@@ -1,4 +1,0 @@
-Core
-====
-
-.. automodule:: nutils.core

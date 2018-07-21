@@ -21,16 +21,6 @@ import sys, os, re
 sys.path.insert(0, os.path.abspath('..'))
 sys.path.insert(0, os.path.abspath('.'))
 
-class Fake(object):
-  def __init__( self, **attrs ):
-    self.__dict__.update( attrs )
-  def __getattr__( self, attr ):
-    return None
-
-sys.modules[ 'numpy' ] = Fake(version=Fake(version='1.8'), dtype=lambda o: None, ndarray=Fake, empty=lambda *args, **kwargs: None, pi=3.14)
-sys.modules[ 'scipy' ] = Fake()
-sys.modules[ 'matplotlib' ] = Fake()
-
 # -- General configuration ------------------------------------------------
 
 # If your documentation needs a minimal Sphinx version, state it here.
@@ -43,11 +33,10 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.doctest',
-    'sphinx.ext.viewcode',
     'sphinx.ext.mathjax',
     'sphinx.ext.napoleon',
     'sphinx.ext.intersphinx',
-    'remove_annotations',
+    'sphinx_mods',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -350,7 +339,8 @@ epub_exclude_files = ['search.html']
 #epub_use_index = True
 
 autodoc_member_order = 'bysource'
-autodoc_default_flags = [ 'members' ]
+autodoc_default_flags = [ 'members', 'special-members', 'show-inheritance' ]
+autodoc_inherit_docstrings = False # i.e. don't document implementations of abstract methods (if the implementation does not have a docstring)
 
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),

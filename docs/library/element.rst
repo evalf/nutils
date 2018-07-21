@@ -1,4 +1,0 @@
-Element
-=======
-
-.. automodule:: nutils.element

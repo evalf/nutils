@@ -1,4 +1,0 @@
-Numeric
-=======
-
-.. automodule:: nutils.numeric

@@ -1548,7 +1548,7 @@ class ConnectedTopology(UnstructuredTopology):
 
   @types.apply_annotations
   def __init__(self, ndims:types.strictint, elements:types.tuple[element.strictelement], connectivity):
-    assert len(connectivity) == len(elements)
+    assert len(connectivity) == len(elements) and all(len(c) == e.nedges for c, e in zip(connectivity, elements))
     self.connectivity = connectivity
     super().__init__(ndims, elements)
 
@@ -1809,11 +1809,11 @@ class RefinedTopology(Topology):
     for ielem, edges in enumerate(self.basetopo.connectivity):
       for iedge, jelem in enumerate(edges):
         if jelem == -1:
-          for ichild, ichildedge in self.elements[ielem].reference.edgechildren[iedge]:
+          for ichild, ichildedge in self.basetopo.elements[ielem].reference.edgechildren[iedge]:
             connectivity[offsets[ielem]+ichild][ichildedge] = -1
         elif jelem < ielem:
           jedge = self.basetopo.connectivity[jelem].index(ielem)
-          for (ichild, ichildedge), (jchild, jchildedge) in zip(self.elements[ielem].reference.edgechildren[iedge], self.elements[jelem].reference.edgechildren[jedge]):
+          for (ichild, ichildedge), (jchild, jchildedge) in zip(self.basetopo.elements[ielem].reference.edgechildren[iedge], self.basetopo.elements[jelem].reference.edgechildren[jedge]):
             connectivity[offsets[ielem]+ichild][ichildedge] = offsets[jelem]+jchild
             connectivity[offsets[jelem]+jchild][jchildedge] = offsets[ielem]+ichild
     return tuple(types.frozenarray(c, copy=False) for c in connectivity)

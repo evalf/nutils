@@ -523,6 +523,10 @@ class ImmutableMeta(CacheMeta):
     if not isinstance(version, int):
       raise ValueError("'version' should be of type 'int' but got {!r}".format(version))
     cls = super().__new__(mcls, name, bases, namespace, **kwargs)
+    # Since we redefine `__call__` here and `inspect.signature(cls)` looks at
+    # `cls.__signature__` and if absent the signature of `__call__`, we
+    # explicitly copy the signature of `<cls instance>.__init__` to `cls`.
+    cls.__signature__ = inspect.signature(cls.__init__.__get__(object(), object))
     # Peel off the preprocessors (see `aspreprocessor`) and store the
     # preprocessors and the uncovered init separately.
     pre_init = []
@@ -1087,7 +1091,7 @@ class frozenmultiset(collections.abc.Container, metaclass=_frozenmultisetmeta):
   __contains__ = lambda self, item: item in self.__items
   __iter__ = lambda self: iter(self.__items)
   __len__ = lambda self: len(self.__items)
-  __nonzero__ = lambda self: bool(self.__items)
+  __bool__ = lambda self: bool(self.__items)
 
   isdisjoint = lambda self, other: not any(item in self.__items for item in other)
 

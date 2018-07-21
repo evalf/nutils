@@ -1,4 +1,0 @@
-Parallel
-========
-
-.. automodule:: nutils.parallel

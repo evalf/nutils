@@ -25,7 +25,7 @@ import os, re
 with open(os.path.join('nutils', '__init__.py')) as f:
   version = next(filter(None, map(re.compile("^version = '([a-zA-Z0-9.]+)'$").match, f))).group(1)
 
-tests_require = ['Sphinx']
+tests_require = ['Sphinx>=1.6','pillow>2.6']
 
 setup(
   name = 'nutils',
@@ -43,8 +43,9 @@ setup(
   tests_require = tests_require,
   extras_require = dict(
     test=tests_require,
-    docs=['Sphinx'],
+    docs=['Sphinx>=1.6'],
     mkl=['mkl'],
+    readthedocs=['pillow>2.6'],
   ),
   command_options = dict(
     test=dict(test_loader=('setup.py', 'unittest:TestLoader')),

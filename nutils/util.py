@@ -224,6 +224,13 @@ class tri_interpolator:
       return vx
     return interpolate
 
+class linear_regressor:
+  def add(self, x, y, weight=.5):
+    y = numpy.asarray(y)
+    new = numpy.outer([1, x], [x] + list(y.flat))
+    (x_, *y_), (xx_, *xy_) = self.avg = (1-weight) * getattr(self, 'avg', new) + weight * new
+    return numpy.dot([[-x_,1], [xx_,-x_]], [y_,xy_]).reshape((2,)+y.shape) / (xx_-x_**2 or numpy.nan)
+
 def obj2str(obj):
   '''compact, lossy string representation of arbitrary object'''
   return '['+','.join(obj2str(item) for item in obj)+']' if isinstance(obj, collections.abc.Iterable) \

@@ -1,4 +1,0 @@
-Expression
-==========
-
-.. automodule:: nutils.expression

@@ -97,7 +97,7 @@ class Matrix(metaclass=types.CacheMeta):
 
     data, (row, col) = self.export('coo')
     supp = numpy.zeros(self.shape[0], dtype=bool)
-    supp[row[data > tol]] = True
+    supp[row[abs(data) > tol]] = True
     return supp
 
   @abc.abstractmethod

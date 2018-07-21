@@ -378,7 +378,7 @@ def assert_allclose64(actual, data=None, atol=2e-15, rtol=2e-3):
   try:
     desired = unpack(numpy.frombuffer(zlib.decompress(binascii.a2b_base64(data)), dtype=numpy.int16), atol, rtol).reshape(actual.shape)
   except Exception as e:
-    status = 'failed to decode data: {}'.format(e),
+    status = ['failed to decode data: {}'.format(e)]
   else:
     error = abs(actual - desired)
     spacing = numpy.sqrt(atol**2 + (desired*rtol)**2)
@@ -386,14 +386,11 @@ def assert_allclose64(actual, data=None, atol=2e-15, rtol=2e-3):
     numpy.greater(error, spacing, where=~numpy.isnan(error), out=fail)
     if not fail.any():
       return
-    status = '{}/{} values do not match up to atol={:.2e}, rtol={:.2e}:'.format(fail.sum(), fail.size, atol, rtol),
-    for index in zip(*fail.nonzero()):
-      status += '{} desired: {:+.4e}, actual: {:+.4e}, spacing: {:.1e}'.format(list(index), desired[index], actual[index], spacing[index]),
-  status += 'If this is expected, update the base64 string to:',
-  with warnings.catch_warnings(record=True) as captured_warnings:
-    status += binascii.b2a_base64(zlib.compress(pack(actual, atol, rtol, numpy.int16).tobytes(), 9)).decode().rstrip(),
-  for w in captured_warnings:
-    status += 'Warning: {}'.format(w.message),
+    status = ['{}/{} values do not match up to atol={:.2e}, rtol={:.2e}:'.format(fail.sum(), fail.size, atol, rtol)]
+    status.extend('{} desired: {:+.4e}, actual: {:+.4e}, spacing: {:.1e}'.format(list(index), desired[index], actual[index], spacing[index]) for index in zip(*fail.nonzero()))
+  status.append('If this is expected, update the base64 string to:')
+  with warnings.via(status.append):
+    status.append(binascii.b2a_base64(zlib.compress(pack(actual, atol, rtol, numpy.int16).tobytes(), 9)).decode().rstrip())
   raise Exception('\n'.join(status))
 
 def binom(n, k):

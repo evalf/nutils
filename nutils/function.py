@@ -1816,6 +1816,9 @@ class Power(Array):
       return ones_like(self)
 
 class Pointwise(Array):
+  '''
+  Abstract base class for pointwise array functions.
+  '''
 
   __slots__ = 'args',
   __cache__ = 'simplified',

@@ -33,3 +33,7 @@ __all__ = ['_', 'numpy', 'core', 'numeric', 'element', 'function', 'expression',
   'mesh', 'plot', 'topology', 'util', 'matrix', 'parallel', 'log',
   'cache', 'transform', 'solver', 'cli', 'warnings', 'config', 'types', 'points',
   'sample', 'export']
+
+from . import numeric, element, function, expression, mesh, topology, util, \
+  matrix, parallel, log, cache, transform, solver, cli, warnings, config, \
+  types, points, sample, export

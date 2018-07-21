@@ -1,4 +1,0 @@
-Matrix
-======
-
-.. automodule:: nutils.matrix
