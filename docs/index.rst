@@ -30,9 +30,9 @@ Contents
 .. toctree::
 
    intro
-   generated/examples
+   examples
+   nutils
    wiki
-   generated/api
 
 
 Indices and tables
