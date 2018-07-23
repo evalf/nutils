@@ -307,7 +307,7 @@ unicode_math_map = {
   # Letters
   'α':r'\alpha', 'β':r'\beta', 'γ':r'\gamma', 'δ':r'\delta', 'ϵ':r'\epsilon',
   'ζ':r'\zeta', 'η':r'\eta', 'θ':r'\theta', 'ι':r'\iota', 'κ':r'\kappa',
-  'λ':r'\lambda', 'μ':r'\mu', 'ν':r'\nu', 'ξ':r'\xi', 'o':r'\omicron',
+  'λ':r'\lambda', 'μ':r'\mu', 'ν':r'\nu', 'ξ':r'\xi', 'ο':r'\omicron',
   'π':r'\pi', 'ρ':r'\rho', 'σ':r'\sigma', 'τ':r'\tau', 'υ':r'\upsilon',
   'ϕ':r'\phi', 'χ':r'\chi', 'ψ':r'\psi', 'ω':r'\omega', 'ε':r'\varepsilon',
   'ϑ':r'\vartheta', 'ϰ':r'\varkappa', 'ϖ':r'\varpi', 'ϱ':r'\varrho',
