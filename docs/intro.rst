@@ -1,78 +1,79 @@
-Introduction
-============
+Getting Started
+===============
 
-To get one thing out of the way first, note that Nutils is not your classical
-Finite Element program. It does not have menus, no buttons to click, nothing to
-make a screenshot of. To get it to do *anything* some programming is going to
-be required.
-
-That said, let's see what Nutils can be instead.
-
-
-Design
-------
-
-Nutils is a programming library, providing components that are rich enough to
-handle a wide range of problems by simply linking them together. This blurs the
-line between classical graphical user interfaces and a programming environment,
-both of which serve to offer some degree of mixing and matching of available
-components. The former has a lower entry bar, whereas the latter offers more
-flexibility, the possibility to extend the toolkit with custom algorithms, and
-the possibility to pull in third party modules. It is our strong belief that on
-the edge of science where Nutils strives to be a great degree of extensibility
-is adamant.
-
-For those so inclined, one of the lesser interesting possibilities this gives
-is to write a dedicated, Nutils powered GUI application.
-
-What Nutils specifically does not offer are problem specific components, such
-as, conceivably, a "crack growth" module or "solve navier stokes" function. As
-a primary design principle we aim for a Nutils application to be closely
-readable as a high level mathematical problem description; `i.e.` the weak
-form, domain, boundary conditions, time stepping of Newton iterations, etc. It
-is the supporting operations like integrating over a domain or taking gradients
-of compound functions that are being kept out of sight as much as possible.
+Nutils can be installed via the `Python Package Index
+<https://pypi.org/project/nutils/>`_ or cloned from `Github
+<https://github.com/nutils/nutils>`_. Once properly configured, the best way to
+get going is by studying the :ref:`examples` that demonstrate implementations
+of several solid and fluid mechanics problems.
 
 
-Quick demo
-----------
+Installation
+------------
 
-As a small but representative demonstration of what is involved in setting up a
-problem in Nutils we solve the `Laplace problem
-<https://en.wikipedia.org/wiki/Laplace%27s_equation>`_ on a unit square, with
-zero Dirichlet conditions on the left and bottom boundaries, unit flux at the
-top and a natural boundary condition at the right. We begin by creating a
-structured ``nelems`` ⅹ ``nelems`` Finite Element mesh using the built-in
-generator::
+Nutils is platform independent and is known to work on Linux, Windows and OS X.
 
-    verts = numpy.linspace( 0, 1, nelems+1 )
-    domain, geom = mesh.rectilinear( [verts,verts] )
+A working installation of Python 3.5 or higher is required. Many different
+installers exist and there are no known issues with any of them. When in doubt
+about which to use, a safe option is to go with the `official installer
+<https://www.python.org/downloads/>`_.
 
-Here ``domain`` is topology representing an interconnected set of elements, and
-``geometry`` is a mapping from the topology onto ℝ², representing it placement
-in physical space. This strict separation of topological and geometric
-information is key design choice in Nutils.
+With Python installed, the recommended way to install Nutils is to clone `the
+repository <https://github.com/nutils/nutils>`_, followed by an editable
+installation using `pip <https://github.com/pypa/pip>`_ (included in the
+standard installer)::
 
-Proceeding to specifying the problem, we create a second order spline basis
-``funcsp`` which doubles as trial and test space (`u` resp. `v`). We build a
-``matrix`` by integrating ``laplace`` = `∇v · ∇u` over the domain, and a ``rhs``
-vector by integrating `v` over the top boundary. The Dirichlet constraints are
-projected over the left and bottom boundaries to find constrained coefficients
-``cons``. Remaining coefficients are found by solving the system in ``lhs``.
-Finally these are contracted with the basis to form our ``solution`` function::
+    $ git clone https://github.com/nutils/nutils.git
+    $ python3 -m pip install --user --editable nutils
 
-    funcsp = domain.splinefunc( degree=2 )
-    laplace = function.outer( funcsp.grad(geom) ).sum()
-    matrix = domain.integrate( laplace, geometry=geom, ischeme='gauss2' )
-    rhs = domain.boundary['top'].integrate( funcsp, geometry=geom, ischeme='gauss1' )
-    cons = domain.boundary['left,bottom'].project( 0, ischeme='gauss1', geometry=geom, onto=funcsp )
-    lhs = matrix.solve( rhs, constrain=cons, tol=1e-8, symmetric=True )
-    solution = funcsp.dot(lhs)
-    
-The ``solution`` function is a mapping from the topology onto ℝ. Sampling this
-together with the ``geometry`` generates arrays that we can use for plotting::
+This will install Nutils locally along with all dependencies. Afterward a
+simple ``git pull`` in the project directory will suffice to update Nutils with
+no reinstallation required.
 
-    points, colors = domain.elem_eval( [ geom, solution ], ischeme='bezier4', separate=True )
-    with plot.PyPlot( 'solution', index=index ) as plt:
-      plt.mesh( points, colors, triangulate='bezier' )
-      plt.colorbar()
+Alternatively it is possible to install Nutils directly::
+
+    $ python3 -m pip install --user nutils
+
+This will download the latest stable version from the `Python Package Index
+<https://pypi.org/project/nutils/>`_ and install it along with dependencies.
+However, since this installation leaves no access to examples or unit tests, in
+the following is is assumed that the former approach was used.
+
+
+First steps
+-----------
+
+A good first step after installing Nutils is to confirm that all unit tests are
+passing. With the current working directory at the root of the repository::
+
+    $ python3 -m unittest -b
+
+Note that this might take a long time. After that, try to run any of the
+scripts in the examples directory, such as the Laplace problem::
+
+    $ python3 examples/laplace.py
+
+Log messages should appear in the terminal during operation. Simulateneously, a
+html file ``log.html`` and any produced figures are written to
+``public_html/laplace.py/yyyy/mm/dd/hh-mm-ss`` in the home directory. In case a
+webserver is running and configured for user directories this automatically
+makes simulations remotely accessible. For convenience,
+``public_html/log.html`` always redirects to the most recent simulation.
+
+
+Next steps and support
+----------------------
+
+For the numerical background of all examples as well as line by line
+documentation see the overview of :ref:`examples`. Documentation of individual
+functions can be found in the :ref:`api_reference`.
+
+Most simulations will have components in common with the example scripts, so a
+mix-and-match approach is a good way to start building your own script. For
+questions that are not answered by the API reference there is the nutils-users
+support channel at `#nutils-users:matrix.org
+<https://matrix.to/#/#nutils-users:matrix.org>`_. Note that you will need to
+create an account at any Matrix server in order to join this channel.
+
+If you are using Nutils in academic research, please consider `citing
+Nutils <https://doi.org/10.5281/zenodo.822369>`_.
