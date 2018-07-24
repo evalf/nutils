@@ -4,15 +4,13 @@
 # square domain :math:`Ω` with boundary :math:`Γ`, subject to boundary
 # conditions:
 #
-# .. math::
+# .. math:: u &= 0                     && Γ_{\rm left}
 #
-#        u &= 0                     &    & Γ_{\rm left}
+#       ∂_n u &= 0                     && Γ_{\rm bottom}
 #
-#    ∂_n u &= 0                     &    & Γ_{\rm bottom}
+#       ∂_n u &= \cos(1) \cosh(x_1)    && Γ_{\rm right}
 #
-#    ∂_n u &= \cos(1) \cosh(x_1)    &    & Γ_{\rm right}
-#
-#        u &= \cosh(1) \sin(x_0)    &    & Γ_{\rm top}
+#           u &= \cosh(1) \sin(x_0)    && Γ_{\rm top}
 #
 # This case is constructed to contain all combinations of homogenous and
 # heterogeneous, Dirichlet and Neumann type boundary conditions, as well as to
@@ -25,8 +23,9 @@
 import nutils, numpy
 
 # The main function defines the parameter space for the script. Configurable
-# parameters are the (structured) mesh density, polynomial degree, and basis
-# type.
+# parameters are the mesh density (in number of elements along an edge),
+# element type (square, triangle, or mixed), type of basis function (std or
+# spline, with availability depending on element type), and polynomial degree.
 
 def main(nelems: 'number of elements along edge' = 10,
          etype: 'type of elements (square/triangle/mixed)' = 'square',
@@ -104,20 +103,20 @@ def main(nelems: 'number of elements along edge' = 10,
 
   return cons, lhs, err
 
-# If the script is executed (as upposed to imported as a module), ``cli.run``
-# calls the main function with parameters provided from the command line.  To
-# run this script type :sh:`python3 laplace.py` in a terminal.  All arguments
-# of the main function are available on the command line.  For example, to
-# change argument ``etype`` to ``'mixed'`` type :sh:`python3 laplace.py
-# etype=mixed`.
+# If the script is executed (as opposed to imported), :func:`nutils.cli.run`
+# calls the main function with arguments provided from the command line. For
+# example, to keep with the default arguments simply run :sh:`python3
+# laplace.py`. To select mixed elements and quadratic basis functions add
+# :sh:`python3 laplace.py etype=mixed degree=2`.
 
 if __name__ == '__main__':
   nutils.cli.run(main)
 
 # Once a simulation is developed and tested, it is good practice to save a few
-# strategicly chosen return values for routine regression testing. The
-# :mod:`nutils.numeric` module facilitates this by providing base64 conversion
-# tools for numerical data to make it suitable for incorporation in the script.
+# strategicly chosen return values for routine regression testing. Here we use
+# the standard :mod:`unittest` framework, with
+# :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
+# desired results as compressed base64 data.
 
 import unittest
 
