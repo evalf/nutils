@@ -1,16 +1,16 @@
 #! /usr/bin/env python3
 #
-# In this script we solve the stationary Stokes and Navier-Stokes on a unit
-# square domain, with no-slip left, bottom and right boundaries and a top
-# boundary that is moving at unit velocity in positive x-direction.
-#
-# .. math::
-#
-#    u &= 0, 0    &    & Γ_{\rm left,bottom,right}
-#
-#    u &= 1, 0    &    & Γ_{\rm top}
+# In this script we solve the lid driven cavity problem for stationary Stokes
+# and Navier-Stokes flow. That is, a unit square domain, with no-slip left,
+# bottom and right boundaries and a top boundary that is moving at unit
+# velocity in positive x-direction.
 
 import nutils, numpy, matplotlib.collections
+
+# The main function defines the parameter space for the script. Configurable
+# parameters are the mesh density (in number of elements along an edge),
+# element type (square, triangle, or mixed), polynomial degree, and Reynolds
+# number.
 
 def main(nelems: 'number of elements' = 12,
          etype: 'type of elements (square/triangle/mixed)' = 'square',
@@ -19,7 +19,6 @@ def main(nelems: 'number of elements' = 12,
 
   domain, geom = nutils.mesh.unitsquare(nelems, etype)
 
-  # create namespace
   ns = nutils.function.Namespace()
   ns.Re = reynolds
   ns.x = geom
@@ -31,7 +30,6 @@ def main(nelems: 'number of elements' = 12,
   ns.p = 'pbasis_n ?lhs_n'
   ns.stress_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
 
-  # boundary conditions
   sqr = domain.boundary.integral('u_k u_k' @ ns, degree=degree*2, geometry=ns.x)
   wallcons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
 
@@ -53,19 +51,21 @@ def main(nelems: 'number of elements' = 12,
 
   return lhs0, lhs1
 
+# Postprocessing in this script is separated so that it can be reused for the
+# results of Stokes and Navier-Stokes, and because of the extra steps required
+# for establishing streamlines.
+
 def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
 
-  # compute streamlines
-  ns = ns.copy_()
+  ns = ns.copy_() # copy namespace so that we don't modify the calling argument
   ns.streambasis = domain.basis('std', degree=2)[1:] # remove first dof to obtain non-singular system
-  ns.stream = 'streambasis_n ?streamdofs_n'
+  ns.stream = 'streambasis_n ?streamdofs_n' # stream function
   sqr = domain.integral('(u_0 - stream_,1)^2 + (u_1 + stream_,0)^2' @ ns, geometry=ns.x, degree=4)
-  arguments['streamdofs'] = nutils.solver.optimize('streamdofs', sqr, arguments=arguments)
+  arguments['streamdofs'] = nutils.solver.optimize('streamdofs', sqr, arguments=arguments) # compute streamlines
 
-  # plot velocity as field, pressure as contours, streamlines as dashed
   bezier = domain.sample('bezier', 9)
   x, u, p, stream = bezier.eval([ns.x, nutils.function.norm2(ns.u), ns.p, ns.stream], arguments=arguments)
-  with nutils.export.mplfigure('flow.jpg') as fig:
+  with nutils.export.mplfigure('flow.jpg') as fig: # plot velocity as field, pressure as contours, streamlines as dashed
     ax = fig.add_axes([.1,.1,.8,.8], yticks=[], aspect='equal')
     ax.add_collection(matplotlib.collections.LineCollection(x[bezier.hull], colors='w', linewidths=.5, alpha=.2))
     ax.tricontour(x[:,0], x[:,1], bezier.tri, stream, 16, colors='k', linestyles='dotted', linewidths=.5, zorder=9)
@@ -77,15 +77,18 @@ def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
     imp = ax.tricontour(x[:,0], x[:,1], bezier.tri, p, 16, cmap='gray', linestyles='solid')
     fig.colorbar(imp, cax=caxp)
 
+# If the script is executed (as opposed to imported), :func:`nutils.cli.run`
+# calls the main function with arguments provided from the command line. To
+# keep with the default arguments simply run :sh:`python3 drivencavity.py`.
+
 if __name__ == '__main__':
   nutils.cli.run(main)
 
-# To run this script type :sh:`python3 drivencavity.py` in a terminal.
-#
 # Once a simulation is developed and tested, it is good practice to save a few
-# strategicly chosen return values for routine regression testing. The
-# `numeric` module facilitates this by providing base64 conversion tools for
-# numerical data to make it suitable for incorporation in the script.
+# strategicly chosen return values for routine regression testing. Here we use
+# the standard :mod:`unittest` framework, with
+# :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
+# desired results as compressed base64 data.
 
 import unittest
 
