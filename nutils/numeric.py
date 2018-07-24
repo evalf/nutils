@@ -374,6 +374,34 @@ def pack(a, atol, rtol, dtype):
   return n[()]
 
 def assert_allclose64(actual, data=None, atol=2e-15, rtol=2e-3):
+  '''Assert numerical equivalence with packed data.
+
+  Equivalent to :func:`numpy.testing.assert_allclose`, with the difference that
+  the desired values are specified as a base64 string representing packed data
+  (see :func:`pack` and :func:`unpack` for details on packing). The primary use
+  case is embedded regression testing.
+
+  The ``data`` argument can be left at ``None`` to trigger an exception
+  containing the base64 string. The same exception is raised when ``data`` is
+  specified but fails the equivalence test, suggesting an update in case
+  failure is expected.
+
+  The ``atol`` and ``rtol`` arguments are used for both unpacking and
+  equivalence testing and cannot be changed independently of the base64 string.
+  Doing so will raise an exception with a suggested update.
+
+  Args
+  ----
+  actual : :class:`float` array
+    The obtained data.
+  data : :class:`str` or ``None``
+    The desired data in the form of a base64 string.
+  atol : :class:`float`
+    Absolute tolerance
+  rtol : :class:`float`
+    Relative tolerance
+  '''
+
   import zlib, binascii
   try:
     desired = unpack(numpy.frombuffer(zlib.decompress(binascii.a2b_base64(data)), dtype=numpy.int16), atol, rtol).reshape(actual.shape)
