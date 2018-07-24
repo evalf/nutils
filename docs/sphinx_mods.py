@@ -55,18 +55,6 @@ def print_rst_h1(text, *, file):
   print('='*len(text), file=file)
   print(file=file)
 
-def print_rst_toctree(entries, *, relative_to, file, maxdepth=None):
-  if relative_to.is_file():
-    relative_to = relative_to.parent
-  print(file=file)
-  print('.. toctree::', file=file)
-  if maxdepth is not None:
-    print('   :maxdepth: {}'.format(maxdepth), file=file)
-  print(file=file)
-  for entry in entries:
-    print('   {}'.format(entry.relative_to(relative_to).as_posix()), file=file)
-  print(file=file)
-
 def print_rst_label(name, *, file):
   print(file=file)
   print('.. _{}:'.format(name), file=file)
@@ -79,19 +67,17 @@ def copy_utime(src, dst):
 def generate_examples(app):
   logger = sphinx.util.logging.getLogger(__name__)
 
-  dst_examples = pathlib.Path(app.srcdir)/'generated'/'examples'
+  dst_examples = pathlib.Path(app.srcdir)/'examples'
   dst_examples.mkdir(parents=True, exist_ok=True)
 
-  toc = []
-  for src in sorted(project_root.glob('examples/*.py'), key=lambda item: str(item.with_suffix(''))):
+  for src in sorted(project_root.glob('examples/*.py')):
     if src.name == '__init__.py':
       continue
-    logger.info('generating examples... {}'.format(src))
     name = src.name
-    dst = dst_examples/(name+'.rst')
-    toc.append(dst)
+    dst = dst_examples/(src.with_suffix('.rst').name)
+    logger.info('generating examples... {}'.format(name))
 
-    with src.open('r') as f_src, dst.open('w') as f_dst:
+    with dst.open('w') as f_dst:
       print_rst_autogen_header(file=f_dst, src=src)
       # Add a label such that you can reference an example by
       # :ref:`examples/laplace.py`.
@@ -99,13 +85,6 @@ def generate_examples(app):
       print_rst_h1(name, file=f_dst)
       print('.. exampledoc:: {}'.format(src.relative_to(project_root).as_posix()), file=f_dst)
     copy_utime(src, dst)
-
-  logger.info('generating examples index...')
-  index = dst_examples.with_suffix('.rst')
-  with index.open('w') as f:
-    print_rst_autogen_header(file=f)
-    print_rst_h1('Examples', file=f)
-    print_rst_toctree(toc, relative_to=index, maxdepth=1, file=f)
 
 class LineIter:
 
@@ -273,41 +252,33 @@ def generate_api(app):
   logger = sphinx.util.logging.getLogger(__name__)
 
   nutils = project_root/'nutils'
-  dst_root = pathlib.Path(app.srcdir)/'generated'/'api'
+  dst_root = pathlib.Path(app.srcdir)/'nutils'
   dst_root.mkdir(parents=True, exist_ok=True)
 
-  toc = []
   for src in sorted(nutils.glob('**/*.py')):
     if src == nutils/'__init__.py':
       continue
     module = '.'.join((src.parent if src.name == '__init__.py' else src.with_suffix('')).relative_to(nutils).parts)
     logger.info('generating api... {}'.format(module))
     dst = dst_root/(module+'.rst')
-    toc.append(dst)
     with dst.open('w') as f:
       print_rst_autogen_header(file=f, src=src)
       print_rst_h1(module, file=f)
       print('.. automodule:: {}'.format('nutils.{}'.format(module)), file=f)
     copy_utime(src, dst)
 
-  logger.info('generating api index...')
-  index = dst_root.with_suffix('.rst')
-  with index.open('w') as f:
-    print_rst_autogen_header(file=f)
-    print_rst_h1('API reference', file=f)
-    print_rst_toctree(toc, relative_to=index, maxdepth=1, file=f)
-
 def remove_generated(app, exception):
   logger = sphinx.util.logging.getLogger(__name__)
-  generated = pathlib.Path(app.srcdir)/'generated'
-  shutil.rmtree(str(generated), onerror=lambda f, p, e: logger.warning('failed to remove {}'.format(p)))
+  for name in 'nutils', 'examples':
+    generated = pathlib.Path(app.srcdir)/name
+    shutil.rmtree(str(generated), onerror=lambda f, p, e: logger.warning('failed to remove {}'.format(p)))
 
 # Selected math symbols from https://en.wikipedia.org/wiki/Wikipedia:LaTeX_symbols
 unicode_math_map = {
   # Letters
   'α':r'\alpha', 'β':r'\beta', 'γ':r'\gamma', 'δ':r'\delta', 'ϵ':r'\epsilon',
   'ζ':r'\zeta', 'η':r'\eta', 'θ':r'\theta', 'ι':r'\iota', 'κ':r'\kappa',
-  'λ':r'\lambda', 'μ':r'\mu', 'ν':r'\nu', 'ξ':r'\xi', 'o':r'\omicron',
+  'λ':r'\lambda', 'μ':r'\mu', 'ν':r'\nu', 'ξ':r'\xi', 'ο':r'\omicron',
   'π':r'\pi', 'ρ':r'\rho', 'σ':r'\sigma', 'τ':r'\tau', 'υ':r'\upsilon',
   'ϕ':r'\phi', 'χ':r'\chi', 'ψ':r'\psi', 'ω':r'\omega', 'ε':r'\varepsilon',
   'ϑ':r'\vartheta', 'ϰ':r'\varkappa', 'ϖ':r'\varpi', 'ϱ':r'\varrho',

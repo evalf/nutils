@@ -1,42 +1,38 @@
-Welcome to Nutils's documentation!
-==================================
+Welcome to Nutils
+=================
 
-Nutils: open source numerical utilities for Python, is a collaborative
-programming effort aimed at the creation of a modern, general purpose
-programming library for `Finite Element
-<https://en.wikipedia.org/wiki/Finite_element_method>`_ applications and
-related computational methods. Identifying features are a heavily object
-oriented design, strict separation of topology and geometry, and CAS-like
-function arithmetic such as found in Maple and Mathematica. Primary design
-goals are:
+Nutils is a Free and Open Source Python programming library for Finite Element
+Method computations, developed by `Evalf Computing <http://evalf.com/>`_ and
+distributed under the permissive MIT license. Key features are a readable,
+math centric syntax, an object oriented design, strict separation of
+topology and geometry, and high level function manipulations with support
+for automatic differentiation.
 
-  * **Readability**. Finite element scripts built on top of Nutils should focus
-    on work flow and maths, unobscured by Finite Element infrastructure.
-  * **Flexibility**. The Nutils are tools; they do not enforce a strict work
-    flow. Missing components can be added locally without loosing
-    interoperability.
-  * **Compatibility**. Exposed objects are of native python type or allow for
-    easy conversion to leverage third party tools.
-  * **Speed**. Nutils are self-optimizing and support parallel computation.
-    Typical scripting inefficiencies are discouraged by design.
-
-For latest project news and developments visit the project website at
-`<nutils.org>`_.
+Nutils provides the tools required to construct a typical simulation workflow
+in just a few lines of Python code, while at the same time leaving full
+flexibility to build novel workflows or interact with third party tools. With
+native support for Isogeometric Analysis (IGA), the Finite Cell method (FCM),
+multi-physics, mixed methods, and hierarchical refinement, Nutils is at the
+forefront of numerical discretization science. Efficient under-the-hood
+vectorization and built-in parallellisation provide for an effortless
+transition from academic research projects to full scale, real world
+applications.
 
 
 Contents
 --------
 
 .. toctree::
+   :maxdepth: 1
 
    intro
-   generated/examples
-   wiki
-   generated/api
+   examples
+   nutils
+   notes
 
 
 Indices and tables
-==================
+------------------
 
 * :ref:`genindex`
 * :ref:`modindex`
