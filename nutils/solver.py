@@ -263,10 +263,13 @@ class newton(RecursionWithSolve, length=1):
       if self.islinear:
         yield _nan_at(lhs+dlhs, nosupp), types.attributes(resnorm=0, relax=1)
         return
-      for irelax in itertools.count() if self.nrelax is None else range(self.nrelax):
+      for irelax in itertools.count():
         newlhs = lhs+relax*dlhs
         res, jac = self._eval(newlhs)
         newresnorm = numpy.linalg.norm(res[~self.constrain])
+        if self.nrelax is not None and irelax >= self.nrelax:
+          log.warning('failed to', 'decrease' if newresnorm > resnorm else 'optimize', 'residual')
+          break
         if not numpy.isfinite(newresnorm):
           log.info('residual norm {} / {}'.format(newresnorm, round(relax, 5)))
           relax *= self.minrelax
@@ -295,8 +298,6 @@ class newton(RecursionWithSolve, length=1):
           relax = min(relax * min(scale, self.rebound), 1)
           break
         relax *= max(scale, self.minrelax)
-      else:
-        log.warning('failed to', 'decrease' if newresnorm > resnorm else 'optimize', 'residual')
       yield _nan_at(newlhs, nosupp), types.attributes(resnorm=newresnorm, relax=relax)
       lhs, resnorm = newlhs, newresnorm
 
