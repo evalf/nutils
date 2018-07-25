@@ -505,9 +505,10 @@ class Topology(types.Singleton):
     assert len(subtopo) == values.sum(0), '{} is not a proper subtopology of {}'.format(subtopo, self)
     return function.Get(values, axis=0, item=function.FindTransform(transforms, function.Promote(self.ndims, trans=function.TRANS)))
 
-  def select(self, indicator, ischeme='bezier2', *, arguments=None):
-    values = self.elem_eval(indicator, ischeme, separate=True, arguments=arguments)
-    selected = [elem for elem, value in zip(self, values) if numpy.greater(value, 0).any()]
+  def select(self, indicator, ischeme='bezier2', **kwargs):
+    sample = self.sample(*element.parse_legacy_ischeme(ischeme))
+    isactive = numpy.greater(sample.eval(indicator, title='select', **kwargs), 0)
+    selected = [elem for elem, index in zip(self, sample.index) if isactive[index].any()]
     return UnstructuredTopology(self.ndims, selected)
 
   def prune_basis(self, basis):
