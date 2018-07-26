@@ -1,7 +1,20 @@
 #! /usr/bin/env python3
+#
+# In this script we solve the linear plane strain elasticity problem for an
+# infinite plate with a circular hole under tension. We do this by placing the
+# circle in the origin of a unit square, imposing symmetry conditions on the
+# left and bottom, and Dirichlet conditions constraining the displacements to
+# the analytical solution to the right and top. The traction-free circle is
+# removed by means of the Finite Cell Method (FCM).
 
-import nutils, numpy, matplotlib.collections
+import nutils, numpy
 
+# The main function defines the parameter space for the script. Configurable
+# parameters are the mesh density (in number of elements along an edge),
+# element type (square, triangle, or mixed), type of basis function (std or
+# spline, with availability depending on element type), polynomial degree, far
+# field traction, number of refinement levels for FCM, the cutout radius and
+# Poisson's ratio.
 
 def main(nelems: 'number of elementsa long edge' = 9,
          etype: 'type of elements (square/triangle/mixed)' = 'square',
@@ -31,35 +44,36 @@ def main(nelems: 'number of elementsa long edge' = 9,
   ns.uexact_i = 'scale (x_i ((k + 1) (0.5 + R2) + (1 - R2) R2 (x_0^2 - 3 x_1^2) / r2) - 2 δ_i1 x_1 (1 + (k - 1 + R2) R2))'
   ns.du_i = 'u_i - uexact_i'
 
-  # construct dirichlet boundary constraints
   sqr = domain.boundary['left,bottom'].integral('(u_i n_i)^2' @ ns, geometry=ns.x, degree=degree*2)
   sqr += domain.boundary['top,right'].integral('du_k du_k' @ ns, geometry=ns.x, degree=20)
   cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
 
-  # construct residual
   res = domain.integral('ubasis_ni,j stress_ij' @ ns, geometry=ns.x, degree=degree*2)
-
-  # solve system
   lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
 
-  # vizualize result
   bezier = domain.sample('bezier', 5)
   X, stressxx = bezier.eval([ns.X, ns.stress[0,0]], arguments=dict(lhs=lhs))
   nutils.export.triplot('stressxx.jpg', X, stressxx, tri=bezier.tri, hull=bezier.hull)
 
-  # evaluate error
   err = numpy.sqrt(domain.integrate(['du_k du_k' @ ns, 'du_i,j du_i,j' @ ns], geometry=ns.x, degree=max(degree,3)*2, arguments=dict(lhs=lhs)))
   nutils.log.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
   return err, cons, lhs
 
+# If the script is executed (as opposed to imported), :func:`nutils.cli.run`
+# calls the main function with arguments provided from the command line. For
+# example, to keep with the default arguments simply run :sh:`python3
+# platewithhole.py`. To select mixed elements and quadratic basis functions add
+# :sh:`python3 platewithhole.py etype=mixed degree=2`.
+
 if __name__ == '__main__':
   nutils.cli.run(main)
 
-# To run this script type :sh:`python3 platewithhole.py` in a terminal.  All
-# arguments of the main function are available on the command line.  For
-# example, to change argument ``etype`` to ``'mixed'`` type :sh:`python3
-# platewithhole.py etype=mixed`.
+# Once a simulation is developed and tested, it is good practice to save a few
+# strategicly chosen return values for routine regression testing. Here we use
+# the standard :mod:`unittest` framework, with
+# :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
+# desired results as compressed base64 data.
 
 import unittest
 

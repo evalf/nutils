@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
+#
+# In this script we solve the same infinite plane strain problem as in
+# :ref:`examples/platewithhole.py`, but instead of using FCM to create the hole
+# we use a NURBS-based mapping. A detailed description of the testcase can be
+# found in Hughes et al., `Isogeometric analysis: CAD, finite elements, NURBS,
+# exact geometry and mesh refinement`, Computer Methods in Applied Mechanics
+# and Engineering, Elsevier, 2005, 194, 4135-4195.
 
-"""
-This example demonstrates how to perform NURBS-based isogeometric analysis
-for the elastic analysis of an infinite plate with a circular hole under
-tension. A detailed description of the testcase can be found in:
-Hughes et al. 'Isogeometric analysis: CAD, finite elements, NURBS, exact 
-geometry and mesh refinement', Computer Methods in Applied Mechanics and 
-Engineering, Elsevier, 2005, 194, 4135-4195.
-"""
+import nutils, numpy
 
-import nutils, numpy, matplotlib.collections
+# The main function defines the parameter space for the script. Configurable
+# parameters are the number of uniform refinements starting from a 1x2 base
+# mesh, the far field traction, cutout radius and Poisson's ratio.
 
-
-def main(
-    nrefine = 2,
-    radius: 'hole radius' = 0.5,
-    poisson: "poisson's ratio" = 0.3,
-    traction: "far field traction (relative to Young's modulus)" = .1,
-  ):
+def main(nrefine = 2,
+         traction: "far field traction (relative to Young's modulus)" = .1,
+         radius: 'hole radius' = 0.5,
+         poisson: "poisson's ratio" = 0.3):
 
   # create the coarsest level parameter domain
   domain, geom0 = nutils.mesh.rectilinear([1, 2])
@@ -82,11 +81,19 @@ def main(
 
   return err, cons, lhs
 
+# If the script is executed (as opposed to imported), :func:`nutils.cli.run`
+# calls the main function with arguments provided from the command line. For
+# example, to keep with the default arguments simply run :sh:`python3
+# platewithhole-nurbs.py`.
+
 if __name__ == '__main__':
   nutils.cli.run(main)
 
-# To run this script type :sh:`python3 platewithhole-nurbs.py` in a terminal.
-# All arguments of the main function are available on the command line.
+# Once a simulation is developed and tested, it is good practice to save a few
+# strategicly chosen return values for routine regression testing. Here we use
+# the standard :mod:`unittest` framework, with
+# :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
+# desired results as compressed base64 data.
 
 import unittest
 

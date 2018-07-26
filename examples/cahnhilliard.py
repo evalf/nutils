@@ -1,15 +1,25 @@
 #! /usr/bin/env python3
+#
+# In this script we solve the Cahn-Hiilliard equation, which models the
+# unmixing of two phases under the effect of surface tension.
 
-import nutils, numpy, matplotlib.collections
+import nutils, numpy
+
+# The main function defines the parameter space for the script. Configurable
+# parameters are the mesh density (in number of elements along an edge),
+# element type (square, triangle, or mixed), type of basis function (std or
+# spline, with availability depending on element type), polynomial degree, the
+# epsilon parameter, contactangle, timestep, stop criterion, random seed, and a
+# boolean flag for making the domain circular as opposed to a unit square.
 
 def main(nelems: 'number of elements' = 20,
-         epsilon: 'epsilon, 0 for automatic (based on nelems)' = 0,
-         timestep: 'time step' = .01,
-         mtol: 'stop when chemical potential is peak to peak below threshold' = .01,
-         contactangle: 'wall contact angle (degrees)' = 90,
          etype: 'type of elements (square/triangle/mixed)' = 'square',
          btype: 'type of basis function (std/spline)' = 'std',
          degree: 'polynomial degree' = 2,
+         epsilon: 'epsilon, 0 for automatic (based on nelems)' = 0,
+         contactangle: 'wall contact angle (degrees)' = 90,
+         timestep: 'time step' = .01,
+         mtol: 'stop when chemical potential is peak to peak below threshold' = .01,
          seed: 'random seed' = 0,
          circle: 'select circular domain' = False):
 
@@ -21,8 +31,8 @@ def main(nelems: 'number of elements' = 20,
     nutils.log.warning('epsilon under crititical threshold: {} < {}'.format(epsilon, mineps))
 
   domain, geom = nutils.mesh.unitsquare(nelems, etype)
+  bezier = domain.sample('bezier', 5) # sample for plotting
 
-  # create namespace
   ns = nutils.function.Namespace()
   if not circle:
     ns.x = geom
@@ -42,18 +52,13 @@ def main(nelems: 'number of elements' = 20,
   res += domain.boundary.integral('cbasis_n ewall' @ ns, geometry=ns.x, degree=7)
   inertia = domain.integral('mbasis_n c' @ ns, geometry=ns.x, degree=7)
 
-  # construct energy breakdown
-  energy = dict(
+  energy = dict( # energy breakdown
     mixture = domain.integral('(c^2 - 1)^2 / 2 epsilon^2' @ ns, geometry=ns.x, degree=4),
     interfaces = domain.integral('.5 c_,k c_,k' @ ns, geometry=ns.x, degree=4),
     wall = domain.boundary.integral('abs(ewall) + ewall c' @ ns, geometry=ns.x, degree=4))
 
-  # prepare sample
-  bezier = domain.sample('bezier', 9)
-
-  # construct initial condition
   numpy.random.seed(seed)
-  lhs0 = numpy.random.normal(0, .5, ns.cbasis.shape)
+  lhs0 = numpy.random.normal(0, .5, ns.cbasis.shape) # initial condition
 
   for lhs in nutils.log.iter('timestep', nutils.solver.impliciteuler('lhs', target0='lhs0', residual=res, inertia=inertia, timestep=timestep, lhs0=lhs0)):
 
@@ -69,8 +74,17 @@ def main(nelems: 'number of elements' = 20,
 
   return lhs0, lhs
 
+# If the script is executed (as opposed to imported), :func:`nutils.cli.run`
+# calls the main function with arguments provided from the command line.
+
 if __name__ == '__main__':
   nutils.cli.run(main)
+
+# Once a simulation is developed and tested, it is good practice to save a few
+# strategicly chosen return values for routine regression testing. Here we use
+# the standard :mod:`unittest` framework, with
+# :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
+# desired results as compressed base64 data.
 
 import unittest
 
