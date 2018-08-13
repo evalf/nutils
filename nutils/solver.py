@@ -571,6 +571,8 @@ class thetamethod(RecursionWithSolve, length=1):
       Coefficient vector for all timesteps after the initial condition.
   '''
 
+  __cache__ = '_res_jac'
+
   @types.apply_annotations
   def __init__(self, target:types.strictstr, residual:sample.strictintegral, inertia:sample.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray, theta:types.strictfloat, target0:types.strictstr='_thetamethod_target0', constrain:types.frozenarray=None, newtontol:types.strictfloat=1e-10, arguments:argdict={}, newtonargs:types.frozendict={}):
     super().__init__()
@@ -585,10 +587,24 @@ class thetamethod(RecursionWithSolve, length=1):
     self.newtonargs = newtonargs
     self.newtontol = newtontol
     self.arguments = arguments
-    res0 = residual * theta + inertia / timestep
-    res1 = residual * (1-theta) - inertia / timestep
-    self.res = res0 + res1.replace({target: function.Argument(target0, lhs0.shape)})
-    self.jac = self.res.derivative(target)
+    self.residual = residual
+    self.inertia = inertia
+    self.theta = theta
+    self.timestep = timestep
+
+  def _res_jac(self, timestep):
+    res = self.residual * self.theta + self.inertia / timestep \
+        + (self.residual * (1-self.theta) - self.inertia / timestep).replace({self.target: function.Argument(self.target0, self.lhs0.shape)})
+    return res, res.derivative(self.target)
+
+  def _step(self, lhs, timestep):
+    res, jac = self._res_jac(timestep)
+    try:
+      return newton(self.target, residual=res, jacobian=jac, lhs0=lhs, constrain=self.constrain,
+        arguments=collections.ChainMap(self.arguments, {self.target0: lhs}), **self.newtonargs).solve(tol=self.newtontol)
+    except (SolverError, matrix.MatrixError) as e:
+      log.error('error: {}; retrying with timestep {}'.format(e, timestep/2))
+      return self._step(self._step(lhs, timestep/2), timestep/2)
 
   def resume(self, history):
     if history:
@@ -597,9 +613,8 @@ class thetamethod(RecursionWithSolve, length=1):
       lhs = self.lhs0
       yield lhs
     while True:
-      lhs = newton(self.target, residual=self.res, jacobian=self.jac, lhs0=lhs, constrain=self.constrain, arguments=collections.ChainMap(self.arguments, {self.target0: lhs}), **self.newtonargs).solve(tol=self.newtontol)
+      lhs = self._step(lhs, self.timestep)
       yield lhs
-
 
 impliciteuler = functools.partial(thetamethod, theta=1)
 cranknicolson = functools.partial(thetamethod, theta=0.5)

@@ -1,4 +1,4 @@
-from nutils import solver, mesh, function, cache, types
+from nutils import solver, mesh, function, cache, types, numeric
 from . import *
 import numpy, contextlib, tempfile
 
@@ -180,3 +180,28 @@ class optimize(TestCase):
 
 optimize(minimize=False)
 optimize(minimize=True)
+
+
+class burgers(TestCase):
+
+  def setUp(self):
+    ns = function.Namespace()
+    domain, ns.x = mesh.rectilinear([10], periodic=(0,))
+    ns.basis = domain.basis('discont', degree=1)
+    ns.u = 'basis_n ?dofs_n'
+    ns.f = '.5 u^2'
+    self.residual = domain.integral('-basis_n,0 f' @ ns, geometry=ns.x, degree=2)
+    self.residual += domain.interfaces.integral('-[basis_n] n_0 ({f} - .5 [u] n_0)' @ ns, geometry=ns.x, degree=4)
+    self.inertia = domain.integral('basis_n u' @ ns, geometry=ns.x, degree=5)
+    self.lhs0 = numpy.sin(numpy.arange(len(ns.basis))) # "random" initial vector
+
+  def test_iters(self):
+    it = iter(solver.impliciteuler('dofs', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=100)) # involves 2-level timestep scaling
+    assert numpy.equal(next(it), self.lhs0).all()
+    numeric.assert_allclose64(next(it), 'eNpzNBA1NjHuNHQ3FDsTfCbAuNz4nUGZgeyZiDOZxlONmQwU9W3OFJ/pNQAADZIOPA==')
+
+  def test_resume(self):
+    _test_recursion_cache(self, lambda: map(types.frozenarray, solver.impliciteuler('dofs', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=1)))
+
+  def test_resume_withscaling(self):
+    _test_recursion_cache(self, lambda: map(types.frozenarray, solver.impliciteuler('dofs', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=100)))
