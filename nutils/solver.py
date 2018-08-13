@@ -205,6 +205,8 @@ class newton(RecursionWithSolve, length=1):
   droptol : :class:`float`
       Threshold for leaving entries in the return value at NaN if they do not
       contribute to the value of the functional.
+  failrelax : :class:`float`
+      Fail with exception if relaxation reaches this lower limit.
   arguments : :class:`collections.abc.Mapping`
       Defines the values for :class:`nutils.function.Argument` objects in
       `residual`.  The ``target`` should not be present in ``arguments``.
@@ -217,7 +219,7 @@ class newton(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, searchrange:types.tuple[float]=(.01,2/3), droptol:types.strictfloat=None, rebound:types.strictfloat=2., arguments:argdict={}, solveargs:types.frozendict={}):
+  def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, searchrange:types.tuple[float]=(.01,2/3), droptol:types.strictfloat=None, rebound:types.strictfloat=2., failrelax:types.strictfloat=1e-6, arguments:argdict={}, solveargs:types.frozendict={}):
     super().__init__()
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
@@ -229,6 +231,7 @@ class newton(RecursionWithSolve, length=1):
     self.minscale, self.maxscale = searchrange
     self.rebound = rebound
     self.droptol = droptol
+    self.failrelax = failrelax
     self.arguments = arguments
     self.solveargs = solveargs
     self.islinear = not self.jacobian.contains(self.target)
@@ -296,6 +299,8 @@ class newton(RecursionWithSolve, length=1):
           relax = min(relax * min(scale, self.rebound), 1)
           break
         relax *= max(scale, self.minscale)
+        if not numpy.isfinite(relax) or relax <= self.failrelax:
+          raise ModelError('stuck in local minimum')
       yield _nan_at(newlhs, nosupp), types.attributes(resnorm=newresnorm, relax=relax)
       lhs, resnorm = newlhs, newresnorm
 
@@ -341,6 +346,8 @@ class minimize(RecursionWithSolve, length=1):
   droptol : :class:`float`
       Threshold for leaving entries in the return value at NaN if they do not
       contribute to the value of the functional.
+  failrelax : :class:`float`
+      Fail with exception if relaxation reaches this lower limit.
   arguments : :class:`collections.abc.Mapping`
       Defines the values for :class:`nutils.function.Argument` objects in
       `residual`.  The ``target`` should not be present in ``arguments``.
@@ -353,7 +360,7 @@ class minimize(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, energy:sample.strictintegral, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, searchrange:types.tuple[float]=(.01,2/3), rebound:types.strictfloat=2., droptol:types.strictfloat=None, arguments:argdict={}, solveargs:types.frozendict={}):
+  def __init__(self, target:types.strictstr, energy:sample.strictintegral, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, searchrange:types.tuple[float]=(.01,2/3), rebound:types.strictfloat=2., droptol:types.strictfloat=None, failrelax:types.strictfloat=1e-6, arguments:argdict={}, solveargs:types.frozendict={}):
     super().__init__()
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
@@ -368,6 +375,7 @@ class minimize(RecursionWithSolve, length=1):
     self.minscale, self.maxscale = searchrange
     self.rebound = rebound
     self.droptol = droptol
+    self.failrelax = failrelax
     self.arguments = arguments
     self.solveargs = solveargs
     self.islinear = not self.jacobian.contains(target)
@@ -450,6 +458,8 @@ class minimize(RecursionWithSolve, length=1):
           relax = min(relax * min(scale, self.rebound), 1)
           break
         relax *= max(scale, self.minscale)
+        if not numpy.isfinite(relax) or relax <= self.failrelax:
+          raise ModelError('stuck in local minimum')
       else:
         log.warning('failed to', 'decrease' if newnrg > nrg else 'optimize', 'energy')
       yield _nan_at(newlhs, nosupp), types.attributes(resnorm=resnorm, energy=newnrg, relax=relax, shift=shift)
