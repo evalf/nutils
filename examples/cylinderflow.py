@@ -19,8 +19,9 @@ def main(nelems: 'number of elements' = 24,
          degree: 'polynomial degree' = 3,
          reynolds: 'reynolds number' = 1000.,
          rotation: 'cylinder rotation speed' = 0.,
-         timestep: 'time step' = .1,
-         maxradius: 'approximate domain size' = 50.,
+         timestep: 'time step' = 1/24,
+         maxradius: 'approximate domain size' = 25.,
+         seed: 'random seed' = 0,
          endtime: 'end time' = numpy.inf):
 
   elemangle = 2 * numpy.pi / nelems
@@ -33,8 +34,8 @@ def main(nelems: 'number of elements' = 24,
   ns.uinf = 1, 0
   ns.r = .5 * nutils.function.exp(elemangle * geom[0])
   ns.Re = reynolds
-  ns.phi = (geom[1] + 1/3) * elemangle # add small angle to break element symmetry
-  ns.x_i = 'r <-cos(phi), -sin(phi)>_i'
+  ns.phi = geom[1] * elemangle # add small angle to break element symmetry
+  ns.x_i = 'r <cos(phi), sin(phi)>_i'
   ns.J = ns.x.grad(geom)
   ns.unbasis, ns.utbasis, ns.pbasis = nutils.function.chain([ # compatible spaces
     domain.basis('spline', degree=(degree,degree-1), removedofs=((0,),None)),
@@ -48,24 +49,27 @@ def main(nelems: 'number of elements' = 24,
   ns.h = .5 * elemangle
   ns.N = 5 * degree / ns.h
   ns.rotation = rotation
-  ns.uwall_i = '0.5 rotation <sin(phi), -cos(phi)>_i'
+  ns.uwall_i = '0.5 rotation <-sin(phi), cos(phi)>_i'
 
   inflow = domain.boundary['outer'].select(-ns.uinf.dotnorm(ns.x), ischeme='gauss1') # upstream half of the exterior boundary
   sqr = inflow.integral('(u_i - uinf_i) (u_i - uinf_i)' @ ns, degree=degree*2)
   cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15) # constrain inflow semicircle to uinf
 
-  res = domain.integral('ubasis_ni,j sigma_ij + pbasis_n u_k,k' @ ns, geometry=ns.x, degree=9)
-  res += domain.boundary['inner'].integral('(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) (u_i - uwall_i) / Re' @ ns, geometry=ns.x, degree=9)
-  lhs0 = nutils.solver.solve_linear('lhs', res, constrain=cons) # use stokes flow as initial condition
+  sqr = domain.integral('(u_i - uinf_i) (u_i - uinf_i) + p^2' @ ns, degree=degree*2)
+  lhs0 = nutils.solver.optimize('lhs', sqr) # set initial condition to u=uinf, p=0
 
-  res += domain.integral('ubasis_ni u_i,j u_j' @ ns, geometry=ns.x, degree=9) # add convective term for Navier-Stokes
+  numpy.random.seed(seed)
+  lhs0 *= numpy.random.normal(1, .1, lhs0.shape) # add small velocity noise
+
+  res = domain.integral('ubasis_ni u_i,j u_j + ubasis_ni,j sigma_ij + pbasis_n u_k,k' @ ns, geometry=ns.x, degree=9)
+  res += domain.boundary['inner'].integral('(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) (u_i - uwall_i) / Re' @ ns, geometry=ns.x, degree=9)
   inertia = domain.integral('ubasis_ni u_i' @ ns, geometry=ns.x, degree=9)
 
-  bbox = numpy.array([[-2,6],[-3,3]]) # bounding box for plots
+  bbox = numpy.array([[-2,46/9],[-2,2]]) # bounding box for figure based on 16x9 aspect ratio
   bezier0 = domain.sample('bezier', 5)
   bezier = bezier0.subset((bezier0.eval((ns.x-bbox[:,0]) * (bbox[:,1]-ns.x)) > 0).all(axis=1))
   interpolate = nutils.util.tri_interpolator(bezier.tri, bezier.eval(ns.x), mergetol=1e-5) # interpolator for quivers
-  spacing = .075 # initial quiver spacing
+  spacing = .05 # initial quiver spacing
   xgrd = nutils.util.regularize(bbox, spacing)
 
   for istep, lhs in nutils.log.enumerate('timestep', nutils.solver.impliciteuler('lhs', residual=res, inertia=inertia, lhs0=lhs0, timestep=timestep, constrain=cons, newtontol=1e-10)):
@@ -74,13 +78,14 @@ def main(nelems: 'number of elements' = 24,
     x, u, normu, p = bezier.eval([ns.x, ns.u, nutils.function.norm2(ns.u), ns.p], arguments=dict(lhs=lhs))
     ugrd = interpolate[xgrd](u)
 
-    with nutils.export.mplfigure('flow.jpg') as fig:
+    with nutils.export.mplfigure('flow.jpg', figsize=(12.8,7.2)) as fig:
       ax = fig.add_axes([0,0,1,1], yticks=[], xticks=[], frame_on=False, xlim=bbox[0], ylim=bbox[1])
       im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, p, shading='gouraud', cmap='jet')
       ax.add_collection(matplotlib.collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1, alpha=.5))
-      ax.quiver(xgrd[:,0], xgrd[:,1], ugrd[:,0], ugrd[:,1], angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9)
+      ax.quiver(xgrd[:,0], xgrd[:,1], ugrd[:,0], ugrd[:,1], angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9, alpha=.5)
       ax.plot(0, 0, 'k', marker=(3,2,t*rotation*180/numpy.pi-90), markersize=20)
-      cax = fig.add_axes([0.8, 0.1, 0.02, 0.8])
+      cax = fig.add_axes([0.9, 0.1, 0.01, 0.8])
+      cax.tick_params(labelsize='large')
       fig.colorbar(im, cax=cax)
 
     if t >= endtime:
@@ -108,26 +113,24 @@ class test(unittest.TestCase):
 
   def test_rot0(self):
     lhs0, lhs = main(nelems=6, reynolds=100, timestep=.1, endtime=.05, rotation=0)
-    nutils.numeric.assert_allclose64(lhs0, 'eNoB2AAn/9PRqdIcLCkuWy3o02bNRc56MJYyv'
-      'jGLz7jHjsg4NkQ4dzfMyYvEZsVhOW47oTqnxl7CL8OnO5Q93zxmxIjBVsKSPF8+vj2Mw4LQQC5'
-      'RMHsvx9Guz6fNHDEmM1Yy6c7ZzKjIGTYrOFU37snUx83F9jgDOy06Fsf9xC7DlDurPcY8icRTw'
-      'kfCezyWPpU9ysNqwYAstCvn1arTidSMKngtsCza1KzSgtOJK4Qvxy6t0/bQ99HFLQQyczGx1EH'
-      'Ph9C1MOs0djROMkjPUTD7M903hTfgNFTM6DARN18Jbag=')
-    nutils.numeric.assert_allclose64(lhs, 'eNoB2AAn/yvR7tI+LWIthC2A2O7MaM59MfYx5D'
-      'Gl0bDHkMhLNjs4eTfgyYfEZ8VqOWo7oTqwxl7CL8OnO5Q93zxmxIjBVsKSPF8+vj2Mw+bP/i52'
-      'MMcus9LUzzzNmjFFM8cxnc/1zKjIGjYrOFQ378nUx8vF+TgDOyo6Gcf9xC/DkjurPcg8h8RSwk'
-      'fCezyWPpU9ysNqwajQIc94zpLP7M6LztvNs82UzaPNWc3EzRrNMcpjyQPMEspxyR/LuMbqxRHL'
-      'j8b5xW072cR2w4I7N8U7w0/BMcOoPYLEycNPO0LNduM=')
+    nutils.numeric.assert_allclose64(lhs0, 'eNqtjD8OwWAcQJ/JNSQ20Tbf135RkUjEZO8RJ'
+      'A7gChYXsDgEkZjN+k/zbQYDCU06Y2Co3yG86S3vtb27C8fiXMDM0Q7s7MHCRHUUpPkqh42eaxh'
+      'lvQzKQAewTMIEQjM2MEyuMUylrOxDykt3Id63Rrzprj0YFJ8T7L2vHMlfcqlU6UMrjVJ4+8+gw'
+      'S3exnUdye8//AB+zDQQ', atol=2e-13)
+    nutils.numeric.assert_allclose64(lhs, 'eNoB2AAn/5A0jjV/MIDKj8rFMoE4Rjcwz4LI7s'
+      'ery545+Dm5MwTGEsa8NVY8pjtWNSzE18OpyXI9VD02M5zCnsJazE0+Hj76NsPByMH/yhA3izOM'
+      'yGPIyC+gN5Y4JcofyEbI+csJOGk4OzXZxrTGLzIKOXo7Acj2xOjENMk3O8Y85DcZwyTDAzjaPF'
+      'Y+sMfJwavBhDNPPvbFV8cxOKk3ADtFOFI86zqjN9o8D8hcNFjCfsXVPd47Vj/qPdZBa0F5QUZD'
+      '7UEJQYi527zjROVETUeVRfZIfrfvRKZKs7s6SVXLZ9k=')
 
   def test_rot1(self):
     lhs0, lhs = main(nelems=6, reynolds=100, timestep=.1, endtime=.05, rotation=1)
-    nutils.numeric.assert_allclose64(lhs0, 'eNoB2AAn/9PRqdIcLCkuWy3o02bNRc56MJYyv'
-      'jGLz7jHjsg4NkQ4dzfMyYvEZsVhOW47oTqnxl7CL8OnO5Q93zxmxIjBVsKSPF8+vj2Mwz80fjS'
-      'jNI80UzQnNKg0aDXFNZY16zRTNA/JrjZkOKo3ycoVyO/FLzkXO0w6WMcSxTPDnTuuPcs8k8RWw'
-      'kfCezyWPpU9ysNqwYAstCvn1arTidSMKngtsCza1KzSgtOJK4Qvxy6t0/bQ99HFLQQyczGx1EH'
-      'Ph9C1MOs0djROMkjPUTD7M903hTfgNFTM6DARNxFpaOI=')
-    nutils.numeric.assert_allclose64(lhs, 'eNoB2AAn/wLR7dWDLrQtmSvT0urMkM68MQMysz'
-      'HF0LDHkchONjs4eDfdyYfEZ8VqOWo7oTqwxl7CL8OnO5Q93zxmxIjBVsKSPF8+vj2Mw0w0pzSt'
-      'NGk0NjQkNIM0eTXONXw1/DRhNAzJrjZkOKo3z8oVyOzFMTkYO0o6XMcTxTTDmzuuPc08kcRWwk'
-      'fCezyWPpU9ysNqwcPO5cyazNXNHM8zz2bN0Mucy5HMqs5V0r7NY8m7yG3LE8tSyivMQsaKxSTK'
-      'EMdsxn47mcRSw3s7msVnw1bB88J5PXrEQMQDPARdb3A=')
+    nutils.numeric.assert_allclose64(lhs0, 'eNqtjD8OwWAcQJ/JNSQ20Tbf135RkUjEZO8RJ'
+      'A7gChYXsDgEkZjN+k/zbQYDCU06Y2Co3yG86S3vtb27C8fiXMDM0Q7s7MHCRHUUpPkqh42eaxh'
+      'lvQzKQAewTMIEQjM2MEyuMUylrOxDykt3Id63Rrzprj0YFJ8T7L2vHMlfcqlU6UMrjVJ4+8+gw'
+      'S3exnUdye8//AB+zDQQ', atol=2e-13)
+    nutils.numeric.assert_allclose64(lhs, 'eNoB2AAn/4s0kDW8MIHKjcq1MoE4RzdQz4PI7s'
+      'ely545+Dm6MwTGEsa8NVY8pjtWNSzE18OpyXI9VD02M5zCnsJazE0+Hj76NsPByMH/yi03ODSm'
+      'yHbI0jGyN5M4FcoayEHI2MsEOGs4PjXZxrXGXTILOXo7AMj2xOfEMsk3O8Y85DcZwyTDAzjaPF'
+      'Y+sMfJwavBhDNPPvTFXMc6OK43/zo7OFI87DqpN9o8Dcg2NFfCgcXXPd87Vj/pPdZBbEF5QUZD'
+      '7UEIQYe527zjROVETUeVRfZIfrfvRKZKsrs6ScqLaQk=')
