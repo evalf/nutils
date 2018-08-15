@@ -76,7 +76,7 @@ class navierstokes(TestCase):
     self.assert_resnorm(solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons).solve(tol=self.tol, maxiter=2))
 
   def test_newton_iter(self):
-    _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, nrelax=1)))
+    _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.newton('dofs', residual=self.residual, constrain=self.cons)))
 
   def test_pseudotime(self):
     self.assert_resnorm(solver.pseudotime('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, inertia=self.inertia, timestep=1).solve(tol=self.tol, maxiter=3))
@@ -96,7 +96,7 @@ class finitestrain(TestCase):
     self.cons = solver.minimize('dofs', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15).solve()
     self.boolcons = ~numpy.isnan(self.cons)
     strain = .5 * (function.outer(Geom.grad(geom), axis=1).sum(0) - function.eye(2))
-    self.energy = domain.integral(function.trace(strain)**2 + 2 * (strain**2).sum([0,1]), geometry=geom, degree=6)
+    self.energy = domain.integral((strain**2).sum([0,1]) + 20*(function.determinant(Geom.grad(geom))-1)**2, geometry=geom, degree=6)
     self.residual = self.energy.derivative('dofs')
     self.tol = 1e-10
 
@@ -110,19 +110,19 @@ class finitestrain(TestCase):
       self.assert_resnorm(solver.solve_linear('dofs', residual=self.residual, constrain=self.cons))
 
   def test_newton(self):
-    self.assert_resnorm(solver.newton('dofs', residual=self.residual, constrain=self.cons).solve(tol=self.tol, maxiter=3))
+    self.assert_resnorm(solver.newton('dofs', residual=self.residual, constrain=self.cons).solve(tol=self.tol, maxiter=7))
 
   def test_newton_boolcons(self):
-    self.assert_resnorm(solver.newton('dofs', residual=self.residual, constrain=self.boolcons).solve(tol=self.tol, maxiter=3))
+    self.assert_resnorm(solver.newton('dofs', residual=self.residual, constrain=self.boolcons).solve(tol=self.tol, maxiter=7))
 
   def test_newton_iter(self):
-    _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.newton('dofs', residual=self.residual, constrain=self.cons, nrelax=1)))
+    _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.newton('dofs', residual=self.residual, constrain=self.cons)))
 
   def test_minimize(self):
-    self.assert_resnorm(solver.minimize('dofs', energy=self.energy, constrain=self.cons).solve(tol=self.tol, maxiter=3))
+    self.assert_resnorm(solver.minimize('dofs', energy=self.energy, constrain=self.cons).solve(tol=self.tol, maxiter=8))
 
   def test_minimize_boolcons(self):
-    self.assert_resnorm(solver.minimize('dofs', energy=self.energy, constrain=self.boolcons).solve(tol=self.tol, maxiter=3))
+    self.assert_resnorm(solver.minimize('dofs', energy=self.energy, constrain=self.boolcons).solve(tol=self.tol, maxiter=8))
 
   def test_minimize_iter(self):
     _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.minimize('dofs', energy=self.energy, constrain=self.cons)))
@@ -136,15 +136,15 @@ class finitestrain(TestCase):
     Geom = [.5 * geom[0], geom[1] + function.cos(geom[0])] + u # compress by 50% and buckle
     cons = solver.minimize('dofs', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15).solve()
     strain = .5 * (function.outer(Geom.grad(geom), axis=1).sum(0) - function.eye(2))
-    energy = domain.integral(function.trace(strain)**2 + 2 * (strain**2).sum([0,1]), geometry=geom, degree=6)
+    energy = domain.integral((strain**2).sum([0,1]) + 150*(function.determinant(Geom.grad(geom))-1)**2, geometry=geom, degree=6)
     nshift = 0
     for iiter, (lhs, info) in enumerate(solver.minimize('dofs', energy, constrain=cons)):
-      self.assertLess(iiter, 28)
+      self.assertLess(iiter, 38)
       if info.shift:
         nshift += 1
       if info.resnorm < self.tol:
         break
-    self.assertEqual(nshift, 13)
+    self.assertEqual(nshift, 9)
 
 
 @parametrize

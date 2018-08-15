@@ -190,9 +190,6 @@ class newton(RecursionWithSolve, length=1):
       (boolean) or NaN (float). In the remaining positions the values of
       ``lhs0`` are returned unchanged (boolean) or overruled by the values in
       `constrain` (float).
-  nrelax : :class:`int`
-      Maximum number of relaxation steps before proceding with the updated
-      coefficient vector (by default unlimited).
   searchrange : :class:`tuple` of two floats
       The lower bound (>=0) and upper bound (<=1) for line search relaxation
       updates. If the estimated optimum relaxation (determined by polynomial
@@ -219,7 +216,7 @@ class newton(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, searchrange:types.tuple[float]=(.01,2/3), droptol:types.strictfloat=None, rebound:types.strictfloat=2., failrelax:types.strictfloat=1e-6, arguments:argdict={}, solveargs:types.frozendict={}):
+  def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, searchrange:types.tuple[float]=(.01,2/3), droptol:types.strictfloat=None, rebound:types.strictfloat=2., failrelax:types.strictfloat=1e-6, arguments:argdict={}, solveargs:types.frozendict={}):
     super().__init__()
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
@@ -227,7 +224,6 @@ class newton(RecursionWithSolve, length=1):
     self.residual = residual
     self.jacobian = _derivative(residual, target, jacobian)
     self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
-    self.nrelax = nrelax
     self.minscale, self.maxscale = searchrange
     self.rebound = rebound
     self.droptol = droptol
@@ -268,9 +264,6 @@ class newton(RecursionWithSolve, length=1):
         newlhs = lhs+relax*dlhs
         res, jac = self._eval(newlhs)
         newresnorm = numpy.linalg.norm(res[~self.constrain])
-        if self.nrelax is not None and irelax >= self.nrelax:
-          log.warning('failed to', 'decrease' if newresnorm > resnorm else 'optimize', 'residual')
-          break
         if not numpy.isfinite(newresnorm):
           log.info('residual norm {} / {}'.format(newresnorm, round(relax, 5)))
           relax *= self.minscale
@@ -331,9 +324,6 @@ class minimize(RecursionWithSolve, length=1):
       (boolean) or NaN (float). In the remaining positions the values of
       ``lhs0`` are returned unchanged (boolean) or overruled by the values in
       `constrain` (float).
-  nrelax : :class:`int`
-      Maximum number of relaxation steps before proceding with the updated
-      coefficient vector (by default unlimited).
   searchrange : :class:`tuple` of two floats
       The lower bound (>=0) and upper bound (<=1) for line search relaxation
       updates. If the estimated optimum relaxation (determined by polynomial
@@ -360,7 +350,7 @@ class minimize(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, energy:sample.strictintegral, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, searchrange:types.tuple[float]=(.01,2/3), rebound:types.strictfloat=2., droptol:types.strictfloat=None, failrelax:types.strictfloat=1e-6, arguments:argdict={}, solveargs:types.frozendict={}):
+  def __init__(self, target:types.strictstr, energy:sample.strictintegral, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, searchrange:types.tuple[float]=(.01,2/3), rebound:types.strictfloat=2., droptol:types.strictfloat=None, failrelax:types.strictfloat=1e-6, arguments:argdict={}, solveargs:types.frozendict={}):
     super().__init__()
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
@@ -371,7 +361,6 @@ class minimize(RecursionWithSolve, length=1):
     self.residual = energy.derivative(target)
     self.jacobian = _derivative(self.residual, target)
     self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, self.residual.shape)
-    self.nrelax = nrelax
     self.minscale, self.maxscale = searchrange
     self.rebound = rebound
     self.droptol = droptol
@@ -426,7 +415,7 @@ class minimize(RecursionWithSolve, length=1):
         shift += res.dot(res) / res.dot(dlhs)
         log.warning('negative eigenvalue detected; shifting spectrum by {:.2e}'.format(shift))
         dlhs = -(jac + shift * matrix.eye(len(dlhs))).solve(res, constrain=self.constrain|nosupp, **self.solveargs)
-      for irelax in itertools.count() if self.nrelax is None else range(self.nrelax):
+      for irelax in itertools.count():
         newlhs = lhs+relax*dlhs
         newnrg, newres, newjac = self._eval(newlhs)
         resnorm = numpy.linalg.norm(newres[~self.constrain])
