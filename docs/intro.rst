@@ -4,8 +4,8 @@ Getting Started
 Nutils can be installed via the `Python Package Index
 <https://pypi.org/project/nutils/>`_ or cloned from `Github
 <https://github.com/nutils/nutils>`_. Once properly configured, the best way to
-get going is by studying the :ref:`examples` that demonstrate implementations
-of several solid and fluid mechanics problems.
+get going is by reading the :ref:`tutorial` and by studying the :ref:`examples`
+that demonstrate implementations of several solid and fluid mechanics problems.
 
 
 Installation

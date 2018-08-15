@@ -60,6 +60,8 @@ for path in sorted((root / 'nutils').glob('**/*.py')):
   module(name.replace('.', '/'), name=name)
 
 for path in sorted((root / 'docs').glob('**/*.rst')):
+  if path == root / 'docs' / 'tutorial.rst':
+    continue
   name = str(path.relative_to(root))
   file(name[:-4], name=name, path=path)
 
