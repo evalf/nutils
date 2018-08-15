@@ -69,7 +69,7 @@ class navierstokes(TestCase):
     self.assertLess(resnorm, self.tol)
 
   def test_direct(self):
-    with self.assertRaises(solver.ModelError):
+    with self.assertRaises(solver.SolverError):
       self.assert_resnorm(solver.solve_linear('dofs', residual=self.residual, constrain=self.cons))
 
   def test_newton(self):
@@ -106,7 +106,7 @@ class finitestrain(TestCase):
     self.assertLess(resnorm, self.tol)
 
   def test_direct(self):
-    with self.assertRaises(solver.ModelError):
+    with self.assertRaises(solver.SolverError):
       self.assert_resnorm(solver.solve_linear('dofs', residual=self.residual, constrain=self.cons))
 
   def test_newton(self):

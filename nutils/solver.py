@@ -56,7 +56,7 @@ import numpy, itertools, functools, numbers, collections
 argdict = types.frozendict[types.strictstr,types.frozenarray]
 
 
-class ModelError(Exception): pass
+class SolverError(Exception): pass
 
 
 @types.apply_annotations
@@ -84,7 +84,7 @@ def solve_linear(target:types.strictstr, residual:sample.strictintegral, constra
 
   jacobian = residual.derivative(target)
   if jacobian.contains(target):
-    raise ModelError('problem is not linear')
+    raise SolverError('problem is not linear')
   assert target not in arguments, '`target` should not be defined in `arguments`'
   argshape = residual._argshape(target)
   arguments = collections.ChainMap(arguments, {target: numpy.zeros(argshape)})
@@ -137,9 +137,9 @@ def solve_withinfo(gen_lhs_resnorm, tol:types.strictfloat=0., maxiter:types.stri
     elif tol:
       log.info('residual: {:.2e} ({:.0f}%)'.format(resnorm, 100 * numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol)))
     else:
-      raise ModelError('nonlinear problem requires a nonzero tolerance')
+      raise SolverError('nonlinear problem requires a nonzero tolerance')
   if resnorm > tol:
-    raise ModelError('failed to reach target tolerance')
+    raise SolverError('failed to reach target tolerance')
   elif resnorm:
     log.info('tolerance reached in {} iterations with residual {:.2e}'.format(iiter, resnorm))
   return lhs, info
@@ -293,7 +293,7 @@ class newton(RecursionWithSolve, length=1):
           break
         relax *= max(scale, self.minscale)
         if not numpy.isfinite(relax) or relax <= self.failrelax:
-          raise ModelError('stuck in local minimum')
+          raise SolverError('stuck in local minimum')
       yield _nan_at(newlhs, nosupp), types.attributes(resnorm=newresnorm, relax=relax)
       lhs, resnorm = newlhs, newresnorm
 
@@ -448,7 +448,7 @@ class minimize(RecursionWithSolve, length=1):
           break
         relax *= max(scale, self.minscale)
         if not numpy.isfinite(relax) or relax <= self.failrelax:
-          raise ModelError('stuck in local minimum')
+          raise SolverError('stuck in local minimum')
       else:
         log.warning('failed to', 'decrease' if newnrg > nrg else 'optimize', 'energy')
       yield _nan_at(newlhs, nosupp), types.attributes(resnorm=resnorm, energy=newnrg, relax=relax, shift=shift)
