@@ -540,4 +540,10 @@ class Identifier(TransformItem):
   def __init__(self, ndims:int, *args):
     super().__init__(None, ndims)
 
+  def __str__(self):
+    return ':'.join(map(str, self._args))
+
+  def apply(self, points):
+    return '{}@{}'.format(points, self)
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
