@@ -3621,6 +3621,9 @@ def _eval_ast(ast, functions):
   elif op == 'call':
     func, arg = args
     return functions[func](arg)
+  elif op == 'd':
+    geom, = args
+    return DelayedJacobian(geom)
   elif op == 'eye':
     length, = args
     return eye(length)

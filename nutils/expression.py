@@ -661,6 +661,11 @@ class _ExpressionParser:
       if '0' <= indices.data <= '9':
         raise _IntermediateError('Expected a non-numeric index, got {!r}.'.format(indices.data), at=indices.pos, count=len(indices.data))
       value = _Array.stack(args, indices.data)
+    elif self._next.type == 'd':
+      self._consume()
+      geometry_name = self._consume_assert_equal('geometry').data
+      geom = self._get_geometry(geometry_name)
+      value = _Array.wrap(('d', _(geom)), '', ())
     elif self._next.type == 'eye':
       self._consume()
       if self._next.type == 'indices':
@@ -905,6 +910,12 @@ class _ExpressionParser:
       if self.expression[pos] in '+-^/|=[]{}()<>,':
         tokens.append(_Token(self.expression[pos], self.expression[pos], pos))
         pos += 1
+        continue
+      m = re.match(r'd:[a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*', self.expression[pos:])
+      if m:
+        tokens.append(_Token('d', m.group(0)[:1], pos))
+        tokens.append(_Token('geometry', m.group(0)[2:], pos+2))
+        pos += m.end()
         continue
       m_variable = re.match(r'[?]?[a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*', self.expression[pos:])
       m_variable = m_variable.group(0) if m_variable else ''
