@@ -39,13 +39,13 @@ def main(nelems: 'number of elements' = 12,
   ns.uwall = domain.boundary.indicator('top'), 0
   ns.N = 5 * degree * nelems # nietzsche constant
 
-  res = domain.integral('ubasis_ni,j stress_ij + pbasis_n (u_k,k + l) + lbasis_n p' @ ns, geometry=ns.x, degree=2*degree)
-  res += domain.boundary.integral('(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) (u_i - uwall_i) / Re' @ ns, geometry=ns.x, degree=2*degree)
+  res = domain.integral('(ubasis_ni,j stress_ij + pbasis_n (u_k,k + l) + lbasis_n p) d:x' @ ns, degree=2*degree)
+  res += domain.boundary.integral('(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) (u_i - uwall_i) d:x / Re' @ ns, degree=2*degree)
   with nutils.log.context('stokes'):
     lhs0 = nutils.solver.solve_linear('lhs', res)
     postprocess(domain, ns, lhs=lhs0)
 
-  res += domain.integral('ubasis_ni u_i,j u_j' @ ns, geometry=ns.x, degree=3*degree)
+  res += domain.integral('ubasis_ni u_i,j u_j d:x' @ ns, degree=3*degree)
   with nutils.log.context('navierstokes'):
     lhs1 = nutils.solver.newton('lhs', res, lhs0=lhs0).solve(tol=1e-10)
     postprocess(domain, ns, lhs=lhs1)
@@ -58,13 +58,13 @@ def main(nelems: 'number of elements' = 12,
 
 def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
 
-  div = domain.integrate('(u_k,k)^2' @ ns, geometry=ns.x, degree=1, arguments=arguments)**.5
+  div = domain.integrate('(u_k,k)^2 d:x' @ ns, degree=1, arguments=arguments)**.5
   nutils.log.info('velocity divergence: {:.2e}'.format(div)) # confirm that velocity is pointwise divergence-free
 
   ns = ns.copy_() # copy namespace so that we don't modify the calling argument
   ns.streambasis = domain.basis('std', degree=2)[1:] # remove first dof to obtain non-singular system
   ns.stream = 'streambasis_n ?streamdofs_n' # stream function
-  sqr = domain.integral('(u_0 - stream_,1)^2 + (u_1 + stream_,0)^2' @ ns, geometry=ns.x, degree=4)
+  sqr = domain.integral('((u_0 - stream_,1)^2 + (u_1 + stream_,0)^2) d:x' @ ns, degree=4)
   arguments['streamdofs'] = nutils.solver.optimize('streamdofs', sqr, arguments=arguments) # compute streamlines
 
   bezier = domain.sample('bezier', 9)

@@ -38,7 +38,7 @@ however, be used to construct a residual functional ``res``. Aiming to solve
 the Poisson problem ``u_,kk = f`` we define the residual functional ``res = v,k
 u,k + v f`` and solve for ``res == 0`` using ``solve_linear``:
 
->>> res = domain.integral('basis_n,i u_,i + basis_n' @ ns, geometry=ns.x, degree=2)
+>>> res = domain.integral('(basis_n,i u_,i + basis_n) d:x' @ ns, degree=2)
 >>> lhs = solver.solve_linear('lhs', residual=res, constrain=cons)
 solve > solver returned with residual ...
 

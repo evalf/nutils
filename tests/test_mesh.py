@@ -62,13 +62,13 @@ class gmsh(TestCase):
     self.domain, self.geom = mesh.gmsh(self.gmshdata)
 
   def test_volume(self):
-    volume = self.domain.integrate(1, geometry=self.geom, ischeme='gauss1')
+    volume = self.domain.integrate(function.J(self.geom), ischeme='gauss1')
     numpy.testing.assert_almost_equal(volume, 1, decimal=10)
 
   def test_length(self):
     for group, exact_length in ('neumann',1), ('dirichlet',3), ((),2*self.domain.ndims):
       with self.subTest(group or 'all'):
-        length = self.domain.boundary[group].integrate(1, geometry=self.geom, ischeme='gauss1')
+        length = self.domain.boundary[group].integrate(function.J(self.geom), ischeme='gauss1')
         numpy.testing.assert_almost_equal(length, exact_length, decimal=10)
 
   def test_interfaces(self):
@@ -76,7 +76,7 @@ class gmsh(TestCase):
     numpy.testing.assert_almost_equal(err, 0, decimal=15)
 
   def test_divergence(self):
-    volumes = self.domain.boundary.integrate(self.geom*self.geom.normal(), geometry=self.geom, ischeme='gauss1')
+    volumes = self.domain.boundary.integrate(self.geom*self.geom.normal()*function.J(self.geom), ischeme='gauss1')
     numpy.testing.assert_almost_equal(volumes, 1, decimal=10)
 
   def test_pointeval(self):
@@ -381,36 +381,36 @@ class gmshrect(TestCase):
     self.domain, self.geom = mesh.gmsh(self.gmshrectdata)
 
   def test_volume(self):
-    volume = self.domain.integrate(1, geometry=self.geom, ischeme='gauss1')
+    volume = self.domain.integrate(function.J(self.geom), ischeme='gauss1')
     numpy.testing.assert_almost_equal(volume, 2, decimal=10)
 
   def test_length(self):
-    length = self.domain.boundary.integrate(1, geometry=self.geom, ischeme='gauss1')
+    length = self.domain.boundary.integrate(function.J(self.geom), ischeme='gauss1')
     numpy.testing.assert_almost_equal(length, 6, decimal=10)
 
   def test_divergence(self):
-    volumes = self.domain.boundary.integrate(self.geom*self.geom.normal(), geometry=self.geom, ischeme='gauss1')
+    volumes = self.domain.boundary.integrate(self.geom*self.geom.normal()*function.J(self.geom), ischeme='gauss1')
     numpy.testing.assert_almost_equal(volumes, 2, decimal=10)
 
   def test_subvolume(self):
     for group in 'left', 'right':
       with self.subTest(group):
         subdom = self.domain[group]
-        volume = subdom.integrate(1, geometry=self.geom, ischeme='gauss1')
+        volume = subdom.integrate(function.J(self.geom), ischeme='gauss1')
         numpy.testing.assert_almost_equal(volume, 1, decimal=10)
 
   def test_sublength(self):
     for group in 'left', 'right':
       with self.subTest(group):
         subdom = self.domain[group]
-        length = subdom.boundary.integrate(1, geometry=self.geom, ischeme='gauss1')
+        length = subdom.boundary.integrate(function.J(self.geom), ischeme='gauss1')
         numpy.testing.assert_almost_equal(length, 4, decimal=10)
 
   def test_subdivergence(self):
     for group in 'left', 'right':
       with self.subTest(group):
         subdom = self.domain[group]
-        volumes = subdom.boundary.integrate(self.geom*self.geom.normal(), geometry=self.geom, ischeme='gauss1')
+        volumes = subdom.boundary.integrate(self.geom*self.geom.normal()*function.J(self.geom), ischeme='gauss1')
         numpy.testing.assert_almost_equal(volumes, 1, decimal=10)
 
   def test_iface(self):
@@ -529,13 +529,13 @@ class gmshperiodic(TestCase):
     self.domain, self.geom = mesh.gmsh(self.gmshperiodicdata)
 
   def test_volume(self):
-    volume = self.domain.integrate(1, geometry=self.geom, ischeme='gauss1')
+    volume = self.domain.integrate(function.J(self.geom), ischeme='gauss1')
     numpy.testing.assert_almost_equal(volume, 1, decimal=10)
 
   def test_length(self):
     for group, exact_length in ('right',1), ('left',1), ((),2):
       with self.subTest(group or 'all'):
-        length = self.domain.boundary[group].integrate(1, geometry=self.geom, ischeme='gauss1')
+        length = self.domain.boundary[group].integrate(function.J(self.geom), ischeme='gauss1')
         numpy.testing.assert_almost_equal(length, exact_length, decimal=10)
 
   def test_interface(self):
@@ -544,7 +544,7 @@ class gmshperiodic(TestCase):
 
   def test_basis(self):
     basis = self.domain.basis('std', degree=1)
-    err = self.domain.interfaces.integrate(basis - function.opposite(basis), geometry=self.geom, ischeme='gauss1')
+    err = self.domain.interfaces.integrate((basis - function.opposite(basis))*function.J(self.geom), ischeme='gauss1')
     numpy.testing.assert_almost_equal(err, 0, decimal=15)
 
 # gmshperiodic geo:
@@ -665,7 +665,7 @@ class rectilinear(TestCase):
     self.domain, self.geom = getattr(mesh, self.method)([4,5])
 
   def test_volume(self):
-    volume = self.domain.integrate(1, geometry=self.geom, ischeme='gauss1')
+    volume = self.domain.integrate(function.J(self.geom), ischeme='gauss1')
     numpy.testing.assert_almost_equal(volume, 20, decimal=15)
 
   def divergence(self):
@@ -674,7 +674,7 @@ class rectilinear(TestCase):
   def test_length(self):
     for group, exact_length in ('right',5), ('left',5), ('top',4), ('bottom',4), ((),18):
       with self.subTest(group or 'all'):
-        length = self.domain.boundary[group].integrate(1, geometry=self.geom, ischeme='gauss1')
+        length = self.domain.boundary[group].integrate(function.J(self.geom), ischeme='gauss1')
         numpy.testing.assert_almost_equal(length, exact_length, decimal=10)
 
   def test_interface(self):
@@ -688,7 +688,7 @@ class rectilinear(TestCase):
       for degree in 1, 2, 3:
         with self.subTest(basistype+str(degree)):
           basis = self.domain.basis(basistype, degree=degree)
-          values = self.domain.interfaces.elem_eval(basis, geometry=self.geom, ischeme='uniform2', separate=False)
+          values = self.domain.interfaces.elem_eval(basis*function.J(self.geom), ischeme='uniform2', separate=False)
           numpy.testing.assert_almost_equal(values.sum(1), 1)
 
 rectilinear('new', method='newrectilinear')

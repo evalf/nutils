@@ -27,8 +27,8 @@ class laplace(TestCase):
     self.cons = domain.boundary['left'].project(0, onto=basis, geometry=geom, ischeme='gauss2')
     dofs = function.Argument('dofs', [len(basis)])
     u = basis.dot(dofs)
-    self.residual = domain.integral((basis.grad(geom) * u.grad(geom)).sum(-1), geometry=geom, degree=2) \
-                  + domain.boundary['top'].integral(basis, geometry=geom, degree=2)
+    self.residual = domain.integral((basis.grad(geom) * u.grad(geom)).sum(-1)*function.J(geom), degree=2) \
+                  + domain.boundary['top'].integral(basis*function.J(geom), degree=2)
 
   def test_res(self):
     for name in 'direct', 'newton':
@@ -55,9 +55,9 @@ class navierstokes(TestCase):
     u = ubasis.dot(dofs)
     p = pbasis.dot(dofs)
     viscosity = 1
-    self.inertia = domain.integral((ubasis * u).sum(-1), geometry=geom, degree=5)
-    stokesres = domain.integral(viscosity * (ubasis.grad(geom) * (u.grad(geom)+u.grad(geom).T)).sum([-1,-2]) - ubasis.div(geom) * p + pbasis * u.div(geom), geometry=geom, degree=5)
-    self.residual = stokesres + domain.integral((ubasis * (u.grad(geom) * u).sum(-1) * u).sum(-1), geometry=geom, degree=5)
+    self.inertia = domain.integral((ubasis * u).sum(-1)*function.J(geom), degree=5)
+    stokesres = domain.integral((viscosity * (ubasis.grad(geom) * (u.grad(geom)+u.grad(geom).T)).sum([-1,-2]) - ubasis.div(geom) * p + pbasis * u.div(geom))*function.J(geom), degree=5)
+    self.residual = stokesres + domain.integral((ubasis * (u.grad(geom) * u).sum(-1) * u).sum(-1)*function.J(geom), degree=5)
     self.cons = domain.boundary['top,bottom'].project([0,0], onto=ubasis, geometry=geom, ischeme='gauss2') \
               | domain.boundary['left'].project([geom[1]*(1-geom[1]),0], onto=ubasis, geometry=geom, ischeme='gauss2')
     self.lhs0 = solver.solve_linear('dofs', residual=stokesres, constrain=self.cons)
@@ -96,7 +96,7 @@ class finitestrain(TestCase):
     self.cons = solver.minimize('dofs', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15).solve()
     self.boolcons = ~numpy.isnan(self.cons)
     strain = .5 * (function.outer(Geom.grad(geom), axis=1).sum(0) - function.eye(2))
-    self.energy = domain.integral((strain**2).sum([0,1]) + 20*(function.determinant(Geom.grad(geom))-1)**2, geometry=geom, degree=6)
+    self.energy = domain.integral(((strain**2).sum([0,1]) + 20*(function.determinant(Geom.grad(geom))-1)**2)*function.J(geom), degree=6)
     self.residual = self.energy.derivative('dofs')
     self.tol = 1e-10
 
@@ -136,7 +136,7 @@ class finitestrain(TestCase):
     Geom = [.5 * geom[0], geom[1] + function.cos(geom[0])] + u # compress by 50% and buckle
     cons = solver.minimize('dofs', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15).solve()
     strain = .5 * (function.outer(Geom.grad(geom), axis=1).sum(0) - function.eye(2))
-    energy = domain.integral((strain**2).sum([0,1]) + 150*(function.determinant(Geom.grad(geom))-1)**2, geometry=geom, degree=6)
+    energy = domain.integral(((strain**2).sum([0,1]) + 150*(function.determinant(Geom.grad(geom))-1)**2)*function.J(geom), degree=6)
     nshift = 0
     for iiter, (lhs, info) in enumerate(solver.minimize('dofs', energy, constrain=cons)):
       self.assertLess(iiter, 38)
@@ -164,7 +164,7 @@ class optimize(TestCase):
     numpy.testing.assert_almost_equal(cons, numpy.take([1,numpy.nan], [0,1,1,0,1,1,0,1,1]), decimal=15)
 
   def test_nonlinear(self):
-    err = self.domain.boundary['bottom'].integral('(u + .25 u^3 - 1.25)^2' @ self.ns, geometry=self.ns.geom, degree=6)
+    err = self.domain.boundary['bottom'].integral('(u + .25 u^3 - 1.25)^2 d:geom' @ self.ns, degree=6)
     cons = self.optimize('dofs', err, droptol=1e-15, newtontol=1e-15)
     numpy.testing.assert_almost_equal(cons, numpy.take([1,numpy.nan], [0,1,1,0,1,1,0,1,1]), decimal=15)
 
@@ -190,9 +190,9 @@ class burgers(TestCase):
     ns.basis = domain.basis('discont', degree=1)
     ns.u = 'basis_n ?dofs_n'
     ns.f = '.5 u^2'
-    self.residual = domain.integral('-basis_n,0 f' @ ns, geometry=ns.x, degree=2)
-    self.residual += domain.interfaces.integral('-[basis_n] n_0 ({f} - .5 [u] n_0)' @ ns, geometry=ns.x, degree=4)
-    self.inertia = domain.integral('basis_n u' @ ns, geometry=ns.x, degree=5)
+    self.residual = domain.integral('-basis_n,0 f d:x' @ ns, degree=2)
+    self.residual += domain.interfaces.integral('-[basis_n] n_0 ({f} - .5 [u] n_0) d:x' @ ns, degree=4)
+    self.inertia = domain.integral('basis_n u d:x' @ ns, degree=5)
     self.lhs0 = numpy.sin(numpy.arange(len(ns.basis))) # "random" initial vector
 
   def test_iters(self):

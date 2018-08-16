@@ -190,9 +190,12 @@ class Topology(types.Singleton):
       else retvals
 
   @util.single_or_multiple
-  def integrate_elementwise(self, funcs, *, asfunction=False, **kwargs):
+  def integrate_elementwise(self, funcs, *, asfunction=False, geometry=None, **kwargs):
     'element-wise integration'
 
+    if geometry is not None:
+      warnings.deprecation('the `geometry` argument is deprecated, use `d:<geometry>` in expressions or `nutils.function.J(<geometry>)` instead')
+      funcs = [func * function.J(geometry, self.ndims) for func in funcs]
     transforms, ielems = zip(*sorted((elem.transform, ielem) for ielem, elem in enumerate(self)))
     ielem = function.get(ielems, iax=0, item=function.FindTransform(transforms, function.TRANS))
     with matrix.backend('numpy'):
@@ -204,7 +207,10 @@ class Topology(types.Singleton):
   @util.single_or_multiple
   def elem_mean(self, funcs, geometry=None, ischeme='gauss', degree=None, **kwargs):
     ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
-    area, *integrals = self.integrate_elementwise((1,)+funcs, ischeme=ischeme, degree=degree, geometry=geometry, **kwargs)
+    funcs = (1,)+funcs
+    if geometry is not None:
+      funcs = [func * function.J(geometry, self.ndims) for func in funcs]
+    area, *integrals = self.integrate_elementwise(funcs, ischeme=ischeme, degree=degree, **kwargs)
     return [integral / area[(slice(None),)+(_,)*(integral.ndim-1)] for integral in integrals]
 
   @util.single_or_multiple
@@ -213,6 +219,7 @@ class Topology(types.Singleton):
 
     ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
     if geometry is not None:
+      warnings.deprecation('the `geometry` argument is deprecated, use `d:<geometry>` in expressions or `nutils.function.J(<geometry>)` instead')
       funcs = [func * function.J(geometry, self.ndims) for func in funcs]
     if edit is not None:
       funcs = [edit(func) for func in funcs]
@@ -223,6 +230,7 @@ class Topology(types.Singleton):
 
     ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
     if geometry is not None:
+      warnings.deprecation('the `geometry` argument is deprecated, use `d:<geometry>` in expressions or `nutils.function.J(<geometry>)` instead')
       func = func * function.J(geometry, self.ndims)
     if edit is not None:
       funcs = edit(func)
@@ -267,7 +275,8 @@ class Topology(types.Singleton):
       else:
         raise Exception
       assert fun2.ndim == 0
-      A, b, f2, area = self.integrate([Afun,bfun,fun2,1], geometry=geometry, ischeme=ischeme, edit=edit, arguments=arguments, title='building system')
+      J = function.J(geometry, self.ndims)
+      A, b, f2, area = self.integrate([Afun*J,bfun*J,fun2*J,J], ischeme=ischeme, edit=edit, arguments=arguments, title='building system')
       N = A.rowsupp(droptol)
       if numpy.equal(b, 0).all():
         constrain[~constrain.where&N] = 0
@@ -290,7 +299,8 @@ class Topology(types.Singleton):
         afun = function.norm2(onto)
       else:
         raise Exception
-      u, scale = self.integrate([ufun, afun], geometry=geometry, ischeme=ischeme, edit=edit, arguments=arguments)
+      J = function.J(geometry, self.ndims)
+      u, scale = self.integrate([ufun*J, afun*J], ischeme=ischeme, edit=edit, arguments=arguments)
       N = ~constrain.where & (scale > droptol)
       constrain[N] = u[N] / scale[N]
 
@@ -479,7 +489,7 @@ class Topology(types.Singleton):
 
   @log.title
   def volume(self, geometry, ischeme='gauss', degree=1, *, arguments=None):
-    return self.integrate(1, geometry=geometry, ischeme=ischeme, degree=degree, arguments=arguments)
+    return self.integrate(function.J(geometry, self.ndims), ischeme=ischeme, degree=degree, arguments=arguments)
 
   @log.title
   def check_boundary(self, geometry, elemwise=False, ischeme='gauss', degree=1, tol=1e-15, print=print, *, arguments=None):
@@ -487,7 +497,8 @@ class Topology(types.Singleton):
       for elem in self:
         elem.reference.check_edges(tol=tol, print=print)
     volume = self.volume(geometry, ischeme=ischeme, degree=degree, arguments=arguments)
-    zeros, volumes = self.boundary.integrate([geometry.normal(), geometry * geometry.normal()], geometry=geometry, ischeme=ischeme, degree=degree, arguments=arguments)
+    J = function.J(geometry, self.ndims-1)
+    zeros, volumes = self.boundary.integrate([geometry.normal()*J, geometry*geometry.normal()*J], ischeme=ischeme, degree=degree, arguments=arguments)
     if numpy.greater(abs(zeros), tol).any():
       print('divergence check failed: {} != 0'.format(zeros))
     if numpy.greater(abs(volumes - volume), tol).any():
