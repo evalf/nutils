@@ -107,7 +107,7 @@ class Sample(types.Singleton):
     # chaining. Here we make a list of all blocks consisting of triplets of
     # argument id, evaluable index, and evaluable values.
 
-    funcs = [function.zero_argument_derivatives(function.asarray(func)) for func in funcs]
+    funcs = [function.asarray(func).prepare_eval(ndims=self.ndims) for func in funcs]
     blocks = [(ifunc, function.Tuple(ind), f.simplified) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func)]
     block2func, indices, values = zip(*blocks) if blocks else ([],[],[])
 
@@ -199,7 +199,7 @@ class Sample(types.Singleton):
     zeros = parallel.shzeros if nprocs > 1 else numpy.zeros
     funcs = [function.asarray(func) for func in funcs]
     retvals = [zeros((self.npoints,)+func.shape, dtype=func.dtype) for func in funcs]
-    idata = function.Tuple(function.Tuple([ifunc, function.Tuple(ind), f.simplified]) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(function.zero_argument_derivatives(func)))
+    idata = function.Tuple(function.Tuple([ifunc, function.Tuple(ind), f.simplified]) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func.prepare_eval(ndims=self.ndims)))
     fcache = cache.WrapperCache()
 
     if config.dot:

@@ -307,8 +307,8 @@ class Topology(types.Singleton):
       F = numpy.zeros(onto.shape[0])
       W = numpy.zeros(onto.shape[0])
       I = numpy.zeros(onto.shape[0], dtype=bool)
-      fun = function.zero_argument_derivatives(function.asarray(fun))
-      data = function.Tuple(function.Tuple([fun, onto_f.simplified, function.Tuple(onto_ind)]) for onto_ind, onto_f in function.blocks(function.zero_argument_derivatives(onto)))
+      fun = function.asarray(fun).prepare_eval()
+      data = function.Tuple(function.Tuple([fun, onto_f.simplified, function.Tuple(onto_ind)]) for onto_ind, onto_f in function.blocks(onto.prepare_eval()))
       for elem in self:
         ipoints, iweights = elem.getischeme('bezier2')
         for fun_, onto_f_, onto_ind_ in data.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, **arguments or {}):
@@ -377,7 +377,7 @@ class Topology(types.Singleton):
       arguments = {}
 
     fcache = cache.WrapperCache()
-    levelset = function.zero_argument_derivatives(levelset).simplified
+    levelset = levelset.prepare_eval().simplified
     if leveltopo is None:
       ischeme = 'vertex{}'.format(maxrefine)
       refs = [elem.reference.trim(levelset.eval(_transforms=(elem.transform, elem.opposite), _points=elem.reference.getischeme(ischeme)[0], _cache=fcache, **arguments), maxrefine=maxrefine, ndivisions=ndivisions) for elem in log.iter('elem', self)]
@@ -438,7 +438,7 @@ class Topology(types.Singleton):
       ischeme = 'gauss{}'.format(degree*2)
 
     blocks = function.Tuple([function.Tuple([function.Tuple((function.Tuple(ind), f.simplified))
-      for ind, f in function.blocks(function.zero_argument_derivatives(func))])
+      for ind, f in function.blocks(func.prepare_eval())])
         for func in funcs])
 
     bases = {}
@@ -593,7 +593,7 @@ class Topology(types.Singleton):
         xi, w = elem.reference.getischeme('gauss1')
         xi = (numpy.dot(w,xi) / w.sum())[_] if len(xi) > 1 else xi.copy()
         J = function.localgradient(geom, self.ndims)
-        geom_J = function.Tuple((function.zero_argument_derivatives(geom), function.zero_argument_derivatives(J))).simplified
+        geom_J = function.Tuple((geom, J)).prepare_eval().simplified
         for iiter in range(maxiter):
           coord_xi, J_xi = geom_J.eval(_transforms=(elem.transform, elem.opposite), _points=xi, **arguments)
           err = numpy.linalg.norm(coord - coord_xi)
