@@ -76,7 +76,7 @@ def main(nrefine = 2,
   nutils.export.triplot('stressxx.jpg', X, stressxx, tri=bezier.tri, hull=bezier.hull, clim=(numpy.nanmin(stressxx), numpy.nanmax(stressxx)))
 
   # evaluate error
-  err = numpy.sqrt(domain.integrate(['du_k du_k d:x' @ ns, 'du_i,j du_i,j d:x' @ ns], degree=9, arguments=dict(lhs=lhs)))
+  err = numpy.sqrt(domain.integrate(['du_k du_k d:x', 'du_i,j du_i,j d:x'] @ ns, degree=9, arguments=dict(lhs=lhs)))
   nutils.log.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
   return err, cons, lhs

@@ -50,7 +50,7 @@ def main(etype: 'type of elements (square/triangle/mixed)' = 'square',
     lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
 
     ndofs = len(ns.basis)
-    error = numpy.sqrt(domain.integrate(['du^2 d:x' @ ns, 'du_,k du_,k d:x' @ ns], degree=7, arguments=dict(lhs=lhs)))
+    error = numpy.sqrt(domain.integrate(['du^2 d:x', 'du_,k du_,k d:x'] @ ns, degree=7, arguments=dict(lhs=lhs)))
     rate, offset = linreg.add(numpy.log(len(ns.basis)), numpy.log(error))
     nutils.log.user('ndofs: {ndofs}, L2 error: {error[0]:.2e} ({rate[0]:.2f}), H1 error: {error[1]:.2e} ({rate[1]:.2f})'.format(ndofs=len(ns.basis), error=error, rate=rate))
 

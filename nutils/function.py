@@ -3834,8 +3834,10 @@ class Namespace:
       raise AttributeError('{!r} object has no attribute {!r}'.format(type(self), name))
 
   def __rmatmul__(self, expr):
-    '''Evaluate zero or one dimensional ``expr``.'''
+    '''Evaluate zero or one dimensional ``expr`` or a list of expressions.'''
 
+    if isinstance(expr, (tuple, list)):
+      return tuple(map(self.__rmatmul__, expr))
     if not isinstance(expr, str):
       return NotImplemented
     try:
