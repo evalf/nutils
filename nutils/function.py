@@ -2587,6 +2587,34 @@ class LocalCoords(DerivativeTargetBase):
   def evalf(self):
     raise Exception('LocalCoords should not be evaluated')
 
+class DelayedJacobian(Array):
+  '''
+  Placeholder for :func:`jacobian` until the dimension of the
+  :class:`nutils.topology.Topology` where this functions is being evaluated is
+  known.  The replacing is carried out by :meth:`Evaluable.prepare_eval`.
+  '''
+
+  __slots__ = '_geom'
+  __cache__ = 'prepare_eval'
+
+  @types.apply_annotations
+  def __init__(self, geom:asarray):
+    self._geom = geom
+    super().__init__(args=[geom], shape=[], dtype=float)
+
+  def evalf(self):
+    raise Exception('DelayedJacobian should not be evaluated')
+
+  def _derivative(self, var, seen):
+    if not iszero(derivative(self._geom, var, seen)):
+      raise NotImplementedError
+    return zeros_like(var)
+
+  @util.positional_only('self')
+  def prepare_eval(*args, ndims, **kwargs):
+    self, = args
+    return asarray(jacobian(self._geom, ndims)).prepare_eval(ndims=ndims, **kwargs)
+
 class Ravel(Array):
 
   __slots__ = 'func', 'axis'
@@ -3319,6 +3347,12 @@ def bringforward(arg, axis):
   return transpose(args, [axis] + range(axis) + range(axis+1,args.ndim))
 
 def jacobian(geom, ndims):
+  '''
+  Return :math:`\sqrt{|J^T J|}` with :math:`J` the gradient of ``geom`` to the
+  local coordinate system with ``ndims`` dimensions (``localgradient(geom,
+  ndims)``).
+  '''
+
   assert geom.ndim == 1
   J = localgradient(geom, ndims)
   cndims, = geom.shape
@@ -3512,7 +3546,7 @@ def mask(arg, mask, axis=0):
 
 def J(geometry, ndims=None):
   if ndims is None:
-    ndims = len(geometry)
+    return DelayedJacobian(geometry)
   elif ndims < 0:
     ndims += len(geometry)
   return jacobian(geometry, ndims)
