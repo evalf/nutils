@@ -17,12 +17,12 @@ class check(TestCase):
       self.curv = 1
 
   def zero(self):
-    zero = self.domain.boundary.integrate(self.geom.normal(), geometry=self.geom, ischeme='gauss9')
+    zero = self.domain.boundary.integrate(self.geom.normal()*function.J(self.geom), ischeme='gauss9')
     numpy.testing.assert_almost_equal(zero, 0)
 
   def volume(self):
-    volume = self.domain.integrate(1, geometry=self.geom, ischeme='gauss9')
-    volumes = self.domain.boundary.integrate(self.geom * self.geom.normal(), geometry=self.geom, ischeme='gauss9')
+    volume = self.domain.integrate(function.J(self.geom), ischeme='gauss9')
+    volumes = self.domain.boundary.integrate(self.geom * self.geom.normal() * function.J(self.geom), ischeme='gauss9')
     numpy.testing.assert_almost_equal(volume, volumes)
 
   def interfaces(self):
@@ -30,10 +30,10 @@ class check(TestCase):
     f = (funcsp[:,_] * numpy.arange(funcsp.shape[0]*self.ndims).reshape(-1,self.ndims)).sum(0)
     g = funcsp.dot(numpy.arange(funcsp.shape[0]))
 
-    fg1 = self.domain.integrate((f * g.grad(self.geom)).sum(-1), geometry=self.geom, ischeme='gauss9')
-    fg2 = self.domain.boundary.integrate((f*g).dotnorm(self.geom), geometry=self.geom, ischeme='gauss9') \
-        - self.domain.interfaces.integrate(function.jump(f*g).dotnorm(self.geom), geometry=self.geom, ischeme='gauss9') \
-        - self.domain.integrate(f.div(self.geom) * g, geometry=self.geom, ischeme='gauss9')
+    fg1 = self.domain.integrate((f * g.grad(self.geom)).sum(-1)*function.J(self.geom), ischeme='gauss9')
+    fg2 = self.domain.boundary.integrate((f*g).dotnorm(self.geom)*function.J(self.geom), ischeme='gauss9') \
+        - self.domain.interfaces.integrate(function.jump(f*g).dotnorm(self.geom)*function.J(self.geom), ischeme='gauss9') \
+        - self.domain.integrate(f.div(self.geom) * g * function.J(self.geom), ischeme='gauss9')
 
     numpy.testing.assert_almost_equal(fg1, fg2)
 

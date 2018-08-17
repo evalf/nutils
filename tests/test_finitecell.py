@@ -63,10 +63,10 @@ class trimmedboundary(TestCase):
     self.trimmed = self.domain - self.right
 
   def test_boundary_length(self):
-    self.assertEqual(self.trimmed.boundary.integrate(1, geometry=self.geom, ischeme='gauss1'), 6)
+    self.assertEqual(self.trimmed.boundary.integrate(function.J(self.geom), ischeme='gauss1'), 6)
 
   def test_trimmed_boundary_length(self):
-    self.assertEqual(self.trimmed.boundary['rightbnd'].integrate(1, geometry=self.geom, ischeme='gauss1'), 2)
+    self.assertEqual(self.trimmed.boundary['rightbnd'].integrate(function.J(self.geom), ischeme='gauss1'), 2)
 
   def test_trimmed_boundary(self):
     left = self.trimmed.boundary['rightbnd']
@@ -170,13 +170,13 @@ class setoperations(TestCase):
     Lexact = 1+numpy.sqrt(2)
     for name, dom in ('left',self.left), ('top',self.top), ('right',self.right), ('bottom',self.bottom):
       with self.subTest(name):
-        L = dom.boundary.integrate(1, geometry=self.geom, ischeme='gauss1')
+        L = dom.boundary.integrate(function.J(self.geom), ischeme='gauss1')
         self.assertTrue(numpy.isclose(L, 1+numpy.sqrt(2)), 'full boundary: wrong length: {} != {}'.format(L, 1+numpy.sqrt(2)))
-        L = dom.boundary[name].integrate(1, geometry=self.geom, ischeme='gauss1')
+        L = dom.boundary[name].integrate(function.J(self.geom), ischeme='gauss1')
         self.assertTrue(numpy.isclose(L, 1), '{}: wrong length: {} != {}'.format(name, L, 1))
-        L = dom.boundary['trim1' if name not in ('left','top') else 'trim1'].integrate(1, geometry=self.geom, ischeme='gauss1')
+        L = dom.boundary['trim1' if name not in ('left','top') else 'trim1'].integrate(function.J(self.geom), ischeme='gauss1')
         self.assertTrue(numpy.isclose(L, .5*numpy.sqrt(2)), 'trim1: wrong length: {} != {}'.format(L, .5*numpy.sqrt(2)))
-        L = dom.boundary['trim2' if name not in ('left','bottom') else 'trim2'].integrate(1, geometry=self.geom, ischeme='gauss1')
+        L = dom.boundary['trim2' if name not in ('left','bottom') else 'trim2'].integrate(function.J(self.geom), ischeme='gauss1')
         self.assertTrue(numpy.isclose(L, .5*numpy.sqrt(2)), 'trim2: wrong length: {} != {}'.format(L, .5*numpy.sqrt(2)))
 
   def test_union(self):
@@ -262,9 +262,9 @@ class multitrim(TestCase):
       domain = domain.trim(.7+(1-itrim%2*2)*geom_rel[itrim//2], maxrefine=1, name='trim{}'.format(itrim), ndivisions=16)
     domain.check_boundary(geom, elemwise=True, print=self.fail)
     for itrim in range(4):
-      L = domain.boundary['trim{}'.format(itrim)].integrate(1, geometry=geom, ischeme='gauss1')
+      L = domain.boundary['trim{}'.format(itrim)].integrate(function.J(geom), ischeme='gauss1')
       numpy.testing.assert_almost_equal(L, 1.4, decimal=4)
-    L = domain.boundary.integrate(1, geometry=geom, ischeme='gauss1')
+    L = domain.boundary.integrate(function.J(geom), ischeme='gauss1')
     numpy.testing.assert_almost_equal(L, 5.6, decimal=4)
 
 

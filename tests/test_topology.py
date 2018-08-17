@@ -34,8 +34,8 @@ def verify_connectivity(structure, geom):
 def verify_boundaries(domain, geom):
   # Test ∫_Ω f_,i = ∫_∂Ω f n_i.
   f = ((0.5 - geom)**2).sum(axis=0)
-  lhs = domain.integrate(f.grad(geom), ischeme='gauss2', geometry=geom)
-  rhs = domain.boundary.integrate(f*function.normal(geom), ischeme='gauss2', geometry=geom)
+  lhs = domain.integrate(f.grad(geom)*function.J(geom), ischeme='gauss2')
+  rhs = domain.boundary.integrate(f*function.normal(geom)*function.J(geom), ischeme='gauss2')
   numpy.testing.assert_array_almost_equal(lhs, rhs)
 
 def verify_interfaces(domain, geom, periodic, interfaces=None, elemindicator=None):
@@ -54,10 +54,10 @@ def verify_interfaces(domain, geom, periodic, interfaces=None, elemindicator=Non
   if elemindicator is None:
     elemindicator = domain.basis('discont', degree=0)
   elemindicator = elemindicator.vector(domain.ndims)
-  lhs = domain.integrate((elemindicator*f.grad(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom)
-  rhs = interfaces.integrate((-function.jump(elemindicator)*f*function.normal(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom)
+  lhs = domain.integrate((elemindicator*f.grad(geom)[None]).sum(axis=1)*function.J(geom), ischeme='gauss2')
+  rhs = interfaces.integrate((-function.jump(elemindicator)*f*function.normal(geom)[None]).sum(axis=1)*function.J(geom), ischeme='gauss2')
   if len(domain.boundary):
-    rhs += domain.boundary.integrate((elemindicator*f*function.normal(geom)[None]).sum(axis=1), ischeme='gauss2', geometry=geom)
+    rhs += domain.boundary.integrate((elemindicator*f*function.normal(geom)[None]).sum(axis=1)*function.J(geom), ischeme='gauss2')
   numpy.testing.assert_array_almost_equal(lhs, rhs)
 
 
@@ -174,7 +174,7 @@ class common_refine(TestCase):
         common = doms[a] & doms[b]
         self.assertEqual(len(common), n)
         for c in a, b:
-          testvals = common.integrate(funs[c], geometry=geom, ischeme='gauss1')
+          testvals = common.integrate(funs[c]*function.J(geom), ischeme='gauss1')
           numpy.testing.assert_array_almost_equal(testvals, vals[c])
 
 @parametrize
@@ -204,34 +204,27 @@ class revolved(TestCase):
       self.domain = self.domain.refined
       self.domain0 = self.domain0.refined
 
-  def test_simplified(self):
-    ndims = 1 if self.domain.ndims == 2 else self.domain.ndims # unfortunately ndims = domain.ndims-1 is currently broken for domain.ndims > 2
-    integrand = function.norm2(self.geom) * function.jacobian(self.geom, ndims=ndims)
-    self.assertNotEqual(integrand, self.simplify(integrand))
-    vals1, vals2 = self.domain.elem_eval([ integrand, self.simplify(integrand)], ischeme='uniform2')
-    numpy.testing.assert_array_almost_equal(vals1, vals2)
-
   def test_revolved(self):
     self.assertEqual(len(self.domain), len(self.domain0))
 
   def test_volume(self):
-    vol = self.domain.integrate(1, geometry=self.geom, ischeme='gauss1', edit=self.simplify)
+    vol = self.domain.integrate(function.J(self.geom), ischeme='gauss1')
     numpy.testing.assert_array_almost_equal(vol, self.exact_volume)
 
   def test_volume_bydiv(self):
     boundary = self.domain.boundary
     if self.domtype != 'hollowcylinder':
       boundary = boundary['bottom,right,top']
-    v = boundary.integrate(self.geom.dotnorm(self.geom), geometry=self.geom, ischeme='gauss1', edit=self.simplify) / self.domain.ndims
+    v = boundary.integrate(self.geom.dotnorm(self.geom)*function.J(self.geom), ischeme='gauss1') / self.domain.ndims
     numpy.testing.assert_array_almost_equal(v, self.exact_volume)
 
   def test_surface(self):
-    surf = self.domain.boundary.integrate(1, geometry=self.geom, ischeme='gauss1', edit=self.simplify)
+    surf = self.domain.boundary.integrate(function.J(self.geom), ischeme='gauss1')
     numpy.testing.assert_array_almost_equal(surf, self.exact_surface)
 
   def test_surface_groups(self):
     for name, exact_surface in self.exact_groups.items():
-      surf = self.domain.boundary[name].integrate(1, geometry=self.geom, ischeme='gauss1', edit=self.simplify)
+      surf = self.domain.boundary[name].integrate(function.J(self.geom), ischeme='gauss1')
       numpy.testing.assert_array_almost_equal(surf, exact_surface)
 
   def test_basis(self):
@@ -242,7 +235,7 @@ class revolved(TestCase):
   def test_trim(self):
     r = function.norm2(self.geom[:2])
     trimmed = self.domain.trim(r - .75, maxrefine=1)
-    volume = trimmed.integrate(1, geometry=self.geom, degree=1)
+    volume = trimmed.integrate(function.J(self.geom), degree=1)
     self.assertGreater(volume, 0)
     self.assertLess(volume, self.exact_volume)
 

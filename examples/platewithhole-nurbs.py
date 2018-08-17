@@ -61,11 +61,11 @@ def main(nrefine = 2,
   ns.du_i = 'u_i - uexact_i'
 
   sqr = domain.boundary['top,bottom'].integral('(u_i n_i)^2' @ ns, degree=9)
-  sqr += domain.boundary['right'].integral('du_k du_k' @ ns, geometry=ns.x, degree=20)
+  sqr += domain.boundary['right'].integral('du_k du_k d:x' @ ns, degree=20)
   cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
 
   # construct residual
-  res = domain.integral('ubasis_ni,j stress_ij' @ ns, geometry=ns.x, degree=9)
+  res = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=9)
 
   # solve system
   lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
@@ -76,7 +76,7 @@ def main(nrefine = 2,
   nutils.export.triplot('stressxx.jpg', X, stressxx, tri=bezier.tri, hull=bezier.hull, clim=(numpy.nanmin(stressxx), numpy.nanmax(stressxx)))
 
   # evaluate error
-  err = numpy.sqrt(domain.integrate(['du_k du_k' @ ns, 'du_i,j du_i,j' @ ns], geometry=ns.x, degree=9, arguments=dict(lhs=lhs)))
+  err = numpy.sqrt(domain.integrate(['du_k du_k d:x', 'du_i,j du_i,j d:x'] @ ns, degree=9, arguments=dict(lhs=lhs)))
   nutils.log.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
   return err, cons, lhs

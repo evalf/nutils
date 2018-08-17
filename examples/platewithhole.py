@@ -44,18 +44,18 @@ def main(nelems: 'number of elementsa long edge' = 9,
   ns.uexact_i = 'scale (x_i ((k + 1) (0.5 + R2) + (1 - R2) R2 (x_0^2 - 3 x_1^2) / r2) - 2 δ_i1 x_1 (1 + (k - 1 + R2) R2))'
   ns.du_i = 'u_i - uexact_i'
 
-  sqr = domain.boundary['left,bottom'].integral('(u_i n_i)^2' @ ns, geometry=ns.x, degree=degree*2)
-  sqr += domain.boundary['top,right'].integral('du_k du_k' @ ns, geometry=ns.x, degree=20)
+  sqr = domain.boundary['left,bottom'].integral('(u_i n_i)^2 d:x' @ ns, degree=degree*2)
+  sqr += domain.boundary['top,right'].integral('du_k du_k d:x' @ ns, degree=20)
   cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
 
-  res = domain.integral('ubasis_ni,j stress_ij' @ ns, geometry=ns.x, degree=degree*2)
+  res = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=degree*2)
   lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
 
   bezier = domain.sample('bezier', 5)
   X, stressxx = bezier.eval([ns.X, ns.stress[0,0]], arguments=dict(lhs=lhs))
   nutils.export.triplot('stressxx.jpg', X, stressxx, tri=bezier.tri, hull=bezier.hull)
 
-  err = numpy.sqrt(domain.integrate(['du_k du_k' @ ns, 'du_i,j du_i,j' @ ns], geometry=ns.x, degree=max(degree,3)*2, arguments=dict(lhs=lhs)))
+  err = numpy.sqrt(domain.integrate(['du_k du_k d:x', 'du_i,j du_i,j d:x'] @ ns, degree=max(degree,3)*2, arguments=dict(lhs=lhs)))
   nutils.log.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
   return err, cons, lhs

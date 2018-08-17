@@ -190,9 +190,12 @@ class Topology(types.Singleton):
       else retvals
 
   @util.single_or_multiple
-  def integrate_elementwise(self, funcs, *, asfunction=False, **kwargs):
+  def integrate_elementwise(self, funcs, *, asfunction=False, geometry=None, **kwargs):
     'element-wise integration'
 
+    if geometry is not None:
+      warnings.deprecation('the `geometry` argument is deprecated, use `d:<geometry>` in expressions or `nutils.function.J(<geometry>)` instead')
+      funcs = [func * function.J(geometry, self.ndims) for func in funcs]
     transforms, ielems = zip(*sorted((elem.transform, ielem) for ielem, elem in enumerate(self)))
     ielem = function.get(ielems, iax=0, item=function.FindTransform(transforms, function.TRANS))
     with matrix.backend('numpy'):
@@ -204,7 +207,10 @@ class Topology(types.Singleton):
   @util.single_or_multiple
   def elem_mean(self, funcs, geometry=None, ischeme='gauss', degree=None, **kwargs):
     ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
-    area, *integrals = self.integrate_elementwise((1,)+funcs, ischeme=ischeme, degree=degree, geometry=geometry, **kwargs)
+    funcs = (1,)+funcs
+    if geometry is not None:
+      funcs = [func * function.J(geometry, self.ndims) for func in funcs]
+    area, *integrals = self.integrate_elementwise(funcs, ischeme=ischeme, degree=degree, **kwargs)
     return [integral / area[(slice(None),)+(_,)*(integral.ndim-1)] for integral in integrals]
 
   @util.single_or_multiple
@@ -213,6 +219,7 @@ class Topology(types.Singleton):
 
     ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
     if geometry is not None:
+      warnings.deprecation('the `geometry` argument is deprecated, use `d:<geometry>` in expressions or `nutils.function.J(<geometry>)` instead')
       funcs = [func * function.J(geometry, self.ndims) for func in funcs]
     if edit is not None:
       funcs = [edit(func) for func in funcs]
@@ -223,6 +230,7 @@ class Topology(types.Singleton):
 
     ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
     if geometry is not None:
+      warnings.deprecation('the `geometry` argument is deprecated, use `d:<geometry>` in expressions or `nutils.function.J(<geometry>)` instead')
       func = func * function.J(geometry, self.ndims)
     if edit is not None:
       funcs = edit(func)
@@ -267,7 +275,8 @@ class Topology(types.Singleton):
       else:
         raise Exception
       assert fun2.ndim == 0
-      A, b, f2, area = self.integrate([Afun,bfun,fun2,1], geometry=geometry, ischeme=ischeme, edit=edit, arguments=arguments, title='building system')
+      J = function.J(geometry, self.ndims)
+      A, b, f2, area = self.integrate([Afun*J,bfun*J,fun2*J,J], ischeme=ischeme, edit=edit, arguments=arguments, title='building system')
       N = A.rowsupp(droptol)
       if numpy.equal(b, 0).all():
         constrain[~constrain.where&N] = 0
@@ -290,7 +299,8 @@ class Topology(types.Singleton):
         afun = function.norm2(onto)
       else:
         raise Exception
-      u, scale = self.integrate([ufun, afun], geometry=geometry, ischeme=ischeme, edit=edit, arguments=arguments)
+      J = function.J(geometry, self.ndims)
+      u, scale = self.integrate([ufun*J, afun*J], ischeme=ischeme, edit=edit, arguments=arguments)
       N = ~constrain.where & (scale > droptol)
       constrain[N] = u[N] / scale[N]
 
@@ -307,8 +317,8 @@ class Topology(types.Singleton):
       F = numpy.zeros(onto.shape[0])
       W = numpy.zeros(onto.shape[0])
       I = numpy.zeros(onto.shape[0], dtype=bool)
-      fun = function.zero_argument_derivatives(function.asarray(fun))
-      data = function.Tuple(function.Tuple([fun, onto_f.simplified, function.Tuple(onto_ind)]) for onto_ind, onto_f in function.blocks(function.zero_argument_derivatives(onto)))
+      fun = function.asarray(fun).prepare_eval()
+      data = function.Tuple(function.Tuple([fun, onto_f.simplified, function.Tuple(onto_ind)]) for onto_ind, onto_f in function.blocks(onto.prepare_eval()))
       for elem in self:
         ipoints, iweights = elem.getischeme('bezier2')
         for fun_, onto_f_, onto_ind_ in data.eval(_transforms=(elem.transform, elem.opposite), _points=ipoints, **arguments or {}):
@@ -377,7 +387,7 @@ class Topology(types.Singleton):
       arguments = {}
 
     fcache = cache.WrapperCache()
-    levelset = function.zero_argument_derivatives(levelset).simplified
+    levelset = levelset.prepare_eval().simplified
     if leveltopo is None:
       ischeme = 'vertex{}'.format(maxrefine)
       refs = [elem.reference.trim(levelset.eval(_transforms=(elem.transform, elem.opposite), _points=elem.reference.getischeme(ischeme)[0], _cache=fcache, **arguments), maxrefine=maxrefine, ndivisions=ndivisions) for elem in log.iter('elem', self)]
@@ -438,7 +448,7 @@ class Topology(types.Singleton):
       ischeme = 'gauss{}'.format(degree*2)
 
     blocks = function.Tuple([function.Tuple([function.Tuple((function.Tuple(ind), f.simplified))
-      for ind, f in function.blocks(function.zero_argument_derivatives(func))])
+      for ind, f in function.blocks(func.prepare_eval())])
         for func in funcs])
 
     bases = {}
@@ -479,7 +489,7 @@ class Topology(types.Singleton):
 
   @log.title
   def volume(self, geometry, ischeme='gauss', degree=1, *, arguments=None):
-    return self.integrate(1, geometry=geometry, ischeme=ischeme, degree=degree, arguments=arguments)
+    return self.integrate(function.J(geometry, self.ndims), ischeme=ischeme, degree=degree, arguments=arguments)
 
   @log.title
   def check_boundary(self, geometry, elemwise=False, ischeme='gauss', degree=1, tol=1e-15, print=print, *, arguments=None):
@@ -487,7 +497,8 @@ class Topology(types.Singleton):
       for elem in self:
         elem.reference.check_edges(tol=tol, print=print)
     volume = self.volume(geometry, ischeme=ischeme, degree=degree, arguments=arguments)
-    zeros, volumes = self.boundary.integrate([geometry.normal(), geometry * geometry.normal()], geometry=geometry, ischeme=ischeme, degree=degree, arguments=arguments)
+    J = function.J(geometry, self.ndims-1)
+    zeros, volumes = self.boundary.integrate([geometry.normal()*J, geometry*geometry.normal()*J], ischeme=ischeme, degree=degree, arguments=arguments)
     if numpy.greater(abs(zeros), tol).any():
       print('divergence check failed: {} != 0'.format(zeros))
     if numpy.greater(abs(volumes - volume), tol).any():
@@ -593,7 +604,7 @@ class Topology(types.Singleton):
         xi, w = elem.reference.getischeme('gauss1')
         xi = (numpy.dot(w,xi) / w.sum())[_] if len(xi) > 1 else xi.copy()
         J = function.localgradient(geom, self.ndims)
-        geom_J = function.Tuple((function.zero_argument_derivatives(geom), function.zero_argument_derivatives(J))).simplified
+        geom_J = function.Tuple((geom, J)).prepare_eval().simplified
         for iiter in range(maxiter):
           coord_xi, J_xi = geom_J.eval(_transforms=(elem.transform, elem.opposite), _points=xi, **arguments)
           err = numpy.linalg.norm(coord - coord_xi)
@@ -647,10 +658,10 @@ class Topology(types.Singleton):
   def revolved(self, geom):
     assert geom.ndim == 1
     revdomain = self * RevolutionTopology()
-    angle, = function.rootcoords(1)
+    angle = function.RevolutionAngle()
     geom, angle = function.bifurcate(geom, angle)
     revgeom = function.concatenate([geom[0] * function.trignormal(angle), geom[1:]])
-    simplify = function.replace(lambda op: function.zeros(()) if op is angle else None)
+    simplify = _identity
     return revdomain, revgeom, simplify
 
   def extruded(self, geom, nelems, periodic=False, bnames=('front','back')):
