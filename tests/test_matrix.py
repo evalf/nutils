@@ -125,6 +125,14 @@ class solver(TestCase):
     self.assertLess(res, self.tol)
 
   @ifsupported
+  def test_singular(self):
+    singularmatrix = matrix.assemble(numpy.arange(self.n)-self.n//2, numpy.arange(self.n)[numpy.newaxis].repeat(2,0), shape=(self.n, self.n))
+    rhs = numpy.ones(self.n)
+    with self.assertRaises(matrix.MatrixError):
+      lhs = singularmatrix.solve(rhs, **self.args)
+      print(lhs)
+
+  @ifsupported
   def test_solve_repeated(self):
     rhs = numpy.arange(self.matrix.shape[0])
     for i in range(3):
@@ -148,6 +156,7 @@ class solver(TestCase):
 solver(backend='Numpy', args=dict())
 solver(backend='Scipy', args=dict())
 solver(backend='Scipy', args=dict(atol=1e-5, solver='gmres', restart=100, precon='spilu'))
+solver(backend='Scipy', args=dict(atol=1e-5, solver='gmres', precon='splu'))
 solver(backend='Scipy', args=dict(atol=1e-5, solver='cg', precon='diag'))
 solver(backend='Scipy', args=dict(atol=1e-5, solver='lgmres'))
 solver(backend='MKL', args=dict())

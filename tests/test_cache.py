@@ -22,6 +22,8 @@ class refcount(TestCase):
     keep = set(k for k, v in self.d.items() if sys.getrefcount(v) > 4)
     assert keep == {'referenced'}
 
+class TestException(Exception): pass
+
 class function(TestCase):
 
   def test_nocache(self):
@@ -149,6 +151,25 @@ class function(TestCase):
       def func():
         pass
 
+  def test_cache_exception(self):
+
+    @cache.function
+    def func():
+      nonlocal ncalls
+      ncalls += 1
+      raise TestException('spam')
+
+    with tmpcache():
+      ncalls = 0
+      with self.assertRaises(TestException) as cm:
+        func()
+      self.assertEqual(cm.exception.args[0], 'spam')
+      self.assertEqual(ncalls, 1)
+      with self.assertRaises(TestException) as cm:
+        func()
+      self.assertEqual(cm.exception.args[0], 'spam')
+      self.assertEqual(ncalls, 1)
+
   def test_corruption(self):
 
     @cache.function
@@ -227,6 +248,7 @@ class function(TestCase):
       self.assertEqual(ncalls, 1)
       self.assertEqual(nsuccess, 2)
 
+
 class Recursion(TestCase):
 
   def test_nocache(self):
@@ -276,6 +298,36 @@ class Recursion(TestCase):
         received_history = untouched
         self.assertEqual(read(R(), 12), tuple(range(10)))
         self.assertEqual(received_history, untouched)
+
+  def test_cache_exception(self):
+
+    read = lambda iterable, n: tuple(item for i, item in zip(range(n), iterable))
+    untouched = object()
+
+    class R(cache.Recursion, length=1):
+      def resume(R_self, history):
+        nonlocal received_history
+        received_history = tuple(history)
+        yield from range(0 if not history else history[-1]+1, 2)
+        raise TestException('spam')
+
+    with tmpcache():
+
+      received_history = untouched
+      with self.assertRaises(TestException) as cm:
+        read(R(), 3)
+      self.assertEqual(cm.exception.args[0], 'spam')
+      self.assertEqual(received_history, ())
+
+      received_history = untouched
+      self.assertEqual(read(R(), 2), tuple(range(2)))
+      self.assertEqual(received_history, untouched)
+
+      received_history = untouched
+      with self.assertRaises(TestException) as cm:
+        read(R(), 4)
+      self.assertEqual(cm.exception.args[0], 'spam')
+      self.assertEqual(received_history, untouched)
 
   def test_corruption(self):
 

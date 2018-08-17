@@ -30,6 +30,9 @@ from . import numpy, log, numeric, warnings, cache, types, config
 import abc, sys, ctypes
 
 
+class MatrixError(Exception): pass
+
+
 class Backend(metaclass=abc.ABCMeta):
   'backend base class'
 
@@ -195,6 +198,8 @@ def preparesolvearguments(wrapped):
     b = (rhs - self.matvec(x))[J]
     if b.any():
       x[J] += wrapped(self if I.all() and J.all() else self.submatrix(I, J), b, **solverargs)
+      if not numpy.isfinite(x).all():
+        raise MatrixError('solver returned non-finite left hand side')
       log.info('solver returned with residual {:.0e}'.format(numpy.linalg.norm((rhs - self.matvec(x))[J])))
     else:
       log.info('skipping solver because initial vector is exact')
@@ -255,7 +260,10 @@ class NumpyMatrix(Matrix):
 
   @preparesolvearguments
   def solve(self, rhs):
-    return numpy.linalg.solve(self.core, rhs)
+    try:
+      return numpy.linalg.solve(self.core, rhs)
+    except numpy.linalg.LinAlgError as e:
+      raise MatrixError(e) from e
 
   def submatrix(self, rows, cols):
     return NumpyMatrix(self.core[numpy.ix_(rows, cols)])
@@ -278,7 +286,7 @@ else:
       if len(shape) == 2:
         csr = scipy.sparse.csr_matrix((data, index), shape)
         return ScipyMatrix(csr)
-      raise Exception('{}d data not supported by scipy backend'.format(len(shape)))
+      raise MatrixError('{}d data not supported by scipy backend'.format(len(shape)))
 
   class ScipyMatrix(Matrix):
     '''matrix based on any of scipy's sparse matrices'''
@@ -347,7 +355,8 @@ else:
           pass
       M = self.getprecon(precon) if isinstance(precon, str) else precon(self.core) if callable(precon) else precon
       mylhs, status = solverfun(self.core, myrhs, M=M, tol=mytol, callback=mycallback, **solverargs)
-      assert status == 0, '{} solver failed with status {}'.format(solver, status)
+      if status != 0:
+        raise MatrixError('{} solver failed with status {}'.format(solver, status))
       log.info('solver converged in {} iterations'.format(niter))
       return mylhs * rhsnorm
 
@@ -356,13 +365,22 @@ else:
       assert self.shape[0] == self.shape[1], 'constrained matrix must be square'
       log.info('building {} preconditioner'.format(name))
       if name == 'splu':
-        precon = scipy.sparse.linalg.splu(self.core.tocsc()).solve
+        try:
+          precon = scipy.sparse.linalg.splu(self.core.tocsc()).solve
+        except RuntimeError as e:
+          raise MatrixError(e) from e
       elif name == 'spilu':
-        precon = scipy.sparse.linalg.spilu(self.core.tocsc(), drop_tol=1e-5, fill_factor=None, drop_rule=None, permc_spec=None, diag_pivot_thresh=None, relax=None, panel_size=None, options=None).solve
+        try:
+          precon = scipy.sparse.linalg.spilu(self.core.tocsc(), drop_tol=1e-5, fill_factor=None, drop_rule=None, permc_spec=None, diag_pivot_thresh=None, relax=None, panel_size=None, options=None).solve
+        except RuntimeError as e:
+          raise MatrixError(e) from e
       elif name == 'diag':
-        precon = numpy.reciprocal(self.core.diagonal()).__mul__
+        diag = self.core.diagonal()
+        if not diag.all():
+          raise MatrixError("building 'diag' preconditioner: diagonal has zero entries")
+        precon = numpy.reciprocal(diag).__mul__
       else:
-        raise Exception('invalid preconditioner {!r}'.format(name))
+        raise MatrixError('invalid preconditioner {!r}'.format(name))
       return scipy.sparse.linalg.LinearOperator(self.shape, precon, dtype=float)
 
     def submatrix(self, rows, cols):
@@ -412,7 +430,7 @@ else:
         return numeric.accumulate(data, index, shape)
       if len(shape) == 2:
         return MKLMatrix(data, index, shape)
-      raise Exception('{}d data not supported by scipy backend'.format(len(shape)))
+      raise MatrixError('{}d data not supported by scipy backend'.format(len(shape)))
 
   class Pardiso:
     '''simple wrapper for libmkl.pardiso
@@ -436,9 +454,6 @@ else:
      -12: 'pardiso_64 called from 32-bit library',
     }
 
-    class PardisoError(Exception):
-      pass
-
     def __init__(self):
       self.pt = numpy.zeros(64, numpy.int64) # handle to data structure
 
@@ -447,7 +462,7 @@ else:
       error = ctypes.c_int32(1)
       self._pardiso(self.pt.ctypes, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, nrhs, iparm, msglvl, b, x, ctypes.byref(error))
       if error.value:
-        raise self.PardisoError(self._errorcodes.get(error.value, 'unknown error {}'.format(error.value)))
+        raise MatrixError(self._errorcodes.get(error.value, 'unknown error {}'.format(error.value)))
 
     def __del__(self):
       if self.pt.any(): # release all internal memory for all matrices

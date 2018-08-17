@@ -56,7 +56,7 @@ import numpy, itertools, functools, numbers, collections
 argdict = types.frozendict[types.strictstr,types.frozenarray]
 
 
-class ModelError(Exception): pass
+class SolverError(Exception): pass
 
 
 @types.apply_annotations
@@ -84,7 +84,7 @@ def solve_linear(target:types.strictstr, residual:sample.strictintegral, constra
 
   jacobian = residual.derivative(target)
   if jacobian.contains(target):
-    raise ModelError('problem is not linear')
+    raise SolverError('problem is not linear')
   assert target not in arguments, '`target` should not be defined in `arguments`'
   argshape = residual._argshape(target)
   arguments = collections.ChainMap(arguments, {target: numpy.zeros(argshape)})
@@ -137,9 +137,9 @@ def solve_withinfo(gen_lhs_resnorm, tol:types.strictfloat=0., maxiter:types.stri
     elif tol:
       log.info('residual: {:.2e} ({:.0f}%)'.format(resnorm, 100 * numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol)))
     else:
-      raise ModelError('nonlinear problem requires a nonzero tolerance')
+      raise SolverError('nonlinear problem requires a nonzero tolerance')
   if resnorm > tol:
-    raise ModelError('failed to reach target tolerance')
+    raise SolverError('failed to reach target tolerance')
   elif resnorm:
     log.info('tolerance reached in {} iterations with residual {:.2e}'.format(iiter, resnorm))
   return lhs, info
@@ -176,7 +176,7 @@ class newton(RecursionWithSolve, length=1):
 
   where ``A``, ``B``, ``C`` and ``D`` are determined based on the current
   residual and tangent, the new residual, and the new tangent. If this value is
-  found to be close to 1 (``> maxrelax``) then the newton update is accepted.
+  found to be close to 1 then the newton update is accepted.
 
   Parameters
   ----------
@@ -190,22 +190,20 @@ class newton(RecursionWithSolve, length=1):
       (boolean) or NaN (float). In the remaining positions the values of
       ``lhs0`` are returned unchanged (boolean) or overruled by the values in
       `constrain` (float).
-  nrelax : :class:`int`
-      Maximum number of relaxation steps before proceding with the updated
-      coefficient vector (by default unlimited).
-  minrelax : :class:`float`
-      Lower bound for the relaxation value, to force re-evaluating the
-      functional in situation where the parabolic assumption would otherwise
-      result in unreasonably small steps.
-  maxrelax : :class:`float`
-      Relaxation value below which relaxation continues, unless ``nrelax`` is
-      reached; should be a value less than or equal to 1.
+  searchrange : :class:`tuple` of two floats
+      The lower bound (>=0) and upper bound (<=1) for line search relaxation
+      updates. If the estimated optimum relaxation (determined by polynomial
+      interpolation) is above upper bound of the current relaxation value then
+      the newton update is accepted. Below it, the functional is re-evaluated
+      at the new relaxation value or at the lower bound, whichever is largest.
   rebound : :class:`float`
       Factor by which the relaxation value grows after every update until it
       reaches unity.
   droptol : :class:`float`
       Threshold for leaving entries in the return value at NaN if they do not
       contribute to the value of the functional.
+  failrelax : :class:`float`
+      Fail with exception if relaxation reaches this lower limit.
   arguments : :class:`collections.abc.Mapping`
       Defines the values for :class:`nutils.function.Argument` objects in
       `residual`.  The ``target`` should not be present in ``arguments``.
@@ -218,7 +216,7 @@ class newton(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, minrelax:types.strictfloat=.01, maxrelax:types.strictfloat=2/3, droptol:types.strictfloat=None, rebound:types.strictfloat=2., arguments:argdict={}, solveargs:types.frozendict={}):
+  def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, searchrange:types.tuple[float]=(.01,2/3), droptol:types.strictfloat=None, rebound:types.strictfloat=2., failrelax:types.strictfloat=1e-6, arguments:argdict={}, solveargs:types.frozendict={}):
     super().__init__()
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
@@ -226,11 +224,10 @@ class newton(RecursionWithSolve, length=1):
     self.residual = residual
     self.jacobian = _derivative(residual, target, jacobian)
     self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
-    self.nrelax = nrelax
-    self.minrelax = minrelax
-    self.maxrelax = maxrelax
+    self.minscale, self.maxscale = searchrange
     self.rebound = rebound
     self.droptol = droptol
+    self.failrelax = failrelax
     self.arguments = arguments
     self.solveargs = solveargs
     self.islinear = not self.jacobian.contains(self.target)
@@ -267,12 +264,9 @@ class newton(RecursionWithSolve, length=1):
         newlhs = lhs+relax*dlhs
         res, jac = self._eval(newlhs)
         newresnorm = numpy.linalg.norm(res[~self.constrain])
-        if self.nrelax is not None and irelax >= self.nrelax:
-          log.warning('failed to', 'decrease' if newresnorm > resnorm else 'optimize', 'residual')
-          break
         if not numpy.isfinite(newresnorm):
           log.info('residual norm {} / {}'.format(newresnorm, round(relax, 5)))
-          relax *= self.minrelax
+          relax *= self.minscale
           continue
         # To determine optimal relaxation we create a polynomial estimation for the residual norm:
         #   P(x) = A + B (x/relax) + C (x/relax)^2 + D (x/relax)^3 ~= |res(lhs+x*dlhs)|^2
@@ -294,10 +288,12 @@ class newton(RecursionWithSolve, length=1):
         discriminant = C**2 - 3 * B * D
         scale = numpy.inf if discriminant < 0 or D < 0 and C < 0 else (numpy.sqrt(discriminant) - C) / (3 * D) if D else -B / (2 * C)
         log.info('residual norm {:+.2f}% / {} with minimum at x{}'.format(100*(newresnorm/resnorm-1), round(relax, 5), round(scale, 2)))
-        if newresnorm < resnorm and scale > self.maxrelax:
+        if newresnorm < resnorm and scale > self.maxscale:
           relax = min(relax * min(scale, self.rebound), 1)
           break
-        relax *= max(scale, self.minrelax)
+        relax *= max(scale, self.minscale)
+        if not numpy.isfinite(relax) or relax <= self.failrelax:
+          raise SolverError('stuck in local minimum')
       yield _nan_at(newlhs, nosupp), types.attributes(resnorm=newresnorm, relax=relax)
       lhs, resnorm = newlhs, newresnorm
 
@@ -314,7 +310,7 @@ class minimize(RecursionWithSolve, length=1):
 
   where ``A``, ``B``, ``C``, ``D``, ``E`` and ``F`` are determined based on the
   current and new energy, residual and tangent. If this value is found to be
-  close to 1 (``> maxrelax``) then the newton update is accepted.
+  close to 1 then the newton update is accepted.
 
   Parameters
   ----------
@@ -328,22 +324,20 @@ class minimize(RecursionWithSolve, length=1):
       (boolean) or NaN (float). In the remaining positions the values of
       ``lhs0`` are returned unchanged (boolean) or overruled by the values in
       `constrain` (float).
-  nrelax : :class:`int`
-      Maximum number of relaxation steps before proceding with the updated
-      coefficient vector (by default unlimited).
-  minrelax : :class:`float`
-      Lower bound for the relaxation value, to force re-evaluating the
-      functional in situation where the parabolic assumption would otherwise
-      result in unreasonably small steps.
-  maxrelax : :class:`float`
-      Relaxation value below which relaxation continues, unless ``nrelax`` is
-      reached; should be a value less than or equal to 1.
+  searchrange : :class:`tuple` of two floats
+      The lower bound (>=0) and upper bound (<=1) for line search relaxation
+      updates. If the estimated optimum relaxation (determined by polynomial
+      interpolation) is above upper bound of the current relaxation value then
+      the newton update is accepted. Below it, the functional is re-evaluated
+      at the new relaxation value or at the lower bound, whichever is largest.
   rebound : :class:`float`
       Factor by which the relaxation value grows after every update until it
       reaches unity.
   droptol : :class:`float`
       Threshold for leaving entries in the return value at NaN if they do not
       contribute to the value of the functional.
+  failrelax : :class:`float`
+      Fail with exception if relaxation reaches this lower limit.
   arguments : :class:`collections.abc.Mapping`
       Defines the values for :class:`nutils.function.Argument` objects in
       `residual`.  The ``target`` should not be present in ``arguments``.
@@ -356,7 +350,7 @@ class minimize(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, energy:sample.strictintegral, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, nrelax:types.strictint=None, minrelax:types.strictfloat=.01, maxrelax:types.strictfloat=2/3, rebound:types.strictfloat=2., droptol:types.strictfloat=None, arguments:argdict={}, solveargs:types.frozendict={}):
+  def __init__(self, target:types.strictstr, energy:sample.strictintegral, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, searchrange:types.tuple[float]=(.01,2/3), rebound:types.strictfloat=2., droptol:types.strictfloat=None, failrelax:types.strictfloat=1e-6, arguments:argdict={}, solveargs:types.frozendict={}):
     super().__init__()
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
@@ -367,11 +361,10 @@ class minimize(RecursionWithSolve, length=1):
     self.residual = energy.derivative(target)
     self.jacobian = _derivative(self.residual, target)
     self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, self.residual.shape)
-    self.nrelax = nrelax
-    self.minrelax = minrelax
-    self.maxrelax = maxrelax
+    self.minscale, self.maxscale = searchrange
     self.rebound = rebound
     self.droptol = droptol
+    self.failrelax = failrelax
     self.arguments = arguments
     self.solveargs = solveargs
     self.islinear = not self.jacobian.contains(target)
@@ -422,13 +415,13 @@ class minimize(RecursionWithSolve, length=1):
         shift += res.dot(res) / res.dot(dlhs)
         log.warning('negative eigenvalue detected; shifting spectrum by {:.2e}'.format(shift))
         dlhs = -(jac + shift * matrix.eye(len(dlhs))).solve(res, constrain=self.constrain|nosupp, **self.solveargs)
-      for irelax in itertools.count() if self.nrelax is None else range(self.nrelax):
+      for irelax in itertools.count():
         newlhs = lhs+relax*dlhs
         newnrg, newres, newjac = self._eval(newlhs)
         resnorm = numpy.linalg.norm(newres[~self.constrain])
         if not numpy.isfinite(newnrg):
           log.info('energy {} / {}'.format(newnrg, round(relax, 5)))
-          relax *= self.minrelax
+          relax *= self.minscale
           continue
         # To determine optimal relaxation we create a polynomial estimation for the energy:
         #   P(x) = A + B (x/relax) + C (x/relax)^2 + D (x/relax)^3 + E (x/relax)^4 + F (x/relax)^5 ~= nrg(lhs+x*dlhs)
@@ -450,10 +443,12 @@ class minimize(RecursionWithSolve, length=1):
         roots = [r.real for r in numpy.roots([5*F,4*E,3*D,2*C,B]) if not r.imag and r > 0 and A+r*(B+r*(C+r*(D+r*(E+r*F)))) < nrg]
         scale = min(roots) if roots else numpy.inf
         log.info('energy {:+.1e} / {} with minimum at x{}'.format(newnrg-nrg, round(relax, 5), round(scale, 2)))
-        if scale > self.maxrelax:
+        if scale > self.maxscale:
           relax = min(relax * min(scale, self.rebound), 1)
           break
-        relax *= max(scale, self.minrelax)
+        relax *= max(scale, self.minscale)
+        if not numpy.isfinite(relax) or relax <= self.failrelax:
+          raise SolverError('stuck in local minimum')
       else:
         log.warning('failed to', 'decrease' if newnrg > nrg else 'optimize', 'energy')
       yield _nan_at(newlhs, nosupp), types.attributes(resnorm=resnorm, energy=newnrg, relax=relax, shift=shift)
@@ -576,6 +571,8 @@ class thetamethod(RecursionWithSolve, length=1):
       Coefficient vector for all timesteps after the initial condition.
   '''
 
+  __cache__ = '_res_jac'
+
   @types.apply_annotations
   def __init__(self, target:types.strictstr, residual:sample.strictintegral, inertia:sample.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray, theta:types.strictfloat, target0:types.strictstr='_thetamethod_target0', constrain:types.frozenarray=None, newtontol:types.strictfloat=1e-10, arguments:argdict={}, newtonargs:types.frozendict={}):
     super().__init__()
@@ -590,10 +587,24 @@ class thetamethod(RecursionWithSolve, length=1):
     self.newtonargs = newtonargs
     self.newtontol = newtontol
     self.arguments = arguments
-    res0 = residual * theta + inertia / timestep
-    res1 = residual * (1-theta) - inertia / timestep
-    self.res = res0 + res1.replace({target: function.Argument(target0, lhs0.shape)})
-    self.jac = self.res.derivative(target)
+    self.residual = residual
+    self.inertia = inertia
+    self.theta = theta
+    self.timestep = timestep
+
+  def _res_jac(self, timestep):
+    res = self.residual * self.theta + self.inertia / timestep \
+        + (self.residual * (1-self.theta) - self.inertia / timestep).replace({self.target: function.Argument(self.target0, self.lhs0.shape)})
+    return res, res.derivative(self.target)
+
+  def _step(self, lhs, timestep):
+    res, jac = self._res_jac(timestep)
+    try:
+      return newton(self.target, residual=res, jacobian=jac, lhs0=lhs, constrain=self.constrain,
+        arguments=collections.ChainMap(self.arguments, {self.target0: lhs}), **self.newtonargs).solve(tol=self.newtontol)
+    except (SolverError, matrix.MatrixError) as e:
+      log.error('error: {}; retrying with timestep {}'.format(e, timestep/2))
+      return self._step(self._step(lhs, timestep/2), timestep/2)
 
   def resume(self, history):
     if history:
@@ -602,9 +613,8 @@ class thetamethod(RecursionWithSolve, length=1):
       lhs = self.lhs0
       yield lhs
     while True:
-      lhs = newton(self.target, residual=self.res, jacobian=self.jac, lhs0=lhs, constrain=self.constrain, arguments=collections.ChainMap(self.arguments, {self.target0: lhs}), **self.newtonargs).solve(tol=self.newtontol)
+      lhs = self._step(lhs, self.timestep)
       yield lhs
-
 
 impliciteuler = functools.partial(thetamethod, theta=1)
 cranknicolson = functools.partial(thetamethod, theta=0.5)
