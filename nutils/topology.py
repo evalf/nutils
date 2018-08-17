@@ -647,10 +647,10 @@ class Topology(types.Singleton):
   def revolved(self, geom):
     assert geom.ndim == 1
     revdomain = self * RevolutionTopology()
-    angle, = function.rootcoords(1)
+    angle = function.RevolutionAngle()
     geom, angle = function.bifurcate(geom, angle)
     revgeom = function.concatenate([geom[0] * function.trignormal(angle), geom[1:]])
-    simplify = function.replace(lambda op: function.zeros(()) if op is angle else None)
+    simplify = _identity
     return revdomain, revgeom, simplify
 
   def extruded(self, geom, nelems, periodic=False, bnames=('front','back')):

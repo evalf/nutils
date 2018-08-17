@@ -2914,6 +2914,32 @@ class Polyval(Array):
     else:
       return self
 
+class RevolutionAngle(Array):
+  '''
+  Pseudo coordinates of a :class:`nutils.topology.RevolutionTopology`.
+  '''
+
+  __slots__ = ()
+  __cache__ = 'prepare_eval'
+
+  def __init__(self):
+    super().__init__(args=[], shape=[], dtype=float)
+
+  @property
+  def isconstant(self):
+    return False
+
+  def evalf(self):
+    raise Exception('RevolutionAngle should not be evaluated')
+
+  def _derivative(self, var, seen):
+    return (ones_like if isinstance(var, LocalCoords) and len(var) > 0 else zeros_like)(var)
+
+  @util.positional_only('self')
+  def prepare_eval(*args, **kwargs):
+    self, = args
+    return zeros_like(self)
+
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
 _ascending = lambda arg: numpy.greater(numpy.diff(arg), 0).all()
