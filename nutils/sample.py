@@ -86,10 +86,11 @@ class Sample(types.Singleton):
     self.ndims = points[0].ndims
 
   @log.title
+  @util.positional_only('self', 'funcs')
   @util.single_or_multiple
   @types.apply_annotations
   @cache.function
-  def integrate(self, funcs, *, arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
+  def integrate(*args, arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
     '''Integrate functions.
 
     Args
@@ -100,6 +101,7 @@ class Sample(types.Singleton):
         Optional arguments for function evaluation.
     '''
 
+    self, funcs = args
     if arguments is None:
       arguments = {}
 
@@ -180,8 +182,9 @@ class Sample(types.Singleton):
     return Integral([(self, func)])
 
   @log.title
+  @util.positional_only('self', 'funcs')
   @util.single_or_multiple
-  def eval(self, funcs, *, arguments=None):
+  def eval(*args, arguments=None):
     '''Evaluate function.
 
     Args
@@ -192,6 +195,7 @@ class Sample(types.Singleton):
         Optional arguments for function evaluation.
     '''
 
+    self, funcs = args
     if arguments is None:
       arguments = {}
 
