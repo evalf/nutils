@@ -44,7 +44,12 @@ efficiently combine common substructures.
 '''
 
 from . import types, points, log, util, function, config, parallel, numeric, cache, matrix
-import numpy, numbers
+import numpy, numbers, collections.abc
+
+def argdict(arguments):
+  if len(arguments) == 1 and 'arguments' in arguments and isinstance(arguments['arguments'], collections.abc.Mapping):
+    arguments = arguments['arguments']
+  return types.frozendict[types.strictstr,types.frozenarray](arguments)
 
 class Sample(types.Singleton):
   '''Collection of points on a topology.
@@ -90,7 +95,7 @@ class Sample(types.Singleton):
   @util.single_or_multiple
   @types.apply_annotations
   @cache.function
-  def integrate(*args, arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
+  def integrate(*args, **arguments:argdict):
     '''Integrate functions.
 
     Args
@@ -102,8 +107,6 @@ class Sample(types.Singleton):
     '''
 
     self, funcs = args
-    if arguments is None:
-      arguments = {}
 
     # Functions may consist of several blocks, such as originating from
     # chaining. Here we make a list of all blocks consisting of triplets of
@@ -184,7 +187,8 @@ class Sample(types.Singleton):
   @log.title
   @util.positional_only('self', 'funcs')
   @util.single_or_multiple
-  def eval(*args, arguments=None):
+  @types.apply_annotations
+  def eval(*args, **arguments:argdict):
     '''Evaluate function.
 
     Args
@@ -196,8 +200,6 @@ class Sample(types.Singleton):
     '''
 
     self, funcs = args
-    if arguments is None:
-      arguments = {}
 
     nprocs = min(config.nprocs, self.nelems)
     zeros = parallel.shzeros if nprocs > 1 else numpy.zeros
@@ -437,7 +439,7 @@ strictintegral = types.strict[Integral]
 
 @types.apply_annotations
 @cache.function
-def eval_integrals(*integrals: types.tuple[strictintegral], arguments:types.frozendict[types.strictstr,types.frozenarray]=None):
+def eval_integrals(*integrals: types.tuple[strictintegral], **arguments:argdict):
   '''Evaluate integrals.
 
   Evaluate one or several postponed integrals. By evaluating them
@@ -459,7 +461,7 @@ def eval_integrals(*integrals: types.tuple[strictintegral], arguments:types.froz
 
   retvals = [None] * len(integrals)
   for sample, iints in util.gather((di, iint) for iint, integral in enumerate(integrals) for di in integral._integrands):
-    for iint, retval in zip(iints, sample.integrate([integrals[iint]._integrands[sample] for iint in iints], arguments=arguments)):
+    for iint, retval in zip(iints, sample.integrate([integrals[iint]._integrands[sample] for iint in iints], **arguments)):
       if retvals[iint] is None:
         retvals[iint] = retval
       else:
