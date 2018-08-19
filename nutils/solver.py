@@ -87,8 +87,7 @@ def solve_linear(target:types.strictstr, residual:sample.strictintegral, constra
     raise SolverError('problem is not linear')
   assert target not in arguments, '`target` should not be defined in `arguments`'
   argshape = residual._argshape(target)
-  arguments = collections.ChainMap(arguments, {target: numpy.zeros(argshape)})
-  res, jac = sample.eval_integrals(residual, jacobian, arguments=arguments)
+  res, jac = sample.eval_integrals(residual, jacobian, **{target: numpy.zeros(argshape)}, **arguments)
   return jac.solve(-res, constrain=constrain, **solveargs)
 
 
@@ -233,9 +232,7 @@ class newton(RecursionWithSolve, length=1):
     self.islinear = not self.jacobian.contains(self.target)
 
   def _eval(self, lhs):
-    arguments = {self.target: lhs}
-    arguments.update(self.arguments)
-    return sample.eval_integrals(self.residual, self.jacobian, arguments=arguments)
+    return sample.eval_integrals(self.residual, self.jacobian, **{self.target: lhs}, **self.arguments)
 
   def resume(self, history):
     if history:
@@ -370,9 +367,7 @@ class minimize(RecursionWithSolve, length=1):
     self.islinear = not self.jacobian.contains(target)
 
   def _eval(self, lhs):
-    arguments = {self.target: lhs}
-    arguments.update(self.arguments)
-    return sample.eval_integrals(self.energy, self.residual, self.jacobian, arguments=arguments)
+    return sample.eval_integrals(self.energy, self.residual, self.jacobian, **{self.target: lhs}, **self.arguments)
 
   def resume(self, history):
     if history:
@@ -507,9 +502,7 @@ class pseudotime(RecursionWithSolve, length=1):
     self.solveargs = solveargs
 
   def _eval(self, lhs, timestep):
-    arguments = {self.target: lhs}
-    arguments.update(self.arguments)
-    return sample.eval_integrals(self.residual, self.jacobian+self.jacobiant/timestep, arguments=arguments)
+    return sample.eval_integrals(self.residual, self.jacobian+self.jacobiant/timestep, **{self.target: lhs}, **self.arguments)
 
   def resume(self, history):
     if history:
@@ -621,7 +614,7 @@ cranknicolson = functools.partial(thetamethod, theta=0.5)
 
 
 @log.title
-def optimize(target:types.strictstr, functional:sample.strictintegral, *, newtontol:types.strictfloat=0., **kwargs):
+def optimize(target:types.strictstr, functional:sample.strictintegral, *, newtontol:types.strictfloat=0., arguments:argdict={}, **kwargs):
   '''find the minimizer of a given functional
 
   Parameters
@@ -632,6 +625,10 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, newton
       The functional the should be minimized by varying target
   newtontol : :class:`float`
       Residual tolerance of Newton procedure (if applicable)
+  arguments : :class:`collections.abc.Mapping`
+      Defines the values for :class:`nutils.function.Argument` objects in
+      `residual`.  The ``target`` should not be present in ``arguments``.
+      Optional.
   **kwargs
       Additional arguments for :class:`minimize`
 
@@ -641,8 +638,8 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, newton
       Coefficient vector corresponding to the functional optimum
   '''
 
-  lhs = newton(target, functional.derivative(target), **kwargs).solve(newtontol)
-  optimum = functional.eval(arguments=dict([(target, numpy.choose(numpy.isnan(lhs), [lhs, 0]))], **kwargs.get('arguments', {})))
+  lhs = newton(target, functional.derivative(target), arguments=arguments, **kwargs).solve(newtontol)
+  optimum = functional.eval(**{target: numpy.choose(numpy.isnan(lhs), [lhs, 0])}, **arguments)
   log.info('constrained {}/{} dofs, optimum value {:.2e}'.format(len(lhs)-numpy.isnan(lhs).sum(), len(lhs), optimum))
   return lhs
 

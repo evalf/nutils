@@ -174,17 +174,19 @@ class Topology(types.Singleton):
     return sample.Sample(transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
 
   @util.single_or_multiple
-  def elem_eval(self, funcs, ischeme, separate=False, geometry=None, asfunction=False, *, edit=None, title='elem_eval', **kwargs):
+  def elem_eval(self, funcs, ischeme, separate=False, geometry=None, asfunction=False, *, edit=None, title='elem_eval', arguments=None, **kwargs):
     'element-wise evaluation'
 
     if geometry is not None:
       warnings.deprecation('elem_eval will be removed in future, use integrate_elementwise instead')
-      return self.integrate_elementwise(funcs, ischeme=ischeme, geometry=geometry, asfunction=asfunction, edit=edit, **kwargs)
+      return self.integrate_elementwise(funcs, ischeme=ischeme, geometry=geometry, asfunction=asfunction, edit=edit, arguments=arguments, **kwargs)
+    if kwargs:
+      raise TypeError('elem_eval got unexpected arguments: {}'.format(', '.join(kwargs)))
     if edit is not None:
       funcs = [edit(func) for func in funcs]
     warnings.deprecation('elem_eval will be removed in future, use sample(...).eval instead')
     sample = self.sample(*element.parse_legacy_ischeme(ischeme))
-    retvals = sample.eval(funcs, title=title, **kwargs)
+    retvals = sample.eval(funcs, title=title, **arguments or {})
     return [sample.asfunction(retval) for retval in retvals] if asfunction \
       else [[retval[index] for index in sample.index] for retval in retvals] if separate \
       else retvals
@@ -223,7 +225,7 @@ class Topology(types.Singleton):
       funcs = [func * function.J(geometry, self.ndims) for func in funcs]
     if edit is not None:
       funcs = [edit(func) for func in funcs]
-    return self.sample(ischeme, degree).integrate(funcs, arguments=arguments, title=title)
+    return self.sample(ischeme, degree).integrate(funcs, **arguments or {})
 
   def integral(self, func, ischeme='gauss', degree=None, geometry=None, edit=None):
     'integral'
@@ -590,7 +592,8 @@ class Topology(types.Singleton):
     assert geom.shape == (self.ndims,)
     coords = numpy.asarray(coords, dtype=float)
     assert coords.ndim == 2 and coords.shape[1] == self.ndims
-    vertices = self.elem_eval(geom, ischeme=ischeme, separate=True, arguments=arguments)
+    bboxsample = self.sample(*element.parse_legacy_ischeme(ischeme))
+    vertices = map(bboxsample.eval(geom, **arguments or {}).__getitem__, bboxsample.index)
     bboxes = numpy.array([numpy.mean(v,axis=0) * (1-scale) + numpy.array([numpy.min(v,axis=0), numpy.max(v,axis=0)]) * scale
       for v in vertices]) # nelems x {min,max} x ndims
     vref = element.getsimplex(0)
