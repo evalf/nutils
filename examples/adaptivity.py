@@ -50,12 +50,12 @@ def main(etype: 'type of elements (square/triangle/mixed)' = 'square',
     lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
 
     ndofs = len(ns.basis)
-    error = numpy.sqrt(domain.integrate(['du^2 d:x', 'du_,k du_,k d:x'] @ ns, degree=7, arguments=dict(lhs=lhs)))
+    error = domain.integral('<du^2, du_,k du_,k>_i d:x' @ ns, degree=7).eval(lhs=lhs)**.5
     rate, offset = linreg.add(numpy.log(len(ns.basis)), numpy.log(error))
     nutils.log.user('ndofs: {ndofs}, L2 error: {error[0]:.2e} ({rate[0]:.2f}), H1 error: {error[1]:.2e} ({rate[1]:.2f})'.format(ndofs=len(ns.basis), error=error, rate=rate))
 
     bezier = domain.sample('bezier', 9)
-    x, u, du = bezier.eval([ns.x, ns.u, ns.du], arguments=dict(lhs=lhs))
+    x, u, du = bezier.eval(['x_i', 'u', 'du'] @ ns, lhs=lhs)
     nutils.export.triplot('sol.jpg', x, u, tri=bezier.tri, hull=bezier.hull)
     nutils.export.triplot('err.jpg', x, du, tri=bezier.tri, hull=bezier.hull)
 
@@ -64,8 +64,8 @@ def main(etype: 'type of elements (square/triangle/mixed)' = 'square',
 
     refdom = domain.refined
     ns.refbasis = refdom.basis(btype, degree=degree)
-    indicator = refdom.integrate('refbasis_n,k u_,k d:x' @ ns, degree=degree*2, arguments=dict(lhs=lhs))
-    indicator -= refdom.boundary.integrate('refbasis_n u_,k n_k d:x' @ ns, degree=degree*2, arguments=dict(lhs=lhs))
+    indicator = refdom.integral('refbasis_n,k u_,k d:x' @ ns, degree=degree*2).eval(lhs=lhs)
+    indicator -= refdom.boundary.integral('refbasis_n u_,k n_k d:x' @ ns, degree=degree*2).eval(lhs=lhs)
     mask = indicator**2 > numpy.mean(indicator**2)
 
     domain = domain.refined_by(elem.transform[:-1] for elem in domain.refined.supp(ns.refbasis, mask))

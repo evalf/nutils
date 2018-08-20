@@ -92,13 +92,13 @@ def main(nelems: 'number of elements along edge' = 10,
   # element outlines.
 
   bezier = domain.sample('bezier', 9)
-  x, u = bezier.eval([ns.x, ns.u], arguments=dict(lhs=lhs))
+  x, u = bezier.eval(['x_i', 'u'] @ ns, lhs=lhs)
   nutils.export.triplot('solution.jpg', x, u, tri=bezier.tri, hull=bezier.hull)
 
   # To confirm that our computation is correct, we use our knowledge of the
   # analytical solution to evaluate the L2-error of the discrete result.
 
-  err = domain.integrate('(u - sin(x_0) cosh(x_1))^2 d:x' @ ns, degree=degree*2, arguments=dict(lhs=lhs))**.5
+  err = domain.integral('(u - sin(x_0) cosh(x_1))^2 d:x' @ ns, degree=degree*2).eval(lhs=lhs)**.5
   nutils.log.user('L2 error: {:.2e}'.format(err))
 
   return cons, lhs, err

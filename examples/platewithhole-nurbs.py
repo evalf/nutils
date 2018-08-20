@@ -34,7 +34,7 @@ def main(nrefine = 2,
     numpy.take([0, 1, 1], indices)])
   geom = (nurbsbasis[:,numpy.newaxis] * controlpoints).sum(0)
 
-  radiuserr = numpy.sqrt(domain.boundary['left'].integrate((nutils.function.norm2(geom) - radius)**2, degree=9))
+  radiuserr = domain.boundary['left'].integral((nutils.function.norm2(geom) - radius)**2, degree=9).eval()**.5
   nutils.log.info('hole radius exact up to L2 error {:.2e}'.format(radiuserr))
 
   # refine domain
@@ -72,11 +72,11 @@ def main(nrefine = 2,
 
   # vizualize result
   bezier = domain.sample('bezier', 9)
-  X, stressxx = bezier.eval([ns.X, ns.stress[0,0]], arguments=dict(lhs=lhs))
+  X, stressxx = bezier.eval(['X_i', 'stress_00'] @ ns, lhs=lhs)
   nutils.export.triplot('stressxx.jpg', X, stressxx, tri=bezier.tri, hull=bezier.hull, clim=(numpy.nanmin(stressxx), numpy.nanmax(stressxx)))
 
   # evaluate error
-  err = numpy.sqrt(domain.integrate(['du_k du_k d:x', 'du_i,j du_i,j d:x'] @ ns, degree=9, arguments=dict(lhs=lhs)))
+  err = domain.integral('<du_k du_k, du_i,j du_i,j>_n d:x' @ ns, degree=9).eval(lhs=lhs)**.5
   nutils.log.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
   return err, cons, lhs

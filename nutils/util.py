@@ -268,10 +268,11 @@ def single_or_multiple(f):
   """
 
   @functools.wraps(f)
-  def wrapped(self, arg0, *args, **kwargs):
-    ismultiple = isinstance(arg0, (list,tuple))
-    arg0mod = tuple(arg0) if ismultiple else (arg0,)
-    retvals = tuple(f(self, arg0mod, *args, **kwargs))
+  def wrapped(*args, **kwargs):
+    if len(args) <= 1:
+      raise TypeError('{} requires at least 1 positional argument'.format(f.__name__))
+    ismultiple = isinstance(args[1], (list,tuple))
+    retvals = tuple(f(args[0], tuple(args[1]) if ismultiple else args[1:2], *args[2:], **kwargs))
     if not ismultiple:
       retvals, = retvals
     return retvals

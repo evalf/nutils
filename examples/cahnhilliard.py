@@ -62,10 +62,10 @@ def main(nelems: 'number of elements' = 20,
 
   for lhs in nutils.log.iter('timestep', nutils.solver.impliciteuler('lhs', target0='lhs0', residual=res, inertia=inertia, timestep=timestep, lhs0=lhs0)):
 
-    E = nutils.sample.eval_integrals(*energy.values(), arguments=dict(lhs=lhs))
+    E = nutils.sample.eval_integrals(*energy.values(), lhs=lhs)
     nutils.log.user('energy: {:.3f} ({})'.format(sum(E), ', '.join('{:.0f}% {}'.format(100*e/sum(E), n) for e, n in sorted(zip(E, energy), reverse=True))))
 
-    x, c, m = bezier.eval([ns.x, ns.c, ns.m], arguments=dict(lhs=lhs))
+    x, c, m = bezier.eval(['x_i', 'c', 'm'] @ ns, lhs=lhs)
     nutils.export.triplot('phase.jpg', x, c, tri=bezier.tri, hull=bezier.hull, clim=(-1,1))
     nutils.export.triplot('chempot.jpg', x, m, tri=bezier.tri, hull=bezier.hull)
 

@@ -684,12 +684,24 @@ def title(f): # decorator
     gettitle = lambda args, kwargs: kwargs.pop('title', default)
   @functools.wraps(f)
   def wrapped(*args, **kwargs):
-    with _current_log.context(gettitle(args, kwargs)):
+    title = gettitle(args, kwargs)
+    if title != default:
+      warnings.deprecation('title argument will be removed in future')
+    with _current_log.context(title):
       return f(*args, **kwargs)
   return wrapped
 
 def context(title, mayskip=False):
   return _current_log.context(title, mayskip)
+
+def withcontext(f):
+  '''Decorator; executes the wrapped function in its own logging context.'''
+
+  @functools.wraps(f)
+  def wrapped(*args, **kwargs):
+    with context(f.__name__):
+      return f(*args, **kwargs)
+  return wrapped
 
 def open(filename, mode, *, level='user', exists='rename'):
   '''Open file in logger-controlled directory.

@@ -27,7 +27,11 @@ project_root = pathlib.Path(__file__).parent.parent.resolve()
 
 def process_signature(self, objtype, fullname, object, options, args, retann):
   if objtype in ('function', 'class', 'method'):
-    signature = inspect.signature(object)
+    try:
+      signature = inspect.signature(object)
+    except ValueError:
+      # Some builtins have no signature.
+      return
   else:
     return
   # Drop annotations from signature.
@@ -240,7 +244,7 @@ def create_log(app, env, node, contnode):
           logger.error('invalid argument for {!r}: {}'.format(name, e))
           return
       # Run script.
-      with nutils.log.HtmlLog(str(dst_log)), nutils.matrix.backend('scipy'):
+      with nutils.log.HtmlLog(str(dst_log)), nutils.matrix.backend('scipy'), nutils.warnings.via(nutils.log.warning):
         script_dict['main'](**kwargs)
       (dst_log/'log.html').rename(dst_log/'index.html')
 
