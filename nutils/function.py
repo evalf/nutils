@@ -3921,4 +3921,4 @@ def dotnorm(arg, geom, axis=-1):
   assert geom.ndim == 1 and geom.shape[0] == arg.shape[axis]
   return dot(arg, normal(geom)[(slice(None),)+(_,)*(arg.ndim-axis-1)], axis)
 
-# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
+# vim:sw=2:sts=2:et

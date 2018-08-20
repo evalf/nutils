@@ -589,4 +589,4 @@ def diag(d):
 def eye(n):
   return diag(numpy.ones(n))
 
-# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
+# vim:sw=2:sts=2:et

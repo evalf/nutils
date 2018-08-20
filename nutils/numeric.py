@@ -508,4 +508,4 @@ def accumulate(data, index, shape):
   numpy.add.at(retval, tuple(index), data)
   return retval
 
-# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
+# vim:sw=2:sts=2:et

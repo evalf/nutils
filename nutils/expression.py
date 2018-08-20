@@ -1249,4 +1249,4 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
     arg_shapes[arg] = tuple(lengths.get(i, i) for i in shape)
   return _replace_lengths(ast, lengths), arg_shapes
 
-# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
+# vim:sw=2:sts=2:et

@@ -324,4 +324,4 @@ def positional_only(*names, keep_varpositional=False):
     return wrapped
   return wrapper
 
-# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
+# vim:sw=2:sts=2:et

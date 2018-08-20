@@ -28,4 +28,4 @@ def open_in_outdir(file, *args, **kwargs):
   warnings.deprecation('core.open_in_outdir is deprecated, use log.open instead')
   return log.open(file, *args, **kwargs)
 
-# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
+# vim:sw=2:sts=2:et
