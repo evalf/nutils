@@ -90,7 +90,7 @@ class Sample(types.Singleton):
     self.npoints = sum(p.npoints for p in points)
     self.ndims = points[0].ndims
 
-  @log.title
+  @log.withcontext
   @util.positional_only('self', 'funcs')
   @util.single_or_multiple
   @types.apply_annotations
@@ -184,7 +184,7 @@ class Sample(types.Singleton):
 
     return Integral([(self, func)])
 
-  @log.title
+  @log.withcontext
   @util.positional_only('self', 'funcs')
   @util.single_or_multiple
   @types.apply_annotations

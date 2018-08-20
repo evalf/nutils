@@ -186,7 +186,7 @@ class Topology(types.Singleton):
       funcs = [edit(func) for func in funcs]
     warnings.deprecation('elem_eval will be removed in future, use sample(...).eval instead')
     sample = self.sample(*element.parse_legacy_ischeme(ischeme))
-    retvals = sample.eval(funcs, title=title, **arguments or {})
+    retvals = sample.eval(funcs, **arguments or {})
     return [sample.asfunction(retval) for retval in retvals] if asfunction \
       else [[retval[index] for index in sample.index] for retval in retvals] if separate \
       else retvals
@@ -257,7 +257,7 @@ class Topology(types.Singleton):
     else:
       constrain = constrain.copy()
     if exact_boundaries:
-      constrain |= self.boundary.project(fun, onto, geometry, constrain=constrain, title='boundaries', ischeme=ischeme, droptol=droptol, ptype=ptype, edit=edit, arguments=arguments)
+      constrain |= self.boundary.project(fun, onto, geometry, constrain=constrain, ischeme=ischeme, droptol=droptol, ptype=ptype, edit=edit, arguments=arguments)
     assert isinstance(constrain, util.NanVec)
     assert constrain.shape == onto.shape[:1]
 
@@ -278,7 +278,7 @@ class Topology(types.Singleton):
         raise Exception
       assert fun2.ndim == 0
       J = function.J(geometry, self.ndims)
-      A, b, f2, area = self.integrate([Afun*J,bfun*J,fun2*J,J], ischeme=ischeme, edit=edit, arguments=arguments, title='building system')
+      A, b, f2, area = self.integrate([Afun*J,bfun*J,fun2*J,J], ischeme=ischeme, edit=edit, arguments=arguments)
       N = A.rowsupp(droptol)
       if numpy.equal(b, 0).all():
         constrain[~constrain.where&N] = 0
@@ -520,7 +520,7 @@ class Topology(types.Singleton):
 
   def select(self, indicator, ischeme='bezier2', **kwargs):
     sample = self.sample(*element.parse_legacy_ischeme(ischeme))
-    isactive = numpy.greater(sample.eval(indicator, title='select', **kwargs), 0)
+    isactive = numpy.greater(sample.eval(indicator, **kwargs), 0)
     selected = [elem for elem, index in zip(self, sample.index) if isactive[index].any()]
     return UnstructuredTopology(self.ndims, selected)
 
