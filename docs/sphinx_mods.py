@@ -244,7 +244,7 @@ def create_log(app, env, node, contnode):
           logger.error('invalid argument for {!r}: {}'.format(name, e))
           return
       # Run script.
-      with nutils.log.HtmlLog(str(dst_log)), nutils.matrix.backend('scipy'):
+      with nutils.log.HtmlLog(str(dst_log)), nutils.matrix.backend('scipy'), nutils.warnings.via(nutils.log.warning):
         script_dict['main'](**kwargs)
       (dst_log/'log.html').rename(dst_log/'index.html')
 
