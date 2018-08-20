@@ -27,7 +27,11 @@ project_root = pathlib.Path(__file__).parent.parent.resolve()
 
 def process_signature(self, objtype, fullname, object, options, args, retann):
   if objtype in ('function', 'class', 'method'):
-    signature = inspect.signature(object)
+    try:
+      signature = inspect.signature(object)
+    except ValueError:
+      # Some builtins have no signature.
+      return
   else:
     return
   # Drop annotations from signature.
