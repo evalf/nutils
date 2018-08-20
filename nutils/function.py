@@ -3193,6 +3193,49 @@ def arctanh(arg):
 def piecewise(level, intervals, *funcs):
   return Get(stack(funcs, axis=0), axis=0, item=util.sum(Int(greater(level, interval)) for interval in intervals))
 
+def partition(f, *levels):
+  '''Create a partition of unity for a scalar function f.
+
+  When ``n`` levels are specified, ``n+1`` indicator functions are formed that
+  evaluate to one if and only if the following condition holds::
+
+      indicator 0: f < levels[0]
+      indicator 1: levels[0] < f < levels[1]
+      ...
+      indicator n-1: levels[n-2] < f < levels[n-1]
+      indicator n: f > levels[n-1]
+
+  At the interval boundaries the indicators evaluate to one half, in the
+  remainder of the domain they evaluate to zero such that the whole forms a
+  partition of unity. The partitions can be used to create a piecewise
+  continuous function by means of multiplication and addition.
+
+  The following example creates a topology consiting of three elements, and a
+  function ``f`` that is zero in the first element, parabolic in the second,
+  and zero again in the third element.
+
+  >>> from nutils import mesh
+  >>> domain, x = mesh.rectilinear([3])
+  >>> left, center, right = partition(x[0], 1, 2)
+  >>> f = (1 - (2*x[0]-3)**2) * center
+
+  Args
+  ----
+  f : :class:`Array`
+      Scalar-valued function
+  levels : scalar constants or :class:`Array`\\s
+      The interval endpoints.
+
+  Returns
+  -------
+  :class:`list` of scalar :class:`Array`\\s
+      The indicator functions.
+  '''
+
+  signs = [Sign(f - level) for level in levels]
+  steps = map(subtract, signs[:-1], signs[1:])
+  return [.5 - .5 * signs[0]] + [.5 * step for step in steps] + [.5 + .5 * signs[-1]]
+
 def trace(arg, n1=-2, n2=-1):
   return sum(takediag(arg, n1, n2), numeric.normdim(arg.ndim, n1))
 
