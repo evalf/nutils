@@ -46,7 +46,7 @@ def main(nelems: 'number of elements along edge' = 10,
 
   energy = domain.integral('energy d:x' @ ns, degree=degree*2)
   lhs0 = nutils.solver.optimize('lhs', energy, constrain=cons)
-  X, energy = bezier.eval([ns.X, ns.energy], arguments=dict(lhs=lhs0))
+  X, energy = bezier.eval(['X_i', 'energy'] @ ns, lhs=lhs0)
   nutils.export.triplot('linear.jpg', X, energy, tri=bezier.tri, hull=bezier.hull)
 
   ns.strain_ij = '.5 (u_i,j + u_j,i + u_k,i u_k,j)'
@@ -54,7 +54,7 @@ def main(nelems: 'number of elements along edge' = 10,
 
   energy = domain.integral('energy d:x' @ ns, degree=degree*2)
   lhs1 = nutils.solver.optimize('lhs', energy, lhs0=lhs0, constrain=cons, newtontol=restol)
-  X, energy = bezier.eval([ns.X, ns.energy], arguments=dict(lhs=lhs1))
+  X, energy = bezier.eval(['X_i', 'energy'] @ ns, lhs=lhs1)
   nutils.export.triplot('nonlinear.jpg', X, energy, tri=bezier.tri, hull=bezier.hull)
 
   return lhs0, lhs1

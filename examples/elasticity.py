@@ -38,7 +38,7 @@ def main(nelems: 'number of elements along edge' = 10,
   lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
 
   bezier = domain.sample('bezier', 5)
-  X, sxy = bezier.eval([ns.X, ns.stress[0,1]], arguments=dict(lhs=lhs))
+  X, sxy = bezier.eval(['X_i', 'stress_01'] @ ns, lhs=lhs)
   nutils.export.triplot('shear.jpg', X, sxy, tri=bezier.tri, hull=bezier.hull)
 
   return cons, lhs

@@ -64,7 +64,7 @@ def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
   arguments['streamdofs'] = nutils.solver.optimize('streamdofs', sqr, arguments=arguments) # compute streamlines
 
   bezier = domain.sample('bezier', 9)
-  x, u, p, stream = bezier.eval([ns.x, nutils.function.norm2(ns.u), ns.p, ns.stream], arguments=arguments)
+  x, u, p, stream = bezier.eval(['x_i', 'sqrt(u_k u_k)', 'p', 'stream'] @ ns, **arguments)
   with nutils.export.mplfigure('flow.jpg') as fig: # plot velocity as field, pressure as contours, streamlines as dashed
     ax = fig.add_axes([.1,.1,.8,.8], yticks=[], aspect='equal')
     ax.add_collection(matplotlib.collections.LineCollection(x[bezier.hull], colors='w', linewidths=.5, alpha=.2))

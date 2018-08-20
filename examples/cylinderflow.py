@@ -75,7 +75,7 @@ def main(nelems: 'number of elements' = 24,
   for istep, lhs in nutils.log.enumerate('timestep', nutils.solver.impliciteuler('lhs', residual=res, inertia=inertia, lhs0=lhs0, timestep=timestep, constrain=cons, newtontol=1e-10)):
 
     t = istep * timestep
-    x, u, normu, p = bezier.eval([ns.x, ns.u, nutils.function.norm2(ns.u), ns.p], arguments=dict(lhs=lhs))
+    x, u, normu, p = bezier.eval(['x_i', 'u_i', 'sqrt(u_k u_k)', 'p'] @ ns, lhs=lhs)
     ugrd = interpolate[xgrd](u)
 
     with nutils.export.mplfigure('flow.jpg', figsize=(12.8,7.2)) as fig:

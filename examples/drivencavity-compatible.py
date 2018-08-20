@@ -58,7 +58,7 @@ def main(nelems: 'number of elements' = 12,
 
 def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
 
-  div = domain.integrate('(u_k,k)^2 d:x' @ ns, degree=1, arguments=arguments)**.5
+  div = domain.integral('(u_k,k)^2 d:x' @ ns, degree=1).eval(**arguments)**.5
   nutils.log.info('velocity divergence: {:.2e}'.format(div)) # confirm that velocity is pointwise divergence-free
 
   ns = ns.copy_() # copy namespace so that we don't modify the calling argument
@@ -68,7 +68,7 @@ def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
   arguments['streamdofs'] = nutils.solver.optimize('streamdofs', sqr, arguments=arguments) # compute streamlines
 
   bezier = domain.sample('bezier', 9)
-  x, u, p, stream = bezier.eval([ns.x, nutils.function.norm2(ns.u), ns.p, ns.stream], arguments=arguments)
+  x, u, p, stream = bezier.eval(['x_i', 'sqrt(u_i u_i)', 'p', 'stream'] @ ns, **arguments)
   with nutils.export.mplfigure('flow.jpg') as fig: # plot velocity as field, pressure as contours, streamlines as dashed
     ax = fig.add_axes([.1,.1,.8,.8], yticks=[], aspect='equal')
     ax.add_collection(matplotlib.collections.LineCollection(x[bezier.hull], colors='w', linewidths=.5, alpha=.2))

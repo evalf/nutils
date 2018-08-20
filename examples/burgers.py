@@ -37,7 +37,7 @@ def main(nelems: 'number of elements' = 20,
   timestep = timescale/nelems
   bezier = domain.sample('bezier', 7)
   for itime, lhs in nutils.log.enumerate('timestep', nutils.solver.impliciteuler('lhs', res, inertia, timestep=timestep, lhs0=lhs0, newtontol=newtontol)):
-    x, u = bezier.eval([ns.x, ns.u], arguments=dict(lhs=lhs))
+    x, u = bezier.eval(['x_i', 'u'] @ ns, lhs=lhs)
     nutils.export.triplot('solution.jpg', x, u, tri=bezier.tri, hull=bezier.hull, clim=(0,1))
     if itime * timestep >= endtime:
       break
