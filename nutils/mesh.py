@@ -612,4 +612,4 @@ def unitsquare(nelems, etype):
 
   return topo, function.rootcoords(2) / nelems
 
-# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=1
+# vim:sw=2:sts=2:et

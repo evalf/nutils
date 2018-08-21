@@ -2498,4 +2498,4 @@ def common_refine(topo1, topo2):
   warnings.deprecation('common_refine(a, b) will be removed in future; use a & b instead')
   return topo1 & topo2
 
-# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
+# vim:sw=2:sts=2:et

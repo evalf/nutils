@@ -679,3 +679,5 @@ def _derivative(residual, target, jacobian=None):
   if jacobian.shape != residual.shape * 2:
     raise ValueError('expected `jacobian` with shape {} but got {}'.format(inertia.shape * 2, jacobian.shape))
   return jacobian
+
+# vim:sw=2:sts=2:et

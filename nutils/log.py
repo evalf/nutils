@@ -728,4 +728,4 @@ def open(filename, mode, *, level='user', exists='rename'):
 
   return _current_log.open(filename, mode, level, exists)
 
-# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
+# vim:sw=2:sts=2:et

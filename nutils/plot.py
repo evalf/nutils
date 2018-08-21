@@ -866,4 +866,4 @@ def interpolate(tri, xy, values, mergetol=1e-5):
   return interpvalues
 
 
-# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
+# vim:sw=2:sts=2:et

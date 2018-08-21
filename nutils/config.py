@@ -218,3 +218,5 @@ sys.modules[__name__] = Config(
   matrix = 'mkl,scipy,numpy',
   cache = False,
 )
+
+# vim:sw=2:sts=2:et

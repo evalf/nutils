@@ -47,3 +47,5 @@ class via:
 
   def showwarning(self, message, category, filename, lineno, *args):
     self.print('{}: {}\n  In {}:{}'.format(category.__name__, message, filename, lineno))
+
+# vim:sw=2:sts=2:et

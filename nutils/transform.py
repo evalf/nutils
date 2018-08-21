@@ -546,4 +546,4 @@ class Identifier(TransformItem):
   def apply(self, points):
     return '{}@{}'.format(points, self)
 
-# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
+# vim:sw=2:sts=2:et

@@ -209,4 +209,4 @@ def call(func, kwargs, scriptname, funcname=None):
   finally:
     signal.signal(signal.SIGINT, old_sigint_handler) # restore handler
 
-# vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
+# vim:sw=2:sts=2:et
