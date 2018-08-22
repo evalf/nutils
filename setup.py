@@ -28,7 +28,7 @@ tests_require = ['Sphinx>=1.6','pillow>2.6']
 setup(
   name = 'nutils',
   version = version,
-  description = 'Numerical Utilities',
+  description = 'Numerical Utilities for Finite Element Analysis',
   author = 'Evalf',
   author_email = 'info@nutils.org',
   url = 'http://nutils.org',
