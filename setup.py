@@ -2,10 +2,11 @@ from setuptools import setup
 
 long_description = """
 Nutils is a Free and Open Source Python programming library for Finite Element
-Method computations, developed by Evalf Computing and distributed under the
-permissive MIT license. Key features are a readable, math centric syntax, an
-object oriented design, strict separation of topology and geometry, and high
-level function manipulations with support for automatic differentiation.
+Method computations, developed by `Evalf Computing <http://evalf.com>`_ and
+distributed under the permissive MIT license. Key features are a readable, math
+centric syntax, an object oriented design, strict separation of topology and
+geometry, and high level function manipulations with support for automatic
+differentiation.
 
 Nutils provides the tools required to construct a typical simulation workflow
 in just a few lines of Python code, while at the same time leaving full
