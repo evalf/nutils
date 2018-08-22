@@ -341,6 +341,7 @@ New: function.Array with dtype; deprecates function.ArrayFunc
 Release history
 ---------------
 
+2018-08-22 Released v3.1
 2018-02-05 Released v3.0 "dragon beard"
 2016-02-18 Released v2.0 "Chuka men"
 2014-08-04 Released v1.0 "Bakmi"
