@@ -324,6 +324,9 @@ class Integral(types.Singleton):
     assert len(shapes) == 1, 'incompatible shapes: {}'.format(' != '.join(str(shape) for shape in shapes))
     self.shape, = shapes
 
+  def __repr__(self):
+    return 'Integral<{}>'.format(','.join(map(str, self.shape)))
+
   def eval(self, **kwargs):
     '''Evaluate integral.
 
