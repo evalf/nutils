@@ -165,6 +165,9 @@ class Matrix(metaclass=types.CacheMeta):
     warnings.deprecation('M.toscipy is deprecated; use scipy.sparse.csr_matrix(M.export("csr"), M.shape) instead')
     return scipy.sparse.csr_matrix(self.export('csr'), self.shape)
 
+  def __repr__(self):
+    return '{}<{}x{}>'.format(type(self).__qualname__, *self.shape)
+
 def preparesolvearguments(wrapped):
   '''Make rhs optional, add lhs0, constrain, rconstrain arguments.
 
