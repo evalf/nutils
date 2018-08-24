@@ -2060,6 +2060,11 @@ class Sampled(Array):
     index = self.sample.index[i]
     return self.array[index]
 
+  def _derivative(self, var, seen):
+    if isinstance(var, Argument):
+      return Zeros(self.shape+var.shape, self.dtype)
+    raise Exception('cannot take spatial derivative of sampled function')
+
 class Elemwise(Array):
 
   __slots__ = 'data',

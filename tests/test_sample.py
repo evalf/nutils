@@ -5,10 +5,10 @@ from . import *
 class rectilinear(TestCase):
 
   def setUp(self):
-    domain, self.geom = mesh.rectilinear([2,1])
-    self.bezier2 = domain.sample('bezier', 2)
-    self.bezier3 = domain.sample('bezier', 3)
-    self.gauss2 = domain.sample('gauss', 2)
+    self.domain, self.geom = mesh.rectilinear([2,1])
+    self.bezier2 = self.domain.sample('bezier', 2)
+    self.bezier3 = self.domain.sample('bezier', 3)
+    self.gauss2 = self.domain.sample('gauss', 2)
 
   def test_integrate(self):
     area = self.gauss2.integrate(1)
@@ -36,3 +36,13 @@ class rectilinear(TestCase):
     self.assertEqual(subset1.npoints, 4)
     self.assertEqual(subset2.npoints, 4)
     self.assertEqual(subset1, subset2)
+
+  def test_asfunction(self):
+    func = self.geom[0]**2 - self.geom[1]**2
+    values = self.gauss2.eval(func)
+    sampled = self.gauss2.asfunction(values)
+    with self.assertRaises(function.EvaluationError):
+      self.bezier2.eval(sampled)
+    self.assertEqual(self.gauss2.eval(sampled).tolist(), values.tolist())
+    arg = function.Argument('dofs', [2,3])
+    self.assertEqual(function.derivative(sampled, arg), function.zeros_like(arg))
