@@ -1149,6 +1149,9 @@ class StructuredTopology(Topology):
     assert all(isinstance(bname,str) for bname in self._bnames)
     super().__init__(len(self.shape))
 
+  def __repr__(self):
+    return '{}<{}>'.format(type(self).__qualname__, 'x'.join(str(axis.j-axis.i)+('p' if axis.isperiodic else '') for axis in self.axes if isinstance(axis, DimAxis)))
+
   def __iter__(self):
     reference = util.product(element.getsimplex(1 if axis.isdim else 0) for axis in self.axes)
     return (element.Element(reference, trans, opp) for trans, opp in zip(self._transform.flat, self._opposite.flat))
