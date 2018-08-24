@@ -481,7 +481,19 @@ def swapaxes(arg, axis1, axis2):
   return transpose(arg, trans)
 
 class Array(Evaluable):
-  'array function'
+  '''
+  Base class for array valued functions.
+
+  Attributes
+  ----------
+  shape : :class:`tuple` of :class:`int`\s
+      The shape of this array function.
+  ndim : :class:`int`
+      The number of dimensions of this array array function.  Equal to
+      ``len(shape)``.
+  dtype : :class:`int`, :class:`float`
+      The dtype of the array elements.
+  '''
 
   __slots__ = 'shape', 'ndim', 'dtype'
 
