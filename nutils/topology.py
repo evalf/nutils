@@ -154,6 +154,9 @@ class Topology(types.Singleton):
       topo = topo.refined
 
   def basis(self, name, *args, **kwargs):
+    '''
+    Create a basis.
+    '''
     if self.ndims == 0:
       return function.asarray([1])
     split = name.split('-', 1)
@@ -677,6 +680,11 @@ class Topology(types.Singleton):
   @property
   @log.title
   def boundary(self):
+    '''
+    :class:`Topology`:
+      The boundary of this topology.
+    '''
+
     belems = []
     for ielem, ioppelems in enumerate(self.connectivity):
       elem = self.elements[ielem]
