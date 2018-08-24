@@ -18,10 +18,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-import inspect, pathlib, shutil, os, runpy, urllib.parse, shlex
+import inspect, pathlib, shutil, os, runpy, urllib.parse, shlex, doctest, re, io, hashlib, base64
 import docutils.nodes, docutils.parsers.rst, docutils.statemachine
 import sphinx.util.logging, sphinx.util.docutils, sphinx.addnodes
 import nutils.log, nutils.matrix
+import numpy
 
 project_root = pathlib.Path(__file__).parent.parent.resolve()
 
@@ -377,10 +378,134 @@ unicode_math_map = {
 }
 unicode_math_map = str.maketrans({k: v+' ' for k, v in unicode_math_map.items()})
 
-
 def replace_unicode_math(app, doctree):
   for node in doctree.traverse(sphinx.ext.mathbase.math):
     node['latex'] = node['latex'].translate(unicode_math_map)
+
+class ConsoleDirective(docutils.parsers.rst.Directive):
+
+  has_content = True
+  required_arguments = 0
+  options_arguments = 0
+
+  def run(self):
+    literal = docutils.nodes.literal_block(contents, contents)
+    literal['language'] = 'python3'
+    literal['linenos'] = False
+    sphinx.util.nodes.set_source_info(self, literal)
+    return [literal]
+
+class ConsoleOutputChecker(doctest.OutputChecker):
+
+  posnum = '(?:[0-9]+|[0-9]+[.]|[.][0-9]+)(?:e[+-]?[0-9]+)?'
+  re_spread = re.compile('\\b((?:-?{posnum}|array[(][^()]*[)])±{posnum})\\b'.format(posnum=posnum))
+
+  def check_output(self, want, got, optionflags):
+    if want == got:
+      return True
+    elif '±' in want and self._check_plus_minus(want, got, optionflags):
+      return True
+    return super().check_output(want, got, optionflags)
+
+  @classmethod
+  def _check_plus_minus(cls, want, got, optionflags):
+    if optionflags & doctest.NORMALIZE_WHITESPACE:
+      want = re.sub(r'\s+', ' ', want, flags=re.MULTILINE)
+      got = re.sub(r'\s+', ' ', got, flags=re.MULTILINE)
+    for i, part in enumerate(cls.re_spread.split(want)):
+      if i % 2 == 0:
+        if got[:len(part)] != part:
+          return False
+        got = got[len(part):]
+      elif part.startswith('array('):
+        match = re.search('^array[(]([^()]*)[)]'.format(posnum=cls.posnum), got)
+        if not match:
+          return False
+        got, got_array = got[len(match.group(0)):], cls._parse_array(match.group(1))
+        want_array, want_spread = part.split('±')
+        want_array = cls._parse_array(want_array[6:-1])
+        if want_array.shape != got_array.shape:
+          return False
+        if (numpy.isnan(want_array) != numpy.isnan(got_array)).any():
+          return False
+        mask = numpy.isnan(want_array)
+        if numpy.greater(abs(want_array - got_array)[~mask], float(want_spread)).any():
+          return False
+      else:
+        match = re.search('^(-?{posnum})\\b'.format(posnum=cls.posnum), got)
+        if not match:
+          return False
+        got, got_number = got[len(match.group(0)):], float(match.group(1))
+        want_number, want_spread = map(float, part.split('±'))
+        if not (abs(got_number - want_number) <= want_spread):
+          return False
+    return True
+
+  @classmethod
+  def _parse_array(cls, s):
+    return numpy.array(cls._parse_array_tokens(filter(None, re.split(r'\s*([\[\],])\s*', s, flags=re.MULTILINE))), dtype=float)
+
+  @classmethod
+  def _parse_array_tokens(cls, tokens):
+    token = next(tokens)
+    if token == '[':
+      data = [cls._parse_array_tokens(tokens)]
+      for token in tokens:
+        if token == ',':
+          data.append(cls._parse_array_tokens(tokens))
+        elif token == ']':
+          return data
+        else:
+          raise ValueError('unexpected token: {}'.format(token))
+    else:
+      return float(token)
+
+class ConsoleDirective(docutils.parsers.rst.Directive):
+
+  has_content = True
+  required_arguments = 0
+  options_arguments = 0
+
+  def run(self):
+    document = self.state.document
+    env = document.settings.env
+    nodes = []
+
+    indent = min(len(line)-len(line.lstrip()) for line in self.content)
+    code = ''.join(line[indent:]+'\n' for line in self.content)
+    code_wo_spread = ConsoleOutputChecker.re_spread.sub(lambda m: m.group(0).split('±', 1)[0], code)
+
+    literal = docutils.nodes.literal_block(code_wo_spread, code_wo_spread, classes=['console'])
+    literal['language'] = 'python3'
+    literal['linenos'] = False
+    sphinx.util.nodes.set_source_info(self, literal)
+    nodes.append(literal)
+
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot
+    parser = doctest.DocTestParser()
+    runner = doctest.DocTestRunner(checker=ConsoleOutputChecker(), optionflags=doctest.ELLIPSIS)
+    globs = getattr(document, '_console_globs', {})
+    test = parser.get_doctest(code, globs, 'test', env.docname, self.lineno)
+    failures, tries = runner.run(test, clear_globs=False)
+    for fignum in matplotlib.pyplot.get_fignums():
+      fig = matplotlib.pyplot.figure(fignum)
+      with io.BytesIO() as f:
+        fig.savefig(f, format='svg')
+        name = hashlib.sha1(f.getvalue()).hexdigest()+'.svg'
+        uri = 'data:image/svg+xml;base64,{}'.format(base64.b64encode(f.getvalue()).decode())
+        nodes.append(docutils.nodes.image('', uri=uri, alt='image generated by matplotlib'))
+    matplotlib.pyplot.close('all')
+    if failures:
+      document.reporter.warning('doctest failed', line=self.lineno)
+    document._console_globs = test.globs
+
+    return nodes
+
+def remove_console_globs(app, doctree):
+  if hasattr(doctree, '_console_globs'):
+    del doctree._console_globs
 
 def setup(app):
   app.connect('autodoc-process-signature', process_signature)
@@ -393,6 +518,9 @@ def setup(app):
   app.connect('missing-reference', create_log)
 
   app.connect('doctree-read', replace_unicode_math)
+
+  app.add_directive('console', ConsoleDirective)
+  app.connect('doctree-read', remove_console_globs)
 
   app.connect('build-finished', remove_generated)
 
