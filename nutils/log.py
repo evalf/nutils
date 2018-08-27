@@ -24,7 +24,7 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import time, functools, itertools, io, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins, hashlib, sys
+import time, functools, itertools, io, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins, hashlib, sys, tempfile
 from . import core, config, warnings
 
 LEVELS = 'error', 'warning', 'user', 'info', 'debug' # NOTE this should match the log levels defined in `nutils/_log/viewer.js`
@@ -489,8 +489,23 @@ class TeeLog(Log):
 
   @contextlib.contextmanager
   def open(self, filename, mode, level, exists):
+    if mode not in ('w', 'wb'):
+      raise ValueError('invalid mode: {!r}'.format(mode))
     with contextlib.ExitStack() as stack:
-      yield _multistream(stack.enter_context(log.open(filename, mode, level, exists)) for log in self.logs)
+      files = [stack.enter_context(log.open(filename, mode, level, exists)) for log in self.logs]
+      files = list(filter(lambda file: not file.devnull, files))
+      if len(files) == 0:
+        yield stack.enter_context(_devnull(filename, mode))
+      elif len(files) == 1:
+        yield files[0]
+      else:
+        f = stack.enter_context(tempfile.NamedTemporaryFile(suffix=filename, mode=mode+'+'))
+        f.devnull = False
+        yield f
+        f.seek(0)
+        data = f.read()
+        for file in files:
+          file.write(data)
 
 class RecordLog(Log):
   '''
@@ -572,13 +587,20 @@ class RecordLog(Log):
 
   @contextlib.contextmanager
   def open(self, filename, mode, level, exists):
+    if mode not in ('w', 'wb'):
+      raise ValueError('invalid mode: {!r}'.format(mode))
     for title in self._contexts[self._appended_contexts:]:
       self._messages.append(('entercontext', title))
     self._appended_contexts = len(self._contexts)
-    data = io.BytesIO() if 'b' in mode else io.StringIO()
-    with self._writethrough_log.open(filename, mode, level) as f:
-      yield _multistream([f, data])
-    self._messages.append(('open', filename, mode, level, exists, data.getValue()))
+    with tempfile.NamedTemporaryFile(suffix=filename, mode=mode+'+') as f:
+      f.devnull = False
+      yield f
+      f.seek(0)
+      data = f.read()
+    self._messages.append(('open', filename, mode, level, exists, data))
+    with self._writethrough_log.open(filename, mode, level, exists) as f:
+      if not f.devnull:
+        f.write(data)
 
   def replay(self):
     '''
@@ -622,16 +644,6 @@ def _len(iterable):
 
 def _print(level, *args):
   return _current_log.write(level, ' '.join(str(arg) for arg in args))
-
-class _multistream(io.IOBase):
-  def __init__(self, streams):
-    self.streams = tuple(streams)
-    self.devnull = False
-  def __bool__(self):
-    return any(self.streams)
-  def write(self, data):
-    for stream in self.streams:
-      stream.write(data)
 
 def _devnull(name, mode):
   if mode not in ('w', 'wb'):
