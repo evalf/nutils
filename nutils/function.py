@@ -188,7 +188,7 @@ class Evaluable(types.Singleton):
     imgtype = config.imagetype
     imgpath = 'dot_{}.{}'.format(hashlib.sha1(imgdata).hexdigest(), imgtype)
     with log.open(imgpath, 'wb', level='info', exists='skip') as img:
-      if img:
+      if not img.devnull:
         status = subprocess.run([dotpath,'-T'+imgtype], input=imgdata, stdout=subprocess.PIPE)
         if status.returncode:
           log.warning('graphviz failed for error code', status.returncode)

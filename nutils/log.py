@@ -244,7 +244,8 @@ class StdoutLog(ContextLog):
 
   @contextlib.contextmanager
   def open(self, filename, mode, level, exists):
-    yield _devnull(filename)
+    with _devnull(filename, mode) as f:
+      yield f
     self.write(level, filename)
 
 class RichOutputLog(StdoutLog):
@@ -625,19 +626,19 @@ def _print(level, *args):
 class _multistream(io.IOBase):
   def __init__(self, streams):
     self.streams = tuple(streams)
+    self.devnull = False
   def __bool__(self):
     return any(self.streams)
   def write(self, data):
     for stream in self.streams:
       stream.write(data)
 
-class _devnull(io.IOBase):
-  def __init__(self, name):
-    self.name = name
-  def __bool__(self):
-    return False
-  def write(self, data):
-    pass
+def _devnull(name, mode):
+  if mode not in ('w', 'wb'):
+    raise ValueError('invalid mode: {!r}'.format(mode))
+  f = builtins.open(name, mode, opener=lambda name_, flags: os.open(os.devnull, flags))
+  f.devnull = True
+  return f
 
 class _makedirs:
   def __init__(self, path, exist_ok=False):
@@ -664,11 +665,13 @@ class _makedirs:
       listdir = set(os.listdir(self.path))
       if filename in listdir:
         if exists == 'skip':
-          return _devnull(filename)
+          return _devnull(filename, mode)
         for filename in map('-{}'.join(os.path.splitext(filename)).format, itertools.count(1)):
           if filename not in listdir:
             break
-    return builtins.open(filename, mode, opener=self._open)
+    f = builtins.open(filename, mode, opener=self._open)
+    f.devnull = False
+    return f
 
 ## MODULE-ONLY METHODS
 
@@ -775,8 +778,8 @@ def open(filename, mode, *, level='user', exists='rename'):
       *   ``'rename'``: change the filename by adding the smallest positive
           suffix ``n`` for which ``filename-n.ext`` does not exist.
 
-      *   ``'skip'``: return a dummy file object, which tests as ``False`` to
-          allow content creation to be skipped altogether.
+      *   ``'skip'``: return a dummy file object with attribute ``devnull`` set
+          to ``False`` to allow content creation to be skipped altogether.
   '''
 
   return _current_log.open(filename, mode, level, exists)
