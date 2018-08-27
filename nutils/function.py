@@ -451,6 +451,9 @@ def power(arg, n):
   return Power(arg, n)
 
 def dot(a, b, axes=None):
+  '''
+  Contract ``a`` and ``b`` along ``axes``.
+  '''
   if axes is None:
     a = asarray(a)
     b = asarray(b)
