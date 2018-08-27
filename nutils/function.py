@@ -3603,6 +3603,11 @@ def mask(arg, mask, axis=0):
   return Mask(arg, mask, axis)
 
 def J(geometry, ndims=None):
+  '''
+  Return :math:`\sqrt{|J^T J|}` with :math:`J` the gradient of ``geometry`` to
+  the local coordinate system with ``ndims`` dimensions (``localgradient(geom,
+  ndims)``).
+  '''
   if ndims is None:
     return DelayedJacobian(geometry)
   elif ndims < 0:
