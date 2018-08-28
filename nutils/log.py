@@ -24,7 +24,7 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import time, functools, itertools, io, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins, hashlib
+import time, functools, itertools, io, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins, hashlib, sys, tempfile
 from . import core, config, warnings
 
 LEVELS = 'error', 'warning', 'user', 'info', 'debug' # NOTE this should match the log levels defined in `nutils/_log/viewer.js`
@@ -40,7 +40,7 @@ HTMLHEAD = '''\
 
 ## LOG
 
-class Log(contextlib.ExitStack, metaclass=abc.ABCMeta):
+class Log(metaclass=abc.ABCMeta):
   '''
   Base class for log objects.  A subclass should define a :meth:`context`
   method that returns a context manager which adds a contextual layer and a
@@ -48,26 +48,30 @@ class Log(contextlib.ExitStack, metaclass=abc.ABCMeta):
   '''
 
   def __enter__(self):
-    if hasattr(self, '_old_log'):
+    if hasattr(self, '_stack'):
       raise RuntimeError('This context manager is not reentrant.')
-    # Replace the current log object with `self` and remember the old instance.
-    global _current_log
-    self._old_log = _current_log
-    _current_log = self
-    return super().__enter__()
+    stack = contextlib.ExitStack()
+    try:
+      self._init_context(stack)
+      # Replace the current log object with `self` and restore at exit.
+      stack.callback(_set_current_log, _current_log)
+      _set_current_log(self)
+    except:
+      stack.__exit__(*sys.exc_info())
+      raise
+    self._stack = stack
+    return self
 
   def __exit__(self, etype, value, tb):
-    if not hasattr(self, '_old_log'):
+    if not hasattr(self, '_stack'):
       raise RuntimeError('This context manager is not yet entered.')
-    if etype in (KeyboardInterrupt, SystemExit, bdb.BdbQuit):
-      self.write('error', 'killed by user')
-    elif etype is not None:
-      self.write_post_mortem(etype, value, tb)
-    # Restore the old log instance.
-    global _current_log
-    _current_log = self._old_log
-    del self._old_log
-    super().__exit__(etype, value, tb)
+    try:
+      return self._stack.__exit__(etype, value, tb)
+    finally:
+      del self._stack
+
+  def _init_context(self, stack):
+    pass
 
   @abc.abstractmethod
   def context(self, title, mayskip=False):
@@ -83,13 +87,6 @@ class Log(contextlib.ExitStack, metaclass=abc.ABCMeta):
     .. Note:: This function is abstract.
     '''
 
-  def write_post_mortem(self, etype, value, tb):
-    try:
-      msg = ''.join(traceback.format_exception(etype, value, tb))
-    except Exception as e:
-      msg = '{} (traceback failed: {})'.format(value, e)
-    self.write('error', msg)
-
   @abc.abstractmethod
   def open(self, filename, mode, level, exists):
     '''Create file object.'''
@@ -101,9 +98,9 @@ class DataLog(Log):
     self.outdir = outdir
     super().__init__()
 
-  def __enter__(self):
-    self._open = self.enter_context(_makedirs(self.outdir, exist_ok=True))
-    return super().__enter__()
+  def _init_context(self, stack):
+    self._open = stack.enter_context(_makedirs(self.outdir, exist_ok=True))
+    super()._init_context(stack)
 
   @contextlib.contextmanager
   def context(self, title, mayskip=False):
@@ -217,6 +214,22 @@ class StdoutLog(ContextLog):
     self.stream = stream
     super().__init__()
 
+  def _write_post_mortem(self, etype, value, tb):
+    if etype in (None, SystemExit):
+      return
+    elif etype in (KeyboardInterrupt, bdb.BdbQuit):
+      self.write('error', 'killed by user')
+    else:
+      try:
+        msg = ''.join(traceback.format_exception(etype, value, tb))
+      except Exception as e:
+        msg = '{} (traceback failed: {})'.format(value, e)
+      self.write('error', msg)
+
+  def _init_context(self, stack):
+    stack.push(self._write_post_mortem)
+    super()._init_context(stack)
+
   def _mkstr(self, level, text):
     return ' > '.join(self._context + ([text] if text is not None else []))
 
@@ -231,7 +244,8 @@ class StdoutLog(ContextLog):
 
   @contextlib.contextmanager
   def open(self, filename, mode, level, exists):
-    yield _devnull(filename)
+    with _devnull(filename, mode) as f:
+      yield f
     self.write(level, filename)
 
 class RichOutputLog(StdoutLog):
@@ -248,9 +262,9 @@ class RichOutputLog(StdoutLog):
     # Progress update interval in seconds.
     self._progressinterval = progressinterval or getattr(config, 'progressinterval', 0.1)
 
-  def __enter__(self):
-    self.callback(print, end='\033[K', file=self.stream) # clear the progress line
-    return super().__enter__()
+  def _init_context(self, stack):
+    stack.callback(print, end='\033[K', file=self.stream) # clear the progress line
+    super()._init_context(stack)
 
   def _mkstr(self, level, text):
     if text is not None:
@@ -291,8 +305,8 @@ class HtmlLog(ContextTreeLog):
     self._funcargs = funcargs
     super().__init__()
 
-  def __enter__(self):
-    self._open = self.enter_context(_makedirs(self._outdir, exist_ok=True))
+  def _init_context(self, stack):
+    self._open = stack.enter_context(_makedirs(self._outdir, exist_ok=True))
     # Copy dependencies.
     paths = {}
     for filename in 'favicon.png', 'viewer.css', 'viewer.js':
@@ -302,7 +316,7 @@ class HtmlLog(ContextTreeLog):
         dst.write(data)
       paths[filename.replace('.', '_')] = dst.name
     # Write header.
-    self._file = self.enter_context(self._open('log.html', 'w', exists='rename'))
+    self._file = stack.enter_context(self._open('log.html', 'w', exists='rename'))
     self._print('<!DOCTYPE html>')
     self._print('<html>')
     self._print(HTMLHEAD.format(title=html.escape(self._title), **paths))
@@ -319,8 +333,9 @@ class HtmlLog(ContextTreeLog):
       for name, value, annotation in self._funcargs:
         self._print(('  <li>{}={}<span class="annotation">{}</span></li>' if annotation is not inspect.Parameter.empty else '<li>{}={}</li>').format(*(html.escape(str(v)) for v in (name, value, annotation))))
       self._print('</ul>')
-    self.callback(self._print, '</div></body></html>')
-    return super().__enter__()
+    stack.callback(self._print, '</div></body></html>')
+    stack.push(self._write_post_mortem)
+    return super()._init_context(stack)
 
   def _print(self, *args, flush=False):
     print(*args, file=self._file)
@@ -338,10 +353,21 @@ class HtmlLog(ContextTreeLog):
       text = html.escape(text)
     self._print('<div class="item" data-loglevel="{}">{}</div>'.format(LEVELS.index(level), text), flush=True)
 
-  def write_post_mortem(self, etype, value, tb):
+  def _write_post_mortem(self, etype, value, tb):
     'write exception nfo to html log'
 
-    super().write_post_mortem(etype, value, tb)
+    if etype in (None, SystemExit):
+      return
+    if etype in (KeyboardInterrupt, bdb.BdbQuit):
+      self.write('error', 'killed by user')
+      return
+
+    try:
+      msg = ''.join(traceback.format_exception(etype, value, tb))
+    except Exception as e:
+      msg = '{} (traceback failed: {})'.format(value, e)
+    self.write('error', msg)
+
     _fmt = lambda obj: '=' + ''.join(s.strip() for s in repr(obj).split('\n'))
     self._print('<div class="post-mortem">')
     self._print('EXHAUSTIVE STACK TRACE')
@@ -372,11 +398,24 @@ class IndentLog(ContextTreeLog):
     self._progressinterval = progressinterval or getattr(config, 'progressinterval', 1)
     super().__init__()
 
-  def __enter__(self):
-    self._open = self.enter_context(_makedirs(self._outdir, exist_ok=True))
-    self._logfile = self.enter_context(self._open('log.html', 'w', exists='overwrite'))
-    self._progressfile = self.enter_context(self._open('progress.json', 'w', exists='overwrite'))
-    return super().__enter__()
+  def _write_post_mortem(self, etype, value, tb):
+    if etype in (None, SystemExit):
+      return
+    elif etype in (KeyboardInterrupt, bdb.BdbQuit):
+      self.write('error', 'killed by user')
+    else:
+      try:
+        msg = ''.join(traceback.format_exception(etype, value, tb))
+      except Exception as e:
+        msg = '{} (traceback failed: {})'.format(value, e)
+      self.write('error', msg)
+
+  def _init_context(self, stack):
+    self._open = stack.enter_context(_makedirs(self._outdir, exist_ok=True))
+    self._logfile = stack.enter_context(self._open('log.html', 'w', exists='overwrite'))
+    self._progressfile = stack.enter_context(self._open('progress.json', 'w', exists='overwrite'))
+    stack.push(self._write_post_mortem)
+    super()._init_context(stack)
 
   def _print(self, *args, flush=False):
     print(*args, file=self._logfile)
@@ -432,10 +471,10 @@ class TeeLog(Log):
     self.logs = logs
     super().__init__()
 
-  def __enter__(self):
+  def _init_context(self, stack):
     for log in self.logs:
-      self.enter_context(log)
-    return super().__enter__()
+      stack.enter_context(log)
+    super()._init_context(stack)
 
   @contextlib.contextmanager
   def context(self, title, mayskip=False):
@@ -450,8 +489,23 @@ class TeeLog(Log):
 
   @contextlib.contextmanager
   def open(self, filename, mode, level, exists):
+    if mode not in ('w', 'wb'):
+      raise ValueError('invalid mode: {!r}'.format(mode))
     with contextlib.ExitStack() as stack:
-      yield _multistream(stack.enter_context(log.open(filename, mode, level, exists)) for log in self.logs)
+      files = [stack.enter_context(log.open(filename, mode, level, exists)) for log in self.logs]
+      files = list(filter(lambda file: not file.devnull, files))
+      if len(files) == 0:
+        yield stack.enter_context(_devnull(filename, mode))
+      elif len(files) == 1:
+        yield files[0]
+      else:
+        f = stack.enter_context(tempfile.NamedTemporaryFile(suffix=filename, mode=mode+'+'))
+        f.devnull = False
+        yield f
+        f.seek(0)
+        data = f.read()
+        for file in files:
+          file.write(data)
 
 class RecordLog(Log):
   '''
@@ -496,12 +550,23 @@ class RecordLog(Log):
     self._appended_contexts = 0
     super().__init__()
 
+  def __enter__(self):
+    self._writethrough_log = _current_log
+    return super().__enter__()
+
+  def __exit__(self, *exc_info):
+    try:
+      del self._writethrough_log
+    except AttributeError:
+      pass
+    return super().__exit__(*exc_info)
+
   @contextlib.contextmanager
   def context(self, title, mayskip=False):
     self._contexts.append(title)
     # We don't append 'entercontext' here.  See `self.__init__`.
     try:
-      with self._old_log.context(title, mayskip):
+      with self._writethrough_log.context(title, mayskip):
         yield
     finally:
       self._contexts.pop()
@@ -510,7 +575,7 @@ class RecordLog(Log):
         self._messages.append(('exitcontext',))
 
   def write(self, level, text):
-    self._old_log.write(level, text)
+    self._writethrough_log.write(level, text)
     from . import parallel
     if not parallel.procid:
       # Append all currently entered contexts that have not been append yet
@@ -522,13 +587,20 @@ class RecordLog(Log):
 
   @contextlib.contextmanager
   def open(self, filename, mode, level, exists):
+    if mode not in ('w', 'wb'):
+      raise ValueError('invalid mode: {!r}'.format(mode))
     for title in self._contexts[self._appended_contexts:]:
       self._messages.append(('entercontext', title))
     self._appended_contexts = len(self._contexts)
-    data = io.BytesIO() if 'b' in mode else io.StringIO()
-    with self._old_log.open(filename, mode, level) as f:
-      yield _multistream([f, data])
-    self._messages.append(('open', filename, mode, level, exists, data.getValue()))
+    with tempfile.NamedTemporaryFile(suffix=filename, mode=mode+'+') as f:
+      f.devnull = False
+      yield f
+      f.seek(0)
+      data = f.read()
+    self._messages.append(('open', filename, mode, level, exists, data))
+    with self._writethrough_log.open(filename, mode, level, exists) as f:
+      if not f.devnull:
+        f.write(data)
 
   def replay(self):
     '''
@@ -555,6 +627,10 @@ class RecordLog(Log):
 # context manager, see `Log` base class.
 _current_log = None
 
+def _set_current_log(new_log):
+  global _current_log
+  _current_log = new_log
+
 # Set a default log instance.
 StdoutLog().__enter__()
 
@@ -569,22 +645,12 @@ def _len(iterable):
 def _print(level, *args):
   return _current_log.write(level, ' '.join(str(arg) for arg in args))
 
-class _multistream(io.IOBase):
-  def __init__(self, streams):
-    self.streams = tuple(streams)
-  def __bool__(self):
-    return any(self.streams)
-  def write(self, data):
-    for stream in self.streams:
-      stream.write(data)
-
-class _devnull(io.IOBase):
-  def __init__(self, name):
-    self.name = name
-  def __bool__(self):
-    return False
-  def write(self, data):
-    pass
+def _devnull(name, mode):
+  if mode not in ('w', 'wb'):
+    raise ValueError('invalid mode: {!r}'.format(mode))
+  f = builtins.open(name, mode, opener=lambda name_, flags: os.open(os.devnull, flags))
+  f.devnull = True
+  return f
 
 class _makedirs:
   def __init__(self, path, exist_ok=False):
@@ -611,11 +677,13 @@ class _makedirs:
       listdir = set(os.listdir(self.path))
       if filename in listdir:
         if exists == 'skip':
-          return _devnull(filename)
+          return _devnull(filename, mode)
         for filename in map('-{}'.join(os.path.splitext(filename)).format, itertools.count(1)):
           if filename not in listdir:
             break
-    return builtins.open(filename, mode, opener=self._open)
+    f = builtins.open(filename, mode, opener=self._open)
+    f.devnull = False
+    return f
 
 ## MODULE-ONLY METHODS
 
@@ -722,8 +790,8 @@ def open(filename, mode, *, level='user', exists='rename'):
       *   ``'rename'``: change the filename by adding the smallest positive
           suffix ``n`` for which ``filename-n.ext`` does not exist.
 
-      *   ``'skip'``: return a dummy file object, which tests as ``False`` to
-          allow content creation to be skipped altogether.
+      *   ``'skip'``: return a dummy file object with attribute ``devnull`` set
+          to ``False`` to allow content creation to be skipped altogether.
   '''
 
   return _current_log.open(filename, mode, level, exists)
