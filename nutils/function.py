@@ -121,30 +121,29 @@ class Evaluable(types.Singleton):
   def serialized(self):
     return zip(self.ordereddeps[1:]+(self,), self.dependencytree[1:])
 
-  def asciitree(self, seen=None):
+  def asciitree(self):
     'string representation'
 
-    if seen is None:
-      seen = []
-    try:
-      index = seen.index(self)
-    except ValueError:
-      pass
-    else:
-      return '%{}'.format(index)
-    asciitree = self._asciitree_str()
     if config.richoutput:
       select = '├ ', '└ '
       bridge = '│ ', '  '
     else:
       select = ': ', ': '
       bridge = '| ', '  '
-    for iarg, arg in enumerate(self.__args):
-      n = iarg >= len(self.__args) - 1
-      asciitree += '\n' + select[n] + (('\n' + bridge[n]).join(arg.asciitree(seen).splitlines()) if isevaluable(arg) else '<{}>'.format(arg))
-    index = len(seen)
-    seen.append(self)
-    return '%{} = {}'.format(index, asciitree)
+    lines = []
+    ordereddeps = list(self.ordereddeps) + [self]
+    pool = [('', len(ordereddeps)-1)] # prefix, object tuples
+    while pool:
+      prefix, n = pool.pop()
+      s = '%{}'.format(n)
+      if prefix:
+        s = prefix[:-2] + select[bridge.index(prefix[-2:])] + s # locally change prefix into selector
+      if ordereddeps[n] is not None:
+        s += ' = ' + ordereddeps[n]._asciitree_str()
+        pool.extend((prefix + bridge[i==0], arg) for i, arg in enumerate(reversed(self.dependencytree[n])))
+        ordereddeps[n] = None
+      lines.append(s)
+    return '\n'.join(lines)
 
   def _asciitree_str(self):
     return str(self)
