@@ -68,9 +68,17 @@ class sphinx(ContextTestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
-    self.tmpdir = stack.enter_context(tempfile.TemporaryDirectory(prefix='nutils'))
+    self.tmpdir = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='nutils')))
 
   def test(self):
-    process = subprocess.run([sys.executable, '-m', 'sphinx', '-n', '-W', '-T', '-b', 'html', 'docs', self.tmpdir], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-    print(process.stdout)
-    self.assertEqual(process.returncode, 0)
+    from sphinx.application import Sphinx
+    app = Sphinx(srcdir=str(root/'docs'),
+                 confdir=str(root/'docs'),
+                 outdir=str(self.tmpdir/'html'),
+                 doctreedir=str(self.tmpdir/'doctree'),
+                 buildername='html',
+                 freshenv=True,
+                 warningiserror=True)
+    app.build()
+    if app.statuscode:
+      self.fail('sphinx build failed with code {}'.format(app.statuscode))
