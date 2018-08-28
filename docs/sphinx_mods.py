@@ -524,4 +524,6 @@ def setup(app):
 
   app.connect('build-finished', remove_generated)
 
+  app.add_stylesheet('mods.css')
+
 # vim: sts=2:sw=2:et
