@@ -121,30 +121,29 @@ class Evaluable(types.Singleton):
   def serialized(self):
     return zip(self.ordereddeps[1:]+(self,), self.dependencytree[1:])
 
-  def asciitree(self, seen=None):
+  def asciitree(self):
     'string representation'
 
-    if seen is None:
-      seen = []
-    try:
-      index = seen.index(self)
-    except ValueError:
-      pass
-    else:
-      return '%{}'.format(index)
-    asciitree = self._asciitree_str()
     if config.richoutput:
       select = '├ ', '└ '
       bridge = '│ ', '  '
     else:
       select = ': ', ': '
       bridge = '| ', '  '
-    for iarg, arg in enumerate(self.__args):
-      n = iarg >= len(self.__args) - 1
-      asciitree += '\n' + select[n] + (('\n' + bridge[n]).join(arg.asciitree(seen).splitlines()) if isevaluable(arg) else '<{}>'.format(arg))
-    index = len(seen)
-    seen.append(self)
-    return '%{} = {}'.format(index, asciitree)
+    lines = []
+    ordereddeps = list(self.ordereddeps) + [self]
+    pool = [('', len(ordereddeps)-1)] # prefix, object tuples
+    while pool:
+      prefix, n = pool.pop()
+      s = '%{}'.format(n)
+      if prefix:
+        s = prefix[:-2] + select[bridge.index(prefix[-2:])] + s # locally change prefix into selector
+      if ordereddeps[n] is not None:
+        s += ' = ' + ordereddeps[n]._asciitree_str()
+        pool.extend((prefix + bridge[i==0], arg) for i, arg in enumerate(reversed(self.dependencytree[n])))
+        ordereddeps[n] = None
+      lines.append(s)
+    return '\n'.join(lines)
 
   def _asciitree_str(self):
     return str(self)
@@ -2060,6 +2059,11 @@ class Sampled(Array):
     index = self.sample.index[i]
     return self.array[index]
 
+  def _derivative(self, var, seen):
+    if isinstance(var, Argument):
+      return Zeros(self.shape+var.shape, self.dtype)
+    raise Exception('cannot take spatial derivative of sampled function')
+
 class Elemwise(Array):
 
   __slots__ = 'data',
@@ -2609,26 +2613,28 @@ class DelayedJacobian(Array):
   known.  The replacing is carried out by :meth:`Evaluable.prepare_eval`.
   '''
 
-  __slots__ = '_geom'
+  __slots__ = '_geom', '_derivativestack'
   __cache__ = 'prepare_eval'
 
   @types.apply_annotations
-  def __init__(self, geom:asarray):
+  def __init__(self, geom:asarray, *derivativestack):
     self._geom = geom
-    super().__init__(args=[geom], shape=[], dtype=float)
+    self._derivativestack = derivativestack
+    super().__init__(args=[geom], shape=[n for var in derivativestack for n in var.shape], dtype=float)
 
   def evalf(self):
     raise Exception('DelayedJacobian should not be evaluated')
 
   def _derivative(self, var, seen):
-    if not iszero(derivative(self._geom, var, seen)):
-      raise NotImplementedError
-    return zeros_like(var)
+    if iszero(derivative(self._geom, var, seen)):
+      return zeros_like(var)
+    return DelayedJacobian(self._geom, *self._derivativestack, var)
 
   @util.positional_only('self')
   def prepare_eval(*args, ndims, **kwargs):
     self, = args
-    return asarray(jacobian(self._geom, ndims)).prepare_eval(ndims=ndims, **kwargs)
+    jac = functools.reduce(derivative, self._derivativestack, asarray(jacobian(self._geom, ndims)))
+    return jac.prepare_eval(ndims=ndims, **kwargs)
 
 class Ravel(Array):
 

@@ -706,3 +706,34 @@ class eval_ast(TestCase):
   def test_unknown_opcode(self):
     with self.assertRaises(ValueError):
       function._eval_ast(('invalid-opcode',), {})
+
+
+@parametrize
+class jacobian(TestCase):
+
+  def setUp(self):
+    self.domain, self.geom = mesh.unitsquare(1, 'square')
+    self.basis = self.domain.basis('std', degree=1)
+    self.arg = function.Argument('dofs', [4])
+    self.v = self.basis.dot(self.arg)
+    self.X = (self.geom[numpy.newaxis,:] * [[0,1],[-self.v,0]]).sum(-1) # X_i = <x_1, -2 x_0>_i
+    self.J = function.J(self.X, None if self.delayed else 2)
+
+  def test_shape(self):
+    self.assertEqual(self.J.shape, ())
+    self.assertEqual(function.derivative(self.J, self.arg).shape, (4,))
+
+  def test_value(self):
+    values = self.domain.sample('uniform', 2).eval(self.J, dofs=[2]*4)
+    numpy.testing.assert_almost_equal(values, [2]*4)
+    values1, values2 = self.domain.sample('uniform', 2).eval([self.J,
+      self.v + self.v.grad(self.geom)[0] * self.geom[0]], dofs=[1,2,3,10])
+    numpy.testing.assert_almost_equal(values1, values2)
+
+  def test_derivative(self):
+    values1, values2 = self.domain.sample('uniform', 2).eval([function.derivative(self.J, self.arg),
+      self.basis + self.basis.grad(self.geom)[:,0] * self.geom[0]], dofs=[1,2,3,10])
+    numpy.testing.assert_almost_equal(values1, values2)
+
+jacobian(delayed=True)
+jacobian(delayed=False)
