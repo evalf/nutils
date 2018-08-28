@@ -423,9 +423,16 @@ class multipatch_L(TestCase):
       nelems={None: 4, (3,6): 8, (4,7): 8})
 
   def test_spline_basis(self):
-    basis = self.domain.basis('spline', degree=2)
-    coeffs = self.domain.elem_eval(basis.sum(0), ischeme='gauss4', separate=False)
-    numpy.testing.assert_array_almost_equal(coeffs, numpy.ones(coeffs.shape))
+    for continuity in (-1, 0):
+      basis = self.domain.basis('spline', degree=2, continuity=continuity)
+      with self.subTest('partition of unity', continuity=continuity):
+        sample = self.domain.sample('bezier', 5)
+        coeffs = sample.eval(basis.sum(0))
+        numpy.testing.assert_array_almost_equal(coeffs, numpy.ones(coeffs.shape))
+      with self.subTest('interpatch continuity', continuity=continuity):
+        sample = self.domain.interfaces['interpatch'].sample('bezier', 5)
+        jump = sample.eval(function.jump(basis))
+        numpy.testing.assert_array_almost_equal(jump, numpy.zeros_like(jump))
 
   def test_nonuniform_spline_basis(self):
     knots_01 = 0, 0.25, 0.5, 0.75, 1
@@ -439,14 +446,17 @@ class multipatch_L(TestCase):
 
   def test_discont_basis(self):
     basis = self.domain.basis('discont', degree=2)
-    coeffs = self.domain.elem_eval(basis.sum(0), ischeme='gauss4', separate=False)
-    numpy.testing.assert_array_almost_equal(coeffs, numpy.ones(coeffs.shape))
+    with self.subTest('partition of unity'):
+      sample = self.domain.sample('bezier', 5)
+      coeffs = sample.eval(basis.sum(0))
+      numpy.testing.assert_array_almost_equal(coeffs, numpy.ones(coeffs.shape))
 
   def test_patch_basis(self):
     patch_index = self.domain.basis('patch').dot([0, 1, 2])
     for ipatch in range(3):
-      vals = self.domain['patch{}'.format(ipatch)].elem_eval(patch_index, ischeme='gauss1')
-      numpy.testing.assert_array_almost_equal(vals, ipatch)
+      with self.subTest(ipatch=ipatch):
+        sample = self.domain['patch{}'.format(ipatch)].sample('gauss', 1)
+        numpy.testing.assert_array_almost_equal(sample.eval(patch_index), ipatch)
 
 
 class elem_eval(TestCase):
