@@ -154,6 +154,9 @@ class Topology(types.Singleton):
       topo = topo.refined
 
   def basis(self, name, *args, **kwargs):
+    '''
+    Create a basis.
+    '''
     if self.ndims == 0:
       return function.asarray([1])
     split = name.split('-', 1)
@@ -677,6 +680,11 @@ class Topology(types.Singleton):
   @property
   @log.title
   def boundary(self):
+    '''
+    :class:`Topology`:
+      The boundary of this topology.
+    '''
+
     belems = []
     for ielem, ioppelems in enumerate(self.connectivity):
       elem = self.elements[ielem]
@@ -1148,6 +1156,9 @@ class StructuredTopology(Topology):
     assert len(self._bnames) == sum(2 for axis in self.axes if axis.isdim and not axis.isperiodic)
     assert all(isinstance(bname,str) for bname in self._bnames)
     super().__init__(len(self.shape))
+
+  def __repr__(self):
+    return '{}<{}>'.format(type(self).__qualname__, 'x'.join(str(axis.j-axis.i)+('p' if axis.isperiodic else '') for axis in self.axes if isinstance(axis, DimAxis)))
 
   def __iter__(self):
     reference = util.product(element.getsimplex(1 if axis.isdim else 0) for axis in self.axes)

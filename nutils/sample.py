@@ -90,6 +90,9 @@ class Sample(types.Singleton):
     self.npoints = sum(p.npoints for p in points)
     self.ndims = points[0].ndims
 
+  def __repr__(self):
+    return '{}<{}D, {} elems, {} points>'.format(type(self).__qualname__, self.ndims, self.nelems, self.npoints)
+
   @log.withcontext
   @util.positional_only('self', 'funcs')
   @util.single_or_multiple
@@ -320,6 +323,9 @@ class Integral(types.Singleton):
     shapes = {integrand.shape for integrand in self._integrands.values()}
     assert len(shapes) == 1, 'incompatible shapes: {}'.format(' != '.join(str(shape) for shape in shapes))
     self.shape, = shapes
+
+  def __repr__(self):
+    return 'Integral<{}>'.format(','.join(map(str, self.shape)))
 
   def eval(self, **kwargs):
     '''Evaluate integral.

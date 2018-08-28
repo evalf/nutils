@@ -451,6 +451,9 @@ def power(arg, n):
   return Power(arg, n)
 
 def dot(a, b, axes=None):
+  '''
+  Contract ``a`` and ``b`` along ``axes``.
+  '''
   if axes is None:
     a = asarray(a)
     b = asarray(b)
@@ -481,7 +484,19 @@ def swapaxes(arg, axis1, axis2):
   return transpose(arg, trans)
 
 class Array(Evaluable):
-  'array function'
+  '''
+  Base class for array valued functions.
+
+  Attributes
+  ----------
+  shape : :class:`tuple` of :class:`int`\s
+      The shape of this array function.
+  ndim : :class:`int`
+      The number of dimensions of this array array function.  Equal to
+      ``len(shape)``.
+  dtype : :class:`int`, :class:`float`
+      The dtype of the array elements.
+  '''
 
   __slots__ = 'shape', 'ndim', 'dtype'
 
@@ -3588,6 +3603,11 @@ def mask(arg, mask, axis=0):
   return Mask(arg, mask, axis)
 
 def J(geometry, ndims=None):
+  '''
+  Return :math:`\sqrt{|J^T J|}` with :math:`J` the gradient of ``geometry`` to
+  the local coordinate system with ``ndims`` dimensions (``localgradient(geom,
+  ndims)``).
+  '''
   if ndims is None:
     return DelayedJacobian(geometry)
   elif ndims < 0:
