@@ -635,3 +635,10 @@ class log_module_funcs(TestCase):
     with self.assertLogs('x > y\n'):
       with nutils.log.context('x'):
         nutils.log.user('y')
+
+  def test_withcontext(self):
+    @nutils.log.withcontext
+    def x():
+      nutils.log.user('y')
+    with self.assertLogs('x > y\n'):
+      x()
