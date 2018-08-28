@@ -568,6 +568,7 @@ method :meth:`Integral.derivative() <nutils.sample.Integral.derivative>` to
 compute the derivative with respect to an :class:`~nutils.function.Argument`,
 returning a new :class:`~nutils.sample.Integral`.
 
+.. console::
     >>> A = res.derivative('lhs').eval()
     >>> f = -res.eval(lhs=numpy.zeros(5))
     >>> A.solve(f)
@@ -617,6 +618,7 @@ array with ``nan`` ('not a number') for every entry for which the optimization
 problem is invariant, or to be precise, where the variation is below
 ``droptol``:
 
+.. console::
     >>> cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
     optimize > constrained 1/5 dofs, optimum value 0.00e+00±1e-15
     >>> cons
@@ -648,8 +650,8 @@ Sampling
 
 Having obtained the coefficient vector that solves the Laplace problem, we are
 now interested in visualizing the function it represents. Nutils does not
-provide its own posts processing functionality, preferring to leave that up to
-the the preference of the user. It does, however, facilitate it, by allowing
+provide its own post processing functionality, leaving that up to the
+preference of the user. It does, however, facilitate it, by allowing
 :class:`~nutils.function.Array` functions to be evaluated in samples. Bundling
 function values and a notion of connectivity, these form a bridge between
 Nutils' world of functions and the discrete realms of `matplotlib`_, VTK, etc.
