@@ -2613,26 +2613,28 @@ class DelayedJacobian(Array):
   known.  The replacing is carried out by :meth:`Evaluable.prepare_eval`.
   '''
 
-  __slots__ = '_geom'
+  __slots__ = '_geom', '_derivativestack'
   __cache__ = 'prepare_eval'
 
   @types.apply_annotations
-  def __init__(self, geom:asarray):
+  def __init__(self, geom:asarray, *derivativestack):
     self._geom = geom
-    super().__init__(args=[geom], shape=[], dtype=float)
+    self._derivativestack = derivativestack
+    super().__init__(args=[geom], shape=[n for var in derivativestack for n in var.shape], dtype=float)
 
   def evalf(self):
     raise Exception('DelayedJacobian should not be evaluated')
 
   def _derivative(self, var, seen):
-    if not iszero(derivative(self._geom, var, seen)):
-      raise NotImplementedError
-    return zeros_like(var)
+    if iszero(derivative(self._geom, var, seen)):
+      return zeros_like(var)
+    return DelayedJacobian(self._geom, *self._derivativestack, var)
 
   @util.positional_only('self')
   def prepare_eval(*args, ndims, **kwargs):
     self, = args
-    return asarray(jacobian(self._geom, ndims)).prepare_eval(ndims=ndims, **kwargs)
+    jac = functools.reduce(derivative, self._derivativestack, asarray(jacobian(self._geom, ndims)))
+    return jac.prepare_eval(ndims=ndims, **kwargs)
 
 class Ravel(Array):
 
