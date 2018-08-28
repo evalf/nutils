@@ -69,17 +69,13 @@ def copy_utime(src, dst):
   os.utime(str(dst), ns=(stat.st_atime_ns, stat.st_mtime_ns))
 
 def generate_examples(app):
-  logger = sphinx.util.logging.getLogger(__name__)
-
   dst_examples = pathlib.Path(app.srcdir)/'examples'
   dst_examples.mkdir(parents=True, exist_ok=True)
 
-  for src in sorted(project_root.glob('examples/*.py')):
-    if src.name == '__init__.py':
-      continue
+  srcs = tuple(f for f in sorted(project_root.glob('examples/*.py')) if f.name != '__init__.py')
+  for src in sphinx.util.status_iterator(srcs, 'generating examples... ', 'purple', len(srcs), app.verbosity):
     name = src.name
     dst = dst_examples/(src.with_suffix('.rst').name)
-    logger.info('generating examples... {}'.format(name))
 
     with dst.open('w') as f_dst:
       print_rst_autogen_header(file=f_dst, src=src)
@@ -253,17 +249,13 @@ def create_log(app, env, node, contnode):
     return refnode
 
 def generate_api(app):
-  logger = sphinx.util.logging.getLogger(__name__)
-
   nutils = project_root/'nutils'
   dst_root = pathlib.Path(app.srcdir)/'nutils'
   dst_root.mkdir(parents=True, exist_ok=True)
 
-  for src in sorted(nutils.glob('**/*.py')):
-    if src == nutils/'__init__.py':
-      continue
+  srcs = tuple(f for f in sorted(nutils.glob('**/*.py')) if f != nutils/'__init__.py')
+  for src in sphinx.util.status_iterator(srcs, 'generating api... ', 'purple', len(srcs), app.verbosity):
     module = '.'.join((src.parent if src.name == '__init__.py' else src.with_suffix('')).relative_to(nutils).parts)
-    logger.info('generating api... {}'.format(module))
     dst = dst_root/(module+'.rst')
     with dst.open('w') as f:
       print_rst_autogen_header(file=f, src=src)
