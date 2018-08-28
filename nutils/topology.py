@@ -2293,7 +2293,7 @@ class MultipatchTopology(Topology):
     else:
       return UnionTopology(patch.topo.getitem(key) for patch in self.patches)
 
-  def basis_spline(self, degree, patchcontinuous=True, knotvalues=None, knotmultiplicities=None):
+  def basis_spline(self, degree, patchcontinuous=True, knotvalues=None, knotmultiplicities=None, *, continuity=-1):
     '''spline from vertices
 
     Create a spline basis with degree ``degree`` per patch.  If
@@ -2371,7 +2371,7 @@ class MultipatchTopology(Topology):
           raise 'ambiguous knot multiplicities for patch {}, dimension {}'.format(ipatch, idim)
         patchknotvalues.append(next(iter(dimknotvalues)))
         patchknotmultiplicities.append(next(iter(dimknotmultiplicities)))
-      patchcoeffs, patchdofmap, patchdofcount = patch.topo._basis_spline(degree, knotvalues=patchknotvalues, knotmultiplicities=patchknotmultiplicities)
+      patchcoeffs, patchdofmap, patchdofcount = patch.topo._basis_spline(degree, knotvalues=patchknotvalues, knotmultiplicities=patchknotmultiplicities, continuity=continuity)
       coeffs.extend(patchcoeffs)
       dofmap.extend(types.frozenarray(dofs+dofcount, copy=False) for dofs in patchdofmap)
       if patchcontinuous:
