@@ -42,7 +42,7 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, types, numpy, numeric, log, config, core, cache, transform, expression, warnings, _
+from . import util, types, numpy, numeric, log, config, cache, transform, expression, warnings, _
 import sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, collections.abc, math
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)

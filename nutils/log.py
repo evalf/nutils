@@ -25,7 +25,7 @@ stdout as well as to an html formatted log file if so configured.
 """
 
 import time, functools, itertools, io, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins, hashlib, sys, tempfile
-from . import core, config, warnings
+from . import config, warnings
 
 LEVELS = 'error', 'warning', 'user', 'info', 'debug' # NOTE this should match the log levels defined in `nutils/_log/viewer.js`
 HTMLHEAD = '''\
