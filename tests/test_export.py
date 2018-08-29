@@ -1,6 +1,25 @@
-from nutils import *
 from . import *
-import os, tempfile
+import os, tempfile, pathlib
+import nutils, numpy
+
+class mplfigure(ContextTestCase):
+
+  def setUpContext(self, stack):
+    super().setUpContext(stack)
+    self.outdir = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory()))
+    stack.enter_context(nutils.log.DataLog(str(self.outdir)))
+
+  def test_autodetect_imagetype(self):
+    for (imagetype, test) in (('jpg', lambda data: self.assertEqual(data[:3], b'\xFF\xD8\xFF')),
+                              ('png', lambda data: self.assertEqual(data[:8], b'\x89\x50\x4E\x47\x0D\x0A\x1A\x0A')),
+                              ('pdf', lambda data: self.assertEqual(data[:4], b'\x25\x50\x44\x46')),
+                              ('svg', lambda data: self.assertRegex(data, b'<svg[^<>]*>'))):
+      with self.subTest(imagetype=imagetype):
+        with nutils.export.mplfigure('test.{}'.format(imagetype)) as fig:
+          ax = fig.add_subplot(111)
+          ax.plot([1,2,3],[1,2,3])
+        with (self.outdir/'test.{}'.format(imagetype)).open('rb') as f:
+          test(f.read())
 
 @parametrize
 class vtk(TestCase):
@@ -96,13 +115,13 @@ class vtk(TestCase):
         raise Exception('not supported: ndims={}, ctype={}, cdims={}'.format(self.ndims, self.ctype, self.cdims))
 
   def test_data(self):
-    with tempfile.TemporaryDirectory() as outdir, log.DataLog(outdir):
+    with tempfile.TemporaryDirectory() as outdir, nutils.log.DataLog(outdir):
       kwargs = {}
       if self.p is not None:
         kwargs['p'] = self.p
       if self.c is not None:
         kwargs['c'] = self.c
-      export.vtk('test', self.tri, self.x, **kwargs)
+      nutils.export.vtk('test', self.tri, self.x, **kwargs)
       with open(os.path.join(outdir, 'test.vtk'), 'rb') as f:
         data = f.read()
     self.assertEqual(data, b''.join(self.data))
