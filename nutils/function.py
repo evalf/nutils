@@ -2006,27 +2006,6 @@ class Sign(Array):
     if iszero(n % 2):
       return ones_like(self)
 
-class OldSampled(Array):
-  'sampled'
-
-  __slots__ = 'data', 'trans'
-
-  @types.apply_annotations
-  def __init__(self, data:types.frozendict, trans:types.strict[TransformChain]=TRANS):
-    self.data = data.copy()
-    self.trans = trans
-    items = iter(self.data.items())
-    trans0, (values0,points0) = next(items)
-    shape = values0.shape[1:]
-    assert all(transi[-1].fromdims == trans0[-1].fromdims and valuesi.shape == pointsi.shape[:1]+shape for transi, (valuesi, pointsi) in items)
-    super().__init__(args=[trans,POINTS], shape=shape, dtype=float)
-
-  def evalf(self, trans, points):
-    (myvals, mypoints), tail = transform.lookup_item(trans, self.data)
-    evalpoints = transform.apply(tail, points)
-    assert mypoints.shape == evalpoints.shape and numpy.equal(mypoints, evalpoints).all(), 'Illegal point set'
-    return myvals
-
 class Sampled(Array):
   '''Convert sampled data to evaluable array.
 
@@ -3289,10 +3268,6 @@ def blocks(arg):
 
 def rootcoords(ndims):
   return ApplyTransforms(PopHead(ndims))
-
-def sampled(data, ndims):
-  warnings.deprecation('function.sampled is deprecated; use domain.sample(...).asfunction instead')
-  return OldSampled(data)
 
 @replace
 def opposite(arg):
