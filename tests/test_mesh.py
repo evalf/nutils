@@ -72,7 +72,7 @@ class gmsh(TestCase):
         numpy.testing.assert_almost_equal(length, exact_length, decimal=10)
 
   def test_interfaces(self):
-    err = self.domain.interfaces.elem_eval(self.geom - function.opposite(self.geom), ischeme='uniform2', separate=False)
+    err = self.domain.interfaces.sample('uniform', 2).eval(self.geom - function.opposite(self.geom))
     numpy.testing.assert_almost_equal(err, 0, decimal=15)
 
   def test_divergence(self):
@@ -80,7 +80,7 @@ class gmsh(TestCase):
     numpy.testing.assert_almost_equal(volumes, 1, decimal=10)
 
   def test_pointeval(self):
-    xy = self.domain.points.elem_eval(self.geom, ischeme='gauss1')
+    xy = self.domain.points.sample('gauss', 1).eval(self.geom)
     self.assertEqual(xy.shape, (2, 2) if self.domain.ndims==2 else (4, 3))
     self.assertTrue(numpy.equal(xy, ([1,0] if self.domain.ndims==2 else [1,0,0])).all())
 
@@ -414,9 +414,9 @@ class gmshrect(TestCase):
         numpy.testing.assert_almost_equal(volumes, 1, decimal=10)
 
   def test_iface(self):
-    ax, ay = self.domain.interfaces['iface'].elem_eval(self.geom, ischeme='uniform1', separate=False).T
-    bx, by = self.domain['left'].boundary['iface'].elem_eval(self.geom, ischeme='uniform1', separate=False).T
-    cx, cy = self.domain['right'].boundary['iface'].elem_eval(self.geom, ischeme='uniform1', separate=False).T
+    ax, ay = self.domain.interfaces['iface'].sample('uniform', 1).eval(self.geom).T
+    bx, by = self.domain['left'].boundary['iface'].sample('uniform', 1).eval(self.geom).T
+    cx, cy = self.domain['right'].boundary['iface'].sample('uniform', 1).eval(self.geom).T
     self.assertTrue(numpy.equal(ax, 1).all())
     self.assertTrue(numpy.equal(bx, 1).all())
     self.assertTrue(numpy.equal(cx, 1).all())
@@ -539,7 +539,7 @@ class gmshperiodic(TestCase):
         numpy.testing.assert_almost_equal(length, exact_length, decimal=10)
 
   def test_interface(self):
-    err = self.domain.interfaces['periodic'].elem_eval(function.opposite(self.geom) - self.geom, ischeme='uniform2', separate=False)
+    err = self.domain.interfaces['periodic'].sample('uniform', 2).eval(function.opposite(self.geom) - self.geom)
     numpy.testing.assert_almost_equal(abs(err)-[0,1], 0, decimal=15)
 
   def test_basis(self):
@@ -678,9 +678,9 @@ class rectilinear(TestCase):
         numpy.testing.assert_almost_equal(length, exact_length, decimal=10)
 
   def test_interface(self):
-    geomerr = self.domain.interfaces.elem_eval(self.geom - function.opposite(self.geom), ischeme='uniform2', separate=False)
+    geomerr = self.domain.interfaces.sample('uniform', 2).eval(self.geom - function.opposite(self.geom))
     numpy.testing.assert_almost_equal(geomerr, 0, decimal=15)
-    normalerr = self.domain.interfaces.elem_eval(self.geom.normal() + function.opposite(self.geom.normal()), ischeme='uniform2', separate=False)
+    normalerr = self.domain.interfaces.sample('uniform', 2).eval(self.geom.normal() + function.opposite(self.geom.normal()))
     numpy.testing.assert_almost_equal(normalerr, 0, decimal=15)
 
   def test_pum(self):
@@ -688,7 +688,7 @@ class rectilinear(TestCase):
       for degree in 1, 2, 3:
         with self.subTest(basistype+str(degree)):
           basis = self.domain.basis(basistype, degree=degree)
-          values = self.domain.interfaces.elem_eval(basis*function.J(self.geom), ischeme='uniform2', separate=False)
+          values = self.domain.interfaces.sample('uniform', 2).eval(basis*function.J(self.geom))
           numpy.testing.assert_almost_equal(values.sum(1), 1)
 
 rectilinear('new', method='newrectilinear')

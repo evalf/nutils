@@ -38,7 +38,7 @@ class check(TestCase):
     numpy.testing.assert_almost_equal(fg1, fg2)
 
   def curvature(self):
-    c = self.domain.boundary.elem_eval(self.geom.curvature(), ischeme='uniform1', separate=False)
+    c = self.domain.boundary.sample('uniform', 1).eval(self.geom.curvature())
     numpy.testing.assert_almost_equal(c, self.curv)
 
   @parametrize.enable_if(lambda curved, **params: not curved)
@@ -46,9 +46,9 @@ class check(TestCase):
     normal = self.geom.normal()
     boundary = self.domain.boundary
     for name, n in zip(['right','top','back'][:self.ndims], numpy.eye(self.ndims)):
-      numpy.testing.assert_almost_equal(boundary[name].elem_eval(normal, ischeme='gauss9', separate=False)-n, 0)
+      numpy.testing.assert_almost_equal(boundary[name].sample('gauss', 9).eval(normal)-n, 0)
     for name, n in zip(['left','bottom','front'][:self.ndims], -numpy.eye(self.ndims)):
-      numpy.testing.assert_almost_equal(boundary[name].elem_eval(normal, ischeme='gauss9', separate=False)-n, 0)
+      numpy.testing.assert_almost_equal(boundary[name].sample('gauss', 9).eval(normal)-n, 0)
 
 check('2d', ndims=2, curved=False)
 check('2dcurved', ndims=2, curved=True)

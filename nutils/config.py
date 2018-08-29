@@ -77,9 +77,9 @@ class Config(types.ModuleType):
 
   .. attribute:: dot
 
-     If ``True``, :meth:`nutils.topology.Topology.elem_eval` and
-     :meth:`nutils.topology.Topology.integrate` log a visualization of the
-     function tree that is being evaluated or integrated.
+     If ``True``, :meth:`nutils.sample.Sample.integrate` and
+     :meth:nutils.sample.Sample.eval` log a visualization of the function tree
+     that is being evaluated or integrated.
 
      Defaults to ``False``.
 

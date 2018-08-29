@@ -177,24 +177,6 @@ class Topology(types.Singleton):
     return sample.Sample(transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
 
   @util.single_or_multiple
-  def elem_eval(self, funcs, ischeme, separate=False, geometry=None, asfunction=False, *, edit=None, title='elem_eval', arguments=None, **kwargs):
-    'element-wise evaluation'
-
-    if geometry is not None:
-      warnings.deprecation('elem_eval will be removed in future, use integrate_elementwise instead')
-      return self.integrate_elementwise(funcs, ischeme=ischeme, geometry=geometry, asfunction=asfunction, edit=edit, arguments=arguments, **kwargs)
-    if kwargs:
-      raise TypeError('elem_eval got unexpected arguments: {}'.format(', '.join(kwargs)))
-    if edit is not None:
-      funcs = [edit(func) for func in funcs]
-    warnings.deprecation('elem_eval will be removed in future, use sample(...).eval instead')
-    sample = self.sample(*element.parse_legacy_ischeme(ischeme))
-    retvals = sample.eval(funcs, **arguments or {})
-    return [sample.asfunction(retval) for retval in retvals] if asfunction \
-      else [[retval[index] for index in sample.index] for retval in retvals] if separate \
-      else retvals
-
-  @util.single_or_multiple
   def integrate_elementwise(self, funcs, *, asfunction=False, geometry=None, **kwargs):
     'element-wise integration'
 
