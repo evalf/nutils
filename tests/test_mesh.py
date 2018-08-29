@@ -669,7 +669,7 @@ class rectilinear(TestCase):
     numpy.testing.assert_almost_equal(volume, 20, decimal=15)
 
   def divergence(self):
-    self.domain.volume_check(self.geom)
+    self.domain.check_boundary(geometry=self.geom)
 
   def test_length(self):
     for group, exact_length in ('right',5), ('left',5), ('top',4), ('bottom',4), ((),18):

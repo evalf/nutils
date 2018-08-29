@@ -491,10 +491,6 @@ class Topology(types.Singleton):
     if numpy.greater(abs(volumes - volume), tol).any():
       print('divergence check failed: {} != {}'.format(volumes, volume))
 
-  def volume_check(self, geometry, ischeme='gauss', degree=1, decimal=15, *, arguments=None):
-    warnings.deprecation('volume_check will be removed in future, us check_boundary instead')
-    self.check_boundary(geometry=geometry, ischeme=ischeme, degree=degree, tol=10**-decimal, arguments=arguments)
-
   def indicator(self, subtopo):
     if isinstance(subtopo, str):
       subtopo = self[subtopo]
