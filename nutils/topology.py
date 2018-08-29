@@ -177,12 +177,9 @@ class Topology(types.Singleton):
     return sample.Sample(transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
 
   @util.single_or_multiple
-  def integrate_elementwise(self, funcs, *, asfunction=False, geometry=None, **kwargs):
+  def integrate_elementwise(self, funcs, *, asfunction=False, **kwargs):
     'element-wise integration'
 
-    if geometry is not None:
-      warnings.deprecation('the `geometry` argument is deprecated, use `d:<geometry>` in expressions or `nutils.function.J(<geometry>)` instead')
-      funcs = [func * function.J(geometry, self.ndims) for func in funcs]
     transforms, ielems = zip(*sorted((elem.transform, ielem) for ielem, elem in enumerate(self)))
     ielem = function.get(ielems, iax=0, item=function.FindTransform(transforms, function.TRANS))
     with matrix.backend('numpy'):
@@ -201,24 +198,18 @@ class Topology(types.Singleton):
     return [integral / area[(slice(None),)+(_,)*(integral.ndim-1)] for integral in integrals]
 
   @util.single_or_multiple
-  def integrate(self, funcs, ischeme='gauss', degree=None, geometry=None, edit=None, *, arguments=None, title='integrate'):
+  def integrate(self, funcs, ischeme='gauss', degree=None, edit=None, *, arguments=None, title='integrate'):
     'integrate functions'
 
     ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
-    if geometry is not None:
-      warnings.deprecation('the `geometry` argument is deprecated, use `d:<geometry>` in expressions or `nutils.function.J(<geometry>)` instead')
-      funcs = [func * function.J(geometry, self.ndims) for func in funcs]
     if edit is not None:
       funcs = [edit(func) for func in funcs]
     return self.sample(ischeme, degree).integrate(funcs, **arguments or {})
 
-  def integral(self, func, ischeme='gauss', degree=None, geometry=None, edit=None):
+  def integral(self, func, ischeme='gauss', degree=None, edit=None):
     'integral'
 
     ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
-    if geometry is not None:
-      warnings.deprecation('the `geometry` argument is deprecated, use `d:<geometry>` in expressions or `nutils.function.J(<geometry>)` instead')
-      func = func * function.J(geometry, self.ndims)
     if edit is not None:
       funcs = edit(func)
     return self.sample(ischeme, degree).integral(func)
