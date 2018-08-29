@@ -3494,9 +3494,10 @@ def cross(arg1, arg2, axis):
 def outer(arg1, arg2=None, axis=0):
   'outer product'
 
-  if arg2 is not None and arg1.ndim != arg2.ndim:
-    warnings.deprecation('varying ndims in function.outer; this will be forbidden in future')
-  arg1, arg2 = _matchndim(arg1, arg2 if arg2 is not None else arg1)
+  if arg2 is None:
+    arg2 = arg1
+  elif arg1.ndim != arg2.ndim:
+    raise ValueError('arg1 and arg2 have different dimensions')
   axis = numeric.normdim(arg1.ndim, axis)
   return expand_dims(arg1,axis+1) * expand_dims(arg2,axis)
 
