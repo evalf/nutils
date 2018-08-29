@@ -92,11 +92,6 @@ class WrapperDummyCache:
     # interchanged without affecting results.
     return hashlib.sha1(b'nutils.cache.WrapperCache\0').digest()
 
-def replace(func):
-  from . import warnings, function
-  warnings.deprecation("'nutils.cache.replace' is moved to 'nutils.function.replace'")
-  return function.replace(func)
-
 _cache = None
 
 @contextlib.contextmanager
