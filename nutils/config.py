@@ -83,20 +83,6 @@ class Config(types.ModuleType):
 
      Defaults to ``False``.
 
-  .. attribute:: imagetype
-
-     A comma-separated list of (file extensions of) image types.
-     :class:`nutils.plot.PyPlot` generates figures for all listed types.
-
-     Defaults to ``'png'``.
-
-     .. deprecated:: 4.0
-
-        Instead of :class:`nutils.plot.PyPlot` the new
-        :func:`nutils.export.mplfigure` helper should be used.  The latter
-        requires a filename with extension and ignores the :attr:`imagetype`
-        attribute.
-
   The following properties are only used in :func:`nutils.cli.run` and
   :func:`nutils.cli.choose`.
 
@@ -211,7 +197,6 @@ sys.modules[__name__] = Config(
   richoutput = False,
   htmloutput = True,
   pdb = False,
-  imagetype = 'png',
   symlink = '',
   dot = False,
   cachedir = 'cache',
