@@ -1985,9 +1985,7 @@ class HierarchicalTopology(Topology):
       Type of basis function as provided by the base topology, with prefix
       ``h-`` (``h-std``, ``h-spline``) for a classical hierarchical basis and
       prefix ``th-`` (``th-std``, ``th-spline``) for a truncated hierarchical
-      basis. For backwards compatibility the ``h-`` prefix is optional, but
-      omitting it triggers a deprecation warning as this behaviour will be
-      removed in future.
+      basis.
     truncation_tolerance : :class:`float` (default 1e-15)
       In order to benefit from the extra sparsity resulting from truncation,
       vanishing polynomials need to be actively identified and removed from the
@@ -1998,15 +1996,14 @@ class HierarchicalTopology(Topology):
     basis : :class:`nutils.function.Array`
     '''
 
-    split = name.split('-', 1)
-    if len(split) != 2 or split[0] not in ('h', 'th'):
-      if name == 'discont':
-        return super().basis(name, *args, **kwargs)
-      warnings.deprecation('hierarchically refined bases will need to be specified using the h- or th- prefix in future')
+    if name.startswith('h-'):
       truncated = False
+      name = name[2:]
+    elif name.startswith('th-'):
+      truncated = True
+      name = name[3:]
     else:
-      name = split[1]
-      truncated = split[0] == 'th'
+      return super().basis(name, *args, **kwargs)
 
     # 1. identify active (supported) and passive (unsupported) basis functions
     ubasis_dofscoeffs = []

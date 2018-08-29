@@ -19,7 +19,7 @@ class hierarchical(TestCase):
     # trimmed [  .  .  .  |]
 
   def test_untrimmed(self, makeplots=False):
-    basis = self.ref2.basis('std', degree=1)
+    basis = self.ref2.basis('h-std', degree=1)
     self.assertEqual(basis.shape, (5,))
     x, y = self.ref2.sample('bezier', 2).eval([self.geom[0], basis])
     self.assertTrue((abs(y - .25 * numpy.array(
@@ -35,7 +35,7 @@ class hierarchical(TestCase):
   def test_trimmed(self, makeplots=False):
     levelset = 1.125 - self.geom[0]
     trimmed = self.ref0.trim(levelset, maxrefine=3).refined_by([self.e2]).refined_by([self.e4])
-    trimbasis = trimmed.basis('std', degree=1)
+    trimbasis = trimmed.basis('h-std', degree=1)
     x, y = trimmed.simplex.sample('bezier', 2).eval([self.geom[0], trimbasis])
     self.assertTrue((abs(y - .125 * numpy.array(
       [[8,0,0],
@@ -293,14 +293,14 @@ class leveltopo(TestCase):
 
   def test_hierarchical(self):
     domain2 = self.domain1.refined_by(self.domain1.elements[:1])
-    basis = domain2.basis('std', degree=1)
+    basis = domain2.basis('h-std', degree=1)
     level = basis.dot((numpy.arange(len(basis))%2)-.5)
     trimtopo = self.domain0.trim(level, maxrefine=2, leveltopo=domain2)
 
   def test_hierarchicalfail(self):
     with self.assertRaises(Exception):
       domain2 = self.domain1.refined_by(self.domain1.elements[:1])
-      basis = domain2.basis('std', degree=1)
+      basis = domain2.basis('h-std', degree=1)
       level = basis.dot((numpy.arange(len(basis))%2)-.5)
       trimtopo = self.domain0.trim(level, maxrefine=1, leveltopo=domain2)
 
