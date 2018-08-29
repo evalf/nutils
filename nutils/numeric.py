@@ -144,10 +144,6 @@ def diagonalize(arg, axis=-1, newaxis=-1):
   diag[:] = arg
   return diagonalized
 
-def eig(A):
-  warnings.deprecation('numeric.eig is deprecated; use numpy.linalg.eig instead')
-  return numpy.linalg.eig(A)
-
 def inv(A):
   '''Matrix inverse.
 
