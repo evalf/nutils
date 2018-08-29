@@ -2478,10 +2478,4 @@ class MultipatchTopology(Topology):
 
     return MultipatchTopology(Patch(patch.topo.refined, patch.verts, patch.boundaries) for patch in self.patches)
 
-# UTILITY FUNCTIONS
-
-def common_refine(topo1, topo2):
-  warnings.deprecation('common_refine(a, b) will be removed in future; use a & b instead')
-  return topo1 & topo2
-
 # vim:sw=2:sts=2:et
