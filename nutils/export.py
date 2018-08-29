@@ -41,16 +41,18 @@ def mplfigure(*args, **kwargs):
       :class:`matplotlib.figure.Figure` object.
   '''
 
+  import matplotlib.figure, matplotlib.backends.backend_agg
   name, = args
-  import matplotlib.backends.backend_agg
   fig = matplotlib.figure.Figure(**kwargs)
-  matplotlib.backends.backend_agg.FigureCanvas(fig) # sets reference via fig.set_canvas
   with log.context(name):
     yield fig
   with log.open(name, 'wb') as f:
     if not f.devnull:
-      fig.savefig(f, format=os.path.splitext(name)[1][1:])
-  fig.set_canvas(None) # break circular reference
+      matplotlib.backends.backend_agg.FigureCanvas(fig) # sets reference via fig.set_canvas
+      try:
+        fig.savefig(f, format=os.path.splitext(name)[1][1:])
+      finally:
+        fig.set_canvas(None) # break circular reference
 
 def triplot(name, points, values=None, *, tri=None, hull=None, cmap='jet', clim=None, linewidth=.1, linecolor='k'):
   if (tri is None) != (values is None):
