@@ -525,8 +525,9 @@ class RecordLog(Log):
       record.replay()
 
   .. Note::
-     Instead of using :class:`RecordLog` and :mod:`pickle` manually, as in
-     above example, we advice to use :class:`nutils.cache.FileCache` instead.
+     Instead of using :class:`RecordLog` and :mod:`pickle` manually, as in the
+     above example, we advice to use :func:`nutils.cache.function` or
+     :class:`nutils.cache.Recursion` instead.
 
   .. Note::
      Exceptions raised while in a :meth:`Log.context` are not recorded.

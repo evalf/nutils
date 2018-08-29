@@ -92,65 +92,6 @@ class WrapperDummyCache:
     # interchanged without affecting results.
     return hashlib.sha1(b'nutils.cache.WrapperCache\0').digest()
 
-class FileCache:
-  'cache'
-
-  def __init__(self, *args):
-    'constructor'
-
-    from . import warnings, config
-    warnings.deprecation("'nutils.cache.FileCache' is deprecated. Use 'nutils.cache.function' or nutils.cache.Recursion' instead.")
-
-    import os, sys, numpy, hashlib, pickle
-    serial = pickle.dumps(args, -1)
-    self.myhash = hash(serial)
-    hexhash = hashlib.md5(serial).hexdigest()
-    cachedir = os.path.join(os.path.expanduser(config.outrootdir), os.path.basename(sys.argv[0]), config.cachedir) # backwards compatibility hack
-    if not os.path.exists(cachedir):
-      os.makedirs(cachedir)
-    path = os.path.join(cachedir, hexhash)
-    if not os.path.isfile(path) or config.recache:
-      log.info('starting new cache:', hexhash)
-      data = open(path, 'wb+')
-      data.write(serial)
-      data.flush()
-    else:
-      log.info('continuing from cache:', hexhash)
-      data = open(path, 'ab+')
-      data.seek(0)
-      recovered_args = pickle.load(data)
-      assert recovered_args == args, 'hash clash'
-    self.data = data
-
-  def __call__(self, func, *args, **kwargs):
-    'call'
-
-    try:
-      import cPickle as pickle
-    except ImportError:
-      import pickle
-    name = func.__name__ + ''.join(' {}'.format(arg) for arg in args) + ''.join(' {}={}'.format(*item) for item in kwargs.items())
-    pos = self.data.tell()
-    try:
-      data = pickle.load(self.data)
-    except EOFError:
-      data = func(*args, **kwargs)
-      self.data.seek(pos)
-      pickle.dump(data, self.data, -1)
-      self.data.flush()
-      msg = 'written to'
-    else:
-      msg = 'loaded from'
-    log.info(msg, 'cache:', name, '[{}b]'.format(self.data.tell()-pos))
-    return data
-
-  def truncate(self):
-    log.info('truncating cache')
-    self.data.truncate()
-
-  def __hash__(self):
-    return self.myhash
-
 def replace(func):
   from . import warnings, function
   warnings.deprecation("'nutils.cache.replace' is moved to 'nutils.function.replace'")
