@@ -690,10 +690,6 @@ class _makedirs:
 
 locals().update({ name: functools.partial(_print, name) for name in LEVELS })
 
-def path(*args):
-  warnings.deprecation("log level 'path' will be removed in the future, please use any other log level instead")
-  return _print('info', *args)
-
 def range(title, *args):
   '''Progress logger identical to built in range'''
 
