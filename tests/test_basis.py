@@ -17,7 +17,7 @@ class basis(TestCase):
   def test_continuity(self):
     funcsp = self.basis
     for regularity in (range(self.degree) if self.btype=='spline' else [0]):
-      elem_jumps = self.domain.interfaces.elem_eval(function.jump(funcsp),ischeme = 'gauss2', separate=False)
+      elem_jumps = self.domain.interfaces.sample('gauss', 2).eval(function.jump(funcsp))
       numpy.testing.assert_almost_equal(elem_jumps,0,decimal=10)
       funcsp = function.grad(funcsp, self.geom)
 
@@ -225,7 +225,7 @@ class unstructured_topology(TestCase):
 
   @parametrize.enable_if(lambda btype, **params: btype != 'lagrange')
   def test_pum_range(self):
-    values = self.domain.elem_eval(self.basis, ischeme='gauss{}'.format(2*self.degree), separate=False)
+    values = self.domain.sample('gauss', 2*self.degree).eval(self.basis)
     self.assertTrue((values > 0-1e-10).all())
     self.assertTrue((values < 1+1e-10).all())
 

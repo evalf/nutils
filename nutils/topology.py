@@ -177,30 +177,9 @@ class Topology(types.Singleton):
     return sample.Sample(transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
 
   @util.single_or_multiple
-  def elem_eval(self, funcs, ischeme, separate=False, geometry=None, asfunction=False, *, edit=None, title='elem_eval', arguments=None, **kwargs):
-    'element-wise evaluation'
-
-    if geometry is not None:
-      warnings.deprecation('elem_eval will be removed in future, use integrate_elementwise instead')
-      return self.integrate_elementwise(funcs, ischeme=ischeme, geometry=geometry, asfunction=asfunction, edit=edit, arguments=arguments, **kwargs)
-    if kwargs:
-      raise TypeError('elem_eval got unexpected arguments: {}'.format(', '.join(kwargs)))
-    if edit is not None:
-      funcs = [edit(func) for func in funcs]
-    warnings.deprecation('elem_eval will be removed in future, use sample(...).eval instead')
-    sample = self.sample(*element.parse_legacy_ischeme(ischeme))
-    retvals = sample.eval(funcs, **arguments or {})
-    return [sample.asfunction(retval) for retval in retvals] if asfunction \
-      else [[retval[index] for index in sample.index] for retval in retvals] if separate \
-      else retvals
-
-  @util.single_or_multiple
-  def integrate_elementwise(self, funcs, *, asfunction=False, geometry=None, **kwargs):
+  def integrate_elementwise(self, funcs, *, asfunction=False, **kwargs):
     'element-wise integration'
 
-    if geometry is not None:
-      warnings.deprecation('the `geometry` argument is deprecated, use `d:<geometry>` in expressions or `nutils.function.J(<geometry>)` instead')
-      funcs = [func * function.J(geometry, self.ndims) for func in funcs]
     transforms, ielems = zip(*sorted((elem.transform, ielem) for ielem, elem in enumerate(self)))
     ielem = function.get(ielems, iax=0, item=function.FindTransform(transforms, function.TRANS))
     with matrix.backend('numpy'):
@@ -219,24 +198,18 @@ class Topology(types.Singleton):
     return [integral / area[(slice(None),)+(_,)*(integral.ndim-1)] for integral in integrals]
 
   @util.single_or_multiple
-  def integrate(self, funcs, ischeme='gauss', degree=None, geometry=None, edit=None, *, arguments=None, title='integrate'):
+  def integrate(self, funcs, ischeme='gauss', degree=None, edit=None, *, arguments=None, title='integrate'):
     'integrate functions'
 
     ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
-    if geometry is not None:
-      warnings.deprecation('the `geometry` argument is deprecated, use `d:<geometry>` in expressions or `nutils.function.J(<geometry>)` instead')
-      funcs = [func * function.J(geometry, self.ndims) for func in funcs]
     if edit is not None:
       funcs = [edit(func) for func in funcs]
     return self.sample(ischeme, degree).integrate(funcs, **arguments or {})
 
-  def integral(self, func, ischeme='gauss', degree=None, geometry=None, edit=None):
+  def integral(self, func, ischeme='gauss', degree=None, edit=None):
     'integral'
 
     ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
-    if geometry is not None:
-      warnings.deprecation('the `geometry` argument is deprecated, use `d:<geometry>` in expressions or `nutils.function.J(<geometry>)` instead')
-      func = func * function.J(geometry, self.ndims)
     if edit is not None:
       funcs = edit(func)
     return self.sample(ischeme, degree).integral(func)
@@ -247,7 +220,7 @@ class Topology(types.Singleton):
     weights = self.project(fun, onto, geometry, **kwargs)
     return onto.dot(weights)
 
-  @log.title
+  @log.withcontext
   def project(self, fun, onto, geometry, ischeme='gauss', degree=None, droptol=1e-12, exact_boundaries=False, constrain=None, verify=None, ptype='lsqr', edit=None, *, arguments=None, **solverargs):
     'L2 projection of function onto function space'
 
@@ -384,7 +357,7 @@ class Topology(types.Singleton):
       n = n[0]
     return self if n <= 0 else self.refined.refine(n-1)
 
-  @log.title
+  @log.withcontext
   def trim(self, levelset, maxrefine, ndivisions=8, name='trimmed', leveltopo=None, *, arguments=None):
     'trim element along levelset'
 
@@ -442,7 +415,7 @@ class Topology(types.Singleton):
   withinterfaces = lambda self, **kwargs: self.withgroups(igroups=kwargs)
   withpoints     = lambda self, **kwargs: self.withgroups(pgroups=kwargs)
 
-  @log.title
+  @log.withcontext
   @util.single_or_multiple
   def elem_project(self, funcs, degree, ischeme=None, check_exact=False, *, arguments=None):
 
@@ -492,11 +465,11 @@ class Topology(types.Singleton):
 
     return extractions
 
-  @log.title
+  @log.withcontext
   def volume(self, geometry, ischeme='gauss', degree=1, *, arguments=None):
     return self.integrate(function.J(geometry, self.ndims), ischeme=ischeme, degree=degree, arguments=arguments)
 
-  @log.title
+  @log.withcontext
   def check_boundary(self, geometry, elemwise=False, ischeme='gauss', degree=1, tol=1e-15, print=print, *, arguments=None):
     if elemwise:
       for elem in self:
@@ -508,10 +481,6 @@ class Topology(types.Singleton):
       print('divergence check failed: {} != 0'.format(zeros))
     if numpy.greater(abs(volumes - volume), tol).any():
       print('divergence check failed: {} != {}'.format(volumes, volume))
-
-  def volume_check(self, geometry, ischeme='gauss', degree=1, decimal=15, *, arguments=None):
-    warnings.deprecation('volume_check will be removed in future, us check_boundary instead')
-    self.check_boundary(geometry=geometry, ischeme=ischeme, degree=degree, tol=10**-decimal, arguments=arguments)
 
   def indicator(self, subtopo):
     if isinstance(subtopo, str):
@@ -678,7 +647,7 @@ class Topology(types.Singleton):
     return extopo, exgeom
 
   @property
-  @log.title
+  @log.withcontext
   def boundary(self):
     '''
     :class:`Topology`:
@@ -700,7 +669,7 @@ class Topology(types.Singleton):
     return UnstructuredTopology(self.ndims-1, belems)
 
   @property
-  @log.title
+  @log.withcontext
   def interfaces(self):
     ielems = []
     for ielem, ioppelems in enumerate(self.connectivity):
@@ -1225,12 +1194,12 @@ class StructuredTopology(Topology):
     return numeric.asobjvector(transform.canonical([root] + trans + updim) for trans in log.iter('canonical', transforms.flat)).reshape(shape)
 
   @property
-  @log.title
+  @log.withcontext
   def _transform(self):
     return self.mktransforms(self.axes, self.root, self.nrefine)
 
   @property
-  @log.title
+  @log.withcontext
   def _opposite(self):
     nbounds = len(self.axes) - self.ndims
     if nbounds == 0:
@@ -1772,7 +1741,7 @@ class SubsetTopology(Topology):
       irefs[iielem] = ielem.reference
     return SubsetTopology(baseinterfaces, irefs)
 
-  @log.title
+  @log.withcontext
   def basis(self, name, *args, **kwargs):
     if isinstance(self.basetopo, HierarchicalTopology):
       warnings.warn('basis may be linearly dependent; a linearly indepent basis is obtained by trimming first, then creating hierarchical refinements')
@@ -1890,7 +1859,7 @@ class HierarchicalTopology(Topology):
     return itemelems
 
   @property
-  @log.title
+  @log.withcontext
   def levels(self):
     levels = [self.basetopo]
     for elem in self:
@@ -1911,7 +1880,7 @@ class HierarchicalTopology(Topology):
     return self.basetopo.hierarchical(elements, precise=True)
 
   @property
-  @log.title
+  @log.withcontext
   def boundary(self):
     'boundary elements'
 
@@ -1929,7 +1898,7 @@ class HierarchicalTopology(Topology):
     return basebtopo.hierarchical(belems, precise=True)
 
   @property
-  @log.title
+  @log.withcontext
   def interfaces(self):
     'interfaces'
 
@@ -1975,7 +1944,7 @@ class HierarchicalTopology(Topology):
         interfaces.append(element.Element(elemedge.reference, elemedge.transform, neighboredge.transform))
     return UnstructuredTopology(self.ndims-1, interfaces)
 
-  @log.title
+  @log.withcontext
   @cache.function
   def basis(self, name, *args, truncation_tolerance=1e-15, **kwargs):
     '''Create hierarchical basis.
@@ -2007,9 +1976,7 @@ class HierarchicalTopology(Topology):
       Type of basis function as provided by the base topology, with prefix
       ``h-`` (``h-std``, ``h-spline``) for a classical hierarchical basis and
       prefix ``th-`` (``th-std``, ``th-spline``) for a truncated hierarchical
-      basis. For backwards compatibility the ``h-`` prefix is optional, but
-      omitting it triggers a deprecation warning as this behaviour will be
-      removed in future.
+      basis.
     truncation_tolerance : :class:`float` (default 1e-15)
       In order to benefit from the extra sparsity resulting from truncation,
       vanishing polynomials need to be actively identified and removed from the
@@ -2020,15 +1987,14 @@ class HierarchicalTopology(Topology):
     basis : :class:`nutils.function.Array`
     '''
 
-    split = name.split('-', 1)
-    if len(split) != 2 or split[0] not in ('h', 'th'):
-      if name == 'discont':
-        return super().basis(name, *args, **kwargs)
-      warnings.deprecation('hierarchically refined bases will need to be specified using the h- or th- prefix in future')
+    if name.startswith('h-'):
       truncated = False
+      name = name[2:]
+    elif name.startswith('th-'):
+      truncated = True
+      name = name[3:]
     else:
-      name = split[1]
-      truncated = split[0] == 'th'
+      return super().basis(name, *args, **kwargs)
 
     # 1. identify active (supported) and passive (unsupported) basis functions
     ubasis_dofscoeffs = []
@@ -2502,11 +2468,5 @@ class MultipatchTopology(Topology):
     'refine'
 
     return MultipatchTopology(Patch(patch.topo.refined, patch.verts, patch.boundaries) for patch in self.patches)
-
-# UTILITY FUNCTIONS
-
-def common_refine(topo1, topo2):
-  warnings.deprecation('common_refine(a, b) will be removed in future; use a & b instead')
-  return topo1 & topo2
 
 # vim:sw=2:sts=2:et

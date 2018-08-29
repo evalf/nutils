@@ -44,7 +44,7 @@ def verify_interfaces(domain, geom, periodic, interfaces=None, elemindicator=Non
   # hypercube and Cinf continuous inside the hypercube.
   if interfaces is None:
     interfaces = domain.interfaces
-  x1, x2, n1, n2 = interfaces.elem_eval([ geom, function.opposite(geom), geom.normal(), function.opposite(geom.normal()) ], 'gauss2', separate=False)
+  x1, x2, n1, n2 = interfaces.sample('gauss', 2).eval([geom, function.opposite(geom), geom.normal(), function.opposite(geom.normal())])
   if not periodic:
     numpy.testing.assert_array_almost_equal(x1, x2)
   numpy.testing.assert_array_almost_equal(n1, -n2)
@@ -70,10 +70,14 @@ class elem_project(TestCase):
     splinebasis = topo.basis('spline', degree=self.degree)
     bezierbasis = topo.basis('spline', degree=self.degree, knotmultiplicities=[numpy.array([self.degree+1]+[self.degree]*(n-1)+[self.degree+1]) for n in topo.shape])
 
-    splinevals, beziervals = topo.elem_eval([splinebasis,bezierbasis], ischeme='uniform2', separate=True)
+    sample = topo.sample('uniform', 2)
+    splinevals, beziervals = sample.eval([splinebasis,bezierbasis])
     sextraction = topo.elem_project(splinebasis, degree=self.degree, check_exact=True)
     bextraction = topo.elem_project(bezierbasis, degree=self.degree, check_exact=True)
-    for svals, (sien,sext), bvals, (bien,bext) in zip(splinevals,sextraction,beziervals,bextraction):
+    self.assertEqual(len(sample.index), len(sextraction))
+    self.assertEqual(len(sample.index), len(bextraction))
+    for index, (sien,sext), (bien,bext) in zip(sample.index,sextraction,bextraction):
+      svals, bvals = splinevals[index], beziervals[index]
       sien, bien = sien[0][0], bien[0][0]
       self.assertEqual(len(sien), len(bien))
       self.assertEqual(len(sien), sext.shape[0])
@@ -101,7 +105,7 @@ class structure2d(TestCase):
       bnd = domain.boundary[grp]
       # DISABLED: what does this check? -GJ 14/07/28
       #verify_connectivity(bnd.structure, geom)
-      xn = bnd.elem_eval(geom.dotnorm(geom), ischeme='gauss1', separate=False)
+      xn = bnd.sample('gauss', 1).eval(geom.dotnorm(geom))
       numpy.testing.assert_array_less(0, xn, 'inward pointing normals')
 
   def test_interfaces(self):
@@ -384,12 +388,12 @@ class multipatch_hyperrect(TestCase):
 
   def test_spline_basis(self):
     basis = self.domain.basis('spline', degree=2)
-    coeffs = self.domain.elem_eval(basis.sum(0), ischeme='gauss4', separate=False)
+    coeffs = self.domain.sample('gauss', 4).eval(basis.sum(0))
     numpy.testing.assert_array_almost_equal(coeffs, numpy.ones(coeffs.shape))
 
   def test_discont_basis(self):
     basis = self.domain.basis('discont', degree=2)
-    coeffs = self.domain.elem_eval(basis.sum(0), ischeme='gauss4', separate=False)
+    coeffs = self.domain.sample('gauss', 4).eval(basis.sum(0))
     numpy.testing.assert_array_almost_equal(coeffs, numpy.ones(coeffs.shape))
 
   def test_boundaries(self):
@@ -457,44 +461,3 @@ class multipatch_L(TestCase):
       with self.subTest(ipatch=ipatch):
         sample = self.domain['patch{}'.format(ipatch)].sample('gauss', 1)
         numpy.testing.assert_array_almost_equal(sample.eval(patch_index), ipatch)
-
-
-class elem_eval(TestCase):
-
-  def setUp(self):
-    self.domain, self.geom = mesh.rectilinear([[0,1,2],[0,1,2]])
-
-  def test_separate(self):
-    retvals = self.domain.elem_eval([self.geom[0], self.geom[1]], ischeme='bezier3', separate=True)
-    self.assertEqual(len(retvals), 2)
-    for arrays in retvals:
-      self.assertIsInstance(arrays, list)
-      self.assertEqual(len(arrays), 4)
-      for array in arrays:
-        self.assertTrue(numeric.isarray(array))
-        self.assertEqual(array.shape, (9,))
-
-  def test_noseparate(self):
-    retvals = self.domain.elem_eval([self.geom[0], self.geom[1]], ischeme='bezier3', separate=False)
-    self.assertEqual(len(retvals), 2)
-    for array in retvals:
-      self.assertTrue(numeric.isarray(array))
-      self.assertEqual(array.shape, (36,))
-
-  def test_asfunction(self):
-    x, y = self.domain.elem_eval([self.geom[0], self.geom[1]], ischeme='gauss3', asfunction=True)
-    err = self.domain.integrate((x-self.geom[0])**2+(y-self.geom[1])**2, ischeme='gauss3')
-    self.assertEqual(err, 0)
-    with self.assertRaises(function.EvaluationError):
-      self.domain.integrate(x, ischeme='gauss4')
-
-  def test_failures(self):
-    f = function.inverse(function.Guard(function.diagonalize(self.geom))) # fails at x=0 and y=0
-    arrays = self.domain.elem_eval(f, ischeme='bezier3', separate=True)
-    self.assertIsInstance(arrays, list)
-    self.assertEqual(len(arrays), 4)
-    isnan = numpy.zeros((4, 4), dtype=bool) # boolean matrix marking all failing bezier points
-    isnan[0,:] = True
-    isnan[:,0] = True
-    for i, array in enumerate(arrays):
-      self.assertTrue(numpy.all(numpy.isnan(array).any(axis=(1,2)).reshape(3,3) == isnan[i//2:,i%2:][:3,:3]))

@@ -18,8 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from . import config, log, util, warnings
-import contextlib, numpy
+from . import log, util, warnings
+import contextlib, numpy, os
 
 @contextlib.contextmanager
 @util.positional_only('name')
@@ -27,36 +27,32 @@ def mplfigure(*args, **kwargs):
   '''Matplotlib figure context, convenience function.
 
   Returns a :class:`matplotlib.figure.Figure` object suitable for
-  `object-oriented plotting`_. Upon exit the result is saved using the
-  agg-backend in all formats configured via :attr:`nutils.config.imagetype`,
-  and the resulting filenames written to log.
+  `object-oriented plotting`_. Upon exit the result is logged via
+  :func:`nutils.log.open`.
 
   .. _`object-oriented plotting`: https://matplotlib.org/gallery/api/agg_oo_sgskip.html
 
   Args
   ----
   name : :class:`str`
-      The filename (without extension) of the resulting figure(s)
+      The filename of the resulting figure.
   **kwargs :
       Keyword arguments are passed on unchanged to the constructor of the
       :class:`matplotlib.figure.Figure` object.
   '''
 
+  import matplotlib.figure, matplotlib.backends.backend_agg
   name, = args
-  import matplotlib.backends.backend_agg
   fig = matplotlib.figure.Figure(**kwargs)
-  matplotlib.backends.backend_agg.FigureCanvas(fig) # sets reference via fig.set_canvas
   with log.context(name):
     yield fig
-  if '.' in name:
-    names_formats = [(name, name.split('.')[-1])]
-  else:
-    warnings.deprecation('`config.imagetype` is deprecated. Please pass a filename with extension, e.g. {!r}.'.format(name+'.png'))
-    names_formats = [(name+'.'+fmt, fmt) for fmt in config.imagetype.split(',')]
-  for name, fmt in names_formats:
-    with log.open(name, 'wb') as f:
-      fig.savefig(f, format=fmt)
-  fig.set_canvas(None) # break circular reference
+  with log.open(name, 'wb') as f:
+    if not f.devnull:
+      matplotlib.backends.backend_agg.FigureCanvas(fig) # sets reference via fig.set_canvas
+      try:
+        fig.savefig(f, format=os.path.splitext(name)[1][1:])
+      finally:
+        fig.set_canvas(None) # break circular reference
 
 def triplot(name, points, values=None, *, tri=None, hull=None, cmap='jet', clim=None, linewidth=.1, linecolor='k'):
   if (tri is None) != (values is None):

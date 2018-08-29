@@ -25,7 +25,7 @@ stdout as well as to an html formatted log file if so configured.
 """
 
 import time, functools, itertools, io, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins, hashlib, sys, tempfile
-from . import core, config, warnings
+from . import config, warnings
 
 LEVELS = 'error', 'warning', 'user', 'info', 'debug' # NOTE this should match the log levels defined in `nutils/_log/viewer.js`
 HTMLHEAD = '''\
@@ -525,8 +525,9 @@ class RecordLog(Log):
       record.replay()
 
   .. Note::
-     Instead of using :class:`RecordLog` and :mod:`pickle` manually, as in
-     above example, we advice to use :class:`nutils.cache.FileCache` instead.
+     Instead of using :class:`RecordLog` and :mod:`pickle` manually, as in the
+     above example, we advice to use :func:`nutils.cache.function` or
+     :class:`nutils.cache.Recursion` instead.
 
   .. Note::
      Exceptions raised while in a :meth:`Log.context` are not recorded.
@@ -689,10 +690,6 @@ class _makedirs:
 
 locals().update({ name: functools.partial(_print, name) for name in LEVELS })
 
-def path(*args):
-  warnings.deprecation("log level 'path' will be removed in the future, please use any other log level instead")
-  return _print('info', *args)
-
 def range(title, *args):
   '''Progress logger identical to built in range'''
 
@@ -738,26 +735,13 @@ def count(title, start=0, step=1):
 def title(f): # decorator
   '''Decorator, adds title argument with default value equal to the name of the
   decorated function, unless argument already exists. The title value is used
-  in a static log context that is destructed with the function frame.'''
+  in a static log context that is destructed with the function frame.
 
-  assert getattr(f, '__self__', None) is None, 'cannot decorate bound instance method'
-  default = f.__name__
-  argnames = f.__code__.co_varnames[:f.__code__.co_argcount]
-  if 'title' in argnames:
-    index = argnames.index('title')
-    if index >= len(argnames) - len(f.__defaults__ or []):
-      default = f.__defaults__[index - len(argnames)]
-    gettitle = lambda args, kwargs: args[index] if index < len(args) else kwargs.get('title', default)
-  else:
-    gettitle = lambda args, kwargs: kwargs.pop('title', default)
-  @functools.wraps(f)
-  def wrapped(*args, **kwargs):
-    title = gettitle(args, kwargs)
-    if title != default:
-      warnings.deprecation('title argument will be removed in future')
-    with _current_log.context(title):
-      return f(*args, **kwargs)
-  return wrapped
+  .. deprecated:: 5.0
+  '''
+
+  warnings.deprecation('title will be removed in future, use withcontext instead')
+  return withcontext(f)
 
 def context(title, mayskip=False):
   return _current_log.context(title, mayskip)

@@ -825,7 +825,7 @@ class Cone(Reference):
         trans = transform.Square((self.etrans.apply(self.edgeref.vertices) - self.tip).T, self.tip)
         return points.TransformPoints(getsimplex(self.ndims).getpoints(ischeme, degree), trans)
       epoints = self.edgeref.getpoints('gauss', degree)
-      tx, tw = gauss(degree + self.ndims - 1)
+      tx, tw = points.gauss((degree + self.ndims - 1)//2)
       wx = tx**(self.ndims-1) * tw * self.extnorm * self.height
       return points.CoordsWeightsPoints((tx[:,_,_] * (self.etrans.apply(epoints.coords)-self.tip)[_,:,:] + self.tip).reshape(-1, self.ndims), (epoints.weights[_,:] * wx[:,_]).ravel())
     if ischeme == 'vtk' and self.nverts == 5 and self.ndims==3: # pyramid
@@ -1132,10 +1132,6 @@ class MosaicReference(Reference):
 
 
 ## UTILITY FUNCTIONS
-
-def gauss(degree):
-  warnings.deprecation('element.gauss(n) is deprecated; use points.gauss(n//2) instead')
-  return points.gauss(degree//2)
 
 def parse_legacy_ischeme(ischeme):
   matches = list(map(re.compile('^([a-zA-Z]+)(.*)$').match, ischeme.split('*')))

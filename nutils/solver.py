@@ -613,7 +613,7 @@ impliciteuler = functools.partial(thetamethod, theta=1)
 cranknicolson = functools.partial(thetamethod, theta=0.5)
 
 
-@log.title
+@log.withcontext
 def optimize(target:types.strictstr, functional:sample.strictintegral, *, newtontol:types.strictfloat=0., arguments:argdict={}, **kwargs):
   '''find the minimizer of a given functional
 

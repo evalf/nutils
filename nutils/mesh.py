@@ -31,7 +31,7 @@ import os, itertools, pathlib
 
 # MESH GENERATORS
 
-@log.title
+@log.withcontext
 def rectilinear(richshape, periodic=(), name='rect'):
   'rectilinear mesh'
 
@@ -101,7 +101,7 @@ def newrectilinear(nodes, periodic=None, bnames=[['left','right'],['bottom','top
     geom = function.concatenate(function.bifurcate(geom,geomi))
   return domain, geom
 
-@log.title
+@log.withcontext
 def multipatch(patches, nelems, patchverts=None, name='multipatch'):
   '''multipatch rectilinear mesh generator
 
@@ -305,7 +305,7 @@ def multipatch(patches, nelems, patchverts=None, name='multipatch'):
 
   return topo, geom
 
-@log.title
+@log.withcontext
 def gmsh(fname, name='gmsh'):
   """Gmsh parser
 
@@ -531,27 +531,6 @@ def fromfunc(func, nelems, ndims, degree=1):
   funcsp = topo.basis('spline', degree=degree).vector(ndims)
   coords = topo.projection(func, onto=funcsp, coords=ref, exact_boundaries=True)
   return topo, coords
-
-def demo(xmin=0, xmax=1, ymin=0, ymax=1):
-  'demo triangulation of a rectangle'
-
-  warnings.deprecation('mesh.demo will be removed in future, use mesh.unitsquare instead')
-
-  phi = numpy.arange(1.5, 13) * (2*numpy.pi) / 12
-  P = numpy.array([numpy.cos(phi), numpy.sin(phi)])
-  P /= abs(P).max(axis=0)
-  phi = numpy.arange(1, 9) * (2*numpy.pi) / 8
-  Q = numpy.array([numpy.cos(phi), numpy.sin(phi)])
-  Q /= 2 * numpy.sqrt(abs(Q).max(axis=0) / numpy.sqrt(2))
-  R = numpy.zeros([2,1])
-
-  coords = [.5*(xmin+xmax),.5*(ymin+ymax)] + [.5*(xmax-xmin),.5*(ymax-ymin)] * numpy.round(numpy.hstack([P,Q,R]).T * 2**5) / 2**5
-  simplices = numpy.sort([[12+(i-i//3)%8, i, (i+1)%12] for i in range(12)] + [[i+1+(i//2), 12+(i+1)%8, 12+i] for i in range(8)] + [[20, 12+i, 12+(i+1)%8] for i in range(8)], axis=1)
-  root = transform.Identifier(2, 'demo')
-  topo = topology.SimplexTopology(simplices, [(root, transform.Simplex(c)) for c in coords[simplices]])
-  belems = [elem.edge(2) for elem in topo.elements[:12]]
-  topo = topo.withboundary(**{name: topology.UnstructuredTopology(1, subbelems) for name, subbelems in (('top',belems[0:3]), ('left',belems[3:6]), ('bottom',belems[6:9]), ('right',belems[9:12]))})
-  return topo, function.rootcoords(2)
 
 def unitsquare(nelems, etype):
   '''Unit square mesh.

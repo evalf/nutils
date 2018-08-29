@@ -298,7 +298,7 @@ class check(TestCase):
       dx = numpy.random.normal(size=x0.shape) * eps
       x = function.Argument('x', x0.shape)
       f = self.op(*(*self.args[:iarg], (x*self.basis).sum(-1), *self.args[iarg+1:]))
-      fx0, fx1, Jx0 = self.domain.elem_eval([f, function.replace_arguments(f, dict(x=x+dx)),function.derivative(f, x)], ischeme='gauss1', arguments=dict(x=x0))
+      fx0, fx1, Jx0 = self.domain.sample('gauss', 1).eval([f, function.replace_arguments(f, dict(x=x+dx)),function.derivative(f, x)], x=x0)
       fx1approx = fx0 + numeric.contract(Jx0, dx, range(Jx0.ndim-dx.ndim, Jx0.ndim))
       if f.dtype in (int, bool):
         self.assertEqual(fx1approx.tolist(), fx1.tolist())
@@ -463,7 +463,8 @@ class sampled(TestCase):
     basis = self.domain.basis('std', degree=1)
     numpy.random.seed(0)
     self.f = basis.dot(numpy.random.uniform(size=len(basis)))
-    self.f_sampled = self.domain.elem_eval(self.f, ischeme='gauss2', asfunction=True)
+    sample = self.domain.sample('gauss', 2)
+    self.f_sampled = sample.asfunction(sample.eval(self.f))
 
   def test_isarray(self):
     self.assertTrue(function.isarray(self.f_sampled))
@@ -493,11 +494,11 @@ class piecewise(TestCase):
       self.f = function.piecewise(x, [.2,.8], 1, function.sin(x), x**2)
 
   def test_evalf(self):
-    f_ = self.domain.elem_eval(self.f, ischeme='uniform4', separate=False) # x=.125, .375, .625, .875
+    f_ = self.domain.sample('uniform', 4).eval(self.f) # x=.125, .375, .625, .875
     assert numpy.equal(f_, [1, numpy.sin(.375), numpy.sin(.625), .875**2]).all()
 
   def test_deriv(self):
-    g_ = self.domain.elem_eval(function.grad(self.f, self.geom), ischeme='uniform4', separate=False) # x=.125, .375, .625, .875
+    g_ = self.domain.sample('uniform', 4).eval(function.grad(self.f, self.geom)) # x=.125, .375, .625, .875
     assert numpy.equal(g_, [[0], [numpy.cos(.375)], [numpy.cos(.625)], [2*.875]]).all()
 
 piecewise(partition=False)

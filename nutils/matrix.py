@@ -157,14 +157,6 @@ class Matrix(metaclass=types.CacheMeta):
 
     raise NotImplementedError('cannot export {} to {!r}'.format(self.__class__.__name__, form))
 
-  def toarray(self):
-    warnings.deprecation('M.toarray is deprecated; use M.export("dense") instead')
-    return self.export('dense')
-
-  def toscipy(self):
-    warnings.deprecation('M.toscipy is deprecated; use scipy.sparse.csr_matrix(M.export("csr"), M.shape) instead')
-    return scipy.sparse.csr_matrix(self.export('csr'), self.shape)
-
   def __repr__(self):
     return '{}<{}x{}>'.format(type(self).__qualname__, *self.shape)
 
@@ -207,7 +199,7 @@ def preparesolvearguments(wrapped):
     else:
       log.info('skipping solver because initial vector is exact')
     return x
-  return log.title(solve)
+  return log.withcontext(solve)
 
 
 ## NUMPY BACKEND
