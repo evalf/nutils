@@ -31,7 +31,7 @@ import os, itertools, pathlib
 
 # MESH GENERATORS
 
-@log.title
+@log.withcontext
 def rectilinear(richshape, periodic=(), name='rect'):
   'rectilinear mesh'
 
@@ -101,7 +101,7 @@ def newrectilinear(nodes, periodic=None, bnames=[['left','right'],['bottom','top
     geom = function.concatenate(function.bifurcate(geom,geomi))
   return domain, geom
 
-@log.title
+@log.withcontext
 def multipatch(patches, nelems, patchverts=None, name='multipatch'):
   '''multipatch rectilinear mesh generator
 
@@ -305,7 +305,7 @@ def multipatch(patches, nelems, patchverts=None, name='multipatch'):
 
   return topo, geom
 
-@log.title
+@log.withcontext
 def gmsh(fname, name='gmsh'):
   """Gmsh parser
 

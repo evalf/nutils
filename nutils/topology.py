@@ -247,7 +247,7 @@ class Topology(types.Singleton):
     weights = self.project(fun, onto, geometry, **kwargs)
     return onto.dot(weights)
 
-  @log.title
+  @log.withcontext
   def project(self, fun, onto, geometry, ischeme='gauss', degree=None, droptol=1e-12, exact_boundaries=False, constrain=None, verify=None, ptype='lsqr', edit=None, *, arguments=None, **solverargs):
     'L2 projection of function onto function space'
 
@@ -384,7 +384,7 @@ class Topology(types.Singleton):
       n = n[0]
     return self if n <= 0 else self.refined.refine(n-1)
 
-  @log.title
+  @log.withcontext
   def trim(self, levelset, maxrefine, ndivisions=8, name='trimmed', leveltopo=None, *, arguments=None):
     'trim element along levelset'
 
@@ -442,7 +442,7 @@ class Topology(types.Singleton):
   withinterfaces = lambda self, **kwargs: self.withgroups(igroups=kwargs)
   withpoints     = lambda self, **kwargs: self.withgroups(pgroups=kwargs)
 
-  @log.title
+  @log.withcontext
   @util.single_or_multiple
   def elem_project(self, funcs, degree, ischeme=None, check_exact=False, *, arguments=None):
 
@@ -492,11 +492,11 @@ class Topology(types.Singleton):
 
     return extractions
 
-  @log.title
+  @log.withcontext
   def volume(self, geometry, ischeme='gauss', degree=1, *, arguments=None):
     return self.integrate(function.J(geometry, self.ndims), ischeme=ischeme, degree=degree, arguments=arguments)
 
-  @log.title
+  @log.withcontext
   def check_boundary(self, geometry, elemwise=False, ischeme='gauss', degree=1, tol=1e-15, print=print, *, arguments=None):
     if elemwise:
       for elem in self:
@@ -678,7 +678,7 @@ class Topology(types.Singleton):
     return extopo, exgeom
 
   @property
-  @log.title
+  @log.withcontext
   def boundary(self):
     '''
     :class:`Topology`:
@@ -700,7 +700,7 @@ class Topology(types.Singleton):
     return UnstructuredTopology(self.ndims-1, belems)
 
   @property
-  @log.title
+  @log.withcontext
   def interfaces(self):
     ielems = []
     for ielem, ioppelems in enumerate(self.connectivity):
@@ -1225,12 +1225,12 @@ class StructuredTopology(Topology):
     return numeric.asobjvector(transform.canonical([root] + trans + updim) for trans in log.iter('canonical', transforms.flat)).reshape(shape)
 
   @property
-  @log.title
+  @log.withcontext
   def _transform(self):
     return self.mktransforms(self.axes, self.root, self.nrefine)
 
   @property
-  @log.title
+  @log.withcontext
   def _opposite(self):
     nbounds = len(self.axes) - self.ndims
     if nbounds == 0:
@@ -1772,7 +1772,7 @@ class SubsetTopology(Topology):
       irefs[iielem] = ielem.reference
     return SubsetTopology(baseinterfaces, irefs)
 
-  @log.title
+  @log.withcontext
   def basis(self, name, *args, **kwargs):
     if isinstance(self.basetopo, HierarchicalTopology):
       warnings.warn('basis may be linearly dependent; a linearly indepent basis is obtained by trimming first, then creating hierarchical refinements')
@@ -1890,7 +1890,7 @@ class HierarchicalTopology(Topology):
     return itemelems
 
   @property
-  @log.title
+  @log.withcontext
   def levels(self):
     levels = [self.basetopo]
     for elem in self:
@@ -1911,7 +1911,7 @@ class HierarchicalTopology(Topology):
     return self.basetopo.hierarchical(elements, precise=True)
 
   @property
-  @log.title
+  @log.withcontext
   def boundary(self):
     'boundary elements'
 
@@ -1929,7 +1929,7 @@ class HierarchicalTopology(Topology):
     return basebtopo.hierarchical(belems, precise=True)
 
   @property
-  @log.title
+  @log.withcontext
   def interfaces(self):
     'interfaces'
 
@@ -1975,7 +1975,7 @@ class HierarchicalTopology(Topology):
         interfaces.append(element.Element(elemedge.reference, elemedge.transform, neighboredge.transform))
     return UnstructuredTopology(self.ndims-1, interfaces)
 
-  @log.title
+  @log.withcontext
   @cache.function
   def basis(self, name, *args, truncation_tolerance=1e-15, **kwargs):
     '''Create hierarchical basis.

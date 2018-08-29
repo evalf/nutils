@@ -207,7 +207,7 @@ def preparesolvearguments(wrapped):
     else:
       log.info('skipping solver because initial vector is exact')
     return x
-  return log.title(solve)
+  return log.withcontext(solve)
 
 
 ## NUMPY BACKEND

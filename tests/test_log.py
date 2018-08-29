@@ -603,33 +603,12 @@ class log_module_funcs(TestCase):
           break
         j += 1
 
-  def test_title_noarg(self):
+  def test_title(self):
     @nutils.log.title
     def x():
       nutils.log.user('y')
     with self.assertLogs('x > y\n'):
       x()
-
-  def test_title_arg_default(self):
-    @nutils.log.title
-    def x(title='default'):
-      nutils.log.user('y')
-    with self.assertLogs('default > y\n'):
-      x()
-
-  def test_title_arg_nodefault(self):
-    @nutils.log.title
-    def x(title):
-      nutils.log.user('y')
-    with self.assertLogs('arg > y\n'):
-      x('arg')
-
-  def test_title_varkw(self):
-    @nutils.log.title
-    def x(**kwargs):
-      nutils.log.user('y')
-    with self.assertLogs('arg > y\n'):
-      x(title='arg')
 
   def test_context(self):
     with self.assertLogs('x > y\n'):

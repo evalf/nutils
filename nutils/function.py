@@ -166,7 +166,7 @@ class Evaluable(types.Singleton):
       values.append(retval)
     return values[-1]
 
-  @log.title
+  @log.withcontext
   def graphviz(self):
     'create function graph'
 
