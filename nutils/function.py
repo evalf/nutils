@@ -184,7 +184,7 @@ class Evaluable(types.Singleton):
     lines.append('}')
     imgdata = '\n'.join(lines).encode()
 
-    imgtype = config.imagetype
+    imgtype = 'png'
     imgpath = 'dot_{}.{}'.format(hashlib.sha1(imgdata).hexdigest(), imgtype)
     with log.open(imgpath, 'wb', level='info', exists='skip') as img:
       if not img.devnull:
