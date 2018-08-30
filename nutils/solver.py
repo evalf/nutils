@@ -423,13 +423,13 @@ class minimize(RecursionWithSolve, length=1):
         # We determine A, B, C, D, E and F based on the following constraints:
         #   P(0) = nrg(lhs)
         #   P'(0) = relax res(lhs).dlhs
-        #   P''(0) = relax^2 dlhs.jac(lhs).dlhs
+        #   P''(0) = relax^2 dlhs.jac(lhs).dlhs = -relax^2 (res + shift dlhs).dlhs
         #   P(1) = nrg(lhs+relax*dlhs)
         #   P'(1) = relax res(lhs+relax*dlhs).dlhs
         #   P''(1) = relax^2 dlhs.jac(lhs+relax*dlhs).dlhs
         A = nrg
         B = res.dot(dlhs) * relax
-        C = .5 * jac.matvec(dlhs).dot(dlhs) * relax**2
+        C = -.5 * relax**2 * (res + shift * dlhs).dot(dlhs)
         D = 10 * newnrg - 4 * newres.dot(dlhs) * relax + 0.25 * newjac.matvec(dlhs).dot(dlhs) * relax**2 - 10 * A - 6 * B - 3 * C
         E = 5 * newnrg - newres.dot(dlhs) * relax - 5 * A - 4 * B - 3 * C - 2 * D
         F = newnrg - A - B - C - D - E
