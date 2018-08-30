@@ -387,6 +387,21 @@ class minimize(RecursionWithSolve, length=1):
       nosupp = self.droptol is not None and ~(jac.rowsupp(self.droptol)|self.constrain)
       yield _nan_at(lhs, nosupp), types.attributes(resnorm=resnorm, energy=nrg, relax=relax, shift=0)
 
+    # To minimize the energy in the direction of the search vector we need to
+    # minimize a 5th degree polynomial, which is done by sampling the polynomial
+    # for a range of relaxation values. For this we prepare the array of scales
+    # s[i] = minscale^(1-i/n), with n chosen such that s[i+1] ~= (1+1/32) s[i].
+    n = round(-32 * numpy.log(self.minscale))
+    s = self.minscale**(1-numpy.arange(n-n*numpy.log(self.rebound)/numpy.log(self.minscale)+1)/n)
+
+    # To evaluate the polynomial based on constraints in s=0 and s=1 we prepare
+    # six basis functions such that the first b0(0)=1, b0'(0)=0, b0''(0)=0,
+    # b0(1)=0, b0'(1)=0, b0''(1)=0; the second b1(0)=0, b1'(0)=1, b1''(0)=0,
+    # b1(1)=0, b1'(1)=0, b1''(1)=0; etcetera. Furthermore, because we are
+    # interested in increments/decrements only, we store the resulting diff.
+    dpbasis = numpy.diff([(1-s)**3*(6*s**2+3*s+1), (1-s)**3*(3*s+1)*s, .5*(1-s)**3*s**2,
+      s**3*(6*s**2-15*s+10), s**3*(3*s-4)*(1-s), .5*s**3*(1-s)**2]).T
+
     while resnorm:
       nosupp = self.droptol is not None and ~(jac.rowsupp(self.droptol)|self.constrain)
       dlhs = -jac.solve(res, constrain=self.constrain|nosupp, **self.solveargs)
@@ -420,30 +435,35 @@ class minimize(RecursionWithSolve, length=1):
           log.info('energy {} / {}'.format(newnrg, round(relax, 5)))
           relax *= self.minscale
           continue
-        # To determine optimal relaxation we create a polynomial estimation for the energy:
-        #   P(scale) = A + B scale + C scale^2 + D scale^3 + E scale^4 + F scale^5 ~= nrg(lhs+scale*relax*dlhs)
-        # We determine A, B, C, D, E and F based on the following constraints:
+        # To determine optimal relaxation we create a 5th degree polynomial
+        # estimation for the energy:
+        #   P(scale) ~= nrg(lhs+scale*relax*dlhs)
+        # based on the following constraints:
         #   P(0) = nrg(lhs)
         #   P'(0) = relax res(lhs).dlhs
         #   P''(0) = relax^2 dlhs.jac(lhs).dlhs = -relax^2 (res + shift dlhs).dlhs
         #   P(1) = nrg(lhs+relax*dlhs)
         #   P'(1) = relax res(lhs+relax*dlhs).dlhs
         #   P''(1) = relax^2 dlhs.jac(lhs+relax*dlhs).dlhs
-        p0, p1 = relax**numpy.arange(3) * [
-          [nrg, res.dot(dlhs), -(res + shift * dlhs).dot(dlhs)],
-          [newnrg, newres.dot(dlhs), newjac.matvec(dlhs).dot(dlhs)]]
-        A, B, C = p0 * [1,1,.5]
-        D, E, F = p0.dot([[-10,15,-6],[-6,8,-3],[-1.5,1.5,-.5]]) + p1.dot([[10,-15,6],[-4,7,-3],[.5,-1,.5]])
-        # Minimizing P:
-        #   B + 2 C scale + 3 D scale^2 + 4 E scale^3 + 5 F scale^4 = 0
-        roots = [r.real for r in numpy.roots([5*F,4*E,3*D,2*C,B]) if not r.imag and r > 0 and A+r*(B+r*(C+r*(D+r*(E+r*F)))) < nrg]
-        scale = min(roots) if roots else numpy.inf
-        log.info('energy {:+.1e} / {} with minimum at x{}'.format(newnrg-nrg, round(relax, 5), round(scale, 2)))
-        if scale > self.maxscale:
-          relax *= min(scale, self.rebound)
+        # The optimal relaxation value is determined by finding the smallest
+        # index i for which P(s[i+1]) > P(s[i]). If P(s) if monotonously
+        # decreasing, or if the number of minima is greater than twice the
+        # theoretical maximum (indicating that we decended into numerical
+        # noise) then we set scale to rebound.
+        decreasing = dpbasis.dot([nrg, relax * res.dot(dlhs), -relax**2 * (res+shift*dlhs).dot(dlhs),
+          newnrg, relax * newres.dot(dlhs), relax**2 * newjac.matvec(dlhs).dot(dlhs)]) < 0
+        minima = s[numpy.hstack([True, decreasing]) & numpy.hstack([~decreasing, False])]
+        if 0 < len(minima) < 6:
+          scale = minima[0]
+          msg = 'with minimum at x{}'.format(round(scale, 2))
+        else:
+          scale = self.rebound
+          msg = 'monotonous within search range'
+        log.info('energy {:+.1e} / {}'.format(newnrg-nrg, round(relax, 5)), msg)
+        relax *= scale
+        if scale >= 1 or scale > self.maxscale and newnrg < nrg:
           break
-        relax *= max(scale, self.minscale)
-        if not numpy.isfinite(relax) or relax <= self.failrelax:
+        if relax <= self.failrelax:
           raise SolverError('stuck in local minimum')
       else:
         log.warning('failed to', 'decrease' if newnrg > nrg else 'optimize', 'energy')

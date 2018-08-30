@@ -139,12 +139,12 @@ class finitestrain(TestCase):
     energy = domain.integral(((strain**2).sum([0,1]) + 150*(function.determinant(Geom.grad(geom))-1)**2)*function.J(geom), degree=6)
     nshift = 0
     for iiter, (lhs, info) in enumerate(solver.minimize('dofs', energy, constrain=cons)):
-      self.assertLess(iiter, 39)
+      self.assertLess(iiter, 90)
       if info.shift:
         nshift += 1
       if info.resnorm < self.tol:
         break
-    self.assertEqual(nshift, 3)
+    self.assertEqual(nshift, 60)
 
 
 @parametrize
