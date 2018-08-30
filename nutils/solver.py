@@ -266,18 +266,18 @@ class newton(RecursionWithSolve, length=1):
           relax *= self.minscale
           continue
         # To determine optimal relaxation we create a polynomial estimation for the residual norm:
-        #   P(x) = A + B (x/relax) + C (x/relax)^2 + D (x/relax)^3 ~= |res(lhs+x*dlhs)|^2
+        #   P(scale) = A + B scale + C scale^2 + D scale^3 ~= |res(lhs+scale*relax*dlhs)|^2
         # We determine A, B, C and D based on the following constraints:
         #   P(0) = |res(lhs)|^2
-        #   P'(0) = 2 res(lhs).jac(lhs).dlhs = -2 |res(lhs)|^2
-        #   P(relax) = |res(lhs+relax*dlhs)|^2
-        #   P'(relax) = 2 res(lhs+relax*dlhs).jac(lhs+relax*dlhs).dlhs
+        #   P'(0) = 2 relax res(lhs).jac(lhs).dlhs = -2 relax |res(lhs)|^2
+        #   P(1) = |res(lhs+relax*dlhs)|^2
+        #   P'(1) = 2 relax res(lhs+relax*dlhs).jac(lhs+relax*dlhs).dlhs
         A = resnorm**2
         B = -2 * A * relax
         C = 3 * newresnorm**2 - 2 * numpy.dot(jac.matvec(dlhs)[~self.constrain], res[~self.constrain]) * relax - 3 * A - 2 * B
         D = newresnorm**2 - A - B - C
         # Minimizing P:
-        #   B + 2 C (x/relax) + 3 D (x/relax)^2 = 0 => x/relax = (-C +/- sqrt(C^2 - 3 B D)) / (3 D)
+        #   B + 2 C scale + 3 D scale^2 = 0 => scale = (-C +/- sqrt(C^2 - 3 B D)) / (3 D)
         # Special case 1: largest root is negative
         #   -C / (3 D) + sqrt(C^2 - 3 B D) / abs(3 D) < 0 <=> sqrt(C^2 - 3 B D) < C * sign(D) <=> D < 0 & C < 0
         # Special case 2: smallest root is positive
@@ -419,14 +419,14 @@ class minimize(RecursionWithSolve, length=1):
           relax *= self.minscale
           continue
         # To determine optimal relaxation we create a polynomial estimation for the energy:
-        #   P(x) = A + B (x/relax) + C (x/relax)^2 + D (x/relax)^3 + E (x/relax)^4 + F (x/relax)^5 ~= nrg(lhs+x*dlhs)
+        #   P(scale) = A + B scale + C scale^2 + D scale^3 + E scale^4 + F scale^5 ~= nrg(lhs+scale*relax*dlhs)
         # We determine A, B, C, D, E and F based on the following constraints:
         #   P(0) = nrg(lhs)
-        #   P'(0) = res(lhs).dlhs
-        #   P''(0) = dlhs.jac(lhs).dlhs
-        #   P(relax) = nrg(lhs+relax*dlhs)
-        #   P'(relax) = res(lhs+relax*dlhs).dlhs
-        #   P''(relax) = dlhs.jac(lhs+relax*dlhs).dlhs
+        #   P'(0) = relax res(lhs).dlhs
+        #   P''(0) = relax^2 dlhs.jac(lhs).dlhs
+        #   P(1) = nrg(lhs+relax*dlhs)
+        #   P'(1) = relax res(lhs+relax*dlhs).dlhs
+        #   P''(1) = relax^2 dlhs.jac(lhs+relax*dlhs).dlhs
         A = nrg
         B = res.dot(dlhs) * relax
         C = .5 * jac.matvec(dlhs).dot(dlhs) * relax**2
@@ -434,7 +434,7 @@ class minimize(RecursionWithSolve, length=1):
         E = 5 * newnrg - newres.dot(dlhs) * relax - 5 * A - 4 * B - 3 * C - 2 * D
         F = newnrg - A - B - C - D - E
         # Minimizing P:
-        #   B + 2 C (x/relax) + 3 D (x/relax)^2 + 4 E (x/relax)^3 + 5 F (x/relax)^4 = 0
+        #   B + 2 C scale + 3 D scale^2 + 4 E scale^3 + 5 F scale^4 = 0
         roots = [r.real for r in numpy.roots([5*F,4*E,3*D,2*C,B]) if not r.imag and r > 0 and A+r*(B+r*(C+r*(D+r*(E+r*F)))) < nrg]
         scale = min(roots) if roots else numpy.inf
         log.info('energy {:+.1e} / {} with minimum at x{}'.format(newnrg-nrg, round(relax, 5), round(scale, 2)))
