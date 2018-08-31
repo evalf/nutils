@@ -1,5 +1,5 @@
 from nutils import *
-from . import *
+from nutils.testing import *
 
 @parametrize
 class check(TestCase):

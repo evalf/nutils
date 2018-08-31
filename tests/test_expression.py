@@ -1,5 +1,5 @@
 import nutils.expression
-from . import *
+from nutils.testing import *
 
 _ = lambda arg: (None, arg)
 

@@ -1,5 +1,5 @@
 from nutils import *
-from . import *
+from nutils.testing import *
 import numpy, copy, sys, pickle, subprocess, base64, itertools, os
 
 grid = numpy.linspace(0., 1., 4)

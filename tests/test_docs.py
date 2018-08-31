@@ -1,6 +1,6 @@
 import doctest as _doctest, importlib, os, tempfile, pathlib, functools, warnings, subprocess, sys
 import nutils.log
-from . import *
+from nutils.testing import *
 
 
 class DocTestLog(nutils.log.ContextLog):

@@ -1,6 +1,6 @@
 import sys, os, tempfile, io
 import nutils.cli, nutils.log
-from . import *
+from nutils.testing import *
 
 def main(
   iarg: 'integer' = 1,
