@@ -38,7 +38,7 @@ setup(
   python_requires = '>=3.5',
   install_requires = ['numpy>=1.12'],
   extras_require = dict(
-    docs=['Sphinx>=1.6','scipy>=0.13','matplotlib>=1.3','pillow>2.6'],
+    docs=['Sphinx>=1.6','scipy>=0.13','matplotlib>=1.3'],
     matrix_scipy=['scipy>=0.13'],
     matrix_mkl=['mkl','tbb;platform_system!="Windows"'],
     export_mpl=['matplotlib>=1.3','pillow>2.6'],
