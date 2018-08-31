@@ -295,7 +295,7 @@ class newton(RecursionWithSolve, length=1):
       lhs, resnorm = newlhs, newresnorm
 
 
-class minimize(RecursionWithSolve, length=1):
+class minimize(RecursionWithSolve, length=1, version=1):
   '''iteratively minimize nonlinear functional by gradient descent
 
   Generates targets such that residual approaches 0 using Newton procedure with
