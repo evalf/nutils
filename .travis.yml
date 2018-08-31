@@ -15,7 +15,7 @@ matrix:
       env: FORCE_PYTHON_PKGS=numpy==1.12
     - os: osx
       language: generic
-      env: PYTHON_PKG_URL=https://www.python.org/ftp/python/3.6.4/python-3.6.4-macosx10.6.pkg
+      env: PYTHON_PKG_URL=https://www.python.org/ftp/python/3.7.1/python-3.7.1-macosx10.9.pkg
 before_install:
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then wget -O python.pkg "$PYTHON_PKG_URL"; sudo installer -pkg python.pkg -target /; rm python.pkg; fi
 install:
