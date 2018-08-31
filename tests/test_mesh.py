@@ -1,6 +1,6 @@
 from nutils import *
 import tempfile, pathlib, os
-from . import *
+from nutils.testing import *
 
 class gmsh_init(TestCase):
 

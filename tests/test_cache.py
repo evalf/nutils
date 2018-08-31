@@ -1,5 +1,5 @@
 from nutils import *
-from . import *
+from nutils.testing import *
 import sys, contextlib, tempfile, pathlib, threading
 
 @contextlib.contextmanager

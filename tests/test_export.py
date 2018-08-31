@@ -1,4 +1,4 @@
-from . import *
+from nutils.testing import *
 import os, tempfile, pathlib
 import nutils, numpy
 

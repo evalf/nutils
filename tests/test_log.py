@@ -1,5 +1,5 @@
 import io, tempfile, os, contextlib, pathlib
-from . import *
+from nutils.testing import *
 import nutils.log, nutils.util, nutils.parallel
 
 log_stdout = '''\

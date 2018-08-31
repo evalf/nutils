@@ -1,4 +1,4 @@
-from . import *
+from nutils.testing import *
 import nutils.types
 import inspect, pickle, itertools, ctypes
 import numpy

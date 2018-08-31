@@ -1,6 +1,6 @@
 import numpy
 from nutils import matrix
-from . import *
+from nutils.testing import *
 
 @parametrize
 class solver(TestCase):

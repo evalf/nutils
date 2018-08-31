@@ -1,5 +1,5 @@
 import nutils.config
-from . import *
+from nutils.testing import *
 
 class Config(TestCase):
 
