@@ -22,8 +22,24 @@
 Extensions of the :mod:`unittest` module.
 '''
 
-import unittest, sys, types as builtin_types, operator, contextlib
+import unittest, sys, types as builtin_types, operator, contextlib, importlib
 from . import log
+
+
+def _not_has_module(module):
+  try:
+    importlib.import_module(module)
+  except ImportError:
+    return True
+  else:
+    return False
+
+def requires(*modules):
+  missing = tuple(filter(_not_has_module, modules))
+  if missing:
+    return unittest.skip('missing module{}: {}'.format('s' if len(missing) > 1 else '', ','.join(missing)))
+  else:
+    return lambda func: func
 
 
 class _ParametrizedCollection(type):
