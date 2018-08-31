@@ -427,12 +427,11 @@ class minimize(RecursionWithSolve, length=1):
         #   P(1) = nrg(lhs+relax*dlhs)
         #   P'(1) = relax res(lhs+relax*dlhs).dlhs
         #   P''(1) = relax^2 dlhs.jac(lhs+relax*dlhs).dlhs
-        A = nrg
-        B = res.dot(dlhs) * relax
-        C = -.5 * relax**2 * (res + shift * dlhs).dot(dlhs)
-        D = 10 * newnrg - 4 * newres.dot(dlhs) * relax + 0.25 * newjac.matvec(dlhs).dot(dlhs) * relax**2 - 10 * A - 6 * B - 3 * C
-        E = 5 * newnrg - newres.dot(dlhs) * relax - 5 * A - 4 * B - 3 * C - 2 * D
-        F = newnrg - A - B - C - D - E
+        p0, p1 = relax**numpy.arange(3) * [
+          [nrg, res.dot(dlhs), -(res + shift * dlhs).dot(dlhs)],
+          [newnrg, newres.dot(dlhs), newjac.matvec(dlhs).dot(dlhs)]]
+        A, B, C = p0 * [1,1,.5]
+        D, E, F = p0.dot([[-10,15,-6],[-6,8,-3],[-1.5,1.5,-.5]]) + p1.dot([[10,-15,6],[-4,7,-3],[.5,-1,.5]])
         # Minimizing P:
         #   B + 2 C scale + 3 D scale^2 + 4 E scale^3 + 5 F scale^4 = 0
         roots = [r.real for r in numpy.roots([5*F,4*E,3*D,2*C,B]) if not r.imag and r > 0 and A+r*(B+r*(C+r*(D+r*(E+r*F)))) < nrg]
