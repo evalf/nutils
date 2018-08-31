@@ -6,7 +6,7 @@ environment:
     - PYTHON: "C:\\Python35-x64"
     - PYTHON: "C:\\Python36-x64"
 install:
-  - "%PYTHON%\\python.exe -m pip install --upgrade .[test,mkl] coverage codecov"
+  - "%PYTHON%\\python.exe -m pip install --upgrade .[docs,matrix_scipy,matrix_mkl,export_mpl] coverage codecov"
 build: off
 test_script:
   - "%PYTHON%\\python.exe -m coverage run -m unittest -b"

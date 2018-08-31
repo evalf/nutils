@@ -23,8 +23,6 @@ import os, re
 with open(os.path.join('nutils', '__init__.py')) as f:
   version = next(filter(None, map(re.compile("^version = '([a-zA-Z0-9.]+)'$").match, f))).group(1)
 
-tests_require = ['Sphinx>=1.6','pillow>2.6']
-
 setup(
   name = 'nutils',
   version = version,
@@ -37,13 +35,12 @@ setup(
   long_description = long_description,
   license = 'MIT',
   python_requires = '>=3.5',
-  install_requires = ['numpy>=1.12', 'matplotlib>=1.3', 'scipy>=0.13', 'treelog', 'stickybar'],
-  tests_require = tests_require,
+  install_requires = ['numpy>=1.12', 'treelog', 'stickybar'],
   extras_require = dict(
-    test=tests_require,
-    docs=['Sphinx>=1.6'],
-    mkl=['mkl'],
-    readthedocs=['pillow>2.6'],
+    docs=['Sphinx>=1.6','scipy>=0.13','matplotlib>=1.3','pillow>2.6'],
+    matrix_scipy=['scipy>=0.13'],
+    matrix_mkl=['mkl','tbb;platform_system!="Windows"'],
+    export_mpl=['matplotlib>=1.3','pillow>2.6'],
   ),
   command_options = dict(
     test=dict(test_loader=('setup.py', 'unittest:TestLoader')),

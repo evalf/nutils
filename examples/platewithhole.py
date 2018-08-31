@@ -77,6 +77,7 @@ if __name__ == '__main__':
 
 class test(nutils.testing.TestCase):
 
+  @nutils.testing.requires('matplotlib')
   def test_spline(self):
     err, cons, lhs = main(nelems=4, etype='square', degree=2, btype='spline')
     nutils.numeric.assert_allclose64(err, 'eNpbpd6jCwAEZgGL')
@@ -88,6 +89,7 @@ class test(nutils.testing.TestCase):
       'zi/OGclHzJfOSs45zjDOOSK7z5fPC8+cznzOBd/D3d3RFdAuz+vO+yGg1bnSvdCoz03Pzdz01a'
       'zS3dDLz2zPaQdIRw==')
 
+  @nutils.testing.requires('matplotlib')
   def test_mixed(self):
     err, cons, lhs = main(nelems=4, etype='mixed', degree=2, btype='std')
     nutils.numeric.assert_allclose64(err, 'eNpjU9+jCwACNgEX')
