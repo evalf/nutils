@@ -73,7 +73,7 @@ def main(nrefine = 2,
   # vizualize result
   bezier = domain.sample('bezier', 9)
   X, stressxx = bezier.eval(['X_i', 'stress_00'] @ ns, lhs=lhs)
-  nutils.export.triplot('stressxx.jpg', X, stressxx, tri=bezier.tri, hull=bezier.hull, clim=(numpy.nanmin(stressxx), numpy.nanmax(stressxx)))
+  nutils.export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull, clim=(numpy.nanmin(stressxx), numpy.nanmax(stressxx)))
 
   # evaluate error
   err = domain.integral('<du_k du_k, du_i,j du_i,j>_n d:x' @ ns, degree=9).eval(lhs=lhs)**.5

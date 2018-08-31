@@ -69,7 +69,7 @@ def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
 
   bezier = domain.sample('bezier', 9)
   x, u, p, stream = bezier.eval(['x_i', 'sqrt(u_i u_i)', 'p', 'stream'] @ ns, **arguments)
-  with nutils.export.mplfigure('flow.jpg') as fig: # plot velocity as field, pressure as contours, streamlines as dashed
+  with nutils.export.mplfigure('flow.png') as fig: # plot velocity as field, pressure as contours, streamlines as dashed
     ax = fig.add_axes([.1,.1,.8,.8], yticks=[], aspect='equal')
     import matplotlib.collections
     ax.add_collection(matplotlib.collections.LineCollection(x[bezier.hull], colors='w', linewidths=.5, alpha=.2))

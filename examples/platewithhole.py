@@ -53,7 +53,7 @@ def main(nelems: 'number of elementsa long edge' = 9,
 
   bezier = domain.sample('bezier', 5)
   X, stressxx = bezier.eval(['X_i', 'stress_00'] @ ns, lhs=lhs)
-  nutils.export.triplot('stressxx.jpg', X, stressxx, tri=bezier.tri, hull=bezier.hull)
+  nutils.export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull)
 
   err = domain.integral('<du_k du_k, du_i,j du_i,j>_n d:x' @ ns, degree=max(degree,3)*2).eval(lhs=lhs)**.5
   nutils.log.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
