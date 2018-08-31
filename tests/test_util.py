@@ -14,11 +14,13 @@ class tri(TestCase):
     self.x = numpy.array([[0,0],[1,0],[0,1],[1,0],[0,1],[1,1]], dtype=float)
     self.tri = numpy.array([[0,1,2],[3,4,5]])
 
+  @requires('scipy')
   def test_merge(self):
     tri_merged = util.tri_merge(self.tri, self.x, mergetol=self.mergetol).tolist()
     tri_expected = self.tri.tolist() if self.mergetol < 0 else [[0,1,2],[1,2,5]] if self.mergetol < 1 else [[0,0,0],[0,0,0]]
     self.assertEqual(tri_merged, tri_expected)
 
+  @requires('matplotlib', 'scipy')
   def test_interpolate(self):
     interpolate = util.tri_interpolator(self.tri, self.x, mergetol=self.mergetol)
     x = [.1, .9],
@@ -36,6 +38,7 @@ class tri(TestCase):
         self.assertTrue(numpy.isnan(vx).all())
 
   @parametrize.enable_if(lambda mergetol: 0 <= mergetol < 1)
+  @requires('matplotlib', 'scipy')
   def test_outofbounds(self):
     interpolate = util.tri_interpolator(self.tri, self.x, mergetol=self.mergetol)
     x = [.5, .5], [1.5, .5]

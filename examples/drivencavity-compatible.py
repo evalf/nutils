@@ -9,7 +9,7 @@
 # uses the Raviart-Thomas discretization providing compatible velocity and
 # pressure spaces resulting in a pointwise divergence-free velocity field.
 
-import nutils, numpy, matplotlib.collections
+import nutils, numpy
 
 # The main function defines the parameter space for the script. Configurable
 # parameters are the mesh density (in number of elements along an edge),
@@ -71,6 +71,7 @@ def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
   x, u, p, stream = bezier.eval(['x_i', 'sqrt(u_i u_i)', 'p', 'stream'] @ ns, **arguments)
   with nutils.export.mplfigure('flow.png') as fig: # plot velocity as field, pressure as contours, streamlines as dashed
     ax = fig.add_axes([.1,.1,.8,.8], yticks=[], aspect='equal')
+    import matplotlib.collections
     ax.add_collection(matplotlib.collections.LineCollection(x[bezier.hull], colors='w', linewidths=.5, alpha=.2))
     ax.tricontour(x[:,0], x[:,1], bezier.tri, stream, 16, colors='k', linestyles='dotted', linewidths=.5, zorder=9)
     caxu = fig.add_axes([.1,.1,.03,.8], title='velocity')
@@ -97,6 +98,7 @@ if __name__ == '__main__':
 
 class test(nutils.testing.TestCase):
 
+  @nutils.testing.requires('matplotlib')
   def test_p1(self):
     lhs0, lhs1 = main(nelems=3, reynolds=100, degree=2)
     nutils.numeric.assert_allclose64(lhs0, 'eNpTvPBI3/o0t1mzds/pltM65opQ/n196QvcZh4XO03MTHbolZ'
@@ -104,6 +106,7 @@ class test(nutils.testing.TestCase):
     nutils.numeric.assert_allclose64(lhs1, 'eNoBUgCt/6nOuTGJy4M1SCzJy4zLCjcsLk3PCst/Nlcx9M2DNe'
       'DPgDR+NB7UG8wVzSwuPc6ByezUQiudMKTL/y4AL73NLS6jLUov8s4zzXoscdMJMSo2AABO+yTF')
 
+  @nutils.testing.requires('matplotlib')
   def test_p2(self):
     lhs0, lhs1 = main(nelems=3, reynolds=100, degree=3)
     nutils.numeric.assert_allclose64(lhs0, 'eNp7ZmB71sY46VSq2dLzludvnMo20jFHsJ7BZaXObzbedDrVbJ'

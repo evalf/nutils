@@ -7,7 +7,7 @@
 # exponentially with radius such that the artificial exterior boundary is
 # placed at large (configurable) distance.
 
-import nutils, numpy, matplotlib.collections
+import nutils, numpy
 
 # The main function defines the parameter space for the script. Configurable
 # parameters are the mesh density (in number of elements along the cylinder
@@ -81,6 +81,7 @@ def main(nelems: 'number of elements' = 24,
     with nutils.export.mplfigure('flow.png', figsize=(12.8,7.2)) as fig:
       ax = fig.add_axes([0,0,1,1], yticks=[], xticks=[], frame_on=False, xlim=bbox[0], ylim=bbox[1])
       im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, p, shading='gouraud', cmap='jet')
+      import matplotlib.collections
       ax.add_collection(matplotlib.collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1, alpha=.5))
       ax.quiver(xgrd[:,0], xgrd[:,1], ugrd[:,0], ugrd[:,1], angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9, alpha=.5)
       ax.plot(0, 0, 'k', marker=(3,2,t*rotation*180/numpy.pi-90), markersize=20)
@@ -109,6 +110,7 @@ if __name__ == '__main__':
 
 class test(nutils.testing.TestCase):
 
+  @nutils.testing.requires('matplotlib', 'scipy')
   def test_rot0(self):
     lhs0, lhs = main(nelems=6, reynolds=100, timestep=.1, endtime=.05, rotation=0)
     nutils.numeric.assert_allclose64(lhs0, 'eNqtjD8OwWAcQJ/JNSQ20Tbf135RkUjEZO8RJ'
@@ -121,6 +123,7 @@ class test(nutils.testing.TestCase):
       'Y+sMfJwavBhDNPPvbFV8cxOKk3ADtFOFI86zqjN9o8D8hcNFjCfsXVPd47Vj/qPdZBa0F5QUZD'
       '7UEJQYi527zjROVETUeVRfZIfrfvRKZKs7s6SVXLZ9k=')
 
+  @nutils.testing.requires('matplotlib', 'scipy')
   def test_rot1(self):
     lhs0, lhs = main(nelems=6, reynolds=100, timestep=.1, endtime=.05, rotation=1)
     nutils.numeric.assert_allclose64(lhs0, 'eNqtjD8OwWAcQJ/JNSQ20Tbf135RkUjEZO8RJ'

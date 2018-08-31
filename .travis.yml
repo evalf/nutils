@@ -19,7 +19,7 @@ matrix:
 before_install:
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then wget -O python.pkg "$PYTHON_PKG_URL"; sudo installer -pkg python.pkg -target /; rm python.pkg; fi
 install:
-  - python3 -m pip install --upgrade .[test,mkl] coverage codecov $FORCE_PYTHON_PKGS
+  - python3 -m pip install --upgrade .[docs,matrix_scipy,matrix_mkl,export_mpl] coverage codecov $FORCE_PYTHON_PKGS
 script:
   - python3 -m coverage run -m unittest -b
 after_success:

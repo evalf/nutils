@@ -1,6 +1,6 @@
 from nutils import *
 from nutils.testing import *
-import os, tempfile
+import os, tempfile, numpy
 
 @parametrize
 class vtk(TestCase):

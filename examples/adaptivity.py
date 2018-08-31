@@ -89,6 +89,7 @@ if __name__ == '__main__':
 
 class test(nutils.testing.TestCase):
 
+  @nutils.testing.requires('matplotlib')
   def test_square_quadratic(self):
     ndofs, error, rate, lhs = main(nrefine=2, etype='square', degree=2)
     self.assertEqual(ndofs, 149)
@@ -101,6 +102,7 @@ class test(nutils.testing.TestCase):
       '+qV92kKevjK36ozDP/FSnh1iteWiqWuf+oMaKuyKaC1i52rKPokiF2WLA/20bya+ZCPbWKRPpv'
       'gFaedebw==')
 
+  @nutils.testing.requires('matplotlib')
   def test_triangle_quadratic(self):
     ndofs, error, rate, lhs = main(nrefine=2, etype='triangle', degree=2)
     self.assertEqual(ndofs, 98)
@@ -111,6 +113,7 @@ class test(nutils.testing.TestCase):
       'MiXH+LXRR9NwoPkg82xN5IB2MZu2mGabSBnnAbGscYEJj3GVYQAQg/TVGfaA7RI0BsErRjeNeo'
       'wDgDQPmF9gkmciaJxtArGjzrAKCGWNpYAQAL0kOBE=')
 
+  @nutils.testing.requires('matplotlib')
   def test_mixed_linear(self):
     ndofs, error, rate, lhs = main(nrefine=2, etype='mixed', degree=1)
     self.assertEqual(ndofs, 34)
