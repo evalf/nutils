@@ -223,7 +223,7 @@ def function(func=None, *, version=0):
           fail = False
         else:
           log_, fail, value = data
-      except (EOFError, pickle.UnpicklingError):
+      except (EOFError, pickle.UnpicklingError, IndexError):
         log.debug('[cache.function {}] failed to load, cache will be rewritten'.format(hkey))
         pass
       else:
@@ -380,7 +380,7 @@ class Recursion(types.Immutable, metaclass=_RecursionMeta):
           if not exhausted:
             try:
               log_, stop, value = pickle.load(f)
-            except pickle.UnpicklingError:
+            except (pickle.UnpicklingError, IndexError):
               log.debug('[cache.Recursion {}.{:04d}] failed to load, cache will be rewritten from this point'.format(hkey, i))
               exhausted = True
             except EOFError:
