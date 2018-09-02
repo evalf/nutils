@@ -593,7 +593,7 @@ class Immutable(metaclass=ImmutableMeta):
 
   Passing unhashable values to ``Plain`` will fail:
 
-  >>> Plain([1, 2], [3, 4])
+  >>> Plain([1, 2], [3, 4]) # doctest: +IGNORE_EXCEPTION_DETAIL
   Traceback (most recent call last):
       ...
   TypeError: unhashable type: 'list'
