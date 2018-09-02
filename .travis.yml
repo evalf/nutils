@@ -21,7 +21,7 @@ before_install:
 install:
   - python3 -m pip install --upgrade .[test,mkl] coverage coveralls $FORCE_PYTHON_PKGS
 script:
-  - LD_LIBRARY_PATH="$VIRTUAL_ENV/lib" DYLD_LIBRARY_PATH="$VIRTUAL_ENV/lib" python3 -m coverage run -m unittest -b
+  - python3 -m coverage run -m unittest -b
 after_success:
   - python3 -c 'import coveralls.cli; coveralls.cli.main()'
 # vim: ts=2:sts=2:sw=2:et
