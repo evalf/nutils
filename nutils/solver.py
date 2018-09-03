@@ -410,6 +410,8 @@ class minimize(RecursionWithSolve, length=1):
         shift += res.dot(res) / res.dot(dlhs)
         log.warning('negative eigenvalue detected; shifting spectrum by {:.2e}'.format(shift))
         dlhs = -(jac + shift * matrix.eye(len(dlhs))).solve(res, constrain=self.constrain|nosupp, **self.solveargs)
+      if not shift:
+        relax = min(relax, 1)
       for irelax in itertools.count():
         newlhs = lhs+relax*dlhs
         newnrg, newres, newjac = self._eval(newlhs)
@@ -438,7 +440,7 @@ class minimize(RecursionWithSolve, length=1):
         scale = min(roots) if roots else numpy.inf
         log.info('energy {:+.1e} / {} with minimum at x{}'.format(newnrg-nrg, round(relax, 5), round(scale, 2)))
         if scale > self.maxscale:
-          relax = min(relax * min(scale, self.rebound), 1)
+          relax *= min(scale, self.rebound)
           break
         relax *= max(scale, self.minscale)
         if not numpy.isfinite(relax) or relax <= self.failrelax:
