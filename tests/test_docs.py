@@ -38,6 +38,10 @@ class DocTestCase(nutils.testing.ContextTestCase, _doctest.DocTestCase):
     if missing:
       self.skipTest('missing module{}: {}'.format('s' if len(missing) > 1 else '', ','.join(missing)))
 
+    if 'matplotlib' in requires:
+      import matplotlib
+      matplotlib.use('Agg', warn=False, force=True)
+
     super().setUpContext(stack)
     stack.enter_context(warnings.catch_warnings())
     warnings.simplefilter('ignore')
