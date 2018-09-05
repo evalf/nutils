@@ -447,7 +447,7 @@ class ConsoleDirective(docutils.parsers.rst.Directive):
     nodes.append(literal)
 
     import matplotlib
-    matplotlib.use('Agg')
+    matplotlib.use('Agg', warn=False, force=True)
     import matplotlib.pyplot
     parser = doctest.DocTestParser()
     runner = doctest.DocTestRunner(checker=nutils.testing.FloatNeighborhoodOutputChecker(), optionflags=doctest.ELLIPSIS)
