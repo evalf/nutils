@@ -22,7 +22,7 @@
 Extensions of the :mod:`unittest` module.
 '''
 
-import unittest, sys, types as builtin_types, operator, contextlib, importlib
+import unittest, sys, types as builtin_types, operator, contextlib, importlib, doctest, re, numpy
 from . import log
 
 
@@ -147,5 +147,71 @@ class TestCase(unittest.TestCase):
       self.addCleanup(stack.__exit__, None, None, None)
 
 ContextTestCase = TestCase
+
+
+class FloatNeighborhoodOutputChecker(doctest.OutputChecker):
+
+  posnum = '(?:[0-9]+|[0-9]+[.]|[.][0-9]+)(?:e[+-]?[0-9]+)?'
+  re_spread = re.compile('\\b((?:-?{posnum}|array[(][^()]*[)])±{posnum})\\b'.format(posnum=posnum))
+
+  def check_output(self, want, got, optionflags):
+    if want == got:
+      return True
+    elif '±' in want and self._check_plus_minus(want, got, optionflags):
+      return True
+    return super().check_output(want, got, optionflags)
+
+  @classmethod
+  def _check_plus_minus(cls, want, got, optionflags):
+    if optionflags & doctest.NORMALIZE_WHITESPACE:
+      want = re.sub(r'\s+', ' ', want, flags=re.MULTILINE)
+      got = re.sub(r'\s+', ' ', got, flags=re.MULTILINE)
+    for i, part in enumerate(cls.re_spread.split(want)):
+      if i % 2 == 0:
+        if got[:len(part)] != part:
+          return False
+        got = got[len(part):]
+      elif part.startswith('array('):
+        match = re.search('^array[(]([^()]*)[)]'.format(posnum=cls.posnum), got)
+        if not match:
+          return False
+        got, got_array = got[len(match.group(0)):], cls._parse_array(match.group(1))
+        want_array, want_spread = part.split('±')
+        want_array = cls._parse_array(want_array[6:-1])
+        if want_array.shape != got_array.shape:
+          return False
+        if (numpy.isnan(want_array) != numpy.isnan(got_array)).any():
+          return False
+        mask = numpy.isnan(want_array)
+        if numpy.greater(abs(want_array - got_array)[~mask], float(want_spread)).any():
+          return False
+      else:
+        match = re.search('^(-?{posnum})\\b'.format(posnum=cls.posnum), got)
+        if not match:
+          return False
+        got, got_number = got[len(match.group(0)):], float(match.group(1))
+        want_number, want_spread = map(float, part.split('±'))
+        if not (abs(got_number - want_number) <= want_spread):
+          return False
+    return True
+
+  @classmethod
+  def _parse_array(cls, s):
+    return numpy.array(cls._parse_array_tokens(filter(None, re.split(r'\s*([\[\],])\s*', s, flags=re.MULTILINE))), dtype=float)
+
+  @classmethod
+  def _parse_array_tokens(cls, tokens):
+    token = next(tokens)
+    if token == '[':
+      data = [cls._parse_array_tokens(tokens)]
+      for token in tokens:
+        if token == ',':
+          data.append(cls._parse_array_tokens(tokens))
+        elif token == ']':
+          return data
+        else:
+          raise ValueError('unexpected token: {}'.format(token))
+    else:
+      return float(token)
 
 # vim:sw=2:sts=2:et
