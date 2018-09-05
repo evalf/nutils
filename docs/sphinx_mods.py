@@ -78,7 +78,7 @@ def generate_examples(app):
     name = src.name
     dst = dst_examples/(src.with_suffix('.rst').name)
 
-    with dst.open('w') as f_dst:
+    with dst.open('w', encoding='utf-8') as f_dst:
       print_rst_autogen_header(file=f_dst, src=src)
       # Add a label such that you can reference an example by
       # :ref:`examples/laplace.py`.
@@ -135,7 +135,7 @@ class ExampleDocDirective(docutils.parsers.rst.Directive):
     nodes = []
 
     src = project_root/self.arguments[0]
-    with src.open('r') as f:
+    with src.open('r', encoding='utf-8') as f:
       prevtype = None
       lines = LineIter(f)
       if lines and lines.peek.startswith('#!'):
@@ -262,7 +262,7 @@ def generate_api(app):
   for src in sphinx.util.status_iterator(srcs, 'generating api... ', 'purple', len(srcs), app.verbosity):
     module = '.'.join((src.parent if src.name == '__init__.py' else src.with_suffix('')).relative_to(nutils).parts)
     dst = dst_root/(module+'.rst')
-    with dst.open('w') as f:
+    with dst.open('w', encoding='utf-8') as f:
       print_rst_autogen_header(file=f, src=src)
       print_rst_h1(module, file=f)
       print('.. automodule:: {}'.format('nutils.{}'.format(module)), file=f)

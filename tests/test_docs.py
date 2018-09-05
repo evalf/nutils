@@ -63,7 +63,7 @@ for path in sorted((root/'nutils').glob('**/*.py')):
     doctest.addTest(DocTestCase(test, optionflags=_doctest.ELLIPSIS, checker=checker))
 for path in sorted((root/'docs').glob('**/*.rst')):
   name = str(path.relative_to(root))
-  with path.open() as f:
+  with path.open(encoding='utf-8') as f:
     doc = f.read()
   test = parser.get_doctest(doc, globs={}, name=name, filename=str(path), lineno=0)
   if test.examples:
