@@ -32,6 +32,8 @@ def mplfigure(*args, **kwargs):
 
   .. _`object-oriented plotting`: https://matplotlib.org/gallery/api/agg_oo_sgskip.html
 
+  .. requires:: matplotlib
+
   Args
   ----
   name : :class:`str`

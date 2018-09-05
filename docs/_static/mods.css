@@ -2,5 +2,9 @@ h3, div.body h3 {
   font-size: 100%;
 }
 
+div.requires {
+  font-style: italic;
+}
+
 /* vim:sw=2:sts=2:et
  */
