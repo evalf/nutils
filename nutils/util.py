@@ -140,6 +140,8 @@ def tri_merge(tri, x, mergetol=0):
   array([[0, 1, 2],
          [2, 1, 4]])
 
+  .. requires:: scipy
+
   Args
   ----
   x : :class:`float` array
@@ -197,6 +199,8 @@ class tri_interpolator:
   >>> interpolate = tri_interpolator([[0,1,2],[1,3,2]], trix)
   >>> x = [.1,.1], [.1,.9], [.9,.9] # interpolation coordinates
   >>> u = interpolate[x](triu) # interpolated values
+
+  .. requires:: matplotlib
   '''
 
   def __init__(self, tri, x, mergetol=0):

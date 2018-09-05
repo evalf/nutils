@@ -387,6 +387,38 @@ def replace_unicode_math(app, doctree):
     node['latex'] = node['latex'].translate(unicode_math_map)
 
 
+class RequiresNode(docutils.nodes.Admonition, docutils.nodes.TextElement): pass
+
+def html_visit_requires(self, node):
+  self.body.append(self.starttag(node, 'div', CLASS='requires'))
+def html_depart_requires(self, node):
+  self.body.append('</div>\n')
+def text_visit_requires(self, node):
+  self.new_state(0)
+def text_depart_requires(self, node):
+  self.end_state()
+def latex_visit_requires(self, node):
+  pass
+def latex_depart_requires(self, node):
+  pass
+
+class RequiresDirective(docutils.parsers.rst.Directive):
+
+  has_content = False
+  required_arguments = 1
+  optional_arguments = 0
+
+  def run(self):
+    requires = tuple(name.strip() for name in self.arguments[0].split(','))
+
+    node = RequiresNode('requires')
+    node.document = self.state.document
+    sphinx.util.nodes.set_source_info(self, node)
+    msg = 'Requires {}.'.format(', '.join(requires))
+    node.append(docutils.nodes.paragraph('', docutils.nodes.Text(msg, msg), translatable=False))
+    return [node]
+
+
 class ConsoleDirective(docutils.parsers.rst.Directive):
 
   has_content = True
@@ -445,6 +477,12 @@ def setup(app):
   app.connect('missing-reference', create_log)
 
   app.connect('doctree-read', replace_unicode_math)
+
+  app.add_node(RequiresNode,
+               html=(html_visit_requires, html_depart_requires),
+               latex=(latex_visit_requires, latex_depart_requires),
+               text=(text_visit_requires, text_depart_requires))
+  app.add_directive('requires', RequiresDirective)
 
   app.add_directive('console', ConsoleDirective)
   app.connect('doctree-read', remove_console_globs)
