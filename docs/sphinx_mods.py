@@ -241,6 +241,8 @@ def create_log(app, env, node, contnode):
           logger.error('invalid argument for {!r}: {}'.format(name, e))
           return
       # Run script.
+      import matplotlib.testing
+      matplotlib.testing.setup()
       func = script_dict['main']
       with treelog.HtmlLog(str(dst_log), title=scriptname, htmltitle='{} {}'.format(nutils.cli.SVGLOGO, html.escape(scriptname)), favicon=nutils.cli.FAVICON) as log, treelog.set(log), nutils.matrix.backend('scipy'), nutils.warnings.via(treelog.warning):
         log.write('<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">{}</ul>'.format(''.join(
@@ -446,8 +448,8 @@ class ConsoleDirective(docutils.parsers.rst.Directive):
     sphinx.util.nodes.set_source_info(self, literal)
     nodes.append(literal)
 
-    import matplotlib
-    matplotlib.use('Agg', warn=False, force=True)
+    import matplotlib.testing
+    matplotlib.testing.setup()
     import matplotlib.pyplot
     parser = doctest.DocTestParser()
     runner = doctest.DocTestRunner(checker=nutils.testing.FloatNeighborhoodOutputChecker(), optionflags=doctest.ELLIPSIS)
