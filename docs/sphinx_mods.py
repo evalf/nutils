@@ -241,6 +241,8 @@ def create_log(app, env, node, contnode):
           logger.error('invalid argument for {!r}: {}'.format(name, e))
           return
       # Run script.
+      import matplotlib.testing
+      matplotlib.testing.setup()
       with nutils.log.HtmlLog(str(dst_log)), nutils.matrix.backend('scipy'), nutils.warnings.via(nutils.log.warning):
         script_dict['main'](**kwargs)
       (dst_log/'log.html').rename(dst_log/'index.html')
@@ -440,8 +442,8 @@ class ConsoleDirective(docutils.parsers.rst.Directive):
     sphinx.util.nodes.set_source_info(self, literal)
     nodes.append(literal)
 
-    import matplotlib
-    matplotlib.use('Agg', warn=False, force=True)
+    import matplotlib.testing
+    matplotlib.testing.setup()
     import matplotlib.pyplot
     parser = doctest.DocTestParser()
     runner = doctest.DocTestRunner(checker=nutils.testing.FloatNeighborhoodOutputChecker(), optionflags=doctest.ELLIPSIS)
