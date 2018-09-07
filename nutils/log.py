@@ -655,8 +655,8 @@ class _makedirs:
     if isinstance(self.path, int):
       os.close(self.path)
   def _open(self, name, *args):
-    return os.open(name, *args, dir_fd=self.path) if isinstance(self.path, int) \
-      else os.open(os.path.join(self.path, name), *args)
+    return os.open(name, *args, mode=0o666, dir_fd=self.path) if isinstance(self.path, int) \
+      else os.open(os.path.join(self.path, name), *args, mode=0o666)
   def open(self, filename, mode, exists):
     if mode not in ('w', 'wb'):
       raise ValueError('invalid mode: {!r}'.format(mode))
