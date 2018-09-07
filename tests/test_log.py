@@ -235,7 +235,7 @@ class recordlog(TestCase):
   def test_devnull(self):
     for mode in 'w', 'wb':
       with self.subTest(mode=mode), nutils.log.DataLog(str(self.outdir_passtrough)), nutils.log.RecordLog() as record:
-        with nutils.log.open('test.txt', 'w') as f:
+        with nutils.log.open('test.txt', mode) as f:
           self.assertEqual(f.devnull, False)
           self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
 
@@ -366,7 +366,7 @@ class _DevnullTests:
   def test_devnull(self):
     for mode in 'w', 'wb':
       with self.subTest(mode=mode):
-        with nutils.log.open('test.txt', 'w') as f:
+        with nutils.log.open('test.txt', mode) as f:
           self.assertEqual(f.devnull, True)
 
 class StdoutLog(TestCase, _DevnullTests):
@@ -402,7 +402,7 @@ class TeeStdoutHtml(TestCase):
   def test_devnull(self):
     for mode in 'w', 'wb':
       with self.subTest(mode=mode):
-        with nutils.log.open('test.txt', 'w') as f:
+        with nutils.log.open('test.txt', mode) as f:
           self.assertEqual(f.devnull, False)
 
   def test_open_rename(self):
@@ -453,7 +453,7 @@ class TeeHtmlData(TestCase):
   def test_devnull(self):
     for mode in 'w', 'wb':
       with self.subTest(mode=mode):
-        with nutils.log.open('test.txt', 'w') as f:
+        with nutils.log.open('test.txt', mode) as f:
           self.assertEqual(f.devnull, False)
 
   def test_open_rename(self):
@@ -515,7 +515,7 @@ class RecordLog(TestCase):
   def test_devnull(self):
     for mode in 'w', 'wb':
       with self.subTest(mode=mode):
-        with nutils.log.open('test.txt', 'w') as f:
+        with nutils.log.open('test.txt', mode) as f:
           self.assertEqual(f.devnull, False)
 
   def test_open_rename(self):
