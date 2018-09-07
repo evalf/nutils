@@ -503,65 +503,6 @@ class TeeHtmlData(TestCase):
       self.assertEqual(f.read(), 'a')
     self.assertFalse((self.outdir_data/'test-1.txt').exists())
 
-class RecordLog(TestCase):
-
-  def setUpContext(self, stack):
-    super().setUpContext(stack)
-    tmpdir = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory()))
-    self.outdir_html = tmpdir/'html'
-    self.outdir_data = tmpdir/'data'
-    stack.enter_context(nutils.log.TeeLog(nutils.log.HtmlLog(str(self.outdir_html)), nutils.log.DataLog(str(self.outdir_data))))
-
-  def test_devnull(self):
-    for mode in 'w', 'wb':
-      with self.subTest(mode=mode):
-        with nutils.log.open('test.txt', mode) as f:
-          self.assertEqual(f.devnull, False)
-
-  def test_open_rename(self):
-    with nutils.log.open('test.txt', 'w') as f:
-      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
-      f.write('a')
-    self.assertTrue((self.outdir_html/'test.txt').exists())
-    self.assertTrue((self.outdir_data/'test.txt').exists())
-    with nutils.log.open('test.txt', 'w') as f:
-      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
-      f.write('b')
-    self.assertTrue((self.outdir_html/'test-1.txt').exists())
-    self.assertTrue((self.outdir_data/'test-1.txt').exists())
-
-  def test_open_overwrite(self):
-    with nutils.log.open('test.txt', 'w', exists='overwrite') as f:
-      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
-      f.write('a')
-    with (self.outdir_html/'test.txt').open() as f:
-      self.assertEqual(f.read(), 'a')
-    with (self.outdir_data/'test.txt').open() as f:
-      self.assertEqual(f.read(), 'a')
-    with nutils.log.open('test.txt', 'w', exists='overwrite') as f:
-      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
-      f.write('b')
-    with (self.outdir_html/'test.txt').open() as f:
-      self.assertEqual(f.read(), 'b')
-    with (self.outdir_data/'test.txt').open() as f:
-      self.assertEqual(f.read(), 'b')
-
-  def test_open_skip(self):
-    with nutils.log.open('test.txt', 'w', exists='skip') as f:
-      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
-      f.write('a')
-    with (self.outdir_html/'test.txt').open() as f:
-      self.assertEqual(f.read(), 'a')
-    with (self.outdir_data/'test.txt').open() as f:
-      self.assertEqual(f.read(), 'a')
-    with nutils.log.open('test.txt', 'w', exists='skip') as f:
-      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
-      f.write('b')
-    with (self.outdir_html/'test.txt').open() as f:
-      self.assertEqual(f.read(), 'a')
-    with (self.outdir_data/'test.txt').open() as f:
-      self.assertEqual(f.read(), 'a')
-
 class log_module_funcs(TestCase):
 
   @contextlib.contextmanager
