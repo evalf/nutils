@@ -237,10 +237,12 @@ class recordlog(TestCase):
       with self.subTest(mode=mode), nutils.log.DataLog(str(self.outdir_passtrough)), nutils.log.RecordLog() as record:
         with nutils.log.open('test.txt', 'w') as f:
           self.assertEqual(f.devnull, False)
+          self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
 
   def test_open_rename(self):
     with self.subTest('record1'), nutils.log.DataLog(str(self.outdir_passtrough)), nutils.log.RecordLog() as record:
       with nutils.log.open('test.txt', 'w') as f:
+        self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
         f.write('a')
       self.assertTrue((self.outdir_passtrough/'test.txt').exists())
     with self.subTest('replay1'), nutils.log.DataLog(str(self.outdir_replay)):
@@ -248,6 +250,7 @@ class recordlog(TestCase):
       self.assertTrue((self.outdir_replay/'test.txt').exists())
     with self.subTest('record2'), nutils.log.DataLog(str(self.outdir_passtrough)), nutils.log.RecordLog() as record:
       with nutils.log.open('test.txt', 'w') as f:
+        self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
         f.write('b')
       self.assertTrue((self.outdir_passtrough/'test-1.txt').exists())
     with self.subTest('replay2'), nutils.log.DataLog(str(self.outdir_replay)):
@@ -257,6 +260,7 @@ class recordlog(TestCase):
   def test_open_overwrite(self):
     with self.subTest('record1'), nutils.log.DataLog(str(self.outdir_passtrough)), nutils.log.RecordLog() as record:
       with nutils.log.open('test.txt', 'w', exists='overwrite') as f:
+        self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
         f.write('a')
       with (self.outdir_passtrough/'test.txt').open() as f:
         self.assertEqual(f.read(), 'a')
@@ -266,6 +270,7 @@ class recordlog(TestCase):
         self.assertEqual(f.read(), 'a')
     with self.subTest('record2'), nutils.log.DataLog(str(self.outdir_passtrough)), nutils.log.RecordLog() as record:
       with nutils.log.open('test.txt', 'w', exists='overwrite') as f:
+        self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
         f.write('b')
       with (self.outdir_passtrough/'test.txt').open() as f:
         self.assertEqual(f.read(), 'b')
@@ -277,6 +282,7 @@ class recordlog(TestCase):
   def test_open_skip(self):
     with self.subTest('record1'), nutils.log.DataLog(str(self.outdir_passtrough)), nutils.log.RecordLog() as record:
       with nutils.log.open('test.txt', 'w', exists='skip') as f:
+        self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
         f.write('a')
       with (self.outdir_passtrough/'test.txt').open() as f:
         self.assertEqual(f.read(), 'a')
@@ -286,6 +292,7 @@ class recordlog(TestCase):
         self.assertEqual(f.read(), 'a')
     with self.subTest('record2'), nutils.log.DataLog(str(self.outdir_passtrough)), nutils.log.RecordLog() as record:
       with nutils.log.open('test.txt', 'w', exists='skip') as f:
+        self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
         f.write('b')
       with (self.outdir_passtrough/'test.txt').open() as f:
         self.assertEqual(f.read(), 'a')
@@ -400,28 +407,34 @@ class TeeStdoutHtml(TestCase):
 
   def test_open_rename(self):
     with nutils.log.open('test.txt', 'w') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       f.write('a')
     self.assertTrue((self.outdir_html/'test.txt').exists())
     with nutils.log.open('test.txt', 'w') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       f.write('b')
     self.assertTrue((self.outdir_html/'test-1.txt').exists())
 
   def test_open_overwrite(self):
     with nutils.log.open('test.txt', 'w', exists='overwrite') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       f.write('a')
     with (self.outdir_html/'test.txt').open() as f:
       self.assertEqual(f.read(), 'a')
     with nutils.log.open('test.txt', 'w', exists='overwrite') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       f.write('b')
     with (self.outdir_html/'test.txt').open() as f:
       self.assertEqual(f.read(), 'b')
 
   def test_open_skip(self):
     with nutils.log.open('test.txt', 'w', exists='skip') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       f.write('a')
     with (self.outdir_html/'test.txt').open() as f:
       self.assertEqual(f.read(), 'a')
     with nutils.log.open('test.txt', 'w', exists='skip') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       self.assertEqual(f.devnull, True)
       f.write('b')
     with (self.outdir_html/'test.txt').open() as f:
@@ -445,22 +458,26 @@ class TeeHtmlData(TestCase):
 
   def test_open_rename(self):
     with nutils.log.open('test.txt', 'w') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       f.write('a')
     self.assertTrue((self.outdir_html/'test.txt').exists())
     self.assertTrue((self.outdir_data/'test.txt').exists())
     with nutils.log.open('test.txt', 'w') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       f.write('b')
     self.assertTrue((self.outdir_html/'test-1.txt').exists())
     self.assertTrue((self.outdir_data/'test-1.txt').exists())
 
   def test_open_overwrite(self):
     with nutils.log.open('test.txt', 'w', exists='overwrite') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       f.write('a')
     with (self.outdir_html/'test.txt').open() as f:
       self.assertEqual(f.read(), 'a')
     with (self.outdir_data/'test.txt').open() as f:
       self.assertEqual(f.read(), 'a')
     with nutils.log.open('test.txt', 'w', exists='overwrite') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       f.write('b')
     with (self.outdir_html/'test.txt').open() as f:
       self.assertEqual(f.read(), 'b')
@@ -469,12 +486,14 @@ class TeeHtmlData(TestCase):
 
   def test_open_skip(self):
     with nutils.log.open('test.txt', 'w', exists='skip') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       f.write('a')
     with (self.outdir_html/'test.txt').open() as f:
       self.assertEqual(f.read(), 'a')
     with (self.outdir_data/'test.txt').open() as f:
       self.assertEqual(f.read(), 'a')
     with nutils.log.open('test.txt', 'w', exists='skip') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       self.assertEqual(f.devnull, True)
       f.write('b')
     with (self.outdir_html/'test.txt').open() as f:
@@ -501,22 +520,26 @@ class RecordLog(TestCase):
 
   def test_open_rename(self):
     with nutils.log.open('test.txt', 'w') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       f.write('a')
     self.assertTrue((self.outdir_html/'test.txt').exists())
     self.assertTrue((self.outdir_data/'test.txt').exists())
     with nutils.log.open('test.txt', 'w') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       f.write('b')
     self.assertTrue((self.outdir_html/'test-1.txt').exists())
     self.assertTrue((self.outdir_data/'test-1.txt').exists())
 
   def test_open_overwrite(self):
     with nutils.log.open('test.txt', 'w', exists='overwrite') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       f.write('a')
     with (self.outdir_html/'test.txt').open() as f:
       self.assertEqual(f.read(), 'a')
     with (self.outdir_data/'test.txt').open() as f:
       self.assertEqual(f.read(), 'a')
     with nutils.log.open('test.txt', 'w', exists='overwrite') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       f.write('b')
     with (self.outdir_html/'test.txt').open() as f:
       self.assertEqual(f.read(), 'b')
@@ -525,12 +548,14 @@ class RecordLog(TestCase):
 
   def test_open_skip(self):
     with nutils.log.open('test.txt', 'w', exists='skip') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       f.write('a')
     with (self.outdir_html/'test.txt').open() as f:
       self.assertEqual(f.read(), 'a')
     with (self.outdir_data/'test.txt').open() as f:
       self.assertEqual(f.read(), 'a')
     with nutils.log.open('test.txt', 'w', exists='skip') as f:
+      self.assertEqual(f.name, nutils.log._virtual_filename_prefix+'test.txt')
       f.write('b')
     with (self.outdir_html/'test.txt').open() as f:
       self.assertEqual(f.read(), 'a')
