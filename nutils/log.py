@@ -623,17 +623,6 @@ class RecordLog(Log):
 
 ## INTERNAL FUNCTIONS
 
-# Reference to the current log instance.  This is updated by the `Log`'s
-# context manager, see `Log` base class.
-_current_log = None
-
-def _set_current_log(new_log):
-  global _current_log
-  _current_log = new_log
-
-# Set a default log instance.
-StdoutLog().__enter__()
-
 def _len(iterable):
   '''Return length if available, otherwise None'''
 
@@ -684,6 +673,17 @@ class _makedirs:
     f = builtins.open(filename, mode, opener=self._open)
     f.devnull = False
     return f
+
+# Reference to the current log instance.  This is updated by the `Log`'s
+# context manager, see `Log` base class.
+_current_log = None
+
+def _set_current_log(new_log):
+  global _current_log
+  _current_log = new_log
+
+# Set a default log instance.
+TeeLog(StdoutLog(), DataLog(os.getcwd())).__enter__()
 
 ## MODULE-ONLY METHODS
 
