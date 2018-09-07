@@ -87,9 +87,7 @@ if __name__ == '__main__':
 # :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
 # desired results as compressed base64 data.
 
-import unittest
-
-class test(unittest.TestCase):
+class test(nutils.testing.TestCase):
 
   def test_square_quadratic(self):
     ndofs, error, rate, lhs = main(nrefine=2, etype='square', degree=2)

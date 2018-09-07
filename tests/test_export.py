@@ -2,7 +2,7 @@ from nutils.testing import *
 import os, tempfile, pathlib
 import nutils, numpy
 
-class mplfigure(ContextTestCase):
+class mplfigure(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
