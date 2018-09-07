@@ -159,7 +159,7 @@ def generate_log(short=False):
   nutils.log.info('nonexistent.png')
 
 @parametrize
-class logoutput(ContextTestCase):
+class logoutput(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
@@ -195,7 +195,7 @@ _logoutput('rich_output', nutils.log.RichOutputLog, log_rich_output)
 _logoutput('html', nutils.log.HtmlLog, log_html)
 _logoutput('indent', nutils.log.IndentLog, log_indent)
 
-class tee_stdout_html(ContextTestCase):
+class tee_stdout_html(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
@@ -209,7 +209,7 @@ class tee_stdout_html(ContextTestCase):
     with open(os.path.join(self.outdir, 'log.html')) as stream_html:
       self.assertEqual(stream_html.read(), log_html)
 
-class recordlog(ContextTestCase):
+class recordlog(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
@@ -296,7 +296,7 @@ class recordlog(ContextTestCase):
         self.assertEqual(f.read(), 'a')
       self.assertFalse((self.outdir_replay/'test-1.txt').exists())
 
-class html_post_mortem(ContextTestCase):
+class html_post_mortem(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
@@ -319,7 +319,7 @@ def generate_exception(level=0):
     with open(os.path.join(self.outdir, 'log.html')) as stream:
       self.assertIn('<div class="post-mortem">', stream.read())
 
-class move_outdir(ContextTestCase):
+class move_outdir(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
@@ -362,21 +362,21 @@ class _DevnullTests:
         with nutils.log.open('test.txt', 'w') as f:
           self.assertEqual(f.devnull, True)
 
-class StdoutLog(ContextTestCase, _DevnullTests):
+class StdoutLog(TestCase, _DevnullTests):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
     stream = io.StringIO()
     stack.enter_context(nutils.log.StdoutLog(stream))
 
-class RichOutputLog(ContextTestCase, _DevnullTests):
+class RichOutputLog(TestCase, _DevnullTests):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
     stream = io.StringIO()
     stack.enter_context(nutils.log.RichOutputLog(stream))
 
-class TeeDoubleStdout(ContextTestCase, _DevnullTests):
+class TeeDoubleStdout(TestCase, _DevnullTests):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
@@ -384,7 +384,7 @@ class TeeDoubleStdout(ContextTestCase, _DevnullTests):
     stream2 = io.StringIO()
     stack.enter_context(nutils.log.TeeLog(nutils.log.StdoutLog(stream1), nutils.log.StdoutLog(stream2)))
 
-class TeeStdoutHtml(ContextTestCase):
+class TeeStdoutHtml(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
@@ -428,7 +428,7 @@ class TeeStdoutHtml(ContextTestCase):
       self.assertEqual(f.read(), 'a')
     self.assertFalse((self.outdir_html/'test-1.txt').exists())
 
-class TeeHtmlData(ContextTestCase):
+class TeeHtmlData(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
@@ -484,7 +484,7 @@ class TeeHtmlData(ContextTestCase):
       self.assertEqual(f.read(), 'a')
     self.assertFalse((self.outdir_data/'test-1.txt').exists())
 
-class RecordLog(ContextTestCase):
+class RecordLog(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)

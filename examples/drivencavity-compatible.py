@@ -95,9 +95,7 @@ if __name__ == '__main__':
 # :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
 # desired results as compressed base64 data.
 
-import unittest
-
-class test(unittest.TestCase):
+class test(nutils.testing.TestCase):
 
   def test_p1(self):
     lhs0, lhs1 = main(nelems=3, reynolds=100, degree=2)

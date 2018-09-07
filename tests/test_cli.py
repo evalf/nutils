@@ -12,7 +12,7 @@ def main(
   print('all OK')
 
 @parametrize
-class run(ContextTestCase):
+class run(TestCase):
 
   scriptname = 'test.py'
 

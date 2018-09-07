@@ -23,6 +23,7 @@ Extensions of the :mod:`unittest` module.
 '''
 
 import unittest, sys, types as builtin_types, operator, contextlib
+from . import log
 
 
 class _ParametrizedCollection(type):
@@ -111,12 +112,11 @@ def _parametrize_skip_if(test, reason):
 parametrize.enable_if = _parametrize_enable_if
 parametrize.skip_if = _parametrize_skip_if
 
-TestCase = unittest.TestCase
 
-class ContextTestCase(TestCase):
+class TestCase(unittest.TestCase):
 
   def setUpContext(self, stack):
-    pass
+    stack.enter_context(log.StdoutLog())
 
   def setUp(self):
     super().setUp()
@@ -129,5 +129,7 @@ class ContextTestCase(TestCase):
       raise
     else:
       self.addCleanup(stack.__exit__, None, None, None)
+
+ContextTestCase = TestCase
 
 # vim:sw=2:sts=2:et
