@@ -53,7 +53,7 @@ def main(nelems: 'number of elements along edge' = 10,
   ns.energy = 'lmbda strain_ii strain_jj + 2 mu strain_ij strain_ij'
 
   energy = domain.integral('energy d:x' @ ns, degree=degree*2)
-  lhs1 = nutils.solver.optimize('lhs', energy, lhs0=lhs0, constrain=cons, newtontol=restol)
+  lhs1 = nutils.solver.minimize('lhs', energy, lhs0=lhs0, constrain=cons).solve(restol)
   X, energy = bezier.eval(['X_i', 'energy'] @ ns, lhs=lhs1)
   nutils.export.triplot('nonlinear.jpg', X, energy, tri=bezier.tri, hull=bezier.hull)
 
