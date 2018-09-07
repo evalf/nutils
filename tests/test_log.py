@@ -18,6 +18,9 @@ exception > ValueError('test',)
   File "??", line ??, in ??
     raise ValueError('test')
 test.png
+test.png
+test.png
+test.png
 nonexistent.png
 '''
 
@@ -68,6 +71,9 @@ log_rich_output = '''\
   File "??", line ??, in ??
     raise ValueError(\'test\')\033[0m
 \033[K\033[1;30m\033[0mtest.png
+\033[K\033[1;30m\033[0mtest.png
+\033[K\033[1;30m\033[0mtest.png
+\033[K\033[1;30m\033[0mtest.png
 \033[K\033[1;30m\033[0mnonexistent.png
 \033[K'''
 
@@ -107,6 +113,9 @@ log_html = '''\
     raise ValueError(&#x27;test&#x27;)</div>
 </div><div class="end"></div></div>
 <div class="item" data-loglevel="3"><a href="test.png">test.png</a></div>
+<div class="item" data-loglevel="3"><a href="test-1.png">test.png</a></div>
+<div class="item" data-loglevel="3"><a href="test.png">test.png</a></div>
+<div class="item" data-loglevel="3"><a href="test.png">test.png</a></div>
 <div class="item" data-loglevel="3">nonexistent.png</div>
 </div></body></html>
 '''
@@ -128,6 +137,9 @@ c exception
  e ValueError(&#x27;test&#x27;,)
  |   File &quot;??&quot;, line ??, in ??
  |     raise ValueError(&#x27;test&#x27;)
+i <a href="test.png">test.png</a>
+i <a href="test-1.png">test.png</a>
+i <a href="test.png">test.png</a>
 i <a href="test.png">test.png</a>
 i nonexistent.png
 '''
@@ -155,6 +167,12 @@ def generate_log(short=False):
       '  File "??", line ??, in ??\n' \
       "    raise ValueError('test')")
   with nutils.log.open('test.png', 'wb', level='info') as f:
+    pass
+  with nutils.log.open('test.png', 'wb', level='info') as f:
+    pass
+  with nutils.log.open('test.png', 'wb', level='info', exists='overwrite') as f:
+    pass
+  with nutils.log.open('test.png', 'wb', level='info', exists='skip') as f:
     pass
   nutils.log.info('nonexistent.png')
 
