@@ -266,18 +266,18 @@ class newton(RecursionWithSolve, length=1):
           relax *= self.minscale
           continue
         # To determine optimal relaxation we create a polynomial estimation for the residual norm:
-        #   P(x) = A + B (x/relax) + C (x/relax)^2 + D (x/relax)^3 ~= |res(lhs+x*dlhs)|^2
+        #   P(scale) = A + B scale + C scale^2 + D scale^3 ~= |res(lhs+scale*relax*dlhs)|^2
         # We determine A, B, C and D based on the following constraints:
         #   P(0) = |res(lhs)|^2
-        #   P'(0) = 2 res(lhs).jac(lhs).dlhs = -2 |res(lhs)|^2
-        #   P(relax) = |res(lhs+relax*dlhs)|^2
-        #   P'(relax) = 2 res(lhs+relax*dlhs).jac(lhs+relax*dlhs).dlhs
+        #   P'(0) = 2 relax res(lhs).jac(lhs).dlhs = -2 relax |res(lhs)|^2
+        #   P(1) = |res(lhs+relax*dlhs)|^2
+        #   P'(1) = 2 relax res(lhs+relax*dlhs).jac(lhs+relax*dlhs).dlhs
         A = resnorm**2
         B = -2 * A * relax
         C = 3 * newresnorm**2 - 2 * numpy.dot(jac.matvec(dlhs)[~self.constrain], res[~self.constrain]) * relax - 3 * A - 2 * B
         D = newresnorm**2 - A - B - C
         # Minimizing P:
-        #   B + 2 C (x/relax) + 3 D (x/relax)^2 = 0 => x/relax = (-C +/- sqrt(C^2 - 3 B D)) / (3 D)
+        #   B + 2 C scale + 3 D scale^2 = 0 => scale = (-C +/- sqrt(C^2 - 3 B D)) / (3 D)
         # Special case 1: largest root is negative
         #   -C / (3 D) + sqrt(C^2 - 3 B D) / abs(3 D) < 0 <=> sqrt(C^2 - 3 B D) < C * sign(D) <=> D < 0 & C < 0
         # Special case 2: smallest root is positive
@@ -295,7 +295,7 @@ class newton(RecursionWithSolve, length=1):
       lhs, resnorm = newlhs, newresnorm
 
 
-class minimize(RecursionWithSolve, length=1):
+class minimize(RecursionWithSolve, length=1, version=1):
   '''iteratively minimize nonlinear functional by gradient descent
 
   Generates targets such that residual approaches 0 using Newton procedure with
@@ -347,7 +347,7 @@ class minimize(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, energy:sample.strictintegral, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, searchrange:types.tuple[float]=(.01,2/3), rebound:types.strictfloat=2., droptol:types.strictfloat=None, failrelax:types.strictfloat=1e-6, arguments:argdict={}, solveargs:types.frozendict={}):
+  def __init__(self, target:types.strictstr, energy:sample.strictintegral, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, searchrange:types.tuple[float]=(.01,.5), rebound:types.strictfloat=2., droptol:types.strictfloat=None, failrelax:types.strictfloat=1e-6, arguments:argdict={}, solveargs:types.frozendict={}):
     super().__init__()
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
@@ -387,6 +387,21 @@ class minimize(RecursionWithSolve, length=1):
       nosupp = self.droptol is not None and ~(jac.rowsupp(self.droptol)|self.constrain)
       yield _nan_at(lhs, nosupp), types.attributes(resnorm=resnorm, energy=nrg, relax=relax, shift=0)
 
+    # To minimize the energy in the direction of the search vector we need to
+    # minimize a 5th degree polynomial, which is done by sampling the polynomial
+    # for a range of relaxation values. For this we prepare the array of scales
+    # s[i] = minscale^(1-i/n), with n chosen such that s[i+1] ~= (1+1/32) s[i].
+    n = round(-32 * numpy.log(self.minscale))
+    s = self.minscale**(1-numpy.arange(n-n*numpy.log(self.rebound)/numpy.log(self.minscale)+1)/n)
+
+    # To evaluate the polynomial based on constraints in s=0 and s=1 we prepare
+    # six basis functions such that the first b0(0)=1, b0'(0)=0, b0''(0)=0,
+    # b0(1)=0, b0'(1)=0, b0''(1)=0; the second b1(0)=0, b1'(0)=1, b1''(0)=0,
+    # b1(1)=0, b1'(1)=0, b1''(1)=0; etcetera. Furthermore, because we are
+    # interested in increments/decrements only, we store the resulting diff.
+    dpbasis = numpy.diff([(1-s)**3*(6*s**2+3*s+1), (1-s)**3*(3*s+1)*s, .5*(1-s)**3*s**2,
+      s**3*(6*s**2-15*s+10), s**3*(3*s-4)*(1-s), .5*s**3*(1-s)**2]).T
+
     while resnorm:
       nosupp = self.droptol is not None and ~(jac.rowsupp(self.droptol)|self.constrain)
       dlhs = -jac.solve(res, constrain=self.constrain|nosupp, **self.solveargs)
@@ -410,6 +425,8 @@ class minimize(RecursionWithSolve, length=1):
         shift += res.dot(res) / res.dot(dlhs)
         log.warning('negative eigenvalue detected; shifting spectrum by {:.2e}'.format(shift))
         dlhs = -(jac + shift * matrix.eye(len(dlhs))).solve(res, constrain=self.constrain|nosupp, **self.solveargs)
+      if not shift:
+        relax = min(relax, 1)
       for irelax in itertools.count():
         newlhs = lhs+relax*dlhs
         newnrg, newres, newjac = self._eval(newlhs)
@@ -418,31 +435,35 @@ class minimize(RecursionWithSolve, length=1):
           log.info('energy {} / {}'.format(newnrg, round(relax, 5)))
           relax *= self.minscale
           continue
-        # To determine optimal relaxation we create a polynomial estimation for the energy:
-        #   P(x) = A + B (x/relax) + C (x/relax)^2 + D (x/relax)^3 + E (x/relax)^4 + F (x/relax)^5 ~= nrg(lhs+x*dlhs)
-        # We determine A, B, C, D, E and F based on the following constraints:
+        # To determine optimal relaxation we create a 5th degree polynomial
+        # estimation for the energy:
+        #   P(scale) ~= nrg(lhs+scale*relax*dlhs)
+        # based on the following constraints:
         #   P(0) = nrg(lhs)
-        #   P'(0) = res(lhs).dlhs
-        #   P''(0) = dlhs.jac(lhs).dlhs
-        #   P(relax) = nrg(lhs+relax*dlhs)
-        #   P'(relax) = res(lhs+relax*dlhs).dlhs
-        #   P''(relax) = dlhs.jac(lhs+relax*dlhs).dlhs
-        A = nrg
-        B = res.dot(dlhs) * relax
-        C = .5 * jac.matvec(dlhs).dot(dlhs) * relax**2
-        D = 10 * newnrg - 4 * newres.dot(dlhs) * relax + 0.25 * newjac.matvec(dlhs).dot(dlhs) * relax**2 - 10 * A - 6 * B - 3 * C
-        E = 5 * newnrg - newres.dot(dlhs) * relax - 5 * A - 4 * B - 3 * C - 2 * D
-        F = newnrg - A - B - C - D - E
-        # Minimizing P:
-        #   B + 2 C (x/relax) + 3 D (x/relax)^2 + 4 E (x/relax)^3 + 5 F (x/relax)^4 = 0
-        roots = [r.real for r in numpy.roots([5*F,4*E,3*D,2*C,B]) if not r.imag and r > 0 and A+r*(B+r*(C+r*(D+r*(E+r*F)))) < nrg]
-        scale = min(roots) if roots else numpy.inf
-        log.info('energy {:+.1e} / {} with minimum at x{}'.format(newnrg-nrg, round(relax, 5), round(scale, 2)))
-        if scale > self.maxscale:
-          relax = min(relax * min(scale, self.rebound), 1)
+        #   P'(0) = relax res(lhs).dlhs
+        #   P''(0) = relax^2 dlhs.jac(lhs).dlhs = -relax^2 (res + shift dlhs).dlhs
+        #   P(1) = nrg(lhs+relax*dlhs)
+        #   P'(1) = relax res(lhs+relax*dlhs).dlhs
+        #   P''(1) = relax^2 dlhs.jac(lhs+relax*dlhs).dlhs
+        # The optimal relaxation value is determined by finding the smallest
+        # index i for which P(s[i+1]) > P(s[i]). If P(s) if monotonously
+        # decreasing, or if the number of minima is greater than twice the
+        # theoretical maximum (indicating that we decended into numerical
+        # noise) then we set scale to rebound.
+        decreasing = dpbasis.dot([nrg, relax * res.dot(dlhs), -relax**2 * (res+shift*dlhs).dot(dlhs),
+          newnrg, relax * newres.dot(dlhs), relax**2 * newjac.matvec(dlhs).dot(dlhs)]) < 0
+        minima = s[numpy.hstack([True, decreasing]) & numpy.hstack([~decreasing, False])]
+        if 0 < len(minima) < 6:
+          scale = minima[0]
+          msg = 'with minimum at x{}'.format(round(scale, 2))
+        else:
+          scale = self.rebound
+          msg = 'monotonous within search range'
+        log.info('energy {:+.1e} / {}'.format(newnrg-nrg, round(relax, 5)), msg)
+        relax *= scale
+        if scale >= 1 or scale > self.maxscale and newnrg < nrg:
           break
-        relax *= max(scale, self.minscale)
-        if not numpy.isfinite(relax) or relax <= self.failrelax:
+        if relax <= self.failrelax:
           raise SolverError('stuck in local minimum')
       else:
         log.warning('failed to', 'decrease' if newnrg > nrg else 'optimize', 'energy')
