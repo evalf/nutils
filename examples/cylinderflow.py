@@ -78,7 +78,7 @@ def main(nelems: 'number of elements' = 24,
     x, u, normu, p = bezier.eval(['x_i', 'u_i', 'sqrt(u_k u_k)', 'p'] @ ns, lhs=lhs)
     ugrd = interpolate[xgrd](u)
 
-    with nutils.export.mplfigure('flow.jpg', figsize=(12.8,7.2)) as fig:
+    with nutils.export.mplfigure('flow.png', figsize=(12.8,7.2)) as fig:
       ax = fig.add_axes([0,0,1,1], yticks=[], xticks=[], frame_on=False, xlim=bbox[0], ylim=bbox[1])
       im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, p, shading='gouraud', cmap='jet')
       ax.add_collection(matplotlib.collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1, alpha=.5))

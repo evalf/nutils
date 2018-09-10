@@ -93,7 +93,7 @@ def main(nelems: 'number of elements along edge' = 10,
 
   bezier = domain.sample('bezier', 9)
   x, u = bezier.eval(['x_i', 'u'] @ ns, lhs=lhs)
-  nutils.export.triplot('solution.jpg', x, u, tri=bezier.tri, hull=bezier.hull)
+  nutils.export.triplot('solution.png', x, u, tri=bezier.tri, hull=bezier.hull)
 
   # To confirm that our computation is correct, we use our knowledge of the
   # analytical solution to evaluate the L2-error of the discrete result.
