@@ -1,5 +1,5 @@
 from nutils import solver, mesh, function, cache, types, numeric
-from . import *
+from nutils.testing import *
 import numpy, contextlib, tempfile
 
 @contextlib.contextmanager

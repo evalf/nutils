@@ -1,6 +1,6 @@
 import itertools
 from nutils import *
-from . import *
+from nutils.testing import *
 
 
 @parametrize

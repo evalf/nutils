@@ -58,7 +58,7 @@ def mplfigure(*args, **kwargs):
       fig.savefig(f, format=fmt)
   fig.set_canvas(None) # break circular reference
 
-def triplot(name, points, values=None, *, tri=None, hull=None, cmap='jet', clim=None, linewidth=.1, linecolor='k'):
+def triplot(name, points, values=None, *, tri=None, hull=None, cmap=None, clim=None, linewidth=.1, linecolor='k'):
   if (tri is None) != (values is None):
     raise Exception('tri and values can only be specified jointly')
   with mplfigure(name) as fig:

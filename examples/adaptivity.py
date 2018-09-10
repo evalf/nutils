@@ -56,8 +56,8 @@ def main(etype: 'type of elements (square/triangle/mixed)' = 'square',
 
     bezier = domain.sample('bezier', 9)
     x, u, du = bezier.eval(['x_i', 'u', 'du'] @ ns, lhs=lhs)
-    nutils.export.triplot('sol.jpg', x, u, tri=bezier.tri, hull=bezier.hull)
-    nutils.export.triplot('err.jpg', x, du, tri=bezier.tri, hull=bezier.hull)
+    nutils.export.triplot('sol.png', x, u, tri=bezier.tri, hull=bezier.hull)
+    nutils.export.triplot('err.png', x, du, tri=bezier.tri, hull=bezier.hull)
 
     if irefine == nrefine:
       break
@@ -87,9 +87,7 @@ if __name__ == '__main__':
 # :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
 # desired results as compressed base64 data.
 
-import unittest
-
-class test(unittest.TestCase):
+class test(nutils.testing.TestCase):
 
   def test_square_quadratic(self):
     ndofs, error, rate, lhs = main(nrefine=2, etype='square', degree=2)

@@ -32,6 +32,7 @@ setup(
   author = 'Evalf',
   author_email = 'info@nutils.org',
   url = 'http://nutils.org',
+  download_url = 'https://github.com/nutils/nutils/releases',
   packages = [ 'nutils' ],
   package_data = { 'nutils': ['_log/*'] },
   long_description = long_description,

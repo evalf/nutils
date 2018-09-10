@@ -39,7 +39,7 @@ def main(nelems: 'number of elements along edge' = 10,
 
   bezier = domain.sample('bezier', 5)
   X, sxy = bezier.eval(['X_i', 'stress_01'] @ ns, lhs=lhs)
-  nutils.export.triplot('shear.jpg', X, sxy, tri=bezier.tri, hull=bezier.hull)
+  nutils.export.triplot('shear.png', X, sxy, tri=bezier.tri, hull=bezier.hull)
 
   return cons, lhs
 
@@ -58,9 +58,7 @@ if __name__ == '__main__':
 # :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
 # desired results as compressed base64 data.
 
-import unittest
-
-class test(unittest.TestCase):
+class test(nutils.testing.TestCase):
 
   def test_default(self):
     cons, lhs = main(nelems=4)

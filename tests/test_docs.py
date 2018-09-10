@@ -1,6 +1,6 @@
 import doctest as _doctest, importlib, os, tempfile, pathlib, functools, warnings, subprocess, sys
 import nutils.log
-from . import *
+from nutils.testing import *
 
 
 class DocTestLog(nutils.log.ContextLog):
@@ -20,7 +20,7 @@ class DocTestLog(nutils.log.ContextLog):
 
 
 @parametrize
-class module(ContextTestCase):
+class module(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
@@ -39,7 +39,7 @@ class module(ContextTestCase):
       self.assertEqual(failcnt, 0)
 
 @parametrize
-class file(ContextTestCase):
+class file(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
@@ -66,12 +66,20 @@ for path in sorted((root / 'docs').glob('**/*.rst')):
   file(name[:-4], name=name, path=path)
 
 
-class sphinx(ContextTestCase):
+try:
+  import sphinx
+except ImportError:
+  _has_sphinx = False
+else:
+  _has_sphinx = True
+
+class sphinx(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
     self.tmpdir = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='nutils')))
 
+  @unittest.skipIf(not _has_sphinx, 'missing sphinx')
   def test(self):
     from sphinx.application import Sphinx
     app = Sphinx(srcdir=str(root/'docs'),

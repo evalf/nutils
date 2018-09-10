@@ -1,6 +1,6 @@
 from nutils import numeric
 import numpy
-from . import *
+from nutils.testing import *
 
 @parametrize
 class pack(TestCase):

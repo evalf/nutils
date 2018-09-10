@@ -1,6 +1,6 @@
 from nutils import *
 import random, itertools, functools
-from . import *
+from nutils.testing import *
 
 @parametrize
 class basis(TestCase):

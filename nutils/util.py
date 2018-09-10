@@ -23,7 +23,7 @@ The util module provides a collection of general purpose methods.
 """
 
 from . import numeric, config
-import sys, os, numpy, collections.abc, inspect, functools, operator, numbers, pathlib
+import sys, os, numpy, collections.abc, inspect, functools, operator, numbers, pathlib, ctypes, site
 
 supports_outdirfd = os.open in os.supports_dir_fd and os.listdir in os.supports_fd
 
@@ -323,5 +323,46 @@ def positional_only(*names, keep_varpositional=False):
     wrapped.__signature__ = signature.replace(parameters=parameters)
     return wrapped
   return wrapper
+
+def loadlib(**libname):
+  '''
+  Find and load a dynamic library using :func:`ctypes.CDLL`.  For each
+  (supported) platform the name of the library should be specified as a keyword
+  argument, including the extension, where the keywords should match the
+  possible values of :func:`sys.platform`.  In addition to the default
+  directories, this function searches :attr:`site.PREFIXES` and
+  :func:`site.getuserbase()`.
+
+  Example
+  -------
+
+  To load the Intel MKL runtime library, write::
+
+      loadlib(linux='libmkl_rt.so', darwin='libmkl_rt.dylib', win32='mkl_rt.dll')
+  '''
+
+  if sys.platform not in libname:
+    return
+  libname = libname[sys.platform]
+  try:
+    return ctypes.CDLL(libname)
+  except (OSError, KeyError):
+    pass
+  libsubdir = dict(linux='lib', darwin='lib', win32='Library\\bin')[sys.platform]
+  prefixes = list(site.PREFIXES)
+  if hasattr(site, 'getuserbase'):
+    prefixes.append(site.getuserbase())
+  for prefix in prefixes:
+    libdir = os.path.join(prefix, libsubdir)
+    if not os.path.exists(os.path.join(libdir, libname)):
+      continue
+    if sys.platform == 'win32' and libdir not in os.environ.get('PATH', '').split(';'):
+      # Make sure dependencies of `libname` residing in the same directory are
+      # found.
+      os.environ['PATH'] = os.environ.get('PATH', '').rstrip(';')+';'+libdir
+    try:
+      return ctypes.CDLL(os.path.join(libdir, libname))
+    except (OSError, KeyError):
+      pass
 
 # vim:sw=2:sts=2:et

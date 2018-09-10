@@ -66,8 +66,8 @@ def main(nelems: 'number of elements' = 20,
     nutils.log.user('energy: {:.3f} ({})'.format(sum(E), ', '.join('{:.0f}% {}'.format(100*e/sum(E), n) for e, n in sorted(zip(E, energy), reverse=True))))
 
     x, c, m = bezier.eval(['x_i', 'c', 'm'] @ ns, lhs=lhs)
-    nutils.export.triplot('phase.jpg', x, c, tri=bezier.tri, hull=bezier.hull, clim=(-1,1))
-    nutils.export.triplot('chempot.jpg', x, m, tri=bezier.tri, hull=bezier.hull)
+    nutils.export.triplot('phase.png', x, c, tri=bezier.tri, hull=bezier.hull, clim=(-1,1))
+    nutils.export.triplot('chempot.png', x, m, tri=bezier.tri, hull=bezier.hull)
 
     if numpy.ptp(m) < mtol:
       break
@@ -86,9 +86,7 @@ if __name__ == '__main__':
 # :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
 # desired results as compressed base64 data.
 
-import unittest
-
-class test(unittest.TestCase):
+class test(nutils.testing.TestCase):
 
   def _checkrand(self, lhs0):
     nutils.numeric.assert_allclose64(lhs0, 'eNoBxAA7/xM3LjTtNYs3MDcUyt41uc14zjo0L'
