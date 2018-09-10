@@ -86,9 +86,7 @@ if __name__ == '__main__':
 # :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
 # desired results as compressed base64 data.
 
-import unittest
-
-class test(unittest.TestCase):
+class test(nutils.testing.TestCase):
 
   def _checkrand(self, lhs0):
     nutils.numeric.assert_allclose64(lhs0, 'eNoBxAA7/xM3LjTtNYs3MDcUyt41uc14zjo0L'

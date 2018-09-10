@@ -314,7 +314,7 @@ class HtmlLog(ContextTreeLog):
         data = src.read()
       with self._open(hashlib.sha1(data).hexdigest() + '.' + filename.split('.')[1], 'wb', exists='skip') as dst:
         dst.write(data)
-      paths[filename.replace('.', '_')] = dst.name
+      paths[filename.replace('.', '_')] = dst._realname
     # Write header.
     self._file = stack.enter_context(self._open('log.html', 'w', exists='rename'))
     self._print('<!DOCTYPE html>')
@@ -386,7 +386,7 @@ class HtmlLog(ContextTreeLog):
   def open(self, filename, mode, level, exists):
     with self._open(filename, mode, exists) as f:
       yield f
-    self.write(level, '<a href="{href}">{name}</a>'.format(href=urllib.parse.quote(f.name), name=html.escape(filename)), escape=False)
+    self.write(level, '<a href="{href}">{name}</a>'.format(href=urllib.parse.quote(f._realname), name=html.escape(filename)), escape=False)
 
 class IndentLog(ContextTreeLog):
   '''Output indented html snippets.'''
@@ -462,7 +462,7 @@ class IndentLog(ContextTreeLog):
   def open(self, filename, mode, level, exists):
     with self._open(filename, mode, exists) as f:
       yield f
-    self._print_item(level, '<a href="{href}">{name}</a>'.format(href=urllib.parse.quote(f.name), name=html.escape(filename)), escape=False)
+    self._print_item(level, '<a href="{href}">{name}</a>'.format(href=urllib.parse.quote(f._realname), name=html.escape(filename)), escape=False)
 
 class TeeLog(Log):
   '''Simultaneously interface multiple logs'''
@@ -494,13 +494,13 @@ class TeeLog(Log):
     with contextlib.ExitStack() as stack:
       files = [stack.enter_context(log.open(filename, mode, level, exists)) for log in self.logs]
       files = list(filter(lambda file: not file.devnull, files))
+      virtual_filename = _virtual_filename_prefix+filename
       if len(files) == 0:
-        yield stack.enter_context(_devnull(filename, mode))
+        yield stack.enter_context(_devnull(virtual_filename, mode))
       elif len(files) == 1:
         yield files[0]
       else:
-        f = stack.enter_context(tempfile.NamedTemporaryFile(suffix=filename, mode=mode+'+'))
-        f.devnull = False
+        f = stack.enter_context(_open_tempfile(virtual_filename, mode=mode+'+'))
         yield f
         f.seek(0)
         data = f.read()
@@ -593,8 +593,7 @@ class RecordLog(Log):
     for title in self._contexts[self._appended_contexts:]:
       self._messages.append(('entercontext', title))
     self._appended_contexts = len(self._contexts)
-    with tempfile.NamedTemporaryFile(suffix=filename, mode=mode+'+') as f:
-      f.devnull = False
+    with _open_tempfile(_virtual_filename_prefix+filename, mode=mode+'+') as f:
       yield f
       f.seek(0)
       data = f.read()
@@ -624,17 +623,6 @@ class RecordLog(Log):
 
 ## INTERNAL FUNCTIONS
 
-# Reference to the current log instance.  This is updated by the `Log`'s
-# context manager, see `Log` base class.
-_current_log = None
-
-def _set_current_log(new_log):
-  global _current_log
-  _current_log = new_log
-
-# Set a default log instance.
-StdoutLog().__enter__()
-
 def _len(iterable):
   '''Return length if available, otherwise None'''
 
@@ -653,6 +641,18 @@ def _devnull(name, mode):
   f.devnull = True
   return f
 
+@contextlib.contextmanager
+def _open_tempfile(name, mode):
+  fd, path = tempfile.mkstemp(text='b' not in mode)
+  try:
+    with builtins.open(name, mode, opener=lambda *args: fd) as f:
+      f.devnull = False
+      yield f
+  finally:
+    os.unlink(path)
+
+_virtual_filename_prefix = '<log>'+os.sep
+
 class _makedirs:
   def __init__(self, path, exist_ok=False):
     self.path = path
@@ -666,25 +666,40 @@ class _makedirs:
   def __exit__(self, etype, value, tb):
     if isinstance(self.path, int):
       os.close(self.path)
-  def _open(self, name, *args):
-    return os.open(name, *args, dir_fd=self.path) if isinstance(self.path, int) \
-      else os.open(os.path.join(self.path, name), *args)
+  def _open(self, fakename, *args, realname):
+    return os.open(realname, *args, mode=0o666, dir_fd=self.path) if isinstance(self.path, int) \
+      else os.open(os.path.join(self.path, realname), *args, mode=0o666)
   def open(self, filename, mode, exists):
     if mode not in ('w', 'wb'):
       raise ValueError('invalid mode: {!r}'.format(mode))
     if exists not in ('overwrite', 'rename', 'skip'):
       raise ValueError('invalid exists: {!r}'.format(exists))
+    virtual_filename = _virtual_filename_prefix + filename
     if exists != 'overwrite':
       listdir = set(os.listdir(self.path))
       if filename in listdir:
         if exists == 'skip':
-          return _devnull(filename, mode)
+          f = _devnull(virtual_filename, mode)
+          f._realname = filename
+          return f
         for filename in map('-{}'.join(os.path.splitext(filename)).format, itertools.count(1)):
           if filename not in listdir:
             break
-    f = builtins.open(filename, mode, opener=self._open)
+    f = builtins.open(virtual_filename, mode, opener=functools.partial(self._open, realname=filename))
     f.devnull = False
+    f._realname = filename
     return f
+
+# Reference to the current log instance.  This is updated by the `Log`'s
+# context manager, see `Log` base class.
+_current_log = None
+
+def _set_current_log(new_log):
+  global _current_log
+  _current_log = new_log
+
+# Set a default log instance.
+TeeLog(StdoutLog(), DataLog(os.getcwd())).__enter__()
 
 ## MODULE-ONLY METHODS
 

@@ -26,7 +26,7 @@ Matrices can be converted into other forms suitable for external processing via
 the ``export`` method.
 """
 
-from . import numpy, log, numeric, warnings, cache, types, config
+from . import numpy, log, numeric, warnings, cache, types, config, util
 import abc, sys, ctypes
 
 
@@ -384,21 +384,15 @@ else:
 
 ## INTEL MKL BACKEND
 
-try:
-  libmkl = ctypes.CDLL({'linux': 'libmkl_rt.so', 'darwin': 'libmkl_rt.dylib', 'win32': 'mkl_rt.dll'}[sys.platform])
-except (OSError, KeyError):
-  pass
-else:
+libmkl = util.loadlib(linux='libmkl_rt.so', darwin='libmkl_rt.dylib', win32='mkl_rt.dll')
+if libmkl is not None:
 
   # typedefs
   c_int = types.c_array[numpy.int32]
   c_long = types.c_array[numpy.int64]
   c_double = types.c_array[numpy.float64]
 
-  try:
-    libtbb = ctypes.CDLL({'linux': 'libtbb.so.2', 'darwin': 'libtbb.dylib', 'win32': 'tbb.dll'}[sys.platform])
-  except (OSError, KeyError):
-    libtbb = None
+  libtbb = util.loadlib(linux='libtbb.so.2', darwin='libtbb.dylib', win32='tbb.dll')
 
   class MKL(Backend):
     '''matrix backend based on Intel's Math Kernel Library'''
