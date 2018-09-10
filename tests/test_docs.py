@@ -66,12 +66,20 @@ for path in sorted((root / 'docs').glob('**/*.rst')):
   file(name[:-4], name=name, path=path)
 
 
+try:
+  import sphinx
+except ImportError:
+  _has_sphinx = False
+else:
+  _has_sphinx = True
+
 class sphinx(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
     self.tmpdir = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='nutils')))
 
+  @unittest.skipIf(not _has_sphinx, 'missing sphinx')
   def test(self):
     from sphinx.application import Sphinx
     app = Sphinx(srcdir=str(root/'docs'),
