@@ -80,7 +80,8 @@ class sphinx(TestCase):
                  doctreedir=str(self.tmpdir/'doctree'),
                  buildername='html',
                  freshenv=True,
-                 warningiserror=True)
+                 warningiserror=True,
+                 confoverrides=dict(nitpicky=True))
     app.build()
     if app.statuscode:
       self.fail('sphinx build failed with code {}'.format(app.statuscode))
