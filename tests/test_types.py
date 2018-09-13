@@ -49,8 +49,9 @@ class apply_annotations(TestCase):
     self.assertEqual(f(1, 2, 3), ('1', (2, 3)))
 
   def test_varpos_annotated(self):
+    map_str = lambda args: map(str, args)
     @nutils.types.apply_annotations
-    def f(a:str, *args:lambda args: map(str, args)):
+    def f(a:str, *args:map_str):
       return a, args
     self.assertEqual(f(1, 2, 3), ('1', ('2', '3')))
 
@@ -61,8 +62,9 @@ class apply_annotations(TestCase):
     self.assertEqual(f(1, b=2, c=3), ('1', dict(b=2, c=3)))
 
   def test_varkw_annotated(self):
+    map_str = lambda kwargs: {k: str(v) for k, v in kwargs.items()}
     @nutils.types.apply_annotations
-    def f(a:str, **kwargs:lambda kwargs: {k: str(v) for k, v in kwargs.items()}):
+    def f(a:str, **kwargs:map_str):
       return a, kwargs
     self.assertEqual(f(1, b=2, c=3), ('1', dict(b='2', c='3')))
 
