@@ -3764,7 +3764,7 @@ class Namespace:
 
   Attributes
   ----------
-  arg_shapes : view of :class:`dict`
+  arg_shapes : :class:`dict`
       A readonly map of argument names and shapes.
   default_geometry_name : :class:`str`
       The name of the default geometry.  See argument with the same name.
