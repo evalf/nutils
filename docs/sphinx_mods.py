@@ -379,7 +379,11 @@ unicode_math_map = {
 unicode_math_map = str.maketrans({k: v+' ' for k, v in unicode_math_map.items()})
 
 def replace_unicode_math(app, doctree):
-  for node in doctree.traverse(sphinx.ext.mathbase.math):
+  if sphinx.version_info >= (1,8):
+    math = sphinx.addnodes.math
+  else:
+    from sphinx.ext.mathbase import math
+  for node in doctree.traverse(math):
     node['latex'] = node['latex'].translate(unicode_math_map)
 
 class ConsoleDirective(docutils.parsers.rst.Directive):
@@ -524,6 +528,9 @@ def setup(app):
 
   app.connect('build-finished', remove_generated)
 
-  app.add_stylesheet('mods.css')
+  if sphinx.version_info >= (1,8):
+    app.add_css_file('mods.css')
+  else:
+    app.add_stylesheet('mods.css')
 
 # vim: sts=2:sw=2:et
