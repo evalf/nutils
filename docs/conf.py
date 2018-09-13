@@ -14,6 +14,11 @@
 
 import sys, os, re
 
+try:
+  from sphinx import version_info as _sphinx_version_info
+except ImportError:
+  _sphinx_version_info = ()
+
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
@@ -339,7 +344,10 @@ epub_exclude_files = ['search.html']
 #epub_use_index = True
 
 autodoc_member_order = 'bysource'
-autodoc_default_flags = [ 'members', 'special-members', 'show-inheritance' ]
+if _sphinx_version_info >= (1,8):
+    autodoc_default_options = {'members':None, 'special-members':None, 'show-inheritance':None}
+else:
+    autodoc_default_flags = ['members', 'special-members', 'show-inheritance']
 autodoc_inherit_docstrings = False # i.e. don't document implementations of abstract methods (if the implementation does not have a docstring)
 
 intersphinx_mapping = {
