@@ -854,12 +854,12 @@ class c_array(TestCase):
   def test_list(self):
     a = [1,2,3]
     a_ct = nutils.types.c_array[numpy.int64](a)
-    self.assertEqual(ctypes.cast(a_ct, ctypes.POINTER(ctypes.c_int64)).contents.value, 1)
+    self.assertEqual(a_ct.data_as(ctypes.POINTER(ctypes.c_int64)).contents.value, 1)
 
   def test_array(self):
     a = numpy.array([1,2,3], dtype=numpy.int64)
     a_ct = nutils.types.c_array[numpy.int64](a)
-    self.assertEqual(ctypes.cast(a_ct, ctypes.POINTER(ctypes.c_int64)).contents.value, 1)
+    self.assertEqual(a_ct.data_as(ctypes.POINTER(ctypes.c_int64)).contents.value, 1)
 
   def test_array_invalid_dtype(self):
     a = numpy.array([1,2,3], dtype=numpy.int32)
