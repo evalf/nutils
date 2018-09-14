@@ -1281,12 +1281,6 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
   cumsum = lambda self, *args, **kwargs: frozenarray(self.__base.cumsum(*args, **kwargs), copy=False)
   nonzero = lambda self, *args, **kwargs: frozenarray(self.__base.nonzero(*args, **kwargs), copy=False)
 
-  def insertaxis(self, axis, length):
-    base = self.__base
-    return frozenarray(numpy.lib.stride_tricks.as_strided(base,
-      shape=base.shape[:axis]+(length,)+base.shape[axis:],
-      strides=base.strides[:axis]+(0,)+base.strides[axis:]))
-
 class _c_arraymeta(type):
   def __getitem__(self, dtype):
     def constructor(value):
