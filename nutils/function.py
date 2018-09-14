@@ -1799,8 +1799,8 @@ class Power(Array):
     ext = (...,)+(_,)*var.ndim
     if self.power.isconstant:
       p, = self.power.eval()
-      return zeros(self.shape + var.shape) if p == 0 \
-        else multiply(p, power(self.func, p-1))[ext] * derivative(self.func, var, seen)
+      p_decr = p - (p!=0)
+      return multiply(p, power(self.func, p_decr))[ext] * derivative(self.func, var, seen)
     # self = func**power
     # ln self = power * ln func
     # self` / self = power` * ln func + power * func` / func
