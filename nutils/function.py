@@ -787,8 +787,14 @@ class InsertAxis(Array):
     return InsertAxis(func, self.axis, self.length)
 
   def evalf(self, func, length):
+    # We would like to return an array with stride zero for the inserted axis,
+    # but this appears to be *slower* (checked with examples/cylinderflow.py)
+    # than the implementation below.
     length, = length
-    return types.frozenarray(func).insertaxis(self.axis+1, length)
+    func = numpy.asarray(func)[(slice(None),)*(self.axis+1)+(None,)]
+    if length != 1:
+      func = numpy.repeat(func, length, self.axis+1)
+    return func
 
   def _derivative(self, var, seen):
     return insertaxis(derivative(self.func, var, seen), self.axis, self.length)
