@@ -209,13 +209,12 @@ class Sample(types.Singleton):
     funcs = [function.asarray(func) for func in funcs]
     retvals = [zeros((self.npoints,)+func.shape, dtype=func.dtype) for func in funcs]
     idata = function.Tuple(function.Tuple([ifunc, function.Tuple(ind), f.simplified]) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func.prepare_eval(ndims=self.ndims)))
-    fcache = cache.WrapperCache()
 
     if config.dot:
       idata.graphviz()
 
     for transforms, points, index in parallel.pariter(log.zip('elem', self.transforms, self.points, self.index), nprocs=nprocs):
-      for ifunc, inds, data in idata.eval(_transforms=transforms, _points=points.coords, _cache=fcache, **arguments):
+      for ifunc, inds, data in idata.eval(_transforms=transforms, _points=points.coords, **arguments):
         numpy.add.at(retvals[ifunc], numpy.ix_(index, *[ind for (ind,) in inds]), data)
 
     return retvals

@@ -152,6 +152,8 @@ class Evaluable(types.Singleton):
     return self.__class__.__name__
 
   def eval(self, **evalargs):
+    if '_cache' in evalargs:
+      warnings.deprecation('The _cache argument is deprecated as of version 5 and can safely be removed.')
     values = [evalargs]
     for op, indices in self.serialized:
       try:
@@ -245,18 +247,6 @@ class EvaluationError(Exception):
     return '\n{} --> {}: {}'.format(self.evaluable.stackstr(nlines=len(self.values)), self.etype.__name__, self.evalue)
 
 EVALARGS = Evaluable(args=())
-
-class Cache(Evaluable):
-  __slots__ = ()
-  def __init__(self):
-    super().__init__(args=[EVALARGS])
-  def evalf(self, evalargs):
-    try:
-      return evalargs['_cache']
-    except KeyError:
-      return cache.WrapperDummyCache()
-
-CACHE = Cache()
 
 class Points(Evaluable):
   __slots__ = ()
