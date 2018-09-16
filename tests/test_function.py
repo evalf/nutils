@@ -278,7 +278,7 @@ class check(TestCase):
     while not numpy.all(good):
       fdpoints = self.points[_,_,:,:] + D[:,:,_,:] * eps
       tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
-      if len(tmp) == 1 or tmp.dtype.kind == 'b':
+      if len(tmp) == 1 or tmp.dtype.kind in 'bi' or self.zerograd:
         error = exact
       else:
         fdgrad, = numpy.diff(tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:]), axis=0) / eps
@@ -308,18 +308,21 @@ class check(TestCase):
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_gradient(self):
     exact = self.op_args.grad(self.geom).simplified.eval(**self.evalargs)
-    D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.geom.shape[-1])
+    fddeltas = numpy.array([1,2,3])
+    fdfactors = numpy.linalg.solve(2*fddeltas**numpy.arange(1,1+2*len(fddeltas),2)[:,None], [1]+[0]*(len(fddeltas)-1))
+    fdfactors = numpy.concatenate([-fdfactors[::-1], fdfactors])
+    D = numpy.concatenate([-fddeltas[::-1], fddeltas])[:,_,_] * numpy.eye(self.geom.shape[-1])
     good = False
-    eps = 1e-5
+    eps = 1e-4
     while not numpy.all(good):
       fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,:,:] + D[:,:,_,:] * eps, self.points[_,_,:,:])
       tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
-      if len(tmp) == 1 or tmp.dtype.kind == 'b':
+      if len(tmp) == 1 or tmp.dtype.kind in 'bi' or self.zerograd:
         error = exact
       else:
-        fdgrad, = numpy.diff(tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:]), axis=0) / eps
+        fdgrad = numpy.tensordot(fdfactors, tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:]), [[0]]*2) / eps
         error = exact - fdgrad.transpose(numpy.roll(numpy.arange(fdgrad.ndim),-1))
-      good |= numpy.less(abs(error / exact), 1e-8)
+      good |= numpy.less(abs(error / exact), 1e-9)
       good |= numpy.less(abs(error), 1e-14)
       eps *= .8
       if eps < 1e-10:
@@ -328,17 +331,20 @@ class check(TestCase):
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_doublegradient(self):
     exact = self.op_args.grad(self.geom).grad(self.geom).simplified.eval(**self.evalargs)
-    D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.geom.shape[-1])
+    fddeltas = numpy.array([1,2,3])
+    fdfactors = numpy.linalg.solve(2*fddeltas**numpy.arange(1,1+2*len(fddeltas),2)[:,None], [1]+[0]*(len(fddeltas)-1))
+    fdfactors = numpy.concatenate([-fdfactors[::-1], fdfactors])
+    D = numpy.concatenate([-fddeltas[::-1], fddeltas])[:,_,_] * numpy.eye(self.geom.shape[-1])
     DD = D[:,_,:,_,:] + D[_,:,_,:,:]
     good = False
     eps = 1e-4
     while not numpy.all(good):
       fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,_,_,:,:] + DD[:,:,:,:,_,:] * eps, self.points[_,_,_,_,:,:])
       tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
-      if len(tmp) == 1 or tmp.dtype.kind == 'b':
+      if len(tmp) == 1 or tmp.dtype.kind in 'bi' or self.zerograd:
         error = exact
       else:
-        (fddgrad,), = numpy.diff(numpy.diff(tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:]), axis=1), axis=0) / eps**2
+        fddgrad = numpy.tensordot(numpy.outer(fdfactors, fdfactors), tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:]), [[0,1]]*2) / eps**2
         error = exact - fddgrad.transpose(numpy.roll(numpy.arange(fddgrad.ndim),-2))
       good |= numpy.less(abs(error / exact), 1e-4)
       good |= numpy.less(abs(error), 1e-14)
@@ -346,9 +352,9 @@ class check(TestCase):
       if eps < 1e-10:
         self.fail('double gradient failed to reach tolerance ({}/{})'.format((~good).sum(), good.size))
 
-def _check(name, op, n_op, shapes, hasgrad=True, pass_geom=False, ndim=2, low=-1, high=1):
-  check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad, pass_geom=pass_geom, ndim=ndim, low=low, high=high)
-  check(name+':guard', op=lambda *args: op(*map(function.Guard, args)), n_op=n_op, shapes=shapes, hasgrad=hasgrad, pass_geom=pass_geom, ndim=ndim, low=low, high=high)
+def _check(name, op, n_op, shapes, hasgrad=True, zerograd=False, pass_geom=False, ndim=2, low=-1, high=1):
+  check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad, zerograd=zerograd, pass_geom=pass_geom, ndim=ndim, low=low, high=high)
+  check(name+':guard', op=lambda *args: op(*map(function.Guard, args)), n_op=n_op, shapes=shapes, hasgrad=hasgrad, zerograd=zerograd, pass_geom=pass_geom, ndim=ndim, low=low, high=high)
 
 _check('identity', lambda f: function.asarray(f), lambda a: a, [(2,3,2)])
 _check('const', lambda f: function.asarray([[1.,2.],[3.,4.]]), lambda a: numpy.array([[[1.,2.],[3.,4.]]]), [(2,3,2)])
@@ -367,7 +373,7 @@ _check('tanh', function.tanh, numpy.tanh, [(3,)])
 _check('cosh', function.cosh, numpy.cosh, [(3,)])
 _check('sinh', function.sinh, numpy.sinh, [(3,)])
 _check('abs', function.abs, numpy.abs, [(3,)])
-_check('sign', function.sign, numpy.sign, [(3,)])
+_check('sign', function.sign, numpy.sign, [(3,)], zerograd=True)
 _check('power', function.power, numpy.power, [(3,1),(1,3)], low=0)
 _check('negative', function.negative, numpy.negative, [(3,)])
 _check('reciprocal', function.reciprocal, numpy.reciprocal, [(3,)], low=-2, high=-1)
@@ -390,9 +396,9 @@ _check('takediag323', lambda a: function.takediag(a,0,2), lambda a: numeric.take
 _check('determinant131', lambda a: function.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(-3,-2)), [(1,3,1)])
 _check('determinant232', lambda a: function.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(-3,-2)), [(2,3,2)])
 _check('determinant323', lambda a: function.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(-3,-2)), [(3,2,3)])
-_check('inverse131', lambda a: function.inverse(a,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)).swapaxes(-3,-2), [(1,3,1)])
-_check('inverse232', lambda a: function.inverse(a,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)).swapaxes(-3,-2), [(2,3,2)])
-_check('inverse323', lambda a: function.inverse(a,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)).swapaxes(-3,-2), [(3,2,3)])
+_check('inverse131', lambda a: function.inverse(a+function.eye(len(a))[:,None],(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)+numpy.eye(a.shape[-1])).swapaxes(-3,-2), [(1,3,1)])
+_check('inverse232', lambda a: function.inverse(a+function.eye(len(a))[:,None],(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)+numpy.eye(a.shape[-1])).swapaxes(-3,-2), [(2,3,2)])
+_check('inverse323', lambda a: function.inverse(a+function.eye(len(a))[:,None],(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)+numpy.eye(a.shape[-1])).swapaxes(-3,-2), [(3,2,3)])
 _check('repeat', lambda a: function.repeat(a,3,1), lambda a: numpy.repeat(a,3,-2), [(2,1,2)])
 _check('diagonalize', lambda a: function.diagonalize(a,1,3), lambda a: numeric.diagonalize(a,2,4), [(2,2,2,2)])
 _check('multiply', function.multiply, numpy.multiply, [(3,1),(3,3)])
