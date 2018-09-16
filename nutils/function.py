@@ -2902,15 +2902,15 @@ class Polyval(Array):
     self.coeffs = coeffs
     self.points = points
     self.ngrad = ngrad
-    super().__init__(args=[CACHE, points, coeffs], shape=coeffs.shape[:ndim]+(self.points_ndim,)*ngrad, dtype=float)
+    super().__init__(args=[points, coeffs], shape=coeffs.shape[:ndim]+(self.points_ndim,)*ngrad, dtype=float)
 
-  def evalf(self, cache, points, coeffs):
+  def evalf(self, points, coeffs):
     assert points.shape[1] == self.points_ndim
     points = types.frozenarray(points)
     coeffs = types.frozenarray(coeffs)
     for igrad in range(self.ngrad):
-      coeffs = cache[numeric.poly_grad](coeffs, self.points_ndim)
-    return cache[numeric.poly_eval](coeffs, points)
+      coeffs = numeric.poly_grad(coeffs, self.points_ndim)
+    return numeric.poly_eval(coeffs, points)
 
   def _derivative(self, var, seen):
     # Derivative to argument `points`.

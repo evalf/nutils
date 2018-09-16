@@ -23,7 +23,7 @@ The numeric module provides methods that are lacking from the numpy module.
 """
 
 from . import types, warnings
-import numpy, numbers, builtins, collections.abc
+import numpy, numbers, builtins, collections.abc, functools
 
 _abc = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' # indices for einsum
 
@@ -438,7 +438,9 @@ def poly_concatenate(coeffs):
   coeffs = [numpy.pad(c, [(0,0)]+[(0,n-c.shape[1])]*(c.ndim-1), 'constant', constant_values=0) if c.shape[1] < n else c for c in coeffs]
   return numpy.concatenate(coeffs)
 
-def poly_grad(coeffs, ndim):
+@types.apply_annotations
+@functools.lru_cache()
+def poly_grad(coeffs:types.frozenarray, ndim:int):
   I = range(ndim)
   dcoeffs = [coeffs[(...,*(slice(1,None) if i==j else slice(0,-1) for j in I))] for i in I]
   if coeffs.shape[-1] > 2:
@@ -447,7 +449,9 @@ def poly_grad(coeffs, ndim):
   dcoeffs = numpy.stack(dcoeffs, axis=coeffs.ndim-ndim)
   return types.frozenarray(dcoeffs, copy=False)
 
-def poly_eval(coeffs, points):
+@types.apply_annotations
+@functools.lru_cache()
+def poly_eval(coeffs:types.frozenarray, points:types.frozenarray):
   assert points.ndim == 2
   if coeffs.shape[-1] == 0:
     return types.frozenarray.full((points.shape[0],)+coeffs.shape[1:coeffs.ndim-points.shape[-1]], 0.)
