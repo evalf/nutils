@@ -23,7 +23,7 @@ The mesh module provides mesh generators: methods that return a topology and an
 accompanying geometry function. Meshes can either be generated on the fly, e.g.
 :func:`rectilinear`, or read from external an externally prepared file,
 :func:`gmsh`, and converted to nutils format. Note that no mesh writers are
-provided at this point; output is handled by the :mod:`nutils.plot` module.
+provided at this point.
 """
 
 from . import topology, function, util, element, numpy, numeric, transform, log, warnings, types, _

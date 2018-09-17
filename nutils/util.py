@@ -326,11 +326,11 @@ def positional_only(*names, keep_varpositional=False):
 
 def loadlib(**libname):
   '''
-  Find and load a dynamic library using :func:`ctypes.CDLL`.  For each
+  Find and load a dynamic library using :any:`ctypes.CDLL`.  For each
   (supported) platform the name of the library should be specified as a keyword
   argument, including the extension, where the keywords should match the
-  possible values of :func:`sys.platform`.  In addition to the default
-  directories, this function searches :attr:`site.PREFIXES` and
+  possible values of :any:`sys.platform`.  In addition to the default
+  directories, this function searches :any:`site.PREFIXES` and
   :func:`site.getuserbase()`.
 
   Example
