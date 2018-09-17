@@ -215,7 +215,7 @@ _logoutput('rich_output', nutils.log.RichOutputLog, log_rich_output)
 _logoutput('html', nutils.log.HtmlLog, log_html)
 _logoutput('indent', nutils.log.IndentLog, log_indent)
 
-class tee_stdout_html(TestCase):
+class deprecated_tee(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
@@ -400,21 +400,23 @@ class RichOutputLog(TestCase, _DevnullTests):
     stream = io.StringIO()
     stack.enter_context(nutils.log.RichOutputLog(stream))
 
-class TeeDoubleStdout(TestCase, _DevnullTests):
+class DoubleStdout(TestCase, _DevnullTests):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
     stream1 = io.StringIO()
     stream2 = io.StringIO()
-    stack.enter_context(nutils.log.TeeLog(nutils.log.StdoutLog(stream1), nutils.log.StdoutLog(stream2)))
+    stack.enter_context(nutils.log.StdoutLog(stream1))
+    stack.enter_context(nutils.log.StdoutLog(stream2))
 
-class TeeStdoutHtml(TestCase):
+class StdoutHtml(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
     self.outdir_html = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory()))
     stream_stdout = io.StringIO()
-    stack.enter_context(nutils.log.TeeLog(nutils.log.StdoutLog(stream_stdout), nutils.log.HtmlLog(str(self.outdir_html))))
+    stack.enter_context(nutils.log.StdoutLog(stream_stdout))
+    stack.enter_context(nutils.log.HtmlLog(str(self.outdir_html)))
 
   def test_devnull(self):
     for mode in 'w', 'wb':
@@ -458,14 +460,15 @@ class TeeStdoutHtml(TestCase):
       self.assertEqual(f.read(), 'a')
     self.assertFalse((self.outdir_html/'test-1.txt').exists())
 
-class TeeHtmlData(TestCase):
+class HtmlData(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
     tmpdir = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory()))
     self.outdir_html = tmpdir/'html'
     self.outdir_data = tmpdir/'data'
-    stack.enter_context(nutils.log.TeeLog(nutils.log.HtmlLog(str(self.outdir_html)), nutils.log.DataLog(str(self.outdir_data))))
+    stack.enter_context(nutils.log.HtmlLog(str(self.outdir_html)))
+    stack.enter_context(nutils.log.DataLog(str(self.outdir_data)))
 
   def test_devnull(self):
     for mode in 'w', 'wb':
