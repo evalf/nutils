@@ -1133,8 +1133,8 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
       copied.
   '''
 
-  __slots__ = '__base', '__hash'
-  __cache__ = '__nutils_hash__',
+  __slots__ = '__base'
+  __cache__ = '__nutils_hash__', '__hash__'
 
   @staticmethod
   def full(shape, fill_value):
@@ -1167,8 +1167,10 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
     self = object.__new__(cls)
     self.__base = numpy.array(base, dtype=dtype) if copy or not isinstance(base, numpy.ndarray) or dtype and dtype != base.dtype else base
     self.__base.flags.writeable = False
-    self.__hash = hash((self.__base.shape, self.__base.dtype, tuple(self.__base.flat[::self.__base.size//32+1]) if self.__base.size else ())) # NOTE special case self.__base.size == 0 necessary for numpy<1.12
     return self
+
+  def __hash__(self):
+    return hash((self.__base.shape, self.__base.dtype, tuple(self.__base.flat[::self.__base.size//32+1]) if self.__base.size else ())) # NOTE special case self.__base.size == 0 necessary for numpy<1.12
 
   @property
   def __nutils_hash__(self):
@@ -1190,7 +1192,7 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
       return False
     if self.__base is other.__base:
       return True
-    if self.__hash != other.__hash or self.__base.dtype != other.__base.dtype or self.__base.shape != other.__base.shape or numpy.not_equal(self.__base, other.__base).any():
+    if hash(self) != hash(other) or self.__base.dtype != other.__base.dtype or self.__base.shape != other.__base.shape or numpy.not_equal(self.__base, other.__base).any():
       return False
     # deduplicate
     self.__base = other.__base
@@ -1249,7 +1251,6 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
   __floordiv__ = lambda self, other: self.__base.__floordiv__(other)
   __rfloordiv__ = lambda self, other: self.__base.__rfloordiv__(other)
   __pow__ = lambda self, other: self.__base.__pow__(other)
-  __hash__ = lambda self: self.__hash
   __int__ = lambda self: self.__base.__int__()
   __float__ = lambda self: self.__base.__float__()
   __abs__ = lambda self: self.__base.__abs__()
@@ -1279,12 +1280,6 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
   transpose = lambda self, *args, **kwargs: frozenarray(self.__base.transpose(*args, **kwargs), copy=False)
   cumsum = lambda self, *args, **kwargs: frozenarray(self.__base.cumsum(*args, **kwargs), copy=False)
   nonzero = lambda self, *args, **kwargs: frozenarray(self.__base.nonzero(*args, **kwargs), copy=False)
-
-  def insertaxis(self, axis, length):
-    base = self.__base
-    return frozenarray(numpy.lib.stride_tricks.as_strided(base,
-      shape=base.shape[:axis]+(length,)+base.shape[axis:],
-      strides=base.strides[:axis]+(0,)+base.strides[axis:]))
 
 class _c_arraymeta(type):
   def __getitem__(self, dtype):

@@ -364,17 +364,17 @@ class Topology(types.Singleton):
     if arguments is None:
       arguments = {}
 
-    fcache = cache.WrapperCache()
     levelset = levelset.prepare_eval().simplified
     if leveltopo is None:
       ischeme = 'vertex{}'.format(maxrefine)
-      refs = [elem.reference.trim(levelset.eval(_transforms=(elem.transform, elem.opposite), _points=elem.reference.getischeme(ischeme)[0], _cache=fcache, **arguments), maxrefine=maxrefine, ndivisions=ndivisions) for elem in log.iter('elem', self)]
+      refs = [elem.reference.trim(levelset.eval(_transforms=(elem.transform, elem.opposite), _points=elem.reference.getischeme(ischeme)[0], **arguments), maxrefine=maxrefine, ndivisions=ndivisions) for elem in log.iter('elem', self)]
     else:
       log.info('collecting leveltopo elements')
       bins = [[] for ielem in range(len(self))]
       for elem in leveltopo:
         ielem, tail = transform.lookup_item(elem.transform, self.edict)
         bins[ielem].append(tail)
+      fcache = cache.WrapperCache()
       refs = []
       for elem, ctransforms in log.zip('elem', self, bins):
         levels = numpy.empty(elem.reference.nvertices_by_level(maxrefine))
@@ -384,10 +384,10 @@ class Topology(types.Singleton):
         while mask.any():
           imax = numpy.argmax([mask[indices].sum() for trans, points, indices in cover])
           trans, points, indices = cover.pop(imax)
-          levels[indices] = levelset.eval(_transforms=(elem.transform + trans,), _points=points, _cache=fcache, **arguments)
+          levels[indices] = levelset.eval(_transforms=(elem.transform + trans,), _points=points, **arguments)
           mask[indices] = False
         refs.append(elem.reference.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
-    log.debug('cache', fcache.stats)
+      log.debug('cache', fcache.stats)
     return SubsetTopology(self, refs, newboundary=name)
 
   def subset(self, elements, newboundary=None, strict=False):

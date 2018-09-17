@@ -78,20 +78,6 @@ class WrapperCache:
   def __nutils_hash__(self):
     return hashlib.sha1(b'nutils.cache.WrapperCache\0').digest()
 
-class WrapperDummyCache:
-  'placeholder object'
-
-  stats = 'caching disabled'
-
-  def __getitem__(self, func):
-    return func
-
-  @property
-  def __nutils_hash__(self):
-    # This hash is intentionally the same as `WrapperCache`: Both can be
-    # interchanged without affecting results.
-    return hashlib.sha1(b'nutils.cache.WrapperCache\0').digest()
-
 _cache = None
 
 @contextlib.contextmanager
