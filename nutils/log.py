@@ -106,6 +106,15 @@ class DataLog(Log):
     with self._open(filename, mode, exists) as f:
       yield f
 
+class CWDLog(Log):
+  '''
+  Output only data in de current working directory.  This is different from
+  `DataLog(os.getcwd)`.  if the current working directory changes afterwards.
+  '''
+
+  def open(self, filename, mode, level, exists):
+    return _open_in_path(filename, mode, exists, path=None)
+
 class ContextLog(Log):
   '''Base class for loggers that keep track of the current list of contexts.
 

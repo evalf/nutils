@@ -520,6 +520,25 @@ class TeeHtmlData(TestCase):
       self.assertEqual(f.read(), 'a')
     self.assertFalse((self.outdir_data/'test-1.txt').exists())
 
+class CWDLog(TestCase):
+
+  def test_change_cwd(self):
+    with tempfile.TemporaryDirectory() as dir1, tempfile.TemporaryDirectory() as dir2, nutils.log.CWDLog():
+      dir1 = pathlib.Path(dir1)
+      dir2 = pathlib.Path(dir2)
+      orig_cwd = os.getcwd()
+      try:
+        os.chdir(str(dir1))
+        with nutils.log.open('test-1.txt', 'w') as f:
+          f.write('a')
+        self.assertTrue((dir1/'test-1.txt').exists())
+        os.chdir(str(dir2))
+        with nutils.log.open('test-2.txt', 'w') as f:
+          f.write('b')
+        self.assertTrue((dir2/'test-2.txt').exists())
+      finally:
+        os.chdir(orig_cwd)
+
 class log_module_funcs(TestCase):
 
   @contextlib.contextmanager
