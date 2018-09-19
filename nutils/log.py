@@ -639,6 +639,39 @@ def _open_tempfile(name, mode):
 
 _virtual_filename_prefix = '<log>'+os.sep
 
+def _open_in_path(filename, mode, exists, *, path):
+  # `path` can be:
+  # * an `int`: fd pointing to a directory,
+  # * a `str`: the name of the directory or
+  # * `None`: meaning: the current working directory.
+  if mode not in ('w', 'wb'):
+    raise ValueError('invalid mode: {!r}'.format(mode))
+  if exists not in ('overwrite', 'rename', 'skip'):
+    raise ValueError('invalid exists: {!r}'.format(exists))
+  virtual_filename = _virtual_filename_prefix + filename
+  if exists != 'overwrite':
+    listdir = set(os.listdir(path))
+    if filename in listdir:
+      if exists == 'skip':
+        f = _devnull(virtual_filename, mode)
+        f._realname = filename
+        return f
+      for filename in map('-{}'.join(os.path.splitext(filename)).format, itertools.count(1)):
+        if filename not in listdir:
+          break
+  if isinstance(path, int):
+    opener = lambda fakename, flags: os.open(filename, flags, mode=0o666, dir_fd=path)
+  elif isinstance(path, str):
+    opener = lambda fakename, flags: os.open(os.path.join(path, filename), flags, mode=0o666)
+  elif path is None:
+    opener = lambda fakename, flags: os.open(filename, flags, mode=0o666)
+  else:
+    raise ValueError("argument 'path': expected an 'int', a 'str' or 'None' but got {!r}".format(path))
+  f = builtins.open(virtual_filename, mode, opener=opener)
+  f.devnull = False
+  f._realname = filename
+  return f
+
 class _makedirs:
   def __init__(self, path, exist_ok=False):
     self.path = path
@@ -652,29 +685,8 @@ class _makedirs:
   def __exit__(self, etype, value, tb):
     if isinstance(self.path, int):
       os.close(self.path)
-  def _open(self, fakename, *args, realname):
-    return os.open(realname, *args, mode=0o666, dir_fd=self.path) if isinstance(self.path, int) \
-      else os.open(os.path.join(self.path, realname), *args, mode=0o666)
   def open(self, filename, mode, exists):
-    if mode not in ('w', 'wb'):
-      raise ValueError('invalid mode: {!r}'.format(mode))
-    if exists not in ('overwrite', 'rename', 'skip'):
-      raise ValueError('invalid exists: {!r}'.format(exists))
-    virtual_filename = _virtual_filename_prefix + filename
-    if exists != 'overwrite':
-      listdir = set(os.listdir(self.path))
-      if filename in listdir:
-        if exists == 'skip':
-          f = _devnull(virtual_filename, mode)
-          f._realname = filename
-          return f
-        for filename in map('-{}'.join(os.path.splitext(filename)).format, itertools.count(1)):
-          if filename not in listdir:
-            break
-    f = builtins.open(virtual_filename, mode, opener=functools.partial(self._open, realname=filename))
-    f.devnull = False
-    f._realname = filename
-    return f
+    return _open_in_path(filename, mode, exists, path=self.path)
 
 # Reference to the current log instance.  This is updated by the `Log`'s
 # context manager, see `Log` base class.
