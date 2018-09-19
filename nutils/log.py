@@ -40,7 +40,7 @@ HTMLHEAD = '''\
 
 ## LOG
 
-class Log(metaclass=abc.ABCMeta):
+class Log:
   '''
   Base class for log objects.  A subclass should define a :meth:`context`
   method that returns a context manager which adds a contextual layer and a
@@ -73,23 +73,22 @@ class Log(metaclass=abc.ABCMeta):
   def _init_context(self, stack):
     pass
 
-  @abc.abstractmethod
+  @contextlib.contextmanager
   def context(self, title, mayskip=False):
-    '''Return a context manager that adds a contextual layer named ``title``.
+    '''Return a context manager that adds a contextual layer named ``title``.'''
 
-    .. Note:: This function is abstract.
-    '''
+    yield
 
-  @abc.abstractmethod
   def write(self, level, text):
-    '''Write ``text`` with log level ``level`` to the log.
+    '''Write ``text`` with log level ``level`` to the log.'''
 
-    .. Note:: This function is abstract.
-    '''
-
-  @abc.abstractmethod
+  @contextlib.contextmanager
   def open(self, filename, mode, level, exists):
     '''Create file object.'''
+
+    with _devnull(filename, mode) as f:
+      yield f
+    self.write(level, filename)
 
 class DataLog(Log):
   '''Output only data.'''
@@ -101,13 +100,6 @@ class DataLog(Log):
   def _init_context(self, stack):
     self._open = stack.enter_context(_makedirs(self.outdir, exist_ok=True))
     super()._init_context(stack)
-
-  @contextlib.contextmanager
-  def context(self, title, mayskip=False):
-    yield
-
-  def write(self, level, text):
-    pass
 
   @contextlib.contextmanager
   def open(self, filename, mode, level, exists):
@@ -146,7 +138,7 @@ class ContextLog(Log):
     finally:
       self._pop_context()
 
-class ContextTreeLog(ContextLog):
+class ContextTreeLog(ContextLog, metaclass=abc.ABCMeta):
   '''Base class for loggers that display contexts as a tree.
 
   .. automethod:: _print_push_context
@@ -241,12 +233,6 @@ class StdoutLog(ContextLog):
         text = '[{}] {}'.format(parallel.procid, text)
       s = self._mkstr(level, text)
       print(s, end='\n' if endl else '', file=self.stream)
-
-  @contextlib.contextmanager
-  def open(self, filename, mode, level, exists):
-    with _devnull(filename, mode) as f:
-      yield f
-    self.write(level, filename)
 
 class RichOutputLog(StdoutLog):
   '''Output rich (colored,unicode) text to stream.'''
