@@ -539,6 +539,17 @@ class CWDLog(TestCase):
       finally:
         os.chdir(orig_cwd)
 
+class LoggingLog(TestCase):
+
+  def setUpContext(self, stack):
+    super().setUpContext(stack)
+    stack.enter_context(nutils.log.LoggingLog())
+
+  def test_logs(self):
+    with self.assertLogs('nutils', level='INFO') as logmsg:
+      nutils.log.info('test')
+    self.assertIn('INFO:nutils:test', logmsg.output)
+
 class log_module_funcs(TestCase):
 
   @contextlib.contextmanager

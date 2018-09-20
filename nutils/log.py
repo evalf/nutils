@@ -24,7 +24,7 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import time, functools, itertools, io, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins, hashlib, sys, tempfile
+import time, functools, itertools, io, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins, hashlib, sys, tempfile, logging
 from . import warnings
 
 LEVELS = 'error', 'warning', 'user', 'info', 'debug' # NOTE this should match the log levels defined in `nutils/_log/viewer.js`
@@ -207,6 +207,21 @@ class ContextTreeLog(ContextLog, metaclass=abc.ABCMeta):
 
     .. Note:: This function is abstract.
     '''
+
+class LoggingLog(ContextLog):
+
+  _level_map = dict(error=logging.ERROR,
+                    warning=logging.WARNING,
+                    user=25,
+                    info=logging.INFO,
+                    debug=logging.DEBUG)
+
+  def __init__(self):
+    self._logger = logging.getLogger('nutils')
+    super().__init__()
+
+  def write(self, level, text):
+    self._logger.log(self._level_map[level], ' > '.join((*self._context, text)))
 
 class StdoutLog(ContextLog):
   '''Output plain text to stream.'''
