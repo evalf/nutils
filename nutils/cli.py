@@ -168,7 +168,7 @@ def call(func, kwargs, scriptname, funcname=None):
 
   cache_ = cache.enable(os.path.join(outrootdir, scriptname, config.cachedir)) if config.cache else cache.disable()
   matrix_ = matrix.backend(config.matrix)
-  log_ = log.RichOutputLog() if config.richoutput else log.StdoutLog()
+  log_ = log.RichOutputLog(verbose=verbose, progressinterval=config.progressinterval) if config.richoutput else log.StdoutLog(verbose=config.verbose)
   if config.htmloutput:
     funcargs = [(param.name, kwargs.get(param.name, param.default), param.annotation) for param in inspect.signature(func).parameters.values()]
     log_ = log.TeeLog(log_, log.HtmlLog(outdir, title=scriptname, scriptname=scriptname, funcname=funcname, funcargs=funcargs))

@@ -182,13 +182,15 @@ class logoutput(TestCase):
   def setUpContext(self, stack):
     super().setUpContext(stack)
     self.outdir = stack.enter_context(tempfile.TemporaryDirectory())
-    stack.enter_context(nutils.config(
-      verbose=self.verbose,
-      progressinterval=-1, # make sure all progress information is written, regardless the speed of this computer
-    ))
 
   def test(self):
-    kwargs = dict(title='test') if self.logcls == nutils.log.HtmlLog else {}
+    kwargs = {}
+    if self.logcls == nutils.log.HtmlLog:
+      kwargs['title'] = 'test'
+    if self.logcls in (nutils.log.StdoutLog, nutils.log.RichOutputLog):
+      kwargs['verbose'] = self.verbose
+    if self.logcls in (nutils.log.RichOutputLog, nutils.log.IndentLog):
+      kwargs['progressinterval'] = -1 # make sure all progress information is written, regardless the speed of this computer
     with contextlib.ExitStack() as stack:
       if issubclass(self.logcls, (nutils.log.HtmlLog, nutils.log.IndentLog)):
         with self.logcls(self.outdir, **kwargs):
@@ -234,18 +236,15 @@ class recordlog(TestCase):
     tmpdir = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory()))
     self.outdir_passtrough = tmpdir/'passthrough'
     self.outdir_replay = tmpdir/'replay'
-    stack.enter_context(nutils.config(
-      verbose=len(nutils.log.LEVELS),
-    ))
 
   def test_text(self):
     stream_passthrough_stdout = io.StringIO()
-    with nutils.log.StdoutLog(stream_passthrough_stdout), nutils.log.RecordLog() as record:
+    with nutils.log.StdoutLog(stream_passthrough_stdout, verbose=len(nutils.log.LEVELS)), nutils.log.RecordLog() as record:
       generate_log(short=True)
     with self.subTest('pass-through'):
       self.assertEqual(stream_passthrough_stdout.getvalue(), log_stdout_short)
     stream_replay_stdout = io.StringIO()
-    with nutils.log.StdoutLog(stream_replay_stdout):
+    with nutils.log.StdoutLog(stream_replay_stdout, verbose=len(nutils.log.LEVELS)):
       record.replay()
     with self.subTest('replay'):
       self.assertEqual(stream_replay_stdout.getvalue(), log_stdout_short)

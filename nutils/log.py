@@ -25,7 +25,7 @@ stdout as well as to an html formatted log file if so configured.
 """
 
 import time, functools, itertools, io, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins, hashlib, sys, tempfile
-from . import config, warnings
+from . import warnings
 
 LEVELS = 'error', 'warning', 'user', 'info', 'debug' # NOTE this should match the log levels defined in `nutils/_log/viewer.js`
 HTMLHEAD = '''\
@@ -202,8 +202,9 @@ class ContextTreeLog(ContextLog, metaclass=abc.ABCMeta):
 class StdoutLog(ContextLog):
   '''Output plain text to stream.'''
 
-  def __init__(self, stream=None):
+  def __init__(self, stream=None, *, verbose=LEVELS.index('info')+1):
     self.stream = stream
+    self.verbose = verbose
     super().__init__()
 
   def _write_post_mortem(self, etype, value, tb):
@@ -226,8 +227,7 @@ class StdoutLog(ContextLog):
     return ' > '.join(self._context + ([text] if text is not None else []))
 
   def write(self, level, text, endl=True):
-    verbose = config.verbose
-    if level not in LEVELS[verbose:]:
+    if level not in LEVELS[self.verbose:]:
       from . import parallel
       if parallel.procid is not None:
         text = '[{}] {}'.format(parallel.procid, text)
@@ -241,12 +241,12 @@ class RichOutputLog(StdoutLog):
 
   cmap = { 'path': (2,1), 'error': (1,1), 'warning': (1,0), 'user': (3,0) }
 
-  def __init__(self, stream=None, *, progressinterval=None):
-    super().__init__(stream=stream)
+  def __init__(self, stream=None, *, verbose=LEVELS.index('info')+1, progressinterval=0.1):
+    super().__init__(stream=stream, verbose=verbose)
     # Timestamp at which a new progress line may be written.
     self._progressupdate = 0
     # Progress update interval in seconds.
-    self._progressinterval = progressinterval or getattr(config, 'progressinterval', 0.1)
+    self._progressinterval = progressinterval
 
   def _init_context(self, stack):
     stack.callback(print, end='\033[K', file=self.stream) # clear the progress line
@@ -377,11 +377,11 @@ class HtmlLog(ContextTreeLog):
 class IndentLog(ContextTreeLog):
   '''Output indented html snippets.'''
 
-  def __init__(self, outdir, *, progressinterval=None):
+  def __init__(self, outdir, *, progressinterval=0.1):
     self._outdir = outdir
     self._prefix = ''
     self._progressupdate = 0 # progress update interval in seconds
-    self._progressinterval = progressinterval or getattr(config, 'progressinterval', 1)
+    self._progressinterval = progressinterval
     super().__init__()
 
   def _write_post_mortem(self, etype, value, tb):
