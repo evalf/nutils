@@ -182,13 +182,15 @@ class logoutput(TestCase):
   def setUpContext(self, stack):
     super().setUpContext(stack)
     self.outdir = stack.enter_context(tempfile.TemporaryDirectory())
-    stack.enter_context(nutils.config(
-      verbose=self.verbose,
-      progressinterval=-1, # make sure all progress information is written, regardless the speed of this computer
-    ))
 
   def test(self):
-    kwargs = dict(title='test') if self.logcls == nutils.log.HtmlLog else {}
+    kwargs = {}
+    if self.logcls == nutils.log.HtmlLog:
+      kwargs['title'] = 'test'
+    if self.logcls in (nutils.log.StdoutLog, nutils.log.RichOutputLog):
+      kwargs['verbose'] = self.verbose
+    if self.logcls in (nutils.log.RichOutputLog, nutils.log.IndentLog):
+      kwargs['progressinterval'] = -1 # make sure all progress information is written, regardless the speed of this computer
     with contextlib.ExitStack() as stack:
       if issubclass(self.logcls, (nutils.log.HtmlLog, nutils.log.IndentLog)):
         with self.logcls(self.outdir, **kwargs):
@@ -213,7 +215,7 @@ _logoutput('rich_output', nutils.log.RichOutputLog, log_rich_output)
 _logoutput('html', nutils.log.HtmlLog, log_html)
 _logoutput('indent', nutils.log.IndentLog, log_indent)
 
-class tee_stdout_html(TestCase):
+class deprecated_tee(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
@@ -234,18 +236,15 @@ class recordlog(TestCase):
     tmpdir = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory()))
     self.outdir_passtrough = tmpdir/'passthrough'
     self.outdir_replay = tmpdir/'replay'
-    stack.enter_context(nutils.config(
-      verbose=len(nutils.log.LEVELS),
-    ))
 
   def test_text(self):
     stream_passthrough_stdout = io.StringIO()
-    with nutils.log.StdoutLog(stream_passthrough_stdout), nutils.log.RecordLog() as record:
+    with nutils.log.StdoutLog(stream_passthrough_stdout, verbose=len(nutils.log.LEVELS)), nutils.log.RecordLog() as record:
       generate_log(short=True)
     with self.subTest('pass-through'):
       self.assertEqual(stream_passthrough_stdout.getvalue(), log_stdout_short)
     stream_replay_stdout = io.StringIO()
-    with nutils.log.StdoutLog(stream_replay_stdout):
+    with nutils.log.StdoutLog(stream_replay_stdout, verbose=len(nutils.log.LEVELS)):
       record.replay()
     with self.subTest('replay'):
       self.assertEqual(stream_replay_stdout.getvalue(), log_stdout_short)
@@ -401,21 +400,23 @@ class RichOutputLog(TestCase, _DevnullTests):
     stream = io.StringIO()
     stack.enter_context(nutils.log.RichOutputLog(stream))
 
-class TeeDoubleStdout(TestCase, _DevnullTests):
+class DoubleStdout(TestCase, _DevnullTests):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
     stream1 = io.StringIO()
     stream2 = io.StringIO()
-    stack.enter_context(nutils.log.TeeLog(nutils.log.StdoutLog(stream1), nutils.log.StdoutLog(stream2)))
+    stack.enter_context(nutils.log.StdoutLog(stream1))
+    stack.enter_context(nutils.log.StdoutLog(stream2))
 
-class TeeStdoutHtml(TestCase):
+class StdoutHtml(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
     self.outdir_html = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory()))
     stream_stdout = io.StringIO()
-    stack.enter_context(nutils.log.TeeLog(nutils.log.StdoutLog(stream_stdout), nutils.log.HtmlLog(str(self.outdir_html))))
+    stack.enter_context(nutils.log.StdoutLog(stream_stdout))
+    stack.enter_context(nutils.log.HtmlLog(str(self.outdir_html)))
 
   def test_devnull(self):
     for mode in 'w', 'wb':
@@ -459,14 +460,15 @@ class TeeStdoutHtml(TestCase):
       self.assertEqual(f.read(), 'a')
     self.assertFalse((self.outdir_html/'test-1.txt').exists())
 
-class TeeHtmlData(TestCase):
+class HtmlData(TestCase):
 
   def setUpContext(self, stack):
     super().setUpContext(stack)
     tmpdir = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory()))
     self.outdir_html = tmpdir/'html'
     self.outdir_data = tmpdir/'data'
-    stack.enter_context(nutils.log.TeeLog(nutils.log.HtmlLog(str(self.outdir_html)), nutils.log.DataLog(str(self.outdir_data))))
+    stack.enter_context(nutils.log.HtmlLog(str(self.outdir_html)))
+    stack.enter_context(nutils.log.DataLog(str(self.outdir_data)))
 
   def test_devnull(self):
     for mode in 'w', 'wb':
@@ -520,6 +522,36 @@ class TeeHtmlData(TestCase):
     with (self.outdir_data/'test.txt').open() as f:
       self.assertEqual(f.read(), 'a')
     self.assertFalse((self.outdir_data/'test-1.txt').exists())
+
+class CWDLog(TestCase):
+
+  def test_change_cwd(self):
+    with tempfile.TemporaryDirectory() as dir1, tempfile.TemporaryDirectory() as dir2, nutils.log.CWDLog():
+      dir1 = pathlib.Path(dir1)
+      dir2 = pathlib.Path(dir2)
+      orig_cwd = os.getcwd()
+      try:
+        os.chdir(str(dir1))
+        with nutils.log.open('test-1.txt', 'w') as f:
+          f.write('a')
+        self.assertTrue((dir1/'test-1.txt').exists())
+        os.chdir(str(dir2))
+        with nutils.log.open('test-2.txt', 'w') as f:
+          f.write('b')
+        self.assertTrue((dir2/'test-2.txt').exists())
+      finally:
+        os.chdir(orig_cwd)
+
+class LoggingLog(TestCase):
+
+  def setUpContext(self, stack):
+    super().setUpContext(stack)
+    stack.enter_context(nutils.log.LoggingLog())
+
+  def test_logs(self):
+    with self.assertLogs('nutils', level='INFO') as logmsg:
+      nutils.log.info('test')
+    self.assertIn('INFO:nutils:test', logmsg.output)
 
 class log_module_funcs(TestCase):
 

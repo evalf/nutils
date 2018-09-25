@@ -24,8 +24,8 @@ The log module provides print methods ``debug``, ``info``, ``user``,
 stdout as well as to an html formatted log file if so configured.
 """
 
-import time, functools, itertools, io, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins, hashlib, sys, tempfile
-from . import config, warnings
+import time, functools, itertools, io, abc, contextlib, html, urllib.parse, os, json, traceback, bdb, inspect, textwrap, builtins, hashlib, sys, tempfile, logging
+from . import warnings
 
 LEVELS = 'error', 'warning', 'user', 'info', 'debug' # NOTE this should match the log levels defined in `nutils/_log/viewer.js`
 HTMLHEAD = '''\
@@ -40,7 +40,7 @@ HTMLHEAD = '''\
 
 ## LOG
 
-class Log(metaclass=abc.ABCMeta):
+class Log:
   '''
   Base class for log objects.  A subclass should define a :meth:`context`
   method that returns a context manager which adds a contextual layer and a
@@ -53,9 +53,7 @@ class Log(metaclass=abc.ABCMeta):
     stack = contextlib.ExitStack()
     try:
       self._init_context(stack)
-      # Replace the current log object with `self` and restore at exit.
-      stack.callback(_set_current_log, _current_log)
-      _set_current_log(self)
+      _active.append(self)
     except:
       stack.__exit__(*sys.exc_info())
       raise
@@ -65,31 +63,34 @@ class Log(metaclass=abc.ABCMeta):
   def __exit__(self, etype, value, tb):
     if not hasattr(self, '_stack'):
       raise RuntimeError('This context manager is not yet entered.')
-    try:
-      return self._stack.__exit__(etype, value, tb)
-    finally:
-      del self._stack
+    # To prevent a cyclic reference when adding the callback, pop `_stack_`
+    # from `self`.  We add the `_active.remove(self)` callback to `_stack`
+    # instead of calling it immediately to let `_stack` take care of
+    # exceptions.
+    stack = self._stack
+    del self._stack
+    stack.callback(_active.remove, self)
+    stack.__exit__(etype, value, tb)
 
   def _init_context(self, stack):
     pass
 
-  @abc.abstractmethod
+  @contextlib.contextmanager
   def context(self, title, mayskip=False):
-    '''Return a context manager that adds a contextual layer named ``title``.
+    '''Return a context manager that adds a contextual layer named ``title``.'''
 
-    .. Note:: This function is abstract.
-    '''
+    yield
 
-  @abc.abstractmethod
   def write(self, level, text):
-    '''Write ``text`` with log level ``level`` to the log.
+    '''Write ``text`` with log level ``level`` to the log.'''
 
-    .. Note:: This function is abstract.
-    '''
-
-  @abc.abstractmethod
+  @contextlib.contextmanager
   def open(self, filename, mode, level, exists):
     '''Create file object.'''
+
+    with _devnull(filename, mode) as f:
+      yield f
+    self.write(level, filename)
 
 class DataLog(Log):
   '''Output only data.'''
@@ -103,16 +104,18 @@ class DataLog(Log):
     super()._init_context(stack)
 
   @contextlib.contextmanager
-  def context(self, title, mayskip=False):
-    yield
-
-  def write(self, level, text):
-    pass
-
-  @contextlib.contextmanager
   def open(self, filename, mode, level, exists):
     with self._open(filename, mode, exists) as f:
       yield f
+
+class CWDLog(Log):
+  '''
+  Output only data in de current working directory.  This is different from
+  `DataLog(os.getcwd)`.  if the current working directory changes afterwards.
+  '''
+
+  def open(self, filename, mode, level, exists):
+    return _open_in_path(filename, mode, exists, path=None)
 
 class ContextLog(Log):
   '''Base class for loggers that keep track of the current list of contexts.
@@ -146,7 +149,7 @@ class ContextLog(Log):
     finally:
       self._pop_context()
 
-class ContextTreeLog(ContextLog):
+class ContextTreeLog(ContextLog, metaclass=abc.ABCMeta):
   '''Base class for loggers that display contexts as a tree.
 
   .. automethod:: _print_push_context
@@ -207,11 +210,27 @@ class ContextTreeLog(ContextLog):
     .. Note:: This function is abstract.
     '''
 
+class LoggingLog(ContextLog):
+
+  _level_map = dict(error=logging.ERROR,
+                    warning=logging.WARNING,
+                    user=25,
+                    info=logging.INFO,
+                    debug=logging.DEBUG)
+
+  def __init__(self):
+    self._logger = logging.getLogger('nutils')
+    super().__init__()
+
+  def write(self, level, text):
+    self._logger.log(self._level_map[level], ' > '.join((*self._context, text)))
+
 class StdoutLog(ContextLog):
   '''Output plain text to stream.'''
 
-  def __init__(self, stream=None):
+  def __init__(self, stream=None, *, verbose=LEVELS.index('info')+1):
     self.stream = stream
+    self.verbose = verbose
     super().__init__()
 
   def _write_post_mortem(self, etype, value, tb):
@@ -234,19 +253,12 @@ class StdoutLog(ContextLog):
     return ' > '.join(self._context + ([text] if text is not None else []))
 
   def write(self, level, text, endl=True):
-    verbose = config.verbose
-    if level not in LEVELS[verbose:]:
+    if level not in LEVELS[self.verbose:]:
       from . import parallel
       if parallel.procid is not None:
         text = '[{}] {}'.format(parallel.procid, text)
       s = self._mkstr(level, text)
       print(s, end='\n' if endl else '', file=self.stream)
-
-  @contextlib.contextmanager
-  def open(self, filename, mode, level, exists):
-    with _devnull(filename, mode) as f:
-      yield f
-    self.write(level, filename)
 
 class RichOutputLog(StdoutLog):
   '''Output rich (colored,unicode) text to stream.'''
@@ -255,12 +267,12 @@ class RichOutputLog(StdoutLog):
 
   cmap = { 'path': (2,1), 'error': (1,1), 'warning': (1,0), 'user': (3,0) }
 
-  def __init__(self, stream=None, *, progressinterval=None):
-    super().__init__(stream=stream)
+  def __init__(self, stream=None, *, verbose=LEVELS.index('info')+1, progressinterval=0.1):
+    super().__init__(stream=stream, verbose=verbose)
     # Timestamp at which a new progress line may be written.
     self._progressupdate = 0
     # Progress update interval in seconds.
-    self._progressinterval = progressinterval or getattr(config, 'progressinterval', 0.1)
+    self._progressinterval = progressinterval
 
   def _init_context(self, stack):
     stack.callback(print, end='\033[K', file=self.stream) # clear the progress line
@@ -391,11 +403,11 @@ class HtmlLog(ContextTreeLog):
 class IndentLog(ContextTreeLog):
   '''Output indented html snippets.'''
 
-  def __init__(self, outdir, *, progressinterval=None):
+  def __init__(self, outdir, *, progressinterval=0.1):
     self._outdir = outdir
     self._prefix = ''
     self._progressupdate = 0 # progress update interval in seconds
-    self._progressinterval = progressinterval or getattr(config, 'progressinterval', 1)
+    self._progressinterval = progressinterval
     super().__init__()
 
   def _write_post_mortem(self, etype, value, tb):
@@ -465,54 +477,33 @@ class IndentLog(ContextTreeLog):
     self._print_item(level, '<a href="{href}">{name}</a>'.format(href=urllib.parse.quote(f._realname), name=html.escape(filename)), escape=False)
 
 class TeeLog(Log):
-  '''Simultaneously interface multiple logs'''
+  '''Simultaneously interface multiple logs
+
+  .. deprecated:: 5.0
+
+      The functionality is merged into :mod:`nutils.log`: multiple class:`Log`
+      objects can be active at the same time and any can be (de)activated
+      independently.
+  '''
 
   def __init__(self, *logs):
+    warnings.deprecation('TeeLog is deprecated as of version 5 and will be removed in version 6.  To activate the logs comprising this tee, simply enter the contexts of these logs individually.')
     self.logs = logs
     super().__init__()
 
-  def _init_context(self, stack):
+  def __enter__(self):
+    self._stack = contextlib.ExitStack()
     for log in self.logs:
-      stack.enter_context(log)
-    super()._init_context(stack)
+      self._stack.enter_context(log)
 
-  @contextlib.contextmanager
-  def context(self, title, mayskip=False):
-    with contextlib.ExitStack() as stack:
-      for log in self.logs:
-        stack.enter_context(log.context(title, mayskip))
-      yield
-
-  def write(self, level, text):
-    for log in self.logs:
-      log.write(level, text)
-
-  @contextlib.contextmanager
-  def open(self, filename, mode, level, exists):
-    if mode not in ('w', 'wb'):
-      raise ValueError('invalid mode: {!r}'.format(mode))
-    with contextlib.ExitStack() as stack:
-      files = [stack.enter_context(log.open(filename, mode, level, exists)) for log in self.logs]
-      files = list(filter(lambda file: not file.devnull, files))
-      virtual_filename = _virtual_filename_prefix+filename
-      if len(files) == 0:
-        yield stack.enter_context(_devnull(virtual_filename, mode))
-      elif len(files) == 1:
-        yield files[0]
-      else:
-        f = stack.enter_context(_open_tempfile(virtual_filename, mode=mode+'+'))
-        yield f
-        f.seek(0)
-        data = f.read()
-        for file in files:
-          file.write(data)
+  def __exit__(self, etype, value, tb):
+    self._stack.__exit__(etype, value, tb)
+    del self._stack
 
 class RecordLog(Log):
   '''
-  Log object that records log messages.  All messages are forwarded to the log
-  that whas active before activating this log (e.g. by ``with RecordLog() as
-  record:``).  The recorded messages can be replayed to the log that's
-  currently active by :meth:`replay`.
+  Log object that records log messages.  The recorded messages can be replayed
+  to the logs that are currently active by :meth:`replay`.
 
   Typical usage is caching expensive operations::
 
@@ -551,24 +542,12 @@ class RecordLog(Log):
     self._appended_contexts = 0
     super().__init__()
 
-  def __enter__(self):
-    self._writethrough_log = _current_log
-    return super().__enter__()
-
-  def __exit__(self, *exc_info):
-    try:
-      del self._writethrough_log
-    except AttributeError:
-      pass
-    return super().__exit__(*exc_info)
-
   @contextlib.contextmanager
   def context(self, title, mayskip=False):
     self._contexts.append(title)
     # We don't append 'entercontext' here.  See `self.__init__`.
     try:
-      with self._writethrough_log.context(title, mayskip):
-        yield
+      yield
     finally:
       self._contexts.pop()
       if self._appended_contexts > len(self._contexts):
@@ -576,7 +555,6 @@ class RecordLog(Log):
         self._messages.append(('exitcontext',))
 
   def write(self, level, text):
-    self._writethrough_log.write(level, text)
     from . import parallel
     if not parallel.procid:
       # Append all currently entered contexts that have not been append yet
@@ -598,9 +576,6 @@ class RecordLog(Log):
       f.seek(0)
       data = f.read()
     self._messages.append(('open', filename, mode, level, exists, data))
-    with self._writethrough_log.open(filename, mode, level, exists) as f:
-      if not f.devnull:
-        f.write(data)
 
   def replay(self):
     '''
@@ -609,16 +584,17 @@ class RecordLog(Log):
     contexts = []
     for cmd, *args in self._messages:
       if cmd == 'entercontext':
-        context = _current_log.context(*args)
-        context.__enter__()
-        contexts.append(context)
+        ctx = context(*args)
+        ctx.__enter__()
+        contexts.append(ctx)
       elif cmd == 'exitcontext':
         contexts.pop().__exit__(None, None, None)
       elif cmd == 'write':
-        _current_log.write(*args)
+        for log in _active or _default:
+          log.write(*args)
       elif cmd == 'open':
         filename, mode, level, exists, data = args
-        with _current_log.open(filename, mode, level, exists) as f:
+        with open(filename, mode, level=level, exists=exists) as f:
           f.write(data)
 
 ## INTERNAL FUNCTIONS
@@ -632,7 +608,8 @@ def _len(iterable):
     return None
 
 def _print(level, *args):
-  return _current_log.write(level, ' '.join(str(arg) for arg in args))
+  for log in _active or _default:
+    log.write(level, ' '.join(str(arg) for arg in args))
 
 def _devnull(name, mode):
   if mode not in ('w', 'wb'):
@@ -653,6 +630,39 @@ def _open_tempfile(name, mode):
 
 _virtual_filename_prefix = '<log>'+os.sep
 
+def _open_in_path(filename, mode, exists, *, path):
+  # `path` can be:
+  # * an `int`: fd pointing to a directory,
+  # * a `str`: the name of the directory or
+  # * `None`: meaning: the current working directory.
+  if mode not in ('w', 'wb'):
+    raise ValueError('invalid mode: {!r}'.format(mode))
+  if exists not in ('overwrite', 'rename', 'skip'):
+    raise ValueError('invalid exists: {!r}'.format(exists))
+  virtual_filename = _virtual_filename_prefix + filename
+  if exists != 'overwrite':
+    listdir = set(os.listdir(path))
+    if filename in listdir:
+      if exists == 'skip':
+        f = _devnull(virtual_filename, mode)
+        f._realname = filename
+        return f
+      for filename in map('-{}'.join(os.path.splitext(filename)).format, itertools.count(1)):
+        if filename not in listdir:
+          break
+  if isinstance(path, int):
+    opener = lambda fakename, flags: os.open(filename, flags, mode=0o666, dir_fd=path)
+  elif isinstance(path, str):
+    opener = lambda fakename, flags: os.open(os.path.join(path, filename), flags, mode=0o666)
+  elif path is None:
+    opener = lambda fakename, flags: os.open(filename, flags, mode=0o666)
+  else:
+    raise ValueError("argument 'path': expected an 'int', a 'str' or 'None' but got {!r}".format(path))
+  f = builtins.open(virtual_filename, mode, opener=opener)
+  f.devnull = False
+  f._realname = filename
+  return f
+
 class _makedirs:
   def __init__(self, path, exist_ok=False):
     self.path = path
@@ -666,40 +676,11 @@ class _makedirs:
   def __exit__(self, etype, value, tb):
     if isinstance(self.path, int):
       os.close(self.path)
-  def _open(self, fakename, *args, realname):
-    return os.open(realname, *args, mode=0o666, dir_fd=self.path) if isinstance(self.path, int) \
-      else os.open(os.path.join(self.path, realname), *args, mode=0o666)
   def open(self, filename, mode, exists):
-    if mode not in ('w', 'wb'):
-      raise ValueError('invalid mode: {!r}'.format(mode))
-    if exists not in ('overwrite', 'rename', 'skip'):
-      raise ValueError('invalid exists: {!r}'.format(exists))
-    virtual_filename = _virtual_filename_prefix + filename
-    if exists != 'overwrite':
-      listdir = set(os.listdir(self.path))
-      if filename in listdir:
-        if exists == 'skip':
-          f = _devnull(virtual_filename, mode)
-          f._realname = filename
-          return f
-        for filename in map('-{}'.join(os.path.splitext(filename)).format, itertools.count(1)):
-          if filename not in listdir:
-            break
-    f = builtins.open(virtual_filename, mode, opener=functools.partial(self._open, realname=filename))
-    f.devnull = False
-    f._realname = filename
-    return f
+    return _open_in_path(filename, mode, exists, path=self.path)
 
-# Reference to the current log instance.  This is updated by the `Log`'s
-# context manager, see `Log` base class.
-_current_log = None
-
-def _set_current_log(new_log):
-  global _current_log
-  _current_log = new_log
-
-# Set a default log instance.
-TeeLog(StdoutLog(), DataLog(os.getcwd())).__enter__()
+_active = []
+_default = StdoutLog(), CWDLog()
 
 ## MODULE-ONLY METHODS
 
@@ -710,7 +691,7 @@ def range(title, *args):
 
   items = builtins.range(*args)
   for index, item in builtins.enumerate(items):
-    with _current_log.context('{} {} ({:.0f}%)'.format(title, item, index*100/len(items)), mayskip=index):
+    with context('{} {} ({:.0f}%)'.format(title, item, index*100/len(items)), mayskip=index):
       yield item
 
 def iter(title, iterable, length=None):
@@ -723,7 +704,7 @@ def iter(title, iterable, length=None):
     text = '{} {}'.format(title, index)
     if length:
       text += ' ({:.0f}%)'.format(100 * index / length)
-    with _current_log.context(text, mayskip=index):
+    with context(text, mayskip=index):
       try:
         yield next(it)
       except StopIteration:
@@ -744,7 +725,7 @@ def count(title, start=0, step=1):
   '''Progress logger identical to itertools.count'''
 
   for item in itertools.count(start, step):
-    with _current_log.context('{} {}'.format(title, item), mayskip=item!=start):
+    with context('{} {}'.format(title, item), mayskip=item!=start):
       yield item
 
 def title(f): # decorator
@@ -758,8 +739,12 @@ def title(f): # decorator
   warnings.deprecation('title will be removed in future, use withcontext instead')
   return withcontext(f)
 
+@contextlib.contextmanager
 def context(title, mayskip=False):
-  return _current_log.context(title, mayskip)
+  with contextlib.ExitStack() as stack:
+    for log in _active or _default:
+      stack.enter_context(log.context(title, mayskip))
+    yield
 
 def withcontext(f):
   '''Decorator; executes the wrapped function in its own logging context.'''
@@ -770,6 +755,7 @@ def withcontext(f):
       return f(*args, **kwargs)
   return wrapped
 
+@contextlib.contextmanager
 def open(filename, mode, *, level='user', exists='rename'):
   '''Open file in logger-controlled directory.
 
@@ -793,6 +779,22 @@ def open(filename, mode, *, level='user', exists='rename'):
           to ``False`` to allow content creation to be skipped altogether.
   '''
 
-  return _current_log.open(filename, mode, level, exists)
+  if mode not in ('w', 'wb'):
+    raise ValueError('invalid mode: {!r}'.format(mode))
+  with contextlib.ExitStack() as stack:
+    files = [stack.enter_context(log.open(filename, mode, level, exists)) for log in _active or _default]
+    files = list(filter(lambda file: not file.devnull, files))
+    virtual_filename = _virtual_filename_prefix+filename
+    if len(files) == 0:
+      yield stack.enter_context(_devnull(virtual_filename, mode))
+    elif len(files) == 1:
+      yield files[0]
+    else:
+      f = stack.enter_context(_open_tempfile(virtual_filename, mode=mode+'+'))
+      yield f
+      f.seek(0)
+      data = f.read()
+      for file in files:
+        file.write(data)
 
 # vim:sw=2:sts=2:et

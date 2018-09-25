@@ -166,16 +166,17 @@ def call(func, kwargs, scriptname, funcname=None):
         print('<meta http-equiv="refresh" content="0;URL={}" />'.format(os.path.join(relpath,'log.html')), file=redirlog)
         print('</head></html>', file=redirlog)
 
-  cache_ = cache.enable(os.path.join(outrootdir, scriptname, config.cachedir)) if config.cache else cache.disable()
-  matrix_ = matrix.backend(config.matrix)
-  log_ = log.RichOutputLog() if config.richoutput else log.StdoutLog()
-  if config.htmloutput:
-    funcargs = [(param.name, kwargs.get(param.name, param.default), param.annotation) for param in inspect.signature(func).parameters.values()]
-    log_ = log.TeeLog(log_, log.HtmlLog(outdir, title=scriptname, scriptname=scriptname, funcname=funcname, funcargs=funcargs))
-
   try:
     old_sigint_handler = signal.signal(signal.SIGINT, _sigint_handler)
-    with log_, cache_, matrix_, warnings.via(log.warning):
+    with contextlib.ExitStack() as stack:
+
+      stack.enter_context(cache.enable(os.path.join(outrootdir, scriptname, config.cachedir)) if config.cache else cache.disable())
+      stack.enter_context(matrix.backend(config.matrix))
+      stack.enter_context(log.RichOutputLog() if config.richoutput else log.StdoutLog())
+      if config.htmloutput:
+        funcargs = [(param.name, kwargs.get(param.name, param.default), param.annotation) for param in inspect.signature(func).parameters.values()]
+        stack.enter_context(log.HtmlLog(outdir, title=scriptname, scriptname=scriptname, funcname=funcname, funcargs=funcargs))
+      stack.enter_context(warnings.via(log.warning))
 
       log.info('nutils v{}'.format(_version()))
       log.info('start {}'.format(starttime.ctime()))
@@ -193,10 +194,6 @@ def call(func, kwargs, scriptname, funcname=None):
     return 1
   except:
     if config.pdb:
-      try:
-        del log_
-      except NameError:
-        pass
       print(_mkbox(
         'YOUR PROGRAM HAS DIED. The Python debugger',
         'allows you to examine its post-mortem state',

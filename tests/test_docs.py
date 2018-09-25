@@ -2,22 +2,7 @@ import doctest as _doctest, importlib, os, tempfile, pathlib, functools, warning
 import nutils.log
 from nutils.testing import *
 
-
-class DocTestLog(nutils.log.ContextLog):
-  '''Output plain text to sys.stdout.'''
-
-  def _mkstr(self, level, text):
-    return ' > '.join(self._context + ([text] if text is not None else []))
-
-  def write(self, level, text, endl=True):
-    verbose = nutils.config.verbose
-    if level not in nutils.log.LEVELS[verbose:]:
-      s = self._mkstr(level, text)
-      print(s, end='\n' if endl else '')
-
-  def open(self, filename, *args, level, **kwargs):
-    pass
-
+_doctestlog = log.StdoutLog()
 
 @parametrize
 class module(TestCase):
@@ -26,7 +11,7 @@ class module(TestCase):
     super().setUpContext(stack)
     stack.enter_context(warnings.catch_warnings())
     warnings.simplefilter('ignore')
-    stack.enter_context(nutils.config(log=stack.enter_context(DocTestLog())))
+    stack.enter_context(nutils.testing.set_log_default(_doctestlog))
     import numpy
     printoptions = numpy.get_printoptions()
     if 'legacy' in printoptions:
@@ -34,9 +19,8 @@ class module(TestCase):
       numpy.set_printoptions(legacy='1.13')
 
   def test(self):
-    with DocTestLog():
-      failcnt, testcnt = _doctest.testmod(importlib.import_module(self.name), optionflags=_doctest.ELLIPSIS)
-      self.assertEqual(failcnt, 0)
+    failcnt, testcnt = _doctest.testmod(importlib.import_module(self.name), optionflags=_doctest.ELLIPSIS)
+    self.assertEqual(failcnt, 0)
 
 @parametrize
 class file(TestCase):
@@ -45,12 +29,11 @@ class file(TestCase):
     super().setUpContext(stack)
     stack.enter_context(warnings.catch_warnings())
     warnings.simplefilter('ignore')
-    stack.enter_context(nutils.config(log=stack.enter_context(DocTestLog())))
+    stack.enter_context(nutils.testing.set_log_default(_doctestlog))
 
   def test(self):
-    with DocTestLog():
-      failcnt, testcnt = _doctest.testfile(str(self.path), module_relative=False, optionflags=_doctest.ELLIPSIS)
-      self.assertEqual(failcnt, 0)
+    failcnt, testcnt = _doctest.testfile(str(self.path), module_relative=False, optionflags=_doctest.ELLIPSIS)
+    self.assertEqual(failcnt, 0)
 
 root = pathlib.Path(__file__).parent.parent
 for path in sorted((root / 'nutils').glob('**/*.py')):

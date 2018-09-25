@@ -470,6 +470,8 @@ class ConsoleDirective(docutils.parsers.rst.Directive):
   required_arguments = 0
   options_arguments = 0
 
+  _console_log = nutils.log.StdoutLog()
+
   def run(self):
     document = self.state.document
     env = document.settings.env
@@ -492,7 +494,8 @@ class ConsoleDirective(docutils.parsers.rst.Directive):
     runner = doctest.DocTestRunner(checker=ConsoleOutputChecker(), optionflags=doctest.ELLIPSIS)
     globs = getattr(document, '_console_globs', {})
     test = parser.get_doctest(code, globs, 'test', env.docname, self.lineno)
-    failures, tries = runner.run(test, clear_globs=False)
+    with nutils.testing.set_log_default(self._console_log):
+      failures, tries = runner.run(test, clear_globs=False)
     for fignum in matplotlib.pyplot.get_fignums():
       fig = matplotlib.pyplot.figure(fignum)
       with io.BytesIO() as f:
