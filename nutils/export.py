@@ -118,64 +118,61 @@ def vtk(*args, **kwargs):
     Cell and/or point data
   '''
 
-  name, cells, points = args
-  assert cells.ndim == points.ndim == 2
-  ndims = points.shape[1]
-  assert cells.shape[1] == ndims + 1
-
-  if ndims == 2:
-    points = numpy.concatenate([points, numpy.zeros_like(points[:,:1])], axis=1)
-    celltype = 5 # VTK_TRIANGLE
-  elif ndims == 3:
-    celltype = 10 # VTK_TETRA
-  else:
-    raise Exception('invalid point dimension: {}'.format(ndims))
-
+  vtkcelltype = {
+    2: numpy.array( 5, dtype='>u4'), # VTK_TRIANGLE
+    3: numpy.array(10, dtype='>u4')} # VTK_TETRA
+  vtkndim = {
+    1: 'SCALARS {} {} 1\nLOOKUP_TABLE default\n',
+    2: 'VECTORS {} {}\n',
+    3: 'TENSORS {} {}\n'}
   vtkdtype = {
     numpy.dtype('>i1'): 'char',  numpy.dtype('>u1'): 'unsigned_char',
     numpy.dtype('>i2'): 'short', numpy.dtype('>u2'): 'unsigned_short',
     numpy.dtype('>i4'): 'int',   numpy.dtype('>u4'): 'unsigned_int',
     numpy.dtype('>f4'): 'float', numpy.dtype('>f8'): 'double'}
+  def vtkarray(a): # convert to big endian data and zero-pad all axes to length 3
+    a = numpy.asarray(a)
+    if any(n > 3 for n in a.shape[1:]):
+      raise Exception('invalid shape: {}'.format(a.shape))
+    e = numpy.zeros([len(a)] + [3] * (a.ndim-1), dtype='>{0.kind}{0.itemsize}'.format(a.dtype))
+    if e.dtype not in vtkdtype:
+      raise Exception('invalid data type: {}'.format(a.dtype))
+    e[tuple(map(slice, a.shape))] = a
+    return e
 
-  vtkndim = {1: 'SCALARS {} {} 1\nLOOKUP_TABLE default\n', 2: 'VECTORS {} {}\n', 3: 'TENSORS {} {}\n'}
+  name, cells, points = args
+  assert cells.ndim == points.ndim == 2
+  npoints, ndims = points.shape
+  ncells, nverts = cells.shape
+  assert nverts == ndims + 1
 
-  bigendian = lambda a: a.astype('>{0.kind}{0.itemsize}'.format(a.dtype))
+  if ndims not in vtkcelltype:
+    raise Exception('invalid point dimension: {}'.format(ndims))
 
-  points = bigendian(points)
-  if points.dtype not in vtkdtype:
-    raise Exception('invalid data type for points: {}'.format(points.dtype))
+  points = vtkarray(points)
+  gathered = util.gather((len(array), (name, vtkarray(array))) for name, array in kwargs.items())
 
-  t_cells = numpy.empty((len(cells), ndims+2), dtype='>u4')
-  t_cells[:,0] = ndims + 1
+  for n, items in gathered:
+    if n != npoints and n != ncells:
+      raise Exception('data length matches neither points nor cells: {}'.format(', '.join(dname for dname, array in items)))
+
+  t_cells = numpy.empty((ncells, ndims+2), dtype='>u4')
+  t_cells[:,0] = nverts
   t_cells[:,1:] = cells
-
-  gathered = util.gather((len(array), (name, bigendian(array))) for name, array in kwargs.items())
-
-  invalid_length = [name for n, arrays in gathered if n not in (len(points), len(cells)) for name, array in arrays]
-  if invalid_length:
-    raise Exception('data length matches neither points nor cells: {}'.format(', '.join(invalid_length)))
-
-  invalid_dimension = [name for n, arrays in gathered for name, array in arrays if array.ndim not in vtkndim or any(n>3 for n in array.shape[1:])]
-  if invalid_dimension:
-    raise Exception('invalid array dimension: {}'.format(', '.join(invalid_dimension)))
-
-  invalid_dtype = [name for n, arrays in gathered for name, array in arrays if array.dtype not in vtkdtype]
-  if invalid_dtype:
-    raise Exception('invalid array data type: {}'.format(', '.join(invalid_dtype)))
 
   name_vtk = name + '.vtk'
   with log.open(name_vtk, 'wb') as vtk:
     vtk.write(b'# vtk DataFile Version 3.0\nvtk output\nBINARY\nDATASET UNSTRUCTURED_GRID\n')
-    vtk.write('POINTS {} {}\n'.format(len(points), vtkdtype[points.dtype]).encode('ascii'))
-    vtk.write(points.tobytes())
-    vtk.write('CELLS {} {}\n'.format(len(t_cells), t_cells.size).encode('ascii'))
-    vtk.write(t_cells.tobytes())
-    vtk.write('CELL_TYPES {}\n'.format(len(cells)).encode('ascii'))
-    vtk.write(numpy.array(celltype, dtype='>u4').repeat(len(cells)).tobytes())
-    for n, arrays in gathered:
-      vtk.write('{}_DATA {}\n'.format('POINT' if n == len(points) else 'CELL', n).encode('ascii'))
-      for name, array in arrays:
-        vtk.write(vtkndim[array.ndim].format(name, vtkdtype[array.dtype]).encode('ascii'))
-        vtk.write(numpy.pad(array, [[0,0]] + [[0,3-n] for n in array.shape[1:]], mode='constant').tobytes())
+    vtk.write('POINTS {} {}\n'.format(npoints, vtkdtype[points.dtype]).encode('ascii'))
+    points.tofile(vtk)
+    vtk.write('CELLS {} {}\n'.format(ncells, t_cells.size).encode('ascii'))
+    t_cells.tofile(vtk)
+    vtk.write('CELL_TYPES {}\n'.format(ncells).encode('ascii'))
+    vtkcelltype[ndims].repeat(ncells).tofile(vtk)
+    for n, items in gathered:
+      vtk.write('{}_DATA {}\n'.format('POINT' if n == npoints else 'CELL', n).encode('ascii'))
+      for dname, array in items:
+        vtk.write(vtkndim[array.ndim].format(dname, vtkdtype[array.dtype]).encode('ascii'))
+        array.tofile(vtk)
 
 # vim:sw=2:sts=2:et
