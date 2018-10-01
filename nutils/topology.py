@@ -2206,7 +2206,7 @@ class MultipatchTopology(Topology):
   'multipatch topology'
 
   __slots__ = 'patches',
-  __cache__ = '_patchinterfaces', 'elements', 'boundary', 'interfaces', 'refined'
+  __cache__ = '_patchinterfaces', 'elements', 'boundary', 'interfaces', 'refined', 'connectivity'
 
   @staticmethod
   def build_boundarydata(connectivity):
@@ -2473,6 +2473,28 @@ class MultipatchTopology(Topology):
     interpatchtopo = MultipatchTopology(tuple(map(Patch, btopos, bconnectivity, self.build_boundarydata(bconnectivity))))
 
     return UnionTopology((intrapatchtopo, interpatchtopo), ('intrapatch', 'interpatch'))
+
+  @property
+  def connectivity(self):
+    connectivity = []
+    patchinterfaces = {}
+    for patch in self.patches: # len(connectivity) represents the element offset for the current patch
+      ielems = numpy.arange(len(patch.topo)).reshape(patch.topo.structure.shape) + len(connectivity)
+      for boundary in patch.boundaries:
+        patchinterfaces.setdefault(boundary.id, []).append((boundary.apply_transform(ielems)[...,0], boundary.dim * 2 + (boundary.side == 0)))
+      connectivity.extend(patch.topo.connectivity + len(connectivity) * numpy.not_equal(patch.topo.connectivity, -1))
+    connectivity = numpy.array(connectivity)
+    for patchdata in patchinterfaces.values():
+      if len(patchdata) > 2:
+        raise ValueError('Cannot create connectivity of multipatch topologies with more than two interface connections.')
+      if len(patchdata) == 2:
+        (ielem, iedge), (jelem, jedge) = patchdata
+        assert ielem.shape == jelem.shape
+        assert numpy.equal(connectivity[ielem, iedge], -1).all()
+        assert numpy.equal(connectivity[jelem, jedge], -1).all()
+        connectivity[ielem, iedge] = jelem
+        connectivity[jelem, jedge] = ielem
+    return types.frozenarray(connectivity, copy=False)
 
   @property
   def refined(self):
