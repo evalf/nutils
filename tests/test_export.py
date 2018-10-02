@@ -95,6 +95,9 @@ class vtk(TestCase):
       elif self.ptype == 'i1' and self.pshape == (2,):
         yield b'VECTORS p char\n'
         yield bytes([0,1,0,2,3,0,4,5,0,6,7,0])
+      elif self.ptype == 'f4' and self.pshape == (2,):
+        yield b'VECTORS p float\n'
+        yield bytes([0,0,0,0,63,128,0,0,0,0,0,0,64,0,0,0,64,64,0,0,0,0,0,0,64,128,0,0,64,160,0,0,0,0,0,0,64,192,0,0,64,224,0,0,0,0,0,0])
       elif self.ptype == 'i1' and self.pshape == (3,):
         yield b'VECTORS p char\n'
         yield bytes([0,1,2,3,4,5,6,7,8,9,10,11])
@@ -137,6 +140,7 @@ vtk(ndims=2, xtype='f4', ptype='i2', pshape=())
 vtk(ndims=2, xtype='f4', ptype='i4', pshape=())
 vtk(ndims=3, xtype='f4', ptype='i1', pshape=())
 vtk(ndims=2, xtype='f4', ptype='i1', pshape=(2,))
+vtk(ndims=2, xtype='f4', ptype='f4', pshape=(2,))
 vtk(ndims=3, xtype='f4', ptype='i1', pshape=(3,))
 vtk(ndims=2, xtype='f4', ptype='i1', pshape=(2,2))
 vtk(ndims=3, xtype='f4', ptype='i1', pshape=(3,3))
