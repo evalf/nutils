@@ -3772,7 +3772,7 @@ class Namespace:
 
   _functions = dict(
     opposite=opposite, sin=sin, cos=cos, tan=tan, sinh=sinh, cosh=cosh,
-    tanh=tanh, arcsin=arcsin, arccos=arccos, arctan2=arctan2, arctanh=arctanh,
+    tanh=tanh, arcsin=arcsin, arccos=arccos, arctan = arctan, arctan2=arctan2, arctanh=arctanh,
     exp=exp, abs=abs, ln=ln, log=ln, log2=log2, log10=log10, sqrt=sqrt,
     sign=sign,
   )
