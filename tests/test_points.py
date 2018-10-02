@@ -120,6 +120,9 @@ class cone(TestCase):
   def test_gauss(self):
     self._test_points('gauss', 3)
 
+  def test_uniform(self):
+    self._test_points('uniform', 3)
+
 cone(shape='square')
 cone(shape='triangle')
 
@@ -132,9 +135,10 @@ class trimmed(TestCase):
     trimmed = quad.trim(levels.ravel(), maxrefine=2, ndivisions=16)
     self.bezier = trimmed.getpoints('bezier', 5)
     self.gauss = trimmed.getpoints('gauss', 3)
+    self.uniform = trimmed.getpoints('uniform', 3)
 
   def test_type(self):
-    for pnt in self.bezier, self.gauss:
+    for pnt in self.bezier, self.gauss, self.uniform:
       self.assertIsInstance(pnt, points.ConcatPoints)
       for i, subpoints in enumerate(pnt.allpoints):
         self.assertIsInstance(subpoints, points.TransformPoints)
@@ -142,7 +146,8 @@ class trimmed(TestCase):
 
   def test_weights(self):
     exact = 1-.5*.125**2
-    self.assertLess(abs(self.gauss.weights.sum()-exact), 1e-15)
+    for pnt in self.gauss, self.uniform:
+      self.assertLess(abs(pnt.weights.sum()-exact), 1e-15)
 
   def test_points(self):
     self.assertEqual(self.bezier.npoints, 27)
