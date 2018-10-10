@@ -472,3 +472,37 @@ class multipatch_L(TestCase):
       except KeyError:
         iface2 = interfaces2.elements[interfaces2.edict[iface1.opposite]].flipped
       self.assertEqual(iface1, iface2)
+
+class groups(TestCase):
+
+  def setUp(self):
+    self.topo, geom = mesh.rectilinear([2,2])
+
+  def test_subdomain(self):
+    topo1 = self.topo.withsubdomain(ll=self.topo[:1,:1], ur=self.topo[1:,1:])
+    self.assertEqual(len(topo1['ll']), 1)
+    self.assertEqual(len(topo1['ur']), 1)
+    topo2 = topo1.withsubdomain(diag='ll,ur')
+    self.assertEqual(len(topo1['ll']), 1)
+    self.assertEqual(len(topo1['ur']), 1)
+    self.assertEqual(len(topo2['diag']), 2)
+
+  def test_boundary(self):
+    topo1 = self.topo.withboundary(ll='left,bottom', ur='top,right')
+    self.assertEqual(len(topo1.boundary['ll']), 4)
+    self.assertEqual(len(topo1.boundary['ur']), 4)
+    topo2 = topo1.withboundary(full='ll,ur')
+    self.assertEqual(len(topo2.boundary['ll']), 4)
+    self.assertEqual(len(topo2.boundary['ur']), 4)
+    self.assertEqual(len(topo2.boundary['full']), 8)
+    topo3 = topo1.withboundary(cup='ll,right')
+    self.assertEqual(len(topo3.boundary['cup']), 6)
+
+  def test_interfaces(self):
+    topo1 = self.topo.withinterfaces(hor=self.topo[:,:1].boundary['top'], ver=self.topo[:1,:].boundary['right'])
+    self.assertEqual(len(topo1.interfaces['hor']), 2)
+    self.assertEqual(len(topo1.interfaces['ver']), 2)
+    topo2 = topo1.withinterfaces(full='hor,ver')
+    self.assertEqual(len(topo2.interfaces['hor']), 2)
+    self.assertEqual(len(topo2.interfaces['ver']), 2)
+    self.assertEqual(len(topo2.interfaces['full']), 4)
