@@ -775,7 +775,7 @@ class Cone(Reference):
   'cone'
 
   __slots__ = 'edgeref', 'etrans', 'tip', 'extnorm', 'height'
-  __cache__ = 'vertices', 'edge_transforms', 'edge_refs'
+  __cache__ = 'vertices', 'edge_transforms', 'edge_refs', 'volume'
 
   @types.apply_annotations
   def __init__(self, edgeref, etrans, tip:types.frozenarray):
@@ -831,6 +831,10 @@ class Cone(Reference):
     if ischeme == 'vtk' and self.nverts == 5 and self.ndims==3: # pyramid
       return points.CoordsPoints(self.vertices[[1,2,4,3,0]])
     return points.ConePoints(self.edgeref.getpoints(ischeme, degree), self.etrans, self.tip)
+
+  @property
+  def volume(self):
+    return self.edgeref.volume * self.extnorm * self.height / self.ndims
 
   @property
   def simplices(self):
