@@ -602,7 +602,7 @@ The optimization problem can also be solved by the
 
 .. console::
     >>> nutils.solver.optimize('lhs', sqr)
-    optimize > iter 1 > solve > solver returned with residual 6e-17±1e-15
+    optimize > solve > solver returned with residual 6e-17±1e-15
     optimize > constrained 5/5 dofs, optimum value 9.63e-33±1e-15
     array([0.  , 0.25, 0.5 , 0.75, 1.  ])±1e-15
 
@@ -804,7 +804,7 @@ solved for ``lhs``, yielding the constraints vector ``cons``:
     >>> sqr = topo.boundary['left'].integral('u^2 d:x' @ ns, degree=2)
     >>> sqr += topo.boundary['top'].integral('(u - cosh(1) sin(x_0))^2 d:x' @ ns, degree=2)
     >>> cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
-    optimize > iter 1 > solve > solver returned with residual 3e-17±1e-15
+    optimize > solve > solver returned with residual 3e-17±1e-15
     optimize > constrained 21/121 dofs, optimum value 4.32e-10±1e-9
 
 To solve the problem ``res=0`` for ``lhs`` subject to ``lhs=cons`` excluding

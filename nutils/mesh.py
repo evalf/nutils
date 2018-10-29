@@ -26,8 +26,8 @@ accompanying geometry function. Meshes can either be generated on the fly, e.g.
 provided at this point.
 """
 
-from . import topology, function, util, element, numpy, numeric, transform, log, warnings, types, _
-import os, itertools, pathlib
+from . import topology, function, util, element, numpy, numeric, transform, warnings, types, _
+import os, itertools, pathlib, treelog as log
 
 # MESH GENERATORS
 

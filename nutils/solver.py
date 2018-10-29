@@ -127,22 +127,22 @@ def solve_withinfo(gen_lhs_resnorm, tol:types.strictfloat=0., maxiter:types.stri
   norm and other generator-dependent information.
   '''
 
-  for iiter, (lhs, info) in log.enumerate('iter', gen_lhs_resnorm):
-    resnorm = info.resnorm
-    if resnorm <= tol or iiter > maxiter:
-      break
-    if not iiter:
-      resnorm0 = resnorm
-    elif tol:
-      log.info('residual: {:.2e} ({:.0f}%)'.format(resnorm, 100 * numpy.log(resnorm0/resnorm) / numpy.log(resnorm0/tol)))
-    else:
+  iterator = iter(gen_lhs_resnorm)
+  lhs, info = next(iterator)
+  if tol:
+    iiter = 0
+    resnorm0 = info.resnorm
+    while info.resnorm > tol:
+      if iiter > maxiter:
+        raise SolverError('failed to reach target tolerance')
+      with log.context('iter {} ({:.0f}%)'.format(iiter, 100 * numpy.log(resnorm0/info.resnorm) / numpy.log(resnorm0/tol))):
+        lhs, info = next(iterator)
+      iiter += 1
+  elif info.resnorm:
+    lhs, info = next(iterator)
+    if info.resnorm:
       raise SolverError('nonlinear problem requires a nonzero tolerance')
-  if resnorm > tol:
-    raise SolverError('failed to reach target tolerance')
-  elif resnorm:
-    log.info('tolerance reached in {} iterations with residual {:.2e}'.format(iiter, resnorm))
   return lhs, info
-
 
 class RecursionWithSolve(cache.Recursion):
   '''add a .solve method to (lhs,resnorm) iterators
