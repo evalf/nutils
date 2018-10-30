@@ -502,7 +502,7 @@ class Topology(types.Singleton):
       dofmap = axes[0]
       for elem in self:
         dofs = dofmap.eval(_transforms=(elem.transform, elem.opposite))
-        used[dofs] = True
+        used[numpy.asarray(dofs)] = True
     return function.mask(basis, used)
 
   def locate(self, geom, coords, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, *, arguments=None):
@@ -1190,8 +1190,8 @@ class StructuredTopology(Topology):
       for irefine in log.range('level', nrefine-1, -1, -1):
         offsets = numpy.array([r[0] for r in grid])
         grid = [numpy.arange(axis.i>>irefine,((axis.j-1)>>irefine)+1) if axis.isdim else numpy.array([(axis.i-1 if axis.side else axis.j)>>irefine]) for axis in axes]
-        A = transforms[numpy.broadcast_arrays(*numeric.ix(r//2-o for r, o in zip(grid, offsets)))]
-        B = scales[numpy.broadcast_arrays(*numeric.ix(r%2 for r in grid))]
+        A = transforms[tuple(numpy.broadcast_arrays(*numeric.ix(r//2-o for r, o in zip(grid, offsets))))]
+        B = scales[tuple(numpy.broadcast_arrays(*numeric.ix(r%2 for r in grid)))]
         transforms = A + B
 
     shape = tuple(axis.j - axis.i for axis in axes if axis.isdim)
