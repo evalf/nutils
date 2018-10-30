@@ -142,33 +142,11 @@ def call(func, kwargs, scriptname, funcname=None):
   '''set up compute environment and call function'''
 
   starttime = datetime.datetime.now()
-  outrootdir = os.path.expanduser(config.outrootdir)
-  ymdt = starttime.strftime('%Y/%m/%d/%H-%M-%S/')
-  outdir = config.outdir or os.path.join(outrootdir, scriptname, ymdt)
-
-  for base, relpath in (outrootdir, os.path.join(scriptname, ymdt)), (os.path.join(outrootdir, scriptname), ymdt):
-    if not os.path.isdir(base):
-      os.makedirs(base)
-    if config.symlink:
-      target = os.path.join(base, config.symlink)
-      if os.path.islink(target):
-        os.remove(target)
-      os.symlink(relpath, target, target_is_directory=True)
-    if config.htmloutput:
-      with open(os.path.join(base,'log.html'), 'w') as redirlog:
-        print('<html><head>', file=redirlog)
-        print('<meta charset="UTF-8"/>', file=redirlog)
-        print('<meta http-equiv="cache-control" content="max-age=0" />', file=redirlog)
-        print('<meta http-equiv="cache-control" content="no-cache" />', file=redirlog)
-        print('<meta http-equiv="expires" content="0" />', file=redirlog)
-        print('<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />', file=redirlog)
-        print('<meta http-equiv="pragma" content="no-cache" />', file=redirlog)
-        print('<meta http-equiv="refresh" content="0;URL={}" />'.format(os.path.join(relpath,'log.html')), file=redirlog)
-        print('</head></html>', file=redirlog)
+  outdir = config.outdir or os.path.join(os.path.expanduser(config.outrootdir), scriptname)
 
   with contextlib.ExitStack() as stack:
 
-    stack.enter_context(cache.enable(os.path.join(outrootdir, scriptname, config.cachedir)) if config.cache else cache.disable())
+    stack.enter_context(cache.enable(os.path.join(outdir, config.cachedir)) if config.cache else cache.disable())
     stack.enter_context(matrix.backend(config.matrix))
     stack.enter_context(log.set(log.FilterLog(log.RichOutputLog() if config.richoutput else log.StdoutLog(), minlevel=5-config.verbose)))
     if config.htmloutput:
