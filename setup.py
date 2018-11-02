@@ -37,7 +37,7 @@ setup(
   long_description = long_description,
   license = 'MIT',
   python_requires = '>=3.5',
-  install_requires = ['numpy>=1.12', 'matplotlib>=1.3', 'scipy>=0.13', 'treelog'],
+  install_requires = ['numpy>=1.12', 'matplotlib>=1.3', 'scipy>=0.13', 'treelog', 'stickybar'],
   tests_require = tests_require,
   extras_require = dict(
     test=tests_require,

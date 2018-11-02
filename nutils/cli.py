@@ -25,7 +25,7 @@ python function based arguments specified on the command line.
 """
 
 from . import util, config, long_version, warnings, matrix, cache
-import sys, inspect, os, datetime, pdb, signal, subprocess, contextlib, traceback, pathlib, treelog as log
+import sys, inspect, os, io, time, pdb, signal, subprocess, contextlib, traceback, pathlib, treelog as log, stickybar
 
 def _version():
   try:
@@ -65,6 +65,12 @@ def _sigint_handler(mysignal, frame):
       pdb.set_trace()
   finally:
     signal.signal(mysignal, _handler)
+
+def _hms(dt):
+  seconds = int(dt)
+  minutes, seconds = divmod(seconds, 60)
+  hours, minutes = divmod(minutes, 60)
+  return hours, minutes, seconds
 
 def run(func, *, skip=1, loaduserconfig=True):
   '''parse command line arguments and call function'''
@@ -141,7 +147,6 @@ def choose(*functions, loaduserconfig=True):
 def call(func, kwargs, scriptname, funcname=None):
   '''set up compute environment and call function'''
 
-  starttime = datetime.datetime.now()
   outdir = config.outdir or os.path.join(os.path.expanduser(config.outrootdir), scriptname)
 
   with contextlib.ExitStack() as stack:
@@ -152,7 +157,12 @@ def call(func, kwargs, scriptname, funcname=None):
     if config.htmloutput:
       html = stack.enter_context(log.HtmlLog(outdir, title=scriptname))
       uri = (config.outrooturi.rstrip('/') + '/' + scriptname if config.outrooturi else pathlib.Path(outdir).resolve().as_uri()) + '/' + html.filename
-      log.info('opened log at', uri)
+      if config.richoutput:
+        t0 = time.perf_counter()
+        bar = lambda running: '{0} [{1}] {2[0]}:{2[1]:02d}:{2[2]:02d}'.format(uri, 'RUNNING' if running else 'STOPPED', _hms(time.perf_counter()-t0))
+        stack.enter_context(stickybar.activate(bar, interval=1))
+      else:
+        log.info('opened log at', uri)
       html.write('<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">{}</ul>'.format(''.join(
         '<li>{}={} <span style="color: gray;">{}</span></li>'.format(param.name, kwargs.get(param.name, param.default), param.annotation)
           for param in inspect.signature(func).parameters.values())), level=1, escape=False)
@@ -161,7 +171,7 @@ def call(func, kwargs, scriptname, funcname=None):
     stack.callback(signal.signal, signal.SIGINT, signal.signal(signal.SIGINT, _sigint_handler))
 
     log.info('nutils v{}'.format(_version()))
-    log.info('start {}'.format(starttime.ctime()))
+    log.info('start', time.ctime())
     try:
       func(**kwargs)
     except (KeyboardInterrupt, SystemExit, pdb.bdb.BdbQuit):
@@ -178,11 +188,7 @@ def call(func, kwargs, scriptname, funcname=None):
         pdb.post_mortem()
       return 2
     else:
-      endtime = datetime.datetime.now()
-      minutes, seconds = divmod((endtime-starttime).seconds, 60)
-      hours, minutes = divmod(minutes, 60)
-      log.info('finish {}'.format(endtime.ctime()))
-      log.info('elapsed {:.0f}:{:02.0f}:{:02.0f}'.format(hours, minutes, seconds))
+      log.info('finish', time.ctime())
       return 0
 
 # vim:sw=2:sts=2:et
