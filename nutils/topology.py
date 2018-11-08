@@ -571,31 +571,35 @@ class Topology(types.Singleton):
     vref = element.getsimplex(0)
     ielems = parallel.shempty(len(coords), dtype=int)
     xis = parallel.shempty((len(coords),len(geom)), dtype=float)
-    for ipoint, coord in parallel.pariter(log.enumerate('point', coords), nprocs=nprocs):
-      ielemcandidates, = numpy.logical_and(numpy.greater_equal(coord, bboxes[:,0,:]), numpy.less_equal(coord, bboxes[:,1,:])).all(axis=-1).nonzero()
-      for ielem in sorted(ielemcandidates, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-coord)):
-        converged = False
-        elem = self.elements[ielem]
-        xi, w = elem.reference.getischeme('gauss1')
-        xi = (numpy.dot(w,xi) / w.sum())[_] if len(xi) > 1 else xi.copy()
-        J = function.localgradient(geom, self.ndims)
-        geom_J = function.Tuple((geom, J)).prepare_eval().simplified
-        for iiter in range(maxiter):
-          coord_xi, J_xi = geom_J.eval(_transforms=(elem.transform, elem.opposite), _points=xi, **arguments)
-          err = numpy.linalg.norm(coord - coord_xi)
-          if err < tol:
-            converged = True
-            break
-          if iiter and err > prev_err:
-            break
-          prev_err = err
-          xi += numpy.linalg.solve(J_xi, coord - coord_xi)
-        if converged and elem.reference.inside(xi[0], eps=eps):
-          ielems[ipoint] = ielem
-          xis[ipoint], = xi
-          break
-      else:
-        raise LocateError('failed to locate point: {}'.format(coord))
+    ipoints = parallel.range(len(coords))
+    with parallel.fork(nprocs):
+      for ipoint in ipoints:
+        with log.context('point {} ({:.0f}%)'.format(ipoint, 100*ipoint/len(coords)), mayskip=ipoint):
+          coord = coords[ipoint]
+          ielemcandidates, = numpy.logical_and(numpy.greater_equal(coord, bboxes[:,0,:]), numpy.less_equal(coord, bboxes[:,1,:])).all(axis=-1).nonzero()
+          for ielem in sorted(ielemcandidates, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-coord)):
+            converged = False
+            elem = self.elements[ielem]
+            xi, w = elem.reference.getischeme('gauss1')
+            xi = (numpy.dot(w,xi) / w.sum())[_] if len(xi) > 1 else xi.copy()
+            J = function.localgradient(geom, self.ndims)
+            geom_J = function.Tuple((geom, J)).prepare_eval().simplified
+            for iiter in range(maxiter):
+              coord_xi, J_xi = geom_J.eval(_transforms=(elem.transform, elem.opposite), _points=xi, **arguments)
+              err = numpy.linalg.norm(coord - coord_xi)
+              if err < tol:
+                converged = True
+                break
+              if iiter and err > prev_err:
+                break
+              prev_err = err
+              xi += numpy.linalg.solve(J_xi, coord - coord_xi)
+            if converged and elem.reference.inside(xi[0], eps=eps):
+              ielems[ipoint] = ielem
+              xis[ipoint], = xi
+              break
+          else:
+            raise LocateError('failed to locate point: {}'.format(coord))
     transforms = []
     points_ = []
     index = []

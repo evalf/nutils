@@ -25,10 +25,50 @@ platforms, notably excluding Windows. On unsupported platforms parallel features
 will disable and a warning is printed.
 """
 
-from . import log, numpy, numeric
-import os, sys, multiprocessing, tempfile, mmap, traceback, signal, collections.abc
+from . import log, numeric, warnings
+import os, multiprocessing, mmap, signal, contextlib, builtins, numpy
 
 procid = None # current process id, None for unforked
+
+@contextlib.contextmanager
+def fork(nprocs):
+  '''continue as ``nprocs`` parallel processes by forking ``nprocs-1`` times
+
+  It is up to the user to prepare shared memory and/or locks for inter-process
+  communication. As a safety measure nested forks are blocked by setting the
+  global ``procid`` variable; all secondary forks will be silently ignored.
+  '''
+
+  global procid
+  if nprocs == 1 or procid is not None:
+    yield 0
+    return
+  if not hasattr(os, 'fork'):
+    log.warning('fork is unavailable on this platform')
+    yield 0
+    return
+  child_pids = []
+  try:
+    fail = 1
+    for procid in builtins.range(1, nprocs):
+      pid = os.fork()
+      if not pid:
+        signal.signal(signal.SIGINT, signal.SIG_IGN) # disable sigint (ctrl+c) handler
+        break
+      child_pids.append(pid)
+    else:
+      procid = 0
+    yield procid
+    fail = 0
+  finally:
+    if procid: # before anything else can fail:
+      os._exit(fail) # communicate exit status to main process
+    procid = None # unset global variable
+    nfails = fail + sum(os.waitpid(pid, 0)[1] != 0 for pid in child_pids)
+    if fail: # failure in main process: exception has been reraised
+      log.error('pariter failed in {} out of {} processes; reraising exception for main process'.format(nfails, nprocs))
+    elif nfails: # failure in child process: raise exception
+      raise Exception('pariter failed in {} out of {} processes'.format(nfails, nprocs))
 
 def shempty(shape, dtype=float):
   '''create uninitialized array in shared memory'''
@@ -54,141 +94,51 @@ def shzeros(shape, dtype=float):
   array.fill(0)
   return array
 
-def pariter(iterable, nprocs):
+class range:
+  '''a shared range-like iterable that yields every index exactly once'''
+
+  def __init__(self, stop):
+    self._stop = stop
+    self._index = multiprocessing.RawValue('i', 0)
+    self._lock = multiprocessing.Lock() # lock to avoid race conditions in incrementing index
+  def __iter__(self):
+    return self
+  def __next__(self):
+    with self._lock:
+      iiter = self._index.value # claim next value
+      if iiter >= self._stop:
+        raise StopIteration
+      self._index.value = iiter + 1
+    return iiter
+
+def pariter(items, nprocs):
   '''iterate in parallel
 
   Fork into ``nprocs`` subprocesses, then yield items from iterable such that
-  all processes receive a nonoverlapping subset of the total. It is up to the
-  user to prepare shared memory and/or locks for inter-process communication.
-  The following creates a data vector containing the first four quadratics::
+  all processes receive a nonoverlapping subset of the total.
 
-     data = shzeros(shape=[4], dtype=int)
-     for i in pariter(range(4), 2):
-       data[i] = i**2
-     data
-
-  As a safety measure nested pariters are blocked by setting the global
-  ``procid`` variable; all secundary pariters will be treated like normal
-  serial iterators.
+  NOTE: Pariter is deprecated because a child proces may not be ended if it
+  forcably breaks out of the loop. Instead a :class:`fork` context should be
+  used in combination with a shared :class:`range` interator.
 
   Parameters
   ----------
-  iterable : :class:`collections.abc.Iterable`
+  iterable :
       The collection of items to be distributed over processors
   nprocs : :class:`int`
       Maximum number of processers to use
-
+ 
   Yields
   ------
       Items from iterable, distributed over at most nprocs processors.
   '''
 
-  global procid
-
-  if procid is not None:
-    log.warning('ignoring pariter for already forked process')
-    yield from iterable
-    return
-
-  if isinstance(iterable, collections.abc.Sized):
-    nprocs = min(nprocs, len(iterable))
-
-  if nprocs <= 1:
-    yield from iterable
-    return
-
-  if not hasattr(os, 'fork'):
-    raise NotImplementedError('pariter requires os.fork, which is unavailable on this platform')
-
-  shared_iter = multiprocessing.RawValue('i', nprocs) # shared integer pointing at first unyielded item
-  lock = multiprocessing.Lock() # lock to avoid race conditions in incrementing shared_iter
-  children = [] # list of forked processes, non-empty only in primary process
-
-  try:
-
-    for procid in range(1, nprocs):
-      child_pid = os.fork()
-      if not child_pid:
-        signal.signal(signal.SIGINT, signal.SIG_IGN) # disable sigint (ctrl+c) handler
-        break
-      children.append(child_pid)
-    else:
-      procid = 0
-
-    iiter = procid # first index is 0 .. nprocs-1, with shared_iter at nprocs
-    for n, it in enumerate(iterable):
-      if n < iiter: # fast forward to iiter
-        continue
-      assert n == iiter
-      yield it
-      with lock:
-        iiter = shared_iter.value # claim next value
-        shared_iter.value = iiter + 1
-
-  except:
-
-    fail = 1
-    if procid == 0:
-      raise # reraise in main process
-
-    # in child processes print traceback then exit
-    excval = sys.exc_info()[1]
-    if isinstance(excval, GeneratorExit):
-      log.error('generator failed with unknown exception')
-    elif not isinstance(excval, KeyboardInterrupt):
-      log.error(traceback.format_exc())
-
-  else:
-
-    fail = 0
-
-  finally:
-
-    if procid != 0: # before anything else can fail:
-      os._exit(fail) # cumminicate exit status to main process
-
-    procid = None # unset global variable
-    totalfail = fail
-    while children:
-      child_pid, child_status = os.wait()
-      children.remove(child_pid)
-      if child_status:
-        totalfail += 1
-    if fail: # failure in main process: exception has been reraised
-      log.error('pariter failed in {} out of {} processes; reraising exception for main process'.format(totalfail, nprocs))
-    elif totalfail: # failure in child process: raise exception
-      raise Exception('pariter failed in {} out of {} processes'.format(totalfail, nprocs))
-
-def parmap(func, iterable, nprocs, shape=(), dtype=float):
-  '''parallel equivalent to builtin map function
-
-  Produces an array of ``func(item)`` values for all items in ``iterable``.
-  Because of shared memory restrictions ``func`` must yield numpy arrays of
-  predetermined shape and type.
-
-  Parameters
-  ----------
-  func : :any:`callable`
-      Takes item from iterable, returns numpy array of ``shape`` and ``dtype``
-  iterable : :class:`collections.abc.Iterable`
-      Collection of items
-  nprocs : :class:`int`
-      Maximum number of processers to use
-  shape : :class:`tuple`
-      Return shape of ``func``, defaults to scalar
-  dtype : :class:`tuple`
-      Return dtype of ``func``, defaults to float
-
-  Returns
-  -------
-      Array of shape ``len(iterable),+shape`` and dtype ``dtype``
-  '''
-
-
-  n = len(iterable)
-  out = shzeros((n,)+shape, dtype=dtype)
-  for i, item in pariter(enumerate(iterable), nprocs=min(n,nprocs)):
-    out[i] = func(item)
-  return out
+  warnings.deprecation('pariter is deprecated, use fork, range instead')
+  if not hasattr(items, '__getitem__'):
+    items = tuple(items)
+  indices = range(len(items))
+  with fork(nprocs):
+    for index in indices:
+      yield items[index]
 
 # vim:sw=2:sts=2:et

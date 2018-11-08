@@ -162,17 +162,20 @@ class Sample(types.Singleton):
     # benefits from parallel speedup.
 
     valueindexfunc = function.Tuple(function.Tuple([value]+list(index)) for value, index in zip(values, indices))
-    for ielem in parallel.pariter(log.range('elem', self.nelems), nprocs=nprocs):
-      points = self.points[ielem]
-      for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=self.transforms[ielem], _points=points.coords, **arguments)):
-        s = slice(*offsets[iblock,ielem:ielem+2])
-        data, index = data_index[block2func[iblock]]
-        w_intdata = numeric.dot(points.weights, intdata)
-        data[s] = w_intdata.ravel()
-        si = (slice(None),) + (numpy.newaxis,) * (w_intdata.ndim-1)
-        for idim, (ii,) in enumerate(indices):
-          index[idim,s].reshape(w_intdata.shape)[...] = ii[si]
-          si = si[:-1]
+    ielems = parallel.range(self.nelems)
+    with parallel.fork(nprocs):
+      for ielem in ielems:
+        with log.context('elem {} ({:.0f}%)'.format(ielem, 100*ielem/self.nelems), mayskip=ielem):
+          points = self.points[ielem]
+          for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=self.transforms[ielem], _points=points.coords, **arguments)):
+            s = slice(*offsets[iblock,ielem:ielem+2])
+            data, index = data_index[block2func[iblock]]
+            w_intdata = numeric.dot(points.weights, intdata)
+            data[s] = w_intdata.ravel()
+            si = (slice(None),) + (numpy.newaxis,) * (w_intdata.ndim-1)
+            for idim, (ii,) in enumerate(indices):
+              index[idim,s].reshape(w_intdata.shape)[...] = ii[si]
+              si = si[:-1]
 
     return [matrix.assemble(data, index, func.shape) for func, (data,index) in log.zip('assembling', funcs, data_index)]
 
@@ -213,9 +216,12 @@ class Sample(types.Singleton):
     if config.dot:
       idata.graphviz()
 
-    for transforms, points, index in parallel.pariter(log.zip('elem', self.transforms, self.points, self.index), nprocs=nprocs):
-      for ifunc, inds, data in idata.eval(_transforms=transforms, _points=points.coords, **arguments):
-        numpy.add.at(retvals[ifunc], numpy.ix_(index, *[ind for (ind,) in inds]), data)
+    ielems = parallel.range(self.nelems)
+    with parallel.fork(nprocs):
+      for ielem in ielems:
+        with log.context('elem {} ({:.0f}%)'.format(ielem, 100*ielem/self.nelems), mayskip=ielem):
+          for ifunc, inds, data in idata.eval(_transforms=self.transforms[ielem], _points=self.points[ielem].coords, **arguments):
+            numpy.add.at(retvals[ifunc], numpy.ix_(self.index[ielem], *[ind for (ind,) in inds]), data)
 
     return retvals
 
