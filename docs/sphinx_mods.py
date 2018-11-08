@@ -18,10 +18,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-import inspect, pathlib, shutil, os, runpy, urllib.parse, shlex, doctest, re, io, hashlib, base64
+import inspect, pathlib, shutil, os, runpy, urllib.parse, shlex, doctest, re, io, hashlib, base64, treelog
 import docutils.nodes, docutils.parsers.rst, docutils.statemachine
 import sphinx.util.logging, sphinx.util.docutils, sphinx.addnodes
-import nutils.log, nutils.matrix
+import nutils.matrix
 import numpy
 
 project_root = pathlib.Path(__file__).parent.parent.resolve()
@@ -241,7 +241,7 @@ def create_log(app, env, node, contnode):
           logger.error('invalid argument for {!r}: {}'.format(name, e))
           return
       # Run script.
-      with nutils.log.HtmlLog(str(dst_log)), nutils.matrix.backend('scipy'), nutils.warnings.via(nutils.log.warning):
+      with treelog.HtmlLog(str(dst_log)), nutils.matrix.backend('scipy'), nutils.warnings.via(treelog.warning):
         script_dict['main'](**kwargs)
       (dst_log/'log.html').rename(dst_log/'index.html')
 
@@ -470,7 +470,7 @@ class ConsoleDirective(docutils.parsers.rst.Directive):
   required_arguments = 0
   options_arguments = 0
 
-  _console_log = nutils.log.StdoutLog()
+  _console_log = treelog.FilterLog(treelog.StdoutLog(), minlevel=1)
 
   def run(self):
     document = self.state.document
@@ -494,7 +494,7 @@ class ConsoleDirective(docutils.parsers.rst.Directive):
     runner = doctest.DocTestRunner(checker=ConsoleOutputChecker(), optionflags=doctest.ELLIPSIS)
     globs = getattr(document, '_console_globs', {})
     test = parser.get_doctest(code, globs, 'test', env.docname, self.lineno)
-    with nutils.testing.set_log_default(self._console_log):
+    with treelog.set(self._console_log):
       failures, tries = runner.run(test, clear_globs=False)
     for fignum in matplotlib.pyplot.get_fignums():
       fig = matplotlib.pyplot.figure(fignum)

@@ -1,8 +1,7 @@
-import doctest as _doctest, importlib, os, tempfile, pathlib, functools, warnings, subprocess, sys
-import nutils.log
+import doctest as _doctest, importlib, os, tempfile, pathlib, functools, warnings, subprocess, sys, treelog
 from nutils.testing import *
 
-_doctestlog = log.StdoutLog()
+_doctestlog = treelog.FilterLog(treelog.StdoutLog(), minlevel=1)
 
 @parametrize
 class module(TestCase):
@@ -11,7 +10,7 @@ class module(TestCase):
     super().setUpContext(stack)
     stack.enter_context(warnings.catch_warnings())
     warnings.simplefilter('ignore')
-    stack.enter_context(nutils.testing.set_log_default(_doctestlog))
+    stack.enter_context(treelog.set(_doctestlog))
     import numpy
     printoptions = numpy.get_printoptions()
     if 'legacy' in printoptions:
@@ -29,7 +28,7 @@ class file(TestCase):
     super().setUpContext(stack)
     stack.enter_context(warnings.catch_warnings())
     warnings.simplefilter('ignore')
-    stack.enter_context(nutils.testing.set_log_default(_doctestlog))
+    stack.enter_context(treelog.set(_doctestlog))
 
   def test(self):
     failcnt, testcnt = _doctest.testfile(str(self.path), module_relative=False, optionflags=_doctest.ELLIPSIS)

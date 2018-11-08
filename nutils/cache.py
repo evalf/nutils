@@ -22,8 +22,8 @@
 The cache module.
 """
 
-from . import log, types
-import os, numpy, functools, inspect, builtins, pathlib, pickle, itertools, hashlib, abc, contextlib
+from . import types
+import os, numpy, functools, inspect, builtins, pathlib, pickle, itertools, hashlib, abc, contextlib, treelog as log
 
 class Wrapper:
   'function decorator that caches results by arguments'
@@ -236,7 +236,8 @@ def function(func=None, *, version=0):
       # Seek back to the beginning, because pickle might have read garbage.
       f.seek(0)
       # Disable the cache temporarily to prevent caching subresults *in* `func`.
-      with disable(), log.RecordLog() as log_:
+      log_ = log.RecordLog()
+      with disable(), log.add(log_):
         try:
           value = func(*args, **kwargs)
         except Exception as e:
@@ -401,7 +402,8 @@ class Recursion(types.Immutable, metaclass=_RecursionMeta):
             f.seek(0)
             del history
           # Disable the cache temporarily to prevent caching subresults *in* `func`.
-          with disable(), log.RecordLog() as log_:
+          log_ = log.RecordLog()
+          with disable(), log.add(log_):
             try:
               value = next(resume)
             except Exception as e:

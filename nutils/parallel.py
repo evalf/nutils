@@ -25,8 +25,8 @@ platforms, notably excluding Windows. On unsupported platforms parallel features
 will disable and a warning is printed.
 """
 
-from . import log, numeric, warnings
-import os, multiprocessing, mmap, signal, contextlib, builtins, numpy
+from . import numeric, warnings
+import os, multiprocessing, mmap, signal, contextlib, builtins, numpy, treelog as log
 
 procid = None # current process id, None for unforked
 
@@ -54,6 +54,7 @@ def fork(nprocs):
       pid = os.fork()
       if not pid:
         signal.signal(signal.SIGINT, signal.SIG_IGN) # disable sigint (ctrl+c) handler
+        log.current = log.NullLog()
         break
       child_pids.append(pid)
     else:

@@ -1,5 +1,5 @@
 from nutils.testing import *
-import os, tempfile, pathlib
+import os, tempfile, pathlib, treelog
 import nutils, numpy
 
 class mplfigure(TestCase):
@@ -7,7 +7,7 @@ class mplfigure(TestCase):
   def setUpContext(self, stack):
     super().setUpContext(stack)
     self.outdir = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory()))
-    stack.enter_context(nutils.log.DataLog(str(self.outdir)))
+    stack.enter_context(treelog.set(treelog.DataLog(str(self.outdir))))
 
   def test_autodetect_imagetype(self):
     for (imagetype, test) in (('jpg', lambda data: self.assertEqual(data[:3], b'\xFF\xD8\xFF')),
@@ -118,7 +118,7 @@ class vtk(TestCase):
         raise Exception('not supported: ndims={}, ctype={}, cdims={}'.format(self.ndims, self.ctype, self.cdims))
 
   def test_data(self):
-    with tempfile.TemporaryDirectory() as outdir, nutils.log.DataLog(outdir):
+    with tempfile.TemporaryDirectory() as outdir, treelog.set(treelog.DataLog(outdir)):
       kwargs = {}
       if self.p is not None:
         kwargs['p'] = self.p

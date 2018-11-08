@@ -24,8 +24,8 @@ can be used set up properties, initiate an output environment, and execute a
 python function based arguments specified on the command line.
 """
 
-from . import log, util, config, long_version, warnings, matrix, cache
-import sys, inspect, os, datetime, pdb, signal, subprocess, contextlib
+from . import util, config, long_version, warnings, matrix, cache
+import sys, inspect, os, datetime, pdb, signal, subprocess, contextlib, traceback, pathlib, treelog as log
 
 def _version():
   try:
@@ -166,44 +166,45 @@ def call(func, kwargs, scriptname, funcname=None):
         print('<meta http-equiv="refresh" content="0;URL={}" />'.format(os.path.join(relpath,'log.html')), file=redirlog)
         print('</head></html>', file=redirlog)
 
-  try:
-    old_sigint_handler = signal.signal(signal.SIGINT, _sigint_handler)
-    with contextlib.ExitStack() as stack:
+  with contextlib.ExitStack() as stack:
 
-      stack.enter_context(cache.enable(os.path.join(outrootdir, scriptname, config.cachedir)) if config.cache else cache.disable())
-      stack.enter_context(matrix.backend(config.matrix))
-      stack.enter_context(log.RichOutputLog() if config.richoutput else log.StdoutLog())
-      if config.htmloutput:
-        funcargs = [(param.name, kwargs.get(param.name, param.default), param.annotation) for param in inspect.signature(func).parameters.values()]
-        stack.enter_context(log.HtmlLog(outdir, title=scriptname, scriptname=scriptname, funcname=funcname, funcargs=funcargs))
-      stack.enter_context(warnings.via(log.warning))
+    stack.enter_context(cache.enable(os.path.join(outrootdir, scriptname, config.cachedir)) if config.cache else cache.disable())
+    stack.enter_context(matrix.backend(config.matrix))
+    stack.enter_context(log.set(log.FilterLog(log.RichOutputLog() if config.richoutput else log.StdoutLog(), minlevel=5-config.verbose)))
+    if config.htmloutput:
+      html = stack.enter_context(log.HtmlLog(outdir, title=scriptname))
+      uri = (config.outrooturi.rstrip('/') + '/' + scriptname if config.outrooturi else pathlib.Path(outdir).resolve().as_uri()) + '/' + html.filename
+      log.info('opened log at', uri)
+      html.write('<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">{}</ul>'.format(''.join(
+        '<li>{}={} <span style="color: gray;">{}</span></li>'.format(param.name, kwargs.get(param.name, param.default), param.annotation)
+          for param in inspect.signature(func).parameters.values())), level=1, escape=False)
+      stack.enter_context(log.add(html))
+    stack.enter_context(warnings.via(log.warning))
+    stack.callback(signal.signal, signal.SIGINT, signal.signal(signal.SIGINT, _sigint_handler))
 
-      log.info('nutils v{}'.format(_version()))
-      log.info('start {}'.format(starttime.ctime()))
-
+    log.info('nutils v{}'.format(_version()))
+    log.info('start {}'.format(starttime.ctime()))
+    try:
       func(**kwargs)
-
+    except (KeyboardInterrupt, SystemExit, pdb.bdb.BdbQuit):
+      log.error('killed by user')
+      return 1
+    except:
+      log.error(traceback.format_exc())
+      if config.pdb:
+        print(_mkbox(
+          'YOUR PROGRAM HAS DIED. The Python debugger',
+          'allows you to examine its post-mortem state',
+          'to figure out why this happened. Type "h"',
+          'for an overview of commands to get going.'))
+        pdb.post_mortem()
+      return 2
+    else:
       endtime = datetime.datetime.now()
       minutes, seconds = divmod((endtime-starttime).seconds, 60)
       hours, minutes = divmod(minutes, 60)
-
       log.info('finish {}'.format(endtime.ctime()))
       log.info('elapsed {:.0f}:{:02.0f}:{:02.0f}'.format(hours, minutes, seconds))
-
-  except (KeyboardInterrupt,SystemExit,pdb.bdb.BdbQuit):
-    return 1
-  except:
-    if config.pdb:
-      print(_mkbox(
-        'YOUR PROGRAM HAS DIED. The Python debugger',
-        'allows you to examine its post-mortem state',
-        'to figure out why this happened. Type "h"',
-        'for an overview of commands to get going.'))
-      pdb.post_mortem()
-    return 2
-  else:
-    return 0
-  finally:
-    signal.signal(signal.SIGINT, old_sigint_handler) # restore handler
+      return 0
 
 # vim:sw=2:sts=2:et

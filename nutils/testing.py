@@ -22,8 +22,7 @@
 Extensions of the :mod:`unittest` module.
 '''
 
-import unittest, sys, types as builtin_types, operator, contextlib
-from . import log
+import unittest, sys, types as builtin_types, operator, contextlib, treelog
 
 
 class _ParametrizedCollection(type):
@@ -113,22 +112,10 @@ parametrize.enable_if = _parametrize_enable_if
 parametrize.skip_if = _parametrize_skip_if
 
 
-_debuglog = log.LoggingLog()
-
-@contextlib.contextmanager
-def set_log_default(*new_default):
-  old_active, old_default = log._active, log._default
-  try:
-    log._active, log._default = [], new_default
-    yield
-  finally:
-    log._active, log._default = old_active, old_default
-
-
 class TestCase(unittest.TestCase):
 
   def setUpContext(self, stack):
-    stack.enter_context(set_log_default(_debuglog))
+    stack.enter_context(treelog.set(treelog.LoggingLog()))
 
   def setUp(self):
     super().setUp()

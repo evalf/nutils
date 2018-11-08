@@ -27,8 +27,8 @@ def mplfigure(*args, **kwargs):
   '''Matplotlib figure context, convenience function.
 
   Returns a :class:`matplotlib.figure.Figure` object suitable for
-  `object-oriented plotting`_. Upon exit the result is logged via
-  :func:`nutils.log.open`.
+  `object-oriented plotting`_. Upon exit the result is written to the currently
+  active logger.
 
   .. _`object-oriented plotting`: https://matplotlib.org/gallery/api/agg_oo_sgskip.html
 
