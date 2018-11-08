@@ -66,9 +66,9 @@ def fork(nprocs):
     procid = None # unset global variable
     nfails = fail + sum(os.waitpid(pid, 0)[1] != 0 for pid in child_pids)
     if fail: # failure in main process: exception has been reraised
-      log.error('pariter failed in {} out of {} processes; reraising exception for main process'.format(nfails, nprocs))
+      log.error('fork failed in {} out of {} processes; reraising exception for main process'.format(nfails, nprocs))
     elif nfails: # failure in child process: raise exception
-      raise Exception('pariter failed in {} out of {} processes'.format(nfails, nprocs))
+      raise Exception('fork failed in {} out of {} processes'.format(nfails, nprocs))
 
 def shempty(shape, dtype=float):
   '''create uninitialized array in shared memory'''
