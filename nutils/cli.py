@@ -160,7 +160,7 @@ def call(func, kwargs, scriptname, funcname=None):
       if config.richoutput:
         t0 = time.perf_counter()
         bar = lambda running: '{0} [{1}] {2[0]}:{2[1]:02d}:{2[2]:02d}'.format(uri, 'RUNNING' if running else 'STOPPED', _hms(time.perf_counter()-t0))
-        stack.enter_context(stickybar.activate(bar, interval=1))
+        stack.enter_context(stickybar.activate(bar, update=1))
       else:
         log.info('opened log at', uri)
       html.write('<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">{}</ul>'.format(''.join(
