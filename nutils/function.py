@@ -42,8 +42,8 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, types, numpy, numeric, log, config, cache, transform, expression, warnings, _
-import sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, collections.abc, math
+from . import util, types, numpy, numeric, config, cache, transform, expression, warnings, _
+import sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, collections.abc, math, treelog as log
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
 
@@ -172,7 +172,7 @@ class Evaluable(types.Singleton):
   def graphviz(self):
     'create function graph'
 
-    import os, subprocess, hashlib
+    import os, subprocess
 
     dotpath = config.dot
     if not isinstance(dotpath, str):
@@ -184,13 +184,12 @@ class Evaluable(types.Singleton):
     lines.extend('{0:} [label="{0:}. {1:}"];'.format(i, name._asciitree_str()) for i, name in enumerate(self.ordereddeps+(self,)))
     lines.extend('{} -> {};'.format(j, i) for i, indices in enumerate(self.dependencytree) for j in indices)
     lines.append('}')
-    imgdata = '\n'.join(lines).encode()
 
+    imgdata = '\n'.join(lines)
     imgtype = 'png'
-    imgpath = 'dot_{}.{}'.format(hashlib.sha1(imgdata).hexdigest(), imgtype)
-    with log.open(imgpath, 'wb', level='info', exists='skip') as img:
-      if not img.devnull:
-        status = subprocess.run([dotpath,'-T'+imgtype], input=imgdata, stdout=subprocess.PIPE)
+    with log.infofile('dot.'+imgtype, 'wb', id=types.nutils_hash((imgdata, imgtype))) as img:
+      if img:
+        status = subprocess.run([dotpath,'-T'+imgtype], input=imgdata.encode(), stdout=subprocess.PIPE)
         if status.returncode:
           log.warning('graphviz failed for error code', status.returncode)
         img.write(status.stdout)

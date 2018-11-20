@@ -35,8 +35,8 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, numpy, parallel, log, config, numeric, cache, transform, warnings, matrix, types, sample, points, _
-import functools, collections.abc, itertools, functools, operator, numbers, pathlib
+from . import element, function, util, parallel, config, numeric, cache, transform, warnings, matrix, types, sample, points, _
+import numpy, functools, collections.abc, itertools, functools, operator, numbers, pathlib, treelog as log
 
 _identity = lambda x: x
 
@@ -149,7 +149,7 @@ class Topology(types.Singleton):
   @property
   def refine_iter(self):
     topo = self
-    for irefine in log.count('refinement level'):
+    while True:
       yield topo
       topo = topo.refined
 
@@ -365,9 +365,12 @@ class Topology(types.Singleton):
       arguments = {}
 
     levelset = levelset.prepare_eval().simplified
+    refs = []
     if leveltopo is None:
-      ischeme = 'vertex{}'.format(maxrefine)
-      refs = [elem.reference.trim(levelset.eval(_transforms=(elem.transform, elem.opposite), _points=elem.reference.getischeme(ischeme)[0], **arguments), maxrefine=maxrefine, ndivisions=ndivisions) for elem in log.iter('elem', self)]
+      for ielem, elem in enumerate(self):
+        with log.context('elem {} ({:.0f}%)'.format(ielem, 100*ielem/len(self))):
+          levels = levelset.eval(_transforms=(elem.transform, elem.opposite), _points=elem.reference.getpoints('vertex', maxrefine).coords, **arguments)
+          refs.append(elem.reference.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
     else:
       log.info('collecting leveltopo elements')
       bins = [[] for ielem in range(len(self))]
@@ -375,18 +378,19 @@ class Topology(types.Singleton):
         ielem, tail = transform.lookup_item(elem.transform, self.edict)
         bins[ielem].append(tail)
       fcache = cache.WrapperCache()
-      refs = []
-      for elem, ctransforms in log.zip('elem', self, bins):
-        levels = numpy.empty(elem.reference.nvertices_by_level(maxrefine))
-        cover = list(fcache[elem.reference.vertex_cover](tuple(sorted(ctransforms)), maxrefine))
-        # confirm cover and greedily optimize order
-        mask = numpy.ones(len(levels), dtype=bool)
-        while mask.any():
-          imax = numpy.argmax([mask[indices].sum() for trans, points, indices in cover])
-          trans, points, indices = cover.pop(imax)
-          levels[indices] = levelset.eval(_transforms=(elem.transform + trans,), _points=points, **arguments)
-          mask[indices] = False
-        refs.append(elem.reference.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
+      for ielem, elem in enumerate(self):
+        with log.context('elem {} ({:.0f}%)'.format(ielem, 100*ielem/len(self))):
+          ctransforms = bins[ielem]
+          levels = numpy.empty(elem.reference.nvertices_by_level(maxrefine))
+          cover = list(fcache[elem.reference.vertex_cover](tuple(sorted(ctransforms)), maxrefine))
+          # confirm cover and greedily optimize order
+          mask = numpy.ones(len(levels), dtype=bool)
+          while mask.any():
+            imax = numpy.argmax([mask[indices].sum() for trans, points, indices in cover])
+            trans, points, indices = cover.pop(imax)
+            levels[indices] = levelset.eval(_transforms=(elem.transform + trans,), _points=points, **arguments)
+            mask[indices] = False
+          refs.append(elem.reference.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
       log.debug('cache', fcache.stats)
     return SubsetTopology(self, refs, newboundary=name)
 
@@ -432,36 +436,37 @@ class Topology(types.Singleton):
     bases = {}
     extractions = [[] for ifunc in range(len(funcs))]
 
-    for elem in log.iter('elem', self):
+    for ielem, elem in enumerate(self):
+      with log.context('elem', ielem, '({:.0f}%)'.format(100*ielem/len(self))):
 
-      try:
-        points, projector, basis = bases[elem.reference]
-      except KeyError:
-        points, weights = elem.reference.getischeme(ischeme)
-        coeffs = elem.reference.get_poly_coeffs('bernstein', degree=degree)
-        basis = numeric.poly_eval(coeffs[_], points)
-        npoints, nfuncs = basis.shape
-        A = numeric.dot(weights, basis[:,:,_] * basis[:,_,:])
-        projector = numpy.linalg.solve(A, basis.T * weights)
-        bases[elem.reference] = points, projector, basis
+        try:
+          points, projector, basis = bases[elem.reference]
+        except KeyError:
+          points, weights = elem.reference.getischeme(ischeme)
+          coeffs = elem.reference.get_poly_coeffs('bernstein', degree=degree)
+          basis = numeric.poly_eval(coeffs[_], points)
+          npoints, nfuncs = basis.shape
+          A = numeric.dot(weights, basis[:,:,_] * basis[:,_,:])
+          projector = numpy.linalg.solve(A, basis.T * weights)
+          bases[elem.reference] = points, projector, basis
 
-      for ifunc, ind_val in enumerate(blocks.eval(_transforms=(elem.transform, elem.opposite), _points=points, **arguments)):
+        for ifunc, ind_val in enumerate(blocks.eval(_transforms=(elem.transform, elem.opposite), _points=points, **arguments)):
 
-        if len(ind_val) == 1:
-          (allind, sumval), = ind_val
-        else:
-          allind, where = zip(*[numpy.unique([i for ind, val in ind_val for i in ind[iax]], return_inverse=True) for iax in range(funcs[ifunc].ndim)])
-          sumval = numpy.zeros([len(n) for n in (points,) + allind])
-          for ind, val in ind_val:
-            I, where = zip(*[(w[:len(n)], w[len(n):]) for w, n in zip(where, ind)])
-            numpy.add.at(sumval, numpy.ix_(range(len(points)), *I), val)
-          assert not any(where)
+          if len(ind_val) == 1:
+            (allind, sumval), = ind_val
+          else:
+            allind, where = zip(*[numpy.unique([i for ind, val in ind_val for i in ind[iax]], return_inverse=True) for iax in range(funcs[ifunc].ndim)])
+            sumval = numpy.zeros([len(n) for n in (points,) + allind])
+            for ind, val in ind_val:
+              I, where = zip(*[(w[:len(n)], w[len(n):]) for w, n in zip(where, ind)])
+              numpy.add.at(sumval, numpy.ix_(range(len(points)), *I), val)
+            assert not any(where)
 
-        ex = numeric.dot(projector, sumval)
-        if check_exact:
-          numpy.testing.assert_almost_equal(sumval, numeric.dot(basis, ex), decimal=15)
+          ex = numeric.dot(projector, sumval)
+          if check_exact:
+            numpy.testing.assert_almost_equal(sumval, numeric.dot(basis, ex), decimal=15)
 
-        extractions[ifunc].append((allind, ex))
+          extractions[ifunc].append((allind, ex))
 
     return extractions
 
@@ -502,7 +507,7 @@ class Topology(types.Singleton):
       dofmap = axes[0]
       for elem in self:
         dofs = dofmap.eval(_transforms=(elem.transform, elem.opposite))
-        used[dofs] = True
+        used[numpy.asarray(dofs)] = True
     return function.mask(basis, used)
 
   def locate(self, geom, coords, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, *, arguments=None):
@@ -574,7 +579,7 @@ class Topology(types.Singleton):
     ipoints = parallel.range(len(coords))
     with parallel.fork(nprocs):
       for ipoint in ipoints:
-        with log.context('point {} ({:.0f}%)'.format(ipoint, 100*ipoint/len(coords)), mayskip=ipoint):
+        with log.context('point', ipoint, '({:.0f}%)'.format(100*ipoint/len(coords))):
           coord = coords[ipoint]
           ielemcandidates, = numpy.logical_and(numpy.greater_equal(coord, bboxes[:,0,:]), numpy.less_equal(coord, bboxes[:,1,:])).all(axis=-1).nonzero()
           for ielem in sorted(ielemcandidates, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-coord)):
@@ -1183,19 +1188,20 @@ class StructuredTopology(Topology):
 
     grid = [numpy.arange(axis.i>>nrefine, ((axis.j-1)>>nrefine)+1) if axis.isdim else numpy.array([(axis.i-1 if axis.side else axis.j)>>nrefine]) for axis in axes]
     indices = numeric.broadcast(*numeric.ix(grid))
-    transforms = numeric.asobjvector([transform.Shift(numpy.array(index, dtype=float))] for index in log.iter('elem', indices, indices.size)).reshape(indices.shape)
+    transforms = numeric.asobjvector([transform.Shift(numpy.array(index, dtype=float))] for index in indices).reshape(indices.shape)
 
     if nrefine:
       scales = numeric.asobjvector([trans] for trans in (element.LineReference()**len(axes)).child_transforms).reshape((2,)*len(axes))
-      for irefine in log.range('level', nrefine-1, -1, -1):
+      for irefine in range(nrefine-1, -1, -1):
         offsets = numpy.array([r[0] for r in grid])
         grid = [numpy.arange(axis.i>>irefine,((axis.j-1)>>irefine)+1) if axis.isdim else numpy.array([(axis.i-1 if axis.side else axis.j)>>irefine]) for axis in axes]
-        A = transforms[numpy.broadcast_arrays(*numeric.ix(r//2-o for r, o in zip(grid, offsets)))]
-        B = scales[numpy.broadcast_arrays(*numeric.ix(r%2 for r in grid))]
+        A = transforms[tuple(numpy.broadcast_arrays(*numeric.ix(r//2-o for r, o in zip(grid, offsets))))]
+        B = scales[tuple(numpy.broadcast_arrays(*numeric.ix(r%2 for r in grid)))]
         transforms = A + B
 
     shape = tuple(axis.j - axis.i for axis in axes if axis.isdim)
-    return numeric.asobjvector(transform.canonical([root] + trans + updim) for trans in log.iter('canonical', transforms.flat)).reshape(shape)
+    with log.context('canonical'):
+      return numeric.asobjvector(transform.canonical([root] + trans + updim) for trans in transforms.flat).reshape(shape)
 
   @property
   @log.withcontext
@@ -1915,37 +1921,38 @@ class HierarchicalTopology(Topology):
     }
     edict = self.edict
     interfaces = []
-    for elem in log.iter('elem', self):
-      # Get `level`, element number at `level` of `elem`.
-      ielem, ilevel = elem_index_level[elem]
-      level = self.levels[ilevel]
-      # Loop over neighbours of `elem`.
-      for ielemedge, ineighbor in enumerate(level.connectivity[ielem]):
-        if ineighbor < 0:
-          # Not an interface.
-          continue
-        neighbor = level.elements[ineighbor]
-        # Lookup `neighbor` (from the same `level` as `elem`) in this topology.
-        head, tail = transform.lookup(neighbor.transform, edict) or (None, None)
-        if not head:
-          # `neighbor` not found, hence refinements of `neighbor` are present.
-          # The interface of this edge will be added when we encounter the
-          # refined elements.
-          continue
-        # Find the edge of `neighbor` between `neighbor` and `elem`.
-        ineighboredge = level.connectivity[ineighbor].index(ielem)
-        if not tail and (ielem, ielemedge) > (ineighbor, ineighboredge):
-          # `neighbor` itself, not a parent of, exists in this topology (`tail`
-          # is empty).  To make sure we add this interface only once we
-          # continue here if the current element has a higher index (in
-          # `level`) than the neighbor (or a higher edge number if the elements
-          # are equal, which might occur when there is only one element in a
-          # periodic dimension).
-          continue
-        # Create and add the interface between `elem` and `neighbor`.
-        elemedge = elem.edges[ielemedge]
-        neighboredge = neighbor.edges[ineighboredge]
-        interfaces.append(element.Element(elemedge.reference, elemedge.transform, neighboredge.transform))
+    for ielem, elem in enumerate(self):
+      with log.context('elem', ielem, '({:.0f}%)'.format(100*ielem/len(self))):
+        # Get `level`, element number at `level` of `elem`.
+        ielem, ilevel = elem_index_level[elem]
+        level = self.levels[ilevel]
+        # Loop over neighbours of `elem`.
+        for ielemedge, ineighbor in enumerate(level.connectivity[ielem]):
+          if ineighbor < 0:
+            # Not an interface.
+            continue
+          neighbor = level.elements[ineighbor]
+          # Lookup `neighbor` (from the same `level` as `elem`) in this topology.
+          head, tail = transform.lookup(neighbor.transform, edict) or (None, None)
+          if not head:
+            # `neighbor` not found, hence refinements of `neighbor` are present.
+            # The interface of this edge will be added when we encounter the
+            # refined elements.
+            continue
+          # Find the edge of `neighbor` between `neighbor` and `elem`.
+          ineighboredge = level.connectivity[ineighbor].index(ielem)
+          if not tail and (ielem, ielemedge) > (ineighbor, ineighboredge):
+            # `neighbor` itself, not a parent of, exists in this topology (`tail`
+            # is empty).  To make sure we add this interface only once we
+            # continue here if the current element has a higher index (in
+            # `level`) than the neighbor (or a higher edge number if the elements
+            # are equal, which might occur when there is only one element in a
+            # periodic dimension).
+            continue
+          # Create and add the interface between `elem` and `neighbor`.
+          elemedge = elem.edges[ielemedge]
+          neighboredge = neighbor.edges[ineighboredge]
+          interfaces.append(element.Element(elemedge.reference, elemedge.transform, neighboredge.transform))
     return UnstructuredTopology(self.ndims-1, interfaces)
 
   @log.withcontext

@@ -25,8 +25,8 @@ platforms, notably excluding Windows. On unsupported platforms parallel features
 will disable and a warning is printed.
 """
 
-from . import log, numeric, warnings
-import os, multiprocessing, mmap, signal, contextlib, builtins, numpy
+from . import numeric, warnings
+import os, multiprocessing, mmap, signal, contextlib, builtins, numpy, treelog as log
 
 procid = None # current process id, None for unforked
 
@@ -54,6 +54,7 @@ def fork(nprocs):
       pid = os.fork()
       if not pid:
         signal.signal(signal.SIGINT, signal.SIG_IGN) # disable sigint (ctrl+c) handler
+        log.current = log.NullLog()
         break
       child_pids.append(pid)
     else:
@@ -66,9 +67,9 @@ def fork(nprocs):
     procid = None # unset global variable
     nfails = fail + sum(os.waitpid(pid, 0)[1] != 0 for pid in child_pids)
     if fail: # failure in main process: exception has been reraised
-      log.error('pariter failed in {} out of {} processes; reraising exception for main process'.format(nfails, nprocs))
+      log.error('fork failed in {} out of {} processes; reraising exception for main process'.format(nfails, nprocs))
     elif nfails: # failure in child process: raise exception
-      raise Exception('pariter failed in {} out of {} processes'.format(nfails, nprocs))
+      raise Exception('fork failed in {} out of {} processes'.format(nfails, nprocs))
 
 def shempty(shape, dtype=float):
   '''create uninitialized array in shared memory'''

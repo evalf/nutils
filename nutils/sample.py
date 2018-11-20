@@ -43,8 +43,8 @@ multiple integrals simultaneously, which has the advantage that it can
 efficiently combine common substructures.
 '''
 
-from . import types, points, log, util, function, config, parallel, numeric, cache, matrix
-import numpy, numbers, collections.abc
+from . import types, points, util, function, config, parallel, numeric, cache, matrix
+import numpy, numbers, collections.abc, treelog as log
 
 def argdict(arguments):
   if len(arguments) == 1 and 'arguments' in arguments and isinstance(arguments['arguments'], collections.abc.Mapping):
@@ -165,7 +165,7 @@ class Sample(types.Singleton):
     ielems = parallel.range(self.nelems)
     with parallel.fork(nprocs):
       for ielem in ielems:
-        with log.context('elem {} ({:.0f}%)'.format(ielem, 100*ielem/self.nelems), mayskip=ielem):
+        with log.context('elem', ielem, '({:.0f}%)'.format(100*ielem/self.nelems)):
           points = self.points[ielem]
           for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=self.transforms[ielem], _points=points.coords, **arguments)):
             s = slice(*offsets[iblock,ielem:ielem+2])
@@ -177,7 +177,11 @@ class Sample(types.Singleton):
               index[idim,s].reshape(w_intdata.shape)[...] = ii[si]
               si = si[:-1]
 
-    return [matrix.assemble(data, index, func.shape) for func, (data,index) in log.zip('assembling', funcs, data_index)]
+    retvals = []
+    for i, func in enumerate(funcs):
+      with log.context('assembling {}/{}'.format(i+1, len(funcs))):
+        retvals.append(matrix.assemble(*data_index[i], shape=func.shape))
+    return retvals
 
   def integral(self, func):
     '''Create Integral object for postponed integration.
@@ -219,7 +223,7 @@ class Sample(types.Singleton):
     ielems = parallel.range(self.nelems)
     with parallel.fork(nprocs):
       for ielem in ielems:
-        with log.context('elem {} ({:.0f}%)'.format(ielem, 100*ielem/self.nelems), mayskip=ielem):
+        with log.context('elem', ielem, '({:.0f}%)'.format(100*ielem/self.nelems)):
           for ifunc, inds, data in idata.eval(_transforms=self.transforms[ielem], _points=self.points[ielem].coords, **arguments):
             numpy.add.at(retvals[ifunc], numpy.ix_(self.index[ielem], *[ind for (ind,) in inds]), data)
 

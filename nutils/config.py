@@ -94,9 +94,8 @@ class Config(types.ModuleType):
 
   .. attribute:: outdir
 
-     Defines the output directory for the HTML log
-     (:class:`nutils.log.HtmlLog`) and plots.  Relative
-     paths are relative with respect to the current working directory (see
+     Defines the output directory for the HTML log and plots. Relative paths
+     are relative with respect to the current working directory (see
      :func:`os.getcwd`).
 
      Defaults to ``'<outrootdir>/<scriptname>/<YY/MM/DD/HH-MM-SS>'``
@@ -128,17 +127,16 @@ class Config(types.ModuleType):
 
   .. attribute:: richoutput
 
-     Controls whether or not the console logger should output rich text
-     (:class:`nutils.log.RichOutputLog`) or plain text
-     (:class:`nutils.log.StdoutLog`).
+     Controls whether or not the console logger should output rich text or
+     plain text.
 
      Defaults to ``True`` if ``sys.stdout`` is attached to a terminal (i.e.
      ``sys.stdout.isatty()`` returns true), otherwise ``False``.
 
   .. attribute:: htmloutput
 
-     If ``True`` the HTML logger (:class:`nutils.log.HtmlLog`) is enabled and
-     written to ``'<outrootdir>/<scriptname>/<YY/MM/DD/HH-MM-SS>/log.html'``
+     If ``True`` the HTML logger is enabled and written to
+     ``'<outrootdir>/<scriptname>/<YY/MM/DD/HH-MM-SS>/log.html'``
 
      Defaults to ``True``.
 
@@ -192,6 +190,7 @@ sys.modules[__name__] = Config(
   __name__,
   nprocs = 1,
   outrootdir = '~/public_html',
+  outrooturi = None,
   outdir = '',
   verbose = 4,
   richoutput = False,

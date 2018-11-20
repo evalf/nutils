@@ -41,17 +41,9 @@ class run(TestCase):
 
   def test_good(self):
     args = ['--outrootdir='+self.outrootdir, '--nopdb', '--iarg=1', '--farg=1', '--sarg=1']
-    symlink = sys.platform not in ('win32', 'cygwin')
-    if symlink:
-      args.append('--symlink=xyz')
     status, output = self._cli(*args)
     with self.subTest('outdir'):
       self.assertTrue(os.path.isdir(os.path.join(self.outrootdir,self.scriptname)), 'output directory not found')
-    if symlink:
-      with self.subTest('first-symlink'):
-        self.assertTrue(os.path.islink(os.path.join(self.outrootdir,'xyz')), 'first symlink not found')
-      with self.subTest('second-symlink'):
-        self.assertTrue(os.path.islink(os.path.join(self.outrootdir,self.scriptname,'xyz')), 'second symlink not found')
     with self.subTest('argparse'):
       nutils.log.info(output)
       self.assertIn('all OK', output)
@@ -69,7 +61,7 @@ class run(TestCase):
       self.assertEqual(status.code, 2)
 
   def test_badvalue(self):
-    status, output = self._cli('--outrootdir='+self.outrootdir, '--nopdb', '--symlink=xyz', '--iarg=1', '--farg=x', '--sarg=1')
+    status, output = self._cli('--outrootdir='+self.outrootdir, '--nopdb', '--iarg=1', '--farg=x', '--sarg=1')
     with self.subTest('outdir'):
       self.assertFalse(os.path.isdir(os.path.join(self.outrootdir,self.scriptname)), 'outdir directory found')
     with self.subTest('argparse'):

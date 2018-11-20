@@ -18,8 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from . import log, util, warnings
-import contextlib, numpy, os
+from . import util, warnings
+import contextlib, numpy, os, treelog as log
 
 @contextlib.contextmanager
 @util.positional_only('name')
@@ -27,8 +27,8 @@ def mplfigure(*args, **kwargs):
   '''Matplotlib figure context, convenience function.
 
   Returns a :class:`matplotlib.figure.Figure` object suitable for
-  `object-oriented plotting`_. Upon exit the result is logged via
-  :func:`nutils.log.open`.
+  `object-oriented plotting`_. Upon exit the result is written to the currently
+  active logger.
 
   .. _`object-oriented plotting`: https://matplotlib.org/gallery/api/agg_oo_sgskip.html
 
@@ -44,10 +44,9 @@ def mplfigure(*args, **kwargs):
   import matplotlib.figure, matplotlib.backends.backend_agg
   name, = args
   fig = matplotlib.figure.Figure(**kwargs)
-  with log.context(name):
+  with log.userfile(name, 'wb') as f:
     yield fig
-  with log.open(name, 'wb') as f:
-    if not f.devnull:
+    if f:
       matplotlib.backends.backend_agg.FigureCanvas(fig) # sets reference via fig.set_canvas
       try:
         fig.savefig(f, format=os.path.splitext(name)[1][1:])
@@ -161,7 +160,7 @@ def vtk(*args, **kwargs):
   t_cells[:,1:] = cells
 
   name_vtk = name + '.vtk'
-  with log.open(name_vtk, 'wb') as vtk:
+  with log.userfile(name_vtk, 'wb') as vtk:
     vtk.write(b'# vtk DataFile Version 3.0\nvtk output\nBINARY\nDATASET UNSTRUCTURED_GRID\n')
     vtk.write('POINTS {} {}\n'.format(npoints, vtkdtype[points.dtype]).encode('ascii'))
     points.tofile(vtk)

@@ -24,8 +24,8 @@ can be used set up properties, initiate an output environment, and execute a
 python function based arguments specified on the command line.
 """
 
-from . import log, util, config, long_version, warnings, matrix, cache
-import sys, inspect, os, datetime, pdb, signal, subprocess, contextlib
+from . import util, config, long_version, warnings, matrix, cache
+import sys, inspect, os, io, time, pdb, signal, subprocess, contextlib, traceback, pathlib, treelog as log, stickybar
 
 def _version():
   try:
@@ -65,6 +65,12 @@ def _sigint_handler(mysignal, frame):
       pdb.set_trace()
   finally:
     signal.signal(mysignal, _handler)
+
+def _hms(dt):
+  seconds = int(dt)
+  minutes, seconds = divmod(seconds, 60)
+  hours, minutes = divmod(minutes, 60)
+  return hours, minutes, seconds
 
 def run(func, *, skip=1, loaduserconfig=True):
   '''parse command line arguments and call function'''
@@ -141,69 +147,66 @@ def choose(*functions, loaduserconfig=True):
 def call(func, kwargs, scriptname, funcname=None):
   '''set up compute environment and call function'''
 
-  starttime = datetime.datetime.now()
-  outrootdir = os.path.expanduser(config.outrootdir)
-  ymdt = starttime.strftime('%Y/%m/%d/%H-%M-%S/')
-  outdir = config.outdir or os.path.join(outrootdir, scriptname, ymdt)
+  outdir = config.outdir or os.path.join(os.path.expanduser(config.outrootdir), scriptname)
 
-  for base, relpath in (outrootdir, os.path.join(scriptname, ymdt)), (os.path.join(outrootdir, scriptname), ymdt):
-    if not os.path.isdir(base):
-      os.makedirs(base)
-    if config.symlink:
-      target = os.path.join(base, config.symlink)
-      if os.path.islink(target):
-        os.remove(target)
-      os.symlink(relpath, target, target_is_directory=True)
+  with contextlib.ExitStack() as stack:
+
+    stack.enter_context(cache.enable(os.path.join(outdir, config.cachedir)) if config.cache else cache.disable())
+    stack.enter_context(matrix.backend(config.matrix))
+    stack.enter_context(log.set(log.FilterLog(log.RichOutputLog() if config.richoutput else log.StdoutLog(), minlevel=5-config.verbose)))
     if config.htmloutput:
-      with open(os.path.join(base,'log.html'), 'w') as redirlog:
-        print('<html><head>', file=redirlog)
-        print('<meta charset="UTF-8"/>', file=redirlog)
-        print('<meta http-equiv="cache-control" content="max-age=0" />', file=redirlog)
-        print('<meta http-equiv="cache-control" content="no-cache" />', file=redirlog)
-        print('<meta http-equiv="expires" content="0" />', file=redirlog)
-        print('<meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />', file=redirlog)
-        print('<meta http-equiv="pragma" content="no-cache" />', file=redirlog)
-        print('<meta http-equiv="refresh" content="0;URL={}" />'.format(os.path.join(relpath,'log.html')), file=redirlog)
-        print('</head></html>', file=redirlog)
+      html = stack.enter_context(log.HtmlLog(outdir, title=scriptname, htmltitle='<a href="http://www.nutils.org">{}</a> {}'.format(SVGLOGO, scriptname), favicon=FAVICON))
+      uri = (config.outrooturi.rstrip('/') + '/' + scriptname if config.outrooturi else pathlib.Path(outdir).resolve().as_uri()) + '/' + html.filename
+      if config.richoutput:
+        t0 = time.perf_counter()
+        bar = lambda running: '{0} [{1}] {2[0]}:{2[1]:02d}:{2[2]:02d}'.format(uri, 'RUNNING' if running else 'STOPPED', _hms(time.perf_counter()-t0))
+        stack.enter_context(stickybar.activate(bar, interval=1))
+      else:
+        log.info('opened log at', uri)
+      html.write('<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">{}</ul>'.format(''.join(
+        '<li>{}={} <span style="color: gray;">{}</span></li>'.format(param.name, kwargs.get(param.name, param.default), param.annotation)
+          for param in inspect.signature(func).parameters.values())), level=1, escape=False)
+      stack.enter_context(log.add(html))
+    stack.enter_context(warnings.via(log.warning))
+    stack.callback(signal.signal, signal.SIGINT, signal.signal(signal.SIGINT, _sigint_handler))
 
-  try:
-    old_sigint_handler = signal.signal(signal.SIGINT, _sigint_handler)
-    with contextlib.ExitStack() as stack:
-
-      stack.enter_context(cache.enable(os.path.join(outrootdir, scriptname, config.cachedir)) if config.cache else cache.disable())
-      stack.enter_context(matrix.backend(config.matrix))
-      stack.enter_context(log.RichOutputLog() if config.richoutput else log.StdoutLog())
-      if config.htmloutput:
-        funcargs = [(param.name, kwargs.get(param.name, param.default), param.annotation) for param in inspect.signature(func).parameters.values()]
-        stack.enter_context(log.HtmlLog(outdir, title=scriptname, scriptname=scriptname, funcname=funcname, funcargs=funcargs))
-      stack.enter_context(warnings.via(log.warning))
-
-      log.info('nutils v{}'.format(_version()))
-      log.info('start {}'.format(starttime.ctime()))
-
+    log.info('nutils v{}'.format(_version()))
+    log.info('start', time.ctime())
+    try:
       func(**kwargs)
+    except (KeyboardInterrupt, SystemExit, pdb.bdb.BdbQuit):
+      log.error('killed by user')
+      return 1
+    except:
+      log.error(traceback.format_exc())
+      if config.pdb:
+        print(_mkbox(
+          'YOUR PROGRAM HAS DIED. The Python debugger',
+          'allows you to examine its post-mortem state',
+          'to figure out why this happened. Type "h"',
+          'for an overview of commands to get going.'))
+        pdb.post_mortem()
+      return 2
+    else:
+      log.info('finish', time.ctime())
+      return 0
 
-      endtime = datetime.datetime.now()
-      minutes, seconds = divmod((endtime-starttime).seconds, 60)
-      hours, minutes = divmod(minutes, 60)
+SVGLOGO = '''\
+<svg style="vertical-align: middle;" width="32" height="32" xmlns="http://www.w3.org/2000/svg">
+  <path d="M7.5 19 v-6 a6 6 0 0 1 12 0 v6 M25.5 13 v6 a6 6 0 0 1 -12 0 v-6" fill="none" stroke-width="3" stroke-linecap="round"/>
+</svg>'''
 
-      log.info('finish {}'.format(endtime.ctime()))
-      log.info('elapsed {:.0f}:{:02.0f}:{:02.0f}'.format(hours, minutes, seconds))
-
-  except (KeyboardInterrupt,SystemExit,pdb.bdb.BdbQuit):
-    return 1
-  except:
-    if config.pdb:
-      print(_mkbox(
-        'YOUR PROGRAM HAS DIED. The Python debugger',
-        'allows you to examine its post-mortem state',
-        'to figure out why this happened. Type "h"',
-        'for an overview of commands to get going.'))
-      pdb.post_mortem()
-    return 2
-  else:
-    return 0
-  finally:
-    signal.signal(signal.SIGINT, old_sigint_handler) # restore handler
+FAVICON = 'data:image/png;base64,' \
+  'iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAQAAAD9CzEMAAACAElEQVRYw+2YS04bQRCGP2wJ' \
+  'gbAimS07WABXGMLzAgiBcgICFwDEEiGiDCScggWPHVseC1AIZ8AIJBA2hg1kF5DiycLYqppp' \
+  'M91j2KCp3rSq//7/VldPdfVAajHW0nAkywDjeHSTBx645IRdfvPvLWTbWeSewNDuWKC9Wfov' \
+  '3BjJa+2aqWa2bInKq/QBARV8MknoM2zHktfaVhKJ79b0AQEr7nsfpthjml466KCPr+xHNmrS' \
+  '7eTo0J4xFMEMUwiFu81eYFFNPSJvROU5Vrh5W/qsOvdnDegBOjkXyDJZO4Fhta7RV7FDCvvZ' \
+  'TmBdhTbODgT6R9zJr9qA8G2LfiurlCji0yq8O6LvKT4zHlQEeoXfr3t94e1TUSAWDzyJKTnh' \
+  'L9W9t8KbE+i/iieCr6XroEEKb9qfee8LJxVIBVKBjyRQqnuKavxZpTiZ1Ez4Typ9KoGN+sCG' \
+  'Evgj+l2ib8ZLxCOhi8KnaLgoTkVino7Fzwr0L7st/Cmm7MeiDwV6zU5gUF3wYw6Fg2dbztyJ' \
+  'SQWHcsb6fC6odR3T2YBeF2RzLiXltZpaYCSCGVWrD7hyKSlhKvJiOGCGfnLk6GdGhbZaFE+4' \
+  'fo7fnMr65STf+5Y1/Way9PPOT6uqTYbCHW5X7nsftjbmKRvJy8yZT05Lgnh4jOPR8/JAv+CE' \
+  'XU6ppH81Etp/wL7MKaEwo4sAAAAASUVORK5CYII='
 
 # vim:sw=2:sts=2:et
