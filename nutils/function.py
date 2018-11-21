@@ -787,8 +787,14 @@ class InsertAxis(Array):
     return InsertAxis(func, self.axis, self.length)
 
   def evalf(self, func, length):
+    # We would like to return an array with stride zero for the inserted axis,
+    # but this appears to be *slower* (checked with examples/cylinderflow.py)
+    # than the implementation below.
     length, = length
-    return types.frozenarray(func).insertaxis(self.axis+1, length)
+    func = numpy.asarray(func)[(slice(None),)*(self.axis+1)+(None,)]
+    if length != 1:
+      func = numpy.repeat(func, length, self.axis+1)
+    return func
 
   def _derivative(self, var, seen):
     return insertaxis(derivative(self.func, var, seen), self.axis, self.length)
@@ -1799,8 +1805,8 @@ class Power(Array):
     ext = (...,)+(_,)*var.ndim
     if self.power.isconstant:
       p, = self.power.eval()
-      return zeros(self.shape + var.shape) if p == 0 \
-        else multiply(p, power(self.func, p-1))[ext] * derivative(self.func, var, seen)
+      p_decr = p - (p!=0)
+      return multiply(p, power(self.func, p_decr))[ext] * derivative(self.func, var, seen)
     # self = func**power
     # ln self = power * ln func
     # self` / self = power` * ln func + power * func` / func
@@ -2917,15 +2923,15 @@ class Polyval(Array):
     self.coeffs = coeffs
     self.points = points
     self.ngrad = ngrad
-    super().__init__(args=[CACHE, points, coeffs], shape=coeffs.shape[:ndim]+(self.points_ndim,)*ngrad, dtype=float)
+    super().__init__(args=[points, coeffs], shape=coeffs.shape[:ndim]+(self.points_ndim,)*ngrad, dtype=float)
 
-  def evalf(self, cache, points, coeffs):
+  def evalf(self, points, coeffs):
     assert points.shape[1] == self.points_ndim
     points = types.frozenarray(points)
     coeffs = types.frozenarray(coeffs)
     for igrad in range(self.ngrad):
-      coeffs = cache[numeric.poly_grad](coeffs, self.points_ndim)
-    return cache[numeric.poly_eval](coeffs, points)
+      coeffs = numeric.poly_grad(coeffs, self.points_ndim)
+    return numeric.poly_eval(coeffs, points)
 
   def _derivative(self, var, seen):
     # Derivative to argument `points`.
