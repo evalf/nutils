@@ -461,3 +461,14 @@ class multipatch_L(TestCase):
       with self.subTest(ipatch=ipatch):
         sample = self.domain['patch{}'.format(ipatch)].sample('gauss', 1)
         numpy.testing.assert_array_almost_equal(sample.eval(patch_index), ipatch)
+
+  def test_connectivity(self):
+    interfaces1 = self.domain.interfaces
+    interfaces2 = topology.ConnectedTopology(self.domain.ndims, self.domain.elements, self.domain.connectivity).interfaces
+    self.assertEqual(len(interfaces1), len(interfaces2))
+    for iface1 in interfaces1:
+      try:
+        iface2 = interfaces2.elements[interfaces2.edict[iface1.transform]]
+      except KeyError:
+        iface2 = interfaces2.elements[interfaces2.edict[iface1.opposite]].flipped
+      self.assertEqual(iface1, iface2)
