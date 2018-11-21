@@ -59,7 +59,7 @@ class iter:
     self._index += 1
     text = '{} {}'.format(self._title, self._index)
     if self._length:
-      text += ' ({:.0f}%)'.format(100 * (self._index+.5) / self._length)
+      text += ' ({:.0f}%)'.format(100 * self._index / self._length)
     treelog.popcontext()
     treelog.pushcontext(text)
     return value
