@@ -40,6 +40,7 @@ def _len(iterable):
 
 class iter:
   def __init__(self, title, iterable, length=None):
+    self._log = treelog.current
     self._iter = builtins.iter(iterable)
     self._title = title
     self._length = length or _len(iterable)
@@ -47,7 +48,7 @@ class iter:
     text = '{} 0'.format(self._title)
     if self._length:
       text += ' (0%)'
-    treelog.pushcontext(text)
+    self._log.pushcontext(text)
     self.closed = False
   def __iter__(self):
     return self
@@ -63,12 +64,12 @@ class iter:
     text = '{} {}'.format(self._title, self._index)
     if self._length:
       text += ' ({:.0f}%)'.format(100 * self._index / self._length)
-    treelog.popcontext()
-    treelog.pushcontext(text)
+    self._log.popcontext()
+    self._log.pushcontext(text)
     return value
   def close(self):
     if not self.closed:
-      treelog.popcontext()
+      self._log.popcontext()
       self.closed = True
   def __enter__(self):
     return self
