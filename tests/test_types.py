@@ -49,8 +49,9 @@ class apply_annotations(TestCase):
     self.assertEqual(f(1, 2, 3), ('1', (2, 3)))
 
   def test_varpos_annotated(self):
+    map_str = lambda args: map(str, args)
     @nutils.types.apply_annotations
-    def f(a:str, *args:lambda args: map(str, args)):
+    def f(a:str, *args:map_str):
       return a, args
     self.assertEqual(f(1, 2, 3), ('1', ('2', '3')))
 
@@ -61,8 +62,9 @@ class apply_annotations(TestCase):
     self.assertEqual(f(1, b=2, c=3), ('1', dict(b=2, c=3)))
 
   def test_varkw_annotated(self):
+    map_str = lambda kwargs: {k: str(v) for k, v in kwargs.items()}
     @nutils.types.apply_annotations
-    def f(a:str, **kwargs:lambda kwargs: {k: str(v) for k, v in kwargs.items()}):
+    def f(a:str, **kwargs:map_str):
       return a, kwargs
     self.assertEqual(f(1, b=2, c=3), ('1', dict(b='2', c='3')))
 
@@ -854,12 +856,12 @@ class c_array(TestCase):
   def test_list(self):
     a = [1,2,3]
     a_ct = nutils.types.c_array[numpy.int64](a)
-    self.assertEqual(ctypes.cast(a_ct, ctypes.POINTER(ctypes.c_int64)).contents.value, 1)
+    self.assertEqual(a_ct.data_as(ctypes.POINTER(ctypes.c_int64)).contents.value, 1)
 
   def test_array(self):
     a = numpy.array([1,2,3], dtype=numpy.int64)
     a_ct = nutils.types.c_array[numpy.int64](a)
-    self.assertEqual(ctypes.cast(a_ct, ctypes.POINTER(ctypes.c_int64)).contents.value, 1)
+    self.assertEqual(a_ct.data_as(ctypes.POINTER(ctypes.c_int64)).contents.value, 1)
 
   def test_array_invalid_dtype(self):
     a = numpy.array([1,2,3], dtype=numpy.int32)
