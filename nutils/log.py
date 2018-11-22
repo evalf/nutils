@@ -27,6 +27,9 @@ This is a transitional wrapper around the external treelog module.
 """
 
 import builtins, itertools, treelog, contextlib
+from treelog import set, add, disable, withcontext, \
+  context, debug, info, user, warning, error, debugfile, infofile, userfile, warningfile, errorfile, \
+  Log, TeeLog, FilterLog, NullLog, DataLog, RecordLog, StdoutLog, RichOutputLog, LoggingLog
 from . import warnings
 
 def _len(iterable):
@@ -98,26 +101,5 @@ def open(filename, mode, *, level='user', exists=None):
   with treelog.open(filename, mode, level=levels.index(level), id=None) as f:
     f.devnull = not f
     yield f
-
-def debug(*args, **kwargs):
-  treelog.debug(*args, **kwargs)
-
-def info(*args, **kwargs):
-  treelog.info(*args, **kwargs)
-
-def user(*args, **kwargs):
-  treelog.user(*args, **kwargs)
-
-def warning(*args, **kwargs):
-  treelog.warning(*args, **kwargs)
-
-def error(*args, **kwargs):
-  treelog.error(*args, **kwargs)
-
-def context(*args, mayskip=False):
-  return treelog.context(*args)
-
-def withcontext(f):
-  return treelog.withcontext(f)
 
 # vim:sw=2:sts=2:et
