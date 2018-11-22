@@ -27,6 +27,9 @@ This is a transitional wrapper around the external treelog module.
 """
 
 import builtins, itertools, treelog, contextlib
+from treelog import set, add, disable, withcontext, \
+  context, debug, info, user, warning, error, debugfile, infofile, userfile, warningfile, errorfile, \
+  Log, TeeLog, FilterLog, NullLog, DataLog, RecordLog, StdoutLog, RichOutputLog, LoggingLog
 from . import warnings
 
 def _len(iterable):
@@ -37,6 +40,7 @@ def _len(iterable):
 
 class iter:
   def __init__(self, title, iterable, length=None):
+    self._log = treelog.current
     self._iter = builtins.iter(iterable)
     self._title = title
     self._length = length or _len(iterable)
@@ -44,7 +48,7 @@ class iter:
     text = '{} 0'.format(self._title)
     if self._length:
       text += ' (0%)'
-    treelog.pushcontext(text)
+    self._log.pushcontext(text)
     self.closed = False
   def __iter__(self):
     return self
@@ -60,12 +64,12 @@ class iter:
     text = '{} {}'.format(self._title, self._index)
     if self._length:
       text += ' ({:.0f}%)'.format(100 * self._index / self._length)
-    treelog.popcontext()
-    treelog.pushcontext(text)
+    self._log.popcontext()
+    self._log.pushcontext(text)
     return value
   def close(self):
     if not self.closed:
-      treelog.popcontext()
+      self._log.popcontext()
       self.closed = True
   def __enter__(self):
     return self
@@ -98,26 +102,5 @@ def open(filename, mode, *, level='user', exists=None):
   with treelog.open(filename, mode, level=levels.index(level), id=None) as f:
     f.devnull = not f
     yield f
-
-def debug(*args, **kwargs):
-  treelog.debug(*args, **kwargs)
-
-def info(*args, **kwargs):
-  treelog.info(*args, **kwargs)
-
-def user(*args, **kwargs):
-  treelog.user(*args, **kwargs)
-
-def warning(*args, **kwargs):
-  treelog.warning(*args, **kwargs)
-
-def error(*args, **kwargs):
-  treelog.error(*args, **kwargs)
-
-def context(*args, mayskip=False):
-  return treelog.context(*args)
-
-def withcontext(f):
-  return treelog.withcontext(f)
 
 # vim:sw=2:sts=2:et
