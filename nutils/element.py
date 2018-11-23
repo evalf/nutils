@@ -775,7 +775,7 @@ class Cone(Reference):
   'cone'
 
   __slots__ = 'edgeref', 'etrans', 'tip', 'extnorm', 'height'
-  __cache__ = 'vertices', 'edge_transforms', 'edge_refs'
+  __cache__ = 'vertices', 'edge_transforms', 'edge_refs', 'volume'
 
   @types.apply_annotations
   def __init__(self, edgeref, etrans, tip:types.frozenarray):
@@ -828,9 +828,16 @@ class Cone(Reference):
       tx, tw = points.gauss((degree + self.ndims - 1)//2)
       wx = tx**(self.ndims-1) * tw * self.extnorm * self.height
       return points.CoordsWeightsPoints((tx[:,_,_] * (self.etrans.apply(epoints.coords)-self.tip)[_,:,:] + self.tip).reshape(-1, self.ndims), (epoints.weights[_,:] * wx[:,_]).ravel())
+    if ischeme == 'uniform':
+      coords = numpy.concatenate([(self.etrans.apply(self.edgeref.getpoints('uniform', i+1).coords) - self.tip) * ((i+.5)/degree) + self.tip for i in range(degree)])
+      return points.CoordsUniformPoints(coords, self.volume)
     if ischeme == 'vtk' and self.nverts == 5 and self.ndims==3: # pyramid
       return points.CoordsPoints(self.vertices[[1,2,4,3,0]])
     return points.ConePoints(self.edgeref.getpoints(ischeme, degree), self.etrans, self.tip)
+
+  @property
+  def volume(self):
+    return self.edgeref.volume * self.extnorm * self.height / self.ndims
 
   @property
   def simplices(self):
