@@ -26,9 +26,8 @@ stdout as well as to an html formatted log file if so configured.
 This is a transitional wrapper around the external treelog module.
 """
 
-import builtins, itertools, treelog, contextlib
+import builtins, itertools, treelog, contextlib, sys
 from treelog import set, add, disable, withcontext, \
-  context, debug, info, user, warning, error, debugfile, infofile, userfile, warningfile, errorfile, \
   Log, TeeLog, FilterLog, NullLog, DataLog, RecordLog, StdoutLog, RichOutputLog, LoggingLog
 from . import warnings
 
@@ -102,5 +101,19 @@ def open(filename, mode, *, level='user', exists=None):
   with treelog.open(filename, mode, level=levels.index(level), id=None) as f:
     f.devnull = not f
     yield f
+
+def __getattr__(name):
+  return getattr(treelog.current, name)
+
+if sys.version_info < (3,7):
+  def _factory(name):
+    def wrapper(*args, **kwargs):
+      return __getattr__(name)(*args, **kwargs)
+    wrapper.__doc__ = getattr(treelog.Log, name).__doc__
+    wrapper.__name__ = name
+    wrapper.__qualname__ = name
+    return wrapper
+  locals().update((name, _factory(name)) for name in dir(treelog.Log) if name not in locals())
+  del _factory
 
 # vim:sw=2:sts=2:et
