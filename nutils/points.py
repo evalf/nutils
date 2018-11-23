@@ -393,7 +393,7 @@ def gauss3(degree):
 
   icw = [
     (I, [1/4], 1),
-  ] if degree == 1 else [
+  ] if degree <= 1 else [
     (J, [0.5854101966249685,0.1381966011250105], 1/4),
   ] if degree == 2 else [
     (I, [.25], -.8),
