@@ -372,7 +372,7 @@ def gauss2(degree):
     (K, [0.638444188569809,0.312865496004875,0.048690315425316], 0.077113760890257),
   ]
 
-  if degree > 7:
+  if degree > 6:
     warnings.warn('inexact integration for polynomial of degree {}'.format(degree))
 
   return types.frozenarray(numpy.concatenate([numpy.take(c,i) for i, c, w in icw]), copy=False), \
@@ -429,7 +429,7 @@ def gauss3(degree):
     (L, [0.7303134278075384,0.0379700484718286,0.1937464752488044], 0.0134324384376852),
   ]
 
-  if degree > 8:
+  if degree > 7:
     warnings.warn('inexact integration for polynomial of degree {}'.format(degree))
 
   return types.frozenarray(numpy.concatenate([numpy.take(c,i) for i, c, w in icw]), copy=False), \
