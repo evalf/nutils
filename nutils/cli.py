@@ -25,7 +25,7 @@ python function based arguments specified on the command line.
 """
 
 from . import util, config, long_version, warnings, matrix, cache
-import sys, inspect, os, io, time, pdb, signal, subprocess, contextlib, traceback, pathlib, treelog as log, stickybar
+import sys, inspect, os, io, time, pdb, signal, subprocess, contextlib, traceback, pathlib, html, treelog as log, stickybar
 
 def _version():
   try:
@@ -155,18 +155,18 @@ def call(func, kwargs, scriptname, funcname=None):
     stack.enter_context(matrix.backend(config.matrix))
     stack.enter_context(log.set(log.FilterLog(log.RichOutputLog() if config.richoutput else log.StdoutLog(), minlevel=5-config.verbose)))
     if config.htmloutput:
-      html = stack.enter_context(log.HtmlLog(outdir, title=scriptname, htmltitle='<a href="http://www.nutils.org">{}</a> {}'.format(SVGLOGO, scriptname), favicon=FAVICON))
-      uri = (config.outrooturi.rstrip('/') + '/' + scriptname if config.outrooturi else pathlib.Path(outdir).resolve().as_uri()) + '/' + html.filename
+      htmllog = stack.enter_context(log.HtmlLog(outdir, title=scriptname, htmltitle='<a href="http://www.nutils.org">{}</a> {}'.format(SVGLOGO, html.escape(scriptname)), favicon=FAVICON))
+      uri = (config.outrooturi.rstrip('/') + '/' + scriptname if config.outrooturi else pathlib.Path(outdir).resolve().as_uri()) + '/' + htmllog.filename
       if config.richoutput:
         t0 = time.perf_counter()
         bar = lambda running: '{0} [{1}] {2[0]}:{2[1]:02d}:{2[2]:02d}'.format(uri, 'RUNNING' if running else 'STOPPED', _hms(time.perf_counter()-t0))
         stack.enter_context(stickybar.activate(bar, update=1))
       else:
         log.info('opened log at', uri)
-      html.write('<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">{}</ul>'.format(''.join(
+      htmllog.write('<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">{}</ul>'.format(''.join(
         '<li>{}={} <span style="color: gray;">{}</span></li>'.format(param.name, kwargs.get(param.name, param.default), param.annotation)
           for param in inspect.signature(func).parameters.values())), level=1, escape=False)
-      stack.enter_context(log.add(html))
+      stack.enter_context(log.add(htmllog))
     stack.enter_context(warnings.via(log.warning))
     stack.callback(signal.signal, signal.SIGINT, signal.signal(signal.SIGINT, _sigint_handler))
 

@@ -47,7 +47,7 @@ def main(nelems: 'number of elements along edge' = 10,
   energy = domain.integral('energy d:x' @ ns, degree=degree*2)
   lhs0 = nutils.solver.optimize('lhs', energy, constrain=cons)
   X, energy = bezier.eval(['X_i', 'energy'] @ ns, lhs=lhs0)
-  nutils.export.triplot('linear.jpg', X, energy, tri=bezier.tri, hull=bezier.hull)
+  nutils.export.triplot('linear.png', X, energy, tri=bezier.tri, hull=bezier.hull)
 
   ns.strain_ij = '.5 (u_i,j + u_j,i + u_k,i u_k,j)'
   ns.energy = 'lmbda strain_ii strain_jj + 2 mu strain_ij strain_ij'
@@ -55,7 +55,7 @@ def main(nelems: 'number of elements along edge' = 10,
   energy = domain.integral('energy d:x' @ ns, degree=degree*2)
   lhs1 = nutils.solver.minimize('lhs', energy, lhs0=lhs0, constrain=cons).solve(restol)
   X, energy = bezier.eval(['X_i', 'energy'] @ ns, lhs=lhs1)
-  nutils.export.triplot('nonlinear.jpg', X, energy, tri=bezier.tri, hull=bezier.hull)
+  nutils.export.triplot('nonlinear.png', X, energy, tri=bezier.tri, hull=bezier.hull)
 
   return lhs0, lhs1
 
@@ -76,6 +76,7 @@ if __name__ == '__main__':
 
 class test(nutils.testing.TestCase):
 
+  @nutils.testing.requires('matplotlib')
   def test_default(self):
     lhs0, lhs1 = main(nelems=4, angle=10)
     nutils.numeric.assert_allclose64(lhs0, 'eNpjYICB8ku8+icMthvOM+K42G1ga6Rv/Mh42'
@@ -85,6 +86,7 @@ class test(nutils.testing.TestCase):
       'wxdjAVM2k1uX1A22mjcbaJsCtfAoHz53sXiC27nGc6pnD94Tutc5dlLZyLOSpw9fab4DOsZyTM'
       'fTp88vex0y2kA6e4nVQ==')
 
+  @nutils.testing.requires('matplotlib')
   def test_mixed(self):
     lhs0, lhs1 = main(nelems=4, angle=10, etype='mixed')
     nutils.numeric.assert_allclose64(lhs0, 'eNoBZACb/wAAAADV0WwvAAChMAAAtjEAAKgyX'
@@ -94,6 +96,7 @@ class test(nutils.testing.TestCase):
       'zGKLIEySDPKM6fS9TFCMwM0mzQjMtvQsTOLNCM1AAAAAD/TYNEAAN7QAAA3zwAACc7SzgnPEc6'
       'TzdjMZ80TzdHMa8wXzPDLGczJy6bLhMthnih2')
 
+  @nutils.testing.requires('matplotlib')
   def test_spline(self):
     lhs0, lhs1 = main(nelems=4, angle=10, degree=2, btype='spline')
     nutils.numeric.assert_allclose64(lhs0, 'eNpjYECAa1e+aE3Qu6Nfa9BlmHoxU/eHgbIRs'

@@ -5,7 +5,7 @@
 # bottom and right boundaries and a top boundary that is moving at unit
 # velocity in positive x-direction.
 
-import nutils, numpy, matplotlib.collections
+import nutils, numpy
 
 # The main function defines the parameter space for the script. Configurable
 # parameters are the mesh density (in number of elements along an edge),
@@ -65,8 +65,9 @@ def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
 
   bezier = domain.sample('bezier', 9)
   x, u, p, stream = bezier.eval(['x_i', 'sqrt(u_k u_k)', 'p', 'stream'] @ ns, **arguments)
-  with nutils.export.mplfigure('flow.jpg') as fig: # plot velocity as field, pressure as contours, streamlines as dashed
+  with nutils.export.mplfigure('flow.png') as fig: # plot velocity as field, pressure as contours, streamlines as dashed
     ax = fig.add_axes([.1,.1,.8,.8], yticks=[], aspect='equal')
+    import matplotlib.collections
     ax.add_collection(matplotlib.collections.LineCollection(x[bezier.hull], colors='w', linewidths=.5, alpha=.2))
     ax.tricontour(x[:,0], x[:,1], bezier.tri, stream, 16, colors='k', linestyles='dotted', linewidths=.5, zorder=9)
     caxu = fig.add_axes([.1,.1,.03,.8], title='velocity')
@@ -92,6 +93,7 @@ if __name__ == '__main__':
 
 class test(nutils.testing.TestCase):
 
+  @nutils.testing.requires('matplotlib')
   def test_square(self):
     lhs0, lhs1 = main(nelems=3, etype='square', reynolds=100, degree=3)
     nutils.numeric.assert_allclose64(lhs0, 'eNp1zj1IQlEUB/BrCJKEQxLRFNFQxvN1vTcpo'
@@ -110,6 +112,7 @@ class test(nutils.testing.TestCase):
       'chLfnV63yLT/Pd2CKLXqfadsL9DmGmLeruPPl42diN/44jyV8wBuMogvteIe827MYxwTWkMOiK'
       '1k8QxrTbl9xZQpPMIzn2EDR3cgjg5dYxzYKKIHjDzbx252sY9mdHuKHaRj/AYh1yFc=')
 
+  @nutils.testing.requires('matplotlib')
   def test_mixed(self):
     lhs0, lhs1 = main(nelems=3, etype='mixed', reynolds=100, degree=2)
     nutils.numeric.assert_allclose64(lhs0, 'eNpjYICAiRePnWdg0D736SyIF3P2nK6VYSWQH'

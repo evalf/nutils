@@ -38,7 +38,7 @@ def main(nelems: 'number of elements' = 20,
   bezier = domain.sample('bezier', 7)
   for itime, lhs in nutils.log.enumerate('timestep', nutils.solver.impliciteuler('lhs', res, inertia, timestep=timestep, lhs0=lhs0, newtontol=newtontol)):
     x, u = bezier.eval(['x_i', 'u'] @ ns, lhs=lhs)
-    nutils.export.triplot('solution.jpg', x, u, tri=bezier.tri, hull=bezier.hull, clim=(0,1))
+    nutils.export.triplot('solution.png', x, u, tri=bezier.tri, hull=bezier.hull, clim=(0,1))
     if itime * timestep >= endtime:
       break
 
@@ -60,16 +60,19 @@ if __name__ == '__main__':
 
 class test(nutils.testing.TestCase):
 
+  @nutils.testing.requires('matplotlib')
   def test_1d_p1(self):
     lhs = main(ndims=1, nelems=10, timescale=.1, degree=1, endtime=.01)
     nutils.numeric.assert_allclose64(lhs, 'eNrbocann6u3yqjTyMLUwfSw2TWzKPNM8+9mH8wyTMNNZxptMir'
       'W49ffpwYAI6cOVA==')
 
+  @nutils.testing.requires('matplotlib')
   def test_1d_p2(self):
     lhs = main(ndims=1, nelems=10, timescale=.1, degree=2, endtime=.01)
     nutils.numeric.assert_allclose64(lhs, 'eNrr0c7SrtWfrD/d4JHRE6Ofxj6mnqaKZofNDpjZmQeYB5pHmL8'
       'we23mb5ZvWmjKY/LV6KPRFIMZ+o368dp92gCxZxZG')
 
+  @nutils.testing.requires('matplotlib')
   def test_2d_p1(self):
     lhs = main(ndims=2, nelems=4, timescale=.1, degree=1, endtime=.01)
     nutils.numeric.assert_allclose64(lhs, 'eNoNyKENhEAQRuGEQsCv2SEzyQZHDbRACdsDJNsBjqBxSBxBHIg'

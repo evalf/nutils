@@ -9,6 +9,7 @@ class mplfigure(TestCase):
     self.outdir = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory()))
     stack.enter_context(treelog.set(treelog.DataLog(str(self.outdir))))
 
+  @nutils.testing.requires('matplotlib', 'PIL')
   def test_autodetect_imagetype(self):
     for (imagetype, test) in (('jpg', lambda data: self.assertEqual(data[:3], b'\xFF\xD8\xFF')),
                               ('png', lambda data: self.assertEqual(data[:8], b'\x89\x50\x4E\x47\x0D\x0A\x1A\x0A')),

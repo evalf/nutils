@@ -53,7 +53,7 @@ def main(nelems: 'number of elementsa long edge' = 9,
 
   bezier = domain.sample('bezier', 5)
   X, stressxx = bezier.eval(['X_i', 'stress_00'] @ ns, lhs=lhs)
-  nutils.export.triplot('stressxx.jpg', X, stressxx, tri=bezier.tri, hull=bezier.hull)
+  nutils.export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull)
 
   err = domain.integral('<du_k du_k, du_i,j du_i,j>_n d:x' @ ns, degree=max(degree,3)*2).eval(lhs=lhs)**.5
   nutils.log.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
@@ -77,6 +77,7 @@ if __name__ == '__main__':
 
 class test(nutils.testing.TestCase):
 
+  @nutils.testing.requires('matplotlib')
   def test_spline(self):
     err, cons, lhs = main(nelems=4, etype='square', degree=2, btype='spline')
     nutils.numeric.assert_allclose64(err, 'eNpbpd6jCwAEZgGL')
@@ -88,6 +89,7 @@ class test(nutils.testing.TestCase):
       'zi/OGclHzJfOSs45zjDOOSK7z5fPC8+cznzOBd/D3d3RFdAuz+vO+yGg1bnSvdCoz03Pzdz01a'
       'zS3dDLz2zPaQdIRw==')
 
+  @nutils.testing.requires('matplotlib')
   def test_mixed(self):
     err, cons, lhs = main(nelems=4, etype='mixed', degree=2, btype='std')
     nutils.numeric.assert_allclose64(err, 'eNpjU9+jCwACNgEX')

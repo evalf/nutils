@@ -66,8 +66,8 @@ def main(nelems: 'number of elements' = 20,
     nutils.log.user('energy: {:.3f} ({})'.format(sum(E), ', '.join('{:.0f}% {}'.format(100*e/sum(E), n) for e, n in sorted(zip(E, energy), reverse=True))))
 
     x, c, m = bezier.eval(['x_i', 'c', 'm'] @ ns, lhs=lhs)
-    nutils.export.triplot('phase.jpg', x, c, tri=bezier.tri, hull=bezier.hull, clim=(-1,1))
-    nutils.export.triplot('chempot.jpg', x, m, tri=bezier.tri, hull=bezier.hull)
+    nutils.export.triplot('phase.png', x, c, tri=bezier.tri, hull=bezier.hull, clim=(-1,1))
+    nutils.export.triplot('chempot.png', x, m, tri=bezier.tri, hull=bezier.hull)
 
     if numpy.ptp(m) < mtol:
       break
@@ -95,6 +95,7 @@ class test(nutils.testing.TestCase):
       'xTJdjQ5yjEwWjX3MTk2n8kwNMbKTsoay1DMWDC8ycM1eTQyyb42NzdKNmLN5skSNs/LXDbnMuw'
       '19DNKNREtGTfui1ut')
 
+  @nutils.testing.requires('matplotlib')
   def test_square(self):
     lhs0, lhs = main(nelems=3, timestep=1, mtol=.1)
     self._checkrand(lhs0)
@@ -103,6 +104,7 @@ class test(nutils.testing.TestCase):
       'J01Pmp9MMY0y/WIYCOSZn7Q82XCi8UTXiSkn5pxYBISovJYTrSd6T0wD8xae6ATCCSemn5gLlu'
       'sFwiknZp9YcGIpEE4Ewhkn5p1YfGIFEKLyAN6wcSE=')
 
+  @nutils.testing.requires('matplotlib')
   def test_contactangle(self):
     lhs0, lhs = main(nelems=3, timestep=1, mtol=.1, contactangle=45)
     self._checkrand(lhs0)
@@ -112,6 +114,7 @@ class test(nutils.testing.TestCase):
       'Mmz4CwzqTeZLbJNpOzJo+AcIrJVJO1JkdMbpi8BsLlJitM9gHNeGLy2eQLkLfSZL/JFZOnJl+B'
       'EAAJrlyi')
 
+  @nutils.testing.requires('matplotlib')
   def test_mixedcircle(self):
     lhs0, lhs = main(nelems=3, timestep=1, mtol=.1, circle=True, etype='mixed')
     self._checkrand(lhs0)

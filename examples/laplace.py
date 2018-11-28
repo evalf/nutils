@@ -93,7 +93,7 @@ def main(nelems: 'number of elements along edge' = 10,
 
   bezier = domain.sample('bezier', 9)
   x, u = bezier.eval(['x_i', 'u'] @ ns, lhs=lhs)
-  nutils.export.triplot('solution.jpg', x, u, tri=bezier.tri, hull=bezier.hull)
+  nutils.export.triplot('solution.png', x, u, tri=bezier.tri, hull=bezier.hull)
 
   # To confirm that our computation is correct, we use our knowledge of the
   # analytical solution to evaluate the L2-error of the discrete result.
@@ -120,6 +120,7 @@ if __name__ == '__main__':
 
 class test(nutils.testing.TestCase):
 
+  @nutils.testing.requires('matplotlib')
   def test_default(self):
     cons, lhs, err = main(nelems=4, etype='square', btype='std', degree=1)
     nutils.numeric.assert_allclose64(cons, 'eNrbKPv1QZ3ip9sL1BgaILDYFMbaZwZj5ZnDW'
@@ -128,6 +129,7 @@ class test(nutils.testing.TestCase):
       'XyNR82ZTa+NpI2oTbPNhU3bjf7Ngo3ODd+N9c3SNEU1g==')
     numpy.testing.assert_almost_equal(err, 1.63e-3, decimal=5)
 
+  @nutils.testing.requires('matplotlib')
   def test_spline(self):
     cons, lhs, err = main(nelems=4, etype='square', btype='spline', degree=2)
     nutils.numeric.assert_allclose64(cons, 'eNqrkmN+sEfhzF0xleRbDA0wKGeCYFuaIdjK5'
@@ -136,6 +138,7 @@ class test(nutils.testing.TestCase):
       'gmmNaZ7jBlN7M08wLCDLNFZh/NlM0vmV0y+2CmZV5pvtr8j9kfMynzEPPF5lfNAcuhGvs=')
     numpy.testing.assert_almost_equal(err, 8.04e-5, decimal=7)
 
+  @nutils.testing.requires('matplotlib')
   def test_mixed(self):
     cons, lhs, err = main(nelems=4, etype='mixed', btype='std', degree=2)
     nutils.numeric.assert_allclose64(cons, 'eNorfLZF2ucJQwMC3pR7+QDG9lCquAtj71Rlu'

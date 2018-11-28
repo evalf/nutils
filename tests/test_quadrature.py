@@ -1,6 +1,6 @@
 from nutils import *
 from nutils.testing import *
-import scipy.special, re
+import math, re
 
 
 @parametrize
@@ -17,7 +17,8 @@ class gauss(TestCase):
       self.integrals = numpy.reciprocal((self.monomials+1.).prod(-1))
     else:
       self.ref = element.getsimplex(self.ndims)
-      self.integrals = scipy.special.gamma(self.monomials+1.).prod(-1) / scipy.special.gamma(self.ndims+1+self.monomials.sum(-1))
+      gamma = numpy.vectorize(math.gamma)
+      self.integrals = gamma(self.monomials+1.).prod(-1) / gamma(self.ndims+1+self.monomials.sum(-1))
 
   def test_degree(self):
     for degree in range(1, self.maxdegree+1):

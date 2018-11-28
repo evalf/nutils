@@ -73,7 +73,7 @@ def main(nrefine = 2,
   # vizualize result
   bezier = domain.sample('bezier', 9)
   X, stressxx = bezier.eval(['X_i', 'stress_00'] @ ns, lhs=lhs)
-  nutils.export.triplot('stressxx.jpg', X, stressxx, tri=bezier.tri, hull=bezier.hull, clim=(numpy.nanmin(stressxx), numpy.nanmax(stressxx)))
+  nutils.export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull, clim=(numpy.nanmin(stressxx), numpy.nanmax(stressxx)))
 
   # evaluate error
   err = domain.integral('<du_k du_k, du_i,j du_i,j>_n d:x' @ ns, degree=9).eval(lhs=lhs)**.5
@@ -97,6 +97,7 @@ if __name__ == '__main__':
 
 class test(nutils.testing.TestCase):
 
+  @nutils.testing.requires('matplotlib')
   def test0(self):
     err, cons, lhs = main(nrefine=0)
     nutils.numeric.assert_allclose64(err, 'eNoT1r6hDwACsAFG')
@@ -105,6 +106,7 @@ class test(nutils.testing.TestCase):
     nutils.numeric.assert_allclose64(lhs, 'eNoBMADP/1jZ0DGVM5YzzSjfL2kzqDMz1ygzHj'
       'PTM5LOr85F0GgpJc6GzrIuc9Qdzm7Pvc+NKyFrF1c=')
 
+  @nutils.testing.requires('matplotlib')
   def test2(self):
     err, cons, lhs = main(nrefine=2)
     nutils.numeric.assert_allclose64(err, 'eNqzUn2kDQADSgFt')
