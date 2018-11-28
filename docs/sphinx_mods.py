@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-import inspect, pathlib, shutil, os, runpy, urllib.parse, shlex, doctest, re, io, hashlib, base64, treelog
+import inspect, pathlib, shutil, os, runpy, urllib.parse, shlex, doctest, re, io, hashlib, base64, treelog, html
 import docutils.nodes, docutils.parsers.rst, docutils.statemachine
 import sphinx.util.logging, sphinx.util.docutils, sphinx.addnodes
 import nutils.matrix
@@ -241,8 +241,12 @@ def create_log(app, env, node, contnode):
           logger.error('invalid argument for {!r}: {}'.format(name, e))
           return
       # Run script.
-      with treelog.HtmlLog(str(dst_log)), nutils.matrix.backend('scipy'), nutils.warnings.via(treelog.warning):
-        script_dict['main'](**kwargs)
+      func = script_dict['main']
+      with treelog.HtmlLog(str(dst_log), title=scriptname, htmltitle='{} {}'.format(nutils.cli.SVGLOGO, html.escape(scriptname)), favicon=nutils.cli.FAVICON) as log, treelog.set(log), nutils.matrix.backend('scipy'), nutils.warnings.via(treelog.warning):
+        log.write('<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">{}</ul>'.format(''.join(
+          '<li>{}={} <span style="color: gray;">{}</span></li>'.format(param.name, kwargs.get(param.name, param.default), param.annotation)
+            for param in inspect.signature(func).parameters.values())), level=1, escape=False)
+        func(**kwargs)
       (dst_log/'log.html').rename(dst_log/'index.html')
 
     refnode = docutils.nodes.reference('', '', internal=False, refuri=app.builder.get_relative_uri(env.docname, target))
