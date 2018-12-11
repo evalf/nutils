@@ -1,4 +1,4 @@
-import itertools
+import itertools, pickle
 from nutils import *
 from nutils.testing import *
 
@@ -665,6 +665,22 @@ class namespace(TestCase):
     self.assertEqual(ns.foo, function.zeros([2,3]))
     self.assertEqual(ns.default_geometry_name, 'y')
 
+  def test_pickle(self):
+    orig = function.Namespace()
+    domain, geom = mesh.unitsquare(2, 'square')
+    orig.x = geom
+    orig.v = domain.basis('std', 1)
+    orig.u = 'v_n ?lhs_n'
+    orig.f = 'cosh(x_0)'
+    pickled = pickle.loads(pickle.dumps(orig))
+    for attr in ('x', 'v', 'u', 'f'):
+      self.assertEqual(getattr(pickled, attr), getattr(orig, attr))
+    self.assertEqual(pickled.arg_shapes['lhs'], orig.arg_shapes['lhs'])
+
+  def test_pickle_default_geometry_name(self):
+    orig = function.Namespace(default_geometry_name='g')
+    pickled = pickle.loads(pickle.dumps(orig))
+    self.assertEqual(pickled.default_geometry_name, orig.default_geometry_name)
 
 class eval_ast(TestCase):
 
