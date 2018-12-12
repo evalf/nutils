@@ -1266,7 +1266,7 @@ class Interpolate(Array):
     self.fp = fp
     self.left = left
     self.right = right
-    super.__init__(args=[x], shape=(), dtype=float)
+    super().__init__(args=[x], shape=(), dtype=float)
 
   def evalf(self, x):
     return numpy.interp(x, self.xp, self.fp, self.left, self.right)
