@@ -803,7 +803,7 @@ class WithGroupsTopology(Topology):
     except KeyError:
       return self.basetopo.getitem(item)
     else:
-      return itemtopo if isinstance(itemtopo, Topology) else self.basetopo[itemtopo]
+      return itemtopo if isinstance(itemtopo, Topology) else self[itemtopo]
 
   @property
   def edict(self):
@@ -832,8 +832,12 @@ class WithGroupsTopology(Topology):
   @property
   def interfaces(self):
     baseitopo = self.basetopo.interfaces
-    # last minute orientation fix
-    igroups = {name: UnstructuredTopology(self.ndims-1, [elem if elem.transform in baseitopo.edict else elem.flipped for elem in elems]) for name, elems in self.igroups.items()}
+    igroups = self.igroups.copy()
+    for name, topo in self.igroups.items():
+      if isinstance(topo, Topology):
+        # last minute orientation fix
+        elems = [elem if elem.transform in baseitopo.edict else elem.flipped for elem in topo]
+        igroups[name] = UnstructuredTopology(self.ndims-1, elems)
     return baseitopo.withgroups(igroups)
 
   @property
