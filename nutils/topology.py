@@ -1476,7 +1476,7 @@ class StructuredTopology(Topology):
     if numeric.isint(degree):
       degree = (degree,) * self.ndims
 
-    if removedofs == None:
+    if removedofs is None or isinstance(removedofs[0], int):
       removedofs = [None] * self.ndims
     else:
       assert len(removedofs) == self.ndims
