@@ -3765,7 +3765,7 @@ class Namespace:
       The name of the default geometry.  See argument with the same name.
   '''
 
-  __slots__ = '_attributes', '_arg_shapes', 'arg_shapes', 'default_geometry_name'
+  __slots__ = '_attributes', '_arg_shapes', 'default_geometry_name'
 
   _re_assign = re.compile('^([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)(_[a-z]+)?$')
 
@@ -3785,9 +3785,21 @@ class Namespace:
       raise ValueError('default_geometry_name: Invalid variable name: {!r}.'.format(default_geometry_name))
     super().__setattr__('_attributes', {})
     super().__setattr__('_arg_shapes', {})
-    super().__setattr__('arg_shapes', builtin_types.MappingProxyType(self._arg_shapes))
     super().__setattr__('default_geometry_name', default_geometry_name)
     super().__init__()
+
+  def __getstate__(self):
+    'Pickle instructions'
+    attrs = '_arg_shapes', '_attributes', 'default_geometry_name'
+    return {k: getattr(self, k) for k in attrs}
+
+  def __setstate__(self, d):
+    'Unpickle instructions'
+    for k, v in d.items(): super().__setattr__(k, v)
+
+  @property
+  def arg_shapes(self):
+    return builtin_types.MappingProxyType(self._arg_shapes)
 
   @property
   def default_geometry(self):
