@@ -65,3 +65,32 @@ class pack(TestCase):
 pack('int8', atol=2e-6, rtol=2e-1, nbits=8)
 pack('int16', atol=2e-15, rtol=2e-3, nbits=16)
 pack('int32', atol=2e-96, rtol=2e-7, nbits=32)
+
+class sorted_index(TestCase):
+
+  def test_None(self):
+    for a, b in ([], []), ([1], []), ([1,2], [2,1]):
+      self.assertEqual(numeric.sorted_index(numpy.array(a, int), b).tolist(), [a.index(v) for v in b if v in a])
+
+  def test_None_exception(self):
+    for a, b in ([], [1]), ([1], [2]), ([1,2], [3,1]):
+      with self.assertRaises(ValueError):
+        numeric.sorted_index(numpy.array(a, int), b)
+
+  def test_int(self):
+    for a, b in ([], []), ([1], []), ([1,2], [2,1]), ([], [1]), ([1], [2]), ([1,2], [3,1]):
+      self.assertEqual(numeric.sorted_index(numpy.array(a, int), b, missing=-1).tolist(), [a.index(v) if v in a else -1 for v in b])
+
+  def test_mask(self):
+    for a, b in ([], []), ([1], []), ([1,2], [2,1]), ([], [1]), ([1], [2]), ([1,2], [3,1]):
+      self.assertEqual(numeric.sorted_index(numpy.array(a, int), b, missing='mask').tolist(), [a.index(v) for v in b if v in a])
+
+  def test_invalid(self):
+    with self.assertRaises(ValueError):
+      numeric.sorted_index(numpy.array([1], int), [1], missing='foo')
+
+class sorted_contains(TestCase):
+
+  def test(self):
+    for a, b in ([], []), ([1], []), ([1,2], [2,1]), ([], [1]), ([1], [2]), ([1,2], [3,1]):
+      self.assertEqual(numeric.sorted_contains(numpy.array(a, int), b).tolist(), [v in a for v in b])
