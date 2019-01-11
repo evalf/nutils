@@ -1,4 +1,4 @@
-import itertools, pickle
+import itertools, pickle, warnings as _builtin_warnings
 from nutils import *
 from nutils.testing import *
 
@@ -32,6 +32,11 @@ class check(TestCase):
     self.op_args = self.op(*self.args)
     self.shapearg = numpy.random.uniform(size=self.op_args.shape, low=self.low, high=self.high)
     self.pairs = [(i, j) for i in range(self.op_args.ndim-1) for j in range(i+1, self.op_args.ndim) if self.op_args.shape[i] == self.op_args.shape[j]]
+
+  def setUpContext(self, stack):
+    super().setUpContext(stack)
+    stack.enter_context(_builtin_warnings.catch_warnings())
+    _builtin_warnings.simplefilter('ignore', category=function.ExpensiveEvaluationWarning)
 
   def assertArrayAlmostEqual(self, actual, desired, decimal):
     if actual.shape[1:] != desired.shape[1:] or len({actual.shape[0],desired.shape[0]}-{1}) == 2:

@@ -74,6 +74,7 @@ def as_canonical_length(value):
 
 asshape = types.tuple[as_canonical_length]
 
+class ExpensiveEvaluationWarning(Warning): pass
 
 class Evaluable(types.Singleton):
   'Base class'
@@ -2210,7 +2211,7 @@ class Inflate(Array):
     assert indices.shape[0] == 1
     indices, = indices
     assert array.ndim == self.ndim+1
-    warnings.warn('using explicit inflation; this is usually a bug.')
+    warnings.warn('using explicit inflation; this is usually a bug.', ExpensiveEvaluationWarning)
     shape = list(array.shape)
     shape[self.axis+1] = self.length
     inflated = numpy.zeros(shape, dtype=self.dtype)
