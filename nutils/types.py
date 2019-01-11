@@ -1169,6 +1169,8 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
     if isstrict:
       if not isinstance(base, numpy.ndarray):
         base = numpy.array(base)
+        if base.size == 0:
+          base = base.astype(dtype)
         copy = False
       if base.dtype == complex or base.dtype == float and dtype == int:
         raise ValueError('downcasting {!r} to {!r} is forbidden'.format(base.dtype, dtype))
