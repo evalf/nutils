@@ -58,7 +58,8 @@ def normdim(ndim, n):
   assert isint(ndim) and ndim >= 0, 'ndim must be positive integer, got {}'.format(ndim)
   if n < 0:
     n += ndim
-  assert 0 <= n < ndim, 'argument out of bounds: {} not in [0,{})'.format(n, ndim)
+  if n < 0 or n >= ndim:
+    raise IndexError('index out of bounds: {} not in [0,{})'.format(n, ndim))
   return n
 
 def get(arr, axis, item):
