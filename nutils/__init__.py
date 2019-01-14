@@ -29,9 +29,9 @@ version_name = None
 long_version = ('{} "{}"' if version_name else '{}').format(version, version_name)
 
 _ = numpy.newaxis
-__all__ = ['_', 'numpy', 'numeric', 'element', 'function', 'expression',
+__all__ = ['_', 'numpy', 'numeric', 'element', 'elementseq', 'function', 'expression',
   'mesh', 'topology', 'util', 'matrix', 'parallel', 'log',
-  'cache', 'transform', 'solver', 'cli', 'warnings', 'config', 'types', 'points',
+  'cache', 'transform', 'transformseq', 'solver', 'cli', 'warnings', 'config', 'types', 'points',
   'sample', 'export', 'testing']
 
 from . import numeric, element, function, expression, mesh, topology, util, \

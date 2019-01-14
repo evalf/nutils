@@ -88,16 +88,16 @@ class gmsh(TestCase):
     boundary1 = self.domain.refined.boundary
     boundary2 = self.domain.boundary.refined
     assert len(boundary1) == len(boundary2) == len(self.domain.boundary) * element.getsimplex(self.domain.ndims-1).nchildren
-    assert set(boundary1.edict) == set(boundary2.edict)
-    assert all(boundary2.elements[boundary2.edict[elem.transform]].reference == elem.reference for elem in boundary1)
+    assert set(boundary1.transforms) == set(boundary2.transforms)
+    assert all(boundary2.references[boundary2.transforms.index(trans)] == ref for ref, trans in zip(boundary1.references, boundary1.transforms))
 
   def test_refinesubset(self):
-    domain = topology.SubsetTopology(self.domain, [elem.reference if ielem % 2 else elem.reference.empty for ielem, elem in enumerate(self.domain)])
+    domain = topology.SubsetTopology(self.domain, [ref if ielem % 2 else ref.empty for ielem, ref in enumerate(self.domain.references)])
     boundary1 = domain.refined.boundary
     boundary2 = domain.boundary.refined
     assert len(boundary1) == len(boundary2) == len(domain.boundary) * element.getsimplex(domain.ndims-1).nchildren
-    assert set(boundary1.edict) == set(boundary2.edict)
-    assert all(boundary2.elements[boundary2.edict[elem.transform]].reference == elem.reference for elem in boundary1)
+    assert set(boundary1.transforms) == set(boundary2.transforms)
+    assert all(boundary2.references[boundary2.transforms.index(trans)] == ref for ref, trans in zip(boundary1.references, boundary1.transforms))
 
 # gmsh geo 2D:
 #

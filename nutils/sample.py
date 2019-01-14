@@ -82,8 +82,10 @@ class Sample(types.Singleton):
 
   @types.apply_annotations
   def __init__(self, transforms:tuple, points:types.tuple[points.strictpoints], index:types.tuple[types.frozenarray[types.strictint]]):
-    assert len(transforms) == len(points) == len(index)
-    self.nelems = len(transforms)
+    assert len(points) == len(index)
+    assert len(transforms) >= 1
+    assert all(len(t) == len(points) for t in transforms)
+    self.nelems = len(transforms[0])
     self.transforms = transforms
     self.points = points
     self.index = index
@@ -132,7 +134,7 @@ class Sample(types.Singleton):
     offsets = numpy.zeros((len(blocks), self.nelems+1), dtype=int)
     if blocks:
       sizefunc = function.stack([f.size for ifunc, ind, f in blocks]).simplified
-      for ielem, transforms in enumerate(self.transforms):
+      for ielem, transforms in enumerate(zip(*self.transforms)):
         n, = sizefunc.eval(_transforms=transforms, **arguments)
         offsets[:,ielem+1] = offsets[:,ielem] + n
 
@@ -167,7 +169,7 @@ class Sample(types.Singleton):
       for ielem in ielems:
         with log.context('elem', ielem, '({:.0f}%)'.format(100*ielem/self.nelems)):
           points = self.points[ielem]
-          for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=self.transforms[ielem], _points=points.coords, **arguments)):
+          for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=points.coords, **arguments)):
             s = slice(*offsets[iblock,ielem:ielem+2])
             data, index = data_index[block2func[iblock]]
             w_intdata = numeric.dot(points.weights, intdata)
@@ -224,7 +226,7 @@ class Sample(types.Singleton):
     with parallel.fork(nprocs):
       for ielem in ielems:
         with log.context('elem', ielem, '({:.0f}%)'.format(100*ielem/self.nelems)):
-          for ifunc, inds, data in idata.eval(_transforms=self.transforms[ielem], _points=self.points[ielem].coords, **arguments):
+          for ifunc, inds, data in idata.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=self.points[ielem].coords, **arguments):
             numpy.add.at(retvals[ifunc], numpy.ix_(self.index[ielem], *[ind for (ind,) in inds]), data)
 
     return retvals
@@ -250,7 +252,8 @@ class Sample(types.Singleton):
         The sampled data.
     '''
 
-    return function.Sampled(self, array)
+    index, tail = function.TransformsIndexWithTail(self.transforms[0], function.TRANS)
+    return function.Sampled(self, array, index, function.ApplyTransforms(tail))
 
   @property
   def tri(self):
@@ -294,7 +297,7 @@ class Sample(types.Singleton):
     '''
 
     selection = [ielem for ielem in range(self.nelems) if mask[self.index[ielem]].any()]
-    transforms = [self.transforms[ielem] for ielem in selection]
+    transforms = tuple(tuple(t[ielem] for ielem in selection) for t in self.transforms)
     points = [self.points[ielem] for ielem in selection]
     offset = numpy.cumsum([0] + [p.npoints for p in points])
     return Sample(transforms, points, map(numpy.arange, offset[:-1], offset[1:]))

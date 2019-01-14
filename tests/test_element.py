@@ -76,3 +76,82 @@ elem('prism2', ref=element.LineReference()*element.TriangleReference(), exactcen
 quad = element.LineReference()**2
 elem('withchildren1', ref=element.WithChildrenReference(quad, [quad,quad.empty,quad.empty,quad.empty]), exactcentroid=[1/4,1/4])
 elem('withchildren2', ref=element.WithChildrenReference(quad, [quad,quad,quad.empty,quad.empty]), exactcentroid=[1/4,1/2])
+
+class Element(TestCase):
+
+  def test_withopposite(self):
+    ref = element.PointReference()
+    trans = transform.Identifier(0, 'a'),
+    opp = transform.Identifier(0, 'b'),
+    elem1 = element.Element(ref, trans)
+    elem2 = element.Element(ref, opp)
+    elem3 = elem1.withopposite(elem2)
+    self.assertEqual(elem3.reference, ref)
+    self.assertEqual(elem3.transform, trans)
+    self.assertEqual(elem3.opposite, opp)
+
+  def test_mul(self):
+    lref, rref = element.LineReference(), element.LineReference()*element.LineReference()
+    ltrans, rtrans = (transform.Identifier(1, 'l'),), (transform.Identifier(2, 'r'),)
+    elem = element.Element(lref, ltrans)*element.Element(rref, rtrans)
+    self.assertEqual(elem.reference, lref*rref)
+    self.assertEqual(elem.transform, (transform.Bifurcate(ltrans, rtrans),))
+    self.assertEqual(elem.opposite, elem.transform)
+
+  def test_mul_iface(self):
+    lref, rref = element.LineReference(), element.LineReference()*element.LineReference()
+    ltrans, lopp, rtrans = (transform.Identifier(1, 'l'),), (transform.Identifier(1, 'o'),), (transform.Identifier(2, 'r'),)
+    elem = element.Element(lref, ltrans, lopp)*element.Element(rref, rtrans)
+    self.assertEqual(elem.reference, lref*rref)
+    self.assertEqual(elem.transform, (transform.Bifurcate(ltrans, rtrans),))
+    self.assertEqual(elem.opposite, (transform.Bifurcate(lopp, rtrans),))
+
+  def test_vertices(self):
+    ref = element.LineReference()
+    trans = transform.Identifier(1, 'a'), transform.Identity(1)
+    elem = element.Element(ref, trans)
+    self.assertEqual(ref.vertices.tolist(), [[0.],[1.]])
+
+  def test_ndims(self):
+    ref = element.LineReference()
+    trans = transform.Identifier(1, 'a'), transform.Identity(1)
+    elem = element.Element(ref, trans)
+    self.assertEqual(elem.ndims, 1)
+
+  def test_nverts(self):
+    ref = element.LineReference()
+    trans = transform.Identifier(1, 'a'), transform.Identity(1)
+    elem = element.Element(ref, trans)
+    self.assertEqual(elem.nverts, ref.nverts)
+
+  def test_edges(self):
+    ref = element.LineReference()
+    trans = transform.Identifier(1, 'a'),
+    opp = transform.Identifier(1, 'b'),
+    elem = element.Element(ref, trans, opp)
+    self.assertEqual(elem.nedges, ref.nedges)
+    self.assertEqual(elem.edges, [element.Element(eref, trans+(etrans,), opp+(etrans,)) if eref else None for etrans, eref in ref.edges])
+    for i, (etrans, eref) in enumerate(ref.edges):
+      self.assertEqual(elem.edge(i), element.Element(eref, trans+(etrans,), opp+(etrans,)) if eref else None)
+
+  def test_children(self):
+    ref = element.LineReference()
+    trans = transform.Identifier(1, 'a'),
+    opp = transform.Identifier(1, 'b'),
+    elem = element.Element(ref, trans, opp)
+    self.assertEqual(elem.children, [element.Element(cref, trans+(ctrans,), opp+(ctrans,)) if cref else None for ctrans, cref in ref.children])
+
+  def test_flipped(self):
+    ref = element.LineReference()
+    trans = transform.Identifier(1, 'a'),
+    opp = transform.Identifier(1, 'b'),
+    elem = element.Element(ref, trans, opp).flipped
+    self.assertEqual(elem.reference, ref)
+    self.assertEqual(elem.transform, opp)
+    self.assertEqual(elem.opposite, trans)
+
+  def test_simplices(self):
+    ref = element.LineReference()*element.LineReference()
+    trans = transform.Identifier(2, 'a'), transform.Identity(1)
+    elem = element.Element(ref, trans)
+    self.assertEqual(elem.simplices, [element.Element(sref, trans+(strans,), trans+(strans,)) for strans, sref in ref.simplices])

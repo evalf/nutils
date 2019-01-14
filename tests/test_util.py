@@ -63,3 +63,16 @@ class linreg(TestCase):
     self.assertTrue(numpy.isnan(ab0).all())
     self.assertEqual([a.tolist(), b.tolist()], ab1.tolist())
     self.assertEqual([a.tolist(), b.tolist()], ab2.tolist())
+
+class pairwise(TestCase):
+
+  def test_normal(self):
+    for n in range(5):
+      with self.subTest(length=n):
+        self.assertEqual(list(util.pairwise(range(n))), list(zip(range(n-1), range(1,n))))
+
+  def test_periodic(self):
+    self.assertEqual(list(util.pairwise((), periodic=True)), [])
+    for n in range(1, 5):
+      with self.subTest(length=n):
+        self.assertEqual(list(util.pairwise(range(n), periodic=True)), [*zip(range(n-1), range(1,n)),(n-1,0)])

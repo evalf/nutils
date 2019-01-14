@@ -7,10 +7,8 @@ class hierarchical(TestCase):
   def setUp(self):
     super().setUp()
     self.ref0, self.geom = mesh.rectilinear([[0,1,2]])
-    self.e1, self.e2 = self.ref0
-    self.ref1 = self.ref0.refined_by([self.e2])
-    self.e3, self.e4, self.e5 = self.ref1
-    self.ref2 = self.ref1.refined_by([self.e4])
+    self.ref1 = self.ref0.refined_by([1])
+    self.ref2 = self.ref1.refined_by([1])
 
     # Topologies:
     # ref0    [  .  .  .  |  .  .  .  ]
@@ -34,7 +32,7 @@ class hierarchical(TestCase):
 
   def test_trimmed(self, makeplots=False):
     levelset = 1.125 - self.geom[0]
-    trimmed = self.ref0.trim(levelset, maxrefine=3).refined_by([self.e2]).refined_by([self.e4])
+    trimmed = self.ref0.trim(levelset, maxrefine=3).refined_by([1]).refined_by([1])
     trimbasis = trimmed.basis('h-std', degree=1)
     x, y = trimmed.simplex.sample('bezier', 2).eval([self.geom[0], trimbasis])
     self.assertTrue((abs(y - .125 * numpy.array(
@@ -182,9 +180,11 @@ class setoperations(TestCase):
 
   def test_union(self):
     self.assertEqual((self.top|self.left) | (self.right|self.bottom), self.domain)
-    union = (self.right|self.left) | (self.top|self.bottom)
+    union = topology.UnionTopology([self.right, self.left, self.top, self.bottom])
     self.assertIsInstance(union, topology.UnionTopology)
-    self.assertEqual(set(union), set(self.domain))
+    self.assertEqual(set(union.references), set(self.domain.references))
+    self.assertEqual(set(union.transforms), set(self.domain.transforms))
+    self.assertEqual(set(union.opposites), set(self.domain.opposites))
 
 
 @parametrize
@@ -282,7 +282,9 @@ class leveltopo(TestCase):
     level = basis.dot((numpy.arange(len(basis))%2)-.5)
     trimtopoA = self.domain0.trim(level, maxrefine=2)
     trimtopoB = self.domain0.trim(level, maxrefine=2, leveltopo=domain2)
-    self.assertEqual(trimtopoA.elements, trimtopoB.elements)
+    self.assertEqual(tuple(trimtopoA.references), tuple(trimtopoB.references))
+    self.assertEqual(tuple(trimtopoA.transforms), tuple(trimtopoB.transforms))
+    self.assertEqual(tuple(trimtopoA.opposites), tuple(trimtopoB.opposites))
 
   def test_uniformfail(self):
     with self.assertRaises(Exception):
@@ -292,14 +294,14 @@ class leveltopo(TestCase):
       trimtopo = self.domain0.trim(level, maxrefine=1, leveltopo=domain2)
 
   def test_hierarchical(self):
-    domain2 = self.domain1.refined_by(self.domain1.elements[:1])
+    domain2 = self.domain1.refined_by([0])
     basis = domain2.basis('h-std', degree=1)
     level = basis.dot((numpy.arange(len(basis))%2)-.5)
     trimtopo = self.domain0.trim(level, maxrefine=2, leveltopo=domain2)
 
   def test_hierarchicalfail(self):
     with self.assertRaises(Exception):
-      domain2 = self.domain1.refined_by(self.domain1.elements[:1])
+      domain2 = self.domain1.refined_by([0])
       basis = domain2.basis('h-std', degree=1)
       level = basis.dot((numpy.arange(len(basis))%2)-.5)
       trimtopo = self.domain0.trim(level, maxrefine=1, leveltopo=domain2)

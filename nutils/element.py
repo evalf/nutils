@@ -28,7 +28,7 @@ affine transformation. They also have a well defined reference coordinate
 system, and provide pointsets for purposes of integration and sampling.
 """
 
-from . import util, numpy, config, numeric, function, cache, transform, warnings, types, points, _
+from . import util, numpy, config, numeric, cache, transform, warnings, types, points, _
 import re, math, itertools, operator, functools
 
 
@@ -253,20 +253,21 @@ class Reference(types.Singleton):
     npoints = self.nvertices_by_level(maxrefine)
     allindices = numpy.arange(npoints)
     if len(ctransforms) == 1:
-      assert not ctransforms[0]
+      ctrans, = ctransforms
+      assert not ctrans
       return ((), self.getpoints('vertex', maxrefine).coords, allindices),
     if maxrefine == 0:
       raise Exception('maxrefine is too low')
-    cbins = [[] for ichild in range(self.nchildren)]
+    cbins = [set() for ichild in range(self.nchildren)]
     for ctrans in ctransforms:
       ichild = self.child_transforms.index(ctrans[0])
-      cbins[ichild].append(ctrans[1:])
+      cbins[ichild].add(ctrans[1:])
     if not all(cbins):
       raise Exception('transformations to not form an element cover')
     fcache = cache.WrapperCache()
     return tuple(((ctrans,) + trans, points, cindices[indices])
       for ctrans, cref, cbin, cindices in zip(self.child_transforms, self.child_refs, cbins, self.child_divide(allindices,maxrefine))
-        for trans, points, indices in fcache[cref.vertex_cover](tuple(sorted(cbin)), maxrefine-1))
+        for trans, points, indices in fcache[cref.vertex_cover](frozenset(cbin), maxrefine-1))
 
   def __str__(self):
     return self.__class__.__name__
@@ -1176,6 +1177,7 @@ class Element(types.Singleton):
     self.reference = reference
     self.transform = trans
     self.opposite = opptrans or trans
+    warnings.deprecation('element.Element is deprecated')
 
   def withopposite(self, opp):
     assert isinstance(opp, Element) and opp.reference == self.reference

@@ -26,7 +26,7 @@ accompanying geometry function. Meshes can either be generated on the fly, e.g.
 provided at this point.
 """
 
-from . import topology, function, util, element, numpy, numeric, transform, warnings, types, _
+from . import topology, function, util, element, elementseq, numpy, numeric, transform, transformseq, warnings, types, _
 import os, itertools, pathlib, treelog as log
 
 # MESH GENERATORS
@@ -55,7 +55,7 @@ def rectilinear(richshape, periodic=(), name='rect'):
       uniform = False
 
   root = transform.Identifier(ndims, name)
-  axes = [topology.DimAxis(0,n,idim in periodic) for idim, n in enumerate(shape)]
+  axes = [transformseq.DimAxis(0,n,idim in periodic) for idim, n in enumerate(shape)]
   topo = topology.StructuredTopology(root, axes)
 
   if uniform:
@@ -462,40 +462,42 @@ def gmsh(fname, name='gmsh'):
   log.info('created topology consisting of {} elements'.format(len(topo)))
 
   if tagnamesbydim[ndims-1]: # separate boundary and interface elements by tag
+    elemref = element.getsimplex(ndims)
+    edgeref = element.getsimplex(ndims-1)
     edges = {}
-    for elem, vtx in zip(topo, inodesbydim[ndims].tolist()):
-      for iedge, edge in enumerate(elem.edges):
-        edges.setdefault(tuple(vtx[:iedge] + vtx[iedge+1:]), []).append(edge)
+    for elemtrans, vtx in zip(topo.transforms, inodesbydim[ndims].tolist()):
+      for iedge, edgetrans in enumerate(elemref.edge_transforms):
+        edges.setdefault(tuple(vtx[:iedge] + vtx[iedge+1:]), []).append(elemtrans+(edgetrans,))
     tagsbelems = {}
     tagsielems = {}
     for name, ibelems in tagnamesbydim[ndims-1].items():
       for ibelem in ibelems:
         edge, *oppedge = edges[tuple(inodesbydim[ndims-1][ibelem])]
         if oppedge:
-          tagsielems.setdefault(name, []).append(edge.withopposite(*oppedge))
+          tagsielems.setdefault(name, []).append((edge, oppedge[0]))
         else:
           tagsbelems.setdefault(name, []).append(edge)
     if tagsbelems:
-      topo = topo.withgroups(bgroups={tagname: topology.UnstructuredTopology(ndims-1, tagbelems) for tagname, tagbelems in tagsbelems.items()})
+      topo = topo.withgroups(bgroups={tagname: topology.UnstructuredTopology((edgeref,)*len(tagbelems), tagbelems, tagbelems, ndims=ndims-1) for tagname, tagbelems in tagsbelems.items()})
       log.info('boundary groups:', ', '.join('{} (#{})'.format(n, len(e)) for n, e in tagsbelems.items()))
     if tagsielems:
-      topo = topo.withgroups(igroups={tagname: topology.UnstructuredTopology(ndims-1, tagielems) for tagname, tagielems in tagsielems.items()})
+      topo = topo.withgroups(igroups={tagname: topology.UnstructuredTopology((edgeref,)*len(tagielems), (trans for trans, opp in tagielems), (opp for trans, opp in tagielems), ndims=ndims-1) for tagname, tagielems in tagsielems.items()})
       log.info('interface groups:', ', '.join('{} (#{})'.format(n, len(e)) for n, e in tagsielems.items()))
 
   if tagnamesbydim[0]: # create points topology and separate by tag
-    pelems = {inodes[0]: [] for inodes in inodesbydim[0]}
+    ptransforms = {inodes[0]: [] for inodes in inodesbydim[0]}
     pref = element.getsimplex(0)
-    for elem, inodes in zip(topo, inodesbydim[ndims]):
+    for ref, trans, inodes in zip(topo.references, topo.transforms, inodesbydim[ndims]):
       for ivertex, inode in enumerate(inodes):
-        if inode in pelems:
-          offset = elem.reference.vertices[ivertex]
-          trans = elem.transform + (transform.Matrix(linear=numpy.zeros(shape=(ndims,0)), offset=offset),)
-          pelems[inode].append(element.Element(pref, trans))
-    tagspelems = {}
+        if inode in ptransforms:
+          offset = ref.vertices[ivertex]
+          ptransforms[inode].append(trans + (transform.Matrix(linear=numpy.zeros(shape=(ndims,0)), offset=offset),))
+    pgroups = {}
     for name, ipelems in tagnamesbydim[0].items():
-      tagspelems[name] = [pelem for ipelem in ipelems for inode in inodesbydim[0][ipelem] for pelem in pelems[inode]]
-    topo = topo.withgroups(pgroups={tagname: topology.UnstructuredTopology(0, tagpelems) for tagname, tagpelems in tagspelems.items()})
-    log.info('point groups:', ', '.join('{} (#{})'.format(n, len(e)) for n, e in tagspelems.items()))
+      tagptransforms = tuple(ptrans for ipelem in ipelems for inode in inodesbydim[0][ipelem] for ptrans in ptransforms[inode])
+      pgroups[name] = topology.UnstructuredTopology((pref,)*len(tagptransforms), tagptransforms, tagptransforms, ndims=0)
+    topo = topo.withgroups(pgroups=pgroups)
+    log.info('point groups:', ', '.join('{} (#{})'.format(n, len(e)) for n, e in pgroups.items()))
 
   if tagnamesbydim[ndims]: # create volume groups
     vgroups = {}
@@ -515,8 +517,7 @@ def gmsh(fname, name='gmsh'):
     geom = function.rootcoords(ndims)
   else:
     coeffs = element.getsimplex(ndims).get_poly_coeffs('lagrange', degree=degree)
-    transforms = [elem.transform for elem in topo]
-    basis = function.polyfunc([coeffs] * len(fullgeomdofs), fullgeomdofs, len(nodes), transforms, issorted=False)
+    basis = function.PlainBasis([coeffs] * len(fullgeomdofs), fullgeomdofs, len(nodes), topo.transforms)
     geom = (basis[:,_] * nodes).sum(0)
 
   return topo, geom
@@ -559,7 +560,7 @@ def unitsquare(nelems, etype):
   root = transform.Identifier(2, 'unitsquare')
 
   if etype == 'square':
-    topo = topology.StructuredTopology(root, [topology.DimAxis(0, nelems, False)] * 2)
+    topo = topology.StructuredTopology(root, [transformseq.DimAxis(0, nelems, False)] * 2)
 
   elif etype in ('triangle', 'mixed'):
     simplices = numpy.concatenate([
@@ -571,20 +572,22 @@ def unitsquare(nelems, etype):
     topo = topology.SimplexTopology(simplices, [(root, transform.Simplex(coords[s])) for s in simplices])
 
     if etype == 'mixed':
-      elems = list(topo)
+      references = list(topo.references)
+      transforms = list(topo.transforms)
       square = element.getsimplex(1)**2
       connectivity = list(topo.connectivity)
       isquares = [i * nelems + j for i in range(nelems) for j in range(nelems) if i%2==j%3]
       for n in sorted(isquares, reverse=True):
         i, j = divmod(n, nelems)
-        elems[n*2:(n+1)*2] = element.Element(square, (root, transform.Shift([float(i),float(j)]))),
+        references[n*2:(n+1)*2] = square,
+        transforms[n*2:(n+1)*2] = (root, transform.Shift([float(i),float(j)])),
         connectivity[n*2:(n+1)*2] = numpy.concatenate(connectivity[n*2:(n+1)*2])[[3,2,4,1] if i%2==j%2 else [3,2,0,5]],
         connectivity = [c-numpy.greater(c,n*2) for c in connectivity]
-      topo = topology.ConnectedTopology(2, elems, tuple(types.frozenarray(c, copy=False) for c in connectivity))
+      topo = topology.ConnectedTopology(elementseq.asreferences(references), transformseq.PlainTransforms(transforms, 2),transformseq.PlainTransforms(transforms, 2), tuple(types.frozenarray(c, copy=False) for c in connectivity))
 
     x, y = topo.boundary.elem_mean(function.rootcoords(2), degree=1).T
     bgroups = dict(left=x==0, right=x==nelems, bottom=y==0, top=y==nelems)
-    topo = topo.withboundary(**{name: topology.UnstructuredTopology(1, [belem for i, belem in enumerate(topo.boundary) if mask[i]]) for name, mask in bgroups.items()})
+    topo = topo.withboundary(**{name: topo.boundary[numpy.where(mask)[0]] for name, mask in bgroups.items()})
 
   else:
     raise Exception('invalid element type {!r}'.format(etype))

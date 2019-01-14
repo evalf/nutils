@@ -58,7 +58,8 @@ def normdim(ndim, n):
   assert isint(ndim) and ndim >= 0, 'ndim must be positive integer, got {}'.format(ndim)
   if n < 0:
     n += ndim
-  assert 0 <= n < ndim, 'argument out of bounds: {} not in [0,{})'.format(n, ndim)
+  if n < 0 or n >= ndim:
+    raise IndexError('index out of bounds: {} not in [0,{})'.format(n, ndim))
   return n
 
 def get(arr, axis, item):
@@ -507,5 +508,32 @@ def accumulate(data, index, shape):
   retval = numpy.zeros(shape, data.dtype)
   numpy.add.at(retval, tuple(index), data)
   return retval
+
+def _sorted_index_mask(sorted_array, values):
+  values = numpy.asarray(values)
+  assert sorted_array.ndim == 1 and values.ndim == 1
+  if len(sorted_array):
+    indices = numpy.searchsorted(sorted_array[:-1], values)
+    mask = numpy.equal(sorted_array[indices], values)
+  else:
+    indices = numpy.zeros(values.shape, dtype=int)
+    mask = numpy.zeros(values.shape, dtype=bool)
+  return indices, mask
+
+def sorted_index(sorted_array, values, *, missing=None):
+  indices, found = _sorted_index_mask(sorted_array, values)
+  if missing is None:
+    if not found.all():
+      raise ValueError
+  elif isint(missing):
+    indices[~found] = missing
+  elif missing == 'mask':
+    indices = indices[found]
+  else:
+    raise ValueError
+  return types.frozenarray(indices, copy=False)
+
+def sorted_contains(sorted_array, values):
+  return types.frozenarray(_sorted_index_mask(sorted_array, values)[1], copy=False)
 
 # vim:sw=2:sts=2:et

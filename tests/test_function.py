@@ -1,4 +1,4 @@
-import itertools, pickle
+import itertools, pickle, warnings as _builtin_warnings
 from nutils import *
 from nutils.testing import *
 
@@ -16,22 +16,30 @@ class check(TestCase):
       self.geom = r * function.stack([function.cos(theta), function.sin(theta)])
     else:
       raise Exception('invalid ndim {!r}'.format(self.ndim))
-    self.elem, = self.domain
-    self.iface = element.Element(self.elem.edge(0).reference, self.elem.edge(0).transform, self.elem.edge(1).transform)
-    self.ifpoints, ifweights = self.iface.reference.getischeme('uniform2')
+    self.elemtrans, = self.domain.transforms
+    self.elemref, = self.domain.references
+    self.ifaceref = self.elemref.edge_refs[0]
+    self.ifacetrans = self.elemtrans+(self.elemref.edge_transforms[0],)
+    self.ifaceopp = self.elemtrans+(self.elemref.edge_transforms[1],)
+    self.ifpoints, ifweights = self.ifaceref.getischeme('uniform2')
     self.basis = self.domain.basis('spline', degree=(1,2)[:self.ndim])
 
     numpy.random.seed(0)
     self.args = [(numpy.random.uniform(size=shape+self.basis.shape, low=self.low, high=self.high) * self.basis).sum(-1) for shape in self.shapes]
     if self.pass_geom:
         self.args += [self.geom]
-    self.points, weights = self.elem.reference.getischeme('uniform2')
-    self.evalargs = {'_transforms': (self.elem.transform,), '_points': self.points}
+    self.points, weights = self.elemref.getischeme('uniform2')
+    self.evalargs = {'_transforms': (self.elemtrans,), '_points': self.points}
     self.argsfun = function.Tuple(self.args)
     self.n_op_argsfun = self.n_op(*self.argsfun.simplified.eval(**self.evalargs))
     self.op_args = self.op(*self.args)
     self.shapearg = numpy.random.uniform(size=self.op_args.shape, low=self.low, high=self.high)
     self.pairs = [(i, j) for i in range(self.op_args.ndim-1) for j in range(i+1, self.op_args.ndim) if self.op_args.shape[i] == self.op_args.shape[j]]
+
+  def setUpContext(self, stack):
+    super().setUpContext(stack)
+    stack.enter_context(_builtin_warnings.catch_warnings())
+    _builtin_warnings.simplefilter('ignore', category=function.ExpensiveEvaluationWarning)
 
   def assertArrayAlmostEqual(self, actual, desired, decimal):
     if actual.shape[1:] != desired.shape[1:] or len({actual.shape[0],desired.shape[0]}-{1}) == 2:
@@ -242,8 +250,8 @@ class check(TestCase):
 
   def test_opposite(self):
     self.assertArrayAlmostEqual(decimal=14,
-      desired=self.n_op(*function.opposite(self.argsfun).simplified.eval(_transforms=[self.iface.transform, self.iface.opposite], _points=self.ifpoints)),
-      actual=function.opposite(self.op_args).simplified.eval(_transforms=[self.iface.transform, self.iface.opposite], _points=self.ifpoints))
+      desired=self.n_op(*function.opposite(self.argsfun).simplified.eval(_transforms=[self.ifacetrans, self.ifaceopp], _points=self.ifpoints)),
+      actual=function.opposite(self.op_args).simplified.eval(_transforms=[self.ifacetrans, self.ifaceopp], _points=self.ifpoints))
 
   def find(self, target, xi0):
     ndim, = self.geom.shape
@@ -259,10 +267,10 @@ class check(TestCase):
     target = target.reshape(-1, target.shape[-1])
     xi = xi0.reshape(-1, xi0.shape[-1])
     while countdown:
-      err = target - self.geom.eval(_transforms=[self.elem.transform], _points=xi)
+      err = target - self.geom.eval(_transforms=[self.elemtrans], _points=xi)
       if numpy.less(numpy.abs(err), 1e-12).all():
         countdown -= 1
-      dxi_root = (Jinv.eval(_transforms=[self.elem.transform], _points=xi) * err[...,_,:]).sum(-1)
+      dxi_root = (Jinv.eval(_transforms=[self.elemtrans], _points=xi) * err[...,_,:]).sum(-1)
       #xi = xi + numpy.dot(dxi_root, self.elem.inv_root_transform.T)
       xi = xi + dxi_root
       iiter += 1
@@ -271,13 +279,13 @@ class check(TestCase):
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_localgradient(self):
-    exact = function.localgradient(self.op_args, ndims=self.elem.ndims).simplified.eval(**self.evalargs)
-    D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.elem.ndims)
+    exact = function.localgradient(self.op_args, ndims=self.domain.ndims).simplified.eval(**self.evalargs)
+    D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.domain.ndims)
     good = False
     eps = 1e-5
     while not numpy.all(good):
       fdpoints = self.points[_,_,:,:] + D[:,:,_,:] * eps
-      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
+      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elemtrans], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
       if len(tmp) == 1 or tmp.dtype.kind in 'bi' or self.zerograd:
         error = exact
       else:
@@ -316,7 +324,7 @@ class check(TestCase):
     eps = 1e-4
     while not numpy.all(good):
       fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,:,:] + D[:,:,_,:] * eps, self.points[_,_,:,:])
-      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
+      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elemtrans], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
       if len(tmp) == 1 or tmp.dtype.kind in 'bi' or self.zerograd:
         error = exact
       else:
@@ -340,7 +348,7 @@ class check(TestCase):
     eps = 1e-4
     while not numpy.all(good):
       fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,_,_,:,:] + DD[:,:,:,:,_,:] * eps, self.points[_,_,_,_,:,:])
-      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
+      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elemtrans], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
       if len(tmp) == 1 or tmp.dtype.kind in 'bi' or self.zerograd:
         error = exact
       else:
@@ -516,8 +524,7 @@ class elemwise(TestCase):
   def setUp(self):
     super().setUp()
     self.domain, geom = mesh.rectilinear([5])
-    self.transforms = tuple(sorted(elem.transform for elem in self.domain))
-    self.index = function.FindTransform(self.transforms, function.TRANS)
+    self.index = function.TransformsIndexWithTail(self.domain.transforms, function.TRANS).index
     self.data = tuple(map(types.frozenarray, (
       numpy.arange(1, dtype=float).reshape(1,1),
       numpy.arange(2, dtype=float).reshape(1,2),
@@ -528,12 +535,12 @@ class elemwise(TestCase):
     self.func = function.Elemwise(self.data, self.index, float)
 
   def test_evalf(self):
-    for i, trans in enumerate(self.transforms):
+    for i, trans in enumerate(self.domain.transforms):
       with self.subTest(i=i):
         numpy.testing.assert_array_almost_equal(self.func.eval(_transforms=(trans,)), self.data[i][_])
 
   def test_shape(self):
-    for i, trans in enumerate(self.transforms):
+    for i, trans in enumerate(self.domain.transforms):
       with self.subTest(i=i):
         self.assertEqual(self.func.size.eval(_transforms=(trans,))[0], self.data[i].size)
 
@@ -760,3 +767,198 @@ class jacobian(TestCase):
 
 jacobian(delayed=True)
 jacobian(delayed=False)
+
+@parametrize
+class basis(TestCase):
+
+  def setUp(self):
+    super().setUp()
+    self.checknelems = len(self.checkcoeffs)
+    self.checksupp = [[] for i in range(self.checkndofs)]
+    for ielem, dofs in enumerate(self.checkdofs):
+      for dof in dofs:
+        self.checksupp[dof].append(ielem)
+    assert len(self.checkcoeffs) == len(self.checkdofs)
+    assert all(len(c) == len(d) for c, d in zip(self.checkcoeffs, self.checkdofs))
+
+  def test_shape(self):
+    self.assertEqual(self.basis.shape, (self.checkndofs,))
+
+  def test_get_coefficients_pos(self):
+    for ielem in range(self.checknelems):
+      self.assertEqual(self.basis.get_coefficients(ielem).tolist(), self.checkcoeffs[ielem])
+
+  def test_get_coefficients_neg(self):
+    for ielem in range(-self.checknelems, 0):
+      self.assertEqual(self.basis.get_coefficients(ielem).tolist(), self.checkcoeffs[ielem])
+
+  def test_get_coefficients_outofbounds(self):
+    with self.assertRaises(IndexError):
+      self.basis.get_coefficients(-self.checknelems-1)
+    with self.assertRaises(IndexError):
+      self.basis.get_coefficients(self.checknelems)
+
+  def test_get_dofs_scalar_pos(self):
+    for ielem in range(self.checknelems):
+      self.assertEqual(self.basis.get_dofs(ielem).tolist(), self.checkdofs[ielem])
+
+  def test_get_dofs_scalar_neg(self):
+    for ielem in range(-self.checknelems, 0):
+      self.assertEqual(self.basis.get_dofs(ielem).tolist(), self.checkdofs[ielem])
+
+  def test_get_dofs_scalar_outofbounds(self):
+    with self.assertRaises(IndexError):
+      self.basis.get_dofs(-self.checknelems-1)
+    with self.assertRaises(IndexError):
+      self.basis.get_dofs(self.checknelems)
+
+  def test_dofs_array(self):
+    for mask in itertools.product(*[[False, True]]*self.checknelems):
+      mask = numpy.array(mask, dtype=bool)
+      indices, = numpy.where(mask)
+      for value in mask, indices:
+        with self.subTest(tuple(value)):
+          self.assertEqual(self.basis.get_dofs(value).tolist(), list(sorted(set(itertools.chain.from_iterable(self.checkdofs[i] for i in indices)))))
+
+  def test_dofs_intarray_outofbounds(self):
+    for i in [-1, self.checknelems]:
+      with self.assertRaises(IndexError):
+        self.basis.get_dofs(numpy.array([i], dtype=int))
+
+  def test_dofs_intarray_invalidndim(self):
+    with self.assertRaises(IndexError):
+      self.basis.get_dofs(numpy.array([[0]], dtype=int))
+
+  def test_dofs_boolarray_invalidshape(self):
+    with self.assertRaises(IndexError):
+      self.basis.get_dofs(numpy.array([True]*(self.checknelems+1), dtype=bool))
+    with self.assertRaises(IndexError):
+      self.basis.get_dofs(numpy.array([[True]*self.checknelems], dtype=bool))
+
+  def test_get_support_scalar_pos(self):
+    for dof in range(self.checkndofs):
+      self.assertEqual(self.basis.get_support(dof).tolist(), self.checksupp[dof])
+
+  def test_get_support_scalar_neg(self):
+    for dof in range(-self.checkndofs, 0):
+      self.assertEqual(self.basis.get_support(dof).tolist(), self.checksupp[dof])
+
+  def test_get_support_scalar_outofbounds(self):
+    with self.assertRaises(IndexError):
+      self.basis.get_support(-self.checkndofs-1)
+    with self.assertRaises(IndexError):
+      self.basis.get_support(self.checkndofs)
+
+  def test_get_support_array(self):
+    for mask in itertools.product(*[[False, True]]*self.checkndofs):
+      mask = numpy.array(mask, dtype=bool)
+      indices, = numpy.where(mask)
+      for value in mask, indices:
+        with self.subTest(tuple(value)):
+          self.assertEqual(self.basis.get_support(value).tolist(), list(sorted(set(itertools.chain.from_iterable(self.checksupp[i] for i in indices)))))
+
+  def test_get_support_intarray_outofbounds(self):
+    for i in [-1, self.checkndofs]:
+      with self.assertRaises(IndexError):
+        self.basis.get_support(numpy.array([i], dtype=int))
+
+  def test_get_support_intarray_invalidndim(self):
+    with self.assertRaises(IndexError):
+      self.basis.get_support(numpy.array([[0]], dtype=int))
+
+  def test_get_support_boolarray(self):
+    for mask in itertools.product(*[[False, True]]*self.checkndofs):
+      mask = numpy.array(mask, dtype=bool)
+      indices, = numpy.where(mask)
+      with self.subTest(tuple(indices)):
+        self.assertEqual(self.basis.get_support(mask).tolist(), list(sorted(set(itertools.chain.from_iterable(self.checksupp[i] for i in indices)))))
+
+  def test_get_support_boolarray_invalidshape(self):
+    with self.assertRaises(IndexError):
+      self.basis.get_support(numpy.array([True]*(self.checkndofs+1), dtype=bool))
+    with self.assertRaises(IndexError):
+      self.basis.get_support(numpy.array([[True]*self.checkndofs], dtype=bool))
+
+  def test_getitem_array(self):
+    for mask in itertools.product(*[[False, True]]*self.checkndofs):
+      mask = numpy.array(mask, dtype=bool)
+      indices, = numpy.where(mask)
+      for value in mask, indices:
+        with self.subTest(tuple(value)):
+          maskedbasis = self.basis[value]
+          self.assertIsInstance(maskedbasis, function.Basis)
+          for ielem in range(self.checknelems):
+            m = numpy.asarray(numeric.sorted_contains(indices, self.checkdofs[ielem]))
+            self.assertEqual(maskedbasis.get_dofs(ielem).tolist(), numeric.sorted_index(indices, numpy.compress(m, self.checkdofs[ielem], axis=0)).tolist())
+            self.assertEqual(maskedbasis.get_coefficients(ielem).tolist(), numpy.compress(m, self.checkcoeffs[ielem], axis=0).tolist())
+
+  def checkeval(self, ielem, points):
+    result = numpy.zeros((points.shape[0], self.checkndofs,), dtype=float)
+    numpy.add.at(result, (slice(None),numpy.array(self.checkdofs[ielem], dtype=int)), numeric.poly_eval(numpy.array(self.checkcoeffs[ielem], dtype=float)[None], points))
+    return result.tolist()
+
+  def test_evalf(self):
+    ref = element.PointReference() if self.basis.transforms.fromdims == 0 else element.LineReference()**self.basis.transforms.fromdims
+    points = ref.getpoints('bezier', 4).coords
+    with self.assertWarnsRegex(function.ExpensiveEvaluationWarning, 'using explicit basis evaluation.*'):
+      for ielem in range(self.checknelems):
+        self.assertEqual(self.basis.evalf([ielem], points).tolist(), self.checkeval(ielem, points))
+
+  def test_simplified(self):
+    ref = element.PointReference() if self.basis.transforms.fromdims == 0 else element.LineReference()**self.basis.transforms.fromdims
+    points = ref.getpoints('bezier', 4).coords
+    simplified = self.basis.simplified
+    with _builtin_warnings.catch_warnings():
+      _builtin_warnings.simplefilter('ignore', category=function.ExpensiveEvaluationWarning)
+      for ielem in range(self.checknelems):
+        value = simplified.eval(_transforms=(self.basis.transforms[ielem],), _points=points)
+        if value.shape[0] == 1:
+          value = numpy.tile(value, (points.shape[0], 1))
+        self.assertEqual(value.tolist(), self.checkeval(ielem, points))
+
+basis(
+  'PlainBasis',
+  basis=function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)),
+  checkcoeffs=[[1],[2,3],[4,5],[6]],
+  checkdofs=[[0],[2,3],[1,3],[2]],
+  checkndofs=4)
+basis(
+  'DiscontBasis',
+  basis=function.DiscontBasis([[1],[2,3],[4,5],[6]], transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)),
+  checkcoeffs=[[1],[2,3],[4,5],[6]],
+  checkdofs=[[0],[1,2],[3,4],[5]],
+  checkndofs=6)
+basis(
+  'MaskedBasis',
+  basis=function.MaskedBasis(function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)), [0,2]),
+  checkcoeffs=[[1],[2],[],[6]],
+  checkdofs=[[0],[1],[],[1]],
+  checkndofs=2)
+basis(
+  'PrunedBasis',
+  basis=function.PrunedBasis(function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)), [0,2]),
+  checkcoeffs=[[1],[4,5]],
+  checkdofs=[[0],[1,2]],
+  checkndofs=3)
+
+structtrans4 = transformseq.StructuredTransforms(transform.Identifier(1, 'test'), [transformseq.DimAxis(0,4,False)], 0)
+structtrans4p = transformseq.StructuredTransforms(transform.Identifier(1, 'test'), [transformseq.DimAxis(0,4,True)], 0)
+structtrans22 = transformseq.StructuredTransforms(transform.Identifier(2, 'test'), [transformseq.DimAxis(0,2,False),transformseq.DimAxis(0,2,False)], 0)
+basis(
+  'StructuredBasis1D',
+  basis=function.StructuredBasis([[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]], [[0,1,2,3]], [[2,3,4,5]], [5], structtrans4, [4]),
+  checkcoeffs=[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]],
+  checkdofs=[[0,1],[1,2],[2,3],[3,4]],
+  checkndofs=5)
+basis(
+  'StructuredBasis1DPeriodic',
+  basis=function.StructuredBasis([[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]], [[0,1,2,3]], [[2,3,4,5]], [4], structtrans4p, [4]),
+  checkcoeffs=[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]],
+  checkdofs=[[0,1],[1,2],[2,3],[3,0]],
+  checkndofs=4)
+basis(
+  'StructuredBasis2D',
+  basis=function.StructuredBasis([[[[1],[2]],[[3],[4]]],[[[5],[6]],[[7],[8]]]], [[0,1],[0,1]], [[2,3],[2,3]], [3,3], structtrans22, [2,2]),
+  checkcoeffs=[[[[5]],[[6]],[[10]],[[12]]],[[[7]],[[8]],[[14]],[[16]]],[[[15]],[[18]],[[20]],[[24]]],[[[21]],[[24]],[[28]],[[32]]]],
+  checkdofs=[[0,1,3,4],[1,2,4,5],[3,4,6,7],[4,5,7,8]],
+  checkndofs=9)

@@ -1,0 +1,489 @@
+# Copyright (c) 2014 Evalf
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
+"""The elementseq module."""
+
+from . import types, numeric, element, util
+import abc, collections.abc, itertools, numpy
+
+class References(types.Singleton):
+  '''Abstract base class for a sequence of :class:`~nutils.element.Reference` objects.
+
+  Parameters
+  ----------
+  length : :class:`int`
+      The length of the sequence.
+
+  Notes
+  -----
+  Subclasses must implement :meth:`__len__` and :meth:`__getitem__`.
+  '''
+
+  __slots__ = ()
+
+  @abc.abstractmethod
+  def __len__(self):
+    '''Return ``len(self)``.'''
+
+    raise NotImplementedError
+
+  def __getitem__(self, index):
+    '''Return ``self[index]``.'''
+
+    if numeric.isint(index):
+      raise NotImplementedError
+    elif isinstance(index, slice):
+      index = range(len(self))[index]
+      if index == range(len(self)):
+        return self
+      return SelectedReferences(self, numpy.arange(index.start, index.stop, index.step))
+    elif numeric.isintarray(index):
+      if index.ndim != 1:
+        raise IndexError('invalid index')
+      if numpy.any(numpy.less(index, 0)) or numpy.any(numpy.greater_equal(index, len(self))):
+        raise IndexError('index out of range')
+      if len(index) == 0:
+        return PlainReferences(())
+      if numpy.all(numpy.equal(numpy.diff(index), 1)) and len(index) == len(self):
+        return self
+      return SelectedReferences(self, index)
+    elif numeric.isboolarray(index):
+      if index.shape != (len(self),):
+        raise IndexError('mask has invalid shape')
+      if not numpy.any(index):
+        return PlainReferences(())
+      if numpy.all(index):
+        return self
+      index, = numpy.where(index)
+      return SelectedReferences(self, index)
+    else:
+      raise IndexError('invalid index')
+
+  def __iter__(self):
+    '''Implement ``iter(self)``.'''
+
+    for i in range(len(self)):
+      yield self[i]
+
+  @property
+  def children(self):
+    '''Return the sequence of child references.
+
+    Returns
+    -------
+    :class:`References`
+        The sequence of child references::
+
+            (cref for ref in self for cref in ref.child_refs)
+    '''
+
+    return ChildReferences(self)
+
+  def getpoints(self, ischeme, degree):
+    '''Return a sequence of :class:`~nutils.points.Points`.'''
+
+    return tuple(reference.getpoints(ischeme, degree) for reference in self)
+
+  def __add__(self, other):
+    '''Return ``self+other``.'''
+
+    if not isinstance(other, References):
+      return NotImplemented
+    return chain((self, other))
+
+  def __mul__(self, other):
+    '''Return ``self*other``.'''
+
+    if numeric.isint(other):
+      if other == 0:
+        return PlainReferences(())
+      else:
+        return RepeatedReferences(self, other)
+    elif isinstance(other, References):
+      return ProductReferences(self, other)
+    else:
+      return NotImplemented
+
+  def unchain(self):
+    '''Iterator of unchained :class:`References` items.
+
+    Yields
+    ------
+    :class:`References`
+        Unchained items.
+    '''
+
+    yield self
+
+  @property
+  def isuniform(self):
+    '''``True`` if all reference in this sequence are equal.'''
+
+    return False
+
+strictreferences = types.strict[References]
+
+class PlainReferences(References):
+  '''A general purpose implementation of :class:`References`.
+
+  Use this class only if there exists no specific implementation of
+  :class:`References` for the references at hand.
+
+  Parameters
+  ----------
+  references : :class:`tuple` of :class:`~nutils.element.Reference` objects
+      The sequence of references.
+  fromdims : :class:`int`
+      The number of dimensions all ``transforms`` map from.
+  '''
+
+  __slots__ = '_references'
+
+  @types.apply_annotations
+  def __init__(self, references:types.tuple[element.strictreference]):
+    self._references = references
+    super().__init__()
+
+  def __len__(self):
+    return len(self._references)
+
+  def __getitem__(self, index):
+    if not numeric.isint(index):
+      return super().__getitem__(index)
+    return self._references[numeric.normdim(len(self), index)]
+
+  def __iter__(self):
+    return iter(self._references)
+
+class UniformReferences(References):
+  '''A uniform sequence.
+
+  Parameters
+  ----------
+  reference : :class:`~nutils.element.Reference`
+      The reference.
+  length : :class:`int`
+      The length of the sequence.
+  '''
+
+  __slots__ = '_reference', '_length'
+  __cache__ = 'children'
+
+  @types.apply_annotations
+  def __init__(self, reference:element.strictreference, length:types.strictint):
+    if length <= 0:
+      raise ValueError('length should be strict positive, but got {}'.format(length))
+    self._reference = reference
+    self._length = length
+    super().__init__()
+
+  def __len__(self):
+    return self._length
+
+  def __getitem__(self, index):
+    if numeric.isint(index):
+      numeric.normdim(len(self), index)
+      return self._reference
+    elif isinstance(index, slice):
+      return asreferences([self._reference]) * len(range(len(self))[index])
+    elif numeric.isintarray(index) and index.ndim == 1:
+      if numpy.any(numpy.less(index, 0)) or numpy.any(numpy.greater_equal(index, len(self))):
+        raise IndexError('index out of range')
+      return asreferences([self._reference]) * len(index)
+    elif numeric.isboolarray(index) and index.shape == (len(self),):
+      return asreferences([self._reference]) * numpy.sum(index)
+    else:
+      return super().__getitem__(index)
+
+  @property
+  def children(self):
+    return asreferences(self._reference.child_refs) * len(self)
+
+  def getpoints(self, ischeme, degree):
+    return (self._reference.getpoints(ischeme, degree),)*len(self)
+
+  def __mul__(self, other):
+    if numeric.isint(other):
+      if other == 0:
+        return PlainReferences(())
+      else:
+        return UniformReferences(self._reference, len(self)*other)
+    else:
+      return super().__mul__(other)
+
+  @property
+  def isuniform(self):
+    return True
+
+class SelectedReferences(References):
+  '''A selection of references.  Duplication and reordering is allowed.
+
+  Parameters
+  ----------
+  parent : :class:`References`
+      The transforms to subset.
+  indices : one-dimensional array of :class:`int`\\s
+      Indices of ``parent`` that form this selection.
+  '''
+
+  __slots__ = '_parent', '_indices'
+
+  @types.apply_annotations
+  def __init__(self, parent:strictreferences, indices:types.frozenarray[types.strictint]):
+    if not numpy.all(numpy.greater_equal(indices, 0) & numpy.less(indices, len(parent))):
+      raise IndexError('`indices` out of range')
+    self._parent = parent
+    self._indices = indices
+    super().__init__()
+
+  def __len__(self):
+    return len(self._indices)
+
+  def __getitem__(self, index):
+    if numeric.isintarray(index) and index.ndim == 1 and numpy.any(numpy.less(index, 0)):
+      raise IndexError('index out of bounds')
+    return self._parent[self._indices[index]]
+
+class ChainedReferences(References):
+  '''A sequence of chained :class:`References` objects.
+
+  Parameters
+  ----------
+  items: :class:`tuple` of :class:`References` objects
+      The :class:`References` objects to chain.
+  '''
+
+  __slots__ = '_items'
+  __cache__ = '_offsets'
+
+  @types.apply_annotations
+  def __init__(self, items:types.tuple[strictreferences]):
+    if len(items) == 0:
+      raise ValueError('Empty chain.')
+    self._items = items
+    super().__init__()
+
+  @property
+  def _offsets(self):
+    return types.frozenarray(numpy.cumsum([0, *map(len, self._items)]), copy=False)
+
+  def __len__(self):
+    return self._offsets[-1]
+
+  def __getitem__(self, index):
+    if numeric.isint(index):
+      index = numeric.normdim(len(self), index)
+      outer = numpy.searchsorted(self._offsets, index, side='right') - 1
+      assert outer >= 0 and outer < len(self._items)
+      return self._items[outer][index-self._offsets[outer]]
+    elif isinstance(index, slice) and index.step in (1, None):
+      index = range(len(self))[index]
+      if index == range(len(self)):
+        return self
+      elif index.start == index.stop:
+        return PlainReferences(())
+      ostart = numpy.searchsorted(self._offsets, index.start, side='right') - 1
+      ostop = numpy.searchsorted(self._offsets, index.stop, side='left')
+      return chain(item[max(0,index.start-istart):min(istop-istart,index.stop-istart)] for item, (istart, istop) in zip(self._items[ostart:ostop], util.pairwise(self._offsets[ostart:ostop+1])))
+    elif numeric.isintarray(index) and index.ndim == 1 and len(index) and numpy.all(numpy.greater(numpy.diff(index), 0)):
+      if index[0] < 0 or index[-1] >= len(self):
+        raise IndexError('index out of bounds')
+      split = numpy.searchsorted(index, self._offsets, side='left')
+      return chain(item[index[start:stop]-offset] for item, offset, (start, stop) in zip(self._items, self._offsets, util.pairwise(split)) if stop > start)
+    elif numeric.isboolarray(index) and index.shape == (len(self),):
+      return chain(item[index[start:stop]] for item, (start, stop) in zip(self._items, util.pairwise(self._offsets)))
+    else:
+      return super().__getitem__(index)
+
+  def __iter__(self):
+    return itertools.chain.from_iterable(self._items)
+
+  @property
+  def children(self):
+    return chain(item.children for item in self._items)
+
+  def getpoints(self, ischeme, degree):
+    return tuple(itertools.chain.from_iterable(item.getpoints(ischeme, degree) for item in self._items))
+
+  def unchain(self):
+    yield from self._items
+
+class RepeatedReferences(References):
+  '''An n-times repeated sequence of references.
+
+  Parameters
+  ----------
+  parent : :class:`References`
+      The references to repeat.
+  count : :class:`int`
+      The number of repetitions.
+  '''
+
+  __slots__ = '_parent', '_count'
+
+  @types.apply_annotations
+  def __init__(self, parent:strictreferences, count:types.strictint):
+    if count <= 0:
+      raise ValueError('count should be strict positive, but got {}'.format(count))
+    self._parent = parent
+    self._count = count
+    super().__init__()
+
+  def __len__(self):
+    return len(self._parent)*self._count
+
+  def __getitem__(self, index):
+    if not numeric.isint(index):
+      return super().__getitem__(index)
+    return self._parent[numeric.normdim(len(self), index) % self._count]
+
+  def __iter__(self):
+    for i in range(self._count):
+      yield from self._parent
+
+  def __mul__(self, other):
+    if numeric.isint(other):
+      if other == 0:
+        return PlainReferences(())
+      else:
+        return RepeatedReferences(self._parent, self._count*other)
+    else:
+      return super().__mul__(other)
+
+  @property
+  def children(self):
+    return self._parent.children * self._count
+
+  def getpoints(self, ischeme, degree):
+    return self._parent.getpoints(ischeme, degree) * self._count
+
+class ProductReferences(References):
+  '''A sequence of products of two other sequences.
+
+  Parameters
+  ----------
+  left : :class:`References`
+  right : :class:`References`
+  '''
+
+  __slots__ = '_left', '_right'
+
+  @types.apply_annotations
+  def __init__(self, left:strictreferences, right:strictreferences):
+    self._left = left
+    self._right = right
+    super().__init__()
+
+  def __len__(self):
+    return len(self._left)*len(self._right)
+
+  def __getitem__(self, index):
+    if not numeric.isint(index):
+      return super().__getitem__(index)
+    li, ri = divmod(numeric.normdim(len(self), index), len(self._right))
+    return self._left[li]*self._right[ri]
+
+  def __iter__(self):
+    for lref in self._left:
+      for rref in self._right:
+        yield lref * rref
+
+class ChildReferences(References):
+  '''A sequence of child references.
+
+  The child references are ordered first by parent references, then by child
+  references, as returned by the reference::
+
+      (cref for ref in parent for cref in ref.child_refs)
+
+  Parameters
+  ----------
+  parent : :class:`References`
+      The references to produce the children of.
+  '''
+
+  __slots__ = '_parent'
+  __cache__ = '_offsets'
+
+  @types.apply_annotations
+  def __init__(self, parent:strictreferences):
+    self._parent = parent
+    super().__init__()
+
+  @property
+  def _offsets(self):
+    return types.frozenarray(numpy.cumsum([0, *(ref.nchildren for ref in self._parent)]), copy=False)
+
+  def __len__(self):
+    return self._offsets[-1]
+
+  def __getitem__(self, index):
+    if not numeric.isint(index):
+      return super().__getitem__(index)
+    index = numeric.normdim(len(self), index)
+    parent_index = numpy.searchsorted(self._offsets, index, side='right')-1
+    child_index = index - self._offsets[parent_index]
+    return self._parent[parent_index].child_refs[child_index]
+
+  def __iter__(self):
+    for ref in self._parent:
+      yield from ref.child_refs
+
+def asreferences(value):
+  '''Convert ``value`` to a :class:`References` object.'''
+
+  if isinstance(value, References):
+    return value
+  elif isinstance(value, collections.abc.Iterable):
+    value = tuple(value)
+    if len(value) == 0:
+      return PlainReferences(())
+    elif all(item == value[0] for item in value[1:]):
+      return UniformReferences(value[0], len(value))
+    else:
+      return PlainReferences(value)
+  else:
+    raise ValueError('cannot convert {!r} to a References object'.format(value))
+
+def chain(items):
+  '''Return the chained references sequence of ``items``.
+
+  Parameters
+  ----------
+  items : iterable of :class:`References` objects
+      The :class:`References` objects to chain.
+
+  Returns
+  -------
+  :class:`References`
+      The chained references.
+  '''
+
+  unchained = tuple(filter(len, itertools.chain.from_iterable(item.unchain() for item in items)))
+  if len(unchained) == 0:
+    return PlainReferences(())
+  elif len(unchained) == 1:
+    return unchained[0]
+  elif all(item.isuniform for item in unchained) and len(set(item[0] for item in unchained)) == 1:
+    return UniformReferences(unchained[0][0], sum(map(len, unchained)))
+  else:
+    return ChainedReferences(unchained)
+
+# vim:sw=2:sts=2:et

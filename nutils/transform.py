@@ -83,25 +83,6 @@ def promote(chain, ndims):
       return canonical(chain[:i+1]) + uppermost(chain[i+1:])
   return chain # NOTE at this point promotion essentially failed, maybe it's better to raise an exception
 
-def lookup(chain, transforms):
-  if not transforms:
-    return
-  for trans in transforms:
-    ndims = trans[-1].fromdims
-    break
-  chain = promote(chain, ndims)
-  for i in range(len(chain), 0, -1):
-    if chain[i-1].fromdims == ndims and chain[:i] in transforms:
-      return chain[:i], chain[i:]
-
-def lookup_item(chain, transforms):
-  head_tail = lookup(chain, transforms)
-  if not head_tail:
-    raise KeyError(chain)
-  head, tail = head_tail
-  item = transforms[head] if isinstance(transforms, collections.Mapping) else transforms.index(head)
-  return item, tail
-
 def linearfrom(chain, fromdims):
   todims = chain[0].todims if chain else fromdims
   while chain and fromdims < chain[-1].fromdims:
@@ -149,26 +130,6 @@ class TransformItem(types.Singleton):
 
   def swapdown(self, other):
     return None
-
-  def __lt__(self, other):
-    if not isinstance(other, TransformItem):
-      return NotImplemented
-    return self is not other and (type(self).__name__,)+self._args < (type(other).__name__,)+other._args
-
-  def __gt__(self, other):
-    if not isinstance(other, TransformItem):
-      return NotImplemented
-    return self is not other and (type(self).__name__,)+self._args > (type(other).__name__,)+other._args
-
-  def __le__(self, other):
-    if not isinstance(other, TransformItem):
-      return NotImplemented
-    return self is other or (type(self).__name__,)+self._args < (type(other).__name__,)+other._args
-
-  def __ge__(self, other):
-    if not isinstance(other, TransformItem):
-      return NotImplemented
-    return self is other or (type(self).__name__,)+self._args > (type(other).__name__,)+other._args
 
 stricttransformitem = types.strict[TransformItem]
 stricttransform = types.tuple[stricttransformitem]

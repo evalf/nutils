@@ -702,10 +702,10 @@ class frozenmultiset(TestCase):
 
 class frozenarray(TestCase):
 
-  def _test_constructor(self, src, frozen_dtype):
+  def _test_constructor(self, src, frozen_dtype, src_types=(list,numpy.array,nutils.types.frozenarray)):
     src = list(src)
     for copy in True, False:
-      for src_type in list, numpy.array, nutils.types.frozenarray:
+      for src_type in src_types:
         with self.subTest(copy=copy, src_type=src_type):
           frozen = nutils.types.frozenarray(src_type(src), copy=copy, dtype=frozen_dtype)
           self.assertIsInstance(frozen, nutils.types.frozenarray)
@@ -718,12 +718,16 @@ class frozenarray(TestCase):
           nutils.types.frozenarray(src_type(src), copy=copy, dtype=frozen_dtype)
   def test_constructor_bool(self):
     self._test_constructor((False, True), bool)
+  def test_constructor_bool_emptyarray(self):
+    self._test_constructor((), bool, src_types=[list])
   def test_constructor_int(self):
     self._test_constructor((0,1), int)
   def test_constructor_int_upcast(self):
     self._test_constructor((False,True), int)
   def test_constructor_int_downcast(self):
     self._test_constructor((0.,1.), int)
+  def test_constructor_int_emptyarray(self):
+    self._test_constructor((), int, src_types=[list])
   def test_constructor_float(self):
     self._test_constructor((0.,1.), float)
   def test_constructor_float_upcast(self):
@@ -744,6 +748,8 @@ class frozenarray(TestCase):
     self._test_constructor((False,True), nutils.types.strictint)
   def test_constructor_strictint_downcast(self):
     self._test_constructor_raises((0.,1.), nutils.types.strictint, ValueError, '^downcasting .* is forbidden$')
+  def test_constructor_strictint_emptyarray(self):
+    self._test_constructor((), nutils.types.strictint, src_types=[list])
   def test_constructor_strictfloat(self):
     self._test_constructor((0.,1.), nutils.types.strictfloat)
   def test_constructor_strictfloat_upcast(self):
