@@ -506,3 +506,60 @@ class groups(TestCase):
     self.assertEqual(len(topo2.interfaces['hor']), 2)
     self.assertEqual(len(topo2.interfaces['ver']), 2)
     self.assertEqual(len(topo2.interfaces['full']), 4)
+
+@parametrize
+class common(TestCase):
+
+  @property
+  def topo_transforms(self):
+    return tuple(elem.transform for elem in self.topo.elements)
+
+  def test_iter(self):
+    self.assertEqual(tuple(self.topo), tuple(self.topo.elements))
+
+  def test_contains(self):
+    for elem in self.topo.elements:
+      self.assertIn(elem, self.topo)
+
+  @parametrize.enable_if(lambda **params: params.get('hasboundary', True))
+  def test_border_transforms(self):
+    border = set(map(self.topo_transforms.index, self.topo.border_transforms))
+    check = set(self.topo_transforms.index(belem.transform[:-1]) for belem in self.topo.boundary.elements)
+    self.assertEqual(border, check)
+
+  def test_refined(self):
+    refined = self.topo.refined
+    checkreferences = tuple(cref for elem in self.topo.elements for cref in elem.reference.child_refs)
+    checktransforms = tuple(elem.transform+(ctrans,) for elem in self.topo.elements for ctrans in elem.reference.child_transforms)
+    self.assertEqual(len(refined), len(checktransforms))
+    self.assertEqual(set(elem.transform for elem in refined.elements), set(checktransforms))
+    for ref, trans in zip((elem.reference for elem in refined.elements), (elem.transform for elem in refined.elements)):
+      self.assertEqual(ref, checkreferences[checktransforms.index(trans)])
+
+  def test_refine_iter(self):
+    level_iter = iter(self.topo.refine_iter)
+    check = self.topo
+    for i in range(4):
+      level = next(level_iter)
+      self.assertEqual(level, check)
+      check = check.refined
+
+  def test_simplex(self):
+    self.topo.simplex
+
+  @parametrize.enable_if(lambda **params: params.get('hasbasis', True))
+  def test_supp_empty(self):
+    self.assertEqual(len(self.topo.supp(self.topo.basis('std', 1), [])), 0)
+
+common(
+  'UnstructuredTopology',
+  topo=topology.UnstructuredTopology(0, [element.Element(element.PointReference(), (transform.Identifier(0, 'test'),))]),
+  hasboundary=False)
+common(
+  'StructuredTopology:2D',
+  topo=mesh.rectilinear([2,2])[0])
+common(
+  'UnionTopology',
+  topo=topology.UnionTopology([mesh.rectilinear([8])[0][l:r] for l, r in [[0,2],[4,6]]]),
+  hasboundary=False,
+  hasbasis=False)
