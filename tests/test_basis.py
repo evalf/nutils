@@ -9,7 +9,7 @@ class basis(TestCase):
     super().setUp()
     self.domain, self.geom = mesh.rectilinear([[0,1,2]]*self.ndims)
     for iref in range(self.nrefine):
-      self.domain = self.domain.refined_by(self.domain.elements[:1])
+      self.domain = self.domain.refined_by([0])
     self.basis = self.domain.basis(self.btype, degree=self.degree)
     self.gauss = 'gauss{}'.format(2*self.degree)
 
@@ -52,7 +52,7 @@ class sparsity(TestCase):
 
   def test_sparsity(self):
     topo, geom = mesh.rectilinear([6]*self.ndim)
-    topo = topo.refined_by(elem.transform for elem in list(topo[1:3]) + list(topo[-2:]))
+    topo = topo.refined_by(set(map(topo.transforms.index, itertools.chain(topo[1:3].transforms, topo[-2:].transforms))))
 
     ns = function.Namespace()
     ns.x = geom
@@ -134,9 +134,8 @@ class structured_line(TestCase):
     verts = numpy.linspace(0, 1, self.nelems+1)
     self.domain, self.x = mesh.line(verts, periodic=self.periodic)
 
-    self.transforms = tuple(elem.transform for elem in self.domain)
-    vl = function.elemwise(dict(zip(self.transforms, verts[:-1])), ())
-    vr = function.elemwise(dict(zip(self.transforms, verts[1:])), ())
+    vl = function.elemwise(self.domain.transforms, verts[:-1], ())
+    vr = function.elemwise(self.domain.transforms, verts[1:], ())
     j = numpy.arange(self.degree+1)
     self.Bbernstein = numpy.vectorize(numeric.binom)(self.degree,j)*(self.x[0]-vl)**j*(vr-self.x[0])**(self.degree-j)/(vr-vl)**self.degree
 
@@ -157,11 +156,11 @@ class structured_line(TestCase):
     elif self.btype == 'std':
       ndofs = self.nelems*self.degree+(1 if not self.periodic else 0) if self.degree else self.nelems
       c = numpy.random.random((ndofs,))
-      f = self.Bbernstein.dot(function.elemwise(dict(zip(self.transforms, types.frozenarray([[c[(i*self.degree+j)%ndofs if self.degree else i] for j in range(self.degree+1)] for i in range(self.nelems)]))), (self.degree+1,)))
+      f = self.Bbernstein.dot(function.elemwise(self.domain.transforms, types.frozenarray([[c[(i*self.degree+j)%ndofs if self.degree else i] for j in range(self.degree+1)] for i in range(self.nelems)]), (self.degree+1,)))
     elif self.btype == 'discont':
       ndofs = self.nelems*(self.degree+1)
       c = types.frozenarray(numpy.random.random((ndofs,)))
-      f = self.Bbernstein.dot(function.elemwise(dict(zip(self.transforms, c.reshape(self.nelems, self.degree+1))), (self.degree+1,)))
+      f = self.Bbernstein.dot(function.elemwise(self.domain.transforms, c.reshape(self.nelems, self.degree+1), (self.degree+1,)))
     basis = self.domain.basis(self.btype, degree=self.degree)
     pc = self.domain.project(f, onto=basis, geometry=self.x, ischeme='gauss', degree=2*self.degree)
     numpy.testing.assert_array_almost_equal(c, pc)
@@ -185,7 +184,7 @@ class unstructured_topology(TestCase):
       nverts = 25
     elif self.variant == 'tensor':
       structured, geom = mesh.rectilinear([numpy.linspace(0, 1, 5-i) for i in range(self.ndims)])
-      domain = topology.ConnectedTopology(structured.ndims, structured.elements, structured.connectivity)
+      domain = topology.ConnectedTopology(structured.references, structured.transforms, structured.opposites, structured.connectivity)
       nverts = numpy.product([5-i for i in range(self.ndims)])
     elif self.variant == 'simplex':
       numpy.random.seed(0)
@@ -210,7 +209,7 @@ class unstructured_topology(TestCase):
       ndofs_by_ref = {
         element.getsimplex(1)**self.ndims: (self.degree+1)**self.ndims,
         element.getsimplex(self.ndims): numpy.product(self.degree+numpy.arange(self.ndims)+1) // numpy.product(numpy.arange(self.ndims)+1)}
-      ndofs = sum(ndofs_by_ref[elem.reference] for elem in self.domain)
+      ndofs = sum(ndofs_by_ref[reference] for reference in self.domain.references)
     elif self.degree == 1:
       ndofs = self.nverts
     else:
@@ -232,7 +231,7 @@ class unstructured_topology(TestCase):
   def test_poly(self):
     target = (self.geom**self.degree).sum(-1)
     if self.btype == 'discont':
-      target += function.FindTransform(tuple(sorted(elem.transform for elem in self.domain)), function.TRANS)
+      target += function.TransformsIndexWithTail(self.domain.transforms, function.TRANS).index
     projection = self.domain.projection(target, onto=self.basis, geometry=self.geom, ischeme='gauss', degree=2*self.degree, droptol=0)
     error = numpy.sqrt(self.domain.integrate((target-projection)**2*function.J(self.geom), ischeme='gauss', degree=2*self.degree))
     numpy.testing.assert_almost_equal(error, 0, decimal=12)

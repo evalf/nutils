@@ -2,63 +2,68 @@ from nutils import *
 from nutils.testing import *
 import numpy, copy, sys, pickle, subprocess, base64, itertools, os
 
-grid = numpy.linspace(0., 1., 4)
+class TopologyAssertions:
 
-def verify_connectivity(structure, geom):
-  (e00,e01), (e10,e11) = structure
-
-  a0 = geom.eval(_transforms=[e00.transform], _points=numpy.array([[0,1]]))
-  a1 = geom.eval(_transforms=[e01.transform], _points=numpy.array([[0,0]]))
-  numpy.testing.assert_array_almost_equal(a0, a1)
-
-  b0 = geom.eval(_transforms=[e10.transform], _points=numpy.array([[1,1]]))
-  b1 = geom.eval(_transforms=[e11.transform], _points=numpy.array([[1,0]]))
-  numpy.testing.assert_array_almost_equal(b0, b1)
-
-  c0 = geom.eval(_transforms=[e00.transform], _points=numpy.array([[1,0]]))
-  c1 = geom.eval(_transforms=[e10.transform], _points=numpy.array([[0,0]]))
-  numpy.testing.assert_array_almost_equal(c0, c1)
-
-  d0 = geom.eval(_transforms=[e01.transform], _points=numpy.array([[1,1]]))
-  d1 = geom.eval(_transforms=[e11.transform], _points=numpy.array([[0,1]]))
-  numpy.testing.assert_array_almost_equal(d0, d1)
-
-  x00 = geom.eval(_transforms=[e00.transform], _points=numpy.array([[1,1]]))
-  x01 = geom.eval(_transforms=[e01.transform], _points=numpy.array([[1,0]]))
-  x10 = geom.eval(_transforms=[e10.transform], _points=numpy.array([[0,1]]))
-  x11 = geom.eval(_transforms=[e11.transform], _points=numpy.array([[0,0]]))
-  numpy.testing.assert_array_almost_equal(x00, x01)
-  numpy.testing.assert_array_almost_equal(x10, x11)
-  numpy.testing.assert_array_almost_equal(x00, x11)
-
-def verify_boundaries(domain, geom):
-  # Test ∫_Ω f_,i = ∫_∂Ω f n_i.
-  f = ((0.5 - geom)**2).sum(axis=0)
-  lhs = domain.integrate(f.grad(geom)*function.J(geom), ischeme='gauss2')
-  rhs = domain.boundary.integrate(f*function.normal(geom)*function.J(geom), ischeme='gauss2')
-  numpy.testing.assert_array_almost_equal(lhs, rhs)
-
-def verify_interfaces(domain, geom, periodic, interfaces=None, elemindicator=None):
-  # If `periodic` is true, the domain should be a unit hypercube or this test
-  # might fail.  The function `f` defined below is C0 continuous on a periodic
-  # hypercube and Cinf continuous inside the hypercube.
-  if interfaces is None:
+  def assertConnectivity(self, domain, geom):
+    boundary = domain.boundary
     interfaces = domain.interfaces
-  x1, x2, n1, n2 = interfaces.sample('gauss', 2).eval([geom, function.opposite(geom), geom.normal(), function.opposite(geom.normal())])
-  if not periodic:
-    numpy.testing.assert_array_almost_equal(x1, x2)
-  numpy.testing.assert_array_almost_equal(n1, -n2)
+    bmask = numpy.zeros(len(boundary), dtype=int)
+    imask = numpy.zeros(len(interfaces), dtype=int)
+    for ielem, ioppelems in enumerate(domain.connectivity):
+      for iedge, ioppelem in enumerate(ioppelems):
+        etrans, eref = domain.references[ielem].edges[iedge]
+        trans = domain.transforms[ielem] + (etrans,)
+        if ioppelem == -1:
+          index = boundary.transforms.index(trans)
+          bmask[index] += 1
+        else:
+          ioppedge = domain.connectivity[ioppelem].index(ielem)
+          oppetrans, opperef = domain.references[ioppelem].edges[ioppedge]
+          opptrans = domain.transforms[ioppelem] + (oppetrans,)
+          try:
+            index = interfaces.transforms.index(trans)
+          except ValueError:
+            index = interfaces.transforms.index(opptrans)
+            self.assertEqual(interfaces.opposites[index], trans)
+          else:
+            self.assertEqual(interfaces.opposites[index], opptrans)
+          imask[index] += 1
+          self.assertEqual(eref, opperef)
+          points = eref.getpoints('gauss', 2).coords
+          a0 = geom.eval(_transforms=[trans], _points=points)
+          a1 = geom.eval(_transforms=[opptrans], _points=points)
+          numpy.testing.assert_array_almost_equal(a0, a1)
+    self.assertTrue(numpy.equal(bmask, 1).all())
+    self.assertTrue(numpy.equal(imask, 2).all())
 
-  # Test ∫_E f_,i = ∫_∂E f n_i ∀ E in `domain`.
-  f = ((0.5 - geom)**2).sum(axis=0)
-  if elemindicator is None:
-    elemindicator = domain.basis('discont', degree=0)
-  elemindicator = elemindicator.vector(domain.ndims)
-  lhs = domain.integrate((elemindicator*f.grad(geom)[None]).sum(axis=1)*function.J(geom), ischeme='gauss2')
-  rhs = interfaces.integrate((-function.jump(elemindicator)*f*function.normal(geom)[None]).sum(axis=1)*function.J(geom), ischeme='gauss2')
-  if len(domain.boundary):
-    rhs += domain.boundary.integrate((elemindicator*f*function.normal(geom)[None]).sum(axis=1)*function.J(geom), ischeme='gauss2')
-  numpy.testing.assert_array_almost_equal(lhs, rhs)
+  def assertBoundaries(self, domain, geom):
+    # Test ∫_Ω f_,i = ∫_∂Ω f n_i.
+    f = ((0.5 - geom)**2).sum(axis=0)
+    lhs = domain.integrate(f.grad(geom)*function.J(geom), ischeme='gauss2')
+    rhs = domain.boundary.integrate(f*function.normal(geom)*function.J(geom), ischeme='gauss2')
+    numpy.testing.assert_array_almost_equal(lhs, rhs)
+
+  def assertInterfaces(self, domain, geom, periodic, interfaces=None, elemindicator=None):
+    # If `periodic` is true, the domain should be a unit hypercube or this test
+    # might fail.  The function `f` defined below is C0 continuous on a periodic
+    # hypercube and Cinf continuous inside the hypercube.
+    if interfaces is None:
+      interfaces = domain.interfaces
+    x1, x2, n1, n2 = interfaces.sample('gauss', 2).eval([geom, function.opposite(geom), geom.normal(), function.opposite(geom.normal())])
+    if not periodic:
+      numpy.testing.assert_array_almost_equal(x1, x2)
+    numpy.testing.assert_array_almost_equal(n1, -n2)
+
+    # Test ∫_E f_,i = ∫_∂E f n_i ∀ E in `domain`.
+    f = ((0.5 - geom)**2).sum(axis=0)
+    if elemindicator is None:
+      elemindicator = domain.basis('discont', degree=0)
+    elemindicator = elemindicator.vector(domain.ndims)
+    lhs = domain.integrate((elemindicator*f.grad(geom)[None]).sum(axis=1)*function.J(geom), ischeme='gauss2')
+    rhs = interfaces.integrate((-function.jump(elemindicator)*f*function.normal(geom)[None]).sum(axis=1)*function.J(geom), ischeme='gauss2')
+    if len(domain.boundary):
+      rhs += domain.boundary.integrate((elemindicator*f*function.normal(geom)[None]).sum(axis=1)*function.J(geom), ischeme='gauss2')
+    numpy.testing.assert_array_almost_equal(lhs, rhs)
 
 
 @parametrize
@@ -93,24 +98,27 @@ for ndims in range(1, 4):
     elem_project(ndims=ndims, degree=degree)
 
 
-class structure2d(TestCase):
+@parametrize
+class structure(TestCase, TopologyAssertions):
+
+  def setUp(self):
+    domain, self.geom = mesh.rectilinear([[-1,0,1]]*self.ndims)
+    self.domain = domain.refine(self.refine)
 
   def test_domain(self):
-    domain, geom = mesh.rectilinear([[-1,0,1]]*2)
-    verify_connectivity(domain.structure, geom)
+    self.assertConnectivity(self.domain, self.geom)
 
   def test_boundaries(self):
-    domain, geom = mesh.rectilinear([[-1,0,1]]*3)
-    for grp in 'left', 'right', 'top', 'bottom', 'front', 'back':
-      bnd = domain.boundary[grp]
-      # DISABLED: what does this check? -GJ 14/07/28
-      #verify_connectivity(bnd.structure, geom)
-      xn = bnd.sample('gauss', 1).eval(geom.dotnorm(geom))
+    for grp in ['left', 'right', 'top', 'bottom', 'front', 'back'][:self.ndims*2]:
+      bnd = self.domain.boundary[grp]
+      xn = bnd.sample('gauss', 1).eval(self.geom.dotnorm(self.geom))
       numpy.testing.assert_array_less(0, xn, 'inward pointing normals')
+      self.assertConnectivity(bnd, self.geom)
 
-  def test_interfaces(self):
-    domain, geom = mesh.rectilinear([[-1,0,1]]*3)
-    verify_interfaces(domain, geom, periodic=False)
+structure(ndims=2, refine=0)
+structure(ndims=3, refine=0)
+structure(ndims=2, refine=1)
+structure(ndims=3, refine=1)
 
 
 @parametrize
@@ -156,20 +164,21 @@ class common_refine(TestCase):
   def test(self):
     dom, geom = mesh.rectilinear([[0,1,2],[0,1,2]])
     doms, funs, vals = {}, {}, {}
+    indices = tuple(range(len(dom.transforms)))
 
-    doms['1'] = dom.refined_by(list(dom)[:1])
+    doms['1'] = dom.refined_by(indices[:1])
     funs['1'] = doms['1'].basis('th-std', degree=1)
     vals['1'] = 0.375,0.25,0.375,0.9375,0.5,0.25,0.5,0.25,0.0625,0.125,0.125,0.25
 
-    doms['234'] = dom.refined_by(list(dom)[1:])
+    doms['234'] = dom.refined_by(indices[1:])
     funs['234'] = doms['234'].basis('th-std', degree=1)
     vals['234'] = 0.25,0.375,0.375,0.5625,0.125,0.0625,0.25,0.125,0.25,0.125,0.125,0.25,0.25,0.25,0.125,0.0625,0.125,0.125,0.125,0.0625
 
-    doms['123'] = dom.refined_by(list(dom)[:-1])
+    doms['123'] = dom.refined_by(indices[:-1])
     funs['123'] = doms['123'].basis('th-std', degree=1)
     vals['123'] = 0.5625,0.375,0.375,0.25,0.0625,0.125,0.125,0.125,0.0625,0.125,0.25,0.25,0.25,0.125,0.125,0.25,0.125,0.25,0.0625,0.125
 
-    doms['4'] = dom.refined_by(list(dom)[-1:])
+    doms['4'] = dom.refined_by(indices[-1:])
     funs['4'] = doms['4'].basis('th-std', degree=1)
     vals['4'] = 0.25,0.5,0.25,0.5,0.9375,0.375,0.25,0.375,0.25,0.125,0.125,0.0625
 
@@ -260,8 +269,8 @@ class refined(TestCase):
 
   def test_boundary_gradient(self):
     ref = _refined_refs[self.etype]
-    elem = element.Element(ref, (transform.Identifier(ref.ndims),))
-    domain = topology.ConnectedTopology(ref.ndims, (elem,), ((-1,)*ref.nedges,)).refine(self.ref0)
+    trans = (transform.Identifier(ref.ndims),)
+    domain = topology.ConnectedTopology(elementseq.asreferences([ref]), transformseq.PlainTransforms([trans], ref.ndims), transformseq.PlainTransforms([trans], ref.ndims), ((-1,)*ref.nedges,)).refine(self.ref0)
     geom = function.rootcoords(ref.ndims)
     basis = domain.basis('std', degree=1)
     u = domain.projection(geom.sum(), onto=basis, geometry=geom, degree=2)
@@ -283,7 +292,7 @@ class general(TestCase):
     super().setUp()
     self.domain, self.geom = mesh.rectilinear([3,4,5], periodic=[] if self.periodic is False else [self.periodic])
     if not self.isstructured:
-      self.domain = topology.ConnectedTopology(self.domain.ndims, self.domain.elements, self.domain.connectivity)
+      self.domain = topology.ConnectedTopology(self.domain.references, self.domain.transforms, self.domain.opposites, self.domain.connectivity)
 
   def test_connectivity(self):
     nboundaries = 0
@@ -294,28 +303,29 @@ class general(TestCase):
           nboundaries += 1
         else:
           ioppedge = tuple(self.domain.connectivity[ioppelem]).index(ielem)
-          edge = self.domain.elements[ielem].edge(iedge)
-          oppedge = self.domain.elements[ioppelem].edge(ioppedge)
-          self.assertEqual(edge.reference, oppedge.reference)
+          edgeref = self.domain.references[ielem].edge_refs[iedge]
+          oppedgeref = self.domain.references[ioppelem].edge_refs[ioppedge]
+          self.assertEqual(edgeref, oppedgeref)
           ninterfaces += .5
     self.assertEqual(nboundaries, len(self.domain.boundary), 'incompatible number of boundaries')
     self.assertEqual(ninterfaces, len(self.domain.interfaces), 'incompatible number of interfaces')
 
   def test_boundary(self):
-    for elem in self.domain.boundary:
-      ielem, tail = transform.lookup_item(elem.transform, self.domain.edict)
+    for trans in self.domain.boundary.transforms:
+      ielem, tail = self.domain.transforms.index_with_tail(trans)
       etrans, = tail
-      iedge = self.domain.elements[ielem].reference.edge_transforms.index(etrans)
+      iedge = self.domain.references[ielem].edge_transforms.index(etrans)
       self.assertEqual(self.domain.connectivity[ielem][iedge], -1)
 
   def test_interfaces(self):
-    for elem in self.domain.interfaces:
-      ielem, tail = transform.lookup_item(elem.transform, self.domain.edict)
+    itopo = self.domain.interfaces
+    for trans, opptrans in zip(itopo.transforms, itopo.opposites):
+      ielem, tail = self.domain.transforms.index_with_tail(trans)
       etrans, = tail
-      iedge = self.domain.elements[ielem].reference.edge_transforms.index(etrans)
-      ioppelem, opptail = transform.lookup_item(elem.opposite, self.domain.edict)
+      iedge = self.domain.references[ielem].edge_transforms.index(etrans)
+      ioppelem, opptail = self.domain.transforms.index_with_tail(opptrans)
       eopptrans, = opptail
-      ioppedge = self.domain.elements[ioppelem].reference.edge_transforms.index(eopptrans)
+      ioppedge = self.domain.references[ioppelem].edge_transforms.index(eopptrans)
       self.assertEqual(self.domain.connectivity[ielem][iedge], ioppelem)
       self.assertEqual(self.domain.connectivity[ioppelem][ioppedge], ielem)
 
@@ -343,7 +353,7 @@ for etype in 'square', 'triangle', 'mixed':
 
 
 @parametrize
-class hierarchical(TestCase):
+class hierarchical(TestCase, TopologyAssertions):
 
   def setUp(self):
     super().setUp()
@@ -351,14 +361,14 @@ class hierarchical(TestCase):
     # Refine `self.domain` near `self.pos`.
     distance = ((self.geom-self.pos)**2).sum(0)**0.5
     for threshold in 0.3, 0.15:
-      self.domain = self.domain.refined_by(elem for elem, value in zip(self.domain, self.domain.elem_mean([distance], ischeme='gauss1', geometry=self.geom)[0]) if value <= threshold)
+      self.domain = self.domain.refined_by(numpy.where(self.domain.elem_mean([distance], ischeme='gauss1', geometry=self.geom)[0] <= threshold)[0])
 
   @parametrize.enable_if(lambda periodic, **params: not periodic)
   def test_boundaries(self):
-    verify_boundaries(self.domain, self.geom)
+    self.assertBoundaries(self.domain, self.geom)
 
   def test_interfaces(self):
-    verify_interfaces(self.domain, self.geom, self.periodic)
+    self.assertInterfaces(self.domain, self.geom, self.periodic)
 
 hierarchical('3d_l_rrr', pos=0, ndims=3, periodic=[])
 hierarchical('3d_l_rpr', pos=0, ndims=3, periodic=[1])
@@ -373,7 +383,7 @@ hierarchical('1d_c_p', pos=0.5, ndims=1, periodic=[0])
 
 
 @parametrize
-class multipatch_hyperrect(TestCase):
+class multipatch_hyperrect(TestCase, TopologyAssertions):
 
   def setUp(self):
     super().setUp()
@@ -397,13 +407,13 @@ class multipatch_hyperrect(TestCase):
     numpy.testing.assert_array_almost_equal(coeffs, numpy.ones(coeffs.shape))
 
   def test_boundaries(self):
-    verify_boundaries(self.domain, self.geom)
+    self.assertBoundaries(self.domain, self.geom)
 
   def test_interfaces(self):
-    verify_interfaces(self.domain, self.geom, periodic=False)
+    self.assertInterfaces(self.domain, self.geom, periodic=False)
 
   def test_interpatch_interfaces(self):
-    verify_interfaces(self.domain, self.geom, periodic=False, interfaces=self.domain.interfaces['interpatch'], elemindicator=self.domain.basis('patch'))
+    self.assertInterfaces(self.domain, self.geom, periodic=False, interfaces=self.domain.interfaces['interpatch'], elemindicator=self.domain.basis('patch'))
 
 multipatch_hyperrect('3', npatches=(3,))
 multipatch_hyperrect('2x2', npatches=(2,2))
@@ -464,14 +474,16 @@ class multipatch_L(TestCase):
 
   def test_connectivity(self):
     interfaces1 = self.domain.interfaces
-    interfaces2 = topology.ConnectedTopology(self.domain.ndims, self.domain.elements, self.domain.connectivity).interfaces
+    interfaces2 = topology.ConnectedTopology(self.domain.references, self.domain.transforms, self.domain.opposites, self.domain.connectivity).interfaces
     self.assertEqual(len(interfaces1), len(interfaces2))
-    for iface1 in interfaces1:
+    for trans1, opp1 in zip(interfaces1.transforms, interfaces1.opposites):
       try:
-        iface2 = interfaces2.elements[interfaces2.edict[iface1.transform]]
-      except KeyError:
-        iface2 = interfaces2.elements[interfaces2.edict[iface1.opposite]].flipped
-      self.assertEqual(iface1, iface2)
+        i2 = interfaces2.transforms.index(trans1)
+      except ValueError:
+        i2 = interfaces2.opposites.index(trans1)
+        trans1, opp1 = opp1, trans1
+      self.assertEqual(trans1, interfaces2.transforms[i2])
+      self.assertEqual(opp1, interfaces2.opposites[i2])
 
 class groups(TestCase):
 
@@ -510,30 +522,29 @@ class groups(TestCase):
 @parametrize
 class common(TestCase):
 
-  @property
-  def topo_transforms(self):
-    return tuple(elem.transform for elem in self.topo.elements)
-
   def test_iter(self):
-    self.assertEqual(tuple(self.topo), tuple(self.topo.elements))
+    self.assertEqual(tuple(self.topo), tuple(map(element.Element, self.topo.references, self.topo.transforms, self.topo.opposites)))
+
+  def test_elements(self):
+    self.assertEqual(self.topo.elements, tuple(map(element.Element, self.topo.references, self.topo.transforms, self.topo.opposites)))
 
   def test_contains(self):
-    for elem in self.topo.elements:
-      self.assertIn(elem, self.topo)
+    for ref, trans in zip(self.topo.references, self.topo.transforms):
+      self.assertIn(element.Element(ref, trans), self.topo)
 
   @parametrize.enable_if(lambda **params: params.get('hasboundary', True))
   def test_border_transforms(self):
-    border = set(map(self.topo_transforms.index, self.topo.border_transforms))
-    check = set(self.topo_transforms.index(belem.transform[:-1]) for belem in self.topo.boundary.elements)
+    border = set(map(self.topo.transforms.index, self.topo.border_transforms))
+    check = set(self.topo.transforms.index_with_tail(btrans)[0] for btrans in self.topo.boundary.transforms)
     self.assertEqual(border, check)
 
   def test_refined(self):
     refined = self.topo.refined
-    checkreferences = tuple(cref for elem in self.topo.elements for cref in elem.reference.child_refs)
-    checktransforms = tuple(elem.transform+(ctrans,) for elem in self.topo.elements for ctrans in elem.reference.child_transforms)
+    checkreferences = self.topo.references.children
+    checktransforms = self.topo.transforms.refined(self.topo.references)
     self.assertEqual(len(refined), len(checktransforms))
-    self.assertEqual(set(elem.transform for elem in refined.elements), set(checktransforms))
-    for ref, trans in zip((elem.reference for elem in refined.elements), (elem.transform for elem in refined.elements)):
+    self.assertEqual(set(refined.transforms), set(checktransforms))
+    for ref, trans in zip(refined.references, refined.transforms):
       self.assertEqual(ref, checkreferences[checktransforms.index(trans)])
 
   def test_refine_iter(self):
@@ -553,7 +564,7 @@ class common(TestCase):
 
 common(
   'UnstructuredTopology',
-  topo=topology.UnstructuredTopology(0, [element.Element(element.PointReference(), (transform.Identifier(0, 'test'),))]),
+  topo=topology.UnstructuredTopology(elementseq.asreferences([element.PointReference()]), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0)),
   hasboundary=False)
 common(
   'StructuredTopology:2D',
@@ -561,5 +572,10 @@ common(
 common(
   'UnionTopology',
   topo=topology.UnionTopology([mesh.rectilinear([8])[0][l:r] for l, r in [[0,2],[4,6]]]),
+  hasboundary=False,
+  hasbasis=False)
+common(
+  'DisjointUnionTopology',
+  topo=topology.DisjointUnionTopology([mesh.rectilinear([8])[0][l:r] for l, r in [[0,2],[4,6]]]),
   hasboundary=False,
   hasbasis=False)

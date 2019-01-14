@@ -42,8 +42,8 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, types, numpy, numeric, config, cache, transform, expression, warnings, _
-import sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, collections.abc, math, treelog as log
+from . import util, types, numpy, numeric, config, cache, transform, transformseq, expression, warnings, _
+import sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
 
@@ -376,31 +376,45 @@ class SelectBifurcation(TransformChain):
     assert selected[0].todims == self.todims
     return selected + trans[1:]
 
-class Promote(TransformChain):
+class TransformChainFromTuple(TransformChain):
 
-  __slots__ = 'ndims',
+  __slots__ = 'index',
+
+  def __init__(self, values:strictevaluable, index:types.strictint, todims:types.strictint=None):
+    assert 0 <= index < len(values)
+    self.index = index
+    super().__init__(args=[values], todims=todims)
+
+  def evalf(self, values):
+    return values[self.index]
+
+class TransformsIndexWithTail(Evaluable):
+
+  __slots__ = '_transforms'
 
   @types.apply_annotations
-  def __init__(self, ndims:types.strictint, trans:strictevaluable):
-    self.ndims = ndims
-    super().__init__(args=[trans], todims=trans.todims)
+  def __init__(self, transforms, trans:types.strict[TransformChain]):
+    self._transforms = transforms
+    super().__init__(args=[trans])
 
   def evalf(self, trans):
-    return transform.promote(trans, self.ndims)
+    index, tail = self._transforms.index_with_tail(trans)
+    return numpy.array(index)[None], tail
 
-class TailOfTransform(TransformChain):
+  def __len__(self):
+    return 2
 
-  __slots__ = ()
+  @property
+  def index(self):
+    return ArrayFromTuple(self, index=0, shape=(), dtype=int)
 
-  @types.apply_annotations
-  def __init__(self, trans:strictevaluable, depth:asarray, todims:types.strictint):
-    assert depth.ndim == 0 and depth.dtype == int
-    super().__init__(args=[trans, depth], todims=todims)
+  @property
+  def tail(self):
+    return TransformChainFromTuple(self, index=1, todims=self._transforms.fromdims)
 
-  def evalf(self, trans, depth):
-    depth, = depth
-    assert trans[depth-1].fromdims == self.todims
-    return trans[depth:]
+  def __iter__(self):
+    yield self.index
+    yield self.tail
 
 # ARRAYFUNC
 #
@@ -744,10 +758,6 @@ class DofMap(Array):
     self.index = index
     length = get([len(d) for d in dofs], iax=0, item=index)
     super().__init__(args=[index], shape=(length,), dtype=int)
-
-  @property
-  def dofmap(self):
-    return self.index.asdict(self.dofs)
 
   def evalf(self, index):
     index, = index
@@ -2015,24 +2025,25 @@ class Sampled(Array):
       The set of points that the data was sampled on.
   array :
       The sampled data.
-  trans : :class:`TransformChain` (optional)
-      The transformation chain that is used to locate the sample points.
+  index : :class:`Array`
+      The element index corresponding to sample points.
+  points : :class:`Array`
+      Point locations (used only to check consistency)
   '''
 
   __slots__ = 'sample', 'array'
 
   @types.apply_annotations
-  def __init__(self, sample, array:types.frozenarray, trans:types.strict[TransformChain]=TRANS):
+  def __init__(self, sample, array:types.frozenarray, index:asarray, points:asarray):
     assert len(array) == sample.npoints, 'array shape does not match sample: len(array)={}, sample.npoints={}'.format(len(array), sample.npoints)
     self.sample = sample
     self.array = array
-    super().__init__(args=[Promote(sample.ndims, trans), POINTS], shape=array.shape[1:], dtype=array.dtype)
+    super().__init__(args=[index, points], shape=array.shape[1:], dtype=array.dtype)
 
-  def evalf(self, trans, points):
-    i, head = transform.lookup_item(trans, [trans[0] for trans in self.sample.transforms])
-    assert numpy.equal(transform.apply(head, points), self.sample.points[i].coords).all(), 'illegal point set'
-    index = self.sample.index[i]
-    return self.array[index]
+  def evalf(self, index, points):
+    index, = index
+    assert numpy.equal(points, self.sample.points[index].coords).all(), 'illegal point set'
+    return self.array[self.sample.index[index]]
 
   def _derivative(self, var, seen):
     if isinstance(var, Argument):
@@ -2808,37 +2819,6 @@ class Mask(Array):
     if self.axis not in (axis, rmaxis):
       return Mask(TakeDiag(self.func, axis, rmaxis), self.mask, self.axis-(rmaxis<self.axis))
 
-class FindTransform(Array):
-
-  __slots__ = 'transforms', 'bits'
-
-  @types.apply_annotations
-  def __init__(self, transforms:tuple, trans:types.strict[TransformChain]):
-    self.transforms = transforms
-    bits = []
-    bit = 1
-    while bit <= len(transforms):
-      bits.append(bit)
-      bit <<= 1
-    self.bits = numpy.array(bits[::-1])
-    super().__init__(args=[trans], shape=(), dtype=int)
-
-  def asdict(self, values):
-    assert len(self.transforms) == len(values)
-    return dict(zip(self.transforms, values))
-
-  def evalf(self, trans):
-    n = len(self.transforms)
-    index = 0
-    for bit in self.bits:
-      i = index|bit
-      if i <= n and trans >= self.transforms[i-1]:
-        index = i
-    index -= 1
-    if index < 0 or trans[:len(self.transforms[index])] != self.transforms[index]:
-      raise IndexError('trans not found')
-    return numpy.array(index)[_]
-
 class Range(Array):
 
   __slots__ = 'length', 'offset'
@@ -3518,33 +3498,19 @@ def polyfunc(coeffs, dofs, ndofs, transforms, *, issorted=True):
   ``issorted`` is true, the ``transforms`` argument is assumed to be sorted.
   '''
 
-  transforms = tuple(transforms)
-  if issorted:
-    dofs = tuple(dofs)
-    coeffs = tuple(coeffs)
-  else:
-    dofsmap = dict(zip(transforms, dofs))
-    coeffsmap = dict(zip(transforms, coeffs))
-    transforms = tuple(sorted(transforms))
-    dofs = tuple(dofsmap[trans] for trans in transforms)
-    coeffs = tuple(coeffsmap[trans] for trans in transforms)
-  fromdims, = set(transform[-1].fromdims for transform in transforms)
-  promote = Promote(fromdims, trans=TRANS)
-  index = FindTransform(transforms, promote)
+  if not isinstance(transforms, transformseq.Transforms):
+    transforms = tuple(transforms)
+    transforms = transformseq.PlainTransforms(transforms, transforms[0][-1].fromdims)
+  index, tail = TransformsIndexWithTail(transforms, TRANS)
   dofmap = DofMap(dofs, index=index)
-  depth = Get([len(trans) for trans in transforms], axis=0, item=index)
-  points = ApplyTransforms(TailOfTransform(promote, depth, fromdims))
+  points = ApplyTransforms(tail)
   func = Polyval(Elemwise(coeffs, index, dtype=float), points)
   return Inflate(func, dofmap, ndofs, axis=0)
 
-def elemwise(fmap, shape, default=None):
-  if default is not None:
-    raise NotImplemented('default is not supported anymore')
-  transforms = tuple(sorted(fmap))
-  values = tuple(fmap[trans] for trans in transforms)
+@types.apply_annotations
+def elemwise(transforms, values:types.tuple[types.frozenarray], shape:types.tuple[types.strictint]):
   fromdims, = set(transform[-1].fromdims for transform in transforms)
-  promote = Promote(fromdims, trans=TRANS)
-  index = FindTransform(transforms, promote)
+  index, tail = TransformsIndexWithTail(transforms, TRANS)
   return Elemwise(values, index, dtype=float)
 
 def take(arg, index, axis):

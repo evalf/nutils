@@ -16,17 +16,20 @@ class check(TestCase):
       self.geom = r * function.stack([function.cos(theta), function.sin(theta)])
     else:
       raise Exception('invalid ndim {!r}'.format(self.ndim))
-    self.elem, = self.domain
-    self.iface = element.Element(self.elem.edge(0).reference, self.elem.edge(0).transform, self.elem.edge(1).transform)
-    self.ifpoints, ifweights = self.iface.reference.getischeme('uniform2')
+    self.elemtrans, = self.domain.transforms
+    self.elemref, = self.domain.references
+    self.ifaceref = self.elemref.edge_refs[0]
+    self.ifacetrans = self.elemtrans+(self.elemref.edge_transforms[0],)
+    self.ifaceopp = self.elemtrans+(self.elemref.edge_transforms[1],)
+    self.ifpoints, ifweights = self.ifaceref.getischeme('uniform2')
     self.basis = self.domain.basis('spline', degree=(1,2)[:self.ndim])
 
     numpy.random.seed(0)
     self.args = [(numpy.random.uniform(size=shape+self.basis.shape, low=self.low, high=self.high) * self.basis).sum(-1) for shape in self.shapes]
     if self.pass_geom:
         self.args += [self.geom]
-    self.points, weights = self.elem.reference.getischeme('uniform2')
-    self.evalargs = {'_transforms': (self.elem.transform,), '_points': self.points}
+    self.points, weights = self.elemref.getischeme('uniform2')
+    self.evalargs = {'_transforms': (self.elemtrans,), '_points': self.points}
     self.argsfun = function.Tuple(self.args)
     self.n_op_argsfun = self.n_op(*self.argsfun.simplified.eval(**self.evalargs))
     self.op_args = self.op(*self.args)
@@ -247,8 +250,8 @@ class check(TestCase):
 
   def test_opposite(self):
     self.assertArrayAlmostEqual(decimal=14,
-      desired=self.n_op(*function.opposite(self.argsfun).simplified.eval(_transforms=[self.iface.transform, self.iface.opposite], _points=self.ifpoints)),
-      actual=function.opposite(self.op_args).simplified.eval(_transforms=[self.iface.transform, self.iface.opposite], _points=self.ifpoints))
+      desired=self.n_op(*function.opposite(self.argsfun).simplified.eval(_transforms=[self.ifacetrans, self.ifaceopp], _points=self.ifpoints)),
+      actual=function.opposite(self.op_args).simplified.eval(_transforms=[self.ifacetrans, self.ifaceopp], _points=self.ifpoints))
 
   def find(self, target, xi0):
     ndim, = self.geom.shape
@@ -264,10 +267,10 @@ class check(TestCase):
     target = target.reshape(-1, target.shape[-1])
     xi = xi0.reshape(-1, xi0.shape[-1])
     while countdown:
-      err = target - self.geom.eval(_transforms=[self.elem.transform], _points=xi)
+      err = target - self.geom.eval(_transforms=[self.elemtrans], _points=xi)
       if numpy.less(numpy.abs(err), 1e-12).all():
         countdown -= 1
-      dxi_root = (Jinv.eval(_transforms=[self.elem.transform], _points=xi) * err[...,_,:]).sum(-1)
+      dxi_root = (Jinv.eval(_transforms=[self.elemtrans], _points=xi) * err[...,_,:]).sum(-1)
       #xi = xi + numpy.dot(dxi_root, self.elem.inv_root_transform.T)
       xi = xi + dxi_root
       iiter += 1
@@ -276,13 +279,13 @@ class check(TestCase):
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_localgradient(self):
-    exact = function.localgradient(self.op_args, ndims=self.elem.ndims).simplified.eval(**self.evalargs)
-    D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.elem.ndims)
+    exact = function.localgradient(self.op_args, ndims=self.domain.ndims).simplified.eval(**self.evalargs)
+    D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.domain.ndims)
     good = False
     eps = 1e-5
     while not numpy.all(good):
       fdpoints = self.points[_,_,:,:] + D[:,:,_,:] * eps
-      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
+      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elemtrans], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
       if len(tmp) == 1 or tmp.dtype.kind in 'bi' or self.zerograd:
         error = exact
       else:
@@ -321,7 +324,7 @@ class check(TestCase):
     eps = 1e-4
     while not numpy.all(good):
       fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,:,:] + D[:,:,_,:] * eps, self.points[_,_,:,:])
-      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
+      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elemtrans], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
       if len(tmp) == 1 or tmp.dtype.kind in 'bi' or self.zerograd:
         error = exact
       else:
@@ -345,7 +348,7 @@ class check(TestCase):
     eps = 1e-4
     while not numpy.all(good):
       fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,_,_,:,:] + DD[:,:,:,:,_,:] * eps, self.points[_,_,_,_,:,:])
-      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elem.transform], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
+      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elemtrans], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
       if len(tmp) == 1 or tmp.dtype.kind in 'bi' or self.zerograd:
         error = exact
       else:
@@ -521,8 +524,7 @@ class elemwise(TestCase):
   def setUp(self):
     super().setUp()
     self.domain, geom = mesh.rectilinear([5])
-    self.transforms = tuple(sorted(elem.transform for elem in self.domain))
-    self.index = function.FindTransform(self.transforms, function.TRANS)
+    self.index = function.TransformsIndexWithTail(self.domain.transforms, function.TRANS).index
     self.data = tuple(map(types.frozenarray, (
       numpy.arange(1, dtype=float).reshape(1,1),
       numpy.arange(2, dtype=float).reshape(1,2),
@@ -533,12 +535,12 @@ class elemwise(TestCase):
     self.func = function.Elemwise(self.data, self.index, float)
 
   def test_evalf(self):
-    for i, trans in enumerate(self.transforms):
+    for i, trans in enumerate(self.domain.transforms):
       with self.subTest(i=i):
         numpy.testing.assert_array_almost_equal(self.func.eval(_transforms=(trans,)), self.data[i][_])
 
   def test_shape(self):
-    for i, trans in enumerate(self.transforms):
+    for i, trans in enumerate(self.domain.transforms):
       with self.subTest(i=i):
         self.assertEqual(self.func.size.eval(_transforms=(trans,))[0], self.data[i].size)
 
