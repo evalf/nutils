@@ -3903,22 +3903,14 @@ def eig(arg, axes=(-2,-1), symmetric=False):
   eigval, eigvec = Eig(transposed, symmetric)
   return Tuple([transpose(diagonalize(eigval), _invtrans(trans)), transpose(eigvec, _invtrans(trans))])
 
-def polyfunc(coeffs, dofs, ndofs, transforms, *, issorted=True):
+def polyfunc(coeffs, dofs, ndofs, transforms):
   '''
   Create an inflated :class:`Polyval` with coefficients ``coeffs`` and
   corresponding dofs ``dofs``.  The arguments ``coeffs``, ``dofs`` and
-  ``transforms`` are assumed to have matching order.  In addition, if
-  ``issorted`` is true, the ``transforms`` argument is assumed to be sorted.
+  ``transforms`` are assumed to have matching order.
   '''
-
-  if not isinstance(transforms, transformseq.Transforms):
-    transforms = tuple(transforms)
-    transforms = transformseq.PlainTransforms(transforms, transforms[0][-1].fromdims)
-  index, tail = TransformsIndexWithTail(transforms, TRANS)
-  dofmap = DofMap(dofs, index=index)
-  points = ApplyTransforms(tail)
-  func = Polyval(Elemwise(coeffs, index, dtype=float), points)
-  return Inflate(func, dofmap, ndofs, axis=0)
+  warnings.deprecation('polyfunc is deprecated, use PlainBasis instead')
+  return PlainBasis(coeffs, dofs, ndofs, transforms)
 
 @types.apply_annotations
 def elemwise(transforms, values:types.tuple[types.frozenarray], shape:types.tuple[types.strictint]):

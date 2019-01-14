@@ -66,9 +66,9 @@ def main(etype: 'type of elements (square/triangle/mixed)' = 'square',
     ns.refbasis = refdom.basis(btype, degree=degree)
     indicator = refdom.integral('refbasis_n,k u_,k d:x' @ ns, degree=degree*2).eval(lhs=lhs)
     indicator -= refdom.boundary.integral('refbasis_n u_,k n_k d:x' @ ns, degree=degree*2).eval(lhs=lhs)
-    mask = indicator**2 > numpy.mean(indicator**2)
+    supp = ns.refbasis.get_support(indicator**2 > numpy.mean(indicator**2))
 
-    domain = domain.refined_by(elem.transform[:-1] for elem in domain.refined.supp(ns.refbasis, mask))
+    domain = domain.refined_by(ns.refbasis.transforms[supp])
 
   return ndofs, error, rate, lhs
 

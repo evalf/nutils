@@ -179,7 +179,7 @@ class Topology(types.Singleton):
     Create a basis.
     '''
     if self.ndims == 0:
-      return function.asarray([1])
+      return function.PlainBasis([[1]], [[0]], 1, self.transforms)
     split = name.split('-', 1)
     if len(split) == 2 and split[0] in ('h', 'th'):
       name = split[1] # default to non-hierarchical bases
@@ -516,15 +516,6 @@ class Topology(types.Singleton):
     selected = types.frozenarray(tuple(i for i, index in enumerate(sample.index) if isactive[index].any()), dtype=int)
     return self[selected]
 
-  def prune_basis(self, basis):
-    used = numpy.zeros(len(basis), dtype=bool)
-    for axes, func in function.blocks(basis):
-      dofmap = axes[0]
-      for elem in self:
-        dofs = dofmap.eval(_transforms=(elem.transform, elem.opposite))
-        used[numpy.asarray(dofs)] = True
-    return function.mask(basis, used)
-
   def locate(self, geom, coords, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, *, arguments=None):
     '''Create a sample based on physical coordinates.
 
@@ -635,6 +626,9 @@ class Topology(types.Singleton):
     return sample.Sample((tuple(transforms), tuple(opposites)), points_, index)
 
   def supp(self, basis, mask=None):
+    warnings.deprecation('Topology.supp is deprecated, use basis.get_support instead')
+    if not isinstance(basis, function.Basis):
+      raise ValueError("argument 'basis' should be of type 'Basis' but got {!r}".format(basis))
     if mask is None:
       mask = numpy.ones(len(basis), dtype=bool)
     elif isinstance(mask, list) or numeric.isarray(mask) and mask.dtype == int:
@@ -643,16 +637,11 @@ class Topology(types.Singleton):
       mask = tmp
     else:
       assert numeric.isarray(mask) and mask.dtype == bool and mask.shape == basis.shape[:1]
-    indfunc = function.Tuple([ind[0] for ind, f in function.blocks(basis)])
     subset = []
-    for ielem, trans in enumerate(self.transforms):
-      try:
-        ind, = numpy.concatenate(indfunc.eval(_transforms=(trans,)), axis=1)
-      except function.EvaluationError:
-        pass
-      else:
-        if mask[ind].any():
-          subset.append(ielem)
+    for ielem in range(len(self.transforms)):
+      dofs = basis.get_dofs(ielem)
+      if mask[dofs].any():
+        subset.append(ielem)
     if not subset:
       return EmptyTopology(self.ndims)
     subset = types.frozenarray(subset, dtype=int)
@@ -724,16 +713,11 @@ class Topology(types.Singleton):
     'discontinuous shape functions'
 
     assert numeric.isint(degree) and degree >= 0
-    coeffs = []
-    nmap = []
-    ndofs = 0
-    for elem in self:
-      elemcoeffs = elem.reference.get_poly_coeffs('bernstein', degree=degree)
-      coeffs.append(elemcoeffs)
-      nmap.append(types.frozenarray(ndofs + numpy.arange(len(elemcoeffs)), copy=False))
-      ndofs += len(elemcoeffs)
-    degrees = set(n-1 for c in coeffs for n in c.shape[1:])
-    return function.polyfunc(coeffs, nmap, ndofs, self.transforms)
+    if self.references.isuniform:
+      coeffs = [self.references[0].get_poly_coeffs('bernstein', degree=degree)]*len(self.references)
+    else:
+      coeffs = [ref.get_poly_coeffs('bernstein', degree=degree) for ref in self.references]
+    return function.DiscontBasis(coeffs, self.transforms)
 
   def _basis_c0_structured(self, name, degree):
     'C^0-continuous shape functions with lagrange stucture'
@@ -771,7 +755,7 @@ class Topology(types.Singleton):
 
     elem_slices = map(slice, offsets[:-1], offsets[1:])
     dofs = tuple(types.frozenarray(dofmap[s]) for s in elem_slices)
-    return function.polyfunc(coeffs, dofs, ndofs, self.transforms)
+    return function.PlainBasis(coeffs, dofs, ndofs, self.transforms)
 
   def basis_lagrange(self, degree):
     'lagrange shape functions'
@@ -1033,22 +1017,10 @@ class StructuredLine(Topology):
         coeffs = coeffs[:p-1] + coeffs[p-1:p] * (nelems-2*(p-1)) + coeffs[p:]
     coeffs = types.frozenarray(coeffs, copy=False)
 
-    func = function.polyfunc(coeffs, dofs, ndofs, self.transforms)
-    if not removedofs:
-      return func
-
-    mask = numpy.ones(ndofs, dtype=bool)
-    mask[list(removedofs)] = False
-    return function.mask(func, mask)
-
-  def basis_discont(self, degree):
-    'discontinuous shape functions'
-
-    ref = element.LineReference()
-    coeffs = [ref.get_poly_coeffs('bernstein', degree=degree)]*len(self)
-    ndofs = ref.get_ndofs(degree)
-    dofs = types.frozenarray(numpy.arange(ndofs*len(self), dtype=int).reshape(len(self), ndofs), copy=False)
-    return function.polyfunc(coeffs, dofs, ndofs*len(self), self.transforms)
+    func = function.PlainBasis(coeffs, dofs, ndofs, self.transforms)
+    if removedofs:
+      func = func[numpy.setdiff1d(numpy.arange(len(func)), removedofs)]
+    return func
 
   def basis_std(self, degree, periodic=None, removedofs=None):
     'spline from vertices'
@@ -1067,13 +1039,10 @@ class StructuredLine(Topology):
     dofs = types.frozenarray(dofs, copy=False)
 
     coeffs = [element.LineReference().get_poly_coeffs('bernstein', degree=degree)]*len(self)
-    func = function.polyfunc(coeffs, dofs, ndofs, self.transforms)
-    if not removedofs:
-      return func
-
-    mask = numpy.ones(ndofs, dtype=bool)
-    mask[list(removedofs)] = False
-    return function.mask(func, mask)
+    func = function.PlainBasis(coeffs, dofs, ndofs, self.transforms)
+    if removedofs:
+      func = func[numpy.setdiff1d(numpy.arange(len(func)), removedofs)]
+    return func
 
   def __str__(self):
     'string representation'
@@ -1337,7 +1306,7 @@ class StructuredTopology(Topology):
     dofmap = [types.frozenarray(vertex_structure[S].ravel(), copy=False) for S in itertools.product(*slices)]
     return coeffs, dofmap, dofshape
 
-  def basis_spline(self, degree, removedofs=None, **kwargs):
+  def basis_spline(self, degree, removedofs=None, knotvalues=None, knotmultiplicities=None, continuity=-1, periodic=None):
     'spline basis'
 
     if removedofs is None or isinstance(removedofs[0], int):
@@ -1345,8 +1314,119 @@ class StructuredTopology(Topology):
     else:
       assert len(removedofs) == self.ndims
 
-    coeffs, dofmap, dofshape = self._basis_spline(degree=degree, **kwargs)
-    func = function.polyfunc(coeffs, dofmap, util.product(dofshape), self.transforms)
+    if periodic is None:
+      periodic = self.periodic
+
+    if numeric.isint(degree):
+      degree = [degree]*self.ndims
+
+    assert len(degree) == self.ndims
+
+    if knotvalues is None or isinstance(knotvalues[0], (int,float)):
+      knotvalues = [knotvalues] * self.ndims
+    else:
+      assert len(knotvalues) == self.ndims
+
+    if knotmultiplicities is None or isinstance(knotmultiplicities[0], int):
+      knotmultiplicities = [knotmultiplicities] * self.ndims
+    else:
+      assert len(knotmultiplicities) == self.ndims
+
+    if not numpy.iterable(continuity):
+      continuity = [continuity] * self.ndims
+    else:
+      assert len(continuity) == self.ndims
+
+    start_dofs = []
+    stop_dofs = []
+    dofshape = []
+    coeffs = []
+    cache = {}
+    for idim in range(self.ndims):
+      p = degree[idim]
+      n = self.shape[idim]
+      isperiodic = idim in periodic
+
+      c = continuity[idim]
+      if c < 0:
+        c += p
+      assert -1 <= c < p
+
+      k = knotvalues[idim]
+      if k is None: #Defaults to uniform spacing
+        k = numpy.arange(n+1)
+      else:
+        k = numpy.array(k)
+        while len(k) < n+1:
+          k_ = numpy.empty(len(k)*2-1)
+          k_[::2] = k
+          k_[1::2] = (k[:-1] + k[1:]) / 2
+          k = k_
+        assert len(k) == n+1, 'knot values do not match the topology size'
+
+      m = knotmultiplicities[idim]
+      if m is None: #Defaults to open spline without internal repetitions
+        m = numpy.repeat(p-c, n+1)
+        if not isperiodic:
+          m[0] = m[-1] = p+1
+      else:
+        m = numpy.array(m)
+        assert min(m) >0 and max(m) <= p+1, 'incorrect multiplicity encountered'
+        while len(m) < n+1:
+          m_ = numpy.empty(len(m)*2-1, dtype=int)
+          m_[::2] = m
+          m_[1::2] = p-c
+          m = m_
+        assert len(m) == n+1, 'knot multiplicity do not match the topology size'
+
+      if not isperiodic:
+        nd = sum(m)-p-1
+        npre  = p+1-m[0]  #Number of knots to be appended to front
+        npost = p+1-m[-1] #Number of knots to be appended to rear
+        m[0] = m[-1] = p+1
+      else:
+        assert m[0]==m[-1], 'Periodic spline multiplicity expected'
+        assert m[0]<p+1, 'Endpoint multiplicity for periodic spline should be p or smaller'
+
+        nd = sum(m[:-1])
+        npre = npost = 0
+        k = numpy.concatenate([k[-p-1:-1]+k[0]-k[-1], k, k[1:1+p]-k[0]+k[-1]])
+        m = numpy.concatenate([m[-p-1:-1], m, m[1:1+p]])
+
+      km = numpy.array([ki for ki,mi in zip(k,m) for cnt in range(mi)],dtype=float)
+      assert len(km)==sum(m)
+      assert nd>0, 'No basis functions defined. Knot vector too short.'
+
+      offsets = numpy.cumsum(m[:-1])-p
+      if isperiodic:
+        offsets = offsets[p:-p]
+      offset0 = offsets[0]+npre
+
+      start_dofs.append(offsets-offset0+numpy.maximum(offset0-offsets, 0))
+      stop_dofs.append(offsets+(p+1-offset0)-numpy.maximum(offsets+(npost-offsets[-1]), 0))
+      dofshape.append(nd)
+
+      coeffs_i = []
+      for offset in offsets:
+        start = max(offset0-offset,0) #Zero unless prepending influence
+        stop  = p+1-max(offset-offsets[-1]+npost,0) #Zero unless appending influence
+        lknots  = km[offset:offset+2*p] - km[offset] #Copy operation required
+        if p: #Normalize for optimized caching
+          lknots /= lknots[-1]
+        key = (tuple(numeric.round(lknots*numpy.iinfo(numpy.int32).max)), p)
+        try:
+          local_coeffs = cache[key]
+        except KeyError:
+          local_coeffs = types.frozenarray(self._localsplinebasis(lknots, p).T, copy=False)
+          cache[key] = local_coeffs
+        coeffs_i.append(types.frozenarray(local_coeffs[start:stop], dtype=types.strictfloat, copy=False))
+      coeffs.append(tuple(coeffs_i))
+
+    #Cache effectivity
+    log.debug('Local knot vector cache effectivity: {}'.format(100*(1.-len(cache)/float(sum(self.shape)))))
+
+    transforms_shape = tuple(axis.j-axis.i for axis in self.axes if axis.isdim)
+    func = function.StructuredBasis(coeffs, start_dofs, stop_dofs, dofshape, self.transforms, transforms_shape)
     if not any(removedofs):
       return func
 
@@ -1356,7 +1436,7 @@ class StructuredTopology(Topology):
       if idofs:
         mask[..., [numeric.normdim(ndofs,idof) for idof in idofs]] = False
     assert mask.shape == tuple(dofshape)
-    return function.mask(func, mask.ravel())
+    return func[mask.ravel()]
 
   @staticmethod
   def _localsplinebasis (lknots, p):
@@ -1394,15 +1474,6 @@ class StructuredTopology(Topology):
 
     return types.frozenarray([Ni.coeffs for Ni in N]).T[::-1]
 
-  def basis_discont(self, degree):
-    'discontinuous shape functions'
-
-    ref = util.product([element.LineReference()]*self.ndims)
-    coeffs = [ref.get_poly_coeffs('bernstein', degree=degree)]*len(self)
-    ndofs = ref.get_ndofs(degree)
-    dofs = types.frozenarray(numpy.arange(ndofs*len(self), dtype=int).reshape(len(self), ndofs), copy=False)
-    return function.polyfunc(coeffs, dofs, ndofs*len(self), self.transforms)
-
   def basis_std(self, degree, removedofs=None, periodic=None):
     'spline from vertices'
 
@@ -1417,9 +1488,9 @@ class StructuredTopology(Topology):
     else:
       assert len(removedofs) == self.ndims
 
+    start_dofs = []
+    stop_dofs = []
     dofshape = []
-    slices = []
-    vertex_structure = numpy.array(0)
     for idim in range(self.ndims):
       periodic_i = idim in periodic
       n = self.shape[idim]
@@ -1429,14 +1500,14 @@ class StructuredTopology(Topology):
       if periodic_i and p > 0:
         numbers[-1] = numbers[0]
         nd -= 1
-      vertex_structure = vertex_structure[...,_] * nd + numbers
+      start_dofs_i = p*numpy.arange(n, dtype=int)
+      start_dofs.append(start_dofs_i)
+      stop_dofs.append(start_dofs_i+(p+1))
       dofshape.append(nd)
-      slices.append([slice(p*i,p*i+p+1) for i in range(n)])
 
     lineref = element.LineReference()
-    coeffs = [functools.reduce(numeric.poly_outer_product, (lineref.get_poly_coeffs('bernstein', degree=p) for p in degree))]*len(self)
-    dofs = [types.frozenarray(vertex_structure[S].ravel(), copy=False) for S in numpy.broadcast(*numpy.ix_(*slices))]
-    func = function.polyfunc(coeffs, dofs, numpy.product(dofshape), self.transforms)
+    coeffs = tuple((lineref.get_poly_coeffs('bernstein', degree=p),)*n for n in self.shape)
+    func = function.StructuredBasis(coeffs, start_dofs, stop_dofs, dofshape, self.transforms, self.shape)
     if not any(removedofs):
       return func
 
@@ -1446,7 +1517,7 @@ class StructuredTopology(Topology):
       if idofs:
         mask[..., [numeric.normdim(ndofs,idof) for idof in idofs]] = False
     assert mask.shape == tuple(dofshape)
-    return function.mask(func, mask.ravel())
+    return func[mask.ravel()]
 
   @property
   def refined(self):
@@ -1547,7 +1618,7 @@ class SimplexTopology(Topology):
     nverts = self.simplices.max() + 1
     ndofs = nverts + len(self)
     nmap = [types.frozenarray(numpy.hstack([idofs, nverts+ielem]), copy=False) for ielem, idofs in enumerate(self.simplices)]
-    return function.polyfunc([coeffs] * len(self), nmap, ndofs, self.transforms)
+    return function.PlainBasis([coeffs] * len(self), nmap, ndofs, self.transforms)
 
 class UnionTopology(Topology):
   'grouped topology'
@@ -1736,7 +1807,7 @@ class SubsetTopology(Topology):
     if isinstance(self.basetopo, HierarchicalTopology):
       warnings.warn('basis may be linearly dependent; a linearly indepent basis is obtained by trimming first, then creating hierarchical refinements')
     basis = self.basetopo.basis(name, *args, **kwargs)
-    return self.prune_basis(basis)
+    return function.PrunedBasis(basis, self._indices)
 
 class OrientedGroupsTopology(UnstructuredTopology):
   'unstructured topology with undirected semi-overlapping basetopology'
@@ -1986,86 +2057,101 @@ class HierarchicalTopology(Topology):
       return super().basis(name, *args, **kwargs)
 
     # 1. identify active (supported) and passive (unsupported) basis functions
-    ubasis_dofscoeffs = []
+    ubases = []
     ubasis_active = []
     ubasis_passive = []
-    for ltopo in self.levels:
-      ubasis = ltopo.basis(name, *args, **kwargs)
-      ((ubasis_dofmap,), ubasis_func), = function.blocks(ubasis)
-      ubasis_dofscoeffs.append(function.Tuple((ubasis_dofmap, ubasis_func.coeffs)))
-      on_current, on_coarser = on_ = numpy.zeros((2, len(ubasis)), dtype=bool)
-      for elem in ltopo:
-        trans = elem.transform
-        lookup = transform.lookup(trans, self.edict)
-        if lookup:
-          ubasis_idofs, = ubasis_dofmap.eval(_transforms=(trans,))
-          head, tail = lookup
-          on_[1 if tail else 0, ubasis_idofs] = True
-      ubasis_active.append((on_current & ~on_coarser))
-      ubasis_passive.append(on_coarser)
+    prev_transforms = None
+    prev_ielems = []
+    map_indices = []
+    for i, (topo, touchielems_i) in reversed(tuple(enumerate(zip(self.levels, self._indices_per_level)))):
+      with log.context('level {} ({:.0f}%)'.format(i, 100 * (i+.5) / len(self.levels))):
 
-    # 2. create consecutive numbering for all active basis functions
-    ndofs = 0
-    dof_renumber = []
-    for myactive in ubasis_active:
-      r = myactive.cumsum() + (ndofs-1)
-      dof_renumber.append(r)
-      ndofs = r[-1]+1
+        topo_index_with_tail = topo.transforms.index_with_tail
+        mapped_prev_ielems = [topo_index_with_tail(prev_transforms[j])[0] for j in prev_ielems]
+        map_indices.insert(0, dict(zip(prev_ielems, mapped_prev_ielems)))
+        nontouchielems_i = numpy.unique(numpy.array(mapped_prev_ielems, dtype=int))
+        prev_ielems = ielems_i = numpy.unique(numpy.concatenate([numpy.asarray(touchielems_i, dtype=int), nontouchielems_i], axis=0))
+        prev_transforms = topo.transforms
 
-    # 3. construct hierarchical polynomials
+        basis_i = topo.basis(name, *args, **kwargs)
+        assert isinstance(basis_i, function.Basis)
+        ubases.insert(0, basis_i)
+        # Basis functions that have at least one touchelem in their support.
+        touchdofs_i = basis_i.get_dofs(touchielems_i)
+        # Basis functions with (partial) support in this hierarchical topology.
+        partsuppdofs_i = numpy.union1d(touchdofs_i, basis_i.get_dofs(numpy.setdiff1d(ielems_i, touchielems_i, assume_unique=True)))
+        # Mask of basis functions in `partsuppdofs_i` with strict support in this hierarchical topology.
+        partsuppdofs_supported_i = numpy.array([numeric.sorted_contains(ielems_i, basis_i.get_support(dof)).all() for dof in partsuppdofs_i], dtype=bool)
+        ubasis_active.insert(0, numpy.intersect1d(touchdofs_i, partsuppdofs_i[partsuppdofs_supported_i], assume_unique=True))
+        ubasis_passive.insert(0, partsuppdofs_i[~partsuppdofs_supported_i])
+
+    *offsets, ndofs = numpy.cumsum([0, *map(len, ubasis_active)])
+
+    # 2. construct hierarchical polynomials
     hbasis_dofs = []
     hbasis_coeffs = []
     projectcache = {}
 
-    for hbasis_trans in self.transforms:
+    for ilevel, (level, indices) in enumerate(zip(self.levels, self._indices_per_level)):
+      for ilocal in indices:
 
-      head, tail = transform.lookup(hbasis_trans, self.basetopo.edict) # len(tail) == level of the hierarchical element
-      trans_dofs = []
-      trans_coeffs = []
+        hbasis_trans = level.transforms[ilocal]
+        tail = hbasis_trans[len(hbasis_trans)-ilevel:]
+        trans_dofs = []
+        trans_coeffs = []
 
-      if not truncated: # classical hierarchical basis
+        local_indices = [ilocal]
+        for m in reversed(map_indices[:ilevel]):
+          ilocal = m[ilocal]
+          local_indices.insert(0, ilocal)
 
-        for h in range(len(tail)+1): # loop from coarse to fine
-          (mydofs,), (mypoly,) = ubasis_dofscoeffs[h].eval(_transforms=(hbasis_trans,))
+        if not truncated: # classical hierarchical basis
 
-          myactive = ubasis_active[h][mydofs]
-          if myactive.any():
-            trans_dofs.append(dof_renumber[h][mydofs[myactive]])
-            trans_coeffs.append(mypoly[myactive])
+          for h, ilocal in enumerate(local_indices): # loop from coarse to fine
+            mydofs = ubases[h].get_dofs(ilocal)
 
-          if h < len(tail):
-            trans_coeffs = [tail[h].transform_poly(c) for c in trans_coeffs]
+            imyactive = numeric.sorted_index(ubasis_active[h], mydofs, missing=-1)
+            myactive = numpy.greater_equal(imyactive, 0)
+            if myactive.any():
+              trans_dofs.append(offsets[h]+imyactive[myactive])
+              mypoly = ubases[h].get_coefficients(ilocal)
+              trans_coeffs.append(mypoly[myactive])
 
-      else: # truncated hierarchical basis
+            if h < len(tail):
+              trans_coeffs = [tail[h].transform_poly(c) for c in trans_coeffs]
 
-        for h in reversed(range(len(tail)+1)): # loop from fine to coarse
-          (mydofs,), (mypoly,) = ubasis_dofscoeffs[h].eval(_transforms=(hbasis_trans,))
+        else: # truncated hierarchical basis
 
-          truncpoly = mypoly if h == len(tail) \
-            else numpy.tensordot(numpy.tensordot(tail[h].transform_poly(mypoly), project[...,mypassive], self.ndims), truncpoly[mypassive], 1)
+          for h, ilocal in reversed(tuple(enumerate(local_indices))): # loop from fine to coarse
+            mydofs = ubases[h].get_dofs(ilocal)
+            mypoly = ubases[h].get_coefficients(ilocal)
 
-          myactive = ubasis_active[h][mydofs] & numpy.greater(abs(truncpoly), truncation_tolerance).any(axis=tuple(range(1,truncpoly.ndim)))
-          if myactive.any():
-            trans_dofs.append(dof_renumber[h][mydofs[myactive]])
-            trans_coeffs.append(truncpoly[myactive])
+            truncpoly = mypoly if h == len(tail) \
+              else numpy.tensordot(numpy.tensordot(tail[h].transform_poly(mypoly), project[...,mypassive], self.ndims), truncpoly[mypassive], 1)
 
-          mypassive = ubasis_passive[h][mydofs]
-          if not mypassive.any():
-            break
+            imyactive = numeric.sorted_index(ubasis_active[h], mydofs, missing=-1)
+            myactive = numpy.greater_equal(imyactive, 0) & numpy.greater(abs(truncpoly), truncation_tolerance).any(axis=tuple(range(1,truncpoly.ndim)))
+            if myactive.any():
+              trans_dofs.append(offsets[h]+imyactive[myactive])
+              trans_coeffs.append(truncpoly[myactive])
 
-          try: # construct least-squares projection matrix
-            project = projectcache[mypoly]
-          except KeyError:
-            P = mypoly.reshape(len(mypoly), -1)
-            U, S, V = numpy.linalg.svd(P) # (U * S).dot(V[:len(S)]) == P
-            project = (V.T[:,:len(S)] / S).dot(U.T).reshape(mypoly.shape[1:]+mypoly.shape[:1])
-            projectcache[mypoly] = project
+            mypassive = numeric.sorted_contains(ubasis_passive[h], mydofs)
+            if not mypassive.any():
+              break
 
-      # add the dofs and coefficients to the hierarchical basis
-      hbasis_dofs.append(numpy.concatenate(trans_dofs))
-      hbasis_coeffs.append(numeric.poly_concatenate(trans_coeffs))
+            try: # construct least-squares projection matrix
+              project = projectcache[mypoly]
+            except KeyError:
+              P = mypoly.reshape(len(mypoly), -1)
+              U, S, V = numpy.linalg.svd(P) # (U * S).dot(V[:len(S)]) == P
+              project = (V.T[:,:len(S)] / S).dot(U.T).reshape(mypoly.shape[1:]+mypoly.shape[:1])
+              projectcache[mypoly] = project
 
-    return function.polyfunc(hbasis_coeffs, hbasis_dofs, ndofs, self.transforms)
+        # add the dofs and coefficients to the hierarchical basis
+        hbasis_dofs.append(numpy.concatenate(trans_dofs))
+        hbasis_coeffs.append(numeric.poly_concatenate(trans_coeffs))
+
+    return function.PlainBasis(hbasis_coeffs, hbasis_dofs, ndofs, self.transforms)
 
 class ProductTopology(Topology):
   'product topology'
@@ -2144,7 +2230,7 @@ class RevolutionTopology(Topology):
     return self
 
   def basis(self, name, *args, **kwargs):
-    return function.asarray([1])
+    return function.DiscontBasis([[[1]]], self.transforms)
 
 class PatchBoundary(types.Singleton):
 
@@ -2344,42 +2430,14 @@ class MultipatchTopology(Topology):
       dofmap = tuple(types.frozenarray(tuple(renumber[merge.get(dof, dof)] for dof in v.flat), dtype=int).reshape(v.shape) for v in dofmap)
       dofcount = len(remainder)
 
-    return function.polyfunc(coeffs, dofmap, dofcount, self.transforms)
-
-  def basis_discont(self, degree):
-    'discontinuous shape functions'
-
-    bases = [patch.topo.basis('discont', degree=degree) for patch in self.patches]
-    coeffs = []
-    dofs = []
-    ndofs = 0
-    for patch in self.patches:
-      basis = patch.topo.basis('discont', degree=degree)
-      (axes,func), = function.blocks(basis)
-      patch_dofmap, = axes
-      if isinstance(func, function.Polyval):
-        patch_coeffs = func.coeffs
-        assert patch_coeffs.ndim == 1+self.ndims
-      elif func.isconstant:
-        assert func.ndim == 1
-        patch_coeffs = func[(slice(None),*(_,)*self.ndims)]
-      else:
-        raise ValueError
-      patch_coeffs_dofs = function.Tuple((patch_coeffs, patch_dofmap))
-      for elem in patch.topo:
-        (elem_coeffs,), (elem_dofs,) = patch_coeffs_dofs.eval(_transforms=(elem.transform,))
-        coeffs.append(elem_coeffs)
-        dofs.append(types.frozenarray(ndofs+elem_dofs, copy=False))
-      ndofs += len(basis)
-    return function.polyfunc(coeffs, dofs, ndofs, self.transforms)
+    return function.PlainBasis(coeffs, dofmap, dofcount, self.transforms)
 
   def basis_patch(self):
     'degree zero patchwise discontinuous basis'
 
-    npatches = len(self.patches)
-    coeffs = [types.frozenarray(1, dtype=int).reshape(1, *(1,)*self.ndims)]*npatches
-    dofs = types.frozenarray(range(npatches), dtype=int)[:,_]
-    return function.polyfunc(coeffs, dofs, npatches, ((patch.topo.root,) for patch in self.patches), issorted=False)
+    return function.DiscontBasis(
+      [types.frozenarray(1, dtype=int).reshape(1, *(1,)*self.ndims)]*len(self.patches),
+      transformseq.PlainTransforms(tuple((patch.topo.root,) for patch in self.patches), self.ndims))
 
   @property
   def boundary(self):
