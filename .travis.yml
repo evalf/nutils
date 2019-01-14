@@ -19,6 +19,7 @@ matrix:
       env:
         - PYPY_URL=https://bitbucket.org/squeaky/portable-pypy/downloads/pypy3.5-6.0.0-linux_x86_64-portable.tar.bz2
         - EXTRAS=matrix_mkl,export_mpl
+        - FORCE_PYTHON_PKGS="numpy<1.16"
     - os: osx
       language: generic
       env: PYTHON_PKG_URL=https://www.python.org/ftp/python/3.7.1/python-3.7.1-macosx10.9.pkg
