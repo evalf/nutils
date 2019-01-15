@@ -167,7 +167,7 @@ def call(func, kwargs, scriptname, funcname=None):
         '<li>{}={} <span style="color: gray;">{}</span></li>'.format(param.name, kwargs.get(param.name, param.default), param.annotation)
           for param in inspect.signature(func).parameters.values())), level=1, escape=False)
       stack.enter_context(log.add(htmllog))
-    stack.enter_context(warnings.via(log.warning))
+    stack.enter_context(warnings.via(lambda msg: log.warning(msg)))
     stack.callback(signal.signal, signal.SIGINT, signal.signal(signal.SIGINT, _sigint_handler))
 
     log.info('nutils v{}'.format(_version()))
