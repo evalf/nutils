@@ -768,6 +768,26 @@ class jacobian(TestCase):
 jacobian(delayed=True)
 jacobian(delayed=False)
 
+class deprecated_elemwise(TestCase):
+
+  def test_args(self):
+    domain, geom = mesh.rectilinear([4])
+    values = [[1],[2],[3],[4]]
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      func = function.elemwise(dict(zip(domain.transforms, values)), None)
+    for i, trans in enumerate(domain.transforms):
+      with self.subTest(i=i):
+        numpy.testing.assert_array_almost_equal(func.eval(_transforms=(trans,)), numpy.array(values[i])[_])
+
+  def test_kwargs(self):
+    domain, geom = mesh.rectilinear([4])
+    values = [[1],[2],[3],[4]]
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      func = function.elemwise(fmap=dict(zip(domain.transforms, values)), shape=None)
+    for i, trans in enumerate(domain.transforms):
+      with self.subTest(i=i):
+        numpy.testing.assert_array_almost_equal(func.eval(_transforms=(trans,)), numpy.array(values[i])[_])
+
 @parametrize
 class basis(TestCase):
 
