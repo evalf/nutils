@@ -134,8 +134,8 @@ class structured_line(TestCase):
     verts = numpy.linspace(0, 1, self.nelems+1)
     self.domain, self.x = mesh.line(verts, periodic=self.periodic)
 
-    vl = function.elemwise(self.domain.transforms, verts[:-1], ())
-    vr = function.elemwise(self.domain.transforms, verts[1:], ())
+    vl = function.elemwise(self.domain.transforms, verts[:-1])
+    vr = function.elemwise(self.domain.transforms, verts[1:])
     j = numpy.arange(self.degree+1)
     self.Bbernstein = numpy.vectorize(numeric.binom)(self.degree,j)*(self.x[0]-vl)**j*(vr-self.x[0])**(self.degree-j)/(vr-vl)**self.degree
 
@@ -156,11 +156,11 @@ class structured_line(TestCase):
     elif self.btype == 'std':
       ndofs = self.nelems*self.degree+(1 if not self.periodic else 0) if self.degree else self.nelems
       c = numpy.random.random((ndofs,))
-      f = self.Bbernstein.dot(function.elemwise(self.domain.transforms, types.frozenarray([[c[(i*self.degree+j)%ndofs if self.degree else i] for j in range(self.degree+1)] for i in range(self.nelems)]), (self.degree+1,)))
+      f = self.Bbernstein.dot(function.elemwise(self.domain.transforms, types.frozenarray([[c[(i*self.degree+j)%ndofs if self.degree else i] for j in range(self.degree+1)] for i in range(self.nelems)])))
     elif self.btype == 'discont':
       ndofs = self.nelems*(self.degree+1)
       c = types.frozenarray(numpy.random.random((ndofs,)))
-      f = self.Bbernstein.dot(function.elemwise(self.domain.transforms, c.reshape(self.nelems, self.degree+1), (self.degree+1,)))
+      f = self.Bbernstein.dot(function.elemwise(self.domain.transforms, c.reshape(self.nelems, self.degree+1)))
     basis = self.domain.basis(self.btype, degree=self.degree)
     pc = self.domain.project(f, onto=basis, geometry=self.x, ischeme='gauss', degree=2*self.degree)
     numpy.testing.assert_array_almost_equal(c, pc)

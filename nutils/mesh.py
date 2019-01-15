@@ -583,7 +583,7 @@ def unitsquare(nelems, etype):
         transforms[n*2:(n+1)*2] = (root, transform.Shift([float(i),float(j)])),
         connectivity[n*2:(n+1)*2] = numpy.concatenate(connectivity[n*2:(n+1)*2])[[3,2,4,1] if i%2==j%2 else [3,2,0,5]],
         connectivity = [c-numpy.greater(c,n*2) for c in connectivity]
-      topo = topology.ConnectedTopology(elementseq.asreferences(references), transformseq.PlainTransforms(transforms, 2),transformseq.PlainTransforms(transforms, 2), tuple(types.frozenarray(c, copy=False) for c in connectivity))
+      topo = topology.ConnectedTopology(elementseq.asreferences(references, 2), transformseq.PlainTransforms(transforms, 2),transformseq.PlainTransforms(transforms, 2), tuple(types.frozenarray(c, copy=False) for c in connectivity))
 
     x, y = topo.boundary.elem_mean(function.rootcoords(2), degree=1).T
     bgroups = dict(left=x==0, right=x==nelems, bottom=y==0, top=y==nelems)

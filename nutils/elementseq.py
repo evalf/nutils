@@ -28,15 +28,20 @@ class References(types.Singleton):
 
   Parameters
   ----------
-  length : :class:`int`
-      The length of the sequence.
+  ndims : :class:`int`
+      The number of dimensions of the references in this sequence.
 
   Notes
   -----
   Subclasses must implement :meth:`__len__` and :meth:`__getitem__`.
   '''
 
-  __slots__ = ()
+  __slots__ = 'ndims'
+
+  @types.apply_annotations
+  def __init__(self, ndims:types.strictint):
+    self.ndims = ndims
+    super().__init__()
 
   @abc.abstractmethod
   def __len__(self):
@@ -60,7 +65,7 @@ class References(types.Singleton):
       if numpy.any(numpy.less(index, 0)) or numpy.any(numpy.greater_equal(index, len(self))):
         raise IndexError('index out of range')
       if len(index) == 0:
-        return PlainReferences(())
+        return PlainReferences((), self.ndims)
       if numpy.all(numpy.equal(numpy.diff(index), 1)) and len(index) == len(self):
         return self
       return SelectedReferences(self, index)
@@ -68,7 +73,7 @@ class References(types.Singleton):
       if index.shape != (len(self),):
         raise IndexError('mask has invalid shape')
       if not numpy.any(index):
-        return PlainReferences(())
+        return PlainReferences((), self.ndims)
       if numpy.all(index):
         return self
       index, = numpy.where(index)
@@ -106,14 +111,14 @@ class References(types.Singleton):
 
     if not isinstance(other, References):
       return NotImplemented
-    return chain((self, other))
+    return chain((self, other), self.ndims)
 
   def __mul__(self, other):
     '''Return ``self*other``.'''
 
     if numeric.isint(other):
       if other == 0:
-        return PlainReferences(())
+        return PlainReferences((), self.ndims)
       else:
         return RepeatedReferences(self, other)
     elif isinstance(other, References):
@@ -150,16 +155,19 @@ class PlainReferences(References):
   ----------
   references : :class:`tuple` of :class:`~nutils.element.Reference` objects
       The sequence of references.
-  fromdims : :class:`int`
-      The number of dimensions all ``transforms`` map from.
+  ndims : :class:`int`
+      The number of dimensions of the ``references``.
   '''
 
   __slots__ = '_references'
 
   @types.apply_annotations
-  def __init__(self, references:types.tuple[element.strictreference]):
+  def __init__(self, references:types.tuple[element.strictreference], ndims:types.strictint):
+    refs_ndims = set(ref.ndims for ref in references)
+    if not (refs_ndims <= {ndims}):
+      raise ValueError('expected references with ndims={}, but got {}'.format(ndims, refs_ndims))
     self._references = references
-    super().__init__()
+    super().__init__(ndims)
 
   def __len__(self):
     return len(self._references)
@@ -192,7 +200,7 @@ class UniformReferences(References):
       raise ValueError('length should be strict positive, but got {}'.format(length))
     self._reference = reference
     self._length = length
-    super().__init__()
+    super().__init__(reference.ndims)
 
   def __len__(self):
     return self._length
@@ -202,19 +210,19 @@ class UniformReferences(References):
       numeric.normdim(len(self), index)
       return self._reference
     elif isinstance(index, slice):
-      return asreferences([self._reference]) * len(range(len(self))[index])
+      return asreferences([self._reference], self.ndims) * len(range(len(self))[index])
     elif numeric.isintarray(index) and index.ndim == 1:
       if numpy.any(numpy.less(index, 0)) or numpy.any(numpy.greater_equal(index, len(self))):
         raise IndexError('index out of range')
-      return asreferences([self._reference]) * len(index)
+      return asreferences([self._reference], self.ndims) * len(index)
     elif numeric.isboolarray(index) and index.shape == (len(self),):
-      return asreferences([self._reference]) * numpy.sum(index)
+      return asreferences([self._reference], self.ndims) * numpy.sum(index)
     else:
       return super().__getitem__(index)
 
   @property
   def children(self):
-    return asreferences(self._reference.child_refs) * len(self)
+    return asreferences(self._reference.child_refs, self.ndims) * len(self)
 
   def getpoints(self, ischeme, degree):
     return (self._reference.getpoints(ischeme, degree),)*len(self)
@@ -222,7 +230,7 @@ class UniformReferences(References):
   def __mul__(self, other):
     if numeric.isint(other):
       if other == 0:
-        return PlainReferences(())
+        return PlainReferences((), self.ndims)
       else:
         return UniformReferences(self._reference, len(self)*other)
     else:
@@ -251,7 +259,7 @@ class SelectedReferences(References):
       raise IndexError('`indices` out of range')
     self._parent = parent
     self._indices = indices
-    super().__init__()
+    super().__init__(parent.ndims)
 
   def __len__(self):
     return len(self._indices)
@@ -277,8 +285,10 @@ class ChainedReferences(References):
   def __init__(self, items:types.tuple[strictreferences]):
     if len(items) == 0:
       raise ValueError('Empty chain.')
+    if len(set(item.ndims for item in items)) != 1:
+      raise ValueError('Cannot chain References with different ndims.')
     self._items = items
-    super().__init__()
+    super().__init__(self._items[0].ndims)
 
   @property
   def _offsets(self):
@@ -298,17 +308,17 @@ class ChainedReferences(References):
       if index == range(len(self)):
         return self
       elif index.start == index.stop:
-        return PlainReferences(())
+        return PlainReferences((), self.ndims)
       ostart = numpy.searchsorted(self._offsets, index.start, side='right') - 1
       ostop = numpy.searchsorted(self._offsets, index.stop, side='left')
-      return chain(item[max(0,index.start-istart):min(istop-istart,index.stop-istart)] for item, (istart, istop) in zip(self._items[ostart:ostop], util.pairwise(self._offsets[ostart:ostop+1])))
+      return chain((item[max(0,index.start-istart):min(istop-istart,index.stop-istart)] for item, (istart, istop) in zip(self._items[ostart:ostop], util.pairwise(self._offsets[ostart:ostop+1]))), self.ndims)
     elif numeric.isintarray(index) and index.ndim == 1 and len(index) and numpy.all(numpy.greater(numpy.diff(index), 0)):
       if index[0] < 0 or index[-1] >= len(self):
         raise IndexError('index out of bounds')
       split = numpy.searchsorted(index, self._offsets, side='left')
-      return chain(item[index[start:stop]-offset] for item, offset, (start, stop) in zip(self._items, self._offsets, util.pairwise(split)) if stop > start)
+      return chain((item[index[start:stop]-offset] for item, offset, (start, stop) in zip(self._items, self._offsets, util.pairwise(split)) if stop > start), self.ndims)
     elif numeric.isboolarray(index) and index.shape == (len(self),):
-      return chain(item[index[start:stop]] for item, (start, stop) in zip(self._items, util.pairwise(self._offsets)))
+      return chain((item[index[start:stop]] for item, (start, stop) in zip(self._items, util.pairwise(self._offsets))), self.ndims)
     else:
       return super().__getitem__(index)
 
@@ -317,7 +327,7 @@ class ChainedReferences(References):
 
   @property
   def children(self):
-    return chain(item.children for item in self._items)
+    return chain((item.children for item in self._items), self.ndims)
 
   def getpoints(self, ischeme, degree):
     return tuple(itertools.chain.from_iterable(item.getpoints(ischeme, degree) for item in self._items))
@@ -344,7 +354,7 @@ class RepeatedReferences(References):
       raise ValueError('count should be strict positive, but got {}'.format(count))
     self._parent = parent
     self._count = count
-    super().__init__()
+    super().__init__(parent.ndims)
 
   def __len__(self):
     return len(self._parent)*self._count
@@ -361,7 +371,7 @@ class RepeatedReferences(References):
   def __mul__(self, other):
     if numeric.isint(other):
       if other == 0:
-        return PlainReferences(())
+        return PlainReferences((), self.ndims)
       else:
         return RepeatedReferences(self._parent, self._count*other)
     else:
@@ -389,7 +399,7 @@ class ProductReferences(References):
   def __init__(self, left:strictreferences, right:strictreferences):
     self._left = left
     self._right = right
-    super().__init__()
+    super().__init__(left.ndims+right.ndims)
 
   def __len__(self):
     return len(self._left)*len(self._right)
@@ -425,7 +435,7 @@ class ChildReferences(References):
   @types.apply_annotations
   def __init__(self, parent:strictreferences):
     self._parent = parent
-    super().__init__()
+    super().__init__(parent.ndims)
 
   @property
   def _offsets(self):
@@ -446,29 +456,33 @@ class ChildReferences(References):
     for ref in self._parent:
       yield from ref.child_refs
 
-def asreferences(value):
+def asreferences(value, ndims):
   '''Convert ``value`` to a :class:`References` object.'''
 
   if isinstance(value, References):
+    if value.ndims != ndims:
+      raise ValueError('expected References object with ndims={}, but got {}'.format(ndims, value.ndims))
     return value
   elif isinstance(value, collections.abc.Iterable):
     value = tuple(value)
     if len(value) == 0:
-      return PlainReferences(())
+      return PlainReferences((), ndims)
     elif all(item == value[0] for item in value[1:]):
       return UniformReferences(value[0], len(value))
     else:
-      return PlainReferences(value)
+      return PlainReferences(value, ndims)
   else:
     raise ValueError('cannot convert {!r} to a References object'.format(value))
 
-def chain(items):
+def chain(items, ndims):
   '''Return the chained references sequence of ``items``.
 
   Parameters
   ----------
   items : iterable of :class:`References` objects
       The :class:`References` objects to chain.
+  ndims : :class:`int`
+      the number of dimensions all references.
 
   Returns
   -------
@@ -477,8 +491,11 @@ def chain(items):
   '''
 
   unchained = tuple(filter(len, itertools.chain.from_iterable(item.unchain() for item in items)))
+  items_ndims = set(item.ndims for item in unchained)
+  if not (items_ndims <= {ndims}):
+    raise ValueError('expected references with ndims={}, but got {}'.format(ndims, items_ndims))
   if len(unchained) == 0:
-    return PlainReferences(())
+    return PlainReferences((), ndims)
   elif len(unchained) == 1:
     return unchained[0]
   elif all(item.isuniform for item in unchained) and len(set(item[0] for item in unchained)) == 1:
