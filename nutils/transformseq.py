@@ -577,6 +577,8 @@ class RefinedTransforms(Transforms):
   def __init__(self, parent:stricttransforms, parent_references:elementseq.strictreferences):
     if len(parent) != len(parent_references):
       raise ValueError('`parent` and `parent_references` should have the same length')
+    if parent.fromdims != parent_references.ndims:
+      raise ValueError('`parent` and `parent_references` have different dimensions')
     self._parent = parent
     self._parent_references = parent_references
     super().__init__(self._parent.fromdims)
@@ -629,6 +631,8 @@ class UniformRefinedTransforms(Transforms):
 
   @types.apply_annotations
   def __init__(self, parent:stricttransforms, parent_reference:element.strictreference):
+    if parent.fromdims != parent_reference.ndims:
+      raise ValueError('`parent` and `parent_reference` have different dimensions')
     self._parent = parent
     self._child_transforms = parent_reference.child_transforms
     super().__init__(self._parent.fromdims)
