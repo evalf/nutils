@@ -3912,8 +3912,7 @@ def polyfunc(coeffs, dofs, ndofs, transforms):
   warnings.deprecation('polyfunc is deprecated, use PlainBasis instead')
   return PlainBasis(coeffs, dofs, ndofs, transforms)
 
-@types.apply_annotations
-def elemwise(transforms, values:types.tuple[types.frozenarray], shape:types.tuple[types.strictint]):
+def elemwise(transforms, values):
   fromdims, = set(transform[-1].fromdims for transform in transforms)
   index, tail = TransformsIndexWithTail(transforms, TRANS)
   return Elemwise(values, index, dtype=float)

@@ -204,7 +204,7 @@ class Topology(types.Singleton):
     with matrix.backend('numpy'):
       retvals = self.integrate([function.Inflate(function.asarray(func)[_], dofmap=ielem[_], length=len(self), axis=0) for func in funcs], **kwargs)
     retvals = [retval.export('dense') if len(retval.shape) == 2 else retval for retval in retvals]
-    return [function.elemwise(self.transforms, retval, shape=retval.shape[1:]) for retval in retvals] if asfunction \
+    return [function.elemwise(self.transforms, retval) for retval in retvals] if asfunction \
       else retvals
 
   @util.single_or_multiple
