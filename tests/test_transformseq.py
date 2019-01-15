@@ -200,7 +200,7 @@ common(
   'StructuredTransforms:1D',
   seq=nutils.transformseq.StructuredTransforms(x1, [nutils.transformseq.DimAxis(0,4,False)], 0),
   check=[(x1,s0),(x1,s1),(x1,s2),(x1,s3)],
-  checkmissing=[(l1,s0),(x1,s4),(r1,s0)],
+  checkmissing=[(l1,s0),(x1,s4),(r1,s0),(x1,c1)],
   checkrefs=nutils.elementseq.asreferences([line]*4, 1),
   checkfromdims=1)
 common(
@@ -262,5 +262,42 @@ common(
   checkmissing=[(x2,s00,c00)],
   checkrefs=nutils.elementseq.asreferences([square]*4, 2),
   checkfromdims=2)
+
+class exceptions(TestCase):
+
+  def test_PlainTransforms_invalid_fromdims(self):
+    with self.assertRaisesRegex(ValueError, 'expected transforms with fromdims=2, but got .*'):
+      nutils.transformseq.PlainTransforms([(x1,s0),(x1,s1)], 2)
+
+  def test_PlainTransforms_multiple_fromdims(self):
+    with self.assertRaisesRegex(ValueError, 'expected transforms with fromdims=2, but got .*'):
+      nutils.transformseq.PlainTransforms([(x1,s0),(x2,s00)], 2)
+
+  def test_RefinedTransforms_length_mismatch(self):
+    transforms = nutils.transformseq.PlainTransforms([(x1,s0),(x1,s1)], 1)
+    references = nutils.elementseq.PlainReferences([line]*3, 1)
+    with self.assertRaisesRegex(ValueError, '`parent` and `parent_references` should have the same length'):
+      nutils.transformseq.RefinedTransforms(transforms, references)
+
+  def test_RefinedTransforms_ndims_mismatch(self):
+    transforms = nutils.transformseq.PlainTransforms([(x1,s0),(x1,s1)], 1)
+    references = nutils.elementseq.PlainReferences([square]*2, 2)
+    with self.assertRaisesRegex(ValueError, '`parent` and `parent_references` have different dimensions'):
+      nutils.transformseq.RefinedTransforms(transforms, references)
+
+  def test_UniformRefinedTransforms_ndims_mismatch(self):
+    transforms = nutils.transformseq.PlainTransforms([(x1,s0),(x1,s1)], 1)
+    with self.assertRaisesRegex(ValueError, '`parent` and `parent_reference` have different dimensions'):
+      nutils.transformseq.UniformRefinedTransforms(transforms, square)
+
+  def test_ChainedTransforms_no_items(self):
+    with self.assertRaisesRegex(ValueError, 'Empty chain.'):
+      nutils.transformseq.ChainedTransforms([])
+
+  def test_ChainedTransforms_multiple_ndims(self):
+    a = nutils.transformseq.PlainTransforms([(x1,s0),(x1,s1)], 1)
+    b = nutils.transformseq.PlainTransforms([(x2,s00),(x2,s01)], 2)
+    with self.assertRaisesRegex(ValueError, 'Cannot chain Transforms with different fromdims.'):
+      nutils.transformseq.ChainedTransforms([a, b])
 
 # vim:sw=2:sts=2:et

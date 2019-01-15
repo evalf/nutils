@@ -469,8 +469,7 @@ class StructuredTransforms(Transforms):
     for axis in reversed(self._axes):
       index, rem = divmod(index, len(axis))
       indices.insert(0, axis.map(rem))
-    if index != 0:
-      raise IndexError
+    assert index == 0
     # Create transform.
     ctransforms = []
     indices = numpy.asarray(indices, dtype=int)
