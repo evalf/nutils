@@ -318,9 +318,9 @@ class Updim(Matrix):
   def flipped(self):
     return Updim(self.linear, self.offset, not self.isflipped)
 
-  def swapup(self, other):
-    if isinstance(other, Identity):
-      return Identity(self.todims), self
+  def swapdown(self, other):
+    if isinstance(other, TensorChild):
+      return ScaledUpdim(other, self), Identity(self.fromdims)
 
 class SimplexEdge(Updim):
 
