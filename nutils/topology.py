@@ -1964,15 +1964,20 @@ class HierarchicalTopology(Topology):
     bindices_per_level = []
     for indices, level, blevel in zip(self._indices_per_level, self.basetopo.refine_iter, basebtopo.refine_iter):
       bindex = blevel.transforms.index
-      bindices = set()
-      for trans, ref in zip(map(level.transforms.__getitem__, indices), map(level.references.__getitem__, indices)):
-        for etrans, eref in ref.edges:
+      bindices = []
+      for index in indices:
+        for etrans, eref in level.references[index].edges:
           if eref:
+            trans = level.transforms[index]+(etrans,)
             try:
-              bindices.add(bindex(trans+(etrans,)))
+              bindices.append(bindex(trans))
             except ValueError:
               pass
-      bindices_per_level.append(numpy.array(sorted(bindices), dtype=int))
+      bindices = numpy.array(bindices, dtype=int)
+      if len(bindices) > 1:
+        bindices.sort()
+        assert not numpy.equal(bindices[1:], bindices[:-1]).any()
+      bindices_per_level.append(bindices)
     return HierarchicalTopology(basebtopo, bindices_per_level)
 
   @property

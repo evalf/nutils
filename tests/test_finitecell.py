@@ -50,34 +50,38 @@ class trimmedboundary(TestCase):
   def setUp(self):
     super().setUp()
     if self.boundary:
-      domain, self.geom = mesh.rectilinear([[0,1,2],[0,1,2],[0,1,2]])
-      self.domain = domain.boundary['front']
+      domain0, self.geom = mesh.rectilinear([2,2,2])
+      self.domain0 = domain0.boundary['front']
     else:
-      self.domain, self.geom = mesh.rectilinear([[0,1,2],[0,1,2]])
-    self.left = self.domain[:1].withboundary(leftbnd=...)
-    self.leftbasis = self.left.basis('std', degree=1)
-    self.right = self.domain[1:].withboundary(rightbnd=...)
-    self.rightbasis = self.right.basis('std', degree=1)
-    self.trimmed = self.domain - self.right
+      self.domain0, self.geom = mesh.rectilinear([2,2])
+    if self.gridline:
+      self.domain1 = self.domain0 - self.domain0[1:].withboundary(trimmed='left')
+    else:
+      self.domain1 = self.domain0.trim(1.25 - self.geom[0], maxrefine=1)
+    self.domain2 = self.domain1.refined_by(filter(self.domain1.transforms.contains, self.domain0[:,1:].transforms))
 
   def test_boundary_length(self):
-    self.assertEqual(self.trimmed.boundary.integrate(function.J(self.geom), ischeme='gauss1'), 6)
+    self.assertEqual(self.domain2.boundary.integrate(function.J(self.geom), ischeme='gauss1'), 6 if self.gridline else 6.5)
 
   def test_trimmed_boundary_length(self):
-    self.assertEqual(self.trimmed.boundary['rightbnd'].integrate(function.J(self.geom), ischeme='gauss1'), 2)
+    self.assertEqual(self.domain2.boundary['trimmed'].integrate(function.J(self.geom), ischeme='gauss1'), 2)
 
+  @parametrize.enable_if(lambda gridline, **params: gridline)
   def test_trimmed_boundary(self):
-    left = self.trimmed.boundary['rightbnd']
-    gauss1 = left.sample('gauss', 1)
-    self.assertTrue(numpy.any(gauss1.eval(self.leftbasis)))
+    trimmed = self.domain2.boundary['trimmed']
+    gauss1 = trimmed.sample('gauss', 1)
+    leftbasis = self.domain0[:1].basis('std', degree=1)
+    self.assertTrue(numpy.any(gauss1.eval(leftbasis)))
     with self.assertRaises(function.EvaluationError):
-      gauss1.eval(function.opposite(self.leftbasis))
-    self.assertTrue(numpy.any(gauss1.eval(function.opposite(self.rightbasis))))
+      gauss1.eval(function.opposite(leftbasis))
+    rightbasis = self.domain0[1:].basis('std', degree=1)
+    self.assertTrue(numpy.any(gauss1.eval(function.opposite(rightbasis))))
     with self.assertRaises(function.EvaluationError):
-      gauss1.eval(self.rightbasis)
+      gauss1.eval(rightbasis)
 
-trimmedboundary('2darea', boundary=False)
-trimmedboundary('3dsurface', boundary=True)
+for boundary in True, False:
+  for gridline in True, False:
+    trimmedboundary(boundary=boundary, gridline=gridline)
 
 
 class specialcases_2d(TestCase):
