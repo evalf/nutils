@@ -1580,7 +1580,7 @@ class SimplexTopology(Topology):
     if not isinstance(transforms, transformseq.Transforms):
       transforms = transformseq.PlainTransforms(transforms, nverts-1)
     else:
-      assert len(transfroms) == ntransforms
+      assert len(transforms) == ntransforms
       assert transforms.fromdims == nverts-1
     return (self, simplices, transforms), {}
 
