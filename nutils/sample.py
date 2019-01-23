@@ -263,7 +263,7 @@ class Sample(types.Singleton):
     row defines a simplex by mapping vertices into the list of points.
     '''
 
-    return types.frozenarray(numpy.concatenate([index.take(points.tri) for points, index in zip(self.points, self.index)]), copy=False)
+    return numpy.concatenate([index.take(points.tri) for points, index in zip(self.points, self.index)])
 
   @property
   def hull(self):
@@ -275,7 +275,7 @@ class Sample(types.Singleton):
     triangulations originating from separate elements are disconnected.
     '''
 
-    return types.frozenarray(numpy.concatenate([index.take(points.hull) for points, index in zip(self.points, self.index)]), copy=False)
+    return numpy.concatenate([index.take(points.hull) for points, index in zip(self.points, self.index)])
 
   def subset(self, mask):
     '''Reduce the number of points.
