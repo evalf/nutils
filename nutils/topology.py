@@ -2235,7 +2235,7 @@ class RevolutionTopology(Topology):
     return self
 
   def basis(self, name, *args, **kwargs):
-    return function.DiscontBasis([[[1]]], self.transforms)
+    return function.asarray([1.])
 
 class PatchBoundary(types.Singleton):
 
