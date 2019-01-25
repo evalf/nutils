@@ -789,26 +789,14 @@ class WithGroupsTopology(Topology):
     super().__init__(basetopo.references, basetopo.transforms, basetopo.opposites)
     assert all(topo is Ellipsis or isinstance(topo, str) or isinstance(topo, Topology) and topo.ndims == basetopo.ndims and set(self.basetopo.transforms).issuperset(topo.transforms) for topo in self.vgroups.values())
 
-  def withgroups(self, vgroups={}, bgroups={}, igroups={}, pgroups={}):
-    args = []
-    for groups, newgroups in (self.vgroups,vgroups), (self.bgroups,bgroups), (self.igroups,igroups), (self.pgroups,pgroups):
-      groups = groups.copy()
-      groups.update(newgroups)
-      args.append(groups)
-    return WithGroupsTopology(self.basetopo, *args)
-
   def __len__(self):
     return len(self.basetopo)
 
   def getitem(self, item):
-    if not isinstance(item, str):
-      return self.basetopo.getitem(item)
-    try:
+    if isinstance(item, str) and item in self.vgroups:
       itemtopo = self.vgroups[item]
-    except KeyError:
-      return self.basetopo.getitem(item)
-    else:
-      return itemtopo if isinstance(itemtopo, Topology) else self[itemtopo]
+      return itemtopo if isinstance(itemtopo, Topology) else self.basetopo[itemtopo]
+    return self.basetopo.getitem(item)
 
   @property
   def border_transforms(self):
@@ -845,7 +833,16 @@ class WithGroupsTopology(Topology):
 
   @property
   def points(self):
-    return UnstructuredTopology(itertools.chain.from_iterable(ptopo.references for ptopo in self.pgroups.values()), itertools.chain.from_iterable(ptopo.transforms for ptopo in self.pgroups.values()), itertools.chain.from_iterable(ptopo.opposites for ptopo in self.pgroups.values()), ndims=0).withgroups(self.pgroups)
+    ptopos = []
+    pnames = []
+    topo = self
+    while isinstance(topo, WithGroupsTopology):
+      for pname, ptopo in topo.pgroups.items():
+        if pname not in pnames:
+          pnames.append(pname)
+          ptopos.append(ptopo)
+      topo = topo.basetopo
+    return UnionTopology(ptopos, pnames)
 
   def basis(self, name, *args, **kwargs):
     return self.basetopo.basis(name, *args, **kwargs)
