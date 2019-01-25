@@ -194,6 +194,8 @@ class SimplexBezierPoints(CoordsPoints):
 
   @property
   def tri(self):
+    if self.n == 2:
+      return types.frozenarray(numpy.arange(self.ndims+1)[None], copy=False)
     if self.ndims == 1:
       return types.frozenarray(numeric.overlapping(numpy.arange(self.n)), copy=False)
     if self.ndims == 2:
