@@ -1487,7 +1487,7 @@ class StructuredTopology(Topology):
       dofshape.append(nd)
 
     lineref = element.LineReference()
-    coeffs = tuple((lineref.get_poly_coeffs('bernstein', degree=p),)*n for n in self.shape)
+    coeffs = tuple((lineref.get_poly_coeffs('bernstein', degree=p),)*n for n, p in zip(self.shape, degree))
     func = function.StructuredBasis(coeffs, start_dofs, stop_dofs, dofshape, self.transforms, self.shape)
     if not any(removedofs):
       return func
