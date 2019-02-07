@@ -1053,20 +1053,16 @@ class StructuredTopology(Topology):
   __cache__ = 'connectivity', 'boundary', 'interfaces'
 
   @types.apply_annotations
-  def __init__(self, root:transform.stricttransformitem, axes:types.tuple[types.strict[transformseq.Axis]], nrefine:types.strictint=0, bnames:types.tuple[types.strictstr]=None):
+  def __init__(self, root:transform.stricttransformitem, axes:types.tuple[types.strict[transformseq.Axis]], nrefine:types.strictint=0, bnames:types.tuple[types.tuple[types.strictstr]]=(('left', 'right'), ('bottom', 'top'), ('front', 'back'))):
     'constructor'
+
+    assert all(len(bname) == 2 for bname in bnames)
 
     self.root = root
     self.axes = axes
     self.nrefine = nrefine
     self.shape = tuple(axis.j - axis.i for axis in self.axes if axis.isdim)
-    if bnames is None:
-      assert len(self.axes) <= 3
-      bnames = ('left', 'right'), ('bottom', 'top'), ('front', 'back')
-      bnames = itertools.chain.from_iterable(n for axis, n in zip(self.axes, bnames) if axis.isdim and not axis.isperiodic)
-    self._bnames = tuple(bnames)
-    assert len(self._bnames) == sum(2 for axis in self.axes if axis.isdim and not axis.isperiodic)
-    assert all(isinstance(bname,str) for bname in self._bnames)
+    self._bnames = bnames
 
     references = elementseq.asreferences([util.product(element.getsimplex(1 if axis.isdim else 0) for axis in self.axes)], len(self.shape))*len(self)
     transforms = transformseq.StructuredTransforms(self.root, self.axes, self.nrefine)
@@ -1096,10 +1092,10 @@ class StructuredTopology(Topology):
     for axis in self.axes:
       if axis.isdim and idim < len(item):
         s = item[idim]
-        start, stop, stride = s.indices(axis.j - axis.i)
-        assert stride == 1
-        assert stop > start
-        if start > 0 or stop < axis.j - axis.i:
+        if s != slice(None):
+          start, stop, stride = s.indices(axis.j - axis.i)
+          assert stride == 1
+          assert stop > start
           axis = transformseq.DimAxis(axis.i+start, axis.i+stop, isperiodic=False)
         idim += 1
       axes.append(axis)
@@ -1131,25 +1127,13 @@ class StructuredTopology(Topology):
     'boundary'
 
     nbounds = len(self.axes) - self.ndims
-    btopos = []
-    bnames = []
-    jdim = 0
-    for idim, axis in enumerate(self.axes):
-      if not axis.isdim or axis.isperiodic:
-        continue
-      btopos.extend([
-        StructuredTopology(
-          root=self.root,
-          axes=self.axes[:idim] + (transformseq.BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:],
-          nrefine=self.nrefine,
-          bnames=self._bnames[:jdim*2]+self._bnames[jdim*2+2:])
-        for side, n in enumerate((axis.i,axis.j)) ])
-      bnames.extend((self._bnames[jdim*2:]+(None,None))[:2])
-      jdim += 1
-    if btopos:
-      return DisjointUnionTopology(btopos, bnames)
-    else:
+    btopos = [StructuredTopology(root=self.root, axes=self.axes[:idim] + (transformseq.BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:], nrefine=self.nrefine, bnames=self._bnames)
+      for idim, axis in enumerate(self.axes) if axis.isdim and not axis.isperiodic
+        for side, n in enumerate((axis.i,axis.j))]
+    if not btopos:
       return EmptyTopology(self.ndims-1)
+    bnames = [bname for bnames, axis in zip(self._bnames, self.axes) if axis.isdim and not axis.isperiodic for bname in bnames]
+    return DisjointUnionTopology(btopos, bnames)
 
   @property
   def interfaces(self):
@@ -2448,12 +2432,12 @@ class MultipatchTopology(Topology):
     subtopos = []
     subnames = []
     for i, patch in enumerate(self.patches):
-      names = dict(zip(itertools.product(range(self.ndims), [0,-1]), patch.topo._bnames))
       for boundary in patch.boundaries:
         if boundary.id in self._patchinterfaces:
           continue
-        subtopos.append(patch.topo.boundary[names[boundary.dim,boundary.side]])
-        subnames.append('patch{}-{}'.format(i, names[boundary.dim,boundary.side]))
+        name = patch.topo._bnames[boundary.dim][boundary.side]
+        subtopos.append(patch.topo.boundary[name])
+        subnames.append('patch{}-{}'.format(i, name))
     if len(subtopos) == 0:
       return EmptyTopology(self.ndims-1)
     else:
@@ -2479,8 +2463,7 @@ class MultipatchTopology(Topology):
       pairs = []
       references = None
       for topo, boundary in patchdata:
-        names = dict(zip(itertools.product(range(self.ndims), [0,-1]), topo._bnames))
-        btopo = topo.boundary[names[boundary.dim, boundary.side]]
+        btopo = topo.boundary[topo._bnames[boundary.dim][boundary.side]]
         if references is None:
           references = numeric.asobjvector(btopo.references).reshape(btopo.shape)
           references = references[tuple(_ if i == boundary.dim else slice(None) for i in range(self.ndims))]
