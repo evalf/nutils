@@ -296,7 +296,7 @@ class newton(RecursionWithSolve, length=1):
       lhs, resnorm = newlhs, newresnorm
 
 
-class minimize(RecursionWithSolve, length=1, version=1):
+class minimize(RecursionWithSolve, length=1, version=2):
   '''iteratively minimize nonlinear functional by gradient descent
 
   Generates targets such that residual approaches 0 using Newton procedure with
@@ -423,7 +423,7 @@ class minimize(RecursionWithSolve, length=1, version=1):
         # positivity, an iterative procedure is used to shift the spectrum in
         # steps, using the available upper bound for mineig(invjac) as a
         # reciprocal lower bound for at least one negative eigenvalue of jac.
-        shift += res.dot(res) / res.dot(dlhs)
+        shift += res[~self.constrain].dot(res[~self.constrain]) / res.dot(dlhs)
         log.warning('negative eigenvalue detected; shifting spectrum by {:.2e}'.format(shift))
         dlhs = -(jac + shift * matrix.eye(len(dlhs))).solve(res, constrain=self.constrain|nosupp, **self.solveargs)
       if not shift:

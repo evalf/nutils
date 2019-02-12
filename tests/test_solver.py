@@ -144,7 +144,7 @@ class finitestrain(TestCase):
         nshift += 1
       if info.resnorm < self.tol:
         break
-    self.assertEqual(nshift, 60)
+    self.assertEqual(nshift, 3)
 
 
 @parametrize
