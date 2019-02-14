@@ -120,8 +120,8 @@ def vtk(*args, **kwargs):
   '''
 
   vtkcelltype = {
-    2: numpy.array( 5, dtype='>u4'), # VTK_TRIANGLE
-    3: numpy.array(10, dtype='>u4')} # VTK_TETRA
+    3: numpy.array( 5, dtype='>u4'), # VTK_TRIANGLE
+    4: numpy.array(10, dtype='>u4')} # VTK_TETRA
   vtkndim = {
     1: 'SCALARS {} {} 1\nLOOKUP_TABLE default\n',
     2: 'VECTORS {} {}\n',
@@ -145,9 +145,8 @@ def vtk(*args, **kwargs):
   assert cells.ndim == points.ndim == 2
   npoints, ndims = points.shape
   ncells, nverts = cells.shape
-  assert nverts == ndims + 1
 
-  if ndims not in vtkcelltype:
+  if nverts not in vtkcelltype:
     raise Exception('invalid point dimension: {}'.format(ndims))
 
   points = vtkarray(points)
@@ -157,7 +156,7 @@ def vtk(*args, **kwargs):
     if n != npoints and n != ncells:
       raise Exception('data length matches neither points nor cells: {}'.format(', '.join(dname for dname, array in items)))
 
-  t_cells = numpy.empty((ncells, ndims+2), dtype='>u4')
+  t_cells = numpy.empty((ncells, nverts+1), dtype='>u4')
   t_cells[:,0] = nverts
   t_cells[:,1:] = cells
 
@@ -169,7 +168,7 @@ def vtk(*args, **kwargs):
     vtk.write('CELLS {} {}\n'.format(ncells, t_cells.size).encode('ascii'))
     t_cells.tofile(vtk)
     vtk.write('CELL_TYPES {}\n'.format(ncells).encode('ascii'))
-    vtkcelltype[ndims].repeat(ncells).tofile(vtk)
+    vtkcelltype[nverts].repeat(ncells).tofile(vtk)
     for n, items in gathered:
       vtk.write('{}_DATA {}\n'.format('POINT' if n == npoints else 'CELL', n).encode('ascii'))
       for dname, array in items:
