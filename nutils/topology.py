@@ -1455,50 +1455,8 @@ class StructuredTopology(Topology):
 
     return types.frozenarray([Ni.coeffs for Ni in N]).T[::-1]
 
-  def basis_std(self, degree, removedofs=None, periodic=None):
-    'spline from vertices'
-
-    if periodic is None:
-      periodic = self.periodic
-
-    if numeric.isint(degree):
-      degree = (degree,) * self.ndims
-
-    if removedofs is None or isinstance(removedofs[0], int):
-      removedofs = [None] * self.ndims
-    else:
-      assert len(removedofs) == self.ndims
-
-    start_dofs = []
-    stop_dofs = []
-    dofshape = []
-    for idim in range(self.ndims):
-      periodic_i = idim in periodic
-      n = self.shape[idim]
-      p = degree[idim]
-      nd = n * p + 1
-      numbers = numpy.arange(nd)
-      if periodic_i and p > 0:
-        numbers[-1] = numbers[0]
-        nd -= 1
-      start_dofs_i = p*numpy.arange(n, dtype=int)
-      start_dofs.append(start_dofs_i)
-      stop_dofs.append(start_dofs_i+(p+1))
-      dofshape.append(nd)
-
-    lineref = element.LineReference()
-    coeffs = tuple((lineref.get_poly_coeffs('bernstein', degree=p),)*n for n in self.shape)
-    func = function.StructuredBasis(coeffs, start_dofs, stop_dofs, dofshape, self.transforms, self.shape)
-    if not any(removedofs):
-      return func
-
-    mask = numpy.ones((), dtype=bool)
-    for idofs, ndofs in zip(removedofs, dofshape):
-      mask = mask[...,_].repeat(ndofs, axis=-1)
-      if idofs:
-        mask[..., [numeric.normdim(ndofs,idof) for idof in idofs]] = False
-    assert mask.shape == tuple(dofshape)
-    return func[mask.ravel()]
+  def basis_std(self, *args, **kwargs):
+    return __class__.basis_spline(self, *args, continuity=0, **kwargs)
 
   @property
   def refined(self):
