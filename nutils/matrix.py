@@ -392,8 +392,6 @@ if libmkl is not None:
   c_long = types.c_array[numpy.int64]
   c_double = types.c_array[numpy.float64]
 
-  libtbb = util.loadlib(linux='libtbb.so.2', darwin='libtbb.dylib', win32='tbb.dll')
-
   class MKL(Backend):
     '''matrix backend based on Intel's Math Kernel Library'''
 
@@ -401,17 +399,7 @@ if libmkl is not None:
       super().__enter__()
       usethreads = config.nprocs > 1
       libmkl.mkl_set_threading_layer(c_long(4 if usethreads else 1)) # 1:SEQUENTIAL, 4:TBB
-      if usethreads and libtbb:
-        self.tbbhandle = ctypes.c_void_p()
-        libtbb._ZN3tbb19task_scheduler_init10initializeEim(ctypes.byref(self.tbbhandle), ctypes.c_int(config.nprocs), ctypes.c_int(2))
-      else:
-        self.tbbhandle = None
       return self
-
-    def __exit__(self, etype, value, tb):
-      if self.tbbhandle:
-        libtbb._ZN3tbb19task_scheduler_init9terminateEv(ctypes.byref(self.tbbhandle))
-      super().__exit__(etype, value, tb)
 
     @staticmethod
     def assemble(data, index, shape):
