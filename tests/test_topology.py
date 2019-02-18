@@ -341,15 +341,20 @@ class locate(TestCase):
   def test(self):
     with config(nprocs=self.nprocs):
       domain, geom = mesh.unitsquare(4, etype=self.etype)
-      geom += .1 * function.sin(geom * numpy.pi) # non-polynomial geometry
+      if self.linear:
+        geom *= .2, .7
+        geom += 0, .3
+      else:
+        geom += .1 * function.sin(geom * numpy.pi) # non-polynomial geometry
       target = numpy.array([(.2,.3), (.1,.9), (0,1)])
       sample = domain.locate(geom, target, eps=1e-15)
       located = sample.eval(geom)
       numpy.testing.assert_array_almost_equal(located, target)
 
 for etype in 'square', 'triangle', 'mixed':
-  for nprocs in 1, 2:
-    locate(etype=etype, nprocs=nprocs)
+  for linear in True, False:
+    for nprocs in 1, 2:
+      locate(etype=etype, linear=linear, nprocs=nprocs)
 
 
 @parametrize
