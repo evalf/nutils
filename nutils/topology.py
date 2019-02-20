@@ -516,7 +516,8 @@ class Topology(types.Singleton):
     selected = types.frozenarray(tuple(i for i, index in enumerate(sample.index) if isactive[index].any()), dtype=int)
     return self[selected]
 
-  def locate(self, geom, coords, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, *, arguments=None):
+  @log.withcontext
+  def locate(self, geom, coords, *, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, arguments=None):
     '''Create a sample based on physical coordinates.
 
     In a finite element application, functions are commonly evaluated in points
@@ -530,10 +531,10 @@ class Topology(types.Singleton):
     Example:
 
     >>> from . import mesh
-    >>> domain, geom = mesh.rectilinear([2,1])
-    >>> sample = domain.locate(geom, [[1.5, .5]])
+    >>> domain, geom = mesh.unitsquare(nelems=3, etype='mixed')
+    >>> sample = domain.locate(geom, [[.9, .4]])
     >>> sample.eval(geom).tolist()
-    [[1.5, 0.5]]
+    [[0.9, 0.4]]
 
     Locate has a long list of arguments that can be used to steer the nonlinear
     search process, but the default values should be fine for reasonably
@@ -613,6 +614,9 @@ class Topology(types.Singleton):
               break
           else:
             raise LocateError('failed to locate point: {}'.format(coord))
+    return self._sample(ielems, xis)
+
+  def _sample(self, ielems, coords):
     transforms = []
     opposites = []
     points_ = []
@@ -621,7 +625,7 @@ class Topology(types.Singleton):
       w, = numpy.equal(ielems, ielem).nonzero()
       transforms.append(self.transforms[ielem])
       opposites.append(self.opposites[ielem])
-      points_.append(points.CoordsPoints(xis[w]))
+      points_.append(points.CoordsPoints(coords[w]))
       index.append(w)
     return sample.Sample((tuple(transforms), tuple(opposites)), points_, index)
 
@@ -1465,6 +1469,26 @@ class StructuredTopology(Topology):
     axes = [transformseq.DimAxis(i=axis.i*2,j=axis.j*2,isperiodic=axis.isperiodic) if axis.isdim
         else transformseq.BndAxis(i=axis.i*2,j=axis.j*2,ibound=axis.ibound,side=axis.side) for axis in self.axes]
     return StructuredTopology(self.root, axes, self.nrefine+1, bnames=self._bnames)
+
+  def locate(self, geom, coords, *, eps=0, **kwargs):
+    index = function.rootcoords(len(self.axes))[[axis.isdim for axis in self.axes]]
+    assert index.ndim == geom.ndim
+    basis = function.concatenate([function.eye(self.ndims), function.diagonalize(index)], axis=0)
+    A, b, f2 = self.integrate([(basis[:,_,:] * basis[_,:,:]).sum(-1), (basis * geom).sum(-1), (geom**2).sum(-1)], degree=3)
+    x = A.solve(b)
+    e = (f2 - b.dot(x)) / numpy.product(self.shape)
+    if e > 1e-10:
+      return super().locate(geom, coords, eps=eps, **kwargs)
+    geom0 = x[:self.ndims]
+    scale = x[self.ndims:]
+    log.info('locate detected linear geometry: x = {} + {} xi ~{:+.1e}'.format(geom0, scale, e))
+    mincoords, maxcoords = numpy.sort([geom0, geom0 + scale * self.shape], axis=0)
+    outofbounds = numpy.less(coords, mincoords - eps) | numpy.greater(coords, maxcoords + eps)
+    if outofbounds.any():
+      raise LocateError('failed to locate {}/{} points'.format(outofbounds.sum(), len(coords)))
+    xi = (coords - geom0) / scale
+    ielem = numpy.minimum(numpy.maximum(xi.astype(int), 0), numpy.array(self.shape)-1)
+    return self._sample(numpy.ravel_multi_index(ielem.T, self.shape), xi - ielem)
 
   def __str__(self):
     'string representation'
