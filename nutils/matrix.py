@@ -542,6 +542,15 @@ if libmkl is not None:
     def __neg__(self):
       return MKLMatrix(-self.data, self.rowptr, self.colidx, self.shape[1])
 
+    def matvec(self, vec):
+      if vec.shape != self.shape[1:]:
+        raise Exception('vector is of wrong length or dimension')
+      m = ctypes.c_int32(self.shape[0])
+      x = numpy.ascontiguousarray(vec, dtype=numpy.float64)
+      y = numpy.empty(self.shape[:1], dtype=numpy.float64)
+      libmkl.mkl_dcsrgemv("N", ctypes.byref(m), self.data.ctypes, self.rowptr.ctypes, self.colidx.ctypes, x.ctypes, y.ctypes)
+      return y
+
     def export(self, form):
       if form == 'dense':
         dense = numpy.zeros(self.shape)
