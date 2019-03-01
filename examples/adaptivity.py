@@ -70,7 +70,7 @@ def main(etype: 'type of elements (square/triangle/mixed)' = 'square',
 
     domain = domain.refined_by(ns.refbasis.transforms[supp])
 
-  return ndofs, error, rate, lhs
+  return ndofs, error, lhs
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line. For
@@ -82,42 +82,52 @@ if __name__ == '__main__':
   nutils.cli.run(main)
 
 # Once a simulation is developed and tested, it is good practice to save a few
-# strategicly chosen return values for routine regression testing. Here we use
-# the standard :mod:`unittest` framework, with
-# :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
-# desired results as compressed base64 data.
+# strategic return values for regression testing. The :mod:`nutils.testing`
+# module, which builds on the standard :mod:`unittest` framework, facilitates
+# this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
+# embedding of desired results as compressed base64 data.
 
 class test(nutils.testing.TestCase):
 
   @nutils.testing.requires('matplotlib')
   def test_square_quadratic(self):
-    ndofs, error, rate, lhs = main(nrefine=2, etype='square', degree=2)
-    self.assertEqual(ndofs, 149)
-    numpy.testing.assert_almost_equal(error, [0.00065, 0.03461], decimal=5)
-    numpy.testing.assert_almost_equal(rate, [-1.066, -0.478], decimal=3)
-    nutils.numeric.assert_allclose64(lhs, 'eNo1j6FrQmEUxT8RBi4KllVfMsl3z/nK4zEmLC'
-      '6bhsKCw2gSw5IPFsymGbZiWnr+By8Ii7Yhsk3BMtC4Z9sJ223ncs85vzvmM9+Yhix8hDIjtnkd'
-      'HqQSdDDDj1Qajr5qPXN/07MZ2vI4V7UOIvmdO/oEZY45xYDnoR7ikLHAHVpcs2A1TLhChDO+MO'
-      'eWt5xjYzm6fOQrGxxiZPeoMGaf37hCyU72hB0u6PglPcQcKxRI/KUd7AYLvMPpsqGkCTPumzWf'
-      '+qV92kKevjK36ozDP/FSnh1iteWiqWuf+oMaKuyKaC1i52rKPokiF2WLA/20bya+ZCPbWKRPpv'
-      'gFaedebw==')
+    ndofs, error, lhs = main(nrefine=2, etype='square', degree=2)
+    with self.subTest('degrees of freedom'):
+      self.assertEqual(ndofs, 149)
+    with self.subTest('L2-error'):
+      self.assertAlmostEqual(error[0], 0.00065, places=5)
+    with self.subTest('H1-error'):
+      self.assertAlmostEqual(error[1], 0.03461, places=5)
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+      eNo1j6FrQmEUxT8RBi4KllVfMsl3z/nK4zEmLC6bhsKCw2gSw5IPFsymGbZiWnr+By8Ii7Yhsk3BMtC4
+      Z9sJ223ncs85vzvmM9+Yhix8hDIjtnkdHqQSdDDDj1Qajr5qPXN/07MZ2vI4V7UOIvmdO/oEZY45xYDn
+      oR7ikLHAHVpcs2A1TLhChDO+MOeWt5xjYzm6fOQrGxxiZPeoMGaf37hCyU72hB0u6PglPcQcKxRI/KUd
+      7AYLvMPpsqGkCTPumzWf+qV92kKevjK36ozDP/FSnh1iteWiqWuf+oMaKuyKaC1i52rKPokiF2WLA/20
+      bya+ZCPbWKRPpvgFaedebw==''')
 
   @nutils.testing.requires('matplotlib')
   def test_triangle_quadratic(self):
-    ndofs, error, rate, lhs = main(nrefine=2, etype='triangle', degree=2)
-    self.assertEqual(ndofs, 98)
-    numpy.testing.assert_almost_equal(error, [0.00138, 0.05324], decimal=5)
-    numpy.testing.assert_almost_equal(rate, [-1.111, -0.548], decimal=3)
-    nutils.numeric.assert_allclose64(lhs, 'eNprMV1oesqU2VTO1Nbko6myWbhpq+kckwST90'
-      'avjRgYzptYm+YYMwBBk3GQWavZb1NXs2+mm83um1WYbQbyXYEiQWbKZjNM7wJVzjBlYICoPW8C'
-      'MiXH+LXRR9NwoPkg82xN5IB2MZu2mGabSBnnAbGscYEJj3GVYQAQg/TVGfaA7RI0BsErRjeNeo'
-      'wDgDQPmF9gkmciaJxtArGjzrAKCGWNpYAQAL0kOBE=')
+    ndofs, error, lhs = main(nrefine=2, etype='triangle', degree=2)
+    with self.subTest('degrees of freedom'):
+      self.assertEqual(ndofs, 98)
+    with self.subTest('L2-error'):
+      self.assertAlmostEqual(error[0], 0.00138, places=5)
+    with self.subTest('H1-error'):
+      self.assertAlmostEqual(error[1], 0.05324, places=5)
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+      eNprMV1oesqU2VTO1Nbko6myWbhpq+kckwST90avjRgYzptYm+YYMwBBk3GQWavZb1NXs2+mm83um1WY
+      bQbyXYEiQWbKZjNM7wJVzjBlYICoPW8CMiXH+LXRR9NwoPkg82xN5IB2MZu2mGabSBnnAbGscYEJj3GV
+      YQAQg/TVGfaA7RI0BsErRjeNeowDgDQPmF9gkmciaJxtArGjzrAKCGWNpYAQAL0kOBE=''')
 
   @nutils.testing.requires('matplotlib')
   def test_mixed_linear(self):
-    ndofs, error, rate, lhs = main(nrefine=2, etype='mixed', degree=1)
-    self.assertEqual(ndofs, 34)
-    numpy.testing.assert_almost_equal(error, [0.00450, 0.11683], decimal=5)
-    numpy.testing.assert_almost_equal(rate, [-1.143, -0.545], decimal=3)
-    nutils.numeric.assert_allclose64(lhs, 'eNprMT1u6mQyxUTRzMCUAQhazL6b3jNrMYPxp5'
-      'iA5FtMD+lcMgDxHa4aXzS+6HDV+fKO85cMnC8zMBzSAQDBThbY')
+    ndofs, error, lhs = main(nrefine=2, etype='mixed', degree=1)
+    with self.subTest('degrees of freedom'):
+      self.assertEqual(ndofs, 34)
+    with self.subTest('L2-error'):
+      self.assertAlmostEqual(error[0], 0.00450, places=5)
+    with self.subTest('H1-error'):
+      self.assertAlmostEqual(error[1], 0.11683, places=5)
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+      eNprMT1u6mQyxUTRzMCUAQhazL6b3jNrMYPxp5iA5FtMD+lcMgDxHa4aXzS+6HDV+fKO85cMnC8zMBzS
+      AQDBThbY''')

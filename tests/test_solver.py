@@ -198,7 +198,7 @@ class burgers(TestCase):
   def test_iters(self):
     it = iter(solver.impliciteuler('dofs', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=100)) # involves 2-level timestep scaling
     assert numpy.equal(next(it), self.lhs0).all()
-    numeric.assert_allclose64(next(it), 'eNpzNBA1NjHuNHQ3FDsTfCbAuNz4nUGZgeyZiDOZxlONmQwU9W3OFJ/pNQAADZIOPA==')
+    self.assertAlmostEqual64(next(it), 'eNpzNBA1NjHuNHQ3FDsTfCbAuNz4nUGZgeyZiDOZxlONmQwU9W3OFJ/pNQAADZIOPA==')
 
   def test_resume(self):
     _test_recursion_cache(self, lambda: map(types.frozenarray, solver.impliciteuler('dofs', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=1)))

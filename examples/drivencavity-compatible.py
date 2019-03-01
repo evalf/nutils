@@ -91,27 +91,30 @@ if __name__ == '__main__':
   nutils.cli.run(main)
 
 # Once a simulation is developed and tested, it is good practice to save a few
-# strategicly chosen return values for routine regression testing. Here we use
-# the standard :mod:`unittest` framework, with
-# :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
-# desired results as compressed base64 data.
+# strategic return values for regression testing. The :mod:`nutils.testing`
+# module, which builds on the standard :mod:`unittest` framework, facilitates
+# this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
+# embedding of desired results as compressed base64 data.
 
 class test(nutils.testing.TestCase):
 
   @nutils.testing.requires('matplotlib')
   def test_p1(self):
     lhs0, lhs1 = main(nelems=3, reynolds=100, degree=2)
-    nutils.numeric.assert_allclose64(lhs0, 'eNpTvPBI3/o0t1mzds/pltM65opQ/n196QvcZh4XO03MTHbolZ'
-      '8+dVrxwlP9rycVL03Xjbm45tQfrZc37M/LGLBcFVc/aPDk/H3dzEtL9EJMGRgAJt4mPA==')
-    nutils.numeric.assert_allclose64(lhs1, 'eNoBUgCt/6nOuTGJy4M1SCzJy4zLCjcsLk3PCst/Nlcx9M2DNe'
-      'DPgDR+NB7UG8wVzSwuPc6ByezUQiudMKTL/y4AL73NLS6jLUov8s4zzXoscdMJMSo2AABO+yTF')
+    with self.subTest('stokes'): self.assertAlmostEqual64(lhs0, '''
+      eNpTvPBI3/o0t1mzds/pltM65opQ/n196QvcZh4XO03MTHbolZ8+dVrxwlP9rycVL03Xjbm45tQfrZc3
+      7M/LGLBcFVc/aPDk/H3dzEtL9EJMGRgAJt4mPA==''')
+    with self.subTest('navier-stokes'): self.assertAlmostEqual64(lhs1, '''
+      eNoBUgCt/6nOuTGJy4M1SCzJy4zLCjcsLk3PCst/Nlcx9M2DNeDPgDR+NB7UG8wVzSwuPc6ByezUQiud
+      MKTL/y4AL73NLS6jLUov8s4zzXoscdMJMSo2AABO+yTF''')
 
   @nutils.testing.requires('matplotlib')
   def test_p2(self):
     lhs0, lhs1 = main(nelems=3, reynolds=100, degree=3)
-    nutils.numeric.assert_allclose64(lhs0, 'eNp7ZmB71sY46VSq2dLzludvnMo20jFHsJ7BZaXObzbedDrVbJ'
-      'nBjPM1ZkuNGaAg6nyGQcvJ6DPPDHzP+JnMPsltwKl1/DyrYcPJUxf0LuXqvDkzzYgBDsz0L+lOvixinH'
-      'X26/nvVy0Nfp9rMGNgAADUrDbX')
-    nutils.numeric.assert_allclose64(lhs1, 'eNoBhAB7/3Axm8zRM23KHDbJzyrMAs7DzOY2yM/vLvfJ8TQ/N8'
-      'AvSc5FMkjKwTaQzlo0K8scNuwwLDKfNWQzcCLOzCs1jTEA0FcxA8kLzcAvU81jMz/JVTELMUjOLDL+ye'
-      'MsaS6lLkLOajM9LDgwWNBzzOvOMTBCMHnXnDHFzcDTYDCgKo0vLzcAACOlOuU=')
+    with self.subTest('stokes'): self.assertAlmostEqual64(lhs0, '''
+      eNp7ZmB71sY46VSq2dLzludvnMo20jFHsJ7BZaXObzbedDrVbJnBjPM1ZkuNGaAg6nyGQcvJ6DPPDHzP
+      +JnMPsltwKl1/DyrYcPJUxf0LuXqvDkzzYgBDsz0L+lOvixinHX26/nvVy0Nfp9rMGNgAADUrDbX''')
+    with self.subTest('navier-stokes'): self.assertAlmostEqual64(lhs1, '''
+      eNoBhAB7/3Axm8zRM23KHDbJzyrMAs7DzOY2yM/vLvfJ8TQ/N8AvSc5FMkjKwTaQzlo0K8scNuwwLDKf
+      NWQzcCLOzCs1jTEA0FcxA8kLzcAvU81jMz/JVTELMUjOLDL+yeMsaS6lLkLOajM9LDgwWNBzzOvOMTBC
+      MHnXnDHFzcDTYDCgKo0vLzcAACOlOuU=''')

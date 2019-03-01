@@ -81,44 +81,45 @@ if __name__ == '__main__':
   nutils.cli.run(main)
 
 # Once a simulation is developed and tested, it is good practice to save a few
-# strategicly chosen return values for routine regression testing. Here we use
-# the standard :mod:`unittest` framework, with
-# :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
-# desired results as compressed base64 data.
+# strategic return values for regression testing. The :mod:`nutils.testing`
+# module, which builds on the standard :mod:`unittest` framework, facilitates
+# this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
+# embedding of desired results as compressed base64 data.
 
 class test(nutils.testing.TestCase):
 
   def _checkrand(self, lhs0):
-    nutils.numeric.assert_allclose64(lhs0, 'eNoBxAA7/xM3LjTtNYs3MDcUyt41uc14zjo0L'
-      'zKzNm812jFhNNMzwDYgzbMzV8o0yCM1rzWeypE3TcnxL07NzTa4NlMyETREyrPIGMxYMl82VDb'
-      'jy1/M8clZyf3IRjday6XLmMl6NRnJDs1Ayh00WMu1yQHRUDSsMKIz7MoEzM/KCMxwyvjIlzLQy'
-      'xTJdjQ5yjEwWjX3MTk2n8kwNMbKTsoay1DMWDC8ycM1eTQyyb42NzdKNmLN5skSNs/LXDbnMuw'
-      '19DNKNREtGTfui1ut')
+    with self.subTest('initial condition'): self.assertAlmostEqual64(lhs0, '''
+      eNoBxAA7/xM3LjTtNYs3MDcUyt41uc14zjo0LzKzNm812jFhNNMzwDYgzbMzV8o0yCM1rzWeypE3Tcnx
+      L07NzTa4NlMyETREyrPIGMxYMl82VDbjy1/M8clZyf3IRjday6XLmMl6NRnJDs1Ayh00WMu1yQHRUDSs
+      MKIz7MoEzM/KCMxwyvjIlzLQyxTJdjQ5yjEwWjX3MTk2n8kwNMbKTsoay1DMWDC8ycM1eTQyyb42NzdK
+      NmLN5skSNs/LXDbnMuw19DNKNREtGTfui1ut''')
 
   @nutils.testing.requires('matplotlib')
   def test_square(self):
     lhs0, lhs = main(nelems=3, timestep=1, mtol=.1)
     self._checkrand(lhs0)
-    nutils.numeric.assert_allclose64(lhs, 'eNqbZTbHzMHsiGmpCd9V1gszzWaZ2ZjtMQ01eX'
-      'V+xbk0szSgzAaTDxdNTkue1jbTMpM15TJqP/335PeT100vmyqYaJ3tPNV1svNknmmKqYJR+On3'
-      'J01Pmp9MMY0y/WIYCOSZn7Q82XCi8UTXiSkn5pxYBISovJYTrSd6T0wD8xae6ATCCSemn5gLlu'
-      'sFwiknZp9YcGIpEE4Ewhkn5p1YfGIFEKLyAN6wcSE=')
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+      eNqbZTbHzMHsiGmpCd9V1gszzWaZ2ZjtMQ01eXV+xbk0szSgzAaTDxdNTkue1jbTMpM15TJqP/335PeT
+      100vmyqYaJ3tPNV1svNknmmKqYJR+On3J01Pmp9MMY0y/WIYCOSZn7Q82XCi8UTXiSkn5pxYBISovJYT
+      rSd6T0wD8xae6ATCCSemn5gLlusFwiknZp9YcGIpEE4Ewhkn5p1YfGIFEKLyAN6wcSE=''')
 
   @nutils.testing.requires('matplotlib')
   def test_contactangle(self):
     lhs0, lhs = main(nelems=3, timestep=1, mtol=.1, contactangle=45)
     self._checkrand(lhs0)
-    nutils.numeric.assert_allclose64(lhs, 'eNqzNsszkzZbbfrdOOus6Jlss5lmPmbPTQtNtp'
-      '6be8bZrNTss6mW6SMDv9OnTokDZRpMbxl7nNE89fTkItNHpl0mT8+fOzX3ZP7J3yb+ph1G206z'
-      'n7I+KXWyyOSeibK+1ulzJyVP/joRZhJp0m6yyeSyyXsgDAfy2kw2mlw0eWvyxiTLJNtkgslmk3'
-      'Mmz4CwzqTeZLbJNpOzJo+AcIrJVJO1JkdMbpi8BsLlJitM9gHNeGLy2eQLkLfSZL/JFZOnJl+B'
-      'EAAJrlyi')
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+      eNqzNsszkzZbbfrdOOus6Jlss5lmPmbPTQtNtp6be8bZrNTss6mW6SMDv9OnTokDZRpMbxl7nNE89fTk
+      ItNHpl0mT8+fOzX3ZP7J3yb+ph1G206zn7I+KXWyyOSeibK+1ulzJyVP/joRZhJp0m6yyeSyyXsgDAfy
+      2kw2mlw0eWvyxiTLJNtkgslmk3Mmz4CwzqTeZLbJNpOzJo+AcIrJVJO1JkdMbpi8BsLlJitM9gHNeGLy
+      2eQLkLfSZL/JFZOnJl+BEAAJrlyi''')
 
   @nutils.testing.requires('matplotlib')
   def test_mixedcircle(self):
     lhs0, lhs = main(nelems=3, timestep=1, mtol=.1, circle=True, etype='mixed')
     self._checkrand(lhs0)
-    nutils.numeric.assert_allclose64(lhs, 'eNrTM31uImDqY1puGmwia1prssNY37TERNM01e'
-      'SOkYuJlck6Q1ED9TP9px+fOmq82FjtfKFJiM6CK70mBsZixmUXgk9XnMo7VX6661zL+cZz58+l'
-      'n0s6e/PM7DOvjDTOvTz97tS8c6xn9pzYemLHiQMn9p9YDyS3nth4YteJbUCRHUByO5DcfGLDie'
-      'UnlpyYA2RtP7HpxJ4T64Aih8Bwz4k1QPF5QJ3rgap3ntgCVAHRe+bEbiBr5YmDQBMBKJ13Eg==')
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+      eNrTM31uImDqY1puGmwia1prssNY37TERNM01eSOkYuJlck6Q1ED9TP9px+fOmq82FjtfKFJiM6CK70m
+      BsZixmUXgk9XnMo7VX6661zL+cZz58+ln0s6e/PM7DOvjDTOvTz97tS8c6xn9pzYemLHiQMn9p9YDyS3
+      nth4YteJbUCRHUByO5DcfGLDieUnlpyYA2RtP7HpxJ4T64Aih8Bwz4k1QPF5QJ3rgap3ntgCVAHRe+bE
+      biBr5YmDQBMBKJ13Eg==''')

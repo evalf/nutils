@@ -53,28 +53,30 @@ if __name__ == '__main__':
   nutils.cli.run(main)
 
 # Once a simulation is developed and tested, it is good practice to save a few
-# strategicly chosen return values for routine regression testing. Here we use
-# the standard :mod:`unittest` framework, with
-# :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
-# desired results as compressed base64 data.
+# strategic return values for regression testing. The :mod:`nutils.testing`
+# module, which builds on the standard :mod:`unittest` framework, facilitates
+# this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
+# embedding of desired results as compressed base64 data.
 
 class test(nutils.testing.TestCase):
 
   @nutils.testing.requires('matplotlib')
   def test_1d_p1(self):
     lhs = main(ndims=1, nelems=10, timescale=.1, degree=1, endtime=.01)
-    nutils.numeric.assert_allclose64(lhs, 'eNrbocann6u3yqjTyMLUwfSw2TWzKPNM8+9mH8wyTMNNZxptMir'
-      'W49ffpwYAI6cOVA==')
+    self.assertAlmostEqual64(lhs, '''
+      eNrbocann6u3yqjTyMLUwfSw2TWzKPNM8+9mH8wyTMNNZxptMirW49ffpwYAI6cOVA==''')
 
   @nutils.testing.requires('matplotlib')
   def test_1d_p2(self):
     lhs = main(ndims=1, nelems=10, timescale=.1, degree=2, endtime=.01)
-    nutils.numeric.assert_allclose64(lhs, 'eNrr0c7SrtWfrD/d4JHRE6Ofxj6mnqaKZofNDpjZmQeYB5pHmL8'
-      'we23mb5ZvWmjKY/LV6KPRFIMZ+o368dp92gCxZxZG')
+    self.assertAlmostEqual64(lhs, '''
+      eNrr0c7SrtWfrD/d4JHRE6Ofxj6mnqaKZofNDpjZmQeYB5pHmL8we23mb5ZvWmjKY/LV6KPRFIMZ+o36
+      8dp92gCxZxZG''')
 
   @nutils.testing.requires('matplotlib')
   def test_2d_p1(self):
     lhs = main(ndims=2, nelems=4, timescale=.1, degree=1, endtime=.01)
-    nutils.numeric.assert_allclose64(lhs, 'eNoNyKENhEAQRuGEQsCv2SEzyQZHDbRACdsDJNsBjqBxSBxBHIg'
-      'J9xsqQJ1Drro1L1/eYBZceGz8njrRyacm8UQLBvPYCw1airpyUVYSJLhKijK4IC01WDnqqxvX8OTl427'
-      'aU73sctPGr3qqceBnRzOjo0xy9JpJR73m6R6YMZo/Q+FCLQ==')
+    self.assertAlmostEqual64(lhs, '''
+      eNoNyKENhEAQRuGEQsCv2SEzyQZHDbRACdsDJNsBjqBxSBxBHIgJ9xsqQJ1Drro1L1/eYBZceGz8njrR
+      yacm8UQLBvPYCw1airpyUVYSJLhKijK4IC01WDnqqxvX8OTl427aU73sctPGr3qqceBnRzOjo0xy9JpJ
+      R73m6R6YMZo/Q+FCLQ==''')
