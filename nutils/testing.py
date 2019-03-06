@@ -22,8 +22,9 @@
 Extensions of the :mod:`unittest` module.
 '''
 
-import unittest, sys, types as builtin_types, operator, contextlib, treelog, functools, importlib, doctest, re
+import unittest, sys, types as builtin_types, operator, contextlib, treelog, functools, importlib, doctest, re, zlib, binascii
 import numpy
+from nutils import warnings, numeric
 
 
 def _not_has_module(module):
@@ -130,6 +131,7 @@ parametrize.skip_if = _parametrize_skip_if
 
 
 class TestCase(unittest.TestCase):
+  '''A class whose instances are single test cases.'''
 
   def setUpContext(self, stack):
     stack.enter_context(treelog.set(treelog.LoggingLog()))
@@ -145,6 +147,53 @@ class TestCase(unittest.TestCase):
       raise
     else:
       self.addCleanup(stack.__exit__, None, None, None)
+
+  def assertAlmostEqual64(self, actual, desired, atol=2e-15, rtol=2e-3):
+    '''Assert numerical equivalence with packed data.
+
+    Test closeness of ``actual`` to ``desired`` data, where the latter are
+    specified as a base64 packed data string (see :func:`nutils.numeric.pack`
+    and :func:`nutils.numeric.unpack` for details on packing). The primary use
+    case is embedded regression testing.
+
+    The ``atol`` and ``rtol`` arguments are used for both unpacking and
+    equivalence testing and cannot be changed independently of the base64 string.
+    Doing so will raise an exception with a suggested update.
+
+    Args
+    ----
+    actual : :class:`float` array
+      The obtained data.
+    desired : :class:`str`
+      The desired data in the form of a base64 string.
+    atol : :class:`float`
+      Absolute tolerance
+    rtol : :class:`float`
+      Relative tolerance
+    '''
+
+    try:
+      desired = numeric.unpack(numpy.frombuffer(zlib.decompress(binascii.a2b_base64(desired)), dtype=numpy.int16), atol, rtol).reshape(actual.shape)
+    except Exception as e:
+      status = ['failed to decode data: {}'.format(e)]
+    else:
+      error = abs(actual - desired)
+      spacing = numpy.sqrt(atol**2 + (desired*rtol)**2)
+      fail = numpy.logical_xor(numpy.isnan(actual), numpy.isnan(desired))
+      numpy.greater(error, spacing, where=~numpy.isnan(error), out=fail)
+      nfail = fail.sum()
+      if not nfail:
+        return
+      status = ['{}/{} values do not match up to atol={:.2e}, rtol={:.2e}:'.format(nfail, fail.size, atol, rtol)]
+      status.extend('{} desired: {:+.4e}, actual: {:+.4e}, spacing: {:.1e}'.format(list(index), desired[index], actual[index], spacing[index]) for index in zip(*fail.nonzero()))
+      if nfail > 10:
+        status[6:-5] = '...',
+    status.append('If this is expected, update the base64 string to:')
+    with warnings.via(status.append):
+      s = binascii.b2a_base64(zlib.compress(numeric.pack(actual, atol, rtol, numpy.int16).tobytes(), 9)).decode().rstrip()
+    status.extend(s[i:i+80] for i in range(0, len(s), 80))
+    self.fail('\n'.join(status))
+
 
 ContextTestCase = TestCase
 

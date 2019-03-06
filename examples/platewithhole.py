@@ -70,37 +70,43 @@ if __name__ == '__main__':
   nutils.cli.run(main)
 
 # Once a simulation is developed and tested, it is good practice to save a few
-# strategicly chosen return values for routine regression testing. Here we use
-# the standard :mod:`unittest` framework, with
-# :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
-# desired results as compressed base64 data.
+# strategic return values for regression testing. The :mod:`nutils.testing`
+# module, which builds on the standard :mod:`unittest` framework, facilitates
+# this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
+# embedding of desired results as compressed base64 data.
 
 class test(nutils.testing.TestCase):
 
   @nutils.testing.requires('matplotlib')
   def test_spline(self):
     err, cons, lhs = main(nelems=4, etype='square', degree=2, btype='spline')
-    nutils.numeric.assert_allclose64(err, 'eNpbpd6jCwAEZgGL')
-    nutils.numeric.assert_allclose64(cons, 'eNpjaPC5XybfdX+dIkMDDP7TQ7ANDBFsayME+'
-      '6nRUeMjxnON04zNjFWNYaL655B0nrNUgrFrzrHeh7Ffn/sNt8v3/Nk7X66uuXT3wunzOecBJ0s'
-      'yCg==')
-    nutils.numeric.assert_allclose64(lhs, 'eNoBjABz/6I2TN92H4rfriEeyuw05zGFLykv/i'
-      '6UM6EzzjLEMUkxMDGlM58zLzOrMlMyOzKwM7EzfTM1M/ky5TLFM8QznTNmMzYzJTPLNvjONM4/'
-      'zi/OGclHzJfOSs45zjDOOSK7z5fPC8+cznzOBd/D3d3RFdAuz+vO+yGg1bnSvdCoz03Pzdz01a'
-      'zS3dDLz2zPaQdIRw==')
+    with self.subTest('l2-error'):
+      self.assertAlmostEqual(err[0], .00033, places=5)
+    with self.subTest('h1-error'):
+      self.assertAlmostEqual(err[1], .00671, places=5)
+    with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
+      eNpjaPC5XybfdX+dIkMDDP7TQ7ANDBFsayME+6nRUeMjxnON04zNjFWNYaL655B0nrNUgrFrzrHeh7Ff
+      n/sNt8v3/Nk7X66uuXT3wunzOecBJ0syCg==''')
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+      eNoBjABz/6I2TN92H4rfriEeyuw05zGFLykv/i6UM6EzzjLEMUkxMDGlM58zLzOrMlMyOzKwM7EzfTM1
+      M/ky5TLFM8QznTNmMzYzJTPLNvjONM4/zi/OGclHzJfOSs45zjDOOSK7z5fPC8+cznzOBd/D3d3RFdAu
+      z+vO+yGg1bnSvdCoz03Pzdz01azS3dDLz2zPaQdIRw==''')
 
   @nutils.testing.requires('matplotlib')
   def test_mixed(self):
     err, cons, lhs = main(nelems=4, etype='mixed', degree=2, btype='std')
-    nutils.numeric.assert_allclose64(err, 'eNpjU9+jCwACNgEX')
-    nutils.numeric.assert_allclose64(cons, 'eNpjaGCAwx4pGMv/8UYZGFvrgagCkNZnaEgyY'
-      'GjABw0NGRqOG+JXY23E0DDdCMTaaMzQcNT4iDGIPde4CUz7G6cD6adGZsaqxvjNgUD9c0BbgTj'
-      'kHEwk+jE2dTVA+Y3nTsmB2GYPsZv1CqhG6jyItePye8XLd69dBbGXXZp0EUQ7Xrh7gaHB9/zp8'
-      'znnAW7uYcc=')
-    nutils.numeric.assert_allclose64(lhs, 'eNoNzcsrRGEYB2CxlbKY1CSXhUJxzvf+Co0Fml'
-      'IWTCExdjaEBSuTSI0FiymRaxgrl9QsBgu2mqFc3vc75zCliGmQUaKkZCH+gKcnQaM4gI11rFaG'
-      '3Gn1aJ6rAPlS0XzTGDG+zWOz/MFVlG1kGAGzx1yAF11YwBo2oKmDMrFDcRVSLmqkeqXUvTpVmw'
-      'hjALvYRhCF+KAydCJKQfoim1qpliK0RBEsI4o9xBHDOPz/exAG8uBDL37oiapQghlp48/L2GUO'
-      'u2WRp3mIT/iXa7iOW9jLGzzJ1WywhxX3cTvvy7Bc6RerO1VuhaVJ+vWbuOWCS2VKZnmMkxzls4'
-      'Ln2yynKrly3encWHHtsjx2rp4Xv3akQl65/1+4E2nn0Hkvdu4S10f2hLVlz1kRXaAb9J3elWY5'
-      'l0H5AxDbnCE=')
+    with self.subTest('l2-error'):
+      self.assertAlmostEqual(err[0], .00024, places=5)
+    with self.subTest('h1-error'):
+      self.assertAlmostEqual(err[1], .00739, places=5)
+    with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
+      eNpjaGCAwx4pGMv/8UYZGFvrgagCkNZnaEgyYGjABw0NGRqOG+JXY23E0DDdCMTaaMzQcNT4iDGIPde4
+      CUz7G6cD6adGZsaqxvjNgUD9c0BbgTjkHEwk+jE2dTVA+Y3nTsmB2GYPsZv1CqhG6jyItePye8XLd69d
+      BbGXXZp0EUQ7Xrh7gaHB9/zp8znnAW7uYcc=''')
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+      eNoNzcsrRGEYB2CxlbKY1CSXhUJxzvf+Co0FmlIWTCExdjaEBSuTSI0FiymRaxgrl9QsBgu2mqFc3vc7
+      5zCliGmQUaKkZCH+gKcnQaM4gI11rFaG3Gn1aJ6rAPlS0XzTGDG+zWOz/MFVlG1kGAGzx1yAF11YwBo2
+      oKmDMrFDcRVSLmqkeqXUvTpVmwhjALvYRhCF+KAydCJKQfoim1qpliK0RBEsI4o9xBHDOPz/exAG8uBD
+      L37oiapQghlp48/L2GUOu2WRp3mIT/iXa7iOW9jLGzzJ1WywhxX3cTvvy7Bc6RerO1VuhaVJ+vWbuOWC
+      S2VKZnmMkxzls4Ln2yynKrly3encWHHtsjx2rp4Xv3akQl65/1+4E2nn0Hkvdu4S10f2hLVlz1kRXaAb
+      9J3elWY5l0H5AxDbnCE=''')

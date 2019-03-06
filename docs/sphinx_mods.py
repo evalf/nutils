@@ -475,6 +475,12 @@ def remove_console_globs(app, doctree):
   if hasattr(doctree, '_console_globs'):
     del doctree._console_globs
 
+def fix_testcase_reference(app, env, node, contnode):
+  if node['reftarget'] == 'unittest.case.TestCase':
+    node = node.deepcopy()
+    node['reftarget'] = 'unittest.TestCase'
+    return app.emit_firstresult('missing-reference', env, node, contnode)
+
 def setup(app):
   app.connect('autodoc-process-signature', process_signature)
 
@@ -497,6 +503,8 @@ def setup(app):
   app.connect('doctree-read', remove_console_globs)
 
   app.connect('build-finished', remove_generated)
+
+  app.connect('missing-reference', fix_testcase_reference)
 
   if sphinx.version_info >= (1,8):
     app.add_css_file('mods.css')

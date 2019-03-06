@@ -113,38 +113,44 @@ if __name__ == '__main__':
   nutils.cli.run(main)
 
 # Once a simulation is developed and tested, it is good practice to save a few
-# strategicly chosen return values for routine regression testing. Here we use
-# the standard :mod:`unittest` framework, with
-# :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
-# desired results as compressed base64 data.
+# strategic return values for regression testing. The :mod:`nutils.testing`
+# module, which builds on the standard :mod:`unittest` framework, facilitates
+# this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
+# embedding of desired results as compressed base64 data.
 
 class test(nutils.testing.TestCase):
 
   @nutils.testing.requires('matplotlib')
   def test_default(self):
     cons, lhs, err = main(nelems=4, etype='square', btype='std', degree=1)
-    nutils.numeric.assert_allclose64(cons, 'eNrbKPv1QZ3ip9sL1BgaILDYFMbaZwZj5ZnDW'
-      'NfNAeWPESU=')
-    nutils.numeric.assert_allclose64(lhs, 'eNoBMgDN/7Ed9eB+IfLboCaXNKc01DQaNXM14j'
-      'XyNR82ZTa+NpI2oTbPNhU3bjf7Ngo3ODd+N9c3SNEU1g==')
-    numpy.testing.assert_almost_equal(err, 1.63e-3, decimal=5)
+    with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
+      eNrbKPv1QZ3ip9sL1BgaILDYFMbaZwZj5ZnDWNfNAeWPESU=''')
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+      eNoBMgDN/7Ed9eB+IfLboCaXNKc01DQaNXM14jXyNR82ZTa+NpI2oTbPNhU3bjf7Ngo3ODd+N9c3SNEU
+      1g==''')
+    with self.subTest('L2-error'):
+      self.assertAlmostEqual(err, 1.63e-3, places=5)
 
   @nutils.testing.requires('matplotlib')
   def test_spline(self):
     cons, lhs, err = main(nelems=4, etype='square', btype='spline', degree=2)
-    nutils.numeric.assert_allclose64(cons, 'eNqrkmN+sEfhzF0xleRbDA0wKGeCYFuaIdjK5'
-      'gj2aiT2VXMAJB0VAQ==')
-    nutils.numeric.assert_allclose64(lhs, 'eNqrkmN+sEfhzF0xleRbrsauxsnGc43fGMuZJJ'
-      'gmmNaZ7jBlN7M08wLCDLNFZh/NlM0vmV0y+2CmZV5pvtr8j9kfMynzEPPF5lfNAcuhGvs=')
-    numpy.testing.assert_almost_equal(err, 8.04e-5, decimal=7)
+    with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
+      eNqrkmN+sEfhzF0xleRbDA0wKGeCYFuaIdjK5gj2aiT2VXMAJB0VAQ==''')
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+      eNqrkmN+sEfhzF0xleRbrsauxsnGc43fGMuZJJgmmNaZ7jBlN7M08wLCDLNFZh/NlM0vmV0y+2CmZV5p
+      vtr8j9kfMynzEPPF5lfNAcuhGvs=''')
+    with self.subTest('L2-error'):
+      self.assertAlmostEqual(err, 8.04e-5, places=7)
 
   @nutils.testing.requires('matplotlib')
   def test_mixed(self):
     cons, lhs, err = main(nelems=4, etype='mixed', btype='std', degree=2)
-    nutils.numeric.assert_allclose64(cons, 'eNorfLZF2ucJQwMC3pR7+QDG9lCquAtj71Rlu'
-      '8XQIGfC0FBoiqweE1qaMTTsNsOvRtmcoSHbHL+a1UD5q+YAxhcu1g==')
-    nutils.numeric.assert_allclose64(lhs, 'eNorfLZF2ueJq7GrcYjxDJPpJstNbsq9fOBr3G'
-      'h8xWS7iYdSxd19xseMP5hImu5UZbv1xljOxM600DTWNN/0k2mC6SPTx6Z1pnNMGc3kzdaaPjRN'
-      'MbMyEzWzNOsy223mBYRRZpPNJpktMks1azM7Z7bRbIXZabNXZiLmH82UzS3Ns80vmj004za/ZP'
-      'YHCD+Y8ZlLmVuYq5kHm9eahwDxavPF5lfNAWFyPdk=')
-    numpy.testing.assert_almost_equal(err, 1.25e-4, decimal=6)
+    with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
+      eNorfLZF2ucJQwMC3pR7+QDG9lCquAtj71Rlu8XQIGfC0FBoiqweE1qaMTTsNsOvRtmcoSHbHL+a1UD5
+      q+YAxhcu1g==''')
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+      eNorfLZF2ueJq7GrcYjxDJPpJstNbsq9fOBr3Gh8xWS7iYdSxd19xseMP5hImu5UZbv1xljOxM600DTW
+      NN/0k2mC6SPTx6Z1pnNMGc3kzdaaPjRNMbMyEzWzNOsy223mBYRRZpPNJpktMks1azM7Z7bRbIXZabNX
+      ZiLmH82UzS3Ns80vmj004za/ZPYHCD+Y8ZlLmVuYq5kHm9eahwDxavPF5lfNAWFyPdk=''')
+    with self.subTest('L2-error'):
+      self.assertAlmostEqual(err, 1.25e-4, places=6)

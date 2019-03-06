@@ -69,41 +69,41 @@ if __name__ == '__main__':
   nutils.cli.run(main)
 
 # Once a simulation is developed and tested, it is good practice to save a few
-# strategicly chosen return values for routine regression testing. Here we use
-# the standard :mod:`unittest` framework, with
-# :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
-# desired results as compressed base64 data.
+# strategic return values for regression testing. The :mod:`nutils.testing`
+# module, which builds on the standard :mod:`unittest` framework, facilitates
+# this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
+# embedding of desired results as compressed base64 data.
 
 class test(nutils.testing.TestCase):
 
   @nutils.testing.requires('matplotlib')
   def test_default(self):
     lhs0, lhs1 = main(nelems=4, angle=10)
-    nutils.numeric.assert_allclose64(lhs0, 'eNpjYICB8ku8+icMthvOM+K42G1ga6Rv/Mh42'
-      'YVcQwnj/8bzTW5fUDbaaNxtomwK18CQfCnxkuPFL+f7zt06d/Rc1rnbZ73Pyp4VPvvwzOwz7mc'
-      'kz3w4ffL0stMtpwGSOirA')
-    nutils.numeric.assert_allclose64(lhs1, 'eNpjYICBMu1b+jKGFw2bjdy1LICkk/Fx4+bLj'
-      'wxdjAVM2k1uX1A22mjcbaJsCtfAoHz53sXiC27nGc6pnD94Tutc5dlLZyLOSpw9fab4DOsZyTM'
-      'fTp88vex0y2kA6e4nVQ==')
+    with self.subTest('linear'): self.assertAlmostEqual64(lhs0, '''
+      eNpjYICB8ku8+icMthvOM+K42G1ga6Rv/Mh42YVcQwnj/8bzTW5fUDbaaNxtomwK18CQfCnxkuPFL+f7
+      zt06d/Rc1rnbZ73Pyp4VPvvwzOwz7mckz3w4ffL0stMtpwGSOirA''')
+    with self.subTest('non-linear'): self.assertAlmostEqual64(lhs1, '''
+      eNpjYICBMu1b+jKGFw2bjdy1LICkk/Fx4+bLjwxdjAVM2k1uX1A22mjcbaJsCtfAoHz53sXiC27nGc6p
+      nD94Tutc5dlLZyLOSpw9fab4DOsZyTMfTp88vex0y2kA6e4nVQ==''')
 
   @nutils.testing.requires('matplotlib')
   def test_mixed(self):
     lhs0, lhs1 = main(nelems=4, angle=10, etype='mixed')
-    nutils.numeric.assert_allclose64(lhs0, 'eNoBZACb/wAAAADV0WwvAAChMAAAtjEAAKgyX'
-      'jBl0UUyMjPeMyXQjzESM/ozqDQjMtvQsTOLNCM1AAAAAIfS7NEAAM/RAADQzwAAmc7czsvOU87'
-      '1zUrNMs0NzenMk8xQzPDLGczJy6bLhMsZ2Sx5')
-    nutils.numeric.assert_allclose64(lhs1, 'eNoBZACb/wAAAAAr3xowAAD9MAAA1DEAAI8yH'
-      'zGKLIEySDPKM6fS9TFCMwM0mzQjMtvQsTOLNCM1AAAAAD/TYNEAAN7QAAA3zwAACc7SzgnPEc6'
-      'TzdjMZ80TzdHMa8wXzPDLGczJy6bLhMthnih2')
+    with self.subTest('linear'): self.assertAlmostEqual64(lhs0, '''
+      eNoBZACb/wAAAADV0WwvAAChMAAAtjEAAKgyXjBl0UUyMjPeMyXQjzESM/ozqDQjMtvQsTOLNCM1AAAA
+      AIfS7NEAAM/RAADQzwAAmc7czsvOU871zUrNMs0NzenMk8xQzPDLGczJy6bLhMsZ2Sx5''')
+    with self.subTest('non-linear'): self.assertAlmostEqual64(lhs1, '''
+      eNoBZACb/wAAAAAr3xowAAD9MAAA1DEAAI8yHzGKLIEySDPKM6fS9TFCMwM0mzQjMtvQsTOLNCM1AAAA
+      AD/TYNEAAN7QAAA3zwAACc7SzgnPEc6TzdjMZ80TzdHMa8wXzPDLGczJy6bLhMthnih2''')
 
   @nutils.testing.requires('matplotlib')
   def test_spline(self):
     lhs0, lhs1 = main(nelems=4, angle=10, degree=2, btype='spline')
-    nutils.numeric.assert_allclose64(lhs0, 'eNpjYECAa1e+aE3Qu6Nfa9BlmHoxU/eHgbIRs'
-      '3Gs8bwLr/S4jayNfxn7mGy/sEz/qNFz4wUmL0xuX/AzEDDWMrlromyKZAxDlg6bbppOw1WXi2n'
-      'nqy8svSBxwf980Ln3Z9+ffXP2+Nm8s6xnT59pOdNzJveM3RnmM/dOS55hOXPn9PbTU0+3nAYAZ'
-      'eQ9sA==')
-    nutils.numeric.assert_allclose64(lhs1, 'eNpjYEAAZ21dXWF9WYNug3RDPu1i/RzDYKNfR'
-      'i7Gn5V9DVKNkoy/G+uaiF/qM/hi9NN4pckZk9sX/AwEjLVM7poomyIZw3BIp0/H/a7qpf4LD85'
-      'tvTD1wtrz+87tPRt8Vvuc0Lm1Z43PLjmTfGbXmQVn0s/onHl7euNpyTMsZ+6c3n566umW0wB4s'
-      'Dra')
+    with self.subTest('linear'): self.assertAlmostEqual64(lhs0, '''
+      eNpjYECAa1e+aE3Qu6Nfa9BlmHoxU/eHgbIRs3Gs8bwLr/S4jayNfxn7mGy/sEz/qNFz4wUmL0xuX/Az
+      EDDWMrlromyKZAxDlg6bbppOw1WXi2nnqy8svSBxwf980Ln3Z9+ffXP2+Nm8s6xnT59pOdNzJveM3Rnm
+      M/dOS55hOXPn9PbTU0+3nAYAZeQ9sA==''')
+    with self.subTest('non-linear'): self.assertAlmostEqual64(lhs1, '''
+      eNpjYEAAZ21dXWF9WYNug3RDPu1i/RzDYKNfRi7Gn5V9DVKNkoy/G+uaiF/qM/hi9NN4pckZk9sX/AwE
+      jLVM7poomyIZw3BIp0/H/a7qpf4LD85tvTD1wtrz+87tPRt8Vvuc0Lm1Z43PLjmTfGbXmQVn0s/onHl7
+      euNpyTMsZ+6c3n566umW0wB4sDra''')

@@ -399,6 +399,7 @@ def assert_allclose64(actual, data=None, atol=2e-15, rtol=2e-3):
     Relative tolerance
   '''
 
+  warnings.deprecation('numeric.assert_allclose64 is deprecated, use testing.UnitTest.assertAlmostEqual64 instead')
   import zlib, binascii
   try:
     desired = unpack(numpy.frombuffer(zlib.decompress(binascii.a2b_base64(data)), dtype=numpy.int16), atol, rtol).reshape(actual.shape)

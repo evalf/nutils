@@ -53,41 +53,48 @@ if __name__ == '__main__':
   nutils.cli.run(main)
 
 # Once a simulation is developed and tested, it is good practice to save a few
-# strategicly chosen return values for routine regression testing. Here we use
-# the standard :mod:`unittest` framework, with
-# :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
-# desired results as compressed base64 data.
+# strategic return values for regression testing. The :mod:`nutils.testing`
+# module, which builds on the standard :mod:`unittest` framework, facilitates
+# this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
+# embedding of desired results as compressed base64 data.
 
 class test(nutils.testing.TestCase):
 
   @nutils.testing.requires('matplotlib')
   def test_default(self):
     cons, lhs = main(nelems=4)
-    nutils.numeric.assert_allclose64(cons, 'eNpjYICDBnzwhykMMhCpAwEBQ08XYg==')
-    nutils.numeric.assert_allclose64(lhs, 'eNpjYICBFGMxYyEgTjFebDLBpB2IF5tkmKaYJg'
-      'JxhukPOIRrYBA1CjJgYFh3/vXZMiMVQwaGO+e6zvYY2QBZR86VnO2FsorPAgAXLB7S')
+    with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
+      eNpjYICDBnzwhykMMhCpAwEBQ08XYg==''')
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+      eNpjYICBFGMxYyEgTjFebDLBpB2IF5tkmKaYJgJxhukPOIRrYBA1CjJgYFh3/vXZMiMVQwaGO+e6zvYY
+      2QBZR86VnO2FsorPAgAXLB7S''')
 
   @nutils.testing.requires('matplotlib')
   def test_mixed(self):
     cons, lhs = main(nelems=4, etype='mixed')
-    nutils.numeric.assert_allclose64(cons, 'eNpjYACCBiBkQMJY4A9TGGQgUgcCAgBVTxdi')
-    nutils.numeric.assert_allclose64(lhs, 'eNpjYGBgSDKWNwZSQKwExAnGfSbLTdpNek2WmW'
-      'SYppgmAHGG6Q84BKpk4DASN2Bg2K/JwHDrPAPDj7MqhnlGRddenpt+ts/I0nChyrlzJWcdDbuN'
-      'YjUOnSs/CwB0uyJb')
+    with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
+      eNpjYACCBiBkQMJY4A9TGGQgUgcCAgBVTxdi''')
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+      eNpjYGBgSDKWNwZSQKwExAnGfSbLTdpNek2WmWSYppgmAHGG6Q84BKpk4DASN2Bg2K/JwHDrPAPDj7Mq
+      hnlGRddenpt+ts/I0nChyrlzJWcdDbuNYjUOnSs/CwB0uyJb''')
 
   @nutils.testing.requires('matplotlib')
   def test_quadratic(self):
     cons, lhs = main(nelems=4, degree=2)
-    nutils.numeric.assert_allclose64(cons, 'eNpjYMAADQMJf5iiQ4ZB5kJMCAAkxE4W')
-    nutils.numeric.assert_allclose64(lhs, 'eNpjYEAHlUauhssMuw2nAvEyQ1fDSqMsY1NjJW'
-      'NxYzEgVgKys4xlTThNfhu/NX4HxL+NOU1kTRabzDaZbNJj0g3Ek4HsxSa8ptym7KZMYMgOZPOa'
-      'Zpimm6aYJoFhCpCdYboFCDfDIYj3AwNiOJDhviGPQbf+RV0GBv1LpRe+nFc8x22UY5hv8F6PgU'
-      'Hw4sTzU859PZtldNGQ3XCCPgNDwYWf5/TPTTtbYvTKUNpwP1DE8cLTc2Lnes62Gf01NDW8BxRR'
-      'unD6HPO5KqjIA6CIAlSkw+ifobnhI6CI3IWT55jOVQBF/hqaGT4EishfOAVUU3EWAA5lcd0=')
+    with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
+      eNpjYMAADQMJf5iiQ4ZB5kJMCAAkxE4W''')
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+      eNpjYEAHlUauhssMuw2nAvEyQ1fDSqMsY1NjJWNxYzEgVgKys4xlTThNfhu/NX4HxL+NOU1kTRabzDaZ
+      bNJj0g3Ek4HsxSa8ptym7KZMYMgOZPOaZpimm6aYJoFhCpCdYboFCDfDIYj3AwNiOJDhviGPQbf+RV0G
+      Bv1LpRe+nFc8x22UY5hv8F6PgUHw4sTzU859PZtldNGQ3XCCPgNDwYWf5/TPTTtbYvTKUNpwP1DE8cLT
+      c2Lnes62Gf01NDW8BxRRunD6HPO5KqjIA6CIAlSkw+ifobnhI6CI3IWT55jOVQBF/hqaGT4EishfOAVU
+      U3EWAA5lcd0=''')
 
   @nutils.testing.requires('matplotlib')
   def test_poisson(self):
     cons, lhs = main(nelems=4, poisson=.4)
-    nutils.numeric.assert_allclose64(cons, 'eNpjYICDBnzwhykMMhCpAwEBQ08XYg==')
-    nutils.numeric.assert_allclose64(lhs, 'eNpjYIABC+M1RkuN1hhZGE8xyTKJAOIpJomm4a'
-      'aBQJxo+gMO4RoYJhu/MWRgEDmXe+a18QKj//8TzoqeYTLZCmR5n/13msVkG5DldfbPaQC28iVf')
+    with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
+      eNpjYICDBnzwhykMMhCpAwEBQ08XYg==''')
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+      eNpjYIABC+M1RkuN1hhZGE8xyTKJAOIpJomm4aaBQJxo+gMO4RoYJhu/MWRgEDmXe+a18QKj//8Tzoqe
+      YTLZCmR5n/13msVkG5DldfbPaQC28iVf''')

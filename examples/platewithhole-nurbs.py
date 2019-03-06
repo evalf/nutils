@@ -90,32 +90,38 @@ if __name__ == '__main__':
   nutils.cli.run(main)
 
 # Once a simulation is developed and tested, it is good practice to save a few
-# strategicly chosen return values for routine regression testing. Here we use
-# the standard :mod:`unittest` framework, with
-# :func:`nutils.numeric.assert_allclose64` facilitating the embedding of
-# desired results as compressed base64 data.
+# strategic return values for regression testing. The :mod:`nutils.testing`
+# module, which builds on the standard :mod:`unittest` framework, facilitates
+# this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
+# embedding of desired results as compressed base64 data.
 
 class test(nutils.testing.TestCase):
 
   @nutils.testing.requires('matplotlib')
   def test0(self):
     err, cons, lhs = main(nrefine=0)
-    nutils.numeric.assert_allclose64(err, 'eNoT1r6hDwACsAFG')
-    nutils.numeric.assert_allclose64(cons, 'eNqLuMnQAIJnNSC08XUNYznjy8YQXoYmhC6+I'
-      'nsu7/ze873aAH5yESc=')
-    nutils.numeric.assert_allclose64(lhs, 'eNoBMADP/1jZ0DGVM5YzzSjfL2kzqDMz1ygzHj'
-      'PTM5LOr85F0GgpJc6GzrIuc9Qdzm7Pvc+NKyFrF1c=')
+    with self.subTest('l2-error'):
+      self.assertAlmostEqual(err[0], .00189, places=5)
+    with self.subTest('h1-error'):
+      self.assertAlmostEqual(err[1], .02174, places=5)
+    with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
+      eNqLuMnQAIJnNSC08XUNYznjy8YQXoYmhC6+Insu7/ze873aAH5yESc=''')
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+      eNoBMADP/1jZ0DGVM5YzzSjfL2kzqDMz1ygzHjPTM5LOr85F0GgpJc6GzrIuc9Qdzm7Pvc+NKyFrF1c=''')
 
   @nutils.testing.requires('matplotlib')
   def test2(self):
     err, cons, lhs = main(nrefine=2)
-    nutils.numeric.assert_allclose64(err, 'eNqzUn2kDQADSgFt')
-    nutils.numeric.assert_allclose64(cons, 'eNrzec7QgA7NpTDFuJ5iiuXJYIpteIgpdkM+y'
-      'sDa6KmRqrGqsYVxqvEO4xPGmKoSsZgm8whTbLEcptjT+5hifxU1z3mce3/O83zu+bzzJ88/u7D'
-      'xSvUdAExTStA=')
-    nutils.numeric.assert_allclose64(lhs, 'eNoB8AAP/0zn8i4cMRsyuTIiM2UzjDOdM50zNx'
-      'pxLqEwuDF5MgQzWzONM6IzojMK5bQuwDC2MVwy3DI8M4AzpTOlM24cUC9CMRgykjLbMiUzcDOr'
-      'M68zsOH9L+UxnDLsMgMzJzNlM7MzvjPYH1owOzLlMiUzJTM4M2UzuDPIM4nOic6azsHOA89szw'
-      'vQC9E102EcWc5YznjOw85EzwrQD9Fd0pzUHOJDzkTOf87xzpvPiNC70UfTqNWjHjrOQM6ozjLP'
-      'us880B/RyNIz1uXfMM5EztrOVc+Tz7bPOdCE0ZfV/SEpzkjO785Jz23Pbs/Jz+bQsdR73GyTdW'
-      'c=')
+    with self.subTest('l2-error'):
+      self.assertAlmostEqual(err[0], .00009, places=5)
+    with self.subTest('h1-error'):
+      self.assertAlmostEqual(err[1], .00286, places=5)
+    with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
+      eNrzec7QgA7NpTDFuJ5iiuXJYIpteIgpdkM+ysDa6KmRqrGqsYVxqvEO4xPGmKoSsZgm8whTbLEcptjT
+      +5hifxU1z3mce3/O83zu+bzzJ88/u7DxSvUdAExTStA=''')
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+      eNoB8AAP/0zn8i4cMRsyuTIiM2UzjDOdM50zNxpxLqEwuDF5MgQzWzONM6IzojMK5bQuwDC2MVwy3DI8
+      M4AzpTOlM24cUC9CMRgykjLbMiUzcDOrM68zsOH9L+UxnDLsMgMzJzNlM7MzvjPYH1owOzLlMiUzJTM4
+      M2UzuDPIM4nOic6azsHOA89szwvQC9E102EcWc5YznjOw85EzwrQD9Fd0pzUHOJDzkTOf87xzpvPiNC7
+      0UfTqNWjHjrOQM6ozjLPus880B/RyNIz1uXfMM5EztrOVc+Tz7bPOdCE0ZfV/SEpzkjO785Jz23Pbs/J
+      z+bQsdR73GyTdWc=''')
