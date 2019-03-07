@@ -109,8 +109,8 @@ class Matrix(metaclass=types.CacheMeta):
     supp[row[abs(data) > tol]] = True
     return supp
 
-  @abc.abstractmethod
-  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, **solverargs):
+  @log.withcontext
+  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, solver='direct', **solverargs):
     '''Solve system given right hand side vector and/or constraints.
 
     Args
@@ -128,12 +128,55 @@ class Matrix(metaclass=types.CacheMeta):
         Row constrains. A True value signifies a constrains, a False value a free
         dof. `None` implies that the constraints follow those defined in
         `constrain` (by implication the matrix must be square).
+    solver : :class:`str`
+        Name of the solver algorithm. The set of available solvers depends on
+        the type of the matrix (i.e. the active backend), although all matrices
+        should implement at least the 'direct' solver.
+    **kwargs :
+        All remaining arguments are passed on to the selected solver method.
 
     Returns
     -------
     :class:`numpy.ndarray`
         Left hand side vector.
     '''
+    nrows, ncols = self.shape
+    if lhs0 is None:
+      x = numpy.zeros(ncols)
+    else:
+      x = numpy.array(lhs0, dtype=float)
+      assert x.shape == (ncols,)
+    if constrain is None:
+      J = numpy.ones(ncols, dtype=bool)
+    else:
+      assert constrain.shape == (ncols,)
+      if constrain.dtype == bool:
+        J = ~constrain
+      else:
+        J = numpy.isnan(constrain)
+        x[~J] = constrain[~J]
+    if rconstrain is None:
+      assert nrows == ncols
+      I = J
+    else:
+      assert rconstrain.shape == (nrows,) and constrain.dtype == bool
+      I = ~rconstrain
+    assert I.sum() == J.sum(), 'constrained matrix is not square: {}x{}'.format(I.sum(), J.sum())
+    if rhs is None:
+      rhs = 0.
+    b = (rhs - self.matvec(x))[J]
+    if b.any():
+      A = self if I.all() and J.all() else self.submatrix(I, J)
+      try:
+        x[J] += getattr(A, 'solve_'+solver)(b, **solverargs)
+      except Exception as e:
+        raise MatrixError('solver failed with error: {}'.format(e)) from e
+      if not numpy.isfinite(x).all():
+        raise MatrixError('solver returned non-finite left hand side')
+      log.info('solver returned with residual {:.0e}'.format(numpy.linalg.norm((rhs - self.matvec(x))[J])))
+    else:
+      log.info('skipping solver because initial vector is exact')
+    return x
 
   @abc.abstractmethod
   def submatrix(self, rows, cols):
@@ -165,47 +208,6 @@ class Matrix(metaclass=types.CacheMeta):
 
   def __repr__(self):
     return '{}<{}x{}>'.format(type(self).__qualname__, *self.shape)
-
-def preparesolvearguments(wrapped):
-  '''Make rhs optional, add lhs0, constrain, rconstrain arguments.
-
-  See Matrix.solve.'''
-
-  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, **solverargs):
-    nrows, ncols = self.shape
-    if lhs0 is None:
-      x = numpy.zeros(ncols)
-    else:
-      x = numpy.array(lhs0, dtype=float)
-      assert x.shape == (ncols,)
-    if constrain is None:
-      J = numpy.ones(ncols, dtype=bool)
-    else:
-      assert constrain.shape == (ncols,)
-      if constrain.dtype == bool:
-        J = ~constrain
-      else:
-        J = numpy.isnan(constrain)
-        x[~J] = constrain[~J]
-    if rconstrain is None:
-      assert nrows == ncols
-      I = J
-    else:
-      assert rconstrain.shape == (nrows,) and constrain.dtype == bool
-      I = ~rconstrain
-    assert I.sum() == J.sum(), 'constrained matrix is not square: {}x{}'.format(I.sum(), J.sum())
-    if rhs is None:
-      rhs = 0.
-    b = (rhs - self.matvec(x))[J]
-    if b.any():
-      x[J] += wrapped(self if I.all() and J.all() else self.submatrix(I, J), b, **solverargs)
-      if not numpy.isfinite(x).all():
-        raise MatrixError('solver returned non-finite left hand side')
-      log.info('solver returned with residual {:.0e}'.format(numpy.linalg.norm((rhs - self.matvec(x))[J])))
-    else:
-      log.info('skipping solver because initial vector is exact')
-    return x
-  return log.withcontext(solve)
 
 
 ## NUMPY BACKEND
@@ -259,12 +261,8 @@ class NumpyMatrix(Matrix):
   def rowsupp(self, tol=0):
     return numpy.greater(abs(self.core), tol).any(axis=1)
 
-  @preparesolvearguments
-  def solve(self, rhs):
-    try:
-      return numpy.linalg.solve(self.core, rhs)
-    except numpy.linalg.LinAlgError as e:
-      raise MatrixError(e) from e
+  def solve_direct(self, rhs):
+    return numpy.linalg.solve(self.core, rhs)
 
   def submatrix(self, rows, cols):
     return NumpyMatrix(self.core[numpy.ix_(rows, cols)])
@@ -332,12 +330,10 @@ else:
     def T(self):
       return ScipyMatrix(self.core.transpose())
 
-    @preparesolvearguments
-    def solve(self, rhs, atol=0, solver='spsolve', callback=None, precon=None, **solverargs):
-      if solver == 'spsolve':
-        log.info('solving system using sparse direct solver')
-        return scipy.sparse.linalg.spsolve(self.core, rhs)
-      assert atol, 'tolerance must be specified for iterative solver'
+    def solve_direct(self, rhs):
+      return scipy.sparse.linalg.spsolve(self.core, rhs)
+
+    def solve_scipy(self, rhs, solver, atol=1e-6, callback=None, precon=None, **solverargs):
       rhsnorm = numpy.linalg.norm(rhs)
       if rhsnorm <= atol:
         return numpy.zeros(self.shape[1])
@@ -357,9 +353,19 @@ else:
       M = self.getprecon(precon) if isinstance(precon, str) else precon(self.core) if callable(precon) else precon
       mylhs, status = solverfun(self.core, myrhs, M=M, tol=mytol, callback=mycallback, **solverargs)
       if status != 0:
-        raise MatrixError('{} solver failed with status {}'.format(solver, status))
+        raise Exception('status {}'.format(status))
+      if numpy.linalg.norm(myrhs - self.matvec(mylhs)) > atol:
+        raise Exception('failed to reach tolerance')
       log.info('solver converged in {} iterations'.format(niter))
       return mylhs * rhsnorm
+
+    solve_bicg     = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'bicg',     **kwargs)
+    solve_bicgstab = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'bicgstab', **kwargs)
+    solve_cg       = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'cg',       **kwargs)
+    solve_cgs      = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'cgs',      **kwargs)
+    solve_gmres    = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'gmres',    **kwargs)
+    solve_lgmres   = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'lgmres',   **kwargs)
+    solve_minres   = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'minres',   **kwargs)
 
     def getprecon(self, name):
       name = name.lower()
@@ -527,9 +533,7 @@ if libmkl is not None:
       csJ = cols.cumsum()
       return MKLMatrix(self.data[keep], numpy.array([csI[I[keep]]-1, csJ[J[keep]]-1]), shape=(csI[-1], csJ[-1]))
 
-    @preparesolvearguments
-    def solve(self, rhs):
-      log.info('solving {0}x{0} system using MKL Pardiso'.format(self.shape[0]))
+    def solve_direct(self, rhs):
       if self._factors:
         log.info('reusing existing factorization')
         pardiso, iparm, mtype = self._factors

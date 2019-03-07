@@ -17,7 +17,6 @@ class solver(TestCase):
     data = numpy.hstack([2.] * self.n + [-1.] * (2*self.n-2))
     self.matrix = matrix.assemble(data, index, shape=(self.n, self.n))
     self.exact = 2 * numpy.eye(self.n) - numpy.eye(self.n, self.n, -1) - numpy.eye(self.n, self.n, +1)
-    self.tol = self.args.get('atol', 1e-10)
 
   def tearDown(self):
     self._backend.__exit__(None, None, None)
@@ -120,25 +119,29 @@ class solver(TestCase):
   @ifsupported
   def test_solve(self):
     rhs = numpy.arange(self.matrix.shape[0])
-    lhs = self.matrix.solve(rhs, **self.args)
-    res = numpy.linalg.norm(self.matrix.matvec(lhs) - rhs)
-    self.assertLess(res, self.tol)
+    for args in self.args:
+      with self.subTest(args.get('solver', 'direct')):
+        lhs = self.matrix.solve(rhs, **args)
+        res = numpy.linalg.norm(self.matrix.matvec(lhs) - rhs)
+        self.assertLess(res, args.get('atol', 1e-10))
 
   @ifsupported
   def test_singular(self):
     singularmatrix = matrix.assemble(numpy.arange(self.n)-self.n//2, numpy.arange(self.n)[numpy.newaxis].repeat(2,0), shape=(self.n, self.n))
     rhs = numpy.ones(self.n)
-    with self.assertRaises(matrix.MatrixError):
-      lhs = singularmatrix.solve(rhs, **self.args)
-      print(lhs)
+    for args in self.args:
+      with self.subTest(args.get('solver', 'direct')), self.assertRaises(matrix.MatrixError):
+        lhs = singularmatrix.solve(rhs, **args)
 
   @ifsupported
   def test_solve_repeated(self):
     rhs = numpy.arange(self.matrix.shape[0])
-    for i in range(3):
-      lhs = self.matrix.solve(rhs, **self.args)
-      res = numpy.linalg.norm(self.matrix.matvec(lhs) - rhs)
-      self.assertLess(res, self.tol)
+    for args in self.args:
+      with self.subTest(args.get('solver', 'direct')):
+        for i in range(3):
+          lhs = self.matrix.solve(rhs, **args)
+          res = numpy.linalg.norm(self.matrix.matvec(lhs) - rhs)
+          self.assertLess(res, args.get('atol', 1e-10))
 
   @ifsupported
   def test_constraints(self):
@@ -146,17 +149,18 @@ class solver(TestCase):
     cons[:] = numpy.nan
     cons[0] = 10
     cons[-1] = 20
-    lhs = self.matrix.solve(constrain=cons, **self.args)
-    self.assertEqual(lhs[0], cons[0])
-    self.assertEqual(lhs[-1], cons[-1])
-    cons[1:-1] = 0
-    res = numpy.linalg.norm(self.matrix.matvec(lhs)[1:-1])
-    self.assertLess(res, self.tol)
+    for args in self.args:
+      with self.subTest(args.get('solver', 'direct')):
+        lhs = self.matrix.solve(constrain=cons, **args)
+        self.assertEqual(lhs[0], cons[0])
+        self.assertEqual(lhs[-1], cons[-1])
+        res = numpy.linalg.norm(self.matrix.matvec(lhs)[1:-1])
+        self.assertLess(res, args.get('atol', 1e-10))
 
-solver(backend='Numpy', args=dict())
-solver(backend='Scipy', args=dict())
-solver(backend='Scipy', args=dict(atol=1e-5, solver='gmres', restart=100, precon='spilu'))
-solver(backend='Scipy', args=dict(atol=1e-5, solver='gmres', precon='splu'))
-solver(backend='Scipy', args=dict(atol=1e-5, solver='cg', precon='diag'))
-solver(backend='Scipy', args=dict(atol=1e-5, solver='lgmres'))
-solver(backend='MKL', args=dict())
+solver('numpy', backend='numpy', args=[{}])
+solver('scipy', backend='scipy', args=[{},
+    dict(solver='gmres', atol=1e-5, restart=100, precon='spilu'),
+    dict(solver='gmres', atol=1e-5, precon='splu'),
+    dict(solver='cg', atol=1e-5, precon='diag')]
+ + [dict(solver=s, atol=1e-5) for s in ('bicg', 'bicgstab', 'cg', 'cgs', 'lgmres', 'minres')])
+solver('mkl', backend='mkl', args=[{}])
