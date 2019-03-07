@@ -157,6 +157,23 @@ class solver(TestCase):
         res = numpy.linalg.norm(self.matrix.matvec(lhs)[1:-1])
         self.assertLess(res, args.get('atol', 1e-10))
 
+class Base(matrix.Backend):
+  @staticmethod
+  def assemble(data, index, shape):
+    obj = matrix.Numpy.assemble(data, index, shape)
+    return WrapperMatrix(obj) if isinstance(obj, matrix.Matrix) else obj
+
+class WrapperMatrix(matrix.Matrix):
+  'simple wrapper to test base implementations of add, mul, etc'
+  def __init__(self, wrapped):
+    self.wrapped = wrapped
+    super().__init__(wrapped.shape)
+  def export(self, form):
+    return self.wrapped.export(form)
+  def solve_direct(self, rhs):
+    return self.wrapped.solve_direct(rhs)
+
+solver('base', backend='base', args=[{}])
 solver('numpy', backend='numpy', args=[{}])
 solver('scipy', backend='scipy', args=[{},
     dict(solver='gmres', atol=1e-5, restart=100, precon='spilu'),

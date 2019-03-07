@@ -71,17 +71,27 @@ class Matrix(metaclass=types.CacheMeta):
     assert len(shape) == 2
     self.shape = shape
 
-  @abc.abstractmethod
   def __add__(self, other):
     'add two matrices'
+    if not isinstance(other, Matrix):
+      return NotImplemented
+    if self.shape != other.shape:
+      raise MatrixError('incompatible shapes')
+    data1, index1 = self.export('coo')
+    data2, index2 = other.export('coo')
+    return assemble(numpy.concatenate([data1, data2]), numpy.concatenate([index1, index2], axis=1), self.shape)
 
-  @abc.abstractmethod
   def __mul__(self, other):
     'multiply matrix with a scalar'
+    if not numeric.isnumber(other):
+      return NotImplemented
+    data, index = self.export('coo')
+    return assemble(data * other, index, self.shape)
 
-  @abc.abstractmethod
-  def __neg__(self, other):
+  def __neg__(self):
     'negate matrix'
+    data, index = self.export('coo')
+    return assemble(-data, index, self.shape)
 
   def __sub__(self, other):
     return self.__add__(-other)
@@ -92,10 +102,17 @@ class Matrix(metaclass=types.CacheMeta):
   def __truediv__(self, other):
     return self.__mul__(1/other)
 
+  def matvec(self, vec):
+    retval = numpy.zeros(self.shape[:1])
+    data, index = self.export('coo')
+    numpy.add.at(retval, index[0], data * vec[index[1]])
+    return retval
+
   @property
-  @abc.abstractmethod
   def T(self):
     'transpose matrix'
+    data, index = self.export('coo')
+    return assemble(data, index[::-1], self.shape[::-1])
 
   @property
   def size(self):
@@ -179,7 +196,6 @@ class Matrix(metaclass=types.CacheMeta):
       log.info('skipping solver because initial vector is exact')
     return x
 
-  @abc.abstractmethod
   def submatrix(self, rows, cols):
     '''Create submatrix from selected rows, columns.
 
@@ -193,6 +209,14 @@ class Matrix(metaclass=types.CacheMeta):
     :class:`Matrix`
         Matrix instance of reduced dimensions
     '''
+
+    rows = numeric.asboolean(rows, self.shape[0])
+    cols = numeric.asboolean(cols, self.shape[1])
+    data, (I,J) = self.export('coo')
+    keep = numpy.logical_and(rows[I], cols[J])
+    csI = rows.cumsum()
+    csJ = cols.cumsum()
+    return assemble(data[keep], numpy.array([csI[I[keep]]-1, csJ[J[keep]]-1]), shape=(csI[-1], csJ[-1]))
 
   def export(self, form):
     '''Export matrix data to any of supported forms.
@@ -216,7 +240,8 @@ class Matrix(metaclass=types.CacheMeta):
 class Numpy(Backend):
   '''matrix backend based on numpy array'''
 
-  def assemble(self, data, index, shape):
+  @staticmethod
+  def assemble(data, index, shape):
     array = numeric.accumulate(data, index, shape)
     return NumpyMatrix(array) if len(shape) == 2 else array
 
@@ -229,14 +254,14 @@ class NumpyMatrix(Matrix):
     super().__init__(core.shape)
 
   def __add__(self, other):
-    if not isinstance(other, NumpyMatrix) or self.shape != other.shape:
-      return NotImplemented
-    return NumpyMatrix(self.core + other.core)
+    if isinstance(other, NumpyMatrix) and self.shape == other.shape:
+      return NumpyMatrix(self.core + other.core)
+    return super().__add__(other)
 
   def __mul__(self, other):
-    if not numeric.isnumber(other):
-      return NotImplemented
-    return NumpyMatrix(self.core * other)
+    if numeric.isnumber(other):
+      return NumpyMatrix(self.core * other)
+    return super().__mul__(other)
 
   def __neg__(self):
     return NumpyMatrix(-self.core)
@@ -280,7 +305,8 @@ else:
   class Scipy(Backend):
     '''matrix backend based on scipy's sparse matrices'''
 
-    def assemble(self, data, index, shape):
+    @staticmethod
+    def assemble(data, index, shape):
       if len(shape) < 2:
         return numeric.accumulate(data, index, shape)
       if len(shape) == 2:
@@ -296,9 +322,9 @@ else:
       super().__init__(core.shape)
 
     def __add__(self, other):
-      if not isinstance(other, ScipyMatrix) or self.shape != other.shape:
-        return NotImplemented
-      return ScipyMatrix(self.core + other.core)
+      if isinstance(other, ScipyMatrix) and self.shape == other.shape:
+        return ScipyMatrix(self.core + other.core)
+      return super().__add__(other)
 
     def __sub__(self, other):
       if not isinstance(other, ScipyMatrix) or self.shape != other.shape:
@@ -306,9 +332,9 @@ else:
       return ScipyMatrix(self.core - other.core)
 
     def __mul__(self, other):
-      if not numeric.isnumber(other):
-        return NotImplemented
-      return ScipyMatrix(self.core * other)
+      if numeric.isnumber(other):
+        return ScipyMatrix(self.core * other)
+      return super().__mul__(other)
 
     def __neg__(self):
       return ScipyMatrix(-self.core)
@@ -491,28 +517,6 @@ if libmkl is not None:
     def indptr(self):
       return self.index[0].searchsorted(numpy.arange(self.shape[0]+1)).astype(numpy.int32, copy=False)
 
-    def __add__(self, other):
-      if not isinstance(other, MKLMatrix) or self.shape != other.shape:
-        return NotImplemented
-      return MKLMatrix(numpy.concatenate([self.data, other.data]), numpy.concatenate([self.index, other.index], axis=1), self.shape)
-
-    def __sub__(self, other):
-      if not isinstance(other, MKLMatrix) or self.shape != other.shape:
-        return NotImplemented
-      return MKLMatrix(numpy.concatenate([self.data, -other.data]), numpy.concatenate([self.index, other.index], axis=1), self.shape)
-
-    def __mul__(self, other):
-      if not numeric.isnumber(other):
-        return NotImplemented
-      return MKLMatrix(self.data * other, self.index, self.shape)
-
-    def __neg__(self):
-      return MKLMatrix(-self.data, self.index, self.shape)
-
-    @property
-    def T(self):
-      return MKLMatrix(self.data, self.index[::-1], self.shape[::-1])
-
     def matvec(self, vec):
       rows, cols = self.index
       return numeric.accumulate(self.data * vec[cols], [rows], [self.shape[0]])
@@ -525,13 +529,6 @@ if libmkl is not None:
       if form == 'coo':
         return self.data, self.index
       raise NotImplementedError('cannot export MKLMatrix to {!r}'.format(form))
-
-    def submatrix(self, rows, cols):
-      I, J = self.index
-      keep = numpy.logical_and(rows[I], cols[J])
-      csI = rows.cumsum()
-      csJ = cols.cumsum()
-      return MKLMatrix(self.data[keep], numpy.array([csI[I[keep]]-1, csJ[J[keep]]-1]), shape=(csI[-1], csJ[-1]))
 
     def solve_direct(self, rhs):
       if self._factors:
