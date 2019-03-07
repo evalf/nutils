@@ -444,8 +444,25 @@ if libmkl is not None:
       if len(shape) < 2:
         return numeric.accumulate(data, index, shape)
       if len(shape) == 2:
-        return MKLMatrix(data, index, shape)
-      raise MatrixError('{}d data not supported by scipy backend'.format(len(shape)))
+        if not len(data):
+          return MKLMatrix([], [0]*(shape[0]+1), [], shape[1])
+        # sort rows, columns
+        reorder = numpy.lexsort(index[::-1])
+        index = index[:,reorder]
+        data = data[reorder]
+        # sum duplicate entries
+        keep = numpy.empty(len(reorder), dtype=bool)
+        keep[0] = True
+        numpy.not_equal(index[:,1:], index[:,:-1]).any(axis=0, out=keep[1:])
+        if not keep.all():
+          index = index[:,keep]
+          data = numeric.accumulate(data, [keep.cumsum()-1], [index.shape[1]])
+        if not data.all():
+          nz = data.astype(bool)
+          data = data[nz]
+          index = index[:,nz]
+        return MKLMatrix(data, index[0].searchsorted(numpy.arange(shape[0]+1)), index[1], shape[1])
+      raise MatrixError('{}d data not supported by MKL backend'.format(len(shape)))
 
   class Pardiso:
     '''simple wrapper for libmkl.pardiso
@@ -487,47 +504,33 @@ if libmkl is not None:
   class MKLMatrix(Matrix):
     '''matrix implementation based on sorted coo data'''
 
-    __cache__ = 'indptr',
-
     _factors = False
 
-    def __init__(self, data, index, shape):
-      assert index.shape == (2, len(data))
-      if len(data):
-        # sort rows, columns
-        reorder = numpy.lexsort(index[::-1])
-        index = index[:,reorder]
-        data = data[reorder]
-        # sum duplicate entries
-        keep = numpy.empty(len(reorder), dtype=bool)
-        keep[0] = True
-        numpy.not_equal(index[:,1:], index[:,:-1]).any(axis=0, out=keep[1:])
-        if not keep.all():
-          index = index[:,keep]
-          data = numeric.accumulate(data, [keep.cumsum()-1], [index.shape[1]])
-        if not data.all():
-          nz = data.astype(bool)
-          data = data[nz]
-          index = index[:,nz]
+    def __init__(self, data, rowptr, colidx, ncols):
+      assert len(data) == len(colidx) == rowptr[-1]
       self.data = numpy.ascontiguousarray(data, dtype=numpy.float64)
-      self.index = numpy.ascontiguousarray(index, dtype=numpy.int32)
-      super().__init__(shape)
+      self.rowptr = numpy.ascontiguousarray(rowptr, dtype=numpy.int32)
+      self.colidx = numpy.ascontiguousarray(colidx, dtype=numpy.int32)
+      super().__init__((len(rowptr)-1, ncols))
 
-    @property
-    def indptr(self):
-      return self.index[0].searchsorted(numpy.arange(self.shape[0]+1)).astype(numpy.int32, copy=False)
+    def __mul__(self, other):
+      if numeric.isnumber(other):
+        return MKLMatrix(self.data * other, self.rowptr, self.colidx, self.shape[1])
+      return super().__mul__(other)
 
-    def matvec(self, vec):
-      rows, cols = self.index
-      return numeric.accumulate(self.data * vec[cols], [rows], [self.shape[0]])
+    def __neg__(self):
+      return MKLMatrix(-self.data, self.rowptr, self.colidx, self.shape[1])
 
     def export(self, form):
       if form == 'dense':
-        return numeric.accumulate(self.data, self.index, self.shape)
+        dense = numpy.zeros(self.shape)
+        for row, i, j in zip(dense, self.rowptr[:-1], self.rowptr[1:]):
+          row[self.colidx[i:j]] = self.data[i:j]
+        return dense
       if form == 'csr':
-        return self.data, self.index[1], self.indptr
+        return self.data, self.colidx, self.rowptr
       if form == 'coo':
-        return self.data, self.index
+        return self.data, numpy.array([numpy.arange(self.shape[0]).repeat(self.rowptr[1:]-self.rowptr[:-1]), self.colidx])
       raise NotImplementedError('cannot export MKLMatrix to {!r}'.format(form))
 
     def solve_direct(self, rhs):
@@ -548,7 +551,7 @@ if libmkl is not None:
         phase = 13 # analysis, numerical factorization, solve, iterative refinement
         self._factors = pardiso, iparm, mtype
       lhs = numpy.empty(self.shape[1], dtype=numpy.float64)
-      pardiso(phase=phase, mtype=mtype, iparm=iparm, n=self.shape[0], nrhs=1, b=rhs, x=lhs, a=self.data, ia=self.indptr, ja=self.index[1])
+      pardiso(phase=phase, mtype=mtype, iparm=iparm, n=self.shape[0], nrhs=1, b=rhs, x=lhs, a=self.data, ia=self.rowptr, ja=self.colidx)
       return lhs
 
 
