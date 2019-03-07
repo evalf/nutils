@@ -445,7 +445,7 @@ if libmkl is not None:
         return numeric.accumulate(data, index, shape)
       if len(shape) == 2:
         if not len(data):
-          return MKLMatrix([], [0]*(shape[0]+1), [], shape[1])
+          return MKLMatrix([], [1]*(shape[0]+1), [], shape[1])
         # sort rows, columns
         reorder = numpy.lexsort(index[::-1])
         index = index[:,reorder]
@@ -461,7 +461,7 @@ if libmkl is not None:
           nz = data.astype(bool)
           data = data[nz]
           index = index[:,nz]
-        return MKLMatrix(data, index[0].searchsorted(numpy.arange(shape[0]+1)), index[1], shape[1])
+        return MKLMatrix(data, index[0].searchsorted(numpy.arange(shape[0]+1))+1, index[1]+1, shape[1])
       raise MatrixError('{}d data not supported by MKL backend'.format(len(shape)))
 
   class Pardiso:
@@ -507,7 +507,7 @@ if libmkl is not None:
     _factors = False
 
     def __init__(self, data, rowptr, colidx, ncols):
-      assert len(data) == len(colidx) == rowptr[-1]
+      assert len(data) == len(colidx) == rowptr[-1]-1
       self.data = numpy.ascontiguousarray(data, dtype=numpy.float64)
       self.rowptr = numpy.ascontiguousarray(rowptr, dtype=numpy.int32)
       self.colidx = numpy.ascontiguousarray(colidx, dtype=numpy.int32)
@@ -524,13 +524,13 @@ if libmkl is not None:
     def export(self, form):
       if form == 'dense':
         dense = numpy.zeros(self.shape)
-        for row, i, j in zip(dense, self.rowptr[:-1], self.rowptr[1:]):
-          row[self.colidx[i:j]] = self.data[i:j]
+        for row, i, j in zip(dense, self.rowptr[:-1]-1, self.rowptr[1:]-1):
+          row[self.colidx[i:j]-1] = self.data[i:j]
         return dense
       if form == 'csr':
-        return self.data, self.colidx, self.rowptr
+        return self.data, self.colidx-1, self.rowptr-1
       if form == 'coo':
-        return self.data, numpy.array([numpy.arange(self.shape[0]).repeat(self.rowptr[1:]-self.rowptr[:-1]), self.colidx])
+        return self.data, numpy.array([numpy.arange(self.shape[0]).repeat(self.rowptr[1:]-self.rowptr[:-1]), self.colidx-1])
       raise NotImplementedError('cannot export MKLMatrix to {!r}'.format(form))
 
     def solve_direct(self, rhs):
@@ -546,7 +546,7 @@ if libmkl is not None:
         iparm[9] = 13 # pivoting perturbation threshold 1e-13 (default for nonsymmetric)
         iparm[10] = 1 # enable scaling vectors (default for nonsymmetric)
         iparm[12] = 1 # enable improved accuracy using (non-) symmetric weighted matching (default for nonsymmetric)
-        iparm[34] = 1 # zero base indexing
+        iparm[34] = 0 # one-based indexing
         mtype = 11 # real and nonsymmetric
         phase = 13 # analysis, numerical factorization, solve, iterative refinement
         self._factors = pardiso, iparm, mtype
