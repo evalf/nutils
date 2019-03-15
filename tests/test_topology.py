@@ -190,6 +190,25 @@ class common_refine(TestCase):
           testvals = common.integrate(funs[c]*function.J(geom), ischeme='gauss1')
           numpy.testing.assert_array_almost_equal(testvals, vals[c])
 
+  def test_bnd(self):
+    dom, geom = mesh.rectilinear([2, 3])
+    dom1 = dom[:1]
+    dom2 = dom[1:]
+    with self.subTest('equal'):
+      iface = dom1.boundary & ~dom2.boundary
+      self.assertEqual(len(iface), 3)
+      self.assertAlmostEqual(iface.integrate(function.J(geom), degree=1), 3)
+    with self.subTest('refined-left'):
+      iface = dom1.refined.boundary['right'] & ~dom2.boundary
+      self.assertIs(iface, dom1.refined.boundary['right'])
+    with self.subTest('refined-right'):
+      iface = dom1.boundary & ~dom2.refined.boundary['left']
+      self.assertIs(iface, ~dom2.refined.boundary['left'])
+    with self.subTest('partial-refined-both'):
+      iface = dom1.refined_by([0]).boundary & ~dom2.refined_by([2]).boundary
+      self.assertEqual(len(iface), 5)
+      self.assertAlmostEqual(iface.integrate(function.J(geom), degree=1), 3)
+
 @parametrize
 class revolved(TestCase):
 
