@@ -135,7 +135,8 @@ class structured_line(TestCase):
   def setUp(self):
     self.periodic = {'normal': False, 'periodic': True}[self.variant]
     verts = numpy.linspace(0, 1, self.nelems+1)
-    self.domain, self.x = mesh.line(verts, periodic=self.periodic)
+    self.domain, self.x = mesh.line(verts, periodic=self.periodic) if self.line \
+                     else mesh.rectilinear([verts], periodic=(0,) if self.periodic else ())
 
     vl = function.elemwise(self.domain.transforms, verts[:-1])
     vr = function.elemwise(self.domain.transforms, verts[1:])
@@ -172,10 +173,8 @@ for btype in ['discont', 'spline', 'std']:
   for variant in ['normal', 'periodic']:
     for nelems in range(1, 4):
       for degree in range(0 if btype == 'discont' else 1, 4):
-        if btype == 'spline' and variant == 'periodic' and nelems < 2*degree:
-          continue
-        structured_line(variant=variant, btype=btype, degree=degree, nelems=nelems)
-structured_line(variant='periodic', btype='spline', degree=0, nelems=1)
+        for line in [False] if btype == 'spline' and variant == 'periodic' and nelems < 2*degree else [True, False]:
+          structured_line(variant=variant, btype=btype, degree=degree, nelems=nelems, line=line)
 
 
 @parametrize
