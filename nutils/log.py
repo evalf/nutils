@@ -113,7 +113,7 @@ if sys.version_info < (3,7):
     wrapper.__name__ = name
     wrapper.__qualname__ = name
     return wrapper
-  locals().update((name, _factory(name)) for name in dir(treelog.Log) if name not in locals())
+  globals().update((name, _factory(name)) for name in dir(treelog.Log) if name not in globals() and callable(getattr(treelog.Log, name)))
   del _factory
 
 # vim:sw=2:sts=2:et
