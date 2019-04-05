@@ -7,6 +7,7 @@ import math, re
 class gauss(TestCase):
   # Gaussian quadrature and exact integration on different element types
   maxdegree=7
+  exclude=frozenset()
 
   def setUp(self):
     super().setUp()
@@ -32,8 +33,16 @@ class gauss(TestCase):
             self.assertNotAlmostEqual(result/integral, 1, msg='integration should not be exact', places=12)
             # Counterexamples can be constructed, but in the case of monomials with maxdegree<8 this assert is verified
 
+  def test_weights(self):
+    for ischeme in {'gauss', 'uniform', 'bezier'} - self.exclude:
+      for degree in range(1, self.maxdegree+1):
+        with self.subTest(ischeme=ischeme, degree=degree):
+          points = self.ref.getpoints(ischeme, degree)
+          self.assertAlmostEqual(points.weights.sum(), self.ref.volume, places=14)
+
+
 gauss('line', ndims=1, istensor=True)
 gauss('quad', ndims=2, istensor=True)
 gauss('hex', ndims=3, istensor=True)
 gauss('tri', ndims=2, istensor=False)
-gauss('tet', ndims=3, istensor=False, maxdegree=8)
+gauss('tet', ndims=3, istensor=False, maxdegree=8, exclude={'uniform'})
