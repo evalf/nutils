@@ -453,6 +453,10 @@ class Integral(types.Singleton):
     shape, = shapes
     return shape
 
+  @property
+  def T(self):
+    return Integral({sample: func.T for sample, func in self._integrands.items()})
+
 strictintegral = types.strict[Integral]
 
 @types.apply_annotations

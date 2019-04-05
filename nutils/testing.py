@@ -148,6 +148,10 @@ class TestCase(unittest.TestCase):
     else:
       self.addCleanup(stack.__exit__, None, None, None)
 
+  def assertAlmostEqual(self, actual, desired, **kwargs):
+    for args in numpy.broadcast(actual, desired):
+      super().assertAlmostEqual(*args, **kwargs)
+
   def assertAlmostEqual64(self, actual, desired, atol=2e-15, rtol=2e-3):
     '''Assert numerical equivalence with packed data.
 
