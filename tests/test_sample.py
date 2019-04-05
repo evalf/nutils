@@ -46,3 +46,36 @@ class rectilinear(TestCase):
     self.assertEqual(self.gauss2.eval(sampled).tolist(), values.tolist())
     arg = function.Argument('dofs', [2,3])
     self.assertEqual(function.derivative(sampled, arg), function.zeros_like(arg))
+
+class integral(TestCase):
+
+  def setUp(self):
+    self.ns = function.Namespace()
+    self.topo, self.ns.x = mesh.rectilinear([5])
+    self.ns.basis = self.topo.basis('std', degree=1)
+    self.ns.v = 'basis_n ?lhs_n'
+    self.lhs = numpy.sin(numpy.arange(len(self.ns.basis)))
+
+  def test_eval(self):
+    self.assertAlmostEqual(
+      self.topo.integrate('basis_n d:x' @ self.ns, degree=2),
+      self.topo.integral('basis_n d:x' @ self.ns, degree=2).eval(),
+      places=15)
+
+  def test_args(self):
+    self.assertAlmostEqual(
+      self.topo.integrate('v d:x' @ self.ns, degree=2, arguments=dict(lhs=self.lhs)),
+      self.topo.integral('v d:x' @ self.ns, degree=2).eval(lhs=self.lhs),
+      places=15)
+
+  def test_derivative(self):
+    self.assertAlmostEqual(
+      self.topo.integrate('2 basis_n v d:x' @ self.ns, degree=2, arguments=dict(lhs=self.lhs)),
+      self.topo.integral('v^2 d:x' @ self.ns, degree=2).derivative('lhs').eval(lhs=self.lhs),
+      places=15)
+
+  def test_transpose(self):
+    self.assertAlmostEqual(
+      self.topo.integrate(self.ns.eval_nm('basis_n (basis_m + 1_m) d:x'), degree=2).export('dense').T,
+      self.topo.integral(self.ns.eval_nm('basis_n (basis_m + 1_m) d:x'), degree=2).T.eval().export('dense'),
+      places=15)
