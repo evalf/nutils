@@ -103,26 +103,20 @@ class Topology(types.Singleton):
   __ror__ = lambda self, other: self.__or__(other)
 
   def __and__(self, other):
-    # Strategy: loop over combined elements sorted by .transform while keeping
-    # track of the origin (mine=True for self, mine=False for other), and
-    # select an element if it is equal to or a refinement of the previous
-    # (hold) element and it originates from the other topology (mine == need).
-    # Hold is not updated in case of a match because it might match multiple
-    # children.
-    references = []
-    transforms = []
-    opposites = []
-    need = None
-    for ref, trans, opp, mine in sorted([(ref, trans, opp, True) for ref, trans, opp in zip(self.references, self.transforms, self.opposites)] + [(ref, trans, opp, False) for ref, trans, opp in zip(other.references, other.transforms, other.opposites)], key=lambda v: tuple(map(id, v[1]))):
-      if mine == need and trans[:len(holdtrans)] == holdtrans:
-        assert opp[:len(holdopp)] == holdopp
-        references.append(ref)
-        transforms.append(trans)
-        opposites.append(opp)
-      else:
-        holdtrans = trans
-        holdopp = opp
-        need = not mine
+    keep_self = numpy.array(list(map(other.transforms.contains_with_tail, self.transforms)), dtype=bool)
+    if keep_self.all():
+      return self
+    keep_other = numpy.array(list(map(self.transforms.contains_with_tail, other.transforms)), dtype=bool)
+    if keep_other.all():
+      return other
+    ind_self = types.frozenarray(keep_self.nonzero()[0], copy=False)
+    ind_other = types.frozenarray([i for i, trans in enumerate(other.transforms) if keep_other[i] and not self.transforms.contains(trans)], dtype=int)
+    # The last condition is to avoid duplicate elements. Note that we could
+    # have reused the result of an earlier lookup to avoid a new (using index
+    # instead of contains) but we choose to trade some speed for simplicity.
+    references = elementseq.chain([self.references[ind_self], other.references[ind_other]], self.ndims)
+    transforms = transformseq.chain([self.transforms[ind_self], other.transforms[ind_other]], self.ndims)
+    opposites = transformseq.chain([self.opposites[ind_self], other.opposites[ind_other]], self.ndims)
     return UnstructuredTopology(references, transforms, opposites, ndims=self.ndims)
 
   __rand__ = lambda self, other: self.__and__(other)
