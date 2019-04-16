@@ -356,23 +356,45 @@ for isstructured in True, False:
 @parametrize
 class locate(TestCase):
 
-  @parametrize.skip_if(lambda nprocs, **kwargs: nprocs > 1 and not hasattr(os, 'fork'), 'nprocs > 1 not supported on this platform')
+  def setUp(self):
+    self.domain, geom = mesh.unitsquare(4, etype=self.etype)
+    self.geom = geom * (.2, .7) + (0, .3) if self.linear \
+           else geom + .1 * function.sin(geom * numpy.pi) # non-polynomial geometry
+
   def test(self):
+    target = numpy.array([(.2,.3), (.1,.9), (0,1)])
     with config(nprocs=self.nprocs):
-      domain, geom = mesh.unitsquare(4, etype=self.etype)
-      if self.linear:
-        geom *= .2, .7
-        geom += 0, .3
-      else:
-        geom += .1 * function.sin(geom * numpy.pi) # non-polynomial geometry
-      target = numpy.array([(.2,.3), (.1,.9), (0,1)])
-      sample = domain.locate(geom, target, eps=1e-15)
-      located = sample.eval(geom)
-      numpy.testing.assert_array_almost_equal(located, target)
+      sample = self.domain.locate(self.geom, target, eps=1e-15)
+    located = sample.eval(self.geom)
+    self.assertAlmostEqual(located, target)
+
+  def test_invalidargs(self):
+    target = numpy.array([(.2,), (.1,), (0,)])
+    with config(nprocs=self.nprocs), self.assertRaises(Exception):
+      self.domain.locate(self.geom, target, eps=1e-15)
+
+  def test_invalidpoint(self):
+    target = numpy.array([(1, 2)])
+    with config(nprocs=self.nprocs), self.assertRaises(topology.LocateError):
+      self.domain.locate(self.geom, target, eps=1e-15)
+
+  def test_boundary(self):
+    target = numpy.array([(.2,), (.1,), (0,)])
+    with config(nprocs=self.nprocs):
+      sample = self.domain.boundary['bottom'].locate(self.geom[:1], target, eps=1e-15)
+    located = sample.eval(self.geom[:1])
+    self.assertAlmostEqual(located, target)
+
+  def test_boundary_scalar(self):
+    target = numpy.array([.3, .9, 1])
+    with config(nprocs=self.nprocs):
+      sample = self.domain.boundary['left'].locate(self.geom[1], target, eps=1e-15)
+    located = sample.eval(self.geom[1])
+    self.assertAlmostEqual(located, target)
 
 for etype in 'square', 'triangle', 'mixed':
   for linear in True, False:
-    for nprocs in 1, 2:
+    for nprocs in [1, 2]:
       locate(etype=etype, linear=linear, nprocs=nprocs)
 
 
