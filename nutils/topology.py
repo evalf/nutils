@@ -561,15 +561,12 @@ class Topology(types.Singleton):
     located : :class:`nutils.sample.Sample`
     '''
 
-    nprocs = min(config.nprocs, len(self))
-    if arguments is None:
-      arguments = {}
+    coords = numpy.asarray(coords, dtype=float)
     if geom.ndim == 0:
       geom = geom[_]
       coords = coords[...,_]
-    assert geom.shape == (self.ndims,)
-    coords = numpy.asarray(coords, dtype=float)
-    assert coords.ndim == 2 and coords.shape[1] == self.ndims
+    if not geom.shape == coords.shape[1:] == (self.ndims,):
+      raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
     bboxsample = self.sample(*element.parse_legacy_ischeme(ischeme))
     vertices = map(bboxsample.eval(geom, **arguments or {}).__getitem__, bboxsample.index)
     bboxes = numpy.array([numpy.mean(v,axis=0) * (1-scale) + numpy.array([numpy.min(v,axis=0), numpy.max(v,axis=0)]) * scale
@@ -578,7 +575,7 @@ class Topology(types.Singleton):
     ielems = parallel.shempty(len(coords), dtype=int)
     xis = parallel.shempty((len(coords),len(geom)), dtype=float)
     ipoints = parallel.range(len(coords))
-    with parallel.fork(nprocs):
+    with parallel.fork(min(config.nprocs, len(self))):
       for ipoint in ipoints:
         with log.context('point', ipoint, '({:.0f}%)'.format(100*ipoint/len(coords))):
           coord = coords[ipoint]
@@ -593,7 +590,7 @@ class Topology(types.Singleton):
             J = function.localgradient(geom, self.ndims)
             geom_J = function.Tuple((geom, J)).prepare_eval().simplified
             for iiter in range(maxiter):
-              coord_xi, J_xi = geom_J.eval(_transforms=(self.transforms[ielem], self.opposites[ielem]), _points=xi, **arguments)
+              coord_xi, J_xi = geom_J.eval(_transforms=(self.transforms[ielem], self.opposites[ielem]), _points=xi, **arguments or {})
               err = numpy.linalg.norm(coord - coord_xi)
               if err < tol:
                 converged = True
@@ -1465,8 +1462,13 @@ class StructuredTopology(Topology):
     return StructuredTopology(self.root, axes, self.nrefine+1, bnames=self._bnames)
 
   def locate(self, geom, coords, *, eps=0, **kwargs):
+    coords = numpy.asarray(coords, dtype=float)
+    if geom.ndim == 0:
+      geom = geom[_]
+      coords = coords[...,_]
+    if not geom.shape == coords.shape[1:] == (self.ndims,):
+      raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
     index = function.rootcoords(len(self.axes))[[axis.isdim for axis in self.axes]]
-    assert index.ndim == geom.ndim
     basis = function.concatenate([function.eye(self.ndims), function.diagonalize(index)], axis=0)
     A, b, f2 = self.integrate([(basis[:,_,:] * basis[_,:,:]).sum(-1), (basis * geom).sum(-1), (geom**2).sum(-1)], degree=3)
     x = A.solve(b)
