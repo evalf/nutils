@@ -608,17 +608,14 @@ class Topology(types.Singleton):
     return self._sample(ielems, xis)
 
   def _sample(self, ielems, coords):
-    transforms = []
-    opposites = []
+    uielems = numpy.unique(ielems)
     points_ = []
     index = []
-    for ielem in numpy.unique(ielems):
+    for ielem in uielems:
       w, = numpy.equal(ielems, ielem).nonzero()
-      transforms.append(self.transforms[ielem])
-      opposites.append(self.opposites[ielem])
       points_.append(points.CoordsPoints(coords[w]))
       index.append(w)
-    return sample.Sample((tuple(transforms), tuple(opposites)), points_, index)
+    return sample.Sample((self.transforms[uielems], self.opposites[uielems]), points_, index)
 
   def supp(self, basis, mask=None):
     warnings.deprecation('Topology.supp is deprecated, use basis.get_support instead')
