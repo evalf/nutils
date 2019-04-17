@@ -296,8 +296,8 @@ class Sample(types.Singleton):
     subset : :class:`Sample`
     '''
 
-    selection = [ielem for ielem in range(self.nelems) if mask[self.index[ielem]].any()]
-    transforms = tuple(tuple(t[ielem] for ielem in selection) for t in self.transforms)
+    selection = types.frozenarray([ielem for ielem in range(self.nelems) if mask[self.index[ielem]].any()])
+    transforms = tuple(transform[selection] for transform in self.transforms)
     points = [self.points[ielem] for ielem in selection]
     offset = numpy.cumsum([0] + [p.npoints for p in points])
     return Sample(transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
