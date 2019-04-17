@@ -7,9 +7,9 @@ class basis(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, self.geom = mesh.rectilinear([[0,1,2]]*self.ndims)
+    self.domain, self.geom = mesh.rectilinear([[0,1,2]]*self.ndims, periodic=[0] if self.periodic else [])
     for iref in range(self.nrefine):
-      self.domain = self.domain.refined_by([0])
+      self.domain = self.domain.refined_by([len(self.domain)-1])
     if self.boundary:
       self.domain = self.domain.boundary[self.boundary]
     self.basis = self.domain.basis(self.btype, degree=self.degree)
@@ -28,6 +28,7 @@ class basis(TestCase):
     error = numpy.sqrt(self.domain.integrate((1-self.basis.sum(0))**2*function.J(self.geom), ischeme=self.gauss))
     numpy.testing.assert_almost_equal(error, 0, decimal=12)
 
+  @parametrize.enable_if(lambda periodic, **params: not periodic)
   def test_poly(self):
     target = (self.geom**self.degree).sum(-1)
     projection = self.domain.projection(target, onto=self.basis, geometry=self.geom, ischeme=self.gauss, droptol=0)
@@ -38,8 +39,9 @@ for ndims in range(1, 4):
   for btype in 'discont', 'h-std', 'th-std', 'h-spline', 'th-spline':
     for degree in range(0 if btype == 'discont' else 1, 4):
       for nrefine in 0, 2:
-        for boundary in [None, 'left'] if ndims > 1 else [None]:
-          basis(btype=btype, degree=degree, ndims=ndims, nrefine=nrefine, boundary=boundary)
+        for boundary in [None, 'bottom'] if ndims > 1 else [None]:
+          for periodic in False, True:
+            basis(btype=btype, degree=degree, ndims=ndims, nrefine=nrefine, boundary=boundary, periodic=periodic)
 
 class NNZ(matrix.Backend):
   def assemble(self, data, index, shape):
@@ -135,7 +137,8 @@ class structured_line(TestCase):
   def setUp(self):
     self.periodic = {'normal': False, 'periodic': True}[self.variant]
     verts = numpy.linspace(0, 1, self.nelems+1)
-    self.domain, self.x = mesh.line(verts, periodic=self.periodic)
+    self.domain, self.x = mesh.line(verts, periodic=self.periodic) if self.line \
+                     else mesh.rectilinear([verts], periodic=(0,) if self.periodic else ())
 
     vl = function.elemwise(self.domain.transforms, verts[:-1])
     vr = function.elemwise(self.domain.transforms, verts[1:])
@@ -172,10 +175,8 @@ for btype in ['discont', 'spline', 'std']:
   for variant in ['normal', 'periodic']:
     for nelems in range(1, 4):
       for degree in range(0 if btype == 'discont' else 1, 4):
-        if btype == 'spline' and variant == 'periodic' and nelems < 2*degree:
-          continue
-        structured_line(variant=variant, btype=btype, degree=degree, nelems=nelems)
-structured_line(variant='periodic', btype='spline', degree=0, nelems=1)
+        for line in [False] if btype == 'spline' and variant == 'periodic' and nelems < 2*degree else [True, False]:
+          structured_line(variant=variant, btype=btype, degree=degree, nelems=nelems, line=line)
 
 
 @parametrize

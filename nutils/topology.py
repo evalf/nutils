@@ -1251,8 +1251,7 @@ class StructuredTopology(Topology):
         try:
           coeffs = cache[key]
         except KeyError:
-          coeffs = types.frozenarray(self._localsplinebasis(lknots, p).T, copy=False)
-          cache[key] = coeffs
+          coeffs = cache[key] = self._localsplinebasis(lknots)
         stdelems_i.append(coeffs[start:stop])
       stdelems.append(stdelems_i)
 
@@ -1326,8 +1325,8 @@ class StructuredTopology(Topology):
       assert -1 <= c < p
 
       k = knotvalues[idim]
-      if k is None: #Defaults to uniform spacing
-        k = numpy.arange(n+1)
+      if k is None:
+        k = numpy.arange(n+1) # default to uniform spacing
       else:
         k = numpy.array(k)
         while len(k) < n+1:
@@ -1338,13 +1337,11 @@ class StructuredTopology(Topology):
         assert len(k) == n+1, 'knot values do not match the topology size'
 
       m = knotmultiplicities[idim]
-      if m is None: #Defaults to open spline without internal repetitions
-        m = numpy.repeat(p-c, n+1)
-        if not isperiodic:
-          m[0] = m[-1] = p+1
+      if m is None:
+        m = numpy.repeat(p-c, n+1) # default to open spline without internal repetitions
       else:
         m = numpy.array(m)
-        assert min(m) >0 and max(m) <= p+1, 'incorrect multiplicity encountered'
+        assert min(m) > 0 and max(m) <= p+1, 'incorrect multiplicity encountered'
         while len(m) < n+1:
           m_ = numpy.empty(len(m)*2-1, dtype=int)
           m_[::2] = m
@@ -1352,51 +1349,33 @@ class StructuredTopology(Topology):
           m = m_
         assert len(m) == n+1, 'knot multiplicity do not match the topology size'
 
-      if not isperiodic:
-        nd = sum(m)-p-1
-        npre  = p+1-m[0]  #Number of knots to be appended to front
-        npost = p+1-m[-1] #Number of knots to be appended to rear
-        m[0] = m[-1] = p+1
-      else:
-        assert m[0]==m[-1], 'Periodic spline multiplicity expected'
-        assert m[0]<p+1, 'Endpoint multiplicity for periodic spline should be p or smaller'
-
-        nd = sum(m[:-1])
-        npre = npost = 0
-        k = numpy.concatenate([k[-p-1:-1]+k[0]-k[-1], k, k[1:1+p]-k[0]+k[-1]])
-        m = numpy.concatenate([m[-p-1:-1], m, m[1:1+p]])
-
-      km = numpy.array([ki for ki,mi in zip(k,m) for cnt in range(mi)],dtype=float)
-      assert len(km)==sum(m)
-      assert nd>0, 'No basis functions defined. Knot vector too short.'
-
-      offsets = numpy.cumsum(m[:-1])-p
       if isperiodic:
-        offsets = offsets[p:-p]
-      offset0 = offsets[0]+npre
+        assert m[0] == m[n], 'periodic spline multiplicity expected'
+        nd = m[:n].sum()
+        while m[n:].sum() < 2*p - m[n]:
+          k = numpy.concatenate([k, k[1:]+k[-1]-k[0]])
+          m = numpy.concatenate([m, m[1:]])
+      else:
+        m[0] = m[-1] = p
+        nd = m[:n].sum()+1
 
-      start_dofs.append(offsets-offset0+numpy.maximum(offset0-offsets, 0))
-      stop_dofs.append(offsets+(p+1-offset0)-numpy.maximum(offsets+(npost-offsets[-1]), 0))
+      km = numpy.array([ki for ki, mi in zip(k, m) for cnt in range(mi)], dtype=float)
+
+      offsets = numpy.cumsum(m[:n]) - m[0]
+      start_dofs.append(offsets)
+      stop_dofs.append(offsets+p+1)
       dofshape.append(nd)
 
       coeffs_i = []
       for offset in offsets:
-        start = max(offset0-offset,0) #Zero unless prepending influence
-        stop  = p+1-max(offset-offsets[-1]+npost,0) #Zero unless appending influence
-        lknots  = km[offset:offset+2*p] - km[offset] #Copy operation required
-        if p: #Normalize for optimized caching
-          lknots /= lknots[-1]
-        key = (tuple(numeric.round(lknots*numpy.iinfo(numpy.int32).max)), p)
+        lknots = km[offset:offset+2*p]
+        key = tuple(numeric.round((lknots[1:-1]-lknots[0])/(lknots[-1]-lknots[0])*numpy.iinfo(numpy.int32).max)), p
         try:
           local_coeffs = cache[key]
         except KeyError:
-          local_coeffs = types.frozenarray(self._localsplinebasis(lknots, p).T, copy=False)
-          cache[key] = local_coeffs
-        coeffs_i.append(types.frozenarray(local_coeffs[start:stop], dtype=types.strictfloat, copy=False))
+          local_coeffs = cache[key] = self._localsplinebasis(lknots)
+        coeffs_i.append(local_coeffs)
       coeffs.append(tuple(coeffs_i))
-
-    #Cache effectivity
-    log.debug('Local knot vector cache effectivity: {}'.format(100*(1.-len(cache)/float(sum(self.shape)))))
 
     transforms_shape = tuple(axis.j-axis.i for axis in self.axes if axis.isdim)
     func = function.StructuredBasis(coeffs, start_dofs, stop_dofs, dofshape, self.transforms, transforms_shape)
@@ -1412,10 +1391,11 @@ class StructuredTopology(Topology):
     return func[mask.ravel()]
 
   @staticmethod
-  def _localsplinebasis (lknots, p):
+  def _localsplinebasis(lknots):
 
     assert numeric.isarray(lknots), 'Local knot vector should be numpy array'
-    assert len(lknots)==2*p, 'Expected 2*p local knots'
+    p, rem = divmod(len(lknots), 2)
+    assert rem == 0
 
     #Based on Algorithm A2.2 Piegl and Tiller
     N    = [None]*(p+1)
@@ -1445,7 +1425,7 @@ class StructuredTopology(Topology):
 
     assert all(Ni.order==p for Ni in N)
 
-    return types.frozenarray([Ni.coeffs for Ni in N]).T[::-1]
+    return types.frozenarray([Ni.coeffs[::-1] for Ni in N])
 
   def basis_std(self, *args, **kwargs):
     return __class__.basis_spline(self, *args, continuity=0, **kwargs)
