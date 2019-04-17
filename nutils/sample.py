@@ -43,7 +43,7 @@ multiple integrals simultaneously, which has the advantage that it can
 efficiently combine common substructures.
 '''
 
-from . import types, points, util, function, config, parallel, numeric, cache, matrix
+from . import types, points, util, function, config, parallel, numeric, cache, matrix, transformseq
 import numpy, numbers, collections.abc, treelog as log
 
 def argdict(arguments):
@@ -81,7 +81,7 @@ class Sample(types.Singleton):
   '''
 
   @types.apply_annotations
-  def __init__(self, transforms:tuple, points:types.tuple[points.strictpoints], index:types.tuple[types.frozenarray[types.strictint]]):
+  def __init__(self, transforms:types.tuple[transformseq.stricttransforms], points:types.tuple[points.strictpoints], index:types.tuple[types.frozenarray[types.strictint]]):
     assert len(points) == len(index)
     assert len(transforms) >= 1
     assert all(len(t) == len(points) for t in transforms)
@@ -296,8 +296,8 @@ class Sample(types.Singleton):
     subset : :class:`Sample`
     '''
 
-    selection = [ielem for ielem in range(self.nelems) if mask[self.index[ielem]].any()]
-    transforms = tuple(tuple(t[ielem] for ielem in selection) for t in self.transforms)
+    selection = types.frozenarray([ielem for ielem in range(self.nelems) if mask[self.index[ielem]].any()])
+    transforms = tuple(transform[selection] for transform in self.transforms)
     points = [self.points[ielem] for ielem in selection]
     offset = numpy.cumsum([0] + [p.npoints for p in points])
     return Sample(transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
