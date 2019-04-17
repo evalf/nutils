@@ -10,6 +10,8 @@ class basis(TestCase):
     self.domain, self.geom = mesh.rectilinear([[0,1,2]]*self.ndims)
     for iref in range(self.nrefine):
       self.domain = self.domain.refined_by([0])
+    if self.boundary:
+      self.domain = self.domain.boundary[self.boundary]
     self.basis = self.domain.basis(self.btype, degree=self.degree)
     self.gauss = 'gauss{}'.format(2*self.degree)
 
@@ -36,7 +38,8 @@ for ndims in range(1, 4):
   for btype in 'discont', 'h-std', 'th-std', 'h-spline', 'th-spline':
     for degree in range(0 if btype == 'discont' else 1, 4):
       for nrefine in 0, 2:
-        basis(btype=btype, degree=degree, ndims=ndims, nrefine=nrefine)
+        for boundary in [None, 'left'] if ndims > 1 else [None]:
+          basis(btype=btype, degree=degree, ndims=ndims, nrefine=nrefine, boundary=boundary)
 
 class NNZ(matrix.Backend):
   def assemble(self, data, index, shape):
