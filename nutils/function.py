@@ -3309,19 +3309,16 @@ class StructuredBasis(Basis):
     supports = []
     for start_dofs_i, stop_dofs_i, ndofs_i, ntrans_i in zip(reversed(self._start_dofs), reversed(self._stop_dofs), reversed(self._dofs_shape), reversed(self._transforms_shape)):
       dof, dof_i = divmod(dof, ndofs_i)
-      stop_ielem = numpy.searchsorted(start_dofs_i, dof_i, side='right')
-      start_ielem = numpy.searchsorted(stop_dofs_i, dof_i, side='right')
-      supports_i = numpy.arange(start_ielem, stop_ielem, dtype=int)
-      if dof_i + ndofs_i < stop_dofs_i[-1]:
-        stop_ielem = numpy.searchsorted(start_dofs_i, dof_i + ndofs_i, side='right')
-        start_ielem = numpy.searchsorted(stop_dofs_i, dof_i + ndofs_i, side='right')
-        supports_i = numpy.concatenate([supports_i, numpy.arange(start_ielem, stop_ielem, dtype=int)])
-      supports.append(supports_i*ntrans)
+      supports_i = []
+      while dof_i < stop_dofs_i[-1]:
+        stop_ielem = numpy.searchsorted(start_dofs_i, dof_i, side='right')
+        start_ielem = numpy.searchsorted(stop_dofs_i, dof_i, side='right')
+        supports_i.append(numpy.arange(start_ielem, stop_ielem, dtype=int))
+        dof_i += ndofs_i
+      supports.append(numpy.unique(numpy.concatenate(supports_i)) * ntrans)
       ndofs *= ndofs_i
       ntrans *= ntrans_i
     assert dof == 0
-    x = functools.reduce(numpy.add.outer, reversed(supports)).ravel()
-    assert (numpy.unique(x) == x).all()
     return types.frozenarray(functools.reduce(numpy.add.outer, reversed(supports)).ravel(), copy=False, dtype=types.strictint)
 
 class PrunedBasis(Basis):
