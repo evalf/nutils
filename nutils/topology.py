@@ -2057,7 +2057,7 @@ class HierarchicalTopology(Topology):
     for ilevel, (level, indices) in enumerate(zip(self.levels, self._indices_per_level)):
       for ilocal in indices:
 
-        hbasis_trans = level.transforms[ilocal]
+        hbasis_trans = transform.canonical(level.transforms[ilocal])
         tail = hbasis_trans[len(hbasis_trans)-ilevel:]
         trans_dofs = []
         trans_coeffs = []
