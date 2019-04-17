@@ -9,7 +9,7 @@ class basis(TestCase):
     super().setUp()
     self.domain, self.geom = mesh.rectilinear([[0,1,2]]*self.ndims)
     for iref in range(self.nrefine):
-      self.domain = self.domain.refined_by([0])
+      self.domain = self.domain.refined_by([len(self.domain)-1])
     if self.boundary:
       self.domain = self.domain.boundary[self.boundary]
     self.basis = self.domain.basis(self.btype, degree=self.degree)
