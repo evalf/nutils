@@ -584,6 +584,48 @@ if libmkl is not None:
       pardiso(phase=phase, mtype=mtype, iparm=iparm, n=self.shape[0], nrhs=1, b=rhs, x=lhs, a=self.data, ia=self.rowptr, ja=self.colidx)
       return lhs
 
+    def solve_fgmres(self, rhs, maxiter=0, atol=1e-6, restart=150):
+      rci = ctypes.c_int32(0)
+      n = ctypes.c_int32(len(rhs))
+      b = numpy.array(rhs, dtype=numpy.float64)
+      x = numpy.zeros_like(b)
+      ipar = numpy.zeros(128, dtype=numpy.int32)
+      ipar[0] = len(rhs) # problem size
+      ipar[1] = 6 # output on screen
+      ipar[2] = 1 # current stage of the RCI FGMRES computations; the initial value is 1
+      ipar[3] = 0 # current iteration number; the initial value is 0
+      ipar[4] = maxiter # maximum number of iterations
+      ipar[5] = 1 # output error messages in accordance with the parameter ipar[1]
+      ipar[6] = 1 # output warning messages in accordance with the parameter ipar[1]
+      ipar[7] = 1 if maxiter > 0 else 0 # perform the stopping test for the maximum number of iterations: ipar[3] <= ipar[4]
+      ipar[8] = 1 # perform the residual stopping test: dpar[4] <= dpar[3]
+      ipar[9] = 0 # the user-defined stopping test should not be performed by setting RCI_request=2
+      ipar[10] = 0 # run the non-preconditioned version of the FGMRES method
+      ipar[11] = 1 # perform the automatic test for zero norm of the currently generated vector: dpar[6] <= dpar[7]
+      ipar[12] = 0 # update the solution to the vector x according to the computations done by the dfgmres routine
+      ipar[13] = 0 # internal iteration counter that counts the number of iterations before the restart takes place; the initial value is 0
+      ipar[14] = min(restart, len(rhs)) # the number of non-restarted FGMRES iterations
+      dpar = numpy.zeros(128, dtype=numpy.float64)
+      dpar[0] = 0 # relative tolerance
+      dpar[1] = atol # absolute tolerance
+      dpar[7] = 1e-12 # tolerance for the zero norm of the currently generated vector
+      tmp = numpy.zeros((2*ipar[14]+1)*ipar[0]+(ipar[14]*(ipar[14]+9))//2+1, dtype=numpy.float64)
+      libmkl.dfgmres_check(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes)
+      assert rci.value == 0
+      while True:
+        with log.context('iter {} ({:.0f}%)'.format(ipar[13], 100 * numpy.log(dpar[2]/dpar[4]) / numpy.log(dpar[2]/atol) if dpar[4] else 0)):
+          libmkl.dfgmres(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes)
+          if rci.value == 0:
+            break
+          elif rci.value == 1:
+            tmp[ipar[22]-1:ipar[22]+n.value-1] = self.matvec(tmp[ipar[21]-1:ipar[21]+n.value-1])
+          else:
+            raise NotImplementedError
+      itercount = ctypes.c_int32(0)
+      libmkl.dfgmres_get(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes, ctypes.byref(itercount))
+      if numpy.linalg.norm(self.matvec(x) - b) > atol:
+        raise MatrixError('fgmres solver failed to reach tolerance')
+      return x
 
 ## MODULE METHODS
 

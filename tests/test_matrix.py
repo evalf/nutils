@@ -180,4 +180,5 @@ solver('scipy', backend='scipy', args=[{},
     dict(solver='gmres', atol=1e-5, precon='splu'),
     dict(solver='cg', atol=1e-5, precon='diag')]
  + [dict(solver=s, atol=1e-5) for s in ('bicg', 'bicgstab', 'cg', 'cgs', 'lgmres', 'minres')])
-solver('mkl', backend='mkl', args=[{}])
+solver('mkl', backend='mkl', args=[{},
+    dict(solver='fgmres', atol=1e-8)])
