@@ -513,6 +513,27 @@ if libmkl is not None:
       self.colidx = numpy.ascontiguousarray(colidx, dtype=numpy.int32)
       super().__init__((len(rowptr)-1, ncols))
 
+    def __add__(self, other):
+      if isinstance(other, MKLMatrix) and self.shape == other.shape:
+        request = ctypes.c_int32(1)
+        info = ctypes.c_int32()
+        rowptr = numpy.empty(self.shape[0]+1, dtype=numpy.int32)
+        args = ["N", ctypes.byref(request), ctypes.byref(ctypes.c_int32(0)),
+          ctypes.byref(ctypes.c_int32(self.shape[0])), ctypes.byref(ctypes.c_int32(self.shape[1])),
+          self.data.ctypes, self.colidx.ctypes, self.rowptr.ctypes, ctypes.byref(ctypes.c_double(1.)),
+          other.data.ctypes, other.colidx.ctypes, other.rowptr.ctypes,
+          None, None, rowptr.ctypes, None, ctypes.byref(info)]
+        libmkl.mkl_dcsradd(*args)
+        assert info.value == 0
+        colidx = numpy.empty(rowptr[-1]-1, dtype=numpy.int32)
+        data = numpy.empty(rowptr[-1]-1, dtype=numpy.float64)
+        request.value = 2
+        args[12:14] = data.ctypes, colidx.ctypes
+        libmkl.mkl_dcsradd(*args)
+        assert info.value == 0
+        return MKLMatrix(data, rowptr, colidx, self.shape[1])
+      return super().__add__(other)
+
     def __mul__(self, other):
       if numeric.isnumber(other):
         return MKLMatrix(self.data * other, self.rowptr, self.colidx, self.shape[1])
