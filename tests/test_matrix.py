@@ -78,6 +78,22 @@ class solver(TestCase):
     numpy.testing.assert_equal(actual=mul.export('dense'), desired=self.exact * 1.5)
 
   @ifsupported
+  def test_matvec(self):
+    x = numpy.arange(self.n)
+    b = numpy.zeros(self.n)
+    b[0] = -1
+    b[-1] = self.n
+    numpy.testing.assert_equal(actual=self.matrix @ x, desired=b)
+
+  @ifsupported
+  def test_matmat(self):
+    X = numpy.arange(self.n*2).reshape(-1,2)
+    B = numpy.zeros((self.n,2))
+    B[0] = -2, -1
+    B[-1] = 2*self.n, 2*self.n+1
+    numpy.testing.assert_equal(actual=self.matrix @ X, desired=B)
+
+  @ifsupported
   def test_rmul(self):
     rmul = 1.5 * self.matrix
     numpy.testing.assert_equal(actual=rmul.export('dense'), desired=self.exact * 1.5)
@@ -122,7 +138,7 @@ class solver(TestCase):
     for args in self.args:
       with self.subTest(args.get('solver', 'direct')):
         lhs = self.matrix.solve(rhs, **args)
-        res = numpy.linalg.norm(self.matrix.matvec(lhs) - rhs)
+        res = numpy.linalg.norm(self.matrix @ lhs - rhs)
         self.assertLess(res, args.get('atol', 1e-10))
 
   @ifsupported
@@ -140,7 +156,7 @@ class solver(TestCase):
       with self.subTest(args.get('solver', 'direct')):
         for i in range(3):
           lhs = self.matrix.solve(rhs, **args)
-          res = numpy.linalg.norm(self.matrix.matvec(lhs) - rhs)
+          res = numpy.linalg.norm(self.matrix @ lhs - rhs)
           self.assertLess(res, args.get('atol', 1e-10))
 
   @ifsupported
@@ -154,7 +170,7 @@ class solver(TestCase):
         lhs = self.matrix.solve(constrain=cons, **args)
         self.assertEqual(lhs[0], cons[0])
         self.assertEqual(lhs[-1], cons[-1])
-        res = numpy.linalg.norm(self.matrix.matvec(lhs)[1:-1])
+        res = numpy.linalg.norm((self.matrix @ lhs)[1:-1])
         self.assertLess(res, args.get('atol', 1e-10))
 
 class Base(matrix.Backend):

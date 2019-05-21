@@ -88,6 +88,17 @@ class Matrix(metaclass=types.CacheMeta):
     data, index = self.export('coo')
     return assemble(data * other, index, self.shape)
 
+  def __matmul__(self, other):
+    'multiply matrix with a dense tensor'
+    if not isinstance(other, numpy.ndarray):
+      return NotImplemented
+    if other.shape[0] != self.shape[1]:
+      raise MatrixError('incompatible shapes')
+    retval = numpy.zeros(self.shape[:1] + other.shape[1:])
+    data, index = self.export('coo')
+    numpy.add.at(retval, index[0], data[(slice(None),)+(numpy.newaxis,)*(other.ndim-1)] * other[index[1]])
+    return retval
+
   def __neg__(self):
     'negate matrix'
     data, index = self.export('coo')
@@ -103,10 +114,8 @@ class Matrix(metaclass=types.CacheMeta):
     return self.__mul__(1/other)
 
   def matvec(self, vec):
-    retval = numpy.zeros(self.shape[:1])
-    data, index = self.export('coo')
-    numpy.add.at(retval, index[0], data * vec[index[1]])
-    return retval
+    warnings.deprecation('A.matvec(x) is deprecated; use A @ x instead')
+    return self.__matmul__(vec)
 
   @property
   def T(self):
@@ -263,15 +272,17 @@ class NumpyMatrix(Matrix):
       return NumpyMatrix(self.core * other)
     return super().__mul__(other)
 
+  def __matmul__(self, other):
+    if isinstance(other, numpy.ndarray) and other.shape[0] == self.shape[1]:
+      return numpy.einsum('ij,j...->i...', self.core, other)
+    return super().__matmul__(other)
+
   def __neg__(self):
     return NumpyMatrix(-self.core)
 
   @property
   def T(self):
     return NumpyMatrix(self.core.T)
-
-  def matvec(self, vec):
-    return numpy.dot(self.core, vec)
 
   def export(self, form):
     if form == 'dense':
@@ -336,11 +347,13 @@ else:
         return ScipyMatrix(self.core * other)
       return super().__mul__(other)
 
+    def __matmul__(self, other):
+      if isinstance(other, numpy.ndarray) and other.shape[0] == self.shape[1]:
+        return self.core * other
+      return super().__matmul__(other)
+
     def __neg__(self):
       return ScipyMatrix(-self.core)
-
-    def matvec(self, vec):
-      return self.core.dot(vec)
 
     def export(self, form):
       if form == 'dense':
@@ -539,17 +552,25 @@ if libmkl is not None:
         return MKLMatrix(self.data * other, self.rowptr, self.colidx, self.shape[1])
       return super().__mul__(other)
 
+    def __matmul__(self, other):
+      if isinstance(other, numpy.ndarray) and other.shape[0] == self.shape[1]:
+        x = numpy.ascontiguousarray(other.T, dtype=numpy.float64)
+        y = numpy.empty(x.shape[:-1] + self.shape[:1], dtype=numpy.float64)
+        if other.ndim == 1:
+          libmkl.mkl_dcsrgemv('N', ctypes.byref(ctypes.c_int32(self.shape[0])),
+            self.data.ctypes, self.rowptr.ctypes, self.colidx.ctypes, x.ctypes, y.ctypes)
+        else:
+          libmkl.mkl_dcsrmm('N', ctypes.byref(ctypes.c_int32(self.shape[0])),
+            ctypes.byref(ctypes.c_int32(other.size//other.shape[0])),
+            ctypes.byref(ctypes.c_int32(self.shape[1])), ctypes.byref(ctypes.c_double(1.)), 'GXXFXX',
+            self.data.ctypes, self.colidx.ctypes, self.rowptr.ctypes, self.rowptr[1:].ctypes,
+            x.ctypes, ctypes.byref(ctypes.c_int32(other.shape[0])), ctypes.byref(ctypes.c_double(0.)),
+            y.ctypes, ctypes.byref(ctypes.c_int32(other.shape[0])))
+        return y.T
+      return super().__matmul__(other)
+
     def __neg__(self):
       return MKLMatrix(-self.data, self.rowptr, self.colidx, self.shape[1])
-
-    def matvec(self, vec):
-      if vec.shape != self.shape[1:]:
-        raise Exception('vector is of wrong length or dimension')
-      m = ctypes.c_int32(self.shape[0])
-      x = numpy.ascontiguousarray(vec, dtype=numpy.float64)
-      y = numpy.empty(self.shape[:1], dtype=numpy.float64)
-      libmkl.mkl_dcsrgemv("N", ctypes.byref(m), self.data.ctypes, self.rowptr.ctypes, self.colidx.ctypes, x.ctypes, y.ctypes)
-      return y
 
     def export(self, form):
       if form == 'dense':
