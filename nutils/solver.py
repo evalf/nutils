@@ -275,7 +275,7 @@ class newton(RecursionWithSolve, length=1):
         #   P'(1) = 2 relax res(lhs+relax*dlhs).jac(lhs+relax*dlhs).dlhs
         A = resnorm**2
         B = -2 * A * relax
-        C = 3 * newresnorm**2 - 2 * numpy.dot(jac.matvec(dlhs)[~self.constrain], res[~self.constrain]) * relax - 3 * A - 2 * B
+        C = 3 * newresnorm**2 - 2 * numpy.dot((jac @ dlhs)[~self.constrain], res[~self.constrain]) * relax - 3 * A - 2 * B
         D = newresnorm**2 - A - B - C
         # Minimizing P:
         #   B + 2 C scale + 3 D scale^2 = 0 => scale = (-C +/- sqrt(C^2 - 3 B D)) / (3 D)
@@ -452,7 +452,7 @@ class minimize(RecursionWithSolve, length=1, version=1):
         # theoretical maximum (indicating that we decended into numerical
         # noise) then we set scale to rebound.
         decreasing = dpbasis.dot([nrg, relax * res.dot(dlhs), -relax**2 * (res+shift*dlhs).dot(dlhs),
-          newnrg, relax * newres.dot(dlhs), relax**2 * newjac.matvec(dlhs).dot(dlhs)]) < 0
+          newnrg, relax * newres.dot(dlhs), relax**2 * (newjac @ dlhs).dot(dlhs)]) < 0
         minima = s[numpy.hstack([True, decreasing]) & numpy.hstack([~decreasing, False])]
         if 0 < len(minima) < 6:
           scale = minima[0]

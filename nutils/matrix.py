@@ -190,7 +190,7 @@ class Matrix(metaclass=types.CacheMeta):
     assert I.sum() == J.sum(), 'constrained matrix is not square: {}x{}'.format(I.sum(), J.sum())
     if rhs is None:
       rhs = 0.
-    b = (rhs - self.matvec(x))[J]
+    b = (rhs - self @ x)[J]
     if b.any():
       A = self if I.all() and J.all() else self.submatrix(I, J)
       log.info('solving {0[0]}x{0[1]} system using {1} solver'.format(A.shape, solver))
@@ -200,7 +200,7 @@ class Matrix(metaclass=types.CacheMeta):
         raise MatrixError('solver failed with error: {}'.format(e)) from e
       if not numpy.isfinite(x).all():
         raise MatrixError('solver returned non-finite left hand side')
-      log.info('solver returned with residual {:.0e}'.format(numpy.linalg.norm((rhs - self.matvec(x))[J])))
+      log.info('solver returned with residual {:.0e}'.format(numpy.linalg.norm((rhs - self @ x)[J])))
     else:
       log.info('skipping solver because initial vector is exact')
     return x
@@ -384,7 +384,7 @@ else:
       def mycallback(arg):
         niter[...] += 1
         # some solvers provide the residual, others the left hand side vector
-        res = numpy.linalg.norm(myrhs - self.matvec(arg)) if numpy.ndim(arg) == 1 else float(arg)
+        res = numpy.linalg.norm(myrhs - self @ arg) if numpy.ndim(arg) == 1 else float(arg)
         if callback:
           callback(res)
         with log.context('residual {:.2e} ({:.0f}%)'.format(res, 100. * numpy.log10(res) / numpy.log10(mytol) if res > 0 else 0)):
@@ -393,7 +393,7 @@ else:
       mylhs, status = solverfun(self.core, myrhs, M=M, tol=mytol, callback=mycallback, **solverargs)
       if status != 0:
         raise Exception('status {}'.format(status))
-      if numpy.linalg.norm(myrhs - self.matvec(mylhs)) > atol:
+      if numpy.linalg.norm(myrhs - self @ mylhs) > atol:
         raise Exception('failed to reach tolerance')
       log.info('solver converged in {} iterations'.format(niter))
       return mylhs * rhsnorm
@@ -639,12 +639,12 @@ if libmkl is not None:
           if rci.value == 0:
             break
           elif rci.value == 1:
-            tmp[ipar[22]-1:ipar[22]+n.value-1] = self.matvec(tmp[ipar[21]-1:ipar[21]+n.value-1])
+            tmp[ipar[22]-1:ipar[22]+n.value-1] = self @ tmp[ipar[21]-1:ipar[21]+n.value-1]
           else:
             raise NotImplementedError
       itercount = ctypes.c_int32(0)
       libmkl.dfgmres_get(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes, ctypes.byref(itercount))
-      if numpy.linalg.norm(self.matvec(x) - b) > atol:
+      if numpy.linalg.norm(self @ x - b) > atol:
         raise MatrixError('fgmres solver failed to reach tolerance')
       return x
 
