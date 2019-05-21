@@ -142,6 +142,13 @@ class solver(TestCase):
         self.assertLess(res, args.get('atol', 1e-10))
 
   @ifsupported
+  def test_multisolve(self):
+    rhs = numpy.arange(self.matrix.shape[0]*2).reshape(-1, 2)
+    lhs = self.matrix.solve(rhs)
+    res = numpy.linalg.norm(self.matrix @ lhs - rhs, axis=0)
+    self.assertLess(numpy.max(res), 1e-9)
+
+  @ifsupported
   def test_singular(self):
     singularmatrix = matrix.assemble(numpy.arange(self.n)-self.n//2, numpy.arange(self.n)[numpy.newaxis].repeat(2,0), shape=(self.n, self.n))
     rhs = numpy.ones(self.n)

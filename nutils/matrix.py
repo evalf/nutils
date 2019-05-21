@@ -167,11 +167,13 @@ class Matrix(metaclass=types.CacheMeta):
         Left hand side vector.
     '''
     nrows, ncols = self.shape
+    if rhs is None:
+      rhs = numpy.zeros(nrows)
     if lhs0 is None:
-      x = numpy.zeros(ncols)
+      x = numpy.zeros((ncols,)+rhs.shape[1:])
     else:
       x = numpy.array(lhs0, dtype=float)
-      assert x.shape == (ncols,)
+      assert x.shape == (ncols,)+rhs.shape[1:]
     if constrain is None:
       J = numpy.ones(ncols, dtype=bool)
     else:
@@ -188,8 +190,6 @@ class Matrix(metaclass=types.CacheMeta):
       assert rconstrain.shape == (nrows,) and constrain.dtype == bool
       I = ~rconstrain
     assert I.sum() == J.sum(), 'constrained matrix is not square: {}x{}'.format(I.sum(), J.sum())
-    if rhs is None:
-      rhs = 0.
     b = (rhs - self @ x)[J]
     if b.any():
       A = self if I.all() and J.all() else self.submatrix(I, J)
@@ -601,9 +601,10 @@ if libmkl is not None:
         mtype = 11 # real and nonsymmetric
         phase = 13 # analysis, numerical factorization, solve, iterative refinement
         self._factors = pardiso, iparm, mtype
-      lhs = numpy.empty(self.shape[1], dtype=numpy.float64)
-      pardiso(phase=phase, mtype=mtype, iparm=iparm, n=self.shape[0], nrhs=1, b=rhs, x=lhs, a=self.data, ia=self.rowptr, ja=self.colidx)
-      return lhs
+      rhsflat = numpy.ascontiguousarray(rhs.reshape(rhs.shape[0], -1).T, dtype=numpy.float64)
+      lhsflat = numpy.empty((rhsflat.shape[0], self.shape[1]), dtype=numpy.float64)
+      pardiso(phase=phase, mtype=mtype, iparm=iparm, n=self.shape[0], nrhs=rhsflat.shape[0], b=rhsflat, x=lhsflat, a=self.data, ia=self.rowptr, ja=self.colidx)
+      return lhsflat.T.reshape(lhsflat.shape[1:] + rhs.shape[1:])
 
     def solve_fgmres(self, rhs, maxiter=0, atol=1e-6, restart=150):
       rci = ctypes.c_int32(0)
