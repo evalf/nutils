@@ -43,7 +43,7 @@ multiple integrals simultaneously, which has the advantage that it can
 efficiently combine common substructures.
 '''
 
-from . import types, points, util, function, config, parallel, numeric, cache, matrix, transformseq
+from . import types, points, util, function, config, parallel, numeric, matrix, transformseq
 import numpy, numbers, collections.abc, treelog as log
 
 def argdict(arguments):
@@ -99,7 +99,6 @@ class Sample(types.Singleton):
   @util.positional_only('self', 'funcs')
   @util.single_or_multiple
   @types.apply_annotations
-  @cache.function
   def integrate(*args, **arguments:argdict):
     '''Integrate functions.
 
@@ -460,7 +459,6 @@ class Integral(types.Singleton):
 strictintegral = types.strict[Integral]
 
 @types.apply_annotations
-@cache.function
 def eval_integrals(*integrals: types.tuple[strictintegral], **arguments:argdict):
   '''Evaluate integrals.
 
