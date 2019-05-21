@@ -167,6 +167,7 @@ class Matrix(metaclass=types.CacheMeta):
     b = (rhs - self.matvec(x))[J]
     if b.any():
       A = self if I.all() and J.all() else self.submatrix(I, J)
+      log.info('solving {0[0]}x{0[1]} system using {1} solver'.format(A.shape, solver))
       try:
         x[J] += getattr(A, 'solve_'+solver)(b, **solverargs)
       except Exception as e:
@@ -337,7 +338,6 @@ else:
       rhsnorm = numpy.linalg.norm(rhs)
       if rhsnorm <= atol:
         return numpy.zeros(self.shape[1])
-      log.info('solving system using {} iterative solver'.format(solver))
       solverfun = getattr(scipy.sparse.linalg, solver)
       myrhs = rhs / rhsnorm # normalize right hand side vector for best control over scipy's stopping criterion
       mytol = atol / rhsnorm
