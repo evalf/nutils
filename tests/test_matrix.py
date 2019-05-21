@@ -5,7 +5,7 @@ from nutils.testing import *
 @parametrize
 class solver(TestCase):
 
-  ifsupported = parametrize.skip_if(lambda backend, args: not hasattr(matrix, backend), reason='not supported')
+  ifsupported = parametrize.skip_if(lambda backend, args: matrix.Backend.get(backend) is None, reason='not supported')
   n = 100
 
   def setUp(self):

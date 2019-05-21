@@ -51,6 +51,12 @@ class Backend(metaclass=abc.ABCMeta):
     _current_backend = self._old_backend
     del self._old_backend
 
+  @classmethod
+  def get(cls, name):
+    for subcls in cls.__subclasses__():
+      if subcls.__name__.lower() == name.lower():
+        return subcls
+
   @abc.abstractmethod
   def assemble(self, data, index, shape):
     '''Assemble a (sparse) tensor based on index-value pairs.
@@ -550,10 +556,9 @@ if libmkl is not None:
 _current_backend = Numpy()
 
 def backend(names):
-  for name in names.lower().split(','):
-    for cls in Backend.__subclasses__():
-      if cls.__name__.lower() == name:
-        return cls()
+  for cls in map(Backend.get, names.split(',')):
+    if cls is not None:
+      return cls()
   raise RuntimeError('matrix backend {!r} is not available'.format(names))
 
 def assemble(data, index, shape):
