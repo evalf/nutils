@@ -4039,8 +4039,8 @@ def _eval_ast(ast, functions):
       subs[arg._name] = value
     return replace_arguments(array, subs)
   elif op == 'call':
-    func, arg = args
-    return functions[func](arg)
+    func, *args = args
+    return functions[func](*args)
   elif op == 'd':
     geom, = args
     return DelayedJacobian(geom)
