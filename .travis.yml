@@ -4,6 +4,7 @@ env:
   global:
     - OMP_NUM_THREADS=1
     - VECLIB_MAXIMUM_THREADS=1
+    - EXTRAS=docs,matrix_scipy,matrix_mkl,export_mpl
 matrix:
   include:
     - os: linux
@@ -12,14 +13,16 @@ matrix:
       python: "3.6"
     - os: linux
       python: "3.6"
-      env: FORCE_PYTHON_PKGS=numpy==1.12
+      env:
+        - EXTRAS=matrix_mkl,export_mpl
+        - FORCE_PYTHON_PKGS="numpy==1.12"
     - os: osx
       language: generic
       env: PYTHON_PKG_URL=https://www.python.org/ftp/python/3.7.1/python-3.7.1-macosx10.9.pkg
 before_install:
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then wget -O python.pkg "$PYTHON_PKG_URL"; sudo installer -pkg python.pkg -target /; rm python.pkg; fi
 install:
-  - python3 -m pip install --upgrade .[docs,matrix_scipy,matrix_mkl,export_mpl] coverage codecov $FORCE_PYTHON_PKGS
+  - python3 -m pip install --upgrade .[$EXTRAS] coverage codecov $FORCE_PYTHON_PKGS
 script:
   - python3 -m coverage run -m unittest -b
 after_success:
