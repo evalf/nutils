@@ -351,7 +351,7 @@ class Recursion(types.Immutable, metaclass=_RecursionMeta):
     global _cache
     length = type(self).length
     if _cache is None:
-      yield from self.resume([])
+      yield from self.resume_index([], 0)
     else:
       # The hash of `types.Immutable` uniquely defines this `Recursion`, so use
       # this to identify the cache directory.  All iterations are stored as
