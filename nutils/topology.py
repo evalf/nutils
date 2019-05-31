@@ -575,7 +575,7 @@ class Topology(types.Singleton):
     ielems = parallel.shempty(len(coords), dtype=int)
     xis = parallel.shempty((len(coords),len(geom)), dtype=float)
     ipoints = parallel.range(len(coords))
-    with parallel.fork(min(config.nprocs, len(self))):
+    with parallel.fork(min(config.nprocs, len(coords))):
       for ipoint in ipoints:
         with log.context('point', ipoint, '({:.0f}%)'.format(100*ipoint/len(coords))):
           coord = coords[ipoint]
