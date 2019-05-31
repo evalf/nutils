@@ -25,15 +25,15 @@ class basis(TestCase):
 
   @parametrize.enable_if(lambda btype, **params: not btype.startswith('h-'))
   def test_pum(self):
-    error = numpy.sqrt(self.domain.integrate((1-self.basis.sum(0))**2*function.J(self.geom), ischeme=self.gauss))
-    numpy.testing.assert_almost_equal(error, 0, decimal=12)
+    error2 = self.domain.integrate((1-self.basis.sum(0))**2*function.J(self.geom), ischeme=self.gauss)
+    numpy.testing.assert_almost_equal(error2, 0, decimal=22)
 
   @parametrize.enable_if(lambda periodic, **params: not periodic)
   def test_poly(self):
     target = (self.geom**self.degree).sum(-1)
     projection = self.domain.projection(target, onto=self.basis, geometry=self.geom, ischeme=self.gauss, droptol=0)
-    error = numpy.sqrt(self.domain.integrate((target-projection)**2*function.J(self.geom), ischeme=self.gauss))
-    numpy.testing.assert_almost_equal(error, 0, decimal=12)
+    error2 = self.domain.integrate((target-projection)**2*function.J(self.geom), ischeme=self.gauss)
+    numpy.testing.assert_almost_equal(error2, 0, decimal=22)
 
 for ndims in range(1, 4):
   for btype in 'discont', 'h-std', 'th-std', 'h-spline', 'th-spline':
@@ -223,8 +223,8 @@ class unstructured_topology(TestCase):
   def test_pum_sum(self):
     # Note that this test holds for btype 'lagrange' as well, although the
     # basis functions are not confined to range [0,1].
-    error = numpy.sqrt(self.domain.integrate((1-self.basis.sum(0))**2*function.J(self.geom), ischeme='gauss', degree=2*self.degree))
-    numpy.testing.assert_almost_equal(error, 0, decimal=12)
+    error2 = self.domain.integrate((1-self.basis.sum(0))**2*function.J(self.geom), ischeme='gauss', degree=2*self.degree)
+    numpy.testing.assert_almost_equal(error2, 0, decimal=22)
 
   @parametrize.enable_if(lambda btype, **params: btype != 'lagrange')
   def test_pum_range(self):
@@ -237,8 +237,8 @@ class unstructured_topology(TestCase):
     if self.btype == 'discont':
       target += function.TransformsIndexWithTail(self.domain.transforms, function.TRANS).index
     projection = self.domain.projection(target, onto=self.basis, geometry=self.geom, ischeme='gauss', degree=2*self.degree, droptol=0)
-    error = numpy.sqrt(self.domain.integrate((target-projection)**2*function.J(self.geom), ischeme='gauss', degree=2*self.degree))
-    numpy.testing.assert_almost_equal(error, 0, decimal=12)
+    error2 = self.domain.integrate((target-projection)**2*function.J(self.geom), ischeme='gauss', degree=2*self.degree)
+    numpy.testing.assert_almost_equal(error2, 0, decimal=24)
 
 for ndims in 1, 2, 3:
   for variant in ['simplex', 'tensor'] if ndims != 2 else ['triangle', 'square', 'mixed']:
