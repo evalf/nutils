@@ -395,7 +395,7 @@ class Recursion(types.Immutable, metaclass=_RecursionMeta):
               if len(history) > length:
                 history = history[1:]
             if exhausted:
-              resume = self.resume(history)
+              resume = self.resume_index(history, i)
               f.seek(0)
               del history
           if exhausted:
@@ -416,7 +416,12 @@ class Recursion(types.Immutable, metaclass=_RecursionMeta):
         else:
           raise value
 
-  @abc.abstractmethod
+  def resume_index(self, history, index):
+    '''
+    Resume recursion from ``history`` at iteration ``index``.
+    '''
+    return self.resume(history)
+
   def resume(self, history):
     '''
     Resume recursion from ``history``.
