@@ -205,3 +205,27 @@ class burgers(TestCase):
 
   def test_resume_withscaling(self):
     _test_recursion_cache(self, lambda: map(types.frozenarray, solver.impliciteuler('dofs', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=100)))
+
+
+class theta_time(TestCase):
+
+  def check(self, method, theta):
+    ns = function.Namespace()
+    topo, ns.x = mesh.rectilinear([1])
+    ns.u_n = '?u_n + <0>_n'
+    inertia = topo.integral('?u_n d:x' @ ns, degree=0)
+    residual = topo.integral('-<1>_n sin(?t) d:x' @ ns, degree=0)
+    timestep = 0.1
+    udesired = numpy.array([0.])
+    uactualiter = iter(method(target='u', residual=residual, inertia=inertia, timestep=timestep, lhs0=udesired, timetarget='t'))
+    for i in range(5):
+      with self.subTest(i=i):
+        uactual = next(uactualiter)
+        self.assertAlmostEqual(uactual, udesired)
+        udesired += timestep*(theta*numpy.sin((i+1)*timestep)+(1-theta)*numpy.sin(i*timestep))
+
+  def test_impliciteuler(self):
+    self.check(solver.impliciteuler, theta=1)
+
+  def test_cranknicolson(self):
+    self.check(solver.cranknicolson, theta=0.5)

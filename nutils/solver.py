@@ -550,7 +550,7 @@ class pseudotime(RecursionWithSolve, length=1):
       yield lhs.copy(), types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
 
 
-class thetamethod(RecursionWithSolve, length=1):
+class thetamethod(RecursionWithSolve, length=1, version=1):
   '''solve time dependent problem using the theta method
 
   Parameters
@@ -578,6 +578,11 @@ class thetamethod(RecursionWithSolve, length=1):
       Defines the values for :class:`nutils.function.Argument` objects in
       `residual`.  The ``target`` should not be present in ``arguments``.
       Optional.
+  timetarget : :class:`str`
+      Name of the :class:`nutils.function.Argument` that represents time.
+      Optional.
+  time0 : :class:`float`
+      The intial time.  Default: ``0.0``.
 
   Yields
   ------
@@ -588,7 +593,7 @@ class thetamethod(RecursionWithSolve, length=1):
   __cache__ = '_res_jac'
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, residual:sample.strictintegral, inertia:sample.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray, theta:types.strictfloat, target0:types.strictstr='_thetamethod_target0', constrain:types.frozenarray=None, newtontol:types.strictfloat=1e-10, arguments:argdict={}, newtonargs:types.frozendict={}):
+  def __init__(self, target:types.strictstr, residual:sample.strictintegral, inertia:sample.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray, theta:types.strictfloat, target0:types.strictstr='_thetamethod_target0', constrain:types.frozenarray=None, newtontol:types.strictfloat=1e-10, arguments:argdict={}, newtonargs:types.frozendict={}, timetarget:types.strictstr=None, time0:types.strictfloat=0.):
     super().__init__()
 
     assert target != target0, '`target` should not be equal to `target0`'
@@ -605,29 +610,32 @@ class thetamethod(RecursionWithSolve, length=1):
     self.inertia = inertia
     self.theta = theta
     self.timestep = timestep
+    self.timetarget = timetarget or '_thetamethod_dummy'
+    self.time0 = time0
 
   def _res_jac(self, timestep):
-    res = self.residual * self.theta + self.inertia / timestep \
+    res = (self.residual * self.theta + self.inertia / timestep).replace({self.timetarget: function.Argument(self.timetarget, ())+timestep}) \
         + (self.residual * (1-self.theta) - self.inertia / timestep).replace({self.target: function.Argument(self.target0, self.lhs0.shape)})
     return res, res.derivative(self.target)
 
-  def _step(self, lhs, timestep):
+  def _step(self, lhs, t, timestep):
     res, jac = self._res_jac(timestep)
     try:
       return newton(self.target, residual=res, jacobian=jac, lhs0=lhs, constrain=self.constrain,
-        arguments=collections.ChainMap(self.arguments, {self.target0: lhs}), **self.newtonargs).solve(tol=self.newtontol)
+        arguments=collections.ChainMap(self.arguments, {self.target0: lhs, self.timetarget: t}), **self.newtonargs).solve(tol=self.newtontol)
     except (SolverError, matrix.MatrixError) as e:
       log.error('error: {}; retrying with timestep {}'.format(e, timestep/2))
-      return self._step(self._step(lhs, timestep/2), timestep/2)
+      return self._step(self._step(lhs, t, timestep/2), t+timestep/2, timestep/2)
 
-  def resume(self, history):
+  def resume_index(self, history, index):
     if history:
       lhs, = history
     else:
       lhs = self.lhs0
       yield lhs
     while True:
-      lhs = self._step(lhs, self.timestep)
+      lhs = self._step(lhs, self.time0+index*self.timestep, self.timestep)
+      index += 1
       yield lhs
 
 impliciteuler = functools.partial(thetamethod, theta=1)
