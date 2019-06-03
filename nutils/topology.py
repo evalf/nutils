@@ -1369,7 +1369,7 @@ class StructuredTopology(Topology):
       coeffs_i = []
       for offset in offsets:
         lknots = km[offset:offset+2*p]
-        key = tuple(numeric.round((lknots[1:-1]-lknots[0])/(lknots[-1]-lknots[0])*numpy.iinfo(numpy.int32).max)), p
+        key = tuple(numeric.round((lknots[1:-1]-lknots[0])/(lknots[-1]-lknots[0])*numpy.iinfo(numpy.int32).max)) if lknots.size else (), p
         try:
           local_coeffs = cache[key]
         except KeyError:

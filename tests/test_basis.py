@@ -15,7 +15,7 @@ class basis(TestCase):
     self.basis = self.domain.basis(self.btype, degree=self.degree)
     self.gauss = 'gauss{}'.format(2*self.degree)
 
-  @parametrize.enable_if(lambda btype, **params: btype != 'discont')
+  @parametrize.enable_if(lambda btype, **params: btype != 'discont' and degree != 0)
   def test_continuity(self):
     funcsp = self.basis
     for regularity in (range(self.degree) if self.btype=='spline' else [0]):
@@ -37,7 +37,7 @@ class basis(TestCase):
 
 for ndims in range(1, 4):
   for btype in 'discont', 'h-std', 'th-std', 'h-spline', 'th-spline':
-    for degree in range(0 if btype == 'discont' else 1, 4):
+    for degree in range(0 if 'std' not in btype else 1, 4):
       for nrefine in 0, 2:
         for boundary in [None, 'bottom'] if ndims > 1 else [None]:
           for periodic in False, True:
