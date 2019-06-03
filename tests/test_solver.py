@@ -221,7 +221,7 @@ class theta_time(TestCase):
     for i in range(5):
       with self.subTest(i=i):
         uactual = next(uactualiter)
-        self.assertAlmostEqual(uactual, udesired)
+        self.assertAllAlmostEqual(uactual, udesired)
         udesired += timestep*(theta*numpy.sin((i+1)*timestep)+(1-theta)*numpy.sin(i*timestep))
 
   def test_impliciteuler(self):
