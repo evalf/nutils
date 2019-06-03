@@ -621,14 +621,7 @@ class Topology(types.Singleton):
     warnings.deprecation('Topology.supp is deprecated, use basis.get_support instead')
     if not isinstance(basis, function.Basis):
       raise ValueError("argument 'basis' should be of type 'Basis' but got {!r}".format(basis))
-    if mask is None:
-      mask = numpy.ones(len(basis), dtype=bool)
-    elif isinstance(mask, list) or numeric.isarray(mask) and mask.dtype == int:
-      tmp = numpy.zeros(len(basis), dtype=bool)
-      tmp[mask] = True
-      mask = tmp
-    else:
-      assert numeric.isarray(mask) and mask.dtype == bool and mask.shape == basis.shape[:1]
+    mask = numeric.asboolean(mask, size=len(basis), ordered=False)
     subset = []
     for ielem in range(len(self.transforms)):
       dofs = basis.get_dofs(ielem)
