@@ -7,7 +7,7 @@ class basis(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, self.geom = mesh.rectilinear([[0,1,2]]*self.ndims, periodic=[0] if self.periodic else [])
+    self.domain, self.geom = mesh.rectilinear([max(1, self.nelems-n) for n in range(self.ndims)], periodic=[0] if self.periodic else [])
     for iref in range(self.nrefine):
       self.domain = self.domain.refined_by([len(self.domain)-1])
     if self.boundary:
@@ -41,7 +41,8 @@ for ndims in range(1, 4):
       for nrefine in 0, 2:
         for boundary in [None, 'bottom'] if ndims > 1 else [None]:
           for periodic in False, True:
-            basis(btype=btype, degree=degree, ndims=ndims, nrefine=nrefine, boundary=boundary, periodic=periodic)
+            for nelems in range(1, 4):
+              basis(btype=btype, degree=degree, ndims=ndims, nrefine=nrefine, boundary=boundary, periodic=periodic, nelems=nelems)
 
 class NNZ(matrix.Backend):
   def assemble(self, data, index, shape):

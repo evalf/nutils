@@ -90,7 +90,7 @@ class Sample(types.Singleton):
     self.points = points
     self.index = index
     self.npoints = sum(p.npoints for p in points)
-    self.ndims = points[0].ndims
+    self.ndims = transforms[0].fromdims
 
   def __repr__(self):
     return '{}<{}D, {} elems, {} points>'.format(type(self).__qualname__, self.ndims, self.nelems, self.npoints)
