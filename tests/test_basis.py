@@ -233,9 +233,9 @@ class unstructured_topology(TestCase):
     self.assertTrue((values < 1+1e-10).all())
 
   def test_poly(self):
-    target = (self.geom**self.degree).sum(-1)
-    if self.btype == 'discont':
-      target += function.TransformsIndexWithTail(self.domain.transforms, function.TRANS).index
+    target = self.geom.sum(-1) if self.btype == 'bubble' \
+        else (self.geom**self.degree).sum(-1) + function.TransformsIndexWithTail(self.domain.transforms, function.TRANS).index if self.btype == 'discont' \
+        else (self.geom**self.degree).sum(-1)
     projection = self.domain.projection(target, onto=self.basis, geometry=self.geom, ischeme='gauss', degree=2*self.degree, droptol=0)
     error2 = self.domain.integrate((target-projection)**2*function.J(self.geom), ischeme='gauss', degree=2*self.degree)
     numpy.testing.assert_almost_equal(error2, 0, decimal=24)
@@ -243,5 +243,5 @@ class unstructured_topology(TestCase):
 for ndims in 1, 2, 3:
   for variant in ['simplex', 'tensor'] if ndims != 2 else ['triangle', 'square', 'mixed']:
     for btype in ['discont', 'bernstein', 'lagrange', 'std', 'bubble'][:5 if variant in ('simplex', 'triangle') else 4]:
-      for degree in [0,1,2,3] if btype == 'discont' else [1] if btype == 'bubble' else [1,2,3]:
+      for degree in [0,1,2,3] if btype == 'discont' else [2] if btype == 'bubble' else [1,2,3]:
         unstructured_topology(ndims=ndims, btype=btype, degree=degree, variant=variant)
