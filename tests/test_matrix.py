@@ -12,9 +12,11 @@ class solver(TestCase):
     super().setUp()
     self._backend = matrix.backend(self.backend)
     self._backend.__enter__()
-    r = numpy.arange(self.n)
-    index = numpy.concatenate([[r, r], [r[:-1], r[1:]], [r[1:], r[:-1]]], axis=1)
-    data = numpy.hstack([2.] * self.n + [-1.] * (2*self.n-2))
+    index = numpy.empty([2, (self.n-1)*4], dtype=int)
+    data = numpy.empty([(self.n-1)*4], dtype=float)
+    for i in range(self.n-1):
+      index[:,i*4:(i+1)*4] = [i, i, i+1, i+1], [i, i+1, i, i+1]
+      data[i*4:(i+1)*4] = 1 if i else 2, -1, -1, 1 if i < self.n-2 else 2
     self.matrix = matrix.assemble(data, index, shape=(self.n, self.n))
     self.exact = 2 * numpy.eye(self.n) - numpy.eye(self.n, self.n, -1) - numpy.eye(self.n, self.n, +1)
 
