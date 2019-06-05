@@ -7,7 +7,7 @@ class basis(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, self.geom = mesh.rectilinear([[0,1,2]]*self.ndims, periodic=[0] if self.periodic else [])
+    self.domain, self.geom = mesh.rectilinear([max(1, self.nelems-n) for n in range(self.ndims)], periodic=[0] if self.periodic else [])
     for iref in range(self.nrefine):
       self.domain = self.domain.refined_by([len(self.domain)-1])
     if self.boundary:
@@ -15,7 +15,7 @@ class basis(TestCase):
     self.basis = self.domain.basis(self.btype, degree=self.degree)
     self.gauss = 'gauss{}'.format(2*self.degree)
 
-  @parametrize.enable_if(lambda btype, **params: btype != 'discont')
+  @parametrize.enable_if(lambda btype, **params: btype != 'discont' and degree != 0)
   def test_continuity(self):
     funcsp = self.basis
     for regularity in (range(self.degree) if self.btype=='spline' else [0]):
@@ -25,23 +25,24 @@ class basis(TestCase):
 
   @parametrize.enable_if(lambda btype, **params: not btype.startswith('h-'))
   def test_pum(self):
-    error = numpy.sqrt(self.domain.integrate((1-self.basis.sum(0))**2*function.J(self.geom), ischeme=self.gauss))
-    numpy.testing.assert_almost_equal(error, 0, decimal=12)
+    error2 = self.domain.integrate((1-self.basis.sum(0))**2*function.J(self.geom), ischeme=self.gauss)
+    numpy.testing.assert_almost_equal(error2, 0, decimal=22)
 
   @parametrize.enable_if(lambda periodic, **params: not periodic)
   def test_poly(self):
     target = (self.geom**self.degree).sum(-1)
     projection = self.domain.projection(target, onto=self.basis, geometry=self.geom, ischeme=self.gauss, droptol=0)
-    error = numpy.sqrt(self.domain.integrate((target-projection)**2*function.J(self.geom), ischeme=self.gauss))
-    numpy.testing.assert_almost_equal(error, 0, decimal=12)
+    error2 = self.domain.integrate((target-projection)**2*function.J(self.geom), ischeme=self.gauss)
+    numpy.testing.assert_almost_equal(error2, 0, decimal=22)
 
 for ndims in range(1, 4):
   for btype in 'discont', 'h-std', 'th-std', 'h-spline', 'th-spline':
-    for degree in range(0 if btype == 'discont' else 1, 4):
+    for degree in range(0 if 'std' not in btype else 1, 4):
       for nrefine in 0, 2:
         for boundary in [None, 'bottom'] if ndims > 1 else [None]:
           for periodic in False, True:
-            basis(btype=btype, degree=degree, ndims=ndims, nrefine=nrefine, boundary=boundary, periodic=periodic)
+            for nelems in range(1, 4):
+              basis(btype=btype, degree=degree, ndims=ndims, nrefine=nrefine, boundary=boundary, periodic=periodic, nelems=nelems)
 
 class NNZ(matrix.Backend):
   def assemble(self, data, index, shape):
@@ -223,8 +224,8 @@ class unstructured_topology(TestCase):
   def test_pum_sum(self):
     # Note that this test holds for btype 'lagrange' as well, although the
     # basis functions are not confined to range [0,1].
-    error = numpy.sqrt(self.domain.integrate((1-self.basis.sum(0))**2*function.J(self.geom), ischeme='gauss', degree=2*self.degree))
-    numpy.testing.assert_almost_equal(error, 0, decimal=12)
+    error2 = self.domain.integrate((1-self.basis.sum(0))**2*function.J(self.geom), ischeme='gauss', degree=2*self.degree)
+    numpy.testing.assert_almost_equal(error2, 0, decimal=22)
 
   @parametrize.enable_if(lambda btype, **params: btype != 'lagrange')
   def test_pum_range(self):
@@ -233,15 +234,15 @@ class unstructured_topology(TestCase):
     self.assertTrue((values < 1+1e-10).all())
 
   def test_poly(self):
-    target = (self.geom**self.degree).sum(-1)
-    if self.btype == 'discont':
-      target += function.TransformsIndexWithTail(self.domain.transforms, function.TRANS).index
+    target = self.geom.sum(-1) if self.btype == 'bubble' \
+        else (self.geom**self.degree).sum(-1) + function.TransformsIndexWithTail(self.domain.transforms, function.TRANS).index if self.btype == 'discont' \
+        else (self.geom**self.degree).sum(-1)
     projection = self.domain.projection(target, onto=self.basis, geometry=self.geom, ischeme='gauss', degree=2*self.degree, droptol=0)
-    error = numpy.sqrt(self.domain.integrate((target-projection)**2*function.J(self.geom), ischeme='gauss', degree=2*self.degree))
-    numpy.testing.assert_almost_equal(error, 0, decimal=12)
+    error2 = self.domain.integrate((target-projection)**2*function.J(self.geom), ischeme='gauss', degree=2*self.degree)
+    numpy.testing.assert_almost_equal(error2, 0, decimal=24)
 
 for ndims in 1, 2, 3:
   for variant in ['simplex', 'tensor'] if ndims != 2 else ['triangle', 'square', 'mixed']:
     for btype in ['discont', 'bernstein', 'lagrange', 'std', 'bubble'][:5 if variant in ('simplex', 'triangle') else 4]:
-      for degree in [0,1,2,3] if btype == 'discont' else [1] if btype == 'bubble' else [1,2,3]:
+      for degree in [0,1,2,3] if btype == 'discont' else [2] if btype == 'bubble' else [1,2,3]:
         unstructured_topology(ndims=ndims, btype=btype, degree=degree, variant=variant)

@@ -575,7 +575,7 @@ class Topology(types.Singleton):
     ielems = parallel.shempty(len(coords), dtype=int)
     xis = parallel.shempty((len(coords),len(geom)), dtype=float)
     ipoints = parallel.range(len(coords))
-    with parallel.fork(min(config.nprocs, len(self))):
+    with parallel.fork(min(config.nprocs, len(coords))):
       for ipoint in ipoints:
         with log.context('point', ipoint, '({:.0f}%)'.format(100*ipoint/len(coords))):
           coord = coords[ipoint]
@@ -1369,7 +1369,7 @@ class StructuredTopology(Topology):
       coeffs_i = []
       for offset in offsets:
         lknots = km[offset:offset+2*p]
-        key = tuple(numeric.round((lknots[1:-1]-lknots[0])/(lknots[-1]-lknots[0])*numpy.iinfo(numpy.int32).max)), p
+        key = tuple(numeric.round((lknots[1:-1]-lknots[0])/(lknots[-1]-lknots[0])*numpy.iinfo(numpy.int32).max)) if lknots.size else (), p
         try:
           local_coeffs = cache[key]
         except KeyError:
