@@ -19,9 +19,10 @@
 # THE SOFTWARE.
 
 """
-The log module provides print methods ``debug``, ``info``, ``user``,
-``warning``, and ``error``, in increasing order of priority. Output is sent to
-stdout as well as to an html formatted log file if so configured.
+The log module provides print methods :func:`debug`, :func:`info`,
+:func:`user`, :func:`warning`, and :func:`error`, in increasing order of
+priority. Output is sent to stdout as well as to an html formatted log file if
+so configured.
 
 This is a transitional wrapper around the external treelog module.
 """
@@ -102,18 +103,14 @@ def open(filename, mode, *, level='user', exists=None):
     f.devnull = not f
     yield f
 
-def __getattr__(name):
-  return getattr(treelog.current, name)
-
-if sys.version_info < (3,7):
-  def _factory(name):
-    def wrapper(*args, **kwargs):
-      return __getattr__(name)(*args, **kwargs)
-    wrapper.__doc__ = getattr(treelog.Log, name).__doc__
-    wrapper.__name__ = name
-    wrapper.__qualname__ = name
-    return wrapper
-  globals().update((name, _factory(name)) for name in dir(treelog.Log) if name not in globals() and callable(getattr(treelog.Log, name)))
-  del _factory
+def _factory(name):
+  def wrapper(*args, **kwargs):
+    return getattr(treelog.current, name)(*args, **kwargs)
+  wrapper.__doc__ = getattr(treelog.Log, name).__doc__
+  wrapper.__name__ = name
+  wrapper.__qualname__ = name
+  return wrapper
+globals().update((name, _factory(name)) for name in dir(treelog.Log) if not name.startswith('_') and name not in globals() and callable(getattr(treelog.Log, name)))
+del _factory
 
 # vim:sw=2:sts=2:et

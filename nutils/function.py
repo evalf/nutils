@@ -492,7 +492,7 @@ class Array(Evaluable):
 
   Attributes
   ----------
-  shape : :class:`tuple` of :class:`int`\s
+  shape : :class:`tuple` of :class:`int`\\s
       The shape of this array function.
   ndim : :class:`int`
       The number of dimensions of this array array function.  Equal to
@@ -2843,7 +2843,7 @@ class Polyval(Array):
   '''
   Computes the :math:`k`-dimensional array
 
-  .. math:: j_0,\\dots,j_{k-1} \\mapsto \\sum_{\substack{i_0,\\dots,i_{n-1}\\in\mathbb{N}\\\\i_0+\\cdots+i_{n-1}\\le d}} p_0^{i_0} \\cdots p_{n-1}^{i_{n-1}} c_{j_0,\\dots,j_{k-1},i_0,\\dots,i_{n-1}},
+  .. math:: j_0,\\dots,j_{k-1} \\mapsto \\sum_{\\substack{i_0,\\dots,i_{n-1}\\in\\mathbb{N}\\\\i_0+\\cdots+i_{n-1}\\le d}} p_0^{i_0} \\cdots p_{n-1}^{i_{n-1}} c_{j_0,\\dots,j_{k-1},i_0,\\dots,i_{n-1}},
 
   where :math:`p` are the :math:`n`-dimensional local coordinates and :math:`c`
   is the argument ``coeffs`` and :math:`d` is the degree of the polynomial,
@@ -3773,7 +3773,7 @@ def bringforward(arg, axis):
 
 def jacobian(geom, ndims):
   '''
-  Return :math:`\sqrt{|J^T J|}` with :math:`J` the gradient of ``geom`` to the
+  Return :math:`\\sqrt{|J^T J|}` with :math:`J` the gradient of ``geom`` to the
   local coordinate system with ``ndims`` dimensions (``localgradient(geom,
   ndims)``).
   '''
@@ -3965,7 +3965,7 @@ def mask(arg, mask, axis=0):
 
 def J(geometry, ndims=None):
   '''
-  Return :math:`\sqrt{|J^T J|}` with :math:`J` the gradient of ``geometry`` to
+  Return :math:`\\sqrt{|J^T J|}` with :math:`J` the gradient of ``geometry`` to
   the local coordinate system with ``ndims`` dimensions (``localgradient(geom,
   ndims)``).
   '''
