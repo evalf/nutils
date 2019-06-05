@@ -76,6 +76,8 @@ class solver(TestCase):
   def test_mul(self):
     mul = self.matrix * 1.5
     numpy.testing.assert_equal(actual=mul.export('dense'), desired=self.exact * 1.5)
+    with self.assertRaises(TypeError):
+      self.matrix * 'foo'
 
   @ifsupported
   def test_matvec(self):
@@ -92,16 +94,24 @@ class solver(TestCase):
     B[0] = -2, -1
     B[-1] = 2*self.n, 2*self.n+1
     numpy.testing.assert_equal(actual=self.matrix @ X, desired=B)
+    with self.assertRaises(TypeError):
+      self.matrix @ 'foo'
+    with self.assertRaises(matrix.MatrixError):
+      self.matrix @ numpy.arange(self.n+1)
 
   @ifsupported
   def test_rmul(self):
     rmul = 1.5 * self.matrix
     numpy.testing.assert_equal(actual=rmul.export('dense'), desired=self.exact * 1.5)
+    with self.assertRaises(TypeError):
+      'foo' / self.matrix
 
   @ifsupported
   def test_div(self):
     div = self.matrix / 1.5
     numpy.testing.assert_equal(actual=div.export('dense'), desired=self.exact / 1.5)
+    with self.assertRaises(TypeError):
+      self.matrix / 'foo'
 
   @ifsupported
   def test_add(self):
@@ -110,6 +120,10 @@ class solver(TestCase):
     other = matrix.assemble(numpy.array([v]*self.n), numpy.array([numpy.arange(self.n),[j]*self.n]), shape=(self.n, self.n))
     add = self.matrix + other
     numpy.testing.assert_equal(actual=add.export('dense'), desired=self.exact + numpy.eye(self.n)[j]*v)
+    with self.assertRaises(TypeError):
+      self.matrix + 'foo'
+    with self.assertRaises(matrix.MatrixError):
+      self.matrix + matrix.eye(self.n+1)
 
   @ifsupported
   def test_sub(self):
@@ -118,6 +132,10 @@ class solver(TestCase):
     other = matrix.assemble(numpy.array([v]*self.n), numpy.array([numpy.arange(self.n),[j]*self.n]), shape=(self.n, self.n))
     sub = self.matrix - other
     numpy.testing.assert_equal(actual=sub.export('dense'), desired=self.exact - numpy.eye(self.n)[j]*v)
+    with self.assertRaises(TypeError):
+      self.matrix - 'foo'
+    with self.assertRaises(matrix.MatrixError):
+      self.matrix - matrix.eye(self.n+1)
 
   @ifsupported
   def test_transpose(self):

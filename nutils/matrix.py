@@ -338,9 +338,9 @@ else:
       return super().__add__(other)
 
     def __sub__(self, other):
-      if not isinstance(other, ScipyMatrix) or self.shape != other.shape:
-        return NotImplemented
-      return ScipyMatrix(self.core - other.core)
+      if isinstance(other, ScipyMatrix) and self.shape == other.shape:
+        return ScipyMatrix(self.core - other.core)
+      return super().__sub__(other)
 
     def __mul__(self, other):
       if numeric.isnumber(other):
