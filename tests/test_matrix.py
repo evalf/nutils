@@ -200,6 +200,14 @@ class solver(TestCase):
         res = numpy.linalg.norm((self.matrix @ lhs)[1:-1])
         self.assertLess(res, args.get('atol', 1e-10))
 
+  @ifsupported
+  def test_submatrix(self):
+    rows = self.n//2 + numpy.array([0, 1])
+    cols = self.n//2 + numpy.array([-1, 0, 2])
+    array = self.matrix.submatrix(rows, cols).export('dense')
+    self.assertEqual(array.shape, (2, 3))
+    numpy.testing.assert_equal(actual=array, desired=[[-1, 2, 0], [0, -1, -1]])
+
 class Base(matrix.Backend):
   @staticmethod
   def assemble(data, index, shape):
