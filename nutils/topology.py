@@ -64,15 +64,6 @@ class Topology(types.Singleton):
   def __len__(self):
     return len(self.references)
 
-  @property
-  def elements(self):
-    warnings.deprecation('Topology.elements is deprecated, use Topology.references and Topology.transforms instead')
-    return tuple(self)
-
-  def __iter__(self):
-    warnings.deprecation('Topology.__iter__ is deprecated, use Topology.references and Topology.transforms instead')
-    return iter(map(element.Element, self.references, self.transforms, self.opposites))
-
   def getitem(self, item):
     return EmptyTopology(self.ndims)
 
@@ -123,14 +114,6 @@ class Topology(types.Singleton):
 
   def __add__(self, other):
     return self | other
-
-  def __contains__(self, element):
-    warnings.deprecation("Topology.__contains__ is deprecated, use 'elem.transform in topo.transforms' instead")
-    try:
-      ielem = self.transforms.index(element.transform)
-    except ValueError:
-      return False
-    return self.references[ielem] == element.reference and self.opposites[ielem] == element.opposite
 
   def __sub__(self, other):
     assert isinstance(other, Topology) and other.ndims == self.ndims
@@ -1862,7 +1845,7 @@ class HierarchicalTopology(Topology):
   def refined_by(self, refine):
     refine = tuple(refine)
     if not all(map(numeric.isint, refine)):
-      refine = tuple(self.transforms.index_with_tail(item.transform if isinstance(item,element.Element) else item)[0] for item in refine)
+      refine = tuple(self.transforms.index_with_tail(item)[0] for item in refine)
     refine = numpy.unique(numpy.array(refine, dtype=int))
     splits = numpy.searchsorted(refine, self._offsets, side='left')
     indices_per_level = list(map(list, self._indices_per_level))+[[]]

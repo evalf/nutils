@@ -593,16 +593,6 @@ class groups(TestCase):
 @parametrize
 class common(TestCase):
 
-  def test_iter(self):
-    self.assertEqual(tuple(self.topo), tuple(map(element.Element, self.topo.references, self.topo.transforms, self.topo.opposites)))
-
-  def test_elements(self):
-    self.assertEqual(self.topo.elements, tuple(map(element.Element, self.topo.references, self.topo.transforms, self.topo.opposites)))
-
-  def test_contains(self):
-    for ref, trans in zip(self.topo.references, self.topo.transforms):
-      self.assertIn(element.Element(ref, trans), self.topo)
-
   @parametrize.enable_if(lambda **params: params.get('hasboundary', True))
   def test_border_transforms(self):
     border = set(map(self.topo.transforms.index, self.topo.border_transforms))
