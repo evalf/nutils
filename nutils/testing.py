@@ -134,7 +134,7 @@ class TestCase(unittest.TestCase):
   '''A class whose instances are single test cases.'''
 
   def setUpContext(self, stack):
-    stack.enter_context(treelog.set(treelog.LoggingLog()))
+    stack.enter_context(treelog.set(treelog.TeeLog(treelog.StdoutLog(), treelog.LoggingLog())))
 
   def setUp(self):
     super().setUp()
