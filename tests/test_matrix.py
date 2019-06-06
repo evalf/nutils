@@ -156,17 +156,20 @@ class solver(TestCase):
   def test_solve(self):
     rhs = numpy.arange(self.matrix.shape[0])
     for args in self.args:
-      with self.subTest(args.get('solver', 'direct')):
-        lhs = self.matrix.solve(rhs, **args)
-        res = numpy.linalg.norm(self.matrix @ lhs - rhs)
-        self.assertLess(res, args.get('atol', 1e-10))
+      for lhs0 in None, numpy.arange(rhs.size)/rhs.size:
+        with self.subTest('{},lhs0={}'.format(args.get('solver', 'direct'), 'none' if lhs0 is None else 'single')):
+          lhs = self.matrix.solve(rhs, lhs0=lhs0, **args)
+          res = numpy.linalg.norm(self.matrix @ lhs - rhs)
+          self.assertLess(res, args.get('atol', 1e-10))
 
   @ifsupported
   def test_multisolve(self):
     rhs = numpy.arange(self.matrix.shape[0]*2).reshape(-1, 2)
-    lhs = self.matrix.solve(rhs)
-    res = numpy.linalg.norm(self.matrix @ lhs - rhs, axis=0)
-    self.assertLess(numpy.max(res), 1e-9)
+    for name, lhs0 in ('none', None), ('single', numpy.arange(self.matrix.shape[1])), ('multi', numpy.arange(rhs.size).reshape(rhs.shape)):
+      with self.subTest('lhs0={}'.format(name)):
+        lhs = self.matrix.solve(rhs, lhs0=lhs0)
+        res = numpy.linalg.norm(self.matrix @ lhs - rhs, axis=0)
+        self.assertLess(numpy.max(res), 1e-9)
 
   @ifsupported
   def test_singular(self):

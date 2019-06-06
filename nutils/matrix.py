@@ -173,6 +173,8 @@ class Matrix(metaclass=types.CacheMeta):
       x = numpy.zeros((ncols,)+rhs.shape[1:])
     else:
       x = numpy.array(lhs0, dtype=float)
+      while x.ndim < rhs.ndim:
+        x = x[...,numpy.newaxis].repeat(rhs.shape[x.ndim], axis=x.ndim)
       assert x.shape == (ncols,)+rhs.shape[1:]
     if constrain is None:
       J = numpy.ones(ncols, dtype=bool)
