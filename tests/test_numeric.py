@@ -94,3 +94,40 @@ class sorted_contains(TestCase):
   def test(self):
     for a, b in ([], []), ([1], []), ([1,2], [2,1]), ([], [1]), ([1], [2]), ([1,2], [3,1]):
       self.assertEqual(numeric.sorted_contains(numpy.array(a, int), b).tolist(), [v in a for v in b])
+
+class asboolean(TestCase):
+
+  def test_bool(self):
+    self.assertAllEqual(numeric.asboolean([True, False], 2), [True, False])
+
+  def test_int(self):
+    self.assertAllEqual(numeric.asboolean([1], 2), [False, True])
+    self.assertAllEqual(numeric.asboolean([0], 2), [True, False])
+
+  def test_none(self):
+    self.assertAllEqual(numeric.asboolean(None, 2), [False, False])
+    self.assertAllEqual(numeric.asboolean([], 2), [False, False])
+    self.assertAllEqual(numeric.asboolean((), 2), [False, False])
+
+  def test_float(self):
+    with self.assertRaises(Exception):
+      numeric.asboolean([1.5, 2.5], 2)
+
+  def test_wrongsize(self):
+    with self.assertRaises(Exception):
+      numeric.asboolean([True, False, True], 2)
+
+  def test_wrongdimension(self):
+    with self.assertRaises(Exception):
+      numeric.asboolean([[True, False, True], [False, True, True]], 2)
+
+  def test_outofbounds(self):
+    with self.assertRaises(Exception):
+      numeric.asboolean([-1], 2)
+    with self.assertRaises(Exception):
+      numeric.asboolean([2], 2)
+
+  def test_unordered(self):
+    self.assertAllEqual(numeric.asboolean([2,1], 3, ordered=False), [False, True, True])
+    with self.assertRaises(Exception):
+      numeric.asboolean([2,1], 3)

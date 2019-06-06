@@ -366,7 +366,7 @@ class locate(TestCase):
     with config(nprocs=self.nprocs):
       sample = self.domain.locate(self.geom, target, eps=1e-15)
     located = sample.eval(self.geom)
-    self.assertAlmostEqual(located, target)
+    self.assertAllAlmostEqual(located, target)
 
   def test_invalidargs(self):
     target = numpy.array([(.2,), (.1,), (0,)])
@@ -383,14 +383,14 @@ class locate(TestCase):
     with config(nprocs=self.nprocs):
       sample = self.domain.boundary['bottom'].locate(self.geom[:1], target, eps=1e-15)
     located = sample.eval(self.geom[:1])
-    self.assertAlmostEqual(located, target)
+    self.assertAllAlmostEqual(located, target)
 
   def test_boundary_scalar(self):
     target = numpy.array([.3, .9, 1])
     with config(nprocs=self.nprocs):
       sample = self.domain.boundary['left'].locate(self.geom[1], target, eps=1e-15)
     located = sample.eval(self.geom[1])
-    self.assertAlmostEqual(located, target)
+    self.assertAllAlmostEqual(located, target)
 
 for etype in 'square', 'triangle', 'mixed':
   for linear in True, False:

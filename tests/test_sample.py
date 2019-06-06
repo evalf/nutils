@@ -57,7 +57,7 @@ class integral(TestCase):
     self.lhs = numpy.sin(numpy.arange(len(self.ns.basis)))
 
   def test_eval(self):
-    self.assertAlmostEqual(
+    self.assertAllAlmostEqual(
       self.topo.integrate('basis_n d:x' @ self.ns, degree=2),
       self.topo.integral('basis_n d:x' @ self.ns, degree=2).eval(),
       places=15)
@@ -69,13 +69,13 @@ class integral(TestCase):
       places=15)
 
   def test_derivative(self):
-    self.assertAlmostEqual(
+    self.assertAllAlmostEqual(
       self.topo.integrate('2 basis_n v d:x' @ self.ns, degree=2, arguments=dict(lhs=self.lhs)),
       self.topo.integral('v^2 d:x' @ self.ns, degree=2).derivative('lhs').eval(lhs=self.lhs),
       places=15)
 
   def test_transpose(self):
-    self.assertAlmostEqual(
+    self.assertAllAlmostEqual(
       self.topo.integrate(self.ns.eval_nm('basis_n (basis_m + 1_m) d:x'), degree=2).export('dense').T,
       self.topo.integral(self.ns.eval_nm('basis_n (basis_m + 1_m) d:x'), degree=2).T.eval().export('dense'),
       places=15)

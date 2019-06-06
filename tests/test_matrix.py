@@ -5,19 +5,20 @@ from nutils.testing import *
 @parametrize
 class solver(TestCase):
 
-  ifsupported = parametrize.skip_if(lambda backend, args: not hasattr(matrix, backend), reason='not supported')
+  ifsupported = parametrize.skip_if(lambda backend, args: matrix.Backend.get(backend) is None, reason='not supported')
   n = 100
 
   def setUp(self):
     super().setUp()
     self._backend = matrix.backend(self.backend)
     self._backend.__enter__()
-    r = numpy.arange(self.n)
-    index = numpy.concatenate([[r, r], [r[:-1], r[1:]], [r[1:], r[:-1]]], axis=1)
-    data = numpy.hstack([2.] * self.n + [-1.] * (2*self.n-2))
+    index = numpy.empty([2, (self.n-1)*4], dtype=int)
+    data = numpy.empty([(self.n-1)*4], dtype=float)
+    for i in range(self.n-1):
+      index[:,i*4:(i+1)*4] = [i, i, i+1, i+1], [i, i+1, i, i+1]
+      data[i*4:(i+1)*4] = 1 if i else 2, -1, -1, 1 if i < self.n-2 else 2
     self.matrix = matrix.assemble(data, index, shape=(self.n, self.n))
     self.exact = 2 * numpy.eye(self.n) - numpy.eye(self.n, self.n, -1) - numpy.eye(self.n, self.n, +1)
-    self.tol = self.args.get('atol', 1e-10)
 
   def tearDown(self):
     self._backend.__exit__(None, None, None)
@@ -77,16 +78,42 @@ class solver(TestCase):
   def test_mul(self):
     mul = self.matrix * 1.5
     numpy.testing.assert_equal(actual=mul.export('dense'), desired=self.exact * 1.5)
+    with self.assertRaises(TypeError):
+      self.matrix * 'foo'
+
+  @ifsupported
+  def test_matvec(self):
+    x = numpy.arange(self.n)
+    b = numpy.zeros(self.n)
+    b[0] = -1
+    b[-1] = self.n
+    numpy.testing.assert_equal(actual=self.matrix @ x, desired=b)
+
+  @ifsupported
+  def test_matmat(self):
+    X = numpy.arange(self.n*2).reshape(-1,2)
+    B = numpy.zeros((self.n,2))
+    B[0] = -2, -1
+    B[-1] = 2*self.n, 2*self.n+1
+    numpy.testing.assert_equal(actual=self.matrix @ X, desired=B)
+    with self.assertRaises(TypeError):
+      self.matrix @ 'foo'
+    with self.assertRaises(matrix.MatrixError):
+      self.matrix @ numpy.arange(self.n+1)
 
   @ifsupported
   def test_rmul(self):
     rmul = 1.5 * self.matrix
     numpy.testing.assert_equal(actual=rmul.export('dense'), desired=self.exact * 1.5)
+    with self.assertRaises(TypeError):
+      'foo' / self.matrix
 
   @ifsupported
   def test_div(self):
     div = self.matrix / 1.5
     numpy.testing.assert_equal(actual=div.export('dense'), desired=self.exact / 1.5)
+    with self.assertRaises(TypeError):
+      self.matrix / 'foo'
 
   @ifsupported
   def test_add(self):
@@ -95,6 +122,10 @@ class solver(TestCase):
     other = matrix.assemble(numpy.array([v]*self.n), numpy.array([numpy.arange(self.n),[j]*self.n]), shape=(self.n, self.n))
     add = self.matrix + other
     numpy.testing.assert_equal(actual=add.export('dense'), desired=self.exact + numpy.eye(self.n)[j]*v)
+    with self.assertRaises(TypeError):
+      self.matrix + 'foo'
+    with self.assertRaises(matrix.MatrixError):
+      self.matrix + matrix.eye(self.n+1)
 
   @ifsupported
   def test_sub(self):
@@ -103,6 +134,10 @@ class solver(TestCase):
     other = matrix.assemble(numpy.array([v]*self.n), numpy.array([numpy.arange(self.n),[j]*self.n]), shape=(self.n, self.n))
     sub = self.matrix - other
     numpy.testing.assert_equal(actual=sub.export('dense'), desired=self.exact - numpy.eye(self.n)[j]*v)
+    with self.assertRaises(TypeError):
+      self.matrix - 'foo'
+    with self.assertRaises(matrix.MatrixError):
+      self.matrix - matrix.eye(self.n+1)
 
   @ifsupported
   def test_transpose(self):
@@ -120,25 +155,39 @@ class solver(TestCase):
   @ifsupported
   def test_solve(self):
     rhs = numpy.arange(self.matrix.shape[0])
-    lhs = self.matrix.solve(rhs, **self.args)
-    res = numpy.linalg.norm(self.matrix.matvec(lhs) - rhs)
-    self.assertLess(res, self.tol)
+    for args in self.args:
+      for lhs0 in None, numpy.arange(rhs.size)/rhs.size:
+        with self.subTest('{},lhs0={}'.format(args.get('solver', 'direct'), 'none' if lhs0 is None else 'single')):
+          lhs = self.matrix.solve(rhs, lhs0=lhs0, **args)
+          res = numpy.linalg.norm(self.matrix @ lhs - rhs)
+          self.assertLess(res, args.get('atol', 1e-10))
+
+  @ifsupported
+  def test_multisolve(self):
+    rhs = numpy.arange(self.matrix.shape[0]*2).reshape(-1, 2)
+    for name, lhs0 in ('none', None), ('single', numpy.arange(self.matrix.shape[1])), ('multi', numpy.arange(rhs.size).reshape(rhs.shape)):
+      with self.subTest('lhs0={}'.format(name)):
+        lhs = self.matrix.solve(rhs, lhs0=lhs0)
+        res = numpy.linalg.norm(self.matrix @ lhs - rhs, axis=0)
+        self.assertLess(numpy.max(res), 1e-9)
 
   @ifsupported
   def test_singular(self):
     singularmatrix = matrix.assemble(numpy.arange(self.n)-self.n//2, numpy.arange(self.n)[numpy.newaxis].repeat(2,0), shape=(self.n, self.n))
     rhs = numpy.ones(self.n)
-    with self.assertRaises(matrix.MatrixError):
-      lhs = singularmatrix.solve(rhs, **self.args)
-      print(lhs)
+    for args in self.args:
+      with self.subTest(args.get('solver', 'direct')), self.assertRaises(matrix.MatrixError):
+        lhs = singularmatrix.solve(rhs, **args)
 
   @ifsupported
   def test_solve_repeated(self):
     rhs = numpy.arange(self.matrix.shape[0])
-    for i in range(3):
-      lhs = self.matrix.solve(rhs, **self.args)
-      res = numpy.linalg.norm(self.matrix.matvec(lhs) - rhs)
-      self.assertLess(res, self.tol)
+    for args in self.args:
+      with self.subTest(args.get('solver', 'direct')):
+        for i in range(3):
+          lhs = self.matrix.solve(rhs, **args)
+          res = numpy.linalg.norm(self.matrix @ lhs - rhs)
+          self.assertLess(res, args.get('atol', 1e-10))
 
   @ifsupported
   def test_constraints(self):
@@ -146,17 +195,44 @@ class solver(TestCase):
     cons[:] = numpy.nan
     cons[0] = 10
     cons[-1] = 20
-    lhs = self.matrix.solve(constrain=cons, **self.args)
-    self.assertEqual(lhs[0], cons[0])
-    self.assertEqual(lhs[-1], cons[-1])
-    cons[1:-1] = 0
-    res = numpy.linalg.norm(self.matrix.matvec(lhs)[1:-1])
-    self.assertLess(res, self.tol)
+    for args in self.args:
+      with self.subTest(args.get('solver', 'direct')):
+        lhs = self.matrix.solve(constrain=cons, **args)
+        self.assertEqual(lhs[0], cons[0])
+        self.assertEqual(lhs[-1], cons[-1])
+        res = numpy.linalg.norm((self.matrix @ lhs)[1:-1])
+        self.assertLess(res, args.get('atol', 1e-10))
 
-solver(backend='Numpy', args=dict())
-solver(backend='Scipy', args=dict())
-solver(backend='Scipy', args=dict(atol=1e-5, solver='gmres', restart=100, precon='spilu'))
-solver(backend='Scipy', args=dict(atol=1e-5, solver='gmres', precon='splu'))
-solver(backend='Scipy', args=dict(atol=1e-5, solver='cg', precon='diag'))
-solver(backend='Scipy', args=dict(atol=1e-5, solver='lgmres'))
-solver(backend='MKL', args=dict())
+  @ifsupported
+  def test_submatrix(self):
+    rows = self.n//2 + numpy.array([0, 1])
+    cols = self.n//2 + numpy.array([-1, 0, 2])
+    array = self.matrix.submatrix(rows, cols).export('dense')
+    self.assertEqual(array.shape, (2, 3))
+    numpy.testing.assert_equal(actual=array, desired=[[-1, 2, 0], [0, -1, -1]])
+
+class Base(matrix.Backend):
+  @staticmethod
+  def assemble(data, index, shape):
+    obj = matrix.Numpy.assemble(data, index, shape)
+    return WrapperMatrix(obj) if isinstance(obj, matrix.Matrix) else obj
+
+class WrapperMatrix(matrix.Matrix):
+  'simple wrapper to test base implementations of add, mul, etc'
+  def __init__(self, wrapped):
+    self.wrapped = wrapped
+    super().__init__(wrapped.shape)
+  def export(self, form):
+    return self.wrapped.export(form)
+  def solve_direct(self, rhs):
+    return self.wrapped.solve_direct(rhs)
+
+solver('base', backend='base', args=[{}])
+solver('numpy', backend='numpy', args=[{}])
+solver('scipy', backend='scipy', args=[{},
+    dict(solver='gmres', atol=1e-5, restart=100, precon='spilu'),
+    dict(solver='gmres', atol=1e-5, precon='splu'),
+    dict(solver='cg', atol=1e-5, precon='diag')]
+ + [dict(solver=s, atol=1e-5) for s in ('bicg', 'bicgstab', 'cg', 'cgs', 'lgmres', 'minres')])
+solver('mkl', backend='mkl', args=[{},
+    dict(solver='fgmres', atol=1e-8)])

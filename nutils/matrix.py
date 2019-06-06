@@ -51,6 +51,12 @@ class Backend(metaclass=abc.ABCMeta):
     _current_backend = self._old_backend
     del self._old_backend
 
+  @classmethod
+  def get(cls, name):
+    for subcls in cls.__subclasses__():
+      if subcls.__name__.lower() == name.lower():
+        return subcls
+
   @abc.abstractmethod
   def assemble(self, data, index, shape):
     '''Assemble a (sparse) tensor based on index-value pairs.
@@ -65,17 +71,38 @@ class Matrix(metaclass=types.CacheMeta):
     assert len(shape) == 2
     self.shape = shape
 
-  @abc.abstractmethod
   def __add__(self, other):
     'add two matrices'
+    if not isinstance(other, Matrix):
+      return NotImplemented
+    if self.shape != other.shape:
+      raise MatrixError('incompatible shapes')
+    data1, index1 = self.export('coo')
+    data2, index2 = other.export('coo')
+    return assemble(numpy.concatenate([data1, data2]), numpy.concatenate([index1, index2], axis=1), self.shape)
 
-  @abc.abstractmethod
   def __mul__(self, other):
     'multiply matrix with a scalar'
+    if not numeric.isnumber(other):
+      return NotImplemented
+    data, index = self.export('coo')
+    return assemble(data * other, index, self.shape)
 
-  @abc.abstractmethod
-  def __neg__(self, other):
+  def __matmul__(self, other):
+    'multiply matrix with a dense tensor'
+    if not isinstance(other, numpy.ndarray):
+      return NotImplemented
+    if other.shape[0] != self.shape[1]:
+      raise MatrixError('incompatible shapes')
+    retval = numpy.zeros(self.shape[:1] + other.shape[1:])
+    data, index = self.export('coo')
+    numpy.add.at(retval, index[0], data[(slice(None),)+(numpy.newaxis,)*(other.ndim-1)] * other[index[1]])
+    return retval
+
+  def __neg__(self):
     'negate matrix'
+    data, index = self.export('coo')
+    return assemble(-data, index, self.shape)
 
   def __sub__(self, other):
     return self.__add__(-other)
@@ -86,10 +113,15 @@ class Matrix(metaclass=types.CacheMeta):
   def __truediv__(self, other):
     return self.__mul__(1/other)
 
+  def matvec(self, vec):
+    warnings.deprecation('A.matvec(x) is deprecated; use A @ x instead')
+    return self.__matmul__(vec)
+
   @property
-  @abc.abstractmethod
   def T(self):
     'transpose matrix'
+    data, index = self.export('coo')
+    return assemble(data, index[::-1], self.shape[::-1])
 
   @property
   def size(self):
@@ -103,8 +135,8 @@ class Matrix(metaclass=types.CacheMeta):
     supp[row[abs(data) > tol]] = True
     return supp
 
-  @abc.abstractmethod
-  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, **solverargs):
+  @log.withcontext
+  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, solver='direct', **solverargs):
     '''Solve system given right hand side vector and/or constraints.
 
     Args
@@ -122,14 +154,59 @@ class Matrix(metaclass=types.CacheMeta):
         Row constrains. A True value signifies a constrains, a False value a free
         dof. `None` implies that the constraints follow those defined in
         `constrain` (by implication the matrix must be square).
+    solver : :class:`str`
+        Name of the solver algorithm. The set of available solvers depends on
+        the type of the matrix (i.e. the active backend), although all matrices
+        should implement at least the 'direct' solver.
+    **kwargs :
+        All remaining arguments are passed on to the selected solver method.
 
     Returns
     -------
     :class:`numpy.ndarray`
         Left hand side vector.
     '''
+    nrows, ncols = self.shape
+    if rhs is None:
+      rhs = numpy.zeros(nrows)
+    if lhs0 is None:
+      x = numpy.zeros((ncols,)+rhs.shape[1:])
+    else:
+      x = numpy.array(lhs0, dtype=float)
+      while x.ndim < rhs.ndim:
+        x = x[...,numpy.newaxis].repeat(rhs.shape[x.ndim], axis=x.ndim)
+      assert x.shape == (ncols,)+rhs.shape[1:]
+    if constrain is None:
+      J = numpy.ones(ncols, dtype=bool)
+    else:
+      assert constrain.shape == (ncols,)
+      if constrain.dtype == bool:
+        J = ~constrain
+      else:
+        J = numpy.isnan(constrain)
+        x[~J] = constrain[~J]
+    if rconstrain is None:
+      assert nrows == ncols
+      I = J
+    else:
+      assert rconstrain.shape == (nrows,) and constrain.dtype == bool
+      I = ~rconstrain
+    assert I.sum() == J.sum(), 'constrained matrix is not square: {}x{}'.format(I.sum(), J.sum())
+    b = (rhs - self @ x)[J]
+    if b.any():
+      A = self if I.all() and J.all() else self.submatrix(I, J)
+      log.info('solving {0[0]}x{0[1]} system using {1} solver'.format(A.shape, solver))
+      try:
+        x[J] += getattr(A, 'solve_'+solver)(b, **solverargs)
+      except Exception as e:
+        raise MatrixError('solver failed with error: {}'.format(e)) from e
+      if not numpy.isfinite(x).all():
+        raise MatrixError('solver returned non-finite left hand side')
+      log.info('solver returned with residual {:.0e}'.format(numpy.linalg.norm((rhs - self @ x)[J])))
+    else:
+      log.info('skipping solver because initial vector is exact')
+    return x
 
-  @abc.abstractmethod
   def submatrix(self, rows, cols):
     '''Create submatrix from selected rows, columns.
 
@@ -143,6 +220,14 @@ class Matrix(metaclass=types.CacheMeta):
     :class:`Matrix`
         Matrix instance of reduced dimensions
     '''
+
+    rows = numeric.asboolean(rows, self.shape[0])
+    cols = numeric.asboolean(cols, self.shape[1])
+    data, (I,J) = self.export('coo')
+    keep = numpy.logical_and(rows[I], cols[J])
+    csI = rows.cumsum()
+    csJ = cols.cumsum()
+    return assemble(data[keep], numpy.array([csI[I[keep]]-1, csJ[J[keep]]-1]), shape=(csI[-1], csJ[-1]))
 
   def export(self, form):
     '''Export matrix data to any of supported forms.
@@ -160,54 +245,14 @@ class Matrix(metaclass=types.CacheMeta):
   def __repr__(self):
     return '{}<{}x{}>'.format(type(self).__qualname__, *self.shape)
 
-def preparesolvearguments(wrapped):
-  '''Make rhs optional, add lhs0, constrain, rconstrain arguments.
-
-  See Matrix.solve.'''
-
-  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, **solverargs):
-    nrows, ncols = self.shape
-    if lhs0 is None:
-      x = numpy.zeros(ncols)
-    else:
-      x = numpy.array(lhs0, dtype=float)
-      assert x.shape == (ncols,)
-    if constrain is None:
-      J = numpy.ones(ncols, dtype=bool)
-    else:
-      assert constrain.shape == (ncols,)
-      if constrain.dtype == bool:
-        J = ~constrain
-      else:
-        J = numpy.isnan(constrain)
-        x[~J] = constrain[~J]
-    if rconstrain is None:
-      assert nrows == ncols
-      I = J
-    else:
-      assert rconstrain.shape == (nrows,) and constrain.dtype == bool
-      I = ~rconstrain
-    assert I.sum() == J.sum(), 'constrained matrix is not square: {}x{}'.format(I.sum(), J.sum())
-    if rhs is None:
-      rhs = 0.
-    b = (rhs - self.matvec(x))[J]
-    if b.any():
-      x[J] += wrapped(self if I.all() and J.all() else self.submatrix(I, J), b, **solverargs)
-      if not numpy.isfinite(x).all():
-        raise MatrixError('solver returned non-finite left hand side')
-      log.info('solver returned with residual {:.0e}'.format(numpy.linalg.norm((rhs - self.matvec(x))[J])))
-    else:
-      log.info('skipping solver because initial vector is exact')
-    return x
-  return log.withcontext(solve)
-
 
 ## NUMPY BACKEND
 
 class Numpy(Backend):
   '''matrix backend based on numpy array'''
 
-  def assemble(self, data, index, shape):
+  @staticmethod
+  def assemble(data, index, shape):
     array = numeric.accumulate(data, index, shape)
     return NumpyMatrix(array) if len(shape) == 2 else array
 
@@ -220,14 +265,19 @@ class NumpyMatrix(Matrix):
     super().__init__(core.shape)
 
   def __add__(self, other):
-    if not isinstance(other, NumpyMatrix) or self.shape != other.shape:
-      return NotImplemented
-    return NumpyMatrix(self.core + other.core)
+    if isinstance(other, NumpyMatrix) and self.shape == other.shape:
+      return NumpyMatrix(self.core + other.core)
+    return super().__add__(other)
 
   def __mul__(self, other):
-    if not numeric.isnumber(other):
-      return NotImplemented
-    return NumpyMatrix(self.core * other)
+    if numeric.isnumber(other):
+      return NumpyMatrix(self.core * other)
+    return super().__mul__(other)
+
+  def __matmul__(self, other):
+    if isinstance(other, numpy.ndarray) and other.shape[0] == self.shape[1]:
+      return numpy.einsum('ij,j...->i...', self.core, other)
+    return super().__matmul__(other)
 
   def __neg__(self):
     return NumpyMatrix(-self.core)
@@ -235,9 +285,6 @@ class NumpyMatrix(Matrix):
   @property
   def T(self):
     return NumpyMatrix(self.core.T)
-
-  def matvec(self, vec):
-    return numpy.dot(self.core, vec)
 
   def export(self, form):
     if form == 'dense':
@@ -253,12 +300,8 @@ class NumpyMatrix(Matrix):
   def rowsupp(self, tol=0):
     return numpy.greater(abs(self.core), tol).any(axis=1)
 
-  @preparesolvearguments
-  def solve(self, rhs):
-    try:
-      return numpy.linalg.solve(self.core, rhs)
-    except numpy.linalg.LinAlgError as e:
-      raise MatrixError(e) from e
+  def solve_direct(self, rhs):
+    return numpy.linalg.solve(self.core, rhs)
 
   def submatrix(self, rows, cols):
     return NumpyMatrix(self.core[numpy.ix_(rows, cols)])
@@ -275,7 +318,8 @@ else:
   class Scipy(Backend):
     '''matrix backend based on scipy's sparse matrices'''
 
-    def assemble(self, data, index, shape):
+    @staticmethod
+    def assemble(data, index, shape):
       if len(shape) < 2:
         return numeric.accumulate(data, index, shape)
       if len(shape) == 2:
@@ -291,25 +335,27 @@ else:
       super().__init__(core.shape)
 
     def __add__(self, other):
-      if not isinstance(other, ScipyMatrix) or self.shape != other.shape:
-        return NotImplemented
-      return ScipyMatrix(self.core + other.core)
+      if isinstance(other, ScipyMatrix) and self.shape == other.shape:
+        return ScipyMatrix(self.core + other.core)
+      return super().__add__(other)
 
     def __sub__(self, other):
-      if not isinstance(other, ScipyMatrix) or self.shape != other.shape:
-        return NotImplemented
-      return ScipyMatrix(self.core - other.core)
+      if isinstance(other, ScipyMatrix) and self.shape == other.shape:
+        return ScipyMatrix(self.core - other.core)
+      return super().__sub__(other)
 
     def __mul__(self, other):
-      if not numeric.isnumber(other):
-        return NotImplemented
-      return ScipyMatrix(self.core * other)
+      if numeric.isnumber(other):
+        return ScipyMatrix(self.core * other)
+      return super().__mul__(other)
+
+    def __matmul__(self, other):
+      if isinstance(other, numpy.ndarray) and other.shape[0] == self.shape[1]:
+        return self.core * other
+      return super().__matmul__(other)
 
     def __neg__(self):
       return ScipyMatrix(-self.core)
-
-    def matvec(self, vec):
-      return self.core.dot(vec)
 
     def export(self, form):
       if form == 'dense':
@@ -326,16 +372,13 @@ else:
     def T(self):
       return ScipyMatrix(self.core.transpose())
 
-    @preparesolvearguments
-    def solve(self, rhs, atol=0, solver='spsolve', callback=None, precon=None, **solverargs):
-      if solver == 'spsolve':
-        log.info('solving system using sparse direct solver')
-        return scipy.sparse.linalg.spsolve(self.core, rhs)
-      assert atol, 'tolerance must be specified for iterative solver'
+    def solve_direct(self, rhs):
+      return scipy.sparse.linalg.spsolve(self.core, rhs)
+
+    def solve_scipy(self, rhs, solver, atol=1e-6, callback=None, precon=None, **solverargs):
       rhsnorm = numpy.linalg.norm(rhs)
       if rhsnorm <= atol:
         return numpy.zeros(self.shape[1])
-      log.info('solving system using {} iterative solver'.format(solver))
       solverfun = getattr(scipy.sparse.linalg, solver)
       myrhs = rhs / rhsnorm # normalize right hand side vector for best control over scipy's stopping criterion
       mytol = atol / rhsnorm
@@ -343,7 +386,7 @@ else:
       def mycallback(arg):
         niter[...] += 1
         # some solvers provide the residual, others the left hand side vector
-        res = numpy.linalg.norm(myrhs - self.matvec(arg)) if numpy.ndim(arg) == 1 else float(arg)
+        res = numpy.linalg.norm(myrhs - self @ arg) if numpy.ndim(arg) == 1 else float(arg)
         if callback:
           callback(res)
         with log.context('residual {:.2e} ({:.0f}%)'.format(res, 100. * numpy.log10(res) / numpy.log10(mytol) if res > 0 else 0)):
@@ -351,9 +394,19 @@ else:
       M = self.getprecon(precon) if isinstance(precon, str) else precon(self.core) if callable(precon) else precon
       mylhs, status = solverfun(self.core, myrhs, M=M, tol=mytol, callback=mycallback, **solverargs)
       if status != 0:
-        raise MatrixError('{} solver failed with status {}'.format(solver, status))
+        raise Exception('status {}'.format(status))
+      if numpy.linalg.norm(myrhs - self @ mylhs) > atol:
+        raise Exception('failed to reach tolerance')
       log.info('solver converged in {} iterations'.format(niter))
       return mylhs * rhsnorm
+
+    solve_bicg     = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'bicg',     **kwargs)
+    solve_bicgstab = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'bicgstab', **kwargs)
+    solve_cg       = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'cg',       **kwargs)
+    solve_cgs      = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'cgs',      **kwargs)
+    solve_gmres    = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'gmres',    **kwargs)
+    solve_lgmres   = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'lgmres',   **kwargs)
+    solve_minres   = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'minres',   **kwargs)
 
     def getprecon(self, name):
       name = name.lower()
@@ -406,8 +459,25 @@ if libmkl is not None:
       if len(shape) < 2:
         return numeric.accumulate(data, index, shape)
       if len(shape) == 2:
-        return MKLMatrix(data, index, shape)
-      raise MatrixError('{}d data not supported by scipy backend'.format(len(shape)))
+        if not len(data):
+          return MKLMatrix([], [1]*(shape[0]+1), [], shape[1])
+        # sort rows, columns
+        reorder = numpy.lexsort(index[::-1])
+        index = index[:,reorder]
+        data = data[reorder]
+        # sum duplicate entries
+        keep = numpy.empty(len(reorder), dtype=bool)
+        keep[0] = True
+        numpy.not_equal(index[:,1:], index[:,:-1]).any(axis=0, out=keep[1:])
+        if not keep.all():
+          index = index[:,keep]
+          data = numeric.accumulate(data, [keep.cumsum()-1], [index.shape[1]])
+        if not data.all():
+          nz = data.astype(bool)
+          data = data[nz]
+          index = index[:,nz]
+        return MKLMatrix(data, index[0].searchsorted(numpy.arange(shape[0]+1))+1, index[1]+1, shape[1])
+      raise MatrixError('{}d data not supported by MKL backend'.format(len(shape)))
 
   class Pardiso:
     '''simple wrapper for libmkl.pardiso
@@ -449,81 +519,74 @@ if libmkl is not None:
   class MKLMatrix(Matrix):
     '''matrix implementation based on sorted coo data'''
 
-    __cache__ = 'indptr',
-
     _factors = False
 
-    def __init__(self, data, index, shape):
-      assert index.shape == (2, len(data))
-      if len(data):
-        # sort rows, columns
-        reorder = numpy.lexsort(index[::-1])
-        index = index[:,reorder]
-        data = data[reorder]
-        # sum duplicate entries
-        keep = numpy.empty(len(reorder), dtype=bool)
-        keep[0] = True
-        numpy.not_equal(index[:,1:], index[:,:-1]).any(axis=0, out=keep[1:])
-        if not keep.all():
-          index = index[:,keep]
-          data = numeric.accumulate(data, [keep.cumsum()-1], [index.shape[1]])
-        if not data.all():
-          nz = data.astype(bool)
-          data = data[nz]
-          index = index[:,nz]
+    def __init__(self, data, rowptr, colidx, ncols):
+      assert len(data) == len(colidx) == rowptr[-1]-1
       self.data = numpy.ascontiguousarray(data, dtype=numpy.float64)
-      self.index = numpy.ascontiguousarray(index, dtype=numpy.int32)
-      super().__init__(shape)
-
-    @property
-    def indptr(self):
-      return self.index[0].searchsorted(numpy.arange(self.shape[0]+1)).astype(numpy.int32, copy=False)
+      self.rowptr = numpy.ascontiguousarray(rowptr, dtype=numpy.int32)
+      self.colidx = numpy.ascontiguousarray(colidx, dtype=numpy.int32)
+      super().__init__((len(rowptr)-1, ncols))
 
     def __add__(self, other):
-      if not isinstance(other, MKLMatrix) or self.shape != other.shape:
-        return NotImplemented
-      return MKLMatrix(numpy.concatenate([self.data, other.data]), numpy.concatenate([self.index, other.index], axis=1), self.shape)
-
-    def __sub__(self, other):
-      if not isinstance(other, MKLMatrix) or self.shape != other.shape:
-        return NotImplemented
-      return MKLMatrix(numpy.concatenate([self.data, -other.data]), numpy.concatenate([self.index, other.index], axis=1), self.shape)
+      if isinstance(other, MKLMatrix) and self.shape == other.shape:
+        request = ctypes.c_int32(1)
+        info = ctypes.c_int32()
+        rowptr = numpy.empty(self.shape[0]+1, dtype=numpy.int32)
+        args = ["N", ctypes.byref(request), ctypes.byref(ctypes.c_int32(0)),
+          ctypes.byref(ctypes.c_int32(self.shape[0])), ctypes.byref(ctypes.c_int32(self.shape[1])),
+          self.data.ctypes, self.colidx.ctypes, self.rowptr.ctypes, ctypes.byref(ctypes.c_double(1.)),
+          other.data.ctypes, other.colidx.ctypes, other.rowptr.ctypes,
+          None, None, rowptr.ctypes, None, ctypes.byref(info)]
+        libmkl.mkl_dcsradd(*args)
+        assert info.value == 0
+        colidx = numpy.empty(rowptr[-1]-1, dtype=numpy.int32)
+        data = numpy.empty(rowptr[-1]-1, dtype=numpy.float64)
+        request.value = 2
+        args[12:14] = data.ctypes, colidx.ctypes
+        libmkl.mkl_dcsradd(*args)
+        assert info.value == 0
+        return MKLMatrix(data, rowptr, colidx, self.shape[1])
+      return super().__add__(other)
 
     def __mul__(self, other):
-      if not numeric.isnumber(other):
-        return NotImplemented
-      return MKLMatrix(self.data * other, self.index, self.shape)
+      if numeric.isnumber(other):
+        return MKLMatrix(self.data * other, self.rowptr, self.colidx, self.shape[1])
+      return super().__mul__(other)
+
+    def __matmul__(self, other):
+      if isinstance(other, numpy.ndarray) and other.shape[0] == self.shape[1]:
+        x = numpy.ascontiguousarray(other.T, dtype=numpy.float64)
+        y = numpy.empty(x.shape[:-1] + self.shape[:1], dtype=numpy.float64)
+        if other.ndim == 1:
+          libmkl.mkl_dcsrgemv('N', ctypes.byref(ctypes.c_int32(self.shape[0])),
+            self.data.ctypes, self.rowptr.ctypes, self.colidx.ctypes, x.ctypes, y.ctypes)
+        else:
+          libmkl.mkl_dcsrmm('N', ctypes.byref(ctypes.c_int32(self.shape[0])),
+            ctypes.byref(ctypes.c_int32(other.size//other.shape[0])),
+            ctypes.byref(ctypes.c_int32(self.shape[1])), ctypes.byref(ctypes.c_double(1.)), 'GXXFXX',
+            self.data.ctypes, self.colidx.ctypes, self.rowptr.ctypes, self.rowptr[1:].ctypes,
+            x.ctypes, ctypes.byref(ctypes.c_int32(other.shape[0])), ctypes.byref(ctypes.c_double(0.)),
+            y.ctypes, ctypes.byref(ctypes.c_int32(other.shape[0])))
+        return y.T
+      return super().__matmul__(other)
 
     def __neg__(self):
-      return MKLMatrix(-self.data, self.index, self.shape)
-
-    @property
-    def T(self):
-      return MKLMatrix(self.data, self.index[::-1], self.shape[::-1])
-
-    def matvec(self, vec):
-      rows, cols = self.index
-      return numeric.accumulate(self.data * vec[cols], [rows], [self.shape[0]])
+      return MKLMatrix(-self.data, self.rowptr, self.colidx, self.shape[1])
 
     def export(self, form):
       if form == 'dense':
-        return numeric.accumulate(self.data, self.index, self.shape)
+        dense = numpy.zeros(self.shape)
+        for row, i, j in zip(dense, self.rowptr[:-1]-1, self.rowptr[1:]-1):
+          row[self.colidx[i:j]-1] = self.data[i:j]
+        return dense
       if form == 'csr':
-        return self.data, self.index[1], self.indptr
+        return self.data, self.colidx-1, self.rowptr-1
       if form == 'coo':
-        return self.data, self.index
+        return self.data, numpy.array([numpy.arange(self.shape[0]).repeat(self.rowptr[1:]-self.rowptr[:-1]), self.colidx-1])
       raise NotImplementedError('cannot export MKLMatrix to {!r}'.format(form))
 
-    def submatrix(self, rows, cols):
-      I, J = self.index
-      keep = numpy.logical_and(rows[I], cols[J])
-      csI = rows.cumsum()
-      csJ = cols.cumsum()
-      return MKLMatrix(self.data[keep], numpy.array([csI[I[keep]]-1, csJ[J[keep]]-1]), shape=(csI[-1], csJ[-1]))
-
-    @preparesolvearguments
-    def solve(self, rhs):
-      log.info('solving {0}x{0} system using MKL Pardiso'.format(self.shape[0]))
+    def solve_direct(self, rhs):
       if self._factors:
         log.info('reusing existing factorization')
         pardiso, iparm, mtype = self._factors
@@ -536,24 +599,66 @@ if libmkl is not None:
         iparm[9] = 13 # pivoting perturbation threshold 1e-13 (default for nonsymmetric)
         iparm[10] = 1 # enable scaling vectors (default for nonsymmetric)
         iparm[12] = 1 # enable improved accuracy using (non-) symmetric weighted matching (default for nonsymmetric)
-        iparm[34] = 1 # zero base indexing
+        iparm[34] = 0 # one-based indexing
         mtype = 11 # real and nonsymmetric
         phase = 13 # analysis, numerical factorization, solve, iterative refinement
         self._factors = pardiso, iparm, mtype
-      lhs = numpy.empty(self.shape[1], dtype=numpy.float64)
-      pardiso(phase=phase, mtype=mtype, iparm=iparm, n=self.shape[0], nrhs=1, b=rhs, x=lhs, a=self.data, ia=self.indptr, ja=self.index[1])
-      return lhs
+      rhsflat = numpy.ascontiguousarray(rhs.reshape(rhs.shape[0], -1).T, dtype=numpy.float64)
+      lhsflat = numpy.empty((rhsflat.shape[0], self.shape[1]), dtype=numpy.float64)
+      pardiso(phase=phase, mtype=mtype, iparm=iparm, n=self.shape[0], nrhs=rhsflat.shape[0], b=rhsflat, x=lhsflat, a=self.data, ia=self.rowptr, ja=self.colidx)
+      return lhsflat.T.reshape(lhsflat.shape[1:] + rhs.shape[1:])
 
+    def solve_fgmres(self, rhs, maxiter=0, atol=1e-6, restart=150):
+      rci = ctypes.c_int32(0)
+      n = ctypes.c_int32(len(rhs))
+      b = numpy.array(rhs, dtype=numpy.float64)
+      x = numpy.zeros_like(b)
+      ipar = numpy.zeros(128, dtype=numpy.int32)
+      ipar[0] = len(rhs) # problem size
+      ipar[1] = 6 # output on screen
+      ipar[2] = 1 # current stage of the RCI FGMRES computations; the initial value is 1
+      ipar[3] = 0 # current iteration number; the initial value is 0
+      ipar[4] = maxiter # maximum number of iterations
+      ipar[5] = 1 # output error messages in accordance with the parameter ipar[1]
+      ipar[6] = 1 # output warning messages in accordance with the parameter ipar[1]
+      ipar[7] = 1 if maxiter > 0 else 0 # perform the stopping test for the maximum number of iterations: ipar[3] <= ipar[4]
+      ipar[8] = 1 # perform the residual stopping test: dpar[4] <= dpar[3]
+      ipar[9] = 0 # the user-defined stopping test should not be performed by setting RCI_request=2
+      ipar[10] = 0 # run the non-preconditioned version of the FGMRES method
+      ipar[11] = 1 # perform the automatic test for zero norm of the currently generated vector: dpar[6] <= dpar[7]
+      ipar[12] = 0 # update the solution to the vector x according to the computations done by the dfgmres routine
+      ipar[13] = 0 # internal iteration counter that counts the number of iterations before the restart takes place; the initial value is 0
+      ipar[14] = min(restart, len(rhs)) # the number of non-restarted FGMRES iterations
+      dpar = numpy.zeros(128, dtype=numpy.float64)
+      dpar[0] = 0 # relative tolerance
+      dpar[1] = atol # absolute tolerance
+      dpar[7] = 1e-12 # tolerance for the zero norm of the currently generated vector
+      tmp = numpy.zeros((2*ipar[14]+1)*ipar[0]+(ipar[14]*(ipar[14]+9))//2+1, dtype=numpy.float64)
+      libmkl.dfgmres_check(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes)
+      assert rci.value == 0
+      while True:
+        with log.context('iter {} ({:.0f}%)'.format(ipar[13], 100 * numpy.log(dpar[2]/dpar[4]) / numpy.log(dpar[2]/atol) if dpar[4] else 0)):
+          libmkl.dfgmres(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes)
+          if rci.value == 0:
+            break
+          elif rci.value == 1:
+            tmp[ipar[22]-1:ipar[22]+n.value-1] = self @ tmp[ipar[21]-1:ipar[21]+n.value-1]
+          else:
+            raise NotImplementedError
+      itercount = ctypes.c_int32(0)
+      libmkl.dfgmres_get(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes, ctypes.byref(itercount))
+      if numpy.linalg.norm(self @ x - b) > atol:
+        raise MatrixError('fgmres solver failed to reach tolerance')
+      return x
 
 ## MODULE METHODS
 
 _current_backend = Numpy()
 
 def backend(names):
-  for name in names.lower().split(','):
-    for cls in Backend.__subclasses__():
-      if cls.__name__.lower() == name:
-        return cls()
+  for cls in map(Backend.get, names.split(',')):
+    if cls is not None:
+      return cls()
   raise RuntimeError('matrix backend {!r} is not available'.format(names))
 
 def assemble(data, index, shape):

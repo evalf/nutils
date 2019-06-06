@@ -277,7 +277,7 @@ class Topology(types.Singleton):
         solvecons[~(constrain.where|N)] = 0
         u = A.solve(b, constrain=solvecons, **solverargs)
         constrain[N] = u[N]
-        err2 = f2 - numpy.dot(2*b-A.matvec(u), u) # can be negative ~zero due to rounding errors
+        err2 = f2 - numpy.dot(2 * b - A @ u, u) # can be negative ~zero due to rounding errors
         avg_error = numpy.sqrt(err2) / area if err2 > 0 else 0
 
     elif ptype == 'convolute':
@@ -621,14 +621,7 @@ class Topology(types.Singleton):
     warnings.deprecation('Topology.supp is deprecated, use basis.get_support instead')
     if not isinstance(basis, function.Basis):
       raise ValueError("argument 'basis' should be of type 'Basis' but got {!r}".format(basis))
-    if mask is None:
-      mask = numpy.ones(len(basis), dtype=bool)
-    elif isinstance(mask, list) or numeric.isarray(mask) and mask.dtype == int:
-      tmp = numpy.zeros(len(basis), dtype=bool)
-      tmp[mask] = True
-      mask = tmp
-    else:
-      assert numeric.isarray(mask) and mask.dtype == bool and mask.shape == basis.shape[:1]
+    mask = numeric.asboolean(mask, size=len(basis), ordered=False)
     subset = []
     for ielem in range(len(self.transforms)):
       dofs = basis.get_dofs(ielem)

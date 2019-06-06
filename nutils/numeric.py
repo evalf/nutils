@@ -537,4 +537,54 @@ def sorted_index(sorted_array, values, *, missing=None):
 def sorted_contains(sorted_array, values):
   return types.frozenarray(_sorted_index_mask(sorted_array, values)[1], copy=False)
 
+def asboolean(array, size, ordered=True):
+  '''convert index array to boolean.
+
+  A boolean array is returned as-is after confirming that the length is correct.
+
+  >>> asboolean([True, False], size=2)
+  array([ True, False], dtype=bool)
+
+  A strictly increasing integer array is converted to the equivalent boolean
+  array such that ``asboolean(array, n).nonzero()[0] == array``.
+
+  >>> asboolean([1,3], size=4)
+  array([False,  True, False,  True], dtype=bool)
+
+  In case the order of integers is not important this must be explicitly
+  specified using the ``ordered`` argument.
+
+  >>> asboolean([3,1,1], size=4, ordered=False)
+  array([False,  True, False,  True], dtype=bool)
+
+  Args
+  ----
+  array : :class:`int` or :class:`bool` array_like or None
+      Integer or boolean index data.
+  size : :class:`int`
+      Target array length.
+  ordered : :class:`bool`
+      Assert that integers are strictly increasing.
+  '''
+
+  if array is None or isinstance(array, (list, tuple)) and len(array) == 0:
+    return numpy.zeros(size, dtype=bool)
+  array = numpy.asarray(array)
+  if array.ndim != 1:
+    raise Exception('cannot convert array of dimension {} to boolean'.format(array.ndim))
+  if array.dtype.kind == 'b':
+    if array.size != size:
+      raise Exception('array is already boolean but has the wrong length')
+    return array
+  if array.dtype.kind != 'i':
+    raise Exception('cannot convert array of type {!r} to boolean'.format(array.dtype))
+  barray = numpy.zeros(size, dtype=bool)
+  if array.size:
+    if ordered and not numpy.greater(array[1:], array[:-1]).all():
+      raise Exception('indices are not strictly increasing')
+    if (array[0] if ordered else array.min()) < 0 or (array[-1] if ordered else array.max()) >= size:
+      raise Exception('indices are out of bounds')
+    barray[array] = True
+  return barray
+
 # vim:sw=2:sts=2:et
