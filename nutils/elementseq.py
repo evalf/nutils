@@ -65,7 +65,7 @@ class References(types.Singleton):
       if numpy.any(numpy.less(index, 0)) or numpy.any(numpy.greater_equal(index, len(self))):
         raise IndexError('index out of range')
       if len(index) == 0:
-        return PlainReferences((), self.ndims)
+        return EmptyReferences(self.ndims)
       if numpy.all(numpy.equal(numpy.diff(index), 1)) and len(index) == len(self):
         return self
       return SelectedReferences(self, index)
@@ -73,7 +73,7 @@ class References(types.Singleton):
       if index.shape != (len(self),):
         raise IndexError('mask has invalid shape')
       if not numpy.any(index):
-        return PlainReferences((), self.ndims)
+        return EmptyReferences(self.ndims)
       if numpy.all(index):
         return self
       index, = numpy.where(index)
@@ -118,7 +118,7 @@ class References(types.Singleton):
 
     if numeric.isint(other):
       if other == 0:
-        return PlainReferences((), self.ndims)
+        return EmptyReferences(self.ndims)
       else:
         return RepeatedReferences(self, other)
     elif isinstance(other, References):
@@ -144,6 +144,24 @@ class References(types.Singleton):
     return False
 
 strictreferences = types.strict[References]
+
+class EmptyReferences(References):
+  '''An empty sequence of references.'''
+
+  def __len__(self):
+    return 0
+
+  def __getitem__(self, index):
+    if not numeric.isint(index):
+      return super().__getitem__(index)
+    raise IndexError('index out of range')
+
+  def __iter__(self):
+    return iter(())
+
+  @property
+  def children(self):
+    return self
 
 class PlainReferences(References):
   '''A general purpose implementation of :class:`References`.
@@ -230,7 +248,7 @@ class UniformReferences(References):
   def __mul__(self, other):
     if numeric.isint(other):
       if other == 0:
-        return PlainReferences((), self.ndims)
+        return EmptyReferences(self.ndims)
       else:
         return UniformReferences(self._reference, len(self)*other)
     else:
@@ -308,7 +326,7 @@ class ChainedReferences(References):
       if index == range(len(self)):
         return self
       elif index.start == index.stop:
-        return PlainReferences((), self.ndims)
+        return EmptyReferences(self.ndims)
       ostart = numpy.searchsorted(self._offsets, index.start, side='right') - 1
       ostop = numpy.searchsorted(self._offsets, index.stop, side='left')
       return chain((item[max(0,index.start-istart):min(istop-istart,index.stop-istart)] for item, (istart, istop) in zip(self._items[ostart:ostop], util.pairwise(self._offsets[ostart:ostop+1]))), self.ndims)
@@ -371,7 +389,7 @@ class RepeatedReferences(References):
   def __mul__(self, other):
     if numeric.isint(other):
       if other == 0:
-        return PlainReferences((), self.ndims)
+        return EmptyReferences(self.ndims)
       else:
         return RepeatedReferences(self._parent, self._count*other)
     else:
@@ -466,7 +484,7 @@ def asreferences(value, ndims):
   elif isinstance(value, collections.abc.Iterable):
     value = tuple(value)
     if len(value) == 0:
-      return PlainReferences((), ndims)
+      return EmptyReferences(ndims)
     elif all(item == value[0] for item in value[1:]):
       return UniformReferences(value[0], len(value))
     else:
@@ -495,7 +513,7 @@ def chain(items, ndims):
   if not (items_ndims <= {ndims}):
     raise ValueError('expected references with ndims={}, but got {}'.format(ndims, items_ndims))
   if len(unchained) == 0:
-    return PlainReferences((), ndims)
+    return EmptyReferences(ndims)
   elif len(unchained) == 1:
     return unchained[0]
   elif all(item.isuniform for item in unchained) and len(set(item[0] for item in unchained)) == 1:

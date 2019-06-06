@@ -818,7 +818,7 @@ class EmptyTopology(Topology):
 
   @types.apply_annotations
   def __init__(self, ndims:types.strictint):
-    super().__init__(elementseq.PlainReferences((), ndims), transformseq.PlainTransforms((), ndims), transformseq.PlainTransforms((), ndims))
+    super().__init__(elementseq.EmptyReferences(ndims), transformseq.PlainTransforms((), ndims), transformseq.PlainTransforms((), ndims))
 
   def __or__(self, other):
     assert self.ndims == other.ndims

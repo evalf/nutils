@@ -67,7 +67,7 @@ class common(TestCase):
     self.assertEqual(tuple(self.seq), tuple(self.check))
 
   def test_add(self):
-    self.assertEqual(tuple(self.seq+nutils.elementseq.PlainReferences((), self.checkndims)), tuple(self.check))
+    self.assertEqual(tuple(self.seq+nutils.elementseq.EmptyReferences(self.checkndims)), tuple(self.check))
     self.assertEqual(tuple(self.seq+self.seq), tuple(self.check)+tuple(self.check))
 
   def test_mul_int(self):
@@ -85,6 +85,11 @@ class common(TestCase):
   def test_getpoints(self):
     self.assertEqual(self.seq.getpoints('bezier', 2), tuple(ref.getpoints('bezier', 2) for ref in self.check))
 
+common(
+  'EmptyReferences',
+  seq=nutils.elementseq.EmptyReferences(2),
+  check=[],
+  checkndims=2)
 common(
   'PlainReferences',
   seq=nutils.elementseq.PlainReferences([square, triangle], 2),
@@ -169,7 +174,7 @@ class asreferences(TestCase):
       nutils.elementseq.asreferences(value, 2)
 
   def test_References_list_empty(self):
-    self.assertEqual(nutils.elementseq.asreferences([], 2), nutils.elementseq.PlainReferences([], 2))
+    self.assertEqual(nutils.elementseq.asreferences([], 2), nutils.elementseq.EmptyReferences(2))
 
   def test_References_list_pluriform(self):
     self.assertEqual(nutils.elementseq.asreferences([square, triangle], 2), nutils.elementseq.PlainReferences([square, triangle], 2))
