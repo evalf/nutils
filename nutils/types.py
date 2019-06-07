@@ -22,7 +22,7 @@
 Module with general purpose types.
 """
 
-import inspect, functools, hashlib, builtins, numbers, collections.abc, itertools, abc, sys
+import inspect, functools, hashlib, builtins, numbers, collections.abc, itertools, abc, sys, weakref
 import numpy
 
 def aspreprocessor(apply):
@@ -614,7 +614,7 @@ class Immutable(metaclass=ImmutableMeta):
   True
   '''
 
-  __slots__ = '_args', '_hash'
+  __slots__ = '__weakref__', '_args', '_hash'
   __cache__ = '__nutils_hash__',
 
   def __reduce__(self):
@@ -647,11 +647,9 @@ class Immutable(metaclass=ImmutableMeta):
 
 class SingletonMeta(ImmutableMeta):
 
-  _cleanup_threshold = 1000 # number of new instances until next cleanup
-
   def __new__(mcls, name, bases, namespace, **kwargs):
     cls = super().__new__(mcls, name, bases, namespace, **kwargs)
-    cls._cache = {}
+    cls._cache = weakref.WeakValueDictionary()
     return cls
 
   def _new(cls, *args):
@@ -659,9 +657,6 @@ class SingletonMeta(ImmutableMeta):
       self = cls._cache[args]
     except KeyError:
       cls._cache[args] = self = super()._new(*args)
-      if len(cls._cache) > cls._cleanup_threshold:
-        cls._cache = {key: value for key, value in cls._cache.items() if sys.getrefcount(value) > 4}
-        cls._cleanup_threshold = SingletonMeta._cleanup_threshold + len(cls._cache)
     return self
 
 class Singleton(Immutable, metaclass=SingletonMeta):
