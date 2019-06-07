@@ -63,7 +63,7 @@ class common(TestCase):
     self.assertEqual(tuple(self.seq), tuple(self.check))
 
   def test_add(self):
-    self.assertEqual(tuple(self.seq+nutils.transformseq.PlainTransforms((), self.checkfromdims)), tuple(self.check))
+    self.assertEqual(tuple(self.seq+nutils.transformseq.EmptyTransforms(self.checkfromdims)), tuple(self.check))
     self.assertEqual(tuple(self.seq+self.seq), tuple(self.check)+tuple(self.check))
 
   def test_index_with_tail(self):
@@ -153,6 +153,13 @@ s13 = nutils.transform.Shift([1.,3.])
 
 c00,c01,c10,c11 = square.child_transforms
 
+common(
+  'EmptyTransforms:1D',
+  seq=nutils.transformseq.EmptyTransforms(fromdims=1),
+  check=[],
+  checkmissing=[(l1,s0),(x1,s4),(r1,s0)],
+  checkrefs=nutils.elementseq.EmptyReferences(1),
+  checkfromdims=1)
 common(
   'PlainTransforms:1D',
   seq=nutils.transformseq.PlainTransforms([(x1,s0),(x1,s1),(x1,s2),(x1,s3)], fromdims=1),

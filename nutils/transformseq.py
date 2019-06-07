@@ -84,7 +84,7 @@ class Transforms(types.Singleton):
       if not numpy.all(numpy.greater(numpy.diff(index), 0)):
         raise NotImplementedError('reordering the sequence is not yet implemented')
       if len(index) == 0:
-        return PlainTransforms((), self.fromdims)
+        return EmptyTransforms(self.fromdims)
       if len(index) == len(self):
         return self
       return MaskedTransforms(self, index)
@@ -92,7 +92,7 @@ class Transforms(types.Singleton):
       if index.shape != (len(self),):
         raise IndexError('mask has invalid shape')
       if not numpy.any(index):
-        return PlainTransforms((), self.fromdims)
+        return EmptyTransforms(self.fromdims)
       if numpy.all(index):
         return self
       index, = numpy.where(index)
@@ -285,6 +285,31 @@ class Transforms(types.Singleton):
     yield self
 
 stricttransforms = types.strict[Transforms]
+
+class EmptyTransforms(Transforms):
+  '''An empty sequence.'''
+
+  def __getitem__(self, index):
+    if not numeric.isint(index):
+      return super().__getitem__(index)
+    raise IndexError('index out of range')
+
+  def __len__(self):
+    return 0
+
+  def index_with_tail(self, trans):
+    raise ValueError
+
+  def index(self, trans):
+    raise ValueError
+
+  def contains_with_tail(self, trans):
+    return False
+
+  def contains(self, trans):
+    return False
+
+  __contains__ = contains
 
 class PlainTransforms(Transforms):
   '''A general purpose implementation of :class:`Transforms`.
@@ -740,7 +765,7 @@ class ChainedTransforms(Transforms):
       if index == range(len(self)):
         return self
       elif index.start == index.stop:
-        return PlainTransforms((), self.fromdims)
+        return EmptyTransforms(self.fromdims)
       ostart = numpy.searchsorted(self._offsets, index.start, side='right') - 1
       ostop = numpy.searchsorted(self._offsets, index.stop, side='left')
       return chain((item[max(0,index.start-istart):min(istop-istart,index.stop-istart)] for item, (istart, istop) in zip(self._items[ostart:ostop], util.pairwise(self._offsets[ostart:ostop+1]))), self.fromdims)
@@ -795,7 +820,7 @@ def chain(items, fromdims):
   if not (items_fromdims <= {fromdims}):
     raise ValueError('expected transforms with fromdims={}, but got {}'.format(fromdims, items_fromdims))
   if len(unchained) == 0:
-    return PlainTransforms((), fromdims)
+    return EmptyTransforms(fromdims)
   elif len(unchained) == 1:
     return unchained[0]
   else:
