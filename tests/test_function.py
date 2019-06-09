@@ -744,14 +744,15 @@ class jacobian(TestCase):
   def setUp(self):
     self.domain, self.geom = mesh.unitsquare(1, 'square')
     self.basis = self.domain.basis('std', degree=1)
-    self.arg = function.Argument('dofs', [4])
-    self.v = self.basis.dot(self.arg)
+    arg = function.Argument('dofs', [4])
+    self.v = self.basis.dot(arg)
     self.X = (self.geom[numpy.newaxis,:] * [[0,1],[-self.v,0]]).sum(-1) # X_i = <x_1, -2 x_0>_i
     self.J = function.J(self.X, None if self.delayed else 2)
+    self.dJ = function.derivative(self.J, arg)
 
   def test_shape(self):
     self.assertEqual(self.J.shape, ())
-    self.assertEqual(function.derivative(self.J, self.arg).shape, (4,))
+    self.assertEqual(self.dJ.shape, (4,))
 
   def test_value(self):
     values = self.domain.sample('uniform', 2).eval(self.J, dofs=[2]*4)
@@ -761,9 +762,15 @@ class jacobian(TestCase):
     numpy.testing.assert_almost_equal(values1, values2)
 
   def test_derivative(self):
-    values1, values2 = self.domain.sample('uniform', 2).eval([function.derivative(self.J, self.arg),
+    values1, values2 = self.domain.sample('uniform', 2).eval([self.dJ,
       self.basis + self.basis.grad(self.geom)[:,0] * self.geom[0]], dofs=[1,2,3,10])
     numpy.testing.assert_almost_equal(values1, values2)
+
+  def test_zeroderivative(self):
+    otherarg = function.Argument('otherdofs', (10,))
+    values = self.domain.sample('uniform', 2).eval(function.derivative(self.dJ, otherarg))
+    self.assertEqual(values.shape[1:], self.dJ.shape + otherarg.shape)
+    self.assertAllEqual(values, 0)
 
 jacobian(delayed=True)
 jacobian(delayed=False)
