@@ -93,12 +93,10 @@ class Evaluable(types.Singleton):
   @property
   def dependencies(self):
     '''collection of all function arguments'''
-    args = set()
+    deps = list(self.__args)
     for func in self.__args:
-      if func not in args:
-        args |= func.dependencies
-        args.add(func)
-    return args
+      deps.extend(func.dependencies)
+    return frozenset(deps)
 
   @property
   def isconstant(self):
