@@ -1386,7 +1386,7 @@ class Determinant(Array):
 class Multiply(Array):
 
   __slots__ = 'funcs',
-  __cache__ = 'simplified',
+  __cache__ = 'simplified', 'optimized_for_numpy'
 
   @types.apply_annotations
   def __init__(self, funcs:types.frozenmultiset[asarray]):
@@ -1411,6 +1411,20 @@ class Multiply(Array):
     if retval is not None:
       assert retval.shape == self.shape
       return retval.simplified
+    return Multiply([func1, func2])
+
+  @property
+  def optimized_for_numpy(self):
+    func1, func2 = [func.optimized_for_numpy for func in self.funcs]
+    mask = [3] * self.ndim
+    for axis in func1._inserted_axes:
+      mask[axis] &= 2
+      func1 = func1.func
+    for axis in func2._inserted_axes:
+      mask[axis] &= 1
+      func2 = func2.func
+    if all(mask): # should always be the case after simplify
+      return Einsum(func1, func2, mask)
     return Multiply([func1, func2])
 
   def evalf(self, arr1, arr2):
@@ -1623,37 +1637,39 @@ class BlockAdd(Array):
         gathered = _concatblocks(((ind[:idim], ind[idim+1:]), (ind[idim], f)) for ind, f in gathered)
     return gathered
 
-class Dot(Array):
+class Einsum(Array):
 
-  __slots__ = 'funcs', 'axes', 'axes_complement', '_einsumfmt'
+  __slots__ = 'func1', 'func2', 'mask', '_einsumfmt'
 
   @types.apply_annotations
-  def __init__(self, funcs:types.frozenmultiset[asarray], axes:types.tuple[types.strictint]):
-    self.funcs = funcs
-    func1, func2 = funcs
-    assert func1.shape == func2.shape
-    self.axes = axes
-    assert all(0 <= ax < func1.ndim for ax in axes)
-    assert all(ax1 < ax2 for ax1, ax2 in zip(axes[:-1], axes[1:]))
-    shape = func1.shape
-    self.axes_complement = list(range(func1.ndim))
-    for ax in reversed(self.axes):
-      shape = shape[:ax] + shape[ax+1:]
-      del self.axes_complement[ax]
-    _abc = numeric._abc[:func1.ndim+1]
-    self._einsumfmt = '{0},{0}->{1}'.format(_abc, ''.join(a for i, a in enumerate(_abc) if i-1 not in axes))
-    super().__init__(args=funcs, shape=shape, dtype=_jointdtype(func1.dtype,func2.dtype))
-
-  def edit(self, op):
-    return Dot([op(func) for func in self.funcs], self.axes)
+  def __init__(self, func1:asarray, func2:asarray, mask:types.tuple[types.strictint]):
+    self.func1 = func1
+    self.func2 = func2
+    self.mask = mask # tuple of bit mask integers in {0,1,2,3}
+    # - the 1-bit indicates that the axis of func1 carries over to the result
+    # - the 2-bit indicates that the axis of func2 carries over to the result
+    # - if neither bit is set (mask==0) this means axes are contracted
+    shape = []
+    i1 = i2 = 0
+    for m in mask:
+      assert 0 <= m <= 3, 'invalid bit mask value'
+      assert 0 < m < 3 or func1.shape[i1] == func2.shape[i2], 'non matching shapes'
+      if m:
+        shape.append(func1.shape[i1] if m == 1 else func2.shape[i2])
+      i1 += m != 2
+      i2 += m != 1
+    assert i1 == func1.ndim and i2 == func2.ndim
+    axes = [(chr(ord('a')+i+1), m) for i, m in enumerate(mask)]
+    self._einsumfmt = 'a{},a{}->a{}'.format(*[''.join(c for c, m in axes if m != ex) for ex in (2,1,0)])
+    super().__init__(args=[func1, func2], shape=shape, dtype=_jointdtype(func1.dtype, func2.dtype))
 
   def evalf(self, arr1, arr2):
-    return numpy.einsum(self._einsumfmt, arr1, arr2, optimize=False)
+    return numpy.core.multiarray.c_einsum(self._einsumfmt, arr1, arr2)
 
 class Sum(Array):
 
   __slots__ = 'axis', 'func'
-  __cache__ = 'simplified',
+  __cache__ = 'simplified', 'optimized_for_numpy'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint):
@@ -1675,9 +1691,14 @@ class Sum(Array):
   @property
   def optimized_for_numpy(self):
     func = self.func.optimized_for_numpy
-    return Dot(func.funcs, [self.axis]) if isinstance(func, Multiply) \
-      else Dot(func.funcs, sorted(func.axes + (func.axes_complement[self.axis],))) if isinstance(func, Dot) \
-      else Sum(func, self.axis)
+    if isinstance(func, Einsum):
+      mask = numpy.array(func.mask)
+      axes, = mask.nonzero()
+      axis = axes[self.axis]
+      if mask[axis] == 3:
+        mask[axis] = 0
+        return Einsum(func.func1, func.func2, mask)
+    return Sum(func, self.axis)
 
   def evalf(self, arr):
     assert arr.ndim == self.ndim+2

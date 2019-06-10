@@ -821,7 +821,7 @@ the ``nan`` values, we can use :func:`nutils.solver.solve_linear`:
 .. console::
     >>> lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
     solve > solving 100x100 system using direct solver
-    solve > solver returned with residual 2e-15±1e-15
+    solve > solver returned with residual 2e-15±2e-15
 
 Finally, we plot the solution.  We create a :class:`~nutils.sample.Sample`
 object from ``topo`` and evaluate the geometry and the solution:
