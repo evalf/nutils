@@ -80,7 +80,7 @@ class Evaluable(types.Singleton):
   'Base class'
 
   __slots__ = '__args',
-  __cache__ = 'dependencies', 'ordereddeps', 'dependencytree', 'simplified', 'prepare_eval'
+  __cache__ = 'dependencies', 'ordereddeps', 'dependencytree', 'simplified', 'prepare_eval', 'optimized_for_numpy'
 
   @types.apply_annotations
   def __init__(self, args:types.tuple[strictevaluable]):
@@ -215,6 +215,10 @@ class Evaluable(types.Singleton):
   @property
   def simplified(self):
     return self.edit(lambda arg: arg.simplified if isevaluable(arg) else arg)
+
+  @property
+  def optimized_for_numpy(self):
+    return self.edit(lambda arg: arg.optimized_for_numpy if isevaluable(arg) else arg)
 
   @util.positional_only('self')
   def prepare_eval(*args, **kwargs):
@@ -462,12 +466,7 @@ def dot(a, b, axes=None):
     for idim in range(1, a.ndim):
       b = insertaxis(b, idim, a.shape[idim])
     axes = 0,
-  else:
-    a, b = _numpy_align(a, b)
-  if numeric.isint(axes):
-    axes = axes,
-  axes = _norm_and_sort(a.ndim, axes)
-  return Dot([a, b], axes)
+  return multiply(a, b).sum(axes)
 
 def transpose(arg, trans=None):
   arg = asarray(arg)
@@ -1425,7 +1424,6 @@ class Multiply(Array):
       return multiply(func1._uninsert(axis), func2.sum(axis))
     if axis in func2._inserted_axes:
       return multiply(func1.sum(axis), func2._uninsert(axis))
-    return Dot([func1, func2], [axis])
 
   def _get(self, axis, item):
     func1, func2 = self.funcs
@@ -1628,7 +1626,6 @@ class BlockAdd(Array):
 class Dot(Array):
 
   __slots__ = 'funcs', 'axes', 'axes_complement', '_einsumfmt'
-  __cache__ = 'simplified',
 
   @types.apply_annotations
   def __init__(self, funcs:types.frozenmultiset[asarray], axes:types.tuple[types.strictint]):
@@ -1650,57 +1647,8 @@ class Dot(Array):
   def edit(self, op):
     return Dot([op(func) for func in self.funcs], self.axes)
 
-  @property
-  def simplified(self):
-    func1, func2 = [func.simplified for func in self.funcs]
-    if len(self.axes) == 0:
-      return multiply(func1, func2).simplified
-    if iszero(func1) or iszero(func2):
-      return zeros(self.shape)
-    retval = func1._multiply(func2)
-    if retval is not None:
-      assert retval.shape == func1.shape
-      return sum(retval, self.axes).simplified
-    retval = func2._multiply(func1)
-    if retval is not None:
-      assert retval.shape == func1.shape
-      return sum(retval, self.axes).simplified
-    return Dot([func1, func2], self.axes)
-
   def evalf(self, arr1, arr2):
     return numpy.einsum(self._einsumfmt, arr1, arr2, optimize=False)
-
-  def _get(self, axis, item):
-    func1, func2 = self.funcs
-    funcaxis = self.axes_complement[axis]
-    return Dot([Get(func1, funcaxis, item), Get(func2, funcaxis, item)], [ax-(ax>=funcaxis) for ax in self.axes])
-
-  def _derivative(self, var, seen):
-    func1, func2 = self.funcs
-    ext = (...,)+(_,)*var.ndim
-    return dot(derivative(func1, var, seen), func2[ext], self.axes) \
-         + dot(func1[ext], derivative(func2, var, seen), self.axes)
-
-  def _add(self, other):
-    if isinstance(other, Dot) and self.axes == other.axes and not self.funcs.isdisjoint(other.funcs):
-      f = next(iter(self.funcs & other.funcs))
-      return Dot([f, Add(self.funcs + other.funcs - [f,f])], self.axes)
-
-  def _takediag(self, axis, rmaxis):
-    func1, func2 = self.funcs
-    faxis = self.axes_complement[axis]
-    frmaxis = self.axes_complement[rmaxis]
-    return Dot([TakeDiag(func1, faxis, frmaxis), TakeDiag(func2, faxis, frmaxis)], [ax-(ax>frmaxis) for ax in self.axes])
-
-  def _sum(self, axis):
-    funcaxis = self.axes_complement[axis]
-    func1, func2 = self.funcs
-    return Dot([func1, func2], sorted(self.axes + (funcaxis,)))
-
-  def _take(self, index, axis):
-    func1, func2 = self.funcs
-    funcaxis = self.axes_complement[axis]
-    return Dot([Take(func1, index, funcaxis), Take(func2, index, funcaxis)], self.axes)
 
 class Sum(Array):
 
@@ -1723,6 +1671,13 @@ class Sum(Array):
       assert retval.shape == self.shape
       return retval.simplified
     return Sum(func, self.axis)
+
+  @property
+  def optimized_for_numpy(self):
+    func = self.func.optimized_for_numpy
+    return Dot(func.funcs, [self.axis]) if isinstance(func, Multiply) \
+      else Dot(func.funcs, sorted(func.axes + (func.axes_complement[self.axis],))) if isinstance(func, Dot) \
+      else Sum(func, self.axis)
 
   def evalf(self, arr):
     assert arr.ndim == self.ndim+2
@@ -1889,10 +1844,6 @@ class Power(Array):
 
   def _get(self, axis, item):
     return Power(Get(self.func, axis, item), Get(self.power, axis, item))
-
-  def _sum(self, axis):
-    if self == (self.func**2):
-      return Dot([self.func, self.func], [axis])
 
   def _takediag(self, axis, rmaxis):
     return Power(TakeDiag(self.func, axis, rmaxis), TakeDiag(self.power, axis, rmaxis))
@@ -2948,7 +2899,7 @@ class Polyval(Array):
 
   def _derivative(self, var, seen):
     # Derivative to argument `points`.
-    dpoints = Dot(_numpy_align(Polyval(self.coeffs, self.points, self.ngrad+1)[(...,*(_,)*var.ndim)], derivative(self.points, var, seen)), [self.ndim])
+    dpoints = dot(Polyval(self.coeffs, self.points, self.ngrad+1)[(...,*(_,)*var.ndim)], derivative(self.points, var, seen), self.ndim)
     # Derivative to argument `coeffs`.  `trans` shuffles the coefficient axes
     # of `derivative(self.coeffs)` after the derivative axes.
     shuffle = lambda a, b, c: (*range(0,a), *range(a+b,a+b+c), *range(a,a+b))

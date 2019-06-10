@@ -50,6 +50,8 @@ class check(TestCase):
       self.assertArrayAlmostEqual(self.sample.eval(actual), desired, decimal)
     with self.subTest('simplified'):
       self.assertArrayAlmostEqual(self.sample.eval(actual.simplified), desired, decimal)
+    with self.subTest('optimized'):
+      self.assertArrayAlmostEqual(self.sample.eval(actual.simplified.optimized_for_numpy), desired, decimal)
 
   def test_evalconst(self):
     constargs = [numpy.random.uniform(size=shape) for shape in self.shapes]

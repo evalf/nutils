@@ -117,7 +117,7 @@ class Sample(types.Singleton):
     # argument id, evaluable index, and evaluable values.
 
     funcs = [function.asarray(func).prepare_eval(ndims=self.ndims) for func in funcs]
-    blocks = [(ifunc, function.Tuple(ind), f.simplified) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func)]
+    blocks = [(ifunc, function.Tuple(ind), f.simplified.optimized_for_numpy) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func)]
     block2func, indices, values = zip(*blocks) if blocks else ([],[],[])
 
     log.debug('integrating {} distinct blocks'.format('+'.join(
@@ -216,7 +216,7 @@ class Sample(types.Singleton):
     zeros = parallel.shzeros if nprocs > 1 else numpy.zeros
     funcs = [function.asarray(func) for func in funcs]
     retvals = [zeros((self.npoints,)+func.shape, dtype=func.dtype) for func in funcs]
-    idata = function.Tuple(function.Tuple([ifunc, function.Tuple(ind), f.simplified]) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func.prepare_eval(ndims=self.ndims)))
+    idata = function.Tuple(function.Tuple([ifunc, function.Tuple(ind), f.simplified.optimized_for_numpy]) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func.prepare_eval(ndims=self.ndims)))
 
     if config.dot:
       idata.graphviz()
