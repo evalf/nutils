@@ -615,6 +615,7 @@ class Array(Evaluable):
   _mask = lambda self, maskvec, axis: None
   _unravel = lambda self, axis, shape: None
   _ravel = lambda self, axis: None
+  _inserted_axes = ()
 
 class Normal(Array):
   'normal'
@@ -815,19 +816,19 @@ class InsertAxis(Array):
     return InsertAxis(Product(self.func), self.axis, self.length)
 
   def _power(self, n):
-    if isinstance(n, InsertAxis) and self.axis == n.axis:
-      assert n.length == self.length
-      return InsertAxis(Power(self.func, n.func), self.axis, self.length)
+    for axis in n._inserted_axes:
+      if axis in self._inserted_axes:
+        return InsertAxis(Power(self._uninsert(axis), n._uninsert(axis)), axis, self.shape[axis])
 
   def _add(self, other):
-    if isinstance(other, InsertAxis) and self.axis == other.axis:
-      assert self.length == other.length
-      return InsertAxis(Add([self.func, other.func]), self.axis, self.length)
+    for axis in other._inserted_axes:
+      if axis in self._inserted_axes:
+        return InsertAxis(Add([self._uninsert(axis), other._uninsert(axis)]), axis, self.shape[axis])
 
   def _multiply(self, other):
-    if isinstance(other, InsertAxis) and self.axis == other.axis:
-      assert self.length == other.length
-      return InsertAxis(Multiply([self.func, other.func]), self.axis, self.length)
+    for axis in other._inserted_axes:
+      if axis in self._inserted_axes:
+        return InsertAxis(Multiply([self._uninsert(axis), other._uninsert(axis)]), axis, self.shape[axis])
 
   def _insertaxis(self, axis, length):
     if (not length.isconstant, axis) < (not self.length.isconstant, self.axis):
@@ -861,6 +862,13 @@ class InsertAxis(Array):
       return InsertAxis(InsertAxis(self.func, self.axis, shape[1]), self.axis, shape[0])
     else:
       return InsertAxis(Unravel(self.func, axis-(axis>self.axis), shape), self.axis+(axis<self.axis), self.length)
+
+  @property
+  def _inserted_axes(self):
+    return tuple([self.axis] + [axis + (axis>=self.axis) for axis in self.func._inserted_axes])
+
+  def _uninsert(self, axis):
+    return self.func if axis == self.axis else InsertAxis(self.func._uninsert(axis-(axis>self.axis)), self.axis-(axis<self.axis), self.length)
 
 class Transpose(Array):
 
@@ -1411,6 +1419,12 @@ class Multiply(Array):
 
   def _sum(self, axis):
     func1, func2 = self.funcs
+    if self.shape[axis] == 1:
+      return multiply(get(func1, axis, 0), get(func2, axis, 0))
+    if axis in func1._inserted_axes:
+      return multiply(func1._uninsert(axis), func2.sum(axis))
+    if axis in func2._inserted_axes:
+      return multiply(func1.sum(axis), func2._uninsert(axis))
     return Dot([func1, func2], [axis])
 
   def _get(self, axis, item):
@@ -1643,9 +1657,6 @@ class Dot(Array):
       return multiply(func1, func2).simplified
     if iszero(func1) or iszero(func2):
       return zeros(self.shape)
-    for i, axis in enumerate(self.axes):
-      if func1.shape[axis] == 1:
-        return dot(sum(func1,axis), sum(func2,axis), self.axes[:i] + tuple(axis-1 for axis in self.axes[i+1:])).simplified
     retval = func1._multiply(func2)
     if retval is not None:
       assert retval.shape == func1.shape
