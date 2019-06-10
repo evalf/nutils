@@ -979,9 +979,6 @@ class Get(Array):
     if tryget is not None:
       return Get(tryget, self.axis-(i<self.axis), self.item)
 
-  def _take(self, indices, axis):
-    return Get(Take(self.func, indices, axis+(axis>=self.axis)), self.axis, self.item)
-
 class Product(Array):
 
   __slots__ = 'func',
@@ -1017,6 +1014,12 @@ class Product(Array):
   def _get(self, i, item):
     func = Get(self.func, i, item)
     return Product(func)
+
+  def _take(self, indices, axis):
+    return Product(Take(self.func, indices, axis))
+
+  def _mask(self, maskvec, axis):
+    return Product(Mask(self.func, maskvec, axis))
 
 class ApplyTransforms(Array):
 
@@ -1090,6 +1093,18 @@ class Inverse(Array):
 
   def _determinant(self):
     return reciprocal(Determinant(self.func))
+
+  def _get(self, i, item):
+    if i < self.ndim - 2:
+      return Inverse(Get(self.func, i, item))
+
+  def _take(self, indices, axis):
+    if axis < self.ndim - 2:
+      return Inverse(Take(self.func, indices, axis))
+
+  def _mask(self, maskvec, axis):
+    if axis < self.ndim - 2:
+      return Inverse(Mask(self.func, maskvec, axis))
 
 class Concatenate(Array):
 
@@ -1310,6 +1325,18 @@ class Cross(Array):
     return cross(self.func1[ext], derivative(self.func2, var, seen), axis=self.axis) \
          - cross(self.func2[ext], derivative(self.func1, var, seen), axis=self.axis)
 
+  def _get(self, axis, item):
+    if axis != self.axis:
+      return Cross(Get(self.func1, axis, item), Get(self.func2, axis, item), self.axis-(axis<self.axis))
+
+  def _take(self, index, axis):
+    if axis != self.axis:
+      return Cross(Take(self.func1, index, axis), Take(self.func2, index, axis), self.axis)
+
+  def _mask(self, maskvec, axis):
+    if axis != self.axis:
+      return Cross(Mask(self.func1, maskvec, axis), Mask(self.func2, maskvec, axis), self.axis)
+
 class Determinant(Array):
 
   __slots__ = 'func',
@@ -1339,6 +1366,15 @@ class Determinant(Array):
     G = derivative(self.func, var, seen)
     ext = (...,)+(_,)*var.ndim
     return self[ext] * sum(Finv[ext] * G, axis=[-2-var.ndim,-1-var.ndim])
+
+  def _get(self, axis, item):
+    return Determinant(Get(self.func, axis, item))
+
+  def _take(self, index, axis):
+    return Determinant(Take(self.func, index, axis))
+
+  def _mask(self, maskvec, axis):
+    return Determinant(Mask(self.func, maskvec, axis))
 
 class Multiply(Array):
 
@@ -1422,6 +1458,10 @@ class Multiply(Array):
   def _take(self, index, axis):
     func1, func2 = self.funcs
     return Multiply([Take(func1, index, axis), Take(func2, index, axis)])
+
+  def _mask(self, maskvec, axis):
+    func1, func2 = self.funcs
+    return Multiply([Mask(func1, maskvec, axis), Mask(func2, maskvec, axis)])
 
   def _power(self, n):
     func1, func2 = self.funcs
@@ -1682,6 +1722,18 @@ class Sum(Array):
     if trysum is not None:
       return Sum(trysum, self.axis-(axis<self.axis))
 
+  def _get(self, axis, item):
+    return Sum(Get(self.func, axis+(axis>=self.axis), item), self.axis-(axis<self.axis))
+
+  def _takediag(self, axis, rmaxis):
+    return Sum(TakeDiag(self.func, axis+(axis>=self.axis), rmaxis+(rmaxis>=self.axis)), self.axis-(rmaxis<self.axis))
+
+  def _take(self, index, axis):
+    return Sum(Take(self.func, index, axis+(axis>=self.axis)), self.axis)
+
+  def _mask(self, maskvec, axis):
+    return Sum(Mask(self.func, maskvec, axis+(axis>=self.axis)), self.axis)
+
   def _derivative(self, var, seen):
     return sum(derivative(self.func, var, seen), self.axis)
 
@@ -1717,9 +1769,10 @@ class TakeDiag(Array):
   def _derivative(self, var, seen):
     return TakeDiag(derivative(self.func, var, seen), self.axis, self.rmaxis)
 
-  def _sum(self, axis):
-    if axis != self.axis:
-      return TakeDiag(Sum(self.func, axis+(axis>=self.rmaxis)), self.axis-(axis<self.axis), self.rmaxis-(axis<self.rmaxis))
+  def _get(self, axis, item):
+    if axis == self.axis:
+      return Get(Get(self.func, self.rmaxis, item), self.axis, item)
+    return TakeDiag(Get(self.func, axis+(axis>=self.rmaxis), item), self.axis-(axis<self.axis), self.rmaxis-(axis<self.rmaxis))
 
 class Take(Array):
 
@@ -1764,6 +1817,10 @@ class Take(Array):
 
   def _derivative(self, var, seen):
     return take(derivative(self.func, var, seen), self.indices, self.axis)
+
+  def _get(self, axis, item):
+    return Get(self.func, axis, Get(self.indices, 0, item)) if axis == self.axis \
+      else Take(Get(self.func, axis, item), self.indices, self.axis-(axis<self.axis))
 
   def _take(self, index, axis):
     if axis == self.axis:
@@ -1832,6 +1889,9 @@ class Power(Array):
   def _take(self, index, axis):
     return Power(Take(self.func, index, axis), Take(self.power, index, axis))
 
+  def _mask(self, maskvec, axis):
+    return Power(Mask(self.func, maskvec, axis), Mask(self.power, maskvec, axis))
+
   def _multiply(self, other):
     if isinstance(other, Power) and self.func == other.func:
       return Power(self.func, Add([self.power, other.power]))
@@ -1882,6 +1942,9 @@ class Pointwise(Array):
 
   def _take(self, index, axis):
     return self.__class__(*[Take(arg, index, axis) for arg in self.args])
+
+  def _mask(self, maskvec, axis):
+    return self.__class__(*[Mask(arg, maskvec, axis) for arg in self.args])
 
 class Cos(Pointwise):
   'Cosine, element-wise.'
@@ -2002,6 +2065,9 @@ class Sign(Array):
 
   def _take(self, index, axis):
     return Sign(Take(self.func, index, axis))
+
+  def _mask(self, maskvec, axis):
+    return Sign(Mask(self.func, maskvec, axis))
 
   def _sign(self):
     return self
@@ -2791,20 +2857,9 @@ class Mask(Array):
       where, = self.mask.nonzero()
       return Get(self.func, i, where[item])
 
-  def _sum(self, axis):
-    if axis != self.axis:
-      return Mask(sum(self.func, axis), self.mask, self.axis-(axis<self.axis))
-    if self.shape[axis] == 1:
-      (item,), = self.mask.nonzero()
-      return Get(self.func, axis, item)
-
   def _take(self, index, axis):
     if axis != self.axis:
       return Mask(Take(self.func, index, axis), self.mask, self.axis)
-
-  def _product(self):
-    if self.axis != self.ndim-1:
-      return Mask(Product(self.func), self.mask, self.axis)
 
   def _mask(self, maskvec, axis):
     if axis == self.axis:
@@ -2894,6 +2949,10 @@ class Polyval(Array):
   def _take(self, index, axis):
     if axis < self.coeffs.ndim - self.points_ndim:
       return Polyval(take(self.coeffs, index, axis), self.points, self.ngrad)
+
+  def _mask(self, maskvec, axis):
+    if axis < self.coeffs.ndim - self.points_ndim:
+      return Polyval(Mask(self.coeffs, maskvec, axis), self.points, self.ngrad)
 
   def _const_helper(self, *j):
     if len(j) == self.ngrad:
