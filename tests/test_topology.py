@@ -616,9 +616,6 @@ class common(TestCase):
       self.assertEqual(level, check)
       check = check.refined
 
-  def test_simplex(self):
-    self.topo.simplex
-
   @parametrize.enable_if(lambda **params: params.get('hasbasis', True))
   def test_supp_empty(self):
     self.assertEqual(len(self.topo.supp(self.topo.basis('std', 1), [])), 0)

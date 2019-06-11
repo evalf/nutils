@@ -34,7 +34,7 @@ class hierarchical(TestCase):
     levelset = 1.125 - self.geom[0]
     trimmed = self.ref0.trim(levelset, maxrefine=3).refined_by([1]).refined_by([1])
     trimbasis = trimmed.basis('h-std', degree=1)
-    x, y = trimmed.simplex.sample('bezier', 2).eval([self.geom[0], trimbasis])
+    x, y = trimmed.sample('bezier', 2).eval([self.geom[0], trimbasis])
     self.assertTrue((abs(y - .125 * numpy.array(
       [[8,0,0],
        [0,8,0],

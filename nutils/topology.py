@@ -44,7 +44,7 @@ class Topology(types.Singleton):
   'topology base class'
 
   __slots__ = 'references', 'transforms', 'opposites', 'ndims'
-  __cache__ = 'border_transforms', 'simplex', 'boundary', 'interfaces'
+  __cache__ = 'border_transforms', 'boundary', 'interfaces'
 
   @types.apply_annotations
   def __init__(self, references:elementseq.strictreferences, transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms):
@@ -322,19 +322,6 @@ class Topology(types.Singleton):
       assert numcons == verify, 'number of constraints does not meet expectation: {} != {}'.format(numcons, verify)
 
     return constrain
-
-  @property
-  def simplex(self):
-    warnings.deprecation('Topology.simplex is deprecated, use Topology.sample(...).tri instead')
-    references = []
-    transforms = []
-    opposites = []
-    for ref, trans, opp in zip(self.references, self.transforms, self.opposites):
-      for simplextrans, simplexref in ref.simplices:
-        references.append(simplexref)
-        transforms.append(trans+(simplextrans,))
-        opposites.append(opp+(simplextrans,))
-    return UnstructuredTopology(references, transforms, opposites, ndims=self.ndims)
 
   def refined_by(self, refine):
     'create refined space by refining dofs in existing one'
