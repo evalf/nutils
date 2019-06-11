@@ -81,8 +81,14 @@ class Transforms(types.Singleton):
         raise IndexError('invalid index')
       if numpy.any(numpy.less(index, 0)) or numpy.any(numpy.greater_equal(index, len(self))):
         raise IndexError('index out of range')
-      if not numpy.all(numpy.greater(numpy.diff(index), 0)):
-        raise NotImplementedError('reordering the sequence is not yet implemented')
+      dindex = numpy.diff(index)
+      if len(index) == len(self) and (len(self) == 0 or (index[0] == 0 and numpy.all(numpy.equal(dindex, 1)))):
+        return self
+      if numpy.any(numpy.equal(dindex, 0)):
+        raise ValueError('repeating an element is not allowed')
+      if not numpy.all(numpy.greater(dindex, 0)):
+        s = numpy.argsort(index)
+        return ReorderedTransforms(self[index[s]], numpy.argsort(s))
       if len(index) == 0:
         return EmptyTransforms(self.fromdims)
       if len(index) == len(self):
@@ -577,6 +583,46 @@ class MaskedTransforms(Transforms):
       raise ValueError
     else:
       return int(index), tail
+
+class ReorderedTransforms(Transforms):
+  '''A reordered :class:`Transforms` object.
+
+  Parameters
+  ----------
+  parent : :class:`Transforms`
+      The transforms to reorder.
+  indices : one-dimensional array of :class:`int`\\s
+      The new order of the transforms.
+  '''
+
+  __slots__ = '_parent', '_mask', '_indices'
+  __cache__ = '_rindices'
+
+  @types.apply_annotations
+  def __init__(self, parent:stricttransforms, indices:types.frozenarray[types.strictint]):
+    self._parent = parent
+    self._indices = indices
+    super().__init__(parent.fromdims)
+
+  @property
+  def _rindices(self):
+    return numpy.argsort(self._indices)
+
+  def __iter__(self):
+    for itrans in self._indices:
+      yield self._parent[int(itrans)]
+
+  def __getitem__(self, index):
+    if numeric.isintarray(index) and index.ndim == 1 and numpy.any(numpy.less(index, 0)):
+      raise IndexError('index out of bounds')
+    return self._parent[self._indices[index]]
+
+  def __len__(self):
+    return len(self._parent)
+
+  def index_with_tail(self, trans):
+    parent_index, tail = self._parent.index_with_tail(trans)
+    return int(self._rindices[parent_index]), tail
 
 class RefinedTransforms(Transforms):
   '''A sequence of refined transforms.

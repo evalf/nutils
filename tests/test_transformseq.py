@@ -182,6 +182,13 @@ common(
   checkrefs=nutils.elementseq.asreferences([square,triangle], 2),
   checkfromdims=2)
 common(
+  'ReorderedTransforms',
+  seq=nutils.transformseq.ReorderedTransforms(nutils.transformseq.PlainTransforms([(x2,s00),(x2,s01),(x2,s10),(x2,s11)], fromdims=2), [0,2,3,1]),
+  check=[(x2,s00),(x2,s10),(x2,s11),(x2,s01)],
+  checkmissing=[(l2,s00),(x2,s02),(x2,s12),(r2,s00)],
+  checkrefs=nutils.elementseq.asreferences([square]*4, 2),
+  checkfromdims=2)
+common(
   'RefinedTransforms',
   seq=nutils.transformseq.RefinedTransforms(nutils.transformseq.PlainTransforms([(x1,s0),(x1,s1)], fromdims=1), nutils.elementseq.asreferences([line,line], 1)),
   check=[(x1,s0,c0),(x1,s0,c1),(x1,s1,c0),(x1,s1,c1)],
