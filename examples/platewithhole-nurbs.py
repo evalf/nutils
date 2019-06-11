@@ -97,6 +97,7 @@ if __name__ == '__main__':
 
 class test(nutils.testing.TestCase):
 
+  @nutils.testing.requires('matplotlib')
   def test0(self):
     err, cons, lhs = main(nrefine=0)
     nutils.numeric.assert_allclose64(err, 'eNoT1r6hDwACsAFG')
@@ -105,6 +106,7 @@ class test(nutils.testing.TestCase):
     nutils.numeric.assert_allclose64(lhs, 'eNoBMADP/1jZ0DGVM5YzzSjfL2kzqDMz1ygzHj'
       'PTM5LOr85F0GgpJc6GzrIuc9Qdzm7Pvc+NKyFrF1c=')
 
+  @nutils.testing.requires('matplotlib')
   def test2(self):
     err, cons, lhs = main(nrefine=2)
     nutils.numeric.assert_allclose64(err, 'eNqzUn2kDQADSgFt')

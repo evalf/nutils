@@ -8,20 +8,6 @@ def tmpcache():
     with cache.enable(tmpdir):
       yield pathlib.Path(tmpdir)
 
-class refcount(TestCase):
-
-  def setUp(self):
-    self.x = object()
-    self.d = {'referenced': self.x, 'dangling': object()}
-
-  def test_noremove(self):
-    keep = set(k for k, v in self.d.items() if sys.getrefcount(v) > 3)
-    assert keep == {'referenced', 'dangling'}
-
-  def test_remove(self):
-    keep = set(k for k, v in self.d.items() if sys.getrefcount(v) > 4)
-    assert keep == {'referenced'}
-
 class TestException(Exception): pass
 
 class function(TestCase):

@@ -76,6 +76,7 @@ if __name__ == '__main__':
 
 class test(nutils.testing.TestCase):
 
+  @nutils.testing.requires('matplotlib')
   def test_default(self):
     lhs0, lhs1 = main(nelems=4, angle=10)
     nutils.numeric.assert_allclose64(lhs0, 'eNpjYICB8ku8+icMthvOM+K42G1ga6Rv/Mh42'
@@ -85,6 +86,7 @@ class test(nutils.testing.TestCase):
       'wxdjAVM2k1uX1A22mjcbaJsCtfAoHz53sXiC27nGc6pnD94Tutc5dlLZyLOSpw9fab4DOsZyTM'
       'fTp88vex0y2kA6e4nVQ==')
 
+  @nutils.testing.requires('matplotlib')
   def test_mixed(self):
     lhs0, lhs1 = main(nelems=4, angle=10, etype='mixed')
     nutils.numeric.assert_allclose64(lhs0, 'eNoBZACb/wAAAADV0WwvAAChMAAAtjEAAKgyX'
@@ -94,6 +96,7 @@ class test(nutils.testing.TestCase):
       'zGKLIEySDPKM6fS9TFCMwM0mzQjMtvQsTOLNCM1AAAAAD/TYNEAAN7QAAA3zwAACc7SzgnPEc6'
       'TzdjMZ80TzdHMa8wXzPDLGczJy6bLhMthnih2')
 
+  @nutils.testing.requires('matplotlib')
   def test_spline(self):
     lhs0, lhs1 = main(nelems=4, angle=10, degree=2, btype='spline')
     nutils.numeric.assert_allclose64(lhs0, 'eNpjYECAa1e+aE3Qu6Nfa9BlmHoxU/eHgbIRs'

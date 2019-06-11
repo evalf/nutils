@@ -60,12 +60,14 @@ if __name__ == '__main__':
 
 class test(nutils.testing.TestCase):
 
+  @nutils.testing.requires('matplotlib')
   def test_default(self):
     cons, lhs = main(nelems=4)
     nutils.numeric.assert_allclose64(cons, 'eNpjYICDBnzwhykMMhCpAwEBQ08XYg==')
     nutils.numeric.assert_allclose64(lhs, 'eNpjYICBFGMxYyEgTjFebDLBpB2IF5tkmKaYJg'
       'JxhukPOIRrYBA1CjJgYFh3/vXZMiMVQwaGO+e6zvYY2QBZR86VnO2FsorPAgAXLB7S')
 
+  @nutils.testing.requires('matplotlib')
   def test_mixed(self):
     cons, lhs = main(nelems=4, etype='mixed')
     nutils.numeric.assert_allclose64(cons, 'eNpjYACCBiBkQMJY4A9TGGQgUgcCAgBVTxdi')
@@ -73,6 +75,7 @@ class test(nutils.testing.TestCase):
       'SYppgmAHGG6Q84BKpk4DASN2Bg2K/JwHDrPAPDj7MqhnlGRddenpt+ts/I0nChyrlzJWcdDbuN'
       'YjUOnSs/CwB0uyJb')
 
+  @nutils.testing.requires('matplotlib')
   def test_quadratic(self):
     cons, lhs = main(nelems=4, degree=2)
     nutils.numeric.assert_allclose64(cons, 'eNpjYMAADQMJf5iiQ4ZB5kJMCAAkxE4W')
@@ -82,6 +85,7 @@ class test(nutils.testing.TestCase):
       'Hw4sTzU859PZtldNGQ3XCCPgNDwYWf5/TPTTtbYvTKUNpwP1DE8cLTc2Lnes62Gf01NDW8BxRR'
       'unD6HPO5KqjIA6CIAlSkw+ifobnhI6CI3IWT55jOVQBF/hqaGT4EishfOAVUU3EWAA5lcd0=')
 
+  @nutils.testing.requires('matplotlib')
   def test_poisson(self):
     cons, lhs = main(nelems=4, poisson=.4)
     nutils.numeric.assert_allclose64(cons, 'eNpjYICDBnzwhykMMhCpAwEBQ08XYg==')
