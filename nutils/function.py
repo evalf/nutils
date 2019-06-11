@@ -2611,7 +2611,7 @@ class DelayedJacobian(Array):
 
   def _derivative(self, var, seen):
     if iszero(derivative(self._geom, var, seen)):
-      return zeros_like(var)
+      return zeros(self.shape + var.shape)
     return DelayedJacobian(self._geom, *self._derivativestack, var)
 
   @util.positional_only('self')
