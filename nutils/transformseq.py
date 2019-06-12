@@ -21,7 +21,7 @@
 """The transformseq module."""
 
 from . import types, numeric, util, transform, element, elementseq
-import abc, itertools, numpy
+import abc, itertools, operator, numpy
 
 class Transforms(types.Singleton):
   '''Abstract base class for a sequence of :class:`~nutils.transform.TransformItem` tuples.
@@ -268,9 +268,9 @@ class Transforms(types.Singleton):
     '''
 
     if references.isuniform:
-      return UniformRefinedTransforms(self, references[0])
+      return UniformDerivedTransforms(self, references[0], 'child_transforms', self.fromdims)
     else:
-      return RefinedTransforms(self, references)
+      return DerivedTransforms(self, references, 'child_transforms', self.fromdims)
 
   def __add__(self, other):
     '''Return ``self+other``.'''
@@ -624,13 +624,13 @@ class ReorderedTransforms(Transforms):
     parent_index, tail = self._parent.index_with_tail(trans)
     return int(self._rindices[parent_index]), tail
 
-class RefinedTransforms(Transforms):
-  '''A sequence of refined transforms.
+class DerivedTransforms(Transforms):
+  '''A sequence of derived transforms.
 
-  The refined transforms are ordered first by parent transforms, then by child
+  The derived transforms are ordered first by parent transforms, then by derived
   transforms, as returned by the reference::
 
-      (trans+(ctrans,) for trans, ref in zip(parent, parent_references) for ctrans in ref.child_transforms)
+      (trans+(ctrans,) for trans, ref in zip(parent, parent_references) for ctrans in getattr(ref, derived_attribute))
 
   Parameters
   ----------
@@ -638,32 +638,38 @@ class RefinedTransforms(Transforms):
       The transforms to refine.
   parent_references: :class:`~nutils.elementseq.References`
       The references to use for the refinement.
+  derived_attribute : :class:`str`
+      The name of the attribute of a :class:`nutils.element.Reference` that
+      contains the derived references.
+  fromdims : :class:`int`
+      The number of dimensions all transforms in this sequence map from.
   '''
 
-  __slots__ = '_parent', '_parent_references'
+  __slots__ = '_parent', '_parent_references', '_derived_transforms'
   __cache__ = '_offsets'
 
   @types.apply_annotations
-  def __init__(self, parent:stricttransforms, parent_references:elementseq.strictreferences):
+  def __init__(self, parent:stricttransforms, parent_references:elementseq.strictreferences, derived_attribute:types.strictstr, fromdims:types.strictint):
     if len(parent) != len(parent_references):
       raise ValueError('`parent` and `parent_references` should have the same length')
     if parent.fromdims != parent_references.ndims:
       raise ValueError('`parent` and `parent_references` have different dimensions')
     self._parent = parent
     self._parent_references = parent_references
-    super().__init__(self._parent.fromdims)
+    self._derived_transforms = operator.attrgetter(derived_attribute)
+    super().__init__(fromdims)
 
   @property
   def _offsets(self):
-    return types.frozenarray(numpy.cumsum([0, *(ref.nchildren for ref in self._parent_references)]), copy=False)
+    return types.frozenarray(numpy.cumsum([0, *(len(self._derived_transforms(ref)) for ref in self._parent_references)]), copy=False)
 
   def __len__(self):
     return self._offsets[-1]
 
   def __iter__(self):
     for reference, trans in zip(self._parent_references, self._parent):
-      for child in reference.child_transforms:
-        yield trans+(child,)
+      for dtrans in self._derived_transforms(reference):
+        yield trans+(dtrans,)
 
   def __getitem__(self, index):
     if not numeric.isint(index):
@@ -671,23 +677,27 @@ class RefinedTransforms(Transforms):
     index = numeric.normdim(len(self), index)
     iparent = numpy.searchsorted(self._offsets, index, side='right')-1
     assert 0 <= iparent < len(self._offsets)-1
-    ichild = index - self._offsets[iparent]
-    return self._parent[iparent] + (self._parent_references[iparent].child_transforms[ichild],)
+    iderived = index - self._offsets[iparent]
+    return self._parent[iparent] + (self._derived_transforms(self._parent_references[iparent])[iderived],)
 
   def index_with_tail(self, trans):
     iparent, tail = self._parent.index_with_tail(trans)
     if not tail:
       raise ValueError
-    ichild = self._parent_references[iparent].child_transforms.index(tail[0])
-    return self._offsets[iparent]+ichild, tail[1:]
+    if self.fromdims == self._parent.fromdims:
+      tail = transform.uppermost(tail)
+    else:
+      tail = transform.canonical(tail)
+    iderived = self._derived_transforms(self._parent_references[iparent]).index(tail[0])
+    return self._offsets[iparent]+iderived, tail[1:]
 
-class UniformRefinedTransforms(Transforms):
+class UniformDerivedTransforms(Transforms):
   '''A sequence of refined transforms from a uniform sequence of references.
 
-  The refined transforms are ordered first by parent transforms, then by child
-  transforms, as returned by the reference::
+  The refined transforms are ordered first by parent transforms, then by
+  derived transforms, as returned by the reference::
 
-      (trans+(ctrans,) for trans in parent for ctrans in parent_reference.child_transforms)
+      (trans+(ctrans,) for trans in parent for ctrans in getattr(parent_reference, derived_attribute))
 
   Parameters
   ----------
@@ -695,38 +705,47 @@ class UniformRefinedTransforms(Transforms):
       The transforms to refine.
   parent_reference: :class:`~nutils.element.Reference`
       The reference to use for the refinement.
+  derived_attribute : :class:`str`
+      The name of the attribute of a :class:`nutils.element.Reference` that
+      contains the derived references.
+  fromdims : :class:`int`
+      The number of dimensions all transforms in this sequence map from.
   '''
 
-  __slots__ = '_parent', '_child_transforms'
+  __slots__ = '_parent', '_derived_transforms'
 
   @types.apply_annotations
-  def __init__(self, parent:stricttransforms, parent_reference:element.strictreference):
+  def __init__(self, parent:stricttransforms, parent_reference:element.strictreference, derived_attribute:types.strictstr, fromdims:types.strictint):
     if parent.fromdims != parent_reference.ndims:
       raise ValueError('`parent` and `parent_reference` have different dimensions')
     self._parent = parent
-    self._child_transforms = parent_reference.child_transforms
-    super().__init__(self._parent.fromdims)
+    self._derived_transforms = getattr(parent_reference, derived_attribute)
+    super().__init__(fromdims)
 
   def __len__(self):
-    return len(self._parent)*len(self._child_transforms)
+    return len(self._parent)*len(self._derived_transforms)
 
   def __iter__(self):
     for trans in self._parent:
-      for child in self._child_transforms:
-        yield trans+(child,)
+      for dtrans in self._derived_transforms:
+        yield trans+(dtrans,)
 
   def __getitem__(self, index):
     if not numeric.isint(index):
       return super().__getitem__(index)
-    iparent, ichild = divmod(numeric.normdim(len(self), index), len(self._child_transforms))
-    return self._parent[iparent] + (self._child_transforms[ichild],)
+    iparent, iderived = divmod(numeric.normdim(len(self), index), len(self._derived_transforms))
+    return self._parent[iparent] + (self._derived_transforms[iderived],)
 
   def index_with_tail(self, trans):
     iparent, tail = self._parent.index_with_tail(trans)
     if not tail:
       raise ValueError
-    ichild = self._child_transforms.index(tail[0])
-    return iparent*len(self._child_transforms) + ichild, tail[1:]
+    if self.fromdims == self._parent.fromdims:
+      tail = transform.uppermost(tail)
+    else:
+      tail = transform.canonical(tail)
+    iderived = self._derived_transforms.index(tail[0])
+    return iparent*len(self._derived_transforms) + iderived, tail[1:]
 
 class ProductTransforms(Transforms):
   '''The product of two :class:`Transforms` objects.

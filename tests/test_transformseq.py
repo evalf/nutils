@@ -189,15 +189,15 @@ common(
   checkrefs=nutils.elementseq.asreferences([square]*4, 2),
   checkfromdims=2)
 common(
-  'RefinedTransforms',
-  seq=nutils.transformseq.RefinedTransforms(nutils.transformseq.PlainTransforms([(x1,s0),(x1,s1)], fromdims=1), nutils.elementseq.asreferences([line,line], 1)),
+  'DerivedTransforms',
+  seq=nutils.transformseq.DerivedTransforms(nutils.transformseq.PlainTransforms([(x1,s0),(x1,s1)], fromdims=1), nutils.elementseq.asreferences([line,line], 1), 'child_transforms', 1),
   check=[(x1,s0,c0),(x1,s0,c1),(x1,s1,c0),(x1,s1,c1)],
   checkmissing=[(l1,s0),(x1,s0),(x1,s1),(r1,s0)],
   checkrefs=nutils.elementseq.asreferences([line]*4, 1),
   checkfromdims=1)
 common(
-  'UniformRefinedTransforms',
-  seq=nutils.transformseq.UniformRefinedTransforms(nutils.transformseq.PlainTransforms([(x1,s0),(x1,s1)], fromdims=1), line),
+  'UniformDerivedTransforms',
+  seq=nutils.transformseq.UniformDerivedTransforms(nutils.transformseq.PlainTransforms([(x1,s0),(x1,s1)], fromdims=1), line, 'child_transforms', 1),
   check=[(x1,s0,c0),(x1,s0,c1),(x1,s1,c0),(x1,s1,c1)],
   checkmissing=[(l1,s0),(x1,s0),(x1,s1),(r1,s0)],
   checkrefs=nutils.elementseq.asreferences([line]*4, 1),
@@ -287,22 +287,22 @@ class exceptions(TestCase):
     with self.assertRaisesRegex(ValueError, 'expected transforms with fromdims=2, but got .*'):
       nutils.transformseq.PlainTransforms([(x1,s0),(x2,s00)], 2)
 
-  def test_RefinedTransforms_length_mismatch(self):
+  def test_DerivedTransforms_length_mismatch(self):
     transforms = nutils.transformseq.PlainTransforms([(x1,s0),(x1,s1)], 1)
     references = nutils.elementseq.PlainReferences([line]*3, 1)
     with self.assertRaisesRegex(ValueError, '`parent` and `parent_references` should have the same length'):
-      nutils.transformseq.RefinedTransforms(transforms, references)
+      nutils.transformseq.DerivedTransforms(transforms, references, 'child_transforms', 1)
 
-  def test_RefinedTransforms_ndims_mismatch(self):
+  def test_DerivedTransforms_ndims_mismatch(self):
     transforms = nutils.transformseq.PlainTransforms([(x1,s0),(x1,s1)], 1)
     references = nutils.elementseq.PlainReferences([square]*2, 2)
     with self.assertRaisesRegex(ValueError, '`parent` and `parent_references` have different dimensions'):
-      nutils.transformseq.RefinedTransforms(transforms, references)
+      nutils.transformseq.DerivedTransforms(transforms, references, 'child_transforms', 1)
 
-  def test_UniformRefinedTransforms_ndims_mismatch(self):
+  def test_UniformDerivedTransforms_ndims_mismatch(self):
     transforms = nutils.transformseq.PlainTransforms([(x1,s0),(x1,s1)], 1)
     with self.assertRaisesRegex(ValueError, '`parent` and `parent_reference` have different dimensions'):
-      nutils.transformseq.UniformRefinedTransforms(transforms, square)
+      nutils.transformseq.UniformDerivedTransforms(transforms, square, 'child_transforms', 1)
 
   def test_ChainedTransforms_no_items(self):
     with self.assertRaisesRegex(ValueError, 'Empty chain.'):
