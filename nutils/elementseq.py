@@ -133,6 +133,8 @@ class References(types.Singleton):
     if numeric.isint(other):
       if other == 0:
         return EmptyReferences(self.ndims)
+      elif other == 1:
+        return self
       else:
         return RepeatedReferences(self, other)
     elif isinstance(other, References):
@@ -416,6 +418,8 @@ class RepeatedReferences(References):
     if numeric.isint(other):
       if other == 0:
         return EmptyReferences(self.ndims)
+      elif other == 1:
+        return self
       else:
         return RepeatedReferences(self._parent, self._count*other)
     else:
