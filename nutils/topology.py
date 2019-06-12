@@ -1499,14 +1499,12 @@ class UnionTopology(Topology):
     assert all(topo.ndims == ndims for topo in self._topos)
 
     references = []
-    transforms = []
-    opposites =[]
+    selections = [[] for topo in topos]
     for trans, indices in util.gather((trans, (itopo, itrans)) for itopo, topo in enumerate(self._topos) for itrans, trans in enumerate(topo.transforms)):
-      transforms.append(trans)
+      itopo0, itrans0 = indices[0]
+      selections[itopo0].append(itrans0)
       if len(indices) == 1:
-        (itopo, itrans), = indices
-        references.append(self._topos[itopo].references[itrans])
-        opposites.append(self._topos[itopo].opposites[itrans])
+        references.append(self._topos[itopo0].references[itrans0])
       else:
         refs = [self._topos[itopo].references[itrans] for itopo, itrans in indices]
         while len(refs) > 1: # sweep all possible unions until a single reference is left
@@ -1525,10 +1523,13 @@ class UnionTopology(Topology):
             iref += 1
           assert len(refs) < nrefs, 'incompatible elements in union'
         references.append(refs[0])
-        opposite, = set(self._topos[itopo].opposites[itrans] for itopo, itrans in indices)
-        opposites.append(opposite)
+        assert len(set(self._topos[itopo].opposites[itrans] for itopo, itrans in indices)) == 1
+    selections = tuple(map(types.frozenarray[int], selections))
 
-    super().__init__(elementseq.PlainReferences(references, ndims), transformseq.PlainTransforms(transforms, ndims), transformseq.PlainTransforms(opposites, ndims))
+    super().__init__(
+      elementseq.asreferences(references, ndims),
+      transformseq.chain((topo.transforms[selection] for topo, selection in zip(topos, selections)), ndims),
+      transformseq.chain((topo.opposites[selection] for topo, selection in zip(topos, selections)), ndims))
 
   def getitem(self, item):
     topos = [topo if name == item else topo.getitem(item) for topo, name in itertools.zip_longest(self._topos, self._names)]
