@@ -125,6 +125,13 @@ class common(TestCase):
     for i, trans in enumerate(ctransforms):
       self.assertEqual(refined.index(trans), i)
 
+  @parametrize.enable_if(lambda checkfromdims, **kwargs: checkfromdims > 0)
+  def test_edges(self):
+    edges = self.seq.edges(self.checkrefs)
+    etransforms = (trans+(etrans,) for trans, ref in zip(self.check, self.checkrefs) for etrans in ref.edge_transforms)
+    for i, trans in enumerate(etransforms):
+      self.assertEqual(edges.index(trans), i)
+
 point = nutils.element.PointReference()
 line = nutils.element.LineReference()
 square = line*line

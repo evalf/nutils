@@ -272,6 +272,27 @@ class Transforms(types.Singleton):
     else:
       return DerivedTransforms(self, references, 'child_transforms', self.fromdims)
 
+  def edges(self, references):
+    '''Return the sequence of edge transforms given ``references``.
+
+    Parameters
+    ----------
+    references : :class:`~nutils.elementseq.References`
+        A sequence of references matching this sequence of transforms.
+
+    Returns
+    -------
+    :class:`Transforms`
+        The sequence of edge transforms::
+
+            (trans+(etrans,) for trans, ref in zip(self, references) for etrans in ref.edge_transforms)
+    '''
+
+    if references.isuniform:
+      return UniformDerivedTransforms(self, references[0], 'edge_transforms', self.fromdims-1)
+    else:
+      return DerivedTransforms(self, references, 'edge_transforms', self.fromdims-1)
+
   def __add__(self, other):
     '''Return ``self+other``.'''
 
@@ -860,6 +881,9 @@ class ChainedTransforms(Transforms):
 
   def refined(self, references):
     return chain((item.refined(references[start:stop]) for item, start, stop in zip(self._items, self._offsets[:-1], self._offsets[1:])), self.fromdims)
+
+  def edges(self, references):
+    return chain((item.edges(references[start:stop]) for item, start, stop in zip(self._items, self._offsets[:-1], self._offsets[1:])), self.fromdims-1)
 
   def unchain(self):
     yield from self._items
