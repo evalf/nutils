@@ -81,7 +81,7 @@ class gmsh(TestCase):
     boundary1 = self.domain.refined.boundary
     boundary2 = self.domain.boundary.refined
     assert len(boundary1) == len(boundary2) == len(self.domain.boundary) * element.getsimplex(self.domain.ndims-1).nchildren
-    assert set(boundary1.transforms) == set(boundary2.transforms)
+    assert set(map(transform.canonical, boundary1.transforms)) == set(map(transform.canonical, boundary2.transforms))
     assert all(boundary2.references[boundary2.transforms.index(trans)] == ref for ref, trans in zip(boundary1.references, boundary1.transforms))
 
   def test_refinesubset(self):
@@ -89,7 +89,7 @@ class gmsh(TestCase):
     boundary1 = domain.refined.boundary
     boundary2 = domain.boundary.refined
     assert len(boundary1) == len(boundary2) == len(domain.boundary) * element.getsimplex(domain.ndims-1).nchildren
-    assert set(boundary1.transforms) == set(boundary2.transforms)
+    assert set(map(transform.canonical, boundary1.transforms)) == set(map(transform.canonical, boundary2.transforms))
     assert all(boundary2.references[boundary2.transforms.index(trans)] == ref for ref, trans in zip(boundary1.references, boundary1.transforms))
 
 for ndims in 2, 3:

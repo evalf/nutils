@@ -608,43 +608,63 @@ class Topology(types.Singleton):
     '''
 
     references = []
-    transforms = []
+    selection = []
+    iglobaledgeiter = itertools.count()
+    refs_touched = False
     for ielem, (ioppelems, elemref, elemtrans) in enumerate(zip(self.connectivity, self.references, self.transforms)):
-      for (edgetrans, edgeref), ioppelem in zip(elemref.edges, ioppelems):
+      for (edgetrans, edgeref), ioppelem, iglobaledge in zip(elemref.edges, ioppelems, iglobaledgeiter):
         if edgeref:
           if ioppelem == -1:
             references.append(edgeref)
-            transforms.append(elemtrans+(edgetrans,))
+            selection.append(iglobaledge)
           else:
             ioppedge = self.connectivity[ioppelem].index(ielem)
             ref = edgeref - self.references[ioppelem].edge_refs[ioppedge]
             if ref:
               references.append(ref)
-              transforms.append(elemtrans+(edgetrans,))
-    references = elementseq.asreferences(references, self.ndims-1)
-    transforms = transformseq.PlainTransforms(transforms, self.ndims-1)
+              selection.append(iglobaledge)
+              refs_touched = True
+    selection = types.frozenarray(selection, int)
+    if refs_touched:
+      references = elementseq.asreferences(references, self.ndims-1)
+    else:
+      references = self.references.edges[selection]
+    transforms = self.transforms.edges(self.references)[selection]
     return Topology(references, transforms, transforms)
 
   @property
   @log.withcontext
   def interfaces(self):
     references = []
-    transforms = []
-    opposites = []
+    selection = []
+    oppselection = []
+    iglobaledgeiter = itertools.count()
+    refs_touched = False
+    edges = self.transforms.edges(self.references)
+    if self.references.isuniform:
+      _nedges = self.references[0].nedges
+      offset = lambda ielem: ielem * _nedges
+    else:
+      offset = numpy.cumsum([0]+list(ref.nedges for ref in self.references)).__getitem__
     for ielem, (ioppelems, elemref, elemtrans) in enumerate(zip(self.connectivity, self.references, self.transforms)):
-      for (edgetrans, edgeref), ioppelem in zip(elemref.edges, ioppelems):
+      for (edgetrans, edgeref), ioppelem, iglobaledge in zip(elemref.edges, ioppelems, iglobaledgeiter):
         if edgeref and -1 < ioppelem < ielem:
           ioppedge = self.connectivity[ioppelem].index(ielem)
           oppedgetrans, oppedgeref = self.references[ioppelem].edges[ioppedge]
           ref = oppedgeref and edgeref & oppedgeref
           if ref:
             references.append(ref)
-            transforms.append(elemtrans+(edgetrans,))
-            opposites.append(self.transforms[ioppelem]+(oppedgetrans,))
-    references = elementseq.asreferences(references, self.ndims-1)
-    transforms = transformseq.PlainTransforms(transforms, self.ndims-1)
-    opposites = transformseq.PlainTransforms(opposites, self.ndims-1)
-    return Topology(references, transforms, opposites)
+            selection.append(iglobaledge)
+            oppselection.append(offset(ioppelem)+ioppedge)
+            if ref != edgeref:
+              refs_touched = True
+    selection = types.frozenarray(selection, int)
+    oppselection = types.frozenarray(oppselection, int)
+    if refs_touched:
+      references = elementseq.asreferences(references, self.ndims-1)
+    else:
+      references = self.references.edges[selection]
+    return Topology(references, edges[selection], edges[oppselection])
 
   def basis_spline(self, degree):
     assert degree == 1
