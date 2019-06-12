@@ -82,6 +82,9 @@ class common(TestCase):
   def test_children(self):
     self.assertEqual(tuple(self.seq.children), tuple(itertools.chain.from_iterable(ref.child_refs for ref in self.check)))
 
+  def test_edges(self):
+    self.assertEqual(tuple(self.seq.edges), tuple(itertools.chain.from_iterable(ref.edge_refs for ref in self.check)))
+
   def test_getpoints(self):
     self.assertEqual(self.seq.getpoints('bezier', 2), tuple(ref.getpoints('bezier', 2) for ref in self.check))
 

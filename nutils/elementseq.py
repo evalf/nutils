@@ -101,6 +101,20 @@ class References(types.Singleton):
 
     return DerivedReferences(self, 'child_refs', self.ndims)
 
+  @property
+  def edges(self):
+    '''Return the sequence of edge references.
+
+    Returns
+    -------
+    :class:`References`
+        The sequence of edge references::
+
+            (eref for ref in self for eref in ref.edge_refs)
+    '''
+
+    return DerivedReferences(self, 'edge_refs', self.ndims-1)
+
   def getpoints(self, ischeme, degree):
     '''Return a sequence of :class:`~nutils.points.Points`.'''
 
@@ -163,6 +177,10 @@ class EmptyReferences(References):
   def children(self):
     return self
 
+  @property
+  def edges(self):
+    return EmptyReferences(self.ndims-1)
+
 class PlainReferences(References):
   '''A general purpose implementation of :class:`References`.
 
@@ -210,7 +228,7 @@ class UniformReferences(References):
   '''
 
   __slots__ = '_reference', '_length'
-  __cache__ = 'children'
+  __cache__ = 'children', 'edges'
 
   @types.apply_annotations
   def __init__(self, reference:element.strictreference, length:types.strictint):
@@ -241,6 +259,10 @@ class UniformReferences(References):
   @property
   def children(self):
     return asreferences(self._reference.child_refs, self.ndims) * len(self)
+
+  @property
+  def edges(self):
+    return asreferences(self._reference.edge_refs, self.ndims-1) * len(self)
 
   def getpoints(self, ischeme, degree):
     return (self._reference.getpoints(ischeme, degree),)*len(self)
@@ -347,6 +369,10 @@ class ChainedReferences(References):
   def children(self):
     return chain((item.children for item in self._items), self.ndims)
 
+  @property
+  def edges(self):
+    return chain((item.edges for item in self._items), self.ndims-1)
+
   def getpoints(self, ischeme, degree):
     return tuple(itertools.chain.from_iterable(item.getpoints(ischeme, degree) for item in self._items))
 
@@ -398,6 +424,10 @@ class RepeatedReferences(References):
   @property
   def children(self):
     return self._parent.children * self._count
+
+  @property
+  def edges(self):
+    return self._parent.edges * self._count
 
   def getpoints(self, ischeme, degree):
     return self._parent.getpoints(ischeme, degree) * self._count
