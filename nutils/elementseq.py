@@ -21,7 +21,7 @@
 """The elementseq module."""
 
 from . import types, numeric, element, util
-import abc, collections.abc, itertools, numpy
+import abc, collections.abc, itertools, operator, numpy
 
 class References(types.Singleton):
   '''Abstract base class for a sequence of :class:`~nutils.element.Reference` objects.
@@ -99,7 +99,7 @@ class References(types.Singleton):
             (cref for ref in self for cref in ref.child_refs)
     '''
 
-    return ChildReferences(self)
+    return DerivedReferences(self, 'child_refs', self.ndims)
 
   def getpoints(self, ischeme, degree):
     '''Return a sequence of :class:`~nutils.points.Points`.'''
@@ -433,31 +433,37 @@ class ProductReferences(References):
       for rref in self._right:
         yield lref * rref
 
-class ChildReferences(References):
-  '''A sequence of child references.
+class DerivedReferences(References):
+  '''Abstract base class for references based on parent references.
 
-  The child references are ordered first by parent references, then by child
-  references, as returned by the reference::
+  The derived references are ordered first by parent references, then by derived
+  references::
 
-      (cref for ref in parent for cref in ref.child_refs)
+      (dref for ref in parent for dref in getattr(ref, derived_attribute))
 
   Parameters
   ----------
   parent : :class:`References`
-      The references to produce the children of.
+      The parent references.
+  derived_attribute : :class:`str`
+      The name of the attribute of a :class:`nutils.element.Reference` that
+      contains the derived references.
+  ndims : :class:`int`
+      The number of dimensions of the references in this sequence.
   '''
 
-  __slots__ = '_parent'
+  __slots__ = '_parent', '_derived_refs'
   __cache__ = '_offsets'
 
   @types.apply_annotations
-  def __init__(self, parent:strictreferences):
+  def __init__(self, parent:strictreferences, derived_attribute:types.strictstr, ndims:types.strictint):
     self._parent = parent
-    super().__init__(parent.ndims)
+    self._derived_refs = operator.attrgetter(derived_attribute)
+    super().__init__(ndims)
 
   @property
   def _offsets(self):
-    return types.frozenarray(numpy.cumsum([0, *(ref.nchildren for ref in self._parent)]), copy=False)
+    return types.frozenarray(numpy.cumsum([0, *(len(self._derived_refs(ref)) for ref in self._parent)]), copy=False)
 
   def __len__(self):
     return self._offsets[-1]
@@ -467,12 +473,12 @@ class ChildReferences(References):
       return super().__getitem__(index)
     index = numeric.normdim(len(self), index)
     parent_index = numpy.searchsorted(self._offsets, index, side='right')-1
-    child_index = index - self._offsets[parent_index]
-    return self._parent[parent_index].child_refs[child_index]
+    derived_index = index - self._offsets[parent_index]
+    return self._derived_refs(self._parent[parent_index])[derived_index]
 
   def __iter__(self):
     for ref in self._parent:
-      yield from ref.child_refs
+      yield from self._derived_refs(ref)
 
 def asreferences(value, ndims):
   '''Convert ``value`` to a :class:`References` object.'''

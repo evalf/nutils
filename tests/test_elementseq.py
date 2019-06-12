@@ -121,8 +121,8 @@ common(
   check=[square*line]*2+[triangle*line]*2,
   checkndims=3)
 common(
-  'ChildReferences',
-  seq=nutils.elementseq.ChildReferences(nutils.elementseq.PlainReferences([square, triangle], 2)),
+  'DerivedReferences',
+  seq=nutils.elementseq.DerivedReferences(nutils.elementseq.PlainReferences([square, triangle], 2), 'child_refs', 2),
   check=[square]*4+[triangle]*4,
   checkndims=2)
 
