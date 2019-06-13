@@ -104,12 +104,11 @@ for version in 2, 4:
   for degree in 1, 2:
     gmshmanifold(version=version, degree=degree)
 
-@parametrize
 class rectilinear(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, self.geom = getattr(mesh, self.method)([4,5])
+    self.domain, self.geom = mesh.rectilinear([4,5])
 
   def test_volume(self):
     volume = self.domain.integrate(function.J(self.geom), ischeme='gauss1')
@@ -137,6 +136,3 @@ class rectilinear(TestCase):
           basis = self.domain.basis(basistype, degree=degree)
           values = self.domain.interfaces.sample('uniform', 2).eval(basis*function.J(self.geom))
           numpy.testing.assert_almost_equal(values.sum(1), 1)
-
-rectilinear('new', method='newrectilinear')
-rectilinear('old', method='rectilinear')
