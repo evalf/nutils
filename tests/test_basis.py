@@ -103,18 +103,11 @@ class sparsity(TestCase):
 for ndim in 1, 2:
   sparsity(ndim=ndim)
 
-@parametrize
 class structured(basisTest):
 
   def setUp(self):
     super().setUp()
-    if not self.product:
-      self.domain, self.geom = mesh.rectilinear([2,3])
-    else:
-      domain1, geom1 = mesh.rectilinear([2])
-      domain2, geom2 = mesh.rectilinear([3])
-      self.domain = domain1 * domain2
-      self.geom = function.concatenate(function.bifurcate(geom1, geom2), axis=0)
+    self.domain, self.geom = mesh.rectilinear([2,3])
 
   def test_std_equalorder(self):
     for p in range(1, 3):
@@ -180,9 +173,6 @@ class structured(basisTest):
     self.assertContinuous(topo=self.domain.interfaces, geom=self.geom, basis=basis, continuity=0)
     self.assertPartitionOfUnity(topo=self.domain, basis=basis)
     self.assertPolynomial(topo=self.domain, geom=self.geom, basis=basis, degree=2)
-
-structured(product=False)
-structured(product=True)
 
 @parametrize
 class structured_line(basisTest):
