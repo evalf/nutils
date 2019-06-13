@@ -96,6 +96,7 @@ class structured(basisTest):
     if not self.product:
       self.domain, self.geom = mesh.rectilinear([2,3])
     else:
+      self.skipTest('in between bifurcate and tensorial')
       domain1, geom1 = mesh.rectilinear([2])
       domain2, geom2 = mesh.rectilinear([3])
       self.domain = domain1 * domain2
