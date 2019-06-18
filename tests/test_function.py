@@ -8,7 +8,7 @@ class check(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, param = mesh.rectilinear([1]*self.ndim)
+    domain, param = mesh.rectilinear([1]*self.ndim, periodic=[0])
     if self.ndim == 1:
       self.geom = param**2
       poly = numpy.array([[1,-2,1],[0,2,-2],[0,0,1]]) # 2nd order bernstein
@@ -18,21 +18,13 @@ class check(TestCase):
       poly = numeric.poly_outer_product([[1,-2,1],[0,2,-2],[0,0,1]], [[1,-1],[0,1]]) # 2nd x 1st order bernstein
     else:
       raise Exception('invalid ndim {!r}'.format(self.ndim))
-    self.elemtrans, = self.domain.transforms
-    self.elemref, = self.domain.references
-    self.ifaceref = self.elemref.edge_refs[0]
-    self.ifacetrans = self.elemtrans+(self.elemref.edge_transforms[0],)
-    self.ifaceopp = self.elemtrans+(self.elemref.edge_transforms[1],)
-    self.ifpoints, ifweights = self.ifaceref.getischeme('uniform2')
-
     numpy.random.seed(0)
     self.args = [function.Polyval(numeric.dot(numpy.random.uniform(size=shape+poly.shape[:1], low=self.low, high=self.high), poly), function.rootcoords(self.ndim)) for shape in self.shapes]
     if self.pass_geom:
         self.args += [self.geom]
-    self.points, weights = self.elemref.getischeme('uniform2')
-    self.evalargs = {'_transforms': (self.elemtrans,), '_points': self.points}
-    self.argsfun = function.Tuple(self.args)
-    self.n_op_argsfun = self.n_op(*self.argsfun.simplified.eval(**self.evalargs))
+    self.sample = domain.sample('uniform', 2)
+    self.ifacesmp = domain.interfaces.sample('uniform', 2)
+    self.n_op_argsfun = self.n_op(*self.sample.eval(self.args))
     self.op_args = self.op(*self.args)
     self.shapearg = numpy.random.uniform(size=self.op_args.shape, low=self.low, high=self.high)
     self.pairs = [(i, j) for i in range(self.op_args.ndim-1) for j in range(i+1, self.op_args.ndim) if self.op_args.shape[i] == self.op_args.shape[j]]
@@ -55,9 +47,9 @@ class check(TestCase):
 
   def assertFunctionAlmostEqual(self, actual, desired, decimal):
     with self.subTest('vanilla'):
-      self.assertArrayAlmostEqual(actual.eval(**self.evalargs), desired, decimal)
+      self.assertArrayAlmostEqual(self.sample.eval(actual), desired, decimal)
     with self.subTest('simplified'):
-      self.assertArrayAlmostEqual(actual.simplified.eval(**self.evalargs), desired, decimal)
+      self.assertArrayAlmostEqual(self.sample.eval(actual.simplified), desired, decimal)
 
   def test_evalconst(self):
     constargs = [numpy.random.uniform(size=shape) for shape in self.shapes]
@@ -102,8 +94,8 @@ class check(TestCase):
   def test_eig(self):
     if self.op_args.dtype == float:
       for ax1, ax2 in self.pairs:
-        A = self.op_args.simplified.eval(**self.evalargs)
-        L, V = function.eig(self.op_args, axes=(ax1,ax2)).simplified.eval(**self.evalargs)
+        A = self.sample.eval(self.op_args)
+        L, V = self.sample.eval(list(function.eig(self.op_args, axes=(ax1,ax2))))
         self.assertArrayAlmostEqual(decimal=11,
           actual=(numpy.expand_dims(V,ax2+1) * numpy.expand_dims(L,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2),
           desired=(numpy.expand_dims(A,ax2+1) * numpy.expand_dims(V,ax2+2).swapaxes(ax1+1,ax2+2)).sum(ax2+2))
@@ -249,13 +241,14 @@ class check(TestCase):
 
   def test_opposite(self):
     self.assertArrayAlmostEqual(decimal=14,
-      desired=self.n_op(*function.opposite(self.argsfun).simplified.eval(_transforms=[self.ifacetrans, self.ifaceopp], _points=self.ifpoints)),
-      actual=function.opposite(self.op_args).simplified.eval(_transforms=[self.ifacetrans, self.ifaceopp], _points=self.ifpoints))
+      desired=self.n_op(*self.ifacesmp.eval([function.opposite(arg) for arg in self.args])),
+      actual=self.ifacesmp.eval(function.opposite(self.op_args)))
 
   def find(self, target, xi0):
+    elemtrans, = self.sample.transforms[0]
     ndim, = self.geom.shape
     J = function.localgradient(self.geom, ndim)
-    Jinv = function.inverse(J).simplified
+    Jinv = function.inverse(J)
     countdown = 5
     iiter = 0
     self.assertEqual(target.shape[-1:], self.geom.shape)
@@ -266,10 +259,10 @@ class check(TestCase):
     target = target.reshape(-1, target.shape[-1])
     xi = xi0.reshape(-1, xi0.shape[-1])
     while countdown:
-      err = target - self.geom.eval(_transforms=[self.elemtrans], _points=xi)
+      err = target - self.geom.eval(_transforms=[elemtrans], _points=xi)
       if numpy.less(numpy.abs(err), 1e-12).all():
         countdown -= 1
-      dxi_root = (Jinv.eval(_transforms=[self.elemtrans], _points=xi) * err[...,_,:]).sum(-1)
+      dxi_root = (Jinv.eval(_transforms=[elemtrans], _points=xi) * err[...,_,:]).sum(-1)
       #xi = xi + numpy.dot(dxi_root, self.elem.inv_root_transform.T)
       xi = xi + dxi_root
       iiter += 1
@@ -278,13 +271,16 @@ class check(TestCase):
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_localgradient(self):
-    exact = function.localgradient(self.op_args, ndims=self.domain.ndims).simplified.eval(**self.evalargs)
-    D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.domain.ndims)
+    elemtrans, = self.sample.transforms[0]
+    points = self.sample.points[0].coords
+    argsfun = function.Tuple(self.args)
+    exact = self.sample.eval(function.localgradient(self.op_args, ndims=self.ndim))
+    D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.ndim)
     good = False
     eps = 1e-5
     while not numpy.all(good):
-      fdpoints = self.points[_,_,:,:] + D[:,:,_,:] * eps
-      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elemtrans], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
+      fdpoints = points[_,_,:,:] + D[:,:,_,:] * eps
+      tmp = self.n_op(*argsfun.eval(_transforms=[elemtrans], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
       if len(tmp) == 1 or tmp.dtype.kind in 'bi' or self.zerograd:
         error = exact
       else:
@@ -299,20 +295,22 @@ class check(TestCase):
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_jacobian(self):
     eps = 1e-8
-    sample = self.domain.sample('uniform', 2)
     for iarg, shape in enumerate(self.shapes):
       x0 = numpy.random.uniform(size=shape, low=self.low, high=self.high)
       dx = numpy.random.normal(size=shape) * eps
       x = function.Argument('x', shape)
       f = self.op(*self.args[:iarg]+[x]+self.args[iarg+1:])
-      fx0, Jx0 = sample.eval([f, function.derivative(f, x)], x=x0)
-      fx1 = sample.eval(f, x=x0+dx)
+      fx0, Jx0 = self.sample.eval([f, function.derivative(f, x)], x=x0)
+      fx1 = self.sample.eval(f, x=x0+dx)
       fx1approx = fx0 + numeric.contract(Jx0, dx, range(fx0.ndim, Jx0.ndim))
       self.assertArrayAlmostEqual(fx1approx, fx1, decimal=12)
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_gradient(self):
-    exact = self.op_args.grad(self.geom).simplified.eval(**self.evalargs)
+    elemtrans, = self.sample.transforms[0]
+    points = self.sample.points[0].coords
+    argsfun = function.Tuple(self.args)
+    exact = self.sample.eval(self.op_args.grad(self.geom))
     fddeltas = numpy.array([1,2,3])
     fdfactors = numpy.linalg.solve(2*fddeltas**numpy.arange(1,1+2*len(fddeltas),2)[:,None], [1]+[0]*(len(fddeltas)-1))
     fdfactors = numpy.concatenate([-fdfactors[::-1], fdfactors])
@@ -320,8 +318,8 @@ class check(TestCase):
     good = False
     eps = 1e-4
     while not numpy.all(good):
-      fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,:,:] + D[:,:,_,:] * eps, self.points[_,_,:,:])
-      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elemtrans], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
+      fdpoints = self.find(self.sample.eval(self.geom)[_,_,:,:] + D[:,:,_,:] * eps, points[_,_,:,:])
+      tmp = self.n_op(*argsfun.eval(_transforms=[elemtrans], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
       if len(tmp) == 1 or tmp.dtype.kind in 'bi' or self.zerograd:
         error = exact
       else:
@@ -335,7 +333,10 @@ class check(TestCase):
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_doublegradient(self):
-    exact = self.op_args.grad(self.geom).grad(self.geom).simplified.eval(**self.evalargs)
+    elemtrans, = self.sample.transforms[0]
+    points = self.sample.points[0].coords
+    argsfun = function.Tuple(self.args)
+    exact = self.sample.eval(self.op_args.grad(self.geom).grad(self.geom))
     fddeltas = numpy.array([1,2,3])
     fdfactors = numpy.linalg.solve(2*fddeltas**numpy.arange(1,1+2*len(fddeltas),2)[:,None], [1]+[0]*(len(fddeltas)-1))
     fdfactors = numpy.concatenate([-fdfactors[::-1], fdfactors])
@@ -344,8 +345,8 @@ class check(TestCase):
     good = False
     eps = 1e-4
     while not numpy.all(good):
-      fdpoints = self.find(self.geom.eval(**self.evalargs)[_,_,_,_,:,:] + DD[:,:,:,:,_,:] * eps, self.points[_,_,_,_,:,:])
-      tmp = self.n_op(*self.argsfun.simplified.eval(_transforms=[self.elemtrans], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
+      fdpoints = self.find(self.sample.eval(self.geom)[_,_,_,_,:,:] + DD[:,:,:,:,_,:] * eps, points[_,_,_,_,:,:])
+      tmp = self.n_op(*argsfun.eval(_transforms=[elemtrans], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
       if len(tmp) == 1 or tmp.dtype.kind in 'bi' or self.zerograd:
         error = exact
       else:
