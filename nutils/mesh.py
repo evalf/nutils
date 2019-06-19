@@ -376,7 +376,7 @@ def gmsh(fname:util.readtext, name='gmsh'):
   assert int(N) == len(Elements)
   inodesbydim = [], [], [], [] # nelems-list of 4-tuples of node numbers
   tagnamesbydim = {}, {}, {}, {} # tag->ielems dictionary
-  etype2nd = {'15': 0, '1': 1, '2': 2, '4': 3, '8': 1, '9': 2}
+  etype2nd = {'15': 0, '1': 1, '2': 2, '4': 3, '8': 1, '9': 2, '11': 3, '26': 1, '21': 2, '23': 2, '27': 1}
   for line in Elements:
     n, e, t, m, *w = line.split()
     nd = etype2nd[e]
@@ -428,17 +428,31 @@ def gmsh(fname:util.readtext, name='gmsh'):
 
   if geomdofs is inodesbydim[ndims]: # geometry is linear and non-periodic, dofs follow in-place sorting of inodesbydim
     degree = 1
-  else: # match sorting of inodesbydim and renumber higher order coeffcients
+  elif geomdofs.shape[1] == ndims+1: # linear elements: match sorting of inodesbydim
+    degree = 1
     shuffle = inodesbydim[ndims].argsort(axis=1)
-    if geomdofs.shape[1] == ndims+1:
-      degree = 1
-    elif ndims == 2 and geomdofs.shape[1] == 6:
-      degree = 2
-      fullshuffle = numpy.concatenate([shuffle, numpy.take([4,5,3], shuffle)], axis=1).take([0,5,1,4,3,2], axis=1)
-      fullgeomdofs = geomdofs[numpy.arange(len(geomdofs))[:,_], fullshuffle]
-    else:
-      raise NotImplementedError
-    geomdofs = geomdofs[numpy.arange(len(geomdofs))[:,_], shuffle]
+    geomdofs = geomdofs[numpy.arange(len(geomdofs))[:,_], shuffle] # gmsh conveniently places the primary ndim+1 vertices first
+  else: # higher order elements: match sorting of inodesbydim and renumber higher order coefficients
+    degree, nodeorder = { # for gmsh node ordering conventions see http://gmsh.info/doc/texinfo/gmsh.html#Node-ordering
+      (2, 6): (2, (0,3,1,5,4,2)),
+      (2,10): (3, (0,3,4,1,8,9,5,7,6,2)),
+      (2,15): (4, (0,3,4,5,1,11,12,13,6,10,14,7,9,8,2)),
+      (3,10): (2, (0,4,1,6,5,2,7,9,8,3))}[ndims, geomdofs.shape[1]]
+    enum = numpy.empty([degree+1]*(ndims+1), dtype=int)
+    bari = tuple(numpy.array([index[::-1] for index in numpy.ndindex(*enum.shape) if sum(index) == degree]).T)
+    enum[bari] = numpy.arange(geomdofs.shape[1]) # maps baricentric index to corresponding enumerated index
+    shuffle = inodesbydim[ndims].argsort(axis=1)
+    geomdofs = geomdofs[:,nodeorder] # convert from gmsh to nutils order
+    for i in range(ndims): # strategy: apply shuffle to geomdofs by sequentially swapping vertices...
+      for j in range(i+1, ndims+1): # ...considering all j > i pairs...
+        m = shuffle[:,i] == j # ...and swap vertices if vertex j is shuffled into i...
+        r = enum.swapaxes(i,j)[bari] # ...using the enum table to generate the appropriate renumbering
+        geomdofs[m,:] = geomdofs[numpy.ix_(m,r)]
+        m = shuffle[:,j] == i
+        shuffle[m,j] = shuffle[m,i] # update shuffle to track changed vertex positions
+    fullgeomdofs = geomdofs
+    geomdofs = geomdofs[:,[tuple(b).index(degree) for b in bari]] # select vertex coordinates for root transforms
+
   for e in inodesbydim:
     e.sort(axis=1)
 

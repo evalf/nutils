@@ -54,7 +54,7 @@ class gmsh(TestCase):
 
   def test_interfaces(self):
     err = self.domain.interfaces.sample('uniform', 2).eval(self.geom - function.opposite(self.geom))
-    numpy.testing.assert_almost_equal(err, 0, decimal=15)
+    numpy.testing.assert_almost_equal(err, 0, decimal=14)
 
   def test_divergence(self):
     volumes = self.domain.boundary.integrate(self.geom*self.geom.normal()*function.J(self.geom), ischeme='gauss1')
@@ -80,9 +80,10 @@ class gmsh(TestCase):
     assert set(boundary1.transforms) == set(boundary2.transforms)
     assert all(boundary2.references[boundary2.transforms.index(trans)] == ref for ref, trans in zip(boundary1.references, boundary1.transforms))
 
-gmsh(data='square', degree=1)
-gmsh(data='square', degree=2)
-gmsh(data='cube', degree=1)
+for degree in range(1,5):
+  gmsh(data='square', degree=degree)
+for degree in range(1,3):
+  gmsh(data='cube', degree=degree)
 
 class gmshrect(TestCase):
 
