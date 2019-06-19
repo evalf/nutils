@@ -55,7 +55,7 @@ def strictevaluable(value):
 def simplified(value):
   return strictevaluable(value).simplified
 
-asdtype = lambda arg: arg if any(arg is dtype for dtype in (bool, int, float)) else {'f': float, 'i': int, 'b': bool}[numpy.dtype(arg).kind]
+asdtype = lambda arg: arg if any(arg is dtype for dtype in (bool, int, float, complex)) else {'f': float, 'i': int, 'b': bool, 'c': complex}[numpy.dtype(arg).kind]
 asarray = lambda arg: arg if isarray(arg) else Constant(arg) if numeric.isarray(arg) or numpy.asarray(arg).dtype != object else stack(arg, axis=0)
 asarrays = types.tuple[asarray]
 
@@ -2089,8 +2089,8 @@ class Eig(Evaluable):
     return 2
 
   def __iter__(self):
-    yield ArrayFromTuple(self, index=0, shape=self.func.shape[:-1], dtype=float)
-    yield ArrayFromTuple(self, index=1, shape=self.func.shape, dtype=float)
+    yield ArrayFromTuple(self, index=0, shape=self.func.shape[:-1], dtype=complex if not self.symmetric else float)
+    yield ArrayFromTuple(self, index=1, shape=self.func.shape, dtype=complex if not self.symmetric or self.func.dtype == complex else float)
 
   @property
   def simplified(self):
