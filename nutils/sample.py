@@ -247,7 +247,7 @@ class Sample(types.Singleton):
     '''Basis-like function that for every point in the sample evaluates to the
     unit vector corresponding to its index.'''
 
-    index, tail = function.TransformsIndexWithTail(self.transforms[0], self.ndims, function.SelectChain(self.roots))
+    index, head, tail = function.TransformsIndexWithTail(self.transforms[0], self.ndims, function.SelectChain(self.roots))
     I = function.Elemwise(self.index, index, dtype=int)
     B = function.Sampled(function.ApplyTransforms(tail), expect=function.take(self.allcoords, I, axis=0))
     return function.Inflate(func=B, dofmap=I, length=self.npoints, axis=0)
