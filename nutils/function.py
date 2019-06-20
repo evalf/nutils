@@ -4915,10 +4915,38 @@ class Namespace:
 
 def normal(arg, exterior=False):
   assert arg.ndim == 1
+  # Order the roots deterministically. In the future we should use the order
+  # of `Sample.roots` (during `prepare_eval` or a successor).
+  roots = tuple(sorted(arg.roots, key=lambda root: (root.name, root.ndims)))
   if not exterior:
-    lgrad = localgradient(arg, len(arg))
-    return Normal(lgrad)
-  lgrad = localgradient(arg, len(arg)-1)
+    assert len(arg) <= builtins.sum(root.ndims for root in roots)
+    ndimstangent = len(arg) - 1
+    ndimsnormal = builtins.sum(root.ndims for root in roots) - ndimstangent
+    V = concatenate([roottangent(roots, ndimstangent), rootnormal(roots, ndimsnormal)[:,:1]], axis=1)
+    # TODO: Truncating the second axis of the rootnormal to one is a bit
+    # fishy, and should probably be disallowed when tensorial is fully
+    # implemented. Consider the following case:
+    #
+    #     topo0, geom0 = mesh.rectilinear([1]*3)
+    #     topo, geom = topo.boundary['top'], function.stack([geom[0], geom0[2]])
+    #
+    # Now we compute the normal of `geom` on the boundaries of `topo`:
+    #
+    #     topo.boundary['left'].sample('gauss', 1).eval(geom.normal())
+    #     topo.boundary['front'].sample('gauss', 1).eval(geom.normal())
+    #
+    # Since the root of `topo` is 3D and `geom` only 2D, the `rootgradient` of
+    # `geom` has shape (2,3). The first element of the second axis
+    # spans the 1D tangent space of the manifold, the remaining elements span
+    # the normal space.  The problem is: can we rely on the order of the
+    # normals. A trim boundary is now always the first element of the normals
+    # section. The remaining normals are ordered by the `Topology.boundary`
+    # operations: the first boundary, in the example `boundary['top']`, will
+    # have the normal in the last position.
+    lgrad = dot(rootgradient(arg, roots)[:,:,_], V[_,:,:], 1)
+    return Normal(lgrad[:,:len(arg)])
+  raise NotImplementedError
+  lgrad = rootgradient(arg, roots)
   if len(arg) == 2:
     return asarray([lgrad[1,0], -lgrad[0,0]]).normalized()
   if len(arg) == 3:
@@ -4929,7 +4957,10 @@ def grad(self, geom, ndims=0):
   assert geom.ndim == 1
   if ndims <= 0:
     ndims += geom.shape[0]
-  J = localgradient(geom, ndims)
+  # Order the roots deterministically. In the future we should use the order
+  # of `Sample.roots` (during `prepare_eval` or a successor).
+  roots = tuple(sorted(geom.roots, key=lambda root: (root.name, root.ndims)))
+  J = rootgradient(geom, roots)
   if J.shape[0] == J.shape[1]:
     Jinv = inverse(J)
   elif J.shape[0] == J.shape[1] + 1: # gamma gradient
@@ -4938,7 +4969,7 @@ def grad(self, geom, ndims=0):
     Jinv = dot(J[_,:,:], Ginv[:,_,:], -1)
   else:
     raise Exception('cannot invert {}x{} jacobian'.format(J.shape))
-  return dot(localgradient(self, ndims)[...,_], Jinv, -2)
+  return dot(rootgradient(self, roots)[...,_], Jinv, -2)
 
 def dotnorm(arg, geom, axis=-1):
   axis = numeric.normdim(arg.ndim, axis)
