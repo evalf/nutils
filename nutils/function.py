@@ -2806,14 +2806,18 @@ class Argument(DerivativeTargetBase):
       ``0``.
   '''
 
-  __slots__ = '_name', '_nderiv'
+  __slots__ = '_name', '_derivs'
   __cache__ = 'prepare_eval'
 
   @types.apply_annotations
-  def __init__(self, name:types.strictstr, shape:asshape, nderiv:types.strictint=0):
+  def __init__(self, name:types.strictstr, shape:asshape, derivs:types.tuple[types.strict[DerivativeTargetBase]]=()):
     self._name = name
-    self._nderiv = nderiv
+    self._derivs = derivs
     super().__init__(args=[EVALARGS], shape=shape, dtype=float)
+
+  @property
+  def _nderiv(self):
+    return len(self._derivs)
 
   def evalf(self, evalargs):
     assert self._nderiv == 0
@@ -2835,7 +2839,7 @@ class Argument(DerivativeTargetBase):
         result = diagonalize(result, i, i+self.ndim)
       return result
     elif isinstance(var, LocalCoords):
-      return Argument(self._name, self.shape+var.shape, self._nderiv+1)
+      return Argument(self._name, self.shape+var.shape, self._derivs+(var,))
     else:
       return zeros(self.shape+var.shape)
 
@@ -4434,8 +4438,9 @@ def replace_arguments(value, arguments):
   if isinstance(value, Argument) and value._name in arguments:
     v = asarray(arguments[value._name])
     assert value.shape[:value.ndim-value._nderiv] == v.shape
-    for ndims in value.shape[value.ndim-value._nderiv:]:
-      v = localgradient(v, ndims)
+    for target in value._derivs:
+      v = derivative(v, target)
+    assert v.shape == value.shape
     return v
 
 def _eval_ast(ast, functions):
