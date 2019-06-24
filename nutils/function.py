@@ -4350,19 +4350,27 @@ def get(arg, iax, item):
 def jacobian(geom, ndims):
   '''
   Return :math:`\\sqrt{|J^T J|}` with :math:`J` the gradient of ``geom`` to the
-  local coordinate system with ``ndims`` dimensions (``localgradient(geom,
-  ndims)``).
+  root coordinate system with ``ndims`` dimensions.
   '''
 
+  # Compute the jacobian `abs(det(J.T @ V.T @ V @ J))**0.5` with `J` the
+  # gradient of `geom` to the root coordinates and `V` the `ndims` vectors
+  # spanning the tangent space.
   assert geom.ndim == 1
-  J = localgradient(geom, ndims)
-  cndims, = geom.shape
-  assert J.shape == (cndims,ndims), 'wrong jacobian shape: got {}, expected {}'.format(J.shape, (cndims, ndims))
-  assert cndims >= ndims, 'geometry dimension < topology dimension'
-  detJ = abs(determinant(J)) if cndims == ndims \
-    else 1. if ndims == 0 \
-    else abs(determinant((J[:,:,_] * J[:,_,:]).sum(0)))**.5
-  return detJ
+  if ndims == 0:
+    return 1.
+  # Order the roots deterministically. In the future we should use the order
+  # of `Sample.roots` (during `prepare_eval` or a successor).
+  roots = tuple(sorted(geom.roots, key=lambda root: (root.name, root.ndims)))
+  J = rootgradient(geom, roots)
+  if J.shape == (ndims, ndims):
+    # Since `J` and `V` are square, the determinant `det(J @ V)` is equal to
+    # `det(J) * det(V)`. The root vectors `V` are orthonormal, hence the
+    # determinant simplifies to `det(J)`.
+    return abs(determinant(J))
+  else:
+    J = dot(J[:,:,_], roottangent(roots, ndims)[_], 1)
+    return abs(determinant((J[:,:,_] * J[:,_,:]).sum(0)))**.5
 
 def matmat(arg0, *args):
   'helper function, contracts last axis of arg0 with first axis of arg1, etc'
@@ -4549,8 +4557,7 @@ def mask(arg, mask, axis=0):
 def J(geometry, ndims=None):
   '''
   Return :math:`\\sqrt{|J^T J|}` with :math:`J` the gradient of ``geometry`` to
-  the local coordinate system with ``ndims`` dimensions (``localgradient(geom,
-  ndims)``).
+  the root coordinate system with ``ndims`` dimensions.
   '''
   if ndims is None:
     return DelayedJacobian(geometry)
