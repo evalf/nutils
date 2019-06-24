@@ -46,12 +46,15 @@ class check(TestCase):
         self.fail('arrays are not equal.\nACTUAL : {}\nDESIRED: {}'.format(decimal, *(numpy.array2string(a, prefix='ACTUAL : ') for a in (actual, desired))))
 
   def assertFunctionAlmostEqual(self, actual, desired, decimal):
+    evalargs = dict(_transforms=[trans[0] for trans in self.sample.transforms], _points=self.sample.points[0].coords)
     with self.subTest('vanilla'):
-      self.assertArrayAlmostEqual(self.sample.eval(actual), desired, decimal)
+      self.assertArrayAlmostEqual(actual.eval(**evalargs), desired, decimal)
     with self.subTest('simplified'):
-      self.assertArrayAlmostEqual(self.sample.eval(actual.simplified), desired, decimal)
+      self.assertArrayAlmostEqual(actual.simplified.eval(**evalargs), desired, decimal)
     with self.subTest('optimized'):
-      self.assertArrayAlmostEqual(self.sample.eval(actual.simplified.optimized_for_numpy), desired, decimal)
+      self.assertArrayAlmostEqual(actual.simplified.optimized_for_numpy.eval(**evalargs), desired, decimal)
+    with self.subTest('sample'):
+      self.assertArrayAlmostEqual(self.sample.eval(actual), desired, decimal)
 
   def test_evalconst(self):
     constargs = [numpy.random.uniform(size=shape) for shape in self.shapes]
@@ -421,7 +424,6 @@ _check('dot', lambda a,b: function.dot(a,b,axes=1), lambda a,b: (a*b).sum(2), [(
 _check('divide', function.divide, lambda a, b: a * b**-1, [(3,3),(1,3)], low=-2, high=-1)
 _check('divide2', lambda a: function.asarray(a)/2, lambda a: a/2, [(3,1)])
 _check('add', function.add, numpy.add, [(3,1),(1,3)])
-_check('blockadd', lambda a, b: function.BlockAdd(function._numpy_align(a, b)), numpy.add, [(3,1),(1,3)])
 _check('subtract', function.subtract, numpy.subtract, [(3,1),(1,3)])
 _check('product2', lambda a,b: function.multiply(a,b).sum(-2), lambda a,b: (a*b).sum(-2), [(2,3,2),(1,3,2)])
 _check('cross', lambda a,b: function.cross(a,b,-2), lambda a,b: numpy.cross(a,b,axis=-2), [(2,3,1),(2,3,2)])

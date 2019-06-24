@@ -769,7 +769,7 @@ class DofMap(Array):
 class InsertAxis(Array):
 
   __slots__ = 'func', 'axis', 'length'
-  __cache__ = 'simplified',
+  __cache__ = 'simplified', 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint, length:asarray):
@@ -874,10 +874,14 @@ class InsertAxis(Array):
   def _uninsert(self, axis):
     return self.func if axis == self.axis else InsertAxis(self.func._uninsert(axis-(axis>self.axis)), self.axis-(axis<self.axis), self.length)
 
+  @property
+  def blocks(self):
+    return tuple((ind[:self.axis]+(Range(self.length),)+ind[self.axis:], InsertAxis(f, self.axis, self.length)) for ind, f in self.func.blocks)
+
 class Transpose(Array):
 
   __slots__ = 'func', 'axes'
-  __cache__ = 'simplified',
+  __cache__ = 'simplified', 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axes:types.tuple[types.strictint]):
@@ -945,6 +949,10 @@ class Transpose(Array):
 
   def _mask(self, maskvec, axis):
     return Transpose(Mask(self.func, maskvec, self.axes[axis]), self.axes)
+
+  @property
+  def blocks(self):
+    return tuple((tuple(ind[n] for n in self.axes), Transpose(f, self.axes)) for ind, f in self.func.blocks)
 
 class Get(Array):
 
@@ -1177,9 +1185,17 @@ class Concatenate(Array):
 
   @property
   def blocks(self):
-    return _concatblocks(((ind[:self.axis], ind[self.axis+1:]), (ind[self.axis]+n, f))
+    blocks = []
+    for (ind1, ind2), ind_f in util.gather(((ind[:self.axis], ind[self.axis+1:]), (ind[self.axis]+n, f))
       for n, func in zip(util.cumsum(func.shape[self.axis] for func in self.funcs), self.funcs)
-        for ind, f in func.blocks)
+        for ind, f in func.blocks):
+      if len(ind_f) == 1:
+        ind, f = ind_f[0]
+      else:
+        ind = Concatenate([ind for ind, f in ind_f], axis=0)
+        f = Concatenate([f for ind, f in ind_f], axis=len(ind1))
+      blocks.append((ind1+(ind,)+ind2, f))
+    return tuple(blocks)
 
   def _get(self, i, item):
     if i != self.axis:
@@ -1351,7 +1367,7 @@ class Determinant(Array):
 class Multiply(Array):
 
   __slots__ = 'funcs',
-  __cache__ = 'simplified', 'optimized_for_numpy'
+  __cache__ = 'simplified', 'optimized_for_numpy', 'blocks'
 
   @types.apply_annotations
   def __init__(self, funcs:types.frozenmultiset[asarray]):
@@ -1461,10 +1477,42 @@ class Multiply(Array):
     if func1pow is not None and func2pow is not None:
       return Multiply([func1pow, func2pow])
 
+  @property
+  def blocks(self):
+    func1, func2 = self.funcs
+    blocks = []
+    for ind1, f1_ in func1.blocks:
+      for ind2, f2 in func2.blocks:
+        f1 = f1_
+        indices = []
+        for i, sh in enumerate(self.shape):
+          if ind1[i] == ind2[i]:
+            ind = ind1[i]
+          elif ind1[i] == Range(sh):
+            ind = ind2[i]
+            f1 = Take(f1, ind, axis=i)
+          elif ind2[i] == Range(sh):
+            ind = ind1[i]
+            f2 = Take(f2, ind, axis=i)
+          elif ind1[i].isconstant and ind2[i].isconstant:
+            ind, subind1, subind2 = numeric.intersect1d(ind1[i].eval()[0], ind2[i].eval()[0], return_indices=True)
+            if not ind.size:
+              break # blocks do not overlap
+            f1 = take(f1, subind1, i)
+            f2 = take(f2, subind2, i)
+          else:
+            warnings.warn('failed to isolate sparsely multiplied blocks', ExpensiveEvaluationWarning)
+            return super().blocks
+          indices.append(asarray(ind))
+        else:
+          assert f1.shape == f2.shape == tuple(ind.shape[0] for ind in indices)
+          blocks.append((tuple(indices), Multiply([f1, f2])))
+    return _gatherblocks(blocks)
+
 class Add(Array):
 
   __slots__ = 'funcs',
-  __cache__ = 'simplified',
+  __cache__ = 'simplified', 'blocks'
 
   @types.apply_annotations
   def __init__(self, funcs:types.frozenmultiset[asarray]):
@@ -1530,77 +1578,9 @@ class Add(Array):
     func1, func2 = self.funcs
     return Add([Mask(func1, maskvec, axis), Mask(func2, maskvec, axis)])
 
-class BlockAdd(Array):
-  'block addition (used for DG)'
-
-  __slots__ = 'funcs',
-  __cache__ = 'simplified', 'blocks'
-
-  @types.apply_annotations
-  def __init__(self, funcs:types.frozenmultiset[asarray]):
-    self.funcs = funcs
-    shapes = set(func.shape for func in funcs)
-    assert len(shapes) == 1, 'multiple shapes in BlockAdd'
-    shape, = shapes
-    super().__init__(args=funcs, shape=shape, dtype=_jointdtype(*[func.dtype for func in self.funcs]))
-
-  def edit(self, op):
-    return BlockAdd([op(func) for func in self.funcs])
-
-  @property
-  def simplified(self):
-    funcs = []
-    for func in self.funcs:
-      func = func.simplified
-      if isinstance(func, BlockAdd):
-        funcs.extend(func.funcs)
-      elif not iszero(func):
-        funcs.append(func)
-    return BlockAdd(funcs) if len(funcs) > 1 else funcs[0] if funcs else zeros_like(self)
-
-  def evalf(self, *args):
-    return util.sum(args)
-
-  def _add(self, other):
-    return BlockAdd(tuple(self.funcs) + tuple(other.funcs if isinstance(other, BlockAdd) else [other]))
-
-  def _sum(self, axis):
-    return BlockAdd([sum(func, axis) for func in self.funcs])
-
-  def _derivative(self, var, seen):
-    return BlockAdd([derivative(func, var, seen) for func in self.funcs])
-
-  def _get(self, i, item):
-    return BlockAdd([Get(func, i, item) for func in self.funcs])
-
-  def _takediag(self, axis, rmaxis):
-    return BlockAdd([TakeDiag(func, axis, rmaxis) for func in self.funcs])
-
-  def _take(self, indices, axis):
-    return BlockAdd([take(func, indices, axis) for func in self.funcs])
-
-  def _transpose(self, axes):
-    return BlockAdd([Transpose(func, axes) for func in self.funcs])
-
-  def _insertaxis(self, axis, length):
-    return BlockAdd([InsertAxis(func, axis, length) for func in self.funcs])
-
-  def _multiply(self, other):
-    return BlockAdd([multiply(func, other) for func in self.funcs])
-
-  def _mask(self, maskvec, axis):
-    return BlockAdd([Mask(func, maskvec, axis) for func in self.funcs])
-
-  def _unravel(self, axis, shape):
-    return BlockAdd([unravel(func, axis, shape) for func in self.funcs])
-
   @property
   def blocks(self):
-    gathered = tuple((ind, util.sum(f)) for ind, f in util.gather(block for func in self.funcs for block in func.blocks))
-    if len(gathered) > 1:
-      for idim in range(self.ndim):
-        gathered = _concatblocks(((ind[:idim], ind[idim+1:]), (ind[idim], f)) for ind, f in gathered)
-    return gathered
+    return _gatherblocks(block for func in self.funcs for block in func.blocks)
 
 class Einsum(Array):
 
@@ -1634,7 +1614,7 @@ class Einsum(Array):
 class Sum(Array):
 
   __slots__ = 'axis', 'func'
-  __cache__ = 'simplified', 'optimized_for_numpy'
+  __cache__ = 'simplified', 'optimized_for_numpy', 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint):
@@ -1688,6 +1668,10 @@ class Sum(Array):
 
   def _derivative(self, var, seen):
     return sum(derivative(self.func, var, seen), self.axis)
+
+  @property
+  def blocks(self):
+    return _gatherblocks((ind[:self.axis] + ind[self.axis+1:], f.sum(self.axis)) for ind, f in self.func.blocks)
 
 class TakeDiag(Array):
 
@@ -2203,7 +2187,7 @@ class Zeros(Array):
 class Inflate(Array):
 
   __slots__ = 'func', 'dofmap', 'length', 'axis'
-  __cache__ = 'simplified',
+  __cache__ = 'simplified', 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, dofmap:asarray, length:types.strictint, axis:types.strictint):
@@ -2239,7 +2223,7 @@ class Inflate(Array):
 
   @property
   def blocks(self):
-    return ((ind[:self.axis] + (Take(self.dofmap, ind[self.axis], axis=0).simplified,) + ind[self.axis+1:], f) for ind, f in self.func.blocks)
+    return tuple((ind[:self.axis] + (Take(self.dofmap, ind[self.axis], axis=0).simplified,) + ind[self.axis+1:], f) for ind, f in self.func.blocks)
 
   def _mask(self, maskvec, axis):
     if axis != self.axis:
@@ -2284,7 +2268,6 @@ class Inflate(Array):
   def _add(self, other):
     if isinstance(other, Inflate) and self.axis == other.axis and self.dofmap == other.dofmap:
       return Inflate(Add([self.func, other.func]), self.dofmap, self.length, self.axis)
-    return BlockAdd([self, other])
 
   def _power(self, n):
     return Inflate(Power(self.func, Take(n, indices=self.dofmap, axis=self.axis)), self.dofmap, self.length, self.axis)
@@ -2634,7 +2617,7 @@ class DelayedJacobian(Array):
 class Ravel(Array):
 
   __slots__ = 'func', 'axis'
-  __cache__ = 'simplified',
+  __cache__ = 'simplified', 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint):
@@ -2718,9 +2701,7 @@ class Ravel(Array):
 
   @property
   def blocks(self):
-    for ind, f in self.func.blocks:
-      newind = ravel(ind[self.axis][:,_] * self.func.shape[self.axis+1] + ind[self.axis+1][_,:], axis=0)
-      yield (ind[:self.axis] + (newind,) + ind[self.axis+2:]), ravel(f, axis=self.axis)
+    return tuple(((ind[:self.axis] + (ravel(ind[self.axis][:,_] * self.func.shape[self.axis+1] + ind[self.axis+1][_,:], axis=0),) + ind[self.axis+2:]), ravel(f, axis=self.axis)) for ind, f in self.func.blocks)
 
 class Unravel(Array):
 
@@ -2975,7 +2956,7 @@ class Opposite(Array):
 class Kronecker(Array):
 
   __slots__ = 'func', 'axis', 'length', 'pos'
-  __cache__ = 'simplified',
+  __cache__ = 'simplified', 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint, length:asarray, pos:asarray):
@@ -3033,7 +3014,6 @@ class Kronecker(Array):
     if isinstance(other, Kronecker) and self.axis == other.axis and self.pos == other.pos:
       assert self.length == other.length
       return Kronecker(add(self.func, other.func), self.axis, self.length, self.pos)
-    return BlockAdd([self, other])
 
   def _sum(self, axis):
     if axis == self.axis:
@@ -3105,7 +3085,7 @@ class Kronecker(Array):
 
   @property
   def blocks(self):
-    return _concatblocks(((ind[:self.axis], ind[self.axis:]), (self.pos[_], InsertAxis(f, self.axis, 1))) for ind, f in self.func.blocks)
+    return tuple((ind[:self.axis] + (self.pos[_],) + ind[self.axis:], InsertAxis(f, self.axis, 1)) for ind, f in self.func.blocks)
 
 # BASES
 
@@ -3552,19 +3532,8 @@ def _norm_and_sort(ndim, args):
   assert _ascending(normargs) # strict
   return normargs
 
-def _concatblocks(items):
-  gathered = util.gather(items)
-  order = [ind for ind12, ind_f in gathered for ind, f in ind_f]
-  blocks = []
-  for (ind1, ind2), ind_f in gathered:
-    if len(ind_f) == 1:
-      ind, f = ind_f[0]
-    else:
-      inds, fs = zip(*sorted(ind_f, key=lambda item: order.index(item[0])))
-      ind = Concatenate(inds, axis=0)
-      f = Concatenate(fs, axis=len(ind1))
-    blocks.append(((ind1+(ind,)+ind2), f))
-  return tuple(blocks)
+def _gatherblocks(blocks):
+  return tuple((ind, util.sum(funcs)) for ind, funcs in util.gather(blocks))
 
 def _numpy_align(*arrays):
   '''reshape arrays according to Numpy's broadcast conventions'''
