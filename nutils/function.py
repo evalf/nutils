@@ -2100,7 +2100,7 @@ class Sampled(Array):
 class Elemwise(Array):
 
   __slots__ = 'data',
-  __cached__ = 'simplified',
+  __cache__ = 'simplified',
 
   @types.apply_annotations
   def __init__(self, data:types.tuple[types.frozenarray], index:asarray, dtype:asdtype):
