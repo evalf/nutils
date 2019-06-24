@@ -1005,6 +1005,8 @@ class Product(Array):
 
   @property
   def simplified(self):
+    if self.func.shape[-1] == 1:
+      return get(self.func, self.ndim, 0).simplified
     func = self.func.simplified
     retval = func._product()
     if retval is not None:
