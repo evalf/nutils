@@ -281,7 +281,7 @@ class check(TestCase):
   def find(self, target, xi0):
     elemtrans, = self.sample.transforms[0]
     ndim, = self.geom.shape
-    J = function.localgradient(self.geom, ndim)
+    J = function.dot(function.rootgradient(self.geom, self.sample.roots)[:,:,_], transform.linear(elemtrans[1:], elemtrans[-1].fromdims)[_,:,:], 1)
     Jinv = function.inverse(J).prepare_eval()
     countdown = 5
     iiter = 0
@@ -304,12 +304,13 @@ class check(TestCase):
     return xi.reshape(xi0.shape)
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
-  def test_localgradient(self):
+  def test_rootgradient(self):
     elemtrans, = self.sample.transforms[0]
     points = self.sample.points[0].coords
     argsfun = function.Tuple(self.args).prepare_eval()
-    exact = self.sample.eval(function.localgradient(self.op_args, ndims=self.ndim))
+    exact = self.sample.eval(function.rootgradient(self.op_args, self.sample.roots))
     D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.ndim)
+    invlinear = numpy.linalg.inv(transform.linear(elemtrans[1:], elemtrans[-1].fromdims))
     good = False
     eps = 1e-5
     while not numpy.all(good):
@@ -319,12 +320,12 @@ class check(TestCase):
         error = exact
       else:
         fdgrad, = numpy.diff(tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:]), axis=0) / eps
-        error = exact - fdgrad.transpose(numpy.roll(numpy.arange(fdgrad.ndim),-1))
+        error = exact - fdgrad.transpose(numpy.roll(numpy.arange(fdgrad.ndim),-1)) @ invlinear
       good |= numpy.less(abs(error / exact), 1e-8)
       good |= numpy.less(abs(error), 1e-14)
       eps *= .8
       if eps < 1e-10:
-        self.fail('local gradient failed to reach tolerance ({}/{})'.format((~good).sum(), good.size))
+        self.fail('root gradient failed to reach tolerance ({}/{})'.format((~good).sum(), good.size))
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_jacobian(self):
@@ -636,10 +637,10 @@ class elemwise(TestCase):
         self.assertEqual(self.func.size.prepare_eval().eval(function.Subsample(roots=self.domain.roots, transforms=(trans,), points=ref.getpoints('gauss', 1), ielem=i))[0], self.data[i].size)
 
   def test_derivative(self):
-    self.assertTrue(function.iszero(function.localgradient(self.func, self.domain.ndims)))
+    self.assertTrue(function.iszero(function.rootgradient(self.func, self.domain.roots)))
 
   def test_shape_derivative(self):
-    self.assertEqual(function.localgradient(self.func, self.domain.ndims).shape, self.func.shape+(self.domain.ndims,))
+    self.assertEqual(function.rootgradient(self.func, self.domain.roots).shape, self.func.shape+(self.domain.ndims,))
 
 
 class namespace(TestCase):
