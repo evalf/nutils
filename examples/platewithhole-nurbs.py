@@ -34,7 +34,7 @@ def main(nrefine = 2,
     numpy.take([0, 1, 1], indices)])
   geom = (nurbsbasis[:,numpy.newaxis] * controlpoints).sum(0)
 
-  radiuserr = domain.boundary['left'].integral((nutils.function.norm2(geom) - radius)**2, degree=9).eval()**.5
+  radiuserr = domain.boundary['left'].integral((nutils.function.norm2(geom) - radius)**2 * nutils.function.J(geom0), degree=9).eval()**.5
   nutils.log.info('hole radius exact up to L2 error {:.2e}'.format(radiuserr))
 
   # refine domain
@@ -60,9 +60,10 @@ def main(nrefine = 2,
   ns.uexact_i = 'scale (x_i ((k + 1) (0.5 + R2) + (1 - R2) R2 (x_0^2 - 3 x_1^2) / r2) - 2 δ_i1 x_1 (1 + (k - 1 + R2) R2))'
   ns.du_i = 'u_i - uexact_i'
 
-  sqr = domain.boundary['top,bottom'].integral('(u_i n_i)^2' @ ns, degree=9)
-  sqr += domain.boundary['right'].integral('du_k du_k d:x' @ ns, degree=20)
+  sqr = domain.boundary['top,bottom'].integral('(u_i n_i)^2 d:x' @ ns, degree=9)
   cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
+  sqr = domain.boundary['right'].integral('du_k du_k d:x' @ ns, degree=20)
+  cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
 
   # construct residual
   res = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=9)
@@ -101,13 +102,13 @@ class test(nutils.testing.TestCase):
   def test0(self):
     err, cons, lhs = main(nrefine=0)
     with self.subTest('l2-error'):
-      self.assertAlmostEqual(err[0], .00189, places=5)
+      self.assertAlmostEqual(err[0], .00199, places=5)
     with self.subTest('h1-error'):
-      self.assertAlmostEqual(err[1], .02174, places=5)
+      self.assertAlmostEqual(err[1], .02269, places=5)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
-      eNqLuMnQAIJnNSC08XUNYznjy8YQXoYmhC6+Insu7/ze873aAH5yESc=''')
+      eNpjYGBoAEM4rWYsb3zZGF1U4VzS+YfnGRgA6IMLgQ==''')
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
-      eNoBMADP/1jZ0DGVM5YzzSjfL2kzqDMz1ygzHjPTM5LOr85F0GgpJc6GzrIuc9Qdzm7Pvc+NKyFrF1c=''')
+      eNpjYLhoONl4ujEDw0v9LOMVQFrNWN74svGkcxvOeV9gYFA513UuRI+BQeFc0vmH5xkYAIlqEWg=''')
 
   @nutils.testing.requires('matplotlib')
   def test2(self):
@@ -117,11 +118,10 @@ class test(nutils.testing.TestCase):
     with self.subTest('h1-error'):
       self.assertAlmostEqual(err[1], .00286, places=5)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
-      eNrzec7QgA7NpTDFuJ5iiuXJYIpteIgpdkM+ysDa6KmRqrGqsYVxqvEO4xPGmKoSsZgm8whTbLEcptjT
-      +5hifxU1z3mce3/O83zu+bzzJ88/u7DxSvUdAExTStA=''')
+      eNpjYGBowIBUF4sysDZ6aqRqrGpsYZxqvMP4hDE9bNU853Hu/TnP87nn886fPP/swporDAwAN7w+0Q==''')
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
-      eNoB8AAP/0zn8i4cMRsyuTIiM2UzjDOdM50zNxpxLqEwuDF5MgQzWzONM6IzojMK5bQuwDC2MVwy3DI8
-      M4AzpTOlM24cUC9CMRgykjLbMiUzcDOrM68zsOH9L+UxnDLsMgMzJzNlM7MzvjPYH1owOzLlMiUzJTM4
-      M2UzuDPIM4nOic6azsHOA89szwvQC9E102EcWc5YznjOw85EzwrQD9Fd0pzUHOJDzkTOf87xzpvPiNC7
-      0UfTqNWjHjrOQM6ozjLPus880B/RyNIz1uXfMM5EztrOVc+Tz7bPOdCE0ZfV/SEpzkjO785Jz23Pbs/J
-      z+bQsdR73GyTdWc=''')
+      eNoNjDEoxGEYh986kxusilLqkuV//+99Uzo3iCtsFsU5ow2xMVEWVyxs7gyUuqIMdB1Xolvc8nu/7w4D
+      1jMpsStvz/b09BD9Rv2uj295UJZlX04Moo3oNK65Le6SRTmQM4PoJnqIq67AH5yVHTk3iGbTE66XD/md
+      U7IuF3Jl7i/dcWX+4oQM2fFa7s3l4zHuWJOSUXM1eZIiijjGIxK6okmfDCNtogXMYxMN5LTb94SlVvmZ
+      aBI5bOMHJd3z9TDVrrwQZTCOCljvNOsHQrPlXoli694wp0da1YzfDSXrhjGNb8zoqq5pUz/9pf3+AVg0
+      aWs=''')
