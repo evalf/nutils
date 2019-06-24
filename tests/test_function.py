@@ -233,6 +233,14 @@ class check(TestCase):
         desired=self.n_op_argsfun.reshape(self.n_op_argsfun.shape[:idim+1]+unravelshape+self.n_op_argsfun.shape[idim+2:]),
         actual=function.unravel(self.op_args, axis=idim, shape=unravelshape))
 
+  def test_kronecker(self):
+    for idim in range(self.op_args.ndim+1):
+      desired = numpy.zeros(self.n_op_argsfun.shape[:idim+1]+(3,)+self.n_op_argsfun.shape[idim+1:], dtype=self.n_op_argsfun.dtype)
+      desired[(slice(None),)*(idim+1)+(1,)] = self.n_op_argsfun
+      self.assertFunctionAlmostEqual(decimal=15,
+        desired=desired,
+        actual=function.kronecker(self.op_args, axis=idim, pos=1, length=3))
+
   def test_edit(self):
     def check_identity(arg):
       if function.isevaluable(arg):
@@ -430,7 +438,7 @@ _check('eig', lambda a: function.eig(a+a.T,symmetric=True)[1], lambda a: numpy.l
 _check('trignormal', lambda a: function.trignormal(a), lambda a: numpy.array([numpy.cos(a), numpy.sin(a)]).T, [()])
 _check('trigtangent', lambda a: function.trigtangent(a), lambda a: numpy.array([-numpy.sin(a), numpy.cos(a)]).T, [()])
 _check('mod', lambda a,b: function.mod(a,b), lambda a,b: numpy.mod(a,b), [(3,),(3,)], hasgrad=False)
-_check('kronecker', lambda f: function.kronecker(f,axis=-2,length=3,pos=1), lambda a: numeric.kronecker(a,axis=-2,length=3,pos=1), [(2,3,)])
+_check('kronecker', lambda f: function.kronecker(f,axis=2,length=3,pos=1), lambda a: numeric.kronecker(a,axis=3,length=3,pos=1), [(2,2,3,3)])
 _check('mask', lambda f: function.mask(f,numpy.array([True,False,True]),axis=1), lambda a: a[:,:,numpy.array([True,False,True])], [(2,3,4)])
 _check('ravel', lambda f: function.ravel(f,axis=1), lambda a: a.reshape(-1,2,6), [(2,3,2)])
 _check('unravel', lambda f: function.unravel(f,axis=0,shape=[2,3]), lambda a: a.reshape(-1,2,3,2), [(6,2)])
