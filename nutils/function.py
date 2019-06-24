@@ -1262,6 +1262,18 @@ class LinearFrom(Array):
     assert not chain or chain[0].todims == todims
     return transform.linearfrom(chain, fromdims)[_]
 
+class Linear(Array):
+
+  __slots__ = '_trans'
+
+  @types.apply_annotations
+  def __init__(self, trans:types.strict[TransformChain], fromdims:types.strictint, todims:types.strictint=None):
+    self._trans = trans
+    super().__init__(args=[trans], shape=(todims or trans.todims, fromdims), dtype=float)
+
+  def evalf(self, chain):
+    return transform.linear(chain, self.shape[0])[_]
+
 class Inverse(Array):
   '''
   Matrix inverse of ``func`` over the last two axes.  All other axes are

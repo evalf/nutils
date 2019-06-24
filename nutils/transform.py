@@ -89,6 +89,12 @@ def linearfrom(chain, fromdims):
   return linear[:,:fromdims] if linear.shape[1] >= fromdims \
     else numpy.concatenate([linear, numpy.zeros((todims, fromdims-linear.shape[1]))], axis=1)
 
+def linear(chain, fromdims):
+  if len(chain) == 0:
+    return numpy.eye(fromdims)
+  else:
+    return functools.reduce(numpy.dot, (trans.linear for trans in chain))
+
 ## TRANSFORM ITEMS
 
 class TransformItem(types.Singleton):
