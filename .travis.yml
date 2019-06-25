@@ -5,34 +5,53 @@ env:
     - OMP_NUM_THREADS=1
     - VECLIB_MAXIMUM_THREADS=1
     - EXTRAS=docs,matrix_scipy,matrix_mkl,export_mpl
+    - PYTHON=python3
 matrix:
   include:
-    - os: linux
+    - name: "Python: 3.5"
+      os: linux
       python: "3.5"
-    - os: linux
+    - name: "Python: 3.6"
+      os: linux
       python: "3.6"
-    - os: linux
+    - name: "Python: 3.7"
+      os: linux
+      dist: xenial
+      python: "3.7"
+    - name: "Python: 3.6, Numpy: 1.12"
+      os: linux
       python: "3.6"
       env:
         - EXTRAS=matrix_mkl,export_mpl
         - FORCE_PYTHON_PKGS="numpy==1.12"
-    - os: linux
+    - name: "Pypy"
+      os: linux
       language: generic
       env:
-        - PYPY_URL=https://bitbucket.org/squeaky/portable-pypy/downloads/pypy3.5-6.0.0-linux_x86_64-portable.tar.bz2
         - EXTRAS=matrix_mkl,export_mpl
-        - FORCE_PYTHON_PKGS="numpy<1.16"
-    - os: osx
+      before_install:
+        - wget --no-verbose -O - "$PYPY_URL" | tar xj
+        - pypy*/bin/pypy3 -m venv venv
+        - . venv/bin/activate
+    - name: "Python"
+      os: osx
       language: generic
-      env: PYTHON_PKG_URL=https://www.python.org/ftp/python/3.7.1/python-3.7.1-macosx10.9.pkg
-before_install:
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then wget -O python.pkg "$PYTHON_PKG_URL"; sudo installer -pkg python.pkg -target /; rm python.pkg; fi
-  - if [[ -n "$PYPY_URL" ]]; then wget -O - "$PYPY_URL" | tar xj; pypy*/bin/pypy3 -m venv venv; . venv/bin/activate; fi
+      before_install:
+        - wget --no-verbose -O python.pkg "$PYTHON_PKG_URL"
+        - sudo installer -pkg python.pkg -target /
+        - rm python.pkg
+    - name: "Python: 3.x"
+      os: windows
+      language: shell
+      before_install:
+        - choco install python3 --params "/InstallDir:C:\\Python"
+      env:
+        - PYTHON=/c/Python/python.exe
 install:
-  - python3 -m pip install --upgrade .[$EXTRAS] coverage codecov $FORCE_PYTHON_PKGS
+  - $PYTHON -m pip install --upgrade .[$EXTRAS] coverage codecov $FORCE_PYTHON_PKGS
 script:
-  - python3 -m coverage run -m unittest -b
+  - $PYTHON -m coverage run -m unittest -b
 after_success:
-  - python3 -m coverage xml -i
-  - python3 -m codecov --file coverage.xml
+  - $PYTHON -m coverage xml -i
+  - $PYTHON -m codecov --file coverage.xml
 # vim: ts=2:sts=2:sw=2:et
