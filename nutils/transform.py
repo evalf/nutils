@@ -324,7 +324,7 @@ class Updim(Matrix):
 
 class SimplexEdge(Updim):
 
-  __slots__ = 'iedge',
+  __slots__ = 'iedge', 'inverted'
 
   swap = (
     ((1,0), (2,0), (3,0), (7,1)),
@@ -333,18 +333,24 @@ class SimplexEdge(Updim):
     ((0,3), (1,3), (2,3), (4,3)),
   )
 
-  def __init__(self, ndims, iedge):
+  @types.apply_annotations
+  def __init__(self, ndims:types.strictint, iedge:types.strictint, inverted:bool=False):
     assert ndims >= iedge >= 0
     self.iedge = iedge
+    self.inverted = inverted
     vertices = numpy.concatenate([numpy.zeros(ndims)[_,:], numpy.eye(ndims)], axis=0)
     coords = vertices[list(range(iedge))+list(range(iedge+1,ndims+1))]
-    super().__init__((coords[1:]-coords[0]).T, coords[0], iedge%2)
+    super().__init__((coords[1:]-coords[0]).T, coords[0], inverted^(iedge%2))
+
+  @property
+  def flipped(self):
+    return SimplexEdge(self.todims, self.iedge, not self.inverted)
 
   def swapup(self, other):
     # prioritize ascending transformations, i.e. change updim << scale to scale << updim
     if isinstance(other, SimplexChild):
       ichild, iedge = self.swap[self.iedge][other.ichild]
-      return SimplexChild(self.todims, ichild), SimplexEdge(self.todims, iedge)
+      return SimplexChild(self.todims, ichild), SimplexEdge(self.todims, iedge, self.inverted)
 
   def swapdown(self, other):
     # prioritize decending transformations, i.e. change scale << updim to updim << scale
@@ -356,7 +362,7 @@ class SimplexEdge(Updim):
         except ValueError:
           pass
         else:
-          return SimplexEdge(self.todims, iedge), SimplexChild(self.fromdims, ichild)
+          return SimplexEdge(self.todims, iedge, self.inverted), SimplexChild(self.fromdims, ichild)
 
 class SimplexChild(Square):
 
@@ -414,6 +420,10 @@ class ScaledUpdim(Updim):
     if isinstance(other, Identity):
       return self.trans1, self.trans2
 
+  @property
+  def flipped(self):
+    return ScaledUpdim(self.trans1, self.trans2.flipped)
+
 class TensorEdge1(Updim):
 
   __slots__ = 'trans',
@@ -445,6 +455,10 @@ class TensorEdge1(Updim):
         return TensorEdge1(edge, other.trans2.todims), TensorChild(child, other.trans2) if child.fromdims else other.trans2
       return ScaledUpdim(other, self), Identity(self.fromdims)
 
+  @property
+  def flipped(self):
+    return TensorEdge1(self.trans.flipped, self.fromdims-self.trans.fromdims)
+
 class TensorEdge2(Updim):
 
   __slots__ = 'trans'
@@ -475,6 +489,10 @@ class TensorEdge2(Updim):
         edge, child = swapped
         return TensorEdge2(other.trans1.todims, edge), TensorChild(other.trans1, child) if child.fromdims else other.trans1
       return ScaledUpdim(other, self), Identity(self.fromdims)
+
+  @property
+  def flipped(self):
+    return TensorEdge2(self.fromdims-self.trans.fromdims, self.trans.flipped)
 
 class TensorChild(Square):
 

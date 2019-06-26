@@ -19,6 +19,8 @@ class elem(TestCase):
   @parametrize.enable_if(lambda ref, **kwargs: ref.ndims >= 1)
   def test_edges(self):
     self.ref.check_edges(print=self.fail)
+    for etrans in self.ref.edge_transforms:
+      assert etrans.flipped.flipped == etrans
 
   @parametrize.enable_if(lambda ref, **kwargs: not isinstance(ref, element.MosaicReference) and ref.ndims >= 1)
   def test_childdivide(self):
