@@ -11,7 +11,7 @@ class elem(TestCase):
   def test_centroid(self):
     numpy.testing.assert_almost_equal(self.ref.centroid, self.exactcentroid, decimal=15)
 
-  @parametrize.enable_if(lambda ref, **kwargs: ref.ndims >= 1)
+  @parametrize.enable_if(lambda ref, **kwargs: not isinstance(ref, element.MosaicReference) and ref.ndims >= 1)
   def test_children(self):
     childvol = sum(abs(trans.det) * child.volume for trans, child in self.ref.children)
     numpy.testing.assert_almost_equal(childvol, self.ref.volume)
@@ -20,7 +20,7 @@ class elem(TestCase):
   def test_edges(self):
     self.ref.check_edges(print=self.fail)
 
-  @parametrize.enable_if(lambda ref, **kwargs: ref.ndims >= 1)
+  @parametrize.enable_if(lambda ref, **kwargs: not isinstance(ref, element.MosaicReference) and ref.ndims >= 1)
   def test_childdivide(self):
     for n in 1, 2, 3:
       with self.subTest(n=n):
@@ -30,7 +30,7 @@ class elem(TestCase):
             cpoints, cweights = cref.getischeme('vertex{}'.format(n-1))
             numpy.testing.assert_equal(ctrans.apply(cpoints), vals)
 
-  @parametrize.enable_if(lambda ref, **kwargs: ref.ndims >= 1)
+  @parametrize.enable_if(lambda ref, **kwargs: not isinstance(ref, element.MosaicReference) and ref.ndims >= 1)
   def test_swap(self):
     for iedge, (etrans, eref) in enumerate(self.ref.edges):
       for ichild, (ctrans, cref) in enumerate(eref.children):
@@ -45,7 +45,7 @@ class elem(TestCase):
   def test_ribbons(self):
     self.ref.ribbons
 
-  @parametrize.enable_if(lambda ref, **kwargs: ref.ndims >= 1)
+  @parametrize.enable_if(lambda ref, **kwargs: not isinstance(ref, element.MosaicReference) and ref.ndims >= 1)
   def test_connectivity(self):
     for ichild, edges in enumerate(self.ref.connectivity):
       for iedge, ioppchild in enumerate(edges):
@@ -56,7 +56,7 @@ class elem(TestCase):
             self.ref.child_transforms[ichild] * self.ref.child_refs[ichild].edge_transforms[iedge],
             (self.ref.child_transforms[ioppchild] * self.ref.child_refs[ioppchild].edge_transforms[ioppedge]).flipped)
 
-  @parametrize.enable_if(lambda ref, **kwargs: ref.ndims >= 1)
+  @parametrize.enable_if(lambda ref, **kwargs: not isinstance(ref, element.MosaicReference) and ref.ndims >= 1)
   def test_edgechildren(self):
     for iedge, edgechildren in enumerate(self.ref.edgechildren):
       for ichild, (jchild, jedge) in enumerate(edgechildren):
@@ -73,6 +73,8 @@ elem('square', ref=element.LineReference()**2, exactcentroid=[.5]*2)
 elem('hexagon', ref=element.LineReference()**3, exactcentroid=[.5]*3)
 elem('prism1', ref=element.TriangleReference()*element.LineReference(), exactcentroid=[1/3,1/3,1/2])
 elem('prism2', ref=element.LineReference()*element.TriangleReference(), exactcentroid=[1/2,1/3,1/3])
-quad = element.LineReference()**2
+line = element.LineReference()
+quad = line**2
 elem('withchildren1', ref=element.WithChildrenReference(quad, [quad,quad.empty,quad.empty,quad.empty]), exactcentroid=[1/4,1/4])
 elem('withchildren2', ref=element.WithChildrenReference(quad, [quad,quad,quad.empty,quad.empty]), exactcentroid=[1/4,1/2])
+elem('mosaic', ref=element.MosaicReference(quad, [line,line.empty,line,line.empty], [.25,.75]), exactcentroid=[2/3,2/3])
