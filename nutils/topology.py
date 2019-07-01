@@ -188,7 +188,10 @@ class Topology(types.Singleton):
     points = [ischeme(reference, degree) for reference in self.references] if callable(ischeme) \
         else self.references.getpoints(ischeme, degree)
     offset = numpy.cumsum([0] + [p.npoints for p in points])
-    return sample.Sample((self.transforms, self.opposites), points, map(numpy.arange, offset[:-1], offset[1:]))
+    transforms = self.transforms,
+    if len(self.transforms) == 0 or self.opposites != self.transforms:
+      transforms += self.opposites,
+    return sample.Sample(transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
 
   @util.single_or_multiple
   def integrate_elementwise(self, funcs, *, asfunction=False, **kwargs):
@@ -615,7 +618,10 @@ class Topology(types.Singleton):
       w, = numpy.equal(ielems, ielem).nonzero()
       points_.append(points.CoordsPoints(coords[w]))
       index.append(w)
-    return sample.Sample((self.transforms[uielems], self.opposites[uielems]), points_, index)
+    transforms = self.transforms[uielems],
+    if len(self.transforms) == 0 or self.opposites != self.transforms:
+      transforms += self.opposites[uielems],
+    return sample.Sample(transforms, points_, index)
 
   def supp(self, basis, mask=None):
     warnings.deprecation('Topology.supp is deprecated, use basis.get_support instead')
