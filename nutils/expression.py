@@ -661,7 +661,12 @@ class _ExpressionParser:
       if '0' <= indices.data <= '9':
         raise _IntermediateError('Expected a non-numeric index, got {!r}.'.format(indices.data), at=indices.pos, count=len(indices.data))
       value = _Array.stack(args, indices.data)
-    elif self._next.type == 'd':
+    elif self._next.type == 'jacobian':
+      nbounds = len(self._consume().data)-1
+      geometry_name = self._consume_assert_equal('geometry').data
+      geom = self._get_geometry(geometry_name)
+      value = _Array.wrap(('jacobian', _(geom), _(len(geom)-nbounds)), '', ())
+    elif self._next.type == 'old-jacobian':
       self._consume()
       geometry_name = self._consume_assert_equal('geometry').data
       geom = self._get_geometry(geometry_name)
@@ -911,9 +916,15 @@ class _ExpressionParser:
         tokens.append(_Token(self.expression[pos], self.expression[pos], pos))
         pos += 1
         continue
+      m = re.match(r'(J\^*):([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)', self.expression[pos:])
+      if m:
+        tokens.append(_Token('jacobian', m.group(1), pos))
+        tokens.append(_Token('geometry', m.group(2), 1+len(m.group(1))))
+        pos += m.end()
+        continue
       m = re.match(r'd:[a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*', self.expression[pos:])
       if m:
-        tokens.append(_Token('d', m.group(0)[:1], pos))
+        tokens.append(_Token('old-jacobian', m.group(0)[:1], pos))
         tokens.append(_Token('geometry', m.group(0)[2:], pos+2))
         pos += m.end()
         continue
