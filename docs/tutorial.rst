@@ -67,12 +67,12 @@ concepts involved.
     >>> ns.basis = topo.basis('spline', degree=1)
     >>> ns.u = 'basis_n ?lhs_n'
 
-    >>> sqr = topo.boundary['left'].integral('u^2 d:x' @ ns, degree=2)
+    >>> sqr = topo.boundary['left'].integral('u^2 J^:x' @ ns, degree=2)
     >>> cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
     optimize > constrained 1/5 dofs, optimum value 0.00e+00±1e-15
 
-    >>> res = topo.integral('basis_n,i u_,i d:x' @ ns, degree=0)
-    >>> res -= topo.boundary['right'].integral('basis_n d:x' @ ns, degree=0)
+    >>> res = topo.integral('basis_n,i u_,i J:x' @ ns, degree=0)
+    >>> res -= topo.boundary['right'].integral('basis_n J^:x' @ ns, degree=0)
     >>> lhs = nutils.solver.solve_linear('lhs', residual=res, constrain=cons)
     solve > solving 4x4 system using direct solver
     solve > solver returned with residual 9e-16±1e-15
@@ -443,12 +443,12 @@ topology, in particular the :meth:`integral()
 The integral method takes a :class:`~nutils.function.Array` function as first
 argument and the degree as keyword argument. The function should contain the
 Jacobian of the geometry against which the function should be integrated, using
-either :func:`nutils.function.J` or the ``d:`` operator in a namespace
+either :func:`nutils.function.J` or the ``J:`` operator in a namespace
 expression. For example, the following integrates ``1`` against the default
 geometry:
 
 .. console::
-    >>> I = topo.integral('1 d:x' @ ns, degree=0)
+    >>> I = topo.integral('1 J:x' @ ns, degree=0)
     >>> I
     Integral<>
 
@@ -464,16 +464,16 @@ Be careful with including the Jacobian in your integrands.  The following two
 integrals are different:
 
 .. console::
-    >>> topo.integral('(1 + 1) d:x' @ ns, degree=0).eval()
+    >>> topo.integral('(1 + 1) J:x' @ ns, degree=0).eval()
     2.0±1e-15
-    >>> topo.integral('1 + 1 d:x' @ ns, degree=0).eval()
+    >>> topo.integral('1 + 1 J:x' @ ns, degree=0).eval()
     5.0±1e-15
 
 The :class:`~nutils.sample.Integral` objects support additions and
 subtractions:
 
 .. console::
-    >>> J = topo.integral('x_0 d:x' @ ns, degree=1)
+    >>> J = topo.integral('x_0 J:x' @ ns, degree=1)
     >>> (I+J).eval()
     1.5±1e-15
 
@@ -482,13 +482,15 @@ object, and hence it supports integration.  For example, to integrate the
 geometry ``x`` over the entire boundary, write
 
 .. console::
-    >>> topo.boundary.integral('x_0 d:x' @ ns, degree=1).eval()
+    >>> topo.boundary.integral('x_0 J^:x' @ ns, degree=1).eval()
     1.0±1e-15
 
-To limit the integral to the right boundary, write
+Note that the jacobian is written as ``J^:x``.  The ``^`` indicates that the
+domain of integration is one dimension lower than the dimension of the
+geometry.  To limit the integral to the right boundary, write
 
 .. console::
-    >>> topo.boundary['right'].integral('x_0 d:x' @ ns, degree=1).eval()
+    >>> topo.boundary['right'].integral('x_0 J^:x' @ ns, degree=1).eval()
     1.0±1e-15
 
 Note that this boundary is simply a point and the integral a point evaluation.
@@ -497,7 +499,7 @@ Integrating and evaluating a 1D :class:`~nutils.function.Array` results in a 1D
 :class:`numpy.ndarray`:
 
 .. console::
-    >>> topo.integral('basis_i d:x' @ ns, degree=1).eval()
+    >>> topo.integral('basis_i J:x' @ ns, degree=1).eval()
     array([0.125, 0.25 , 0.25 , 0.25 , 0.125])±1e-15
 
 Since the integrals of 2D :class:`~nutils.function.Array` functions are usually
@@ -510,7 +512,7 @@ coordinate representation via the :meth:`Matrix.export()
 <nutils.matrix.Matrix.export>` method.  An example:
 
 .. console::
-    >>> M = topo.integral(ns.eval_nm('basis_n,i basis_m,i d:x'), degree=1).eval()
+    >>> M = topo.integral(ns.eval_nm('basis_n,i basis_m,i J:x'), degree=1).eval()
     >>> M
     NumpyMatrix<5x5>
     >>> M.export('dense')
@@ -549,8 +551,8 @@ for all :math:`φ_n`, or :math:`A_{nm} \hat{u}_m = f_n`. This is implemented as
 follows:
 
 .. console::
-    >>> A = topo.integral(ns.eval_nm('basis_n basis_m d:x'), degree=2).eval()
-    >>> f = topo.integral('basis_n x_0 d:x' @ ns, degree=2).eval()
+    >>> A = topo.integral(ns.eval_nm('basis_n basis_m J:x'), degree=2).eval()
+    >>> f = topo.integral('basis_n x_0 J:x' @ ns, degree=2).eval()
     >>> A.solve(f)
     solve > solving 5x5 system using direct solver
     solve > solver returned with residual 3e-17±1e-15
@@ -561,7 +563,7 @@ Alternatively, we can write this in the slightly more general form
 .. math:: R_n := ∫_Ω φ_n (u - x_0) \ dx = 0.
 
 .. console::
-    >>> res = topo.integral('basis_n (u - x_0) d:x' @ ns, degree=2)
+    >>> res = topo.integral('basis_n (u - x_0) J:x' @ ns, degree=2)
 
 Taking the derivative of :math:`R_n` to :math:`\hat{u}_m` gives the above
 matrix :math:`A_{nm}`, and substituting for :math:`\hat{u}` the zero vector
@@ -595,7 +597,7 @@ for :math:`\hat{u}` is equivalent to the above two variants.  The derivative of
 :math:`S` to :math:`\hat{u}_n` gives :math:`2 R_n`:
 
 .. console::
-    >>> sqr = topo.integral('(u - x_0)^2 d:x' @ ns, degree=2)
+    >>> sqr = topo.integral('(u - x_0)^2 J:x' @ ns, degree=2)
     >>> nutils.solver.solve_linear('lhs', sqr.derivative('lhs'))
     solve > solving 5x5 system using direct solver
     solve > solver returned with residual 6e-17±1e-15
@@ -617,7 +619,7 @@ problem stated above, the Dirichlet boundary condition at :math:`Γ_\text{left}`
 minimizes the following functional:
 
 .. console::
-    >>> sqr = topo.boundary['left'].integral('(u - 0)^2 d:x' @ ns, degree=2)
+    >>> sqr = topo.boundary['left'].integral('(u - 0)^2 J^:x' @ ns, degree=2)
 
 By passing the ``droptol`` argument, :func:`nutils.solver.optimize` returns an
 array with ``nan`` ('not a number') for every entry for which the optimization
@@ -634,8 +636,8 @@ Consider again the Laplace problem stated above.  The residual
 :eq:`laplace_residual` is implemented as
 
 .. console::
-    >>> res = topo.integral('basis_n,i u_,i d:x' @ ns, degree=0)
-    >>> res -= topo.boundary['right'].integral('basis_n d:x' @ ns, degree=0)
+    >>> res = topo.integral('basis_n,i u_,i J:x' @ ns, degree=0)
+    >>> res -= topo.boundary['right'].integral('basis_n J^:x' @ ns, degree=0)
 
 Since this problem is linear in argument ``lhs``, we can use the
 :func:`nutils.solver.solve_linear` method to solve this problem.  The
@@ -801,15 +803,15 @@ example.
 The residual :eq:`laplace2_residual` is implemented as
 
 .. console::
-    >>> res = topo.integral('basis_n,i u_,i d:x' @ ns, degree=2)
-    >>> res -= topo.boundary['right'].integral('basis_n cos(1) cosh(x_1) d:x' @ ns, degree=2)
+    >>> res = topo.integral('basis_n,i u_,i J:x' @ ns, degree=2)
+    >>> res -= topo.boundary['right'].integral('basis_n cos(1) cosh(x_1) J^:x' @ ns, degree=2)
 
 The Dirichlet boundary conditions are rewritten as a least squares problem and
 solved for ``lhs``, yielding the constraints vector ``cons``:
 
 .. console::
-    >>> sqr = topo.boundary['left'].integral('u^2 d:x' @ ns, degree=2)
-    >>> sqr += topo.boundary['top'].integral('(u - cosh(1) sin(x_0))^2 d:x' @ ns, degree=2)
+    >>> sqr = topo.boundary['left'].integral('u^2 J^:x' @ ns, degree=2)
+    >>> sqr += topo.boundary['top'].integral('(u - cosh(1) sin(x_0))^2 J^:x' @ ns, degree=2)
     >>> cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
     optimize > solve > solving 21x21 system using direct solver
     optimize > solve > solver returned with residual 3e-17±1e-15
