@@ -27,7 +27,7 @@ provided at this point.
 """
 
 from . import topology, function, util, element, elementseq, numpy, numeric, transform, transformseq, warnings, types, _
-import os, itertools, re, treelog as log
+import os, itertools, re, math, treelog as log
 
 # MESH GENERATORS
 
@@ -450,77 +450,157 @@ def gmsh(fname:util.readtext, name='gmsh'):
         geomdofs[m,:] = geomdofs[numpy.ix_(m,r)]
         m = shuffle[:,j] == i
         shuffle[m,j] = shuffle[m,i] # update shuffle to track changed vertex positions
-    fullgeomdofs = geomdofs
-    geomdofs = geomdofs[:,[tuple(b).index(degree) for b in bari]] # select vertex coordinates for root transforms
 
-  for e in inodesbydim:
-    e.sort(axis=1)
+  inodesbydim[ndims].sort(axis=1)
+  if tagnamesbydim[ndims-1]:
+    inodesbydim[ndims-1].sort(axis=1)
+    edges = {tuple(inodes[:iedge])+tuple(inodes[iedge+1:]): (ielem, iedge) for ielem, inodes in enumerate(inodesbydim[ndims]) for iedge in range(ndims+1)}
 
-  # create simplex topology
+  vtags = {name: numpy.array(inodes) for name, inodes in tagnamesbydim[ndims].items()}
+  btags = {name: numpy.array([edges[tuple(inodesbydim[ndims-1][ibelem])] for ibelem in ibelems]) for name, ibelems in tagnamesbydim[ndims-1].items()}
+  ptags = {name: inodesbydim[0][ipelems][...,0] for name, ipelems in tagnamesbydim[0].items()}
+
+  log.info('\n- '.join(['loaded {}d gmsh topology consisting of #{} elements'.format(ndims, len(geomdofs))]
+    + [name + ' groups: ' + ', '.join('{} #{}'.format(n, len(e)) for n, e in tags.items())
+      for name, tags in (('volume', vtags), ('boundary', btags), ('point', ptags)) if tags]))
+
+  return simplex(nodes=inodesbydim[ndims], cnodes=geomdofs, coords=nodes, tags=vtags, btags=btags, ptags=ptags, name=name)
+
+def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
+  '''Simplex topology.
+
+  Parameters
+  ----------
+  nodes : :class:`numpy.ndarray`
+      Vertex indices as (nelems x ndims+1) integer array, sorted along the
+      second dimension. This table fully determines the connectivity of the
+      simplices.
+  cnodes : :class:`numpy.ndarray`
+      Coordinate indices as (nelems x ncnodes) integer array following Nutils'
+      conventions for Bernstein polynomials. The polynomial degree is inferred
+      from the array shape.
+  coords : :class:`numpy.ndarray`
+      Coordinates as (nverts x ndims) float array to be indexed by ``cnodes``.
+  tags : :class:`dict`
+      Dictionary of name->element numbers. Element order is preserved in the
+      resulting volumetric groups.
+  btags : :class:`dict`
+      Dictionary of name->edges, where edges is a (nedges x 2) integer array
+      containing pairs of element number and edge number. The segments are
+      assigned to boundary or interfaces groups automatically while otherwise
+      preserving order.
+  ptags : :class:`dict`
+      Dictionary of name->node numbers referencing the ``nodes`` table.
+  name : :class:`str`
+      Name of simplex topology.
+
+  Returns
+  -------
+  topo : :class:`nutils.topology.SimplexTopology`
+      Topology with volumetric, boundary and interface groups.
+  geom : :class:`nutils.function.Array`
+      Geometry function.
+  '''
+
+  nverts, ndims = coords.shape
+  nelems, ncnodes = cnodes.shape
+  assert nodes.shape == (nelems, ndims+1)
+  assert numpy.greater(nodes[:,1:], nodes[:,:-1]).all(), 'nodes must be sorted'
+
+  if ncnodes == ndims+1:
+    degree = 1
+    vnodes = cnodes
+  else:
+    degree = int((ncnodes * math.factorial(ndims))**(1/ndims))-1  # degree**ndims/ndims! < ncnodes < (degree+1)**ndims/ndims!
+    dims = numpy.arange(ndims)
+    strides = (dims+1+degree).cumprod() // (dims+1).cumprod() # (i+1+degree)!/(i+1)!
+    assert strides[-1] == ncnodes
+    vnodes = cnodes[:,(0,*strides-1)]
+
+  assert vnodes.shape == nodes.shape
   root = transform.Identifier(ndims, name)
-  topo = topology.SimplexTopology(inodesbydim[ndims], transformseq.PlainTransforms([(root, transform.Simplex(c)) for c in nodes[geomdofs]], ndims))
-  log.info('created topology consisting of {} elements'.format(len(topo)))
-
-  if tagnamesbydim[ndims-1]: # separate boundary and interface elements by tag
-    elemref = element.getsimplex(ndims)
-    edgeref = element.getsimplex(ndims-1)
-    edges = {}
-    for elemtrans, vtx in zip(topo.transforms, inodesbydim[ndims].tolist()):
-      for iedge, edgetrans in enumerate(elemref.edge_transforms):
-        edges.setdefault(tuple(vtx[:iedge] + vtx[iedge+1:]), []).append(elemtrans+(edgetrans,))
-    tagsbelems = {}
-    tagsielems = {}
-    for name, ibelems in tagnamesbydim[ndims-1].items():
-      for ibelem in ibelems:
-        edge, *oppedge = edges[tuple(inodesbydim[ndims-1][ibelem])]
-        if oppedge:
-          tagsielems.setdefault(name, []).append((edge, oppedge[0]))
-        else:
-          tagsbelems.setdefault(name, []).append(edge)
-    if tagsbelems:
-      topo = topo.withgroups(bgroups={tagname: topology.UnstructuredTopology((edgeref,)*len(tagbelems), tagbelems, tagbelems, ndims=ndims-1) for tagname, tagbelems in tagsbelems.items()})
-      log.info('boundary groups:', ', '.join('{} (#{})'.format(n, len(e)) for n, e in tagsbelems.items()))
-    if tagsielems:
-      topo = topo.withgroups(igroups={tagname: topology.UnstructuredTopology((edgeref,)*len(tagielems), (trans for trans, opp in tagielems), (opp for trans, opp in tagielems), ndims=ndims-1) for tagname, tagielems in tagsielems.items()})
-      log.info('interface groups:', ', '.join('{} (#{})'.format(n, len(e)) for n, e in tagsielems.items()))
-
-  if tagnamesbydim[0]: # create points topology and separate by tag
-    ptransforms = {inodes[0]: [] for inodes in inodesbydim[0]}
-    pref = element.getsimplex(0)
-    for ref, trans, inodes in zip(topo.references, topo.transforms, inodesbydim[ndims]):
-      for ivertex, inode in enumerate(inodes):
-        if inode in ptransforms:
-          offset = ref.vertices[ivertex]
-          ptransforms[inode].append(trans + (transform.Matrix(linear=numpy.zeros(shape=(ndims,0)), offset=offset),))
-    pgroups = {}
-    for name, ipelems in tagnamesbydim[0].items():
-      tagptransforms = tuple(ptrans for ipelem in ipelems for inode in inodesbydim[0][ipelem] for ptrans in ptransforms[inode])
-      pgroups[name] = topology.UnstructuredTopology((pref,)*len(tagptransforms), tagptransforms, tagptransforms, ndims=0)
-    topo = topo.withgroups(pgroups=pgroups)
-    log.info('point groups:', ', '.join('{} (#{})'.format(n, len(e)) for n, e in pgroups.items()))
-
-  if tagnamesbydim[ndims]: # create volume groups
-    vgroups = {}
-    simplex = element.getsimplex(ndims)
-    for name, ielems in tagnamesbydim[ndims].items():
-      if len(ielems) == len(topo):
-        vgroups[name] = ...
-      elif ielems:
-        refs = numpy.array([simplex.empty] * len(topo), dtype=object)
-        refs[ielems] = simplex
-        vgroups[name] = topology.SubsetTopology(topo, refs)
-    topo = topo.withgroups(vgroups=vgroups)
-    log.info('volume groups:', ', '.join('{} (#{})'.format(n, len(e)) for n, e in tagnamesbydim[ndims].items()))
-
-  # create geometry
+  transforms = transformseq.PlainTransforms([(root, transform.Simplex(c)) for c in coords[vnodes]], ndims)
+  topo = topology.SimplexTopology(nodes, transforms, transforms)
   if degree == 1:
     geom = function.rootcoords(ndims)
   else:
     coeffs = element.getsimplex(ndims).get_poly_coeffs('lagrange', degree=degree)
-    basis = function.PlainBasis([coeffs] * len(fullgeomdofs), fullgeomdofs, len(nodes), topo.transforms)
-    geom = (basis[:,_] * nodes).sum(0)
+    basis = function.PlainBasis([coeffs] * nelems, cnodes, nverts, topo.transforms)
+    geom = (basis[:,_] * coords).sum(0)
 
-  return topo, geom
+  connectivity = topo.connectivity
+
+  bgroups = {}
+  igroups = {}
+  for name, elems_edges in btags.items():
+    bitems = [], [], None
+    iitems = [], [], []
+    for ielem, iedge in elems_edges:
+      ioppelem = connectivity[ielem, iedge]
+      simplices, transforms, opposites = bitems if ioppelem == -1 else iitems
+      simplices.append(tuple(nodes[ielem][:iedge])+tuple(nodes[ielem][iedge+1:]))
+      transforms.append(topo.transforms[ielem] + (transform.SimplexEdge(ndims, iedge),))
+      if opposites is not None:
+        opposites.append(topo.transforms[ioppelem] + (transform.SimplexEdge(ndims, tuple(connectivity[ioppelem]).index(ielem)),))
+    for groups, (simplices, transforms, opposites) in (bgroups, bitems), (igroups, iitems):
+      if simplices:
+        transforms = transformseq.PlainTransforms(transforms, ndims-1)
+        opposites = transforms if opposites is None else transformseq.PlainTransforms(opposites, ndims-1)
+        groups[name] = topology.SimplexTopology(simplices, transforms, opposites)
+
+  pgroups = {}
+  if ptags:
+    ptrans = [transform.Matrix(linear=numpy.zeros(shape=(ndims,0)), offset=offset) for offset in numpy.eye(ndims+1)[:,1:]]
+    pmap = {inode: numpy.array(numpy.equal(nodes, inode).nonzero()).T for inode in set.union(*map(set, ptags.values()))}
+    for pname, inodes in ptags.items():
+      ptransforms = [topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode]]
+      pgroups[pname] = topology.UnstructuredTopology((element.getsimplex(0),)*len(ptransforms), ptransforms, ptransforms, ndims=0)
+
+  vgroups = {}
+  for name, ielems in tags.items():
+    if len(ielems) == nelems and numpy.equal(ielems, numpy.arange(nelems)).all():
+      vgroups[name] = topo.withgroups(bgroups=bgroups, igroups=igroups, pgroups=pgroups)
+      continue
+    transforms = topo.transforms[ielems]
+    vtopo = topology.SimplexTopology(nodes[ielems], transforms, transforms)
+    keep = numpy.zeros(nelems, dtype=bool)
+    keep[ielems] = True
+    vbgroups = {}
+    vigroups = {}
+    for bname, elems_edges in btags.items():
+      bitems = [], [], []
+      iitems = [], [], []
+      for ielem, iedge in elems_edges:
+        ioppelem = connectivity[ielem, iedge]
+        if ioppelem == -1:
+          keepopp = False
+        else:
+          keepopp = keep[ioppelem]
+          ioppedge = tuple(connectivity[ioppelem]).index(ielem)
+        if keepopp and keep[ielem]:
+          simplices, transforms, opposites = iitems
+        elif keepopp or keep[ielem]:
+          simplices, transforms, opposites = bitems
+          if keepopp:
+            ielem, iedge, ioppelem, ioppedge = ioppelem, ioppedge, ielem, iedge
+        else:
+          continue
+        simplices.append(tuple(nodes[ielem][:iedge])+tuple(nodes[ielem][iedge+1:]))
+        transforms.append(topo.transforms[ielem] + (transform.SimplexEdge(ndims, iedge),))
+        if ioppelem != -1:
+          opposites.append(topo.transforms[ioppelem] + (transform.SimplexEdge(ndims, ioppedge),))
+      for groups, (simplices, transforms, opposites) in (vbgroups, bitems), (vigroups, iitems):
+        if simplices:
+          transforms = transformseq.PlainTransforms(transforms, ndims-1)
+          opposites = transformseq.PlainTransforms(opposites, ndims-1) if len(opposites) == len(transforms) else transforms
+          groups[bname] = topology.SimplexTopology(simplices, transforms, opposites)
+    vpgroups = {}
+    for pname, inodes in ptags.items():
+      ptransforms = [topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode] if keep[ielem]]
+      vpgroups[pname] = topology.UnstructuredTopology((element.getsimplex(0),)*len(ptransforms), ptransforms, ptransforms, ndims=0)
+    vgroups[name] = vtopo.withgroups(bgroups=vbgroups, igroups=vigroups, pgroups=vpgroups)
+
+  return topo.withgroups(vgroups=vgroups, bgroups=bgroups, igroups=igroups, pgroups=pgroups), geom
 
 def fromfunc(func, nelems, ndims, degree=1):
   'piecewise'
@@ -569,7 +649,8 @@ def unitsquare(nelems, etype):
 
     v = numpy.arange(nelems+1, dtype=float)
     coords = numeric.meshgrid(v, v).reshape(2,-1).T
-    topo = topology.SimplexTopology(simplices, transformseq.PlainTransforms([(root, transform.Simplex(coords[s])) for s in simplices], 2))
+    transforms = transformseq.PlainTransforms([(root, transform.Simplex(coords[s])) for s in simplices], 2)
+    topo = topology.SimplexTopology(simplices, transforms, transforms)
 
     if etype == 'mixed':
       references = list(topo.references)

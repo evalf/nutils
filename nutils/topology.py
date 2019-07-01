@@ -1464,12 +1464,12 @@ class SimplexTopology(Topology):
     return types.frozenarray(simplices if keep.all() else (numpy.cumsum(keep)-1)[simplices], copy=False)
 
   @types.apply_annotations
-  def __init__(self, simplices:_renumber, transforms:transformseq.stricttransforms):
+  def __init__(self, simplices:_renumber, transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms):
     assert simplices.shape == (len(transforms), transforms.fromdims+1)
     assert numpy.greater(simplices[:,1:], simplices[:,:-1]).all(), 'nodes should be sorted'
     self.simplices = simplices
     references = elementseq.asreferences([element.getsimplex(transforms.fromdims)], transforms.fromdims)*len(transforms)
-    super().__init__(references, transforms, transforms)
+    super().__init__(references, transforms, opposites)
 
   @property
   def connectivity(self):
