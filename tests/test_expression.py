@@ -469,6 +469,8 @@ class parse(TestCase):
 
   # NORMAL
 
+  def test_normal(self): self.assert_ast('n:x_i', 'i', ('normal', v._x))
+
   def test_normal_default(self): self.assert_ast('n_i', 'i', ('normal', v._x))
   def test_normal_altgeom(self): self.assert_ast('n_altgeom_i', 'i', ('normal', v._altgeom))
   def test_normal_default_grad_default(self): self.assert_ast('n_i,j', 'ij', ('grad', ('normal', v._x), v._x))

@@ -928,6 +928,13 @@ class _ExpressionParser:
         tokens.append(_Token('geometry', m.group(0)[2:], pos+2))
         pos += m.end()
         continue
+      m = re.match(r'({}):([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)_([a-zA-Z0-9])'.format('|'.join(map(re.escape, self.normal_symbols))), self.expression[pos:])
+      if m:
+        tokens.append(_Token('normal', m.group(1), pos))
+        tokens.append(_Token('geometry', m.group(2), pos+m.start(2)))
+        tokens.append(_Token('indices', m.group(3), pos+m.start(3)))
+        pos += m.end()
+        continue
       m_variable = re.match(r'[?]?[a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*', self.expression[pos:])
       m_variable = m_variable.group(0) if m_variable else ''
       m_eye = _string_startswith(self.expression, self.eye_symbols, start=pos)
