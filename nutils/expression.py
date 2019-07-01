@@ -665,7 +665,7 @@ class _ExpressionParser:
       self._consume()
       geometry_name = self._consume_assert_equal('geometry').data
       geom = self._get_geometry(geometry_name)
-      value = _Array.wrap(('d', _(geom)), '', ())
+      value = _Array.wrap(('jacobian', _(geom), _(None)), '', ())
     elif self._next.type == 'eye':
       self._consume()
       if self._next.type == 'indices':

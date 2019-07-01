@@ -507,6 +507,11 @@ class parse(TestCase):
     nx = Array('nx', [2])
     self.assert_ast('nx_i', 'i', _(nx), variables=dict(nx=nx))
 
+  # JACOBIAN
+
+  def test_jacobian(self):
+    self.assert_ast('d:x', '', ('jacobian', _(v.x), _(None)))
+
   # VARIABLE LENGTH TESTS
 
   def test_variable_lengths_shape_mismatch1(self):
