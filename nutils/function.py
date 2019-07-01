@@ -334,18 +334,27 @@ class TransformChain(Evaluable):
     super().__init__(args)
 
 class SelectChain(TransformChain):
-  __slots__ = 'n',
+
+  __slots__ = 'n'
+
   @types.apply_annotations
-  def __init__(self, n:types.strictint, todims:types.strictint=None):
+  def __init__(self, n:types.strictint=None):
     self.n = n
-    super().__init__(args=[EVALARGS], todims=todims)
+    super().__init__(args=[EVALARGS])
+
   def evalf(self, evalargs):
+    if self.n is None:
+      raise Exception('SelectChain cannot be evaluated with unspecifed index')
     trans = evalargs['_transforms'][self.n]
-    assert isinstance(trans, tuple) and trans[0].todims == self.todims
+    assert isinstance(trans, tuple) and trans[0].todims == None
     return trans
 
-TRANS = SelectChain(0)
-OPPTRANS = SelectChain(1)
+  @util.positional_only('self')
+  def prepare_eval(*args, opposite=False, **kwargs):
+    self, = args
+    return SelectChain(self.n if self.n is not None else 1 if opposite else 0)
+
+TRANS = SelectChain()
 
 class PopHead(TransformChain):
 
@@ -2984,6 +2993,28 @@ class RevolutionAngle(Array):
     self, = args
     return zeros_like(self)
 
+class Opposite(Array):
+
+  __slots__ = '_value'
+
+  @types.apply_annotations
+  def __init__(self, value:asarray):
+    self._value = value
+    super().__init__(args=[value], shape=value.shape, dtype=value.dtype)
+
+  def evalf(self, evalargs):
+    raise Exception('Opposite should not be evaluated')
+
+  @util.positional_only('self')
+  def prepare_eval(*args, opposite=None, **kwargs):
+    self, = args
+    if opposite is None:
+      raise Exception('opposite is undefined') from e
+    return self._value.prepare_eval(opposite=not opposite, **kwargs)
+
+  def _derivative(self, var, seen):
+    return Opposite(derivative(self._value, var, seen))
+
 # BASES
 
 class Basis(Array):
@@ -3695,16 +3726,12 @@ def blocks(arg):
 def rootcoords(ndims):
   return ApplyTransforms(PopHead(ndims))
 
-@replace
 def opposite(arg):
-  if arg is TRANS:
-    return OPPTRANS
-  if arg is OPPTRANS:
-    return TRANS
+  return Opposite(arg)
 
 @replace
 def _bifurcate(arg, side):
-  if arg in (TRANS, OPPTRANS):
+  if isinstance(arg, SelectChain):
     return SelectBifurcation(arg, side)
 
 bifurcate1 = functools.partial(_bifurcate, side=True)

@@ -250,7 +250,7 @@ class check(TestCase):
     elemtrans, = self.sample.transforms[0]
     ndim, = self.geom.shape
     J = function.localgradient(self.geom, ndim)
-    Jinv = function.inverse(J)
+    Jinv = function.inverse(J).prepare_eval()
     countdown = 5
     iiter = 0
     self.assertEqual(target.shape[-1:], self.geom.shape)
@@ -261,7 +261,7 @@ class check(TestCase):
     target = target.reshape(-1, target.shape[-1])
     xi = xi0.reshape(-1, xi0.shape[-1])
     while countdown:
-      err = target - self.geom.eval(_transforms=[elemtrans], _points=xi)
+      err = target - self.geom.prepare_eval().eval(_transforms=[elemtrans], _points=xi)
       if numpy.less(numpy.abs(err), 1e-12).all():
         countdown -= 1
       dxi_root = (Jinv.eval(_transforms=[elemtrans], _points=xi) * err[...,_,:]).sum(-1)
@@ -275,7 +275,7 @@ class check(TestCase):
   def test_localgradient(self):
     elemtrans, = self.sample.transforms[0]
     points = self.sample.points[0].coords
-    argsfun = function.Tuple(self.args)
+    argsfun = function.Tuple(self.args).prepare_eval()
     exact = self.sample.eval(function.localgradient(self.op_args, ndims=self.ndim))
     D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.ndim)
     good = False
@@ -311,7 +311,7 @@ class check(TestCase):
   def test_gradient(self):
     elemtrans, = self.sample.transforms[0]
     points = self.sample.points[0].coords
-    argsfun = function.Tuple(self.args)
+    argsfun = function.Tuple(self.args).prepare_eval()
     exact = self.sample.eval(self.op_args.grad(self.geom))
     fddeltas = numpy.array([1,2,3])
     fdfactors = numpy.linalg.solve(2*fddeltas**numpy.arange(1,1+2*len(fddeltas),2)[:,None], [1]+[0]*(len(fddeltas)-1))
@@ -337,7 +337,7 @@ class check(TestCase):
   def test_doublegradient(self):
     elemtrans, = self.sample.transforms[0]
     points = self.sample.points[0].coords
-    argsfun = function.Tuple(self.args)
+    argsfun = function.Tuple(self.args).prepare_eval()
     exact = self.sample.eval(self.op_args.grad(self.geom).grad(self.geom))
     fddeltas = numpy.array([1,2,3])
     fdfactors = numpy.linalg.solve(2*fddeltas**numpy.arange(1,1+2*len(fddeltas),2)[:,None], [1]+[0]*(len(fddeltas)-1))
@@ -537,12 +537,12 @@ class elemwise(TestCase):
   def test_evalf(self):
     for i, trans in enumerate(self.domain.transforms):
       with self.subTest(i=i):
-        numpy.testing.assert_array_almost_equal(self.func.eval(_transforms=(trans,)), self.data[i][_])
+        numpy.testing.assert_array_almost_equal(self.func.prepare_eval().eval(_transforms=(trans,)), self.data[i][_])
 
   def test_shape(self):
     for i, trans in enumerate(self.domain.transforms):
       with self.subTest(i=i):
-        self.assertEqual(self.func.size.eval(_transforms=(trans,))[0], self.data[i].size)
+        self.assertEqual(self.func.size.prepare_eval().eval(_transforms=(trans,))[0], self.data[i].size)
 
   def test_derivative(self):
     self.assertTrue(function.iszero(function.localgradient(self.func, self.domain.ndims)))
@@ -784,7 +784,7 @@ class deprecated_elemwise(TestCase):
       func = function.elemwise(dict(zip(domain.transforms, values)), None)
     for i, trans in enumerate(domain.transforms):
       with self.subTest(i=i):
-        numpy.testing.assert_array_almost_equal(func.eval(_transforms=(trans,)), numpy.array(values[i])[_])
+        numpy.testing.assert_array_almost_equal(func.prepare_eval().eval(_transforms=(trans,)), numpy.array(values[i])[_])
 
   def test_kwargs(self):
     domain, geom = mesh.rectilinear([4])
@@ -793,7 +793,7 @@ class deprecated_elemwise(TestCase):
       func = function.elemwise(fmap=dict(zip(domain.transforms, values)), shape=None)
     for i, trans in enumerate(domain.transforms):
       with self.subTest(i=i):
-        numpy.testing.assert_array_almost_equal(func.eval(_transforms=(trans,)), numpy.array(values[i])[_])
+        numpy.testing.assert_array_almost_equal(func.prepare_eval().eval(_transforms=(trans,)), numpy.array(values[i])[_])
 
 @parametrize
 class basis(TestCase):
@@ -938,7 +938,7 @@ class basis(TestCase):
     with _builtin_warnings.catch_warnings():
       _builtin_warnings.simplefilter('ignore', category=function.ExpensiveEvaluationWarning)
       for ielem in range(self.checknelems):
-        value = simplified.eval(_transforms=(self.basis.transforms[ielem],), _points=points)
+        value = simplified.prepare_eval().eval(_transforms=(self.basis.transforms[ielem],), _points=points)
         if value.shape[0] == 1:
           value = numpy.tile(value, (points.shape[0], 1))
         self.assertEqual(value.tolist(), self.checkeval(ielem, points))

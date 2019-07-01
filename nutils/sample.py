@@ -95,6 +95,12 @@ class Sample(types.Singleton):
   def __repr__(self):
     return '{}<{}D, {} elems, {} points>'.format(type(self).__qualname__, self.ndims, self.nelems, self.npoints)
 
+  def _prepare_funcs(self, funcs):
+    kwargs = dict(ndims=self.ndims)
+    if len(self.transforms) == 2:
+      kwargs['opposite'] = False
+    return [function.asarray(func).prepare_eval(**kwargs) for func in funcs]
+
   @log.withcontext
   @util.positional_only('self', 'funcs')
   @util.single_or_multiple
@@ -116,7 +122,7 @@ class Sample(types.Singleton):
     # chaining. Here we make a list of all blocks consisting of triplets of
     # argument id, evaluable index, and evaluable values.
 
-    funcs = [function.asarray(func).prepare_eval(ndims=self.ndims) for func in funcs]
+    funcs = self._prepare_funcs(funcs)
     blocks = [(ifunc, function.Tuple(ind), f.simplified.optimized_for_numpy) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func)]
     block2func, indices, values = zip(*blocks) if blocks else ([],[],[])
 
@@ -214,9 +220,9 @@ class Sample(types.Singleton):
 
     nprocs = min(config.nprocs, self.nelems)
     zeros = parallel.shzeros if nprocs > 1 else numpy.zeros
-    funcs = [function.asarray(func) for func in funcs]
+    funcs = self._prepare_funcs(funcs)
     retvals = [zeros((self.npoints,)+func.shape, dtype=func.dtype) for func in funcs]
-    idata = function.Tuple(function.Tuple([ifunc, function.Tuple(ind), f.simplified.optimized_for_numpy]) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func.prepare_eval(ndims=self.ndims)))
+    idata = function.Tuple(function.Tuple([ifunc, function.Tuple(ind), f.simplified.optimized_for_numpy]) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func))
 
     if config.dot:
       idata.graphviz()
