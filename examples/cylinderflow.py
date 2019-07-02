@@ -61,9 +61,9 @@ def main(nelems: 'number of elements' = 24,
   numpy.random.seed(seed)
   lhs0 *= numpy.random.normal(1, .1, lhs0.shape) # add small velocity noise
 
-  res = domain.integral('(ubasis_ni u_i,j u_j + ubasis_ni,j sigma_ij + pbasis_n u_k,k) d:x' @ ns, degree=9)
-  res += domain.boundary['inner'].integral('(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) (u_i - uwall_i) d:x / Re' @ ns, degree=9)
-  inertia = domain.integral('ubasis_ni u_i d:x' @ ns, degree=9)
+  res = domain.integral('(ubasis_ni u_i,j u_j + ubasis_ni,j sigma_ij + pbasis_n u_k,k) J:x' @ ns, degree=9)
+  res += domain.boundary['inner'].integral('(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n:x_j) (u_i - uwall_i) J^:x / Re' @ ns, degree=9)
+  inertia = domain.integral('ubasis_ni u_i J:x' @ ns, degree=9)
 
   bbox = numpy.array([[-2,46/9],[-2,2]]) # bounding box for figure based on 16x9 aspect ratio
   bezier0 = domain.sample('bezier', 5)

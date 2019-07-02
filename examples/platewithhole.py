@@ -44,18 +44,19 @@ def main(nelems: 'number of elementsa long edge' = 9,
   ns.uexact_i = 'scale (x_i ((k + 1) (0.5 + R2) + (1 - R2) R2 (x_0^2 - 3 x_1^2) / r2) - 2 δ_i1 x_1 (1 + (k - 1 + R2) R2))'
   ns.du_i = 'u_i - uexact_i'
 
-  sqr = domain.boundary['left,bottom'].integral('(u_i n_i)^2 d:x' @ ns, degree=degree*2)
-  sqr += domain.boundary['top,right'].integral('du_k du_k d:x' @ ns, degree=20)
+  sqr = domain.boundary['left,bottom'].integral('(u_i n:x_i)^2 J^:x' @ ns, degree=degree*2)
   cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
+  sqr = domain.boundary['top,right'].integral('du_k du_k J^:x' @ ns, degree=20)
+  cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
 
-  res = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=degree*2)
+  res = domain.integral('ubasis_ni,j stress_ij J:x' @ ns, degree=degree*2)
   lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
 
   bezier = domain.sample('bezier', 5)
   X, stressxx = bezier.eval(['X_i', 'stress_00'] @ ns, lhs=lhs)
   nutils.export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull)
 
-  err = domain.integral('<du_k du_k, du_i,j du_i,j>_n d:x' @ ns, degree=max(degree,3)*2).eval(lhs=lhs)**.5
+  err = domain.integral('<du_k du_k, du_i,j du_i,j>_n J:x' @ ns, degree=max(degree,3)*2).eval(lhs=lhs)**.5
   nutils.log.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
   return err, cons, lhs
@@ -83,14 +84,14 @@ class test(nutils.testing.TestCase):
     with self.subTest('l2-error'):
       self.assertAlmostEqual(err[0], .00033, places=5)
     with self.subTest('h1-error'):
-      self.assertAlmostEqual(err[1], .00671, places=5)
+      self.assertAlmostEqual(err[1], .00672, places=5)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
-      eNpjaPC5XybfdX+dIkMDDP7TQ7ANDBFsayME+6nRUeMjxnON04zNjFWNYaL655B0nrNUgrFrzrHeh7Ff
-      n/sNt8v3/Nk7X66uuXT3wunzOecBJ0syCg==''')
+      eNpjaGCAgQYY/K+HYBsYItjWRgj2U6OjxkeM5xqnGZsZqxrDRPXPIek8hzCzBon9Gonte56B4e3VtZfu
+      Xjh9Puc8ALOgKgk=''')
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
-      eNoBjABz/6I2TN92H4rfriEeyuw05zGFLykv/i6UM6EzzjLEMUkxMDGlM58zLzOrMlMyOzKwM7EzfTM1
-      M/ky5TLFM8QznTNmMzYzJTPLNvjONM4/zi/OGclHzJfOSs45zjDOOSK7z5fPC8+cznzOBd/D3d3RFdAu
-      z+vO+yGg1bnSvdCoz03Pzdz01azS3dDLz2zPaQdIRw==''')
+      eNpbZMYABfKn3pg8N2zV19D/rzfFeKHxOaMjhp6GBoZLjecb6xuvNgo2sjbaYLzRuNbY1Pin0VOjo8ZH
+      jOcapxmbGasanzb7cc7knP05/XOSJ93OTD/ndc7ynME5Bobd56ef5z4/51wNkF1x9+5F0Qt6518D2Yuv
+      7ry098KK877nGRjeXl176e6F0+dzzgMA63Y//Q==''')
 
   @nutils.testing.requires('matplotlib')
   def test_mixed(self):
@@ -100,13 +101,13 @@ class test(nutils.testing.TestCase):
     with self.subTest('h1-error'):
       self.assertAlmostEqual(err[1], .00739, places=5)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
-      eNpjaGCAwx4pGMv/8UYZGFvrgagCkNZnaEgyYGjABw0NGRqOG+JXY23E0DDdCMTaaMzQcNT4iDGIPde4
-      CUz7G6cD6adGZsaqxvjNgUD9c0BbgTjkHEwk+jE2dTVA+Y3nTsmB2GYPsZv1CqhG6jyItePye8XLd69d
-      BbGXXZp0EUQ7Xrh7gaHB9/zp8znnAW7uYcc=''')
+      eNpjaGBAQAYkFjpbn6EhyYChAR80NGRoOG6IX421EUPDdCMQa6MxQ8NR4yPGIPZc4yYw7W+cDqSfGpkZ
+      qxrjNwcC9c8BbQXikHNY/IAEa4DyG89B5Riwm/UKqEbqPIi14zLIy+evgthLL026CKIdL9y9wNDge/70
+      +ZzzANABV94=''')
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
-      eNoNzcsrRGEYB2CxlbKY1CSXhUJxzvf+Co0FmlIWTCExdjaEBSuTSI0FiymRaxgrl9QsBgu2mqFc3vc7
-      5zCliGmQUaKkZCH+gKcnQaM4gI11rFaG3Gn1aJ6rAPlS0XzTGDG+zWOz/MFVlG1kGAGzx1yAF11YwBo2
-      oKmDMrFDcRVSLmqkeqXUvTpVmwhjALvYRhCF+KAydCJKQfoim1qpliK0RBEsI4o9xBHDOPz/exAG8uBD
-      L37oiapQghlp48/L2GUOu2WRp3mIT/iXa7iOW9jLGzzJ1WywhxX3cTvvy7Bc6RerO1VuhaVJ+vWbuOWC
-      S2VKZnmMkxzls4Ln2yynKrly3encWHHtsjx2rp4Xv3akQl65/1+4E2nn0Hkvdu4S10f2hLVlz1kRXaAb
-      9J3elWY5l0H5AxDbnCE=''')
+      eNoVj08og3EYx3/NVcpBqx04KRTv+3u+hTggpRxQSLOjC40DJxKpOXBQIvMnbKdFqx2GA1dtHGbP83vf
+      11YOkqJQSknJQeZ7+lw+ffoWaR5ncHGI/SalXvWTndNzpEqzrVnr2760/7ncUtacPWZH0Y1RRHGAOAyN
+      kA/HlNVruop6qFNr/aCvdQIxTCKJI0RQgw+qRxBpitAXuTRI7ZSiHUphF2mcIIsMFhEq1SOw4McAxvFD
+      z9SMWqzLEH/mM/kKDsg2r/I0X/Evt3IH93M3x3mZW9jiNtY8wcN8KjNya14cpRqcmPRK2LxLQG64TlZk
+      gxf4kdOslO++zFNqrxD07pysqXLa3EqzJSHjSaO8cbhk+Iuv3rn3/1kKF+6Sk3A3nZSpNl3m3iSlT3Iy
+      JX8zb5FS''')

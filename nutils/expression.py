@@ -24,6 +24,7 @@ expression.
 '''
 
 import re, collections, functools
+from . import warnings
 
 
 # Convenience function to create a constant in ExpressionAST (details in
@@ -661,11 +662,16 @@ class _ExpressionParser:
       if '0' <= indices.data <= '9':
         raise _IntermediateError('Expected a non-numeric index, got {!r}.'.format(indices.data), at=indices.pos, count=len(indices.data))
       value = _Array.stack(args, indices.data)
-    elif self._next.type == 'd':
+    elif self._next.type == 'jacobian':
+      nbounds = len(self._consume().data)-1
+      geometry_name = self._consume_assert_equal('geometry').data
+      geom = self._get_geometry(geometry_name)
+      value = _Array.wrap(('jacobian', _(geom), _(len(geom)-nbounds)), '', ())
+    elif self._next.type == 'old-jacobian':
       self._consume()
       geometry_name = self._consume_assert_equal('geometry').data
       geom = self._get_geometry(geometry_name)
-      value = _Array.wrap(('d', _(geom)), '', ())
+      value = _Array.wrap(('jacobian', _(geom), _(None)), '', ())
     elif self._next.type == 'eye':
       self._consume()
       if self._next.type == 'indices':
@@ -911,10 +917,24 @@ class _ExpressionParser:
         tokens.append(_Token(self.expression[pos], self.expression[pos], pos))
         pos += 1
         continue
+      m = re.match(r'(J\^*):([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)', self.expression[pos:])
+      if m:
+        tokens.append(_Token('jacobian', m.group(1), pos))
+        tokens.append(_Token('geometry', m.group(2), 1+len(m.group(1))))
+        pos += m.end()
+        continue
       m = re.match(r'd:[a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*', self.expression[pos:])
       if m:
-        tokens.append(_Token('d', m.group(0)[:1], pos))
+        warnings.deprecation("The notation 'd:x' for the jacobian of 'x' is deprecated. Use 'J:x' instead, or 'J^:x' on boundaries.")
+        tokens.append(_Token('old-jacobian', m.group(0)[:1], pos))
         tokens.append(_Token('geometry', m.group(0)[2:], pos+2))
+        pos += m.end()
+        continue
+      m = re.match(r'({}):([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)_([a-zA-Z0-9])'.format('|'.join(map(re.escape, self.normal_symbols))), self.expression[pos:])
+      if m:
+        tokens.append(_Token('normal', m.group(1), pos))
+        tokens.append(_Token('geometry', m.group(2), pos+m.start(2)))
+        tokens.append(_Token('indices', m.group(3), pos+m.start(3)))
         pos += m.end()
         continue
       m_variable = re.match(r'[?]?[a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*', self.expression[pos:])
@@ -927,6 +947,7 @@ class _ExpressionParser:
         continue
       m_normal = _string_startswith(self.expression, self.normal_symbols, start=pos)
       if m_normal and len(m_variable) <= len(m_normal):
+        warnings.deprecation("The notation 'n_i' for the normal of 'x' (or some other default geometry) is deprecated. Use 'n:x_i' instead.")
         tokens.append(_Token('normal', m_normal, pos))
         pos += len(m_normal)
         continue

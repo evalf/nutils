@@ -8,6 +8,8 @@ class Array:
     self.text = text
     self.shape = tuple(shape)
     self.ndim = len(self.shape)
+  def __len__(self):
+    return self.shape[0]
   def __str__(self):
     return self.text
   def __repr__(self):
@@ -467,6 +469,8 @@ class parse(TestCase):
 
   # NORMAL
 
+  def test_normal(self): self.assert_ast('n:x_i', 'i', ('normal', v._x))
+
   def test_normal_default(self): self.assert_ast('n_i', 'i', ('normal', v._x))
   def test_normal_altgeom(self): self.assert_ast('n_altgeom_i', 'i', ('normal', v._altgeom))
   def test_normal_default_grad_default(self): self.assert_ast('n_i,j', 'ij', ('grad', ('normal', v._x), v._x))
@@ -506,6 +510,13 @@ class parse(TestCase):
   def test_variable_startswith_normal(self):
     nx = Array('nx', [2])
     self.assert_ast('nx_i', 'i', _(nx), variables=dict(nx=nx))
+
+  # JACOBIAN
+
+  def test_jacobian(self): self.assert_ast('J:x', '', ('jacobian', v._x, _(2)))
+  def test_jacobian_boundary(self): self.assert_ast('J^:x', '', ('jacobian', v._x, _(1)))
+  def test_jacobian_double_boundary(self): self.assert_ast('J^^:x', '', ('jacobian', v._x, _(0)))
+  def test_old_jacobian(self): self.assert_ast('d:x', '', ('jacobian', v._x, _(None)))
 
   # VARIABLE LENGTH TESTS
 

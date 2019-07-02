@@ -4010,6 +4010,7 @@ def J(geometry, ndims=None):
   ndims)``).
   '''
   if ndims is None:
+    warnings.deprecation('omitting ndims is deprecated')
     return DelayedJacobian(geometry)
   elif ndims < 0:
     ndims += len(geometry)
@@ -4081,9 +4082,9 @@ def _eval_ast(ast, functions):
   elif op == 'call':
     func, *args = args
     return functions[func](*args)
-  elif op == 'd':
-    geom, = args
-    return DelayedJacobian(geom)
+  elif op == 'jacobian':
+    geom, ndims = args
+    return J(geom, ndims)
   elif op == 'eye':
     length, = args
     return eye(length)
