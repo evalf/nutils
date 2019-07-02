@@ -9,7 +9,7 @@ found in the ``examples/`` directory of the code repository. Note that this
 directory will not be included in an installation via the `Python Package Index
 <https://pypi.org/project/nutils/>`_; in that situation the scripts matching
 the installed version should be separately downloaded from `Github
-<https://github.com/nutils/nutils/releases>`_.
+<https://github.com/evalf/nutils/releases>`_.
 
 The examples include:
 

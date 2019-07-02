@@ -28,6 +28,7 @@ Contents
    intro
    tutorial
    examples
+   changelog
    nutils
    notes
 
