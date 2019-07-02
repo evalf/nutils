@@ -587,21 +587,6 @@ class Topology(types.Singleton):
       transforms += self.opposites[uielems],
     return sample.Sample(transforms, points_, index)
 
-  def supp(self, basis, mask=None):
-    warnings.deprecation('Topology.supp is deprecated, use basis.get_support instead')
-    if not isinstance(basis, function.Basis):
-      raise ValueError("argument 'basis' should be of type 'Basis' but got {!r}".format(basis))
-    mask = numeric.asboolean(mask, size=len(basis), ordered=False)
-    subset = []
-    for ielem in range(len(self.transforms)):
-      dofs = basis.get_dofs(ielem)
-      if mask[dofs].any():
-        subset.append(ielem)
-    if not subset:
-      return EmptyTopology(self.ndims)
-    subset = types.frozenarray(subset, dtype=int)
-    return self.subset(self[subset], newboundary='supp', strict=True)
-
   def revolved(self, geom):
     assert geom.ndim == 1
     revdomain = self * RevolutionTopology()

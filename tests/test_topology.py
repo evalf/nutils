@@ -616,10 +616,6 @@ class common(TestCase):
       self.assertEqual(level, check)
       check = check.refined
 
-  @parametrize.enable_if(lambda **params: params.get('hasbasis', True))
-  def test_supp_empty(self):
-    self.assertEqual(len(self.topo.supp(self.topo.basis('std', 1), [])), 0)
-
 common(
   'UnstructuredTopology',
   topo=topology.UnstructuredTopology(elementseq.asreferences([element.PointReference()], 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0)),
