@@ -1486,6 +1486,12 @@ class SimplexTopology(Topology):
     connectivity[jelems,jedges] = ielems
     return types.frozenarray(connectivity, copy=False)
 
+  def basis_std(self, degree):
+    if degree == 1:
+      coeffs = element.getsimplex(self.ndims).get_poly_coeffs('bernstein', degree=1)
+      return function.PlainBasis([coeffs] * len(self), self.simplices, self.simplices.max()+1, self.transforms)
+    return super().basis_std(degree)
+
   def basis_bubble(self):
     'bubble from vertices'
 

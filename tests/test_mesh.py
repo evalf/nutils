@@ -153,9 +153,11 @@ class gmshperiodic(TestCase):
     numpy.testing.assert_almost_equal(abs(err)-[0,1], 0, decimal=15)
 
   def test_basis(self):
-    basis = self.domain.basis('std', degree=1)
-    err = self.domain.interfaces.integrate((basis - function.opposite(basis))*function.J(self.geom), ischeme='gauss1')
-    numpy.testing.assert_almost_equal(err, 0, decimal=15)
+    for args in ('std', 1), ('std', 2), ('std', 3), ('bubble',):
+      with self.subTest(':'.join(map(str, args))):
+        basis = self.domain.basis(*args)
+        err = self.domain.interfaces.sample('uniform', 2).eval(basis - function.opposite(basis))
+        numpy.testing.assert_almost_equal(err, 0, decimal=15)
 
 @parametrize
 class rectilinear(TestCase):
