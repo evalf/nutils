@@ -3965,15 +3965,6 @@ def eig(arg, axes=(-2,-1), symmetric=False):
   eigval, eigvec = Eig(transposed, symmetric)
   return Tuple([transpose(diagonalize(eigval), _invtrans(trans)), transpose(eigvec, _invtrans(trans))])
 
-def polyfunc(coeffs, dofs, ndofs, transforms):
-  '''
-  Create an inflated :class:`Polyval` with coefficients ``coeffs`` and
-  corresponding dofs ``dofs``.  The arguments ``coeffs``, ``dofs`` and
-  ``transforms`` are assumed to have matching order.
-  '''
-  warnings.deprecation('polyfunc is deprecated, use PlainBasis instead')
-  return PlainBasis(coeffs, dofs, ndofs, transforms)
-
 def elemwise(*args, **kwargs):
   if 'fmap' in kwargs or len(args) >= 1 and isinstance(args[0], dict):
     warnings.deprecation('passing a dictionary with transforms and values to elemwise is deprecated, pass the transforms and values as separate arguments instead')
