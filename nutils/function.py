@@ -151,8 +151,6 @@ class Evaluable(types.Singleton):
     return self.__class__.__name__
 
   def eval(self, **evalargs):
-    if '_cache' in evalargs:
-      warnings.deprecation('The _cache argument is deprecated as of version 5 and can safely be removed.')
     values = [evalargs]
     for op, indices in self.serialized:
       try:
