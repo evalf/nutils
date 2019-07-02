@@ -1457,20 +1457,16 @@ class SimplexTopology(Topology):
   __slots__ = 'simplices', 'references', 'transforms', 'opposites'
   __cache__ = 'connectivity'
 
-  @types.aspreprocessor
-  @types.apply_annotations
-  def _preprocess_init(self, simplices:types.frozenarray[types.strictint], transforms):
-    ntransforms, nverts = simplices.shape
-    if not isinstance(transforms, transformseq.Transforms):
-      transforms = transformseq.PlainTransforms(transforms, nverts-1)
-    else:
-      assert len(transforms) == ntransforms
-      assert transforms.fromdims == nverts-1
-    return (self, simplices, transforms), {}
+  def _renumber(simplices):
+    simplices = numpy.asarray(simplices)
+    keep = numpy.zeros(simplices.max()+1, dtype=bool)
+    keep[simplices.flat] = True
+    return types.frozenarray(simplices if keep.all() else (numpy.cumsum(keep)-1)[simplices], copy=False)
 
-  @_preprocess_init
-  def __init__(self, simplices, transforms):
+  @types.apply_annotations
+  def __init__(self, simplices:_renumber, transforms:transformseq.stricttransforms):
     assert simplices.shape == (len(transforms), transforms.fromdims+1)
+    assert numpy.greater(simplices[:,1:], simplices[:,:-1]).all(), 'nodes should be sorted'
     self.simplices = simplices
     references = elementseq.asreferences([element.getsimplex(transforms.fromdims)], transforms.fromdims)*len(transforms)
     super().__init__(references, transforms, transforms)

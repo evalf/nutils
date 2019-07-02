@@ -444,7 +444,7 @@ def gmsh(fname:util.readtext, name='gmsh'):
 
   # create simplex topology
   root = transform.Identifier(ndims, name)
-  topo = topology.SimplexTopology(inodesbydim[ndims], [(root, transform.Simplex(c)) for c in nodes[geomdofs]])
+  topo = topology.SimplexTopology(inodesbydim[ndims], transformseq.PlainTransforms([(root, transform.Simplex(c)) for c in nodes[geomdofs]], ndims))
   log.info('created topology consisting of {} elements'.format(len(topo)))
 
   if tagnamesbydim[ndims-1]: # separate boundary and interface elements by tag
@@ -555,7 +555,7 @@ def unitsquare(nelems, etype):
 
     v = numpy.arange(nelems+1, dtype=float)
     coords = numeric.meshgrid(v, v).reshape(2,-1).T
-    topo = topology.SimplexTopology(simplices, [(root, transform.Simplex(coords[s])) for s in simplices])
+    topo = topology.SimplexTopology(simplices, transformseq.PlainTransforms([(root, transform.Simplex(coords[s])) for s in simplices], 2))
 
     if etype == 'mixed':
       references = list(topo.references)
