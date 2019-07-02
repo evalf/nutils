@@ -3,7 +3,7 @@ Getting Started
 
 Nutils can be installed via the `Python Package Index
 <https://pypi.org/project/nutils/>`_ or cloned from `Github
-<https://github.com/nutils/nutils>`_. Once properly configured, the best way to
+<https://github.com/evalf/nutils>`_. Once properly configured, the best way to
 get going is by reading the :ref:`tutorial` and by studying the :ref:`examples`
 that demonstrate implementations of several solid and fluid mechanics problems.
 
@@ -19,11 +19,11 @@ about which to use, a safe option is to go with the `official installer
 <https://www.python.org/downloads/>`_.
 
 With Python installed, the recommended way to install Nutils is to clone `the
-repository <https://github.com/nutils/nutils>`_, followed by an editable
+repository <https://github.com/evalf/nutils>`_, followed by an editable
 installation using `pip <https://github.com/pypa/pip>`_ (included in the
 standard installer)::
 
-    $ git clone https://github.com/nutils/nutils.git
+    $ git clone https://github.com/evalf/nutils.git
     $ python3 -m pip install --user --editable nutils
 
 This will install Nutils locally along with all dependencies. Afterward a
