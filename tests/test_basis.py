@@ -15,7 +15,7 @@ class basis(TestCase):
     self.basis = self.domain.basis(self.btype, degree=self.degree)
     self.gauss = 'gauss{}'.format(2*self.degree)
 
-  @parametrize.enable_if(lambda btype, **params: btype != 'discont' and degree != 0)
+  @parametrize.enable_if(lambda btype, degree, boundary, **params: btype != 'discont' and degree != 0 and not boundary)
   def test_continuity(self):
     funcsp = self.basis
     for regularity in (range(self.degree) if self.btype=='spline' else [0]):
