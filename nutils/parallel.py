@@ -112,34 +112,4 @@ class range:
       self._index.value = iiter + 1
     return iiter
 
-def pariter(items, nprocs):
-  '''iterate in parallel
-
-  Fork into ``nprocs`` subprocesses, then yield items from iterable such that
-  all processes receive a nonoverlapping subset of the total.
-
-  NOTE: Pariter is deprecated because a child proces may not be ended if it
-  forcably breaks out of the loop. Instead a :class:`fork` context should be
-  used in combination with a shared :class:`range` interator.
-
-  Parameters
-  ----------
-  iterable :
-      The collection of items to be distributed over processors
-  nprocs : :class:`int`
-      Maximum number of processers to use
- 
-  Yields
-  ------
-      Items from iterable, distributed over at most nprocs processors.
-  '''
-
-  warnings.deprecation('pariter is deprecated, use fork, range instead')
-  if not hasattr(items, '__getitem__'):
-    items = tuple(items)
-  indices = range(len(items))
-  with fork(nprocs):
-    for index in indices:
-      yield items[index]
-
 # vim:sw=2:sts=2:et
