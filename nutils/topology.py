@@ -127,12 +127,6 @@ class Topology(types.Singleton):
     return ProductTopology(self, other)
 
   @property
-  def edict(self):
-    '''transform -> ielement mapping'''
-    warnings.deprecation('edict is deprecated, use Topology.transforms.index instead')
-    return {trans: i for i, trans in enumerate(self.transforms)}
-
-  @property
   def border_transforms(self):
     indices = set()
     for btrans in self.boundary.transforms:
