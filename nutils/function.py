@@ -3023,7 +3023,7 @@ class Opposite(Array):
   def prepare_eval(*args, opposite=None, **kwargs):
     self, = args
     if opposite is None:
-      raise Exception('opposite is undefined') from e
+      raise Exception('opposite is undefined')
     return self._value.prepare_eval(opposite=not opposite, **kwargs)
 
   def _derivative(self, var, seen):
