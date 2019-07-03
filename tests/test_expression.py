@@ -461,11 +461,23 @@ class parse(TestCase):
       "1 + 1_i,i + 1", "",
       "    ^^^^^")
 
+  # NEW GRAD
+
+  def test_newgradient(self): self.assert_ast('dx_j:a2_i', 'ij', ('grad', v._a2, v._x))
+  def test_newgradient_trace(self): self.assert_ast('dx_i:a2_i', '', ('trace', ('grad', v._a2, v._x), _(0), _(1)))
+  def test_newgradient_double_trace(self): self.assert_ast('dx_k:(dx_j:a422_ijk)', 'i', ('trace', ('grad', ('group', ('trace', ('grad', v._a422, v._x), _(1), _(3))), v._x), _(1), _(2)))
+
   # DERIVATIVE
 
   def test_derivative0(self): self.assert_ast('(2 ?arg + 1)_,?arg', '', ('derivative', ('group', ('add', ('mul', _(2), ('arg', _('arg'))), _(1))), ('arg', _('arg'))))
   def test_derivative1(self): self.assert_ast('(a2_i + ?arg_i)_,?arg_j', 'ij', ('derivative', ('group', ('add', v._a2, ('arg', _('arg'), _(2)))), ('arg', _('arg'), _(2))))
   def test_derivative2(self): self.assert_ast('(a23_ij + ?arg_ij)_,?arg_kj', 'ik', ('trace', ('derivative', ('group', ('add', v._a23, ('arg', _('arg'), _(2), _(3)))), ('arg', _('arg'), _(2), _(3))), _(1), _(3)))
+
+  # NEW DERIVATIVE
+
+  def test_newderivative0(self): self.assert_ast('d?arg:(2 ?arg + 1)', '', ('derivative', ('group', ('add', ('mul', _(2), ('arg', _('arg'))), _(1))), ('arg', _('arg'))))
+  def test_newderivative1(self): self.assert_ast('d?arg_j:(a2_i + ?arg_i)', 'ij', ('derivative', ('group', ('add', v._a2, ('arg', _('arg'), _(2)))), ('arg', _('arg'), _(2))))
+  def test_newderivative2(self): self.assert_ast('d?arg_kj:(a23_ij + ?arg_ij)', 'ik', ('trace', ('derivative', ('group', ('add', v._a23, ('arg', _('arg'), _(2), _(3)))), ('arg', _('arg'), _(2), _(3))), _(1), _(3)))
 
   # NORMAL
 

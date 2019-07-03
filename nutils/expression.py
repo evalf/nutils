@@ -671,6 +671,27 @@ class _ExpressionParser:
       geometry_name = self._consume_assert_equal('geometry').data
       geom = self._get_geometry(geometry_name)
       value = _Array.wrap(('jacobian', _(geom), _(None)), '', ())
+    elif self._next.type == 'derivative':
+      self._consume()
+      target = self._consume()
+      assert target.type in ('geometry', 'argument')
+      if self._next.type == 'indices':
+        token = self._consume()
+        indices = token.data
+        indices_start = token.pos
+      else:
+        indices = ''
+        indices_start = 0
+      if target.type == 'geometry':
+        geom = self._get_geometry(target.data)
+      elif target.type == 'argument':
+        assert target.data.startswith('?')
+        arg = self._get_arg(target.data[1:], indices, indices_start)
+      func = self.parse_var()
+      if target.type == 'geometry':
+        return func.grad(indices, geom, 'grad')
+      else:
+        return func.derivative(arg, indices)
     elif self._next.type == 'eye':
       self._consume()
       if self._next.type == 'indices':
@@ -926,6 +947,14 @@ class _ExpressionParser:
       if m:
         tokens.append(_Token('old-jacobian', m.group(0)[:1], pos))
         tokens.append(_Token('geometry', m.group(0)[2:], pos+2))
+        pos += m.end()
+        continue
+      m = re.match(r'd(\??[a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)(_[a-zA-Z0-9]+)?:', self.expression[pos:])
+      if m:
+        tokens.append(_Token('derivative', 'd', pos))
+        tokens.append(_Token('argument' if m.group(1).startswith('?') else 'geometry', m.group(1), pos+m.start(1)))
+        if m.group(2):
+          tokens.append(_Token('indices', m.group(2)[1:], pos+m.start(2)+1))
         pos += m.end()
         continue
       m = re.match(r'({}):([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)_([a-zA-Z0-9])'.format('|'.join(map(re.escape, self.normal_symbols))), self.expression[pos:])
