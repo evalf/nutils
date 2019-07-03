@@ -44,7 +44,7 @@ class Topology(types.Singleton):
   'topology base class'
 
   __slots__ = 'references', 'transforms', 'opposites', 'ndims'
-  __cache__ = 'border_transforms', 'simplex', 'boundary', 'interfaces'
+  __cache__ = 'border_transforms', 'boundary', 'interfaces'
 
   @types.apply_annotations
   def __init__(self, references:elementseq.strictreferences, transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms):
@@ -63,15 +63,6 @@ class Topology(types.Singleton):
 
   def __len__(self):
     return len(self.references)
-
-  @property
-  def elements(self):
-    warnings.deprecation('Topology.elements is deprecated, use Topology.references and Topology.transforms instead')
-    return tuple(self)
-
-  def __iter__(self):
-    warnings.deprecation('Topology.__iter__ is deprecated, use Topology.references and Topology.transforms instead')
-    return iter(map(element.Element, self.references, self.transforms, self.opposites))
 
   def getitem(self, item):
     return EmptyTopology(self.ndims)
@@ -124,14 +115,6 @@ class Topology(types.Singleton):
   def __add__(self, other):
     return self | other
 
-  def __contains__(self, element):
-    warnings.deprecation("Topology.__contains__ is deprecated, use 'elem.transform in topo.transforms' instead")
-    try:
-      ielem = self.transforms.index(element.transform)
-    except ValueError:
-      return False
-    return self.references[ielem] == element.reference and self.opposites[ielem] == element.opposite
-
   def __sub__(self, other):
     assert isinstance(other, Topology) and other.ndims == self.ndims
     return other.__rsub__(self)
@@ -142,12 +125,6 @@ class Topology(types.Singleton):
 
   def __mul__(self, other):
     return ProductTopology(self, other)
-
-  @property
-  def edict(self):
-    '''transform -> ielement mapping'''
-    warnings.deprecation('edict is deprecated, use Topology.transforms.index instead')
-    return {trans: i for i, trans in enumerate(self.transforms)}
 
   @property
   def border_transforms(self):
@@ -339,19 +316,6 @@ class Topology(types.Singleton):
       assert numcons == verify, 'number of constraints does not meet expectation: {} != {}'.format(numcons, verify)
 
     return constrain
-
-  @property
-  def simplex(self):
-    warnings.deprecation('Topology.simplex is deprecated, use Topology.sample(...).tri instead')
-    references = []
-    transforms = []
-    opposites = []
-    for ref, trans, opp in zip(self.references, self.transforms, self.opposites):
-      for simplextrans, simplexref in ref.simplices:
-        references.append(simplexref)
-        transforms.append(trans+(simplextrans,))
-        opposites.append(opp+(simplextrans,))
-    return UnstructuredTopology(references, transforms, opposites, ndims=self.ndims)
 
   def refined_by(self, refine):
     'create refined space by refining dofs in existing one'
@@ -622,21 +586,6 @@ class Topology(types.Singleton):
     if len(self.transforms) == 0 or self.opposites != self.transforms:
       transforms += self.opposites[uielems],
     return sample.Sample(transforms, points_, index)
-
-  def supp(self, basis, mask=None):
-    warnings.deprecation('Topology.supp is deprecated, use basis.get_support instead')
-    if not isinstance(basis, function.Basis):
-      raise ValueError("argument 'basis' should be of type 'Basis' but got {!r}".format(basis))
-    mask = numeric.asboolean(mask, size=len(basis), ordered=False)
-    subset = []
-    for ielem in range(len(self.transforms)):
-      dofs = basis.get_dofs(ielem)
-      if mask[dofs].any():
-        subset.append(ielem)
-    if not subset:
-      return EmptyTopology(self.ndims)
-    subset = types.frozenarray(subset, dtype=int)
-    return self.subset(self[subset], newboundary='supp', strict=True)
 
   def revolved(self, geom):
     assert geom.ndim == 1
@@ -1862,7 +1811,7 @@ class HierarchicalTopology(Topology):
   def refined_by(self, refine):
     refine = tuple(refine)
     if not all(map(numeric.isint, refine)):
-      refine = tuple(self.transforms.index_with_tail(item.transform if isinstance(item,element.Element) else item)[0] for item in refine)
+      refine = tuple(self.transforms.index_with_tail(item)[0] for item in refine)
     refine = numpy.unique(numpy.array(refine, dtype=int))
     splits = numpy.searchsorted(refine, self._offsets, side='left')
     indices_per_level = list(map(list, self._indices_per_level))+[[]]

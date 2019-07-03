@@ -93,9 +93,7 @@ def count(title, start=0, step=1):
   return iter(title, itertools.count(start, step))
 
 @contextlib.contextmanager
-def open(filename, mode, *, level='user', exists=None):
-  if exists is not None:
-    warnings.deprecation('the "exists" argument is deprecated and will be ignored')
+def open(filename, mode, *, level='user'):
   levels = 'debug', 'info', 'user', 'warning', 'error'
   if level not in levels:
     raise Exception('the "level" argument should be on of {}'.format(', '.join(levels)))

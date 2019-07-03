@@ -151,8 +151,6 @@ class Evaluable(types.Singleton):
     return self.__class__.__name__
 
   def eval(self, **evalargs):
-    if '_cache' in evalargs:
-      warnings.deprecation('The _cache argument is deprecated as of version 5 and can safely be removed.')
     values = [evalargs]
     for op, indices in self.serialized:
       try:
@@ -3967,33 +3965,8 @@ def eig(arg, axes=(-2,-1), symmetric=False):
   eigval, eigvec = Eig(transposed, symmetric)
   return Tuple([transpose(diagonalize(eigval), _invtrans(trans)), transpose(eigvec, _invtrans(trans))])
 
-def polyfunc(coeffs, dofs, ndofs, transforms):
-  '''
-  Create an inflated :class:`Polyval` with coefficients ``coeffs`` and
-  corresponding dofs ``dofs``.  The arguments ``coeffs``, ``dofs`` and
-  ``transforms`` are assumed to have matching order.
-  '''
-  warnings.deprecation('polyfunc is deprecated, use PlainBasis instead')
-  return PlainBasis(coeffs, dofs, ndofs, transforms)
-
-def elemwise(*args, **kwargs):
-  if 'fmap' in kwargs or len(args) >= 1 and isinstance(args[0], dict):
-    warnings.deprecation('passing a dictionary with transforms and values to elemwise is deprecated, pass the transforms and values as separate arguments instead')
-    return _deprecated_elemwise(*args, **kwargs)
-  else:
-    return _new_elemwise(*args, **kwargs)
-
 @types.apply_annotations
-def _new_elemwise(transforms:transformseq.stricttransforms, values:types.tuple[types.frozenarray]):
-  index, tail = TransformsIndexWithTail(transforms, TRANS)
-  return Elemwise(values, index, dtype=float)
-
-def _deprecated_elemwise(fmap, shape, default=None):
-  if default is not None:
-    raise NotImplemented('default is not supported anymore')
-  transforms = tuple(sorted(fmap, key=lambda trans: tuple(map(id, trans))))
-  values = tuple(fmap[trans] for trans in transforms)
-  transforms = transformseq.PlainTransforms(transforms, transforms[0][-1].fromdims)
+def elemwise(transforms:transformseq.stricttransforms, values:types.tuple[types.frozenarray]):
   index, tail = TransformsIndexWithTail(transforms, TRANS)
   return Elemwise(values, index, dtype=float)
 
