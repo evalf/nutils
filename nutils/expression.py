@@ -24,7 +24,6 @@ expression.
 '''
 
 import re, collections, functools
-from . import warnings
 
 
 # Convenience function to create a constant in ExpressionAST (details in
@@ -925,7 +924,6 @@ class _ExpressionParser:
         continue
       m = re.match(r'd:[a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*', self.expression[pos:])
       if m:
-        warnings.deprecation("The notation 'd:x' for the jacobian of 'x' is deprecated. Use 'J:x' instead, or 'J^:x' on boundaries.")
         tokens.append(_Token('old-jacobian', m.group(0)[:1], pos))
         tokens.append(_Token('geometry', m.group(0)[2:], pos+2))
         pos += m.end()
@@ -947,7 +945,6 @@ class _ExpressionParser:
         continue
       m_normal = _string_startswith(self.expression, self.normal_symbols, start=pos)
       if m_normal and len(m_variable) <= len(m_normal):
-        warnings.deprecation("The notation 'n_i' for the normal of 'x' (or some other default geometry) is deprecated. Use 'n:x_i' instead.")
         tokens.append(_Token('normal', m_normal, pos))
         pos += len(m_normal)
         continue

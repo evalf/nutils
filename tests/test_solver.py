@@ -164,7 +164,7 @@ class optimize(TestCase):
     numpy.testing.assert_almost_equal(cons, numpy.take([1,numpy.nan], [0,1,1,0,1,1,0,1,1]), decimal=15)
 
   def test_nonlinear(self):
-    err = self.domain.boundary['bottom'].integral('(u + .25 u^3 - 1.25)^2 J^:geom' @ self.ns, degree=6)
+    err = self.domain.boundary['bottom'].integral('(u + .25 u^3 - 1.25)^2 d:geom' @ self.ns, degree=6)
     cons = self.optimize('dofs', err, droptol=1e-15, newtontol=1e-15)
     numpy.testing.assert_almost_equal(cons, numpy.take([1,numpy.nan], [0,1,1,0,1,1,0,1,1]), decimal=15)
 
@@ -190,9 +190,9 @@ class burgers(TestCase):
     ns.basis = domain.basis('discont', degree=1)
     ns.u = 'basis_n ?dofs_n'
     ns.f = '.5 u^2'
-    self.residual = domain.integral('-basis_n,0 f J:x' @ ns, degree=2)
-    self.residual += domain.interfaces.integral('-[basis_n] n_0 ({f} - .5 [u] n_0) J^:x' @ ns, degree=4)
-    self.inertia = domain.integral('basis_n u J:x' @ ns, degree=5)
+    self.residual = domain.integral('-basis_n,0 f d:x' @ ns, degree=2)
+    self.residual += domain.interfaces.integral('-[basis_n] n_0 ({f} - .5 [u] n_0) d:x' @ ns, degree=4)
+    self.inertia = domain.integral('basis_n u d:x' @ ns, degree=5)
     self.lhs0 = numpy.sin(numpy.arange(len(ns.basis))) # "random" initial vector
 
   def test_iters(self):
@@ -213,8 +213,8 @@ class theta_time(TestCase):
     ns = function.Namespace()
     topo, ns.x = mesh.rectilinear([1])
     ns.u_n = '?u_n + <0>_n'
-    inertia = topo.integral('?u_n J:x' @ ns, degree=0)
-    residual = topo.integral('-<1>_n sin(?t) J:x' @ ns, degree=0)
+    inertia = topo.integral('?u_n d:x' @ ns, degree=0)
+    residual = topo.integral('-<1>_n sin(?t) d:x' @ ns, degree=0)
     timestep = 0.1
     udesired = numpy.array([0.])
     uactualiter = iter(method(target='u', residual=residual, inertia=inertia, timestep=timestep, lhs0=udesired, timetarget='t'))

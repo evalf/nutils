@@ -40,11 +40,11 @@ def main(nelems: 'number of elements along edge' = 10,
   ns.strain_ij = '.5 (u_i,j + u_j,i)'
   ns.energy = 'lmbda strain_ii strain_jj + 2 mu strain_ij strain_ij'
 
-  sqr = domain.boundary['left'].integral('u_k u_k J^:x' @ ns, degree=degree*2)
-  sqr += domain.boundary['right'].integral('((u_0 - x_1 sin(2 angle) - cos(angle) + 1)^2 + (u_1 - x_1 (cos(2 angle) - 1) + sin(angle))^2) J^:x' @ ns, degree=degree*2)
+  sqr = domain.boundary['left'].integral('u_k u_k d:x' @ ns, degree=degree*2)
+  sqr += domain.boundary['right'].integral('((u_0 - x_1 sin(2 angle) - cos(angle) + 1)^2 + (u_1 - x_1 (cos(2 angle) - 1) + sin(angle))^2) d:x' @ ns, degree=degree*2)
   cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
 
-  energy = domain.integral('energy J:x' @ ns, degree=degree*2)
+  energy = domain.integral('energy d:x' @ ns, degree=degree*2)
   lhs0 = nutils.solver.optimize('lhs', energy, constrain=cons)
   X, energy = bezier.eval(['X_i', 'energy'] @ ns, lhs=lhs0)
   nutils.export.triplot('linear.png', X, energy, tri=bezier.tri, hull=bezier.hull)
@@ -52,7 +52,7 @@ def main(nelems: 'number of elements along edge' = 10,
   ns.strain_ij = '.5 (u_i,j + u_j,i + u_k,i u_k,j)'
   ns.energy = 'lmbda strain_ii strain_jj + 2 mu strain_ij strain_ij'
 
-  energy = domain.integral('energy J:x' @ ns, degree=degree*2)
+  energy = domain.integral('energy d:x' @ ns, degree=degree*2)
   lhs1 = nutils.solver.minimize('lhs', energy, lhs0=lhs0, constrain=cons).solve(restol)
   X, energy = bezier.eval(['X_i', 'energy'] @ ns, lhs=lhs1)
   nutils.export.triplot('nonlinear.png', X, energy, tri=bezier.tri, hull=bezier.hull)

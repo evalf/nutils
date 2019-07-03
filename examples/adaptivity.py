@@ -40,17 +40,17 @@ def main(etype: 'type of elements (square/triangle/mixed)' = 'square',
     ns.u = 'basis_n ?lhs_n'
     ns.du = ns.u - exact
 
-    sqr = domain.boundary['trimmed'].integral('u^2 J^:x' @ ns, degree=degree*2)
+    sqr = domain.boundary['trimmed'].integral('u^2 d:x' @ ns, degree=degree*2)
     cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
 
-    sqr = domain.boundary.integral('du^2 J^:x' @ ns, degree=7)
+    sqr = domain.boundary.integral('du^2 d:x' @ ns, degree=7)
     cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
 
-    res = domain.integral('basis_n,k u_,k J:x' @ ns, degree=degree*2)
+    res = domain.integral('basis_n,k u_,k d:x' @ ns, degree=degree*2)
     lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
 
     ndofs = len(ns.basis)
-    error = domain.integral('<du^2, du_,k du_,k>_i J:x' @ ns, degree=7).eval(lhs=lhs)**.5
+    error = domain.integral('<du^2, du_,k du_,k>_i d:x' @ ns, degree=7).eval(lhs=lhs)**.5
     rate, offset = linreg.add(numpy.log(len(ns.basis)), numpy.log(error))
     nutils.log.user('ndofs: {ndofs}, L2 error: {error[0]:.2e} ({rate[0]:.2f}), H1 error: {error[1]:.2e} ({rate[1]:.2f})'.format(ndofs=len(ns.basis), error=error, rate=rate))
 
@@ -64,8 +64,8 @@ def main(etype: 'type of elements (square/triangle/mixed)' = 'square',
 
     refdom = domain.refined
     ns.refbasis = refdom.basis(btype, degree=degree)
-    indicator = refdom.integral('refbasis_n,k u_,k J:x' @ ns, degree=degree*2).eval(lhs=lhs)
-    indicator -= refdom.boundary.integral('refbasis_n u_,k n:x_k J^:x' @ ns, degree=degree*2).eval(lhs=lhs)
+    indicator = refdom.integral('refbasis_n,k u_,k d:x' @ ns, degree=degree*2).eval(lhs=lhs)
+    indicator -= refdom.boundary.integral('refbasis_n u_,k n_k d:x' @ ns, degree=degree*2).eval(lhs=lhs)
     supp = ns.refbasis.get_support(indicator**2 > numpy.mean(indicator**2))
 
     domain = domain.refined_by(ns.refbasis.transforms[supp])

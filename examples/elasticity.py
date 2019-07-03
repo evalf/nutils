@@ -30,11 +30,11 @@ def main(nelems: 'number of elements along edge' = 10,
   ns.strain_ij = '(u_i,j + u_j,i) / 2'
   ns.stress_ij = 'lmbda strain_kk δ_ij + 2 mu strain_ij'
 
-  sqr = domain.boundary['left'].integral('u_k u_k J^:x' @ ns, degree=degree*2)
-  sqr += domain.boundary['right'].integral('(u_0 - .5)^2 J^:x' @ ns, degree=degree*2)
+  sqr = domain.boundary['left'].integral('u_k u_k d:x' @ ns, degree=degree*2)
+  sqr += domain.boundary['right'].integral('(u_0 - .5)^2 d:x' @ ns, degree=degree*2)
   cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
 
-  res = domain.integral('basis_ni,j stress_ij J:x' @ ns, degree=degree*2)
+  res = domain.integral('basis_ni,j stress_ij d:x' @ ns, degree=degree*2)
   lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
 
   bezier = domain.sample('bezier', 5)

@@ -47,15 +47,15 @@ def main(nelems: 'number of elements' = 20,
   ns.m = 'mbasis_n ?lhs_n'
   ns.f = '(6 c0 - 2 c0^3 - 4 c) / epsilon^2' # convex/concave splitting of double well potential derivative
 
-  res = domain.integral('(epsilon^2 mbasis_n,k m_,k + cbasis_n,k c_,k) J:x' @ ns, degree=7)
-  res -= domain.integral('cbasis_n (m + f) J:x' @ ns, degree=7)
-  res += domain.boundary.integral('cbasis_n ewall J^:x' @ ns, degree=7)
-  inertia = domain.integral('mbasis_n c J:x' @ ns, degree=7)
+  res = domain.integral('(epsilon^2 mbasis_n,k m_,k + cbasis_n,k c_,k) d:x' @ ns, degree=7)
+  res -= domain.integral('cbasis_n (m + f) d:x' @ ns, degree=7)
+  res += domain.boundary.integral('cbasis_n ewall d:x' @ ns, degree=7)
+  inertia = domain.integral('mbasis_n c d:x' @ ns, degree=7)
 
   energy = dict( # energy breakdown
-    mixture = domain.integral('(c^2 - 1)^2 J:x / 2 epsilon^2' @ ns, degree=4),
-    interfaces = domain.integral('.5 c_,k c_,k J:x' @ ns, degree=4),
-    wall = domain.boundary.integral('(abs(ewall) + ewall c) J^:x' @ ns, degree=4))
+    mixture = domain.integral('(c^2 - 1)^2 d:x / 2 epsilon^2' @ ns, degree=4),
+    interfaces = domain.integral('.5 c_,k c_,k d:x' @ ns, degree=4),
+    wall = domain.boundary.integral('(abs(ewall) + ewall c) d:x' @ ns, degree=4))
 
   numpy.random.seed(seed)
   lhs0 = numpy.random.normal(0, .5, ns.cbasis.shape) # initial condition

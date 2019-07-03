@@ -4010,7 +4010,6 @@ def J(geometry, ndims=None):
   ndims)``).
   '''
   if ndims is None:
-    warnings.deprecation('omitting ndims is deprecated')
     return DelayedJacobian(geometry)
   elif ndims < 0:
     ndims += len(geometry)
