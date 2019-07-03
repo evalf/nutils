@@ -38,6 +38,10 @@ class gmsh(TestCase):
     super().setUp()
     self.domain, self.geom = mesh.gmsh(MESHDIR/'{0.data}_p{0.degree}.msh'.format(self))
 
+  def test_rootcoords(self):
+    geom, rootgeom = self.domain.sample('bezier', 2).eval([self.geom, function.rootcoords(self.domain.ndims)])
+    numpy.testing.assert_almost_equal(geom, rootgeom, decimal=10)
+
   def test_volume(self):
     volume = self.domain.integrate(function.J(self.geom), ischeme='gauss1')
     numpy.testing.assert_almost_equal(volume, 1, decimal=10)
@@ -120,14 +124,13 @@ class gmshrect(TestCase):
         numpy.testing.assert_almost_equal(volumes, 1, decimal=10)
 
   def test_iface(self):
-    ax, ay = self.domain.interfaces['iface'].sample('uniform', 1).eval(self.geom).T
-    bx, by = self.domain['left'].boundary['iface'].sample('uniform', 1).eval(self.geom).T
-    cx, cy = self.domain['right'].boundary['iface'].sample('uniform', 1).eval(self.geom).T
-    self.assertTrue(numpy.equal(ax, 1).all())
-    self.assertTrue(numpy.equal(bx, 1).all())
-    self.assertTrue(numpy.equal(cx, 1).all())
-    self.assertTrue(min(ay) == min(by) == min(cy))
-    self.assertTrue(max(ay) == max(by) == max(cy))
+    for name in 'iface', 'left', 'right':
+      with self.subTest(name):
+        topo = (self.domain.interfaces if name == 'iface' else self.domain[name].boundary)['iface']
+        x1, x2 = topo.sample('uniform', 2).eval([self.geom, function.opposite(self.geom)])
+        self.assertAllEqual(x1[:,0], 1)
+        self.assertAllEqual(x2[:,0], 1)
+        self.assertAllEqual(x1, x2)
 
 class gmshperiodic(TestCase):
 
