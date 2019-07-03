@@ -34,7 +34,7 @@ def main(nrefine = 2,
     numpy.take([0, 1, 1], indices)])
   geom = (nurbsbasis[:,numpy.newaxis] * controlpoints).sum(0)
 
-  radiuserr = domain.boundary['left'].integral((nutils.function.norm2(geom) - radius)**2 * nutils.function.J(geom0, -1), degree=9).eval()**.5
+  radiuserr = domain.boundary['left'].integral((nutils.function.norm2(geom) - radius)**2 * nutils.function.J(geom0), degree=9).eval()**.5
   nutils.log.info('hole radius exact up to L2 error {:.2e}'.format(radiuserr))
 
   # refine domain
@@ -60,13 +60,13 @@ def main(nrefine = 2,
   ns.uexact_i = 'scale (x_i ((k + 1) (0.5 + R2) + (1 - R2) R2 (x_0^2 - 3 x_1^2) / r2) - 2 δ_i1 x_1 (1 + (k - 1 + R2) R2))'
   ns.du_i = 'u_i - uexact_i'
 
-  sqr = domain.boundary['top,bottom'].integral('(u_i n:x_i)^2 J^:x' @ ns, degree=9)
+  sqr = domain.boundary['top,bottom'].integral('(u_i n_i)^2 d:x' @ ns, degree=9)
   cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
-  sqr = domain.boundary['right'].integral('du_k du_k J^:x' @ ns, degree=20)
+  sqr = domain.boundary['right'].integral('du_k du_k d:x' @ ns, degree=20)
   cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
 
   # construct residual
-  res = domain.integral('ubasis_ni,j stress_ij J:x' @ ns, degree=9)
+  res = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=9)
 
   # solve system
   lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
@@ -77,7 +77,7 @@ def main(nrefine = 2,
   nutils.export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull, clim=(numpy.nanmin(stressxx), numpy.nanmax(stressxx)))
 
   # evaluate error
-  err = domain.integral('<du_k du_k, du_i,j du_i,j>_n J:x' @ ns, degree=9).eval(lhs=lhs)**.5
+  err = domain.integral('<du_k du_k, du_i,j du_i,j>_n d:x' @ ns, degree=9).eval(lhs=lhs)**.5
   nutils.log.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
   return err, cons, lhs
