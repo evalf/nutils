@@ -1650,28 +1650,54 @@ class SubsetTopology(Topology):
   @property
   def boundary(self):
     baseboundary = self.basetopo.boundary
-    superboundary = super().boundary
+    baseconnectivity = self.basetopo.connectivity
     brefs = [ref.empty for ref in baseboundary.references]
-    trimmedindices = []
-    for i, (ref, trans) in enumerate(zip(superboundary.references, superboundary.transforms)):
-      try:
-        ibelem = baseboundary.transforms.index(trans)
-      except ValueError:
-        trimmedindices.append(i)
-      else:
-        brefs[ibelem] = ref
+    trimmedreferences = []
+    trimmedtransforms = []
+    trimmedopposites = []
+    for ielem, newref in enumerate(self.refs):
+      if not newref:
+        continue
+      elemtrans = self.basetopo.transforms[ielem]
+      # The first edges of newref by convention share location with the edges
+      # of the original reference. We can therefore use baseconnectivity to
+      # locate opposing edges.
+      ioppelems = baseconnectivity[ielem]
+      for (edgetrans, edgeref), ioppelem in zip(newref.edges, ioppelems):
+        if not edgeref:
+          continue
+        if ioppelem == -1:
+          # If the edge had no opposite in basetopology then it must already by
+          # in baseboundary, so we can use index to locate it.
+          brefs[baseboundary.transforms.index(elemtrans+(edgetrans,))] = edgeref
+        else:
+          # If the edge did have an opposite in basetopology then there is a
+          # possibility this opposite (partially) disappeared, in which case
+          # the exposed part is added to the trimmed group.
+          ioppedge = baseconnectivity[ioppelem].index(ielem)
+          oppref = self.refs[ioppelem]
+          edgeref -= oppref.edge_refs[ioppedge]
+          if edgeref:
+            trimmedreferences.append(edgeref)
+            trimmedtransforms.append(elemtrans+(edgetrans,))
+            trimmedopposites.append(self.basetopo.transforms[ioppelem]+(oppref.edge_transforms[ioppedge],))
+      # The last edges of newref (beyond the number of edges of the original)
+      # cannot have opposites and are added to the trimmed group directly.
+      for edgetrans, edgeref in newref.edges[len(ioppelems):]:
+        trimmedreferences.append(edgeref)
+        trimmedtransforms.append(elemtrans+(edgetrans,))
+        trimmedopposites.append(elemtrans+(edgetrans.flipped,))
     origboundary = SubsetTopology(baseboundary, brefs)
-    trimmedindices = numpy.array(trimmedindices, dtype=int)
-    trimmedreferences = superboundary.references[trimmedindices]
-    trimmedtransforms = superboundary.transforms[trimmedindices]
-    trimmedopposites = superboundary.opposites[trimmedindices]
     if isinstance(self.newboundary, Topology):
       trimmedbrefs = [ref.empty for ref in self.newboundary.references]
       for ref, trans in zip(trimmedreferences, trimmedtransforms):
         trimmedbrefs[self.newboundary.transforms.index(trans)] = ref
       trimboundary = SubsetTopology(self.newboundary, trimmedbrefs)
     else:
-      trimboundary = OrientedGroupsTopology(self.basetopo.interfaces, trimmedreferences, trimmedtransforms, trimmedopposites)
+      trimboundary = OrientedGroupsTopology(self.basetopo.interfaces,
+        elementseq.PlainReferences(trimmedreferences, self.ndims-1),
+        transformseq.PlainTransforms(trimmedtransforms, self.ndims-1),
+        transformseq.PlainTransforms(trimmedopposites, self.ndims-1))
     return DisjointUnionTopology([trimboundary, origboundary], names=[self.newboundary] if isinstance(self.newboundary,str) else [])
 
   @property

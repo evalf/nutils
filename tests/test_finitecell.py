@@ -356,3 +356,54 @@ class trim_conforming(TestCase):
     self.assertEqual(len(self.domain5.interfaces), 12)
     self.assertEqual(len(self.domain5.boundary), 12)
     self.assertEqual(len(self.domain5.boundary['trimtopright']), 6)
+
+
+class partialtrim(TestCase):
+
+  # Test setup:
+  # +-----+-----+
+  # |         A |
+  # .           |
+  # + '.  +     +
+  # |    '.     |
+  # | B   |<----|--half of original A-B interface element
+  # +-----+-----+
+
+  def setUp(self):
+    self.topo, geom = mesh.rectilinear([2,2])
+    self.topoA = self.topo.trim(geom[0]-1+geom[1]*(geom[1]-.5), maxrefine=1)
+    self.topoB = self.topo - self.topoA
+
+  def test_topos(self):
+    self.assertEqual(len(self.topoA), 4)
+    self.assertEqual(len(self.topoB), 2)
+
+  def test_boundaries(self):
+    self.assertEqual(len(self.topoA.boundary), 11)
+    self.assertEqual(len(self.topoB.boundary), 8)
+    self.assertEqual(len(self.topoA.boundary['trimmed']), 5)
+    self.assertEqual(len(self.topoB.boundary['trimmed']), 5)
+
+  def test_interfaces(self):
+    self.assertEqual(len(self.topoA.interfaces), 4)
+    self.assertEqual(len(self.topoB.interfaces), 1)
+
+  def test_transforms(self):
+    self.assertEqual(set(self.topoA.boundary['trimmed'].transforms), set(self.topoB.boundary['trimmed'].opposites))
+    self.assertEqual(set(self.topoB.boundary['trimmed'].transforms), set(self.topoA.boundary['trimmed'].opposites))
+
+  def test_opposites(self):
+    ielem = function.elemwise(self.topo.transforms, numpy.arange(4))
+    sampleA = self.topoA.boundary['trimmed'].sample('uniform', 1)
+    sampleB = self.topoB.boundary['trimmed'].sample('uniform', 1)
+    self.assertEqual(set(sampleB.eval(ielem)), {0,1})
+    self.assertEqual(set(sampleB.eval(function.opposite(ielem))), {0,1,2})
+    self.assertEqual(set(sampleA.eval(ielem)), {0,1,2})
+    self.assertEqual(set(sampleA.eval(function.opposite(ielem))), {0,1})
+
+  def test_baseboundaries(self):
+    # the base implementation should create the correct boundary topology but
+    # without interface opposites and without the trimmed group
+    for topo in self.topoA, self.topoB:
+      alttopo = topology.ConnectedTopology(topo.references, topo.transforms, topo.opposites, topo.connectivity)
+      self.assertEqual(dict(zip(alttopo.boundary.transforms, alttopo.boundary.references)), dict(zip(topo.boundary.transforms, topo.boundary.references)))
