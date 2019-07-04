@@ -331,12 +331,19 @@ def gmsh(fname:util.readtext, name='gmsh'):
 
   # split sections
   sections = dict(re.findall(r'^\$(\w+)\n(.*)\n\$End\1$', fname, re.MULTILINE|re.DOTALL))
+  missing = {'MeshFormat', 'PhysicalNames', 'Nodes', 'Elements'}.difference(sections)
+  if missing:
+    raise ValueError('invalid or incomplete gmsh data: missing section {}'.format(', '.join(missing)))
 
-  # discard section MeshFormat
-  sections.pop('MeshFormat', None)
+  # parse section MeshFormat
+  version, filetype, datasize = sections.pop('MeshFormat').split()
+  if not version.startswith('2.'):
+    raise ValueError('gmsh version {} is not supported; please use -format msh2'.format(version))
+  if filetype != '0':
+    raise ValueError('binary gmsh data is not supported')
 
   # parse section PhysicalNames
-  N, *PhysicalNames = sections.pop('PhysicalNames', '0').splitlines()
+  N, *PhysicalNames = sections.pop('PhysicalNames').splitlines()
   assert int(N) == len(PhysicalNames)
   tagmapbydim = {}, {}, {}, {} # tagid->tagname dictionary
   for line in PhysicalNames:
