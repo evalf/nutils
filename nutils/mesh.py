@@ -26,7 +26,7 @@ accompanying geometry function. Meshes can either be generated on the fly, e.g.
 provided at this point.
 """
 
-from . import topology, function, util, element, elementseq, numpy, numeric, transform, transformseq, warnings, types, _
+from . import topology, function, util, element, elementseq, numpy, numeric, transform, transformseq, warnings, types, cache, _
 import os, itertools, re, math, treelog as log
 
 # MESH GENERATORS
@@ -306,8 +306,8 @@ def multipatch(patches, nelems, patchverts=None, name='multipatch'):
   return topo, geom
 
 @types.apply_annotations
-@log.withcontext
-def gmsh(fname:util.readtext, name='gmsh'):
+@cache.function
+def parsegmsh(fname:util.readtext, name='gmsh'):
   """Gmsh parser
 
   Parser for Gmsh files in `.msh` format. Only files with physical groups are
@@ -318,15 +318,10 @@ def gmsh(fname:util.readtext, name='gmsh'):
   ----------
   fname : :class:`str`
       Path to mesh file.
-  name : :class:`str` or :any:`None`
-      Name of parsed topology, defaults to 'gmsh'.
 
   Returns
   -------
-  topo : :class:`nutils.topology.SimplexTopology`
-      Topology of parsed Gmsh file.
-  geom : :class:`nutils.function.Array`
-      Isoparametric map.
+  Keyword arguments for :func:`simplex`
   """
 
   # split sections
@@ -464,7 +459,32 @@ def gmsh(fname:util.readtext, name='gmsh'):
     + [name + ' groups: ' + ', '.join('{} #{}'.format(n, len(e)) for n, e in tags.items())
       for name, tags in (('volume', vtags), ('boundary', btags), ('point', ptags)) if tags]))
 
-  return simplex(nodes=inodesbydim[ndims], cnodes=geomdofs, coords=nodes, tags=vtags, btags=btags, ptags=ptags, name=name)
+  return dict(nodes=inodesbydim[ndims], cnodes=geomdofs, coords=nodes, tags=vtags, btags=btags, ptags=ptags)
+
+@log.withcontext
+def gmsh(fname, name='gmsh'):
+  """Gmsh parser
+
+  Parser for Gmsh files in `.msh` format. Only files with physical groups are
+  supported. See the `Gmsh manual
+  <http://geuz.org/gmsh/doc/texinfo/gmsh.html>`_ for details.
+
+  Parameters
+  ----------
+  fname : :class:`str`
+      Path to mesh file.
+  name : :class:`str` or :any:`None`
+      Name of parsed topology, defaults to 'gmsh'.
+
+  Returns
+  -------
+  topo : :class:`nutils.topology.SimplexTopology`
+      Topology of parsed Gmsh file.
+  geom : :class:`nutils.function.Array`
+      Isoparametric map.
+  """
+
+  return simplex(name=name, **parsegmsh(fname))
 
 def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
   '''Simplex topology.
