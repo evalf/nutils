@@ -23,7 +23,7 @@ The util module provides a collection of general purpose methods.
 """
 
 from . import numeric, config
-import sys, os, numpy, collections.abc, inspect, functools, operator, numbers, pathlib, ctypes, site
+import sys, os, numpy, collections.abc, inspect, functools, operator, numbers, pathlib, ctypes, site, io
 
 supports_outdirfd = os.open in os.supports_dir_fd and os.listdir in os.supports_fd
 
@@ -380,5 +380,32 @@ def loadlib(**libname):
       return ctypes.CDLL(os.path.join(libdir, libname))
     except (OSError, KeyError):
       pass
+
+def readtext(path):
+  '''Read file and return contents
+
+  Args
+  ----
+  path: :class:`os.PathLike`, :class:`str` or :class:`io.TextIOBase`
+      Path-like or file-like object pointing to the data to be read.
+
+  Returns
+  -------
+  :
+      File data as :class:`str`.
+  '''
+
+  if isinstance(path, pathlib.Path):
+    with path.open() as f:
+      return f.read()
+
+  if isinstance(path, str):
+    with open(path) as f:
+      return f.read()
+
+  if isinstance(path, io.TextIOBase):
+    return path.read()
+
+  raise TypeError('readtext requires a path-like or file-like argument')
 
 # vim:sw=2:sts=2:et
