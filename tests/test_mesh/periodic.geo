@@ -1,0 +1,15 @@
+Point(1) = {0,0,0};
+Point(2) = {1,0,0};
+Point(3) = {1,1,0};
+Point(4) = {0,1,0};
+Line(5) = {1,2};
+Line(6) = {2,3};
+Line(7) = {3,4};
+Line(8) = {4,1};
+Line Loop(9) = {5,6,7,8};
+Plane Surface(10) = {9};
+Physical Surface("interior") = {10};
+Physical Line("right") = {6};
+Physical Line("left") = {8};
+Physical Line("periodic") = {5};
+Periodic Line {5} = {-7};

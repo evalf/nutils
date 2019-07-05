@@ -27,7 +27,7 @@ provided at this point.
 """
 
 from . import topology, function, util, element, elementseq, numpy, numeric, transform, transformseq, warnings, types, _
-import os, itertools, pathlib, treelog as log
+import os, itertools, re, treelog as log
 
 # MESH GENERATORS
 
@@ -305,8 +305,9 @@ def multipatch(patches, nelems, patchverts=None, name='multipatch'):
 
   return topo, geom
 
+@types.apply_annotations
 @log.withcontext
-def gmsh(fname, name='gmsh'):
+def gmsh(fname:util.readtext, name='gmsh'):
   """Gmsh parser
 
   Parser for Gmsh files in `.msh` format. Only files with physical groups are
@@ -328,39 +329,17 @@ def gmsh(fname, name='gmsh'):
       Isoparametric map.
   """
 
-  # create lines iterable
-  if isinstance(fname, pathlib.Path):
-    lines = fname.open()
-  elif isinstance(fname, str):
-    if fname.startswith('$MeshFormat'):
-      lines = iter(fname.splitlines())
-    else:
-      lines = open(fname)
-  else:
-    raise ValueError("expected the contents of a Gmsh MSH file (as 'str') or a filename (as 'str' or 'pathlib.Path') but got {!r}".format(fname))
-
   # split sections
-  sections = {}
-  for line in lines:
-    line = line.strip()
-    assert line[0]=='$'
-    sname = line[1:]
-    slines = []
-    for sline in lines:
-      sline = sline.strip()
-      if sline == '$End'+sname:
-        break
-      slines.append(sline)
-    sections[sname] = slines
+  sections = dict(re.findall(r'^\$(\w+)\n(.*)\n\$End\1$', fname, re.MULTILINE|re.DOTALL))
 
   # discard section MeshFormat
   sections.pop('MeshFormat', None)
 
   # parse section PhysicalNames
-  PhysicalNames = sections.pop('PhysicalNames', [0])
-  assert int(PhysicalNames[0]) == len(PhysicalNames)-1
+  N, *PhysicalNames = sections.pop('PhysicalNames', '0').splitlines()
+  assert int(N) == len(PhysicalNames)
   tagmapbydim = {}, {}, {}, {} # tagid->tagname dictionary
-  for line in PhysicalNames[1:]:
+  for line in PhysicalNames:
     nd, tagid, tagname = line.split(' ', 2)
     nd = int(nd)
     tagmapbydim[nd][tagid] = tagname.strip('"')
@@ -371,12 +350,12 @@ def gmsh(fname, name='gmsh'):
     raise NotImplementedError('Physical line groups are not supported in volumetric meshes')
 
   # parse section Nodes
-  Nodes = sections.pop('Nodes')
-  nnodes = len(Nodes)-1
-  assert int(Nodes[0]) == nnodes
+  N, *Nodes = sections.pop('Nodes').splitlines()
+  nnodes = len(Nodes)
+  assert int(N) == nnodes
   nodes = numpy.empty((nnodes, 3))
   nodemap = {}
-  for i, line in enumerate(Nodes[1:]):
+  for i, line in enumerate(Nodes):
     n, *c = line.split()
     nodemap[n] = i
     nodes[i] = c
@@ -386,12 +365,12 @@ def gmsh(fname, name='gmsh'):
     nodes = nodes[:,:2]
 
   # parse section Elements
-  Elements = sections.pop('Elements')
-  assert int(Elements[0]) == len(Elements)-1
+  N, *Elements = sections.pop('Elements').splitlines()
+  assert int(N) == len(Elements)
   inodesbydim = [], [], [], [] # nelems-list of 4-tuples of node numbers
   tagnamesbydim = {}, {}, {}, {} # tag->ielems dictionary
   etype2nd = {'15': 0, '1': 1, '2': 2, '4': 3, '8': 1, '9': 2}
-  for line in Elements[1:]:
+  for line in Elements:
     n, e, t, m, *w = line.split()
     nd = etype2nd[e]
     ntags = int(t) - 1
@@ -404,11 +383,11 @@ def gmsh(fname, name='gmsh'):
   inodesbydim = [numpy.array(e) if e else numpy.empty((0,nd+1), dtype=int) for nd, e in enumerate(inodesbydim)]
 
   # parse section Periodic
-  Periodic = sections.pop('Periodic', [0])
-  nperiodic = int(Periodic[0])
+  N, *Periodic = sections.pop('Periodic', '0').splitlines()
+  nperiodic = int(N)
   vertex_identities = [] # slave, master
   n = 0
-  for line in Periodic[1:]:
+  for line in Periodic:
     words = line.split()
     if len(words) == 1:
       n = int(words[0]) # initialize for counting backwards
