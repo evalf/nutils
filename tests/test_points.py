@@ -80,6 +80,14 @@ class bezier(TestCase):
       self.assertEqual(len(bezier.tri), (n-1)**2)
       self.assertEqual(len(bezier.hull), 3*(n-1))
 
+  def test_tetrahedron(self):
+    tet = element.getsimplex(3)
+    for n in range(2, 8):
+      bezier = tet.getpoints('bezier', n)
+      self.assertEqual(bezier.npoints, (n*(n+1)*(n+2))//6)
+      self.assertEqual(len(bezier.tri), (n-1)**3)
+      self.assertEqual(len(bezier.hull), 4*(n-1)**2)
+
   def test_pyramid(self):
     pyramid = element.getsimplex(1)*element.getsimplex(2)
     for n in range(2, 8):
