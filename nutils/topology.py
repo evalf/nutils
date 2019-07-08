@@ -1467,23 +1467,24 @@ class SimplexTopology(Topology):
   def __init__(self, simplices:_renumber, transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms):
     assert simplices.shape == (len(transforms), transforms.fromdims+1)
     assert numpy.greater(simplices[:,1:], simplices[:,:-1]).all(), 'nodes should be sorted'
+    assert not numpy.equal(simplices[:,1:], simplices[:,:-1]).all(), 'duplicate nodes'
     self.simplices = simplices
     references = elementseq.asreferences([element.getsimplex(transforms.fromdims)], transforms.fromdims)*len(transforms)
     super().__init__(references, transforms, opposites)
 
   @property
   def connectivity(self):
-    connectivity = -numpy.ones((len(self.simplices), self.ndims+1), dtype=int)
-    edge_vertices = numpy.arange(self.ndims+1).repeat(self.ndims).reshape(self.ndims, self.ndims+1)[:,::-1].T # nedges x nverts
-    v = self.simplices.take(edge_vertices, axis=1).reshape(-1, self.ndims) # (nelems,nedges) x nverts
-    o = numpy.lexsort(v.T)
-    vo = v.take(o, axis=0)
-    i, = numpy.equal(vo[1:], vo[:-1]).all(axis=1).nonzero()
+    nverts = self.ndims + 1
+    edge_vertices = numpy.arange(nverts).repeat(self.ndims).reshape(self.ndims, nverts)[:,::-1].T # nverts x ndims
+    simplices_edges = self.simplices.take(edge_vertices, axis=1) # nelems x nverts x ndims
+    elems, edges = divmod(numpy.lexsort(simplices_edges.reshape(-1, self.ndims).T), nverts)
+    sorted_simplices_edges = simplices_edges[elems, edges] # (nelems x nverts) x ndims; matching edges are now adjacent
+    i, = numpy.equal(sorted_simplices_edges[1:], sorted_simplices_edges[:-1]).all(axis=1).nonzero()
     j = i + 1
-    ielems, iedges = divmod(o[i], self.ndims+1)
-    jelems, jedges = divmod(o[j], self.ndims+1)
-    connectivity[ielems,iedges] = jelems
-    connectivity[jelems,jedges] = ielems
+    assert numpy.greater(i[1:], j[:-1]).all(), 'single edge is shared by three or more simplices'
+    connectivity = numpy.full((len(self.simplices), self.ndims+1), fill_value=-1, dtype=int)
+    connectivity[elems[i],edges[i]] = elems[j]
+    connectivity[elems[j],edges[j]] = elems[i]
     return types.frozenarray(connectivity, copy=False)
 
   def basis_std(self, degree):

@@ -391,7 +391,9 @@ def parsegmsh(fname:util.readtext, name='gmsh'):
   n = 0
   for line in Periodic:
     words = line.split()
-    if len(words) == 1:
+    if words[0] == 'Affine':
+      pass
+    elif len(words) == 1:
       n = int(words[0]) # initialize for counting backwards
     elif len(words) == 2:
       vertex_identities.append([nodemap[w] for w in words])
