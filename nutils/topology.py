@@ -1697,10 +1697,7 @@ class SubsetTopology(Topology):
         trimmedbrefs[self.newboundary.transforms.index(trans)] = ref
       trimboundary = SubsetTopology(self.newboundary, trimmedbrefs)
     else:
-      trimboundary = OrientedGroupsTopology(self.basetopo.interfaces,
-        elementseq.PlainReferences(trimmedreferences, self.ndims-1),
-        transformseq.PlainTransforms(trimmedtransforms, self.ndims-1),
-        transformseq.PlainTransforms(trimmedopposites, self.ndims-1))
+      trimboundary = UnstructuredTopology(trimmedreferences, trimmedtransforms, trimmedopposites, ndims=self.ndims-1)
     return DisjointUnionTopology([trimboundary, origboundary], names=[self.newboundary] if isinstance(self.newboundary,str) else [])
 
   @property
@@ -1722,38 +1719,6 @@ class SubsetTopology(Topology):
       warnings.warn('basis may be linearly dependent; a linearly indepent basis is obtained by trimming first, then creating hierarchical refinements')
     basis = self.basetopo.basis(name, *args, **kwargs)
     return function.PrunedBasis(basis, self._indices)
-
-class OrientedGroupsTopology(UnstructuredTopology):
-  'unstructured topology with undirected semi-overlapping basetopology'
-
-  __slots__ = 'basetopo',
-
-  @types.apply_annotations
-  def __init__(self, basetopo:stricttopology, references:elementseq.strictreferences, transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms):
-    self.basetopo = basetopo
-    super().__init__(references, transforms, opposites)
-
-  def getitem(self, item):
-    references = []
-    transforms = []
-    opposites = []
-    topo = self.basetopo.getitem(item)
-    for ref, trans1, trans2 in zip(topo.references, topo.transforms, topo.opposites):
-      for trans, opp in ((trans1, trans2), (trans2, trans1)):
-        try:
-          ielem, tail = self.transforms.index_with_tail(trans)
-        except ValueError:
-          continue
-        if tail:
-          raise NotImplementedError
-        break
-      else:
-        continue
-      ref = self.references[ielem] & ref
-      references.append(ref)
-      transforms.append(trans)
-      opposites.append(opp)
-    return UnstructuredTopology(references, transforms, opposites, ndims=self.ndims)
 
 class RefinedTopology(Topology):
   'refinement'
