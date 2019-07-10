@@ -82,11 +82,12 @@ class Points(types.Singleton):
     defines a simplex by mapping vertices into the list of points.
     '''
 
-    edges = set()
-    iedges = numpy.array(list(itertools.combinations(range(self.ndims+1), self.ndims)))
-    for tri in self.tri:
-      edges.symmetric_difference_update(map(tuple, numpy.sort(tri[iedges], axis=1)))
-    return numpy.array(sorted(edges))
+    edge_vertices = numpy.arange(self.ndims+1).repeat(self.ndims).reshape(self.ndims, self.ndims+1).T # ndims+1 x ndims
+    edge_simplices = numpy.sort(self.tri, axis=1)[:,edge_vertices] # nelems x ndims+1 x ndims
+    elems, edges = divmod(numpy.lexsort(edge_simplices.reshape(-1, self.ndims).T), self.ndims+1)
+    sorted_edge_simplices = edge_simplices[elems, edges] # (nelems x ndims+1) x ndims; matching edges are now adjacent
+    notequal = numpy.not_equal(sorted_edge_simplices[1:], sorted_edge_simplices[:-1]).any(axis=1)
+    return sorted_edge_simplices[numpy.hstack([True,notequal]) & numpy.hstack([notequal,True])]
 
   @property
   def onhull(self):
