@@ -506,6 +506,7 @@ class Array(Evaluable):
   '''
 
   __slots__ = 'shape', 'ndim', 'dtype'
+  __cache__ = 'optimized_for_numpy'
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
@@ -622,6 +623,13 @@ class Array(Evaluable):
   _unravel = lambda self, axis, shape: None
   _ravel = lambda self, axis: None
   _inserted_axes = ()
+
+  @property
+  def optimized_for_numpy(self):
+    if self.isconstant:
+      const, = self.eval()
+      return Constant(const)
+    return super().optimized_for_numpy
 
 class Normal(Array):
   'normal'
