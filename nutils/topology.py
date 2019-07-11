@@ -1457,38 +1457,41 @@ class SimplexTopology(Topology):
   __slots__ = 'simplices', 'references', 'transforms', 'opposites'
   __cache__ = 'connectivity'
 
-  @types.aspreprocessor
-  @types.apply_annotations
-  def _preprocess_init(self, simplices:types.frozenarray[types.strictint], transforms):
-    ntransforms, nverts = simplices.shape
-    if not isinstance(transforms, transformseq.Transforms):
-      transforms = transformseq.PlainTransforms(transforms, nverts-1)
-    else:
-      assert len(transforms) == ntransforms
-      assert transforms.fromdims == nverts-1
-    return (self, simplices, transforms), {}
+  def _renumber(simplices):
+    simplices = numpy.asarray(simplices)
+    keep = numpy.zeros(simplices.max()+1, dtype=bool)
+    keep[simplices.flat] = True
+    return types.frozenarray(simplices if keep.all() else (numpy.cumsum(keep)-1)[simplices], copy=False)
 
-  @_preprocess_init
-  def __init__(self, simplices, transforms):
+  @types.apply_annotations
+  def __init__(self, simplices:_renumber, transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms):
     assert simplices.shape == (len(transforms), transforms.fromdims+1)
+    assert numpy.greater(simplices[:,1:], simplices[:,:-1]).all(), 'nodes should be sorted'
+    assert not numpy.equal(simplices[:,1:], simplices[:,:-1]).all(), 'duplicate nodes'
     self.simplices = simplices
     references = elementseq.asreferences([element.getsimplex(transforms.fromdims)], transforms.fromdims)*len(transforms)
-    super().__init__(references, transforms, transforms)
+    super().__init__(references, transforms, opposites)
 
   @property
   def connectivity(self):
-    connectivity = -numpy.ones((len(self.simplices), self.ndims+1), dtype=int)
-    edge_vertices = numpy.arange(self.ndims+1).repeat(self.ndims).reshape(self.ndims, self.ndims+1)[:,::-1].T # nedges x nverts
-    v = self.simplices.take(edge_vertices, axis=1).reshape(-1, self.ndims) # (nelems,nedges) x nverts
-    o = numpy.lexsort(v.T)
-    vo = v.take(o, axis=0)
-    i, = numpy.equal(vo[1:], vo[:-1]).all(axis=1).nonzero()
+    nverts = self.ndims + 1
+    edge_vertices = numpy.arange(nverts).repeat(self.ndims).reshape(self.ndims, nverts)[:,::-1].T # nverts x ndims
+    simplices_edges = self.simplices.take(edge_vertices, axis=1) # nelems x nverts x ndims
+    elems, edges = divmod(numpy.lexsort(simplices_edges.reshape(-1, self.ndims).T), nverts)
+    sorted_simplices_edges = simplices_edges[elems, edges] # (nelems x nverts) x ndims; matching edges are now adjacent
+    i, = numpy.equal(sorted_simplices_edges[1:], sorted_simplices_edges[:-1]).all(axis=1).nonzero()
     j = i + 1
-    ielems, iedges = divmod(o[i], self.ndims+1)
-    jelems, jedges = divmod(o[j], self.ndims+1)
-    connectivity[ielems,iedges] = jelems
-    connectivity[jelems,jedges] = ielems
+    assert numpy.greater(i[1:], j[:-1]).all(), 'single edge is shared by three or more simplices'
+    connectivity = numpy.full((len(self.simplices), self.ndims+1), fill_value=-1, dtype=int)
+    connectivity[elems[i],edges[i]] = elems[j]
+    connectivity[elems[j],edges[j]] = elems[i]
     return types.frozenarray(connectivity, copy=False)
+
+  def basis_std(self, degree):
+    if degree == 1:
+      coeffs = element.getsimplex(self.ndims).get_poly_coeffs('bernstein', degree=1)
+      return function.PlainBasis([coeffs] * len(self), self.simplices, self.simplices.max()+1, self.transforms)
+    return super().basis_std(degree)
 
   def basis_bubble(self):
     'bubble from vertices'
@@ -1694,10 +1697,7 @@ class SubsetTopology(Topology):
         trimmedbrefs[self.newboundary.transforms.index(trans)] = ref
       trimboundary = SubsetTopology(self.newboundary, trimmedbrefs)
     else:
-      trimboundary = OrientedGroupsTopology(self.basetopo.interfaces,
-        elementseq.PlainReferences(trimmedreferences, self.ndims-1),
-        transformseq.PlainTransforms(trimmedtransforms, self.ndims-1),
-        transformseq.PlainTransforms(trimmedopposites, self.ndims-1))
+      trimboundary = UnstructuredTopology(trimmedreferences, trimmedtransforms, trimmedopposites, ndims=self.ndims-1)
     return DisjointUnionTopology([trimboundary, origboundary], names=[self.newboundary] if isinstance(self.newboundary,str) else [])
 
   @property
@@ -1719,38 +1719,6 @@ class SubsetTopology(Topology):
       warnings.warn('basis may be linearly dependent; a linearly indepent basis is obtained by trimming first, then creating hierarchical refinements')
     basis = self.basetopo.basis(name, *args, **kwargs)
     return function.PrunedBasis(basis, self._indices)
-
-class OrientedGroupsTopology(UnstructuredTopology):
-  'unstructured topology with undirected semi-overlapping basetopology'
-
-  __slots__ = 'basetopo',
-
-  @types.apply_annotations
-  def __init__(self, basetopo:stricttopology, references:elementseq.strictreferences, transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms):
-    self.basetopo = basetopo
-    super().__init__(references, transforms, opposites)
-
-  def getitem(self, item):
-    references = []
-    transforms = []
-    opposites = []
-    topo = self.basetopo.getitem(item)
-    for ref, trans1, trans2 in zip(topo.references, topo.transforms, topo.opposites):
-      for trans, opp in ((trans1, trans2), (trans2, trans1)):
-        try:
-          ielem, tail = self.transforms.index_with_tail(trans)
-        except ValueError:
-          continue
-        if tail:
-          raise NotImplementedError
-        break
-      else:
-        continue
-      ref = self.references[ielem] & ref
-      references.append(ref)
-      transforms.append(trans)
-      opposites.append(opp)
-    return UnstructuredTopology(references, transforms, opposites, ndims=self.ndims)
 
 class RefinedTopology(Topology):
   'refinement'

@@ -26,8 +26,8 @@ accompanying geometry function. Meshes can either be generated on the fly, e.g.
 provided at this point.
 """
 
-from . import topology, function, util, element, elementseq, numpy, numeric, transform, transformseq, warnings, types, _
-import os, itertools, pathlib, treelog as log
+from . import topology, function, util, element, elementseq, numpy, numeric, transform, transformseq, warnings, types, cache, _
+import os, itertools, re, math, treelog as log
 
 # MESH GENERATORS
 
@@ -305,8 +305,9 @@ def multipatch(patches, nelems, patchverts=None, name='multipatch'):
 
   return topo, geom
 
-@log.withcontext
-def gmsh(fname, name='gmsh'):
+@types.apply_annotations
+@cache.function
+def parsegmsh(fname:util.readtext, name='gmsh'):
   """Gmsh parser
 
   Parser for Gmsh files in `.msh` format. Only files with physical groups are
@@ -317,50 +318,30 @@ def gmsh(fname, name='gmsh'):
   ----------
   fname : :class:`str`
       Path to mesh file.
-  name : :class:`str` or :any:`None`
-      Name of parsed topology, defaults to 'gmsh'.
 
   Returns
   -------
-  topo : :class:`nutils.topology.SimplexTopology`
-      Topology of parsed Gmsh file.
-  geom : :class:`nutils.function.Array`
-      Isoparametric map.
+  Keyword arguments for :func:`simplex`
   """
 
-  # create lines iterable
-  if isinstance(fname, pathlib.Path):
-    lines = fname.open()
-  elif isinstance(fname, str):
-    if fname.startswith('$MeshFormat'):
-      lines = iter(fname.splitlines())
-    else:
-      lines = open(fname)
-  else:
-    raise ValueError("expected the contents of a Gmsh MSH file (as 'str') or a filename (as 'str' or 'pathlib.Path') but got {!r}".format(fname))
-
   # split sections
-  sections = {}
-  for line in lines:
-    line = line.strip()
-    assert line[0]=='$'
-    sname = line[1:]
-    slines = []
-    for sline in lines:
-      sline = sline.strip()
-      if sline == '$End'+sname:
-        break
-      slines.append(sline)
-    sections[sname] = slines
+  sections = dict(re.findall(r'^\$(\w+)\n(.*)\n\$End\1$', fname, re.MULTILINE|re.DOTALL))
+  missing = {'MeshFormat', 'PhysicalNames', 'Nodes', 'Elements'}.difference(sections)
+  if missing:
+    raise ValueError('invalid or incomplete gmsh data: missing section {}'.format(', '.join(missing)))
 
-  # discard section MeshFormat
-  sections.pop('MeshFormat', None)
+  # parse section MeshFormat
+  version, filetype, datasize = sections.pop('MeshFormat').split()
+  if not version.startswith('2.'):
+    raise ValueError('gmsh version {} is not supported; please use -format msh2'.format(version))
+  if filetype != '0':
+    raise ValueError('binary gmsh data is not supported')
 
   # parse section PhysicalNames
-  PhysicalNames = sections.pop('PhysicalNames', [0])
-  assert int(PhysicalNames[0]) == len(PhysicalNames)-1
+  N, *PhysicalNames = sections.pop('PhysicalNames').splitlines()
+  assert int(N) == len(PhysicalNames)
   tagmapbydim = {}, {}, {}, {} # tagid->tagname dictionary
-  for line in PhysicalNames[1:]:
+  for line in PhysicalNames:
     nd, tagid, tagname = line.split(' ', 2)
     nd = int(nd)
     tagmapbydim[nd][tagid] = tagname.strip('"')
@@ -371,12 +352,12 @@ def gmsh(fname, name='gmsh'):
     raise NotImplementedError('Physical line groups are not supported in volumetric meshes')
 
   # parse section Nodes
-  Nodes = sections.pop('Nodes')
-  nnodes = len(Nodes)-1
-  assert int(Nodes[0]) == nnodes
+  N, *Nodes = sections.pop('Nodes').splitlines()
+  nnodes = len(Nodes)
+  assert int(N) == nnodes
   nodes = numpy.empty((nnodes, 3))
   nodemap = {}
-  for i, line in enumerate(Nodes[1:]):
+  for i, line in enumerate(Nodes):
     n, *c = line.split()
     nodemap[n] = i
     nodes[i] = c
@@ -386,12 +367,12 @@ def gmsh(fname, name='gmsh'):
     nodes = nodes[:,:2]
 
   # parse section Elements
-  Elements = sections.pop('Elements')
-  assert int(Elements[0]) == len(Elements)-1
+  N, *Elements = sections.pop('Elements').splitlines()
+  assert int(N) == len(Elements)
   inodesbydim = [], [], [], [] # nelems-list of 4-tuples of node numbers
   tagnamesbydim = {}, {}, {}, {} # tag->ielems dictionary
-  etype2nd = {'15': 0, '1': 1, '2': 2, '4': 3, '8': 1, '9': 2}
-  for line in Elements[1:]:
+  etype2nd = {'15': 0, '1': 1, '2': 2, '4': 3, '8': 1, '9': 2, '11': 3, '26': 1, '21': 2, '23': 2, '27': 1}
+  for line in Elements:
     n, e, t, m, *w = line.split()
     nd = etype2nd[e]
     ntags = int(t) - 1
@@ -404,13 +385,15 @@ def gmsh(fname, name='gmsh'):
   inodesbydim = [numpy.array(e) if e else numpy.empty((0,nd+1), dtype=int) for nd, e in enumerate(inodesbydim)]
 
   # parse section Periodic
-  Periodic = sections.pop('Periodic', [0])
-  nperiodic = int(Periodic[0])
+  N, *Periodic = sections.pop('Periodic', '0').splitlines()
+  nperiodic = int(N)
   vertex_identities = [] # slave, master
   n = 0
-  for line in Periodic[1:]:
+  for line in Periodic:
     words = line.split()
-    if len(words) == 1:
+    if words[0] == 'Affine':
+      pass
+    elif len(words) == 1:
       n = int(words[0]) # initialize for counting backwards
     elif len(words) == 2:
       vertex_identities.append([nodemap[w] for w in words])
@@ -442,85 +425,204 @@ def gmsh(fname, name='gmsh'):
 
   if geomdofs is inodesbydim[ndims]: # geometry is linear and non-periodic, dofs follow in-place sorting of inodesbydim
     degree = 1
-  else: # match sorting of inodesbydim and renumber higher order coeffcients
+  elif geomdofs.shape[1] == ndims+1: # linear elements: match sorting of inodesbydim
+    degree = 1
     shuffle = inodesbydim[ndims].argsort(axis=1)
-    if geomdofs.shape[1] == ndims+1:
-      degree = 1
-    elif ndims == 2 and geomdofs.shape[1] == 6:
-      degree = 2
-      fullshuffle = numpy.concatenate([shuffle, numpy.take([4,5,3], shuffle)], axis=1).take([0,5,1,4,3,2], axis=1)
-      fullgeomdofs = geomdofs[numpy.arange(len(geomdofs))[:,_], fullshuffle]
-    else:
-      raise NotImplementedError
-    geomdofs = geomdofs[numpy.arange(len(geomdofs))[:,_], shuffle]
-  for e in inodesbydim:
-    e.sort(axis=1)
+    geomdofs = geomdofs[numpy.arange(len(geomdofs))[:,_], shuffle] # gmsh conveniently places the primary ndim+1 vertices first
+  else: # higher order elements: match sorting of inodesbydim and renumber higher order coefficients
+    degree, nodeorder = { # for gmsh node ordering conventions see http://gmsh.info/doc/texinfo/gmsh.html#Node-ordering
+      (2, 6): (2, (0,3,1,5,4,2)),
+      (2,10): (3, (0,3,4,1,8,9,5,7,6,2)),
+      (2,15): (4, (0,3,4,5,1,11,12,13,6,10,14,7,9,8,2)),
+      (3,10): (2, (0,4,1,6,5,2,7,9,8,3))}[ndims, geomdofs.shape[1]]
+    enum = numpy.empty([degree+1]*(ndims+1), dtype=int)
+    bari = tuple(numpy.array([index[::-1] for index in numpy.ndindex(*enum.shape) if sum(index) == degree]).T)
+    enum[bari] = numpy.arange(geomdofs.shape[1]) # maps baricentric index to corresponding enumerated index
+    shuffle = inodesbydim[ndims].argsort(axis=1)
+    geomdofs = geomdofs[:,nodeorder] # convert from gmsh to nutils order
+    for i in range(ndims): # strategy: apply shuffle to geomdofs by sequentially swapping vertices...
+      for j in range(i+1, ndims+1): # ...considering all j > i pairs...
+        m = shuffle[:,i] == j # ...and swap vertices if vertex j is shuffled into i...
+        r = enum.swapaxes(i,j)[bari] # ...using the enum table to generate the appropriate renumbering
+        geomdofs[m,:] = geomdofs[numpy.ix_(m,r)]
+        m = shuffle[:,j] == i
+        shuffle[m,j] = shuffle[m,i] # update shuffle to track changed vertex positions
 
-  # create simplex topology
+  inodesbydim[ndims].sort(axis=1)
+  if tagnamesbydim[ndims-1]:
+    inodesbydim[ndims-1].sort(axis=1)
+    edges = {tuple(inodes[:iedge])+tuple(inodes[iedge+1:]): (ielem, iedge) for ielem, inodes in enumerate(inodesbydim[ndims]) for iedge in range(ndims+1)}
+
+  vtags = {name: numpy.array(inodes) for name, inodes in tagnamesbydim[ndims].items()}
+  btags = {name: numpy.array([edges[tuple(inodesbydim[ndims-1][ibelem])] for ibelem in ibelems]) for name, ibelems in tagnamesbydim[ndims-1].items()}
+  ptags = {name: inodesbydim[0][ipelems][...,0] for name, ipelems in tagnamesbydim[0].items()}
+
+  log.info('\n- '.join(['loaded {}d gmsh topology consisting of #{} elements'.format(ndims, len(geomdofs))]
+    + [name + ' groups: ' + ', '.join('{} #{}'.format(n, len(e)) for n, e in tags.items())
+      for name, tags in (('volume', vtags), ('boundary', btags), ('point', ptags)) if tags]))
+
+  return dict(nodes=inodesbydim[ndims], cnodes=geomdofs, coords=nodes, tags=vtags, btags=btags, ptags=ptags)
+
+@log.withcontext
+def gmsh(fname, name='gmsh'):
+  """Gmsh parser
+
+  Parser for Gmsh files in `.msh` format. Only files with physical groups are
+  supported. See the `Gmsh manual
+  <http://geuz.org/gmsh/doc/texinfo/gmsh.html>`_ for details.
+
+  Parameters
+  ----------
+  fname : :class:`str`
+      Path to mesh file.
+  name : :class:`str` or :any:`None`
+      Name of parsed topology, defaults to 'gmsh'.
+
+  Returns
+  -------
+  topo : :class:`nutils.topology.SimplexTopology`
+      Topology of parsed Gmsh file.
+  geom : :class:`nutils.function.Array`
+      Isoparametric map.
+  """
+
+  return simplex(name=name, **parsegmsh(fname))
+
+def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
+  '''Simplex topology.
+
+  Parameters
+  ----------
+  nodes : :class:`numpy.ndarray`
+      Vertex indices as (nelems x ndims+1) integer array, sorted along the
+      second dimension. This table fully determines the connectivity of the
+      simplices.
+  cnodes : :class:`numpy.ndarray`
+      Coordinate indices as (nelems x ncnodes) integer array following Nutils'
+      conventions for Bernstein polynomials. The polynomial degree is inferred
+      from the array shape.
+  coords : :class:`numpy.ndarray`
+      Coordinates as (nverts x ndims) float array to be indexed by ``cnodes``.
+  tags : :class:`dict`
+      Dictionary of name->element numbers. Element order is preserved in the
+      resulting volumetric groups.
+  btags : :class:`dict`
+      Dictionary of name->edges, where edges is a (nedges x 2) integer array
+      containing pairs of element number and edge number. The segments are
+      assigned to boundary or interfaces groups automatically while otherwise
+      preserving order.
+  ptags : :class:`dict`
+      Dictionary of name->node numbers referencing the ``nodes`` table.
+  name : :class:`str`
+      Name of simplex topology.
+
+  Returns
+  -------
+  topo : :class:`nutils.topology.SimplexTopology`
+      Topology with volumetric, boundary and interface groups.
+  geom : :class:`nutils.function.Array`
+      Geometry function.
+  '''
+
+  nverts, ndims = coords.shape
+  nelems, ncnodes = cnodes.shape
+  assert nodes.shape == (nelems, ndims+1)
+  assert numpy.greater(nodes[:,1:], nodes[:,:-1]).all(), 'nodes must be sorted'
+
+  if ncnodes == ndims+1:
+    degree = 1
+    vnodes = cnodes
+  else:
+    degree = int((ncnodes * math.factorial(ndims))**(1/ndims))-1  # degree**ndims/ndims! < ncnodes < (degree+1)**ndims/ndims!
+    dims = numpy.arange(ndims)
+    strides = (dims+1+degree).cumprod() // (dims+1).cumprod() # (i+1+degree)!/(i+1)!
+    assert strides[-1] == ncnodes
+    vnodes = cnodes[:,(0,*strides-1)]
+
+  assert vnodes.shape == nodes.shape
   root = transform.Identifier(ndims, name)
-  topo = topology.SimplexTopology(inodesbydim[ndims], [(root, transform.Simplex(c)) for c in nodes[geomdofs]])
-  log.info('created topology consisting of {} elements'.format(len(topo)))
-
-  if tagnamesbydim[ndims-1]: # separate boundary and interface elements by tag
-    elemref = element.getsimplex(ndims)
-    edgeref = element.getsimplex(ndims-1)
-    edges = {}
-    for elemtrans, vtx in zip(topo.transforms, inodesbydim[ndims].tolist()):
-      for iedge, edgetrans in enumerate(elemref.edge_transforms):
-        edges.setdefault(tuple(vtx[:iedge] + vtx[iedge+1:]), []).append(elemtrans+(edgetrans,))
-    tagsbelems = {}
-    tagsielems = {}
-    for name, ibelems in tagnamesbydim[ndims-1].items():
-      for ibelem in ibelems:
-        edge, *oppedge = edges[tuple(inodesbydim[ndims-1][ibelem])]
-        if oppedge:
-          tagsielems.setdefault(name, []).append((edge, oppedge[0]))
-        else:
-          tagsbelems.setdefault(name, []).append(edge)
-    if tagsbelems:
-      topo = topo.withgroups(bgroups={tagname: topology.UnstructuredTopology((edgeref,)*len(tagbelems), tagbelems, tagbelems, ndims=ndims-1) for tagname, tagbelems in tagsbelems.items()})
-      log.info('boundary groups:', ', '.join('{} (#{})'.format(n, len(e)) for n, e in tagsbelems.items()))
-    if tagsielems:
-      topo = topo.withgroups(igroups={tagname: topology.UnstructuredTopology((edgeref,)*len(tagielems), (trans for trans, opp in tagielems), (opp for trans, opp in tagielems), ndims=ndims-1) for tagname, tagielems in tagsielems.items()})
-      log.info('interface groups:', ', '.join('{} (#{})'.format(n, len(e)) for n, e in tagsielems.items()))
-
-  if tagnamesbydim[0]: # create points topology and separate by tag
-    ptransforms = {inodes[0]: [] for inodes in inodesbydim[0]}
-    pref = element.getsimplex(0)
-    for ref, trans, inodes in zip(topo.references, topo.transforms, inodesbydim[ndims]):
-      for ivertex, inode in enumerate(inodes):
-        if inode in ptransforms:
-          offset = ref.vertices[ivertex]
-          ptransforms[inode].append(trans + (transform.Matrix(linear=numpy.zeros(shape=(ndims,0)), offset=offset),))
-    pgroups = {}
-    for name, ipelems in tagnamesbydim[0].items():
-      tagptransforms = tuple(ptrans for ipelem in ipelems for inode in inodesbydim[0][ipelem] for ptrans in ptransforms[inode])
-      pgroups[name] = topology.UnstructuredTopology((pref,)*len(tagptransforms), tagptransforms, tagptransforms, ndims=0)
-    topo = topo.withgroups(pgroups=pgroups)
-    log.info('point groups:', ', '.join('{} (#{})'.format(n, len(e)) for n, e in pgroups.items()))
-
-  if tagnamesbydim[ndims]: # create volume groups
-    vgroups = {}
-    simplex = element.getsimplex(ndims)
-    for name, ielems in tagnamesbydim[ndims].items():
-      if len(ielems) == len(topo):
-        vgroups[name] = ...
-      elif ielems:
-        refs = numpy.array([simplex.empty] * len(topo), dtype=object)
-        refs[ielems] = simplex
-        vgroups[name] = topology.SubsetTopology(topo, refs)
-    topo = topo.withgroups(vgroups=vgroups)
-    log.info('volume groups:', ', '.join('{} (#{})'.format(n, len(e)) for n, e in tagnamesbydim[ndims].items()))
-
-  # create geometry
+  transforms = transformseq.PlainTransforms([(root, transform.Simplex(c)) for c in coords[vnodes]], ndims)
+  topo = topology.SimplexTopology(nodes, transforms, transforms)
   if degree == 1:
     geom = function.rootcoords(ndims)
   else:
     coeffs = element.getsimplex(ndims).get_poly_coeffs('lagrange', degree=degree)
-    basis = function.PlainBasis([coeffs] * len(fullgeomdofs), fullgeomdofs, len(nodes), topo.transforms)
-    geom = (basis[:,_] * nodes).sum(0)
+    basis = function.PlainBasis([coeffs] * nelems, cnodes, nverts, topo.transforms)
+    geom = (basis[:,_] * coords).sum(0)
 
-  return topo, geom
+  connectivity = topo.connectivity
+
+  bgroups = {}
+  igroups = {}
+  for name, elems_edges in btags.items():
+    bitems = [], [], None
+    iitems = [], [], []
+    for ielem, iedge in elems_edges:
+      ioppelem = connectivity[ielem, iedge]
+      simplices, transforms, opposites = bitems if ioppelem == -1 else iitems
+      simplices.append(tuple(nodes[ielem][:iedge])+tuple(nodes[ielem][iedge+1:]))
+      transforms.append(topo.transforms[ielem] + (transform.SimplexEdge(ndims, iedge),))
+      if opposites is not None:
+        opposites.append(topo.transforms[ioppelem] + (transform.SimplexEdge(ndims, tuple(connectivity[ioppelem]).index(ielem)),))
+    for groups, (simplices, transforms, opposites) in (bgroups, bitems), (igroups, iitems):
+      if simplices:
+        transforms = transformseq.PlainTransforms(transforms, ndims-1)
+        opposites = transforms if opposites is None else transformseq.PlainTransforms(opposites, ndims-1)
+        groups[name] = topology.SimplexTopology(simplices, transforms, opposites)
+
+  pgroups = {}
+  if ptags:
+    ptrans = [transform.Matrix(linear=numpy.zeros(shape=(ndims,0)), offset=offset) for offset in numpy.eye(ndims+1)[:,1:]]
+    pmap = {inode: numpy.array(numpy.equal(nodes, inode).nonzero()).T for inode in set.union(*map(set, ptags.values()))}
+    for pname, inodes in ptags.items():
+      ptransforms = [topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode]]
+      pgroups[pname] = topology.UnstructuredTopology((element.getsimplex(0),)*len(ptransforms), ptransforms, ptransforms, ndims=0)
+
+  vgroups = {}
+  for name, ielems in tags.items():
+    if len(ielems) == nelems and numpy.equal(ielems, numpy.arange(nelems)).all():
+      vgroups[name] = topo.withgroups(bgroups=bgroups, igroups=igroups, pgroups=pgroups)
+      continue
+    transforms = topo.transforms[ielems]
+    vtopo = topology.SimplexTopology(nodes[ielems], transforms, transforms)
+    keep = numpy.zeros(nelems, dtype=bool)
+    keep[ielems] = True
+    vbgroups = {}
+    vigroups = {}
+    for bname, elems_edges in btags.items():
+      bitems = [], [], []
+      iitems = [], [], []
+      for ielem, iedge in elems_edges:
+        ioppelem = connectivity[ielem, iedge]
+        if ioppelem == -1:
+          keepopp = False
+        else:
+          keepopp = keep[ioppelem]
+          ioppedge = tuple(connectivity[ioppelem]).index(ielem)
+        if keepopp and keep[ielem]:
+          simplices, transforms, opposites = iitems
+        elif keepopp or keep[ielem]:
+          simplices, transforms, opposites = bitems
+          if keepopp:
+            ielem, iedge, ioppelem, ioppedge = ioppelem, ioppedge, ielem, iedge
+        else:
+          continue
+        simplices.append(tuple(nodes[ielem][:iedge])+tuple(nodes[ielem][iedge+1:]))
+        transforms.append(topo.transforms[ielem] + (transform.SimplexEdge(ndims, iedge),))
+        if ioppelem != -1:
+          opposites.append(topo.transforms[ioppelem] + (transform.SimplexEdge(ndims, ioppedge),))
+      for groups, (simplices, transforms, opposites) in (vbgroups, bitems), (vigroups, iitems):
+        if simplices:
+          transforms = transformseq.PlainTransforms(transforms, ndims-1)
+          opposites = transformseq.PlainTransforms(opposites, ndims-1) if len(opposites) == len(transforms) else transforms
+          groups[bname] = topology.SimplexTopology(simplices, transforms, opposites)
+    vpgroups = {}
+    for pname, inodes in ptags.items():
+      ptransforms = [topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode] if keep[ielem]]
+      vpgroups[pname] = topology.UnstructuredTopology((element.getsimplex(0),)*len(ptransforms), ptransforms, ptransforms, ndims=0)
+    vgroups[name] = vtopo.withgroups(bgroups=vbgroups, igroups=vigroups, pgroups=vpgroups)
+
+  return topo.withgroups(vgroups=vgroups, bgroups=bgroups, igroups=igroups, pgroups=pgroups), geom
 
 def fromfunc(func, nelems, ndims, degree=1):
   'piecewise'
@@ -569,7 +671,8 @@ def unitsquare(nelems, etype):
 
     v = numpy.arange(nelems+1, dtype=float)
     coords = numeric.meshgrid(v, v).reshape(2,-1).T
-    topo = topology.SimplexTopology(simplices, [(root, transform.Simplex(coords[s])) for s in simplices])
+    transforms = transformseq.PlainTransforms([(root, transform.Simplex(coords[s])) for s in simplices], 2)
+    topo = topology.SimplexTopology(simplices, transforms, transforms)
 
     if etype == 'mixed':
       references = list(topo.references)

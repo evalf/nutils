@@ -197,7 +197,8 @@ class unstructured_topology(TestCase):
       simplices = numeric.overlapping(numpy.arange(nverts), n=self.ndims+1)
       coords = numpy.random.normal(size=(nverts, self.ndims))
       root = transform.Identifier(self.ndims, 'test')
-      domain = topology.SimplexTopology(simplices, [(root, transform.Simplex(c)) for c in coords[simplices]])
+      transforms = transformseq.PlainTransforms([(root, transform.Simplex(c)) for c in coords[simplices]], self.ndims)
+      domain = topology.SimplexTopology(simplices, transforms, transforms)
       geom = function.rootcoords(self.ndims)
     else:
       raise NotImplementedError

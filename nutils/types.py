@@ -1271,6 +1271,7 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
   max = lambda self, *args, **kwargs: self.__base.max(*args, **kwargs)
   prod = lambda self, *args, **kwargs: self.__base.prod(*args, **kwargs)
   dot = lambda self, *args, **kwargs: self.__base.dot(*args, **kwargs)
+  argsort = lambda self, *args, **kwargs: self.__base.argsort(*args, **kwargs)
   swapaxes = lambda self, *args, **kwargs: frozenarray(self.__base.swapaxes(*args, **kwargs), copy=False)
   ravel = lambda self, *args, **kwargs: frozenarray(self.__base.ravel(*args, **kwargs), copy=False)
   reshape = lambda self, *args, **kwargs: frozenarray(self.__base.reshape(*args, **kwargs), copy=False)

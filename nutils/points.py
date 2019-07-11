@@ -82,11 +82,12 @@ class Points(types.Singleton):
     defines a simplex by mapping vertices into the list of points.
     '''
 
-    edges = set()
-    iedges = numpy.array(list(itertools.combinations(range(self.ndims+1), self.ndims)))
-    for tri in self.tri:
-      edges.symmetric_difference_update(map(tuple, numpy.sort(tri[iedges], axis=1)))
-    return numpy.array(sorted(edges))
+    edge_vertices = numpy.arange(self.ndims+1).repeat(self.ndims).reshape(self.ndims, self.ndims+1).T # ndims+1 x ndims
+    edge_simplices = numpy.sort(self.tri, axis=1)[:,edge_vertices] # nelems x ndims+1 x ndims
+    elems, edges = divmod(numpy.lexsort(edge_simplices.reshape(-1, self.ndims).T), self.ndims+1)
+    sorted_edge_simplices = edge_simplices[elems, edges] # (nelems x ndims+1) x ndims; matching edges are now adjacent
+    notequal = numpy.not_equal(sorted_edge_simplices[1:], sorted_edge_simplices[:-1]).any(axis=1)
+    return sorted_edge_simplices[numpy.hstack([True,notequal]) & numpy.hstack([notequal,True])]
 
   @property
   def onhull(self):
@@ -184,34 +185,45 @@ class SimplexGaussPoints(CoordsWeightsPoints):
 class SimplexBezierPoints(CoordsPoints):
   '''Bezier points on a simplex.'''
 
-  __cache__ = 'tri', 'hull'
+  __cache__ = 'tri'
 
   @types.apply_annotations
   def __init__(self, ndims:types.strictint, n:types.strictint):
     self.n = n
-    linspace = numpy.linspace(0, 1, n)
-    super().__init__([linspace[list(index)[::-1]] for index in numpy.ndindex(*[n] * ndims) if sum(index) < n])
+    self._indices = numpy.array([index[::-1] for index in numpy.ndindex(*[n] * ndims) if sum(index) < n])
+    super().__init__(self._indices/(n-1))
+
+  @property
+  def _indexgrid(self):
+    grid = numpy.full([self.n]*self.ndims, self.npoints, dtype=int) # initialize with out of bounds
+    grid[tuple(self._indices.T)] = numpy.arange(self.npoints)
+    return grid
 
   @property
   def tri(self):
     if self.n == 2:
-      return types.frozenarray(numpy.arange(self.ndims+1)[None], copy=False)
-    if self.ndims == 1:
-      return types.frozenarray(numeric.overlapping(numpy.arange(self.n)), copy=False)
-    if self.ndims == 2:
-      n = self.n
-      vert1 = [((2*n-i+1)*i)//2 + numpy.array([j,j+1,j+n-i]) for i in range(n-1) for j in range(n-i-1)]
-      vert2 = [((2*n-i+1)*i)//2 + numpy.array([j+1,j+n-i+1,j+n-i]) for i in range(n-1) for j in range(n-i-2)]
-      return types.frozenarray(vert1 + vert2, copy=False)
-    return super().tri
-
-  @property
-  def hull(self):
-    if self.ndims == 2:
-      n = self.n
-      hull = numpy.concatenate([numpy.arange(n), numpy.arange(n-1,0,-1).cumsum()+n-1, numpy.arange(n+1,2,-1).cumsum()[::-1]-n-1])
-      return types.frozenarray(numeric.overlapping(hull), copy=False)
-    return super().hull
+      tri = numpy.arange(self.npoints)[_]
+    elif self.ndims == 1:
+      tri = numeric.overlapping(self._indexgrid)
+    elif self.ndims == 2:
+      grid = self._indexgrid
+      tri = [grid[[i,i+1,i],[j,j,j+1]] for i in range(self.n-1) for j in range(self.n-i-1)] \
+          + [grid[[i+1,i+1,i],[j,j+1,j+1]] for i in range(self.n-1) for j in range(self.n-i-2)]
+    elif self.ndims == 3:
+      grid = self._indexgrid
+      aaa, aab, aba, abb, baa, bab, bba, bbb = [grid[i:i+self.n-1,j:j+self.n-1,k:k+self.n-1] for i in range(2) for j in range(2) for k in range(2)]
+      tri = numpy.array([ # we devide every cube in 6 tetrahedra, subject to some constraints
+        [bba, abb, bab, bbb], # 1: required in order to introduce the x+y+z=1 cutting plane
+        [aaa, aab, baa, aba], # 2: required for opposing plane symmetry
+        [bba, abb, bab, aab], # 3-6: arbitrarily connected to vertex aab
+        [baa, bab, bba, aab],
+        [bba, aba, baa, aab],
+        [aba, abb, bba, aab]])
+      ws, wx, wy, wz = (tri<self.npoints).all(axis=1).nonzero()
+      tri = tri[ws,:,wx,wy,wz] # remove all x+y+z>1 simplices
+    else:
+      return super().tri
+    return types.frozenarray(tri, copy=False)
 
 class TransformPoints(Points):
   '''Affinely transformed Points.'''

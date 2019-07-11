@@ -1,5 +1,6 @@
 from nutils import *
 from nutils.testing import *
+import tempfile, pathlib, os, io
 
 @parametrize
 class tri(TestCase):
@@ -76,3 +77,26 @@ class pairwise(TestCase):
     for n in range(1, 5):
       with self.subTest(length=n):
         self.assertEqual(list(util.pairwise(range(n), periodic=True)), [*zip(range(n-1), range(1,n)),(n-1,0)])
+
+class readtext(TestCase):
+
+  def _test(self, method):
+    try:
+      with tempfile.NamedTemporaryFile('w', delete=False) as f:
+        f.write('foobar')
+      self.assertEqual(util.readtext(method(f.name)), 'foobar')
+    finally: # this instead of simply setting delete=True is required for windows
+      os.remove(str(f.name))
+
+  def test_str(self):
+    self._test(str)
+
+  def test_path(self):
+    self._test(pathlib.Path)
+
+  def test_file(self):
+    self.assertEqual(util.readtext(io.StringIO('foobar')), 'foobar')
+
+  def test_typeerror(self):
+    with self.assertRaises(TypeError):
+      util.readtext(None)
