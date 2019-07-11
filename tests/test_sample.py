@@ -43,9 +43,9 @@ class rectilinear(TestCase):
     sampled = self.gauss2.asfunction(values)
     with self.assertRaises(function.EvaluationError):
       self.bezier2.eval(sampled)
-    self.assertEqual(self.gauss2.eval(sampled).tolist(), values.tolist())
+    self.assertAllEqual(self.gauss2.eval(sampled), values)
     arg = function.Argument('dofs', [2,3])
-    self.assertEqual(function.derivative(sampled, arg), function.zeros_like(arg))
+    self.assertTrue(function.iszero(function.derivative(sampled, arg)))
 
 class integral(TestCase):
 
