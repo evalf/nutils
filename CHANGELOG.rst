@@ -8,6 +8,12 @@ inverse chronological order.
 Changes since version 5.0
 -------------------------
 
+- Higher order gmsh geometries
+
+  Gmsh element support has been extended to include cubic and quartic meshes in
+  2D and quadratic meshes in 3D, and parsing the msh file is now a cacheable
+  operation. Additionally, tetrahedra now define bezier points at any order.
+
 - Repository location
 
   The Nutils repository has moved to https://github.com/evalf/nutils.git. For
