@@ -436,10 +436,10 @@ class _Array:
     ast = type, self.ast, _(geom)
     return _Array._apply_indices(ast, self.ndim, self.indices+index, self.shape+geom.shape, self.summed, self.linked_lengths)
 
-  def derivative(self, arg, indices):
+  def derivative(self, arg):
     'Return the derivative to ``arg``.'
 
-    return _Array._apply_indices(('derivative', self.ast, arg.ast), self.ndim, self.indices+indices, self.shape+arg.shape, self.summed, self.linked_lengths)
+    return _Array._apply_indices(('derivative', self.ast, arg.ast), self.ndim, self.indices+arg.indices, self.shape+arg.shape, self.summed, self.linked_lengths)
 
   def append_axis(self, index, length):
     '''Return an :class:`_Array` with one additional axis.'''
@@ -691,7 +691,7 @@ class _ExpressionParser:
       if target.type == 'geometry':
         return func.grad(indices, geom, 'grad')
       else:
-        return func.derivative(arg, indices)
+        return func.derivative(arg)
     elif self._next.type == 'eye':
       self._consume()
       if self._next.type == 'indices':
@@ -744,7 +744,7 @@ class _ExpressionParser:
           indices = ''
           indices_start = 0
         arg = self._get_arg(name, indices, indices_start)
-        value = value.derivative(arg, indices)
+        value = value.derivative(arg)
       else:
         gradtype = {',': 'grad', ';': 'surfgrad'}[token.data[0]]
         if '_' in token.data[1:]:
