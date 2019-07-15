@@ -590,15 +590,16 @@ class _ExpressionParser:
       raise _IntermediateError('Invalid geometry: expected 1 dimension, but {!r} has {}.'.format(name, geom.ndim))
     return geom
 
-  def _get_arg(self, name, indices, indices_start):
+  def _get_arg(self, name, indices_token):
     'get arg by ``name`` or raise an error'
 
+    indices = indices_token.data if indices_token else ''
     if name in self.arg_shapes:
       shape = self.arg_shapes[name]
       if len(shape) != len(indices):
         raise _IntermediateError('Argument {!r} previously defined with {} instead of {}.'.format(name, _sp(len(shape), 'axis', 'axes'), len(indices)))
     else:
-      shape = tuple(_Length(indices_start+i) for i, j in enumerate(indices))
+      shape = tuple(_Length(indices_token.pos+i) for i, j in enumerate(indices))
       self.arg_shapes[name] = shape
     return _Array.wrap(('arg', _(name)) + tuple(map(_, shape)), indices, shape)
 
@@ -615,13 +616,13 @@ class _ExpressionParser:
     if name in seen_lhs:
       raise _IntermediateError("Argument {!r} occurs more than once.".format(name))
     seen_lhs[name] = token
-    indices = self._consume().data if self._next.type == 'indices' else ''
-    for i, index in enumerate(indices):
-      if index in indices[i+1:]:
+    indices = self._consume() if self._next.type == 'indices' else ''
+    for i, index in enumerate(indices and indices.data):
+      if index in indices.data[i+1:]:
         raise _IntermediateError('Repeated indices are not allowed on the left hand side.')
       elif '0' <= index <= '9':
         raise _IntermediateError('Numeric indices are not allowed on the left hand side.')
-    return self._get_arg(name, indices, self._current.pos)
+    return self._get_arg(name, indices)
 
   @highlight
   def parse_var(self):
@@ -675,21 +676,15 @@ class _ExpressionParser:
       self._consume()
       target = self._consume()
       assert target.type in ('geometry', 'argument')
-      if self._next.type == 'indices':
-        token = self._consume()
-        indices = token.data
-        indices_start = token.pos
-      else:
-        indices = ''
-        indices_start = 0
+      indices = self._consume() if self._next.type == 'indices' else ''
       if target.type == 'geometry':
         geom = self._get_geometry(target.data)
       elif target.type == 'argument':
         assert target.data.startswith('?')
-        arg = self._get_arg(target.data[1:], indices, indices_start)
+        arg = self._get_arg(target.data[1:], indices)
       func = self.parse_var()
       if target.type == 'geometry':
-        return func.grad(indices, geom, 'grad')
+        return func.grad(indices and indices.data, geom, 'grad')
       else:
         return func.derivative(arg)
     elif self._next.type == 'eye':
@@ -724,8 +719,8 @@ class _ExpressionParser:
         args = _Array.align(*args)
         value = args[0].replace(ast=('call', _(name))+tuple(arg.ast for arg in args))
       elif name.startswith('?'):
-        indices = self._consume().data if self._next.type == 'indices' else ''
-        value = self._get_arg(name[1:], indices, self._current.pos)
+        indices = self._consume() if self._next.type == 'indices' else ''
+        value = self._get_arg(name[1:], indices)
       else:
         raw = self._get_variable(name)
         indices = self._consume().data if self._next.type == 'indices' else ''
@@ -737,22 +732,17 @@ class _ExpressionParser:
       gradient = self._consume()
       target = self._consume()
       assert target.type in ('geometry', 'argument')
-      if self._next.type == 'indices':
-        token = self._consume()
-        indices = token.data
-        indices_start = token.pos
-      else:
-        indices = ''
-        indices_start = 0
+      indices = self._consume() if self._next.type == 'indices' else ''
       if target.type == 'geometry':
+        assert indices
         gradtype = {',': 'grad', ';': 'surfgrad'}[gradient.data]
         geom = self._get_geometry(target.data)
-        for i, index in enumerate(indices):
+        for i, index in enumerate(indices.data):
           value = value.grad(index, geom, gradtype)
       elif target.type == 'argument':
         assert gradient.data == ','
         assert target.data.startswith('?')
-        arg = self._get_arg(target.data[1:], indices, indices_start)
+        arg = self._get_arg(target.data[1:], indices)
         value = value.derivative(arg)
     elif self._next.type == 'indices':
       raise _IntermediateError("Indices can only be specified for variables, e.g. 'a_ij', not for groups, e.g. '(a+b)_ij'.", at=self._next.pos, count=len(self._next.data))
