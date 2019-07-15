@@ -734,27 +734,26 @@ class _ExpressionParser:
       raise _IntermediateError('Expected a variable, group or function call.')
 
     if self._next.type == 'gradient':
-      token = self._consume()
-      if token.data.startswith(',?'):
-        name = token.data[2:]
-        if '_' in name:
-          name, indices = name.split('_', 1)
-          indices_start = token.pos+3+len(name)
-        else:
-          indices = ''
-          indices_start = 0
-        arg = self._get_arg(name, indices, indices_start)
-        value = value.derivative(arg)
+      gradient = self._consume()
+      target = self._consume()
+      assert target.type in ('geometry', 'argument')
+      if self._next.type == 'indices':
+        token = self._consume()
+        indices = token.data
+        indices_start = token.pos
       else:
-        gradtype = {',': 'grad', ';': 'surfgrad'}[token.data[0]]
-        if '_' in token.data[1:]:
-          geometry_name, indices = token.data[1:].split('_', 1)
-        else:
-          geometry_name = self.default_geometry_name
-          indices = token.data[1:]
-        geom = self._get_geometry(geometry_name)
+        indices = ''
+        indices_start = 0
+      if target.type == 'geometry':
+        gradtype = {',': 'grad', ';': 'surfgrad'}[gradient.data]
+        geom = self._get_geometry(target.data)
         for i, index in enumerate(indices):
           value = value.grad(index, geom, gradtype)
+      elif target.type == 'argument':
+        assert gradient.data == ','
+        assert target.data.startswith('?')
+        arg = self._get_arg(target.data[1:], indices, indices_start)
+        value = value.derivative(arg)
     elif self._next.type == 'indices':
       raise _IntermediateError("Indices can only be specified for variables, e.g. 'a_ij', not for groups, e.g. '(a+b)_ij'.", at=self._next.pos, count=len(self._next.data))
 
@@ -802,6 +801,9 @@ class _ExpressionParser:
       raise _IntermediateError('Expected a number.')
     if self._next.type == 'gradient':
       self._consume()
+      self._consume()
+      if self._next.type  == 'indices':
+        self._consume()
       raise _IntermediateError('Taking a derivative of a constant is not allowed.')
 
     return value
@@ -822,6 +824,9 @@ class _ExpressionParser:
         value = value.append_axis(index, _Length(pos=token.pos+i))
     if self._next.type == 'gradient':
       self._consume()
+      self._consume()
+      if self._next.type  == 'indices':
+        self._consume()
       raise _IntermediateError('Taking a derivative of a constant is not allowed.')
     return value
 
@@ -1010,18 +1015,23 @@ class _ExpressionParser:
           tokens.append(_Token('indices', m.group(0), pos))
           pos += m.end()
           parts += 1
-        m_arg = re.match(r',[?][a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*(_[a-zA-Z0-9]+)?', self.expression[pos:])
-        m_geom = re.match(r'[,;]([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*_)?([a-zA-Z0-9]+)', self.expression[pos:])
+        m_arg = re.match(r'(,)([?][a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)(_[a-zA-Z0-9]+)?', self.expression[pos:])
+        m_geom = re.match(r'([,;])(([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)_)?([a-zA-Z0-9]+)', self.expression[pos:])
         if m_arg:
-          tokens.append(_Token('gradient', m_arg.group(0), pos))
+          tokens.append(_Token('gradient', m_arg.group(1), pos))
+          tokens.append(_Token('argument', m_arg.group(2), pos+m_arg.start(2)))
+          if m_arg.group(3):
+            tokens.append(_Token('indices', m_arg.group(3)[1:], pos+m_arg.start(3)+1))
           pos += m_arg.end()
           parts += 1
         elif m_geom:
-          if withgeom is not None and not m_geom.group(1):
-            variant_geom = m_geom.group(0)[0] + withgeom + '_' + m_geom.group(2)
-            variant_default = m_geom.group(0)[0] + self.default_geometry_name + '_' + m_geom.group(2)
+          if withgeom is not None and not m_geom.group(2):
+            variant_geom = m_geom.group(1) + withgeom + '_' + m_geom.group(4)
+            variant_default = m_geom.group(1) + self.default_geometry_name + '_' + m_geom.group(4)
             raise _IntermediateError('Missing geometry, e.g. {!r} or {!r}.'.format(variant_geom, variant_default), at=pos)
-          tokens.append(_Token('gradient', m_geom.group(0), pos))
+          tokens.append(_Token('gradient', m_geom.group(1), pos))
+          tokens.append(_Token('geometry', m_geom.group(3) or self.default_geometry_name, pos+m_geom.start(3)))
+          tokens.append(_Token('indices', m_geom.group(4), pos+m_geom.start(4)))
           pos += m_geom.end()
           parts += 1
         if parts == 0:
