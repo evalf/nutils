@@ -574,6 +574,9 @@ class _ExpressionParser:
 
     return self._tokens[self._index+2] if self._next.type == 'whitespace' else self._next
 
+  def _asarray(self, ast, indices, shape):
+    return _Array.wrap(ast, indices and indices.data, shape)
+
   def _get_variable(self, name):
     'get variable by ``name`` or raise an error'
 
@@ -601,7 +604,7 @@ class _ExpressionParser:
     else:
       shape = tuple(_Length(indices_token.pos+i) for i, j in enumerate(indices))
       self.arg_shapes[name] = shape
-    return _Array.wrap(('arg', _(name)) + tuple(map(_, shape)), indices, shape)
+    return self._asarray(('arg', _(name)) + tuple(map(_, shape)), indices_token, shape)
 
   @highlight
   def parse_lhs_arg(self, seen_lhs):
@@ -644,8 +647,7 @@ class _ExpressionParser:
         geometry_name = self.default_geometry_name
       geom = self._get_geometry(geometry_name)
       if self._next.type == 'indices':
-        indices = self._consume().data
-        value *= _Array.wrap(('normal', _(geom)), indices, geom.shape)
+        value *= self._asarray(('normal', _(geom)), self._consume(), geom.shape)
     elif self._next.type == '{':
       self._consume()
       value = self.parse_subexpression()
@@ -666,12 +668,12 @@ class _ExpressionParser:
       nbounds = len(self._consume().data)-1
       geometry_name = self._consume_assert_equal('geometry').data
       geom = self._get_geometry(geometry_name)
-      value = _Array.wrap(('jacobian', _(geom), _(len(geom)-nbounds)), '', ())
+      value = self._asarray(('jacobian', _(geom), _(len(geom)-nbounds)), '', ())
     elif self._next.type == 'old-jacobian':
       self._consume()
       geometry_name = self._consume_assert_equal('geometry').data
       geom = self._get_geometry(geometry_name)
-      value = _Array.wrap(('jacobian', _(geom), _(None)), '', ())
+      value = self._asarray(('jacobian', _(geom), _(None)), '', ())
     elif self._next.type == 'derivative':
       self._consume()
       target = self._consume()
@@ -689,12 +691,9 @@ class _ExpressionParser:
         return func.derivative(arg)
     elif self._next.type == 'eye':
       self._consume()
-      if self._next.type == 'indices':
-        indices = self._consume().data
-      else:
-        indices = ''
+      indices = self._consume() if self._next.type == 'indices' else ''
       length = _Length(self._current.pos)
-      value = _Array.wrap(('eye', _(length)), indices, (length, length))
+      value = self._asarray(('eye', _(length)), indices, (length, length))
     elif self._next.type == 'normal':
       self._consume()
       if self._next.type == 'geometry':
@@ -702,11 +701,8 @@ class _ExpressionParser:
       else:
         geometry_name = self.default_geometry_name
       geom = self._get_geometry(geometry_name)
-      if self._next.type == 'indices':
-        indices = self._consume().data
-      else:
-        indices = ''
-      value = _Array.wrap(('normal', _(geom)), indices, geom.shape)
+      indices = self._consume() if self._next.type == 'indices' else ''
+      value = self._asarray(('normal', _(geom)), indices, geom.shape)
     elif self._next.type == 'variable':
       token = self._consume()
       name = token.data
@@ -723,8 +719,8 @@ class _ExpressionParser:
         value = self._get_arg(name[1:], indices)
       else:
         raw = self._get_variable(name)
-        indices = self._consume().data if self._next.type == 'indices' else ''
-        value = _Array.wrap(_(raw), indices, raw.shape)
+        indices = self._consume() if self._next.type == 'indices' else ''
+        value = self._asarray(_(raw), indices, raw.shape)
     else:
       raise _IntermediateError('Expected a variable, group or function call.')
 
@@ -784,9 +780,9 @@ class _ExpressionParser:
 
     token = self._consume()
     if token.type == 'int':
-      value = _Array.wrap(_(int(token.data)), '', [])
+      value = self._asarray(_(int(token.data)), '', [])
     elif token.type == 'float':
-      value = _Array.wrap(_(float(token.data)), '', [])
+      value = self._asarray(_(float(token.data)), '', [])
     else:
       raise _IntermediateError('Expected a number.')
     if self._next.type == 'gradient':
