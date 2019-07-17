@@ -562,6 +562,10 @@ class parse(TestCase):
       '^^^^^^^^^',
       fixed_lengths=dict(j=3))
 
+  # FALLBACK LENGHT
+
+  def test_fallback_length(self): self.assert_ast('1_i', 'i', ('append_axis', _(1), _(2)), fallback_length=2)
+
   # ARG
 
   def test_arg0(self): self.assert_ast('a ?coeffs', '', ('mul', v._a, ('arg', _('coeffs'))))

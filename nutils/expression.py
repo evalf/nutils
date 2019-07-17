@@ -1062,7 +1062,7 @@ def _replace_lengths(ast, lengths):
     return ast
 
 
-def parse(expression, variables, functions, indices, arg_shapes={}, default_geometry_name='x', fixed_lengths=None):
+def parse(expression, variables, functions, indices, arg_shapes={}, default_geometry_name='x', fixed_lengths=None, fallback_length=None):
   '''Parse ``expression`` and return AST.
 
   This function parses a tensor expression with `Einstein Summation
@@ -1238,6 +1238,9 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
       A :class:`dict` of indices and lengths.  All axes in the expression
       marked with an index of fixed length are asserted to have the fixed
       length.
+  fallback_length : :class:`int`, optional
+      The fallback length of an axis if the length cannot be determined from
+      the expression.
 
   Returns
   -------
@@ -1295,11 +1298,9 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
   lengths = {}
   undetermined = set()
   for group in value.linked_lengths:
-    val = None
-    for i in group:
-      if not isinstance(i, _Length):
-        assert val is None
-        val = i
+    ints = tuple(i for i in group if not isinstance(i, _Length))
+    assert len(ints) <= 1, 'multiple integers in linked lengths group'
+    val = ints[0] if ints else fallback_length
     if val is None:
       undetermined.update(i.pos for i in group)
     else:
