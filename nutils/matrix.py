@@ -387,12 +387,12 @@ else:
         niter[...] += 1
         # some solvers provide the residual, others the left hand side vector
         res = numpy.linalg.norm(myrhs - self @ arg) if numpy.ndim(arg) == 1 else float(arg)
+        log.recontext('residual {:.2e} ({:.0f}%)'.format(res, 100. * numpy.log10(res) / numpy.log10(mytol) if res > 0 else 0))
         if callback:
           callback(res)
-        with log.context('residual {:.2e} ({:.0f}%)'.format(res, 100. * numpy.log10(res) / numpy.log10(mytol) if res > 0 else 0)):
-          pass
       M = self.getprecon(precon) if isinstance(precon, str) else precon(self.core) if callable(precon) else precon
-      mylhs, status = solverfun(self.core, myrhs, M=M, tol=mytol, callback=mycallback, **solverargs)
+      with log.context('residual'):
+        mylhs, status = solverfun(self.core, myrhs, M=M, tol=mytol, callback=mycallback, **solverargs)
       if status != 0:
         raise Exception('status {}'.format(status))
       if numpy.linalg.norm(myrhs - self @ mylhs) > atol:
@@ -636,8 +636,9 @@ if libmkl is not None:
       tmp = numpy.zeros((2*ipar[14]+1)*ipar[0]+(ipar[14]*(ipar[14]+9))//2+1, dtype=numpy.float64)
       libmkl.dfgmres_check(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes)
       assert rci.value == 0
-      while True:
-        with log.context('iter {} ({:.0f}%)'.format(ipar[13], 100 * numpy.log(dpar[2]/dpar[4]) / numpy.log(dpar[2]/atol) if dpar[4] else 0)):
+      with log.context('iteration'):
+        while True:
+          log.recontext('iteration {} ({:.0f}%)'.format(ipar[13], 100 * numpy.log(dpar[2]/dpar[4]) / numpy.log(dpar[2]/atol) if dpar[4] else 0))
           libmkl.dfgmres(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes)
           if rci.value == 0:
             break

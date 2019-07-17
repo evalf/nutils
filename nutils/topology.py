@@ -35,8 +35,8 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, elementseq, function, util, parallel, config, numeric, cache, transform, transformseq, warnings, matrix, types, sample, points, _
-import numpy, functools, collections.abc, itertools, functools, operator, numbers, pathlib, treelog as log, abc
+from . import element, elementseq, function, util, parallel, config, numeric, cache, transform, transformseq, warnings, matrix, types, sample, points, log, _
+import numpy, functools, collections.abc, itertools, functools, operator, numbers, pathlib, abc
 
 _identity = lambda x: x
 
@@ -345,8 +345,9 @@ class Topology(types.Singleton):
     levelset = levelset.prepare_eval().simplified
     refs = []
     if leveltopo is None:
-      for ielem, (ref, trans, opp) in enumerate(zip(self.references, self.transforms, self.opposites)):
-        with log.context('elem {} ({:.0f}%)'.format(ielem, 100*ielem/len(self))):
+      with log.context('progress'):
+        for ielem, (ref, trans, opp) in enumerate(zip(self.references, self.transforms, self.opposites)):
+          log.recontext('progress {:.0f}%'.format(100*ielem/len(self)))
           levels = levelset.eval(_transforms=(trans, opp), _points=ref.getpoints('vertex', maxrefine).coords, **arguments)
           refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
     else:
@@ -356,8 +357,9 @@ class Topology(types.Singleton):
         ielem, tail = self.transforms.index_with_tail(trans)
         bins[ielem].add(tail)
       fcache = cache.WrapperCache()
-      for ielem, (ref, trans, ctransforms) in enumerate(zip(self.references, self.transforms, bins)):
-        with log.context('elem {} ({:.0f}%)'.format(ielem, 100*ielem/len(self))):
+      with log.context('trimming'):
+        for ielem, (ref, trans, ctransforms) in enumerate(zip(self.references, self.transforms, bins)):
+          log.recontext('trimming {:.0f}%'.format(100*ielem/len(self)))
           levels = numpy.empty(ref.nvertices_by_level(maxrefine))
           cover = list(fcache[ref.vertex_cover](frozenset(ctransforms), maxrefine))
           # confirm cover and greedily optimize order
@@ -542,36 +544,36 @@ class Topology(types.Singleton):
     ielems = parallel.shempty(len(coords), dtype=int)
     xis = parallel.shempty((len(coords),len(geom)), dtype=float)
     ipoints = parallel.range(len(coords))
-    with parallel.fork(min(config.nprocs, len(coords))):
+    with parallel.fork(min(config.nprocs, len(coords))), log.context('progress'):
       for ipoint in ipoints:
-        with log.context('point', ipoint, '({:.0f}%)'.format(100*ipoint/len(coords))):
-          coord = coords[ipoint]
-          ielemcandidates, = numpy.logical_and(numpy.greater_equal(coord, bboxes[:,0,:]), numpy.less_equal(coord, bboxes[:,1,:])).all(axis=-1).nonzero()
-          for ielem in sorted(ielemcandidates, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-coord)):
-            converged = False
-            ref = self.references[ielem]
-            p = ref.getpoints('gauss', 1)
-            xi = p.coords
-            w = p.weights
-            xi = (numpy.dot(w,xi) / w.sum())[_] if len(xi) > 1 else xi.copy()
-            J = function.localgradient(geom, self.ndims)
-            geom_J = function.Tuple((geom, J)).prepare_eval().simplified
-            for iiter in range(maxiter):
-              coord_xi, J_xi = geom_J.eval(_transforms=(self.transforms[ielem], self.opposites[ielem]), _points=xi, **arguments or {})
-              err = numpy.linalg.norm(coord - coord_xi)
-              if err < tol:
-                converged = True
-                break
-              if iiter and err > prev_err:
-                break
-              prev_err = err
-              xi += numpy.linalg.solve(J_xi, coord - coord_xi)
-            if converged and ref.inside(xi[0], eps=eps):
-              ielems[ipoint] = ielem
-              xis[ipoint], = xi
+        log.recontext('progress {:.0f}%'.format(100*ipoint/len(coords)))
+        coord = coords[ipoint]
+        ielemcandidates, = numpy.logical_and(numpy.greater_equal(coord, bboxes[:,0,:]), numpy.less_equal(coord, bboxes[:,1,:])).all(axis=-1).nonzero()
+        for ielem in sorted(ielemcandidates, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-coord)):
+          converged = False
+          ref = self.references[ielem]
+          p = ref.getpoints('gauss', 1)
+          xi = p.coords
+          w = p.weights
+          xi = (numpy.dot(w,xi) / w.sum())[_] if len(xi) > 1 else xi.copy()
+          J = function.localgradient(geom, self.ndims)
+          geom_J = function.Tuple((geom, J)).prepare_eval().simplified
+          for iiter in range(maxiter):
+            coord_xi, J_xi = geom_J.eval(_transforms=(self.transforms[ielem], self.opposites[ielem]), _points=xi, **arguments or {})
+            err = numpy.linalg.norm(coord - coord_xi)
+            if err < tol:
+              converged = True
               break
-          else:
-            raise LocateError('failed to locate point: {}'.format(coord))
+            if iiter and err > prev_err:
+              break
+            prev_err = err
+            xi += numpy.linalg.solve(J_xi, coord - coord_xi)
+          if converged and ref.inside(xi[0], eps=eps):
+            ielems[ipoint] = ielem
+            xis[ipoint], = xi
+            break
+        else:
+          raise LocateError('failed to locate point: {}'.format(coord))
     return self._sample(ielems, xis)
 
   def _sample(self, ielems, coords):
@@ -1946,8 +1948,9 @@ class HierarchicalTopology(Topology):
     prev_transforms = None
     prev_ielems = []
     map_indices = []
-    for i, (topo, touchielems_i) in reversed(tuple(enumerate(zip(self.levels, self._indices_per_level)))):
-      with log.context('level {} ({:.0f}%)'.format(i, 100 * (i+.5) / len(self.levels))):
+    with log.context('level'):
+      for i, (topo, touchielems_i) in reversed(tuple(enumerate(zip(self.levels, self._indices_per_level)))):
+        log.recontext('level {} ({:.0f}%)'.format(i, 100 * (i+.5) / len(self.levels)))
 
         topo_index_with_tail = topo.transforms.index_with_tail
         mapped_prev_ielems = [topo_index_with_tail(prev_transforms[j])[0] for j in prev_ielems]

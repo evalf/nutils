@@ -111,4 +111,10 @@ def _factory(name):
 globals().update((name, _factory(name)) for name in dir(treelog.Log) if not name.startswith('_') and name not in globals() and callable(getattr(treelog.Log, name)))
 del _factory
 
+if not hasattr(treelog.Log, 'recontext'):
+  print('warning: treelog is out of date, plase update to version >1.1 using pip install -U treelog')
+  def recontext(title):
+    popcontext()
+    pushcontext(title)
+
 # vim:sw=2:sts=2:et

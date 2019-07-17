@@ -43,8 +43,8 @@ multiple integrals simultaneously, which has the advantage that it can
 efficiently combine common substructures.
 '''
 
-from . import types, points, util, function, config, parallel, numeric, matrix, transformseq
-import numpy, numbers, collections.abc, treelog as log
+from . import types, points, util, function, config, parallel, numeric, matrix, transformseq, log
+import numpy, numbers, collections.abc
 
 def argdict(arguments):
   if len(arguments) == 1 and 'arguments' in arguments and isinstance(arguments['arguments'], collections.abc.Mapping):
@@ -170,23 +170,24 @@ class Sample(types.Singleton):
 
     valueindexfunc = function.Tuple(function.Tuple([value]+list(index)) for value, index in zip(values, indices))
     ielems = parallel.range(self.nelems)
-    with parallel.fork(nprocs):
+    with parallel.fork(nprocs), log.context('progress'):
       for ielem in ielems:
-        with log.context('elem', ielem, '({:.0f}%)'.format(100*ielem/self.nelems)):
-          points = self.points[ielem]
-          for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=points.coords, **arguments)):
-            s = slice(*offsets[iblock,ielem:ielem+2])
-            data, index = data_index[block2func[iblock]]
-            w_intdata = numeric.dot(points.weights, intdata)
-            data[s] = w_intdata.ravel()
-            si = (slice(None),) + (numpy.newaxis,) * (w_intdata.ndim-1)
-            for idim, (ii,) in enumerate(indices):
-              index[idim,s].reshape(w_intdata.shape)[...] = ii[si]
-              si = si[:-1]
+        log.recontext('progress {:.0f}%'.format(100*ielem/self.nelems))
+        points = self.points[ielem]
+        for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=points.coords, **arguments)):
+          s = slice(*offsets[iblock,ielem:ielem+2])
+          data, index = data_index[block2func[iblock]]
+          w_intdata = numeric.dot(points.weights, intdata)
+          data[s] = w_intdata.ravel()
+          si = (slice(None),) + (numpy.newaxis,) * (w_intdata.ndim-1)
+          for idim, (ii,) in enumerate(indices):
+            index[idim,s].reshape(w_intdata.shape)[...] = ii[si]
+            si = si[:-1]
 
     retvals = []
-    for i, func in enumerate(funcs):
-      with log.context('assembling {}/{}'.format(i+1, len(funcs))):
+    with log.context('assembling'):
+      for i, func in enumerate(funcs):
+        log.recontext('assembling {}/{}'.format(i+1, len(funcs)))
         retvals.append(matrix.assemble(*data_index[i], shape=func.shape))
     return retvals
 
@@ -228,11 +229,11 @@ class Sample(types.Singleton):
       idata.graphviz()
 
     ielems = parallel.range(self.nelems)
-    with parallel.fork(nprocs):
+    with parallel.fork(nprocs), log.context('progress'):
       for ielem in ielems:
-        with log.context('elem', ielem, '({:.0f}%)'.format(100*ielem/self.nelems)):
-          for ifunc, inds, data in idata.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=self.points[ielem].coords, **arguments):
-            numpy.add.at(retvals[ifunc], numpy.ix_(self.index[ielem], *[ind for (ind,) in inds]), data)
+        log.recontext('progress {:.0f}%'.format(100*ielem/self.nelems))
+        for ifunc, inds, data in idata.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=self.points[ielem].coords, **arguments):
+          numpy.add.at(retvals[ifunc], numpy.ix_(self.index[ielem], *[ind for (ind,) in inds]), data)
 
     return retvals
 
