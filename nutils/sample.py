@@ -43,8 +43,8 @@ multiple integrals simultaneously, which has the advantage that it can
 efficiently combine common substructures.
 '''
 
-from . import types, points, util, function, config, parallel, numeric, matrix, transformseq
-import numpy, numbers, collections.abc, treelog as log
+from . import types, points, util, function, config, parallel, numeric, matrix, transformseq, log
+import numpy, numbers, collections.abc
 
 def argdict(arguments):
   if len(arguments) == 1 and 'arguments' in arguments and isinstance(arguments['arguments'], collections.abc.Mapping):

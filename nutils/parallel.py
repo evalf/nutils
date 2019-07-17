@@ -25,8 +25,8 @@ platforms, notably excluding Windows. On unsupported platforms parallel features
 will disable and a warning is printed.
 """
 
-from . import numeric, warnings
-import os, multiprocessing, mmap, signal, contextlib, builtins, numpy, treelog as log
+from . import numeric, warnings, log
+import os, multiprocessing, mmap, signal, contextlib, builtins, numpy
 
 procid = None # current process id, None for unforked
 
