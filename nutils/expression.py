@@ -106,7 +106,7 @@ class _Array:
   '''
 
   @classmethod
-  def wrap(cls, ast, indices, shape):
+  def wrap(cls, ast, indices, shape, linked_lengths=None):
     '''Create an :class:`_Array` by wrapping ``ast``.
 
     The ``ast`` should be a constant or variable.  Duplicate indices are summed
@@ -115,7 +115,7 @@ class _Array:
 
     if len(indices) != len(shape):
       raise _IntermediateError('Expected {}, got {}.'.format(_sp(len(shape), 'index', 'indices'), len(indices)))
-    return cls._apply_indices(ast, 0, indices, shape, frozenset(), {})
+    return cls._apply_indices(ast, 0, indices, shape, frozenset(), linked_lengths or frozenset())
 
   @classmethod
   def _apply_indices(cls, ast, offset, indices, shape, summed, linked_lengths):
@@ -492,17 +492,20 @@ class _ExpressionParser:
       See argument ``arg_shapes`` of :func:`parse`.
   default_geometry_name : class:`str`
       See argument ``default_geometry_name`` of :func:`parse`.
+  fixed_lengths : :class:`dict` of :class:`str` and :class:`int`
+      See argument ``fixed_lengths`` of :func:`parse`.
   '''
 
   eye_symbols = '$', 'δ'
   normal_symbols = 'n',
 
-  def __init__(self, expression, variables, functions, arg_shapes, default_geometry_name):
+  def __init__(self, expression, variables, functions, arg_shapes, default_geometry_name, fixed_lengths):
     self.expression = expression
     self.variables = variables
     self.functions = functions
     self.arg_shapes = dict(arg_shapes)
     self.default_geometry_name = default_geometry_name
+    self.fixed_lengths = fixed_lengths
 
   def highlight(f):
     'wrap ``f`` in a function that converts ``_IntermediateError`` objects'
@@ -574,8 +577,20 @@ class _ExpressionParser:
 
     return self._tokens[self._index+2] if self._next.type == 'whitespace' else self._next
 
-  def _asarray(self, ast, indices, shape):
-    return _Array.wrap(ast, indices and indices.data, shape)
+  def _asarray(self, ast, indices_token, shape):
+    indices = indices_token.data if indices_token else ''
+    if len(indices) != len(shape):
+      raise _IntermediateError('Expected {}, got {}.'.format(_sp(len(shape), 'index', 'indices'), len(indices)))
+    linked_lengths = set()
+    for iaxis, (length, index) in enumerate(zip(shape, indices)):
+      fixed = self.fixed_lengths.get(index)
+      if fixed is None:
+        pass
+      elif isinstance(length, _Length):
+        linked_lengths.add(frozenset([length, fixed]))
+      elif fixed != length:
+        raise _IntermediateError('Length of index {} is fixed at {} but the expression has length {}.'.format(index, fixed, length), at=indices_token.pos+iaxis, count=1)
+    return _Array.wrap(ast, indices, shape, linked_lengths)
 
   def _get_variable(self, name):
     'get variable by ``name`` or raise an error'
@@ -1047,7 +1062,7 @@ def _replace_lengths(ast, lengths):
     return ast
 
 
-def parse(expression, variables, functions, indices, arg_shapes={}, default_geometry_name='x'):
+def parse(expression, variables, functions, indices, arg_shapes={}, default_geometry_name='x', fixed_lengths=None):
   '''Parse ``expression`` and return AST.
 
   This function parses a tensor expression with `Einstein Summation
@@ -1219,6 +1234,10 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
       the normal, e.g. ``'f_,i'`` or ``'n_i'``, this variable is used as the
       geometry, unless the geometry is explicitly mentioned in the expression.
       Default: ``'x'``.
+  fixed_lengths : :class:`dict` of :class:`str` and :class:`int` pairs, optional
+      A :class:`dict` of indices and lengths.  All axes in the expression
+      marked with an index of fixed length are asserted to have the fixed
+      length.
 
   Returns
   -------
@@ -1257,7 +1276,7 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
       ``expression``.
   '''
 
-  parser = _ExpressionParser(expression, variables, functions, arg_shapes, default_geometry_name)
+  parser = _ExpressionParser(expression, variables, functions, arg_shapes, default_geometry_name, fixed_lengths or {})
   parser.tokenize()
   value = parser.parse_subexpression()
   parser._consume_assert_equal('EOF', msg='Unexpected symbol at end of expression.')

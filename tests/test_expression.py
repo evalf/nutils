@@ -61,9 +61,9 @@ class parse(TestCase):
       variables = v
     self.assertEqual(nutils.expression.parse(expression, variables, functions, indices, **parse_kwargs)[0], ast)
 
-  def assert_syntax_error(self, msg, expression, indices, highlight, arg_shapes={}, exccls=nutils.expression.ExpressionSyntaxError):
+  def assert_syntax_error(self, msg, expression, indices, highlight, arg_shapes={}, fixed_lengths=None, exccls=nutils.expression.ExpressionSyntaxError):
     with self.assertRaises(exccls) as cm:
-      nutils.expression.parse(expression, v, functions, indices, arg_shapes)
+      nutils.expression.parse(expression, v, functions, indices, arg_shapes, fixed_lengths=fixed_lengths)
     self.assertEqual(str(cm.exception), msg + '\n' + expression + '\n' + highlight)
 
   # OTHER
@@ -543,6 +543,24 @@ class parse(TestCase):
       "Shapes at index 'j' differ: 2, 3.",
       "aX2X3_iijj", "",
       "^^^^^^^^^^")
+
+  # FIXED LENGTHS
+
+  def test_fixed_lengths(self): self.assert_ast('δ_ij', 'ij', ('eye', _(3)), fixed_lengths=dict(i=3))
+
+  def test_fixed_lengths_invalid(self):
+    self.assert_syntax_error(
+      'Length of index i is fixed at 3 but the expression has length 2.',
+      'a2_i', 'i',
+      '   ^',
+      fixed_lengths=dict(i=3))
+
+  def test_fixed_lengths_invalid_linked(self):
+    self.assert_syntax_error(
+      'Axes have different lengths: 2, 3.',
+      'a2_i δ_ij', 'j',
+      '^^^^^^^^^',
+      fixed_lengths=dict(j=3))
 
   # ARG
 
