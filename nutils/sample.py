@@ -80,6 +80,8 @@ class Sample(types.Singleton):
       points show up in the evaluation.
   '''
 
+  __cache__ = 'allcoords'
+
   @types.apply_annotations
   def __init__(self, transforms:types.tuple[transformseq.stricttransforms], points:types.tuple[points.strictpoints], index:types.tuple[types.frozenarray[types.strictint]]):
     assert len(points) == len(index)
@@ -236,6 +238,22 @@ class Sample(types.Singleton):
 
     return retvals
 
+  @property
+  def allcoords(self):
+    coords = numpy.empty([self.npoints, self.ndims])
+    for points, index in zip(self.points, self.index):
+      coords[index] = points.coords
+    return types.frozenarray(coords, copy=False)
+
+  def basis(self):
+    '''Basis-like function that for every point in the sample evaluates to the
+    unit vector corresponding to its index.'''
+
+    index, tail = function.TransformsIndexWithTail(self.transforms[0], function.TRANS)
+    I = function.Elemwise(self.index, index, dtype=int)
+    B = function.Sampled(function.ApplyTransforms(tail), expect=function.take(self.allcoords, I, axis=0))
+    return function.Inflate(func=B, dofmap=I, length=self.npoints, axis=0)
+
   def asfunction(self, array):
     '''Convert sampled data to evaluable array.
 
@@ -257,8 +275,7 @@ class Sample(types.Singleton):
         The sampled data.
     '''
 
-    index, tail = function.TransformsIndexWithTail(self.transforms[0], function.TRANS)
-    return function.Sampled(self, array, index, function.ApplyTransforms(tail))
+    return function.matmat(self.basis(), array)
 
   @property
   def tri(self):

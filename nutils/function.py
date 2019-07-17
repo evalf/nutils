@@ -2075,37 +2075,30 @@ class Sign(Array):
       return ones_like(self)
 
 class Sampled(Array):
-  '''Convert sampled data to evaluable array.
+  '''Basis-like identity operator.
 
-  Using the result of :func:`nutils.sample.Sample.eval`, create an evaluable
-  array that upon evaluation recovers the original function in the set of
-  points matching the original sampling.
+  Basis-like function that for every point in a predefined set evaluates to the
+  unit vector corresponding to its index.
 
   Args
   ----
-  sample : :class:`nutils.sample.Sample`
-      The set of points that the data was sampled on.
-  array :
-      The sampled data.
-  index : :class:`Array`
-      The element index corresponding to sample points.
-  points : :class:`Array`
-      Point locations (used only to check consistency)
+  points : 1d :class:`Array`
+      Present point coordinates.
+  expect : 2d :class:`Array`
+      Elementwise constant that evaluates to the predefined point coordinates;
+      used for error checking and to inherit the shape.
   '''
 
-  __slots__ = 'sample', 'array'
+  __slots__ = ()
 
   @types.apply_annotations
-  def __init__(self, sample, array:types.frozenarray, index:asarray, points:asarray):
-    assert len(array) == sample.npoints, 'array shape does not match sample: len(array)={}, sample.npoints={}'.format(len(array), sample.npoints)
-    self.sample = sample
-    self.array = array
-    super().__init__(args=[index, points], shape=array.shape[1:], dtype=array.dtype)
+  def __init__(self, points:asarray, expect:asarray):
+    assert points.ndim == 1 and expect.ndim == 2 and expect.shape[1] == points.shape[0]
+    super().__init__(args=[points, expect], shape=expect.shape[:1], dtype=int)
 
-  def evalf(self, index, points):
-    index, = index
-    assert numpy.equal(points, self.sample.points[index].coords).all(), 'illegal point set'
-    return self.array[self.sample.index[index]]
+  def evalf(self, points, expect):
+    assert numpy.equal(points, expect).all(), 'illegal point set'
+    return numpy.eye(len(points), dtype=int)
 
   def _derivative(self, var, seen):
     if isinstance(var, Argument):

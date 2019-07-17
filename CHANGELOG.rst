@@ -8,6 +8,18 @@ inverse chronological order.
 Changes since version 5.0
 -------------------------
 
+- Sample basis
+
+  Samples now provide a :func:`nutils.sample.Sample.basis`: an array that for
+  any point in the sample evaluates to the unit vector corresponding to its
+  index. This new underpinning of :func:`nutils.sample.Sample.asfunction` opens
+  the way for sampled arguments, as demonstrated in the last example below:
+
+      >>> H1 = mysample.asfunction(mydata) # mysample.eval(H1) == mydata
+      >>> H2 = mysample.basis().dot(mydata) # mysample.eval(H2) == mydata
+      >>> ns.Hbasis = mysample.basis()
+      >>> H3 = 'Hbasis_n ?d_n' @ ns # mysample.eval(H3, d=mydata) == mydata
+
 - Higher order gmsh geometries
 
   Gmsh element support has been extended to include cubic and quartic meshes in
