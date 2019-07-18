@@ -22,7 +22,7 @@
 Module with general purpose types.
 """
 
-import inspect, functools, hashlib, builtins, numbers, collections.abc, itertools, abc, sys, weakref
+import inspect, functools, hashlib, builtins, numbers, collections.abc, itertools, abc, sys, weakref, re
 import numpy
 
 def aspreprocessor(apply):
@@ -1326,5 +1326,165 @@ class attributes:
     self.__dict__.update(args)
   def __repr__(self):
     return 'attributes({})'.format(', '.join(map('{0[0]}={0[1]!r}'.format, sorted(self.__dict__.items()))))
+
+class unit(float):
+  '''
+  Framework for physical units.
+
+  The unit class provides a basic framework for specifying values with physical
+  units using readable notation such as ``2.5km/h``. The system ensures that
+  values are consistent with a measurement system derived from base units, but
+  it does impose or even preload one such system. Instead a derived class,
+  created using either :func:`unit.create` or class arguments, should specify
+  the units and scales relevant for the situation to which it is applied.
+
+  Once units are defined, the formal syntax for instantiating a quantity is:
+
+  .. code:: BNF
+
+      <quantity> ::= <number> <units> | <number> <operator> <units>
+      <number>   ::= "" | <integer> | <integer> "." <integer>
+                  ; Numerical value, allowing for decimal fractions but not
+                  ; scientific notation. An empty number is equivalent to 1.
+      <units>    ::= <unit> | <unit> <operator> <units>
+      <unit>     ::= <prefix> <name> <power>
+      <prefix>   ::= "" | "h" | "k" | "M" | "G" | "T" | "P" | "E" | "Z" | "Y"
+                  | "d" | "c" | "m" | "μ" | "n" | "p" | "f" | "a" | "z" | "y"
+                  ; Single character prefix to indicate a multiple or fraction
+                  ; of the unit. All SI prefixes are supported except for deca.
+                  ; An empty prefix signifies no scaling.
+      <name>     ::= <string>
+                  ; One of the defined units, case sensitive, containing Latin
+                  ; or Greek symbols.
+      <power>    ::= "" | <integer>
+                  ; Integer power to which to raise the unit. An empty power is
+                  ; equivalent to 1.
+      <operator> ::= "*" | "/"
+                  ; Multiplication or division.
+
+  With the prefix and unit name sharing an alphabet there is potential for
+  ambiguities (is it mol or micro-ol?). These are resolved using the simple
+  logic that the first character is considered part of the unit if this unit
+  exists; otherwise it is considered a prefix.
+  '''
+
+  _words = re.compile('([a-zA-Zα-ωΑ-Ω]+)')
+  _prefix = dict(Y=1e24, Z=1e21, E=1e18, P=1e15, T=1e12, G=1e9, M=1e6, k=1e3, h=1e2,
+    d=1e-1, c=1e-2, m=1e-3, μ=1e-6, n=1e-9, p=1e-12, f=1e-15, a=1e-18, z=1e-21, y=1e-24)
+
+  class _pdict(dict):
+    '''
+    Minimal helper class for sparse addition, multiplication
+    '''
+    def __iadd__(self, other):
+      for key, value in other.items():
+        value += self.pop(key, 0)
+        if value:
+          self[key] = value
+      return self
+    def __mul__(self, other):
+      return {key: value*other for key, value in self.items()}
+    def __str__(self):
+      return ''.join(sorted('*/'[value<0] + key + (str(abs(value)) if abs(value) > 1 else '') for key, value in self.items())).lstrip('*')
+
+  @classmethod
+  def create(cls, *args, **units):
+    '''
+    Create new unit type.
+
+    The unit system is defined via variable keyword arguments, with every unit
+    specified either as a direct numerical value or as a string referencing
+    other units using the standard expression syntax. Ultimately every unit
+    should be resolvable to a numerical value by tracing its dependencies.
+
+    The following example defines a subset of the SI system. Note that we
+    cannot use prefixes on the receiving end of a definition for reasons of
+    ambiguity, hence the definition of a gram as 1/1000:
+
+    >>> SI = unit.create(m=1, s=1, g=1e-3, N='kg*m/s2', Pa='N/m2')
+    >>> length = SI('2km')
+    >>> float(length)
+    2000.0
+    >>> mass = SI('2g')
+    >>> float(mass)
+    0.002
+    >>> mass/SI('g')
+    2.0
+
+    Args
+    ----
+    name : :class:`str` (optional, positional only)
+        Name of the new class object.
+    **units :
+        Unit definitions.
+
+    Returns
+    -------
+    :
+        The newly created (uninitiated) unit class.
+    '''
+    if args:
+      name, = args
+    else:
+      name = 'myunit'
+    mycls = type(name, (cls,), {})
+    mycls.__init_subclass__(**units)
+    return mycls
+
+  @classmethod
+  def __init_subclass__(cls, **units):
+    '''
+    Initialize unit using class arguments, supported as of Python 3.6.
+    '''
+    if not units:
+      return
+    def depth(name, d={}):
+      if name not in units:
+        name = name[1:] # strip prefix
+      if name not in d:
+        value = units.get(name)
+        d[name] = isinstance(value, str) and sum(map(depth, cls._words.findall(value)), 1)
+      return d[name]
+    cls._units = {}
+    for name in sorted(units, key=depth): # sort by dependency depth to establish resolve order
+      value = units[name]
+      cls._units[name] = cls._parse(value) if isinstance(value, str) else (value, cls._pdict({name: 1}))
+
+  @classmethod
+  def _parse(cls, s):
+    '''
+    Parse string into a tuple of float, _pdict.
+    '''
+    parts = cls._words.split(s)
+    value = float(parts[0].rstrip('*/') or 1)
+    powers = cls._pdict()
+    for i in range(1, len(parts), 2):
+      s = int(parts[i+1].rstrip('*/') or 1)
+      if parts[i-1].endswith('/'):
+        s = -s
+      name = parts[i]
+      if name not in cls._units:
+        if name[0] not in cls._prefix or name[1:] not in cls._units:
+          raise ValueError('unknown unit: {}'.format(name))
+        v, p = cls._units[name[1:]]
+        v *= cls._prefix[name[0]]
+      else:
+        v, p = cls._units[name]
+      value *= v**s
+      powers += p*s
+    return value, powers
+
+  def __new__(cls, s):
+    v, powers = cls._parse(s)
+    if not hasattr(cls, 'bound'):
+      cls = type('{}:{}'.format(cls.__name__, powers), (cls,), dict(bound=powers))
+    elif cls.bound != powers:
+      raise ValueError('invalid unit: expected {}, got {}'.format(cls.bound, powers))
+    self = float.__new__(cls, v)
+    self._str = s
+    return self
+
+  def __str__(self):
+    return self._str
 
 # vim:sw=2:sts=2:et

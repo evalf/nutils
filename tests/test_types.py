@@ -969,4 +969,58 @@ class ImmutableFamily(TestCase):
 ImmutableFamily(cls=nutils.types.Immutable)
 ImmutableFamily(cls=nutils.types.Singleton)
 
+class Unit(TestCase):
+
+  def setUp(self):
+    self.U = nutils.types.unit.create(m=1, s=1, g=1e-3,
+      Pa='N/m2', N='kg*m/s2', lb='453.59237g', h='3600s', **{'in': '.0254m'})
+
+  def check(self, *args, **powers):
+    s, v = args
+    u = self.U(s)
+    self.assertEqual(u, v)
+    U = u.__class__
+    self.assertEqual(U.bound, powers)
+    self.assertEqual(U(s), v)
+
+  def test_length(self):
+    self.check('m', 1, m=1)
+    self.check('10in', .254, m=1)
+
+  def test_mass(self):
+    self.check('kg', 1, g=1)
+    self.check('1lb', .45359237, g=1)
+
+  def test_time(self):
+    self.check('s', 1, s=1)
+    self.check('.5h', 1800, s=1)
+
+  def test_velocity(self):
+    self.check('m/s', 1, m=1, s=-1)
+    self.check('km/h', 1/3.6, m=1, s=-1)
+
+  def test_force(self):
+    self.check('N', 1, g=1, m=1, s=-2)
+    self.check('100Pa*in2', .254**2, g=1, m=1, s=-2)
+
+  def test_pressure(self):
+    self.check('Pa', 1, g=1, m=-1, s=-2)
+    self.check('10000lb/in/h2', 453.59237/25.4/36**2, g=1, m=-1, s=-2)
+
+  def test_bind(self):
+    T = self.U('2m').__class__
+    self.assertEqual(T.__name__, 'myunit:m')
+    T('2in')
+    with self.assertRaises(ValueError):
+      T('2m/2')
+
+  def test_invalid(self):
+    with self.assertRaises(ValueError):
+      self.U('2foo')
+
+  def test_str(self):
+    s = '1.23km'
+    L = self.U(s)
+    self.assertEqual(str(L), s)
+
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

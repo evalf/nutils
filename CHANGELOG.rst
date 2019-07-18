@@ -8,6 +8,20 @@ inverse chronological order.
 Changes since version 5.0
 -------------------------
 
+- Unit type
+
+  The new :class:`nutils.types.unit` allows for the creation of a unit system
+  for easy specification of physical quantities. Used in conjuction with
+  :func:`nutils.cli.run` this facilitates specifying units from the command
+  line, as well as providing a warning mechanism against incompatible units.
+
+      >>> U = types.unit.create(m=1, s=1, g=1e-3, N='kg*m/s2', Pa='N/m2')
+      >>> def main(length=U('2m'), F=U('5kN')):
+      ...   topo, geom = mesh.rectilinear([numpy.linspace(0,length,10)])
+
+    | $ python myscript.py length=25cm # OK
+    | $ python myscript.py F=10Pa # error!
+
 - Sample basis
 
   Samples now provide a :func:`nutils.sample.Sample.basis`: an array that for
