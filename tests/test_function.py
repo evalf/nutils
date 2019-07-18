@@ -638,10 +638,33 @@ class namespace(TestCase):
     self.assertEqual(ns2.default_geometry_name, 'y')
     self.assertEqual(ns2.eval_ni('basis_n,i'), ns2.basis.grad(ns2.y))
 
+  def test_copy_fixed_lengths(self):
+    ns = function.Namespace(length_i=2)
+    ns = ns.copy_()
+    self.assertEqual(ns.eval_ij('δ_ij').shape, (2,2))
+
+  def test_copy_fallback_length(self):
+    ns = function.Namespace(fallback_length=2)
+    ns = ns.copy_()
+    self.assertEqual(ns.eval_ij('δ_ij').shape, (2,2))
+
   def test_eval(self):
     ns = function.Namespace()
     ns.foo = function.zeros([3,3])
     ns.eval_ij('foo_ij + foo_ji')
+
+  def test_eval_fixed_lengths(self):
+    ns = function.Namespace(length_i=2)
+    self.assertEqual(ns.eval_ij('δ_ij').shape, (2,2))
+
+  def test_eval_fixed_lengths_multiple(self):
+    ns = function.Namespace(length_jk=2)
+    self.assertEqual(ns.eval_ij('δ_ij').shape, (2,2))
+    self.assertEqual(ns.eval_ik('δ_ik').shape, (2,2))
+
+  def test_eval_fallback_length(self):
+    ns = function.Namespace(fallback_length=2)
+    self.assertEqual(ns.eval_ij('δ_ij').shape, (2,2))
 
   def test_matmul_0d(self):
     ns = function.Namespace()
@@ -663,6 +686,14 @@ class namespace(TestCase):
     ns = function.Namespace()
     with self.assertRaises(TypeError):
       1 @ ns
+
+  def test_matmul_fixed_lengths(self):
+    ns = function.Namespace(length_i=2)
+    self.assertEqual(('1_i δ_ij' @ ns).shape, (2,))
+
+  def test_matmul_fallback_length(self):
+    ns = function.Namespace(fallback_length=2)
+    self.assertEqual(('1_i δ_ij' @ ns).shape, (2,))
 
   def test_replace(self):
     ns = function.Namespace(default_geometry_name='y')
@@ -688,6 +719,24 @@ class namespace(TestCase):
     orig = function.Namespace(default_geometry_name='g')
     pickled = pickle.loads(pickle.dumps(orig))
     self.assertEqual(pickled.default_geometry_name, orig.default_geometry_name)
+
+  def test_pickle_fixed_lengths(self):
+    orig = function.Namespace(length_i=2)
+    pickled = pickle.loads(pickle.dumps(orig))
+    self.assertEqual(pickled.eval_ij('δ_ij').shape, (2,2))
+
+  def test_pickle_fallback_length(self):
+    orig = function.Namespace(fallback_length=2)
+    pickled = pickle.loads(pickle.dumps(orig))
+    self.assertEqual(pickled.eval_ij('δ_ij').shape, (2,2))
+
+  def test_duplicate_fixed_lengths(self):
+    with self.assertRaisesRegex(ValueError, '^length of index i specified more than once$'):
+      function.Namespace(length_ii=2)
+
+  def test_unexpected_keyword_argument(self):
+    with self.assertRaisesRegex(TypeError, r"^__init__\(\) got an unexpected keyword argument 'test'$"):
+      function.Namespace(test=2)
 
 class eval_ast(TestCase):
 
