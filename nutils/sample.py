@@ -103,7 +103,6 @@ class Sample(types.Singleton):
       kwargs['opposite'] = False
     return [function.asarray(func).prepare_eval(**kwargs) for func in funcs]
 
-  @log.withcontext
   @util.positional_only('self', 'funcs')
   @util.single_or_multiple
   @types.apply_annotations
@@ -171,26 +170,22 @@ class Sample(types.Singleton):
     # benefits from parallel speedup.
 
     valueindexfunc = function.Tuple(function.Tuple([value]+list(index)) for value, index in zip(values, indices))
-    ielems = parallel.range(self.nelems)
-    with parallel.fork(nprocs):
+    erange = parallel.range(self.nelems) # prepare shared iterator
+    with parallel.fork(nprocs), log.iter.percentage('integrating', erange) as ielems:
       for ielem in ielems:
-        with log.context('elem', ielem, '({:.0f}%)'.format(100*ielem/self.nelems)):
-          points = self.points[ielem]
-          for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=points.coords, **arguments)):
-            s = slice(*offsets[iblock,ielem:ielem+2])
-            data, index = data_index[block2func[iblock]]
-            w_intdata = numeric.dot(points.weights, intdata)
-            data[s] = w_intdata.ravel()
-            si = (slice(None),) + (numpy.newaxis,) * (w_intdata.ndim-1)
-            for idim, (ii,) in enumerate(indices):
-              index[idim,s].reshape(w_intdata.shape)[...] = ii[si]
-              si = si[:-1]
+        points = self.points[ielem]
+        for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=points.coords, **arguments)):
+          s = slice(*offsets[iblock,ielem:ielem+2])
+          data, index = data_index[block2func[iblock]]
+          w_intdata = numeric.dot(points.weights, intdata)
+          data[s] = w_intdata.ravel()
+          si = (slice(None),) + (numpy.newaxis,) * (w_intdata.ndim-1)
+          for idim, (ii,) in enumerate(indices):
+            index[idim,s].reshape(w_intdata.shape)[...] = ii[si]
+            si = si[:-1]
 
-    retvals = []
-    for i, func in enumerate(funcs):
-      with log.context('assembling {}/{}'.format(i+1, len(funcs))):
-        retvals.append(matrix.assemble(*data_index[i], shape=func.shape))
-    return retvals
+    with log.iter.fraction('assembling', data_index, funcs) as items:
+      return [matrix.assemble(*data, shape=func.shape) for data, func in items]
 
   def integral(self, func):
     '''Create Integral object for postponed integration.
@@ -203,7 +198,6 @@ class Sample(types.Singleton):
 
     return Integral([(self, func)])
 
-  @log.withcontext
   @util.positional_only('self', 'funcs')
   @util.single_or_multiple
   @types.apply_annotations
@@ -229,12 +223,11 @@ class Sample(types.Singleton):
     if config.dot:
       idata.graphviz()
 
-    ielems = parallel.range(self.nelems)
-    with parallel.fork(nprocs):
+    erange = parallel.range(self.nelems) # prepare shared iterator
+    with parallel.fork(nprocs), log.iter.percentage('evaluating', erange) as ielems:
       for ielem in ielems:
-        with log.context('elem', ielem, '({:.0f}%)'.format(100*ielem/self.nelems)):
-          for ifunc, inds, data in idata.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=self.points[ielem].coords, **arguments):
-            numpy.add.at(retvals[ifunc], numpy.ix_(self.index[ielem], *[ind for (ind,) in inds]), data)
+        for ifunc, inds, data in idata.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=self.points[ielem].coords, **arguments):
+          numpy.add.at(retvals[ifunc], numpy.ix_(self.index[ielem], *[ind for (ind,) in inds]), data)
 
     return retvals
 

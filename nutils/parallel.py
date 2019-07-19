@@ -102,6 +102,8 @@ class range:
     self._stop = stop
     self._index = multiprocessing.RawValue('i', 0)
     self._lock = multiprocessing.Lock() # lock to avoid race conditions in incrementing index
+  def __len__(self):
+    return self._stop
   def __iter__(self):
     return self
   def __next__(self):
