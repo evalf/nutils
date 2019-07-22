@@ -27,7 +27,7 @@ so configured.
 This is a transitional wrapper around the external treelog module.
 """
 
-import builtins, itertools, treelog, contextlib, sys
+import builtins, itertools, treelog, contextlib, sys, functools
 from treelog import set, add, disable, withcontext, \
   Log, TeeLog, FilterLog, NullLog, DataLog, RecordLog, StdoutLog, RichOutputLog, LoggingLog
 from . import warnings
@@ -103,14 +103,44 @@ def open(filename, mode, *, level='user', exists=None):
     f.devnull = not f
     yield f
 
-def _factory(name):
-  def wrapper(*args, **kwargs):
-    return getattr(treelog.current, name)(*args, **kwargs)
-  wrapper.__doc__ = getattr(treelog.Log, name).__doc__
-  wrapper.__name__ = name
-  wrapper.__qualname__ = name
-  return wrapper
-globals().update((name, _factory(name)) for name in dir(treelog.Log) if not name.startswith('_') and name not in globals() and callable(getattr(treelog.Log, name)))
-del _factory
+@contextlib.contextmanager
+def context(*args, sep=' '):
+  log = treelog.current
+  log.pushcontext(sep.join(args))
+  try:
+    yield
+  finally:
+    log.popcontext()
+
+def _print(level, *args, sep=' '):
+  '''Write message to log.
+
+  Args
+  ----
+  *args : tuple of :class:`str`
+      Values to be printed to the log.
+  sep : :class:`str`
+      String inserted between values, default a space.
+  '''
+  treelog.current.write(sep.join(map(str, args)), level)
+
+def _file(level, name, mode, *, id=None):
+  '''Open file in logger-controlled directory.
+
+  Args
+  ----
+  filename : :class:`str`
+  mode : :class:`str`
+      Should be either ``'w'`` (text) or ``'wb'`` (binary data).
+  id :
+      Bytes identifier that can be used to decide a priori that a file has
+      already been constructed. Default: None.
+  '''
+  return treelog.current.open(name, mode, level, id)
+
+debug, info, user, warning, error = [functools.partial(_print, level) for level in builtins.range(5)]
+debugfile, infofile, userfile, warningfile, errorfile = [functools.partial(_file, level) for level in builtins.range(5)]
+
+del _print, _file
 
 # vim:sw=2:sts=2:et
