@@ -18,8 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from . import util, warnings
-import contextlib, numpy, os, treelog as log
+from . import util, warnings, log
+import contextlib, numpy, os
 
 @contextlib.contextmanager
 @util.positional_only('name')

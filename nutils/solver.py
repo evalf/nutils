@@ -50,7 +50,7 @@ In addition to ``solve_linear`` the solver module defines ``newton`` and
 time dependent problems.
 """
 
-from . import function, cache, log, numeric, sample, types, util, matrix
+from . import function, cache, log, numeric, sample, types, util, matrix, warnings
 import numpy, itertools, functools, numbers, collections, math
 
 
@@ -91,76 +91,61 @@ def solve_linear(target:types.strictstr, residual:sample.strictintegral, constra
   res, jac = sample.eval_integrals(residual, jacobian, **{target: numpy.zeros(argshape)}, **arguments)
   return jac.solve(-res, constrain=constrain, **solveargs)
 
-
 def solve(gen_lhs_resnorm, tol=0., maxiter=float('inf')):
-  '''execute nonlinear solver, return lhs
+  warnings.deprecation('solve(x, ...) is deprecated, use x.solve(...) instead')
+  return gen_lhs_resnorm.solve(tol, maxiter)
 
-  Iterates over nonlinear solver until tolerance is reached. Example::
-
-      lhs = solve(newton(target, residual), tol=1e-5)
-
-  Parameters
-  ----------
-  gen_lhs_resnorm : :class:`collections.abc.Generator`
-      Generates (lhs, resnorm) tuples
-  tol : :class:`float`
-      Target residual norm
-  maxiter : :class:`int`
-      Maximum number of iterations
-
-  Returns
-  -------
-  :class:`numpy.ndarray`
-      Coefficient vector that corresponds to a smaller than ``tol`` residual.
-  '''
-
-  lhs, info = solve_withinfo(gen_lhs_resnorm, tol=tol, maxiter=maxiter)
-  return lhs
-
-
-@types.apply_annotations
-@cache.function
 def solve_withinfo(gen_lhs_resnorm, tol:types.strictfloat=0., maxiter:types.strictfloat=float('inf')):
-  '''execute nonlinear solver, return lhs and info
+  warnings.deprecation('solve_withinfo(x, ...) is deprecated, use x.solve_withinfo(...) instead')
+  return gen_lhs_resnorm.solve_withinfo(tol, maxiter)
 
-  Like :func:`solve`, but return a 2-tuple of the solution and the
-  corresponding info object which holds information about the final residual
-  norm and other generator-dependent information.
-  '''
-
-  iterator = iter(gen_lhs_resnorm)
-  lhs, info = next(iterator)
-  if tol:
-    iiter = 0
-    resnorm0 = info.resnorm
-    while info.resnorm > tol:
-      if iiter > maxiter:
-        raise SolverError('failed to reach target tolerance')
-      with log.context('iter {} ({:.0f}%)'.format(iiter, 100 * numpy.log(resnorm0/info.resnorm) / numpy.log(resnorm0/tol))):
-        lhs, info = next(iterator)
-      iiter += 1
-  elif info.resnorm:
-    lhs, info = next(iterator)
-    if info.resnorm:
-      raise SolverError('nonlinear problem requires a nonzero tolerance')
-  return lhs, info
 
 class RecursionWithSolve(cache.Recursion):
-  '''add a .solve method to (lhs,resnorm) iterators
-
-  Introduces the convenient form::
-
-      newton(target, residual).solve(tol)
-
-  Shorthand for::
-
-      solve(newton(target, residual), tol)
-  '''
+  '''add a .solve method to (lhs,resnorm) iterators'''
 
   __slots__ = ()
 
-  solve_withinfo = solve_withinfo
-  solve = solve
+  def solve(self, tol=0., maxiter=float('inf')):
+    '''execute nonlinear solver, return lhs
+  
+    Iterates over nonlinear solver until tolerance is reached. Example::
+  
+        lhs = newton(target, residual).solve(tol=1e-5)
+  
+    Parameters
+    ----------
+    tol : :class:`float`
+        Target residual norm
+    maxiter : :class:`int`
+        Maximum number of iterations
+  
+    Returns
+    -------
+    :class:`numpy.ndarray`
+        Coefficient vector that corresponds to a smaller than ``tol`` residual.
+    '''
+  
+    lhs, info = self.solve_withinfo(tol=tol, maxiter=maxiter)
+    return lhs
+
+  @types.apply_annotations
+  @cache.function
+  def solve_withinfo(self, tol=0., maxiter=float('inf')):
+    '''execute nonlinear solver, return lhs and info
+
+    Like :func:`solve`, but return a 2-tuple of the solution and the
+    corresponding info object which holds information about the final residual
+    norm and other generator-dependent information.
+    '''
+  
+    with log.iter.wrap(_progress(self.__class__.__name__, tol), self) as items:
+      for i, (lhs, info) in enumerate(items):
+        if info.resnorm <= tol:
+          break
+        if i > maxiter:
+          raise SolverError('failed to reach target tolerance')
+      log.info('converged with residual {:.1e}'.format(info.resnorm))
+    return lhs, info
 
 
 class newton(RecursionWithSolve, length=1):
@@ -691,5 +676,13 @@ def _minimize3(p0, p1, q0, q1, r0, r1):
   # To minimize P we need to determine the roots for P'(x) = q0 + r0 x + 3 d x^2 + 4 e x^3 + 5 f x^4
   roots = [x.real for x in numpy.roots([5*f, 4*e, 3*d, r0, q0]) if not x.imag and x > 0]
   return min(roots) if roots else math.inf
+
+def _progress(name, tol):
+  '''helper function for iter.wrap'''
+
+  lhs, info = yield name
+  resnorm0 = info.resnorm
+  while True:
+    lhs, info = yield (name + ' {:.0f}%').format(100 * numpy.log(resnorm0/max(info.resnorm,tol)) / numpy.log(resnorm0/tol) if tol else 0 if info.resnorm else 100)
 
 # vim:sw=2:sts=2:et

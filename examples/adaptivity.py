@@ -23,7 +23,7 @@ import nutils, numpy
 def main(etype: 'type of elements (square/triangle/mixed)' = 'square',
          btype: 'type of basis function (h/th-std/spline)' = 'h-std',
          degree: 'polynomial degree' = 2,
-         nrefine: 'number of refinement steps (-1 for unlimited)' = -1):
+         nrefine: 'number of refinement steps' = 5):
 
   domain, geom = nutils.mesh.unitsquare(2, etype)
 
@@ -32,43 +32,41 @@ def main(etype: 'type of elements (square/triangle/mixed)' = 'square',
   domain = domain.trim(exact-1e-15, maxrefine=0)
   linreg = nutils.util.linear_regressor()
 
-  for irefine in nutils.log.count('level'):
+  with nutils.log.iter.fraction('level', range(nrefine+1)) as lrange:
+    for irefine in lrange:
 
-    ns = nutils.function.Namespace()
-    ns.x = geom
-    ns.basis = domain.basis(btype, degree=degree)
-    ns.u = 'basis_n ?lhs_n'
-    ns.du = ns.u - exact
+      if irefine:
+        refdom = domain.refined
+        ns.refbasis = refdom.basis(btype, degree=degree)
+        indicator = refdom.integral('refbasis_n,k u_,k d:x' @ ns, degree=degree*2).eval(lhs=lhs)
+        indicator -= refdom.boundary.integral('refbasis_n u_,k n_k d:x' @ ns, degree=degree*2).eval(lhs=lhs)
+        supp = ns.refbasis.get_support(indicator**2 > numpy.mean(indicator**2))
+        domain = domain.refined_by(ns.refbasis.transforms[supp])
 
-    sqr = domain.boundary['trimmed'].integral('u^2 d:x' @ ns, degree=degree*2)
-    cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
+      ns = nutils.function.Namespace()
+      ns.x = geom
+      ns.basis = domain.basis(btype, degree=degree)
+      ns.u = 'basis_n ?lhs_n'
+      ns.du = ns.u - exact
 
-    sqr = domain.boundary.integral('du^2 d:x' @ ns, degree=7)
-    cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
+      sqr = domain.boundary['trimmed'].integral('u^2 d:x' @ ns, degree=degree*2)
+      cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
 
-    res = domain.integral('basis_n,k u_,k d:x' @ ns, degree=degree*2)
-    lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
+      sqr = domain.boundary.integral('du^2 d:x' @ ns, degree=7)
+      cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
 
-    ndofs = len(ns.basis)
-    error = domain.integral('<du^2, du_,k du_,k>_i d:x' @ ns, degree=7).eval(lhs=lhs)**.5
-    rate, offset = linreg.add(numpy.log(len(ns.basis)), numpy.log(error))
-    nutils.log.user('ndofs: {ndofs}, L2 error: {error[0]:.2e} ({rate[0]:.2f}), H1 error: {error[1]:.2e} ({rate[1]:.2f})'.format(ndofs=len(ns.basis), error=error, rate=rate))
+      res = domain.integral('basis_n,k u_,k d:x' @ ns, degree=degree*2)
+      lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
 
-    bezier = domain.sample('bezier', 9)
-    x, u, du = bezier.eval(['x_i', 'u', 'du'] @ ns, lhs=lhs)
-    nutils.export.triplot('sol.png', x, u, tri=bezier.tri, hull=bezier.hull)
-    nutils.export.triplot('err.png', x, du, tri=bezier.tri, hull=bezier.hull)
+      ndofs = len(ns.basis)
+      error = domain.integral('<du^2, du_,k du_,k>_i d:x' @ ns, degree=7).eval(lhs=lhs)**.5
+      rate, offset = linreg.add(numpy.log(len(ns.basis)), numpy.log(error))
+      nutils.log.user('ndofs: {ndofs}, L2 error: {error[0]:.2e} ({rate[0]:.2f}), H1 error: {error[1]:.2e} ({rate[1]:.2f})'.format(ndofs=len(ns.basis), error=error, rate=rate))
 
-    if irefine == nrefine:
-      break
-
-    refdom = domain.refined
-    ns.refbasis = refdom.basis(btype, degree=degree)
-    indicator = refdom.integral('refbasis_n,k u_,k d:x' @ ns, degree=degree*2).eval(lhs=lhs)
-    indicator -= refdom.boundary.integral('refbasis_n u_,k n_k d:x' @ ns, degree=degree*2).eval(lhs=lhs)
-    supp = ns.refbasis.get_support(indicator**2 > numpy.mean(indicator**2))
-
-    domain = domain.refined_by(ns.refbasis.transforms[supp])
+      bezier = domain.sample('bezier', 9)
+      x, u, du = bezier.eval(['x_i', 'u', 'du'] @ ns, lhs=lhs)
+      nutils.export.triplot('sol.png', x, u, tri=bezier.tri, hull=bezier.hull)
+      nutils.export.triplot('err.png', x, du, tri=bezier.tri, hull=bezier.hull)
 
   return ndofs, error, lhs
 

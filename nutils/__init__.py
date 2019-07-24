@@ -19,7 +19,7 @@
 # THE SOFTWARE.
 
 import sys, numpy
-from distutils.version import LooseVersion
+from distutils.version import LooseVersion, StrictVersion
 
 assert sys.version_info >= (3, 5)
 assert LooseVersion(numpy.version.version) >= LooseVersion('1.8'), 'nutils requires numpy 1.8 or higher, got {}'.format(numpy.version.version)
@@ -34,8 +34,14 @@ __all__ = ['_', 'numpy', 'numeric', 'element', 'elementseq', 'function', 'expres
   'cache', 'transform', 'transformseq', 'solver', 'cli', 'warnings', 'config', 'types', 'points',
   'sample', 'export', 'testing']
 
+import treelog
+if StrictVersion(treelog.version) < StrictVersion('1.0b5'):
+  from . import log
+else:
+  log = treelog
+
 from . import numeric, element, function, expression, mesh, topology, util, \
-  matrix, parallel, log, cache, transform, solver, cli, warnings, config, \
+  matrix, parallel, cache, transform, solver, cli, warnings, config, \
   types, points, sample, export, testing
 
 # vim:sw=2:sts=2:et

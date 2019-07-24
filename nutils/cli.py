@@ -24,8 +24,8 @@ can be used set up properties, initiate an output environment, and execute a
 python function based arguments specified on the command line.
 """
 
-from . import util, config, long_version, warnings, matrix, cache
-import sys, inspect, os, io, time, pdb, signal, subprocess, contextlib, traceback, pathlib, html, treelog as log, stickybar
+from . import util, config, long_version, warnings, matrix, cache, log
+import sys, inspect, os, io, time, pdb, signal, subprocess, contextlib, traceback, pathlib, html, stickybar
 
 def _version():
   try:

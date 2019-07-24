@@ -72,27 +72,28 @@ def main(nelems: 'number of elements' = 24,
   spacing = .05 # initial quiver spacing
   xgrd = nutils.util.regularize(bbox, spacing)
 
-  for istep, lhs in nutils.log.enumerate('timestep', nutils.solver.impliciteuler('lhs', residual=res, inertia=inertia, lhs0=lhs0, timestep=timestep, constrain=cons, newtontol=1e-10)):
+  with nutils.log.iter.plain('timestep', nutils.solver.impliciteuler('lhs', residual=res, inertia=inertia, lhs0=lhs0, timestep=timestep, constrain=cons, newtontol=1e-10)) as steps:
+    for istep, lhs in enumerate(steps):
 
-    t = istep * timestep
-    x, u, normu, p = bezier.eval(['x_i', 'u_i', 'sqrt(u_k u_k)', 'p'] @ ns, lhs=lhs)
-    ugrd = interpolate[xgrd](u)
+      t = istep * timestep
+      x, u, normu, p = bezier.eval(['x_i', 'u_i', 'sqrt(u_k u_k)', 'p'] @ ns, lhs=lhs)
+      ugrd = interpolate[xgrd](u)
 
-    with nutils.export.mplfigure('flow.png', figsize=(12.8,7.2)) as fig:
-      ax = fig.add_axes([0,0,1,1], yticks=[], xticks=[], frame_on=False, xlim=bbox[0], ylim=bbox[1])
-      im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, p, shading='gouraud', cmap='jet')
-      import matplotlib.collections
-      ax.add_collection(matplotlib.collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1, alpha=.5))
-      ax.quiver(xgrd[:,0], xgrd[:,1], ugrd[:,0], ugrd[:,1], angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9, alpha=.5)
-      ax.plot(0, 0, 'k', marker=(3,2,t*rotation*180/numpy.pi-90), markersize=20)
-      cax = fig.add_axes([0.9, 0.1, 0.01, 0.8])
-      cax.tick_params(labelsize='large')
-      fig.colorbar(im, cax=cax)
+      with nutils.export.mplfigure('flow.png', figsize=(12.8,7.2)) as fig:
+        ax = fig.add_axes([0,0,1,1], yticks=[], xticks=[], frame_on=False, xlim=bbox[0], ylim=bbox[1])
+        im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, p, shading='gouraud', cmap='jet')
+        import matplotlib.collections
+        ax.add_collection(matplotlib.collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1, alpha=.5))
+        ax.quiver(xgrd[:,0], xgrd[:,1], ugrd[:,0], ugrd[:,1], angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9, alpha=.5)
+        ax.plot(0, 0, 'k', marker=(3,2,t*rotation*180/numpy.pi-90), markersize=20)
+        cax = fig.add_axes([0.9, 0.1, 0.01, 0.8])
+        cax.tick_params(labelsize='large')
+        fig.colorbar(im, cax=cax)
 
-    if t >= endtime:
-      break
+      if t >= endtime:
+        break
 
-    xgrd = nutils.util.regularize(bbox, spacing, xgrd + ugrd * timestep)
+      xgrd = nutils.util.regularize(bbox, spacing, xgrd + ugrd * timestep)
 
   return lhs0, lhs
 

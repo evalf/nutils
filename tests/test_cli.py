@@ -1,6 +1,5 @@
 import sys, os, tempfile, io
-import nutils.cli, nutils.log
-from nutils.testing import *
+from nutils import cli, log, testing
 
 def main(
   iarg: 'integer' = 1,
@@ -11,8 +10,8 @@ def main(
   assert isinstance(sarg, str), 'f should be str, got {}'.format(type(sarg))
   print('all OK')
 
-@parametrize
-class run(TestCase):
+@testing.parametrize
+class run(testing.TestCase):
 
   scriptname = 'test.py'
 
@@ -29,7 +28,7 @@ class run(TestCase):
       if self.method == 'choose' and funcname:
         sys.argv.append(funcname)
       sys.argv.extend(args)
-      getattr(nutils.cli, self.method)(main, loaduserconfig=False)
+      getattr(cli, self.method)(main, loaduserconfig=False)
     except SystemExit as e:
       status = e
     else:
@@ -45,7 +44,7 @@ class run(TestCase):
     with self.subTest('outdir'):
       self.assertTrue(os.path.isdir(os.path.join(self.outrootdir,self.scriptname)), 'output directory not found')
     with self.subTest('argparse'):
-      nutils.log.info(output)
+      log.info(output)
       self.assertIn('all OK', output)
     with self.subTest('exitstatus'):
       self.assertIsNotNone(status)
@@ -54,7 +53,7 @@ class run(TestCase):
   def test_badarg(self):
     status, output = self._cli('--bla') if self.method == 'run' else self._cli(funcname='bla')
     with self.subTest('argparse'):
-      nutils.log.info(output)
+      log.info(output)
       self.assertNotIn('all OK', output)
     with self.subTest('exitstatus'):
       self.assertIsNotNone(status)
@@ -65,7 +64,7 @@ class run(TestCase):
     with self.subTest('outdir'):
       self.assertFalse(os.path.isdir(os.path.join(self.outrootdir,self.scriptname)), 'outdir directory found')
     with self.subTest('argparse'):
-      nutils.log.info(output)
+      log.info(output)
       self.assertNotIn('all OK', output)
     with self.subTest('exitstatus'):
       self.assertIsNotNone(status)
