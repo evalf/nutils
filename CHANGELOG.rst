@@ -1,5 +1,4 @@
-Changelog
-=========
+Changelog =========
 
 Nutils is being actively developed and the API is continuously evolving. The
 following overview lists user facing changes as well as newly added features in
@@ -7,6 +6,20 @@ inverse chronological order.
 
 Changes since version 5.0
 -------------------------
+
+- Fixed and fallback lengths in (namespace) expressions
+
+  The :class:`nutils.function.Namespace` has two new arguments:
+  ``length_<indices>`` and ``fallback_length``. The former can be used to
+  assign fixed lengths to specific indices in expressions, say index ``i``
+  should have length 2, which is used for verification and resolving undefined
+  lengths.  The latter is used to resolve remaining undefined lengths.
+
+      >>> ns = nutils.function.Namespace(length_i=2, fallback_length=3)
+      >>> ns.eval_ij('δ_ij') # using length_i
+      Array<2,2>
+      >>> ns.eval_jk('δ_jk') # using fallback_length
+      Array<3,3>
 
 - Treelog update
 
