@@ -58,8 +58,8 @@ class navierstokes(TestCase):
     self.inertia = domain.integral((ubasis * u).sum(-1)*function.J(geom), degree=5)
     stokesres = domain.integral((viscosity * (ubasis.grad(geom) * (u.grad(geom)+u.grad(geom).T)).sum([-1,-2]) - ubasis.div(geom) * p + pbasis * u.div(geom))*function.J(geom), degree=5)
     self.residual = stokesres + domain.integral((ubasis * (u.grad(geom) * u).sum(-1) * u).sum(-1)*function.J(geom), degree=5)
-    self.cons = domain.boundary['top,bottom'].project([0,0], onto=ubasis, geometry=geom, ischeme='gauss2') \
-              | domain.boundary['left'].project([geom[1]*(1-geom[1]),0], onto=ubasis, geometry=geom, ischeme='gauss2')
+    self.cons = domain.boundary['top,bottom'].project([0,0], onto=ubasis, geometry=geom, ischeme='gauss4') \
+              | domain.boundary['left'].project([geom[1]*(1-geom[1]),0], onto=ubasis, geometry=geom, ischeme='gauss4')
     self.lhs0 = solver.solve_linear('dofs', residual=stokesres, constrain=self.cons)
     self.tol = 1e-10
 
@@ -79,7 +79,7 @@ class navierstokes(TestCase):
     _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.newton('dofs', residual=self.residual, constrain=self.cons)))
 
   def test_pseudotime(self):
-    self.assert_resnorm(solver.pseudotime('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, inertia=self.inertia, timestep=1).solve(tol=self.tol, maxiter=9))
+    self.assert_resnorm(solver.pseudotime('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, inertia=self.inertia, timestep=1).solve(tol=self.tol, maxiter=12))
 
   def test_pseudotime_iter(self):
     _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.pseudotime('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, inertia=self.inertia, timestep=1)))

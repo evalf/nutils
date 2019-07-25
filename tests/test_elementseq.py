@@ -107,8 +107,8 @@ common(
   checkndims=2)
 common(
   'RepeatedReferences',
-  seq=nutils.elementseq.RepeatedReferences(nutils.elementseq.PlainReferences([square, triangle], 2), 2),
-  check=[square, triangle]*2,
+  seq=nutils.elementseq.RepeatedReferences(nutils.elementseq.PlainReferences([square, triangle, square], 2), 2),
+  check=[square, triangle, square]*2,
   checkndims=2)
 common(
   'ProductReferences',

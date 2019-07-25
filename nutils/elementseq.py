@@ -362,7 +362,7 @@ class RepeatedReferences(References):
   def __getitem__(self, index):
     if not numeric.isint(index):
       return super().__getitem__(index)
-    return self._parent[numeric.normdim(len(self), index) % self._count]
+    return self._parent[numeric.normdim(len(self), index) % len(self._parent)]
 
   def __iter__(self):
     for i in range(self._count):
