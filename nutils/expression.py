@@ -106,7 +106,7 @@ class _Array:
   '''
 
   @classmethod
-  def wrap(cls, ast, indices, shape):
+  def wrap(cls, ast, indices, shape, linked_lengths=None):
     '''Create an :class:`_Array` by wrapping ``ast``.
 
     The ``ast`` should be a constant or variable.  Duplicate indices are summed
@@ -115,7 +115,7 @@ class _Array:
 
     if len(indices) != len(shape):
       raise _IntermediateError('Expected {}, got {}.'.format(_sp(len(shape), 'index', 'indices'), len(indices)))
-    return cls._apply_indices(ast, 0, indices, shape, frozenset(), {})
+    return cls._apply_indices(ast, 0, indices, shape, frozenset(), linked_lengths or frozenset())
 
   @classmethod
   def _apply_indices(cls, ast, offset, indices, shape, summed, linked_lengths):
@@ -436,10 +436,10 @@ class _Array:
     ast = type, self.ast, _(geom)
     return _Array._apply_indices(ast, self.ndim, self.indices+index, self.shape+geom.shape, self.summed, self.linked_lengths)
 
-  def derivative(self, arg, indices):
+  def derivative(self, arg):
     'Return the derivative to ``arg``.'
 
-    return _Array._apply_indices(('derivative', self.ast, arg.ast), self.ndim, self.indices+indices, self.shape+arg.shape, self.summed, self.linked_lengths)
+    return _Array._apply_indices(('derivative', self.ast, arg.ast), self.ndim, self.indices+arg.indices, self.shape+arg.shape, self.summed, self.linked_lengths)
 
   def append_axis(self, index, length):
     '''Return an :class:`_Array` with one additional axis.'''
@@ -492,17 +492,20 @@ class _ExpressionParser:
       See argument ``arg_shapes`` of :func:`parse`.
   default_geometry_name : class:`str`
       See argument ``default_geometry_name`` of :func:`parse`.
+  fixed_lengths : :class:`dict` of :class:`str` and :class:`int`
+      See argument ``fixed_lengths`` of :func:`parse`.
   '''
 
   eye_symbols = '$', 'δ'
   normal_symbols = 'n',
 
-  def __init__(self, expression, variables, functions, arg_shapes, default_geometry_name):
+  def __init__(self, expression, variables, functions, arg_shapes, default_geometry_name, fixed_lengths):
     self.expression = expression
     self.variables = variables
     self.functions = functions
     self.arg_shapes = dict(arg_shapes)
     self.default_geometry_name = default_geometry_name
+    self.fixed_lengths = fixed_lengths
 
   def highlight(f):
     'wrap ``f`` in a function that converts ``_IntermediateError`` objects'
@@ -574,6 +577,21 @@ class _ExpressionParser:
 
     return self._tokens[self._index+2] if self._next.type == 'whitespace' else self._next
 
+  def _asarray(self, ast, indices_token, shape):
+    indices = indices_token.data if indices_token else ''
+    if len(indices) != len(shape):
+      raise _IntermediateError('Expected {}, got {}.'.format(_sp(len(shape), 'index', 'indices'), len(indices)))
+    linked_lengths = set()
+    for iaxis, (length, index) in enumerate(zip(shape, indices)):
+      fixed = self.fixed_lengths.get(index)
+      if fixed is None:
+        pass
+      elif isinstance(length, _Length):
+        linked_lengths.add(frozenset([length, fixed]))
+      elif fixed != length:
+        raise _IntermediateError('Length of index {} is fixed at {} but the expression has length {}.'.format(index, fixed, length), at=indices_token.pos+iaxis, count=1)
+    return _Array.wrap(ast, indices, shape, linked_lengths)
+
   def _get_variable(self, name):
     'get variable by ``name`` or raise an error'
 
@@ -590,17 +608,18 @@ class _ExpressionParser:
       raise _IntermediateError('Invalid geometry: expected 1 dimension, but {!r} has {}.'.format(name, geom.ndim))
     return geom
 
-  def _get_arg(self, name, indices, indices_start):
+  def _get_arg(self, name, indices_token):
     'get arg by ``name`` or raise an error'
 
+    indices = indices_token.data if indices_token else ''
     if name in self.arg_shapes:
       shape = self.arg_shapes[name]
       if len(shape) != len(indices):
         raise _IntermediateError('Argument {!r} previously defined with {} instead of {}.'.format(name, _sp(len(shape), 'axis', 'axes'), len(indices)))
     else:
-      shape = tuple(_Length(indices_start+i) for i, j in enumerate(indices))
+      shape = tuple(_Length(indices_token.pos+i) for i, j in enumerate(indices))
       self.arg_shapes[name] = shape
-    return _Array.wrap(('arg', _(name)) + tuple(map(_, shape)), indices, shape)
+    return self._asarray(('arg', _(name)) + tuple(map(_, shape)), indices_token, shape)
 
   @highlight
   def parse_lhs_arg(self, seen_lhs):
@@ -615,13 +634,13 @@ class _ExpressionParser:
     if name in seen_lhs:
       raise _IntermediateError("Argument {!r} occurs more than once.".format(name))
     seen_lhs[name] = token
-    indices = self._consume().data if self._next.type == 'indices' else ''
-    for i, index in enumerate(indices):
-      if index in indices[i+1:]:
+    indices = self._consume() if self._next.type == 'indices' else ''
+    for i, index in enumerate(indices and indices.data):
+      if index in indices.data[i+1:]:
         raise _IntermediateError('Repeated indices are not allowed on the left hand side.')
       elif '0' <= index <= '9':
         raise _IntermediateError('Numeric indices are not allowed on the left hand side.')
-    return self._get_arg(name, indices, self._current.pos)
+    return self._get_arg(name, indices)
 
   @highlight
   def parse_var(self):
@@ -643,8 +662,7 @@ class _ExpressionParser:
         geometry_name = self.default_geometry_name
       geom = self._get_geometry(geometry_name)
       if self._next.type == 'indices':
-        indices = self._consume().data
-        value *= _Array.wrap(('normal', _(geom)), indices, geom.shape)
+        value *= self._asarray(('normal', _(geom)), self._consume(), geom.shape)
     elif self._next.type == '{':
       self._consume()
       value = self.parse_subexpression()
@@ -665,41 +683,32 @@ class _ExpressionParser:
       nbounds = len(self._consume().data)-1
       geometry_name = self._consume_assert_equal('geometry').data
       geom = self._get_geometry(geometry_name)
-      value = _Array.wrap(('jacobian', _(geom), _(len(geom)-nbounds)), '', ())
+      value = self._asarray(('jacobian', _(geom), _(len(geom)-nbounds)), '', ())
     elif self._next.type == 'old-jacobian':
       self._consume()
       geometry_name = self._consume_assert_equal('geometry').data
       geom = self._get_geometry(geometry_name)
-      value = _Array.wrap(('jacobian', _(geom), _(None)), '', ())
+      value = self._asarray(('jacobian', _(geom), _(None)), '', ())
     elif self._next.type == 'derivative':
       self._consume()
       target = self._consume()
       assert target.type in ('geometry', 'argument')
-      if self._next.type == 'indices':
-        token = self._consume()
-        indices = token.data
-        indices_start = token.pos
-      else:
-        indices = ''
-        indices_start = 0
+      indices = self._consume() if self._next.type == 'indices' else ''
       if target.type == 'geometry':
         geom = self._get_geometry(target.data)
       elif target.type == 'argument':
         assert target.data.startswith('?')
-        arg = self._get_arg(target.data[1:], indices, indices_start)
+        arg = self._get_arg(target.data[1:], indices)
       func = self.parse_var()
       if target.type == 'geometry':
-        return func.grad(indices, geom, 'grad')
+        return func.grad(indices and indices.data, geom, 'grad')
       else:
-        return func.derivative(arg, indices)
+        return func.derivative(arg)
     elif self._next.type == 'eye':
       self._consume()
-      if self._next.type == 'indices':
-        indices = self._consume().data
-      else:
-        indices = ''
+      indices = self._consume() if self._next.type == 'indices' else ''
       length = _Length(self._current.pos)
-      value = _Array.wrap(('eye', _(length)), indices, (length, length))
+      value = self._asarray(('eye', _(length)), indices, (length, length))
     elif self._next.type == 'normal':
       self._consume()
       if self._next.type == 'geometry':
@@ -707,11 +716,8 @@ class _ExpressionParser:
       else:
         geometry_name = self.default_geometry_name
       geom = self._get_geometry(geometry_name)
-      if self._next.type == 'indices':
-        indices = self._consume().data
-      else:
-        indices = ''
-      value = _Array.wrap(('normal', _(geom)), indices, geom.shape)
+      indices = self._consume() if self._next.type == 'indices' else ''
+      value = self._asarray(('normal', _(geom)), indices, geom.shape)
     elif self._next.type == 'variable':
       token = self._consume()
       name = token.data
@@ -724,37 +730,31 @@ class _ExpressionParser:
         args = _Array.align(*args)
         value = args[0].replace(ast=('call', _(name))+tuple(arg.ast for arg in args))
       elif name.startswith('?'):
-        indices = self._consume().data if self._next.type == 'indices' else ''
-        value = self._get_arg(name[1:], indices, self._current.pos)
+        indices = self._consume() if self._next.type == 'indices' else ''
+        value = self._get_arg(name[1:], indices)
       else:
         raw = self._get_variable(name)
-        indices = self._consume().data if self._next.type == 'indices' else ''
-        value = _Array.wrap(_(raw), indices, raw.shape)
+        indices = self._consume() if self._next.type == 'indices' else ''
+        value = self._asarray(_(raw), indices, raw.shape)
     else:
       raise _IntermediateError('Expected a variable, group or function call.')
 
     if self._next.type == 'gradient':
-      token = self._consume()
-      if token.data.startswith(',?'):
-        name = token.data[2:]
-        if '_' in name:
-          name, indices = name.split('_', 1)
-          indices_start = token.pos+3+len(name)
-        else:
-          indices = ''
-          indices_start = 0
-        arg = self._get_arg(name, indices, indices_start)
-        value = value.derivative(arg, indices)
-      else:
-        gradtype = {',': 'grad', ';': 'surfgrad'}[token.data[0]]
-        if '_' in token.data[1:]:
-          geometry_name, indices = token.data[1:].split('_', 1)
-        else:
-          geometry_name = self.default_geometry_name
-          indices = token.data[1:]
-        geom = self._get_geometry(geometry_name)
-        for i, index in enumerate(indices):
+      gradient = self._consume()
+      target = self._consume()
+      assert target.type in ('geometry', 'argument')
+      indices = self._consume() if self._next.type == 'indices' else ''
+      if target.type == 'geometry':
+        assert indices
+        gradtype = {',': 'grad', ';': 'surfgrad'}[gradient.data]
+        geom = self._get_geometry(target.data)
+        for i, index in enumerate(indices.data):
           value = value.grad(index, geom, gradtype)
+      elif target.type == 'argument':
+        assert gradient.data == ','
+        assert target.data.startswith('?')
+        arg = self._get_arg(target.data[1:], indices)
+        value = value.derivative(arg)
     elif self._next.type == 'indices':
       raise _IntermediateError("Indices can only be specified for variables, e.g. 'a_ij', not for groups, e.g. '(a+b)_ij'.", at=self._next.pos, count=len(self._next.data))
 
@@ -795,13 +795,16 @@ class _ExpressionParser:
 
     token = self._consume()
     if token.type == 'int':
-      value = _Array.wrap(_(int(token.data)), '', [])
+      value = self._asarray(_(int(token.data)), '', [])
     elif token.type == 'float':
-      value = _Array.wrap(_(float(token.data)), '', [])
+      value = self._asarray(_(float(token.data)), '', [])
     else:
       raise _IntermediateError('Expected a number.')
     if self._next.type == 'gradient':
       self._consume()
+      self._consume()
+      if self._next.type  == 'indices':
+        self._consume()
       raise _IntermediateError('Taking a derivative of a constant is not allowed.')
 
     return value
@@ -822,6 +825,9 @@ class _ExpressionParser:
         value = value.append_axis(index, _Length(pos=token.pos+i))
     if self._next.type == 'gradient':
       self._consume()
+      self._consume()
+      if self._next.type  == 'indices':
+        self._consume()
       raise _IntermediateError('Taking a derivative of a constant is not allowed.')
     return value
 
@@ -1010,18 +1016,23 @@ class _ExpressionParser:
           tokens.append(_Token('indices', m.group(0), pos))
           pos += m.end()
           parts += 1
-        m_arg = re.match(r',[?][a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*(_[a-zA-Z0-9]+)?', self.expression[pos:])
-        m_geom = re.match(r'[,;]([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*_)?([a-zA-Z0-9]+)', self.expression[pos:])
+        m_arg = re.match(r'(,)([?][a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)(_[a-zA-Z0-9]+)?', self.expression[pos:])
+        m_geom = re.match(r'([,;])(([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)_)?([a-zA-Z0-9]+)', self.expression[pos:])
         if m_arg:
-          tokens.append(_Token('gradient', m_arg.group(0), pos))
+          tokens.append(_Token('gradient', m_arg.group(1), pos))
+          tokens.append(_Token('argument', m_arg.group(2), pos+m_arg.start(2)))
+          if m_arg.group(3):
+            tokens.append(_Token('indices', m_arg.group(3)[1:], pos+m_arg.start(3)+1))
           pos += m_arg.end()
           parts += 1
         elif m_geom:
-          if withgeom is not None and not m_geom.group(1):
-            variant_geom = m_geom.group(0)[0] + withgeom + '_' + m_geom.group(2)
-            variant_default = m_geom.group(0)[0] + self.default_geometry_name + '_' + m_geom.group(2)
+          if withgeom is not None and not m_geom.group(2):
+            variant_geom = m_geom.group(1) + withgeom + '_' + m_geom.group(4)
+            variant_default = m_geom.group(1) + self.default_geometry_name + '_' + m_geom.group(4)
             raise _IntermediateError('Missing geometry, e.g. {!r} or {!r}.'.format(variant_geom, variant_default), at=pos)
-          tokens.append(_Token('gradient', m_geom.group(0), pos))
+          tokens.append(_Token('gradient', m_geom.group(1), pos))
+          tokens.append(_Token('geometry', m_geom.group(3) or self.default_geometry_name, pos+m_geom.start(3)))
+          tokens.append(_Token('indices', m_geom.group(4), pos+m_geom.start(4)))
           pos += m_geom.end()
           parts += 1
         if parts == 0:
@@ -1051,7 +1062,7 @@ def _replace_lengths(ast, lengths):
     return ast
 
 
-def parse(expression, variables, functions, indices, arg_shapes={}, default_geometry_name='x'):
+def parse(expression, variables, functions, indices, arg_shapes={}, default_geometry_name='x', fixed_lengths=None, fallback_length=None):
   '''Parse ``expression`` and return AST.
 
   This function parses a tensor expression with `Einstein Summation
@@ -1223,6 +1234,13 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
       the normal, e.g. ``'f_,i'`` or ``'n_i'``, this variable is used as the
       geometry, unless the geometry is explicitly mentioned in the expression.
       Default: ``'x'``.
+  fixed_lengths : :class:`dict` of :class:`str` and :class:`int` pairs, optional
+      A :class:`dict` of indices and lengths.  All axes in the expression
+      marked with an index of fixed length are asserted to have the fixed
+      length.
+  fallback_length : :class:`int`, optional
+      The fallback length of an axis if the length cannot be determined from
+      the expression.
 
   Returns
   -------
@@ -1261,7 +1279,7 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
       ``expression``.
   '''
 
-  parser = _ExpressionParser(expression, variables, functions, arg_shapes, default_geometry_name)
+  parser = _ExpressionParser(expression, variables, functions, arg_shapes, default_geometry_name, fixed_lengths or {})
   parser.tokenize()
   value = parser.parse_subexpression()
   parser._consume_assert_equal('EOF', msg='Unexpected symbol at end of expression.')
@@ -1280,11 +1298,9 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
   lengths = {}
   undetermined = set()
   for group in value.linked_lengths:
-    val = None
-    for i in group:
-      if not isinstance(i, _Length):
-        assert val is None
-        val = i
+    ints = tuple(i for i in group if not isinstance(i, _Length))
+    assert len(ints) <= 1, 'multiple integers in linked lengths group'
+    val = ints[0] if ints else fallback_length
     if val is None:
       undetermined.update(i.pos for i in group)
     else:
