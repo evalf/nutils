@@ -6,8 +6,7 @@ line = nutils.element.LineReference()
 square = line*line
 triangle = nutils.element.TriangleReference()
 
-@parametrize
-class common(TestCase):
+class Common:
 
   def test_fromdims(self):
     self.assertEqual(self.seq.ndims, self.checkndims)
@@ -88,46 +87,54 @@ class common(TestCase):
   def test_getpoints(self):
     self.assertEqual(self.seq.getpoints('bezier', 2), tuple(ref.getpoints('bezier', 2) for ref in self.check))
 
-common(
-  'EmptyReferences',
-  seq=nutils.elementseq.EmptyReferences(2),
-  check=[],
-  checkndims=2)
-common(
-  'PlainReferences',
-  seq=nutils.elementseq.PlainReferences([square, triangle], 2),
-  check=[square, triangle],
-  checkndims=2)
-common(
-  'UniformReferences',
-  seq=nutils.elementseq.UniformReferences(square, 3),
-  check=[square]*3,
-  checkndims=2)
-common(
-  'SelectedReferences',
-  seq=nutils.elementseq.SelectedReferences(nutils.elementseq.PlainReferences([square, triangle, square], 2), [1, 2]),
-  check=[triangle, square],
-  checkndims=2)
-common(
-  'ChainedReferences',
-  seq=nutils.elementseq.ChainedReferences([nutils.elementseq.PlainReferences([square, triangle], 2)]*2),
-  check=[square, triangle]*2,
-  checkndims=2)
-common(
-  'RepeatedReferences',
-  seq=nutils.elementseq.RepeatedReferences(nutils.elementseq.PlainReferences([square, triangle, square], 2), 2),
-  check=[square, triangle, square]*2,
-  checkndims=2)
-common(
-  'ProductReferences',
-  seq=nutils.elementseq.ProductReferences(nutils.elementseq.PlainReferences([square, triangle], 2), nutils.elementseq.PlainReferences([line, line], 1)),
-  check=[square*line]*2+[triangle*line]*2,
-  checkndims=3)
-common(
-  'DerivedReferences',
-  seq=nutils.elementseq.DerivedReferences(nutils.elementseq.PlainReferences([square, triangle], 2), 'child_refs', 2),
-  check=[square]*4+[triangle]*4,
-  checkndims=2)
+class EmptyReferences(TestCase, Common):
+  def setUp(self):
+    self.seq = nutils.elementseq.EmptyReferences(2)
+    self.check = []
+    self.checkndims = 2
+
+class PlainReferences(TestCase, Common):
+  def setUp(self):
+    self.seq = nutils.elementseq.PlainReferences([square, triangle], 2)
+    self.check = [square, triangle]
+    self.checkndims = 2
+
+class UniformReferences(TestCase, Common):
+  def setUp(self):
+    self.seq = nutils.elementseq.UniformReferences(square, 3)
+    self.check = [square]*3
+    self.checkndims = 2
+
+class SelectedReferences(TestCase, Common):
+  def setUp(self):
+    self.seq = nutils.elementseq.SelectedReferences(nutils.elementseq.PlainReferences([square, triangle, square], 2), [1, 2])
+    self.check = [triangle, square]
+    self.checkndims = 2
+
+class ChainedReferences(TestCase, Common):
+  def setUp(self):
+    self.seq = nutils.elementseq.ChainedReferences([nutils.elementseq.PlainReferences([square, triangle], 2)]*2)
+    self.check = [square, triangle]*2
+    self.checkndims = 2
+
+class RepeatedReferences(TestCase, Common):
+  def setUp(self):
+    self.seq = nutils.elementseq.RepeatedReferences(nutils.elementseq.PlainReferences([square, triangle, square], 2), 2)
+    self.check = [square, triangle, square]*2
+    self.checkndims = 2
+
+class ProductReferences(TestCase, Common):
+  def setUp(self):
+    self.seq = nutils.elementseq.ProductReferences(nutils.elementseq.PlainReferences([square, triangle], 2), nutils.elementseq.PlainReferences([line, line], 1))
+    self.check = [square*line]*2+[triangle*line]*2
+    self.checkndims = 3
+
+class DerivedReferences(TestCase, Common):
+  def setUp(self):
+    self.seq = nutils.elementseq.DerivedReferences(nutils.elementseq.PlainReferences([square, triangle], 2), 'child_refs', 2)
+    self.check = [square]*4+[triangle]*4
+    self.checkndims = 2
+
 
 class exceptions(TestCase):
 
