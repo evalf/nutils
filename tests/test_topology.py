@@ -617,8 +617,8 @@ class common(TestCase):
       check = check.refined
 
 common(
-  'UnstructuredTopology',
-  topo=topology.UnstructuredTopology(elementseq.asreferences([element.PointReference()], 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0)),
+  'Topology',
+  topo=topology.Topology(elementseq.asreferences([element.PointReference()], 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0)),
   hasboundary=False)
 common(
   'StructuredTopology:2D',

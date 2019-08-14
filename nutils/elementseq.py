@@ -21,7 +21,7 @@
 """The elementseq module."""
 
 from . import types, numeric, element, util
-import abc, collections.abc, itertools, numpy
+import abc, collections.abc, itertools, operator, numpy
 
 class References(types.Singleton):
   '''Abstract base class for a sequence of :class:`~nutils.element.Reference` objects.
@@ -65,7 +65,7 @@ class References(types.Singleton):
       if numpy.any(numpy.less(index, 0)) or numpy.any(numpy.greater_equal(index, len(self))):
         raise IndexError('index out of range')
       if len(index) == 0:
-        return PlainReferences((), self.ndims)
+        return EmptyReferences(self.ndims)
       if numpy.all(numpy.equal(numpy.diff(index), 1)) and len(index) == len(self):
         return self
       return SelectedReferences(self, index)
@@ -73,7 +73,7 @@ class References(types.Singleton):
       if index.shape != (len(self),):
         raise IndexError('mask has invalid shape')
       if not numpy.any(index):
-        return PlainReferences((), self.ndims)
+        return EmptyReferences(self.ndims)
       if numpy.all(index):
         return self
       index, = numpy.where(index)
@@ -99,7 +99,21 @@ class References(types.Singleton):
             (cref for ref in self for cref in ref.child_refs)
     '''
 
-    return ChildReferences(self)
+    return DerivedReferences(self, 'child_refs', self.ndims)
+
+  @property
+  def edges(self):
+    '''Return the sequence of edge references.
+
+    Returns
+    -------
+    :class:`References`
+        The sequence of edge references::
+
+            (eref for ref in self for eref in ref.edge_refs)
+    '''
+
+    return DerivedReferences(self, 'edge_refs', self.ndims-1)
 
   def getpoints(self, ischeme, degree):
     '''Return a sequence of :class:`~nutils.points.Points`.'''
@@ -118,7 +132,9 @@ class References(types.Singleton):
 
     if numeric.isint(other):
       if other == 0:
-        return PlainReferences((), self.ndims)
+        return EmptyReferences(self.ndims)
+      elif other == 1:
+        return self
       else:
         return RepeatedReferences(self, other)
     elif isinstance(other, References):
@@ -144,6 +160,28 @@ class References(types.Singleton):
     return False
 
 strictreferences = types.strict[References]
+
+class EmptyReferences(References):
+  '''An empty sequence of references.'''
+
+  def __len__(self):
+    return 0
+
+  def __getitem__(self, index):
+    if not numeric.isint(index):
+      return super().__getitem__(index)
+    raise IndexError('index out of range')
+
+  def __iter__(self):
+    return iter(())
+
+  @property
+  def children(self):
+    return self
+
+  @property
+  def edges(self):
+    return EmptyReferences(self.ndims-1)
 
 class PlainReferences(References):
   '''A general purpose implementation of :class:`References`.
@@ -192,7 +230,7 @@ class UniformReferences(References):
   '''
 
   __slots__ = '_reference', '_length'
-  __cache__ = 'children'
+  __cache__ = 'children', 'edges'
 
   @types.apply_annotations
   def __init__(self, reference:element.strictreference, length:types.strictint):
@@ -224,13 +262,17 @@ class UniformReferences(References):
   def children(self):
     return asreferences(self._reference.child_refs, self.ndims) * len(self)
 
+  @property
+  def edges(self):
+    return asreferences(self._reference.edge_refs, self.ndims-1) * len(self)
+
   def getpoints(self, ischeme, degree):
     return (self._reference.getpoints(ischeme, degree),)*len(self)
 
   def __mul__(self, other):
     if numeric.isint(other):
       if other == 0:
-        return PlainReferences((), self.ndims)
+        return EmptyReferences(self.ndims)
       else:
         return UniformReferences(self._reference, len(self)*other)
     else:
@@ -308,7 +350,7 @@ class ChainedReferences(References):
       if index == range(len(self)):
         return self
       elif index.start == index.stop:
-        return PlainReferences((), self.ndims)
+        return EmptyReferences(self.ndims)
       ostart = numpy.searchsorted(self._offsets, index.start, side='right') - 1
       ostop = numpy.searchsorted(self._offsets, index.stop, side='left')
       return chain((item[max(0,index.start-istart):min(istop-istart,index.stop-istart)] for item, (istart, istop) in zip(self._items[ostart:ostop], util.pairwise(self._offsets[ostart:ostop+1]))), self.ndims)
@@ -328,6 +370,10 @@ class ChainedReferences(References):
   @property
   def children(self):
     return chain((item.children for item in self._items), self.ndims)
+
+  @property
+  def edges(self):
+    return chain((item.edges for item in self._items), self.ndims-1)
 
   def getpoints(self, ischeme, degree):
     return tuple(itertools.chain.from_iterable(item.getpoints(ischeme, degree) for item in self._items))
@@ -371,7 +417,9 @@ class RepeatedReferences(References):
   def __mul__(self, other):
     if numeric.isint(other):
       if other == 0:
-        return PlainReferences((), self.ndims)
+        return EmptyReferences(self.ndims)
+      elif other == 1:
+        return self
       else:
         return RepeatedReferences(self._parent, self._count*other)
     else:
@@ -380,6 +428,10 @@ class RepeatedReferences(References):
   @property
   def children(self):
     return self._parent.children * self._count
+
+  @property
+  def edges(self):
+    return self._parent.edges * self._count
 
   def getpoints(self, ischeme, degree):
     return self._parent.getpoints(ischeme, degree) * self._count
@@ -415,31 +467,37 @@ class ProductReferences(References):
       for rref in self._right:
         yield lref * rref
 
-class ChildReferences(References):
-  '''A sequence of child references.
+class DerivedReferences(References):
+  '''Abstract base class for references based on parent references.
 
-  The child references are ordered first by parent references, then by child
-  references, as returned by the reference::
+  The derived references are ordered first by parent references, then by derived
+  references::
 
-      (cref for ref in parent for cref in ref.child_refs)
+      (dref for ref in parent for dref in getattr(ref, derived_attribute))
 
   Parameters
   ----------
   parent : :class:`References`
-      The references to produce the children of.
+      The parent references.
+  derived_attribute : :class:`str`
+      The name of the attribute of a :class:`nutils.element.Reference` that
+      contains the derived references.
+  ndims : :class:`int`
+      The number of dimensions of the references in this sequence.
   '''
 
-  __slots__ = '_parent'
+  __slots__ = '_parent', '_derived_refs'
   __cache__ = '_offsets'
 
   @types.apply_annotations
-  def __init__(self, parent:strictreferences):
+  def __init__(self, parent:strictreferences, derived_attribute:types.strictstr, ndims:types.strictint):
     self._parent = parent
-    super().__init__(parent.ndims)
+    self._derived_refs = operator.attrgetter(derived_attribute)
+    super().__init__(ndims)
 
   @property
   def _offsets(self):
-    return types.frozenarray(numpy.cumsum([0, *(ref.nchildren for ref in self._parent)]), copy=False)
+    return types.frozenarray(numpy.cumsum([0, *(len(self._derived_refs(ref)) for ref in self._parent)]), copy=False)
 
   def __len__(self):
     return self._offsets[-1]
@@ -449,12 +507,12 @@ class ChildReferences(References):
       return super().__getitem__(index)
     index = numeric.normdim(len(self), index)
     parent_index = numpy.searchsorted(self._offsets, index, side='right')-1
-    child_index = index - self._offsets[parent_index]
-    return self._parent[parent_index].child_refs[child_index]
+    derived_index = index - self._offsets[parent_index]
+    return self._derived_refs(self._parent[parent_index])[derived_index]
 
   def __iter__(self):
     for ref in self._parent:
-      yield from ref.child_refs
+      yield from self._derived_refs(ref)
 
 def asreferences(value, ndims):
   '''Convert ``value`` to a :class:`References` object.'''
@@ -466,7 +524,7 @@ def asreferences(value, ndims):
   elif isinstance(value, collections.abc.Iterable):
     value = tuple(value)
     if len(value) == 0:
-      return PlainReferences((), ndims)
+      return EmptyReferences(ndims)
     elif all(item == value[0] for item in value[1:]):
       return UniformReferences(value[0], len(value))
     else:
@@ -495,7 +553,7 @@ def chain(items, ndims):
   if not (items_ndims <= {ndims}):
     raise ValueError('expected references with ndims={}, but got {}'.format(ndims, items_ndims))
   if len(unchained) == 0:
-    return PlainReferences((), ndims)
+    return EmptyReferences(ndims)
   elif len(unchained) == 1:
     return unchained[0]
   elif all(item.isuniform for item in unchained) and len(set(item[0] for item in unchained)) == 1:
