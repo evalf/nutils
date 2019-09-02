@@ -104,9 +104,9 @@ def open(filename, mode, *, level='user', exists=None):
     yield f
 
 @contextlib.contextmanager
-def context(*args, sep=' '):
+def context(title, *args):
   log = treelog.current
-  log.pushcontext(sep.join(args))
+  log.pushcontext(title.format(*args))
   try:
     yield
   finally:
