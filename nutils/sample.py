@@ -166,7 +166,7 @@ class Sample(types.Singleton):
     ielems = parallel.range(self.nelems)
     with parallel.fork(nprocs):
       for ielem in ielems:
-        with log.context('elem', ielem, '({:.0f}%)'.format(100*ielem/self.nelems)):
+        with log.context('elem {} ({:.0f}%)', ielem, 100*ielem/self.nelems):
           points = self.points[ielem]
           for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=points.coords, **arguments)):
             s = slice(*offsets[iblock,ielem:ielem+2])
@@ -180,7 +180,7 @@ class Sample(types.Singleton):
 
     retvals = []
     for i, func in enumerate(funcs):
-      with log.context('assembling {}/{}'.format(i+1, len(funcs))):
+      with log.context('assembling {}/{}', i+1, len(funcs)):
         retvals.append(matrix.assemble(*data_index[i], shape=func.shape))
     return retvals
 
@@ -224,7 +224,7 @@ class Sample(types.Singleton):
     ielems = parallel.range(self.nelems)
     with parallel.fork(nprocs):
       for ielem in ielems:
-        with log.context('elem', ielem, '({:.0f}%)'.format(100*ielem/self.nelems)):
+        with log.context('elem {} ({:.0f}%)', ielem, 100*ielem/self.nelems):
           for ifunc, inds, data in idata.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=self.points[ielem].coords, **arguments):
             numpy.add.at(retvals[ifunc], numpy.ix_(self.index[ielem], *[ind for (ind,) in inds]), data)
 

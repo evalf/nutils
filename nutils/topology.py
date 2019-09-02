@@ -379,7 +379,7 @@ class Topology(types.Singleton):
     refs = []
     if leveltopo is None:
       for ielem, (ref, trans, opp) in enumerate(zip(self.references, self.transforms, self.opposites)):
-        with log.context('elem {} ({:.0f}%)'.format(ielem, 100*ielem/len(self))):
+        with log.context('elem {} ({:.0f}%)', ielem, 100*ielem/len(self)):
           levels = levelset.eval(_transforms=(trans, opp), _points=ref.getpoints('vertex', maxrefine).coords, **arguments)
           refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
     else:
@@ -390,7 +390,7 @@ class Topology(types.Singleton):
         bins[ielem].add(tail)
       fcache = cache.WrapperCache()
       for ielem, (ref, trans, ctransforms) in enumerate(zip(self.references, self.transforms, bins)):
-        with log.context('elem {} ({:.0f}%)'.format(ielem, 100*ielem/len(self))):
+        with log.context('elem {} ({:.0f}%)', ielem, 100*ielem/len(self)):
           levels = numpy.empty(ref.nvertices_by_level(maxrefine))
           cover = list(fcache[ref.vertex_cover](frozenset(ctransforms), maxrefine))
           # confirm cover and greedily optimize order
@@ -447,7 +447,7 @@ class Topology(types.Singleton):
     extractions = [[] for ifunc in range(len(funcs))]
 
     for ielem, (ref, trans, opp) in enumerate(zip(self.references, self.transforms, self.opposites)):
-      with log.context('elem', ielem, '({:.0f}%)'.format(100*ielem/len(self))):
+      with log.context('elem {} ({:.0f}%)', ielem, 100*ielem/len(self)):
 
         try:
           points, projector, basis = bases[ref]
@@ -577,7 +577,7 @@ class Topology(types.Singleton):
     ipoints = parallel.range(len(coords))
     with parallel.fork(min(config.nprocs, len(coords))):
       for ipoint in ipoints:
-        with log.context('point', ipoint, '({:.0f}%)'.format(100*ipoint/len(coords))):
+        with log.context('point {} ({:.0f}%)', ipoint, 100*ipoint/len(coords)):
           coord = coords[ipoint]
           ielemcandidates, = numpy.logical_and(numpy.greater_equal(coord, bboxes[:,0,:]), numpy.less_equal(coord, bboxes[:,1,:])).all(axis=-1).nonzero()
           for ielem in sorted(ielemcandidates, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-coord)):
@@ -1998,7 +1998,7 @@ class HierarchicalTopology(Topology):
     prev_ielems = []
     map_indices = []
     for i, (topo, touchielems_i) in reversed(tuple(enumerate(zip(self.levels, self._indices_per_level)))):
-      with log.context('level {} ({:.0f}%)'.format(i, 100 * (i+.5) / len(self.levels))):
+      with log.context('level {} ({:.0f}%)', i, 100 * (i+.5) / len(self.levels)):
 
         topo_index_with_tail = topo.transforms.index_with_tail
         mapped_prev_ielems = [topo_index_with_tail(prev_transforms[j])[0] for j in prev_ielems]

@@ -136,7 +136,7 @@ def solve_withinfo(gen_lhs_resnorm, tol:types.strictfloat=0., maxiter:types.stri
     while info.resnorm > tol:
       if iiter > maxiter:
         raise SolverError('failed to reach target tolerance')
-      with log.context('iter {} ({:.0f}%)'.format(iiter, 100 * numpy.log(resnorm0/info.resnorm) / numpy.log(resnorm0/tol))):
+      with log.context('iter {} ({:.0f}%)', iiter, 100 * numpy.log(resnorm0/info.resnorm) / numpy.log(resnorm0/tol)):
         lhs, info = next(iterator)
       iiter += 1
   elif info.resnorm:
