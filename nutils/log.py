@@ -28,12 +28,15 @@ This is a transitional wrapper around the external treelog module that will be
 removed in version 6.
 """
 
-import builtins, itertools, treelog, contextlib, sys, functools, inspect
+import builtins, itertools, treelog, contextlib, sys, functools, inspect, treelog, distutils
 from treelog import set, add, disable, withcontext, \
   Log, TeeLog, FilterLog, NullLog, DataLog, RecordLog, StdoutLog, RichOutputLog, LoggingLog, HtmlLog
 from . import warnings
 
-warnings.deprecation('treelog 1.0b5 or higher is required, please update using pip install -U treelog')
+if distutils.version.StrictVersion(treelog.version) < distutils.version.StrictVersion('1.0b5'):
+  warnings.deprecation('treelog 1.0b5 or higher is required, please update using pip install -U treelog')
+else:
+  sys.modules['nutils.log'] = treelog
 
 def _len(iterable):
   try:
