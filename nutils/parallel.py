@@ -102,8 +102,6 @@ class range:
     self._stop = stop
     self._index = multiprocessing.RawValue('i', 0)
     self._lock = multiprocessing.Lock() # lock to avoid race conditions in incrementing index
-  def __len__(self):
-    return self._stop
   def __iter__(self):
     return self
   def __next__(self):
@@ -113,5 +111,20 @@ class range:
         raise StopIteration
       self._index.value = iiter + 1
     return iiter
+
+@contextlib.contextmanager
+def ctxrange(name, nprocs, nitems):
+  '''fork and yield shared range-like counter with percentage-style logging'''
+
+  rng = range(nitems) # shared range, must be created pre-fork
+  with fork(min(nprocs, nitems)):
+    yield log.iter.wrap(_pct(name, nitems), rng)
+
+def _pct(name, n):
+  '''helper function for ctxrange'''
+
+  i = yield name + ' 0%'
+  while True:
+    i = yield name + ' {:.0f}%'.format(100*(i+1)/n)
 
 # vim:sw=2:sts=2:et

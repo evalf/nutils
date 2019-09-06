@@ -170,8 +170,7 @@ class Sample(types.Singleton):
     # benefits from parallel speedup.
 
     valueindexfunc = function.Tuple(function.Tuple([value]+list(index)) for value, index in zip(values, indices))
-    erange = parallel.range(self.nelems) # prepare shared iterator
-    with parallel.fork(nprocs), log.iter.percentage('integrating', erange) as ielems:
+    with parallel.ctxrange('integrating', nprocs=nprocs, nitems=self.nelems) as ielems:
       for ielem in ielems:
         points = self.points[ielem]
         for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=points.coords, **arguments)):
@@ -223,8 +222,7 @@ class Sample(types.Singleton):
     if config.dot:
       idata.graphviz()
 
-    erange = parallel.range(self.nelems) # prepare shared iterator
-    with parallel.fork(nprocs), log.iter.percentage('evaluating', erange) as ielems:
+    with parallel.ctxrange('evaluating', nprocs=nprocs, nitems=self.nelems) as ielems:
       for ielem in ielems:
         for ifunc, inds, data in idata.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=self.points[ielem].coords, **arguments):
           numpy.add.at(retvals[ifunc], numpy.ix_(self.index[ielem], *[ind for (ind,) in inds]), data)
