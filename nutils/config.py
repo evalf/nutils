@@ -19,6 +19,9 @@
 # THE SOFTWARE.
 
 import types, contextlib, sys
+from . import warnings
+
+warnings.deprecation('nutils.config is deprecated and will be removed in nutils 6')
 
 def load_rcfile(path):
   settings = {}

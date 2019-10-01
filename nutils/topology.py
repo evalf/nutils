@@ -34,7 +34,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, elementseq, function, util, parallel, config, numeric, cache, transform, transformseq, warnings, matrix, types, sample, points, log, _
+from . import element, elementseq, function, util, parallel, numeric, cache, transform, transformseq, warnings, matrix, types, sample, points, log, _
 import numpy, functools, collections.abc, itertools, functools, operator, numbers, pathlib, abc
 
 _identity = lambda x: x

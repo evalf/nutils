@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-import inspect, pathlib, shutil, os, runpy, urllib.parse, shlex, doctest, re, io, hashlib, base64, treelog, html
+import inspect, pathlib, shutil, os, runpy, urllib.parse, shlex, doctest, re, io, hashlib, base64, treelog, html, stringly
 import docutils.nodes, docutils.parsers.rst, docutils.statemachine
 import sphinx.util.logging, sphinx.util.docutils, sphinx.addnodes
 import nutils.matrix, nutils.testing
@@ -219,36 +219,18 @@ def create_log(app, env, node, contnode):
       logger.info('creating log... {}'.format(cmdline))
       script_dict = runpy.run_path(str(script), run_name='__log_builder__')
       # Parse cmdline.
-      params = inspect.signature(script_dict['main']).parameters.values()
-      kwargs = {param.name: param.default for param in params}
-      for arg in cmdline_args:
-        if not arg:
-          continue
-        name, sep, value = arg.lstrip('-').partition('=')
-        if not sep:
-          value = not name.startswith('no')
-          if not value:
-            name = name[2:]
-        if name not in kwargs:
-          logger.error('unkown argument {!r}'.format(name))
-          return
-        default = kwargs[name]
-        try:
-          if isinstance(default, bool) and not isinstance(value, bool):
-            raise Exception('boolean value should be specifiec as --{0}/--no{0}'.format(name))
-          kwargs[name] = default.__class__(value)
-        except Exception as e:
-          logger.error('invalid argument for {!r}: {}'.format(name, e))
-          return
+      func = script_dict['main']
+      params = inspect.signature(func).parameters
+      doc = stringly.util.DocString(func)
+      kwargs = doc.defaults.copy()
+      kwargs.update(arg.split('=', 1) for arg in cmdline_args if arg)
       # Run script.
       import matplotlib.testing
       matplotlib.testing.setup()
-      func = script_dict['main']
       with treelog.HtmlLog(str(dst_log), title=scriptname, htmltitle='{} {}'.format(nutils.cli.SVGLOGO, html.escape(scriptname)), favicon=nutils.cli.FAVICON) as log, treelog.set(log), nutils.matrix.Scipy(), nutils.warnings.via(treelog.warning):
         log.write('<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">{}</ul>'.format(''.join(
-          '<li>{}={} <span style="color: gray;">{}</span></li>'.format(param.name, kwargs.get(param.name, param.default), param.annotation)
-            for param in inspect.signature(func).parameters.values())), level=1, escape=False)
-        func(**kwargs)
+          '<li>{}={} <span style="color: gray;">{}</span></li>'.format(name, kwargs[name], doc.argdocs[name]) for name in params)), level=1, escape=False)
+        func(**{name: stringly.loads(params[name].annotation, kwargs[name]) for name in params})
       (dst_log/'log.html').rename(dst_log/'index.html')
 
     refnode = docutils.nodes.reference('', '', internal=False, refuri=app.builder.get_relative_uri(env.docname, target))

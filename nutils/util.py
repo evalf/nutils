@@ -22,7 +22,7 @@
 The util module provides a collection of general purpose methods.
 """
 
-from . import numeric, config
+from . import numeric
 import sys, os, numpy, collections.abc, inspect, functools, operator, numbers, pathlib, ctypes, site, io
 
 supports_outdirfd = os.open in os.supports_dir_fd and os.listdir in os.supports_fd

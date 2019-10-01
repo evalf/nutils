@@ -28,7 +28,7 @@ affine transformation. They also have a well defined reference coordinate
 system, and provide pointsets for purposes of integration and sampling.
 """
 
-from . import util, numpy, config, numeric, cache, transform, warnings, types, points, _
+from . import util, numpy, numeric, cache, transform, warnings, types, points, _
 import re, math, itertools, operator, functools
 
 

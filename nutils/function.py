@@ -42,7 +42,7 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, types, numpy, numeric, config, cache, transform, transformseq, expression, warnings, log, _
+from . import util, types, numpy, numeric, cache, transform, transformseq, expression, warnings, log, _
 import sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
@@ -120,10 +120,10 @@ class Evaluable(types.Singleton):
   def serialized(self):
     return zip(self.ordereddeps[1:]+(self,), self.dependencytree[1:])
 
-  def asciitree(self):
+  def asciitree(self, richoutput=False):
     'string representation'
 
-    if config.richoutput:
+    if richoutput:
       select = '├ ', '└ '
       bridge = '│ ', '  '
     else:
