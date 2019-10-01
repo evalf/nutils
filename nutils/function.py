@@ -166,14 +166,10 @@ class Evaluable(types.Singleton):
     return values[-1]
 
   @log.withcontext
-  def graphviz(self):
+  def graphviz(self, dotpath='dot'):
     'create function graph'
 
     import os, subprocess
-
-    dotpath = config.dot
-    if not isinstance(dotpath, str):
-      dotpath = 'dot'
 
     lines = []
     lines.append('digraph {')

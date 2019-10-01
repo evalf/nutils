@@ -44,7 +44,9 @@ efficiently combine common substructures.
 '''
 
 from . import types, points, util, function, config, parallel, numeric, matrix, transformseq, log
-import numpy, numbers, collections.abc
+import numpy, numbers, collections.abc, os
+
+graphviz = os.environ.get('NUTILS_GRAPHVIZ')
 
 def argdict(arguments):
   if len(arguments) == 1 and 'arguments' in arguments and isinstance(arguments['arguments'], collections.abc.Mapping):
@@ -128,8 +130,8 @@ class Sample(types.Singleton):
     log.debug('integrating {} distinct blocks'.format('+'.join(
       str(block2func.count(ifunc)) for ifunc in range(len(funcs)))))
 
-    if config.dot:
-      function.Tuple(values).graphviz()
+    if graphviz:
+      function.Tuple(values).graphviz(graphviz)
 
     # To allocate (shared) memory for all block data we evaluate indexfunc to
     # build an nblocks x nelems+1 offset array, and nblocks index lists of
@@ -215,8 +217,8 @@ class Sample(types.Singleton):
     retvals = [zeros((self.npoints,)+func.shape, dtype=func.dtype) for func in funcs]
     idata = function.Tuple(function.Tuple([ifunc, function.Tuple(ind), f.simplified.optimized_for_numpy]) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func))
 
-    if config.dot:
-      idata.graphviz()
+    if graphviz:
+      idata.graphviz(graphviz)
 
     with parallel.ctxrange('evaluating', nprocs=nprocs, nitems=self.nelems) as ielems:
       for ielem in ielems:
