@@ -24,7 +24,7 @@ can be used set up properties, initiate an output environment, and execute a
 python function based arguments specified on the command line.
 """
 
-from . import util, config, long_version, warnings, matrix, cache, log
+from . import util, config, long_version, warnings, matrix, cache, log, parallel
 import sys, inspect, os, io, time, pdb, signal, subprocess, contextlib, traceback, pathlib, html, stickybar
 
 def _version():
@@ -152,6 +152,7 @@ def call(func, kwargs, scriptname, funcname=None):
   with contextlib.ExitStack() as stack:
 
     stack.enter_context(cache.enable(os.path.join(outdir, config.cachedir)) if config.cache else cache.disable())
+    stack.enter_context(parallel.maxprocs(config.nprocs))
     stack.enter_context(matrix.backend(config.matrix))
     stack.enter_context(log.set(log.FilterLog(log.RichOutputLog() if config.richoutput else log.StdoutLog(), minlevel=5-config.verbose)))
     if config.htmloutput:

@@ -25,22 +25,39 @@ platforms, notably excluding Windows. On unsupported platforms parallel features
 will disable and a warning is printed.
 """
 
-from . import numeric, warnings, log
+from . import numeric, warnings, log, util
 import os, multiprocessing, mmap, signal, contextlib, builtins, numpy
 
-procid = None # current process id, None for unforked
+_maxprocs = 1
 
 @contextlib.contextmanager
-def fork(nprocs):
+@util.positional_only
+def maxprocs(new):
+  '''limit number of processes for fork.'''
+
+  if not isinstance(new, int) or new < 1:
+    raise ValueError('nprocs requires a positive integer argument')
+  global _maxprocs
+  old = _maxprocs
+  _maxprocs = new
+  try:
+    yield
+  finally:
+    _maxprocs = old
+
+@contextlib.contextmanager
+def fork(nprocs=None):
   '''continue as ``nprocs`` parallel processes by forking ``nprocs-1`` times
 
-  It is up to the user to prepare shared memory and/or locks for inter-process
-  communication. As a safety measure nested forks are blocked by setting the
-  global ``procid`` variable; all secondary forks will be silently ignored.
+  If ``nprocs`` exceeds the configured ``maxprocs`` than it will silently be
+  capped. It is up to the user to prepare shared memory and/or locks for
+  inter-process communication. As a safety measure nested forks are blocked by
+  limiting nprocs to 1; all secondary forks will be silently ignored.
   '''
 
-  global procid
-  if nprocs == 1 or procid is not None:
+  if nprocs is None or nprocs > _maxprocs:
+    nprocs = _maxprocs
+  if nprocs == 1:
     yield 0
     return
   if not hasattr(os, 'fork'):
@@ -59,17 +76,17 @@ def fork(nprocs):
       child_pids.append(pid)
     else:
       procid = 0
-    yield procid
+    with maxprocs(1):
+      yield procid
     fail = 0
   finally:
     if procid: # before anything else can fail:
       os._exit(fail) # communicate exit status to main process
-    procid = None # unset global variable
     nfails = fail + sum(os.waitpid(pid, 0)[1] != 0 for pid in child_pids)
     if fail: # failure in main process: exception has been reraised
       log.error('fork failed in {} out of {} processes; reraising exception for main process'.format(nfails, nprocs))
     elif nfails: # failure in child process: raise exception
-      raise Exception('fork failed in {} out of {} processes'.format(nfails, nprocs))
+      raise Exception('fork failed in {} out of {} processes'.format(nfails, _maxprocs))
 
 def shempty(shape, dtype=float):
   '''create uninitialized array in shared memory'''
@@ -80,7 +97,7 @@ def shempty(shape, dtype=float):
     assert all(numeric.isint(sh) for sh in shape)
   dtype = numpy.dtype(dtype)
   size = (numpy.product(shape) if shape else 1) * dtype.itemsize
-  if size == 0:
+  if size == 0 or _maxprocs == 1:
     return numpy.empty(shape, dtype)
   # `mmap(-1,...)` will allocate *anonymous* memory.  Although linux' man page
   # mmap(2) states that anonymous memory is initialized to zero, we can't rely
@@ -113,11 +130,11 @@ class range:
     return iiter
 
 @contextlib.contextmanager
-def ctxrange(name, nprocs, nitems):
+def ctxrange(name, nitems):
   '''fork and yield shared range-like counter with percentage-style logging'''
 
   rng = range(nitems) # shared range, must be created pre-fork
-  with fork(min(nprocs, nitems)):
+  with fork(nitems):
     yield log.iter.wrap(_pct(name, nitems), rng)
 
 def _pct(name, n):
