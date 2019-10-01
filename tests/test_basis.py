@@ -66,7 +66,7 @@ class sparsity(TestCase):
     ns.tnotol = topo.basis('th-spline', degree=2, truncation_tolerance=0)
     ns.hbasis = topo.basis('h-spline', degree=2)
 
-    with matrix.backend('nnz'):
+    with NNZ():
       tA, tA_tol, hA = topo.integrate([ns.eval_ij('tbasis_i,k tbasis_j,k'), ns.eval_ij('tnotol_i,k tnotol_j,k'), ns.eval_ij('hbasis_i,k hbasis_j,k')], degree=5)
 
     tA_nnz, tA_tol_nnz, hA_nnz = self.vals[self.ndim]

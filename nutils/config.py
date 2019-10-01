@@ -199,7 +199,7 @@ sys.modules[__name__] = Config(
   symlink = '',
   dot = False,
   cachedir = 'cache',
-  matrix = 'mkl,scipy,numpy',
+  matrix = None,
   cache = False,
 )
 

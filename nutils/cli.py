@@ -153,7 +153,15 @@ def call(func, kwargs, scriptname, funcname=None):
 
     stack.enter_context(cache.enable(os.path.join(outdir, config.cachedir)) if config.cache else cache.disable())
     stack.enter_context(parallel.maxprocs(config.nprocs))
-    stack.enter_context(matrix.backend(config.matrix))
+
+    backend = config.matrix in (None, 'mkl') and matrix.MKL(threading=matrix.MKL.Threading.TBB if config.nprocs > 1 else matrix.MKL.Threading.SEQUENTIAL) \
+           or config.matrix in (None, 'scipy') and matrix.ScipyMatrix() \
+           or config.matrix in (None, 'numpy') and matrix.NumpyMatrix()
+    if not backend:
+      log.error('invalid matrix backend {!r}'.format(config.matrix))
+      return 1
+    stack.enter_context(backend)
+
     stack.enter_context(log.set(log.FilterLog(log.RichOutputLog() if config.richoutput else log.StdoutLog(), minlevel=5-config.verbose)))
     if config.htmloutput:
       htmllog = stack.enter_context(log.HtmlLog(outdir, title=scriptname, htmltitle='<a href="http://www.nutils.org">{}</a> {}'.format(SVGLOGO, html.escape(scriptname)), favicon=FAVICON))

@@ -5,23 +5,26 @@ from nutils.testing import *
 @parametrize
 class solver(TestCase):
 
-  ifsupported = parametrize.skip_if(lambda backend, args: matrix.Backend.get(backend) is None, reason='not supported')
   n = 100
 
-  def setUp(self):
-    super().setUp()
-    self._backend = matrix.backend(self.backend)
-    self._backend.__enter__()
-    index = numpy.empty([2, (self.n-1)*4], dtype=int)
-    data = numpy.empty([(self.n-1)*4], dtype=float)
-    for i in range(self.n-1):
-      index[:,i*4:(i+1)*4] = [i, i, i+1, i+1], [i, i+1, i, i+1]
-      data[i*4:(i+1)*4] = 1 if i else 2, -1, -1, 1 if i < self.n-2 else 2
-    self.matrix = matrix.assemble(data, index, shape=(self.n, self.n))
-    self.exact = 2 * numpy.eye(self.n) - numpy.eye(self.n, self.n, -1) - numpy.eye(self.n, self.n, +1)
+  def setUpContext(self, stack):
+    if self.backend:
+      stack.enter_context(self.backend)
+      index = numpy.empty([2, (self.n-1)*4], dtype=int)
+      data = numpy.empty([(self.n-1)*4], dtype=float)
+      for i in range(self.n-1):
+        index[:,i*4:(i+1)*4] = [i, i, i+1, i+1], [i, i+1, i, i+1]
+        data[i*4:(i+1)*4] = 1 if i else 2, -1, -1, 1 if i < self.n-2 else 2
+      self.matrix = matrix.assemble(data, index, shape=(self.n, self.n))
+      self.exact = 2 * numpy.eye(self.n) - numpy.eye(self.n, self.n, -1) - numpy.eye(self.n, self.n, +1)
 
-  def tearDown(self):
-    self._backend.__exit__(None, None, None)
+  def ifsupported(f):
+    def wrapped(self):
+      if self.backend:
+        f(self)
+      else:
+        self.skipTest('backend is unavailable')
+    return wrapped
 
   @ifsupported
   def test_scalar(self):
@@ -227,12 +230,13 @@ class WrapperMatrix(matrix.Matrix):
   def solve_direct(self, rhs):
     return self.wrapped.solve_direct(rhs)
 
-solver('base', backend='base', args=[{}])
-solver('numpy', backend='numpy', args=[{}])
-solver('scipy', backend='scipy', args=[{},
+solver('base', backend=Base(), args=[{}])
+solver('numpy', backend=matrix.Numpy(), args=[{}])
+solver('scipy', backend=matrix.Scipy(), args=[{},
     dict(solver='gmres', atol=1e-5, restart=100, precon='spilu'),
     dict(solver='gmres', atol=1e-5, precon='splu'),
     dict(solver='cg', atol=1e-5, precon='diag')]
  + [dict(solver=s, atol=1e-5) for s in ('bicg', 'bicgstab', 'cg', 'cgs', 'lgmres', 'minres')])
-solver('mkl', backend='mkl', args=[{},
-    dict(solver='fgmres', atol=1e-8)])
+for threading in matrix.MKL.Threading.SEQUENTIAL, matrix.MKL.Threading.TBB:
+  solver('mkl:{}'.format(threading.name.lower()), backend=matrix.MKL(threading=threading), args=[{},
+      dict(solver='fgmres', atol=1e-8)])
