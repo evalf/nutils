@@ -6,30 +6,39 @@
 # angle. The configuration is constructed such that a symmetric solution is
 # expected.
 
-import nutils, numpy
+from nutils import mesh, function, solver, export, cli, testing
+import numpy
 
-# The main function defines the parameter space for the script. Configurable
-# parameters are the mesh density (in number of elements along an edge),
-# element type (square, triangle, or mixed), type of basis function (std or
-# spline, with availability depending on element type), polynomial degree,
-# Poisson's ratio, wedge angle, Newton tolerance, and a boolean flag for a
-# circular cutout.
+def main(nelems:int, etype:str, btype:str, degree:int, poisson:float, angle:float, restol:float, trim:bool):
+  '''
+  Deformed hyperelastic plate.
 
-def main(nelems: 'number of elements along edge' = 10,
-         etype: 'type of elements (square/triangle/mixed)' = 'square',
-         btype: 'type of basis function (std/spline)' = 'std',
-         degree: 'polynomial degree' = 1,
-         poisson: 'poisson ratio < 0.5' = .25,
-         angle: 'bend angle (degrees)' = 20,
-         restol: 'residual tolerance' = 1e-10,
-         trim: 'create circular-shaped hole' = False):
+  .. arguments::
 
-  domain, geom = nutils.mesh.unitsquare(nelems, etype)
+     nelems [10]
+       Number of elements along edge.
+     etype [square]
+       Type of elements (square/triangle/mixed).
+     btype [std]
+       Type of basis function (std/spline).
+     degree [1]
+       Polynomial degree.
+     poisson [.25]
+       Poisson's ratio, nonnegative and stricly smaller than 1/2.
+     angle [20]
+       Rotation angle for right clamp (degrees).
+     restol [1e-10]
+       Newton tolerance.
+     trim [no]
+       Create circular-shaped hole.
+  '''
+
+  domain, geom = mesh.unitsquare(nelems, etype)
   if trim:
-    domain = domain.trim(nutils.function.norm2(geom-.5)-.2, maxrefine=2)
+    domain = domain.trim(function.norm2(geom-.5)-.2, maxrefine=2)
   bezier = domain.sample('bezier', 5)
 
-  ns = nutils.function.Namespace()
+  ns = function.Namespace()
   ns.x = geom
   ns.angle = angle * numpy.pi / 180
   ns.lmbda = 2 * poisson
@@ -42,20 +51,20 @@ def main(nelems: 'number of elements along edge' = 10,
 
   sqr = domain.boundary['left'].integral('u_k u_k d:x' @ ns, degree=degree*2)
   sqr += domain.boundary['right'].integral('((u_0 - x_1 sin(2 angle) - cos(angle) + 1)^2 + (u_1 - x_1 (cos(2 angle) - 1) + sin(angle))^2) d:x' @ ns, degree=degree*2)
-  cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
+  cons = solver.optimize('lhs', sqr, droptol=1e-15)
 
   energy = domain.integral('energy d:x' @ ns, degree=degree*2)
-  lhs0 = nutils.solver.optimize('lhs', energy, constrain=cons)
+  lhs0 = solver.optimize('lhs', energy, constrain=cons)
   X, energy = bezier.eval(['X_i', 'energy'] @ ns, lhs=lhs0)
-  nutils.export.triplot('linear.png', X, energy, tri=bezier.tri, hull=bezier.hull)
+  export.triplot('linear.png', X, energy, tri=bezier.tri, hull=bezier.hull)
 
   ns.strain_ij = '.5 (u_i,j + u_j,i + u_k,i u_k,j)'
   ns.energy = 'lmbda strain_ii strain_jj + 2 mu strain_ij strain_ij'
 
   energy = domain.integral('energy d:x' @ ns, degree=degree*2)
-  lhs1 = nutils.solver.minimize('lhs', energy, lhs0=lhs0, constrain=cons).solve(restol)
+  lhs1 = solver.minimize('lhs', energy, lhs0=lhs0, constrain=cons).solve(restol)
   X, energy = bezier.eval(['X_i', 'energy'] @ ns, lhs=lhs1)
-  nutils.export.triplot('nonlinear.png', X, energy, tri=bezier.tri, hull=bezier.hull)
+  export.triplot('nonlinear.png', X, energy, tri=bezier.tri, hull=bezier.hull)
 
   return lhs0, lhs1
 
@@ -63,10 +72,10 @@ def main(nelems: 'number of elements along edge' = 10,
 # calls the main function with arguments provided from the command line. For
 # example, to keep with the default arguments simply run :sh:`python3
 # finitestrain.py`. To select quadratic splines and a cutout add :sh:`python3
-# finitestrain.py btype=spline degree=2 trim`.
+# finitestrain.py btype=spline degree=2 trim=yes`.
 
 if __name__ == '__main__':
-  nutils.cli.run(main)
+  cli.run(main)
 
 # Once a simulation is developed and tested, it is good practice to save a few
 # strategic return values for regression testing. The :mod:`nutils.testing`
@@ -74,11 +83,11 @@ if __name__ == '__main__':
 # this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
 # embedding of desired results as compressed base64 data.
 
-class test(nutils.testing.TestCase):
+class test(testing.TestCase):
 
-  @nutils.testing.requires('matplotlib')
+  @testing.requires('matplotlib')
   def test_default(self):
-    lhs0, lhs1 = main(nelems=4, angle=10)
+    lhs0, lhs1 = main(nelems=4, etype='square', btype='std', degree=1, poisson=.25, angle=10, restol=1e-10, trim=False)
     with self.subTest('linear'): self.assertAlmostEqual64(lhs0, '''
       eNpjYICB8ku8+icMthvOM+K42G1ga6Rv/Mh42YVcQwnj/8bzTW5fUDbaaNxtomwK18CQfCnxkuPFL+f7
       zt06d/Rc1rnbZ73Pyp4VPvvwzOwz7mckz3w4ffL0stMtpwGSOirA''')
@@ -86,9 +95,9 @@ class test(nutils.testing.TestCase):
       eNpjYICBMu1b+jKGFw2bjdy1LICkk/Fx4+bLjwxdjAVM2k1uX1A22mjcbaJsCtfAoHz53sXiC27nGc6p
       nD94Tutc5dlLZyLOSpw9fab4DOsZyTMfTp88vex0y2kA6e4nVQ==''')
 
-  @nutils.testing.requires('matplotlib')
+  @testing.requires('matplotlib')
   def test_mixed(self):
-    lhs0, lhs1 = main(nelems=4, angle=10, etype='mixed')
+    lhs0, lhs1 = main(nelems=4, etype='mixed', btype='std', degree=1, poisson=.25, angle=10, restol=1e-10, trim=False)
     with self.subTest('linear'): self.assertAlmostEqual64(lhs0, '''
       eNoBZACb/wAAAADV0WwvAAChMAAAtjEAAKgyXjBl0UUyMjPeMyXQjzESM/ozqDQjMtvQsTOLNCM1AAAA
       AIfS7NEAAM/RAADQzwAAmc7czsvOU871zUrNMs0NzenMk8xQzPDLGczJy6bLhMsZ2Sx5''')
@@ -96,9 +105,9 @@ class test(nutils.testing.TestCase):
       eNoBZACb/wAAAAAr3xowAAD9MAAA1DEAAI8yHzGKLIEySDPKM6fS9TFCMwM0mzQjMtvQsTOLNCM1AAAA
       AD/TYNEAAN7QAAA3zwAACc7SzgnPEc6TzdjMZ80TzdHMa8wXzPDLGczJy6bLhMthnih2''')
 
-  @nutils.testing.requires('matplotlib')
+  @testing.requires('matplotlib')
   def test_spline(self):
-    lhs0, lhs1 = main(nelems=4, angle=10, degree=2, btype='spline')
+    lhs0, lhs1 = main(nelems=4, etype='square', btype='spline', degree=2, poisson=.25, angle=10, restol=1e-10, trim=False)
     with self.subTest('linear'): self.assertAlmostEqual64(lhs0, '''
       eNpjYECAa1e+aE3Qu6Nfa9BlmHoxU/eHgbIRs3Gs8bwLr/S4jayNfxn7mGy/sEz/qNFz4wUmL0xuX/Az
       EDDWMrlromyKZAxDlg6bbppOw1WXi2nnqy8svSBxwf980Ln3Z9+ffXP2+Nm8s6xnT59pOdNzJveM3Rnm

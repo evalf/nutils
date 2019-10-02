@@ -20,17 +20,25 @@
 #
 # We start by importing the necessary modules.
 
-import nutils, numpy
+from nutils import mesh, function, solver, export, cli, testing
+import treelog
 
-# The main function defines the parameter space for the script. Configurable
-# parameters are the mesh density (in number of elements along an edge),
-# element type (square, triangle, or mixed), type of basis function (std or
-# spline, with availability depending on element type), and polynomial degree.
+def main(nelems:int, etype:str, btype:str, degree:int):
+  '''
+  Laplace problem on a unit square.
 
-def main(nelems: 'number of elements along edge' = 10,
-         etype: 'type of elements (square/triangle/mixed)' = 'square',
-         btype: 'type of basis function (std/spline)' = 'std',
-         degree: 'polynomial degree' = 1):
+  .. arguments::
+
+     nelems [10]
+       Number of elements along edge.
+     etype [square]
+       Type of elements (square/triangle/mixed).
+     btype [std]
+       Type of basis function (std/spline), availability depending on the
+       selected element type.
+     degree [1]
+       Polynomial degree.
+  '''
 
   # A unit square domain is created by calling the
   # :func:`nutils.mesh.unitsquare` mesh generator, with the number of elements
@@ -38,14 +46,14 @@ def main(nelems: 'number of elements along edge' = 10,
   # "triangle", or "mixed") as the second. The result is a topology object
   # ``domain`` and a vectored valued geometry function ``geom``.
 
-  domain, geom = nutils.mesh.unitsquare(nelems, etype)
+  domain, geom = mesh.unitsquare(nelems, etype)
 
   # To be able to write index based tensor contractions, we need to bundle all
   # relevant functions together in a namespace. Here we add the geometry ``x``,
   # a scalar ``basis``, and the solution ``u``. The latter is formed by
   # contracting the basis with a to-be-determined solution vector ``?lhs``.
 
-  ns = nutils.function.Namespace()
+  ns = function.Namespace()
   ns.x = geom
   ns.basis = domain.basis(btype, degree=degree)
   ns.u = 'basis_n ?lhs_n'
@@ -74,7 +82,7 @@ def main(nelems: 'number of elements along edge' = 10,
 
   sqr = domain.boundary['left'].integral('u^2 d:x' @ ns, degree=degree*2)
   sqr += domain.boundary['top'].integral('(u - cosh(1) sin(x_0))^2 d:x' @ ns, degree=degree*2)
-  cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
+  cons = solver.optimize('lhs', sqr, droptol=1e-15)
 
   # The unconstrained entries of ``?lhs`` are to be determined such that the
   # residual vector evaluates to zero in the corresponding entries. This step
@@ -82,7 +90,7 @@ def main(nelems: 'number of elements along edge' = 10,
   # right hand side vector that are subsequently assembled and solved. The
   # resulting ``lhs`` array matches ``cons`` in the constrained entries.
 
-  lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
+  lhs = solver.solve_linear('lhs', res, constrain=cons)
 
   # Once all entries of ``?lhs`` are establised, the corresponding solution can
   # be vizualised by sampling values of ``ns.u`` along with physical
@@ -93,13 +101,13 @@ def main(nelems: 'number of elements along edge' = 10,
 
   bezier = domain.sample('bezier', 9)
   x, u = bezier.eval(['x_i', 'u'] @ ns, lhs=lhs)
-  nutils.export.triplot('solution.png', x, u, tri=bezier.tri, hull=bezier.hull)
+  export.triplot('solution.png', x, u, tri=bezier.tri, hull=bezier.hull)
 
   # To confirm that our computation is correct, we use our knowledge of the
   # analytical solution to evaluate the L2-error of the discrete result.
 
   err = domain.integral('(u - sin(x_0) cosh(x_1))^2 d:x' @ ns, degree=degree*2).eval(lhs=lhs)**.5
-  nutils.log.user('L2 error: {:.2e}'.format(err))
+  treelog.user('L2 error: {:.2e}'.format(err))
 
   return cons, lhs, err
 
@@ -110,7 +118,7 @@ def main(nelems: 'number of elements along edge' = 10,
 # :sh:`python3 laplace.py etype=mixed degree=2`.
 
 if __name__ == '__main__':
-  nutils.cli.run(main)
+  cli.run(main)
 
 # Once a simulation is developed and tested, it is good practice to save a few
 # strategic return values for regression testing. The :mod:`nutils.testing`
@@ -118,9 +126,9 @@ if __name__ == '__main__':
 # this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
 # embedding of desired results as compressed base64 data.
 
-class test(nutils.testing.TestCase):
+class test(testing.TestCase):
 
-  @nutils.testing.requires('matplotlib')
+  @testing.requires('matplotlib')
   def test_default(self):
     cons, lhs, err = main(nelems=4, etype='square', btype='std', degree=1)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
@@ -131,7 +139,7 @@ class test(nutils.testing.TestCase):
     with self.subTest('L2-error'):
       self.assertAlmostEqual(err, 1.63e-3, places=5)
 
-  @nutils.testing.requires('matplotlib')
+  @testing.requires('matplotlib')
   def test_spline(self):
     cons, lhs, err = main(nelems=4, etype='square', btype='spline', degree=2)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
@@ -142,7 +150,7 @@ class test(nutils.testing.TestCase):
     with self.subTest('L2-error'):
       self.assertAlmostEqual(err, 8.04e-5, places=7)
 
-  @nutils.testing.requires('matplotlib')
+  @testing.requires('matplotlib')
   def test_mixed(self):
     cons, lhs, err = main(nelems=4, etype='mixed', btype='std', degree=2)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''

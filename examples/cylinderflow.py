@@ -7,41 +7,55 @@
 # exponentially with radius such that the artificial exterior boundary is
 # placed at large (configurable) distance.
 
-import nutils, numpy
+from nutils import mesh, function, solver, util, export, cli, testing
+import numpy, treelog
 
-# The main function defines the parameter space for the script. Configurable
-# parameters are the mesh density (in number of elements along the cylinder
-# wall), polynomial degree, Reynolds number, rotational velocity of the
-# cylinder, time step, exterior radius, and the end time of the simulation (by
-# default it will run forever).
+def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float, maxradius:float, seed:int, endtime:float):
+  '''
+  Flow around a cylinder.
 
-def main(nelems: 'number of elements' = 24,
-         degree: 'polynomial degree' = 3,
-         reynolds: 'reynolds number' = 1000.,
-         rotation: 'cylinder rotation speed' = 0.,
-         timestep: 'time step' = 1/24,
-         maxradius: 'approximate domain size' = 25.,
-         seed: 'random seed' = 0,
-         endtime: 'end time' = numpy.inf):
+  .. arguments::
+
+     nelems [24]
+       Element size expressed in number of elements along the cylinder wall.
+       All elements have similar shape with approximately unit aspect ratio,
+       with elements away from the cylinder wall growing exponentially.
+     degree [3]
+       Polynomial degree for velocity space; the pressure space is one degree
+       less.
+     reynolds [1000]
+       Reynolds number, taking the cylinder radius as characteristic length.
+     rotation [0]
+       Cylinder rotation speed.
+     timestep [.04]
+       Time step
+     maxradius [25]
+       Target exterior radius; the actual domain size is subject to integer
+       multiples of the configured element size.
+     seed [0]
+       Random seed for small velocity noise in the intial condition.
+     endtime [inf]
+       Stopping time.
+  '''
 
   elemangle = 2 * numpy.pi / nelems
   melems = int(numpy.log(2*maxradius) / elemangle + .5)
-  nutils.log.info('creating {}x{} mesh, outer radius {:.2f}'.format(melems, nelems, .5*numpy.exp(elemangle*melems)))
-  domain, geom = nutils.mesh.rectilinear([melems, nelems], periodic=(1,))
+  treelog.info('creating {}x{} mesh, outer radius {:.2f}'.format(melems, nelems, .5*numpy.exp(elemangle*melems)))
+  domain, geom = mesh.rectilinear([melems, nelems], periodic=(1,))
   domain = domain.withboundary(inner='left', outer='right')
 
-  ns = nutils.function.Namespace()
+  ns = function.Namespace()
   ns.uinf = 1, 0
-  ns.r = .5 * nutils.function.exp(elemangle * geom[0])
+  ns.r = .5 * function.exp(elemangle * geom[0])
   ns.Re = reynolds
   ns.phi = geom[1] * elemangle # add small angle to break element symmetry
   ns.x_i = 'r <cos(phi), sin(phi)>_i'
   ns.J = ns.x.grad(geom)
-  ns.unbasis, ns.utbasis, ns.pbasis = nutils.function.chain([ # compatible spaces
+  ns.unbasis, ns.utbasis, ns.pbasis = function.chain([ # compatible spaces
     domain.basis('spline', degree=(degree,degree-1), removedofs=((0,),None)),
     domain.basis('spline', degree=(degree-1,degree)),
     domain.basis('spline', degree=degree-1),
-  ]) / nutils.function.determinant(ns.J)
+  ]) / function.determinant(ns.J)
   ns.ubasis_ni = 'unbasis_n J_i0 + utbasis_n J_i1' # piola transformation
   ns.u_i = 'ubasis_ni ?lhs_n'
   ns.p = 'pbasis_n ?lhs_n'
@@ -53,10 +67,10 @@ def main(nelems: 'number of elements' = 24,
 
   inflow = domain.boundary['outer'].select(-ns.uinf.dotnorm(ns.x), ischeme='gauss1') # upstream half of the exterior boundary
   sqr = inflow.integral('(u_i - uinf_i) (u_i - uinf_i)' @ ns, degree=degree*2)
-  cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15) # constrain inflow semicircle to uinf
+  cons = solver.optimize('lhs', sqr, droptol=1e-15) # constrain inflow semicircle to uinf
 
   sqr = domain.integral('(u_i - uinf_i) (u_i - uinf_i) + p^2' @ ns, degree=degree*2)
-  lhs0 = nutils.solver.optimize('lhs', sqr) # set initial condition to u=uinf, p=0
+  lhs0 = solver.optimize('lhs', sqr) # set initial condition to u=uinf, p=0
 
   numpy.random.seed(seed)
   lhs0 *= numpy.random.normal(1, .1, lhs0.shape) # add small velocity noise
@@ -68,18 +82,18 @@ def main(nelems: 'number of elements' = 24,
   bbox = numpy.array([[-2,46/9],[-2,2]]) # bounding box for figure based on 16x9 aspect ratio
   bezier0 = domain.sample('bezier', 5)
   bezier = bezier0.subset((bezier0.eval((ns.x-bbox[:,0]) * (bbox[:,1]-ns.x)) > 0).all(axis=1))
-  interpolate = nutils.util.tri_interpolator(bezier.tri, bezier.eval(ns.x), mergetol=1e-5) # interpolator for quivers
+  interpolate = util.tri_interpolator(bezier.tri, bezier.eval(ns.x), mergetol=1e-5) # interpolator for quivers
   spacing = .05 # initial quiver spacing
-  xgrd = nutils.util.regularize(bbox, spacing)
+  xgrd = util.regularize(bbox, spacing)
 
-  with nutils.log.iter.plain('timestep', nutils.solver.impliciteuler('lhs', residual=res, inertia=inertia, lhs0=lhs0, timestep=timestep, constrain=cons, newtontol=1e-10)) as steps:
+  with treelog.iter.plain('timestep', solver.impliciteuler('lhs', residual=res, inertia=inertia, lhs0=lhs0, timestep=timestep, constrain=cons, newtontol=1e-10)) as steps:
     for istep, lhs in enumerate(steps):
 
       t = istep * timestep
       x, u, normu, p = bezier.eval(['x_i', 'u_i', 'sqrt(u_k u_k)', 'p'] @ ns, lhs=lhs)
       ugrd = interpolate[xgrd](u)
 
-      with nutils.export.mplfigure('flow.png', figsize=(12.8,7.2)) as fig:
+      with export.mplfigure('flow.png', figsize=(12.8,7.2)) as fig:
         ax = fig.add_axes([0,0,1,1], yticks=[], xticks=[], frame_on=False, xlim=bbox[0], ylim=bbox[1])
         im = ax.tripcolor(x[:,0], x[:,1], bezier.tri, p, shading='gouraud', cmap='jet')
         import matplotlib.collections
@@ -93,7 +107,7 @@ def main(nelems: 'number of elements' = 24,
       if t >= endtime:
         break
 
-      xgrd = nutils.util.regularize(bbox, spacing, xgrd + ugrd * timestep)
+      xgrd = util.regularize(bbox, spacing, xgrd + ugrd * timestep)
 
   return lhs0, lhs
 
@@ -101,7 +115,7 @@ def main(nelems: 'number of elements' = 24,
 # calls the main function with arguments provided from the command line.
 
 if __name__ == '__main__':
-  nutils.cli.run(main)
+  cli.run(main)
 
 # Once a simulation is developed and tested, it is good practice to save a few
 # strategic return values for regression testing. The :mod:`nutils.testing`
@@ -109,11 +123,11 @@ if __name__ == '__main__':
 # this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
 # embedding of desired results as compressed base64 data.
 
-class test(nutils.testing.TestCase):
+class test(testing.TestCase):
 
-  @nutils.testing.requires('matplotlib', 'scipy')
+  @testing.requires('matplotlib', 'scipy')
   def test_rot0(self):
-    lhs0, lhs = main(nelems=6, reynolds=100, timestep=.1, endtime=.05, rotation=0)
+    lhs0, lhs = main(nelems=6, degree=3, reynolds=100, rotation=0, timestep=.1, maxradius=25, seed=0, endtime=.05)
     with self.subTest('initial condition'): self.assertAlmostEqual64(lhs0, '''
       eNqtjD8OwWAcQJ/JNSQ20Tbf135RkUjEZO8RJA7gChYXsDgEkZjN+k/zbQYDCU06Y2Co3yG86S3vtb27
       C8fiXMDM0Q7s7MHCRHUUpPkqh42eaxhlvQzKQAewTMIEQjM2MEyuMUylrOxDykt3Id63Rrzprj0YFJ8T
@@ -124,9 +138,9 @@ class test(nutils.testing.TestCase):
       xOjENMk3O8Y85DcZwyTDAzjaPFY+sMfJwavBhDNPPvbFV8cxOKk3ADtFOFI86zqjN9o8D8hcNFjCfsXV
       Pd47Vj/qPdZBa0F5QUZD7UEJQYi527zjROVETUeVRfZIfrfvRKZKs7s6SVXLZ9k=''')
 
-  @nutils.testing.requires('matplotlib', 'scipy')
+  @testing.requires('matplotlib', 'scipy')
   def test_rot1(self):
-    lhs0, lhs = main(nelems=6, reynolds=100, timestep=.1, endtime=.05, rotation=1)
+    lhs0, lhs = main(nelems=6, degree=3, reynolds=100, rotation=1, timestep=.1, maxradius=25, seed=0, endtime=.05)
     with self.subTest('initial condition'): self.assertAlmostEqual64(lhs0, '''
       eNqtjD8OwWAcQJ/JNSQ20Tbf135RkUjEZO8RJA7gChYXsDgEkZjN+k/zbQYDCU06Y2Co3yG86S3vtb27
       C8fiXMDM0Q7s7MHCRHUUpPkqh42eaxhlvQzKQAewTMIEQjM2MEyuMUylrOxDykt3Id63Rrzprj0YFJ8T

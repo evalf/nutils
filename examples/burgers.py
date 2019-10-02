@@ -1,26 +1,35 @@
-#! /usr/bin/python3
+#! /usr/bin/env python3
 #
-# In this script we solve the Burgers equation on a 1D or 2D periodic dommain,
+# In this script we solve the Burgers equation on a 1D or 2D periodic domain,
 # starting from a centered Gaussian and convecting in the positive direction of
 # the first coordinate.
 
-import nutils, numpy
+from nutils import mesh, function, solver, export, cli, testing
+import numpy, treelog
 
-# The main function defines the parameter space for the script. Configurable
-# parameters are the mesh density (in number of elements along an edge), number
-# of dimensions, polynomial degree, time scale, Newton tolerance and the
-# stopping time.
+def main(nelems:int, ndims:int, degree:int, timescale:float, newtontol:float, endtime:float):
+  '''
+  Burgers equation on a 1D or 2D periodic domain.
 
-def main(nelems: 'number of elements' = 20,
-         ndims: 'spatial dimension' = 1,
-         degree: 'polynomial degree' = 1,
-         timescale: 'time scale (timestep=timescale/nelems)' = .5,
-         newtontol: 'solver tolerance' = 1e-5,
-         endtime: 'end time' = numpy.inf):
+  .. arguments::
 
-  domain, geom = nutils.mesh.rectilinear([numpy.linspace(0,1,nelems+1)]*ndims, periodic=range(ndims))
+     nelems [20]
+       Number of elements along a single dimension.
+     ndims [1]
+       Number of spatial dimensions.
+     degree [1]
+       Polynomial degree for discontinuous basis functions.
+     timescale [.5]
+       Fraction of timestep and element size: timestep=timescale/nelems.
+     newtontol [1e-5]
+       Newton tolerance.
+     endtime [inf]
+       Stopping time.
+  '''
 
-  ns = nutils.function.Namespace()
+  domain, geom = mesh.rectilinear([numpy.linspace(0,1,nelems+1)]*ndims, periodic=range(ndims))
+
+  ns = function.Namespace()
   ns.x = geom
   ns.basis = domain.basis('discont', degree=degree)
   ns.u = 'basis_n ?lhs_n'
@@ -32,14 +41,14 @@ def main(nelems: 'number of elements' = 20,
   inertia = domain.integral('basis_n u d:x' @ ns, degree=5)
 
   sqr = domain.integral('(u - exp(-?y_i ?y_i)(y_i = 5 (x_i - 0.5_i)))^2 d:x' @ ns, degree=5)
-  lhs0 = nutils.solver.optimize('lhs', sqr)
+  lhs0 = solver.optimize('lhs', sqr)
 
   timestep = timescale/nelems
   bezier = domain.sample('bezier', 7)
-  with nutils.log.iter.plain('timestep', nutils.solver.impliciteuler('lhs', res, inertia, timestep=timestep, lhs0=lhs0, newtontol=newtontol)) as steps:
+  with treelog.iter.plain('timestep', solver.impliciteuler('lhs', res, inertia, timestep=timestep, lhs0=lhs0, newtontol=newtontol)) as steps:
     for itime, lhs in enumerate(steps):
       x, u = bezier.eval(['x_i', 'u'] @ ns, lhs=lhs)
-      nutils.export.triplot('solution.png', x, u, tri=bezier.tri, hull=bezier.hull, clim=(0,1))
+      export.triplot('solution.png', x, u, tri=bezier.tri, hull=bezier.hull, clim=(0,1))
       if itime * timestep >= endtime:
         break
 
@@ -51,7 +60,7 @@ def main(nelems: 'number of elements' = 20,
 # endtime=0.5`.
 
 if __name__ == '__main__':
-  nutils.cli.run(main)
+  cli.run(main)
 
 # Once a simulation is developed and tested, it is good practice to save a few
 # strategic return values for regression testing. The :mod:`nutils.testing`
@@ -59,24 +68,24 @@ if __name__ == '__main__':
 # this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
 # embedding of desired results as compressed base64 data.
 
-class test(nutils.testing.TestCase):
+class test(testing.TestCase):
 
-  @nutils.testing.requires('matplotlib')
+  @testing.requires('matplotlib')
   def test_1d_p1(self):
-    lhs = main(ndims=1, nelems=10, timescale=.1, degree=1, endtime=.01)
+    lhs = main(ndims=1, nelems=10, timescale=.1, degree=1, endtime=.01, newtontol=1e-5)
     self.assertAlmostEqual64(lhs, '''
       eNrbocann6u3yqjTyMLUwfSw2TWzKPNM8+9mH8wyTMNNZxptMirW49ffpwYAI6cOVA==''')
 
-  @nutils.testing.requires('matplotlib')
+  @testing.requires('matplotlib')
   def test_1d_p2(self):
-    lhs = main(ndims=1, nelems=10, timescale=.1, degree=2, endtime=.01)
+    lhs = main(ndims=1, nelems=10, timescale=.1, degree=2, endtime=.01, newtontol=1e-5)
     self.assertAlmostEqual64(lhs, '''
       eNrr0c7SrtWfrD/d4JHRE6Ofxj6mnqaKZofNDpjZmQeYB5pHmL8we23mb5ZvWmjKY/LV6KPRFIMZ+o36
       8dp92gCxZxZG''')
 
-  @nutils.testing.requires('matplotlib')
+  @testing.requires('matplotlib')
   def test_2d_p1(self):
-    lhs = main(ndims=2, nelems=4, timescale=.1, degree=1, endtime=.01)
+    lhs = main(ndims=2, nelems=4, timescale=.1, degree=1, endtime=.01, newtontol=1e-5)
     self.assertAlmostEqual64(lhs, '''
       eNoNyKENhEAQRuGEQsCv2SEzyQZHDbRACdsDJNsBjqBxSBxBHIgJ9xsqQJ1Drro1L1/eYBZceGz8njrR
       yacm8UQLBvPYCw1airpyUVYSJLhKijK4IC01WDnqqxvX8OTl427aU73sctPGr3qqceBnRzOjo0xy9JpJ

@@ -9,23 +9,30 @@
 # uses the Raviart-Thomas discretization providing compatible velocity and
 # pressure spaces resulting in a pointwise divergence-free velocity field.
 
-import nutils, numpy
+from nutils import mesh, function, solver, export, cli, testing
+import numpy, treelog
 
-# The main function defines the parameter space for the script. Configurable
-# parameters are the mesh density (in number of elements along an edge),
-# polynomial degree, and Reynolds number.
+def main(nelems:int, degree:int, reynolds:float):
+  '''
+  Driven cavity benchmark problem using compatible spaces.
 
-def main(nelems: 'number of elements' = 12,
-         degree: 'polynomial degree for velocity' = 2,
-         reynolds: 'reynolds number' = 1000.):
+  .. arguments::
+
+     nelems [12]
+       Number of elements along edge.
+     degree [2]
+       Polynomial degree for velocity; the pressure space is one degree less.
+     reynolds [1000]
+       Reynolds number, taking the domain size as characteristic length.
+  '''
 
   verts = numpy.linspace(0, 1, nelems+1)
-  domain, geom = nutils.mesh.rectilinear([verts, verts])
+  domain, geom = mesh.rectilinear([verts, verts])
 
-  ns = nutils.function.Namespace()
+  ns = function.Namespace()
   ns.x = geom
   ns.Re = reynolds
-  ns.uxbasis, ns.uybasis, ns.pbasis, ns.lbasis = nutils.function.chain([
+  ns.uxbasis, ns.uybasis, ns.pbasis, ns.lbasis = function.chain([
     domain.basis('spline', degree=(degree,degree-1), removedofs=((0,-1),None)),
     domain.basis('spline', degree=(degree-1,degree), removedofs=(None,(0,-1))),
     domain.basis('spline', degree=degree-1),
@@ -41,13 +48,13 @@ def main(nelems: 'number of elements' = 12,
 
   res = domain.integral('(ubasis_ni,j stress_ij + pbasis_n (u_k,k + l) + lbasis_n p) d:x' @ ns, degree=2*degree)
   res += domain.boundary.integral('(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) (u_i - uwall_i) d:x / Re' @ ns, degree=2*degree)
-  with nutils.log.context('stokes'):
-    lhs0 = nutils.solver.solve_linear('lhs', res)
+  with treelog.context('stokes'):
+    lhs0 = solver.solve_linear('lhs', res)
     postprocess(domain, ns, lhs=lhs0)
 
   res += domain.integral('ubasis_ni u_i,j u_j d:x' @ ns, degree=3*degree)
-  with nutils.log.context('navierstokes'):
-    lhs1 = nutils.solver.newton('lhs', res, lhs0=lhs0).solve(tol=1e-10)
+  with treelog.context('navierstokes'):
+    lhs1 = solver.newton('lhs', res, lhs0=lhs0).solve(tol=1e-10)
     postprocess(domain, ns, lhs=lhs1)
 
   return lhs0, lhs1
@@ -59,17 +66,17 @@ def main(nelems: 'number of elements' = 12,
 def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
 
   div = domain.integral('(u_k,k)^2 d:x' @ ns, degree=1).eval(**arguments)**.5
-  nutils.log.info('velocity divergence: {:.2e}'.format(div)) # confirm that velocity is pointwise divergence-free
+  treelog.info('velocity divergence: {:.2e}'.format(div)) # confirm that velocity is pointwise divergence-free
 
   ns = ns.copy_() # copy namespace so that we don't modify the calling argument
   ns.streambasis = domain.basis('std', degree=2)[1:] # remove first dof to obtain non-singular system
   ns.stream = 'streambasis_n ?streamdofs_n' # stream function
   sqr = domain.integral('((u_0 - stream_,1)^2 + (u_1 + stream_,0)^2) d:x' @ ns, degree=4)
-  arguments['streamdofs'] = nutils.solver.optimize('streamdofs', sqr, arguments=arguments) # compute streamlines
+  arguments['streamdofs'] = solver.optimize('streamdofs', sqr, arguments=arguments) # compute streamlines
 
   bezier = domain.sample('bezier', 9)
   x, u, p, stream = bezier.eval(['x_i', 'sqrt(u_i u_i)', 'p', 'stream'] @ ns, **arguments)
-  with nutils.export.mplfigure('flow.png') as fig: # plot velocity as field, pressure as contours, streamlines as dashed
+  with export.mplfigure('flow.png') as fig: # plot velocity as field, pressure as contours, streamlines as dashed
     ax = fig.add_axes([.1,.1,.8,.8], yticks=[], aspect='equal')
     import matplotlib.collections
     ax.add_collection(matplotlib.collections.LineCollection(x[bezier.hull], colors='w', linewidths=.5, alpha=.2))
@@ -88,7 +95,7 @@ def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
 # drivencavity-compatible.py`.
 
 if __name__ == '__main__':
-  nutils.cli.run(main)
+  cli.run(main)
 
 # Once a simulation is developed and tested, it is good practice to save a few
 # strategic return values for regression testing. The :mod:`nutils.testing`
@@ -96,9 +103,9 @@ if __name__ == '__main__':
 # this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
 # embedding of desired results as compressed base64 data.
 
-class test(nutils.testing.TestCase):
+class test(testing.TestCase):
 
-  @nutils.testing.requires('matplotlib')
+  @testing.requires('matplotlib')
   def test_p1(self):
     lhs0, lhs1 = main(nelems=3, reynolds=100, degree=2)
     with self.subTest('stokes'): self.assertAlmostEqual64(lhs0, '''
@@ -108,7 +115,7 @@ class test(nutils.testing.TestCase):
       eNoBUgCt/6nOuTGJy4M1SCzJy4zLCjcsLk3PCst/Nlcx9M2DNeDPgDR+NB7UG8wVzSwuPc6ByezUQiud
       MKTL/y4AL73NLS6jLUov8s4zzXoscdMJMSo2AABO+yTF''')
 
-  @nutils.testing.requires('matplotlib')
+  @testing.requires('matplotlib')
   def test_p2(self):
     lhs0, lhs1 = main(nelems=3, reynolds=100, degree=3)
     with self.subTest('stokes'): self.assertAlmostEqual64(lhs0, '''
