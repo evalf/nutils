@@ -156,7 +156,7 @@ def run(func, *, args=None, loaduserconfig=True):
     if doc.text:
       usage.append(doc.text)
       usage.append('\n\n')
-    usage.append('usage: {}'.format(scriptname))
+    usage.append('USAGE: {}'.format(scriptname))
     if doc.presets:
       usage.append(' [{}]'.format('|'.join(doc.presets)))
     if sig.parameters:
@@ -223,7 +223,7 @@ def choose(*functions, args=None, loaduserconfig=True):
 
   funcnames = {func.__name__: func for func in functions}
   if len(args) == 1 or args[1] in ('-h', '--help'):
-    print('usage: {} [{}] (...)'.format(args[0], '|'.join(funcnames)))
+    print('USAGE: {} [{}] (...)'.format(args[0], '|'.join(funcnames)))
     sys.exit(1)
 
   funcname = args.pop(1)
