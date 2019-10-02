@@ -218,13 +218,12 @@ class Evaluable(types.Singleton):
   def optimized_for_numpy(self):
     return self.edit(lambda arg: arg.optimized_for_numpy if isevaluable(arg) else arg)
 
-  @util.positional_only('self')
-  def prepare_eval(*args, **kwargs):
+  @util.positional_only
+  def prepare_eval(self, kwargs=...):
     '''
     Return a function tree suitable for evaluation.
     '''
 
-    self, = args
     return self.edit(lambda arg: arg.prepare_eval(**kwargs) if isevaluable(arg) else arg)
 
 class EvaluationError(Exception):
@@ -347,9 +346,8 @@ class SelectChain(TransformChain):
     assert isinstance(trans, tuple) and trans[0].todims == None
     return trans
 
-  @util.positional_only('self')
-  def prepare_eval(*args, opposite=False, **kwargs):
-    self, = args
+  @util.positional_only
+  def prepare_eval(self, *, opposite=False, kwargs=...):
     return SelectChain(self.n if self.n is not None else 1 if opposite else 0)
 
 TRANS = SelectChain()
@@ -2630,9 +2628,8 @@ class Argument(DerivativeTargetBase):
   def __str__(self):
     return '{} {!r} <{}>'.format(self.__class__.__name__, self._name, ','.join(map(str, self.shape)))
 
-  @util.positional_only('self')
-  def prepare_eval(*args, **kwargs):
-    self, = args
+  @util.positional_only
+  def prepare_eval(self, kwargs=...):
     return zeros_like(self) if self._nderiv > 0 else self
 
 class LocalCoords(DerivativeTargetBase):
@@ -2671,9 +2668,8 @@ class DelayedJacobian(Array):
       return zeros(self.shape + var.shape)
     return DelayedJacobian(self._geom, *self._derivativestack, var)
 
-  @util.positional_only('self')
-  def prepare_eval(*args, ndims, **kwargs):
-    self, = args
+  @util.positional_only
+  def prepare_eval(self, *, ndims, kwargs=...):
     jac = functools.reduce(derivative, self._derivativestack, asarray(jacobian(self._geom, ndims)))
     return jac.prepare_eval(ndims=ndims, **kwargs)
 
@@ -2987,9 +2983,8 @@ class RevolutionAngle(Array):
   def _derivative(self, var, seen):
     return (ones_like if isinstance(var, LocalCoords) and len(var) > 0 else zeros_like)(var)
 
-  @util.positional_only('self')
-  def prepare_eval(*args, **kwargs):
-    self, = args
+  @util.positional_only
+  def prepare_eval(self, kwargs=...):
     return zeros_like(self)
 
 class Opposite(Array):
@@ -3012,9 +3007,8 @@ class Opposite(Array):
       return value
     return Opposite(value)
 
-  @util.positional_only('self')
-  def prepare_eval(*args, opposite=None, **kwargs):
-    self, = args
+  @util.positional_only
+  def prepare_eval(self, *, opposite=None, kwargs=...):
     if opposite is None:
       raise Exception('opposite is undefined')
     return self._value.prepare_eval(opposite=not opposite, **kwargs)

@@ -22,8 +22,8 @@ from . import util, warnings, log
 import contextlib, numpy, os
 
 @contextlib.contextmanager
-@util.positional_only('name')
-def mplfigure(*args, **kwargs):
+@util.positional_only
+def mplfigure(name, kwargs=...):
   '''Matplotlib figure context, convenience function.
 
   Returns a :class:`matplotlib.figure.Figure` object suitable for
@@ -44,7 +44,6 @@ def mplfigure(*args, **kwargs):
   '''
 
   import matplotlib.figure, matplotlib.backends.backend_agg
-  name, = args
   fig = matplotlib.figure.Figure(**kwargs)
   with log.userfile(name, 'wb') as f:
     yield fig
@@ -86,8 +85,8 @@ def triplot(name, points, values=None, *, tri=None, hull=None, cmap=None, clim=N
     else:
       raise Exception('invalid spatial dimension: {}'.format(points.shape[1]))
 
-@util.positional_only('name', 'tri', 'x')
-def vtk(*args, **kwargs):
+@util.positional_only
+def vtk(name, cells, points, kwargs=...):
   '''Export data to a VTK file.
 
   This method provides a simple interface to the `VTK file format`_ with a
@@ -141,7 +140,6 @@ def vtk(*args, **kwargs):
     e[tuple(map(slice, a.shape))] = a
     return e
 
-  name, cells, points = args
   assert cells.ndim == points.ndim == 2
   npoints, ndims = points.shape
   ncells, nverts = cells.shape

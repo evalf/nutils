@@ -103,10 +103,10 @@ class Sample(types.Singleton):
       kwargs['opposite'] = False
     return [function.asarray(func).prepare_eval(**kwargs) for func in funcs]
 
-  @util.positional_only('self', 'funcs')
+  @util.positional_only
   @util.single_or_multiple
   @types.apply_annotations
-  def integrate(*args, **arguments:argdict):
+  def integrate(self, funcs, arguments:argdict=...):
     '''Integrate functions.
 
     Args
@@ -116,8 +116,6 @@ class Sample(types.Singleton):
     arguments : :class:`dict` (default: None)
         Optional arguments for function evaluation.
     '''
-
-    self, funcs = args
 
     # Functions may consist of several blocks, such as originating from
     # chaining. Here we make a list of all blocks consisting of triplets of
@@ -197,10 +195,10 @@ class Sample(types.Singleton):
 
     return Integral([(self, func)])
 
-  @util.positional_only('self', 'funcs')
+  @util.positional_only
   @util.single_or_multiple
   @types.apply_annotations
-  def eval(*args, **arguments:argdict):
+  def eval(self, funcs, arguments:argdict=...):
     '''Evaluate function.
 
     Args
@@ -210,8 +208,6 @@ class Sample(types.Singleton):
     arguments : :class:`dict` (default: None)
         Optional arguments for function evaluation.
     '''
-
-    self, funcs = args
 
     nprocs = min(config.nprocs, self.nelems)
     zeros = parallel.shzeros if nprocs > 1 else numpy.zeros
