@@ -127,6 +127,17 @@ def _load_rcfile(path):
     raise Exception('error loading config from {}'.format(path)) from e
   return settings
 
+def _htmllog(outdir, scriptname, kwargs):
+  htmllog = treelog.HtmlLog(outdir, title=scriptname, htmltitle='<a href="http://www.nutils.org">{}</a> {}'.format(SVGLOGO, html.escape(scriptname)), favicon=FAVICON)
+  if kwargs:
+    if hasattr(treelog, 'proto'):
+      info = treelog.proto.Level.info
+    else:
+      info = 1 # for backwards compatibility with treelog < 1.0b6
+    htmllog.write('<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">{}</ul>'.format(''.join(
+      '<li>{}={} <span style="color: gray;">{}</span></li>'.format(name, value, doc) for name, value, doc in kwargs)), level=info, escape=False)
+  return htmllog
+
 def run(func, *, args=None, loaduserconfig=True):
   '''parse command line arguments and call function'''
 
@@ -275,11 +286,7 @@ def setup(scriptname: str,
   consolellog = treelog.RichOutputLog() if richoutput else treelog.StdoutLog()
   if verbose is not None:
     consolellog = treelog.FilterLog(consolellog, minlevel=5-verbose)
-
-  htmllog = treelog.HtmlLog(outdir, title=scriptname, htmltitle='<a href="http://www.nutils.org">{}</a> {}'.format(SVGLOGO, html.escape(scriptname)), favicon=FAVICON)
-  if kwargs:
-    htmllog.write('<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">{}</ul>'.format(''.join(
-      '<li>{}={} <span style="color: gray;">{}</span></li>'.format(name, value, doc) for name, value, doc in kwargs)), level=1, escape=False)
+  htmllog = _htmllog(outdir, scriptname, kwargs)
 
   with htmllog, treelog.set(treelog.TeeLog(consolellog, htmllog)), \
        _traceback(richoutput=richoutput, postmortem=pdb), \

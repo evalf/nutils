@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-import inspect, pathlib, shutil, os, runpy, urllib.parse, shlex, doctest, re, io, hashlib, base64, treelog, html, stringly
+import inspect, pathlib, shutil, os, runpy, urllib.parse, shlex, doctest, re, io, hashlib, base64, treelog, stringly
 import docutils.nodes, docutils.parsers.rst, docutils.statemachine
 import sphinx.util.logging, sphinx.util.docutils, sphinx.addnodes
 import nutils.matrix, nutils.testing
@@ -227,9 +227,7 @@ def create_log(app, env, node, contnode):
       # Run script.
       import matplotlib.testing
       matplotlib.testing.setup()
-      with treelog.HtmlLog(str(dst_log), title=scriptname, htmltitle='{} {}'.format(nutils.cli.SVGLOGO, html.escape(scriptname)), favicon=nutils.cli.FAVICON) as log, treelog.set(log), nutils.matrix.Scipy(), nutils.warnings.via(treelog.warning):
-        log.write('<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">{}</ul>'.format(''.join(
-          '<li>{}={} <span style="color: gray;">{}</span></li>'.format(name, kwargs[name], doc.argdocs[name]) for name in params)), level=1, escape=False)
+      with nutils.cli._htmllog(outdir=str(dst_log), scriptname=scriptname, kwargs=[(name, kwargs[name], doc.argdocs[name]) for name in params]) as log, treelog.set(log), nutils.matrix.Scipy(), nutils.warnings.via(treelog.warning):
         func(**{name: stringly.loads(params[name].annotation, kwargs[name]) for name in params})
       (dst_log/'log.html').rename(dst_log/'index.html')
 
