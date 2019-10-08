@@ -1327,7 +1327,7 @@ class attributes:
   def __repr__(self):
     return 'attributes({})'.format(', '.join(map('{0[0]}={0[1]!r}'.format, sorted(self.__dict__.items()))))
 
-class unit(float):
+class unit:
   '''
   Framework for physical units.
 
@@ -1388,7 +1388,13 @@ class unit(float):
       return ''.join(sorted('*/'[value<0] + key + (str(abs(value)) if abs(value) > 1 else '') for key, value in self.items())).lstrip('*')
 
   @classmethod
-  def create(cls, *args, **units):
+  def create(*args, **units):
+    '''
+    Alternative constructor for backwards compatibility.
+    '''
+    return args[0](**units)
+
+  def __init__(*args, **units):
     '''
     Create new unit type.
 
@@ -1401,15 +1407,11 @@ class unit(float):
     cannot use prefixes on the receiving end of a definition for reasons of
     ambiguity, hence the definition of a gram as 1/1000:
 
-    >>> SI = unit.create(m=1, s=1, g=1e-3, N='kg*m/s2', Pa='N/m2')
-    >>> length = SI('2km')
-    >>> float(length)
+    >>> SI = unit(m=1, s=1, g=1e-3, N='kg*m/s2', Pa='N/m2')
+    >>> SI('2km')
     2000.0
-    >>> mass = SI('2g')
-    >>> float(mass)
+    >>> SI('2g')
     0.002
-    >>> mass/SI('g')
-    2.0
 
     Args
     ----
@@ -1423,68 +1425,68 @@ class unit(float):
     :
         The newly created (uninitiated) unit class.
     '''
-    if args:
-      name, = args
-    else:
-      name = 'myunit'
-    mycls = type(name, (cls,), {})
-    mycls.__init_subclass__(**units)
-    return mycls
-
-  @classmethod
-  def __init_subclass__(cls, **units):
-    '''
-    Initialize unit using class arguments, supported as of Python 3.6.
-    '''
-    if not units:
-      return
+    self, = args
     def depth(name, d={}):
       if name not in units:
         name = name[1:] # strip prefix
       if name not in d:
         value = units.get(name)
-        d[name] = isinstance(value, str) and sum(map(depth, cls._words.findall(value)), 1)
+        d[name] = isinstance(value, str) and sum(map(depth, self._words.findall(value)), 1)
       return d[name]
-    cls._units = {}
+    self._units = {}
     for name in sorted(units, key=depth): # sort by dependency depth to establish resolve order
       value = units[name]
-      cls._units[name] = cls._parse(value) if isinstance(value, str) else (value, cls._pdict({name: 1}))
+      self._units[name] = self._parse(value) if isinstance(value, str) else (value, self._pdict({name: 1}))
 
-  @classmethod
-  def _parse(cls, s):
+  def __getitem__(self, unit):
+    '''
+    Create subclass of float with custom stringly loads, dumps methods.
+    '''
+    if unit[0] in '1234567890.*':
+      raise ValueError('unit cannot start with a numeral')
+    return type(unit, (float,), dict(__stringly_loads__=classmethod(self._loads), __stringly_dumps__=classmethod(self._dumps)))
+
+  def __call__(self, s):
+    '''
+    Create subclass of float and instantiate.
+    '''
+    value, powers = self._parse(s)
+    return self[s.lstrip('1234567890.*')](value)
+
+  def _parse(self, s):
     '''
     Parse string into a tuple of float, _pdict.
     '''
-    parts = cls._words.split(s)
+    parts = self._words.split(s)
     value = float(parts[0].rstrip('*/') or 1)
-    powers = cls._pdict()
+    powers = self._pdict()
     for i in range(1, len(parts), 2):
       s = int(parts[i+1].rstrip('*/') or 1)
       if parts[i-1].endswith('/'):
         s = -s
       name = parts[i]
-      if name not in cls._units:
-        if name[0] not in cls._prefix or name[1:] not in cls._units:
+      if name not in self._units:
+        if name[0] not in self._prefix or name[1:] not in self._units:
           raise ValueError('unknown unit: {}'.format(name))
-        v, p = cls._units[name[1:]]
-        v *= cls._prefix[name[0]]
+        v, p = self._units[name[1:]]
+        v *= self._prefix[name[0]]
       else:
-        v, p = cls._units[name]
+        v, p = self._units[name]
       value *= v**s
       powers += p*s
     return value, powers
 
-  def __new__(cls, s):
-    v, powers = cls._parse(s)
-    if not hasattr(cls, 'bound'):
-      cls = type('{}:{}'.format(cls.__name__, powers), (cls,), dict(bound=powers))
-    elif cls.bound != powers:
-      raise ValueError('invalid unit: expected {}, got {}'.format(cls.bound, powers))
-    self = float.__new__(cls, v)
-    self._str = s
-    return self
+  def _loads(self, U, s):
+    uvalue, upowers = self._parse(U.__name__)
+    value, powers = self._parse(s)
+    if powers != upowers:
+      raise ValueError('invalid unit: expected {}, got {}'.format(upowers, powers))
+    return U(value)
 
-  def __str__(self):
-    return self._str
+  def _dumps(self, U, v):
+    if not isinstance(v, (int,float)):
+      raise ValueError('can only dump numerical values as unit, got {!r}'.format(type(v)))
+    uvalue, upowers = self._parse(U.__name__)
+    return '{:f}'.format(v/uvalue).strip('0').rstrip('.') + U.__name__
 
 # vim:sw=2:sts=2:et
