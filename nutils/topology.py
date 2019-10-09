@@ -34,7 +34,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, elementseq, function, util, parallel, config, numeric, cache, transform, transformseq, warnings, matrix, types, sample, points, log, _
+from . import element, elementseq, function, util, parallel, numeric, cache, transform, transformseq, warnings, matrix, types, sample, points, log, _
 import numpy, functools, collections.abc, itertools, functools, operator, numbers, pathlib, abc
 
 _identity = lambda x: x
@@ -174,7 +174,7 @@ class Topology(types.Singleton):
     'element-wise integration'
 
     ielem = function.TransformsIndexWithTail(self.transforms, function.TRANS).index
-    with matrix.backend('numpy'):
+    with matrix.Numpy():
       retvals = self.integrate([function.Inflate(function.asarray(func)[_], dofmap=ielem[_], length=len(self), axis=0) for func in funcs], **kwargs)
     retvals = [retval.export('dense') if len(retval.shape) == 2 else retval for retval in retvals]
     return [function.elemwise(self.transforms, retval) for retval in retvals] if asfunction \
@@ -538,7 +538,7 @@ class Topology(types.Singleton):
     vref = element.getsimplex(0)
     ielems = parallel.shempty(len(coords), dtype=int)
     xis = parallel.shempty((len(coords),len(geom)), dtype=float)
-    with parallel.ctxrange('locating', nprocs=config.nprocs, nitems=len(coords)) as ipoints:
+    with parallel.ctxrange('locating', len(coords)) as ipoints:
       for ipoint in ipoints:
         coord = coords[ipoint]
         ielemcandidates, = numpy.logical_and(numpy.greater_equal(coord, bboxes[:,0,:]), numpy.less_equal(coord, bboxes[:,1,:])).all(axis=-1).nonzero()

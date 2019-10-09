@@ -100,3 +100,23 @@ class readtext(TestCase):
   def test_typeerror(self):
     with self.assertRaises(TypeError):
       util.readtext(None)
+
+class positional_only(TestCase):
+
+  def test_simple(self):
+    @util.positional_only
+    def f(x):
+      return x
+    self.assertEqual(f(1), 1)
+
+  def test_mixed(self):
+    @util.positional_only
+    def f(x, *, y):
+      return x, y
+    self.assertEqual(f(1, y=2), (1, 2))
+
+  def test_varkw(self):
+    @util.positional_only
+    def f(x, y=...):
+      return x, y
+    self.assertEqual(f(1, x=2, y=3), (1, {'x':2,'y':3}))

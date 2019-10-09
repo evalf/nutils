@@ -43,8 +43,10 @@ multiple integrals simultaneously, which has the advantage that it can
 efficiently combine common substructures.
 '''
 
-from . import types, points, util, function, config, parallel, numeric, matrix, transformseq, log
-import numpy, numbers, collections.abc
+from . import types, points, util, function, parallel, numeric, matrix, transformseq, log
+import numpy, numbers, collections.abc, os
+
+graphviz = os.environ.get('NUTILS_GRAPHVIZ')
 
 def argdict(arguments):
   if len(arguments) == 1 and 'arguments' in arguments and isinstance(arguments['arguments'], collections.abc.Mapping):
@@ -103,10 +105,10 @@ class Sample(types.Singleton):
       kwargs['opposite'] = False
     return [function.asarray(func).prepare_eval(**kwargs) for func in funcs]
 
-  @util.positional_only('self', 'funcs')
+  @util.positional_only
   @util.single_or_multiple
   @types.apply_annotations
-  def integrate(*args, **arguments:argdict):
+  def integrate(self, funcs, arguments:argdict=...):
     '''Integrate functions.
 
     Args
@@ -116,8 +118,6 @@ class Sample(types.Singleton):
     arguments : :class:`dict` (default: None)
         Optional arguments for function evaluation.
     '''
-
-    self, funcs = args
 
     # Functions may consist of several blocks, such as originating from
     # chaining. Here we make a list of all blocks consisting of triplets of
@@ -130,8 +130,8 @@ class Sample(types.Singleton):
     log.debug('integrating {} distinct blocks'.format('+'.join(
       str(block2func.count(ifunc)) for ifunc in range(len(funcs)))))
 
-    if config.dot:
-      function.Tuple(values).graphviz()
+    if graphviz:
+      function.Tuple(values).graphviz(graphviz)
 
     # To allocate (shared) memory for all block data we evaluate indexfunc to
     # build an nblocks x nelems+1 offset array, and nblocks index lists of
@@ -156,12 +156,7 @@ class Sample(types.Singleton):
     # The data_index list contains shared memory index and value arrays for
     # each function argument.
 
-    nprocs = min(config.nprocs, self.nelems)
-    empty = parallel.shempty if nprocs > 1 else numpy.empty
-    data_index = [
-      (empty(n, dtype=float),
-        empty((funcs[ifunc].ndim,n), dtype=int))
-            for ifunc, n in enumerate(nvals) ]
+    data_index = [(parallel.shempty(n, dtype=float), parallel.shempty((funcs[ifunc].ndim,n), dtype=int)) for ifunc, n in enumerate(nvals)]
 
     # In a second, parallel element loop, valuefunc is evaluated to fill the
     # data part of data_index using the offsets array for location. Each
@@ -170,7 +165,7 @@ class Sample(types.Singleton):
     # benefits from parallel speedup.
 
     valueindexfunc = function.Tuple(function.Tuple([value]+list(index)) for value, index in zip(values, indices))
-    with parallel.ctxrange('integrating', nprocs=nprocs, nitems=self.nelems) as ielems:
+    with parallel.ctxrange('integrating', self.nelems) as ielems:
       for ielem in ielems:
         points = self.points[ielem]
         for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=points.coords, **arguments)):
@@ -197,10 +192,10 @@ class Sample(types.Singleton):
 
     return Integral([(self, func)])
 
-  @util.positional_only('self', 'funcs')
+  @util.positional_only
   @util.single_or_multiple
   @types.apply_annotations
-  def eval(*args, **arguments:argdict):
+  def eval(self, funcs, arguments:argdict=...):
     '''Evaluate function.
 
     Args
@@ -211,18 +206,14 @@ class Sample(types.Singleton):
         Optional arguments for function evaluation.
     '''
 
-    self, funcs = args
-
-    nprocs = min(config.nprocs, self.nelems)
-    zeros = parallel.shzeros if nprocs > 1 else numpy.zeros
     funcs = self._prepare_funcs(funcs)
-    retvals = [zeros((self.npoints,)+func.shape, dtype=func.dtype) for func in funcs]
+    retvals = [parallel.shzeros((self.npoints,)+func.shape, dtype=func.dtype) for func in funcs]
     idata = function.Tuple(function.Tuple([ifunc, function.Tuple(ind), f.simplified.optimized_for_numpy]) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func))
 
-    if config.dot:
-      idata.graphviz()
+    if graphviz:
+      idata.graphviz(graphviz)
 
-    with parallel.ctxrange('evaluating', nprocs=nprocs, nitems=self.nelems) as ielems:
+    with parallel.ctxrange('evaluating', self.nelems) as ielems:
       for ielem in ielems:
         for ifunc, inds, data in idata.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=self.points[ielem].coords, **arguments):
           numpy.add.at(retvals[ifunc], numpy.ix_(self.index[ielem], *[ind for (ind,) in inds]), data)

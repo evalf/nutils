@@ -75,7 +75,7 @@ class run(testing.TestCase):
       for funcname in ('main', False):
         status, output = self._cli(arg, funcname=funcname)
         with self.subTest(arg=arg, funcname=funcname, test='argparse'):
-          self.assertEqual(output[:6], 'usage:')
+          self.assertEqual(output[:6], 'USAGE:')
         with self.subTest(arg=arg, funcname=funcname, test='exitstatus'):
           self.assertIsNotNone(status)
           self.assertEqual(status.code, 1)

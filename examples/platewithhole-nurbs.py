@@ -7,19 +7,27 @@
 # exact geometry and mesh refinement`, Computer Methods in Applied Mechanics
 # and Engineering, Elsevier, 2005, 194, 4135-4195.
 
-import nutils, numpy
+from nutils import mesh, function, solver, export, cli, testing
+import numpy, treelog
 
-# The main function defines the parameter space for the script. Configurable
-# parameters are the number of uniform refinements starting from a 1x2 base
-# mesh, the far field traction, cutout radius and Poisson's ratio.
+def main(nrefine:int, traction:float, radius:float, poisson:float):
+  '''
+  Horizontally loaded linear elastic plate with IGA hole.
 
-def main(nrefine = 2,
-         traction: "far field traction (relative to Young's modulus)" = .1,
-         radius: 'hole radius' = 0.5,
-         poisson: "poisson's ratio" = 0.3):
+  .. arguments::
+
+     nrefine [2]
+       Number of uniform refinements starting from 1x2 base mesh.
+     traction [.1]
+       Far field traction (relative to Young's modulus).
+     radius [.5]
+       Cut-out radius.
+     poisson [.3]
+       Poisson's ratio, nonnegative and strictly smaller than 1/2.
+  '''
 
   # create the coarsest level parameter domain
-  domain, geom0 = nutils.mesh.rectilinear([1, 2])
+  domain, geom0 = mesh.rectilinear([1, 2])
   bsplinebasis = domain.basis('spline', degree=2)
   controlweights = numpy.ones(12)
   controlweights[1:3] = .5 + .25 * numpy.sqrt(2)
@@ -34,8 +42,8 @@ def main(nrefine = 2,
     numpy.take([0, 1, 1], indices)])
   geom = (nurbsbasis[:,numpy.newaxis] * controlpoints).sum(0)
 
-  radiuserr = domain.boundary['left'].integral((nutils.function.norm2(geom) - radius)**2 * nutils.function.J(geom0), degree=9).eval()**.5
-  nutils.log.info('hole radius exact up to L2 error {:.2e}'.format(radiuserr))
+  radiuserr = domain.boundary['left'].integral((function.norm2(geom) - radius)**2 * function.J(geom0), degree=9).eval()**.5
+  treelog.info('hole radius exact up to L2 error {:.2e}'.format(radiuserr))
 
   # refine domain
   if nrefine:
@@ -44,7 +52,7 @@ def main(nrefine = 2,
     controlweights = domain.project(weightfunc, onto=bsplinebasis, geometry=geom0, ischeme='gauss9')
     nurbsbasis = bsplinebasis * controlweights / weightfunc
 
-  ns = nutils.function.Namespace()
+  ns = function.Namespace()
   ns.x = geom
   ns.lmbda = 2 * poisson
   ns.mu = 1 - poisson
@@ -61,24 +69,24 @@ def main(nrefine = 2,
   ns.du_i = 'u_i - uexact_i'
 
   sqr = domain.boundary['top,bottom'].integral('(u_i n_i)^2 d:x' @ ns, degree=9)
-  cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
+  cons = solver.optimize('lhs', sqr, droptol=1e-15)
   sqr = domain.boundary['right'].integral('du_k du_k d:x' @ ns, degree=20)
-  cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
+  cons = solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
 
   # construct residual
   res = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=9)
 
   # solve system
-  lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
+  lhs = solver.solve_linear('lhs', res, constrain=cons)
 
   # vizualize result
   bezier = domain.sample('bezier', 9)
   X, stressxx = bezier.eval(['X_i', 'stress_00'] @ ns, lhs=lhs)
-  nutils.export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull, clim=(numpy.nanmin(stressxx), numpy.nanmax(stressxx)))
+  export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull, clim=(numpy.nanmin(stressxx), numpy.nanmax(stressxx)))
 
   # evaluate error
   err = domain.integral('<du_k du_k, du_i,j du_i,j>_n d:x' @ ns, degree=9).eval(lhs=lhs)**.5
-  nutils.log.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
+  treelog.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
   return err, cons, lhs
 
@@ -88,7 +96,7 @@ def main(nrefine = 2,
 # platewithhole-nurbs.py`.
 
 if __name__ == '__main__':
-  nutils.cli.run(main)
+  cli.run(main)
 
 # Once a simulation is developed and tested, it is good practice to save a few
 # strategic return values for regression testing. The :mod:`nutils.testing`
@@ -96,11 +104,11 @@ if __name__ == '__main__':
 # this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
 # embedding of desired results as compressed base64 data.
 
-class test(nutils.testing.TestCase):
+class test(testing.TestCase):
 
-  @nutils.testing.requires('matplotlib')
+  @testing.requires('matplotlib')
   def test0(self):
-    err, cons, lhs = main(nrefine=0)
+    err, cons, lhs = main(nrefine=0, traction=.1, radius=.5, poisson=.3)
     with self.subTest('l2-error'):
       self.assertAlmostEqual(err[0], .00199, places=5)
     with self.subTest('h1-error'):
@@ -110,9 +118,9 @@ class test(nutils.testing.TestCase):
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
       eNpjYLhoONl4ujEDw0v9LOMVQFrNWN74svGkcxvOeV9gYFA513UuRI+BQeFc0vmH5xkYAIlqEWg=''')
 
-  @nutils.testing.requires('matplotlib')
+  @testing.requires('matplotlib')
   def test2(self):
-    err, cons, lhs = main(nrefine=2)
+    err, cons, lhs = main(nrefine=2, traction=.1, radius=.5, poisson=.3)
     with self.subTest('l2-error'):
       self.assertAlmostEqual(err[0], .00009, places=5)
     with self.subTest('h1-error'):

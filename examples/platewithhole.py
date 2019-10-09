@@ -7,28 +7,38 @@
 # the analytical solution to the right and top. The traction-free circle is
 # removed by means of the Finite Cell Method (FCM).
 
-import nutils, numpy
+from nutils import mesh, function, solver, export, cli, testing
+import numpy, treelog
 
-# The main function defines the parameter space for the script. Configurable
-# parameters are the mesh density (in number of elements along an edge),
-# element type (square, triangle, or mixed), type of basis function (std or
-# spline, with availability depending on element type), polynomial degree, far
-# field traction, number of refinement levels for FCM, the cutout radius and
-# Poisson's ratio.
+def main(nelems:int, etype:str, btype:str, degree:int, traction:float, maxrefine:int, radius:float, poisson:float):
+  '''
+  Horizontally loaded linear elastic plate with FCM hole.
 
-def main(nelems: 'number of elementsa long edge' = 9,
-         etype: 'type of elements (square/triangle/mixed)' = 'square',
-         btype: 'type of basis function (std/spline)' = 'std',
-         degree: 'polynomial degree' = 2,
-         traction: "far field traction (relative to Young's modulus)" = .1,
-         maxrefine: 'maxrefine level for trimming' = 2,
-         radius: 'cut-out radius' = .5,
-         poisson: 'poisson ratio' = .3):
+  .. arguments::
 
-  domain0, geom = nutils.mesh.unitsquare(nelems, etype)
-  domain = domain0.trim(nutils.function.norm2(geom) - radius, maxrefine=maxrefine)
+     nelems [9]
+       Number of elements along edge.
+     etype [square]
+       Type of elements (square/triangle/mixed).
+     btype [std]
+       Type of basis function (std/spline), with availability depending on the
+       selected element type.
+     degree [2]
+       Polynomial degree.
+     traction [.1]
+       Far field traction (relative to Young's modulus).
+     maxrefine [2]
+       Number or refinement levels used for the finite cell method.
+     radius [.5]
+       Cut-out radius.
+     poisson [.3]
+       Poisson's ratio, nonnegative and strictly smaller than 1/2.
+  '''
 
-  ns = nutils.function.Namespace()
+  domain0, geom = mesh.unitsquare(nelems, etype)
+  domain = domain0.trim(function.norm2(geom) - radius, maxrefine=maxrefine)
+
+  ns = function.Namespace()
   ns.x = geom
   ns.lmbda = 2 * poisson
   ns.mu = 1 - poisson
@@ -45,19 +55,19 @@ def main(nelems: 'number of elementsa long edge' = 9,
   ns.du_i = 'u_i - uexact_i'
 
   sqr = domain.boundary['left,bottom'].integral('(u_i n_i)^2 d:x' @ ns, degree=degree*2)
-  cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
+  cons = solver.optimize('lhs', sqr, droptol=1e-15)
   sqr = domain.boundary['top,right'].integral('du_k du_k d:x' @ ns, degree=20)
-  cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
+  cons = solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
 
   res = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=degree*2)
-  lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
+  lhs = solver.solve_linear('lhs', res, constrain=cons)
 
   bezier = domain.sample('bezier', 5)
   X, stressxx = bezier.eval(['X_i', 'stress_00'] @ ns, lhs=lhs)
-  nutils.export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull)
+  export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull)
 
   err = domain.integral('<du_k du_k, du_i,j du_i,j>_n d:x' @ ns, degree=max(degree,3)*2).eval(lhs=lhs)**.5
-  nutils.log.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
+  treelog.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
   return err, cons, lhs
 
@@ -68,7 +78,7 @@ def main(nelems: 'number of elementsa long edge' = 9,
 # :sh:`python3 platewithhole.py etype=mixed degree=2`.
 
 if __name__ == '__main__':
-  nutils.cli.run(main)
+  cli.run(main)
 
 # Once a simulation is developed and tested, it is good practice to save a few
 # strategic return values for regression testing. The :mod:`nutils.testing`
@@ -76,11 +86,11 @@ if __name__ == '__main__':
 # this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
 # embedding of desired results as compressed base64 data.
 
-class test(nutils.testing.TestCase):
+class test(testing.TestCase):
 
-  @nutils.testing.requires('matplotlib')
+  @testing.requires('matplotlib')
   def test_spline(self):
-    err, cons, lhs = main(nelems=4, etype='square', degree=2, btype='spline')
+    err, cons, lhs = main(nelems=4, etype='square', btype='spline', degree=2, traction=.1, maxrefine=2, radius=.5, poisson=.3)
     with self.subTest('l2-error'):
       self.assertAlmostEqual(err[0], .00033, places=5)
     with self.subTest('h1-error'):
@@ -93,9 +103,9 @@ class test(nutils.testing.TestCase):
       jOcapxmbGasanzb7cc7knP05/XOSJ93OTD/ndc7ynME5Bobd56ef5z4/51wNkF1x9+5F0Qt6518D2Yuv
       7ry098KK877nGRjeXl176e6F0+dzzgMA63Y//Q==''')
 
-  @nutils.testing.requires('matplotlib')
+  @testing.requires('matplotlib')
   def test_mixed(self):
-    err, cons, lhs = main(nelems=4, etype='mixed', degree=2, btype='std')
+    err, cons, lhs = main(nelems=4, etype='mixed', btype='std', degree=2, traction=.1, maxrefine=2, radius=.5, poisson=.3)
     with self.subTest('l2-error'):
       self.assertAlmostEqual(err[0], .00024, places=5)
     with self.subTest('h1-error'):

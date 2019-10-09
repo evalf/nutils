@@ -22,7 +22,7 @@
 The util module provides a collection of general purpose methods.
 """
 
-from . import numeric, config
+from . import numeric
 import sys, os, numpy, collections.abc, inspect, functools, operator, numbers, pathlib, ctypes, site, io
 
 supports_outdirfd = os.open in os.supports_dir_fd and os.listdir in os.supports_fd
@@ -294,51 +294,62 @@ def single_or_multiple(f):
     return retvals
   return wrapped
 
-def positional_only(*names, keep_varpositional=False):
-  '''Add var-positional arguments to function signature.
+def positional_only(f):
+  '''Change all positional-or-keyword arguments to positional-only.
 
   Python has no explicit syntax for defining positional-only parameters, but
-  the effect can be achieved by using a var-positional argument and unpacking
-  it inside the function body. The :func:`positional_only` decorator adds a
-  check for the number of positional arguments provided, and updates the
-  function signature to reflect this design. It requires that the first
-  argument is var-positional, precluding positional-or-keyword arguments.
+  the effect can be achieved by using a wrapper with a var-positional argument.
+  The :func:`positional_only` decorator uses this technique to treat all
+  positional-or-keyword arguments as positional-only. In order to avoid name
+  clashes between the positional-only arguments and variable keyword arguments,
+  the wrapper additionally introduces the convention that the last argument
+  receives the variable keyword argument dictionary in case is has a default
+  value of ... (ellipsis).
 
   Example:
 
-  >>> @positional_only('x')
-  ... def f(*args, **kwargs):
-  ...   x, = args
+  >>> @positional_only
+  ... def f(x, *, y):
+  ...   pass
   >>> inspect.signature(f)
-  <Signature (x, /, **kwargs)>
+  <Signature (x, /, *, y)>
 
-  >>> @positional_only('x', keep_varpositional=True)
-  ... def f(*args, **kwargs):
-  ...   x, *args = args
+  >>> @positional_only
+  ... def f(x, *args, y, kwargs=...):
+  ...   pass
   >>> inspect.signature(f)
-  <Signature (x, /, *args, **kwargs)>
+  <Signature (x, /, *args, y, **kwargs)>
 
   Args
   ----
-  names : variable argument list of :class:`str`
-      Names of the positional-only arguments, in order.
-  keep_varpositional : :class:`bool` (default: False)
-      If True, retain the var_positional argument.
+  f : :any:`callable`
+      Function to be wrapped.
   '''
 
-  def wrapper(f):
-    signature = inspect.signature(f)
-    parameters = list(signature.parameters.values())
-    assert parameters[0].kind == inspect.Parameter.VAR_POSITIONAL
-    parameters[:1-keep_varpositional] = [inspect.Parameter(name, inspect.Parameter.POSITIONAL_ONLY) for name in names]
-    @functools.wraps(f)
-    def wrapped(*args, **kwargs):
-      if len(args) < len(names) or not keep_varpositional and len(args) > len(names):
-        raise TypeError('expected {} {} positional arguments, got {}'.format('at least' if keep_varpositional else 'exactly', len(names), len(args)))
-      return f(*args, **kwargs)
-    wrapped.__signature__ = signature.replace(parameters=parameters)
-    return wrapped
-  return wrapper
+  signature = inspect.signature(f)
+  parameters = list(signature.parameters.values())
+  keywords = []
+  varkw = None
+  for i, param in enumerate(parameters):
+    if param.kind is param.VAR_KEYWORD:
+      raise Exception('positional_only decorated function must use ellipses to mark a variable keyword argument')
+    if i == len(parameters)-1 and param.default is ...:
+      parameters[i] = param.replace(kind=inspect.Parameter.VAR_KEYWORD, default=inspect.Parameter.empty)
+      varkw = param.name
+    elif param.kind is param.POSITIONAL_OR_KEYWORD:
+      parameters[i] = param.replace(kind=param.POSITIONAL_ONLY)
+    elif param.kind is param.KEYWORD_ONLY:
+      keywords.append(param.name)
+  @functools.wraps(f)
+  def wrapped(*args, **kwargs):
+    wrappedkwargs = {name: kwargs.pop(name) for name in keywords if name in kwargs}
+    if varkw:
+      wrappedkwargs[varkw] = kwargs
+    elif kwargs:
+      raise TypeError('{}() got an unexpected keyword argument {!r}'.format(f.__name__, *kwargs))
+    return f(*args, **wrappedkwargs)
+  f.__signature__ = signature.replace(parameters=parameters)
+  return wrapped
 
 def loadlib(**libname):
   '''

@@ -363,31 +363,31 @@ class locate(TestCase):
 
   def test(self):
     target = numpy.array([(.2,.3), (.1,.9), (0,1)])
-    with config(nprocs=self.nprocs):
+    with parallel.maxprocs(self.nprocs):
       sample = self.domain.locate(self.geom, target, eps=1e-15)
     located = sample.eval(self.geom)
     self.assertAllAlmostEqual(located, target)
 
   def test_invalidargs(self):
     target = numpy.array([(.2,), (.1,), (0,)])
-    with config(nprocs=self.nprocs), self.assertRaises(Exception):
+    with parallel.maxprocs(self.nprocs), self.assertRaises(Exception):
       self.domain.locate(self.geom, target, eps=1e-15)
 
   def test_invalidpoint(self):
     target = numpy.array([(1, 2)])
-    with config(nprocs=self.nprocs), self.assertRaises(topology.LocateError):
+    with parallel.maxprocs(self.nprocs), self.assertRaises(topology.LocateError):
       self.domain.locate(self.geom, target, eps=1e-15)
 
   def test_boundary(self):
     target = numpy.array([(.2,), (.1,), (0,)])
-    with config(nprocs=self.nprocs):
+    with parallel.maxprocs(self.nprocs):
       sample = self.domain.boundary['bottom'].locate(self.geom[:1], target, eps=1e-15)
     located = sample.eval(self.geom[:1])
     self.assertAllAlmostEqual(located, target)
 
   def test_boundary_scalar(self):
     target = numpy.array([.3, .9, 1])
-    with config(nprocs=self.nprocs):
+    with parallel.maxprocs(self.nprocs):
       sample = self.domain.boundary['left'].locate(self.geom[1], target, eps=1e-15)
     located = sample.eval(self.geom[1])
     self.assertAllAlmostEqual(located, target)
