@@ -1385,7 +1385,7 @@ class unit:
     def __mul__(self, other):
       return {key: value*other for key, value in self.items()}
     def __str__(self):
-      return ''.join(sorted('*/'[value<0] + key + (str(abs(value)) if abs(value) > 1 else '') for key, value in self.items())).lstrip('*')
+      return ''.join(sorted('*/'[value<0] + key + (str(abs(value)) if abs(value) > 1 else '') for key, value in self.items())).lstrip('*') or 'dimensionless'
 
   @classmethod
   def create(*args, **units):
@@ -1444,7 +1444,7 @@ class unit:
     '''
     if unit[0] in '1234567890.*':
       raise ValueError('unit cannot start with a numeral')
-    return type(unit, (float,), dict(__stringly_loads__=classmethod(self._loads), __stringly_dumps__=classmethod(self._dumps)))
+    return type('unit:'+unit, (float,), dict(unit=unit, __stringly_loads__=classmethod(self._loads), __stringly_dumps__=classmethod(self._dumps)))
 
   def __call__(self, s):
     '''
@@ -1477,7 +1477,7 @@ class unit:
     return value, powers
 
   def _loads(self, U, s):
-    uvalue, upowers = self._parse(U.__name__)
+    uvalue, upowers = self._parse(U.unit)
     value, powers = self._parse(s)
     if powers != upowers:
       raise ValueError('invalid unit: expected {}, got {}'.format(upowers, powers))
@@ -1486,7 +1486,7 @@ class unit:
   def _dumps(self, U, v):
     if not isinstance(v, (int,float)):
       raise ValueError('can only dump numerical values as unit, got {!r}'.format(type(v)))
-    uvalue, upowers = self._parse(U.__name__)
-    return '{:f}'.format(v/uvalue).strip('0').rstrip('.') + U.__name__
+    uvalue, upowers = self._parse(U.unit)
+    return '{:f}'.format(v/uvalue).strip('0').rstrip('.') + U.unit
 
 # vim:sw=2:sts=2:et
