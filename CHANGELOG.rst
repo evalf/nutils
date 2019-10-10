@@ -7,6 +7,18 @@ inverse chronological order.
 Changes since version 5.0
 -------------------------
 
+- Use stringly for command line parsing.
+
+  Nutils now depends on stringly (version 1.0b1) for parsing of command line
+  arguments. The new implementation of :func:`nutils.cli.run` is fully
+  backwards compatible, but the preferred method of annotating function
+  arguments is now as demonstrated in all of the examples.
+
+  For new Nutils installations Stringly will be installed automatically as a
+  dependency. For existing setups it can be installed manually as follows:
+
+      $ python3 -m pip install --user --upgrade stringly
+
 - Fixed and fallback lengths in (namespace) expressions
 
   The :class:`nutils.function.Namespace` has two new arguments:
