@@ -1010,7 +1010,7 @@ class Unit(TestCase):
 
   def test_bind(self):
     T = self.U['m']
-    self.assertEqual(T.__name__, 'm')
+    self.assertEqual(T.__name__, 'unit:m')
     stringly.loads(T, '2in')
     with self.assertRaises(ValueError):
       stringly.loads(T, '2kg')
