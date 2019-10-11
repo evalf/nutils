@@ -66,6 +66,11 @@ class elem(TestCase):
           self.ref.edge_transforms[iedge] * self.ref.edge_refs[iedge].child_transforms[ichild],
           self.ref.child_transforms[jchild] * self.ref.child_refs[jchild].edge_transforms[jedge])
 
+  def test_inside(self):
+    self.assertTrue(self.ref.inside(self.exactcentroid))
+    if self.ref.ndims:
+      self.assertFalse(self.ref.inside(-numpy.ones(self.ref.ndims)))
+
 elem('point', ref=element.PointReference(), exactcentroid=numpy.zeros((0,)))
 elem('point2', ref=element.PointReference()**2, exactcentroid=numpy.zeros((0,)))
 elem('line', ref=element.LineReference(), exactcentroid=[.5])
