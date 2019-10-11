@@ -472,6 +472,9 @@ class SimplexReference(Reference):
   def get_edge_dofs(self, degree, iedge):
     return types.frozenarray(tuple(i for i, j in enumerate(self._integer_barycentric_coordinates(degree)) if j[iedge] == 0), dtype=int)
 
+  def inside(self, point, eps=0):
+    return numpy.greater_equal(point, -eps).all(axis=0) and numpy.less_equal(numpy.sum(point, axis=0), 1+eps)
+
 class PointReference(SimplexReference):
   '0D simplex'
 
@@ -483,9 +486,6 @@ class PointReference(SimplexReference):
 
   def getpoints(self, ischeme, degree):
     return points.CoordsWeightsPoints(numpy.empty([1,0]), [1.])
-
-  def inside(self, point, eps=0):
-    return True
 
   def nvertices_by_level(self, n):
     return 1
@@ -515,10 +515,6 @@ class LineReference(SimplexReference):
     assert len(vals) == self.nvertices_by_level(n)
     m = (len(vals)+1) // 2
     return vals[:m], vals[m-1:]
-
-  def inside(self, point, eps=0):
-    x, = point
-    return -eps <= x <= 1+eps
 
 class TriangleReference(SimplexReference):
   '2D simplex'
@@ -553,10 +549,6 @@ class TriangleReference(SimplexReference):
       j = numpy.arange(mp-i)
       cvals.append([vals[b+a*np-(a*(a-1))//2] for a, b in [(i,j),(i,mp-1+j),(mp-1+i,j),(i+j,mp-1-j)]])
     return numpy.concatenate(cvals, axis=1)
-
-  def inside(self, point, eps=0):
-    x, y = point
-    return x >= -eps and y >= -eps and 1-x-y >= -eps
 
 class TetrahedronReference(SimplexReference):
   '3D simplex'
