@@ -1,5 +1,5 @@
-import sys, os, tempfile, io
-from nutils import cli, log, testing
+import sys, os, tempfile, io, contextlib
+from nutils import cli, log, testing, matrix, parallel, cache
 
 def main(
   iarg: 'integer' = 1,
@@ -82,3 +82,40 @@ class run(testing.TestCase):
 
 run(method='run')
 run(method='choose')
+
+class setup(testing.TestCase):
+
+  @contextlib.contextmanager
+  def _setup(self, **kwargs):
+    with self.assertRaises(SystemExit) as cm, \
+         tempfile.TemporaryDirectory() as outdir, \
+         cli.setup(scriptname='unittest', kwargs=[], outdir=outdir, **kwargs):
+      yield
+    self.assertEqual(cm.exception.code, 0)
+
+  def _test_matrix(self, backend):
+    name = backend.__name__.lower()
+    if not backend():
+      raise self.skipTest('{} backend is not available'.format(name))
+    with self._setup(matrix=name):
+      self.assertIsInstance(matrix._current_backend, backend)
+
+  def test_matrix_mkl(self):
+    self._test_matrix(matrix.MKL)
+
+  def test_matrix_scipy(self):
+    self._test_matrix(matrix.Scipy)
+
+  def test_matrix_numpy(self):
+    self._test_matrix(matrix.Numpy)
+
+  def test_nprocs(self):
+    for n in 1, 2, 3:
+      with self.subTest(nprocs=n), self._setup(nprocs=n):
+        self.assertEqual(parallel._maxprocs, n)
+
+  def test_cache(self):
+    with self.subTest('cache'), self._setup(cache=True):
+      self.assertTrue(cache._cache)
+    with self.subTest('nocache'), self._setup(cache=False):
+      self.assertFalse(cache._cache)

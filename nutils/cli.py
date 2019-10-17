@@ -275,8 +275,8 @@ def setup(scriptname: str,
     outuri = pathlib.Path(outdir).resolve().as_uri()
 
   matrix_backend = matrix in (None, 'mkl') and _matrix.MKL(threading=_matrix.MKL.Threading.TBB if nprocs > 1 else _matrix.MKL.Threading.SEQUENTIAL) \
-                or matrix in (None, 'scipy') and _matrix.ScipyMatrix() \
-                or matrix in (None, 'numpy') and _matrix.NumpyMatrix()
+                or matrix in (None, 'scipy') and _matrix.Scipy() \
+                or matrix in (None, 'numpy') and _matrix.Numpy()
   if not matrix_backend:
     raise ValueError('invalid matrix backend {!r}'.format(matrix))
 
