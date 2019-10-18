@@ -68,6 +68,10 @@ class Matrix(metaclass=types.CacheMeta):
     assert len(shape) == 2
     self.shape = shape
 
+  def __reduce__(self):
+    data, index = self.export('coo')
+    return assemble, (data, index, self.shape)
+
   def __add__(self, other):
     'add two matrices'
     if not isinstance(other, Matrix):
