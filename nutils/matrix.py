@@ -600,8 +600,9 @@ class MKLMatrix(Matrix):
     raise NotImplementedError('cannot export MKLMatrix to {!r}'.format(form))
 
   def solve_direct(self, rhs):
+    log.debug('solving system using MKL Pardiso')
     if self._factors:
-      log.info('reusing existing factorization')
+      log.debug('reusing existing factorization')
       pardiso, iparm, mtype = self._factors
       phase = 33 # solve, iterative refinement
     else:
@@ -609,6 +610,7 @@ class MKLMatrix(Matrix):
       iparm = numpy.zeros(64, dtype=numpy.int32) # https://software.intel.com/en-us/mkl-developer-reference-c-pardiso-iparm-parameter
       iparm[0] = 1 # supply all values in components iparm[1:64]
       iparm[1] = 2 # fill-in reducing ordering for the input matrix: nested dissection algorithm from the METIS package
+      iparm[7] = 999 # maximum number of iterative refinement steps that the solver performs
       iparm[9] = 13 # pivoting perturbation threshold 1e-13 (default for nonsymmetric)
       iparm[10] = 1 # enable scaling vectors (default for nonsymmetric)
       iparm[12] = 1 # enable improved accuracy using (non-) symmetric weighted matching (default for nonsymmetric)
@@ -619,6 +621,7 @@ class MKLMatrix(Matrix):
     rhsflat = numpy.ascontiguousarray(rhs.reshape(rhs.shape[0], -1).T, dtype=numpy.float64)
     lhsflat = numpy.empty((rhsflat.shape[0], self.shape[1]), dtype=numpy.float64)
     pardiso(phase=phase, mtype=mtype, iparm=iparm, n=self.shape[0], nrhs=rhsflat.shape[0], b=rhsflat, x=lhsflat, a=self.data, ia=self.rowptr, ja=self.colidx)
+    log.debug('solver returned after {} refinement steps; peak memory use {:,d}k'.format(iparm[6], max(iparm[14], iparm[15]+iparm[16])))
     return lhsflat.T.reshape(lhsflat.shape[1:] + rhs.shape[1:])
 
   def solve_fgmres(self, rhs, maxiter=0, atol=1e-6, restart=150):
