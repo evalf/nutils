@@ -45,7 +45,7 @@ matrix:
       os: windows
       language: shell
       before_install:
-        - choco install python3 --params "/InstallDir:C:\\Python"
+        - choco install python3 --version=$PYTHON_VERSION_WINDOWS --params "/InstallDir:C:\\Python"
       env:
         - PYTHON=/c/Python/python.exe
 install:
