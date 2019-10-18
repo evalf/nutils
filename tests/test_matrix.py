@@ -1,4 +1,4 @@
-import numpy
+import numpy, pickle
 from nutils import matrix
 from nutils.testing import *
 
@@ -213,6 +213,18 @@ class solver(TestCase):
     array = self.matrix.submatrix(rows, cols).export('dense')
     self.assertEqual(array.shape, (2, 3))
     numpy.testing.assert_equal(actual=array, desired=[[-1, 2, 0], [0, -1, -1]])
+
+  @ifsupported
+  def test_pickle(self):
+    s = pickle.dumps(self.matrix)
+    mat = pickle.loads(s)
+    self.assertIsInstance(mat, type(self.matrix))
+    numpy.testing.assert_equal(mat.export('dense'), self.exact)
+    with self.subTest('cross-pickle'), matrix.Numpy():
+      mat = pickle.loads(s)
+      self.assertIsInstance(mat, matrix.NumpyMatrix)
+      numpy.testing.assert_equal(mat.export('dense'), self.exact)
+
 
 class Base(matrix.Backend):
   @staticmethod
