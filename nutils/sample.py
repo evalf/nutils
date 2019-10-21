@@ -190,7 +190,7 @@ class Sample(types.Singleton):
         Integrand.
     '''
 
-    return Integral([(self, func)])
+    return Integral([(self, func)], shape=func.shape)
 
   @util.positional_only
   @util.single_or_multiple
@@ -329,16 +329,17 @@ class Integral(types.Singleton):
   integrands : :class:`dict`
       Dictionary representing a sum of integrals, where every key-value pair
       binds together the sample set and the integrand.
+  shape : :class:`tuple`
+      Array dimensions of the integral.
   '''
 
   __slots__ = '_integrands', 'shape'
 
   @types.apply_annotations
-  def __init__(self, integrands:types.frozendict[strictsample, function.simplified]):
+  def __init__(self, integrands:types.frozendict[strictsample, function.simplified], shape:types.tuple[int]):
+    assert all(ig.shape == shape for ig in integrands.values()), 'incompatible shapes: expected {}, got {}'.format(shape, ', '.join({str(ig.shape) for ig in integrands.values()}))
     self._integrands = integrands
-    shapes = {integrand.shape for integrand in self._integrands.values()}
-    assert len(shapes) == 1, 'incompatible shapes: {}'.format(' != '.join(str(shape) for shape in shapes))
-    self.shape, = shapes
+    self.shape = shape
 
   def __repr__(self):
     return 'Integral<{}>'.format(','.join(map(str, self.shape)))
@@ -373,7 +374,7 @@ class Integral(types.Singleton):
     argshape = self._argshape(target)
     arg = function.Argument(target, argshape)
     seen = {}
-    return Integral([di, function.derivative(integrand, var=arg, seen=seen)] for di, integrand in self._integrands.items())
+    return Integral({di: function.derivative(integrand, var=arg, seen=seen) for di, integrand in self._integrands.items()}, shape=self.shape+argshape)
 
   def replace(self, arguments):
     '''Return copy with arguments applied.
@@ -394,7 +395,7 @@ class Integral(types.Singleton):
     replaced : :class:`Integral`
     '''
 
-    return Integral([di, function.replace_arguments(integrand, arguments)] for di, integrand in self._integrands.items())
+    return Integral({di: function.replace_arguments(integrand, arguments) for di, integrand in self._integrands.items()}, shape=self.shape)
 
   def contains(self, name):
     '''Test if target occurs in any of the integrands.
@@ -426,10 +427,10 @@ class Integral(types.Singleton):
         integrands[di] += integrand
       except KeyError:
         integrands[di] = integrand
-    return Integral(integrands.items())
+    return Integral(integrands.items(), shape=self.shape)
 
   def __neg__(self):
-    return Integral([di, -integrand] for di, integrand in self._integrands.items())
+    return Integral({di: -integrand for di, integrand in self._integrands.items()}, shape=self.shape)
 
   def __sub__(self, other):
     return self + (-other)
@@ -437,7 +438,7 @@ class Integral(types.Singleton):
   def __mul__(self, other):
     if not isinstance(other, numbers.Number):
       return NotImplemented
-    return Integral([di, integrand * other] for di, integrand in self._integrands.items())
+    return Integral({di: integrand * other for di, integrand in self._integrands.items()}, shape=self.shape)
 
   __rmul__ = __mul__
 
@@ -459,7 +460,7 @@ class Integral(types.Singleton):
 
   @property
   def T(self):
-    return Integral({sample: func.T for sample, func in self._integrands.items()})
+    return Integral({sample: func.T for sample, func in self._integrands.items()}, shape=self.shape[::-1])
 
 strictintegral = types.strict[Integral]
 
@@ -484,13 +485,10 @@ def eval_integrals(*integrals: types.tuple[strictintegral], **arguments:argdict)
   results : :class:`tuple` of arrays and/or :class:`nutils.matrix.Matrix` objects.
   '''
 
-  retvals = [None] * len(integrals)
+  retvals = [matrix.empty(integral.shape) for integral in integrals]
   for sample, iints in util.gather((di, iint) for iint, integral in enumerate(integrals) for di in integral._integrands):
     for iint, retval in zip(iints, sample.integrate([integrals[iint]._integrands[sample] for iint in iints], **arguments)):
-      if retvals[iint] is None:
-        retvals[iint] = retval
-      else:
-        retvals[iint] += retval
+      retvals[iint] += retval
   return retvals
 
 # vim:sw=2:sts=2:et
