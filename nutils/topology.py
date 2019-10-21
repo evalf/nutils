@@ -747,7 +747,7 @@ class WithGroupsTopology(Topology):
     self.igroups = igroups
     self.pgroups = pgroups
     super().__init__(basetopo.references, basetopo.transforms, basetopo.opposites)
-    assert all(topo is Ellipsis or isinstance(topo, str) or isinstance(topo, Topology) and topo.ndims == basetopo.ndims and set(self.basetopo.transforms).issuperset(topo.transforms) for topo in self.vgroups.values())
+    assert all(topo is Ellipsis or isinstance(topo, str) or isinstance(topo, Topology) and topo.ndims == basetopo.ndims for topo in self.vgroups.values())
 
   def __len__(self):
     return len(self.basetopo)
