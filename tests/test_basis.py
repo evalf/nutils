@@ -2,8 +2,27 @@ from nutils import *
 import random, itertools, functools
 from nutils.testing import *
 
+class basisTest(TestCase):
+
+  def assertContinuous(self, topo, geom, basis, continuity):
+    for regularity in range(continuity+1):
+      elem_jumps = topo.interfaces.sample('gauss', 2).eval(function.jump(basis))
+      self.assertAllAlmostEqual(elem_jumps, 0, places=10)
+      basis = function.grad(basis, geom)
+
+  def assertPartitionOfUnity(self, topo, basis):
+    sumbasis = topo.sample('uniform', 2).eval(basis.sum(0))
+    self.assertAllAlmostEqual(sumbasis, 1, places=10)
+
+  def assertPolynomial(self, topo, geom, basis, degree):
+    target = (geom**degree).sum(-1)
+    matrix, rhs, target2 = topo.integrate([basis[:,numpy.newaxis] * basis, basis * target, target**2], degree=degree*2)
+    lhs = matrix.solve(rhs)
+    error = target2 - rhs.dot(lhs)
+    self.assertAlmostEqual(error, 0, places=10)
+
 @parametrize
-class basis(TestCase):
+class basis(basisTest):
 
   def setUp(self):
     super().setUp()
@@ -17,23 +36,16 @@ class basis(TestCase):
 
   @parametrize.enable_if(lambda btype, degree, boundary, **params: btype != 'discont' and degree != 0 and not boundary)
   def test_continuity(self):
-    funcsp = self.basis
-    for regularity in (range(self.degree) if self.btype=='spline' else [0]):
-      elem_jumps = self.domain.interfaces.sample('gauss', 2).eval(function.jump(funcsp))
-      numpy.testing.assert_almost_equal(elem_jumps,0,decimal=10)
-      funcsp = function.grad(funcsp, self.geom)
+    self.assertContinuous(topo=self.domain, geom=self.geom, basis=self.basis,
+      continuity=0 if self.btype.endswith('std') or self.nelems == 1 and self.nrefine == 0 and self.periodic else self.degree-1)
 
   @parametrize.enable_if(lambda btype, **params: not btype.startswith('h-'))
   def test_pum(self):
-    error2 = self.domain.integrate((1-self.basis.sum(0))**2*function.J(self.geom), ischeme=self.gauss)
-    numpy.testing.assert_almost_equal(error2, 0, decimal=22)
+    self.assertPartitionOfUnity(topo=self.domain, basis=self.basis)
 
   @parametrize.enable_if(lambda periodic, **params: not periodic)
   def test_poly(self):
-    target = (self.geom**self.degree).sum(-1)
-    projection = self.domain.projection(target, onto=self.basis, geometry=self.geom, ischeme=self.gauss, droptol=0)
-    error2 = self.domain.integrate((target-projection)**2*function.J(self.geom), ischeme=self.gauss)
-    numpy.testing.assert_almost_equal(error2, 0, decimal=22)
+    self.assertPolynomial(topo=self.domain, geom=self.geom, basis=self.basis, degree=self.degree)
 
 for ndims in range(1, 4):
   for btype in 'discont', 'h-std', 'th-std', 'h-spline', 'th-spline':
@@ -78,107 +90,136 @@ for ndim in 1, 2:
   sparsity(ndim=ndim)
 
 @parametrize
-class structured(TestCase):
+class structured(basisTest):
 
   def setUp(self):
     if self.product:
-      self.domain, geom = mesh.rectilinear([2,3])
+      self.domain, self.geom = mesh.rectilinear([2,3])
     else:
       domain1, geom1 = mesh.rectilinear([2])
       domain2, geom2 = mesh.rectilinear([3])
       self.domain = domain1 * domain2
+      self.geom = function.concatenate(function.bifurcate(geom1, geom2), axis=0)
 
   def test_std_equalorder(self):
     for p in range(1, 3):
       basis = self.domain.basis('std', degree=p)
       self.assertEqual(len(basis), (3+2*(p-1))*(4+3*(p-1)))
+      self.assertContinuous(topo=self.domain, geom=self.geom, basis=basis, continuity=0)
+      self.assertPartitionOfUnity(topo=self.domain, basis=basis)
+      self.assertPolynomial(topo=self.domain, geom=self.geom, basis=basis, degree=p)
 
   def test_spline_equalorder(self):
     for p in range(1, 3):
       basis = self.domain.basis('spline', degree=p)
       self.assertEqual(len(basis), (2+p)*(3+p))
+      self.assertContinuous(topo=self.domain, geom=self.geom, basis=basis, continuity=p-1)
+      self.assertPartitionOfUnity(topo=self.domain, basis=basis)
+      self.assertPolynomial(topo=self.domain, geom=self.geom, basis=basis, degree=p)
 
   def test_std_mixedorder(self):
     basis = self.domain.basis('std', degree=(1,2))
     self.assertEqual(len(basis), 3*7)
+    self.assertPartitionOfUnity(topo=self.domain, basis=basis)
     basis = self.domain.basis('std', degree=(2,1))
     self.assertEqual(len(basis), 5*4)
+    self.assertPartitionOfUnity(topo=self.domain, basis=basis)
 
   def test_spline_mixedorder(self):
     basis = self.domain.basis('spline', degree=(1,2))
     self.assertEqual(len(basis), 3*5)
+    self.assertPartitionOfUnity(topo=self.domain, basis=basis)
     basis = self.domain.basis('spline', degree=(2,1))
     self.assertEqual(len(basis), 4*4)
+    self.assertPartitionOfUnity(topo=self.domain, basis=basis)
 
   def test_knotvalues(self):
     # test refinement of knotvalues[0] -> [0,1/2,1]
     basis = self.domain.basis('spline', degree=2, knotvalues=[[0,1],[0,1/3,2/3,1]])
+    self.assertContinuous(topo=self.domain, geom=self.geom, basis=basis, continuity=1)
+    self.assertPartitionOfUnity(topo=self.domain, basis=basis)
+    self.assertPolynomial(topo=self.domain, geom=self.geom, basis=basis, degree=2)
 
   def test_knotmultiplicities(self):
     # test refinement of knotmultiplicities[0] -> [3,1,3]
     basis = self.domain.basis('spline', degree=2, knotmultiplicities=[[3,3],[3,1,1,3]])
     self.assertEqual(len(basis), 4*5)
+    self.assertContinuous(topo=self.domain, geom=self.geom, basis=basis, continuity=1)
+    self.assertPartitionOfUnity(topo=self.domain, basis=basis)
+    self.assertPolynomial(topo=self.domain, geom=self.geom, basis=basis, degree=2)
     basis = self.domain.basis('spline', degree=2, knotmultiplicities=[[3,3],[3,2,1,3]])
     self.assertEqual(len(basis), 4*6)
+    self.assertContinuous(topo=self.domain, geom=self.geom, basis=basis, continuity=0)
+    self.assertPartitionOfUnity(topo=self.domain, basis=basis)
+    self.assertPolynomial(topo=self.domain, geom=self.geom, basis=basis, degree=2)
 
   def test_continuity(self):
     # test refinement of knotmultiplicities[0] -> [3,1,3]
     basis = self.domain.basis('spline', degree=2, continuity=0)
     self.assertEqual(len(basis), 5*7)
+    self.assertContinuous(topo=self.domain, geom=self.geom, basis=basis, continuity=0)
+    self.assertPartitionOfUnity(topo=self.domain, basis=basis)
+    self.assertPolynomial(topo=self.domain, geom=self.geom, basis=basis, degree=2)
     basis = self.domain.basis('spline', degree=2, continuity=0, knotmultiplicities=[[3,3],None])
     self.assertEqual(len(basis), 5*7)
+    self.assertContinuous(topo=self.domain, geom=self.geom, basis=basis, continuity=0)
+    self.assertPartitionOfUnity(topo=self.domain, basis=basis)
+    self.assertPolynomial(topo=self.domain, geom=self.geom, basis=basis, degree=2)
 
 structured(product=False)
 structured(product=True)
 
-
 @parametrize
-class structured_line(TestCase):
+class structured_line(basisTest):
 
   def setUp(self):
-    self.periodic = {'normal': False, 'periodic': True}[self.variant]
     verts = numpy.linspace(0, 1, self.nelems+1)
-    self.domain, self.x = mesh.line(verts, periodic=self.periodic) if self.line \
-                     else mesh.rectilinear([verts], periodic=(0,) if self.periodic else ())
+    self.domain, self.geom = mesh.line(verts, periodic=self.periodic)
+    self.basis = self.domain.basis(self.btype, degree=self.degree)
 
-    vl = function.elemwise(self.domain.transforms, verts[:-1])
-    vr = function.elemwise(self.domain.transforms, verts[1:])
-    j = numpy.arange(self.degree+1)
-    self.Bbernstein = numpy.vectorize(numeric.binom)(self.degree,j)*(self.x[0]-vl)**j*(vr-self.x[0])**(self.degree-j)/(vr-vl)**self.degree
+  @parametrize.enable_if(lambda btype, **params: btype != 'discont')
+  def test_continuity(self):
+    self.assertContinuous(topo=self.domain, geom=self.geom, basis=self.basis, continuity=0 if self.btype == 'std' else self.degree-1)
 
-    if self.periodic:
-      t = numpy.linspace(-self.degree/self.nelems, 1+self.degree/self.nelems, self.nelems+1+2*self.degree)
-    else:
-      t = numpy.concatenate([[0]*self.degree, verts, [1]*self.degree], axis=0)
-    self.Bspline = function.heaviside(self.x[0]-t[:-1])*function.heaviside(t[1:]-self.x[0])
-    for p in range(1, self.degree+1):
-      dt = numpy.array([t[i+p]-t[i] if t[i+p] != t[i] else 1 for i in range(len(self.Bspline))])
-      self.Bspline = (self.x[0]-t[:-p-1])/dt[:-1]*self.Bspline[:-1] + (t[p+1:]-self.x[0])/dt[1:]*self.Bspline[1:]
+  def test_pum(self):
+    self.assertPartitionOfUnity(topo=self.domain, basis=self.basis)
 
-  def test_coeffs(self):
-    numpy.random.seed(0)
-    if self.btype == 'spline':
-      c = numpy.random.random(self.nelems if self.periodic else len(self.Bspline))
-      f = self.Bspline.dot(numpy.array([c[i%self.nelems] for i in range(len(self.Bspline))]) if self.periodic else c)
-    elif self.btype == 'std':
-      ndofs = self.nelems*self.degree+(1 if not self.periodic else 0) if self.degree else self.nelems
-      c = numpy.random.random((ndofs,))
-      f = self.Bbernstein.dot(function.elemwise(self.domain.transforms, types.frozenarray([[c[(i*self.degree+j)%ndofs if self.degree else i] for j in range(self.degree+1)] for i in range(self.nelems)])))
-    elif self.btype == 'discont':
-      ndofs = self.nelems*(self.degree+1)
-      c = types.frozenarray(numpy.random.random((ndofs,)))
-      f = self.Bbernstein.dot(function.elemwise(self.domain.transforms, c.reshape(self.nelems, self.degree+1)))
-    basis = self.domain.basis(self.btype, degree=self.degree)
-    pc = self.domain.project(f, onto=basis, geometry=self.x, ischeme='gauss', degree=2*self.degree)
-    numpy.testing.assert_array_almost_equal(c, pc)
+  @parametrize.enable_if(lambda periodic, **params: not periodic)
+  def test_poly(self):
+    self.assertPolynomial(topo=self.domain, geom=self.geom, basis=self.basis, degree=self.degree)
 
 for btype in ['discont', 'spline', 'std']:
-  for variant in ['normal', 'periodic']:
+  for periodic in False, True:
+    for degree in range(0 if btype == 'discont' else 1, 4):
+      for nelems in range(2*degree or 1, 2*degree + 3):
+        structured_line(periodic=periodic, btype=btype, degree=degree, nelems=nelems)
+
+@parametrize
+class structured_rect1d(basisTest):
+
+  def setUp(self):
+    verts = numpy.linspace(0, 1, self.nelems+1)
+    self.domain, self.geom = mesh.rectilinear([verts], periodic=(0,) if self.periodic else ())
+    self.basis = self.domain.basis(self.btype, degree=self.degree) if self.btype != 'spline' \
+            else self.domain.basis(self.btype, degree=self.degree, continuity=self.continuity)
+
+  @parametrize.enable_if(lambda continuity, **params: continuity >= 0)
+  def test_continuity(self):
+    self.assertContinuous(topo=self.domain, geom=self.geom, basis=self.basis, continuity=self.continuity)
+
+  def test_pum(self):
+    self.assertPartitionOfUnity(topo=self.domain, basis=self.basis)
+
+  @parametrize.enable_if(lambda periodic, **params: not periodic)
+  def test_poly(self):
+    self.assertPolynomial(topo=self.domain, geom=self.geom, basis=self.basis, degree=self.degree)
+
+for btype in ['discont', 'spline', 'std']:
+  for periodic in False, True:
     for nelems in range(1, 4):
       for degree in range(0 if btype == 'discont' else 1, 4):
-        for line in [False] if btype == 'spline' and variant == 'periodic' and nelems < 2*degree else [True, False]:
-          structured_line(variant=variant, btype=btype, degree=degree, nelems=nelems, line=line)
-
+        for continuity in [-1] if btype == 'discont' else [0] if btype == 'std' else range(degree):
+          structured_rect1d(periodic=periodic, btype=btype, degree=degree, nelems=nelems, continuity=continuity)
 
 @parametrize
 class unstructured_topology(TestCase):
