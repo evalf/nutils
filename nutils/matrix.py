@@ -679,6 +679,9 @@ _current_backend = Numpy()
 def assemble(data, index, shape):
   return _current_backend.assemble(data, index, shape)
 
+def empty(shape):
+  return assemble(data=numpy.empty([0], dtype=float), index=numpy.empty([len(shape), 0], dtype=int), shape=shape)
+
 def diag(d):
   assert d.ndim == 1
   return assemble(d, index=numpy.arange(len(d))[numpy.newaxis].repeat(2, axis=0), shape=d.shape*2)
