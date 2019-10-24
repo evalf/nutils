@@ -19,17 +19,12 @@
 # THE SOFTWARE.
 
 """
-The log module provides print methods :func:`debug`, :func:`info`,
-:func:`user`, :func:`warning`, and :func:`error`, in increasing order of
-priority. Output is sent to stdout as well as to an html formatted log file if
-so configured.
-
 This is a transitional wrapper around the external treelog module.
 """
 
-import builtins, itertools, treelog, contextlib, sys, functools
+import builtins, itertools, treelog, contextlib, sys, distutils
 from treelog import set, add, disable, withcontext, \
-  Log, TeeLog, FilterLog, NullLog, DataLog, RecordLog, StdoutLog, RichOutputLog, LoggingLog
+  Log, TeeLog, FilterLog, NullLog, DataLog, RecordLog, StdoutLog, RichOutputLog, LoggingLog, HtmlLog
 from . import warnings
 
 def _len(iterable):
@@ -92,55 +87,19 @@ def zip(title, *iterables):
 def count(title, start=0, step=1):
   return iter(title, itertools.count(start, step))
 
-@contextlib.contextmanager
-def open(filename, mode, *, level='user', exists=None):
-  if exists is not None:
-    warnings.deprecation('the "exists" argument is deprecated and will be ignored')
-  levels = 'debug', 'info', 'user', 'warning', 'error'
-  if level not in levels:
-    raise Exception('the "level" argument should be on of {}'.format(', '.join(levels)))
-  with treelog.open(filename, mode, level=levels.index(level), id=None) as f:
-    f.devnull = not f
-    yield f
-
-@contextlib.contextmanager
-def context(title, *args):
-  log = treelog.current
-  log.pushcontext(title.format(*args))
-  try:
-    yield
-  finally:
-    log.popcontext()
-
-def _print(level, *args, sep=' '):
-  '''Write message to log.
-
-  Args
-  ----
-  *args : tuple of :class:`str`
-      Values to be printed to the log.
-  sep : :class:`str`
-      String inserted between values, default a space.
-  '''
-  treelog.current.write(sep.join(map(str, args)), level)
-
-def _file(level, name, mode, *, id=None):
-  '''Open file in logger-controlled directory.
-
-  Args
-  ----
-  filename : :class:`str`
-  mode : :class:`str`
-      Should be either ``'w'`` (text) or ``'wb'`` (binary data).
-  id :
-      Bytes identifier that can be used to decide a priori that a file has
-      already been constructed. Default: None.
-  '''
-  return treelog.current.open(name, mode, level, id)
-
-debug, info, user, warning, error = [functools.partial(_print, level) for level in builtins.range(5)]
-debugfile, infofile, userfile, warningfile, errorfile = [functools.partial(_file, level) for level in builtins.range(5)]
-
-del _print, _file
+if distutils.version.StrictVersion(treelog.version) >= distutils.version.StrictVersion('1.0b5'):
+  from treelog import debug, info, user, warning, error, debugfile, infofile, userfile, warningfile, errorfile, context
+else:
+  debug = lambda *args, **kwargs: treelog.debug(*args, **kwargs)
+  info = lambda *args, **kwargs: treelog.info(*args, **kwargs)
+  user = lambda *args, **kwargs: treelog.user(*args, **kwargs)
+  warning = lambda *args, **kwargs: treelog.warning(*args, **kwargs)
+  error = lambda *args, **kwargs: treelog.error(*args, **kwargs)
+  debugfile = lambda *args, **kwargs: treelog.debugfile(*args, **kwargs)
+  infofile = lambda *args, **kwargs: treelog.infofile(*args, **kwargs)
+  userfile = lambda *args, **kwargs: treelog.userfile(*args, **kwargs)
+  warningfile = lambda *args, **kwargs: treelog.warningfile(*args, **kwargs)
+  errorfile = lambda *args, **kwargs: treelog.errorfile(*args, **kwargs)
+  context = lambda *args, **kwargs: treelog.context(title, *initargs, **initkwargs)
 
 # vim:sw=2:sts=2:et
