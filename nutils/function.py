@@ -331,20 +331,18 @@ class SelectChain(TransformChain):
   __slots__ = 'n'
 
   @types.apply_annotations
-  def __init__(self, n:types.strictint=None):
+  def __init__(self, n:types.strictint=0):
     self.n = n
     super().__init__(args=[EVALARGS])
 
   def evalf(self, evalargs):
-    if self.n is None:
-      raise Exception('SelectChain cannot be evaluated with unspecifed index')
     trans = evalargs['_transforms'][self.n]
     assert isinstance(trans, tuple) and trans[0].todims == None
     return trans
 
   @util.positional_only
   def prepare_eval(self, *, opposite=False, kwargs=...):
-    return SelectChain(self.n if self.n is not None else 1 if opposite else 0)
+    return SelectChain(1-self.n) if opposite else self
 
 TRANS = SelectChain()
 
@@ -3004,9 +3002,7 @@ class Opposite(Array):
     return Opposite(value)
 
   @util.positional_only
-  def prepare_eval(self, *, opposite=None, kwargs=...):
-    if opposite is None:
-      raise Exception('opposite is undefined')
+  def prepare_eval(self, *, opposite=False, kwargs=...):
     return self._value.prepare_eval(opposite=not opposite, **kwargs)
 
   def _derivative(self, var, seen):

@@ -100,10 +100,7 @@ class Sample(types.Singleton):
     return '{}<{}D, {} elems, {} points>'.format(type(self).__qualname__, self.ndims, self.nelems, self.npoints)
 
   def _prepare_funcs(self, funcs):
-    kwargs = dict(ndims=self.ndims)
-    if len(self.transforms) == 2:
-      kwargs['opposite'] = False
-    return [function.asarray(func).prepare_eval(**kwargs) for func in funcs]
+    return [function.asarray(func).prepare_eval(ndims=self.ndims) for func in funcs]
 
   @util.positional_only
   @util.single_or_multiple
