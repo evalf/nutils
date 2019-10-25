@@ -28,15 +28,10 @@ This is a transitional wrapper around the external treelog module that will be
 removed in version 6.
 """
 
-import builtins, itertools, treelog, contextlib, sys, functools, inspect, treelog, distutils
+import builtins, itertools, treelog, contextlib, sys, inspect, distutils
 from treelog import set, add, disable, withcontext, \
   Log, TeeLog, FilterLog, NullLog, DataLog, RecordLog, StdoutLog, RichOutputLog, LoggingLog, HtmlLog
 from . import warnings
-
-if distutils.version.StrictVersion(treelog.version) < distutils.version.StrictVersion('1.0b5'):
-  warnings.deprecation('treelog 1.0b5 or higher is required, please update using pip install -U treelog')
-else:
-  sys.modules['nutils.log'] = treelog
 
 def _len(iterable):
   try:
@@ -160,63 +155,19 @@ def count(title, start=0, step=1):
   warnings.deprecation('log.count is deprecated; use log.iter.percentage instead')
   return iter(title, itertools.count(start, step))
 
-@contextlib.contextmanager
-def open(filename, mode, *, level='user'):
-  warnings.deprecation('log.open is deprecated; use log.userfile instead')
-  levels = 'debug', 'info', 'user', 'warning', 'error'
-  if level not in levels:
-    raise Exception('the "level" argument should be on of {}'.format(', '.join(levels)))
-  with treelog.open(filename, mode, level=levels.index(level), id=None) as f:
-    f.devnull = not f
-    yield f
-
-@contextlib.contextmanager
-def context(title, *initargs, **initkwargs):
-  log = treelog.current
-  if initargs or initkwargs:
-    log.pushcontext(title.format(*initargs, **initkwargs))
-    def reformat(*args, **kwargs):
-      log.popcontext()
-      log.pushcontext(title.format(*args, **kwargs))
-  else:
-    log.pushcontext(title)
-    reformat = None
-  try:
-    yield reformat
-  finally:
-    log.popcontext()
-
-def _print(level, *args, sep=' '):
-  '''Write message to log.
-
-  Args
-  ----
-  *args : tuple of :class:`str`
-      Values to be printed to the log.
-  sep : :class:`str`
-      String inserted between values, default a space.
-  '''
-  treelog.current.write(sep.join(map(str, args)), level)
-
-@contextlib.contextmanager
-def _file(level, name, mode, *, id=None):
-  '''Open file in logger-controlled directory.
-
-  Args
-  ----
-  filename : :class:`str`
-  mode : :class:`str`
-      Should be either ``'w'`` (text) or ``'wb'`` (binary data).
-  id :
-      Bytes identifier that can be used to decide a priori that a file has
-      already been constructed. Default: None.
-  '''
-  with treelog.current.open(name, mode, level, id) as f, context(name):
-    yield f
-
-debug, info, user, warning, error = [functools.partial(_print, level) for level in builtins.range(5)]
-debugfile, infofile, userfile, warningfile, errorfile = [functools.partial(_file, level) for level in builtins.range(5)]
-
-del _print, _file
+if distutils.version.StrictVersion(treelog.version) >= distutils.version.StrictVersion('1.0b5'):
+  from treelog import debug, info, user, warning, error, debugfile, infofile, userfile, warningfile, errorfile, context
+else:
+  debug = lambda *args, **kwargs: treelog.debug(*args, **kwargs)
+  info = lambda *args, **kwargs: treelog.info(*args, **kwargs)
+  user = lambda *args, **kwargs: treelog.user(*args, **kwargs)
+  warning = lambda *args, **kwargs: treelog.warning(*args, **kwargs)
+  error = lambda *args, **kwargs: treelog.error(*args, **kwargs)
+  debugfile = lambda *args, **kwargs: treelog.debugfile(*args, **kwargs)
+  infofile = lambda *args, **kwargs: treelog.infofile(*args, **kwargs)
+  userfile = lambda *args, **kwargs: treelog.userfile(*args, **kwargs)
+  warningfile = lambda *args, **kwargs: treelog.warningfile(*args, **kwargs)
+  errorfile = lambda *args, **kwargs: treelog.errorfile(*args, **kwargs)
+  context = lambda *args, **kwargs: treelog.context(title, *initargs, **initkwargs)
 
 # vim:sw=2:sts=2:et
