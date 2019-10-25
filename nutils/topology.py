@@ -1319,15 +1319,20 @@ class StructuredTopology(Topology):
 
       if isperiodic:
         assert m[0] == m[n], 'periodic spline multiplicity expected'
-        nd = m[:n].sum()
-        while m[n:].sum() < 2*p - m[n]:
-          k = numpy.concatenate([k, k[1:]+k[-1]-k[0]])
-          m = numpy.concatenate([m, m[1:]])
+        dk = k[n] - k[0]
+        m = m[:n]
+        k = k[:n]
+        nd = m.sum()
+        while m[n:].sum() < p - m[0] + 2:
+          k = numpy.concatenate([k, k+dk])
+          m = numpy.concatenate([m, m])
+          dk *= 2
+        km = numpy.array([ki for ki, mi in zip(k, m) for cnt in range(mi)], dtype=float)
+        km = numpy.concatenate([km[-p:] - dk, km])
       else:
         m[0] = m[-1] = p
         nd = m[:n].sum()+1
-
-      km = numpy.array([ki for ki, mi in zip(k, m) for cnt in range(mi)], dtype=float)
+        km = numpy.array([ki for ki, mi in zip(k, m) for cnt in range(mi)], dtype=float)
 
       offsets = numpy.cumsum(m[:n]) - m[0]
       start_dofs.append(offsets)
