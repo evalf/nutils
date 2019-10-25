@@ -411,7 +411,8 @@ class ConsoleDirective(docutils.parsers.rst.Directive):
   required_arguments = 0
   options_arguments = 0
 
-  _console_log = treelog.FilterLog(treelog.StdoutLog(), minlevel=1)
+  info = treelog.proto.Level.info if hasattr(treelog, 'proto') else 1
+  _console_log = treelog.FilterLog(treelog.StdoutLog(), minlevel=info)
 
   def run(self):
     document = self.state.document

@@ -19,11 +19,6 @@
 # THE SOFTWARE.
 
 """
-The log module provides print methods :func:`debug`, :func:`info`,
-:func:`user`, :func:`warning`, and :func:`error`, in increasing order of
-priority. Output is sent to stdout as well as to an html formatted log file if
-so configured.
-
 This is a transitional wrapper around the external treelog module that will be
 removed in version 6.
 """
