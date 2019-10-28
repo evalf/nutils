@@ -4109,7 +4109,7 @@ def _eval_ast(ast, functions):
     return derivative(func, target)
   elif op == 'append_axis':
     array, length = args
-    return repeat(asarray(array)[..., None], length, -1)
+    return insertaxis(array, -1, length)
   elif op == 'transpose':
     array, trans = args
     return transpose(array, trans)
