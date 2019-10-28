@@ -25,7 +25,12 @@ python function based arguments specified on the command line.
 """
 
 from . import long_version, warnings
-import sys, inspect, os, time, signal, subprocess, contextlib, traceback, pathlib, html, functools, pdb, stringly, textwrap, typing, treelog
+import sys, inspect, os, time, signal, subprocess, contextlib, traceback, pathlib, html, functools, pdb, stringly, textwrap, typing, treelog, collections
+
+try:
+  Level = treelog.proto.Level
+except AttributeError: # treelog version < 1.0b6
+  Level = collections.namedtuple('Level', ['debug', 'info', 'user', 'warning', 'error'])(0,1,2,3,4)
 
 def _version():
   try:
@@ -130,12 +135,8 @@ def _load_rcfile(path):
 def _htmllog(outdir, scriptname, kwargs):
   htmllog = treelog.HtmlLog(outdir, title=scriptname, htmltitle='<a href="http://www.nutils.org">{}</a> {}'.format(SVGLOGO, html.escape(scriptname)), favicon=FAVICON)
   if kwargs:
-    if hasattr(treelog, 'proto'):
-      info = treelog.proto.Level.info
-    else:
-      info = 1 # for backwards compatibility with treelog < 1.0b6
     htmllog.write('<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">{}</ul>'.format(''.join(
-      '<li>{}={} <span style="color: gray;">{}</span></li>'.format(name, value, doc) for name, value, doc in kwargs)), level=info, escape=False)
+      '<li>{}={} <span style="color: gray;">{}</span></li>'.format(name, value, doc) for name, value, doc in kwargs)), level=Level.info, escape=False)
   return htmllog
 
 def run(func, *, args=None, loaduserconfig=True):
@@ -285,7 +286,7 @@ def setup(scriptname: str,
 
   consolellog = treelog.RichOutputLog() if richoutput else treelog.StdoutLog()
   if verbose is not None:
-    consolellog = treelog.FilterLog(consolellog, minlevel=5-verbose)
+    consolellog = treelog.FilterLog(consolellog, minlevel=tuple(Level)[5-verbose])
   htmllog = _htmllog(outdir, scriptname, kwargs)
 
   with htmllog, treelog.set(treelog.TeeLog(consolellog, htmllog)), \

@@ -1,7 +1,8 @@
 import doctest as _doctest, unittest, importlib, os, tempfile, pathlib, functools, warnings, subprocess, sys, treelog
 import nutils.testing
 
-_doctestlog = treelog.FilterLog(treelog.StdoutLog(), minlevel=1)
+info = treelog.proto.Level.info if hasattr(treelog, 'proto') else 1
+_doctestlog = treelog.FilterLog(treelog.StdoutLog(), minlevel=info)
 
 class DocTestCase(nutils.testing.ContextTestCase, _doctest.DocTestCase):
 
