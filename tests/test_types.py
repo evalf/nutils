@@ -994,7 +994,7 @@ class Unit(TestCase):
 
   def test_time(self):
     self.check('1s', 1, s=1)
-    self.check('.5h', 1800, s=1)
+    self.check('0.5h', 1800, s=1)
 
   def test_velocity(self):
     self.check('1m/s', 1, m=1, s=-1)
@@ -1002,11 +1002,9 @@ class Unit(TestCase):
 
   def test_force(self):
     self.check('1N', 1, g=1, m=1, s=-2)
-    self.check('100Pa*in2', .254**2, g=1, m=1, s=-2)
 
   def test_pressure(self):
     self.check('1Pa', 1, g=1, m=-1, s=-2)
-    self.check('10000lb/in/h2', 453.59237/25.4/36**2, g=1, m=-1, s=-2)
 
   def test_bind(self):
     T = self.U['m']
@@ -1019,12 +1017,11 @@ class Unit(TestCase):
     with self.assertRaises(ValueError):
       self.U('2foo')
 
-  def test_dumps(self):
+  def test_loads_dumps(self):
     U = self.U['Pa*mm2']
-    u = stringly.loads(U, '.1mN')
-    self.assertEqual(u, 1e-4)
-    s = stringly.dumps(U, 1e-4)
-    self.assertEqual(s, '100Pa*mm2')
+    for s in '123456789Pa*mm2', '12.34Pa*mm2', '0Pa*mm2', '0.000012345Pa*mm2':
+      v = stringly.loads(U, s)
+      self.assertEqual(s, stringly.dumps(U, v))
     with self.assertRaises(ValueError):
       stringly.dumps(U, 'foo')
 

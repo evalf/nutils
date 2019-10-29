@@ -1487,6 +1487,19 @@ class unit:
     if not isinstance(v, (int,float)):
       raise ValueError('can only dump numerical values as unit, got {!r}'.format(type(v)))
     uvalue, upowers = self._parse(U.unit)
-    return '{:f}'.format(v/uvalue).strip('0').rstrip('.') + U.unit
+    return _f2s(v/uvalue) + U.unit
+
+def _f2s(v):
+  'convert float to string without scientific notation'
+  s, sep, e = str(v).partition('e')
+  a, b = s.split('.')
+  pos = len(a) + int(e or 0)
+  s = (a + b).rstrip('0')
+  if pos >= len(s):
+    return s.ljust(pos, '0')
+  elif pos <= 0:
+    return '0.' + '0' * -pos + s
+  else:
+    return s[:pos] + '.' + s[pos:]
 
 # vim:sw=2:sts=2:et
