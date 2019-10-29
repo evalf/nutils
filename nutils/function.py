@@ -166,7 +166,7 @@ class Evaluable(types.Singleton):
     return values[-1]
 
   @log.withcontext
-  def graphviz(self, dotpath='dot'):
+  def graphviz(self, dotpath='dot', imgtype='png'):
     'create function graph'
 
     import os, subprocess
@@ -178,14 +178,11 @@ class Evaluable(types.Singleton):
     lines.extend('{} -> {};'.format(j, i) for i, indices in enumerate(self.dependencytree) for j in indices)
     lines.append('}')
 
-    imgdata = '\n'.join(lines)
-    imgtype = 'png'
-    with log.infofile('dot.'+imgtype, 'wb', id=types.nutils_hash((imgdata, imgtype))) as img:
-      if img:
-        status = subprocess.run([dotpath,'-T'+imgtype], input=imgdata.encode(), stdout=subprocess.PIPE)
-        if status.returncode:
-          log.warning('graphviz failed for error code', status.returncode)
-        img.write(status.stdout)
+    with log.infofile('dot.'+imgtype, 'wb') as img:
+      status = subprocess.run([dotpath,'-T'+imgtype], input='\n'.join(lines).encode(), stdout=subprocess.PIPE)
+      if status.returncode:
+        log.warning('graphviz failed for error code', status.returncode)
+      img.write(status.stdout)
 
   def stackstr(self, nlines=-1):
     'print stack'
