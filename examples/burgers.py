@@ -71,6 +71,12 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
   @testing.requires('matplotlib')
+  def test_1d_p0(self):
+    lhs = main(ndims=1, nelems=10, timescale=.1, degree=0, endtime=.01, newtontol=1e-5)
+    self.assertAlmostEqual64(lhs, '''
+      eNrz1ttqGGOiZSZlrmbuZdZgcsEwUg8AOqwFug==''')
+
+  @testing.requires('matplotlib')
   def test_1d_p1(self):
     lhs = main(ndims=1, nelems=10, timescale=.1, degree=1, endtime=.01, newtontol=1e-5)
     self.assertAlmostEqual64(lhs, '''
