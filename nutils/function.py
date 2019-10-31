@@ -3809,27 +3809,6 @@ def get(arg, iax, item):
     item = numeric.normdim(sh, item.eval()[0])
   return Get(arg, iax, item)
 
-def align(arg, axes, ndim):
-  keep = numpy.zeros(ndim, dtype=bool)
-  keep[list(axes)] = True
-  renumber = keep.cumsum()-1
-  transaxes = _invtrans(renumber[numpy.asarray(axes)])
-  retval = transpose(arg, transaxes)
-  for axis in numpy.where(~keep)[0]:
-    retval = expand_dims(retval, axis)
-  for i, j in enumerate(axes):
-    assert arg.shape[i] == retval.shape[j]
-  return retval
-
-def bringforward(arg, axis):
-  'bring axis forward'
-
-  arg = asarray(arg)
-  axis = numeric.normdim(arg.ndim,axis)
-  if axis == 0:
-    return arg
-  return transpose(args, [axis] + range(axis) + range(axis+1,args.ndim))
-
 def jacobian(geom, ndims):
   '''
   Return :math:`\\sqrt{|J^T J|}` with :math:`J` the gradient of ``geom`` to the
