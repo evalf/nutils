@@ -1308,48 +1308,6 @@ class Interpolate(Array):
   def evalf(self, x):
     return numpy.interp(x, self.xp, self.fp, self.left, self.right)
 
-class Cross(Array):
-
-  __slots__ = 'func1', 'func2', 'axis'
-  __cache__ = 'simplified',
-
-  @types.apply_annotations
-  def __init__(self, func1:asarray, func2:asarray, axis:types.strictint):
-    assert func1.shape == func2.shape
-    assert 0 <= axis < func1.ndim and func2.shape[axis] == 3
-    self.func1 = func1
-    self.func2 = func2
-    self.axis = axis
-    super().__init__(args=(func1,func2), shape=func1.shape, dtype=_jointdtype(func1.dtype, func2.dtype))
-
-  @property
-  def simplified(self):
-    i = types.frozenarray([1, 2, 0])
-    j = types.frozenarray([2, 0, 1])
-    return subtract(take(self.func1, i, self.axis) * take(self.func2, j, self.axis),
-                    take(self.func2, i, self.axis) * take(self.func1, j, self.axis)).simplified
-
-  def evalf(self, a, b):
-    assert a.ndim == b.ndim == self.ndim+1
-    return numpy.cross(a, b, axis=self.axis+1)
-
-  def _derivative(self, var, seen):
-    ext = (...,)+(_,)*var.ndim
-    return cross(self.func1[ext], derivative(self.func2, var, seen), axis=self.axis) \
-         - cross(self.func2[ext], derivative(self.func1, var, seen), axis=self.axis)
-
-  def _get(self, axis, item):
-    if axis != self.axis:
-      return Cross(Get(self.func1, axis, item), Get(self.func2, axis, item), self.axis-(axis<self.axis))
-
-  def _take(self, index, axis):
-    if axis != self.axis:
-      return Cross(Take(self.func1, index, axis), Take(self.func2, index, axis), self.axis)
-
-  def _mask(self, maskvec, axis):
-    if axis != self.axis:
-      return Cross(Mask(self.func1, maskvec, axis), Mask(self.func2, maskvec, axis), self.axis)
-
 class Determinant(Array):
 
   __slots__ = 'func',
@@ -3913,7 +3871,9 @@ def cross(arg1, arg2, axis):
   arg1, arg2 = _numpy_align(arg1, arg2)
   axis = numeric.normdim(arg1.ndim, axis)
   assert arg1.shape[axis] == 3
-  return Cross(arg1, arg2, axis)
+  i = types.frozenarray([1, 2, 0])
+  j = types.frozenarray([2, 0, 1])
+  return take(arg1, i, axis) * take(arg2, j, axis) - take(arg2, i, axis) * take(arg1, j, axis)
 
 def outer(arg1, arg2=None, axis=0):
   'outer product'
