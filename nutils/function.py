@@ -934,8 +934,6 @@ class Transpose(Array):
     return transpose(derivative(self.func, var, seen), self.axes+tuple(range(self.ndim, self.ndim+var.ndim)))
 
   def _multiply(self, other):
-    if isinstance(other, Transpose) and self.axes == other.axes:
-      return Transpose(Multiply([self.func, other.func]), self.axes)
     other_trans = other._transpose(_invtrans(self.axes))
     if other_trans is not None:
       return Transpose(Multiply([self.func, other_trans]), self.axes)
@@ -1540,10 +1538,6 @@ class Add(Array):
   @property
   def simplified(self):
     func1, func2 = [func.simplified for func in self.funcs]
-    if iszero(func1):
-      return func2
-    if iszero(func2):
-      return func1
     if func1 == func2:
       return multiply(func1, 2).simplified
     retval = func1._add(func2)
