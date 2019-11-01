@@ -528,7 +528,7 @@ class Array(Evaluable):
       elif it is _:
         array = expand_dims(array, axis)
         axis += 1
-      elif it is slice(None):
+      elif it == slice(None):
         axis += 1
       elif isinstance(it, slice):
         assert it.step == None or it.step == 1
