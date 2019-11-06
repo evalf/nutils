@@ -27,6 +27,11 @@ python function based arguments specified on the command line.
 from . import util, config, long_version, warnings, matrix, cache
 import sys, inspect, os, io, time, pdb, signal, subprocess, contextlib, traceback, pathlib, html, treelog as log, stickybar
 
+try:
+  Level = log.proto.Level
+except AttributeError: # treelog version < 1.0b6
+  Level = collections.namedtuple('Level', ['debug', 'info', 'user', 'warning', 'error'])(0,1,2,3,4)
+
 def _version():
   try:
     githash = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], universal_newlines=True, stderr=subprocess.DEVNULL, cwd=os.path.dirname(__file__)).strip()
@@ -153,7 +158,7 @@ def call(func, kwargs, scriptname, funcname=None):
 
     stack.enter_context(cache.enable(os.path.join(outdir, config.cachedir)) if config.cache else cache.disable())
     stack.enter_context(matrix.backend(config.matrix))
-    stack.enter_context(log.set(log.FilterLog(log.RichOutputLog() if config.richoutput else log.StdoutLog(), minlevel=5-config.verbose)))
+    stack.enter_context(log.set(log.FilterLog(log.RichOutputLog() if config.richoutput else log.StdoutLog(), minlevel=tuple(Level)[5-config.verbose])))
     if config.htmloutput:
       htmllog = stack.enter_context(log.HtmlLog(outdir, title=scriptname, htmltitle='<a href="http://www.nutils.org">{}</a> {}'.format(SVGLOGO, html.escape(scriptname)), favicon=FAVICON))
       uri = (config.outrooturi.rstrip('/') + '/' + scriptname if config.outrooturi else pathlib.Path(outdir).resolve().as_uri()) + '/' + htmllog.filename
@@ -165,7 +170,7 @@ def call(func, kwargs, scriptname, funcname=None):
         log.info('opened log at', uri)
       htmllog.write('<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">{}</ul>'.format(''.join(
         '<li>{}={} <span style="color: gray;">{}</span></li>'.format(param.name, kwargs.get(param.name, param.default), param.annotation)
-          for param in inspect.signature(func).parameters.values())), level=1, escape=False)
+          for param in inspect.signature(func).parameters.values())), level=Level.info, escape=False)
       stack.enter_context(log.add(htmllog))
     stack.enter_context(warnings.via(lambda msg: log.warning(msg)))
     stack.callback(signal.signal, signal.SIGINT, signal.signal(signal.SIGINT, _sigint_handler))

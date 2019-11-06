@@ -244,10 +244,11 @@ def create_log(app, env, node, contnode):
       import matplotlib.testing
       matplotlib.testing.setup()
       func = script_dict['main']
+      info = treelog.proto.Level.info if hasattr(treelog, 'proto') else 1
       with treelog.HtmlLog(str(dst_log), title=scriptname, htmltitle='{} {}'.format(nutils.cli.SVGLOGO, html.escape(scriptname)), favicon=nutils.cli.FAVICON) as log, treelog.set(log), nutils.matrix.backend('scipy'), nutils.warnings.via(treelog.warning):
         log.write('<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">{}</ul>'.format(''.join(
           '<li>{}={} <span style="color: gray;">{}</span></li>'.format(param.name, kwargs.get(param.name, param.default), param.annotation)
-            for param in inspect.signature(func).parameters.values())), level=1, escape=False)
+            for param in inspect.signature(func).parameters.values())), level=info, escape=False)
         func(**kwargs)
       (dst_log/'log.html').rename(dst_log/'index.html')
 
@@ -431,7 +432,8 @@ class ConsoleDirective(docutils.parsers.rst.Directive):
   required_arguments = 0
   options_arguments = 0
 
-  _console_log = treelog.FilterLog(treelog.StdoutLog(), minlevel=1)
+  info = treelog.proto.Level.info if hasattr(treelog, 'proto') else 1
+  _console_log = treelog.FilterLog(treelog.StdoutLog(), minlevel=info)
 
   def run(self):
     document = self.state.document
