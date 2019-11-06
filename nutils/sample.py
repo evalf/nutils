@@ -43,8 +43,8 @@ multiple integrals simultaneously, which has the advantage that it can
 efficiently combine common substructures.
 '''
 
-from . import types, points, util, function, parallel, numeric, matrix, transformseq, log
-import numpy, numbers, collections.abc, os
+from . import types, points, util, function, parallel, numeric, matrix, transformseq
+import numpy, numbers, collections.abc, os, treelog as log
 
 graphviz = os.environ.get('NUTILS_GRAPHVIZ')
 

@@ -50,8 +50,8 @@ In addition to ``solve_linear`` the solver module defines ``newton`` and
 time dependent problems.
 """
 
-from . import function, cache, log, numeric, sample, types, util, matrix, warnings
-import numpy, itertools, functools, numbers, collections, math
+from . import function, cache, numeric, sample, types, util, matrix, warnings
+import numpy, itertools, functools, numbers, collections, math, treelog as log
 
 
 argdict = types.frozendict[types.strictstr,types.frozenarray]

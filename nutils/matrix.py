@@ -26,8 +26,8 @@ Matrices can be converted into other forms suitable for external processing via
 the ``export`` method.
 """
 
-from . import numpy, numeric, warnings, cache, types, util, log
-import abc, sys, ctypes, enum
+from . import numpy, numeric, warnings, cache, types, util
+import abc, sys, ctypes, enum, treelog as log
 
 
 class MatrixError(Exception): pass
