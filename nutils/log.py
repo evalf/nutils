@@ -34,6 +34,9 @@ def _len(iterable):
   except:
     return 0
 
+def _escape(s):
+  return s.replace('{', '{{').replace('}', '}}')
+
 class iter:
   def __init__(self, title, iterable, length=None):
     warnings.deprecation('log.iter is deprecated; use log.iter.percentage instead')
@@ -77,62 +80,63 @@ class iter:
       warnings.warn('unclosed iterator {!r}'.format(self._title), ResourceWarning)
       self.close()
 
-  class wrap:
+  if distutils.version.StrictVersion(treelog.version) >= distutils.version.StrictVersion('1.0b5'):
+    from treelog.iter import wrap, plain, fraction, percentage
+  else:
 
-    def __init__(self, titles, iterable):
-      self._titles = builtins.iter(titles)
-      self._iterable = builtins.iter(iterable)
-      self._log = None
-      self._warn = False
+    class wrap:
 
-    def __enter__(self):
-      if self._log is not None:
-        raise Exception('iter.wrap is not reentrant')
-      self._log = treelog.current
-      self._log.pushcontext(next(self._titles))
-      return builtins.iter(self)
+      def __init__(self, titles, iterable):
+        self._titles = builtins.iter(titles)
+        self._iterable = builtins.iter(iterable)
+        self._log = None
+        self._warn = False
 
-    def __iter__(self):
-      if self._log is not None:
-        cansend = inspect.isgenerator(self._titles)
-        for value in self._iterable:
-          self._log.popcontext()
-          self._log.pushcontext(self._titles.send(value) if cansend else next(self._titles))
-          yield value
+      def __enter__(self):
+        if self._log is not None:
+          raise Exception('iter.wrap is not reentrant')
+        self._log = treelog.current
+        self._log.pushcontext(next(self._titles))
+        return builtins.iter(self)
+
+      def __iter__(self):
+        if self._log is not None:
+          cansend = inspect.isgenerator(self._titles)
+          for value in self._iterable:
+            self._log.popcontext()
+            self._log.pushcontext(self._titles.send(value) if cansend else next(self._titles))
+            yield value
+        else:
+          with self:
+            self._warn = True
+            yield from self
+
+      def __exit__(self, exctype, excvalue, tb):
+        if self._log is None:
+          raise Exception('iter.wrap has not yet been entered')
+        if self._warn and exctype is GeneratorExit:
+          warnings.warn('unclosed iter.wrap', ResourceWarning)
+        self._log.popcontext()
+        self._log = False
+
+    def plain(title, *args):
+      titles = map((_escape(title) + ' {}').format, itertools.count())
+      return iter.wrap(titles, builtins.zip(*args) if len(args) > 1 else args[0])
+
+    def fraction(title, *args, length=None):
+      if length is None:
+        length = min(len(arg) for arg in args)
+      titles = map((_escape(title) + ' {}/' + str(length)).format, itertools.count())
+      return iter.wrap(titles, builtins.zip(*args) if len(args) > 1 else args[0])
+
+    def percentage(title, *args, length=None):
+      if length is None:
+        length = min(len(arg) for arg in args)
+      if length:
+        titles = map((_escape(title) + ' {:.0f}%').format, itertools.count(step=100/length))
       else:
-        with self:
-          self._warn = True
-          yield from self
-
-    def __exit__(self, exctype, excvalue, tb):
-      if self._log is None:
-        raise Exception('iter.wrap has not yet been entered')
-      if self._warn and exctype is GeneratorExit:
-        warnings.warn('unclosed iter.wrap', ResourceWarning)
-      self._log.popcontext()
-      self._log = False
-
-  def plain(title, *args):
-    titles = map((iter._escape(title) + ' {}').format, itertools.count())
-    return iter.wrap(titles, builtins.zip(*args) if len(args) > 1 else args[0])
-
-  def fraction(title, *args, length=None):
-    if length is None:
-      length = min(len(arg) for arg in args)
-    titles = map((iter._escape(title) + ' {}/' + str(length)).format, itertools.count())
-    return iter.wrap(titles, builtins.zip(*args) if len(args) > 1 else args[0])
-
-  def percentage(title, *args, length=None):
-    if length is None:
-      length = min(len(arg) for arg in args)
-    if length:
-      titles = map((iter._escape(title) + ' {:.0f}%').format, itertools.count(step=100/length))
-    else:
-      titles = title + ' 100%',
-    return iter.wrap(titles, builtins.zip(*args) if len(args) > 1 else args[0])
-
-  def _escape(s):
-    return s.replace('{', '{{').replace('}', '}}')
+        titles = title + ' 100%',
+      return iter.wrap(titles, builtins.zip(*args) if len(args) > 1 else args[0])
 
 def range(title, *args):
   warnings.deprecation('log.range is deprecated; use log.iter.percentage instead')
