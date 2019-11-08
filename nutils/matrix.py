@@ -614,7 +614,6 @@ class MKLMatrix(Matrix):
       iparm = numpy.zeros(64, dtype=numpy.int32) # https://software.intel.com/en-us/mkl-developer-reference-c-pardiso-iparm-parameter
       iparm[0] = 1 # supply all values in components iparm[1:64]
       iparm[1] = 2 # fill-in reducing ordering for the input matrix: nested dissection algorithm from the METIS package
-      iparm[7] = 999 # maximum number of iterative refinement steps that the solver performs
       iparm[9] = 13 # pivoting perturbation threshold 1e-13 (default for nonsymmetric)
       iparm[10] = 1 # enable scaling vectors (default for nonsymmetric)
       iparm[12] = 1 # enable improved accuracy using (non-) symmetric weighted matching (default for nonsymmetric)
