@@ -93,7 +93,7 @@ for ndim in 1, 2:
 class structured(basisTest):
 
   def setUp(self):
-    if self.product:
+    if not self.product:
       self.domain, self.geom = mesh.rectilinear([2,3])
     else:
       domain1, geom1 = mesh.rectilinear([2])
@@ -220,6 +220,16 @@ for btype in ['discont', 'spline', 'std']:
       for degree in range(0 if btype == 'discont' else 1, 4):
         for continuity in [-1] if btype == 'discont' else [0] if btype == 'std' else range(degree):
           structured_rect1d(periodic=periodic, btype=btype, degree=degree, nelems=nelems, continuity=continuity)
+
+class structured_rect1d_knotmultiplicities(basisTest):
+
+  def test(self):
+    for knotmultiplicities, ndofs in [([3,1,3], 4), ([3,2,1,3], 6)]:
+      domain, geom = mesh.rectilinear([len(knotmultiplicities)-1], periodic=[0])
+      basis = domain.basis('spline', degree=3, knotmultiplicities=[knotmultiplicities])
+      self.assertEqual(len(basis), ndofs)
+      self.assertContinuous(topo=domain, geom=geom, basis=basis, continuity=0)
+      self.assertPartitionOfUnity(topo=domain, basis=basis)
 
 @parametrize
 class unstructured_topology(TestCase):
