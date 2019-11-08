@@ -90,7 +90,7 @@ def _cache_context(value):
   finally:
     _cache = old_value
 
-def enable(cachedir):
+def enable(cachedir: str):
   '''
   Enable cacheing and set the cache directory to ``cachedir``.  Affects
   functions decorated with :func:`function` and subclasses of
