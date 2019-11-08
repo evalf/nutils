@@ -1328,7 +1328,8 @@ class StructuredTopology(Topology):
           m = numpy.concatenate([m, m])
           dk *= 2
         km = numpy.array([ki for ki, mi in zip(k, m) for cnt in range(mi)], dtype=float)
-        km = numpy.concatenate([km[-p:] - dk, km])
+        if p > m[0]:
+          km = numpy.concatenate([km[-p+m[0]:] - dk, km])
       else:
         m[0] = m[-1] = p
         nd = m[:n].sum()+1
