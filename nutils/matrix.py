@@ -642,7 +642,7 @@ class MKLMatrix(Matrix):
     log.debug('solver returned after {} refinement steps; peak memory use {:,d}k'.format(iparm[6], max(iparm[14], iparm[15]+iparm[16])))
     return lhsflat.T.reshape(lhsflat.shape[1:] + rhs.shape[1:])
 
-  def solve_fgmres(self, rhs, maxiter=0, atol=1e-6, restart=150):
+  def solve_fgmres(self, rhs, maxiter=0, atol=1e-6, restart=150, precon=None, ztol=1e-12):
     rci = ctypes.c_int32(0)
     n = ctypes.c_int32(len(rhs))
     b = numpy.array(rhs, dtype=numpy.float64)
@@ -652,39 +652,60 @@ class MKLMatrix(Matrix):
     ipar[1] = 6 # output on screen
     ipar[2] = 1 # current stage of the RCI FGMRES computations; the initial value is 1
     ipar[3] = 0 # current iteration number; the initial value is 0
-    ipar[4] = maxiter # maximum number of iterations
+    ipar[4] = 0 # maximum number of iterations
     ipar[5] = 1 # output error messages in accordance with the parameter ipar[1]
     ipar[6] = 1 # output warning messages in accordance with the parameter ipar[1]
-    ipar[7] = 1 if maxiter > 0 else 0 # perform the stopping test for the maximum number of iterations: ipar[3] <= ipar[4]
-    ipar[8] = 1 # perform the residual stopping test: dpar[4] <= dpar[3]
-    ipar[9] = 0 # the user-defined stopping test should not be performed by setting RCI_request=2
-    ipar[10] = 0 # run the non-preconditioned version of the FGMRES method
-    ipar[11] = 1 # perform the automatic test for zero norm of the currently generated vector: dpar[6] <= dpar[7]
-    ipar[12] = 0 # update the solution to the vector x according to the computations done by the dfgmres routine
+    ipar[7] = 0 # do not perform the stopping test for the maximum number of iterations: ipar[3] <= ipar[4]
+    ipar[8] = 0 # do not perform the residual stopping test: dpar[4] <= dpar[3]
+    ipar[9] = 1 # perform the user-defined stopping test by setting RCI_request=2
+    if precon is None:
+      ipar[10] = 0 # run the non-preconditioned version of the FGMRES method
+    else:
+      ipar[10] = 1 # run the preconditioned version of the FGMRES method
+      if precon == 'lu':
+        precon = self.solve_direct
+      elif precon == 'diag':
+        diag = self.diagonal()
+        if not diag.all():
+          raise MatrixError("building 'diag' preconditioner: diagonal has zero entries")
+        precon = numpy.reciprocal(diag).__mul__
+      elif not callback(precon):
+        raise MatrixError('invalid preconditioner {!r}'.format(precon))
+    ipar[11] = 0 # do not perform the automatic test for zero norm of the currently generated vector: dpar[6] <= dpar[7]
+    ipar[12] = 1 # update the solution to the vector b according to the computations done by the dfgmres routine
     ipar[13] = 0 # internal iteration counter that counts the number of iterations before the restart takes place; the initial value is 0
     ipar[14] = min(restart, len(rhs)) # the number of non-restarted FGMRES iterations
     dpar = numpy.zeros(128, dtype=numpy.float64)
-    dpar[0] = 0 # relative tolerance
-    dpar[1] = atol # absolute tolerance
-    dpar[7] = 1e-12 # tolerance for the zero norm of the currently generated vector
     tmp = numpy.zeros((2*ipar[14]+1)*ipar[0]+(ipar[14]*(ipar[14]+9))//2+1, dtype=numpy.float64)
     self.libmkl.dfgmres_check(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes)
-    assert rci.value == 0
-    with log.context('iter {} ({:.0f}%)', 0, 0) as format:
+    if rci.value != 0:
+      raise MatrixError('dgmres check failed with error code {}'.format(rci.value))
+    with log.context('fgmres {:.0f}%', 0, 0) as format:
       while True:
         self.libmkl.dfgmres(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes)
-        format(ipar[13], 100 * numpy.log(dpar[2]/dpar[4]) / numpy.log(dpar[2]/atol))
-        if rci.value == 0:
-          break
-        elif rci.value == 1:
+        if rci.value == 1: # multiply the matrix
           tmp[ipar[22]-1:ipar[22]+n.value-1] = self @ tmp[ipar[21]-1:ipar[21]+n.value-1]
+        elif rci.value == 2: # perform the stopping test
+          if dpar[4] < atol:
+            self.libmkl.dfgmres_get(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes, ctypes.byref(ctypes.c_int32(0)))
+            if numpy.linalg.norm(self @ b - rhs) < atol:
+              break
+            b[:] = rhs # reset rhs vector for restart
+          format(100 * numpy.log(dpar[2]/dpar[4]) / numpy.log(dpar[2]/atol))
+          if ipar[3] > maxiter > 0:
+            raise MatrixError('fgmres solver failed to reach tolerance in {} iterations'.format(maxiter))
+        elif rci.value == 3: # apply the preconditioner
+          tmp[ipar[22]-1:ipar[22]+n.value-1] = precon(tmp[ipar[21]-1:ipar[21]+n.value-1])
+        elif rci.value == 4: # check if the norm of the current orthogonal vector is zero
+          if dpar[6] < ztol:
+            self.libmkl.dfgmres_get(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes, ctypes.byref(ctypes.c_int32(0)))
+            if numpy.linalg.norm(self @ b - rhs) < atol:
+              break
+            raise MatrixError('singular matrix')
         else:
-          raise NotImplementedError
-    itercount = ctypes.c_int32(0)
-    self.libmkl.dfgmres_get(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes, ctypes.byref(itercount))
-    if numpy.linalg.norm(self @ x - b) > atol:
-      raise MatrixError('fgmres solver failed to reach tolerance')
-    return x
+          raise MatrixError('this should not have occurred: rci={}'.format(rci.value))
+    log.debug('tolerance reached in {} fgmres iterations, {} restarts'.format(ipar[3], ipar[3]//ipar[14]))
+    return b
 
 ## MODULE METHODS
 

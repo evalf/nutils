@@ -255,4 +255,5 @@ solver('scipy', backend=matrix.Scipy(), args=[{},
  + [dict(solver=s, atol=1e-5) for s in ('bicg', 'bicgstab', 'cg', 'cgs', 'lgmres', 'minres')])
 for threading in matrix.MKL.Threading.SEQUENTIAL, matrix.MKL.Threading.TBB:
   solver('mkl:{}'.format(threading.name.lower()), backend=matrix.MKL(threading=threading), args=[{},
-      dict(solver='fgmres', atol=1e-8)])
+      dict(solver='fgmres', atol=1e-8),
+      dict(solver='fgmres', atol=1e-8, precon='diag')])
