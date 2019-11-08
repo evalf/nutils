@@ -225,6 +225,10 @@ class solver(TestCase):
       self.assertIsInstance(mat, matrix.NumpyMatrix)
       numpy.testing.assert_equal(mat.export('dense'), self.exact)
 
+  @ifsupported
+  def test_diagonal(self):
+    self.assertAllEqual(self.matrix.diagonal(), numpy.diag(self.exact))
+
 
 class Base(matrix.Backend):
   @staticmethod

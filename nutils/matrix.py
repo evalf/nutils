@@ -243,6 +243,18 @@ class Matrix(metaclass=types.CacheMeta):
 
     raise NotImplementedError('cannot export {} to {!r}'.format(self.__class__.__name__, form))
 
+  def diagonal(self):
+    nrows, ncols = self.shape
+    if nrows != ncols:
+      raise MatrixError('failed to extract diagonal: matrix is not square')
+    data, indices, indptr = self.export('csr')
+    diag = numpy.empty(nrows)
+    for irow in range(nrows):
+      icols = indices[indptr[irow]:indptr[irow+1]]
+      idiag = numpy.searchsorted(icols, irow)
+      diag[irow] = data[indptr[irow]+idiag] if idiag < len(icols) and icols[idiag] == irow else 0
+    return diag
+
   def __repr__(self):
     return '{}<{}x{}>'.format(type(self).__qualname__, *self.shape)
 
@@ -436,6 +448,9 @@ class ScipyMatrix(Matrix):
 
   def submatrix(self, rows, cols):
     return ScipyMatrix(self.core[rows,:][:,cols], scipy=self.scipy)
+
+  def diagonal(self):
+    return self.core.diagonal()
 
 
 ## INTEL MKL BACKEND
