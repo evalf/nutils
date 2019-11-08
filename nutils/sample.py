@@ -331,6 +331,7 @@ class Integral(types.Singleton):
   '''
 
   __slots__ = '_integrands', 'shape'
+  __cache__ = 'derivative'
 
   @types.apply_annotations
   def __init__(self, integrands:types.frozendict[strictsample, function.simplified], shape:types.tuple[int]):
