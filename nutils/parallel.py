@@ -25,8 +25,8 @@ platforms, notably excluding Windows. On unsupported platforms parallel features
 will disable and a warning is printed.
 """
 
-from . import numeric, warnings, log, util
-import os, multiprocessing, mmap, signal, contextlib, builtins, numpy
+from . import numeric, warnings, util
+import os, multiprocessing, mmap, signal, contextlib, builtins, numpy, treelog as log
 
 _maxprocs = 1
 

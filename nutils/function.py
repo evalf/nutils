@@ -42,8 +42,8 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, types, numpy, numeric, cache, transform, transformseq, expression, warnings, log, _
-import sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math
+from . import util, types, numpy, numeric, cache, transform, transformseq, expression, warnings, _
+import sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
 

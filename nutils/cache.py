@@ -22,8 +22,8 @@
 The cache module.
 """
 
-from . import types, log
-import os, numpy, functools, inspect, builtins, pathlib, pickle, itertools, hashlib, abc, contextlib
+from . import types
+import os, numpy, functools, inspect, builtins, pathlib, pickle, itertools, hashlib, abc, contextlib, treelog as log
 
 class Wrapper:
   'function decorator that caches results by arguments'

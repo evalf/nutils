@@ -26,8 +26,8 @@ accompanying geometry function. Meshes can either be generated on the fly, e.g.
 provided at this point.
 """
 
-from . import topology, function, util, element, elementseq, numpy, numeric, transform, transformseq, warnings, types, cache, log, _
-import os, itertools, re, math
+from . import topology, function, util, element, elementseq, numpy, numeric, transform, transformseq, warnings, types, cache, _
+import os, itertools, re, math, treelog as log
 
 # MESH GENERATORS
 
