@@ -32,7 +32,7 @@ _maxprocs = 1
 
 @contextlib.contextmanager
 @util.positional_only
-def maxprocs(new):
+def maxprocs(new: int):
   '''limit number of processes for fork.'''
 
   if not isinstance(new, int) or new < 1:
