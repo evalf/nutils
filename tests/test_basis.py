@@ -221,7 +221,7 @@ for btype in ['discont', 'spline', 'std']:
         for continuity in [-1] if btype == 'discont' else [0] if btype == 'std' else range(degree):
           structured_rect1d(periodic=periodic, btype=btype, degree=degree, nelems=nelems, continuity=continuity)
 
-class structured_rect1d_knotmultiplicities(basisTest):
+class structured_rect1d_periodic_knotmultiplicities(basisTest):
 
   def test(self):
     for knotmultiplicities, ndofs in [([3,1,3], 4), ([3,2,1,3], 6)]:
@@ -230,6 +230,15 @@ class structured_rect1d_knotmultiplicities(basisTest):
       self.assertEqual(len(basis), ndofs)
       self.assertContinuous(topo=domain, geom=geom, basis=basis, continuity=0)
       self.assertPartitionOfUnity(topo=domain, basis=basis)
+
+  def test_discontinuous(self):
+    pdomain, pgeom = mesh.rectilinear([3], periodic=[0])
+    rdomain, rgeom = mesh.rectilinear([3])
+    pbasis = pdomain.basis('spline', degree=2, knotmultiplicities=[[3,1,2,3]])
+    rbasis = rdomain.basis('spline', degree=2, knotmultiplicities=[[1,1,2,1]])
+    psampled = pdomain.sample('gauss', 2).eval(pbasis)
+    rsampled = rdomain.sample('gauss', 2).eval(rbasis)
+    self.assertAllAlmostEqual(psampled, rsampled)
 
 @parametrize
 class unstructured_topology(TestCase):
