@@ -69,8 +69,8 @@ concepts involved.
 
     >>> sqr = topo.boundary['left'].integral('u^2 d:x' @ ns, degree=2)
     >>> cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
-    optimize > newton 100% > converged with residual 0.0e+00
-    optimize > constrained 1/5 dofs, optimum value 0.00e+00
+    optimize > constrained 1/5 dofs
+    optimize > optimum value 0.00e+00
 
     >>> res = topo.integral('basis_n,i u_,i d:x' @ ns, degree=0)
     >>> res -= topo.boundary['right'].integral('basis_n d:x' @ ns, degree=0)
@@ -608,10 +608,9 @@ The optimization problem can also be solved by the
 
 .. console::
     >>> nutils.solver.optimize('lhs', sqr)
-    optimize > newton 0% > solve > solving 5x5 system using direct solver
-    optimize > newton 0% > solve > solver returned with residual 0e+00
-    optimize > newton 100% > converged with residual 0.0e+00
-    optimize > constrained 5/5 dofs, optimum value 9.63e-33±1e-15
+    optimize > solve > solving 5x5 system using direct solver
+    optimize > solve > solver returned with residual 0e+00
+    optimize > optimum value 0.00e+00±1e-15
     array([0.  , 0.25, 0.5 , 0.75, 1.  ])±1e-15
 
 Nutils also supports solving a partial optimization problem.  In the Laplace
@@ -628,8 +627,8 @@ problem is invariant, or to be precise, where the variation is below
 
 .. console::
     >>> cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
-    optimize > newton 100% > converged with residual 0.0e+00
-    optimize > constrained 1/5 dofs, optimum value 0.00e+00
+    optimize > constrained 1/5 dofs
+    optimize > optimum value 0.00e+00
     >>> cons
     array([ 0., nan, nan, nan, nan])±1e-15
 
@@ -814,10 +813,10 @@ solved for ``lhs``, yielding the constraints vector ``cons``:
     >>> sqr = topo.boundary['left'].integral('u^2 d:x' @ ns, degree=2)
     >>> sqr += topo.boundary['top'].integral('(u - cosh(1) sin(x_0))^2 d:x' @ ns, degree=2)
     >>> cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
-    optimize > newton 0% > solve > solving 21x21 system using direct solver
-    optimize > newton 0% > solve > solver returned with residual 3e-17±1e-15
-    optimize > newton 100% > converged with residual 0.0e+00
-    optimize > constrained 21/121 dofs, optimum value 4.32e-10±1e-9
+    optimize > solve > solving 21x21 system using direct solver
+    optimize > solve > solver returned with residual 3e-17±2e-15
+    optimize > constrained 21/121 dofs
+    optimize > optimum value 4.32e-10±1e-9
 
 To solve the problem ``res=0`` for ``lhs`` subject to ``lhs=cons`` excluding
 the ``nan`` values, we can use :func:`nutils.solver.solve_linear`:
