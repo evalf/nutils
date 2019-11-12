@@ -669,7 +669,7 @@ class MKLMatrix(Matrix):
         if not diag.all():
           raise MatrixError("building 'diag' preconditioner: diagonal has zero entries")
         precon = numpy.reciprocal(diag).__mul__
-      elif not callback(precon):
+      elif not callable(precon):
         raise MatrixError('invalid preconditioner {!r}'.format(precon))
     ipar[11] = 0 # do not perform the automatic test for zero norm of the currently generated vector: dpar[6] <= dpar[7]
     ipar[12] = 1 # update the solution to the vector b according to the computations done by the dfgmres routine
