@@ -192,13 +192,14 @@ class Matrix(metaclass=types.CacheMeta):
     else:
       assert rconstrain.shape == (nrows,) and constrain.dtype == bool
       I = ~rconstrain
-    assert I.sum() == J.sum(), 'constrained matrix is not square: {}x{}'.format(I.sum(), J.sum())
+    n = I.sum()
+    if J.sum() != n:
+      raise MatrixError('constrained matrix is not square: {}x{}'.format(I.sum(), J.sum()))
     b = (rhs - self @ x)[J]
     if b.any():
-      A = self if I.all() and J.all() else self.submatrix(I, J)
-      log.info('solving {0[0]}x{0[1]} system using {1} solver'.format(A.shape, solver))
+      log.info('solving {0}x{0} system using {1} solver'.format(n, solver))
       try:
-        x[J] += getattr(A, 'solve_'+solver)(b, **solverargs)
+        x[J] += getattr(self.submatrix(I, J), 'solve_'+solver)(b, **solverargs)
       except Exception as e:
         raise MatrixError('solver failed with error: {}'.format(e)) from e
       if not numpy.isfinite(x).all():
@@ -224,6 +225,8 @@ class Matrix(metaclass=types.CacheMeta):
 
     rows = numeric.asboolean(rows, self.shape[0])
     cols = numeric.asboolean(cols, self.shape[1])
+    if rows.all() and cols.all():
+      return self
     data, (I,J) = self.export('coo')
     keep = numpy.logical_and(rows[I], cols[J])
     csI = rows.cumsum()
