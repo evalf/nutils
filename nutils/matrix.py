@@ -137,7 +137,7 @@ class Matrix(metaclass=types.CacheMeta):
     return supp
 
   @log.withcontext
-  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, solver='direct', **solverargs):
+  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, solver='direct', atol=0., **solverargs):
     '''Solve system given right hand side vector and/or constraints.
 
     Args
@@ -196,17 +196,20 @@ class Matrix(metaclass=types.CacheMeta):
     if J.sum() != n:
       raise MatrixError('constrained matrix is not square: {}x{}'.format(I.sum(), J.sum()))
     b = (rhs - self @ x)[J]
-    if b.any():
+    if numpy.linalg.norm(b) > atol:
       log.info('solving {0}x{0} system using {1} solver'.format(n, solver))
       try:
-        x[J] += getattr(self.submatrix(I, J), 'solve_'+solver)(b, **solverargs)
+        x[J] += getattr(self.submatrix(I, J), 'solve_'+solver)(b, atol=atol, **solverargs)
       except Exception as e:
         raise MatrixError('solver failed with error: {}'.format(e)) from e
       if not numpy.isfinite(x).all():
         raise MatrixError('solver returned non-finite left hand side')
-      log.info('solver returned with residual {:.0e}'.format(numpy.linalg.norm((rhs - self @ x)[J])))
+      resnorm = numpy.linalg.norm((rhs - self @ x)[J])
+      log.info('solver returned with residual {:.0e}'.format(resnorm))
+      if resnorm > atol > 0:
+        log.warning('solver failed to reach tolerance')
     else:
-      log.info('skipping solver because initial vector is exact')
+      log.info('skipping solver because initial vector is within tolerance')
     return x
 
   def submatrix(self, rows, cols):
@@ -263,7 +266,7 @@ class Matrix(metaclass=types.CacheMeta):
 
 def refine_to_tolerance(solve):
   @functools.wraps(solve)
-  def wrapped(self, rhs, atol=1e-6, **kwargs):
+  def wrapped(self, rhs, atol, **kwargs):
     lhs = solve(self, rhs, **kwargs)
     res = rhs - self @ lhs
     resnorm = numpy.linalg.norm(res)
@@ -276,7 +279,6 @@ def refine_to_tolerance(solve):
         newresnorm = numpy.linalg.norm(newres)
         if not numpy.isfinite(resnorm) or newresnorm >= resnorm:
           log.debug('residual increased to {:.0e} (discarding)'.format(newresnorm))
-          log.warning('failed to reach tolerance')
           return lhs
         log.debug('residual decreased to {:.0e}'.format(newresnorm))
         lhs, res, resnorm = newlhs, newres, newresnorm
@@ -420,10 +422,8 @@ class ScipyMatrix(Matrix):
   def solve_direct(self, rhs):
     return self.scipy.sparse.linalg.spsolve(self.core, rhs)
 
-  def solve_scipy(self, rhs, solver, atol=1e-6, callback=None, precon=None, **solverargs):
+  def solve_scipy(self, rhs, solver, atol, callback=None, precon=None, **solverargs):
     rhsnorm = numpy.linalg.norm(rhs)
-    if rhsnorm <= atol:
-      return numpy.zeros(self.shape[1])
     solverfun = getattr(self.scipy.sparse.linalg, solver)
     myrhs = rhs / rhsnorm # normalize right hand side vector for best control over scipy's stopping criterion
     mytol = atol / rhsnorm
@@ -438,8 +438,6 @@ class ScipyMatrix(Matrix):
       mylhs, status = solverfun(self.core, myrhs, M=M, tol=mytol, callback=mycallback, **solverargs)
     if status != 0:
       raise Exception('status {}'.format(status))
-    if numpy.linalg.norm(myrhs - self @ mylhs) > atol:
-      raise Exception('failed to reach tolerance')
     return mylhs * rhsnorm
 
   solve_bicg     = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'bicg',     **kwargs)
@@ -670,7 +668,7 @@ class MKLMatrix(Matrix):
     log.debug('solver returned after {} refinement steps; peak memory use {:,d}k'.format(iparm[6], max(iparm[14], iparm[15]+iparm[16])))
     return lhsflat.T.reshape(lhsflat.shape[1:] + rhs.shape[1:])
 
-  def solve_fgmres(self, rhs, maxiter=0, atol=1e-6, restart=150, precon=None, ztol=1e-12):
+  def solve_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12):
     rci = ctypes.c_int32(0)
     n = ctypes.c_int32(len(rhs))
     b = numpy.array(rhs, dtype=numpy.float64)
@@ -721,7 +719,7 @@ class MKLMatrix(Matrix):
             b[:] = rhs # reset rhs vector for restart
           format(100 * numpy.log(dpar[2]/dpar[4]) / numpy.log(dpar[2]/atol))
           if ipar[3] > maxiter > 0:
-            raise MatrixError('fgmres solver failed to reach tolerance in {} iterations'.format(maxiter))
+            break
         elif rci.value == 3: # apply the preconditioner
           tmp[ipar[22]-1:ipar[22]+n.value-1] = precon(tmp[ipar[21]-1:ipar[21]+n.value-1])
         elif rci.value == 4: # check if the norm of the current orthogonal vector is zero
@@ -732,7 +730,7 @@ class MKLMatrix(Matrix):
             raise MatrixError('singular matrix')
         else:
           raise MatrixError('this should not have occurred: rci={}'.format(rci.value))
-    log.debug('tolerance reached in {} fgmres iterations, {} restarts'.format(ipar[3], ipar[3]//ipar[14]))
+    log.debug('performed {} fgmres iterations, {} restarts'.format(ipar[3], ipar[3]//ipar[14]))
     return b
 
 ## MODULE METHODS
