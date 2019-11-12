@@ -27,7 +27,7 @@ the ``export`` method.
 """
 
 from . import numpy, numeric, warnings, cache, types, util
-import abc, sys, ctypes, enum, treelog as log
+import abc, sys, ctypes, enum, treelog as log, functools, itertools
 
 
 class MatrixError(Exception): pass
@@ -261,6 +261,28 @@ class Matrix(metaclass=types.CacheMeta):
   def __repr__(self):
     return '{}<{}x{}>'.format(type(self).__qualname__, *self.shape)
 
+def refine_to_tolerance(solve):
+  @functools.wraps(solve)
+  def wrapped(self, rhs, atol=1e-6, **kwargs):
+    lhs = solve(self, rhs, **kwargs)
+    res = rhs - self @ lhs
+    resnorm = numpy.linalg.norm(res)
+    if not numpy.isfinite(resnorm) or resnorm <= atol:
+      return lhs
+    with log.iter.plain('refinement iteration', itertools.count(start=1)) as count:
+      for iiter in count:
+        newlhs = lhs + solve(self, res, **kwargs)
+        newres = rhs - self @ newlhs
+        newresnorm = numpy.linalg.norm(newres)
+        if not numpy.isfinite(resnorm) or newresnorm >= resnorm:
+          log.debug('residual increased to {:.0e} (discarding)'.format(newresnorm))
+          log.warning('failed to reach tolerance')
+          return lhs
+        log.debug('residual decreased to {:.0e}'.format(newresnorm))
+        lhs, res, resnorm = newlhs, newres, newresnorm
+        if resnorm <= atol:
+          return lhs
+  return wrapped
 
 ## NUMPY BACKEND
 
@@ -316,6 +338,7 @@ class NumpyMatrix(Matrix):
   def rowsupp(self, tol=0):
     return numpy.greater(abs(self.core), tol).any(axis=1)
 
+  @refine_to_tolerance
   def solve_direct(self, rhs):
     return numpy.linalg.solve(self.core, rhs)
 
@@ -393,6 +416,7 @@ class ScipyMatrix(Matrix):
   def T(self):
     return ScipyMatrix(self.core.transpose(), scipy=self.scipy)
 
+  @refine_to_tolerance
   def solve_direct(self, rhs):
     return self.scipy.sparse.linalg.spsolve(self.core, rhs)
 
@@ -621,6 +645,7 @@ class MKLMatrix(Matrix):
       return self.data, numpy.array([numpy.arange(self.shape[0]).repeat(self.rowptr[1:]-self.rowptr[:-1]), self.colidx-1])
     raise NotImplementedError('cannot export MKLMatrix to {!r}'.format(form))
 
+  @refine_to_tolerance
   def solve_direct(self, rhs):
     log.debug('solving system using MKL Pardiso')
     if self._factors:
