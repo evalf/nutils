@@ -93,7 +93,7 @@ class finitestrain(TestCase):
     ubasis = domain.basis('std', degree=2).vector(2)
     u = ubasis.dot(function.Argument('dofs', [len(ubasis)]))
     Geom = geom * [1.1, 1] + u
-    self.cons = solver.minimize('dofs', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15).solve()
+    self.cons = solver.optimize('dofs', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15)
     self.boolcons = ~numpy.isnan(self.cons)
     strain = .5 * (function.outer(Geom.grad(geom), axis=1).sum(0) - function.eye(2))
     self.energy = domain.integral(((strain**2).sum([0,1]) + 20*(function.determinant(Geom.grad(geom))-1)**2)*function.J(geom), degree=6)
@@ -134,7 +134,7 @@ class finitestrain(TestCase):
     ubasis = domain.basis('spline', degree=2).vector(2)
     u = ubasis.dot(function.Argument('dofs', [len(ubasis)]))
     Geom = [.5 * geom[0], geom[1] + function.cos(geom[0])] + u # compress by 50% and buckle
-    cons = solver.minimize('dofs', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15).solve()
+    cons = solver.optimize('dofs', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15)
     strain = .5 * (function.outer(Geom.grad(geom), axis=1).sum(0) - function.eye(2))
     energy = domain.integral(((strain**2).sum([0,1]) + 150*(function.determinant(Geom.grad(geom))-1)**2)*function.J(geom), degree=6)
     nshift = 0
@@ -156,30 +156,26 @@ class optimize(TestCase):
     self.domain, self.ns.geom = mesh.rectilinear([2,2])
     self.ns.ubasis = self.domain.basis('std', degree=1)
     self.ns.u = 'ubasis_n ?dofs_n'
-    self.optimize = solver.optimize if not self.minimize else lambda *args, newtontol=0, **kwargs: solver.minimize(*args, **kwargs).solve(newtontol)
 
   def test_linear(self):
     err = self.domain.boundary['bottom'].integral('(u - 1)^2' @ self.ns, degree=2)
-    cons = self.optimize('dofs', err, droptol=1e-15)
+    cons = solver.optimize('dofs', err, droptol=1e-15)
     numpy.testing.assert_almost_equal(cons, numpy.take([1,numpy.nan], [0,1,1,0,1,1,0,1,1]), decimal=15)
 
   def test_nonlinear(self):
     err = self.domain.boundary['bottom'].integral('(u + .25 u^3 - 1.25)^2 d:geom' @ self.ns, degree=6)
-    cons = self.optimize('dofs', err, droptol=1e-15, newtontol=1e-15)
+    cons = solver.optimize('dofs', err, droptol=1e-15, newtontol=1e-15)
     numpy.testing.assert_almost_equal(cons, numpy.take([1,numpy.nan], [0,1,1,0,1,1,0,1,1]), decimal=15)
 
   def test_nonlinear_multipleroots(self):
     err = self.domain.boundary['bottom'].integral('(u + u^2 - .75)^2' @ self.ns, degree=2)
-    cons = self.optimize('dofs', err, droptol=1e-15, lhs0=numpy.ones(len(self.ns.ubasis)), newtontol=1e-10)
+    cons = solver.optimize('dofs', err, droptol=1e-15, lhs0=numpy.ones(len(self.ns.ubasis)), newtontol=1e-10)
     numpy.testing.assert_almost_equal(cons, numpy.take([.5,numpy.nan], [0,1,1,0,1,1,0,1,1]), decimal=15)
 
   def test_nanres(self):
     err = self.domain.integral('(sqrt(1 - u) - .5)^2' @ self.ns, degree=2)
-    dofs = self.optimize('dofs', err, newtontol=1e-10)
+    dofs = solver.optimize('dofs', err, newtontol=1e-10)
     numpy.testing.assert_almost_equal(dofs, .75)
-
-optimize(minimize=False)
-optimize(minimize=True)
 
 
 class burgers(TestCase):
