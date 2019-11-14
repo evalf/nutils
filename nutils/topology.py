@@ -1148,7 +1148,6 @@ class StructuredTopology(Topology):
     for idim in range(self.ndims):
       p = degree[idim]
       n = self.shape[idim]
-      isperiodic = idim in periodic
 
       c = continuity[idim]
       if c < 0:
@@ -1180,7 +1179,7 @@ class StructuredTopology(Topology):
           m = m_
         assert len(m) == n+1, 'knot multiplicity do not match the topology size'
 
-      if isperiodic:
+      if idim in periodic and not m[0] == m[n] == p+1: # if m[0] == m[n] == p+1 the spline is discontinuous at the boundary
         assert m[0] == m[n], 'periodic spline multiplicity expected'
         dk = k[n] - k[0]
         m = m[:n]
