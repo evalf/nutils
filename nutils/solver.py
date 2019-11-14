@@ -138,6 +138,9 @@ class RecursionWithSolve(cache.Recursion):
     norm and other generator-dependent information.
     '''
   
+    if not tol:
+      warnings.deprecation('solve with zero tolerance is deprecated and will be removed; proceeding with tol=1e-12')
+      tol = 1e-12
     with log.iter.wrap(_progress(self.__class__.__name__, tol), self) as items:
       for i, (lhs, info) in enumerate(items):
         if info.resnorm <= tol:
@@ -331,7 +334,6 @@ class minimize(RecursionWithSolve, length=1, version=3):
     self.failrelax = failrelax
     self.arguments = arguments
     self.solveargs = solveargs
-    self.islinear = not self.jacobian.contains(target)
     self.maxinc = maxinc
 
   def _eval(self, lhs):
@@ -354,9 +356,6 @@ class minimize(RecursionWithSolve, length=1, version=3):
 
     while resnorm:
       dlhs = -jac.solve(res, constrain=self.constrain, **self.solveargs)
-      if self.islinear:
-        yield lhs+dlhs, types.attributes(resnorm=0, energy=nrg+.5*res.dot(dlhs), relax=1, shift=0)
-        return
       shift = 0
       while res.dot(dlhs) > 0:
         # Energy is locally increasing, an adjustment is required to maintain
