@@ -552,14 +552,14 @@ class ImmutableMeta(CacheMeta):
     for preprocess in cls._pre_init:
       args, kwargs = preprocess(*args, **kwargs)
     args = args[1:]
-    assert not kwargs
-    return cls._new(*args)
+    return cls._new(*args, **kwargs)
 
-  def _new(cls, *args):
+  def _new(cls, *args, **kwargs):
     self = cls.__new__(cls)
     self._args = args
-    self._hash = hash(args)
-    self._init(*args)
+    self._kwargs = kwargs
+    self._hash = hash(args + tuple((key, kwargs[key]) for key in sorted(kwargs)))
+    self._init(*args, **kwargs)
     return self
 
 class Immutable(metaclass=ImmutableMeta):
@@ -614,7 +614,7 @@ class Immutable(metaclass=ImmutableMeta):
   True
   '''
 
-  __slots__ = '__weakref__', '_args', '_hash'
+  __slots__ = '__weakref__', '_args', '_kwargs', '_hash'
   __cache__ = '__nutils_hash__',
 
   def __reduce__(self):
@@ -624,7 +624,7 @@ class Immutable(metaclass=ImmutableMeta):
     return self._hash
 
   def __eq__(self, other):
-    return self.__class__ is other.__class__ and self._hash == other._hash and self._args == other._args
+    return self.__class__ is other.__class__ and self._hash == other._hash and self._args == other._args and self._kwargs == other._kwargs
 
   @property
   def __nutils_hash__(self):
@@ -652,11 +652,12 @@ class SingletonMeta(ImmutableMeta):
     cls._cache = weakref.WeakValueDictionary()
     return cls
 
-  def _new(cls, *args):
+  def _new(cls, *args, **kwargs):
+    key = args + tuple((key, kwargs[key]) for key in sorted(kwargs))
     try:
-      self = cls._cache[args]
+      self = cls._cache[key]
     except KeyError:
-      cls._cache[args] = self = super()._new(*args)
+      cls._cache[key] = self = super()._new(*args, **kwargs)
     return self
 
 class Singleton(Immutable, metaclass=SingletonMeta):
