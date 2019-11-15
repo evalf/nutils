@@ -1,6 +1,6 @@
-from nutils import solver, mesh, function, cache, types, numeric
+from nutils import solver, mesh, function, cache, types, numeric, warnings
 from nutils.testing import *
-import numpy, contextlib, tempfile, itertools
+import numpy, contextlib, tempfile, itertools, logging
 
 @contextlib.contextmanager
 def tmpcache():
@@ -74,6 +74,12 @@ class navierstokes(TestCase):
 
   def test_newton(self):
     self.assert_resnorm(solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons).solve(tol=self.tol, maxiter=2))
+
+  def test_newton_tolnotreached(self):
+    with self.assertLogs('nutils', logging.WARNING) as cm:
+      self.assert_resnorm(solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, linrtol=1e-99).solve(tol=self.tol, maxiter=2))
+    for msg in cm.output:
+      self.assertIn('solver failed to reach tolerance', msg)
 
   def test_newton_iter(self):
     _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.newton('dofs', residual=self.residual, constrain=self.cons)))
