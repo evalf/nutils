@@ -137,7 +137,7 @@ class Matrix(metaclass=types.CacheMeta):
     return supp
 
   @log.withcontext
-  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, solver='direct', atol=0., **solverargs):
+  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, solver='direct', atol=0., rtol=0., **solverargs):
     '''Solve system given right hand side vector and/or constraints.
 
     Args
@@ -196,7 +196,9 @@ class Matrix(metaclass=types.CacheMeta):
     if J.sum() != n:
       raise MatrixError('constrained matrix is not square: {}x{}'.format(I.sum(), J.sum()))
     b = (rhs - self @ x)[J]
-    if numpy.linalg.norm(b) > atol:
+    bnorm = numpy.linalg.norm(b)
+    atol = max(atol, rtol * bnorm)
+    if bnorm > atol:
       log.info('solving {0}x{0} system using {1} solver'.format(n, solver))
       try:
         x[J] += getattr(self.submatrix(I, J), 'solve_'+solver)(b, atol=atol, **solverargs)
