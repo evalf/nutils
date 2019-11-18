@@ -129,9 +129,9 @@ class test(testing.TestCase):
   def test_rot0(self):
     lhs0, lhs = main(nelems=6, degree=3, reynolds=100, rotation=0, timestep=.1, maxradius=25, seed=0, endtime=.05)
     with self.subTest('initial condition'): self.assertAlmostEqual64(lhs0, '''
-      eNqtjD8OwWAcQJ/JNSQ20Tbf135RkUjEZO8RJA7gChYXsDgEkZjN+k/zbQYDCU06Y2Co3yG86S3vtb27
-      C8fiXMDM0Q7s7MHCRHUUpPkqh42eaxhlvQzKQAewTMIEQjM2MEyuMUylrOxDykt3Id63Rrzprj0YFJ8T
-      7L2vHMlfcqlU6UMrjVJ4+8+gwS3exnUdye8//AB+zDQQ''', atol=2e-13)
+      eNpT1n+qx8Bw8sLNCwwM6bpGugwMmy7tv8TA4GmoZcjAcObctHMMDOuNio0YGBzPmp9lYHhuYmTCwNB5
+      2uI0A4OFqbMpA4Pd6YenGBhSgDpfXXoG1HlXpwXItrxkCmSz683WZ2CwvvDrPAPDVv3fQBMZzn0FmvLK
+      8LkxA4PCmZAzDAzfjL8ATXx0agPQlBCgedQBAOgCMhE=''', atol=2e-13)
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
       eNoB2AAn/5A0jjV/MIDKj8rFMoE4Rjcwz4LI7sery545+Dm5MwTGEsa8NVY8pjtWNSzE18OpyXI9VD02
       M5zCnsJazE0+Hj76NsPByMH/yhA3izOMyGPIyC+gN5Y4JcofyEbI+csJOGk4OzXZxrTGLzIKOXo7Acj2
@@ -142,9 +142,9 @@ class test(testing.TestCase):
   def test_rot1(self):
     lhs0, lhs = main(nelems=6, degree=3, reynolds=100, rotation=1, timestep=.1, maxradius=25, seed=0, endtime=.05)
     with self.subTest('initial condition'): self.assertAlmostEqual64(lhs0, '''
-      eNqtjD8OwWAcQJ/JNSQ20Tbf135RkUjEZO8RJA7gChYXsDgEkZjN+k/zbQYDCU06Y2Co3yG86S3vtb27
-      C8fiXMDM0Q7s7MHCRHUUpPkqh42eaxhlvQzKQAewTMIEQjM2MEyuMUylrOxDykt3Id63Rrzprj0YFJ8T
-      7L2vHMlfcqlU6UMrjVJ4+8+gwS3exnUdye8//AB+zDQQ''', atol=2e-13)
+      eNpT1n+qx8Bw8sLNCwwM6bpGugwMmy7tv8TA4GmoZcjAcObctHMMDOuNio0YGBzPmp9lYHhuYmTCwNB5
+      2uI0A4OFqbMpA4Pd6YenGBhSgDpfXXoG1HlXpwXItrxkCmSz683WZ2CwvvDrPAPDVv3fQBMZzn0FmvLK
+      8LkxA4PCmZAzDAzfjL8ATXx0agPQlBCgedQBAOgCMhE=''', atol=2e-13)
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
       eNoB2AAn/4s0kDW8MIHKjcq1MoE4RzdQz4PI7sely545+Dm6MwTGEsa8NVY8pjtWNSzE18OpyXI9VD02
       M5zCnsJazE0+Hj76NsPByMH/yi03ODSmyHbI0jGyN5M4FcoayEHI2MsEOGs4PjXZxrXGXTILOXo7AMj2
