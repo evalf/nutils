@@ -92,7 +92,7 @@ def main(nelems:int, etype:str, btype:str, degree:int, epsilon:typing.Optional[f
     if numpy.ptp(m) < mtol:
       break
 
-    lhs = solver.optimize('lhs', nrg, arguments=dict(lhs0=lhs), lhs0=lhs, newtontol=1e-10)
+    lhs = solver.optimize('lhs', nrg, arguments=dict(lhs0=lhs), lhs0=lhs, tol=1e-10)
 
   return lhs
 

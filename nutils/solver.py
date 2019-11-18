@@ -577,7 +577,7 @@ cranknicolson = functools.partial(thetamethod, theta=0.5)
 @log.withcontext
 @types.apply_annotations
 @cache.function
-def optimize(target:types.strictstr, functional:sample.strictintegral, *, newtontol:types.strictfloat=0., arguments:argdict={}, droptol:float=None, constrain:types.frozenarray=None, lhs0:types.frozenarray[types.strictfloat]=None, solveargs:types.frozendict={}, searchrange:types.tuple[float]=(.01,2/3), rebound:types.strictfloat=2., failrelax:types.strictfloat=1e-6, **linargs):
+def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:types.strictfloat=0., arguments:argdict={}, droptol:float=None, constrain:types.frozenarray=None, lhs0:types.frozenarray[types.strictfloat]=None, solveargs:types.frozendict={}, searchrange:types.tuple[float]=(.01,2/3), rebound:types.strictfloat=2., failrelax:types.strictfloat=1e-6, **linargs):
   '''find the minimizer of a given functional
 
   Parameters
@@ -586,8 +586,8 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, newton
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
   functional : scalar :class:`nutils.sample.Integral`
       The functional the should be minimized by varying target
-  newtontol : :class:`float`
-      Residual tolerance of Newton procedure (if applicable)
+  tol : :class:`float`
+      Target residual norm.
   arguments : :class:`collections.abc.Mapping`
       Defines the values for :class:`nutils.function.Argument` objects in
       `residual`.  The ``target`` should not be present in ``arguments``.
@@ -606,6 +606,9 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, newton
       Coefficient vector corresponding to the functional optimum
   '''
 
+  if 'newtontol' in linargs:
+    warnings.deprecation('argument "newtontol" is deprecated, use "tol" instead')
+    tol = linargs.pop('newtontol')
   solveargs = _striplin(linargs, solveargs)
   residual = functional.derivative(target)
   jacobian = residual.derivative(target)
@@ -616,15 +619,17 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, newton
     cons = cons | nan
   resnorm = numpy.linalg.norm(res[~cons])
   if jacobian.contains(target):
+    if tol <= 0:
+      raise ValueError('nonlinear optimization problem requires a nonzero "tol" argument')
     solveargs.setdefault('rtol', 1e-3)
     linesearch = LineSearch(searchrange, rebound, failrelax)
     firstresnorm = resnorm
     relax = 1
     accept = True
     with log.context('newton {:.0f}%', 0) as reformat:
-      while resnorm > newtontol:
+      while resnorm > tol:
         if accept:
-          reformat(100 * numpy.log(firstresnorm/resnorm) / numpy.log(firstresnorm/newtontol))
+          reformat(100 * numpy.log(firstresnorm/resnorm) / numpy.log(firstresnorm/tol))
           dlhs = -jac.solve_leniently(res, constrain=cons, **solveargs)
           lhs0 = lhs
           resnorm0 = resnorm
@@ -633,8 +638,8 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, newton
         resnorm = numpy.linalg.norm(res[~cons])
         relax, accept = linesearch(resnorm0**2, -2*resnorm0**2, resnorm**2, 2*(jac@dlhs)[~cons].dot(res[~cons]), relax)
       log.info('converged with residual {:.1e}'.format(resnorm))
-  elif resnorm > newtontol:
-    solveargs.setdefault('atol', newtontol)
+  elif resnorm > tol:
+    solveargs.setdefault('atol', tol)
     dlhs = -jac.solve(res, constrain=cons, **solveargs)
     lhs = lhs + dlhs
     val += (res + jac@dlhs/2).dot(dlhs)
