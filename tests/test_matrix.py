@@ -8,6 +8,7 @@ class solver(TestCase):
   n = 100
 
   def setUpContext(self, stack):
+    super().setUpContext(stack)
     if self.backend:
       stack.enter_context(self.backend)
       index = numpy.empty([2, (self.n-1)*4], dtype=int)
