@@ -32,6 +32,10 @@ import abc, sys, ctypes, enum, treelog as log, functools, itertools
 
 class MatrixError(Exception): pass
 class BackendNotAvailable(MatrixError): pass
+class ToleranceNotReached(MatrixError):
+  def __init__(self, best):
+    super().__init__('solver failed to reach tolerance')
+    self.best = best
 
 
 class Backend(metaclass=abc.ABCMeta):
@@ -209,10 +213,22 @@ class Matrix(metaclass=types.CacheMeta):
       resnorm = numpy.linalg.norm((rhs - self @ x)[J])
       log.info('solver returned with residual {:.0e}'.format(resnorm))
       if resnorm > atol > 0:
-        log.warning('solver failed to reach tolerance')
+        raise ToleranceNotReached(x)
     else:
       log.info('skipping solver because initial vector is within tolerance')
     return x
+
+  def solve_leniently(self, *args, **kwargs):
+    '''
+    Identical to :func:`nutils.matrix.Matrix.solve`, but emit a warning in case
+    tolerances are not met rather than an exception, while returning the
+    obtained solution vector.
+    '''
+    try:
+      return self.solve(*args, **kwargs)
+    except ToleranceNotReached as e:
+      log.warning(e)
+      return e.best
 
   def submatrix(self, rows, cols):
     '''Create submatrix from selected rows, columns.
