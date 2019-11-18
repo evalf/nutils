@@ -203,7 +203,7 @@ class Matrix(metaclass=types.CacheMeta):
     bnorm = numpy.linalg.norm(b)
     atol = max(atol, rtol * bnorm)
     if bnorm > atol:
-      log.info('solving {0}x{0} system using {1} solver'.format(n, solver))
+      log.info('solving {} dof system to {} using {} solver'.format(n, 'tolerance {:.0e}'.format(atol) if atol else 'machine precision', solver))
       try:
         x[J] += getattr(self.submatrix(I, J), 'solve_'+solver)(b, atol=atol, **solverargs)
       except Exception as e:
