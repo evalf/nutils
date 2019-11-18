@@ -84,7 +84,19 @@ def _traceback(richoutput, postmortem):
     treelog.error('killed by user')
     raise SystemExit(1) from None
   except:
-    treelog.error(traceback.format_exc())
+    exc = traceback.TracebackException(*sys.exc_info())
+    prefix = ''
+    while True:
+      treelog.error(prefix + ''.join(exc.format_exception_only()).rstrip())
+      treelog.debug('Traceback (most recent call first):\n' + ''.join(reversed(exc.stack.format())).rstrip())
+      if exc.__cause__ is not None:
+        exc = exc.__cause__
+        prefix = '.. caused by '
+      elif exc.__context__ is not None and not exc.__suppress_context__:
+        exc = exc.__context__
+        prefix = '.. while handling '
+      else:
+        break
     if postmortem:
       print(_mkbox(
         'YOUR PROGRAM HAS DIED. The Python debugger',
