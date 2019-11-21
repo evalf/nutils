@@ -77,12 +77,14 @@ def _breakpoint(richoutput, mysignal, frame):
       pdb.set_trace()
 
 @contextlib.contextmanager
-def _traceback(richoutput, postmortem):
+def _traceback(richoutput, postmortem, exit):
   try:
     yield
   except (KeyboardInterrupt, SystemExit, pdb.bdb.BdbQuit):
     treelog.error('killed by user')
-    raise SystemExit(1) from None
+    if exit:
+      raise SystemExit(1) from None
+    raise
   except:
     exc = traceback.TracebackException(*sys.exc_info())
     prefix = ''
@@ -104,9 +106,12 @@ def _traceback(richoutput, postmortem):
         'to figure out why this happened. Type "h"',
         'for an overview of commands to get going.', richoutput=richoutput))
       pdb.post_mortem()
-    raise SystemExit(2) from None
+    if exit:
+      raise SystemExit(2) from None
+    raise
   else:
-    raise SystemExit(0)
+    if exit:
+      raise SystemExit(0)
 
 class _timer:
   def __init__(self):
@@ -271,6 +276,7 @@ def setup(scriptname: str,
           outuri: typing.Optional[str] = None,
           verbose: typing.Optional[int] = 4,
           pdb: bool = False,
+          gracefulexit: bool = True,
           **unused):
   '''Set up compute environment.'''
 
@@ -302,7 +308,7 @@ def setup(scriptname: str,
   htmllog = _htmllog(outdir, scriptname, kwargs)
 
   with htmllog, treelog.set(treelog.TeeLog(consolellog, htmllog)), \
-       _traceback(richoutput=richoutput, postmortem=pdb), \
+       _traceback(richoutput=richoutput, postmortem=pdb, exit=gracefulexit), \
        warnings.via(treelog.warning), \
        _cache.enable(os.path.join(outdir, cachedir)) if cache else _cache.disable(), \
        _parallel.maxprocs(nprocs), \
