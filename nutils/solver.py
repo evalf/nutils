@@ -294,24 +294,16 @@ class minimize(RecursionWithSolve, length=1, version=3):
       (boolean) or NaN (float). In the remaining positions the values of
       ``lhs0`` are returned unchanged (boolean) or overruled by the values in
       `constrain` (float).
-  searchrange : :class:`tuple` of two floats
-      The lower bound (>=0) and upper bound (<=1) for line search relaxation
-      updates. If the estimated optimum relaxation (determined by polynomial
-      interpolation) is above upper bound of the current relaxation value then
-      the newton update is accepted. Below it, the functional is re-evaluated
-      at the new relaxation value or at the lower bound, whichever is largest.
-  rebound : :class:`float`
-      Factor by which the relaxation value grows after every update until it
-      reaches unity.
+  rampup : :class:`float`
+      Value to increase the relaxation power by in case energy is decreasing.
+  rampdown : :class:`float`
+      Value to decrease the relaxation power by in case energy is increasing.
   failrelax : :class:`float`
       Fail with exception if relaxation reaches this lower limit.
   arguments : :class:`collections.abc.Mapping`
       Defines the values for :class:`nutils.function.Argument` objects in
       `residual`.  The ``target`` should not be present in ``arguments``.
       Optional.
-  maxinc : :class:`float`
-      Permitted energy increase; a small nonzero value is required to avoid
-      getting stuck on numerical noise close to the energy minimum.
 
   Yields
   ------
@@ -320,7 +312,7 @@ class minimize(RecursionWithSolve, length=1, version=3):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, energy:sample.strictintegral, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, searchrange:types.tuple[float]=(.01,.5), rebound:types.strictfloat=2., failrelax:types.strictfloat=1e-6, arguments:argdict={}, solveargs:types.frozendict={}, maxinc=1e-14, **linargs):
+  def __init__(self, target:types.strictstr, energy:sample.strictintegral, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, rampup:types.strictfloat=.5, rampdown:types.strictfloat=-1., failrelax:types.strictfloat=-10., arguments:argdict={}, solveargs:types.frozendict={}, **linargs):
     super().__init__()
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
@@ -331,76 +323,66 @@ class minimize(RecursionWithSolve, length=1, version=3):
     self.residual = energy.derivative(target)
     self.jacobian = _derivative(self.residual, target)
     self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, self.residual.shape)
-    self.minscale, self.maxscale = searchrange
-    self.rebound = rebound
+    self.rampup = rampup
+    self.rampdown = rampdown
     self.failrelax = failrelax
     self.arguments = arguments
     self.solveargs = _striplin(linargs, solveargs)
-    self.solveargs.setdefault('rtol', 1e-3)
-    self.maxinc = maxinc
 
   def _eval(self, lhs):
-    return sample.eval_integrals(self.energy, self.residual, self.jacobian, **{self.target: lhs}, **self.arguments)
+    nrg, res, jac = sample.eval_integrals(self.energy, self.residual, self.jacobian, **{self.target: lhs}, **self.arguments)
+    return nrg, res[~self.constrain], jac.submatrix(~self.constrain, ~self.constrain)
 
   def resume(self, history):
     if history:
       lhs, info = history[-1]
       nrg, res, jac = self._eval(lhs)
       assert nrg == info.energy
-      resnorm = numpy.linalg.norm(res[~self.constrain])
-      assert resnorm == info.resnorm
+      assert numpy.linalg.norm(res) == info.resnorm
       relax = info.relax
     else:
       lhs = self.lhs0
       nrg, res, jac = self._eval(lhs)
-      resnorm = numpy.linalg.norm(res[~self.constrain])
-      relax = 1
-      yield lhs, types.attributes(resnorm=resnorm, energy=nrg, relax=relax, shift=0)
+      relax = 0
+      yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
 
-    while resnorm:
-      dlhs = -jac.solve_leniently(res, constrain=self.constrain, **self.solveargs)
-      shift = 0
-      while res.dot(dlhs) > 0:
-        # Energy is locally increasing, an adjustment is required to maintain
-        # gradient descent. Because the minimum Rayleigh quotient of a matrix
-        # equals its smallest eigenvalue, we have:
-        #   mineig(invjac) < res.invjac.res/res.res = -dlhs.res/res.res < 0
-        # We aim to modify jac by adding a sufficiently large diagonal term
-        #   modjac = jac + shift eye
-        # Knowing that modjac becomes SPD if shift > -mineig(jac), we know that
-        # res.invmodjac.res > 0 for shift sufficiently large. Since mineig(jac)
-        # is unknown, and a complete push to SPD is typically not required for
-        # positivity, an iterative procedure is used to shift the spectrum in
-        # steps, using the available upper bound for mineig(invjac) as a
-        # reciprocal lower bound for at least one negative eigenvalue of jac.
-        shift += res[~self.constrain].dot(res[~self.constrain]) / res.dot(dlhs)
-        log.warning('negative eigenvalue detected; shifting spectrum by {:.2e}'.format(shift))
-        dlhs = -(jac + shift * matrix.eye(len(dlhs))).solve_leniently(res, constrain=self.constrain, **self.solveargs)
-      if not shift:
-        relax = min(relax, 1)
+    while True:
+      nrg0 = nrg
+      lhs0 = lhs
+      dlhs = -jac.solve_leniently(res, **self.solveargs)
+
+      # compute first two ritz values to determine approximate path of steepest descent
+      dlhsnorm = numpy.linalg.norm(dlhs)
+      k0 = dlhs / dlhsnorm
+      k1 = -res / dlhsnorm # = jac @ k0
+      a = k1 @ k0
+      k1 -= k0 * a # orthogonalize
+      c = numpy.linalg.norm(k1)
+      k1 /= c # normalize
+      b = k1 @ (jac @ k1)
+      # at this point k0 and k1 are orthonormal, and [k0 k1]^T jac [k0 k1] = [a c; c b]
+      D = numpy.hypot(b-a, 2*c)
+      L = numpy.array([a+b-D, a+b+D]) / 2 # 2nd order ritz values: eigenvalues of [a c; c b]
+      v0, v1 = res + dlhs * L[:,numpy.newaxis]
+      V = numpy.array([v1, -v0]).T / D # ritz vectors times dlhs -- note: V.dot(L) = -res, V.sum() = dlhs
+      log.info('spectrum: {:.1e}..{:.1e} ({}definite)'.format(*L, 'positive ' if L[0] > 0 else 'negative ' if L[-1] < 0 else 'in'))
+
       for irelax in itertools.count():
-        newlhs = lhs+relax*dlhs
-        newnrg, newres, newjac = self._eval(newlhs)
-        resnorm = numpy.linalg.norm(newres[~self.constrain])
-        if not numpy.isfinite(newnrg):
-          log.info('energy {} / {}'.format(newnrg, round(relax, 5)))
-          relax *= self.minscale
-          continue
-        # To determine optimal relaxation we minimize a polynomial estimator for the energy:
-        # nrg(lhs+scale*relax*dlhs) ~= A + B scale + C scale^2 + D scale^3 + E scale^4 + F scale^5
-        scale = _minimize3(p0=nrg, q0=relax*res.dot(dlhs)-self.maxinc, r0=-relax**2*(res+shift*dlhs).dot(dlhs),
-          p1=newnrg-self.maxinc, q1=relax*newres.dot(dlhs)-self.maxinc, r1=relax**2*(newjac@dlhs).dot(dlhs))
-        log.info('energy {:+.1e} / {} with estimated minimum at {:.0f}%'.format(newnrg - nrg, round(relax, 5), scale*100))
-        if newnrg < nrg+self.maxinc and scale > self.maxscale:
-          relax = min(relax * min(scale, self.rebound), 1)
+        r = numpy.exp(relax - numpy.log(D)) # = exp(relax) / D
+        eL = numpy.exp(-r*L)
+        lhs = lhs0.copy()
+        lhs[~self.constrain] += dlhs - V.dot(eL)
+        nrg, res, jac = self._eval(lhs)
+        slope = res.dot(V.dot(eL*L))
+        log.info('energy {:+.2e} / e{:+.1f} and {}creasing'.format(nrg - nrg0, relax, 'in' if slope > 0 else 'de'))
+        if numpy.isfinite(nrg) and numpy.isfinite(res).all() and nrg <= nrg0 and slope <= 0:
+          relax += self.rampup
           break
-        relax *= max(scale, self.minscale)
+        relax += self.rampdown
         if relax <= self.failrelax:
           raise SolverError('stuck in local minimum')
-      else:
-        log.warning('failed to', 'decrease' if newnrg > nrg else 'optimize', 'energy')
-      yield newlhs, types.attributes(resnorm=resnorm, energy=newnrg, relax=relax, shift=shift)
-      lhs, nrg, res, jac = newlhs, newnrg, newres, newjac
+
+      yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
 
 
 class pseudotime(RecursionWithSolve, length=1):
@@ -710,17 +692,6 @@ def _minimize2(p0, p1, q0, q1):
   # - d = 0 => sqrt(D) = abs(c): one negative root
   # - d < 0 => sqrt(D) < abs(c): two roots of same sign as c
   return -q0 / (c + math.sqrt(D)) if D > 0 and (c > 0 or d > 0) else math.inf
-
-def _minimize3(p0, p1, q0, q1, r0, r1):
-  'find smallest positive minimum of a 5th degree polynomial defined by values (p), derivatives (q) and second derivatives (r) at x=0 and x=1'
-  assert q0 < 0
-  # Polynomial: P(x) = p0 + q0 x + r0/2 x^2 + d x^3 + e x^4 + f x^5
-  d = math.fsum([-10*p0, -6*q0, -1.5*r0, 10*p1, -4*q1, .5*r1])
-  e = math.fsum([15*p0, 8*q0, 1.5*r0, -15*p1, 7*q1, -r1])
-  f = math.fsum([-6*p0, -3*q0, -.5*r0, 6*p1, -3*q1, .5*r1])
-  # To minimize P we need to determine the roots for P'(x) = q0 + r0 x + 3 d x^2 + 4 e x^3 + 5 f x^4
-  roots = [x.real for x in numpy.roots([5*f, 4*e, 3*d, r0, q0]) if not x.imag and x > 0]
-  return min(roots) if roots else math.inf
 
 def _progress(name, tol):
   '''helper function for iter.wrap'''

@@ -125,32 +125,13 @@ class finitestrain(TestCase):
     _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.newton('dofs', residual=self.residual, constrain=self.cons)))
 
   def test_minimize(self):
-    self.assert_resnorm(solver.minimize('dofs', energy=self.energy, constrain=self.cons).solve(tol=self.tol, maxiter=8))
+    self.assert_resnorm(solver.minimize('dofs', energy=self.energy, constrain=self.cons).solve(tol=self.tol, maxiter=12))
 
   def test_minimize_boolcons(self):
-    self.assert_resnorm(solver.minimize('dofs', energy=self.energy, constrain=self.boolcons).solve(tol=self.tol, maxiter=8))
+    self.assert_resnorm(solver.minimize('dofs', energy=self.energy, constrain=self.boolcons).solve(tol=self.tol, maxiter=12))
 
   def test_minimize_iter(self):
     _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.minimize('dofs', energy=self.energy, constrain=self.cons)))
-
-  def test_nonlinear_diagonalshift(self):
-    nelems = 10
-    domain, geom = mesh.rectilinear([nelems,1])
-    geom *= [2*numpy.pi/nelems, 1]
-    ubasis = domain.basis('spline', degree=2).vector(2)
-    u = ubasis.dot(function.Argument('dofs', [len(ubasis)]))
-    Geom = [.5 * geom[0], geom[1] + function.cos(geom[0])] + u # compress by 50% and buckle
-    cons = solver.optimize('dofs', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15)
-    strain = .5 * (function.outer(Geom.grad(geom), axis=1).sum(0) - function.eye(2))
-    energy = domain.integral(((strain**2).sum([0,1]) + 150*(function.determinant(Geom.grad(geom))-1)**2)*function.J(geom), degree=6)
-    nshift = 0
-    for iiter, (lhs, info) in enumerate(solver.minimize('dofs', energy, constrain=cons)):
-      self.assertLess(iiter, 90)
-      if info.shift:
-        nshift += 1
-      if info.resnorm < self.tol:
-        break
-    self.assertGreater(nshift, 0)
 
 
 @parametrize
@@ -257,6 +238,3 @@ class minimize_poly(TestCase):
 
   def test_minimize2(self):
     self._poly(1)
-
-  def test_minimize3(self):
-    self._poly(2)
