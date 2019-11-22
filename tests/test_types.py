@@ -919,6 +919,15 @@ class ImmutableFamily(TestCase):
 
     self.assertEqual(T(x=1, y=2), T(1, 2, 3))
 
+  def test_keyword_args(self):
+    class T(self.cls):
+      def __init__(self, x, y, **kwargs):
+        pass
+
+    a = T(x=1, y=2, z=3)
+    b = T(1, 2, z=3)
+    self.assertEqual(a, b)
+
   def test_preprocessors(self):
     class T(self.cls):
       @nutils.types.apply_annotations

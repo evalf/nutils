@@ -27,11 +27,15 @@ the ``export`` method.
 """
 
 from . import numpy, numeric, warnings, cache, types, util
-import abc, sys, ctypes, enum, treelog as log
+import abc, sys, ctypes, enum, treelog as log, functools, itertools
 
 
 class MatrixError(Exception): pass
 class BackendNotAvailable(MatrixError): pass
+class ToleranceNotReached(MatrixError):
+  def __init__(self, best):
+    super().__init__('solver failed to reach tolerance')
+    self.best = best
 
 
 class Backend(metaclass=abc.ABCMeta):
@@ -137,7 +141,7 @@ class Matrix(metaclass=types.CacheMeta):
     return supp
 
   @log.withcontext
-  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, solver='direct', **solverargs):
+  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, solver='direct', atol=0., rtol=0., **solverargs):
     '''Solve system given right hand side vector and/or constraints.
 
     Args
@@ -192,21 +196,39 @@ class Matrix(metaclass=types.CacheMeta):
     else:
       assert rconstrain.shape == (nrows,) and constrain.dtype == bool
       I = ~rconstrain
-    assert I.sum() == J.sum(), 'constrained matrix is not square: {}x{}'.format(I.sum(), J.sum())
+    n = I.sum()
+    if J.sum() != n:
+      raise MatrixError('constrained matrix is not square: {}x{}'.format(I.sum(), J.sum()))
     b = (rhs - self @ x)[J]
-    if b.any():
-      A = self if I.all() and J.all() else self.submatrix(I, J)
-      log.info('solving {0[0]}x{0[1]} system using {1} solver'.format(A.shape, solver))
+    bnorm = numpy.linalg.norm(b)
+    atol = max(atol, rtol * bnorm)
+    if bnorm > atol:
+      log.info('solving {} dof system to {} using {} solver'.format(n, 'tolerance {:.0e}'.format(atol) if atol else 'machine precision', solver))
       try:
-        x[J] += getattr(A, 'solve_'+solver)(b, **solverargs)
+        x[J] += getattr(self.submatrix(I, J), 'solve_'+solver)(b, atol=atol, **solverargs)
       except Exception as e:
         raise MatrixError('solver failed with error: {}'.format(e)) from e
       if not numpy.isfinite(x).all():
         raise MatrixError('solver returned non-finite left hand side')
-      log.info('solver returned with residual {:.0e}'.format(numpy.linalg.norm((rhs - self @ x)[J])))
+      resnorm = numpy.linalg.norm((rhs - self @ x)[J])
+      log.info('solver returned with residual {:.0e}'.format(resnorm))
+      if resnorm > atol > 0:
+        raise ToleranceNotReached(x)
     else:
-      log.info('skipping solver because initial vector is exact')
+      log.info('skipping solver because initial vector is within tolerance')
     return x
+
+  def solve_leniently(self, *args, **kwargs):
+    '''
+    Identical to :func:`nutils.matrix.Matrix.solve`, but emit a warning in case
+    tolerances are not met rather than an exception, while returning the
+    obtained solution vector.
+    '''
+    try:
+      return self.solve(*args, **kwargs)
+    except ToleranceNotReached as e:
+      log.warning(e)
+      return e.best
 
   def submatrix(self, rows, cols):
     '''Create submatrix from selected rows, columns.
@@ -224,6 +246,8 @@ class Matrix(metaclass=types.CacheMeta):
 
     rows = numeric.asboolean(rows, self.shape[0])
     cols = numeric.asboolean(cols, self.shape[1])
+    if rows.all() and cols.all():
+      return self
     data, (I,J) = self.export('coo')
     keep = numpy.logical_and(rows[I], cols[J])
     csI = rows.cumsum()
@@ -258,6 +282,27 @@ class Matrix(metaclass=types.CacheMeta):
   def __repr__(self):
     return '{}<{}x{}>'.format(type(self).__qualname__, *self.shape)
 
+def refine_to_tolerance(solve):
+  @functools.wraps(solve)
+  def wrapped(self, rhs, atol, **kwargs):
+    lhs = solve(self, rhs, **kwargs)
+    res = rhs - self @ lhs
+    resnorm = numpy.linalg.norm(res)
+    if not numpy.isfinite(resnorm) or resnorm <= atol:
+      return lhs
+    with log.iter.plain('refinement iteration', itertools.count(start=1)) as count:
+      for iiter in count:
+        newlhs = lhs + solve(self, res, **kwargs)
+        newres = rhs - self @ newlhs
+        newresnorm = numpy.linalg.norm(newres)
+        if not numpy.isfinite(resnorm) or newresnorm >= resnorm:
+          log.debug('residual increased to {:.0e} (discarding)'.format(newresnorm))
+          return lhs
+        log.debug('residual decreased to {:.0e}'.format(newresnorm))
+        lhs, res, resnorm = newlhs, newres, newresnorm
+        if resnorm <= atol:
+          return lhs
+  return wrapped
 
 ## NUMPY BACKEND
 
@@ -313,6 +358,7 @@ class NumpyMatrix(Matrix):
   def rowsupp(self, tol=0):
     return numpy.greater(abs(self.core), tol).any(axis=1)
 
+  @refine_to_tolerance
   def solve_direct(self, rhs):
     return numpy.linalg.solve(self.core, rhs)
 
@@ -390,13 +436,12 @@ class ScipyMatrix(Matrix):
   def T(self):
     return ScipyMatrix(self.core.transpose(), scipy=self.scipy)
 
+  @refine_to_tolerance
   def solve_direct(self, rhs):
     return self.scipy.sparse.linalg.spsolve(self.core, rhs)
 
-  def solve_scipy(self, rhs, solver, atol=1e-6, callback=None, precon=None, **solverargs):
+  def solve_scipy(self, rhs, solver, atol, callback=None, precon=None, **solverargs):
     rhsnorm = numpy.linalg.norm(rhs)
-    if rhsnorm <= atol:
-      return numpy.zeros(self.shape[1])
     solverfun = getattr(self.scipy.sparse.linalg, solver)
     myrhs = rhs / rhsnorm # normalize right hand side vector for best control over scipy's stopping criterion
     mytol = atol / rhsnorm
@@ -411,8 +456,6 @@ class ScipyMatrix(Matrix):
       mylhs, status = solverfun(self.core, myrhs, M=M, tol=mytol, callback=mycallback, **solverargs)
     if status != 0:
       raise Exception('status {}'.format(status))
-    if numpy.linalg.norm(myrhs - self @ mylhs) > atol:
-      raise Exception('failed to reach tolerance')
     return mylhs * rhsnorm
 
   solve_bicg     = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'bicg',     **kwargs)
@@ -618,6 +661,7 @@ class MKLMatrix(Matrix):
       return self.data, numpy.array([numpy.arange(self.shape[0]).repeat(self.rowptr[1:]-self.rowptr[:-1]), self.colidx-1])
     raise NotImplementedError('cannot export MKLMatrix to {!r}'.format(form))
 
+  @refine_to_tolerance
   def solve_direct(self, rhs):
     log.debug('solving system using MKL Pardiso')
     if self._factors:
@@ -642,7 +686,7 @@ class MKLMatrix(Matrix):
     log.debug('solver returned after {} refinement steps; peak memory use {:,d}k'.format(iparm[6], max(iparm[14], iparm[15]+iparm[16])))
     return lhsflat.T.reshape(lhsflat.shape[1:] + rhs.shape[1:])
 
-  def solve_fgmres(self, rhs, maxiter=0, atol=1e-6, restart=150, precon=None, ztol=1e-12):
+  def solve_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12):
     rci = ctypes.c_int32(0)
     n = ctypes.c_int32(len(rhs))
     b = numpy.array(rhs, dtype=numpy.float64)
@@ -669,7 +713,7 @@ class MKLMatrix(Matrix):
         if not diag.all():
           raise MatrixError("building 'diag' preconditioner: diagonal has zero entries")
         precon = numpy.reciprocal(diag).__mul__
-      elif not callback(precon):
+      elif not callable(precon):
         raise MatrixError('invalid preconditioner {!r}'.format(precon))
     ipar[11] = 0 # do not perform the automatic test for zero norm of the currently generated vector: dpar[6] <= dpar[7]
     ipar[12] = 1 # update the solution to the vector b according to the computations done by the dfgmres routine
@@ -693,7 +737,7 @@ class MKLMatrix(Matrix):
             b[:] = rhs # reset rhs vector for restart
           format(100 * numpy.log(dpar[2]/dpar[4]) / numpy.log(dpar[2]/atol))
           if ipar[3] > maxiter > 0:
-            raise MatrixError('fgmres solver failed to reach tolerance in {} iterations'.format(maxiter))
+            break
         elif rci.value == 3: # apply the preconditioner
           tmp[ipar[22]-1:ipar[22]+n.value-1] = precon(tmp[ipar[21]-1:ipar[21]+n.value-1])
         elif rci.value == 4: # check if the norm of the current orthogonal vector is zero
@@ -704,7 +748,7 @@ class MKLMatrix(Matrix):
             raise MatrixError('singular matrix')
         else:
           raise MatrixError('this should not have occurred: rci={}'.format(rci.value))
-    log.debug('tolerance reached in {} fgmres iterations, {} restarts'.format(ipar[3], ipar[3]//ipar[14]))
+    log.debug('performed {} fgmres iterations, {} restarts'.format(ipar[3], ipar[3]//ipar[14]))
     return b
 
 ## MODULE METHODS

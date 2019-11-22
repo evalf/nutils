@@ -75,7 +75,7 @@ concepts involved.
     >>> res = topo.integral('basis_n,i u_,i d:x' @ ns, degree=0)
     >>> res -= topo.boundary['right'].integral('basis_n d:x' @ ns, degree=0)
     >>> lhs = nutils.solver.solve_linear('lhs', residual=res, constrain=cons)
-    solve > solving 4x4 system using direct solver
+    solve > solving 4 dof system to machine precision using direct solver
     solve > solver returned with residual 9e-16±1e-15
 
     >>> bezier = topo.sample('bezier', 32)
@@ -553,7 +553,7 @@ follows:
     >>> A = topo.integral(ns.eval_nm('basis_n basis_m d:x'), degree=2).eval()
     >>> f = topo.integral('basis_n x_0 d:x' @ ns, degree=2).eval()
     >>> A.solve(f)
-    solve > solving 5x5 system using direct solver
+    solve > solving 5 dof system to machine precision using direct solver
     solve > solver returned with residual 3e-17±1e-15
     array([0.  , 0.25, 0.5 , 0.75, 1.  ])±1e-15
 
@@ -575,7 +575,7 @@ returning a new :class:`~nutils.sample.Integral`.
     >>> A = res.derivative('lhs').eval()
     >>> f = -res.eval(lhs=numpy.zeros(5))
     >>> A.solve(f)
-    solve > solving 5x5 system using direct solver
+    solve > solving 5 dof system to machine precision using direct solver
     solve > solver returned with residual 3e-17±1e-15
     array([0.  , 0.25, 0.5 , 0.75, 1.  ])±1e-15
 
@@ -584,7 +584,7 @@ The above three lines are so common that they are combined in the function
 
 .. console::
     >>> nutils.solver.solve_linear('lhs', res)
-    solve > solving 5x5 system using direct solver
+    solve > solving 5 dof system to machine precision using direct solver
     solve > solver returned with residual 3e-17±1e-15
     array([0.  , 0.25, 0.5 , 0.75, 1.  ])±1e-15
 
@@ -598,7 +598,7 @@ for :math:`\hat{u}` is equivalent to the above two variants.  The derivative of
 .. console::
     >>> sqr = topo.integral('(u - x_0)^2 d:x' @ ns, degree=2)
     >>> nutils.solver.solve_linear('lhs', sqr.derivative('lhs'))
-    solve > solving 5x5 system using direct solver
+    solve > solving 5 dof system to machine precision using direct solver
     solve > solver returned with residual 6e-17±1e-15
     array([0.  , 0.25, 0.5 , 0.75, 1.  ])±1e-15
 
@@ -608,7 +608,7 @@ The optimization problem can also be solved by the
 
 .. console::
     >>> nutils.solver.optimize('lhs', sqr)
-    optimize > solve > solving 5x5 system using direct solver
+    optimize > solve > solving 5 dof system to machine precision using direct solver
     optimize > solve > solver returned with residual 0e+00
     optimize > optimum value 0.00e+00±1e-15
     array([0.  , 0.25, 0.5 , 0.75, 1.  ])±1e-15
@@ -645,7 +645,7 @@ constraints ``cons`` are passed via the keyword argument ``constrain``:
 
 .. console::
     >>> lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
-    solve > solving 4x4 system using direct solver
+    solve > solving 4 dof system to machine precision using direct solver
     solve > solver returned with residual 9e-16±1e-15
     >>> lhs
     array([0.  , 0.25, 0.5 , 0.75, 1.  ])±1e-15
@@ -813,7 +813,7 @@ solved for ``lhs``, yielding the constraints vector ``cons``:
     >>> sqr = topo.boundary['left'].integral('u^2 d:x' @ ns, degree=2)
     >>> sqr += topo.boundary['top'].integral('(u - cosh(1) sin(x_0))^2 d:x' @ ns, degree=2)
     >>> cons = nutils.solver.optimize('lhs', sqr, droptol=1e-15)
-    optimize > solve > solving 21x21 system using direct solver
+    optimize > solve > solving 21 dof system to machine precision using direct solver
     optimize > solve > solver returned with residual 3e-17±2e-15
     optimize > constrained 21/121 dofs
     optimize > optimum value 4.32e-10±1e-9
@@ -823,7 +823,7 @@ the ``nan`` values, we can use :func:`nutils.solver.solve_linear`:
 
 .. console::
     >>> lhs = nutils.solver.solve_linear('lhs', res, constrain=cons)
-    solve > solving 100x100 system using direct solver
+    solve > solving 100 dof system to machine precision using direct solver
     solve > solver returned with residual 2e-15±2e-15
 
 Finally, we plot the solution.  We create a :class:`~nutils.sample.Sample`

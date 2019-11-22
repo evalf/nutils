@@ -1,6 +1,6 @@
-from nutils import solver, mesh, function, cache, types, numeric
+from nutils import solver, mesh, function, cache, types, numeric, warnings
 from nutils.testing import *
-import numpy, contextlib, tempfile, itertools
+import numpy, contextlib, tempfile, itertools, logging
 
 @contextlib.contextmanager
 def tmpcache():
@@ -74,6 +74,12 @@ class navierstokes(TestCase):
 
   def test_newton(self):
     self.assert_resnorm(solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons).solve(tol=self.tol, maxiter=2))
+
+  def test_newton_tolnotreached(self):
+    with self.assertLogs('nutils', logging.WARNING) as cm:
+      self.assert_resnorm(solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, linrtol=1e-99).solve(tol=self.tol, maxiter=2))
+    for msg in cm.output:
+      self.assertIn('solver failed to reach tolerance', msg)
 
   def test_newton_iter(self):
     _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.newton('dofs', residual=self.residual, constrain=self.cons)))
@@ -164,17 +170,17 @@ class optimize(TestCase):
 
   def test_nonlinear(self):
     err = self.domain.boundary['bottom'].integral('(u + .25 u^3 - 1.25)^2 d:geom' @ self.ns, degree=6)
-    cons = solver.optimize('dofs', err, droptol=1e-15, newtontol=1e-15)
+    cons = solver.optimize('dofs', err, droptol=1e-15, tol=1e-15)
     numpy.testing.assert_almost_equal(cons, numpy.take([1,numpy.nan], [0,1,1,0,1,1,0,1,1]), decimal=15)
 
   def test_nonlinear_multipleroots(self):
     err = self.domain.boundary['bottom'].integral('(u + u^2 - .75)^2' @ self.ns, degree=2)
-    cons = solver.optimize('dofs', err, droptol=1e-15, lhs0=numpy.ones(len(self.ns.ubasis)), newtontol=1e-10)
+    cons = solver.optimize('dofs', err, droptol=1e-15, lhs0=numpy.ones(len(self.ns.ubasis)), tol=1e-10)
     numpy.testing.assert_almost_equal(cons, numpy.take([.5,numpy.nan], [0,1,1,0,1,1,0,1,1]), decimal=15)
 
   def test_nanres(self):
     err = self.domain.integral('(sqrt(1 - u) - .5)^2' @ self.ns, degree=2)
-    dofs = solver.optimize('dofs', err, newtontol=1e-10)
+    dofs = solver.optimize('dofs', err, tol=1e-10)
     numpy.testing.assert_almost_equal(dofs, .75)
 
 

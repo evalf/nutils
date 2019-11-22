@@ -8,6 +8,7 @@ class solver(TestCase):
   n = 100
 
   def setUpContext(self, stack):
+    super().setUpContext(stack)
     if self.backend:
       stack.enter_context(self.backend)
       index = numpy.empty([2, (self.n-1)*4], dtype=int)
@@ -243,8 +244,8 @@ class WrapperMatrix(matrix.Matrix):
     super().__init__(wrapped.shape)
   def export(self, form):
     return self.wrapped.export(form)
-  def solve_direct(self, rhs):
-    return self.wrapped.solve_direct(rhs)
+  def solve_direct(self, rhs, atol):
+    return self.wrapped.solve_direct(rhs, atol=atol)
 
 solver('base', backend=Base(), args=[{}])
 solver('numpy', backend=matrix.Numpy(), args=[{}])
