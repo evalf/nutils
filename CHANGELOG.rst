@@ -8,6 +8,22 @@ inverse chronological order.
 Changes since version 5.0
 -------------------------
 
+- New command line option: gracefulexit.
+
+  The new boolean command line option `gracefulexit` determines what happens
+  when an exception reaches :func:`nutils.cli.run`. If true (default) then the
+  exception is handled as before and a system exit is initiated with an exit
+  code of 2. If false then the exception is reraised as-is. This is useful in
+  particular when combined with an external debugging tool.
+
+- Log tracebacks at debug level.
+
+  The way exceptions are handled by :func:`nutils.cli.run` is changed from
+  logging the entire exception and traceback as a single error message, to
+  logging the exceptions as errors and tracebacks as debug messages.
+  Additionally, the order of exceptions and traceback is fully reversed, such
+  that the most relevant message is the first thing shown and context follows.
+
 - Solve leniently to relative tolerance in Newton systems.
 
   The :class:`nutils.solver.newton` method now sets the relative tolerance of
