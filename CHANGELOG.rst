@@ -10,7 +10,7 @@ Changes since version 5.0
 
 - New command line option: gracefulexit.
 
-  The new boolean command line option `gracefulexit` determines what happens
+  The new boolean command line option ``gracefulexit`` determines what happens
   when an exception reaches :func:`nutils.cli.run`. If true (default) then the
   exception is handled as before and a system exit is initiated with an exit
   code of 2. If false then the exception is reraised as-is. This is useful in
@@ -27,22 +27,22 @@ Changes since version 5.0
 - Solve leniently to relative tolerance in Newton systems.
 
   The :class:`nutils.solver.newton` method now sets the relative tolerance of
-  the linear system to `1e-3` unless otherwise specified via `linrtol`. This is
-  mainly useful for iterative solvers which can save computational effort by
-  having their stopping criterion follow the current Newton residual, but it
-  may also help with direct solvers to point out ill conditioning problems.
+  the linear system to ``1e-3`` unless otherwise specified via ``linrtol``.
+  This is mainly useful for iterative solvers which can save computational
+  effort by having their stopping criterion follow the current Newton residual,
+  but it may also help with direct solvers to warn of ill conditioning issues.
   Iterations furthermore use :func:`nutils.matrix.Matrix.solve_leniently`, thus
   proceeding after warning that tolerances have not been met in the hope that
   Newton convergence might be attained regardless.
 
 - Linear solver arguments.
 
-  The methods :func:`solver.solve_linear`, :class:`solver.newton`,
-  :class:`solver.minimize`, :class:`solver.pseudotime` and
-  :func:`solver.optimize` now receive linear solver arguments as keyword
-  arguments rather than via the `solveargs` dictionary, which is deprecated. To
-  avoid name clashes with the remaining arguments, argument names must be
-  prefixed by `lin`.
+  The methods :class:`nutils.solver.newton`, :class:`nutils.solver.minimize`,
+  :class:`nutils.solver.pseudotime`, :func:`nutils.solver.solve_linear` and
+  :func:`nutils.solver.optimize` now receive linear solver arguments as keyword
+  arguments rather than via the ``solveargs`` dictionary, which is deprecated.
+  To avoid name clashes with the remaining arguments, argument names must be
+  prefixed by ``lin``.
 
       # deprecated syntax
       >>> solver.solve_linear('lhs', res, solveargs=dict(solver='gmres'))
@@ -59,9 +59,9 @@ Changes since version 5.0
 - Matrix solver tolerances.
 
   The absolute and/or relative tolerance for solutions of a linear system can
-  now be specified in :func:`nutils.matrix.Matrix.solve` via the `atol` resp.
-  `rtol` arguments, regardless of backend and solver. If the backend returns a
-  solution that violates both tolerances then an exception is raised of type
+  now be specified in :func:`nutils.matrix.Matrix.solve` via the ``atol`` resp.
+  ``rtol`` arguments, regardless of backend and solver. If the backend returns
+  a solution that violates both tolerances then an exception is raised of type
   :class:`nutils.matrix.ToleranceNotReached`, from which the solution can still
   be obtained via the `.best` attribute. Alternatively the new method
   :func:`nutils.matrix.Matrix.solve_leniently` always returns a solution while

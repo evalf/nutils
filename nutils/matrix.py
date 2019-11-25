@@ -30,9 +30,22 @@ from . import numpy, numeric, warnings, cache, types, util
 import abc, sys, ctypes, enum, treelog as log, functools, itertools
 
 
-class MatrixError(Exception): pass
-class BackendNotAvailable(MatrixError): pass
+class MatrixError(Exception):
+  '''
+  General error message for matrix-related failure.
+  '''
+
+class BackendNotAvailable(MatrixError):
+  '''
+  Error message reporting that the selected matrix backend is not available on
+  the system.
+  '''
+
 class ToleranceNotReached(MatrixError):
+  '''
+  Error message reporting that the configured linear solver tolerance was not
+  reached. The ``.best`` attribute carries the non-conforming solution.
+  '''
   def __init__(self, best):
     super().__init__('solver failed to reach tolerance')
     self.best = best
