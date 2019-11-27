@@ -2322,7 +2322,7 @@ class Inflate(Array):
 class Diagonalize(Array):
 
   __slots__ = 'func', 'axis', 'newaxis'
-  __cache__ = 'simplified',
+  __cache__ = 'simplified', 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis=types.strictint, newaxis=types.strictint):
@@ -2436,6 +2436,10 @@ class Diagonalize(Array):
 
   def _sign(self):
     return Diagonalize(Sign(self.func), self.axis, self.newaxis)
+
+  @property
+  def blocks(self):
+    return tuple((ind[:self.newaxis] + (ind[self.axis],) + ind[self.newaxis:], Diagonalize(f, self.axis, self.newaxis)) for ind, f in self.func.blocks)
 
 class Guard(Array):
   'bar all simplifications'
