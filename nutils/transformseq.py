@@ -390,6 +390,44 @@ class PlainTransforms(Transforms):
       raise ValueError('{!r} not in sequence of transforms'.format(orig_trans))
     return self._indices[i], trans[len(match):]
 
+class IdentifierTransforms(Transforms):
+  '''A sequence of :class:`nutils.transform.Identifier` singletons.
+
+  Every identifier is instantiated with three arguments: the dimension, the
+  name string, and an integer index matching its position in the sequence.
+
+  Parameters
+  ----------
+  ndims : :class:`int`
+      Dimension of the transformation.
+  name : :class:`str`
+      Identifying name string.
+  length : :class:`int`
+      Length of the sequence.
+  '''
+
+  __slots__ = '_name', '_length'
+
+  @types.apply_annotations
+  def __init__(self, ndims:types.strictint, name:str, length:int):
+    self._name = name
+    self._length = length
+    super().__init__(ndims)
+
+  def __getitem__(self, index):
+    if not numeric.isint(index):
+      return super().__getitem__(index)
+    return transform.Identifier(self.fromdims, self._name, numeric.normdim(self._length, index)),
+
+  def __len__(self):
+    return self._length
+
+  def index_with_tail(self, trans):
+    root = trans[0]
+    if root.fromdims == self.fromdims and isinstance(root, transform.Identifier) and root._args[1] == self._name and 0 <= root._args[2] < self._length:
+      return root._args[2], trans[1:]
+    raise ValueError
+
 class Axis(types.Singleton):
   '''Abstract base class for axes of :class:`~nutils.topology.StructuredTopology`.'''
 
