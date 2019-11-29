@@ -527,9 +527,10 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
       Geometry function.
   '''
 
-  nverts, ndims = coords.shape
+  nverts = len(coords)
   nelems, ncnodes = cnodes.shape
-  assert nodes.shape == (nelems, ndims+1)
+  ndims = nodes.shape[1] - 1
+  assert len(nodes) == nelems
   assert numpy.greater(nodes[:,1:], nodes[:,:-1]).all(), 'nodes must be sorted'
 
   if ncnodes == ndims+1:
@@ -543,15 +544,11 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
     vnodes = cnodes[:,(0,*strides-1)]
 
   assert vnodes.shape == nodes.shape
-  root = transform.Identifier(ndims, name)
-  transforms = transformseq.PlainTransforms([(root, transform.Simplex(c)) for c in coords[vnodes]], ndims)
+  transforms = transformseq.IdentifierTransforms(ndims=ndims, name=name, length=nelems)
   topo = topology.SimplexTopology(nodes, transforms, transforms)
-  if degree == 1:
-    geom = function.rootcoords(ndims)
-  else:
-    coeffs = element.getsimplex(ndims).get_poly_coeffs('lagrange', degree=degree)
-    basis = function.PlainBasis([coeffs] * nelems, cnodes, nverts, topo.transforms)
-    geom = (basis[:,_] * coords).sum(0)
+  coeffs = element.getsimplex(ndims).get_poly_coeffs('lagrange', degree=degree)
+  basis = function.PlainBasis([coeffs] * nelems, cnodes, nverts, topo.transforms)
+  geom = (basis[:,_] * coords).sum(0)
 
   connectivity = topo.connectivity
 

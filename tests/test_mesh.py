@@ -36,10 +36,6 @@ class gmsh(TestCase):
     path = pathlib.Path(__file__).parent/'test_mesh'/'mesh{0.ndims}d_p{0.degree}.msh'.format(self)
     self.domain, self.geom = mesh.gmsh(path)
 
-  def test_rootcoords(self):
-    geom, rootgeom = self.domain.sample('bezier', 2).eval([self.geom, function.rootcoords(self.domain.ndims)])
-    self.assertAllAlmostEqual(geom, rootgeom, places=10)
-
   def test_volume(self):
     for group, exact_volume in ((),2), ('left',1), ('right',1):
       with self.subTest(group or 'all'):
