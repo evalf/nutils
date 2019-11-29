@@ -93,6 +93,24 @@ for ndims in 2, 3:
     gmsh(ndims=ndims, degree=degree)
 
 @parametrize
+class gmshmanifold(TestCase):
+
+  def setUp(self):
+    path = pathlib.Path(__file__).parent/'test_mesh'/'mesh3dmani_p{0.degree}.msh'.format(self)
+    self.domain, self.geom = mesh.gmsh(path)
+
+  def test_volume(self):
+    volume = self.domain.integrate(function.J(self.geom), degree=self.degree)
+    self.assertAllAlmostEqual(volume, 2*numpy.pi, places=0 if self.degree == 1 else 1)
+
+  def test_length(self):
+    length = self.domain.boundary.integrate(function.J(self.geom), degree=self.degree)
+    self.assertAllAlmostEqual(length, 2*numpy.pi, places=1 if self.degree == 1 else 3)
+
+for degree in 1, 2:
+  gmshmanifold(degree=degree)
+
+@parametrize
 class rectilinear(TestCase):
 
   def setUp(self):
