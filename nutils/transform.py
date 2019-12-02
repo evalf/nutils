@@ -512,6 +512,14 @@ class TensorChild(Square):
     return self.trans1.det * self.trans2.det
 
 class Identifier(TransformItem):
+  '''
+  Generic identifier.
+
+  This transformation serves as an element-specific or topology-specific token
+  to form the basis of transformation lookups. Though the ``apply`` method is
+  defined, its return value is a string, formed of the identifying arguments
+  and the points array, intended for debugging purposes only.
+  '''
 
   __slots__ = ()
 
