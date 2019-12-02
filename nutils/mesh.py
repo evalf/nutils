@@ -326,7 +326,7 @@ def parsegmsh(fname:util.readtext, name='gmsh'):
 
   # split sections
   sections = dict(re.findall(r'^\$(\w+)\n(.*)\n\$End\1$', fname, re.MULTILINE|re.DOTALL))
-  missing = {'MeshFormat', 'PhysicalNames', 'Nodes', 'Elements'}.difference(sections)
+  missing = {'MeshFormat', 'Nodes', 'Elements'}.difference(sections)
   if missing:
     raise ValueError('invalid or incomplete gmsh data: missing section {}'.format(', '.join(missing)))
 
@@ -338,18 +338,16 @@ def parsegmsh(fname:util.readtext, name='gmsh'):
     raise ValueError('binary gmsh data is not supported')
 
   # parse section PhysicalNames
-  N, *PhysicalNames = sections.pop('PhysicalNames').splitlines()
-  assert int(N) == len(PhysicalNames)
-  tagmapbydim = {}, {}, {}, {} # tagid->tagname dictionary
-  for line in PhysicalNames:
-    nd, tagid, tagname = line.split(' ', 2)
-    nd = int(nd)
-    tagmapbydim[nd][tagid] = tagname.strip('"')
-
-  # determine the dimension of the mesh
-  ndims = 2 if not tagmapbydim[3] else 3
-  if ndims == 3 and tagmapbydim[1]:
-    raise NotImplementedError('Physical line groups are not supported in volumetric meshes')
+  if 'PhysicalNames' not in sections:
+    tagmapbydim = None
+  else:
+    N, *PhysicalNames = sections.pop('PhysicalNames').splitlines()
+    assert int(N) == len(PhysicalNames)
+    tagmapbydim = {}, {}, {}, {} # tagid->tagname dictionary
+    for line in PhysicalNames:
+      nd, tagid, tagname = line.split(' ', 2)
+      nd = int(nd)
+      tagmapbydim[nd][tagid] = tagname.strip('"')
 
   # parse section Nodes
   N, *Nodes = sections.pop('Nodes').splitlines()
@@ -362,9 +360,6 @@ def parsegmsh(fname:util.readtext, name='gmsh'):
     nodemap[n] = i
     nodes[i] = c
   assert not numpy.isnan(nodes).any()
-  if ndims == 2:
-    assert numpy.all(nodes[:,2]) == 0, 'Non-zero z-coordinates found in 2D mesh.'
-    nodes = nodes[:,:2]
 
   # parse section Elements
   N, *Elements = sections.pop('Elements').splitlines()
@@ -377,12 +372,20 @@ def parsegmsh(fname:util.readtext, name='gmsh'):
     nd = etype2nd[e]
     ntags = int(t) - 1
     assert ntags >= 0
-    tagname = tagmapbydim[nd][m]
     inodes = tuple(nodemap[nodeid] for nodeid in w[ntags:])
     if not inodesbydim[nd] or inodesbydim[nd][-1] != inodes: # multiple tags are repeated in consecutive lines
       inodesbydim[nd].append(inodes)
-    tagnamesbydim[nd].setdefault(tagname, []).append(len(inodesbydim[nd])-1)
+    if tagmapbydim:
+      tagname = tagmapbydim[nd][m]
+      tagnamesbydim[nd].setdefault(tagname, []).append(len(inodesbydim[nd])-1)
   inodesbydim = [numpy.array(e) if e else numpy.empty((0,nd+1), dtype=int) for nd, e in enumerate(inodesbydim)]
+
+  # determine the dimension of the mesh
+  while not inodesbydim[-1].size:
+    inodesbydim.pop()
+  ndims = len(inodesbydim)-1 # topological dimension
+  while nodes.shape[1] > ndims and not nodes[:,-1].any():
+    nodes = nodes[:,:-1]
 
   # parse section Periodic
   N, *Periodic = sections.pop('Periodic', '0').splitlines()
@@ -524,9 +527,10 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
       Geometry function.
   '''
 
-  nverts, ndims = coords.shape
+  nverts = len(coords)
   nelems, ncnodes = cnodes.shape
-  assert nodes.shape == (nelems, ndims+1)
+  ndims = nodes.shape[1] - 1
+  assert len(nodes) == nelems
   assert numpy.greater(nodes[:,1:], nodes[:,:-1]).all(), 'nodes must be sorted'
 
   if ncnodes == ndims+1:
@@ -540,15 +544,11 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
     vnodes = cnodes[:,(0,*strides-1)]
 
   assert vnodes.shape == nodes.shape
-  root = transform.Identifier(ndims, name)
-  transforms = transformseq.PlainTransforms([(root, transform.Simplex(c)) for c in coords[vnodes]], ndims)
+  transforms = transformseq.IdentifierTransforms(ndims=ndims, name=name, length=nelems)
   topo = topology.SimplexTopology(nodes, transforms, transforms)
-  if degree == 1:
-    geom = function.rootcoords(ndims)
-  else:
-    coeffs = element.getsimplex(ndims).get_poly_coeffs('lagrange', degree=degree)
-    basis = function.PlainBasis([coeffs] * nelems, cnodes, nverts, topo.transforms)
-    geom = (basis[:,_] * coords).sum(0)
+  coeffs = element.getsimplex(ndims).get_poly_coeffs('lagrange', degree=degree)
+  basis = function.PlainBasis([coeffs] * nelems, cnodes, nverts, topo.transforms)
+  geom = (basis[:,_] * coords).sum(0)
 
   connectivity = topo.connectivity
 
