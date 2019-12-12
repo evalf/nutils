@@ -417,6 +417,7 @@ class IdentifierTransforms(Transforms):
   def __getitem__(self, index):
     if not numeric.isint(index):
       return super().__getitem__(index)
+    index = int(index) # make sure that index is a Python integer rather than numpy.intxx
     return transform.Identifier(self.fromdims, self._name, numeric.normdim(self._length, index)),
 
   def __len__(self):
