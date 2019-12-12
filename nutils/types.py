@@ -297,7 +297,7 @@ def nutils_hash(data):
   elif t is frozenset:
     hargs = sorted(map(nutils_hash, data))
   else:
-    raise TypeError('unhashable type: {!r}'.format(data))
+    raise TypeError('unhashable type: {!r} {!r}'.format(data, t))
 
   h = hashlib.sha1(t.__name__.encode()+b'\0')
   for harg in hargs:
