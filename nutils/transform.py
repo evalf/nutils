@@ -635,6 +635,10 @@ class Manifold(Identity):
   def flipped(self):
     return Manifold(self.fromdims, self.trans.flipped)
 
+  @property
+  def isflipped(self):
+    return self.trans.isflipped
+
   def swapdown(self, other):
     if isinstance(other, (TensorChild, SimplexChild)):
       return ScaledUpdim(other, self), Identity(self.fromdims)
