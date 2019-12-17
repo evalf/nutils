@@ -1493,7 +1493,7 @@ class unit:
 def _f2s(v):
   'convert float to string without scientific notation'
   s, sep, e = str(v).partition('e')
-  a, b = s.split('.')
+  a, sep, b = s.partition('.')
   pos = len(a) + int(e or 0)
   s = (a + b).rstrip('0')
   if pos >= len(s):
