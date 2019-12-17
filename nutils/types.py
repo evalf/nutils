@@ -1482,7 +1482,7 @@ class unit:
     value, powers = self._parse(s)
     if powers != upowers:
       raise ValueError('invalid unit: expected {}, got {}'.format(upowers, powers))
-    return U(value)
+    return value
 
   def _dumps(self, U, v):
     if not isinstance(v, (int,float)):
