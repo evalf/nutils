@@ -27,7 +27,7 @@ the ``export`` method.
 """
 
 from . import numpy, numeric, warnings, cache, types, util
-import abc, sys, ctypes, enum, treelog as log, functools, itertools
+import abc, sys, ctypes, enum, treelog as log, functools, itertools, typing
 
 
 class MatrixError(Exception):
@@ -525,7 +525,7 @@ class MKL(Backend):
     GNU = 3
     TBB = 4
 
-  def __init__(self, threading=Threading.SEQUENTIAL):
+  def __init__(self, threading:typing.Optional[Threading]=None):
     self.current_threading = -1
     self.threading = threading
     self.libmkl = util.loadlib(linux='libmkl_rt.so', darwin='libmkl_rt.dylib', win32='mkl_rt.dll')
@@ -535,7 +535,11 @@ class MKL(Backend):
 
   def __enter__(self):
     super().__enter__()
-    self.current_threading = self.libmkl.mkl_set_threading_layer(c_long(self.threading.value))
+    threading = self.threading
+    if threading is None:
+      from . import parallel
+      threading = self.Threading.TBB if parallel._maxprocs > 1 else self.Threading.SEQUENTIAL
+    self.current_threading = self.libmkl.mkl_set_threading_layer(c_long(threading.value))
 
   def __exit__(self, *exc):
     if self.current_threading != -1:
@@ -780,5 +784,8 @@ def diag(d):
 
 def eye(n):
   return diag(numpy.ones(n))
+
+backend = typing.Union[Numpy,Scipy,MKL]
+auto = MKL() or Scipy() or Numpy()
 
 # vim:sw=2:sts=2:et
