@@ -996,6 +996,7 @@ class Unit(TestCase):
   def test_length(self):
     self.check('1m', 1, m=1)
     self.check('10in', .254, m=1)
+    self.check('10000000000000000m', 1e16, m=1) # str(1e16) has no decimal point
 
   def test_mass(self):
     self.check('1kg', 1, g=1)

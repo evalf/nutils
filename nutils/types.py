@@ -1482,7 +1482,7 @@ class unit:
     value, powers = self._parse(s)
     if powers != upowers:
       raise ValueError('invalid unit: expected {}, got {}'.format(upowers, powers))
-    return U(value)
+    return value
 
   def _dumps(self, U, v):
     if not isinstance(v, (int,float)):
@@ -1493,7 +1493,7 @@ class unit:
 def _f2s(v):
   'convert float to string without scientific notation'
   s, sep, e = str(v).partition('e')
-  a, b = s.split('.')
+  a, sep, b = s.partition('.')
   pos = len(a) + int(e or 0)
   s = (a + b).rstrip('0')
   if pos >= len(s):
