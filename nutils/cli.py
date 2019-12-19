@@ -24,7 +24,7 @@ can be used set up properties, initiate an output environment, and execute a
 python function based arguments specified on the command line.
 """
 
-from . import long_version, warnings
+from . import long_version, warnings, matrix
 import sys, inspect, os, time, signal, subprocess, contextlib, traceback, pathlib, html, functools, pdb, stringly, textwrap, typing, treelog, collections
 
 try:
@@ -270,7 +270,7 @@ def setup(scriptname: str,
           cachedir: str = 'cache',
           cache: bool = False,
           nprocs: int = 1,
-          matrix: typing.Optional[str] = None,
+          matrix: matrix.backend = matrix.auto,
           richoutput: typing.Optional[bool] = None,
           outrooturi: typing.Optional[str] = None,
           outuri: typing.Optional[str] = None,
@@ -280,7 +280,7 @@ def setup(scriptname: str,
           **unused):
   '''Set up compute environment.'''
 
-  from . import cache as _cache, parallel as _parallel, matrix as _matrix
+  from . import cache as _cache, parallel as _parallel
 
   for name in unused:
     warnings.warn('ignoring unused configuration variable {!r}'.format(name))
@@ -292,12 +292,6 @@ def setup(scriptname: str,
     outuri = outrooturi.rstrip('/') + '/' + scriptname
   elif outuri is None:
     outuri = pathlib.Path(outdir).resolve().as_uri()
-
-  matrix_backend = matrix in (None, 'mkl') and _matrix.MKL(threading=_matrix.MKL.Threading.TBB if nprocs > 1 else _matrix.MKL.Threading.SEQUENTIAL) \
-                or matrix in (None, 'scipy') and _matrix.Scipy() \
-                or matrix in (None, 'numpy') and _matrix.Numpy()
-  if not matrix_backend:
-    raise ValueError('invalid matrix backend {!r}'.format(matrix))
 
   if richoutput is None:
     richoutput = sys.stdout.isatty()
@@ -312,7 +306,7 @@ def setup(scriptname: str,
        warnings.via(treelog.warning), \
        _cache.enable(os.path.join(outdir, cachedir)) if cache else _cache.disable(), \
        _parallel.maxprocs(nprocs), \
-       matrix_backend, \
+       matrix, \
        _status(outuri+'/'+htmllog.filename, stickybar=richoutput), \
        _signal_handler(signal.SIGINT, functools.partial(_breakpoint, richoutput)):
 

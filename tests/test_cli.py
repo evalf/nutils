@@ -94,20 +94,19 @@ class setup(testing.TestCase):
     self.assertEqual(cm.exception.code, 0)
 
   def _test_matrix(self, backend):
-    name = backend.__name__.lower()
-    if not backend():
-      raise self.skipTest('{} backend is not available'.format(name))
-    with self._setup(matrix=name):
-      self.assertIsInstance(matrix._current_backend, backend)
+    if not backend:
+      raise self.skipTest('{} backend is not available'.format(backend.__class__.__name__))
+    with self._setup(matrix=backend):
+      self.assertIs(matrix._current_backend, backend)
 
   def test_matrix_mkl(self):
-    self._test_matrix(matrix.MKL)
+    self._test_matrix(matrix.MKL())
 
   def test_matrix_scipy(self):
-    self._test_matrix(matrix.Scipy)
+    self._test_matrix(matrix.Scipy())
 
   def test_matrix_numpy(self):
-    self._test_matrix(matrix.Numpy)
+    self._test_matrix(matrix.Numpy())
 
   def test_nprocs(self):
     for n in 1, 2, 3:
