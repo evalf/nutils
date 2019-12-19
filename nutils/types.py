@@ -631,6 +631,9 @@ class Immutable(metaclass=ImmutableMeta):
     h = hashlib.sha1('{}.{}:{}\0'.format(type(self).__module__, type(self).__qualname__, type(self)._version).encode())
     for arg in self._args:
       h.update(nutils_hash(arg))
+    for name in sorted(self._kwargs):
+      h.update(nutils_hash(name))
+      h.update(nutils_hash(self._kwargs[name]))
     return h.digest()
 
   def __getstate__(self):
