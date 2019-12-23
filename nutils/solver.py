@@ -209,39 +209,43 @@ class newton(RecursionWithSolve, length=1):
     self.target = target
     self.residual = residual
     self.jacobian = _derivative(residual, target, jacobian)
-    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
+    self.lhs0, constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
+    self.free = ~constrain
     self.linesearch = LineSearch(searchrange, rebound, failrelax)
     self.arguments = arguments
     self.solveargs = _striplin(linargs, solveargs)
     self.solveargs.setdefault('rtol', 1e-3)
 
   def _eval(self, lhs):
-    return sample.eval_integrals(self.residual, self.jacobian, **{self.target: lhs}, **self.arguments)
+    res, jac = sample.eval_integrals(self.residual, self.jacobian, **{self.target: lhs}, **self.arguments)
+    return res[self.free], jac.submatrix(self.free, self.free)
 
   def resume(self, history):
     if history:
       lhs, info = history[-1]
       res, jac = self._eval(lhs)
-      resnorm = numpy.linalg.norm(res[~self.constrain])
+      resnorm = numpy.linalg.norm(res)
       assert resnorm == info.resnorm
       relax = info.relax
     else:
       lhs = self.lhs0
       res, jac = self._eval(lhs)
-      resnorm = numpy.linalg.norm(res[~self.constrain])
+      resnorm = numpy.linalg.norm(res)
       relax = 1.
       yield lhs, types.attributes(resnorm=resnorm, relax=relax)
-    dlhs = -jac.solve_leniently(res, constrain=self.constrain, **self.solveargs) # compute new search vector
     while True:
-      newlhs = lhs + relax * dlhs
-      res, jac = self._eval(newlhs)
-      newresnorm = numpy.linalg.norm(res[~self.constrain])
-      relax, accept = self.linesearch(resnorm**2, -2*resnorm**2, newresnorm**2, 2*(jac@dlhs)[~self.constrain].dot(res[~self.constrain]), relax)
-      if accept:
-        lhs = newlhs
-        resnorm = newresnorm
-        yield lhs, types.attributes(resnorm=resnorm, relax=relax)
-        dlhs = -jac.solve_leniently(res, constrain=self.constrain, **self.solveargs) # compute new search vector
+      dlhs = -jac.solve_leniently(res, **self.solveargs) # compute new search vector
+      while True: # line search
+        newlhs = lhs.copy()
+        newlhs[self.free] += relax * dlhs
+        res, jac = self._eval(newlhs)
+        newresnorm = numpy.linalg.norm(res)
+        relax, accept = self.linesearch(resnorm**2, -2*resnorm**2, newresnorm**2, 2*(jac@dlhs).dot(res), relax)
+        if accept:
+          break
+      lhs = newlhs
+      resnorm = newresnorm
+      yield lhs, types.attributes(resnorm=resnorm, relax=relax)
 
 
 class LineSearch:
