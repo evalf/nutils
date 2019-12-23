@@ -288,7 +288,7 @@ class refined(TestCase):
 
   def test_boundary_gradient(self):
     ref = _refined_refs[self.etype]
-    trans = (transform.Identifier(ref.ndims),)
+    trans = (transform.Identifier(ref.ndims, 'root'),)
     domain = topology.ConnectedTopology(elementseq.asreferences([ref], ref.ndims), transformseq.PlainTransforms([trans], ref.ndims), transformseq.PlainTransforms([trans], ref.ndims), ((-1,)*ref.nedges,)).refine(self.ref0)
     geom = function.rootcoords(ref.ndims)
     basis = domain.basis('std', degree=1)

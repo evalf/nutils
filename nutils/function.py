@@ -334,7 +334,7 @@ class SelectChain(TransformChain):
 
   def evalf(self, evalargs):
     trans = evalargs['_transforms'][self.n]
-    assert isinstance(trans, tuple) and trans[0].todims == None
+    assert isinstance(trans, tuple)
     return trans
 
   @util.positional_only
@@ -353,7 +353,7 @@ class PopHead(TransformChain):
     super().__init__(args=[self.trans], todims=todims)
 
   def evalf(self, trans):
-    assert trans[0].todims == None and trans[0].fromdims == self.todims
+    assert trans[0].fromdims == self.todims
     return trans[1:]
 
 class SelectBifurcation(TransformChain):
@@ -371,7 +371,6 @@ class SelectBifurcation(TransformChain):
     bf = trans[0]
     assert isinstance(bf, transform.Bifurcate)
     selected = bf.trans1 if self.first else bf.trans2
-    assert selected[0].todims == self.todims
     return selected + trans[1:]
 
 class TransformChainFromTuple(TransformChain):
