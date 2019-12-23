@@ -104,7 +104,7 @@ def linearfrom(chain, fromdims):
 class TransformItem(types.Singleton):
   '''Affine transformation.
 
-  Base class for transformations of the type ``A x + b``.
+  Base class for transformations of the type :math:`x ↦ A x + b`.
 
   Args
   ----
@@ -152,6 +152,15 @@ class Bifurcate(TransformItem):
     return apply(self.trans1, points), apply(self.trans2, points)
 
 class Matrix(TransformItem):
+  '''Affine transformation :math:`x ↦ A x + b`, with :math:`A` an :math:`n×m` matrix, :math:`n≥m`
+
+  Parameters
+  ----------
+  linear : :class:`numpy.ndarray`
+      The transformation matrix :math:`A`.
+  offset : :class:`numpy.ndarray`
+      The offset :math:`b`.
+  '''
 
   __slots__ = 'linear', 'offset'
 
@@ -182,6 +191,15 @@ class Matrix(TransformItem):
     return util.obj2str(self.offset) + ''.join('+{}*x{}'.format(util.obj2str(v), i) for i, v in enumerate(self.linear.T))
 
 class Square(Matrix):
+  '''Affine transformation :math:`x ↦ A x + b`, with :math:`A` square
+
+  Parameters
+  ----------
+  linear : :class:`numpy.ndarray`
+      The transformation matrix :math:`A`.
+  offset : :class:`numpy.ndarray`
+      The offset :math:`b`.
+  '''
 
   __slots__ = '_transform_matrix',
   __cache__ ='det',
@@ -227,13 +245,14 @@ class Square(Matrix):
       self._transform_matrix[degree] = M
     return numpy.einsum('jk,ik', M.reshape([(degree+1)**self.fromdims]*2), coeffs.reshape(coeffs.shape[0],-1)).reshape(coeffs.shape)
 
-class Simplex(Square):
-
-  @types.apply_annotations
-  def __init__(self, coords:types.frozenarray):
-    super().__init__((coords[1:]-coords[0]).T, coords[0])
-
 class Shift(Square):
+  '''Shift transformation :math:`x ↦ x + b`
+
+  Parameters
+  ----------
+  offset : :class:`numpy.ndarray`
+      The offset :math:`b`.
+  '''
 
   __slots__ = ()
 
@@ -254,6 +273,13 @@ class Shift(Square):
     return '{}+x'.format(util.obj2str(self.offset))
 
 class Identity(Shift):
+  '''Identity transformation :math:`x ↦ x`
+
+  Parameters
+  ----------
+  ndims : :class:`int`
+      Dimension of :math:`x`.
+  '''
 
   __slots__ = ()
 
@@ -270,6 +296,15 @@ class Identity(Shift):
     return 'x'
 
 class Scale(Square):
+  '''Affine transformation :math:`x ↦ a x + b`, with :math:`a` a scalar
+
+  Parameters
+  ----------
+  scale : :class:`float`
+      The scalar :math:`a`.
+  offset : :class:`numpy.ndarray`
+      The offset :math:`b`.
+  '''
 
   __slots__ = 'scale',
 
@@ -299,6 +334,15 @@ class Scale(Square):
     return super().__mul__(other)
 
 class Updim(Matrix):
+  '''Affine transformation :math:`x ↦ A x + b`, with :math:`A` an :math:`n×(n-1)` matrix
+
+  Parameters
+  ----------
+  linear : :class:`numpy.ndarray`
+      The transformation matrix :math:`A`.
+  offset : :class:`numpy.ndarray`
+      The offset :math:`b`.
+  '''
 
   __slots__ = 'isflipped',
   __cache__ = 'ext',
@@ -417,7 +461,7 @@ class ScaledUpdim(Updim):
     super().__init__(numpy.dot(trans1.linear, trans2.linear), trans1.apply(trans2.offset), trans1.isflipped^trans2.isflipped)
 
   def swapup(self, other):
-    if isinstance(other, Identity):
+    if type(other) is Identity:
       return self.trans1, self.trans2
 
   @property
@@ -511,26 +555,22 @@ class TensorChild(Square):
   def det(self):
     return self.trans1.det * self.trans2.det
 
-class Identifier(TransformItem):
-  '''
-  Generic identifier.
+class Identifier(Identity):
+  '''Generic identifier
 
   This transformation serves as an element-specific or topology-specific token
-  to form the basis of transformation lookups. Though the ``apply`` method is
-  defined, its return value is a string, formed of the identifying arguments
-  and the points array, intended for debugging purposes only.
+  to form the basis of transformation lookups. Otherwise, the transform behaves
+  like an identity.
   '''
 
-  __slots__ = ()
+  __slots__ = 'token'
 
   @types.apply_annotations
-  def __init__(self, ndims:int, *args):
-    super().__init__(None, ndims)
+  def __init__(self, ndims:int, token):
+    self.token = token
+    super().__init__(ndims)
 
   def __str__(self):
     return ':'.join(map(str, self._args))
-
-  def apply(self, points):
-    return '{}@{}'.format(points, self)
 
 # vim:sw=2:sts=2:et

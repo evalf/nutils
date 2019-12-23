@@ -418,15 +418,15 @@ class IdentifierTransforms(Transforms):
     if not numeric.isint(index):
       return super().__getitem__(index)
     index = int(index) # make sure that index is a Python integer rather than numpy.intxx
-    return transform.Identifier(self.fromdims, self._name, numeric.normdim(self._length, index)),
+    return transform.Identifier(self.fromdims, (self._name, numeric.normdim(self._length, index))),
 
   def __len__(self):
     return self._length
 
   def index_with_tail(self, trans):
     root = trans[0]
-    if root.fromdims == self.fromdims and isinstance(root, transform.Identifier) and root._args[1] == self._name and 0 <= root._args[2] < self._length:
-      return root._args[2], trans[1:]
+    if root.fromdims == self.fromdims and isinstance(root, transform.Identifier) and isinstance(root.token, tuple) and len(root.token) == 2 and root.token[0] == self._name and 0 <= root.token[1] < self._length:
+      return root.token[1], trans[1:]
     raise ValueError
 
 class Axis(types.Singleton):
