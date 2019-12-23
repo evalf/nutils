@@ -211,7 +211,8 @@ class newton(RecursionWithSolve, length=1):
     self.jacobian = _derivative(residual, target, jacobian)
     self.lhs0, constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
     self.free = ~constrain
-    self.linesearch = LineSearch(searchrange, rebound, failrelax)
+    self.linesearch = LineSearch(searchrange, rebound)
+    self.failrelax = failrelax
     self.arguments = arguments
     self.solveargs = _striplin(linargs, solveargs)
     self.solveargs.setdefault('rtol', 1e-3)
@@ -240,11 +241,16 @@ class newton(RecursionWithSolve, length=1):
         newlhs[self.free] += relax * dlhs
         res, jac = self._eval(newlhs)
         newresnorm = numpy.linalg.norm(res)
-        relax, accept = self.linesearch(resnorm**2, -2*resnorm**2, newresnorm**2, 2*(jac@dlhs).dot(res), relax)
+        scale, accept = self.linesearch(resnorm**2, -2*relax*resnorm**2, newresnorm**2, 2*relax*(jac@dlhs).dot(res))
         if accept:
           break
+        relax *= scale
+        if relax <= self.failrelax:
+          raise SolverError('stuck in local minimum')
+      log.info('update accepted at relaxation', round(relax, 5))
       lhs = newlhs
       resnorm = newresnorm
+      relax = min(relax * scale, 1)
       yield lhs, types.attributes(resnorm=resnorm, relax=relax)
 
 
@@ -253,23 +259,19 @@ class LineSearch:
   Helper class for Newton-like iterations.
   '''
 
-  def __init__(self, searchrange:types.tuple[float]=(.01,2/3), rebound:types.strictfloat=2., failrelax:types.strictfloat=1e-6):
+  def __init__(self, searchrange:types.tuple[float]=(.01,2/3), rebound:types.strictfloat=2.):
     self.minscale, self.maxscale = searchrange
     self.rebound = rebound
-    self.failrelax = failrelax
 
-  def __call__(self, p0, q0, p1, q1, relax):
+  def __call__(self, p0, q0, p1, q1):
     if not numpy.isfinite(p1):
-      log.info('residual norm {} / {}'.format(p1, round(relax, 5)))
-      return relax * self.minscale, False
+      log.info('residual norm {}'.format(p1))
+      return self.minscale, False
     # To determine optimal relaxation we minimize a polynomial estimation for the residual norm:
     # P(scale) = A + B scale + C scale^2 + D scale^3 ~= |res(lhs+scale*relax*dlhs)|^2
-    scale = _minimize2(p0=p0, q0=relax*q0, p1=p1, q1=relax*q1)
-    log.info('residual norm {:+.2f}% / {} with estimated minimum at {:.0f}%'.format(100*numpy.sqrt(p1/p0)-100, round(relax, 5), scale*100))
-    relax *= min(max(scale, self.minscale), self.rebound)
-    if not numpy.isfinite(relax) or relax <= self.failrelax:
-      raise SolverError('stuck in local minimum')
-    return min(relax, 1), p1 < p0 and scale > self.maxscale
+    scale = _minimize2(p0=p0, q0=q0, p1=p1, q1=q1)
+    log.info('residual norm {:+.2f}% with estimated minimum at {:.0f}%'.format(100*numpy.sqrt(p1/p0)-100, scale*100))
+    return min(max(scale, self.minscale), self.rebound), p1 < p0 and scale > self.maxscale
 
 
 class minimize(RecursionWithSolve, length=1, version=3):
@@ -608,21 +610,27 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
     if tol <= 0:
       raise ValueError('nonlinear optimization problem requires a nonzero "tol" argument')
     solveargs.setdefault('rtol', 1e-3)
-    linesearch = LineSearch(searchrange, rebound, failrelax)
+    linesearch = LineSearch(searchrange, rebound)
     firstresnorm = resnorm
     relax = 1
-    accept = True
     with log.context('newton {:.0f}%', 0) as reformat:
+      dlhs = -jac.solve_leniently(res, constrain=cons, **solveargs)
+      lhs0 = lhs
+      resnorm0 = resnorm
       while not numpy.isfinite(val) or not numpy.isfinite(resnorm) or resnorm > tol:
+        lhs = lhs0 + relax * dlhs
+        val, res, jac = sample.eval_integrals(functional, residual, jacobian, **{target: lhs}, **arguments)
+        resnorm = numpy.linalg.norm(res[~cons])
+        scale, accept = linesearch(resnorm0**2, -2*relax*resnorm0**2, resnorm**2, 2*relax*(jac@dlhs)[~cons].dot(res[~cons]))
         if accept:
+          log.info('update accepted at relaxation', round(relax, 5))
           reformat(100 * numpy.log(firstresnorm/resnorm) / numpy.log(firstresnorm/tol))
           dlhs = -jac.solve_leniently(res, constrain=cons, **solveargs)
           lhs0 = lhs
           resnorm0 = resnorm
-        lhs = lhs0 + relax * dlhs
-        val, res, jac = sample.eval_integrals(functional, residual, jacobian, **{target: lhs}, **arguments)
-        resnorm = numpy.linalg.norm(res[~cons])
-        relax, accept = linesearch(resnorm0**2, -2*resnorm0**2, resnorm**2, 2*(jac@dlhs)[~cons].dot(res[~cons]), relax)
+        relax = min(relax * scale, 1)
+        if relax <= failrelax:
+          raise SolverError('stuck in local minimum')
       log.info('converged with residual {:.1e}'.format(resnorm))
   elif resnorm > tol:
     solveargs.setdefault('atol', tol)
