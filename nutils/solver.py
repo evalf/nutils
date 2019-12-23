@@ -609,7 +609,7 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
     relax = 1
     accept = True
     with log.context('newton {:.0f}%', 0) as reformat:
-      while resnorm > tol:
+      while not numpy.isfinite(val) or not numpy.isfinite(resnorm) or resnorm > tol:
         if accept:
           reformat(100 * numpy.log(firstresnorm/resnorm) / numpy.log(firstresnorm/tol))
           dlhs = -jac.solve_leniently(res, constrain=cons, **solveargs)

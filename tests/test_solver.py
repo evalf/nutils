@@ -134,7 +134,6 @@ class finitestrain(TestCase):
     _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.minimize('dofs', energy=self.energy, constrain=self.cons)))
 
 
-@parametrize
 class optimize(TestCase):
 
   def setUp(self):
