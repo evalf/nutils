@@ -484,9 +484,10 @@ def eval_integrals(*integrals: types.tuple[strictintegral], **arguments:argdict)
   '''
 
   retvals = [matrix.empty(integral.shape) for integral in integrals]
-  for sample, iints in util.gather((di, iint) for iint, integral in enumerate(integrals) for di in integral._integrands):
-    for iint, retval in zip(iints, sample.integrate([integrals[iint]._integrands[sample] for iint in iints], **arguments)):
-      retvals[iint] += retval
+  with log.iter.fraction('topology', util.gather((di, iint) for iint, integral in enumerate(integrals) for di in integral._integrands)) as gathered:
+    for sample, iints in gathered:
+      for iint, retval in zip(iints, sample.integrate([integrals[iint]._integrands[sample] for iint in iints], **arguments)):
+        retvals[iint] += retval
   return retvals
 
 # vim:sw=2:sts=2:et
