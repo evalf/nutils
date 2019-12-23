@@ -257,7 +257,7 @@ class unstructured_topology(TestCase):
       simplices = numeric.overlapping(numpy.arange(nverts), n=self.ndims+1)
       coords = numpy.random.normal(size=(nverts, self.ndims))
       root = transform.Identifier(self.ndims, 'test')
-      transforms = transformseq.PlainTransforms([(root, transform.Simplex(c)) for c in coords[simplices]], self.ndims)
+      transforms = transformseq.PlainTransforms([(root, transform.Square((c[1:]-c[0]).T, c[0])) for c in coords[simplices]], self.ndims)
       domain = topology.SimplexTopology(simplices, transforms, transforms)
       geom = function.rootcoords(self.ndims)
     else:

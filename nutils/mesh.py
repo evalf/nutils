@@ -673,7 +673,7 @@ def unitsquare(nelems, etype):
 
     v = numpy.arange(nelems+1, dtype=float)
     coords = numeric.meshgrid(v, v).reshape(2,-1).T
-    transforms = transformseq.PlainTransforms([(root, transform.Simplex(coords[s])) for s in simplices], 2)
+    transforms = transformseq.PlainTransforms([(root, transform.Square((c[1:]-c[0]).T, c[0])) for c in coords[simplices]], 2)
     topo = topology.SimplexTopology(simplices, transforms, transforms)
 
     if etype == 'mixed':

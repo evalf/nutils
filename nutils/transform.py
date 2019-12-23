@@ -227,12 +227,6 @@ class Square(Matrix):
       self._transform_matrix[degree] = M
     return numpy.einsum('jk,ik', M.reshape([(degree+1)**self.fromdims]*2), coeffs.reshape(coeffs.shape[0],-1)).reshape(coeffs.shape)
 
-class Simplex(Square):
-
-  @types.apply_annotations
-  def __init__(self, coords:types.frozenarray):
-    super().__init__((coords[1:]-coords[0]).T, coords[0])
-
 class Shift(Square):
 
   __slots__ = ()
