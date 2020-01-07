@@ -914,8 +914,7 @@ class jacobian(TestCase):
 jacobian(delayed=True)
 jacobian(delayed=False)
 
-@parametrize
-class basis(TestCase):
+class CommonBasis:
 
   def setUp(self):
     super().setUp()
@@ -1088,49 +1087,67 @@ class basis(TestCase):
       b, = self.basis.f_coefficients(ielem).eval()
       self.assertAllEqual(a, b)
 
-basis(
-  'PlainBasis',
-  basis=function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)),
-  checkcoeffs=[[1],[2,3],[4,5],[6]],
-  checkdofs=[[0],[2,3],[1,3],[2]],
-  checkndofs=4)
-basis(
-  'DiscontBasis',
-  basis=function.DiscontBasis([[1],[2,3],[4,5],[6]], transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)),
-  checkcoeffs=[[1],[2,3],[4,5],[6]],
-  checkdofs=[[0],[1,2],[3,4],[5]],
-  checkndofs=6)
-basis(
-  'MaskedBasis',
-  basis=function.MaskedBasis(function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)), [0,2]),
-  checkcoeffs=[[1],[2],[],[6]],
-  checkdofs=[[0],[1],[],[1]],
-  checkndofs=2)
-basis(
-  'PrunedBasis',
-  basis=function.PrunedBasis(function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)), [0,2]),
-  checkcoeffs=[[1],[4,5]],
-  checkdofs=[[0],[1,2]],
-  checkndofs=3)
+class PlainBasis(CommonBasis, TestCase):
+  def setUp(self):
+    transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
+    self.checkcoeffs = [[1],[2,3],[4,5],[6]]
+    self.checkdofs = [[0],[2,3],[1,3],[2]]
+    self.basis = function.PlainBasis(self.checkcoeffs, self.checkdofs, 4, transforms)
+    self.checkndofs = 4
+    super().setUp()
 
-structtrans4 = transformseq.StructuredTransforms(transform.Identifier(1, 'test'), [transformseq.DimAxis(0,4,False)], 0)
-structtrans4p = transformseq.StructuredTransforms(transform.Identifier(1, 'test'), [transformseq.DimAxis(0,4,True)], 0)
-structtrans22 = transformseq.StructuredTransforms(transform.Identifier(2, 'test'), [transformseq.DimAxis(0,2,False),transformseq.DimAxis(0,2,False)], 0)
-basis(
-  'StructuredBasis1D',
-  basis=function.StructuredBasis([[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]], [[0,1,2,3]], [[2,3,4,5]], [5], structtrans4, [4]),
-  checkcoeffs=[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]],
-  checkdofs=[[0,1],[1,2],[2,3],[3,4]],
-  checkndofs=5)
-basis(
-  'StructuredBasis1DPeriodic',
-  basis=function.StructuredBasis([[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]], [[0,1,2,3]], [[2,3,4,5]], [4], structtrans4p, [4]),
-  checkcoeffs=[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]],
-  checkdofs=[[0,1],[1,2],[2,3],[3,0]],
-  checkndofs=4)
-basis(
-  'StructuredBasis2D',
-  basis=function.StructuredBasis([[[[1],[2]],[[3],[4]]],[[[5],[6]],[[7],[8]]]], [[0,1],[0,1]], [[2,3],[2,3]], [3,3], structtrans22, [2,2]),
-  checkcoeffs=[[[[5]],[[6]],[[10]],[[12]]],[[[7]],[[8]],[[14]],[[16]]],[[[15]],[[18]],[[20]],[[24]]],[[[21]],[[24]],[[28]],[[32]]]],
-  checkdofs=[[0,1,3,4],[1,2,4,5],[3,4,6,7],[4,5,7,8]],
-  checkndofs=9)
+class DiscontBasis(CommonBasis, TestCase):
+  def setUp(self):
+    transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
+    self.checkcoeffs = [[1],[2,3],[4,5],[6]]
+    self.basis = function.DiscontBasis(self.checkcoeffs, transforms)
+    self.checkdofs = [[0],[1,2],[3,4],[5]]
+    self.checkndofs = 6
+    super().setUp()
+
+class MaskedBasis(CommonBasis, TestCase):
+  def setUp(self):
+    transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
+    parent = function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, transforms)
+    self.basis = function.MaskedBasis(parent, [0,2])
+    self.checkcoeffs = [[1],[2],[],[6]]
+    self.checkdofs = [[0],[1],[],[1]]
+    self.checkndofs = 2
+    super().setUp()
+
+class PrunedBasis(CommonBasis, TestCase):
+  def setUp(self):
+    parent_transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
+    parent = function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, parent_transforms)
+    self.basis = function.PrunedBasis(parent, [0,2])
+    self.checkcoeffs = [[1],[4,5]]
+    self.checkdofs = [[0],[1,2]]
+    self.checkndofs = 3
+    super().setUp()
+
+class StructuredBasis1D(CommonBasis, TestCase):
+  def setUp(self):
+    transforms = transformseq.StructuredTransforms(transform.Identifier(1, 'test'), [transformseq.DimAxis(0,4,False)], 0)
+    self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]], [[0,1,2,3]], [[2,3,4,5]], [5], transforms, [4])
+    self.checkcoeffs = [[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]
+    self.checkdofs = [[0,1],[1,2],[2,3],[3,4]]
+    self.checkndofs = 5
+    super().setUp()
+
+class StructuredBasis1DPeriodic(CommonBasis, TestCase):
+  def setUp(self):
+    transforms = transformseq.StructuredTransforms(transform.Identifier(1, 'test'), [transformseq.DimAxis(0,4,True)], 0)
+    self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]], [[0,1,2,3]], [[2,3,4,5]], [4], transforms, [4])
+    self.checkcoeffs = [[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]
+    self.checkdofs = [[0,1],[1,2],[2,3],[3,0]]
+    self.checkndofs = 4
+    super().setUp()
+
+class StructuredBasis2D(CommonBasis, TestCase):
+  def setUp(self):
+    transforms = transformseq.StructuredTransforms(transform.Identifier(2, 'test'), [transformseq.DimAxis(0,2,False),transformseq.DimAxis(0,2,False)], 0)
+    self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]]],[[[5],[6]],[[7],[8]]]], [[0,1],[0,1]], [[2,3],[2,3]], [3,3], transforms, [2,2])
+    self.checkcoeffs = [[[[5]],[[6]],[[10]],[[12]]],[[[7]],[[8]],[[14]],[[16]]],[[[15]],[[18]],[[20]],[[24]]],[[[21]],[[24]],[[28]],[[32]]]]
+    self.checkdofs = [[0,1,3,4],[1,2,4,5],[3,4,6,7],[4,5,7,8]]
+    self.checkndofs = 9
+    super().setUp()
