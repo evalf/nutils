@@ -24,7 +24,7 @@ matrix:
       python: "3.6"
       env:
         - EXTRAS=matrix_mkl,export_mpl
-        - CONSTRAINTS=numpy==1.12
+        - LOCAL_CONSTRAINTS=numpy==1.12
     - name: "Pypy"
       os: linux
       python: pypy3.5
@@ -51,7 +51,7 @@ matrix:
 install:
   - $PYTHON -m pip install --upgrade pip wheel
   - touch .constraints
-  - for CONSTRAINT in $CONSTRAINTS; do echo $CONSTRAINT >> .constraints; done
+  - for CONSTRAINT in $LOCAL_CONSTRAINTS $CONSTRAINTS; do echo $CONSTRAINT >> .constraints; done
   - $PYTHON -m pip install --upgrade --constraint .constraints numpy
   - $PYTHON -m pip install --upgrade --constraint .constraints .[$EXTRAS] coverage
 script:
