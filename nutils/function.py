@@ -4379,6 +4379,54 @@ class ProductBasis(Basis):
     supp2 = self._basis2.get_support(dof2)
     return (supp1[:,_] * len(self._basis2.transforms) + supp2[_,:]).ravel()
 
+class DisjointUnionBasis(Basis):
+
+  __slots__ = '_bases', '_dofsplits', '_elemsplits'
+
+  @types.apply_annotations
+  def __init__(self, bases:types.tuple[strictbasis], trans:types.strict[TransformChain]):
+    self._bases = bases
+    self._dofsplits = numpy.cumsum([0, *map(len, bases)])
+    self._elemsplits = numpy.cumsum([0, *(len(basis.transforms) for basis in bases)])
+    ndims = bases[0].ndimsdomain
+    if not all(basis.ndimsdomain == ndims for basis in bases):
+      raise ValueError
+    transforms = transformseq.chain((basis.transforms for basis in bases), bases[0].transforms.todims)
+    super().__init__(ndofs=self._dofsplits[-1], transforms=transforms, ndims=ndims, trans=trans)
+
+  def get_support(self, dof):
+    if numeric.isint(dof):
+      dof = numeric.normdim(self.ndofs, dof)
+      ibasis = numpy.searchsorted(self._dofsplits[1:-1], dof, 'right')
+      return self._bases[ibasis].get_support(dof - self._dofsplits[ibasis]) + self._elemsplits[ibasis]
+    elif numeric.isboolarray(dof) and dof.shape == (len(self),):
+      return numpy.concatenate([basis.get_support(dof[l:r]) + m for basis, l, r, m in zip(self._bases, self._dofsplits[:-1], self._dofsplits[1:], self._elemsplits)])
+    elif numeric.isintarray(dof) and dof.ndim == 1:
+      dof = numpy.unique(dof)
+      splits = numpy.searchsorted(dof, self._dofsplits[1:-1])
+      return numpy.concatenate([basis.get_support(dof[l:r] - n) + m for basis, l, r, n, m in zip(self._bases, [0,*splits], [*splits, None], self._dofsplits[:-1], self._elemsplits[:-1])])
+    else:
+      return super().get_support(dof)
+
+  def get_dofs(self, ielem):
+    if numeric.isint(ielem):
+      ielem = numeric.normdim(len(self.transforms), ielem)
+      ibasis = numpy.searchsorted(self._elemsplits[1:-1], ielem, 'right')
+      return self._bases[ibasis].get_dofs(ielem - self._elemsplits[ibasis]) + self._dofsplits[ibasis]
+    elif numeric.isboolarray(ielem) and ielem.shape == (len(self.transforms),):
+      return numpy.concatenate([basis.get_dofs(ielem[l:r]) + n for basis, l, r, n in zip(self._bases, self._elemsplits[:-1], self._elemsplits[1:], self._dofsplits)])
+    elif numeric.isintarray(ielem) and ielem.ndim == 1:
+      ielem = numpy.unique(ielem)
+      splits = numpy.searchsorted(ielem, self._elemsplits[1:-1])
+      return numpy.concatenate([basis.get_dofs(ielem[l:r] - m) + n for basis, l, r, m, n in zip(self._bases, [0,*splits], [*splits, None], self._elemsplits[:-1], self._dofsplits[:-1])])
+    else:
+      return super().get_dofs(ielem)
+
+  def get_coefficients(self, ielem):
+    ielem = numeric.normdim(len(self.transforms), ielem)
+    ibasis = numpy.searchsorted(self._elemsplits[1:-1], ielem, 'right')
+    return self._bases[ibasis].get_coefficients(ielem - self._elemsplits[ibasis])
+
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
 _ascending = lambda arg: numpy.greater(numpy.diff(arg), 0).all()
