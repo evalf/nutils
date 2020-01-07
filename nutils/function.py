@@ -4275,7 +4275,6 @@ class PrunedBasis(Basis):
       raise IndexError('dof out of bounds')
     return numeric.sorted_index(self._transmap, self._parent.get_support(self._dofmap[dof]), missing='mask')
 
-
 class ProductBasis(Basis):
 
   __slots__ = '_basis1', '_basis2'
@@ -4311,6 +4310,32 @@ class ProductBasis(Basis):
   @property
   def simplified(self):
     return ravel(self._basis1.simplified[:,_] * self._basis2.simplified[_,:], 0)
+
+class WithTransformsBasis(Basis):
+  '''Replace the transforms sequence of a basis.
+
+  Parameters
+  ----------
+  parent : :class:`Basis`
+      The basis to wrap.
+  transforms : :class:`nutils.transformseq.Transforms`
+      The new transforms sequence.
+  '''
+
+  @types.apply_annotations
+  def __init__(self, parent:strictbasis, transforms:transformseq.stricttransforms, trans:types.strict[TransformChain]):
+    self._parent = parent
+    assert len(self._parent.transforms) == len(transforms)
+    super().__init__(ndofs=parent.ndofs, transforms=transforms, ndims=parent.ndimsdomain, trans=trans)
+
+  def get_support(self, dof):
+    return self._parent.get_support(dof)
+
+  def get_dofs(self, ielem):
+    return self._parent.get_dofs(ielem)
+
+  def get_coefficients(self, ielem):
+    return self._parent.get_coefficients(ielem)
 
 class DisjointUnionBasis(Basis):
 

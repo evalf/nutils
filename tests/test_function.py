@@ -1115,6 +1115,19 @@ class PrunedBasis(CommonBasis, TestCase):
     self.checkndofs = 3
     super().setUp()
 
+class WithTransformsBasis(CommonBasis, TestCase):
+  def setUp(self):
+    root = function.Root('X', 0)
+    self.roots = root,
+    self.checkcoeffs = [[1],[2,3],[4,5],[6]]
+    self.checkdofs = [[0],[2,3],[1,3],[2]]
+    self.checkndofs = 4
+    parent_transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0, 0)
+    parent = function.PlainBasis(self.checkcoeffs, self.checkdofs, 4, parent_transforms, 0, function.SelectChain(self.roots))
+    transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'efgh'], 0, 0)
+    self.basis = function.WithTransformsBasis(parent, transforms, function.SelectChain(self.roots))
+    super().setUp()
+
 class DisjointUnionBasis(CommonBasis, TestCase):
   def setUp(self):
     root = function.Root('X', 0)
