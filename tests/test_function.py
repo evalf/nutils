@@ -1115,6 +1115,22 @@ class PrunedBasis(CommonBasis, TestCase):
     self.checkndofs = 3
     super().setUp()
 
+class DisjointUnionBasis(CommonBasis, TestCase):
+  def setUp(self):
+    root = function.Root('X', 0)
+    self.roots = root,
+    transforms0 = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'a'], 0, 0)
+    transforms1 = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'bc'], 0, 0)
+    transforms2 = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'd'], 0, 0)
+    basis0 = function.PlainBasis([[1]], [[0]], 1, transforms0, 0, function.SelectChain(self.roots))
+    basis1 = function.PlainBasis([[2,3],[4,5]], [[0,1],[0,2]], 3, transforms1, 0, function.SelectChain(self.roots))
+    basis2 = function.PlainBasis([[6]], [[0]], 1, transforms2, 0, function.SelectChain(self.roots))
+    self.basis = function.DisjointUnionBasis((basis0, basis1, basis2), function.SelectChain(self.roots))
+    self.checkcoeffs = [[1],[2,3],[4,5],[6]]
+    self.checkdofs = [[0],[1,2],[1,3],[4]]
+    self.checkndofs = 5
+    super().setUp()
+
 class StructuredBasis1D(CommonBasis, TestCase):
   def setUp(self):
     root = function.Root('X', 1)

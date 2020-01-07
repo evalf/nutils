@@ -1783,6 +1783,12 @@ class DisjointUnionTopology(Topology):
       transforms += self.opposites,
     return sample.ChainedSample(tuple(topo.sample(ischeme, degree) for topo in self._topos), transforms)
 
+  def basis(self, name, *args, **kwargs):
+    if name == 'discont':
+      return super().basis(name, *args, **kwargs)
+    else:
+      return function.DisjointUnionBasis(topo.basis(name, *args, **kwargs) for topo in self._topos)
+
 class SubsetTopology(Topology):
   'trimmed'
 

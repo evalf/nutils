@@ -309,3 +309,28 @@ for ndims in 1, 2, 3:
     for btype in ['discont', 'bernstein', 'lagrange', 'std', 'bubble'][:5 if variant in ('simplex', 'triangle') else 4]:
       for degree in [0,1,2,3] if btype == 'discont' else [2] if btype == 'bubble' else [1,2,3]:
         unstructured_topology(ndims=ndims, btype=btype, degree=degree, variant=variant)
+
+class disjointunion(basisTest):
+
+  def setUp(self):
+    self.base, self.geom = mesh.rectilinear([3])
+    self.left, self.right = self.base[:2], self.base[2:]
+    self.domain = topology.DisjointUnionTopology((self.left, self.right))
+    self.degree = 2
+    self.basis = self.domain.basis('spline', self.degree)
+
+  def test_pum(self):
+    self.assertPartitionOfUnity(topo=self.domain, basis=self.basis)
+
+  def test_poly(self):
+    self.assertPolynomial(topo=self.domain, geom=self.geom, basis=self.basis, degree=self.degree)
+
+  def test_discontinuity(self):
+    ns = function.Namespace()
+    ns.x = self.geom
+    ns.basis = self.basis
+    ns.u = 'basis_n ?coeffs_n'
+    ns.f = function.sign(self.geom[0] - 2)
+    coeffs = solver.optimize('coeffs', self.domain.integral('(u - f)^2 d:x' @ ns, degree=2*self.degree))
+    actual = self.domain.sample('bezier', 2).eval('u' @ ns, coeffs=coeffs)
+    self.assertAllAlmostEqual(actual, [-1]*4+[1]*2)
