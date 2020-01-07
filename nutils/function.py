@@ -4379,6 +4379,41 @@ class ProductBasis(Basis):
     supp2 = self._basis2.get_support(dof2)
     return (supp1[:,_] * len(self._basis2.transforms) + supp2[_,:]).ravel()
 
+class WithTransformsBasis(Basis):
+  '''Replace the transforms sequence of a basis.
+
+  Parameters
+  ----------
+  parent : :class:`Basis`
+      The basis to wrap.
+  transforms : :class:`nutils.transformseq.Transforms`
+      The new transforms sequence.
+  '''
+
+  @types.apply_annotations
+  def __init__(self, parent:strictbasis, transforms:transformseq.stricttransforms, trans:types.strict[TransformChain]):
+    self._parent = parent
+    assert len(self._parent.transforms) == len(transforms)
+    super().__init__(ndofs=parent.ndofs, transforms=transforms, ndims=parent.ndimsdomain, trans=trans)
+
+  def get_support(self, dof):
+    return self._parent.get_support(dof)
+
+  def get_dofs(self, ielem):
+    return self._parent.get_dofs(ielem)
+
+  def get_coefficients(self, ielem):
+    return self._parent.get_coefficients(ielem)
+
+  def f_ndofs(self, index):
+    return self._parent.f_ndofs(index)
+
+  def f_dofs(self, index):
+    return self._parent.f_dofs(index)
+
+  def f_coefficients(self, index):
+    return self._parent.f_coefficients(index)
+
 class DisjointUnionBasis(Basis):
 
   __slots__ = '_bases', '_dofsplits', '_elemsplits'
