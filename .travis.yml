@@ -53,10 +53,10 @@ install:
   - touch .constraints
   - for CONSTRAINT in $CONSTRAINTS; do echo $CONSTRAINT >> .constraints; done
   - $PYTHON -m pip install --upgrade --constraint .constraints numpy
-  - $PYTHON -m pip install --upgrade --constraint .constraints .[$EXTRAS] coverage codecov
+  - $PYTHON -m pip install --upgrade --constraint .constraints .[$EXTRAS] coverage
 script:
   - $PYTHON -m coverage run -m unittest -b
 after_success:
   - $PYTHON -m coverage xml -i
-  - $PYTHON -m codecov --file coverage.xml
+  - bash <(curl -s https://codecov.io/bash) -f coverage.xml
 # vim: ts=2:sts=2:sw=2:et
