@@ -326,6 +326,9 @@ class EmptyLike(Reference):
 
   volume = 0
 
+  def __bool__(self):
+    return False
+
   @property
   def empty(self):
     return self
@@ -418,6 +421,9 @@ class SimplexReference(Reference):
 
   __slots__ = ()
   __cache__ = 'edge_refs', 'edge_transforms', 'ribbons', '_get_poly_coeffs_bernstein', '_get_poly_coeffs_lagrange', '_integer_barycentric_coordinates'
+
+  def __bool__(self):
+    return True
 
   @property
   def vertices(self):
@@ -661,6 +667,9 @@ class TensorReference(Reference):
     self.ref2 = ref2
     super().__init__(ref1.ndims + ref2.ndims, ref1.ndimsnormal + ref2.ndimsnormal)
 
+  def __bool__(self):
+    return bool(self.ref1) and bool(self.ref2)
+
   def __mul__(self, other):
     assert isinstance(other, Reference)
     return TensorReference(self.ref1, self.ref2 * other)
@@ -821,6 +830,9 @@ class Cone(Reference):
     self.height = numpy.dot(etrans.offset - tip, ext) / self.extnorm
     assert self.height >= 0, 'tip is positioned at the negative side of edge'
 
+  def __bool__(self):
+    return bool(self.edgeref) and bool(self.height)
+
   @property
   def vertices(self):
     return types.frozenarray(numpy.vstack([[self.tip], self.etrans.apply(self.edgeref.vertices)]), copy=False)
@@ -894,6 +906,9 @@ class OwnChildReference(Reference):
     self.child_transforms = transform.Identity(baseref.ndims+baseref.ndimsnormal),
     super().__init__(baseref.ndims, baseref.ndimsnormal)
 
+  def __bool__(self):
+    return bool(self.baseref)
+
   @property
   def vertices(self):
     return self.baseref.vertices
@@ -941,6 +956,9 @@ class WithChildrenReference(Reference):
     self.child_transforms = baseref.child_transforms
     self.child_refs = child_refs
     super().__init__(baseref.ndims, baseref.ndimsnormal)
+
+  def __bool__(self):
+    return bool(self.baseref)
 
   def check_edges(self, tol=1e-15, print=print):
     super().check_edges(tol=tol, print=print)
@@ -1095,6 +1113,9 @@ class MosaicReference(Reference):
         self.edge_refs.append(edge.cone(extrudetrans, tip))
 
     super().__init__(baseref.ndims)
+
+  def __bool__(self):
+    return any(self.subrefs)
 
   @property
   def vertices(self):
