@@ -2408,6 +2408,49 @@ class RevolutionTopology(Topology):
   def basis(self, name, *args, **kwargs):
     return function.asarray([1.])
 
+class WithIdentifierTopology(Topology):
+  '''A topology that appends an :class:`nutils.transform.Identifier` to the ``transforms`` and ``opposites`` of another topology.
+
+  Parameters
+  ----------
+  parent : :class:`Topology`
+      The parent topology.
+  token : :class:`object`
+      An immutable token that will be used to create the
+      :class:`nutils.transform.Identifier`.
+  '''
+
+  __slots__ = '_parent', '_root', '_identifier'
+
+  @types.apply_annotations
+  def __init__(self, parent:stricttopology, root:function.strictroot, identifier:transformseq.stricttransforms):
+    assert len(identifier) == 1 and sum(identifier.todims) == 0
+    self._parent = parent
+    self._root = root
+    self._identifier = identifier
+    super().__init__(parent.roots+(root,),
+                     parent.references,
+                     parent.transforms*identifier,
+                     parent.opposites*identifier)
+
+  def basis(self, *args, **kwargs):
+    return function.WithTransformsBasis(self._parent.basis(*args, **kwargs), self.transforms, function.SelectChain(self.roots))
+
+  @property
+  def refined(self):
+    return WithIdentifierTopology(self._parent.refined, self._root, self._identifier.refined(elementseq.asreferences([element.PointReference()], 0)))
+
+  @property
+  def boundary(self):
+    return WithIdentifierTopology(self._parent.boundary, self._root, self._identifier)
+
+  @property
+  def interfaces(self):
+    return WithIdentifierTopology(self._parent.interfaces, self._root, self._identifier)
+
+  def getitem(self, item):
+    return WithIdentifierTopology(self._parent.getitem(item), self._root, self._identifier)
+
 class PatchBoundary(types.Singleton):
 
   __slots__ = 'id', 'dim', 'side', 'reverse', 'transpose'
