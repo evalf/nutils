@@ -520,4 +520,12 @@ def asboolean(array, size, ordered=True):
     barray[array] = True
   return barray
 
+def gramschmidt(V):
+  assert V.ndim >= 2
+  assert V.shape[-2] >= V.shape[-1]
+  for i in range(V.shape[-1]):
+    if i > 0:
+      V[...,i] -= numpy.einsum('...ij,...j->...i', V[...,:i], numpy.einsum('...ji,...j->...i', V[...,:i], V[...,i]))
+    V[...,i] /= numpy.linalg.norm(V[...,i], axis=-1)[...,numpy.newaxis]
+
 # vim:sw=2:sts=2:et

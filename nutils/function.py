@@ -760,6 +760,25 @@ class Array(Evaluable):
       return Zeros(self.shape + var.shape, dtype=self.dtype)
     raise NotImplementedError('derivative not defined for {}'.format(self.__class__.__name__))
 
+class GramSchmidt(Array):
+
+  __slots__ = '_arg'
+
+  @types.apply_annotations
+  def __init__(self, arg:asarray):
+    self._arg = arg
+    super().__init__(args=[arg], shape=arg.shape, dtype=float)
+
+  def evalf(self, arg):
+    arg = arg.copy()
+    numeric.gramschmidt(arg)
+    return arg
+
+  def _derivative(self, var, seen):
+    if not iszero(derivative(self._arg, var, seen)):
+      raise NotImplementedError
+    return zeros(self.shape + var.shape)
+
 class Normal(Array):
   'normal'
 
