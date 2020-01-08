@@ -3842,9 +3842,6 @@ def ones_like(arr):
 def reciprocal(arg):
   return power(arg, -1)
 
-def grad(arg, coords, ndims=0):
-  return asarray(arg).grad(coords, ndims)
-
 def symgrad(arg, coords, ndims=0):
   return asarray(arg).symgrad(coords, ndims)
 
@@ -4176,9 +4173,6 @@ def dotnorm(arg, coords):
   'normal component'
 
   return sum(arg * coords.normal(), -1)
-
-def normal(geom):
-  return geom.normal()
 
 def kronecker(arg, axis, length, pos):
   arg = asarray(arg)
