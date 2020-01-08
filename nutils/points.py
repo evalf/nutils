@@ -55,12 +55,16 @@ class Points(types.Singleton):
     Number of spatial dimensions.
   '''
 
-  __cache__ = 'hull', 'onhull'
+  __cache__ = 'hull', 'onhull', 'basis'
 
   @types.apply_annotations
-  def __init__(self, npoints:types.strictint, ndims:types.strictint):
+  def __init__(self, npoints:types.strictint, ndims:types.strictint, ndimsnormal:types.strictint=0):
     self.npoints = npoints
     self.ndims = ndims
+    if not 0 <= ndimsnormal <= ndims:
+      raise ValueError('the dimension of the normal space should be in [0,{}] but got {}'.format(ndims, ndimsnormal))
+    self.ndimsnormal = ndimsnormal
+    self.ndimsmanifold = ndims - ndimsnormal
 
   @property
   def tri(self):
@@ -101,23 +105,30 @@ class Points(types.Singleton):
     onhull[numpy.ravel(self.hull)] = True # not clear why ravel is necessary but setitem seems to require it
     return types.frozenarray(onhull, copy=False)
 
+  @property
+  def basis(self):
+    if self.ndimsnormal == 0:
+      return types.frozenarray(numpy.eye(self.ndims)[numpy.newaxis], dtype=float, copy=False)
+    else:
+      raise NotImplementedError
+
 strictpoints = types.strict[Points]
 
 class CoordsPoints(Points):
   '''Manually supplied points.'''
 
   @types.apply_annotations
-  def __init__(self, coords:types.frozenarray[float]):
+  def __init__(self, coords:types.frozenarray[float], ndimsnormal:types.strictint=0):
     self.coords = coords
-    super().__init__(*coords.shape)
+    super().__init__(*coords.shape, ndimsnormal)
 
 class CoordsWeightsPoints(CoordsPoints):
   '''Manually supplied points and weights.'''
 
   @types.apply_annotations
-  def __init__(self, coords:types.frozenarray[float], weights:types.frozenarray[float]):
+  def __init__(self, coords:types.frozenarray[float], weights:types.frozenarray[float], ndimsnormal:types.strictint=0):
     self.weights = weights
-    super().__init__(coords)
+    super().__init__(coords, ndimsnormal)
 
 class CoordsUniformPoints(CoordsPoints):
   '''Manually supplied points with uniform weights.'''
@@ -136,7 +147,7 @@ class TensorPoints(Points):
   def __init__(self, points1:strictpoints, points2:strictpoints):
     self.points1 = points1
     self.points2 = points2
-    super().__init__(points1.npoints * points2.npoints, points1.ndims + points2.ndims)
+    super().__init__(points1.npoints * points2.npoints, points1.ndims + points2.ndims, points1.ndimsnormal + points2.ndimsnormal)
 
   @property
   def coords(self):
@@ -228,13 +239,15 @@ class SimplexBezierPoints(CoordsUniformPoints):
 class TransformPoints(Points):
   '''Affinely transformed Points.'''
 
-  __cache__ = 'coords', 'weights'
+  __cache__ = 'coords', 'weights', 'basis'
 
   @types.apply_annotations
   def __init__(self, points:strictpoints, trans:transform.stricttransformitem):
     self.points = points
     self.trans = trans
-    super().__init__(points.npoints, points.ndims)
+    if trans.fromdims != points.ndims:
+      raise ValueError('the dimension of the domain of the transform should match the dimension of the points but got {} and {} respectively'.format(trans.fromdims, points.ndims))
+    super().__init__(points.npoints, trans.todims, trans.todims-points.ndimsmanifold)
 
   @property
   def coords(self):
@@ -242,7 +255,14 @@ class TransformPoints(Points):
 
   @property
   def weights(self):
-    return self.points.weights * abs(float(self.trans.det))
+    if self.points.ndimsmanifold < self.points.ndims:
+      P = numpy.array(self.points.basis[:,:,:self.points.ndimsmanifold], dtype=float, copy=True)
+      numeric.gramschmidt(P)
+      TP = numpy.einsum('ij,njk->nik', self.trans.linear, P)
+      det = numpy.sqrt(numpy.linalg.det(numpy.einsum('nki,nkj->nij', TP, TP)))
+    else:
+      det = abs(float(self.trans.det))
+    return self.points.weights * det
 
   @property
   def tri(self):
@@ -252,6 +272,17 @@ class TransformPoints(Points):
   def hull(self):
     return self.points.hull
 
+  @property
+  def basis(self):
+    b = numpy.empty((self.npoints, self.ndims, self.ndims), dtype=float)
+    numpy.einsum('ij,njk->nik', self.trans.linear, self.points.basis, out=b[:,:,:self.points.ndims])
+    if self.points.ndims == self.ndims-1:
+      b[:,:,-1] = self.trans.ext
+    elif self.points.ndims != self.ndims:
+      raise ValueError('`trans.fromdims` should equal `trans.todims` or `trans.todims-1`')
+    numeric.gramschmidt(b)
+    return types.frozenarray(b, dtype=float, copy=False)
+
 class ConcatPoints(Points):
   '''Concatenation of several Points objects.
 
@@ -259,13 +290,20 @@ class ConcatPoints(Points):
   triggering deduplication and resulting in a smaller total point count.
   '''
 
-  __cache__ = 'coords', 'weights', 'tri', 'masks'
+  __cache__ = 'coords', 'weights', 'tri', 'masks', 'basis'
 
   @types.apply_annotations
   def __init__(self, allpoints:types.tuple[strictpoints], duplicates:frozenset=frozenset()):
     self.allpoints = allpoints
     self.duplicates = duplicates
-    super().__init__(sum(points.npoints for points in allpoints) - sum(len(d)-1 for d in duplicates), allpoints[0].ndims)
+    ndimsmanifolds = set(p.ndimsmanifold for p in allpoints)
+    ndimsnormals = set(p.ndimsnormal for p in allpoints)
+    if len(ndimsmanifolds) != 1:
+      raise ValueError('the dimension of the manifold space of the points to be concatenated is inhomongeneous')
+    if len(ndimsnormals) != 1:
+      raise ValueError('the dimension of the normal space of the points to be concatenated is inhomongeneous')
+    ndimsnormal, = ndimsnormals
+    super().__init__(sum(points.npoints for points in allpoints) - sum(len(d)-1 for d in duplicates), allpoints[0].ndims, ndimsnormal)
 
   @property
   def masks(self):
@@ -307,6 +345,10 @@ class ConcatPoints(Points):
         renumber[i][j] = renumber[I][J]
     return types.frozenarray(numpy.concatenate([renum.take(points.tri) for renum, points in zip(renumber, self.allpoints)]), copy=False)
 
+  @property
+  def basis(self):
+    return types.frozenarray(numpy.concatenate([numpy.broadcast_to(points.basis, [points.npoints,self.ndims,self.ndims])[mask] for mask, points in zip(self.masks, self.allpoints)] if self.duplicates else [numpy.broadcast_to(points.basis, [points.npoints,self.ndims,self.ndims]) for points in self.allpoints]), copy=False)
+
 class ConePoints(Points):
   '''Affinely transformed lower-dimensional points plus tip.
 
@@ -323,6 +365,8 @@ class ConePoints(Points):
     self.edgepoints = edgepoints
     self.edgeref = edgeref
     self.tip = tip
+    if edgepoints.ndimsnormal > 0:
+      raise NotImplementedError
     super().__init__(edgepoints.npoints+1, edgepoints.ndims+1)
 
   @property

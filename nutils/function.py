@@ -804,10 +804,15 @@ class RootBasis(Array):
     ndims = self._root.ndims
     assert trans == _trans
     assert (trans[0].todims if trans else points.ndims) == ndims
-    if points.ndims != self._ndimstangent:
+    if points.ndimsmanifold != self._ndimstangent:
       raise ValueError('expected a {}D tangent space, but got a {}D space'.format(self._ndimstangent, points.ndimstangent))
 
-    return transform.linearfrom(trans, ndims)[_]
+    linear = numpy.empty((points.npoints, ndims, ndims), dtype=float)
+    translinear = transform.linearfrom(trans, ndims)
+    numpy.einsum('ij,njk->nik', translinear[:,:points.ndims], points.basis, out=linear[:,:,:points.ndims])
+    if points.ndims < ndims:
+      linear[:,:,points.ndims:] = translinear[_,:,points.ndims:]
+    return linear
 
   @util.positional_only
   def prepare_eval(self, *, opposite=False, kwargs=...):

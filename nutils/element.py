@@ -238,10 +238,27 @@ class Reference(types.Singleton):
     zero = 0
     for trans, edge in self.edges:
       if edge:
-        gauss = edge.getpoints('gauss', 1)
-        w_normal = gauss.weights[:,_] * trans.ext
+        points = edge.getpoints('gauss', 1)
+        TJ = numpy.empty((self.ndims, self.ndims), dtype=float)
+        TJ[:,:trans.fromdims] = trans.linear
+        if trans.todims == trans.fromdims:
+          pass
+        elif trans.todims == trans.fromdims + 1:
+          TJ[:,-1] = trans.ext
+        else:
+          raise NotImplementedError
+        J = numpy.empty((points.npoints, self.ndims, self.ndims), dtype=float)
+        PJ = points.basis
+        numpy.einsum('ij,njk->nik', TJ[:,:points.ndims], points.basis, out=J[:,:,:PJ.shape[2]])
+        if PJ.shape[2] < self.ndims:
+          assert PJ.shape[2] == points.ndims
+          J[:,:,PJ.shape[2]:] = TJ[_,:,points.ndims:self.ndims]
+        detJ = abs(numpy.linalg.det(J[:,:,:self.ndims-1].transpose(0,2,1) @ J[:,:,:self.ndims-1]))**0.5
+        numeric.gramschmidt(J)
+        n = J[:,:,-1]
+        w_normal = (points.weights * detJ)[:,_] * n
         zero += w_normal.sum(0)
-        volume += numeric.contract(trans.apply(gauss.coords), w_normal, axis=0)
+        volume += numeric.contract(trans.apply(points.coords), w_normal, axis=0)
     if numpy.greater(abs(zero), tol).any():
       print('divergence check failed: {} != 0'.format(zero))
     if numpy.greater(abs(volume - self.volume), tol).any():
