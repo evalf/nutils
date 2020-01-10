@@ -176,7 +176,7 @@ class Reference(types.Singleton):
       else self.empty if numpy.less_equal(levels, 0).all() \
       else self.with_children(cref.trim(clevels, maxrefine-1, ndivisions)
             for cref, clevels in zip(self.child_refs, self.child_divide(levels,maxrefine))) if maxrefine > 0 \
-      else self.slice(lambda vertices: numeric.dot(numeric.poly_eval(self._linear_bernstein[_], vertices), levels), ndivisions)
+      else self.slice(lambda vertices: numeric.dot(numeric.poly_eval(self._linear_bernstein[_], vertices), levels), ndivisions).withmanifoldedges
 
   @property
   def _linear_bernstein(self):
@@ -300,6 +300,13 @@ class Reference(types.Singleton):
 
   def get_edge_dofs(self, degree, iedge):
     raise NotImplementedError
+
+  @property
+  def withmanifoldedges(self):
+    if any(map(WithManifoldEdgesReference._ismanifold, self.edge_transforms)):
+      return WithManifoldEdgesReference(self)
+    else:
+      return self
 
 strictreference = types.strict[Reference]
 
@@ -1152,6 +1159,182 @@ class MosaicReference(Reference):
   def get_edge_dofs(self, degree, iedge):
     return self.baseref.get_edge_dofs(degree, iedge)
 
+class WithManifoldEdgesReference(Reference):
+
+  __slots__ = 'baseref'
+  __cache__ = 'edges'
+
+  def __init__(self, baseref:strictreference):
+    self.baseref = baseref
+    super().__init__(baseref.ndims, baseref.ndimsnormal)
+
+  def __bool__(self):
+    return bool(self.baseref)
+
+  @property
+  def volume(self):
+    return self.baseref.volume
+
+  @property
+  def vertices(self):
+    return self.baseref.vertices
+
+  def nvertices_by_level(self, n):
+    return self.baseref.nvertices_by_level(n)
+
+  def __and__(self, other):
+    if isinstance(other, WithManifoldEdgesReference):
+      other = other.baseref
+    result = self.baseref & other
+    return result if result is NotImplemented else result.withmanifoldedges
+
+  __rand__ = __and__
+
+  def __or__(self, other):
+    if isinstance(other, WithManifoldEdgesReference):
+      other = other.baseref
+    result = self.baseref | other
+    return result if result is NotImplemented else result.withmanifoldedges
+
+  __ror__ = __or__
+
+  def __sub__(self, other):
+    if isinstance(other, WithManifoldEdgesReference):
+      other = other.baseref
+    result = self.baseref - other
+    return result if result is NotImplemented else result.withmanifoldedges
+
+  def __rsub__(self, other):
+    if isinstance(other, WithManifoldEdgesReference):
+      other = other.baseref
+    result = other - self.baseref
+    return result if result is NotImplemented else result.withmanifoldedges
+
+  def getpoints(self, ischeme, degree):
+    return self.baseref.getpoints(ischeme, degree)
+
+  def slice(self, levelfunc, ndivisions):
+    return self.baseref.slice(levelfunc, ndivisions).withmanifoldedges
+
+  @property
+  def withmanifoldedges(self):
+    return self
+
+  @property
+  def child_transforms(self):
+    return self.baseref.child_transforms
+
+  @property
+  def child_refs(self):
+    return tuple(cref.withmanifoldedges for cref in self.baseref.child_refs)
+
+  @classmethod
+  def _ismanifold(cls, etrans):
+    if isinstance(etrans, transform.ScaledUpdim):
+      return cls._ismanifold(etrans.trans2)
+    else:
+      return not isinstance(etrans, (transform.TensorEdge1, transform.TensorEdge2, transform.SimplexEdge))
+
+  @property
+  def edges(self):
+    edges = []
+    for etrans, eref in self.baseref.edges:
+      if self._ismanifold(etrans):
+        eref = ManifoldReference(eref, etrans)
+        etrans = transform.Manifold(self.baseref.ndims, etrans)
+      edges.append((etrans, eref))
+    return tuple(edges)
+
+  @property
+  def edge_transforms(self):
+    return tuple(etrans for etrans, eref in self.edges)
+
+  @property
+  def edge_refs(self):
+    return tuple(eref for etrans, eref in self.edges)
+
+  def get_ndofs(self, degree):
+    return self.baseref.get_ndofs(degree)
+
+  def get_poly_coeffs(self, basis, **kwargs):
+    return self.baseref.get_poly_coeffs(basis, **kwargs)
+
+  def get_edge_dofs(self, degree, iedge):
+    return self.baseref.get_edge_dofs(degree, iedge)
+
+  def inside(self, point, eps=0):
+    return self.baseref.inside(point, eps=eps)
+
+class ManifoldReference(Reference):
+
+  __slots__ = 'ref', 'trans'
+
+  @types.apply_annotations
+  def __init__(self, ref: strictreference, trans: transform.stricttransformitem):
+    self.ref = ref
+    self.trans = trans
+    assert self.ref.ndims + self.ref.ndimsnormal == self.trans.fromdims
+    super().__init__(self.ref.ndims, self.ref.ndimsnormal+trans.todims-trans.fromdims)
+
+  def __bool__(self):
+    return bool(self.ref)
+
+  def __and__(self, other):
+    if not isinstance(other, Reference):
+      return NotImplemented
+    if isinstance(other, ManifoldReference) and other.trans == self.trans:
+      return ManifoldReference(self.ref & other.ref, self.trans)
+    else:
+      return self.empty
+
+  __rand__ = __and__
+
+  @property
+  def vertices(self):
+    verts = types.frozenarray(self.trans.apply(self.ref.vertices))
+    assert len(verts) == len(self.ref.vertices)
+    return verts
+
+  # def nvertices_by_level(self, n):
+
+  @property
+  def child_transforms(self):
+    if isinstance(self.ref, OwnChildReference):
+      assert isinstance(self.trans, transform.ScaledUpdim)
+      return self.trans.trans1,
+    else:
+      assert self.ref.nchildren == 0
+      return ()
+
+  @property
+  def child_refs(self):
+    if isinstance(self.ref, OwnChildReference):
+      assert isinstance(self.trans, transform.ScaledUpdim)
+      return ManifoldReference(self.ref.baseref, self.trans.trans2),
+    else:
+      assert self.ref.nchildren == 0
+      return ()
+
+  @property
+  def edge_transforms(self):
+    return (transform.Identity(self.ndims+self.ndimsnormal),)*len(self.ref.edges)
+
+  @property
+  def edge_refs(self):
+    return tuple(ManifoldReference(eref, self.trans*etrans) for etrans, eref in self.ref.edges)
+
+  @property
+  def simplices(self):
+    return tuple((trans, ManifoldReference(simplex, self.trans)) for trans, simplex in self.ref.simplices)
+
+  def getpoints(self, ischeme, degree):
+    return points.TransformPoints(self.ref.getpoints(ischeme, degree), self.trans)
+
+  def inside(self, point, eps=0):
+    return self.ref.inside(self.trans.invapply(point), eps=0)
+
+  def slice(self, levelfunc, ndivisions):
+    return ManifoldReference(self.ref.slice(lambda vertices: levelfunc(self.trans.apply(vertices)), ndivisions), self.trans)
 
 ## UTILITY FUNCTIONS
 
