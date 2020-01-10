@@ -40,7 +40,7 @@ def canonical(chain):
     return tuple(chain)
   items = list(chain)
   i = 0
-  while items[i].fromdims > items[n-1].fromdims:
+  while i < len(items)-1:
     swapped = items[i+1].swapdown(items[i])
     if swapped:
       items[i:i+2] = swapped
@@ -56,7 +56,7 @@ def uppermost(chain):
     return tuple(chain)
   items = list(chain)
   i = n
-  while items[i-1].todims < items[0].todims:
+  while i > 1:
     swapped = items[i-2].swapup(items[i-1])
     if swapped:
       items[i-2:i] = swapped
@@ -68,7 +68,7 @@ def uppermost(chain):
 def promote(chain, ndims):
   # swap transformations such that ndims is reached as soon as possible, and
   # then maintained as long as possible (i.e. proceeds as canonical).
-  for i, item in enumerate(chain): # NOTE possible efficiency gain using bisection
+  for i, item in reversed(tuple(enumerate(chain))):
     if item.fromdims == ndims:
       return canonical(chain[:i+1]) + uppermost(chain[i+1:])
   return chain # NOTE at this point promotion essentially failed, maybe it's better to raise an exception
@@ -426,15 +426,15 @@ class SimplexChild(Square):
       raise NotImplementedError('SimplexChild(ndims={}, ichild={})'.format(ndims, ichild))
     super().__init__(linear, offset)
 
-class ScaledUpdim(Updim):
+class ScaledUpdim(Matrix):
 
-  __slots__ = 'trans1', 'trans2'
+  __slots__ = 'trans1', 'trans2', 'isflipped'
 
   def __init__(self, trans1, trans2):
-    assert trans1.todims == trans1.fromdims == trans2.todims == trans2.fromdims + 1
     self.trans1 = trans1
     self.trans2 = trans2
-    super().__init__(numpy.dot(trans1.linear, trans2.linear), trans1.apply(trans2.offset), trans1.isflipped^trans2.isflipped)
+    self.isflipped = trans1.isflipped^trans2.isflipped
+    super().__init__(numpy.dot(trans1.linear, trans2.linear), trans1.apply(trans2.offset))
 
   def swapup(self, other):
     if type(other) is Identity:
@@ -447,6 +447,15 @@ class ScaledUpdim(Updim):
   @property
   def det(self):
     return numpy.sqrt(numpy.linalg.det(numpy.einsum('ki,kj->ij', self.linear, self.linear))) if self.fromdims else 1
+
+  @property
+  def ext(self):
+    ext = numeric.ext(self.linear)
+    return types.frozenarray(-ext if self.isflipped else ext, copy=False)
+
+  def swapdown(self, other):
+    if isinstance(other, TensorChild):
+      return ScaledUpdim(other, self), Identity(self.fromdims)
 
 class TensorEdge1(Updim):
 
@@ -552,5 +561,20 @@ class Identifier(Identity):
 
   def __str__(self):
     return ':'.join(map(str, self._args))
+
+class Manifold(Identity):
+
+  @types.apply_annotations
+  def __init__(self, ndims:types.strictint, trans:stricttransformitem):
+    self.trans = trans
+    super().__init__(ndims)
+
+  @property
+  def flipped(self):
+    return Manifold(self.fromdims, self.trans.flipped)
+
+  def swapdown(self, other):
+    if isinstance(other, TensorChild):
+      return ScaledUpdim(other, self), Identity(self.fromdims)
 
 # vim:sw=2:sts=2:et
