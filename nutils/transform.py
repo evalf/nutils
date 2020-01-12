@@ -340,6 +340,10 @@ class Updim(Matrix):
     super().__init__(linear, offset)
 
   @property
+  def det(self):
+    return numpy.sqrt(numpy.linalg.det(numpy.einsum('ki,kj->ij', self.linear, self.linear))) if self.fromdims else 1
+
+  @property
   def ext(self):
     ext = numeric.ext(self.linear)
     return types.frozenarray(-ext if self.isflipped else ext, copy=False)
@@ -439,6 +443,10 @@ class ScaledUpdim(Updim):
   @property
   def flipped(self):
     return ScaledUpdim(self.trans1, self.trans2.flipped)
+
+  @property
+  def det(self):
+    return numpy.sqrt(numpy.linalg.det(numpy.einsum('ki,kj->ij', self.linear, self.linear))) if self.fromdims else 1
 
 class TensorEdge1(Updim):
 
