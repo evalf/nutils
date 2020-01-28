@@ -37,13 +37,14 @@ import re, math, itertools, operator, functools
 class Reference(types.Singleton):
   'reference element'
 
-  __slots__ = 'ndims',
+  __slots__ = 'ndims', 'ndimsnormal'
   __cache__ = 'connectivity', 'edgechildren', 'ribbons', 'volume', 'centroid', '_linear_bernstein', 'getpoints'
 
   @types.apply_annotations
-  def __init__(self, ndims:int):
+  def __init__(self, ndims:int, ndimsnormal:int=0):
     super().__init__()
     self.ndims = ndims
+    self.ndimsnormal = ndimsnormal
 
   @property
   def nverts(self):
@@ -316,7 +317,7 @@ class EmptyLike(Reference):
   @types.apply_annotations
   def __init__(self, baseref:strictreference):
     self.baseref = baseref
-    super().__init__(baseref.ndims)
+    super().__init__(baseref.ndims, baseref.ndimsnormal)
 
   @property
   def vertices(self):
@@ -642,7 +643,7 @@ class TensorReference(Reference):
     assert not isinstance(ref1, TensorReference)
     self.ref1 = ref1
     self.ref2 = ref2
-    super().__init__(ref1.ndims + ref2.ndims)
+    super().__init__(ref1.ndims + ref2.ndims, ref1.ndimsnormal + ref2.ndimsnormal)
 
   def __mul__(self, other):
     assert isinstance(other, Reference)
@@ -650,10 +651,10 @@ class TensorReference(Reference):
 
   @property
   def vertices(self):
-    vertices = numpy.empty((self.ref1.nverts, self.ref2.nverts, self.ndims), dtype=float)
-    vertices[:,:,:self.ref1.ndims] = self.ref1.vertices[:,_]
-    vertices[:,:,self.ref1.ndims:] = self.ref2.vertices[_,:]
-    return types.frozenarray(vertices.reshape(self.ref1.nverts*self.ref2.nverts, self.ndims), copy=False)
+    vertices = numpy.empty((self.ref1.nverts, self.ref2.nverts, self.ndims+self.ndimsnormal), dtype=float)
+    vertices[:,:,:self.ref1.ndims+self.ref1.ndimsnormal] = self.ref1.vertices[:,_]
+    vertices[:,:,self.ref1.ndims+self.ref1.ndimsnormal:] = self.ref2.vertices[_,:]
+    return types.frozenarray(vertices.reshape(self.ref1.nverts*self.ref2.nverts, self.ndims+self.ndimsnormal), copy=False)
 
   @property
   def centroid(self):
@@ -682,6 +683,8 @@ class TensorReference(Reference):
       degree1 = degree if not isinstance(degree, tuple) else degree[0]
       degree2 = degree if not isinstance(degree, tuple) else degree[1] if len(degree) == 2 else degree[1:]
       return points.TensorPoints(self.ref1.getpoints(ischeme1, degree1), self.ref2.getpoints(ischeme2, degree2))
+    if self.ndimsnormal != 0:
+      raise NotImplementedError
     if self.ref1.ndims == self.ref2.ndims == 1:
       coords = numpy.empty([2, 2, 2])
       coords[...,:1] = self.ref1.vertices[:,_]
@@ -703,9 +706,9 @@ class TensorReference(Reference):
   def edge_transforms(self):
     edge_transforms = []
     if self.ref1.ndims:
-      edge_transforms.extend(transform.TensorEdge1(trans1, self.ref2.ndims) for trans1 in self.ref1.edge_transforms)
+      edge_transforms.extend(transform.TensorEdge1(trans1, self.ref2.ndims+self.ref2.ndimsnormal) for trans1 in self.ref1.edge_transforms)
     if self.ref2.ndims:
-      edge_transforms.extend(transform.TensorEdge2(self.ref1.ndims, trans2) for trans2 in self.ref2.edge_transforms)
+      edge_transforms.extend(transform.TensorEdge2(self.ref1.ndims+self.ref1.ndimsnormal, trans2) for trans2 in self.ref2.edge_transforms)
     return tuple(edge_transforms)
 
   @property
@@ -749,7 +752,7 @@ class TensorReference(Reference):
     return tuple(child1 * child2 for child1 in self.ref1.child_refs for child2 in self.ref2.child_refs)
 
   def inside(self, point, eps=0):
-    return self.ref1.inside(point[:self.ref1.ndims],eps) and self.ref2.inside(point[self.ref1.ndims:],eps)
+    return self.ref1.inside(point[:self.ref1.ndims+self.ref1.ndimsnormal],eps) and self.ref2.inside(point[self.ref1.ndims+self.ref1.ndimsnormal:],eps)
 
   @property
   def simplices(self):
@@ -789,6 +792,8 @@ class Cone(Reference):
 
   @types.apply_annotations
   def __init__(self, edgeref, etrans, tip:types.frozenarray):
+    if edgeref.ndimsnormal != 0:
+      raise NotImplementedError
     assert etrans.fromdims == edgeref.ndims
     assert etrans.todims == len(tip)
     super().__init__(len(tip))
@@ -870,8 +875,8 @@ class OwnChildReference(Reference):
   def __init__(self, baseref):
     self.baseref = baseref
     self.child_refs = baseref,
-    self.child_transforms = transform.Identity(baseref.ndims),
-    super().__init__(baseref.ndims)
+    self.child_transforms = transform.Identity(baseref.ndims+baseref.ndimsnormal),
+    super().__init__(baseref.ndims, baseref.ndimsnormal)
 
   @property
   def vertices(self):
@@ -911,11 +916,11 @@ class WithChildrenReference(Reference):
   def __init__(self, baseref, child_refs:tuple):
     assert len(child_refs) == baseref.nchildren and any(child_refs) and child_refs != baseref.child_refs
     assert all(isinstance(child_ref,Reference) for child_ref in child_refs)
-    assert all(child_ref.ndims == baseref.ndims for child_ref in child_refs)
+    assert all(child_ref.ndims == baseref.ndims and child_ref.ndimsnormal == baseref.ndimsnormal for child_ref in child_refs)
     self.baseref = baseref
     self.child_transforms = baseref.child_transforms
     self.child_refs = child_refs
-    super().__init__(baseref.ndims)
+    super().__init__(baseref.ndims, baseref.ndimsnormal)
 
   def check_edges(self, tol=1e-15, print=print):
     super().check_edges(tol=tol, print=print)
