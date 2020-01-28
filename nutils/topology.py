@@ -1492,12 +1492,16 @@ class SubsetTopology(Topology):
     baseboundary = self.basetopo.boundary
     baseconnectivity = self.basetopo.connectivity
     brefs = [ref.empty for ref in baseboundary.references]
+    trimmededges = {}
+    def addtrimmededge(ielem, etrans):
+      edges = trimmededges.setdefault(ielem, [])
+      assert etrans not in edges
+      iedge = len(edges)
+      edges.append(etrans)
+      return ielem, iedge
     trimmedreferences = []
     trimmedtransforms = []
     trimmedopposites = []
-    manifoldreferences = []
-    manifoldtransforms = []
-    manifoldopposites = []
     for ielem, newref in enumerate(self.refs):
       if not newref:
         continue
@@ -1522,32 +1526,27 @@ class SubsetTopology(Topology):
           edgeref -= oppref.edge_refs[ioppedge]
           if edgeref:
             trimmedreferences.append(edgeref)
-            trimmedtransforms.append(elemtrans+(edgetrans,))
-            trimmedopposites.append(self.basetopo.transforms[ioppelem]+(oppref.edge_transforms[ioppedge],))
+            trimmedtransforms.append(addtrimmededge(ielem, edgetrans))
+            trimmedopposites.append(addtrimmededge(ioppelem, oppref.edge_transforms[ioppedge]))
       # The last edges of newref (beyond the number of edges of the original)
       # cannot have opposites and are added to the trimmed group directly.
       for edgetrans, edgeref in newref.edges[len(ioppelems):]:
-        if edgetrans.fromdims == edgetrans.todims:
-          manifoldreferences.append(edgeref)
-          manifoldtransforms.append(elemtrans+(edgetrans,))
-          manifoldopposites.append(elemtrans+(edgetrans.flipped,))
-        else:
-          trimmedreferences.append(edgeref)
-          trimmedtransforms.append(elemtrans+(edgetrans,))
-          trimmedopposites.append(elemtrans+(edgetrans.flipped,))
+        trimmedreferences.append(edgeref)
+        trimmedtransforms.append(addtrimmededge(ielem, edgetrans))
+        trimmedopposites.append(addtrimmededge(ielem, edgetrans.flipped))
+    trimmedreferences = elementseq.asreferences(trimmedreferences, self.ndims-1)
+    trimmedielems, trimmededges = zip(*sorted(trimmededges.items(), key=lambda item: item[0]))
+    trimmedoffsets = dict(zip(trimmedielems, numpy.cumsum([0, *map(len, trimmededges)])))
+    trimmededges = transformseq.TrimmedEdgesTransforms(self.basetopo.transforms[numpy.asarray(trimmedielems)], trimmededges)
+    trimmedtransforms = trimmededges[numpy.fromiter((trimmedoffsets[ielem]+iedge for ielem, iedge in trimmedtransforms), dtype=int)]
+    trimmedopposites = trimmededges[numpy.fromiter((trimmedoffsets[ielem]+iedge for ielem, iedge in trimmedopposites), dtype=int)]
+    trimboundary = Topology(self.roots, trimmedreferences, trimmedtransforms, trimmedopposites)
     origboundary = SubsetTopology(baseboundary, brefs)
     if isinstance(self.newboundary, Topology):
       trimmedbrefs = [ref.empty for ref in self.newboundary.references]
-      for ref, trans in zip(trimmedreferences, trimmedtransforms):
-        trimmedbrefs[self.newboundary.transforms.index(trans)] = ref
-      for ref, trans in zip(manifoldreferences, manifoldtransforms):
+      for ref, trans in zip(trimboundary.references, trimboundary.transforms):
         trimmedbrefs[self.newboundary.transforms.index(trans)] = ref
       trimboundary = SubsetTopology(self.newboundary, trimmedbrefs)
-    else:
-      root, = self.roots
-      trimmedboundary = Topology(self.roots, elementseq.asreferences(trimmedreferences, self.ndims-1), transformseq.PlainTransforms(trimmedtransforms, root.ndims, self.ndims-1), transformseq.PlainTransforms(trimmedopposites, root.ndims, self.ndims-1))
-      manifoldboundary = Topology(self.roots, elementseq.asreferences(manifoldreferences, self.ndims-1), transformseq.PlainTransforms(manifoldtransforms, root.ndims, self.ndims), transformseq.PlainTransforms(manifoldopposites, root.ndims, self.ndims))
-      trimboundary = DisjointUnionTopology([trimmedboundary, manifoldboundary])
     return DisjointUnionTopology([trimboundary, origboundary], names=[self.newboundary] if isinstance(self.newboundary,str) else [])
 
   @property

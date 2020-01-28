@@ -804,6 +804,47 @@ class UniformDerivedTransforms(Transforms):
     iderived = self._derived_transforms.index(tail[0])
     return iparent*len(self._derived_transforms) + iderived, tail[1:]
 
+class TrimmedEdgesTransforms(Transforms):
+
+  __slots__ = '_parent', '_edges'
+  __cache__ = '_offsets'
+
+  @types.apply_annotations
+  def __init__(self, parent:stricttransforms, edges:types.tuple[types.tuple[transform.stricttransformitem]]):
+    assert len(edges) == len(parent)
+    self._parent = parent
+    self._edges = edges
+    super().__init__(parent.todims)
+
+  @property
+  def _offsets(self):
+    return types.frozenarray(numpy.cumsum([0, *map(len, self._edges)]), copy=False)
+
+  def __len__(self):
+    return self._offsets[-1]
+
+  def __iter__(self):
+    for ptrans, edges in zip(self._parent, self._edges):
+      for etrans in edges:
+        yield ptrans+(etrans,)
+
+  def __getitem__(self, index):
+    if not numeric.isint(index):
+      return super().__getitem__(index)
+    index = numeric.normdim(len(self), index)
+    iparent = numpy.searchsorted(self._offsets, index, side='right')-1
+    assert 0 <= iparent < len(self._offsets)-1
+    iedge = index - self._offsets[iparent]
+    return self._parent[iparent] + (self._edges[iparent][iedge],)
+
+  def index_with_tail(self, trans):
+    iparent, tail = self._parent.index_with_tail(trans)
+    if not tail:
+      raise ValueError
+    tail = transform.canonical(tail)
+    iedge = self._edges[iparent].index(tail[0])
+    return self._offsets[iparent]+iedge, tail[1:]
+
 class ProductTransforms(Transforms):
   '''The product of two :class:`Transforms` objects.
 
