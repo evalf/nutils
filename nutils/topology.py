@@ -2057,8 +2057,6 @@ class MultipatchTopology(Topology):
         patchboundarydata.append(PatchBoundary(boundaryid,dim,side,reverse,transpose))
       boundarydata.append(tuple(patchboundarydata))
 
-    # TODO: boundary sanity checks
-
     return boundarydata
 
   @types.apply_annotations
@@ -2066,6 +2064,18 @@ class MultipatchTopology(Topology):
     'constructor'
 
     self.patches = patches
+
+    for boundaryid, patchdata in self._patchinterfaces.items():
+      if len(patchdata) == 1:
+        continue
+      transposes = set()
+      reverses = set()
+      for topo, boundary in patchdata:
+        assert boundary.transpose[-1] == boundary.dim
+        transposes.add(tuple(i-1 if i > boundary.dim else i for i in boundary.transpose[:-1]))
+        reverses.add(boundary.reverse[:boundary.dim]+boundary.reverse[boundary.dim+1:])
+      if len(transposes) != 1 or len(reverses) != 1:
+        raise NotImplementedError('patch interfaces must have the same order of axes and the same orientation per axis')
 
     super().__init__(
       elementseq.chain([patch.topo.references for patch in self.patches], self.patches[0].topo.ndims),
