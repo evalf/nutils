@@ -45,6 +45,48 @@ expensive and currently unsupported operation.
 from . import util, types, numpy, numeric, cache, transform, transformseq, expression, warnings, _
 import sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log
 
+class Root(types.Singleton):
+  '''Root
+
+  A root can be seen as a real coordinate space of dimension :attr:`ndims`,
+  identified by a :attr:`name`. An :class:`Evaluable` lives on zero roots, in
+  which case the evaluable is constant, one root or multiple roots, in which
+  case all roots must have unique names and the combined coordinate space is
+  the product of all root coordinate spaces.
+
+  Every transform chain belongs to precisely one root and, if unempty, the
+  chain should start with a :class:`~nutils.transform.TransformItem` with
+  :attr:`~nutils.transform.TransformItem.todims` equal to :attr:`ndims`.
+
+  parameters
+  ----------
+  name : :class:`str`
+      The name of this root.
+  ndims : :class:`int`
+      The dimension of the space. Every transform chain beloning to this root
+      should start with a :class:`~nutils.transform.TransformItem` with
+      :attr:`~nutils.transform.TransformItem.todims` equal to ``ndims``.
+
+  attributes
+  ----------
+  name : :class:`str`
+      The name of this root.
+  ndims : :class:`int`
+      The dimension of the space.
+  '''
+
+  __slots__ = 'name', 'ndims'
+
+  @types.apply_annotations
+  def __init__(self, name:types.strictstr, ndims: types.strictint):
+    self.name = name
+    self.ndims = ndims
+
+  def __repr__(self):
+    return 'Root({},{})'.format(self.name, self.ndims)
+
+strictroot = types.strict[Root]
+
 isevaluable = lambda arg: isinstance(arg, Evaluable)
 
 def strictevaluable(value):
