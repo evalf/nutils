@@ -19,7 +19,7 @@ class check(TestCase):
     else:
       raise Exception('invalid ndim {!r}'.format(self.ndim))
     numpy.random.seed(0)
-    self.args = [function.Guard(function.Polyval(numeric.dot(numpy.random.uniform(size=shape+poly.shape[:1], low=self.low, high=self.high), poly), function.rootcoords(self.ndim))) for shape in self.shapes]
+    self.args = [function.Guard(function.Polyval(numeric.dot(numpy.random.uniform(size=shape+poly.shape[:1], low=self.low, high=self.high), poly), function.rootcoords(domain.root))) for shape in self.shapes]
     if self.pass_geom:
         self.args += [self.geom]
     self.sample = domain.sample('uniform', 2)
@@ -614,7 +614,7 @@ class elemwise(TestCase):
   def setUp(self):
     super().setUp()
     self.domain, geom = mesh.rectilinear([5])
-    self.index = function.TransformsIndexWithTail(self.domain.transforms, self.domain.ndims, function.TRANS).index
+    self.index = function.TransformsIndexWithTail(self.domain.transforms, self.domain.ndims, function.SelectChain(self.domain.roots)).index
     self.data = tuple(map(types.frozenarray, (
       numpy.arange(1, dtype=float).reshape(1,1),
       numpy.arange(2, dtype=float).reshape(1,2),
@@ -1063,27 +1063,30 @@ class CommonBasis:
 
 class PlainBasis(CommonBasis, TestCase):
   def setUp(self):
+    root = function.Root('X', 0)
     transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
     self.checkcoeffs = [[1],[2,3],[4,5],[6]]
     self.checkdofs = [[0],[2,3],[1,3],[2]]
-    self.basis = function.PlainBasis(self.checkcoeffs, self.checkdofs, 4, transforms, 0)
+    self.basis = function.PlainBasis(self.checkcoeffs, self.checkdofs, 4, transforms, 0, function.SelectChain((root,)))
     self.checkndofs = 4
     super().setUp()
 
 class DiscontBasis(CommonBasis, TestCase):
   def setUp(self):
+    root = function.Root('X', 0)
     transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
     self.checkcoeffs = [[1],[2,3],[4,5],[6]]
-    self.basis = function.DiscontBasis(self.checkcoeffs, transforms, 0)
+    self.basis = function.DiscontBasis(self.checkcoeffs, transforms, 0, function.SelectChain((root,)))
     self.checkdofs = [[0],[1,2],[3,4],[5]]
     self.checkndofs = 6
     super().setUp()
 
 class MaskedBasis(CommonBasis, TestCase):
   def setUp(self):
+    root = function.Root('X', 0)
     transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
-    parent = function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, transforms, 0)
-    self.basis = function.MaskedBasis(parent, [0,2])
+    parent = function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, transforms, 0, function.SelectChain((root,)))
+    self.basis = function.MaskedBasis(parent, [0,2], function.SelectChain((root,)))
     self.checkcoeffs = [[1],[2],[],[6]]
     self.checkdofs = [[0],[1],[],[1]]
     self.checkndofs = 2
@@ -1091,9 +1094,10 @@ class MaskedBasis(CommonBasis, TestCase):
 
 class PrunedBasis(CommonBasis, TestCase):
   def setUp(self):
+    root = function.Root('X', 0)
     parent_transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
-    parent = function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, parent_transforms, 0)
-    self.basis = function.PrunedBasis(parent, [0,2])
+    parent = function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, parent_transforms, 0, function.SelectChain((root,)))
+    self.basis = function.PrunedBasis(parent, [0,2], function.SelectChain((root,)))
     self.checkcoeffs = [[1],[4,5]]
     self.checkdofs = [[0],[1,2]]
     self.checkndofs = 3
@@ -1101,8 +1105,9 @@ class PrunedBasis(CommonBasis, TestCase):
 
 class StructuredBasis1D(CommonBasis, TestCase):
   def setUp(self):
+    root = function.Root('X', 1)
     transforms = transformseq.StructuredTransforms([transformseq.DimAxis(0,4,False)], 0)
-    self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]], [[0,1,2,3]], [[2,3,4,5]], [5], transforms, [4])
+    self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]], [[0,1,2,3]], [[2,3,4,5]], [5], transforms, [4], function.SelectChain((root,)))
     self.checkcoeffs = [[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]
     self.checkdofs = [[0,1],[1,2],[2,3],[3,4]]
     self.checkndofs = 5
@@ -1110,8 +1115,9 @@ class StructuredBasis1D(CommonBasis, TestCase):
 
 class StructuredBasis1DPeriodic(CommonBasis, TestCase):
   def setUp(self):
+    root = function.Root('X', 1)
     transforms = transformseq.StructuredTransforms([transformseq.DimAxis(0,4,True)], 0)
-    self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]], [[0,1,2,3]], [[2,3,4,5]], [4], transforms, [4])
+    self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]], [[0,1,2,3]], [[2,3,4,5]], [4], transforms, [4], function.SelectChain((root,)))
     self.checkcoeffs = [[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]
     self.checkdofs = [[0,1],[1,2],[2,3],[3,0]]
     self.checkndofs = 4
@@ -1119,8 +1125,9 @@ class StructuredBasis1DPeriodic(CommonBasis, TestCase):
 
 class StructuredBasis2D(CommonBasis, TestCase):
   def setUp(self):
+    root = function.Root('X', 2)
     transforms = transformseq.StructuredTransforms([transformseq.DimAxis(0,2,False),transformseq.DimAxis(0,2,False)], 0)
-    self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]]],[[[5],[6]],[[7],[8]]]], [[0,1],[0,1]], [[2,3],[2,3]], [3,3], transforms, [2,2])
+    self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]]],[[[5],[6]],[[7],[8]]]], [[0,1],[0,1]], [[2,3],[2,3]], [3,3], transforms, [2,2], function.SelectChain((root,)))
     self.checkcoeffs = [[[[5]],[[6]],[[10]],[[12]]],[[[7]],[[8]],[[14]],[[16]]],[[[15]],[[18]],[[20]],[[24]]],[[[21]],[[24]],[[28]],[[32]]]]
     self.checkdofs = [[0,1,3,4],[1,2,4,5],[3,4,6,7],[4,5,7,8]]
     self.checkndofs = 9

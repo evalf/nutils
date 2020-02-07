@@ -258,8 +258,9 @@ class refined(TestCase):
   def test_boundary_gradient(self):
     ref = _refined_refs[self.etype]
     trans = (transform.Identifier(ref.ndims, 'root'),)
-    domain = topology.ConnectedTopology(elementseq.asreferences([ref], ref.ndims), transformseq.PlainTransforms([trans], ref.ndims), transformseq.PlainTransforms([trans], ref.ndims), ((-1,)*ref.nedges,)).refine(self.ref0)
-    geom = function.rootcoords(ref.ndims)
+    root = function.Root('root', ref.ndims)
+    domain = topology.ConnectedTopology((root,), elementseq.asreferences([ref], ref.ndims), transformseq.PlainTransforms([trans], ref.ndims), transformseq.PlainTransforms([trans], ref.ndims), ((-1,)*ref.nedges,)).refine(self.ref0)
+    geom = function.rootcoords(root)
     basis = domain.basis('std', degree=1)
     u = domain.projection(geom.sum(), onto=basis, geometry=geom, degree=2)
     bpoints = domain.refine(self.ref1).boundary.refine(self.ref2).sample('uniform', 1)
@@ -280,7 +281,7 @@ class general(TestCase):
     super().setUp()
     self.domain, self.geom = mesh.rectilinear([3,4,5], periodic=[] if self.periodic is False else [self.periodic])
     if not self.isstructured:
-      self.domain = topology.ConnectedTopology(self.domain.references, self.domain.transforms, self.domain.opposites, self.domain.connectivity)
+      self.domain = topology.ConnectedTopology(self.domain.roots, self.domain.references, self.domain.transforms, self.domain.opposites, self.domain.connectivity)
 
   def test_connectivity(self):
     nboundaries = 0
@@ -616,7 +617,7 @@ class common(TestCase):
 
 common(
   'Topology',
-  topo=topology.Topology(elementseq.asreferences([element.PointReference()], 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0)),
+  topo=topology.Topology((function.Root('point', 0),), elementseq.asreferences([element.PointReference()], 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0)),
   hasboundary=False)
 common(
   'StructuredTopology:2D',
