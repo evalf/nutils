@@ -393,7 +393,7 @@ class partialtrim(TestCase):
     self.assertEqual(set(self.topoB.boundary['trimmed'].transforms), set(self.topoA.boundary['trimmed'].opposites))
 
   def test_opposites(self):
-    ielem = function.elemwise(self.topo.transforms, self.topo.ndims, numpy.arange(4))
+    ielem = function.elemwise(self.topo.roots, self.topo.transforms, self.topo.ndims, numpy.arange(4))
     sampleA = self.topoA.boundary['trimmed'].sample('uniform', 1)
     sampleB = self.topoB.boundary['trimmed'].sample('uniform', 1)
     self.assertEqual(set(sampleB.eval(ielem)), {0,1})
@@ -405,5 +405,5 @@ class partialtrim(TestCase):
     # the base implementation should create the correct boundary topology but
     # without interface opposites and without the trimmed group
     for topo in self.topoA, self.topoB:
-      alttopo = topology.ConnectedTopology(topo.references, topo.transforms, topo.opposites, topo.connectivity)
+      alttopo = topology.ConnectedTopology(topo.roots, topo.references, topo.transforms, topo.opposites, topo.connectivity)
       self.assertEqual(dict(zip(alttopo.boundary.transforms, alttopo.boundary.references)), dict(zip(topo.boundary.transforms, topo.boundary.references)))

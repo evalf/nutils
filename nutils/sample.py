@@ -70,8 +70,10 @@ class Sample(types.Singleton):
   respectively. Availability of these properties depends on the selected sample
   points, and is typically used in combination with the "bezier" set.
 
-  Args
-  ----
+  Parameters
+  ----------
+  roots : :class:`tuple` of :class:`~nutils.function.Root`
+      The roots of this sample.
   ndims : :class:`int`
       The dimension of the :class:`~nutils.topology.Topology` from which this
       sample is created.
@@ -88,7 +90,7 @@ class Sample(types.Singleton):
   __cache__ = 'allcoords'
 
   @types.apply_annotations
-  def __init__(self, ndims:types.strictint, transforms:types.tuple[transformseq.stricttransforms], points:types.tuple[points.strictpoints], index:types.tuple[types.frozenarray[types.strictint]]):
+  def __init__(self, roots:types.tuple[function.strictroot], ndims:types.strictint, transforms:types.tuple[transformseq.stricttransforms], points:types.tuple[points.strictpoints], index:types.tuple[types.frozenarray[types.strictint]]):
     assert len(points) == len(index)
     assert len(transforms) >= 1
     assert all(len(t) == len(points) for t in transforms)
@@ -98,6 +100,7 @@ class Sample(types.Singleton):
     self.index = index
     self.npoints = sum(p.npoints for p in points)
     self.ndims = ndims
+    self.roots = roots
 
   def __repr__(self):
     return '{}<{}D, {} elems, {} points>'.format(type(self).__qualname__, self.ndims, self.nelems, self.npoints)
@@ -240,7 +243,7 @@ class Sample(types.Singleton):
     '''Basis-like function that for every point in the sample evaluates to the
     unit vector corresponding to its index.'''
 
-    index, tail = function.TransformsIndexWithTail(self.transforms[0], self.ndims, function.TRANS)
+    index, tail = function.TransformsIndexWithTail(self.transforms[0], self.ndims, function.SelectChain(self.roots))
     I = function.Elemwise(self.index, index, dtype=int)
     B = function.Sampled(function.ApplyTransforms(tail), expect=function.take(self.allcoords, I, axis=0))
     return function.Inflate(func=B, dofmap=I, length=self.npoints, axis=0)
@@ -313,7 +316,7 @@ class Sample(types.Singleton):
     transforms = tuple(transform[selection] for transform in self.transforms)
     points = [self.points[ielem] for ielem in selection]
     offset = numpy.cumsum([0] + [p.npoints for p in points])
-    return Sample(self.ndims, transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
+    return Sample(self.roots, self.ndims, transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
 
 strictsample = types.strict[Sample]
 

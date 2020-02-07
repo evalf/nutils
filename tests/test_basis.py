@@ -97,8 +97,8 @@ class structured(basisTest):
       self.domain, self.geom = mesh.rectilinear([2,3])
     else:
       self.skipTest('in between bifurcate and tensorial')
-      domain1, geom1 = mesh.rectilinear([2])
-      domain2, geom2 = mesh.rectilinear([3])
+      domain1, geom1 = mesh.rectilinear([2], name='rect1')
+      domain2, geom2 = mesh.rectilinear([3], name='rect2')
       self.domain = domain1 * domain2
       self.geom = function.concatenate(function.bifurcate(geom1, geom2), axis=0)
 
@@ -250,17 +250,18 @@ class unstructured_topology(TestCase):
       nverts = 25
     elif self.variant == 'tensor':
       structured, geom = mesh.rectilinear([numpy.linspace(0, 1, 5-i) for i in range(self.ndims)])
-      domain = topology.ConnectedTopology(structured.references, structured.transforms, structured.opposites, structured.connectivity)
+      domain = topology.ConnectedTopology(structured.roots, structured.references, structured.transforms, structured.opposites, structured.connectivity)
       nverts = numpy.product([5-i for i in range(self.ndims)])
     elif self.variant == 'simplex':
       numpy.random.seed(0)
       nverts = 20
       simplices = numeric.overlapping(numpy.arange(nverts), n=self.ndims+1)
       coords = numpy.random.normal(size=(nverts, self.ndims))
-      root = transform.Identifier(self.ndims, 'test')
-      transforms = transformseq.PlainTransforms([(root, transform.Square((c[1:]-c[0]).T, c[0])) for c in coords[simplices]], self.ndims)
-      domain = topology.SimplexTopology(simplices, transforms, transforms)
-      geom = function.rootcoords(self.ndims)
+      roottrans = transform.Identifier(self.ndims, 'test')
+      root = function.Root('X', self.ndims)
+      transforms = transformseq.PlainTransforms([(roottrans, transform.Square((c[1:]-c[0]).T, c[0])) for c in coords[simplices]], self.ndims)
+      domain = topology.SimplexTopology(root, simplices, transforms, transforms)
+      geom = function.rootcoords(root)
     else:
       raise NotImplementedError
     self.domain = domain
@@ -297,7 +298,7 @@ class unstructured_topology(TestCase):
 
   def test_poly(self):
     target = self.geom.sum(-1) if self.btype == 'bubble' \
-        else (self.geom**self.degree).sum(-1) + function.TransformsIndexWithTail(self.domain.transforms, self.domain.ndims, function.TRANS).index if self.btype == 'discont' \
+        else (self.geom**self.degree).sum(-1) + function.TransformsIndexWithTail(self.domain.transforms, self.domain.ndims, function.SelectChain(self.domain.roots)).index if self.btype == 'discont' \
         else (self.geom**self.degree).sum(-1)
     projection = self.domain.projection(target, onto=self.basis, geometry=self.geom, ischeme='gauss', degree=2*self.degree, droptol=0)
     error2 = self.domain.integrate((target-projection)**2*function.J(self.geom), ischeme='gauss', degree=2*self.degree)

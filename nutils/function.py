@@ -202,7 +202,7 @@ class Evaluable(types.Singleton):
   'Base class'
 
   __slots__ = '__args',
-  __cache__ = 'dependencies', 'ordereddeps', 'dependencytree', 'simplified', 'prepare_eval', 'optimized_for_numpy'
+  __cache__ = 'dependencies', 'ordereddeps', 'dependencytree', 'simplified', 'prepare_eval', 'optimized_for_numpy', 'roots'
 
   @types.apply_annotations
   def __init__(self, args:types.tuple[strictevaluable]):
@@ -219,6 +219,10 @@ class Evaluable(types.Singleton):
     for func in self.__args:
       deps.extend(func.dependencies)
     return frozenset(deps)
+
+  @property
+  def roots(self):
+    return frozenset(root for arg in self.__args for root in arg.roots)
 
   @property
   def isconstant(self):
@@ -260,7 +264,7 @@ class Evaluable(types.Singleton):
       if prefix:
         s = prefix[:-2] + select[bridge.index(prefix[-2:])] + s # locally change prefix into selector
       if ordereddeps[n] is not None:
-        s += ' = ' + ordereddeps[n]._asciitree_str()
+        s += ' = {} {}'.format(ordereddeps[n]._asciitree_str(), ','.join(sorted(tuple(map('{0.name}:{0.ndims}'.format, ordereddeps[n].roots)))))
         pool.extend((prefix + bridge[i==0], arg) for i, arg in enumerate(reversed(self.dependencytree[n])))
         ordereddeps[n] = None
       lines.append(s)
@@ -438,21 +442,28 @@ class TransformChain(Evaluable):
   Evaluates to a tuple of :class:`nutils.transform.TransformItem` objects.
   '''
 
-  __slots__ = 'todims',
+  __slots__ = 'ordered_roots', 'todims'
 
   @types.apply_annotations
-  def __init__(self, args:types.tuple[strictevaluable], todims:types.strictint=None):
+  def __init__(self, roots:types.tuple[strictroot], args:types.tuple[strictevaluable], todims:types.strictint=None):
+    self.ordered_roots = roots
     self.todims = todims
     super().__init__(args)
+
+  @property
+  def roots(self):
+    return frozenset(self.ordered_roots)
 
 class SelectChain(TransformChain):
 
   __slots__ = 'n'
 
   @types.apply_annotations
-  def __init__(self, n:types.strictint=0):
+  def __init__(self, roots:types.tuple[strictroot], n:types.strictint=0):
+    if len(roots) != 1:
+      raise NotImplementedError
     self.n = n
-    super().__init__(args=[EVALARGS])
+    super().__init__(roots, args=[EVALARGS], todims=builtins.sum(root.ndims for root in roots))
 
   def evalf(self, evalargs):
     trans = evalargs['_transforms'][self.n]
@@ -461,44 +472,34 @@ class SelectChain(TransformChain):
 
   @util.positional_only
   def prepare_eval(self, *, opposite=False, kwargs=...):
-    return SelectChain(1-self.n) if opposite else self
-
-TRANS = SelectChain()
-
-class TransformChainWithTodims(TransformChain):
-
-  __slots__ = 'trans',
-
-  @types.apply_annotations
-  def __init__(self, todims:types.strictint, trans=TRANS):
-    self.trans = trans
-    super().__init__(args=[self.trans], todims=todims)
-
-  def evalf(self, trans):
-    assert trans[0].todims == self.todims
-    return trans
+    return SelectChain(self.ordered_roots, 1-self.n) if opposite else self
 
 class TransformChainFromTuple(TransformChain):
 
-  __slots__ = 'index',
+  __slots__ = 'index'
 
-  def __init__(self, values:strictevaluable, index:types.strictint, todims:types.strictint=None):
+  def __init__(self, roots:types.tuple[strictroot], values:strictevaluable, index:types.strictint, todims:types.strictint=None):
     assert 0 <= index < len(values)
     self.index = index
-    super().__init__(args=[values], todims=todims)
+    super().__init__(roots, args=[values], todims=todims)
 
   def evalf(self, values):
     return values[self.index]
 
 class TransformsIndexWithTail(Evaluable):
 
-  __slots__ = '_transforms', '_fromdims'
+  __slots__ = '_transforms', '_fromdims', '_trans'
 
   @types.apply_annotations
   def __init__(self, transforms:transformseq.stricttransforms, fromdims:types.strictint, trans:types.strict[TransformChain]):
     self._transforms = transforms
     self._fromdims = fromdims
+    self._trans = trans
     super().__init__(args=[trans])
+
+  @property
+  def roots(self):
+    return self._trans.roots
 
   def evalf(self, trans):
     index, tail = self._transforms.index_with_tail(trans)
@@ -513,7 +514,7 @@ class TransformsIndexWithTail(Evaluable):
 
   @property
   def tail(self):
-    return TransformChainFromTuple(self, index=1, todims=self._fromdims)
+    return TransformChainFromTuple(self._trans.ordered_roots, self, index=1, todims=self._fromdims)
 
   def __iter__(self):
     yield self.index
@@ -1178,12 +1179,16 @@ class Product(Array):
 
 class ApplyTransforms(Array):
 
-  __slots__ = 'trans',
+  __slots__ = 'trans'
 
   @types.apply_annotations
   def __init__(self, trans:types.strict[TransformChain], points:strictevaluable=POINTS):
     self.trans = trans
     super().__init__(args=[points, trans], shape=[trans.todims], dtype=float)
+
+  @property
+  def roots(self):
+    return self.trans.roots
 
   def evalf(self, points, chain):
     return transform.apply(chain, points)
@@ -1195,11 +1200,16 @@ class ApplyTransforms(Array):
 
 class LinearFrom(Array):
 
-  __slots__ = ()
+  __slots__ = 'trans'
 
   @types.apply_annotations
   def __init__(self, trans:types.strict[TransformChain], fromdims:types.strictint):
+    self.trans = trans
     super().__init__(args=[trans], shape=(trans.todims, fromdims), dtype=float)
+
+  @property
+  def roots(self):
+    return self.trans.roots
 
   def evalf(self, chain):
     todims, fromdims = self.shape
@@ -3395,18 +3405,23 @@ class Basis(Array):
   if possible should redefine :meth:`get_support`.
   '''
 
-  __slots__ = 'ndofs', 'transforms', 'ndimsdomain', '_index', '_points'
+  __slots__ = 'ndofs', 'transforms', 'ndimsdomain', '_index', '_points', '_trans'
   __cache__ = '_computed_support'
 
   @types.apply_annotations
-  def __init__(self, ndofs:types.strictint, transforms:transformseq.stricttransforms, ndims:types.strictint, trans:types.strict[TransformChain]=TRANS):
+  def __init__(self, ndofs:types.strictint, transforms:transformseq.stricttransforms, ndims:types.strictint, trans:types.strict[TransformChain]):
     self.ndofs = ndofs
     self.transforms = transforms
     self.ndimsdomain = ndims
 
     self._index, tail = TransformsIndexWithTail(self.transforms, ndims, trans)
     self._points = ApplyTransforms(tail)
+    self._trans = trans
     super().__init__(args=(self._index, self._points), shape=(ndofs,), dtype=float)
+
+  @property
+  def roots(self):
+    return self._trans.roots
 
   def evalf(self, index, points):
     warnings.warn('using explicit basis evaluation; this is usually a bug.', ExpensiveEvaluationWarning)
@@ -3550,9 +3565,9 @@ class Basis(Array):
 
   def __getitem__(self, index):
     if numeric.isintarray(index) and index.ndim == 1 and numpy.all(numpy.greater(numpy.diff(index), 0)):
-      return MaskedBasis(self, index)
+      return MaskedBasis(self, index, self._trans)
     elif numeric.isboolarray(index) and index.shape == (self.ndofs,):
-      return MaskedBasis(self, numpy.where(index)[0])
+      return MaskedBasis(self, numpy.where(index)[0], self._trans)
     else:
       return super().__getitem__(index)
 
@@ -3581,7 +3596,7 @@ class PlainBasis(Basis):
   __slots__ = '_coeffs', '_dofs'
 
   @types.apply_annotations
-  def __init__(self, coefficients:types.tuple[types.frozenarray], dofs:types.tuple[types.frozenarray], ndofs:types.strictint, transforms:transformseq.stricttransforms, ndims:types.strictint, trans=TRANS):
+  def __init__(self, coefficients:types.tuple[types.frozenarray], dofs:types.tuple[types.frozenarray], ndofs:types.strictint, transforms:transformseq.stricttransforms, ndims:types.strictint, trans:types.strict[TransformChain]):
     self._coeffs = coefficients
     self._dofs = dofs
     assert len(self._coeffs) == len(self._dofs) == len(transforms)
@@ -3623,7 +3638,7 @@ class DiscontBasis(Basis):
   __slots__ = '_coeffs', '_offsets'
 
   @types.apply_annotations
-  def __init__(self, coefficients:types.tuple[types.frozenarray], transforms:transformseq.stricttransforms, ndims:types.strictint, trans=TRANS):
+  def __init__(self, coefficients:types.tuple[types.frozenarray], transforms:transformseq.stricttransforms, ndims:types.strictint, trans:types.strict[TransformChain]):
     self._coeffs = coefficients
     assert len(self._coeffs) == len(transforms)
     assert all(c.ndim == 1+ndims for c in self._coeffs)
@@ -3674,7 +3689,7 @@ class MaskedBasis(Basis):
   __slots__ = '_parent', '_indices'
 
   @types.apply_annotations
-  def __init__(self, parent:strictbasis, indices:types.frozenarray[types.strictint], trans=TRANS):
+  def __init__(self, parent:strictbasis, indices:types.frozenarray[types.strictint], trans:types.strict[TransformChain]):
     if indices.ndim != 1:
       raise ValueError('`indices` should have one dimension but got {}'.format(indices.ndim))
     if len(indices) and not numpy.all(numpy.greater(numpy.diff(indices), 0)):
@@ -3724,7 +3739,7 @@ class StructuredBasis(Basis):
   __slots__ = '_coeffs', '_start_dofs', '_stop_dofs', '_dofs_shape', '_transforms_shape'
 
   @types.apply_annotations
-  def __init__(self, coeffs:types.tuple[types.tuple[types.frozenarray]], start_dofs:types.tuple[types.frozenarray[types.strictint]], stop_dofs:types.tuple[types.frozenarray[types.strictint]], dofs_shape:types.tuple[types.strictint], transforms:transformseq.stricttransforms, transforms_shape:types.tuple[types.strictint], trans=TRANS):
+  def __init__(self, coeffs:types.tuple[types.tuple[types.frozenarray]], start_dofs:types.tuple[types.frozenarray[types.strictint]], stop_dofs:types.tuple[types.frozenarray[types.strictint]], dofs_shape:types.tuple[types.strictint], transforms:transformseq.stricttransforms, transforms_shape:types.tuple[types.strictint], trans:types.strict[TransformChain]):
     self._coeffs = coeffs
     self._start_dofs = start_dofs
     self._stop_dofs = stop_dofs
@@ -3814,7 +3829,7 @@ class PrunedBasis(Basis):
   __slots__ = '_parent', '_transmap', '_dofmap'
 
   @types.apply_annotations
-  def __init__(self, parent:strictbasis, transmap:types.frozenarray[types.strictint], trans=TRANS):
+  def __init__(self, parent:strictbasis, transmap:types.frozenarray[types.strictint], trans:types.strict[TransformChain]):
     self._parent = parent
     self._transmap = transmap
     self._dofmap = parent.get_dofs(self._transmap)
@@ -4123,8 +4138,11 @@ def add_T(arg, axes=(-2,-1)):
 def blocks(arg):
   return asarray(arg).simplified.blocks
 
-def rootcoords(ndims):
-  return ApplyTransforms(TransformChainWithTodims(ndims))
+def rootcoords(roots):
+  if isinstance(roots, Root):
+    return ApplyTransforms(SelectChain((roots,)))
+  else:
+    return concatenate([rootcoords(root) for root in roots], axis=0)
 
 def opposite(arg):
   return Opposite(arg)
@@ -4340,8 +4358,8 @@ def eig(arg, axes=(-2,-1), symmetric=False):
   return Tuple([transpose(diagonalize(eigval), _invtrans(trans)), transpose(eigvec, _invtrans(trans))])
 
 @types.apply_annotations
-def elemwise(transforms:transformseq.stricttransforms, ndims:types.strictint, values:types.tuple[types.frozenarray]):
-  index, tail = TransformsIndexWithTail(transforms, ndims, TRANS)
+def elemwise(roots:types.tuple[strictroot], transforms:transformseq.stricttransforms, ndims:types.strictint, values:types.tuple[types.frozenarray]):
+  index, tail = TransformsIndexWithTail(transforms, ndims, SelectChain(roots))
   return Elemwise(values, index, dtype=float)
 
 def take(arg, index, axis):

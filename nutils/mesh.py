@@ -54,7 +54,7 @@ def rectilinear(richshape, periodic=(), name='rect'):
       shape.append(len(v)-1)
       uniform = False
 
-  root = transform.Identifier(ndims, name)
+  root = function.Root(name, ndims)
   axes = [transformseq.DimAxis(0,n,idim in periodic) for idim, n in enumerate(shape)]
   topo = topology.StructuredTopology(root, axes)
 
@@ -63,7 +63,7 @@ def rectilinear(richshape, periodic=(), name='rect'):
       offset = offset[0]
     if all(s == scale[0] for s in scale[1:]):
       scale = scale[0]
-    geom = function.rootcoords(ndims) * scale + offset
+    geom = function.rootcoords(root) * scale + offset
   else:
     funcsp = topo.basis('spline', degree=1, periodic=())
     coords = numeric.meshgrid(*richshape).reshape(ndims, -1)
@@ -71,7 +71,7 @@ def rectilinear(richshape, periodic=(), name='rect'):
 
   return topo, geom
 
-def line(nodes, periodic=False, bnames=None):
+def line(nodes, periodic=False, bnames=None, *, rootid='line'):
   if isinstance(nodes, int):
     uniform = True
     assert nodes > 0
@@ -83,9 +83,9 @@ def line(nodes, periodic=False, bnames=None):
     scale = (nodes[-1]-nodes[0]) / nelems
     offset = nodes[0]
     uniform = numpy.equal(nodes, offset + numpy.arange(nelems+1) * scale).all()
-  root = transform.Identifier(1, 'line')
+  root = function.Root(rootid, 1)
   domain = topology.StructuredLine(root, 0, nelems, periodic=periodic, bnames=bnames)
-  geom = function.rootcoords(1) * scale + offset if uniform else domain.basis('std', degree=1, periodic=False).dot(nodes)
+  geom = function.rootcoords(root) * scale + offset if uniform else domain.basis('std', degree=1, periodic=False).dot(nodes)
   return domain, geom
 
 def newrectilinear(nodes, periodic=None, bnames=[['left','right'],['bottom','top'],['front','back']]):
@@ -94,7 +94,7 @@ def newrectilinear(nodes, periodic=None, bnames=[['left','right'],['bottom','top
   else:
     periodic = numpy.asarray(periodic)
     assert len(periodic) == len(nodes) and periodic.ndim == 1 and periodic.dtype == bool
-  dims = [line(nodesi, periodici, bnamesi) for nodesi, periodici, bnamesi in zip(nodes, periodic, tuple(bnames)+(None,)*len(nodes))]
+  dims = [line(nodesi, periodici, bnamesi, rootid=rootid) for nodesi, periodici, bnamesi, rootid in zip(nodes, periodic, tuple(bnames)+(None,)*len(nodes), 'XYZABC')]
   domain, geom = dims.pop(0)
   for domaini, geomi in dims:
     domain = domain * domaini
@@ -542,9 +542,10 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
 
   assert vnodes.shape == nodes.shape
   transforms = transformseq.IdentifierTransforms(ndims=ndims, name=name, length=nelems)
-  topo = topology.SimplexTopology(nodes, transforms, transforms)
+  root = function.Root(name, ndims)
+  topo = topology.SimplexTopology(root, nodes, transforms, transforms)
   coeffs = element.getsimplex(ndims).get_poly_coeffs('lagrange', degree=degree)
-  basis = function.PlainBasis([coeffs] * nelems, cnodes, nverts, topo.transforms, ndims)
+  basis = function.PlainBasis([coeffs] * nelems, cnodes, nverts, topo.transforms, ndims, function.SelectChain(topo.roots))
   geom = (basis[:,_] * coords).sum(0)
 
   connectivity = topo.connectivity
@@ -565,7 +566,7 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
       if simplices:
         transforms = transformseq.PlainTransforms(transforms, ndims-1)
         opposites = transforms if opposites is None else transformseq.PlainTransforms(opposites, ndims-1)
-        groups[name] = topology.SimplexTopology(simplices, transforms, opposites)
+        groups[name] = topology.SimplexTopology(root, simplices, transforms, opposites)
 
   pgroups = {}
   if ptags:
@@ -574,7 +575,7 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
     for pname, inodes in ptags.items():
       ptransforms = transformseq.PlainTransforms([topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode]], 0)
       preferences = elementseq.asreferences([element.getsimplex(0)], 0)*len(ptransforms)
-      pgroups[pname] = topology.Topology(preferences, ptransforms, ptransforms)
+      pgroups[pname] = topology.Topology((root,), preferences, ptransforms, ptransforms)
 
   vgroups = {}
   for name, ielems in tags.items():
@@ -582,7 +583,7 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
       vgroups[name] = topo.withgroups(bgroups=bgroups, igroups=igroups, pgroups=pgroups)
       continue
     transforms = topo.transforms[ielems]
-    vtopo = topology.SimplexTopology(nodes[ielems], transforms, transforms)
+    vtopo = topology.SimplexTopology(root, nodes[ielems], transforms, transforms)
     keep = numpy.zeros(nelems, dtype=bool)
     keep[ielems] = True
     vbgroups = {}
@@ -613,12 +614,12 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
         if simplices:
           transforms = transformseq.PlainTransforms(transforms, ndims-1)
           opposites = transformseq.PlainTransforms(opposites, ndims-1) if len(opposites) == len(transforms) else transforms
-          groups[bname] = topology.SimplexTopology(simplices, transforms, opposites)
+          groups[bname] = topology.SimplexTopology(root, simplices, transforms, opposites)
     vpgroups = {}
     for pname, inodes in ptags.items():
       ptransforms = transformseq.PlainTransforms([topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode] if keep[ielem]], 0)
       preferences = elementseq.asreferences([element.getsimplex(0)], 0)*len(ptransforms)
-      vpgroups[pname] = topology.Topology(preferences, ptransforms, ptransforms)
+      vpgroups[pname] = topology.Topology((root,), preferences, ptransforms, ptransforms)
     vgroups[name] = vtopo.withgroups(bgroups=vbgroups, igroups=vigroups, pgroups=vpgroups)
 
   return topo.withgroups(vgroups=vgroups, bgroups=bgroups, igroups=igroups, pgroups=pgroups), geom
@@ -658,7 +659,8 @@ def unitsquare(nelems, etype):
       The geometry function.
   '''
 
-  root = transform.Identifier(2, 'unitsquare')
+  root = function.Root('unitsquare', 2)
+  idtrans = transform.Identifier(2, 'unitsquare')
 
   if etype == 'square':
     topo = topology.StructuredTopology(root, [transformseq.DimAxis(0, nelems, False)] * 2)
@@ -670,8 +672,8 @@ def unitsquare(nelems, etype):
 
     v = numpy.arange(nelems+1, dtype=float)
     coords = numeric.meshgrid(v, v).reshape(2,-1).T
-    transforms = transformseq.PlainTransforms([(root, transform.Square((c[1:]-c[0]).T, c[0])) for c in coords[simplices]], 2)
-    topo = topology.SimplexTopology(simplices, transforms, transforms)
+    transforms = transformseq.PlainTransforms([(idtrans, transform.Square((c[1:]-c[0]).T, c[0])) for c in coords[simplices]], 2)
+    topo = topology.SimplexTopology(root, simplices, transforms, transforms)
 
     if etype == 'mixed':
       references = list(topo.references)
@@ -682,18 +684,18 @@ def unitsquare(nelems, etype):
       for n in sorted(isquares, reverse=True):
         i, j = divmod(n, nelems)
         references[n*2:(n+1)*2] = square,
-        transforms[n*2:(n+1)*2] = (root, transform.Shift([float(i),float(j)])),
+        transforms[n*2:(n+1)*2] = (idtrans, transform.Shift([float(i),float(j)])),
         connectivity[n*2:(n+1)*2] = numpy.concatenate(connectivity[n*2:(n+1)*2])[[3,2,4,1] if i%2==j%2 else [3,2,0,5]],
         connectivity = [c-numpy.greater(c,n*2) for c in connectivity]
-      topo = topology.ConnectedTopology(elementseq.asreferences(references, 2), transformseq.PlainTransforms(transforms, 2),transformseq.PlainTransforms(transforms, 2), tuple(types.frozenarray(c, copy=False) for c in connectivity))
+      topo = topology.ConnectedTopology((root,), elementseq.asreferences(references, 2), transformseq.PlainTransforms(transforms, 2),transformseq.PlainTransforms(transforms, 2), tuple(types.frozenarray(c, copy=False) for c in connectivity))
 
-    x, y = topo.boundary.elem_mean(function.rootcoords(2), degree=1).T
+    x, y = topo.boundary.elem_mean(function.rootcoords(root), degree=1).T
     bgroups = dict(left=x==0, right=x==nelems, bottom=y==0, top=y==nelems)
     topo = topo.withboundary(**{name: topo.boundary[numpy.where(mask)[0]] for name, mask in bgroups.items()})
 
   else:
     raise Exception('invalid element type {!r}'.format(etype))
 
-  return topo, function.rootcoords(2) / nelems
+  return topo, function.rootcoords(root) / nelems
 
 # vim:sw=2:sts=2:et
