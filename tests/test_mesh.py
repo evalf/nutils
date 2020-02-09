@@ -14,11 +14,9 @@ class gmsh_init(TestCase):
     domain, geom = mesh.gmsh(io.StringIO('\n'.join(self.geo)))
     self.assertEqual(len(domain), 1)
 
-  def test_missing_section(self):
+  def test_invalid(self):
     with self.assertRaises(ValueError):
       mesh.gmsh(io.StringIO('\n'.join(self.geo[3:]))) # missing meshformat
-    with self.assertRaises(ValueError):
-      mesh.gmsh(io.StringIO('\n'.join(self.geo[:-4]))) # missing elements
 
   def test_meshformat(self):
     geo = self.geo.copy()
