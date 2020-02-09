@@ -33,7 +33,7 @@ class gmsh_init(TestCase):
 class gmsh(TestCase):
 
   def setUp(self):
-    path = pathlib.Path(__file__).parent/'test_mesh'/'mesh{0.ndims}d_p{0.degree}.msh'.format(self)
+    path = pathlib.Path(__file__).parent/'test_mesh'/'mesh{0.ndims}d_p{0.degree}_v{0.version}.msh'.format(self)
     self.domain, self.geom = mesh.gmsh(path)
 
   def test_volume(self):
@@ -89,14 +89,15 @@ class gmsh(TestCase):
     assert all(boundary2.references[boundary2.transforms.index(trans)] == ref for ref, trans in zip(boundary1.references, boundary1.transforms))
 
 for ndims in 2, 3:
-  for degree in range(1, 5 if ndims == 2 else 3):
-    gmsh(ndims=ndims, degree=degree)
+  for version in 2, 4:
+    for degree in range(1, 5 if ndims == 2 else 3):
+      gmsh(ndims=ndims, version=version, degree=degree)
 
 @parametrize
 class gmshmanifold(TestCase):
 
   def setUp(self):
-    path = pathlib.Path(__file__).parent/'test_mesh'/'mesh3dmani_p{0.degree}.msh'.format(self)
+    path = pathlib.Path(__file__).parent/'test_mesh'/'mesh3dmani_p{0.degree}_v{0.version}.msh'.format(self)
     self.domain, self.geom = mesh.gmsh(path)
 
   def test_volume(self):
@@ -107,8 +108,9 @@ class gmshmanifold(TestCase):
     length = self.domain.boundary.integrate(function.J(self.geom), degree=self.degree)
     self.assertAllAlmostEqual(length, 2*numpy.pi, places=1 if self.degree == 1 else 3)
 
-for degree in 1, 2:
-  gmshmanifold(degree=degree)
+for version in 2, 4:
+  for degree in 1, 2:
+    gmshmanifold(version=version, degree=degree)
 
 @parametrize
 class rectilinear(TestCase):

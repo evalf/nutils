@@ -2,8 +2,7 @@
 // test_mesh.gmsh, equal to mesh2d.geo but periodically extruded in
 // z-direction. To regenerate the msh files:
 //
-// gmsh -format msh2 -3 -order 1 mesh3d.geo -o mesh3d_p1.msh
-// gmsh -format msh2 -3 -order 2 mesh3d.geo -o mesh3d_p2.msh
+// for o in 1 2; do for v in 2 4; do gmsh -format msh$v -3 -order $o mesh3d.geo -o mesh3d_p${o}_v${v}.msh; done; done
 
 p000 = newp; Point(p000) = {0,0,0};
 p001 = newp; Point(p001) = {0,0,1};

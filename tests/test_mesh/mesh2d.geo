@@ -3,10 +3,7 @@
 // groups, an "iface" interface group separating "left" and "right", and a
 // "midpoint" point group at coordinate (1,0). To regenerate the msh files:
 //
-// gmsh -format msh2 -2 -order 1 mesh2d.geo -o mesh2d_p1.msh
-// gmsh -format msh2 -2 -order 2 mesh2d.geo -o mesh2d_p2.msh
-// gmsh -format msh2 -2 -order 3 mesh2d.geo -o mesh2d_p3.msh
-// gmsh -format msh2 -2 -order 4 mesh2d.geo -o mesh2d_p4.msh
+// for o in 1 2 3 4; do for v in 2 4; do gmsh -format msh$v -2 -order $o mesh2d.geo -o mesh2d_p${o}_v${v}.msh; done; done
 
 p00 = newp; Point(p00) = {0,0,0};
 p01 = newp; Point(p01) = {0,1,0};

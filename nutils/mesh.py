@@ -305,37 +305,8 @@ def multipatch(patches, nelems, patchverts=None, name='multipatch'):
 
   return topo, geom
 
-@types.apply_annotations
-@cache.function
-def parsegmsh(fname:util.readtext, name='gmsh'):
-  """Gmsh parser
-
-  Parser for Gmsh files in `.msh` format. Only files with physical groups are
-  supported. See the `Gmsh manual
-  <http://geuz.org/gmsh/doc/texinfo/gmsh.html>`_ for details.
-
-  Parameters
-  ----------
-  fname : :class:`str`
-      Path to mesh file.
-
-  Returns
-  -------
-  Keyword arguments for :func:`simplex`
-  """
-
-  # split sections
-  sections = dict(re.findall(r'^\$(\w+)\n(.*)\n\$End\1$', fname, re.MULTILINE|re.DOTALL))
-  missing = {'MeshFormat', 'Nodes', 'Elements'}.difference(sections)
-  if missing:
-    raise ValueError('invalid or incomplete gmsh data: missing section {}'.format(', '.join(missing)))
-
-  # parse section MeshFormat
-  version, filetype, datasize = sections.pop('MeshFormat').split()
-  if not version.startswith('2.'):
-    raise ValueError('gmsh version {} is not supported; please use -format msh2'.format(version))
-  if filetype != '0':
-    raise ValueError('binary gmsh data is not supported')
+def _parsegmsh2(sections):
+  '''helper function to parse msh2 format'''
 
   # parse section PhysicalNames
   if 'PhysicalNames' not in sections:
@@ -380,13 +351,6 @@ def parsegmsh(fname:util.readtext, name='gmsh'):
       tagnamesbydim[nd].setdefault(tagname, []).append(len(inodesbydim[nd])-1)
   inodesbydim = [numpy.array(e) if e else numpy.empty((0,nd+1), dtype=int) for nd, e in enumerate(inodesbydim)]
 
-  # determine the dimension of the mesh
-  while not inodesbydim[-1].size:
-    inodesbydim.pop()
-  ndims = len(inodesbydim)-1 # topological dimension
-  while nodes.shape[1] > ndims and not nodes[:,-1].any():
-    nodes = nodes[:,:-1]
-
   # parse section Periodic
   N, *Periodic = sections.pop('Periodic', '0').splitlines()
   nperiodic = int(N)
@@ -407,6 +371,144 @@ def parsegmsh(fname:util.readtext, name='gmsh'):
       nperiodic -= 1
   assert nperiodic == 0 # check if number of periodic blocks matches announcement
   assert n == 0 # check if last batch of slave/master nodes matches announcement
+
+  return inodesbydim, vertex_identities, nodes, tagnamesbydim
+
+def _parsegmsh4(sections):
+  '''helper function to parse msh4 format'''
+
+  # parse section PhysicalNames
+  PhysicalNames = sections.pop('PhysicalNames').splitlines()
+  nnames = int(PhysicalNames[0])
+  lines = PhysicalNames[1:]
+  assert len(lines) == nnames
+  names = {} # nd, nametag -> name
+  for line in lines:
+    nd, nametag, tagname = line.split(' ', 2)
+    names[int(nd), nametag] = tagname.strip('"')
+
+  # parse section Entities
+  Entities = sections.pop('Entities').splitlines()
+  header = Entities[0]
+  lines = Entities[1:]
+  entities = {} # nd, entitytag -> nametags
+  for nd, nentities in enumerate(map(int, header.split())):
+    for line in lines[:nentities]:
+      parts = line.split()
+      ntags, *tags = parts[7 if nd else 4:]
+      entities[nd, parts[0]] = tags[:int(ntags)]
+    lines = lines[nentities:]
+  assert not lines
+
+  # parse section Nodes
+  Nodes = sections.pop('Nodes').splitlines()
+  lines = iter(Nodes)
+  countdown = int(next(lines).split()[0])
+  coords = numpy.empty([0, 3], dtype=float) # inode x 3
+  nodemap = {} # nodeid -> inode
+  for header in lines:
+    ndims, tag, parametric, nnodes = header.split()
+    a = len(coords)
+    b = a + int(nnodes)
+    for i in range(a, b):
+      n = next(lines)
+      assert n not in nodemap
+      nodemap[n] = i
+    coords.resize((b, 3), refcheck=False)
+    for i in range(a, b):
+      coords[i] = [float(s) for s in next(lines).split()]
+    countdown -= 1
+  assert countdown == 0
+
+  # parse section Elements
+  Elements = sections.pop('Elements').splitlines()
+  lines = iter(Elements)
+  countdown = int(next(lines).split()[0])
+  elements = {} # nd -> nodeids = ielem x nd+1
+  elemtags = [] # nd, entitytag, elemslice
+  for header in lines:
+    ndims, tag, elemtype, nelems = header.split()
+    inodes = elements.setdefault(int(ndims), [])
+    a = len(inodes)
+    inodes.extend(next(lines).split()[1:] for i in range(int(nelems)))
+    b = len(inodes)
+    elemtags.append((int(ndims), tag, range(a, b)))
+    countdown -= 1
+  assert countdown == 0
+
+  # parse section Periodic
+  Periodic = sections.pop('Periodic', '0').splitlines()
+  lines = iter(Periodic)
+  countdown = int(next(lines))
+  vertex_identities = [] # slave, master
+  for header in lines:
+    ndims, tag, mastertag = header.split()
+    affine = next(lines)
+    npairs = int(next(lines))
+    vertex_identities.extend(next(lines).split() for ipair in range(npairs))
+    countdown -= 1
+  assert countdown == 0
+
+  # process data
+  nodemap = numpy.vectorize(nodemap.__getitem__, otypes=[int])
+  inodesbydim = [nodemap(elements[nd]) if nd in elements else numpy.empty([0,nd+1], dtype=int) for nd in range(4)]
+  tagnamesbydim = [{} for nd in range(4)]
+  for nd, tag, ielems in elemtags:
+    for n in entities[nd, tag]:
+      tagnamesbydim[nd].setdefault(names[nd, n], []).extend(ielems)
+  vertex_identities = nodemap(vertex_identities).tolist()
+
+  return inodesbydim, vertex_identities, coords, tagnamesbydim
+
+@types.apply_annotations
+@cache.function
+def parsegmsh(fname:util.readtext, name='gmsh'):
+  """Gmsh parser
+
+  Parser for Gmsh files in `.msh` format. Only files with physical groups are
+  supported. See the `Gmsh manual
+  <http://geuz.org/gmsh/doc/texinfo/gmsh.html>`_ for details.
+
+  Parameters
+  ----------
+  fname : :class:`str`
+      Path to mesh file.
+
+  Returns
+  -------
+  Keyword arguments for :func:`simplex`
+  """
+
+  # split sections
+  sections = dict(re.findall(r'^\$(\w+)\n(.*)\n\$End\1$', fname, re.MULTILINE|re.DOTALL))
+
+  # parse section MeshFormat
+  MeshFormat = sections.pop('MeshFormat', None)
+  if not MeshFormat:
+    raise ValueError('invalid or incomplete gmsh data')
+  version, filetype, datasize = MeshFormat.split()
+  if filetype != '0':
+    raise ValueError('binary gmsh data is not supported')
+
+  # parse remaining sections
+  if version.startswith('2.'):
+    _parse = _parsegmsh2
+  elif version.startswith('4.'):
+    _parse = _parsegmsh4
+  else:
+    raise ValueError('gmsh version {} is not supported; please use -format msh4'.format(version))
+
+  inodesbydim, vertex_identities, nodes, tagnamesbydim = _parse(sections)
+
+  # determine the dimension of the topology
+  while not inodesbydim[-1].size:
+    inodesbydim.pop()
+  ndims = len(inodesbydim)-1 # topological dimension
+
+  # determine the dimension of the geometry
+  assert not numpy.isnan(nodes).any()
+  while nodes.shape[1] > ndims and not nodes[:,-1].any():
+    nodes = nodes[:,:-1]
 
   # warn about unused sections
   for section in sections:
