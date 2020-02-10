@@ -211,7 +211,7 @@ class newton(RecursionWithSolve, length=1):
     self.jacobian = _derivative(residual, target, jacobian)
     self.lhs0, constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
     self.free = ~constrain
-    self.linesearch = LineSearch(searchrange, rebound)
+    self.linesearch = LineSearch(*searchrange, rebound)
     self.failrelax = failrelax
     self.arguments = arguments
     self.solveargs = _striplin(linargs, solveargs)
@@ -256,12 +256,29 @@ class newton(RecursionWithSolve, length=1):
 
 class LineSearch:
   '''
-  Helper class for Newton-like iterations.
+  Line search abstraction for Newton-like iterations, computing relaxation
+  values that correspond to greatest reduction of the residual norm.
+
+  Parameters
+  ----------
+  minscale : :class:`float`
+      Minimum relaxation scaling per update. Must be strictly greater than
+      zero.
+  acceptscale : :class:`float`
+      Relaxation scaling that is considered close enough to optimality to
+      to accept the current Newton update. Must lie between minscale and one.
+  maxscale : :class:`float`
+      Maximum relaxation scaling per update. Must be greater than one, and
+      therefore always coincides with acceptance, determining how fast
+      relaxation values rebound to one if not bounded by optimality.
   '''
 
-  def __init__(self, searchrange:types.tuple[float]=(.01,2/3), rebound:types.strictfloat=2.):
-    self.minscale, self.maxscale = searchrange
-    self.rebound = rebound
+  @types.apply_annotations
+  def __init__(self, minscale:float=.01, acceptscale:float=2/3, maxscale:float=2.):
+    assert 0 < minscale < acceptscale < 1 < maxscale
+    self.minscale = minscale
+    self.acceptscale = acceptscale
+    self.maxscale = maxscale
 
   def __call__(self, p0, q0, p1, q1):
     if not numpy.isfinite(p1):
@@ -271,7 +288,7 @@ class LineSearch:
     # P(scale) = A + B scale + C scale^2 + D scale^3 ~= |res(lhs+scale*relax*dlhs)|^2
     scale = _minimize2(p0=p0, q0=q0, p1=p1, q1=q1)
     log.info('residual norm {:+.2f}% with estimated minimum at {:.0f}%'.format(100*numpy.sqrt(p1/p0)-100, scale*100))
-    return min(max(scale, self.minscale), self.rebound), p1 < p0 and scale > self.maxscale
+    return min(max(scale, self.minscale), self.maxscale), p1 < p0 and scale >= self.acceptscale
 
 
 class minimize(RecursionWithSolve, length=1, version=3):
@@ -610,7 +627,7 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
     if tol <= 0:
       raise ValueError('nonlinear optimization problem requires a nonzero "tol" argument')
     solveargs.setdefault('rtol', 1e-3)
-    linesearch = LineSearch(searchrange, rebound)
+    linesearch = LineSearch(*searchrange, rebound)
     firstresnorm = resnorm
     relax = 1
     with log.context('newton {:.0f}%', 0) as reformat:
