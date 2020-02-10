@@ -1,8 +1,7 @@
 // This geo file defines the unit semi-sphere without physical groups,
 // resulting in a tagless 2D topology with a 3D geometry.
 //
-// gmsh -format msh2 -3 -order 1 mesh3dmani.geo -o mesh3dmani_p1.msh
-// gmsh -format msh2 -3 -order 2 mesh3dmani.geo -o mesh3dmani_p2.msh
+// for o in 1 2; do for v in 2 4; do gmsh -format msh$v -3 -order $o mesh3dmani.geo -o mesh3dmani_p${o}_v${v}.msh; done; done
 
 Point(1) = {0,0,0,.5};
 Point(2) = {1,0,0,.5};
