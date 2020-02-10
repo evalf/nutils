@@ -8,6 +8,13 @@ inverse chronological order.
 Changes since version 5.0
 -------------------------
 
+- Support for gmsh 'msh4' file format
+
+  The :func:`nutils.mesh.gmsh` method now supports input in the 'msh4' file
+  format, in addition to the 'msh2' format which remains supported for backward
+  compatibility. Internally, the function :func:`nutils.mesh.parsegmsh` now
+  takes file contents instead of a file name.
+
 - New command line option: gracefulexit.
 
   The new boolean command line option ``gracefulexit`` determines what happens
