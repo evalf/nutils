@@ -225,23 +225,21 @@ class newton(RecursionWithSolve, length=1):
     if history:
       lhs, info = history[-1]
       res, jac = self._eval(lhs)
-      resnorm = numpy.linalg.norm(res)
-      assert resnorm == info.resnorm
+      assert numpy.linalg.norm(res) == info.resnorm
       relax = info.relax
     else:
       lhs = self.lhs0
       res, jac = self._eval(lhs)
-      resnorm = numpy.linalg.norm(res)
       relax = 1.
-      yield lhs, types.attributes(resnorm=resnorm, relax=relax)
+      yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
     while True:
       dlhs = -jac.solve_leniently(res, **self.solveargs) # compute new search vector
+      dres = jac@dlhs # == -res if dlhs was solved to infinite precision
       while True: # line search
         newlhs = lhs.copy()
         newlhs[self.free] += relax * dlhs
-        res, jac = self._eval(newlhs)
-        newresnorm = numpy.linalg.norm(res)
-        scale, accept = self.linesearch(resnorm**2, -2*relax*resnorm**2, newresnorm**2, 2*relax*(jac@dlhs).dot(res))
+        newres, newjac = self._eval(newlhs)
+        scale, accept = self.linesearch(res.dot(res), 2*relax*dres.dot(res), newres.dot(newres), 2*relax*(newjac@dlhs).dot(newres))
         if accept:
           break
         relax *= scale
@@ -249,9 +247,10 @@ class newton(RecursionWithSolve, length=1):
           raise SolverError('stuck in local minimum')
       log.info('update accepted at relaxation', round(relax, 5))
       lhs = newlhs
-      resnorm = newresnorm
+      res = newres
+      jac = newjac
       relax = min(relax * scale, 1)
-      yield lhs, types.attributes(resnorm=resnorm, relax=relax)
+      yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
 
 
 class LineSearch:
@@ -284,6 +283,8 @@ class LineSearch:
     if not numpy.isfinite(p1):
       log.info('residual norm {}'.format(p1))
       return self.minscale, False
+    if q0 >= 0:
+      raise SolverError('search vector does not reduce residual')
     # To determine optimal relaxation we minimize a polynomial estimation for the residual norm:
     # P(scale) = A + B scale + C scale^2 + D scale^3 ~= |res(lhs+scale*relax*dlhs)|^2
     scale = _minimize2(p0=p0, q0=q0, p1=p1, q1=q1)
@@ -630,21 +631,20 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
     linesearch = LineSearch(*searchrange, rebound)
     firstresnorm = resnorm
     relax = 1
+    accept = True
     with log.context('newton {:.0f}%', 0) as reformat:
-      dlhs = -jac.solve_leniently(res, constrain=cons, **solveargs)
-      lhs0 = lhs
-      resnorm0 = resnorm
-      while not numpy.isfinite(val) or not numpy.isfinite(resnorm) or resnorm > tol:
+      while not numpy.isfinite(resnorm) or resnorm > tol:
+        if accept:
+          reformat(100 * numpy.log(firstresnorm/resnorm) / numpy.log(firstresnorm/tol))
+          lhs0 = lhs
+          dlhs = -jac.solve_leniently(res, constrain=cons, **solveargs)
+          res0 = res[~cons]
+          dres0 = (jac@dlhs)[~cons] # == -res0 if dlhs was solved to infinite precision
+          resnorm0 = resnorm
         lhs = lhs0 + relax * dlhs
         val, res, jac = sample.eval_integrals(functional, residual, jacobian, **{target: lhs}, **arguments)
         resnorm = numpy.linalg.norm(res[~cons])
-        scale, accept = linesearch(resnorm0**2, -2*relax*resnorm0**2, resnorm**2, 2*relax*(jac@dlhs)[~cons].dot(res[~cons]))
-        if accept:
-          log.info('update accepted at relaxation', round(relax, 5))
-          reformat(100 * numpy.log(firstresnorm/resnorm) / numpy.log(firstresnorm/tol))
-          dlhs = -jac.solve_leniently(res, constrain=cons, **solveargs)
-          lhs0 = lhs
-          resnorm0 = resnorm
+        scale, accept = linesearch(resnorm0**2, 2*relax*dres0.dot(res0), resnorm**2, 2*relax*(jac@dlhs)[~cons].dot(res[~cons]))
         relax = min(relax * scale, 1)
         if relax <= failrelax:
           raise SolverError('stuck in local minimum')
