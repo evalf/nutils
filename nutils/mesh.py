@@ -463,27 +463,26 @@ def _parsegmsh4(sections):
 
   return nodes, identities, coords, tags
 
-@types.apply_annotations
 @cache.function
-def parsegmsh(fname:util.readtext, name='gmsh'):
+def parsegmsh(mshdata):
   """Gmsh parser
 
-  Parser for Gmsh files in `.msh` format. Only files with physical groups are
-  supported. See the `Gmsh manual
+  Parser for Gmsh data in ``msh2`` or ``msh4`` format. See the `Gmsh manual
   <http://geuz.org/gmsh/doc/texinfo/gmsh.html>`_ for details.
 
   Parameters
   ----------
-  fname : :class:`str`
-      Path to mesh file.
+  mshdata : :class:`str`
+      Msh file contents.
 
   Returns
   -------
-  Keyword arguments for :func:`simplex`
+  :class:`dict`:
+      Keyword arguments for :func:`simplex`
   """
 
   # split sections
-  sections = dict(re.findall(r'^\$(\w+)\n(.*)\n\$End\1$', fname, re.MULTILINE|re.DOTALL))
+  sections = dict(re.findall(r'^\$(\w+)\n(.*)\n\$End\1$', mshdata, re.MULTILINE|re.DOTALL))
 
   # parse section MeshFormat
   MeshFormat = sections.pop('MeshFormat', None)
@@ -587,7 +586,8 @@ def parsegmsh(fname:util.readtext, name='gmsh'):
   return dict(nodes=vnodes, cnodes=cnodes, coords=coords, tags=vtags, btags=btags, ptags=ptags)
 
 @log.withcontext
-def gmsh(fname, name='gmsh'):
+@types.apply_annotations
+def gmsh(fname:util.readtext, name='gmsh'):
   """Gmsh parser
 
   Parser for Gmsh files in `.msh` format. Only files with physical groups are
@@ -597,7 +597,7 @@ def gmsh(fname, name='gmsh'):
   Parameters
   ----------
   fname : :class:`str`
-      Path to mesh file.
+      Path to mesh file or mesh file object.
   name : :class:`str` or :any:`None`
       Name of parsed topology, defaults to 'gmsh'.
 
