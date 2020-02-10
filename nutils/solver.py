@@ -239,7 +239,7 @@ class newton(RecursionWithSolve, length=1):
         newlhs = lhs.copy()
         newlhs[self.free] += relax * dlhs
         newres, newjac = self._eval(newlhs)
-        scale, accept = self.linesearch(res.dot(res), 2*relax*dres.dot(res), newres.dot(newres), 2*relax*(newjac@dlhs).dot(newres))
+        scale, accept = self.linesearch(res, relax*dres, newres, relax*newjac@dlhs)
         if accept:
           break
         relax *= scale
@@ -279,10 +279,14 @@ class LineSearch:
     self.acceptscale = acceptscale
     self.maxscale = maxscale
 
-  def __call__(self, p0, q0, p1, q1):
-    if not numpy.isfinite(p1):
-      log.info('residual norm {}'.format(p1))
+  def __call__(self, res0, dres0, res1, dres1):
+    if not numpy.isfinite(res1).all():
+      log.info('non-finite residual')
       return self.minscale, False
+    p0 = res0@res0
+    q0 = 2*res0@dres0
+    p1 = res1@res1
+    q1 = 2*res1@dres1
     if q0 >= 0:
       raise SolverError('search vector does not reduce residual')
     # To determine optimal relaxation we minimize a polynomial estimation for the residual norm:
@@ -644,7 +648,7 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
         lhs = lhs0 + relax * dlhs
         val, res, jac = sample.eval_integrals(functional, residual, jacobian, **{target: lhs}, **arguments)
         resnorm = numpy.linalg.norm(res[~cons])
-        scale, accept = linesearch(resnorm0**2, 2*relax*dres0.dot(res0), resnorm**2, 2*relax*(jac@dlhs)[~cons].dot(res[~cons]))
+        scale, accept = linesearch(res0, relax*dres0, res[~cons], relax*(jac@dlhs)[~cons])
         relax = min(relax * scale, 1)
         if relax <= failrelax:
           raise SolverError('stuck in local minimum')
