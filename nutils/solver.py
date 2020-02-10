@@ -283,17 +283,31 @@ class LineSearch:
     if not numpy.isfinite(res1).all():
       log.info('non-finite residual')
       return self.minscale, False
+    # To determine optimal relaxation we minimize a polynomial estimation for
+    # the residual norm: P(x) = p0 + q0 x + c x^2 + d x^3
     p0 = res0@res0
     q0 = 2*res0@dres0
     p1 = res1@res1
     q1 = 2*res1@dres1
     if q0 >= 0:
       raise SolverError('search vector does not reduce residual')
-    # To determine optimal relaxation we minimize a polynomial estimation for the residual norm:
-    # P(scale) = A + B scale + C scale^2 + D scale^3 ~= |res(lhs+scale*relax*dlhs)|^2
-    scale = _minimize2(p0=p0, q0=q0, p1=p1, q1=q1)
-    log.info('residual norm {:+.2f}% with estimated minimum at {:.0f}%'.format(100*numpy.sqrt(p1/p0)-100, scale*100))
-    return min(max(scale, self.minscale), self.maxscale), p1 < p0 and scale >= self.acceptscale
+    c = math.fsum([-3*p0, 3*p1, -2*q0, -q1])
+    d = math.fsum([2*p0, -2*p1, q0, q1])
+    # To minimize P we need to determine the roots for P'(x) = q0 + 2 c x + 3 d x^2
+    # For numerical stability we use Citardauq's formula: x = -q0 / (c +/- sqrt(D)),
+    # with D the discriminant
+    D = c**2 - 3 * q0 * d
+    # If D <= 0 we have at most one duplicate root, which we ignore. For D > 0,
+    # taking into account that q0 < 0, we distinguish three situations:
+    # - d > 0 => sqrt(D) > abs(c): one negative, one positive root
+    # - d = 0 => sqrt(D) = abs(c): one negative root
+    # - d < 0 => sqrt(D) < abs(c): two roots of same sign as c
+    scale = -q0 / (c + math.sqrt(D)) if D > 0 and (c > 0 or d > 0) else math.inf
+    if scale >= 1 and p1 > p0: # this should not happen, but just in case
+      log.info('failed to estimate scale factor')
+      return self.minscale, False
+    log.info('estimated residual minimum at {:.0f}% of update vector'.format(scale*100))
+    return min(max(scale, self.minscale), self.maxscale), scale >= self.acceptscale and p1 < p0
 
 
 class minimize(RecursionWithSolve, length=1, version=3):
@@ -708,23 +722,6 @@ def _derivative(residual, target, jacobian=None):
   if jacobian.shape != residual.shape * 2:
     raise ValueError('expected `jacobian` with shape {} but got {}'.format(residual.shape * 2, jacobian.shape))
   return jacobian
-
-def _minimize2(p0, p1, q0, q1):
-  'find smallest positive minimum of a 3rd degree polynomial defined by values (p) and derivatives (q) at x=0 and x=1'
-  assert q0 < 0
-  # Polynomial: P(x) = p0 + q0 x + c x^2 + d x^3
-  c = math.fsum([-3*p0, 3*p1, -2*q0, -q1])
-  d = math.fsum([2*p0, -2*p1, q0, q1])
-  # To minimize P we need to determine the roots for P'(x) = q0 + 2 c x + 3 d x^2
-  # For numerical stability we use Citardauq's formula: x = -q0 / (c +/- sqrt(D)),
-  # with D the discriminant
-  D = c**2 - 3 * q0 * d
-  # If D <= 0 we have at most one duplicate root, which we ignore. For D > 0,
-  # taking into account that q0 < 0, we distinguish three situations:
-  # - d > 0 => sqrt(D) > abs(c): one negative, one positive root
-  # - d = 0 => sqrt(D) = abs(c): one negative root
-  # - d < 0 => sqrt(D) < abs(c): two roots of same sign as c
-  return -q0 / (c + math.sqrt(D)) if D > 0 and (c > 0 or d > 0) else math.inf
 
 def _progress(name, tol):
   '''helper function for iter.wrap'''

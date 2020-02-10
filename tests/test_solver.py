@@ -211,29 +211,3 @@ class theta_time(TestCase):
 
   def test_cranknicolson(self):
     self.check(solver.cranknicolson, theta=0.5)
-
-
-class minimize_poly(TestCase):
-
-  def _poly(self, n):
-    for coeffs in itertools.product([-1,-.5,0,.5,1], repeat=2*n):
-      P = coeffs + (-.5, 0)
-      Q = numpy.polyder(P)
-      roots = [r.real for r in numpy.roots(Q) if not r.imag and r > 0]
-      p0, p1 = numpy.polyval(P, [0,1])
-      q0, q1 = numpy.polyval(Q, [0,1])
-      if n == 1:
-        xmin = solver._minimize2(p0=p0, p1=p1, q0=q0, q1=q1)
-      elif n == 2:
-        R = numpy.polyder(Q)
-        r0, r1 = numpy.polyval(R, [0,1])
-        xmin = solver._minimize3(p0=p0, p1=p1, q0=q0, q1=q1, r0=r0, r1=r1)
-      else:
-        raise NotImplementedError
-      if not roots:
-        self.assertEqual(xmin, numpy.inf)
-      else:
-        self.assertAlmostEqual(xmin, min(roots), places=10)
-
-  def test_minimize2(self):
-    self._poly(1)
