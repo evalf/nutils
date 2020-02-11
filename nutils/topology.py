@@ -47,12 +47,11 @@ class Topology(types.Singleton):
 
   @types.apply_annotations
   def __init__(self, references:elementseq.strictreferences, transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms):
-    assert references.ndims == opposites.fromdims == transforms.fromdims
     assert len(references) == len(transforms) == len(opposites)
     self.references = references
     self.transforms = transforms
     self.opposites = opposites
-    self.ndims = transforms.fromdims
+    self.ndims = references.ndims
     super().__init__()
 
   def __str__(self):
@@ -149,7 +148,7 @@ class Topology(types.Singleton):
     Create a basis.
     '''
     if self.ndims == 0:
-      return function.PlainBasis([[1]], [[0]], 1, self.transforms)
+      return function.PlainBasis([[1]], [[0]], 1, self.transforms, self.ndims)
     split = name.split('-', 1)
     if len(split) == 2 and split[0] in ('h', 'th'):
       name = split[1] # default to non-hierarchical bases
@@ -167,17 +166,17 @@ class Topology(types.Singleton):
     transforms = self.transforms,
     if len(self.transforms) == 0 or self.opposites != self.transforms:
       transforms += self.opposites,
-    return sample.Sample(transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
+    return sample.Sample(self.ndims, transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
 
   @util.single_or_multiple
   def integrate_elementwise(self, funcs, *, asfunction=False, **kwargs):
     'element-wise integration'
 
-    ielem = function.TransformsIndexWithTail(self.transforms, function.TRANS).index
+    ielem = function.TransformsIndexWithTail(self.transforms, self.ndims, function.TRANS).index
     with matrix.Numpy():
       retvals = self.integrate([function.Inflate(function.asarray(func)[_], dofmap=ielem[_], length=len(self), axis=0) for func in funcs], **kwargs)
     retvals = [retval.export('dense') if len(retval.shape) == 2 else retval for retval in retvals]
-    return [function.elemwise(self.transforms, retval) for retval in retvals] if asfunction \
+    return [function.elemwise(self.transforms, self.ndims, retval) for retval in retvals] if asfunction \
       else retvals
 
   @util.single_or_multiple
@@ -416,7 +415,7 @@ class Topology(types.Singleton):
       subtopo = self[subtopo]
     values = numpy.zeros([len(self)], dtype=int)
     values[numpy.fromiter(map(self.transforms.index, subtopo.transforms), dtype=int)] = 1
-    return function.Get(values, axis=0, item=function.TransformsIndexWithTail(self.transforms, function.TRANS).index)
+    return function.Get(values, axis=0, item=function.TransformsIndexWithTail(self.transforms, self.ndims, function.TRANS).index)
 
   def select(self, indicator, ischeme='bezier2', **kwargs):
     sample = self.sample(*element.parse_legacy_ischeme(ischeme))
@@ -533,7 +532,7 @@ class Topology(types.Singleton):
     transforms = self.transforms[uielems],
     if len(self.transforms) == 0 or self.opposites != self.transforms:
       transforms += self.opposites[uielems],
-    return sample.Sample(transforms, points_, index)
+    return sample.Sample(self.ndims, transforms, points_, index)
 
   def revolved(self, geom):
     assert geom.ndim == 1
@@ -630,7 +629,7 @@ class Topology(types.Singleton):
       coeffs = [self.references[0].get_poly_coeffs('bernstein', degree=degree)]*len(self.references)
     else:
       coeffs = [ref.get_poly_coeffs('bernstein', degree=degree) for ref in self.references]
-    return function.DiscontBasis(coeffs, self.transforms)
+    return function.DiscontBasis(coeffs, self.transforms, self.ndims)
 
   def _basis_c0_structured(self, name, degree):
     'C^0-continuous shape functions with lagrange stucture'
@@ -668,7 +667,7 @@ class Topology(types.Singleton):
 
     elem_slices = map(slice, offsets[:-1], offsets[1:])
     dofs = tuple(types.frozenarray(dofmap[s]) for s in elem_slices)
-    return function.PlainBasis(coeffs, dofs, ndofs, self.transforms)
+    return function.PlainBasis(coeffs, dofs, ndofs, self.transforms, self.ndims)
 
   def basis_lagrange(self, degree):
     'lagrange shape functions'
@@ -1285,11 +1284,13 @@ class SimplexTopology(Topology):
 
   @types.apply_annotations
   def __init__(self, simplices:_renumber, transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms):
-    assert simplices.shape == (len(transforms), transforms.fromdims+1)
+    assert simplices.ndim == 2
+    assert simplices.shape[0] == len(transforms)
     assert numpy.greater(simplices[:,1:], simplices[:,:-1]).all(), 'nodes should be sorted'
     assert not numpy.equal(simplices[:,1:], simplices[:,:-1]).all(), 'duplicate nodes'
+    ndims = simplices.shape[1] - 1
     self.simplices = simplices
-    references = elementseq.asreferences([element.getsimplex(transforms.fromdims)], transforms.fromdims)*len(transforms)
+    references = elementseq.asreferences([element.getsimplex(ndims)], ndims)*len(transforms)
     super().__init__(references, transforms, opposites)
 
   @property
@@ -1310,7 +1311,7 @@ class SimplexTopology(Topology):
   def basis_std(self, degree):
     if degree == 1:
       coeffs = element.getsimplex(self.ndims).get_poly_coeffs('bernstein', degree=1)
-      return function.PlainBasis([coeffs] * len(self), self.simplices, self.simplices.max()+1, self.transforms)
+      return function.PlainBasis([coeffs] * len(self), self.simplices, self.simplices.max()+1, self.transforms, self.ndims)
     return super().basis_std(degree)
 
   def basis_bubble(self):
@@ -1326,7 +1327,7 @@ class SimplexTopology(Topology):
     nverts = self.simplices.max() + 1
     ndofs = nverts + len(self)
     nmap = [types.frozenarray(numpy.hstack([idofs, nverts+ielem]), copy=False) for ielem, idofs in enumerate(self.simplices)]
-    return function.PlainBasis([coeffs] * len(self), nmap, ndofs, self.transforms)
+    return function.PlainBasis([coeffs] * len(self), nmap, ndofs, self.transforms, self.ndims)
 
 class UnionTopology(Topology):
   'grouped topology'
@@ -1866,7 +1867,7 @@ class HierarchicalTopology(Topology):
         hbasis_dofs.append(numpy.concatenate(trans_dofs))
         hbasis_coeffs.append(numeric.poly_concatenate(trans_coeffs))
 
-    return function.PlainBasis(hbasis_coeffs, hbasis_dofs, ndofs, self.transforms)
+    return function.PlainBasis(hbasis_coeffs, hbasis_dofs, ndofs, self.transforms, self.ndims)
 
 class ProductTopology(Topology):
   'product topology'
@@ -2155,14 +2156,15 @@ class MultipatchTopology(Topology):
       dofmap = tuple(types.frozenarray(tuple(renumber[merge.get(dof, dof)] for dof in v.flat), dtype=int).reshape(v.shape) for v in dofmap)
       dofcount = len(remainder)
 
-    return function.PlainBasis(coeffs, dofmap, dofcount, self.transforms)
+    return function.PlainBasis(coeffs, dofmap, dofcount, self.transforms, self.ndims)
 
   def basis_patch(self):
     'degree zero patchwise discontinuous basis'
 
     return function.DiscontBasis(
       [types.frozenarray(1, dtype=int).reshape(1, *(1,)*self.ndims)]*len(self.patches),
-      transformseq.PlainTransforms(tuple((patch.topo.root,) for patch in self.patches), self.ndims))
+      transformseq.PlainTransforms(tuple((patch.topo.root,) for patch in self.patches), self.ndims),
+      self.ndims)
 
   @property
   def boundary(self):
