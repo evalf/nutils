@@ -370,11 +370,12 @@ class TransformChainFromTuple(TransformChain):
 
 class TransformsIndexWithTail(Evaluable):
 
-  __slots__ = '_transforms'
+  __slots__ = '_transforms', '_fromdims'
 
   @types.apply_annotations
-  def __init__(self, transforms, trans:types.strict[TransformChain]):
+  def __init__(self, transforms:transformseq.stricttransforms, fromdims:types.strictint, trans:types.strict[TransformChain]):
     self._transforms = transforms
+    self._fromdims = fromdims
     super().__init__(args=[trans])
 
   def evalf(self, trans):
@@ -390,7 +391,7 @@ class TransformsIndexWithTail(Evaluable):
 
   @property
   def tail(self):
-    return TransformChainFromTuple(self, index=1, todims=self._transforms.fromdims)
+    return TransformChainFromTuple(self, index=1, todims=self._fromdims)
 
   def __iter__(self):
     yield self.index
@@ -3269,6 +3270,8 @@ class Basis(Array):
       The number of functions in this basis.
   transforms : :class:`nutils.transformseq.Transforms`
       The transforms on which this basis is defined.
+  ndims : :class:`int`
+      Dimension of the topology on which this basis is defined.
   trans : :class:`TransformChain`
 
   Notes
@@ -3277,15 +3280,16 @@ class Basis(Array):
   if possible should redefine :meth:`get_support`.
   '''
 
-  __slots__ = 'ndofs', 'transforms', '_index', '_points'
+  __slots__ = 'ndofs', 'transforms', 'ndimsdomain', '_index', '_points'
   __cache__ = '_computed_support'
 
   @types.apply_annotations
-  def __init__(self, ndofs:types.strictint, transforms:transformseq.stricttransforms, trans:types.strict[TransformChain]=TRANS):
+  def __init__(self, ndofs:types.strictint, transforms:transformseq.stricttransforms, ndims:types.strictint, trans:types.strict[TransformChain]=TRANS):
     self.ndofs = ndofs
     self.transforms = transforms
+    self.ndimsdomain = ndims
 
-    self._index, tail = TransformsIndexWithTail(self.transforms, trans)
+    self._index, tail = TransformsIndexWithTail(self.transforms, ndims, trans)
     self._points = ApplyTransforms(tail)
     super().__init__(args=(self._index, self._points), shape=(ndofs,), dtype=float)
 
@@ -3447,13 +3451,13 @@ class PlainBasis(Basis):
   __slots__ = '_coeffs', '_dofs'
 
   @types.apply_annotations
-  def __init__(self, coefficients:types.tuple[types.frozenarray], dofs:types.tuple[types.frozenarray], ndofs:types.strictint, transforms:transformseq.stricttransforms, trans=TRANS):
+  def __init__(self, coefficients:types.tuple[types.frozenarray], dofs:types.tuple[types.frozenarray], ndofs:types.strictint, transforms:transformseq.stricttransforms, ndims:types.strictint, trans=TRANS):
     self._coeffs = coefficients
     self._dofs = dofs
     assert len(self._coeffs) == len(self._dofs) == len(transforms)
-    assert all(c.ndim == 1+transforms.fromdims for c in self._coeffs)
+    assert all(c.ndim == 1+ndims for c in self._coeffs)
     assert all(len(c) == len(d) for c, d in zip(self._coeffs, self._dofs))
-    super().__init__(ndofs=ndofs, transforms=transforms, trans=trans)
+    super().__init__(ndofs=ndofs, transforms=transforms, ndims=ndims, trans=trans)
 
   def get_dofs(self, ielem):
     if not numeric.isint(ielem):
@@ -3487,12 +3491,12 @@ class DiscontBasis(Basis):
   __slots__ = '_coeffs', '_offsets'
 
   @types.apply_annotations
-  def __init__(self, coefficients:types.tuple[types.frozenarray], transforms:transformseq.stricttransforms, trans=TRANS):
+  def __init__(self, coefficients:types.tuple[types.frozenarray], transforms:transformseq.stricttransforms, ndims:types.strictint, trans=TRANS):
     self._coeffs = coefficients
     assert len(self._coeffs) == len(transforms)
-    assert all(c.ndim == 1+transforms.fromdims for c in self._coeffs)
+    assert all(c.ndim == 1+ndims for c in self._coeffs)
     self._offsets = types.frozenarray(numpy.cumsum([0, *map(len, self._coeffs)]), copy=False)
-    super().__init__(ndofs=self._offsets[-1], transforms=transforms, trans=trans)
+    super().__init__(ndofs=self._offsets[-1], transforms=transforms, ndims=ndims, trans=trans)
 
   def get_support(self, dof):
     if not numeric.isint(dof):
@@ -3543,7 +3547,7 @@ class MaskedBasis(Basis):
       raise ValueError('`indices` out of range \x5b0,{}\x29'.format(0, len(parent)))
     self._parent = parent
     self._indices = indices
-    super().__init__(ndofs=len(self._indices), transforms=parent.transforms, trans=trans)
+    super().__init__(ndofs=len(self._indices), transforms=parent.transforms, ndims=parent.ndimsdomain, trans=trans)
 
   def get_dofs(self, ielem):
     return numeric.sorted_index(self._indices, self._parent.get_dofs(ielem), missing='mask')
@@ -3587,7 +3591,7 @@ class StructuredBasis(Basis):
     self._stop_dofs = stop_dofs
     self._dofs_shape = dofs_shape
     self._transforms_shape = transforms_shape
-    super().__init__(ndofs=util.product(dofs_shape), transforms=transforms, trans=trans)
+    super().__init__(ndofs=util.product(dofs_shape), transforms=transforms, ndims=len(dofs_shape), trans=trans)
 
   def _get_indices(self, ielem):
     ielem = numeric.normdim(len(self.transforms), ielem)
@@ -3651,7 +3655,7 @@ class PrunedBasis(Basis):
     self._parent = parent
     self._transmap = transmap
     self._dofmap = parent.get_dofs(self._transmap)
-    super().__init__(len(self._dofmap), parent.transforms[transmap], trans)
+    super().__init__(len(self._dofmap), parent.transforms[transmap], parent.ndimsdomain, trans)
 
   def get_dofs(self, ielem):
     if numeric.isintarray(ielem) and ielem.ndim == 1 and numpy.any(numpy.less(ielem, 0)):
@@ -4167,8 +4171,8 @@ def eig(arg, axes=(-2,-1), symmetric=False):
   return Tuple([transpose(diagonalize(eigval), _invtrans(trans)), transpose(eigvec, _invtrans(trans))])
 
 @types.apply_annotations
-def elemwise(transforms:transformseq.stricttransforms, values:types.tuple[types.frozenarray]):
-  index, tail = TransformsIndexWithTail(transforms, TRANS)
+def elemwise(transforms:transformseq.stricttransforms, ndims:types.strictint, values:types.tuple[types.frozenarray]):
+  index, tail = TransformsIndexWithTail(transforms, ndims, TRANS)
   return Elemwise(values, index, dtype=float)
 
 def take(arg, index, axis):

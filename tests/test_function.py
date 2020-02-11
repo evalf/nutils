@@ -614,7 +614,7 @@ class elemwise(TestCase):
   def setUp(self):
     super().setUp()
     self.domain, geom = mesh.rectilinear([5])
-    self.index = function.TransformsIndexWithTail(self.domain.transforms, function.TRANS).index
+    self.index = function.TransformsIndexWithTail(self.domain.transforms, self.domain.ndims, function.TRANS).index
     self.data = tuple(map(types.frozenarray, (
       numpy.arange(1, dtype=float).reshape(1,1),
       numpy.arange(2, dtype=float).reshape(1,2),
@@ -1043,14 +1043,14 @@ class CommonBasis:
     return result.tolist()
 
   def test_evalf(self):
-    ref = element.PointReference() if self.basis.transforms.fromdims == 0 else element.LineReference()**self.basis.transforms.fromdims
+    ref = element.PointReference() if self.basis.ndimsdomain == 0 else element.LineReference()**self.basis.ndimsdomain
     points = ref.getpoints('bezier', 4).coords
     with self.assertWarnsRegex(function.ExpensiveEvaluationWarning, 'using explicit basis evaluation.*'):
       for ielem in range(self.checknelems):
         self.assertEqual(self.basis.evalf([ielem], points).tolist(), self.checkeval(ielem, points))
 
   def test_simplified(self):
-    ref = element.PointReference() if self.basis.transforms.fromdims == 0 else element.LineReference()**self.basis.transforms.fromdims
+    ref = element.PointReference() if self.basis.ndimsdomain == 0 else element.LineReference()**self.basis.ndimsdomain
     points = ref.getpoints('bezier', 4).coords
     simplified = self.basis.simplified
     with _builtin_warnings.catch_warnings():
@@ -1066,7 +1066,7 @@ class PlainBasis(CommonBasis, TestCase):
     transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
     self.checkcoeffs = [[1],[2,3],[4,5],[6]]
     self.checkdofs = [[0],[2,3],[1,3],[2]]
-    self.basis = function.PlainBasis(self.checkcoeffs, self.checkdofs, 4, transforms)
+    self.basis = function.PlainBasis(self.checkcoeffs, self.checkdofs, 4, transforms, 0)
     self.checkndofs = 4
     super().setUp()
 
@@ -1074,7 +1074,7 @@ class DiscontBasis(CommonBasis, TestCase):
   def setUp(self):
     transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
     self.checkcoeffs = [[1],[2,3],[4,5],[6]]
-    self.basis = function.DiscontBasis(self.checkcoeffs, transforms)
+    self.basis = function.DiscontBasis(self.checkcoeffs, transforms, 0)
     self.checkdofs = [[0],[1,2],[3,4],[5]]
     self.checkndofs = 6
     super().setUp()
@@ -1082,7 +1082,7 @@ class DiscontBasis(CommonBasis, TestCase):
 class MaskedBasis(CommonBasis, TestCase):
   def setUp(self):
     transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
-    parent = function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, transforms)
+    parent = function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, transforms, 0)
     self.basis = function.MaskedBasis(parent, [0,2])
     self.checkcoeffs = [[1],[2],[],[6]]
     self.checkdofs = [[0],[1],[],[1]]
@@ -1092,7 +1092,7 @@ class MaskedBasis(CommonBasis, TestCase):
 class PrunedBasis(CommonBasis, TestCase):
   def setUp(self):
     parent_transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
-    parent = function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, parent_transforms)
+    parent = function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, parent_transforms, 0)
     self.basis = function.PrunedBasis(parent, [0,2])
     self.checkcoeffs = [[1],[4,5]]
     self.checkdofs = [[0],[1,2]]

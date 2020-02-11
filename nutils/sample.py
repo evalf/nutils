@@ -72,6 +72,9 @@ class Sample(types.Singleton):
 
   Args
   ----
+  ndims : :class:`int`
+      The dimension of the :class:`~nutils.topology.Topology` from which this
+      sample is created.
   transforms : :class:`tuple` or transformation chains
       List of transformation chains leading to local coordinate systems that
       contain points.
@@ -85,7 +88,7 @@ class Sample(types.Singleton):
   __cache__ = 'allcoords'
 
   @types.apply_annotations
-  def __init__(self, transforms:types.tuple[transformseq.stricttransforms], points:types.tuple[points.strictpoints], index:types.tuple[types.frozenarray[types.strictint]]):
+  def __init__(self, ndims:types.strictint, transforms:types.tuple[transformseq.stricttransforms], points:types.tuple[points.strictpoints], index:types.tuple[types.frozenarray[types.strictint]]):
     assert len(points) == len(index)
     assert len(transforms) >= 1
     assert all(len(t) == len(points) for t in transforms)
@@ -94,7 +97,7 @@ class Sample(types.Singleton):
     self.points = points
     self.index = index
     self.npoints = sum(p.npoints for p in points)
-    self.ndims = transforms[0].fromdims
+    self.ndims = ndims
 
   def __repr__(self):
     return '{}<{}D, {} elems, {} points>'.format(type(self).__qualname__, self.ndims, self.nelems, self.npoints)
@@ -237,7 +240,7 @@ class Sample(types.Singleton):
     '''Basis-like function that for every point in the sample evaluates to the
     unit vector corresponding to its index.'''
 
-    index, tail = function.TransformsIndexWithTail(self.transforms[0], function.TRANS)
+    index, tail = function.TransformsIndexWithTail(self.transforms[0], self.ndims, function.TRANS)
     I = function.Elemwise(self.index, index, dtype=int)
     B = function.Sampled(function.ApplyTransforms(tail), expect=function.take(self.allcoords, I, axis=0))
     return function.Inflate(func=B, dofmap=I, length=self.npoints, axis=0)
@@ -310,7 +313,7 @@ class Sample(types.Singleton):
     transforms = tuple(transform[selection] for transform in self.transforms)
     points = [self.points[ielem] for ielem in selection]
     offset = numpy.cumsum([0] + [p.npoints for p in points])
-    return Sample(transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
+    return Sample(self.ndims, transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
 
 strictsample = types.strict[Sample]
 
