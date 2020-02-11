@@ -27,7 +27,7 @@ and :class:`SimplexGaussPoints` that reflect the variety of elements in the
 '''
 
 from . import types, transform, numeric, util
-import numpy, functools, itertools, warnings
+import numpy, functools, itertools, warnings, math
 _ = numpy.newaxis
 
 class Points(types.Singleton):
@@ -182,7 +182,7 @@ class SimplexGaussPoints(CoordsWeightsPoints):
   def __init__(self, ndims:types.strictint, degree:types.strictint):
     super().__init__(*gaussn[ndims](degree))
 
-class SimplexBezierPoints(CoordsPoints):
+class SimplexBezierPoints(CoordsUniformPoints):
   '''Bezier points on a simplex.'''
 
   __cache__ = 'tri'
@@ -191,7 +191,7 @@ class SimplexBezierPoints(CoordsPoints):
   def __init__(self, ndims:types.strictint, n:types.strictint):
     self.n = n
     self._indices = numpy.array([index[::-1] for index in numpy.ndindex(*[n] * ndims) if sum(index) < n])
-    super().__init__(self._indices/(n-1))
+    super().__init__(self._indices/(n-1), 1/math.factorial(ndims))
 
   @property
   def _indexgrid(self):
