@@ -174,6 +174,8 @@ class newton(RecursionWithSolve, length=1):
   residual : :class:`nutils.sample.Integral`
   lhs0 : :class:`numpy.ndarray`
       Coefficient vector, starting point of the iterative procedure.
+  relax0 : :class:`float`
+      Initial relaxation value.
   constrain : :class:`numpy.ndarray` with dtype :class:`bool` or :class:`float`
       Equal length to ``lhs0``, masks the free vector entries as ``False``
       (boolean) or NaN (float). In the remaining positions the values of
@@ -195,7 +197,7 @@ class newton(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, linesearch=None, failrelax:types.strictfloat=1e-6, arguments:argdict={}, solveargs:types.frozendict={}, **linargs):
+  def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, relax0:float=1., constrain:types.frozenarray=None, linesearch=None, failrelax:types.strictfloat=1e-6, arguments:argdict={}, solveargs:types.frozendict={}, **linargs):
     super().__init__()
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
@@ -203,6 +205,7 @@ class newton(RecursionWithSolve, length=1):
     self.residual = residual
     self.jacobian = _derivative(residual, target, jacobian)
     self.lhs0, constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
+    self.relax0 = relax0
     self.free = ~constrain
     self.linesearch = linesearch or NormBased.legacy(linargs)
     self.failrelax = failrelax
@@ -223,7 +226,7 @@ class newton(RecursionWithSolve, length=1):
     else:
       lhs = self.lhs0
       res, jac = self._eval(lhs)
-      relax = 1.
+      relax = self.relax0
       yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
     while True:
       dlhs = -jac.solve_leniently(res, **self.solveargs) # compute new search vector
@@ -681,7 +684,7 @@ cranknicolson = functools.partial(thetamethod, theta=0.5)
 @log.withcontext
 @types.apply_annotations
 @cache.function
-def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:types.strictfloat=0., arguments:argdict={}, droptol:float=None, constrain:types.frozenarray=None, lhs0:types.frozenarray[types.strictfloat]=None, solveargs:types.frozendict={}, linesearch=None, failrelax:types.strictfloat=1e-6, **linargs):
+def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:types.strictfloat=0., arguments:argdict={}, droptol:float=None, constrain:types.frozenarray=None, lhs0:types.frozenarray[types.strictfloat]=None, relax0:float=1., solveargs:types.frozendict={}, linesearch=None, failrelax:types.strictfloat=1e-6, **linargs):
   '''find the minimizer of a given functional
 
   Parameters
@@ -703,6 +706,8 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
       Defines the fixed entries of the coefficient vector
   lhs0 : :class:`numpy.ndarray`
       Coefficient vector, starting point of the iterative procedure.
+  relax0 : :class:`float`
+      Initial relaxation value.
   linesearch : :class:`nutils.solver.LineSearch`
       Callable that defines relaxation logic.
   failrelax : :class:`float`
@@ -733,7 +738,7 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
       raise ValueError('nonlinear optimization problem requires a nonzero "tol" argument')
     solveargs.setdefault('rtol', 1e-3)
     firstresnorm = resnorm
-    relax = 1
+    relax = relax0
     accept = True
     with log.context('newton {:.0f}%', 0) as reformat:
       while not numpy.isfinite(resnorm) or resnorm > tol:
