@@ -6,6 +6,9 @@ env:
     - VECLIB_MAXIMUM_THREADS=1
     - EXTRAS=docs,matrix_scipy,matrix_mkl,export_mpl
     - PYTHON=python3
+    - COVERALLS_PARALLEL=true
+notifications:
+  webhooks: https://coveralls.io/webhook
 cache: pip
 matrix:
   include:
@@ -53,10 +56,9 @@ install:
   - touch .constraints
   - for CONSTRAINT in $LOCAL_CONSTRAINTS $CONSTRAINTS; do echo $CONSTRAINT >> .constraints; done
   - $PYTHON -m pip install --upgrade --constraint .constraints numpy
-  - $PYTHON -m pip install --upgrade --constraint .constraints .[$EXTRAS] coverage
+  - $PYTHON -m pip install --upgrade --constraint .constraints .[$EXTRAS] coverage coveralls
 script:
   - $PYTHON -m coverage run -m unittest -b
 after_success:
-  - $PYTHON -m coverage xml -i
-  - bash <(curl -s https://codecov.io/bash) -f coverage.xml
+  - $PYTHON -m coveralls
 # vim: ts=2:sts=2:sw=2:et
