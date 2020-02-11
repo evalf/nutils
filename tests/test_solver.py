@@ -75,6 +75,9 @@ class navierstokes(TestCase):
   def test_newton(self):
     self.assert_resnorm(solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons).solve(tol=self.tol, maxiter=2))
 
+  def test_newton_medianbased(self):
+    self.assert_resnorm(solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, linesearch=solver.MedianBased()).solve(tol=self.tol, maxiter=2))
+
   def test_newton_tolnotreached(self):
     with self.assertLogs('nutils', logging.WARNING) as cm:
       self.assert_resnorm(solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, linrtol=1e-99).solve(tol=self.tol, maxiter=2))

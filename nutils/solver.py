@@ -51,7 +51,7 @@ time dependent problems.
 """
 
 from . import function, cache, numeric, sample, types, util, matrix, warnings
-import numpy, itertools, functools, numbers, collections, math, treelog as log
+import abc, numpy, itertools, functools, numbers, collections, math, treelog as log
 
 
 argdict = types.frozendict[types.strictstr,types.frozenarray]
@@ -179,15 +179,8 @@ class newton(RecursionWithSolve, length=1):
       (boolean) or NaN (float). In the remaining positions the values of
       ``lhs0`` are returned unchanged (boolean) or overruled by the values in
       `constrain` (float).
-  searchrange : :class:`tuple` of two floats
-      The lower bound (>=0) and upper bound (<=1) for line search relaxation
-      updates. If the estimated optimum relaxation (determined by polynomial
-      interpolation) is above upper bound of the current relaxation value then
-      the newton update is accepted. Below it, the functional is re-evaluated
-      at the new relaxation value or at the lower bound, whichever is largest.
-  rebound : :class:`float`
-      Factor by which the relaxation value grows after every update until it
-      reaches unity.
+  linesearch : :class:`nutils.solver.LineSearch`
+      Callable that defines relaxation logic.
   failrelax : :class:`float`
       Fail with exception if relaxation reaches this lower limit.
   arguments : :class:`collections.abc.Mapping`
@@ -202,7 +195,7 @@ class newton(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, searchrange:types.tuple[float]=(.01,2/3), rebound:types.strictfloat=2., failrelax:types.strictfloat=1e-6, arguments:argdict={}, solveargs:types.frozendict={}, **linargs):
+  def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, linesearch=None, failrelax:types.strictfloat=1e-6, arguments:argdict={}, solveargs:types.frozendict={}, **linargs):
     super().__init__()
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
@@ -211,7 +204,7 @@ class newton(RecursionWithSolve, length=1):
     self.jacobian = _derivative(residual, target, jacobian)
     self.lhs0, constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
     self.free = ~constrain
-    self.linesearch = LineSearch(*searchrange, rebound)
+    self.linesearch = linesearch or NormBased.legacy(linargs)
     self.failrelax = failrelax
     self.arguments = arguments
     self.solveargs = _striplin(linargs, solveargs)
@@ -253,7 +246,23 @@ class newton(RecursionWithSolve, length=1):
       yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
 
 
-class LineSearch:
+class LineSearch(types.Immutable):
+  '''
+  Line search abstraction for gradient based optimization.
+
+  A line search object is a callable that takes four arguments: the current
+  residual and directional derivative, and the candidate residual and
+  directional derivative, with derivatives normalized to unit length; and
+  returns the optimal scaling and a boolean flag that marks whether the
+  candidate should be accepted.
+  '''
+
+  @abc.abstractmethod
+  def __call__(self, res0, dres0, res1, dres1):
+    raise NotImplementedError
+
+
+class NormBased(LineSearch):
   '''
   Line search abstraction for Newton-like iterations, computing relaxation
   values that correspond to greatest reduction of the residual norm.
@@ -278,6 +287,12 @@ class LineSearch:
     self.minscale = minscale
     self.acceptscale = acceptscale
     self.maxscale = maxscale
+
+  @classmethod
+  def legacy(cls, kwargs):
+    minscale, acceptscale = kwargs.pop('searchrange', (.01, 2/3))
+    maxscale = kwargs.pop('rebound', 2.)
+    return cls(minscale=minscale, acceptscale=acceptscale, maxscale=maxscale)
 
   def __call__(self, res0, dres0, res1, dres1):
     if not numpy.isfinite(res1).all():
@@ -308,6 +323,71 @@ class LineSearch:
       return self.minscale, False
     log.info('estimated residual minimum at {:.0f}% of update vector'.format(scale*100))
     return min(max(scale, self.minscale), self.maxscale), scale >= self.acceptscale and p1 < p0
+
+
+class MedianBased(LineSearch):
+  '''
+  Line search abstraction for Newton-like iterations, computing relaxation
+  values such that half (or any other configurable quantile) of the residual
+  vector has its optimal reduction beyond it. Unline the :class:`NormBased`
+  approach this is invariant to constant scaling of the residual items.
+
+  Parameters
+  ----------
+  minscale : :class:`float`
+      Minimum relaxation scaling per update. Must be strictly greater than
+      zero.
+  acceptscale : :class:`float`
+      Relaxation scaling that is considered close enough to optimality to
+      to accept the current Newton update. Must lie between minscale and one.
+  maxscale : :class:`float`
+      Maximum relaxation scaling per update. Must be greater than one, and
+      therefore always coincides with acceptance, determining how fast
+      relaxation values rebound to one if not bounded by optimality.
+  quantile : :class:`float`
+      Fraction of the residual vector that is aimed to have its optimal
+      reduction at a smaller relaxation value. The default value of one half
+      corresponds to the median. A value close to zero means tighter control,
+      resulting in strong relaxation.
+  '''
+
+  @types.apply_annotations
+  def __init__(self, minscale:float=.01, acceptscale:float=2/3, maxscale:float=2., quantile:float=.5):
+    assert 0 < minscale < acceptscale < 1 < maxscale
+    assert 0 < quantile < 1
+    self.minscale = minscale
+    self.acceptscale = acceptscale
+    self.maxscale = maxscale
+    self.quantile = quantile
+
+  def __call__(self, res0, dres0, res1, dres1):
+    if not numpy.isfinite(res1).all():
+      log.info('non-finite residual')
+      return self.minscale, False
+    # To determine optimal relaxation we minimize a polynomial estimation for
+    # the squared residual: P(x) = p0 + q0 x + c x^2 + d x^3
+    dp = res1**2 - res0**2
+    q0 = 2*res0*dres0
+    q1 = 2*res1*dres1
+    mask = q0 < 0 # ideally this mask is all true, but solver inaccuracies can result in some positive slopes
+    n = round(len(res0)*self.quantile) - (~mask).sum()
+    if n < 0:
+      raise SolverError('search vector fails to reduce more than {}-quantile of residual vector'.format(self.quantile))
+    c = 3*dp - 2*q0 - q1
+    d = -2*dp + q0 + q1
+    D = c**2 - 3 * q0 * d
+    mask &= D > 0
+    numer = -q0[mask]
+    denom = c[mask] + numpy.sqrt(D[mask])
+    mask = denom > 0
+    if n < mask.sum():
+      scales = numer[mask] / denom[mask]
+      scales.sort()
+      scale = scales[n]
+    else:
+      scale = numpy.inf
+    log.info('estimated {}-quantile at {:.0f}% of update vector'.format(self.quantile, scale*100))
+    return min(max(scale, self.minscale), self.maxscale), scale >= self.acceptscale
 
 
 class minimize(RecursionWithSolve, length=1, version=3):
@@ -601,7 +681,7 @@ cranknicolson = functools.partial(thetamethod, theta=0.5)
 @log.withcontext
 @types.apply_annotations
 @cache.function
-def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:types.strictfloat=0., arguments:argdict={}, droptol:float=None, constrain:types.frozenarray=None, lhs0:types.frozenarray[types.strictfloat]=None, solveargs:types.frozendict={}, searchrange:types.tuple[float]=(.01,2/3), rebound:types.strictfloat=2., failrelax:types.strictfloat=1e-6, **linargs):
+def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:types.strictfloat=0., arguments:argdict={}, droptol:float=None, constrain:types.frozenarray=None, lhs0:types.frozenarray[types.strictfloat]=None, solveargs:types.frozendict={}, linesearch=None, failrelax:types.strictfloat=1e-6, **linargs):
   '''find the minimizer of a given functional
 
   Parameters
@@ -623,6 +703,10 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
       Defines the fixed entries of the coefficient vector
   lhs0 : :class:`numpy.ndarray`
       Coefficient vector, starting point of the iterative procedure.
+  linesearch : :class:`nutils.solver.LineSearch`
+      Callable that defines relaxation logic.
+  failrelax : :class:`float`
+      Fail with exception if relaxation reaches this lower limit.
 
   Yields
   ------
@@ -633,6 +717,8 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
   if 'newtontol' in linargs:
     warnings.deprecation('argument "newtontol" is deprecated, use "tol" instead')
     tol = linargs.pop('newtontol')
+  if linesearch is None:
+    linesearch = NormBased.legacy(linargs)
   solveargs = _striplin(linargs, solveargs)
   residual = functional.derivative(target)
   jacobian = residual.derivative(target)
@@ -646,7 +732,6 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
     if tol <= 0:
       raise ValueError('nonlinear optimization problem requires a nonzero "tol" argument')
     solveargs.setdefault('rtol', 1e-3)
-    linesearch = LineSearch(*searchrange, rebound)
     firstresnorm = resnorm
     relax = 1
     accept = True
