@@ -259,7 +259,7 @@ class unstructured_topology(TestCase):
       coords = numpy.random.normal(size=(nverts, self.ndims))
       roottrans = transform.Identifier(self.ndims, 'test')
       root = function.Root('X', self.ndims)
-      transforms = transformseq.PlainTransforms([(roottrans, transform.Square((c[1:]-c[0]).T, c[0])) for c in coords[simplices]], self.ndims)
+      transforms = transformseq.PlainTransforms([(roottrans, transform.Square((c[1:]-c[0]).T, c[0])) for c in coords[simplices]], root.ndims, self.ndims)
       domain = topology.SimplexTopology(root, simplices, transforms, transforms)
       geom = function.rootcoords(root)
     else:

@@ -1093,7 +1093,7 @@ class PlainBasis(CommonBasis, TestCase):
   def setUp(self):
     root = function.Root('X', 0)
     self.roots = root,
-    transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
+    transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0, 0)
     self.checkcoeffs = [[1],[2,3],[4,5],[6]]
     self.checkdofs = [[0],[2,3],[1,3],[2]]
     self.basis = function.PlainBasis(self.checkcoeffs, self.checkdofs, 4, transforms, 0, function.SelectChain((root,)))
@@ -1104,7 +1104,7 @@ class DiscontBasis(CommonBasis, TestCase):
   def setUp(self):
     root = function.Root('X', 0)
     self.roots = root,
-    transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
+    transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0, 0)
     self.checkcoeffs = [[1],[2,3],[4,5],[6]]
     self.basis = function.DiscontBasis(self.checkcoeffs, transforms, 0, function.SelectChain((root,)))
     self.checkdofs = [[0],[1,2],[3,4],[5]]
@@ -1115,7 +1115,7 @@ class MaskedBasis(CommonBasis, TestCase):
   def setUp(self):
     root = function.Root('X', 0)
     self.roots = root,
-    transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
+    transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0, 0)
     parent = function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, transforms, 0, function.SelectChain((root,)))
     self.basis = function.MaskedBasis(parent, [0,2], function.SelectChain((root,)))
     self.checkcoeffs = [[1],[2],[],[6]]
@@ -1127,7 +1127,7 @@ class PrunedBasis(CommonBasis, TestCase):
   def setUp(self):
     root = function.Root('X', 0)
     self.roots = root,
-    parent_transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
+    parent_transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0, 0)
     parent = function.PlainBasis([[1],[2,3],[4,5],[6]], [[0],[2,3],[1,3],[2]], 4, parent_transforms, 0, function.SelectChain((root,)))
     self.basis = function.PrunedBasis(parent, [0,2], function.SelectChain((root,)))
     self.checkcoeffs = [[1],[4,5]]

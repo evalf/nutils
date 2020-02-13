@@ -259,7 +259,7 @@ class refined(TestCase):
     ref = _refined_refs[self.etype]
     trans = (transform.Identifier(ref.ndims, 'root'),)
     root = function.Root('root', ref.ndims)
-    domain = topology.ConnectedTopology((root,), elementseq.asreferences([ref], ref.ndims), transformseq.PlainTransforms([trans], ref.ndims), transformseq.PlainTransforms([trans], ref.ndims), ((-1,)*ref.nedges,)).refine(self.ref0)
+    domain = topology.ConnectedTopology((root,), elementseq.asreferences([ref], ref.ndims), transformseq.PlainTransforms([trans], root.ndims, ref.ndims), transformseq.PlainTransforms([trans], root.ndims, ref.ndims), ((-1,)*ref.nedges,)).refine(self.ref0)
     geom = function.rootcoords(root)
     basis = domain.basis('std', degree=1)
     u = domain.projection(geom.sum(), onto=basis, geometry=geom, degree=2)
@@ -617,7 +617,7 @@ class common(TestCase):
 
 common(
   'Topology',
-  topo=topology.Topology((function.Root('point', 0),), elementseq.asreferences([element.PointReference()], 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0)),
+  topo=topology.Topology((function.Root('point', 0),), elementseq.asreferences([element.PointReference()], 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0, 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0, 0)),
   hasboundary=False)
 common(
   'StructuredTopology:2D',
