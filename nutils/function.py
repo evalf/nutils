@@ -343,7 +343,7 @@ class SelectChain(TransformChain):
 
 TRANS = SelectChain()
 
-class PopHead(TransformChain):
+class TransformChainWithTodims(TransformChain):
 
   __slots__ = 'trans',
 
@@ -353,8 +353,8 @@ class PopHead(TransformChain):
     super().__init__(args=[self.trans], todims=todims)
 
   def evalf(self, trans):
-    assert trans[0].fromdims == self.todims
-    return trans[1:]
+    assert trans[0].todims == self.todims
+    return trans
 
 class TransformChainFromTuple(TransformChain):
 
@@ -4006,7 +4006,7 @@ def blocks(arg):
   return asarray(arg).simplified.blocks
 
 def rootcoords(ndims):
-  return ApplyTransforms(PopHead(ndims))
+  return ApplyTransforms(TransformChainWithTodims(ndims))
 
 def opposite(arg):
   return Opposite(arg)
