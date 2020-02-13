@@ -108,9 +108,10 @@ class Topology(types.Singleton):
     # The last condition is to avoid duplicate elements. Note that we could
     # have reused the result of an earlier lookup to avoid a new (using index
     # instead of contains) but we choose to trade some speed for simplicity.
+    root, = self.roots
     references = elementseq.chain([self.references[ind_self], other.references[ind_other]], self.ndims)
-    transforms = transformseq.chain([self.transforms[ind_self], other.transforms[ind_other]], self.ndims)
-    opposites = transformseq.chain([self.opposites[ind_self], other.opposites[ind_other]], self.ndims)
+    transforms = transformseq.chain([self.transforms[ind_self], other.transforms[ind_other]], root.ndims)
+    opposites = transformseq.chain([self.opposites[ind_self], other.opposites[ind_other]], root.ndims)
     return Topology(self.roots, references, transforms, opposites)
 
   __rand__ = lambda self, other: self.__and__(other)
@@ -795,7 +796,8 @@ class EmptyTopology(Topology):
 
   @types.apply_annotations
   def __init__(self, roots:types.tuple[function.strictroot], ndims:types.strictint):
-    super().__init__(roots, elementseq.EmptyReferences(ndims), transformseq.EmptyTransforms(ndims), transformseq.EmptyTransforms(ndims))
+    root, = roots
+    super().__init__(roots, elementseq.EmptyReferences(ndims), transformseq.EmptyTransforms(root.ndims), transformseq.EmptyTransforms(root.ndims))
 
   def __or__(self, other):
     assert self.ndims == other.ndims
@@ -817,9 +819,10 @@ class Point(Topology):
   @_preprocess_init
   def __init__(self, roots, trans, opposite):
     assert trans[-1].fromdims == 0
+    root, = roots
     references = elementseq.asreferences([element.getsimplex(0)], 0)
-    transforms = transformseq.PlainTransforms((trans,), 0)
-    opposites = transforms if opposite is None else transformseq.PlainTransforms((opposite,), 0)
+    transforms = transformseq.PlainTransforms((trans,), root.ndims, 0)
+    opposites = transforms if opposite is None else transformseq.PlainTransforms((opposite,), root.ndims, 0)
     super().__init__(roots, references, transforms, opposites)
 
 def StructuredLine(root:function.strictroot, i:types.strictint, j:types.strictint, periodic:bool=False, bnames:types.tuple[types.strictstr]=None):
@@ -1377,11 +1380,12 @@ class UnionTopology(Topology):
         assert len(set(self._topos[itopo].opposites[itrans] for itopo, itrans in indices)) == 1
     selections = tuple(map(types.frozenarray[int], selections))
 
+    root, = roots
     super().__init__(
       roots,
       elementseq.asreferences(references, ndims),
-      transformseq.chain((topo.transforms[selection] for topo, selection in zip(topos, selections)), ndims),
-      transformseq.chain((topo.opposites[selection] for topo, selection in zip(topos, selections)), ndims))
+      transformseq.chain((topo.transforms[selection] for topo, selection in zip(topos, selections)), root.ndims),
+      transformseq.chain((topo.opposites[selection] for topo, selection in zip(topos, selections)), root.ndims))
 
   def getitem(self, item):
     topos = [topo if name == item else topo.getitem(item) for topo, name in itertools.zip_longest(self._topos, self._names)]
@@ -1409,11 +1413,12 @@ class DisjointUnionTopology(Topology):
     roots = self._topos[0].roots
     ndims = self._topos[0].ndims
     assert all(topo.roots == roots and topo.ndims == ndims for topo in self._topos)
+    root, = roots
     super().__init__(
       roots,
       elementseq.chain((topo.references for topo in self._topos), ndims),
-      transformseq.chain((topo.transforms for topo in self._topos), ndims),
-      transformseq.chain((topo.opposites for topo in self._topos), ndims))
+      transformseq.chain((topo.transforms for topo in self._topos), root.ndims),
+      transformseq.chain((topo.opposites for topo in self._topos), root.ndims))
 
   def getitem(self, item):
     topos = [topo if name == item else topo.getitem(item) for topo, name in itertools.zip_longest(self._topos, self._names)]
@@ -1529,7 +1534,8 @@ class SubsetTopology(Topology):
         trimmedbrefs[self.newboundary.transforms.index(trans)] = ref
       trimboundary = SubsetTopology(self.newboundary, trimmedbrefs)
     else:
-      trimboundary = Topology(self.roots, elementseq.asreferences(trimmedreferences, self.ndims-1), transformseq.PlainTransforms(trimmedtransforms, self.ndims-1), transformseq.PlainTransforms(trimmedopposites, self.ndims-1))
+      root, = self.roots
+      trimboundary = Topology(self.roots, elementseq.asreferences(trimmedreferences, self.ndims-1), transformseq.PlainTransforms(trimmedtransforms, root.ndims, self.ndims-1), transformseq.PlainTransforms(trimmedopposites, root.ndims, self.ndims-1))
     return DisjointUnionTopology([trimboundary, origboundary], names=[self.newboundary] if isinstance(self.newboundary,str) else [])
 
   @property
@@ -1630,7 +1636,8 @@ class HierarchicalTopology(Topology):
         opposites.append(level.opposites[indices])
     self.levels = tuple(levels)
 
-    super().__init__(basetopo.roots, elementseq.chain(references, basetopo.ndims), transformseq.chain(transforms, basetopo.ndims), transformseq.chain(opposites, basetopo.ndims))
+    root, = basetopo.roots
+    super().__init__(basetopo.roots, elementseq.chain(references, basetopo.ndims), transformseq.chain(transforms, root.ndims), transformseq.chain(opposites, root.ndims))
 
   def getitem(self, item):
     itemtopo = self.basetopo.getitem(item)
@@ -1730,7 +1737,8 @@ class HierarchicalTopology(Topology):
         hreferences.append(level.interfaces.references[selection])
         htransforms.append(level.interfaces.transforms[selection])
         hopposites.append(level.interfaces.opposites[selection])
-    return Topology(self.roots, elementseq.chain(hreferences, self.ndims-1), transformseq.chain(htransforms, self.ndims-1), transformseq.chain(hopposites, self.ndims-1))
+    root, = self.roots
+    return Topology(self.roots, elementseq.chain(hreferences, self.ndims-1), transformseq.chain(htransforms, root.ndims), transformseq.chain(hopposites, root.ndims))
 
   @log.withcontext
   def basis(self, name, *args, truncation_tolerance=1e-15, **kwargs):

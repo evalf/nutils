@@ -548,8 +548,8 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
         opposites.append(topo.transforms[ioppelem] + (transform.SimplexEdge(ndims, tuple(connectivity[ioppelem]).index(ielem)),))
     for groups, (simplices, transforms, opposites) in (bgroups, bitems), (igroups, iitems):
       if simplices:
-        transforms = transformseq.PlainTransforms(transforms, ndims-1)
-        opposites = transforms if opposites is None else transformseq.PlainTransforms(opposites, ndims-1)
+        transforms = transformseq.PlainTransforms(transforms, ndims, ndims-1)
+        opposites = transforms if opposites is None else transformseq.PlainTransforms(opposites, ndims, ndims-1)
         groups[name] = topology.SimplexTopology(root, simplices, transforms, opposites)
 
   pgroups = {}
@@ -557,7 +557,7 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
     ptrans = [transform.Matrix(linear=numpy.zeros(shape=(ndims,0)), offset=offset) for offset in numpy.eye(ndims+1)[:,1:]]
     pmap = {inode: numpy.array(numpy.equal(nodes, inode).nonzero()).T for inode in set.union(*map(set, ptags.values()))}
     for pname, inodes in ptags.items():
-      ptransforms = transformseq.PlainTransforms([topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode]], 0)
+      ptransforms = transformseq.PlainTransforms([topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode]], ndims, 0)
       preferences = elementseq.asreferences([element.getsimplex(0)], 0)*len(ptransforms)
       pgroups[pname] = topology.Topology((root,), preferences, ptransforms, ptransforms)
 
@@ -596,12 +596,12 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
           opposites.append(topo.transforms[ioppelem] + (transform.SimplexEdge(ndims, ioppedge),))
       for groups, (simplices, transforms, opposites) in (vbgroups, bitems), (vigroups, iitems):
         if simplices:
-          transforms = transformseq.PlainTransforms(transforms, ndims-1)
-          opposites = transformseq.PlainTransforms(opposites, ndims-1) if len(opposites) == len(transforms) else transforms
+          transforms = transformseq.PlainTransforms(transforms, ndims, ndims-1)
+          opposites = transformseq.PlainTransforms(opposites, ndims, ndims-1) if len(opposites) == len(transforms) else transforms
           groups[bname] = topology.SimplexTopology(root, simplices, transforms, opposites)
     vpgroups = {}
     for pname, inodes in ptags.items():
-      ptransforms = transformseq.PlainTransforms([topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode] if keep[ielem]], 0)
+      ptransforms = transformseq.PlainTransforms([topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode] if keep[ielem]], ndims, 0)
       preferences = elementseq.asreferences([element.getsimplex(0)], 0)*len(ptransforms)
       vpgroups[pname] = topology.Topology((root,), preferences, ptransforms, ptransforms)
     vgroups[name] = vtopo.withgroups(bgroups=vbgroups, igroups=vigroups, pgroups=vpgroups)
@@ -656,7 +656,7 @@ def unitsquare(nelems, etype):
 
     v = numpy.arange(nelems+1, dtype=float)
     coords = numeric.meshgrid(v, v).reshape(2,-1).T
-    transforms = transformseq.PlainTransforms([(idtrans, transform.Square((c[1:]-c[0]).T, c[0])) for c in coords[simplices]], 2)
+    transforms = transformseq.PlainTransforms([(idtrans, transform.Square((c[1:]-c[0]).T, c[0])) for c in coords[simplices]], 2, 2)
     topo = topology.SimplexTopology(root, simplices, transforms, transforms)
 
     if etype == 'mixed':
@@ -671,7 +671,7 @@ def unitsquare(nelems, etype):
         transforms[n*2:(n+1)*2] = (idtrans, transform.Shift([float(i),float(j)])),
         connectivity[n*2:(n+1)*2] = numpy.concatenate(connectivity[n*2:(n+1)*2])[[3,2,4,1] if i%2==j%2 else [3,2,0,5]],
         connectivity = [c-numpy.greater(c,n*2) for c in connectivity]
-      topo = topology.ConnectedTopology((root,), elementseq.asreferences(references, 2), transformseq.PlainTransforms(transforms, 2),transformseq.PlainTransforms(transforms, 2), tuple(types.frozenarray(c, copy=False) for c in connectivity))
+      topo = topology.ConnectedTopology((root,), elementseq.asreferences(references, 2), transformseq.PlainTransforms(transforms, 2, 2),transformseq.PlainTransforms(transforms, 2, 2), tuple(types.frozenarray(c, copy=False) for c in connectivity))
 
     x, y = topo.boundary.elem_mean(function.rootcoords(root), degree=1).T
     bgroups = dict(left=x==0, right=x==nelems, bottom=y==0, top=y==nelems)
