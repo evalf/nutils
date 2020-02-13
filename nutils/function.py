@@ -356,23 +356,6 @@ class PopHead(TransformChain):
     assert trans[0].fromdims == self.todims
     return trans[1:]
 
-class SelectBifurcation(TransformChain):
-
-  __slots__ = 'trans', 'first'
-
-  @types.apply_annotations
-  def __init__(self, trans:strictevaluable, first:bool, todims:types.strictint=None):
-    self.trans = trans
-    self.first = first
-    super().__init__(args=[trans], todims=todims)
-
-  def evalf(self, trans):
-    assert isinstance(trans, tuple)
-    bf = trans[0]
-    assert isinstance(bf, transform.Bifurcate)
-    selected = bf.trans1 if self.first else bf.trans2
-    return selected + trans[1:]
-
 class TransformChainFromTuple(TransformChain):
 
   __slots__ = 'index',
@@ -4030,17 +4013,6 @@ def rootcoords(ndims):
 
 def opposite(arg):
   return Opposite(arg)
-
-@replace
-def _bifurcate(arg, side):
-  if isinstance(arg, SelectChain):
-    return SelectBifurcation(arg, side)
-
-bifurcate1 = functools.partial(_bifurcate, side=True)
-bifurcate2 = functools.partial(_bifurcate, side=False)
-
-def bifurcate(arg1, arg2):
-  return bifurcate1(arg1), bifurcate2(arg2)
 
 def curvature(geom, ndims=-1):
   return geom.normal().div(geom, ndims=ndims)
