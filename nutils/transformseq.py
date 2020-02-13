@@ -425,7 +425,7 @@ class IdentifierTransforms(Transforms):
 
   def index_with_tail(self, trans):
     root = trans[0]
-    if root.fromdims == self.fromdims and isinstance(root, transform.Identifier) and isinstance(root.token, tuple) and len(root.token) == 2 and root.token[0] == self._name and 0 <= root.token[1] < self._length:
+    if root.fromdims == self.fromdims and type(root) == transform.Identifier and isinstance(root.token, tuple) and len(root.token) == 2 and root.token[0] == self._name and 0 <= root.token[1] < self._length:
       return root.token[1], trans[1:]
     raise ValueError
 
@@ -581,7 +581,7 @@ class StructuredTransforms(Transforms):
     if root != self._root:
       raise ValueError
 
-    if not isinstance(shift, transform.Shift) or len(shift.offset) != len(self._axes) or not numpy.equal(shift.offset.astype(int), shift.offset).all():
+    if not type(shift) == transform.Shift or len(shift.offset) != len(self._axes) or not numpy.equal(shift.offset.astype(int), shift.offset).all():
       raise ValueError
     indices = numpy.array(shift.offset, dtype=int)
 
