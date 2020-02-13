@@ -520,19 +520,16 @@ class StructuredTransforms(Transforms):
 
   Parameters
   ----------
-  root : :class:`~nutils.transform.TransformItem`
-      Root transform of the :class:`~nutils.topology.StructuredTopology`.
   axes : :class:`tuple` of :class:`Axis` objects
       The axes defining the :class:`~nutils.topology.StructuredTopology`.
   nrefine : :class:`int`
       Number of structured refinements.
   '''
 
-  __slots__ = '_root', '_axes', '_nrefine', '_etransforms', '_ctransforms', '_cindices'
+  __slots__ = '_axes', '_nrefine', '_etransforms', '_ctransforms', '_cindices'
 
   @types.apply_annotations
-  def __init__(self, root:transform.stricttransformitem, axes:types.tuple[types.strict[Axis]], nrefine:types.strictint):
-    self._root = root
+  def __init__(self, axes:types.tuple[types.strict[Axis]], nrefine:types.strictint):
     self._axes = axes
     self._nrefine = nrefine
 
@@ -568,18 +565,16 @@ class StructuredTransforms(Transforms):
       indices, r = divmod(indices, self._ctransforms.shape)
       ctransforms.insert(0, self._ctransforms[tuple(r)])
     trans0 = transform.Shift(types.frozenarray(indices, dtype=float, copy=False))
-    return (self._root, trans0, *ctransforms, *self._etransforms)
+    return (trans0, *ctransforms, *self._etransforms)
 
   def __len__(self):
     return util.product(map(len, self._axes))
 
   def index_with_tail(self, trans):
-    if len(trans) < 2 + self._nrefine + len(self._etransforms):
+    if len(trans) < 1 + self._nrefine + len(self._etransforms):
       raise ValueError
 
-    root, shift, tail = trans[0], trans[1], transform.uppermost(trans[2:])
-    if root != self._root:
-      raise ValueError
+    shift, tail = trans[0], transform.uppermost(trans[1:])
 
     if not type(shift) == transform.Shift or len(shift.offset) != len(self._axes) or not numpy.equal(shift.offset.astype(int), shift.offset).all():
       raise ValueError

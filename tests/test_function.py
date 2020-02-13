@@ -1127,7 +1127,7 @@ class PrunedBasis(CommonBasis, TestCase):
 
 class StructuredBasis1D(CommonBasis, TestCase):
   def setUp(self):
-    transforms = transformseq.StructuredTransforms(transform.Identifier(1, 'test'), [transformseq.DimAxis(0,4,False)], 0)
+    transforms = transformseq.StructuredTransforms([transformseq.DimAxis(0,4,False)], 0)
     self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]], [[0,1,2,3]], [[2,3,4,5]], [5], transforms, [4])
     self.checkcoeffs = [[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]
     self.checkdofs = [[0,1],[1,2],[2,3],[3,4]]
@@ -1136,7 +1136,7 @@ class StructuredBasis1D(CommonBasis, TestCase):
 
 class StructuredBasis1DPeriodic(CommonBasis, TestCase):
   def setUp(self):
-    transforms = transformseq.StructuredTransforms(transform.Identifier(1, 'test'), [transformseq.DimAxis(0,4,True)], 0)
+    transforms = transformseq.StructuredTransforms([transformseq.DimAxis(0,4,True)], 0)
     self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]], [[0,1,2,3]], [[2,3,4,5]], [4], transforms, [4])
     self.checkcoeffs = [[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]
     self.checkdofs = [[0,1],[1,2],[2,3],[3,0]]
@@ -1145,7 +1145,7 @@ class StructuredBasis1DPeriodic(CommonBasis, TestCase):
 
 class StructuredBasis2D(CommonBasis, TestCase):
   def setUp(self):
-    transforms = transformseq.StructuredTransforms(transform.Identifier(2, 'test'), [transformseq.DimAxis(0,2,False),transformseq.DimAxis(0,2,False)], 0)
+    transforms = transformseq.StructuredTransforms([transformseq.DimAxis(0,2,False),transformseq.DimAxis(0,2,False)], 0)
     self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]]],[[[5],[6]],[[7],[8]]]], [[0,1],[0,1]], [[2,3],[2,3]], [3,3], transforms, [2,2])
     self.checkcoeffs = [[[[5]],[[6]],[[10]],[[12]]],[[[7]],[[8]],[[14]],[[16]]],[[[15]],[[18]],[[20]],[[24]]],[[[21]],[[24]],[[28]],[[32]]]]
     self.checkdofs = [[0,1,3,4],[1,2,4,5],[3,4,6,7],[4,5,7,8]]
