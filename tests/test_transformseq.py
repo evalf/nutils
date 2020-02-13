@@ -226,81 +226,81 @@ class ChainedTransforms(TestCase, Common, Edges):
 
 class StructuredTransforms1D(TestCase, Common, Edges):
   def setUp(self):
-    self.seq = nutils.transformseq.StructuredTransforms(x1, [nutils.transformseq.DimAxis(0,4,False)], 0)
-    self.check = (x1,s0),(x1,s1),(x1,s2),(x1,s3)
-    self.checkmissing = (l1,s0),(x1,s4),(r1,s0),(x1,c1)
+    self.seq = nutils.transformseq.StructuredTransforms([nutils.transformseq.DimAxis(0,4,False)], 0)
+    self.check = (s0,),(s1,),(s2,),(s3,)
+    self.checkmissing = (l1,s0),(s4,),(r1,s0),(c1,)
     self.checkrefs = nutils.elementseq.asreferences([line]*4, 1)
     self.checkfromdims = 1
 
 class StructuredTransforms1DRefined(TestCase, Common, Edges):
   def setUp(self):
-    self.seq = nutils.transformseq.StructuredTransforms(x1, [nutils.transformseq.DimAxis(0,4,False)], 1)
-    self.check = (x1,s0,c0),(x1,s0,c1),(x1,s1,c0),(x1,s1,c1)
-    self.checkmissing = (l1,s0),(x1,s0),(x1,s1),(x1,s0,s1),(r1,s0)
+    self.seq = nutils.transformseq.StructuredTransforms([nutils.transformseq.DimAxis(0,4,False)], 1)
+    self.check = (s0,c0),(s0,c1),(s1,c0),(s1,c1)
+    self.checkmissing = (l1,s0),(s0,),(s1,),(s0,s1),(r1,s0)
     self.checkrefs = nutils.elementseq.asreferences([line]*4, 1)
     self.checkfromdims = 1
 
 class StructuredTransforms1DLeft(TestCase, Common):
   def setUp(self):
-    self.seq = nutils.transformseq.StructuredTransforms(x1, [nutils.transformseq.BndAxis(3,3,0,False)], 0)
-    self.check = (x1,s3,e1),
-    self.checkmissing = (x1,s0,e0),(x1,s2,e0),(x1,s4,e0)
+    self.seq = nutils.transformseq.StructuredTransforms([nutils.transformseq.BndAxis(3,3,0,False)], 0)
+    self.check = (s3,e1),
+    self.checkmissing = (s0,e0),(s2,e0),(s4,e0)
     self.checkrefs = nutils.elementseq.asreferences([point], 0)
     self.checkfromdims = 0
 
 class StructuredTransforms1DRight(TestCase, Common):
   def setUp(self):
-    self.seq = nutils.transformseq.StructuredTransforms(x1, [nutils.transformseq.BndAxis(3,3,0,True)], 0)
-    self.check = (x1,s2,e0),
-    self.checkmissing = (x1,s0,e0),(x1,s3,e1),(x1,s4,e0)
+    self.seq = nutils.transformseq.StructuredTransforms([nutils.transformseq.BndAxis(3,3,0,True)], 0)
+    self.check = (s2,e0),
+    self.checkmissing = (s0,e0),(s3,e1),(s4,e0)
     self.checkrefs = nutils.elementseq.asreferences([point], 0)
     self.checkfromdims = 0
 
 class StructuredTransforms1DInterfacesLeft(TestCase, Common):
   def setUp(self):
-    self.seq = nutils.transformseq.StructuredTransforms(x1, [nutils.transformseq.IntAxis(0,4,0,False)], 0)
-    self.check = (x1,s1,e1),(x1,s2,e1),(x1,s3,e1)
-    self.checkmissing = (x1,s0,e1),(x1,s0,e0),(x1,s1,e0),(x1,s2,e0),(x1,s3,e0)
+    self.seq = nutils.transformseq.StructuredTransforms([nutils.transformseq.IntAxis(0,4,0,False)], 0)
+    self.check = (s1,e1),(s2,e1),(s3,e1)
+    self.checkmissing = (s0,e1),(s0,e0),(s1,e0),(s2,e0),(s3,e0)
     self.checkrefs = nutils.elementseq.asreferences([point]*3, 0)
     self.checkfromdims = 0
 
 class StructuredTransforms1DInterfacesRight(TestCase, Common):
   def setUp(self):
-    self.seq = nutils.transformseq.StructuredTransforms(x1, [nutils.transformseq.IntAxis(0,4,0,True)], 0)
-    self.check = (x1,s0,e0),(x1,s1,e0),(x1,s2,e0)
-    self.checkmissing = (x1,s3,e0),(x1,s0,e1),(x1,s1,e1),(x1,s2,e1),(x1,s3,e1)
+    self.seq = nutils.transformseq.StructuredTransforms([nutils.transformseq.IntAxis(0,4,0,True)], 0)
+    self.check = (s0,e0),(s1,e0),(s2,e0)
+    self.checkmissing = (s3,e0),(s0,e1),(s1,e1),(s2,e1),(s3,e1)
     self.checkrefs = nutils.elementseq.asreferences([point]*3, 0)
     self.checkfromdims = 0
 
 class StructuredTransforms1DPeriodicInterfacesLeft(TestCase, Common):
   def setUp(self):
-    self.seq = nutils.transformseq.StructuredTransforms(x1, [nutils.transformseq.PIntAxis(0,4,0,False)], 0)
-    self.check = (x1,s1,e1),(x1,s2,e1),(x1,s3,e1),(x1,s0,e1)
-    self.checkmissing = (x1,s0,e0),(x1,s1,e0),(x1,s2,e0),(x1,s3,e0),(x1,s4,e0)
+    self.seq = nutils.transformseq.StructuredTransforms([nutils.transformseq.PIntAxis(0,4,0,False)], 0)
+    self.check = (s1,e1),(s2,e1),(s3,e1),(s0,e1)
+    self.checkmissing = (s0,e0),(s1,e0),(s2,e0),(s3,e0),(s4,e0)
     self.checkrefs = nutils.elementseq.asreferences([point]*3, 0)
     self.checkfromdims = 0
 
 class StructuredTransforms1DPeriodicInterfacesRight(TestCase, Common):
   def setUp(self):
-    self.seq = nutils.transformseq.StructuredTransforms(x1, [nutils.transformseq.PIntAxis(0,4,0,True)], 0)
-    self.check = (x1,s0,e0),(x1,s1,e0),(x1,s2,e0),(x1,s3,e0)
-    self.checkmissing = (x1,s0,e1),(x1,s1,e1),(x1,s2,e1),(x1,s3,e1),(x1,s4,e1)
+    self.seq = nutils.transformseq.StructuredTransforms([nutils.transformseq.PIntAxis(0,4,0,True)], 0)
+    self.check = (s0,e0),(s1,e0),(s2,e0),(s3,e0)
+    self.checkmissing = (s0,e1),(s1,e1),(s2,e1),(s3,e1),(s4,e1)
     self.checkrefs = nutils.elementseq.asreferences([point]*3, 0)
     self.checkfromdims = 0
 
 class StructuredTransforms2D(TestCase, Common, Edges):
   def setUp(self):
-    self.seq = nutils.transformseq.StructuredTransforms(x2, [nutils.transformseq.DimAxis(0,2,False),nutils.transformseq.DimAxis(2,4,False)], 0)
-    self.check = (x2,s02),(x2,s03),(x2,s12),(x2,s13)
-    self.checkmissing = (x2,s00),(x2,s01),(x2,s10),(x2,s11)
+    self.seq = nutils.transformseq.StructuredTransforms([nutils.transformseq.DimAxis(0,2,False),nutils.transformseq.DimAxis(2,4,False)], 0)
+    self.check = (s02,),(s03,),(s12,),(s13,)
+    self.checkmissing = (s00,),(s01,),(s10,),(s11,)
     self.checkrefs = nutils.elementseq.asreferences([square]*4, 2)
     self.checkfromdims = 2
 
 class StructuredTransforms2DRefined(TestCase, Common, Edges):
   def setUp(self):
-    self.seq = nutils.transformseq.StructuredTransforms(x2, [nutils.transformseq.DimAxis(0,2,False),nutils.transformseq.DimAxis(2,4,False)], 1)
-    self.check = (x2,s01,c00),(x2,s01,c01),(x2,s01,c10),(x2,s01,c11)
-    self.checkmissing = (x2,s00,c00),
+    self.seq = nutils.transformseq.StructuredTransforms([nutils.transformseq.DimAxis(0,2,False),nutils.transformseq.DimAxis(2,4,False)], 1)
+    self.check = (s01,c00),(s01,c01),(s01,c10),(s01,c11)
+    self.checkmissing = (s00,c00),
     self.checkrefs = nutils.elementseq.asreferences([square]*4, 2)
     self.checkfromdims = 2
 

@@ -841,13 +841,13 @@ class StructuredTopology(Topology):
     self._bnames = bnames
 
     references = elementseq.asreferences([util.product(element.getsimplex(1 if axis.isdim else 0) for axis in self.axes)], len(self.shape))*len(self)
-    transforms = transformseq.StructuredTransforms(self.root, self.axes, self.nrefine)
+    transforms = transformseq.StructuredTransforms(self.axes, self.nrefine)
     nbounds = len(self.axes) - len(self.shape)
     if nbounds == 0:
       opposites = transforms
     else:
       axes = [transformseq.BndAxis(axis.i, axis.j, axis.ibound, not axis.side) if not axis.isdim and axis.ibound==nbounds-1 else axis for axis in self.axes]
-      opposites = transformseq.StructuredTransforms(self.root, axes, self.nrefine)
+      opposites = transformseq.StructuredTransforms(axes, self.nrefine)
 
     super().__init__(references, transforms, opposites)
 
@@ -924,8 +924,8 @@ class StructuredTopology(Topology):
       intaxis = lambda side: (transformseq.PIntAxis if idim in self.periodic else transformseq.IntAxis)(axis.i, axis.j, nbounds, side)
       axes = (*self.axes[:idim], intaxis(True), *self.axes[idim+1:])
       oppaxes = (*self.axes[:idim], intaxis(False), *self.axes[idim+1:])
-      itransforms = transformseq.StructuredTransforms(self.root, axes, self.nrefine)
-      iopposites = transformseq.StructuredTransforms(self.root, oppaxes, self.nrefine)
+      itransforms = transformseq.StructuredTransforms(axes, self.nrefine)
+      iopposites = transformseq.StructuredTransforms(oppaxes, self.nrefine)
       ireferences = elementseq.asreferences([util.product(element.getsimplex(1 if a.isdim else 0) for a in axes)], self.ndims-1)*len(itransforms)
       itopos.append(Topology(ireferences, itransforms, iopposites))
     assert len(itopos) == self.ndims
