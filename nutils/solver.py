@@ -143,12 +143,14 @@ class RecursionWithSolve(cache.Recursion):
       warnings.deprecation('solve with zero tolerance is deprecated and will be removed; proceeding with tol=1e-12')
       tol = 1e-12
     with log.iter.wrap(_progress(self.__class__.__name__, tol), self) as items:
-      for i, (lhs, info) in enumerate(items):
+      i = 0
+      for lhs, info in items:
         if info.resnorm <= tol:
           break
         if i > maxiter:
           raise SolverError('failed to reach target tolerance')
-      log.info('converged with residual {:.1e}'.format(info.resnorm))
+        i += 1
+      log.info('converged in {} steps to residual {:.1e}'.format(i, info.resnorm))
     return lhs, info
 
 
