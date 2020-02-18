@@ -12,14 +12,14 @@ class TopologyAssertions:
     for ielem, ioppelems in enumerate(domain.connectivity):
       for iedge, ioppelem in enumerate(ioppelems):
         etrans, eref = domain.references[ielem].edges[iedge]
-        trans = domain.transforms[ielem] + (etrans,)
+        trans = transform.append_edge(domain.transforms[ielem], etrans)
         if ioppelem == -1:
           index = boundary.transforms.index(trans)
           bmask[index] += 1
         else:
           ioppedge = domain.connectivity[ioppelem].index(ielem)
           oppetrans, opperef = domain.references[ioppelem].edges[ioppedge]
-          opptrans = domain.transforms[ioppelem] + (oppetrans,)
+          opptrans = transform.append_edge(domain.transforms[ioppelem], oppetrans)
           try:
             index = interfaces.transforms.index(trans)
           except ValueError:
@@ -302,7 +302,7 @@ class general(TestCase):
   def test_boundary(self):
     for trans in self.domain.boundary.transforms:
       ielem, tail = self.domain.transforms.index_with_tail(trans)
-      etrans, = tail
+      (etrans,), = tail
       iedge = self.domain.references[ielem].edge_transforms.index(etrans)
       self.assertEqual(self.domain.connectivity[ielem][iedge], -1)
 
@@ -310,10 +310,10 @@ class general(TestCase):
     itopo = self.domain.interfaces
     for trans, opptrans in zip(itopo.transforms, itopo.opposites):
       ielem, tail = self.domain.transforms.index_with_tail(trans)
-      etrans, = tail
+      (etrans,), = tail
       iedge = self.domain.references[ielem].edge_transforms.index(etrans)
       ioppelem, opptail = self.domain.transforms.index_with_tail(opptrans)
-      eopptrans, = opptail
+      (eopptrans,), = opptail
       ioppedge = self.domain.references[ioppelem].edge_transforms.index(eopptrans)
       self.assertEqual(self.domain.connectivity[ielem][iedge], ioppelem)
       self.assertEqual(self.domain.connectivity[ioppelem][ioppedge], ielem)

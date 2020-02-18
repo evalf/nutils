@@ -37,13 +37,13 @@ class Transforms(types.Singleton):
 
   Parameters
   ----------
-  todims : :class:`int`
-      The dimension all transforms in this sequence map to.
+  todims : :class:`tuple` of :class:`int`
+      The todims of the transform chains in this sequence.
 
   Attributes
   ----------
-  todims : :class:`int`
-      The dimension all transforms in this sequence map to.
+  todims : :class:`tuple` of :class:`int`
+      The todims of the transform chains in this sequence.
 
   Notes
   -----
@@ -54,7 +54,7 @@ class Transforms(types.Singleton):
   __slots__ = 'todims'
 
   @types.apply_annotations
-  def __init__(self, todims:types.strictint):
+  def __init__(self, todims:types.tuple[types.strictint]):
     self.todims = todims
     super().__init__()
 
@@ -118,14 +118,14 @@ class Transforms(types.Singleton):
 
     Parameters
     ----------
-    trans : :class:`tuple` of :class:`nutils.transform.TransformItem` objects
+    trans : :class:`tuple` of :class:`tuple` of :class:`nutils.transform.TransformItem` objects
         The transform to find up to a possibly empty tail.
 
     Returns
     -------
     index : :class:`int`
         The index of ``trans`` without tail in this sequence.
-    tail : :class:`tuple` of :class:`nutils.transform.TransformItem` objects
+    tail : :class:`tuple` of :class:`tuple` of :class:`nutils.transform.TransformItem` objects
         The tail: ``trans[len(self[index]):]``.
 
     Raises
@@ -144,13 +144,13 @@ class Transforms(types.Singleton):
     Calling :meth:`index_with_tail` with the first transform gives index ``0``
     and no tail:
 
-    >>> transforms.index_with_tail((Shift([0.]),))
-    (0, ())
+    >>> transforms.index_with_tail(((Shift([0.]),),))
+    (0, ((),))
 
     Calling with an additional scale gives:
 
-    >>> transforms.index_with_tail((Shift([0.]), Scale(0.5, [0.])))
-    (0, (Scale([0]+0.5*x),))
+    >>> transforms.index_with_tail(((Shift([0.]), Scale(0.5, [0.])),))
+    (0, ((Scale([0]+0.5*x),),))
     '''
 
     raise NotImplementedError
@@ -166,7 +166,7 @@ class Transforms(types.Singleton):
 
     Parameters
     ----------
-    trans : :class:`tuple` of :class:`nutils.transform.TransformItem` objects
+    trans : :class:`tuple` of :class:`tuple` of :class:`nutils.transform.TransformItem` objects
 
     Returns
     -------
@@ -188,20 +188,20 @@ class Transforms(types.Singleton):
 
     Calling :meth:`index` with the first transform gives index ``0``:
 
-    >>> transforms.index((Shift([0.]),))
+    >>> transforms.index(((Shift([0.]),),))
     0
 
     Calling with an additional scale raises an exception, because the transform
     is not present in ``transforms``.
 
-    >>> transforms.index((Shift([0.]), Scale(0.5, [0.])))
+    >>> transforms.index(((Shift([0.]), Scale(0.5, [0.])),))
     Traceback (most recent call last):
       ...
-    ValueError: (Shift([0]+x), Scale([0]+0.5*x)) not in sequence of transforms
+    ValueError: ((Shift([0]+x), Scale([0]+0.5*x)),) not in sequence of transforms
     '''
 
     index, tail = self.index_with_tail(trans)
-    if tail:
+    if any(tail):
       raise ValueError('{!r} not in sequence of transforms'.format(trans))
     return index
 
@@ -210,7 +210,7 @@ class Transforms(types.Singleton):
 
     Parameters
     ----------
-    trans : :class:`tuple` of :class:`nutils.transform.TransformItem` objects
+    trans : :class:`tuple` of :class:`tuple` of :class:`nutils.transform.TransformItem` objects
 
     Returns
     -------
@@ -234,7 +234,7 @@ class Transforms(types.Singleton):
 
     Parameters
     ----------
-    trans : :class:`tuple` of :class:`nutils.transform.TransformItem` objects
+    trans : :class:`tuple` of :class:`tuple` of :class:`nutils.transform.TransformItem` objects
 
     Returns
     -------
@@ -301,6 +301,11 @@ class Transforms(types.Singleton):
     if self.todims != other.todims:
       raise ValueError('Cannot add two Transforms with different todims.')
     return chain((self, other), self.todims)
+
+  def __mul__(self, other):
+    if not isinstance(other, Transforms):
+      return NotImplemented
+    return ProductTransforms(self, other)
 
   def unchain(self):
     '''Iterator of unchained :class:`Transforms` items.
@@ -373,30 +378,32 @@ class PlainTransforms(Transforms):
     self._indices = numpy.argsort(self._sorted)
     self._sorted = self._sorted[self._indices]
     self._fromdims = fromdims
-    super().__init__(todims)
+    super().__init__((todims,))
 
   def __iter__(self):
-    return iter(self._transforms)
+    for trans in self._transforms:
+      yield trans,
 
   def __getitem__(self, index):
     if not numeric.isint(index):
       return super().__getitem__(index)
-    return self._transforms[numeric.normdim(len(self), index)]
+    return self._transforms[numeric.normdim(len(self), index)],
 
   def __len__(self):
     return len(self._transforms)
 
-  def index_with_tail(self, trans):
-    trans, orig_trans = transform.promote(trans, self._fromdims), trans
+  def index_with_tail(self, mtrans):
+    assert len(mtrans) == 1
+    trans = transform.promote(mtrans[0], self._fromdims)
     transid_array = numpy.empty((), dtype=object)
     transid_array[()] = transid = tuple(map(id, trans))
     i = numpy.searchsorted(self._sorted, transid_array, side='right') - 1
     if i < 0:
-      raise ValueError('{!r} not in sequence of transforms'.format(orig_trans))
+      raise ValueError('{!r} not in sequence of transforms'.format(mtrans))
     match = self._sorted[i]
     if transid[:len(match)] != match:
-      raise ValueError('{!r} not in sequence of transforms'.format(orig_trans))
-    return self._indices[i], trans[len(match):]
+      raise ValueError('{!r} not in sequence of transforms'.format(mtrans))
+    return self._indices[i], (trans[len(match):],)
 
 class IdentifierTransforms(Transforms):
   '''A sequence of :class:`nutils.transform.Identifier` singletons.
@@ -421,21 +428,24 @@ class IdentifierTransforms(Transforms):
     self._ndims = ndims
     self._name = name
     self._length = length
-    super().__init__(ndims)
+    super().__init__((ndims,))
 
   def __getitem__(self, index):
     if not numeric.isint(index):
       return super().__getitem__(index)
     index = int(index) # make sure that index is a Python integer rather than numpy.intxx
-    return transform.Identifier(self._ndims, (self._name, numeric.normdim(self._length, index))),
+    return (transform.Identifier(self._ndims, (self._name, numeric.normdim(self._length, index))),),
 
   def __len__(self):
     return self._length
 
-  def index_with_tail(self, trans):
+  def index_with_tail(self, mtrans):
+    trans, = mtrans
+    if not trans:
+      raise ValueError
     root = trans[0]
     if root.todims == self._ndims and type(root) == transform.Identifier and isinstance(root.token, tuple) and len(root.token) == 2 and root.token[0] == self._name and 0 <= root.token[1] < self._length:
-      return root.token[1], trans[1:]
+      return root.token[1], (trans[1:],)
     raise ValueError
 
 class Axis(types.Singleton):
@@ -556,7 +566,7 @@ class StructuredTransforms(Transforms):
     self._etransforms = tuple(etransforms)
 
     self._fromdims = sum(axis.isdim for axis in self._axes)
-    super().__init__(len(self._axes))
+    super().__init__((len(self._axes),))
 
   def __getitem__(self, index):
     if not numeric.isint(index):
@@ -575,12 +585,16 @@ class StructuredTransforms(Transforms):
       indices, r = divmod(indices, self._ctransforms.shape)
       ctransforms.insert(0, self._ctransforms[tuple(r)])
     trans0 = transform.Shift(types.frozenarray(indices, dtype=float, copy=False))
-    return (trans0, *ctransforms, *self._etransforms)
+    return (trans0, *ctransforms, *self._etransforms),
 
   def __len__(self):
     return util.product(map(len, self._axes))
 
-  def index_with_tail(self, trans):
+  def index_with_tail(self, mtrans):
+    trans, = mtrans
+    # FIXME
+    #if trans and trans[-1].fromdims == 0 and len(trans) < 1 + self._nrefine + len(self._etransforms):
+    #  trans += (transform.SimplexChild(0, 0),)*(1 + self._nrefine + len(self._etransforms) - len(trans))
     if len(trans) < 1 + self._nrefine + len(self._etransforms):
       raise ValueError
 
@@ -608,7 +622,10 @@ class StructuredTransforms(Transforms):
       raise ValueError
     tail = tail[len(self._etransforms):]
 
-    return flatindex, tail
+    return flatindex, (tail,)
+
+  def linear_evaluable(self, index, roots):
+    return function.asarray(transform.linear(self[0][0], self.todims[0])),
 
 class MaskedTransforms(Transforms):
   '''An order preserving subset of another :class:`Transforms` object.
@@ -733,7 +750,7 @@ class DerivedTransforms(Transforms):
   def __iter__(self):
     for reference, trans in zip(self._parent_references, self._parent):
       for dtrans in self._derived_transforms(reference):
-        yield trans+(dtrans,)
+        yield transform.append_joined_item(trans, dtrans, kind='edge' if self._updim else 'child')
 
   def __getitem__(self, index):
     if not numeric.isint(index):
@@ -742,15 +759,24 @@ class DerivedTransforms(Transforms):
     iparent = numpy.searchsorted(self._offsets, index, side='right')-1
     assert 0 <= iparent < len(self._offsets)-1
     iderived = index - self._offsets[iparent]
-    return self._parent[iparent] + (self._derived_transforms(self._parent_references[iparent])[iderived],)
+    trans = self._parent[iparent]
+    derived = self._derived_transforms(self._parent_references[iparent])[iderived]
+    return transform.append_joined_item(trans, derived, kind='edge' if self._updim else 'child')
 
   def index_with_tail(self, trans):
-    iparent, tail = self._parent.index_with_tail(trans)
-    if not tail:
+    iparent, parenttail = self._parent.index_with_tail(trans)
+    if not any(parenttail):
       raise ValueError
-    tail = (transform.canonical if self._updim else transform.uppermost)(tail)
-    iderived = self._derived_transforms(self._parent_references[iparent]).index(tail[0])
-    return self._offsets[iparent]+iderived, tail[1:]
+    parenttail = tuple(map(transform.canonical if self._updim else transform.uppermost, parenttail))
+    todims = [a[0].todims if a else b[-1].fromdims for a, b in zip(parenttail, trans)]
+    for iderived, derivedtrans in enumerate(self._derived_transforms(self._parent_references[iparent])):
+      sepderivedtrans = tuple(None if type(t) is transform.Identity and self._updim else transform.SimplexChild(0,0) if t == transform.Identity(0) and not self._updim else t for t in derivedtrans.separate(todims))
+      if all(b is None or a and a[0] == b for a, b in zip(parenttail, sepderivedtrans)):
+        tail = tuple(a if b is None else a[1:] for a, b in zip(parenttail, sepderivedtrans))
+        break
+    else:
+      raise ValueError
+    return self._offsets[iparent]+iderived, tail
 
 class UniformDerivedTransforms(Transforms):
   '''A sequence of refined transforms from a uniform sequence of references.
@@ -788,21 +814,30 @@ class UniformDerivedTransforms(Transforms):
   def __iter__(self):
     for trans in self._parent:
       for dtrans in self._derived_transforms:
-        yield trans+(dtrans,)
+        yield transform.append_joined_item(trans, dtrans, kind='edge' if self._updim else 'child')
 
   def __getitem__(self, index):
     if not numeric.isint(index):
       return super().__getitem__(index)
     iparent, iderived = divmod(numeric.normdim(len(self), index), len(self._derived_transforms))
-    return self._parent[iparent] + (self._derived_transforms[iderived],)
+    trans = self._parent[iparent]
+    derived = self._derived_transforms[iderived]
+    return transform.append_joined_item(trans, derived, kind='edge' if self._updim else 'child')
 
   def index_with_tail(self, trans):
-    iparent, tail = self._parent.index_with_tail(trans)
-    if not tail:
+    iparent, parenttail = self._parent.index_with_tail(trans)
+    if not any(parenttail):
       raise ValueError
-    tail = (transform.canonical if self._updim else transform.uppermost)(tail)
-    iderived = self._derived_transforms.index(tail[0])
-    return iparent*len(self._derived_transforms) + iderived, tail[1:]
+    parenttail = tuple(map(transform.canonical if self._updim else transform.uppermost, parenttail))
+    todims = [a[0].todims if a else b[-1].fromdims for a, b in zip(parenttail, trans)]
+    for iderived, derivedtrans in enumerate(self._derived_transforms):
+      sepderivedtrans = tuple(None if type(t) is transform.Identity and self._updim else transform.SimplexChild(0,0) if t == transform.Identity(0) and not self._updim else t for t in derivedtrans.separate(todims))
+      if all(b is None or a and a[0] == b for a, b in zip(parenttail, sepderivedtrans)):
+        tail = tuple(a if b is None else a[1:] for a, b in zip(parenttail, sepderivedtrans))
+        break
+    else:
+      raise ValueError
+    return iparent*len(self._derived_transforms) + iderived, tail
 
 class TrimmedEdgesTransforms(Transforms):
 
@@ -810,7 +845,7 @@ class TrimmedEdgesTransforms(Transforms):
   __cache__ = '_offsets'
 
   @types.apply_annotations
-  def __init__(self, parent:stricttransforms, edges:types.tuple[types.tuple[transform.stricttransformitem]]):
+  def __init__(self, parent:stricttransforms, edges:types.tuple[types.tuple[types.tuple[transform.stricttransformitem]]]):
     assert len(edges) == len(parent)
     self._parent = parent
     self._edges = edges
@@ -826,7 +861,7 @@ class TrimmedEdgesTransforms(Transforms):
   def __iter__(self):
     for ptrans, edges in zip(self._parent, self._edges):
       for etrans in edges:
-        yield ptrans+(etrans,)
+        yield tuple(h+(t,) for h, t in zip(ptrans, etrans))
 
   def __getitem__(self, index):
     if not numeric.isint(index):
@@ -835,22 +870,22 @@ class TrimmedEdgesTransforms(Transforms):
     iparent = numpy.searchsorted(self._offsets, index, side='right')-1
     assert 0 <= iparent < len(self._offsets)-1
     iedge = index - self._offsets[iparent]
-    return self._parent[iparent] + (self._edges[iparent][iedge],)
+    return tuple(h+(t,) for h, t in zip(self._parent[iparent], self._edges[iparent][iedge]))
 
   def index_with_tail(self, trans):
-    iparent, tail = self._parent.index_with_tail(trans)
-    if not tail:
+    iparent, tails = self._parent.index_with_tail(trans)
+    if not all(tails):
       raise ValueError
-    tail = transform.canonical(tail)
-    iedge = self._edges[iparent].index(tail[0])
-    return self._offsets[iparent]+iedge, tail[1:]
+    tails = tuple(map(transform.canonical, tails))
+    iedge = self._edges[iparent].index(tuple(tail[0] for tail in tails))
+    return self._offsets[iparent]+iedge, tuple(tail[1:] for tail in tails)
 
 class ProductTransforms(Transforms):
   '''The product of two :class:`Transforms` objects.
 
-  The order of the resulting transforms is: ``transforms1[0]*transforms2[0],
-  transforms1[0]*transforms2[1], ..., transforms1[1]*transforms2[0],
-  transforms1[1]*transforms2[1], ...``.
+  The order of the resulting transforms is: ``transforms1[0]+transforms2[0],
+  transforms1[0]+transforms2[1], ..., transforms1[1]+transforms2[0],
+  transforms1[1]+transforms2[1], ...``.
 
   Parameters
   ----------
@@ -866,28 +901,26 @@ class ProductTransforms(Transforms):
   def __init__(self, transforms1:stricttransforms, transforms2:stricttransforms):
     self._transforms1 = transforms1
     self._transforms2 = transforms2
-    super().__init__(transforms1.fromdims+transforms2.fromdims)
+    super().__init__(transforms1.todims+transforms2.todims)
 
   def __iter__(self):
     for trans1 in self._transforms1:
       for trans2 in self._transforms2:
-        yield transform.Bifurcate(trans1, trans2),
+        yield trans1+trans2
 
   def __getitem__(self, index):
     if not numeric.isint(index):
       return super().__getitem__(index)
     index1, index2 = divmod(numeric.normdim(len(self), index), len(self._transforms2))
-    return transform.Bifurcate(self._transforms1[index1], self._transforms2[index2]),
+    return self._transforms1[index1]+self._transforms2[index2]
 
   def __len__(self):
     return len(self._transforms1) * len(self._transforms2)
 
   def index_with_tail(self, trans):
-    bf = trans[0]
-    assert isinstance(bf, transform.Bifurcate)
-    index1, tail1 = self._transforms1.index_with_tail(bf.trans1[:-1])
-    index2, tail2 = self._transforms2.index_with_tail(bf.trans2[:-1])
-    return index1*len(self._transforms2)+index2, None # FIXME
+    index1, tail1 = self._transforms1.index_with_tail(trans[:len(self._transforms1.todims)])
+    index2, tail2 = self._transforms2.index_with_tail(trans[len(self._transforms1.todims):])
+    return index1*len(self._transforms2)+index2, tail1+tail2
 
 class ChainedTransforms(Transforms):
   '''A sequence of chained :class:`Transforms` objects.
@@ -966,14 +999,14 @@ class ChainedTransforms(Transforms):
     yield from self._items
 
 @types.apply_annotations
-def chain(items:types.tuple[stricttransforms], todims:types.strictint):
+def chain(items:types.tuple[stricttransforms], todims:types.tuple[types.strictint]):
   '''Return the chained transforms sequence of ``items``.
 
   Parameters
   ----------
   items : iterable of :class:`Transforms` objects
       The :class:`Transforms` objects to chain.
-  todims : :class:`int`
+  todims : :class:`tuple` of :class:`int`
       The dimension all transforms of all sequences map to.
 
   Returns

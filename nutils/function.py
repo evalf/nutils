@@ -107,11 +107,9 @@ class Subsample:
 
   __slots__ = 'roots', 'transforms', 'points', 'ielem'
 
-  def __init__(self, roots: types.tuple[strictroot], transforms: types.tuple[transform.stricttransform], points: points.strictpoints, ielem: types.strictint = None):
-    if len(roots) != 1:
-      raise NotImplementedError
+  def __init__(self, roots: types.tuple[strictroot], transforms: types.tuple[types.tuple[transform.stricttransform]], points: points.strictpoints, ielem: types.strictint = None):
     self.roots = roots
-    self.transforms = tuple((chain,) for chain in transforms)
+    self.transforms = transforms
     self.points = points
     self.ielem = ielem
 
@@ -470,7 +468,7 @@ class SelectChain(TransformChain):
           break
       else:
         raise ValueError('no such root: {!r}'.format(root))
-    return tuple(trans)
+    return tuple(trans), tuple(t[0].todims for t in trans), tuple(t[-1].fromdims for t in trans)
 
   @util.positional_only
   def prepare_eval(self, *, opposite=False, kwargs=...):
@@ -478,14 +476,17 @@ class SelectChain(TransformChain):
 
 class EmptyTransformChain(TransformChain):
 
-  __slots__ = ()
+  __slots__ = '_todims', '_fromdims'
 
   @types.apply_annotations
-  def __init__(self, roots:types.tuple[strictroot], todims:types.strictint=None, fromdims:types.strictint=None):
-    super().__init__(roots=roots, args=[], todims=todims, fromdims=fromdims)
+  def __init__(self, roots:types.tuple[strictroot], todims:types.tuple[types.strictint], fromdims:types.tuple[types.strictint]):
+    assert len(roots) == len(todims) == len(fromdims)
+    self._todims = todims
+    self._fromdims = fromdims
+    super().__init__(roots=roots, args=[], todims=builtins.sum(todims), fromdims=builtins.sum(fromdims))
 
   def evalf(self):
-    return ()
+    return ((),)*len(self.roots), self._todims, self._fromdims
 
 class TransformChainFromTuple(TransformChain):
 
@@ -515,11 +516,11 @@ class TransformsIndexWithTail(Evaluable):
     return self._trans.roots
 
   def evalf(self, chains):
-    if len(chains) != 1:
-      raise NotImplementedError
-    trans, = chains
-    index, tail = self._transforms.index_with_tail(trans)
-    return numpy.array(index)[None], (tail,)
+    chains, todims, fromdims = chains
+    index, tails = self._transforms.index_with_tail(chains)
+    tailtodims = tuple(t[0].todims if t else n for n, t in zip(fromdims, tails))
+    assert builtins.sum(tailtodims) == self._fromdims
+    return numpy.array(index)[None], (tails, tailtodims, fromdims)
 
   def __len__(self):
     return 3
@@ -553,7 +554,8 @@ class GetTransform(TransformChain):
 
   def evalf(self, index):
     index, = index
-    return self.transforms[index][1:]
+    trans = self.transforms[index]
+    return trans, tuple(t[0].todims for t in trans), tuple(t[-1].fromdims for t in trans)
 
 # ARRAYFUNC
 #
@@ -786,39 +788,57 @@ class RootBasis(Array):
   trans : :class:`TransformChain`
   '''
 
-  __slots__ = '_root', '_ndimstangent', '_opposite', '_trans'
+  __slots__ = '_roots', '_ndimstangent', '_opposite', '_trans'
 
   @types.apply_annotations
   def __init__(self, roots:types.tuple[strictroot], ndimstangent:types.strictint, trans:types.strict[TransformChain], _opposite:bool=None):
     # NOTE: `trans` is only required because of the `SelectChain` test in `Opposite.simplified`.
-    self._root, = roots
+    self._roots = roots
     self._ndimstangent = ndimstangent
     self._opposite = _opposite
     self._trans = trans
-    super().__init__(args=[EVALARGS, trans], shape=[self._root.ndims, self._root.ndims], dtype=float)
+    assert self._trans.ordered_roots == roots
+    ndims = sum(root.ndims for root in roots)
+    super().__init__(args=[EVALARGS, trans], shape=[ndims, ndims], dtype=float)
 
   def evalf(self, evalargs, _trans):
-    trans = evalargs['_transforms'][1 if self._opposite else 0]
+    mtrans = evalargs['_transforms'][1 if self._opposite else 0]
     points = evalargs['_points']
 
-    ndims = self._root.ndims
-    assert trans == _trans
-    assert (trans[0].todims if trans else points.ndims) == ndims
+    ndims = self.shape[0]
+    assert mtrans == _trans[0]
     if points.ndimsmanifold != self._ndimstangent:
       raise ValueError('expected a {}D tangent space, but got a {}D space'.format(self._ndimstangent, points.ndimstangent))
 
-    linear = numpy.empty((points.npoints, ndims, ndims), dtype=float)
-    translinear = transform.linearfrom(trans, ndims)
-    numpy.einsum('ij,njk->nik', translinear[:,:points.ndims], points.basis, out=linear[:,:,:points.ndims])
-    if points.ndims < ndims:
-      linear[:,:,points.ndims:] = translinear[_,:,points.ndims:]
+    linear = numpy.zeros((points.npoints, ndims, ndims), dtype=float)
+    mtranslinear = numpy.zeros((ndims, points.ndims), dtype=float)
+    to0 = from0 = 0
+    n0 = points.ndims
+    for root, trans in zip(self._roots, mtrans):
+      to1 = to0 + root.ndims
+      fromdims = trans[-1].fromdims if trans else root.ndims
+      translinear = transform.linearfrom(trans, root.ndims)
+      if fromdims:
+        from1 = from0 + fromdims
+        mtranslinear[to0:to1,from0:from1] = translinear[:,:fromdims]
+        from0 = from1
+      if fromdims < root.ndims:
+        n1 = n0 + root.ndims - fromdims
+        linear[:,to0:to1,n0:n1] = translinear[:,fromdims:]
+        n0 = n1
+      to0 = to1
+    assert to0 == self.shape[0]
+    assert from0 == points.ndims
+    assert n0 == self.shape[0]
+
+    numpy.einsum('ij,njk->nik', mtranslinear, points.basis, out=linear[:,:,:points.ndims])
     return linear
 
   @util.positional_only
   def prepare_eval(self, *, opposite=False, kwargs=...):
     if self._opposite is not None:
       raise ValueError('prepare already called')
-    return RootBasis((self._root,), self._ndimstangent, self._trans.prepare_eval(opposite=opposite, **kwargs), _opposite=opposite)
+    return RootBasis(self._roots, self._ndimstangent, self._trans.prepare_eval(opposite=opposite, **kwargs), _opposite=opposite)
 
 class GramSchmidt(Array):
 
@@ -1324,7 +1344,7 @@ class ApplyTransforms(Array):
 
     result = numpy.zeros((*(subsample.npoints for subsample in subsamples), self.shape[0]), dtype=float)
     to0 = 0
-    for root, chain in zip(self._tail.ordered_roots, chains):
+    for root, (chain, chaintodims, chainfromdims) in zip(self._tail.ordered_roots, chains):
       to1 = to0 + (chain[0].todims if chain else slices[root].stop - slices[root].start)
       isubsample = isubsamples[root]
       expand = tuple(slice(None) if i == isubsample else numpy.newaxis for i in range(len(subsamples)))
@@ -1337,26 +1357,35 @@ class ApplyTransforms(Array):
     if isinstance(var, RootCoords) and var.root in self.roots:
       if self._head.fromdims != builtins.sum(root.ndims for root in self.roots):
         raise NotImplementedError('transform contains updims')
-      to0 = 0
-      for root in self._head.ordered_roots:
-        to1 = to0 + root.ndims
-        if root == var.root:
-          return Inverse(Linear(self._head, self._head.fromdims))[:,to0:to1]
-        to0 = to1
-      raise Exception
+      return Inverse(Linear(self._head, len(var)))
     return zeros(self.shape+var.shape)
 
 class Linear(Array):
 
   __slots__ = '_trans'
+  __cache__ = 'simplified'
 
   @types.apply_annotations
   def __init__(self, trans:types.strict[TransformChain], fromdims:types.strictint, todims:types.strictint=None):
     self._trans = trans
     super().__init__(args=[trans], shape=(todims or trans.todims, fromdims), dtype=float)
 
-  def evalf(self, chain):
-    return transform.linear(chain, self.shape[0])[_]
+  def evalf(self, chains):
+    result = numpy.zeros((1, *self.shape), dtype=float)
+    to0 = from0 = 0
+    for chain, todims, fromdims in zip(*chains):
+      to1, from1 = to0 + todims, from0 + fromdims
+      result[:,to0:to1,from0:from1] = transform.linear(chain, todims)
+      to0, from0 = to1, from1
+    assert (to0, from0) == self.shape
+    return result
+
+  @property
+  def simplified(self):
+    if isinstance(self._trans, EmptyTransformChain) and self._trans.todims == self._trans.fromdims:
+      return eye(self._trans.todims)
+    else:
+      return self
 
 class Inverse(Array):
   '''
@@ -4221,7 +4250,7 @@ def blocks(arg):
 
 def rootcoords(roots):
   if isinstance(roots, Root):
-    return ApplyTransforms(EmptyTransformChain(roots=(roots,), todims=roots.ndims, fromdims=roots.ndims), SelectChain((roots,)))
+    return ApplyTransforms(EmptyTransformChain(roots=(roots,), todims=(roots.ndims,), fromdims=(roots.ndims,)), SelectChain((roots,)))
   else:
     return concatenate([rootcoords(root) for root in roots], axis=0)
 
