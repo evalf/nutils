@@ -475,7 +475,7 @@ class Topology(types.Singleton):
     return self[selected]
 
   @log.withcontext
-  def locate(self, geom, coords, *, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, arguments=None):
+  def locate(self, geom, coords, *, ischeme='vertex', scale=1, tol=None, eps=0, maxiter=100, arguments=None):
     '''Create a sample based on physical coordinates.
 
     In a finite element application, functions are commonly evaluated in points
@@ -504,14 +504,14 @@ class Topology(types.Singleton):
         Geometry function of length ``ndims``.
     coords : 2-dimensional :class:`float` array
         Array of coordinates with ``ndims`` columns.
+    tol : :class:`float`
+        Maximum allowed distance between original and located coordinate.
     ischeme : :class:`str` (default: "vertex")
         Sample points used to determine bounding boxes.
     scale : :class:`float` (default: 1)
         Bounding box amplification factor, useful when element shapes are
         distorted. Setting this to >1 can increase computational effort but is
         otherwise harmless.
-    tol : :class:`float` (default: 1e-12)
-        Newton tolerance.
     eps : :class:`float` (default: 0)
         Epsilon radius around element within which a point is considered to be
         inside.
@@ -525,6 +525,9 @@ class Topology(types.Singleton):
     located : :class:`nutils.sample.Sample`
     '''
 
+    if tol is None:
+      warnings.deprecation('locate without tol argument is deprecated, please provide an explicit tolerance')
+      tol = 1e-12
     coords = numpy.asarray(coords, dtype=float)
     if geom.ndim == 0:
       geom = geom[_]
@@ -1274,7 +1277,10 @@ class StructuredTopology(Topology):
         else transformseq.BndAxis(i=axis.i*2,j=axis.j*2,ibound=axis.ibound,side=axis.side) for axis in self.axes]
     return StructuredTopology(self.root, axes, self.nrefine+1, bnames=self._bnames)
 
-  def locate(self, geom, coords, *, eps=0, tol=1e-12, **kwargs):
+  def locate(self, geom, coords, *, eps=0, tol=None, **kwargs):
+    if tol is None:
+      warnings.deprecation('locate without tol argument is deprecated, please provide an explicit tolerance')
+      tol = 1e-12
     coords = numpy.asarray(coords, dtype=float)
     if geom.ndim == 0:
       geom = geom[_]
