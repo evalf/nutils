@@ -281,7 +281,8 @@ class check(TestCase):
   def find(self, target, xi0):
     elemtrans, = self.sample.transforms[0]
     ndim, = self.geom.shape
-    J = function.dot(function.rootgradient(self.geom, self.sample.roots)[:,:,_], transform.linear(elemtrans[1:], elemtrans[-1].fromdims)[_,:,:], 1)
+    rootlinear = numeric.blockdiag([transform.linear(trans, root.ndims) for root, trans in zip(self.sample.roots, elemtrans)])
+    J = function.dot(function.rootgradient(self.geom, self.sample.roots)[:,:,_], rootlinear[_,:,:], 1)
     Jinv = function.inverse(J).prepare_eval()
     countdown = 5
     iiter = 0
@@ -310,7 +311,7 @@ class check(TestCase):
     argsfun = function.Tuple(self.args).prepare_eval()
     exact = self.sample.eval(function.rootgradient(self.op_args, self.sample.roots))
     D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.ndim)
-    invlinear = numpy.linalg.inv(transform.linear(elemtrans[1:], elemtrans[-1].fromdims))
+    invlinear = numeric.blockdiag([numpy.linalg.inv(transform.linear(trans, root.ndims)) for root, trans in zip(self.sample.roots, elemtrans)])
     good = False
     eps = 1e-5
     while not numpy.all(good):

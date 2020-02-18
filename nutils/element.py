@@ -265,27 +265,31 @@ class Reference(types.Singleton):
     if numpy.greater(abs(volume - self.volume), tol).any():
       print('divergence check failed: {} != {}'.format(volume, self.volume))
 
-  def vertex_cover(self, ctransforms, maxrefine):
+  def vertex_cover(self, ctransforms, maxrefine, todims):
     if maxrefine < 0:
       raise Exception('maxrefine is too low')
     npoints = self.nvertices_by_level(maxrefine)
     allindices = numpy.arange(npoints)
     if len(ctransforms) == 1:
       ctrans, = ctransforms
-      assert not ctrans
-      return ((), self.getpoints('vertex', maxrefine).coords, allindices),
+      assert not any(ctrans)
+      return (ctrans, self.getpoints('vertex', maxrefine).coords, allindices),
     if maxrefine == 0:
       raise Exception('maxrefine is too low')
     cbins = [set() for ichild in range(self.nchildren)]
     for ctrans in ctransforms:
-      ichild = self.child_transforms.index(ctrans[0])
-      cbins[ichild].add(ctrans[1:])
+      for ichild, child in enumerate(self.child_transforms):
+        if child.separate(todims) == tuple(t[0] for t in ctrans):
+          break
+      else:
+        raise ValueError('child not found')
+      cbins[ichild].add(tuple(t[1:] for t in ctrans))
     if not all(cbins):
       raise Exception('transformations to not form an element cover')
     fcache = cache.WrapperCache()
-    return tuple(((ctrans,) + trans, points, cindices[indices])
+    return tuple((tuple((a,)+b for a, b in zip(ctrans.separate(todims), trans)), points, cindices[indices])
       for ctrans, cref, cbin, cindices in zip(self.child_transforms, self.child_refs, cbins, self.child_divide(allindices,maxrefine))
-        for trans, points, indices in fcache[cref.vertex_cover](frozenset(cbin), maxrefine-1))
+        for trans, points, indices in fcache[cref.vertex_cover](frozenset(cbin), maxrefine-1, todims))
 
   def __str__(self):
     return self.__class__.__name__

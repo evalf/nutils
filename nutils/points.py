@@ -36,23 +36,34 @@ class Points(types.Singleton):
   The :class:`Points` base class bundles point coordinates, point weights,
   a local triangulation and hull triangulation. Of these only the coordinates
   are mandatory, and should be provided by the derived class in the form of the
-  ``coords`` attribute. Of the remaining properties only :func:`hull` has a
-  functional base implementation that relies on the availability of ``tri``.
+  :attr:`coords` attribute. Of the remaining properties only :meth:`hull` has a
+  functional base implementation that relies on the availability of :meth:`tri`.
 
-  .. attribute:: coords
-
-    Coordinates of the points as a :class:`float` array.
-
-  .. attribute:: weights
-
-    Weights of the points as a :class:`float` array.
-
-  Args
-  ----
+  Parameters
+  ----------
   npoints : :class:`int`
     Number of discrete points.
   ndims : :class:`int`
-    Number of spatial dimensions.
+    Dimension of the coordinates.
+  ndimsnormal : :class:`int`
+    Dimension of the normal space. This is zero unless the points describe a
+    manifold.
+
+  Attributes
+  ----------
+  coords : :class:`numpy.ndarray`, shape: [:attr:`npoints`, :attr:`ndims`]
+    Coordinates of the points.
+  weights : :class:`numpy.ndarray`, shape: [:attr:`npoints`]
+    Weights of the points.
+  npoints : :class:`int`
+    Number of points.
+  ndims : :class:`int`
+    Dimension of the :attr:`coords`. This is always the sum of
+    :attr:`ndimsmanifold` and :attr:`ndimsnormal`.
+  ndimsmanifold : :class:`int`
+    Dimension of the manifold space.
+  ndimsnormal : :class:`int`
+    Dimension of the normal space.
   '''
 
   __cache__ = 'hull', 'onhull', 'basis'
@@ -107,6 +118,15 @@ class Points(types.Singleton):
 
   @property
   def basis(self):
+    '''An orthonormal basis for the tangent and normal space per point.
+
+    The first :attr:`ndimsnormal` vectors of the basis space the tangent space
+    (``basis[:.:,:ndimsnormal]``), the remainder spans the normal space. The
+    basis is always the identity matrix per point if the normal space has
+    dimension zero.
+
+    :type: :class:`numpy.ndarray`, shape: [:attr:`npoints`, :attr:`ndims`, :attr:`ndims`]
+    '''
     if self.ndimsnormal == 0:
       return types.frozenarray(numpy.eye(self.ndims)[numpy.newaxis], dtype=float, copy=False)
     else:
