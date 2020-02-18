@@ -475,7 +475,7 @@ class Topology(types.Singleton):
     return self[selected]
 
   @log.withcontext
-  def locate(self, geom, coords, *, ischeme='vertex', scale=1, tol=1e-12, eps=0, maxiter=100, arguments=None):
+  def locate(self, geom, coords, *, ischeme='vertex', scale=1, tol=None, eps=0, maxiter=100, arguments=None):
     '''Create a sample based on physical coordinates.
 
     In a finite element application, functions are commonly evaluated in points
@@ -504,14 +504,14 @@ class Topology(types.Singleton):
         Geometry function of length ``ndims``.
     coords : 2-dimensional :class:`float` array
         Array of coordinates with ``ndims`` columns.
+    tol : :class:`float`
+        Maximum allowed distance between original and located coordinate.
     ischeme : :class:`str` (default: "vertex")
         Sample points used to determine bounding boxes.
     scale : :class:`float` (default: 1)
         Bounding box amplification factor, useful when element shapes are
         distorted. Setting this to >1 can increase computational effort but is
         otherwise harmless.
-    tol : :class:`float` (default: 1e-12)
-        Newton tolerance.
     eps : :class:`float` (default: 0)
         Epsilon radius around element within which a point is considered to be
         inside.
@@ -525,6 +525,9 @@ class Topology(types.Singleton):
     located : :class:`nutils.sample.Sample`
     '''
 
+    if tol is None:
+      warnings.deprecation('locate without tol argument is deprecated, please provide an explicit tolerance')
+      tol = 1e-12
     coords = numpy.asarray(coords, dtype=float)
     if geom.ndim == 0:
       geom = geom[_]
@@ -538,6 +541,8 @@ class Topology(types.Singleton):
     vref = element.getsimplex(0)
     ielems = parallel.shempty(len(coords), dtype=int)
     xis = parallel.shempty((len(coords),len(geom)), dtype=float)
+    J = function.localgradient(geom, self.ndims)
+    geom_J = function.Tuple((geom, J)).prepare_eval().simplified
     with parallel.ctxrange('locating', len(coords)) as ipoints:
       for ipoint in ipoints:
         coord = coords[ipoint]
@@ -549,8 +554,6 @@ class Topology(types.Singleton):
           xi = p.coords
           w = p.weights
           xi = (numpy.dot(w,xi) / w.sum())[_] if len(xi) > 1 else xi.copy()
-          J = function.localgradient(geom, self.ndims)
-          geom_J = function.Tuple((geom, J)).prepare_eval().simplified
           for iiter in range(maxiter):
             coord_xi, J_xi = geom_J.eval(_transforms=(self.transforms[ielem], self.opposites[ielem]), _points=xi, **arguments or {})
             err = numpy.linalg.norm(coord - coord_xi)
@@ -1274,7 +1277,10 @@ class StructuredTopology(Topology):
         else transformseq.BndAxis(i=axis.i*2,j=axis.j*2,ibound=axis.ibound,side=axis.side) for axis in self.axes]
     return StructuredTopology(self.root, axes, self.nrefine+1, bnames=self._bnames)
 
-  def locate(self, geom, coords, *, eps=0, **kwargs):
+  def locate(self, geom, coords, *, eps=0, tol=None, **kwargs):
+    if tol is None:
+      warnings.deprecation('locate without tol argument is deprecated, please provide an explicit tolerance')
+      tol = 1e-12
     coords = numpy.asarray(coords, dtype=float)
     if geom.ndim == 0:
       geom = geom[_]
@@ -1283,13 +1289,13 @@ class StructuredTopology(Topology):
       raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
     index = function.rootcoords(len(self.axes))[[axis.isdim for axis in self.axes]]
     basis = function.concatenate([function.eye(self.ndims), function.diagonalize(index)], axis=0)
-    A, b, f2 = self.integrate([(basis[:,_,:] * basis[_,:,:]).sum(-1), (basis * geom).sum(-1), (geom**2).sum(-1)], degree=3)
+    A, b = self.integrate([(basis[:,_,:] * basis[_,:,:]).sum(-1), (basis * geom).sum(-1)], degree=2)
     x = A.solve(b)
-    e = (f2 - b.dot(x)) / numpy.product(self.shape)
-    if e > 1e-10:
-      return super().locate(geom, coords, eps=eps, **kwargs)
     geom0 = x[:self.ndims]
     scale = x[self.ndims:]
+    e = self.sample('uniform', 2).eval(function.norm2(geom0 + index * scale - geom)).max() # inf-norm on non-gauss sample
+    if e > tol:
+      return super().locate(geom, coords, eps=eps, tol=tol, **kwargs)
     log.info('locate detected linear geometry: x = {} + {} xi ~{:+.1e}'.format(geom0, scale, e))
     mincoords, maxcoords = numpy.sort([geom0, geom0 + scale * self.shape], axis=0)
     outofbounds = numpy.less(coords, mincoords - eps) | numpy.greater(coords, maxcoords + eps)
@@ -1584,6 +1590,17 @@ class SubsetTopology(Topology):
       warnings.warn('basis may be linearly dependent; a linearly indepent basis is obtained by trimming first, then creating hierarchical refinements')
     basis = self.basetopo.basis(name, *args, **kwargs)
     return function.PrunedBasis(basis, self._indices)
+
+  def locate(self, geom, coords, *, eps=0, **kwargs):
+    sample = self.basetopo.locate(geom, coords, eps=eps, **kwargs)
+    for transforms, points, index in zip(sample.transforms[0], sample.points, sample.index):
+      ielem = self.basetopo.transforms.index(transforms)
+      ref = self.refs[ielem]
+      if ref != self.basetopo.references[ielem]:
+        for i, coord in enumerate(points.coords):
+          if not ref.inside(coord, eps):
+            raise LocateError('failed to locate point: {}'.format(coords[index[i]]))
+    return sample
 
 class RefinedTopology(Topology):
   'refinement'

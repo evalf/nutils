@@ -357,9 +357,14 @@ for isstructured in True, False:
 class locate(TestCase):
 
   def setUp(self):
-    self.domain, geom = mesh.unitsquare(4, etype=self.etype)
-    self.geom = geom * (.2, .7) + (0, .3) if self.linear \
-           else geom + .1 * function.sin(geom * numpy.pi) # non-polynomial geometry
+    domain, geom = mesh.unitsquare(4, etype=self.etype)
+    if self.mode == 'nonlinear':
+      geom = function.sin(geom * numpy.pi / 2) # nonlinear map from [0,1] to [0,1]
+    geom = geom * (.32 if self.mode == 'trimmed' else .2, .7) + (0, .3) # trimmed: keep 2.5 elements in x-direction
+    if self.mode == 'trimmed':
+      domain = domain.trim(.2 - geom[0], maxrefine=0)
+    self.domain = domain
+    self.geom = geom
 
   def test(self):
     target = numpy.array([(.2,.3), (.1,.9), (0,1)])
@@ -374,7 +379,7 @@ class locate(TestCase):
       self.domain.locate(self.geom, target, eps=1e-15)
 
   def test_invalidpoint(self):
-    target = numpy.array([(1, 2)])
+    target = numpy.array([(.3, 1)]) # outside domain, but inside basetopo for mode==trimmed
     with parallel.maxprocs(self.nprocs), self.assertRaises(topology.LocateError):
       self.domain.locate(self.geom, target, eps=1e-15)
 
@@ -393,9 +398,9 @@ class locate(TestCase):
     self.assertAllAlmostEqual(located, target)
 
 for etype in 'square', 'triangle', 'mixed':
-  for linear in True, False:
+  for mode in 'linear', 'nonlinear', 'trimmed':
     for nprocs in [1, 2]:
-      locate(etype=etype, linear=linear, nprocs=nprocs)
+      locate(etype=etype, mode=mode, nprocs=nprocs)
 
 
 @parametrize

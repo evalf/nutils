@@ -841,7 +841,7 @@ class Cone(Reference):
   def inside(self, point, eps=0):
     # point = etrans.apply(epoint) * xi + tip * (1-xi) => etrans.apply(epoint) = tip + (point-tip) / xi
     xi = numpy.dot(self.etrans.ext, point-self.tip) / numpy.dot(self.etrans.ext, self.etrans.offset-self.tip)
-    return 0 < xi <= 1+eps and self.edgeref.inside(numpy.linalg.solve(
+    return -eps <= xi <= 1+eps and self.edgeref.inside(numpy.linalg.solve(
       numpy.dot(self.etrans.linear.T, self.etrans.linear),
       numpy.dot(self.etrans.linear.T, self.tip + (point-self.tip)/xi - self.etrans.offset)), eps=eps)
 
