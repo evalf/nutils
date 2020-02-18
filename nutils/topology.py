@@ -1591,6 +1591,17 @@ class SubsetTopology(Topology):
     basis = self.basetopo.basis(name, *args, **kwargs)
     return function.PrunedBasis(basis, self._indices)
 
+  def locate(self, geom, coords, *, eps=0, **kwargs):
+    sample = self.basetopo.locate(geom, coords, eps=eps, **kwargs)
+    for transforms, points, index in zip(sample.transforms[0], sample.points, sample.index):
+      ielem = self.basetopo.transforms.index(transforms)
+      ref = self.refs[ielem]
+      if ref != self.basetopo.references[ielem]:
+        for i, coord in enumerate(points.coords):
+          if not ref.inside(coord, eps):
+            raise LocateError('failed to locate point: {}'.format(coords[index[i]]))
+    return sample
+
 class RefinedTopology(Topology):
   'refinement'
 
