@@ -541,6 +541,8 @@ class Topology(types.Singleton):
     vref = element.getsimplex(0)
     ielems = parallel.shempty(len(coords), dtype=int)
     xis = parallel.shempty((len(coords),len(geom)), dtype=float)
+    J = function.localgradient(geom, self.ndims)
+    geom_J = function.Tuple((geom, J)).prepare_eval().simplified
     with parallel.ctxrange('locating', len(coords)) as ipoints:
       for ipoint in ipoints:
         coord = coords[ipoint]
@@ -552,8 +554,6 @@ class Topology(types.Singleton):
           xi = p.coords
           w = p.weights
           xi = (numpy.dot(w,xi) / w.sum())[_] if len(xi) > 1 else xi.copy()
-          J = function.localgradient(geom, self.ndims)
-          geom_J = function.Tuple((geom, J)).prepare_eval().simplified
           for iiter in range(maxiter):
             coord_xi, J_xi = geom_J.eval(_transforms=(self.transforms[ielem], self.opposites[ielem]), _points=xi, **arguments or {})
             err = numpy.linalg.norm(coord - coord_xi)
