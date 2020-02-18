@@ -1274,7 +1274,7 @@ class StructuredTopology(Topology):
         else transformseq.BndAxis(i=axis.i*2,j=axis.j*2,ibound=axis.ibound,side=axis.side) for axis in self.axes]
     return StructuredTopology(self.root, axes, self.nrefine+1, bnames=self._bnames)
 
-  def locate(self, geom, coords, *, eps=0, **kwargs):
+  def locate(self, geom, coords, *, eps=0, tol=1e-12, **kwargs):
     coords = numpy.asarray(coords, dtype=float)
     if geom.ndim == 0:
       geom = geom[_]
@@ -1283,13 +1283,13 @@ class StructuredTopology(Topology):
       raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
     index = function.rootcoords(len(self.axes))[[axis.isdim for axis in self.axes]]
     basis = function.concatenate([function.eye(self.ndims), function.diagonalize(index)], axis=0)
-    A, b, f2 = self.integrate([(basis[:,_,:] * basis[_,:,:]).sum(-1), (basis * geom).sum(-1), (geom**2).sum(-1)], degree=3)
+    A, b = self.integrate([(basis[:,_,:] * basis[_,:,:]).sum(-1), (basis * geom).sum(-1)], degree=2)
     x = A.solve(b)
-    e = (f2 - b.dot(x)) / numpy.product(self.shape)
-    if e > 1e-10:
-      return super().locate(geom, coords, eps=eps, **kwargs)
     geom0 = x[:self.ndims]
     scale = x[self.ndims:]
+    e = self.sample('uniform', 2).eval(function.norm2(geom0 + index * scale - geom)).max() # inf-norm on non-gauss sample
+    if e > tol:
+      return super().locate(geom, coords, eps=eps, tol=tol, **kwargs)
     log.info('locate detected linear geometry: x = {} + {} xi ~{:+.1e}'.format(geom0, scale, e))
     mincoords, maxcoords = numpy.sort([geom0, geom0 + scale * self.shape], axis=0)
     outofbounds = numpy.less(coords, mincoords - eps) | numpy.greater(coords, maxcoords + eps)
