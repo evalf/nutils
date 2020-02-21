@@ -215,7 +215,7 @@ class Square(Matrix):
 
   @property
   def det(self):
-    return numeric.det_exact(self.linear)
+    return numpy.linalg.det(self.linear)
 
   @property
   def isflipped(self):
