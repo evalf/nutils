@@ -747,7 +747,8 @@ class Constant(Array):
     return Constant(self.value[(slice(None),)*axis+(numpy.asarray(maskvec),)])
 
   def _determinant(self):
-    return Constant(numpy.linalg.det(self.value))
+    # NOTE: numpy <= 1.12 cannot compute the determinant of an array with shape [...,0,0]
+    return Constant(numpy.linalg.det(self.value) if self.value.shape[-1] else numpy.ones(self.value.shape[:-2]))
 
 class DofMap(Array):
 
@@ -1361,7 +1362,8 @@ class Determinant(Array):
 
   def evalf(self, arr):
     assert arr.ndim == self.ndim+3
-    return numpy.linalg.det(arr)
+    # NOTE: numpy <= 1.12 cannot compute the determinant of an array with shape [...,0,0]
+    return numpy.linalg.det(arr) if arr.shape[-1] else numpy.ones(arr.shape[:-2])
 
   def _derivative(self, var, seen):
     Finv = swapaxes(inverse(self.func), -2, -1)
@@ -2191,7 +2193,10 @@ class Zeros(Array):
     return Zeros(self.shape[:axis] + (self.shape[axis]*self.shape[axis+1],) + self.shape[axis+2:], self.dtype)
 
   def _determinant(self):
-    return Zeros(self.shape[:-2], self.dtype)
+    if self.shape[-1] == 0:
+      return ones(self.shape[:-2], self.dtype)
+    else:
+      return Zeros(self.shape[:-2], self.dtype)
 
   def _kronecker(self, axis, length, pos):
     return Zeros(self.shape[:axis] + (length,) + self.shape[axis:], self.dtype)

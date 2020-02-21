@@ -414,6 +414,7 @@ _check('takediag323', lambda a: function.takediag(a,0,2), lambda a: numeric.take
 _check('determinant131', lambda a: function.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(-3,-2)), [(1,3,1)])
 _check('determinant232', lambda a: function.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(-3,-2)), [(2,3,2)])
 _check('determinant3322', lambda a: function.determinant(a,(2,3)), lambda a: numpy.linalg.det(a), [(2,2,3,3)])
+_check('determinant200', lambda a: function.determinant(a,(1,2)), lambda a: numpy.linalg.det(a) if a.shape[-1] else numpy.ones(a.shape[:-2], float), [(2,0,0)], zerograd=True)
 _check('inverse131', lambda a: function.inverse(a+function.eye(1)[:,None],(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)+numpy.eye(1)).swapaxes(-3,-2), [(1,3,1)])
 _check('inverse232', lambda a: function.inverse(a+function.eye(2)[:,None],(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)+numpy.eye(2)).swapaxes(-3,-2), [(2,3,2)])
 _check('inverse3322', lambda a: function.inverse(a+function.eye(2)), lambda a: numpy.linalg.inv(a+numpy.eye(2)), [(3,3,2,2)])
