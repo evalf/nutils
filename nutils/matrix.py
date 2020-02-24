@@ -584,13 +584,17 @@ class Pardiso:
   }
 
   def __init__(self, libmkl):
-    self._pardiso = libmkl.pardiso
+    ctypes.CDLL('libgfortran.so.5', mode=ctypes.RTLD_GLOBAL)
+    ctypes.CDLL('libgomp.so.1', mode=ctypes.RTLD_GLOBAL)
+    self._pardiso = util.loadlib(linux='libpardiso600-GNU800-X86-64.so').pardiso
+    self._dparm = numpy.zeros(64, dtype=numpy.float64)
+    self._dparm[:9] = 300, 1e-6, 5000, 10, 1e-2, 5e-3, 10, 500, 25
     self.pt = numpy.zeros(64, numpy.int64) # handle to data structure
 
   @types.apply_annotations
   def __call__(self, *, phase:c_int, iparm:c_int, maxfct:c_int=1, mnum:c_int=1, mtype:c_int=0, n:c_int=0, a:c_double=None, ia:c_int=None, ja:c_int=None, perm:c_int=None, nrhs:c_int=0, msglvl:c_int=0, b:c_double=None, x:c_double=None):
     error = ctypes.c_int32(1)
-    self._pardiso(self.pt.ctypes, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, nrhs, iparm, msglvl, b, x, ctypes.byref(error))
+    self._pardiso(self.pt.ctypes, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, nrhs, iparm, msglvl, b, x, ctypes.byref(error), self._dparm.ctypes)
     if error.value:
       raise MatrixError(self._errorcodes.get(error.value, 'unknown error {}'.format(error.value)))
 
@@ -725,9 +729,11 @@ class MKLMatrix(Matrix):
       iparm = numpy.zeros(64, dtype=numpy.int32) # https://software.intel.com/en-us/mkl-developer-reference-c-pardiso-iparm-parameter
       iparm[0] = 1 # supply all values in components iparm[1:64]
       iparm[1] = 2 # fill-in reducing ordering for the input matrix: nested dissection algorithm from the METIS package
+      iparm[2] = 1 # single processor
       iparm[9] = 13 # pivoting perturbation threshold 1e-13 (default for nonsymmetric)
       iparm[10] = 1 # enable scaling vectors (default for nonsymmetric)
       iparm[12] = 1 # enable improved accuracy using (non-) symmetric weighted matching (default for nonsymmetric)
+      iparm[31] = 0 # use direct solver
       iparm[34] = 0 # one-based indexing
       mtype = 11 # real and nonsymmetric
       phase = 13 # analysis, numerical factorization, solve, iterative refinement
