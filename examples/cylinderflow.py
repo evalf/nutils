@@ -60,8 +60,8 @@ def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float,
   ns.u_i = 'ubasis_ni ?lhs_n'
   ns.p = 'pbasis_n ?lhs_n'
   ns.sigma_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
-  ns.h = .5 * elemangle
-  ns.N = 5 * degree / ns.h
+  ns.N = 10 * degree / elemangle # Nitsche constant based on element size = elemangle/2
+  ns.nitsche_ni = '(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) / Re'
   ns.rotation = rotation
   ns.uwall_i = '0.5 rotation <-sin(phi), cos(phi)>_i'
 
@@ -76,7 +76,7 @@ def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float,
   lhs0 *= numpy.random.normal(1, .1, lhs0.shape) # add small velocity noise
 
   res = domain.integral('(ubasis_ni u_i,j u_j + ubasis_ni,j sigma_ij + pbasis_n u_k,k) d:x' @ ns, degree=9)
-  res += domain.boundary['inner'].integral('(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) (u_i - uwall_i) d:x / Re' @ ns, degree=9)
+  res += domain.boundary['inner'].integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni sigma_ij n_j) d:x' @ ns, degree=9)
   inertia = domain.integral('ubasis_ni u_i d:x' @ ns, degree=9)
 
   bbox = numpy.array([[-2,46/9],[-2,2]]) # bounding box for figure based on 16x9 aspect ratio
@@ -133,10 +133,10 @@ class test(testing.TestCase):
       2uI0A4OFqbMpA4Pd6YenGBhSgDpfXXoG1HlXpwXItrxkCmSz683WZ2CwvvDrPAPDVv3fQBMZzn0FmvLK
       8LkxA4PCmZAzDAzfjL8ATXx0agPQlBCgedQBAOgCMhE=''', atol=2e-13)
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
-      eNoB2AAn/5A0jjV/MIDKj8rFMoE4Rjcwz4LI7sery545+Dm5MwTGEsa8NVY8pjtWNSzE18OpyXI9VD02
-      M5zCnsJazE0+Hj76NsPByMH/yhA3izOMyGPIyC+gN5Y4JcofyEbI+csJOGk4OzXZxrTGLzIKOXo7Acj2
-      xOjENMk3O8Y85DcZwyTDAzjaPFY+sMfJwavBhDNPPvbFV8cxOKk3ADtFOFI86zqjN9o8D8hcNFjCfsXV
-      Pd47Vj/qPdZBa0F5QUZD7UEJQYi527zjROVETUeVRfZIfrfvRKZKs7s6SVXLZ9k=''')
+      eNoB2AAn/4Y0pjUwMHTKhMrmMoI4Qzcpz4TI78egy545+Dm7MwPGEsa+NVY8pjtVNSzE18OoyXI9VD02
+      M5zCnsJazE0+Hj76NsPByMH/yhQ30DN6yFjIAjCrN5Y4FcooyE3I8ssCOGk4QjXXxrPGNzILOXo7AMj3
+      xOjEM8k3O8Y85DcZwyTDAzjaPFY+sMfJwavBhDNPPvbFX8cuOKI3/zpFOFI87TqmN9k8C8hkNFnCgcXV
+      Pds7VT/qPdZBbEF5QUZD7UEJQYi527ziROVETEeVRfZIfrfuRKZKr7s6SRCVaAA=''')
 
   @testing.requires('matplotlib', 'scipy')
   def test_rot1(self):
@@ -146,7 +146,7 @@ class test(testing.TestCase):
       2uI0A4OFqbMpA4Pd6YenGBhSgDpfXXoG1HlXpwXItrxkCmSz683WZ2CwvvDrPAPDVv3fQBMZzn0FmvLK
       8LkxA4PCmZAzDAzfjL8ATXx0agPQlBCgedQBAOgCMhE=''', atol=2e-13)
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
-      eNoB2AAn/4s0kDW8MIHKjcq1MoE4RzdQz4PI7sely545+Dm6MwTGEsa8NVY8pjtWNSzE18OpyXI9VD02
-      M5zCnsJazE0+Hj76NsPByMH/yi03ODSmyHbI0jGyN5M4FcoayEHI2MsEOGs4PjXZxrXGXTILOXo7AMj2
-      xOfEMsk3O8Y85DcZwyTDAzjaPFY+sMfJwavBhDNPPvTFXMc6OK43/zo7OFI87DqpN9o8Dcg2NFfCgcXX
-      Pd87Vj/pPdZBbEF5QUZD7UEIQYe527zjROVETUeVRfZIfrfvRKZKsrs6ScqLaQk=''')
+      eNoB2AAn/380qTWFMHXKgsrUMoI4RDdJz4XI78eZy545+Dm8MwPGEsa+NVY8pjtWNSzE18OoyXI9VD02
+      M5zCnsJazE0+Hj76NsPByMH/yjM3ejSWyGzI/TG+N5I4A8oiyEjIzsv9N2o4RTXYxrTGajIMOXo7AMj3
+      xOjEMsk3O8Y85TcZwyTDAzjaPFY+sMfJwavBhDNPPvPFZMc4OKg3/jo7OFI87jqtN9k8Ccg6NFjChcXW
+      Pd07VT/oPdZBbEF5QUZD7EEIQYe527ziROVETEeURfZIfrfuRKZKrrs6SVFLajU=''')
