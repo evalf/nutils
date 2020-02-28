@@ -224,24 +224,6 @@ class Broadcast1D:
 
 broadcast = lambda *args: numpy.broadcast(*args) if len(args) > 1 else Broadcast1D(args[0])
 
-def det_exact(A):
-  # for some reason, numpy.linalg.det suffers from rounding errors
-  A = numpy.asarray(A)
-  assert A.ndim == 2 and A.shape[0] == A.shape[1]
-  if len(A) == 0:
-    det = 1.
-  elif len(A) == 1:
-    det = A[0,0]
-  elif len(A) == 2:
-    ((a,b),(c,d)) = A
-    det = a*d - b*c
-  elif len(A) == 3:
-    ((a,b,c),(d,e,f),(g,h,i)) = A
-    det = a*e*i + b*f*g + c*d*h - c*e*g - b*d*i - a*f*h
-  else:
-    raise NotImplementedError('shape=' + str(A.shape))
-  return det
-
 def ext(A):
   """Exterior
   For array of shape (n,n-1) return n-vector ex such that ex.array = 0 and
