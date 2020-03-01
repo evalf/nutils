@@ -799,40 +799,62 @@ class RootBasis(Array):
     self._trans = trans
     assert self._trans.ordered_roots == roots
     ndims = sum(root.ndims for root in roots)
-    super().__init__(args=[EVALARGS, trans], shape=[ndims, ndims], dtype=float)
+    super().__init__(args=[SUBSAMPLES, trans], shape=[ndims, ndims], dtype=float)
 
-  def evalf(self, evalargs, _trans):
-    mtrans = evalargs['_transforms'][1 if self._opposite else 0]
-    points = evalargs['_points']
-
-    ndims = self.shape[0]
-    assert mtrans == _trans[0]
-    if points.ndimsmanifold != self._ndimstangent:
-      raise ValueError('expected a {}D tangent space, but got a {}D space'.format(self._ndimstangent, points.ndimstangent))
-
+  def _evalf_subsample(self, roots, chains, points):
+    ndims = builtins.sum(root.ndims for root in roots)
     linear = numpy.zeros((points.npoints, ndims, ndims), dtype=float)
-    mtranslinear = numpy.zeros((ndims, points.ndims), dtype=float)
+    chainslinear = numpy.zeros((ndims, points.ndims), dtype=float)
     to0 = from0 = 0
     n0 = points.ndims
-    for root, trans in zip(self._roots, mtrans):
+    for root, chain in zip(roots, chains):
       to1 = to0 + root.ndims
-      fromdims = trans[-1].fromdims if trans else root.ndims
-      translinear = transform.linearfrom(trans, root.ndims)
+      fromdims = chain[-1].fromdims if chain else root.ndims
+      chainlinear = transform.linearfrom(chain, root.ndims)
       if fromdims:
         from1 = from0 + fromdims
-        mtranslinear[to0:to1,from0:from1] = translinear[:,:fromdims]
+        chainslinear[to0:to1,from0:from1] = chainlinear[:,:fromdims]
         from0 = from1
       if fromdims < root.ndims:
         n1 = n0 + root.ndims - fromdims
-        linear[:,to0:to1,n0:n1] = translinear[:,fromdims:]
+        linear[:,to0:to1,n0:n1] = chainlinear[:,fromdims:]
         n0 = n1
       to0 = to1
-    assert to0 == self.shape[0]
+    assert to0 == ndims
     assert from0 == points.ndims
-    assert n0 == self.shape[0]
-
-    numpy.einsum('ij,njk->nik', mtranslinear, points.basis, out=linear[:,:,:points.ndims])
+    assert n0 == ndims
+    numpy.einsum('ij,njk->nik', chainslinear, points.basis, out=linear[:,:,:points.ndims])
     return linear
+
+  def evalf(self, subsamples, _trans):
+    ndims = self.shape[0]
+    linear = numpy.zeros((*(subsample.points.npoints for subsample in subsamples), ndims, ndims), dtype=float)
+    to0 = from0 = 0
+    n0 = self._ndimstangent
+    slices = {}
+    for ipoints, subsample in enumerate(subsamples):
+      if frozenset(subsample.roots).isdisjoint(self.roots):
+        continue
+      subsamplelinear = self._evalf_subsample(subsample.roots, subsample.transforms[1 if self._opposite else 0], subsample.points)
+      subsamplelinear = subsamplelinear[tuple(slice(None) if j == ipoints else _ for j in range(len(subsamples)))]
+      to1 = to0 + subsamplelinear.shape[-1]
+      from1 = from0 + subsample.ndimsmanifold
+      n1 = n0 + subsamplelinear.shape[-1] - subsample.ndimsmanifold
+      linear[...,to0:to1,from0:from1] = subsamplelinear[...,:subsample.ndimsmanifold]
+      linear[...,to0:to1,n0:n1] = subsamplelinear[...,subsample.ndimsmanifold:]
+      r0 = to0
+      for root in subsample.roots:
+        r1 = r0 + root.ndims
+        slices[root] = slice(r0, r1)
+        r0 = r1
+      to0, from0, n0 = to1, from1, n1
+    assert to0 == ndims
+    assert from0 == self._ndimstangent
+    assert n0 == ndims
+
+    # reorder to `self._roots`
+    linear = linear.reshape((-1, ndims, ndims))
+    return numpy.concatenate([linear[:,slices[root]] for root in self._roots], axis=1)
 
   @util.positional_only
   def prepare_eval(self, *, opposite=False, kwargs=...):
@@ -1344,7 +1366,7 @@ class ApplyTransforms(Array):
 
     result = numpy.zeros((*(subsample.npoints for subsample in subsamples), self.shape[0]), dtype=float)
     to0 = 0
-    for root, (chain, chaintodims, chainfromdims) in zip(self._tail.ordered_roots, chains):
+    for root, chain in zip(self._tail.ordered_roots, chains[0]):
       to1 = to0 + (chain[0].todims if chain else slices[root].stop - slices[root].start)
       isubsample = isubsamples[root]
       expand = tuple(slice(None) if i == isubsample else numpy.newaxis for i in range(len(subsamples)))
@@ -1357,7 +1379,13 @@ class ApplyTransforms(Array):
     if isinstance(var, RootCoords) and var.root in self.roots:
       if self._head.fromdims != builtins.sum(root.ndims for root in self.roots):
         raise NotImplementedError('transform contains updims')
-      return Inverse(Linear(self._head, len(var)))
+      to0 = 0
+      for root in self._tail.ordered_roots:
+        to1 = to0 + root.ndims
+        if root == var.root:
+          return Inverse(Linear(self._head, self._head.fromdims))[:,to0:to1]
+        to0 = to1
+      raise Exception
     return zeros(self.shape+var.shape)
 
 class Linear(Array):
