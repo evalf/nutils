@@ -861,7 +861,7 @@ class TrimmedEdgesTransforms(Transforms):
   def __iter__(self):
     for ptrans, edges in zip(self._parent, self._edges):
       for etrans in edges:
-        yield tuple(h+(t,) for h, t in zip(ptrans, etrans))
+        yield tuple(h if type(t) is transform.Identity else h+(t,) for h, t in zip(ptrans, etrans))
 
   def __getitem__(self, index):
     if not numeric.isint(index):
@@ -870,15 +870,20 @@ class TrimmedEdgesTransforms(Transforms):
     iparent = numpy.searchsorted(self._offsets, index, side='right')-1
     assert 0 <= iparent < len(self._offsets)-1
     iedge = index - self._offsets[iparent]
-    return tuple(h+(t,) for h, t in zip(self._parent[iparent], self._edges[iparent][iedge]))
+    return tuple(h if type(t) is transform.Identity else h+(t,) for h, t in zip(self._parent[iparent], self._edges[iparent][iedge]))
 
   def index_with_tail(self, trans):
     iparent, tails = self._parent.index_with_tail(trans)
     if not all(tails):
       raise ValueError
     tails = tuple(map(transform.canonical, tails))
-    iedge = self._edges[iparent].index(tuple(tail[0] for tail in tails))
-    return self._offsets[iparent]+iedge, tuple(tail[1:] for tail in tails)
+    for iedge, edges in enumerate(self._edges[iparent]):
+      if all(type(e) is transform.Identity or t and t[0] == e for e, t in zip(edges, tails)):
+        break
+    else:
+      raise ValueError
+    #iedge = self._edges[iparent].index(tuple(tail[0] for tail in tails))
+    return self._offsets[iparent]+iedge, tuple(tail if type(e) is transform.Identity else tail[1:] for tail, e in zip(tails, edges))
 
 class ProductTransforms(Transforms):
   '''The product of two :class:`Transforms` objects.
