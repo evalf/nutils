@@ -1725,7 +1725,7 @@ class HierarchicalTopology(Topology):
       bindices = []
       for index in indices:
         for trans in transform.unempty_edge_transforms(level.transforms[index], level.references[index]):
-          trans = tuple(map(transform.uppermost, trans))
+          #trans = tuple(map(transform.uppermost, trans))
           try:
             bindices.append(bindex(trans))
           except ValueError:
@@ -1735,6 +1735,8 @@ class HierarchicalTopology(Topology):
         bindices.sort()
         assert not numpy.equal(bindices[1:], bindices[:-1]).any()
       bindices_per_level.append(bindices)
+    foo = HierarchicalTopology(basebtopo, bindices_per_level)
+    assert foo.integral(function.asarray(1), degree=1).eval() == basebtopo.integral(function.asarray(1), degree=1).eval()
     return HierarchicalTopology(basebtopo, bindices_per_level)
 
   @property
