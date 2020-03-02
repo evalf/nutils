@@ -561,6 +561,22 @@ class multipatch_L(TestCase):
       self.assertEqual(trans1, interfaces2.transforms[i2])
       self.assertEqual(opp1, interfaces2.opposites[i2])
 
+class multipatch_errors(TestCase):
+
+  def test_reverse(self):
+    with self.assertRaises(NotImplementedError):
+      mesh.multipatch(
+        patches=[[0,1,2,3],[3,2,5,4]],
+        patchverts=tuple(itertools.product([0,1,2],[0,1])),
+        nelems=1)
+
+  def test_transpose(self):
+    with self.assertRaises(NotImplementedError):
+      mesh.multipatch(
+        patches=[[0,1,2,3,4,5,6,7],[4,6,5,7,8,10,9,11]],
+        patchverts=tuple(itertools.product([0,1,2],[0,1],[0,1])),
+        nelems=1)
+
 class groups(TestCase):
 
   def setUp(self):
