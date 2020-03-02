@@ -2047,6 +2047,9 @@ class ProductTopology(Topology):
   def refined(self):
     return self._left.refined.mul(self._right.refined, self._leftopp, self._rightopp)
 
+  def sample(self, ischeme, degree):
+    return sample.ProductSample(self._left.sample(ischeme, degree), self._right.sample(ischeme, degree))
+
 class RevolutionTopology(Topology):
   'topology consisting of a single revolution element'
 

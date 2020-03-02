@@ -44,7 +44,7 @@ efficiently combine common substructures.
 '''
 
 from . import types, points, util, function, parallel, numeric, matrix, transformseq, sparse
-import numpy, numbers, collections.abc, os, treelog as log
+import numpy, numbers, collections.abc, os, treelog as log, operator
 
 graphviz = os.environ.get('NUTILS_GRAPHVIZ')
 
@@ -337,6 +337,22 @@ class Sample(types.Singleton):
     return function.SubsampleMeta(roots=self.roots, ndimsnormal=sum(root.ndims for root in self.roots)-self.ndims, transforms=self.transforms),
 
 strictsample = types.strict[Sample]
+
+class ProductSample(Sample):
+
+  @types.apply_annotations
+  def __init__(self, sample1:strictsample, sample2:strictsample):
+    self._sample1 = sample1
+    self._sample2 = sample2
+    super().__init__(sample1.roots+sample2.roots,
+                     sample1.ndims+sample2.ndims,
+                     tuple(map(operator.mul, sample1.transforms, sample2.transforms)),
+                     tuple(points.TensorPoints(points1, points2) for points1 in sample1.points for points2 in sample2.points), # TODO: make lazy
+                     tuple((index1[:,numpy.newaxis]*sample2.npoints + index2[numpy.newaxis,:]).ravel() for index1 in sample1.index for index2 in sample2.index))
+
+  def getsubsamples(self, ielem):
+    ielem1, ielem2 = divmod(ielem, self._sample2.nelems)
+    return self._sample1.getsubsamples(ielem1) + self._sample2.getsubsamples(ielem2)
 
 class Integral(types.Singleton):
   '''Postponed integration.
