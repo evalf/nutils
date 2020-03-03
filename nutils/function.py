@@ -474,66 +474,81 @@ class SelectChain(TransformChain):
   def prepare_eval(self, *, opposite=False, kwargs=...):
     return SelectChain(self.ordered_roots, 1-self.n) if opposite else self
 
-class TransformChainFromTuple(TransformChain):
+class EmptyTransformChain(TransformChain):
 
-  __slots__ = 'index'
+  __slots__ = ()
 
-  def __init__(self, roots:types.tuple[strictroot], values:strictevaluable, index:types.strictint, todims:types.strictint=None, fromdims:types.strictint=None):
-    assert 0 <= index < len(values)
-    self.index = index
-    super().__init__(roots, args=[values], todims=todims, fromdims=fromdims)
+  @types.apply_annotations
+  def __init__(self, roots:types.tuple[strictroot], ndims=types.strictint):
+    super().__init__(roots=roots, args=[], todims=ndims, fromdims=ndims)
 
-  def evalf(self, values):
-    return values[self.index]
+  def evalf(self):
+    return ((),)*len(self.roots)
 
 class TransformsIndexWithTail(Evaluable):
 
-  __slots__ = '_transforms', '_fromdims', '_trans'
+  __slots__ = 'transforms', 'ndims', 'trans'
 
   @types.apply_annotations
-  def __init__(self, transforms:transformseq.stricttransforms, fromdims:types.strictint, trans:types.strict[TransformChain]):
-    self._transforms = transforms
-    self._fromdims = fromdims
-    self._trans = trans
+  def __init__(self, transforms:transformseq.stricttransforms, ndims:types.strictint, trans:types.strict[TransformChain]):
+    self.transforms = transforms
+    self.ndims = ndims
+    self.trans = trans
     super().__init__(args=[trans])
 
   @property
   def roots(self):
-    return self._trans.roots
+    return self.trans.roots
 
   def evalf(self, chains):
-    index, tails = self._transforms.index_with_tail(chains)
+    index, tails = self.transforms.index_with_tail(chains)
     tailtodims = tuple(t[0].todims if t else c[-1].fromdims for t, c in zip(tails, chains))
-    assert builtins.sum(tailtodims) == self._fromdims
-    return numpy.array(index)[None], tails
+    assert builtins.sum(tailtodims) == self.ndims
+    return index, tails
 
   def __len__(self):
     return 3
 
   @property
   def index(self):
-    return ArrayFromTuple(self, index=0, shape=(), dtype=int)
+    return IndexFromTransformsIndexWithTail(self)
 
   @property
   def tail(self):
-    return TransformChainFromTuple(self._trans.ordered_roots, self, index=1, todims=self._fromdims)
+    return TransformChainFromTransformsIndexWithTail(self)
 
   @property
   def linear(self):
-    return Linear(self._trans.ordered_roots, self._transforms, self.index, self._fromdims)
+    return Linear(self.trans.ordered_roots, self.transforms, self.index, self.ndims)
 
   def __iter__(self):
     yield self.index
     yield self.tail
     yield self.linear
 
-# @util.positional_only
-# def prepare_eval(self, *, subsamples, kwargs=...):
-#   self = TransformsIndexWithTail(self._transforms, self._fromdims, self._trans.prepare_eval(subsamples=subsamples, **kwargs))
-#   for subsample in subsamples:
-#     if self._trans.ordered_roots == subsample.roots and isinstance(self._trans, SelectChain) and self._transforms == subsamples.transforms[self._trans.n]:
-#       return 
-#
+class TransformChainFromTransformsIndexWithTail(TransformChain):
+
+  __slots__ = '_indextail'
+
+  @types.apply_annotations
+  def __init__(self, indextail:types.strict[TransformsIndexWithTail]):
+    self._indextail = indextail
+    super().__init__(roots=indextail.trans.ordered_roots, args=[indextail], todims=indextail.ndims)
+
+  def evalf(self, indextail):
+    index, tail = indextail
+    return tail
+
+  @util.positional_only
+  def prepare_eval(self, *, subsamples, kwargs=...):
+    self = TransformChainFromTransformsIndexWithTail(self._indextail.prepare_eval(subsamples=subsamples, **kwargs))
+    trans = self._indextail.trans
+    if isinstance(trans, SelectChain):
+      for isubsample, subsample in enumerate(subsamples):
+        if trans.ordered_roots == subsample.roots and self._indextail.transforms == subsample.transforms[trans.n]:
+          return EmptyTransformChain(roots=self.ordered_roots, ndims=self.todims)
+    return self
+
 # ARRAYFUNC
 #
 # The main evaluable. Closely mimics a numpy array.
@@ -2481,6 +2496,45 @@ class ArrayFromTuple(Array):
   def evalf(self, arrays):
     assert isinstance(arrays, tuple)
     return arrays[self.index]
+
+class IndexFromTransformsIndexWithTail(Array):
+
+  __slots__ = '_indextail'
+
+  def __init__(self, indextail:types.strict[TransformsIndexWithTail]):
+    self._indextail = indextail
+    super().__init__(args=[indextail], shape=(), dtype=int)
+
+  def evalf(self, indextail):
+    index, tail = indextail
+    return numpy.array([index], int)
+
+  @util.positional_only
+  def prepare_eval(self, *, subsamples, kwargs=...):
+    self = IndexFromTransformsIndexWithTail(self._indextail.prepare_eval(subsamples=subsamples, **kwargs))
+    trans = self._indextail.trans
+    if isinstance(trans, SelectChain):
+      for isubsample, subsample in enumerate(subsamples):
+        if trans.ordered_roots == subsample.roots and self._indextail.transforms == subsample.transforms[trans.n]:
+          return IndexFromSubsample(isubsample, trans.ordered_roots)
+    return self
+
+class IndexFromSubsample(Array):
+
+  __slots__ = '_isubsample', '_roots'
+
+  @types.apply_annotations
+  def __init__(self, isubsample:types.strictint, roots:types.tuple[strictroot]):
+    self._isubsample = isubsample
+    self._roots = roots
+    super().__init__(args=[SUBSAMPLES], shape=(), dtype=int)
+
+  @property
+  def roots(self):
+    return frozenset(self._roots)
+
+  def evalf(self, subsamples):
+    return numpy.array([subsamples[self._isubsample].ielem], int)
 
 class Zeros(Array):
   'zero'
