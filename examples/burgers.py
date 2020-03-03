@@ -27,7 +27,7 @@ def main(nelems:int, ndims:int, degree:int, timescale:float, newtontol:float, en
        Stopping time.
   '''
 
-  domain, geom = mesh.rectilinear([numpy.linspace(0,1,nelems+1)]*ndims, periodic=range(ndims))
+  domain, geom = mesh.newrectilinear([numpy.linspace(0,1,nelems+1)]*ndims, periodic=range(ndims))
 
   ns = function.Namespace()
   ns.x = geom

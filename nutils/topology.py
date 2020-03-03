@@ -1450,6 +1450,14 @@ class DisjointUnionTopology(Topology):
   def refined(self):
     return DisjointUnionTopology([topo.refined for topo in self._topos], self._names)
 
+  @property
+  def boundary(self):
+    return DisjointUnionTopology([topo.boundary for topo in self._topos])
+
+  @property
+  def interfaces(self):
+    return DisjointUnionTopology([topo.interfaces for topo in self._topos])
+
 class SubsetTopology(Topology):
   'trimmed'
 
