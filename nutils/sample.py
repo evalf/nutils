@@ -254,9 +254,9 @@ class Sample(types.Singleton):
     '''Basis-like function that for every point in the sample evaluates to the
     unit vector corresponding to its index.'''
 
-    index, head, tail = function.TransformsIndexWithTail(self.transforms[0], self.ndims, function.SelectChain(self.roots))
+    index, tail, linear = function.TransformsIndexWithTail(self.transforms[0], self.ndims, function.SelectChain(self.roots))
     I = function.Elemwise(self.index, index, dtype=int)
-    B = function.Sampled(function.ApplyTransforms(head, tail), expect=function.take(self.allcoords, I, axis=0))
+    B = function.Sampled(function.ApplyTransforms(tail, linear), expect=function.take(self.allcoords, I, axis=0))
     return function.Inflate(func=B, dofmap=I, length=self.npoints, axis=0)
 
   def asfunction(self, array):
@@ -353,6 +353,10 @@ class ProductSample(Sample):
   def getsubsamples(self, ielem):
     ielem1, ielem2 = divmod(ielem, self._sample2.nelems)
     return self._sample1.getsubsamples(ielem1) + self._sample2.getsubsamples(ielem2)
+
+  @property
+  def subsamplemetas(self):
+    return self._sample1.subsamplemetas + self._sample2.subsamplemetas
 
 class Integral(types.Singleton):
   '''Postponed integration.

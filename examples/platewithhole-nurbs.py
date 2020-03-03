@@ -27,7 +27,7 @@ def main(nrefine:int, traction:float, radius:float, poisson:float):
   '''
 
   # create the coarsest level parameter domain
-  domain, geom0 = mesh.rectilinear([1, 2])
+  domain, geom0 = mesh.newrectilinear([1, 2])
   bsplinebasis = domain.basis('spline', degree=2)
   controlweights = numpy.ones(12)
   controlweights[1:3] = .5 + .25 * numpy.sqrt(2)
