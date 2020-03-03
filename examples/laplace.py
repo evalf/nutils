@@ -70,8 +70,6 @@ def main(nelems:int, etype:str, btype:str, degree:int):
   res = domain.integral('basis_n,i u_,i d:x' @ ns, degree=degree*2)
   res -= domain.boundary['right'].integral('basis_n cos(1) cosh(x_1) d:x' @ ns, degree=degree*2)
 
-  print(('basis_n,i u_,i d:x' @ ns).prepare_eval(subsamples=domain.sample('gauss', 1).subsamplemetas).simplified.asciitree())
-
   # The Dirichlet constraints are set by finding the coefficients that minimize
   # the error:
   #

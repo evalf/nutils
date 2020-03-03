@@ -27,7 +27,7 @@ def main(nelems:int, degree:int, reynolds:float):
   '''
 
   verts = numpy.linspace(0, 1, nelems+1)
-  domain, geom = mesh.newrectilinear([verts, verts])
+  domain, geom = mesh.rectilinear([verts, verts])
 
   ns = function.Namespace()
   ns.x = geom

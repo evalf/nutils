@@ -41,7 +41,7 @@ def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float,
   elemangle = 2 * numpy.pi / nelems
   melems = int(numpy.log(2*maxradius) / elemangle + .5)
   treelog.info('creating {}x{} mesh, outer radius {:.2f}'.format(melems, nelems, .5*numpy.exp(elemangle*melems)))
-  domain, geom = mesh.newrectilinear([melems, nelems], periodic=(1,))
+  domain, geom = mesh.rectilinear([melems, nelems], periodic=(1,))
   domain = domain.withboundary(inner='left', outer='right')
 
   ns = function.Namespace()
