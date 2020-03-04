@@ -2751,7 +2751,7 @@ class Unravel(Array):
 class Mask(Array):
 
   __slots__ = 'func', 'axis', 'mask'
-  __cache__ = 'simplified',
+  __cache__ = 'simplified', 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, mask:types.frozenarray, axis:types.strictint):
@@ -2801,6 +2801,22 @@ class Mask(Array):
       newmask[numpy.asarray(self.mask)] = maskvec
       assert maskvec.sum() == newmask.sum()
       return Mask(self.func, newmask, self.axis)
+
+  @property
+  def blocks(self):
+    blocks = []
+    for ind, f in self.func.blocks:
+      if ind[self.axis] == Range(self.func.shape[self.axis]):
+        indi = Range(self.shape[self.axis])
+        newf = Mask(f, self.mask, axis=self.axis)
+      else:
+        renumber = numpy.repeat(self.mask.size, self.mask.size) # initialize with out of bounds
+        renumber[self.mask] = numpy.arange(self.mask.sum())
+        subind = Find(Take(self.mask, ind[self.axis], axis=0))
+        indi = Take(renumber, Take(ind[self.axis], subind, axis=0), axis=0)
+        newf = Take(f, subind, axis=self.axis)
+      blocks.append((ind[:self.axis] + (indi,) + ind[self.axis+1:], newf))
+    return tuple(blocks)
 
 class Range(Array):
 
