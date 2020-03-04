@@ -218,6 +218,8 @@ class Square(Matrix):
     return self.fromdims > 0 and self.det < 0
 
   def transform_poly(self, coeffs, startdim):
+    if self.fromdims == 0:
+      return coeffs
     assert startdim >= 0
     assert coeffs.ndim >= startdim + self.fromdims + 1
     degree = coeffs.shape[startdim + 1] - 1
@@ -630,7 +632,7 @@ class Manifold(Identity):
     return Manifold(self.fromdims, self.trans.flipped)
 
   def swapdown(self, other):
-    if isinstance(other, TensorChild):
+    if isinstance(other, (TensorChild, SimplexChild)):
       return ScaledUpdim(other, self), Identity(self.fromdims)
 
   def separate(self, septodims):
@@ -681,6 +683,42 @@ def edge_transforms(trans, ref):
 
 def unempty_edge_transforms(trans, ref):
   return (append_edge(trans, etrans) for etrans, eref in ref.edges if eref)
+
+def index_child_transforms(children, chains, septodims):
+  assert len(chains) == len(septodims)
+  chains = tuple(map(uppermost, chains))
+  for ichild, child in enumerate(children):
+    child = child.separate(septodims)
+    if all(chain == (SimplexChild(0,0) if ctrans == Identity(0) else ctrans,) for chain, ctrans in zip(chains, child)):
+      return ichild
+  raise ValueError
+
+def index_edge_transforms(edges, chains, septodims):
+  assert len(chains) == len(septodims)
+  chains = tuple(map(canonical, chains))
+  for iedge, edge in enumerate(edges):
+    edge = edge.separate(septodims)
+    if all(chain == () if type(etrans) is Identity else chain == (etrans,) for chain, etrans in zip(chains, edge)):
+      return iedge
+  raise ValueError
+
+def index_child_transforms_with_tail(children, chains, septodims):
+  assert len(chains) == len(septodims)
+  chains = tuple(map(uppermost, chains))
+  for ichild, child in enumerate(children):
+    child = child.separate(septodims)
+    if all(chain and chain[0] == (SimplexChild(0,0) if ctrans == Identity(0) else ctrans) for chain, ctrans in zip(chains, child)):
+      return ichild, tuple(chain[1:] for chain in chains)
+  raise ValueError
+
+def index_edge_transforms_with_tail(edges, chains, septodims):
+  assert len(chains) == len(septodims)
+  chains = tuple(map(canonical, chains))
+  for iedge, edge in enumerate(edges):
+    edge = edge.separate(septodims)
+    if all(chain and chain[0] == etrans for chain, etrans in zip(chains, edge) if type(etrans) != Identity):
+      return iedge, tuple(chain if type(etrans) == Identity else chain[1:] for chain, etrans in zip(chains, edge))
+  raise ValueError
 
 def transform_poly(items, coeffs):
   startdim = 0

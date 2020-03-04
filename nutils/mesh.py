@@ -45,7 +45,7 @@ def line(nodes, periodic=False, bnames=None, *, rootid='line'):
     uniform = numpy.equal(nodes, offset + numpy.arange(nelems+1) * scale).all()
   root = function.Root(rootid, 1)
   domain = topology.StructuredLine(root, 0, nelems, periodic=periodic, bnames=bnames)
-  geom = function.rootcoords(root) * scale + offset if uniform else domain.basis('std', degree=1, periodic=False).dot(nodes)
+  geom = function.rootcoords(root) * scale + offset if uniform else domain.basis('std', degree=1, periodic=[]).dot(nodes)[_]
   return domain, geom
 
 @log.withcontext

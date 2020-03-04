@@ -20,7 +20,7 @@ class check(TestCase):
     else:
       raise Exception('invalid ndim {!r}'.format(self.ndim))
     numpy.random.seed(0)
-    self.args = [function.Guard(function.Polyval(numeric.dot(numpy.random.uniform(size=shape+poly.shape[:1], low=self.low, high=self.high), poly), function.rootcoords(domain.root))) for shape in self.shapes]
+    self.args = [function.Guard(function.Polyval(numeric.dot(numpy.random.uniform(size=shape+poly.shape[:1], low=self.low, high=self.high), poly), function.rootcoords(domain.roots))) for shape in self.shapes]
     if self.pass_geom:
         self.args += [self.geom]
     self.sample = domain.sample('uniform', 2)

@@ -89,20 +89,6 @@ structure(ndims=2, refine=1)
 structure(ndims=3, refine=1)
 
 
-@parametrize
-class structured_prop_periodic(TestCase):
-
-  def test(self):
-    bnames = 'left', 'top', 'front'
-    side = bnames[self.sdim]
-    domain, geom = mesh.rectilinear([2]*self.ndim, periodic=self.periodic)
-    self.assertEqual(list(domain.boundary[side].periodic), [i if i < self.sdim else i-1 for i in self.periodic if i != self.sdim])
-
-structured_prop_periodic('2d_1_0', ndim=2, periodic=[1], sdim=0)
-structured_prop_periodic('2d_0_1', ndim=2, periodic=[0], sdim=1)
-structured_prop_periodic('3d_0,2_1', ndim=3, periodic=[0,2], sdim=1)
-
-
 class picklability(TestCase):
 
   def assert_pickle_dump_load(self, data):
@@ -301,20 +287,19 @@ class general(TestCase):
 
   def test_boundary(self):
     for trans in self.domain.boundary.transforms:
-      ielem, tail = self.domain.transforms.index_with_tail(trans)
-      (etrans,), = tail
-      iedge = self.domain.references[ielem].edge_transforms.index(etrans)
+      ielem, tails = self.domain.transforms.index_with_tail(trans)
+      todims = tuple(t[-1].fromdims for t in self.domain.transforms[ielem])
+      iedge = transform.index_edge_transforms(self.domain.references[ielem].edge_transforms, tails, todims)
       self.assertEqual(self.domain.connectivity[ielem][iedge], -1)
 
   def test_interfaces(self):
     itopo = self.domain.interfaces
     for trans, opptrans in zip(itopo.transforms, itopo.opposites):
-      ielem, tail = self.domain.transforms.index_with_tail(trans)
-      (etrans,), = tail
-      iedge = self.domain.references[ielem].edge_transforms.index(etrans)
-      ioppelem, opptail = self.domain.transforms.index_with_tail(opptrans)
-      (eopptrans,), = opptail
-      ioppedge = self.domain.references[ioppelem].edge_transforms.index(eopptrans)
+      ielem, tails = self.domain.transforms.index_with_tail(trans)
+      todims = tuple(t[-1].fromdims for t in self.domain.transforms[ielem])
+      iedge = transform.index_edge_transforms(self.domain.references[ielem].edge_transforms, tails, todims)
+      ioppelem, opptails = self.domain.transforms.index_with_tail(opptrans)
+      ioppedge = transform.index_edge_transforms(self.domain.references[ioppelem].edge_transforms, opptails, todims)
       self.assertEqual(self.domain.connectivity[ielem][iedge], ioppelem)
       self.assertEqual(self.domain.connectivity[ioppelem][ioppedge], ielem)
 
