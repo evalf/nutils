@@ -540,8 +540,11 @@ class TransformChainFromTransformsIndexWithTail(TransformChain):
     return tail
 
   @util.positional_only
-  def prepare_eval(self, *, subsamples, kwargs=...):
-    self = TransformChainFromTransformsIndexWithTail(self._indextail.prepare_eval(subsamples=subsamples, **kwargs))
+  def prepare_eval(self, *, kwargs=...):
+    self = TransformChainFromTransformsIndexWithTail(self._indextail.prepare_eval(**kwargs))
+    if 'subsamples' not in kwargs:
+      return self
+    subsamples = kwargs['subsamples']
     trans = self._indextail.trans
     if isinstance(trans, SelectChain):
       for isubsample, subsample in enumerate(subsamples):
@@ -2511,8 +2514,11 @@ class IndexFromTransformsIndexWithTail(Array):
     return numpy.array([index], int)
 
   @util.positional_only
-  def prepare_eval(self, *, subsamples, kwargs=...):
-    self = IndexFromTransformsIndexWithTail(self._indextail.prepare_eval(subsamples=subsamples, **kwargs))
+  def prepare_eval(self, *, kwargs=...):
+    self = IndexFromTransformsIndexWithTail(self._indextail.prepare_eval(**kwargs))
+    if 'subsamples' not in kwargs:
+      return self
+    subsamples = kwargs['subsamples']
     trans = self._indextail.trans
     if isinstance(trans, SelectChain):
       for isubsample, subsample in enumerate(subsamples):

@@ -1552,15 +1552,15 @@ class SubsetTopology(Topology):
             elemfromdims = tuple(t[-1].fromdims for t in elemtrans)
             oppelemfromdims = tuple(t[-1].fromdims for t in self.basetopo.transforms[ioppelem])
             trimmedreferences.append(edgeref)
-            trimmedtransforms.append(addtrimmededge(ielem, edgetrans.separate(elemfromdims)))
-            trimmedopposites.append(addtrimmededge(ioppelem, oppref.edge_transforms[ioppedge].separate(oppelemfromdims)))
+            trimmedtransforms.append(addtrimmededge(ielem, edgetrans))
+            trimmedopposites.append(addtrimmededge(ioppelem, oppref.edge_transforms[ioppedge]))
       # The last edges of newref (beyond the number of edges of the original)
       # cannot have opposites and are added to the trimmed group directly.
       for edgetrans, edgeref in newref.edges[len(ioppelems):]:
         elemfromdims = tuple(t[-1].fromdims for t in elemtrans)
         trimmedreferences.append(edgeref)
-        trimmedtransforms.append(addtrimmededge(ielem, edgetrans.separate(elemfromdims)))
-        trimmedopposites.append(addtrimmededge(ielem, edgetrans.flipped.separate(elemfromdims)))
+        trimmedtransforms.append(addtrimmededge(ielem, edgetrans))
+        trimmedopposites.append(addtrimmededge(ielem, edgetrans.flipped))
     trimmedreferences = elementseq.asreferences(trimmedreferences, self.ndims-1)
     trimmedielems, trimmededges = zip(*sorted(trimmededges.items(), key=lambda item: item[0]))
     trimmedoffsets = dict(zip(trimmedielems, numpy.cumsum([0, *map(len, trimmededges)])))
@@ -1733,7 +1733,6 @@ class HierarchicalTopology(Topology):
       bindices = []
       for index in indices:
         for trans in transform.unempty_edge_transforms(level.transforms[index], level.references[index]):
-          #trans = tuple(map(transform.uppermost, trans))
           try:
             bindices.append(bindex(trans))
           except ValueError:
@@ -1743,8 +1742,6 @@ class HierarchicalTopology(Topology):
         bindices.sort()
         assert not numpy.equal(bindices[1:], bindices[:-1]).any()
       bindices_per_level.append(bindices)
-    foo = HierarchicalTopology(basebtopo, bindices_per_level)
-    assert foo.integral(function.asarray(1), degree=1).eval() == basebtopo.integral(function.asarray(1), degree=1).eval()
     return HierarchicalTopology(basebtopo, bindices_per_level)
 
   @property
@@ -1944,6 +1941,10 @@ class ProductTopology(Topology):
 
   def __repr__(self):
     return '{!r}*{!r}'.format(self._left, self._right)
+
+  @property
+  def shape(self):
+    return self._left.shape + self._right.shape
 
   @property
   def shape(self):

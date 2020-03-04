@@ -767,15 +767,8 @@ class DerivedTransforms(Transforms):
     iparent, parenttail = self._parent.index_with_tail(trans)
     if not any(parenttail):
       raise ValueError
-    parenttail = tuple(map(transform.canonical if self._updim else transform.uppermost, parenttail))
     todims = [a[0].todims if a else b[-1].fromdims for a, b in zip(parenttail, trans)]
-    for iderived, derivedtrans in enumerate(self._derived_transforms(self._parent_references[iparent])):
-      sepderivedtrans = tuple(None if type(t) is transform.Identity and self._updim else transform.SimplexChild(0,0) if t == transform.Identity(0) and not self._updim else t for t in derivedtrans.separate(todims))
-      if all(b is None or a and a[0] == b for a, b in zip(parenttail, sepderivedtrans)):
-        tail = tuple(a if b is None else a[1:] for a, b in zip(parenttail, sepderivedtrans))
-        break
-    else:
-      raise ValueError
+    iderived, tail = (transform.index_edge_transforms_with_tail if self._updim else transform.index_child_transforms_with_tail)(self._derived_transforms(self._parent_references[iparent]), parenttail, todims)
     return self._offsets[iparent]+iderived, tail
 
 class UniformDerivedTransforms(Transforms):
@@ -828,15 +821,8 @@ class UniformDerivedTransforms(Transforms):
     iparent, parenttail = self._parent.index_with_tail(trans)
     if not any(parenttail):
       raise ValueError
-    parenttail = tuple(map(transform.canonical if self._updim else transform.uppermost, parenttail))
     todims = [a[0].todims if a else b[-1].fromdims for a, b in zip(parenttail, trans)]
-    for iderived, derivedtrans in enumerate(self._derived_transforms):
-      sepderivedtrans = tuple(None if type(t) is transform.Identity and self._updim else transform.SimplexChild(0,0) if t == transform.Identity(0) and not self._updim else t for t in derivedtrans.separate(todims))
-      if all(b is None or a and a[0] == b for a, b in zip(parenttail, sepderivedtrans)):
-        tail = tuple(a if b is None else a[1:] for a, b in zip(parenttail, sepderivedtrans))
-        break
-    else:
-      raise ValueError
+    iderived, tail = (transform.index_edge_transforms_with_tail if self._updim else transform.index_child_transforms_with_tail)(self._derived_transforms, parenttail, todims)
     return iparent*len(self._derived_transforms) + iderived, tail
 
 class TrimmedEdgesTransforms(Transforms):
@@ -845,7 +831,7 @@ class TrimmedEdgesTransforms(Transforms):
   __cache__ = '_offsets'
 
   @types.apply_annotations
-  def __init__(self, parent:stricttransforms, edges:types.tuple[types.tuple[types.tuple[transform.stricttransformitem]]]):
+  def __init__(self, parent:stricttransforms, edges:types.tuple[types.tuple[transform.stricttransformitem]]):
     assert len(edges) == len(parent)
     self._parent = parent
     self._edges = edges
@@ -859,9 +845,10 @@ class TrimmedEdgesTransforms(Transforms):
     return self._offsets[-1]
 
   def __iter__(self):
-    for ptrans, edges in zip(self._parent, self._edges):
-      for etrans in edges:
-        yield tuple(h if type(t) is transform.Identity else h+(t,) for h, t in zip(ptrans, etrans))
+    for pchains, edges in zip(self._parent, self._edges):
+      todims = tuple(pchain[-1].fromdims for pchain in pchains)
+      for edge in edges:
+        yield tuple(pchain if type(etrans) == transform.Identity else pchain+(etrans,) for pchain, etrans in zip(pchains, edge.separate(todims)))
 
   def __getitem__(self, index):
     if not numeric.isint(index):
@@ -870,20 +857,15 @@ class TrimmedEdgesTransforms(Transforms):
     iparent = numpy.searchsorted(self._offsets, index, side='right')-1
     assert 0 <= iparent < len(self._offsets)-1
     iedge = index - self._offsets[iparent]
-    return tuple(h if type(t) is transform.Identity else h+(t,) for h, t in zip(self._parent[iparent], self._edges[iparent][iedge]))
+    pchains = self._parent[iparent]
+    todims = tuple(pchain[-1].fromdims for pchain in pchains)
+    return tuple(pchain if type(etrans) == transform.Identity else pchain+(etrans,) for pchain, etrans in zip(pchains, self._edges[iparent][iedge].separate(todims)))
 
-  def index_with_tail(self, trans):
-    iparent, tails = self._parent.index_with_tail(trans)
-    if not all(tails):
-      raise ValueError
-    tails = tuple(map(transform.canonical, tails))
-    for iedge, edges in enumerate(self._edges[iparent]):
-      if all(type(e) is transform.Identity or t and t[0] == e for e, t in zip(edges, tails)):
-        break
-    else:
-      raise ValueError
-    #iedge = self._edges[iparent].index(tuple(tail[0] for tail in tails))
-    return self._offsets[iparent]+iedge, tuple(tail if type(e) is transform.Identity else tail[1:] for tail, e in zip(tails, edges))
+  def index_with_tail(self, chains):
+    iparent, parenttails = self._parent.index_with_tail(chains)
+    todims = tuple(tail[0].todims if tail else chain[-1].fromdims for tail, chain in zip(parenttails, chains))
+    iedge, tails = transform.index_edge_transforms_with_tail(self._edges[iparent], parenttails, todims)
+    return self._offsets[iparent]+iedge, tails
 
 class ProductTransforms(Transforms):
   '''The product of two :class:`Transforms` objects.
