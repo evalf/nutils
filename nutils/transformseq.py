@@ -831,7 +831,7 @@ class TrimmedEdgesTransforms(Transforms):
   __cache__ = '_offsets'
 
   @types.apply_annotations
-  def __init__(self, parent:stricttransforms, edges:types.tuple[types.tuple[transform.stricttransformitem]]):
+  def __init__(self, parent:stricttransforms, edges:types.tuple[types.tuple[types.tuple[transform.stricttransformitem]]]):
     assert len(edges) == len(parent)
     self._parent = parent
     self._edges = edges
@@ -846,9 +846,8 @@ class TrimmedEdgesTransforms(Transforms):
 
   def __iter__(self):
     for pchains, edges in zip(self._parent, self._edges):
-      todims = tuple(pchain[-1].fromdims for pchain in pchains)
       for edge in edges:
-        yield tuple(pchain if type(etrans) == transform.Identity else pchain+(etrans,) for pchain, etrans in zip(pchains, edge.separate(todims)))
+        yield tuple(pchain if type(etrans) == transform.Identity else pchain+(etrans,) for pchain, etrans in zip(pchains, edge))
 
   def __getitem__(self, index):
     if not numeric.isint(index):
@@ -858,14 +857,17 @@ class TrimmedEdgesTransforms(Transforms):
     assert 0 <= iparent < len(self._offsets)-1
     iedge = index - self._offsets[iparent]
     pchains = self._parent[iparent]
-    todims = tuple(pchain[-1].fromdims for pchain in pchains)
-    return tuple(pchain if type(etrans) == transform.Identity else pchain+(etrans,) for pchain, etrans in zip(pchains, self._edges[iparent][iedge].separate(todims)))
+    return tuple(pchain if type(etrans) == transform.Identity else pchain+(etrans,) for pchain, etrans in zip(pchains, self._edges[iparent][iedge]))
 
   def index_with_tail(self, chains):
     iparent, parenttails = self._parent.index_with_tail(chains)
-    todims = tuple(tail[0].todims if tail else chain[-1].fromdims for tail, chain in zip(parenttails, chains))
-    iedge, tails = transform.index_edge_transforms_with_tail(self._edges[iparent], parenttails, todims)
-    return self._offsets[iparent]+iedge, tails
+    parenttails = tuple(map(transform.canonical, parenttails))
+    for iedge, edge in enumerate(self._edges[iparent]):
+      if all(tail and tail[0] == etrans for tail, etrans in zip(parenttails, edge) if type(etrans) != transform.Identity):
+        break
+    else:
+      raise ValueError
+    return self._offsets[iparent]+iedge, tuple(tail if type(etrans) == transform.Identity else tail[1:] for tail, etrans in zip(parenttails, edge))
 
 class ProductTransforms(Transforms):
   '''The product of two :class:`Transforms` objects.

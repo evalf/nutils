@@ -140,7 +140,7 @@ class TransformItem(types.Singleton):
     if septodims == (self.todims,):
       return self,
     elif self.todims in septodims:
-      return tuple(self if todims == self.todims else Identity(0) for todims in septodims)
+      return tuple(Identity(0) if todims == 0 else self for todims in septodims)
     else:
       raise ValueError('Cannot separate {} into TransformItems with todims {}.'.format(self, septodims))
 
@@ -413,6 +413,9 @@ class SimplexEdge(Updim):
     if isinstance(other, SimplexChild):
       ichild, iedge = self.swap[self.iedge][other.ichild]
       return SimplexChild(self.todims, ichild), SimplexEdge(self.todims, iedge, self.inverted)
+    elif self.fromdims == 0 and other == Identity(0):
+      ichild, iedge = self.swap[self.iedge][0]
+      return SimplexChild(self.todims, ichild), SimplexEdge(self.todims, iedge, self.inverted)
 
   def swapdown(self, other):
     # prioritize decending transformations, i.e. change scale << updim to updim << scale
@@ -424,13 +427,14 @@ class SimplexEdge(Updim):
         except ValueError:
           pass
         else:
-          return SimplexEdge(self.todims, iedge, self.inverted), SimplexChild(self.fromdims, ichild)
+          return SimplexEdge(self.todims, iedge, self.inverted), SimplexChild(self.fromdims, ichild) if self.fromdims else Identity(0)
 
 class SimplexChild(Square):
 
   __slots__ = 'ichild',
 
   def __init__(self, ndims, ichild):
+    assert ndims > 0, 'use `Identity(0)` instead'
     self.ichild = ichild
     if ichild <= ndims:
       linear = numpy.eye(ndims) * .5
@@ -482,11 +486,11 @@ class ScaledUpdim(Matrix):
     return types.frozenarray(-ext if self.isflipped else ext, copy=False)
 
   def swapdown(self, other):
-    if isinstance(other, TensorChild):
+    if isinstance(other, (TensorChild, SimplexChild)):
       return ScaledUpdim(other, self), Identity(self.fromdims)
 
   def separate(self, septodims):
-    return tuple(map(ScaledUpdim, self.trans1.separate(septodims), self.trans2.separate(septodims)))
+    return tuple(ScaledUpdim(a, b) if todims else Identity(0) for todims, a, b in zip(septodims, self.trans1.separate(septodims), self.trans2.separate(septodims)))
 
 class TensorEdge1(Updim):
 
@@ -503,7 +507,7 @@ class TensorEdge1(Updim):
       swapped = self.trans.swapup(other.trans1)
       trans2 = other.trans2
     elif isinstance(other, (TensorChild, SimplexChild)) and other.fromdims == other.todims and not self.trans.fromdims:
-      swapped = self.trans.swapup(SimplexChild(0, 0))
+      swapped = self.trans.swapup(Identity(0))
       trans2 = other
     else:
       swapped = None
@@ -545,7 +549,7 @@ class TensorEdge2(Updim):
       swapped = self.trans.swapup(other.trans2)
       trans1 = other.trans1
     elif isinstance(other, (TensorChild, SimplexChild)) and other.fromdims == other.todims and not self.trans.fromdims:
-      swapped = self.trans.swapup(SimplexChild(0, 0))
+      swapped = self.trans.swapup(Identity(0))
       trans1 = other
     else:
       swapped = None
@@ -638,7 +642,7 @@ class Manifold(Identity):
   def separate(self, septodims):
     if sum(septodims) != self.todims:
       raise ValueError("'septodims' does not add up to 'todims'")
-    return tuple(Manifold(todims, self.trans) for todims in septodims)
+    return tuple(Manifold(todims, self.trans) if todims else Identity(0) for todims in septodims)
 
 def separate_tensor(trans1, trans2, septodims):
   i = 0
@@ -663,8 +667,7 @@ def append_joined_item(trans, item, *, kind):
   assert isinstance(trans, tuple) and all(isinstance(t, tuple) for t in trans)
   assert isinstance(item, TransformItem)
   sepitem = item.separate(tuple(t[-1].fromdims for t in trans))
-  #return tuple(t if type(i) is Identity else t+(i,) for t, i in zip(trans, sepitem))
-  return tuple(t if type(i) is Identity and kind == 'edge' else t+(SimplexChild(0,0),) if i == Identity(0) and kind == 'child' else t+(i,) for t, i in zip(trans, sepitem))
+  return tuple(t if type(i) is Identity and kind == 'edge' else t+(i,) for t, i in zip(trans, sepitem))
 
 def append_edge(trans, edge):
   return append_joined_item(trans, edge, kind='edge')
@@ -689,7 +692,7 @@ def index_child_transforms(children, chains, septodims):
   chains = tuple(map(uppermost, chains))
   for ichild, child in enumerate(children):
     child = child.separate(septodims)
-    if all(chain == (SimplexChild(0,0) if ctrans == Identity(0) else ctrans,) for chain, ctrans in zip(chains, child)):
+    if all(chain == (ctrans,) for chain, ctrans in zip(chains, child)):
       return ichild
   raise ValueError
 
@@ -707,7 +710,7 @@ def index_child_transforms_with_tail(children, chains, septodims):
   chains = tuple(map(uppermost, chains))
   for ichild, child in enumerate(children):
     child = child.separate(septodims)
-    if all(chain and chain[0] == (SimplexChild(0,0) if ctrans == Identity(0) else ctrans) for chain, ctrans in zip(chains, child)):
+    if all(chain and chain[0] == ctrans for chain, ctrans in zip(chains, child)):
       return ichild, tuple(chain[1:] for chain in chains)
   raise ValueError
 
