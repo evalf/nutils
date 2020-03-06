@@ -1182,7 +1182,7 @@ class Concatenate(Array):
         # here, but currently cannot appear anywhere else due to design
         # choices. We need it here to fix a regression while awaiting a full
         # rewrite of this module to fundamentally take care of the issue.
-        concat_blocks = Concatenate([Take(func, dofmap, axis) for func in funcs], self.axis)
+        concat_blocks = Concatenate([Take(func, dofmap, axis) if iszero(func) else func.func for func in funcs], self.axis)
         return Inflate(concat_blocks, dofmap=dofmap, length=self.shape[axis], axis=axis).simplified
     return Concatenate(funcs, self.axis)
 
