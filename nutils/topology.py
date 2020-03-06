@@ -1947,10 +1947,6 @@ class ProductTopology(Topology):
     return self._left.shape + self._right.shape
 
   @property
-  def shape(self):
-    return self._left.shape + self._right.shape
-
-  @property
   def connectivity(self):
     s = len(self._right)
     return tuple(tuple(ir+cli*s if cli >= 0 else -1 for cli in cl)+tuple(il*s+cri if cri >= 0 else -1 for cri in cr) for (il,cl), (ir,cr) in itertools.product(enumerate(self._left.connectivity), enumerate(self._right.connectivity)))
