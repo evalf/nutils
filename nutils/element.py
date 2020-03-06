@@ -434,7 +434,7 @@ class SimplexReference(Reference):
 
   @property
   def child_transforms(self):
-    return tuple(transform.SimplexChild(self.ndims, ichild) for ichild in range(2**self.ndims))
+    return tuple(transform.SimplexChild(self.ndims, ichild) for ichild in range(2**self.ndims)) if self.ndims else (transform.Identity(0),)
 
   @property
   def ribbons(self):
