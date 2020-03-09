@@ -142,11 +142,13 @@ class Sample(types.Singleton):
     if arguments is None:
       arguments = {}
 
-    J = function.RootBasis(self.roots, self.ndims, function.SelectChain(self.roots))[:,:self.ndims]
-    if J.shape[0] == J.shape[1]:
-      detJ = abs(function.determinant(J))
-    else:
-      detJ = abs(function.determinant((J[:,:,None] * J[:,None,:]).sum(0)))**.5
+    detJ = 1
+    for subsample in self.subsamplemetas:
+      J = function.RootBasis(subsample.roots, subsample.ndimsmanifold, function.SelectChain(subsample.roots))[:,:subsample.ndimsmanifold]
+      if J.shape[0] == J.shape[1]:
+        detJ *= abs(function.determinant(J))
+      else:
+        detJ *= abs(function.determinant((J[:,:,None] * J[:,None,:]).sum(0)))**.5
     funcs = [func * detJ for func in funcs]
 
     # Functions may consist of several blocks, such as originating from
