@@ -481,7 +481,7 @@ class TensorEdge1(Updim):
     if isinstance(other, TensorChild) and self.trans.fromdims == other.trans1.todims:
       swapped = self.trans.swapup(other.trans1)
       trans2 = other.trans2
-    elif other.fromdims == other.todims and not self.trans.fromdims:
+    elif isinstance(other, (TensorChild, SimplexChild)) and other.fromdims == other.todims and not self.trans.fromdims:
       swapped = self.trans.swapup(SimplexChild(0, 0))
       trans2 = other
     else:
@@ -516,7 +516,7 @@ class TensorEdge2(Updim):
     if isinstance(other, TensorChild) and self.trans.fromdims == other.trans2.todims:
       swapped = self.trans.swapup(other.trans2)
       trans1 = other.trans1
-    elif other.fromdims == other.todims and not self.trans.fromdims:
+    elif isinstance(other, (TensorChild, SimplexChild)) and other.fromdims == other.todims and not self.trans.fromdims:
       swapped = self.trans.swapup(SimplexChild(0, 0))
       trans1 = other
     else:
