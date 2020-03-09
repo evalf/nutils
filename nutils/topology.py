@@ -517,7 +517,7 @@ class Topology(types.Singleton):
     vref = element.getsimplex(0)
     ielems = parallel.shempty(len(coords), dtype=int)
     xis = parallel.shempty((len(coords),len(geom)), dtype=float)
-    J = function.dot(function.rootgradient(geom, self.roots)[:,:,_], function.RootBasis(self.roots, self.ndims, function.SelectChain(self.roots))[_,:,:self.ndims], 1)
+    J = function.dot(function.rootgradient(geom, self.roots)[:,:,_], function.RootBasis(0, self.roots, self.ndims, function.SelectChain(self.roots))[_,:,:self.ndims], 1)
     geom_J = function.Tuple((geom, J)).prepare_eval().simplified
     with parallel.ctxrange('locating', len(coords)) as ipoints:
       for ipoint in ipoints:
