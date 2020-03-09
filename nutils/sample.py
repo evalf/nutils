@@ -143,8 +143,8 @@ class Sample(types.Singleton):
       arguments = {}
 
     detJ = 1
-    for subsample in self.subsamplemetas:
-      J = function.RootBasis(subsample.roots, subsample.ndimsmanifold, function.SelectChain(subsample.roots))[:,:subsample.ndimsmanifold]
+    for isubsample, subsample in enumerate(self.subsamplemetas):
+      J = function.RootBasis(isubsample, subsample.roots, subsample.ndimsmanifold, function.SelectChain(subsample.roots))[:,:subsample.ndimsmanifold]
       if J.shape[0] == J.shape[1]:
         detJ *= abs(function.determinant(J))
       else:

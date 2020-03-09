@@ -776,18 +776,22 @@ class RootBasis(Array):
 
   Parameters
   ----------
+  isubsample : :class:`int`
+      The index of the subsample to compute the basis for.
   roots : :class:`tuple` of :class:`Root` objects
-      The roots to compute the tangent and normal vectors for.
+      The roots to compute the basis for.
   ndimstangent : int
       The dimension of the tangent space.
   trans : :class:`TransformChain`
   '''
 
-  __slots__ = '_roots', '_ndimstangent', '_opposite', '_trans'
+  __slots__ = '_isubsample', '_roots', '_ndimstangent', '_opposite', '_trans'
+  __cache__ = 'prepare_eval'
 
   @types.apply_annotations
-  def __init__(self, roots:types.tuple[strictroot], ndimstangent:types.strictint, trans:types.strict[TransformChain], _opposite:bool=None):
+  def __init__(self, isubsample:types.strictint, roots:types.tuple[strictroot], ndimstangent:types.strictint, trans:types.strict[TransformChain], _opposite:bool=None):
     # NOTE: `trans` is only required because of the `SelectChain` test in `Opposite.simplified`.
+    self._isubsample = isubsample
     self._roots = roots
     self._ndimstangent = ndimstangent
     self._opposite = _opposite
@@ -796,13 +800,20 @@ class RootBasis(Array):
     ndims = sum(root.ndims for root in roots)
     super().__init__(args=[SUBSAMPLES, trans], shape=[ndims, ndims], dtype=float)
 
-  def _evalf_subsample(self, roots, chains, points):
-    ndims = builtins.sum(root.ndims for root in roots)
-    linear = numpy.zeros((points.npoints, ndims, ndims), dtype=float)
+  def evalf(self, subsamples, _trans):
+    subsample = subsamples[self._isubsample]
+    assert subsample.roots == self._roots
+    assert subsample.ndimsmanifold == self._ndimstangent
+    assert subsample.ndims == self.shape[0]
+    ndims = subsample.ndims
+    points = subsample.points
+    npointsbefore = functools.reduce(operator.mul, (s.points.npoints for s in subsamples[:self._isubsample]), 1)
+    npointsafter = functools.reduce(operator.mul, (s.points.npoints for s in subsamples[self._isubsample+1:]), 1)
+    linear = numpy.zeros((npointsbefore, points.npoints, npointsafter, ndims, ndims), dtype=float)
     chainslinear = numpy.zeros((ndims, points.ndims), dtype=float)
     to0 = from0 = 0
     n0 = points.ndims
-    for root, chain in zip(roots, chains):
+    for root, chain in zip(subsample.roots, subsample.transforms[1 if self._opposite else 0]):
       to1 = to0 + root.ndims
       fromdims = chain[-1].fromdims if chain else root.ndims
       chainlinear = transform.linearfrom(chain, root.ndims)
@@ -812,54 +823,25 @@ class RootBasis(Array):
         from0 = from1
       if fromdims < root.ndims:
         n1 = n0 + root.ndims - fromdims
-        linear[:,to0:to1,n0:n1] = chainlinear[:,fromdims:]
+        linear[:,:,:,to0:to1,n0:n1] = chainlinear[_,_,_,:,fromdims:]
         n0 = n1
       to0 = to1
     assert to0 == ndims
     assert from0 == points.ndims
     assert n0 == ndims
-    numpy.einsum('ij,njk->nik', chainslinear, points.basis, out=linear[:,:,:points.ndims])
-    return linear
-
-  def evalf(self, subsamples, _trans):
-    ndims = self.shape[0]
-    linear = numpy.zeros((*(subsample.points.npoints for subsample in subsamples), ndims, ndims), dtype=float)
-    to0 = from0 = 0
-    n0 = self._ndimstangent
-    slices = {}
-    for ipoints, subsample in enumerate(subsamples):
-      if frozenset(subsample.roots).isdisjoint(self.roots):
-        continue
-      subsamplelinear = self._evalf_subsample(subsample.roots, subsample.transforms[1 if self._opposite else 0], subsample.points)
-      subsamplelinear = subsamplelinear[tuple(slice(None) if j == ipoints else _ for j in range(len(subsamples)))]
-      to1 = to0 + subsamplelinear.shape[-1]
-      from1 = from0 + subsample.ndimsmanifold
-      n1 = n0 + subsamplelinear.shape[-1] - subsample.ndimsmanifold
-      linear[...,to0:to1,from0:from1] = subsamplelinear[...,:subsample.ndimsmanifold]
-      linear[...,to0:to1,n0:n1] = subsamplelinear[...,subsample.ndimsmanifold:]
-      r0 = to0
-      for root in subsample.roots:
-        r1 = r0 + root.ndims
-        slices[root] = slice(r0, r1)
-        r0 = r1
-      to0, from0, n0 = to1, from1, n1
-    assert to0 == ndims
-    assert from0 == self._ndimstangent
-    assert n0 == ndims
-
-    # reorder to `self._roots`
-    linear = linear.reshape((-1, ndims, ndims))
-    return numpy.concatenate([linear[:,slices[root]] for root in self._roots], axis=1)
+    numpy.einsum('ij,bnajk->bnaik', chainslinear, points.basis[_,:,_], out=linear[:,:,:,:,:points.ndims])
+    return linear.reshape((npointsbefore*points.npoints*npointsafter, ndims, ndims))
 
   @util.positional_only
   def prepare_eval(self, *, opposite=False, kwargs=...):
     if self._opposite is not None:
       raise ValueError('prepare already called')
-    return RootBasis(self._roots, self._ndimstangent, self._trans.prepare_eval(opposite=opposite, **kwargs), _opposite=opposite)
+    return RootBasis(self._isubsample, self._roots, self._ndimstangent, self._trans.prepare_eval(opposite=opposite, **kwargs), _opposite=opposite)
 
 class GramSchmidt(Array):
 
   __slots__ = '_arg'
+  __cache__ = 'simplified'
 
   @types.apply_annotations
   def __init__(self, arg:asarray):
@@ -875,6 +857,16 @@ class GramSchmidt(Array):
     if not iszero(derivative(self._arg, var, seen)):
       raise NotImplementedError
     return zeros(self.shape + var.shape)
+
+  @property
+  def simplified(self):
+    arg = self._arg.simplified
+    if arg == eye(self.shape[-1]):
+      return arg
+    elif self.shape[-2:] == (1,1):
+      return sign(arg).simplified
+    else:
+      return GramSchmidt(arg)
 
 class Normal(Array):
   'normal'
@@ -3063,18 +3055,17 @@ class RootCoords(DerivativeTargetBase):
     raise Exception('RootCoords should not be evaluated')
 
 class DelayedJacobian(Array):
-  '''
-  Placeholder for :func:`jacobian` until the dimension of the
-  :class:`nutils.topology.Topology` where this functions is being evaluated is
-  known.  The replacing is carried out by :meth:`Evaluable.prepare_eval`.
-  '''
+  '''Jacobian of a geometry.'''
 
-  __slots__ = '_geom', '_derivativestack'
+  __slots__ = '_geom', '_ndimsmanifold', '_derivativestack'
   __cache__ = 'prepare_eval'
 
   @types.apply_annotations
-  def __init__(self, geom:asarray, *derivativestack):
+  def __init__(self, geom:asarray, ndimsmanifold, *derivativestack:types.tuple[types.strict[DerivativeTargetBase]]):
+    if geom.ndim != 1:
+      raise ValueError('the geometry should have dimension 1 but got {}'.format(geom.ndim))
     self._geom = geom
+    self._ndimsmanifold = ndimsmanifold
     self._derivativestack = derivativestack
     super().__init__(args=[geom], shape=[n for var in derivativestack for n in var.shape], dtype=float)
 
@@ -3084,19 +3075,78 @@ class DelayedJacobian(Array):
   def _derivative(self, var, seen):
     if iszero(derivative(self._geom, var, seen)):
       return zeros(self.shape + var.shape)
-    return DelayedJacobian(self._geom, *self._derivativestack, var)
+    return DelayedJacobian(self._geom, self._ndimsmanifold, *self._derivativestack, var)
 
   @util.positional_only
   def prepare_eval(self, *, subsamples, kwargs=...):
     ndimsmanifold = 0
-    for subsample in subsamples:
+    J = []
+    for isubsample, subsample in enumerate(subsamples):
       if self.roots.isdisjoint(subsample.roots):
         continue
       if not frozenset(subsample.roots) <= self.roots:
         raise ValueError('Cannot compute jacobian.')
       ndimsmanifold += subsample.ndimsmanifold
-    jac = functools.reduce(derivative, self._derivativestack, asarray(jacobian(self._geom, ndimsmanifold)))
-    return jac.prepare_eval(subsamples=subsamples, **kwargs)
+      if subsample.ndims == 0:
+        continue
+      J.append(dot(rootgradient(self._geom, subsample.roots)[:,:,_], rootbasis(subsamples, isubsample, orthonormal=True)[_:,:subsample.ndimsmanifold], 1))
+    if self._ndimsmanifold is not None and ndimsmanifold != self._ndimsmanifold:
+      raise ValueError('jacobian will be evaluated on a manifold of dimension {} but {} was requested'.format(ndimsmanifold, self._ndimsmanifold))
+    J = concatenate(J, axis=1)
+    if J.shape[0] == J.shape[1]:
+      detJ = abs(determinant(J))
+    else:
+      detJ = abs(determinant((J[:,:,_] * J[:,_,:]).sum(0)))**.5
+    detJ = functools.reduce(derivative, self._derivativestack, asarray(detJ))
+    return detJ.prepare_eval(subsamples=subsamples, **kwargs)
+
+class DelayedNormal(Array):
+  '''Normal of a geometry.'''
+
+  __slots__ = '_geom', '_derivativestack'
+  __cache__ = 'prepare_eval'
+
+  @types.apply_annotations
+  def __init__(self, geom:asarray, *derivativestack:types.tuple[types.strict[DerivativeTargetBase]]):
+    if geom.ndim != 1:
+      raise ValueError('the geometry should have dimension 1 but got {}'.format(geom.ndim))
+    assert len(geom) <= builtins.sum(root.ndims for root in geom.roots)
+    self._geom = geom
+    self._derivativestack = derivativestack
+    super().__init__(args=[geom], shape=[len(geom)]+[n for var in derivativestack for n in var.shape], dtype=float)
+
+  def evalf(self):
+    raise Exception('DelayedNormal should not be evaluated')
+
+  def _derivative(self, var, seen):
+    if iszero(derivative(self._geom, var, seen)):
+      return zeros(self.shape + var.shape)
+    return DelayedNormal(self._geom, *self._derivativestack, var)
+
+  @util.positional_only
+  def prepare_eval(self, *, subsamples, kwargs=...):
+    tangents = []
+    normals = []
+    ndimsnormal = 0
+    for isubsample, subsample in enumerate(subsamples):
+      if self.roots.isdisjoint(subsample.roots):
+        continue
+      if not frozenset(subsample.roots) <= self.roots:
+        raise ValueError('Cannot compute normal.')
+      ndimsnormal += subsample.ndimsnormal
+      basis = rootbasis(subsamples, isubsample)
+      grad = dot(rootgradient(self._geom, subsample.roots)[:,:,_], basis[_,:,:], 1)
+      if subsample.ndimsmanifold:
+        tangents.append(grad[:,:subsample.ndimsmanifold])
+      if subsample.ndimsnormal:
+        normals.append(grad[:,subsample.ndimsmanifold:])
+    if ndimsnormal == 0:
+      raise ValueError('cannot compute normal: the normal space has dimension zero')
+    elif ndimsnormal > 1:
+      raise ValueError('cannot compute normal: the normal space has dimension larger then one')
+    n = Normal(concatenate(tangents+normals, axis=1)[:,:len(self._geom)])
+    n = functools.reduce(derivative, self._derivativestack, asarray(n))
+    return n.prepare_eval(subsamples=subsamples, **kwargs)
 
 class Ravel(Array):
 
@@ -4474,31 +4524,6 @@ def get(arg, iax, item):
     item = numeric.normdim(sh, item.eval()[0])
   return Get(arg, iax, item)
 
-def jacobian(geom, ndims):
-  '''
-  Return :math:`\\sqrt{|J^T J|}` with :math:`J` the gradient of ``geom`` to the
-  root coordinate system with ``ndims`` dimensions.
-  '''
-
-  # Compute the jacobian `abs(det(J.T @ V.T @ V @ J))**0.5` with `J` the
-  # gradient of `geom` to the root coordinates and `V` the `ndims` vectors
-  # spanning the tangent space.
-  assert geom.ndim == 1
-  if ndims == 0:
-    return 1.
-  # Order the roots deterministically. In the future we should use the order
-  # of `Sample.roots` (during `prepare_eval` or a successor).
-  roots = tuple(sorted(geom.roots, key=lambda root: (root.name, root.ndims)))
-  J = rootgradient(geom, roots)
-  if J.shape == (ndims, ndims):
-    # Since `J` and `V` are square, the determinant `det(J @ V)` is equal to
-    # `det(J) * det(V)`. The root vectors `V` are orthonormal, hence the
-    # determinant simplifies to `det(J)`.
-    return abs(determinant(J))
-  else:
-    J = dot(J[:,:,_], roottangent(roots, ndims)[_], 1)
-    return abs(determinant((J[:,:,_] * J[:,_,:]).sum(0)))**.5
-
 def matmat(arg0, *args):
   'helper function, contracts last axis of arg0 with first axis of arg1, etc'
   retval = asarray(arg0)
@@ -4549,42 +4574,24 @@ def derivative(func, var, seen=None):
 def rootgradient(arg, roots):
   return concatenate([derivative(arg, RootCoords(root)) for root in roots], axis=-1)
 
-def roottangent(roots, ndimstangent):
-  '''Returns the orthonormal vectors spanning the tangent space.
-
-  Parameters
-  ----------
-  roots : :class:`tuple` or :class:`Root` objects
-      The roots to compute the tangent vectors for.
-  ndimstangent : int
-      The dimension of the tangent space.
-
-  Returns
-  -------
-  :class:`Array`
-      The tangent vectors with shape `(sum(root.ndims for root in roots), ndims)`.
-  '''
-
-  return GramSchmidt(RootBasis(roots, ndimstangent, SelectChain(roots)))[:,:ndimstangent]
-
-def rootnormal(roots, ndimsnormal):
-  '''Returns the orthonormal vectors spanning the normal space.
-
-  Parameters
-  ----------
-  roots : :class:`tuple` or :class:`Root` objects
-      The roots to compute the normal vectors for.
-  ndimstangent : int
-      The dimension of the normal space.
-
-  Returns
-  -------
-  :class:`Array`
-      The tangent vectors with shape `(sum(root.ndims for root in roots), ndims)`.
-  '''
-
-  ndimstangent = builtins.sum(root.ndims for root in roots) - ndimsnormal
-  return GramSchmidt(RootBasis(roots, ndimstangent, SelectChain(roots)))[:,ndimstangent:]
+def rootbasis(subsamples, index_or_roots, *, orthonormal=False):
+  subsamples = tuple(subsamples)
+  if isinstance(index_or_roots, int):
+    isubsample = index_or_roots
+    subsample = subsamples[isubsample]
+  elif isinstance(index_or_roots, tuple):
+    roots = index_or_roots
+    for isubsample, subsample in enumerate(subsamples):
+      if subsample.roots == roots:
+        break
+    else:
+      raise ValueError('no subsample with roots {}, candidates: {}'.format(roots, ', '.join(str(subsample.roots) for subsample in subsamples)))
+  else:
+    raise ValueError('expected an `int` or `tuple` of `Root` objects but got {!r}'.format(index_or_roots))
+  basis = RootBasis(isubsample, subsample.roots, subsample.ndimsmanifold, SelectChain(subsample.roots))
+  if orthonormal:
+    basis = GramSchmidt(basis)
+  return basis
 
 def dotnorm(arg, coords):
   'normal component'
@@ -4601,6 +4608,18 @@ def diagonalize(arg, axis=-1, newaxis=-1):
   newaxis = numeric.normdim(arg.ndim+1, newaxis)
   assert axis < newaxis
   return Diagonalize(arg, axis, newaxis)
+
+def blockdiagonalize(blocks):
+  blocks = tuple(map(asarray, blocks))
+  if not blocks:
+    raise ValueError('`blockdiagonalize` requires at least one block')
+  shape = blocks[0].shape[:-2]
+  ndim = blocks[0].ndim
+  if not all(block.ndim == ndim and block.shape[:-2] == shape for block in blocks):
+    raise ValueError('blocks have inhomogeneous dimensions or leading shapes')
+  dtype = _jointdtype(*[block.dtype for block in blocks])
+  size1, size2 = zip(*(block.shape[-2:] for block in blocks))
+  return concatenate([concatenate([block if i == j else zeros(shape+(size1[i],size2[j]), dtype) for j in range(len(blocks))], -1) for i, block in enumerate(blocks)], -2)
 
 def concatenate(args, axis=0):
   args = _matchndim(*args)
@@ -4681,11 +4700,9 @@ def J(geometry, ndims=None):
   Return :math:`\\sqrt{|J^T J|}` with :math:`J` the gradient of ``geometry`` to
   the root coordinate system with ``ndims`` dimensions.
   '''
-  if ndims is None:
-    return DelayedJacobian(geometry)
-  elif ndims < 0:
+  if ndims is not None and ndims < 0:
     ndims += len(geometry)
-  return jacobian(geometry, ndims)
+  return DelayedJacobian(geometry, ndims)
 
 def unravel(func, axis, shape):
   func = asarray(func)
@@ -5044,37 +5061,11 @@ class Namespace:
 
 def normal(arg, exterior=False):
   assert arg.ndim == 1
+  if not exterior:
+    return DelayedNormal(arg)
   # Order the roots deterministically. In the future we should use the order
   # of `Sample.roots` (during `prepare_eval` or a successor).
   roots = tuple(sorted(arg.roots, key=lambda root: (root.name, root.ndims)))
-  if not exterior:
-    assert len(arg) <= builtins.sum(root.ndims for root in roots)
-    ndimstangent = len(arg) - 1
-    ndimsnormal = builtins.sum(root.ndims for root in roots) - ndimstangent
-    V = concatenate([roottangent(roots, ndimstangent), rootnormal(roots, ndimsnormal)[:,:1]], axis=1)
-    # TODO: Truncating the second axis of the rootnormal to one is a bit
-    # fishy, and should probably be disallowed when tensorial is fully
-    # implemented. Consider the following case:
-    #
-    #     topo0, geom0 = mesh.rectilinear([1]*3)
-    #     topo, geom = topo.boundary['top'], function.stack([geom[0], geom0[2]])
-    #
-    # Now we compute the normal of `geom` on the boundaries of `topo`:
-    #
-    #     topo.boundary['left'].sample('gauss', 1).eval(geom.normal())
-    #     topo.boundary['front'].sample('gauss', 1).eval(geom.normal())
-    #
-    # Since the root of `topo` is 3D and `geom` only 2D, the `rootgradient` of
-    # `geom` has shape (2,3). The first element of the second axis
-    # spans the 1D tangent space of the manifold, the remaining elements span
-    # the normal space.  The problem is: can we rely on the order of the
-    # normals. A trim boundary is now always the first element of the normals
-    # section. The remaining normals are ordered by the `Topology.boundary`
-    # operations: the first boundary, in the example `boundary['top']`, will
-    # have the normal in the last position.
-    lgrad = dot(rootgradient(arg, roots)[:,:,_], V[_,:,:], 1)
-    return Normal(lgrad[:,:len(arg)])
-  raise NotImplementedError
   lgrad = rootgradient(arg, roots)
   if len(arg) == 2:
     return asarray([lgrad[1,0], -lgrad[0,0]]).normalized()
