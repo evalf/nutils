@@ -4022,6 +4022,54 @@ class MaskedBasis(Basis):
       raise IndexError('dof out of bounds')
     return self._parent.get_support(self._indices[dof])
 
+class StructuredLineBasis(Basis):
+  '''A basis for a structured line.
+
+  Parameters
+  ----------
+  coeffs : :class:`tuple` of arrays
+      Per dimension the coefficients of the basis functions per transform.
+  start_dofs : array of :class:`int`\\s
+      Per dimension the dof of the first entry in ``coeffs`` per transform.
+  stop_dofs : array of :class:`int`\\s
+      Per dimension one plus the dof of the last entry  in ``coeffs`` per
+      transform.
+  ndofs : :class:`int`
+      The number of dofs.
+  transforms : :class:`nutils.transformseq.Transforms`
+      The transforms on which this basis is defined.
+  trans : :class:`TransformChain`
+  '''
+
+  __slots__ = '_coeffs', '_start_dofs', '_stop_dofs'
+
+  @types.apply_annotations
+  def __init__(self, coeffs:types.tuple[types.frozenarray], start_dofs:types.frozenarray[types.strictint], stop_dofs:types.frozenarray[types.strictint], ndofs:types.strictint, transforms:transformseq.stricttransforms, trans:types.strict[TransformChain]):
+    self._coeffs = coeffs
+    self._start_dofs = start_dofs
+    self._stop_dofs = stop_dofs
+    super().__init__(ndofs=ndofs, transforms=transforms, ndims=1, trans=trans)
+
+  def get_dofs(self, ielem):
+    if not numeric.isint(ielem):
+      return super().get_dofs(ielem)
+    return types.frozenarray(numpy.arange(self._start_dofs[ielem], self._stop_dofs[ielem]) % self.ndofs, copy=False)
+
+  def get_coefficients(self, ielem):
+    return self._coeffs[ielem]
+
+  def get_support(self, dof):
+    if not numeric.isint(dof):
+      return super().get_support(dof)
+    dof = numeric.normdim(self.ndofs, dof)
+    supports = []
+    while dof < self._stop_dofs[-1]:
+      stop_ielem = numpy.searchsorted(self._start_dofs, dof, side='right')
+      start_ielem = numpy.searchsorted(self._stop_dofs, dof, side='right')
+      supports.append(numpy.arange(start_ielem, stop_ielem))
+      dof += self.ndofs
+    return types.frozenarray(numpy.unique(numpy.concatenate(supports)), dtype=int, copy=False)
+
 class StructuredBasis(Basis):
   '''A basis for class:`nutils.transformseq.StructuredTransforms`.
 
