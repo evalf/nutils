@@ -20,7 +20,7 @@
 
 """
 The topology module defines the topology objects, notably the
-:class:`StructuredTopology`. Maintaining strict separation of topological and
+:class:`StructuredLine`. Maintaining strict separation of topological and
 geometrical information, the topology represents a set of elements and their
 interconnectivity, boundaries, refinements, subtopologies etc, but not their
 positioning in physical space. The dimension of the topology represents the
@@ -375,7 +375,7 @@ class Topology(types.Singleton):
     if leveltopo is None:
       verts = self.sample('vertex', maxrefine)
       levels = verts.eval(levelset)
-      refs = [ref.trim(levels[verts.index[ielem]], maxrefine=maxrefine, ndivisions=ndivisions) for ielem, ref in enumerate(self.references)]
+      refs = [ref.trim(levels[verts.getindex(ielem)], maxrefine=maxrefine, ndivisions=ndivisions) for ielem, ref in enumerate(self.references)]
     else:
       log.info('collecting leveltopo elements')
       bins = [set() for ielem in range(len(self))]
@@ -577,8 +577,9 @@ class Topology(types.Singleton):
   def extruded(self, geom, nelems, periodic=False, bnames=('front','back')):
     assert geom.ndim == 1
     root = transform.Identifier('extrude', 1)
-    extopo = self * StructuredLine(root, i=0, j=nelems, periodic=periodic, bnames=bnames)
-    exgeom = function.concatenate(function.bifurcate(geom, function.rootcoords(root)))
+    extransforms = transformseq.IdentifierTransforms(1, 'extrude', nelems)
+    extopo = self * StructuredLine(root, extransforms, periodic, bnames)
+    exgeom = extopo.basis('std', degree=1).dot(numpy.arange(nelems+1))
     return extopo, exgeom
 
   @property
@@ -847,10 +848,319 @@ class Point(Topology):
     opposites = transforms if opposite is None else transformseq.PlainTransforms((opposite,), root.ndims, 0)
     super().__init__((root,), references, transforms, opposites)
 
-def StructuredLine(root:function.strictroot, i:types.strictint, j:types.strictint, periodic:bool=False, bnames:types.tuple[types.strictstr]=None):
-  if bnames is None:
-    bnames = ('_structured_line_dummy_boundary_name_',) * 2
-  return StructuredTopology(root, axes=(transformseq.DimAxis(i,j,periodic),), nrefine=0, bnames=(bnames,))
+class PointsTopology(Topology):
+  'points'
+
+  __slots__ = ()
+  __cache__ = 'connectivity', 'refined'
+
+  @types.apply_annotations
+  def __init__(self, roots:types.tuple[function.strictroot], transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms):
+    references = elementseq.asreferences([element.getsimplex(0)], 0)*len(transforms)
+    super().__init__(roots, references, transforms, opposites)
+
+  def __repr__(self):
+    return 'PointsTopology<{}>'.format(len(self))
+
+  def getitem(self, item):
+    if isinstance(item, tuple):
+      if len(item) != 1:
+        raise ValueError('expected a tuple of length 1 but got length {}'.format(len(item)))
+      item = item[0]
+    if not isinstance(item, slice):
+      return EmptyTopology(self.roots, self.ndims)
+    if item == slice(None):
+      return self
+    else:
+      return PointsTopology(self.roots, self.transforms[item], self.opposites[item])
+
+  @property
+  def connectivity(self):
+    return types.frozenarray(numpy.zeros((len(self), 0), int))
+
+  @property
+  def boundary(self):
+    raise ValueError('a 0D topology has no boundary')
+
+  @property
+  def interfaces(self):
+    raise ValueError('a 0D topology has no interfaces')
+
+  @property
+  def refined(self):
+    return PointsTopology(self.roots, self.transforms.refined(self.references), self.opposites.refined(self.references))
+
+class StructuredLine(Topology):
+  '''StructuredLine'''
+
+  __slots__ = '_bnames', 'periodic'
+  __cache__ = 'connectivity', 'boundary', 'interfaces'
+
+  @types.apply_annotations
+  def __init__(self, root:function.strictroot, transforms:transformseq.stricttransforms, periodic:bool=False, bnames:types.tuple[types.strictstr]=None):
+    self._bnames = bnames
+    self.periodic = periodic
+    references = elementseq.asreferences([element.LineReference()], 1)*len(transforms)
+    super().__init__((root,), references, transforms, transforms)
+
+  def __repr__(self):
+    return '{}<{}{}>'.format(type(self).__qualname__, len(self), 'p' if self.periodic else '')
+
+  def getitem(self, item):
+    if isinstance(item, tuple):
+      if len(item) != 1:
+        raise ValueError('expected a tuple of length 1 but got length {}'.format(len(item)))
+      item = item[0]
+    if not isinstance(item, slice):
+      return EmptyTopology(self.roots, self.ndims)
+    start, stop, step = item.indices(len(self))
+    if item == slice(None):
+      return self
+    elif step != 1:
+      return super().getitem(item)
+    elif start == 0 and stop == len(self):
+      return StructuredLine(self.roots[0], self.transforms, False, self._bnames)
+    else:
+      return SliceOfStructuredLine(self, start, stop)
+
+  @property
+  def connectivity(self):
+    connectivity = numpy.stack([numpy.arange(1, len(self)+1), numpy.arange(-1, len(self)-1)], axis=1)
+    if self.periodic:
+      connectivity %= len(self)
+    else:
+      connectivity[-1,0] = -1
+    return types.frozenarray(connectivity)
+
+  @property
+  def boundary(self):
+    if self.periodic:
+      return EmptyTopology(self.roots, 0)
+    idx = types.frozenarray([1, 2*len(self)-2], dtype=int)
+    btransforms = self.transforms.edges(self.references)[idx]
+    btopo = PointsTopology(self.roots, btransforms, btransforms)
+    if self._bnames:
+      btopo = btopo.withgroups(vgroups={bname: btopo[i:i+1] for i, bname in enumerate(self._bnames)})
+    return btopo
+
+  @property
+  def interfaces(self):
+    if self.periodic:
+      idx = types.frozenarray(numpy.arange(0, len(self)*2, 2))
+      oppidx = types.frozenarray(numpy.arange(3, len(self)*2+2, 2)%(len(self)*2))
+    elif len(self) == 1:
+      return EmptyTopology(self.roots, 0)
+    else:
+      idx = types.frozenarray(numpy.arange(0, len(self)*2-2, 2))
+      oppidx = types.frozenarray(numpy.arange(3, len(self)*2, 2))
+    edges = self.transforms.edges(self.references)
+    return PointsTopology(self.roots, edges[idx], edges[oppidx])
+
+  @property
+  def refined(self):
+    return StructuredLine(self.roots[0], self.transforms.refined(self.references), self.periodic, self._bnames)
+
+  # TODO: locate
+
+  def basis_spline(self, degree, removedofs=None, knotvalues=None, knotmultiplicities=None, continuity=-1, periodic=None):
+    'spline basis'
+
+    if numpy.iterable(removedofs):
+      if len(removedofs) != 1:
+        raise ValueError('removedofs should be a tuple or list of length 1 but got {}'.format(len(removedofs)))
+      removedofs = removedofs[0]
+
+    if numpy.iterable(periodic):
+      if len(periodic) != 1:
+        raise ValueError('periodic should be a tuple or list of length 1 but got {}'.format(len(periodic)))
+      periodic = periodic[0]
+    if periodic is None:
+      periodic = self.periodic
+    elif not isinstance(periodic, bool):
+      raise NotImplementedError
+
+    if numpy.iterable(degree):
+      if len(degree) != 1:
+        raise ValueError('degree should be a tuple or list of length 1 but got {}'.format(len(degree)))
+      degree = degree[0]
+
+    if numpy.iterable(knotvalues) and all(v is None or numpy.iterable(v) for v in knotvalues):
+      if len(knotvalues) != 1:
+        raise ValueError('knotvalues should be a tuple or list of length 1 but got {}'.format(len(knotvalues)))
+      knotvalues = knotvalues[0]
+    if knotvalues:
+      knotvalues = numpy.array(knotvalues)
+      assert knotvalues.ndim == 1
+
+    if numpy.iterable(knotmultiplicities) and all(v is None or numpy.iterable(v) for v in knotmultiplicities):
+      if len(knotmultiplicities) != 1:
+        raise ValueError('knotmultiplicities should be a tuple or list of length 1 but got {}'.format(len(knotmultiplicities)))
+      knotmultiplicities = knotmultiplicities[0]
+    if knotmultiplicities:
+      knotmultiplicities = numpy.array(knotmultiplicities)
+      assert knotmultiplicities.ndim == 1 and knotmultiplicities.dtype.kind == 'i'
+
+    if numpy.iterable(continuity):
+      if len(continuity) != 1:
+        raise ValueError('continuity should be a tuple or list of length 1 but got {}'.format(len(continuity)))
+      continuity = continuity[0]
+
+    p = degree
+    n = len(self)
+
+    c = continuity
+    if c < 0:
+      c += p
+    assert -1 <= c < p
+
+    k = knotvalues
+    if k is None:
+      k = numpy.arange(n+1) # default to uniform spacing
+    else:
+      k = numpy.array(k)
+      while len(k) < n+1:
+        k_ = numpy.empty(len(k)*2-1)
+        k_[::2] = k
+        k_[1::2] = (k[:-1] + k[1:]) / 2
+        k = k_
+      assert len(k) == n+1, 'knot values do not match the topology size'
+
+    m = knotmultiplicities
+    if m is None:
+      m = numpy.repeat(p-c, n+1) # default to open spline without internal repetitions
+    else:
+      m = numpy.array(m)
+      assert min(m) > 0 and max(m) <= p+1, 'incorrect multiplicity encountered'
+      while len(m) < n+1:
+        m_ = numpy.empty(len(m)*2-1, dtype=int)
+        m_[::2] = m
+        m_[1::2] = p-c
+        m = m_
+      assert len(m) == n+1, 'knot multiplicity do not match the topology size'
+
+    if periodic and not m[0] == m[n] == p+1: # if m[0] == m[n] == p+1 the spline is discontinuous at the boundary
+      assert m[0] == m[n], 'periodic spline multiplicity expected'
+      dk = k[n] - k[0]
+      m = m[:n]
+      k = k[:n]
+      nd = m.sum()
+      while m[n:].sum() < p - m[0] + 2:
+        k = numpy.concatenate([k, k+dk])
+        m = numpy.concatenate([m, m])
+        dk *= 2
+      km = numpy.array([ki for ki, mi in zip(k, m) for cnt in range(mi)], dtype=float)
+      if p > m[0]:
+        km = numpy.concatenate([km[-p+m[0]:] - dk, km])
+    else:
+      m[0] = m[-1] = p
+      nd = m[:n].sum()+1
+      km = numpy.array([ki for ki, mi in zip(k, m) for cnt in range(mi)], dtype=float)
+
+    offsets = numpy.cumsum(m[:n]) - m[0]
+    start_dofs = offsets
+    stop_dofs = offsets+p+1
+    dofshape = nd
+
+    coeffs = []
+    cache = {}
+    for offset in offsets:
+      lknots = km[offset:offset+2*p]
+      key = tuple(numeric.round((lknots[1:-1]-lknots[0])/(lknots[-1]-lknots[0])*numpy.iinfo(numpy.int32).max)) if lknots.size else (), p
+      try:
+        local_coeffs = cache[key]
+      except KeyError:
+        local_coeffs = cache[key] = self._localsplinebasis(lknots)
+      coeffs.append(local_coeffs)
+    coeffs = tuple(coeffs)
+
+    func = function.StructuredLineBasis(coeffs, start_dofs, stop_dofs, nd, self.transforms, function.SelectChain(self.roots))
+    if not removedofs:
+      return func
+
+    mask = numpy.ones((nd,), dtype=bool)
+    mask[[numeric.normdim(nd,idof) for idof in removedofs]] = False
+    return func[mask]
+
+  @staticmethod
+  def _localsplinebasis(lknots):
+
+    assert numeric.isarray(lknots), 'Local knot vector should be numpy array'
+    p, rem = divmod(len(lknots), 2)
+    assert rem == 0
+
+    #Based on Algorithm A2.2 Piegl and Tiller
+    N    = [None]*(p+1)
+    N[0] = numpy.poly1d([1.])
+
+    if p > 0:
+
+      assert numpy.less(lknots[:-1]-lknots[1:], numpy.spacing(1)).all(), 'Local knot vector should be non-decreasing'
+      assert lknots[p]-lknots[p-1]>numpy.spacing(1), 'Element size should be positive'
+
+      lknots = lknots.astype(float)
+
+      xi = numpy.poly1d([lknots[p]-lknots[p-1],lknots[p-1]])
+
+      left  = [None]*p
+      right = [None]*p
+
+      for i in range(p):
+        left[i] = xi - lknots[p-i-1]
+        right[i] = -xi + lknots[p+i]
+        saved = 0.
+        for r in range(i+1):
+          temp = N[r]/(lknots[p+r]-lknots[p+r-i-1])
+          N[r] = saved+right[r]*temp
+          saved = left[i-r]*temp
+        N[i+1] = saved
+
+    assert all(Ni.order==p for Ni in N)
+
+    return types.frozenarray([Ni.coeffs[::-1] for Ni in N])
+
+  def basis_std(self, *args, **kwargs):
+    return __class__.basis_spline(self, *args, continuity=0, **kwargs)
+
+class SliceOfStructuredLine(StructuredLine):
+
+  __slots__ = '_line', '_start', '_stop'
+  __cache__ = 'boundary'
+
+  @types.apply_annotations
+  def __init__(self, line:types.strict[StructuredLine], start:types.strictint, stop:types.strictint):
+    assert type(line) == StructuredLine
+    self._line = line
+    self._start = start
+    self._stop = stop
+    # TODO: copy bnames?
+    super().__init__(line.roots[0], line.transforms[start:stop], False, line._bnames)
+
+  def getitem(self, item):
+    if isinstance(item, tuple):
+      if len(item) != 1:
+        raise ValueError('expected a tuple of length 1 but got length {}'.format(len(item)))
+      item = item[0]
+    if not isinstance(item, slice):
+      return EmptyTopology(self.roots, self.ndims)
+    r = range(self._start, self._stop)[item]
+    if r.step != 1:
+      return super().getitem(item)
+    return self._line[r.start:r.stop]
+
+  @property
+  def boundary(self):
+    idx = types.frozenarray([2*self._start+1, 2*self._stop-2], dtype=int)
+    n = len(self._line)
+    oppidx = types.frozenarray([1 if self._start == 0 else 2*self._start-2, 2*n-2 if self._stop == n else 2*self._stop+1])
+    edges = self._line.transforms.edges(self.references)
+    btopo = PointsTopology(self.roots, edges[idx], edges[oppidx])
+    if self._bnames:
+      btopo = btopo.withgroups(vgroups={bname: btopo[i:i+1] for i, bname in enumerate(self._bnames)})
+    return btopo
+
+  @property
+  def refined(self):
+    return SliceOfStructuredLine(self._line.refined, self._start*2, self._stop*2)
 
 class StructuredTopology(Topology):
   'structured topology'
@@ -862,6 +1172,8 @@ class StructuredTopology(Topology):
   def __init__(self, root:function.strictroot, axes:types.tuple[types.strict[transformseq.Axis]], nrefine:types.strictint=0, bnames:types.tuple[types.tuple[types.strictstr]]=(('left', 'right'), ('bottom', 'top'), ('front', 'back'))):
     'constructor'
 
+    if root.ndims != 1:
+      raise ValueError('the `StructuredTopology` must have a 1D root but got a {}D root'.format(root.ndims))
     assert all(len(bname) == 2 for bname in bnames)
 
     self.root = root
@@ -1318,7 +1630,8 @@ class SimplexTopology(Topology):
     assert simplices.ndim == 2
     assert simplices.shape[0] == len(transforms)
     assert numpy.greater(simplices[:,1:], simplices[:,:-1]).all(), 'nodes should be sorted'
-    assert not numpy.equal(simplices[:,1:], simplices[:,:-1]).all(), 'duplicate nodes'
+    if simplices.shape[1] > 1:
+      assert not numpy.equal(simplices[:,1:], simplices[:,:-1]).all(), 'duplicate nodes'
     ndims = simplices.shape[1] - 1
     self.simplices = simplices
     references = elementseq.asreferences([element.getsimplex(ndims)], ndims)*len(transforms)
