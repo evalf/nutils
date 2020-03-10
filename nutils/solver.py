@@ -330,7 +330,7 @@ class NormBased(LineSearch):
     return min(max(scale, self.minscale), self.maxscale), scale >= self.acceptscale and p1 < p0
 
 
-class MedianBased(LineSearch):
+class MedianBased(LineSearch, version=1):
   '''
   Line search abstraction for Newton-like iterations, computing relaxation
   values such that half (or any other configurable quantile) of the residual
@@ -374,7 +374,7 @@ class MedianBased(LineSearch):
     dp = res1**2 - res0**2
     q0 = 2*res0*dres0
     q1 = 2*res1*dres1
-    mask = q0 < 0 # ideally this mask is all true, but solver inaccuracies can result in some positive slopes
+    mask = q0 <= 0 # ideally this mask is all true, but solver inaccuracies can result in some positive slopes
     n = round(len(res0)*self.quantile) - (~mask).sum()
     if n < 0:
       raise SolverError('search vector fails to reduce more than {}-quantile of residual vector'.format(self.quantile))
