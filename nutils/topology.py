@@ -187,13 +187,17 @@ class Topology(types.Singleton):
   def sample(self, ischeme, degree):
     'Create sample.'
 
-    points = [ischeme(reference, degree) for reference in self.references] if callable(ischeme) \
-        else self.references.getpoints(ischeme, degree)
-    offset = numpy.cumsum([0] + [p.npoints for p in points])
     transforms = self.transforms,
     if len(self.transforms) == 0 or self.opposites != self.transforms:
       transforms += self.opposites,
-    return sample.Sample(self.roots, self.ndims, transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
+    if self.references.isuniform:
+      points = ischeme(self.references[0], degree) if callable(ischeme) else self.references[0].getpoints(ischeme, degree)
+      return sample.UniformSample(self.roots, self.ndims, transforms, points)
+    else:
+      points = [ischeme(reference, degree) for reference in self.references] if callable(ischeme) \
+          else self.references.getpoints(ischeme, degree)
+      offset = numpy.cumsum([0] + [p.npoints for p in points])
+      return sample.PlainSample(self.roots, self.ndims, transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
 
   @util.single_or_multiple
   def integrate_elementwise(self, funcs, *, asfunction=False, **kwargs):
@@ -559,7 +563,7 @@ class Topology(types.Singleton):
     transforms = self.transforms[uielems],
     if len(self.transforms) == 0 or self.opposites != self.transforms:
       transforms += self.opposites[uielems],
-    return sample.Sample(self.roots, self.ndims, transforms, points_, index)
+    return sample.PlainSample(self.roots, self.ndims, transforms, points_, index)
 
   def revolved(self, geom):
     assert geom.ndim == 1
@@ -1598,13 +1602,13 @@ class SubsetTopology(Topology):
 
   def locate(self, geom, coords, *, eps=0, **kwargs):
     sample = self.basetopo.locate(geom, coords, eps=eps, **kwargs)
-    for transforms, points, index in zip(sample.transforms[0], sample.points, sample.index):
-      ielem = self.basetopo.transforms.index(transforms)
-      ref = self.refs[ielem]
-      if ref != self.basetopo.references[ielem]:
-        for i, coord in enumerate(points.coords):
+    for ielem in range(sample.nelems):
+      baseielem = self.basetopo.transforms.index(sample.transforms[0][ielem])
+      ref = self.refs[baseielem]
+      if ref != self.basetopo.references[baseielem]:
+        for i, coord in enumerate(sample.getpoints(ielem).coords):
           if not ref.inside(coord, eps):
-            raise LocateError('failed to locate point: {}'.format(coords[index[i]]))
+            raise LocateError('failed to locate point: {}'.format(coords[sample.getindex(ielem)[i]]))
     return sample
 
 class RefinedTopology(Topology):
