@@ -767,7 +767,7 @@ class DerivedTransforms(Transforms):
     iparent, parenttail = self._parent.index_with_tail(trans)
     if not any(parenttail):
       raise ValueError
-    todims = [a[0].todims if a else b[-1].fromdims for a, b in zip(parenttail, trans)]
+    todims = tuple(a[0].todims if a else b[-1].fromdims for a, b in zip(parenttail, trans))
     iderived, tail = (transform.index_edge_transforms_with_tail if self._updim else transform.index_child_transforms_with_tail)(self._derived_transforms(self._parent_references[iparent]), parenttail, todims)
     return self._offsets[iparent]+iderived, tail
 
@@ -821,7 +821,7 @@ class UniformDerivedTransforms(Transforms):
     iparent, parenttail = self._parent.index_with_tail(trans)
     if not any(parenttail):
       raise ValueError
-    todims = [a[0].todims if a else b[-1].fromdims for a, b in zip(parenttail, trans)]
+    todims = tuple(a[0].todims if a else b[-1].fromdims for a, b in zip(parenttail, trans))
     iderived, tail = (transform.index_edge_transforms_with_tail if self._updim else transform.index_child_transforms_with_tail)(self._derived_transforms, parenttail, todims)
     return iparent*len(self._derived_transforms) + iderived, tail
 
