@@ -20,7 +20,7 @@
 
 """The transformseq module."""
 
-from . import types, numeric, util, transform, element, elementseq
+from . import types, numeric, util, transform, element, elementseq, numeric
 import abc, itertools, operator, numpy
 
 class Transforms(types.Singleton):
@@ -318,6 +318,13 @@ class Transforms(types.Singleton):
 
     yield self
 
+  @property
+  def linear_is_uniform(self):
+    return False
+
+  def linear(self, index):
+    return numeric.blockdiag(map(transform.linear, self[index], self.todims))
+
 stricttransforms = types.strict[Transforms]
 
 class EmptyTransforms(Transforms):
@@ -447,6 +454,13 @@ class IdentifierTransforms(Transforms):
     if root.todims == self._ndims and type(root) == transform.Identifier and isinstance(root.token, tuple) and len(root.token) == 2 and root.token[0] == self._name and 0 <= root.token[1] < self._length:
       return root.token[1], (trans[1:],)
     raise ValueError
+
+  @property
+  def linear_is_uniform(self):
+    return True
+
+  def linear(self, ielem):
+    return numpy.eye(self._ndims)
 
 class Axis(types.Singleton):
   '''Abstract base class for axes of :class:`~nutils.topology.StructuredTopology`.'''
@@ -624,9 +638,6 @@ class StructuredTransforms(Transforms):
 
     return flatindex, (tail,)
 
-  def linear_evaluable(self, index, roots):
-    return function.asarray(transform.linear(self[0][0], self.todims[0])),
-
 class MaskedTransforms(Transforms):
   '''An order preserving subset of another :class:`Transforms` object.
 
@@ -665,6 +676,13 @@ class MaskedTransforms(Transforms):
       raise ValueError
     else:
       return int(index), tail
+
+  @property
+  def linear_is_uniform(self):
+    return self._parent.linear_is_uniform
+
+  def linear(self, index):
+    return self._parent.linear(self._indices[index])
 
 class ReorderedTransforms(Transforms):
   '''A reordered :class:`Transforms` object.
@@ -705,6 +723,13 @@ class ReorderedTransforms(Transforms):
   def index_with_tail(self, trans):
     parent_index, tail = self._parent.index_with_tail(trans)
     return int(self._rindices[parent_index]), tail
+
+  @property
+  def linear_is_uniform(self):
+    return self._parent.linear_is_uniform
+
+  def linear(self, index):
+    return self._parent.linear(self._indices[index])
 
 class DerivedTransforms(Transforms):
   '''A sequence of derived transforms.
@@ -793,6 +818,7 @@ class UniformDerivedTransforms(Transforms):
   '''
 
   __slots__ = '_parent', '_derived_transforms', '_updim'
+  __cache__ = 'linear_is_uniform'
 
   @types.apply_annotations
   def __init__(self, parent:stricttransforms, parent_reference:element.strictreference, derived_attribute:types.strictstr, updim:types.strict[bool]):
@@ -824,6 +850,13 @@ class UniformDerivedTransforms(Transforms):
     todims = tuple(a[0].todims if a else b[-1].fromdims for a, b in zip(parenttail, trans))
     iderived, tail = (transform.index_edge_transforms_with_tail if self._updim else transform.index_child_transforms_with_tail)(self._derived_transforms, parenttail, todims)
     return iparent*len(self._derived_transforms) + iderived, tail
+
+  @property
+  def linear_is_uniform(self):
+    if not self._parent.linear_is_uniform or len(self._derived_transforms) == 0:
+      return False
+    linear = self._derived_transforms[0].linear
+    return all(numpy.allclose(linear, trans.linear) for trans in self._derived_transforms[1:])
 
 class TrimmedEdgesTransforms(Transforms):
 
@@ -911,6 +944,14 @@ class ProductTransforms(Transforms):
     index2, tail2 = self._transforms2.index_with_tail(trans[len(self._transforms1.todims):])
     return index1*len(self._transforms2)+index2, tail1+tail2
 
+  @property
+  def linear_is_uniform(self):
+    return self._transforms1.linear_is_uniform and self._transforms2.linear_is_uniform
+
+  def linear(self, index):
+    index1, index2 = divmod(numeric.normdim(len(self), index), len(self._transforms2))
+    return numeric.blockdiag([self._transforms1.linear(index1), self._transforms2.linear(index2)])
+
 class ChainedTransforms(Transforms):
   '''A sequence of chained :class:`Transforms` objects.
 
@@ -986,6 +1027,19 @@ class ChainedTransforms(Transforms):
 
   def unchain(self):
     yield from self._items
+
+  @property
+  def linear_is_uniform(self):
+    if not all(item.linear_is_uniform for item in self._items):
+      return False
+    linear = self._items[0].linear(0)
+    return all(numpy.allclose(item.linear(0), linear) for item in self._items[1:])
+
+  def linear(self, index):
+    index = numeric.normdim(len(self), index)
+    outer = numpy.searchsorted(self._offsets, index, side='right') - 1
+    assert outer >= 0 and outer < len(self._items)
+    return self._items[outer].linear(index-self._offsets[outer])
 
 @types.apply_annotations
 def chain(items:types.tuple[stricttransforms], todims:types.tuple[types.strictint]):

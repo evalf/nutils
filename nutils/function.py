@@ -1363,6 +1363,7 @@ class ApplyTransforms(Array):
 class Linear(Array):
 
   __slots__ = '_roots', '_transforms'
+  __cache__ = 'simplified'
 
   @types.apply_annotations
   def __init__(self, roots:types.tuple[strictroot], transforms:transformseq.stricttransforms, index:asarray, fromdims:types.strictint):
@@ -1373,14 +1374,16 @@ class Linear(Array):
 
   def evalf(self, index):
     index, = index
-    result = numpy.zeros(self.shape, dtype=float)
-    to1 = from1 = 0
-    for root, chain in zip(self._roots, self._transforms[index]):
-      assert chain[0].todims == root.ndims
-      to0, from0, to1, from1 = to1, from1, to1 + root.ndims, from1 + chain[-1].fromdims
-      result[to0:to1,from0:from1] = transform.linear(chain, root.ndims)
-    assert (to1, from1) == self.shape
-    return result[_]
+    if self._transforms.linear_is_uniform:
+      numpy.testing.assert_allclose(self._transforms.linear(index), self._transforms.linear(0))
+    return self._transforms.linear(index)[_]
+
+  @property
+  def simplified(self):
+    if self._transforms.linear_is_uniform:
+      return asarray(self._transforms.linear(0))
+    else:
+      return self
 
 class Inverse(Array):
   '''
