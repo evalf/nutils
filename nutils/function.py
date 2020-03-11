@@ -620,6 +620,11 @@ class Array(Evaluable):
       return Constant(const)
     return super().optimized_for_numpy
 
+  def _derivative(self, var, seen):
+    if var not in self.dependencies:
+      return Zeros(self.shape + var.shape, dtype=self.dtype)
+    raise NotImplementedError('derivative not defined for {}'.format(self.__class__.__name__))
+
 class Normal(Array):
   'normal'
 
