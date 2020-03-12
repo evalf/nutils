@@ -696,9 +696,6 @@ class Constant(Array):
   def _isunit(self):
     return numpy.equal(self.value, 1).all()
 
-  def _derivative(self, var, seen):
-    return zeros(self.shape + var.shape)
-
   def _transpose(self, axes):
     return Constant(self.value.transpose(axes))
 
@@ -1088,9 +1085,6 @@ class LinearFrom(Array):
     todims, fromdims = self.shape
     assert not chain or chain[0].todims == todims
     return transform.linearfrom(chain, fromdims)[_]
-
-  def _derivative(self, var, seen):
-    return zeros(self.shape+var.shape)
 
 class Inverse(Array):
   '''
@@ -2053,11 +2047,6 @@ class Sampled(Array):
     assert numpy.equal(points, expect).all(), 'illegal point set'
     return numpy.eye(len(points), dtype=int)
 
-  def _derivative(self, var, seen):
-    if isinstance(var, Argument):
-      return Zeros(self.shape+var.shape, self.dtype)
-    raise Exception('cannot take spatial derivative of sampled function')
-
 class Elemwise(Array):
 
   __slots__ = 'data',
@@ -2073,9 +2062,6 @@ class Elemwise(Array):
   def evalf(self, index):
     index, = index
     return self.data[index][_]
-
-  def _derivative(self, var, seen):
-    return Zeros(self.shape+var.shape, self.dtype)
 
   @property
   def simplified(self):
@@ -2149,9 +2135,6 @@ class Zeros(Array):
 
   def edit(self, op):
     return Zeros(tuple(map(op, self.shape)), self.dtype)
-
-  def _derivative(self, var, seen):
-    return zeros(self.shape+var.shape, dtype=self.dtype)
 
   def _add(self, other):
     return other
