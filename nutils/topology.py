@@ -394,56 +394,6 @@ class Topology(types.Singleton):
   withinterfaces = lambda self, **kwargs: self.withgroups(igroups=kwargs)
   withpoints     = lambda self, **kwargs: self.withgroups(pgroups=kwargs)
 
-  @util.single_or_multiple
-  def elem_project(self, funcs, degree, ischeme=None, check_exact=False, *, arguments=None):
-
-    if arguments is None:
-      arguments = {}
-
-    if ischeme is None:
-      ischeme = 'gauss{}'.format(degree*2)
-
-    blocks = function.Tuple([function.Tuple([function.Tuple((function.Tuple(ind), f.simplified))
-      for ind, f in function.blocks(func.prepare_eval())])
-        for func in funcs])
-
-    bases = {}
-    extractions = [[] for ifunc in range(len(funcs))]
-
-    with log.iter.percentage('projecting', self.references, self.transforms, self.opposites) as items:
-      for ref, trans, opp in items:
-
-        try:
-          points, projector, basis = bases[ref]
-        except KeyError:
-          points, weights = ref.getischeme(ischeme)
-          coeffs = ref.get_poly_coeffs('bernstein', degree=degree)
-          basis = numeric.poly_eval(coeffs[_], points)
-          npoints, nfuncs = basis.shape
-          A = numeric.dot(weights, basis[:,:,_] * basis[:,_,:])
-          projector = numpy.linalg.solve(A, basis.T * weights)
-          bases[ref] = points, projector, basis
-
-        for ifunc, ind_val in enumerate(blocks.eval(_transforms=(trans, opp), _points=points, **arguments)):
-
-          if len(ind_val) == 1:
-            (allind, sumval), = ind_val
-          else:
-            allind, where = zip(*[numpy.unique([i for ind, val in ind_val for i in ind[iax]], return_inverse=True) for iax in range(funcs[ifunc].ndim)])
-            sumval = numpy.zeros([len(n) for n in (points,) + allind])
-            for ind, val in ind_val:
-              I, where = zip(*[(w[:len(n)], w[len(n):]) for w, n in zip(where, ind)])
-              numpy.add.at(sumval, numpy.ix_(range(len(points)), *I), val)
-            assert not any(where)
-
-          ex = numeric.dot(projector, sumval)
-          if check_exact:
-            numpy.testing.assert_almost_equal(sumval, numeric.dot(basis, ex), decimal=15)
-
-          extractions[ifunc].append((allind, ex))
-
-    return extractions
-
   @log.withcontext
   def volume(self, geometry, ischeme='gauss', degree=1, *, arguments=None):
     return self.integrate(function.J(geometry, self.ndims), ischeme=ischeme, degree=degree, arguments=arguments)
