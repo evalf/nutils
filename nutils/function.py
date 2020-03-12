@@ -621,7 +621,7 @@ class Array(Evaluable):
     return super().optimized_for_numpy
 
   def _derivative(self, var, seen):
-    if var not in self.dependencies:
+    if self.dtype in (bool, int) or var not in self.dependencies:
       return Zeros(self.shape + var.shape, dtype=self.dtype)
     raise NotImplementedError('derivative not defined for {}'.format(self.__class__.__name__))
 
