@@ -1988,7 +1988,7 @@ class Sign(Array):
   @types.apply_annotations
   def __init__(self, func:asarray):
     self.func = func
-    super().__init__(args=[func], shape=func.shape, dtype=func.dtype)
+    super().__init__(args=[func], shape=func.shape, dtype=int)
 
   @property
   def simplified(self):
@@ -2001,10 +2001,7 @@ class Sign(Array):
 
   def evalf(self, arr):
     assert arr.ndim == self.ndim+1
-    return numpy.sign(arr)
-
-  def _derivative(self, var, seen):
-    return zeros(self.shape + var.shape)
+    return numpy.sign(arr).astype(int)
 
   def _takediag(self, axis, rmaxis):
     return Sign(TakeDiag(self.func, axis, rmaxis))
