@@ -4047,6 +4047,38 @@ class PrunedBasis(Basis):
   def f_coefficients(self, index):
     return self._parent.f_coefficients(get(self._transmap, 0, index))
 
+class ProductBasis(Basis):
+
+  __slots__ = '_basis1', '_basis2'
+
+  @types.apply_annotations
+  def __init__(self, basis1:strictbasis, basis2:strictbasis, trans:types.strict[TransformChain]):
+    self._basis1 = basis1
+    self._basis2 = basis2
+    super().__init__(basis1.ndofs*basis2.ndofs, basis1.transforms*basis2.transforms, basis1.ndimsdomain+basis2.ndimsdomain, trans)
+
+  def get_dofs(self, ielem):
+    if not numeric.isint(ielem):
+      return super().get_dofs(ielem)
+    ielem1, ielem2 = divmod(ielem, len(self._basis2.transforms))
+    dofs1 = self._basis1.get_dofs(ielem1)
+    dofs2 = self._basis2.get_dofs(ielem2)
+    return (dofs1[:,_] * self._basis2.ndofs + dofs2[_,:]).ravel()
+
+  def get_coefficients(self, ielem):
+    if not numeric.isint(ielem):
+      return super().get_coefficients(ielem)
+    ielem1, ielem2 = divmod(ielem, len(self._basis2.transforms))
+    coeffs1 = self._basis1.get_coefficients(ielem1)
+    coeffs2 = self._basis2.get_coefficients(ielem2)
+    return numeric.poly_outer_product(coeffs1, coeffs2)
+
+  def get_support(self, dof):
+    dof1, dof2 = divmod(dof, self._basis2.ndofs)
+    supp1 = self._basis1.get_support(dof1)
+    supp2 = self._basis2.get_support(dof2)
+    return (supp1[:,_] * len(self._basis2.transforms) + supp2[_,:]).ravel()
+
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
 _ascending = lambda arg: numpy.greater(numpy.diff(arg), 0).all()
