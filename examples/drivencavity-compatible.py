@@ -44,10 +44,11 @@ def main(nelems:int, degree:int, reynolds:float):
   ns.l = 'lbasis_n ?lhs_n'
   ns.stress_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
   ns.uwall = domain.boundary.indicator('top'), 0
-  ns.N = 5 * degree * nelems # nietzsche constant
+  ns.N = 5 * degree * nelems # nitsche constant based on element size = 1/nelems
+  ns.nitsche_ni = '(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) / Re'
 
   res = domain.integral('(ubasis_ni,j stress_ij + pbasis_n (u_k,k + l) + lbasis_n p) d:x' @ ns, degree=2*degree)
-  res += domain.boundary.integral('(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) (u_i - uwall_i) d:x / Re' @ ns, degree=2*degree)
+  res += domain.boundary.integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni stress_ij n_j) d:x' @ ns, degree=2*degree)
   with treelog.context('stokes'):
     lhs0 = solver.solve_linear('lhs', res)
     postprocess(domain, ns, lhs=lhs0)
@@ -109,19 +110,19 @@ class test(testing.TestCase):
   def test_p1(self):
     lhs0, lhs1 = main(nelems=3, reynolds=100, degree=2)
     with self.subTest('stokes'): self.assertAlmostEqual64(lhs0, '''
-      eNpTvPBI3/o0t1mzds/pltM65opQ/n196QvcZh4XO03MTHbolZ8+dVrxwlP9rycVL03Xjbm45tQfrZc3
-      7M/LGLBcFVc/aPDk/H3dzEtL9EJMGRgAJt4mPA==''')
+      eNrzu9Bt8OuUndkD/eTTSqezzP2g/E3698/ZmZlf2GjSaHJS3/90/Wm/C4qGh066XzLQ47846VSPpoWK
+      3vnD+iXXTty+ZGB7YafuhYsf9fJMGRgAkFIn4A==''')
     with self.subTest('navier-stokes'): self.assertAlmostEqual64(lhs1, '''
-      eNoBUgCt/6nOuTGJy4M1SCzJy4zLCjcsLk3PCst/Nlcx9M2DNeDPgDR+NB7UG8wVzSwuPc6ByezUQiud
-      MKTL/y4AL73NLS6jLUov8s4zzXoscdMJMSo2AABO+yTF''')
+      eNoBUgCt/2XOWjJSy5k1jS+yyzvLODfgL1rO0MrINpsxHM2ZNSrPqDTANCPVQsxCzeAvcc04yaUmYysm
+      MbLLAi9YL6TN+y3eLcgvM87NzOUrTNY9MWA2AABnnyYn''')
 
   @testing.requires('matplotlib')
   def test_p2(self):
     lhs0, lhs1 = main(nelems=3, reynolds=100, degree=3)
     with self.subTest('stokes'): self.assertAlmostEqual64(lhs0, '''
-      eNp7ZmB71sY46VSq2dLzludvnMo20jFHsJ7BZaXObzbedDrVbJnBjPM1ZkuNGaAg6nyGQcvJ6DPPDHzP
-      +JnMPsltwKl1/DyrYcPJUxf0LuXqvDkzzYgBDsz0L+lOvixinHX26/nvVy0Nfp9rMGNgAADUrDbX''')
+      eNo7aLjtjIjJxZN7zVgvZJ9jOv3lfK05gnUQLmt/Ttlk5qm9ZgKGQeeXmj0zZoCCD+fWGUSflDpz0PDu
+      6XRT55OL9dt11pwvNYw5+f7ClYv2Oq/O7DBigANBfR29g5fFjD3Oxl6ovBxi0H1uiRkDAwD+ITkl''')
     with self.subTest('navier-stokes'): self.assertAlmostEqual64(lhs1, '''
-      eNoBhAB7/3Axm8zRM23KHDbJzyrMAs7DzOY2yM/vLvfJ8TQ/N8AvSc5FMkjKwTaQzlo0K8scNuwwLDKf
-      NWQzcCLOzCs1jTEA0FcxA8kLzcAvU81jMz/JVTELMUjOLDL+yeMsaS6lLkLOajM9LDgwWNBzzOvOMTBC
-      MHnXnDHFzcDTYDCgKo0vLzcAACOlOuU=''')
+      eNoBhAB7/14yGcxyNPbJYTahLj/LSDE7yy43SM9WMsXJoDR+N3Iw8s1hM5zJODeizcE0X8phNrQwUDOO
+      NbMzJi+ty4s1oDFqzxIzysjWzXIwFM3tNMjIKjG8MeLNoTLzyQMuCi+IK3jOcjMzLuMvudNEzOrOEDAF
+      MD8sTTDpzNjYZDCg0RgwcTcAAJCyOzM=''')
