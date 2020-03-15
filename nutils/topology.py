@@ -128,8 +128,28 @@ class Topology(types.Singleton):
     assert isinstance(other, Topology) and other.ndims == self.ndims
     return other - other.subset(self, newboundary=getattr(self,'boundary',None))
 
+  def mul(self, other, leftopp, rightopp):
+    if not isinstance(other, Topology):
+      return NotImplemented
+    if not set(self.roots).isdisjoint(other.roots):
+      raise ValueError('cannot multiply topologies with common roots')
+    if isinstance(self, EmptyTopology) or isinstance(other, EmptyTopology):
+      return EmptyTopology(self.roots+other.roots, self.ndims+other.ndims)
+    else:
+      return ProductTopology(self, other, leftopp, rightopp)
+
   def __mul__(self, other):
-    return ProductTopology(self, other)
+    leftopp = self.transforms != self.opposites
+    rightopp = other.transforms != other.opposites
+    if leftopp and rightopp:
+      raise ValueError('Cannot multiply two topologies, both having opposites. Use :meth:`mul_leftopp` or :meth:`mul_rightopp` instead.')
+    return self.mul(other, leftopp, rightopp)
+
+  def mul_leftopp(self, other):
+    return self.mul(other, True, False)
+
+  def mul_rightopp(self, other):
+    return self.mul(other, False, True)
 
   @property
   def border_transforms(self):
@@ -1899,63 +1919,133 @@ class HierarchicalTopology(Topology):
 class ProductTopology(Topology):
   'product topology'
 
-  __slots__ = 'topo1', 'topo2'
-  __cache__ = 'boundary', 'interfaces'
+  __slots__ = '_left', '_right', '_leftopp', '_rightopp'
 
   @types.apply_annotations
-  def __init__(self, topo1:stricttopology, topo2:stricttopology):
-    assert not isinstance(topo1, ProductTopology)
-    self.topo1 = topo1
-    self.topo2 = topo2
-    references = self.topo1.references * self.topo2.references
-    transforms = transformseq.ProductTransforms(self.topo1.transforms, self.topo2.transforms)
-    if (self.topo1.opposites != self.topo1.transforms) != (self.topo2.opposites != self.topo2.transforms):
-      opposites = transformseq.ProductTransforms(self.topo1.opposites, self.topo2.opposites)
-    else:
-      opposites = transforms
-    if len(self.topo1.roots) != 1 or len(self.topo2.roots) != 1 or self.topo1.roots == self.topo2.roots:
-      raise NotImplementedError
-    root = function.Root('{}*{}'.format(self.topo1.roots[0].id, self.topo2.roots[0].id), self.topo1.roots[0].ndims+self.topo2.roots[0].ndims)
-    super().__init__((root,), references, transforms, opposites)
+  def __init__(self, left:stricttopology, right:stricttopology, leftopp:bool, rightopp:bool):
+    self._left = left
+    self._right = right
+    self._leftopp = leftopp
+    self._rightopp = rightopp
+    super().__init__(left.roots+right.roots,
+                     references=left.references*right.references,
+                     transforms=left.transforms*right.transforms,
+                     opposites=(left.opposites if leftopp else left.transforms)*(right.opposites if rightopp else right.transforms))
 
-  def __mul__(self, other):
-    return ProductTopology(self.topo1, self.topo2 * other)
+  def __repr__(self):
+    return '{!r}*{!r}'.format(self._left, self._right)
 
   @property
-  def refined(self):
-    return self.topo1.refined * self.topo2.refined
+  def shape(self):
+    return self._left.shape + self._right.shape
 
-  def refine(self, n):
-    if numpy.iterable(n):
-      assert len(n) == self.ndims
-    else:
-      n = (n,)*self.ndims
-    return self.topo1.refine(n[:self.topo1.ndims]) * self.topo2.refine(n[self.topo1.ndims:])
+  @property
+  def connectivity(self):
+    s = len(self._right)
+    return tuple(tuple(ir+cli*s if cli >= 0 else -1 for cli in cl)+tuple(il*s+cri if cri >= 0 else -1 for cri in cr) for (il,cl), (ir,cr) in itertools.product(enumerate(self._left.connectivity), enumerate(self._right.connectivity)))
 
   def getitem(self, item):
-    return self.topo1.getitem(item) * self.topo2 | self.topo1 * self.topo2.getitem(item) if isinstance(item, str) \
-      else self.topo1[item[:self.topo1.ndims]] * self.topo2[item[self.topo1.ndims:]]
-
-  def basis(self, name, *args, **kwargs):
-    def _split(arg):
-      if not numpy.iterable(arg):
-        return arg, arg
-      assert len(arg) == self.ndims
-      return tuple(a[0] if all(ai == a[0] for ai in a[1:]) else a for a in (arg[:self.topo1.ndims], arg[self.topo1.ndims:]))
-    splitargs = [_split(arg) for arg in args]
-    splitkwargs = [(name,)+_split(arg) for name, arg in kwargs.items()]
-    basis1, basis2 = function.bifurcate(
-      self.topo1.basis(name, *[arg1 for arg1, arg2 in splitargs], **{name: arg1 for name, arg1, arg2 in splitkwargs}),
-      self.topo2.basis(name, *[arg2 for arg1, arg2 in splitargs], **{name: arg2 for name, arg1, arg2 in splitkwargs}))
-    return function.ravel(function.outer(basis1,basis2), axis=0)
+    if isinstance(item, tuple) and all(isinstance(it, slice) for it in item):
+      left = self._left.getitem(item[:self._left.ndims])
+      if len(item) > self._left.ndims:
+        right = self._right.getitem(item[self._left.ndims:])
+      else:
+        right = self._right
+      return left.mul(right, self._leftopp, self._rightopp)
+    left = self._left.getitem(item)
+    right = self._right.getitem(item)
+    if not left and not right:
+      return left*right
+    else:
+      return (left or self._left).mul(right or self._right, self._leftopp, self._rightopp)
 
   @property
   def boundary(self):
-    return self.topo1 * self.topo2.boundary + self.topo1.boundary * self.topo2
+    boundaries = []
+    if self._right.ndims:
+      boundaries.append(self._left.mul_rightopp(self._right.boundary))
+    if self._left.ndims:
+      boundaries.append(self._left.boundary.mul_leftopp(self._right))
+    if not boundaries:
+      return EmptyTopology(self.roots, ndims=0)
+    elif len(boundaries) == 1:
+      return boundaries[0]
+    else:
+      return DisjointUnionTopology(boundaries)
 
   @property
   def interfaces(self):
-    return self.topo1 * self.topo2.interfaces + self.topo1.interfaces * self.topo2
+    interfaces = []
+    if self._right.ndims:
+      interfaces.append(self._left.mul_rightopp(self._right.interfaces))
+    if self._left.ndims:
+      interfaces.append(self._left.interfaces.mul_leftopp(self._right))
+    if not interfaces:
+      return EmptyTopology(self.roots, ndims=0)
+    elif len(interfaces) == 1:
+      return interfaces[0]
+    else:
+      return DisjointUnionTopology(interfaces)
+
+  def _productbasis(self, lbasis, rbasis):
+    if not lbasis:
+      return rbasis
+    if not rbasis:
+      return lbasis
+    return function.ProductBasis(lbasis, rbasis, function.SelectChain(self.roots))
+
+  def basis(self, name, *args, **kwargs):
+    if name in ('spline', 'h-spline', 'th-spline'):
+      return self.basis_spline(*args, _variant=name, **kwargs)
+    elif name == 'std':
+      return self.basis_std(*args, **kwargs)
+    lbasis = self._left.basis(name, *args, **kwargs) if self._left.ndims else None
+    rbasis = self._right.basis(name, *args, **kwargs) if self._right.ndims else None
+    return self._productbasis(lbasis, rbasis)
+
+  def _split_list(self, value, scalar_type):
+    if value is None or isinstance(value[0], scalar_type):
+      lvalue = rvalue = value
+    else:
+      assert len(value) == self.ndims
+      lvalue = value[:self._left.ndims]
+      rvalue = value[self._left.ndims:]
+    return lvalue, rvalue
+
+  def _split_scalar(self, value, scalar_type):
+    if value is None or isinstance(value, scalar_type):
+      lvalue = rvalue = value
+    else:
+      assert len(value) == self.ndims
+      lvalue = value[:self._left.ndims]
+      rvalue = value[self._left.ndims:]
+    return lvalue, rvalue
+
+  def basis_spline(self, degree, removedofs=None, knotvalues=None, knotmultiplicities=None, continuity=-1, periodic=None, _variant='spline'):
+    lremovedofs, rremovedofs = self._split_list(removedofs, int)
+    lknotvalues, rknotvalues = self._split_list(knotvalues, (int, float))
+    lknotmultiplicities, rknotmultiplicities = self._split_list(knotmultiplicities, int)
+    lcontinuity, rcontinuity = self._split_scalar(continuity, int)
+    ldegree, rdegree = self._split_scalar(degree, int)
+    if periodic is None:
+      lperiodic = rperiodic = None
+    else:
+      lperiodic = [i for i in periodic if i < self._left.ndims]
+      rperiodic = [i-self._left.ndims for i in periodic if i >= self._left.ndims]
+
+    lbasis = self._left.basis(_variant, degree=ldegree, removedofs=lremovedofs, knotvalues=lknotvalues, knotmultiplicities=lknotmultiplicities, continuity=lcontinuity, periodic=lperiodic) if self._left.ndims else None
+    rbasis = self._right.basis(_variant, degree=rdegree, removedofs=rremovedofs, knotvalues=rknotvalues, knotmultiplicities=rknotmultiplicities, continuity=rcontinuity, periodic=rperiodic) if self._right.ndims else None
+    return self._productbasis(lbasis, rbasis)
+
+  def basis_std(self, degree):
+    ldegree, rdegree = self._split_scalar(degree, int)
+    lbasis = self._left.basis('std', degree=ldegree) if self._left.ndims else None
+    rbasis = self._right.basis('std', degree=rdegree) if self._right.ndims else None
+    return self._productbasis(lbasis, rbasis)
+
+  @property
+  def refined(self):
+    return self._left.refined.mul(self._right.refined, self._leftopp, self._rightopp)
 
 class RevolutionTopology(Topology):
   'topology consisting of a single revolution element'
