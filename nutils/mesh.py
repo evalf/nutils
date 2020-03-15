@@ -27,49 +27,9 @@ provided at this point.
 """
 
 from . import topology, function, util, element, elementseq, numpy, numeric, transform, transformseq, warnings, types, cache, _
-import os, itertools, re, math, treelog as log, io, contextlib
+import os, itertools, re, math, treelog as log, io, contextlib, functools
 
 # MESH GENERATORS
-
-@log.withcontext
-def rectilinear(richshape, periodic=(), name='rect'):
-  'rectilinear mesh'
-
-  ndims = len(richshape)
-  shape = []
-  offset = []
-  scale = []
-  uniform = True
-  for v in richshape:
-    if numeric.isint(v):
-      assert v > 0
-      shape.append(v)
-      scale.append(1)
-      offset.append(0)
-    elif numpy.equal(v, numpy.linspace(v[0],v[-1],len(v))).all():
-      shape.append(len(v)-1)
-      scale.append((v[-1]-v[0]) / float(len(v)-1))
-      offset.append(v[0])
-    else:
-      shape.append(len(v)-1)
-      uniform = False
-
-  root = function.Root(name, ndims)
-  axes = [transformseq.DimAxis(0,n,idim in periodic) for idim, n in enumerate(shape)]
-  topo = topology.StructuredTopology(root, axes)
-
-  if uniform:
-    if all(o == offset[0] for o in offset[1:]):
-      offset = offset[0]
-    if all(s == scale[0] for s in scale[1:]):
-      scale = scale[0]
-    geom = function.rootcoords(root) * scale + offset
-  else:
-    funcsp = topo.basis('spline', degree=1, periodic=())
-    coords = numeric.meshgrid(*richshape).reshape(ndims, -1)
-    geom = (funcsp * coords).sum(-1)
-
-  return topo, geom
 
 def line(nodes, periodic=False, bnames=None, *, rootid='line'):
   if isinstance(nodes, int):
@@ -88,18 +48,15 @@ def line(nodes, periodic=False, bnames=None, *, rootid='line'):
   geom = function.rootcoords(root) * scale + offset if uniform else domain.basis('std', degree=1, periodic=False).dot(nodes)
   return domain, geom
 
-def newrectilinear(nodes, periodic=None, bnames=[['left','right'],['bottom','top'],['front','back']]):
+@log.withcontext
+def rectilinear(nodes, periodic=None, bnames=[['left','right'],['bottom','top'],['front','back']], rootnames='XYZABX'):
+  'rectilinear mesh'
   if periodic is None:
-    periodic = numpy.zeros(len(nodes), dtype=bool)
-  else:
-    periodic = numpy.asarray(periodic)
-    assert len(periodic) == len(nodes) and periodic.ndim == 1 and periodic.dtype == bool
-  dims = [line(nodesi, periodici, bnamesi, rootid=rootid) for nodesi, periodici, bnamesi, rootid in zip(nodes, periodic, tuple(bnames)+(None,)*len(nodes), 'XYZABC')]
-  domain, geom = dims.pop(0)
-  for domaini, geomi in dims:
-    domain = domain * domaini
-    geom = function.concatenate(function.bifurcate(geom,geomi))
-  return domain, geom
+    periodic = []
+  domains, geoms = zip(*(line(nodesi, idim in periodic, bnamesi, rootid=rootid) for idim, (nodesi, bnamesi, rootid) in enumerate(zip(nodes, tuple(bnames)+(None,)*len(nodes), rootnames))))
+  return functools.reduce(lambda l, r: topology.ProductTopology(l, r, False, False), domains), function.concatenate(geoms, axis=0)
+
+newrectilinear = rectilinear
 
 @log.withcontext
 def multipatch(patches, nelems, patchverts=None, name='multipatch'):
@@ -643,12 +600,11 @@ def unitsquare(nelems, etype):
       The geometry function.
   '''
 
-  root = function.Root('unitsquare', 2)
-
   if etype == 'square':
-    topo = topology.StructuredTopology(root, [transformseq.DimAxis(0, nelems, False)] * 2)
+    topo, geom = rectilinear([nelems]*2)
 
   elif etype in ('triangle', 'mixed'):
+    root = function.Root('unitsquare', 2)
     simplices = numpy.concatenate([
       numpy.take([i*(nelems+1)+j, i*(nelems+1)+j+1, (i+1)*(nelems+1)+j, (i+1)*(nelems+1)+j+1], [[0,1,2],[1,2,3]] if i%2==j%2 else [[0,1,3],[0,2,3]], axis=0)
         for i in range(nelems) for j in range(nelems)])
@@ -675,10 +631,11 @@ def unitsquare(nelems, etype):
     x, y = topo.boundary.elem_mean(function.rootcoords(root), degree=1).T
     bgroups = dict(left=x==0, right=x==nelems, bottom=y==0, top=y==nelems)
     topo = topo.withboundary(**{name: topo.boundary[numpy.where(mask)[0]] for name, mask in bgroups.items()})
+    geom = function.rootcoords(root)
 
   else:
     raise Exception('invalid element type {!r}'.format(etype))
 
-  return topo, function.rootcoords(root) / nelems
+  return topo, geom/nelems
 
 # vim:sw=2:sts=2:et
