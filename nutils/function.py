@@ -87,6 +87,50 @@ class Root(types.Singleton):
 
 strictroot = types.strict[Root]
 
+class Subsample:
+  '''Subsample
+
+  Parameters
+  ----------
+  roots : :class:`tuple` of :class:`Root`
+  transforms : :class:`tuple` of transform chains
+  points : :class:`~nutils.points.Points`
+  ielem : :class:`int`, optional
+
+  Attributes
+  ----------
+  roots : :class:`tuple` of :class:`Root`
+  transforms : :class:`tuple` of transform chains
+  points : :class:`~nutils.points.Points`
+  ielem : :class:`int` or ``None``
+  '''
+
+  __slots__ = 'roots', 'transforms', 'points', 'ielem'
+
+  def __init__(self, roots: types.tuple[strictroot], transforms: types.tuple[transform.stricttransform], points: points.strictpoints, ielem: types.strictint = None):
+    if len(roots) != 1:
+      raise NotImplementedError
+    self.roots = roots
+    self.transforms = tuple((chain,) for chain in transforms)
+    self.points = points
+    self.ielem = ielem
+
+  @property
+  def npoints(self):
+    return self.points.npoints
+
+  @property
+  def ndims(self):
+    return builtins.sum(root.ndims for root in self.roots)
+
+  @property
+  def ndimsmanifold(self):
+    return self.points.ndimsmanifold
+
+  @property
+  def ndimsnormal(self):
+    return self.ndims - self.ndimsmanifold
+
 isevaluable = lambda arg: isinstance(arg, Evaluable)
 
 def strictevaluable(value):
