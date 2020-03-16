@@ -163,8 +163,8 @@ class Sample(types.Singleton):
     offsets = numpy.zeros((len(blocks), self.nelems+1), dtype=int)
     if blocks:
       sizefunc = function.stack([f.size for ifunc, ind, f in blocks]).simplified
-      for ielem, transforms in enumerate(zip(*self.transforms)):
-        n, = sizefunc.eval(_transforms=transforms, **arguments)
+      for ielem in range(self.nelems):
+        n, = sizefunc.eval(*self.getsubsamples(ielem), **arguments)
         offsets[:,ielem+1] = offsets[:,ielem] + n
 
     # Since several blocks may belong to the same function, we post process the
@@ -184,10 +184,14 @@ class Sample(types.Singleton):
     valueindexfunc = function.Tuple(function.Tuple([value]+list(index)) for value, index in zip(values, indices))
     with parallel.ctxrange('integrating', self.nelems) as ielems:
       for ielem in ielems:
-        points = self.points[ielem]
-        for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=points.coords, **arguments)):
+        subsamples = self.getsubsamples(ielem)
+        weights = numpy.ones((1,))
+        for subsample in reversed(subsamples):
+          weights = weights[...,numpy.newaxis] * subsample.points.weights
+        weights = weights.ravel()
+        for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(*subsamples, **arguments)):
           data = datas[block2func[iblock]][offsets[iblock,ielem]:offsets[iblock,ielem+1]].reshape(intdata.shape[1:])
-          numpy.einsum('p,p...->...', points.weights, intdata, out=data['value'])
+          numpy.einsum('p,p...->...', weights, intdata, out=data['value'])
           for idim, ii in enumerate(indices):
             data['index']['i'+str(idim)] = ii.reshape([-1]+[1]*(data.ndim-1-idim))
 
@@ -227,7 +231,7 @@ class Sample(types.Singleton):
 
     with parallel.ctxrange('evaluating', self.nelems) as ielems:
       for ielem in ielems:
-        for ifunc, inds, data in idata.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=self.points[ielem].coords, **arguments):
+        for ifunc, inds, data in idata.eval(*self.getsubsamples(ielem), **arguments):
           numpy.add.at(retvals[ifunc], numpy.ix_(self.index[ielem], *[ind for (ind,) in inds]), data)
 
     return retvals
@@ -317,6 +321,9 @@ class Sample(types.Singleton):
     points = [self.points[ielem] for ielem in selection]
     offset = numpy.cumsum([0] + [p.npoints for p in points])
     return Sample(self.roots, self.ndims, transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
+
+  def getsubsamples(self, ielem):
+    return function.Subsample(roots=self.roots, transforms=tuple(t[ielem] for t in self.transforms), points=self.points[ielem], ielem=ielem),
 
 strictsample = types.strict[Sample]
 
