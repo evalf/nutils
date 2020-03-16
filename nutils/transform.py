@@ -102,6 +102,13 @@ class TransformItem(types.Singleton):
       Dimension of the affine transformation domain.
   fromdims : :class:`int`
       Dimension of the affine transformation range.
+
+  Attributes
+  ----------
+  todims : :class:`int`
+      Dimension of the affine transformation domain.
+  fromdims : :class:`int`
+      Dimension of the affine transformation range.
   '''
 
   __slots__ = 'todims', 'fromdims'
