@@ -106,7 +106,7 @@ class Sample(types.Singleton):
     return '{}<{}D, {} elems, {} points>'.format(type(self).__qualname__, self.ndims, self.nelems, self.npoints)
 
   def _prepare_funcs(self, funcs):
-    return [function.asarray(func).prepare_eval(ndims=self.ndims) for func in funcs]
+    return [function.asarray(func).prepare_eval(subsamples=self.subsamplemetas) for func in funcs]
 
   @util.positional_only
   @util.single_or_multiple
@@ -324,6 +324,10 @@ class Sample(types.Singleton):
 
   def getsubsamples(self, ielem):
     return function.Subsample(roots=self.roots, transforms=tuple(t[ielem] for t in self.transforms), points=self.points[ielem], ielem=ielem),
+
+  @property
+  def subsamplemetas(self):
+    return function.SubsampleMeta(roots=self.roots, ndimsnormal=sum(root.ndims for root in self.roots)-self.ndims, transforms=self.transforms),
 
 strictsample = types.strict[Sample]
 
