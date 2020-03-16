@@ -2864,7 +2864,8 @@ class DelayedJacobian(Array):
     return DelayedJacobian(self._geom, *self._derivativestack, var)
 
   @util.positional_only
-  def prepare_eval(self, *, ndims, kwargs=...):
+  def prepare_eval(self, *, subsamples, kwargs=...):
+    ndims = builtins.sum(subsample.ndimsmanifold for subsample in subsamples)
     jac = functools.reduce(derivative, self._derivativestack, asarray(jacobian(self._geom, ndims)))
     return jac.prepare_eval(ndims=ndims, **kwargs)
 
