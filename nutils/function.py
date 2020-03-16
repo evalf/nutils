@@ -42,7 +42,7 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, types, numpy, numeric, cache, transform, transformseq, expression, warnings, _
+from . import util, types, numpy, numeric, cache, transform, transformseq, points, expression, warnings, _
 import sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log
 
 class Root(types.Singleton):
@@ -130,6 +130,42 @@ class Subsample:
   @property
   def ndimsnormal(self):
     return self.ndims - self.ndimsmanifold
+
+class SubsampleMeta:
+  '''Subsample meta information
+
+  Parameters
+  ----------
+  roots : :class:`tuple` of :class:`Root`
+  ndimsnormal : :class:`int`
+  transforms : :class:`tuple` of :class:`~nutils.transformseq.Transforms`, optional
+  points : :class:`~nutils.points.Points`, options
+      The points object if invariant, otherwise ``None``.
+
+  Attributes
+  ----------
+  roots : :class:`tuple` of :class:`Root`
+  ndimsnormal : :class:`int`
+  transforms : :class:`tuple` of :class:`~nutils.transformseq.Transforms` or ``None``
+  points : :class:`~nutils.points.Points`, options
+      The points object if invariant, otherwise ``None``.
+  '''
+
+  __slots__ = 'roots', 'ndimsnormal', 'transforms', 'points'
+
+  def __init__(self, roots:types.tuple[strictroot], ndimsnormal:types.strictint, transforms:types.tuple[transformseq.stricttransforms]=None, points:points.strictpoints=None):
+    self.roots = roots
+    self.ndimsnormal = ndimsnormal
+    self.transforms = transforms
+    self.points = points
+
+  @property
+  def ndims(self):
+    return builtins.sum(root.ndims for root in self.roots)
+
+  @property
+  def ndimsmanifold(self):
+    return self.ndims - self.ndimsnormal
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
 
