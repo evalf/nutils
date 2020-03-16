@@ -293,9 +293,9 @@ class Topology(types.Singleton):
       I = numpy.zeros(onto.shape[0], dtype=bool)
       fun = function.asarray(fun).prepare_eval()
       data = function.Tuple(function.Tuple([fun, onto_f.simplified, function.Tuple(onto_ind)]) for onto_ind, onto_f in function.blocks(onto.prepare_eval()))
-      for ref, trans, opp in zip(self.references, self.transforms, self.opposites):
-        ipoints, iweights = ref.getischeme('bezier2')
-        for fun_, onto_f_, onto_ind_ in data.eval(_transforms=(trans, opp), _points=ipoints, **arguments or {}):
+      for ielem, (ref, trans, opp) in enumerate(zip(self.references, self.transforms, self.opposites)):
+        points = ref.getpoints('bezier', 2)
+        for fun_, onto_f_, onto_ind_ in data.eval(function.Subsample(roots=self.roots, transforms=(trans, opp), points=points, ielem=ielem), **arguments or {}):
           onto_f_ = onto_f_.swapaxes(0,1) # -> dof axis, point axis, ...
           indfun_ = fun_[(slice(None),)+numpy.ix_(*onto_ind_[1:])]
           assert onto_f_.shape[0] == len(onto_ind_[0])
@@ -347,10 +347,9 @@ class Topology(types.Singleton):
     levelset = levelset.prepare_eval().simplified
     refs = []
     if leveltopo is None:
-      with log.iter.percentage('trimming', self.references, self.transforms, self.opposites) as items:
-        for ref, trans, opp in items:
-          levels = levelset.eval(_transforms=(trans, opp), _points=ref.getpoints('vertex', maxrefine).coords, **arguments)
-          refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
+      verts = self.sample('vertex', maxrefine)
+      levels = verts.eval(levelset)
+      refs = [ref.trim(levels[verts.index[ielem]], maxrefine=maxrefine, ndivisions=ndivisions) for ielem, ref in enumerate(self.references)]
     else:
       log.info('collecting leveltopo elements')
       bins = [set() for ielem in range(len(self))]
@@ -359,15 +358,15 @@ class Topology(types.Singleton):
         bins[ielem].add(tail)
       fcache = cache.WrapperCache()
       with log.iter.percentage('trimming', self.references, self.transforms, bins) as items:
-        for ref, trans, ctransforms in items:
+        for ielem, (ref, trans, ctransforms) in enumerate(items):
           levels = numpy.empty(ref.nvertices_by_level(maxrefine))
           cover = list(fcache[ref.vertex_cover](frozenset(ctransforms), maxrefine))
           # confirm cover and greedily optimize order
           mask = numpy.ones(len(levels), dtype=bool)
           while mask.any():
-            imax = numpy.argmax([mask[indices].sum() for tail, points, indices in cover])
-            tail, points, indices = cover.pop(imax)
-            levels[indices] = levelset.eval(_transforms=(trans + tail,), _points=points, **arguments)
+            imax = numpy.argmax([mask[indices].sum() for tail, cpoints, indices in cover])
+            tail, cpoints, indices = cover.pop(imax)
+            levels[indices] = levelset.eval(function.Subsample(roots=self.roots, transforms=(trans + tail,), points=points.CoordsPoints(cpoints), ielem=ielem), **arguments)
             mask[indices] = False
           refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
       log.debug('cache', fcache.stats)
@@ -511,7 +510,7 @@ class Topology(types.Singleton):
           w = p.weights
           xi = (numpy.dot(w,xi) / w.sum())[_] if len(xi) > 1 else xi.copy()
           for iiter in range(maxiter):
-            coord_xi, J_xi = geom_J.eval(_transforms=(self.transforms[ielem], self.opposites[ielem]), _points=xi, **arguments or {})
+            coord_xi, J_xi = geom_J.eval(function.Subsample(roots=self.roots, transforms=(self.transforms[ielem], self.opposites[ielem]), points=points.CoordsPoints(xi), ielem=ielem), **arguments or {})
             err = numpy.linalg.norm(coord - coord_xi)
             if err < tol:
               converged = True

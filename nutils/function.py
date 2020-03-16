@@ -226,13 +226,13 @@ class Evaluable(types.Singleton):
 
   @property
   def isconstant(self):
-    return EVALARGS not in self.dependencies
+    return SUBSAMPLES not in self.dependencies and EVALARGS not in self.dependencies
 
   @property
   def ordereddeps(self):
     '''collection of all function arguments such that the arguments to
     dependencies[i] can be found in dependencies[:i]'''
-    return tuple([EVALARGS] + sorted(self.dependencies - {EVALARGS}, key=lambda f: len(f.dependencies)))
+    return tuple([SUBSAMPLES, EVALARGS] + sorted(self.dependencies - {SUBSAMPLES, EVALARGS}, key=lambda f: len(f.dependencies)))
 
   @property
   def dependencytree(self):
@@ -244,7 +244,7 @@ class Evaluable(types.Singleton):
 
   @property
   def serialized(self):
-    return zip(self.ordereddeps[1:]+(self,), self.dependencytree[1:])
+    return zip(self.ordereddeps[2:]+(self,), self.dependencytree[2:])
 
   def asciitree(self, richoutput=False):
     'string representation'
@@ -276,8 +276,8 @@ class Evaluable(types.Singleton):
   def __str__(self):
     return self.__class__.__name__
 
-  def eval(self, **evalargs):
-    values = [evalargs]
+  def eval(self, *subsamples, **evalargs):
+    values = [subsamples, evalargs]
     for op, indices in self.serialized:
       try:
         args = [values[i] for i in indices]
@@ -313,7 +313,7 @@ class Evaluable(types.Singleton):
   def stackstr(self, nlines=-1):
     'print stack'
 
-    lines = ['  %0 = EVALARGS']
+    lines = ['  %0 = SUBSAMPLES', '  %1 = EVALARGS']
     for op, indices in self.serialized:
       args = ['%{}'.format(idx) for idx in indices]
       try:
@@ -364,18 +364,15 @@ class EvaluationError(Exception):
 
     return '\n{} --> {}: {}'.format(self.evaluable.stackstr(nlines=len(self.values)), self.etype.__name__, self.evalue)
 
-EVALARGS = Evaluable(args=())
-
-class Points(Evaluable):
-  __slots__ = ()
+class SUBSAMPLES(Evaluable):
   def __init__(self):
-    super().__init__(args=[EVALARGS])
-  def evalf(self, evalargs):
-    points = evalargs['_points']
-    assert numeric.isarray(points) and points.ndim == 2
-    return types.frozenarray(points)
+    super().__init__(args=())
+SUBSAMPLES = SUBSAMPLES()
 
-POINTS = Points()
+class EVALARGS(Evaluable):
+  def __init__(self):
+    super().__init__(args=())
+EVALARGS = EVALARGS()
 
 class Tuple(Evaluable):
 
@@ -460,15 +457,19 @@ class SelectChain(TransformChain):
 
   @types.apply_annotations
   def __init__(self, roots:types.tuple[strictroot], n:types.strictint=0):
-    if len(roots) != 1:
-      raise NotImplementedError
     self.n = n
-    super().__init__(roots, args=[EVALARGS], todims=builtins.sum(root.ndims for root in roots))
+    super().__init__(roots, args=[SUBSAMPLES], todims=builtins.sum(root.ndims for root in roots))
 
-  def evalf(self, evalargs):
-    trans = evalargs['_transforms'][self.n]
-    assert isinstance(trans, tuple)
-    return trans
+  def evalf(self, subsamples):
+    trans = []
+    for root in self.ordered_roots:
+      for subsample in subsamples:
+        if root in subsample.roots:
+          trans.append(subsample.transforms[self.n if len(subsample.transforms) > 1 else 0][subsample.roots.index(root)])
+          break
+      else:
+        raise ValueError('no such root: {!r}'.format(root))
+    return tuple(trans)
 
   @util.positional_only
   def prepare_eval(self, *, opposite=False, kwargs=...):
@@ -501,9 +502,12 @@ class TransformsIndexWithTail(Evaluable):
   def roots(self):
     return self._trans.roots
 
-  def evalf(self, trans):
+  def evalf(self, chains):
+    if len(chains) != 1:
+      raise NotImplementedError
+    trans, = chains
     index, tail = self._transforms.index_with_tail(trans)
-    return numpy.array(index)[None], tail
+    return numpy.array(index)[None], (tail,)
 
   def __len__(self):
     return 2
@@ -1182,16 +1186,35 @@ class ApplyTransforms(Array):
   __slots__ = 'trans'
 
   @types.apply_annotations
-  def __init__(self, trans:types.strict[TransformChain], points:strictevaluable=POINTS):
+  def __init__(self, trans:types.strict[TransformChain]):
     self.trans = trans
-    super().__init__(args=[points, trans], shape=[trans.todims], dtype=float)
+    super().__init__(args=[SUBSAMPLES, trans], shape=[trans.todims], dtype=float)
 
   @property
   def roots(self):
     return self.trans.roots
 
-  def evalf(self, points, chain):
-    return transform.apply(chain, points)
+  def evalf(self, subsamples, chains):
+    slices = {}
+    isubsamples = {}
+    for isubsample, subsample in enumerate(subsamples):
+      from0 = 0
+      for root, chain in zip(subsample.roots, subsample.transforms[0]):
+        isubsamples[root] = isubsample
+        from1 = from0 + (chain[-1].fromdims if chain else root.ndims)
+        slices[root] = slice(from0, from1)
+        from0 = from1
+
+    result = numpy.zeros((*(subsample.npoints for subsample in subsamples), self.shape[0]), dtype=float)
+    to0 = 0
+    for root, chain in zip(self.trans.ordered_roots, chains):
+      to1 = to0 + (chain[0].todims if chain else slices[root].stop - slices[root].start)
+      isubsample = isubsamples[root]
+      expand = tuple(slice(None) if i == isubsample else numpy.newaxis for i in range(len(subsamples)))
+      result[...,to0:to1] = transform.apply(chain, subsamples[isubsample].points.coords[:,slices[root]])[expand]
+      to0 = to1
+    assert to0 == self.shape[0]
+    return result.reshape((-1, self.shape[0]))
 
   def _derivative(self, var, seen):
     if isinstance(var, LocalCoords) and len(var) > 0:
@@ -1204,6 +1227,8 @@ class LinearFrom(Array):
 
   @types.apply_annotations
   def __init__(self, trans:types.strict[TransformChain], fromdims:types.strictint):
+    if len(trans.roots) != 1:
+      raise NotImplementedError
     self.trans = trans
     super().__init__(args=[trans], shape=(trans.todims, fromdims), dtype=float)
 
@@ -1211,8 +1236,9 @@ class LinearFrom(Array):
   def roots(self):
     return self.trans.roots
 
-  def evalf(self, chain):
+  def evalf(self, chains):
     todims, fromdims = self.shape
+    chain, = chains
     assert not chain or chain[0].todims == todims
     return transform.linearfrom(chain, fromdims)[_]
 
