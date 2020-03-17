@@ -3105,7 +3105,6 @@ class RevolutionAngle(Array):
 class Opposite(Array):
 
   __slots__ = '_value'
-  __cache__ = 'simplified'
 
   @types.apply_annotations
   def __init__(self, value:asarray):
@@ -3114,13 +3113,6 @@ class Opposite(Array):
 
   def evalf(self, evalargs):
     raise Exception('Opposite should not be evaluated')
-
-  @property
-  def simplified(self):
-    value = self._value.simplified
-    if not any(isinstance(arg, SelectChain) for arg in value.dependencies):
-      return value
-    return Opposite(value)
 
   @util.positional_only
   def prepare_eval(self, *, opposite=False, kwargs=...):
