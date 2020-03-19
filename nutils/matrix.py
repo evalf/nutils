@@ -73,7 +73,7 @@ class Backend(metaclass=abc.ABCMeta):
 
   @abc.abstractmethod
   def assemble(self, data, index, shape):
-    '''Assemble a (sparse) tensor based on index-value pairs.
+    '''Assemble a (sparse) matrix based on index-value pairs.
 
     .. Note:: This function is abstract.
     '''
@@ -320,8 +320,10 @@ class Numpy(Backend):
 
   @staticmethod
   def assemble(data, index, shape):
-    array = numeric.accumulate(data, index, shape)
-    return NumpyMatrix(array) if len(shape) == 2 else array
+    array = numpy.zeros(shape, dtype=data.dtype)
+    if len(data):
+      array[tuple(index)] = data
+    return NumpyMatrix(array)
 
 class NumpyMatrix(Matrix):
   '''matrix based on numpy array'''
@@ -404,12 +406,8 @@ class Scipy(Backend):
     return self.scipy is not None
 
   def assemble(self, data, index, shape):
-    if len(shape) < 2:
-      return numeric.accumulate(data, index, shape)
-    if len(shape) == 2:
-      csr = self.scipy.sparse.csr_matrix((data, index), shape)
-      return ScipyMatrix(csr, scipy=self.scipy)
-    raise MatrixError('{}d data not supported by scipy backend'.format(len(shape)))
+    csr = self.scipy.sparse.csr_matrix((data, index[1], index[0].searchsorted(numpy.arange(shape[0]+1))), shape)
+    return ScipyMatrix(csr, scipy=self.scipy)
 
 class ScipyMatrix(Matrix):
   '''matrix based on any of scipy's sparse matrices'''
@@ -562,28 +560,7 @@ class MKL(Backend):
     super().__exit__(*exc)
 
   def assemble(self, data, index, shape):
-    if len(shape) < 2:
-      return numeric.accumulate(data, index, shape)
-    if len(shape) == 2:
-      if not len(data):
-        return MKLMatrix([], [1]*(shape[0]+1), [], shape[1], libmkl=self.libmkl)
-      # sort rows, columns
-      reorder = numpy.lexsort(index[::-1])
-      index = index[:,reorder]
-      data = data[reorder]
-      # sum duplicate entries
-      keep = numpy.empty(len(reorder), dtype=bool)
-      keep[0] = True
-      numpy.not_equal(index[:,1:], index[:,:-1]).any(axis=0, out=keep[1:])
-      if not keep.all():
-        index = index[:,keep]
-        data = numeric.accumulate(data, [keep.cumsum()-1], [index.shape[1]])
-      if not data.all():
-        nz = data.astype(bool)
-        data = data[nz]
-        index = index[:,nz]
-      return MKLMatrix(data, index[0].searchsorted(numpy.arange(shape[0]+1))+1, index[1]+1, shape[1], libmkl=self.libmkl)
-    raise MatrixError('{}d data not supported by MKL backend'.format(len(shape)))
+    return MKLMatrix(data, index[0].searchsorted(numpy.arange(shape[0]+1))+1, index[1]+1, shape[1], libmkl=self.libmkl)
 
 class Pardiso:
   '''simple wrapper for libmkl.pardiso
@@ -733,7 +710,7 @@ class MKLMatrix(Matrix):
     if form == 'csr':
       return self.data, self.colidx-1, self.rowptr-1
     if form == 'coo':
-      return self.data, numpy.array([numpy.arange(self.shape[0]).repeat(self.rowptr[1:]-self.rowptr[:-1]), self.colidx-1])
+      return self.data, (numpy.arange(self.shape[0]).repeat(self.rowptr[1:]-self.rowptr[:-1]), self.colidx-1)
     raise NotImplementedError('cannot export MKLMatrix to {!r}'.format(form))
 
   @refine_to_tolerance
@@ -831,6 +808,11 @@ class MKLMatrix(Matrix):
 _current_backend = Numpy()
 
 def assemble(data, index, shape):
+  if not isinstance(data, numpy.ndarray) or data.ndim != 1 or len(index) != 2 or len(shape) != 2:
+    raise MatrixError('assemble received invalid input')
+  n, = (index[0][1:] <= index[0][:-1]).nonzero() # index[0][n+1] <= index[0][n]
+  if (index[0][n+1] < index[0][n]).any() or (index[1][n+1] <= index[1][n]).any():
+    raise MatrixError('assemble input must be sorted')
   return _current_backend.assemble(data, index, shape)
 
 def empty(shape):

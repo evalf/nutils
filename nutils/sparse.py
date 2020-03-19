@@ -231,7 +231,7 @@ def tomatrix(data, inplace=False):
     raise Exception('cannot convert {}d data to matrix'.format(ndim(data)))
   from . import matrix
   indices, values, shape = extract(prune(dedup(data, inplace=inplace), inplace=True))
-  return matrix.assemble(values, numpy.array(indices), shape)
+  return matrix.assemble(values, indices, shape)
 
 def convert(data, inplace=False):
   '''Convert a two-dimensional sparse object to an appropriate object.
