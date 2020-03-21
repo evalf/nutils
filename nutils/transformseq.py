@@ -323,7 +323,15 @@ class Transforms(types.Singleton):
     return False
 
   def linear(self, index):
-    return numeric.blockdiag(map(transform.linear, self[index], self.todims))
+    ndims = sum(self.todims)
+    linears = numpy.zeros((ndims, ndims), float)
+    ismanifold = numpy.zeros(sum(self.todims), dtype=bool)
+    i = 0
+    for chain, todims in zip(self[index], self.todims):
+      linears[i:i+todims,i:i+todims] = transform.linearfrom(chain, todims)
+      ismanifold[i:i+chain[-1].fromdims] = True
+      i += todims
+    return linears, ismanifold
 
 stricttransforms = types.strict[Transforms]
 
@@ -460,7 +468,7 @@ class IdentifierTransforms(Transforms):
     return True
 
   def linear(self, ielem):
-    return numpy.eye(self._ndims)
+    return numpy.eye(self._ndims), numpy.ones(self._ndims, dtype=bool)
 
 class Axis(types.Singleton):
   '''Abstract base class for axes of :class:`~nutils.topology.StructuredTopology`.'''
@@ -856,7 +864,13 @@ class UniformDerivedTransforms(Transforms):
     if not self._parent.linear_is_uniform or len(self._derived_transforms) == 0:
       return False
     linear = self._derived_transforms[0].linear
-    return all(numpy.allclose(linear, trans.linear) for trans in self._derived_transforms[1:])
+    if not all(numpy.allclose(linear, trans.linear) for trans in self._derived_transforms[1:]):
+      return False
+    if self._derived_transforms[0].todims == self._derived_transforms[0].fromdims + 1:
+      ext = self._derived_transforms[0].ext
+      if not all(numpy.allclose(ext, trans.ext) for trans in self._derived_transforms[1:]):
+        return False
+    return True
 
 class TrimmedEdgesTransforms(Transforms):
 
@@ -950,7 +964,9 @@ class ProductTransforms(Transforms):
 
   def linear(self, index):
     index1, index2 = divmod(numeric.normdim(len(self), index), len(self._transforms2))
-    return numeric.blockdiag([self._transforms1.linear(index1), self._transforms2.linear(index2)])
+    linear1, ismanifold1 = self._transforms1.linear(index1)
+    linear2, ismanifold2 = self._transforms2.linear(index2)
+    return numeric.blockdiag([linear1, linear2]), numpy.concatenate([ismanifold1, ismanifold2])
 
 class ChainedTransforms(Transforms):
   '''A sequence of chained :class:`Transforms` objects.
@@ -1032,8 +1048,8 @@ class ChainedTransforms(Transforms):
   def linear_is_uniform(self):
     if not all(item.linear_is_uniform for item in self._items):
       return False
-    linear = self._items[0].linear(0)
-    return all(numpy.allclose(item.linear(0), linear) for item in self._items[1:])
+    linear, ismanifold = self._items[0].linear(0)
+    return all(numpy.allclose(item.linear(0)[0], linear) and numpy.equal(item.linear(0)[1], ismanifold).all() for item in self._items[1:])
 
   def linear(self, index):
     index = numeric.normdim(len(self), index)

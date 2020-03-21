@@ -521,7 +521,7 @@ class Topology(types.Singleton):
     vref = element.getsimplex(0)
     ielems = parallel.shempty(len(coords), dtype=int)
     xis = parallel.shempty((len(coords),len(geom)), dtype=float)
-    J = function.dot(function.rootgradient(geom, self.roots)[:,:,_], function.RootBasis(0, self.roots, self.ndims, function.SelectChain(self.roots))[_,:,:self.ndims], 1)
+    J = function.dot(function.rootgradient(geom, self.roots)[:,:,_], function.RootBasis(0, self.roots, self.ndims)[_,:,:self.ndims], 1)
     geom_J = function.Tuple((geom, J)).prepare_eval().simplified
     with parallel.ctxrange('locating', len(coords)) as ipoints:
       for ipoint in ipoints:
@@ -1775,6 +1775,12 @@ class DisjointUnionTopology(Topology):
   def interfaces(self):
     return DisjointUnionTopology([topo.interfaces for topo in self._topos])
 
+  def sample(self, ischeme, degree):
+    transforms = self.transforms,
+    if len(self.transforms) == 0 or self.opposites != self.transforms:
+      transforms += self.opposites,
+    return sample.ChainedSample(tuple(topo.sample(ischeme, degree) for topo in self._topos), transforms)
+
 class SubsetTopology(Topology):
   'trimmed'
 
@@ -2372,7 +2378,10 @@ class ProductTopology(Topology):
     return self._left.refined.mul(self._right.refined, self._leftopp, self._rightopp)
 
   def sample(self, ischeme, degree):
-    return sample.ProductSample(self._left.sample(ischeme, degree), self._right.sample(ischeme, degree))
+    transforms = self.transforms,
+    if len(self.transforms) == 0 or self.opposites != self.transforms:
+      transforms += self.opposites,
+    return sample.ProductSample(self._left.sample(ischeme, degree), self._right.sample(ischeme, degree), transforms)
 
 class RevolutionTopology(Topology):
   'topology consisting of a single revolution element'

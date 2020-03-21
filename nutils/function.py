@@ -107,7 +107,7 @@ class Subsample:
 
   __slots__ = 'roots', 'transforms', 'points', 'ielem'
 
-  def __init__(self, roots: types.tuple[strictroot], transforms: types.tuple[types.tuple[transform.stricttransform]], points: points.strictpoints, ielem: types.strictint = None):
+  def __init__(self, *, roots: types.tuple[strictroot], transforms: types.tuple[types.tuple[transform.stricttransform]], points: points.strictpoints, ielem: types.strictint = None):
     self.roots = roots
     self.transforms = transforms
     self.points = points
@@ -139,6 +139,8 @@ class SubsampleMeta:
   transforms : :class:`tuple` of :class:`~nutils.transformseq.Transforms`, optional
   points : :class:`~nutils.points.Points`, options
       The points object if invariant, otherwise ``None``.
+  ndimspoints : :class:`int`
+      The dimension of the points object if invariant, otherwise ``None``.
 
   Attributes
   ----------
@@ -147,15 +149,18 @@ class SubsampleMeta:
   transforms : :class:`tuple` of :class:`~nutils.transformseq.Transforms` or ``None``
   points : :class:`~nutils.points.Points`, options
       The points object if invariant, otherwise ``None``.
+  ndimspoints : :class:`int`
+      The dimension of the points object if invariant, otherwise ``None``.
   '''
 
-  __slots__ = 'roots', 'ndimsnormal', 'transforms', 'points'
+  __slots__ = 'roots', 'ndimsnormal', 'transforms', 'points', 'ndimspoints'
 
-  def __init__(self, roots:types.tuple[strictroot], ndimsnormal:types.strictint, transforms:types.tuple[transformseq.stricttransforms]=None, points:points.strictpoints=None):
+  def __init__(self, *, roots:types.tuple[strictroot], ndimsnormal:types.strictint, transforms:types.tuple[transformseq.stricttransforms]=None, points:points.strictpoints=None, ndimspoints:types.strictint=None):
     self.roots = roots
     self.ndimsnormal = ndimsnormal
     self.transforms = transforms
     self.points = points
+    self.ndimspoints = ndimspoints
 
   @property
   def ndims(self):
@@ -262,7 +267,8 @@ class Evaluable(types.Singleton):
       if prefix:
         s = prefix[:-2] + select[bridge.index(prefix[-2:])] + s # locally change prefix into selector
       if ordereddeps[n] is not None:
-        s += ' = {} {}'.format(ordereddeps[n]._asciitree_str(), ','.join(sorted(tuple(map('{0.name}:{0.ndims}'.format, ordereddeps[n].roots)))))
+        dep = ordereddeps[n]
+        s += ' = {} {}'.format(dep._asciitree_str(), 'CONST' if dep.isconstant else ','.join(sorted(tuple(map('{0.name}:{0.ndims}'.format, dep.roots)))))
         pool.extend((prefix + bridge[i==0], arg) for i, arg in enumerate(reversed(self.dependencytree[n])))
         ordereddeps[n] = None
       lines.append(s)
@@ -519,7 +525,7 @@ class TransformsIndexWithTail(Evaluable):
 
   @property
   def linear(self):
-    return Linear(self.trans.ordered_roots, self.transforms, self.index, self.ndims)
+    return Linear(self.trans.ordered_roots, self.ndims, (self.transforms,), self.index)[:,:self.ndims]
 
   def __iter__(self):
     yield self.index
@@ -782,25 +788,21 @@ class RootBasis(Array):
       The roots to compute the basis for.
   ndimstangent : int
       The dimension of the tangent space.
-  trans : :class:`TransformChain`
   '''
 
-  __slots__ = '_isubsample', '_roots', '_ndimstangent', '_opposite', '_trans'
+  __slots__ = '_isubsample', '_roots', '_ndimstangent', '_opposite'
   __cache__ = 'prepare_eval'
 
   @types.apply_annotations
-  def __init__(self, isubsample:types.strictint, roots:types.tuple[strictroot], ndimstangent:types.strictint, trans:types.strict[TransformChain], _opposite:bool=None):
-    # NOTE: `trans` is only required because of the `SelectChain` test in `Opposite.simplified`.
+  def __init__(self, isubsample:types.strictint, roots:types.tuple[strictroot], ndimstangent:types.strictint, _opposite:bool=None):
     self._isubsample = isubsample
     self._roots = roots
     self._ndimstangent = ndimstangent
     self._opposite = _opposite
-    self._trans = trans
-    assert self._trans.ordered_roots == roots
     ndims = sum(root.ndims for root in roots)
-    super().__init__(args=[SUBSAMPLES, trans], shape=[ndims, ndims], dtype=float)
+    super().__init__(args=[SUBSAMPLES], shape=[ndims, ndims], dtype=float)
 
-  def evalf(self, subsamples, _trans):
+  def evalf(self, subsamples):
     subsample = subsamples[self._isubsample]
     assert subsample.roots == self._roots
     assert subsample.ndimsmanifold == self._ndimstangent
@@ -836,7 +838,7 @@ class RootBasis(Array):
   def prepare_eval(self, *, opposite=False, kwargs=...):
     if self._opposite is not None:
       raise ValueError('prepare already called')
-    return RootBasis(self._isubsample, self._roots, self._ndimstangent, self._trans.prepare_eval(opposite=opposite, **kwargs), _opposite=opposite)
+    return RootBasis(self._isubsample, self._roots, self._ndimstangent, _opposite=opposite)
 
 class GramSchmidt(Array):
 
@@ -934,6 +936,12 @@ class Constant(Array):
 
   def evalf(self):
     return self.value[_]
+
+  def _asciitree_str(self):
+    if self.size < 10:
+      return '{} {}'.format(super()._asciitree_str(), self.value.tolist())
+    else:
+      return super()._asciitree_str()
 
   @property
   def _isunit(self):
@@ -1378,28 +1386,40 @@ class ApplyTransforms(Array):
 
 class Linear(Array):
 
-  __slots__ = '_roots', '_transforms'
+  __slots__ = '_roots', '_fromdims', '_transforms', '_ielem', '_itransforms'
   __cache__ = 'simplified'
 
   @types.apply_annotations
-  def __init__(self, roots:types.tuple[strictroot], transforms:transformseq.stricttransforms, index:asarray, fromdims:types.strictint):
-    assert frozenset(roots) == index.roots
+  def __init__(self, roots:types.tuple[strictroot], fromdims:types.strictint, transforms:types.tuple[transformseq.stricttransforms], ielem:asarray, _itransforms:types.strictint=None):
     self._roots = roots
+    self._fromdims = fromdims
     self._transforms = transforms
-    super().__init__(args=[index], shape=(builtins.sum(root.ndims for root in roots), fromdims), dtype=float)
+    self._ielem = ielem
+    self._itransforms = _itransforms
+    super().__init__(args=[ielem], shape=(builtins.sum(root.ndims for root in roots),)*2, dtype=float)
 
-  def evalf(self, index):
-    index, = index
-    if self._transforms.linear_is_uniform:
-      numpy.testing.assert_allclose(self._transforms.linear(index), self._transforms.linear(0))
-    return self._transforms.linear(index)[_]
+  @property
+  def roots(self):
+    return frozenset(self._roots)
+
+  def evalf(self, ielem):
+    ielem, = ielem
+    linear, ismanifold = self._transforms[self._itransforms].linear(ielem)
+    assert ismanifold.sum() == self._fromdims
+    return numpy.concatenate([linear[:,ismanifold], linear[:,~ismanifold]], axis=1)[_]
 
   @property
   def simplified(self):
-    if self._transforms.linear_is_uniform:
-      return asarray(self._transforms.linear(0))
-    else:
-      return self
+    ielem = 0 if self._itransforms is not None and self._transforms[self._itransforms].linear_is_uniform else self._ielem.simplified
+    return Linear(self._roots, self._fromdims, self._transforms, ielem, self._itransforms)
+
+  @util.positional_only
+  def prepare_eval(self, *, kwargs=...):
+    ielem = self._ielem.prepare_eval(**kwargs)
+    if self._itransforms is not None:
+      raise RuntimeError('prepare_eval called twice')
+    itransforms = 1 if kwargs.get('opposite', False) and len(self._transforms) > 1 else 0
+    return Linear(self._roots, self._fromdims, self._transforms, ielem, itransforms)
 
 class Inverse(Array):
   '''
@@ -1737,8 +1757,8 @@ class Multiply(Array):
       mask[axis] &= 1
       func2 = func2.func
     if all(mask): # should always be the case after simplify
-      return Einsum(func1, func2, mask)
-    return Multiply([func1, func2])
+      return Einsum(func1, func2, mask).optimized_for_numpy
+    return Multiply([func1.optimized_for_numpy, func2.optimized_for_numpy])
 
   def evalf(self, arr1, arr2):
     return arr1 * arr2
@@ -1949,6 +1969,25 @@ class Einsum(Array):
   def evalf(self, arr1, arr2):
     return numpy.core.multiarray.c_einsum(self._einsumfmt, arr1, arr2)
 
+  def _asciitree_str(self):
+    return '{} {}'.format(super()._asciitree_str(), self._einsumfmt)
+
+  @property
+  def optimized_for_numpy(self):
+    func1 = self.func1.optimized_for_numpy
+    func2 = self.func2.optimized_for_numpy
+    if func1.isconstant and isinstance(func2, Einsum) and (func2.func1.isconstant or func2.func2.isconstant) and not self.mask and not func2.mask:
+      if func2.func1.isconstant:
+        return Einsum(func2.func2, Einsum(func1, func2.func1, ()).optimized_for_numpy, ())
+      else:
+        return Einsum(func2.func1, Einsum(func1, func2.func2, ()).optimized_for_numpy, ())
+    elif func2.isconstant and isinstance(func1, Einsum) and (func1.func1.isconstant or func1.func2.isconstant) and not self.mask and not func1.mask:
+      if func1.func2.isconstant:
+        return Einsum(func1.func2, Einsum(func2, func1.func1, ()).optimized_for_numpy, ())
+      else:
+        return Einsum(func1.func1, Einsum(func2, func1.func2, ()).optimized_for_numpy, ())
+    return super().optimized_for_numpy
+
 class Sum(Array):
 
   __slots__ = 'axis', 'func'
@@ -1980,7 +2019,7 @@ class Sum(Array):
       axis = axes[self.axis]
       if mask[axis] == 3:
         mask[axis] = 0
-        return Einsum(func.func1, func.func2, mask)
+        return Einsum(func.func1, func.func2, mask).optimized_for_numpy
     return Sum(func, self.axis)
 
   def evalf(self, arr):
@@ -4639,8 +4678,14 @@ def rootbasis(subsamples, index_or_roots, *, orthonormal=False):
       raise ValueError('no subsample with roots {}, candidates: {}'.format(roots, ', '.join(str(subsample.roots) for subsample in subsamples)))
   else:
     raise ValueError('expected an `int` or `tuple` of `Root` objects but got {!r}'.format(index_or_roots))
-  basis = RootBasis(isubsample, subsample.roots, subsample.ndimsmanifold, SelectChain(subsample.roots))
+  if subsample.ndimspoints == subsample.ndimsmanifold:
+    # `points.basis` is the identity.
+    basis = Linear(subsample.roots, subsample.ndimspoints, subsample.transforms, IndexFromSubsample(isubsample, subsample.roots))
+  else:
+    basis = RootBasis(isubsample, subsample.roots, subsample.ndimsmanifold)
   if orthonormal:
+    if subsample.ndimsnormal == 0:
+      return eye(subsample.ndims)
     basis = GramSchmidt(basis)
   return basis
 
