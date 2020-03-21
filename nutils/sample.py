@@ -116,6 +116,26 @@ class Sample(types.Singleton):
         Optional arguments for function evaluation.
     '''
 
+    datas = self.integrate_sparse(funcs, arguments)
+    with log.iter.fraction('assembling', datas) as items:
+      return [sparse.convert(data, inplace=True) for data in items]
+
+  @util.single_or_multiple
+  @types.apply_annotations
+  def integrate_sparse(self, funcs:types.tuple[function.asarray], arguments:types.frozendict[str,types.frozenarray]=None):
+    '''Integrate functions into sparse data.
+
+    Args
+    ----
+    funcs : :class:`nutils.function.Array` object or :class:`tuple` thereof.
+        The integrand(s).
+    arguments : :class:`dict` (default: None)
+        Optional arguments for function evaluation.
+    '''
+
+    if arguments is None:
+      arguments = {}
+
     # Functions may consist of several blocks, such as originating from
     # chaining. Here we make a list of all blocks consisting of triplets of
     # argument id, evaluable index, and evaluable values.
@@ -165,8 +185,7 @@ class Sample(types.Singleton):
           for idim, ii in enumerate(indices):
             data['index']['i'+str(idim)] = ii.reshape([-1]+[1]*(data.ndim-1-idim))
 
-    with log.iter.fraction('assembling', datas) as items:
-      return [sparse.convert(data, inplace=True) for data in items]
+    return datas
 
   def integral(self, func):
     '''Create Integral object for postponed integration.
@@ -477,11 +496,40 @@ def eval_integrals(*integrals: types.tuple[strictintegral], **arguments:argdict)
   results : :class:`tuple` of arrays and/or :class:`nutils.matrix.Matrix` objects.
   '''
 
-  retvals = [matrix.empty(integral.shape) for integral in integrals]
+  with log.iter.fraction('assembling', eval_integrals_sparse(*integrals, **arguments)) as retvals:
+    return [sparse.convert(retval, inplace=True) for retval in retvals]
+
+@types.apply_annotations
+def eval_integrals_sparse(*integrals: types.tuple[strictintegral], **arguments: argdict):
+  '''Evaluate integrals into sparse data.
+
+  Evaluate one or several postponed integrals. By evaluating them
+  simultaneously, rather than using :func:`Integral.eval` on each integral
+  individually, integrations will be grouped per Sample and jointly executed,
+  potentially increasing efficiency.
+
+  Args
+  ----
+  integrals : :class:`tuple` of integrals
+      Integrals to be evaluated.
+  arguments : :class:`dict` (default: None)
+      Optional arguments for function evaluation.
+
+  Returns
+  -------
+  results : :class:`tuple` of arrays and/or :class:`nutils.matrix.Matrix` objects.
+  '''
+
+  if arguments is None:
+    arguments = types.frozendict({})
+
+  retvals = [[sparse.empty(integral.shape)] for integral in integrals] # initialize with zeros to set shape and avoid empty addition
   with log.iter.fraction('topology', util.gather((di, iint) for iint, integral in enumerate(integrals) for di in integral._integrands)) as gathered:
     for sample, iints in gathered:
-      for iint, retval in zip(iints, sample.integrate([integrals[iint]._integrands[sample] for iint in iints], **arguments)):
-        retvals[iint] += retval
-  return retvals
+      for iint, retval in zip(iints, sample.integrate_sparse([integrals[iint]._integrands[sample] for iint in iints], arguments)):
+        retvals[iint].append(retval)
+      del retval
+
+  return [sparse.add(retval) for retval in retvals]
 
 # vim:sw=2:sts=2:et
