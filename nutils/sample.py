@@ -43,7 +43,7 @@ multiple integrals simultaneously, which has the advantage that it can
 efficiently combine common substructures.
 '''
 
-from . import types, points, util, function, parallel, numeric, matrix, transformseq
+from . import types, points, util, function, parallel, numeric, matrix, transformseq, sparse
 import numpy, numbers, collections.abc, os, treelog as log
 
 graphviz = os.environ.get('NUTILS_GRAPHVIZ')
@@ -150,33 +150,23 @@ class Sample(types.Singleton):
       offsets[iblock] += nvals[ifunc]
       nvals[ifunc] = offsets[iblock,-1]
 
-    # The data_index list contains shared memory index and value arrays for
-    # each function argument.
+    # In a second, parallel element loop, value and index are evaluated and
+    # stored in shared memory using the offsets array for location. Each
+    # element has its own location so no locks are required.
 
-    data_index = [(parallel.shempty(n, dtype=float), parallel.shempty((funcs[ifunc].ndim,n), dtype=int)) for ifunc, n in enumerate(nvals)]
-
-    # In a second, parallel element loop, valuefunc is evaluated to fill the
-    # data part of data_index using the offsets array for location. Each
-    # element has its own location so no locks are required. The index part of
-    # data_index is filled in the same loop. It does not use valuefunc data but
-    # benefits from parallel speedup.
-
+    datas = [parallel.shempty(n, dtype=sparse.dtype(funcs[ifunc].shape)) for ifunc, n in enumerate(nvals)]
     valueindexfunc = function.Tuple(function.Tuple([value]+list(index)) for value, index in zip(values, indices))
     with parallel.ctxrange('integrating', self.nelems) as ielems:
       for ielem in ielems:
         points = self.points[ielem]
         for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=points.coords, **arguments)):
-          s = slice(*offsets[iblock,ielem:ielem+2])
-          data, index = data_index[block2func[iblock]]
-          w_intdata = numeric.dot(points.weights, intdata)
-          data[s] = w_intdata.ravel()
-          si = (slice(None),) + (numpy.newaxis,) * (w_intdata.ndim-1)
-          for idim, (ii,) in enumerate(indices):
-            index[idim,s].reshape(w_intdata.shape)[...] = ii[si]
-            si = si[:-1]
+          data = datas[block2func[iblock]][offsets[iblock,ielem]:offsets[iblock,ielem+1]].reshape(intdata.shape[1:])
+          numpy.einsum('p,p...->...', points.weights, intdata, out=data['value'])
+          for idim, ii in enumerate(indices):
+            data['index']['i'+str(idim)] = ii.reshape([-1]+[1]*(data.ndim-1-idim))
 
-    with log.iter.fraction('assembling', data_index, funcs) as items:
-      return [matrix.assemble(*data, shape=func.shape) for data, func in items]
+    with log.iter.fraction('assembling', datas) as items:
+      return [sparse.convert(data, inplace=True) for data in items]
 
   def integral(self, func):
     '''Create Integral object for postponed integration.
