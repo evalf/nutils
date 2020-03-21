@@ -182,7 +182,7 @@ class TensorPoints(Points):
 
   @property
   def tri(self):
-    if self.points1.ndims == 1:
+    if self.points1.ndimsmanifold == 1:
       # For an n-dimensional simplex with vertices a0,a1,..,an, the extruded
       # element has vertices a0,a1,..,an,b0,b1,..,bn. These can be divided in
       # simplices by selecting a0,a1,..,an,b0; a1,..,an,b0,n1; and so on until
@@ -191,18 +191,18 @@ class TensorPoints(Points):
       # of triangulations and raveling, effectively achieving vectorized
       # concatenation. The overlapping vertex subsets then follow directly from
       # numeric.overlapping.
-      tri12 = self.points1.tri[:,_,:,_] * self.points2.npoints + self.points2.tri[_,:,_,:] # ntri1 x ntri2 x 2 x ndims
-      return types.frozenarray(numeric.overlapping(tri12.reshape(-1, 2*self.ndims), n=self.ndims+1).reshape(-1, self.ndims+1), copy=False)
+      tri12 = self.points1.tri[:,_,:,_] * self.points2.npoints + self.points2.tri[_,:,_,:] # ntri1 x ntri2 x 2 x ndimsmanifold
+      return types.frozenarray(numeric.overlapping(tri12.reshape(-1, 2*self.ndimsmanifold), n=self.ndimsmanifold+1).reshape(-1, self.ndimsmanifold+1), copy=False)
     return super().tri
 
   @property
   def hull(self):
-    if self.points1.ndims == 1:
-      hull1 = self.points1.hull[:,_,:,_] * self.points2.npoints + self.points2.tri[_,:,_,:] # 2 x ntri2 x 1 x ndims
-      hull2 = self.points1.tri[:,_,:,_] * self.points2.npoints + self.points2.hull[_,:,_,:] # ntri1 x nhull2 x 2 x ndims-1
+    if self.points1.ndimsmanifold == 1:
+      hull1 = self.points1.hull[:,_,:,_] * self.points2.npoints + self.points2.tri[_,:,_,:] # 2 x ntri2 x 1 x ndimsmanifold
+      hull2 = self.points1.tri[:,_,:,_] * self.points2.npoints + self.points2.hull[_,:,_,:] # ntri1 x nhull2 x 2 x ndimsmanifold-1
       # The subdivision of hull2 into simplices follows identical logic to that
       # used in the construction of self.tri.
-      hull = numpy.concatenate([hull1.reshape(-1, self.ndims), numeric.overlapping(hull2.reshape(-1, 2*(self.ndims-1)), n=self.ndims).reshape(-1, self.ndims)])
+      hull = numpy.concatenate([hull1.reshape(-1, self.ndimsmanifold), numeric.overlapping(hull2.reshape(-1, 2*(self.ndimsmanifold-1)), n=self.ndimsmanifold).reshape(-1, self.ndimsmanifold)])
       return types.frozenarray(hull, copy=False)
     return super().hull
 

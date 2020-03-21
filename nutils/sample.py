@@ -44,7 +44,7 @@ efficiently combine common substructures.
 '''
 
 from . import types, points, util, function, parallel, numeric, matrix, transformseq, sparse, warnings
-import numpy, numbers, collections.abc, os, treelog as log, operator
+import numpy, numbers, collections.abc, os, treelog as log, operator, functools
 
 graphviz = os.environ.get('NUTILS_GRAPHVIZ')
 
@@ -84,7 +84,7 @@ class Sample(types.Singleton):
       contain points.
   '''
 
-  __cache__ = 'allcoords', 'index'
+  __cache__ = 'allcoords', 'index', 'subsamplemetas'
 
   @types.apply_annotations
   def __init__(self, roots:types.tuple[function.strictroot], ndims:types.strictint, npoints:types.strictint, transforms:types.tuple[transformseq.stricttransforms]):
@@ -146,7 +146,7 @@ class Sample(types.Singleton):
 
     detJ = 1
     for isubsample, subsample in enumerate(self.subsamplemetas):
-      J = function.RootBasis(isubsample, subsample.roots, subsample.ndimsmanifold, function.SelectChain(subsample.roots))[:,:subsample.ndimsmanifold]
+      J = function.RootBasis(isubsample, subsample.roots, subsample.ndimsmanifold)[:,:subsample.ndimsmanifold]
       if J.shape[0] == J.shape[1]:
         detJ *= abs(function.determinant(J))
       else:
@@ -294,7 +294,7 @@ class Sample(types.Singleton):
     row defines a simplex by mapping vertices into the list of points.
     '''
 
-    return numpy.concatenate([self.getindex(ielem).take(self.getpoints(ielem).tri) for ielem in range(self.nelems)])
+    return types.frozenarray(numpy.concatenate([self.getindex(ielem).take(self.getpoints(ielem).tri) for ielem in range(self.nelems)]), copy=False)
 
   @property
   def hull(self):
@@ -306,7 +306,7 @@ class Sample(types.Singleton):
     triangulations originating from separate elements are disconnected.
     '''
 
-    return numpy.concatenate([self.getindex(ielem).take(self.getpoints(ielem).hull) for ielem in range(self.nelems)])
+    return types.frozenarray(numpy.concatenate([self.getindex(ielem).take(self.getpoints(ielem).hull) for ielem in range(self.nelems)]), copy=False)
 
   def subset(self, mask):
     '''Reduce the number of points.
@@ -338,7 +338,13 @@ class Sample(types.Singleton):
 
   @property
   def subsamplemetas(self):
-    return function.SubsampleMeta(roots=self.roots, ndimsnormal=sum(root.ndims for root in self.roots)-self.ndims, transforms=self.transforms),
+    if self.nelems:
+      ndimspoints = self.getpoints(0).ndims
+      if not all(self.getpoints(ielem).ndims == ndimspoints for ielem in range(self.nelems)):
+        ndimspoints = None
+    else:
+      ndimspoints = None
+    return function.SubsampleMeta(roots=self.roots, ndimsnormal=sum(root.ndims for root in self.roots)-self.ndims, transforms=self.transforms, ndimspoints=ndimspoints),
 
 strictsample = types.strict[Sample]
 
@@ -395,6 +401,8 @@ class UniformSample(Sample):
       Point set.
   '''
 
+  __cache__ = 'tri', 'hull', 'subsamplemetas'
+
   @types.apply_annotations
   def __init__(self, roots:types.tuple[function.strictroot], ndims:types.strictint, transforms:types.tuple[transformseq.stricttransforms], points:points.strictpoints):
     assert len(transforms) >= 1
@@ -407,16 +415,32 @@ class UniformSample(Sample):
   def getindex(self, ielem):
     return numpy.arange(ielem*self._points.npoints, (ielem+1)*self._points.npoints)
 
+  @property
+  def tri(self):
+    tri = self._points.tri
+    return types.frozenarray((numpy.arange(0, self.nelems*self._points.npoints, self._points.npoints)[:,None,None] + tri).reshape(-1,tri.shape[-1]), copy=False)
+
+  @property
+  def hull(self):
+    hull = self._points.hull
+    return types.frozenarray((numpy.arange(0, self.nelems*self._points.npoints, self._points.npoints)[:,None,None] + hull).reshape(-1,hull.shape[-1]), copy=False)
+
+  @property
+  def subsamplemetas(self):
+    return function.SubsampleMeta(roots=self.roots, ndimsnormal=sum(root.ndims for root in self.roots)-self.ndims, transforms=self.transforms, points=self._points, ndimspoints=self._points.ndims),
+
 class ProductSample(Sample):
 
+  __cache__ = 'subsamplemetas', 'tri', 'hull'
+
   @types.apply_annotations
-  def __init__(self, sample1:strictsample, sample2:strictsample):
+  def __init__(self, sample1:strictsample, sample2:strictsample, transforms:types.tuple[transformseq.stricttransforms]):
     self._sample1 = sample1
     self._sample2 = sample2
     super().__init__(sample1.roots+sample2.roots,
                      sample1.ndims+sample2.ndims,
                      sample1.npoints*sample2.npoints,
-                     tuple(map(operator.mul, sample1.transforms, sample2.transforms)))
+                     transforms)
 
   def getpoints(self, ielem):
     ielem1, ielem2 = divmod(ielem, self._sample2.nelems)
@@ -426,6 +450,25 @@ class ProductSample(Sample):
     ielem1, ielem2 = divmod(ielem, self._sample2.nelems)
     return (self._sample1.getindex(ielem1)[:,numpy.newaxis]*self._sample2.npoints + self._sample2.getindex(ielem2)[numpy.newaxis,:]).ravel()
 
+  @property
+  def tri(self):
+    if self._sample1.ndims == 1:
+      tri12 = self._sample1.tri[:,None,:,None] * self._sample2.npoints + self._sample2.tri[None,:,None,:] # ntri1 x ntri2 x 2 x ndims
+      return types.frozenarray(numeric.overlapping(tri12.reshape(-1, 2*self.ndims), n=self.ndims+1).reshape(-1, self.ndims+1), copy=False)
+    return super().tri
+
+  @property
+  def hull(self):
+    # NOTE: the order differs from `super().hull`
+    if self._sample1.ndims == 1:
+      hull1 = self._sample1.hull[:,None,:,None] * self._sample2.npoints + self._sample2.tri[None,:,None,:] # 2 x ntri2 x 1 x ndims
+      hull2 = self._sample1.tri[:,None,:,None] * self._sample2.npoints + self._sample2.hull[None,:,None,:] # ntri1 x nhull2 x 2 x ndims-1
+      # The subdivision of hull2 into simplices follows identical logic to that
+      # used in the construction of self.tri.
+      hull = numpy.concatenate([hull1.reshape(-1, self.ndims), numeric.overlapping(hull2.reshape(-1, 2*(self.ndims-1)), n=self.ndims).reshape(-1, self.ndims)])
+      return types.frozenarray(hull, copy=False)
+    return super().hull
+
   def getsubsamples(self, ielem):
     ielem1, ielem2 = divmod(ielem, self._sample2.nelems)
     return self._sample1.getsubsamples(ielem1) + self._sample2.getsubsamples(ielem2)
@@ -433,6 +476,53 @@ class ProductSample(Sample):
   @property
   def subsamplemetas(self):
     return self._sample1.subsamplemetas + self._sample2.subsamplemetas
+
+class ChainedSample(Sample):
+
+  __cache__ = 'tri', 'hull'
+
+  @types.apply_annotations
+  def __init__(self, samples:types.tuple[strictsample], transforms:types.tuple[transformseq.stricttransforms]):
+    if not len(samples):
+      raise ValueError('cannot chain zero samples')
+    roots = samples[0].roots
+    ndims = samples[0].ndims
+    if not all(sample.roots == roots for sample in samples):
+      raise ValueError('all samples to be chained should have the same (order of) roots')
+    if not all(sample.ndims == ndims for sample in samples):
+      raise ValueError('all samples to be chained should have the same dimension')
+    todims = tuple(root.ndims for root in roots)
+    self._samples = samples
+    self._elemoffsets = numpy.cumsum([0, *(sample.nelems for sample in samples[:-1])])
+    self._pointsoffsets = numpy.cumsum([0, *(sample.npoints for sample in samples[:-1])])
+    super().__init__(roots, ndims, sum(sample.npoints for sample in samples), transforms)
+
+  def _findelem(self, ielem):
+    if ielem < 0 or ielem >= self.nelems:
+      raise IndexError('element index out of range')
+    isample = numpy.searchsorted(self._elemoffsets[1:], ielem, side='right')
+    return isample, ielem - self._elemoffsets[isample]
+
+  def getpoints(self, ielem):
+    isample, ielem = self._findelem(ielem)
+    return self._samples[isample].getpoints(ielem)
+
+  def getindex(self, ielem):
+    isample, ielem = self._findelem(ielem)
+    return self._samples[isample].getindex(ielem) + self._pointsoffsets[isample]
+
+  def integral(self, func):
+    return functools.reduce(operator.add, (sample.integral(func) for sample in self._samples))
+
+  @property
+  def tri(self):
+    offsets = util.cumsum(sample.npoints for sample in self._samples)
+    return types.frozenarray(numpy.concatenate([sample.tri+offset for sample, offset in zip(self._samples, offsets)], axis=0), copy=False)
+
+  @property
+  def hull(self):
+    offsets = util.cumsum(sample.npoints for sample in self._samples)
+    return types.frozenarray(numpy.concatenate([sample.hull+offset for sample, offset in zip(self._samples, offsets)], axis=0), copy=False)
 
 class Integral(types.Singleton):
   '''Postponed integration.

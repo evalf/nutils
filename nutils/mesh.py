@@ -50,7 +50,7 @@ def line(nodes, periodic=False, bnames=None, *, rootid='line'):
     ielem = function.TransformsIndexWithTail(domain.transforms, 1, function.SelectChain((root,))).index
     geom = (function.rootcoords(root) + ielem) * scale + offset
   else:
-    geom = domain.basis('std', degree=1, periodic=False).dot(nodes)
+    geom = domain.basis('std', degree=1, periodic=False).dot(nodes)[_]
   return domain, geom
 
 @log.withcontext
