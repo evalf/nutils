@@ -336,7 +336,7 @@ class Integral(types.Singleton):
   @types.apply_annotations
   def __init__(self, integrands:types.frozendict[strictsample, function.simplified], shape:types.tuple[int]):
     assert all(ig.shape == shape for ig in integrands.values()), 'incompatible shapes: expected {}, got {}'.format(shape, ', '.join({str(ig.shape) for ig in integrands.values()}))
-    self._integrands = integrands
+    self._integrands = {topo: func for topo, func in integrands.items() if not function.iszero(func)}
     self.shape = shape
 
   @property
