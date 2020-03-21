@@ -339,6 +339,10 @@ class Integral(types.Singleton):
     self._integrands = integrands
     self.shape = shape
 
+  @property
+  def ndim(self):
+    return len(self.shape)
+
   def __repr__(self):
     return 'Integral<{}>'.format(','.join(map(str, self.shape)))
 
