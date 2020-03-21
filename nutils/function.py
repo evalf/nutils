@@ -917,16 +917,15 @@ class Constant(Array):
     if not self.value.any():
       return zeros_like(self)
     # Find and replace invariant axes with InsertAxis.
-    value = self.value
+    value = numpy.asarray(self.value)
     invariant = []
     for i in reversed(range(self.ndim)):
       # Since `self.value.any()` is False for arrays with a zero-length axis,
-      # we can arrive here only if all axes have at least length one, hence the
-      # following statement should work.
-      first = numeric.get(value, i, 0)
-      if all(numpy.equal(first, numeric.get(value, i, j)).all() for j in range(1, value.shape[i])):
+      # we can arrive here only if all axes have at least length one, hence
+      # `value[...,0,...]` should work.
+      if numpy.equal(value, value[(slice(None),)*i+(0,_)]).all():
         invariant.append(i)
-        value = first
+        value = value[(slice(None),)*i+(0,)]
     if invariant:
       value = Constant(value)
       for i in reversed(invariant):
