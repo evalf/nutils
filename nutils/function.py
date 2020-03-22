@@ -765,8 +765,8 @@ class Array(Evaluable):
   @property
   def optimized_for_numpy(self):
     if self.isconstant:
-      const, = self.eval()
-      return Constant(const)
+      const = self.eval()
+      return Constant(const[0]) if const.shape[0] == 1 else ConstantPoints(const)
     return super().optimized_for_numpy
 
   def _derivative(self, var, seen):
@@ -1001,6 +1001,18 @@ class Constant(Array):
   def _determinant(self):
     # NOTE: numpy <= 1.12 cannot compute the determinant of an array with shape [...,0,0]
     return Constant(numpy.linalg.det(self.value) if self.value.shape[-1] else numpy.ones(self.value.shape[:-2]))
+
+class ConstantPoints(Array):
+
+  __slots__ = 'value'
+
+  @types.apply_annotations
+  def __init__(self, value:types.frozenarray):
+    self.value = value
+    super().__init__(args=[], shape=value.shape[1:], dtype=value.dtype)
+
+  def evalf(self):
+    return self.value
 
 class InsertAxis(Array):
 
@@ -1367,6 +1379,38 @@ class ApplyTransforms(Array):
       raise Exception
     return zeros(self.shape+var.shape)
 
+  @util.positional_only
+  def prepare_eval(self, *, kwargs=...):
+    tail = self._tail.prepare_eval(**kwargs)
+    if 'subsamples' in kwargs and isinstance(tail, EmptyTransformChain):
+      subsamples = kwargs['subsamples']
+      # TODO: Follow the same procedure if `tail` is `SelectChain` from `IdentifierTransforms`
+      slices = {}
+      isubsamples = {}
+      for isubsample, subsample in enumerate(subsamples):
+        if not self.roots.isdisjoint(subsample.roots) and subsample.points is None:
+          return super().prepare_eval(**kwargs)
+
+        from0 = 0
+        for root in subsample.roots:
+          isubsamples[root] = isubsample
+          from1 = from0 + root.ndims
+          slices[root] = slice(from0, from1)
+          from0 = from1
+
+      result = numpy.zeros((*(subsample.points.npoints for subsample in subsamples), self.shape[0]), dtype=float)
+      to0 = 0
+      for root in tail.ordered_roots:
+        to1 = to0 + slices[root].stop - slices[root].start
+        isubsample = isubsamples[root]
+        expand = tuple(slice(None) if i == isubsample else numpy.newaxis for i in range(len(subsamples)))
+        result[...,to0:to1] = subsamples[isubsample].points.coords[:,slices[root]][expand]
+        to0 = to1
+      assert to0 == self.shape[0]
+      return ConstantPoints(result.reshape((-1, self.shape[0])))
+
+    return super().prepare_eval(**kwargs)
+
 class Linear(Array):
 
   __slots__ = '_roots', '_fromdims', '_transforms', '_ielem', '_itransforms'
@@ -1403,6 +1447,34 @@ class Linear(Array):
       raise RuntimeError('prepare_eval called twice')
     itransforms = 1 if kwargs.get('opposite', False) and len(self._transforms) > 1 else 0
     return Linear(self._roots, self._fromdims, self._transforms, ielem, itransforms)
+
+class Weights(Array):
+
+  def __init__(self):
+    super().__init__(args=[SUBSAMPLES], shape=(), dtype=float)
+
+  def evalf(self, subsamples):
+    weights = numpy.ones((1,))
+    for subsample in reversed(subsamples):
+      weights = weights[...,numpy.newaxis] * subsample.points.weights
+    return weights.ravel()
+
+  @util.positional_only
+  def prepare_eval(self, *, subsamples, kwargs=...):
+    if all(subsample.points is not None for subsample in subsamples):
+      return ConstantPoints(self.evalf(subsamples))
+    else:
+      return self
+
+class DotWeights(Array):
+
+  @types.apply_annotations
+  def __init__(self, value:asarray, weights:asarray):
+    assert weights.ndim == 0
+    super().__init__(args=[value, weights], shape=value.shape, dtype=float)
+
+  def evalf(self, value, weights):
+    return numpy.einsum('a...,a->...', value, weights)[_]
 
 class Inverse(Array):
   '''

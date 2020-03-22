@@ -370,7 +370,6 @@ class Topology(types.Singleton):
     if arguments is None:
       arguments = {}
 
-    levelset = levelset.prepare_eval().simplified
     refs = []
     if leveltopo is None:
       verts = self.sample('vertex', maxrefine)
@@ -378,6 +377,7 @@ class Topology(types.Singleton):
       refs = [ref.trim(levels[verts.getindex(ielem)], maxrefine=maxrefine, ndivisions=ndivisions) for ielem, ref in enumerate(self.references)]
     else:
       log.info('collecting leveltopo elements')
+      levelset = levelset.prepare_eval(subsamples=(function.SubsampleMeta(roots=self.roots, ndimsnormal=sum(root.ndims for root in self.roots)-self.ndims),), transforms=(self.transforms, self.opposites)).simplified
       bins = [set() for ielem in range(len(self))]
       for trans in leveltopo.transforms:
         ielem, tail = self.transforms.index_with_tail(trans)
