@@ -146,7 +146,7 @@ class Sample(types.Singleton):
 
     detJ = 1
     for isubsample, subsample in enumerate(self.subsamplemetas):
-      J = function.RootBasis(isubsample, subsample.roots, subsample.ndimsmanifold)[:,:subsample.ndimsmanifold]
+      J = function.rootbasis(self.subsamplemetas, isubsample)[:,:subsample.ndimsmanifold]
       if J.shape[0] == J.shape[1]:
         detJ *= abs(function.determinant(J))
       else:
