@@ -1380,16 +1380,14 @@ class ApplyTransforms(Array):
     return zeros(self.shape+var.shape)
 
   @util.positional_only
-  def prepare_eval(self, *, kwargs=...):
-    tail = self._tail.prepare_eval(**kwargs)
-    if 'subsamples' in kwargs and isinstance(tail, EmptyTransformChain):
-      subsamples = kwargs['subsamples']
-      # TODO: Follow the same procedure if `tail` is `SelectChain` from `IdentifierTransforms`
+  def prepare_eval(self, *, subsamples, kwargs=...):
+    tail = self._tail.prepare_eval(subsamples=subsamples, **kwargs)
+    if isinstance(tail, EmptyTransformChain) or isinstance(tail, SelectChain) and any(subsample.roots == tail.ordered_roots and subsample.transforms == transformseq.IdentifierTransforms for subsample in subsamples):
       slices = {}
       isubsamples = {}
       for isubsample, subsample in enumerate(subsamples):
         if not self.roots.isdisjoint(subsample.roots) and subsample.points is None:
-          return super().prepare_eval(**kwargs)
+          return super().prepare_eval(subsamples=subsamples, **kwargs)
 
         from0 = 0
         for root in subsample.roots:
@@ -1408,8 +1406,7 @@ class ApplyTransforms(Array):
         to0 = to1
       assert to0 == self.shape[0]
       return ConstantPoints(result.reshape((-1, self.shape[0])))
-
-    return super().prepare_eval(**kwargs)
+    return super().prepare_eval(subsamples=subsamples, **kwargs)
 
 class Linear(Array):
 
