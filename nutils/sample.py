@@ -158,7 +158,8 @@ class Sample(types.Singleton):
     # argument id, evaluable index, and evaluable values.
 
     funcs = self._prepare_funcs(funcs)
-    blocks = [(ifunc, function.Tuple(ind), f.simplified.optimized_for_numpy) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func)]
+    weights = function.Weights().prepare_eval(subsamples=self.subsamplemetas)
+    blocks = [(ifunc, function.Tuple(ind), function.DotWeights(f, weights).simplified.optimized_for_numpy) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func)]
     block2func, indices, values = zip(*blocks) if blocks else ([],[],[])
 
     log.debug('integrating {} distinct blocks'.format('+'.join(
@@ -196,13 +197,9 @@ class Sample(types.Singleton):
     with parallel.ctxrange('integrating', self.nelems) as ielems:
       for ielem in ielems:
         subsamples = self.getsubsamples(ielem)
-        weights = numpy.ones((1,))
-        for subsample in reversed(subsamples):
-          weights = weights[...,numpy.newaxis] * subsample.points.weights
-        weights = weights.ravel()
-        for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(*subsamples, **arguments)):
-          data = datas[block2func[iblock]][offsets[iblock,ielem]:offsets[iblock,ielem+1]].reshape(intdata.shape[1:])
-          numpy.einsum('p,p...->...', weights, intdata, out=data['value'])
+        for iblock, ((intdata,), *indices) in enumerate(valueindexfunc.eval(*subsamples, **arguments)):
+          data = datas[block2func[iblock]][offsets[iblock,ielem]:offsets[iblock,ielem+1]].reshape(intdata.shape)
+          data['value'] = intdata
           for idim, ii in enumerate(indices):
             data['index']['i'+str(idim)] = ii.reshape([-1]+[1]*(data.ndim-1-idim))
 
