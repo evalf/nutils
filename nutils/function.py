@@ -87,6 +87,12 @@ class Root(types.Singleton):
 
 strictroot = types.strict[Root]
 
+class RevolutionRoot(Root):
+
+  @types.apply_annotations
+  def __init__(self, name:types.strictstr):
+    super().__init__(name, 1)
+
 class Subsample:
   '''Subsample
 
@@ -3165,15 +3171,23 @@ class DelayedJacobian(Array):
   def prepare_eval(self, *, subsamples, kwargs=...):
     ndimsmanifold = 0
     J = []
+    roots = set(self.roots)
     for isubsample, subsample in enumerate(subsamples):
-      if self.roots.isdisjoint(subsample.roots):
+      if roots.isdisjoint(subsample.roots):
         continue
-      if not frozenset(subsample.roots) <= self.roots:
+      if not frozenset(subsample.roots) <= roots:
         raise ValueError('Cannot compute jacobian.')
+      roots -= set(subsample.roots)
       ndimsmanifold += subsample.ndimsmanifold
       if subsample.ndims == 0:
         continue
       J.append(dot(rootgradient(self._geom, subsample.roots)[:,:,_], rootbasis(subsamples, isubsample, orthonormal=True, opposite=kwargs.get('opposite', False))[_:,:subsample.ndimsmanifold], 1))
+    for root in tuple(roots):
+      if isinstance(root, RevolutionRoot):
+        roots.remove(root)
+        J.append(rootgradient(self._geom, (root,))*(2*numpy.pi))
+    if roots:
+      raise ValueError('extra roots: {}'.format(roots))
     if self._ndimsmanifold is not None and ndimsmanifold != self._ndimsmanifold:
       raise ValueError('jacobian will be evaluated on a manifold of dimension {} but {} was requested'.format(ndimsmanifold, self._ndimsmanifold))
     J = concatenate(J, axis=1)
@@ -3212,11 +3226,13 @@ class DelayedNormal(Array):
     tangents = []
     normals = []
     ndimsnormal = 0
+    roots = set(self.roots)
     for isubsample, subsample in enumerate(subsamples):
-      if self.roots.isdisjoint(subsample.roots):
+      if roots.isdisjoint(subsample.roots):
         continue
-      if not frozenset(subsample.roots) <= self.roots:
+      if not frozenset(subsample.roots) <= roots:
         raise ValueError('Cannot compute normal.')
+      roots -= set(subsample.roots)
       ndimsnormal += subsample.ndimsnormal
       basis = rootbasis(subsamples, isubsample, opposite=kwargs.get('opposite', False))
       grad = dot(rootgradient(self._geom, subsample.roots)[:,:,_], basis[_,:,:], 1)
@@ -3224,6 +3240,12 @@ class DelayedNormal(Array):
         tangents.append(grad[:,:subsample.ndimsmanifold])
       if subsample.ndimsnormal:
         normals.append(grad[:,subsample.ndimsmanifold:])
+    for root in tuple(roots):
+      if isinstance(root, RevolutionRoot):
+        roots.remove(root)
+        tangents.append(rootgradient(self._geom, (root,)))
+    if roots:
+      raise ValueError('extra roots: {}'.format(roots))
     if ndimsnormal == 0:
       raise ValueError('cannot compute normal: the normal space has dimension zero')
     elif ndimsnormal > 1:
@@ -3604,11 +3626,16 @@ class RevolutionAngle(Array):
   Pseudo coordinates of a :class:`nutils.topology.RevolutionTopology`.
   '''
 
-  __slots__ = ()
+  __slots__ = '_root'
   __cache__ = 'prepare_eval'
 
-  def __init__(self):
+  def __init__(self, root):
+    self._root = root
     super().__init__(args=[], shape=[], dtype=float)
+
+  @property
+  def roots(self):
+    return frozenset((self._root,))
 
   @property
   def isconstant(self):
@@ -3618,7 +3645,7 @@ class RevolutionAngle(Array):
     raise Exception('RevolutionAngle should not be evaluated')
 
   def _derivative(self, var, seen):
-    return (ones_like if isinstance(var, LocalCoords) and len(var) > 0 else zeros_like)(var)
+    return (ones_like if isinstance(var, RootCoords) and var.root == self._root else zeros_like)(var)
 
   @util.positional_only
   def prepare_eval(self, kwargs=...):
