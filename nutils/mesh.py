@@ -44,7 +44,7 @@ def line(nodes, periodic=False, bnames=None, *, rootid='line'):
     offset = nodes[0]
     uniform = numpy.equal(nodes, offset + numpy.arange(nelems+1) * scale).all()
   root = function.Root(rootid, 1)
-  transforms = transformseq.IdentifierTransforms(1, rootid, nelems)
+  transforms = transformseq.IdentifierTransforms(1, 'line', nelems)
   domain = topology.StructuredLine(root, transforms, periodic, bnames)
   if uniform:
     ielem = function.TransformsIndexWithTail(domain.transforms, 1, function.SelectChain((root,))).index
