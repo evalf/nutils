@@ -254,7 +254,8 @@ class Reference(types.Singleton):
         if PJ.shape[2] < self.ndims:
           assert PJ.shape[2] == points.ndims
           J[:,:,PJ.shape[2]:] = TJ[_,:,points.ndims:self.ndims]
-        detJ = abs(numpy.linalg.det(J[:,:,:self.ndims-1].transpose(0,2,1) @ J[:,:,:self.ndims-1]))**0.5
+        JTJ = numpy.einsum('nij,nik->njk', J[:,:,:self.ndims-1], J[:,:,:self.ndims-1])
+        detJ = abs(numpy.linalg.det(JTJ)**0.5) if JTJ.size else 1
         numeric.gramschmidt(J)
         n = J[:,:,-1]
         w_normal = (points.weights * detJ)[:,_] * n
