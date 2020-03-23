@@ -164,35 +164,30 @@ class common_refine(TestCase):
       self.assertAlmostEqual(iface.integrate(function.J(geom), degree=1), 3)
 
 @parametrize
-@unittest.skip('in between bifurcate and tensorial')
 class revolved(TestCase):
 
   def setUp(self):
     super().setUp()
     if self.domtype == 'circle':
-      self.domain0, self.geom0 = mesh.rectilinear([2])
+      self.domain, self.geom0 = mesh.rectilinear([2])
       self.exact_volume = 4 * numpy.pi
       self.exact_surface = 4 * numpy.pi
       self.exact_groups = {}
     elif self.domtype == 'cylinder':
-      self.domain0, self.geom0 = mesh.rectilinear([1,2])
+      self.domain, self.geom0 = mesh.rectilinear([1,2])
       self.exact_volume = 2 * numpy.pi
       self.exact_surface = 6 * numpy.pi
       self.exact_groups = dict(right=4*numpy.pi, left=0)
     elif self.domtype == 'hollowcylinder':
-      self.domain0, self.geom0 = mesh.rectilinear([[.5,1],2])
+      self.domain, self.geom0 = mesh.rectilinear([[.5,1],2])
       self.exact_volume = 1.5 * numpy.pi
       self.exact_surface = 7.5 * numpy.pi
       self.exact_groups = dict(right=4*numpy.pi, left=2*numpy.pi)
     else:
       raise Exception('unknown domain type {!r}'.format(self.domtype))
-    self.domain, self.geom, self.simplify = self.domain0.revolved(self.geom0)
+    self.geom = self.domain.revolved_geometry(self.geom0)
     if self.refined:
       self.domain = self.domain.refined
-      self.domain0 = self.domain0.refined
-
-  def test_revolved(self):
-    self.assertEqual(len(self.domain), len(self.domain0))
 
   def test_volume(self):
     vol = self.domain.integrate(function.J(self.geom), ischeme='gauss1')
@@ -202,7 +197,7 @@ class revolved(TestCase):
     boundary = self.domain.boundary
     if self.domtype != 'hollowcylinder':
       boundary = boundary['bottom,right,top']
-    v = boundary.integrate(self.geom.dotnorm(self.geom)*function.J(self.geom), ischeme='gauss1') / self.domain.ndims
+    v = boundary.integrate(self.geom.dotnorm(self.geom)*function.J(self.geom), ischeme='gauss1') / (self.domain.ndims+1)
     numpy.testing.assert_array_almost_equal(v, self.exact_volume)
 
   def test_surface(self):

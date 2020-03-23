@@ -566,14 +566,15 @@ class Topology(types.Singleton):
       transforms += self.opposites[uielems],
     return sample.PlainSample(self.roots, self.ndims, transforms, points_, index)
 
-  def revolved(self, geom):
+  def revolved_geometry(self, geom, *, name='rev'):
     assert geom.ndim == 1
-    revdomain = self * RevolutionTopology()
-    angle = function.RevolutionAngle()
-    geom, angle = function.bifurcate(geom, angle)
-    revgeom = function.concatenate([geom[0] * function.trignormal(angle), geom[1:]])
-    simplify = _identity
-    return revdomain, revgeom, simplify
+    revroot = function.RevolutionRoot(name)
+    angle = function.RevolutionAngle(revroot)
+    return function.concatenate([geom[0] * function.trignormal(angle), geom[1:]])
+
+  def revolved(self, geom):
+    warnings.deprecation('`Topology.revolved` is deprecated; use Topology.revolved_geometry instead')
+    return self, self.revolved_geometry(geom), _identity
 
   def extruded(self, geom, nelems, periodic=False, bnames=('front','back')):
     assert geom.ndim == 1
