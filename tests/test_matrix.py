@@ -28,16 +28,6 @@ class solver(TestCase):
     return wrapped
 
   @ifsupported
-  def test_scalar(self):
-    s = matrix.assemble(numpy.array([1.,2.]), index=numpy.empty((0,2), dtype=int), shape=())
-    self.assertEqual(s, 3.)
-
-  @ifsupported
-  def test_vector(self):
-    v = matrix.assemble(numpy.array([1.,2.,3.]), index=numpy.array([[0,2,0]]), shape=(3,))
-    self.assertEqual(tuple(v), (4.,0.,2.))
-
-  @ifsupported
   def test_size(self):
     self.assertEqual(self.matrix.size, self.n**2)
 
@@ -240,23 +230,6 @@ class solver(TestCase):
     self.assertAllEqual(self.matrix.diagonal(), numpy.diag(self.exact))
 
 
-class Base(matrix.Backend):
-  @staticmethod
-  def assemble(data, index, shape):
-    obj = matrix.Numpy.assemble(data, index, shape)
-    return WrapperMatrix(obj) if isinstance(obj, matrix.Matrix) else obj
-
-class WrapperMatrix(matrix.Matrix):
-  'simple wrapper to test base implementations of add, mul, etc'
-  def __init__(self, wrapped):
-    self.wrapped = wrapped
-    super().__init__(wrapped.shape)
-  def export(self, form):
-    return self.wrapped.export(form)
-  def solve_direct(self, rhs, atol):
-    return self.wrapped.solve_direct(rhs, atol=atol)
-
-solver('base', backend=Base(), args=[{}])
 solver('numpy', backend=matrix.Numpy(), args=[{}])
 solver('scipy', backend=matrix.Scipy(), args=[{},
     dict(solver='gmres', atol=1e-5, restart=100, precon='spilu'),

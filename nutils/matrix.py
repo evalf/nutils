@@ -89,38 +89,29 @@ class Matrix(metaclass=types.CacheMeta):
     data, index = self.export('coo')
     return assemble, (data, index, self.shape)
 
+  @abc.abstractmethod
   def __add__(self, other):
     'add two matrices'
-    if not isinstance(other, Matrix):
-      return NotImplemented
-    if self.shape != other.shape:
-      raise MatrixError('incompatible shapes')
-    data1, index1 = self.export('coo')
-    data2, index2 = other.export('coo')
-    return assemble(numpy.concatenate([data1, data2]), numpy.concatenate([index1, index2], axis=1), self.shape)
 
+    raise NotImplementedError
+
+  @abc.abstractmethod
   def __mul__(self, other):
     'multiply matrix with a scalar'
-    if not numeric.isnumber(other):
-      return NotImplemented
-    data, index = self.export('coo')
-    return assemble(data * other, index, self.shape)
 
+    raise NotImplementedError
+
+  @abc.abstractmethod
   def __matmul__(self, other):
     'multiply matrix with a dense tensor'
-    if not isinstance(other, numpy.ndarray):
-      return NotImplemented
-    if other.shape[0] != self.shape[1]:
-      raise MatrixError('incompatible shapes')
-    retval = numpy.zeros(self.shape[:1] + other.shape[1:])
-    data, index = self.export('coo')
-    numpy.add.at(retval, index[0], data[(slice(None),)+(numpy.newaxis,)*(other.ndim-1)] * other[index[1]])
-    return retval
 
+    raise NotImplementedError
+
+  @abc.abstractmethod
   def __neg__(self):
     'negate matrix'
-    data, index = self.export('coo')
-    return assemble(-data, index, self.shape)
+
+    raise NotImplementedError
 
   def __sub__(self, other):
     return self.__add__(-other)
@@ -136,10 +127,11 @@ class Matrix(metaclass=types.CacheMeta):
     return self.__matmul__(vec)
 
   @property
+  @abc.abstractmethod
   def T(self):
     'transpose matrix'
-    data, index = self.export('coo')
-    return assemble(data, index[::-1], self.shape[::-1])
+
+    raise NotImplementedError
 
   @property
   def size(self):
@@ -243,6 +235,7 @@ class Matrix(metaclass=types.CacheMeta):
       log.warning(e)
       return e.best
 
+  @abc.abstractmethod
   def submatrix(self, rows, cols):
     '''Create submatrix from selected rows, columns.
 
@@ -256,6 +249,9 @@ class Matrix(metaclass=types.CacheMeta):
     :class:`Matrix`
         Matrix instance of reduced dimensions
     '''
+
+    raise NotImplementedError
+
 
     rows = numeric.asboolean(rows, self.shape[0])
     cols = numeric.asboolean(cols, self.shape[1])
@@ -335,20 +331,32 @@ class NumpyMatrix(Matrix):
     self.core = core
     super().__init__(core.shape)
 
+  def convert(self, mat):
+    if not isinstance(mat, Matrix):
+      raise TypeError('cannot convert {} to Matrix'.format(type(mat).__name__))
+    if self.shape != mat.shape:
+      raise MatrixError('non-matching shapes')
+    if isinstance(mat, NumpyMatrix):
+      return mat
+    return NumpyMatrix(mat.export('dense'))
+
   def __add__(self, other):
-    if isinstance(other, NumpyMatrix) and self.shape == other.shape:
-      return NumpyMatrix(self.core + other.core)
-    return super().__add__(other)
+    return NumpyMatrix(self.core + self.convert(other).core)
+
+  def __sub__(self, other):
+    return NumpyMatrix(self.core - self.convert(other).core)
 
   def __mul__(self, other):
-    if numeric.isnumber(other):
-      return NumpyMatrix(self.core * other)
-    return super().__mul__(other)
+    if not numeric.isnumber(other):
+      raise TypeError
+    return NumpyMatrix(self.core * other)
 
   def __matmul__(self, other):
-    if isinstance(other, numpy.ndarray) and other.shape[0] == self.shape[1]:
-      return numpy.einsum('ij,j...->i...', self.core, other)
-    return super().__matmul__(other)
+    if not isinstance(other, numpy.ndarray):
+      raise TypeError
+    if other.shape[0] != self.shape[1]:
+      raise MatrixError
+    return numpy.einsum('ij,j...->i...', self.core, other)
 
   def __neg__(self):
     return NumpyMatrix(-self.core)
@@ -411,25 +419,32 @@ class ScipyMatrix(Matrix):
     self.scipy = scipy
     super().__init__(core.shape)
 
+  def convert(self, mat):
+    if not isinstance(mat, Matrix):
+      raise TypeError('cannot convert {} to Matrix'.format(type(mat).__name__))
+    if self.shape != mat.shape:
+      raise MatrixError('non-matching shapes')
+    if isinstance(mat, ScipyMatrix):
+      return mat
+    return ScipyMatrix(self.scipy.sparse.csr_matrix(mat.export('csr'), self.shape), self.scipy)
+
   def __add__(self, other):
-    if isinstance(other, ScipyMatrix) and self.shape == other.shape:
-      return ScipyMatrix(self.core + other.core, scipy=self.scipy)
-    return super().__add__(other)
+    return ScipyMatrix(self.core + self.convert(other).core, scipy=self.scipy)
 
   def __sub__(self, other):
-    if isinstance(other, ScipyMatrix) and self.shape == other.shape:
-      return ScipyMatrix(self.core - other.core, scipy=self.scipy)
-    return super().__sub__(other)
+    return ScipyMatrix(self.core - self.convert(other).core, scipy=self.scipy)
 
   def __mul__(self, other):
-    if numeric.isnumber(other):
-      return ScipyMatrix(self.core * other, scipy=self.scipy)
-    return super().__mul__(other)
+    if not numeric.isnumber(other):
+      raise TypeError
+    return ScipyMatrix(self.core * other, scipy=self.scipy)
 
   def __matmul__(self, other):
-    if isinstance(other, numpy.ndarray) and other.shape[0] == self.shape[1]:
-      return self.core * other
-    return super().__matmul__(other)
+    if not isinstance(other, numpy.ndarray):
+      raise TypeError
+    if other.shape[0] != self.shape[1]:
+      raise MatrixError
+    return self.core * other
 
   def __neg__(self):
     return ScipyMatrix(-self.core, scipy=self.scipy)
@@ -620,48 +635,60 @@ class MKLMatrix(Matrix):
     self.libmkl = libmkl
     super().__init__((len(rowptr)-1, ncols))
 
+  def convert(self, mat):
+    if not isinstance(mat, Matrix):
+      raise TypeError('cannot convert {} to Matrix'.format(type(mat).__name__))
+    if self.shape != mat.shape:
+      raise MatrixError('non-matching shapes')
+    if isinstance(mat, MKLMatrix):
+      return mat
+    data, colidx, rowptr = mat.export('csr')
+    return MKLMatrix(data, rowptr+1, colidx+1, self.shape[1], self.libmkl)
+
   def __add__(self, other):
-    if isinstance(other, MKLMatrix) and self.shape == other.shape:
-      request = ctypes.c_int32(1)
-      info = ctypes.c_int32()
-      rowptr = numpy.empty(self.shape[0]+1, dtype=numpy.int32)
-      args = ["N", ctypes.byref(request), ctypes.byref(ctypes.c_int32(0)),
-        ctypes.byref(ctypes.c_int32(self.shape[0])), ctypes.byref(ctypes.c_int32(self.shape[1])),
-        self.data.ctypes, self.colidx.ctypes, self.rowptr.ctypes, ctypes.byref(ctypes.c_double(1.)),
-        other.data.ctypes, other.colidx.ctypes, other.rowptr.ctypes,
-        None, None, rowptr.ctypes, None, ctypes.byref(info)]
-      self.libmkl.mkl_dcsradd(*args)
-      assert info.value == 0
-      colidx = numpy.empty(rowptr[-1]-1, dtype=numpy.int32)
-      data = numpy.empty(rowptr[-1]-1, dtype=numpy.float64)
-      request.value = 2
-      args[12:14] = data.ctypes, colidx.ctypes
-      self.libmkl.mkl_dcsradd(*args)
-      assert info.value == 0
-      return MKLMatrix(data, rowptr, colidx, self.shape[1], libmkl=self.libmkl)
-    return super().__add__(other)
+    other = self.convert(other)
+    assert self.shape == other.shape
+    request = ctypes.c_int32(1)
+    info = ctypes.c_int32()
+    rowptr = numpy.empty(self.shape[0]+1, dtype=numpy.int32)
+    args = ["N", ctypes.byref(request), ctypes.byref(ctypes.c_int32(0)),
+      ctypes.byref(ctypes.c_int32(self.shape[0])), ctypes.byref(ctypes.c_int32(self.shape[1])),
+      self.data.ctypes, self.colidx.ctypes, self.rowptr.ctypes, ctypes.byref(ctypes.c_double(1.)),
+      other.data.ctypes, other.colidx.ctypes, other.rowptr.ctypes,
+      None, None, rowptr.ctypes, None, ctypes.byref(info)]
+    self.libmkl.mkl_dcsradd(*args)
+    assert info.value == 0
+    colidx = numpy.empty(rowptr[-1]-1, dtype=numpy.int32)
+    data = numpy.empty(rowptr[-1]-1, dtype=numpy.float64)
+    request.value = 2
+    args[12:14] = data.ctypes, colidx.ctypes
+    self.libmkl.mkl_dcsradd(*args)
+    assert info.value == 0
+    return MKLMatrix(data, rowptr, colidx, self.shape[1], libmkl=self.libmkl)
 
   def __mul__(self, other):
-    if numeric.isnumber(other):
-      return MKLMatrix(self.data * other, self.rowptr, self.colidx, self.shape[1], libmkl=self.libmkl)
-    return super().__mul__(other)
+    if not numeric.isnumber(other):
+      raise TypeError
+    return MKLMatrix(self.data * other, self.rowptr, self.colidx, self.shape[1], libmkl=self.libmkl)
 
   def __matmul__(self, other):
-    if isinstance(other, numpy.ndarray) and other.shape[0] == self.shape[1]:
-      x = numpy.ascontiguousarray(other.T, dtype=numpy.float64)
-      y = numpy.empty(x.shape[:-1] + self.shape[:1], dtype=numpy.float64)
-      if other.ndim == 1:
-        self.libmkl.mkl_dcsrgemv('N', ctypes.byref(ctypes.c_int32(self.shape[0])),
-          self.data.ctypes, self.rowptr.ctypes, self.colidx.ctypes, x.ctypes, y.ctypes)
-      else:
-        self.libmkl.mkl_dcsrmm('N', ctypes.byref(ctypes.c_int32(self.shape[0])),
-          ctypes.byref(ctypes.c_int32(other.size//other.shape[0])),
-          ctypes.byref(ctypes.c_int32(self.shape[1])), ctypes.byref(ctypes.c_double(1.)), 'GXXFXX',
-          self.data.ctypes, self.colidx.ctypes, self.rowptr.ctypes, self.rowptr[1:].ctypes,
-          x.ctypes, ctypes.byref(ctypes.c_int32(other.shape[0])), ctypes.byref(ctypes.c_double(0.)),
-          y.ctypes, ctypes.byref(ctypes.c_int32(other.shape[0])))
-      return y.T
-    return super().__matmul__(other)
+    if not isinstance(other, numpy.ndarray):
+      raise TypeError
+    if other.shape[0] != self.shape[1]:
+      raise MatrixError
+    x = numpy.ascontiguousarray(other.T, dtype=numpy.float64)
+    y = numpy.empty(x.shape[:-1] + self.shape[:1], dtype=numpy.float64)
+    if other.ndim == 1:
+      self.libmkl.mkl_dcsrgemv('N', ctypes.byref(ctypes.c_int32(self.shape[0])),
+        self.data.ctypes, self.rowptr.ctypes, self.colidx.ctypes, x.ctypes, y.ctypes)
+    else:
+      self.libmkl.mkl_dcsrmm('N', ctypes.byref(ctypes.c_int32(self.shape[0])),
+        ctypes.byref(ctypes.c_int32(other.size//other.shape[0])),
+        ctypes.byref(ctypes.c_int32(self.shape[1])), ctypes.byref(ctypes.c_double(1.)), 'GXXFXX',
+        self.data.ctypes, self.colidx.ctypes, self.rowptr.ctypes, self.rowptr[1:].ctypes,
+        x.ctypes, ctypes.byref(ctypes.c_int32(other.shape[0])), ctypes.byref(ctypes.c_double(0.)),
+        y.ctypes, ctypes.byref(ctypes.c_int32(other.shape[0])))
+    return y.T
 
   def __neg__(self):
     return MKLMatrix(-self.data, self.rowptr, self.colidx, self.shape[1], libmkl=self.libmkl)
