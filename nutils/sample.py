@@ -44,7 +44,7 @@ efficiently combine common substructures.
 '''
 
 from . import types, points, util, function, parallel, numeric, matrix, transformseq, sparse, warnings
-import numpy, numbers, collections.abc, os, treelog as log, operator, functools
+import numpy, numbers, collections.abc, os, treelog as log, operator, functools, itertools
 
 graphviz = os.environ.get('NUTILS_GRAPHVIZ')
 
@@ -110,6 +110,14 @@ class Sample(types.Singleton):
     warnings.deprecation('`Sample.points` is deprecated; replace `Sample.points[ielem]` with `Sample.getpoints(ielem)`')
     return tuple(self.getpoints(ielem) for ielem in range(self.nelems))
 
+  @property
+  def indexiter(self):
+    return map(self.getindex, range(self.nelems))
+
+  @property
+  def pointsiter(self):
+    return map(self.getpoints, range(self.nelems))
+
   @util.positional_only
   @util.single_or_multiple
   @types.apply_annotations
@@ -158,7 +166,7 @@ class Sample(types.Singleton):
     # argument id, evaluable index, and evaluable values.
 
     funcs = self._prepare_funcs(funcs)
-    weights = function.Weights().prepare_eval(subsamples=self.subsamplemetas)
+    weights = function.PointsWeights().prepare_eval(subsamples=self.subsamplemetas)
     blocks = [(ifunc, function.Tuple(ind), function.DotWeights(f, weights).simplified.optimized_for_numpy) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func)]
     block2func, indices, values = zip(*blocks) if blocks else ([],[],[])
 
@@ -247,8 +255,8 @@ class Sample(types.Singleton):
   @property
   def allcoords(self):
     coords = numpy.empty([self.npoints, self.ndims])
-    for ielem in range(self.nelems):
-      coords[self.getindex(ielem)] = self.getpoints(ielem).coords
+    for index, points in zip(self.indexiter, self.pointsiter):
+      coords[index] = points.coords
     return types.frozenarray(coords, copy=False)
 
   def basis(self):
@@ -291,7 +299,7 @@ class Sample(types.Singleton):
     row defines a simplex by mapping vertices into the list of points.
     '''
 
-    return types.frozenarray(numpy.concatenate([self.getindex(ielem).take(self.getpoints(ielem).tri) for ielem in range(self.nelems)]), copy=False)
+    return types.frozenarray(numpy.concatenate([index.take(points.tri) for index, points in zip(self.indexiter, self.pointsiter)]), copy=False)
 
   @property
   def hull(self):
@@ -303,7 +311,7 @@ class Sample(types.Singleton):
     triangulations originating from separate elements are disconnected.
     '''
 
-    return types.frozenarray(numpy.concatenate([self.getindex(ielem).take(self.getpoints(ielem).hull) for ielem in range(self.nelems)]), copy=False)
+    return types.frozenarray(numpy.concatenate([index.take(points.hull) for index, points in zip(self.indexiter, self.pointsiter)]), copy=False)
 
   def subset(self, mask):
     '''Reduce the number of points.
@@ -324,7 +332,7 @@ class Sample(types.Singleton):
     subset : :class:`Sample`
     '''
 
-    selection = types.frozenarray([ielem for ielem in range(self.nelems) if mask[self.getindex(ielem)].any()])
+    selection = types.frozenarray([ielem for ielem, index in enumerate(self.indexiter) if mask[index].any()])
     transforms = tuple(transform[selection] for transform in self.transforms)
     points = [self.getpoints(ielem) for ielem in selection]
     offset = numpy.cumsum([0] + [p.npoints for p in points])
@@ -381,6 +389,14 @@ class PlainSample(Sample):
   def getindex(self, ielem):
     return self._index[ielem]
 
+  @property
+  def pointsiter(self):
+    return iter(self._points)
+
+  @property
+  def indexiter(self):
+    return iter(self._index)
+
 class UniformSample(Sample):
   '''A sample with uniform points.
 
@@ -411,6 +427,10 @@ class UniformSample(Sample):
 
   def getindex(self, ielem):
     return numpy.arange(ielem*self._points.npoints, (ielem+1)*self._points.npoints)
+
+  @property
+  def pointsiter(self):
+    return itertools.repeat(self._points, self.nelems)
 
   @property
   def tri(self):
@@ -446,6 +466,14 @@ class ProductSample(Sample):
   def getindex(self, ielem):
     ielem1, ielem2 = divmod(ielem, self._sample2.nelems)
     return (self._sample1.getindex(ielem1)[:,numpy.newaxis]*self._sample2.npoints + self._sample2.getindex(ielem2)[numpy.newaxis,:]).ravel()
+
+  @property
+  def pointsiter(self):
+    return (points.TensorPoints(points1, points2) for points1 in self._sample1.pointsiter for points2 in self._sample2.pointsiter)
+
+  @property
+  def indexiter(self):
+    return ((index1[:,numpy.newaxis]*self._sample2.npoints + index2[numpy.newaxis,:]).ravel() for index1 in self._sample1.indexiter for index2 in self._sample2.indexiter)
 
   @property
   def tri(self):
@@ -507,6 +535,14 @@ class ChainedSample(Sample):
   def getindex(self, ielem):
     isample, ielem = self._findelem(ielem)
     return self._samples[isample].getindex(ielem) + self._pointsoffsets[isample]
+
+  @property
+  def pointsiter(self):
+    return itertools.chain.fromiterable(sample.pointsiter for sample in self._samples)
+
+  @property
+  def indexiter(self):
+    return (index+offset for sample, offset in zip(self._samples, self._pointsoffsets) for index in sample.indexiter)
 
   def integral(self, func):
     return functools.reduce(operator.add, (sample.integral(func) for sample in self._samples))
