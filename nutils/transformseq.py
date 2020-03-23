@@ -319,19 +319,19 @@ class Transforms(types.Singleton):
     yield self
 
   @property
-  def linear_is_uniform(self):
+  def basis_is_uniform(self):
     return False
 
-  def linear(self, index):
+  def basis(self, index):
     ndims = sum(self.todims)
-    linears = numpy.zeros((ndims, ndims), float)
+    basis = numpy.zeros((ndims, ndims), float)
     ismanifold = numpy.zeros(sum(self.todims), dtype=bool)
     i = 0
     for chain, todims in zip(self[index], self.todims):
-      linears[i:i+todims,i:i+todims] = transform.linearfrom(chain, todims)
+      basis[i:i+todims,i:i+todims] = transform.linearfrom(chain, todims)
       ismanifold[i:i+chain[-1].fromdims] = True
       i += todims
-    return linears, ismanifold
+    return basis, ismanifold
 
 stricttransforms = types.strict[Transforms]
 
@@ -464,10 +464,10 @@ class IdentifierTransforms(Transforms):
     raise ValueError
 
   @property
-  def linear_is_uniform(self):
+  def basis_is_uniform(self):
     return True
 
-  def linear(self, ielem):
+  def basis(self, ielem):
     return numpy.eye(self._ndims), numpy.ones(self._ndims, dtype=bool)
 
 class Axis(types.Singleton):
@@ -686,11 +686,11 @@ class MaskedTransforms(Transforms):
       return int(index), tail
 
   @property
-  def linear_is_uniform(self):
-    return self._parent.linear_is_uniform
+  def basis_is_uniform(self):
+    return self._parent.basis_is_uniform
 
-  def linear(self, index):
-    return self._parent.linear(self._indices[index])
+  def basis(self, index):
+    return self._parent.basis(self._indices[index])
 
 class ReorderedTransforms(Transforms):
   '''A reordered :class:`Transforms` object.
@@ -733,11 +733,11 @@ class ReorderedTransforms(Transforms):
     return int(self._rindices[parent_index]), tail
 
   @property
-  def linear_is_uniform(self):
-    return self._parent.linear_is_uniform
+  def basis_is_uniform(self):
+    return self._parent.basis_is_uniform
 
-  def linear(self, index):
-    return self._parent.linear(self._indices[index])
+  def basis(self, index):
+    return self._parent.basis(self._indices[index])
 
 class DerivedTransforms(Transforms):
   '''A sequence of derived transforms.
@@ -826,7 +826,7 @@ class UniformDerivedTransforms(Transforms):
   '''
 
   __slots__ = '_parent', '_derived_transforms', '_updim'
-  __cache__ = 'linear_is_uniform'
+  __cache__ = 'basis_is_uniform'
 
   @types.apply_annotations
   def __init__(self, parent:stricttransforms, parent_reference:element.strictreference, derived_attribute:types.strictstr, updim:types.strict[bool]):
@@ -860,8 +860,8 @@ class UniformDerivedTransforms(Transforms):
     return iparent*len(self._derived_transforms) + iderived, tail
 
   @property
-  def linear_is_uniform(self):
-    if not self._parent.linear_is_uniform or len(self._derived_transforms) == 0:
+  def basis_is_uniform(self):
+    if not self._parent.basis_is_uniform or len(self._derived_transforms) == 0:
       return False
     linear = self._derived_transforms[0].linear
     if not all(numpy.allclose(linear, trans.linear) for trans in self._derived_transforms[1:]):
@@ -932,6 +932,7 @@ class ProductTransforms(Transforms):
   '''
 
   __slots__ = '_transforms1', '_transforms2'
+  __cache__ = 'basis_is_uniform'
 
   @types.apply_annotations
   def __init__(self, transforms1:stricttransforms, transforms2:stricttransforms):
@@ -959,14 +960,14 @@ class ProductTransforms(Transforms):
     return index1*len(self._transforms2)+index2, tail1+tail2
 
   @property
-  def linear_is_uniform(self):
-    return self._transforms1.linear_is_uniform and self._transforms2.linear_is_uniform
+  def basis_is_uniform(self):
+    return self._transforms1.basis_is_uniform and self._transforms2.basis_is_uniform
 
-  def linear(self, index):
+  def basis(self, index):
     index1, index2 = divmod(numeric.normdim(len(self), index), len(self._transforms2))
-    linear1, ismanifold1 = self._transforms1.linear(index1)
-    linear2, ismanifold2 = self._transforms2.linear(index2)
-    return numeric.blockdiag([linear1, linear2]), numpy.concatenate([ismanifold1, ismanifold2])
+    basis1, ismanifold1 = self._transforms1.basis(index1)
+    basis2, ismanifold2 = self._transforms2.basis(index2)
+    return numeric.blockdiag([basis1, basis2]), numpy.concatenate([ismanifold1, ismanifold2])
 
 class ChainedTransforms(Transforms):
   '''A sequence of chained :class:`Transforms` objects.
@@ -978,7 +979,7 @@ class ChainedTransforms(Transforms):
   '''
 
   __slots__ = '_items'
-  __cache__ = '_offsets'
+  __cache__ = '_offsets', 'basis_is_uniform'
 
   @types.apply_annotations
   def __init__(self, items:types.tuple[stricttransforms]):
@@ -1045,17 +1046,17 @@ class ChainedTransforms(Transforms):
     yield from self._items
 
   @property
-  def linear_is_uniform(self):
-    if not all(item.linear_is_uniform for item in self._items):
+  def basis_is_uniform(self):
+    if not all(item.basis_is_uniform for item in self._items):
       return False
-    linear, ismanifold = self._items[0].linear(0)
-    return all(numpy.allclose(item.linear(0)[0], linear) and numpy.equal(item.linear(0)[1], ismanifold).all() for item in self._items[1:])
+    basis, ismanifold = self._items[0].basis(0)
+    return all(numpy.allclose(item.basis(0)[0], basis) and numpy.equal(item.basis(0)[1], ismanifold).all() for item in self._items[1:])
 
-  def linear(self, index):
+  def basis(self, index):
     index = numeric.normdim(len(self), index)
     outer = numpy.searchsorted(self._offsets, index, side='right') - 1
     assert outer >= 0 and outer < len(self._items)
-    return self._items[outer].linear(index-self._offsets[outer])
+    return self._items[outer].basis(index-self._offsets[outer])
 
 @types.apply_annotations
 def chain(items:types.tuple[stricttransforms], todims:types.tuple[types.strictint]):

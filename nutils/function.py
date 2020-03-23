@@ -1359,16 +1359,16 @@ class TransformsBasisFromChains(Array):
 
   def evalf(self, chains):
     ndims = self.shape[0]
-    linear = numpy.zeros((ndims, ndims), float)
+    basis = numpy.zeros((ndims, ndims), float)
     ismanifold = numpy.zeros(ndims, dtype=bool)
     i = 0
     for chain, todims in zip(chains, self._todims):
-      linear[i:i+todims,i:i+todims] = transform.linearfrom(chain, todims)
+      basis[i:i+todims,i:i+todims] = transform.linearfrom(chain, todims)
       ismanifold[i:i+chain[-1].fromdims] = True
       i += todims
     if self._fromdims is not None:
       assert ismanifold.sum() == self._fromdims
-    return numpy.concatenate([linear[:,ismanifold], linear[:,~ismanifold]], axis=1)[_]
+    return numpy.concatenate([basis[:,ismanifold], basis[:,~ismanifold]], axis=1)[_]
 
 class TransformsBasisFromSequence(Array):
 
@@ -1389,14 +1389,14 @@ class TransformsBasisFromSequence(Array):
 
   def evalf(self, ielem):
     ielem, = ielem
-    linear, ismanifold = self._transforms.linear(ielem)
+    basis, ismanifold = self._transforms.basis(ielem)
     if self._fromdims is not None:
       assert ismanifold.sum() == self._fromdims
-    return numpy.concatenate([linear[:,ismanifold], linear[:,~ismanifold]], axis=1)[_]
+    return numpy.concatenate([basis[:,ismanifold], basis[:,~ismanifold]], axis=1)[_]
 
   @property
   def simplified(self):
-    ielem = 0 if self._transforms.linear_is_uniform else self._ielem.simplified
+    ielem = 0 if self._transforms.basis_is_uniform else self._ielem.simplified
     return TransformsBasisFromSequence(self._roots, self._transforms, ielem, self._fromdims)
 
 class PointsBasis(Array):
