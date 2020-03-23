@@ -515,14 +515,15 @@ class Topology(types.Singleton):
     if not geom.shape == coords.shape[1:] == (self.ndims,):
       raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
     bboxsample = self.sample(*element.parse_legacy_ischeme(ischeme))
-    vertices = map(bboxsample.eval(geom, **arguments or {}).__getitem__, bboxsample.index)
+    vertices = map(bboxsample.eval(geom, **arguments or {}).__getitem__, bboxsample.indexiter)
     bboxes = numpy.array([numpy.mean(v,axis=0) * (1-scale) + numpy.array([numpy.min(v,axis=0), numpy.max(v,axis=0)]) * scale
       for v in vertices]) # nelems x {min,max} x ndims
     vref = element.getsimplex(0)
     ielems = parallel.shempty(len(coords), dtype=int)
     xis = parallel.shempty((len(coords),len(geom)), dtype=float)
-    J = function.dot(function.rootgradient(geom, self.roots)[:,:,_], function.RootBasis(0, self.roots, self.ndims)[_,:,:self.ndims], 1)
-    geom_J = function.Tuple((geom, J)).prepare_eval().simplified
+    subsamplemetas = function.SubsampleMeta(roots=self.roots, ndimsnormal=sum(root.ndims for root in self.roots)-self.ndims, ndimspoints=self.ndims),
+    J = function.dot(function.rootgradient(geom, self.roots)[:,:,_], function.rootbasis(subsamplemetas, 0)[_,:,:self.ndims], 1)
+    geom_J = function.Tuple((geom, J)).prepare_eval(subsamples=subsamplemetas).simplified
     with parallel.ctxrange('locating', len(coords)) as ipoints:
       for ipoint in ipoints:
         coord = coords[ipoint]

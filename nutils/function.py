@@ -478,7 +478,7 @@ class SelectChain(TransformChain):
 
   @util.positional_only
   def prepare_eval(self, *, opposite=False, kwargs=...):
-    return SelectChain(self.ordered_roots, 1-self.n) if opposite else self
+    return SelectChain(self.ordered_roots, 1) if opposite else SelectChain(self.ordered_roots, 0)
 
 class EmptyTransformChain(TransformChain):
 
@@ -525,7 +525,7 @@ class TransformsIndexWithTail(Evaluable):
 
   @property
   def linear(self):
-    return Linear(self.trans.ordered_roots, self.ndims, (self.transforms,), self.index)[:,:self.ndims]
+    return TransformsBasisFromSequence(self.trans.ordered_roots, self.transforms, self.index, self.ndims)[:,:self.ndims]
 
   def __iter__(self):
     yield self.index
@@ -773,72 +773,6 @@ class Array(Evaluable):
     if self.dtype in (bool, int) or var not in self.dependencies:
       return Zeros(self.shape + var.shape, dtype=self.dtype)
     raise NotImplementedError('derivative not defined for {}'.format(self.__class__.__name__))
-
-class RootBasis(Array):
-  '''Orthonormal vectors spanning the tangent space and the complement.
-
-  The first ``ndimstangent`` vectors span the tangent space of the manifold,
-  the remainders span the complement.
-
-  Parameters
-  ----------
-  isubsample : :class:`int`
-      The index of the subsample to compute the basis for.
-  roots : :class:`tuple` of :class:`Root` objects
-      The roots to compute the basis for.
-  ndimstangent : int
-      The dimension of the tangent space.
-  '''
-
-  __slots__ = '_isubsample', '_roots', '_ndimstangent', '_opposite'
-  __cache__ = 'prepare_eval'
-
-  @types.apply_annotations
-  def __init__(self, isubsample:types.strictint, roots:types.tuple[strictroot], ndimstangent:types.strictint, _opposite:bool=None):
-    self._isubsample = isubsample
-    self._roots = roots
-    self._ndimstangent = ndimstangent
-    self._opposite = _opposite
-    ndims = sum(root.ndims for root in roots)
-    super().__init__(args=[SUBSAMPLES], shape=[ndims, ndims], dtype=float)
-
-  def evalf(self, subsamples):
-    subsample = subsamples[self._isubsample]
-    assert subsample.roots == self._roots
-    assert subsample.ndimsmanifold == self._ndimstangent
-    assert subsample.ndims == self.shape[0]
-    ndims = subsample.ndims
-    points = subsample.points
-    npointsbefore = functools.reduce(operator.mul, (s.points.npoints for s in subsamples[:self._isubsample]), 1)
-    npointsafter = functools.reduce(operator.mul, (s.points.npoints for s in subsamples[self._isubsample+1:]), 1)
-    linear = numpy.zeros((npointsbefore, points.npoints, npointsafter, ndims, ndims), dtype=float)
-    chainslinear = numpy.zeros((ndims, points.ndims), dtype=float)
-    to0 = from0 = 0
-    n0 = points.ndims
-    for root, chain in zip(subsample.roots, subsample.transforms[1 if self._opposite else 0]):
-      to1 = to0 + root.ndims
-      fromdims = chain[-1].fromdims if chain else root.ndims
-      chainlinear = transform.linearfrom(chain, root.ndims)
-      if fromdims:
-        from1 = from0 + fromdims
-        chainslinear[to0:to1,from0:from1] = chainlinear[:,:fromdims]
-        from0 = from1
-      if fromdims < root.ndims:
-        n1 = n0 + root.ndims - fromdims
-        linear[:,:,:,to0:to1,n0:n1] = chainlinear[_,_,_,:,fromdims:]
-        n0 = n1
-      to0 = to1
-    assert to0 == ndims
-    assert from0 == points.ndims
-    assert n0 == ndims
-    numpy.einsum('ij,bnajk->bnaik', chainslinear, points.basis[_,:,_], out=linear[:,:,:,:,:points.ndims])
-    return linear.reshape((npointsbefore*points.npoints*npointsafter, ndims, ndims))
-
-  @util.positional_only
-  def prepare_eval(self, *, opposite=False, kwargs=...):
-    if self._opposite is not None:
-      raise ValueError('prepare already called')
-    return RootBasis(self._isubsample, self._roots, self._ndimstangent, _opposite=opposite)
 
 class GramSchmidt(Array):
 
@@ -1396,14 +1330,18 @@ class ApplyTransforms(Array):
     return zeros(self.shape+var.shape)
 
   @util.positional_only
-  def prepare_eval(self, *, subsamples, kwargs=...):
-    tail = self._tail.prepare_eval(subsamples=subsamples, **kwargs)
+  def prepare_eval(self, *, kwargs=...):
+    tail = self._tail.prepare_eval(**kwargs)
+    if 'subsamples' not in kwargs:
+      return ApplyTransforms(tail, self._linear)
+    subsamples = kwargs['subsamples']
+
     if isinstance(tail, EmptyTransformChain) or isinstance(tail, SelectChain) and any(subsample.roots == tail.ordered_roots and subsample.transforms == transformseq.IdentifierTransforms for subsample in subsamples):
       slices = {}
       isubsamples = {}
       for isubsample, subsample in enumerate(subsamples):
         if not self.roots.isdisjoint(subsample.roots) and subsample.points is None:
-          return super().prepare_eval(subsamples=subsamples, **kwargs)
+          return ApplyTransforms(tail, self._linear)
 
         from0 = 0
         for root in subsample.roots:
@@ -1422,20 +1360,43 @@ class ApplyTransforms(Array):
         to0 = to1
       assert to0 == self.shape[0]
       return ConstantPoints(result.reshape((-1, self.shape[0])))
-    return super().prepare_eval(subsamples=subsamples, **kwargs)
 
-class Linear(Array):
+    return ApplyTransforms(tail, self._linear)
 
-  __slots__ = '_roots', '_fromdims', '_transforms', '_ielem', '_itransforms'
+class TransformsBasisFromChains(Array):
+
+  __slots__ = '_todims', '_fromdims'
+
+  @types.apply_annotations
+  def __init__(self, chains:types.strict[TransformChain], fromdims:types.strictint=None):
+    self._todims = tuple(root.ndims for root in chains.ordered_roots)
+    self._fromdims = fromdims
+    super().__init__(args=[chains], shape=(builtins.sum(root.ndims for root in chains.roots),)*2, dtype=float)
+
+  def evalf(self, chains):
+    ndims = self.shape[0]
+    linear = numpy.zeros((ndims, ndims), float)
+    ismanifold = numpy.zeros(ndims, dtype=bool)
+    i = 0
+    for chain, todims in zip(chains, self._todims):
+      linear[i:i+todims,i:i+todims] = transform.linearfrom(chain, todims)
+      ismanifold[i:i+chain[-1].fromdims] = True
+      i += todims
+    if self._fromdims is not None:
+      assert ismanifold.sum() == self._fromdims
+    return numpy.concatenate([linear[:,ismanifold], linear[:,~ismanifold]], axis=1)[_]
+
+class TransformsBasisFromSequence(Array):
+
+  __slots__ = '_roots', '_transforms', '_ielem', '_fromdims'
   __cache__ = 'simplified'
 
   @types.apply_annotations
-  def __init__(self, roots:types.tuple[strictroot], fromdims:types.strictint, transforms:types.tuple[transformseq.stricttransforms], ielem:asarray, _itransforms:types.strictint=None):
+  def __init__(self, roots:types.tuple[strictroot], transforms:transformseq.stricttransforms, ielem:asarray, fromdims:types.strictint=None):
     self._roots = roots
-    self._fromdims = fromdims
     self._transforms = transforms
     self._ielem = ielem
-    self._itransforms = _itransforms
+    self._fromdims = fromdims
     super().__init__(args=[ielem], shape=(builtins.sum(root.ndims for root in roots),)*2, dtype=float)
 
   @property
@@ -1444,24 +1405,37 @@ class Linear(Array):
 
   def evalf(self, ielem):
     ielem, = ielem
-    linear, ismanifold = self._transforms[self._itransforms].linear(ielem)
-    assert ismanifold.sum() == self._fromdims
+    linear, ismanifold = self._transforms.linear(ielem)
+    if self._fromdims is not None:
+      assert ismanifold.sum() == self._fromdims
     return numpy.concatenate([linear[:,ismanifold], linear[:,~ismanifold]], axis=1)[_]
 
   @property
   def simplified(self):
-    ielem = 0 if self._itransforms is not None and self._transforms[self._itransforms].linear_is_uniform else self._ielem.simplified
-    return Linear(self._roots, self._fromdims, self._transforms, ielem, self._itransforms)
+    ielem = 0 if self._transforms.linear_is_uniform else self._ielem.simplified
+    return TransformsBasisFromSequence(self._roots, self._transforms, ielem, self._fromdims)
 
-  @util.positional_only
-  def prepare_eval(self, *, kwargs=...):
-    ielem = self._ielem.prepare_eval(**kwargs)
-    if self._itransforms is not None:
-      raise RuntimeError('prepare_eval called twice')
-    itransforms = 1 if kwargs.get('opposite', False) and len(self._transforms) > 1 else 0
-    return Linear(self._roots, self._fromdims, self._transforms, ielem, itransforms)
+class PointsBasis(Array):
 
-class Weights(Array):
+  __slots__ = '_isubsample', '_roots', '_ndims'
+
+  @types.apply_annotations
+  def __init__(self, isubsample:types.strictint, roots:types.tuple[strictroot], ndims:types.strictint):
+    self._isubsample = isubsample
+    self._roots = roots
+    self._ndims = ndims
+    super().__init__(args=[SUBSAMPLES], shape=[ndims, ndims], dtype=float)
+
+  def evalf(self, subsamples):
+    points = subsamples[self._isubsample].points
+    npointsbefore = functools.reduce(operator.mul, (s.points.npoints for s in subsamples[:self._isubsample]), 1)
+    npointsafter = functools.reduce(operator.mul, (s.points.npoints for s in subsamples[self._isubsample+1:]), 1)
+    basis = numpy.zeros((npointsbefore, points.npoints, npointsafter, self._ndims, self._ndims), dtype=float)
+    basis[:,:,:,:points.ndims,:points.ndims] = points.basis[_,:,_]
+    basis[:,:,:,points.ndims:,points.ndims:] = numpy.eye(self._ndims-points.ndims)[_]
+    return basis.reshape((npointsbefore*points.npoints*npointsafter, self._ndims, self._ndims))
+
+class PointsWeights(Array):
 
   def __init__(self):
     super().__init__(args=[SUBSAMPLES], shape=(), dtype=float)
@@ -3199,7 +3173,7 @@ class DelayedJacobian(Array):
       ndimsmanifold += subsample.ndimsmanifold
       if subsample.ndims == 0:
         continue
-      J.append(dot(rootgradient(self._geom, subsample.roots)[:,:,_], rootbasis(subsamples, isubsample, orthonormal=True)[_:,:subsample.ndimsmanifold], 1))
+      J.append(dot(rootgradient(self._geom, subsample.roots)[:,:,_], rootbasis(subsamples, isubsample, orthonormal=True, opposite=kwargs.get('opposite', False))[_:,:subsample.ndimsmanifold], 1))
     if self._ndimsmanifold is not None and ndimsmanifold != self._ndimsmanifold:
       raise ValueError('jacobian will be evaluated on a manifold of dimension {} but {} was requested'.format(ndimsmanifold, self._ndimsmanifold))
     J = concatenate(J, axis=1)
@@ -3244,7 +3218,7 @@ class DelayedNormal(Array):
       if not frozenset(subsample.roots) <= self.roots:
         raise ValueError('Cannot compute normal.')
       ndimsnormal += subsample.ndimsnormal
-      basis = rootbasis(subsamples, isubsample)
+      basis = rootbasis(subsamples, isubsample, opposite=kwargs.get('opposite', False))
       grad = dot(rootgradient(self._geom, subsample.roots)[:,:,_], basis[_,:,:], 1)
       if subsample.ndimsmanifold:
         tangents.append(grad[:,:subsample.ndimsmanifold])
@@ -3253,7 +3227,7 @@ class DelayedNormal(Array):
     if ndimsnormal == 0:
       raise ValueError('cannot compute normal: the normal space has dimension zero')
     elif ndimsnormal > 1:
-      raise ValueError('cannot compute normal: the normal space has dimension larger then one')
+      warnings.warn('cannot umambiguously compute the normal: the normal space has dimension larger then one')
     n = Normal(concatenate(tangents+normals, axis=1)[:,:len(self._geom)])
     n = functools.reduce(derivative, self._derivativestack, asarray(n))
     return n.prepare_eval(subsamples=subsamples, **kwargs)
@@ -4732,25 +4706,19 @@ def derivative(func, var, seen=None):
 def rootgradient(arg, roots):
   return concatenate([derivative(arg, RootCoords(root)) for root in roots], axis=-1)
 
-def rootbasis(subsamples, index_or_roots, *, orthonormal=False):
-  subsamples = tuple(subsamples)
-  if isinstance(index_or_roots, int):
-    isubsample = index_or_roots
-    subsample = subsamples[isubsample]
-  elif isinstance(index_or_roots, tuple):
-    roots = index_or_roots
-    for isubsample, subsample in enumerate(subsamples):
-      if subsample.roots == roots:
-        break
-    else:
-      raise ValueError('no subsample with roots {}, candidates: {}'.format(roots, ', '.join(str(subsample.roots) for subsample in subsamples)))
+def rootbasis(subsamples, isubsample, *, orthonormal=False, opposite=False):
+  subsample = subsamples[isubsample]
+  if subsample.transforms is None:
+    transformsbasis = TransformsBasisFromChains(SelectChain(subsample.roots, n=1 if opposite else 0), subsample.ndimspoints)
   else:
-    raise ValueError('expected an `int` or `tuple` of `Root` objects but got {!r}'.format(index_or_roots))
-  if subsample.ndimspoints == subsample.ndimsmanifold:
-    # `points.basis` is the identity.
-    basis = Linear(subsample.roots, subsample.ndimspoints, subsample.transforms, IndexFromSubsample(isubsample, subsample.roots))
+    transformsbasis = TransformsBasisFromSequence(subsample.roots, subsample.transforms[1 if opposite and len(subsample.transforms) > 1 else 0], IndexFromSubsample(isubsample, subsample.roots), subsample.ndimspoints)
+  if subsample.ndimsmanifold == subsample.ndimspoints:
+    basis = transformsbasis
   else:
-    basis = RootBasis(isubsample, subsample.roots, subsample.ndimsmanifold)
+    pointsbasis = PointsBasis(isubsample, subsample.roots, subsample.ndims)
+    if subsample.points is not None:
+      pointsbasis = ConstantPoints(pointsbasis.evalf(subsamples))
+    basis = (transformsbasis[:,:,_]*pointsbasis[_]).sum(axis=1)
   if orthonormal:
     if subsample.ndimsnormal == 0:
       return eye(subsample.ndims)
