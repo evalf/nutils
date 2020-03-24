@@ -310,7 +310,7 @@ class Evaluable(types.Singleton):
     lines = []
     lines.append('digraph {')
     lines.append('graph [dpi=72];')
-    lines.extend('{0:} [label="{0:}. {1:}"];'.format(i, name._asciitree_str()) for i, name in enumerate(self.ordereddeps+(self,)))
+    lines.extend('{0:} [label="{0:}. {1:} {2:}"];'.format(i, name._asciitree_str(), 'CONST' if name.isconstant else ','.join(sorted(tuple(map('{0.name}:{0.ndims}'.format, name.roots))))) for i, name in enumerate(self.ordereddeps+(self,)))
     lines.extend('{} -> {};'.format(j, i) for i, indices in enumerate(self.dependencytree) for j in indices)
     lines.append('}')
 
@@ -560,8 +560,11 @@ class TransformChainFromTransformsIndexWithTail(TransformChain):
     trans = self._indextail.trans
     if isinstance(trans, SelectChain):
       for isubsample, subsample in enumerate(subsamples):
-        if trans.ordered_roots == subsample.roots and self._indextail.transforms == subsample.transforms[trans.n if len(subsample.transforms) > 1 else 0]:
-          return EmptyTransformChain(roots=self.ordered_roots, ndims=self.todims)
+        if trans.ordered_roots == subsample.roots:
+          if self._indextail.transforms == subsample.transforms[trans.n if len(subsample.transforms) > 1 else 0]:
+            return EmptyTransformChain(roots=self.ordered_roots, ndims=self.todims)
+          else:
+            break
     return self
 
 # ARRAYFUNC
