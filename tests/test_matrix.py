@@ -216,6 +216,15 @@ class solver(TestCase):
     numpy.testing.assert_equal(actual=array, desired=[[-1, 2, 0], [0, -1, -1]])
 
   @ifsupported
+  def test_submatrix_specialcases(self):
+    mat = matrix.assemble(numpy.array([1,2,3,4]), numpy.array([[0,0,2,2],[0,2,0,2]]), (3,3))
+    self.assertAllEqual(mat.export('dense'), [[1,0,2],[0,0,0],[3,0,4]])
+    self.assertAllEqual(mat.submatrix([0,2],[0,1,2]).export('dense'), [[1,0,2],[3,0,4]])
+    self.assertAllEqual(mat.submatrix([0,1,2],[0,2]).export('dense'), [[1,2],[0,0],[3,4]])
+    self.assertAllEqual(mat.submatrix([0,2],[0,2]).export('dense'), [[1,2],[3,4]])
+    self.assertAllEqual(mat.submatrix([1],[1]).export('dense'), [[0]])
+
+  @ifsupported
   def test_pickle(self):
     s = pickle.dumps(self.matrix)
     mat = pickle.loads(s)

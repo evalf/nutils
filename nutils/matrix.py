@@ -681,6 +681,22 @@ class MKLMatrix(Matrix):
       rowptr.ctypes, ctypes.byref(info))
     return MKLMatrix(data, rowptr, colidx, self.shape[1], libmkl=self.libmkl)
 
+  def submatrix(self, rows, cols):
+    rows = numeric.asboolean(rows, self.shape[0])
+    cols = numeric.asboolean(cols, self.shape[1])
+    keep = (rows.all() or rows.repeat(numpy.diff(self.rowptr))) & (cols.all() or cols[self.colidx-1])
+    if keep is True: # all rows and all columns are kept
+      return self
+    elif keep.all(): # all nonzero entries are kept
+      rowptr = self.rowptr[numpy.hstack([True, rows])]
+      keep = slice(None) # avoid array copies
+    else:
+      rowptr = numpy.cumsum([1] + [keep[i:j].sum() for i, j in numeric.overlapping(self.rowptr-1)[rows]], dtype=numpy.int32)
+    data = self.data[keep]
+    assert rowptr[-1] == len(data)+1
+    colidx = (self.colidx if cols.all() else cols.cumsum(dtype=numpy.int32)[self.colidx-1])[keep]
+    return MKLMatrix(data, rowptr, colidx, cols.sum(), libmkl=self.libmkl)
+
   def export(self, form):
     if form == 'dense':
       dense = numpy.zeros(self.shape)
