@@ -90,7 +90,7 @@ def solve_linear(target:types.strictstr, residual:sample.strictintegral, constra
   if jacobian.contains(target):
     raise SolverError('problem is not linear')
   assert target not in arguments, '`target` should not be defined in `arguments`'
-  argshape = residual._argshape(target)
+  argshape = residual.argshapes[target]
   res, jac = sample.eval_integrals(residual, jacobian, **{target: numpy.zeros(argshape)}, **arguments)
   return jac.solve(-res, constrain=constrain, **solveargs)
 
