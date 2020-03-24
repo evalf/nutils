@@ -414,7 +414,7 @@ class Integral(types.Singleton):
   '''
 
   __slots__ = '_integrands', 'shape'
-  __cache__ = 'derivative'
+  __cache__ = 'derivative', 'argshapes'
 
   @types.apply_annotations
   def __init__(self, integrands:types.frozendict[strictsample, function.simplified], shape:types.tuple[int]):
@@ -456,7 +456,7 @@ class Integral(types.Singleton):
     derivative : :class:`Integral`
     '''
 
-    argshape = self._argshape(target)
+    argshape = self.argshapes[target]
     arg = function.Argument(target, argshape)
     seen = {}
     return Integral({di: function.derivative(integrand, var=arg, seen=seen) for di, integrand in self._integrands.items()}, shape=self.shape+argshape)
@@ -495,12 +495,7 @@ class Integral(types.Singleton):
     iscontained : :class:`bool`
     '''
 
-    try:
-      self._argshape(name)
-    except KeyError:
-      return False
-    else:
-      return True
+    return name in self.argshapes
 
   def __add__(self, other):
     if not isinstance(other, Integral):
@@ -532,16 +527,13 @@ class Integral(types.Singleton):
       return NotImplemented
     return self.__mul__(1/other)
 
-  def _argshape(self, name):
-    assert isinstance(name, str)
-    shapes = {func.shape[:func.ndim-func._nderiv]
-      for func in function.Tuple(self._integrands.values()).dependencies
-        if isinstance(func, function.Argument) and func._name == name}
-    if not shapes:
-      raise KeyError(name)
-    assert len(shapes) == 1, 'inconsistent shapes for argument {!r}'.format(name)
-    shape, = shapes
-    return shape
+  @property
+  def argshapes(self):
+    items = [(dep._name, dep.shape[:dep.ndim-dep._nderiv]) for func in self._integrands.values() for dep in func.dependencies if isinstance(dep, function.Argument)]
+    shapes = dict(items)
+    if any(shapes[name] != shape for name, shape in items):
+      raise Exception('non-matching arguments shapes encountered')
+    return types.frozendict(shapes)
 
   @property
   def T(self):
