@@ -666,6 +666,21 @@ class MKLMatrix(Matrix):
   def __neg__(self):
     return MKLMatrix(-self.data, self.rowptr, self.colidx, self.shape[1], libmkl=self.libmkl)
 
+  @property
+  def T(self):
+    if self.shape[0] != self.shape[1]:
+      raise NotImplementedError('MKLMatrix does not yet support transpose of non-square matrices')
+    job = numpy.array([0, 1, 1, 0, 0, 1], numpy.int32)
+    data = numpy.empty_like(self.data)
+    rowptr = numpy.empty_like(self.rowptr)
+    colidx = numpy.empty_like(self.colidx)
+    info = ctypes.c_int32()
+    self.libmkl.mkl_dcsrcsc(job.ctypes,
+      ctypes.byref(ctypes.c_int32(self.shape[0])), self.data.ctypes,
+      self.colidx.ctypes, self.rowptr.ctypes, data.ctypes, colidx.ctypes,
+      rowptr.ctypes, ctypes.byref(info))
+    return MKLMatrix(data, rowptr, colidx, self.shape[1], libmkl=self.libmkl)
+
   def export(self, form):
     if form == 'dense':
       dense = numpy.zeros(self.shape)

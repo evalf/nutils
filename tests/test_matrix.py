@@ -145,8 +145,8 @@ class solver(TestCase):
 
   @ifsupported
   def test_transpose(self):
-    asym = matrix.assemble(numpy.array([1,2,3,4], dtype=float), numpy.array([[0,0,1,1],[0,1,1,2]]), shape=(2,3))
-    exact = numpy.array([[1,2,0],[0,3,4]], dtype=float)
+    asym = matrix.assemble(numpy.arange(1,7), numpy.array([[0,0,0,1,1,2],[0,1,2,1,2,2]]), shape=(3,3))
+    exact = numpy.array([[1,2,3],[0,4,5],[0,0,6]], dtype=float)
     transpose = asym.T
     numpy.testing.assert_equal(actual=transpose.export('dense'), desired=exact.T)
 
