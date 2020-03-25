@@ -339,7 +339,7 @@ class Sample(types.Singleton):
     return PlainSample(self.roots, self.ndims, transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
 
   def getsubsamples(self, ielem):
-    return function.Subsample(roots=self.roots, transforms=tuple(t[ielem] for t in self.transforms), points=self.getpoints(ielem), ielem=ielem),
+    return function.Subsample(roots=self.roots, transforms=self.transforms, points=self.getpoints(ielem), ielem=ielem),
 
   @property
   def subsamplemetas(self):

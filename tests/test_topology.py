@@ -9,11 +9,13 @@ class TopologyAssertions:
     interfaces = domain.interfaces
     bmask = numpy.zeros(len(boundary), dtype=int)
     imask = numpy.zeros(len(interfaces), dtype=int)
+    geom = geom.prepare_eval()
     for ielem, ioppelems in enumerate(domain.connectivity):
       for iedge, ioppelem in enumerate(ioppelems):
         etrans, eref = domain.references[ielem].edges[iedge]
         trans = transform.append_edge(domain.transforms[ielem], etrans)
         if ioppelem == -1:
+          transforms = boundary.transforms, boundary.opposites
           index = boundary.transforms.index(trans)
           bmask[index] += 1
         else:
@@ -25,13 +27,15 @@ class TopologyAssertions:
           except ValueError:
             index = interfaces.transforms.index(opptrans)
             self.assertEqual(interfaces.opposites[index], trans)
+            transforms = interfaces.opposites, interfaces.transforms
           else:
             self.assertEqual(interfaces.opposites[index], opptrans)
+            transforms = interfaces.transforms, interfaces.opposites
           imask[index] += 1
           self.assertEqual(eref, opperef)
           points = eref.getpoints('gauss', 2)
-          a0 = geom.prepare_eval().eval(function.Subsample(roots=domain.roots, transforms=[trans], points=points))
-          a1 = geom.prepare_eval().eval(function.Subsample(roots=domain.roots, transforms=[opptrans], points=points))
+          a0 = geom.eval(function.Subsample(roots=domain.roots, transforms=transforms[:1], points=points, ielem=index))
+          a1 = geom.eval(function.Subsample(roots=domain.roots, transforms=transforms[1:], points=points, ielem=index))
           numpy.testing.assert_array_almost_equal(a0, a1)
     self.assertTrue(numpy.equal(bmask, 1).all())
     self.assertTrue(numpy.equal(imask, 2).all())
