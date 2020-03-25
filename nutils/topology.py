@@ -990,7 +990,7 @@ class StructuredLine(Topology):
       if len(knotvalues) != 1:
         raise ValueError('knotvalues should be a tuple or list of length 1 but got {}'.format(len(knotvalues)))
       knotvalues = knotvalues[0]
-    if knotvalues:
+    if knotvalues is not None:
       knotvalues = numpy.array(knotvalues)
       assert knotvalues.ndim == 1
 
@@ -998,7 +998,7 @@ class StructuredLine(Topology):
       if len(knotmultiplicities) != 1:
         raise ValueError('knotmultiplicities should be a tuple or list of length 1 but got {}'.format(len(knotmultiplicities)))
       knotmultiplicities = knotmultiplicities[0]
-    if knotmultiplicities:
+    if knotmultiplicities is not None:
       knotmultiplicities = numpy.array(knotmultiplicities)
       assert knotmultiplicities.ndim == 1 and knotmultiplicities.dtype.kind == 'i'
 
