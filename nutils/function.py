@@ -106,14 +106,14 @@ class Subsample:
   Attributes
   ----------
   roots : :class:`tuple` of :class:`Root`
-  transforms : :class:`tuple` of transform chains
+  transforms : :class:`tuple` of :class:`~nutils.transformseq.Transforms`
   points : :class:`~nutils.points.Points`
   ielem : :class:`int` or ``None``
   '''
 
   __slots__ = 'roots', 'transforms', 'points', 'ielem'
 
-  def __init__(self, *, roots: types.tuple[strictroot], transforms: types.tuple[types.tuple[transform.stricttransform]], points: points.strictpoints, ielem: types.strictint = None):
+  def __init__(self, *, roots: types.tuple[strictroot], transforms: types.tuple[transformseq.stricttransforms], points: points.strictpoints, ielem: types.strictint = None):
     self.roots = roots
     self.transforms = transforms
     self.points = points
@@ -473,10 +473,15 @@ class SelectChain(TransformChain):
 
   def evalf(self, subsamples):
     trans = []
+    subsamplechains = {}
     for root in self.ordered_roots:
-      for subsample in subsamples:
+      for isubsample, subsample in enumerate(subsamples):
         if root in subsample.roots:
-          trans.append(subsample.transforms[self.n if len(subsample.transforms) > 1 else 0][subsample.roots.index(root)])
+          if isubsample in subsamplechains:
+            chains = subsamplechains[isubsample]
+          else:
+            subsamplechains[isubsample] = chains = subsample.transforms[self.n if len(subsample.transforms) > 1 else 0][subsample.ielem]
+          trans.append(chains[subsample.roots.index(root)])
           break
       else:
         raise ValueError('no such root: {!r}'.format(root))
@@ -1307,8 +1312,10 @@ class ApplyTransforms(Array):
     slices = {}
     isubsamples = {}
     for isubsample, subsample in enumerate(subsamples):
+      if self.roots.isdisjoint(subsample.roots):
+        continue
       from0 = 0
-      for root, chain in zip(subsample.roots, subsample.transforms[0]):
+      for root, chain in zip(subsample.roots, subsample.transforms[0][subsample.ielem]):
         isubsamples[root] = isubsample
         from1 = from0 + (chain[-1].fromdims if chain else root.ndims)
         slices[root] = slice(from0, from1)

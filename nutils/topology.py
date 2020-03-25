@@ -317,11 +317,11 @@ class Topology(types.Singleton):
       F = numpy.zeros(onto.shape[0])
       W = numpy.zeros(onto.shape[0])
       I = numpy.zeros(onto.shape[0], dtype=bool)
-      fun = function.asarray(fun).prepare_eval()
-      data = function.Tuple(function.Tuple([fun, onto_f.simplified, function.Tuple(onto_ind)]) for onto_ind, onto_f in function.blocks(onto.prepare_eval()))
-      for ielem, (ref, trans, opp) in enumerate(zip(self.references, self.transforms, self.opposites)):
-        points = ref.getpoints('bezier', 2)
-        for fun_, onto_f_, onto_ind_ in data.eval(function.Subsample(roots=self.roots, transforms=(trans, opp), points=points, ielem=ielem), **arguments or {}):
+      sample = self.sample('bezier', 2)
+      fun = function.asarray(fun).prepare_eval(subsamples=sample.subsamplemetas).simplified
+      data = function.Tuple(function.Tuple([fun, onto_f.simplified, function.Tuple(onto_ind)]) for onto_ind, onto_f in function.blocks(onto.prepare_eval(subsamples=sample.subsamplemetas)))
+      for ielem in range(sample.nelems):
+        for fun_, onto_f_, onto_ind_ in data.eval(*sample.getsubsample(ielem), **arguments or {}):
           onto_f_ = onto_f_.swapaxes(0,1) # -> dof axis, point axis, ...
           indfun_ = fun_[(slice(None),)+numpy.ix_(*onto_ind_[1:])]
           assert onto_f_.shape[0] == len(onto_ind_[0])
@@ -378,22 +378,22 @@ class Topology(types.Singleton):
     else:
       log.info('collecting leveltopo elements')
       levelset = levelset.prepare_eval(subsamples=(function.SubsampleMeta(roots=self.roots, ndimsnormal=sum(root.ndims for root in self.roots)-self.ndims),), transforms=(self.transforms, self.opposites)).simplified
-      bins = [set() for ielem in range(len(self))]
-      for trans in leveltopo.transforms:
+      bins = [dict() for ielem in range(len(self))]
+      for ielemlevel, trans in enumerate(leveltopo.transforms):
         ielem, tail = self.transforms.index_with_tail(trans)
-        bins[ielem].add(tail)
+        bins[ielem][tail] = ielemlevel
       fcache = cache.WrapperCache()
       with log.iter.percentage('trimming', self.references, self.transforms, bins) as items:
-        for ielem, (ref, trans, ctransforms) in enumerate(items):
+        for ielem, (ref, trans, bin) in enumerate(items):
           levels = numpy.empty(ref.nvertices_by_level(maxrefine))
           todims = tuple(t[-1].fromdims for t in trans)
-          cover = list(fcache[ref.vertex_cover](frozenset(ctransforms), maxrefine, todims))
+          cover = list(fcache[ref.vertex_cover](frozenset(bin), maxrefine, todims))
           # confirm cover and greedily optimize order
           mask = numpy.ones(len(levels), dtype=bool)
           while mask.any():
             imax = numpy.argmax([mask[indices].sum() for tail, cpoints, indices in cover])
             tail, cpoints, indices = cover.pop(imax)
-            levels[indices] = levelset.eval(function.Subsample(roots=self.roots, transforms=(tuple(a+b for a, b in zip(trans, tail)),), points=points.CoordsPoints(cpoints), ielem=ielem), **arguments)
+            levels[indices] = levelset.eval(function.Subsample(roots=self.roots, transforms=(leveltopo.transforms,), points=points.CoordsPoints(cpoints), ielem=bin[tail]), **arguments)
             mask[indices] = False
           refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
       log.debug('cache', fcache.stats)
@@ -536,7 +536,7 @@ class Topology(types.Singleton):
           w = p.weights
           xi = (numpy.dot(w,xi) / w.sum())[_] if len(xi) > 1 else xi.copy()
           for iiter in range(maxiter):
-            coord_xi, J_xi = geom_J.eval(function.Subsample(roots=self.roots, transforms=(self.transforms[ielem], self.opposites[ielem]), points=points.CoordsPoints(xi), ielem=ielem), **arguments or {})
+            coord_xi, J_xi = geom_J.eval(function.Subsample(roots=self.roots, transforms=(self.transforms, self.opposites), points=points.CoordsPoints(xi), ielem=ielem), **arguments or {})
             err = numpy.linalg.norm(coord - coord_xi)
             if err < tol:
               converged = True
