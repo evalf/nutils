@@ -2184,11 +2184,9 @@ class HierarchicalTopology(Topology):
   def interfaces(self):
     'interfaces'
 
-    hreferences = []
-    htransforms = []
-    hopposites = []
+    levelsifaces = []
     for level, indices in zip(self.levels, self._indices_per_level):
-      selection = []
+      selection = set()
       to = level.interfaces.transforms, level.interfaces.opposites
       for trans, ref in zip(map(level.transforms.__getitem__, indices), map(level.references.__getitem__, indices)):
         for trans_etrans in transform.unempty_edge_transforms(trans, ref):
@@ -2198,14 +2196,11 @@ class HierarchicalTopology(Topology):
             except ValueError:
               continue
             if self.transforms.contains_with_tail(opposites[i]):
-              selection.append(i)
+              selection.add(i)
             break
       if selection:
-        selection = types.frozenarray(numpy.unique(selection))
-        hreferences.append(level.interfaces.references[selection])
-        htransforms.append(level.interfaces.transforms[selection])
-        hopposites.append(level.interfaces.opposites[selection])
-    return Topology(self.roots, elementseq.chain(hreferences, self.ndims-1), transformseq.chain(htransforms, tuple(root.ndims for root in self.roots)), transformseq.chain(hopposites, tuple(root.ndims for root in self.roots)))
+        levelsifaces.append(SubsetTopology(level.interfaces, tuple(ref if i in selection else ref.empty for i, ref in enumerate(level.interfaces.references))))
+    return DisjointUnionTopology(levelsifaces)
 
   @log.withcontext
   def basis(self, name, *args, truncation_tolerance=1e-15, **kwargs):
