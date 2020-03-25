@@ -3178,7 +3178,7 @@ class DelayedJacobian(Array):
     for isubsample, subsample in enumerate(subsamples):
       if roots.isdisjoint(subsample.roots):
         continue
-      if not frozenset(subsample.roots) <= roots:
+      if not frozenset(root for root in subsample.roots if root.ndims) <= roots:
         raise ValueError('Cannot compute jacobian.')
       roots -= set(subsample.roots)
       ndimsmanifold += subsample.ndimsmanifold
@@ -3233,7 +3233,7 @@ class DelayedNormal(Array):
     for isubsample, subsample in enumerate(subsamples):
       if roots.isdisjoint(subsample.roots):
         continue
-      if not frozenset(subsample.roots) <= roots:
+      if not frozenset(root for root in subsample.roots if root.ndims) <= roots:
         raise ValueError('Cannot compute normal.')
       roots -= set(subsample.roots)
       ndimsnormal += subsample.ndimsnormal
@@ -4734,7 +4734,7 @@ def derivative(func, var, seen=None):
   return result
 
 def rootgradient(arg, roots):
-  return concatenate([derivative(arg, RootCoords(root)) for root in roots], axis=-1)
+  return concatenate([derivative(arg, RootCoords(root)) for root in roots if root.ndims], axis=-1)
 
 def rootbasis(subsamples, isubsample, *, orthonormal=False, opposite=False):
   subsample = subsamples[isubsample]
