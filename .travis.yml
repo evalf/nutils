@@ -4,7 +4,7 @@ env:
   global:
     - OMP_NUM_THREADS=1
     - VECLIB_MAXIMUM_THREADS=1
-    - EXTRAS=docs,matrix_scipy,matrix_mkl,export_mpl
+    - EXTRAS=docs,matrix_scipy,matrix_mkl,export_mpl,import_gmsh
     - PYTHON=python3
     - COVERALLS_PARALLEL=true
 notifications:
@@ -26,7 +26,7 @@ matrix:
       os: linux
       python: "3.6"
       env:
-        - EXTRAS=matrix_mkl,export_mpl
+        - EXTRAS=matrix_mkl,export_mpl,import_gmsh
         - LOCAL_CONSTRAINTS=numpy==1.12
     - name: "Python"
       os: osx
