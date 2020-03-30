@@ -578,7 +578,7 @@ class Topology(types.Singleton):
     index = []
     for ielem in uielems:
       w, = numpy.equal(ielems, ielem).nonzero()
-      points_.append(points.CoordsPoints(coords[w]))
+      points_.append(points.CoordsWeightsPoints(coords[w], types.frozenarray.full(w.shape, 1.)))
       index.append(w)
     transforms = self.transforms[uielems],
     if len(self.transforms) == 0 or self.opposites != self.transforms:
