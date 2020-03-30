@@ -756,22 +756,6 @@ class Constant(Array):
     # NOTE: numpy <= 1.12 cannot compute the determinant of an array with shape [...,0,0]
     return Constant(numpy.linalg.det(self.value) if self.value.shape[-1] else numpy.ones(self.value.shape[:-2]))
 
-class DofMap(Array):
-
-  __slots__ = 'dofs', 'index'
-
-  @types.apply_annotations
-  def __init__(self, dofs:types.tuple[types.frozenarray], index:asarray):
-    assert index.ndim == 0 and index.dtype == int
-    self.dofs = dofs
-    self.index = index
-    length = get([len(d) for d in dofs], iax=0, item=index)
-    super().__init__(args=[index], shape=(length,), dtype=int)
-
-  def evalf(self, index):
-    index, = index
-    return self.dofs[index][_]
-
 class InsertAxis(Array):
 
   __slots__ = 'func', 'axis', 'length'
@@ -2139,6 +2123,23 @@ class Elemwise(Array):
       return Constant(self.data[0])
     return self
 
+class ElemwiseFromCallable(Array):
+
+  __slots__ = '_func', '_index'
+
+  @types.apply_annotations
+  def __init__(self, func, index:asarray, shape:asshape, dtype:asdtype):
+    self._func = func
+    self._index = index
+    super().__init__(args=[index], shape=shape, dtype=dtype)
+
+  def evalf(self, index):
+    i, = index
+    return numpy.asarray(self._func(i))[numpy.newaxis]
+
+  def edit(self, op):
+    return ElemwiseFromCallable(self._func, op(self._index), shape=[op(sh) if isarray(sh) else sh for sh in self.shape], dtype=self.dtype)
+
 class Eig(Evaluable):
 
   __slots__ = 'symmetric', 'func'
@@ -3400,6 +3401,11 @@ class Basis(Array):
     else:
       raise IndexError('invalid index')
 
+  def get_ndofs(self, ielem):
+    '''Return the number of basis functions with support on element ``ielem``.'''
+
+    return len(self.get_dofs(ielem))
+
   @abc.abstractmethod
   def get_coefficients(self, ielem):
     '''Return an array of coefficients for all basis functions with support on element ``ielem``.
@@ -3419,14 +3425,18 @@ class Basis(Array):
 
     raise NotImplementedError
 
+  def f_ndofs(self, index):
+    return ElemwiseFromCallable(self.get_ndofs, index, dtype=int, shape=())
+
+  def f_dofs(self, index):
+    return ElemwiseFromCallable(self.get_dofs, index, dtype=int, shape=(self.f_ndofs(index),))
+
+  def f_coefficients(self, index):
+    return ElemwiseFromCallable(self.get_coefficients, index, dtype=float, shape=(self.f_ndofs(index),) + self.get_coefficients(0).shape[1:])
+
   @property
   def simplified(self):
-    ielems = range(len(self.transforms))
-    dofmap = DofMap(tuple(map(self.get_dofs, ielems)), index=self._index)
-    coeffs = Elemwise(tuple(map(self.get_coefficients, ielems)), self._index, dtype=float)
-    func = Polyval(coeffs, self._points)
-    inflated = Inflate(func, dofmap, self.shape[0], axis=0)
-    return inflated.simplified
+    return Inflate(Polyval(self.f_coefficients(self._index), self._points), self.f_dofs(self._index), self.shape[0], axis=0).simplified
 
   def _derivative(self, var, seen):
     return self.simplified._derivative(var, seen)
@@ -3480,13 +3490,15 @@ class PlainBasis(Basis):
   def get_coefficients(self, ielem):
     return self._coeffs[ielem]
 
-  @property
-  def simplified(self):
-    dofmap = DofMap(self._dofs, index=self._index)
-    coeffs = Elemwise(self._coeffs, self._index, dtype=float)
-    value = Polyval(coeffs, self._points)
-    inflated = Inflate(value, dofmap, self.shape[0], axis=0)
-    return inflated.simplified
+  def f_ndofs(self, index):
+    ndofs = numpy.fromiter(map(len, self._dofs), dtype=int, count=len(self._dofs))
+    return get(types.frozenarray(ndofs, copy=False), 0, index)
+
+  def f_dofs(self, index):
+    return Elemwise(self._dofs, index, dtype=int)
+
+  def f_coefficients(self, index):
+    return Elemwise(self._coeffs, index, dtype=float)
 
 class DiscontBasis(Basis):
   '''A discontinuous basis with monotonic increasing dofs.
@@ -3523,17 +3535,21 @@ class DiscontBasis(Basis):
     ielem = numeric.normdim(len(self.transforms), ielem)
     return numpy.arange(self._offsets[ielem], self._offsets[ielem+1])
 
+  def get_ndofs(self, ielem):
+    return self._offsets[ielem+1] - self._offsets[ielem]
+
   def get_coefficients(self, ielem):
     return self._coeffs[ielem]
 
-  @property
-  def simplified(self):
-    dofs = tuple(numpy.arange(self._offsets[i], self._offsets[i+1]) for i in range(len(self._coeffs)))
-    dofmap = DofMap(dofs, index=self._index)
-    coeffs = Elemwise(self._coeffs, self._index, dtype=float)
-    value = Polyval(coeffs, self._points)
-    inflated = Inflate(value, dofmap, self.shape[0], axis=0)
-    return inflated.simplified
+  def f_ndofs(self, index):
+    ndofs = numpy.diff(self._offsets)
+    return get(types.frozenarray(ndofs, copy=False), 0, index)
+
+  def f_dofs(self, index):
+    return Range(self.f_ndofs(index), offset=get(self._offsets, 0, index))
+
+  def f_coefficients(self, index):
+    return Elemwise(self._coeffs, index, dtype=float)
 
 class MaskedBasis(Basis):
   '''An order preserving subset of another :class:`Basis`.
@@ -3626,8 +3642,32 @@ class StructuredBasis(Basis):
       dofs = numpy.add.outer(dofs*ndofs_i, dofs_i)
     return types.frozenarray(dofs.ravel(), dtype=types.strictint, copy=False)
 
+  def get_ndofs(self, ielem):
+    indices = self._get_indices(ielem)
+    ndofs = 1
+    for start_dofs_i, stop_dofs_i, index_i in zip(self._start_dofs, self._stop_dofs, indices):
+      ndofs *= stop_dofs_i[index_i] - start_dofs_i[index_i]
+    return ndofs
+
   def get_coefficients(self, ielem):
     return functools.reduce(numeric.poly_outer_product, map(operator.getitem, self._coeffs, self._get_indices(ielem)))
+
+  def f_coefficients(self, index):
+    coeffs = []
+    for coeffs_i in self._coeffs:
+      if any(coeffs_ij != coeffs_i[0] for coeffs_ij in coeffs_i[1:]):
+        return super().f_coefficients(index)
+      coeffs.append(coeffs_i[0])
+    return Constant(functools.reduce(numeric.poly_outer_product, coeffs))
+
+  def f_ndofs(self, index):
+    ndofs = 1
+    for start_dofs_i, stop_dofs_i in zip(self._start_dofs, self._stop_dofs):
+      ndofs_i = stop_dofs_i - start_dofs_i
+      if any(ndofs_ij != ndofs_i[0] for ndofs_ij in ndofs_i[1:]):
+        return super().f_ndofs(index)
+      ndofs *= ndofs_i[0]
+    return Constant(ndofs)
 
   def get_support(self, dof):
     if not numeric.isint(dof):
@@ -3682,6 +3722,12 @@ class PrunedBasis(Basis):
     if numeric.isintarray(dof) and dof.ndim == 1 and numpy.any(numpy.less(dof, 0)):
       raise IndexError('dof out of bounds')
     return numeric.sorted_index(self._transmap, self._parent.get_support(self._dofmap[dof]), missing='mask')
+
+  def f_ndofs(self, index):
+    return self._parent.f_ndofs(get(self._transmap, 0, index))
+
+  def f_coefficients(self, index):
+    return self._parent.f_coefficients(get(self._transmap, 0, index))
 
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 

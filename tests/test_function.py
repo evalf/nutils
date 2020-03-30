@@ -958,6 +958,10 @@ class basis(TestCase):
     with self.assertRaises(IndexError):
       self.basis.get_dofs(self.checknelems)
 
+  def test_get_ndofs(self):
+    for ielem in range(self.checknelems):
+      self.assertEqual(self.basis.get_ndofs(ielem), len(self.checkdofs[ielem]))
+
   def test_dofs_array(self):
     for mask in itertools.product(*[[False, True]]*self.checknelems):
       mask = numpy.array(mask, dtype=bool)
@@ -1061,6 +1065,24 @@ class basis(TestCase):
         if value.shape[0] == 1:
           value = numpy.tile(value, (points.shape[0], 1))
         self.assertEqual(value.tolist(), self.checkeval(ielem, points))
+
+  def test_f_ndofs(self):
+    for ielem in range(self.checknelems):
+      a = self.basis.get_ndofs(ielem)
+      b, = self.basis.f_ndofs(ielem).eval()
+      self.assertEqual(a, b)
+
+  def test_f_dofs(self):
+    for ielem in range(self.checknelems):
+      a = self.basis.get_dofs(ielem)
+      b, = self.basis.f_dofs(ielem).eval()
+      self.assertAllEqual(a, b)
+
+  def test_f_coefficients(self):
+    for ielem in range(self.checknelems):
+      a = self.basis.get_coefficients(ielem)
+      b, = self.basis.f_coefficients(ielem).eval()
+      self.assertAllEqual(a, b)
 
 basis(
   'PlainBasis',
