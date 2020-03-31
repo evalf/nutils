@@ -90,6 +90,13 @@ class apply_annotations(TestCase):
 
 class nutils_hash(TestCase):
 
+  class custom:
+    @property
+    def __nutils_hash__(self):
+      return b'01234567890123456789'
+    def f(self):
+      pass
+
   def test_ellipsis(self):
     self.assertEqual(nutils.types.nutils_hash(...).hex(), '0c8bce06e451e4d5c49f60da0abf2ccbadf80600')
 
@@ -172,12 +179,11 @@ class nutils_hash(TestCase):
     finally:
       os.unlink(path)
 
+  def test_type_boundmethod(self):
+    self.assertEqual(nutils.types.nutils_hash(self.custom().f).hex(), 'ebf7084bb2504922235ab035a9197b9cb4cf47af')
+
   def test_custom(self):
-    class custom:
-      @property
-      def __nutils_hash__(self):
-        return b'01234567890123456789'
-    self.assertEqual(nutils.types.nutils_hash(custom()).hex(), b'01234567890123456789'.hex())
+    self.assertEqual(nutils.types.nutils_hash(self.custom()).hex(), b'01234567890123456789'.hex())
 
   def test_unhashable(self):
     with self.assertRaises(TypeError):
