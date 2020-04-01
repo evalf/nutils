@@ -879,6 +879,14 @@ class InsertAxis(Array):
   def _sign(self):
     return InsertAxis(Sign(self.func), self.axis, self.length)
 
+  def _inverse(self):
+    if self.axis < self.ndim-2:
+      return InsertAxis(Inverse(self.func), self.axis, self.length)
+
+  def _determinant(self):
+    if self.axis < self.ndim-2:
+      return InsertAxis(Determinant(self.func), self.axis, self.length)
+
   @property
   def blocks(self):
     return tuple((ind[:self.axis]+(Range(self.length),)+ind[self.axis:], InsertAxis(f, self.axis, self.length)) for ind, f in self.func.blocks)
@@ -959,6 +967,24 @@ class Transpose(Array):
 
   def _sign(self):
     return Transpose(Sign(self.func), self.axes)
+
+  def _unravel(self, axis, shape):
+    orig_axis = self.axes[axis]
+    axes = [ax + (ax>orig_axis) for ax in self.axes]
+    axes.insert(axis+1, orig_axis+1)
+    return Transpose(Unravel(self.func, orig_axis, shape), axes)
+
+  def _product(self):
+    if self.axes[-1] == self.ndim-1:
+      return Transpose(Product(self.func), self.axes[:-1])
+
+  def _determinant(self):
+    if sorted(self.axes[-2:]) == [self.ndim-2, self.ndim-1]:
+      return Transpose(Determinant(self.func), self.axes[:-2])
+
+  def _inverse(self):
+    if sorted(self.axes[-2:]) == [self.ndim-2, self.ndim-1]:
+      return Transpose(Inverse(self.func), self.axes)
 
   @property
   def blocks(self):
@@ -1142,6 +1168,10 @@ class Inverse(Array):
     if axis < rmaxis < self.ndim - 2:
       return Inverse(TakeDiag(self.func, axis, rmaxis))
 
+  def _unravel(self, axis, shape):
+    if axis < self.ndim-2:
+      return Inverse(Unravel(self.func, axis, shape))
+
 class Concatenate(Array):
 
   __slots__ = 'funcs', 'axis'
@@ -1213,7 +1243,7 @@ class Concatenate(Array):
       else:
         ind = Concatenate([ind for ind, f in ind_f], axis=0)
         f = Concatenate([f for ind, f in ind_f], axis=len(ind1))
-      blocks.append((ind1+(ind,)+ind2, f))
+      blocks.append((ind1+(ind.simplified,)+ind2, f))
     return tuple(blocks)
 
   def _get(self, i, item):
@@ -1372,8 +1402,6 @@ class Multiply(Array):
   @property
   def simplified(self):
     func1, func2 = [func.simplified for func in self.funcs]
-    if func1 == func2:
-      return power(func1, 2).simplified
     retval = func1._multiply(func2)
     if retval is not None:
       assert retval.shape == self.shape
@@ -1459,6 +1487,20 @@ class Multiply(Array):
   def _mask(self, maskvec, axis):
     func1, func2 = self.funcs
     return Multiply([Mask(func1, maskvec, axis), Mask(func2, maskvec, axis)])
+
+  def _sign(self):
+    return Multiply([Sign(func) for func in self.funcs])
+
+  def _unravel(self, axis, shape):
+    return Multiply([Unravel(func, axis, shape) for func in self.funcs])
+
+  def _inverse(self):
+    func1, func2 = self.funcs
+    invaxes = {self.ndim-2, self.ndim-1}
+    if invaxes.issubset(func1._inserted_axes):
+      return divide(Inverse(func2), func1)
+    if invaxes.issubset(func2._inserted_axes):
+      return divide(Inverse(func1), func2)
 
   @property
   def blocks(self):
@@ -1557,6 +1599,9 @@ class Add(Array):
     func1, func2 = self.funcs
     return Add([Mask(func1, maskvec, axis), Mask(func2, maskvec, axis)])
 
+  def _unravel(self, axis, shape):
+    return Add([Unravel(func, axis, shape) for func in self.funcs])
+
   @property
   def blocks(self):
     return _gatherblocks(block for func in self.funcs for block in func.blocks)
@@ -1636,15 +1681,6 @@ class Sum(Array):
   def _get(self, axis, item):
     return Sum(Get(self.func, axis+(axis>=self.axis), item), self.axis-(axis<self.axis))
 
-  def _takediag(self, axis, rmaxis):
-    return Sum(TakeDiag(self.func, axis+(axis>=self.axis), rmaxis+(rmaxis>=self.axis)), self.axis-(rmaxis<self.axis))
-
-  def _take(self, index, axis):
-    return Sum(Take(self.func, index, axis+(axis>=self.axis)), self.axis)
-
-  def _mask(self, maskvec, axis):
-    return Sum(Mask(self.func, maskvec, axis+(axis>=self.axis)), self.axis)
-
   def _derivative(self, var, seen):
     return sum(derivative(self.func, var, seen), self.axis)
 
@@ -1703,6 +1739,10 @@ class TakeDiag(Array):
       func = Mask(self.func, maskvec, axis+(axis>=self.rmaxis))
     return TakeDiag(func, self.axis, self.rmaxis)
 
+  def _sum(self, axis):
+    if axis != self.axis:
+      return TakeDiag(Sum(self.func, axis+(axis>=self.rmaxis)), self.axis-(axis<self.axis), self.rmaxis-(axis<self.rmaxis))
+
   @property
   def blocks(self):
     blocks = []
@@ -1713,6 +1753,12 @@ class TakeDiag(Array):
         elif ind[self.axis] == Range(self.func.shape[self.axis]):
           f = Take(f, ind[self.rmaxis], axis=self.axis)
           ind = ind[:self.axis] + (ind[self.rmaxis],) + ind[self.axis+1:]
+        elif ind[self.axis].isconstant and ind[self.rmaxis].isconstant:
+          newind, subind1, subind2 = numeric.intersect1d(ind[self.axis].eval()[0], ind[self.rmaxis].eval()[0], return_indices=True)
+          if not newind.size:
+            break # blocks do not overlap
+          f = Take(Take(f, subind1, axis=self.axis), subind2, axis=self.rmaxis)
+          ind = ind[:self.axis] + (asarray(newind),) + ind[self.axis+1:]
         else:
           warnings.warn('failed to preserve takediag sparsity', ExpensiveEvaluationWarning)
           return super().blocks
@@ -1774,8 +1820,9 @@ class Take(Array):
     return take(derivative(self.func, var, seen), self.indices, self.axis)
 
   def _get(self, axis, item):
-    return Get(self.func, axis, Get(self.indices, 0, item)) if axis == self.axis \
-      else Take(Get(self.func, axis, item), self.indices, self.axis-(axis<self.axis))
+    if axis == self.axis:
+      return Get(self.func, axis, Get(self.indices, 0, item))
+    return Take(Get(self.func, axis, item), self.indices, self.axis-(axis<self.axis))
 
   def _take(self, index, axis):
     if axis == self.axis:
@@ -1783,6 +1830,10 @@ class Take(Array):
     trytake = self.func._take(index, axis)
     if trytake is not None:
       return Take(trytake, self.indices, self.axis)
+
+  def _sum(self, axis):
+    if axis != self.axis:
+      return Take(Sum(self.func, axis), self.indices, self.axis-(axis<self.axis))
 
   @property
   def blocks(self):
@@ -1850,11 +1901,12 @@ class Power(Array):
   def _mask(self, maskvec, axis):
     return Power(Mask(self.func, maskvec, axis), Mask(self.power, maskvec, axis))
 
-  def _multiply(self, other):
-    if isinstance(other, Power) and self.func == other.func:
-      return Power(self.func, Add([self.power, other.power]))
-    if other == self.func:
-      return Power(self.func, Add([self.power, ones_like(self.power)]))
+  def _unravel(self, axis, shape):
+    return Power(Unravel(self.func, axis, shape), Unravel(self.power, axis, shape))
+
+  def _product(self):
+    if self.ndim-1 in self.power._inserted_axes:
+      return Power(Product(self.func), self.power._uninsert(self.ndim-1))
 
 class Pointwise(Array):
   '''
@@ -1899,6 +1951,9 @@ class Pointwise(Array):
 
   def _mask(self, maskvec, axis):
     return self.__class__(*[Mask(arg, maskvec, axis) for arg in self.args])
+
+  def _unravel(self, axis, shape):
+    return self.__class__(*[Unravel(arg, axis, shape) for arg in self.args])
 
 class Cos(Pointwise):
   'Cosine, element-wise.'
@@ -2021,6 +2076,9 @@ class Sign(Array):
 
   def _sign(self):
     return self
+
+  def _unravel(self, axis, shape):
+    return Sign(Unravel(self.func, axis, shape))
 
   def _derivative(self, var, seen):
     return Zeros(self.shape + var.shape, dtype=self.dtype)
@@ -2319,6 +2377,18 @@ class Inflate(Array):
   def _sign(self):
     return Inflate(Sign(self.func), self.dofmap, self.length, self.axis)
 
+  def _inverse(self):
+    if self.axis < self.ndim-2:
+      return Inflate(Inverse(self.func), self.dofmap, self.length, self.axis)
+
+  def _determinant(self):
+    if self.axis < self.ndim-2:
+      return Inflate(Determinant(self.func), self.dofmap, self.length, self.axis)
+
+  def _product(self):
+    if self.axis < self.ndim-1:
+      return Inflate(Product(self.func), self.dofmap, self.length, self.axis)
+
 class Diagonalize(Array):
 
   __slots__ = 'func', 'axis', 'newaxis'
@@ -2437,6 +2507,15 @@ class Diagonalize(Array):
 
   def _sign(self):
     return Diagonalize(Sign(self.func), self.axis, self.newaxis)
+
+  def _power(self, n):
+    return Diagonalize(Power(self.func, TakeDiag(n, self.axis, self.newaxis)), self.axis, self.newaxis)
+
+  def _product(self):
+    if self.newaxis < self.ndim-1:
+      return Diagonalize(Product(self.func), self.axis, self.newaxis)
+    elif numeric.isint(self.shape[self.axis]) and self.shape[self.axis] > 1:
+      return Zeros(self.shape[:-1], dtype=self.dtype)
 
   @property
   def blocks(self):
@@ -2678,7 +2757,6 @@ class Ravel(Array):
   def _add(self, other):
     if isinstance(other, Ravel) and other.axis == self.axis and other.func.shape[self.axis:self.axis+2] == self.func.shape[self.axis:self.axis+2]:
       return Ravel(Add([self.func, other.func]), self.axis)
-    return Ravel(Add([self.func, Unravel(other, self.axis, self.func.shape[self.axis:self.axis+2])]), self.axis)
 
   def _get(self, i, item):
     if i != self.axis:
@@ -2707,7 +2785,7 @@ class Ravel(Array):
       return Ravel(TakeDiag(self.func, axis+(axis>self.axis), rmaxis+(rmaxis>self.axis)), self.axis-(self.axis>rmaxis))
 
   def _take(self, index, axis):
-    if axis not in (self.axis, self.axis+1):
+    if axis != self.axis:
       return Ravel(Take(self.func, index, axis+(axis>self.axis)), self.axis)
 
   def _unravel(self, axis, shape):
@@ -2719,6 +2797,39 @@ class Ravel(Array):
   def _mask(self, maskvec, axis):
     if axis != self.axis:
       return Ravel(Mask(self.func, maskvec, axis+(axis>self.axis)), self.axis)
+
+  def _inflate(self, dofmap, length, axis):
+    if axis != self.axis:
+      return Ravel(Inflate(self.func, dofmap, length, axis=axis+(axis>self.axis)), self.axis)
+
+  def _diagonalize(self, axis, newaxis):
+    if axis != self.axis:
+      return Ravel(Diagonalize(self.func, axis+(axis>self.axis), newaxis+(newaxis>self.axis)), self.axis+(newaxis<=self.axis))
+
+  def _kronecker(self, axis, length, pos):
+    return Ravel(Kronecker(self.func, axis+(axis>self.axis), length, pos), self.axis+(axis<=self.axis))
+
+  def _insertaxis(self, axis, length):
+    return Ravel(InsertAxis(self.func, axis+(axis>self.axis), length), self.axis+(axis<=self.axis))
+
+  def _power(self, n):
+    return Ravel(Power(self.func, Unravel(n, self.axis, self.func.shape[self.axis:self.axis+2])), self.axis)
+
+  def _sign(self):
+    return Ravel(Sign(self.func), self.axis)
+
+  def _inverse(self):
+    if self.axis < self.ndim-2:
+      return Ravel(Inverse(self.func), self.axis)
+
+  def _product(self):
+    if self.axis == self.ndim-1:
+      return Product(Product(self.func))
+    return Ravel(Product(self.func), self.axis)
+
+  def _determinant(self):
+    if self.axis < self.ndim-2:
+      return Ravel(Determinant(self.func), self.axis)
 
   @property
   def blocks(self):
@@ -2760,9 +2871,33 @@ class Unravel(Array):
     sh2, = sh2
     return f.reshape(f.shape[:self.axis+1]+(sh1, sh2)+f.shape[self.axis+2:])
 
-  def _ravel(self, axis):
-    if axis == self.axis:
-      return self.func
+  def _get(self, axis, item):
+    if not self.axis <= axis < self.axis+2:
+      return Unravel(Get(self.func, axis-(axis>self.axis), item), self.axis-(axis<self.axis), self.unravelshape)
+
+  def _determinant(self):
+    if self.axis < self.func.ndim-2:
+      return Unravel(Determinant(self.func), self.axis, self.unravelshape)
+
+  def _takediag(self, axis, rmaxis):
+    if not self.axis <= axis < self.axis+2 and not self.axis <= rmaxis < self.axis+2:
+      return Unravel(TakeDiag(self.func, axis-(axis>self.axis), rmaxis-(rmaxis>self.axis)), self.axis-(rmaxis<self.axis), self.unravelshape)
+
+  def _mask(self, maskvec, axis):
+    if not self.axis <= axis < self.axis+2:
+      return Unravel(Mask(self.func, maskvec, axis-(axis>self.axis)), self.axis, self.unravelshape)
+
+  def _take(self, index, axis):
+    if not self.axis <= axis < self.axis+2:
+      return Unravel(Take(self.func, index, axis-(axis>self.axis)), self.axis, self.unravelshape)
+
+  def _product(self):
+    if self.axis < self.func.ndim-1:
+      return Unravel(Product(self.func), self.axis, self.unravelshape)
+
+  def _sum(self, axis):
+    if not self.axis <= axis < self.axis+2:
+      return Unravel(Sum(self.func, axis-(axis>self.axis)), self.axis-(axis<self.axis), self.unravelshape)
 
   @property
   def blocks(self):
@@ -2826,6 +2961,10 @@ class Mask(Array):
       assert maskvec.sum() == newmask.sum()
       return Mask(self.func, newmask, self.axis)
 
+  def _sum(self, axis):
+    if axis != self.axis:
+      return Mask(Sum(self.func, axis), self.mask, self.axis-(axis<self.axis))
+
   @property
   def blocks(self):
     blocks = []
@@ -2856,6 +2995,10 @@ class Range(Array):
 
   def _take(self, index, axis):
     return add(index, self.offset)
+
+  def _add(self, offset):
+    if 0 in offset._inserted_axes:
+      return Range(self.length, self.offset + offset._uninsert(0))
 
   def evalf(self, length, offset):
     length, = length
@@ -3115,11 +3258,7 @@ class Kronecker(Array):
 
   def _unravel(self, axis, shape):
     if axis != self.axis:
-      return Kronecker(Unravel(self.func, axis-(axis>self.axis), shape), self.axis+(axis<self.axis)*len(shape), self.length, self.pos)
-
-  def _ravel(self, axis):
-    if axis != self.axis and axis != self.axis-1:
-      return Kronecker(Ravel(self.func, axis-(self.axis<axis)), self.axis-(axis<self.axis), self.length, self.pos)
+      return Kronecker(Unravel(self.func, axis-(axis>self.axis), shape), self.axis+(axis<self.axis)*(len(shape)-1), self.length, self.pos)
 
   def _diagonalize(self, axis, newaxis):
     if axis == self.axis:
@@ -4484,9 +4623,8 @@ def dotnorm(arg, geom, axis=-1):
 if __name__ == '__main__':
   # Diagnostics for the development for simplify operations.
   simplify_priority = (
-    Inflate, Kronecker, Diagonalize, InsertAxis, # shape increasing, sparse
-    Ravel, Unravel, Transpose, Power, Multiply, Add, Sign, Inverse, # shape preserving
-    Sum, Product, Determinant, TakeDiag, Mask, Take, Get) # shape decreasing
+    Ravel, Inflate, Kronecker, Diagonalize, InsertAxis, Transpose, Multiply, Add, Sign, Power, Inverse, Unravel, # size preserving
+    Product, Determinant, TakeDiag, Mask, Take, Sum, Get) # size decreasing
   # The simplify priority defines the preferred order in which operations are
   # performed: shape decreasing operations such as Sum and Get should be done
   # as soon as possible, and shape increasing operations such as Inflate and

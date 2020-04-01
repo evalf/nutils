@@ -19,7 +19,7 @@ class check(TestCase):
     else:
       raise Exception('invalid ndim {!r}'.format(self.ndim))
     numpy.random.seed(0)
-    self.args = [function.Polyval(numeric.dot(numpy.random.uniform(size=shape+poly.shape[:1], low=self.low, high=self.high), poly), function.rootcoords(self.ndim)) for shape in self.shapes]
+    self.args = [function.Guard(function.Polyval(numeric.dot(numpy.random.uniform(size=shape+poly.shape[:1], low=self.low, high=self.high), poly), function.rootcoords(self.ndim))) for shape in self.shapes]
     if self.pass_geom:
         self.args += [self.geom]
     self.sample = domain.sample('uniform', 2)
@@ -113,7 +113,7 @@ class check(TestCase):
     for ax1, ax2 in self.pairs:
       trans = [i for i in range(self.n_op_argsfun.ndim) if i not in (ax1+1,ax2+1)] + [ax1+1,ax2+1]
       invtrans = list(map(trans.index, range(len(trans))))
-      self.assertFunctionAlmostEqual(decimal=15,
+      self.assertFunctionAlmostEqual(decimal=14,
         desired=numeric.inv(self.n_op_argsfun.transpose(trans)).transpose(invtrans),
         actual=function.inverse(self.op_args, axes=(ax1,ax2)))
 
@@ -124,6 +124,22 @@ class check(TestCase):
         actual=function.determinant(self.op_args, axes=(ax1,ax2)))
 
   def test_take(self):
+    indices = [0,-1]
+    for iax, sh in enumerate(self.op_args.shape):
+      if sh >= 2:
+        self.assertFunctionAlmostEqual(decimal=15,
+          desired=numpy.take(self.n_op_argsfun, indices, axis=iax+1),
+          actual=function.take(self.op_args, indices, axis=iax))
+
+  def test_take_nomask(self):
+    for iax, sh in enumerate(self.op_args.shape):
+      if sh >= 2:
+        indices = [0,sh-1]
+        self.assertFunctionAlmostEqual(decimal=15,
+          desired=numpy.take(self.n_op_argsfun, indices, axis=iax+1),
+          actual=function.take(self.op_args, function.Guard(function.asarray(indices)), axis=iax))
+
+  def test_take_reversed(self):
     indices = [-1,0]
     for iax, sh in enumerate(self.op_args.shape):
       if sh >= 2:
@@ -186,7 +202,7 @@ class check(TestCase):
 
   def test_dot(self):
     for iax in range(self.op_args.ndim):
-      self.assertFunctionAlmostEqual(decimal=15,
+      self.assertFunctionAlmostEqual(decimal=14,
         desired=numeric.contract(self.n_op_argsfun, self.shapearg, axis=iax+1),
         actual=function.dot(self.op_args, self.shapearg, axes=iax))
 
@@ -378,78 +394,80 @@ class check(TestCase):
 def _check(name, op, n_op, shapes, hasgrad=True, zerograd=False, pass_geom=False, ndim=2, low=-1, high=1):
   check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad, zerograd=zerograd, pass_geom=pass_geom, ndim=ndim, low=low, high=high)
 
-_check('identity', lambda f: function.asarray(f), lambda a: a, [(2,3,2)])
-_check('const', lambda f: function.asarray(numpy.arange(12, dtype=float).reshape(2,3,2)), lambda a: numpy.arange(12, dtype=float).reshape(1,2,3,2), [(2,3,2)])
+_check('identity', lambda f: function.asarray(f), lambda a: a, [(2,4,2)])
+_check('const', lambda f: function.asarray(numpy.arange(16, dtype=float).reshape(2,4,2)), lambda a: numpy.arange(16, dtype=float).reshape(1,2,4,2), [(2,4,2)])
 _check('zeros', lambda f: function.zeros([4,3,4]), lambda a: numpy.zeros([1,4,3,4]), [(4,3,4)])
-_check('ones', lambda f: function.ones([2,2]), lambda a: numpy.ones([1,2,2]), [(2,3,2)])
-_check('sin', function.sin, numpy.sin, [(3,)])
-_check('cos', function.cos, numpy.cos, [(3,)])
-_check('tan', function.tan, numpy.tan, [(3,)])
-_check('sqrt', function.sqrt, numpy.sqrt, [(3,)], low=0)
-_check('log', function.ln, numpy.log, [(3,)], low=0)
-_check('log2', function.log2, numpy.log2, [(3,)], low=0)
-_check('log10', function.log10, numpy.log10, [(3,)], low=0)
-_check('exp', function.exp, numpy.exp, [(3,)])
-_check('arctanh', function.arctanh, numpy.arctanh, [(3,)])
-_check('tanh', function.tanh, numpy.tanh, [(3,)])
-_check('cosh', function.cosh, numpy.cosh, [(3,)])
-_check('sinh', function.sinh, numpy.sinh, [(3,)])
-_check('abs', function.abs, numpy.abs, [(3,)])
-_check('sign', function.sign, numpy.sign, [(3,3)], zerograd=True)
-_check('power', function.power, numpy.power, [(3,1),(1,3)], low=0)
-_check('negative', function.negative, numpy.negative, [(3,)])
-_check('reciprocal', function.reciprocal, numpy.reciprocal, [(3,)], low=-2, high=-1)
-_check('arcsin', function.arcsin, numpy.arcsin, [(3,)])
-_check('arccos', function.arccos, numpy.arccos, [(3,)])
-_check('arctan', function.arctan, numpy.arctan, [(3,)])
-_check('ln', function.ln, numpy.log, [(3,)], low=0)
-_check('product', lambda a: function.product(a,1), lambda a: numpy.product(a,-2), [(2,3,2)])
-_check('norm2', lambda a: function.norm2(a,1), lambda a: (a**2).sum(-2)**.5, [(2,3,2)])
-_check('norm2scalar', lambda a: function.norm2(a,1), lambda a: abs(a.sum(-2)), [(3,1,3)])
-_check('sum', lambda a: function.sum(a,1), lambda a: a.sum(-2), [(2,3,2)])
-_check('transpose1', lambda a: function.transpose(a,[0,2,1]), lambda a: a.transpose([0,1,3,2]), [(2,3,2)])
-_check('transpose2', lambda a: function.transpose(a,[1,2,0]), lambda a: a.transpose([0,2,3,1]), [(2,3,2)])
-_check('expand_dims', lambda a: function.expand_dims(a,1), lambda a: numpy.expand_dims(a,2), [(2,3)])
-_check('get', lambda a: function.get(a,1,1), lambda a: a[...,1,:], [(2,3,2)])
+_check('ones', lambda f: function.ones([4,3,4]), lambda a: numpy.ones([1,4,3,4]), [(4,3,4)])
+_check('range', lambda f: function.Range(4, offset=2), lambda a: numpy.arange(2,6)[numpy.newaxis], [(4,)])
+_check('sin', function.sin, numpy.sin, [(4,)])
+_check('cos', function.cos, numpy.cos, [(4,)])
+_check('tan', function.tan, numpy.tan, [(4,)])
+_check('sqrt', function.sqrt, numpy.sqrt, [(4,)], low=0)
+_check('log', function.ln, numpy.log, [(4,)], low=0)
+_check('log2', function.log2, numpy.log2, [(4,)], low=0)
+_check('log10', function.log10, numpy.log10, [(4,)], low=0)
+_check('exp', function.exp, numpy.exp, [(4,)])
+_check('arctanh', function.arctanh, numpy.arctanh, [(4,)])
+_check('tanh', function.tanh, numpy.tanh, [(4,)])
+_check('cosh', function.cosh, numpy.cosh, [(4,)])
+_check('sinh', function.sinh, numpy.sinh, [(4,)])
+_check('abs', function.abs, numpy.abs, [(4,)])
+_check('sign', function.sign, numpy.sign, [(4,4)], zerograd=True)
+_check('power', function.power, numpy.power, [(4,1),(1,4)], low=0)
+_check('negative', function.negative, numpy.negative, [(4,)])
+_check('reciprocal', function.reciprocal, numpy.reciprocal, [(4,)], low=-2, high=-1)
+_check('arcsin', function.arcsin, numpy.arcsin, [(4,)])
+_check('arccos', function.arccos, numpy.arccos, [(4,)])
+_check('arctan', function.arctan, numpy.arctan, [(4,)])
+_check('ln', function.ln, numpy.log, [(4,)], low=0)
+_check('product', lambda a: function.product(a,1), lambda a: numpy.product(a,-2), [(4,3,4)])
+_check('norm2', lambda a: function.norm2(a,1), lambda a: (a**2).sum(-2)**.5, [(4,3,4)])
+_check('norm2scalar', lambda a: function.norm2(a,1), lambda a: abs(a.sum(-2)), [(4,1,4)])
+_check('sum', lambda a: function.sum(a,1), lambda a: a.sum(-2), [(4,3,4)])
+_check('transpose1', lambda a: function.transpose(a,[0,2,1]), lambda a: a.transpose([0,1,3,2]), [(4,4,4)], low=0, high=20)
+_check('transpose2', lambda a: function.transpose(a,[1,2,0]), lambda a: a.transpose([0,2,3,1]), [(4,4,4)])
+_check('expand_dims', lambda a: function.expand_dims(a,1), lambda a: numpy.expand_dims(a,2), [(2,4)])
+_check('get', lambda a: function.get(a,1,1), lambda a: a[...,1,:], [(4,3,4)])
 _check('getvar', lambda a: function.get(function.Constant([[1,2],[3,4]]),1,function.Int(a)%2), lambda a: numpy.array([[1,2],[3,4]])[:,a.astype(int)%2].T, [()])
-_check('takediag121', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(1,2,1)])
-_check('takediag232', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(2,3,2)])
-_check('takediag323', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(3,2,3)])
-_check('determinant131', lambda a: function.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(-3,-2)), [(1,3,1)])
-_check('determinant232', lambda a: function.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(-3,-2)), [(2,3,2)])
-_check('determinant3322', lambda a: function.determinant(a,(2,3)), lambda a: numpy.linalg.det(a), [(2,2,3,3)])
+_check('takediag141', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(1,4,1)])
+_check('takediag434', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(4,3,4)])
+_check('takediag343', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(3,4,3)])
+_check('determinant141', lambda a: function.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(-3,-2)), [(1,4,1)])
+_check('determinant434', lambda a: function.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(-3,-2)), [(4,3,4)])
+_check('determinant4433', lambda a: function.determinant(a,(2,3)), lambda a: numpy.linalg.det(a), [(4,4,3,3)])
 _check('determinant200', lambda a: function.determinant(a,(1,2)), lambda a: numpy.linalg.det(a) if a.shape[-1] else numpy.ones(a.shape[:-2], float), [(2,0,0)], zerograd=True)
-_check('inverse131', lambda a: function.inverse(a+function.eye(1)[:,None],(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)+numpy.eye(1)).swapaxes(-3,-2), [(1,3,1)])
-_check('inverse232', lambda a: function.inverse(a+function.eye(2)[:,None],(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)+numpy.eye(2)).swapaxes(-3,-2), [(2,3,2)])
-_check('inverse3322', lambda a: function.inverse(a+function.eye(2)), lambda a: numpy.linalg.inv(a+numpy.eye(2)), [(3,3,2,2)])
-_check('repeat', lambda a: function.repeat(a,3,1), lambda a: numpy.repeat(a,3,-2), [(2,1,2)])
-_check('diagonalize', lambda a: function.diagonalize(a,1,3), lambda a: numeric.diagonalize(a,2,4), [(2,2,2,2)])
-_check('multiply', function.multiply, numpy.multiply, [(3,1),(3,3)])
-_check('dot', lambda a,b: function.dot(a,b,axes=1), lambda a,b: (a*b).sum(2), [(3,2,3),(3,2,3)])
-_check('divide', function.divide, lambda a, b: a * b**-1, [(3,3),(1,3)], low=-2, high=-1)
-_check('divide2', lambda a: function.asarray(a)/2, lambda a: a/2, [(3,1)])
-_check('add', function.add, numpy.add, [(3,1),(1,3)])
-_check('subtract', function.subtract, numpy.subtract, [(3,1),(1,3)])
-_check('product2', lambda a,b: function.multiply(a,b).sum(-2), lambda a,b: (a*b).sum(-2), [(2,3,2),(1,3,2)])
-_check('cross', lambda a,b: function.cross(a,b,-2), lambda a,b: numpy.cross(a,b,axis=-2), [(2,3,1),(2,3,2)])
-_check('min', lambda a,b: function.min(a,b), numpy.minimum, [(3,1),(1,3)])
-_check('max', lambda a,b: function.max(a,b), numpy.maximum, [(3,1),(1,3)])
-_check('equal', lambda a,b: function.equal(a,b), numpy.equal, [(3,1),(1,3)])
-_check('greater', lambda a,b: function.greater(a,b), numpy.greater, [(3,1),(1,3)])
-_check('less', lambda a,b: function.less(a,b), numpy.less, [(3,1),(1,3)])
-_check('arctan2', function.arctan2, numpy.arctan2, [(3,1),(1,3)])
-_check('stack', lambda a,b: function.stack([a,b]), lambda a,b: numpy.concatenate([a[...,_,:],b[...,_,:]], axis=-2), [(3,),(3,)])
+_check('inverse141', lambda a: function.inverse(a+function.eye(1)[:,None],(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)+numpy.eye(1)).swapaxes(-3,-2), [(1,4,1)])
+_check('inverse434', lambda a: function.inverse(a+function.eye(4)[:,None],(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(-3,-2)+numpy.eye(4)).swapaxes(-3,-2), [(4,3,4)])
+_check('inverse4422', lambda a: function.inverse(a+function.eye(2)), lambda a: numpy.linalg.inv(a+numpy.eye(2)), [(4,4,2,2)])
+_check('repeat', lambda a: function.repeat(a,3,1), lambda a: numpy.repeat(a,3,-2), [(4,1,4)])
+_check('diagonalize', lambda a: function.diagonalize(a,1,3), lambda a: numeric.diagonalize(a,2,4), [(4,4,4,4,4)])
+_check('multiply', function.multiply, numpy.multiply, [(4,1),(4,4)])
+_check('dot', lambda a,b: function.dot(a,b,axes=1), lambda a,b: (a*b).sum(2), [(4,2,4),(4,2,4)])
+_check('divide', function.divide, lambda a, b: a * b**-1, [(4,4),(1,4)], low=-2, high=-1)
+_check('divide2', lambda a: function.asarray(a)/2, lambda a: a/2, [(4,1)])
+_check('add', function.add, numpy.add, [(4,1),(1,4)])
+_check('subtract', function.subtract, numpy.subtract, [(4,1),(1,4)])
+_check('dot2', lambda a,b: function.multiply(a,b).sum(-2), lambda a,b: (a*b).sum(-2), [(4,2,4),(1,2,4)])
+_check('cross', lambda a,b: function.cross(a,b,-2), lambda a,b: numpy.cross(a,b,axis=-2), [(4,3,1),(4,3,4)])
+_check('min', lambda a,b: function.min(a,b), numpy.minimum, [(4,1),(1,4)])
+_check('max', lambda a,b: function.max(a,b), numpy.maximum, [(4,1),(1,4)])
+_check('equal', lambda a,b: function.equal(a,b), numpy.equal, [(4,1),(1,4)])
+_check('greater', lambda a,b: function.greater(a,b), numpy.greater, [(4,1),(1,4)])
+_check('less', lambda a,b: function.less(a,b), numpy.less, [(4,1),(1,4)])
+_check('arctan2', function.arctan2, numpy.arctan2, [(4,1),(1,4)])
+_check('stack', lambda a,b: function.stack([a,b]), lambda a,b: numpy.concatenate([a[...,_,:],b[...,_,:]], axis=-2), [(4,),(4,)])
 _check('concatenate1', lambda a,b: function.concatenate([a,b],axis=0), lambda a,b: numpy.concatenate([a,b], axis=-2), [(4,6),(2,6)])
 _check('concatenate2', lambda a,b: function.concatenate([a,b],axis=1), lambda a,b: numpy.concatenate([a,b], axis=-1), [(4,3),(4,1)])
-_check('eig', lambda a: function.eig(a+a.T,symmetric=True)[1], lambda a: numpy.linalg.eigh(a+a.swapaxes(1,2))[1], [(3,3)], hasgrad=False)
+_check('eig', lambda a: function.eig(a+a.T,symmetric=True)[1], lambda a: numpy.linalg.eigh(a+a.swapaxes(1,2))[1], [(4,4)], hasgrad=False)
 _check('trignormal', lambda a: function.trignormal(a), lambda a: numpy.array([numpy.cos(a), numpy.sin(a)]).T, [()])
 _check('trigtangent', lambda a: function.trigtangent(a), lambda a: numpy.array([-numpy.sin(a), numpy.cos(a)]).T, [()])
-_check('mod', lambda a,b: function.mod(a,b), lambda a,b: numpy.mod(a,b), [(3,),(3,)], hasgrad=False)
-_check('kronecker', lambda f: function.kronecker(f,axis=2,length=3,pos=1), lambda a: numeric.kronecker(a,axis=3,length=3,pos=1), [(2,2,3,3)])
-_check('mask', lambda f: function.mask(f,numpy.array([True,False,True]),axis=1), lambda a: a[:,:,numpy.array([True,False,True])], [(2,3,4)])
-_check('ravel', lambda f: function.ravel(f,axis=1), lambda a: a.reshape(-1,2,6), [(2,3,2)])
-_check('unravel', lambda f: function.unravel(f,axis=0,shape=[2,3]), lambda a: a.reshape(-1,2,3,2), [(6,2)])
-_check('inflate', lambda f: function.Inflate(f,dofmap=[0,2],length=3,axis=1), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a)[:,:,:1], a[:,:,1:]], axis=2), [(4,2,4)])
+_check('mod', lambda a,b: function.mod(a,b), lambda a,b: numpy.mod(a,b), [(4,),(4,)], hasgrad=False)
+_check('kronecker', lambda f: function.kronecker(f,axis=2,length=4,pos=1), lambda a: numeric.kronecker(a,axis=3,length=4,pos=1), [(4,4,4,4)])
+_check('mask', lambda f: function.mask(f,numpy.array([True,False,True,False,True,False,True]),axis=1), lambda a: a[:,:,::2], [(4,7,4)])
+_check('ravel', lambda f: function.ravel(f,axis=1), lambda a: a.reshape(-1,4,4,4,4), [(4,2,2,4,4)])
+_check('unravel', lambda f: function.unravel(f,axis=1,shape=[2,2]), lambda a: a.reshape(-1,4,2,2,4,4), [(4,4,4,4)])
+_check('inflate', lambda f: function.Inflate(f,dofmap=function.Guard([0,3]),length=4,axis=1), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a), a[:,:,1:]], axis=2), [(4,2,4)])
+_check('inflate-constant', lambda f: function.Inflate(f,dofmap=[0,3],length=4,axis=1), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a), a[:,:,1:]], axis=2), [(4,2,4)])
 
 _polyval_mask = lambda shape, ndim: 1 if ndim == 0 else numpy.array([sum(i[-ndim:]) < shape[-1] for i in numpy.ndindex(shape)], dtype=int).reshape(shape)
 _polyval_desired = lambda c, x: sum(c[(...,*i)]*(x[(slice(None),*[None]*(c.ndim-1-x.shape[1]))]**i).prod(-1) for i in itertools.product(*[range(c.shape[-1])]*x.shape[1]) if sum(i) < c.shape[-1])
@@ -460,6 +478,62 @@ _check('polyval_2d_p0', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2)
 _check('polyval_2d_p1', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2), function.asarray(x)), _polyval_desired, [(2,2)], pass_geom=True, ndim=2)
 _check('polyval_2d_p2', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2), function.asarray(x)), _polyval_desired, [(3,3)], pass_geom=True, ndim=2)
 _check('polyval_2d_p1_23', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2), function.asarray(x)), _polyval_desired, [(2,3,2,2)], pass_geom=True, ndim=2)
+
+
+class blocks(TestCase):
+
+  def test_multiply_equal(self):
+    ((i,), f), = function.multiply(function.Inflate([1,2], dofmap=[0,2], length=3, axis=0), function.Inflate([3,4], dofmap=[0,2], length=3, axis=0)).blocks
+    self.assertEqual(i, function.asarray([0,2]))
+    self.assertAllEqual(f.eval(), [1*3,2*4])
+
+  def test_multiply_embedded(self):
+    ((i,), f), = function.multiply([1,2,3], function.Inflate([4,5], dofmap=[0,2], length=3, axis=0)).blocks
+    self.assertEqual(i, function.asarray([0,2]))
+    self.assertAllEqual(f.eval(), [1*4,3*5])
+
+  def test_multiply_overlapping(self):
+    ((i,), f), = function.multiply(function.Inflate([1,2], dofmap=[0,1], length=3, axis=0), function.Inflate([3,4], dofmap=[1,2], length=3, axis=0)).blocks
+    self.assertEqual(i, function.asarray([1]))
+    self.assertAllEqual(f.eval(), 2*3)
+
+  def test_multiply_disjoint(self):
+    blocks = function.multiply(function.Inflate([1,2], dofmap=[0,2], length=4, axis=0), function.Inflate([3,4], dofmap=[1,3], length=4, axis=0)).blocks
+    self.assertEqual(blocks, ())
+
+  def test_multiply_fallback(self):
+    ((i,), f), = function.multiply(function.Inflate([1,2], dofmap=function.Guard([0,1]), length=3, axis=0), function.Inflate([3,4], dofmap=function.Guard([1,2]), length=3, axis=0)).blocks
+    self.assertEqual(i, function.Range(3))
+    self.assertAllEqual(f.eval(), [0,2*3,0])
+
+  def test_takediag(self):
+    ((i,), f), = function.takediag([[1,2,3],[4,5,6],[7,8,9]]).blocks
+    self.assertEqual(i, function.Range(3))
+    self.assertAllEqual(f.eval(), [1,5,9])
+
+  def test_takediag_embedded_axis(self):
+    ((i,), f), = function.takediag(function.Inflate([[1,2,3],[4,5,6]], dofmap=[0,2], length=3, axis=0)).blocks
+    self.assertEqual(i, function.asarray([0,2]))
+    self.assertAllEqual(f.eval(), [1,6])
+
+  def test_takediag_embedded_rmaxis(self):
+    ((i,), f), = function.takediag(function.Inflate([[1,2],[3,4],[5,6]], dofmap=[0,2], length=3, axis=1)).blocks
+    self.assertEqual(i, function.asarray([0,2]))
+    self.assertAllEqual(f.eval(), [1,6])
+
+  def test_takediag_overlapping(self):
+    ((i,), f), = function.takediag(function.Inflate(function.Inflate([[1,2],[3,4]], dofmap=[0,1], length=3, axis=0), dofmap=[1,2], length=3, axis=1)).blocks
+    self.assertEqual(i, function.asarray([1]))
+    self.assertAllEqual(f.eval(), 3)
+
+  def test_takediag_disjoint(self):
+    blocks = function.takediag(function.Inflate(function.Inflate([[1,2],[3,4]], dofmap=[0,2], length=4, axis=0), dofmap=[1,3], length=4, axis=1)).blocks
+    self.assertEqual(blocks, ())
+
+  def test_takediag_fallback(self):
+    ((i,), f), = function.takediag(function.Inflate(function.Inflate([[1,2],[3,4]], dofmap=function.Guard([0,1]), length=3, axis=0), dofmap=function.Guard([1,2]), length=3, axis=1)).blocks
+    self.assertEqual(i, function.Range(3))
+    self.assertAllEqual(f.eval(), [0,3,0])
 
 
 class commutativity(TestCase):
