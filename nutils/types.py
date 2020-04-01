@@ -22,7 +22,7 @@
 Module with general purpose types.
 """
 
-import inspect, functools, hashlib, builtins, numbers, collections.abc, itertools, abc, sys, weakref, re
+import inspect, functools, hashlib, builtins, numbers, collections.abc, itertools, abc, sys, weakref, re, io
 import numpy
 
 def aspreprocessor(apply):
@@ -299,6 +299,12 @@ def nutils_hash(data):
   elif t is frozenset:
     for item in sorted(map(nutils_hash, data)):
       h.update(item)
+  elif issubclass(t, io.BufferedIOBase) and data.seekable() and not data.writable():
+    pos = data.tell()
+    h.update(str(pos).encode())
+    data.seek(0)
+    map(h.update, iter(lambda: data.read(0x20000), b''))
+    data.seek(pos)
   else:
     raise TypeError('unhashable type: {!r} {!r}'.format(data, t))
   return h.digest()
