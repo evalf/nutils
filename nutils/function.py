@@ -1683,7 +1683,7 @@ class Sum(Array):
 class TakeDiag(Array):
 
   __slots__ = 'func', 'axis', 'rmaxis'
-  __cache__ = 'simplified',
+  __cache__ = 'simplified', 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint, rmaxis:types.strictint):
@@ -1730,6 +1730,22 @@ class TakeDiag(Array):
     else:
       func = Mask(self.func, maskvec, axis+(axis>=self.rmaxis))
     return TakeDiag(func, self.axis, self.rmaxis)
+
+  @property
+  def blocks(self):
+    blocks = []
+    for ind, f in self.func.blocks:
+      if ind[self.axis] != ind[self.rmaxis]:
+        if ind[self.rmaxis] == Range(self.func.shape[self.rmaxis]):
+          f = Take(f, ind[self.axis], axis=self.rmaxis)
+        elif ind[self.axis] == Range(self.func.shape[self.axis]):
+          f = Take(f, ind[self.rmaxis], axis=self.axis)
+          ind = ind[:self.axis] + (ind[self.rmaxis],) + ind[self.axis+1:]
+        else:
+          warnings.warn('failed to preserve takediag sparsity', ExpensiveEvaluationWarning)
+          return super().blocks
+      blocks.append((ind[:self.rmaxis] + ind[self.rmaxis+1:], TakeDiag(f, self.axis, self.rmaxis)))
+    return tuple(blocks)
 
 class Take(Array):
 
