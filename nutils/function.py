@@ -1999,7 +1999,7 @@ class Int(Pointwise):
 class Sign(Array):
 
   __slots__ = 'func',
-  __cache__ = 'simplified',
+  __cache__ = 'simplified', 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray):
@@ -2035,6 +2035,10 @@ class Sign(Array):
 
   def _derivative(self, var, seen):
     return Zeros(self.shape + var.shape, dtype=self.dtype)
+
+  @property
+  def blocks(self):
+    return tuple((ind, Sign(f)) for ind, f in self.func.blocks)
 
 class Sampled(Array):
   '''Basis-like identity operator.
