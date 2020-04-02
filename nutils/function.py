@@ -1750,7 +1750,7 @@ class TakeDiag(Array):
 class Take(Array):
 
   __slots__ = 'func', 'axis', 'indices'
-  __cache__ = 'simplified',
+  __cache__ = 'simplified', 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, indices:asarray, axis:types.strictint):
@@ -1801,6 +1801,13 @@ class Take(Array):
     trytake = self.func._take(index, axis)
     if trytake is not None:
       return Take(trytake, self.indices, self.axis)
+
+  @property
+  def blocks(self):
+    fullrange = Range(self.shape[self.axis])
+    if not all(ind[self.axis] == fullrange for ind, f in self.func.blocks):
+      return super().blocks
+    return tuple((ind[:self.axis]+(fullrange,)+ind[self.axis+1:], Take(f, self.indices, self.axis)) for ind, f in self.func.blocks)
 
 class Power(Array):
 
