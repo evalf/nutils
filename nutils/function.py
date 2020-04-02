@@ -566,7 +566,6 @@ class Array(Evaluable):
 
   sum = sum
   prod = product
-  vector = lambda self, ndims: vectorize([self] * ndims)
   dot = dot
   normalized = lambda self, axis=-1: normalized(self, axis)
   normal = lambda self, exterior=False: normal(self, exterior)
@@ -582,6 +581,11 @@ class Array(Evaluable):
   tangent = lambda self, vec: tangent(self, vec)
   ngrad = lambda self, geom, ndims=0: ngrad(self, geom, ndims)
   nsymgrad = lambda self, geom, ndims=0: nsymgrad(self, geom, ndims)
+
+  def vector(self, ndims):
+    if self.ndim != 1:
+      raise Exception('only a scalar basis van be vectorized')
+    return ravel(diagonalize(insertaxis(self, 1, ndims), 1, 2), 0)
 
   @property
   def blocks(self):

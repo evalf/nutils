@@ -104,31 +104,30 @@ class test(testing.TestCase):
   def test_square(self):
     lhs0, lhs1 = main(nelems=3, etype='square', reynolds=100, degree=3)
     with self.subTest('stokes'): self.assertAlmostEqual64(lhs0, '''
-      eNp1zj1IQlEUB/BrCJKEQxLRFNFQxvN1vTcpoqWhzZaGElr7WKOGirApiIaipcEKoiXCpaKEiCKnhjzn
-      XX1PejaEJGGFRCCiCH153YrXOXCG3+Fw/oT8rZFeQpaVqDGVmjHNxEKSJmxM2rOIal1aDlsxKyK+gF/a
-      sZbHEA5gDmL6FduuWRnHsAQXcABEXeGP/5rVrdUPqyxWma1q2ih3u1g7/+JnPf3+BiYtr5ToBGvm33yN
-      d/C3pLTrTi9d9Y2yCkuxU2Z6pa17CqpKMzTo+6AbdLJmc3eupC7axKFmF7NiR5c2aBpiUYugAxUcRk/N
-      mgyn2MVXsME83INblRZW6hMFfIA6CMRvbotonTgL7/ACWQjBfjwcT8MT6HAJSxCEI8hAvroxIQZ7cA7F
-      X+3ET3CgG1Ucxz5sRDu2IMctTONQNVkFbNW5iScGIT8HbdXq''')
+      eNqNkE8og3EYx99JLZKDJTktOfjT9nr3+3kjuTi4zcUB5cpcxcGkOa3kQC4OGyUXaRfESiI7OdjzfX/v
+      3nd5OUiWhpbUWlsr/1Za48Tzrec5PJ/69v1K0t8z3PN9F11TZtQsdPmS9WzaauWW/sH9iaNuRe9TbayO
+      lblHkXFFtbzSqU2wNJq4E588JZZ5xNPGvepLoszta+ftGbiVAJY8/RhhaSqymJFkZ+yQhVXLXeYKWOkY
+      RVbOk6yc0J2yQ2MeSX5TgnxVuVcnf3CzV6OoT+TJECfUInZoV5PkahHkM+Je3TAqvgNWBqYIYF7rRwRp
+      siNmuHDGhhBWO4xKjkYzqtWKTm0TaTyTEzZKiTmKeG7IqzrkSi8hV9Ss0X3JLKatW7L0KvInvHFFv7i0
+      sRzK3H96TtErPVGKArQdD8Wv6YEMOqUFGqM9uqNM6WNRjLbomHK/VIv3UgoHZIyjFw2oRjM41nGNQdhR
+      JFtpr+HAlKQvrHfV6g==''')
     with self.subTest('navier-stokes'): self.assertAlmostEqual64(lhs1, '''
-      eNptzkFoE0EUBuD1ELwIBUUwLdpLiq2bJjuzhkhbReihlQqKGkgLpQ3Bq4cWaVG86EXTUrC5mCCmEFRK
-      JLHQRAumiYqg+XdmdrMbpB4EbyIF21uKl+7sUfLgwXvfezM8Rfk/bkQVZV0ddw6cqvrZWnEC9k1NWt2M
-      i4visjgh9geOkYQu7ZZY4GN8mE/zF6EGeXReWorbLMcesl/sUyhPf3t2hb9iQ+yvMcnS2hn9XkTaPx7h
-      y6yb1Yy406vPeNZj+sRPdpsRg/EHesGz68Gic6mVtHZFSGgs4P3X6eZOUbfvhIcIpT/oBX1eP6lJGwmO
-      as/JVXpUz9CndMKWttX/MRwlPlqhWZqi98PS/pzzhy0tR5J0ipapKqQtnO1qnm6tBiNklsSISaSd2uk1
-      /SLE6/yxuGbFvL0nznFRZH2siQTndE733n5/be2xjMGRaGx/U43OF5dQxgYKWMI4VLzBW7deQxrPUEUR
-      m66sYRUpt9/EO1eyWMYi8qi58/coYQUvUcEXfMBXWGhjG0eMqtuV3Wzj7qCiHALXRMfq''')
+      eNpjYCAMgswh9ErtA5c9ruTp/7xiZbhX28jo8MVbRn1XLIxVLhcbBxuIGsDUHbhgoxNx3tnA9vwcQ4fz
+      PkbC59mNP2rONOIxnGiUaOx9GaYu5PxOjfJzB/Xdz5kbWp9jNYo9t81ont4so1OGXUbNJtX6MHVd515p
+      XT4rqT//7EWDprPzDR+eTTY6pBdltNhoq9ELE+3zMHWe58rVl53lv2R1Vvbq+zOTdCLPmhpONkgwlDMO
+      NawyvWAIU/f7nMRN03PyF3rOSp6XOqt3bv+ZA+cirnSclzf2vxhvGgo3T/pC5xXW80Ln751ddzb1rOpZ
+      wzOXTp89l3iu1vic0WrTImOYugCd8uvrriy/aHf1w9nkizPPvDl/7rTe+cRTBmf3nVQx0T4DU0dMOK8/
+      vfX0xtOrT3ef9jitfXrN6Q1A9oLTk0/POL339LrTW4AiC05POt0F5G85vR0oMut0z+mK04tP7wfK7zi9
+      /nTf6aWnt50+enrP6ROnL57+cXrfacYze4G8rUD843SpLgMDAGbLx+o=''')
 
   @testing.requires('matplotlib')
   def test_mixed(self):
     lhs0, lhs1 = main(nelems=3, etype='mixed', reynolds=100, degree=2)
     with self.subTest('stokes'): self.assertAlmostEqual64(lhs0, '''
-      eNpjYICAiRePnWdg0D736SyIF3P2nK6VYSWQHWS+1SjI3MAkyLz6rMbZI2BZhXMJZxyMNp/xMbwMFA8y
-      LzNhYNh6YdUFiElzzykYgGg94yBzkH6oBQwvLm80YmA4r6dkCOYZq5h4GZUYgdg8QHKbJpA2OHhp8zmQ
-      iM8Vp6tpV03PMp1TPQ/ipwPJcIOtZyAmvT69Bcy6BOXHnM0+m3w28ezmM+ZnY88EnW0/O+vs2bO7zq48
-      W352FdA8ABC3SoM=''')
+      eNpjYEAFEy++uHzs/EYjEFv73Hm9T2eVDGFyMWdfGJ/TVTGxMvQyqjxbAlYTZM7AsNWIxwhEG5hs0wTR
+      1Wd5DDTOHrx05OzmczC9Cud8riSccbrqYJR2dfMZ07M+hkznLpuongepB+Eyk/TzIHVbL4QbrLqw9Qyy
+      m+aee31awWALXEzP+NIZkB6Y/TFns88mn008u/mM+dnYM0Fn28/OOnv27K6zK8+Wn10FdAEAKXRKgw==''')
     with self.subTest('navier-stokes'): self.assertAlmostEqual64(lhs1, '''
-      eNpjYICA3ouWFxkYfpzbdQ7EizjXrb/UQBvIDjK3NAwylzMOMk86d+zs9bMg2X3ndM/GGvmcuWugZBJk
-      HmQ+wYSBIfPiggsQk2zObr4MolWBciD9UAsYHly+bcjAEKC3xQDE+2z00sjKSNoIxJbSZ2BYrMvA0GMw
-      W3cZ2P4+3TkGl/Udzy258Ow8iH8WqNPUKOIMxCTeM4Jgd9w+DeGznuE7w3OG/cyZ069P7z3NeIbjjMKZ
-      f6c5z5ic+XL6IlAPAPejR7A=''')
+      eNpjYEAFvRcfXLa8eNsQxP5xLkBv17ktBjC5iHOfjbr1XxotNbAy0j4nbQQSCzJnYLA0lNIH0XLGi3VB
+      dNK5HoNjZ2frXj+77BxM775zfbq6Z+cYxBpd1vc543jursGSC0omz86D1IPwBJOzYDszL5oaLbgQcQbZ
+      TTZnec9svix4FsZXNbl9GqQHZj/rGb4zPGfYz5w5/fr03tOMZzjOKJz5d5rzjMmZL6cvAk0CAOBkR7A=''')

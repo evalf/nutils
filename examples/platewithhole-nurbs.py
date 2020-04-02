@@ -114,9 +114,9 @@ class test(testing.TestCase):
     with self.subTest('h1-error'):
       self.assertAlmostEqual(err[1], .02269, places=5)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
-      eNpjYGBoAEM4rWYsb3zZGF1U4VzS+YfnGRgA6IMLgQ==''')
+      eNpjYGBoQIIggMZXOKdmnHRe3vjh+cvGDAwA6w0LgQ==''')
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
-      eNpjYLhoONl4ujEDw0v9LOMVQFrNWN74svGkcxvOeV9gYFA513UuRI+BQeFc0vmH5xkYAIlqEWg=''')
+      eNpjYJh07qLhhnOTjb0vTDdmAAKVcy/1u85lGYforQDzFc6pGSedlzd+eP4ykA8AvkQRaA==''')
 
   @testing.requires('matplotlib')
   def test2(self):
@@ -126,10 +126,10 @@ class test(testing.TestCase):
     with self.subTest('h1-error'):
       self.assertAlmostEqual(err[1], .00286, places=5)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
-      eNpjYGBowIBUF4sysDZ6aqRqrGpsYZxqvMP4hDE9bNU853Hu/TnP87nn886fPP/swporDAwAN7w+0Q==''')
+      eNpjYGBoIAKCwCBXp3kuysDjnLXR+3NPjTzPqxrnAnHeeQvjk+dTjZ9d2GG85soJYwYGAPkhPtE=''')
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
-      eNoNjDEoxGEYh986kxusilLqkuV//+99Uzo3iCtsFsU5ow2xMVEWVyxs7gyUuqIMdB1Xolvc8nu/7w4D
-      1jMpsStvz/b09BD9Rv2uj295UJZlX04Moo3oNK65Le6SRTmQM4PoJnqIq67AH5yVHTk3iGbTE66XD/md
-      U7IuF3Jl7i/dcWX+4oQM2fFa7s3l4zHuWJOSUXM1eZIiijjGIxK6okmfDCNtogXMYxMN5LTb94SlVvmZ
-      aBI5bOMHJd3z9TDVrrwQZTCOCljvNOsHQrPlXoli694wp0da1YzfDSXrhjGNb8zoqq5pUz/9pf3+AVg0
-      aWs=''')
+      eNpjYOg890mv85yM4axz0kYHz+00Yj6vZJxzPtWY+0KPMffFucaml+caMwBB5LlCvYhzCw0qzu0wPHyu
+      0sjlPIsx14VoY/6LvcaxlxYZz7myCKzO+dwWPZdzBwzqz20z/Hguxmj2+TtGHRdsjHdfbDB2v7zUeMXV
+      pWB1VucC9B3OORmuOCdhZHR+ktGu87eNbC6oGstfLDA+eWm1seG19WB1Buf+6ruce2p469wco9Dzb4wm
+      n2c23nZe3djqQqpx88XNxrOv7gOr0zwXZeBxztro/bmnRp7nVY1zgTjvvIXxSaBfnl3YYbzmygmgOgDU
+      Imlr''')

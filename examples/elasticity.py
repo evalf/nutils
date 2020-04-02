@@ -71,37 +71,37 @@ class test(testing.TestCase):
   def test_default(self):
     cons, lhs = main(nelems=4, etype='square', btype='std', degree=1, poisson=.25)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
-      eNpjYICDBnzwhykMMhCpAwEBQ08XYg==''')
+      eNpjYMACGsiHP0wxMQBKlBdi''')
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
-      eNpjYICBFGMxYyEgTjFebDLBpB2IF5tkmKaYJgJxhukPOIRrYBA1CjJgYFh3/vXZMiMVQwaGO+e6zvYY
-      2QBZR86VnO2FsorPAgAXLB7S''')
+      eNpjYMAEKcaiRmLGQQZCxgwMYsbrzqcYvz672KTMaIKJimG7CQPDBJM75xabdJ3NMO0xSjG1MUw0Beox
+      PXIuw7Tk7A/TXqMfQLEfQLEfQLEfpsVnAUzzHtI=''')
 
   @testing.requires('matplotlib')
   def test_mixed(self):
     cons, lhs = main(nelems=4, etype='mixed', btype='std', degree=1, poisson=.25)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
-      eNpjYACCBiBkQMJY4A9TGGQgUgcCAgBVTxdi''')
+      eNpjYICCBiiEsdFpIuEPU0wMAG6UF2I=''')
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
-      eNpjYGBgSDKWNwZSQKwExAnGfSbLTdpNek2WmWSYppgmAHGG6Q84BKpk4DASN2Bg2K/JwHDrPAPDj7Mq
-      hnlGRddenpt+ts/I0nChyrlzJWcdDbuNYjUOnSs/CwB0uyJb''')
+      eNpjYICAJGMOI3ljcQMwx3i/JohSMr51HkQnGP8422eiYrjcJM+o3aToWq/Jy3PLTKafzTDtM0oxtTRM
+      MF2okmJ67lyGacnZH6aOhj9Mu41+mMZq/DA9dO6HaflZAAMdIls=''')
 
   @testing.requires('matplotlib')
   def test_quadratic(self):
     cons, lhs = main(nelems=4, etype='square', btype='std', degree=2, poisson=.25)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
-      eNpjYMAADQMJf5iiQ4ZB5kJMCAAkxE4W''')
+      eNpjYCACNIxc+MOUMAYA/+NOFg==''')
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
-      eNpjYEAHlUauhssMuw2nAvEyQ1fDSqMsY1NjJWNxYzEgVgKys4xlTThNfhu/NX4HxL+NOU1kTRabzDaZ
-      bNJj0g3Ek4HsxSa8ptym7KZMYMgOZPOaZpimm6aYJoFhCpCdYboFCDfDIYj3AwNiOJDhviGPQbf+RV0G
-      Bv1LpRe+nFc8x22UY5hv8F6PgUHw4sTzU859PZtldNGQ3XCCPgNDwYWf5/TPTTtbYvTKUNpwP1DE8cLT
-      c2Lnes62Gf01NDW8BxRRunD6HPO5KqjIA6CIAlSkw+ifobnhI6CI3IWT55jOVQBF/hqaGT4EishfOAVU
-      U3EWAA5lcd0=''')
+      eNqFzL9KA0EQx/HlLI5wprBJCol/rtfN7MxobZEXOQIJQdBCwfgAItwVStQmZSAvcOmtVW6z5wP4D2yE
+      aKOwEhTnDRz4VvPhp9T/1zeP0ILF5hhSnUK5cQlKpaDvx3DoWvA57Zt128PIMO5CjHvNOn5s1lCpOi6V
+      MZ5PGS/k/1U0qGcqVMIcQ5jhmX4XM8N9N8dvWyFtG3RVjOjADOkNBrQMGV3rlJTKaMcN6NUOqWZHlBVV
+      PjER/0DIDAE/6ICVCjh2Id/ZiBdslY+LrpiOmLaYhJ90IibhNdcW0xHTFTPhUzPhX8h5W3rRuZicV1zO
+      N3bCgXRUeDFedjxvSc/ai/G86jzfWi87Xswfg5Nx3Q==''')
 
   @testing.requires('matplotlib')
   def test_poisson(self):
     cons, lhs = main(nelems=4, etype='square', btype='std', degree=1, poisson=.4)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
-      eNpjYICDBnzwhykMMhCpAwEBQ08XYg==''')
+      eNpjYMACGsiHP0wxMQBKlBdi''')
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
-      eNpjYIABC+M1RkuN1hhZGE8xyTKJAOIpJomm4aaBQJxo+gMO4RoYJhu/MWRgEDmXe+a18QKj//8Tzoqe
-      YTLZCmR5n/13msVkG5DldfbPaQC28iVf''')
+      eNpjYMAEFsaTjdcYvTFcasTAsMZI5JyFce6ZKSavjbNMFhhFmPz/n2WScHaKieiZRFMmk3DTrUaBpv//
+      h5t6n000/Xf6hymLyQ/TbUY/gGI/TL3O/jD9cxoASiglXw==''')

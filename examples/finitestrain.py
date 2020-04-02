@@ -89,30 +89,30 @@ class test(testing.TestCase):
   def test_default(self):
     lhs0, lhs1 = main(nelems=4, etype='square', btype='std', degree=1, poisson=.25, angle=10, restol=1e-10, trim=False)
     with self.subTest('linear'): self.assertAlmostEqual64(lhs0, '''
-      eNpjYICB8ku8+icMthvOM+K42G1ga6Rv/Mh42YVcQwnj/8bzTW5fUDbaaNxtomwK18CQfCnxkuPFL+f7
-      zt06d/Rc1rnbZ73Pyp4VPvvwzOwz7mckz3w4ffL0stMtpwGSOirA''')
+      eNpjYMAE5ZeSL/HqJ146YeB4cbvhl/PzjPrOcVy8da7b4Og5W6Osc/rGt88+MvY+u+yC7NlcQ+GzEsYP
+      z/w3nn1mvon7mdsXJM8oG304vdH45Oluk2WnlU1bTgMAv04qwA==''')
     with self.subTest('non-linear'): self.assertAlmostEqual64(lhs1, '''
-      eNpjYICBMu1b+jKGFw2bjdy1LICkk/Fx4+bLjwxdjAVM2k1uX1A22mjcbaJsCtfAoHz53sXiC27nGc6p
-      nD94Tutc5dlLZyLOSpw9fab4DOsZyTMfTp88vex0y2kA6e4nVQ==''')
+      eNpjYMAEZdrKl2/p37soY1h84aKh2/lmI4Zz7loq5y0MD55rNtI652Rcefa48aUzzZcjzj4ylDjrYnz6
+      jIBJ8Zl2E9Yzty9InlE2+nB6o/HJ090my04rm7acBgAKcSdV''')
 
   @testing.requires('matplotlib')
   def test_mixed(self):
     lhs0, lhs1 = main(nelems=4, etype='mixed', btype='std', degree=1, poisson=.25, angle=10, restol=1e-10, trim=False)
     with self.subTest('linear'): self.assertAlmostEqual64(lhs0, '''
-      eNoBZACb/wAAAADV0WwvAAChMAAAtjEAAKgyXjBl0UUyMjPeMyXQjzESM/ozqDQjMtvQsTOLNCM1AAAA
-      AIfS7NEAAM/RAADQzwAAmc7czsvOU871zUrNMs0NzenMk8xQzPDLGczJy6bLhMsZ2Sx5''')
+      eNpjYICAqxfbL+Xov7kIYi80OA+mtxleOA+iVxjNPBdncOdc6sXT51yNgs8ZGX89e8/Y66zqBaOz/Ya8
+      Z4WMX575ZTz5zAqTgDPKRh9O374geWaj8cnT3SbLTiubtpwGAJ6hLHk=''')
     with self.subTest('non-linear'): self.assertAlmostEqual64(lhs1, '''
-      eNoBZACb/wAAAAAr3xowAAD9MAAA1DEAAI8yHzGKLIEySDPKM6fS9TFCMwM0mzQjMtvQsTOLNCM1AAAA
-      AD/TYNEAAN7QAAA3zwAACc7SzgnPEc6TzdjMZ80TzdHMa8wXzPDLGczJy6bLhMthnih2''')
+      eNpjYIAA7fv2l6UMEi6C2H8N7l0A0VcMzc+D6H4jznPyhpfOdelwnm80EjznYTz57CnjG2eWX0o/+9VQ
+      +KyT8cUzzCbZZ2abiJ9RNvpw+vYFyTMbjU+e7jZZdlrZtOU0AJN4KHY=''')
 
   @testing.requires('matplotlib')
   def test_spline(self):
     lhs0, lhs1 = main(nelems=4, etype='square', btype='spline', degree=2, poisson=.25, angle=10, restol=1e-10, trim=False)
     with self.subTest('linear'): self.assertAlmostEqual64(lhs0, '''
-      eNpjYECAa1e+aE3Qu6Nfa9BlmHoxU/eHgbIRs3Gs8bwLr/S4jayNfxn7mGy/sEz/qNFz4wUmL0xuX/Az
-      EDDWMrlromyKZAxDlg6bbppOw1WXi2nnqy8svSBxwf980Ln3Z9+ffXP2+Nm8s6xnT59pOdNzJveM3Rnm
-      M/dOS55hOXPn9PbTU0+3nAYAZeQ9sA==''')
+      eNpjYMAOrl3J0vmixaY7QS9N545+w9VaA5eLXYZp51MvVl/I1F164YeBxAVlI//zzMZB52KN35+dd+H9
+      2Vd6b85yGx0/a22cd/aXMetZH5PTZ7ZfaDmzTL/nzFGj3DPPje3OLDBhPvPC5N7p2xckz/gZsJwRML5z
+      Wstk++m7JlNPK5u2nAYATqg9sA==''')
     with self.subTest('non-linear'): self.assertAlmostEqual64(lhs1, '''
-      eNpjYEAAZ21dXWF9WYNug3RDPu1i/RzDYKNfRi7Gn5V9DVKNkoy/G+uaiF/qM/hi9NN4pckZk9sX/AwE
-      jLVM7poomyIZw3BIp0/H/a7qpf4LD85tvTD1wtrz+87tPRt8Vvuc0Lm1Z43PLjmTfGbXmQVn0s/onHl7
-      euNpyTMsZ+6c3n566umW0wB4sDra''')
+      eNpjYMAOnLUP6ejq9ukI67vflTVQvdRt0H8h3fDBOT7trReK9adeyDFcez7YaN+5X0Z7z7oYB5/9rKx9
+      ztdA6Fyq0dqzScbGZ78bLzmja5J8RvzSrjN9BgvOfDFKP/PTWOfMSpO3p8+YbDx9+4LkGT8DljMCxndO
+      a5lsP33XZOppZdOW0wApLzra''')
