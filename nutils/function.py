@@ -2740,7 +2740,7 @@ class Ravel(Array):
 class Unravel(Array):
 
   __slots__ = 'func', 'axis', 'unravelshape'
-  __cache__ = 'simplified',
+  __cache__ = 'simplified', 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint, shape:asshape):
@@ -2776,6 +2776,14 @@ class Unravel(Array):
   def _ravel(self, axis):
     if axis == self.axis:
       return self.func
+
+  @property
+  def blocks(self):
+    fullrange = Range(self.func.shape[self.axis])
+    if not all(ind[self.axis] == fullrange for ind, f in self.func.blocks):
+      return super().blocks
+    ravelrange = Range(self.shape[self.axis]), Range(self.shape[self.axis+1])
+    return tuple((ind[:self.axis]+ravelrange+ind[self.axis+1:], Unravel(f, self.axis, self.unravelshape)) for ind, f in self.func.blocks)
 
 class Mask(Array):
 
