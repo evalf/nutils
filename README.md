@@ -3,6 +3,7 @@ Nutils
 
 [![Build Status](https://travis-ci.com/evalf/nutils.svg?branch=master)](https://travis-ci.com/evalf/nutils)
 [![Coverage Status](https://coveralls.io/repos/github/evalf/nutils/badge.svg?branch=master)](https://coveralls.io/github/evalf/nutils?branch=master)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.822369.svg)](https://doi.org/10.5281/zenodo.822369)
 
 Nutils is a Free and Open Source Python programming library for Finite Element
 Method computations, developed by [Evalf Computing][1] and distributed under
