@@ -8,6 +8,18 @@ inverse chronological order.
 Changes since version 5.0
 -------------------------
 
+- Change from stickybar to bottombar
+
+  For :func:`nutils.cli.run` to generate a status bar, it now requires the
+  external [bottombar] (https://github.com/evalf/bottombar) module to be
+  installed. This replaces stickybar, which is no longer used.
+
+      $ python3 -m pip install --user bottombar
+
+  In addition to the uri and runtime the status bar will now show the current
+  memory usage, if that information is available. On Windows this requires
+  `psutil` to be installed; on Linux and OSX it should work by default.
+
 - Support for gmsh 'msh4' file format
 
   The :func:`nutils.mesh.gmsh` method now supports input in the 'msh4' file
