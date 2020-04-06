@@ -2385,7 +2385,8 @@ class Diagonalize(Array):
     if self.axis == axis and self.newaxis == rmaxis:
       return self.func
     if self.newaxis == axis: # self.axis < self.newaxis = axis < rmaxis
-      takeaxes = diagaxes = self.axis, rmaxis-1
+      takeaxes = self.axis, rmaxis-1
+      diagaxes = self.axis, self.newaxis
     elif self.newaxis == rmaxis:
       takeaxes = diagaxes = sorted([axis, self.axis])
     elif self.axis == rmaxis: # axis < rmaxis = self.axis < self.newaxis
