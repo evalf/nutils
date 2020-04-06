@@ -160,7 +160,7 @@ class ExampleDocDirective(docutils.parsers.rst.Directive):
             cmdline = sh_node.get('nutils_sh')
             cmdline_parts = tuple(shlex.split(cmdline))
             if cmdline_parts[:2] != ('python3', src.name):
-              logger.warn('Not creating a log for {}.'.format(cmdline))
+              logger.warning('Not creating a log for {}.'.format(cmdline))
               continue
             log_link = sphinx.addnodes.only(expr='html')
             log_link.append(docutils.nodes.inline('', ' '))
@@ -386,12 +386,9 @@ unicode_math_map = {
 unicode_math_map = str.maketrans({k: v+' ' for k, v in unicode_math_map.items()})
 
 def replace_unicode_math(app, doctree):
-  if sphinx.version_info >= (1,8):
-    math = sphinx.addnodes.math
-  else:
-    from sphinx.ext.mathbase import math
-  for node in doctree.traverse(math):
-    node['latex'] = node['latex'].translate(unicode_math_map)
+  for node in doctree.traverse(docutils.nodes.math):
+    newtext = node.pop().astext().translate(unicode_math_map)
+    node.append(docutils.nodes.Text(newtext))
 
 
 class RequiresNode(docutils.nodes.Admonition, docutils.nodes.TextElement): pass
