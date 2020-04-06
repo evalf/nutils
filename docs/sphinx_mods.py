@@ -277,120 +277,6 @@ def remove_generated(app, exception):
     generated = pathlib.Path(app.srcdir)/name
     shutil.rmtree(str(generated), onerror=lambda f, p, e: logger.warning('failed to remove {}'.format(p)))
 
-# Selected math symbols from https://en.wikipedia.org/wiki/Wikipedia:LaTeX_symbols
-unicode_math_map = {
-  # Letters
-  'α':r'\alpha', 'β':r'\beta', 'γ':r'\gamma', 'δ':r'\delta', 'ϵ':r'\epsilon',
-  'ζ':r'\zeta', 'η':r'\eta', 'θ':r'\theta', 'ι':r'\iota', 'κ':r'\kappa',
-  'λ':r'\lambda', 'μ':r'\mu', 'ν':r'\nu', 'ξ':r'\xi', 'ο':r'\omicron',
-  'π':r'\pi', 'ρ':r'\rho', 'σ':r'\sigma', 'τ':r'\tau', 'υ':r'\upsilon',
-  'ϕ':r'\phi', 'χ':r'\chi', 'ψ':r'\psi', 'ω':r'\omega', 'ε':r'\varepsilon',
-  'ϑ':r'\vartheta', 'ϰ':r'\varkappa', 'ϖ':r'\varpi', 'ϱ':r'\varrho',
-  'φ':r'\varphi', 'ς':r'\varsigma', 'Γ':r'\Gamma', 'Δ':r'\Delta',
-  'Θ':r'\Theta', 'Λ':r'\Lambda', 'Υ':r'\Upsilon', 'Ξ':r'\Xi', 'Φ':r'\Phi',
-  'Π':r'\Pi', 'Ψ':r'\Psi', 'Σ':r'\Sigma', 'Ω':r'\Omega', 'ϝ':r'\digamma',
-  'ℵ':r'\aleph', 'ℶ':r'\beth', 'ℷ':r'\gimel', 'ℸ':r'\daleth', '∀':r'\forall',
-  '∃':r'\exists', '∄':r'\nexists', 'Ⅎ':r'\Finv', '⅁':r'\Game',
-  '∍':r'\backepsilon', 'ı':r'\imath', 'ȷ':r'\jmath', 'ℓ':r'\ell',
-  '⨿':r'\amalg', '∇':r'\nabla', '℧':r'\mho', '∂':r'\partial', 'ð':r'\eth',
-  'ℏ':r'\hbar', 'ℏ':r'\hslash', 'ℑ':r'\Im', 'ℜ':r'\Re', '℘':r'\wp',
-  '∅':r'\emptyset',
-  # Big symbols
-  '∫':r'\int', '∬':r'\iint', '∮':r'\oint', '∑':r'\sum',
-  '∏':r'\prod', '⋂':r'\bigcap', '⋀':r'\bigwedge', '∐':r'\coprod',
-  '⋃':r'\bigcup', '⋁':r'\bigvee', '⨆':r'\bigsqcup', '⨄':r'\biguplus',
-  '⨁':r'\bigoplus', '⨂':r'\bigotimes', '⨀':r'\bigodot',
-  # Arrows
-  '←':r'\leftarrow', '⇐':r'\Leftarrow', '↼':r'\leftharpoonup',
-  '↽':r'\leftharpoondown', '⇇':r'\leftleftarrows', '→':r'\rightarrow',
-  '⇒':r'\Rightarrow', '⇀':r'\rightharpoonup', '⇁':r'\rightharpoondown',
-  '⇉':r'\rightrightarrows', '↑':r'\uparrow', '⇑':r'\Uparrow',
-  '↿':r'\upharpoonleft', '↾':r'\upharpoonright', '⇈':r'\upuparrows',
-  '↓':r'\downarrow', '⇓':r'\Downarrow', '⇃':r'\downharpoonleft',
-  '⇂':r'\downharpoonright', '⇊':r'\downdownarrows', '⟵':r'\longleftarrow',
-  '⟸':r'\Longleftarrow', '↩':r'\hookleftarrow', '⇋':r'\leftrightharpoons',
-  '⇆':r'\leftrightarrows', '⇚':r'\Lleftarrow', '↰':r'\Lsh',
-  '↢':r'\leftarrowtail', '↞':r'\twoheadleftarrow', '↶':r'\curvearrowleft',
-  '↺':r'\circlearrowleft', '↫':r'\looparrowleft', '⟶':r'\longrightarrow',
-  '⟹':r'\Longrightarrow', '↪':r'\hookrightarrow', '⇌':r'\rightleftharpoons',
-  '⇄':r'\rightleftarrows', '⇛':r'\Rrightarrow', '↱':r'\Rsh',
-  '↣':r'\rightarrowtail', '↠':r'\twoheadrightarrow', '↷':r'\curvearrowright',
-  '↻':r'\circlearrowright', '↬':r'\looparrowright', '↔':r'\leftrightarrow',
-  '⟷':r'\longleftrightarrow', '↕':r'\updownarrow', '↚':r'\nleftarrow',
-  '↛':r'\nrightarrow', '↮':r'\nleftrightarrow', '⇔':r'\Leftrightarrow',
-  '⟺':r'\Longleftrightarrow', '⇕':r'\Updownarrow', '⇍':r'\nLeftarrow',
-  '⇏':r'\nRightarrow', '⇎':r'\nLeftrightarrow', '↦':r'\mapsto',
-  '⟼':r'\longmapsto', '⊸':r'\multimap', '⇝':r'\rightsquigarrow',
-  '↭':r'\leftrightsquigarrow', '↙':r'\swarrow', '↘':r'\searrow',
-  '↖':r'\nwarrow', '↗':r'\nearrow',
-  # Order symbols
-  '≤':r'\leq', '≦':r'\leqq', '≥':r'\geq', '≧':r'\geqq', '≮':r'\nless',
-  '≰':r'\nleq', '≰':r'\nleqq', '≨':r'\lneqq', '≨':r'\lvertneqq', '≯':r'\ngtr',
-  '≱':r'\ngeq', '≱':r'\ngeqq', '≩':r'\gneqq', '≩':r'\gvertneqq',
-  '⊲':r'\vartriangleleft', '⊴':r'\trianglelefteq', '≲':r'\lesssim',
-  '≺':r'\prec', '≾':r'\precsim', '⊳':r'\vartriangleright',
-  '⊵':r'\trianglerighteq', '≳':r'\gtrsim', '≻':r'\succ', '≿':r'\succsim',
-  '⋪':r'\ntriangleleft', '⋬':r'\ntrianglelefteq', '⋦':r'\lnsim', '⊀':r'\nprec',
-  '⋠':r'\npreceq', '⋨':r'\precnsim', '⋫':r'\ntriangleright',
-  '⋭':r'\ntrianglerighteq', '⋧':r'\gnsim', '⊁':r'\nsucc', '⋡':r'\nsucceq',
-  '⋩':r'\succnsim', '≶':r'\lessgtr', '⋚':r'\lesseqgtr', '≷':r'\gtrless',
-  '⋛':r'\gtreqless', '≪':r'\ll', '⋘':r'\lll', '⋖':r'\lessdot',
-  '≼':r'\preccurlyeq', '⋞':r'\curlyeqprec', '≫':r'\gg', '⋙':r'\ggg',
-  '⋗':r'\gtrdot', '≽':r'\succcurlyeq', '⋟':r'\curlyeqsucc',
-  # Set symbols
-  '⊂':r'\subset', '⋐':r'\Subset', '⊏':r'\sqsubset', '◃':r'\triangleleft',
-  '◂':r'\blacktriangleleft', '⊃':r'\supset', '⋑':r'\Supset', '⊐':r'\sqsupset',
-  '▹':r'\triangleright', '▸':r'\blacktriangleright', '∩':r'\cap', '⋒':r'\Cap',
-  '⊓':r'\sqcap', '△':r'\vartriangle', '▴':r'\blacktriangle', '∪':r'\cup',
-  '⋓':r'\Cup', '⊔':r'\sqcup', '▽':r'\triangledown', '▾':r'\blacktriangledown',
-  '∈':r'\in', '⊆':r'\subseteq', '⊑':r'\sqsubseteq', '∋':r'\ni',
-  '⊇':r'\supseteq', '⊒':r'\sqsupseteq', '∉':r'\notin', '⊈':r'\nsubseteq',
-  '⊊':r'\subsetneq', '⊊':r'\varsubsetneq', '⊈':r'\nsubseteqq', '⊎':r'\uplus',
-  '⊉':r'\nsupseteq', '⊋':r'\supsetneq', '⊋':r'\varsupsetneq',
-  '⊉':r'\nsupseteqq',
-  # Equality and inference
-  '≠':r'\neq', '≡':r'\equiv', '≈':r'\thickapprox', '≈':r'\approx',
-  '≊':r'\approxeq', '≅':r'\cong', '≆':r'\ncong', '∼':r'\sim', '∼':r'\thicksim',
-  '≁':r'\nsim', '≃':r'\simeq', '∽':r'\backsim', '⋍':r'\backsimeq',
-  '≂':r'\eqsim', '≐':r'\doteq', '÷':r'\div', '≑':r'\doteqdot',
-  '≒':r'\fallingdotseq', '≓':r'\risingdotseq', '≜':r'\triangleq',
-  '≗':r'\circeq', '≖':r'\eqcirc', '≏':r'\bumpeq', '≎':r'\Bumpeq',
-  '≍':r'\asymp', '∣':r'\mid', '∣':r'\shortmid', '⊢':r'\vdash', '⊣':r'\dashv',
-  '⊩':r'\Vdash', '∥':r'\parallel', '∥':r'\shortparallel', '⊨':r'\vDash',
-  '⊪':r'\Vvdash', '⊨':r'\models', '∤':r'\nmid', '∤':r'\nshortmid',
-  '⊬':r'\nvdash', '⊮':r'\nVdash', '∦':r'\nparallel', '∦':r'\nshortparallel',
-  '⊭':r'\nvDash', '⊯':r'\nVDash',
-  # Other symbols
-  '∞':r'\infty', '∝':r'\propto', '∝':r'\varpropto', '⋈':r'\bowtie',
-  '⋉':r'\ltimes', '⋊':r'\rtimes', '⊺':r'\intercal', '∔':r'\dotplus',
-  '×':r'\times', '≀':r'\wr', '⋔':r'\pitchfork', '√':r'\surd', '∖':r'\setminus',
-  '╲':r'\diagdown', '╱':r'\diagup', '⋋':r'\leftthreetimes',
-  '⋌':r'\rightthreetimes', '⊥':r'\perp', '≬':r'\between', '≍':r'\asymp',
-  '∠':r'\angle', '∡':r'\measuredangle', '∢':r'\sphericalangle', '⊥':r'\bot',
-  '∧':r'\wedge', '⊼':r'\barwedge', '∴':r'\therefore', '⊤':r'\top', '∨':r'\vee',
-  '⊻':r'\veebar', '∵':r'\because', '±':r'\pm', '⋏':r'\curlywedge',
-  '⌢':r'\smallfrown', '⌢':r'\frown', '△':r'\bigtriangleup', '△':r'\triangle',
-  '∓':r'\mp', '⋎':r'\curlyvee', '⌣':r'\smallsmile', '⌣':r'\smile',
-  '▽':r'\bigtriangledown', '∘':r'\circ', '∙':r'\bullet', '⋅':r'\centerdot',
-  '⋯':r'\cdots', '⋮':r'\vdots', '…':r'\ldots', '⋱':r'\ddots',
-  '⊚':r'\circledcirc', '⊝':r'\circleddash', '⊛':r'\circledast',
-  '◯':r'\bigcirc', '⋇':r'\divideontimes', '⊙':r'\odot', '⊕':r'\oplus',
-  '⊖':r'\ominus', '⊗':r'\otimes', '⊘':r'\oslash', '⊡':r'\boxdot',
-  '⊞':r'\boxplus', '⊟':r'\boxminus', '⊠':r'\boxtimes', '◻':r'\Box',
-  '♢':r'\diamondsuit', '♣':r'\clubsuit', '♡':r'\heartsuit', '♠':r'\spadesuit',
-  '◊':r'\lozenge', '⧫':r'\blacklozenge', '◻':r'\square', '◼':r'\blacksquare',
-  '⋄':r'\diamond', '◊':r'\Diamond', '∗':r'\ast', '⋆':r'\star', '★':r'\bigstar',
-  '♯':r'\sharp', '♭':r'\flat', '♮':r'\natural', '†':r'\dagger',
-  '‡':r'\ddagger',
-}
-unicode_math_map = str.maketrans({k: v+' ' for k, v in unicode_math_map.items()})
-
-def replace_unicode_math(app, doctree):
-  for node in doctree.traverse(docutils.nodes.math):
-    newtext = node.pop().astext().translate(unicode_math_map)
-    node.append(docutils.nodes.Text(newtext))
-
-
 class RequiresNode(docutils.nodes.Admonition, docutils.nodes.TextElement): pass
 
 def html_visit_requires(self, node):
@@ -401,10 +287,6 @@ def text_visit_requires(self, node):
   self.new_state(0)
 def text_depart_requires(self, node):
   self.end_state()
-def latex_visit_requires(self, node):
-  pass
-def latex_depart_requires(self, node):
-  pass
 
 class RequiresDirective(docutils.parsers.rst.Directive):
 
@@ -490,11 +372,8 @@ def setup(app):
   app.add_role('sh', role_sh)
   app.connect('missing-reference', create_log)
 
-  app.connect('doctree-read', replace_unicode_math)
-
   app.add_node(RequiresNode,
                html=(html_visit_requires, html_depart_requires),
-               latex=(latex_visit_requires, latex_depart_requires),
                text=(text_visit_requires, text_depart_requires))
   app.add_directive('requires', RequiresDirective)
 
