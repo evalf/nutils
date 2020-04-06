@@ -1164,8 +1164,13 @@ class Concatenate(Array):
     return Concatenate([op(func) for func in self.funcs], self.axis)
 
   @property
+  def _slices(self):
+    shapes = [func.shape[self.axis] for func in self.funcs]
+    return tuple(map(Range, shapes, util.cumsum(shapes)))
+
+  @property
   def _withslices(self):
-    return tuple((Range(func.shape[self.axis], n), func) for n, func in zip(util.cumsum(func.shape[self.axis] for func in self.funcs), self.funcs))
+    return tuple(zip(self._slices, self.funcs))
 
   @property
   def simplified(self):
@@ -1232,28 +1237,11 @@ class Concatenate(Array):
     return Concatenate(funcs, self.axis)
 
   def _add(self, other):
-    if isinstance(other, Concatenate) and self.axis == other.axis:
-      if [f1.shape[self.axis] for f1 in self.funcs] == [f2.shape[self.axis] for f2 in other.funcs]:
-        funcs = [add(f1, f2) for f1, f2 in zip(self.funcs, other.funcs)]
-      else:
-        if isarray(self.shape[self.axis]):
-          raise NotImplementedError
-        funcs = []
-        beg1 = 0
-        for func1 in self.funcs:
-          end1 = beg1 + func1.shape[self.axis]
-          beg2 = 0
-          for func2 in other.funcs:
-            end2 = beg2 + func2.shape[self.axis]
-            if end1 > beg2 and end2 > beg1:
-              mask = numpy.zeros(self.shape[self.axis], dtype=bool)
-              mask[builtins.max(beg1, beg2):builtins.min(end1, end2)] = True
-              funcs.append(Add([Mask(func1, mask[beg1:end1], self.axis), Mask(func2, mask[beg2:end2], self.axis)]))
-            beg2 = end2
-          beg1 = end1
+    if isinstance(other, Concatenate) and self.axis == other.axis and [f1.shape[self.axis] for f1 in self.funcs] == [f2.shape[self.axis] for f2 in other.funcs]:
+      other_funcs = other.funcs
     else:
-      funcs = [Add([func, Take(other, s, self.axis)]) for s, func in self._withslices]
-    return Concatenate(funcs, self.axis)
+      other_funcs = [Take(other, s, self.axis) for s in self._slices]
+    return Concatenate([Add(f12) for f12 in zip(self.funcs, other_funcs)], self.axis)
 
   def _sum(self, axis):
     funcs = [Sum(func, axis) for func in self.funcs]
@@ -1285,22 +1273,6 @@ class Concatenate(Array):
   def _take(self, indices, axis):
     if axis != self.axis:
       return Concatenate([Take(func, indices, axis) for func in self.funcs], self.axis)
-    if not indices.isconstant:
-      return
-    indices, = indices.eval()
-    if not numpy.logical_and(numpy.greater_equal(indices, 0), numpy.less(indices, self.shape[axis])).all():
-      return
-    ifuncs = numpy.hstack([numpy.repeat(ifunc,func.shape[axis]) for ifunc, func in enumerate(self.funcs)])[indices]
-    splits, = numpy.nonzero(numpy.diff(ifuncs) != 0)
-    funcs = []
-    for i, j in zip(numpy.hstack([0, splits+1]), numpy.hstack([splits+1, len(indices)])):
-      ifunc = ifuncs[i]
-      assert numpy.equal(ifuncs[i:j], ifunc).all()
-      offset = builtins.sum(func.shape[axis] for func in self.funcs[:ifunc])
-      funcs.append(Take(self.funcs[ifunc], indices[i:j] - offset, axis))
-    if len(funcs) == 1:
-      return funcs[0]
-    return Concatenate(funcs, axis=axis)
 
   def _power(self, n):
     return Concatenate([Power(func, Take(n, s, self.axis)) for s, func in self._withslices], self.axis)
