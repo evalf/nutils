@@ -1017,10 +1017,6 @@ class frozenmultiset(collections.abc.Container, metaclass=_frozenmultisetmeta):
 
   >>> frozenmultiset(['spam', 'spam', 'eggs']) == frozenmultiset(['spam', 'eggs'])
   False
-
-  .. automethod:: __and__
-  .. automethod:: __add__
-  .. automethod:: __sub__
   '''
 
   __slots__ = '__items', '__key'
