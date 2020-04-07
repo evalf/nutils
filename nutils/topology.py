@@ -34,7 +34,8 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, elementseq, function, util, parallel, numeric, cache, transform, transformseq, warnings, matrix, types, sample, points, _
+from . import element, elementseq, function, util, parallel, numeric, cache, transform, transformseq, warnings, matrix, types, points, _
+from .sample import Sample
 import numpy, functools, collections.abc, itertools, functools, operator, numbers, pathlib, abc, treelog as log
 
 _identity = lambda x: x
@@ -163,11 +164,10 @@ class Topology(types.Singleton):
 
     points = [ischeme(reference, degree) for reference in self.references] if callable(ischeme) \
         else self.references.getpoints(ischeme, degree)
-    offset = numpy.cumsum([0] + [p.npoints for p in points])
     transforms = self.transforms,
     if len(self.transforms) == 0 or self.opposites != self.transforms:
       transforms += self.opposites,
-    return sample.Sample(transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
+    return Sample.new(transforms, points)
 
   @util.single_or_multiple
   def integrate_elementwise(self, funcs, *, asfunction=False, **kwargs):
@@ -583,7 +583,7 @@ class Topology(types.Singleton):
     transforms = self.transforms[uielems],
     if len(self.transforms) == 0 or self.opposites != self.transforms:
       transforms += self.opposites[uielems],
-    return sample.Sample(transforms, points_, index)
+    return Sample.new(transforms, points_, index)
 
   def revolved(self, geom):
     assert geom.ndim == 1

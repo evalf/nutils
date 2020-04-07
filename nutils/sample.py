@@ -44,7 +44,7 @@ efficiently combine common substructures.
 '''
 
 from . import types, points, util, function, parallel, numeric, matrix, transformseq, sparse
-import numpy, numbers, collections.abc, os, treelog as log
+import numpy, numbers, collections.abc, os, treelog as log, abc
 
 graphviz = os.environ.get('NUTILS_GRAPHVIZ')
 
@@ -69,40 +69,65 @@ class Sample(types.Singleton):
   representing a (n-dimensional) triangulation of the interior and boundary,
   respectively. Availability of these properties depends on the selected sample
   points, and is typically used in combination with the "bezier" set.
-
-  Args
-  ----
-  transforms : :class:`tuple` or transformation chains
-      List of transformation chains leading to local coordinate systems that
-      contain points.
-  points : :class:`tuple` of point sets
-      List of point sets matching ``transforms``.
-  index : :class:`tuple` of integer arrays
-      List of indices matching ``transforms``, defining the order on which
-      points show up in the evaluation.
   '''
 
+  __slots__ = 'nelems', 'transforms', 'points', 'npoints', 'ndims'
   __cache__ = 'allcoords'
 
+  @staticmethod
   @types.apply_annotations
-  def __init__(self, transforms:types.tuple[transformseq.stricttransforms], points:types.tuple[points.strictpoints], index:types.tuple[types.frozenarray[types.strictint]]):
-    assert len(points) == len(index)
+  def new(transforms:types.tuple[transformseq.stricttransforms], points:types.tuple[points.strictpoints], index:types.tuple[types.frozenarray[int]]=None):
+    '''Create a new :class:`Sample`.
+
+    Parameters
+    ----------
+    transforms : :class:`tuple` or transformation chains
+        List of transformation chains leading to local coordinate systems that
+        contain points.
+    points : :class:`tuple` of point sets
+        List of point sets matching ``transforms``.
+    index : :class:`tuple` of integer arrays, optional
+        List of indices matching ``transforms``, defining the order on which
+        points show up in the evaluation. If absent the indices will be strict
+        increasing.
+    '''
+
+    if index is None:
+      return _DefaultIndex(transforms, points)
+    else:
+      return _CustomIndex(transforms, points, index)
+
+  def __init__(self, transforms, points):
+    '''
+    parameters
+    ----------
+    transforms : :class:`tuple` or transformation chains
+        List of transformation chains leading to local coordinate systems that
+        contain points.
+    points : :class:`tuple` of point sets
+        List of point sets matching ``transforms``.
+    '''
+
     assert len(transforms) >= 1
     assert all(len(t) == len(points) for t in transforms)
     self.nelems = len(transforms[0])
     self.transforms = transforms
     self.points = points
-    self.index = index
     self.npoints = sum(p.npoints for p in points)
     self.ndims = transforms[0].fromdims
 
   def __repr__(self):
-    return '{}<{}D, {} elems, {} points>'.format(type(self).__qualname__, self.ndims, self.nelems, self.npoints)
+    return '{}.{}<{}D, {} elems, {} points>'.format(type(self).__module__, type(self).__qualname__, self.ndims, self.nelems, self.npoints)
 
+  @property
+  def index(self):
+    return tuple(map(self.getindex, range(self.nelems)))
+
+  @abc.abstractmethod
   def getindex(self, ielem):
     '''Return the indices of `Sample.points[ielem]` in results of `Sample.eval`.'''
 
-    return self.index[ielem]
+    raise NotImplementedError
 
   def _prepare_funcs(self, funcs):
     return [function.asarray(func).prepare_eval(ndims=self.ndims) for func in funcs]
@@ -315,9 +340,40 @@ class Sample(types.Singleton):
     transforms = tuple(transform[selection] for transform in self.transforms)
     points = [self.points[ielem] for ielem in selection]
     offset = numpy.cumsum([0] + [p.npoints for p in points])
-    return Sample(transforms, points, map(numpy.arange, offset[:-1], offset[1:]))
+    return Sample.new(transforms, points)
 
 strictsample = types.strict[Sample]
+
+class _DefaultIndex(Sample):
+
+  __slots__ = ()
+  __cache__ = 'offsets'
+
+  @property
+  def offsets(self):
+    return numpy.cumsum([0]+[p.npoints for p in self.points])
+
+  def getindex(self, ielem):
+    return numpy.arange(self.offsets[ielem], self.offsets[ielem+1])
+
+class _CustomIndex(Sample):
+
+  __slots__ = '_index'
+
+  def __init__(self, transforms, points, index):
+    self._index = index
+    if len(index) != len(points):
+      raise ValueError('expected an `index` with {} items but got {}'.format(len(points), len(index)))
+    if not all(len(i) == p.npoints for i, p in zip(self._index, points)):
+      raise ValueError('lengths of indices does not match number of points per element')
+    super().__init__(transforms, points)
+
+  @property
+  def index(self):
+    return self._index
+
+  def getindex(self, ielem):
+    return self._index[ielem]
 
 class Integral(types.Singleton):
   '''Postponed integration.
