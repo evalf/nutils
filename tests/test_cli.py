@@ -1,4 +1,4 @@
-import sys, os, tempfile, io, contextlib
+import sys, os, tempfile, io, contextlib, time, unittest
 from nutils import cli, log, testing, matrix, parallel, cache
 
 def main(
@@ -118,3 +118,15 @@ class setup(testing.TestCase):
       self.assertTrue(cache._cache)
     with self.subTest('nocache'), self._setup(cache=False):
       self.assertFalse(cache._cache)
+
+class bottombar(testing.TestCase):
+
+  @unittest.skipIf(cli._rss_memory is None, 'resource or psutil must be installed')
+  def test_status_format(self):
+    uri = 'https://path/to/log.html' # 24 characters
+    t0 = time.perf_counter()
+    self.assertRegex(cli._format(uri, t0, width=80)[1:], '^\[2mwriting log to ' + uri + r'[ ]+memory: [0-9,]+M | runtime: \d:\d\d:\d\d$')
+    self.assertRegex(cli._format(uri, t0, width=63)[1:], '^\[2mwriting log to ' + uri + r'[ ]+[0-9,]+M | \d:\d\d:\d\d$')
+    self.assertRegex(cli._format(uri, t0, width=45)[1:], '^\[2m' + uri + r'[ ]+[0-9,]+M | \d:\d\d:\d\d$')
+    self.assertEqual(cli._format(uri, t0, width=28), '\033[2m' + uri)
+    self.assertEqual(cli._format(uri, t0, width=13), '\033[2m...' + uri[-10:])

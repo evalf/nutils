@@ -42,12 +42,13 @@ matrix:
         - choco install python3 --version=$PYTHON_VERSION_WINDOWS --params "/InstallDir:C:\\Python"
       env:
         - PYTHON=/c/Python/python.exe
+        - DEP=psutil
 install:
   - $PYTHON -m pip install --upgrade pip wheel
   - touch .constraints
   - for CONSTRAINT in $LOCAL_CONSTRAINTS $CONSTRAINTS; do echo $CONSTRAINT >> .constraints; done
   - $PYTHON -m pip install --upgrade --constraint .constraints numpy
-  - $PYTHON -m pip install --upgrade --constraint .constraints .[$EXTRAS] coverage coveralls
+  - $PYTHON -m pip install --upgrade --constraint .constraints .[$EXTRAS] coverage coveralls $DEP
 script:
   - $PYTHON -m coverage run -m unittest -b
 after_success:
