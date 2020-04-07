@@ -8,7 +8,7 @@ env:
     - PYTHON=python3
     - COVERALLS_PARALLEL=true
 notifications:
-  webhooks: https://coveralls.io/webhook
+  webhooks: https://coveralls.io/webhook?repo_token=oymJVraNAf4i2QtRr7QO0aoag5Mhe9END
 cache: pip
 matrix:
   include:
