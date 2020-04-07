@@ -37,13 +37,17 @@ class check(TestCase):
   def assertArrayAlmostEqual(self, actual, desired, decimal):
     if actual.shape[1:] != desired.shape[1:] or actual.shape[0] != 1 and desired.shape[0] != 1 and actual.shape[0] != desired.shape[0]:
       self.fail('shapes of actual {} and desired {} are incompatible.'.format(actual.shape, desired.shape))
-    if actual.dtype.kind in 'fc' or desired.dtype.kind in 'fc':
-      error = abs(actual - desired)
-      if numpy.greater_equal(error, 1.5 * 10**-decimal).any():
-        self.fail('arrays are not equal up to {} decimals.\nACTUAL : {}\nDESIRED: {}\nDIFF   : {}'.format(decimal, *(numpy.array2string(a, prefix='ACTUAL : ') for a in (actual, desired, error))))
-    else:
-      if not numpy.equal(actual, desired).all():
-        self.fail('arrays are not equal.\nACTUAL : {}\nDESIRED: {}'.format(decimal, *(numpy.array2string(a, prefix='ACTUAL : ') for a in (actual, desired))))
+    error = actual - desired if not actual.dtype.kind == desired.dtype.kind == 'b' else actual ^ desired
+    approx = error.dtype.kind in 'fc'
+    indices = (numpy.greater_equal(abs(error), 1.5 * 10**-decimal) if approx else error).nonzero()
+    if not len(indices[0]):
+      return
+    lines = ['arrays are not equal']
+    if approx:
+      lines.append(' up to {} decimals'.format(decimal))
+    lines.append(' in {}/{} entries:'.format(len(indices[0]), error.size))
+    lines.extend('\n  {} actual={} desired={} difference={}'.format(index, actual[index], desired[index], error[index]) for index in zip(*indices))
+    self.fail(''.join(lines))
 
   def assertFunctionAlmostEqual(self, actual, desired, decimal):
     evalargs = dict(_transforms=[trans[0] for trans in self.sample.transforms], _points=self.sample.points[0].coords)
