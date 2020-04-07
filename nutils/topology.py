@@ -535,7 +535,7 @@ class Topology(types.Singleton):
     if not geom.shape == coords.shape[1:] == (self.ndims,):
       raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
     bboxsample = self.sample(*element.parse_legacy_ischeme(ischeme))
-    vertices = map(bboxsample.eval(geom, **arguments or {}).__getitem__, bboxsample.index)
+    vertices = map(bboxsample.eval(geom, **arguments or {}).__getitem__, map(bboxsample.getindex, range(len(self))))
     bboxes = numpy.array([numpy.mean(v,axis=0) * (1-scale) + numpy.array([numpy.min(v,axis=0), numpy.max(v,axis=0)]) * scale
       for v in vertices]) # nelems x {min,max} x ndims
     vref = element.getsimplex(0)
@@ -1593,13 +1593,13 @@ class SubsetTopology(Topology):
 
   def locate(self, geom, coords, *, eps=0, **kwargs):
     sample = self.basetopo.locate(geom, coords, eps=eps, **kwargs)
-    for transforms, points, index in zip(sample.transforms[0], sample.points, sample.index):
+    for isampleelem, (transforms, points) in enumerate(zip(sample.transforms[0], sample.points)):
       ielem = self.basetopo.transforms.index(transforms)
       ref = self.refs[ielem]
       if ref != self.basetopo.references[ielem]:
         for i, coord in enumerate(points.coords):
           if not ref.inside(coord, eps):
-            raise LocateError('failed to locate point: {}'.format(coords[index[i]]))
+            raise LocateError('failed to locate point: {}'.format(coords[sample.getindex(isampleelem)[i]]))
     return sample
 
 class RefinedTopology(Topology):

@@ -99,6 +99,11 @@ class Sample(types.Singleton):
   def __repr__(self):
     return '{}<{}D, {} elems, {} points>'.format(type(self).__qualname__, self.ndims, self.nelems, self.npoints)
 
+  def getindex(self, ielem):
+    '''Return the indices of `Sample.points[ielem]` in results of `Sample.eval`.'''
+
+    return self.index[ielem]
+
   def _prepare_funcs(self, funcs):
     return [function.asarray(func).prepare_eval(ndims=self.ndims) for func in funcs]
 
@@ -222,15 +227,15 @@ class Sample(types.Singleton):
     with parallel.ctxrange('evaluating', self.nelems) as ielems:
       for ielem in ielems:
         for ifunc, inds, data in idata.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=self.points[ielem].coords, **arguments):
-          numpy.add.at(retvals[ifunc], numpy.ix_(self.index[ielem], *[ind for (ind,) in inds]), data)
+          numpy.add.at(retvals[ifunc], numpy.ix_(self.getindex(ielem), *[ind for (ind,) in inds]), data)
 
     return retvals
 
   @property
   def allcoords(self):
     coords = numpy.empty([self.npoints, self.ndims])
-    for points, index in zip(self.points, self.index):
-      coords[index] = points.coords
+    for ielem, points in enumerate(self.points):
+      coords[self.getindex(ielem)] = points.coords
     return types.frozenarray(coords, copy=False)
 
   def basis(self):
@@ -273,7 +278,7 @@ class Sample(types.Singleton):
     row defines a simplex by mapping vertices into the list of points.
     '''
 
-    return numpy.concatenate([index.take(points.tri) for points, index in zip(self.points, self.index)])
+    return numpy.concatenate([self.getindex(ielem).take(points.tri) for ielem, points in enumerate(self.points)])
 
   @property
   def hull(self):
@@ -285,7 +290,7 @@ class Sample(types.Singleton):
     triangulations originating from separate elements are disconnected.
     '''
 
-    return numpy.concatenate([index.take(points.hull) for points, index in zip(self.points, self.index)])
+    return numpy.concatenate([self.getindex(ielem).take(points.hull) for ielem, points in enumerate(self.points)])
 
   def subset(self, mask):
     '''Reduce the number of points.
@@ -306,7 +311,7 @@ class Sample(types.Singleton):
     subset : :class:`Sample`
     '''
 
-    selection = types.frozenarray([ielem for ielem in range(self.nelems) if mask[self.index[ielem]].any()])
+    selection = types.frozenarray([ielem for ielem in range(self.nelems) if mask[self.getindex(ielem)].any()])
     transforms = tuple(transform[selection] for transform in self.transforms)
     points = [self.points[ielem] for ielem in selection]
     offset = numpy.cumsum([0] + [p.npoints for p in points])
