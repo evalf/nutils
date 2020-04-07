@@ -28,15 +28,6 @@ matrix:
       env:
         - EXTRAS=matrix_mkl,export_mpl
         - LOCAL_CONSTRAINTS=numpy==1.12
-    - name: "Pypy"
-      os: linux
-      python: pypy3.5
-      env:
-        - EXTRAS=matrix_mkl,export_mpl
-        - PYTHON=venv/bin/python3
-      before_install:
-        - wget --no-verbose -O - "$PYPY_URL" | tar xj
-        - pypy*/bin/pypy3 -m venv venv
     - name: "Python"
       os: osx
       language: generic
