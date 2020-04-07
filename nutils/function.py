@@ -2442,6 +2442,10 @@ class Guard(Array):
     self.fun = fun
     super().__init__(args=[fun], shape=fun.shape, dtype=fun.dtype)
 
+  @property
+  def isconstant(self):
+    return False # avoid simplifications based on fun being constant
+
   @staticmethod
   def evalf(dat):
     return dat
