@@ -96,12 +96,12 @@ class test(testing.TestCase):
     with self.subTest('h1-error'):
       self.assertAlmostEqual(err[1], .00672, places=5)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
-      eNpjaGCAgQYY/K+HYBsYItjWRgj2U6OjxkeM5xqnGZsZqxrDRPXPIek8hzCzBon9Gonte56B4e3VtZfu
-      Xjh9Puc8ALOgKgk=''')
+      eNpjaGBoYGBAxvrnGBow4X89g3NQFSjQwLAGq7i10Wus4k+NfM8fNWZgOGL89upc47WX0ozvXjAzPn1e
+      1TjnPACrACoJ''')
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
-      eNpbZMYABfKn3pg8N2zV19D/rzfFeKHxOaMjhp6GBoZLjecb6xuvNgo2sjbaYLzRuNbY1Pin0VOjo8ZH
-      jOcapxmbGasanzb7cc7knP05/XOSJ93OTD/ndc7ynME5Bobd56ef5z4/51wNkF1x9+5F0Qt6518D2Yuv
-      7ry098KK877nGRjeXl176e6F0+dzzgMA63Y//Q==''')
+      eNpbZHbajIHhxzkGBhMgtgdi/XPypyRPvjFxO/PccPq5Vn2vcxr6luf+6xmcm2LMwLDQePf5c0bTzx8x
+      5D7vaTjnnIFhzbmlQPH5xhV39Y3vXlxtJHoh2EjvvLXR63MbgOIbjRdfrTXeecnUeO+Fn0Yrzj818j1/
+      FCh+xPjt1bnGay+lGd+9YGZ8+ryqcc55AK+AP/0=''')
 
   @testing.requires('matplotlib')
   def test_mixed(self):
@@ -111,13 +111,12 @@ class test(testing.TestCase):
     with self.subTest('h1-error'):
       self.assertAlmostEqual(err[1], .00739, places=5)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
-      eNpjaGBAQAYkFjpbn6EhyYChAR80NGRoOG6IX421EUPDdCMQa6MxQ8NR4yPGIPZc4yYw7W+cDqSfGpkZ
-      qxrjNwcC9c8BbQXikHNY/IAEa4DyG89B5Riwm/UKqEbqPIi14zLIy+evgthLL026CKIdL9y9wNDge/70
-      +ZzzANABV94=''')
+      eNpjaGDADhlwiOEU1z8HZusbgukkg5BzRJqKFRoa1oD1HzfceA5NH9FmgKC10SuwOdONpM7DxDYa77gM
+      MueoMQPDEePzV2Hic42XXmoynnQRxvc3dryQbnz3Aoj91Mj3vJnx6fOqxjnnAQzkV94=''')
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
-      eNoVj08og3EYx3/NVcpBqx04KRTv+3u+hTggpRxQSLOjC40DJxKpOXBQIvMnbKdFqx2GA1dtHGbP83vf
-      11YOkqJQSknJQeZ7+lw+ffoWaR5ncHGI/SalXvWTndNzpEqzrVnr2760/7ncUtacPWZH0Y1RRHGAOAyN
-      kA/HlNVruop6qFNr/aCvdQIxTCKJI0RQgw+qRxBpitAXuTRI7ZSiHUphF2mcIIsMFhEq1SOw4McAxvFD
-      z9SMWqzLEH/mM/kKDsg2r/I0X/Evt3IH93M3x3mZW9jiNtY8wcN8KjNya14cpRqcmPRK2LxLQG64TlZk
-      gxf4kdOslO++zFNqrxD07pysqXLa3EqzJSHjSaO8cbhk+Iuv3rn3/1kKF+6Sk3A3nZSpNl3m3iSlT3Iy
-      JX8zb5FS''')
+      eNoNzE8og3EcBvC3uUo5rNUOnBSK9/19n0Ic0Eo5oJBmRxcaB04kUnPgoETmT2w7LVrtMBy4auMw+35/
+      7/vaykFSFEopKTnIe/jU01PPU6FNWcQIn+Or5CBfSqCGD1uDYhi7/KbW+dma5aK65gX6Y8Po8HSzZQ7y
+      vBniHyvFV9aq17V7TK42O9kwFS9YUzxhjXIcZxLCnIzjTsfxah/BMFJotjUlZYz6xYeoPqEPKaigbKhb
+      9lOj9NGa9KgtVmqJH9UT36gcp71dEr6HaVS5GS8f46AcQ9itx739SQXdBL8dRqeTo1odox35poh2yJVh
+      apEueucsRWWPgpJFoLKPNzeHC/fU+yl48pDyMi6dCFbsBNJODNu2iawOoE4PoVdP4kH/UkZeaEDaUJQG
+      zMg/DouRUg==''')
