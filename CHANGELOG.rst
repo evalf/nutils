@@ -8,6 +8,25 @@ inverse chronological order.
 Changes since version 5.0
 -------------------------
 
+- Change dof order in basis.vector
+
+  When creating a vector basis using `topo.basis(..).vector(nd)`, the order of
+  the degrees of freedom changed from grouping by vector components to grouping
+  by the underlying scalar basis functions:
+
+      [b0,  0]         [b0,  0]
+      [b1,  0]         [ 0, b0]
+      [.., ..] old     [b1,  0]
+      [bn,  0] ------> [ 0, b1]
+      [ 0, b0]     new [.., ..]
+      [.., ..]         [bn,  0]
+      [ 0, bn]         [ 0, bn]
+
+  This should not affect applications unless the solution vector is manipulated
+  directly, for example in unit tests. If required for legacy purposes the old
+  vector can be retrieved using `lhs.reshape(-1,nd).T.ravel()`. Note that the
+  change does not extend to :func:`nutils.vectorize`.
+
 - Change from stickybar to bottombar
 
   For :func:`nutils.cli.run` to generate a status bar, it now requires the
