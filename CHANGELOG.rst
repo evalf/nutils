@@ -10,9 +10,9 @@ Changes since version 5.0
 
 - Change dof order in basis.vector
 
-  When creating a vector basis using `topo.basis(..).vector(nd)`, the order of
-  the degrees of freedom changed from grouping by vector components to grouping
-  by the underlying scalar basis functions:
+  When creating a vector basis using ``topo.basis(..).vector(nd)``, the order
+  of the degrees of freedom changed from grouping by vector components to
+  grouping by scalar basis functions::
 
       [b0,  0]         [b0,  0]
       [b1,  0]         [ 0, b0]
@@ -23,21 +23,21 @@ Changes since version 5.0
       [ 0, bn]         [ 0, bn]
 
   This should not affect applications unless the solution vector is manipulated
-  directly, for example in unit tests. If required for legacy purposes the old
-  vector can be retrieved using `lhs.reshape(-1,nd).T.ravel()`. Note that the
-  change does not extend to :func:`nutils.vectorize`.
+  directly, such as might happen in unit tests. If required for legacy purposes
+  the old vector can be retrieved using ``old = new.reshape(-1,nd).T.ravel()``.
+  Note that the change does not extend to :func:`nutils.function.vectorize`.
 
 - Change from stickybar to bottombar
 
-  For :func:`nutils.cli.run` to generate a status bar, it now requires the
-  external [bottombar] (https://github.com/evalf/bottombar) module to be
-  installed. This replaces stickybar, which is no longer used.
+  For :func:`nutils.cli.run` to draw a status bar, it now requires the external
+  `bottombar <https://github.com/evalf/bottombar>`_ module to be installed::
 
       $ python3 -m pip install --user bottombar
 
-  In addition to the uri and runtime the status bar will now show the current
-  memory usage, if that information is available. On Windows this requires
-  `psutil` to be installed; on Linux and OSX it should work by default.
+  This replaces stickybar, which is no longer used. In addition to the log uri
+  and runtime the status bar will now show the current memory usage, if that
+  information is available. On Windows this requires `psutil` to be installed;
+  on Linux and OSX it should work by default.
 
 - Support for gmsh 'msh4' file format
 
@@ -80,7 +80,7 @@ Changes since version 5.0
   :func:`nutils.solver.optimize` now receive linear solver arguments as keyword
   arguments rather than via the ``solveargs`` dictionary, which is deprecated.
   To avoid name clashes with the remaining arguments, argument names must be
-  prefixed by ``lin``.
+  prefixed by ``lin``::
 
       # deprecated syntax
       >>> solver.solve_linear('lhs', res, solveargs=dict(solver='gmres'))
@@ -115,7 +115,7 @@ Changes since version 5.0
   arguments is now as demonstrated in all of the examples.
 
   For new Nutils installations Stringly will be installed automatically as a
-  dependency. For existing setups it can be installed manually as follows:
+  dependency. For existing setups it can be installed manually as follows::
 
       $ python3 -m pip install --user --upgrade stringly
 
@@ -125,7 +125,7 @@ Changes since version 5.0
   ``length_<indices>`` and ``fallback_length``. The former can be used to
   assign fixed lengths to specific indices in expressions, say index ``i``
   should have length 2, which is used for verification and resolving undefined
-  lengths.  The latter is used to resolve remaining undefined lengths.
+  lengths. The latter is used to resolve remaining undefined lengths::
 
       >>> ns = nutils.function.Namespace(length_i=2, fallback_length=3)
       >>> ns.eval_ij('δ_ij') # using length_i
@@ -149,21 +149,21 @@ Changes since version 5.0
   The new :class:`nutils.types.unit` allows for the creation of a unit system
   for easy specification of physical quantities. Used in conjuction with
   :func:`nutils.cli.run` this facilitates specifying units from the command
-  line, as well as providing a warning mechanism against incompatible units.
+  line, as well as providing a warning mechanism against incompatible units::
 
       >>> U = types.unit.create(m=1, s=1, g=1e-3, N='kg*m/s2', Pa='N/m2')
       >>> def main(length=U('2m'), F=U('5kN')):
       ...   topo, geom = mesh.rectilinear([numpy.linspace(0,length,10)])
 
-    | $ python myscript.py length=25cm # OK
-    | $ python myscript.py F=10Pa # error!
+      # python myscript.py length=25cm # OK
+      # python myscript.py F=10Pa # error!
 
 - Sample basis
 
   Samples now provide a :func:`nutils.sample.Sample.basis`: an array that for
   any point in the sample evaluates to the unit vector corresponding to its
   index. This new underpinning of :func:`nutils.sample.Sample.asfunction` opens
-  the way for sampled arguments, as demonstrated in the last example below:
+  the way for sampled arguments, as demonstrated in the last example below::
 
       >>> H1 = mysample.asfunction(mydata) # mysample.eval(H1) == mydata
       >>> H2 = mysample.basis().dot(mydata) # mysample.eval(H2) == mydata
