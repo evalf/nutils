@@ -64,29 +64,38 @@ def fork(nprocs=None):
     log.warning('fork is unavailable on this platform')
     yield 0
     return
-  child_pids = []
+  amchild = False
   try:
-    fail = 1
+    child_pids = []
     for procid in builtins.range(1, nprocs):
       pid = os.fork()
       if not pid:
+        amchild = True
         signal.signal(signal.SIGINT, signal.SIG_IGN) # disable sigint (ctrl+c) handler
-        log.current = log.NullLog()
+        log.current = log.NullLog() # silence treelog
         break
       child_pids.append(pid)
     else:
       procid = 0
     with maxprocs(1):
       yield procid
-    fail = 0
+  except BaseException as e:
+    if amchild:
+      print('[parallel.fork] exception in child process:', e)
+      os._exit(1) # communicate failure to main process
+    for pid in child_pids: # kill all child processes
+      os.kill(pid, signal.SIGKILL)
+    raise
+  else:
+    if amchild:
+      os._exit(0) # communicate success to main process
+    with log.context('waiting for child processes'):
+      nfails = sum(os.waitpid(pid, 0)[1] != 0 for pid in child_pids)
+    if nfails: # failure in child process: raise exception
+      raise Exception('fork failed in {} out of {} processes'.format(nfails, nprocs))
   finally:
-    if procid: # before anything else can fail:
-      os._exit(fail) # communicate exit status to main process
-    nfails = fail + sum(os.waitpid(pid, 0)[1] != 0 for pid in child_pids)
-    if fail: # failure in main process: exception has been reraised
-      log.error('fork failed in {} out of {} processes; reraising exception for main process'.format(nfails, nprocs))
-    elif nfails: # failure in child process: raise exception
-      raise Exception('fork failed in {} out of {} processes'.format(nfails, _maxprocs))
+    if amchild:
+      os._exit(1) # failsafe
 
 def shempty(shape, dtype=float):
   '''create uninitialized array in shared memory'''
