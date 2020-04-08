@@ -468,6 +468,7 @@ _check('ravel', lambda f: function.ravel(f,axis=1), lambda a: a.reshape(-1,4,4,4
 _check('unravel', lambda f: function.unravel(f,axis=1,shape=[2,2]), lambda a: a.reshape(-1,4,2,2,4,4), [(4,4,4,4)])
 _check('inflate', lambda f: function.Inflate(f,dofmap=function.Guard([0,3]),length=4,axis=1), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a), a[:,:,1:]], axis=2), [(4,2,4)])
 _check('inflate-constant', lambda f: function.Inflate(f,dofmap=[0,3],length=4,axis=1), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a), a[:,:,1:]], axis=2), [(4,2,4)])
+_check('vectorize', lambda a,b: function.vectorize([a, b]), lambda a,b: numpy.concatenate([numpy.stack([a, numpy.zeros_like(a)], axis=2), numpy.stack([numpy.zeros_like(b), b], axis=2)], axis=1), [(3,),(5,)])
 
 _polyval_mask = lambda shape, ndim: 1 if ndim == 0 else numpy.array([sum(i[-ndim:]) < shape[-1] for i in numpy.ndindex(shape)], dtype=int).reshape(shape)
 _polyval_desired = lambda c, x: sum(c[(...,*i)]*(x[(slice(None),*[None]*(c.ndim-1-x.shape[1]))]**i).prod(-1) for i in itertools.product(*[range(c.shape[-1])]*x.shape[1]) if sum(i) < c.shape[-1])

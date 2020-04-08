@@ -4048,6 +4048,18 @@ def chain(funcs):
                for i, func in enumerate(funcs)]
 
 def vectorize(args):
+  '''
+  Combine scalar-valued bases into a vector-valued basis.
+
+  Args
+  ----
+  args : iterable of 1-dimensional :class:`nutils.function.Array` objects
+
+  Returns
+  -------
+  :class:`Array`
+  '''
+
   return concatenate([kronecker(arg, axis=-1, length=len(args), pos=iarg) for iarg, arg in enumerate(args)])
 
 def repeat(arg, length, axis):
