@@ -1743,12 +1743,22 @@ class Take(Array):
     length = self.func.shape[self.axis]
     if indices == Range(length):
       return func
-    if indices.isconstant and numeric.isint(length):
+    if indices.isconstant:
       indices_, = indices.eval()
-      if numpy.greater(numpy.diff(numpy.mod(indices_, length)), 0).all():
-        mask = numpy.zeros(length, dtype=bool)
-        mask[indices_] = True # note: includes proper bounds check
-        return Mask(func, mask, self.axis).simplified
+      ineg, = numpy.less(indices_, 0).nonzero()
+      if numeric.isint(length):
+        if len(ineg):
+          indices_ = indices_.copy()
+          indices_[ineg] += length
+          indices = Constant(types.frozenarray(indices_, copy=False))
+        if numpy.less(indices_[ineg], 0).any() or numpy.greater_equal(indices_, length).any():
+          raise IndexError('indices out of bounds: 0 !< {} !<= {}'.format(indices_, length))
+        if numpy.greater(numpy.diff(indices_), 0).all():
+          mask = numpy.zeros(length, dtype=bool)
+          mask[indices_] = True
+          return Mask(func, mask, self.axis).simplified
+      elif len(ineg):
+        raise IndexError('negative indices only allowed for constant-length axes')
     retval = func._take(indices, self.axis)
     if retval is not None:
       assert retval.shape == self.shape
