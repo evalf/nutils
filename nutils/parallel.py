@@ -26,7 +26,7 @@ will disable and a warning is printed.
 """
 
 from . import numeric, warnings, util
-import os, multiprocessing, mmap, signal, contextlib, builtins, numpy, treelog as log
+import os, multiprocessing, mmap, signal, contextlib, builtins, numpy, treelog
 
 _maxprocs = 1
 
@@ -61,7 +61,7 @@ def fork(nprocs=None):
     yield 0
     return
   if not hasattr(os, 'fork'):
-    log.warning('fork is unavailable on this platform')
+    treelog.warning('fork is unavailable on this platform')
     yield 0
     return
   amchild = False
@@ -72,7 +72,7 @@ def fork(nprocs=None):
       if not pid:
         amchild = True
         signal.signal(signal.SIGINT, signal.SIG_IGN) # disable sigint (ctrl+c) handler
-        log.current = log.NullLog() # silence treelog
+        treelog.current = treelog.NullLog() # silence treelog
         break
       child_pids.append(pid)
     else:
@@ -89,7 +89,7 @@ def fork(nprocs=None):
   else:
     if amchild:
       os._exit(0) # communicate success to main process
-    with log.context('waiting for child processes'):
+    with treelog.context('waiting for child processes'):
       nfails = sum(os.waitpid(pid, 0)[1] != 0 for pid in child_pids)
     if nfails: # failure in child process: raise exception
       raise Exception('fork failed in {} out of {} processes'.format(nfails, nprocs))
@@ -144,7 +144,7 @@ def ctxrange(name, nitems):
 
   rng = range(nitems) # shared range, must be created pre-fork
   with fork(nitems):
-    yield log.iter.wrap(_pct(name, nitems), rng)
+    yield treelog.iter.wrap(_pct(name, nitems), rng)
 
 def _pct(name, n):
   '''helper function for ctxrange'''
