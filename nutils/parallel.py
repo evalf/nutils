@@ -69,7 +69,7 @@ def fork(nprocs=None):
     child_pids = []
     for procid in builtins.range(1, nprocs):
       pid = os.fork()
-      if not pid:
+      if not pid: # pragma: no cover
         amchild = True
         signal.signal(signal.SIGINT, signal.SIG_IGN) # disable sigint (ctrl+c) handler
         treelog.current = treelog.NullLog() # silence treelog
@@ -80,21 +80,21 @@ def fork(nprocs=None):
     with maxprocs(1):
       yield procid
   except BaseException as e:
-    if amchild:
+    if amchild: # pragma: no cover
       print('[parallel.fork] exception in child process:', e)
       os._exit(1) # communicate failure to main process
     for pid in child_pids: # kill all child processes
       os.kill(pid, signal.SIGKILL)
     raise
   else:
-    if amchild:
+    if amchild: # pragma: no cover
       os._exit(0) # communicate success to main process
     with treelog.context('waiting for child processes'):
       nfails = sum(os.waitpid(pid, 0)[1] != 0 for pid in child_pids)
     if nfails: # failure in child process: raise exception
       raise Exception('fork failed in {} out of {} processes'.format(nfails, nprocs))
   finally:
-    if amchild:
+    if amchild: # pragma: no cover
       os._exit(1) # failsafe
 
 def shempty(shape, dtype=float):
