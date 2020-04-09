@@ -1,8 +1,8 @@
 Nutils
 ======
 
-[![Build Status](https://travis-ci.com/evalf/nutils.svg?branch=master)](https://travis-ci.com/evalf/nutils)
-[![Coverage Status](https://coveralls.io/repos/github/evalf/nutils/badge.svg?branch=master)](https://coveralls.io/github/evalf/nutils?branch=master)
+[![Test Status](https://github.com/joostvanzwieten/nutils/workflows/test/badge.svg?branch=master)](https://github.com/evalf/nutils/actions?query=workflow%3Atest+branch%3Amaster)
+[![Coverage Status](https://codecov.io/gh/evalf/nutils/branch/master/graph/badge.svg)](https://codecov.io/gh/evalf/nutils/branch/master)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.822369.svg)](https://doi.org/10.5281/zenodo.822369)
 
 Nutils is a Free and Open Source Python programming library for Finite Element
