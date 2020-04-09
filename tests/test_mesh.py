@@ -1,31 +1,6 @@
 from nutils import *
-import tempfile, pathlib, os, io
+import tempfile, pathlib, os
 from nutils.testing import *
-
-class gmsh_init(TestCase):
-
-  geo = [ # single element triangle mesh
-    '$MeshFormat', '2.2 0 8', '$EndMeshFormat',
-    '$PhysicalNames', '1', '2 1 "v"', '$EndPhysicalNames',
-    '$Nodes', '3', '1 0 0 0', '2 1 0 0', '3 0 1 0', '$EndNodes',
-    '$Elements', '1', '1 2 2 1 8 1 2 3', '$EndElements']
-
-  def test_valid(self):
-    domain, geom = mesh.gmsh(io.StringIO('\n'.join(self.geo)))
-    self.assertEqual(len(domain), 1)
-
-  def test_invalid(self):
-    with self.assertRaises(ValueError):
-      mesh.gmsh(io.StringIO('\n'.join(self.geo[3:]))) # missing meshformat
-
-  def test_meshformat(self):
-    geo = self.geo.copy()
-    geo[1] = '9.0 0 8' # imaginary future version
-    with self.assertRaises(ValueError):
-      mesh.gmsh(io.StringIO('\n'.join(geo)))
-    geo[1] = '2.2 1 8' # binary data
-    with self.assertRaises(ValueError):
-      mesh.gmsh(io.StringIO('\n'.join(geo)))
 
 @parametrize
 class gmsh(TestCase):
@@ -34,12 +9,14 @@ class gmsh(TestCase):
     path = pathlib.Path(__file__).parent/'test_mesh'/'mesh{0.ndims}d_p{0.degree}_v{0.version}.msh'.format(self)
     self.domain, self.geom = mesh.gmsh(path)
 
+  @requires('meshio')
   def test_volume(self):
     for group, exact_volume in ((),2), ('left',1), ('right',1):
       with self.subTest(group or 'all'):
         volume = self.domain[group].integrate(function.J(self.geom), ischeme='gauss1')
         self.assertAllAlmostEqual(volume, exact_volume, places=10)
 
+  @requires('meshio')
   def test_divergence(self):
     for group, exact_volume in ((),2), ('left',1), ('right',1):
       with self.subTest(group or 'all'):
@@ -47,16 +24,19 @@ class gmsh(TestCase):
         self.assertAllAlmostEqual(volumes[:2], exact_volume, places=10)
         self.assertAllAlmostEqual(volumes[2:], 0, places=10)
 
+  @requires('meshio')
   def test_length(self):
     for vgroup, bgroup, exact_length in ((),(),6), ((),'neumann',2), ((),'dirichlet',4), ('left',(),4), ('right',(),4):
       with self.subTest('{},{}'.format(vgroup or 'all', bgroup or 'all')):
         length = self.domain[vgroup].boundary[bgroup].integrate(function.J(self.geom), ischeme='gauss1')
         self.assertAllAlmostEqual(length, exact_length, places=10)
 
+  @requires('meshio')
   def test_interfaces(self):
     err = self.domain.interfaces.sample('uniform', 2).eval(self.geom - function.opposite(self.geom))
     self.assertAllAlmostEqual(err[:,:2], 0, places=13) # the third dimension (if present) is discontinuous at the periodic boundary
 
+  @requires('meshio')
   def test_ifacegroup(self):
     for name in 'iface', 'left', 'right':
       with self.subTest(name):
@@ -66,11 +46,13 @@ class gmsh(TestCase):
         self.assertAllAlmostEqual(x2[:,0], 1, places=13)
         self.assertAllAlmostEqual(x1, x2, places=13)
 
+  @requires('meshio')
   def test_pointeval(self):
     x = self.domain.points.sample('gauss', 1).eval(self.geom)
     self.assertAllAlmostEqual(x[:,0], 1, places=15)
     self.assertAllAlmostEqual(x[:,1], 0, places=15)
 
+  @requires('meshio')
   def test_refine(self):
     boundary1 = self.domain.refined.boundary
     boundary2 = self.domain.boundary.refined
@@ -78,6 +60,7 @@ class gmsh(TestCase):
     assert set(map(transform.canonical, boundary1.transforms)) == set(map(transform.canonical, boundary2.transforms))
     assert all(boundary2.references[boundary2.transforms.index(trans)] == ref for ref, trans in zip(boundary1.references, boundary1.transforms))
 
+  @requires('meshio')
   def test_refinesubset(self):
     domain = topology.SubsetTopology(self.domain, [ref if ielem % 2 else ref.empty for ielem, ref in enumerate(self.domain.references)])
     boundary1 = domain.refined.boundary
@@ -98,10 +81,12 @@ class gmshmanifold(TestCase):
     path = pathlib.Path(__file__).parent/'test_mesh'/'mesh3dmani_p{0.degree}_v{0.version}.msh'.format(self)
     self.domain, self.geom = mesh.gmsh(path)
 
+  @requires('meshio')
   def test_volume(self):
     volume = self.domain.integrate(function.J(self.geom), degree=self.degree)
     self.assertAllAlmostEqual(volume, 2*numpy.pi, places=0 if self.degree == 1 else 1)
 
+  @requires('meshio')
   def test_length(self):
     length = self.domain.boundary.integrate(function.J(self.geom), degree=self.degree)
     self.assertAllAlmostEqual(length, 2*numpy.pi, places=1 if self.degree == 1 else 3)

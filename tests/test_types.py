@@ -1,6 +1,6 @@
 from nutils.testing import *
 import nutils.types
-import inspect, pickle, itertools, ctypes, stringly
+import inspect, pickle, itertools, ctypes, stringly, tempfile, io, os
 import numpy
 
 class apply_annotations(TestCase):
@@ -157,6 +157,20 @@ class nutils_hash(TestCase):
 
   def test_type_frozenset(self):
     self.assertEqual(nutils.types.nutils_hash(frozenset).hex(), '48dc7cd0fbd54924498deb7c68dd363b4049f5e2')
+
+  def test_type_bufferedreader(self):
+    try:
+      fid, path = tempfile.mkstemp()
+      os.write(fid, b'test')
+      os.close(fid)
+      with open(path, 'rb') as f:
+        f.seek(2)
+        self.assertEqual(nutils.types.nutils_hash(f).hex(), '4edef1af3aa845b9e8bbde2d8265be5f30be4c2a')
+        self.assertEqual(f.tell(), 2)
+      with open(path, 'rb+') as f, self.assertRaises(TypeError):
+        nutils.types.nutils_hash(f).hex()
+    finally:
+      os.unlink(path)
 
   def test_custom(self):
     class custom:

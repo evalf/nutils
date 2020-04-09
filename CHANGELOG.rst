@@ -8,6 +8,13 @@ inverse chronological order.
 Changes since version 5.0
 -------------------------
 
+- External dependency for parsing gmsh files
+
+  The :func:`nutils.mesh.gmsh` method now depends on the external `meshio
+  <https://github.com/nschloe/meshio>`_ module to parse .msh files::
+
+      $ python3 -m pip install --user --upgrade meshio
+
 - Change dof order in basis.vector
 
   When creating a vector basis using ``topo.basis(..).vector(nd)``, the order

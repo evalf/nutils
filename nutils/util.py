@@ -23,7 +23,7 @@ The util module provides a collection of general purpose methods.
 """
 
 from . import numeric
-import sys, os, numpy, collections.abc, inspect, functools, operator, numbers, pathlib, ctypes, site, io
+import sys, os, numpy, collections.abc, inspect, functools, operator, numbers, pathlib, ctypes, site, io, contextlib
 
 supports_outdirfd = os.open in os.supports_dir_fd and os.listdir in os.supports_fd
 
@@ -418,5 +418,31 @@ def readtext(path):
     return path.read()
 
   raise TypeError('readtext requires a path-like or file-like argument')
+
+def binaryfile(path):
+  '''Open file for binary reading
+
+  Args
+  ----
+  path: :class:`os.PathLike`, :class:`str` or :class:`io.BufferedIOBase`
+      Path-like or file-like object pointing to the data to be read.
+
+  Returns
+  -------
+  :
+      Context that returns a :class:`io.BufferedReader` upon entry.
+  '''
+
+  if isinstance(path, pathlib.Path):
+    return path.open('rb')
+
+  if isinstance(path, str):
+    return open(path, 'rb')
+
+  if isinstance(path, io.BufferedIOBase):
+    return contextlib.nullcontext(path) if hasattr(contextlib, 'nullcontext') \
+      else contextlib.contextmanager(iter)([path]) # Python <= 3.6
+
+  raise TypeError('binaryfile requires a path-like or file-like argument')
 
 # vim:sw=2:sts=2:et

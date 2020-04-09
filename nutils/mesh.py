@@ -27,7 +27,7 @@ provided at this point.
 """
 
 from . import topology, function, util, element, elementseq, numpy, numeric, transform, transformseq, warnings, types, cache, _
-import os, itertools, re, math, treelog as log
+import os, itertools, re, math, treelog as log, io, contextlib
 
 # MESH GENERATORS
 
@@ -320,164 +320,6 @@ def multipatch(patches, nelems, patchverts=None, name='multipatch'):
 
   return topo, geom
 
-def _parsegmsh2(sections):
-  '''helper function to parse msh2 format'''
-
-  # parse section PhysicalNames
-  PhysicalNames = sections.pop('PhysicalNames', '0').splitlines()
-  nnames = int(PhysicalNames[0])
-  lines = PhysicalNames[1:]
-  assert len(lines) == nnames
-  tagnames = {} # nd, tagid -> name
-  for line in lines:
-    nd, tagid, tagname = line.split(' ', 2)
-    tagnames[int(nd), tagid] = tagname.strip('"')
-
-  # parse section Nodes
-  Nodes = sections.pop('Nodes').splitlines()
-  nnodes = int(Nodes[0])
-  lines = Nodes[1:]
-  assert len(lines) == nnodes
-  coords = numpy.empty((nnodes, 3))
-  nodemap = {}
-  for i, line in enumerate(lines):
-    n, *c = line.split()
-    nodemap[n] = i
-    coords[i] = c
-
-  # parse section Elements
-  Elements = sections.pop('Elements').splitlines()
-  nelems = int(Elements[0])
-  lines = Elements[1:]
-  assert len(lines) == nelems
-  nodes = {} # nd -> inodes
-  tagmap = {} # nd, tagid -> ielems
-  etype2nd = {'15': 0, '1': 1, '2': 2, '4': 3, '8': 1, '9': 2, '11': 3, '26': 1, '21': 2, '23': 2, '27': 1}
-  for line in lines:
-    n, e, t, m, *w = line.split()
-    nd = etype2nd[e]
-    ntags = int(t) - 1
-    assert ntags >= 0
-    inodes = w[ntags:]
-    l = nodes.setdefault(nd, [])
-    if not l or l[-1] != inodes: # multiple tags are repeated in consecutive lines
-      l.append(inodes)
-    tagmap.setdefault((nd, m), []).append(len(l)-1)
-
-  # parse section Periodic
-  Periodic = sections.pop('Periodic', '0').splitlines()
-  countdown = int(Periodic[0])
-  lines = Periodic[1:]
-  identities = [] # slave, master
-  n = 0
-  for line in lines:
-    words = line.split()
-    if words[0] == 'Affine':
-      pass
-    elif len(words) == 1:
-      n = int(words[0]) # initialize for counting backwards
-    elif len(words) == 2:
-      identities.append(words)
-      n -= 1
-    else:
-      assert len(words) == 3 # discard content
-      assert n == 0 # check if batch of slave/master nodes matches announcement
-      countdown -= 1
-  assert countdown == 0 # check if number of periodic blocks matches announcement
-  assert n == 0 # check if last batch of slave/master nodes matches announcement
-
-  # process data
-  nodemap = numpy.vectorize(nodemap.__getitem__, otypes=[int])
-  nodes = {nd: nodemap(e) for nd, e in nodes.items()}
-  identities = nodemap(identities)
-  tags = [(nd, tagnames[nd, m], ielems) for (nd, m), ielems in tagmap.items() if (nd, m) in tagnames]
-
-  return nodes, identities, coords, tags
-
-def _parsegmsh4(sections):
-  '''helper function to parse msh4 format'''
-
-  # parse section PhysicalNames
-  PhysicalNames = sections.pop('PhysicalNames', '0').splitlines()
-  nnames = int(PhysicalNames[0])
-  lines = PhysicalNames[1:]
-  assert len(lines) == nnames
-  names = {} # nd, nametag -> name
-  for line in lines:
-    nd, nametag, tagname = line.split(' ', 2)
-    names[int(nd), nametag] = tagname.strip('"')
-
-  # parse section Entities
-  Entities = sections.pop('Entities').splitlines()
-  header = Entities[0]
-  lines = Entities[1:]
-  entities = {} # nd, entitytag -> nametags
-  for nd, nentities in enumerate(map(int, header.split())):
-    for line in lines[:nentities]:
-      parts = line.split()
-      ntags, *tags = parts[7 if nd else 4:]
-      entities[nd, parts[0]] = tags[:int(ntags)]
-    lines = lines[nentities:]
-  assert not lines
-
-  # parse section Nodes
-  Nodes = sections.pop('Nodes').splitlines()
-  lines = iter(Nodes)
-  countdown = int(next(lines).split()[0])
-  coords = numpy.empty([0, 3], dtype=float) # inode x 3
-  nodemap = {} # nodeid -> inode
-  for header in lines:
-    ndims, tag, parametric, nnodes = header.split()
-    a = len(coords)
-    b = a + int(nnodes)
-    for i in range(a, b):
-      n = next(lines)
-      assert n not in nodemap
-      nodemap[n] = i
-    coords.resize((b, 3), refcheck=False)
-    for i in range(a, b):
-      coords[i] = [float(s) for s in next(lines).split()]
-    countdown -= 1
-  assert countdown == 0
-
-  # parse section Elements
-  Elements = sections.pop('Elements').splitlines()
-  lines = iter(Elements)
-  countdown = int(next(lines).split()[0])
-  elements = {} # nd -> nodeids = ielem x nd+1
-  elemtags = [] # nd, entitytag, elemslice
-  for header in lines:
-    ndims, tag, elemtype, nelems = header.split()
-    inodes = elements.setdefault(int(ndims), [])
-    a = len(inodes)
-    inodes.extend(next(lines).split()[1:] for i in range(int(nelems)))
-    b = len(inodes)
-    elemtags.append((int(ndims), tag, range(a, b)))
-    countdown -= 1
-  assert countdown == 0
-
-  # parse section Periodic
-  Periodic = sections.pop('Periodic', '0').splitlines()
-  lines = iter(Periodic)
-  countdown = int(next(lines))
-  identities = [] # slave, master
-  for header in lines:
-    ndims, tag, mastertag = header.split()
-    affine = next(lines)
-    npairs = int(next(lines))
-    identities.extend(next(lines).split() for ipair in range(npairs))
-    countdown -= 1
-  assert countdown == 0
-
-  # process data
-  nodemap = numpy.vectorize(nodemap.__getitem__, otypes=[int])
-  nodes = {nd: nodemap(e) for nd, e in elements.items()}
-  gathered = util.gather(((nd, nametag), ielems) for nd, entitytag, ielems in elemtags for nametag in entities[nd, entitytag])
-  tags = [(nd, names[nd, nametag], numpy.concatenate(ielems)) for (nd, nametag), ielems in gathered]
-  identities = nodemap(identities)
-
-  return nodes, identities, coords, tags
-
 @cache.function
 def parsegmsh(mshdata):
   """Gmsh parser
@@ -487,7 +329,7 @@ def parsegmsh(mshdata):
 
   Parameters
   ----------
-  mshdata : :class:`str`
+  mshdata : :class:`io.BufferedIOBase`
       Msh file contents.
 
   Returns
@@ -496,31 +338,38 @@ def parsegmsh(mshdata):
       Keyword arguments for :func:`simplex`
   """
 
-  # split sections
-  sections = dict(re.findall(r'^\$(\w+)\n(.*)\n\$End\1$', mshdata, re.MULTILINE|re.DOTALL))
+  try:
+    from meshio import gmsh
+  except ImportError as e:
+    raise Exception('parsegmsh requires the meshio module to be installed') from e
 
-  # parse section MeshFormat
-  MeshFormat = sections.pop('MeshFormat', None)
-  if not MeshFormat:
-    raise ValueError('invalid or incomplete gmsh data')
-  version, filetype, datasize = MeshFormat.split()
-  if filetype != '0':
-    raise ValueError('binary gmsh data is not supported')
+  msh = gmsh.main.read_buffer(mshdata)
 
-  # parse remaining sections
-  if version.startswith('2.'):
-    _parse = _parsegmsh2
-  elif version.startswith('4.'):
-    _parse = _parsegmsh4
-  else:
-    raise ValueError('gmsh version {} is not supported; please use -format msh4'.format(version))
-  # the _parse method returns a 4-tuple with the following data:
-  # - nodes: a ndims -> 2d int-array dictionary: nodes[nd][ndelem,localnode] == icoord,
-  #   where localnode < nd+1 for linear geometries, larger for higher order geometries.
-  # - identities: a 2d int-aray: identities[icoord,{0=master,1=slave}] == icoord
-  # - coords: a 2d float-array: coords[icoord,idim] == coordinate
-  # - tags: a list of (nd, name, ndelems) tuples
-  nodes, identities, coords, tags = _parse(sections)
+  # Coords is a 2d float-array such that coords[inode,idim] == coordinate.
+  coords = msh.points
+
+  # Nodes is a dictionary that maps a topological dimension to a 2d int-array
+  # dictionary such that nodes[nd][ielem,ilocal] == inode, where ilocal < nd+1
+  # for linear geometries or larger for higher order geometries. Since meshio
+  # stores nodes by simplex type and cell, simplex types are mapped to
+  # dimensions and gathered, after which cells are concatenated under the
+  # assumption that there is only one simplex type per dimension.
+  nodes = {('ver','lin','tri','tet').index(typename[:3]): numpy.concatenate(datas, axis=0)
+    for typename, datas in util.gather((cells.type, cells.data) for cells in msh.cells)}
+
+  # Identities is a 2d [master, slave] int-aray that pairs matching nodes on
+  # periodic walls. For the topological connectivity, all slaves in the nodes
+  # arrays will be replaced by their master counterpart.
+  identities = numpy.zeros((0, 2), dtype=int) if not msh.gmsh_periodic \
+    else numpy.concatenate([d for a, b, c, d in msh.gmsh_periodic], axis=0)
+
+  # Tags is a list of (nd, name, ndelems) tuples that define topological groups
+  # per dimension. Since meshio associates group names with cells, which are
+  # concatenated in nodes, element ids are offset and concatenated to match.
+  tags = [(nd, name, numpy.concatenate([(data == itag).nonzero()[0]
+    + sum(len(cells.data) for cells in msh.cells[:icell] if cells.type == msh.cells[icell].type) # offset into nodes
+                                         for icell, data in enumerate(msh.cell_data['gmsh:physical'])]))
+           for name, (itag, nd) in msh.field_data.items()]
 
   # determine the dimension of the topology
   ndims = max(nodes)
@@ -529,10 +378,6 @@ def parsegmsh(mshdata):
   assert not numpy.isnan(coords).any()
   while coords.shape[1] > ndims and not coords[:,-1].any():
     coords = coords[:,:-1]
-
-  # warn about unused sections
-  for section in sections:
-    warnings.warn('section {!r} defined but not used'.format(section))
 
   # separate geometric, topological nodes
   cnodes = nodes[ndims]
@@ -559,11 +404,11 @@ def parsegmsh(mshdata):
     shuffle = vnodes.argsort(axis=1)
     cnodes = cnodes[numpy.arange(len(cnodes))[:,_], shuffle] # gmsh conveniently places the primary ndim+1 vertices first
   else: # higher order elements: match sorting of nodes and renumber higher order coefficients
-    degree, nodeorder = { # for gmsh node ordering conventions see http://gmsh.info/doc/texinfo/gmsh.html#Node-ordering
+    degree, nodeorder = { # for meshio's node ordering conventions see http://www.vtk.org/VTK/img/file-formats.pdf
       (2, 6): (2, (0,3,1,5,4,2)),
       (2,10): (3, (0,3,4,1,8,9,5,7,6,2)),
       (2,15): (4, (0,3,4,5,1,11,12,13,6,10,14,7,9,8,2)),
-      (3,10): (2, (0,4,1,6,5,2,7,9,8,3))}[ndims, cnodes.shape[1]]
+      (3,10): (2, (0,4,1,6,5,2,7,8,9,3))}[ndims, cnodes.shape[1]]
     enum = numpy.empty([degree+1]*(ndims+1), dtype=int)
     bari = tuple(numpy.array([index[::-1] for index in numpy.ndindex(*enum.shape) if sum(index) == degree]).T)
     enum[bari] = numpy.arange(cnodes.shape[1]) # maps baricentric index to corresponding enumerated index
@@ -602,7 +447,7 @@ def parsegmsh(mshdata):
 
 @log.withcontext
 @types.apply_annotations
-def gmsh(fname:util.readtext, name='gmsh'):
+def gmsh(fname:util.binaryfile, name='gmsh'):
   """Gmsh parser
 
   Parser for Gmsh files in `.msh` format. Only files with physical groups are
@@ -611,7 +456,7 @@ def gmsh(fname:util.readtext, name='gmsh'):
 
   Parameters
   ----------
-  fname : :class:`str`
+  fname : :class:`str` or :class:`io.BufferedIOBase`
       Path to mesh file or mesh file object.
   name : :class:`str` or :any:`None`
       Name of parsed topology, defaults to 'gmsh'.
@@ -624,7 +469,8 @@ def gmsh(fname:util.readtext, name='gmsh'):
       Isoparametric map.
   """
 
-  return simplex(name=name, **parsegmsh(fname))
+  with fname as f:
+    return simplex(name=name, **parsegmsh(f))
 
 def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
   '''Simplex topology.

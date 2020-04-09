@@ -22,7 +22,7 @@
 Module with general purpose types.
 """
 
-import inspect, functools, hashlib, builtins, numbers, collections.abc, itertools, abc, sys, weakref, re
+import inspect, functools, hashlib, builtins, numbers, collections.abc, itertools, abc, sys, weakref, re, io
 import numpy
 
 def aspreprocessor(apply):
@@ -280,28 +280,33 @@ def nutils_hash(data):
     pass
 
   t = type(data)
+  h = hashlib.sha1(t.__name__.encode()+b'\0')
   if data is Ellipsis:
-    hargs = ()
+    pass
   elif data is None:
-    hargs = ()
+    pass
   elif any(data is dtype for dtype in (bool, int, float, complex, str, bytes, builtins.tuple, frozenset, type(Ellipsis), type(None))):
-    hargs = hashlib.sha1(data.__name__.encode()).digest(),
+    h.update(hashlib.sha1(data.__name__.encode()).digest())
   elif any(t is dtype for dtype in (bool, int, float, complex)):
-    hargs = hashlib.sha1(repr(data).encode()).digest(),
+    h.update(hashlib.sha1(repr(data).encode()).digest())
   elif t is str:
-    hargs = hashlib.sha1(data.encode()).digest(),
+    h.update(hashlib.sha1(data.encode()).digest())
   elif t is bytes:
-    hargs = hashlib.sha1(data).digest(),
+    h.update(hashlib.sha1(data).digest())
   elif t is builtins.tuple:
-    hargs = map(nutils_hash, data)
+    for item in data:
+      h.update(nutils_hash(item))
   elif t is frozenset:
-    hargs = sorted(map(nutils_hash, data))
+    for item in sorted(map(nutils_hash, data)):
+      h.update(item)
+  elif issubclass(t, io.BufferedIOBase) and data.seekable() and not data.writable():
+    pos = data.tell()
+    h.update(str(pos).encode())
+    data.seek(0)
+    map(h.update, iter(lambda: data.read(0x20000), b''))
+    data.seek(pos)
   else:
     raise TypeError('unhashable type: {!r} {!r}'.format(data, t))
-
-  h = hashlib.sha1(t.__name__.encode()+b'\0')
-  for harg in hargs:
-    h.update(harg)
   return h.digest()
 
 class _CacheMeta_property:

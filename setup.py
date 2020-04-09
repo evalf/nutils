@@ -41,6 +41,7 @@ setup(
     matrix_scipy=['scipy>=0.13'],
     matrix_mkl=['mkl'],
     export_mpl=['matplotlib>=1.3','pillow>2.6'],
+    import_gmsh=['meshio'],
   ),
   command_options = dict(
     test=dict(test_loader=('setup.py', 'unittest:TestLoader')),

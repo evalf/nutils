@@ -1,6 +1,6 @@
 from nutils import *
 from nutils.testing import *
-import tempfile, pathlib, os, io
+import tempfile, pathlib, os, io, contextlib
 
 @parametrize
 class tri(TestCase):
@@ -100,6 +100,32 @@ class readtext(TestCase):
   def test_typeerror(self):
     with self.assertRaises(TypeError):
       util.readtext(None)
+
+class binaryfile(TestCase):
+
+  def setUp(self):
+    fid, self.path = tempfile.mkstemp()
+    os.write(fid, b'foobar')
+    os.close(fid)
+
+  def tearDown(self):
+    os.unlink(self.path)
+
+  def test_str(self):
+    with util.binaryfile(self.path) as f:
+      self.assertEqual(f.read(), b'foobar')
+
+  def test_path(self):
+    with util.binaryfile(pathlib.Path(self.path)) as f:
+      self.assertEqual(f.read(), b'foobar')
+
+  def test_file(self):
+    with open(self.path, 'rb') as F, util.binaryfile(F) as f:
+      self.assertEqual(f.read(), b'foobar')
+
+  def test_typeerror(self):
+    with self.assertRaises(TypeError):
+      util.binaryfile(None)
 
 class positional_only(TestCase):
 
