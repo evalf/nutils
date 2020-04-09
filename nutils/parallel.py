@@ -61,7 +61,7 @@ def fork(nprocs=None):
     yield 0
     return
   if not hasattr(os, 'fork'):
-    treelog.warning('fork is unavailable on this platform')
+    warnings.warn('fork is unavailable on this platform')
     yield 0
     return
   amchild = False
