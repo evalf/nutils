@@ -62,6 +62,28 @@ class Points(types.Singleton):
     self.npoints = npoints
     self.ndims = ndims
 
+  def __mul__(self, other):
+    '''Return ``self*other``.'''
+
+    if not isinstance(other, Points):
+      return NotImplemented
+    return self.product(other)
+
+  def product(self, other):
+    '''Return the product with ``other``.
+
+    Parameters
+    ----------
+    other : :class:`Points`
+
+    Returns
+    -------
+    product : :class:`Points`
+        The product.
+    '''
+
+    return TensorPoints(self, other)
+
   @property
   def tri(self):
     '''Triangulation of interior.
@@ -174,6 +196,9 @@ class TensorPoints(Points):
       hull = numpy.concatenate([hull1.reshape(-1, self.ndims), numeric.overlapping(hull2.reshape(-1, 2*(self.ndims-1)), n=self.ndims).reshape(-1, self.ndims)])
       return types.frozenarray(hull, copy=False)
     return super().hull
+
+  def product(self, other):
+    return self.points1.product(self.points2.product(other))
 
 class SimplexGaussPoints(CoordsWeightsPoints):
   '''Gauss quadrature points on a simplex.'''
