@@ -44,6 +44,7 @@ efficiently combine common substructures.
 '''
 
 from . import types, points, util, function, parallel, numeric, matrix, transformseq, sparse
+from .pointsseq import PointsSequence
 import numpy, numbers, collections.abc, os, treelog as log, abc
 
 graphviz = os.environ.get('NUTILS_GRAPHVIZ')
@@ -71,12 +72,12 @@ class Sample(types.Singleton):
   points, and is typically used in combination with the "bezier" set.
   '''
 
-  __slots__ = 'nelems', 'transforms', 'points', 'npoints', 'ndims'
+  __slots__ = 'nelems', 'transforms', 'points', 'ndims'
   __cache__ = 'allcoords'
 
   @staticmethod
   @types.apply_annotations
-  def new(transforms:types.tuple[transformseq.stricttransforms], points:types.tuple[points.strictpoints], index:types.tuple[types.frozenarray[int]]=None):
+  def new(transforms:types.tuple[transformseq.stricttransforms], points:types.strict[PointsSequence], index:types.tuple[types.frozenarray[int]]=None):
     '''Create a new :class:`Sample`.
 
     Parameters
@@ -84,8 +85,8 @@ class Sample(types.Singleton):
     transforms : :class:`tuple` or transformation chains
         List of transformation chains leading to local coordinate systems that
         contain points.
-    points : :class:`tuple` of point sets
-        List of point sets matching ``transforms``.
+    points : :class:`~nutils.pointsseq.PointsSequence`
+        Points sequence.
     index : :class:`tuple` of integer arrays, optional
         List of indices matching ``transforms``, defining the order on which
         points show up in the evaluation. If absent the indices will be strict
@@ -104,20 +105,24 @@ class Sample(types.Singleton):
     transforms : :class:`tuple` or transformation chains
         List of transformation chains leading to local coordinate systems that
         contain points.
-    points : :class:`tuple` of point sets
-        List of point sets matching ``transforms``.
+    points : :class:`~nutils.pointsseq.PointsSequence`
+        Points sequence.
     '''
 
+  def __init__(self, transforms, points):
     assert len(transforms) >= 1
     assert all(len(t) == len(points) for t in transforms)
     self.nelems = len(transforms[0])
     self.transforms = transforms
     self.points = points
-    self.npoints = sum(p.npoints for p in points)
     self.ndims = transforms[0].fromdims
 
   def __repr__(self):
     return '{}.{}<{}D, {} elems, {} points>'.format(type(self).__module__, type(self).__qualname__, self.ndims, self.nelems, self.npoints)
+
+  @property
+  def npoints(self):
+    return self.points.npoints
 
   @property
   def index(self):
@@ -338,9 +343,7 @@ class Sample(types.Singleton):
 
     selection = types.frozenarray([ielem for ielem in range(self.nelems) if mask[self.getindex(ielem)].any()])
     transforms = tuple(transform[selection] for transform in self.transforms)
-    points = [self.points[ielem] for ielem in selection]
-    offset = numpy.cumsum([0] + [p.npoints for p in points])
-    return Sample.new(transforms, points)
+    return Sample.new(transforms, self.points.take(selection))
 
 strictsample = types.strict[Sample]
 
@@ -355,6 +358,14 @@ class _DefaultIndex(Sample):
 
   def getindex(self, ielem):
     return numpy.arange(self.offsets[ielem], self.offsets[ielem+1])
+
+  @property
+  def tri(self):
+    return self.points.tri
+
+  @property
+  def hull(self):
+    return self.points.hull
 
 class _CustomIndex(Sample):
 

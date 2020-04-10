@@ -21,6 +21,7 @@
 """The elementseq module."""
 
 from . import types, numeric, element, util
+from .pointsseq import PointsSequence
 import abc, collections.abc, itertools, operator, numpy
 
 class References(types.Singleton):
@@ -118,7 +119,7 @@ class References(types.Singleton):
   def getpoints(self, ischeme, degree):
     '''Return a sequence of :class:`~nutils.points.Points`.'''
 
-    return tuple(reference.getpoints(ischeme, degree) for reference in self)
+    return PointsSequence.from_iter((reference.getpoints(ischeme, degree) for reference in self), self.ndims)
 
   def __add__(self, other):
     '''Return ``self+other``.'''
@@ -267,7 +268,7 @@ class UniformReferences(References):
     return asreferences(self._reference.edge_refs, self.ndims-1) * len(self)
 
   def getpoints(self, ischeme, degree):
-    return (self._reference.getpoints(ischeme, degree),)*len(self)
+    return PointsSequence.uniform(self._reference.getpoints(ischeme, degree), len(self))
 
   def __mul__(self, other):
     if numeric.isint(other):
@@ -376,7 +377,7 @@ class ChainedReferences(References):
     return chain((item.edges for item in self._items), self.ndims-1)
 
   def getpoints(self, ischeme, degree):
-    return tuple(itertools.chain.from_iterable(item.getpoints(ischeme, degree) for item in self._items))
+    return util.sum(item.getpoints(ischeme, degree) for item in self._items)
 
   def unchain(self):
     yield from self._items
@@ -433,9 +434,6 @@ class RepeatedReferences(References):
   def edges(self):
     return self._parent.edges * self._count
 
-  def getpoints(self, ischeme, degree):
-    return self._parent.getpoints(ischeme, degree) * self._count
-
 class ProductReferences(References):
   '''A sequence of products of two other sequences.
 
@@ -466,6 +464,9 @@ class ProductReferences(References):
     for lref in self._left:
       for rref in self._right:
         yield lref * rref
+
+  def getpoints(self, ischeme, degree):
+    return self._left.getpoints(ischeme, degree).product(self._right.getpoints(ischeme, degree))
 
 class DerivedReferences(References):
   '''Abstract base class for references based on parent references.

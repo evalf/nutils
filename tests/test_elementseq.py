@@ -85,7 +85,7 @@ class Common:
     self.assertEqual(tuple(self.seq.edges), tuple(itertools.chain.from_iterable(ref.edge_refs for ref in self.check)))
 
   def test_getpoints(self):
-    self.assertEqual(self.seq.getpoints('bezier', 2), tuple(ref.getpoints('bezier', 2) for ref in self.check))
+    self.assertEqual(tuple(self.seq.getpoints('bezier', 2)), tuple(ref.getpoints('bezier', 2) for ref in self.check))
 
 class EmptyReferences(TestCase, Common):
   def setUp(self):

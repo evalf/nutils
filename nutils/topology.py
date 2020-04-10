@@ -36,6 +36,7 @@ out in element loops. For lower level operations topologies can be used as
 
 from . import element, elementseq, function, util, parallel, numeric, cache, transform, transformseq, warnings, matrix, types, points, _
 from .sample import Sample
+from .pointsseq import PointsSequence
 import numpy, functools, collections.abc, itertools, functools, operator, numbers, pathlib, abc, treelog as log
 
 _identity = lambda x: x
@@ -162,7 +163,7 @@ class Topology(types.Singleton):
   def sample(self, ischeme, degree):
     'Create sample.'
 
-    points = [ischeme(reference, degree) for reference in self.references] if callable(ischeme) \
+    points = PointsSequence.from_iter((ischeme(reference, degree) for reference in self.references), self.ndims) if callable(ischeme) \
         else self.references.getpoints(ischeme, degree)
     transforms = self.transforms,
     if len(self.transforms) == 0 or self.opposites != self.transforms:
@@ -583,6 +584,7 @@ class Topology(types.Singleton):
     transforms = self.transforms[uielems],
     if len(self.transforms) == 0 or self.opposites != self.transforms:
       transforms += self.opposites[uielems],
+    points_ = PointsSequence.from_iter(points_, self.ndims)
     return Sample.new(transforms, points_, index)
 
   def revolved(self, geom):
