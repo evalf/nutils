@@ -40,7 +40,7 @@ jobs:
         with:
           fail_ci_if_error: true
   test-old-numpy:
-    name: 'ubuntu-latest, Py3.6, Numpy 1.12'
+    name: 'ubuntu-latest, Py3.6, Numpy 1.15'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -52,7 +52,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --upgrade .[matrix_mkl,export_mpl,import_gmsh] numpy==1.12 coverage
+          python -m pip install --upgrade .[matrix_mkl,export_mpl,import_gmsh] numpy==1.15 coverage
       - name: Test
         run: |
           python -m coverage run -m unittest -b
