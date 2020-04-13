@@ -143,8 +143,8 @@ def ctxrange(name, nitems):
   '''fork and yield shared range-like counter with percentage-style logging'''
 
   rng = range(nitems) # shared range, must be created pre-fork
-  with fork(nitems):
-    yield treelog.iter.wrap(_pct(name, nitems), rng)
+  with fork(nitems), treelog.iter.wrap(_pct(name, nitems), rng) as wrprng:
+    yield wrprng
 
 def _pct(name, n):
   '''helper function for ctxrange'''
