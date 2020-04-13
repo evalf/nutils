@@ -1,0 +1,63 @@
+name: test
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - v*.x
+env:
+  OMP_NUM_THREADS: 1
+  VECLIB_MAXIMUM_THREADS: 1
+jobs:
+  test:
+    name: ${{ matrix.os }}, Py${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: [3.5, 3.6, 3.7, 3.8]
+        include:
+          - os: windows-latest
+            dep: 'psutil'
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v1
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade .[docs,matrix_scipy,matrix_mkl,export_mpl,import_gmsh] coverage ${{ matrix.dep }}
+      - name: Test
+        run: |
+          python -m coverage run -m unittest -b
+          python -m coverage xml
+      - name: Upload coverage
+        uses: codecov/codecov-action@v1
+        with:
+          fail_ci_if_error: true
+  test-old-numpy:
+    name: 'ubuntu-latest, Py3.6, Numpy 1.12'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Set up Python 3.6
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.6
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade .[matrix_mkl,export_mpl,import_gmsh] numpy==1.12 coverage
+      - name: Test
+        run: |
+          python -m coverage run -m unittest -b
+          python -m coverage xml
+      - name: Upload coverage
+        uses: codecov/codecov-action@v1
+        with:
+          fail_ci_if_error: true
