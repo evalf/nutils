@@ -1340,7 +1340,7 @@ class ApplyTransforms(Array):
       slices = {}
       isubsamples = {}
       for isubsample, subsample in enumerate(subsamples):
-        if not self.roots.isdisjoint(subsample.roots) and subsample.points is None:
+        if not self.roots.isdisjoint(subsample.roots) or subsample.points is None:
           return ApplyTransforms(tail, self._linear)
 
         from0 = 0
