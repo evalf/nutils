@@ -42,8 +42,139 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, types, numpy, numeric, cache, transform, transformseq, expression, warnings, _
+from . import util, types, numpy, numeric, cache, transform, transformseq, points, expression, warnings, _
 import sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log
+
+class Root(types.Singleton):
+  '''Root
+
+  A root can be seen as a real coordinate space of dimension :attr:`ndims`,
+  identified by a :attr:`name`. An :class:`Evaluable` lives on zero roots, in
+  which case the evaluable is constant, one root or multiple roots, in which
+  case all roots must have unique names and the combined coordinate space is
+  the product of all root coordinate spaces.
+
+  Every transform chain belongs to precisely one root and, if unempty, the
+  chain should start with a :class:`~nutils.transform.TransformItem` with
+  :attr:`~nutils.transform.TransformItem.todims` equal to :attr:`ndims`.
+
+  parameters
+  ----------
+  name : :class:`str`
+      The name of this root.
+  ndims : :class:`int`
+      The dimension of the space. Every transform chain beloning to this root
+      should start with a :class:`~nutils.transform.TransformItem` with
+      :attr:`~nutils.transform.TransformItem.todims` equal to ``ndims``.
+
+  attributes
+  ----------
+  name : :class:`str`
+      The name of this root.
+  ndims : :class:`int`
+      The dimension of the space.
+  '''
+
+  __slots__ = 'name', 'ndims'
+
+  @types.apply_annotations
+  def __init__(self, name:types.strictstr, ndims: types.strictint):
+    self.name = name
+    self.ndims = ndims
+
+  def __repr__(self):
+    return 'Root({},{})'.format(self.name, self.ndims)
+
+strictroot = types.strict[Root]
+
+class RevolutionRoot(Root):
+
+  @types.apply_annotations
+  def __init__(self, name:types.strictstr):
+    super().__init__(name, 1)
+
+class Subsample:
+  '''Subsample
+
+  Parameters
+  ----------
+  roots : :class:`tuple` of :class:`Root`
+  transforms : :class:`tuple` of transform chains
+  points : :class:`~nutils.points.Points`
+  ielem : :class:`int`, optional
+
+  Attributes
+  ----------
+  roots : :class:`tuple` of :class:`Root`
+  transforms : :class:`tuple` of :class:`~nutils.transformseq.Transforms`
+  points : :class:`~nutils.points.Points`
+  ielem : :class:`int` or ``None``
+  '''
+
+  __slots__ = 'roots', 'transforms', 'points', 'ielem'
+
+  def __init__(self, *, roots: types.tuple[strictroot], transforms: types.tuple[transformseq.stricttransforms], points: points.strictpoints, ielem: types.strictint = None):
+    self.roots = roots
+    self.transforms = transforms
+    self.points = points
+    self.ielem = ielem
+
+  @property
+  def npoints(self):
+    return self.points.npoints
+
+  @property
+  def ndims(self):
+    return builtins.sum(root.ndims for root in self.roots)
+
+  @property
+  def ndimsmanifold(self):
+    return self.points.ndimsmanifold
+
+  @property
+  def ndimsnormal(self):
+    return self.ndims - self.ndimsmanifold
+
+class SubsampleMeta:
+  '''Subsample meta information
+
+  Parameters
+  ----------
+  roots : :class:`tuple` of :class:`Root`
+  ndimsnormal : :class:`int`
+  transforms : :class:`tuple` of :class:`~nutils.transformseq.Transforms`, optional
+  points : :class:`~nutils.points.Points`, options
+      The points object if invariant, otherwise ``None``.
+  ndimspoints : :class:`int`
+      The dimension of the points object if invariant, otherwise ``None``.
+
+  Attributes
+  ----------
+  roots : :class:`tuple` of :class:`Root`
+  ndimsnormal : :class:`int`
+  transforms : :class:`tuple` of :class:`~nutils.transformseq.Transforms` or ``None``
+  points : :class:`~nutils.points.Points`, options
+      The points object if invariant, otherwise ``None``.
+  ndimspoints : :class:`int`
+      The dimension of the points object if invariant, otherwise ``None``.
+  '''
+
+  __slots__ = 'roots', 'ndimsnormal', 'transforms', 'points', 'ndimspoints'
+
+  def __init__(self, *, roots:types.tuple[strictroot], ndimsnormal:types.strictint, transforms:types.tuple[transformseq.stricttransforms]=None, points:points.strictpoints=None, ndimspoints:types.strictint=None):
+    self.roots = roots
+    self.ndimsnormal = ndimsnormal
+    self.transforms = transforms
+    self.points = points
+    self.ndimspoints = ndimspoints
+
+  @property
+  def ndims(self):
+    return builtins.sum(root.ndims for root in self.roots)
+
+  @property
+  def ndimsmanifold(self):
+    return self.ndims - self.ndimsnormal
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
 
@@ -80,7 +211,7 @@ class Evaluable(types.Singleton):
   'Base class'
 
   __slots__ = '__args',
-  __cache__ = 'dependencies', 'ordereddeps', 'dependencytree', 'simplified', 'prepare_eval', 'optimized_for_numpy'
+  __cache__ = 'dependencies', 'ordereddeps', 'dependencytree', 'simplified', 'prepare_eval', 'optimized_for_numpy', 'roots'
 
   @types.apply_annotations
   def __init__(self, args:types.tuple[strictevaluable]):
@@ -99,14 +230,18 @@ class Evaluable(types.Singleton):
     return frozenset(deps)
 
   @property
+  def roots(self):
+    return frozenset(root for arg in self.__args for root in arg.roots)
+
+  @property
   def isconstant(self):
-    return EVALARGS not in self.dependencies
+    return SUBSAMPLES not in self.dependencies and EVALARGS not in self.dependencies
 
   @property
   def ordereddeps(self):
     '''collection of all function arguments such that the arguments to
     dependencies[i] can be found in dependencies[:i]'''
-    return tuple([EVALARGS] + sorted(self.dependencies - {EVALARGS}, key=lambda f: len(f.dependencies)))
+    return tuple([SUBSAMPLES, EVALARGS] + sorted(self.dependencies - {SUBSAMPLES, EVALARGS}, key=lambda f: len(f.dependencies)))
 
   @property
   def dependencytree(self):
@@ -118,7 +253,7 @@ class Evaluable(types.Singleton):
 
   @property
   def serialized(self):
-    return zip(self.ordereddeps[1:]+(self,), self.dependencytree[1:])
+    return zip(self.ordereddeps[2:]+(self,), self.dependencytree[2:])
 
   def asciitree(self, richoutput=False):
     'string representation'
@@ -138,7 +273,8 @@ class Evaluable(types.Singleton):
       if prefix:
         s = prefix[:-2] + select[bridge.index(prefix[-2:])] + s # locally change prefix into selector
       if ordereddeps[n] is not None:
-        s += ' = ' + ordereddeps[n]._asciitree_str()
+        dep = ordereddeps[n]
+        s += ' = {} {}'.format(dep._asciitree_str(), 'CONST' if dep.isconstant else ','.join(sorted(tuple(map('{0.name}:{0.ndims}'.format, dep.roots)))))
         pool.extend((prefix + bridge[i==0], arg) for i, arg in enumerate(reversed(self.dependencytree[n])))
         ordereddeps[n] = None
       lines.append(s)
@@ -150,8 +286,8 @@ class Evaluable(types.Singleton):
   def __str__(self):
     return self.__class__.__name__
 
-  def eval(self, **evalargs):
-    values = [evalargs]
+  def eval(self, *subsamples, **evalargs):
+    values = [subsamples, evalargs]
     for op, indices in self.serialized:
       try:
         args = [values[i] for i in indices]
@@ -174,7 +310,7 @@ class Evaluable(types.Singleton):
     lines = []
     lines.append('digraph {')
     lines.append('graph [dpi=72];')
-    lines.extend('{0:} [label="{0:}. {1:}"];'.format(i, name._asciitree_str()) for i, name in enumerate(self.ordereddeps+(self,)))
+    lines.extend('{0:} [label="{0:}. {1:} {2:}"];'.format(i, name._asciitree_str(), 'CONST' if name.isconstant else ','.join(sorted(tuple(map('{0.name}:{0.ndims}'.format, name.roots))))) for i, name in enumerate(self.ordereddeps+(self,)))
     lines.extend('{} -> {};'.format(j, i) for i, indices in enumerate(self.dependencytree) for j in indices)
     lines.append('}')
 
@@ -187,7 +323,7 @@ class Evaluable(types.Singleton):
   def stackstr(self, nlines=-1):
     'print stack'
 
-    lines = ['  %0 = EVALARGS']
+    lines = ['  %0 = SUBSAMPLES', '  %1 = EVALARGS']
     for op, indices in self.serialized:
       args = ['%{}'.format(idx) for idx in indices]
       try:
@@ -238,18 +374,15 @@ class EvaluationError(Exception):
 
     return '\n{} --> {}: {}'.format(self.evaluable.stackstr(nlines=len(self.values)), self.etype.__name__, self.evalue)
 
-EVALARGS = Evaluable(args=())
-
-class Points(Evaluable):
-  __slots__ = ()
+class SUBSAMPLES(Evaluable):
   def __init__(self):
-    super().__init__(args=[EVALARGS])
-  def evalf(self, evalargs):
-    points = evalargs['_points']
-    assert numeric.isarray(points) and points.ndim == 2
-    return types.frozenarray(points)
+    super().__init__(args=())
+SUBSAMPLES = SUBSAMPLES()
 
-POINTS = Points()
+class EVALARGS(Evaluable):
+  def __init__(self):
+    super().__init__(args=())
+EVALARGS = EVALARGS()
 
 class Tuple(Evaluable):
 
@@ -316,102 +449,128 @@ class TransformChain(Evaluable):
   Evaluates to a tuple of :class:`nutils.transform.TransformItem` objects.
   '''
 
-  __slots__ = 'todims',
+  __slots__ = 'ordered_roots', 'todims', 'fromdims'
 
   @types.apply_annotations
-  def __init__(self, args:types.tuple[strictevaluable], todims:types.strictint=None):
+  def __init__(self, roots:types.tuple[strictroot], args:types.tuple[strictevaluable], todims:types.strictint=None, fromdims:types.strictint=None):
+    self.ordered_roots = roots
     self.todims = todims
+    self.fromdims = fromdims
     super().__init__(args)
+
+  @property
+  def roots(self):
+    return frozenset(self.ordered_roots)
 
 class SelectChain(TransformChain):
 
   __slots__ = 'n'
 
   @types.apply_annotations
-  def __init__(self, n:types.strictint=0):
+  def __init__(self, roots:types.tuple[strictroot], n:types.strictint=0):
     self.n = n
-    super().__init__(args=[EVALARGS])
+    super().__init__(roots, args=[SUBSAMPLES], todims=builtins.sum(root.ndims for root in roots))
 
-  def evalf(self, evalargs):
-    trans = evalargs['_transforms'][self.n]
-    assert isinstance(trans, tuple)
-    return trans
+  def evalf(self, subsamples):
+    trans = []
+    subsamplechains = {}
+    for root in self.ordered_roots:
+      for isubsample, subsample in enumerate(subsamples):
+        if root in subsample.roots:
+          if isubsample in subsamplechains:
+            chains = subsamplechains[isubsample]
+          else:
+            subsamplechains[isubsample] = chains = subsample.transforms[self.n if len(subsample.transforms) > 1 else 0][subsample.ielem]
+          trans.append(chains[subsample.roots.index(root)])
+          break
+      else:
+        raise ValueError('no such root: {!r}'.format(root))
+    return tuple(trans)
 
   @util.positional_only
   def prepare_eval(self, *, opposite=False, kwargs=...):
-    return SelectChain(1-self.n) if opposite else self
+    return SelectChain(self.ordered_roots, 1) if opposite else SelectChain(self.ordered_roots, 0)
 
-TRANS = SelectChain()
+class EmptyTransformChain(TransformChain):
 
-class PopHead(TransformChain):
-
-  __slots__ = 'trans',
+  __slots__ = ()
 
   @types.apply_annotations
-  def __init__(self, todims:types.strictint, trans=TRANS):
-    self.trans = trans
-    super().__init__(args=[self.trans], todims=todims)
+  def __init__(self, roots:types.tuple[strictroot], ndims=types.strictint):
+    super().__init__(roots=roots, args=[], todims=ndims, fromdims=ndims)
 
-  def evalf(self, trans):
-    assert trans[0].fromdims == self.todims
-    return trans[1:]
-
-class SelectBifurcation(TransformChain):
-
-  __slots__ = 'trans', 'first'
-
-  @types.apply_annotations
-  def __init__(self, trans:strictevaluable, first:bool, todims:types.strictint=None):
-    self.trans = trans
-    self.first = first
-    super().__init__(args=[trans], todims=todims)
-
-  def evalf(self, trans):
-    assert isinstance(trans, tuple)
-    bf = trans[0]
-    assert isinstance(bf, transform.Bifurcate)
-    selected = bf.trans1 if self.first else bf.trans2
-    return selected + trans[1:]
-
-class TransformChainFromTuple(TransformChain):
-
-  __slots__ = 'index',
-
-  def __init__(self, values:strictevaluable, index:types.strictint, todims:types.strictint=None):
-    assert 0 <= index < len(values)
-    self.index = index
-    super().__init__(args=[values], todims=todims)
-
-  def evalf(self, values):
-    return values[self.index]
+  def evalf(self):
+    return ((),)*len(self.roots)
 
 class TransformsIndexWithTail(Evaluable):
 
-  __slots__ = '_transforms'
+  __slots__ = 'transforms', 'ndims', 'trans'
 
   @types.apply_annotations
-  def __init__(self, transforms, trans:types.strict[TransformChain]):
-    self._transforms = transforms
+  def __init__(self, transforms:transformseq.stricttransforms, ndims:types.strictint, trans:types.strict[TransformChain]):
+    self.transforms = transforms
+    self.ndims = ndims
+    self.trans = trans
     super().__init__(args=[trans])
 
-  def evalf(self, trans):
-    index, tail = self._transforms.index_with_tail(trans)
-    return numpy.array(index)[None], tail
+  @property
+  def roots(self):
+    return self.trans.roots
+
+  def evalf(self, chains):
+    index, tails = self.transforms.index_with_tail(chains)
+    tailtodims = tuple(t[0].todims if t else c[-1].fromdims for t, c in zip(tails, chains))
+    assert builtins.sum(tailtodims) == self.ndims
+    return index, tails
 
   def __len__(self):
-    return 2
+    return 3
 
   @property
   def index(self):
-    return ArrayFromTuple(self, index=0, shape=(), dtype=int)
+    return IndexFromTransformsIndexWithTail(self)
 
   @property
   def tail(self):
-    return TransformChainFromTuple(self, index=1, todims=self._transforms.fromdims)
+    return TransformChainFromTransformsIndexWithTail(self)
+
+  @property
+  def linear(self):
+    return TransformsBasisFromSequence(self.trans.ordered_roots, self.transforms, self.index, self.ndims)[:,:self.ndims]
 
   def __iter__(self):
     yield self.index
     yield self.tail
+    yield self.linear
+
+class TransformChainFromTransformsIndexWithTail(TransformChain):
+
+  __slots__ = '_indextail'
+
+  @types.apply_annotations
+  def __init__(self, indextail:types.strict[TransformsIndexWithTail]):
+    self._indextail = indextail
+    super().__init__(roots=indextail.trans.ordered_roots, args=[indextail], todims=indextail.ndims)
+
+  def evalf(self, indextail):
+    index, tail = indextail
+    return tail
+
+  @util.positional_only
+  def prepare_eval(self, *, kwargs=...):
+    self = TransformChainFromTransformsIndexWithTail(self._indextail.prepare_eval(**kwargs))
+    if 'subsamples' not in kwargs:
+      return self
+    subsamples = kwargs['subsamples']
+    trans = self._indextail.trans
+    if isinstance(trans, SelectChain):
+      for isubsample, subsample in enumerate(subsamples):
+        if trans.ordered_roots == subsample.roots:
+          if self._indextail.transforms == subsample.transforms[trans.n if len(subsample.transforms) > 1 else 0]:
+            return EmptyTransformChain(roots=self.ordered_roots, ndims=self.todims)
+          else:
+            break
+    return self
 
 # ARRAYFUNC
 #
@@ -620,14 +779,44 @@ class Array(Evaluable):
   @property
   def optimized_for_numpy(self):
     if self.isconstant:
-      const, = self.eval()
-      return Constant(const)
+      const = self.eval()
+      return Constant(const[0]) if const.shape[0] == 1 else ConstantPoints(const)
     return super().optimized_for_numpy
 
   def _derivative(self, var, seen):
     if self.dtype in (bool, int) or var not in self.dependencies:
       return Zeros(self.shape + var.shape, dtype=self.dtype)
     raise NotImplementedError('derivative not defined for {}'.format(self.__class__.__name__))
+
+class GramSchmidt(Array):
+
+  __slots__ = '_arg'
+  __cache__ = 'simplified'
+
+  @types.apply_annotations
+  def __init__(self, arg:asarray):
+    self._arg = arg
+    super().__init__(args=[arg], shape=arg.shape, dtype=float)
+
+  def evalf(self, arg):
+    arg = arg.copy()
+    numeric.gramschmidt(arg)
+    return arg
+
+  def _derivative(self, var, seen):
+    if not iszero(derivative(self._arg, var, seen)):
+      raise NotImplementedError
+    return zeros(self.shape + var.shape)
+
+  @property
+  def simplified(self):
+    arg = self._arg.simplified
+    if arg == eye(self.shape[-1]):
+      return arg
+    elif self.shape[-2:] == (1,1):
+      return sign(arg).simplified
+    else:
+      return GramSchmidt(arg)
 
 class Normal(Array):
   'normal'
@@ -676,16 +865,15 @@ class Constant(Array):
     if not self.value.any():
       return zeros_like(self)
     # Find and replace invariant axes with InsertAxis.
-    value = self.value
+    value = numpy.asarray(self.value)
     invariant = []
     for i in reversed(range(self.ndim)):
       # Since `self.value.any()` is False for arrays with a zero-length axis,
-      # we can arrive here only if all axes have at least length one, hence the
-      # following statement should work.
-      first = numeric.get(value, i, 0)
-      if all(numpy.equal(first, numeric.get(value, i, j)).all() for j in range(1, value.shape[i])):
+      # we can arrive here only if all axes have at least length one, hence
+      # `value[...,0,...]` should work.
+      if numpy.equal(value, value[(slice(None),)*i+(0,_)]).all():
         invariant.append(i)
-        value = first
+        value = value[(slice(None),)*i+(0,)]
     if invariant:
       value = Constant(value)
       for i in reversed(invariant):
@@ -695,6 +883,12 @@ class Constant(Array):
 
   def evalf(self):
     return self.value[_]
+
+  def _asciitree_str(self):
+    if self.size < 10:
+      return '{} {}'.format(super()._asciitree_str(), self.value.tolist())
+    else:
+      return super()._asciitree_str()
 
   @property
   def _isunit(self):
@@ -755,6 +949,18 @@ class Constant(Array):
   def _determinant(self):
     # NOTE: numpy <= 1.12 cannot compute the determinant of an array with shape [...,0,0]
     return Constant(numpy.linalg.det(self.value) if self.value.shape[-1] else numpy.ones(self.value.shape[:-2]))
+
+class ConstantPoints(Array):
+
+  __slots__ = 'value'
+
+  @types.apply_annotations
+  def __init__(self, value:types.frozenarray):
+    self.value = value
+    super().__init__(args=[], shape=value.shape[1:], dtype=value.dtype)
+
+  def evalf(self):
+    return self.value
 
 class DofMap(Array):
 
@@ -1088,33 +1294,190 @@ class Product(Array):
 
 class ApplyTransforms(Array):
 
-  __slots__ = 'trans',
+  __slots__ = '_tail', '_linear'
 
   @types.apply_annotations
-  def __init__(self, trans:types.strict[TransformChain], points:strictevaluable=POINTS):
-    self.trans = trans
-    super().__init__(args=[points, trans], shape=[trans.todims], dtype=float)
+  def __init__(self, tail:types.strict[TransformChain], linear:asarray):
+    assert linear.ndim == 2
+    assert tail.todims == linear.shape[1]
+    self._tail = tail
+    self._linear = linear
+    super().__init__(args=[SUBSAMPLES, tail], shape=[tail.todims], dtype=float)
 
-  def evalf(self, points, chain):
-    return transform.apply(chain, points)
+  @property
+  def roots(self):
+    return self._tail.roots
+
+  def evalf(self, subsamples, chains):
+    slices = {}
+    isubsamples = {}
+    for isubsample, subsample in enumerate(subsamples):
+      if self.roots.isdisjoint(subsample.roots):
+        continue
+      from0 = 0
+      for root, chain in zip(subsample.roots, subsample.transforms[0][subsample.ielem]):
+        isubsamples[root] = isubsample
+        from1 = from0 + (chain[-1].fromdims if chain else root.ndims)
+        slices[root] = slice(from0, from1)
+        from0 = from1
+
+    result = numpy.zeros((*(subsample.npoints for subsample in subsamples), self.shape[0]), dtype=float)
+    to0 = 0
+    for root, chain in zip(self._tail.ordered_roots, chains):
+      to1 = to0 + (chain[0].todims if chain else slices[root].stop - slices[root].start)
+      isubsample = isubsamples[root]
+      expand = tuple(slice(None) if i == isubsample else numpy.newaxis for i in range(len(subsamples)))
+      result[...,to0:to1] = transform.apply(chain, subsamples[isubsample].points.coords[:,slices[root]])[expand]
+      to0 = to1
+    assert to0 == self.shape[0]
+    return result.reshape((-1, self.shape[0]))
 
   def _derivative(self, var, seen):
-    if isinstance(var, LocalCoords) and len(var) > 0:
-      return LinearFrom(self.trans, len(var))
+    if isinstance(var, RootCoords) and var.root in self.roots:
+      if self._linear.shape[0] != self._linear.shape[1]:
+        raise NotImplementedError('transform contains updims')
+      to0 = 0
+      for root in self._tail.ordered_roots:
+        to1 = to0 + root.ndims
+        if root == var.root:
+          return Inverse(self._linear)[:,to0:to1]
+        to0 = to1
+      raise Exception
     return zeros(self.shape+var.shape)
 
-class LinearFrom(Array):
+  @util.positional_only
+  def prepare_eval(self, *, kwargs=...):
+    tail = self._tail.prepare_eval(**kwargs)
+    if 'subsamples' not in kwargs:
+      return ApplyTransforms(tail, self._linear)
+    subsamples = kwargs['subsamples']
 
-  __slots__ = ()
+    if isinstance(tail, EmptyTransformChain) or isinstance(tail, SelectChain) and any(subsample.roots == tail.ordered_roots and subsample.transforms == transformseq.IdentifierTransforms for subsample in subsamples):
+      slices = {}
+      isubsamples = {}
+      for isubsample, subsample in enumerate(subsamples):
+        if not self.roots.isdisjoint(subsample.roots) or subsample.points is None:
+          return ApplyTransforms(tail, self._linear)
+
+        from0 = 0
+        for root in subsample.roots:
+          isubsamples[root] = isubsample
+          from1 = from0 + root.ndims
+          slices[root] = slice(from0, from1)
+          from0 = from1
+
+      result = numpy.zeros((*(subsample.points.npoints for subsample in subsamples), self.shape[0]), dtype=float)
+      to0 = 0
+      for root in tail.ordered_roots:
+        to1 = to0 + slices[root].stop - slices[root].start
+        isubsample = isubsamples[root]
+        expand = tuple(slice(None) if i == isubsample else numpy.newaxis for i in range(len(subsamples)))
+        result[...,to0:to1] = subsamples[isubsample].points.coords[:,slices[root]][expand]
+        to0 = to1
+      assert to0 == self.shape[0]
+      return ConstantPoints(result.reshape((-1, self.shape[0])))
+
+    return ApplyTransforms(tail, self._linear)
+
+class TransformsBasisFromChains(Array):
+
+  __slots__ = '_todims', '_fromdims'
 
   @types.apply_annotations
-  def __init__(self, trans:types.strict[TransformChain], fromdims:types.strictint):
-    super().__init__(args=[trans], shape=(trans.todims, fromdims), dtype=float)
+  def __init__(self, chains:types.strict[TransformChain], fromdims:types.strictint=None):
+    self._todims = tuple(root.ndims for root in chains.ordered_roots)
+    self._fromdims = fromdims
+    super().__init__(args=[chains], shape=(builtins.sum(root.ndims for root in chains.roots),)*2, dtype=float)
 
-  def evalf(self, chain):
-    todims, fromdims = self.shape
-    assert not chain or chain[0].todims == todims
-    return transform.linearfrom(chain, fromdims)[_]
+  def evalf(self, chains):
+    ndims = self.shape[0]
+    basis = numpy.zeros((ndims, ndims), float)
+    ismanifold = numpy.zeros(ndims, dtype=bool)
+    i = 0
+    for chain, todims in zip(chains, self._todims):
+      basis[i:i+todims,i:i+todims] = transform.linearfrom(chain, todims)
+      ismanifold[i:i+chain[-1].fromdims] = True
+      i += todims
+    if self._fromdims is not None:
+      assert ismanifold.sum() == self._fromdims
+    return numpy.concatenate([basis[:,ismanifold], basis[:,~ismanifold]], axis=1)[_]
+
+class TransformsBasisFromSequence(Array):
+
+  __slots__ = '_roots', '_transforms', '_ielem', '_fromdims'
+  __cache__ = 'simplified'
+
+  @types.apply_annotations
+  def __init__(self, roots:types.tuple[strictroot], transforms:transformseq.stricttransforms, ielem:asarray, fromdims:types.strictint=None):
+    self._roots = roots
+    self._transforms = transforms
+    self._ielem = ielem
+    self._fromdims = fromdims
+    super().__init__(args=[ielem], shape=(builtins.sum(root.ndims for root in roots),)*2, dtype=float)
+
+  @property
+  def roots(self):
+    return frozenset(self._roots)
+
+  def evalf(self, ielem):
+    ielem, = ielem
+    basis, ismanifold = self._transforms.basis(ielem)
+    if self._fromdims is not None:
+      assert ismanifold.sum() == self._fromdims
+    return numpy.concatenate([basis[:,ismanifold], basis[:,~ismanifold]], axis=1)[_]
+
+  @property
+  def simplified(self):
+    ielem = 0 if self._transforms.basis_is_uniform else self._ielem.simplified
+    return TransformsBasisFromSequence(self._roots, self._transforms, ielem, self._fromdims)
+
+class PointsBasis(Array):
+
+  __slots__ = '_isubsample', '_roots', '_ndims'
+
+  @types.apply_annotations
+  def __init__(self, isubsample:types.strictint, roots:types.tuple[strictroot], ndims:types.strictint):
+    self._isubsample = isubsample
+    self._roots = roots
+    self._ndims = ndims
+    super().__init__(args=[SUBSAMPLES], shape=[ndims, ndims], dtype=float)
+
+  def evalf(self, subsamples):
+    points = subsamples[self._isubsample].points
+    npointsbefore = functools.reduce(operator.mul, (s.points.npoints for s in subsamples[:self._isubsample]), 1)
+    npointsafter = functools.reduce(operator.mul, (s.points.npoints for s in subsamples[self._isubsample+1:]), 1)
+    basis = numpy.zeros((npointsbefore, points.npoints, npointsafter, self._ndims, self._ndims), dtype=float)
+    basis[:,:,:,:points.ndims,:points.ndims] = points.basis[_,:,_]
+    basis[:,:,:,points.ndims:,points.ndims:] = numpy.eye(self._ndims-points.ndims)[_]
+    return basis.reshape((npointsbefore*points.npoints*npointsafter, self._ndims, self._ndims))
+
+class PointsWeights(Array):
+
+  def __init__(self):
+    super().__init__(args=[SUBSAMPLES], shape=(), dtype=float)
+
+  def evalf(self, subsamples):
+    weights = numpy.ones((1,))
+    for subsample in reversed(subsamples):
+      weights = weights[...,numpy.newaxis] * subsample.points.weights
+    return weights.ravel()
+
+  @util.positional_only
+  def prepare_eval(self, *, subsamples, kwargs=...):
+    if all(subsample.points is not None for subsample in subsamples):
+      return ConstantPoints(self.evalf(subsamples))
+    else:
+      return self
+
+class DotWeights(Array):
+
+  @types.apply_annotations
+  def __init__(self, value:asarray, weights:asarray):
+    assert weights.ndim == 0
+    super().__init__(args=[value, weights], shape=value.shape, dtype=float)
+
+  def evalf(self, value, weights):
+    return numpy.einsum('a...,a->...', value, weights)[_]
 
 class Inverse(Array):
   '''
@@ -1138,6 +1501,8 @@ class Inverse(Array):
     if retval is not None:
       assert retval.shape == self.shape
       return retval.simplified
+    if func.shape[-1] == func.shape[-2] == 1:
+      return (1 / func).simplified
     return Inverse(func)
 
   def evalf(self, arr):
@@ -1325,6 +1690,27 @@ class Concatenate(Array):
     if axis != self.axis:
       return Concatenate([Unravel(func, axis, shape) for func in self.funcs], self.axis+(self.axis>axis))
 
+  def _squareblockdiagonal(self):
+    if self.axis < self.ndim-2:
+      return None, None
+    sizes = tuple(func1.shape[self.axis] for func1 in self.funcs)
+    axis2 = self.ndim-1 if self.axis == self.ndim-2 else self.ndim-2
+    if not all(isinstance(func1, Concatenate) and func1.axis == axis2 and tuple(func2.shape[axis2] for func2 in func1.funcs) == sizes and all(iszero(func2) for j, func2 in enumerate(func1.funcs) if i != j) for i, func1 in enumerate(self.funcs)):
+      return None, None
+    return tuple(func1.funcs[i] for i, func1 in enumerate(self.funcs)), sizes
+
+  def _inverse(self):
+    blocks, sizes = self._squareblockdiagonal()
+    if blocks is None:
+      return
+    return concatenate([concatenate([inverse(b) if i == j else zeros((*self.shape[:-2], n, n), self.dtype) for j, n in enumerate(sizes)], self.ndim-2) for i, b in enumerate(blocks)], self.ndim-1)
+
+  def _determinant(self):
+    blocks, sizes = self._squareblockdiagonal()
+    if blocks is None:
+      return
+    return functools.reduce(operator.mul, map(determinant, blocks))
+
 class Interpolate(Array):
   'interpolate uniformly spaced data; stepwise for now'
 
@@ -1363,6 +1749,8 @@ class Determinant(Array):
     if retval is not None:
       assert retval.shape == self.shape
       return retval.simplified
+    if func.shape[-1] == func.shape[-2] == 1:
+      return func[...,0,0]
     return Determinant(func)
 
   def evalf(self, arr):
@@ -1427,8 +1815,8 @@ class Multiply(Array):
       mask[axis] &= 1
       func2 = func2.func
     if all(mask): # should always be the case after simplify
-      return Einsum(func1, func2, mask)
-    return Multiply([func1, func2])
+      return Einsum(func1, func2, mask).optimized_for_numpy
+    return Multiply([func1.optimized_for_numpy, func2.optimized_for_numpy])
 
   def evalf(self, arr1, arr2):
     return arr1 * arr2
@@ -1639,6 +2027,25 @@ class Einsum(Array):
   def evalf(self, arr1, arr2):
     return numpy.core.multiarray.c_einsum(self._einsumfmt, arr1, arr2)
 
+  def _asciitree_str(self):
+    return '{} {}'.format(super()._asciitree_str(), self._einsumfmt)
+
+  @property
+  def optimized_for_numpy(self):
+    func1 = self.func1.optimized_for_numpy
+    func2 = self.func2.optimized_for_numpy
+    if func1.isconstant and isinstance(func2, Einsum) and (func2.func1.isconstant or func2.func2.isconstant) and not self.mask and not func2.mask:
+      if func2.func1.isconstant:
+        return Einsum(func2.func2, Einsum(func1, func2.func1, ()).optimized_for_numpy, ())
+      else:
+        return Einsum(func2.func1, Einsum(func1, func2.func2, ()).optimized_for_numpy, ())
+    elif func2.isconstant and isinstance(func1, Einsum) and (func1.func1.isconstant or func1.func2.isconstant) and not self.mask and not func1.mask:
+      if func1.func2.isconstant:
+        return Einsum(func1.func2, Einsum(func2, func1.func1, ()).optimized_for_numpy, ())
+      else:
+        return Einsum(func1.func1, Einsum(func2, func1.func2, ()).optimized_for_numpy, ())
+    return super().optimized_for_numpy
+
 class Sum(Array):
 
   __slots__ = 'axis', 'func'
@@ -1670,7 +2077,7 @@ class Sum(Array):
       axis = axes[self.axis]
       if mask[axis] == 3:
         mask[axis] = 0
-        return Einsum(func.func1, func.func2, mask)
+        return Einsum(func.func1, func.func2, mask).optimized_for_numpy
     return Sum(func, self.axis)
 
   def evalf(self, arr):
@@ -2185,6 +2592,48 @@ class ArrayFromTuple(Array):
     assert isinstance(arrays, tuple)
     return arrays[self.index]
 
+class IndexFromTransformsIndexWithTail(Array):
+
+  __slots__ = '_indextail'
+
+  def __init__(self, indextail:types.strict[TransformsIndexWithTail]):
+    self._indextail = indextail
+    super().__init__(args=[indextail], shape=(), dtype=int)
+
+  def evalf(self, indextail):
+    index, tail = indextail
+    return numpy.array([index], int)
+
+  @util.positional_only
+  def prepare_eval(self, *, kwargs=...):
+    self = IndexFromTransformsIndexWithTail(self._indextail.prepare_eval(**kwargs))
+    if 'subsamples' not in kwargs:
+      return self
+    subsamples = kwargs['subsamples']
+    trans = self._indextail.trans
+    if isinstance(trans, SelectChain):
+      for isubsample, subsample in enumerate(subsamples):
+        if trans.ordered_roots == subsample.roots and self._indextail.transforms == subsample.transforms[trans.n if len(subsample.transforms) > 1 else 0]:
+          return IndexFromSubsample(isubsample, trans.ordered_roots)
+    return self
+
+class IndexFromSubsample(Array):
+
+  __slots__ = '_isubsample', '_roots'
+
+  @types.apply_annotations
+  def __init__(self, isubsample:types.strictint, roots:types.tuple[strictroot]):
+    self._isubsample = isubsample
+    self._roots = roots
+    super().__init__(args=[SUBSAMPLES], shape=(), dtype=int)
+
+  @property
+  def roots(self):
+    return frozenset(self._roots)
+
+  def evalf(self, subsamples):
+    return numpy.array([subsamples[self._isubsample].ielem], int)
+
 class Zeros(Array):
   'zero'
 
@@ -2644,14 +3093,18 @@ class Argument(DerivativeTargetBase):
       ``0``.
   '''
 
-  __slots__ = '_name', '_nderiv'
+  __slots__ = '_name', '_derivs'
   __cache__ = 'prepare_eval'
 
   @types.apply_annotations
-  def __init__(self, name:types.strictstr, shape:asshape, nderiv:types.strictint=0):
+  def __init__(self, name:types.strictstr, shape:asshape, derivs:types.tuple[types.strict[DerivativeTargetBase]]=()):
     self._name = name
-    self._nderiv = nderiv
+    self._derivs = derivs
     super().__init__(args=[EVALARGS], shape=shape, dtype=float)
+
+  @property
+  def _nderiv(self):
+    return len(self._derivs)
 
   def evalf(self, evalargs):
     assert self._nderiv == 0
@@ -2672,8 +3125,8 @@ class Argument(DerivativeTargetBase):
       for i, sh in enumerate(self.shape):
         result = diagonalize(result, i, i+self.ndim)
       return result
-    elif isinstance(var, LocalCoords):
-      return Argument(self._name, self.shape+var.shape, self._nderiv+1)
+    elif isinstance(var, RootCoords):
+      return Argument(self._name, self.shape+var.shape, self._derivs+(var,))
     else:
       return zeros(self.shape+var.shape)
 
@@ -2684,31 +3137,35 @@ class Argument(DerivativeTargetBase):
   def prepare_eval(self, kwargs=...):
     return zeros_like(self) if self._nderiv > 0 else self
 
-class LocalCoords(DerivativeTargetBase):
-  'local coords derivative target'
+class RootCoords(DerivativeTargetBase):
+  'root coords derivative target'
 
-  __slots__ = ()
+  __slots__ = 'root'
 
   @types.apply_annotations
-  def __init__(self, ndims:types.strictint):
-    super().__init__(args=[], shape=[ndims], dtype=float)
+  def __init__(self, root:strictroot):
+    self.root = root
+    super().__init__(args=[], shape=[root.ndims], dtype=float)
+
+  @property
+  def roots(self):
+    return frozenset((self.root,))
 
   def evalf(self):
-    raise Exception('LocalCoords should not be evaluated')
+    raise Exception('RootCoords should not be evaluated')
 
 class DelayedJacobian(Array):
-  '''
-  Placeholder for :func:`jacobian` until the dimension of the
-  :class:`nutils.topology.Topology` where this functions is being evaluated is
-  known.  The replacing is carried out by :meth:`Evaluable.prepare_eval`.
-  '''
+  '''Jacobian of a geometry.'''
 
-  __slots__ = '_geom', '_derivativestack'
+  __slots__ = '_geom', '_ndimsmanifold', '_derivativestack'
   __cache__ = 'prepare_eval'
 
   @types.apply_annotations
-  def __init__(self, geom:asarray, *derivativestack):
+  def __init__(self, geom:asarray, ndimsmanifold, *derivativestack:types.tuple[types.strict[DerivativeTargetBase]]):
+    if geom.ndim != 1:
+      raise ValueError('the geometry should have dimension 1 but got {}'.format(geom.ndim))
     self._geom = geom
+    self._ndimsmanifold = ndimsmanifold
     self._derivativestack = derivativestack
     super().__init__(args=[geom], shape=[n for var in derivativestack for n in var.shape], dtype=float)
 
@@ -2718,12 +3175,94 @@ class DelayedJacobian(Array):
   def _derivative(self, var, seen):
     if iszero(derivative(self._geom, var, seen)):
       return zeros(self.shape + var.shape)
-    return DelayedJacobian(self._geom, *self._derivativestack, var)
+    return DelayedJacobian(self._geom, self._ndimsmanifold, *self._derivativestack, var)
 
   @util.positional_only
-  def prepare_eval(self, *, ndims, kwargs=...):
-    jac = functools.reduce(derivative, self._derivativestack, asarray(jacobian(self._geom, ndims)))
-    return jac.prepare_eval(ndims=ndims, **kwargs)
+  def prepare_eval(self, *, subsamples, kwargs=...):
+    ndimsmanifold = 0
+    J = []
+    roots = set(self.roots)
+    for isubsample, subsample in enumerate(subsamples):
+      if roots.isdisjoint(subsample.roots):
+        continue
+      if not frozenset(root for root in subsample.roots if root.ndims) <= roots:
+        raise ValueError('Cannot compute jacobian.')
+      roots -= set(subsample.roots)
+      ndimsmanifold += subsample.ndimsmanifold
+      if subsample.ndims == 0:
+        continue
+      J.append(dot(rootgradient(self._geom, subsample.roots)[:,:,_], rootbasis(subsamples, isubsample, orthonormal=True, opposite=kwargs.get('opposite', False))[_:,:subsample.ndimsmanifold], 1))
+    for root in tuple(roots):
+      if isinstance(root, RevolutionRoot):
+        roots.remove(root)
+        J.append(rootgradient(self._geom, (root,))*(2*numpy.pi))
+    if roots:
+      raise ValueError('extra roots: {}'.format(roots))
+    if self._ndimsmanifold is not None and ndimsmanifold != self._ndimsmanifold:
+      raise ValueError('jacobian will be evaluated on a manifold of dimension {} but {} was requested'.format(ndimsmanifold, self._ndimsmanifold))
+    J = concatenate(J, axis=1)
+    if J.shape[0] == J.shape[1]:
+      detJ = abs(determinant(J))
+    else:
+      detJ = abs(determinant((J[:,:,_] * J[:,_,:]).sum(0)))**.5
+    detJ = functools.reduce(derivative, self._derivativestack, asarray(detJ))
+    return detJ.prepare_eval(subsamples=subsamples, **kwargs)
+
+class DelayedNormal(Array):
+  '''Normal of a geometry.'''
+
+  __slots__ = '_geom', '_derivativestack'
+  __cache__ = 'prepare_eval'
+
+  @types.apply_annotations
+  def __init__(self, geom:asarray, *derivativestack:types.tuple[types.strict[DerivativeTargetBase]]):
+    if geom.ndim != 1:
+      raise ValueError('the geometry should have dimension 1 but got {}'.format(geom.ndim))
+    assert len(geom) <= builtins.sum(root.ndims for root in geom.roots)
+    self._geom = geom
+    self._derivativestack = derivativestack
+    super().__init__(args=[geom], shape=[len(geom)]+[n for var in derivativestack for n in var.shape], dtype=float)
+
+  def evalf(self):
+    raise Exception('DelayedNormal should not be evaluated')
+
+  def _derivative(self, var, seen):
+    if iszero(derivative(self._geom, var, seen)):
+      return zeros(self.shape + var.shape)
+    return DelayedNormal(self._geom, *self._derivativestack, var)
+
+  @util.positional_only
+  def prepare_eval(self, *, subsamples, kwargs=...):
+    tangents = []
+    normals = []
+    ndimsnormal = 0
+    roots = set(self.roots)
+    for isubsample, subsample in enumerate(subsamples):
+      if roots.isdisjoint(subsample.roots):
+        continue
+      if not frozenset(root for root in subsample.roots if root.ndims) <= roots:
+        raise ValueError('Cannot compute normal.')
+      roots -= set(subsample.roots)
+      ndimsnormal += subsample.ndimsnormal
+      basis = rootbasis(subsamples, isubsample, opposite=kwargs.get('opposite', False))
+      grad = dot(rootgradient(self._geom, subsample.roots)[:,:,_], basis[_,:,:], 1)
+      if subsample.ndimsmanifold:
+        tangents.append(grad[:,:subsample.ndimsmanifold])
+      if subsample.ndimsnormal:
+        normals.append(grad[:,subsample.ndimsmanifold:])
+    for root in tuple(roots):
+      if isinstance(root, RevolutionRoot):
+        roots.remove(root)
+        tangents.append(rootgradient(self._geom, (root,)))
+    if roots:
+      raise ValueError('extra roots: {}'.format(roots))
+    if ndimsnormal == 0:
+      raise ValueError('cannot compute normal: the normal space has dimension zero')
+    elif ndimsnormal > 1:
+      warnings.warn('cannot umambiguously compute the normal: the normal space has dimension larger then one')
+    n = Normal(concatenate(tangents+normals, axis=1)[:,:len(self._geom)])
+    n = functools.reduce(derivative, self._derivativestack, asarray(n))
+    return n.prepare_eval(subsamples=subsamples, **kwargs)
 
 class Ravel(Array):
 
@@ -3097,11 +3636,16 @@ class RevolutionAngle(Array):
   Pseudo coordinates of a :class:`nutils.topology.RevolutionTopology`.
   '''
 
-  __slots__ = ()
+  __slots__ = '_root'
   __cache__ = 'prepare_eval'
 
-  def __init__(self):
+  def __init__(self, root):
+    self._root = root
     super().__init__(args=[], shape=[], dtype=float)
+
+  @property
+  def roots(self):
+    return frozenset((self._root,))
 
   @property
   def isconstant(self):
@@ -3111,7 +3655,7 @@ class RevolutionAngle(Array):
     raise Exception('RevolutionAngle should not be evaluated')
 
   def _derivative(self, var, seen):
-    return (ones_like if isinstance(var, LocalCoords) and len(var) > 0 else zeros_like)(var)
+    return (ones_like if isinstance(var, RootCoords) and var.root == self._root else zeros_like)(var)
 
   @util.positional_only
   def prepare_eval(self, kwargs=...):
@@ -3120,7 +3664,6 @@ class RevolutionAngle(Array):
 class Opposite(Array):
 
   __slots__ = '_value'
-  __cache__ = 'simplified'
 
   @types.apply_annotations
   def __init__(self, value:asarray):
@@ -3129,13 +3672,6 @@ class Opposite(Array):
 
   def evalf(self, evalargs):
     raise Exception('Opposite should not be evaluated')
-
-  @property
-  def simplified(self):
-    value = self._value.simplified
-    if not any(isinstance(arg, SelectChain) for arg in value.dependencies):
-      return value
-    return Opposite(value)
 
   @util.positional_only
   def prepare_eval(self, *, opposite=False, kwargs=...):
@@ -3286,6 +3822,8 @@ class Basis(Array):
       The number of functions in this basis.
   transforms : :class:`nutils.transformseq.Transforms`
       The transforms on which this basis is defined.
+  ndims : :class:`int`
+      Dimension of the topology on which this basis is defined.
   trans : :class:`TransformChain`
 
   Notes
@@ -3294,17 +3832,23 @@ class Basis(Array):
   if possible should redefine :meth:`get_support`.
   '''
 
-  __slots__ = 'ndofs', 'transforms', '_index', '_points'
+  __slots__ = 'ndofs', 'transforms', 'ndimsdomain', '_index', '_points', '_trans'
   __cache__ = '_computed_support'
 
   @types.apply_annotations
-  def __init__(self, ndofs:types.strictint, transforms:transformseq.stricttransforms, trans:types.strict[TransformChain]=TRANS):
+  def __init__(self, ndofs:types.strictint, transforms:transformseq.stricttransforms, ndims:types.strictint, trans:types.strict[TransformChain]):
     self.ndofs = ndofs
     self.transforms = transforms
+    self.ndimsdomain = ndims
 
-    self._index, tail = TransformsIndexWithTail(self.transforms, trans)
-    self._points = ApplyTransforms(tail)
+    self._index, tail, linear = TransformsIndexWithTail(self.transforms, ndims, trans)
+    self._points = ApplyTransforms(tail, linear)
+    self._trans = trans
     super().__init__(args=(self._index, self._points), shape=(ndofs,), dtype=float)
+
+  @property
+  def roots(self):
+    return self._trans.roots
 
   def evalf(self, index, points):
     warnings.warn('using explicit basis evaluation; this is usually a bug.', ExpensiveEvaluationWarning)
@@ -3433,9 +3977,9 @@ class Basis(Array):
 
   def __getitem__(self, index):
     if numeric.isintarray(index) and index.ndim == 1 and numpy.all(numpy.greater(numpy.diff(index), 0)):
-      return MaskedBasis(self, index)
+      return MaskedBasis(self, index, self._trans)
     elif numeric.isboolarray(index) and index.shape == (self.ndofs,):
-      return MaskedBasis(self, numpy.where(index)[0])
+      return MaskedBasis(self, numpy.where(index)[0], self._trans)
     else:
       return super().__getitem__(index)
 
@@ -3464,13 +4008,13 @@ class PlainBasis(Basis):
   __slots__ = '_coeffs', '_dofs'
 
   @types.apply_annotations
-  def __init__(self, coefficients:types.tuple[types.frozenarray], dofs:types.tuple[types.frozenarray], ndofs:types.strictint, transforms:transformseq.stricttransforms, trans=TRANS):
+  def __init__(self, coefficients:types.tuple[types.frozenarray], dofs:types.tuple[types.frozenarray], ndofs:types.strictint, transforms:transformseq.stricttransforms, ndims:types.strictint, trans:types.strict[TransformChain]):
     self._coeffs = coefficients
     self._dofs = dofs
     assert len(self._coeffs) == len(self._dofs) == len(transforms)
-    assert all(c.ndim == 1+transforms.fromdims for c in self._coeffs)
+    assert all(c.ndim == 1+ndims for c in self._coeffs)
     assert all(len(c) == len(d) for c, d in zip(self._coeffs, self._dofs))
-    super().__init__(ndofs=ndofs, transforms=transforms, trans=trans)
+    super().__init__(ndofs=ndofs, transforms=transforms, ndims=ndims, trans=trans)
 
   def get_dofs(self, ielem):
     if not numeric.isint(ielem):
@@ -3504,12 +4048,12 @@ class DiscontBasis(Basis):
   __slots__ = '_coeffs', '_offsets'
 
   @types.apply_annotations
-  def __init__(self, coefficients:types.tuple[types.frozenarray], transforms:transformseq.stricttransforms, trans=TRANS):
+  def __init__(self, coefficients:types.tuple[types.frozenarray], transforms:transformseq.stricttransforms, ndims:types.strictint, trans:types.strict[TransformChain]):
     self._coeffs = coefficients
     assert len(self._coeffs) == len(transforms)
-    assert all(c.ndim == 1+transforms.fromdims for c in self._coeffs)
+    assert all(c.ndim == 1+ndims for c in self._coeffs)
     self._offsets = types.frozenarray(numpy.cumsum([0, *map(len, self._coeffs)]), copy=False)
-    super().__init__(ndofs=self._offsets[-1], transforms=transforms, trans=trans)
+    super().__init__(ndofs=self._offsets[-1], transforms=transforms, ndims=ndims, trans=trans)
 
   def get_support(self, dof):
     if not numeric.isint(dof):
@@ -3551,7 +4095,7 @@ class MaskedBasis(Basis):
   __slots__ = '_parent', '_indices'
 
   @types.apply_annotations
-  def __init__(self, parent:strictbasis, indices:types.frozenarray[types.strictint], trans=TRANS):
+  def __init__(self, parent:strictbasis, indices:types.frozenarray[types.strictint], trans:types.strict[TransformChain]):
     if indices.ndim != 1:
       raise ValueError('`indices` should have one dimension but got {}'.format(indices.ndim))
     if len(indices) and not numpy.all(numpy.greater(numpy.diff(indices), 0)):
@@ -3560,7 +4104,7 @@ class MaskedBasis(Basis):
       raise ValueError('`indices` out of range \x5b0,{}\x29'.format(0, len(parent)))
     self._parent = parent
     self._indices = indices
-    super().__init__(ndofs=len(self._indices), transforms=parent.transforms, trans=trans)
+    super().__init__(ndofs=len(self._indices), transforms=parent.transforms, ndims=parent.ndimsdomain, trans=trans)
 
   def get_dofs(self, ielem):
     return numeric.sorted_index(self._indices, self._parent.get_dofs(ielem), missing='mask')
@@ -3573,6 +4117,54 @@ class MaskedBasis(Basis):
     if numeric.isintarray(dof) and dof.ndim == 1 and numpy.any(numpy.less(dof, 0)):
       raise IndexError('dof out of bounds')
     return self._parent.get_support(self._indices[dof])
+
+class StructuredLineBasis(Basis):
+  '''A basis for a structured line.
+
+  Parameters
+  ----------
+  coeffs : :class:`tuple` of arrays
+      Per dimension the coefficients of the basis functions per transform.
+  start_dofs : array of :class:`int`\\s
+      Per dimension the dof of the first entry in ``coeffs`` per transform.
+  stop_dofs : array of :class:`int`\\s
+      Per dimension one plus the dof of the last entry  in ``coeffs`` per
+      transform.
+  ndofs : :class:`int`
+      The number of dofs.
+  transforms : :class:`nutils.transformseq.Transforms`
+      The transforms on which this basis is defined.
+  trans : :class:`TransformChain`
+  '''
+
+  __slots__ = '_coeffs', '_start_dofs', '_stop_dofs'
+
+  @types.apply_annotations
+  def __init__(self, coeffs:types.tuple[types.frozenarray], start_dofs:types.frozenarray[types.strictint], stop_dofs:types.frozenarray[types.strictint], ndofs:types.strictint, transforms:transformseq.stricttransforms, trans:types.strict[TransformChain]):
+    self._coeffs = coeffs
+    self._start_dofs = start_dofs
+    self._stop_dofs = stop_dofs
+    super().__init__(ndofs=ndofs, transforms=transforms, ndims=1, trans=trans)
+
+  def get_dofs(self, ielem):
+    if not numeric.isint(ielem):
+      return super().get_dofs(ielem)
+    return types.frozenarray(numpy.arange(self._start_dofs[ielem], self._stop_dofs[ielem]) % self.ndofs, copy=False)
+
+  def get_coefficients(self, ielem):
+    return self._coeffs[ielem]
+
+  def get_support(self, dof):
+    if not numeric.isint(dof):
+      return super().get_support(dof)
+    dof = numeric.normdim(self.ndofs, dof)
+    supports = []
+    while dof < self._stop_dofs[-1]:
+      stop_ielem = numpy.searchsorted(self._start_dofs, dof, side='right')
+      start_ielem = numpy.searchsorted(self._stop_dofs, dof, side='right')
+      supports.append(numpy.arange(start_ielem, stop_ielem))
+      dof += self.ndofs
+    return types.frozenarray(numpy.unique(numpy.concatenate(supports)), dtype=int, copy=False)
 
 class StructuredBasis(Basis):
   '''A basis for class:`nutils.transformseq.StructuredTransforms`.
@@ -3598,13 +4190,13 @@ class StructuredBasis(Basis):
   __slots__ = '_coeffs', '_start_dofs', '_stop_dofs', '_dofs_shape', '_transforms_shape'
 
   @types.apply_annotations
-  def __init__(self, coeffs:types.tuple[types.tuple[types.frozenarray]], start_dofs:types.tuple[types.frozenarray[types.strictint]], stop_dofs:types.tuple[types.frozenarray[types.strictint]], dofs_shape:types.tuple[types.strictint], transforms:transformseq.stricttransforms, transforms_shape:types.tuple[types.strictint], trans=TRANS):
+  def __init__(self, coeffs:types.tuple[types.tuple[types.frozenarray]], start_dofs:types.tuple[types.frozenarray[types.strictint]], stop_dofs:types.tuple[types.frozenarray[types.strictint]], dofs_shape:types.tuple[types.strictint], transforms:transformseq.stricttransforms, transforms_shape:types.tuple[types.strictint], trans:types.strict[TransformChain]):
     self._coeffs = coeffs
     self._start_dofs = start_dofs
     self._stop_dofs = stop_dofs
     self._dofs_shape = dofs_shape
     self._transforms_shape = transforms_shape
-    super().__init__(ndofs=util.product(dofs_shape), transforms=transforms, trans=trans)
+    super().__init__(ndofs=util.product(dofs_shape), transforms=transforms, ndims=len(dofs_shape), trans=trans)
 
   def _get_indices(self, ielem):
     ielem = numeric.normdim(len(self.transforms), ielem)
@@ -3664,11 +4256,11 @@ class PrunedBasis(Basis):
   __slots__ = '_parent', '_transmap', '_dofmap'
 
   @types.apply_annotations
-  def __init__(self, parent:strictbasis, transmap:types.frozenarray[types.strictint], trans=TRANS):
+  def __init__(self, parent:strictbasis, transmap:types.frozenarray[types.strictint], trans:types.strict[TransformChain]):
     self._parent = parent
     self._transmap = transmap
     self._dofmap = parent.get_dofs(self._transmap)
-    super().__init__(len(self._dofmap), parent.transforms[transmap], trans)
+    super().__init__(len(self._dofmap), parent.transforms[transmap], parent.ndimsdomain, trans)
 
   def get_dofs(self, ielem):
     if numeric.isintarray(ielem) and ielem.ndim == 1 and numpy.any(numpy.less(ielem, 0)):
@@ -3682,6 +4274,116 @@ class PrunedBasis(Basis):
     if numeric.isintarray(dof) and dof.ndim == 1 and numpy.any(numpy.less(dof, 0)):
       raise IndexError('dof out of bounds')
     return numeric.sorted_index(self._transmap, self._parent.get_support(self._dofmap[dof]), missing='mask')
+
+class ProductBasis(Basis):
+
+  __slots__ = '_basis1', '_basis2'
+
+  @types.apply_annotations
+  def __init__(self, basis1:strictbasis, basis2:strictbasis, trans:types.strict[TransformChain]):
+    self._basis1 = basis1
+    self._basis2 = basis2
+    super().__init__(basis1.ndofs*basis2.ndofs, basis1.transforms*basis2.transforms, basis1.ndimsdomain+basis2.ndimsdomain, trans)
+
+  def get_dofs(self, ielem):
+    if not numeric.isint(ielem):
+      return super().get_dofs(ielem)
+    ielem1, ielem2 = divmod(ielem, len(self._basis2.transforms))
+    dofs1 = self._basis1.get_dofs(ielem1)
+    dofs2 = self._basis2.get_dofs(ielem2)
+    return (dofs1[:,_] * self._basis2.ndofs + dofs2[_,:]).ravel()
+
+  def get_coefficients(self, ielem):
+    if not numeric.isint(ielem):
+      return super().get_coefficients(ielem)
+    ielem1, ielem2 = divmod(ielem, len(self._basis2.transforms))
+    coeffs1 = self._basis1.get_coefficients(ielem1)
+    coeffs2 = self._basis2.get_coefficients(ielem2)
+    return numeric.poly_outer_product(coeffs1, coeffs2)
+
+  def get_support(self, dof):
+    dof1, dof2 = divmod(dof, self._basis2.ndofs)
+    supp1 = self._basis1.get_support(dof1)
+    supp2 = self._basis2.get_support(dof2)
+    return (supp1[:,_] * len(self._basis2.transforms) + supp2[_,:]).ravel()
+
+  @property
+  def simplified(self):
+    return ravel(self._basis1.simplified[:,_] * self._basis2.simplified[_,:], 0)
+
+class WithTransformsBasis(Basis):
+  '''Replace the transforms sequence of a basis.
+
+  Parameters
+  ----------
+  parent : :class:`Basis`
+      The basis to wrap.
+  transforms : :class:`nutils.transformseq.Transforms`
+      The new transforms sequence.
+  '''
+
+  @types.apply_annotations
+  def __init__(self, parent:strictbasis, transforms:transformseq.stricttransforms, trans:types.strict[TransformChain]):
+    self._parent = parent
+    assert len(self._parent.transforms) == len(transforms)
+    super().__init__(ndofs=parent.ndofs, transforms=transforms, ndims=parent.ndimsdomain, trans=trans)
+
+  def get_support(self, dof):
+    return self._parent.get_support(dof)
+
+  def get_dofs(self, ielem):
+    return self._parent.get_dofs(ielem)
+
+  def get_coefficients(self, ielem):
+    return self._parent.get_coefficients(ielem)
+
+class DisjointUnionBasis(Basis):
+
+  __slots__ = '_bases', '_dofsplits', '_elemsplits'
+
+  @types.apply_annotations
+  def __init__(self, bases:types.tuple[strictbasis], trans:types.strict[TransformChain]):
+    self._bases = bases
+    self._dofsplits = numpy.cumsum([0, *map(len, bases)])
+    self._elemsplits = numpy.cumsum([0, *(len(basis.transforms) for basis in bases)])
+    ndims = bases[0].ndimsdomain
+    if not all(basis.ndimsdomain == ndims for basis in bases):
+      raise ValueError
+    transforms = transformseq.chain((basis.transforms for basis in bases), bases[0].transforms.todims)
+    super().__init__(ndofs=self._dofsplits[-1], transforms=transforms, ndims=ndims, trans=trans)
+
+  def get_support(self, dof):
+    if numeric.isint(dof):
+      dof = numeric.normdim(self.ndofs, dof)
+      ibasis = numpy.searchsorted(self._dofsplits[1:-1], dof, 'right')
+      return self._bases[ibasis].get_support(dof - self._dofsplits[ibasis]) + self._elemsplits[ibasis]
+    elif numeric.isboolarray(dof) and dof.shape == (len(self),):
+      return numpy.concatenate([basis.get_support(dof[l:r]) + m for basis, l, r, m in zip(self._bases, self._dofsplits[:-1], self._dofsplits[1:], self._elemsplits)])
+    elif numeric.isintarray(dof) and dof.ndim == 1:
+      dof = numpy.unique(dof)
+      splits = numpy.searchsorted(dof, self._dofsplits[1:-1])
+      return numpy.concatenate([basis.get_support(dof[l:r] - n) + m for basis, l, r, n, m in zip(self._bases, [0,*splits], [*splits, None], self._dofsplits[:-1], self._elemsplits[:-1])])
+    else:
+      return super().get_support(dof)
+
+  def get_dofs(self, ielem):
+    if numeric.isint(ielem):
+      ielem = numeric.normdim(len(self.transforms), ielem)
+      ibasis = numpy.searchsorted(self._elemsplits[1:-1], ielem, 'right')
+      return self._bases[ibasis].get_dofs(ielem - self._elemsplits[ibasis]) + self._dofsplits[ibasis]
+    elif numeric.isboolarray(ielem) and ielem.shape == (len(self.transforms),):
+      return numpy.concatenate([basis.get_dofs(ielem[l:r]) + n for basis, l, r, n in zip(self._bases, self._elemsplits[:-1], self._elemsplits[1:], self._dofsplits)])
+    elif numeric.isintarray(ielem) and ielem.ndim == 1:
+      ielem = numpy.unique(ielem)
+      splits = numpy.searchsorted(ielem, self._elemsplits[1:-1])
+      return numpy.concatenate([basis.get_dofs(ielem[l:r] - m) + n for basis, l, r, m, n in zip(self._bases, [0,*splits], [*splits, None], self._elemsplits[:-1], self._dofsplits[:-1])])
+    else:
+      return super().get_dofs(ielem)
+
+  def get_coefficients(self, ielem):
+    ielem = numeric.normdim(len(self.transforms), ielem)
+    ibasis = numpy.searchsorted(self._elemsplits[1:-1], ielem, 'right')
+    return self._bases[ibasis].get_coefficients(ielem - self._elemsplits[ibasis])
 
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
@@ -3803,9 +4505,6 @@ def ones_like(arr):
 
 def reciprocal(arg):
   return power(arg, -1)
-
-def grad(arg, coords, ndims=0):
-  return asarray(arg).grad(coords, ndims)
 
 def symgrad(arg, coords, ndims=0):
   return asarray(arg).symgrad(coords, ndims)
@@ -3970,22 +4669,14 @@ def add_T(arg, axes=(-2,-1)):
 def blocks(arg):
   return asarray(arg).simplified.blocks
 
-def rootcoords(ndims):
-  return ApplyTransforms(PopHead(ndims))
+def rootcoords(roots):
+  if isinstance(roots, Root):
+    return ApplyTransforms(SelectChain((roots,)), eye(roots.ndims))
+  else:
+    return concatenate([rootcoords(root) for root in roots], axis=0)
 
 def opposite(arg):
   return Opposite(arg)
-
-@replace
-def _bifurcate(arg, side):
-  if isinstance(arg, SelectChain):
-    return SelectBifurcation(arg, side)
-
-bifurcate1 = functools.partial(_bifurcate, side=True)
-bifurcate2 = functools.partial(_bifurcate, side=False)
-
-def bifurcate(arg1, arg2):
-  return bifurcate1(arg1), bifurcate2(arg2)
 
 def curvature(geom, ndims=-1):
   return geom.normal().div(geom, ndims=ndims)
@@ -4076,23 +4767,6 @@ def get(arg, iax, item):
     item = numeric.normdim(sh, item.eval()[0])
   return Get(arg, iax, item)
 
-def jacobian(geom, ndims):
-  '''
-  Return :math:`\\sqrt{|J^T J|}` with :math:`J` the gradient of ``geom`` to the
-  local coordinate system with ``ndims`` dimensions (``localgradient(geom,
-  ndims)``).
-  '''
-
-  assert geom.ndim == 1
-  J = localgradient(geom, ndims)
-  cndims, = geom.shape
-  assert J.shape == (cndims,ndims), 'wrong jacobian shape: got {}, expected {}'.format(J.shape, (cndims, ndims))
-  assert cndims >= ndims, 'geometry dimension < topology dimension'
-  detJ = abs(determinant(J)) if cndims == ndims \
-    else 1. if ndims == 0 \
-    else abs(determinant((J[:,:,_] * J[:,_,:]).sum(0)))**.5
-  return detJ
-
 def matmat(arg0, *args):
   'helper function, contracts last axis of arg0 with first axis of arg1, etc'
   retval = asarray(arg0)
@@ -4140,18 +4814,32 @@ def derivative(func, var, seen=None):
   assert result.shape == func.shape+var.shape, 'bug in {}._derivative'.format(func)
   return result
 
-def localgradient(arg, ndims):
-  'local derivative'
+def rootgradient(arg, roots):
+  return concatenate([derivative(arg, RootCoords(root)) for root in roots if root.ndims], axis=-1)
 
-  return derivative(arg, LocalCoords(ndims))
+def rootbasis(subsamples, isubsample, *, orthonormal=False, opposite=False):
+  subsample = subsamples[isubsample]
+  if subsample.transforms is None:
+    transformsbasis = TransformsBasisFromChains(SelectChain(subsample.roots, n=1 if opposite else 0), subsample.ndimspoints)
+  else:
+    transformsbasis = TransformsBasisFromSequence(subsample.roots, subsample.transforms[1 if opposite and len(subsample.transforms) > 1 else 0], IndexFromSubsample(isubsample, subsample.roots), subsample.ndimspoints)
+  if subsample.ndimsmanifold == subsample.ndimspoints:
+    basis = transformsbasis
+  else:
+    pointsbasis = PointsBasis(isubsample, subsample.roots, subsample.ndims)
+    if subsample.points is not None:
+      pointsbasis = ConstantPoints(pointsbasis.evalf(subsamples))
+    basis = (transformsbasis[:,:,_]*pointsbasis[_]).sum(axis=1)
+  if orthonormal:
+    if subsample.ndimsnormal == 0:
+      return eye(subsample.ndims)
+    basis = GramSchmidt(basis)
+  return basis
 
 def dotnorm(arg, coords):
   'normal component'
 
   return sum(arg * coords.normal(), -1)
-
-def normal(geom):
-  return geom.normal()
 
 def kronecker(arg, axis, length, pos):
   arg = asarray(arg)
@@ -4163,6 +4851,18 @@ def diagonalize(arg, axis=-1, newaxis=-1):
   newaxis = numeric.normdim(arg.ndim+1, newaxis)
   assert axis < newaxis
   return Diagonalize(arg, axis, newaxis)
+
+def blockdiagonalize(blocks):
+  blocks = tuple(map(asarray, blocks))
+  if not blocks:
+    raise ValueError('`blockdiagonalize` requires at least one block')
+  shape = blocks[0].shape[:-2]
+  ndim = blocks[0].ndim
+  if not all(block.ndim == ndim and block.shape[:-2] == shape for block in blocks):
+    raise ValueError('blocks have inhomogeneous dimensions or leading shapes')
+  dtype = _jointdtype(*[block.dtype for block in blocks])
+  size1, size2 = zip(*(block.shape[-2:] for block in blocks))
+  return concatenate([concatenate([block if i == j else zeros(shape+(size1[i],size2[j]), dtype) for j in range(len(blocks))], -1) for i, block in enumerate(blocks)], -2)
 
 def concatenate(args, axis=0):
   args = _matchndim(*args)
@@ -4201,8 +4901,8 @@ def eig(arg, axes=(-2,-1), symmetric=False):
   return Tuple([transpose(diagonalize(eigval), _invtrans(trans)), transpose(eigvec, _invtrans(trans))])
 
 @types.apply_annotations
-def elemwise(transforms:transformseq.stricttransforms, values:types.tuple[types.frozenarray]):
-  index, tail = TransformsIndexWithTail(transforms, TRANS)
+def elemwise(roots:types.tuple[strictroot], transforms:transformseq.stricttransforms, ndims:types.strictint, values:types.tuple[types.frozenarray]):
+  index = TransformsIndexWithTail(transforms, ndims, SelectChain(roots)).index
   return Elemwise(values, index, dtype=float)
 
 def take(arg, index, axis):
@@ -4241,14 +4941,11 @@ def mask(arg, mask, axis=0):
 def J(geometry, ndims=None):
   '''
   Return :math:`\\sqrt{|J^T J|}` with :math:`J` the gradient of ``geometry`` to
-  the local coordinate system with ``ndims`` dimensions (``localgradient(geom,
-  ndims)``).
+  the root coordinate system with ``ndims`` dimensions.
   '''
-  if ndims is None:
-    return DelayedJacobian(geometry)
-  elif ndims < 0:
+  if ndims is not None and ndims < 0:
     ndims += len(geometry)
-  return jacobian(geometry, ndims)
+  return DelayedJacobian(geometry, ndims)
 
 def unravel(func, axis, shape):
   func = asarray(func)
@@ -4285,8 +4982,9 @@ def replace_arguments(value, arguments):
   if isinstance(value, Argument) and value._name in arguments:
     v = asarray(arguments[value._name])
     assert value.shape[:value.ndim-value._nderiv] == v.shape
-    for ndims in value.shape[value.ndim-value._nderiv:]:
-      v = localgradient(v, ndims)
+    for target in value._derivs:
+      v = derivative(v, target)
+    assert v.shape == value.shape
     return v
 
 def _eval_ast(ast, functions):
@@ -4607,9 +5305,11 @@ class Namespace:
 def normal(arg, exterior=False):
   assert arg.ndim == 1
   if not exterior:
-    lgrad = localgradient(arg, len(arg))
-    return Normal(lgrad)
-  lgrad = localgradient(arg, len(arg)-1)
+    return DelayedNormal(arg)
+  # Order the roots deterministically. In the future we should use the order
+  # of `Sample.roots` (during `prepare_eval` or a successor).
+  roots = tuple(sorted(arg.roots, key=lambda root: (root.name, root.ndims)))
+  lgrad = rootgradient(arg, roots)
   if len(arg) == 2:
     return asarray([lgrad[1,0], -lgrad[0,0]]).normalized()
   if len(arg) == 3:
@@ -4620,7 +5320,10 @@ def grad(self, geom, ndims=0):
   assert geom.ndim == 1
   if ndims <= 0:
     ndims += geom.shape[0]
-  J = localgradient(geom, ndims)
+  # Order the roots deterministically. In the future we should use the order
+  # of `Sample.roots` (during `prepare_eval` or a successor).
+  roots = tuple(sorted(geom.roots, key=lambda root: (root.name, root.ndims)))
+  J = rootgradient(geom, roots)
   if J.shape[0] == J.shape[1]:
     Jinv = inverse(J)
   elif J.shape[0] == J.shape[1] + 1: # gamma gradient
@@ -4629,7 +5332,7 @@ def grad(self, geom, ndims=0):
     Jinv = dot(J[_,:,:], Ginv[:,_,:], -1)
   else:
     raise Exception('cannot invert {}x{} jacobian'.format(J.shape))
-  return dot(localgradient(self, ndims)[...,_], Jinv, -2)
+  return dot(rootgradient(self, roots)[...,_], Jinv, -2)
 
 def dotnorm(arg, geom, axis=-1):
   axis = numeric.normdim(arg.ndim, axis)

@@ -93,6 +93,6 @@ class test(testing.TestCase):
   def test_2d_p1(self):
     lhs = main(ndims=2, nelems=4, timescale=.1, degree=1, endtime=.01, newtontol=1e-5)
     self.assertAlmostEqual64(lhs, '''
-      eNoNyKENhEAQRuGEQsCv2SEzyQZHDbRACdsDJNsBjqBxSBxBHIgJ9xsqQJ1Drro1L1/eYBZceGz8njrR
-      yacm8UQLBvPYCw1airpyUVYSJLhKijK4IC01WDnqqxvX8OTl427aU73sctPGr3qqceBnRzOjo0xy9JpJ
-      R73m6R6YMZo/Q+FCLQ==''')
+      eNoNx6ENhjAQBtCEQcDX9Mhd0uCYgRUYoTtAwga4P2gcEkcQUHGBzzABCoes+slTrzcT4hk0aDwn9ObA
+      bQcKHHig2x6oUFOWF1JIltdUIerMnXTuIzNHfXVhL5vbnJeFXy3h6aJVVrnIU4kdj20okUQaeuyOnxmR
+      otVWU4zf/jlhQi0=''')

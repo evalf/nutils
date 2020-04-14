@@ -96,8 +96,9 @@ class structured(basisTest):
     if not self.product:
       self.domain, self.geom = mesh.rectilinear([2,3])
     else:
-      domain1, geom1 = mesh.rectilinear([2])
-      domain2, geom2 = mesh.rectilinear([3])
+      self.skipTest('in between bifurcate and tensorial')
+      domain1, geom1 = mesh.rectilinear([2], name='rect1')
+      domain2, geom2 = mesh.rectilinear([3], name='rect2')
       self.domain = domain1 * domain2
       self.geom = function.concatenate(function.bifurcate(geom1, geom2), axis=0)
 
@@ -249,17 +250,18 @@ class unstructured_topology(TestCase):
       nverts = 25
     elif self.variant == 'tensor':
       structured, geom = mesh.rectilinear([numpy.linspace(0, 1, 5-i) for i in range(self.ndims)])
-      domain = topology.ConnectedTopology(structured.references, structured.transforms, structured.opposites, structured.connectivity)
+      domain = topology.ConnectedTopology(structured.roots, structured.references, structured.transforms, structured.opposites, structured.connectivity)
       nverts = numpy.product([5-i for i in range(self.ndims)])
     elif self.variant == 'simplex':
       numpy.random.seed(0)
       nverts = 20
       simplices = numeric.overlapping(numpy.arange(nverts), n=self.ndims+1)
       coords = numpy.random.normal(size=(nverts, self.ndims))
-      root = transform.Identifier(self.ndims, 'test')
-      transforms = transformseq.PlainTransforms([(root, transform.Square((c[1:]-c[0]).T, c[0])) for c in coords[simplices]], self.ndims)
-      domain = topology.SimplexTopology(simplices, transforms, transforms)
-      geom = function.rootcoords(self.ndims)
+      roottrans = transform.Identifier(self.ndims, 'test')
+      root = function.Root('X', self.ndims)
+      transforms = transformseq.PlainTransforms([(roottrans, transform.Square((c[1:]-c[0]).T, c[0])) for c in coords[simplices]], root.ndims, self.ndims)
+      domain = topology.SimplexTopology(root, simplices, transforms, transforms)
+      geom = function.rootcoords(root)
     else:
       raise NotImplementedError
     self.domain = domain
@@ -296,7 +298,7 @@ class unstructured_topology(TestCase):
 
   def test_poly(self):
     target = self.geom.sum(-1) if self.btype == 'bubble' \
-        else (self.geom**self.degree).sum(-1) + function.TransformsIndexWithTail(self.domain.transforms, function.TRANS).index if self.btype == 'discont' \
+        else (self.geom**self.degree).sum(-1) + function.TransformsIndexWithTail(self.domain.transforms, self.domain.ndims, function.SelectChain(self.domain.roots)).index if self.btype == 'discont' \
         else (self.geom**self.degree).sum(-1)
     projection = self.domain.projection(target, onto=self.basis, geometry=self.geom, ischeme='gauss', degree=2*self.degree, droptol=0)
     error2 = self.domain.integrate((target-projection)**2*function.J(self.geom), ischeme='gauss', degree=2*self.degree)
@@ -307,3 +309,28 @@ for ndims in 1, 2, 3:
     for btype in ['discont', 'bernstein', 'lagrange', 'std', 'bubble'][:5 if variant in ('simplex', 'triangle') else 4]:
       for degree in [0,1,2,3] if btype == 'discont' else [2] if btype == 'bubble' else [1,2,3]:
         unstructured_topology(ndims=ndims, btype=btype, degree=degree, variant=variant)
+
+class disjointunion(basisTest):
+
+  def setUp(self):
+    self.base, self.geom = mesh.rectilinear([3])
+    self.left, self.right = self.base[:2], self.base[2:]
+    self.domain = topology.DisjointUnionTopology((self.left, self.right))
+    self.degree = 2
+    self.basis = self.domain.basis('spline', self.degree)
+
+  def test_pum(self):
+    self.assertPartitionOfUnity(topo=self.domain, basis=self.basis)
+
+  def test_poly(self):
+    self.assertPolynomial(topo=self.domain, geom=self.geom, basis=self.basis, degree=self.degree)
+
+  def test_discontinuity(self):
+    ns = function.Namespace()
+    ns.x = self.geom
+    ns.basis = self.basis
+    ns.u = 'basis_n ?coeffs_n'
+    ns.f = function.sign(self.geom[0] - 2)
+    coeffs = solver.optimize('coeffs', self.domain.integral('(u - f)^2 d:x' @ ns, degree=2*self.degree))
+    actual = self.domain.sample('bezier', 2).eval('u' @ ns, coeffs=coeffs)
+    self.assertAllAlmostEqual(actual, [-1]*4+[1]*2)
