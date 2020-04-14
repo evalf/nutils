@@ -1524,7 +1524,7 @@ class Multiply(Array):
             ind = ind1[i]
             f2 = Take(f2, ind, axis=i)
           elif ind1[i].isconstant and ind2[i].isconstant:
-            ind, subind1, subind2 = numeric.intersect1d(ind1[i].eval()[0], ind2[i].eval()[0], return_indices=True)
+            ind, subind1, subind2 = numpy.intersect1d(ind1[i].eval()[0], ind2[i].eval()[0], return_indices=True)
             if not ind.size:
               break # blocks do not overlap
             f1 = take(f1, subind1, i)
@@ -1758,7 +1758,7 @@ class TakeDiag(Array):
           f = Take(f, ind[self.rmaxis], axis=self.axis)
           ind = ind[:self.axis] + (ind[self.rmaxis],) + ind[self.axis+1:]
         elif ind[self.axis].isconstant and ind[self.rmaxis].isconstant:
-          newind, subind1, subind2 = numeric.intersect1d(ind[self.axis].eval()[0], ind[self.rmaxis].eval()[0], return_indices=True)
+          newind, subind1, subind2 = numpy.intersect1d(ind[self.axis].eval()[0], ind[self.rmaxis].eval()[0], return_indices=True)
           if not newind.size:
             break # blocks do not overlap
           f = Take(Take(f, subind1, axis=self.axis), subind2, axis=self.rmaxis)

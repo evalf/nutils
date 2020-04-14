@@ -43,7 +43,7 @@ multiple integrals simultaneously, which has the advantage that it can
 efficiently combine common substructures.
 '''
 
-from . import types, points, util, function, parallel, numeric, matrix, transformseq
+from . import types, points, util, function, parallel, numeric, matrix, transformseq, sparse
 import numpy, numbers, collections.abc, os, treelog as log
 
 graphviz = os.environ.get('NUTILS_GRAPHVIZ')
@@ -116,6 +116,26 @@ class Sample(types.Singleton):
         Optional arguments for function evaluation.
     '''
 
+    datas = self.integrate_sparse(funcs, arguments)
+    with log.iter.fraction('assembling', datas) as items:
+      return [sparse.convert(data, inplace=True) for data in items]
+
+  @util.single_or_multiple
+  @types.apply_annotations
+  def integrate_sparse(self, funcs:types.tuple[function.asarray], arguments:types.frozendict[str,types.frozenarray]=None):
+    '''Integrate functions into sparse data.
+
+    Args
+    ----
+    funcs : :class:`nutils.function.Array` object or :class:`tuple` thereof.
+        The integrand(s).
+    arguments : :class:`dict` (default: None)
+        Optional arguments for function evaluation.
+    '''
+
+    if arguments is None:
+      arguments = {}
+
     # Functions may consist of several blocks, such as originating from
     # chaining. Here we make a list of all blocks consisting of triplets of
     # argument id, evaluable index, and evaluable values.
@@ -150,33 +170,22 @@ class Sample(types.Singleton):
       offsets[iblock] += nvals[ifunc]
       nvals[ifunc] = offsets[iblock,-1]
 
-    # The data_index list contains shared memory index and value arrays for
-    # each function argument.
+    # In a second, parallel element loop, value and index are evaluated and
+    # stored in shared memory using the offsets array for location. Each
+    # element has its own location so no locks are required.
 
-    data_index = [(parallel.shempty(n, dtype=float), parallel.shempty((funcs[ifunc].ndim,n), dtype=int)) for ifunc, n in enumerate(nvals)]
-
-    # In a second, parallel element loop, valuefunc is evaluated to fill the
-    # data part of data_index using the offsets array for location. Each
-    # element has its own location so no locks are required. The index part of
-    # data_index is filled in the same loop. It does not use valuefunc data but
-    # benefits from parallel speedup.
-
+    datas = [parallel.shempty(n, dtype=sparse.dtype(funcs[ifunc].shape)) for ifunc, n in enumerate(nvals)]
     valueindexfunc = function.Tuple(function.Tuple([value]+list(index)) for value, index in zip(values, indices))
     with parallel.ctxrange('integrating', self.nelems) as ielems:
       for ielem in ielems:
         points = self.points[ielem]
         for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=points.coords, **arguments)):
-          s = slice(*offsets[iblock,ielem:ielem+2])
-          data, index = data_index[block2func[iblock]]
-          w_intdata = numeric.dot(points.weights, intdata)
-          data[s] = w_intdata.ravel()
-          si = (slice(None),) + (numpy.newaxis,) * (w_intdata.ndim-1)
-          for idim, (ii,) in enumerate(indices):
-            index[idim,s].reshape(w_intdata.shape)[...] = ii[si]
-            si = si[:-1]
+          data = datas[block2func[iblock]][offsets[iblock,ielem]:offsets[iblock,ielem+1]].reshape(intdata.shape[1:])
+          numpy.einsum('p,p...->...', points.weights, intdata, out=data['value'])
+          for idim, ii in enumerate(indices):
+            data['index']['i'+str(idim)] = ii.reshape([-1]+[1]*(data.ndim-1-idim))
 
-    with log.iter.fraction('assembling', data_index, funcs) as items:
-      return [matrix.assemble(*data, shape=func.shape) for data, func in items]
+    return datas
 
   def integral(self, func):
     '''Create Integral object for postponed integration.
@@ -336,8 +345,12 @@ class Integral(types.Singleton):
   @types.apply_annotations
   def __init__(self, integrands:types.frozendict[strictsample, function.simplified], shape:types.tuple[int]):
     assert all(ig.shape == shape for ig in integrands.values()), 'incompatible shapes: expected {}, got {}'.format(shape, ', '.join({str(ig.shape) for ig in integrands.values()}))
-    self._integrands = integrands
+    self._integrands = {topo: func for topo, func in integrands.items() if not function.iszero(func)}
     self.shape = shape
+
+  @property
+  def ndim(self):
+    return len(self.shape)
 
   def __repr__(self):
     return 'Integral<{}>'.format(','.join(map(str, self.shape)))
@@ -483,11 +496,40 @@ def eval_integrals(*integrals: types.tuple[strictintegral], **arguments:argdict)
   results : :class:`tuple` of arrays and/or :class:`nutils.matrix.Matrix` objects.
   '''
 
-  retvals = [matrix.empty(integral.shape) for integral in integrals]
+  with log.iter.fraction('assembling', eval_integrals_sparse(*integrals, **arguments)) as retvals:
+    return [sparse.convert(retval, inplace=True) for retval in retvals]
+
+@types.apply_annotations
+def eval_integrals_sparse(*integrals: types.tuple[strictintegral], **arguments: argdict):
+  '''Evaluate integrals into sparse data.
+
+  Evaluate one or several postponed integrals. By evaluating them
+  simultaneously, rather than using :func:`Integral.eval` on each integral
+  individually, integrations will be grouped per Sample and jointly executed,
+  potentially increasing efficiency.
+
+  Args
+  ----
+  integrals : :class:`tuple` of integrals
+      Integrals to be evaluated.
+  arguments : :class:`dict` (default: None)
+      Optional arguments for function evaluation.
+
+  Returns
+  -------
+  results : :class:`tuple` of arrays and/or :class:`nutils.matrix.Matrix` objects.
+  '''
+
+  if arguments is None:
+    arguments = types.frozendict({})
+
+  retvals = [[sparse.empty(integral.shape)] for integral in integrals] # initialize with zeros to set shape and avoid empty addition
   with log.iter.fraction('topology', util.gather((di, iint) for iint, integral in enumerate(integrals) for di in integral._integrands)) as gathered:
     for sample, iints in gathered:
-      for iint, retval in zip(iints, sample.integrate([integrals[iint]._integrands[sample] for iint in iints], **arguments)):
-        retvals[iint] += retval
-  return retvals
+      for iint, retval in zip(iints, sample.integrate_sparse([integrals[iint]._integrands[sample] for iint in iints], arguments)):
+        retvals[iint].append(retval)
+      del retval
+
+  return [sparse.add(retval) for retval in retvals]
 
 # vim:sw=2:sts=2:et

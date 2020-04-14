@@ -11,11 +11,16 @@ class solver(TestCase):
     super().setUpContext(stack)
     if self.backend:
       stack.enter_context(self.backend)
-      index = numpy.empty([2, (self.n-1)*4], dtype=int)
-      data = numpy.empty([(self.n-1)*4], dtype=float)
-      for i in range(self.n-1):
-        index[:,i*4:(i+1)*4] = [i, i, i+1, i+1], [i, i+1, i, i+1]
-        data[i*4:(i+1)*4] = 1 if i else 2, -1, -1, 1 if i < self.n-2 else 2
+      data = numpy.empty(self.n*3-2)
+      data[0::3] = 2
+      data[1::3] = -1
+      data[2::3] = -1
+      index = numpy.empty([2, self.n*3-2], dtype=int)
+      index[:,0::3] = numpy.arange(self.n)
+      index[0,1::3] = numpy.arange(self.n-1)
+      index[0,2::3] = numpy.arange(1,self.n)
+      index[1,1::3] = numpy.arange(1,self.n)
+      index[1,2::3] = numpy.arange(self.n-1)
       self.matrix = matrix.assemble(data, index, shape=(self.n, self.n))
       self.exact = 2 * numpy.eye(self.n) - numpy.eye(self.n, self.n, -1) - numpy.eye(self.n, self.n, +1)
 
@@ -26,16 +31,6 @@ class solver(TestCase):
       else:
         self.skipTest('backend is unavailable')
     return wrapped
-
-  @ifsupported
-  def test_scalar(self):
-    s = matrix.assemble(numpy.array([1.,2.]), index=numpy.empty((0,2), dtype=int), shape=())
-    self.assertEqual(s, 3.)
-
-  @ifsupported
-  def test_vector(self):
-    v = matrix.assemble(numpy.array([1.,2.,3.]), index=numpy.array([[0,2,0]]), shape=(3,))
-    self.assertEqual(tuple(v), (4.,0.,2.))
 
   @ifsupported
   def test_size(self):
@@ -145,8 +140,8 @@ class solver(TestCase):
 
   @ifsupported
   def test_transpose(self):
-    asym = matrix.assemble(numpy.array([1,2,3,4], dtype=float), numpy.array([[0,0,1,1],[0,1,1,2]]), shape=(2,3))
-    exact = numpy.array([[1,2,0],[0,3,4]], dtype=float)
+    asym = matrix.assemble(numpy.arange(1,7), numpy.array([[0,0,0,1,1,2],[0,1,2,1,2,2]]), shape=(3,3))
+    exact = numpy.array([[1,2,3],[0,4,5],[0,0,6]], dtype=float)
     transpose = asym.T
     numpy.testing.assert_equal(actual=transpose.export('dense'), desired=exact.T)
 
@@ -216,6 +211,15 @@ class solver(TestCase):
     numpy.testing.assert_equal(actual=array, desired=[[-1, 2, 0], [0, -1, -1]])
 
   @ifsupported
+  def test_submatrix_specialcases(self):
+    mat = matrix.assemble(numpy.array([1,2,3,4]), numpy.array([[0,0,2,2],[0,2,0,2]]), (3,3))
+    self.assertAllEqual(mat.export('dense'), [[1,0,2],[0,0,0],[3,0,4]])
+    self.assertAllEqual(mat.submatrix([0,2],[0,1,2]).export('dense'), [[1,0,2],[3,0,4]])
+    self.assertAllEqual(mat.submatrix([0,1,2],[0,2]).export('dense'), [[1,2],[0,0],[3,4]])
+    self.assertAllEqual(mat.submatrix([0,2],[0,2]).export('dense'), [[1,2],[3,4]])
+    self.assertAllEqual(mat.submatrix([1],[1]).export('dense'), [[0]])
+
+  @ifsupported
   def test_pickle(self):
     s = pickle.dumps(self.matrix)
     mat = pickle.loads(s)
@@ -231,23 +235,6 @@ class solver(TestCase):
     self.assertAllEqual(self.matrix.diagonal(), numpy.diag(self.exact))
 
 
-class Base(matrix.Backend):
-  @staticmethod
-  def assemble(data, index, shape):
-    obj = matrix.Numpy.assemble(data, index, shape)
-    return WrapperMatrix(obj) if isinstance(obj, matrix.Matrix) else obj
-
-class WrapperMatrix(matrix.Matrix):
-  'simple wrapper to test base implementations of add, mul, etc'
-  def __init__(self, wrapped):
-    self.wrapped = wrapped
-    super().__init__(wrapped.shape)
-  def export(self, form):
-    return self.wrapped.export(form)
-  def solve_direct(self, rhs, atol):
-    return self.wrapped.solve_direct(rhs, atol=atol)
-
-solver('base', backend=Base(), args=[{}])
 solver('numpy', backend=matrix.Numpy(), args=[{}])
 solver('scipy', backend=matrix.Scipy(), args=[{},
     dict(solver='gmres', atol=1e-5, restart=100, precon='spilu'),

@@ -520,14 +520,4 @@ def asboolean(array, size, ordered=True):
     barray[array] = True
   return barray
 
-if numpy.version.version >= '1.15':
-  intersect1d = numpy.intersect1d
-else:
-  def intersect1d(arr1, arr2, assume_unique=False, return_indices=False):
-    # unoptimized fallback for backwards compatibility with numpy < 1.15
-    isect = numpy.intersect1d(arr1, arr2, assume_unique=assume_unique)
-    if not return_indices:
-      return isect
-    return isect, numpy.fromiter(map(tuple(arr1).index, isect), dtype=int), numpy.fromiter(map(tuple(arr2).index, isect), dtype=int)
-
 # vim:sw=2:sts=2:et
