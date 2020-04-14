@@ -1,8 +1,9 @@
-import unittest, os, multiprocessing, time
+import unittest, os, multiprocessing, time, sys
 from nutils import parallel
 
 canfork = hasattr(os, 'fork')
 
+@unittest.skipIf(sys.platform == 'darwin', 'fork is unreliable (in combination with matplotlib)')
 class Test(unittest.TestCase):
 
   def setUp(self):
