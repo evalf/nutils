@@ -214,6 +214,50 @@ def add(datas):
     numpy.concatenate(datas, out=retval)
   return retval
 
+def block(datas):
+  '''Stack sparse blocks.'''
+
+  assert isinstance(datas, list)
+  structure = [len(datas)]
+  while all(isinstance(data, list) for data in datas):
+    length = set(map(len, datas))
+    if len(length) != 1:
+      raise Exception('inconsistent block structure')
+    datas = sum(datas, [])
+    structure.extend(length)
+  blocksizes = [numpy.repeat(-1, sh) for sh in structure]
+  blocks = []
+  for i, data in enumerate(datas):
+    if isinstance(data, int) and data == 0:
+      continue
+    if not issparse(data) or ndim(data) != len(structure):
+      raise Exception('all blocks should be either {}d-sparse is None'.format(len(structure)))
+    blockidx = numpy.unravel_index(i, structure)
+    for blocksize, iblock, size in zip(blocksizes, blockidx, shape(data)):
+      if blocksize[iblock] == -1:
+        blocksize[iblock] = size
+      elif blocksize[iblock] != size:
+        raise Exception('block sizes do not match')
+    blocks.append((blockidx, data))
+  if any(-1 in blocksize for blocksize in blocksizes):
+    raise Exception('not all block sizes can be determined')
+  retval = numpy.empty(sum(len(data) for blockidx, data in blocks),
+    dtype=dtype([blocksize.sum() for blocksize in blocksizes], numpy.result_type(*[data.dtype['value'] for blockidx, data in blocks])))
+  i = 0
+  for blockidx, data in blocks:
+    j = i + len(data)
+    out = retval[i:j]
+    out['value'] = data['value']
+    for idim, iblock in enumerate(blockidx):
+      outindex = out['index']['i'+str(idim)]
+      numpy.add(data['index']['i'+str(idim)], blocksizes[idim][:iblock].sum(), out=outindex, dtype=outindex.dtype)
+      # NOTE: Specifying the dtype is necessary because Numpy apparently does
+      # not follow the out argument automatically, defaulting instead to a
+      # dtype that may be to small to contain the result of the addition.
+    i = j
+  assert i == len(retval)
+  return retval
+
 def toarray(data):
   '''Convert sparse object to a dense array.
 

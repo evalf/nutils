@@ -73,6 +73,22 @@ class vector(unittest.TestCase):
         self.assertEqual(prune.tolist(),
           [((4,),10), ((4,),20), ((3,),1), ((2,),30), ((1,),40), ((2,),50), ((3,),-1), ((0,),60)])
 
+  def test_block(self):
+    A = self.data
+    B = C = numpy.array([
+      ((1,), 10)], dtype=sparse.dtype([3]))
+    for a, b, c in numpy.ndindex(2,2,2):
+      with self.subTest(A=a, B=b, C=c):
+        datas = [a and A, b and B, c and C]
+        if a and b and c:
+          retval = sparse.block(datas)
+          self.assertEqual(sparse.shape(retval), (11,))
+          self.assertEqual(retval.tolist(),
+            [((4,),10), ((4,),20), ((3,),1), ((2,),30), ((1,),40), ((2,),50), ((3,),-1), ((0,),0), ((0,),60), ((6,),10), ((9,),10)])
+        else:
+          with self.assertRaises(Exception):
+            sparse.blocks(datas)
+
   def test_toarray(self):
     array = sparse.toarray(self.data)
     self.assertEqual(array.tolist(), self.full.tolist())
@@ -165,6 +181,28 @@ class matrix(unittest.TestCase):
         (self.assertIs if inplace else self.assertIsNot)(prune, self.data)
         self.assertEqual(prune.tolist(),
           [((2,4),10), ((3,4),20), ((2,3),1), ((1,2),30), ((0,1),40), ((1,2),50), ((2,3),-1), ((2,0),60)])
+
+  def test_block(self):
+    A = self.data
+    B = numpy.array([((1,0), 10)], dtype=sparse.dtype([4,2]))
+    C = E = numpy.array([((0,2), 20)], dtype=sparse.dtype([1,5]))
+    D = F = numpy.array([((0,1), 30)], dtype=sparse.dtype([1,2]))
+    for a, b, c, d, e, f in numpy.ndindex(2,2,2,2,2,2):
+      with self.subTest(A=a, B=b, C=c, D=d, E=e, F=f):
+        datas = [[a and A, b and B], [c and C, d and D], [e and E, f and F]]
+        if (a or c or e) and (b or d or f) and (a or b) and (c or d) and (e or f):
+          retval = sparse.block(datas)
+          self.assertEqual(sparse.shape(retval), (6,7))
+          self.assertEqual(retval.tolist(),
+            ([((2,4), 10), ((3,4), 20), ((2,3), 1), ((1,2), 30), ((0,1), 40), ((1,2), 50), ((2,3), -1), ((3,0), 0), ((2,0), 60)] if a else [])
+          + ([((1,5), 10)] if b else [])
+          + ([((4,2), 20)] if c else [])
+          + ([((4,6), 30)] if d else [])
+          + ([((5,2), 20)] if e else [])
+          + ([((5,6), 30)] if f else []))
+        else:
+          with self.assertRaises(Exception):
+            sparse.blocks(datas)
 
   def test_toarray(self):
     array = sparse.toarray(self.data)
