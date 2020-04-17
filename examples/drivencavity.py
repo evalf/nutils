@@ -26,37 +26,39 @@ def main(nelems:int, etype:str, degree:int, reynolds:float):
 
   domain, geom = mesh.unitsquare(nelems, etype)
 
-  ns = function.Namespace()
+  ns = function.Namespace(fallback_length=domain.ndims)
   ns.Re = reynolds
   ns.x = geom
-  ns.ubasis, ns.pbasis = function.chain([
-    domain.basis('std', degree=degree).vector(2),
-    domain.basis('std', degree=degree-1),
-  ])
-  ns.u_i = 'ubasis_ni ?lhs_n'
-  ns.p = 'pbasis_n ?lhs_n'
+  ns.ubasis = domain.basis('std', degree=degree)
+  ns.pbasis = domain.basis('std', degree=degree-1)
+  ns.u_i = 'ubasis_n ?udofs_ni'
+  ns.p = 'pbasis_n ?pdofs_n'
   ns.stress_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
 
-  sqr = domain.boundary.integral('u_k u_k d:x' @ ns, degree=degree*2)
-  wallcons = solver.optimize('lhs', sqr, droptol=1e-15)
+  usqr = domain.boundary.integral('u_k u_k d:x' @ ns, degree=degree*2)
+  wallcons = solver.optimize('udofs', usqr, droptol=1e-15)
 
-  sqr = domain.boundary['top'].integral('(u_0 - 1)^2 d:x' @ ns, degree=degree*2)
-  lidcons = solver.optimize('lhs', sqr, droptol=1e-15)
+  usqr = domain.boundary['top'].integral('(u_0 - 1)^2 d:x' @ ns, degree=degree*2)
+  lidcons = solver.optimize('udofs', usqr, droptol=1e-15)
 
-  cons = numpy.choose(numpy.isnan(lidcons), [lidcons, wallcons])
-  cons[-1] = 0 # pressure point constraint
+  ucons = numpy.choose(numpy.isnan(lidcons), [lidcons, wallcons])
+  pcons = numpy.repeat(numpy.nan, len(ns.pbasis))
+  pcons[-1] = 0
 
-  res = domain.integral('(ubasis_ni,j stress_ij + pbasis_n u_k,k) d:x' @ ns, degree=degree*2)
+  cons = dict(udofs=ucons, pdofs=pcons)
+
+  ures = domain.integral(ns.eval_ni('ubasis_n,j stress_ij d:x'), degree=degree*2)
+  pres = domain.integral(ns.eval_n('pbasis_n u_k,k d:x'), degree=degree*2)
   with treelog.context('stokes'):
-    lhs0 = solver.solve_linear('lhs', res, constrain=cons)
-    postprocess(domain, ns, lhs=lhs0)
+    dofs0 = solver.solve_linear(('udofs', 'pdofs'), (ures, pres), constrain=cons)
+    postprocess(domain, ns, **dofs0)
 
-  res += domain.integral('.5 (ubasis_ni u_i,j - ubasis_ni,j u_i) u_j d:x' @ ns, degree=degree*3)
+  ures += domain.integral(ns.eval_ni('.5 (ubasis_n u_i,j - ubasis_n,j u_i) u_j d:x'), degree=degree*3)
   with treelog.context('navierstokes'):
-    lhs1 = solver.newton('lhs', res, lhs0=lhs0, constrain=cons).solve(tol=1e-10)
-    postprocess(domain, ns, lhs=lhs1)
+    dofs1 = solver.newton(('udofs', 'pdofs'), (ures, pres), lhs0=dofs0, constrain=cons).solve(tol=1e-10)
+    postprocess(domain, ns, **dofs1)
 
-  return lhs0, lhs1
+  return [numpy.hstack([dofs['udofs'].ravel(), dofs['pdofs']]) for dofs in [dofs0, dofs1]]
 
 # Postprocessing in this script is separated so that it can be reused for the
 # results of Stokes and Navier-Stokes, and because of the extra steps required

@@ -51,14 +51,12 @@ def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float,
   ns.phi = geom[1] * elemangle # add small angle to break element symmetry
   ns.x_i = 'r <cos(phi), sin(phi)>_i'
   ns.J = ns.x.grad(geom)
-  ns.unbasis, ns.utbasis, ns.pbasis = function.chain([ # compatible spaces
+  ns.ubasis = function.matmat(function.vectorize([
     domain.basis('spline', degree=(degree,degree-1), removedofs=((0,),None)),
-    domain.basis('spline', degree=(degree-1,degree)),
-    domain.basis('spline', degree=degree-1),
-  ]) / function.determinant(ns.J)
-  ns.ubasis_ni = 'unbasis_n J_i0 + utbasis_n J_i1' # piola transformation
-  ns.u_i = 'ubasis_ni ?lhs_n'
-  ns.p = 'pbasis_n ?lhs_n'
+    domain.basis('spline', degree=(degree-1,degree))]), ns.J.T) / function.determinant(ns.J)
+  ns.pbasis = domain.basis('spline', degree=degree-1) / function.determinant(ns.J)
+  ns.u_i = 'ubasis_ni ?udofs_n'
+  ns.p = 'pbasis_n ?pdofs_n'
   ns.sigma_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
   ns.N = 10 * degree / elemangle # Nitsche constant based on element size = elemangle/2
   ns.nitsche_ni = '(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) / Re'
@@ -67,15 +65,18 @@ def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float,
 
   inflow = domain.boundary['outer'].select(-ns.uinf.dotnorm(ns.x), ischeme='gauss1') # upstream half of the exterior boundary
   sqr = inflow.integral('(u_i - uinf_i) (u_i - uinf_i)' @ ns, degree=degree*2)
-  cons = solver.optimize('lhs', sqr, droptol=1e-15) # constrain inflow semicircle to uinf
+  ucons = solver.optimize('udofs', sqr, droptol=1e-15) # constrain inflow semicircle to uinf
+  cons = dict(udofs=ucons)
 
   numpy.random.seed(seed)
-  sqr = domain.integral('(u_i - uinf_i) (u_i - uinf_i) + p^2' @ ns, degree=degree*2)
-  lhs0 = solver.optimize('lhs', sqr) * numpy.random.normal(1, .1, len(ns.ubasis)) # set initial condition to u=uinf, p=0 with small random noise
+  sqr = domain.integral('(u_i - uinf_i) (u_i - uinf_i)' @ ns, degree=degree*2)
+  udofs0 = solver.optimize('udofs', sqr) * numpy.random.normal(1, .1, len(ns.ubasis)) # set initial condition to u=uinf with small random noise
+  dofs0 = dict(udofs=udofs0)
 
-  res = domain.integral('(ubasis_ni u_i,j u_j + ubasis_ni,j sigma_ij + pbasis_n u_k,k) d:x' @ ns, degree=9)
-  res += domain.boundary['inner'].integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni sigma_ij n_j) d:x' @ ns, degree=9)
-  inertia = domain.integral('ubasis_ni u_i d:x' @ ns, degree=9)
+  ures = domain.integral('(ubasis_ni u_i,j u_j + ubasis_ni,j sigma_ij) d:x' @ ns, degree=9)
+  ures += domain.boundary['inner'].integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni sigma_ij n_j) d:x' @ ns, degree=9)
+  pres = domain.integral('pbasis_n u_k,k d:x' @ ns, degree=9)
+  uinertia = domain.integral('ubasis_ni u_i d:x' @ ns, degree=9)
 
   bbox = numpy.array([[-2,46/9],[-2,2]]) # bounding box for figure based on 16x9 aspect ratio
   bezier0 = domain.sample('bezier', 5)
@@ -84,11 +85,11 @@ def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float,
   spacing = .05 # initial quiver spacing
   xgrd = util.regularize(bbox, spacing)
 
-  with treelog.iter.plain('timestep', solver.impliciteuler('lhs', residual=res, inertia=inertia, lhs0=lhs0, timestep=timestep, constrain=cons, newtontol=1e-10)) as steps:
-    for istep, lhs in enumerate(steps):
+  with treelog.iter.plain('timestep', solver.impliciteuler(('udofs', 'pdofs'), residual=(ures, pres), inertia=(uinertia, None), lhs0=dofs0, timestep=timestep, constrain=cons, newtontol=1e-10)) as steps:
+    for istep, dofs in enumerate(steps):
 
       t = istep * timestep
-      x, u, normu, p = bezier.eval(['x_i', 'u_i', 'sqrt(u_k u_k)', 'p'] @ ns, lhs=lhs)
+      x, u, normu, p = bezier.eval(['x_i', 'u_i', 'sqrt(u_k u_k)', 'p'] @ ns, **dofs)
       ugrd = interpolate[xgrd](u)
 
       with export.mplfigure('flow.png', figsize=(12.8,7.2)) as fig:
@@ -107,7 +108,7 @@ def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float,
 
       xgrd = util.regularize(bbox, spacing, xgrd + ugrd * timestep)
 
-  return lhs0, lhs
+  return [numpy.hstack([dofs['udofs'].ravel(), dofs.get('pdofs', numpy.zeros(len(ns.pbasis)))]) for dofs in (dofs0, dofs)]
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line.

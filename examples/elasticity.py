@@ -27,10 +27,10 @@ def main(nelems:int, etype:str, btype:str, degree:int, poisson:float):
 
   domain, geom = mesh.unitsquare(nelems, etype)
 
-  ns = function.Namespace()
+  ns = function.Namespace(fallback_length=domain.ndims)
   ns.x = geom
-  ns.basis = domain.basis(btype, degree=degree).vector(2)
-  ns.u_i = 'basis_ni ?lhs_n'
+  ns.basis = domain.basis(btype, degree=degree)
+  ns.u_i = 'basis_n ?lhs_ni'
   ns.X_i = 'x_i + u_i'
   ns.lmbda = 2 * poisson
   ns.mu = 1 - 2 * poisson
@@ -41,7 +41,7 @@ def main(nelems:int, etype:str, btype:str, degree:int, poisson:float):
   sqr += domain.boundary['right'].integral('(u_0 - .5)^2 d:x' @ ns, degree=degree*2)
   cons = solver.optimize('lhs', sqr, droptol=1e-15)
 
-  res = domain.integral('basis_ni,j stress_ij d:x' @ ns, degree=degree*2)
+  res = domain.integral(ns.eval_ni('basis_n,j stress_ij d:x'), degree=degree*2)
   lhs = solver.solve_linear('lhs', res, constrain=cons)
 
   bezier = domain.sample('bezier', 5)

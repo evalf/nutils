@@ -38,12 +38,12 @@ def main(nelems:int, etype:str, btype:str, degree:int, traction:float, maxrefine
   domain0, geom = mesh.unitsquare(nelems, etype)
   domain = domain0.trim(function.norm2(geom) - radius, maxrefine=maxrefine)
 
-  ns = function.Namespace()
+  ns = function.Namespace(fallback_length=domain.ndims)
   ns.x = geom
   ns.lmbda = 2 * poisson
   ns.mu = 1 - poisson
-  ns.ubasis = domain.basis(btype, degree=degree).vector(2)
-  ns.u_i = 'ubasis_ni ?lhs_n'
+  ns.ubasis = domain.basis(btype, degree=degree)
+  ns.u_i = 'ubasis_n ?lhs_ni'
   ns.X_i = 'x_i + u_i'
   ns.strain_ij = '(u_i,j + u_j,i) / 2'
   ns.stress_ij = 'lmbda strain_kk δ_ij + 2 mu strain_ij'
@@ -59,7 +59,7 @@ def main(nelems:int, etype:str, btype:str, degree:int, traction:float, maxrefine
   sqr = domain.boundary['top,right'].integral('du_k du_k d:x' @ ns, degree=20)
   cons = solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
 
-  res = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=degree*2)
+  res = domain.integral(ns.eval_ni('ubasis_n,j stress_ij d:x'), degree=degree*2)
   lhs = solver.solve_linear('lhs', res, constrain=cons)
 
   bezier = domain.sample('bezier', 5)
