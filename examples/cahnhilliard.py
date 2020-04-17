@@ -63,10 +63,10 @@ def main(nelems:int, etype:str, btype:str, degree:int, epsilon:typing.Optional[f
     ns.x = function.sin(angle) * function.cos(angle)[[1,0]] / numpy.sqrt(2)
   ns.epsilon = epsilon
   ns.ewall = .5 * numpy.cos(contactangle * numpy.pi / 180)
-  ns.cbasis, ns.mbasis = function.chain([domain.basis('std', degree=degree)] * 2)
-  ns.c = 'cbasis_n ?lhs_n'
-  ns.dc = 'cbasis_n (?lhs_n - ?lhs0_n)'
-  ns.m = 'mbasis_n ?lhs_n'
+  ns.cbasis = ns.mbasis = domain.basis('std', degree=degree)
+  ns.c = 'cbasis_n ?c_n'
+  ns.dc = 'cbasis_n (?c_n - ?c0_n)'
+  ns.m = 'mbasis_n ?m_n'
   ns.F = '.5 (c^2 - 1)^2 / epsilon^2'
   ns.dF = stab.value
   ns.dt = timestep
@@ -77,24 +77,25 @@ def main(nelems:int, etype:str, btype:str, degree:int, epsilon:typing.Optional[f
   nrg = nrg_mix + nrg_iface + nrg_wall + domain.integral('(dF - m dc - .5 dt epsilon^2 m_,k m_,k) d:x' @ ns, degree=7)
 
   numpy.random.seed(seed)
-  lhs = numpy.random.normal(0, .5, ns.cbasis.shape) # initial condition
+  state = dict(c=numpy.random.normal(0,.5,ns.cbasis.shape), m=numpy.random.normal(0,.5,ns.mbasis.shape)) # initial condition
 
   with treelog.iter.plain('timestep', itertools.count()) as steps:
    for istep in steps:
 
-    E = sample.eval_integrals(nrg_mix, nrg_iface, nrg_wall, lhs=lhs)
+    E = sample.eval_integrals(nrg_mix, nrg_iface, nrg_wall, **state)
     treelog.user('energy: {0:.3f} ({1[0]:.0f}% mixture, {1[1]:.0f}% interface, {1[2]:.0f}% wall)'.format(sum(E), 100*numpy.array(E)/sum(E)))
 
-    x, c, m = bezier.eval(['x_i', 'c', 'm'] @ ns, lhs=lhs)
+    x, c, m = bezier.eval(['x_i', 'c', 'm'] @ ns, **state)
     export.triplot('phase.png', x, c, tri=bezier.tri, clim=(-1,1))
     export.triplot('chempot.png', x, m, tri=bezier.tri)
 
     if numpy.ptp(m) < mtol:
       break
 
-    lhs = solver.optimize('lhs', nrg, arguments=dict(lhs0=lhs), lhs0=lhs, tol=1e-10)
+    state['c0'] = state['c']
+    state = solver.optimize(['c', 'm'], nrg, arguments=state, tol=1e-10)
 
-  return lhs
+  return numpy.hstack([state['c'], state['m']])
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line.

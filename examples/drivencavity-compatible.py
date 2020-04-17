@@ -32,33 +32,32 @@ def main(nelems:int, degree:int, reynolds:float):
   ns = function.Namespace()
   ns.x = geom
   ns.Re = reynolds
-  ns.uxbasis, ns.uybasis, ns.pbasis, ns.lbasis = function.chain([
+  ns.ubasis = function.vectorize([
     domain.basis('spline', degree=(degree,degree-1), removedofs=((0,-1),None)),
-    domain.basis('spline', degree=(degree-1,degree), removedofs=(None,(0,-1))),
-    domain.basis('spline', degree=degree-1),
-    [1], # lagrange multiplier
-  ])
-  ns.ubasis_ni = '<uxbasis_n, uybasis_n>_i'
-  ns.u_i = 'ubasis_ni ?lhs_n'
-  ns.p = 'pbasis_n ?lhs_n'
-  ns.l = 'lbasis_n ?lhs_n'
+    domain.basis('spline', degree=(degree-1,degree), removedofs=(None,(0,-1)))])
+  ns.pbasis = domain.basis('spline', degree=degree-1)
+  ns.u_i = 'ubasis_ni ?u_n'
+  ns.p = 'pbasis_n ?p_n'
   ns.stress_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
   ns.uwall = domain.boundary.indicator('top'), 0
   ns.N = 5 * degree * nelems # nitsche constant based on element size = 1/nelems
   ns.nitsche_ni = '(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) / Re'
 
-  res = domain.integral('(ubasis_ni,j stress_ij + pbasis_n (u_k,k + l) + lbasis_n p) d:x' @ ns, degree=2*degree)
-  res += domain.boundary.integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni stress_ij n_j) d:x' @ ns, degree=2*degree)
+  ures = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=2*degree)
+  ures += domain.boundary.integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni stress_ij n_j) d:x' @ ns, degree=2*degree)
+  pres = domain.integral('pbasis_n (u_k,k + ?lm) d:x' @ ns, degree=2*degree)
+  lres = domain.integral('p d:x' @ ns, degree=2*degree)
+
   with treelog.context('stokes'):
-    lhs0 = solver.solve_linear('lhs', res)
-    postprocess(domain, ns, lhs=lhs0)
+    state0 = solver.solve_linear(['u', 'p', 'lm'], [ures, pres, lres])
+    postprocess(domain, ns, **state0)
 
-  res += domain.integral('ubasis_ni u_i,j u_j d:x' @ ns, degree=3*degree)
+  ures += domain.integral('ubasis_ni u_i,j u_j d:x' @ ns, degree=3*degree)
   with treelog.context('navierstokes'):
-    lhs1 = solver.newton('lhs', res, lhs0=lhs0).solve(tol=1e-10)
-    postprocess(domain, ns, lhs=lhs1)
+    state1 = solver.newton(('u', 'p', 'lm'), (ures, pres, lres), arguments=state0).solve(tol=1e-10)
+    postprocess(domain, ns, **state1)
 
-  return lhs0, lhs1
+  return [numpy.hstack([state['u'], state['p'], state['lm']]) for state in [state0, state1]]
 
 # Postprocessing in this script is separated so that it can be reused for the
 # results of Stokes and Navier-Stokes, and because of the extra steps required

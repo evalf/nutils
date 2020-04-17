@@ -29,34 +29,35 @@ def main(nelems:int, etype:str, degree:int, reynolds:float):
   ns = function.Namespace()
   ns.Re = reynolds
   ns.x = geom
-  ns.ubasis, ns.pbasis = function.chain([
-    domain.basis('std', degree=degree).vector(2),
-    domain.basis('std', degree=degree-1),
-  ])
-  ns.u_i = 'ubasis_ni ?lhs_n'
-  ns.p = 'pbasis_n ?lhs_n'
+  ns.ubasis = domain.basis('std', degree=degree).vector(domain.ndims)
+  ns.pbasis = domain.basis('std', degree=degree-1)
+  ns.u_i = 'ubasis_ni ?u_n'
+  ns.p = 'pbasis_n ?p_n'
   ns.stress_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
 
-  sqr = domain.boundary.integral('u_k u_k d:x' @ ns, degree=degree*2)
-  wallcons = solver.optimize('lhs', sqr, droptol=1e-15)
+  usqr = domain.boundary.integral('u_k u_k d:x' @ ns, degree=degree*2)
+  wallcons = solver.optimize('u', usqr, droptol=1e-15)
 
-  sqr = domain.boundary['top'].integral('(u_0 - 1)^2 d:x' @ ns, degree=degree*2)
-  lidcons = solver.optimize('lhs', sqr, droptol=1e-15)
+  usqr = domain.boundary['top'].integral('(u_0 - 1)^2 d:x' @ ns, degree=degree*2)
+  lidcons = solver.optimize('u', usqr, droptol=1e-15)
 
-  cons = numpy.choose(numpy.isnan(lidcons), [lidcons, wallcons])
-  cons[-1] = 0 # pressure point constraint
+  ucons = numpy.choose(numpy.isnan(lidcons), [lidcons, wallcons])
+  pcons = numpy.zeros(len(ns.pbasis), dtype=bool)
+  pcons[-1] = True # constrain pressure to zero in a point
+  cons = dict(u=ucons, p=pcons)
 
-  res = domain.integral('(ubasis_ni,j stress_ij + pbasis_n u_k,k) d:x' @ ns, degree=degree*2)
+  ures = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=degree*2)
+  pres = domain.integral('pbasis_n u_k,k d:x' @ ns, degree=degree*2)
   with treelog.context('stokes'):
-    lhs0 = solver.solve_linear('lhs', res, constrain=cons)
-    postprocess(domain, ns, lhs=lhs0)
+    state0 = solver.solve_linear(('u', 'p'), (ures, pres), constrain=cons)
+    postprocess(domain, ns, **state0)
 
-  res += domain.integral('.5 (ubasis_ni u_i,j - ubasis_ni,j u_i) u_j d:x' @ ns, degree=degree*3)
+  ures += domain.integral('.5 (ubasis_ni u_i,j - ubasis_ni,j u_i) u_j d:x' @ ns, degree=degree*3)
   with treelog.context('navierstokes'):
-    lhs1 = solver.newton('lhs', res, lhs0=lhs0, constrain=cons).solve(tol=1e-10)
-    postprocess(domain, ns, lhs=lhs1)
+    state1 = solver.newton(('u', 'p'), (ures, pres), arguments=state0, constrain=cons).solve(tol=1e-10)
+    postprocess(domain, ns, **state1)
 
-  return lhs0, lhs1
+  return [numpy.hstack([state['u'], state['p']]) for state in [state0, state1]]
 
 # Postprocessing in this script is separated so that it can be reused for the
 # results of Stokes and Navier-Stokes, and because of the extra steps required

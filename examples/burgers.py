@@ -45,7 +45,7 @@ def main(nelems:int, ndims:int, degree:int, timescale:float, newtontol:float, en
 
   timestep = timescale/nelems
   bezier = domain.sample('bezier', 7)
-  with treelog.iter.plain('timestep', solver.impliciteuler('lhs', res, inertia, timestep=timestep, lhs0=lhs0, newtontol=newtontol)) as steps:
+  with treelog.iter.plain('timestep', solver.impliciteuler('lhs', res, inertia, timestep=timestep, arguments=dict(lhs=lhs0), newtontol=newtontol)) as steps:
     for itime, lhs in enumerate(steps):
       x, u = bezier.eval(['x_i', 'u'] @ ns, lhs=lhs)
       export.triplot('solution.png', x, u, tri=bezier.tri, hull=bezier.hull, clim=(0,1))
