@@ -75,7 +75,7 @@ def as_canonical_length(value):
 
 asshape = types.tuple[as_canonical_length]
 
-class ExpensiveEvaluationWarning(Warning): pass
+class ExpensiveEvaluationWarning(warnings.NutilsInefficiencyWarning): pass
 
 class Evaluable(types.Singleton):
   'Base class'

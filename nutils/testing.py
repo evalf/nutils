@@ -22,7 +22,7 @@
 Extensions of the :mod:`unittest` module.
 '''
 
-import unittest, sys, types as builtin_types, operator, contextlib, treelog, functools, importlib, doctest, re, zlib, binascii
+import unittest, sys, types as builtin_types, operator, contextlib, treelog, functools, importlib, doctest, re, zlib, binascii, warnings as _builtin_warnings
 import numpy
 from nutils import warnings, numeric
 
@@ -131,7 +131,36 @@ parametrize.skip_if = _parametrize_skip_if
 
 
 class TestCase(unittest.TestCase):
-  '''A class whose instances are single test cases.'''
+  '''A class whose instances are single test cases.
+
+  All :class:`nutils.warnings.NutilsWarning` are turned into an
+  exception by default. Use
+
+  ::
+
+    def test(self):
+      with TestCase.assertWarns(...):
+        ...
+
+  to assert expected warnings. Use
+
+  ::
+
+    def test(self):
+      with warnings.catch_warnings():
+        warnings.simplefilter('ignore', ...)
+        ...
+
+  to ignore warnings locally or
+
+  ::
+
+    def setUp(self):
+      super().setUp()
+      warnings.simplefilter('ignore', ...)
+
+  to ignore warnings for the entire class.
+  '''
 
   def enter_context(self, ctx):
     retval = ctx.__enter__()
@@ -141,6 +170,8 @@ class TestCase(unittest.TestCase):
   def setUp(self):
     super().setUp()
     self.enter_context(treelog.set(treelog.TeeLog(treelog.StdoutLog(), treelog.LoggingLog())))
+    self.enter_context(_builtin_warnings.catch_warnings())
+    _builtin_warnings.simplefilter('error', warnings.NutilsWarning)
 
   def assertAllEqual(self, actual, desired):
     for args in numpy.broadcast(actual, desired):
