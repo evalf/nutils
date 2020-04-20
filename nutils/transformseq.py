@@ -20,7 +20,8 @@
 
 """The transformseq module."""
 
-from . import types, numeric, util, transform, element, elementseq
+from . import types, numeric, util, transform, element
+from .elementseq import References
 import abc, itertools, operator, numpy
 
 class Transforms(types.Singleton):
@@ -709,7 +710,7 @@ class DerivedTransforms(Transforms):
   __cache__ = '_offsets'
 
   @types.apply_annotations
-  def __init__(self, parent:stricttransforms, parent_references:elementseq.strictreferences, derived_attribute:types.strictstr, fromdims:types.strictint):
+  def __init__(self, parent:stricttransforms, parent_references:types.strict[References], derived_attribute:types.strictstr, fromdims:types.strictint):
     if len(parent) != len(parent_references):
       raise ValueError('`parent` and `parent_references` should have the same length')
     if parent.fromdims != parent_references.ndims:
