@@ -21,10 +21,13 @@
 import warnings
 
 class NutilsWarning(Warning):
-  pass
+  'Base class for warnings from Nutils.'
 
 class NutilsDeprecationWarning(NutilsWarning):
-  pass
+  'Warning about deprecated Nutils features.'
+
+class NutilsInefficiencyWarning(NutilsWarning):
+  'Warning about inefficient runtime.'
 
 def warn(message, category=NutilsWarning, stacklevel=1):
   warnings.warn(message, category, stacklevel=stacklevel)
