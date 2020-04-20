@@ -72,18 +72,18 @@ class vector(unittest.TestCase):
     self.assertIsInstance(sparse.convert(self.data), numpy.ndarray)
 
   def test_add_int(self):
-    other = numpy.empty(2, dtype=self.data.dtype)
-    other['index']['i0'] = 1, 2
-    other['value'] = -40, 70
+    other = numpy.array([
+      ((1,), -40),
+      ((2,),  70)], dtype=self.data.dtype)
     retval = sparse.add([self.data, other])
     self.assertEqual(retval.dtype, self.data.dtype)
     self.assertEqual(retval.tolist(),
       [((4,),10), ((4,),20), ((3,),1), ((2,),30), ((1,),40), ((2,),50), ((3,),-1), ((0,),0), ((0,),60), ((1,),-40), ((2,),70)])
 
   def test_add_float(self):
-    other = numpy.empty(2, dtype=sparse.dtype((5,), float))
-    other['index']['i0'] = 1, 2
-    other['value'] = -40, .5
+    other = numpy.array([
+      ((1,), -40),
+      ((2,),  .5)], dtype=sparse.dtype((5,), float))
     retval = sparse.add([self.data, other])
     self.assertEqual(retval.dtype, other.dtype)
     self.assertEqual(retval.tolist(),
@@ -162,20 +162,18 @@ class matrix(unittest.TestCase):
       self.assertIsInstance(sparse.convert(self.data), matrix.Matrix)
 
   def test_add_int(self):
-    other = numpy.empty(2, dtype=self.data.dtype)
-    other['index']['i0'] = 0, 0
-    other['index']['i1'] = 1, 2
-    other['value'] = -40, 70
+    other = numpy.array([
+      ((0, 1), -40),
+      ((0, 2),  70)], dtype=self.data.dtype)
     retval = sparse.add([self.data, other])
     self.assertEqual(retval.dtype, self.data.dtype)
     self.assertEqual(retval.tolist(),
       [((2,4),10), ((3,4),20), ((2,3),1), ((1,2),30), ((0,1),40), ((1,2),50), ((2,3),-1), ((3,0),0), ((2,0),60), ((0,1),-40), ((0,2),70)])
 
   def test_add_float(self):
-    other = numpy.empty(2, dtype=sparse.dtype((4,5), float))
-    other['index']['i0'] = 0, 0
-    other['index']['i1'] = 1, 2
-    other['value'] = -40, .5
+    other = numpy.array([
+      ((0, 1), -40),
+      ((0, 2),  .5)], dtype=sparse.dtype((4,5), float))
     retval = sparse.add([self.data, other])
     self.assertEqual(retval.dtype, other.dtype)
     self.assertEqual(retval.tolist(),
