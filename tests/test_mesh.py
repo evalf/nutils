@@ -26,15 +26,22 @@ class gmsh(TestCase):
 
   @requires('meshio')
   def test_length(self):
-    for vgroup, bgroup, exact_length in ((),(),6), ((),'neumann',2), ((),'dirichlet',4), ('left',(),4), ('right',(),4):
-      with self.subTest('{},{}'.format(vgroup or 'all', bgroup or 'all')):
-        length = self.domain[vgroup].boundary[bgroup].integrate(function.J(self.geom), ischeme='gauss1')
+    for name, boundary, exact_length in (('full', self.domain.boundary, 6),
+                                         ('neumann', self.domain.boundary['neumann'], 2),
+                                         ('dirichlet', self.domain.boundary['dirichlet'], 4),
+                                         ('extra', self.domain.boundary['extra'], 2),
+                                         ('extraneumann', self.domain.boundary['extra'] & self.domain.boundary['neumann'], 1),
+                                         ('extradirichlet', self.domain.boundary['extra'] & self.domain.boundary['dirichlet'], 1),
+                                         ('left', self.domain['left'].boundary, 4),
+                                         ('right', self.domain['right'].boundary, 4)):
+      with self.subTest(name):
+        length = boundary.integrate(function.J(self.geom), ischeme='gauss1')
         self.assertAllAlmostEqual(length, exact_length, places=10)
 
   @requires('meshio')
   def test_interfaces(self):
-    err = self.domain.interfaces.sample('uniform', 2).eval(self.geom - function.opposite(self.geom))
-    self.assertAllAlmostEqual(err[:,:2], 0, places=13) # the third dimension (if present) is discontinuous at the periodic boundary
+    a, b = self.domain.interfaces.sample('bezier', 2).eval([self.geom, function.opposite(self.geom)])
+    self.assertAllAlmostEqual(a[:,:2], b[:,:2], places=11) # the third dimension (if present) is discontinuous at the periodic boundary
 
   @requires('meshio')
   def test_ifacegroup(self):

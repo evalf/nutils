@@ -1,6 +1,7 @@
 // This geo file defines the [0,2]x[0,1] domain required by test_mesh.gmsh,
-// with "left" and "right" volume groups, "neumann" and "dirichlet" boundary
-// groups, an "iface" interface group separating "left" and "right", and a
+// with "left" and "right" volume groups, "neumann", "dirichlet" and "extra"
+// boundary groups with the latter overlapping both "neumann and "dirichlet",
+// and an "iface" interface group separating "left" and "right", and a
 // "midpoint" point group at coordinate (1,0). To regenerate the msh files:
 //
 // for o in 1 2 3 4; do for v in 2 4; do gmsh -format msh$v -2 -order $o mesh2d.geo -o mesh2d_p${o}_v${v}.msh; done; done
@@ -25,6 +26,7 @@ sR = news; Plane Surface(sR) = {llR};
 Physical Point("midpoint") = {p10};
 Physical Line("neumann") = {lL0,lR0};
 Physical Line("dirichlet") = {l2X,lR1,lL1,l0X};
+Physical Line("extra") = {lL0,l0X};
 Physical Line("iface") = {l1X};
 Physical Surface("left") = {sL};
 Physical Surface("right") = {sR};

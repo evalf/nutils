@@ -65,6 +65,7 @@ vR = newv; Volume(vR) = {slR};
 Physical Point("midpoint") = {p100};
 Physical Surface("neumann") = {sL0X,sR0X};
 Physical Surface("dirichlet") = {s2XX,sR1X,sL1X,s0XX};
+Physical Surface("extra") = {sL0X,s0XX};
 Physical Surface("iface") = {s1XX};
 Physical Volume("left") = {vL};
 Physical Volume("right") = {vR};
