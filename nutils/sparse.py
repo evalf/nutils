@@ -56,7 +56,15 @@ def dtype(shape, vtype=numpy.float64):
       The sparse dtype.
   '''
 
-  return _dtype([((n, 'i'+str(i)), '>u'+str(1 if n <= 256 else 2 if n <= 256**2 else 4 if n <= 256**4 else 8)) for i, n in enumerate(shape)], vtype)
+  return _dtype([((int(n), 'i'+str(i)), '>u'+str(1 if n <= 256 else 2 if n <= 256**2 else 4 if n <= 256**4 else 8)) for i, n in enumerate(shape)], vtype)
+
+def issparse(data):
+  return isinstance(data, numpy.ndarray) and issparsedtype(data.dtype)
+
+def issparsedtype(dtype):
+  return dtype.names == ('index', 'value') and all(
+    len(value) == 3 and isinstance(value[2], int) and 0 <= value[2] < 256**value[0].itemsize
+      for value in dtype['index'].fields.values())
 
 def ndim(data):
   '''Dimension of the sparse object.'''

@@ -28,6 +28,14 @@ class vector(unittest.TestCase):
     self.full = numpy.array(
       [ 60, 40, 80,  0, 30 ])
 
+  def test_issparse(self):
+    self.assertTrue(sparse.issparse(self.data))
+    self.assertFalse(sparse.issparse(numpy.array([10.])))
+
+  def test_issparsedtype(self):
+    self.assertTrue(sparse.issparsedtype(self.data.dtype))
+    self.assertFalse(sparse.issparsedtype(numpy.dtype('int8')))
+
   def test_ndim(self):
     self.assertEqual(sparse.ndim(self.data), 1)
 
@@ -107,6 +115,14 @@ class matrix(unittest.TestCase):
        [  0,  0, 80,  0,  0 ],
        [ 60,  0,  0,  0, 10 ],
        [  0,  0,  0,  0, 20 ]])
+
+  def test_issparse(self):
+    self.assertTrue(sparse.issparse(self.data))
+    self.assertFalse(sparse.issparse(numpy.array([[10.]])))
+
+  def test_issparsedtype(self):
+    self.assertTrue(sparse.issparsedtype(self.data.dtype))
+    self.assertFalse(sparse.issparsedtype(numpy.dtype('int8')))
 
   def test_ndim(self):
     self.assertEqual(sparse.ndim(self.data), 2)
