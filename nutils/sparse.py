@@ -258,6 +258,52 @@ def block(datas):
   assert i == len(retval)
   return retval
 
+def take(data, select):
+  '''Take a multidimensional, ordered subset.'''
+
+  indices, values, shape = extract(data)
+  newindices = []
+  newshape = []
+  keep = True
+  axis = 0
+  for s in select:
+    if not isinstance(s, numpy.ndarray) or s.dtype != bool:
+      raise Exception('invalid selection vector for dimension {}'.format(axis))
+    nextaxis = axis + s.ndim
+    if s.shape != shape[axis:nextaxis]:
+      raise Exception('selection vector has incorrect shape for dimension {}'.format(axis))
+    sh = s.sum()
+    if sh != s.size:
+      keep &= s[indices[axis:nextaxis]]
+      renumber = numpy.empty(s.shape, dtype=_uint(sh))
+      renumber[s] = numpy.arange(sh)
+      index = renumber[indices[axis:nextaxis]]
+      del renumber
+    elif s.ndim == 1:
+      index = indices[axis]
+    else:
+      index = numpy.zeros(len(data), dtype=_uint(sh))
+      for i in range(axis, nextaxis):
+        index *= shape[i]
+        index += indices[i]
+    newindices.append(index)
+    newshape.append(sh)
+    axis = nextaxis
+  assert axis == len(shape)
+  if keep is not True: # selection
+    retval = numpy.empty(keep.sum(), dtype=dtype(newshape, data['value'].dtype))
+    numpy.compress(keep, data['value'], out=retval['value'])
+    for i, newindex in enumerate(newindices):
+      numpy.compress(keep, newindex, out=retval['index']['i'+str(i)])
+  elif newshape != list(shape): # reshape
+    retval = numpy.empty(len(data), dtype=dtype(newshape, data['value'].dtype))
+    retval['value'] = data['value']
+    for i, newindex in enumerate(newindices):
+      retval['index']['i'+str(i)] = newindex
+  else: # identity
+    retval = data
+  return retval
+
 def toarray(data):
   '''Convert sparse object to a dense array.
 

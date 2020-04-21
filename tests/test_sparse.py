@@ -25,9 +25,9 @@ class vector(unittest.TestCase):
        ((2,), 50),
        ((3,), -1),
        ((0,),  0),
-       ((0,), 60)], dtype=sparse.dtype([5], int))
+       ((0,), 60)], dtype=sparse.dtype([6], int))
     self.full = numpy.array(
-      [ 60, 40, 80,  0, 30 ])
+      [ 60, 40, 80,  0, 30, 0 ])
 
   def test_issparse(self):
     self.assertTrue(sparse.issparse(self.data))
@@ -41,7 +41,7 @@ class vector(unittest.TestCase):
     self.assertEqual(sparse.ndim(self.data), 1)
 
   def test_shape(self):
-    self.assertEqual(sparse.shape(self.data), (5,))
+    self.assertEqual(sparse.shape(self.data), (6,))
 
   def test_indices(self):
     i0, = sparse.indices(self.data)
@@ -82,12 +82,20 @@ class vector(unittest.TestCase):
         datas = [a and A, b and B, c and C]
         if a and b and c:
           retval = sparse.block(datas)
-          self.assertEqual(sparse.shape(retval), (11,))
+          self.assertEqual(sparse.shape(retval), (12,))
           self.assertEqual(retval.tolist(),
-            [((4,),10), ((4,),20), ((3,),1), ((2,),30), ((1,),40), ((2,),50), ((3,),-1), ((0,),0), ((0,),60), ((6,),10), ((9,),10)])
+            [((4,),10), ((4,),20), ((3,),1), ((2,),30), ((1,),40), ((2,),50), ((3,),-1), ((0,),0), ((0,),60), ((7,),10), ((10,),10)])
         else:
           with self.assertRaises(Exception):
             sparse.blocks(datas)
+
+  def test_take(self):
+    s = numpy.ones(6, dtype=bool)
+    self.assertEqual(sparse.take(self.data, [s]).tolist(),
+      [((4,),10), ((4,),20), ((3,),1), ((2,),30), ((1,),40), ((2,),50), ((3,),-1), ((0,),0), ((0,),60)])
+    s[1::2] = False
+    self.assertEqual(sparse.take(self.data, [s]).tolist(),
+      [((2,),10), ((2,),20), ((1,),30), ((1,),50), ((0,),0), ((0,),60)])
 
   def test_toarray(self):
     array = sparse.toarray(self.data)
@@ -96,7 +104,7 @@ class vector(unittest.TestCase):
   def test_fromarray(self):
     data = sparse.fromarray(self.full)
     self.assertEqual(data.tolist(),
-      [((0,),60),((1,),40),((2,),80),((3,),0),((4,),30)])
+      [((0,),60),((1,),40),((2,),80),((3,),0),((4,),30),((5,),0)])
 
   def test_add_int(self):
     other = numpy.array([
@@ -110,7 +118,7 @@ class vector(unittest.TestCase):
   def test_add_float(self):
     other = numpy.array([
       ((1,), -40),
-      ((2,),  .5)], dtype=sparse.dtype((5,), float))
+      ((2,),  .5)], dtype=sparse.dtype((6,), float))
     retval = sparse.add([self.data, other])
     self.assertEqual(retval.dtype, other.dtype)
     self.assertEqual(retval.tolist(),
@@ -203,6 +211,24 @@ class matrix(unittest.TestCase):
         else:
           with self.assertRaises(Exception):
             sparse.blocks(datas)
+
+  def test_take(self):
+    s = numpy.ones((4,5), dtype=bool)
+    self.assertEqual(sparse.take(self.data, [s]).tolist(),
+      [((14,), 10), ((19,), 20), ((13,), 1), ((7,), 30), ((1,), 40), ((7,), 50), ((13,), -1), ((15,), 0), ((10,), 60)])
+    s.flat[1::2] = False
+    self.assertEqual(sparse.take(self.data, [s]).tolist(),
+      [((7,), 10), ((5,), 60)])
+    s = numpy.ones(4, dtype=bool)
+    t = numpy.ones(5, dtype=bool)
+    self.assertEqual(sparse.take(self.data, [s,t]).tolist(),
+      [((2,4),10), ((3,4),20), ((2,3),1), ((1,2),30), ((0,1),40), ((1,2),50), ((2,3),-1), ((3,0),0), ((2,0),60)])
+    s.flat[1::2] = False
+    self.assertEqual(sparse.take(self.data, [s,t]).tolist(),
+      [((1,4),10), ((1,3),1), ((0,1),40), ((1,3),-1), ((1,0),60)])
+    t.flat[1::2] = False
+    self.assertEqual(sparse.take(self.data, [s,t]).tolist(),
+      [((1,2),10), ((1,0),60)])
 
   def test_toarray(self):
     array = sparse.toarray(self.data)
