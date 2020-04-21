@@ -930,6 +930,10 @@ class basis(TestCase):
   def test_shape(self):
     self.assertEqual(self.basis.shape, (self.checkndofs,))
 
+  def test_get_coeffshape(self):
+    for ielem in range(self.checknelems):
+      self.assertAllEqual(self.basis.get_coeffshape(ielem), numpy.shape(self.checkcoeffs[ielem])[1:])
+
   def test_get_coefficients_pos(self):
     for ielem in range(self.checknelems):
       self.assertEqual(self.basis.get_coefficients(ielem).tolist(), self.checkcoeffs[ielem])

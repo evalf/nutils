@@ -3425,6 +3425,11 @@ class Basis(Array):
 
     raise NotImplementedError
 
+  def get_coeffshape(self, ielem):
+    '''Return the shape of the array of coefficients for basis functions with support on element ``ielem``.'''
+
+    return numpy.asarray(self.get_coefficients(ielem).shape[1:])
+
   def f_ndofs(self, index):
     return ElemwiseFromCallable(self.get_ndofs, index, dtype=int, shape=())
 
@@ -3432,7 +3437,8 @@ class Basis(Array):
     return ElemwiseFromCallable(self.get_dofs, index, dtype=int, shape=(self.f_ndofs(index),))
 
   def f_coefficients(self, index):
-    return ElemwiseFromCallable(self.get_coefficients, index, dtype=float, shape=(self.f_ndofs(index),) + self.get_coefficients(0).shape[1:])
+    coeffshape = ElemwiseFromCallable(self.get_coeffshape, index, dtype=int, shape=self._points.shape)
+    return ElemwiseFromCallable(self.get_coefficients, index, dtype=float, shape=(self.f_ndofs(index), *coeffshape))
 
   @property
   def simplified(self):
@@ -3580,6 +3586,9 @@ class MaskedBasis(Basis):
 
   def get_dofs(self, ielem):
     return numeric.sorted_index(self._indices, self._parent.get_dofs(ielem), missing='mask')
+
+  def get_coeffshape(self, ielem):
+    return self._parent.get_coeffshape(ielem)
 
   def get_coefficients(self, ielem):
     mask = numeric.sorted_contains(self._indices, self._parent.get_dofs(ielem))
