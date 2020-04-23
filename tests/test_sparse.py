@@ -76,8 +76,10 @@ class vector(unittest.TestCase):
     array = sparse.toarray(self.data)
     self.assertEqual(array.tolist(), self.full.tolist())
 
-  def test_convert(self):
-    self.assertIsInstance(sparse.convert(self.data), numpy.ndarray)
+  def test_fromarray(self):
+    data = sparse.fromarray(self.full)
+    self.assertEqual(data.tolist(),
+      [((0,),60),((1,),40),((2,),80),((3,),0),((4,),30)])
 
   def test_add_int(self):
     other = numpy.array([
@@ -166,16 +168,13 @@ class matrix(unittest.TestCase):
     array = sparse.toarray(self.data)
     self.assertEqual(array.tolist(), self.full.tolist())
 
-  def test_tomatrix(self):
-    from nutils import matrix
-    with matrix.Numpy():
-      dense = sparse.tomatrix(self.data).export('dense')
-    self.assertEqual(dense.tolist(), self.full.tolist())
-
-  def test_convert(self):
-    from nutils import matrix
-    with matrix.Numpy():
-      self.assertIsInstance(sparse.convert(self.data), matrix.Matrix)
+  def test_fromarray(self):
+    data = sparse.fromarray(self.full)
+    self.assertEqual(data.tolist(),
+      [((0,0),0),((0,1),40),((0,2),0),((0,3),0),((0,4),0),
+       ((1,0),0),((1,1),0),((1,2),80),((1,3),0),((1,4),0),
+       ((2,0),60),((2,1),0),((2,2),0),((2,3),0),((2,4),10),
+       ((3,0),0),((3,1),0),((3,2),0),((3,3),0),((3,4),20)])
 
   def test_add_int(self):
     other = numpy.array([

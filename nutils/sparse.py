@@ -216,7 +216,7 @@ def add(datas):
 
 def toarray(data):
   '''Convert sparse object to a dense array.
-  
+
   >>> from nutils.sparse import dtype, toarray
   >>> from numpy import array
   >>> A = array([((0,1),.1), ((1,0),.2), ((0,1),.3)], dtype=dtype([2,2]))
@@ -230,6 +230,24 @@ def toarray(data):
     return values.sum()
   retval = numpy.zeros(shape, values.dtype)
   numpy.add.at(retval, indices, values)
+  return retval
+
+def fromarray(data):
+  '''Convert dense array to sparse object.
+
+  >>> from nutils.sparse import dtype, fromarray
+  >>> from numpy import array
+  >>> A = array([[0, .4], [.2, 0]])
+  >>> fromarray(A)
+  array([((0, 0),  0. ), ((0, 1),  0.4), ((1, 0),  0.2), ((1, 1),  0. )],
+        dtype=[('index', [((2, 'i0'), 'u1'), ((2, 'i1'), 'u1')]), ('value', '<f8')])
+  '''
+
+  retval = numpy.empty(data.size, dtype=dtype(data.shape, data.dtype))
+  retval.reshape(data.shape)['value'] = data
+  index = retval.reshape(data.shape)['index']
+  for i, sh in enumerate(data.shape):
+    index['i'+str(i)] = numpy.arange(sh).reshape([-1]+[1]*(data.ndim-i-1))
   return retval
 
 def tomatrix(data, inplace=False):
