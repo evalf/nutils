@@ -259,19 +259,6 @@ def tomatrix(data, inplace=False):
   indices, values, shape = extract(prune(dedup(data, inplace=inplace), inplace=True))
   return matrix.assemble(values, indices, shape)
 
-def convert(data, inplace=False):
-  '''Convert a two-dimensional sparse object to an appropriate object.
-
-  The return type is determined based on dimension: a zero-dimensional object
-  becomes a scalar, a one-dimensional object a (dense) Numpy vector, a
-  two-dimensional object a Nutils matrix, and any higher dimensional object a
-  deduplicated and pruned sparse object.
-  '''
-
-  return toarray(data) if ndim(data) < 2 \
-    else tomatrix(data, inplace=inplace) if ndim(data) == 2 \
-    else prune(dedup(data, inplace=inplace), inplace=True)
-
 # internal methods
 
 def _dtype(itype, vtype):
