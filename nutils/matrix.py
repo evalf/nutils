@@ -26,7 +26,7 @@ Matrices can be converted into other forms suitable for external processing via
 the ``export`` method.
 """
 
-from . import numpy, numeric, warnings, cache, types, util
+from . import numpy, numeric, warnings, cache, types, util, sparse
 import abc, sys, ctypes, enum, treelog as log, functools, itertools, typing
 
 
@@ -808,12 +808,17 @@ class MKLMatrix(Matrix):
 _current_backend = Numpy()
 
 def assemble(data, index, shape):
+  warnings.deprecation('matrix.assemble is deprecated; use matrix.fromsparse')
   if not isinstance(data, numpy.ndarray) or data.ndim != 1 or len(index) != 2 or len(shape) != 2:
     raise MatrixError('assemble received invalid input')
   n, = (index[0][1:] <= index[0][:-1]).nonzero() # index[0][n+1] <= index[0][n]
   if (index[0][n+1] < index[0][n]).any() or (index[1][n+1] <= index[1][n]).any():
     raise MatrixError('assemble input must be sorted')
   return _current_backend.assemble(data, index, shape)
+
+def fromsparse(data, inplace=False):
+  indices, values, shape = sparse.extract(sparse.prune(sparse.dedup(data, inplace=inplace), inplace=True))
+  return _current_backend.assemble(values, indices, shape)
 
 def empty(shape):
   return assemble(data=numpy.empty([0], dtype=float), index=numpy.empty([len(shape), 0], dtype=int), shape=shape)

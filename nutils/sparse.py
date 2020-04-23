@@ -250,15 +250,6 @@ def fromarray(data):
     index['i'+str(i)] = numpy.arange(sh).reshape([-1]+[1]*(data.ndim-i-1))
   return retval
 
-def tomatrix(data, inplace=False):
-  '''Convert a two-dimensional sparse object to a Nutils matrix.'''
-
-  if ndim(data) != 2:
-    raise Exception('cannot convert {}d data to matrix'.format(ndim(data)))
-  from . import matrix
-  indices, values, shape = extract(prune(dedup(data, inplace=inplace), inplace=True))
-  return matrix.assemble(values, indices, shape)
-
 # internal methods
 
 def _dtype(itype, vtype):

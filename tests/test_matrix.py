@@ -1,5 +1,5 @@
 import numpy, pickle
-from nutils import matrix
+from nutils import matrix, sparse
 from nutils.testing import *
 
 @parametrize
@@ -11,18 +11,10 @@ class solver(TestCase):
     super().setUpContext(stack)
     if self.backend:
       stack.enter_context(self.backend)
-      data = numpy.empty(self.n*3-2)
-      data[0::3] = 2
-      data[1::3] = -1
-      data[2::3] = -1
-      index = numpy.empty([2, self.n*3-2], dtype=int)
-      index[:,0::3] = numpy.arange(self.n)
-      index[0,1::3] = numpy.arange(self.n-1)
-      index[0,2::3] = numpy.arange(1,self.n)
-      index[1,1::3] = numpy.arange(1,self.n)
-      index[1,2::3] = numpy.arange(self.n-1)
-      self.matrix = matrix.assemble(data, index, shape=(self.n, self.n))
       self.exact = 2 * numpy.eye(self.n) - numpy.eye(self.n, self.n, -1) - numpy.eye(self.n, self.n, +1)
+      data = sparse.prune(sparse.fromarray(self.exact), inplace=True)
+      assert len(data) == self.n*3-2
+      self.matrix = matrix.fromsparse(data, inplace=True)
 
   def ifsupported(f):
     def wrapped(self):

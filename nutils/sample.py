@@ -615,7 +615,7 @@ def _convert(data, inplace=False):
 
   ndim = sparse.ndim(data)
   return sparse.toarray(data) if ndim < 2 \
-    else sparse.tomatrix(data, inplace=inplace) if ndim == 2 \
+    else matrix.fromsparse(data, inplace=inplace) if ndim == 2 \
     else sparse.prune(sparse.dedup(data, inplace=inplace), inplace=True)
 
 # vim:sw=2:sts=2:et
