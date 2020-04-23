@@ -61,7 +61,13 @@ class Reference(types.Singleton):
     return EmptyLike(self)
 
   def __mul__(self, other):
-    assert isinstance(other, Reference)
+    '''Return ``self*other``.'''
+
+    if not isinstance(other, Reference):
+      return NotImplemented
+    return self.product(other)
+
+  def product(self, other):
     return self if not other.ndims else other if not self.ndims else TensorReference(self, other)
 
   def __pow__(self, n):
@@ -627,9 +633,8 @@ class TensorReference(Reference):
     self.ref2 = ref2
     super().__init__(ref1.ndims + ref2.ndims)
 
-  def __mul__(self, other):
-    assert isinstance(other, Reference)
-    return TensorReference(self.ref1, self.ref2 * other)
+  def product(self, other):
+    return self.ref1.product(self.ref2.product(other))
 
   @property
   def vertices(self):
