@@ -675,8 +675,6 @@ second argument of :class:`Topology.sample()
 
 .. console::
     >>> bezier = topo.sample('bezier', 2)
-    >>> bezier
-    Sample<1D, 4 elems, 8 points>
 
 The resulting :class:`nutils.sample.Sample` object can be used to evaluate
 :class:`~nutils.function.Array` functions via the :meth:`Sample.eval(func)

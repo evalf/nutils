@@ -1,15 +1,18 @@
 from nutils.testing import TestCase, parametrize
-import nutils.elementseq, nutils.element, nutils.warnings
+import nutils.pointsseq, nutils.element, nutils.points, nutils.warnings
 import unittest, numpy, itertools, operator, functools
 
-line = nutils.element.LineReference()
+line = nutils.element.LineReference().getpoints('bezier', 2)
 square = line*line
-triangle = nutils.element.TriangleReference()
+triangle = nutils.element.TriangleReference().getpoints('bezier', 2)
 
 class Common:
 
   def test_fromdims(self):
     self.assertEqual(self.seq.ndims, self.checkndims)
+
+  def test_npoints(self):
+    self.assertEqual(self.seq.npoints, sum(p.npoints for p in self.check))
 
   def test_len(self):
     self.assertEqual(len(self.seq), len(self.check))
@@ -105,11 +108,11 @@ class Common:
     for product in self._op_or_meth('__mul__', 'product'):
       for other in [], [square], [square]*2, [square, triangle]:
         with self.subTest(other=other):
-          self.assertEqual(tuple(product(nutils.elementseq.References.from_iter(other, 2))), tuple(l*r for l, r in itertools.product(self.check, other)))
+          self.assertEqual(tuple(product(nutils.pointsseq.PointsSequence.from_iter(other, 2))), tuple(l*r for l, r in itertools.product(self.check, other)))
 
   def test_chain_empty(self):
     for chain in self._op_or_meth('__add__', 'chain'):
-      self.assertEqual(tuple(chain(nutils.elementseq._Empty(self.checkndims))), tuple(self.check))
+      self.assertEqual(tuple(chain(nutils.pointsseq._Empty(self.checkndims))), tuple(self.check))
 
   def test_chain_self(self):
     for chain in self._op_or_meth('__add__', 'chain'):
@@ -123,61 +126,77 @@ class Common:
   def test_chain_other(self):
     other = tuple(self.check)[::-1]+(self.check[0],) if self.check else ()
     for chain in self._op_or_meth('__add__', 'chain'):
-      self.assertEqual(tuple(chain(nutils.elementseq.References.from_iter(other, self.checkndims))), tuple(self.check)+other)
+      self.assertEqual(tuple(chain(nutils.pointsseq.PointsSequence.from_iter(other, self.checkndims))), tuple(self.check)+other)
 
-  def test_children(self):
-    self.assertEqual(tuple(self.seq.children), tuple(itertools.chain.from_iterable(ref.child_refs for ref in self.check)))
+  def test_chain_invalid_ndims(self):
+    for chain in self._op_or_meth('__add__', 'chain'):
+      with self.assertRaises(ValueError):
+        chain(nutils.pointsseq.PointsSequence.empty(self.checkndims+1))
 
-  def test_edges(self):
-    self.assertEqual(tuple(self.seq.edges), tuple(itertools.chain.from_iterable(ref.edge_refs for ref in self.check)))
+class TriHull:
 
-  def test_getpoints(self):
-    self.assertEqual(tuple(self.seq.getpoints('bezier', 2)), tuple(ref.getpoints('bezier', 2) for ref in self.check))
+  def test_tri(self):
+    desired = []
+    offset = 0
+    for points in self.check:
+      desired.append(points.tri + offset)
+      offset += points.npoints
+    desired = numpy.concatenate(desired) if desired else numpy.zeros((0, self.checkndims+1), int)
+    self.assertAllEqual(self.seq.tri, desired)
 
-class Empty(TestCase, Common):
+  def test_hull(self):
+    desired = []
+    offset = 0
+    for points in self.check:
+      desired.append(points.hull + offset)
+      offset += points.npoints
+    desired = numpy.concatenate(desired) if desired else numpy.zeros((0, self.checkndims), int)
+    self.assertAllEqual(self.seq.hull, desired)
+
+class Empty(TestCase, Common, TriHull):
 
   def setUp(self):
-    self.seq = nutils.elementseq._Empty(2)
+    self.seq = nutils.pointsseq._Empty(2)
     self.check = []
     self.checkndims = 2
     super().setUp()
 
-class Plain(TestCase, Common):
+class Plain(TestCase, Common, TriHull):
 
   def setUp(self):
-    self.seq = nutils.elementseq._Plain((square, triangle), 2)
+    self.seq = nutils.pointsseq._Plain((square, triangle), 2)
     self.check = [square, triangle]
     self.checkndims = 2
     super().setUp()
 
-class Uniform(TestCase, Common):
+class Uniform(TestCase, Common, TriHull):
 
   def setUp(self):
-    self.seq = nutils.elementseq._Uniform(square, 3)
+    self.seq = nutils.pointsseq._Uniform(square, 3)
     self.check = [square]*3
     self.checkndims = 2
     super().setUp()
 
-class Take(TestCase, Common):
+class Take(TestCase, Common, TriHull):
 
   def setUp(self):
-    self.seq = nutils.elementseq._Take(nutils.elementseq.References.from_iter([square, triangle, square], 2), nutils.types.frozenarray([1, 2], dtype=int))
+    self.seq = nutils.pointsseq._Take(nutils.pointsseq.PointsSequence.from_iter([square, triangle, square], 2), nutils.types.frozenarray([1, 2], dtype=int))
     self.check = [triangle, square]
     self.checkndims = 2
     super().setUp()
 
-class Chain(TestCase, Common):
+class Chain(TestCase, Common, TriHull):
 
   def setUp(self):
-    self.seq = nutils.elementseq._Chain(nutils.elementseq.References.from_iter([square, triangle], 2), nutils.elementseq.References.from_iter([square, square, triangle], 2))
+    self.seq = nutils.pointsseq._Chain(nutils.pointsseq.PointsSequence.from_iter([square, triangle], 2), nutils.pointsseq.PointsSequence.from_iter([square, square, triangle], 2))
     self.check = [square, triangle, square, square, triangle]
     self.checkndims = 2
     super().setUp()
 
-class Repeat(TestCase, Common):
+class Repeat(TestCase, Common, TriHull):
 
   def setUp(self):
-    self.seq = nutils.elementseq._Repeat(nutils.elementseq.References.from_iter([square, triangle, square], 2), 2)
+    self.seq = nutils.pointsseq._Repeat(nutils.pointsseq.PointsSequence.from_iter([square, triangle, square], 2), 2)
     self.check = [square, triangle, square]*2
     self.checkndims = 2
     super().setUp()
@@ -185,53 +204,45 @@ class Repeat(TestCase, Common):
 class Product(TestCase, Common):
 
   def setUp(self):
-    self.seq = nutils.elementseq._Product(nutils.elementseq.References.from_iter([square, triangle], 2), nutils.elementseq.References.uniform(line, 3))
+    self.seq = nutils.pointsseq._Product(nutils.pointsseq.PointsSequence.from_iter([square, triangle], 2), nutils.pointsseq.PointsSequence.uniform(line, 3))
     self.check = [square*line]*3+[triangle*line]*3
     self.checkndims = 3
-    super().setUp()
-
-class Derived(TestCase, Common):
-
-  def setUp(self):
-    self.seq = nutils.elementseq._Derived(nutils.elementseq.References.from_iter([square, triangle], 2), 'child_refs', 2)
-    self.check = [square]*4+[triangle]*4
-    self.checkndims = 2
     super().setUp()
 
 class from_iter(TestCase):
 
   def test_empty(self):
-    self.assertEqual(nutils.elementseq.References.from_iter([], 2), nutils.elementseq._Empty(2))
+    self.assertEqual(nutils.pointsseq.PointsSequence.from_iter([], 2), nutils.pointsseq._Empty(2))
 
   def test_uniform(self):
-    self.assertEqual(nutils.elementseq.References.from_iter([square]*3, 2), nutils.elementseq._Uniform(square, 3))
+    self.assertEqual(nutils.pointsseq.PointsSequence.from_iter([square]*3, 2), nutils.pointsseq._Uniform(square, 3))
 
   def test_plain(self):
-    self.assertEqual(nutils.elementseq.References.from_iter([square, triangle], 2), nutils.elementseq._Plain((square, triangle), 2))
+    self.assertEqual(nutils.pointsseq.PointsSequence.from_iter([square, triangle], 2), nutils.pointsseq._Plain((square, triangle), 2))
 
   def test_invalid_ndims(self):
-    with self.assertRaisesRegex(ValueError, '^not all `Reference` objects in the sequence have ndims equal to 1$'):
-      nutils.elementseq.References.from_iter([line, square], 1)
+    with self.assertRaisesRegex(ValueError, '^not all `Points` in the sequence have ndims equal to 1$'):
+      nutils.pointsseq.PointsSequence.from_iter([line, square], 1)
 
 class uniform(TestCase):
 
   def test_empty(self):
-    self.assertEqual(nutils.elementseq.References.uniform(square, 0), nutils.elementseq._Empty(2))
+    self.assertEqual(nutils.pointsseq.PointsSequence.uniform(square, 0), nutils.pointsseq._Empty(2))
 
   def test_uniform(self):
-    self.assertEqual(nutils.elementseq.References.uniform(square, 1), nutils.elementseq._Uniform(square, 1))
+    self.assertEqual(nutils.pointsseq.PointsSequence.uniform(square, 1), nutils.pointsseq._Uniform(square, 1))
 
   def test_invalid_length(self):
     with self.assertRaisesRegex(ValueError, '^expected nonnegative `length` but got -1$'):
-      nutils.elementseq.References.uniform(square, -1)
+      nutils.pointsseq.PointsSequence.uniform(square, -1)
 
 class empty(TestCase):
 
   def test_empty(self):
-    self.assertEqual(nutils.elementseq.References.empty(1), nutils.elementseq._Empty(1))
+    self.assertEqual(nutils.pointsseq.PointsSequence.empty(1), nutils.pointsseq._Empty(1))
 
   def test_invalid_ndims(self):
     with self.assertRaisesRegex(ValueError, '^expected nonnegative `ndims` but got -1$'):
-      nutils.elementseq.References.empty(-1)
+      nutils.pointsseq.PointsSequence.empty(-1)
 
 # vim:sw=2:sts=2:et

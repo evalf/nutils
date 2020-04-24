@@ -26,7 +26,8 @@ accompanying geometry function. Meshes can either be generated on the fly, e.g.
 provided at this point.
 """
 
-from . import topology, function, util, element, elementseq, numpy, numeric, transform, transformseq, warnings, types, cache, _
+from . import topology, function, util, element, numpy, numeric, transform, transformseq, warnings, types, cache, _
+from .elementseq import References
 import os, itertools, re, math, treelog as log, io, contextlib
 
 # MESH GENERATORS
@@ -573,7 +574,7 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
     pmap = {inode: numpy.array(numpy.equal(nodes, inode).nonzero()).T for inode in set.union(*map(set, ptags.values()))}
     for pname, inodes in ptags.items():
       ptransforms = transformseq.PlainTransforms([topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode]], 0)
-      preferences = elementseq.asreferences([element.getsimplex(0)], 0)*len(ptransforms)
+      preferences = References.uniform(element.getsimplex(0), len(ptransforms))
       pgroups[pname] = topology.Topology(preferences, ptransforms, ptransforms)
 
   vgroups = {}
@@ -617,7 +618,7 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
     vpgroups = {}
     for pname, inodes in ptags.items():
       ptransforms = transformseq.PlainTransforms([topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode] if keep[ielem]], 0)
-      preferences = elementseq.asreferences([element.getsimplex(0)], 0)*len(ptransforms)
+      preferences = References.uniform(element.getsimplex(0), len(ptransforms))
       vpgroups[pname] = topology.Topology(preferences, ptransforms, ptransforms)
     vgroups[name] = vtopo.withgroups(bgroups=vbgroups, igroups=vigroups, pgroups=vpgroups)
 
@@ -685,7 +686,7 @@ def unitsquare(nelems, etype):
         transforms[n*2:(n+1)*2] = (root, transform.Shift([float(i),float(j)])),
         connectivity[n*2:(n+1)*2] = numpy.concatenate(connectivity[n*2:(n+1)*2])[[3,2,4,1] if i%2==j%2 else [3,2,0,5]],
         connectivity = [c-numpy.greater(c,n*2) for c in connectivity]
-      topo = topology.ConnectedTopology(elementseq.asreferences(references, 2), transformseq.PlainTransforms(transforms, 2),transformseq.PlainTransforms(transforms, 2), tuple(types.frozenarray(c, copy=False) for c in connectivity))
+      topo = topology.ConnectedTopology(References.from_iter(references, 2), transformseq.PlainTransforms(transforms, 2),transformseq.PlainTransforms(transforms, 2), tuple(types.frozenarray(c, copy=False) for c in connectivity))
 
     x, y = topo.boundary.elem_mean(function.rootcoords(2), degree=1).T
     bgroups = dict(left=x==0, right=x==nelems, bottom=y==0, top=y==nelems)

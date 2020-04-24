@@ -61,7 +61,13 @@ class Reference(types.Singleton):
     return EmptyLike(self)
 
   def __mul__(self, other):
-    assert isinstance(other, Reference)
+    '''Return ``self*other``.'''
+
+    if not isinstance(other, Reference):
+      return NotImplemented
+    return self.product(other)
+
+  def product(self, other):
     return self if not other.ndims else other if not self.ndims else TensorReference(self, other)
 
   def __pow__(self, n):
@@ -627,9 +633,8 @@ class TensorReference(Reference):
     self.ref2 = ref2
     super().__init__(ref1.ndims + ref2.ndims)
 
-  def __mul__(self, other):
-    assert isinstance(other, Reference)
-    return TensorReference(self.ref1, self.ref2 * other)
+  def product(self, other):
+    return self.ref1.product(self.ref2.product(other))
 
   @property
   def vertices(self):
@@ -664,7 +669,7 @@ class TensorReference(Reference):
       ischeme1, ischeme2 = ischeme.split('*', 1) if '*' in ischeme else (ischeme, ischeme)
       degree1 = degree if not isinstance(degree, tuple) else degree[0]
       degree2 = degree if not isinstance(degree, tuple) else degree[1] if len(degree) == 2 else degree[1:]
-      return points.TensorPoints(self.ref1.getpoints(ischeme1, degree1), self.ref2.getpoints(ischeme2, degree2))
+      return self.ref1.getpoints(ischeme1, degree1) * self.ref2.getpoints(ischeme2, degree2)
     if self.ref1.ndims == self.ref2.ndims == 1:
       coords = numpy.empty([2, 2, 2])
       coords[...,:1] = self.ref1.vertices[:,_]

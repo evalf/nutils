@@ -1,5 +1,6 @@
 from nutils import *
 from nutils.testing import *
+from nutils.elementseq import References
 import numpy, copy, sys, pickle, subprocess, base64, itertools, os
 
 class TopologyAssertions:
@@ -289,7 +290,7 @@ class refined(TestCase):
   def test_boundary_gradient(self):
     ref = _refined_refs[self.etype]
     trans = (transform.Identifier(ref.ndims, 'root'),)
-    domain = topology.ConnectedTopology(elementseq.asreferences([ref], ref.ndims), transformseq.PlainTransforms([trans], ref.ndims), transformseq.PlainTransforms([trans], ref.ndims), ((-1,)*ref.nedges,)).refine(self.ref0)
+    domain = topology.ConnectedTopology(References.uniform(ref, 1), transformseq.PlainTransforms([trans], ref.ndims), transformseq.PlainTransforms([trans], ref.ndims), ((-1,)*ref.nedges,)).refine(self.ref0)
     geom = function.rootcoords(ref.ndims)
     basis = domain.basis('std', degree=1)
     u = domain.projection(geom.sum(), onto=basis, geometry=geom, degree=2)
@@ -635,7 +636,7 @@ class common(TestCase):
 
 common(
   'Topology',
-  topo=topology.Topology(elementseq.asreferences([element.PointReference()], 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0)),
+  topo=topology.Topology(References.uniform(element.PointReference(), 1), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0)),
   hasboundary=False)
 common(
   'StructuredTopology:2D',
