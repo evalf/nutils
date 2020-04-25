@@ -13,9 +13,9 @@ Changes since version 5.0
   The new :mod:`nutils.sparse` module introduces a data type and a suite of
   manipulation methods for arbitrary dimensional sparse data. The existing
   integrate and integral methods now create data of this type under the hood,
-  and then :func:`nutils.sparse.convert` it to a scalar, Numpy array or
-  :class:`nutils.matrix.Matrix` upon return. In order to receive the sparse
-  objects instead use the new :func:`nutils.sample.Sample.integrate_sparse` or
+  and then convert it to a scalar, Numpy array or :class:`nutils.matrix.Matrix`
+  upon return. In order to receive the sparse objects instead use the new
+  :func:`nutils.sample.Sample.integrate_sparse` or
   :func:`nutils.sample.eval_integrals_sparse`.
 
 - External dependency for parsing gmsh files

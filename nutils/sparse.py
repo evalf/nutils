@@ -56,7 +56,15 @@ def dtype(shape, vtype=numpy.float64):
       The sparse dtype.
   '''
 
-  return _dtype([((n, 'i'+str(i)), '>u'+str(1 if n <= 256 else 2 if n <= 256**2 else 4 if n <= 256**4 else 8)) for i, n in enumerate(shape)], vtype)
+  return _dtype([((int(n), 'i'+str(i)), '>u'+str(1 if n <= 256 else 2 if n <= 256**2 else 4 if n <= 256**4 else 8)) for i, n in enumerate(shape)], vtype)
+
+def issparse(data):
+  return isinstance(data, numpy.ndarray) and issparsedtype(data.dtype)
+
+def issparsedtype(dtype):
+  return dtype.names == ('index', 'value') and all(
+    len(value) == 3 and isinstance(value[2], int) and 0 <= value[2] < 256**value[0].itemsize
+      for value in dtype['index'].fields.values())
 
 def ndim(data):
   '''Dimension of the sparse object.'''
@@ -208,7 +216,7 @@ def add(datas):
 
 def toarray(data):
   '''Convert sparse object to a dense array.
-  
+
   >>> from nutils.sparse import dtype, toarray
   >>> from numpy import array
   >>> A = array([((0,1),.1), ((1,0),.2), ((0,1),.3)], dtype=dtype([2,2]))
@@ -224,27 +232,23 @@ def toarray(data):
   numpy.add.at(retval, indices, values)
   return retval
 
-def tomatrix(data, inplace=False):
-  '''Convert a two-dimensional sparse object to a Nutils matrix.'''
+def fromarray(data):
+  '''Convert dense array to sparse object.
 
-  if ndim(data) != 2:
-    raise Exception('cannot convert {}d data to matrix'.format(ndim(data)))
-  from . import matrix
-  indices, values, shape = extract(prune(dedup(data, inplace=inplace), inplace=True))
-  return matrix.assemble(values, indices, shape)
-
-def convert(data, inplace=False):
-  '''Convert a two-dimensional sparse object to an appropriate object.
-
-  The return type is determined based on dimension: a zero-dimensional object
-  becomes a scalar, a one-dimensional object a (dense) Numpy vector, a
-  two-dimensional object a Nutils matrix, and any higher dimensional object a
-  deduplicated and pruned sparse object.
+  >>> from nutils.sparse import dtype, fromarray
+  >>> from numpy import array
+  >>> A = array([[0, .4], [.2, 0]])
+  >>> fromarray(A)
+  array([((0, 0),  0. ), ((0, 1),  0.4), ((1, 0),  0.2), ((1, 1),  0. )],
+        dtype=[('index', [((2, 'i0'), 'u1'), ((2, 'i1'), 'u1')]), ('value', '<f8')])
   '''
 
-  return toarray(data) if ndim(data) < 2 \
-    else tomatrix(data, inplace=inplace) if ndim(data) == 2 \
-    else prune(dedup(data, inplace=inplace), inplace=True)
+  retval = numpy.empty(data.size, dtype=dtype(data.shape, data.dtype))
+  retval.reshape(data.shape)['value'] = data
+  index = retval.reshape(data.shape)['index']
+  for i, sh in enumerate(data.shape):
+    index['i'+str(i)] = numpy.arange(sh).reshape([-1]+[1]*(data.ndim-i-1))
+  return retval
 
 # internal methods
 

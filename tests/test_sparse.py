@@ -28,6 +28,14 @@ class vector(unittest.TestCase):
     self.full = numpy.array(
       [ 60, 40, 80,  0, 30 ])
 
+  def test_issparse(self):
+    self.assertTrue(sparse.issparse(self.data))
+    self.assertFalse(sparse.issparse(numpy.array([10.])))
+
+  def test_issparsedtype(self):
+    self.assertTrue(sparse.issparsedtype(self.data.dtype))
+    self.assertFalse(sparse.issparsedtype(numpy.dtype('int8')))
+
   def test_ndim(self):
     self.assertEqual(sparse.ndim(self.data), 1)
 
@@ -68,22 +76,24 @@ class vector(unittest.TestCase):
     array = sparse.toarray(self.data)
     self.assertEqual(array.tolist(), self.full.tolist())
 
-  def test_convert(self):
-    self.assertIsInstance(sparse.convert(self.data), numpy.ndarray)
+  def test_fromarray(self):
+    data = sparse.fromarray(self.full)
+    self.assertEqual(data.tolist(),
+      [((0,),60),((1,),40),((2,),80),((3,),0),((4,),30)])
 
   def test_add_int(self):
-    other = numpy.empty(2, dtype=self.data.dtype)
-    other['index']['i0'] = 1, 2
-    other['value'] = -40, 70
+    other = numpy.array([
+      ((1,), -40),
+      ((2,),  70)], dtype=self.data.dtype)
     retval = sparse.add([self.data, other])
     self.assertEqual(retval.dtype, self.data.dtype)
     self.assertEqual(retval.tolist(),
       [((4,),10), ((4,),20), ((3,),1), ((2,),30), ((1,),40), ((2,),50), ((3,),-1), ((0,),0), ((0,),60), ((1,),-40), ((2,),70)])
 
   def test_add_float(self):
-    other = numpy.empty(2, dtype=sparse.dtype((5,), float))
-    other['index']['i0'] = 1, 2
-    other['value'] = -40, .5
+    other = numpy.array([
+      ((1,), -40),
+      ((2,),  .5)], dtype=sparse.dtype((5,), float))
     retval = sparse.add([self.data, other])
     self.assertEqual(retval.dtype, other.dtype)
     self.assertEqual(retval.tolist(),
@@ -107,6 +117,14 @@ class matrix(unittest.TestCase):
        [  0,  0, 80,  0,  0 ],
        [ 60,  0,  0,  0, 10 ],
        [  0,  0,  0,  0, 20 ]])
+
+  def test_issparse(self):
+    self.assertTrue(sparse.issparse(self.data))
+    self.assertFalse(sparse.issparse(numpy.array([[10.]])))
+
+  def test_issparsedtype(self):
+    self.assertTrue(sparse.issparsedtype(self.data.dtype))
+    self.assertFalse(sparse.issparsedtype(numpy.dtype('int8')))
 
   def test_ndim(self):
     self.assertEqual(sparse.ndim(self.data), 2)
@@ -150,32 +168,27 @@ class matrix(unittest.TestCase):
     array = sparse.toarray(self.data)
     self.assertEqual(array.tolist(), self.full.tolist())
 
-  def test_tomatrix(self):
-    from nutils import matrix
-    with matrix.Numpy():
-      dense = sparse.tomatrix(self.data).export('dense')
-    self.assertEqual(dense.tolist(), self.full.tolist())
-
-  def test_convert(self):
-    from nutils import matrix
-    with matrix.Numpy():
-      self.assertIsInstance(sparse.convert(self.data), matrix.Matrix)
+  def test_fromarray(self):
+    data = sparse.fromarray(self.full)
+    self.assertEqual(data.tolist(),
+      [((0,0),0),((0,1),40),((0,2),0),((0,3),0),((0,4),0),
+       ((1,0),0),((1,1),0),((1,2),80),((1,3),0),((1,4),0),
+       ((2,0),60),((2,1),0),((2,2),0),((2,3),0),((2,4),10),
+       ((3,0),0),((3,1),0),((3,2),0),((3,3),0),((3,4),20)])
 
   def test_add_int(self):
-    other = numpy.empty(2, dtype=self.data.dtype)
-    other['index']['i0'] = 0, 0
-    other['index']['i1'] = 1, 2
-    other['value'] = -40, 70
+    other = numpy.array([
+      ((0, 1), -40),
+      ((0, 2),  70)], dtype=self.data.dtype)
     retval = sparse.add([self.data, other])
     self.assertEqual(retval.dtype, self.data.dtype)
     self.assertEqual(retval.tolist(),
       [((2,4),10), ((3,4),20), ((2,3),1), ((1,2),30), ((0,1),40), ((1,2),50), ((2,3),-1), ((3,0),0), ((2,0),60), ((0,1),-40), ((0,2),70)])
 
   def test_add_float(self):
-    other = numpy.empty(2, dtype=sparse.dtype((4,5), float))
-    other['index']['i0'] = 0, 0
-    other['index']['i1'] = 1, 2
-    other['value'] = -40, .5
+    other = numpy.array([
+      ((0, 1), -40),
+      ((0, 2),  .5)], dtype=sparse.dtype((4,5), float))
     retval = sparse.add([self.data, other])
     self.assertEqual(retval.dtype, other.dtype)
     self.assertEqual(retval.tolist(),

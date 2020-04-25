@@ -153,7 +153,7 @@ class Sample(types.Singleton):
 
     datas = self.integrate_sparse(funcs, arguments)
     with log.iter.fraction('assembling', datas) as items:
-      return [sparse.convert(data, inplace=True) for data in items]
+      return [_convert(data, inplace=True) for data in items]
 
   @util.single_or_multiple
   @types.apply_annotations
@@ -569,7 +569,7 @@ def eval_integrals(*integrals: types.tuple[strictintegral], **arguments:argdict)
   '''
 
   with log.iter.fraction('assembling', eval_integrals_sparse(*integrals, **arguments)) as retvals:
-    return [sparse.convert(retval, inplace=True) for retval in retvals]
+    return [_convert(retval, inplace=True) for retval in retvals]
 
 @types.apply_annotations
 def eval_integrals_sparse(*integrals: types.tuple[strictintegral], **arguments: argdict):
@@ -603,5 +603,19 @@ def eval_integrals_sparse(*integrals: types.tuple[strictintegral], **arguments: 
       del retval
 
   return [sparse.add(retval) for retval in retvals]
+
+def _convert(data, inplace=False):
+  '''Convert a two-dimensional sparse object to an appropriate object.
+
+  The return type is determined based on dimension: a zero-dimensional object
+  becomes a scalar, a one-dimensional object a (dense) Numpy vector, a
+  two-dimensional object a Nutils matrix, and any higher dimensional object a
+  deduplicated and pruned sparse object.
+  '''
+
+  ndim = sparse.ndim(data)
+  return sparse.toarray(data) if ndim < 2 \
+    else matrix.fromsparse(data, inplace=inplace) if ndim == 2 \
+    else sparse.prune(sparse.dedup(data, inplace=inplace), inplace=True)
 
 # vim:sw=2:sts=2:et
