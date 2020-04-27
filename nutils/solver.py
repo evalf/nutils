@@ -637,8 +637,7 @@ class thetamethod(RecursionWithSolve, length=1, version=1):
     assert target0 not in arguments, '`target0` should not be defined in `arguments`'
     self.target = target
     self.target0 = target0
-    self.lhs0 = lhs0
-    self.constrain = constrain
+    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
     self.newtonargs = newtonargs
     self.newtontol = newtontol
     self.arguments = arguments
