@@ -47,8 +47,8 @@ Note that discretization inevitably implies approximation, i.e. :math:`u ≠
 space of piecewise linears, which contains the exact solution. We therefore
 expect our Finite Element solution to be exact.
 
-Wetting your appetite
----------------------
+Whetting your appetite
+----------------------
 
 The computation can be set up in about 20 lines of Nutils code, including
 visualization. The entire script is presented below, in copy-pasteable form
