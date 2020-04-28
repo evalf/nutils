@@ -829,6 +829,22 @@ class _ExpressionParser:
       if self._next.type  == 'indices':
         self._consume()
       raise _IntermediateError('Taking a derivative of a constant is not allowed.')
+    if self._next.type == '^':
+      token = self._consume()
+      if self._next.type == '(':
+        self._consume()
+        exponent = self.parse_subexpression()
+        self._consume_assert_equal(')')
+      else:
+        if self._next.type == '-':
+          self._consume()
+          negate = True
+        else:
+          negate = False
+        exponent = self.parse_const_scalar()
+        if negate:
+          exponent = -exponent
+      value = value**exponent
     return value
 
   @highlight

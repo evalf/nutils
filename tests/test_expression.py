@@ -332,6 +332,9 @@ class parse(TestCase):
   def test_array_pow_pos(self): self.assert_ast('a2_i^2', 'i', ('pow', v._a2, _(2)))
   def test_array_pow_neg(self): self.assert_ast('a2_i^-2', 'i', ('pow', v._a2, ('neg', _(2))))
   def test_array_pow_scalar_expr(self): self.assert_ast('a2_i^(1 / 3)', 'i', ('pow', v._a2, ('truediv', _(1), _(3))))
+  def test_scalar_pow_pos(self): self.assert_ast('2^3', '', ('pow', _(2), _(3)))
+  def test_scalar_pow_neg(self): self.assert_ast('2^-3', '', ('pow', _(2), ('neg', _(3))))
+  def test_scalar_pow_scalar_expr(self): self.assert_ast('2^(1 / 3)', '', ('pow', _(2), ('truediv', _(1), _(3))))
 
   def test_array_pow_nonconst(self):
     self.assert_syntax_error(
