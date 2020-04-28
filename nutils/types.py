@@ -560,9 +560,9 @@ class ImmutableMeta(CacheMeta):
     for preprocess in cls._pre_init:
       args, kwargs = preprocess(*args, **kwargs)
     args = args[1:]
-    return cls._new(*args, **kwargs)
+    return cls._new(args, kwargs)
 
-  def _new(cls, *args, **kwargs):
+  def _new(cls, args, kwargs):
     self = cls.__new__(cls)
     self._args = args
     self._kwargs = kwargs
@@ -626,7 +626,7 @@ class Immutable(metaclass=ImmutableMeta):
   __cache__ = '__nutils_hash__',
 
   def __reduce__(self):
-    return self.__class__._new, self._args
+    return self.__class__._new, (self._args, self._kwargs)
 
   def __hash__(self):
     return self._hash
@@ -654,7 +654,7 @@ class Immutable(metaclass=ImmutableMeta):
     return '{}({})'.format(self.__class__.__name__, ','.join(str(arg) for arg in self._args))
 
   def edit(self, op):
-    return self.__class__(*[op(arg) for arg in self._args])
+    return self.__class__(*[op(arg) for arg in self._args], **{name: op(value) for name, value in self._kwargs.items()})
 
 class SingletonMeta(ImmutableMeta):
 
@@ -663,12 +663,12 @@ class SingletonMeta(ImmutableMeta):
     cls._cache = weakref.WeakValueDictionary()
     return cls
 
-  def _new(cls, *args, **kwargs):
+  def _new(cls, args, kwargs):
     key = args + tuple((key, kwargs[key]) for key in sorted(kwargs))
     try:
       self = cls._cache[key]
     except KeyError:
-      cls._cache[key] = self = super()._new(*args, **kwargs)
+      cls._cache[key] = self = super()._new(args, kwargs)
     return self
 
 class Singleton(Immutable, metaclass=SingletonMeta):

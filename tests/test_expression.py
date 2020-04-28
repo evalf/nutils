@@ -215,9 +215,17 @@ class parse(TestCase):
       "a2_i- a2_i", "i",
       "    ^")
 
-  def test_int_float_syntax(self):
-    self.assert_ast('1 + 1.1 + 1. + 0.12', '',
-      ('add', ('add', ('add', _(1), _(1.1)), _(1.)), _(0.12)))
+  def test_int(self):
+    self.assert_ast('1', '', _(1))
+
+  def test_float(self):
+    for f in '10', '1', '1.', '.1', '1.2', '0.01', '10.0':
+      self.assert_ast(f, '', _(float(f)))
+
+  def test_scientific(self):
+    for base in '0', '1', '10', '1.', '.1', '.01', '1.2':
+      for exp in '-1', '0', '1', '10':
+        self.assert_ast(base+'e'+exp, '', _(float(base+'e'+exp)))
 
   def test_jump_mean(self):
     self.assert_ast('[a2_i,i] + {a2_j,j}', '',
@@ -331,7 +339,11 @@ class parse(TestCase):
 
   def test_array_pow_pos(self): self.assert_ast('a2_i^2', 'i', ('pow', v._a2, _(2)))
   def test_array_pow_neg(self): self.assert_ast('a2_i^-2', 'i', ('pow', v._a2, ('neg', _(2))))
+  def test_array_pow_scientific(self): self.assert_ast('a2_i^1e1', 'i', ('pow', v._a2, _(1e1)))
   def test_array_pow_scalar_expr(self): self.assert_ast('a2_i^(1 / 3)', 'i', ('pow', v._a2, ('truediv', _(1), _(3))))
+  def test_scalar_pow_pos(self): self.assert_ast('2^3', '', ('pow', _(2), _(3)))
+  def test_scalar_pow_neg(self): self.assert_ast('2^-3', '', ('pow', _(2), ('neg', _(3))))
+  def test_scalar_pow_scalar_expr(self): self.assert_ast('2^(1 / 3)', '', ('pow', _(2), ('truediv', _(1), _(3))))
 
   def test_array_pow_nonconst(self):
     self.assert_syntax_error(

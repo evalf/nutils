@@ -791,7 +791,7 @@ class _ExpressionParser:
 
   @highlight
   def parse_const_scalar(self):
-    'parse a constant scalar, e.g. "1", "1.0", "0.1"'
+    'parse a constant scalar, e.g. "1", "1.0", "0.1", "1e3", ".1e0", "1.2e03"'
 
     token = self._consume()
     if token.type == 'int':
@@ -829,6 +829,22 @@ class _ExpressionParser:
       if self._next.type  == 'indices':
         self._consume()
       raise _IntermediateError('Taking a derivative of a constant is not allowed.')
+    if self._next.type == '^':
+      token = self._consume()
+      if self._next.type == '(':
+        self._consume()
+        exponent = self.parse_subexpression()
+        self._consume_assert_equal(')')
+      else:
+        if self._next.type == '-':
+          self._consume()
+          negate = True
+        else:
+          negate = False
+        exponent = self.parse_const_scalar()
+        if negate:
+          exponent = -exponent
+      value = value**exponent
     return value
 
   @highlight
@@ -987,9 +1003,9 @@ class _ExpressionParser:
         tokens.append(_Token('variable', m_variable, pos))
         pos += len(m_variable)
         continue
-      m = re.match(r'[0-9]*[.][0-9]*', self.expression[pos:])
+      m = re.match(r'[0-9]+e-?[0-9]+|([0-9]+[.][0-9]*|[.][0-9]+)(e-?[0-9]+)?', self.expression[pos:])
       if m:
-        if m.group(0).startswith('0') and not m.group(0).startswith('0.'):
+        if m.group(0).startswith('0') and not (m.group(0).startswith('0.') or m.group(0).startswith('0e')):
           raise _IntermediateError('Leading zeros are forbidden.', at=pos, count=len(m.group(0)))
         tokens.append(_Token('float', m.group(0), pos))
         pos += m.end()
