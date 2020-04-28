@@ -904,11 +904,11 @@ class c_array(TestCase):
       nutils.types.c_array()
 
 class T_Immutable(nutils.types.Immutable):
-  def __init__(self, x, y):
+  def __init__(self, x, y, *, z):
     pass
 
 class T_Singleton(nutils.types.Singleton):
-  def __init__(self, x, y):
+  def __init__(self, x, y, *, z):
     pass
 
 @parametrize
@@ -916,7 +916,7 @@ class ImmutableFamily(TestCase):
 
   def test_pickle(self):
     T = {nutils.types.Immutable: T_Immutable, nutils.types.Singleton: T_Singleton}[self.cls]
-    a = T(1, 2)
+    a = T(1, 2, z=3)
     b = pickle.loads(pickle.dumps(a))
     self.assertEqual(a, b)
 
@@ -994,6 +994,16 @@ class ImmutableFamily(TestCase):
     self.assertNotEqual(a, c)
     self.assertIsNot(a, d)
     self.assertNotEqual(a, d)
+
+  def test_edit(self):
+    class T(self.cls):
+      def __init__(self, x, *, y):
+        self.x = x
+        self.y = y
+
+    a = T(1, y=2).edit(lambda v: v+1)
+    self.assertEqual(a.x, 2)
+    self.assertEqual(a.y, 3)
 
 ImmutableFamily(cls=nutils.types.Immutable)
 ImmutableFamily(cls=nutils.types.Singleton)
