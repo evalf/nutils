@@ -247,7 +247,7 @@ class cutdomain(TestCase):
         point = p * .5**numpy.arange(self.domain.ndims)
         r = numpy.linalg.norm(point)
         try:
-          sample = self.pos.locate(curvegeom, [point])
+          sample = self.pos.locate(curvegeom, [point], tol=1e-12)
         except topology.LocateError:
           self.assertGreater(r, self.radius)
         else:

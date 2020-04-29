@@ -322,35 +322,35 @@ class locate(TestCase):
 
   def test(self):
     target = numpy.array([(.2,.3), (.1,.9), (0,1)])
-    sample = self.domain.locate(self.geom, target, eps=1e-15)
+    sample = self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12)
     located = sample.eval(self.geom)
     self.assertAllAlmostEqual(located, target)
 
   def test_invalidargs(self):
     target = numpy.array([(.2,), (.1,), (0,)])
     with self.assertRaises(Exception):
-      self.domain.locate(self.geom, target, eps=1e-15)
+      self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12)
 
   def test_invalidpoint(self):
     target = numpy.array([(.3, 1)]) # outside domain, but inside basetopo for mode==trimmed
     with self.assertRaises(topology.LocateError):
-      self.domain.locate(self.geom, target, eps=1e-15)
+      self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12)
 
   def test_boundary(self):
     target = numpy.array([(.2,), (.1,), (0,)])
-    sample = self.domain.boundary['bottom'].locate(self.geom[:1], target, eps=1e-15)
+    sample = self.domain.boundary['bottom'].locate(self.geom[:1], target, eps=1e-15, tol=1e-12)
     located = sample.eval(self.geom[:1])
     self.assertAllAlmostEqual(located, target)
 
   def test_boundary_scalar(self):
     target = numpy.array([.3, .9, 1])
-    sample = self.domain.boundary['left'].locate(self.geom[1], target, eps=1e-15)
+    sample = self.domain.boundary['left'].locate(self.geom[1], target, eps=1e-15, tol=1e-12)
     located = sample.eval(self.geom[1])
     self.assertAllAlmostEqual(located, target)
 
 for etype in 'square', 'triangle', 'mixed':
   for mode in 'linear', 'nonlinear', 'trimmed':
-    locate(etype=etype, mode=mode)
+    locate(etype=etype, mode=mode, tol=1e-12)
 
 
 @parametrize
