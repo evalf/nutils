@@ -94,14 +94,6 @@ def solve_linear(target:types.strictstr, residual:sample.strictintegral, constra
   res, jac = sample.eval_integrals(residual, jacobian, **{target: numpy.zeros(argshape)}, **arguments)
   return jac.solve(-res, constrain=constrain, **solveargs)
 
-def solve(gen_lhs_resnorm, tol=0., maxiter=float('inf')):
-  warnings.deprecation('solve(x, ...) is deprecated, use x.solve(...) instead')
-  return gen_lhs_resnorm.solve(tol, maxiter)
-
-def solve_withinfo(gen_lhs_resnorm, tol:types.strictfloat=0., maxiter:types.strictfloat=float('inf')):
-  warnings.deprecation('solve_withinfo(x, ...) is deprecated, use x.solve_withinfo(...) instead')
-  return gen_lhs_resnorm.solve_withinfo(tol, maxiter)
-
 
 class RecursionWithSolve(cache.Recursion):
   '''add a .solve method to (lhs,resnorm) iterators'''
@@ -133,7 +125,7 @@ class RecursionWithSolve(cache.Recursion):
 
   @types.apply_annotations
   @cache.function
-  def solve_withinfo(self, tol=0., maxiter=float('inf')):
+  def solve_withinfo(self, tol, maxiter=float('inf')):
     '''execute nonlinear solver, return lhs and info
 
     Like :func:`solve`, but return a 2-tuple of the solution and the
@@ -141,9 +133,6 @@ class RecursionWithSolve(cache.Recursion):
     norm and other generator-dependent information.
     '''
   
-    if not tol:
-      warnings.deprecation('solve with zero tolerance is deprecated and will be removed; proceeding with tol=1e-12')
-      tol = 1e-12
     with log.iter.wrap(_progress(self.__class__.__name__, tol), self) as items:
       i = 0
       for lhs, info in items:
@@ -729,9 +718,6 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
       Coefficient vector corresponding to the functional optimum
   '''
 
-  if 'newtontol' in kwargs:
-    warnings.deprecation('argument "newtontol" is deprecated, use "tol" instead')
-    tol = kwargs.pop('newtontol')
   if linesearch is None:
     linesearch = NormBased.legacy(kwargs)
   solveargs = _strip(kwargs, 'lin')
