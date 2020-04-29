@@ -171,7 +171,7 @@ Release date: `2020-04-29 <https://github.com/evalf/nutils/releases/tag/v6.0>`_.
   Nutils now depends on treelog version 1.0b5, which brings improved
   iterators along with other enhancements. For transitional convenience
   the backwards incompatible changes have been backported in the
-  :mod:`nutils.log` wrapper, which now emits a warning in case the
+  ``nutils.log`` wrapper, which now emits a warning in case the
   deprecated methods are used. This wrapper is scheduled for deletion
   prior to the release of version 6.0. To update treelog to the most
   recent version use::

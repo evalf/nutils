@@ -36,7 +36,6 @@ __all__ = [
   'export',
   'expression',
   'function',
-  'log',
   'matrix',
   'mesh',
   'numeric',

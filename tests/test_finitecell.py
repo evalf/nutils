@@ -1,5 +1,6 @@
 from nutils import *
 from nutils.testing import *
+import treelog as log
 
 
 class hierarchical(TestCase):
