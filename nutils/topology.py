@@ -480,7 +480,7 @@ class Topology(types.Singleton):
     return self[selected]
 
   @log.withcontext
-  def locate(self, geom, coords, *, ischeme='vertex', scale=1, tol=None, eps=0, maxiter=100, arguments=None):
+  def locate(self, geom, coords, *, tol, ischeme='vertex', scale=1, eps=0, maxiter=100, arguments=None):
     '''Create a sample based on physical coordinates.
 
     In a finite element application, functions are commonly evaluated in points
@@ -495,7 +495,7 @@ class Topology(types.Singleton):
 
     >>> from . import mesh
     >>> domain, geom = mesh.unitsquare(nelems=3, etype='mixed')
-    >>> sample = domain.locate(geom, [[.9, .4]])
+    >>> sample = domain.locate(geom, [[.9, .4]], tol=1e-12)
     >>> sample.eval(geom).tolist()
     [[0.9, 0.4]]
 
@@ -530,9 +530,6 @@ class Topology(types.Singleton):
     located : :class:`nutils.sample.Sample`
     '''
 
-    if tol is None:
-      warnings.deprecation('locate without tol argument is deprecated, please provide an explicit tolerance')
-      tol = 1e-12
     coords = numpy.asarray(coords, dtype=float)
     if geom.ndim == 0:
       geom = geom[_]
@@ -1285,10 +1282,7 @@ class StructuredTopology(Topology):
         else transformseq.BndAxis(i=axis.i*2,j=axis.j*2,ibound=axis.ibound,side=axis.side) for axis in self.axes]
     return StructuredTopology(self.root, axes, self.nrefine+1, bnames=self._bnames)
 
-  def locate(self, geom, coords, *, eps=0, tol=None, **kwargs):
-    if tol is None:
-      warnings.deprecation('locate without tol argument is deprecated, please provide an explicit tolerance')
-      tol = 1e-12
+  def locate(self, geom, coords, *, tol, eps=0, **kwargs):
     coords = numpy.asarray(coords, dtype=float)
     if geom.ndim == 0:
       geom = geom[_]
