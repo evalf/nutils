@@ -62,7 +62,7 @@ class SolverError(Exception): pass
 
 @types.apply_annotations
 @cache.function
-def solve_linear(target:types.strictstr, residual:sample.strictintegral, constrain:types.frozenarray=None, *, arguments:argdict={}, solveargs:types.frozendict={}, **linargs):
+def solve_linear(target:types.strictstr, residual:sample.strictintegral, constrain:types.frozenarray=None, *, arguments:argdict={}, **kwargs):
   '''solve linear problem
 
   Parameters
@@ -83,7 +83,9 @@ def solve_linear(target:types.strictstr, residual:sample.strictintegral, constra
   :class:`numpy.ndarray`
       Array of ``target`` values for which ``residual == 0``'''
 
-  solveargs = _striplin(linargs, solveargs)
+  solveargs = _strip(kwargs, 'lin')
+  if kwargs:
+    raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
   jacobian = residual.derivative(target)
   if jacobian.contains(target):
     raise SolverError('problem is not linear')
@@ -199,7 +201,7 @@ class newton(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, relax0:float=1., constrain:types.frozenarray=None, linesearch=None, failrelax:types.strictfloat=1e-6, arguments:argdict={}, solveargs:types.frozendict={}, **linargs):
+  def __init__(self, target:types.strictstr, residual:sample.strictintegral, jacobian:sample.strictintegral=None, lhs0:types.frozenarray[types.strictfloat]=None, relax0:float=1., constrain:types.frozenarray=None, linesearch=None, failrelax:types.strictfloat=1e-6, arguments:argdict={}, **kwargs):
     super().__init__()
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
@@ -209,10 +211,12 @@ class newton(RecursionWithSolve, length=1):
     self.lhs0, constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
     self.relax0 = relax0
     self.free = ~constrain
-    self.linesearch = linesearch or NormBased.legacy(linargs)
+    self.linesearch = linesearch or NormBased.legacy(kwargs)
     self.failrelax = failrelax
     self.arguments = arguments
-    self.solveargs = _striplin(linargs, solveargs)
+    self.solveargs = _strip(kwargs, 'lin')
+    if kwargs:
+      raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
     self.solveargs.setdefault('rtol', 1e-3)
 
   def _eval(self, lhs):
@@ -439,7 +443,7 @@ class minimize(RecursionWithSolve, length=1, version=3):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, energy:sample.strictintegral, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, rampup:types.strictfloat=.5, rampdown:types.strictfloat=-1., failrelax:types.strictfloat=-10., arguments:argdict={}, solveargs:types.frozendict={}, **linargs):
+  def __init__(self, target:types.strictstr, energy:sample.strictintegral, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, rampup:types.strictfloat=.5, rampdown:types.strictfloat=-1., failrelax:types.strictfloat=-10., arguments:argdict={}, **kwargs):
     super().__init__()
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
@@ -454,7 +458,9 @@ class minimize(RecursionWithSolve, length=1, version=3):
     self.rampdown = rampdown
     self.failrelax = failrelax
     self.arguments = arguments
-    self.solveargs = _striplin(linargs, solveargs)
+    self.solveargs = _strip(kwargs, 'lin')
+    if kwargs:
+      raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
 
   def _eval(self, lhs):
     nrg, res, jac = sample.eval_integrals(self.energy, self.residual, self.jacobian, **{self.target: lhs}, **self.arguments)
@@ -546,7 +552,7 @@ class pseudotime(RecursionWithSolve, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, residual:sample.strictintegral, inertia:sample.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, arguments:argdict={}, solveargs:types.frozendict={}, **linargs):
+  def __init__(self, target:types.strictstr, residual:sample.strictintegral, inertia:sample.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray[types.strictfloat]=None, constrain:types.frozenarray=None, arguments:argdict={}, **kwargs):
     super().__init__()
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
@@ -560,7 +566,9 @@ class pseudotime(RecursionWithSolve, length=1):
     self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
     self.timestep = timestep
     self.arguments = arguments
-    self.solveargs = _striplin(linargs, solveargs)
+    self.solveargs = _strip(kwargs, 'lin')
+    if kwargs:
+      raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
     self.solveargs.setdefault('rtol', 1e-3)
 
   def _eval(self, lhs, timestep):
@@ -686,7 +694,7 @@ cranknicolson = functools.partial(thetamethod, theta=0.5)
 @log.withcontext
 @types.apply_annotations
 @cache.function
-def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:types.strictfloat=0., arguments:argdict={}, droptol:float=None, constrain:types.frozenarray=None, lhs0:types.frozenarray[types.strictfloat]=None, relax0:float=1., solveargs:types.frozendict={}, linesearch=None, failrelax:types.strictfloat=1e-6, **linargs):
+def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:types.strictfloat=0., arguments:argdict={}, droptol:float=None, constrain:types.frozenarray=None, lhs0:types.frozenarray[types.strictfloat]=None, relax0:float=1., linesearch=None, failrelax:types.strictfloat=1e-6, **kwargs):
   '''find the minimizer of a given functional
 
   Parameters
@@ -721,12 +729,14 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
       Coefficient vector corresponding to the functional optimum
   '''
 
-  if 'newtontol' in linargs:
+  if 'newtontol' in kwargs:
     warnings.deprecation('argument "newtontol" is deprecated, use "tol" instead')
-    tol = linargs.pop('newtontol')
+    tol = kwargs.pop('newtontol')
   if linesearch is None:
-    linesearch = NormBased.legacy(linargs)
-  solveargs = _striplin(linargs, solveargs)
+    linesearch = NormBased.legacy(kwargs)
+  solveargs = _strip(kwargs, 'lin')
+  if kwargs:
+    raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
   residual = functional.derivative(target)
   jacobian = residual.derivative(target)
   lhs, cons = _parse_lhs_cons(lhs0, constrain, residual.shape)
@@ -773,19 +783,8 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
 
 ## HELPER FUNCTIONS
 
-def _striplin(linargs, solveargs):
-  if solveargs:
-    warnings.deprecation('solveargs={"key": value} is deprecated, use linkey=value instead')
-    solveargs = solveargs.copy()
-  else:
-    solveargs = {}
-  for key, value in linargs.items():
-    if not key.startswith('lin'):
-      raise TypeError('unexpected keyword argument {!r}'.format(key))
-    if key[3:] in solveargs:
-      raise TypeError('duplicate solver argument: {!r}'.format(key))
-    solveargs[key[3:]] = value
-  return solveargs
+def _strip(kwargs, prefix):
+  return {key[len(prefix):]: kwargs.pop(key) for key in list(kwargs) if key.startswith(prefix)}
 
 def _parse_lhs_cons(lhs0, constrain, shape):
   if lhs0 is None:
