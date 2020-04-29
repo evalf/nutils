@@ -28,14 +28,30 @@ version = '7.0a0'
 version_name = None
 long_version = ('{} "{}"' if version_name else '{}').format(version, version_name)
 
-_ = numpy.newaxis
-__all__ = ['_', 'numpy', 'numeric', 'element', 'elementseq', 'function', 'expression',
-  'mesh', 'topology', 'util', 'matrix', 'parallel', 'log',
-  'cache', 'transform', 'transformseq', 'solver', 'cli', 'warnings', 'types', 'points',
-  'sample', 'export', 'testing']
-
-from . import numeric, element, function, expression, mesh, topology, util, \
-  matrix, parallel, log, cache, transform, solver, cli, warnings, \
-  types, points, sample, export, testing
+__all__ = [
+  'cache',
+  'cli',
+  'element',
+  'elementseq',
+  'export',
+  'expression',
+  'function',
+  'log',
+  'matrix',
+  'mesh',
+  'numeric',
+  'parallel',
+  'points',
+  'pointsseq',
+  'sample',
+  'solver',
+  'testing',
+  'topology',
+  'transform',
+  'transformseq',
+  'types',
+  'util',
+  'warnings',
+]
 
 # vim:sw=2:sts=2:et

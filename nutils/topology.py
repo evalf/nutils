@@ -34,11 +34,12 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, parallel, numeric, cache, transform, transformseq, warnings, matrix, types, points, _
+from . import element, function, util, parallel, numeric, cache, transform, transformseq, warnings, matrix, types, points
 from .sample import Sample
 from .elementseq import References
 from .pointsseq import PointsSequence
 import numpy, functools, collections.abc, itertools, functools, operator, numbers, pathlib, abc, treelog as log
+_ = numpy.newaxis
 
 _identity = lambda x: x
 
