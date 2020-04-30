@@ -122,10 +122,6 @@ class Matrix(metaclass=types.CacheMeta):
   def __truediv__(self, other):
     return self.__mul__(1/other)
 
-  def matvec(self, vec):
-    warnings.deprecation('A.matvec(x) is deprecated; use A @ x instead')
-    return self.__matmul__(vec)
-
   @property
   @abc.abstractmethod
   def T(self):
