@@ -22,8 +22,9 @@
 The transform module.
 """
 
-from . import cache, numeric, util, types, _
+from . import cache, numeric, util, types
 import numpy, collections, itertools, functools, operator
+_ = numpy.newaxis
 
 
 ## TRANSFORM CHAIN OPERATIONS

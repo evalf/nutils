@@ -122,10 +122,6 @@ class Matrix(metaclass=types.CacheMeta):
   def __truediv__(self, other):
     return self.__mul__(1/other)
 
-  def matvec(self, vec):
-    warnings.deprecation('A.matvec(x) is deprecated; use A @ x instead')
-    return self.__matmul__(vec)
-
   @property
   @abc.abstractmethod
   def T(self):
@@ -808,7 +804,6 @@ class MKLMatrix(Matrix):
 _current_backend = Numpy()
 
 def assemble(data, index, shape):
-  warnings.deprecation('matrix.assemble is deprecated; use matrix.fromsparse')
   if not isinstance(data, numpy.ndarray) or data.ndim != 1 or len(index) != 2 or len(shape) != 2:
     raise MatrixError('assemble received invalid input')
   n, = (index[0][1:] <= index[0][:-1]).nonzero() # index[0][n+1] <= index[0][n]

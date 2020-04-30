@@ -1,5 +1,5 @@
-import sys, os, tempfile, io, contextlib, time, unittest
-from nutils import cli, log, testing, matrix, parallel, cache
+import sys, os, tempfile, io, contextlib, time, unittest, treelog as log
+from nutils import cli, testing, matrix, parallel, cache
 
 def main(
   iarg: 'integer' = 1,

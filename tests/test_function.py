@@ -1,6 +1,7 @@
-import itertools, pickle, warnings as _builtin_warnings
+import numpy, itertools, pickle, warnings as _builtin_warnings
 from nutils import *
 from nutils.testing import *
+_ = numpy.newaxis
 
 
 @parametrize

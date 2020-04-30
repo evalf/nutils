@@ -26,9 +26,10 @@ accompanying geometry function. Meshes can either be generated on the fly, e.g.
 provided at this point.
 """
 
-from . import topology, function, util, element, numpy, numeric, transform, transformseq, warnings, types, cache, _
+from . import topology, function, util, element, numeric, transform, transformseq, warnings, types, cache
 from .elementseq import References
-import os, itertools, re, math, treelog as log, io, contextlib
+import numpy, os, itertools, re, math, treelog as log, io, contextlib
+_ = numpy.newaxis
 
 # MESH GENERATORS
 

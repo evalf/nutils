@@ -28,8 +28,9 @@ affine transformation. They also have a well defined reference coordinate
 system, and provide pointsets for purposes of integration and sampling.
 """
 
-from . import util, numpy, numeric, cache, transform, warnings, types, points, _
-import re, math, itertools, operator, functools
+from . import util, numeric, cache, transform, warnings, types, points
+import numpy, re, math, itertools, operator, functools
+_ = numpy.newaxis
 
 
 ## REFERENCE ELEMENTS
