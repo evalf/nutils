@@ -9,6 +9,14 @@ features in inverse chronological order.
 New in v7.0 (in development)
 ----------------------------
 
+- Deprecated ``function.elemwise``
+
+  The function ``function.elemwise`` has been deprecated. Use
+  ``function.Elemwise`` instead::
+
+      >>> function.elemwise(topo.transforms, values) # deprecated
+      >>> function.Elemwise(values, topo.f_index) # new
+
 - Removed ``transforms`` attribute of bases
 
   The ``transforms`` attribute of bases has been removed due to internal

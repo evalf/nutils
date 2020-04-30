@@ -4267,6 +4267,7 @@ def eig(arg, axes=(-2,-1), symmetric=False):
 
 @types.apply_annotations
 def elemwise(transforms:transformseq.stricttransforms, values:types.tuple[types.frozenarray]):
+  warnings.deprecation('function.elemwise is deprecated; use function.Elemwise instead')
   index, tail = TransformsIndexWithTail(transforms, TRANS)
   return Elemwise(values, index, dtype=float)
 

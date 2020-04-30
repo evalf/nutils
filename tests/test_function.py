@@ -641,6 +641,13 @@ class elemwise(TestCase):
   def test_shape_derivative(self):
     self.assertEqual(function.localgradient(self.func, self.domain.ndims).shape, self.func.shape+(self.domain.ndims,))
 
+  def test_deprecated_elemwise(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      func = function.elemwise(self.domain.transforms, self.data)
+      func = func.prepare_eval()
+      for i, trans in enumerate(self.domain.transforms):
+        numpy.testing.assert_array_almost_equal(func.eval(_transforms=(trans,)), self.data[i][_])
+
 
 class namespace(TestCase):
 
