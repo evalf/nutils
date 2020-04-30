@@ -808,7 +808,6 @@ class MKLMatrix(Matrix):
 _current_backend = Numpy()
 
 def assemble(data, index, shape):
-  warnings.deprecation('matrix.assemble is deprecated; use matrix.fromsparse')
   if not isinstance(data, numpy.ndarray) or data.ndim != 1 or len(index) != 2 or len(shape) != 2:
     raise MatrixError('assemble received invalid input')
   n, = (index[0][1:] <= index[0][:-1]).nonzero() # index[0][n+1] <= index[0][n]
