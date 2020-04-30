@@ -151,6 +151,8 @@ class Evaluable(types.Singleton):
     return self.__class__.__name__
 
   def eval(self, **evalargs):
+    '''Evaluate function on a specified element, point set.'''
+
     values = [evalargs]
     for op, indices in self.serialized:
       try:
@@ -426,6 +428,8 @@ def multiply(a, b):
   return Multiply([a, b])
 
 def sum(arg, axis=None):
+  '''Sum array elements over a given axis.'''
+
   arg = asarray(arg)
   if axis is None:
     axis = numpy.arange(arg.ndim)
