@@ -48,7 +48,7 @@ def main(etype:str, btype:str, degree:int, nrefine:int):
         indicator = refdom.integral('refbasis_n,k u_,k d:x' @ ns, degree=degree*2).eval(lhs=lhs)
         indicator -= refdom.boundary.integral('refbasis_n u_,k n_k d:x' @ ns, degree=degree*2).eval(lhs=lhs)
         supp = ns.refbasis.get_support(indicator**2 > numpy.mean(indicator**2))
-        domain = domain.refined_by(ns.refbasis.transforms[supp])
+        domain = domain.refined_by(refdom.transforms[supp])
 
       ns = function.Namespace()
       ns.x = geom

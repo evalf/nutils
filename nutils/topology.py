@@ -172,7 +172,7 @@ class Topology(types.Singleton):
     Create a basis.
     '''
     if self.ndims == 0:
-      return function.PlainBasis([[1]], [[0]], 1, self.transforms)
+      return function.PlainBasis([[1]], [[0]], 1, self.f_index, self.f_coords)
     split = name.split('-', 1)
     if len(split) == 2 and split[0] in ('h', 'th'):
       name = split[1] # default to non-hierarchical bases
@@ -704,7 +704,7 @@ class Topology(types.Singleton):
       coeffs = [self.references[0].get_poly_coeffs('bernstein', degree=degree)]*len(self.references)
     else:
       coeffs = [ref.get_poly_coeffs('bernstein', degree=degree) for ref in self.references]
-    return function.DiscontBasis(coeffs, self.transforms)
+    return function.DiscontBasis(coeffs, self.f_index, self.f_coords)
 
   def _basis_c0_structured(self, name, degree):
     'C^0-continuous shape functions with lagrange stucture'
@@ -742,7 +742,7 @@ class Topology(types.Singleton):
 
     elem_slices = map(slice, offsets[:-1], offsets[1:])
     dofs = tuple(types.frozenarray(dofmap[s]) for s in elem_slices)
-    return function.PlainBasis(coeffs, dofs, ndofs, self.transforms)
+    return function.PlainBasis(coeffs, dofs, ndofs, self.f_index, self.f_coords)
 
   def basis_lagrange(self, degree):
     'lagrange shape functions'
@@ -1241,7 +1241,7 @@ class StructuredTopology(Topology):
       coeffs.append(tuple(coeffs_i))
 
     transforms_shape = tuple(axis.j-axis.i for axis in self.axes if axis.isdim)
-    func = function.StructuredBasis(coeffs, start_dofs, stop_dofs, dofshape, self.transforms, transforms_shape)
+    func = function.StructuredBasis(coeffs, start_dofs, stop_dofs, dofshape, transforms_shape, self.f_index, self.f_coords)
     if not any(removedofs):
       return func
 
@@ -1381,7 +1381,7 @@ class SimplexTopology(Topology):
   def basis_std(self, degree):
     if degree == 1:
       coeffs = element.getsimplex(self.ndims).get_poly_coeffs('bernstein', degree=1)
-      return function.PlainBasis([coeffs] * len(self), self.simplices, self.simplices.max()+1, self.transforms)
+      return function.PlainBasis([coeffs] * len(self), self.simplices, self.simplices.max()+1, self.f_index, self.f_coords)
     return super().basis_std(degree)
 
   def basis_bubble(self):
@@ -1397,7 +1397,7 @@ class SimplexTopology(Topology):
     nverts = self.simplices.max() + 1
     ndofs = nverts + len(self)
     nmap = [types.frozenarray(numpy.hstack([idofs, nverts+ielem]), copy=False) for ielem, idofs in enumerate(self.simplices)]
-    return function.PlainBasis([coeffs] * len(self), nmap, ndofs, self.transforms)
+    return function.PlainBasis([coeffs] * len(self), nmap, ndofs, self.f_index, self.f_coords)
 
 class UnionTopology(Topology):
   'grouped topology'
@@ -1610,7 +1610,7 @@ class SubsetTopology(Topology):
     if isinstance(self.basetopo, HierarchicalTopology):
       warnings.warn('basis may be linearly dependent; a linearly indepent basis is obtained by trimming first, then creating hierarchical refinements')
     basis = self.basetopo.basis(name, *args, **kwargs)
-    return function.PrunedBasis(basis, self._indices)
+    return function.PrunedBasis(basis, self._indices, self.f_index, self.f_coords)
 
   def locate(self, geom, coords, *, eps=0, **kwargs):
     sample = self.basetopo.locate(geom, coords, eps=eps, **kwargs)
@@ -1937,7 +1937,7 @@ class HierarchicalTopology(Topology):
         hbasis_dofs.append(numpy.concatenate(trans_dofs))
         hbasis_coeffs.append(numeric.poly_concatenate(trans_coeffs))
 
-    return function.PlainBasis(hbasis_coeffs, hbasis_dofs, ndofs, self.transforms)
+    return function.PlainBasis(hbasis_coeffs, hbasis_dofs, ndofs, self.f_index, self.f_coords)
 
 class ProductTopology(Topology):
   'product topology'
@@ -2226,14 +2226,15 @@ class MultipatchTopology(Topology):
       dofmap = tuple(types.frozenarray(tuple(renumber[merge.get(dof, dof)] for dof in v.flat), dtype=int).reshape(v.shape) for v in dofmap)
       dofcount = len(remainder)
 
-    return function.PlainBasis(coeffs, dofmap, dofcount, self.transforms)
+    return function.PlainBasis(coeffs, dofmap, dofcount, self.f_index, self.f_coords)
 
   def basis_patch(self):
     'degree zero patchwise discontinuous basis'
 
-    return function.DiscontBasis(
-      [types.frozenarray(1, dtype=int).reshape(1, *(1,)*self.ndims)]*len(self.patches),
-      transformseq.PlainTransforms(tuple((patch.topo.root,) for patch in self.patches), self.ndims))
+    transforms = transformseq.PlainTransforms(tuple((patch.topo.root,) for patch in self.patches), self.ndims)
+    index, tail = function.TransformsIndexWithTail(transforms, function.TRANS)
+    coords = function.ApplyTransforms(tail)
+    return function.DiscontBasis([types.frozenarray(1, dtype=int).reshape(1, *(1,)*self.ndims)]*len(self.patches), index, coords)
 
   @property
   def boundary(self):

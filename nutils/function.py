@@ -3290,9 +3290,10 @@ class Basis(Array):
   ----------
   ndofs : :class:`int`
       The number of functions in this basis.
-  transforms : :class:`nutils.transformseq.Transforms`
-      The transforms on which this basis is defined.
-  trans : :class:`TransformChain`
+  index : :class:`Array`
+      The element index.
+  coords : :class:`Array`
+      The element local coordinates.
 
   Notes
   -----
@@ -3300,30 +3301,29 @@ class Basis(Array):
   if possible should redefine :meth:`get_support`.
   '''
 
-  __slots__ = 'ndofs', 'transforms', '_index', '_points'
+  __slots__ = 'ndofs', 'nelems', 'index', 'coords'
   __cache__ = '_computed_support'
 
   @types.apply_annotations
-  def __init__(self, ndofs:types.strictint, transforms:transformseq.stricttransforms, trans:types.strict[TransformChain]=TRANS):
+  def __init__(self, ndofs:types.strictint, nelems:types.strictint, index:asarray, coords:asarray):
     self.ndofs = ndofs
-    self.transforms = transforms
+    self.nelems = nelems
+    self.index = index
+    self.coords = coords
+    super().__init__(args=(index, coords), shape=(ndofs,), dtype=float)
 
-    self._index, tail = TransformsIndexWithTail(self.transforms, trans)
-    self._points = ApplyTransforms(tail)
-    super().__init__(args=(self._index, self._points), shape=(ndofs,), dtype=float)
-
-  def evalf(self, index, points):
+  def evalf(self, index, coords):
     warnings.warn('using explicit basis evaluation; this is usually a bug.', ExpensiveEvaluationWarning)
     index, = index
-    values = numeric.poly_eval(self.get_coefficients(index)[None], points)
-    inflated = numpy.zeros((points.shape[0], self.ndofs), float)
+    values = numeric.poly_eval(self.get_coefficients(index)[None], coords)
+    inflated = numpy.zeros((coords.shape[0], self.ndofs), float)
     numpy.add.at(inflated, (slice(None), self.get_dofs(index)), values)
     return inflated
 
   @property
   def _computed_support(self):
     support = [set() for i in range(self.ndofs)]
-    for ielem in range(len(self.transforms)):
+    for ielem in range(self.nelems):
       for dof in self.get_dofs(ielem):
         support[dof].add(ielem)
     return tuple(types.frozenarray(numpy.fromiter(sorted(ielems), dtype=int), copy=False) for ielems in support)
@@ -3358,7 +3358,7 @@ class Basis(Array):
       if dof[0] < 0 or dof[-1] >= self.ndofs:
         raise IndexError('dof out of bounds')
       if self.get_support == __class__.get_support.__get__(self, __class__):
-        return numpy.unique([ielem for ielem in range(len(self.transforms)) if numpy.in1d(self.get_dofs(ielem), dof, assume_unique=True).any()])
+        return numpy.unique([ielem for ielem in range(self.nelems) if numpy.in1d(self.get_dofs(ielem), dof, assume_unique=True).any()])
       else:
         return numpy.unique(numpy.fromiter(itertools.chain.from_iterable(map(self.get_support, dof)), dtype=int))
     elif numeric.isboolarray(dof):
@@ -3396,11 +3396,11 @@ class Basis(Array):
       if len(ielem) == 0:
         return numpy.array([], dtype=int)
       ielem = numpy.unique(ielem)
-      if ielem[0] < 0 or ielem[-1] >= len(self.transforms):
+      if ielem[0] < 0 or ielem[-1] >= self.nelems:
         raise IndexError('ielem out of bounds')
       return numpy.unique(numpy.fromiter(itertools.chain.from_iterable(map(self.get_dofs, ielem)), dtype=int))
     elif numeric.isboolarray(ielem):
-      if ielem.shape != (len(self.transforms),):
+      if ielem.shape != (self.nelems,):
         raise IndexError('ielem has invalid shape')
       return self.get_dofs(numpy.where(ielem)[0])
     else:
@@ -3442,12 +3442,12 @@ class Basis(Array):
     return ElemwiseFromCallable(self.get_dofs, index, dtype=int, shape=(self.f_ndofs(index),))
 
   def f_coefficients(self, index):
-    coeffshape = ElemwiseFromCallable(self.get_coeffshape, index, dtype=int, shape=self._points.shape)
+    coeffshape = ElemwiseFromCallable(self.get_coeffshape, index, dtype=int, shape=self.coords.shape)
     return ElemwiseFromCallable(self.get_coefficients, index, dtype=float, shape=(self.f_ndofs(index), *coeffshape))
 
   @property
   def simplified(self):
-    return Inflate(Polyval(self.f_coefficients(self._index), self._points), self.f_dofs(self._index), self.shape[0], axis=0).simplified
+    return Inflate(Polyval(self.f_coefficients(self.index), self.coords), self.f_dofs(self.index), self.shape[0], axis=0).simplified
 
   def _derivative(self, var, seen):
     return self.simplified._derivative(var, seen)
@@ -3477,21 +3477,22 @@ class PlainBasis(Basis):
       The dofs corresponding to the ``coefficients`` argument.
   ndofs : :class:`int`
       The number of basis functions.
-  transforms : :class:`nutils.transformseq.Transforms`
-      The transforms on which this basis is defined.
-  trans : :class:`TransformChain`
+  index : :class:`Array`
+      The element index.
+  coords : :class:`Array`
+      The element local coordinates.
   '''
 
   __slots__ = '_coeffs', '_dofs'
 
   @types.apply_annotations
-  def __init__(self, coefficients:types.tuple[types.frozenarray], dofs:types.tuple[types.frozenarray], ndofs:types.strictint, transforms:transformseq.stricttransforms, trans=TRANS):
+  def __init__(self, coefficients:types.tuple[types.frozenarray], dofs:types.tuple[types.frozenarray], ndofs:types.strictint, index:asarray, coords:asarray):
     self._coeffs = coefficients
     self._dofs = dofs
-    assert len(self._coeffs) == len(self._dofs) == len(transforms)
-    assert all(c.ndim == 1+transforms.fromdims for c in self._coeffs)
+    assert len(self._coeffs) == len(self._dofs)
+    assert all(c.ndim == 1+coords.shape[0] for c in self._coeffs)
     assert all(len(c) == len(d) for c, d in zip(self._coeffs, self._dofs))
-    super().__init__(ndofs=ndofs, transforms=transforms, trans=trans)
+    super().__init__(ndofs, len(coefficients), index, coords)
 
   def get_dofs(self, ielem):
     if not numeric.isint(ielem):
@@ -3519,20 +3520,20 @@ class DiscontBasis(Basis):
   coefficients : :class:`tuple` of :class:`nutils.types.frozenarray` objects
       The coefficients of the basis functions per transform.  The order should
       match the ``transforms`` argument.
-  transforms : :class:`nutils.transformseq.Transforms`
-      The transforms on which this basis is defined.
-  trans : :class:`TransformChain`
+  index : :class:`Array`
+      The element index.
+  coords : :class:`Array`
+      The element local coordinates.
   '''
 
   __slots__ = '_coeffs', '_offsets'
 
   @types.apply_annotations
-  def __init__(self, coefficients:types.tuple[types.frozenarray], transforms:transformseq.stricttransforms, trans=TRANS):
+  def __init__(self, coefficients:types.tuple[types.frozenarray], index:asarray, coords:asarray):
     self._coeffs = coefficients
-    assert len(self._coeffs) == len(transforms)
-    assert all(c.ndim == 1+transforms.fromdims for c in self._coeffs)
+    assert all(c.ndim == 1+coords.shape[0] for c in self._coeffs)
     self._offsets = types.frozenarray(numpy.cumsum([0, *map(len, self._coeffs)]), copy=False)
-    super().__init__(ndofs=self._offsets[-1], transforms=transforms, trans=trans)
+    super().__init__(self._offsets[-1], len(coefficients), index, coords)
 
   def get_support(self, dof):
     if not numeric.isint(dof):
@@ -3543,7 +3544,7 @@ class DiscontBasis(Basis):
   def get_dofs(self, ielem):
     if not numeric.isint(ielem):
       return super().get_dofs(ielem)
-    ielem = numeric.normdim(len(self.transforms), ielem)
+    ielem = numeric.normdim(self.nelems, ielem)
     return numpy.arange(self._offsets[ielem], self._offsets[ielem+1])
 
   def get_ndofs(self, ielem):
@@ -3572,13 +3573,12 @@ class MaskedBasis(Basis):
   indices : array of :class:`int`\\s
       The strict monotonic increasing indices of ``parent`` basis functions to
       keep.
-  trans : :class:`TransformChain`
   '''
 
   __slots__ = '_parent', '_indices'
 
   @types.apply_annotations
-  def __init__(self, parent:strictbasis, indices:types.frozenarray[types.strictint], trans=TRANS):
+  def __init__(self, parent:strictbasis, indices:types.frozenarray[types.strictint]):
     if indices.ndim != 1:
       raise ValueError('`indices` should have one dimension but got {}'.format(indices.ndim))
     if len(indices) and not numpy.all(numpy.greater(numpy.diff(indices), 0)):
@@ -3587,7 +3587,7 @@ class MaskedBasis(Basis):
       raise ValueError('`indices` out of range \x5b0,{}\x29'.format(0, len(parent)))
     self._parent = parent
     self._indices = indices
-    super().__init__(ndofs=len(self._indices), transforms=parent.transforms, trans=trans)
+    super().__init__(len(self._indices), parent.nelems, parent.index, parent.coords)
 
   def get_dofs(self, ielem):
     return numeric.sorted_index(self._indices, self._parent.get_dofs(ielem), missing='mask')
@@ -3618,26 +3618,27 @@ class StructuredBasis(Basis):
       transform.
   dofs_shape : :class:`tuple` of :class:`int`\\s
       The tensor shape of the dofs.
-  transforms : :class:`nutils.transformseq.Transforms`
-      The transforms on which this basis is defined.
   transforms_shape : :class:`tuple` of :class:`int`\\s
       The tensor shape of the transforms.
-  trans : :class:`TransformChain`
+  index : :class:`Array`
+      The element index.
+  coords : :class:`Array`
+      The element local coordinates.
   '''
 
   __slots__ = '_coeffs', '_start_dofs', '_stop_dofs', '_dofs_shape', '_transforms_shape'
 
   @types.apply_annotations
-  def __init__(self, coeffs:types.tuple[types.tuple[types.frozenarray]], start_dofs:types.tuple[types.frozenarray[types.strictint]], stop_dofs:types.tuple[types.frozenarray[types.strictint]], dofs_shape:types.tuple[types.strictint], transforms:transformseq.stricttransforms, transforms_shape:types.tuple[types.strictint], trans=TRANS):
+  def __init__(self, coeffs:types.tuple[types.tuple[types.frozenarray]], start_dofs:types.tuple[types.frozenarray[types.strictint]], stop_dofs:types.tuple[types.frozenarray[types.strictint]], dofs_shape:types.tuple[types.strictint], transforms_shape:types.tuple[types.strictint], index:asarray, coords:asarray):
     self._coeffs = coeffs
     self._start_dofs = start_dofs
     self._stop_dofs = stop_dofs
     self._dofs_shape = dofs_shape
     self._transforms_shape = transforms_shape
-    super().__init__(ndofs=util.product(dofs_shape), transforms=transforms, trans=trans)
+    super().__init__(util.product(dofs_shape), util.product(transforms_shape), index, coords)
 
   def _get_indices(self, ielem):
-    ielem = numeric.normdim(len(self.transforms), ielem)
+    ielem = numeric.normdim(self.nelems, ielem)
     indices = []
     for n in reversed(self._transforms_shape):
       ielem, index = divmod(ielem, n)
@@ -3713,16 +3714,20 @@ class PrunedBasis(Basis):
       The basis to prune.
   transmap : one-dimensional array of :class:`int`\\s
       The indices of transforms in ``parent`` that form this subset.
+  index : :class:`Array`
+      The element index.
+  coords : :class:`Array`
+      The element local coordinates.
   '''
 
   __slots__ = '_parent', '_transmap', '_dofmap'
 
   @types.apply_annotations
-  def __init__(self, parent:strictbasis, transmap:types.frozenarray[types.strictint], trans=TRANS):
+  def __init__(self, parent:strictbasis, transmap:types.frozenarray[types.strictint], index:asarray, coords:asarray):
     self._parent = parent
     self._transmap = transmap
     self._dofmap = parent.get_dofs(self._transmap)
-    super().__init__(len(self._dofmap), parent.transforms[transmap], trans)
+    super().__init__(len(self._dofmap), len(transmap), index, coords)
 
   def get_dofs(self, ielem):
     if numeric.isintarray(ielem) and ielem.ndim == 1 and numpy.any(numpy.less(ielem, 0)):
