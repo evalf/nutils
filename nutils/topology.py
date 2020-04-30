@@ -464,6 +464,8 @@ class Topology(types.Singleton):
       print('divergence check failed: {} != {}'.format(volumes, volume))
 
   def indicator(self, subtopo):
+    '''Create an indicator function for a subtopology.'''
+
     if isinstance(subtopo, str):
       subtopo = self[subtopo]
     values = numpy.zeros([len(self)], dtype=int)
@@ -589,6 +591,8 @@ class Topology(types.Singleton):
     return Sample.new(transforms, points_, index)
 
   def revolved(self, geom):
+    '''Create revolved topology, geometry.'''
+
     assert geom.ndim == 1
     revdomain = self * RevolutionTopology()
     angle = function.RevolutionAngle()
