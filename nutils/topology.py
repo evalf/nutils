@@ -148,6 +148,25 @@ class Topology(types.Singleton):
       yield topo
       topo = topo.refined
 
+  @property
+  def _index_coords(self):
+    index, tail = function.TransformsIndexWithTail(self.transforms, function.TRANS)
+    coords = function.ApplyTransforms(tail)
+    assert coords.shape == (self.ndims,)
+    return index, coords
+
+  @property
+  def f_index(self):
+    '''The evaluable index of the element in this topology.'''
+
+    return self._index_coords[0]
+
+  @property
+  def f_coords(self):
+    '''The evaluable element local coordinates.'''
+
+    return self._index_coords[1]
+
   def basis(self, name, *args, **kwargs):
     '''
     Create a basis.
