@@ -296,7 +296,7 @@ class unstructured_topology(TestCase):
 
   def test_poly(self):
     target = self.geom.sum(-1) if self.btype == 'bubble' \
-        else (self.geom**self.degree).sum(-1) + function.TransformsIndexWithTail(self.domain.transforms, function.TRANS).index if self.btype == 'discont' \
+        else (self.geom**self.degree).sum(-1) + self.domain.f_index if self.btype == 'discont' \
         else (self.geom**self.degree).sum(-1)
     projection = self.domain.projection(target, onto=self.basis, geometry=self.geom, ischeme='gauss', degree=2*self.degree, droptol=0)
     error2 = self.domain.integrate((target-projection)**2*function.J(self.geom), ischeme='gauss', degree=2*self.degree)

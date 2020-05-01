@@ -6,6 +6,30 @@ The following overview lists user facing changes as well as newly added
 features in inverse chronological order.
 
 
+New in v7.0 (in development)
+----------------------------
+
+- Deprecated ``function.elemwise``
+
+  The function ``function.elemwise`` has been deprecated. Use
+  ``function.Elemwise`` instead::
+
+      >>> function.elemwise(topo.transforms, values) # deprecated
+      >>> function.Elemwise(values, topo.f_index) # new
+
+- Removed ``transforms`` attribute of bases
+
+  The ``transforms`` attribute of bases has been removed due to internal
+  restructurings. The ``transforms`` attribute of the topology on which the
+  basis was created can be used as a replacement::
+
+      >>> reftopo = topo.refined
+      >>> refbasis = reftopo.basis(...)
+      >>> supp = refbasis.get_support(...)
+      >>> #topo = topo.refined_by(refbasis.transforms[supp]) # no longer valid
+      >>> topo = topo.refined_by(reftopo.transforms[supp]) # still valid
+
+
 New in v6.0 "garak-guksu"
 -------------------------
 
