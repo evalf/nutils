@@ -111,7 +111,7 @@ class setup(testing.TestCase):
   def test_nprocs(self):
     for n in 1, 2, 3:
       with self.subTest(nprocs=n), self._setup(nprocs=n):
-        self.assertEqual(parallel._maxprocs, n)
+        self.assertEqual(parallel._maxprocs.value, n)
 
   def test_cache(self):
     with self.subTest('cache'), self._setup(cache=True):

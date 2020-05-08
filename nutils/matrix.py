@@ -547,7 +547,7 @@ class MKL(Backend):
     threading = self.threading
     if threading is None:
       from . import parallel
-      threading = self.Threading.TBB if parallel._maxprocs > 1 else self.Threading.SEQUENTIAL
+      threading = self.Threading.TBB if parallel._maxprocs.value > 1 else self.Threading.SEQUENTIAL
     self.current_threading = self.libmkl.mkl_set_threading_layer(c_long(threading.value))
 
   def __exit__(self, *exc):
