@@ -19,18 +19,15 @@
 # THE SOFTWARE.
 
 from ._base import Matrix, MatrixError, BackendNotAvailable, refine_to_tolerance
-from .. import numeric, util, types
+from .. import numeric, util
 from contextlib import contextmanager
+from ctypes import c_long, c_int, c_double, byref
 import treelog as log
-import numpy, typing, ctypes
+import numpy
 
 libmkl = util.loadlib(linux='libmkl_rt.so', darwin='libmkl_rt.dylib', win32='mkl_rt.dll')
 if not libmkl:
   raise BackendNotAvailable('the Intel MKL matrix backend requires libmkl to be installed (try: pip install mkl)')
-
-c_int = types.c_array[numpy.int32]
-c_long = types.c_array[numpy.int64]
-c_double = types.c_array[numpy.float64]
 
 @contextmanager
 def setassemble(sets, threading:str=None):
@@ -38,18 +35,18 @@ def setassemble(sets, threading:str=None):
     from ..parallel import _maxprocs
     threading = 'tbb' if _maxprocs.value > 1 else 'sequential'
   value = dict(intel=0, sequential=1, pgi=2, gnu=3, tbb=4)[threading.lower()]
-  _threading = libmkl.mkl_set_threading_layer(c_long(value))
+  oldvalue = libmkl.mkl_set_threading_layer(byref(c_long(value)))
   try:
     with sets(assemble):
       yield
   finally:
-    libmkl.mkl_set_threading_layer(c_long(_threading))
+    libmkl.mkl_set_threading_layer(byref(c_long(oldvalue)))
 
 def assemble(data, index, shape):
   return MKLMatrix(data, index[0].searchsorted(numpy.arange(shape[0]+1))+1, index[1]+1, shape[1])
 
 class Pardiso:
-  '''simple wrapper for libmkl.pardiso
+  '''Wrapper for libmkl.pardiso.
 
   https://software.intel.com/en-us/mkl-developer-reference-c-pardiso
   '''
@@ -69,31 +66,53 @@ class Pardiso:
    -12: 'pardiso_64 called from 32-bit library',
   }
 
-  def __init__(self):
+  def __init__(self, mtype, a, ia, ja, n):
     self.pt = numpy.zeros(64, numpy.int64) # handle to data structure
+    self.maxfct = c_int(1)
+    self.mnum = c_int(1)
+    self.mtype = c_int(mtype)
+    self.phase = c_int(13) # analysis, numerical factorization, solve, iterative refinement
+    self.n = c_int(n)
+    self.a = a.ctypes
+    self.ia = ia.ctypes
+    self.ja = ja.ctypes
+    self.perm = None
+    self.iparm = numpy.zeros(64, dtype=numpy.int32) # https://software.intel.com/en-us/mkl-developer-reference-c-pardiso-iparm-parameter
+    self.msglvl = c_int(0)
+    libmkl.pardisoinit(self.pt.ctypes, byref(self.mtype), self.iparm.ctypes) # initialize iparm based on mtype
+    self.iparm[34] == 0 # make sure one-based indexing is selected
 
-  @types.apply_annotations
-  def __call__(self, *, phase:c_int, iparm:c_int, maxfct:c_int=1, mnum:c_int=1, mtype:c_int=0, n:c_int=0, a:c_double=None, ia:c_int=None, ja:c_int=None, perm:c_int=None, nrhs:c_int=0, msglvl:c_int=0, b:c_double=None, x:c_double=None):
-    error = ctypes.c_int32(1)
-    libmkl.pardiso(self.pt.ctypes, maxfct, mnum, mtype, phase, n, a, ia, ja, perm, nrhs, iparm, msglvl, b, x, ctypes.byref(error))
+  def solve(self, rhs):
+    rhsflat = numpy.ascontiguousarray(rhs.reshape(rhs.shape[0], -1).T, dtype=numpy.float64)
+    lhsflat = numpy.empty_like(rhsflat)
+    self.raw(rhsflat.shape[0], rhsflat.ctypes, lhsflat.ctypes)
+    log.debug('peak memory use {:,d}k'.format(max(self.iparm[14], self.iparm[15]+self.iparm[16])))
+    self.phase.value = 33 # solve, iterative refinement
+    return lhsflat.T.reshape(rhs.shape)
+
+  def raw(self, nrhs, b, x):
+    error = c_int(1)
+    libmkl.pardiso(self.pt.ctypes, byref(self.maxfct), byref(self.mnum), byref(self.mtype),
+      byref(self.phase), byref(self.n), self.a, self.ia, self.ja, self.perm,
+      byref(c_int(nrhs)), self.iparm.ctypes, byref(self.msglvl), b, x, byref(error))
     if error.value:
       raise MatrixError(self._errorcodes.get(error.value, 'unknown error {}'.format(error.value)))
 
   def __del__(self):
     if self.pt.any(): # release all internal memory for all matrices
-      self(phase=-1, iparm=numpy.zeros(64, dtype=numpy.int32))
+      self.phase.value = -1
+      self.raw(0, None, None)
       assert not self.pt.any(), 'it appears that Pardiso failed to release its internal memory'
 
 class MKLMatrix(Matrix):
   '''matrix implementation based on sorted coo data'''
-
-  _factors = False
 
   def __init__(self, data, rowptr, colidx, ncols):
     assert len(data) == len(colidx) == rowptr[-1]-1
     self.data = numpy.ascontiguousarray(data, dtype=numpy.float64)
     self.rowptr = numpy.ascontiguousarray(rowptr, dtype=numpy.int32)
     self.colidx = numpy.ascontiguousarray(colidx, dtype=numpy.int32)
+    self._pardiso = None
     super().__init__((len(rowptr)-1, ncols))
 
   def convert(self, mat):
@@ -109,14 +128,14 @@ class MKLMatrix(Matrix):
   def __add__(self, other):
     other = self.convert(other)
     assert self.shape == other.shape
-    request = ctypes.c_int32(1)
-    info = ctypes.c_int32()
+    request = c_int(1)
+    info = c_int()
     rowptr = numpy.empty(self.shape[0]+1, dtype=numpy.int32)
-    args = ["N", ctypes.byref(request), ctypes.byref(ctypes.c_int32(0)),
-      ctypes.byref(ctypes.c_int32(self.shape[0])), ctypes.byref(ctypes.c_int32(self.shape[1])),
-      self.data.ctypes, self.colidx.ctypes, self.rowptr.ctypes, ctypes.byref(ctypes.c_double(1.)),
+    args = ["N", byref(request), byref(c_int(0)),
+      byref(c_int(self.shape[0])), byref(c_int(self.shape[1])),
+      self.data.ctypes, self.colidx.ctypes, self.rowptr.ctypes, byref(c_double(1.)),
       other.data.ctypes, other.colidx.ctypes, other.rowptr.ctypes,
-      None, None, rowptr.ctypes, None, ctypes.byref(info)]
+      None, None, rowptr.ctypes, None, byref(info)]
     libmkl.mkl_dcsradd(*args)
     assert info.value == 0
     colidx = numpy.empty(rowptr[-1]-1, dtype=numpy.int32)
@@ -140,15 +159,15 @@ class MKLMatrix(Matrix):
     x = numpy.ascontiguousarray(other.T, dtype=numpy.float64)
     y = numpy.empty(x.shape[:-1] + self.shape[:1], dtype=numpy.float64)
     if other.ndim == 1:
-      libmkl.mkl_dcsrgemv('N', ctypes.byref(ctypes.c_int32(self.shape[0])),
+      libmkl.mkl_dcsrgemv('N', byref(c_int(self.shape[0])),
         self.data.ctypes, self.rowptr.ctypes, self.colidx.ctypes, x.ctypes, y.ctypes)
     else:
-      libmkl.mkl_dcsrmm('N', ctypes.byref(ctypes.c_int32(self.shape[0])),
-        ctypes.byref(ctypes.c_int32(other.size//other.shape[0])),
-        ctypes.byref(ctypes.c_int32(self.shape[1])), ctypes.byref(ctypes.c_double(1.)), 'GXXFXX',
+      libmkl.mkl_dcsrmm('N', byref(c_int(self.shape[0])),
+        byref(c_int(other.size//other.shape[0])),
+        byref(c_int(self.shape[1])), byref(c_double(1.)), 'GXXFXX',
         self.data.ctypes, self.colidx.ctypes, self.rowptr.ctypes, self.rowptr[1:].ctypes,
-        x.ctypes, ctypes.byref(ctypes.c_int32(other.shape[0])), ctypes.byref(ctypes.c_double(0.)),
-        y.ctypes, ctypes.byref(ctypes.c_int32(other.shape[0])))
+        x.ctypes, byref(c_int(other.shape[0])), byref(c_double(0.)),
+        y.ctypes, byref(c_int(other.shape[0])))
     return y.T
 
   def __neg__(self):
@@ -162,11 +181,11 @@ class MKLMatrix(Matrix):
     data = numpy.empty_like(self.data)
     rowptr = numpy.empty_like(self.rowptr)
     colidx = numpy.empty_like(self.colidx)
-    info = ctypes.c_int32()
+    info = c_int()
     libmkl.mkl_dcsrcsc(job.ctypes,
-      ctypes.byref(ctypes.c_int32(self.shape[0])), self.data.ctypes,
+      byref(c_int(self.shape[0])), self.data.ctypes,
       self.colidx.ctypes, self.rowptr.ctypes, data.ctypes, colidx.ctypes,
-      rowptr.ctypes, ctypes.byref(info))
+      rowptr.ctypes, byref(info))
     return MKLMatrix(data, rowptr, colidx, self.shape[1])
 
   def submatrix(self, rows, cols):
@@ -199,32 +218,17 @@ class MKLMatrix(Matrix):
 
   @refine_to_tolerance
   def solve_direct(self, rhs):
+    if self.shape[0] != self.shape[1]:
+      raise MatrixError('matrix is not square')
     log.debug('solving system using MKL Pardiso')
-    if self._factors:
-      log.debug('reusing existing factorization')
-      pardiso, iparm, mtype = self._factors
-      phase = 33 # solve, iterative refinement
-    else:
-      pardiso = Pardiso()
-      iparm = numpy.zeros(64, dtype=numpy.int32) # https://software.intel.com/en-us/mkl-developer-reference-c-pardiso-iparm-parameter
-      iparm[0] = 1 # supply all values in components iparm[1:64]
-      iparm[1] = 2 # fill-in reducing ordering for the input matrix: nested dissection algorithm from the METIS package
-      iparm[9] = 13 # pivoting perturbation threshold 1e-13 (default for nonsymmetric)
-      iparm[10] = 1 # enable scaling vectors (default for nonsymmetric)
-      iparm[12] = 1 # enable improved accuracy using (non-) symmetric weighted matching (default for nonsymmetric)
-      iparm[34] = 0 # one-based indexing
-      mtype = 11 # real and nonsymmetric
-      phase = 13 # analysis, numerical factorization, solve, iterative refinement
-      self._factors = pardiso, iparm, mtype
-    rhsflat = numpy.ascontiguousarray(rhs.reshape(rhs.shape[0], -1).T, dtype=numpy.float64)
-    lhsflat = numpy.empty((rhsflat.shape[0], self.shape[1]), dtype=numpy.float64)
-    pardiso(phase=phase, mtype=mtype, iparm=iparm, n=self.shape[0], nrhs=rhsflat.shape[0], b=rhsflat, x=lhsflat, a=self.data, ia=self.rowptr, ja=self.colidx)
-    log.debug('solver returned after {} refinement steps; peak memory use {:,d}k'.format(iparm[6], max(iparm[14], iparm[15]+iparm[16])))
-    return lhsflat.T.reshape(lhsflat.shape[1:] + rhs.shape[1:])
+    if not self._pardiso:
+      self._pardiso = Pardiso(mtype=11, # real and nonsymmetric
+        a=self.data, ia=self.rowptr, ja=self.colidx, n=self.shape[0])
+    return self._pardiso.solve(rhs)
 
   def solve_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12):
-    rci = ctypes.c_int32(0)
-    n = ctypes.c_int32(len(rhs))
+    rci = c_int(0)
+    n = c_int(len(rhs))
     b = numpy.array(rhs, dtype=numpy.float64)
     x = numpy.zeros_like(b)
     ipar = numpy.zeros(128, dtype=numpy.int32)
@@ -257,17 +261,17 @@ class MKLMatrix(Matrix):
     ipar[14] = min(restart, len(rhs)) # the number of non-restarted FGMRES iterations
     dpar = numpy.zeros(128, dtype=numpy.float64)
     tmp = numpy.zeros((2*ipar[14]+1)*ipar[0]+(ipar[14]*(ipar[14]+9))//2+1, dtype=numpy.float64)
-    libmkl.dfgmres_check(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes)
+    libmkl.dfgmres_check(byref(n), x.ctypes, b.ctypes, byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes)
     if rci.value != 0:
       raise MatrixError('dgmres check failed with error code {}'.format(rci.value))
     with log.context('fgmres {:.0f}%', 0, 0) as format:
       while True:
-        libmkl.dfgmres(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes)
+        libmkl.dfgmres(byref(n), x.ctypes, b.ctypes, byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes)
         if rci.value == 1: # multiply the matrix
           tmp[ipar[22]-1:ipar[22]+n.value-1] = self @ tmp[ipar[21]-1:ipar[21]+n.value-1]
         elif rci.value == 2: # perform the stopping test
           if dpar[4] < atol:
-            libmkl.dfgmres_get(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes, ctypes.byref(ctypes.c_int32(0)))
+            libmkl.dfgmres_get(byref(n), x.ctypes, b.ctypes, byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes, byref(c_int(0)))
             if numpy.linalg.norm(self @ b - rhs) < atol:
               break
             b[:] = rhs # reset rhs vector for restart
@@ -278,7 +282,7 @@ class MKLMatrix(Matrix):
           tmp[ipar[22]-1:ipar[22]+n.value-1] = precon(tmp[ipar[21]-1:ipar[21]+n.value-1])
         elif rci.value == 4: # check if the norm of the current orthogonal vector is zero
           if dpar[6] < ztol:
-            libmkl.dfgmres_get(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes, ctypes.byref(ctypes.c_int32(0)))
+            libmkl.dfgmres_get(byref(n), x.ctypes, b.ctypes, byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes, byref(c_int(0)))
             if numpy.linalg.norm(self @ b - rhs) < atol:
               break
             raise MatrixError('singular matrix')
