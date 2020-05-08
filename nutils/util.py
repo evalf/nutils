@@ -445,4 +445,35 @@ def binaryfile(path):
 
   raise TypeError('binaryfile requires a path-like or file-like argument')
 
+class settable:
+  '''Context-switchable data container.
+
+  A mutable container for a general Python object, which can be changed by
+  entering the ``sets`` context. The current value can be accessed via the
+  ``value`` attribute.
+
+  >>> myprop = settable(2)
+  >>> myprop.value
+  2
+  >>> with myprop.sets(3):
+  ...   myprop.value
+  3
+  >>> myprop.value
+  2
+  '''
+
+  __slots__ = 'value'
+
+  def __init__(self, value=None):
+    self.value = value
+
+  @contextlib.contextmanager
+  def sets(self, value):
+    oldvalue = self.value
+    self.value = value
+    try:
+      yield
+    finally:
+      self.value = oldvalue
+
 # vim:sw=2:sts=2:et
