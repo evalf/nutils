@@ -119,6 +119,7 @@ def vtk(name, cells, points, kwargs=...):
   '''
 
   vtkcelltype = {
+    2: numpy.array( 5, dtype='>u4'), # VTK_LINE
     3: numpy.array( 5, dtype='>u4'), # VTK_TRIANGLE
     4: numpy.array(10, dtype='>u4')} # VTK_TETRA
   vtkndim = {
