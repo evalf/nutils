@@ -115,9 +115,9 @@ class setup(testing.TestCase):
 
   def test_cache(self):
     with self.subTest('cache'), self._setup(cache=True):
-      self.assertTrue(cache._cache)
+      self.assertTrue(cache._cache.value)
     with self.subTest('nocache'), self._setup(cache=False):
-      self.assertFalse(cache._cache)
+      self.assertFalse(cache._cache.value)
 
 class bottombar(testing.TestCase):
 

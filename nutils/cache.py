@@ -22,7 +22,7 @@
 The cache module.
 """
 
-from . import types
+from . import types, util
 import os, numpy, functools, inspect, builtins, pathlib, pickle, itertools, hashlib, abc, contextlib, treelog as log
 
 class Wrapper:
@@ -78,17 +78,7 @@ class WrapperCache:
   def __nutils_hash__(self):
     return hashlib.sha1(b'nutils.cache.WrapperCache\0').digest()
 
-_cache = None
-
-@contextlib.contextmanager
-def _cache_context(value):
-  global _cache
-  old_value = _cache
-  try:
-    _cache = value
-    yield
-  finally:
-    _cache = old_value
+_cache = util.settable()
 
 def enable(cachedir: str):
   '''
@@ -96,14 +86,14 @@ def enable(cachedir: str):
   functions decorated with :func:`function` and subclasses of
   :class:`Recursion`.
   '''
-  return _cache_context(pathlib.Path(cachedir))
+  return _cache.sets(pathlib.Path(cachedir))
 
 def disable():
   '''
   Disable cacheing.  Affects functions decorated with :func:`function` and
   subclasses of :class:`Recursion`.
   '''
-  return _cache_context(None)
+  return _cache.sets(None)
 
 # Define platform-dependent `_lock_file` function.
 def _lock_file_fallback(f): pass
@@ -190,8 +180,7 @@ def function(func=None, *, version=0):
 
   @functools.wraps(func)
   def wrapper(*args, **kwargs):
-    global _cache
-    if _cache is None:
+    if _cache.value is None:
       return func(*args, **kwargs)
     args, kwargs = canonicalize(*args, **kwargs)
     # Hash the function key and the canonicalized arguments and compute the
@@ -202,7 +191,7 @@ def function(func=None, *, version=0):
     for hkv in sorted(hashlib.sha1(k.encode()).digest()+types.nutils_hash(v) for k, v in kwargs.items()):
       h.update(hkv)
     hkey = h.hexdigest()
-    cachefile = _cache/hkey
+    cachefile = _cache.value/hkey
     # Open and lock `cachefile`.  Try to read it and, if successful, unlock
     # the file (implicitly by closing the file) and return the value.  If
     # reading fails, e.g. because the file did not exist, call `func`, store
@@ -348,16 +337,15 @@ class Recursion(types.Immutable, metaclass=_RecursionMeta):
   __slots__ = ()
 
   def __iter__(self):
-    global _cache
     length = type(self).length
-    if _cache is None:
+    if _cache.value is None:
       yield from self.resume_index([], 0)
     else:
       # The hash of `types.Immutable` uniquely defines this `Recursion`, so use
       # this to identify the cache directory.  All iterations are stored as
       # separate files, numbered '0000', '0001', ..., in this directory.
       hkey = self.__nutils_hash__.hex()
-      cachepath = _cache / hkey
+      cachepath = _cache.value / hkey
       cachepath.mkdir(exist_ok=True, parents=True)
       log.debug('[cache.Recursion {}] start iterating'.format(hkey))
       # The `history` variable is updated while reading from the cache and
