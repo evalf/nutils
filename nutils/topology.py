@@ -2195,8 +2195,8 @@ class MultipatchTopology(Topology):
           raise 'ambiguous knot values for patch {}, dimension {}'.format(ipatch, idim)
         if len(dimknotmultiplicities) != 1:
           raise 'ambiguous knot multiplicities for patch {}, dimension {}'.format(ipatch, idim)
-        patchknotvalues.append(next(iter(dimknotvalues)))
-        patchknotmultiplicities.append(next(iter(dimknotmultiplicities)))
+        patchknotvalues.extend(dimknotvalues)
+        patchknotmultiplicities.extend(dimknotmultiplicities)
       patchcoeffs, patchdofmap, patchdofcount = patch.topo._basis_spline(degree, knotvalues=patchknotvalues, knotmultiplicities=patchknotmultiplicities, continuity=continuity)
       coeffs.extend(patchcoeffs)
       dofmap.extend(types.frozenarray(dofs+dofcount, copy=False) for dofs in patchdofmap)
