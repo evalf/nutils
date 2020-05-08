@@ -1,4 +1,4 @@
-import sys, os, tempfile, io, contextlib, time, unittest, treelog as log
+import sys, os, tempfile, io, contextlib, time, unittest, treelog as log, importlib
 from nutils import cli, testing, matrix, parallel, cache
 
 def main(
@@ -94,19 +94,21 @@ class setup(testing.TestCase):
     self.assertEqual(cm.exception.code, 0)
 
   def _test_matrix(self, backend):
-    if not backend:
-      raise self.skipTest('{} backend is not available'.format(backend.__class__.__name__))
+    try:
+      mod = importlib.import_module('nutils.matrix._'+backend)
+    except matrix.BackendNotAvailable:
+      raise self.skipTest('{!r} backend is not available'.format(backend))
     with self._setup(matrix=backend):
-      self.assertIs(matrix._current_backend, backend)
+      self.assertEqual(matrix._assemble.value, mod.assemble)
 
   def test_matrix_mkl(self):
-    self._test_matrix(matrix.MKL())
+    self._test_matrix('mkl')
 
   def test_matrix_scipy(self):
-    self._test_matrix(matrix.Scipy())
+    self._test_matrix('scipy')
 
   def test_matrix_numpy(self):
-    self._test_matrix(matrix.Numpy())
+    self._test_matrix('numpy')
 
   def test_nprocs(self):
     for n in 1, 2, 3:

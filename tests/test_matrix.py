@@ -9,32 +9,23 @@ class solver(TestCase):
 
   def setUp(self):
     super().setUp()
-    if self.backend:
-      self.enter_context(self.backend)
-      self.exact = 2 * numpy.eye(self.n) - numpy.eye(self.n, self.n, -1) - numpy.eye(self.n, self.n, +1)
-      data = sparse.prune(sparse.fromarray(self.exact), inplace=True)
-      assert len(data) == self.n*3-2
-      self.matrix = matrix.fromsparse(data, inplace=True)
+    try:
+      self.enter_context(matrix.backend(self.backend))
+    except matrix.BackendNotAvailable:
+      self.skipTest('backend is unavailable')
+    self.exact = 2 * numpy.eye(self.n) - numpy.eye(self.n, self.n, -1) - numpy.eye(self.n, self.n, +1)
+    data = sparse.prune(sparse.fromarray(self.exact), inplace=True)
+    assert len(data) == self.n*3-2
+    self.matrix = matrix.fromsparse(data, inplace=True)
 
-  def ifsupported(f):
-    def wrapped(self):
-      if self.backend:
-        f(self)
-      else:
-        self.skipTest('backend is unavailable')
-    return wrapped
-
-  @ifsupported
   def test_size(self):
     self.assertEqual(self.matrix.size, self.n**2)
 
-  @ifsupported
   def test_export_dense(self):
     array = self.matrix.export('dense')
     self.assertEqual(array.shape, (self.n, self.n))
     numpy.testing.assert_equal(actual=array, desired=self.exact)
 
-  @ifsupported
   def test_export_coo(self):
     data, (row, col) = self.matrix.export('coo')
     numpy.testing.assert_equal(row[0::3], numpy.arange(self.n))
@@ -47,7 +38,6 @@ class solver(TestCase):
     numpy.testing.assert_equal(col[2::3], numpy.arange(self.n-1))
     numpy.testing.assert_equal(data[2::3], -1)
 
-  @ifsupported
   def test_export_csr(self):
     data, indices, indptr = self.matrix.export('csr')
     self.assertEqual(indptr[0], 0)
@@ -60,19 +50,16 @@ class solver(TestCase):
     numpy.testing.assert_equal(indices[2::3], numpy.arange(self.n-1))
     numpy.testing.assert_equal(indptr[1:-1], numpy.arange(2, 3*(self.n-1), 3))
 
-  @ifsupported
   def test_neg(self):
     neg = -self.matrix
     numpy.testing.assert_equal(actual=neg.export('dense'), desired=-self.exact)
 
-  @ifsupported
   def test_mul(self):
     mul = self.matrix * 1.5
     numpy.testing.assert_equal(actual=mul.export('dense'), desired=self.exact * 1.5)
     with self.assertRaises(TypeError):
       self.matrix * 'foo'
 
-  @ifsupported
   def test_matvec(self):
     x = numpy.arange(self.n)
     b = numpy.zeros(self.n)
@@ -80,7 +67,6 @@ class solver(TestCase):
     b[-1] = self.n
     numpy.testing.assert_equal(actual=self.matrix @ x, desired=b)
 
-  @ifsupported
   def test_matmat(self):
     X = numpy.arange(self.n*2).reshape(-1,2)
     B = numpy.zeros((self.n,2))
@@ -92,21 +78,18 @@ class solver(TestCase):
     with self.assertRaises(matrix.MatrixError):
       self.matrix @ numpy.arange(self.n+1)
 
-  @ifsupported
   def test_rmul(self):
     rmul = 1.5 * self.matrix
     numpy.testing.assert_equal(actual=rmul.export('dense'), desired=self.exact * 1.5)
     with self.assertRaises(TypeError):
       'foo' / self.matrix
 
-  @ifsupported
   def test_div(self):
     div = self.matrix / 1.5
     numpy.testing.assert_equal(actual=div.export('dense'), desired=self.exact / 1.5)
     with self.assertRaises(TypeError):
       self.matrix / 'foo'
 
-  @ifsupported
   def test_add(self):
     j = self.n//2
     v = 10.
@@ -118,7 +101,6 @@ class solver(TestCase):
     with self.assertRaises(matrix.MatrixError):
       self.matrix + matrix.eye(self.n+1)
 
-  @ifsupported
   def test_sub(self):
     j = self.n//2
     v = 10.
@@ -130,20 +112,17 @@ class solver(TestCase):
     with self.assertRaises(matrix.MatrixError):
       self.matrix - matrix.eye(self.n+1)
 
-  @ifsupported
   def test_transpose(self):
     asym = matrix.assemble(numpy.arange(1,7), numpy.array([[0,0,0,1,1,2],[0,1,2,1,2,2]]), shape=(3,3))
     exact = numpy.array([[1,2,3],[0,4,5],[0,0,6]], dtype=float)
     transpose = asym.T
     numpy.testing.assert_equal(actual=transpose.export('dense'), desired=exact.T)
 
-  @ifsupported
   def test_rowsupp(self):
     sparse = matrix.assemble(numpy.array([1e-10,0,1,1]), numpy.array([[0,0,2,2],[0,1,1,2]]), shape=(3,3))
     self.assertEqual(tuple(sparse.rowsupp(tol=1e-5)), (False,False,True))
     self.assertEqual(tuple(sparse.rowsupp(tol=0)), (True,False,True))
 
-  @ifsupported
   def test_solve(self):
     rhs = numpy.arange(self.matrix.shape[0])
     for args in self.args:
@@ -153,7 +132,6 @@ class solver(TestCase):
           res = numpy.linalg.norm(self.matrix @ lhs - rhs)
           self.assertLess(res, args.get('atol', 1e-10))
 
-  @ifsupported
   def test_multisolve(self):
     rhs = numpy.arange(self.matrix.shape[0]*2).reshape(-1, 2)
     for name, lhs0 in ('none', None), ('single', numpy.arange(self.matrix.shape[1])), ('multi', numpy.arange(rhs.size).reshape(rhs.shape)):
@@ -162,7 +140,6 @@ class solver(TestCase):
         res = numpy.linalg.norm(self.matrix @ lhs - rhs, axis=0)
         self.assertLess(numpy.max(res), 1e-9)
 
-  @ifsupported
   def test_singular(self):
     singularmatrix = matrix.assemble(numpy.arange(self.n)-self.n//2, numpy.arange(self.n)[numpy.newaxis].repeat(2,0), shape=(self.n, self.n))
     rhs = numpy.ones(self.n)
@@ -170,7 +147,6 @@ class solver(TestCase):
       with self.subTest(args.get('solver', 'direct')), self.assertRaises(matrix.MatrixError):
         lhs = singularmatrix.solve(rhs, **args)
 
-  @ifsupported
   def test_solve_repeated(self):
     rhs = numpy.arange(self.matrix.shape[0])
     for args in self.args:
@@ -180,7 +156,6 @@ class solver(TestCase):
           res = numpy.linalg.norm(self.matrix @ lhs - rhs)
           self.assertLess(res, args.get('atol', 1e-10))
 
-  @ifsupported
   def test_constraints(self):
     cons = numpy.empty(self.matrix.shape[0])
     cons[:] = numpy.nan
@@ -194,7 +169,6 @@ class solver(TestCase):
         res = numpy.linalg.norm((self.matrix @ lhs)[1:-1])
         self.assertLess(res, args.get('atol', 1e-10))
 
-  @ifsupported
   def test_submatrix(self):
     rows = self.n//2 + numpy.array([0, 1])
     cols = self.n//2 + numpy.array([-1, 0, 2])
@@ -202,7 +176,6 @@ class solver(TestCase):
     self.assertEqual(array.shape, (2, 3))
     numpy.testing.assert_equal(actual=array, desired=[[-1, 2, 0], [0, -1, -1]])
 
-  @ifsupported
   def test_submatrix_specialcases(self):
     mat = matrix.assemble(numpy.array([1,2,3,4]), numpy.array([[0,0,2,2],[0,2,0,2]]), (3,3))
     self.assertAllEqual(mat.export('dense'), [[1,0,2],[0,0,0],[3,0,4]])
@@ -211,7 +184,6 @@ class solver(TestCase):
     self.assertAllEqual(mat.submatrix([0,2],[0,2]).export('dense'), [[1,2],[3,4]])
     self.assertAllEqual(mat.submatrix([1],[1]).export('dense'), [[0]])
 
-  @ifsupported
   def test_pickle(self):
     s = pickle.dumps(self.matrix)
     mat = pickle.loads(s)
@@ -219,21 +191,21 @@ class solver(TestCase):
     numpy.testing.assert_equal(mat.export('dense'), self.exact)
     with self.subTest('cross-pickle'), matrix.Numpy():
       mat = pickle.loads(s)
-      self.assertIsInstance(mat, matrix.NumpyMatrix)
+      from nutils.matrix._numpy import NumpyMatrix
+      self.assertIsInstance(mat, NumpyMatrix)
       numpy.testing.assert_equal(mat.export('dense'), self.exact)
 
-  @ifsupported
   def test_diagonal(self):
     self.assertAllEqual(self.matrix.diagonal(), numpy.diag(self.exact))
 
 
-solver('numpy', backend=matrix.Numpy(), args=[{}])
-solver('scipy', backend=matrix.Scipy(), args=[{},
+solver(backend='numpy', args=[{}])
+solver(backend='scipy', args=[{},
     dict(solver='gmres', atol=1e-5, restart=100, precon='spilu'),
     dict(solver='gmres', atol=1e-5, precon='splu'),
     dict(solver='cg', atol=1e-5, precon='diag')]
  + [dict(solver=s, atol=1e-5) for s in ('bicg', 'bicgstab', 'cg', 'cgs', 'lgmres', 'minres')])
-for threading in matrix.MKL.Threading.SEQUENTIAL, matrix.MKL.Threading.TBB:
-  solver('mkl:{}'.format(threading.name.lower()), backend=matrix.MKL(threading=threading), args=[{},
+for threading in 'sequential', 'tbb':
+  solver(backend='mkl:'+threading, args=[{},
       dict(solver='fgmres', atol=1e-8),
       dict(solver='fgmres', atol=1e-8, precon='diag')])
