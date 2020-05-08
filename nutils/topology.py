@@ -2196,16 +2196,14 @@ class MultipatchTopology(Topology):
     if patchcontinuous:
       # build merge mapping: merge common boundary dofs (from low to high)
       pairs = itertools.chain(*(zip(*dofs) for dofs in commonboundarydofs.values() if len(dofs) > 1))
-      merge = {}
+      merge = numpy.arange(dofcount)
       for dofs in sorted(pairs):
-        dst = merge.get(dofs[0], dofs[0])
-        for src in dofs[1:]:
-          merge[src] = dst
+        merge[list(dofs)] = merge[dofs[0]]
+      assert all(numpy.all(merge[a] == merge[b]) for a, *B in commonboundarydofs.values() for b in B), 'something went wrong is merging interface dofs; this should not have happened'
       # build renumber mapping: renumber remaining dofs consecutively, starting at 0
-      remainder = set(merge.get(dof, dof) for dof in range(dofcount))
-      renumber = dict(zip(sorted(remainder), range(len(remainder))))
+      remainder, renumber = numpy.unique(merge, return_inverse=True)
       # apply mappings
-      dofmap = tuple(types.frozenarray(tuple(renumber[merge.get(dof, dof)] for dof in v.flat), dtype=int).reshape(v.shape) for v in dofmap)
+      dofmap = tuple(types.frozenarray(renumber[v], copy=False) for v in dofmap)
       dofcount = len(remainder)
 
     return function.PlainBasis(coeffs, dofmap, dofcount, self.transforms)
