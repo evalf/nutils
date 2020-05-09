@@ -103,6 +103,7 @@ for ndims in range(1, 4):
 class structure(TestCase, TopologyAssertions):
 
   def setUp(self):
+    super().setUp()
     domain, self.geom = mesh.rectilinear([[-1,0,1]]*self.ndims)
     self.domain = domain.refine(self.refine)
 
@@ -358,6 +359,7 @@ for isstructured in True, False:
 class locate(TestCase):
 
   def setUp(self):
+    super().setUp()
     domain, geom = mesh.unitsquare(4, etype=self.etype)
     if self.mode == 'nonlinear':
       geom = function.sin(geom * numpy.pi / 2) # nonlinear map from [0,1] to [0,1]

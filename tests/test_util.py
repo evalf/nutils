@@ -12,6 +12,7 @@ class tri(TestCase):
   #   (0)-1/3
 
   def setUp(self):
+    super().setUp()
     self.x = numpy.array([[0,0],[1,0],[0,1],[1,0],[0,1],[1,1]], dtype=float)
     self.tri = numpy.array([[0,1,2],[3,4,5]])
 
@@ -104,12 +105,11 @@ class readtext(TestCase):
 class binaryfile(TestCase):
 
   def setUp(self):
+    super().setUp()
     fid, self.path = tempfile.mkstemp()
+    self.addCleanup(os.unlink, self.path)
     os.write(fid, b'foobar')
     os.close(fid)
-
-  def tearDown(self):
-    os.unlink(self.path)
 
   def test_str(self):
     with util.binaryfile(self.path) as f:

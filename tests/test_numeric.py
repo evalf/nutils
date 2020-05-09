@@ -6,6 +6,7 @@ from nutils.testing import *
 class pack(TestCase):
 
   def setUp(self):
+    super().setUp()
     assert self.nbits in (8, 16, 32)
     self.dtype = numpy.dtype('int{}'.format(self.nbits))
     self.nnan, self.nnil, self.nmin, self.nmax, self.ninf = n = numpy.array(

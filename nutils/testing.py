@@ -133,20 +133,14 @@ parametrize.skip_if = _parametrize_skip_if
 class TestCase(unittest.TestCase):
   '''A class whose instances are single test cases.'''
 
-  def setUpContext(self, stack):
-    stack.enter_context(treelog.set(treelog.TeeLog(treelog.StdoutLog(), treelog.LoggingLog())))
+  def enter_context(self, ctx):
+    retval = ctx.__enter__()
+    self.addCleanup(ctx.__exit__, None, None, None)
+    return retval
 
   def setUp(self):
     super().setUp()
-    stack = contextlib.ExitStack()
-    stack.__enter__()
-    try:
-      self.setUpContext(stack)
-    except:
-      stack.__exit__(None, None, None)
-      raise
-    else:
-      self.addCleanup(stack.__exit__, None, None, None)
+    self.enter_context(treelog.set(treelog.TeeLog(treelog.StdoutLog(), treelog.LoggingLog())))
 
   def assertAllEqual(self, actual, desired):
     for args in numpy.broadcast(actual, desired):
