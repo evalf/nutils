@@ -103,6 +103,7 @@ class bezier(TestCase):
 class cone(TestCase):
 
   def setUp(self):
+    super().setUp()
     if self.shape == 'square':
       self.edgeref = element.getsimplex(1)**2
     elif self.shape == 'triangle':
@@ -138,6 +139,7 @@ cone(shape='triangle')
 class trimmed(TestCase):
 
   def setUp(self):
+    super().setUp()
     quad = element.getsimplex(1)**2
     levels = numeric.overlapping(numpy.arange(-1, 16, 2), n=5) # linear ramp cutting at x + y == .125
     trimmed = quad.trim(levels.ravel(), maxrefine=2, ndivisions=16)

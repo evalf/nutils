@@ -370,6 +370,7 @@ class partialtrim(TestCase):
   # +-----+-----+
 
   def setUp(self):
+    super().setUp()
     self.topo, geom = mesh.rectilinear([2,2])
     self.topoA = self.topo.trim(geom[0]-1+geom[1]*(geom[1]-.5), maxrefine=1)
     self.topoB = self.topo - self.topoA
