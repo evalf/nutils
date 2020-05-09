@@ -1,4 +1,4 @@
-from nutils import *
+from nutils import function, mesh, sparse, transform, transformseq, topology, element
 import random, itertools, functools
 from nutils.testing import *
 
@@ -56,10 +56,6 @@ for ndims in range(1, 4):
             for nelems in range(1, 4):
               basis(btype=btype, degree=degree, ndims=ndims, nrefine=nrefine, boundary=boundary, periodic=periodic, nelems=nelems)
 
-class NNZ(matrix.Backend):
-  def assemble(self, data, index, shape):
-    return type('nnzmatrix', (), dict(nnz=len(numpy.unique(numpy.ravel_multi_index(index, shape))), shape=shape))()
-
 @parametrize
 class sparsity(TestCase):
 
@@ -78,13 +74,12 @@ class sparsity(TestCase):
     ns.tnotol = topo.basis('th-spline', degree=2, truncation_tolerance=0)
     ns.hbasis = topo.basis('h-spline', degree=2)
 
-    with NNZ():
-      tA, tA_tol, hA = topo.integrate([ns.eval_ij('tbasis_i,k tbasis_j,k'), ns.eval_ij('tnotol_i,k tnotol_j,k'), ns.eval_ij('hbasis_i,k hbasis_j,k')], degree=5)
+    tA, tA_tol, hA = topo.sample('gauss', 5).integrate_sparse([ns.eval_ij('tbasis_i,k tbasis_j,k'), ns.eval_ij('tnotol_i,k tnotol_j,k'), ns.eval_ij('hbasis_i,k hbasis_j,k')])
 
     tA_nnz, tA_tol_nnz, hA_nnz = self.vals[self.ndim]
-    self.assertEqual(tA.nnz, tA_nnz)
-    self.assertEqual(tA_tol.nnz, tA_tol_nnz)
-    self.assertEqual(hA.nnz, hA_nnz)
+    self.assertEqual(len(sparse.dedup(tA)), tA_nnz)
+    self.assertEqual(len(sparse.dedup(tA_tol)), tA_tol_nnz)
+    self.assertEqual(len(sparse.dedup(hA)), hA_nnz)
 
 for ndim in 1, 2:
   sparsity(ndim=ndim)
