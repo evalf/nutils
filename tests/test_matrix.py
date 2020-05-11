@@ -1,9 +1,7 @@
 import numpy, pickle
-from nutils import matrix, sparse
-from nutils.testing import *
+from nutils import matrix, sparse, testing
 
-@parametrize
-class solver(TestCase):
+class Solver(testing.TestCase):
 
   n = 100
 
@@ -198,14 +196,32 @@ class solver(TestCase):
   def test_diagonal(self):
     self.assertAllEqual(self.matrix.diagonal(), numpy.diag(self.exact))
 
+class Numpy(Solver):
+  def setUp(self):
+    self.backend = 'numpy'
+    self.args = [{}]
+    super().setUp()
 
-solver(backend='numpy', args=[{}])
-solver(backend='scipy', args=[{},
-    dict(solver='gmres', atol=1e-5, restart=100, precon='spilu'),
-    dict(solver='gmres', atol=1e-5, precon='splu'),
-    dict(solver='cg', atol=1e-5, precon='diag')]
- + [dict(solver=s, atol=1e-5) for s in ('bicg', 'bicgstab', 'cg', 'cgs', 'lgmres', 'minres')])
-for threading in 'sequential', 'tbb':
-  solver(backend='mkl:'+threading, args=[{},
+class Scipy(Solver):
+  def setUp(self):
+    self.backend = 'scipy'
+    self.args = [{},
+      dict(solver='gmres', atol=1e-5, restart=100, precon='spilu'),
+      dict(solver='gmres', atol=1e-5, precon='splu'),
+      dict(solver='cg', atol=1e-5, precon='diag')] + [
+      dict(solver=s, atol=1e-5) for s in ('bicg', 'bicgstab', 'cg', 'cgs', 'lgmres', 'minres')]
+    super().setUp()
+
+@testing.parametrize
+class MKL(Solver):
+  def setUp(self):
+    self.backend = 'mkl:' + self.threading
+    self.args=[{},
       dict(solver='fgmres', atol=1e-8),
-      dict(solver='fgmres', atol=1e-8, precon='diag')])
+      dict(solver='fgmres', atol=1e-8, precon='diag')]
+    super().setUp()
+
+MKL(threading='sequential')
+MKL(threading='tbb')
+
+del Solver
