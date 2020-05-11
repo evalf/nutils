@@ -44,6 +44,7 @@ __all__ = [
   'pointsseq',
   'sample',
   'solver',
+  'sparse',
   'testing',
   'topology',
   'transform',
