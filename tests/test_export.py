@@ -27,7 +27,10 @@ class vtk(testing.TestCase):
 
   def setUp(self):
     super().setUp()
-    if self.ndims == 2:
+    if self.ndims == 1:
+      self.x = numpy.array([[0,],[1,],[2,],[3,]], dtype=self.xtype)
+      self.tri = numpy.array([[0,1],[1,2],[2,3]])
+    elif self.ndims == 2:
       self.x = numpy.array([[0,0],[0,1],[1,0],[1,1]], dtype=self.xtype)
       self.tri = numpy.array([[0,1,2],[1,2,3]])
     elif self.ndims == 3:
@@ -55,7 +58,11 @@ class vtk(testing.TestCase):
       yield b'POINTS 4 double\n'
     else:
       raise Exception('not supported: xtype={!r}'.format(self.xtype))
-    if self.ndims == 2 and self.xtype == 'i4':
+    if self.ndims == 1 and self.xtype == 'i4':
+      yield bytes([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0])
+    elif self.ndims == 1 and self.xtype == 'f4':
+      yield bytes([0,0,0,0,0,0,0,0,0,0,0,0,63,128,0,0,0,0,0,0,0,0,0,0,64,0,0,0,0,0,0,0,0,0,0,0,64,64,0,0,0,0,0,0,0,0,0,0])
+    elif self.ndims == 2 and self.xtype == 'i4':
       yield bytes([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0])
     elif self.ndims == 2 and self.xtype == 'f4':
       yield bytes([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,63,128,0,0,0,0,0,0,63,128,0,0,0,0,0,0,0,0,0,0,63,128,0,0,63,128,0,0,0,0,0,0])
@@ -65,7 +72,12 @@ class vtk(testing.TestCase):
       yield bytes([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,63,128,0,0,0,0,0,0,63,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,63,128,0,0])
     else:
       raise Exception('not supported: xtype={!r}, ndims={}'.format(self.xtype, self.ndims))
-    if self.ndims == 2:
+    if self.ndims == 1:
+      yield b'CELLS 3 9\n'
+      yield bytes([0,0,0,2,0,0,0,0,0,0,0,1,0,0,0,2,0,0,0,1,0,0,0,2,0,0,0,2,0,0,0,2,0,0,0,3])
+      yield b'CELL_TYPES 3\n'
+      yield bytes([0,0,0,3,0,0,0,3,0,0,0,3])
+    elif self.ndims == 2:
       yield b'CELLS 2 8\n'
       yield bytes([0,0,0,3,0,0,0,0,0,0,0,1,0,0,0,2,0,0,0,3,0,0,0,1,0,0,0,2,0,0,0,3])
       yield b'CELL_TYPES 2\n'
@@ -131,10 +143,13 @@ class vtk(testing.TestCase):
         data = f.read()
     self.assertEqual(data, b''.join(self.data))
 
+vtk(ndims=1, xtype='i4')
+vtk(ndims=1, xtype='f4')
 vtk(ndims=2, xtype='i4')
 vtk(ndims=2, xtype='f4')
 vtk(ndims=2, xtype='f8')
 vtk(ndims=3, xtype='f4')
+vtk(ndims=1, xtype='f4', ptype='f4', pshape=())
 vtk(ndims=2, xtype='f4', ptype='f4', pshape=())
 vtk(ndims=2, xtype='f4', ptype='f8', pshape=())
 vtk(ndims=2, xtype='f4', ptype='i1', pshape=())
