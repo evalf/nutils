@@ -51,11 +51,8 @@ parser = _doctest.DocTestParser()
 finder = _doctest.DocTestFinder(parser=parser)
 checker = nutils.testing.FloatNeighborhoodOutputChecker()
 root = pathlib.Path(__file__).parent.parent
-for path in sorted((root/'nutils').glob('**/*.py')):
-  name = '.'.join(path.relative_to(root).parts)[:-3]
-  if name.endswith('.__init__'):
-    name = name[:-9]
-  module = importlib.import_module(name)
+for name in nutils.__all__:
+  module = importlib.import_module('.'+name, 'nutils')
   for test in sorted(finder.find(module)):
     if len(test.examples) == 0:
       continue
