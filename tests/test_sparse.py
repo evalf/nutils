@@ -15,6 +15,7 @@ def chunksize(n):
 class vector(unittest.TestCase):
 
   def setUp(self):
+    super().setUp()
     self.data = numpy.array(
       [((4,), 10),
        ((4,), 20),
@@ -102,6 +103,7 @@ class vector(unittest.TestCase):
 class matrix(unittest.TestCase):
 
   def setUp(self):
+    super().setUp()
     self.data = numpy.array([
       ((2,4), 10),
       ((3,4), 20),

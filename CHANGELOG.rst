@@ -267,9 +267,9 @@ Release date: `2019-06-11 <https://github.com/evalf/nutils/releases/tag/v5.0>`_.
 
 - MKL's fgmres method
 
-  Matrices produced by the :class:`nutils.matrix.MKL` backend now
-  support the :func:`nutils.matrix.Matrix.solve` argument
-  solver='fmgres' to use Intel MKL's fgmres method.
+  Matrices produced by the ``MKL`` backend now support the
+  :func:`nutils.matrix.Matrix.solve` argument solver='fmgres' to use Intel
+  MKL's fgmres method.
 
 - Thetamethod time target
 
@@ -421,10 +421,10 @@ Release date: `2018-08-22 <https://github.com/evalf/nutils/releases/tag/v4.0>`_.
 
 - MKL matrix, Pardiso solver
 
-  The new :class:`nutils.matrix.MKL` backend generates matrices that are
-  powered by Intel's Math Kernel Library, which notably includes the
-  reputable Pardiso solver. This requires ``libmkl`` to be installed,
-  which is conveniently available through pip::
+  The new ``MKL`` backend generates matrices that are powered by Intel's Math
+  Kernel Library, which notably includes the reputable Pardiso solver. This
+  requires ``libmkl`` to be installed, which is conveniently available through
+  pip::
 
       $ pip install mkl
 

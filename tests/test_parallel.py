@@ -1,21 +1,19 @@
 import unittest, os, multiprocessing, time, sys
-from nutils import parallel
+from nutils import parallel, testing
 
 canfork = hasattr(os, 'fork')
 
 @unittest.skipIf(sys.platform == 'darwin', 'fork is unreliable (in combination with matplotlib)')
-class Test(unittest.TestCase):
+class Test(testing.TestCase):
 
   def setUp(self):
-    parallel._maxprocs = 3
-
-  def tearDown(self):
-    parallel._maxprocs = 1
+    super().setUp()
+    self.enter_context(parallel.maxprocs(3))
 
   def test_maxprocs(self):
     with parallel.maxprocs(4):
-      self.assertEqual(parallel._maxprocs, 4)
-    self.assertEqual(parallel._maxprocs, 3)
+      self.assertEqual(parallel._maxprocs.value, 4)
+    self.assertEqual(parallel._maxprocs.value, 3)
 
   def test_fork(self):
     mask = multiprocessing.RawValue('i', 0)

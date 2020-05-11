@@ -24,7 +24,7 @@ can be used set up properties, initiate an output environment, and execute a
 python function based arguments specified on the command line.
 """
 
-from . import long_version, warnings, matrix
+from . import long_version, warnings
 import sys, inspect, os, time, signal, subprocess, contextlib, traceback, pathlib, html, functools, pdb, stringly, textwrap, typing, treelog, collections
 
 try:
@@ -292,7 +292,7 @@ def setup(scriptname: str,
           cachedir: str = 'cache',
           cache: bool = False,
           nprocs: int = 1,
-          matrix: matrix.backend = matrix.auto,
+          matrix: str = 'auto',
           richoutput: typing.Optional[bool] = None,
           outrooturi: typing.Optional[str] = None,
           outuri: typing.Optional[str] = None,
@@ -302,7 +302,7 @@ def setup(scriptname: str,
           **unused):
   '''Set up compute environment.'''
 
-  from . import cache as _cache, parallel as _parallel
+  from . import cache as _cache, parallel as _parallel, matrix as _matrix
 
   for name in unused:
     warnings.warn('ignoring unused configuration variable {!r}'.format(name))
@@ -330,7 +330,7 @@ def setup(scriptname: str,
        warnings.via(treelog.warning), \
        _cache.enable(os.path.join(outdir, cachedir)) if cache else _cache.disable(), \
        _parallel.maxprocs(nprocs), \
-       matrix, \
+       _matrix.backend(matrix), \
        _signal_handler(signal.SIGINT, functools.partial(_breakpoint, richoutput)):
 
     treelog.info('nutils v{}'.format(_version()))

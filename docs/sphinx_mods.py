@@ -227,7 +227,7 @@ def create_log(app, env, node, contnode):
       # Run script.
       import matplotlib.testing
       matplotlib.testing.setup()
-      with nutils.cli._htmllog(outdir=str(dst_log), scriptname=scriptname, kwargs=[(name, kwargs[name], doc.argdocs[name]) for name in params]) as log, treelog.set(log), nutils.matrix.Scipy(), nutils.warnings.via(treelog.warning):
+      with nutils.cli._htmllog(outdir=str(dst_log), scriptname=scriptname, kwargs=[(name, kwargs[name], doc.argdocs[name]) for name in params]) as log, treelog.set(log), nutils.matrix.backend('scipy'), nutils.warnings.via(treelog.warning):
         func(**{name: stringly.loads(params[name].annotation, kwargs[name]) for name in params})
       (dst_log/'log.html').rename(dst_log/'index.html')
 

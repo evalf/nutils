@@ -6,6 +6,7 @@ from nutils.testing import *
 class gmsh(TestCase):
 
   def setUp(self):
+    super().setUp()
     path = pathlib.Path(__file__).parent/'test_mesh'/'mesh{0.ndims}d_p{0.degree}_v{0.version}.msh'.format(self)
     self.domain, self.geom = mesh.gmsh(path)
 
@@ -85,6 +86,7 @@ for ndims in 2, 3:
 class gmshmanifold(TestCase):
 
   def setUp(self):
+    super().setUp()
     path = pathlib.Path(__file__).parent/'test_mesh'/'mesh3dmani_p{0.degree}_v{0.version}.msh'.format(self)
     self.domain, self.geom = mesh.gmsh(path)
 
