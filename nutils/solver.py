@@ -442,7 +442,8 @@ class minimize(RecursionWithSolve, length=1, version=3):
     self.energy = energy
     self.residual = energy.derivative(target)
     self.jacobian = _derivative(self.residual, target)
-    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, self.residual.shape)
+    self.lhs0, constrain = _parse_lhs_cons(lhs0, constrain, self.residual.shape)
+    self.free = ~constrain
     self.rampup = rampup
     self.rampdown = rampdown
     self.failrelax = failrelax
@@ -453,7 +454,7 @@ class minimize(RecursionWithSolve, length=1, version=3):
 
   def _eval(self, lhs):
     nrg, res, jac = sample.eval_integrals(self.energy, self.residual, self.jacobian, **{self.target: lhs}, **self.arguments)
-    return nrg, res[~self.constrain], jac.submatrix(~self.constrain, ~self.constrain)
+    return nrg, res[self.free], jac.submatrix(self.free, self.free)
 
   def resume(self, history):
     if history:
@@ -463,15 +464,15 @@ class minimize(RecursionWithSolve, length=1, version=3):
       assert numpy.linalg.norm(res) == info.resnorm
       relax = info.relax
     else:
-      lhs = self.lhs0
+      lhs = self.lhs0.copy()
       nrg, res, jac = self._eval(lhs)
       relax = 0
       yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
 
     while True:
       nrg0 = nrg
-      lhs0 = lhs
       dlhs = -jac.solve_leniently(res, **self.solveargs)
+      lhs[self.free] += dlhs # baseline: vanilla Newton
 
       # compute first two ritz values to determine approximate path of steepest descent
       dlhsnorm = numpy.linalg.norm(dlhs)
@@ -489,11 +490,12 @@ class minimize(RecursionWithSolve, length=1, version=3):
       V = numpy.array([v1, -v0]).T / D # ritz vectors times dlhs -- note: V.dot(L) = -res, V.sum() = dlhs
       log.info('spectrum: {:.1e}..{:.1e} ({}definite)'.format(*L, 'positive ' if L[0] > 0 else 'negative ' if L[-1] < 0 else 'in'))
 
-      for irelax in itertools.count():
+      eL = 0
+      for irelax in itertools.count(): # line search along steepest descent curve
         r = numpy.exp(relax - numpy.log(D)) # = exp(relax) / D
+        eL0 = eL
         eL = numpy.exp(-r*L)
-        lhs = lhs0.copy()
-        lhs[~self.constrain] += dlhs - V.dot(eL)
+        lhs[self.free] -= V.dot(eL - eL0)
         nrg, res, jac = self._eval(lhs)
         slope = res.dot(V.dot(eL*L))
         log.info('energy {:+.2e} / e{:+.1f} and {}creasing'.format(nrg - nrg0, relax, 'in' if slope > 0 else 'de'))
