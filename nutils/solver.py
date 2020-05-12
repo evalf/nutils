@@ -198,8 +198,8 @@ class newton(RecursionWithSolve, length=1):
     self.residual = residual
     self.jacobian = _derivative(residual, target, jacobian)
     self.lhs0, constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
-    self.relax0 = relax0
     self.free = ~constrain
+    self.relax0 = relax0
     self.linesearch = linesearch or NormBased.legacy(kwargs)
     self.failrelax = failrelax
     self.arguments = arguments
@@ -219,27 +219,27 @@ class newton(RecursionWithSolve, length=1):
       assert numpy.linalg.norm(res) == info.resnorm
       relax = info.relax
     else:
-      lhs = self.lhs0
+      lhs = self.lhs0.copy()
       res, jac = self._eval(lhs)
       relax = self.relax0
       yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
     while True:
       dlhs = -jac.solve_leniently(res, **self.solveargs) # compute new search vector
+      res0 = res
       dres = jac@dlhs # == -res if dlhs was solved to infinite precision
-      while True: # line search
-        newlhs = lhs.copy()
-        newlhs[self.free] += relax * dlhs
-        newres, newjac = self._eval(newlhs)
-        scale, accept = self.linesearch(res, relax*dres, newres, relax*newjac@dlhs)
-        if accept:
-          break
+      lhs[self.free] += relax * dlhs
+      res, jac = self._eval(lhs)
+      scale, accept = self.linesearch(res0, relax*dres, res, relax*(jac@dlhs))
+      while not accept: # line search
+        assert scale < 1
+        oldrelax = relax
         relax *= scale
         if relax <= self.failrelax:
           raise SolverError('stuck in local minimum')
+        lhs[self.free] += (relax - oldrelax) * dlhs
+        res, jac = self._eval(lhs)
+        scale, accept = self.linesearch(res0, relax*dres, res, relax*(jac@dlhs))
       log.info('update accepted at relaxation', round(relax, 5))
-      lhs = newlhs
-      res = newres
-      jac = newjac
       relax = min(relax * scale, 1)
       yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
 
