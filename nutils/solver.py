@@ -197,8 +197,7 @@ class newton(RecursionWithSolve, length=1):
     self.target = target
     self.residual = residual
     self.jacobian = _derivative(residual, target, jacobian)
-    self.lhs0, constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
-    self.free = ~constrain
+    self.lhs0, self.free = _parse_lhs_cons(lhs0, constrain, residual.shape)
     self.relax0 = relax0
     self.linesearch = linesearch or NormBased.legacy(kwargs)
     self.failrelax = failrelax
@@ -442,8 +441,7 @@ class minimize(RecursionWithSolve, length=1, version=3):
     self.energy = energy
     self.residual = energy.derivative(target)
     self.jacobian = _derivative(self.residual, target)
-    self.lhs0, constrain = _parse_lhs_cons(lhs0, constrain, self.residual.shape)
-    self.free = ~constrain
+    self.lhs0, self.free = _parse_lhs_cons(lhs0, constrain, self.residual.shape)
     self.rampup = rampup
     self.rampdown = rampdown
     self.failrelax = failrelax
@@ -554,8 +552,7 @@ class pseudotime(RecursionWithSolve, length=1):
     self.jacobian = _derivative(residual, target)
     self.inertia = inertia
     self.jacobiant = _derivative(inertia, target)
-    self.lhs0, constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
-    self.free = ~constrain
+    self.lhs0, self.free = _parse_lhs_cons(lhs0, constrain, residual.shape)
     self.timestep = timestep
     self.arguments = arguments
     self.solveargs = _strip(kwargs, 'lin')
@@ -640,7 +637,8 @@ class thetamethod(RecursionWithSolve, length=1, version=1):
     assert target0 not in arguments, '`target0` should not be defined in `arguments`'
     self.target = target
     self.target0 = target0
-    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
+    self.lhs0, free = _parse_lhs_cons(lhs0, constrain, residual.shape)
+    self.constrain = ~free
     self.newtonargs = newtonargs
     self.newtontol = newtontol
     self.arguments = arguments
@@ -724,9 +722,7 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
     raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
   residual = functional.derivative(target)
   jacobian = residual.derivative(target)
-  lhs, cons = _parse_lhs_cons(lhs0, constrain, residual.shape)
-  free = ~cons
-  lhs = lhs.copy()
+  lhs, free = _parse_lhs_cons(lhs0, constrain, residual.shape)
   val, res, jac = sample.eval_integrals(functional, residual, jacobian, **{target: lhs}, **arguments)
   if droptol is not None:
     supp = jac.rowsupp(droptol)
@@ -780,24 +776,23 @@ def _strip(kwargs, prefix):
 
 def _parse_lhs_cons(lhs0, constrain, shape):
   if lhs0 is None:
-    lhs0 = types.frozenarray.full(shape, fill_value=0.)
+    lhs = numpy.zeros(shape)
   elif lhs0.shape == shape:
-    lhs0 = types.frozenarray(lhs0)
+    lhs = lhs0.copy()
   else:
     raise ValueError('expected `lhs0` with shape {} but got {}'.format(shape, lhs0.shape))
   if constrain is None:
-    constrain = types.frozenarray.full(shape, fill_value=False)
+    free = numpy.ones(shape, dtype=bool)
   elif constrain.shape != shape:
     raise ValueError('expected `constrain` with shape {} but got {}'.format(shape, constrain.shape))
   elif constrain.dtype == float:
-    isnan = numpy.isnan(constrain)
-    lhs0 = types.frozenarray(numpy.choose(isnan, [constrain, lhs0]), copy=False)
-    constrain = types.frozenarray(~isnan, copy=False)
+    free = numpy.isnan(constrain)
+    lhs[~free] = constrain[~free]
   elif constrain.dtype == bool:
-    constrain = types.frozenarray(constrain)
+    free = ~constrain
   else:
     raise ValueError('`constrain` should have dtype bool or float but got {}'.format(constrain.dtype))
-  return lhs0, constrain
+  return lhs, free
 
 def _derivative(residual, target, jacobian=None):
   if jacobian is None:
