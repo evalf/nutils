@@ -221,7 +221,7 @@ class newton(RecursionWithSolve, length=1):
       lhs = self.lhs0.copy()
       res, jac = self._eval(lhs)
       relax = self.relax0
-      yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
+      yield _ro(lhs), types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
     while True:
       dlhs = -jac.solve_leniently(res, **self.solveargs) # compute new search vector
       res0 = res
@@ -240,7 +240,7 @@ class newton(RecursionWithSolve, length=1):
         scale, accept = self.linesearch(res0, relax*dres, res, relax*(jac@dlhs))
       log.info('update accepted at relaxation', round(relax, 5))
       relax = min(relax * scale, 1)
-      yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
+      yield _ro(lhs), types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
 
 
 class LineSearch(types.Immutable):
@@ -465,7 +465,7 @@ class minimize(RecursionWithSolve, length=1, version=3):
       lhs = self.lhs0.copy()
       nrg, res, jac = self._eval(lhs)
       relax = 0
-      yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
+      yield _ro(lhs), types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
 
     while True:
       nrg0 = nrg
@@ -504,7 +504,7 @@ class minimize(RecursionWithSolve, length=1, version=3):
         if relax <= self.failrelax:
           raise SolverError('stuck in local minimum')
 
-      yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
+      yield _ro(lhs), types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
 
 
 class pseudotime(RecursionWithSolve, length=1):
@@ -577,7 +577,7 @@ class pseudotime(RecursionWithSolve, length=1):
       timestep = self.timestep
       res, jac = self._eval(lhs, timestep)
       resnorm = resnorm0 = numpy.linalg.norm(res)
-      yield lhs, types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
+      yield _ro(lhs), types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
 
     while True:
       lhs[self.free] -= jac.solve_leniently(res, **self.solveargs)
@@ -585,7 +585,7 @@ class pseudotime(RecursionWithSolve, length=1):
       log.info('timestep: {:.0e}'.format(timestep))
       res, jac = self._eval(lhs, timestep)
       resnorm = numpy.linalg.norm(res)
-      yield lhs, types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
+      yield _ro(lhs), types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
 
 
 class thetamethod(RecursionWithSolve, length=1, version=1):
@@ -667,11 +667,11 @@ class thetamethod(RecursionWithSolve, length=1, version=1):
       lhs, = history
     else:
       lhs = self.lhs0
-      yield lhs
+      yield _ro(lhs)
     while True:
       lhs = self._step(lhs, self.time0+index*self.timestep, self.timestep)
       index += 1
-      yield lhs
+      yield _ro(lhs)
 
 impliciteuler = functools.partial(thetamethod, theta=1)
 cranknicolson = functools.partial(thetamethod, theta=0.5)
@@ -808,5 +808,12 @@ def _progress(name, tol):
   resnorm0 = info.resnorm
   while True:
     lhs, info = yield (name + ' {:.0f}%').format(100 * numpy.log(resnorm0/max(info.resnorm,tol)) / numpy.log(resnorm0/tol) if tol else 0 if info.resnorm else 100)
+
+def _ro(array):
+  '''read-only view'''
+
+  view = array.view()
+  view.flags.writeable = False
+  return view
 
 # vim:sw=2:sts=2:et
