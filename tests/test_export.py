@@ -1,33 +1,36 @@
-from nutils.testing import *
+from nutils import testing, export
 import os, tempfile, pathlib, treelog
-import nutils, numpy
+import numpy
 
-class mplfigure(TestCase):
+class mplfigure(testing.TestCase):
 
   def setUp(self):
     super().setUp()
     self.outdir = pathlib.Path(self.enter_context(tempfile.TemporaryDirectory()))
     self.enter_context(treelog.set(treelog.DataLog(str(self.outdir))))
 
-  @nutils.testing.requires('matplotlib', 'PIL')
+  @testing.requires('matplotlib', 'PIL')
   def test_autodetect_imagetype(self):
     for (imagetype, test) in (('jpg', lambda data: self.assertEqual(data[:3], b'\xFF\xD8\xFF')),
                               ('png', lambda data: self.assertEqual(data[:8], b'\x89\x50\x4E\x47\x0D\x0A\x1A\x0A')),
                               ('pdf', lambda data: self.assertEqual(data[:4], b'\x25\x50\x44\x46')),
                               ('svg', lambda data: self.assertRegex(data, b'<svg[^<>]*>'))):
       with self.subTest(imagetype=imagetype):
-        with nutils.export.mplfigure('test.{}'.format(imagetype)) as fig:
+        with export.mplfigure('test.{}'.format(imagetype)) as fig:
           ax = fig.add_subplot(111)
           ax.plot([1,2,3],[1,2,3])
         with (self.outdir/'test.{}'.format(imagetype)).open('rb') as f:
           test(f.read())
 
-@parametrize
-class vtk(TestCase):
+@testing.parametrize
+class vtk(testing.TestCase):
 
   def setUp(self):
     super().setUp()
-    if self.ndims == 2:
+    if self.ndims == 1:
+      self.x = numpy.array([[0,],[1,],[2,],[3,]], dtype=self.xtype)
+      self.tri = numpy.array([[0,1],[1,2],[2,3]])
+    elif self.ndims == 2:
       self.x = numpy.array([[0,0],[0,1],[1,0],[1,1]], dtype=self.xtype)
       self.tri = numpy.array([[0,1,2],[1,2,3]])
     elif self.ndims == 3:
@@ -55,7 +58,11 @@ class vtk(TestCase):
       yield b'POINTS 4 double\n'
     else:
       raise Exception('not supported: xtype={!r}'.format(self.xtype))
-    if self.ndims == 2 and self.xtype == 'i4':
+    if self.ndims == 1 and self.xtype == 'i4':
+      yield bytes([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0])
+    elif self.ndims == 1 and self.xtype == 'f4':
+      yield bytes([0,0,0,0,0,0,0,0,0,0,0,0,63,128,0,0,0,0,0,0,0,0,0,0,64,0,0,0,0,0,0,0,0,0,0,0,64,64,0,0,0,0,0,0,0,0,0,0])
+    elif self.ndims == 2 and self.xtype == 'i4':
       yield bytes([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0])
     elif self.ndims == 2 and self.xtype == 'f4':
       yield bytes([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,63,128,0,0,0,0,0,0,63,128,0,0,0,0,0,0,0,0,0,0,63,128,0,0,63,128,0,0,0,0,0,0])
@@ -65,7 +72,12 @@ class vtk(TestCase):
       yield bytes([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,63,128,0,0,0,0,0,0,63,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,63,128,0,0])
     else:
       raise Exception('not supported: xtype={!r}, ndims={}'.format(self.xtype, self.ndims))
-    if self.ndims == 2:
+    if self.ndims == 1:
+      yield b'CELLS 3 9\n'
+      yield bytes([0,0,0,2,0,0,0,0,0,0,0,1,0,0,0,2,0,0,0,1,0,0,0,2,0,0,0,2,0,0,0,2,0,0,0,3])
+      yield b'CELL_TYPES 3\n'
+      yield bytes([0,0,0,3,0,0,0,3,0,0,0,3])
+    elif self.ndims == 2:
       yield b'CELLS 2 8\n'
       yield bytes([0,0,0,3,0,0,0,0,0,0,0,1,0,0,0,2,0,0,0,3,0,0,0,1,0,0,0,2,0,0,0,3])
       yield b'CELL_TYPES 2\n'
@@ -126,15 +138,18 @@ class vtk(TestCase):
         kwargs['p'] = self.p
       if self.c is not None:
         kwargs['c'] = self.c
-      nutils.export.vtk('test', self.tri, self.x, **kwargs)
+      export.vtk('test', self.tri, self.x, **kwargs)
       with open(os.path.join(outdir, 'test.vtk'), 'rb') as f:
         data = f.read()
     self.assertEqual(data, b''.join(self.data))
 
+vtk(ndims=1, xtype='i4')
+vtk(ndims=1, xtype='f4')
 vtk(ndims=2, xtype='i4')
 vtk(ndims=2, xtype='f4')
 vtk(ndims=2, xtype='f8')
 vtk(ndims=3, xtype='f4')
+vtk(ndims=1, xtype='f4', ptype='f4', pshape=())
 vtk(ndims=2, xtype='f4', ptype='f4', pshape=())
 vtk(ndims=2, xtype='f4', ptype='f8', pshape=())
 vtk(ndims=2, xtype='f4', ptype='i1', pshape=())
