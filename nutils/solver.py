@@ -554,7 +554,8 @@ class pseudotime(RecursionWithSolve, length=1):
     self.jacobian = _derivative(residual, target)
     self.inertia = inertia
     self.jacobiant = _derivative(inertia, target)
-    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
+    self.lhs0, constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
+    self.free = ~constrain
     self.timestep = timestep
     self.arguments = arguments
     self.solveargs = _strip(kwargs, 'lin')
@@ -563,7 +564,8 @@ class pseudotime(RecursionWithSolve, length=1):
     self.solveargs.setdefault('rtol', 1e-3)
 
   def _eval(self, lhs, timestep):
-    return sample.eval_integrals(self.residual, self.jacobian+self.jacobiant/timestep, **{self.target: lhs}, **self.arguments)
+    res, jac = sample.eval_integrals(self.residual, self.jacobian+self.jacobiant/timestep, **{self.target: lhs}, **self.arguments)
+    return res[self.free], jac.submatrix(self.free, self.free)
 
   def resume(self, history):
     if history:
@@ -571,23 +573,22 @@ class pseudotime(RecursionWithSolve, length=1):
       resnorm0 = info.resnorm0
       timestep = info.timestep
       res, jac = self._eval(lhs, timestep)
-      resnorm = numpy.linalg.norm(res[~self.constrain])
+      resnorm = numpy.linalg.norm(res)
       assert resnorm == info.resnorm
     else:
-      lhs = self.lhs0
+      lhs = self.lhs0.copy()
       timestep = self.timestep
       res, jac = self._eval(lhs, timestep)
-      resnorm = resnorm0 = numpy.linalg.norm(res[~self.constrain])
-      yield numpy.array(lhs), types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
+      resnorm = resnorm0 = numpy.linalg.norm(res)
+      yield lhs, types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
 
-    lhs = numpy.array(lhs)
     while True:
-      lhs -= jac.solve_leniently(res, constrain=self.constrain, **self.solveargs)
+      lhs[self.free] -= jac.solve_leniently(res, **self.solveargs)
       timestep = self.timestep * (resnorm0/resnorm)
       log.info('timestep: {:.0e}'.format(timestep))
       res, jac = self._eval(lhs, timestep)
-      resnorm = numpy.linalg.norm(res[~self.constrain])
-      yield lhs.copy(), types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
+      resnorm = numpy.linalg.norm(res)
+      yield lhs, types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
 
 
 class thetamethod(RecursionWithSolve, length=1, version=1):
