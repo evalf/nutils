@@ -197,9 +197,8 @@ class newton(RecursionWithSolve, length=1):
     self.target = target
     self.residual = residual
     self.jacobian = _derivative(residual, target, jacobian)
-    self.lhs0, constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
+    self.lhs0, self.free = _parse_lhs_cons(lhs0, constrain, residual.shape)
     self.relax0 = relax0
-    self.free = ~constrain
     self.linesearch = linesearch or NormBased.legacy(kwargs)
     self.failrelax = failrelax
     self.arguments = arguments
@@ -219,29 +218,29 @@ class newton(RecursionWithSolve, length=1):
       assert numpy.linalg.norm(res) == info.resnorm
       relax = info.relax
     else:
-      lhs = self.lhs0
+      lhs = self.lhs0.copy()
       res, jac = self._eval(lhs)
       relax = self.relax0
-      yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
+      yield _ro(lhs), types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
     while True:
       dlhs = -jac.solve_leniently(res, **self.solveargs) # compute new search vector
+      res0 = res
       dres = jac@dlhs # == -res if dlhs was solved to infinite precision
-      while True: # line search
-        newlhs = lhs.copy()
-        newlhs[self.free] += relax * dlhs
-        newres, newjac = self._eval(newlhs)
-        scale, accept = self.linesearch(res, relax*dres, newres, relax*newjac@dlhs)
-        if accept:
-          break
+      lhs[self.free] += relax * dlhs
+      res, jac = self._eval(lhs)
+      scale, accept = self.linesearch(res0, relax*dres, res, relax*(jac@dlhs))
+      while not accept: # line search
+        assert scale < 1
+        oldrelax = relax
         relax *= scale
         if relax <= self.failrelax:
           raise SolverError('stuck in local minimum')
+        lhs[self.free] += (relax - oldrelax) * dlhs
+        res, jac = self._eval(lhs)
+        scale, accept = self.linesearch(res0, relax*dres, res, relax*(jac@dlhs))
       log.info('update accepted at relaxation', round(relax, 5))
-      lhs = newlhs
-      res = newres
-      jac = newjac
       relax = min(relax * scale, 1)
-      yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
+      yield _ro(lhs), types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
 
 
 class LineSearch(types.Immutable):
@@ -442,7 +441,7 @@ class minimize(RecursionWithSolve, length=1, version=3):
     self.energy = energy
     self.residual = energy.derivative(target)
     self.jacobian = _derivative(self.residual, target)
-    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, self.residual.shape)
+    self.lhs0, self.free = _parse_lhs_cons(lhs0, constrain, self.residual.shape)
     self.rampup = rampup
     self.rampdown = rampdown
     self.failrelax = failrelax
@@ -453,7 +452,7 @@ class minimize(RecursionWithSolve, length=1, version=3):
 
   def _eval(self, lhs):
     nrg, res, jac = sample.eval_integrals(self.energy, self.residual, self.jacobian, **{self.target: lhs}, **self.arguments)
-    return nrg, res[~self.constrain], jac.submatrix(~self.constrain, ~self.constrain)
+    return nrg, res[self.free], jac.submatrix(self.free, self.free)
 
   def resume(self, history):
     if history:
@@ -463,15 +462,15 @@ class minimize(RecursionWithSolve, length=1, version=3):
       assert numpy.linalg.norm(res) == info.resnorm
       relax = info.relax
     else:
-      lhs = self.lhs0
+      lhs = self.lhs0.copy()
       nrg, res, jac = self._eval(lhs)
       relax = 0
-      yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
+      yield _ro(lhs), types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
 
     while True:
       nrg0 = nrg
-      lhs0 = lhs
       dlhs = -jac.solve_leniently(res, **self.solveargs)
+      lhs[self.free] += dlhs # baseline: vanilla Newton
 
       # compute first two ritz values to determine approximate path of steepest descent
       dlhsnorm = numpy.linalg.norm(dlhs)
@@ -489,11 +488,12 @@ class minimize(RecursionWithSolve, length=1, version=3):
       V = numpy.array([v1, -v0]).T / D # ritz vectors times dlhs -- note: V.dot(L) = -res, V.sum() = dlhs
       log.info('spectrum: {:.1e}..{:.1e} ({}definite)'.format(*L, 'positive ' if L[0] > 0 else 'negative ' if L[-1] < 0 else 'in'))
 
-      for irelax in itertools.count():
+      eL = 0
+      for irelax in itertools.count(): # line search along steepest descent curve
         r = numpy.exp(relax - numpy.log(D)) # = exp(relax) / D
+        eL0 = eL
         eL = numpy.exp(-r*L)
-        lhs = lhs0.copy()
-        lhs[~self.constrain] += dlhs - V.dot(eL)
+        lhs[self.free] -= V.dot(eL - eL0)
         nrg, res, jac = self._eval(lhs)
         slope = res.dot(V.dot(eL*L))
         log.info('energy {:+.2e} / e{:+.1f} and {}creasing'.format(nrg - nrg0, relax, 'in' if slope > 0 else 'de'))
@@ -504,7 +504,7 @@ class minimize(RecursionWithSolve, length=1, version=3):
         if relax <= self.failrelax:
           raise SolverError('stuck in local minimum')
 
-      yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
+      yield _ro(lhs), types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
 
 
 class pseudotime(RecursionWithSolve, length=1):
@@ -552,7 +552,7 @@ class pseudotime(RecursionWithSolve, length=1):
     self.jacobian = _derivative(residual, target)
     self.inertia = inertia
     self.jacobiant = _derivative(inertia, target)
-    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
+    self.lhs0, self.free = _parse_lhs_cons(lhs0, constrain, residual.shape)
     self.timestep = timestep
     self.arguments = arguments
     self.solveargs = _strip(kwargs, 'lin')
@@ -561,7 +561,8 @@ class pseudotime(RecursionWithSolve, length=1):
     self.solveargs.setdefault('rtol', 1e-3)
 
   def _eval(self, lhs, timestep):
-    return sample.eval_integrals(self.residual, self.jacobian+self.jacobiant/timestep, **{self.target: lhs}, **self.arguments)
+    res, jac = sample.eval_integrals(self.residual, self.jacobian+self.jacobiant/timestep, **{self.target: lhs}, **self.arguments)
+    return res[self.free], jac.submatrix(self.free, self.free)
 
   def resume(self, history):
     if history:
@@ -569,23 +570,22 @@ class pseudotime(RecursionWithSolve, length=1):
       resnorm0 = info.resnorm0
       timestep = info.timestep
       res, jac = self._eval(lhs, timestep)
-      resnorm = numpy.linalg.norm(res[~self.constrain])
+      resnorm = numpy.linalg.norm(res)
       assert resnorm == info.resnorm
     else:
-      lhs = self.lhs0
+      lhs = self.lhs0.copy()
       timestep = self.timestep
       res, jac = self._eval(lhs, timestep)
-      resnorm = resnorm0 = numpy.linalg.norm(res[~self.constrain])
-      yield numpy.array(lhs), types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
+      resnorm = resnorm0 = numpy.linalg.norm(res)
+      yield _ro(lhs), types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
 
-    lhs = numpy.array(lhs)
     while True:
-      lhs -= jac.solve_leniently(res, constrain=self.constrain, **self.solveargs)
+      lhs[self.free] -= jac.solve_leniently(res, **self.solveargs)
       timestep = self.timestep * (resnorm0/resnorm)
       log.info('timestep: {:.0e}'.format(timestep))
       res, jac = self._eval(lhs, timestep)
-      resnorm = numpy.linalg.norm(res[~self.constrain])
-      yield lhs.copy(), types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
+      resnorm = numpy.linalg.norm(res)
+      yield _ro(lhs), types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
 
 
 class thetamethod(RecursionWithSolve, length=1, version=1):
@@ -637,7 +637,8 @@ class thetamethod(RecursionWithSolve, length=1, version=1):
     assert target0 not in arguments, '`target0` should not be defined in `arguments`'
     self.target = target
     self.target0 = target0
-    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
+    self.lhs0, free = _parse_lhs_cons(lhs0, constrain, residual.shape)
+    self.constrain = ~free
     self.newtonargs = newtonargs
     self.newtontol = newtontol
     self.arguments = arguments
@@ -666,11 +667,11 @@ class thetamethod(RecursionWithSolve, length=1, version=1):
       lhs, = history
     else:
       lhs = self.lhs0
-      yield lhs
+      yield _ro(lhs)
     while True:
       lhs = self._step(lhs, self.time0+index*self.timestep, self.timestep)
       index += 1
-      yield lhs
+      yield _ro(lhs)
 
 impliciteuler = functools.partial(thetamethod, theta=1)
 cranknicolson = functools.partial(thetamethod, theta=0.5)
@@ -721,12 +722,15 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
     raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
   residual = functional.derivative(target)
   jacobian = residual.derivative(target)
-  lhs, cons = _parse_lhs_cons(lhs0, constrain, residual.shape)
+  lhs, free = _parse_lhs_cons(lhs0, constrain, residual.shape)
   val, res, jac = sample.eval_integrals(functional, residual, jacobian, **{target: lhs}, **arguments)
   if droptol is not None:
-    nan = ~(cons|jac.rowsupp(droptol))
-    cons = cons | nan
-  resnorm = numpy.linalg.norm(res[~cons])
+    supp = jac.rowsupp(droptol)
+    nan = free & ~supp # not a number if not constrained and not supported
+    free &= supp # free if not constrained and supported
+  res = res[free]
+  jac = jac.submatrix(free, free)
+  resnorm = numpy.linalg.norm(res)
   if jacobian.contains(target):
     if tol <= 0:
       raise ValueError('nonlinear optimization problem requires a nonzero "tol" argument')
@@ -738,26 +742,28 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
       while not numpy.isfinite(resnorm) or resnorm > tol:
         if accept:
           reformat(100 * numpy.log(firstresnorm/resnorm) / numpy.log(firstresnorm/tol))
-          lhs0 = lhs
-          dlhs = -jac.solve_leniently(res, constrain=cons, **solveargs)
-          res0 = res[~cons]
-          dres0 = (jac@dlhs)[~cons] # == -res0 if dlhs was solved to infinite precision
-          resnorm0 = resnorm
-        lhs = lhs0 + relax * dlhs
+          dlhs = -jac.solve_leniently(res, **solveargs)
+          res0 = res
+          dres = jac@dlhs # == -res0 if dlhs was solved to infinite precision
+          relax0 = 0
+        lhs[free] += (relax - relax0) * dlhs
+        relax0 = relax # currently applied relaxation
         val, res, jac = sample.eval_integrals(functional, residual, jacobian, **{target: lhs}, **arguments)
-        resnorm = numpy.linalg.norm(res[~cons])
-        scale, accept = linesearch(res0, relax*dres0, res[~cons], relax*(jac@dlhs)[~cons])
+        res = res[free]
+        jac = jac.submatrix(free, free)
+        resnorm = numpy.linalg.norm(res)
+        scale, accept = linesearch(res0, relax*dres, res, relax*(jac@dlhs))
         relax = min(relax * scale, 1)
         if relax <= failrelax:
           raise SolverError('stuck in local minimum')
       log.info('converged with residual {:.1e}'.format(resnorm))
   elif resnorm > tol:
     solveargs.setdefault('atol', tol)
-    dlhs = -jac.solve(res, constrain=cons, **solveargs)
-    lhs = lhs + dlhs
+    dlhs = -jac.solve(res, **solveargs)
+    lhs[free] += dlhs
     val += (res + jac@dlhs/2).dot(dlhs)
   if droptol is not None:
-    lhs = numpy.choose(nan, [lhs, numpy.nan])
+    lhs[nan] = numpy.nan
     log.info('constrained {}/{} dofs'.format(len(lhs)-nan.sum(), len(lhs)))
   log.info('optimum value {:.2e}'.format(val))
   return lhs
@@ -770,24 +776,23 @@ def _strip(kwargs, prefix):
 
 def _parse_lhs_cons(lhs0, constrain, shape):
   if lhs0 is None:
-    lhs0 = types.frozenarray.full(shape, fill_value=0.)
+    lhs = numpy.zeros(shape)
   elif lhs0.shape == shape:
-    lhs0 = types.frozenarray(lhs0)
+    lhs = lhs0.copy()
   else:
     raise ValueError('expected `lhs0` with shape {} but got {}'.format(shape, lhs0.shape))
   if constrain is None:
-    constrain = types.frozenarray.full(shape, fill_value=False)
+    free = numpy.ones(shape, dtype=bool)
   elif constrain.shape != shape:
     raise ValueError('expected `constrain` with shape {} but got {}'.format(shape, constrain.shape))
   elif constrain.dtype == float:
-    isnan = numpy.isnan(constrain)
-    lhs0 = types.frozenarray(numpy.choose(isnan, [constrain, lhs0]), copy=False)
-    constrain = types.frozenarray(~isnan, copy=False)
+    free = numpy.isnan(constrain)
+    lhs[~free] = constrain[~free]
   elif constrain.dtype == bool:
-    constrain = types.frozenarray(constrain)
+    free = ~constrain
   else:
     raise ValueError('`constrain` should have dtype bool or float but got {}'.format(constrain.dtype))
-  return lhs0, constrain
+  return lhs, free
 
 def _derivative(residual, target, jacobian=None):
   if jacobian is None:
@@ -803,5 +808,12 @@ def _progress(name, tol):
   resnorm0 = info.resnorm
   while True:
     lhs, info = yield (name + ' {:.0f}%').format(100 * numpy.log(resnorm0/max(info.resnorm,tol)) / numpy.log(resnorm0/tol) if tol else 0 if info.resnorm else 100)
+
+def _ro(array):
+  '''read-only view'''
+
+  view = array.view()
+  view.flags.writeable = False
+  return view
 
 # vim:sw=2:sts=2:et

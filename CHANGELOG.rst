@@ -9,6 +9,13 @@ features in inverse chronological order.
 New in v7.0 (in development)
 ----------------------------
 
+- In-place modification of newton, minimize, pseudotime iterates
+
+  When :class:`nutils.solver.newton`, :class:`nutils.solver.minimize` or
+  :class:`nutils.solver.pseudotime` are used as iterators, the generated
+  vectors are now modified in place. Therefore, if iterates are stored for
+  analysis, be sure to use the ``.copy`` method.
+
 - Deprecated ``function.elemwise``
 
   The function ``function.elemwise`` has been deprecated. Use
