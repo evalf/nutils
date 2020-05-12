@@ -133,10 +133,10 @@ class test(testing.TestCase):
       2uI0A4OFqbMpA4Pd6YenGBhSgDpfXXoG1HlXpwXItrxkCmSz683WZ2CwvvDrPAPDVv3fQBMZzn0FmvLK
       8LkxA4PCmZAzDAzfjL8ATXx0agPQlBCgedQBAOgCMhE=''', atol=2e-13)
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
-      eNoB2AAn/4Y0pjUwMHTKhMrmMoI4Qzcpz4TI78egy545+Dm7MwPGEsa+NVY8pjtVNSzE18OoyXI9VD02
-      M5zCnsJazE0+Hj76NsPByMH/yhQ30DN6yFjIAjCrN5Y4FcooyE3I8ssCOGk4QjXXxrPGNzILOXo7AMj3
-      xOjEM8k3O8Y85DcZwyTDAzjaPFY+sMfJwavBhDNPPvbFX8cuOKI3/zpFOFI87TqmN9k8C8hkNFnCgcXV
-      Pds7VT/qPdZBbEF5QUZD7UEJQYi527ziROVETEeVRfZIfrfuRKZKr7s6SRCVaAA=''')
+      eNoB2AAn/+o0szWg04bKlsogMVI4JjcmMXXI+cfizb05/Dk4MBHGEcaPNDo8ljuTNibE4sNpznI9VD02
+      M5zCnsJazE0+Hj76NsPByMH/yl43nDNlyGnIsy+YNz44MspbyD/IWcwHOMM4AzXAxsPGGjAJOUM7GcgU
+      xePEqckvO+g8+DcOwyfD4zfjPFY+sMfJwavBhDNPPozF18aozR866DpHNSk8JDonOdw4k8VzNaHBk8PF
+      OyI+Gj9vPPRA/T/LQDtBIECaP0i5yLsAwL9FwkabQsJJTbc2ubJHw7ZvRr3pZnA=''')
 
   @testing.requires('matplotlib', 'scipy')
   def test_rot1(self):
@@ -146,7 +146,7 @@ class test(testing.TestCase):
       2uI0A4OFqbMpA4Pd6YenGBhSgDpfXXoG1HlXpwXItrxkCmSz683WZ2CwvvDrPAPDVv3fQBMZzn0FmvLK
       8LkxA4PCmZAzDAzfjL8ATXx0agPQlBCgedQBAOgCMhE=''', atol=2e-13)
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
-      eNoB2AAn/380qTWFMHXKgsrUMoI4RDdJz4XI78eZy545+Dm8MwPGEsa+NVY8pjtWNSzE18OoyXI9VD02
-      M5zCnsJazE0+Hj76NsPByMH/yjM3ejSWyGzI/TG+N5I4A8oiyEjIzsv9N2o4RTXYxrTGajIMOXo7AMj3
-      xOjEMsk3O8Y85TcZwyTDAzjaPFY+sMfJwavBhDNPPvPFZMc4OKg3/jo7OFI87jqtN9k8Ccg6NFjChcXW
-      Pd07VT/oPdZBbEF5QUZD7EEIQYe527ziROVETEeURfZIfrfuRKZKrrs6SVFLajU=''')
+      eNoB2AAn/+M0tzVcKYfKlMr1MFE4JzdBMXbI+cfMzb05/Dk/MBHGEcaPNDo8ljuUNibE4sNjznI9VD02
+      M5zCnsJazE0+Hj76NsPByMH/ynk3WTR/yH7I5TGsNzk4HcpUyDnILMwBOMQ4BzXBxsTGpDAKOUM7GMgU
+      xePEp8kvO+g8+DcOwyfD5DfkPFY+sMfJwavBhDNPPorF3Ma4ziE65zoUNSg8JToqOd04k8VbNaDBlMPJ
+      OyI+Gj9sPPRA/T/MQDtBH0CYP0e5yLsDwL9FwkaaQsJJTbc3ubJHw7ZvRtqoZrA=''')

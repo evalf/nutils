@@ -628,8 +628,6 @@ class thetamethod(RecursionWithSolve, length=1, version=1):
       Coefficient vector for all timesteps after the initial condition.
   '''
 
-  __cache__ = '_res_jac'
-
   @types.apply_annotations
   def __init__(self, target:types.strictstr, residual:sample.strictintegral, inertia:sample.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray, theta:types.strictfloat, target0:types.strictstr='_thetamethod_target0', constrain:types.frozenarray=None, newtontol:types.strictfloat=1e-10, arguments:argdict={}, newtonargs:types.frozendict={}, timetarget:types.strictstr=None, time0:types.strictfloat=0.):
     super().__init__()
@@ -639,31 +637,29 @@ class thetamethod(RecursionWithSolve, length=1, version=1):
     assert target0 not in arguments, '`target0` should not be defined in `arguments`'
     self.target = target
     self.target0 = target0
-    self.lhs0 = lhs0
-    self.constrain = constrain
+    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, residual.shape)
     self.newtonargs = newtonargs
     self.newtontol = newtontol
     self.arguments = arguments
-    self.residual = residual
-    self.inertia = inertia
-    self.theta = theta
     self.timestep = timestep
-    self.timetarget = timetarget or '_thetamethod_dummy'
+    self.timetarget = timetarget or '_thetamethod_time'
+    self.timetarget0 = '_thetamethod_time0'
     self.time0 = time0
 
-  def _res_jac(self, timestep):
-    res = (self.residual * self.theta + self.inertia / timestep).replace({self.timetarget: function.Argument(self.timetarget, ())+timestep}) \
-        + (self.residual * (1-self.theta) - self.inertia / timestep).replace({self.target: function.Argument(self.target0, self.lhs0.shape)})
-    return res, res.derivative(self.target)
+    t0 = function.Argument(self.timetarget0, ())
+    dt = function.Argument(self.timetarget, ()) - t0
+    subs0 = {target: function.Argument(target0, self.lhs0.shape), self.timetarget: t0}
+    self._res = sample.Integral({smp: func * theta + function.replace_arguments(func, subs0) * (1-theta) for smp, func in residual._integrands.items()}, shape=residual.shape)
+    self._res += sample.Integral({smp: (func - function.replace_arguments(func, subs0)) / dt for smp, func in inertia._integrands.items()}, shape=inertia.shape)
+    self._jac = self._res.derivative(target)
 
-  def _step(self, lhs, t, timestep):
-    res, jac = self._res_jac(timestep)
+  def _step(self, lhs0, t0, dt):
     try:
-      return newton(self.target, residual=res, jacobian=jac, lhs0=lhs, constrain=self.constrain,
-        arguments=collections.ChainMap(self.arguments, {self.target0: lhs, self.timetarget: t}), **self.newtonargs).solve(tol=self.newtontol)
+      return newton(self.target, residual=self._res, jacobian=self._jac, lhs0=lhs0, constrain=self.constrain,
+        arguments={self.target0: lhs0, self.timetarget0: t0, self.timetarget: t0+dt, **self.arguments}, **self.newtonargs).solve(tol=self.newtontol)
     except (SolverError, matrix.MatrixError) as e:
-      log.error('error: {}; retrying with timestep {}'.format(e, timestep/2))
-      return self._step(self._step(lhs, t, timestep/2), t+timestep/2, timestep/2)
+      log.error('error: {}; retrying with timestep {}'.format(e, dt/2))
+      return self._step(self._step(lhs0, t0, dt/2), t0+dt/2, dt/2)
 
   def resume_index(self, history, index):
     if history:
