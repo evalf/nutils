@@ -725,11 +725,16 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
   residual = functional.derivative(target)
   jacobian = residual.derivative(target)
   lhs, cons = _parse_lhs_cons(lhs0, constrain, residual.shape)
+  free = ~cons
+  lhs = lhs.copy()
   val, res, jac = sample.eval_integrals(functional, residual, jacobian, **{target: lhs}, **arguments)
   if droptol is not None:
-    nan = ~(cons|jac.rowsupp(droptol))
-    cons = cons | nan
-  resnorm = numpy.linalg.norm(res[~cons])
+    supp = jac.rowsupp(droptol)
+    nan = free & ~supp # not a number if not constrained and not supported
+    free &= supp # free if not constrained and supported
+  res = res[free]
+  jac = jac.submatrix(free, free)
+  resnorm = numpy.linalg.norm(res)
   if jacobian.contains(target):
     if tol <= 0:
       raise ValueError('nonlinear optimization problem requires a nonzero "tol" argument')
@@ -741,26 +746,28 @@ def optimize(target:types.strictstr, functional:sample.strictintegral, *, tol:ty
       while not numpy.isfinite(resnorm) or resnorm > tol:
         if accept:
           reformat(100 * numpy.log(firstresnorm/resnorm) / numpy.log(firstresnorm/tol))
-          lhs0 = lhs
-          dlhs = -jac.solve_leniently(res, constrain=cons, **solveargs)
-          res0 = res[~cons]
-          dres0 = (jac@dlhs)[~cons] # == -res0 if dlhs was solved to infinite precision
-          resnorm0 = resnorm
-        lhs = lhs0 + relax * dlhs
+          dlhs = -jac.solve_leniently(res, **solveargs)
+          res0 = res
+          dres = jac@dlhs # == -res0 if dlhs was solved to infinite precision
+          relax0 = 0
+        lhs[free] += (relax - relax0) * dlhs
+        relax0 = relax # currently applied relaxation
         val, res, jac = sample.eval_integrals(functional, residual, jacobian, **{target: lhs}, **arguments)
-        resnorm = numpy.linalg.norm(res[~cons])
-        scale, accept = linesearch(res0, relax*dres0, res[~cons], relax*(jac@dlhs)[~cons])
+        res = res[free]
+        jac = jac.submatrix(free, free)
+        resnorm = numpy.linalg.norm(res)
+        scale, accept = linesearch(res0, relax*dres, res, relax*(jac@dlhs))
         relax = min(relax * scale, 1)
         if relax <= failrelax:
           raise SolverError('stuck in local minimum')
       log.info('converged with residual {:.1e}'.format(resnorm))
   elif resnorm > tol:
     solveargs.setdefault('atol', tol)
-    dlhs = -jac.solve(res, constrain=cons, **solveargs)
-    lhs = lhs + dlhs
+    dlhs = -jac.solve(res, **solveargs)
+    lhs[free] += dlhs
     val += (res + jac@dlhs/2).dot(dlhs)
   if droptol is not None:
-    lhs = numpy.choose(nan, [lhs, numpy.nan])
+    lhs[nan] = numpy.nan
     log.info('constrained {}/{} dofs'.format(len(lhs)-nan.sum(), len(lhs)))
   log.info('optimum value {:.2e}'.format(val))
   return lhs
