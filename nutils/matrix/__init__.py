@@ -79,8 +79,13 @@ def _helper(name, *args):
   else:
     return backend.setassemble(_assemble.sets, *args)
 
-Numpy = lambda: _helper('Numpy')
-Scipy = lambda: _helper('Scipy')
-MKL = lambda threading = None: _helper('MKL', threading)
+def Numpy():
+  return _helper('Numpy')
+
+def Scipy():
+  return _helper('Scipy')
+
+def MKL(threading:str=None):
+  return _helper('MKL', threading)
 
 # vim:sw=2:sts=2:et

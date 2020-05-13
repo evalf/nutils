@@ -305,7 +305,7 @@ class PointsSequence(types.Singleton):
         return _balanced_chain(selfitems + otheritems)
 
   @property
-  def tri(self) -> types.frozenarray:
+  def tri(self) -> numpy.ndarray:
     '''Triangulation of interior.
 
     A two-dimensional integer array with ``ndims+1`` columns, of which every
@@ -317,10 +317,12 @@ class PointsSequence(types.Singleton):
     for points in self:
       tri.append(points.tri + offset)
       offset += points.npoints
-    return types.frozenarray(numpy.concatenate(tri) if tri else numpy.zeros((0,self.ndims+1), int), copy=False)
+    tri = numpy.concatenate(tri) if tri else numpy.zeros((0,self.ndims+1), int)
+    tri.flags.writeable = False
+    return tri
 
   @property
-  def hull(self) -> types.frozenarray:
+  def hull(self) -> numpy.ndarray:
     '''Triangulation of the exterior hull.
 
     A two-dimensional integer array with ``ndims`` columns, of which every row
@@ -334,7 +336,9 @@ class PointsSequence(types.Singleton):
     for points in self:
       hull.append(points.hull + offset)
       offset += points.npoints
-    return types.frozenarray(numpy.concatenate(hull) if hull else numpy.zeros((0,self.ndims), int), copy=False)
+    hull = numpy.concatenate(hull) if hull else numpy.zeros((0,self.ndims), int)
+    hull.flags.writeable = False
+    return hull
 
 class _Empty(PointsSequence):
 
@@ -413,18 +417,19 @@ class _Uniform(PointsSequence):
     else:
       return super().product(other)
 
-  def _mk_indices(self, item: numpy.ndarray) -> types.frozenarray:
+  def _mk_indices(self, item: numpy.ndarray) -> numpy.ndarray:
     npoints = self.item.npoints
     ind = item[None] + numpy.arange(0, len(self)*npoints, npoints)[:,None,None]
     ind = ind.reshape(len(self)*item.shape[0], item.shape[1])
-    return types.frozenarray(ind, copy=False)
+    ind.flags.writeable = False
+    return ind
 
   @property
-  def tri(self) -> types.frozenarray:
+  def tri(self) -> numpy.ndarray:
     return self._mk_indices(self.item.tri)
 
   @property
-  def hull(self) -> types.frozenarray:
+  def hull(self) -> numpy.ndarray:
     return self._mk_indices(self.item.hull)
 
 class _Take(PointsSequence):
@@ -490,18 +495,19 @@ class _Repeat(PointsSequence):
     else:
       return _Repeat(self.parent, self.count * count)
 
-  def _mk_indices(self, parent: numpy.ndarray) -> types.frozenarray:
+  def _mk_indices(self, parent: numpy.ndarray) -> numpy.ndarray:
     npoints = self.parent.npoints
     ind = parent[None] + numpy.arange(0, self.count*npoints, npoints)[:,None,None]
     ind = ind.reshape(self.count*parent.shape[0], parent.shape[1])
-    return types.frozenarray(ind, copy=False)
+    ind.flags.writeable = False
+    return ind
 
   @property
-  def tri(self) -> types.frozenarray:
+  def tri(self) -> numpy.ndarray:
     return self._mk_indices(self.parent.tri)
 
   @property
-  def hull(self) -> types.frozenarray:
+  def hull(self) -> numpy.ndarray:
     return self._mk_indices(self.parent.hull)
 
 class _Product(PointsSequence):
