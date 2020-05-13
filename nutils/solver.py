@@ -548,10 +548,12 @@ class pseudotime(RecursionWithSolve, length=1):
     if inertia.shape != residual.shape:
       raise ValueError('expected `inertia` with shape {} but got {}'.format(residual.shape, inertia.shape))
     self.target = target
+    self.timesteptarget = '_pseudotime_timestep'
+    dt = function.Argument(self.timesteptarget, ())
     self.residual = residual
-    self.jacobian = _derivative(residual, target)
+    self.jacobian = residual.derivative(target)
+    self.jacobian += sample.Integral({smp: func / dt for smp, func in inertia.derivative(target)._integrands.items()}, shape=self.jacobian.shape)
     self.inertia = inertia
-    self.jacobiant = _derivative(inertia, target)
     self.lhs0, self.free = _parse_lhs_cons(lhs0, constrain, residual.shape)
     self.timestep = timestep
     self.arguments = arguments
@@ -561,7 +563,7 @@ class pseudotime(RecursionWithSolve, length=1):
     self.solveargs.setdefault('rtol', 1e-3)
 
   def _eval(self, lhs, timestep):
-    res, jac = sample.eval_integrals(self.residual, self.jacobian+self.jacobiant/timestep, **{self.target: lhs}, **self.arguments)
+    res, jac = sample.eval_integrals(self.residual, self.jacobian, **{self.target: lhs, self.timesteptarget: timestep}, **self.arguments)
     return res[self.free], jac.submatrix(self.free, self.free)
 
   def resume(self, history):
