@@ -588,7 +588,7 @@ class pseudotime(RecursionWithSolve, length=1):
       yield _ro(lhs), types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
 
 
-class thetamethod(RecursionWithSolve, length=1, version=1):
+class thetamethod(cache.Recursion, length=1, version=1):
   '''solve time dependent problem using the theta method
 
   Parameters
