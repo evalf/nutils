@@ -810,7 +810,8 @@ class OppositeTopology(Topology):
 
   def __init__(self, basetopo):
     self.basetopo = basetopo
-    super().__init__(basetopo.roots, basetopo.references, basetopo.opposites, basetopo.transforms)
+    refs = elementseq.asreferences((ref.flipped for ref in basetopo.references), self.basetopo.ndims)
+    super().__init__(basetopo.roots, refs, basetopo.opposites, basetopo.transforms)
 
   def getitem(self, item):
     return ~(self.basetopo.getitem(item))

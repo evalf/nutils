@@ -313,6 +313,10 @@ class Reference(types.Singleton):
     else:
       return self
 
+  @property
+  def flipped(self):
+    return self
+
 strictreference = types.strict[Reference]
 
 class EmptyLike(Reference):
@@ -918,6 +922,10 @@ class OwnChildReference(Reference):
   def get_edge_dofs(self, degree, iedge):
     return self.baseref.get_edge_dofs(degree, iedge)
 
+  @property
+  def flipped(self):
+    return OwnChildReference(self.baseref.flipped)
+
 class WithChildrenReference(Reference):
   'base reference with explicit children'
 
@@ -1340,6 +1348,10 @@ class ManifoldReference(Reference):
 
   def slice(self, levelfunc, ndivisions):
     return ManifoldReference(self.ref.slice(lambda vertices: levelfunc(self.trans.apply(vertices)), ndivisions), self.trans)
+
+  @property
+  def flipped(self):
+    return ManifoldReference(self.ref, self.trans.flipped)
 
 ## UTILITY FUNCTIONS
 

@@ -370,7 +370,8 @@ class partialtrim(TestCase):
   # +-----+-----+
 
   def setUp(self):
-    self.topo, geom = mesh.rectilinear([2,2])
+    self.topo, self.geom = mesh.rectilinear([2,2])
+    geom = self.geom
     self.topoA = self.topo.trim(geom[0]-1+geom[1]*(geom[1]-.5), maxrefine=1)
     self.topoB = self.topo - self.topoA
 
@@ -407,3 +408,13 @@ class partialtrim(TestCase):
     for topo in self.topoA, self.topoB:
       alttopo = topology.ConnectedTopology(topo.roots, topo.references, topo.transforms, topo.opposites, topo.connectivity)
       self.assertEqual(dict(zip(alttopo.boundary.transforms, alttopo.boundary.references)), dict(zip(topo.boundary.transforms, topo.boundary.references)))
+
+  def test_volumes(self):
+    geom = self.geom
+    f = ((0.5 - geom)**2).sum(axis=0)
+    lhs = self.topoA.integrate(f.grad(geom)*function.J(geom), ischeme='gauss2')
+    rhs = self.topoA.boundary.integrate(f*function.normal(geom)*function.J(geom), ischeme='gauss2')
+    numpy.testing.assert_array_almost_equal(lhs, rhs)
+    lhs = self.topoB.integrate(f.grad(geom)*function.J(geom), ischeme='gauss2')
+    rhs = self.topoB.boundary.integrate(f*function.normal(geom)*function.J(geom), ischeme='gauss2')
+    numpy.testing.assert_array_almost_equal(lhs, rhs)
