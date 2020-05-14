@@ -56,7 +56,7 @@ def dtype(shape, vtype=numpy.float64):
       The sparse dtype.
   '''
 
-  return _dtype([((int(n), 'i'+str(i)), '>u'+str(1 if n <= 256 else 2 if n <= 256**2 else 4 if n <= 256**4 else 8)) for i, n in enumerate(shape)], vtype)
+  return _dtype([((int(n), 'i'+str(i)), _uint(n)) for i, n in enumerate(shape)], vtype)
 
 def issparse(data):
   return isinstance(data, numpy.ndarray) and issparsedtype(data.dtype)
@@ -254,6 +254,9 @@ def fromarray(data):
 
 def _dtype(itype, vtype):
   return numpy.dtype([('index', itype), ('value', vtype)])
+
+def _uint(n):
+  return numpy.dtype('>u'+str(1 if n <= 256 else 2 if n <= 256**2 else 4 if n <= 256**4 else 8))
 
 def _resize(data, n):
   if data.base is not None:
