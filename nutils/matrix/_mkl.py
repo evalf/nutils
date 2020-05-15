@@ -19,7 +19,7 @@
 # THE SOFTWARE.
 
 from ._base import Matrix, MatrixError, BackendNotAvailable
-from .. import numeric, util
+from .. import numeric, util, sparse
 from contextlib import contextmanager
 from ctypes import c_long, c_int, c_double, byref
 import treelog as log
@@ -214,6 +214,27 @@ class MKLMatrix(Matrix):
 
   def precon_splu(self):
     return Pardiso(mtype=11, a=self.data, ia=self.rowptr, ja=self.colidx, n=self.shape[0]).solve
+
+  def precon_sym(self):
+    log.info('creating symmetric MKL Pardiso instance')
+    values, (rows, cols) = self.export('coo')
+    data = numpy.empty(len(self.data), dtype=sparse.dtype(self.shape, self.data.dtype))
+    data['value'] = values
+    data['index']['i0'] = rows
+    data['index']['i1'] = cols
+    upper = rows < cols
+    lower = rows > cols
+    data['value'][upper] *= .5
+    data['value'][lower] *= .5
+    data['index']['i0'][lower] = cols[lower]
+    data['index']['i1'][lower] = rows[lower]
+    data = sparse.prune(sparse.dedup(data, inplace=True), inplace=True)
+    (rows, cols), values, shape = sparse.extract(data)
+    return Pardiso(mtype=-2,
+      a=numpy.ascontiguousarray(values, dtype=numpy.float64),
+      ia=numpy.ascontiguousarray(rows.searchsorted(numpy.arange(shape[0]+1))+1, dtype=numpy.int32),
+      ja=numpy.ascontiguousarray(cols+1, dtype=numpy.int32),
+      n=self.shape[0]).solve
 
   def solve_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12):
     rci = c_int(0)
