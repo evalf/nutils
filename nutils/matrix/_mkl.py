@@ -114,7 +114,6 @@ class MKLMatrix(Matrix):
     self.data = numpy.ascontiguousarray(data, dtype=numpy.float64)
     self.rowptr = numpy.ascontiguousarray(rowptr, dtype=numpy.int32)
     self.colidx = numpy.ascontiguousarray(colidx, dtype=numpy.int32)
-    self._pardiso = None
     super().__init__((len(rowptr)-1, ncols))
 
   def convert(self, mat):
@@ -217,13 +216,7 @@ class MKLMatrix(Matrix):
 
   @refine_to_tolerance
   def _solver_direct(self, rhs):
-    if self.shape[0] != self.shape[1]:
-      raise MatrixError('matrix is not square')
-    log.debug('solving system using MKL Pardiso')
-    if not self._pardiso:
-      self._pardiso = Pardiso(mtype=11, # real and nonsymmetric
-        a=self.data, ia=self.rowptr, ja=self.colidx)
-    return self._pardiso(rhs)
+    return self.getprecon('direct')(rhs)
 
   def _solver_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12):
     rci = c_int(0)
@@ -245,15 +238,7 @@ class MKLMatrix(Matrix):
       ipar[10] = 0 # run the non-preconditioned version of the FGMRES method
     else:
       ipar[10] = 1 # run the preconditioned version of the FGMRES method
-      if precon == 'lu':
-        precon = self.solve_direct
-      elif precon == 'diag':
-        diag = self.diagonal()
-        if not diag.all():
-          raise MatrixError("building 'diag' preconditioner: diagonal has zero entries")
-        precon = numpy.reciprocal(diag).__mul__
-      elif not callable(precon):
-        raise MatrixError('invalid preconditioner {!r}'.format(precon))
+      precon = self.getprecon(precon)
     ipar[11] = 0 # do not perform the automatic test for zero norm of the currently generated vector: dpar[6] <= dpar[7]
     ipar[12] = 1 # update the solution to the vector b according to the computations done by the dfgmres routine
     ipar[13] = 0 # internal iteration counter that counts the number of iterations before the restart takes place; the initial value is 0
@@ -289,5 +274,8 @@ class MKLMatrix(Matrix):
           raise MatrixError('this should not have occurred: rci={}'.format(rci.value))
     log.debug('performed {} fgmres iterations, {} restarts'.format(ipar[3], ipar[3]//ipar[14]))
     return b
+
+  def _precon_direct(self):
+    return Pardiso(mtype=11, a=self.data, ia=self.rowptr, ja=self.colidx)
 
 # vim:sw=2:sts=2:et

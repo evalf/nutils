@@ -47,6 +47,7 @@ class Matrix:
   def __init__(self, shape):
     assert len(shape) == 2
     self.shape = shape
+    self._precon = object()
 
   def __reduce__(self):
     from . import assemble
@@ -266,6 +267,29 @@ class Matrix:
       idiag = numpy.searchsorted(icols, irow)
       diag[irow] = data[indptr[irow]+idiag] if idiag < len(icols) and icols[idiag] == irow else 0
     return diag
+
+  def getprecon(self, precon):
+    if precon == self._precon:
+      return self._precon_object
+    if self.shape[0] != self.shape[1]:
+      raise MatrixError('matrix must be square')
+    precon_method, precon_name = self._method('precon', precon)
+    try:
+      with treelog.context('constructing {} preconditioner'.format(precon_name)):
+        precon_object = precon_method()
+    except MatrixError:
+      raise
+    except Exception as e:
+      raise MatrixError('failed to create preconditioner: {}'.format(e)) from e
+    self._precon = precon
+    self._precon_object = precon_object
+    return precon_object
+
+  def _precon_diag(self):
+    diag = self.diagonal()
+    if not diag.all():
+      raise MatrixError("building 'diag' preconditioner: diagonal has zero entries")
+    return numpy.reciprocal(diag).__mul__
 
   def __repr__(self):
     return '{}<{}x{}>'.format(type(self).__qualname__, *self.shape)
