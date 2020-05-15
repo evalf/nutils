@@ -18,6 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+from .. import numeric
 import abc, treelog, functools, numpy, itertools
 
 class MatrixError(Exception):
@@ -194,7 +195,6 @@ class Matrix:
       treelog.warning(e)
       return e.best
 
-  @abc.abstractmethod
   def submatrix(self, rows, cols):
     '''Create submatrix from selected rows, columns.
 
@@ -209,6 +209,15 @@ class Matrix:
         Matrix instance of reduced dimensions
     '''
 
+    rows = numeric.asboolean(rows, self.shape[0])
+    cols = numeric.asboolean(cols, self.shape[1])
+    if rows.all() and cols.all():
+      return self
+
+    return self._submatrix(rows, cols)
+
+  @abc.abstractmethod
+  def _submatrix(self, rows, cols):
     raise NotImplementedError
 
   def export(self, form):
