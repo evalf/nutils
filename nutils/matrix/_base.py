@@ -18,7 +18,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from ..types import CacheMeta
 from .. import numeric
 import abc, treelog, functools, numpy, itertools
 
@@ -42,12 +41,13 @@ class ToleranceNotReached(MatrixError):
     super().__init__('solver failed to reach tolerance')
     self.best = best
 
-class Matrix(metaclass=CacheMeta):
+class Matrix:
   'matrix base class'
 
   def __init__(self, shape):
     assert len(shape) == 2
     self.shape = shape
+    self._precon_name = None
 
   def __reduce__(self):
     from . import assemble
@@ -245,6 +245,22 @@ class Matrix(metaclass=CacheMeta):
       idiag = numpy.searchsorted(icols, irow)
       diag[irow] = data[indptr[irow]+idiag] if idiag < len(icols) and icols[idiag] == irow else 0
     return diag
+
+  def precon_diag(self):
+    diag = self.diagonal()
+    if not diag.all():
+      raise MatrixError("building 'diag' preconditioner: diagonal has zero entries")
+    return numpy.reciprocal(diag).__mul__
+
+  def getprecon(self, name):
+    if not isinstance(name, str):
+      raise MatrixError('invalid preconditioner {!r}'.format(name))
+    if self.shape[0] != self.shape[1]:
+      raise MatrixError('matrix must be square')
+    if self._precon_name != name:
+      treelog.info('creating {} solver'.format(name))
+      self._precon = getattr(self, 'precon_'+name)()
+    return self._precon
 
   def __repr__(self):
     return '{}<{}x{}>'.format(type(self).__qualname__, *self.shape)
