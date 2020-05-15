@@ -54,46 +54,12 @@ from . import function, cache, numeric, sample, types, util, matrix, warnings
 import abc, numpy, itertools, functools, numbers, collections, math, treelog as log
 
 
+## TYPE COERCION
+
 argdict = types.frozendict[types.strictstr,types.frozenarray]
 
 
-class SolverError(Exception): pass
-
-
-@types.apply_annotations
-@cache.function
-def solve_linear(target:types.strictstr, residual:sample.strictintegral, constrain:types.frozenarray=None, *, arguments:argdict={}, **kwargs):
-  '''solve linear problem
-
-  Parameters
-  ----------
-  target : :class:`str`
-      Name of the target: a :class:`nutils.function.Argument` in ``residual``.
-  residual : :class:`nutils.sample.Integral`
-      Residual integral, depends on ``target``
-  constrain : :class:`numpy.ndarray` with dtype :class:`float`
-      Defines the fixed entries of the coefficient vector
-  arguments : :class:`collections.abc.Mapping`
-      Defines the values for :class:`nutils.function.Argument` objects in
-      `residual`.  The ``target`` should not be present in ``arguments``.
-      Optional.
-
-  Returns
-  -------
-  :class:`numpy.ndarray`
-      Array of ``target`` values for which ``residual == 0``'''
-
-  solveargs = _strip(kwargs, 'lin')
-  if kwargs:
-    raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
-  jacobian = residual.derivative(target)
-  if jacobian.contains(target):
-    raise SolverError('problem is not linear')
-  assert target not in arguments, '`target` should not be defined in `arguments`'
-  argshape = residual.argshapes[target]
-  res, jac = sample.eval_integrals(residual, jacobian, **{target: numpy.zeros(argshape)}, **arguments)
-  return jac.solve(-res, constrain=constrain, **solveargs)
-
+## SOLVER BASE
 
 class RecursionWithSolve(cache.Recursion):
   '''add a .solve method to (lhs,resnorm) iterators'''
@@ -143,6 +109,192 @@ class RecursionWithSolve(cache.Recursion):
         i += 1
       log.info('converged in {} steps to residual {:.1e}'.format(i, info.resnorm))
     return lhs, info
+
+
+## EXCEPTIONS
+
+class SolverError(Exception): pass
+
+
+## LINE SEARCH
+
+class LineSearch(types.Immutable):
+  '''
+  Line search abstraction for gradient based optimization.
+
+  A line search object is a callable that takes four arguments: the current
+  residual and directional derivative, and the candidate residual and
+  directional derivative, with derivatives normalized to unit length; and
+  returns the optimal scaling and a boolean flag that marks whether the
+  candidate should be accepted.
+  '''
+
+  @abc.abstractmethod
+  def __call__(self, res0, dres0, res1, dres1):
+    raise NotImplementedError
+
+class NormBased(LineSearch):
+  '''
+  Line search abstraction for Newton-like iterations, computing relaxation
+  values that correspond to greatest reduction of the residual norm.
+
+  Parameters
+  ----------
+  minscale : :class:`float`
+      Minimum relaxation scaling per update. Must be strictly greater than
+      zero.
+  acceptscale : :class:`float`
+      Relaxation scaling that is considered close enough to optimality to
+      to accept the current Newton update. Must lie between minscale and one.
+  maxscale : :class:`float`
+      Maximum relaxation scaling per update. Must be greater than one, and
+      therefore always coincides with acceptance, determining how fast
+      relaxation values rebound to one if not bounded by optimality.
+  '''
+
+  @types.apply_annotations
+  def __init__(self, minscale:float=.01, acceptscale:float=2/3, maxscale:float=2.):
+    assert 0 < minscale < acceptscale < 1 < maxscale
+    self.minscale = minscale
+    self.acceptscale = acceptscale
+    self.maxscale = maxscale
+
+  @classmethod
+  def legacy(cls, kwargs):
+    minscale, acceptscale = kwargs.pop('searchrange', (.01, 2/3))
+    maxscale = kwargs.pop('rebound', 2.)
+    return cls(minscale=minscale, acceptscale=acceptscale, maxscale=maxscale)
+
+  def __call__(self, res0, dres0, res1, dres1):
+    if not numpy.isfinite(res1).all():
+      log.info('non-finite residual')
+      return self.minscale, False
+    # To determine optimal relaxation we minimize a polynomial estimation for
+    # the residual norm: P(x) = p0 + q0 x + c x^2 + d x^3
+    p0 = res0@res0
+    q0 = 2*res0@dres0
+    p1 = res1@res1
+    q1 = 2*res1@dres1
+    if q0 >= 0:
+      raise SolverError('search vector does not reduce residual')
+    c = math.fsum([-3*p0, 3*p1, -2*q0, -q1])
+    d = math.fsum([2*p0, -2*p1, q0, q1])
+    # To minimize P we need to determine the roots for P'(x) = q0 + 2 c x + 3 d x^2
+    # For numerical stability we use Citardauq's formula: x = -q0 / (c +/- sqrt(D)),
+    # with D the discriminant
+    D = c**2 - 3 * q0 * d
+    # If D <= 0 we have at most one duplicate root, which we ignore. For D > 0,
+    # taking into account that q0 < 0, we distinguish three situations:
+    # - d > 0 => sqrt(D) > abs(c): one negative, one positive root
+    # - d = 0 => sqrt(D) = abs(c): one negative root
+    # - d < 0 => sqrt(D) < abs(c): two roots of same sign as c
+    scale = -q0 / (c + math.sqrt(D)) if D > 0 and (c > 0 or d > 0) else math.inf
+    if scale >= 1 and p1 > p0: # this should not happen, but just in case
+      log.info('failed to estimate scale factor')
+      return self.minscale, False
+    log.info('estimated residual minimum at {:.0f}% of update vector'.format(scale*100))
+    return min(max(scale, self.minscale), self.maxscale), scale >= self.acceptscale and p1 < p0
+
+class MedianBased(LineSearch, version=1):
+  '''
+  Line search abstraction for Newton-like iterations, computing relaxation
+  values such that half (or any other configurable quantile) of the residual
+  vector has its optimal reduction beyond it. Unline the :class:`NormBased`
+  approach this is invariant to constant scaling of the residual items.
+
+  Parameters
+  ----------
+  minscale : :class:`float`
+      Minimum relaxation scaling per update. Must be strictly greater than
+      zero.
+  acceptscale : :class:`float`
+      Relaxation scaling that is considered close enough to optimality to
+      to accept the current Newton update. Must lie between minscale and one.
+  maxscale : :class:`float`
+      Maximum relaxation scaling per update. Must be greater than one, and
+      therefore always coincides with acceptance, determining how fast
+      relaxation values rebound to one if not bounded by optimality.
+  quantile : :class:`float`
+      Fraction of the residual vector that is aimed to have its optimal
+      reduction at a smaller relaxation value. The default value of one half
+      corresponds to the median. A value close to zero means tighter control,
+      resulting in strong relaxation.
+  '''
+
+  @types.apply_annotations
+  def __init__(self, minscale:float=.01, acceptscale:float=2/3, maxscale:float=2., quantile:float=.5):
+    assert 0 < minscale < acceptscale < 1 < maxscale
+    assert 0 < quantile < 1
+    self.minscale = minscale
+    self.acceptscale = acceptscale
+    self.maxscale = maxscale
+    self.quantile = quantile
+
+  def __call__(self, res0, dres0, res1, dres1):
+    if not numpy.isfinite(res1).all():
+      log.info('non-finite residual')
+      return self.minscale, False
+    # To determine optimal relaxation we minimize a polynomial estimation for
+    # the squared residual: P(x) = p0 + q0 x + c x^2 + d x^3
+    dp = res1**2 - res0**2
+    q0 = 2*res0*dres0
+    q1 = 2*res1*dres1
+    mask = q0 <= 0 # ideally this mask is all true, but solver inaccuracies can result in some positive slopes
+    n = round(len(res0)*self.quantile) - (~mask).sum()
+    if n < 0:
+      raise SolverError('search vector fails to reduce more than {}-quantile of residual vector'.format(self.quantile))
+    c = 3*dp - 2*q0 - q1
+    d = -2*dp + q0 + q1
+    D = c**2 - 3 * q0 * d
+    mask &= D > 0
+    numer = -q0[mask]
+    denom = c[mask] + numpy.sqrt(D[mask])
+    mask = denom > 0
+    if n < mask.sum():
+      scales = numer[mask] / denom[mask]
+      scales.sort()
+      scale = scales[n]
+    else:
+      scale = numpy.inf
+    log.info('estimated {}-quantile at {:.0f}% of update vector'.format(self.quantile, scale*100))
+    return min(max(scale, self.minscale), self.maxscale), scale >= self.acceptscale
+
+
+## SOLVERS
+
+@types.apply_annotations
+@cache.function
+def solve_linear(target:types.strictstr, residual:sample.strictintegral, constrain:types.frozenarray=None, *, arguments:argdict={}, **kwargs):
+  '''solve linear problem
+
+  Parameters
+  ----------
+  target : :class:`str`
+      Name of the target: a :class:`nutils.function.Argument` in ``residual``.
+  residual : :class:`nutils.sample.Integral`
+      Residual integral, depends on ``target``
+  constrain : :class:`numpy.ndarray` with dtype :class:`float`
+      Defines the fixed entries of the coefficient vector
+  arguments : :class:`collections.abc.Mapping`
+      Defines the values for :class:`nutils.function.Argument` objects in
+      `residual`.  The ``target`` should not be present in ``arguments``.
+      Optional.
+
+  Returns
+  -------
+  :class:`numpy.ndarray`
+      Array of ``target`` values for which ``residual == 0``'''
+
+  solveargs = _strip(kwargs, 'lin')
+  if kwargs:
+    raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
+  jacobian = residual.derivative(target)
+  if jacobian.contains(target):
+    raise SolverError('problem is not linear')
+  assert target not in arguments, '`target` should not be defined in `arguments`'
+  argshape = residual.argshapes[target]
+  res, jac = sample.eval_integrals(residual, jacobian, **{target: numpy.zeros(argshape)}, **arguments)
+  return jac.solve(-res, constrain=constrain, **solveargs)
 
 
 class newton(RecursionWithSolve, length=1):
@@ -241,150 +393,6 @@ class newton(RecursionWithSolve, length=1):
       log.info('update accepted at relaxation', round(relax, 5))
       relax = min(relax * scale, 1)
       yield _ro(lhs), types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
-
-
-class LineSearch(types.Immutable):
-  '''
-  Line search abstraction for gradient based optimization.
-
-  A line search object is a callable that takes four arguments: the current
-  residual and directional derivative, and the candidate residual and
-  directional derivative, with derivatives normalized to unit length; and
-  returns the optimal scaling and a boolean flag that marks whether the
-  candidate should be accepted.
-  '''
-
-  @abc.abstractmethod
-  def __call__(self, res0, dres0, res1, dres1):
-    raise NotImplementedError
-
-
-class NormBased(LineSearch):
-  '''
-  Line search abstraction for Newton-like iterations, computing relaxation
-  values that correspond to greatest reduction of the residual norm.
-
-  Parameters
-  ----------
-  minscale : :class:`float`
-      Minimum relaxation scaling per update. Must be strictly greater than
-      zero.
-  acceptscale : :class:`float`
-      Relaxation scaling that is considered close enough to optimality to
-      to accept the current Newton update. Must lie between minscale and one.
-  maxscale : :class:`float`
-      Maximum relaxation scaling per update. Must be greater than one, and
-      therefore always coincides with acceptance, determining how fast
-      relaxation values rebound to one if not bounded by optimality.
-  '''
-
-  @types.apply_annotations
-  def __init__(self, minscale:float=.01, acceptscale:float=2/3, maxscale:float=2.):
-    assert 0 < minscale < acceptscale < 1 < maxscale
-    self.minscale = minscale
-    self.acceptscale = acceptscale
-    self.maxscale = maxscale
-
-  @classmethod
-  def legacy(cls, kwargs):
-    minscale, acceptscale = kwargs.pop('searchrange', (.01, 2/3))
-    maxscale = kwargs.pop('rebound', 2.)
-    return cls(minscale=minscale, acceptscale=acceptscale, maxscale=maxscale)
-
-  def __call__(self, res0, dres0, res1, dres1):
-    if not numpy.isfinite(res1).all():
-      log.info('non-finite residual')
-      return self.minscale, False
-    # To determine optimal relaxation we minimize a polynomial estimation for
-    # the residual norm: P(x) = p0 + q0 x + c x^2 + d x^3
-    p0 = res0@res0
-    q0 = 2*res0@dres0
-    p1 = res1@res1
-    q1 = 2*res1@dres1
-    if q0 >= 0:
-      raise SolverError('search vector does not reduce residual')
-    c = math.fsum([-3*p0, 3*p1, -2*q0, -q1])
-    d = math.fsum([2*p0, -2*p1, q0, q1])
-    # To minimize P we need to determine the roots for P'(x) = q0 + 2 c x + 3 d x^2
-    # For numerical stability we use Citardauq's formula: x = -q0 / (c +/- sqrt(D)),
-    # with D the discriminant
-    D = c**2 - 3 * q0 * d
-    # If D <= 0 we have at most one duplicate root, which we ignore. For D > 0,
-    # taking into account that q0 < 0, we distinguish three situations:
-    # - d > 0 => sqrt(D) > abs(c): one negative, one positive root
-    # - d = 0 => sqrt(D) = abs(c): one negative root
-    # - d < 0 => sqrt(D) < abs(c): two roots of same sign as c
-    scale = -q0 / (c + math.sqrt(D)) if D > 0 and (c > 0 or d > 0) else math.inf
-    if scale >= 1 and p1 > p0: # this should not happen, but just in case
-      log.info('failed to estimate scale factor')
-      return self.minscale, False
-    log.info('estimated residual minimum at {:.0f}% of update vector'.format(scale*100))
-    return min(max(scale, self.minscale), self.maxscale), scale >= self.acceptscale and p1 < p0
-
-
-class MedianBased(LineSearch, version=1):
-  '''
-  Line search abstraction for Newton-like iterations, computing relaxation
-  values such that half (or any other configurable quantile) of the residual
-  vector has its optimal reduction beyond it. Unline the :class:`NormBased`
-  approach this is invariant to constant scaling of the residual items.
-
-  Parameters
-  ----------
-  minscale : :class:`float`
-      Minimum relaxation scaling per update. Must be strictly greater than
-      zero.
-  acceptscale : :class:`float`
-      Relaxation scaling that is considered close enough to optimality to
-      to accept the current Newton update. Must lie between minscale and one.
-  maxscale : :class:`float`
-      Maximum relaxation scaling per update. Must be greater than one, and
-      therefore always coincides with acceptance, determining how fast
-      relaxation values rebound to one if not bounded by optimality.
-  quantile : :class:`float`
-      Fraction of the residual vector that is aimed to have its optimal
-      reduction at a smaller relaxation value. The default value of one half
-      corresponds to the median. A value close to zero means tighter control,
-      resulting in strong relaxation.
-  '''
-
-  @types.apply_annotations
-  def __init__(self, minscale:float=.01, acceptscale:float=2/3, maxscale:float=2., quantile:float=.5):
-    assert 0 < minscale < acceptscale < 1 < maxscale
-    assert 0 < quantile < 1
-    self.minscale = minscale
-    self.acceptscale = acceptscale
-    self.maxscale = maxscale
-    self.quantile = quantile
-
-  def __call__(self, res0, dres0, res1, dres1):
-    if not numpy.isfinite(res1).all():
-      log.info('non-finite residual')
-      return self.minscale, False
-    # To determine optimal relaxation we minimize a polynomial estimation for
-    # the squared residual: P(x) = p0 + q0 x + c x^2 + d x^3
-    dp = res1**2 - res0**2
-    q0 = 2*res0*dres0
-    q1 = 2*res1*dres1
-    mask = q0 <= 0 # ideally this mask is all true, but solver inaccuracies can result in some positive slopes
-    n = round(len(res0)*self.quantile) - (~mask).sum()
-    if n < 0:
-      raise SolverError('search vector fails to reduce more than {}-quantile of residual vector'.format(self.quantile))
-    c = 3*dp - 2*q0 - q1
-    d = -2*dp + q0 + q1
-    D = c**2 - 3 * q0 * d
-    mask &= D > 0
-    numer = -q0[mask]
-    denom = c[mask] + numpy.sqrt(D[mask])
-    mask = denom > 0
-    if n < mask.sum():
-      scales = numer[mask] / denom[mask]
-      scales.sort()
-      scale = scales[n]
-    else:
-      scale = numpy.inf
-    log.info('estimated {}-quantile at {:.0f}% of update vector'.format(self.quantile, scale*100))
-    return min(max(scale, self.minscale), self.maxscale), scale >= self.acceptscale
 
 
 class minimize(RecursionWithSolve, length=1, version=3):
