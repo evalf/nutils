@@ -19,7 +19,7 @@
 # THE SOFTWARE.
 
 from .. import numeric
-import abc, treelog, functools, numpy, itertools
+import abc, treelog, functools, numpy, itertools, collections
 
 class MatrixError(Exception):
   '''
@@ -218,19 +218,33 @@ class Matrix:
       raise ToleranceNotReached(lhs)
     return lhs
 
-  def _solver_direct(self, rhs, atol, precon='direct'):
+  def _solver_direct(self, rhs, atol, precon='direct', history=0):
     solve = self.getprecon(precon)
-    lhs = solve(rhs)
+    k = solve(rhs)
+    v = self @ k
+    v2 = numpy.square(v, order='F').sum(0) # use sum rather than dot for higher accuracy due to pairwise summation
+    c = numpy.multiply(v, rhs, order='F').sum(0) / v2 # min_c |rhs - c v| => c = rhs.v / v.v
+    lhs = k * c
     res = rhs - self @ lhs
-    resnorm = numpy.linalg.norm(res)
+    resnorm = numpy.linalg.norm(res, axis=0).max()
     if not numpy.isfinite(resnorm) or resnorm <= atol:
       return lhs
+    history = collections.deque(maxlen=history)
     with treelog.iter.plain('refinement iteration', itertools.count(start=1)) as count:
       for iiter in count:
-        newlhs = solve(res)
+        history.append((k, v, v2))
+        k = solve(res)
+        v = self @ k
+        for k_, v_, v2_ in history: # orthogonolize v (modified Gramm-Schmidt)
+          c = numpy.multiply(v, v_, order='F').sum(0) / v2_
+          k -= k_ * c
+          v -= v_ * c
+        v2 = numpy.square(v, order='F').sum(0)
+        c = numpy.multiply(v, res, order='F').sum(0) / v2 # min_c |res - c v| => c = res.v / v.v
+        newlhs = k * c
         newlhs += lhs
-        res = rhs - self @ newlhs
-        newresnorm = numpy.linalg.norm(res)
+        res = rhs - self @ newlhs # recompute rather than update to avoid drift
+        newresnorm = numpy.linalg.norm(res, axis=0).max()
         if not numpy.isfinite(resnorm) or newresnorm >= resnorm:
           treelog.debug('residual increased to {:.0e} (discarding)'.format(resnorm))
           return lhs
