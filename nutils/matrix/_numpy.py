@@ -91,7 +91,7 @@ class NumpyMatrix(Matrix):
   def solve_direct(self, rhs):
     return numpy.linalg.solve(self.core, rhs)
 
-  def submatrix(self, rows, cols):
+  def _submatrix(self, rows, cols):
     return NumpyMatrix(self.core[numpy.ix_(rows, cols)])
 
 # vim:sw=2:sts=2:et

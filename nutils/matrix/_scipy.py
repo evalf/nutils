@@ -31,8 +31,7 @@ def setassemble(sets):
   return sets(assemble)
 
 def assemble(data, index, shape):
-  csr = scipy.sparse.csr_matrix((data, index[1], index[0].searchsorted(numpy.arange(shape[0]+1))), shape)
-  return ScipyMatrix(csr)
+  return ScipyMatrix(scipy.sparse.csr_matrix((data, index), shape))
 
 class ScipyMatrix(Matrix):
   '''matrix based on any of scipy's sparse matrices'''
@@ -139,7 +138,7 @@ class ScipyMatrix(Matrix):
       raise MatrixError('invalid preconditioner {!r}'.format(name))
     return scipy.sparse.linalg.LinearOperator(self.shape, precon, dtype=float)
 
-  def submatrix(self, rows, cols):
+  def _submatrix(self, rows, cols):
     return ScipyMatrix(self.core[rows,:][:,cols])
 
   def diagonal(self):

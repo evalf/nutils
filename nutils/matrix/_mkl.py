@@ -188,13 +188,10 @@ class MKLMatrix(Matrix):
       rowptr.ctypes, byref(info))
     return MKLMatrix(data, rowptr, colidx, self.shape[1])
 
-  def submatrix(self, rows, cols):
-    rows = numeric.asboolean(rows, self.shape[0])
-    cols = numeric.asboolean(cols, self.shape[1])
-    keep = (rows.all() or rows.repeat(numpy.diff(self.rowptr))) & (cols.all() or cols[self.colidx-1])
-    if keep is True: # all rows and all columns are kept
-      return self
-    elif keep.all(): # all nonzero entries are kept
+  def _submatrix(self, rows, cols):
+    keep = rows.repeat(numpy.diff(self.rowptr))
+    keep &= cols[self.colidx-1]
+    if keep.all(): # all nonzero entries are kept
       rowptr = self.rowptr[numpy.hstack([True, rows])]
       keep = slice(None) # avoid array copies
     else:
