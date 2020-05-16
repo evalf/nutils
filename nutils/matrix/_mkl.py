@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from ._base import Matrix, MatrixError, BackendNotAvailable, refine_to_tolerance
+from ._base import Matrix, MatrixError, BackendNotAvailable
 from .. import numeric, util, warnings
 from contextlib import contextmanager
 from ctypes import c_long, c_int, c_double, byref
@@ -213,10 +213,6 @@ class MKLMatrix(Matrix):
     if form == 'coo':
       return self.data, (numpy.arange(self.shape[0]).repeat(self.rowptr[1:]-self.rowptr[:-1]), self.colidx-1)
     raise NotImplementedError('cannot export MKLMatrix to {!r}'.format(form))
-
-  @refine_to_tolerance
-  def _solver_direct(self, rhs):
-    return self.getprecon('direct')(rhs)
 
   def _solver_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12):
     rci = c_int(0)

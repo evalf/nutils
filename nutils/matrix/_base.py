@@ -218,6 +218,26 @@ class Matrix:
       raise ToleranceNotReached(lhs)
     return lhs
 
+  def _solver_direct(self, rhs, atol, precon='direct'):
+    solve = self.getprecon(precon)
+    lhs = solve(rhs)
+    res = rhs - self @ lhs
+    resnorm = numpy.linalg.norm(res)
+    if not numpy.isfinite(resnorm) or resnorm <= atol:
+      return lhs
+    with treelog.iter.plain('refinement iteration', itertools.count(start=1)) as count:
+      for iiter in count:
+        newlhs = lhs + solve(res)
+        newres = rhs - self @ newlhs
+        newresnorm = numpy.linalg.norm(newres)
+        if not numpy.isfinite(resnorm) or newresnorm >= resnorm:
+          treelog.debug('residual increased to {:.0e} (discarding)'.format(newresnorm))
+          return lhs
+        treelog.debug('residual decreased to {:.0e}'.format(newresnorm))
+        lhs, res, resnorm = newlhs, newres, newresnorm
+        if resnorm <= atol:
+          return lhs
+
   def submatrix(self, rows, cols):
     '''Create submatrix from selected rows, columns.
 
@@ -293,27 +313,5 @@ class Matrix:
 
   def __repr__(self):
     return '{}<{}x{}>'.format(type(self).__qualname__, *self.shape)
-
-def refine_to_tolerance(solve):
-  @functools.wraps(solve)
-  def wrapped(self, rhs, atol, **kwargs):
-    lhs = solve(self, rhs, **kwargs)
-    res = rhs - self @ lhs
-    resnorm = numpy.linalg.norm(res)
-    if not numpy.isfinite(resnorm) or resnorm <= atol:
-      return lhs
-    with treelog.iter.plain('refinement iteration', itertools.count(start=1)) as count:
-      for iiter in count:
-        newlhs = lhs + solve(self, res, **kwargs)
-        newres = rhs - self @ newlhs
-        newresnorm = numpy.linalg.norm(newres)
-        if not numpy.isfinite(resnorm) or newresnorm >= resnorm:
-          treelog.debug('residual increased to {:.0e} (discarding)'.format(newresnorm))
-          return lhs
-        treelog.debug('residual decreased to {:.0e}'.format(newresnorm))
-        lhs, res, resnorm = newlhs, newres, newresnorm
-        if resnorm <= atol:
-          return lhs
-  return wrapped
 
 # vim:sw=2:sts=2:et
