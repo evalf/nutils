@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from ._base import Matrix, MatrixError, BackendNotAvailable, refine_to_tolerance
+from ._base import Matrix, MatrixError, BackendNotAvailable
 from .. import numeric, util
 from contextlib import contextmanager
 from ctypes import c_long, c_int, c_double, byref
@@ -214,10 +214,6 @@ class MKLMatrix(Matrix):
 
   def precon_splu(self):
     return Pardiso(mtype=11, a=self.data, ia=self.rowptr, ja=self.colidx, n=self.shape[0]).solve
-
-  @refine_to_tolerance
-  def solve_direct(self, rhs):
-    return self.getprecon('splu')(rhs)
 
   def solve_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12):
     rci = c_int(0)

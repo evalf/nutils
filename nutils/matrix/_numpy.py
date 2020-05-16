@@ -18,9 +18,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from ._base import Matrix, MatrixError, refine_to_tolerance
+from ._base import Matrix, MatrixError
 from .. import numeric
-import numpy
+import numpy, functools
 
 def setassemble(sets):
   return sets(assemble)
@@ -87,9 +87,8 @@ class NumpyMatrix(Matrix):
   def rowsupp(self, tol=0):
     return numpy.greater(abs(self.core), tol).any(axis=1)
 
-  @refine_to_tolerance
-  def solve_direct(self, rhs):
-    return numpy.linalg.solve(self.core, rhs)
+  def precon_splu(self):
+    return functools.partial(numpy.linalg.solve, self.core)
 
   def _submatrix(self, rows, cols):
     return NumpyMatrix(self.core[numpy.ix_(rows, cols)])

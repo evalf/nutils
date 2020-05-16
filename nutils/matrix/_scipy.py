@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from ._base import Matrix, MatrixError, BackendNotAvailable, refine_to_tolerance
+from ._base import Matrix, MatrixError, BackendNotAvailable
 from .. import numeric
 import treelog as log
 import numpy
@@ -84,10 +84,6 @@ class ScipyMatrix(Matrix):
   @property
   def T(self):
     return ScipyMatrix(self.core.transpose())
-
-  @refine_to_tolerance
-  def solve_direct(self, rhs):
-    return scipy.sparse.linalg.spsolve(self.core, rhs)
 
   def solve_scipy(self, rhs, solver, atol, callback=None, precon=None, **solverargs):
     rhsnorm = numpy.linalg.norm(rhs)
