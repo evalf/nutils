@@ -18,8 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from ._base import Matrix, MatrixError, BackendNotAvailable, refine_to_tolerance
-from .. import numeric, util
+from ._base import Matrix, MatrixError, BackendNotAvailable
+from .. import numeric, util, sparse
 from contextlib import contextmanager
 from ctypes import c_long, c_int, c_double, byref
 import treelog as log
@@ -112,7 +112,6 @@ class MKLMatrix(Matrix):
     self.data = numpy.ascontiguousarray(data, dtype=numpy.float64)
     self.rowptr = numpy.ascontiguousarray(rowptr, dtype=numpy.int32)
     self.colidx = numpy.ascontiguousarray(colidx, dtype=numpy.int32)
-    self._pardiso = None
     super().__init__((len(rowptr)-1, ncols))
 
   def convert(self, mat):
@@ -188,13 +187,10 @@ class MKLMatrix(Matrix):
       rowptr.ctypes, byref(info))
     return MKLMatrix(data, rowptr, colidx, self.shape[1])
 
-  def submatrix(self, rows, cols):
-    rows = numeric.asboolean(rows, self.shape[0])
-    cols = numeric.asboolean(cols, self.shape[1])
-    keep = (rows.all() or rows.repeat(numpy.diff(self.rowptr))) & (cols.all() or cols[self.colidx-1])
-    if keep is True: # all rows and all columns are kept
-      return self
-    elif keep.all(): # all nonzero entries are kept
+  def _submatrix(self, rows, cols):
+    keep = rows.repeat(numpy.diff(self.rowptr))
+    keep &= cols[self.colidx-1]
+    if keep.all(): # all nonzero entries are kept
       rowptr = self.rowptr[numpy.hstack([True, rows])]
       keep = slice(None) # avoid array copies
     else:
@@ -216,15 +212,29 @@ class MKLMatrix(Matrix):
       return self.data, (numpy.arange(self.shape[0]).repeat(self.rowptr[1:]-self.rowptr[:-1]), self.colidx-1)
     raise NotImplementedError('cannot export MKLMatrix to {!r}'.format(form))
 
-  @refine_to_tolerance
-  def solve_direct(self, rhs):
-    if self.shape[0] != self.shape[1]:
-      raise MatrixError('matrix is not square')
-    log.debug('solving system using MKL Pardiso')
-    if not self._pardiso:
-      self._pardiso = Pardiso(mtype=11, # real and nonsymmetric
-        a=self.data, ia=self.rowptr, ja=self.colidx, n=self.shape[0])
-    return self._pardiso.solve(rhs)
+  def precon_splu(self):
+    return Pardiso(mtype=11, a=self.data, ia=self.rowptr, ja=self.colidx, n=self.shape[0]).solve
+
+  def precon_sym(self):
+    log.info('creating symmetric MKL Pardiso instance')
+    values, (rows, cols) = self.export('coo')
+    data = numpy.empty(len(self.data), dtype=sparse.dtype(self.shape, self.data.dtype))
+    data['value'] = values
+    data['index']['i0'] = rows
+    data['index']['i1'] = cols
+    upper = rows < cols
+    lower = rows > cols
+    data['value'][upper] *= .5
+    data['value'][lower] *= .5
+    data['index']['i0'][lower] = cols[lower]
+    data['index']['i1'][lower] = rows[lower]
+    data = sparse.prune(sparse.dedup(data, inplace=True), inplace=True)
+    (rows, cols), values, shape = sparse.extract(data)
+    return Pardiso(mtype=-2,
+      a=numpy.ascontiguousarray(values, dtype=numpy.float64),
+      ia=numpy.ascontiguousarray(rows.searchsorted(numpy.arange(shape[0]+1))+1, dtype=numpy.int32),
+      ja=numpy.ascontiguousarray(cols+1, dtype=numpy.int32),
+      n=self.shape[0]).solve
 
   def solve_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12):
     rci = c_int(0)
@@ -246,15 +256,8 @@ class MKLMatrix(Matrix):
       ipar[10] = 0 # run the non-preconditioned version of the FGMRES method
     else:
       ipar[10] = 1 # run the preconditioned version of the FGMRES method
-      if precon == 'lu':
-        precon = self.solve_direct
-      elif precon == 'diag':
-        diag = self.diagonal()
-        if not diag.all():
-          raise MatrixError("building 'diag' preconditioner: diagonal has zero entries")
-        precon = numpy.reciprocal(diag).__mul__
-      elif not callable(precon):
-        raise MatrixError('invalid preconditioner {!r}'.format(precon))
+      if not callable(precon):
+        precon = self.getprecon(precon)
     ipar[11] = 0 # do not perform the automatic test for zero norm of the currently generated vector: dpar[6] <= dpar[7]
     ipar[12] = 1 # update the solution to the vector b according to the computations done by the dfgmres routine
     ipar[13] = 0 # internal iteration counter that counts the number of iterations before the restart takes place; the initial value is 0

@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from ..types import CacheMeta
+from .. import numeric
 import abc, treelog, functools, numpy, itertools
 
 class MatrixError(Exception):
@@ -41,12 +41,13 @@ class ToleranceNotReached(MatrixError):
     super().__init__('solver failed to reach tolerance')
     self.best = best
 
-class Matrix(metaclass=CacheMeta):
+class Matrix:
   'matrix base class'
 
   def __init__(self, shape):
     assert len(shape) == 2
     self.shape = shape
+    self._precon_name = None
 
   def __reduce__(self):
     from . import assemble
@@ -195,7 +196,27 @@ class Matrix(metaclass=CacheMeta):
       treelog.warning(e)
       return e.best
 
-  @abc.abstractmethod
+  def solve_direct(self, rhs, atol, precon='splu'):
+    if not callable(precon):
+      precon = self.getprecon(precon)
+    lhs = precon(rhs)
+    res = rhs - self @ lhs
+    resnorm = numpy.linalg.norm(res)
+    if not numpy.isfinite(resnorm) or resnorm <= atol:
+      return lhs
+    with treelog.iter.plain('refinement iteration', itertools.count(start=1)) as count:
+      for iiter in count:
+        newlhs = lhs + precon(res)
+        newres = rhs - self @ newlhs
+        newresnorm = numpy.linalg.norm(newres)
+        if not numpy.isfinite(resnorm) or newresnorm >= resnorm:
+          treelog.debug('residual increased to {:.0e} (discarding)'.format(newresnorm))
+          return lhs
+        treelog.debug('residual decreased to {:.0e}'.format(newresnorm))
+        lhs, res, resnorm = newlhs, newres, newresnorm
+        if resnorm <= atol:
+          return lhs
+
   def submatrix(self, rows, cols):
     '''Create submatrix from selected rows, columns.
 
@@ -210,6 +231,15 @@ class Matrix(metaclass=CacheMeta):
         Matrix instance of reduced dimensions
     '''
 
+    rows = numeric.asboolean(rows, self.shape[0])
+    cols = numeric.asboolean(cols, self.shape[1])
+    if rows.all() and cols.all():
+      return self
+
+    return self._submatrix(rows, cols)
+
+  @abc.abstractmethod
+  def _submatrix(self, rows, cols):
     raise NotImplementedError
 
   def export(self, form):
@@ -237,29 +267,53 @@ class Matrix(metaclass=CacheMeta):
       diag[irow] = data[indptr[irow]+idiag] if idiag < len(icols) and icols[idiag] == irow else 0
     return diag
 
+  def precon_diag(self):
+    diag = self.diagonal()
+    if not diag.all():
+      raise MatrixError("building 'diag' preconditioner: diagonal has zero entries")
+    return numpy.reciprocal(diag).__mul__
+
+  def getprecon(self, name):
+    if not isinstance(name, str):
+      raise MatrixError('invalid preconditioner {!r}'.format(name))
+    if self.shape[0] != self.shape[1]:
+      raise MatrixError('matrix must be square')
+    if self._precon_name != name:
+      treelog.info('creating {} solver'.format(name))
+      self._precon = getattr(self, 'precon_'+name)()
+    return self._precon
+
+  def solve_minres(self, rhs, *, atol, precon=None):
+    if precon is None:
+      precon = lambda x: x
+    elif not callable(precon):
+      precon = self.getprecon(precon)
+    lhs = numpy.zeros_like(rhs)
+    oldresnorm = numpy.inf # to detect divergence
+    krylov = [] # pairs of k, Ak
+    res = rhs
+    while True:
+      resnorm = numpy.linalg.norm(res)
+      treelog.user('resnorm:', resnorm)
+      if resnorm < atol:
+        return lhs
+      if resnorm > oldresnorm:
+        raise MatrixError('minres diverged')
+      oldresnorm = resnorm
+      k = precon(res)
+      Ak = self @ k
+      for k_, Ak_ in krylov: # modified Gramm-Schmidt
+        c = Ak @ Ak_
+        Ak -= c * Ak_
+        k -= c * k_
+      c = numpy.linalg.norm(Ak)
+      Ak /= c
+      k /= c
+      krylov.append((k, Ak))
+      lhs += k * (Ak @ rhs)
+      res = rhs - self @ lhs
+
   def __repr__(self):
     return '{}<{}x{}>'.format(type(self).__qualname__, *self.shape)
-
-def refine_to_tolerance(solve):
-  @functools.wraps(solve)
-  def wrapped(self, rhs, atol, **kwargs):
-    lhs = solve(self, rhs, **kwargs)
-    res = rhs - self @ lhs
-    resnorm = numpy.linalg.norm(res)
-    if not numpy.isfinite(resnorm) or resnorm <= atol:
-      return lhs
-    with treelog.iter.plain('refinement iteration', itertools.count(start=1)) as count:
-      for iiter in count:
-        newlhs = lhs + solve(self, res, **kwargs)
-        newres = rhs - self @ newlhs
-        newresnorm = numpy.linalg.norm(newres)
-        if not numpy.isfinite(resnorm) or newresnorm >= resnorm:
-          treelog.debug('residual increased to {:.0e} (discarding)'.format(newresnorm))
-          return lhs
-        treelog.debug('residual decreased to {:.0e}'.format(newresnorm))
-        lhs, res, resnorm = newlhs, newres, newresnorm
-        if resnorm <= atol:
-          return lhs
-  return wrapped
 
 # vim:sw=2:sts=2:et
