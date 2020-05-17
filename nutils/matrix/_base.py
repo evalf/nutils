@@ -197,8 +197,7 @@ class Matrix:
       return e.best
 
   def solve_direct(self, rhs, atol, precon='splu'):
-    if not callable(precon):
-      precon = self.getprecon(precon)
+    precon = self.getprecon(precon)
     lhs = precon(rhs)
     res = rhs - self @ lhs
     resnorm = numpy.linalg.norm(res)
@@ -274,44 +273,51 @@ class Matrix:
     return numpy.reciprocal(diag).__mul__
 
   def getprecon(self, name):
-    if not isinstance(name, str):
-      raise MatrixError('invalid preconditioner {!r}'.format(name))
+    if self._precon_name is name:
+      return self._precon
     if self.shape[0] != self.shape[1]:
       raise MatrixError('matrix must be square')
-    if self._precon_name != name:
+    if callable(name):
+      precon = name(self)
+    elif isinstance(name, str):
       treelog.info('creating {} solver'.format(name))
-      self._precon = getattr(self, 'precon_'+name)()
-    return self._precon
+      precon = getattr(self, 'precon_'+name)()
+    else:
+      raise MatrixError('invalid preconditioner {!r}'.format(name))
+    self._precon = precon
+    self._precon_name = name
+    return precon
 
-  def solve_minres(self, rhs, *, atol, precon=None):
-    if precon is None:
-      precon = lambda x: x
-    elif not callable(precon):
-      precon = self.getprecon(precon)
+  def solve_minres(self, rhs, *, atol, precon):
+    precon = self.getprecon(precon)
     lhs = numpy.zeros_like(rhs)
     oldresnorm = numpy.inf # to detect divergence
     krylov = [] # pairs of k, Ak
     res = rhs
-    while True:
-      resnorm = numpy.linalg.norm(res)
-      treelog.user('resnorm:', resnorm)
-      if resnorm < atol:
-        return lhs
-      if resnorm > oldresnorm:
-        raise MatrixError('minres diverged')
-      oldresnorm = resnorm
-      k = precon(res)
-      Ak = self @ k
-      for k_, Ak_ in krylov: # modified Gramm-Schmidt
-        c = Ak @ Ak_
-        Ak -= c * Ak_
-        k -= c * k_
-      c = numpy.linalg.norm(Ak)
-      Ak /= c
-      k /= c
-      krylov.append((k, Ak))
-      lhs += k * (Ak @ rhs)
-      res = rhs - self @ lhs
+    with treelog.iter.plain('minres iteration', itertools.count(start=1)) as count:
+      for iiter in count:
+        resnorm = numpy.linalg.norm(res)
+        if resnorm > oldresnorm:
+          treelog.debug('residual increased to {:.0e} (discarding)'.format(resnorm))
+          lhs -= dlhs # roll back last update
+          return lhs
+        treelog.debug('residual decreased to {:.0e}'.format(resnorm))
+        if resnorm < atol:
+          return lhs
+        oldresnorm = resnorm
+        k = precon(res)
+        Ak = self @ k
+        for k_, Ak_ in krylov: # modified Gramm-Schmidt
+          c = Ak @ Ak_
+          Ak -= c * Ak_
+          k -= c * k_
+        c = numpy.linalg.norm(Ak)
+        Ak /= c
+        k /= c
+        krylov.append((k, Ak))
+        dlhs = k * (Ak @ rhs)
+        lhs += dlhs
+        res = rhs - self @ lhs
 
   def __repr__(self):
     return '{}<{}x{}>'.format(type(self).__qualname__, *self.shape)

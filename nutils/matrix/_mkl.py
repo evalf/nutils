@@ -256,8 +256,7 @@ class MKLMatrix(Matrix):
       ipar[10] = 0 # run the non-preconditioned version of the FGMRES method
     else:
       ipar[10] = 1 # run the preconditioned version of the FGMRES method
-      if not callable(precon):
-        precon = self.getprecon(precon)
+      precon = self.getprecon(precon)
     ipar[11] = 0 # do not perform the automatic test for zero norm of the currently generated vector: dpar[6] <= dpar[7]
     ipar[12] = 1 # update the solution to the vector b according to the computations done by the dfgmres routine
     ipar[13] = 0 # internal iteration counter that counts the number of iterations before the restart takes place; the initial value is 0

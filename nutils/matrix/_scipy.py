@@ -90,12 +90,7 @@ class ScipyMatrix(Matrix):
     solverfun = getattr(scipy.sparse.linalg, solver)
     myrhs = rhs / rhsnorm # normalize right hand side vector for best control over scipy's stopping criterion
     mytol = atol / rhsnorm
-    if precon is None:
-      M = None
-    else:
-      if not callable(precon):
-        precon = self.getprecon(precon)
-      M = scipy.sparse.linalg.LinearOperator(self.shape, precon, dtype=float)
+    M = precon and scipy.sparse.linalg.LinearOperator(self.shape, self.getprecon(precon), dtype=float)
     with log.context(solver + ' {:.0f}%', 0) as reformat:
       def mycallback(arg):
         # some solvers provide the residual, others the left hand side vector
