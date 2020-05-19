@@ -164,7 +164,7 @@ class Matrix(metaclass=CacheMeta):
     n = I.sum()
     if J.sum() != n:
       raise MatrixError('constrained matrix is not square: {}x{}'.format(I.sum(), J.sum()))
-    b = (rhs - self @ x)[J]
+    b = (rhs - self @ x)[I]
     bnorm = numpy.linalg.norm(b)
     atol = max(atol, rtol * bnorm)
     if bnorm > atol:
