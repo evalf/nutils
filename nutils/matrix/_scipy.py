@@ -85,17 +85,23 @@ class ScipyMatrix(Matrix):
   def T(self):
     return ScipyMatrix(self.core.transpose())
 
+  def _solver(self, rhs, solver, **kwargs):
+    if solver in ['bicg', 'bicgstab', 'cg', 'cgs', 'gmres', 'lgmres', 'minres']:
+      kwargs['method'] = solver
+      solver = 'scipy'
+    return super()._solver(rhs, solver, **kwargs)
+
   @refine_to_tolerance
-  def solve_direct(self, rhs):
+  def _solver_direct(self, rhs):
     return scipy.sparse.linalg.spsolve(self.core, rhs)
 
-  def solve_scipy(self, rhs, solver, atol, callback=None, precon=None, **solverargs):
+  def _solver_scipy(self, rhs, method, atol, callback=None, precon=None, **solverargs):
     rhsnorm = numpy.linalg.norm(rhs)
-    solverfun = getattr(scipy.sparse.linalg, solver)
+    solverfun = getattr(scipy.sparse.linalg, method)
     myrhs = rhs / rhsnorm # normalize right hand side vector for best control over scipy's stopping criterion
     mytol = atol / rhsnorm
     M = self.getprecon(precon) if isinstance(precon, str) else precon(self.core) if callable(precon) else precon
-    with log.context(solver + ' {:.0f}%', 0) as reformat:
+    with log.context(method + ' {:.0f}%', 0) as reformat:
       def mycallback(arg):
         # some solvers provide the residual, others the left hand side vector
         res = numpy.linalg.norm(myrhs - self @ arg) if numpy.ndim(arg) == 1 else float(arg)
@@ -106,14 +112,6 @@ class ScipyMatrix(Matrix):
     if status != 0:
       raise Exception('status {}'.format(status))
     return mylhs * rhsnorm
-
-  solve_bicg     = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'bicg',     **kwargs)
-  solve_bicgstab = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'bicgstab', **kwargs)
-  solve_cg       = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'cg',       **kwargs)
-  solve_cgs      = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'cgs',      **kwargs)
-  solve_gmres    = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'gmres',    **kwargs)
-  solve_lgmres   = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'lgmres',   **kwargs)
-  solve_minres   = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'minres',   **kwargs)
 
   def getprecon(self, name):
     name = name.lower()

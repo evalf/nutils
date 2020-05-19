@@ -136,16 +136,22 @@ class Matrix:
     :class:`numpy.ndarray`
         Left hand side vector.
     '''
+
+    # absent an initial guess and constraints we can directly forward to _solver
+    if lhs0 is constrain is rconstrain is None:
+      return self._solver(rhs, solver, atol=atol, rtol=rtol, **solverargs)
+
+    # otherwise we need to do some pre- and post-processing
     nrows, ncols = self.shape
     if rhs is None:
       rhs = numpy.zeros(nrows)
     if lhs0 is None:
-      x = numpy.zeros((ncols,)+rhs.shape[1:])
+      lhs = numpy.zeros((ncols,)+rhs.shape[1:])
     else:
-      x = numpy.array(lhs0, dtype=float)
-      while x.ndim < rhs.ndim:
-        x = x[...,numpy.newaxis].repeat(rhs.shape[x.ndim], axis=x.ndim)
-      assert x.shape == (ncols,)+rhs.shape[1:]
+      lhs = numpy.array(lhs0, dtype=float)
+      while lhs.ndim < rhs.ndim:
+        lhs = lhs[...,numpy.newaxis].repeat(rhs.shape[lhs.ndim], axis=lhs.ndim)
+      assert lhs.shape == (ncols,)+rhs.shape[1:]
     if constrain is None:
       J = numpy.ones(ncols, dtype=bool)
     else:
@@ -154,34 +160,15 @@ class Matrix:
         J = ~constrain
       else:
         J = numpy.isnan(constrain)
-        x[~J] = constrain[~J]
+        lhs[~J] = constrain[~J]
     if rconstrain is None:
       assert nrows == ncols
       I = J
     else:
       assert rconstrain.shape == (nrows,) and constrain.dtype == bool
       I = ~rconstrain
-    n = I.sum()
-    if J.sum() != n:
-      raise MatrixError('constrained matrix is not square: {}x{}'.format(I.sum(), J.sum()))
-    b = (rhs - self @ x)[I]
-    bnorm = numpy.linalg.norm(b)
-    atol = max(atol, rtol * bnorm)
-    if bnorm > atol:
-      treelog.info('solving {} dof system to {} using {} solver'.format(n, 'tolerance {:.0e}'.format(atol) if atol else 'machine precision', solver))
-      try:
-        x[J] += getattr(self.submatrix(I, J), 'solve_'+solver)(b, atol=atol, **solverargs)
-      except Exception as e:
-        raise MatrixError('solver failed with error: {}'.format(e)) from e
-      if not numpy.isfinite(x).all():
-        raise MatrixError('solver returned non-finite left hand side')
-      resnorm = numpy.linalg.norm((rhs - self @ x)[J])
-      treelog.info('solver returned with residual {:.0e}'.format(resnorm))
-      if resnorm > atol > 0:
-        raise ToleranceNotReached(x)
-    else:
-      treelog.info('skipping solver because initial vector is within tolerance')
-    return x
+    lhs[J] += self.submatrix(I, J)._solver((rhs - self @ lhs)[I], solver, atol=atol, rtol=rtol, **solverargs)
+    return lhs
 
   def solve_leniently(self, *args, **kwargs):
     '''
@@ -194,6 +181,41 @@ class Matrix:
     except ToleranceNotReached as e:
       treelog.warning(e)
       return e.best
+
+  def _method(self, prefix, attr):
+    if callable(attr):
+      return functools.partial(attr, self), getattr(attr, '__name__', 'user defined')
+    if isinstance(attr, str):
+      fullattr = '_' + prefix + '_' + attr
+      if hasattr(self, fullattr):
+        return getattr(self, fullattr), attr
+    raise MatrixError('invalid {} {!r} for {}'.format(prefix, attr, self.__class__.__name__))
+
+  def _solver(self, rhs, solver, *, atol, rtol, **solverargs):
+    if self.shape[0] != self.shape[1]:
+      raise MatrixError('constrained matrix is not square: {}x{}'.format(*self.shape))
+    if rhs.shape[0] != self.shape[0]:
+      raise MatrixError('right-hand size shape does not match matrix shape')
+    rhsnorm = numpy.linalg.norm(rhs, axis=0).max()
+    atol = max(atol, rtol * rhsnorm)
+    if rhsnorm <= atol:
+      treelog.info('skipping solver because initial vector is within tolerance')
+      return numpy.zeros_like(rhs)
+    solver_method, solver_name = self._method('solver', solver)
+    treelog.info('solving {} dof system to {} using {} solver'.format(self.shape[0], 'tolerance {:.0e}'.format(atol) if atol else 'machine precision', solver_name))
+    try:
+      lhs = solver_method(rhs, atol=atol, **solverargs)
+    except MatrixError:
+      raise
+    except Exception as e:
+      raise MatrixError('solver failed with error: {}'.format(e)) from e
+    if not numpy.isfinite(lhs).all():
+      raise MatrixError('solver returned non-finite left hand side')
+    resnorm = numpy.linalg.norm(rhs - self @ lhs, axis=0).max()
+    treelog.info('solver returned with residual {:.0e}'.format(resnorm))
+    if resnorm > atol > 0:
+      raise ToleranceNotReached(lhs)
+    return lhs
 
   def submatrix(self, rows, cols):
     '''Create submatrix from selected rows, columns.

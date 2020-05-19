@@ -88,7 +88,7 @@ class NumpyMatrix(Matrix):
     return numpy.greater(abs(self.core), tol).any(axis=1)
 
   @refine_to_tolerance
-  def solve_direct(self, rhs):
+  def _solver_direct(self, rhs):
     return numpy.linalg.solve(self.core, rhs)
 
   def _submatrix(self, rows, cols):

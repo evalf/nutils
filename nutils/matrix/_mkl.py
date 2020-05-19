@@ -214,7 +214,7 @@ class MKLMatrix(Matrix):
     raise NotImplementedError('cannot export MKLMatrix to {!r}'.format(form))
 
   @refine_to_tolerance
-  def solve_direct(self, rhs):
+  def _solver_direct(self, rhs):
     if self.shape[0] != self.shape[1]:
       raise MatrixError('matrix is not square')
     log.debug('solving system using MKL Pardiso')
@@ -223,7 +223,7 @@ class MKLMatrix(Matrix):
         a=self.data, ia=self.rowptr, ja=self.colidx, n=self.shape[0])
     return self._pardiso.solve(rhs)
 
-  def solve_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12):
+  def _solver_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12):
     rci = c_int(0)
     n = c_int(len(rhs))
     b = numpy.array(rhs, dtype=numpy.float64)
