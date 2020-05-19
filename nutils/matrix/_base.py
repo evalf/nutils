@@ -18,7 +18,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from ..types import CacheMeta
 import abc, treelog, functools, numpy, itertools
 
 class MatrixError(Exception):
@@ -41,7 +40,7 @@ class ToleranceNotReached(MatrixError):
     super().__init__('solver failed to reach tolerance')
     self.best = best
 
-class Matrix(metaclass=CacheMeta):
+class Matrix:
   'matrix base class'
 
   def __init__(self, shape):
