@@ -31,8 +31,7 @@ def setassemble(sets):
   return sets(assemble)
 
 def assemble(data, index, shape):
-  csr = scipy.sparse.csr_matrix((data, index[1], index[0].searchsorted(numpy.arange(shape[0]+1))), shape)
-  return ScipyMatrix(csr)
+  return ScipyMatrix(scipy.sparse.csr_matrix((data, index), shape))
 
 class ScipyMatrix(Matrix):
   '''matrix based on any of scipy's sparse matrices'''
