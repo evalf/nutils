@@ -9,6 +9,60 @@ features in inverse chronological order.
 New in v7.0 (in development)
 ----------------------------
 
+- Solve multiple residuals to multiple targets
+
+  In problems involving multiple fields, where formerly it was required to
+  :func:`nutils.function.chain` the bases in order to construct and solve a
+  block system, an alternative possibility is now to keep the residuals and
+  targets separate and reference the several parts at the solving phase::
+
+      # old, still valid approach
+      >>> ns.ubasis, ns.pbasis = function.chain([ubasis, pbasis])
+      >>> ns.u_i = 'ubasis_ni ?dofs_n'
+      >>> ns.p = 'pbasis_n ?dofs_n'
+
+      # new, alternative approach
+      >>> ns.ubasis = ubasis
+      >>> ns.pbasis = pbasis
+      >>> ns.u_i = 'ubasis_ni ?u_n'
+      >>> ns.p = 'pbasis_n ?p_n'
+
+      # common: problem definition
+      >>> ns.σ_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
+      >>> ures = topo.integral('ubasis_ni,j σ_ij d:x d:x' @ ns, degree=4)
+      >>> pres = topo.integral('pbasis_n u_,kk d:x' @ ns, degree=4)
+
+      # old approach: solving a single residual to a single target
+      >>> dofs = solver.newton('dofs', ures + pres).solve(1e-10)
+
+      # new approach: solving multiple residuals to multiple targets
+      >>> state = solver.newton(['u', 'p'], [ures, pres]).solve(1e-10)
+
+  In the new, multi-target approach, the return value is no longer an array but
+  a dictionary that maps a target to its solution. If additional arguments were
+  specified to newton (or any of the other solvers) then these are copied into
+  the return dictionary so as to form a complete state, which can directly be
+  used as an arguments to subsequent evaluations.
+
+  If an argument is specified for a solve target then its value is used as an
+  initial guess (newton, minimize) or initial condition (thetamethod). This
+  replaces the ``lhs0`` argument which is not supported for multiple targets.
+
+- New thetamethod argument ``historysuffix`` deprecates ``target0``
+
+  To explicitly refer to the history state in :func:`nutils.solver.thetamethod`
+  and its derivatives ``impliciteuler`` and ``cranknicolson``, instead of
+  specifiying the target through the ``target0`` parameter, the new argument
+  ``historysuffix`` specifies only the suffix to be added to the main target.
+  Hence, the following three invocations are equivalent::
+
+      # deprecated
+      >>> solver.impliciteuler('target', residual, inertia, target0='target0')
+      # new syntax
+      >>> solver.impliciteuler('target', residual, inertia, historysuffix='0')
+      # equal, since '0' is the default suffix
+      >>> solver.impliciteuler('target', residual, inertia)
+
 - In-place modification of newton, minimize, pseudotime iterates
 
   When :class:`nutils.solver.newton`, :class:`nutils.solver.minimize` or
