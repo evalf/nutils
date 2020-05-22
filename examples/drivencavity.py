@@ -57,7 +57,7 @@ def main(nelems:int, etype:str, degree:int, reynolds:float):
     state1 = solver.newton(('u', 'p'), (ures, pres), arguments=state0, constrain=cons).solve(tol=1e-10)
     postprocess(domain, ns, **state1)
 
-  return [numpy.hstack([state['u'], state['p']]) for state in [state0, state1]]
+  return state0, state1
 
 # Postprocessing in this script is separated so that it can be reused for the
 # results of Stokes and Navier-Stokes, and because of the extra steps required
@@ -103,32 +103,39 @@ class test(testing.TestCase):
 
   @testing.requires('matplotlib')
   def test_square(self):
-    lhs0, lhs1 = main(nelems=3, etype='square', reynolds=100, degree=3)
-    with self.subTest('stokes'): self.assertAlmostEqual64(lhs0, '''
-      eNqNkE8og3EYx99JLZKDJTktOfjT9nr3+3kjuTi4zcUB5cpcxcGkOa3kQC4OGyUXaRfESiI7OdjzfX/v
-      3nd5OUiWhpbUWlsr/1Za48Tzrec5PJ/69v1K0t8z3PN9F11TZtQsdPmS9WzaauWW/sH9iaNuRe9TbayO
-      lblHkXFFtbzSqU2wNJq4E588JZZ5xNPGvepLoszta+ftGbiVAJY8/RhhaSqymJFkZ+yQhVXLXeYKWOkY
-      RVbOk6yc0J2yQ2MeSX5TgnxVuVcnf3CzV6OoT+TJECfUInZoV5PkahHkM+Je3TAqvgNWBqYIYF7rRwRp
-      siNmuHDGhhBWO4xKjkYzqtWKTm0TaTyTEzZKiTmKeG7IqzrkSi8hV9Ss0X3JLKatW7L0KvInvHFFv7i0
-      sRzK3H96TtErPVGKArQdD8Wv6YEMOqUFGqM9uqNM6WNRjLbomHK/VIv3UgoHZIyjFw2oRjM41nGNQdhR
-      JFtpr+HAlKQvrHfV6g==''')
-    with self.subTest('navier-stokes'): self.assertAlmostEqual64(lhs1, '''
+    state0, state1 = main(nelems=3, etype='square', reynolds=100, degree=3)
+    with self.subTest('stokes-velocity'): self.assertAlmostEqual64(state0['u'], '''
+      eNpjYCAMgswhdJ1O+uWtl7/rp13hMyq4rmx8/cI/44qLW0wMLliZMhrxGMHUPT//WmfruW8GWudSjJ6d
+      FTeWP/vf+NH5TuNVhurGPqZvL8LUbTi3X+P1WV2D2rPthjZnw4yenflpdODSFaO9RpuNZple14Wp+362
+      VzP87Ce9b2f0DHaduW+w7EyEIYPeH4MW4z6Dh6apSOqKr4Wf5bv47cyl87vOKJ5fdmbFOQY9lvMtxkXn
+      H5rOvoSw1/H667OXz9eerTxnc3bV2Wdn2M8euKRzdq+R79lZppqXEP4Qvbz1HNd5rXNzzj47+/KM/FnG
+      M4/Ol59ZZXjzjI+psB4iXGbqbL3MeSHtyqezBdfvnrl+gelMxUWf0wYXjp1iNPpyFqaOmHAGAFFhkvE=''')
+    with self.subTest('stokes-pressure'): self.assertAlmostEqual64(state0['p'], '''
+      eNp7dOb9mRdnHp2pPbPw9MzTN848OXPpzJ4z1Wcizqw/c//Ma6DM9TMHzsw/s+PMFxTIdfbvGfazwmf1
+      zkaftTgrdJblrORZ47NTz94463qW/ezPM4xAcsLZjZcZGAAX7kL6''')
+    with self.subTest('navier-stokes-velocity'): self.assertAlmostEqual64(state1['u'], '''
       eNpjYCAMgswh9ErtA5c9ruTp/7xiZbhX28jo8MVbRn1XLIxVLhcbBxuIGsDUHbhgoxNx3tnA9vwcQ4fz
       PkbC59mNP2rONOIxnGiUaOx9GaYu5PxOjfJzB/Xdz5kbWp9jNYo9t81ont4so1OGXUbNJtX6MHVd515p
       XT4rqT//7EWDprPzDR+eTTY6pBdltNhoq9ELE+3zMHWe58rVl53lv2R1Vvbq+zOTdCLPmhpONkgwlDMO
       NawyvWAIU/f7nMRN03PyF3rOSp6XOqt3bv+ZA+cirnSclzf2vxhvGgo3T/pC5xXW80Ln751ddzb1rOpZ
-      wzOXTp89l3iu1vic0WrTImOYugCd8uvrriy/aHf1w9nkizPPvDl/7rTe+cRTBmf3nVQx0T4DU0dMOK8/
-      vfX0xtOrT3ef9jitfXrN6Q1A9oLTk0/POL339LrTW4AiC05POt0F5G85vR0oMut0z+mK04tP7wfK7zi9
-      /nTf6aWnt50+enrP6ROnL57+cXrfacYze4G8rUD843SpLgMDAGbLx+o=''')
+      wzOXTp89l3iu1vic0WrTImOYugCd8uvrriy/aHf1w9nkizPPvDl/7rTe+cRTBmf3nVQx0T4DU0dMOAMA
+      p1CDeg==''')
+    with self.subTest('navier-stokes-pressure'): self.assertAlmostEqual64(state1['p'], '''
+      eNoNiT0OQEAYBdd5xD1cSOIMiIJGVJuIiliS9VNYKolkNG6j9BUvmZlnmJnoSAnx6RmFNSUVjgErRVOQ
+      iFtWKTUZMQ2n/BuGnJaFi52bl48D73Fis+wjCpT6AWgsRHE=''')
 
   @testing.requires('matplotlib')
   def test_mixed(self):
-    lhs0, lhs1 = main(nelems=3, etype='mixed', reynolds=100, degree=2)
-    with self.subTest('stokes'): self.assertAlmostEqual64(lhs0, '''
+    state0, state1 = main(nelems=3, etype='mixed', reynolds=100, degree=2)
+    with self.subTest('stokes-velocity'): self.assertAlmostEqual64(state0['u'], '''
       eNpjYEAFEy++uHzs/EYjEFv73Hm9T2eVDGFyMWdfGJ/TVTGxMvQyqjxbAlYTZM7AsNWIxwhEG5hs0wTR
       1Wd5DDTOHrx05OzmczC9Cud8riSccbrqYJR2dfMZ07M+hkznLpuongepB+Eyk/TzIHVbL4QbrLqw9Qyy
-      m+aee31awWALXEzP+NIZkB6Y/TFns88mn008u/mM+dnYM0Fn28/OOnv27K6zK8+Wn10FdAEAKXRKgw==''')
-    with self.subTest('navier-stokes'): self.assertAlmostEqual64(lhs1, '''
+      m+aee31awWALXEzP+NIZkB6Y/QAD2Dbr''')
+    with self.subTest('stokes-pressure'): self.assertAlmostEqual64(state0['p'], '''
+      eNoBIADf/1zNa81jzWHNs8w3zV3MUs2HzZrNzc26zanNd82qzgAAR/MTmQ==''')
+    with self.subTest('navier-stokes-velocity'): self.assertAlmostEqual64(state1['u'], '''
       eNpjYEAFvRcfXLa8eNsQxP5xLkBv17ktBjC5iHOfjbr1XxotNbAy0j4nbQQSCzJnYLA0lNIH0XLGi3VB
       dNK5HoNjZ2frXj+77BxM775zfbq6Z+cYxBpd1vc543jursGSC0omz86D1IPwBJOzYDszL5oaLbgQcQbZ
-      TTZnec9svix4FsZXNbl9GqQHZj/rGb4zPGfYz5w5/fr03tOMZzjOKJz5d5rzjMmZL6cvAk0CAOBkR7A=''')
+      TTZnec9svix4FsZXNbl9GqQHZj8AAcY1/g==''')
+    with self.subTest('navier-stokes-pressure'): self.assertAlmostEqual64(state1['p'], '''
+      eNoBIADf/wXMDswMzAfMzMvry73LAcwIzCDM/ssJzDTM9MvRzAAAHqQRsw==''')

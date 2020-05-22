@@ -57,7 +57,7 @@ def main(nelems:int, degree:int, reynolds:float):
     state1 = solver.newton(('u', 'p', 'lm'), (ures, pres, lres), arguments=state0).solve(tol=1e-10)
     postprocess(domain, ns, **state1)
 
-  return [numpy.hstack([state['u'], state['p'], state['lm']]) for state in [state0, state1]]
+  return state0, state1
 
 # Postprocessing in this script is separated so that it can be reused for the
 # results of Stokes and Navier-Stokes, and because of the extra steps required
@@ -106,22 +106,32 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
   @testing.requires('matplotlib')
-  def test_p1(self):
-    lhs0, lhs1 = main(nelems=3, reynolds=100, degree=2)
-    with self.subTest('stokes'): self.assertAlmostEqual64(lhs0, '''
-      eNrzu9Bt8OuUndkD/eTTSqezzP2g/E3698/ZmZlf2GjSaHJS3/90/Wm/C4qGh066XzLQ47846VSPpoWK
-      3vnD+iXXTty+ZGB7YafuhYsf9fJMGRgAkFIn4A==''')
-    with self.subTest('navier-stokes'): self.assertAlmostEqual64(lhs1, '''
-      eNoBUgCt/2XOWjJSy5k1jS+yyzvLODfgL1rO0MrINpsxHM2ZNSrPqDTANCPVQsxCzeAvcc04yaUmYysm
-      MbLLAi9YL6TN+y3eLcgvM87NzOUrTNY9MWA2AABnnyYn''')
+  def test_p2(self):
+    state0, state1 = main(nelems=3, reynolds=100, degree=2)
+    with self.subTest('stokes-velocity'): self.assertAlmostEqual64(state0['u'], '''
+      eNrzu9Bt8OuUndkD/eTTSqezzP2g/E3698/ZmZlf2GjSaHJS3/90/Wm/C4qGh04CAErOF+g=''')
+    with self.subTest('stokes-pressure'): self.assertAlmostEqual64(state0['p'], '''
+      eNoBIADf/0fSMC4P0ZLKjCk4JC7Pwy901sjb0jA90Lkt0NHxLm41+KgP+Q==''')
+    with self.subTest('stokes-multiplier'): self.assertAlmostEqual(state0['lm'], 0)
+    with self.subTest('navier-stokes-velocity'): self.assertAlmostEqual64(state1['u'], '''
+      eNoBMADP/2XOWjJSy5k1jS+yyzvLODfgL1rO0MrINpsxHM2ZNSrPqDTANCPVQsxCzeAvcc04yT3AF9c=''')
+    with self.subTest('navier-stokes-pressure'): self.assertAlmostEqual64(state1['p'], '''
+      eNpbqpasrWa46TSTfoT+krO/de/pntA3Pnf2zFNtn2u2hglmAOKVDlE=''')
+    with self.subTest('navier-stokes-multiplier'): self.assertAlmostEqual(state1['lm'], 0)
 
   @testing.requires('matplotlib')
-  def test_p2(self):
-    lhs0, lhs1 = main(nelems=3, reynolds=100, degree=3)
-    with self.subTest('stokes'): self.assertAlmostEqual64(lhs0, '''
+  def test_p3(self):
+    state0, state1 = main(nelems=3, reynolds=100, degree=3)
+    with self.subTest('stokes-velocity'): self.assertAlmostEqual64(state0['u'], '''
       eNo7aLjtjIjJxZN7zVgvZJ9jOv3lfK05gnUQLmt/Ttlk5qm9ZgKGQeeXmj0zZoCCD+fWGUSflDpz0PDu
-      6XRT55OL9dt11pwvNYw5+f7ClYv2Oq/O7DBigANBfR29g5fFjD3Oxl6ovBxi0H1uiRkDAwD+ITkl''')
-    with self.subTest('navier-stokes'): self.assertAlmostEqual64(lhs1, '''
-      eNoBhAB7/14yGcxyNPbJYTahLj/LSDE7yy43SM9WMsXJoDR+N3Iw8s1hM5zJODeizcE0X8phNrQwUDOO
-      NbMzJi+ty4s1oDFqzxIzysjWzXIwFM3tNMjIKjG8MeLNoTLzyQMuCi+IK3jOcjMzLuMvudNEzOrOEDAF
-      MD8sTTDpzNjYZDCg0RgwcTcAAJCyOzM=''')
+      6XRT55MANiIlLw==''')
+    with self.subTest('stokes-pressure'): self.assertAlmostEqual64(state0['p'], '''
+      eNpbrN+us+Z8qWHMyfcXrly013l1ZocRAxwI6uvoHbwsZuxxNvZC5eUQg+5zS8wAElAT9w==''')
+    with self.subTest('stokes-multiplier'): self.assertAlmostEqual(state0['lm'], 0)
+    with self.subTest('navier-stokes-velocity'): self.assertAlmostEqual64(state1['u'], '''
+      eNoBUACv/14yGcxyNPbJYTahLj/LSDE7yy43SM9WMsXJoDR+N3Iw8s1hM5zJODeizcE0X8phNrQwUDOO
+      NbMzJi+ty4s1oDFqzxIzysjWzXIwFM3tNMjIpDMlJw==''')
+    with self.subTest('navier-stokes-pressure'): self.assertAlmostEqual64(state1['p'], '''
+      eNoBMgDN/yoxvDHizaEy88kDLgoviCt4znIzMy7jL7nTRMzqzhAwBTA/LE0w6czY2GQwoNEYMHE3NDUW
+      DQ==''')
+    with self.subTest('navier-stokes-multiplier'): self.assertAlmostEqual(state1['lm'], 0)
