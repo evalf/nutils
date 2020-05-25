@@ -631,9 +631,12 @@ class thetamethod(cache.Recursion, length=1, version=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target:types.strictstr, residual:sample.strictintegral, inertia:sample.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray, theta:types.strictfloat, target0:types.strictstr='_thetamethod_target0', constrain:types.frozenarray=None, newtontol:types.strictfloat=1e-10, arguments:argdict={}, newtonargs:types.frozendict={}, timetarget:types.strictstr=None, time0:types.strictfloat=0.):
+  def __init__(self, target:types.strictstr, residual:sample.strictintegral, inertia:sample.strictintegral, timestep:types.strictfloat, lhs0:types.frozenarray, theta:types.strictfloat, target0:types.strictstr=None, constrain:types.frozenarray=None, newtontol:types.strictfloat=1e-10, arguments:argdict={}, newtonargs:types.frozendict={}, timetarget:types.strictstr=None, time0:types.strictfloat=0., historysuffix:types.strictstr='0'):
     super().__init__()
-
+    if target0 is None:
+      target0 = target + historysuffix
+    else:
+      warnings.deprecation('target0 is deprecated; use historysuffix instead (target0=target+historysuffix)')
     assert target != target0, '`target` should not be equal to `target0`'
     assert target not in arguments, '`target` should not be defined in `arguments`'
     assert target0 not in arguments, '`target0` should not be defined in `arguments`'
@@ -646,7 +649,7 @@ class thetamethod(cache.Recursion, length=1, version=1):
     self.arguments = arguments
     self.timestep = timestep
     self.timetarget = timetarget or '_thetamethod_time'
-    self.timetarget0 = '_thetamethod_time0'
+    self.timetarget0 = self.timetarget + historysuffix
     self.time0 = time0
 
     t0 = function.Argument(self.timetarget0, ())
