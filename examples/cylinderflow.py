@@ -69,11 +69,9 @@ def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float,
   sqr = inflow.integral('(u_i - uinf_i) (u_i - uinf_i)' @ ns, degree=degree*2)
   cons = solver.optimize('lhs', sqr, droptol=1e-15) # constrain inflow semicircle to uinf
 
-  sqr = domain.integral('(u_i - uinf_i) (u_i - uinf_i) + p^2' @ ns, degree=degree*2)
-  lhs0 = solver.optimize('lhs', sqr) # set initial condition to u=uinf, p=0
-
   numpy.random.seed(seed)
-  lhs0 *= numpy.random.normal(1, .1, lhs0.shape) # add small velocity noise
+  sqr = domain.integral('(u_i - uinf_i) (u_i - uinf_i) + p^2' @ ns, degree=degree*2)
+  lhs0 = solver.optimize('lhs', sqr) * numpy.random.normal(1, .1, len(ns.ubasis)) # set initial condition to u=uinf, p=0 with small random noise
 
   res = domain.integral('(ubasis_ni u_i,j u_j + ubasis_ni,j sigma_ij + pbasis_n u_k,k) d:x' @ ns, degree=9)
   res += domain.boundary['inner'].integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni sigma_ij n_j) d:x' @ ns, degree=9)
