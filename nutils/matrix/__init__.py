@@ -32,6 +32,7 @@ import numpy, importlib
 from ._base import Matrix, MatrixError, BackendNotAvailable, ToleranceNotReached
 for cls in Matrix, MatrixError, BackendNotAvailable, ToleranceNotReached:
   cls.__module__ = __name__ # make it appear as if cls was defined here
+del cls # clean up for sphinx
 
 from ._numpy import assemble as _numpy_assemble
 _assemble = util.settable(_numpy_assemble)
