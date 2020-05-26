@@ -185,24 +185,27 @@ class Sample(types.Singleton):
       function.Tuple(values).graphviz(graphviz)
 
     # To allocate (shared) memory for all block data we evaluate indexfunc to
-    # build an nblocks x nelems+1 offset array, and nblocks index lists of
-    # length nelems.
+    # build an nblocks x nelems+1 offset array. In the first step the block
+    # sizes are evaluated.
 
-    offsets = numpy.zeros((len(blocks), self.nelems+1), dtype=int)
+    offsets = numpy.empty((len(blocks), self.nelems+1), dtype=numpy.uint64)
     if blocks:
       sizefunc = function.stack([f.size for ifunc, ind, f in blocks]).simplified
       for ielem, transforms in enumerate(zip(*self.transforms)):
-        n, = sizefunc.eval(_transforms=transforms, **arguments)
-        offsets[:,ielem+1] = offsets[:,ielem] + n
+        offsets[:,ielem+1], = sizefunc.eval(_transforms=transforms, **arguments)
 
-    # Since several blocks may belong to the same function, we post process the
+    # In the second step the block sizes are accumulated to form offsets. Since
+    # several blocks may belong to the same function, we post process the
     # offsets to form consecutive intervals in longer arrays. The length of
-    # these arrays is captured in the nfuncs-array nvals.
+    # these arrays is captured in the nvals array.
 
-    nvals = numpy.zeros(len(funcs), dtype=int)
+    nvals = numpy.zeros(len(funcs), dtype=numpy.uint64)
     for iblock, ifunc in enumerate(block2func):
-      offsets[iblock] += nvals[ifunc]
-      nvals[ifunc] = offsets[iblock,-1]
+      v = offsets[iblock]
+      v[0] = nvals[ifunc]
+      numpy.cumsum(v, out=v) # in place accumulation
+      assert (v[1:] >= v[:-1]).all(), 'integer overflow'
+      nvals[ifunc] = v[-1]
 
     # In a second, parallel element loop, value and index are evaluated and
     # stored in shared memory using the offsets array for location. Each
