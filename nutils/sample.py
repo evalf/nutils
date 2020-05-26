@@ -109,7 +109,6 @@ class Sample(types.Singleton):
         Points sequence.
     '''
 
-  def __init__(self, transforms, points):
     assert len(transforms) >= 1
     assert all(len(t) == len(points) for t in transforms)
     self.nelems = len(transforms[0])
