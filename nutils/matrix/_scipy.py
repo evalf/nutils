@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from ._base import Matrix, MatrixError, BackendNotAvailable, refine_to_tolerance
+from ._base import Matrix, MatrixError, BackendNotAvailable
 from .. import numeric
 import treelog as log
 import numpy
@@ -31,8 +31,7 @@ def setassemble(sets):
   return sets(assemble)
 
 def assemble(data, index, shape):
-  csr = scipy.sparse.csr_matrix((data, index[1], index[0].searchsorted(numpy.arange(shape[0]+1))), shape)
-  return ScipyMatrix(csr)
+  return ScipyMatrix(scipy.sparse.csr_matrix((data, index), shape))
 
 class ScipyMatrix(Matrix):
   '''matrix based on any of scipy's sparse matrices'''
@@ -86,60 +85,41 @@ class ScipyMatrix(Matrix):
   def T(self):
     return ScipyMatrix(self.core.transpose())
 
-  @refine_to_tolerance
-  def solve_direct(self, rhs):
-    return scipy.sparse.linalg.spsolve(self.core, rhs)
+  def _solver(self, rhs, solver, **kwargs):
+    if solver in ['bicg', 'bicgstab', 'cg', 'cgs', 'gmres', 'lgmres', 'minres']:
+      kwargs['method'] = solver
+      solver = 'scipy'
+    return super()._solver(rhs, solver, **kwargs)
 
-  def solve_scipy(self, rhs, solver, atol, callback=None, precon=None, **solverargs):
+  def _solver_scipy(self, rhs, method, atol, callback=None, precon=None, **solverargs):
     rhsnorm = numpy.linalg.norm(rhs)
-    solverfun = getattr(scipy.sparse.linalg, solver)
+    solverfun = getattr(scipy.sparse.linalg, method)
     myrhs = rhs / rhsnorm # normalize right hand side vector for best control over scipy's stopping criterion
     mytol = atol / rhsnorm
-    M = self.getprecon(precon) if isinstance(precon, str) else precon(self.core) if callable(precon) else precon
-    with log.context(solver + ' {:.0f}%', 0) as reformat:
+    if precon is not None:
+      precon = scipy.sparse.linalg.LinearOperator(self.shape, self.getprecon(precon), dtype=float)
+    with log.context(method + ' {:.0f}%', 0) as reformat:
       def mycallback(arg):
         # some solvers provide the residual, others the left hand side vector
         res = numpy.linalg.norm(myrhs - self @ arg) if numpy.ndim(arg) == 1 else float(arg)
         if callback:
           callback(res)
         reformat(100 * numpy.log10(max(mytol, res)) / numpy.log10(mytol))
-      mylhs, status = solverfun(self.core, myrhs, M=M, tol=mytol, callback=mycallback, **solverargs)
+      mylhs, status = solverfun(self.core, myrhs, M=precon, tol=mytol, callback=mycallback, **solverargs)
     if status != 0:
       raise Exception('status {}'.format(status))
     return mylhs * rhsnorm
 
-  solve_bicg     = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'bicg',     **kwargs)
-  solve_bicgstab = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'bicgstab', **kwargs)
-  solve_cg       = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'cg',       **kwargs)
-  solve_cgs      = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'cgs',      **kwargs)
-  solve_gmres    = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'gmres',    **kwargs)
-  solve_lgmres   = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'lgmres',   **kwargs)
-  solve_minres   = lambda self, rhs, **kwargs: self.solve_scipy(rhs, 'minres',   **kwargs)
+  def _precon_direct(self):
+    return scipy.sparse.linalg.factorized(self.core.tocsc())
 
-  def getprecon(self, name):
-    name = name.lower()
-    assert self.shape[0] == self.shape[1], 'constrained matrix must be square'
-    log.info('building {} preconditioner'.format(name))
-    if name == 'splu':
-      try:
-        precon = scipy.sparse.linalg.splu(self.core.tocsc()).solve
-      except RuntimeError as e:
-        raise MatrixError(e) from e
-    elif name == 'spilu':
-      try:
-        precon = scipy.sparse.linalg.spilu(self.core.tocsc(), drop_tol=1e-5, fill_factor=None, drop_rule=None, permc_spec=None, diag_pivot_thresh=None, relax=None, panel_size=None, options=None).solve
-      except RuntimeError as e:
-        raise MatrixError(e) from e
-    elif name == 'diag':
-      diag = self.core.diagonal()
-      if not diag.all():
-        raise MatrixError("building 'diag' preconditioner: diagonal has zero entries")
-      precon = numpy.reciprocal(diag).__mul__
-    else:
-      raise MatrixError('invalid preconditioner {!r}'.format(name))
-    return scipy.sparse.linalg.LinearOperator(self.shape, precon, dtype=float)
+  def _precon_splu(self):
+    return scipy.sparse.linalg.splu(self.core.tocsc()).solve
 
-  def submatrix(self, rows, cols):
+  def _precon_spilu(self, **kwargs):
+    return scipy.sparse.linalg.spilu(self.core.tocsc(), **kwargs).solve
+
+  def _submatrix(self, rows, cols):
     return ScipyMatrix(self.core[rows,:][:,cols])
 
   def diagonal(self):

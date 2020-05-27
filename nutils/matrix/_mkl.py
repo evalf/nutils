@@ -18,8 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from ._base import Matrix, MatrixError, BackendNotAvailable, refine_to_tolerance
-from .. import numeric, util
+from ._base import Matrix, MatrixError, BackendNotAvailable
+from .. import numeric, util, warnings
 from contextlib import contextmanager
 from ctypes import c_long, c_int, c_double, byref
 import treelog as log
@@ -66,43 +66,45 @@ class Pardiso:
    -12: 'pardiso_64 called from 32-bit library',
   }
 
-  def __init__(self, mtype, a, ia, ja, n):
+  def __init__(self, mtype, a, ia, ja, checkmatrix=False, verbose=False):
     self.pt = numpy.zeros(64, numpy.int64) # handle to data structure
     self.maxfct = c_int(1)
     self.mnum = c_int(1)
     self.mtype = c_int(mtype)
-    self.phase = c_int(13) # analysis, numerical factorization, solve, iterative refinement
-    self.n = c_int(n)
+    self.n = c_int(len(ia)-1)
     self.a = a.ctypes
     self.ia = ia.ctypes
     self.ja = ja.ctypes
     self.perm = None
     self.iparm = numpy.zeros(64, dtype=numpy.int32) # https://software.intel.com/en-us/mkl-developer-reference-c-pardiso-iparm-parameter
-    self.msglvl = c_int(0)
+    self.msglvl = c_int(verbose)
     libmkl.pardisoinit(self.pt.ctypes, byref(self.mtype), self.iparm.ctypes) # initialize iparm based on mtype
-    self.iparm[34] == 0 # make sure one-based indexing is selected
+    assert self.iparm[0] == 1, 'pardiso init failed'
+    self.iparm[26] = checkmatrix
+    self.iparm[27] = 0 # double precision data
+    self.iparm[34] = 0 # one-based indexing
+    self.iparm[36] = 0 # csr matrix format
+    self._phase(12) # analysis, numerical factorization
+    log.debug('peak memory use {:,d}k'.format(max(self.iparm[14], self.iparm[15]+self.iparm[16])))
 
-  def solve(self, rhs):
+  def __call__(self, rhs):
     rhsflat = numpy.ascontiguousarray(rhs.reshape(rhs.shape[0], -1).T, dtype=numpy.float64)
     lhsflat = numpy.empty_like(rhsflat)
-    self.raw(rhsflat.shape[0], rhsflat.ctypes, lhsflat.ctypes)
-    log.debug('peak memory use {:,d}k'.format(max(self.iparm[14], self.iparm[15]+self.iparm[16])))
-    self.phase.value = 33 # solve, iterative refinement
+    self._phase(33, rhsflat.shape[0], rhsflat.ctypes, lhsflat.ctypes) # solve, iterative refinement
     return lhsflat.T.reshape(rhs.shape)
 
-  def raw(self, nrhs, b, x):
+  def _phase(self, phase, nrhs=0, b=None, x=None):
     error = c_int(1)
     libmkl.pardiso(self.pt.ctypes, byref(self.maxfct), byref(self.mnum), byref(self.mtype),
-      byref(self.phase), byref(self.n), self.a, self.ia, self.ja, self.perm,
+      byref(c_int(phase)), byref(self.n), self.a, self.ia, self.ja, self.perm,
       byref(c_int(nrhs)), self.iparm.ctypes, byref(self.msglvl), b, x, byref(error))
     if error.value:
       raise MatrixError(self._errorcodes.get(error.value, 'unknown error {}'.format(error.value)))
 
   def __del__(self):
-    if self.pt.any(): # release all internal memory for all matrices
-      self.phase.value = -1
-      self.raw(0, None, None)
-      assert not self.pt.any(), 'it appears that Pardiso failed to release its internal memory'
+    self._phase(-1) # release all internal memory for all matrices
+    if self.pt.any():
+      warnings.warn('Pardiso failed to release its internal memory')
 
 class MKLMatrix(Matrix):
   '''matrix implementation based on sorted coo data'''
@@ -112,7 +114,6 @@ class MKLMatrix(Matrix):
     self.data = numpy.ascontiguousarray(data, dtype=numpy.float64)
     self.rowptr = numpy.ascontiguousarray(rowptr, dtype=numpy.int32)
     self.colidx = numpy.ascontiguousarray(colidx, dtype=numpy.int32)
-    self._pardiso = None
     super().__init__((len(rowptr)-1, ncols))
 
   def convert(self, mat):
@@ -188,13 +189,10 @@ class MKLMatrix(Matrix):
       rowptr.ctypes, byref(info))
     return MKLMatrix(data, rowptr, colidx, self.shape[1])
 
-  def submatrix(self, rows, cols):
-    rows = numeric.asboolean(rows, self.shape[0])
-    cols = numeric.asboolean(cols, self.shape[1])
-    keep = (rows.all() or rows.repeat(numpy.diff(self.rowptr))) & (cols.all() or cols[self.colidx-1])
-    if keep is True: # all rows and all columns are kept
-      return self
-    elif keep.all(): # all nonzero entries are kept
+  def _submatrix(self, rows, cols):
+    keep = rows.repeat(numpy.diff(self.rowptr))
+    keep &= cols[self.colidx-1]
+    if keep.all(): # all nonzero entries are kept
       rowptr = self.rowptr[numpy.hstack([True, rows])]
       keep = slice(None) # avoid array copies
     else:
@@ -216,17 +214,7 @@ class MKLMatrix(Matrix):
       return self.data, (numpy.arange(self.shape[0]).repeat(self.rowptr[1:]-self.rowptr[:-1]), self.colidx-1)
     raise NotImplementedError('cannot export MKLMatrix to {!r}'.format(form))
 
-  @refine_to_tolerance
-  def solve_direct(self, rhs):
-    if self.shape[0] != self.shape[1]:
-      raise MatrixError('matrix is not square')
-    log.debug('solving system using MKL Pardiso')
-    if not self._pardiso:
-      self._pardiso = Pardiso(mtype=11, # real and nonsymmetric
-        a=self.data, ia=self.rowptr, ja=self.colidx, n=self.shape[0])
-    return self._pardiso.solve(rhs)
-
-  def solve_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12):
+  def _solver_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12):
     rci = c_int(0)
     n = c_int(len(rhs))
     b = numpy.array(rhs, dtype=numpy.float64)
@@ -246,15 +234,7 @@ class MKLMatrix(Matrix):
       ipar[10] = 0 # run the non-preconditioned version of the FGMRES method
     else:
       ipar[10] = 1 # run the preconditioned version of the FGMRES method
-      if precon == 'lu':
-        precon = self.solve_direct
-      elif precon == 'diag':
-        diag = self.diagonal()
-        if not diag.all():
-          raise MatrixError("building 'diag' preconditioner: diagonal has zero entries")
-        precon = numpy.reciprocal(diag).__mul__
-      elif not callable(precon):
-        raise MatrixError('invalid preconditioner {!r}'.format(precon))
+      precon = self.getprecon(precon)
     ipar[11] = 0 # do not perform the automatic test for zero norm of the currently generated vector: dpar[6] <= dpar[7]
     ipar[12] = 1 # update the solution to the vector b according to the computations done by the dfgmres routine
     ipar[13] = 0 # internal iteration counter that counts the number of iterations before the restart takes place; the initial value is 0
@@ -290,5 +270,8 @@ class MKLMatrix(Matrix):
           raise MatrixError('this should not have occurred: rci={}'.format(rci.value))
     log.debug('performed {} fgmres iterations, {} restarts'.format(ipar[3], ipar[3]//ipar[14]))
     return b
+
+  def _precon_direct(self):
+    return Pardiso(mtype=11, a=self.data, ia=self.rowptr, ja=self.colidx)
 
 # vim:sw=2:sts=2:et

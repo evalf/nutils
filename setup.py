@@ -31,7 +31,7 @@ setup(
   author_email = 'info@nutils.org',
   url = 'http://nutils.org',
   download_url = 'https://github.com/nutils/nutils/releases',
-  packages = ['nutils'],
+  packages = ['nutils', 'nutils.matrix'],
   long_description = long_description,
   license = 'MIT',
   python_requires = '>=3.5',

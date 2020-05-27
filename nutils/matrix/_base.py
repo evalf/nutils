@@ -18,8 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from ..types import CacheMeta
-import abc, treelog, functools, numpy, itertools
+from .. import numeric
+import abc, treelog, functools, numpy, itertools, collections
 
 class MatrixError(Exception):
   '''
@@ -41,12 +41,13 @@ class ToleranceNotReached(MatrixError):
     super().__init__('solver failed to reach tolerance')
     self.best = best
 
-class Matrix(metaclass=CacheMeta):
+class Matrix:
   'matrix base class'
 
   def __init__(self, shape):
     assert len(shape) == 2
     self.shape = shape
+    self._precon = object()
 
   def __reduce__(self):
     from . import assemble
@@ -112,22 +113,32 @@ class Matrix(metaclass=CacheMeta):
     Args
     ----
     rhs : :class:`float` vector or :any:`None`
-        Right hand side vector. `None` implies all zeros.
+        Right hand side vector. A :any:`None` value implies the zero vector.
     lhs0 : class:`float` vector or :any:`None`
-        Initial values. `None` implies all zeros.
-    constrain : :class:`float` or :class:`bool` array, or :any:`None`
-        Column constraints. For float values, a number signifies a constraint,
-        NaN signifies a free dof. For boolean, a True value signifies a
-        constraint to the value in `lhs0`, a False value signifies a free dof.
-        `None` implies no constraints.
+        Initial values: compute the solution by solving ``A dx = b - A lhs0``.
+        A :any:`None` value implies the zero vector, i.e. solving ``A x = b``
+        directly.
+    constrain : :class:`float` or :class:`bool` array, or :any:`None` Column
+        constraints. For float values, a number signifies a constraint, NaN
+        signifies a free dof. For boolean, a :any:`True` value signifies a
+        constraint to the value in ``lhs0``, a :any:`False` value signifies a
+        free dof. A :any:`None` value implies no constraints.
     rconstrain : :class:`bool` array or :any:`None`
         Row constrains. A True value signifies a constrains, a False value a free
-        dof. `None` implies that the constraints follow those defined in
-        `constrain` (by implication the matrix must be square).
+        dof. A :any:`None` value implies that the constraints follow those
+        defined in ``constrain`` (by implication the matrix must be square).
     solver : :class:`str`
         Name of the solver algorithm. The set of available solvers depends on
-        the type of the matrix (i.e. the active backend), although all matrices
-        should implement at least the 'direct' solver.
+        the type of the matrix (i.e. the active backend), although the 'direct'
+        solver is always available.
+    rtol : :class:`float`
+        Relative tolerance: see ``atol``.
+    atol : :class:`float`
+        Absolute tolerance: require that ``|A x - b| <= max(atol, rtol |b|)``
+        after applying constraints and the initial value. In case ``atol`` and
+        ``rtol`` are both zero (the defaults) solve to machine precision.
+        Otherwise fail with :class:`nutils.matrix.ToleranceNotReached` if the
+        requirement is not reached.
     **kwargs :
         All remaining arguments are passed on to the selected solver method.
 
@@ -136,16 +147,22 @@ class Matrix(metaclass=CacheMeta):
     :class:`numpy.ndarray`
         Left hand side vector.
     '''
+
+    # absent an initial guess and constraints we can directly forward to _solver
+    if lhs0 is constrain is rconstrain is None:
+      return self._solver(rhs, solver, atol=atol, rtol=rtol, **solverargs)
+
+    # otherwise we need to do some pre- and post-processing
     nrows, ncols = self.shape
     if rhs is None:
       rhs = numpy.zeros(nrows)
     if lhs0 is None:
-      x = numpy.zeros((ncols,)+rhs.shape[1:])
+      lhs = numpy.zeros((ncols,)+rhs.shape[1:])
     else:
-      x = numpy.array(lhs0, dtype=float)
-      while x.ndim < rhs.ndim:
-        x = x[...,numpy.newaxis].repeat(rhs.shape[x.ndim], axis=x.ndim)
-      assert x.shape == (ncols,)+rhs.shape[1:]
+      lhs = numpy.array(lhs0, dtype=float)
+      while lhs.ndim < rhs.ndim:
+        lhs = lhs[...,numpy.newaxis].repeat(rhs.shape[lhs.ndim], axis=lhs.ndim)
+      assert lhs.shape == (ncols,)+rhs.shape[1:]
     if constrain is None:
       J = numpy.ones(ncols, dtype=bool)
     else:
@@ -154,34 +171,15 @@ class Matrix(metaclass=CacheMeta):
         J = ~constrain
       else:
         J = numpy.isnan(constrain)
-        x[~J] = constrain[~J]
+        lhs[~J] = constrain[~J]
     if rconstrain is None:
       assert nrows == ncols
       I = J
     else:
       assert rconstrain.shape == (nrows,) and constrain.dtype == bool
       I = ~rconstrain
-    n = I.sum()
-    if J.sum() != n:
-      raise MatrixError('constrained matrix is not square: {}x{}'.format(I.sum(), J.sum()))
-    b = (rhs - self @ x)[J]
-    bnorm = numpy.linalg.norm(b)
-    atol = max(atol, rtol * bnorm)
-    if bnorm > atol:
-      treelog.info('solving {} dof system to {} using {} solver'.format(n, 'tolerance {:.0e}'.format(atol) if atol else 'machine precision', solver))
-      try:
-        x[J] += getattr(self.submatrix(I, J), 'solve_'+solver)(b, atol=atol, **solverargs)
-      except Exception as e:
-        raise MatrixError('solver failed with error: {}'.format(e)) from e
-      if not numpy.isfinite(x).all():
-        raise MatrixError('solver returned non-finite left hand side')
-      resnorm = numpy.linalg.norm((rhs - self @ x)[J])
-      treelog.info('solver returned with residual {:.0e}'.format(resnorm))
-      if resnorm > atol > 0:
-        raise ToleranceNotReached(x)
-    else:
-      treelog.info('skipping solver because initial vector is within tolerance')
-    return x
+    lhs[J] += self.submatrix(I, J)._solver((rhs - self @ lhs)[I], solver, atol=atol, rtol=rtol, **solverargs)
+    return lhs
 
   def solve_leniently(self, *args, **kwargs):
     '''
@@ -195,7 +193,77 @@ class Matrix(metaclass=CacheMeta):
       treelog.warning(e)
       return e.best
 
-  @abc.abstractmethod
+  def _method(self, prefix, attr):
+    if callable(attr):
+      return functools.partial(attr, self), getattr(attr, '__name__', 'user defined')
+    if isinstance(attr, str):
+      fullattr = '_' + prefix + '_' + attr
+      if hasattr(self, fullattr):
+        return getattr(self, fullattr), attr
+    raise MatrixError('invalid {} {!r} for {}'.format(prefix, attr, self.__class__.__name__))
+
+  def _solver(self, rhs, solver, *, atol, rtol, **solverargs):
+    if self.shape[0] != self.shape[1]:
+      raise MatrixError('constrained matrix is not square: {}x{}'.format(*self.shape))
+    if rhs.shape[0] != self.shape[0]:
+      raise MatrixError('right-hand size shape does not match matrix shape')
+    rhsnorm = numpy.linalg.norm(rhs, axis=0).max()
+    atol = max(atol, rtol * rhsnorm)
+    if rhsnorm <= atol:
+      treelog.info('skipping solver because initial vector is within tolerance')
+      return numpy.zeros_like(rhs)
+    solver_method, solver_name = self._method('solver', solver)
+    treelog.info('solving {} dof system to {} using {} solver'.format(self.shape[0], 'tolerance {:.0e}'.format(atol) if atol else 'machine precision', solver_name))
+    try:
+      lhs = solver_method(rhs, atol=atol, **solverargs)
+    except MatrixError:
+      raise
+    except Exception as e:
+      raise MatrixError('solver failed with error: {}'.format(e)) from e
+    if not numpy.isfinite(lhs).all():
+      raise MatrixError('solver returned non-finite left hand side')
+    resnorm = numpy.linalg.norm(rhs - self @ lhs, axis=0).max()
+    treelog.info('solver returned with residual {:.0e}'.format(resnorm))
+    if resnorm > atol > 0:
+      raise ToleranceNotReached(lhs)
+    return lhs
+
+  def _solver_direct(self, rhs, atol, precon='direct', history=0):
+    solve = self.getprecon(precon)
+    k = solve(rhs)
+    v = self @ k
+    v2 = numpy.square(v, order='F').sum(0) # use sum rather than dot for higher accuracy due to pairwise summation
+    c = numpy.multiply(v, rhs, order='F').sum(0) / v2 # min_c |rhs - c v| => c = rhs.v / v.v
+    lhs = k * c
+    res = rhs - self @ lhs
+    resnorm = numpy.linalg.norm(res, axis=0).max()
+    if not numpy.isfinite(resnorm) or resnorm <= atol:
+      return lhs
+    history = collections.deque(maxlen=history)
+    with treelog.iter.plain('refinement iteration', itertools.count(start=1)) as count:
+      for iiter in count:
+        history.append((k, v, v2))
+        k = solve(res)
+        v = self @ k
+        for k_, v_, v2_ in history: # orthogonolize v (modified Gramm-Schmidt)
+          c = numpy.multiply(v, v_, order='F').sum(0) / v2_
+          k -= k_ * c
+          v -= v_ * c
+        v2 = numpy.square(v, order='F').sum(0)
+        c = numpy.multiply(v, res, order='F').sum(0) / v2 # min_c |res - c v| => c = res.v / v.v
+        newlhs = k * c
+        newlhs += lhs
+        res = rhs - self @ newlhs # recompute rather than update to avoid drift
+        newresnorm = numpy.linalg.norm(res, axis=0).max()
+        if not numpy.isfinite(resnorm) or newresnorm >= resnorm:
+          treelog.debug('residual increased to {:.0e} (discarding)'.format(resnorm))
+          return lhs
+        lhs = newlhs
+        resnorm = newresnorm
+        treelog.debug('residual decreased to {:.0e}'.format(resnorm))
+        if resnorm <= atol:
+          return lhs
+
   def submatrix(self, rows, cols):
     '''Create submatrix from selected rows, columns.
 
@@ -210,6 +278,15 @@ class Matrix(metaclass=CacheMeta):
         Matrix instance of reduced dimensions
     '''
 
+    rows = numeric.asboolean(rows, self.shape[0])
+    cols = numeric.asboolean(cols, self.shape[1])
+    if rows.all() and cols.all():
+      return self
+
+    return self._submatrix(rows, cols)
+
+  @abc.abstractmethod
+  def _submatrix(self, rows, cols):
     raise NotImplementedError
 
   def export(self, form):
@@ -237,29 +314,30 @@ class Matrix(metaclass=CacheMeta):
       diag[irow] = data[indptr[irow]+idiag] if idiag < len(icols) and icols[idiag] == irow else 0
     return diag
 
+  def getprecon(self, precon):
+    if precon == self._precon:
+      return self._precon_object
+    if self.shape[0] != self.shape[1]:
+      raise MatrixError('matrix must be square')
+    precon_method, precon_name = self._method('precon', precon)
+    try:
+      with treelog.context('constructing {} preconditioner'.format(precon_name)):
+        precon_object = precon_method()
+    except MatrixError:
+      raise
+    except Exception as e:
+      raise MatrixError('failed to create preconditioner: {}'.format(e)) from e
+    self._precon = precon
+    self._precon_object = precon_object
+    return precon_object
+
+  def _precon_diag(self):
+    diag = self.diagonal()
+    if not diag.all():
+      raise MatrixError("building 'diag' preconditioner: diagonal has zero entries")
+    return numpy.reciprocal(diag).__mul__
+
   def __repr__(self):
     return '{}<{}x{}>'.format(type(self).__qualname__, *self.shape)
-
-def refine_to_tolerance(solve):
-  @functools.wraps(solve)
-  def wrapped(self, rhs, atol, **kwargs):
-    lhs = solve(self, rhs, **kwargs)
-    res = rhs - self @ lhs
-    resnorm = numpy.linalg.norm(res)
-    if not numpy.isfinite(resnorm) or resnorm <= atol:
-      return lhs
-    with treelog.iter.plain('refinement iteration', itertools.count(start=1)) as count:
-      for iiter in count:
-        newlhs = lhs + solve(self, res, **kwargs)
-        newres = rhs - self @ newlhs
-        newresnorm = numpy.linalg.norm(newres)
-        if not numpy.isfinite(resnorm) or newresnorm >= resnorm:
-          treelog.debug('residual increased to {:.0e} (discarding)'.format(newresnorm))
-          return lhs
-        treelog.debug('residual decreased to {:.0e}'.format(newresnorm))
-        lhs, res, resnorm = newlhs, newres, newresnorm
-        if resnorm <= atol:
-          return lhs
-  return wrapped
 
 # vim:sw=2:sts=2:et
