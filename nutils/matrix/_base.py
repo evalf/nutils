@@ -113,22 +113,32 @@ class Matrix:
     Args
     ----
     rhs : :class:`float` vector or :any:`None`
-        Right hand side vector. `None` implies all zeros.
+        Right hand side vector. A :any:`None` value implies the zero vector.
     lhs0 : class:`float` vector or :any:`None`
-        Initial values. `None` implies all zeros.
-    constrain : :class:`float` or :class:`bool` array, or :any:`None`
-        Column constraints. For float values, a number signifies a constraint,
-        NaN signifies a free dof. For boolean, a True value signifies a
-        constraint to the value in `lhs0`, a False value signifies a free dof.
-        `None` implies no constraints.
+        Initial values: compute the solution by solving ``A dx = b - A lhs0``.
+        A :any:`None` value implies the zero vector, i.e. solving ``A x = b``
+        directly.
+    constrain : :class:`float` or :class:`bool` array, or :any:`None` Column
+        constraints. For float values, a number signifies a constraint, NaN
+        signifies a free dof. For boolean, a :any:`True` value signifies a
+        constraint to the value in ``lhs0``, a :any:`False` value signifies a
+        free dof. A :any:`None` value implies no constraints.
     rconstrain : :class:`bool` array or :any:`None`
         Row constrains. A True value signifies a constrains, a False value a free
-        dof. `None` implies that the constraints follow those defined in
-        `constrain` (by implication the matrix must be square).
+        dof. A :any:`None` value implies that the constraints follow those
+        defined in ``constrain`` (by implication the matrix must be square).
     solver : :class:`str`
         Name of the solver algorithm. The set of available solvers depends on
-        the type of the matrix (i.e. the active backend), although all matrices
-        should implement at least the 'direct' solver.
+        the type of the matrix (i.e. the active backend), although the 'direct'
+        solver is always available.
+    rtol : :class:`float`
+        Relative tolerance: see ``atol``.
+    atol : :class:`float`
+        Absolute tolerance: require that ``|A x - b| <= max(atol, rtol |b|)``
+        after applying constraints and the initial value. In case ``atol`` and
+        ``rtol`` are both zero (the defaults) solve to machine precision.
+        Otherwise fail with :class:`nutils.matrix.ToleranceNotReached` if the
+        requirement is not reached.
     **kwargs :
         All remaining arguments are passed on to the selected solver method.
 
