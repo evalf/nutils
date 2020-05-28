@@ -34,7 +34,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, parallel, numeric, cache, transform, transformseq, warnings, matrix, types, points
+from . import element, function, util, parallel, numeric, cache, transform, transformseq, warnings, matrix, types, points, sparse
 from .sample import Sample
 from .elementseq import References
 from .pointsseq import PointsSequence
@@ -192,14 +192,15 @@ class Topology(types.Singleton):
     return Sample.new(transforms, points)
 
   @util.single_or_multiple
-  def integrate_elementwise(self, funcs, *, asfunction=False, **kwargs):
+  def integrate_elementwise(self, funcs, *, degree, asfunction=False, ischeme='gauss', arguments=None):
     'element-wise integration'
 
-    with matrix.Numpy():
-      retvals = self.integrate([function.Inflate(function.asarray(func)[_], dofmap=self.f_index[_], length=len(self), axis=0) for func in funcs], **kwargs)
-    retvals = [retval.export('dense') if len(retval.shape) == 2 else retval for retval in retvals]
-    return [function.Elemwise(retval, self.f_index, dtype=float) for retval in retvals] if asfunction \
-      else retvals
+    retvals = [sparse.toarray(retval) for retval in self.sample(ischeme, degree).integrate_sparse(
+      [function.kronecker(func, pos=self.f_index, length=len(self), axis=0) for func in funcs], arguments=arguments)]
+    if asfunction:
+      return [function.Elemwise(retval, self.f_index, dtype=float) for retval in retvals]
+    else:
+      return retvals
 
   @util.single_or_multiple
   def elem_mean(self, funcs, geometry=None, ischeme='gauss', degree=None, **kwargs):
