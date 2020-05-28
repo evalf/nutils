@@ -170,8 +170,8 @@ def inv(A):
 isarray = lambda a: isinstance(a, (numpy.ndarray, types.frozenarray))
 isboolarray = lambda a: isarray(a) and a.dtype == bool
 isbool = lambda a: isboolarray(a) and a.ndim == 0 or type(a) == bool
-isint = lambda a: isinstance(a, (numbers.Integral,numpy.integer))
-isnumber = lambda a: isinstance(a, (numbers.Number,numpy.generic))
+isint = lambda a: isinstance(a, numbers.Integral)
+isnumber = lambda a: isinstance(a, numbers.Number)
 isintarray = lambda a: isarray(a) and numpy.issubdtype(a.dtype, numpy.integer)
 asobjvector = lambda v: numpy.array((None,)+tuple(v), dtype=object)[1:] # 'None' prevents interpretation of objects as axes
 
