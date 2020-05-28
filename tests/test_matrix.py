@@ -200,14 +200,14 @@ class Numpy(Solver):
   def setUp(self):
     self.backend = 'numpy'
     self.args = [{},
-      dict(atol=1e-5, precon='diag', history=5)]
+      dict(atol=1e-5, precon='diag', truncate=5)]
     super().setUp()
 
 class Scipy(Solver):
   def setUp(self):
     self.backend = 'scipy'
     self.args = [{},
-      dict(atol=1e-5, precon='diag', history=5),
+      dict(atol=1e-5, precon='diag', truncate=5),
       dict(solver='gmres', atol=1e-5, restart=100, precon='spilu'),
       dict(solver='gmres', atol=1e-5, precon='splu'),
       dict(solver='cg', atol=1e-5, precon='diag')] + [
@@ -219,7 +219,7 @@ class MKL(Solver):
   def setUp(self):
     self.backend = 'mkl:' + self.threading
     self.args=[{},
-      dict(atol=1e-5, precon='diag', history=5),
+      dict(atol=1e-5, precon='diag', truncate=5),
       dict(solver='fgmres', atol=1e-8),
       dict(solver='fgmres', atol=1e-8, precon='diag')]
     super().setUp()
