@@ -19,7 +19,7 @@
 # THE SOFTWARE.
 
 from .. import numeric
-import abc, treelog, functools, numpy, itertools, collections
+import abc, treelog, functools, numpy, collections
 
 class MatrixError(Exception):
   '''
@@ -107,7 +107,7 @@ class Matrix:
     return supp
 
   @treelog.withcontext
-  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, solver='direct', atol=0., rtol=0., **solverargs):
+  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, solver='arnoldi', atol=0., rtol=0., **solverargs):
     '''Solve system given right hand side vector and/or constraints.
 
     Args
@@ -130,7 +130,7 @@ class Matrix:
     solver : :class:`str`
         Name of the solver algorithm. The set of available solvers depends on
         the type of the matrix (i.e. the active backend), although the 'direct'
-        solver is always available.
+        and 'arnoldi' solvers are always available.
     rtol : :class:`float`
         Relative tolerance: see ``atol``.
     atol : :class:`float`
@@ -228,41 +228,36 @@ class Matrix:
       raise ToleranceNotReached(lhs)
     return lhs
 
-  def _solver_direct(self, rhs, atol, precon='direct', history=0):
+  def _solver_direct(self, rhs, atol):
+    return self.getprecon('direct').solve(rhs)
+
+  def _solver_arnoldi(self, rhs, atol, precon='direct', truncate=None):
     solve = self.getprecon(precon)
-    k = solve(rhs)
-    v = self @ k
-    v2 = numpy.square(v, order='F').sum(0) # use sum rather than dot for higher accuracy due to pairwise summation
-    c = numpy.multiply(v, rhs, order='F').sum(0) / v2 # min_c |rhs - c v| => c = rhs.v / v.v
-    lhs = k * c
-    res = rhs - self @ lhs
+    lhs = numpy.zeros_like(rhs)
+    res = rhs
     resnorm = numpy.linalg.norm(res, axis=0).max()
-    if not numpy.isfinite(resnorm) or resnorm <= atol:
-      return lhs
-    history = collections.deque(maxlen=history)
-    with treelog.iter.plain('refinement iteration', itertools.count(start=1)) as count:
-      for iiter in count:
-        history.append((k, v, v2))
-        k = solve(res)
-        v = self @ k
-        for k_, v_, v2_ in history: # orthogonolize v (modified Gramm-Schmidt)
-          c = numpy.multiply(v, v_, order='F').sum(0) / v2_
-          k -= k_ * c
-          v -= v_ * c
-        v2 = numpy.square(v, order='F').sum(0)
-        c = numpy.multiply(v, res, order='F').sum(0) / v2 # min_c |res - c v| => c = res.v / v.v
-        newlhs = k * c
-        newlhs += lhs
-        res = rhs - self @ newlhs # recompute rather than update to avoid drift
-        newresnorm = numpy.linalg.norm(res, axis=0).max()
-        if not numpy.isfinite(resnorm) or newresnorm >= resnorm:
-          treelog.debug('residual increased to {:.0e} (discarding)'.format(resnorm))
-          return lhs
-        lhs = newlhs
-        resnorm = newresnorm
-        treelog.debug('residual decreased to {:.0e}'.format(resnorm))
-        if resnorm <= atol:
-          return lhs
+    krylov = collections.deque(maxlen=truncate) # unlimited if truncate is None
+    while resnorm > atol:
+      k = solve(res)
+      v = self @ k
+      # In the following we use sum rather than dot for slightly higher accuracy due to partial
+      # pairwise summation, see https://numpy.org/doc/stable/reference/generated/numpy.sum.html
+      for k_, v_, v2_ in krylov: # orthogonolize v (modified Gramm-Schmidt)
+        c = numpy.multiply(v, v_, order='F').sum(0) / v2_
+        k -= k_ * c
+        v -= v_ * c
+      v2 = numpy.square(v, order='F').sum(0)
+      c = numpy.multiply(v, res, order='F').sum(0) / v2 # min_c |res - c v| => c = res.v / v.v
+      newlhs = lhs + k * c
+      res = rhs - self @ newlhs # recompute rather than update to avoid drift
+      newresnorm = numpy.linalg.norm(res, axis=0).max()
+      if not numpy.isfinite(newresnorm) or newresnorm >= resnorm:
+        break
+      treelog.debug('residual decreased by {:.1f} orders using {} krylov vectors'.format(numpy.log10(resnorm/newresnorm), len(krylov)))
+      lhs = newlhs
+      resnorm = newresnorm
+      krylov.append((k, v, v2))
+    return lhs
 
   def submatrix(self, rows, cols):
     '''Create submatrix from selected rows, columns.
