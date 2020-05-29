@@ -107,7 +107,7 @@ class Matrix:
     return supp
 
   @treelog.withcontext
-  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, solver='direct', atol=0., rtol=0., **solverargs):
+  def solve(self, rhs=None, *, lhs0=None, constrain=None, rconstrain=None, solver='arnoldi', atol=0., rtol=0., **solverargs):
     '''Solve system given right hand side vector and/or constraints.
 
     Args
@@ -130,7 +130,7 @@ class Matrix:
     solver : :class:`str`
         Name of the solver algorithm. The set of available solvers depends on
         the type of the matrix (i.e. the active backend), although the 'direct'
-        solver is always available.
+        and 'arnoldi' solvers are always available.
     rtol : :class:`float`
         Relative tolerance: see ``atol``.
     atol : :class:`float`
@@ -228,7 +228,10 @@ class Matrix:
       raise ToleranceNotReached(lhs)
     return lhs
 
-  def _solver_direct(self, rhs, atol, precon='direct', history=0):
+  def _solver_direct(self, rhs, atol):
+    return self.getprecon('direct').solve(rhs)
+
+  def _solver_arnoldi(self, rhs, atol, precon='direct', history=0):
     solve = self.getprecon(precon)
     k = solve(rhs)
     v = self @ k
