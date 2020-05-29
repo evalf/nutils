@@ -231,7 +231,7 @@ class Matrix:
   def _solver_direct(self, rhs, atol):
     return self.getprecon('direct').solve(rhs)
 
-  def _solver_arnoldi(self, rhs, atol, precon='direct', truncate=0):
+  def _solver_arnoldi(self, rhs, atol, precon='direct', truncate=None):
     solve = self.getprecon(precon)
     lhs = numpy.zeros_like(rhs)
     res = rhs
