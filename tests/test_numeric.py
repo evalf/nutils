@@ -132,3 +132,49 @@ class asboolean(TestCase):
     self.assertAllEqual(numeric.asboolean([2,1], 3, ordered=False), [False, True, True])
     with self.assertRaises(Exception):
       numeric.asboolean([2,1], 3)
+
+class types:
+
+  def test_isint(self):
+    self.assertTrue(numeric.isint(1))
+    self.assertTrue(numeric.isint(numpy.array(1)))
+    self.assertTrue(numeric.isint(numpy.int32(1)))
+    self.assertTrue(numeric.isint(numpy.uint32(1)))
+    self.assertFalse(numeric.isint(1.5))
+    self.assertFalse(numeric.isint(numpy.array([1])))
+
+  def test_isbool(self):
+    self.assertTrue(numeric.isbool(True))
+    self.assertTrue(numeric.isbool(numpy.bool(True)))
+    self.assertTrue(numeric.isbool(numpy.array(True)))
+    self.assertFalse(numeric.isbool(numpy.array([True])))
+
+  def test_isnumber(self):
+    self.assertTrue(numeric.isnumber(1))
+    self.assertTrue(numeric.isnumber(numpy.array(1)))
+    self.assertTrue(numeric.isnumber(numpy.int32(1)))
+    self.assertTrue(numeric.isnumber(numpy.uint32(1)))
+    self.assertTrue(numeric.isnumber(1.5))
+    self.assertTrue(numeric.isnumber(numpy.float64(1.5)))
+    self.assertTrue(numeric.isnumber(numpy.array(1.5)))
+    self.assertFalse(numeric.isnumber(numpy.array([1])))
+
+  def test_isarray(self):
+    self.assertTrue(numeric.isarray(numpy.array([1,2,3])))
+    self.assertTrue(numeric.isarray(types.frozenarray([1,2,3])))
+    self.assertTrue(numeric.isarray(numpy.array(1)))
+    self.assertTrue(numeric.isarray(types.frozenarray(1)))
+
+  def test_isboolarray(self):
+    self.assertTrue(numeric.isboolarray(numpy.array(True)))
+    self.assertTrue(numeric.isboolarray(numpy.array([True])))
+    self.assertTrue(numeric.isboolarray(types.frozenarray([True])))
+    self.assertFalse(numeric.isboolarray(numpy.array([1])))
+    self.assertFalse(numeric.isboolarray(True))
+
+  def test_isboolarray(self):
+    self.assertTrue(numeric.isintarray(numpy.array(1)))
+    self.assertTrue(numeric.isintarray(numpy.array([1])))
+    self.assertTrue(numeric.isintarray(types.frozenarray([1])))
+    self.assertFalse(numeric.isintarray(numpy.array([1.5])))
+    self.assertFalse(numeric.isintarray(1.5))

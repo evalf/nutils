@@ -350,6 +350,15 @@ class general(TestCase):
       self.assertEqual(self.domain.connectivity[ielem][iedge], ioppelem)
       self.assertEqual(self.domain.connectivity[ioppelem][ioppedge], ielem)
 
+  def test_integrate_elementwise(self):
+    v = self.domain.integrate_elementwise(self.geom, degree=2)
+    self.assertEqual(v.shape, (len(self.domain), len(self.geom)))
+    vtot = self.domain.integrate(self.geom, degree=2)
+    self.assertAllAlmostEqual(v.sum(axis=0), vtot)
+    vf = self.domain.integrate_elementwise(self.geom, degree=2, asfunction=True)
+    v_ = self.domain.sample('uniform', 1).eval(vf)
+    self.assertAllAlmostEqual(v, v_)
+
 for isstructured in True, False:
   for periodic in False, 0, 1, 2:
     general(isstructured=isstructured, periodic=periodic)

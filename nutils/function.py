@@ -57,7 +57,7 @@ def simplified(value):
   return strictevaluable(value).simplified
 
 asdtype = lambda arg: arg if any(arg is dtype for dtype in (bool, int, float, complex)) else {'f': float, 'i': int, 'b': bool, 'c': complex}[numpy.dtype(arg).kind]
-asarray = lambda arg: arg if isarray(arg) else Constant(arg) if numeric.isarray(arg) or numpy.asarray(arg).dtype != object else stack(arg, axis=0)
+asarray = lambda arg: arg if isarray(arg) else stack(arg, axis=0) if _containsarray(arg) else Constant(arg)
 asarrays = types.tuple[asarray]
 
 def as_canonical_length(value):
@@ -3850,6 +3850,9 @@ def replace(func):
 
 def isarray(arg):
   return isinstance(arg, Array)
+
+def _containsarray(arg):
+  return any(map(_containsarray, arg)) if isinstance(arg, (list, tuple)) else isarray(arg)
 
 def iszero(arg):
   return isinstance(arg.simplified, Zeros)
