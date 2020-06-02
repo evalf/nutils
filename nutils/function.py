@@ -591,17 +591,12 @@ def multiply(a, b):
 def sum(arg, axis=None):
   '''Sum array elements over a given axis.'''
 
-  arg = asarray(arg)
   if axis is None:
-    axis = numpy.arange(arg.ndim)
-  elif numeric.isint(axis):
-    axis = numeric.normdim(arg.ndim, axis),
-  else:
-    axis = _norm_and_sort(arg.ndim, axis)
-    assert numpy.greater(numpy.diff(axis), 0).all(), 'duplicate axes in sum'
-  summed = arg
-  for ax in reversed(axis):
-    summed = Sum(summed, ax)
+    return Sum(arg)
+  axes = (axis,) if numeric.isint(axis) else axis
+  summed = Transpose.to_end(arg, *axes)
+  for i in range(len(axes)):
+    summed = Sum(summed)
   return summed
 
 def product(arg, axis):
@@ -1026,7 +1021,7 @@ class InsertAxis(Array):
   def _sum(self, i):
     if i == self.axis:
       return Multiply([self.func, _inflate_scalar(self.length, self.func.shape)])
-    return InsertAxis(Sum(self.func, i-(i>self.axis)), self.axis-(i<self.axis), self.length)
+    return InsertAxis(sum(self.func, i-(i>self.axis)), self.axis-(i<self.axis), self.length)
 
   def _product(self):
     if self.axis == self.ndim-1:
@@ -1158,8 +1153,10 @@ class Transpose(Array):
 
   def _sum(self, i):
     axis = self.axes[i]
-    axes = [ax-(ax>axis) for ax in self.axes if ax != axis]
-    return Transpose(Sum(self.func, axis), axes)
+    trysum = self.func._sum(axis)
+    if trysum is not None:
+      axes = [ax-(ax>axis) for ax in self.axes if ax != axis]
+      return Transpose(trysum, axes)
 
   def _derivative(self, var, seen):
     return transpose(derivative(self.func, var, seen), self.axes+tuple(range(self.ndim, self.ndim+var.ndim)))
@@ -1579,7 +1576,7 @@ class Add(Array):
     return arr1 + arr2
 
   def _sum(self, axis):
-    return Add([Sum(func, axis) for func in self.funcs])
+    return Add([sum(func, axis) for func in self.funcs])
 
   def _derivative(self, var, seen):
     func1, func2 = self.funcs
@@ -1666,37 +1663,37 @@ class Einsum(Array):
 
 class Sum(Array):
 
-  __slots__ = 'axis', 'func'
+  __slots__ = 'func'
 
   @types.apply_annotations
-  def __init__(self, func:asarray, axis:types.strictint):
-    self.axis = axis
+  def __init__(self, func:asarray):
+    if func.ndim == 0:
+      raise Exception('cannot sum a scalar function')
     self.func = func
-    assert 0 <= axis < func.ndim, 'axis out of bounds'
-    shape = func._axes[:axis] + func._axes[axis+1:]
+    shape = func._axes[:-1]
     super().__init__(args=[func], shape=shape, dtype=int if func.dtype == bool else func.dtype)
 
   def _simplified(self):
-    return self.func._sum(self.axis)
+    return self.func._sum(self.ndim)
 
   def evalf(self, arr):
     assert arr.ndim == self.ndim+2
-    return numpy.sum(arr, self.axis+1)
+    return numpy.sum(arr, -1)
 
   def _sum(self, axis):
-    trysum = self.func._sum(axis+(axis>=self.axis))
+    trysum = self.func._sum(axis)
     if trysum is not None:
-      return Sum(trysum, self.axis-(axis<self.axis))
+      return Sum(trysum)
 
   def _get(self, axis, item):
-    return Sum(Get(self.func, axis+(axis>=self.axis), item), self.axis-(axis<self.axis))
+    return Sum(Get(self.func, axis, item))
 
   def _derivative(self, var, seen):
-    return sum(derivative(self.func, var, seen), self.axis)
+    return sum(derivative(self.func, var, seen), self.ndim)
 
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
-    return [(ind, f.sum(self.axis)) for ind, f in self.func._desparsify(axis+(axis>=self.axis))]
+    return [(ind, Sum(f)) for ind, f in self.func._desparsify(axis)]
 
 class TakeDiag(Array):
 
@@ -1738,7 +1735,7 @@ class TakeDiag(Array):
 
   def _sum(self, axis):
     if axis != self.axis:
-      return TakeDiag(Sum(self.func, axis+(axis>=self.rmaxis)), self.axis-(axis<self.axis), self.rmaxis-(axis<self.rmaxis))
+      return TakeDiag(sum(self.func, axis+(axis>=self.rmaxis)), self.axis-(axis<self.axis), self.rmaxis-(axis<self.rmaxis))
 
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
@@ -1789,7 +1786,7 @@ class Take(Array):
 
   def _sum(self, axis):
     if axis != self.axis:
-      return Take(Sum(self.func, axis), self.indices, self.axis-(axis<self.axis))
+      return Take(sum(self.func, axis), self.indices, self.axis-(axis<self.axis))
 
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
@@ -2320,7 +2317,7 @@ class Inflate(Array):
       return Inflate(Diagonalize(self.func, axis, newaxis), self.dofmap, self.length, self.axis+(newaxis<=self.axis))
 
   def _sum(self, axis):
-    arr = Sum(self.func, axis)
+    arr = sum(self.func, axis)
     if axis == self.axis:
       return arr
     return Inflate(arr, self.dofmap, self.length, self.axis-(axis<self.axis))
@@ -2397,7 +2394,7 @@ class Diagonalize(Array):
       return self.func
     if axis == self.axis:
       return Transpose(self.func, list(range(self.axis))+list(range(self.axis+1,self.newaxis))+[self.axis]+list(range(self.newaxis,self.func.ndim)))
-    return Diagonalize(Sum(self.func, axis-(axis>self.newaxis)), self.axis-(axis<self.axis), self.newaxis-(axis<self.newaxis))
+    return Diagonalize(sum(self.func, axis-(axis>self.newaxis)), self.axis-(axis<self.axis), self.newaxis-(axis<self.newaxis))
 
   def _transpose(self, axes):
     axis = axes.index(self.axis)
@@ -2699,8 +2696,8 @@ class Ravel(Array):
 
   def _sum(self, axis):
     if axis == self.axis:
-      return Sum(Sum(self.func, axis), axis)
-    return Ravel(Sum(self.func, axis+(axis>self.axis)), self.axis-(axis<self.axis))
+      return sum(self.func, [axis, axis+1])
+    return Ravel(sum(self.func, axis+(axis>self.axis)), self.axis-(axis<self.axis))
 
   def _derivative(self, var, seen):
     return ravel(derivative(self.func, var, seen), axis=self.axis)
@@ -2820,7 +2817,7 @@ class Unravel(Array):
 
   def _sum(self, axis):
     if not self.axis <= axis < self.axis+2:
-      return Unravel(Sum(self.func, axis-(axis>self.axis)), self.axis-(axis<self.axis), self.unravelshape)
+      return Unravel(sum(self.func, axis-(axis>self.axis)), self.axis-(axis<self.axis), self.unravelshape)
 
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
