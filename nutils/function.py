@@ -431,17 +431,12 @@ def multiply(a, b):
 def sum(arg, axis=None):
   '''Sum array elements over a given axis.'''
 
-  arg = asarray(arg)
   if axis is None:
-    axis = numpy.arange(arg.ndim)
-  elif numeric.isint(axis):
-    axis = numeric.normdim(arg.ndim, axis),
-  else:
-    axis = _norm_and_sort(arg.ndim, axis)
-    assert numpy.greater(numpy.diff(axis), 0).all(), 'duplicate axes in sum'
-  summed = arg
-  for ax in reversed(axis):
-    summed = Sum(summed, ax)
+    return Sum(arg)
+  axes = (axis,) if numeric.isint(axis) else axis
+  summed = Transpose.to_end(arg, *axes)
+  for i in range(len(axes)):
+    summed = Sum(summed)
   return summed
 
 def product(arg, axis):
@@ -807,7 +802,7 @@ class InsertAxis(Array):
   def _sum(self, i):
     if i == self.axis:
       return Multiply([self.func, _inflate_scalar(self.length, self.func.shape)])
-    return InsertAxis(Sum(self.func, i-(i>self.axis)), self.axis-(i<self.axis), self.length)
+    return InsertAxis(sum(self.func, i-(i>self.axis)), self.axis-(i<self.axis), self.length)
 
   def _product(self):
     if self.axis == self.ndim-1:
@@ -954,8 +949,10 @@ class Transpose(Array):
 
   def _sum(self, i):
     axis = self.axes[i]
-    axes = [ax-(ax>axis) for ax in self.axes if ax != axis]
-    return Transpose(Sum(self.func, axis), axes)
+    trysum = self.func._sum(axis)
+    if trysum is not None:
+      axes = [ax-(ax>axis) for ax in self.axes if ax != axis]
+      return Transpose(trysum, axes)
 
   def _derivative(self, var, seen):
     return transpose(derivative(self.func, var, seen), self.axes+tuple(range(self.ndim, self.ndim+var.ndim)))
@@ -1294,7 +1291,7 @@ class Concatenate(Array):
     return Concatenate([Add(f12) for f12 in zip(self.funcs, other_funcs)], self.axis)
 
   def _sum(self, axis):
-    funcs = [Sum(func, axis) for func in self.funcs]
+    funcs = [sum(func, axis) for func in self.funcs]
     if axis == self.axis:
       while len(funcs) > 1:
         funcs[-2:] = Add(funcs[-2:]),
@@ -1588,7 +1585,7 @@ class Add(Array):
     return arr1 + arr2
 
   def _sum(self, axis):
-    return Add([Sum(func, axis) for func in self.funcs])
+    return Add([sum(func, axis) for func in self.funcs])
 
   def _derivative(self, var, seen):
     func1, func2 = self.funcs
@@ -1657,25 +1654,24 @@ class Einsum(Array):
 
 class Sum(Array):
 
-  __slots__ = 'axis', 'func'
+  __slots__ = 'func'
   __cache__ = 'simplified', 'optimized_for_numpy', 'blocks'
 
   @types.apply_annotations
-  def __init__(self, func:asarray, axis:types.strictint):
-    self.axis = axis
+  def __init__(self, func:asarray):
+    if func.ndim == 0:
+      raise Exception('cannot sum a scalar function')
     self.func = func
-    assert 0 <= axis < func.ndim, 'axis out of bounds'
-    shape = func.shape[:axis] + func.shape[axis+1:]
-    super().__init__(args=[func], shape=shape, dtype=int if func.dtype == bool else func.dtype)
+    super().__init__(args=[func], shape=func.shape[:-1], dtype=int if func.dtype == bool else func.dtype)
 
   @property
   def simplified(self):
     func = self.func.simplified
-    retval = func._sum(self.axis)
+    retval = func._sum(func.ndim-1)
     if retval is not None:
       assert retval.shape == self.shape
       return retval.simplified
-    return Sum(func, self.axis)
+    return Sum(func)
 
   @property
   def optimized_for_numpy(self):
@@ -1683,30 +1679,30 @@ class Sum(Array):
     if isinstance(func, Einsum):
       mask = numpy.array(func.mask)
       axes, = mask.nonzero()
-      axis = axes[self.axis]
+      axis = axes[-1]
       if mask[axis] == 3:
         mask[axis] = 0
         return Einsum(func.func1, func.func2, mask)
-    return Sum(func, self.axis)
+    return Sum(func)
 
   def evalf(self, arr):
     assert arr.ndim == self.ndim+2
-    return numpy.sum(arr, self.axis+1)
+    return numpy.sum(arr, -1)
 
   def _sum(self, axis):
-    trysum = self.func._sum(axis+(axis>=self.axis))
+    trysum = self.func._sum(axis)
     if trysum is not None:
-      return Sum(trysum, self.axis-(axis<self.axis))
+      return Sum(trysum)
 
   def _get(self, axis, item):
-    return Sum(Get(self.func, axis+(axis>=self.axis), item), self.axis-(axis<self.axis))
+    return Sum(Get(self.func, axis, item))
 
   def _derivative(self, var, seen):
-    return sum(derivative(self.func, var, seen), self.axis)
+    return sum(derivative(self.func, var, seen), self.ndim)
 
   @property
   def blocks(self):
-    return _gatherblocks((ind[:self.axis] + ind[self.axis+1:], f.sum(self.axis)) for ind, f in self.func.blocks)
+    return _gatherblocks((ind[:-1], Sum(f)) for ind, f in self.func.blocks)
 
 class TakeDiag(Array):
 
@@ -1761,7 +1757,7 @@ class TakeDiag(Array):
 
   def _sum(self, axis):
     if axis != self.axis:
-      return TakeDiag(Sum(self.func, axis+(axis>=self.rmaxis)), self.axis-(axis<self.axis), self.rmaxis-(axis<self.rmaxis))
+      return TakeDiag(sum(self.func, axis+(axis>=self.rmaxis)), self.axis-(axis<self.axis), self.rmaxis-(axis<self.rmaxis))
 
   @property
   def blocks(self):
@@ -1853,7 +1849,7 @@ class Take(Array):
 
   def _sum(self, axis):
     if axis != self.axis:
-      return Take(Sum(self.func, axis), self.indices, self.axis-(axis<self.axis))
+      return Take(sum(self.func, axis), self.indices, self.axis-(axis<self.axis))
 
   @property
   def blocks(self):
@@ -2410,7 +2406,7 @@ class Inflate(Array):
       return Inflate(Diagonalize(self.func, axis, newaxis), self.dofmap, self.length, self.axis+(newaxis<=self.axis))
 
   def _sum(self, axis):
-    arr = Sum(self.func, axis)
+    arr = sum(self.func, axis)
     if axis == self.axis:
       return arr
     return Inflate(arr, self.dofmap, self.length, self.axis-(axis<self.axis))
@@ -2493,7 +2489,7 @@ class Diagonalize(Array):
       return self.func
     if axis == self.axis:
       return Transpose(self.func, list(range(self.axis))+list(range(self.axis+1,self.newaxis))+[self.axis]+list(range(self.newaxis,self.func.ndim)))
-    return Diagonalize(Sum(self.func, axis-(axis>self.newaxis)), self.axis-(axis<self.axis), self.newaxis-(axis<self.newaxis))
+    return Diagonalize(sum(self.func, axis-(axis>self.newaxis)), self.axis-(axis<self.axis), self.newaxis-(axis<self.newaxis))
 
   def _transpose(self, axes):
     axis = axes.index(self.axis)
@@ -2813,8 +2809,8 @@ class Ravel(Array):
 
   def _sum(self, axis):
     if axis == self.axis:
-      return Sum(Sum(self.func, axis), axis)
-    return Ravel(Sum(self.func, axis+(axis>self.axis)), self.axis-(axis<self.axis))
+      return sum(self.func, [axis, axis+1])
+    return Ravel(sum(self.func, axis+(axis>self.axis)), self.axis-(axis<self.axis))
 
   def _derivative(self, var, seen):
     return ravel(derivative(self.func, var, seen), axis=self.axis)
@@ -2942,7 +2938,7 @@ class Unravel(Array):
 
   def _sum(self, axis):
     if not self.axis <= axis < self.axis+2:
-      return Unravel(Sum(self.func, axis-(axis>self.axis)), self.axis-(axis<self.axis), self.unravelshape)
+      return Unravel(sum(self.func, axis-(axis>self.axis)), self.axis-(axis<self.axis), self.unravelshape)
 
   @property
   def blocks(self):
@@ -3008,7 +3004,7 @@ class Mask(Array):
 
   def _sum(self, axis):
     if axis != self.axis:
-      return Mask(Sum(self.func, axis), self.mask, self.axis-(axis<self.axis))
+      return Mask(sum(self.func, axis), self.mask, self.axis-(axis<self.axis))
 
   @property
   def blocks(self):
