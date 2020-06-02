@@ -103,5 +103,5 @@ class test(testing.TestCase):
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
       eNpjYMACGsiHP0wxMQBKlBdi''')
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
-      eNpjYMAEFsaTjdcYvTFcasTAsMZI5JyFce6ZKSavjbNMFhhFmPz/n2WScHaKieiZRFMmk3DTrUaBpv//
-      h5t6n000/Xf6hymLyQ/TbUY/gGI/TL3O/jD9cxoASiglXw==''')
+      eNpjYMAEFsaTjdcYvTFcasTAsMZI5JyFce6ZKSavjbNMFhhFmDAwZJkknJ1iInom0ZTJJNx0q1GgKQND
+      uKn32UTTf6d/mLKY/DDdZvQDKPbD1OvsD9M/pwGZyh9l''')
