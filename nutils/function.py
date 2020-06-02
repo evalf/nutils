@@ -797,7 +797,7 @@ class InsertAxis(Array):
       if item.isconstant and self.length.isconstant:
         assert item.eval()[0] < self.length.eval()[0]
       return self.func
-    return InsertAxis(Get(self.func, i-(i>self.axis), item), self.axis-(i<self.axis), self.length)
+    return InsertAxis(get(self.func, i-(i>self.axis), item), self.axis-(i<self.axis), self.length)
 
   def _sum(self, i):
     if i == self.axis:
@@ -944,8 +944,10 @@ class Transpose(Array):
 
   def _get(self, i, item):
     axis = self.axes[i]
-    axes = [ax-(ax>axis) for ax in self.axes if ax != axis]
-    return Transpose(Get(self.func, axis, item), axes)
+    tryget = self.func._get(axis, item)
+    if tryget is not None:
+      axes = [ax-(ax>axis) for ax in self.axes if ax != axis]
+      return Transpose(tryget, axes)
 
   def _sum(self, i):
     axis = self.axes[i]
@@ -1009,29 +1011,30 @@ class Transpose(Array):
 
 class Get(Array):
 
-  __slots__ = 'func', 'axis', 'item'
+  __slots__ = 'func', 'item'
   __cache__ = 'simplified',
 
   @types.apply_annotations
-  def __init__(self, func:asarray, axis:types.strictint, item:asarray):
-    assert item.ndim == 0 and item.dtype == int
+  def __init__(self, func:asarray, item:asarray):
+    if func.ndim == 0:
+      raise Exception('cannot get item from a scalar function')
+    if item.ndim != 0 or item.dtype != int:
+      raise Exception('invalid item in get')
     self.func = func
-    self.axis = axis
     self.item = item
-    assert 0 <= axis < func.ndim, 'axis is out of bounds'
-    if item.isconstant and numeric.isint(func.shape[axis]):
-      assert 0 <= item.eval()[0] < func.shape[axis], 'item is out of bounds'
-    super().__init__(args=[func, item], shape=func.shape[:axis]+func.shape[axis+1:], dtype=func.dtype)
+    if item.isconstant and numeric.isint(func.shape[-1]):
+      assert 0 <= item.eval()[0] < func.shape[-1], 'item is out of bounds'
+    super().__init__(args=[func, item], shape=func.shape[:-1], dtype=func.dtype)
 
   @property
   def simplified(self):
     func = self.func.simplified
     item = self.item.simplified
-    retval = func._get(self.axis, item)
+    retval = func._get(func.ndim-1, item)
     if retval is not None:
       assert retval.shape == self.shape
       return retval.simplified
-    return Get(func, self.axis, item)
+    return Get(func, item)
 
   def evalf(self, arr, item):
     if len(item) == 1:
@@ -1041,16 +1044,16 @@ class Get(Array):
       p = numpy.zeros(len(item), dtype=int)
     else:
       p = numpy.arange(len(item))
-    return arr[(p,)+(slice(None),)*self.axis+(item,)]
+    return arr[p,...,item]
 
   def _derivative(self, var, seen):
     f = derivative(self.func, var, seen)
-    return get(f, self.axis, self.item)
+    return get(f, self.ndim, self.item)
 
   def _get(self, i, item):
-    tryget = self.func._get(i+(i>=self.axis), item)
+    tryget = self.func._get(i, item)
     if tryget is not None:
-      return Get(tryget, self.axis-(i<self.axis), self.item)
+      return Get(tryget, self.item)
 
 class Product(Array):
 
@@ -1087,7 +1090,7 @@ class Product(Array):
     #return self[ext] * (derivative(self.func,var,shape,seen) / self.func[ext]).sum(self.ndim)
 
   def _get(self, i, item):
-    func = Get(self.func, i, item)
+    func = get(self.func, i, item)
     return Product(func)
 
   def _take(self, indices, axis):
@@ -1171,7 +1174,7 @@ class Inverse(Array):
 
   def _get(self, i, item):
     if i < self.ndim - 2:
-      return Inverse(Get(self.func, i, item))
+      return Inverse(get(self.func, i, item))
 
   def _take(self, indices, axis):
     if axis < self.ndim - 2:
@@ -1266,12 +1269,12 @@ class Concatenate(Array):
   def _get(self, i, item):
     if i != self.axis:
       axis = self.axis - (self.axis > i)
-      return Concatenate([Get(f, i, item) for f in self.funcs], axis=axis)
+      return Concatenate([get(f, i, item) for f in self.funcs], axis=axis)
     if item.isconstant:
       item, = item.eval()
       for f in self.funcs:
         if item < f.shape[i]:
-          return Get(f, i, item)
+          return get(f, i, item)
         item -= f.shape[i]
       raise Exception
 
@@ -1390,7 +1393,7 @@ class Determinant(Array):
     return self[ext] * sum(Finv[ext] * G, axis=[-2-var.ndim,-1-var.ndim])
 
   def _get(self, axis, item):
-    return Determinant(Get(self.func, axis, item))
+    return Determinant(get(self.func, axis, item))
 
   def _take(self, index, axis):
     return Determinant(Take(self.func, index, axis))
@@ -1457,7 +1460,7 @@ class Multiply(Array):
 
   def _get(self, axis, item):
     func1, func2 = self.funcs
-    return Multiply([Get(func1, axis, item), Get(func2, axis, item)])
+    return Multiply([get(func1, axis, item), get(func2, axis, item)])
 
   def _add(self, other):
     func1, func2 = self.funcs
@@ -1593,7 +1596,7 @@ class Add(Array):
 
   def _get(self, axis, item):
     func1, func2 = self.funcs
-    return Add([Get(func1, axis, item), Get(func2, axis, item)])
+    return Add([get(func1, axis, item), get(func2, axis, item)])
 
   def _takediag(self, axis, rmaxis):
     func1, func2 = self.funcs
@@ -1695,7 +1698,7 @@ class Sum(Array):
       return Sum(trysum)
 
   def _get(self, axis, item):
-    return Sum(Get(self.func, axis, item))
+    return Sum(get(self.func, axis, item))
 
   def _derivative(self, var, seen):
     return sum(derivative(self.func, var, seen), self.ndim)
@@ -1738,8 +1741,8 @@ class TakeDiag(Array):
 
   def _get(self, axis, item):
     if axis == self.axis:
-      return Get(Get(self.func, self.rmaxis, item), self.axis, item)
-    return TakeDiag(Get(self.func, axis+(axis>=self.rmaxis), item), self.axis-(axis<self.axis), self.rmaxis-(axis<self.rmaxis))
+      return get(get(self.func, self.rmaxis, item), self.axis, item)
+    return TakeDiag(get(self.func, axis+(axis>=self.rmaxis), item), self.axis-(axis<self.axis), self.rmaxis-(axis<self.rmaxis))
 
   def _take(self, index, axis):
     if axis == self.axis:
@@ -1837,8 +1840,8 @@ class Take(Array):
 
   def _get(self, axis, item):
     if axis == self.axis:
-      return Get(self.func, axis, Get(self.indices, 0, item))
-    return Take(Get(self.func, axis, item), self.indices, self.axis-(axis<self.axis))
+      return get(self.func, axis, get(self.indices, 0, item))
+    return Take(get(self.func, axis, item), self.indices, self.axis-(axis<self.axis))
 
   def _take(self, index, axis):
     if axis == self.axis:
@@ -1906,7 +1909,7 @@ class Power(Array):
     return Power(func, newpower)
 
   def _get(self, axis, item):
-    return Power(Get(self.func, axis, item), Get(self.power, axis, item))
+    return Power(get(self.func, axis, item), get(self.power, axis, item))
 
   def _takediag(self, axis, rmaxis):
     return Power(TakeDiag(self.func, axis, rmaxis), TakeDiag(self.power, axis, rmaxis))
@@ -1977,7 +1980,7 @@ class Pointwise(Array):
     return self.__class__(*[TakeDiag(arg, axis, rmaxis) for arg in self.args])
 
   def _get(self, axis, item):
-    return self.__class__(*[Get(arg, axis, item) for arg in self.args])
+    return self.__class__(*[get(arg, axis, item) for arg in self.args])
 
   def _take(self, index, axis):
     return self.__class__(*[Take(arg, index, axis) for arg in self.args])
@@ -2099,7 +2102,7 @@ class Sign(Array):
     return Sign(TakeDiag(self.func, axis, rmaxis))
 
   def _get(self, axis, item):
-    return Sign(Get(self.func, axis, item))
+    return Sign(get(self.func, axis, item))
 
   def _take(self, index, axis):
     return Sign(Take(self.func, index, axis))
@@ -2155,7 +2158,7 @@ class Elemwise(Array):
   def __init__(self, data:types.tuple[types.frozenarray], index:asarray, dtype:asdtype):
     self.data = data
     ndim = self.data[0].ndim
-    shape = tuple(get([d.shape[i] for d in self.data], iax=0, item=index) for i in range(ndim))
+    shape = tuple(get([d.shape[i] for d in self.data], 0, index) for i in range(ndim))
     super().__init__(args=[index], shape=shape, dtype=dtype)
 
   def evalf(self, index):
@@ -2373,11 +2376,11 @@ class Inflate(Array):
 
   def _get(self, axis, item):
     if axis != self.axis:
-      return Inflate(Get(self.func,axis,item), self.dofmap, self.length, self.axis-(axis<self.axis))
+      return Inflate(get(self.func,axis,item), self.dofmap, self.length, self.axis-(axis<self.axis))
     if self.dofmap.isconstant and item.isconstant:
       dofmap, = self.dofmap.eval()
       item, = item.eval()
-      return Get(self.func, axis, tuple(dofmap).index(item)) if item in dofmap \
+      return get(self.func, axis, tuple(dofmap).index(item)) if item in dofmap \
         else Zeros(self.shape[:axis]+self.shape[axis+1:], self.dtype)
 
   def _multiply(self, other):
@@ -2466,8 +2469,8 @@ class Diagonalize(Array):
 
   def _get(self, i, item):
     if i != self.axis and i != self.newaxis:
-      return Diagonalize(Get(self.func, i-(i>self.newaxis), item), self.axis-(i<self.axis), self.newaxis-(i<self.newaxis))
-    return kronecker(Get(self.func, self.axis, item), axis=self.axis if i == self.newaxis else self.newaxis-1, length=self.shape[i], pos=item)
+      return Diagonalize(get(self.func, i-(i>self.newaxis), item), self.axis-(i<self.axis), self.newaxis-(i<self.newaxis))
+    return kronecker(get(self.func, self.axis, item), axis=self.axis if i == self.newaxis else self.newaxis-1, length=self.shape[i], pos=item)
 
   def _inverse(self):
     if self.axis == self.func.ndim-1 and self.newaxis == self.ndim-1:
@@ -2801,11 +2804,11 @@ class Ravel(Array):
 
   def _get(self, i, item):
     if i != self.axis:
-      return Ravel(Get(self.func, i+(i>self.axis), item), self.axis-(i<self.axis))
+      return Ravel(get(self.func, i+(i>self.axis), item), self.axis-(i<self.axis))
     if item.isconstant and numeric.isint(self.func.shape[self.axis+1]):
       item, = item.eval()
       i, j = divmod(item, self.func.shape[self.axis+1])
-      return Get(Get(self.func, self.axis, i), self.axis, j)
+      return get(get(self.func, self.axis, i), self.axis, j)
 
   def _sum(self, axis):
     if axis == self.axis:
@@ -2914,7 +2917,7 @@ class Unravel(Array):
 
   def _get(self, axis, item):
     if not self.axis <= axis < self.axis+2:
-      return Unravel(Get(self.func, axis-(axis>self.axis), item), self.axis-(axis<self.axis), self.unravelshape)
+      return Unravel(get(self.func, axis-(axis>self.axis), item), self.axis-(axis<self.axis), self.unravelshape)
 
   def _determinant(self):
     if self.axis < self.func.ndim-2:
@@ -2982,11 +2985,11 @@ class Mask(Array):
 
   def _get(self, i, item):
     if i != self.axis:
-      return Mask(Get(self.func, i, item), self.mask, self.axis-(i<self.axis))
+      return Mask(get(self.func, i, item), self.mask, self.axis-(i<self.axis))
     if item.isconstant:
       item, = item.eval()
       where, = self.mask.nonzero()
-      return Get(self.func, i, where[item])
+      return get(self.func, i, where[item])
 
   def _take(self, index, axis):
     if axis != self.axis:
@@ -3113,7 +3116,7 @@ class Polyval(Array):
       coeffs = self.coeffs
       for i in reversed(range(self.points_ndim)):
         p = builtins.sum(k==i for k in j)
-        coeffs = math.factorial(p)*Get(coeffs, axis=i+self.coeffs.ndim-self.points_ndim, item=p)
+        coeffs = math.factorial(p)*get(coeffs, i+self.coeffs.ndim-self.points_ndim, p)
       return coeffs
     else:
       return stack([self._const_helper(*j, k) for k in range(self.points_ndim)], axis=self.coeffs.ndim-self.points_ndim+self.ngrad-len(j)-1)
@@ -3986,7 +3989,7 @@ def arctanh(arg):
   return .5 * (ln(1+arg) - ln(1-arg))
 
 def piecewise(level, intervals, *funcs):
-  return Get(stack(funcs, axis=0), axis=0, item=util.sum(Int(greater(level, interval)) for interval in intervals))
+  return get(stack(funcs, axis=0), 0, util.sum(Int(greater(level, interval)) for interval in intervals))
 
 def partition(f, *levels):
   '''Create a partition of unity for a scalar function f.
@@ -4163,13 +4166,7 @@ def repeat(arg, length, axis):
   return insertaxis(get(arg, axis, 0), axis, length)
 
 def get(arg, iax, item):
-  arg = asarray(arg)
-  item = asarray(item)
-  iax = numeric.normdim(arg.ndim, iax)
-  sh = arg.shape[iax]
-  if numeric.isint(sh) and item.isconstant:
-    item = numeric.normdim(sh, item.eval()[0])
-  return Get(arg, iax, item)
+  return Get(Transpose.to_end(arg, iax), item)
 
 def jacobian(geom, ndims):
   '''
