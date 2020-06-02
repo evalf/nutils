@@ -1052,7 +1052,7 @@ class InsertAxis(Array):
   def _take(self, index, axis):
     if axis == self.axis:
       return InsertAxis(self.func, self.axis, index.shape[0])
-    return InsertAxis(Take(self.func, index, axis-(axis>self.axis)), self.axis, self.length)
+    return InsertAxis(_take(self.func, index, axis-(axis>self.axis)), self.axis, self.length)
 
   def _takediag(self, axis1, axis2):
     assert axis1 < axis2
@@ -1180,7 +1180,9 @@ class Transpose(Array):
       return Transpose(Add([self.func, other_trans]), self.axes)
 
   def _take(self, indices, axis):
-    return Transpose(Take(self.func, indices, self.axes[axis]), self.axes)
+    trytake = self.func._take(indices, self.axes[axis])
+    if trytake is not None:
+      return Transpose(trytake, self.axes)
 
   def _axes_for(self, ndim, axis):
     funcaxis = self.axes[axis]
@@ -1291,7 +1293,7 @@ class Product(Array):
     return Product(func)
 
   def _take(self, indices, axis):
-    return Product(Take(self.func, indices, axis))
+    return Product(_take(self.func, indices, axis))
 
   def _takediag(self, axis1, axis2):
     return product(_takediag(self.func, axis1, axis2), self.ndim-2)
@@ -1368,7 +1370,7 @@ class Inverse(Array):
 
   def _take(self, indices, axis):
     if axis < self.ndim - 2:
-      return Inverse(Take(self.func, indices, axis))
+      return Inverse(_take(self.func, indices, axis))
 
   def _takediag(self, axis1, axis2):
     assert axis1 < axis2
@@ -1427,7 +1429,7 @@ class Determinant(Array):
     return Determinant(get(self.func, axis, item))
 
   def _take(self, index, axis):
-    return Determinant(Take(self.func, index, axis))
+    return Determinant(_take(self.func, index, axis))
 
   def _takediag(self, axis1, axis2):
     return determinant(_takediag(self.func, axis1, axis2), (self.ndim-2, self.ndim-1))
@@ -1535,7 +1537,7 @@ class Multiply(Array):
 
   def _take(self, index, axis):
     func1, func2 = self.funcs
-    return Multiply([Take(func1, index, axis), Take(func2, index, axis)])
+    return Multiply([_take(func1, index, axis), _take(func2, index, axis)])
 
   def _sign(self):
     return Multiply([Sign(func) for func in self.funcs])
@@ -1606,7 +1608,7 @@ class Add(Array):
 
   def _take(self, index, axis):
     func1, func2 = self.funcs
-    return Add([Take(func1, index, axis), Take(func2, index, axis)])
+    return Add([_take(func1, index, axis), _take(func2, index, axis)])
 
   def _add(self, other):
     func1, func2 = self.funcs
@@ -1741,9 +1743,9 @@ class TakeDiag(Array):
     return TakeDiag(get(self.func, axis, item))
 
   def _take(self, index, axis):
-    func = Take(self.func, index, axis)
+    func = _take(self.func, index, axis)
     if axis == self.ndim - 1:
-      func = Take(func, index, self.ndim)
+      func = _take(func, index, self.ndim)
     return TakeDiag(func)
 
   def _sum(self, axis):
@@ -1757,54 +1759,55 @@ class TakeDiag(Array):
 
 class Take(Array):
 
-  __slots__ = 'func', 'axis', 'indices'
+  __slots__ = 'func', 'indices'
 
   @types.apply_annotations
-  def __init__(self, func:asarray, indices:asarray, axis:types.strictint):
-    assert indices.ndim == 1 and indices.dtype == int
-    assert 0 <= axis < func.ndim
+  def __init__(self, func:asarray, indices:asarray):
+    if func.ndim == 0:
+      raise Exception('cannot take a scalar function')
+    if indices.ndim != 1 or indices.dtype != int:
+      raise Exception('invalid indices argument for take')
     self.func = func
-    self.axis = axis
     self.indices = indices
-    shape = func._axes[:axis] + indices.shape + func._axes[axis+1:]
+    shape = func._axes[:-1] + indices.shape
     super().__init__(args=[func,indices], shape=shape, dtype=func.dtype)
 
   def _simplified(self):
-    if self.shape[self.axis] == 0:
+    if self.shape[-1] == 0:
       return zeros_like(self)
-    length = self.func.shape[self.axis]
+    length = self.func.shape[-1]
     if self.indices == Range(length):
       return self.func
-    return self.func._take(self.indices, self.axis)
+    return self.func._take(self.indices, self.ndim-1)
 
   def evalf(self, arr, indices):
     if indices.shape[0] != 1:
       raise NotImplementedError('non element-constant indexing not supported yet')
-    return types.frozenarray(numpy.take(arr, indices[0], self.axis+1), copy=False)
+    return types.frozenarray(numpy.take(arr, indices[0], -1), copy=False)
 
   def _derivative(self, var, seen):
-    return _take(derivative(self.func, var, seen), self.indices, self.axis)
+    return _take(derivative(self.func, var, seen), self.indices, self.ndim-1)
 
   def _get(self, axis, item):
-    if axis == self.axis:
-      return get(self.func, axis, get(self.indices, 0, item))
-    return Take(get(self.func, axis, item), self.indices, self.axis-(axis<self.axis))
+    if axis == self.ndim - 1:
+      return Get(self.func, Get(self.indices, item))
+    return Take(get(self.func, axis, item), self.indices)
 
   def _take(self, index, axis):
-    if axis == self.axis:
-      return Take(self.func, self.indices[index], axis)
+    if axis == self.ndim - 1:
+      return Take(self.func, Take(self.indices, index))
     trytake = self.func._take(index, axis)
     if trytake is not None:
-      return Take(trytake, self.indices, self.axis)
+      return Take(trytake, self.indices)
 
   def _sum(self, axis):
-    if axis != self.axis:
-      return Take(sum(self.func, axis), self.indices, self.axis-(axis<self.axis))
+    if axis != self.ndim - 1:
+      return Take(sum(self.func, axis), self.indices)
 
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
-    assert axis != self.axis
-    return [(ind, Take(f, self.indices, self.axis+(axis<self.axis)*(ind.ndim-1))) for ind, f in self.func._desparsify(axis)]
+    assert axis != self.ndim-1
+    return [(ind, Take(f, self.indices)) for ind, f in self.func._desparsify(axis)]
 
 class Power(Array):
 
@@ -1852,7 +1855,7 @@ class Power(Array):
     return Power(_takediag(self.func, axis1, axis2), _takediag(self.power, axis1, axis2))
 
   def _take(self, index, axis):
-    return Power(Take(self.func, index, axis), Take(self.power, index, axis))
+    return Power(_take(self.func, index, axis), _take(self.power, index, axis))
 
   def _unravel(self, axis, shape):
     return Power(Unravel(self.func, axis, shape), Unravel(self.power, axis, shape))
@@ -1913,7 +1916,7 @@ class Pointwise(Array):
     return self.__class__(*[get(arg, axis, item) for arg in self.args])
 
   def _take(self, index, axis):
-    return self.__class__(*[Take(arg, index, axis) for arg in self.args])
+    return self.__class__(*[_take(arg, index, axis) for arg in self.args])
 
   def _unravel(self, axis, shape):
     return self.__class__(*[Unravel(arg, axis, shape) for arg in self.args])
@@ -2025,7 +2028,7 @@ class Sign(Array):
     return Sign(get(self.func, axis, item))
 
   def _take(self, index, axis):
-    return Sign(Take(self.func, index, axis))
+    return Sign(_take(self.func, index, axis))
 
   def _sign(self):
     return self
@@ -2276,7 +2279,7 @@ class Inflate(Array):
 
   def _inflate(self, dofmap, length, axis):
     if axis == self.axis:
-      return Inflate(self.func, Take(dofmap, self.dofmap, 0), length, axis)
+      return Inflate(self.func, _take(dofmap, self.dofmap, 0), length, axis)
     if axis < self.axis:
       return Inflate(Inflate(self.func, dofmap, length, axis), self.dofmap, self.length, self.axis)
 
@@ -2300,7 +2303,7 @@ class Inflate(Array):
         else Zeros(self.shape[:axis]+self.shape[axis+1:], self.dtype)
 
   def _multiply(self, other):
-    return Inflate(Multiply([self.func, Take(other, self.dofmap, self.axis)]), self.dofmap, self.length, self.axis)
+    return Inflate(Multiply([self.func, _take(other, self.dofmap, self.axis)]), self.dofmap, self.length, self.axis)
 
   def _add(self, other):
     if isinstance(other, Inflate) and self.axis == other.axis and self.dofmap == other.dofmap:
@@ -2318,7 +2321,7 @@ class Inflate(Array):
 
   def _take(self, index, axis):
     if axis != self.axis:
-      return Inflate(Take(self.func, index, axis), self.dofmap, self.length, self.axis)
+      return Inflate(_take(self.func, index, axis), self.dofmap, self.length, self.axis)
     if index == self.dofmap:
       return self.func
     ind, subind1, subind2 = Intersect(self.dofmap, index)
@@ -2441,8 +2444,8 @@ class Diagonalize(Array):
 
   def _take(self, index, axis):
     if axis not in (self.axis, self.newaxis):
-      return Diagonalize(Take(self.func, index, axis-(axis>self.newaxis)), self.axis, self.newaxis)
-    diag = Diagonalize(Take(self.func, index, self.axis), self.axis, self.newaxis)
+      return Diagonalize(_take(self.func, index, axis-(axis>self.newaxis)), self.axis, self.newaxis)
+    diag = Diagonalize(_take(self.func, index, self.axis), self.axis, self.newaxis)
     return Inflate(diag, index, self.func.shape[self.axis], self.newaxis if axis == self.axis else self.axis)
 
   def _unravel(self, axis, shape):
@@ -2725,7 +2728,7 @@ class Ravel(Array):
 
   def _take(self, index, axis):
     if axis != self.axis:
-      return Ravel(Take(self.func, index, axis+(axis>self.axis)), self.axis)
+      return Ravel(_take(self.func, index, axis+(axis>self.axis)), self.axis)
 
   def _unravel(self, axis, shape):
     if axis != self.axis:
@@ -2820,7 +2823,7 @@ class Unravel(Array):
 
   def _take(self, index, axis):
     if not self.axis <= axis < self.axis+2:
-      return Unravel(Take(self.func, index, axis-(axis>self.axis)), self.axis, self.unravelshape)
+      return Unravel(_take(self.func, index, axis-(axis>self.axis)), self.axis, self.unravelshape)
 
   def _product(self):
     if self.axis < self.func.ndim-1:
@@ -4159,7 +4162,7 @@ def _take(arg:asarray, index:asarray, axis:types.strictint):
   if index.ndim == 0:
     return get(arg, axis, index)
   elif index.ndim == 1:
-    return Take(arg, index, axis)
+    return Transpose.from_end(Take(Transpose.to_end(arg, axis), index), axis)
   else:
     return unravel(_take(arg, ravel(index, 0), axis), axis, index.shape[:2])
 
