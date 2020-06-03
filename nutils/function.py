@@ -2618,116 +2618,107 @@ class DelayedJacobian(Array):
 
 class Ravel(Array):
 
-  __slots__ = 'func', 'axis'
+  __slots__ = 'func'
 
   @types.apply_annotations
-  def __init__(self, func:asarray, axis:types.strictint):
-    assert 0 <= axis < func.ndim-1
+  def __init__(self, func:asarray):
+    if func.ndim < 2:
+      raise Exception('cannot ravel function of dimension < 2')
     self.func = func
-    self.axis = axis
-    ax1, ax2 = func._axes[axis:axis+2]
+    ax1, ax2 = func._axes[-2:]
     axisprop = Sparse(ax1.length * ax2.length) if isinstance(ax1, Sparse) or isinstance(ax2, Sparse) else Raveled((ax1.length, ax2.length))
-    super().__init__(args=[func], shape=func._axes[:axis]+(axisprop,)+func._axes[axis+2:], dtype=func.dtype)
+    super().__init__(args=[func], shape=func._axes[:-2]+(axisprop,), dtype=func.dtype)
 
   def _simplified(self):
-    if self.func.shape[self.axis] == 1:
-      return get(self.func, self.axis, 0)
-    if self.func.shape[self.axis+1] == 1:
-      return get(self.func, self.axis+1, 0)
-    return self.func._ravel(self.axis)
+    if self.func.shape[-2] == 1:
+      return get(self.func, -2, 0)
+    if self.func.shape[-1] == 1:
+      return get(self.func, -1, 0)
+    return self.func._ravel(self.ndim-1)
 
   def evalf(self, f):
-    return f.reshape(f.shape[:self.axis+1] + (f.shape[self.axis+1]*f.shape[self.axis+2],) + f.shape[self.axis+3:])
+    return f.reshape(f.shape[:-2] + (f.shape[-2]*f.shape[-1],))
 
   def _multiply(self, other):
-    if isinstance(other, Ravel) and other.axis == self.axis and other.func.shape[self.axis:self.axis+2] == self.func.shape[self.axis:self.axis+2]:
-      return Ravel(Multiply([self.func, other.func]), self.axis)
-    return Ravel(Multiply([self.func, unravel(other, self.axis, self.func.shape[self.axis:self.axis+2])]), self.axis)
+    if isinstance(other, Ravel) and other.func.shape[-2:] == self.func.shape[-2:]:
+      return Ravel(Multiply([self.func, other.func]))
+    return Ravel(Multiply([self.func, Unravel(other, *self.func.shape[-2:])]))
 
   def _add(self, other):
-    if isinstance(other, Ravel) and other.axis == self.axis and other.func.shape[self.axis:self.axis+2] == self.func.shape[self.axis:self.axis+2]:
-      return Ravel(Add([self.func, other.func]), self.axis)
+    if isinstance(other, Ravel) and other.func.shape[-2:] == self.func.shape[-2:]:
+      return Ravel(Add([self.func, other.func]))
 
   def _get(self, i, item):
-    if i != self.axis:
-      return Ravel(get(self.func, i+(i>self.axis), item), self.axis-(i<self.axis))
-    if item.isconstant and numeric.isint(self.func.shape[self.axis+1]):
+    if i != self.ndim-1:
+      return Ravel(get(self.func, i, item))
+    if item.isconstant and numeric.isint(self.func.shape[self.ndim-1+1]):
       item, = item.eval()
-      i, j = divmod(item, self.func.shape[self.axis+1])
-      return get(get(self.func, self.axis, i), self.axis, j)
+      i, j = divmod(item, self.func.shape[self.ndim])
+      return Get(Get(self.func, j), i)
 
   def _sum(self, axis):
-    if axis == self.axis:
-      return sum(self.func, [axis, axis+1])
-    return Ravel(sum(self.func, axis+(axis>self.axis)), self.axis-(axis<self.axis))
+    if axis == self.ndim-1:
+      return Sum(Sum(self.func))
+    return Ravel(sum(self.func, axis))
 
   def _derivative(self, var, seen):
-    return ravel(derivative(self.func, var, seen), axis=self.axis)
+    return ravel(derivative(self.func, var, seen), axis=self.ndim-1)
 
   def _transpose(self, axes):
-    ravelaxis = axes.index(self.axis)
-    funcaxes = [ax+(ax>self.axis) for ax in axes]
-    funcaxes = funcaxes[:ravelaxis+1] + [self.axis+1] + funcaxes[ravelaxis+1:]
-    return Ravel(Transpose(self.func, funcaxes), ravelaxis)
+    if axes[-1] == self.ndim-1:
+      return Ravel(Transpose(self.func, axes+(self.ndim,)))
 
   def _takediag(self, axis1, axis2):
     assert axis1 < axis2
-    if not {self.axis, self.axis+1} & {axis1, axis2}:
-      return Ravel(_takediag(self.func, axis1+(axis1>self.axis), axis2+(axis2>self.axis)), self.axis-(self.axis>axis1)-(self.axis>axis2))
+    if axis2 <= self.ndim-2:
+      return ravel(_takediag(self.func, axis1, axis2), self.ndim-3)
 
   def _take(self, index, axis):
-    if axis != self.axis:
-      return Ravel(_take(self.func, index, axis+(axis>self.axis)), self.axis)
+    if axis != self.ndim-1:
+      return Ravel(_take(self.func, index, axis))
 
   def _unravel(self, axis, shape):
-    if axis != self.axis:
-      return Ravel(unravel(self.func, axis+(axis>self.axis), shape), self.axis+(self.axis>axis))
-    elif shape == self.func.shape[axis:axis+2]:
+    if axis != self.ndim-1:
+      return Ravel(unravel(self.func, axis, shape))
+    elif shape == self.func.shape[-2:]:
       return self.func
 
   def _inflate(self, dofmap, length, axis):
-    if axis != self.axis:
-      return Ravel(_inflate(self.func, dofmap, length, axis=axis+(axis>self.axis)), self.axis)
+    if axis != self.ndim-1:
+      return Ravel(_inflate(self.func, dofmap, length, axis))
 
   def _diagonalize(self, axis):
-    if axis != self.axis:
-      return ravel(diagonalize(self.func, axis+(axis>self.axis)), self.axis)
+    if axis != self.ndim-1:
+      return ravel(diagonalize(self.func, axis), self.ndim-1)
 
   def _kronecker(self, axis, length, pos):
-    return Ravel(kronecker(self.func, axis+(axis>self.axis), length, pos), self.axis+(axis<=self.axis))
+    if axis != self.ndim:
+      return Ravel(kronecker(self.func, axis, length, pos))
+    else:
+      return ravel(Kronecker(self.func, length, pos), self.ndim-1)
 
   def _insertaxis(self, axis, length):
-    return Ravel(insertaxis(self.func, axis+(axis>self.axis), length), self.axis+(axis<=self.axis))
+    return ravel(insertaxis(self.func, axis+(axis==self.ndim), length), self.ndim-(axis==self.ndim))
 
   def _power(self, n):
-    return Ravel(Power(self.func, unravel(n, self.axis, self.func.shape[self.axis:self.axis+2])), self.axis)
+    return Ravel(Power(self.func, Unravel(n, *self.func.shape[-2:])))
 
   def _sign(self):
-    return Ravel(Sign(self.func), self.axis)
-
-  def _inverse(self):
-    if self.axis < self.ndim-2:
-      return Ravel(Inverse(self.func), self.axis)
+    return Ravel(Sign(self.func))
 
   def _product(self):
-    if self.axis == self.ndim-1:
-      return Product(Product(self.func))
-    return Ravel(Product(self.func), self.axis)
-
-  def _determinant(self):
-    if self.axis < self.ndim-2:
-      return Ravel(Determinant(self.func), self.axis)
+    return Product(Product(self.func))
 
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
-    if axis != self.axis:
-      return [(ind, Ravel(f, self.axis+(axis<self.axis)*(ind.ndim-1))) for ind, f in self.func._desparsify(axis+(axis>self.axis))]
-    if isinstance(self.func._axes[self.axis], Sparse):
-      items = [(ind1, Range(self.func.shape[self.axis+1]), f) for ind1, f in self.func._desparsify(self.axis)]
+    if axis != self.ndim-1:
+      return [(ind, Ravel(f)) for ind, f in self.func._desparsify(axis)]
+    if isinstance(self.func._axes[-2], Sparse):
+      items = [(ind1, Range(self.func.shape[-1]), f) for ind1, f in self.func._desparsify(self.ndim-1)]
     else:
-      assert isinstance(self.func._axes[self.axis+1], Sparse)
-      items = [(Range(self.func.shape[self.axis]), ind2, f) for ind2, f in self.func._desparsify(self.axis+1)]
-    return [(appendaxes(ind1, ind2.shape) * self.func.shape[self.axis+1] + prependaxes(ind2, ind1.shape), f) for ind1, ind2, f in items]
+      assert isinstance(self.func._axes[-1], Sparse)
+      items = [(Range(self.func.shape[-2]), ind2, f) for ind2, f in self.func._desparsify(self.ndim)]
+    return [(appendaxes(ind1, ind2.shape) * self.func.shape[-1] + prependaxes(ind2, ind1.shape), f) for ind1, ind2, f in items]
 
 class Unravel(Array):
 
@@ -4137,7 +4128,7 @@ def unravel(func, axis, shape):
 def ravel(func, axis):
   func = asarray(func)
   axis = numeric.normdim(func.ndim-1, axis)
-  return Ravel(func, axis)
+  return Transpose.from_end(Ravel(Transpose.to_end(func, axis, axis+1)), axis)
 
 def normal(arg, exterior=False):
   arg = asarray(arg)

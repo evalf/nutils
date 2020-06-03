@@ -115,7 +115,7 @@ class check(TestCase):
     for ax1, ax2 in self.pairs:
       trans = [i for i in range(self.n_op_argsfun.ndim) if i not in (ax1+1,ax2+1)] + [ax1+1,ax2+1]
       invtrans = list(map(trans.index, range(len(trans))))
-      self.assertFunctionAlmostEqual(decimal=13,
+      self.assertFunctionAlmostEqual(decimal=10,
         desired=numeric.inv(self.n_op_argsfun.transpose(trans)).transpose(invtrans),
         actual=function.inverse(self.op_args, axes=(ax1,ax2)))
 
