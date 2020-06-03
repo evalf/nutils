@@ -156,7 +156,7 @@ class check(TestCase):
       desired[(slice(None),)*(iax+1)+(slice(None,None,2),)] = self.n_op_argsfun
       self.assertFunctionAlmostEqual(decimal=15,
         desired=desired,
-        actual=function.Inflate(self.op_args, dofmap=dofmap, length=sh*2-1, axis=iax))
+        actual=function.inflate(self.op_args, dofmap=dofmap, length=sh*2-1, axis=iax))
 
   def test_diagonalize(self):
     for axis in range(self.op_args.ndim):
@@ -476,8 +476,8 @@ _check('kronecker', lambda f: function.kronecker(f,axis=2,length=4,pos=1), lambd
 _check('mask', lambda f: function.mask(f,numpy.array([True,False,True,False,True,False,True]),axis=1), lambda a: a[:,:,::2], [(4,7,4)])
 _check('ravel', lambda f: function.ravel(f,axis=1), lambda a: a.reshape(-1,4,4,4,4), [(4,2,2,4,4)])
 _check('unravel', lambda f: function.unravel(f,axis=1,shape=[2,2]), lambda a: a.reshape(-1,4,2,2,4,4), [(4,4,4,4)])
-_check('inflate', lambda f: function.Inflate(f,dofmap=function.Guard([0,3]),length=4,axis=1), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a), a[:,:,1:]], axis=2), [(4,2,4)])
-_check('inflate-constant', lambda f: function.Inflate(f,dofmap=[0,3],length=4,axis=1), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a), a[:,:,1:]], axis=2), [(4,2,4)])
+_check('inflate', lambda f: function.inflate(f,dofmap=function.Guard([0,3]),length=4,axis=1), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a), a[:,:,1:]], axis=2), [(4,2,4)])
+_check('inflate-constant', lambda f: function.inflate(f,dofmap=[0,3],length=4,axis=1), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a), a[:,:,1:]], axis=2), [(4,2,4)])
 _check('vectorize', lambda a,b: function.vectorize([a, b]), lambda a,b: numpy.concatenate([numpy.stack([a, numpy.zeros_like(a)], axis=2), numpy.stack([numpy.zeros_like(b), b], axis=2)], axis=1), [(3,),(5,)])
 
 _polyval_mask = lambda shape, ndim: 1 if ndim == 0 else numpy.array([sum(i[-ndim:]) < shape[-1] for i in numpy.ndindex(shape)], dtype=int).reshape(shape)
@@ -498,26 +498,26 @@ class blocks(TestCase):
     _builtin_warnings.simplefilter('ignore', function.ExpensiveEvaluationWarning)
 
   def test_multiply_equal(self):
-    ((i,), f), = function.multiply(function.Inflate([1,2], dofmap=[0,2], length=3, axis=0), function.Inflate([3,4], dofmap=[0,2], length=3, axis=0)).blocks
+    ((i,), f), = function.multiply(function.inflate([1,2], dofmap=[0,2], length=3, axis=0), function.inflate([3,4], dofmap=[0,2], length=3, axis=0)).blocks
     self.assertEqual(i, function.asarray([0,2]))
     self.assertAllEqual(f.eval(), [1*3,2*4])
 
   def test_multiply_embedded(self):
-    ((i,), f), = function.multiply([1,2,3], function.Inflate([4,5], dofmap=[0,2], length=3, axis=0)).blocks
+    ((i,), f), = function.multiply([1,2,3], function.inflate([4,5], dofmap=[0,2], length=3, axis=0)).blocks
     self.assertEqual(i, function.asarray([0,2]))
     self.assertAllEqual(f.eval(), [1*4,3*5])
 
   def test_multiply_overlapping(self):
-    ((i,), f), = function.multiply(function.Inflate([1,2], dofmap=[0,1], length=3, axis=0), function.Inflate([3,4], dofmap=[1,2], length=3, axis=0)).blocks
+    ((i,), f), = function.multiply(function.inflate([1,2], dofmap=[0,1], length=3, axis=0), function.inflate([3,4], dofmap=[1,2], length=3, axis=0)).blocks
     self.assertEqual(i, function.asarray([1]))
     self.assertAllEqual(f.eval(), 2*3)
 
   def test_multiply_disjoint(self):
-    blocks = function.multiply(function.Inflate([1,2], dofmap=[0,2], length=4, axis=0), function.Inflate([3,4], dofmap=[1,3], length=4, axis=0)).blocks
+    blocks = function.multiply(function.inflate([1,2], dofmap=[0,2], length=4, axis=0), function.inflate([3,4], dofmap=[1,3], length=4, axis=0)).blocks
     self.assertEqual(blocks, ())
 
   def test_multiply_fallback(self):
-    ((i,), f), = function.multiply(function.Inflate([1,2], dofmap=function.Guard([0,1]), length=3, axis=0), function.Inflate([3,4], dofmap=function.Guard([1,2]), length=3, axis=0)).blocks
+    ((i,), f), = function.multiply(function.inflate([1,2], dofmap=function.Guard([0,1]), length=3, axis=0), function.inflate([3,4], dofmap=function.Guard([1,2]), length=3, axis=0)).blocks
     self.assertEqual(i, function.Range(3))
     self.assertAllEqual(f.eval(), [0,2*3,0])
 
@@ -527,26 +527,26 @@ class blocks(TestCase):
     self.assertAllEqual(f.eval(), [1,5,9])
 
   def test_takediag_embedded_axis(self):
-    ((i,), f), = function.takediag(function.Inflate([[1,2,3],[4,5,6]], dofmap=[0,2], length=3, axis=0)).blocks
+    ((i,), f), = function.takediag(function.inflate([[1,2,3],[4,5,6]], dofmap=[0,2], length=3, axis=0)).blocks
     self.assertEqual(i, function.asarray([0,2]))
     self.assertAllEqual(f.eval(), [1,6])
 
   def test_takediag_embedded_rmaxis(self):
-    ((i,), f), = function.takediag(function.Inflate([[1,2],[3,4],[5,6]], dofmap=[0,2], length=3, axis=1)).blocks
+    ((i,), f), = function.takediag(function.inflate([[1,2],[3,4],[5,6]], dofmap=[0,2], length=3, axis=1)).blocks
     self.assertEqual(i, function.asarray([0,2]))
     self.assertAllEqual(f.eval(), [1,6])
 
   def test_takediag_overlapping(self):
-    ((i,), f), = function.takediag(function.Inflate(function.Inflate([[1,2],[3,4]], dofmap=[0,1], length=3, axis=0), dofmap=[1,2], length=3, axis=1)).blocks
+    ((i,), f), = function.takediag(function.inflate(function.inflate([[1,2],[3,4]], dofmap=[0,1], length=3, axis=0), dofmap=[1,2], length=3, axis=1)).blocks
     self.assertEqual(i, function.asarray([1]))
     self.assertAllEqual(f.eval(), 3)
 
   def test_takediag_disjoint(self):
-    blocks = function.takediag(function.Inflate(function.Inflate([[1,2],[3,4]], dofmap=[0,2], length=4, axis=0), dofmap=[1,3], length=4, axis=1)).blocks
+    blocks = function.takediag(function.inflate(function.inflate([[1,2],[3,4]], dofmap=[0,2], length=4, axis=0), dofmap=[1,3], length=4, axis=1)).blocks
     self.assertEqual(blocks, ())
 
   def test_takediag_fallback(self):
-    ((i,), f), = function.takediag(function.Inflate(function.Inflate([[1,2],[3,4]], dofmap=function.Guard([0,1]), length=3, axis=0), dofmap=function.Guard([1,2]), length=3, axis=1)).blocks
+    ((i,), f), = function.takediag(function.inflate(function.inflate([[1,2],[3,4]], dofmap=function.Guard([0,1]), length=3, axis=0), dofmap=function.Guard([1,2]), length=3, axis=1)).blocks
     self.assertEqual(i, function.Range(3))
     self.assertAllEqual(f.eval(), [0,3,0])
 
