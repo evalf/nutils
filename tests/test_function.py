@@ -94,7 +94,7 @@ class check(TestCase):
       with self.subTest(axis=axis):
         self.assertFunctionAlmostEqual(decimal=15,
           desired=numpy.repeat(numpy.expand_dims(self.n_op_argsfun, axis+1), 2, axis+1),
-          actual=function.InsertAxis(self.op_args, axis=axis, length=2))
+          actual=function.insertaxis(self.op_args, axis, 2))
 
   def test_takediag(self):
     for ax1, ax2 in self.pairs:
