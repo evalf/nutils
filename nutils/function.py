@@ -1216,24 +1216,24 @@ class Concatenate(Array):
   __cache__ = '_withslices', 'simplified', 'blocks'
 
   @types.apply_annotations
-  def __init__(self, funcs:types.tuple[asarray], axis:types.strictint=0):
+  def __init__(self, funcs:types.tuple[asarray]):
     ndim = funcs[0].ndim
-    assert all(func.ndim == ndim for func in funcs)
-    assert 0 <= axis < ndim
-    assert all(func.shape[:axis] == funcs[0].shape[:axis] and func.shape[axis+1:] == funcs[0].shape[axis+1:] for func in funcs[1:])
-    length = util.sum(func.shape[axis] for func in funcs)
-    shape = funcs[0].shape[:axis] + (length,) + funcs[0].shape[axis+1:]
-    dtype = _jointdtype(*[func.dtype for func in funcs])
+    if any(func.ndim != ndim for func in funcs):
+      raise Exception('dimensions do not match')
+    if ndim == 0:
+      raise Exception('cannot concatenate a scalar function')
+    if any(func.shape[:-1] != funcs[0].shape[:-1] for func in funcs[1:]):
+      raise Exception('shapes do not match')
+    length = util.sum(func.shape[-1] for func in funcs)
     self.funcs = funcs
-    self.axis = axis
-    super().__init__(args=funcs, shape=shape, dtype=dtype)
+    super().__init__(args=funcs, shape=funcs[0].shape[:-1]+(length,), dtype=_jointdtype(*[func.dtype for func in funcs]))
 
   def edit(self, op):
-    return Concatenate([op(func) for func in self.funcs], self.axis)
+    return Concatenate(op(func) for func in self.funcs)
 
   @property
   def _slices(self):
-    shapes = [func.shape[self.axis] for func in self.funcs]
+    shapes = [func.shape[-1] for func in self.funcs]
     return tuple(map(Range, shapes, util.cumsum(shapes)))
 
   @property
@@ -1242,52 +1242,47 @@ class Concatenate(Array):
 
   @property
   def simplified(self):
-    funcs = tuple(func.simplified for func in self.funcs if func.shape[self.axis] != 0)
+    funcs = tuple(func.simplified for func in self.funcs if func.shape[-1] != 0)
     if all(iszero(func) for func in funcs):
       return zeros_like(self)
     if len(funcs) == 1:
       return funcs[0]
-    if self.axis != self.ndim-1 and all(isinstance(func, Inflate) or iszero(func) for func in funcs):
-      dofmap, *other = set(func.dofmap for func in funcs if isinstance(func, Inflate))
-      if not other:
+    if all(isinstance(func, Transpose) and isinstance(func.func, Inflate) or iszero(func) for func in funcs):
+      (axis, dofmap), *other = {(func.axes.index(self.ndim-1), func.func.dofmap) for func in funcs if isinstance(func, Transpose)}
+      if axis != self.ndim-1 and not other:
         # This is an Inflate-specific simplification that shouldn't appear
         # here, but currently cannot appear anywhere else due to design
         # choices. We need it here to fix a regression while awaiting a full
         # rewrite of this module to fundamentally take care of the issue.
-        concat_blocks = Concatenate([Take(func, dofmap) if iszero(func) else func.func for func in funcs], self.axis)
-        return Inflate(concat_blocks, dofmap=dofmap, length=self.shape[-1]).simplified
-    return Concatenate(funcs, self.axis)
+        concat_blocks = Concatenate(take(func, dofmap, axis) for func in funcs)
+        return inflate(concat_blocks, dofmap=dofmap, length=self.shape[axis], axis=axis).simplified
+    return Concatenate(funcs)
 
   def evalf(self, *arrays):
     shape = list(builtins.max(arrays, key=len).shape)
-    shape[self.axis+1] = builtins.sum(array.shape[self.axis+1] for array in arrays)
+    shape[-1] = builtins.sum(array.shape[-1] for array in arrays)
     retval = numpy.empty(shape, dtype=self.dtype)
     n0 = 0
     for array in arrays:
-      n1 = n0 + array.shape[self.axis+1]
-      retval[(slice(None),)*(self.axis+1)+(slice(n0,n1),)] = array
+      n1 = n0 + array.shape[-1]
+      retval[...,n0:n1] = array
       n0 = n1
-    assert n0 == retval.shape[self.axis+1]
+    assert n0 == retval.shape[-1]
     return retval
 
   @property
   def blocks(self):
     blocks = []
-    for (ind1, ind2), ind_f in util.gather(((ind[:self.axis], ind[self.axis+1:]), (ind[self.axis]+n, f))
-      for n, func in zip(util.cumsum(func.shape[self.axis] for func in self.funcs), self.funcs)
+    for ind, lastind_f in util.gather((ind[:-1], (ind[-1]+n, f))
+      for n, func in zip(util.cumsum(func.shape[-1] for func in self.funcs), self.funcs)
         for ind, f in func.blocks):
-      if len(ind_f) == 1:
-        ind, f = ind_f[0]
-      else:
-        ind = Concatenate([ind for ind, f in ind_f], axis=0)
-        f = Concatenate([f for ind, f in ind_f], axis=len(ind1))
-      blocks.append((ind1+(ind.simplified,)+ind2, f))
+          lastind, f = lastind_f[0] if len(lastind_f) == 1 else map(Concatenate, zip(*lastind_f))
+          blocks.append((ind+(lastind.simplified,), f))
     return tuple(blocks)
 
   def _get(self, i, item):
-    if i != self.axis:
-      axis = self.axis - (self.axis > i)
-      return Concatenate([get(f, i, item) for f in self.funcs], axis=axis)
+    if i != self.ndim-1:
+      return Concatenate(get(f, i, item) for f in self.funcs)
     if item.isconstant:
       item, = item.eval()
       for f in self.funcs:
@@ -1298,67 +1293,61 @@ class Concatenate(Array):
 
   def _derivative(self, var, seen):
     funcs = [derivative(func, var, seen) for func in self.funcs]
-    return concatenate(funcs, axis=self.axis)
+    return concatenate(funcs, axis=self.ndim-1)
 
   def _multiply(self, other):
-    funcs = [Multiply([func, take(other, s, self.axis)]) for s, func in self._withslices]
-    return Concatenate(funcs, self.axis)
+    return Concatenate(Multiply([func, Take(other, s)]) for s, func in self._withslices)
 
   def _add(self, other):
-    if isinstance(other, Concatenate) and self.axis == other.axis and [f1.shape[self.axis] for f1 in self.funcs] == [f2.shape[self.axis] for f2 in other.funcs]:
+    if isinstance(other, Concatenate) and [f1.shape[-1] for f1 in self.funcs] == [f2.shape[-1] for f2 in other.funcs]:
       other_funcs = other.funcs
     else:
-      other_funcs = [take(other, s, self.axis) for s in self._slices]
-    return Concatenate([Add(f12) for f12 in zip(self.funcs, other_funcs)], self.axis)
+      other_funcs = [Take(other, s) for s in self._slices]
+    return Concatenate(Add(f12) for f12 in zip(self.funcs, other_funcs))
 
   def _sum(self, axis):
     funcs = [sum(func, axis) for func in self.funcs]
-    if axis == self.axis:
+    if axis == self.ndim-1:
       while len(funcs) > 1:
         funcs[-2:] = Add(funcs[-2:]),
       return funcs[0]
-    return Concatenate(funcs, self.axis - (axis<self.axis))
+    return Concatenate(funcs)
 
   def _transpose(self, axes):
-    funcs = [Transpose(func, axes) for func in self.funcs]
-    axis = axes.index(self.axis)
-    return Concatenate(funcs, axis)
+    if axes[-1] == self.ndim-1:
+      return Concatenate(Transpose(func, axes) for func in self.funcs)
 
   def _insertaxis(self, axis, length):
     funcs = [insertaxis(func, axis, length) for func in self.funcs]
-    return Concatenate(funcs, self.axis+(axis<=self.axis))
+    return concatenate(funcs, self.ndim-(axis==self.ndim))
 
   def _takediag(self, axis1, axis2):
     assert axis1 < axis2
-    if axis1 == self.axis:
-      funcs = [newtakediag(take(func, s, axis2), axis1, axis2) for s, func in self._withslices]
-      return Concatenate(funcs, axis=self.ndim-2)
-    elif axis2 == self.axis:
-      funcs = [newtakediag(take(func, s, axis1), axis1, axis2) for s, func in self._withslices]
-      return Concatenate(funcs, axis=self.ndim-2)
-    else:
-      return Concatenate([newtakediag(f, axis1, axis2) for f in self.funcs], axis=self.axis-(self.axis>axis1)-(self.axis>axis2))
+    if axis2 == self.ndim-1:
+      return Concatenate(newtakediag(take(func, s, axis1), axis1, axis2) for s, func in self._withslices)
+    else: # axis1 < axis2 < self.ndim-1
+      return concatenate([newtakediag(f, axis1, axis2) for f in self.funcs], axis=self.ndim-3)
 
   def _take(self, indices, axis):
-    if axis != self.axis:
-      return Concatenate([take(func, indices, axis) for func in self.funcs], self.axis)
+    if axis != self.ndim-1:
+      return Concatenate(take(func, indices, axis) for func in self.funcs)
 
   def _power(self, n):
-    return Concatenate([Power(func, take(n, s, self.axis)) for s, func in self._withslices], self.axis)
+    return Concatenate(Power(func, Take(n, s)) for s, func in self._withslices)
 
   def _diagonalize(self, axis):
-    if self.axis != axis:
-      return Concatenate([diagonalize(func, axis) for func in self.funcs], self.axis)
+    if axis != self.ndim-1:
+      return concatenate([diagonalize(func, axis) for func in self.funcs], self.ndim-1)
 
   def _mask(self, maskvec, axis):
-    if axis != self.axis:
-      return Concatenate([mask(func,maskvec,axis) for func in self.funcs], self.axis)
+    if axis != self.ndim-1:
+      return Concatenate(mask(func,maskvec,axis) for func in self.funcs)
     if all(s.isconstant for s, func in self._withslices):
-      return Concatenate([mask(func, maskvec[s.eval()[0]], axis) for s, func in self._withslices], axis)
+      return Concatenate(Mask(func, maskvec[s.eval()[0]]) for s, func in self._withslices)
 
   def _unravel(self, axis, shape):
-    if axis != self.axis:
-      return Concatenate([unravel(func, axis, shape) for func in self.funcs], self.axis+(self.axis>axis))
+    if axis != self.ndim-1:
+      return Concatenate(unravel(func, axis, shape) for func in self.funcs)
 
 class Interpolate(Array):
   'interpolate uniformly spaced data; stepwise for now'
@@ -2512,7 +2501,7 @@ class Diagonalize(Array):
     # consecutive sub-block
     ax = self.ndim-2 if axis == self.ndim-1 else self.ndim-1
     masked = Diagonalize(mask(self.func, maskvec, self.ndim-2))
-    return Concatenate([Zeros(masked.shape[:ax] + (indices[0],) + masked.shape[ax+1:], dtype=self.dtype), masked, Zeros(masked.shape[:ax] + (self.shape[ax]-(indices[-1]+1),) + masked.shape[ax+1:], dtype=self.dtype)], axis=ax)
+    return concatenate([Zeros(masked.shape[:ax] + (indices[0],) + masked.shape[ax+1:], dtype=self.dtype), masked, Zeros(masked.shape[:ax] + (self.shape[ax]-(indices[-1]+1),) + masked.shape[ax+1:], dtype=self.dtype)], axis=ax)
 
   def _unravel(self, axis, shape):
     if axis >= self.ndim - 2:
@@ -4068,7 +4057,7 @@ def insertaxis(arg, n, length):
 def stack(args, axis=0):
   aligned = _numpy_align(*args)
   axis = numeric.normdim(aligned[0].ndim+1, axis)
-  return Concatenate([insertaxis(arg, axis, 1) for arg in aligned], axis)
+  return concatenate([insertaxis(arg, axis, 1) for arg in aligned], axis)
 
 def chain(funcs):
   'chain'
@@ -4186,9 +4175,7 @@ def diagonalize(arg, axis=-1, newaxis=-1):
   return Transpose.from_end(Diagonalize(Transpose.to_end(arg, axis)), axis, newaxis)
 
 def concatenate(args, axis=0):
-  args = _matchndim(*args)
-  axis = numeric.normdim(args[0].ndim, axis)
-  return Concatenate(args, axis)
+  return Transpose.from_end(Concatenate(Transpose.to_end(arg, axis) for arg in _matchndim(*args)), axis)
 
 def cross(arg1, arg2, axis):
   arg1, arg2 = _numpy_align(arg1, arg2)
