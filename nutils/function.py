@@ -937,9 +937,13 @@ class Transpose(Array):
     return transpose(derivative(self.func, var, seen), self.axes+tuple(range(self.ndim, self.ndim+var.ndim)))
 
   def _multiply(self, other):
-    other_trans = other._transpose(_invtrans(self.axes))
+    invtrans = _invtrans(self.axes)
+    other_trans = other._transpose(invtrans)
     if other_trans is not None:
       return Transpose(Multiply([self.func, other_trans]), self.axes)
+    trymultiply = self.func._multiply(Transpose(other, invtrans))
+    if trymultiply is not None:
+      return Transpose(trymultiply, self.axes)
 
   def _add(self, other):
     if isinstance(other, Transpose) and self.axes == other.axes:
