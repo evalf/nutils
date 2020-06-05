@@ -24,6 +24,7 @@ expression.
 '''
 
 import re, collections, functools
+from . import warnings
 
 
 # Convenience function to create a constant in ExpressionAST (details in
@@ -486,8 +487,6 @@ class _ExpressionParser:
       See argument ``expression`` of :func:`parse`.
   variables : :class:`dict` of :class:`str` and :class:`nutils.function.Array` pairs
       See argument ``variables`` of :func:`parse`.
-  functions : :class:`dict` of :class:`str` and :class:`int` pairs
-      See argument ``functions`` of :func:`parse`.
   arg_shapes : :class:`dict` of :class:`str` and :class:`tuple` or :class:`int`\\s pairs
       See argument ``arg_shapes`` of :func:`parse`.
   default_geometry_name : class:`str`
@@ -499,10 +498,9 @@ class _ExpressionParser:
   eye_symbols = '$', 'δ'
   normal_symbols = 'n',
 
-  def __init__(self, expression, variables, functions, arg_shapes, default_geometry_name, fixed_lengths):
+  def __init__(self, expression, variables, arg_shapes, default_geometry_name, fixed_lengths):
     self.expression = expression
     self.variables = variables
-    self.functions = functions
     self.arg_shapes = dict(arg_shapes)
     self.default_geometry_name = default_geometry_name
     self.fixed_lengths = fixed_lengths
@@ -721,17 +719,14 @@ class _ExpressionParser:
     elif self._next.type == 'variable':
       token = self._consume()
       name = token.data
-      if name in self.functions and name not in self.variables: # function (and not overriden as variable)
-        self._consume_assert_equal('(', msg="Expected '(' for function {}.".format(name))
-        args = self.parse_comma_separated(end=')', parse_item=self.parse_subexpression)
-        nargs = self.functions[name]
-        if len(args) != nargs:
-          raise _IntermediateError('Function {!r} takes {}, got {}.'.format(name, _sp(nargs, 'argument', 'arguments'), len(args)))
-        args = _Array.align(*args)
-        value = args[0].replace(ast=('call', _(name))+tuple(arg.ast for arg in args))
-      elif name.startswith('?'):
+      if name.startswith('?'):
         indices = self._consume() if self._next.type == 'indices' else ''
         value = self._get_arg(name[1:], indices)
+      elif name not in self.variables and self._next.type == '(': # assume function
+        self._consume()
+        args = self.parse_comma_separated(end=')', parse_item=self.parse_subexpression)
+        args = _Array.align(*args)
+        value = args[0].replace(ast=('call', _(name))+tuple(arg.ast for arg in args))
       else:
         raw = self._get_variable(name)
         indices = self._consume() if self._next.type == 'indices' else ''
@@ -1078,7 +1073,7 @@ def _replace_lengths(ast, lengths):
     return ast
 
 
-def parse(expression, variables, functions, indices, arg_shapes={}, default_geometry_name='x', fixed_lengths=None, fallback_length=None):
+def parse(expression, variables, indices, arg_shapes={}, default_geometry_name='x', fixed_lengths=None, fallback_length=None, functions=None):
   '''Parse ``expression`` and return AST.
 
   This function parses a tensor expression with `Einstein Summation
@@ -1232,9 +1227,6 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
   variables : :class:`dict` of :class:`str` and :class:`nutils.function.Array` pairs
       A :class:`dict` of variable names and array pairs.  All variables used in
       the ``expression`` should exist in ``variables``.
-  functions : :class:`dict` of :class:`str` and :class:`int` pairs
-      A :class:`dict` of function names and number of arguments pairs.  All
-      functions used in the ``expression`` should exist in ``functions``.
   indices : :class:`str`
       The indices used for aligning the resulting array.  For example, let
       ``expression`` be ``'a_ij'``.  If ``indices`` is ``'ij'``, then the
@@ -1295,7 +1287,9 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
       ``expression``.
   '''
 
-  parser = _ExpressionParser(expression, variables, functions, arg_shapes, default_geometry_name, fixed_lengths or {})
+  if functions is not None:
+    warnings.deprecation('argument `functions` is deprecated; the existence and number of arguments is not checked during parsing')
+  parser = _ExpressionParser(expression, variables, arg_shapes, default_geometry_name, fixed_lengths or {})
   parser.tokenize()
   value = parser.parse_subexpression()
   parser._consume_assert_equal('EOF', msg='Unexpected symbol at end of expression.')

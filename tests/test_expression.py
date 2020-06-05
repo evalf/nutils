@@ -52,18 +52,17 @@ class Variables:
       return default
 
 v = Variables(x=Array('x', [2]), altgeom=Array('altgeom', [3]), funcoverride=Array('funcoverride', []))
-functions = dict(func1=1, func2=2, func3=3, funcoverride=1)
 
 class parse(TestCase):
 
   def assert_ast(self, expression, indices, ast, variables=None, **parse_kwargs):
     if variables is None:
       variables = v
-    self.assertEqual(nutils.expression.parse(expression, variables, functions, indices, **parse_kwargs)[0], ast)
+    self.assertEqual(nutils.expression.parse(expression, variables, indices, **parse_kwargs)[0], ast)
 
   def assert_syntax_error(self, msg, expression, indices, highlight, arg_shapes={}, fixed_lengths=None, exccls=nutils.expression.ExpressionSyntaxError):
     with self.assertRaises(exccls) as cm:
-      nutils.expression.parse(expression, v, functions, indices, arg_shapes, fixed_lengths=fixed_lengths)
+      nutils.expression.parse(expression, v, indices, arg_shapes, fixed_lengths=fixed_lengths)
     self.assertEqual(str(cm.exception), msg + '\n' + expression + '\n' + highlight)
 
   # OTHER
@@ -753,12 +752,6 @@ class parse(TestCase):
   def test_function_2d_2d(self): self.assert_ast('func2(a23_ij, a32_ji)', 'ij', ('call', _('func2'), v._a23, ('transpose', v._a32, _((1,0)))))
   def test_function_2d_2d_2d(self): self.assert_ast('func3(a23_ij, a22_ik a23_kj, a23_ij)', 'ij', ('call', _('func3'), v._a23, ('sum', ('mul', ('append_axis', v._a22, _(3)), ('transpose', ('append_axis', v._a23, _(2)), _((2,0,1)))), _(1)), v._a23))
 
-  def test_function_invalid_nargs(self):
-    self.assert_syntax_error(
-      "Function 'func1' takes 1 argument, got 2.",
-      "1 + func1(a, a) + 1", "",
-      "    ^^^^^^^^^^^")
-
   def test_function_unmatched_indices(self):
     self.assert_syntax_error(
       "Cannot align arrays with unmatched indices: ij, ij, jk.",
@@ -770,12 +763,6 @@ class parse(TestCase):
       "Shapes at index 'i' differ: 2, 3.",
       "1_ij + func2(a23_ij, a33_ij) + 1_ij", "ij",
       "       ^^^^^^^^^^^^^^^^^^^^^")
-
-  def test_function_unknown(self):
-    self.assert_syntax_error(
-      "Unknown variable: 'funcX'.",
-      "1_ij + funcX(a23_ij) + 1_ij", "ij",
-      "       ^^^^^")
 
   def test_function_override(self):
     self.assert_syntax_error(

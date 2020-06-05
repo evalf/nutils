@@ -5220,7 +5220,6 @@ class Namespace:
     exp=exp, abs=abs, ln=ln, log=ln, log2=log2, log10=log10, sqrt=sqrt,
     sign=sign,
   )
-  _functions_nargs = {k: len(inspect.signature(v).parameters) for k, v in _functions.items()}
 
   @types.apply_annotations
   def __init__(self, *, default_geometry_name='x', fallback_length:types.strictint=None, **kwargs):
@@ -5300,7 +5299,7 @@ class Namespace:
     '''Get attribute ``name``.'''
 
     if name.startswith('eval_'):
-      return lambda expr: _eval_ast(expression.parse(expr, variables=self._attributes, functions=self._functions_nargs, indices=name[5:], arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)[0], self._functions)
+      return lambda expr: _eval_ast(expression.parse(expr, variables=self._attributes, indices=name[5:], arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)[0], self._functions)
     try:
       return self._attributes[name]
     except KeyError:
@@ -5319,7 +5318,7 @@ class Namespace:
       name, indices = m.groups()
       indices = indices[1:] if indices else ''
       if isinstance(value, str):
-        ast, arg_shapes = expression.parse(value, variables=self._attributes, functions=self._functions_nargs, indices=indices, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)
+        ast, arg_shapes = expression.parse(value, variables=self._attributes, indices=indices, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)
         value = _eval_ast(ast, self._functions)
         self._arg_shapes.update(arg_shapes)
       else:
@@ -5344,7 +5343,7 @@ class Namespace:
     if not isinstance(expr, str):
       return NotImplemented
     try:
-      ast = expression.parse(expr, variables=self._attributes, functions=self._functions_nargs, indices=None, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)[0]
+      ast = expression.parse(expr, variables=self._attributes, indices=None, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)[0]
     except expression.AmbiguousAlignmentError:
       raise ValueError('`expression @ Namespace` cannot be used because the expression has more than one dimension.  Use `Namespace.eval_...(expression)` instead')
     return _eval_ast(ast, self._functions)
