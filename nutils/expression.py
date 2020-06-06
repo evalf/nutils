@@ -23,7 +23,7 @@ This module defines the function :func:`parse`, which parses a tensor
 expression.
 '''
 
-import re, collections, functools
+import re, collections, functools, operator
 from . import warnings
 
 
@@ -725,8 +725,12 @@ class _ExpressionParser:
       elif name not in self.variables and self._next.type == '(': # assume function
         self._consume()
         args = self.parse_comma_separated(end=')', parse_item=self.parse_subexpression)
-        args = _Array.align(*args)
-        value = args[0].replace(ast=('call', _(name))+tuple(arg.ast for arg in args))
+        value = _Array._apply_indices(ast=('call', _(name), *(arg.ast for arg in args)),
+                                      offset=0,
+                                      indices=''.join(arg.indices for arg in args),
+                                      shape=sum((arg.shape for arg in args), ()),
+                                      summed=functools.reduce(operator.or_, (arg.summed for arg in args), frozenset()),
+                                      linked_lengths=functools.reduce(operator.or_, (arg.linked_lengths for arg in args), frozenset()))
       else:
         raw = self._get_variable(name)
         indices = self._consume() if self._next.type == 'indices' else ''
@@ -1203,11 +1207,11 @@ def parse(expression, variables, indices, arg_shapes={}, default_geometry_name='
       for a variable name — directly followed by the left parenthesis ``(``,
       without a space.  The arguments to the function are separated by a comma
       and at least one space.  The function is applied pointwise to the
-      arguments and all arguments should have the same shape.  Example:
-      ``f(x_i, y_i)``.denotes the call to function ``f`` with arguments ``x_i``
-      and ``y_i``.  Functions and variables share a namespace: defining a
-      variable with the same name as a function renders the function
-      inaccessible.
+      arguments and summation convection is applied to the result. Example:
+      assume ``mul(...)`` returns the product of its arguments, then ``mul(x_i,
+      y_j)`` is equivalent to ``x_i y_j`` and ``mul(x_i, y_i)`` to ``x_i y_i``.
+      Functions and variables share a namespace: defining a variable with the
+      same name as a function renders the function inaccessible.
 
   *   A **stack** of two or more arrays along an axis is denoted by a ``<``
       followed by comma and space separated arrays followed by ``>`` and an

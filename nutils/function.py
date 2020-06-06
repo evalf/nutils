@@ -5060,7 +5060,12 @@ def _eval_ast(ast, functions):
     return replace_arguments(array, subs)
   elif op == 'call':
     func, *args = args
-    return functions[func](*args)
+    args = tuple(map(asarray, args))
+    shape = builtins.sum((arg.shape for arg in args), ())
+    result = functions[func](*args)
+    if result.shape != shape:
+      raise ValueError('expected an array with shape {} when calling {} but got {}'.format(shape, func, result.shape))
+    return result
   elif op == 'jacobian':
     geom, ndims = args
     return J(geom, ndims)
@@ -5216,7 +5221,7 @@ class Namespace:
 
   _functions = dict(
     opposite=opposite, sin=sin, cos=cos, tan=tan, sinh=sinh, cosh=cosh,
-    tanh=tanh, arcsin=arcsin, arccos=arccos, arctan=arctan, arctan2=arctan2, arctanh=arctanh,
+    tanh=tanh, arcsin=arcsin, arccos=arccos, arctan=arctan, arctan2=ArcTan2.outer, arctanh=arctanh,
     exp=exp, abs=abs, ln=ln, log=ln, log2=log2, log10=log10, sqrt=sqrt,
     sign=sign,
   )

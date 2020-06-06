@@ -744,25 +744,26 @@ class parse(TestCase):
 
   # FUNCTION
 
-  def test_function_0d(self): self.assert_ast('func1(a)', '', ('call', _('func1'), v._a))
+  def test_function(self): self.assert_ast('func1(a)', '', ('call', _('func1'), v._a))
   def test_function_1d(self): self.assert_ast('func1(a2_i)', 'i', ('call', _('func1'), v._a2))
   def test_function_2d(self): self.assert_ast('func1(a23_ij)', 'ij', ('call', _('func1'), v._a23))
   def test_function_0d_0d(self): self.assert_ast('func2(a, a)', '', ('call', _('func2'), v._a, v._a))
-  def test_function_1d_1d(self): self.assert_ast('func2(a2_i, a2_i)', 'i', ('call', _('func2'), v._a2, v._a2))
-  def test_function_2d_2d(self): self.assert_ast('func2(a23_ij, a32_ji)', 'ij', ('call', _('func2'), v._a23, ('transpose', v._a32, _((1,0)))))
-  def test_function_2d_2d_2d(self): self.assert_ast('func3(a23_ij, a22_ik a23_kj, a23_ij)', 'ij', ('call', _('func3'), v._a23, ('sum', ('mul', ('append_axis', v._a22, _(3)), ('transpose', ('append_axis', v._a23, _(2)), _((2,0,1)))), _(1)), v._a23))
+  def test_function_1d_1d(self): self.assert_ast('func2(a2_i, a2_j)', 'ij', ('call', _('func2'), v._a2, v._a2))
+  def test_function_1d_1d_trace(self): self.assert_ast('func2(a2_i, a2_i)', '', ('trace', ('call', _('func2'), v._a2, v._a2), _(0), _(1)))
+  def test_function_2d_2d(self): self.assert_ast('func2(a23_ij, a32_kl)', 'ijkl', ('call', _('func2'), v._a23, v._a32))
+  def test_function_1d_1d_2d(self): self.assert_ast('func3(a2_i, a2_j, a23_kl)', 'ijkl', ('call', _('func3'), v._a2, v._a2, v._a23))
 
-  def test_function_unmatched_indices(self):
+  def test_function_triple_index(self):
     self.assert_syntax_error(
-      "Cannot align arrays with unmatched indices: ij, ij, jk.",
-      "1_ij + func3(a23_ij, a23_ij, a23_jk) + 1_ij", "ij",
-      "       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+      "Index 'i' occurs more than twice.",
+      "1_i + func(a2_i, a2_i, a2_i) + 1_i", "i",
+      "      ^^^^^^^^^^^^^^^^^^^^^^")
 
   def test_function_unmatched_shape(self):
     self.assert_syntax_error(
       "Shapes at index 'i' differ: 2, 3.",
-      "1_ij + func2(a23_ij, a33_ij) + 1_ij", "ij",
-      "       ^^^^^^^^^^^^^^^^^^^^^")
+      "1 + func2(a23_ij, a33_ij) + 1", "",
+      "    ^^^^^^^^^^^^^^^^^^^^^")
 
   def test_function_override(self):
     self.assert_syntax_error(
