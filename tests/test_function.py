@@ -871,6 +871,7 @@ class eval_ast(TestCase):
   def test_substitute(self): self.assertIdentical('(?x_i^2)(x_i=a2_i)', self.ns.a2**2)
   def test_multisubstitute(self): self.assertIdentical('(a2_i + ?x_i + ?y_i)(x_i=?y_i, y_i=?x_i)', self.ns.a2 + function.Argument('y', [2]) + function.Argument('x', [2]))
   def test_call(self): self.assertIdentical('sin(a)', function.sin(self.ns.a))
+  def test_call2(self): self.assertEqual(self.ns.eval_ij('arctan2(a2_i, a3_j)').simplified, function.arctan2(self.ns.a2[:,None], self.ns.a3[None,:]).simplified)
   def test_eye(self): self.assertIdentical('δ_ij a2_i', function.dot(function.eye(2), self.ns.a2, axes=[0]))
   def test_normal(self): self.assertIdentical('n_i', self.ns.x.normal())
   def test_getitem(self): self.assertIdentical('a2_0', self.ns.a2[0])
@@ -895,6 +896,10 @@ class eval_ast(TestCase):
     with self.assertRaises(ValueError):
       function._eval_ast(('invalid-opcode',), {})
 
+  def test_call_invalid_shape(self):
+    with self.assertRaisesRegex(ValueError, '^expected an array with shape'):
+      function._eval_ast(('call', (None, 'f'), (None, function.Zeros((2,), float)), (None, function.Zeros((3,), float))),
+                         dict(f=lambda a, b: a[None,:] * b[:,None])) # result is transposed
 
 @parametrize
 class jacobian(TestCase):
