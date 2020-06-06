@@ -4351,6 +4351,22 @@ def dotnorm(arg, geom, axis=-1):
   assert geom.ndim == 1 and geom.shape[0] == arg.shape[axis]
   return dot(arg, normal(geom)[(slice(None),)+(_,)*(arg.ndim-axis-1)], axis)
 
+def prependaxes(func, shape):
+  'Prepend axes with specified `shape` to `func`.'
+
+  func = asarray(func)
+  for i, n in enumerate(shape):
+    func = insertaxis(func, i, n)
+  return func
+
+def appendaxes(func, shape):
+  'Append axes with specified `shape` to `func`.'
+
+  func = asarray(func)
+  for n in shape:
+    func = insertaxis(func, func.ndim, n)
+  return func
+
 @replace
 def replace_arguments(value, arguments):
   '''Replace :class:`Argument` objects in ``value``.
