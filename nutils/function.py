@@ -207,20 +207,26 @@ class Evaluable(types.Singleton):
     return '\n'.join(lines)
 
   @property
-  def simplified(self):
-    return self.edit(lambda arg: arg.simplified if isevaluable(arg) else arg)
+  @util.replace(inclusive=False, caching=False)
+  def simplified(arg):
+    if isevaluable(arg):
+      return arg.simplified
 
   @property
-  def optimized_for_numpy(self):
-    return self.edit(lambda arg: arg.optimized_for_numpy if isevaluable(arg) else arg)
+  @util.replace(inclusive=False, caching=False)
+  def optimized_for_numpy(arg):
+    if isevaluable(arg):
+      return arg.optimized_for_numpy
 
   @util.positional_only
-  def prepare_eval(self, kwargs=...):
+  @util.replace(inclusive=False, caching=False)
+  def prepare_eval(arg, kwargs=...):
     '''
     Return a function tree suitable for evaluation.
     '''
 
-    return self.edit(lambda arg: arg.prepare_eval(**kwargs) if isevaluable(arg) else arg)
+    if isevaluable(arg):
+      return arg.prepare_eval(**kwargs)
 
 class EvaluationError(Exception):
   'evaluation error'
@@ -274,9 +280,6 @@ class Tuple(Evaluable):
   @property
   def simplified(self):
     return Tuple([item.simplified if isevaluable(item) else item for item in self.items])
-
-  def edit(self, op):
-    return Tuple([op(item) for item in self.items])
 
   def evalf(self, *items):
     'evaluate'
@@ -1182,9 +1185,6 @@ class Concatenate(Array):
     self.axis = axis
     super().__init__(args=funcs, shape=shape, dtype=dtype)
 
-  def edit(self, op):
-    return Concatenate([op(func) for func in self.funcs], self.axis)
-
   @property
   def _slices(self):
     shapes = [func.shape[self.axis] for func in self.funcs]
@@ -1388,9 +1388,6 @@ class Multiply(Array):
     assert func1.shape == func2.shape
     super().__init__(args=self.funcs, shape=func1.shape, dtype=_jointdtype(func1.dtype,func2.dtype))
 
-  def edit(self, op):
-    return Multiply([op(func) for func in self.funcs])
-
   @property
   def simplified(self):
     func1, func2 = [func.simplified for func in self.funcs]
@@ -1537,9 +1534,6 @@ class Add(Array):
     func1, func2 = funcs
     assert func1.shape == func2.shape
     super().__init__(args=self.funcs, shape=func1.shape, dtype=_jointdtype(func1.dtype,func2.dtype))
-
-  def edit(self, op):
-    return Add([op(func) for func in self.funcs])
 
   @property
   def simplified(self):
@@ -2131,18 +2125,27 @@ class ElemwiseFromCallable(Array):
 
   __slots__ = '_func', '_index'
 
+  class shield:
+    '''Non-reducable object container te prevent deep edits'''
+    def __init__(self, obj):
+      self.obj = obj
+    def __hash__(self):
+      return hash(self.obj)
+    def __eq__(self, other):
+      return type(other) == type(self) and other.obj == self.obj
+    @property
+    def __nutils_hash__(self):
+      return types.nutils_hash(self.obj)
+
   @types.apply_annotations
-  def __init__(self, func, index:asarray, shape:asshape, dtype:asdtype):
-    self._func = func
+  def __init__(self, func:shield, index:asarray, shape:asshape, dtype:asdtype):
+    self._func = func.obj
     self._index = index
     super().__init__(args=[index], shape=shape, dtype=dtype)
 
   def evalf(self, index):
     i, = index
     return numpy.asarray(self._func(i))[numpy.newaxis]
-
-  def edit(self, op):
-    return ElemwiseFromCallable(self._func, op(self._index), shape=[op(sh) if isarray(sh) else sh for sh in self.shape], dtype=self.dtype)
 
 class Eig(Evaluable):
 
@@ -2207,9 +2210,6 @@ class Zeros(Array):
   @property
   def blocks(self):
     return ()
-
-  def edit(self, op):
-    return Zeros(tuple(map(op, self.shape)), self.dtype)
 
   def _add(self, other):
     return other
@@ -3807,43 +3807,6 @@ def _inflate_scalar(arg, shape):
     arg = insertaxis(arg, idim, length)
   return arg
 
-def replace(func):
-  '''decorator for deep object replacement
-
-  Generates a deep replacement method for Immutable objects based on a callable
-  that is applied (recursively) on individual constructor arguments.
-
-  Args
-  ----
-  func
-      callable which maps (obj, ...) onto replaced_obj
-
-  Returns
-  -------
-  :any:`callable`
-      The method that searches the object to perform the replacements.
-  '''
-
-  @functools.wraps(func)
-  def wrapped(target, *funcargs, **funckwargs):
-    cache = {}
-    def op(obj):
-      try:
-        replaced = cache[obj]
-      except TypeError: # unhashable
-        replaced = obj
-      except KeyError:
-        replaced = func(obj, *funcargs, **funckwargs)
-        if replaced is None:
-          replaced = obj.edit(op) if isinstance(obj, types.Immutable) else obj
-        cache[obj] = replaced
-      return replaced
-    retval = op(target)
-    del op
-    return retval
-
-  return wrapped
-
 # FUNCTIONS
 
 def isarray(arg):
@@ -4042,7 +4005,7 @@ def rootcoords(ndims):
 def opposite(arg):
   return Opposite(arg)
 
-@replace
+@util.replace
 def _bifurcate(arg, side):
   if isinstance(arg, SelectChain):
     return SelectBifurcation(arg, side)
@@ -4329,7 +4292,7 @@ def ravel(func, axis):
   axis = numeric.normdim(func.ndim-1, axis)
   return Ravel(func, axis)
 
-@replace
+@util.replace
 def replace_arguments(value, arguments):
   '''Replace :class:`Argument` objects in ``value``.
 

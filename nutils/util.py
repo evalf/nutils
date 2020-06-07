@@ -476,4 +476,77 @@ class settable:
     finally:
       self.value = oldvalue
 
+def replace(func=None, inclusive=True, caching=True):
+  '''decorator for deep object replacement
+
+  Generates a deep replacement method for Immutable objects based on a callable
+  that is applied (recursively) on individual constructor arguments.
+
+  Args
+  ----
+  func
+      callable which maps (obj, ...) onto replaced_obj
+
+  Returns
+  -------
+  :any:`callable`
+      The method that searches the object to perform the replacements.
+  '''
+
+  if func is None:
+    return functools.partial(replace, inclusive=inclusive, caching=caching)
+
+  @functools.wraps(func)
+  def wrapped(target, *funcargs, **funckwargs):
+    marker = object()
+    fstack = [target]
+    rstack = []
+    cache = {} if caching else None
+    while fstack:
+      obj = fstack.pop()
+      if obj is marker: # arguments and constructor are ready in rstack
+        args = [rstack.pop() for i in range(fstack.pop())]
+        new = rstack.pop()
+        r = new(*args)
+      else: # new object to be considered
+        r = func(obj, *funcargs, **funckwargs) if fstack or inclusive else None
+        if r is None: # object is not replaced by func
+          r, args = _reduce(obj, cache)
+          if args is not None: # object can be reduced; push arguments for edit
+            fstack.append(len(args))
+            fstack.append(marker)
+            fstack.extend(args)
+      rstack.append(r)
+    assert len(rstack) == 1
+    return rstack[0]
+
+  return wrapped
+
+def _newtuple(*x):
+  return x
+
+def _newdict(*x):
+  n = len(x) // 2
+  return dict(zip(x[:n], x[n:]))
+
+def _reduce(obj, cache=None):
+  if isinstance(obj, tuple):
+    return _newtuple, obj
+  if isinstance(obj, dict):
+    return _newdict, tuple(obj.keys()) + tuple(obj.values())
+  try:
+    new, args = obj.__reduce__()
+  except:
+    return obj, None
+  if cache is None:
+    return new, args
+  key = id(obj)
+  if key in cache:
+    return cache[key], None
+  def mynew(*newargs):
+    newobj = new(*newargs)
+    cache[key] = newobj
+    return newobj
+  return mynew, args
+
 # vim:sw=2:sts=2:et
