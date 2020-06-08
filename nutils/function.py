@@ -3088,14 +3088,13 @@ class Polyval(Array):
 
   @property
   def simplified(self):
-    self = self.edit(lambda arg: arg.simplified if isevaluable(arg) else arg)
     degree = 0 if self.points_ndim == 0 else self.coeffs.shape[-1]-1 if isinstance(self.coeffs.shape[-1], int) else float('inf')
-    if iszero(self.coeffs) or self.ngrad > degree:
+    if iszero(self.coeffs.simplified) or self.ngrad > degree:
       return zeros_like(self)
     elif self.ngrad == degree:
       return self._const_helper().simplified
     else:
-      return self
+      return Polyval(self.coeffs.simplified, self.points.simplified, self.ngrad)
 
 class RevolutionAngle(Array):
   '''
