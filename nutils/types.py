@@ -653,9 +653,6 @@ class Immutable(metaclass=ImmutableMeta):
   def __str__(self):
     return '{}({})'.format(self.__class__.__name__, ','.join(str(arg) for arg in self._args))
 
-  def edit(self, op):
-    return self.__class__(*[op(arg) for arg in self._args], **{name: op(value) for name, value in self._kwargs.items()})
-
 class SingletonMeta(ImmutableMeta):
 
   def __new__(mcls, name, bases, namespace, **kwargs):

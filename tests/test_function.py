@@ -58,7 +58,7 @@ class check(TestCase):
     with self.subTest('simplified'):
       self.assertArrayAlmostEqual(actual.simplified.eval(**evalargs), desired, decimal)
     with self.subTest('optimized'):
-      self.assertArrayAlmostEqual(actual.simplified.optimized_for_numpy.eval(**evalargs), desired, decimal)
+      self.assertArrayAlmostEqual(actual.optimized_for_numpy.eval(**evalargs), desired, decimal)
     with self.subTest('sample'):
       self.assertArrayAlmostEqual(self.sample.eval(actual), desired, decimal)
 
@@ -272,14 +272,6 @@ class check(TestCase):
         desired=desired,
         actual=function.kronecker(self.op_args, axis=idim, pos=1, length=3))
 
-  def test_edit(self):
-    def check_identity(arg):
-      if function.isevaluable(arg):
-        newarg = arg.edit(check_identity)
-        self.assertEqual(arg, newarg)
-      return arg
-    check_identity(self.op_args)
-
   def test_opposite(self):
     self.assertArrayAlmostEqual(decimal=14,
       desired=self.n_op(*self.ifacesmp.eval([function.opposite(arg) for arg in self.args])),
@@ -289,7 +281,7 @@ class check(TestCase):
     elemtrans, = self.sample.transforms[0]
     ndim, = self.geom.shape
     J = function.localgradient(self.geom, ndim)
-    Jinv = function.inverse(J).prepare_eval()
+    Jinv = function.prepare_eval(function.inverse(J))
     countdown = 5
     iiter = 0
     self.assertEqual(target.shape[-1:], self.geom.shape)
@@ -300,7 +292,7 @@ class check(TestCase):
     target = target.reshape(-1, target.shape[-1])
     xi = xi0.reshape(-1, xi0.shape[-1])
     while countdown:
-      err = target - self.geom.prepare_eval().eval(_transforms=[elemtrans], _points=xi)
+      err = target - function.prepare_eval(self.geom).eval(_transforms=[elemtrans], _points=xi)
       if numpy.less(numpy.abs(err), 1e-12).all():
         countdown -= 1
       dxi_root = (Jinv.eval(_transforms=[elemtrans], _points=xi) * err[...,_,:]).sum(-1)
@@ -314,7 +306,7 @@ class check(TestCase):
   def test_localgradient(self):
     elemtrans, = self.sample.transforms[0]
     points = self.sample.points[0].coords
-    argsfun = function.Tuple(self.args).prepare_eval()
+    argsfun = function.prepare_eval(function.Tuple(self.args))
     exact = self.sample.eval(function.localgradient(self.op_args, ndims=self.ndim))
     D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.ndim)
     good = False
@@ -350,7 +342,7 @@ class check(TestCase):
   def test_gradient(self):
     elemtrans, = self.sample.transforms[0]
     points = self.sample.points[0].coords
-    argsfun = function.Tuple(self.args).prepare_eval()
+    argsfun = function.prepare_eval(function.Tuple(self.args))
     exact = self.sample.eval(self.op_args.grad(self.geom))
     fddeltas = numpy.array([1,2,3])
     fdfactors = numpy.linalg.solve(2*fddeltas**numpy.arange(1,1+2*len(fddeltas),2)[:,None], [1]+[0]*(len(fddeltas)-1))
@@ -377,7 +369,7 @@ class check(TestCase):
   def test_doublegradient(self):
     elemtrans, = self.sample.transforms[0]
     points = self.sample.points[0].coords
-    argsfun = function.Tuple(self.args).prepare_eval()
+    argsfun = function.prepare_eval(function.Tuple(self.args))
     exact = self.sample.eval(self.op_args.grad(self.geom).grad(self.geom))
     fddeltas = numpy.array([1,2,3])
     fdfactors = numpy.linalg.solve(2*fddeltas**numpy.arange(1,1+2*len(fddeltas),2)[:,None], [1]+[0]*(len(fddeltas)-1))
@@ -642,12 +634,12 @@ class elemwise(TestCase):
   def test_evalf(self):
     for i, trans in enumerate(self.domain.transforms):
       with self.subTest(i=i):
-        numpy.testing.assert_array_almost_equal(self.func.prepare_eval().eval(_transforms=(trans,)), self.data[i][_])
+        numpy.testing.assert_array_almost_equal(function.prepare_eval(self.func).eval(_transforms=(trans,)), self.data[i][_])
 
   def test_shape(self):
     for i, trans in enumerate(self.domain.transforms):
       with self.subTest(i=i):
-        self.assertEqual(self.func.size.prepare_eval().eval(_transforms=(trans,))[0], self.data[i].size)
+        self.assertEqual(function.prepare_eval(function.asarray(self.func.size)).eval(_transforms=(trans,))[0], self.data[i].size)
 
   def test_derivative(self):
     self.assertTrue(function.iszero(function.localgradient(self.func, self.domain.ndims)))
@@ -658,7 +650,7 @@ class elemwise(TestCase):
   def test_deprecated_elemwise(self):
     with self.assertWarns(warnings.NutilsDeprecationWarning):
       func = function.elemwise(self.domain.transforms, self.data)
-      func = func.prepare_eval()
+      func = function.prepare_eval(func)
       for i, trans in enumerate(self.domain.transforms):
         numpy.testing.assert_array_almost_equal(func.eval(_transforms=(trans,)), self.data[i][_])
 
@@ -1044,6 +1036,7 @@ class CommonBasis:
 
   def setUp(self):
     super().setUp()
+    self.wrapped = self.basis.wrapped
     self.checknelems = len(self.checkcoeffs)
     self.checksupp = [[] for i in range(self.checkndofs)]
     for ielem, dofs in enumerate(self.checkdofs):
@@ -1052,8 +1045,11 @@ class CommonBasis:
     assert len(self.checkcoeffs) == len(self.checkdofs)
     assert all(len(c) == len(d) for c, d in zip(self.checkcoeffs, self.checkdofs))
 
+  def test_ndofs(self):
+    self.assertEqual(self.basis.ndofs, self.checkndofs)
+
   def test_shape(self):
-    self.assertEqual(self.basis.shape, (self.checkndofs,))
+    self.assertEqual(self.wrapped.shape, (self.checkndofs,))
 
   def test_get_coeffshape(self):
     for ielem in range(self.checknelems):
@@ -1164,7 +1160,7 @@ class CommonBasis:
       indices, = numpy.where(mask)
       for value in mask, indices:
         with self.subTest(tuple(value)):
-          maskedbasis = self.basis[value]
+          maskedbasis = self.wrapped[value]._basis
           self.assertIsInstance(maskedbasis, function.Basis)
           for ielem in range(self.checknelems):
             m = numpy.asarray(numeric.sorted_contains(indices, self.checkdofs[ielem]))
@@ -1179,18 +1175,19 @@ class CommonBasis:
   def test_evalf(self):
     ref = element.PointReference() if self.basis.coords.shape[0] == 0 else element.LineReference()**self.basis.coords.shape[0]
     points = ref.getpoints('bezier', 4).coords
-    with self.assertWarnsRegex(function.ExpensiveEvaluationWarning, 'using explicit basis evaluation.*'):
+    with self.assertWarnsRegex(function.ExpensiveEvaluationWarning, 'using explicit inflation.*'):
       for ielem in range(self.checknelems):
-        self.assertEqual(self.basis.evalf([ielem], points).tolist(), self.checkeval(ielem, points))
+        value = self.wrapped.eval(_transforms=(self.checktransforms[ielem],), _points=points)
+        self.assertEqual(value.tolist(), self.checkeval(ielem, points))
 
   def test_simplified(self):
     ref = element.PointReference() if self.basis.coords.shape[0] == 0 else element.LineReference()**self.basis.coords.shape[0]
     points = ref.getpoints('bezier', 4).coords
-    simplified = self.basis.simplified
+    simplified = self.wrapped.simplified
     with _builtin_warnings.catch_warnings():
       _builtin_warnings.simplefilter('ignore', category=function.ExpensiveEvaluationWarning)
       for ielem in range(self.checknelems):
-        value = simplified.prepare_eval().eval(_transforms=(self.checktransforms[ielem],), _points=points)
+        value = function.prepare_eval(simplified).eval(_transforms=(self.checktransforms[ielem],), _points=points)
         if value.shape[0] == 1:
           value = numpy.tile(value, (points.shape[0], 1))
         self.assertEqual(value.tolist(), self.checkeval(ielem, points))

@@ -172,7 +172,7 @@ class Topology(types.Singleton):
     Create a basis.
     '''
     if self.ndims == 0:
-      return function.PlainBasis([[1]], [[0]], 1, self.f_index, self.f_coords)
+      return function.PlainBasis([[1]], [[0]], 1, self.f_index, self.f_coords).wrapped
     split = name.split('-', 1)
     if len(split) == 2 and split[0] in ('h', 'th'):
       name = split[1] # default to non-hierarchical bases
@@ -309,8 +309,8 @@ class Topology(types.Singleton):
       F = numpy.zeros(onto.shape[0])
       W = numpy.zeros(onto.shape[0])
       I = numpy.zeros(onto.shape[0], dtype=bool)
-      fun = function.asarray(fun).prepare_eval()
-      data = function.Tuple(function.Tuple([fun, onto_f.simplified, function.Tuple(onto_ind)]) for onto_ind, onto_f in function.blocks(onto.prepare_eval()))
+      fun = function.prepare_eval(function.asarray(fun))
+      data = function.Tuple(function.Tuple([fun, onto_f.simplified, function.Tuple(onto_ind)]) for onto_ind, onto_f in function.blocks(function.prepare_eval(onto)))
       for ref, trans, opp in zip(self.references, self.transforms, self.opposites):
         ipoints, iweights = ref.getischeme('bezier2')
         for fun_, onto_f_, onto_ind_ in data.eval(_transforms=(trans, opp), _points=ipoints, **arguments or {}):
@@ -362,7 +362,7 @@ class Topology(types.Singleton):
     if arguments is None:
       arguments = {}
 
-    levelset = levelset.prepare_eval().simplified
+    levelset = function.prepare_eval(levelset).simplified
     refs = []
     if leveltopo is None:
       with log.iter.percentage('trimming', self.references, self.transforms, self.opposites) as items:
@@ -426,7 +426,7 @@ class Topology(types.Singleton):
       ischeme = 'gauss{}'.format(degree*2)
 
     blocks = function.Tuple([function.Tuple([function.Tuple((function.Tuple(ind), f.simplified))
-      for ind, f in function.blocks(func.prepare_eval())])
+      for ind, f in function.blocks(function.prepare_eval(func))])
         for func in funcs])
 
     bases = {}
@@ -563,7 +563,7 @@ class Topology(types.Singleton):
     ielems = parallel.shempty(len(coords), dtype=int)
     xis = parallel.shempty((len(coords),len(geom)), dtype=float)
     J = function.localgradient(geom, self.ndims)
-    geom_J = function.Tuple((geom, J)).prepare_eval().simplified
+    geom_J = function.prepare_eval(function.Tuple((geom, J))).simplified
     with parallel.ctxrange('locating', len(coords)) as ipoints:
       for ipoint in ipoints:
         coord = coords[ipoint]
@@ -704,7 +704,7 @@ class Topology(types.Singleton):
       coeffs = [self.references[0].get_poly_coeffs('bernstein', degree=degree)]*len(self.references)
     else:
       coeffs = [ref.get_poly_coeffs('bernstein', degree=degree) for ref in self.references]
-    return function.DiscontBasis(coeffs, self.f_index, self.f_coords)
+    return function.DiscontBasis(coeffs, self.f_index, self.f_coords).wrapped
 
   def _basis_c0_structured(self, name, degree):
     'C^0-continuous shape functions with lagrange stucture'
@@ -742,7 +742,7 @@ class Topology(types.Singleton):
 
     elem_slices = map(slice, offsets[:-1], offsets[1:])
     dofs = tuple(types.frozenarray(dofmap[s]) for s in elem_slices)
-    return function.PlainBasis(coeffs, dofs, ndofs, self.f_index, self.f_coords)
+    return function.PlainBasis(coeffs, dofs, ndofs, self.f_index, self.f_coords).wrapped
 
   def basis_lagrange(self, degree):
     'lagrange shape functions'
@@ -1241,7 +1241,7 @@ class StructuredTopology(Topology):
       coeffs.append(tuple(coeffs_i))
 
     transforms_shape = tuple(axis.j-axis.i for axis in self.axes if axis.isdim)
-    func = function.StructuredBasis(coeffs, start_dofs, stop_dofs, dofshape, transforms_shape, self.f_index, self.f_coords)
+    func = function.StructuredBasis(coeffs, start_dofs, stop_dofs, dofshape, transforms_shape, self.f_index, self.f_coords).wrapped
     if not any(removedofs):
       return func
 
@@ -1381,7 +1381,7 @@ class SimplexTopology(Topology):
   def basis_std(self, degree):
     if degree == 1:
       coeffs = element.getsimplex(self.ndims).get_poly_coeffs('bernstein', degree=1)
-      return function.PlainBasis([coeffs] * len(self), self.simplices, self.simplices.max()+1, self.f_index, self.f_coords)
+      return function.PlainBasis([coeffs] * len(self), self.simplices, self.simplices.max()+1, self.f_index, self.f_coords).wrapped
     return super().basis_std(degree)
 
   def basis_bubble(self):
@@ -1397,7 +1397,7 @@ class SimplexTopology(Topology):
     nverts = self.simplices.max() + 1
     ndofs = nverts + len(self)
     nmap = [types.frozenarray(numpy.hstack([idofs, nverts+ielem]), copy=False) for ielem, idofs in enumerate(self.simplices)]
-    return function.PlainBasis([coeffs] * len(self), nmap, ndofs, self.f_index, self.f_coords)
+    return function.PlainBasis([coeffs] * len(self), nmap, ndofs, self.f_index, self.f_coords).wrapped
 
 class UnionTopology(Topology):
   'grouped topology'
@@ -1610,7 +1610,7 @@ class SubsetTopology(Topology):
     if isinstance(self.basetopo, HierarchicalTopology):
       warnings.warn('basis may be linearly dependent; a linearly indepent basis is obtained by trimming first, then creating hierarchical refinements')
     basis = self.basetopo.basis(name, *args, **kwargs)
-    return function.PrunedBasis(basis, self._indices, self.f_index, self.f_coords)
+    return function.PrunedBasis(basis, self._indices, self.f_index, self.f_coords).wrapped
 
   def locate(self, geom, coords, *, eps=0, **kwargs):
     sample = self.basetopo.locate(geom, coords, eps=eps, **kwargs)
@@ -1860,7 +1860,6 @@ class HierarchicalTopology(Topology):
         prev_transforms = topo.transforms
 
         basis_i = topo.basis(name, *args, **kwargs)
-        assert isinstance(basis_i, function.Basis)
         ubases.insert(0, basis_i)
         # Basis functions that have at least one touchelem in their support.
         touchdofs_i = basis_i.get_dofs(touchielems_i)
@@ -1937,7 +1936,7 @@ class HierarchicalTopology(Topology):
         hbasis_dofs.append(numpy.concatenate(trans_dofs))
         hbasis_coeffs.append(numeric.poly_concatenate(trans_coeffs))
 
-    return function.PlainBasis(hbasis_coeffs, hbasis_dofs, ndofs, self.f_index, self.f_coords)
+    return function.PlainBasis(hbasis_coeffs, hbasis_dofs, ndofs, self.f_index, self.f_coords).wrapped
 
 class ProductTopology(Topology):
   'product topology'
@@ -2224,7 +2223,7 @@ class MultipatchTopology(Topology):
       dofmap = tuple(types.frozenarray(renumber[v], copy=False) for v in dofmap)
       dofcount = len(remainder)
 
-    return function.PlainBasis(coeffs, dofmap, dofcount, self.f_index, self.f_coords)
+    return function.PlainBasis(coeffs, dofmap, dofcount, self.f_index, self.f_coords).wrapped
 
   def basis_patch(self):
     'degree zero patchwise discontinuous basis'
@@ -2232,7 +2231,7 @@ class MultipatchTopology(Topology):
     transforms = transformseq.PlainTransforms(tuple((patch.topo.root,) for patch in self.patches), self.ndims)
     index, tail = function.TransformsIndexWithTail(transforms, function.TRANS)
     coords = function.ApplyTransforms(tail)
-    return function.DiscontBasis([types.frozenarray(1, dtype=int).reshape(1, *(1,)*self.ndims)]*len(self.patches), index, coords)
+    return function.DiscontBasis([types.frozenarray(1, dtype=int).reshape(1, *(1,)*self.ndims)]*len(self.patches), index, coords).wrapped
 
   @property
   def boundary(self):
