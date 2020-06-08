@@ -9,6 +9,17 @@ features in inverse chronological order.
 New in v7.0 (in development)
 ----------------------------
 
+- User-defined functions in :class:`~nutils.function.Namespace`
+
+  The :class:`~nutils.function.Namespace` can be initialized with a dictionary
+  of user-defined functions::
+
+      >>> def mul(a, b):
+      ...   return a[(...,)+(None,)*b.ndim] * b[(None,)*a.ndim]
+      >>> ns = Namespace(functions=dict(mul=mul))
+
+      >>> 'mul(a_i, b_j)' @ ns # equivalent to `'a_i b_j' @ ns`
+
 - Solve multiple residuals to multiple targets
 
   In problems involving multiple fields, where formerly it was required to

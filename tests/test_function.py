@@ -862,6 +862,22 @@ class namespace(TestCase):
     topo, ns.x = mesh.rectilinear([1])
     self.assertEqual(ns.eval_i('n(x_i)'), function.normal(ns.x))
 
+  def test_functions(self):
+    def sqr(a):
+      return a**2
+    def mul(*args):
+      if len(args) == 2:
+        return args[0][(...,)+(None,)*args[1].ndim] * args[1][(None,)*args[0].ndim]
+      else:
+        return mul(mul(args[0], args[1]), *args[2:])
+    ns = function.Namespace(functions=dict(sqr=sqr, mul=mul))
+    ns.a = numpy.array([1, 2, 3])
+    ns.b = numpy.array([4, 5])
+    ns.A = numpy.array([[6, 7, 8], [9, 10, 11]])
+    self.assertEqual(ns.eval_i('sqr(a_i)').shape, (3,))
+    self.assertEqual(ns.eval_ij('mul(a_i, b_j)').shape, (3,2))
+    self.assertEqual(ns.eval_('mul(b_i, A_ij, a_j)').shape, ())
+
 class eval_ast(TestCase):
 
   def setUp(self):

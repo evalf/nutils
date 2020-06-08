@@ -4579,6 +4579,24 @@ class Namespace:
   ``tanh``, ``arcsin``, ``arccos``, ``arctan2``, ``arctanh``, ``exp``, ``abs``,
   ``ln``, ``log``, ``log2``, ``log10``, ``sqrt`` and ``sign``.
 
+  Additional pointwise functions can be passed to argument ``functions``. All
+  functions should take :class:`Array` objects as arguments and must return an
+  :class:`Array` with as shape the sum of all shapes of the arguments.
+
+  >>> def sqr(a):
+  ...   return a**2
+  >>> def mul(a, b):
+  ...   return a[(...,)+(None,)*b.ndim] * b[(None,)*a.ndim]
+  >>> ns_funcs = function.Namespace(functions=dict(sqr=sqr, mul=mul))
+  >>> ns_funcs.a = numpy.array([1,2,3])
+  >>> ns_funcs.b = numpy.array([4,5])
+  >>> 'sqr(a_i)' @ ns_funcs # same as 'a_i^2'
+  Array<3>
+  >>> ns_funcs.eval_ij('mul(a_i, b_j)') # same as 'a_i b_j'
+  Array<3,2>
+  >>> 'mul(a_i, a_i)' @ ns_funcs # same as 'a_i a_i'
+  Array<>
+
   Args
   ----
   default_geometry_name : :class:`str`
@@ -4590,6 +4608,10 @@ class Namespace:
   length_<indices> : :class:`int`
       The fixed length of ``<indices>``.  All axes in the expression marked
       with one of the ``<indices>`` are asserted to have the specified length.
+  functions : :class:`dict`, optional
+      Pointwise functions that should be available in the namespace,
+      supplementing the default functions listed above. All functions should
+      return arrays with as shape the sum of all shapes of the arguments.
 
   Attributes
   ----------
@@ -4599,11 +4621,11 @@ class Namespace:
       The name of the default geometry.  See argument with the same name.
   '''
 
-  __slots__ = '_attributes', '_arg_shapes', 'default_geometry_name', '_fixed_lengths', '_fallback_length'
+  __slots__ = '_attributes', '_arg_shapes', 'default_geometry_name', '_fixed_lengths', '_fallback_length', '_functions'
 
   _re_assign = re.compile('^([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)(_[a-z]+)?$')
 
-  _functions = dict(
+  _default_functions = dict(
     opposite=opposite, sin=sin, cos=cos, tan=tan, sinh=sinh, cosh=cosh,
     tanh=tanh, arcsin=arcsin, arccos=arccos, arctan=arctan, arctan2=ArcTan2.outer, arctanh=arctanh,
     exp=exp, abs=abs, ln=ln, log=ln, log2=log2, log10=log10, sqrt=sqrt,
@@ -4611,7 +4633,7 @@ class Namespace:
   )
 
   @types.apply_annotations
-  def __init__(self, *, default_geometry_name='x', fallback_length:types.strictint=None, **kwargs):
+  def __init__(self, *, default_geometry_name='x', fallback_length:types.strictint=None, functions=None, **kwargs):
     if not isinstance(default_geometry_name, str):
       raise ValueError('default_geometry_name: Expected a str, got {!r}.'.format(default_geometry_name))
     if '_' in default_geometry_name or not self._re_assign.match(default_geometry_name):
@@ -4629,11 +4651,12 @@ class Namespace:
     super().__setattr__('_fixed_lengths', types.frozendict({i: l for indices, l in fixed_lengths.items() for i in indices} if fixed_lengths else {}))
     super().__setattr__('_fallback_length', fallback_length)
     super().__setattr__('default_geometry_name', default_geometry_name)
+    super().__setattr__('_functions', dict(itertools.chain(self._default_functions.items(), () if functions is None else functions.items())))
     super().__init__()
 
   def __getstate__(self):
     'Pickle instructions'
-    attrs = '_arg_shapes', '_attributes', 'default_geometry_name', '_fixed_lengths', '_fallback_length'
+    attrs = '_arg_shapes', '_attributes', 'default_geometry_name', '_fixed_lengths', '_fallback_length', '_functions'
     return {k: getattr(self, k) for k in attrs}
 
   def __setstate__(self, d):
