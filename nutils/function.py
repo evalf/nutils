@@ -1920,6 +1920,23 @@ class Pointwise(Array):
     self.args = args
     super().__init__(args=args, shape=shape, dtype=retval.dtype)
 
+  @classmethod
+  def outer(cls, *args):
+    '''Alternative constructor that outer-aligns the arguments.
+
+    The output shape of this pointwise function is the sum of all shapes of its
+    arguments. When called with multiple arguments, the first argument will be
+    appended with singleton axes to match the output shape, the second argument
+    will be prepended with as many singleton axes as the dimension of the
+    original first argument and appended to match the output shape, and so
+    forth and so on.
+    '''
+
+    args = tuple(map(asarray, args))
+    shape = builtins.sum((arg.shape for arg in args), ())
+    offsets = numpy.cumsum([0]+[arg.ndim for arg in args])
+    return cls(*(prependaxes(appendaxes(arg, shape[r:]), shape[:l]) for arg, l, r in zip(args, offsets[:-1], offsets[1:])))
+
   @property
   def simplified(self):
     args = [arg.simplified for arg in self.args]
