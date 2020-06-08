@@ -318,6 +318,7 @@ class _CacheMeta_property:
   '''
 
   _self = object()
+  _circular = object()
 
   def __init__(self, prop, cache_attr):
     assert isinstance(prop, property)
@@ -331,10 +332,13 @@ class _CacheMeta_property:
     try:
       cached_value = getattr(instance, self.cache_attr)
     except AttributeError:
+      setattr(instance, self.cache_attr, self._circular)
       value = self.fget(instance)
       setattr(instance, self.cache_attr, value if value is not instance else self._self)
       return value
     else:
+      if cached_value is self._circular:
+        raise Exception('circular dependence in lazy attributes')
       return cached_value if cached_value is not self._self else instance
 
   def __set__(self, instance, value):
