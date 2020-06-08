@@ -529,13 +529,12 @@ class Array(Evaluable):
       elif it is _:
         array = expand_dims(array, axis)
         axis += 1
-      elif it == slice(None):
-        axis += 1
       elif isinstance(it, slice):
         assert it.step == None or it.step == 1
-        start = 0 if it.start is None else it.start if it.start >= 0 else it.start + array.shape[axis]
-        stop = array.shape[axis] if it.stop is None else it.stop if it.stop >= 0 else it.stop + array.shape[axis]
-        array = take(array, index=Range(stop-start, start), axis=axis)
+        if it.start or it.stop is not None and it.stop != array.shape[axis]:
+          start = 0 if it.start is None else it.start if it.start >= 0 else it.start + array.shape[axis]
+          stop = array.shape[axis] if it.stop is None else it.stop if it.stop >= 0 else it.stop + array.shape[axis]
+          array = take(array, index=Range(stop-start, start), axis=axis)
         axis += 1
       else:
         array = take(array, index=it, axis=axis)
