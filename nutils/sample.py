@@ -456,10 +456,10 @@ class Integral(types.Singleton):
     derivative : :class:`Integral`
     '''
 
-    argshape = self.argshapes[target]
-    arg = function.Argument(target, argshape)
+    if not isinstance(target, function.Argument):
+      target = function.Argument(target, self.argshapes[target])
     seen = {}
-    return Integral({di: function.derivative(integrand, var=arg, seen=seen) for di, integrand in self._integrands.items()}, shape=self.shape+argshape)
+    return Integral({di: function.derivative(integrand, var=target, seen=seen) for di, integrand in self._integrands.items()}, shape=self.shape+target.shape)
 
   def replace(self, arguments):
     '''Return copy with arguments applied.
