@@ -4990,6 +4990,13 @@ def dotnorm(arg, geom, axis=-1):
   assert geom.ndim == 1 and geom.shape[0] == arg.shape[axis]
   return dot(arg, normal(geom)[(slice(None),)+(_,)*(arg.ndim-axis-1)], axis)
 
+def _d1(arg, var):
+  return (derivative if isinstance(var, Argument) else grad)(arg, var)
+
+def d(arg, *vars):
+  'derivative of `arg` to `vars`'
+  return functools.reduce(_d1, vars, arg)
+
 def prependaxes(func, shape):
   'Prepend axes with specified `shape` to `func`.'
 
@@ -5223,7 +5230,7 @@ class Namespace:
     opposite=opposite, sin=sin, cos=cos, tan=tan, sinh=sinh, cosh=cosh,
     tanh=tanh, arcsin=arcsin, arccos=arccos, arctan=arctan, arctan2=ArcTan2.outer, arctanh=arctanh,
     exp=exp, abs=abs, ln=ln, log=ln, log2=log2, log10=log10, sqrt=sqrt,
-    sign=sign,
+    sign=sign, d=d
   )
 
   @types.apply_annotations
