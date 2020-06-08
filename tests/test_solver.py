@@ -1,4 +1,4 @@
-from nutils import solver, mesh, function, cache, types, numeric, warnings
+from nutils import solver, mesh, function, cache, types, numeric, warnings, sample, sparse
 from nutils.testing import *
 import numpy, contextlib, tempfile, itertools, logging
 
@@ -42,68 +42,96 @@ class laplace(TestCase):
         self.assertLess(resnorm, 1e-13)
 
 
+@parametrize
 class navierstokes(TestCase):
+
+  viscosity = 1e-3
 
   def setUp(self):
     super().setUp()
     domain, geom = mesh.rectilinear([numpy.linspace(0,1,9)] * 2)
-    ubasis, pbasis = function.chain([
-      domain.basis('std', degree=2).vector(2),
-      domain.basis('std', degree=1),
-    ])
-    dofs = function.Argument('dofs', [len(ubasis)])
-    u = ubasis.dot(dofs)
-    p = pbasis.dot(dofs)
-    viscosity = 1e-3
-    self.inertia = domain.integral((ubasis * u).sum(-1)*function.J(geom), degree=5)
-    stokesres = domain.integral((viscosity * (ubasis.grad(geom) * (u.grad(geom)+u.grad(geom).T)).sum([-1,-2]) - ubasis.div(geom) * p + pbasis * u.div(geom))*function.J(geom), degree=5)
-    self.residual = stokesres + domain.integral((ubasis * (u.grad(geom) * u).sum(-1) * u).sum(-1)*function.J(geom), degree=5)
-    self.cons = domain.boundary['top,bottom'].project([0,0], onto=ubasis, geometry=geom, ischeme='gauss4') \
-              | domain.boundary['left'].project([geom[1]*(1-geom[1]),0], onto=ubasis, geometry=geom, ischeme='gauss4')
-    self.lhs0 = solver.solve_linear('dofs', residual=stokesres, constrain=self.cons)
+    gauss = domain.sample('gauss', 5)
+    uin = geom[1] * (1-geom[1])
+    dx = function.J(geom, 2)
+    ubasis = domain.basis('std', degree=2)
+    pbasis = domain.basis('std', degree=1)
+    if self.single:
+      ubasis, pbasis = function.chain([ubasis.vector(2), pbasis])
+      dofs = function.Argument('dofs', [len(ubasis)])
+      u = ubasis.dot(dofs)
+      p = pbasis.dot(dofs)
+      dofs = 'dofs'
+      ures = gauss.integral((self.viscosity * (ubasis.grad(geom) * (u.grad(geom) + u.grad(geom).T)).sum([-1,-2]) - ubasis.div(geom) * p) * dx)
+      dres = gauss.integral((ubasis * (u.grad(geom) * u).sum(-1)).sum(-1) * dx)
+    else:
+      u = (ubasis[:,numpy.newaxis] * function.Argument('dofs', [len(ubasis), 2])).sum(0)
+      p = (pbasis * function.Argument('pdofs', [len(pbasis)])).sum(0)
+      dofs = 'dofs', 'pdofs'
+      ures = gauss.integral((self.viscosity * (ubasis[:,numpy.newaxis].grad(geom) * (u.grad(geom) + u.grad(geom).T)).sum(-1) - ubasis.grad(geom) * p) * dx)
+      dres = gauss.integral(ubasis[:,numpy.newaxis] * (u.grad(geom) * u).sum(-1) * dx)
+    pres = gauss.integral((pbasis * u.div(geom)) * dx)
+    cons = solver.optimize('dofs', domain.boundary['top,bottom'].integral((u**2).sum(), degree=4), droptol=1e-10)
+    cons = solver.optimize('dofs', domain.boundary['left'].integral((u[0]-uin)**2 + u[1]**2, degree=4), droptol=1e-10, constrain=cons)
+    self.cons = cons if self.single else {'dofs': cons}
+    stokes = solver.solve_linear(dofs, residual=ures + pres if self.single else [ures, pres], constrain=self.cons)
+    self.arguments = dict(dofs=stokes) if self.single else stokes
+    self.residual = ures + dres + pres if self.single else [ures + dres, pres]
+    inertia = gauss.integral(.5 * (u**2).sum(-1) * dx).derivative('dofs')
+    self.inertia = inertia if self.single else [inertia, None]
     self.tol = 1e-10
+    self.dofs = dofs
+    self.frozen = types.frozenarray if self.single else solver.argdict
 
   def assert_resnorm(self, lhs):
-    res = self.residual.eval(arguments=dict(dofs=lhs))
-    resnorm = numpy.linalg.norm(res[numpy.isnan(self.cons)])
+    res = self.residual.eval(arguments=dict(dofs=lhs))[numpy.isnan(self.cons)] if self.single \
+      else numpy.concatenate([sparse.toarray(sparse.take(r, [numpy.isnan(self.cons[d])]) if d in self.cons else r)
+        for d, r in zip(self.dofs, sample.eval_integrals_sparse(*self.residual, **lhs))])
+    resnorm = numpy.linalg.norm(res)
     self.assertLess(resnorm, self.tol)
 
   def test_direct(self):
     with self.assertRaises(solver.SolverError):
-      self.assert_resnorm(solver.solve_linear('dofs', residual=self.residual, constrain=self.cons))
+      solver.solve_linear(self.dofs, residual=self.residual, constrain=self.cons)
 
   def test_newton(self):
-    self.assert_resnorm(solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons).solve(tol=self.tol, maxiter=2))
+    self.assert_resnorm(solver.newton(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons).solve(tol=self.tol, maxiter=2))
 
   def test_newton_medianbased(self):
-    self.assert_resnorm(solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, linesearch=solver.MedianBased()).solve(tol=self.tol, maxiter=2))
+    self.assert_resnorm(solver.newton(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, linesearch=solver.MedianBased()).solve(tol=self.tol, maxiter=2))
 
   def test_newton_relax0(self):
-    self.assert_resnorm(solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, relax0=.1).solve(tol=self.tol, maxiter=5))
+    self.assert_resnorm(solver.newton(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, relax0=.1).solve(tol=self.tol, maxiter=5))
 
   def test_newton_tolnotreached(self):
     with self.assertLogs('nutils', logging.WARNING) as cm:
-      self.assert_resnorm(solver.newton('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, linrtol=1e-99).solve(tol=self.tol, maxiter=2))
+      self.assert_resnorm(solver.newton(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, linrtol=1e-99).solve(tol=self.tol, maxiter=2))
     for msg in cm.output:
       self.assertIn('solver failed to reach tolerance', msg)
 
   def test_newton_iter(self):
-    _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.newton('dofs', residual=self.residual, constrain=self.cons)))
+    _test_recursion_cache(self, lambda: ((self.frozen(lhs), info.resnorm) for lhs, info in solver.newton(self.dofs, residual=self.residual, constrain=self.cons)))
 
   def test_pseudotime(self):
-    self.assert_resnorm(solver.pseudotime('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, inertia=self.inertia, timestep=1).solve(tol=self.tol, maxiter=12))
+    self.assert_resnorm(solver.pseudotime(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, inertia=self.inertia, timestep=1).solve(tol=self.tol, maxiter=12))
 
   def test_pseudotime_iter(self):
-    _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.pseudotime('dofs', residual=self.residual, lhs0=self.lhs0, constrain=self.cons, inertia=self.inertia, timestep=1)))
+    _test_recursion_cache(self, lambda: ((self.frozen(lhs), info.resnorm) for lhs, info in solver.pseudotime(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, inertia=self.inertia, timestep=1)))
+
+navierstokes(single=False)
+navierstokes(single=True)
 
 
+@parametrize
 class finitestrain(TestCase):
 
   def setUp(self):
     super().setUp()
     domain, geom = mesh.rectilinear([numpy.linspace(0,1,9)] * 2)
-    ubasis = domain.basis('std', degree=2).vector(2)
-    u = ubasis.dot(function.Argument('dofs', [len(ubasis)]))
+    ubasis = domain.basis('std', degree=2)
+    if self.vector:
+      u = ubasis.vector(2).dot(function.Argument('dofs', [len(ubasis)*2]))
+    else:
+      u = (ubasis[:,numpy.newaxis] * function.Argument('dofs', [len(ubasis), 2])).sum(0)
     Geom = geom * [1.1, 1] + u
     self.cons = solver.optimize('dofs', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15)
     self.boolcons = ~numpy.isnan(self.cons)
@@ -113,8 +141,8 @@ class finitestrain(TestCase):
     self.tol = 1e-10
 
   def assert_resnorm(self, lhs):
-    res = self.residual.eval(arguments=dict(dofs=lhs))
-    resnorm = numpy.linalg.norm(res[~self.boolcons])
+    res, = sample.eval_integrals_sparse(self.residual, dofs=lhs)
+    resnorm = numpy.linalg.norm(sparse.toarray(res)[~self.boolcons])
     self.assertLess(resnorm, self.tol)
 
   def test_direct(self):
@@ -138,6 +166,9 @@ class finitestrain(TestCase):
 
   def test_minimize_iter(self):
     _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.minimize('dofs', energy=self.energy, constrain=self.cons)))
+
+finitestrain(vector=False)
+finitestrain(vector=True)
 
 
 class optimize(TestCase):

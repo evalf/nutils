@@ -56,7 +56,7 @@ def dtype(shape, vtype=numpy.float64):
       The sparse dtype.
   '''
 
-  return _dtype([((int(n), 'i'+str(i)), '>u'+str(1 if n <= 256 else 2 if n <= 256**2 else 4 if n <= 256**4 else 8)) for i, n in enumerate(shape)], vtype)
+  return _dtype([((int(n), 'i'+str(i)), _uint(n)) for i, n in enumerate(shape)], vtype)
 
 def issparse(data):
   return isinstance(data, numpy.ndarray) and issparsedtype(data.dtype)
@@ -214,6 +214,96 @@ def add(datas):
     numpy.concatenate(datas, out=retval)
   return retval
 
+def block(datas):
+  '''Stack sparse blocks.'''
+
+  assert isinstance(datas, list)
+  structure = [len(datas)]
+  while all(isinstance(data, list) for data in datas):
+    length = set(map(len, datas))
+    if len(length) != 1:
+      raise Exception('inconsistent block structure')
+    datas = sum(datas, [])
+    structure.extend(length)
+  blocksizes = [numpy.repeat(-1, sh) for sh in structure]
+  blocks = []
+  for i, data in enumerate(datas):
+    if isinstance(data, int) and data == 0:
+      continue
+    if not issparse(data) or ndim(data) != len(structure):
+      raise Exception('all blocks should be either {}d-sparse or 0'.format(len(structure)))
+    blockidx = numpy.unravel_index(i, structure)
+    for blocksize, iblock, size in zip(blocksizes, blockidx, shape(data)):
+      if blocksize[iblock] == -1:
+        blocksize[iblock] = size
+      elif blocksize[iblock] != size:
+        raise Exception('block sizes do not match')
+    blocks.append((blockidx, data))
+  if any(-1 in blocksize for blocksize in blocksizes):
+    raise Exception('not all block sizes can be determined')
+  retval = numpy.empty(sum(len(data) for blockidx, data in blocks),
+    dtype=dtype([blocksize.sum() for blocksize in blocksizes], numpy.result_type(*[data.dtype['value'] for blockidx, data in blocks])))
+  i = 0
+  for blockidx, data in blocks:
+    j = i + len(data)
+    out = retval[i:j]
+    out['value'] = data['value']
+    for idim, iblock in enumerate(blockidx):
+      outindex = out['index']['i'+str(idim)]
+      numpy.add(data['index']['i'+str(idim)], blocksizes[idim][:iblock].sum(), out=outindex, dtype=outindex.dtype)
+      # NOTE: Specifying the dtype is necessary because Numpy apparently does
+      # not follow the out argument automatically, defaulting instead to a
+      # dtype that may be to small to contain the result of the addition.
+    i = j
+  assert i == len(retval)
+  return retval
+
+def take(data, select):
+  '''Take a multidimensional, ordered subset.'''
+
+  indices, values, shape = extract(data)
+  newindices = []
+  newshape = []
+  keep = True
+  axis = 0
+  for s in select:
+    if not isinstance(s, numpy.ndarray) or s.dtype != bool:
+      raise Exception('invalid selection vector for dimension {}'.format(axis))
+    nextaxis = axis + s.ndim
+    if s.shape != shape[axis:nextaxis]:
+      raise Exception('selection vector has incorrect shape for dimension {}'.format(axis))
+    sh = s.sum()
+    if sh != s.size:
+      keep &= s[indices[axis:nextaxis]]
+      renumber = numpy.empty(s.shape, dtype=_uint(sh))
+      renumber[s] = numpy.arange(sh)
+      index = renumber[indices[axis:nextaxis]]
+      del renumber
+    elif s.ndim == 1:
+      index = indices[axis]
+    else:
+      index = numpy.zeros(len(data), dtype=_uint(sh))
+      for i in range(axis, nextaxis):
+        index *= shape[i]
+        index += indices[i]
+    newindices.append(index)
+    newshape.append(sh)
+    axis = nextaxis
+  assert axis == len(shape)
+  if keep is not True: # selection
+    retval = numpy.empty(keep.sum(), dtype=dtype(newshape, data['value'].dtype))
+    numpy.compress(keep, data['value'], out=retval['value'])
+    for i, newindex in enumerate(newindices):
+      numpy.compress(keep, newindex, out=retval['index']['i'+str(i)])
+  elif newshape != list(shape): # reshape
+    retval = numpy.empty(len(data), dtype=dtype(newshape, data['value'].dtype))
+    retval['value'] = data['value']
+    for i, newindex in enumerate(newindices):
+      retval['index']['i'+str(i)] = newindex
+  else: # identity
+    retval = data
+  return retval
+
 def toarray(data):
   '''Convert sparse object to a dense array.
 
@@ -254,6 +344,9 @@ def fromarray(data):
 
 def _dtype(itype, vtype):
   return numpy.dtype([('index', itype), ('value', vtype)])
+
+def _uint(n):
+  return numpy.dtype('>u'+str(1 if n <= 256 else 2 if n <= 256**2 else 4 if n <= 256**4 else 8))
 
 def _resize(data, n):
   if data.base is not None:

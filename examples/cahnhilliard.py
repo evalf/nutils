@@ -63,10 +63,10 @@ def main(nelems:int, etype:str, btype:str, degree:int, epsilon:typing.Optional[f
     ns.x = function.sin(angle) * function.cos(angle)[[1,0]] / numpy.sqrt(2)
   ns.epsilon = epsilon
   ns.ewall = .5 * numpy.cos(contactangle * numpy.pi / 180)
-  ns.cbasis, ns.mbasis = function.chain([domain.basis('std', degree=degree)] * 2)
-  ns.c = 'cbasis_n ?lhs_n'
-  ns.dc = 'cbasis_n (?lhs_n - ?lhs0_n)'
-  ns.m = 'mbasis_n ?lhs_n'
+  ns.cbasis = ns.mbasis = domain.basis('std', degree=degree)
+  ns.c = 'cbasis_n ?c_n'
+  ns.dc = 'cbasis_n (?c_n - ?c0_n)'
+  ns.m = 'mbasis_n ?m_n'
   ns.F = '.5 (c^2 - 1)^2 / epsilon^2'
   ns.dF = stab.value
   ns.dt = timestep
@@ -77,24 +77,25 @@ def main(nelems:int, etype:str, btype:str, degree:int, epsilon:typing.Optional[f
   nrg = nrg_mix + nrg_iface + nrg_wall + domain.integral('(dF - m dc - .5 dt epsilon^2 m_,k m_,k) d:x' @ ns, degree=7)
 
   numpy.random.seed(seed)
-  lhs = numpy.random.normal(0, .5, ns.cbasis.shape) # initial condition
+  state = dict(c=numpy.random.normal(0,.5,ns.cbasis.shape), m=numpy.random.normal(0,.5,ns.mbasis.shape)) # initial condition
 
   with treelog.iter.plain('timestep', itertools.count()) as steps:
    for istep in steps:
 
-    E = sample.eval_integrals(nrg_mix, nrg_iface, nrg_wall, lhs=lhs)
+    E = sample.eval_integrals(nrg_mix, nrg_iface, nrg_wall, **state)
     treelog.user('energy: {0:.3f} ({1[0]:.0f}% mixture, {1[1]:.0f}% interface, {1[2]:.0f}% wall)'.format(sum(E), 100*numpy.array(E)/sum(E)))
 
-    x, c, m = bezier.eval(['x_i', 'c', 'm'] @ ns, lhs=lhs)
+    x, c, m = bezier.eval(['x_i', 'c', 'm'] @ ns, **state)
     export.triplot('phase.png', x, c, tri=bezier.tri, clim=(-1,1))
     export.triplot('chempot.png', x, m, tri=bezier.tri)
 
     if numpy.ptp(m) < mtol:
       break
 
-    lhs = solver.optimize('lhs', nrg, arguments=dict(lhs0=lhs), lhs0=lhs, tol=1e-10)
+    state['c0'] = state['c']
+    state = solver.optimize(['c', 'm'], nrg, arguments=state, tol=1e-10)
 
-  return lhs
+  return state
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line.
@@ -112,35 +113,40 @@ class test(testing.TestCase):
 
   @testing.requires('matplotlib')
   def test_initial(self):
-    lhs = main(nelems=3, etype='square', btype='std', degree=2, epsilon=None, contactangle=90, timestep=1, mtol=float('inf'), seed=0, circle=False, stab=stab.linear)
-    self.assertAlmostEqual64(lhs, '''
-      eNoBxAA7/xM3LjTtNYs3MDcUyt41uc14zjo0LzKzNm812jFhNNMzwDYgzbMzV8o0yCM1rzWeypE3Tcnx
-      L07NzTa4NlMyETREyrPIGMxYMl82VDbjy1/M8clZyf3IRjday6XLmMl6NRnJDs1Ayh00WMu1yQHRUDSs
-      MKIz7MoEzM/KCMxwyvjIlzLQyxTJdjQ5yjEwWjX3MTk2n8kwNMbKTsoay1DMWDC8ycM1eTQyyb42NzdK
-      NmLN5skSNs/LXDbnMuw19DNKNREtGTfui1ut''')
+    state = main(nelems=3, etype='square', btype='std', degree=2, epsilon=None, contactangle=90, timestep=1, mtol=float('inf'), seed=0, circle=False, stab=stab.linear)
+    with self.subTest('concentration'): self.assertAlmostEqual64(state['c'], '''
+      eNoBYgCd/xM3LjTtNYs3MDcUyt41uc14zjo0LzKzNm812jFhNNMzwDYgzbMzV8o0yCM1rzWeypE3Tcnx
+      L07NzTa4NlMyETREyrPIGMxYMl82VDbjy1/M8clZyf3IRjday6XLmMl6NRnJMF4tqQ==''')
+    with self.subTest('chemical-potential'): self.assertAlmostEqual64(state['m'], '''
+      eNoBYgCd/w7NQModNFjLtckB0VA0rDCiM+zKBMzPygjMcMr4yJcy0MsUyXY0OcoxMFo19zE5Np/JMDTG
+      yk7KGstQzFgwvMnDNXk0Msm+Njc3SjZizebJEjbPy1w25zLsNfQzSjURLRk3Qt4uBQ==''')
 
   @testing.requires('matplotlib')
   def test_square(self):
-    lhs = main(nelems=3, etype='square', btype='std', degree=2, epsilon=None, contactangle=90, timestep=1, mtol=.1, seed=0, circle=False, stab=stab.linear)
-    self.assertAlmostEqual64(lhs, '''
-      eNqbZTbHzMHsiGmpCd9V1gszzWaZ2ZjtMQ01eXV+xbk0szSgzAaTDxdNTkue1jbTMpM15TJqP/335PeT
-      100vmyqYaJ3tPNV1svNknmmKqYJR+On3J01Pmp9MMY0y/WIYCOSZn7Q82XCi8UTXiSkn5pxYBISovJYT
-      rSd6T0wD8xae6ATCCSemn5gLlusFwiknZp9YcGIpEE4Ewhkn5p1YfGIFEKLyAN6wcSE=''')
+    state = main(nelems=3, etype='square', btype='std', degree=2, epsilon=None, contactangle=90, timestep=1, mtol=.1, seed=0, circle=False, stab=stab.linear)
+    with self.subTest('concentration'): self.assertAlmostEqual64(state['c'], '''
+      eNoBYgCd/5o2nDZANsQ1dTQO1QXQmTaaNjw2vDVVNOrPqM5mNmY2xDWwNPDRNMsZyys2KjYdNQoyh8v9
+      yffJ1zXTNSA0Ks2JyorJicluNWQ1IDJXy+/JNck3yWQ1WjX0MVHL78k3yTnJbYgt7Q==''')
+    with self.subTest('chemical-potential'): self.assertAlmostEqual64(state['m'], '''
+      eNpVyU0KgCAABeGrK9SiQCiQCsrwB8GjzLF8uJNvNYzBsuP5yGKmWlhxXKMSmxzchPGceF4iVU55+Ck0
+      masD28JDNQ==''')
 
   @testing.requires('matplotlib')
   def test_contactangle(self):
-    lhs = main(nelems=3, etype='square', btype='std', degree=2, epsilon=None, contactangle=45, timestep=1, mtol=.1, seed=0, circle=False, stab=stab.linear)
-    self.assertAlmostEqual64(lhs, '''
-      eNqzNsszkzZbbfrdOOus6Jlss5lmPmbPTQtNtp6be8bZrNTss6mW6SMDv9OnTokDZRpMbxl7nNE89fTk
-      ItNHpl0mT8+fOzX3ZP7J3yb+ph1G206zn7I+KXWyyOSeibK+1ulzJyVP/joRZhJp0m6yyeSyyXsgDAfy
-      2kw2mlw0eWvyxiTLJNtkgslmk3Mmz4CwzqTeZLbJNpOzJo+AcIrJVJO1JkdMbpi8BsLlJitM9gHNeGLy
-      2eQLkLfSZL/JFZOnJl+BEAAJrlyi''')
+    state = main(nelems=3, etype='square', btype='std', degree=2, epsilon=None, contactangle=45, timestep=1, mtol=.1, seed=0, circle=False, stab=stab.linear)
+    with self.subTest('concentration'): self.assertAlmostEqual64(state['c'], '''
+      eNoBYgCd/zs2bjYbNqs19zNqzRXMazaZNkw25zVxNLXOncxDNnU28zUqNeIwTsvKyhc2TDaANdozSMwp
+      yuXJojXiNYo05c/Oyp3Jb8n7NE81iDK2ywfKO8kayXI03jQjLyrLzskZyfrIkb8vTg==''')
+    with self.subTest('chemical-potential'): self.assertAlmostEqual64(state['m'], '''
+      eNoNzCEOggAYgNFLvbPguILeQRpWgyQPoAYCuBGhWHVzGshOLegMSvffS1/5EqmF2sUnTKJylbO3l6mZ
+      pb2TZ5jLrDWObmGlUDroDWFjq43H3dcvaqdz9TCGP1tYLVU=''')
 
   @testing.requires('matplotlib')
   def test_mixedcircle(self):
-    lhs = main(nelems=3, etype='mixed', btype='std', degree=2, epsilon=None, contactangle=90, timestep=1, mtol=.1, seed=0, circle=True, stab=stab.linear)
-    self.assertAlmostEqual64(lhs, '''
-      eNrTM31uImDqY1puGmwia1prssNY37TERNM01eSOkYuJlck6Q1ED9TP9px+fOmq82FjtfKFJiM6CK70m
-      BsZixmUXgk9XnMo7VX6661zL+cZz58+ln0s6e/PM7DOvjDTOvTz97tS8c6xn9pzYemLHiQMn9p9YDyS3
-      nth4YteJbUCRHUByO5DcfGLDieUnlpyYA2RtP7HpxJ4T64Aih8Bwz4k1QPF5QJ3rgap3ntgCVAHRe+bE
-      biBr5YmDQBMBKJ13Eg==''')
+    state = main(nelems=3, etype='mixed', btype='std', degree=2, epsilon=None, contactangle=90, timestep=1, mtol=.1, seed=0, circle=True, stab=stab.linear)
+    with self.subTest('concentration'): self.assertAlmostEqual64(state['c'], '''
+      eNoBYgCd/y415zQQNUw1dzVTNB01fTS4My81dDQpNWU03DJENDo0rjEVMCfMj8vjysUzozMmz3E0VCyg
+      1I00MDMWM3bQU8t4ym7Kd8uKzoTPgc7PzmfOYs3ZzJvM6jIozunL7sqezgXMYsUuJg==''')
+    with self.subTest('chemical-potential'): self.assertAlmostEqual64(state['m'], '''
+      eNoljEkKgEAQxP7/B/EkiCCO27gOuJxy8FEGpSEUoaoTkYWTgyAjHRuTZpGzHGgpKchMMz2JRnN/l6j1
+      uctge2W08W8fdlPF5ccXGqBI7Q==''')
