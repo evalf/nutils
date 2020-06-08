@@ -847,6 +847,16 @@ class namespace(TestCase):
     with self.assertRaisesRegex(TypeError, r"^__init__\(\) got an unexpected keyword argument 'test'$"):
       function.Namespace(test=2)
 
+  def test_d_geom(self):
+    ns = function.Namespace()
+    topo, ns.x = mesh.rectilinear([1])
+    self.assertEqual(ns.eval_ij('d(x_i, x_j)'), function.grad(ns.x, ns.x))
+
+  def test_d_arg(self):
+    ns = function.Namespace()
+    ns.a = '?a'
+    self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').simplified, function.asarray(2.))
+
 class eval_ast(TestCase):
 
   def setUp(self):
