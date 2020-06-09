@@ -707,15 +707,6 @@ class _ExpressionParser:
       indices = self._consume() if self._next.type == 'indices' else ''
       length = _Length(self._current.pos)
       value = self._asarray(('eye', _(length)), indices, (length, length))
-    elif self._next.type == 'normal':
-      self._consume()
-      if self._next.type == 'geometry':
-        geometry_name = self._consume().data
-      else:
-        geometry_name = self.default_geometry_name
-      geom = self._get_geometry(geometry_name)
-      indices = self._consume() if self._next.type == 'indices' else ''
-      value = self._asarray(('normal', _(geom)), indices, geom.shape)
     elif self._next.type == 'variable':
       token = self._consume()
       name = token.data
@@ -731,6 +722,14 @@ class _ExpressionParser:
                                       shape=sum((arg.shape for arg in args), ()),
                                       summed=functools.reduce(operator.or_, (arg.summed for arg in args), frozenset()),
                                       linked_lengths=functools.reduce(operator.or_, (arg.linked_lengths for arg in args), frozenset()))
+      elif name in self.normal_symbols:
+        if self._next.type == 'geometry':
+          geometry_name = self._consume().data
+        else:
+          geometry_name = self.default_geometry_name
+        geom = self._get_geometry(geometry_name)
+        indices = self._consume() if self._next.type == 'indices' else ''
+        value = self._asarray(('normal', _(geom)), indices, geom.shape)
       else:
         raw = self._get_variable(name)
         indices = self._consume() if self._next.type == 'indices' else ''
@@ -980,7 +979,7 @@ class _ExpressionParser:
         continue
       m = re.match(r'({}):([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)_([a-zA-Z0-9])'.format('|'.join(map(re.escape, self.normal_symbols))), self.expression[pos:])
       if m:
-        tokens.append(_Token('normal', m.group(1), pos))
+        tokens.append(_Token('variable', m.group(1), pos))
         tokens.append(_Token('geometry', m.group(2), pos+m.start(2)))
         tokens.append(_Token('indices', m.group(3), pos+m.start(3)))
         pos += m.end()
@@ -994,10 +993,6 @@ class _ExpressionParser:
         pos += len(m_eye)
         continue
       m_normal = _string_startswith(self.expression, self.normal_symbols, start=pos)
-      if m_normal and len(m_variable) <= len(m_normal):
-        tokens.append(_Token('normal', m_normal, pos))
-        pos += len(m_normal)
-        continue
       if m_variable:
         tokens.append(_Token('variable', m_variable, pos))
         pos += len(m_variable)
