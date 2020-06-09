@@ -769,14 +769,17 @@ class WithGroupsTopology(Topology):
         for transs in zip(topo.transforms, topo.opposites):
           for trans in transs:
             try:
-              s.append(baseitopo.transforms.index(trans))
-              break
+              ielem = baseitopo.transforms.index(trans)
             except ValueError:
+              ref = ref.flipped
               continue
+            assert baseitopo.references[ielem] == ref
+            s.append(ielem)
+            break
           else:
             raise ValueError('group is not a subset of topology')
         s = types.frozenarray(tuple(sorted(s)), dtype=int)
-        igroups[name] = Topology(self.roots, baseitopo.references[s], baseitopo.transforms[s], baseitopo.opposites[s])
+        igroups[name] = Topology(baseitopo.roots, baseitopo.references[s], baseitopo.transforms[s], baseitopo.opposites[s])
     return baseitopo.withgroups(igroups)
 
   @property
