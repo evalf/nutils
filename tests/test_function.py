@@ -982,6 +982,34 @@ class grad(TestCase):
     x = function.unravel(function.unravel(x, 0, (2, 2)), 0, (2, 1))
     self.assertEvalAlmostEqual(domain, function.grad(x, x), numpy.eye(4, 4).reshape(2, 1, 2, 2, 1, 2))
 
+class normal(TestCase):
+
+  def assertEvalAlmostEqual(self, topo, factual, fdesired):
+    actual, desired = topo.sample('uniform', 2).eval([function.asarray(factual), function.asarray(fdesired)])
+    self.assertAllAlmostEqual(actual, desired)
+
+  def test_0d(self):
+    domain, (x,) = mesh.rectilinear([1])
+    self.assertEvalAlmostEqual(domain.boundary['right'], function.normal(x), 1)
+    self.assertEvalAlmostEqual(domain.boundary['left'], function.normal(x), -1)
+
+  def test_1d(self):
+    domain, x = mesh.rectilinear([1]*2)
+    for bnd, n in ('right', [1, 0]), ('left', [-1, 0]), ('top', [0, 1]), ('bottom', [0, -1]):
+      self.assertEvalAlmostEqual(domain.boundary[bnd], function.normal(x), n)
+
+  def test_2d(self):
+    domain, x = mesh.rectilinear([1]*2)
+    x = function.unravel(x, 0, [2, 1])
+    for bnd, n in ('right', [1, 0]), ('left', [-1, 0]), ('top', [0, 1]), ('bottom', [0, -1]):
+      self.assertEvalAlmostEqual(domain.boundary[bnd], function.normal(x), numpy.array(n)[:,_])
+
+  def test_3d(self):
+    domain, x = mesh.rectilinear([1]*2)
+    x = function.unravel(function.unravel(x, 0, [2, 1]), 0, [1, 2])
+    for bnd, n in ('right', [1, 0]), ('left', [-1, 0]), ('top', [0, 1]), ('bottom', [0, -1]):
+      self.assertEvalAlmostEqual(domain.boundary[bnd], function.normal(x), numpy.array(n)[_,:,_])
+
 class CommonBasis:
 
   def setUp(self):
