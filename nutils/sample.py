@@ -299,6 +299,8 @@ class Sample(types.Singleton):
     row defines a simplex by mapping vertices into the list of points.
     '''
 
+    if self.npoints == 0:
+      return types.frozenarray(numpy.zeros((0,self.ndims+1), int))
     return types.frozenarray(numpy.concatenate([index.take(points.tri) for index, points in zip(self.indexiter, self.pointsiter)]), copy=False)
 
   @property
@@ -311,6 +313,8 @@ class Sample(types.Singleton):
     triangulations originating from separate elements are disconnected.
     '''
 
+    if self.npoints == 0:
+      return types.frozenarray(numpy.zeros((0,self.ndims), int))
     return types.frozenarray(numpy.concatenate([index.take(points.hull) for index, points in zip(self.indexiter, self.pointsiter)]), copy=False)
 
   def subset(self, mask):
@@ -549,11 +553,15 @@ class ChainedSample(Sample):
 
   @property
   def tri(self):
+    if self.npoints == 0:
+      return types.frozenarray(numpy.zeros((0,self.ndims+1), int))
     offsets = util.cumsum(sample.npoints for sample in self._samples)
     return types.frozenarray(numpy.concatenate([sample.tri+offset for sample, offset in zip(self._samples, offsets)], axis=0), copy=False)
 
   @property
   def hull(self):
+    if self.npoints == 0:
+      return types.frozenarray(numpy.zeros((0,self.ndims), int))
     offsets = util.cumsum(sample.npoints for sample in self._samples)
     return types.frozenarray(numpy.concatenate([sample.hull+offset for sample, offset in zip(self._samples, offsets)], axis=0), copy=False)
 
