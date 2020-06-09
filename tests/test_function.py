@@ -846,6 +846,11 @@ class namespace(TestCase):
     ns.a = '?a'
     self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').simplified, function.asarray(2.))
 
+  def test_n(self):
+    ns = function.Namespace()
+    topo, ns.x = mesh.rectilinear([1])
+    self.assertEqual(ns.eval_i('n(x_i)'), function.normal(ns.x))
+
 class eval_ast(TestCase):
 
   def setUp(self):

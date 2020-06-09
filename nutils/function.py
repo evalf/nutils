@@ -5230,7 +5230,7 @@ class Namespace:
     opposite=opposite, sin=sin, cos=cos, tan=tan, sinh=sinh, cosh=cosh,
     tanh=tanh, arcsin=arcsin, arccos=arccos, arctan=arctan, arctan2=ArcTan2.outer, arctanh=arctanh,
     exp=exp, abs=abs, ln=ln, log=ln, log2=log2, log10=log10, sqrt=sqrt,
-    sign=sign, d=d
+    sign=sign, d=d, n=normal,
   )
 
   @types.apply_annotations
