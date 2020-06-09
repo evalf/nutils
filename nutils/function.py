@@ -4337,16 +4337,23 @@ def ravel(func, axis):
   return Ravel(func, axis)
 
 def normal(arg, exterior=False):
-  assert arg.ndim == 1
-  if not exterior:
-    lgrad = localgradient(arg, len(arg))
-    return Normal(lgrad)
-  lgrad = localgradient(arg, len(arg)-1)
-  if len(arg) == 2:
-    return asarray([lgrad[1,0], -lgrad[0,0]]).normalized()
-  if len(arg) == 3:
-    return cross(lgrad[:,0], lgrad[:,1], axis=0).normalized()
-  raise NotImplementedError
+  arg = asarray(arg)
+  if arg.ndim == 0:
+    return normal(insertaxis(arg, 0, 1), exterior)[...,0]
+  elif arg.ndim > 1:
+    arg = asarray(arg)
+    sh = arg.shape[-2:]
+    return unravel(normal(ravel(arg, arg.ndim-2), exterior), arg.ndim-2, sh)
+  else:
+    if not exterior:
+      lgrad = localgradient(arg, len(arg))
+      return Normal(lgrad)
+    lgrad = localgradient(arg, len(arg)-1)
+    if len(arg) == 2:
+      return asarray([lgrad[1,0], -lgrad[0,0]]).normalized()
+    if len(arg) == 3:
+      return cross(lgrad[:,0], lgrad[:,1], axis=0).normalized()
+    raise NotImplementedError
 
 def grad(func, geom, ndims=0):
   geom = asarray(geom)
