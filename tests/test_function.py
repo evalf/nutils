@@ -37,14 +37,19 @@ class check(TestCase):
       self.fail('shapes of actual {} and desired {} are incompatible.'.format(actual.shape, desired.shape))
     error = actual - desired if not actual.dtype.kind == desired.dtype.kind == 'b' else actual ^ desired
     approx = error.dtype.kind in 'fc'
-    indices = (numpy.greater_equal(abs(error), 1.5 * 10**-decimal) if approx else error).nonzero()
-    if not len(indices[0]):
+    indices = tuple(zip(*(numpy.greater_equal(abs(error), 1.5 * 10**-decimal) if approx else error).nonzero()))
+    if not indices:
       return
     lines = ['arrays are not equal']
     if approx:
       lines.append(' up to {} decimals'.format(decimal))
-    lines.append(' in {}/{} entries:'.format(len(indices[0]), error.size))
-    lines.extend('\n  {} actual={} desired={} difference={}'.format(index, actual[index], desired[index], error[index]) for index in zip(*indices))
+    lines.append(' in {}/{} entries:'.format(len(indices), error.size))
+    n = 5
+    lines.extend('\n  {} actual={} desired={} difference={}'.format(index, actual[index], desired[index], error[index]) for index in indices[:n])
+    if len(indices) > 2*n:
+      lines.append('\n  ...')
+      n = -n
+    lines.extend('\n  {} actual={} desired={} difference={}'.format(index, actual[index], desired[index], error[index]) for index in indices[n:])
     self.fail(''.join(lines))
 
   def assertFunctionAlmostEqual(self, actual, desired, decimal):
@@ -222,6 +227,12 @@ class check(TestCase):
       desired=self.n_op_argsfun**3,
       actual=(self.op_args**3))
 
+  def test_power0(self):
+    power = (numpy.arange(self.op_args.size) % 2).reshape(self.op_args.shape)
+    self.assertFunctionAlmostEqual(decimal=13,
+      desired=self.n_op_argsfun**power,
+      actual=self.op_args**power)
+
   def test_sign(self):
     if self.n_op_argsfun.dtype.kind != 'b':
       self.assertFunctionAlmostEqual(decimal=15,
@@ -344,17 +355,18 @@ class check(TestCase):
     exact = self.sample.eval(self.op_args.grad(self.geom))
     fddeltas = numpy.array([1,2,3])
     fdfactors = numpy.linalg.solve(2*fddeltas**numpy.arange(1,1+2*len(fddeltas),2)[:,None], [1]+[0]*(len(fddeltas)-1))
-    fdfactors = numpy.concatenate([-fdfactors[::-1], fdfactors])
-    D = numpy.concatenate([-fddeltas[::-1], fddeltas])[:,_,_] * numpy.eye(self.geom.shape[-1])
+    D = numpy.array([-fddeltas, fddeltas])[:,:,_,_] * numpy.eye(self.geom.shape[-1])
     good = False
     eps = 1e-4
     while not numpy.all(good):
-      fdpoints = self.find(self.sample.eval(self.geom)[_,_,:,:] + D[:,:,_,:] * eps, points[_,_,:,:])
+      fdpoints = self.find(self.sample.eval(self.geom)[_,_,_,:,:] + D[:,:,:,_,:] * eps, points[_,_,_,:,:])
       tmp = self.n_op(*argsfun.eval(_transforms=[elemtrans], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
       if len(tmp) == 1 or tmp.dtype.kind in 'bi' or self.zerograd:
         error = exact
       else:
-        fdgrad = numpy.tensordot(fdfactors, tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:]), [[0]]*2) / eps
+        a, b = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
+        diff = b - a
+        fdgrad = (diff.T @ fdfactors).T / eps
         error = exact - fdgrad.transpose(numpy.roll(numpy.arange(fdgrad.ndim),-1))
       good |= numpy.less(abs(error / exact), 1e-9)
       good |= numpy.less(abs(error), 1e-14)
@@ -370,18 +382,19 @@ class check(TestCase):
     exact = self.sample.eval(self.op_args.grad(self.geom).grad(self.geom))
     fddeltas = numpy.array([1,2,3])
     fdfactors = numpy.linalg.solve(2*fddeltas**numpy.arange(1,1+2*len(fddeltas),2)[:,None], [1]+[0]*(len(fddeltas)-1))
-    fdfactors = numpy.concatenate([-fdfactors[::-1], fdfactors])
-    D = numpy.concatenate([-fddeltas[::-1], fddeltas])[:,_,_] * numpy.eye(self.geom.shape[-1])
-    DD = D[:,_,:,_,:] + D[_,:,_,:,:]
+    D = numpy.array([-fddeltas, fddeltas])[:,:,_,_] * numpy.eye(self.geom.shape[-1])
+    DD = D[:,_,:,_,:,_,:] + D[_,:,_,:,_,:,:]
     good = False
     eps = 1e-4
     while not numpy.all(good):
-      fdpoints = self.find(self.sample.eval(self.geom)[_,_,_,_,:,:] + DD[:,:,:,:,_,:] * eps, points[_,_,_,_,:,:])
+      fdpoints = self.find(self.sample.eval(self.geom)[_,_,_,_,_,_,:,:] + DD[:,:,:,:,:,:,_,:] * eps, points[_,_,_,_,_,_,:,:])
       tmp = self.n_op(*argsfun.eval(_transforms=[elemtrans], _points=fdpoints.reshape(-1,fdpoints.shape[-1])))
       if len(tmp) == 1 or tmp.dtype.kind in 'bi' or self.zerograd:
         error = exact
       else:
-        fddgrad = numpy.tensordot(numpy.outer(fdfactors, fdfactors), tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:]), [[0,1]]*2) / eps**2
+        (a,b), (c,d) = tmp.reshape(fdpoints.shape[:-1] + tmp.shape[1:])
+        diff = (d-c) - (b-a)
+        fddgrad = (diff.T @ fdfactors @ fdfactors).T / eps**2
         error = exact - fddgrad.transpose(numpy.roll(numpy.arange(fddgrad.ndim),-2))
       good |= numpy.less(abs(error / exact), 1e-4)
       good |= numpy.less(abs(error), 1e-14)
