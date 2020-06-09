@@ -37,14 +37,19 @@ class check(TestCase):
       self.fail('shapes of actual {} and desired {} are incompatible.'.format(actual.shape, desired.shape))
     error = actual - desired if not actual.dtype.kind == desired.dtype.kind == 'b' else actual ^ desired
     approx = error.dtype.kind in 'fc'
-    indices = (numpy.greater_equal(abs(error), 1.5 * 10**-decimal) if approx else error).nonzero()
-    if not len(indices[0]):
+    indices = tuple(zip(*(numpy.greater_equal(abs(error), 1.5 * 10**-decimal) if approx else error).nonzero()))
+    if not indices:
       return
     lines = ['arrays are not equal']
     if approx:
       lines.append(' up to {} decimals'.format(decimal))
-    lines.append(' in {}/{} entries:'.format(len(indices[0]), error.size))
-    lines.extend('\n  {} actual={} desired={} difference={}'.format(index, actual[index], desired[index], error[index]) for index in zip(*indices))
+    lines.append(' in {}/{} entries:'.format(len(indices), error.size))
+    n = 5
+    lines.extend('\n  {} actual={} desired={} difference={}'.format(index, actual[index], desired[index], error[index]) for index in indices[:n])
+    if len(indices) > 2*n:
+      lines.append('\n  ...')
+      n = -n
+    lines.extend('\n  {} actual={} desired={} difference={}'.format(index, actual[index], desired[index], error[index]) for index in indices[n:])
     self.fail(''.join(lines))
 
   def assertFunctionAlmostEqual(self, actual, desired, decimal):
