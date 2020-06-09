@@ -4936,6 +4936,43 @@ def ravel(func, axis):
   axis = numeric.normdim(func.ndim-1, axis)
   return Ravel(func, axis)
 
+def normal(arg, exterior=False):
+  assert arg.ndim == 1
+  if not exterior:
+    return DelayedNormal(arg)
+  # Order the roots deterministically. In the future we should use the order
+  # of `Sample.roots` (during `prepare_eval` or a successor).
+  roots = tuple(sorted(arg.roots, key=lambda root: (root.name, root.ndims)))
+  lgrad = rootgradient(arg, roots)
+  if len(arg) == 2:
+    return asarray([lgrad[1,0], -lgrad[0,0]]).normalized()
+  if len(arg) == 3:
+    return cross(lgrad[:,0], lgrad[:,1], axis=0).normalized()
+  raise NotImplementedError
+
+def grad(self, geom, ndims=0):
+  assert geom.ndim == 1
+  if ndims <= 0:
+    ndims += geom.shape[0]
+  # Order the roots deterministically. In the future we should use the order
+  # of `Sample.roots` (during `prepare_eval` or a successor).
+  roots = tuple(sorted(geom.roots, key=lambda root: (root.name, root.ndims)))
+  J = rootgradient(geom, roots)
+  if J.shape[0] == J.shape[1]:
+    Jinv = inverse(J)
+  elif J.shape[0] == J.shape[1] + 1: # gamma gradient
+    G = dot(J[:,:,_], J[:,_,:], 0)
+    Ginv = inverse(G)
+    Jinv = dot(J[_,:,:], Ginv[:,_,:], -1)
+  else:
+    raise Exception('cannot invert {}x{} jacobian'.format(J.shape))
+  return dot(rootgradient(self, roots)[...,_], Jinv, -2)
+
+def dotnorm(arg, geom, axis=-1):
+  axis = numeric.normdim(arg.ndim, axis)
+  assert geom.ndim == 1 and geom.shape[0] == arg.shape[axis]
+  return dot(arg, normal(geom)[(slice(None),)+(_,)*(arg.ndim-axis-1)], axis)
+
 @replace
 def replace_arguments(value, arguments):
   '''Replace :class:`Argument` objects in ``value``.
@@ -5278,43 +5315,6 @@ class Namespace:
     except expression.AmbiguousAlignmentError:
       raise ValueError('`expression @ Namespace` cannot be used because the expression has more than one dimension.  Use `Namespace.eval_...(expression)` instead')
     return _eval_ast(ast, self._functions)
-
-def normal(arg, exterior=False):
-  assert arg.ndim == 1
-  if not exterior:
-    return DelayedNormal(arg)
-  # Order the roots deterministically. In the future we should use the order
-  # of `Sample.roots` (during `prepare_eval` or a successor).
-  roots = tuple(sorted(arg.roots, key=lambda root: (root.name, root.ndims)))
-  lgrad = rootgradient(arg, roots)
-  if len(arg) == 2:
-    return asarray([lgrad[1,0], -lgrad[0,0]]).normalized()
-  if len(arg) == 3:
-    return cross(lgrad[:,0], lgrad[:,1], axis=0).normalized()
-  raise NotImplementedError
-
-def grad(self, geom, ndims=0):
-  assert geom.ndim == 1
-  if ndims <= 0:
-    ndims += geom.shape[0]
-  # Order the roots deterministically. In the future we should use the order
-  # of `Sample.roots` (during `prepare_eval` or a successor).
-  roots = tuple(sorted(geom.roots, key=lambda root: (root.name, root.ndims)))
-  J = rootgradient(geom, roots)
-  if J.shape[0] == J.shape[1]:
-    Jinv = inverse(J)
-  elif J.shape[0] == J.shape[1] + 1: # gamma gradient
-    G = dot(J[:,:,_], J[:,_,:], 0)
-    Ginv = inverse(G)
-    Jinv = dot(J[_,:,:], Ginv[:,_,:], -1)
-  else:
-    raise Exception('cannot invert {}x{} jacobian'.format(J.shape))
-  return dot(rootgradient(self, roots)[...,_], Jinv, -2)
-
-def dotnorm(arg, geom, axis=-1):
-  axis = numeric.normdim(arg.ndim, axis)
-  assert geom.ndim == 1 and geom.shape[0] == arg.shape[axis]
-  return dot(arg, normal(geom)[(slice(None),)+(_,)*(arg.ndim-axis-1)], axis)
 
 if __name__ == '__main__':
   # Diagnostics for the development for simplify operations.
