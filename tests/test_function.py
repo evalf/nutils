@@ -970,6 +970,30 @@ class jacobian(TestCase):
 jacobian(delayed=True)
 jacobian(delayed=False)
 
+class grad(TestCase):
+
+  def assertEvalAlmostEqual(self, topo, factual, fdesired):
+    actual, desired = topo.sample('uniform', 2).eval([function.asarray(factual), function.asarray(fdesired)])
+    self.assertAllAlmostEqual(actual, desired)
+
+  def test_0d(self):
+    domain, (x,) = mesh.rectilinear([1])
+    self.assertEvalAlmostEqual(domain, function.grad(x**2, x), 2*x)
+
+  def test_1d(self):
+    domain, x = mesh.rectilinear([1]*2)
+    self.assertEvalAlmostEqual(domain, function.grad([x[0]**2, x[1]**2], x), [[2*x[0], 0], [0, 2*x[1]]])
+
+  def test_2d(self):
+    domain, x = mesh.rectilinear([1]*4)
+    x = function.unravel(x, 0, (2, 2))
+    self.assertEvalAlmostEqual(domain, function.grad(x, x), numpy.eye(4, 4).reshape(2, 2, 2, 2))
+
+  def test_3d(self):
+    domain, x = mesh.rectilinear([1]*4)
+    x = function.unravel(function.unravel(x, 0, (2, 2)), 0, (2, 1))
+    self.assertEvalAlmostEqual(domain, function.grad(x, x), numpy.eye(4, 4).reshape(2, 1, 2, 2, 1, 2))
+
 class CommonBasis:
 
   @staticmethod

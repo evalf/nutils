@@ -4348,20 +4348,27 @@ def normal(arg, exterior=False):
     return cross(lgrad[:,0], lgrad[:,1], axis=0).normalized()
   raise NotImplementedError
 
-def grad(self, geom, ndims=0):
-  assert geom.ndim == 1
-  if ndims <= 0:
-    ndims += geom.shape[0]
-  J = localgradient(geom, ndims)
-  if J.shape[0] == J.shape[1]:
-    Jinv = inverse(J)
-  elif J.shape[0] == J.shape[1] + 1: # gamma gradient
-    G = dot(J[:,:,_], J[:,_,:], 0)
-    Ginv = inverse(G)
-    Jinv = dot(J[_,:,:], Ginv[:,_,:], -1)
+def grad(func, geom, ndims=0):
+  geom = asarray(geom)
+  if geom.ndim == 0:
+    return grad(func, insertaxis(geom, 0, 1), ndims)[...,0]
+  elif geom.ndim > 1:
+    func = asarray(func)
+    sh = geom.shape[-2:]
+    return unravel(grad(func, ravel(geom, geom.ndim-2), ndims), func.ndim+geom.ndim-2, sh)
   else:
-    raise Exception('cannot invert {}x{} jacobian'.format(J.shape))
-  return dot(localgradient(self, ndims)[...,_], Jinv, -2)
+    if ndims <= 0:
+      ndims += geom.shape[0]
+    J = localgradient(geom, ndims)
+    if J.shape[0] == J.shape[1]:
+      Jinv = inverse(J)
+    elif J.shape[0] == J.shape[1] + 1: # gamma gradient
+      G = dot(J[:,:,_], J[:,_,:], 0)
+      Ginv = inverse(G)
+      Jinv = dot(J[_,:,:], Ginv[:,_,:], -1)
+    else:
+      raise Exception('cannot invert {}x{} jacobian'.format(J.shape))
+    return dot(localgradient(func, ndims)[...,_], Jinv, -2)
 
 def dotnorm(arg, geom, axis=-1):
   axis = numeric.normdim(arg.ndim, axis)
