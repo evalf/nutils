@@ -528,4 +528,26 @@ def gramschmidt(V):
       V[...,i] -= numpy.einsum('...ij,...j->...i', V[...,:i], numpy.einsum('...ji,...j->...i', V[...,:i], V[...,i]))
     V[...,i] /= numpy.linalg.norm(V[...,i], axis=-1)[...,numpy.newaxis]
 
+def levicivita(n: int, dtype=float):
+  'n-dimensional Levi-Civita symbol.'
+  if n < 2:
+    raise ValueError('The Levi-Civita symbol is undefined for dimensions lower than 2.')
+  # Generate all possible permutations of `{0,1,...,n-1}` in array `I`, where
+  # the second axis runs over the permutations, and determine the number of
+  # permutations (`nperms`). First, `I[k] ∈ {k,...,n-1}` becomes the index of
+  # dimension `k` for the partial permutation `I[k:]`.
+  I = numpy.mgrid[tuple(slice(k, n) for k in range(n))].reshape(n, -1)
+  # The number of permutations is equal to the number of deviations from the
+  # unpermuted case.
+  nperms = numpy.sum(numpy.not_equal(I, numpy.arange(n)[:,None]), 0)
+  # Make all partial permutations `I[k+1:]` unique by replacing `I[j]` with `k`
+  # if `I[j]` equals `I[k]`, `j > k`. Example with `n = 4`: if `I[2:] = [3,2]` and
+  # `I[1] = 2` then `I[3]` must be replaced with `1` to give `I[1:] = [2,3,1]`.
+  for k in reversed(range(n-1)):
+    I[k+1:][numpy.equal(I[k+1:], I[k,None])] = k
+  # Inflate with `1` if `nperms` is even and `-1` if odd.
+  result = numpy.zeros((n,)*n, dtype=dtype)
+  result[tuple(I)] = 1 - 2*(nperms % 2)
+  return result
+
 # vim:sw=2:sts=2:et

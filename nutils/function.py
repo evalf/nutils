@@ -4713,6 +4713,10 @@ def trigtangent(angle):
 def eye(n, dtype=float):
   return diagonalize(ones([n], dtype=dtype))
 
+def levicivita(n: int, dtype=float):
+  'n-dimensional Levi-Civita symbol.'
+  return Constant(numeric.levicivita(n))
+
 def insertaxis(arg, n, length):
   arg = asarray(arg)
   n = numeric.normdim(arg.ndim+1, n)
