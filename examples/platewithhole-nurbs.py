@@ -59,7 +59,7 @@ def main(nrefine:int, traction:float, radius:float, poisson:float):
   ns.ubasis = nurbsbasis.vector(2)
   ns.u_i = 'ubasis_ni ?lhs_n'
   ns.X_i = 'x_i + u_i'
-  ns.strain_ij = '(u_i,j + u_j,i) / 2'
+  ns.strain_ij = '(d(u_i, x_j) + d(u_j, x_i)) / 2'
   ns.stress_ij = 'lmbda strain_kk δ_ij + 2 mu strain_ij'
   ns.r2 = 'x_k x_k'
   ns.R2 = radius**2 / ns.r2
@@ -74,7 +74,7 @@ def main(nrefine:int, traction:float, radius:float, poisson:float):
   cons = solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
 
   # construct residual
-  res = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=9)
+  res = domain.integral('d(ubasis_ni, x_j) stress_ij d:x' @ ns, degree=9)
 
   # solve system
   lhs = solver.solve_linear('lhs', res, constrain=cons)
@@ -85,7 +85,7 @@ def main(nrefine:int, traction:float, radius:float, poisson:float):
   export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull, clim=(numpy.nanmin(stressxx), numpy.nanmax(stressxx)))
 
   # evaluate error
-  err = domain.integral('<du_k du_k, du_i,j du_i,j>_n d:x' @ ns, degree=9).eval(lhs=lhs)**.5
+  err = domain.integral('<du_k du_k, d(du_i, x_j) d(du_i, x_j)>_n d:x' @ ns, degree=9).eval(lhs=lhs)**.5
   treelog.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
   return err, cons, lhs

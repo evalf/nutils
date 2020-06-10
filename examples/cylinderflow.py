@@ -59,9 +59,9 @@ def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float,
   ns.ubasis_ni = 'unbasis_n J_i0 + utbasis_n J_i1' # piola transformation
   ns.u_i = 'ubasis_ni ?lhs_n'
   ns.p = 'pbasis_n ?lhs_n'
-  ns.sigma_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
+  ns.sigma_ij = '(d(u_i, x_j) + d(u_j, x_i)) / Re - p δ_ij'
   ns.N = 10 * degree / elemangle # Nitsche constant based on element size = elemangle/2
-  ns.nitsche_ni = '(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) / Re'
+  ns.nitsche_ni = '(N ubasis_ni - (d(ubasis_ni, x_j) + d(ubasis_nj, x_i)) n_j) / Re'
   ns.rotation = rotation
   ns.uwall_i = '0.5 rotation <-sin(phi), cos(phi)>_i'
 
@@ -75,7 +75,7 @@ def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float,
   numpy.random.seed(seed)
   lhs0 *= numpy.random.normal(1, .1, lhs0.shape) # add small velocity noise
 
-  res = domain.integral('(ubasis_ni u_i,j u_j + ubasis_ni,j sigma_ij + pbasis_n u_k,k) d:x' @ ns, degree=9)
+  res = domain.integral('(ubasis_ni d(u_i, x_j) u_j + d(ubasis_ni, x_j) sigma_ij + pbasis_n d(u_k, x_k)) d:x' @ ns, degree=9)
   res += domain.boundary['inner'].integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni sigma_ij n_j) d:x' @ ns, degree=9)
   inertia = domain.integral('ubasis_ni u_i d:x' @ ns, degree=9)
 

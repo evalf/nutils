@@ -72,9 +72,9 @@ def main(nelems:int, etype:str, btype:str, degree:int, epsilon:typing.Optional[f
   ns.dt = timestep
 
   nrg_mix = domain.integral('F d:x' @ ns, degree=7)
-  nrg_iface = domain.integral('.5 c_,k c_,k d:x' @ ns, degree=7)
+  nrg_iface = domain.integral('.5 d(c, x_k) d(c, x_k) d:x' @ ns, degree=7)
   nrg_wall = domain.boundary.integral('(abs(ewall) + c ewall) d:x' @ ns, degree=7)
-  nrg = nrg_mix + nrg_iface + nrg_wall + domain.integral('(dF - m dc - .5 dt epsilon^2 m_,k m_,k) d:x' @ ns, degree=7)
+  nrg = nrg_mix + nrg_iface + nrg_wall + domain.integral('(dF - m dc - .5 dt epsilon^2 d(m, x_k) d(m, x_k)) d:x' @ ns, degree=7)
 
   numpy.random.seed(seed)
   lhs = numpy.random.normal(0, .5, ns.cbasis.shape) # initial condition

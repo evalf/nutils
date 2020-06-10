@@ -45,8 +45,8 @@ def main(etype:str, btype:str, degree:int, nrefine:int):
       if irefine:
         refdom = domain.refined
         ns.refbasis = refdom.basis(btype, degree=degree)
-        indicator = refdom.integral('refbasis_n,k u_,k d:x' @ ns, degree=degree*2).eval(lhs=lhs)
-        indicator -= refdom.boundary.integral('refbasis_n u_,k n_k d:x' @ ns, degree=degree*2).eval(lhs=lhs)
+        indicator = refdom.integral('d(refbasis_n, x_k) d(u, x_k) d:x' @ ns, degree=degree*2).eval(lhs=lhs)
+        indicator -= refdom.boundary.integral('refbasis_n d(u, x_k) n(x_k) d:x' @ ns, degree=degree*2).eval(lhs=lhs)
         supp = ns.refbasis.get_support(indicator**2 > numpy.mean(indicator**2))
         domain = domain.refined_by(ns.refbasis.transforms[supp])
 
@@ -62,11 +62,11 @@ def main(etype:str, btype:str, degree:int, nrefine:int):
       sqr = domain.boundary.integral('du^2 d:x' @ ns, degree=7)
       cons = solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
 
-      res = domain.integral('basis_n,k u_,k d:x' @ ns, degree=degree*2)
+      res = domain.integral('d(basis_n, x_k) d(u, x_k) d:x' @ ns, degree=degree*2)
       lhs = solver.solve_linear('lhs', res, constrain=cons)
 
       ndofs = len(ns.basis)
-      error = domain.integral('<du^2, du_,k du_,k>_i d:x' @ ns, degree=7).eval(lhs=lhs)**.5
+      error = domain.integral('<du^2, d(du, x_k) d(du, x_k)>_i d:x' @ ns, degree=7).eval(lhs=lhs)**.5
       rate, offset = linreg.add(numpy.log(len(ns.basis)), numpy.log(error))
       treelog.user('ndofs: {ndofs}, L2 error: {error[0]:.2e} ({rate[0]:.2f}), H1 error: {error[1]:.2e} ({rate[1]:.2f})'.format(ndofs=len(ns.basis), error=error, rate=rate))
 
