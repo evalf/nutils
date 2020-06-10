@@ -58,9 +58,9 @@ def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float,
   ns.pbasis = domain.basis('spline', degree=degree-1) / detJ
   ns.u_i = 'ubasis_ni ?u_n'
   ns.p = 'pbasis_n ?p_n'
-  ns.sigma_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
+  ns.sigma_ij = '(d(u_i, x_j) + d(u_j, x_i)) / Re - p δ_ij'
   ns.N = 10 * degree / elemangle # Nitsche constant based on element size = elemangle/2
-  ns.nitsche_ni = '(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) / Re'
+  ns.nitsche_ni = '(N ubasis_ni - (d(ubasis_ni, x_j) + d(ubasis_nj, x_i)) n_j) / Re'
   ns.rotation = rotation
   ns.uwall_i = '0.5 rotation <-sin(phi), cos(phi)>_i'
 
@@ -74,9 +74,9 @@ def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float,
   udofs0 = solver.optimize('u', sqr) * numpy.random.normal(1, .1, len(ns.ubasis)) # set initial condition to u=uinf with small random noise
   state0 = dict(u=udofs0)
 
-  ures = domain.integral('(ubasis_ni u_i,j u_j + ubasis_ni,j sigma_ij) d:x' @ ns, degree=9)
+  ures = domain.integral('(ubasis_ni d(u_i, x_j) u_j + d(ubasis_ni, x_j) sigma_ij) d:x' @ ns, degree=9)
   ures += domain.boundary['inner'].integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni sigma_ij n_j) d:x' @ ns, degree=9)
-  pres = domain.integral('pbasis_n u_k,k d:x' @ ns, degree=9)
+  pres = domain.integral('pbasis_n d(u_k, x_k) d:x' @ ns, degree=9)
   uinertia = domain.integral('ubasis_ni u_i d:x' @ ns, degree=9)
 
   bbox = numpy.array([[-2,46/9],[-2,2]]) # bounding box for figure based on 16x9 aspect ratio

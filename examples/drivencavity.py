@@ -33,7 +33,7 @@ def main(nelems:int, etype:str, degree:int, reynolds:float):
   ns.pbasis = domain.basis('std', degree=degree-1)
   ns.u_i = 'ubasis_ni ?u_n'
   ns.p = 'pbasis_n ?p_n'
-  ns.stress_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
+  ns.stress_ij = '(d(u_i, x_j) + d(u_j, x_i)) / Re - p δ_ij'
 
   usqr = domain.boundary.integral('u_k u_k d:x' @ ns, degree=degree*2)
   wallcons = solver.optimize('u', usqr, droptol=1e-15)
@@ -46,13 +46,13 @@ def main(nelems:int, etype:str, degree:int, reynolds:float):
   pcons[-1] = True # constrain pressure to zero in a point
   cons = dict(u=ucons, p=pcons)
 
-  ures = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=degree*2)
-  pres = domain.integral('pbasis_n u_k,k d:x' @ ns, degree=degree*2)
+  ures = domain.integral('d(ubasis_ni, x_j) stress_ij d:x' @ ns, degree=degree*2)
+  pres = domain.integral('pbasis_n d(u_k, x_k) d:x' @ ns, degree=degree*2)
   with treelog.context('stokes'):
     state0 = solver.solve_linear(('u', 'p'), (ures, pres), constrain=cons)
     postprocess(domain, ns, **state0)
 
-  ures += domain.integral('.5 (ubasis_ni u_i,j - ubasis_ni,j u_i) u_j d:x' @ ns, degree=degree*3)
+  ures += domain.integral('.5 (ubasis_ni d(u_i, x_j) - d(ubasis_ni, x_j) u_i) u_j d:x' @ ns, degree=degree*3)
   with treelog.context('navierstokes'):
     state1 = solver.newton(('u', 'p'), (ures, pres), arguments=state0, constrain=cons).solve(tol=1e-10)
     postprocess(domain, ns, **state1)
@@ -68,7 +68,8 @@ def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
   ns = ns.copy_() # copy namespace so that we don't modify the calling argument
   ns.streambasis = domain.basis('std', degree=2)[1:] # remove first dof to obtain non-singular system
   ns.stream = 'streambasis_n ?streamdofs_n' # stream function
-  sqr = domain.integral('((u_0 - stream_,1)^2 + (u_1 + stream_,0)^2) d:x' @ ns, degree=4)
+  ns.ε = function.levicivita(2)
+  sqr = domain.integral('(u_i - ε_ij d(stream, x_j)) (u_i - ε_ij d(stream, x_j)) d:x' @ ns, degree=4)
   arguments['streamdofs'] = solver.optimize('streamdofs', sqr, arguments=arguments) # compute streamlines
 
   bezier = domain.sample('bezier', 9)

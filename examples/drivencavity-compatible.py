@@ -38,21 +38,21 @@ def main(nelems:int, degree:int, reynolds:float):
   ns.pbasis = domain.basis('spline', degree=degree-1)
   ns.u_i = 'ubasis_ni ?u_n'
   ns.p = 'pbasis_n ?p_n'
-  ns.stress_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
+  ns.stress_ij = '(d(u_i, x_j) + d(u_j, x_i)) / Re - p δ_ij'
   ns.uwall = domain.boundary.indicator('top'), 0
   ns.N = 5 * degree * nelems # nitsche constant based on element size = 1/nelems
-  ns.nitsche_ni = '(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) / Re'
+  ns.nitsche_ni = '(N ubasis_ni - (d(ubasis_ni, x_j) + d(ubasis_nj, x_i)) n(x_j)) / Re'
 
-  ures = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=2*degree)
-  ures += domain.boundary.integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni stress_ij n_j) d:x' @ ns, degree=2*degree)
-  pres = domain.integral('pbasis_n (u_k,k + ?lm) d:x' @ ns, degree=2*degree)
+  ures = domain.integral('d(ubasis_ni, x_j) stress_ij d:x' @ ns, degree=2*degree)
+  ures += domain.boundary.integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni stress_ij n(x_j)) d:x' @ ns, degree=2*degree)
+  pres = domain.integral('pbasis_n (d(u_k, x_k) + ?lm) d:x' @ ns, degree=2*degree)
   lres = domain.integral('p d:x' @ ns, degree=2*degree)
 
   with treelog.context('stokes'):
     state0 = solver.solve_linear(['u', 'p', 'lm'], [ures, pres, lres])
     postprocess(domain, ns, **state0)
 
-  ures += domain.integral('ubasis_ni u_i,j u_j d:x' @ ns, degree=3*degree)
+  ures += domain.integral('ubasis_ni d(u_i, x_j) u_j d:x' @ ns, degree=3*degree)
   with treelog.context('navierstokes'):
     state1 = solver.newton(('u', 'p', 'lm'), (ures, pres, lres), arguments=state0).solve(tol=1e-10)
     postprocess(domain, ns, **state1)
@@ -65,13 +65,14 @@ def main(nelems:int, degree:int, reynolds:float):
 
 def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
 
-  div = domain.integral('(u_k,k)^2 d:x' @ ns, degree=1).eval(**arguments)**.5
+  div = domain.integral('d(u_k, x_k)^2 d:x' @ ns, degree=1).eval(**arguments)**.5
   treelog.info('velocity divergence: {:.2e}'.format(div)) # confirm that velocity is pointwise divergence-free
 
   ns = ns.copy_() # copy namespace so that we don't modify the calling argument
   ns.streambasis = domain.basis('std', degree=2)[1:] # remove first dof to obtain non-singular system
   ns.stream = 'streambasis_n ?streamdofs_n' # stream function
-  sqr = domain.integral('((u_0 - stream_,1)^2 + (u_1 + stream_,0)^2) d:x' @ ns, degree=4)
+  ns.ε = function.levicivita(2)
+  sqr = domain.integral('(u_i - ε_ij d(stream, x_j)) (u_i - ε_ij d(stream, x_j)) d:x' @ ns, degree=4)
   arguments['streamdofs'] = solver.optimize('streamdofs', sqr, arguments=arguments) # compute streamlines
 
   bezier = domain.sample('bezier', 9)
