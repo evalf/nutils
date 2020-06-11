@@ -732,9 +732,9 @@ class Array(Evaluable):
   choose = lambda self, choices: Choose(self, _numpy_align(*choices))
 
   def vector(self, ndims):
-    if self.ndim != 1:
-      raise Exception('only a scalar basis van be vectorized')
-    return ravel(diagonalize(insertaxis(self, 1, ndims), 1, 2), 0)
+    if not self.ndim:
+      raise Exception('a scalar function cannot be vectorized')
+    return ravel(diagonalize(insertaxis(self, 1, ndims), 1), 0)
 
   @property
   def blocks(self):
@@ -2848,7 +2848,7 @@ class Unravel(Array):
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint, shape:asshape):
     assert 0 <= axis < func.ndim
-    assert func.shape[axis] == numpy.product(shape)
+    assert func.shape[axis] == as_canonical_length(Product(shape))
     assert len(shape) == 2
     self.func = func
     self.axis = axis
