@@ -583,9 +583,9 @@ class Array(Evaluable):
   nsymgrad = lambda self, geom, ndims=0: nsymgrad(self, geom, ndims)
 
   def vector(self, ndims):
-    if self.ndim != 1:
-      raise Exception('only a scalar basis van be vectorized')
-    return ravel(diagonalize(insertaxis(self, 1, ndims), 1, 2), 0)
+    if not self.ndim:
+      raise Exception('a scalar function cannot be vectorized')
+    return ravel(diagonalize(insertaxis(self, 1, ndims), 1), 0)
 
   @property
   def blocks(self):
