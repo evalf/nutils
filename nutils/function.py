@@ -2614,7 +2614,7 @@ class IndexFromTransformsIndexWithTail(Array):
     trans = self._indextail.trans
     if isinstance(trans, SelectChain):
       for isubsample, subsample in enumerate(subsamples):
-        if trans.ordered_roots == subsample.roots and self._indextail.transforms == subsample.transforms[trans.n if len(subsample.transforms) > 1 else 0]:
+        if trans.ordered_roots == subsample.roots and subsample.transforms is not None and self._indextail.transforms == subsample.transforms[trans.n if len(subsample.transforms) > 1 else 0]:
           return IndexFromSubsample(isubsample, trans.ordered_roots)
     return self
 
