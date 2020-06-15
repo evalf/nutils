@@ -69,8 +69,12 @@ class Topology(types.Singleton):
   def __len__(self):
     return len(self.references)
 
-  def getitem(self, item):
+  @property
+  def empty(self):
     return EmptyTopology(self.roots, self.ndims)
+
+  def getitem(self, item):
+    return self.empty
 
   def __getitem__(self, item):
     if numeric.isintarray(item):
@@ -81,7 +85,7 @@ class Topology(types.Singleton):
     if all(it in (...,slice(None)) for it in item):
       return self
     topo = self.getitem(item) if len(item) != 1 or not isinstance(item[0],str) \
-       else functools.reduce(operator.or_, map(self.getitem, item[0].split(',')), EmptyTopology(self.roots, self.ndims))
+       else functools.reduce(operator.or_, map(self.getitem, item[0].split(',')), self.empty)
     if not topo:
       raise KeyError(item)
     return topo
@@ -133,10 +137,7 @@ class Topology(types.Singleton):
       return NotImplemented
     if not set(self.roots).isdisjoint(other.roots):
       raise ValueError('cannot multiply topologies with common roots')
-    if isinstance(self, EmptyTopology) or isinstance(other, EmptyTopology):
-      return EmptyTopology(self.roots+other.roots, self.ndims+other.ndims)
-    else:
-      return ProductTopology(self, other, leftopp, rightopp)
+    return ProductTopology(self, other, leftopp, rightopp)
 
   def __mul__(self, other):
     leftopp = self.transforms != self.opposites
@@ -414,7 +415,7 @@ class Topology(types.Singleton):
           assert subref == ref, 'elements do not form a strict subset'
         refs[ielem] = subref
     if not any(refs):
-      return EmptyTopology(self.roots, self.ndims)
+      return self.empty
     return SubsetTopology(self, refs, newboundary)
 
   def withgroups(self, vgroups={}, bgroups={}, igroups={}, pgroups={}):
@@ -871,7 +872,7 @@ class PointsTopology(Topology):
         raise ValueError('expected a tuple of length 1 but got length {}'.format(len(item)))
       item = item[0]
     if not isinstance(item, slice):
-      return EmptyTopology(self.roots, self.ndims)
+      return self.empty
     if item == slice(None):
       return self
     else:
@@ -915,7 +916,7 @@ class StructuredLine(Topology):
         raise ValueError('expected a tuple of length 1 but got length {}'.format(len(item)))
       item = item[0]
     if not isinstance(item, slice):
-      return EmptyTopology(self.roots, self.ndims)
+      return self.empty
     start, stop, step = item.indices(len(self))
     if item == slice(None):
       return self
@@ -1204,7 +1205,7 @@ class StructuredTopology(Topology):
 
   def getitem(self, item):
     if not isinstance(item, tuple):
-      return EmptyTopology(self.roots, self.ndims)
+      return self.empty
     assert all(isinstance(it,slice) for it in item) and len(item) <= self.ndims
     if all(it == slice(None) for it in item): # shortcut
       return self
@@ -1251,8 +1252,6 @@ class StructuredTopology(Topology):
     btopos = [StructuredTopology(root=self.root, axes=self.axes[:idim] + (transformseq.BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:], nrefine=self.nrefine, bnames=self._bnames)
       for idim, axis in enumerate(self.axes) if axis.isdim and not axis.isperiodic
         for side, n in enumerate((axis.i,axis.j))]
-    if not btopos:
-      return EmptyTopology(self.roots, self.ndims-1)
     bnames = [bname for bnames, axis in zip(self._bnames, self.axes) if axis.isdim and not axis.isperiodic for bname in bnames]
     return DisjointUnionTopology(btopos, bnames)
 
@@ -1726,7 +1725,7 @@ class UnionTopology(Topology):
 
   def getitem(self, item):
     topos = [topo if name == item else topo.getitem(item) for topo, name in itertools.zip_longest(self._topos, self._names)]
-    return functools.reduce(operator.or_, topos, EmptyTopology(self.roots, self.ndims))
+    return functools.reduce(operator.or_, topos, self.empty)
 
   def __or__(self, other):
     if not isinstance(other, UnionTopology):
@@ -1757,14 +1756,7 @@ class DisjointUnionTopology(Topology):
       transformseq.chain((topo.opposites for topo in self._topos), tuple(root.ndims for root in roots)))
 
   def getitem(self, item):
-    topos = [topo if name == item else topo.getitem(item) for topo, name in itertools.zip_longest(self._topos, self._names)]
-    topos = [topo for topo in topos if not isinstance(topo, EmptyTopology)]
-    if len(topos) == 0:
-      return EmptyTopology(self.roots, self.ndims)
-    elif len(topos) == 1:
-      return topos[0]
-    else:
-      return DisjointUnionTopology(topos)
+    return DisjointUnionTopology([topo if name == item else topo.getitem(item) for topo, name in itertools.zip_longest(self._topos, self._names)])
 
   @property
   def refined(self):
@@ -1778,11 +1770,19 @@ class DisjointUnionTopology(Topology):
   def interfaces(self):
     return DisjointUnionTopology([topo.interfaces for topo in self._topos])
 
+  @property
+  def empty(self):
+    return DisjointUnionTopology([topo.empty for topo in self._topos])
+
   def sample(self, ischeme, degree):
     transforms = self.transforms,
     if len(self.transforms) == 0 or self.opposites != self.transforms:
       transforms += self.opposites,
-    return sample.ChainedSample(tuple(topo.sample(ischeme, degree) for topo in self._topos), transforms)
+    if any(self._topos):
+      samples = tuple(topo.sample(ischeme, degree) for topo in self._topos if topo)
+    else:
+      samples = tuple(topo.sample(ischeme, degree) for topo in self._topos)
+    return sample.ChainedSample(samples, transforms)
 
 class SubsetTopology(Topology):
   'trimmed'
@@ -2277,6 +2277,10 @@ class ProductTopology(Topology):
     s = len(self._right)
     return tuple(tuple(ir+cli*s if cli >= 0 else -1 for cli in cl)+tuple(il*s+cri if cri >= 0 else -1 for cri in cr) for (il,cl), (ir,cr) in itertools.product(enumerate(self._left.connectivity), enumerate(self._right.connectivity)))
 
+  @property
+  def empty(self):
+    return ProductTopology(self._left.empty, self._right.empty, False, False)
+
   def getitem(self, item):
     if isinstance(item, tuple) and all(isinstance(it, slice) for it in item):
       left = self._left.getitem(item[:self._left.ndims])
@@ -2300,9 +2304,7 @@ class ProductTopology(Topology):
     if self._left.ndims:
       boundaries.append(self._left.boundary.mul_leftopp(self._right))
     if not boundaries:
-      return EmptyTopology(self.roots, ndims=0)
-    elif len(boundaries) == 1:
-      return boundaries[0]
+      raise ValueError('a 0D topology has no boundary')
     else:
       return DisjointUnionTopology(boundaries)
 
@@ -2314,9 +2316,7 @@ class ProductTopology(Topology):
     if self._left.ndims:
       interfaces.append(self._left.interfaces.mul_leftopp(self._right))
     if not interfaces:
-      return EmptyTopology(self.roots, ndims=0)
-    elif len(interfaces) == 1:
-      return interfaces[0]
+      raise ValueError('a 0D topology has no interfaces')
     else:
       return DisjointUnionTopology(interfaces)
 
