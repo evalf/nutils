@@ -838,6 +838,22 @@ class EmptyTopology(Topology):
   def __rsub__(self, other):
     return other
 
+  @property
+  def boundary(self):
+    if self.ndims == 0:
+      raise ValueError('a 0D topology has no boundary')
+    return EmptyTopology(self.roots, self.ndims-1)
+
+  @property
+  def interfaces(self):
+    if self.ndims == 0:
+      raise ValueError('a 0D topology has no interfaces')
+    return EmptyTopology(self.roots, self.ndims-1)
+
+  @property
+  def refined(self):
+    return self
+
 class Point(Topology):
   'point'
 
