@@ -660,6 +660,7 @@ class _ExpressionParser:
         geometry_name = self.default_geometry_name
       geom = self._get_geometry(geometry_name)
       if self._next.type == 'indices':
+        warnings.deprecation('`[f]_i` and `[f]_x_i` are deprecated; use `[f] n({x}_i)` instead'.format(x=geometry_name))
         value *= self._asarray(('normal', _(geom)), self._consume(), geom.shape)
     elif self._next.type == '{':
       self._consume()

@@ -232,8 +232,13 @@ class parse(TestCase):
         ('jump', ('trace', ('grad', v._a2, v._x), _(0), _(1))),
         ('mean', ('trace', ('grad', v._a2, v._x), _(0), _(1)))))
 
-  def test_jump_normal(self): self.assert_ast('[a]_i', 'i', ('mul', ('append_axis', ('jump', v._a), _(2)), ('normal', v._x)))
-  def test_jump_normal_altgeom(self): self.assert_ast('[a]_altgeom_i', 'i', ('mul', ('append_axis', ('jump', v._a), _(3)), ('normal', v._altgeom)))
+  def test_jump_normal(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('[a]_i', 'i', ('mul', ('append_axis', ('jump', v._a), _(2)), ('normal', v._x)))
+
+  def test_jump_normal_altgeom(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('[a]_altgeom_i', 'i', ('mul', ('append_axis', ('jump', v._a), _(3)), ('normal', v._altgeom)))
 
   def test_laplace_of_group(self):
     self.assert_ast('(2 a2_i)_,jj', 'i',
