@@ -204,9 +204,10 @@ class Topology(types.Singleton):
   def integrate_elementwise(self, funcs, *, asfunction=False, **kwargs):
     'element-wise integration'
 
-    ielem = function.TransformsIndexWithTail(self.transforms, self.ndims, function.SelectChain(self.roots)).index
+    funcs = tuple(map(function.asarray, funcs))
+    elems = self.basis('discont', 0)
     with matrix.Numpy():
-      retvals = self.integrate([function.Inflate(function.asarray(func)[_], dofmap=ielem[_], length=len(self), axis=0) for func in funcs], **kwargs)
+      retvals = self.integrate([func[_] * elems[(slice(None),)+(_,)*func.ndim] for func in funcs], **kwargs)
     retvals = [retval.export('dense') if len(retval.shape) == 2 else retval for retval in retvals]
     return [function.elemwise(self.roots, self.transforms, self.ndims, retval) for retval in retvals] if asfunction \
       else retvals
