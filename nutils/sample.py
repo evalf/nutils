@@ -100,6 +100,13 @@ class Sample(types.Singleton):
   def _prepare_funcs(self, funcs):
     return [function.asarray(func).prepare_eval(subsamples=self.subsamplemetas) for func in funcs]
 
+  def compress(self, indices):
+    assert indices.ndim == 1
+    assert not len(indices) or numpy.less(indices[:-1], indices[1:]).all() and 0 <= indices[0] and indices[-1] < self.nelems
+    if self.nelems == 0 or len(indices) == self.nelems:
+      return self
+    return CompressedSample(self, indices)
+
   @property
   def index(self):
     warnings.deprecation('`Sample.index` is deprecated; replace `Sample.index[ielem]` with `Sample.getindex(ielem)`')
@@ -463,6 +470,13 @@ class ProductSample(Sample):
                      sample1.npoints*sample2.npoints,
                      transforms)
 
+  def compress(self, indices):
+    assert indices.ndim == 1
+    assert not len(indices) or numpy.less(indices[:-1], indices[1:]).all() and 0 <= indices[0] and indices[-1] < self.nelems
+    if self.nelems == 0 or len(indices) == self.nelems:
+      return self
+    return CompressedProductSample(self._sample1, self._sample2, self.transforms, indices)
+
   def getpoints(self, ielem):
     ielem1, ielem2 = divmod(ielem, self._sample2.nelems)
     return points.TensorPoints(self._sample1.getpoints(ielem1), self._sample2.getpoints(ielem2))
@@ -522,14 +536,22 @@ class ChainedSample(Sample):
       raise ValueError('all samples to be chained should have the same dimension')
     todims = tuple(root.ndims for root in roots)
     self._samples = samples
-    self._elemoffsets = numpy.cumsum([0, *(sample.nelems for sample in samples[:-1])])
-    self._pointsoffsets = numpy.cumsum([0, *(sample.npoints for sample in samples[:-1])])
+    self._elemoffsets = numpy.cumsum([0, *(sample.nelems for sample in samples)])
+    self._pointsoffsets = numpy.cumsum([0, *(sample.npoints for sample in samples)])
     super().__init__(roots, ndims, sum(sample.npoints for sample in samples), transforms)
+
+  def compress(self, indices):
+    assert indices.ndim == 1
+    assert not len(indices) or numpy.less(indices[:-1], indices[1:]).all() and 0 <= indices[0] and indices[-1] < self.nelems
+    if self.nelems == 0 or len(indices) == self.nelems:
+      return self
+    splits = numpy.searchsorted(indices, self._elemoffsets)
+    return ChainedSample([s.compress(indices[l:r] - o) for s, l, r, o in zip(self._samples, splits[:-1], splits[1:], self._elemoffsets[:-1])], tuple(t[indices] for t in self.transforms))
 
   def _findelem(self, ielem):
     if ielem < 0 or ielem >= self.nelems:
       raise IndexError('element index out of range')
-    isample = numpy.searchsorted(self._elemoffsets[1:], ielem, side='right')
+    isample = numpy.searchsorted(self._elemoffsets[1:-1], ielem, side='right')
     return isample, ielem - self._elemoffsets[isample]
 
   def getpoints(self, ielem):
@@ -564,6 +586,68 @@ class ChainedSample(Sample):
       return types.frozenarray(numpy.zeros((0,self.ndims), int))
     offsets = util.cumsum(sample.npoints for sample in self._samples)
     return types.frozenarray(numpy.concatenate([sample.hull+offset for sample, offset in zip(self._samples, offsets)], axis=0), copy=False)
+
+  @util.single_or_multiple
+  @types.apply_annotations
+  def integrate_sparse(self, funcs:types.tuple[function.asarray], arguments:types.frozendict[str,types.frozenarray]=None):
+    results = []
+    for smpl in self._samples:
+      results.append(smpl.integrate_sparse(funcs, arguments))
+    return tuple(map(sparse.add, zip(*results)))
+
+class CompressedSample(Sample):
+
+  @types.apply_annotations
+  def __init__(self, base:strictsample, indices:types.frozenarray[types.strictint]):
+    assert indices.ndim == 1
+    assert not len(indices) or numpy.less(indices[:-1], indices[1:]).all() and indices[-1] < base.nelems
+    self.base = base
+    self.indices = indices
+    self._renumber = numpy.full((base.npoints,), base.npoints, int)
+    offset = 0
+    for baseindex in map(base.getindex, indices):
+      self._renumber[baseindex] = numpy.arange(offset, offset+len(baseindex))
+      offset += len(baseindex)
+    super().__init__(base.roots, base.ndims, sum(base.getpoints(i).npoints for i in indices), tuple(t[indices] for t in base.transforms))
+
+  def compress(self, indices):
+    assert indices.ndim == 1
+    assert not len(indices) or numpy.less(indices[:-1], indices[1:]).all() and 0 <= indices[0] and indices[-1] < self.nelems
+    if self.nelems == 0 or len(indices) == self.nelems:
+      return self
+    return CompressedSample(self.base, self.indices[indices])
+
+  def getpoints(self, ielem):
+    return self.base.getpoints(self.indices[ielem])
+
+  def getindex(self, ielem):
+    return self._renumber[self.base.getindex(self.indices[ielem])]
+
+class CompressedProductSample(CompressedSample):
+
+  @types.apply_annotations
+  def __init__(self, sample1:strictsample, sample2:strictsample, transforms:types.tuple[transformseq.stricttransforms], indices:types.frozenarray[types.strictint]):
+    self._sample1 = sample1
+    self._sample2 = sample2
+    self._prod_transforms = transforms
+    self._prod_indices = indices
+    super().__init__(ProductSample(sample1, sample2, transforms), indices)
+
+  def compress(self, indices):
+    assert indices.ndim == 1
+    assert not len(indices) or numpy.less(indices[:-1], indices[1:]).all() and 0 <= indices[0] and indices[-1] < self.nelems
+    if self.nelems == 0 or len(indices) == self.nelems:
+      return self
+    return CompressedProductSample(self._sample1, self._sample2, self._prod_transforms, self._prod_indices[indices])
+
+  def getsubsamples(self, ielem):
+    ibase = self.indices[ielem]
+    ielem1, ielem2 = divmod(ibase, self._sample2.nelems)
+    return self._sample1.getsubsamples(ielem1) + self._sample2.getsubsamples(ielem2)
+
+  @property
+  def subsamplemetas(self):
+    return self._sample1.subsamplemetas + self._sample2.subsamplemetas
 
 class Integral(types.Singleton):
   '''Postponed integration.

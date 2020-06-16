@@ -73,13 +73,16 @@ class Topology(types.Singleton):
   def empty(self):
     return EmptyTopology(self.roots, self.ndims)
 
+  def compress(self, indices):
+    indices = types.frozenarray(indices)
+    return CompressedTopology(self, indices)
+
   def getitem(self, item):
     return self.empty
 
   def __getitem__(self, item):
     if numeric.isintarray(item):
-      item = types.frozenarray(item)
-      return Topology(self.roots, self.references[item], self.transforms[item], self.opposites[item])
+      return self.compress(item)
     if not isinstance(item, tuple):
       item = item,
     if all(it in (...,slice(None)) for it in item):
@@ -838,6 +841,10 @@ class EmptyTopology(Topology):
 
   def __rsub__(self, other):
     return other
+
+  @property
+  def connectivity(self):
+    return types.frozenarray(numpy.zeros((0, 2**self.ndims), int))
 
   @property
   def boundary(self):
@@ -1954,6 +1961,20 @@ class SubsetTopology(Topology):
             raise LocateError('failed to locate point: {}'.format(coords[sample.getindex(ielem)[i]]))
     return sample
 
+class CompressedTopology(Topology):
+
+  @types.apply_annotations
+  def __init__(self, basetopo: stricttopology, indices: types.frozenarray[types.strictint]):
+    self.basetopo = basetopo
+    self.indices = indices
+    super().__init__(basetopo.roots,
+                     basetopo.references[indices],
+                     basetopo.transforms[indices],
+                     basetopo.opposites[indices])
+
+  def sample(self, ischeme, degree):
+    return self.basetopo.sample(ischeme, degree).compress(self.indices)
+
 class RefinedTopology(Topology):
   'refinement'
 
@@ -2269,6 +2290,9 @@ class HierarchicalTopology(Topology):
         hbasis_coeffs.append(numeric.poly_concatenate(trans_coeffs))
 
     return function.PlainBasis(hbasis_coeffs, hbasis_dofs, ndofs, self.transforms, self.ndims, function.SelectChain(self.roots))
+
+  def sample(self, ischeme, degree):
+    return DisjointUnionTopology([level[ind] for level, ind in zip(self.levels, self._indices_per_level)]).sample(ischeme, degree)
 
 class ProductTopology(Topology):
   'product topology'
