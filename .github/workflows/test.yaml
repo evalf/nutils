@@ -30,7 +30,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --upgrade .[docs,matrix_scipy,matrix_mkl,export_mpl,import_gmsh] coverage ${{ matrix.dep }}
+          python -m pip install --upgrade .[docs,matrix_scipy,matrix_mkl,export_mpl,import_gmsh] coverage "Sphinx<3.1" ${{ matrix.dep }}
       - name: Test
         run: |
           python -m coverage run -m unittest -b
