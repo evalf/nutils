@@ -862,6 +862,9 @@ class EmptyTopology(Topology):
   def refined(self):
     return self
 
+  def basis(self, *args, **kwargs):
+    return function.PlainBasis(numpy.zeros((0,)*(self.ndims+1)), numpy.zeros((0,)*(self.ndims+1)), 0, self.transforms, self.ndims, function.SelectChain(self.roots))
+
 class Point(Topology):
   'point'
 
@@ -2366,10 +2369,6 @@ class ProductTopology(Topology):
       return DisjointUnionTopology(interfaces)
 
   def _productbasis(self, lbasis, rbasis):
-    if not lbasis:
-      return rbasis
-    if not rbasis:
-      return lbasis
     return function.ProductBasis(lbasis, rbasis, function.SelectChain(self.roots))
 
   def basis(self, name, *args, **kwargs):
@@ -2377,8 +2376,8 @@ class ProductTopology(Topology):
       return self.basis_spline(*args, _variant=name, **kwargs)
     elif name == 'std':
       return self.basis_std(*args, **kwargs)
-    lbasis = self._left.basis(name, *args, **kwargs) if self._left.ndims else None
-    rbasis = self._right.basis(name, *args, **kwargs) if self._right.ndims else None
+    lbasis = self._left.basis(name, *args, **kwargs)
+    rbasis = self._right.basis(name, *args, **kwargs)
     return self._productbasis(lbasis, rbasis)
 
   def _split_list(self, value, scalar_type):
@@ -2411,14 +2410,14 @@ class ProductTopology(Topology):
       lperiodic = [i for i in periodic if i < self._left.ndims]
       rperiodic = [i-self._left.ndims for i in periodic if i >= self._left.ndims]
 
-    lbasis = self._left.basis(_variant, degree=ldegree, removedofs=lremovedofs, knotvalues=lknotvalues, knotmultiplicities=lknotmultiplicities, continuity=lcontinuity, periodic=lperiodic) if self._left.ndims else None
-    rbasis = self._right.basis(_variant, degree=rdegree, removedofs=rremovedofs, knotvalues=rknotvalues, knotmultiplicities=rknotmultiplicities, continuity=rcontinuity, periodic=rperiodic) if self._right.ndims else None
+    lbasis = self._left.basis(_variant, degree=ldegree, removedofs=lremovedofs, knotvalues=lknotvalues, knotmultiplicities=lknotmultiplicities, continuity=lcontinuity, periodic=lperiodic)
+    rbasis = self._right.basis(_variant, degree=rdegree, removedofs=rremovedofs, knotvalues=rknotvalues, knotmultiplicities=rknotmultiplicities, continuity=rcontinuity, periodic=rperiodic)
     return self._productbasis(lbasis, rbasis)
 
   def basis_std(self, degree):
     ldegree, rdegree = self._split_scalar(degree, int)
-    lbasis = self._left.basis('std', degree=ldegree) if self._left.ndims else None
-    rbasis = self._right.basis('std', degree=rdegree) if self._right.ndims else None
+    lbasis = self._left.basis('std', degree=ldegree)
+    rbasis = self._right.basis('std', degree=rdegree)
     return self._productbasis(lbasis, rbasis)
 
   @property
