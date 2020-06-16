@@ -9,6 +9,16 @@ features in inverse chronological order.
 New in v7.0 (in development)
 ----------------------------
 
+- New derivative and normal syntax
+
+  The :class:`~nutils.function.Namespace` now supports writing derivatives and
+  normals as functions::
+
+      'd(u, x_i)' # alternative for 'u_,i', deprecates 'u_,x_i'
+      'd(u, x_i, x_j)' # alternative for 'u_,ij'
+      'd(u, ?a)' # deprecates 'u_,?a'
+      'n(x_i)' # deprecates 'n:x_i'
+
 - User-defined functions in :class:`~nutils.function.Namespace`
 
   The :class:`~nutils.function.Namespace` can be initialized with a dictionary
