@@ -34,14 +34,14 @@ def main(nelems:int, etype:str, btype:str, degree:int, poisson:float):
   ns.X_i = 'x_i + u_i'
   ns.lmbda = 2 * poisson
   ns.mu = 1 - 2 * poisson
-  ns.strain_ij = '(u_i,j + u_j,i) / 2'
+  ns.strain_ij = '(d(u_i, x_j) + d(u_j, x_i)) / 2'
   ns.stress_ij = 'lmbda strain_kk δ_ij + 2 mu strain_ij'
 
   sqr = domain.boundary['left'].integral('u_k u_k d:x' @ ns, degree=degree*2)
   sqr += domain.boundary['right'].integral('(u_0 - .5)^2 d:x' @ ns, degree=degree*2)
   cons = solver.optimize('lhs', sqr, droptol=1e-15)
 
-  res = domain.integral('basis_ni,j stress_ij d:x' @ ns, degree=degree*2)
+  res = domain.integral('d(basis_ni, x_j) stress_ij d:x' @ ns, degree=degree*2)
   lhs = solver.solve_linear('lhs', res, constrain=cons)
 
   bezier = domain.sample('bezier', 5)

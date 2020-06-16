@@ -52,18 +52,17 @@ class Variables:
       return default
 
 v = Variables(x=Array('x', [2]), altgeom=Array('altgeom', [3]), funcoverride=Array('funcoverride', []))
-functions = dict(func1=1, func2=2, func3=3, funcoverride=1)
 
 class parse(TestCase):
 
   def assert_ast(self, expression, indices, ast, variables=None, **parse_kwargs):
     if variables is None:
       variables = v
-    self.assertEqual(nutils.expression.parse(expression, variables, functions, indices, **parse_kwargs)[0], ast)
+    self.assertEqual(nutils.expression.parse(expression, variables, indices, **parse_kwargs)[0], ast)
 
   def assert_syntax_error(self, msg, expression, indices, highlight, arg_shapes={}, fixed_lengths=None, exccls=nutils.expression.ExpressionSyntaxError):
     with self.assertRaises(exccls) as cm:
-      nutils.expression.parse(expression, v, functions, indices, arg_shapes, fixed_lengths=fixed_lengths)
+      nutils.expression.parse(expression, v, indices, arg_shapes, fixed_lengths=fixed_lengths)
     self.assertEqual(str(cm.exception), msg + '\n' + expression + '\n' + highlight)
 
   # OTHER
@@ -233,8 +232,13 @@ class parse(TestCase):
         ('jump', ('trace', ('grad', v._a2, v._x), _(0), _(1))),
         ('mean', ('trace', ('grad', v._a2, v._x), _(0), _(1)))))
 
-  def test_jump_normal(self): self.assert_ast('[a]_i', 'i', ('mul', ('append_axis', ('jump', v._a), _(2)), ('normal', v._x)))
-  def test_jump_normal_altgeom(self): self.assert_ast('[a]_altgeom_i', 'i', ('mul', ('append_axis', ('jump', v._a), _(3)), ('normal', v._altgeom)))
+  def test_jump_normal(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('[a]_i', 'i', ('mul', ('append_axis', ('jump', v._a), _(2)), ('normal', v._x)))
+
+  def test_jump_normal_altgeom(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('[a]_altgeom_i', 'i', ('mul', ('append_axis', ('jump', v._a), _(3)), ('normal', v._altgeom)))
 
   def test_laplace_of_group(self):
     self.assert_ast('(2 a2_i)_,jj', 'i',
@@ -443,23 +447,35 @@ class parse(TestCase):
   def test_gradient_other_default(self): self.assert_ast('a2_i,j', 'ij', ('grad', v._a2, v._altgeom), default_geometry_name='altgeom')
   def test_gradient_default_trace(self): self.assert_ast('a2_i,i', '', ('trace', ('grad', v._a2, v._x), _(0), _(1)))
   def test_gradient_default_double_trace(self): self.assert_ast('a422_ijk,jk', 'i', ('trace', ('grad', ('trace', ('grad', v._a422, v._x), _(1), _(3)), v._x), _(1), _(2)))
-  def test_gradient_altgeom(self): self.assert_ast('a3_i,altgeom_j', 'ij', ('grad', v._a3, v._altgeom))
-  def test_gradient_altgeom_trace(self): self.assert_ast('a3_i,altgeom_i', '', ('trace', ('grad', v._a3, v._altgeom), _(0), _(1)))
-  def test_gradient_altgeom_double_trace(self): self.assert_ast('a433_ijk,altgeom_jk', 'i', ('trace', ('grad', ('trace', ('grad', v._a433, v._altgeom), _(1), _(3)), v._altgeom), _(1), _(2)))
+
+  def test_gradient_altgeom(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('a3_i,altgeom_j', 'ij', ('grad', v._a3, v._altgeom))
+
+  def test_gradient_altgeom_trace(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('a3_i,altgeom_i', '', ('trace', ('grad', v._a3, v._altgeom), _(0), _(1)))
+
+  def test_gradient_altgeom_double_trace(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('a433_ijk,altgeom_jk', 'i', ('trace', ('grad', ('trace', ('grad', v._a433, v._altgeom), _(1), _(3)), v._altgeom), _(1), _(2)))
+
   def test_surfgrad_default(self): self.assert_ast('a2_i;j', 'ij', ('surfgrad', v._a2, v._x))
   def test_surfgrad_default_trace(self): self.assert_ast('a2_i;i', '', ('trace', ('surfgrad', v._a2, v._x), _(0), _(1)))
 
   def test_gradient_invalid_geom_0dim(self):
-    self.assert_syntax_error(
-      "Invalid geometry: expected 1 dimension, but 'a' has 0.",
-      "1 + a2_i,a_i + 1", "",
-      "    ^^^^^^^^")
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_syntax_error(
+        "Invalid geometry: expected 1 dimension, but 'a' has 0.",
+        "1 + a2_i,a_i + 1", "",
+        "    ^^^^^^^^")
 
   def test_gradient_invalid_geom_2dim(self):
-    self.assert_syntax_error(
-      "Invalid geometry: expected 1 dimension, but 'a22' has 2.",
-      "1 + a2_i,a22_i + 1", "",
-      "    ^^^^^^^^^^")
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_syntax_error(
+        "Invalid geometry: expected 1 dimension, but 'a22' has 2.",
+        "1 + a2_i,a22_i + 1", "",
+        "    ^^^^^^^^^^")
 
   def test_gradient_const_scalar(self):
     self.assert_syntax_error(
@@ -475,31 +491,66 @@ class parse(TestCase):
 
   # NEW GRAD
 
-  def test_newgradient(self): self.assert_ast('dx_j:a2_i', 'ij', ('grad', v._a2, v._x))
-  def test_newgradient_trace(self): self.assert_ast('dx_i:a2_i', '', ('trace', ('grad', v._a2, v._x), _(0), _(1)))
-  def test_newgradient_double_trace(self): self.assert_ast('dx_k:(dx_j:a422_ijk)', 'i', ('trace', ('grad', ('group', ('trace', ('grad', v._a422, v._x), _(1), _(3))), v._x), _(1), _(2)))
+  def test_newgradient(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('dx_j:a2_i', 'ij', ('grad', v._a2, v._x))
+
+  def test_newgradient_trace(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('dx_i:a2_i', '', ('trace', ('grad', v._a2, v._x), _(0), _(1)))
+
+  def test_newgradient_double_trace(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('dx_k:(dx_j:a422_ijk)', 'i', ('trace', ('grad', ('group', ('trace', ('grad', v._a422, v._x), _(1), _(3))), v._x), _(1), _(2)))
 
   # DERIVATIVE
 
-  def test_derivative0(self): self.assert_ast('(2 ?arg + 1)_,?arg', '', ('derivative', ('group', ('add', ('mul', _(2), ('arg', _('arg'))), _(1))), ('arg', _('arg'))))
-  def test_derivative1(self): self.assert_ast('(a2_i + ?arg_i)_,?arg_j', 'ij', ('derivative', ('group', ('add', v._a2, ('arg', _('arg'), _(2)))), ('arg', _('arg'), _(2))))
-  def test_derivative2(self): self.assert_ast('(a23_ij + ?arg_ij)_,?arg_kj', 'ik', ('trace', ('derivative', ('group', ('add', v._a23, ('arg', _('arg'), _(2), _(3)))), ('arg', _('arg'), _(2), _(3))), _(1), _(3)))
+  def test_derivative0(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('(2 ?arg + 1)_,?arg', '', ('derivative', ('group', ('add', ('mul', _(2), ('arg', _('arg'))), _(1))), ('arg', _('arg'))))
+
+  def test_derivative1(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('(a2_i + ?arg_i)_,?arg_j', 'ij', ('derivative', ('group', ('add', v._a2, ('arg', _('arg'), _(2)))), ('arg', _('arg'), _(2))))
+
+  def test_derivative2(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('(a23_ij + ?arg_ij)_,?arg_kj', 'ik', ('trace', ('derivative', ('group', ('add', v._a23, ('arg', _('arg'), _(2), _(3)))), ('arg', _('arg'), _(2), _(3))), _(1), _(3)))
 
   # NEW DERIVATIVE
 
-  def test_newderivative0(self): self.assert_ast('d?arg:(2 ?arg + 1)', '', ('derivative', ('group', ('add', ('mul', _(2), ('arg', _('arg'))), _(1))), ('arg', _('arg'))))
-  def test_newderivative1(self): self.assert_ast('d?arg_j:(a2_i + ?arg_i)', 'ij', ('derivative', ('group', ('add', v._a2, ('arg', _('arg'), _(2)))), ('arg', _('arg'), _(2))))
-  def test_newderivative2(self): self.assert_ast('d?arg_kj:(a23_ij + ?arg_ij)', 'ik', ('trace', ('derivative', ('group', ('add', v._a23, ('arg', _('arg'), _(2), _(3)))), ('arg', _('arg'), _(2), _(3))), _(1), _(3)))
+  def test_newderivative0(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('d?arg:(2 ?arg + 1)', '', ('derivative', ('group', ('add', ('mul', _(2), ('arg', _('arg'))), _(1))), ('arg', _('arg'))))
+
+  def test_newderivative1(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('d?arg_j:(a2_i + ?arg_i)', 'ij', ('derivative', ('group', ('add', v._a2, ('arg', _('arg'), _(2)))), ('arg', _('arg'), _(2))))
+
+  def test_newderivative2(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('d?arg_kj:(a23_ij + ?arg_ij)', 'ik', ('trace', ('derivative', ('group', ('add', v._a23, ('arg', _('arg'), _(2), _(3)))), ('arg', _('arg'), _(2), _(3))), _(1), _(3)))
 
   # NORMAL
 
-  def test_normal(self): self.assert_ast('n:x_i', 'i', ('normal', v._x))
-
   def test_normal_default(self): self.assert_ast('n_i', 'i', ('normal', v._x))
-  def test_normal_altgeom(self): self.assert_ast('n_altgeom_i', 'i', ('normal', v._altgeom))
   def test_normal_default_grad_default(self): self.assert_ast('n_i,j', 'ij', ('grad', ('normal', v._x), v._x))
-  def test_normal_altgeom_grad_default(self): self.assert_ast('n_altgeom_i,x_j', 'ij', ('grad', ('normal', v._altgeom), v._x))
-  def test_normal_altgeom_grad_altgeom(self): self.assert_ast('n_altgeom_i,altgeom_j', 'ij', ('grad', ('normal', v._altgeom), v._altgeom))
+
+  def test_normal(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('n:x_i', 'i', ('normal', v._x))
+
+  def test_normal_altgeom(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('n_altgeom_i', 'i', ('normal', v._altgeom))
+
+  def test_normal_altgeom_grad_default(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('n_altgeom_i,x_j', 'ij', ('grad', ('normal', v._altgeom), v._x))
+
+  def test_normal_altgeom_grad_altgeom(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('n_altgeom_i,altgeom_j', 'ij', ('grad', ('normal', v._altgeom), v._altgeom))
 
   def test_normal_altgeom_grad_nogeom(self):
     self.assert_syntax_error(
@@ -520,16 +571,18 @@ class parse(TestCase):
       "    ^^^^")
 
   def test_normal_invalid_geom_0dim(self):
-    self.assert_syntax_error(
-      "Invalid geometry: expected 1 dimension, but 'a' has 0.",
-      "1 + n_a_i + 1", "",
-      "    ^^^^")
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_syntax_error(
+        "Invalid geometry: expected 1 dimension, but 'a' has 0.",
+        "1 + n_a_i + 1", "",
+        "    ^^^^")
 
   def test_normal_invalid_geom_2dim(self):
-    self.assert_syntax_error(
-      "Invalid geometry: expected 1 dimension, but 'a22' has 2.",
-      "1 + n_a22_i + 1", "",
-      "    ^^^^^^")
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_syntax_error(
+        "Invalid geometry: expected 1 dimension, but 'a22' has 2.",
+        "1 + n_a22_i + 1", "",
+        "    ^^^^^^")
 
   def test_variable_startswith_normal(self):
     nx = Array('nx', [2])
@@ -617,17 +670,30 @@ class parse(TestCase):
       "     ^")
 
   def test_arg_index_pos2(self):
-    self.assert_syntax_error(
-      "Length of axis cannot be determined from the expression.",
-      "?foo_,?bar_n", "n",
-      "           ^")
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_syntax_error(
+        "Length of axis cannot be determined from the expression.",
+        "?foo_,?bar_n", "n",
+        "           ^")
 
   # SUBSTITUTE
 
-  def test_arg_subs_0d_const(self): self.assert_ast('?arg_,?arg(arg=1)', '', ('substitute', ('derivative', ('arg', _('arg')), ('arg', _('arg'))), ('arg', _('arg')), _(1)))
-  def test_arg_subs_0d_var(self): self.assert_ast('?arg_,?arg(arg=a )', '', ('substitute', ('derivative', ('arg', _('arg')), ('arg', _('arg'))), ('arg', _('arg')), v._a))
-  def test_arg_subs_1d_var(self): self.assert_ast('?arg_i,?arg_j(arg_i = a2_i)', 'ij', ('substitute', ('derivative', ('arg', _('arg'), _(2)), ('arg', _('arg'), _(2))), ('arg', _('arg'), _(2)), v._a2))
-  def test_arg_subs_2d_var(self): self.assert_ast('?arg_ij,?arg_kl( arg_ij =a23_ji)', 'ijkl', ('substitute', ('derivative', ('arg', _('arg'), _(3), _(2)), ('arg', _('arg'), _(3), _(2))), ('arg', _('arg'), _(3), _(2)), ('transpose', v._a23, _((1,0)))))
+  def test_arg_subs_0d_const(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('?arg_,?arg(arg=1)', '', ('substitute', ('derivative', ('arg', _('arg')), ('arg', _('arg'))), ('arg', _('arg')), _(1)))
+
+  def test_arg_subs_0d_var(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('?arg_,?arg(arg=a )', '', ('substitute', ('derivative', ('arg', _('arg')), ('arg', _('arg'))), ('arg', _('arg')), v._a))
+
+  def test_arg_subs_1d_var(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('?arg_i,?arg_j(arg_i = a2_i)', 'ij', ('substitute', ('derivative', ('arg', _('arg'), _(2)), ('arg', _('arg'), _(2))), ('arg', _('arg'), _(2)), v._a2))
+
+  def test_arg_subs_2d_var(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assert_ast('?arg_ij,?arg_kl( arg_ij =a23_ji)', 'ijkl', ('substitute', ('derivative', ('arg', _('arg'), _(3), _(2)), ('arg', _('arg'), _(3), _(2))), ('arg', _('arg'), _(3), _(2)), ('transpose', v._a23, _((1,0)))))
+
   def test_arg_multisubs(self): self.assert_ast('(1 + ?x + ?y)(x=1 + a, y=2)', '', ('substitute', ('group', ('add', ('add', _(1), ('arg', _('x'))), ('arg', _('y')))), ('arg', _('x')), ('add', _(1), v._a), ('arg', _('y')), _(2)))
 
   def test_arg_subs_missing_equals(self):
@@ -745,37 +811,26 @@ class parse(TestCase):
 
   # FUNCTION
 
-  def test_function_0d(self): self.assert_ast('func1(a)', '', ('call', _('func1'), v._a))
+  def test_function(self): self.assert_ast('func1(a)', '', ('call', _('func1'), v._a))
   def test_function_1d(self): self.assert_ast('func1(a2_i)', 'i', ('call', _('func1'), v._a2))
   def test_function_2d(self): self.assert_ast('func1(a23_ij)', 'ij', ('call', _('func1'), v._a23))
   def test_function_0d_0d(self): self.assert_ast('func2(a, a)', '', ('call', _('func2'), v._a, v._a))
-  def test_function_1d_1d(self): self.assert_ast('func2(a2_i, a2_i)', 'i', ('call', _('func2'), v._a2, v._a2))
-  def test_function_2d_2d(self): self.assert_ast('func2(a23_ij, a32_ji)', 'ij', ('call', _('func2'), v._a23, ('transpose', v._a32, _((1,0)))))
-  def test_function_2d_2d_2d(self): self.assert_ast('func3(a23_ij, a22_ik a23_kj, a23_ij)', 'ij', ('call', _('func3'), v._a23, ('sum', ('mul', ('append_axis', v._a22, _(3)), ('transpose', ('append_axis', v._a23, _(2)), _((2,0,1)))), _(1)), v._a23))
+  def test_function_1d_1d(self): self.assert_ast('func2(a2_i, a2_j)', 'ij', ('call', _('func2'), v._a2, v._a2))
+  def test_function_1d_1d_trace(self): self.assert_ast('func2(a2_i, a2_i)', '', ('trace', ('call', _('func2'), v._a2, v._a2), _(0), _(1)))
+  def test_function_2d_2d(self): self.assert_ast('func2(a23_ij, a32_kl)', 'ijkl', ('call', _('func2'), v._a23, v._a32))
+  def test_function_1d_1d_2d(self): self.assert_ast('func3(a2_i, a2_j, a23_kl)', 'ijkl', ('call', _('func3'), v._a2, v._a2, v._a23))
 
-  def test_function_invalid_nargs(self):
+  def test_function_triple_index(self):
     self.assert_syntax_error(
-      "Function 'func1' takes 1 argument, got 2.",
-      "1 + func1(a, a) + 1", "",
-      "    ^^^^^^^^^^^")
-
-  def test_function_unmatched_indices(self):
-    self.assert_syntax_error(
-      "Cannot align arrays with unmatched indices: ij, ij, jk.",
-      "1_ij + func3(a23_ij, a23_ij, a23_jk) + 1_ij", "ij",
-      "       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+      "Index 'i' occurs more than twice.",
+      "1_i + func(a2_i, a2_i, a2_i) + 1_i", "i",
+      "      ^^^^^^^^^^^^^^^^^^^^^^")
 
   def test_function_unmatched_shape(self):
     self.assert_syntax_error(
       "Shapes at index 'i' differ: 2, 3.",
-      "1_ij + func2(a23_ij, a33_ij) + 1_ij", "ij",
-      "       ^^^^^^^^^^^^^^^^^^^^^")
-
-  def test_function_unknown(self):
-    self.assert_syntax_error(
-      "Unknown variable: 'funcX'.",
-      "1_ij + funcX(a23_ij) + 1_ij", "ij",
-      "       ^^^^^")
+      "1 + func2(a23_ij, a33_ij) + 1", "",
+      "    ^^^^^^^^^^^^^^^^^^^^^")
 
   def test_function_override(self):
     self.assert_syntax_error(

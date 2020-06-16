@@ -1920,6 +1920,23 @@ class Pointwise(Array):
     self.args = args
     super().__init__(args=args, shape=shape, dtype=retval.dtype)
 
+  @classmethod
+  def outer(cls, *args):
+    '''Alternative constructor that outer-aligns the arguments.
+
+    The output shape of this pointwise function is the sum of all shapes of its
+    arguments. When called with multiple arguments, the first argument will be
+    appended with singleton axes to match the output shape, the second argument
+    will be prepended with as many singleton axes as the dimension of the
+    original first argument and appended to match the output shape, and so
+    forth and so on.
+    '''
+
+    args = tuple(map(asarray, args))
+    shape = builtins.sum((arg.shape for arg in args), ())
+    offsets = numpy.cumsum([0]+[arg.ndim for arg in args])
+    return cls(*(prependaxes(appendaxes(arg, shape[r:]), shape[:l]) for arg, l, r in zip(args, offsets[:-1], offsets[1:])))
+
   @property
   def simplified(self):
     args = [arg.simplified for arg in self.args]
@@ -4084,6 +4101,10 @@ def trigtangent(angle):
 def eye(n, dtype=float):
   return diagonalize(ones([n], dtype=dtype))
 
+def levicivita(n: int, dtype=float):
+  'n-dimensional Levi-Civita symbol.'
+  return Constant(numeric.levicivita(n))
+
 def insertaxis(arg, n, length):
   arg = asarray(arg)
   n = numeric.normdim(arg.ndim+1, n)
@@ -4319,6 +4340,75 @@ def ravel(func, axis):
   axis = numeric.normdim(func.ndim-1, axis)
   return Ravel(func, axis)
 
+def normal(arg, exterior=False):
+  arg = asarray(arg)
+  if arg.ndim == 0:
+    return normal(insertaxis(arg, 0, 1), exterior)[...,0]
+  elif arg.ndim > 1:
+    arg = asarray(arg)
+    sh = arg.shape[-2:]
+    return unravel(normal(ravel(arg, arg.ndim-2), exterior), arg.ndim-2, sh)
+  else:
+    if not exterior:
+      lgrad = localgradient(arg, len(arg))
+      return Normal(lgrad)
+    lgrad = localgradient(arg, len(arg)-1)
+    if len(arg) == 2:
+      return asarray([lgrad[1,0], -lgrad[0,0]]).normalized()
+    if len(arg) == 3:
+      return cross(lgrad[:,0], lgrad[:,1], axis=0).normalized()
+    raise NotImplementedError
+
+def grad(func, geom, ndims=0):
+  geom = asarray(geom)
+  if geom.ndim == 0:
+    return grad(func, insertaxis(geom, 0, 1), ndims)[...,0]
+  elif geom.ndim > 1:
+    func = asarray(func)
+    sh = geom.shape[-2:]
+    return unravel(grad(func, ravel(geom, geom.ndim-2), ndims), func.ndim+geom.ndim-2, sh)
+  else:
+    if ndims <= 0:
+      ndims += geom.shape[0]
+    J = localgradient(geom, ndims)
+    if J.shape[0] == J.shape[1]:
+      Jinv = inverse(J)
+    elif J.shape[0] == J.shape[1] + 1: # gamma gradient
+      G = dot(J[:,:,_], J[:,_,:], 0)
+      Ginv = inverse(G)
+      Jinv = dot(J[_,:,:], Ginv[:,_,:], -1)
+    else:
+      raise Exception('cannot invert {}x{} jacobian'.format(J.shape))
+    return dot(localgradient(func, ndims)[...,_], Jinv, -2)
+
+def dotnorm(arg, geom, axis=-1):
+  axis = numeric.normdim(arg.ndim, axis)
+  assert geom.ndim == 1 and geom.shape[0] == arg.shape[axis]
+  return dot(arg, normal(geom)[(slice(None),)+(_,)*(arg.ndim-axis-1)], axis)
+
+def _d1(arg, var):
+  return (derivative if isinstance(var, Argument) else grad)(arg, var)
+
+def d(arg, *vars):
+  'derivative of `arg` to `vars`'
+  return functools.reduce(_d1, vars, arg)
+
+def prependaxes(func, shape):
+  'Prepend axes with specified `shape` to `func`.'
+
+  func = asarray(func)
+  for i, n in enumerate(shape):
+    func = insertaxis(func, i, n)
+  return func
+
+def appendaxes(func, shape):
+  'Append axes with specified `shape` to `func`.'
+
+  func = asarray(func)
+  for n in shape:
+    func = insertaxis(func, func.ndim, n)
+  return func
+
 @replace
 def replace_arguments(value, arguments):
   '''Replace :class:`Argument` objects in ``value``.
@@ -4372,7 +4462,12 @@ def _eval_ast(ast, functions):
     return replace_arguments(array, subs)
   elif op == 'call':
     func, *args = args
-    return functions[func](*args)
+    args = tuple(map(asarray, args))
+    shape = builtins.sum((arg.shape for arg in args), ())
+    result = functions[func](*args)
+    if result.shape != shape:
+      raise ValueError('expected an array with shape {} when calling {} but got {}'.format(shape, func, result.shape))
+    return result
   elif op == 'jacobian':
     geom, ndims = args
     return J(geom, ndims)
@@ -4502,6 +4597,24 @@ class Namespace:
   ``tanh``, ``arcsin``, ``arccos``, ``arctan2``, ``arctanh``, ``exp``, ``abs``,
   ``ln``, ``log``, ``log2``, ``log10``, ``sqrt`` and ``sign``.
 
+  Additional pointwise functions can be passed to argument ``functions``. All
+  functions should take :class:`Array` objects as arguments and must return an
+  :class:`Array` with as shape the sum of all shapes of the arguments.
+
+  >>> def sqr(a):
+  ...   return a**2
+  >>> def mul(a, b):
+  ...   return a[(...,)+(None,)*b.ndim] * b[(None,)*a.ndim]
+  >>> ns_funcs = function.Namespace(functions=dict(sqr=sqr, mul=mul))
+  >>> ns_funcs.a = numpy.array([1,2,3])
+  >>> ns_funcs.b = numpy.array([4,5])
+  >>> 'sqr(a_i)' @ ns_funcs # same as 'a_i^2'
+  Array<3>
+  >>> ns_funcs.eval_ij('mul(a_i, b_j)') # same as 'a_i b_j'
+  Array<3,2>
+  >>> 'mul(a_i, a_i)' @ ns_funcs # same as 'a_i a_i'
+  Array<>
+
   Args
   ----
   default_geometry_name : :class:`str`
@@ -4513,6 +4626,10 @@ class Namespace:
   length_<indices> : :class:`int`
       The fixed length of ``<indices>``.  All axes in the expression marked
       with one of the ``<indices>`` are asserted to have the specified length.
+  functions : :class:`dict`, optional
+      Pointwise functions that should be available in the namespace,
+      supplementing the default functions listed above. All functions should
+      return arrays with as shape the sum of all shapes of the arguments.
 
   Attributes
   ----------
@@ -4522,20 +4639,19 @@ class Namespace:
       The name of the default geometry.  See argument with the same name.
   '''
 
-  __slots__ = '_attributes', '_arg_shapes', 'default_geometry_name', '_fixed_lengths', '_fallback_length'
+  __slots__ = '_attributes', '_arg_shapes', 'default_geometry_name', '_fixed_lengths', '_fallback_length', '_functions'
 
   _re_assign = re.compile('^([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)(_[a-z]+)?$')
 
-  _functions = dict(
+  _default_functions = dict(
     opposite=opposite, sin=sin, cos=cos, tan=tan, sinh=sinh, cosh=cosh,
-    tanh=tanh, arcsin=arcsin, arccos=arccos, arctan=arctan, arctan2=arctan2, arctanh=arctanh,
+    tanh=tanh, arcsin=arcsin, arccos=arccos, arctan=arctan, arctan2=ArcTan2.outer, arctanh=arctanh,
     exp=exp, abs=abs, ln=ln, log=ln, log2=log2, log10=log10, sqrt=sqrt,
-    sign=sign,
+    sign=sign, d=d, n=normal,
   )
-  _functions_nargs = {k: len(inspect.signature(v).parameters) for k, v in _functions.items()}
 
   @types.apply_annotations
-  def __init__(self, *, default_geometry_name='x', fallback_length:types.strictint=None, **kwargs):
+  def __init__(self, *, default_geometry_name='x', fallback_length:types.strictint=None, functions=None, **kwargs):
     if not isinstance(default_geometry_name, str):
       raise ValueError('default_geometry_name: Expected a str, got {!r}.'.format(default_geometry_name))
     if '_' in default_geometry_name or not self._re_assign.match(default_geometry_name):
@@ -4553,11 +4669,12 @@ class Namespace:
     super().__setattr__('_fixed_lengths', types.frozendict({i: l for indices, l in fixed_lengths.items() for i in indices} if fixed_lengths else {}))
     super().__setattr__('_fallback_length', fallback_length)
     super().__setattr__('default_geometry_name', default_geometry_name)
+    super().__setattr__('_functions', dict(itertools.chain(self._default_functions.items(), () if functions is None else functions.items())))
     super().__init__()
 
   def __getstate__(self):
     'Pickle instructions'
-    attrs = '_arg_shapes', '_attributes', 'default_geometry_name', '_fixed_lengths', '_fallback_length'
+    attrs = '_arg_shapes', '_attributes', 'default_geometry_name', '_fixed_lengths', '_fallback_length', '_functions'
     return {k: getattr(self, k) for k in attrs}
 
   def __setstate__(self, d):
@@ -4612,7 +4729,7 @@ class Namespace:
     '''Get attribute ``name``.'''
 
     if name.startswith('eval_'):
-      return lambda expr: _eval_ast(expression.parse(expr, variables=self._attributes, functions=self._functions_nargs, indices=name[5:], arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)[0], self._functions)
+      return lambda expr: _eval_ast(expression.parse(expr, variables=self._attributes, indices=name[5:], arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)[0], self._functions)
     try:
       return self._attributes[name]
     except KeyError:
@@ -4631,7 +4748,7 @@ class Namespace:
       name, indices = m.groups()
       indices = indices[1:] if indices else ''
       if isinstance(value, str):
-        ast, arg_shapes = expression.parse(value, variables=self._attributes, functions=self._functions_nargs, indices=indices, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)
+        ast, arg_shapes = expression.parse(value, variables=self._attributes, indices=indices, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)
         value = _eval_ast(ast, self._functions)
         self._arg_shapes.update(arg_shapes)
       else:
@@ -4656,42 +4773,10 @@ class Namespace:
     if not isinstance(expr, str):
       return NotImplemented
     try:
-      ast = expression.parse(expr, variables=self._attributes, functions=self._functions_nargs, indices=None, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)[0]
+      ast = expression.parse(expr, variables=self._attributes, indices=None, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)[0]
     except expression.AmbiguousAlignmentError:
       raise ValueError('`expression @ Namespace` cannot be used because the expression has more than one dimension.  Use `Namespace.eval_...(expression)` instead')
     return _eval_ast(ast, self._functions)
-
-def normal(arg, exterior=False):
-  assert arg.ndim == 1
-  if not exterior:
-    lgrad = localgradient(arg, len(arg))
-    return Normal(lgrad)
-  lgrad = localgradient(arg, len(arg)-1)
-  if len(arg) == 2:
-    return asarray([lgrad[1,0], -lgrad[0,0]]).normalized()
-  if len(arg) == 3:
-    return cross(lgrad[:,0], lgrad[:,1], axis=0).normalized()
-  raise NotImplementedError
-
-def grad(self, geom, ndims=0):
-  assert geom.ndim == 1
-  if ndims <= 0:
-    ndims += geom.shape[0]
-  J = localgradient(geom, ndims)
-  if J.shape[0] == J.shape[1]:
-    Jinv = inverse(J)
-  elif J.shape[0] == J.shape[1] + 1: # gamma gradient
-    G = dot(J[:,:,_], J[:,_,:], 0)
-    Ginv = inverse(G)
-    Jinv = dot(J[_,:,:], Ginv[:,_,:], -1)
-  else:
-    raise Exception('cannot invert {}x{} jacobian'.format(J.shape))
-  return dot(localgradient(self, ndims)[...,_], Jinv, -2)
-
-def dotnorm(arg, geom, axis=-1):
-  axis = numeric.normdim(arg.ndim, axis)
-  assert geom.ndim == 1 and geom.shape[0] == arg.shape[axis]
-  return dot(arg, normal(geom)[(slice(None),)+(_,)*(arg.ndim-axis-1)], axis)
 
 if __name__ == '__main__':
   # Diagnostics for the development for simplify operations.

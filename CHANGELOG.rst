@@ -9,6 +9,27 @@ features in inverse chronological order.
 New in v7.0 (in development)
 ----------------------------
 
+- New derivative and normal syntax
+
+  The :class:`~nutils.function.Namespace` now supports writing derivatives and
+  normals as functions::
+
+      'd(u, x_i)' # alternative for 'u_,i', deprecates 'u_,x_i'
+      'd(u, x_i, x_j)' # alternative for 'u_,ij'
+      'd(u, ?a)' # deprecates 'u_,?a'
+      'n(x_i)' # deprecates 'n:x_i'
+
+- User-defined functions in :class:`~nutils.function.Namespace`
+
+  The :class:`~nutils.function.Namespace` can be initialized with a dictionary
+  of user-defined functions::
+
+      >>> def mul(a, b):
+      ...   return a[(...,)+(None,)*b.ndim] * b[(None,)*a.ndim]
+      >>> ns = Namespace(functions=dict(mul=mul))
+
+      >>> 'mul(a_i, b_j)' @ ns # equivalent to `'a_i b_j' @ ns`
+
 - Solve multiple residuals to multiple targets
 
   In problems involving multiple fields, where formerly it was required to

@@ -1,6 +1,7 @@
-from nutils import numeric
+from nutils import numeric, util
 import numpy
 from nutils.testing import *
+import itertools
 
 @parametrize
 class pack(TestCase):
@@ -178,3 +179,21 @@ class types:
     self.assertTrue(numeric.isintarray(types.frozenarray([1])))
     self.assertFalse(numeric.isintarray(numpy.array([1.5])))
     self.assertFalse(numeric.isintarray(1.5))
+
+class levicivita(TestCase):
+
+  def test_1d(self):
+    with self.assertRaisesRegex(ValueError, '^The Levi-Civita symbol is undefined for dimensions lower than 2.'):
+      numeric.levicivita(1)
+
+  def test_2d(self):
+    self.assertAllEqual(numeric.levicivita(2, int), numpy.array([[0, 1], [-1, 0]]))
+
+  def test_nd(self):
+    sign = lambda v: -1 if v < 0 else 1 if v > 0 else 0
+    for n in range(2, 6):
+      with self.subTest(n=n):
+        desired = numpy.empty((n,)*n, int)
+        for I in itertools.product(*[range(n)]*n):
+          desired[I] = util.product(sign(b-a) for a, b in itertools.combinations(I, 2))
+        self.assertAllEqual(numeric.levicivita(n, int), desired)

@@ -61,13 +61,13 @@ def main(nelems:int, etype:str, btype:str, degree:int):
   # We are now ready to implement the Laplace equation. In weak form, the
   # solution is a scalar field :math:`u` for which:
   #
-  # .. math:: ∀ v: ∫_Ω v_{,k} u_{,k} - ∫_{Γ_n} v f = 0.
+  # .. math:: ∀ v: ∫_Ω \frac{dv}{dx_i} \frac{du}{dx_i} - ∫_{Γ_n} v f = 0.
   #
   # By linearity the test function :math:`v` can be replaced by the basis that
   # spans its space. The result is an integral ``res`` that evaluates to a
   # vector matching the size of the function space.
 
-  res = domain.integral('basis_n,i u_,i d:x' @ ns, degree=degree*2)
+  res = domain.integral('d(basis_n, x_i) d(u, x_i) d:x' @ ns, degree=degree*2)
   res -= domain.boundary['right'].integral('basis_n cos(1) cosh(x_1) d:x' @ ns, degree=degree*2)
 
   # The Dirichlet constraints are set by finding the coefficients that minimize

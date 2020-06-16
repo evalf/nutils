@@ -23,7 +23,8 @@ This module defines the function :func:`parse`, which parses a tensor
 expression.
 '''
 
-import re, collections, functools
+import re, collections, functools, operator
+from . import warnings
 
 
 # Convenience function to create a constant in ExpressionAST (details in
@@ -486,8 +487,6 @@ class _ExpressionParser:
       See argument ``expression`` of :func:`parse`.
   variables : :class:`dict` of :class:`str` and :class:`nutils.function.Array` pairs
       See argument ``variables`` of :func:`parse`.
-  functions : :class:`dict` of :class:`str` and :class:`int` pairs
-      See argument ``functions`` of :func:`parse`.
   arg_shapes : :class:`dict` of :class:`str` and :class:`tuple` or :class:`int`\\s pairs
       See argument ``arg_shapes`` of :func:`parse`.
   default_geometry_name : class:`str`
@@ -499,10 +498,9 @@ class _ExpressionParser:
   eye_symbols = '$', 'δ'
   normal_symbols = 'n',
 
-  def __init__(self, expression, variables, functions, arg_shapes, default_geometry_name, fixed_lengths):
+  def __init__(self, expression, variables, arg_shapes, default_geometry_name, fixed_lengths):
     self.expression = expression
     self.variables = variables
-    self.functions = functions
     self.arg_shapes = dict(arg_shapes)
     self.default_geometry_name = default_geometry_name
     self.fixed_lengths = fixed_lengths
@@ -662,6 +660,7 @@ class _ExpressionParser:
         geometry_name = self.default_geometry_name
       geom = self._get_geometry(geometry_name)
       if self._next.type == 'indices':
+        warnings.deprecation('`[f]_i` and `[f]_x_i` are deprecated; use `[f] n({x}_i)` instead'.format(x=geometry_name))
         value *= self._asarray(('normal', _(geom)), self._consume(), geom.shape)
     elif self._next.type == '{':
       self._consume()
@@ -695,9 +694,11 @@ class _ExpressionParser:
       assert target.type in ('geometry', 'argument')
       indices = self._consume() if self._next.type == 'indices' else ''
       if target.type == 'geometry':
+        warnings.deprecation('the gradient syntax `dx_i:u` is deprecated; use `d(u, x_i)` instead')
         geom = self._get_geometry(target.data)
       elif target.type == 'argument':
         assert target.data.startswith('?')
+        warnings.deprecation('the derivative syntax `d?a:u` is deprecated; use `d(u, ?a)` instead')
         arg = self._get_arg(target.data[1:], indices)
       func = self.parse_var()
       if target.type == 'geometry':
@@ -709,29 +710,30 @@ class _ExpressionParser:
       indices = self._consume() if self._next.type == 'indices' else ''
       length = _Length(self._current.pos)
       value = self._asarray(('eye', _(length)), indices, (length, length))
-    elif self._next.type == 'normal':
-      self._consume()
-      if self._next.type == 'geometry':
-        geometry_name = self._consume().data
-      else:
-        geometry_name = self.default_geometry_name
-      geom = self._get_geometry(geometry_name)
-      indices = self._consume() if self._next.type == 'indices' else ''
-      value = self._asarray(('normal', _(geom)), indices, geom.shape)
     elif self._next.type == 'variable':
       token = self._consume()
       name = token.data
-      if name in self.functions and name not in self.variables: # function (and not overriden as variable)
-        self._consume_assert_equal('(', msg="Expected '(' for function {}.".format(name))
-        args = self.parse_comma_separated(end=')', parse_item=self.parse_subexpression)
-        nargs = self.functions[name]
-        if len(args) != nargs:
-          raise _IntermediateError('Function {!r} takes {}, got {}.'.format(name, _sp(nargs, 'argument', 'arguments'), len(args)))
-        args = _Array.align(*args)
-        value = args[0].replace(ast=('call', _(name))+tuple(arg.ast for arg in args))
-      elif name.startswith('?'):
+      if name.startswith('?'):
         indices = self._consume() if self._next.type == 'indices' else ''
         value = self._get_arg(name[1:], indices)
+      elif name not in self.variables and self._next.type == '(': # assume function
+        self._consume()
+        args = self.parse_comma_separated(end=')', parse_item=self.parse_subexpression)
+        value = _Array._apply_indices(ast=('call', _(name), *(arg.ast for arg in args)),
+                                      offset=0,
+                                      indices=''.join(arg.indices for arg in args),
+                                      shape=sum((arg.shape for arg in args), ()),
+                                      summed=functools.reduce(operator.or_, (arg.summed for arg in args), frozenset()),
+                                      linked_lengths=functools.reduce(operator.or_, (arg.linked_lengths for arg in args), frozenset()))
+      elif name in self.normal_symbols:
+        if self._next.type == 'geometry':
+          warnings.deprecation('the normal syntax with explicitly geometry `n:x_i` is deprecated; use `n(x_i)` instead')
+          geometry_name = self._consume().data
+        else:
+          geometry_name = self.default_geometry_name
+        geom = self._get_geometry(geometry_name)
+        indices = self._consume() if self._next.type == 'indices' else ''
+        value = self._asarray(('normal', _(geom)), indices, geom.shape)
       else:
         raw = self._get_variable(name)
         indices = self._consume() if self._next.type == 'indices' else ''
@@ -747,12 +749,15 @@ class _ExpressionParser:
       if target.type == 'geometry':
         assert indices
         gradtype = {',': 'grad', ';': 'surfgrad'}[gradient.data]
-        geom = self._get_geometry(target.data)
+        if target.data:
+          warnings.deprecation('the gradient syntax with explicit geometry `u_,x_i` is deprecated; use `d(u, x_i)` instead')
+        geom = self._get_geometry(target.data or self.default_geometry_name)
         for i, index in enumerate(indices.data):
           value = value.grad(index, geom, gradtype)
       elif target.type == 'argument':
         assert gradient.data == ','
         assert target.data.startswith('?')
+        warnings.deprecation('the derivative to argument syntax `u_,?a` is deprecated; use `d(u, ?a)` instead')
         arg = self._get_arg(target.data[1:], indices)
         value = value.derivative(arg)
     elif self._next.type == 'indices':
@@ -981,7 +986,7 @@ class _ExpressionParser:
         continue
       m = re.match(r'({}):([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)_([a-zA-Z0-9])'.format('|'.join(map(re.escape, self.normal_symbols))), self.expression[pos:])
       if m:
-        tokens.append(_Token('normal', m.group(1), pos))
+        tokens.append(_Token('variable', m.group(1), pos))
         tokens.append(_Token('geometry', m.group(2), pos+m.start(2)))
         tokens.append(_Token('indices', m.group(3), pos+m.start(3)))
         pos += m.end()
@@ -995,10 +1000,6 @@ class _ExpressionParser:
         pos += len(m_eye)
         continue
       m_normal = _string_startswith(self.expression, self.normal_symbols, start=pos)
-      if m_normal and len(m_variable) <= len(m_normal):
-        tokens.append(_Token('normal', m_normal, pos))
-        pos += len(m_normal)
-        continue
       if m_variable:
         tokens.append(_Token('variable', m_variable, pos))
         pos += len(m_variable)
@@ -1047,7 +1048,7 @@ class _ExpressionParser:
             variant_default = m_geom.group(1) + self.default_geometry_name + '_' + m_geom.group(4)
             raise _IntermediateError('Missing geometry, e.g. {!r} or {!r}.'.format(variant_geom, variant_default), at=pos)
           tokens.append(_Token('gradient', m_geom.group(1), pos))
-          tokens.append(_Token('geometry', m_geom.group(3) or self.default_geometry_name, pos+m_geom.start(3)))
+          tokens.append(_Token('geometry', m_geom.group(3), pos+m_geom.start(3)))
           tokens.append(_Token('indices', m_geom.group(4), pos+m_geom.start(4)))
           pos += m_geom.end()
           parts += 1
@@ -1078,7 +1079,7 @@ def _replace_lengths(ast, lengths):
     return ast
 
 
-def parse(expression, variables, functions, indices, arg_shapes={}, default_geometry_name='x', fixed_lengths=None, fallback_length=None):
+def parse(expression, variables, indices, arg_shapes={}, default_geometry_name='x', fixed_lengths=None, fallback_length=None, functions=None):
   '''Parse ``expression`` and return AST.
 
   This function parses a tensor expression with `Einstein Summation
@@ -1177,22 +1178,9 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
       a numeral as index.  The **surface gradient** is denoted with a semicolon
       instead of a comma, but follows the same rules as the gradient otherwise.
       Example: ``a_i;j`` is the sufrace gradient of ``a_i`` to the geometry.
-      It is also possible to take the gradient to another geometry by appending
-      the name of the geometry, which should exist as a variable, and an
-      underscore directly after the comma of semicolon.  Example:
-      ``a_i,altgeom_j`` denotes the gradient of ``a_i`` to ``altgeom`` and the
-      gradient axis has index ``j``.  Futhermore, it is possible to take the
-      **derivative** to an argument by adding the argument with appropriate
-      indices after the comma.  Example: ``(?x^2)_,?x`` denotes the derivative
-      of ``?x^2`` to ``?x``, which is equivalent to ``2 ?x``, and ``(?y_i
-      ?y_i),?y_j`` is the derivative of ``?y_i ?y_i`` to ``?y_j``, which is
-      equivalent to ``2 ?y_j``.
 
   *   The **normal** of the default geometry is denoted by ``n_i``, where the
-      index ``i`` may be replaced with an index of choice.  The normal with
-      respect to different geometry is denoted by appending an underscore with
-      the name of the geometry right after ``n``.  Example: ``n_altgeom_j`` is
-      the normal with respect to geometry ``altgeom``.
+      index ``i`` may be replaced with an index of choice.
 
   *   A **dirac** is denoted by ``δ`` or ``$`` and takes two indices.  The
       shape of the dirac is deduced from the expression.  Example: let ``A`` be
@@ -1208,11 +1196,11 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
       for a variable name — directly followed by the left parenthesis ``(``,
       without a space.  The arguments to the function are separated by a comma
       and at least one space.  The function is applied pointwise to the
-      arguments and all arguments should have the same shape.  Example:
-      ``f(x_i, y_i)``.denotes the call to function ``f`` with arguments ``x_i``
-      and ``y_i``.  Functions and variables share a namespace: defining a
-      variable with the same name as a function renders the function
-      inaccessible.
+      arguments and summation convection is applied to the result. Example:
+      assume ``mul(...)`` returns the product of its arguments, then ``mul(x_i,
+      y_j)`` is equivalent to ``x_i y_j`` and ``mul(x_i, y_i)`` to ``x_i y_i``.
+      Functions and variables share a namespace: defining a variable with the
+      same name as a function renders the function inaccessible.
 
   *   A **stack** of two or more arrays along an axis is denoted by a ``<``
       followed by comma and space separated arrays followed by ``>`` and an
@@ -1232,9 +1220,6 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
   variables : :class:`dict` of :class:`str` and :class:`nutils.function.Array` pairs
       A :class:`dict` of variable names and array pairs.  All variables used in
       the ``expression`` should exist in ``variables``.
-  functions : :class:`dict` of :class:`str` and :class:`int` pairs
-      A :class:`dict` of function names and number of arguments pairs.  All
-      functions used in the ``expression`` should exist in ``functions``.
   indices : :class:`str`
       The indices used for aligning the resulting array.  For example, let
       ``expression`` be ``'a_ij'``.  If ``indices`` is ``'ij'``, then the
@@ -1295,7 +1280,9 @@ def parse(expression, variables, functions, indices, arg_shapes={}, default_geom
       ``expression``.
   '''
 
-  parser = _ExpressionParser(expression, variables, functions, arg_shapes, default_geometry_name, fixed_lengths or {})
+  if functions is not None:
+    warnings.deprecation('argument `functions` is deprecated; the existence and number of arguments is not checked during parsing')
+  parser = _ExpressionParser(expression, variables, arg_shapes, default_geometry_name, fixed_lengths or {})
   parser.tokenize()
   value = parser.parse_subexpression()
   parser._consume_assert_equal('EOF', msg='Unexpected symbol at end of expression.')

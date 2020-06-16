@@ -847,6 +847,37 @@ class namespace(TestCase):
     with self.assertRaisesRegex(TypeError, r"^__init__\(\) got an unexpected keyword argument 'test'$"):
       function.Namespace(test=2)
 
+  def test_d_geom(self):
+    ns = function.Namespace()
+    topo, ns.x = mesh.rectilinear([1])
+    self.assertEqual(ns.eval_ij('d(x_i, x_j)'), function.grad(ns.x, ns.x))
+
+  def test_d_arg(self):
+    ns = function.Namespace()
+    ns.a = '?a'
+    self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').simplified, function.asarray(2.))
+
+  def test_n(self):
+    ns = function.Namespace()
+    topo, ns.x = mesh.rectilinear([1])
+    self.assertEqual(ns.eval_i('n(x_i)'), function.normal(ns.x))
+
+  def test_functions(self):
+    def sqr(a):
+      return a**2
+    def mul(*args):
+      if len(args) == 2:
+        return args[0][(...,)+(None,)*args[1].ndim] * args[1][(None,)*args[0].ndim]
+      else:
+        return mul(mul(args[0], args[1]), *args[2:])
+    ns = function.Namespace(functions=dict(sqr=sqr, mul=mul))
+    ns.a = numpy.array([1, 2, 3])
+    ns.b = numpy.array([4, 5])
+    ns.A = numpy.array([[6, 7, 8], [9, 10, 11]])
+    self.assertEqual(ns.eval_i('sqr(a_i)').shape, (3,))
+    self.assertEqual(ns.eval_ij('mul(a_i, b_j)').shape, (3,2))
+    self.assertEqual(ns.eval_('mul(b_i, A_ij, a_j)').shape, ())
+
 class eval_ast(TestCase):
 
   def setUp(self):
@@ -871,6 +902,7 @@ class eval_ast(TestCase):
   def test_substitute(self): self.assertIdentical('(?x_i^2)(x_i=a2_i)', self.ns.a2**2)
   def test_multisubstitute(self): self.assertIdentical('(a2_i + ?x_i + ?y_i)(x_i=?y_i, y_i=?x_i)', self.ns.a2 + function.Argument('y', [2]) + function.Argument('x', [2]))
   def test_call(self): self.assertIdentical('sin(a)', function.sin(self.ns.a))
+  def test_call2(self): self.assertEqual(self.ns.eval_ij('arctan2(a2_i, a3_j)').simplified, function.arctan2(self.ns.a2[:,None], self.ns.a3[None,:]).simplified)
   def test_eye(self): self.assertIdentical('δ_ij a2_i', function.dot(function.eye(2), self.ns.a2, axes=[0]))
   def test_normal(self): self.assertIdentical('n_i', self.ns.x.normal())
   def test_getitem(self): self.assertIdentical('a2_0', self.ns.a2[0])
@@ -895,6 +927,10 @@ class eval_ast(TestCase):
     with self.assertRaises(ValueError):
       function._eval_ast(('invalid-opcode',), {})
 
+  def test_call_invalid_shape(self):
+    with self.assertRaisesRegex(ValueError, '^expected an array with shape'):
+      function._eval_ast(('call', (None, 'f'), (None, function.Zeros((2,), float)), (None, function.Zeros((3,), float))),
+                         dict(f=lambda a, b: a[None,:] * b[:,None])) # result is transposed
 
 @parametrize
 class jacobian(TestCase):
@@ -933,6 +969,58 @@ class jacobian(TestCase):
 
 jacobian(delayed=True)
 jacobian(delayed=False)
+
+class grad(TestCase):
+
+  def assertEvalAlmostEqual(self, topo, factual, fdesired):
+    actual, desired = topo.sample('uniform', 2).eval([function.asarray(factual), function.asarray(fdesired)])
+    self.assertAllAlmostEqual(actual, desired)
+
+  def test_0d(self):
+    domain, (x,) = mesh.rectilinear([1])
+    self.assertEvalAlmostEqual(domain, function.grad(x**2, x), 2*x)
+
+  def test_1d(self):
+    domain, x = mesh.rectilinear([1]*2)
+    self.assertEvalAlmostEqual(domain, function.grad([x[0]**2, x[1]**2], x), [[2*x[0], 0], [0, 2*x[1]]])
+
+  def test_2d(self):
+    domain, x = mesh.rectilinear([1]*4)
+    x = function.unravel(x, 0, (2, 2))
+    self.assertEvalAlmostEqual(domain, function.grad(x, x), numpy.eye(4, 4).reshape(2, 2, 2, 2))
+
+  def test_3d(self):
+    domain, x = mesh.rectilinear([1]*4)
+    x = function.unravel(function.unravel(x, 0, (2, 2)), 0, (2, 1))
+    self.assertEvalAlmostEqual(domain, function.grad(x, x), numpy.eye(4, 4).reshape(2, 1, 2, 2, 1, 2))
+
+class normal(TestCase):
+
+  def assertEvalAlmostEqual(self, topo, factual, fdesired):
+    actual, desired = topo.sample('uniform', 2).eval([function.asarray(factual), function.asarray(fdesired)])
+    self.assertAllAlmostEqual(actual, desired)
+
+  def test_0d(self):
+    domain, (x,) = mesh.rectilinear([1])
+    self.assertEvalAlmostEqual(domain.boundary['right'], function.normal(x), 1)
+    self.assertEvalAlmostEqual(domain.boundary['left'], function.normal(x), -1)
+
+  def test_1d(self):
+    domain, x = mesh.rectilinear([1]*2)
+    for bnd, n in ('right', [1, 0]), ('left', [-1, 0]), ('top', [0, 1]), ('bottom', [0, -1]):
+      self.assertEvalAlmostEqual(domain.boundary[bnd], function.normal(x), n)
+
+  def test_2d(self):
+    domain, x = mesh.rectilinear([1]*2)
+    x = function.unravel(x, 0, [2, 1])
+    for bnd, n in ('right', [1, 0]), ('left', [-1, 0]), ('top', [0, 1]), ('bottom', [0, -1]):
+      self.assertEvalAlmostEqual(domain.boundary[bnd], function.normal(x), numpy.array(n)[:,_])
+
+  def test_3d(self):
+    domain, x = mesh.rectilinear([1]*2)
+    x = function.unravel(function.unravel(x, 0, [2, 1]), 0, [1, 2])
+    for bnd, n in ('right', [1, 0]), ('left', [-1, 0]), ('top', [0, 1]), ('bottom', [0, -1]):
+      self.assertEvalAlmostEqual(domain.boundary[bnd], function.normal(x), numpy.array(n)[_,:,_])
 
 class CommonBasis:
 
