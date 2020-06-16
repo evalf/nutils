@@ -694,9 +694,11 @@ class _ExpressionParser:
       assert target.type in ('geometry', 'argument')
       indices = self._consume() if self._next.type == 'indices' else ''
       if target.type == 'geometry':
+        warnings.deprecation('the gradient syntax `dx_i:u` is deprecated; use `d(u, x_i)` instead')
         geom = self._get_geometry(target.data)
       elif target.type == 'argument':
         assert target.data.startswith('?')
+        warnings.deprecation('the derivative syntax `d?a:u` is deprecated; use `d(u, ?a)` instead')
         arg = self._get_arg(target.data[1:], indices)
       func = self.parse_var()
       if target.type == 'geometry':
@@ -725,6 +727,7 @@ class _ExpressionParser:
                                       linked_lengths=functools.reduce(operator.or_, (arg.linked_lengths for arg in args), frozenset()))
       elif name in self.normal_symbols:
         if self._next.type == 'geometry':
+          warnings.deprecation('the normal syntax with explicitly geometry `n:x_i` is deprecated; use `n(x_i)` instead')
           geometry_name = self._consume().data
         else:
           geometry_name = self.default_geometry_name
@@ -746,12 +749,15 @@ class _ExpressionParser:
       if target.type == 'geometry':
         assert indices
         gradtype = {',': 'grad', ';': 'surfgrad'}[gradient.data]
-        geom = self._get_geometry(target.data)
+        if target.data:
+          warnings.deprecation('the gradient syntax with explicit geometry `u_,x_i` is deprecated; use `d(u, x_i)` instead')
+        geom = self._get_geometry(target.data or self.default_geometry_name)
         for i, index in enumerate(indices.data):
           value = value.grad(index, geom, gradtype)
       elif target.type == 'argument':
         assert gradient.data == ','
         assert target.data.startswith('?')
+        warnings.deprecation('the derivative to argument syntax `u_,?a` is deprecated; use `d(u, ?a)` instead')
         arg = self._get_arg(target.data[1:], indices)
         value = value.derivative(arg)
     elif self._next.type == 'indices':
@@ -1042,7 +1048,7 @@ class _ExpressionParser:
             variant_default = m_geom.group(1) + self.default_geometry_name + '_' + m_geom.group(4)
             raise _IntermediateError('Missing geometry, e.g. {!r} or {!r}.'.format(variant_geom, variant_default), at=pos)
           tokens.append(_Token('gradient', m_geom.group(1), pos))
-          tokens.append(_Token('geometry', m_geom.group(3) or self.default_geometry_name, pos+m_geom.start(3)))
+          tokens.append(_Token('geometry', m_geom.group(3), pos+m_geom.start(3)))
           tokens.append(_Token('indices', m_geom.group(4), pos+m_geom.start(4)))
           pos += m_geom.end()
           parts += 1
@@ -1172,22 +1178,9 @@ def parse(expression, variables, indices, arg_shapes={}, default_geometry_name='
       a numeral as index.  The **surface gradient** is denoted with a semicolon
       instead of a comma, but follows the same rules as the gradient otherwise.
       Example: ``a_i;j`` is the sufrace gradient of ``a_i`` to the geometry.
-      It is also possible to take the gradient to another geometry by appending
-      the name of the geometry, which should exist as a variable, and an
-      underscore directly after the comma of semicolon.  Example:
-      ``a_i,altgeom_j`` denotes the gradient of ``a_i`` to ``altgeom`` and the
-      gradient axis has index ``j``.  Futhermore, it is possible to take the
-      **derivative** to an argument by adding the argument with appropriate
-      indices after the comma.  Example: ``(?x^2)_,?x`` denotes the derivative
-      of ``?x^2`` to ``?x``, which is equivalent to ``2 ?x``, and ``(?y_i
-      ?y_i),?y_j`` is the derivative of ``?y_i ?y_i`` to ``?y_j``, which is
-      equivalent to ``2 ?y_j``.
 
   *   The **normal** of the default geometry is denoted by ``n_i``, where the
-      index ``i`` may be replaced with an index of choice.  The normal with
-      respect to different geometry is denoted by appending an underscore with
-      the name of the geometry right after ``n``.  Example: ``n_altgeom_j`` is
-      the normal with respect to geometry ``altgeom``.
+      index ``i`` may be replaced with an index of choice.
 
   *   A **dirac** is denoted by ``δ`` or ``$`` and takes two indices.  The
       shape of the dirac is deduced from the expression.  Example: let ``A`` be
