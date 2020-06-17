@@ -1,5 +1,5 @@
-import unittest, os, multiprocessing, time, sys
-from nutils import parallel, testing
+import unittest, os, multiprocessing, time, sys, warnings as _builtin_warnings
+from nutils import parallel, testing, warnings
 
 canfork = hasattr(os, 'fork')
 
@@ -9,6 +9,7 @@ class Test(testing.TestCase):
   def setUp(self):
     super().setUp()
     self.enter_context(parallel.maxprocs(3))
+    _builtin_warnings.filterwarnings('ignore', 'fork is unavailable on this platform', warnings.NutilsWarning)
 
   def test_maxprocs(self):
     with parallel.maxprocs(4):
