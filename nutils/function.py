@@ -221,24 +221,48 @@ def simplified(value):
 @types.apply_annotations
 @replace(depthfirst=True)
 def optimized_for_numpy(value: simplified):
-  if isinstance(value, Multiply) and any(f._inserted_axes for f in value.funcs):
+  if isinstance(value, Multiply) and value.ndim:
     func1, func2 = value.funcs
-    mask = [3] * value.ndim
-    for axis in sorted(func1._inserted_axes, reverse=True):
-      mask[axis] &= 2
-      func1 = func1._uninsert(axis)
-    for axis in sorted(func2._inserted_axes, reverse=True):
-      mask[axis] &= 1
-      func2 = func2._uninsert(axis)
-    if all(mask): # should always be the case after simplify
-      return Einsum(func1, func2, mask)
-  elif isinstance(value, Sum) and isinstance(value.func, Einsum):
-    mask = numpy.array(value.func.mask)
-    axes, = mask.nonzero()
-    axis = axes[-1]
-    if mask[axis] == 3:
+    axes1 = func1._inserted_axes
+    axes2 = func2._inserted_axes
+    if not axes1.any() and not axes2.any(): # no insertions
+      return
+    assert not (axes1 & axes2).any() # this cannot occur since value is simplified
+    for axis in reversed(range(value.ndim)):
+      if axes1[axis]:
+        func1 = func1._uninsert(axis)
+      if axes2[axis]:
+        func2 = func2._uninsert(axis)
+    retval = Einsum(func1, func2, 3 - axes1*1 - axes2*2)
+  elif isinstance(value, Sum):
+    func = value.func
+    if isinstance(func, Transpose):
+      sumaxis = func.axes[-1]
+      axes = [ax-(ax>sumaxis) for ax in func.axes if ax != sumaxis]
+      func = func.func
+    else:
+      sumaxis = func.ndim-1
+      axes = list(range(func.ndim-1))
+    if isinstance(func, Multiply): # func has no inserted axes since it was not turned into einsum
+      mask = numpy.repeat(3, func.ndim)
+      mask[sumaxis] = 0
+      retval = Einsum(*func.funcs, mask)
+    elif isinstance(func, Einsum):
+      mask = numpy.array(func.mask)
+      nzaxes, = mask.nonzero()
+      axis = nzaxes[sumaxis]
+      if mask[axis] != 3:
+        return
       mask[axis] = 0
-      return Einsum(value.func.func1, value.func.func2, mask)
+      retval = Einsum(func.func1, func.func2, mask)
+    else:
+      return
+    if axes != list(range(retval.ndim)):
+      retval = Transpose(retval, axes)
+  else:
+    return
+  assert retval.shape == value.shape, 'optimized_for_numpy resulted in shape change'
+  return retval
 
 @replace
 def prepare_eval(value, **kwargs):
@@ -775,7 +799,10 @@ class Array(Evaluable):
   _unravel = lambda self, axis, shape: None
   _ravel = lambda self, axis: None
   _kronecker = lambda self, axis, length, pos: None
-  _inserted_axes = ()
+
+  @property
+  def _inserted_axes(self):
+    return numpy.zeros(self.ndim, dtype=bool)
 
   def _derivative(self, var, seen):
     if self.dtype in (bool, int) or var not in self.dependencies:
@@ -912,7 +939,7 @@ class Constant(Array):
 class InsertAxis(Array):
 
   __slots__ = 'func', 'length'
-  __cache__ = 'blocks', '_inserted_axes'
+  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, length:asarray):
@@ -954,19 +981,19 @@ class InsertAxis(Array):
     return Power(self.func, _inflate_scalar(self.length, self.func.shape))
 
   def _power(self, n):
-    for axis in n._inserted_axes:
-      if axis in self._inserted_axes:
-        return insertaxis(Power(self._uninsert(axis), n._uninsert(axis)), axis, self.shape[axis])
+    inserted, = (self._inserted_axes & n._inserted_axes).nonzero()
+    for axis in reversed(inserted):
+      return insertaxis(Power(self._uninsert(axis), n._uninsert(axis)), axis, self.shape[axis])
 
   def _add(self, other):
-    for axis in other._inserted_axes:
-      if axis in self._inserted_axes:
-        return insertaxis(Add([self._uninsert(axis), other._uninsert(axis)]), axis, self.shape[axis])
+    inserted, = (self._inserted_axes & other._inserted_axes).nonzero()
+    for axis in reversed(inserted):
+      return insertaxis(Add([self._uninsert(axis), other._uninsert(axis)]), axis, self.shape[axis])
 
   def _multiply(self, other):
-    for axis in other._inserted_axes:
-      if axis in self._inserted_axes:
-        return insertaxis(Multiply([self._uninsert(axis), other._uninsert(axis)]), axis, self.shape[axis])
+    inserted, = (self._inserted_axes & other._inserted_axes).nonzero()
+    for axis in reversed(inserted):
+      return insertaxis(Multiply([self._uninsert(axis), other._uninsert(axis)]), axis, self.shape[axis])
 
   def _insertaxis(self, axis, length):
     if axis == self.ndim - 1:
@@ -998,7 +1025,7 @@ class InsertAxis(Array):
 
   @property
   def _inserted_axes(self):
-    return (self.func.ndim,) + self.func._inserted_axes
+    return numpy.hstack([self.func._inserted_axes, True])
 
   def _uninsert(self, axis):
     return self.func if axis == self.ndim-1 else InsertAxis(self.func._uninsert(axis), self.length)
@@ -1013,7 +1040,7 @@ class InsertAxis(Array):
 class Transpose(Array):
 
   __slots__ = 'func', 'axes'
-  __cache__ = 'blocks', '_invaxes', '_inserted_axes'
+  __cache__ = 'blocks', '_invaxes'
 
   @classmethod
   @types.apply_annotations
@@ -1156,7 +1183,7 @@ class Transpose(Array):
 
   @property
   def _inserted_axes(self):
-    return tuple(self.axes.index(axis) for axis in self.func._inserted_axes)
+    return self.func._inserted_axes[numpy.array(self.axes, dtype=int)]
 
   def _uninsert(self, axis):
     return Transpose(self.func._uninsert(self.axes[axis]), [ax - (ax>self.axes[axis]) for ax in self.axes[:axis] + self.axes[axis+1:]])
@@ -1540,9 +1567,9 @@ class Multiply(Array):
     func1, func2 = self.funcs
     if self.shape[axis] == 1:
       return multiply(get(func1, axis, 0), get(func2, axis, 0))
-    if axis in func1._inserted_axes:
+    if func1._inserted_axes[axis]:
       return multiply(func1._uninsert(axis), func2.sum(axis))
-    if axis in func2._inserted_axes:
+    if func2._inserted_axes[axis]:
       return multiply(func1.sum(axis), func2._uninsert(axis))
 
   def _get(self, axis, item):
@@ -1603,10 +1630,9 @@ class Multiply(Array):
 
   def _inverse(self):
     func1, func2 = self.funcs
-    invaxes = {self.ndim-2, self.ndim-1}
-    if invaxes.issubset(func1._inserted_axes):
+    if func1._inserted_axes[-2:].all():
       return divide(Inverse(func2), func1)
-    if invaxes.issubset(func2._inserted_axes):
+    if func2._inserted_axes[-2:].all():
       return divide(Inverse(func1), func2)
 
   @property
@@ -1961,7 +1987,7 @@ class Power(Array):
     return Power(unravel(self.func, axis, shape), unravel(self.power, axis, shape))
 
   def _product(self):
-    if self.ndim-1 in self.power._inserted_axes:
+    if self.power._inserted_axes[-1]:
       return Power(Product(self.func), self.power._uninsert(self.ndim-1))
 
 class Pointwise(Array):
@@ -2950,7 +2976,7 @@ class Range(Array):
     return add(index, self.offset)
 
   def _add(self, offset):
-    if 0 in offset._inserted_axes:
+    if offset._inserted_axes[0]:
       return Range(self.length, self.offset + offset._uninsert(0))
 
   def evalf(self, length, offset):
