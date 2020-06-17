@@ -29,8 +29,7 @@ class check(TestCase):
     self.op_args = self.op(*self.args)
     self.shapearg = numpy.random.uniform(size=self.op_args.shape, low=self.low, high=self.high)
     self.pairs = [(i, j) for i in range(self.op_args.ndim-1) for j in range(i+1, self.op_args.ndim) if self.op_args.shape[i] == self.op_args.shape[j]]
-    self.enter_context(_builtin_warnings.catch_warnings())
-    _builtin_warnings.simplefilter('ignore', category=function.ExpensiveEvaluationWarning)
+    _builtin_warnings.simplefilter('ignore', function.ExpensiveEvaluationWarning)
 
   def assertArrayAlmostEqual(self, actual, desired, decimal):
     if actual.shape[1:] != desired.shape[1:] or actual.shape[0] != 1 and desired.shape[0] != 1 and actual.shape[0] != desired.shape[0]:
@@ -494,6 +493,10 @@ _check('polyval_2d_p1_23', lambda c, x: function.Polyval(c*_polyval_mask(c.shape
 
 class blocks(TestCase):
 
+  def setUp(self):
+    super().setUp()
+    _builtin_warnings.simplefilter('ignore', function.ExpensiveEvaluationWarning)
+
   def test_multiply_equal(self):
     ((i,), f), = function.multiply(function.Inflate([1,2], dofmap=[0,2], length=3, axis=0), function.Inflate([3,4], dofmap=[0,2], length=3, axis=0)).blocks
     self.assertEqual(i, function.asarray([0,2]))
@@ -910,8 +913,8 @@ class eval_ast(TestCase):
   def test_sum(self): self.assertIdentical('a2_i a2_i', function.sum(self.ns.a2 * self.ns.a2, axis=0))
   def test_concatenate(self): self.assertIdentical('<a, a2_i>_i', function.concatenate([self.ns.a[None],self.ns.a2], axis=0))
   def test_grad(self): self.assertIdentical('basis_n,0', self.ns.basis.grad(self.ns.x)[:,0])
-  def test_surfgrad(self): self.assertIdentical('basis_n;altgeom_0', function.grad(self.ns.basis, self.ns.altgeom, len(self.ns.altgeom)-1)[:,0])
-  def test_derivative(self): self.assertIdentical('exp(?x)_,?x', function.derivative(function.exp(self.x), self.x))
+  def test_surfgrad(self): self.assertIdentical('surfgrad(basis_0, altgeom_i)', function.grad(self.ns.basis[0], self.ns.altgeom, len(self.ns.altgeom)-1))
+  def test_derivative(self): self.assertIdentical('d(exp(?x), ?x)', function.derivative(function.exp(self.x), self.x))
   def test_append_axis(self): self.assertIdentical('a a2_i', self.ns.a[None]*self.ns.a2)
   def test_transpose(self): self.assertIdentical('a22_ij a22_ji', function.dot(self.ns.a22, self.ns.a22.T, axes=[0,1]))
   def test_jump(self): self.assertIdentical('[a]', function.jump(self.ns.a))
@@ -931,6 +934,14 @@ class eval_ast(TestCase):
     with self.assertRaisesRegex(ValueError, '^expected an array with shape'):
       function._eval_ast(('call', (None, 'f'), (None, function.Zeros((2,), float)), (None, function.Zeros((3,), float))),
                          dict(f=lambda a, b: a[None,:] * b[:,None])) # result is transposed
+
+  def test_surfgrad_deprecated(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assertIdentical('basis_n;altgeom_0', function.grad(self.ns.basis, self.ns.altgeom, len(self.ns.altgeom)-1)[:,0])
+
+  def test_derivative_deprecated(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assertIdentical('exp(?x)_,?x', function.derivative(function.exp(self.x), self.x))
 
 @parametrize
 class jacobian(TestCase):

@@ -1,5 +1,5 @@
 import numpy, pickle
-from nutils import matrix, sparse, testing
+from nutils import matrix, sparse, testing, warnings
 
 class Solver(testing.TestCase):
 
@@ -187,7 +187,7 @@ class Solver(testing.TestCase):
     mat = pickle.loads(s)
     self.assertIsInstance(mat, type(self.matrix))
     numpy.testing.assert_equal(mat.export('dense'), self.exact)
-    with self.subTest('cross-pickle'), matrix.Numpy():
+    with self.subTest('cross-pickle'), matrix.backend('Numpy'):
       mat = pickle.loads(s)
       from nutils.matrix._numpy import NumpyMatrix
       self.assertIsInstance(mat, NumpyMatrix)
@@ -203,6 +203,11 @@ class Numpy(Solver):
       dict(atol=1e-5, precon='diag', truncate=5)]
     super().setUp()
 
+  def test_deprecated_context(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      with matrix.Numpy():
+        pass
+
 class Scipy(Solver):
   def setUp(self):
     self.backend = 'scipy'
@@ -214,6 +219,11 @@ class Scipy(Solver):
       dict(solver=s, atol=1e-5) for s in ('bicg', 'bicgstab', 'cg', 'cgs', 'lgmres', 'minres')]
     super().setUp()
 
+  def test_deprecated_context(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      with matrix.Scipy():
+        pass
+
 @testing.parametrize
 class MKL(Solver):
   def setUp(self):
@@ -223,6 +233,11 @@ class MKL(Solver):
       dict(solver='fgmres', atol=1e-8),
       dict(solver='fgmres', atol=1e-8, precon='diag')]
     super().setUp()
+
+  def test_deprecated_context(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      with matrix.MKL():
+        pass
 
 MKL(threading='sequential')
 MKL(threading='tbb')

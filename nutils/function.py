@@ -75,7 +75,7 @@ def as_canonical_length(value):
 
 asshape = types.tuple[as_canonical_length]
 
-class ExpensiveEvaluationWarning(Warning): pass
+class ExpensiveEvaluationWarning(warnings.NutilsInefficiencyWarning): pass
 
 class Evaluable(types.Singleton):
   'Base class'
@@ -4393,6 +4393,14 @@ def d(arg, *vars):
   'derivative of `arg` to `vars`'
   return functools.reduce(_d1, vars, arg)
 
+def _surfgrad1(arg, geom):
+  geom = asarray(geom)
+  return grad(arg, geom, len(geom)-1)
+
+def surfgrad(arg, *vars):
+  'surface gradient of `arg` to `vars`'
+  return functools.reduce(_surfgrad1, vars, arg)
+
 def prependaxes(func, shape):
   'Prepend axes with specified `shape` to `func`.'
 
@@ -4647,7 +4655,7 @@ class Namespace:
     opposite=opposite, sin=sin, cos=cos, tan=tan, sinh=sinh, cosh=cosh,
     tanh=tanh, arcsin=arcsin, arccos=arccos, arctan=arctan, arctan2=ArcTan2.outer, arctanh=arctanh,
     exp=exp, abs=abs, ln=ln, log=ln, log2=log2, log10=log10, sqrt=sqrt,
-    sign=sign, d=d, n=normal,
+    sign=sign, d=d, surfgrad=surfgrad, n=normal,
   )
 
   @types.apply_annotations
