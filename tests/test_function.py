@@ -910,8 +910,8 @@ class eval_ast(TestCase):
   def test_sum(self): self.assertIdentical('a2_i a2_i', function.sum(self.ns.a2 * self.ns.a2, axis=0))
   def test_concatenate(self): self.assertIdentical('<a, a2_i>_i', function.concatenate([self.ns.a[None],self.ns.a2], axis=0))
   def test_grad(self): self.assertIdentical('basis_n,0', self.ns.basis.grad(self.ns.x)[:,0])
-  def test_surfgrad(self): self.assertIdentical('basis_n;altgeom_0', function.grad(self.ns.basis, self.ns.altgeom, len(self.ns.altgeom)-1)[:,0])
-  def test_derivative(self): self.assertIdentical('exp(?x)_,?x', function.derivative(function.exp(self.x), self.x))
+  def test_surfgrad(self): self.assertIdentical('surfgrad(basis_0, altgeom_i)', function.grad(self.ns.basis[0], self.ns.altgeom, len(self.ns.altgeom)-1))
+  def test_derivative(self): self.assertIdentical('d(exp(?x), ?x)', function.derivative(function.exp(self.x), self.x))
   def test_append_axis(self): self.assertIdentical('a a2_i', self.ns.a[None]*self.ns.a2)
   def test_transpose(self): self.assertIdentical('a22_ij a22_ji', function.dot(self.ns.a22, self.ns.a22.T, axes=[0,1]))
   def test_jump(self): self.assertIdentical('[a]', function.jump(self.ns.a))
@@ -931,6 +931,14 @@ class eval_ast(TestCase):
     with self.assertRaisesRegex(ValueError, '^expected an array with shape'):
       function._eval_ast(('call', (None, 'f'), (None, function.Zeros((2,), float)), (None, function.Zeros((3,), float))),
                          dict(f=lambda a, b: a[None,:] * b[:,None])) # result is transposed
+
+  def test_surfgrad_deprecated(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assertIdentical('basis_n;altgeom_0', function.grad(self.ns.basis, self.ns.altgeom, len(self.ns.altgeom)-1)[:,0])
+
+  def test_derivative_deprecated(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.assertIdentical('exp(?x)_,?x', function.derivative(function.exp(self.x), self.x))
 
 @parametrize
 class jacobian(TestCase):
