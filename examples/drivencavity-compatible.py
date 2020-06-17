@@ -36,11 +36,9 @@ def main(nelems:int, degree:int, reynolds:float):
     domain.basis('spline', degree=(degree,degree-1), removedofs=((0,-1),None)),
     domain.basis('spline', degree=(degree-1,degree), removedofs=(None,(0,-1)))])
   ns.pbasis = domain.basis('spline', degree=degree-1)
-  ns.lbasis = [1]
   ns.ubasis_ni = '<uxbasis_n, uybasis_n>_i'
   ns.u_i = 'ubasis_ni ?u_n'
   ns.p = 'pbasis_n ?p_n'
-  ns.l = 'lbasis_n ?lm_n'
   ns.stress_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
   ns.uwall = domain.boundary.indicator('top'), 0
   ns.N = 5 * degree * nelems # nitsche constant based on element size = 1/nelems
@@ -48,8 +46,8 @@ def main(nelems:int, degree:int, reynolds:float):
 
   ures = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=2*degree)
   ures += domain.boundary.integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni stress_ij n_j) d:x' @ ns, degree=2*degree)
-  pres = domain.integral('pbasis_n (u_k,k + l) d:x' @ ns, degree=2*degree)
-  lres = domain.integral('lbasis_n p d:x' @ ns, degree=2*degree)
+  pres = domain.integral('pbasis_n (u_k,k + ?lm) d:x' @ ns, degree=2*degree)
+  lres = domain.integral('p d:x' @ ns, degree=2*degree)
 
   with treelog.context('stokes'):
     state0 = solver.solve_linear(['u', 'p', 'lm'], [ures, pres, lres])
