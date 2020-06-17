@@ -32,11 +32,10 @@ def main(nelems:int, degree:int, reynolds:float):
   ns = function.Namespace()
   ns.x = geom
   ns.Re = reynolds
-  ns.uxbasis, ns.uybasis = function.chain([
+  ns.ubasis = function.vectorize([
     domain.basis('spline', degree=(degree,degree-1), removedofs=((0,-1),None)),
     domain.basis('spline', degree=(degree-1,degree), removedofs=(None,(0,-1)))])
   ns.pbasis = domain.basis('spline', degree=degree-1)
-  ns.ubasis_ni = '<uxbasis_n, uybasis_n>_i'
   ns.u_i = 'ubasis_ni ?u_n'
   ns.p = 'pbasis_n ?p_n'
   ns.stress_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
