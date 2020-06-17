@@ -750,7 +750,10 @@ class _ExpressionParser:
         assert indices
         gradtype = {',': 'grad', ';': 'surfgrad'}[gradient.data]
         if target.data:
-          warnings.deprecation('the gradient syntax with explicit geometry `u_,x_i` is deprecated; use `d(u, x_i)` instead')
+          if gradient.data == ',':
+            warnings.deprecation('the gradient syntax with explicit geometry `u_,x_i` is deprecated; use `d(u, x_i)` instead')
+          else:
+            warnings.deprecation('the surface gradient syntax with explicit geometry `u_;x_i` is deprecated; use `surfgrad(u, x_i)` instead')
         geom = self._get_geometry(target.data or self.default_geometry_name)
         for i, index in enumerate(indices.data):
           value = value.grad(index, geom, gradtype)

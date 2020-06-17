@@ -16,6 +16,7 @@ New in v7.0 (in development)
 
       'd(u, x_i)' # alternative for 'u_,i', deprecates 'u_,x_i'
       'd(u, x_i, x_j)' # alternative for 'u_,ij'
+      'surfgrad(u, x_i)' # alternative for 'u_;i', deprecates 'u_;x_i'
       'd(u, ?a)' # deprecates 'u_,?a'
       'n(x_i)' # deprecates 'n:x_i'
 
