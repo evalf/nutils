@@ -29,21 +29,54 @@ def main(nelems:int, degree:int, reynolds:float):
   verts = numpy.linspace(0, 1, nelems+1)
   domain, geom = mesh.rectilinear([verts, verts])
 
+  ns = function.Namespace()
+  ns.x = geom
+  ns.Re = reynolds
+
   uxbasis = domain.basis('spline', degree=(degree,degree-1), removedofs=((0,-1),None))
   uybasis = domain.basis('spline', degree=(degree-1,degree), removedofs=(None,(0,-1)))
 
-  Ubasis = function.stack([function.concatenate([uxbasis, function.zeros_like(uybasis)]), function.concatenate([function.zeros_like(uxbasis), uybasis])], axis=1) # OK
-  ubasis = function.kronecker(function.concatenate([uxbasis, function.zeros_like(uybasis)]), 1, 2, 0) + function.kronecker(function.concatenate([function.zeros_like(uxbasis), uybasis]), 1, 2, 1) # FAILS
-  dubasis = Ubasis - ubasis
+  #ns.ubasis = function.vectorize([uxbasis, uybasis]) # FAILS
+  #ns.ubasis = function.concatenate([function.kronecker(uxbasis, axis=1, length=2, pos=0), function.kronecker(uybasis, axis=1, length=2, pos=1)]) # FAILS
+  ns.Ubasis = function.stack([function.concatenate([uxbasis, function.zeros_like(uybasis)]), function.concatenate([function.zeros_like(uxbasis), uybasis])], axis=1) # OK
+  ns.ubasis = function.kronecker(function.concatenate([uxbasis, function.zeros_like(uybasis)]), 1, 2, 0) + function.kronecker(function.concatenate([function.zeros_like(uxbasis), uybasis]), 1, 2, 1) # FAILS
 
-  treelog.info('cmp1:', domain.integrate((dubasis**2).sum(1), degree=9).sum())
-  treelog.info('cmp2:', domain.integrate((dubasis.grad(geom)**2).sum([1,2]), degree=9).sum())
-  treelog.info('cmp3:', domain.boundary.integrate((dubasis**2).sum(1), degree=9).sum())
-  treelog.info('cmp4:', domain.boundary.integrate((dubasis.grad(geom)**2).sum([1,2]), degree=9).sum())
+  treelog.info('cmp1:', domain.integrate(((ns.Ubasis - ns.ubasis)**2).sum(1), degree=9).sum())
+  treelog.info('cmp2:', domain.integrate(((ns.Ubasis - ns.ubasis).grad(ns.x)**2).sum([1,2]), degree=9).sum())
+  treelog.info('cmp3:', domain.boundary.integrate(((ns.Ubasis - ns.ubasis)**2).sum(1), degree=9).sum())
+  treelog.info('cmp4:', domain.boundary.integrate(((ns.Ubasis - ns.ubasis).grad(ns.x)**2).sum([1,2]), degree=9).sum())
 
-  u = ubasis.dot(function.Argument('u', ubasis.shape[:1]))
+  ns.pbasis = domain.basis('spline', degree=degree-1)
+  ns.u_i = 'ubasis_ni ?u_n'
+  ns.p = 'pbasis_n ?p_n'
+  ns.stress_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
+  ns.uwall = domain.boundary.indicator('top'), 0
+  ns.N = 5 * degree * nelems # nitsche constant based on element size = 1/nelems
+  ns.nitsche_ni = '(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) / Re'
 
-  treelog.info('cmp5:', numpy.linalg.norm(domain.integral((dubasis.grad(geom) * (u.grad(geom) + u.grad(geom).T)).sum([1,2]), degree=2*degree).eval(u=numpy.arange(len(ubasis)))))
+  treelog.info('cmp5:', numpy.linalg.norm(domain.integral('(ubasis_ni,j - Ubasis_ni,j) (u_i,j + u_j,i)' @ ns, degree=2*degree).eval(u=numpy.arange(len(ns.ubasis)))))
+
+  bures = domain.boundary.integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni stress_ij n_j) d:x' @ ns, degree=2*degree)
+
+  ures = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=2*degree) + bures
+  pres = domain.integral('pbasis_n (u_k,k + ?lm) d:x' @ ns, degree=2*degree)
+  lres = domain.integral('p d:x' @ ns, degree=2*degree)
+
+  state0 = solver.solve_linear(['u', 'p', 'lm'], [ures, pres, lres])
+
+  Ures = domain.integral('Ubasis_ni,j stress_ij d:x' @ ns, degree=2*degree) + bures
+
+  treelog.info('cmp6:', numpy.linalg.norm((ures - Ures).eval(u=numpy.arange(len(ns.ubasis)), p=numpy.arange(len(ns.pbasis)))))
+
+  state1 = solver.solve_linear(['u', 'p', 'lm'], [Ures, pres, lres])
+
+  treelog.info('ures:', numpy.linalg.norm(ures.eval(**state0)), numpy.linalg.norm(ures.eval(**state1)))
+  treelog.info('pres:', numpy.linalg.norm(pres.eval(**state0)), numpy.linalg.norm(pres.eval(**state1)))
+  treelog.info('lres:', lres.eval(**state0), lres.eval(**state1))
+  treelog.info('Ures:', numpy.linalg.norm(Ures.eval(**state0)), numpy.linalg.norm(Ures.eval(**state1)))
+  treelog.info('pres:', numpy.linalg.norm(pres.eval(**state0)), numpy.linalg.norm(pres.eval(**state1)))
+
+  return numpy.hstack([state0['u'], state0['p'], state0['lm']])
 
 # Postprocessing in this script is separated so that it can be reused for the
 # results of Stokes and Navier-Stokes, and because of the extra steps required
@@ -93,7 +126,7 @@ class test(testing.TestCase):
 
   @testing.requires('matplotlib')
   def test_p1(self):
-    main(nelems=3, reynolds=100, degree=2)
-    #with self.subTest('stokes'): self.assertAlmostEqual64(lhs0, '''
-    #  eNrzu9Bt8OuUndkD/eTTSqezzP2g/E3698/ZmZlf2GjSaHJS3/90/Wm/C4qGh066XzLQ47846VSPpoWK
-    #  3vnD+iXXTty+ZGB7YafuhYsf9fJMGRgAkFIn4A==''')
+    lhs0 = main(nelems=3, reynolds=100, degree=2)
+    with self.subTest('stokes'): self.assertAlmostEqual64(lhs0, '''
+      eNrzu9Bt8OuUndkD/eTTSqezzP2g/E3698/ZmZlf2GjSaHJS3/90/Wm/C4qGh066XzLQ47846VSPpoWK
+      3vnD+iXXTty+ZGB7YafuhYsf9fJMGRgAkFIn4A==''')
