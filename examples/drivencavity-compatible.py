@@ -40,8 +40,13 @@ def main(nelems:int, degree:int, reynolds:float):
   print(f.simplified.asciitree())
   treelog.info('cmp:', numpy.linalg.norm(domain.integrate(f, degree=2)))
 
-  gauss = domain.sample('gauss', 2)
+  gauss = domain.sample('gauss', 1)
   print(gauss.eval(f))
+
+  expected = numpy.array([[-1.5, 0.5, -0.5, 1.5, -3.5, 0.5, -0.5, 3.5]])
+  print('ubasis:', gauss.eval((ubasis.grad(geom) * g).sum([1,2])))
+  print('Ubasis:', gauss.eval((Ubasis.grad(geom) * g).sum([1,2])))
+  print('expect:', expected)
 
 if __name__ == '__main__':
   cli.run(main)
