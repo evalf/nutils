@@ -32,15 +32,16 @@ def main(nelems:int, degree:int, reynolds:float):
   uxbasis = domain.basis('spline', degree=(degree,degree-1), removedofs=((0,-1),None))
   uybasis = domain.basis('spline', degree=(degree-1,degree), removedofs=(None,(0,-1)))
 
-  ns = function.Namespace()
-  ns.x = geom
-  ns.Ubasis = function.stack([function.concatenate([uxbasis, function.zeros_like(uybasis)]), function.concatenate([function.zeros_like(uxbasis), uybasis])], axis=1) # OK
-  ns.ubasis = function.kronecker(function.concatenate([uxbasis, function.zeros_like(uybasis)]), 1, 2, 0) + function.kronecker(function.concatenate([function.zeros_like(uxbasis), uybasis]), 1, 2, 1) # FAILS
+  Ubasis = function.stack([function.concatenate([uxbasis, function.zeros_like(uybasis)]), function.concatenate([function.zeros_like(uxbasis), uybasis])], axis=1) # OK
+  ubasis = function.kronecker(function.concatenate([uxbasis, function.zeros_like(uybasis)]), 1, 2, 0) + function.kronecker(function.concatenate([function.zeros_like(uxbasis), uybasis]), 1, 2, 1) # FAILS
 
-  treelog.info('cmp1:', numpy.linalg.norm(domain.integrate('(ubasis_ni,j - Ubasis_ni,j) δ_ij' @ ns, degree=2*degree)))
-  ns.g = function.asarray([[1,2],[3,4]])
-  treelog.info('cmp2:', numpy.linalg.norm(domain.integrate('(ubasis_ni,j - Ubasis_ni,j) g_ij' @ ns, degree=2*degree)))
-  treelog.info('cmp3:', numpy.linalg.norm(domain.integrate(((ns.ubasis.grad(ns.x) - ns.Ubasis.grad(ns.x)) * ns.g).sum([1,2]), degree=2)))
+  g = numpy.asarray([[1,2],[3,4]])
+  f = ((ubasis.grad(geom) - Ubasis.grad(geom)) * g).sum([1,2])
+  print('f:')
+  print(f.asciitree())
+  print('f.simplified:')
+  print(f.simplified.asciitree())
+  treelog.info('cmp:', numpy.linalg.norm(domain.integrate(f, degree=2)))
 
 if __name__ == '__main__':
   cli.run(main)
