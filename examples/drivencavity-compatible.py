@@ -40,8 +40,7 @@ def main(nelems:int, degree:int, reynolds:float):
   treelog.info('cmp1:', numpy.linalg.norm(domain.integrate('(ubasis_ni,j - Ubasis_ni,j) δ_ij' @ ns, degree=2*degree)))
   ns.g = function.asarray([[1,2],[3,4]])
   treelog.info('cmp2:', numpy.linalg.norm(domain.integrate('(ubasis_ni,j - Ubasis_ni,j) g_ij' @ ns, degree=2*degree)))
-  ns.G = function.Guard([[1,2],[3,4]])
-  treelog.info('cmp3:', numpy.linalg.norm(domain.integrate('(ubasis_ni,j - Ubasis_ni,j) G_ij' @ ns, degree=2*degree)))
+  treelog.info('cmp3:', numpy.linalg.norm(domain.integrate(((ns.ubasis.grad(ns.x) - ns.Ubasis.grad(ns.x)) * ns.g).sum([1,2]), degree=2)))
 
 if __name__ == '__main__':
   cli.run(main)
