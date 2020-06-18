@@ -38,7 +38,8 @@ def main(nelems:int, degree:int, reynolds:float):
 
   #ns.ubasis = function.vectorize([uxbasis, uybasis]) # FAILS
   #ns.ubasis = function.concatenate([function.kronecker(uxbasis, axis=1, length=2, pos=0), function.kronecker(uybasis, axis=1, length=2, pos=1)]) # FAILS
-  ns.ubasis = function.stack([function.concatenate([uxbasis, function.zeros_like(uybasis)]), function.concatenate([function.zeros_like(uxbasis), uybasis])], axis=1)
+  #ns.ubasis = function.stack([function.concatenate([uxbasis, function.zeros_like(uybasis)]), function.concatenate([function.zeros_like(uxbasis), uybasis])], axis=1) # OK
+  ns.ubasis = function.kronecker(function.concatenate([uxbasis, function.zeros_like(uybasis)]), 1, 2, 0) + function.kronecker(function.concatenate([function.zeros_like(uxbasis), uybasis]), 1, 2, 1)
 
   ns.pbasis = domain.basis('spline', degree=degree-1)
   ns.u_i = 'ubasis_ni ?u_n'
