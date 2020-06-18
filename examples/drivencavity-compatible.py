@@ -44,8 +44,10 @@ def main(nelems:int, degree:int, reynolds:float):
   gauss = domain.sample('gauss', 2)
   v1 = gauss.eval((ubasis.grad(geom) * g).sum([1,2]))
   v2 = gauss.eval((Ubasis.grad(geom) * g).sum([1,2]))
+  v3 = gauss.eval(f)
   print(v1)
   print(v2)
+  print(v3)
   print(v1-v2)
 
 if __name__ == '__main__':
