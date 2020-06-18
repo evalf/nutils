@@ -37,11 +37,24 @@ def main(nelems:int, degree:int, reynolds:float):
 
   g = numpy.asarray([[1,2],[3,4]])
   f = ((ubasis.grad(geom) - Ubasis.grad(geom)) * g).sum([1,2])
-  print('f:')
-  print(f.asciitree())
   print('f.simplified:')
   print(f.simplified.asciitree())
   treelog.info('cmp:', numpy.linalg.norm(domain.integrate(f, degree=2)))
+
+  f = (ubasis.grad(geom) * g).sum([1,2])
+  gauss = domain.sample('gauss', 2)
+  v1 = 0
+  for ielem in range(gauss.nelems):
+    v1 += gauss.points[ielem].weights @ f.eval(_transforms=(gauss.transforms[0][ielem],), _points=gauss.points[ielem].coords)
+  print(v1)
+  v2 = 0
+  for ielem in range(gauss.nelems):
+    v2 += gauss.points[ielem].weights @ f.simplified.eval(_transforms=(gauss.transforms[0][ielem],), _points=gauss.points[ielem].coords)
+  print(v2)
+  w = gauss.integrate(f)
+  print(w)
+  print(v1-w)
+  print(v2-w)
 
 if __name__ == '__main__':
   cli.run(main)
