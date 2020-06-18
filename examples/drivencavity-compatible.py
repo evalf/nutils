@@ -55,6 +55,5 @@ if __name__ == '__main__':
 
 class test(testing.TestCase):
 
-  @testing.requires('matplotlib')
   def test_p1(self):
     main(nelems=1, reynolds=100, degree=2)
