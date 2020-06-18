@@ -54,16 +54,9 @@ def main(nelems:int, degree:int, reynolds:float):
   pres = domain.integral('pbasis_n (u_k,k + ?lm) d:x' @ ns, degree=2*degree)
   lres = domain.integral('p d:x' @ ns, degree=2*degree)
 
-  with treelog.context('stokes'):
-    state0 = solver.solve_linear(['u', 'p', 'lm'], [ures, pres, lres])
-    postprocess(domain, ns, **state0)
+  state0 = solver.solve_linear(['u', 'p', 'lm'], [ures, pres, lres])
 
-  ures += domain.integral('ubasis_ni u_i,j u_j d:x' @ ns, degree=3*degree)
-  with treelog.context('navierstokes'):
-    state1 = solver.newton(('u', 'p', 'lm'), (ures, pres, lres), arguments=state0).solve(tol=1e-10)
-    postprocess(domain, ns, **state1)
-
-  return [numpy.hstack([state['u'], state['p'], state['lm']]) for state in [state0, state1]]
+  return numpy.hstack([state0['u'], state0['p'], state0['lm']])
 
 # Postprocessing in this script is separated so that it can be reused for the
 # results of Stokes and Navier-Stokes, and because of the extra steps required
@@ -113,21 +106,7 @@ class test(testing.TestCase):
 
   @testing.requires('matplotlib')
   def test_p1(self):
-    lhs0, lhs1 = main(nelems=3, reynolds=100, degree=2)
+    lhs0 = main(nelems=3, reynolds=100, degree=2)
     with self.subTest('stokes'): self.assertAlmostEqual64(lhs0, '''
       eNrzu9Bt8OuUndkD/eTTSqezzP2g/E3698/ZmZlf2GjSaHJS3/90/Wm/C4qGh066XzLQ47846VSPpoWK
       3vnD+iXXTty+ZGB7YafuhYsf9fJMGRgAkFIn4A==''')
-    with self.subTest('navier-stokes'): self.assertAlmostEqual64(lhs1, '''
-      eNoBUgCt/2XOWjJSy5k1jS+yyzvLODfgL1rO0MrINpsxHM2ZNSrPqDTANCPVQsxCzeAvcc04yaUmYysm
-      MbLLAi9YL6TN+y3eLcgvM87NzOUrTNY9MWA2AABnnyYn''')
-
-  @testing.requires('matplotlib')
-  def test_p2(self):
-    lhs0, lhs1 = main(nelems=3, reynolds=100, degree=3)
-    with self.subTest('stokes'): self.assertAlmostEqual64(lhs0, '''
-      eNo7aLjtjIjJxZN7zVgvZJ9jOv3lfK05gnUQLmt/Ttlk5qm9ZgKGQeeXmj0zZoCCD+fWGUSflDpz0PDu
-      6XRT55OL9dt11pwvNYw5+f7ClYv2Oq/O7DBigANBfR29g5fFjD3Oxl6ovBxi0H1uiRkDAwD+ITkl''')
-    with self.subTest('navier-stokes'): self.assertAlmostEqual64(lhs1, '''
-      eNoBhAB7/14yGcxyNPbJYTahLj/LSDE7yy43SM9WMsXJoDR+N3Iw8s1hM5zJODeizcE0X8phNrQwUDOO
-      NbMzJi+ty4s1oDFqzxIzysjWzXIwFM3tNMjIKjG8MeLNoTLzyQMuCi+IK3jOcjMzLuMvudNEzOrOEDAF
-      MD8sTTDpzNjYZDCg0RgwcTcAAJCyOzM=''')

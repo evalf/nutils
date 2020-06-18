@@ -36,4 +36,4 @@ jobs:
           python -u -m pip install --upgrade .[docs,matrix_scipy,matrix_mkl,export_mpl,import_gmsh] coverage "Sphinx<3.1" ${{ matrix.dep }}
       - name: Test
         run: |
-          python -u -m unittest -b examples
+          python -u -m unittest examples.drivencavity-compatible
