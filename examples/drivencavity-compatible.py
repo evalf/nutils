@@ -36,8 +36,12 @@ def main(nelems:int, degree:int, reynolds:float):
   ns.x = geom
   ns.Ubasis = function.stack([function.concatenate([uxbasis, function.zeros_like(uybasis)]), function.concatenate([function.zeros_like(uxbasis), uybasis])], axis=1) # OK
   ns.ubasis = function.kronecker(function.concatenate([uxbasis, function.zeros_like(uybasis)]), 1, 2, 0) + function.kronecker(function.concatenate([function.zeros_like(uxbasis), uybasis]), 1, 2, 1) # FAILS
-  ns.g = function.Guard([[1,2],[3,4]])
-  treelog.info('cmp5:', numpy.linalg.norm(domain.integrate('(ubasis_ni,j - Ubasis_ni,j) g_ij' @ ns, degree=2*degree)))
+
+  treelog.info('cmp1:', numpy.linalg.norm(domain.integrate('(ubasis_ni,j - Ubasis_ni,j) δ_ij' @ ns, degree=2*degree)))
+  ns.g = function.asarray([[1,2],[3,4]])
+  treelog.info('cmp2:', numpy.linalg.norm(domain.integrate('(ubasis_ni,j - Ubasis_ni,j) g_ij' @ ns, degree=2*degree)))
+  ns.G = function.Guard([[1,2],[3,4]])
+  treelog.info('cmp3:', numpy.linalg.norm(domain.integrate('(ubasis_ni,j - Ubasis_ni,j) G_ij' @ ns, degree=2*degree)))
 
 if __name__ == '__main__':
   cli.run(main)
