@@ -56,28 +56,6 @@ def main(nelems:int, degree:int, reynolds:float):
 
   treelog.info('cmp5:', numpy.linalg.norm(domain.integral('(ubasis_ni,j - Ubasis_ni,j) (u_i,j + u_j,i)' @ ns, degree=2*degree).eval(u=numpy.arange(len(ns.ubasis)))))
 
-  bures = domain.boundary.integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni stress_ij n_j) d:x' @ ns, degree=2*degree)
-
-  ures = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=2*degree) + bures
-  pres = domain.integral('pbasis_n (u_k,k + ?lm) d:x' @ ns, degree=2*degree)
-  lres = domain.integral('p d:x' @ ns, degree=2*degree)
-
-  state0 = solver.solve_linear(['u', 'p', 'lm'], [ures, pres, lres])
-
-  Ures = domain.integral('Ubasis_ni,j stress_ij d:x' @ ns, degree=2*degree) + bures
-
-  treelog.info('cmp6:', numpy.linalg.norm((ures - Ures).eval(u=numpy.arange(len(ns.ubasis)), p=numpy.arange(len(ns.pbasis)))))
-
-  state1 = solver.solve_linear(['u', 'p', 'lm'], [Ures, pres, lres])
-
-  treelog.info('ures:', numpy.linalg.norm(ures.eval(**state0)), numpy.linalg.norm(ures.eval(**state1)))
-  treelog.info('pres:', numpy.linalg.norm(pres.eval(**state0)), numpy.linalg.norm(pres.eval(**state1)))
-  treelog.info('lres:', lres.eval(**state0), lres.eval(**state1))
-  treelog.info('Ures:', numpy.linalg.norm(Ures.eval(**state0)), numpy.linalg.norm(Ures.eval(**state1)))
-  treelog.info('pres:', numpy.linalg.norm(pres.eval(**state0)), numpy.linalg.norm(pres.eval(**state1)))
-
-  return numpy.hstack([state0['u'], state0['p'], state0['lm']])
-
 # Postprocessing in this script is separated so that it can be reused for the
 # results of Stokes and Navier-Stokes, and because of the extra steps required
 # for establishing streamlines.
@@ -126,7 +104,4 @@ class test(testing.TestCase):
 
   @testing.requires('matplotlib')
   def test_p1(self):
-    lhs0 = main(nelems=3, reynolds=100, degree=2)
-    with self.subTest('stokes'): self.assertAlmostEqual64(lhs0, '''
-      eNrzu9Bt8OuUndkD/eTTSqezzP2g/E3698/ZmZlf2GjSaHJS3/90/Wm/C4qGh066XzLQ47846VSPpoWK
-      3vnD+iXXTty+ZGB7YafuhYsf9fJMGRgAkFIn4A==''')
+    main(nelems=3, reynolds=100, degree=2)
