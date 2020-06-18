@@ -29,8 +29,8 @@ def main(nelems:int, degree:int, reynolds:float):
   verts = numpy.linspace(0, 1, nelems+1)
   domain, geom = mesh.rectilinear([verts, verts])
 
-  uxbasis = domain.basis('spline', degree=(degree,degree-1), removedofs=((0,-1),None))
-  uybasis = domain.basis('spline', degree=(degree-1,degree), removedofs=(None,(0,-1)))
+  uxbasis = function.Guard([1,2,3])#domain.basis('spline', degree=(degree,degree-1), removedofs=((0,-1),None))
+  uybasis = function.Guard([4,5,6])#domain.basis('spline', degree=(degree-1,degree), removedofs=(None,(0,-1)))
 
   Ubasis = function.stack([function.concatenate([uxbasis, function.zeros_like(uybasis)]), function.concatenate([function.zeros_like(uxbasis), uybasis])], axis=1) # OK
   ubasis = function.kronecker(function.concatenate([uxbasis, function.zeros_like(uybasis)]), 1, 2, 0) + function.kronecker(function.concatenate([function.zeros_like(uxbasis), uybasis]), 1, 2, 1) # FAILS
@@ -42,7 +42,6 @@ def main(nelems:int, degree:int, reynolds:float):
   treelog.info('cmp:', numpy.linalg.norm(domain.integrate(f, degree=2)))
 
   gauss = domain.sample('gauss', 2)
-  print(gauss.eval(function.Guard(f)))
   print(gauss.eval(f))
 
 if __name__ == '__main__':
