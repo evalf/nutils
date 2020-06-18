@@ -48,10 +48,8 @@ def main(nelems:int, degree:int, reynolds:float):
 
   ns.pbasis = domain.basis('spline', degree=degree-1)
   ns.u_i = 'ubasis_ni ?u_n'
-  ns.U_i = 'Ubasis_ni ?u_n'
   ns.p = 'pbasis_n ?p_n'
   ns.stress_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
-  ns.Stress_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
   ns.uwall = domain.boundary.indicator('top'), 0
   ns.N = 5 * degree * nelems # nitsche constant based on element size = 1/nelems
   ns.nitsche_ni = '(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) / Re'
@@ -64,17 +62,16 @@ def main(nelems:int, degree:int, reynolds:float):
 
   state0 = solver.solve_linear(['u', 'p', 'lm'], [ures, pres, lres])
 
-  Ures = domain.integral('Ubasis_ni,j Stress_ij d:x' @ ns, degree=2*degree)
-  Ures += domain.boundary.integral('(Nitsche_ni (U_i - uwall_i) - Ubasis_ni Stress_ij n_j) d:x' @ ns, degree=2*degree)
-  Pres = domain.integral('pbasis_n (U_k,k + ?lm) d:x' @ ns, degree=2*degree)
+  Ures = domain.integral('Ubasis_ni,j stress_ij d:x' @ ns, degree=2*degree)
+  Ures += domain.boundary.integral('(Nitsche_ni (u_i - uwall_i) - Ubasis_ni stress_ij n_j) d:x' @ ns, degree=2*degree)
 
-  state1 = solver.solve_linear(['u', 'p', 'lm'], [Ures, Pres, lres])
+  state1 = solver.solve_linear(['u', 'p', 'lm'], [Ures, pres, lres])
 
   treelog.info('ures:', numpy.linalg.norm(ures.eval(**state0)), numpy.linalg.norm(ures.eval(**state1)))
   treelog.info('pres:', numpy.linalg.norm(pres.eval(**state0)), numpy.linalg.norm(pres.eval(**state1)))
   treelog.info('lres:', lres.eval(**state0), lres.eval(**state1))
   treelog.info('Ures:', numpy.linalg.norm(Ures.eval(**state0)), numpy.linalg.norm(Ures.eval(**state1)))
-  treelog.info('Pres:', numpy.linalg.norm(Pres.eval(**state0)), numpy.linalg.norm(Pres.eval(**state1)))
+  treelog.info('pres:', numpy.linalg.norm(pres.eval(**state0)), numpy.linalg.norm(pres.eval(**state1)))
 
   return numpy.hstack([state0['u'], state0['p'], state0['lm']])
 
