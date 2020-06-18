@@ -3207,10 +3207,12 @@ class Kronecker(Array):
   def _get(self, axis, item):
     if axis != self.axis:
       return Kronecker(get(self.func, axis-(axis>self.axis), item), self.axis-(axis<=self.axis), self.length, self.pos)
-    if item.simplified == self.pos.simplified or item.isconstant and self.pos.isconstant and item.eval() == self.pos.eval():
+    if item.simplified == self.pos.simplified:
       return self.func
-    if item.isconstant and self.pos.isconstant: # inequality is implied by the previous test
-      return zeros_like(self.func)
+    if item.isconstant and self.pos.isconstant:
+      item, = item.eval()
+      pos, = self.pos.eval()
+      return self.func if item == pos else zeros_like(self.func)
 
   def _add(self, other):
     if isinstance(other, Kronecker) and self.axis == other.axis and self.pos == other.pos:
