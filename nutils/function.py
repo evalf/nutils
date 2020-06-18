@@ -3186,15 +3186,15 @@ class Kronecker(Array):
   def _derivative(self, var, seen):
     return Kronecker(derivative(self.func, var, seen), self.axis, self.length, self.pos)
 
-  def _multiply(self, other):
-    return Kronecker(multiply(self.func, get(other, self.axis, self.pos)), self.axis, self.length, self.pos)
+# def _multiply(self, other):
+#   return Kronecker(multiply(self.func, get(other, self.axis, self.pos)), self.axis, self.length, self.pos)
 
-  def _transpose(self, axes):
-    i = axes.index(self.axis)
-    return Kronecker(Transpose(self.func, [ax-(ax>self.axis) for ax in axes[:i]+axes[i+1:]]), i, self.length, self.pos)
+# def _transpose(self, axes):
+#   i = axes.index(self.axis)
+#   return Kronecker(Transpose(self.func, [ax-(ax>self.axis) for ax in axes[:i]+axes[i+1:]]), i, self.length, self.pos)
 
-  def _insertaxis(self, axis, length):
-    return Kronecker(InsertAxis(self.func, axis-(axis>self.axis), length), self.axis+(axis<=self.axis), self.length, self.pos)
+# def _insertaxis(self, axis, length):
+#   return Kronecker(InsertAxis(self.func, axis-(axis>self.axis), length), self.axis+(axis<=self.axis), self.length, self.pos)
 
   def _get(self, axis, item):
     if axis != self.axis:
@@ -3202,78 +3202,81 @@ class Kronecker(Array):
     if item.simplified == self.pos.simplified or item.isconstant and self.pos.isconstant and item.eval() == self.pos.eval():
       return self.func
     if item.isconstant and self.pos.isconstant: # inequality is implied by the previous test
+      a, = item.eval()
+      b, = self.pos.eval()
+      assert a != b
       return zeros_like(self.func)
 
-  def _power(self, n):
-    return Kronecker(power(self.func, get(n, self.axis, self.pos)), self.axis, self.length, self.pos)
+# def _power(self, n):
+#   return Kronecker(power(self.func, get(n, self.axis, self.pos)), self.axis, self.length, self.pos)
 
-  def _add(self, other):
-    if isinstance(other, Kronecker) and self.axis == other.axis and self.pos == other.pos:
-      assert self.length == other.length
-      return Kronecker(add(self.func, other.func), self.axis, self.length, self.pos)
+# def _add(self, other):
+#   if isinstance(other, Kronecker) and self.axis == other.axis and self.pos == other.pos:
+#     assert self.length == other.length
+#     return Kronecker(add(self.func, other.func), self.axis, self.length, self.pos)
 
-  def _sum(self, axis):
-    if axis == self.axis:
-      return self.func
-    return Kronecker(sum(self.func, axis-(axis>self.axis)), self.axis-(axis<=self.axis), self.length, self.pos)
+# def _sum(self, axis):
+#   if axis == self.axis:
+#     return self.func
+#   return Kronecker(sum(self.func, axis-(axis>self.axis)), self.axis-(axis<=self.axis), self.length, self.pos)
 
-  def _take(self, index, axis):
-    if axis != self.axis:
-      return Kronecker(take(self.func, index, axis-(axis>self.axis)), self.axis, self.length, self.pos)
-    if self.pos.isconstant and index.isconstant:
-      pos, = self.pos.eval()
-      index, = index.eval()
-      if pos in index:
-        assert tuple(index).count(pos) == 1
-        newpos = tuple(index).index(pos)
-        return Kronecker(self.func, self.axis, len(index), newpos)
-      return Zeros(self.shape[:axis]+(len(index),)+self.shape[axis+1:], dtype=self.dtype)
+# def _take(self, index, axis):
+#   if axis != self.axis:
+#     return Kronecker(take(self.func, index, axis-(axis>self.axis)), self.axis, self.length, self.pos)
+#   if self.pos.isconstant and index.isconstant:
+#     pos, = self.pos.eval()
+#     index, = index.eval()
+#     if pos in index:
+#       assert tuple(index).count(pos) == 1
+#       newpos = tuple(index).index(pos)
+#       return Kronecker(self.func, self.axis, len(index), newpos)
+#     return Zeros(self.shape[:axis]+(len(index),)+self.shape[axis+1:], dtype=self.dtype)
 
-  def _determinant(self):
-    if self.axis < self.ndim-2:
-      return Kronecker(determinant(self.func), self.axis, self.length, self.pos)
-    elif self.length.isconstant and self.length.eval()[0] > 1:
-      return Zeros(self.shape[:-2], dtype=self.dtype)
+# def _determinant(self):
+#   if self.axis < self.ndim-2:
+#     return Kronecker(determinant(self.func), self.axis, self.length, self.pos)
+#   elif self.length.isconstant and self.length.eval()[0] > 1:
+#     return Zeros(self.shape[:-2], dtype=self.dtype)
 
-  def _inverse(self):
-    if self.axis < self.ndim-2:
-      return Kronecker(inverse(self.func), self.axis, self.length, self.pos)
+# def _inverse(self):
+#   if self.axis < self.ndim-2:
+#     return Kronecker(inverse(self.func), self.axis, self.length, self.pos)
 
-  def _takediag(self, axis, rmaxis):
-    assert axis < rmaxis
-    if rmaxis == self.axis:
-      return Kronecker(get(self.func, axis, self.pos), axis, self.length, self.pos)
-    if axis == self.axis:
-      return Kronecker(get(self.func, rmaxis-1, self.pos), axis, self.length, self.pos)
-    return Kronecker(takediag(self.func, axis-(axis>self.axis), rmaxis-(rmaxis>self.axis)), self.axis-(rmaxis<self.axis), self.length, self.pos)
+# def _takediag(self, axis, rmaxis):
+#   assert axis < rmaxis
+#   if rmaxis == self.axis:
+#     return Kronecker(get(self.func, axis, self.pos), axis, self.length, self.pos)
+#   if axis == self.axis:
+#     return Kronecker(get(self.func, rmaxis-1, self.pos), axis, self.length, self.pos)
+#   return Kronecker(takediag(self.func, axis-(axis>self.axis), rmaxis-(rmaxis>self.axis)), self.axis-(rmaxis<self.axis), self.length, self.pos)
 
-  def _product(self):
-    if self.axis < self.ndim-1:
-      return Kronecker(Product(self.func), self.axis, self.length, self.pos)
-    if numeric.isint(self.shape[-1]) and self.shape[-1] > 1:
-      return zeros_like(self.func)
+# def _product(self):
+#   if self.axis < self.ndim-1:
+#     return Kronecker(Product(self.func), self.axis, self.length, self.pos)
+#   if numeric.isint(self.shape[-1]) and self.shape[-1] > 1:
+#     return zeros_like(self.func)
 
-  def _sign(self):
-    return Kronecker(sign(self.func), self.axis, self.length, self.pos)
+# def _sign(self):
+#   return Kronecker(sign(self.func), self.axis, self.length, self.pos)
 
-  def _mask(self, maskvec, axis):
-    if axis != self.axis:
-      return Kronecker(mask(self.func, maskvec, axis-(axis>self.axis)), self.axis, self.length, self.pos)
-    if self.pos.isconstant:
-      pos, = self.pos.eval()
-      length = maskvec.sum()
-      if maskvec[pos]:
-        return Kronecker(self.func, self.axis, length, maskvec[:pos].sum())
-      return Zeros(self.shape[:axis]+(length,)+self.shape[axis+1:], dtype=self.dtype)
+# def _mask(self, maskvec, axis):
+#   if axis != self.axis:
+#     return Kronecker(mask(self.func, maskvec, axis-(axis>self.axis)), self.axis, self.length, self.pos)
+#   if self.pos.isconstant:
+#     pos, = self.pos.eval()
+#     length = maskvec.sum()
+#     if maskvec[pos]:
+#       return Kronecker(self.func, self.axis, length, maskvec[:pos].sum())
+#     return Zeros(self.shape[:axis]+(length,)+self.shape[axis+1:], dtype=self.dtype)
 
-  def _unravel(self, axis, shape):
-    if axis != self.axis:
-      return Kronecker(Unravel(self.func, axis-(axis>self.axis), shape), self.axis+(axis<self.axis)*(len(shape)-1), self.length, self.pos)
+# def _unravel(self, axis, shape):
+#   if axis != self.axis:
+#     return Kronecker(Unravel(self.func, axis-(axis>self.axis), shape), self.axis+(axis<self.axis)*(len(shape)-1), self.length, self.pos)
 
-  def _diagonalize(self, axis, newaxis):
-    if axis == self.axis:
-      return Kronecker(self, newaxis, self.length, self.pos)
-    return Kronecker(Diagonalize(self.func, axis-(axis>self.axis), newaxis-(newaxis>self.axis)), self.axis+(newaxis<=self.axis), self.length, self.pos)
+# def _diagonalize(self, axis, newaxis):
+#   if axis == self.axis:
+#     return Kronecker(self, newaxis, self.length, self.pos)
+#   return Kronecker(Diagonalize(self.func, axis-(axis>self.axis), newaxis-(newaxis>self.axis)), self.axis+(newaxis<=self.axis), self.length, self.pos)
 
   @property
   def blocks(self):
