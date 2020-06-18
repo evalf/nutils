@@ -54,15 +54,15 @@ def main(nelems:int, degree:int, reynolds:float):
   ns.N = 5 * degree * nelems # nitsche constant based on element size = 1/nelems
   ns.nitsche_ni = '(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) / Re'
 
-  ures = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=2*degree)
-  ures += domain.boundary.integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni stress_ij n_j) d:x' @ ns, degree=2*degree)
+  bures = domain.boundary.integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni stress_ij n_j) d:x' @ ns, degree=2*degree)
+
+  ures = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=2*degree) + bures
   pres = domain.integral('pbasis_n (u_k,k + ?lm) d:x' @ ns, degree=2*degree)
   lres = domain.integral('p d:x' @ ns, degree=2*degree)
 
   state0 = solver.solve_linear(['u', 'p', 'lm'], [ures, pres, lres])
 
-  Ures = domain.integral('Ubasis_ni,j stress_ij d:x' @ ns, degree=2*degree)
-  Ures += domain.boundary.integral('(nitsche_ni (u_i - uwall_i) - Ubasis_ni stress_ij n_j) d:x' @ ns, degree=2*degree)
+  Ures = domain.integral('Ubasis_ni,j stress_ij d:x' @ ns, degree=2*degree) + bures
 
   state1 = solver.solve_linear(['u', 'p', 'lm'], [Ures, pres, lres])
 
