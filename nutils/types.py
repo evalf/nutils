@@ -1175,7 +1175,7 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
     return self
 
   def __hash__(self):
-    return hash((self._base.shape, self._base.dtype, tuple(self._base.flat[::self._base.size//32+1]) if self._base.size else ())) # NOTE special case self._base.size == 0 necessary for numpy<1.12
+    return hash((self._base.shape, self._base.dtype.kind, tuple(self._base.flat[::self._base.size//32+1]) if self._base.size else ())) # NOTE special case self._base.size == 0 necessary for numpy<1.12
 
   @property
   def __nutils_hash__(self):
@@ -1197,7 +1197,7 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
       return False
     if self._base is other._base:
       return True
-    if hash(self) != hash(other) or self._base.dtype != other._base.dtype or self._base.shape != other._base.shape or numpy.not_equal(self._base, other._base).any():
+    if hash(self) != hash(other) or self._base.dtype.kind != other._base.dtype.kind or self._base.shape != other._base.shape or numpy.not_equal(self._base, other._base).any():
       return False
     # deduplicate
     self._base = other._base
