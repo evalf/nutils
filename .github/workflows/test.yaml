@@ -17,8 +17,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: [3.5, 3.6, 3.7, 3.8]
+        os: [windows-latest]
+        python-version: [3.8]
         include:
           - os: windows-latest
             dep: 'psutil'
@@ -36,31 +36,4 @@ jobs:
           python -u -m pip install --upgrade .[docs,matrix_scipy,matrix_mkl,export_mpl,import_gmsh] coverage "Sphinx<3.1" ${{ matrix.dep }}
       - name: Test
         run: |
-          python -u -m coverage run -m unittest -b
-          python -u -m coverage xml
-      - name: Upload coverage
-        uses: codecov/codecov-action@v1
-        with:
-          fail_ci_if_error: true
-  test-old-numpy:
-    name: 'ubuntu-latest, Py3.6, Numpy 1.15'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Set up Python 3.6
-        uses: actions/setup-python@v1
-        with:
-          python-version: 3.6
-      - name: Install dependencies
-        run: |
-          python -u -m pip install --upgrade pip
-          python -u -m pip install --upgrade .[matrix_mkl,export_mpl,import_gmsh] numpy==1.15 coverage
-      - name: Test
-        run: |
-          python -u -m coverage run -m unittest -b
-          python -u -m coverage xml
-      - name: Upload coverage
-        uses: codecov/codecov-action@v1
-        with:
-          fail_ci_if_error: true
+          python -u -m unittest -b examples
