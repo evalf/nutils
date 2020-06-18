@@ -3202,6 +3202,16 @@ class Kronecker(Array):
     if item.simplified == self.pos.simplified or item.isconstant and self.pos.isconstant and item.eval() == self.pos.eval():
       return self.func
     if item.isconstant and self.pos.isconstant: # inequality is implied by the previous test
+      a, = item.eval()
+      b, = self.pos.eval()
+      if a == b:
+        print(a)
+        A = item.eval()
+        B = self.pos.eval()
+        print(A, type(A))
+        print(B, type(B))
+        print(A == B)
+        raise
       return zeros_like(self.func)
 
   def _power(self, n):
