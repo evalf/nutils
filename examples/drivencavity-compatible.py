@@ -42,21 +42,7 @@ def main(nelems:int, degree:int, reynolds:float):
   treelog.info('cmp:', numpy.linalg.norm(domain.integrate(f, degree=2)))
 
   gauss = domain.sample('gauss', 2)
-  v1 = gauss.eval((ubasis.grad(geom) * g).sum([1,2]))
-  v2 = gauss.eval((Ubasis.grad(geom) * g).sum([1,2]))
-  v3 = gauss.eval(f)
-  print(v1)
-  print(v2)
-  print(v3)
-  print(v1-v2)
-
-  print('---')
-  g = numpy.asarray([1,2])
-  f = ((ubasis - Ubasis) * g).sum([1])
-  print(gauss.eval(f))
-
-  print('---')
-  f = (ubasis - Ubasis).sum([1])
+  print(gauss.eval(function.Guard(f)))
   print(gauss.eval(f))
 
 if __name__ == '__main__':
