@@ -50,7 +50,7 @@ def fork(nprocs=None):
 
   if nprocs is None or nprocs > _maxprocs.value:
     nprocs = _maxprocs.value
-  if nprocs == 1:
+  if nprocs <= 1:
     yield 0
     return
   if not hasattr(os, 'fork'):
