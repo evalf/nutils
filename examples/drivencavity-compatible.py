@@ -54,6 +54,8 @@ def main(nelems:int, degree:int, reynolds:float):
   ns.N = 5 * degree * nelems # nitsche constant based on element size = 1/nelems
   ns.nitsche_ni = '(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) / Re'
 
+  treelog.info('cmp5:', numpy.linalg.norm(domain.integral('(ubasis_ni,j - Ubasis_ni,j) (u_i,j + u_j,i)' @ ns, degree=2*degree).eval(u=numpy.arange(len(ns.ubasis)))))
+
   bures = domain.boundary.integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni stress_ij n_j) d:x' @ ns, degree=2*degree)
 
   ures = domain.integral('ubasis_ni,j stress_ij d:x' @ ns, degree=2*degree) + bures
@@ -63,6 +65,8 @@ def main(nelems:int, degree:int, reynolds:float):
   state0 = solver.solve_linear(['u', 'p', 'lm'], [ures, pres, lres])
 
   Ures = domain.integral('Ubasis_ni,j stress_ij d:x' @ ns, degree=2*degree) + bures
+
+  treelog.info('cmp6:', numpy.linalg.norm((ures - Ures).eval(u=numpy.arange(len(ns.ubasis)), p=numpy.arange(len(ns.pbasis)))))
 
   state1 = solver.solve_linear(['u', 'p', 'lm'], [Ures, pres, lres])
 
