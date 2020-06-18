@@ -36,7 +36,7 @@ def main(nelems:int, degree:int, reynolds:float):
   ns.x = geom
   ns.Ubasis = function.stack([function.concatenate([uxbasis, function.zeros_like(uybasis)]), function.concatenate([function.zeros_like(uxbasis), uybasis])], axis=1) # OK
   ns.ubasis = function.kronecker(function.concatenate([uxbasis, function.zeros_like(uybasis)]), 1, 2, 0) + function.kronecker(function.concatenate([function.zeros_like(uxbasis), uybasis]), 1, 2, 1) # FAILS
-  ns.u_i = 'ubasis_ni ?u_n'
+  ns.u_i = 'Ubasis_ni ?u_n'
   treelog.info('cmp5:', numpy.linalg.norm(domain.integral('(ubasis_ni,j - Ubasis_ni,j) (u_i,j + u_j,i)' @ ns, degree=2*degree).eval(u=numpy.arange(len(ns.ubasis)))))
 
 if __name__ == '__main__':
