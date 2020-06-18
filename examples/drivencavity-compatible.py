@@ -40,11 +40,12 @@ def main(nelems:int, degree:int, reynolds:float):
   #ns.ubasis = function.concatenate([function.kronecker(uxbasis, axis=1, length=2, pos=0), function.kronecker(uybasis, axis=1, length=2, pos=1)]) # FAILS
   ns.Ubasis = function.stack([function.concatenate([uxbasis, function.zeros_like(uybasis)]), function.concatenate([function.zeros_like(uxbasis), uybasis])], axis=1) # OK
   ns.ubasis = function.kronecker(function.concatenate([uxbasis, function.zeros_like(uybasis)]), 1, 2, 0) + function.kronecker(function.concatenate([function.zeros_like(uxbasis), uybasis]), 1, 2, 1) # FAILS
+  ns.dubasis = ns.Ubasis - ns.ubasis
 
-  treelog.info('cmp1:', domain.integrate(((ns.Ubasis - ns.ubasis)**2).sum(1), degree=9).sum())
-  treelog.info('cmp2:', domain.integrate(((ns.Ubasis - ns.ubasis).grad(ns.x)**2).sum([1,2]), degree=9).sum())
-  treelog.info('cmp3:', domain.boundary.integrate(((ns.Ubasis - ns.ubasis)**2).sum(1), degree=9).sum())
-  treelog.info('cmp4:', domain.boundary.integrate(((ns.Ubasis - ns.ubasis).grad(ns.x)**2).sum([1,2]), degree=9).sum())
+  treelog.info('cmp1:', domain.integrate((ns.dubasis**2).sum(1), degree=9).sum())
+  treelog.info('cmp2:', domain.integrate((ns.dubasis.grad(ns.x)**2).sum([1,2]), degree=9).sum())
+  treelog.info('cmp3:', domain.boundary.integrate((ns.dubasis**2).sum(1), degree=9).sum())
+  treelog.info('cmp4:', domain.boundary.integrate((ns.dubasis.grad(ns.x)**2).sum([1,2]), degree=9).sum())
 
   ns.pbasis = domain.basis('spline', degree=degree-1)
   ns.u_i = 'ubasis_ni ?u_n'
@@ -54,7 +55,7 @@ def main(nelems:int, degree:int, reynolds:float):
   ns.N = 5 * degree * nelems # nitsche constant based on element size = 1/nelems
   ns.nitsche_ni = '(N ubasis_ni - (ubasis_ni,j + ubasis_nj,i) n_j) / Re'
 
-  treelog.info('cmp5:', numpy.linalg.norm(domain.integral('(ubasis_ni,j - Ubasis_ni,j) (u_i,j + u_j,i)' @ ns, degree=2*degree).eval(u=numpy.arange(len(ns.ubasis)))))
+  treelog.info('cmp5:', numpy.linalg.norm(domain.integral('dubasis_ni,j (u_i,j + u_j,i)' @ ns, degree=2*degree).eval(u=numpy.arange(len(ns.ubasis)))))
 
 # Postprocessing in this script is separated so that it can be reused for the
 # results of Stokes and Navier-Stokes, and because of the extra steps required
