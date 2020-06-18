@@ -51,11 +51,13 @@ def main(nelems:int, degree:int, reynolds:float):
   print(v1-v2)
 
   print('---')
-  f1 = (ubasis.grad(geom) * g).sum([1,2])
-  f2 = (Ubasis.grad(geom) * g).sum([1,2])
-  print(gauss.eval(f1))
-  print(gauss.eval(f2))
-  print(gauss.eval(f1 - f2))
+  g = numpy.asarray([1,2])
+  f = ((ubasis - Ubasis) * g).sum([1])
+  print(gauss.eval(f))
+
+  print('---')
+  f = (ubasis - Ubasis).sum([1])
+  print(gauss.eval(f))
 
 if __name__ == '__main__':
   cli.run(main)
