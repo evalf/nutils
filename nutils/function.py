@@ -3211,6 +3211,8 @@ class Kronecker(Array):
         print(A, type(A))
         print(B, type(B))
         print(A == B)
+        print(hash(A), hash(B))
+        print(A._base.dtype, B._base.dtype)
         raise
       return zeros_like(self.func)
 

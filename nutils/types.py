@@ -1136,7 +1136,7 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
       copied.
   '''
 
-  __slots__ = '__base'
+  __slots__ = '_base'
   __cache__ = '__nutils_hash__', '__hash__'
 
   @staticmethod
@@ -1160,7 +1160,7 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
     if isinstance(base, frozenarray):
       if dtype is None or dtype == base.dtype:
         return base
-      base = base.__base
+      base = base._base
     if isstrict:
       if not isinstance(base, numpy.ndarray):
         base = numpy.array(base)
@@ -1170,37 +1170,37 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
       if base.dtype == complex or base.dtype == float and dtype == int:
         raise ValueError('downcasting {!r} to {!r} is forbidden'.format(base.dtype, dtype))
     self = object.__new__(cls)
-    self.__base = numpy.array(base, dtype=dtype) if copy or not isinstance(base, numpy.ndarray) or dtype and dtype != base.dtype else base
-    self.__base.flags.writeable = False
+    self._base = numpy.array(base, dtype=dtype) if copy or not isinstance(base, numpy.ndarray) or dtype and dtype != base.dtype else base
+    self._base.flags.writeable = False
     return self
 
   def __hash__(self):
-    return hash((self.__base.shape, self.__base.dtype, tuple(self.__base.flat[::self.__base.size//32+1]) if self.__base.size else ())) # NOTE special case self.__base.size == 0 necessary for numpy<1.12
+    return hash((self._base.shape, self._base.dtype, tuple(self._base.flat[::self._base.size//32+1]) if self._base.size else ())) # NOTE special case self._base.size == 0 necessary for numpy<1.12
 
   @property
   def __nutils_hash__(self):
-    h = hashlib.sha1('{}.{}\0{} {}'.format(type(self).__module__, type(self).__qualname__, self.__base.shape, self.__base.dtype.str).encode())
-    h.update(self.__base.tobytes())
+    h = hashlib.sha1('{}.{}\0{} {}'.format(type(self).__module__, type(self).__qualname__, self._base.shape, self._base.dtype.str).encode())
+    h.update(self._base.tobytes())
     return h.digest()
 
   @property
   def __array_struct__(self):
-    return self.__base.__array_struct__
+    return self._base.__array_struct__
 
   def __reduce__(self):
-    return frozenarray, (self.__base, None, False)
+    return frozenarray, (self._base, None, False)
 
   def __eq__(self, other):
     if self is other:
       return True
     if not isinstance(other, frozenarray):
       return False
-    if self.__base is other.__base:
+    if self._base is other._base:
       return True
-    if hash(self) != hash(other) or self.__base.dtype != other.__base.dtype or self.__base.shape != other.__base.shape or numpy.not_equal(self.__base, other.__base).any():
+    if hash(self) != hash(other) or self._base.dtype != other._base.dtype or self._base.shape != other._base.shape or numpy.not_equal(self._base, other._base).any():
       return False
     # deduplicate
-    self.__base = other.__base
+    self._base = other._base
     return True
 
   def __lt__(self, other):
@@ -1208,84 +1208,84 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
       return NotImplemented
     return self != other and (self.dtype < other.dtype
       or self.dtype == other.dtype and (self.shape < other.shape
-        or self.shape == other.shape and self.__base.tolist() < other.__base.tolist()))
+        or self.shape == other.shape and self._base.tolist() < other._base.tolist()))
 
   def __le__(self, other):
     if not isinstance(other, frozenarray):
       return NotImplemented
     return self == other or (self.dtype < other.dtype
       or self.dtype == other.dtype and (self.shape < other.shape
-        or self.shape == other.shape and self.__base.tolist() < other.__base.tolist()))
+        or self.shape == other.shape and self._base.tolist() < other._base.tolist()))
 
   def __gt__(self, other):
     if not isinstance(other, frozenarray):
       return NotImplemented
     return self != other and (self.dtype > other.dtype
       or self.dtype == other.dtype and (self.shape > other.shape
-        or self.shape == other.shape and self.__base.tolist() > other.__base.tolist()))
+        or self.shape == other.shape and self._base.tolist() > other._base.tolist()))
 
   def __ge__(self, other):
     if not isinstance(other, frozenarray):
       return NotImplemented
     return self == other or (self.dtype > other.dtype
       or self.dtype == other.dtype and (self.shape > other.shape
-        or self.shape == other.shape and self.__base.tolist() > other.__base.tolist()))
+        or self.shape == other.shape and self._base.tolist() > other._base.tolist()))
 
   def __getitem__(self, item):
-    retval = self.__base.__getitem__(item)
+    retval = self._base.__getitem__(item)
     return frozenarray(retval, copy=False) if isinstance(retval, numpy.ndarray) else retval
 
-  dtype = property(lambda self: self.__base.dtype)
-  shape = property(lambda self: self.__base.shape)
-  size = property(lambda self: self.__base.size)
-  ndim = property(lambda self: self.__base.ndim)
-  flat = property(lambda self: self.__base.flat)
-  T = property(lambda self: frozenarray(self.__base.T, copy=False))
+  dtype = property(lambda self: self._base.dtype)
+  shape = property(lambda self: self._base.shape)
+  size = property(lambda self: self._base.size)
+  ndim = property(lambda self: self._base.ndim)
+  flat = property(lambda self: self._base.flat)
+  T = property(lambda self: frozenarray(self._base.T, copy=False))
 
-  __len__ = lambda self: self.__base.__len__()
-  __repr__ = lambda self: 'frozenarray'+self.__base.__repr__()[5:]
-  __str__ = lambda self: self.__base.__str__()
-  __add__ = lambda self, other: self.__base.__add__(other)
-  __radd__ = lambda self, other: self.__base.__radd__(other)
-  __sub__ = lambda self, other: self.__base.__sub__(other)
-  __rsub__ = lambda self, other: self.__base.__rsub__(other)
-  __mul__ = lambda self, other: self.__base.__mul__(other)
-  __rmul__ = lambda self, other: self.__base.__rmul__(other)
-  __truediv__ = lambda self, other: self.__base.__truediv__(other)
-  __rtruediv__ = lambda self, other: self.__base.__rtruediv__(other)
-  __floordiv__ = lambda self, other: self.__base.__floordiv__(other)
-  __rfloordiv__ = lambda self, other: self.__base.__rfloordiv__(other)
-  __pow__ = lambda self, other: self.__base.__pow__(other)
-  __int__ = lambda self: self.__base.__int__()
-  __float__ = lambda self: self.__base.__float__()
-  __abs__ = lambda self: self.__base.__abs__()
-  __neg__ = lambda self: self.__base.__neg__()
-  __invert__ = lambda self: self.__base.__invert__()
-  __or__ = lambda self, other: self.__base.__or__(other)
-  __ror__ = lambda self, other: self.__base.__ror__(other)
-  __and__ = lambda self, other: self.__base.__and__(other)
-  __rand__ = lambda self, other: self.__base.__rand__(other)
-  __xor__ = lambda self, other: self.__base.__xor__(other)
-  __rxor__ = lambda self, other: self.__base.__rxor__(other)
+  __len__ = lambda self: self._base.__len__()
+  __repr__ = lambda self: 'frozenarray'+self._base.__repr__()[5:]
+  __str__ = lambda self: self._base.__str__()
+  __add__ = lambda self, other: self._base.__add__(other)
+  __radd__ = lambda self, other: self._base.__radd__(other)
+  __sub__ = lambda self, other: self._base.__sub__(other)
+  __rsub__ = lambda self, other: self._base.__rsub__(other)
+  __mul__ = lambda self, other: self._base.__mul__(other)
+  __rmul__ = lambda self, other: self._base.__rmul__(other)
+  __truediv__ = lambda self, other: self._base.__truediv__(other)
+  __rtruediv__ = lambda self, other: self._base.__rtruediv__(other)
+  __floordiv__ = lambda self, other: self._base.__floordiv__(other)
+  __rfloordiv__ = lambda self, other: self._base.__rfloordiv__(other)
+  __pow__ = lambda self, other: self._base.__pow__(other)
+  __int__ = lambda self: self._base.__int__()
+  __float__ = lambda self: self._base.__float__()
+  __abs__ = lambda self: self._base.__abs__()
+  __neg__ = lambda self: self._base.__neg__()
+  __invert__ = lambda self: self._base.__invert__()
+  __or__ = lambda self, other: self._base.__or__(other)
+  __ror__ = lambda self, other: self._base.__ror__(other)
+  __and__ = lambda self, other: self._base.__and__(other)
+  __rand__ = lambda self, other: self._base.__rand__(other)
+  __xor__ = lambda self, other: self._base.__xor__(other)
+  __rxor__ = lambda self, other: self._base.__rxor__(other)
 
-  tolist = lambda self, *args, **kwargs: self.__base.tolist(*args, **kwargs)
-  copy = lambda self, *args, **kwargs: self.__base.copy(*args, **kwargs)
-  astype = lambda self, *args, **kwargs: self.__base.astype(*args, **kwargs)
-  take = lambda self, *args, **kwargs: self.__base.take(*args, **kwargs)
-  any = lambda self, *args, **kwargs: self.__base.any(*args, **kwargs)
-  all = lambda self, *args, **kwargs: self.__base.all(*args, **kwargs)
-  sum = lambda self, *args, **kwargs: self.__base.sum(*args, **kwargs)
-  min = lambda self, *args, **kwargs: self.__base.min(*args, **kwargs)
-  max = lambda self, *args, **kwargs: self.__base.max(*args, **kwargs)
-  prod = lambda self, *args, **kwargs: self.__base.prod(*args, **kwargs)
-  dot = lambda self, *args, **kwargs: self.__base.dot(*args, **kwargs)
-  argsort = lambda self, *args, **kwargs: self.__base.argsort(*args, **kwargs)
-  swapaxes = lambda self, *args, **kwargs: frozenarray(self.__base.swapaxes(*args, **kwargs), copy=False)
-  ravel = lambda self, *args, **kwargs: frozenarray(self.__base.ravel(*args, **kwargs), copy=False)
-  reshape = lambda self, *args, **kwargs: frozenarray(self.__base.reshape(*args, **kwargs), copy=False)
-  transpose = lambda self, *args, **kwargs: frozenarray(self.__base.transpose(*args, **kwargs), copy=False)
-  cumsum = lambda self, *args, **kwargs: frozenarray(self.__base.cumsum(*args, **kwargs), copy=False)
-  nonzero = lambda self, *args, **kwargs: frozenarray(self.__base.nonzero(*args, **kwargs), copy=False)
+  tolist = lambda self, *args, **kwargs: self._base.tolist(*args, **kwargs)
+  copy = lambda self, *args, **kwargs: self._base.copy(*args, **kwargs)
+  astype = lambda self, *args, **kwargs: self._base.astype(*args, **kwargs)
+  take = lambda self, *args, **kwargs: self._base.take(*args, **kwargs)
+  any = lambda self, *args, **kwargs: self._base.any(*args, **kwargs)
+  all = lambda self, *args, **kwargs: self._base.all(*args, **kwargs)
+  sum = lambda self, *args, **kwargs: self._base.sum(*args, **kwargs)
+  min = lambda self, *args, **kwargs: self._base.min(*args, **kwargs)
+  max = lambda self, *args, **kwargs: self._base.max(*args, **kwargs)
+  prod = lambda self, *args, **kwargs: self._base.prod(*args, **kwargs)
+  dot = lambda self, *args, **kwargs: self._base.dot(*args, **kwargs)
+  argsort = lambda self, *args, **kwargs: self._base.argsort(*args, **kwargs)
+  swapaxes = lambda self, *args, **kwargs: frozenarray(self._base.swapaxes(*args, **kwargs), copy=False)
+  ravel = lambda self, *args, **kwargs: frozenarray(self._base.ravel(*args, **kwargs), copy=False)
+  reshape = lambda self, *args, **kwargs: frozenarray(self._base.reshape(*args, **kwargs), copy=False)
+  transpose = lambda self, *args, **kwargs: frozenarray(self._base.transpose(*args, **kwargs), copy=False)
+  cumsum = lambda self, *args, **kwargs: frozenarray(self._base.cumsum(*args, **kwargs), copy=False)
+  nonzero = lambda self, *args, **kwargs: frozenarray(self._base.nonzero(*args, **kwargs), copy=False)
 
 class _c_arraymeta(type):
   def __getitem__(self, dtype):
