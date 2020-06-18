@@ -34,8 +34,18 @@ def main(nelems:int, degree:int, reynolds:float):
   Ubasis = function.stack([function.concatenate([uxbasis, function.zeros_like(uybasis)]), function.concatenate([function.zeros_like(uxbasis), uybasis])], axis=1) # OK
   ubasis = function.kronecker(function.concatenate([uxbasis, function.zeros_like(uybasis)]), 1, 2, 0) + function.kronecker(function.concatenate([function.zeros_like(uxbasis), uybasis]), 1, 2, 1) # FAILS
 
+  UG = numpy.array(
+ [[[-0.5, -0.5], [ 0. ,  0. ]],
+  [[-0.5,  0.5], [ 0. ,  0. ]],
+  [[ 0.5, -0.5], [ 0. ,  0. ]],
+  [[ 0.5,  0.5], [ 0. ,  0. ]],
+  [[ 0. ,  0. ], [-0.5, -0.5]],
+  [[ 0. ,  0. ], [-0.5,  0.5]],
+  [[ 0. ,  0. ], [ 0.5, -0.5]],
+  [[ 0. ,  0. ], [ 0.5,  0.5]]])
+
   g = numpy.asarray([[1,2],[3,4]])
-  f = ((ubasis.grad(geom) - Ubasis.grad(geom)) * g).sum([1,2])
+  f = ((ubasis.grad(geom) - UG) * g).sum([1,2])
   print('f.simplified:')
   print(f.simplified.asciitree())
   treelog.info('cmp:', numpy.linalg.norm(domain.integrate(f, degree=2)))
