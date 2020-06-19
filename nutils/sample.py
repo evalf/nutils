@@ -134,7 +134,7 @@ class Sample(types.Singleton):
     raise NotImplementedError
 
   def _prepare_funcs(self, funcs):
-    return [function.asarray(func).prepare_eval(ndims=self.ndims) for func in funcs]
+    return [function.prepare_eval(function.asarray(func), ndims=self.ndims) for func in funcs]
 
   @util.positional_only
   @util.single_or_multiple
@@ -175,7 +175,7 @@ class Sample(types.Singleton):
     # argument id, evaluable index, and evaluable values.
 
     funcs = self._prepare_funcs(funcs)
-    blocks = [(ifunc, function.Tuple(ind), f.simplified.optimized_for_numpy) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func)]
+    blocks = [(ifunc, function.Tuple(ind), f.optimized_for_numpy) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func)]
     block2func, indices, values = zip(*blocks) if blocks else ([],[],[])
 
     log.debug('integrating {} distinct blocks'.format('+'.join(
@@ -238,7 +238,7 @@ class Sample(types.Singleton):
   @util.positional_only
   @util.single_or_multiple
   @types.apply_annotations
-  def eval(self, funcs, arguments:argdict=...):
+  def eval(self, funcs:types.tuple[function.asarray], arguments:argdict=...):
     '''Evaluate function.
 
     Args
@@ -251,7 +251,7 @@ class Sample(types.Singleton):
 
     funcs = self._prepare_funcs(funcs)
     retvals = [parallel.shzeros((self.npoints,)+func.shape, dtype=func.dtype) for func in funcs]
-    idata = function.Tuple(function.Tuple([ifunc, function.Tuple(ind), f.simplified.optimized_for_numpy]) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func))
+    idata = function.Tuple(function.Tuple([ifunc, function.Tuple(ind), f.optimized_for_numpy]) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func))
 
     if graphviz:
       idata.graphviz(graphviz)
@@ -277,7 +277,7 @@ class Sample(types.Singleton):
     index, tail = function.TransformsIndexWithTail(self.transforms[0], function.TRANS)
     I = function.Elemwise(self.index, index, dtype=int)
     B = function.Sampled(function.ApplyTransforms(tail), expect=function.take(self.allcoords, I, axis=0))
-    return function.Inflate(func=B, dofmap=I, length=self.npoints, axis=0)
+    return function.inflate(B, dofmap=I, length=self.npoints, axis=0)
 
   def asfunction(self, array):
     '''Convert sampled data to evaluable array.
