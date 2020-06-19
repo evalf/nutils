@@ -603,11 +603,7 @@ def sum(arg, axis=None):
   return summed
 
 def product(arg, axis):
-  arg = asarray(arg)
-  axis = numeric.normdim(arg.ndim, axis)
-  shape = arg.shape[:axis] + arg.shape[axis+1:]
-  trans = [i for i in range(arg.ndim) if i != axis] + [axis]
-  return Product(transpose(arg, trans))
+  return Product(Transpose.to_end(arg, axis))
 
 def power(arg, n):
   arg, n = _numpy_align(arg, n)
@@ -1036,7 +1032,27 @@ class InsertAxis(Array):
 class Transpose(Array):
 
   __slots__ = 'func', 'axes'
-  __cache__ = 'blocks'
+  __cache__ = 'blocks', '_invaxes'
+
+  @classmethod
+  @types.apply_annotations
+  def _end(cls, array:asarray, axes, invert=False):
+    axes = [numeric.normdim(array.ndim, axis) for axis in axes]
+    if all(a == b for a, b in enumerate(axes, start=array.ndim-len(axes))):
+      return array
+    trans = [i for i in range(array.ndim) if i not in axes]
+    trans.extend(axes)
+    if len(trans) != array.ndim:
+      raise Exception('duplicate axes')
+    return cls(array, numpy.argsort(trans) if invert else trans)
+
+  @classmethod
+  def from_end(cls, array, *axes):
+    return cls._end(array, axes, invert=True)
+
+  @classmethod
+  def to_end(cls, array, *axes):
+    return cls._end(array, axes, invert=False)
 
   @types.apply_annotations
   def __init__(self, func:asarray, axes:types.tuple[types.strictint]):
@@ -1044,6 +1060,10 @@ class Transpose(Array):
     self.func = func
     self.axes = axes
     super().__init__(args=[func], shape=[func.shape[n] for n in axes], dtype=func.dtype)
+
+  @property
+  def _invaxes(self):
+    return tuple(numpy.argsort(self.axes))
 
   def _simplified(self):
     if self.axes == tuple(range(self.ndim)):
@@ -1083,14 +1103,14 @@ class Transpose(Array):
     return transpose(derivative(self.func, var, seen), self.axes+tuple(range(self.ndim, self.ndim+var.ndim)))
 
   def _multiply(self, other):
-    other_trans = other._transpose(_invtrans(self.axes))
+    other_trans = other._transpose(self._invaxes)
     if other_trans is not None:
       return Transpose(Multiply([self.func, other_trans]), self.axes)
 
   def _add(self, other):
     if isinstance(other, Transpose) and self.axes == other.axes:
       return Transpose(Add([self.func, other.func]), self.axes)
-    other_trans = other._transpose(_invtrans(self.axes))
+    other_trans = other._transpose(self._invaxes)
     if other_trans is not None:
       return Transpose(Add([self.func, other_trans]), self.axes)
 
@@ -1101,7 +1121,7 @@ class Transpose(Array):
     return Transpose(Mask(self.func, maskvec, self.axes[axis]), self.axes)
 
   def _power(self, n):
-    n_trans = n._transpose(_invtrans(self.axes))
+    n_trans = n._transpose(self._invaxes)
     return Transpose(Power(self.func, n_trans), self.axes)
 
   def _sign(self):
@@ -3806,13 +3826,6 @@ def _matchndim(*arrays):
   ndim = builtins.max(array.ndim for array in arrays)
   return tuple(array[(_,)*(ndim-array.ndim)] for array in arrays)
 
-def _invtrans(trans):
-  trans = numpy.asarray(trans)
-  assert trans.dtype == int
-  invtrans = numpy.empty(len(trans), dtype=int)
-  invtrans[trans] = numpy.arange(len(trans))
-  return tuple(invtrans)
-
 def _norm_and_sort(ndim, args):
   'norm axes, sort, and assert unique'
 
@@ -4175,20 +4188,10 @@ def matmat(arg0, *args):
   return retval
 
 def determinant(arg, axes=(-2,-1)):
-  arg = asarray(arg)
-  ax1, ax2 = _norm_and_sort(arg.ndim, axes)
-  assert ax2 > ax1 # strict
-  trans = [i for i in range(arg.ndim) if i not in (ax1, ax2)] + [ax1, ax2]
-  arg = transpose(arg, trans)
-  return Determinant(arg)
+  return Determinant(Transpose.to_end(arg, *axes))
 
 def inverse(arg, axes=(-2,-1)):
-  arg = asarray(arg)
-  ax1, ax2 = _norm_and_sort(arg.ndim, axes)
-  assert ax2 > ax1 # strict
-  trans = [i for i in range(arg.ndim) if i not in (ax1, ax2)] + [ax1, ax2]
-  arg = transpose(arg, trans)
-  return transpose(Inverse(arg), _invtrans(trans))
+  return Transpose.from_end(Inverse(Transpose.to_end(arg, *axes)), *axes)
 
 def takediag(arg, axis=-2, rmaxis=-1):
   arg = asarray(arg)
@@ -4264,13 +4267,8 @@ def sign(arg):
   return Sign(arg)
 
 def eig(arg, axes=(-2,-1), symmetric=False):
-  arg = asarray(arg)
-  ax1, ax2 = _norm_and_sort(arg.ndim, axes)
-  assert ax2 > ax1 # strict
-  trans = [i for i in range(arg.ndim) if i not in (ax1, ax2)] + [ax1, ax2]
-  transposed = transpose(arg, trans)
-  eigval, eigvec = Eig(transposed, symmetric)
-  return Tuple([transpose(diagonalize(eigval), _invtrans(trans)), transpose(eigvec, _invtrans(trans))])
+  eigval, eigvec = Eig(Transpose.to_end(arg, *axes), symmetric)
+  return Tuple(Transpose.from_end(v, *axes) for v in [diagonalize(eigval), eigvec])
 
 @types.apply_annotations
 def elemwise(transforms:transformseq.stricttransforms, values:types.tuple[types.frozenarray]):
