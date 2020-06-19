@@ -683,19 +683,10 @@ class Array(Evaluable):
     for it in item + (slice(None),)*nx if iell is None else item[:iell] + (slice(None),)*(nx+1) + item[iell+1:]:
       if numeric.isint(it):
         array = get(array, axis, item=it)
-      elif it is _:
-        array = expand_dims(array, axis)
-        axis += 1
-      elif it == slice(None):
-        axis += 1
-      elif isinstance(it, slice):
-        assert it.step == None or it.step == 1
-        start = 0 if it.start is None else it.start if it.start >= 0 else it.start + array.shape[axis]
-        stop = array.shape[axis] if it.stop is None else it.stop if it.stop >= 0 else it.stop + array.shape[axis]
-        array = take(array, index=Range(stop-start, start), axis=axis)
-        axis += 1
       else:
-        array = take(array, index=it, axis=axis)
+        array = expand_dims(array, axis) if it is _ \
+           else _takeslice(array, it, axis) if isinstance(it, slice) \
+           else take(array, it, axis)
         axis += 1
     assert axis == array.ndim
     return array
@@ -4297,6 +4288,21 @@ def elemwise(transforms:transformseq.stricttransforms, values:types.tuple[types.
   warnings.deprecation('function.elemwise is deprecated; use function.Elemwise instead')
   index, tail = TransformsIndexWithTail(transforms, TRANS)
   return Elemwise(values, index, dtype=float)
+
+@types.apply_annotations
+def _takeslice(arg:asarray, s:types.strict[slice], axis:types.strictint):
+  n = arg.shape[axis]
+  if s.step == None or s.step == 1:
+    start = 0 if s.start is None else s.start if s.start >= 0 else s.start + n
+    stop = n if s.stop is None else s.stop if s.stop >= 0 else s.stop + n
+    if start == 0 and stop == n:
+      return arg
+    index = Range(stop-start, start)
+  elif numeric.isint(n):
+    index = Constant(numpy.arange(*s.indices(arg.shape[axis])))
+  else:
+    raise Exception('a non-unit slice requires a constant-length axis')
+  return take(arg, index, axis)
 
 def take(arg, index, axis):
   arg = asarray(arg)
