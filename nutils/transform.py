@@ -212,7 +212,7 @@ class Square(Matrix):
     super().__init__(linear, offset)
 
   def invapply(self, points):
-    return types.frozenarray(numpy.linalg.solve(self.linear, points - self.offset), copy=False)
+    return types.frozenarray(numpy.linalg.solve(self.linear, (points - self.offset).T).T, copy=False)
 
   @property
   def det(self):
