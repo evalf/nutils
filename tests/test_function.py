@@ -58,7 +58,7 @@ class check(TestCase):
     with self.subTest('simplified'):
       self.assertArrayAlmostEqual(actual.simplified.eval(**evalargs), desired, decimal)
     with self.subTest('optimized'):
-      self.assertArrayAlmostEqual(actual.optimized_for_numpy.eval(**evalargs), desired, decimal)
+      self.assertArrayAlmostEqual(actual.simplified.optimized_for_numpy.eval(**evalargs), desired, decimal)
     with self.subTest('sample'):
       self.assertArrayAlmostEqual(self.sample.eval(actual), desired, decimal)
 
@@ -94,7 +94,7 @@ class check(TestCase):
       with self.subTest(axis=axis):
         self.assertFunctionAlmostEqual(decimal=15,
           desired=numpy.repeat(numpy.expand_dims(self.n_op_argsfun, axis+1), 2, axis+1),
-          actual=function.insertaxis(self.op_args, axis, 2))
+          actual=function.InsertAxis(self.op_args, axis=axis, length=2))
 
   def test_takediag(self):
     for ax1, ax2 in self.pairs:
@@ -115,7 +115,7 @@ class check(TestCase):
     for ax1, ax2 in self.pairs:
       trans = [i for i in range(self.n_op_argsfun.ndim) if i not in (ax1+1,ax2+1)] + [ax1+1,ax2+1]
       invtrans = list(map(trans.index, range(len(trans))))
-      self.assertFunctionAlmostEqual(decimal=10,
+      self.assertFunctionAlmostEqual(decimal=14,
         desired=numeric.inv(self.n_op_argsfun.transpose(trans)).transpose(invtrans),
         actual=function.inverse(self.op_args, axes=(ax1,ax2)))
 
@@ -156,7 +156,7 @@ class check(TestCase):
       desired[(slice(None),)*(iax+1)+(slice(None,None,2),)] = self.n_op_argsfun
       self.assertFunctionAlmostEqual(decimal=15,
         desired=desired,
-        actual=function.inflate(self.op_args, dofmap=dofmap, length=sh*2-1, axis=iax))
+        actual=function.Inflate(self.op_args, dofmap=dofmap, length=sh*2-1, axis=iax))
 
   def test_diagonalize(self):
     for axis in range(self.op_args.ndim):
@@ -272,6 +272,14 @@ class check(TestCase):
         desired=desired,
         actual=function.kronecker(self.op_args, axis=idim, pos=1, length=3))
 
+  def test_edit(self):
+    def check_identity(arg):
+      if function.isevaluable(arg):
+        newarg = arg.edit(check_identity)
+        self.assertEqual(arg, newarg)
+      return arg
+    check_identity(self.op_args)
+
   def test_opposite(self):
     self.assertArrayAlmostEqual(decimal=14,
       desired=self.n_op(*self.ifacesmp.eval([function.opposite(arg) for arg in self.args])),
@@ -281,7 +289,7 @@ class check(TestCase):
     elemtrans, = self.sample.transforms[0]
     ndim, = self.geom.shape
     J = function.localgradient(self.geom, ndim)
-    Jinv = function.prepare_eval(function.inverse(J))
+    Jinv = function.inverse(J).prepare_eval()
     countdown = 5
     iiter = 0
     self.assertEqual(target.shape[-1:], self.geom.shape)
@@ -292,7 +300,7 @@ class check(TestCase):
     target = target.reshape(-1, target.shape[-1])
     xi = xi0.reshape(-1, xi0.shape[-1])
     while countdown:
-      err = target - function.prepare_eval(self.geom).eval(_transforms=[elemtrans], _points=xi)
+      err = target - self.geom.prepare_eval().eval(_transforms=[elemtrans], _points=xi)
       if numpy.less(numpy.abs(err), 1e-12).all():
         countdown -= 1
       dxi_root = (Jinv.eval(_transforms=[elemtrans], _points=xi) * err[...,_,:]).sum(-1)
@@ -306,7 +314,7 @@ class check(TestCase):
   def test_localgradient(self):
     elemtrans, = self.sample.transforms[0]
     points = self.sample.points[0].coords
-    argsfun = function.prepare_eval(function.Tuple(self.args))
+    argsfun = function.Tuple(self.args).prepare_eval()
     exact = self.sample.eval(function.localgradient(self.op_args, ndims=self.ndim))
     D = numpy.array([-.5,.5])[:,_,_] * numpy.eye(self.ndim)
     good = False
@@ -342,7 +350,7 @@ class check(TestCase):
   def test_gradient(self):
     elemtrans, = self.sample.transforms[0]
     points = self.sample.points[0].coords
-    argsfun = function.prepare_eval(function.Tuple(self.args))
+    argsfun = function.Tuple(self.args).prepare_eval()
     exact = self.sample.eval(self.op_args.grad(self.geom))
     fddeltas = numpy.array([1,2,3])
     fdfactors = numpy.linalg.solve(2*fddeltas**numpy.arange(1,1+2*len(fddeltas),2)[:,None], [1]+[0]*(len(fddeltas)-1))
@@ -369,7 +377,7 @@ class check(TestCase):
   def test_doublegradient(self):
     elemtrans, = self.sample.transforms[0]
     points = self.sample.points[0].coords
-    argsfun = function.prepare_eval(function.Tuple(self.args))
+    argsfun = function.Tuple(self.args).prepare_eval()
     exact = self.sample.eval(self.op_args.grad(self.geom).grad(self.geom))
     fddeltas = numpy.array([1,2,3])
     fdfactors = numpy.linalg.solve(2*fddeltas**numpy.arange(1,1+2*len(fddeltas),2)[:,None], [1]+[0]*(len(fddeltas)-1))
@@ -468,10 +476,9 @@ _check('kronecker', lambda f: function.kronecker(f,axis=2,length=4,pos=1), lambd
 _check('mask', lambda f: function.mask(f,numpy.array([True,False,True,False,True,False,True]),axis=1), lambda a: a[:,:,::2], [(4,7,4)])
 _check('ravel', lambda f: function.ravel(f,axis=1), lambda a: a.reshape(-1,4,4,4,4), [(4,2,2,4,4)])
 _check('unravel', lambda f: function.unravel(f,axis=1,shape=[2,2]), lambda a: a.reshape(-1,4,2,2,4,4), [(4,4,4,4)])
-_check('inflate', lambda f: function.inflate(f,dofmap=function.Guard([0,3]),length=4,axis=1), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a), a[:,:,1:]], axis=2), [(4,2,4)])
-_check('inflate-constant', lambda f: function.inflate(f,dofmap=[0,3],length=4,axis=1), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a), a[:,:,1:]], axis=2), [(4,2,4)])
+_check('inflate', lambda f: function.Inflate(f,dofmap=function.Guard([0,3]),length=4,axis=1), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a), a[:,:,1:]], axis=2), [(4,2,4)])
+_check('inflate-constant', lambda f: function.Inflate(f,dofmap=[0,3],length=4,axis=1), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a), a[:,:,1:]], axis=2), [(4,2,4)])
 _check('vectorize', lambda a,b: function.vectorize([a, b]), lambda a,b: numpy.concatenate([numpy.stack([a, numpy.zeros_like(a)], axis=2), numpy.stack([numpy.zeros_like(b), b], axis=2)], axis=1), [(3,),(5,)])
-_check('slice', lambda a: function.asarray(a)[::2], lambda a: a[:,::2], [(5,3)])
 
 _polyval_mask = lambda shape, ndim: 1 if ndim == 0 else numpy.array([sum(i[-ndim:]) < shape[-1] for i in numpy.ndindex(shape)], dtype=int).reshape(shape)
 _polyval_desired = lambda c, x: sum(c[(...,*i)]*(x[(slice(None),*[None]*(c.ndim-1-x.shape[1]))]**i).prod(-1) for i in itertools.product(*[range(c.shape[-1])]*x.shape[1]) if sum(i) < c.shape[-1])
@@ -491,26 +498,26 @@ class blocks(TestCase):
     _builtin_warnings.simplefilter('ignore', function.ExpensiveEvaluationWarning)
 
   def test_multiply_equal(self):
-    ((i,), f), = function.multiply(function.inflate([1,2], dofmap=[0,2], length=3, axis=0), function.inflate([3,4], dofmap=[0,2], length=3, axis=0)).blocks
+    ((i,), f), = function.multiply(function.Inflate([1,2], dofmap=[0,2], length=3, axis=0), function.Inflate([3,4], dofmap=[0,2], length=3, axis=0)).blocks
     self.assertEqual(i, function.asarray([0,2]))
     self.assertAllEqual(f.eval(), [1*3,2*4])
 
   def test_multiply_embedded(self):
-    ((i,), f), = function.multiply([1,2,3], function.inflate([4,5], dofmap=[0,2], length=3, axis=0)).blocks
+    ((i,), f), = function.multiply([1,2,3], function.Inflate([4,5], dofmap=[0,2], length=3, axis=0)).blocks
     self.assertEqual(i, function.asarray([0,2]))
     self.assertAllEqual(f.eval(), [1*4,3*5])
 
   def test_multiply_overlapping(self):
-    ((i,), f), = function.multiply(function.inflate([1,2], dofmap=[0,1], length=3, axis=0), function.inflate([3,4], dofmap=[1,2], length=3, axis=0)).blocks
+    ((i,), f), = function.multiply(function.Inflate([1,2], dofmap=[0,1], length=3, axis=0), function.Inflate([3,4], dofmap=[1,2], length=3, axis=0)).blocks
     self.assertEqual(i, function.asarray([1]))
     self.assertAllEqual(f.eval(), 2*3)
 
   def test_multiply_disjoint(self):
-    blocks = function.multiply(function.inflate([1,2], dofmap=[0,2], length=4, axis=0), function.inflate([3,4], dofmap=[1,3], length=4, axis=0)).blocks
+    blocks = function.multiply(function.Inflate([1,2], dofmap=[0,2], length=4, axis=0), function.Inflate([3,4], dofmap=[1,3], length=4, axis=0)).blocks
     self.assertEqual(blocks, ())
 
   def test_multiply_fallback(self):
-    ((i,), f), = function.multiply(function.inflate([1,2], dofmap=function.Guard([0,1]), length=3, axis=0), function.inflate([3,4], dofmap=function.Guard([1,2]), length=3, axis=0)).blocks
+    ((i,), f), = function.multiply(function.Inflate([1,2], dofmap=function.Guard([0,1]), length=3, axis=0), function.Inflate([3,4], dofmap=function.Guard([1,2]), length=3, axis=0)).blocks
     self.assertEqual(i, function.Range(3))
     self.assertAllEqual(f.eval(), [0,2*3,0])
 
@@ -520,26 +527,26 @@ class blocks(TestCase):
     self.assertAllEqual(f.eval(), [1,5,9])
 
   def test_takediag_embedded_axis(self):
-    ((i,), f), = function.takediag(function.inflate([[1,2,3],[4,5,6]], dofmap=[0,2], length=3, axis=0)).blocks
+    ((i,), f), = function.takediag(function.Inflate([[1,2,3],[4,5,6]], dofmap=[0,2], length=3, axis=0)).blocks
     self.assertEqual(i, function.asarray([0,2]))
     self.assertAllEqual(f.eval(), [1,6])
 
   def test_takediag_embedded_rmaxis(self):
-    ((i,), f), = function.takediag(function.inflate([[1,2],[3,4],[5,6]], dofmap=[0,2], length=3, axis=1)).blocks
+    ((i,), f), = function.takediag(function.Inflate([[1,2],[3,4],[5,6]], dofmap=[0,2], length=3, axis=1)).blocks
     self.assertEqual(i, function.asarray([0,2]))
     self.assertAllEqual(f.eval(), [1,6])
 
   def test_takediag_overlapping(self):
-    ((i,), f), = function.takediag(function.inflate(function.inflate([[1,2],[3,4]], dofmap=[0,1], length=3, axis=0), dofmap=[1,2], length=3, axis=1)).blocks
+    ((i,), f), = function.takediag(function.Inflate(function.Inflate([[1,2],[3,4]], dofmap=[0,1], length=3, axis=0), dofmap=[1,2], length=3, axis=1)).blocks
     self.assertEqual(i, function.asarray([1]))
     self.assertAllEqual(f.eval(), 3)
 
   def test_takediag_disjoint(self):
-    blocks = function.takediag(function.inflate(function.inflate([[1,2],[3,4]], dofmap=[0,2], length=4, axis=0), dofmap=[1,3], length=4, axis=1)).blocks
+    blocks = function.takediag(function.Inflate(function.Inflate([[1,2],[3,4]], dofmap=[0,2], length=4, axis=0), dofmap=[1,3], length=4, axis=1)).blocks
     self.assertEqual(blocks, ())
 
   def test_takediag_fallback(self):
-    ((i,), f), = function.takediag(function.inflate(function.inflate([[1,2],[3,4]], dofmap=function.Guard([0,1]), length=3, axis=0), dofmap=function.Guard([1,2]), length=3, axis=1)).blocks
+    ((i,), f), = function.takediag(function.Inflate(function.Inflate([[1,2],[3,4]], dofmap=function.Guard([0,1]), length=3, axis=0), dofmap=function.Guard([1,2]), length=3, axis=1)).blocks
     self.assertEqual(i, function.Range(3))
     self.assertAllEqual(f.eval(), [0,3,0])
 
@@ -635,12 +642,12 @@ class elemwise(TestCase):
   def test_evalf(self):
     for i, trans in enumerate(self.domain.transforms):
       with self.subTest(i=i):
-        numpy.testing.assert_array_almost_equal(function.prepare_eval(self.func).eval(_transforms=(trans,)), self.data[i][_])
+        numpy.testing.assert_array_almost_equal(self.func.prepare_eval().eval(_transforms=(trans,)), self.data[i][_])
 
   def test_shape(self):
     for i, trans in enumerate(self.domain.transforms):
       with self.subTest(i=i):
-        self.assertEqual(function.prepare_eval(function.asarray(self.func.size)).eval(_transforms=(trans,))[0], self.data[i].size)
+        self.assertEqual(self.func.size.prepare_eval().eval(_transforms=(trans,))[0], self.data[i].size)
 
   def test_derivative(self):
     self.assertTrue(function.iszero(function.localgradient(self.func, self.domain.ndims)))
@@ -651,7 +658,7 @@ class elemwise(TestCase):
   def test_deprecated_elemwise(self):
     with self.assertWarns(warnings.NutilsDeprecationWarning):
       func = function.elemwise(self.domain.transforms, self.data)
-      func = function.prepare_eval(func)
+      func = func.prepare_eval()
       for i, trans in enumerate(self.domain.transforms):
         numpy.testing.assert_array_almost_equal(func.eval(_transforms=(trans,)), self.data[i][_])
 
@@ -1037,7 +1044,6 @@ class CommonBasis:
 
   def setUp(self):
     super().setUp()
-    self.wrapped = self.basis.wrapped
     self.checknelems = len(self.checkcoeffs)
     self.checksupp = [[] for i in range(self.checkndofs)]
     for ielem, dofs in enumerate(self.checkdofs):
@@ -1046,11 +1052,8 @@ class CommonBasis:
     assert len(self.checkcoeffs) == len(self.checkdofs)
     assert all(len(c) == len(d) for c, d in zip(self.checkcoeffs, self.checkdofs))
 
-  def test_ndofs(self):
-    self.assertEqual(self.basis.ndofs, self.checkndofs)
-
   def test_shape(self):
-    self.assertEqual(self.wrapped.shape, (self.checkndofs,))
+    self.assertEqual(self.basis.shape, (self.checkndofs,))
 
   def test_get_coeffshape(self):
     for ielem in range(self.checknelems):
@@ -1161,7 +1164,7 @@ class CommonBasis:
       indices, = numpy.where(mask)
       for value in mask, indices:
         with self.subTest(tuple(value)):
-          maskedbasis = self.wrapped[value]._basis
+          maskedbasis = self.basis[value]
           self.assertIsInstance(maskedbasis, function.Basis)
           for ielem in range(self.checknelems):
             m = numpy.asarray(numeric.sorted_contains(indices, self.checkdofs[ielem]))
@@ -1176,19 +1179,18 @@ class CommonBasis:
   def test_evalf(self):
     ref = element.PointReference() if self.basis.coords.shape[0] == 0 else element.LineReference()**self.basis.coords.shape[0]
     points = ref.getpoints('bezier', 4).coords
-    with self.assertWarnsRegex(function.ExpensiveEvaluationWarning, 'using explicit inflation.*'):
+    with self.assertWarnsRegex(function.ExpensiveEvaluationWarning, 'using explicit basis evaluation.*'):
       for ielem in range(self.checknelems):
-        value = self.wrapped.eval(_transforms=(self.checktransforms[ielem],), _points=points)
-        self.assertEqual(value.tolist(), self.checkeval(ielem, points))
+        self.assertEqual(self.basis.evalf([ielem], points).tolist(), self.checkeval(ielem, points))
 
   def test_simplified(self):
     ref = element.PointReference() if self.basis.coords.shape[0] == 0 else element.LineReference()**self.basis.coords.shape[0]
     points = ref.getpoints('bezier', 4).coords
-    simplified = self.wrapped.simplified
+    simplified = self.basis.simplified
     with _builtin_warnings.catch_warnings():
       _builtin_warnings.simplefilter('ignore', category=function.ExpensiveEvaluationWarning)
       for ielem in range(self.checknelems):
-        value = function.prepare_eval(simplified).eval(_transforms=(self.checktransforms[ielem],), _points=points)
+        value = simplified.prepare_eval().eval(_transforms=(self.checktransforms[ielem],), _points=points)
         if value.shape[0] == 1:
           value = numpy.tile(value, (points.shape[0], 1))
         self.assertEqual(value.tolist(), self.checkeval(ielem, points))

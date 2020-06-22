@@ -995,6 +995,16 @@ class ImmutableFamily(TestCase):
     self.assertIsNot(a, d)
     self.assertNotEqual(a, d)
 
+  def test_edit(self):
+    class T(self.cls):
+      def __init__(self, x, *, y):
+        self.x = x
+        self.y = y
+
+    a = T(1, y=2).edit(lambda v: v+1)
+    self.assertEqual(a.x, 2)
+    self.assertEqual(a.y, 3)
+
 ImmutableFamily(cls=nutils.types.Immutable)
 ImmutableFamily(cls=nutils.types.Singleton)
 

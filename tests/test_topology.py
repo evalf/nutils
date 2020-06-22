@@ -31,8 +31,8 @@ class TopologyAssertions:
           imask[index] += 1
           self.assertEqual(eref, opperef)
           points = eref.getpoints('gauss', 2).coords
-          a0 = function.prepare_eval(geom).eval(_transforms=[trans], _points=points)
-          a1 = function.prepare_eval(geom).eval(_transforms=[opptrans], _points=points)
+          a0 = geom.prepare_eval().eval(_transforms=[trans], _points=points)
+          a1 = geom.prepare_eval().eval(_transforms=[opptrans], _points=points)
           numpy.testing.assert_array_almost_equal(a0, a1)
     self.assertTrue(numpy.equal(bmask, 1).all())
     self.assertTrue(numpy.equal(imask, 2).all())
