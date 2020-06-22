@@ -1308,7 +1308,7 @@ class StructuredTopology(Topology):
       coords = coords[...,_]
     if not geom.shape == coords.shape[1:] == (self.ndims,):
       raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
-    index = function.rootcoords(len(self.axes))[[axis.isdim for axis in self.axes]]
+    index = function.rootcoords(len(self.axes))[[axis.isdim for axis in self.axes]] * 2**self.nrefine - [axis.i for axis in self.axes if axis.isdim]
     basis = function.concatenate([function.eye(self.ndims), function.diagonalize(index)], axis=0)
     A, b = self.integrate([(basis[:,_,:] * basis[_,:,:]).sum(-1), (basis * geom).sum(-1)], degree=2)
     x = A.solve(b)
