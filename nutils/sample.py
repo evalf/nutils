@@ -479,7 +479,7 @@ class ProductSample(Sample):
 
   def getpoints(self, ielem):
     ielem1, ielem2 = divmod(ielem, self._sample2.nelems)
-    return points.TensorPoints(self._sample1.getpoints(ielem1), self._sample2.getpoints(ielem2))
+    return self._sample1.getpoints(ielem1) * self._sample2.getpoints(ielem2)
 
   def getindex(self, ielem):
     ielem1, ielem2 = divmod(ielem, self._sample2.nelems)
@@ -487,7 +487,7 @@ class ProductSample(Sample):
 
   @property
   def pointsiter(self):
-    return (points.TensorPoints(points1, points2) for points1 in self._sample1.pointsiter for points2 in self._sample2.pointsiter)
+    return (points1 * points2 for points1 in self._sample1.pointsiter for points2 in self._sample2.pointsiter)
 
   @property
   def indexiter(self):

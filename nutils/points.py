@@ -132,6 +132,11 @@ class Points(types.Singleton):
     else:
       raise NotImplementedError
 
+  def __mul__(self, other):
+    if not isinstance(other, Points):
+      return NotImplemented
+    return TensorPoints(self, other)
+
 strictpoints = types.strict[Points]
 
 class CoordsPoints(Points):
@@ -182,6 +187,10 @@ class TensorPoints(Points):
 
   @property
   def tri(self):
+    if self.points2.npoints == 1:
+      return self.points1.tri
+    if self.points1.npoints == 1:
+      return self.points2.tri
     if self.points1.ndimsmanifold == 1:
       # For an n-dimensional simplex with vertices a0,a1,..,an, the extruded
       # element has vertices a0,a1,..,an,b0,b1,..,bn. These can be divided in
@@ -205,6 +214,11 @@ class TensorPoints(Points):
       hull = numpy.concatenate([hull1.reshape(-1, self.ndimsmanifold), numeric.overlapping(hull2.reshape(-1, 2*(self.ndimsmanifold-1)), n=self.ndimsmanifold).reshape(-1, self.ndimsmanifold)])
       return types.frozenarray(hull, copy=False)
     return super().hull
+
+  def __mul__(self, other):
+    if not isinstance(other, Points):
+      return NotImplemented
+    return TensorPoints(self.points1, self.points2 * other)
 
 class SimplexGaussPoints(CoordsWeightsPoints):
   '''Gauss quadrature points on a simplex.'''
