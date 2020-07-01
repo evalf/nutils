@@ -890,8 +890,9 @@ class Constant(Array):
     return Constant(numeric.takediag(self.value, axis, rmaxis))
 
   def _take(self, index, axis):
-    if isinstance(index, Constant):
-      return Constant(self.value.take(index.value, axis))
+    if index.isconstant:
+      index_, = index.eval()
+      return Constant(self.value.take(index_, axis))
 
   def _power(self, n):
     if isinstance(n, Constant):
