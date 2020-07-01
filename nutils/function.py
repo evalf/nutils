@@ -827,7 +827,6 @@ class Array(Evaluable):
   _inflate = lambda self, dofmap, length, axis: None
   _unravel = lambda self, axis, shape: None
   _ravel = lambda self, axis: None
-  _kronecker = lambda self, axis, length, pos: None
 
   def _uninsert(self, axis):
     assert isinstance(self._axes[axis], Inserted)
@@ -1686,6 +1685,9 @@ class Take(Array):
     length = self.func.shape[-1]
     if self.indices == Range(length):
       return self.func
+    if self.indices.ndim == 1 and isinstance(self.indices._axes[-1], Raveled):
+      shape = self.indices._axes[-1].shape
+      return Ravel(Take(self.func, Unravel(self.indices, *shape)))
     return self.func._take(self.indices, self.func.ndim-1)
 
   def evalf(self, arr, indices):
@@ -2109,7 +2111,7 @@ class Zeros(Array):
     return Zeros(self.shape[:axis] + index.shape + self.shape[axis+1:], dtype=self.dtype)
 
   def _inflate(self, dofmap, length, axis):
-    return Zeros(self.shape[:axis] + (length,) + self.shape[axis+1:], dtype=self.dtype)
+    return Zeros(self.shape[:axis] + (length,) + self.shape[axis+dofmap.ndim:], dtype=self.dtype)
 
   def _unravel(self, axis, shape):
     shape = self.shape[:axis] + shape + self.shape[axis+1:]
@@ -2124,38 +2126,40 @@ class Zeros(Array):
     else:
       return Zeros(self.shape[:-2], self.dtype)
 
-  def _kronecker(self, axis, length, pos):
-    return Zeros(self.shape[:axis] + (length,) + self.shape[axis:], self.dtype)
-
 class Inflate(Array):
 
   __slots__ = 'func', 'dofmap', 'length', 'warn'
 
   @types.apply_annotations
   def __init__(self, func:asarray, dofmap:asarray, length:asarray):
-    if func.ndim == 0:
-      raise Exception('cannot inflate scalar function')
-    if func.shape[-1:] != dofmap.shape:
+    if func.shape[func.ndim-dofmap.ndim:] != dofmap.shape:
       raise Exception('invalid dofmap')
     self.func = func
     self.dofmap = dofmap
     self.length = length
-    mask = not isinstance(func._axes[-1], Sparse) and dofmap.isconstant and length.isconstant and numeric.asboolean(dofmap.eval().ravel(), length.eval()[0], ordered=False)
+    mask = not any(isinstance(ax, Sparse) for ax in func._axes[func.ndim-dofmap.ndim:]) and dofmap.isconstant and length.isconstant and numeric.asboolean(dofmap.eval().ravel(), length.eval()[0], ordered=False)
     shape = func._axes[:-1] + (Sparse(length, mask),)
     self.warn = not dofmap.isconstant
-    super().__init__(args=[func,dofmap,length], shape=shape, dtype=func.dtype)
+    super().__init__(args=[func,dofmap,length], shape=func._axes[:func.ndim-dofmap.ndim]+(Sparse(length, mask),), dtype=func.dtype)
 
   def _simplified(self):
+    if self.dofmap == Range(self.length):
+      return self.func
+    for axis in range(self.dofmap.ndim):
+      if self.dofmap.shape[axis] == 1:
+        return Inflate(_take(self.func, 0, self.func.ndim-self.dofmap.ndim+axis), _take(self.dofmap, 0, axis), self.length)
+      if isinstance(self.func._axes[self.func.ndim-self.dofmap.ndim+axis], Sparse):
+        items = [Inflate(f, _take(self.dofmap, ind, axis), self.shape[-1]) for ind, f in self.func._desparsify(self.func.ndim-self.dofmap.ndim+axis)]
+        return util.sum(items) if items else zeros_like(self)
     return self.func._inflate(self.dofmap, self.length, self.ndim-1)
 
   def evalf(self, array, indices, length):
     assert indices.shape[0] == 1
     indices, = indices
     length, = length
-    assert array.ndim == self.ndim+1
     if self.warn:
       warnings.warn('using explicit inflation; this is usually a bug.', ExpensiveEvaluationWarning)
-    inflated = numpy.zeros(array.shape[:-1] + (length,), dtype=self.dtype)
+    inflated = numpy.zeros(array.shape[:array.ndim-indices.ndim] + (length,), dtype=self.dtype)
     numpy.add.at(inflated, (slice(None),)*self.ndim+(indices,), array)
     return inflated
 
@@ -2166,7 +2170,7 @@ class Inflate(Array):
     return [(ind, Inflate(f, self.dofmap, self.length)) for ind, f in self.func._desparsify(axis)]
 
   def _inflate(self, dofmap, length, axis):
-    if axis == self.ndim-1:
+    if dofmap.ndim == 1 and axis == self.ndim-1:
       return Inflate(self.func, Take(dofmap, self.dofmap), length)
 
   def _derivative(self, var, seen):
@@ -2177,7 +2181,7 @@ class Inflate(Array):
       return Inflate(Transpose(self.func, axes), self.dofmap, self.length)
 
   def _insertaxis(self, axis, length):
-    return _inflate(insertaxis(self.func, axis, length), self.dofmap, self.length, self.ndim-(axis==self.ndim))
+    return _inflate(insertaxis(self.func, axis+self.dofmap.ndim-1, length), self.dofmap, self.length, self.ndim-1 if axis == self.ndim else -1)
 
   def _multiply(self, other):
     return Inflate(Multiply([self.func, Take(other, self.dofmap)]), self.dofmap, self.length)
@@ -2189,7 +2193,10 @@ class Inflate(Array):
   def _takediag(self, axis1, axis2):
     assert axis1 < axis2
     if axis2 == self.ndim-1:
-      return Inflate(_takediag(_take(self.func, self.dofmap, axis1), axis1, axis2), self.dofmap, self.length)
+      func = _take(self.func, self.dofmap, axis1)
+      for i in range(self.dofmap.ndim):
+        func = _takediag(func, axis1, axis2-i)
+      return Inflate(func, self.dofmap, self.length)
     else:
       return _inflate(_takediag(self.func, axis1, axis2), self.dofmap, self.length, self.ndim-3)
 
@@ -2201,7 +2208,7 @@ class Inflate(Array):
     ind, subind1, subind2 = Intersect(self.dofmap, index)
     if ind.shape[0] == 0:
       return Zeros(self.shape[:axis] + index.shape + self.shape[axis+1:], dtype=self.dtype)
-    if index.ndim == 1:
+    if self.dofmap.ndim == 1 and index.ndim == 1:
       return Inflate(_take(self.func, subind1, axis), subind2, index.shape[0])
 
   def _diagonalize(self, axis):
@@ -2210,18 +2217,22 @@ class Inflate(Array):
 
   def _sum(self, axis):
     if axis == self.ndim-1:
-      return Sum(self.func)
+      func = self.func
+      for i in range(self.dofmap.ndim):
+        func = Sum(func)
+      return func
     return Inflate(sum(self.func, axis), self.dofmap, self.length)
 
   def _unravel(self, axis, shape):
     if axis != self.ndim-1:
       return Inflate(unravel(self.func, axis, shape), self.dofmap, self.length)
 
-  def _kronecker(self, axis, length, pos):
-    return _inflate(kronecker(self.func, axis, length, pos), self.dofmap, self.length, self.ndim-(axis==self.ndim))
-
   def _sign(self):
     return Inflate(Sign(self.func), self.dofmap, self.length)
+
+  def _transpose(self, axes):
+    if axes[-1] == self.ndim-1:
+      return Inflate(transpose(self.func, axes[:-1] + tuple(range(self.ndim-1, self.func.ndim))), self.dofmap, self.length)
 
 class Diagonalize(Array):
 
@@ -2568,18 +2579,12 @@ class Ravel(Array):
       return self.func
 
   def _inflate(self, dofmap, length, axis):
-    if axis != self.ndim-1:
+    if axis < self.ndim-dofmap.ndim:
       return Ravel(_inflate(self.func, dofmap, length, axis))
 
   def _diagonalize(self, axis):
     if axis != self.ndim-1:
       return ravel(diagonalize(self.func, axis), self.ndim-1)
-
-  def _kronecker(self, axis, length, pos):
-    if axis != self.ndim:
-      return Ravel(kronecker(self.func, axis, length, pos))
-    else:
-      return ravel(Kronecker(self.func, length, pos), self.ndim-1)
 
   def _insertaxis(self, axis, length):
     return ravel(insertaxis(self.func, axis+(axis==self.ndim), length), self.ndim-(axis==self.ndim))
@@ -2803,104 +2808,6 @@ class Opposite(Array):
 
   def _derivative(self, var, seen):
     return Opposite(derivative(self._value, var, seen))
-
-class Kronecker(Array):
-
-  __slots__ = 'func', 'length', 'pos'
-
-  @types.apply_annotations
-  def __init__(self, func:asarray, length:asarray, pos:asarray):
-    assert pos.ndim == 0 and pos.dtype == int
-    assert length.ndim == 0 and length.dtype == int
-    self.func = func
-    self.length = length
-    self.pos = pos
-    axisprop = Sparse(length, length.isconstant and pos.isconstant and numeric.asboolean(pos.eval(), length.eval()[0]))
-    super().__init__(args=[func, length, pos], shape=func._axes+(axisprop,), dtype=func.dtype)
-
-  def _simplified(self):
-    if self.shape[-1] == 1:
-      return InsertAxis(self.func, 1) # we assume without checking that pos correctly evaluates to 0
-    return self.func._kronecker(self.ndim-1, self.length, self.pos)
-
-  def evalf(self, func, length, pos):
-    length, = length
-    pos, = pos
-    retval = numpy.zeros(func.shape + (length,), dtype=func.dtype)
-    retval[...,pos] = func
-    return retval
-
-  def _derivative(self, var, seen):
-    return kronecker(derivative(self.func, var, seen), self.ndim-1, self.length, self.pos)
-
-  def _multiply(self, other):
-    return Kronecker(Multiply([self.func, Get(other, self.pos)]), self.length, self.pos)
-
-  def _transpose(self, axes):
-    if axes[-1] == self.ndim-1:
-      return Kronecker(Transpose(self.func, axes[:-1]), self.length, self.pos)
-
-  def _insertaxis(self, axis, length):
-    if axis < self.ndim:
-      return Kronecker(insertaxis(self.func, axis, length), self.length, self.pos)
-
-  def _get(self, axis, item):
-    if axis < self.ndim-1:
-      return Kronecker(get(self.func, axis, item), self.length, self.pos)
-    if item.simplified == self.pos.simplified:
-      return self.func
-    if item.isconstant and self.pos.isconstant:
-      item, = item.eval()
-      pos, = self.pos.eval()
-      return self.func if item == pos else zeros_like(self.func)
-
-  def _add(self, other):
-    if isinstance(other, Kronecker) and self.pos == other.pos:
-      assert self.length == other.length
-      return Kronecker(Add([self.func, other.func]), self.length, self.pos)
-
-  def _sum(self, axis):
-    if axis == self.ndim-1:
-      return self.func
-    return Kronecker(sum(self.func, axis), self.length, self.pos)
-
-  def _take(self, index, axis):
-    if axis != self.ndim-1:
-      return Kronecker(_take(self.func, index, axis), self.length, self.pos)
-    if self.pos.isconstant and index.isconstant and self.pos.eval()[0] not in index.eval().ravel():
-      return Zeros(self.func.shape+index.shape, dtype=self.dtype)
-
-  def _determinant(self):
-    if self.length.isconstant and self.length.eval()[0] > 1:
-      return Zeros(self.shape[:-2], dtype=self.dtype)
-
-  def _takediag(self, axis1, axis2):
-    if axis2 == self.ndim-1:
-      return Kronecker(get(self.func, axis1, self.pos), self.length, self.pos)
-    else:
-      return kronecker(_takediag(self.func, axis1, axis2), self.ndim-3, self.length, self.pos)
-
-  def _product(self):
-    if numeric.isint(self.shape[-1]) and self.shape[-1] > 1:
-      return zeros_like(self.func)
-
-  def _sign(self):
-    return Kronecker(Sign(self.func), self.length, self.pos)
-
-  def _unravel(self, axis, shape):
-    if axis < self.ndim-1:
-      return Kronecker(unravel(self.func, axis, shape), self.length, self.pos)
-
-  def _diagonalize(self, axis):
-    if axis == self.ndim-1:
-      return Kronecker(self, self.length, self.pos)
-    return kronecker(diagonalize(self.func, axis), self.ndim-1, self.length, self.pos)
-
-  def _desparsify(self, axis):
-    assert isinstance(self._axes[axis], Sparse)
-    if axis == self.ndim-1:
-      return [(self.pos, self.func)]
-    return [(ind, Kronecker(f, self.length, self.pos)) for ind, f in self.func._desparsify(axis)]
 
 class Choose(Array):
   '''Function equivalent of :func:`numpy.choose`.'''
@@ -3148,7 +3055,6 @@ class Basis(Array):
   _sum = lambda self, axis: self._asinflate._sum(axis)
   _take = lambda self, index, axis: self._asinflate._take(index, axis)
   _inflate = lambda self, dofmap, length, axis: self._asinflate._inflate(dofmap, length, axis)
-  _kronecker = lambda self, axis, length, pos: self._asinflate._kronecker(axis, length, pos)
 
 strictbasis = types.strict[Basis]
 
@@ -3858,7 +3764,7 @@ def normal(geom):
   return geom.normal()
 
 def kronecker(arg, axis, length, pos):
-  return Transpose.from_end(Kronecker(arg, length, pos), axis)
+  return Transpose.from_end(Inflate(arg, pos, length), axis)
 
 def diagonalize(arg, axis=-1, newaxis=-1):
   arg = asarray(arg)
@@ -3953,12 +3859,7 @@ def _take(arg:asarray, index:asarray, axis:types.strictint):
 def _inflate(arg:asarray, dofmap:asarray, length:asarray, axis:types.strictint):
   axis = numeric.normdim(arg.ndim+1-dofmap.ndim, axis)
   assert dofmap.shape == arg.shape[axis:axis+dofmap.ndim]
-  if dofmap.ndim == 0:
-    return kronecker(arg, axis, length, dofmap)
-  elif dofmap.ndim == 1:
-    return Transpose.from_end(Inflate(Transpose.to_end(arg, axis), dofmap, length), axis)
-  else:
-    return _inflate(ravel(arg, axis), ravel(dofmap, 0), length, axis)
+  return Transpose.from_end(Inflate(Transpose.to_end(arg, *range(axis, axis+dofmap.ndim)), dofmap, length), axis)
 
 def find(arg):
   'find'
@@ -4469,7 +4370,7 @@ class Namespace:
 if __name__ == '__main__':
   # Diagnostics for the development for simplify operations.
   simplify_priority = (
-    Ravel, Inflate, Kronecker, Diagonalize, InsertAxis, Transpose, Multiply, Add, Sign, Power, Inverse, Unravel, # size preserving
+    Ravel, Inflate, Diagonalize, InsertAxis, Transpose, Multiply, Add, Sign, Power, Inverse, Unravel, # size preserving
     Product, Determinant, TakeDiag, Take, Sum) # size decreasing
   # The simplify priority defines the preferred order in which operations are
   # performed: shape decreasing operations such as Sum and Take should be done
