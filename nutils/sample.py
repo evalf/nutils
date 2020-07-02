@@ -208,6 +208,7 @@ class Sample(types.Singleton):
     # element has its own location so no locks are required.
 
     datas = [parallel.shempty(n, dtype=sparse.dtype(funcs[ifunc].shape)) for ifunc, n in enumerate(nvals)]
+    trailingdims = [numpy.cumsum([0]+[ind.ndim for ind in index[:0:-1]])[::-1] for index in indices] # prepare index reshapes
 
     with function.Tuple(function.Tuple([value, *index]) for value, index in zip(values, indices)).session(graphviz) as eval, \
          parallel.ctxrange('integrating', self.nelems) as ielems:
@@ -217,8 +218,9 @@ class Sample(types.Singleton):
         for iblock, (intdata, *indices) in enumerate(eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=points.coords, **arguments)):
           data = datas[block2func[iblock]][offsets[iblock,ielem]:offsets[iblock,ielem+1]].reshape(intdata.shape[1:])
           numpy.einsum('p,p...->...', points.weights, intdata, out=data['value'])
+          td = trailingdims[iblock]
           for idim, ii in enumerate(indices):
-            data['index']['i'+str(idim)] = ii.reshape([-1]+[1]*(data.ndim-1-idim))
+            data['index']['i'+str(idim)] = ii.reshape(ii.shape[1:]+(1,)*td[idim]) # note: this could be implemented using newaxis, but reshape appears to be faster
 
     return datas
 
@@ -255,7 +257,7 @@ class Sample(types.Singleton):
 
       for ielem in ielems:
         for ifunc, *inds, data in eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=self.points[ielem].coords, **arguments):
-          numpy.add.at(retvals[ifunc], numpy.ix_(self.getindex(ielem), *[ind for (ind,) in inds]), data)
+          numpy.add.at(retvals[ifunc], numpy.ix_(self.getindex(ielem), *[ind.ravel() for (ind,) in inds]), data.reshape([data.shape[0]] + [ind.size for ind in inds]))
 
     return retvals
 
