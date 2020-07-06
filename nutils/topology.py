@@ -1311,16 +1311,21 @@ class StructuredTopology(Topology):
       coords = coords[...,_]
     if not geom.shape == coords.shape[1:] == (self.ndims,):
       raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
-    index = function.rootcoords(len(self.axes))[[axis.isdim for axis in self.axes]] * 2**self.nrefine - [axis.i for axis in self.axes if axis.isdim]
-    basis = function.concatenate([function.eye(self.ndims), function.diagonalize(index)], axis=0)
-    A, b = self.integrate([(basis[:,_,:] * basis[_,:,:]).sum(-1), (basis * geom).sum(-1)], degree=2)
-    x = A.solve(b)
-    geom0 = x[:self.ndims]
-    scale = x[self.ndims:]
+    geom0, scale, index = self._asaffine(geom)
     e = self.sample('uniform', 2).eval(function.norm2(geom0 + index * scale - geom)).max() # inf-norm on non-gauss sample
     if e > tol:
       return super().locate(geom, coords, eps=eps, tol=tol, weights=weights, **kwargs)
     log.info('locate detected linear geometry: x = {} + {} xi ~{:+.1e}'.format(geom0, scale, e))
+    return self._locate(geom0, scale, coords, eps=eps, weights=weights)
+
+  def _asaffine(self, geom):
+    index = function.rootcoords(len(self.axes))[[axis.isdim for axis in self.axes]] * 2**self.nrefine - [axis.i for axis in self.axes if axis.isdim]
+    basis = function.concatenate([function.eye(self.ndims), function.diagonalize(index)], axis=0)
+    A, b = self.integrate([(basis[:,_,:] * basis[_,:,:]).sum(-1), (basis * geom).sum(-1)], degree=2)
+    x = A.solve(b)
+    return x[:self.ndims], x[self.ndims:], index
+
+  def _locate(self, geom0, scale, coords, *, eps=0, weights=None):
     mincoords, maxcoords = numpy.sort([geom0, geom0 + scale * self.shape], axis=0)
     outofbounds = numpy.less(coords, mincoords - eps) | numpy.greater(coords, maxcoords + eps)
     if outofbounds.any():
