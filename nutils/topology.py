@@ -770,7 +770,9 @@ class WithGroupsTopology(Topology):
       if isinstance(topo, Topology):
         # last minute orientation fix
         s = []
-        for transs in zip(topo.transforms, topo.opposites):
+        for ref, *transs in zip(topo.references, topo.transforms, topo.opposites):
+          if not ref:
+            continue
           for trans in transs:
             try:
               ielem = baseitopo.transforms.index(trans)
