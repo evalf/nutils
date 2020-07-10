@@ -148,6 +148,9 @@ class Evaluable(types.Singleton):
   def _asciitree_str(self):
     return str(self)
 
+  def _graphviz_node(self):
+    return 'label="{}"'.format(self)
+
   def __str__(self):
     return self.__class__.__name__
 
@@ -177,7 +180,7 @@ class Evaluable(types.Singleton):
     lines = []
     lines.append('digraph {')
     lines.append('graph [dpi=72];')
-    lines.extend('{0:} [label="{0:}. {1:}"];'.format(i, name._asciitree_str()) for i, name in enumerate(self.ordereddeps+(self,)))
+    lines.extend('{} [{}];'.format(i, dep._graphviz_node()) for i, dep in enumerate(self.ordereddeps+(self,)))
     lines.extend('{} -> {};'.format(j, i) for i, indices in enumerate(self.dependencytree) for j in indices)
     lines.append('}')
 
@@ -598,6 +601,11 @@ class Array(Evaluable):
 
   def _asciitree_str(self):
     return '{}({})'.format(type(self).__name__, ','.join(['?' if isarray(sh) else str(sh) for sh in self.shape]))
+
+  def _graphviz_node(self):
+    if not self.ndim:
+      return r'shape=box,label="{}"'.format(type(self).__name__)
+    return r'shape=none,margin=0,label=<<table cellborder="0" cellspacing="0"><tr><td colspan="{}">{}</td></tr><tr>{}</tr></table>>'.format(self.ndim, type(self).__name__, ''.join('<td>{}</td>'.format(sh) for sh in self.shape))
 
   # simplifications
   _multiply = lambda self, other: None
