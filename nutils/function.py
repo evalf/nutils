@@ -77,7 +77,7 @@ asshape = types.tuple[as_canonical_length]
 
 class ExpensiveEvaluationWarning(warnings.NutilsInefficiencyWarning): pass
 
-def replace(func=None, lru=4):
+def replace(func=None, depthfirst=False, lru=4):
   '''decorator for deep object replacement
 
   Generates a deep replacement method for general objects based on a callable
@@ -90,6 +90,11 @@ def replace(func=None, lru=4):
       replacement is made. It must have one positional argument for the object,
       and may have any number of additional positional and/or keyword
       arguments.
+  depthfirst : :class:`bool`
+      If `True`, decompose each object as far a possible, then apply `func` to
+      all arguments as the objects are reconstructed. Otherwise apply `func`
+      directly on each new object that is encountered in the decomposition,
+      proceding only if the return value is `None`.
   lru : :class:`int`
       Maximum size of the least-recently-used cache. A persistent weak-key
       dictionary is maintained for every unique set of function arguments. When
@@ -102,7 +107,7 @@ def replace(func=None, lru=4):
   '''
 
   if func is None:
-    return functools.partial(replace, lru=lru)
+    return functools.partial(replace, depthfirst=depthfirst, lru=lru)
 
   signature = inspect.signature(func)
   arguments = [] # list of past function arguments, least recently used last
@@ -142,6 +147,10 @@ def replace(func=None, lru=4):
         args = [rstack.pop() for obj in range(fstack.pop())]
         f = fstack.pop()
         r = f(*args)
+        if depthfirst:
+          newr = func(r, *funcargs, **funckwargs)
+          if newr is not None:
+            r = newr
         rstack.append(r)
         continue
 
@@ -175,10 +184,11 @@ def replace(func=None, lru=4):
         rstack.append(r)
         continue
 
-      newr = func(obj, *funcargs, **funckwargs)
-      if newr is not None:
-        rstack.append(newr)
-        continue
+      if not depthfirst:
+        newr = func(obj, *funcargs, **funckwargs)
+        if newr is not None:
+          rstack.append(newr)
+          continue
 
       try:
         f, args = obj.__reduce__()
