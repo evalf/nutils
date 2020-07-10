@@ -199,7 +199,7 @@ class Evaluable(types.Singleton):
   'Base class'
 
   __slots__ = '__args',
-  __cache__ = 'dependencies', 'ordereddeps', 'dependencytree', 'simplified', 'prepare_eval', 'optimized_for_numpy'
+  __cache__ = 'dependencies', 'ordereddeps', 'dependencytree', 'simplified', 'optimized_for_numpy'
 
   @types.apply_annotations
   def __init__(self, args:types.tuple[strictevaluable]):
@@ -335,13 +335,19 @@ class Evaluable(types.Singleton):
   def optimized_for_numpy(self):
     return self.edit(lambda arg: arg.optimized_for_numpy if isevaluable(arg) else arg)
 
+  @replace
   @util.positional_only
-  def prepare_eval(self, kwargs=...):
+  def prepare_eval(obj, kwargs=...):
     '''
     Return a function tree suitable for evaluation.
     '''
 
-    return self.edit(lambda arg: arg.prepare_eval(**kwargs) if isevaluable(arg) else arg)
+    if isinstance(obj, Evaluable):
+      return obj._prepare_eval(**kwargs)
+
+  @util.positional_only
+  def _prepare_eval(self, kwargs=...):
+    return
 
 class EvaluationError(Exception):
   'evaluation error'
@@ -462,7 +468,7 @@ class SelectChain(TransformChain):
     return trans
 
   @util.positional_only
-  def prepare_eval(self, *, opposite=False, kwargs=...):
+  def _prepare_eval(self, *, opposite=False, kwargs=...):
     return SelectChain(1-self.n) if opposite else self
 
 TRANS = SelectChain()
@@ -2785,7 +2791,6 @@ class Argument(DerivativeTargetBase):
   '''
 
   __slots__ = '_name', '_nderiv'
-  __cache__ = 'prepare_eval'
 
   @types.apply_annotations
   def __init__(self, name:types.strictstr, shape:asshape, nderiv:types.strictint=0):
@@ -2821,7 +2826,7 @@ class Argument(DerivativeTargetBase):
     return '{} {!r} <{}>'.format(self.__class__.__name__, self._name, ','.join(map(str, self.shape)))
 
   @util.positional_only
-  def prepare_eval(self, kwargs=...):
+  def _prepare_eval(self, kwargs=...):
     return zeros_like(self) if self._nderiv > 0 else self
 
 class LocalCoords(DerivativeTargetBase):
@@ -2840,11 +2845,10 @@ class DelayedJacobian(Array):
   '''
   Placeholder for :func:`jacobian` until the dimension of the
   :class:`nutils.topology.Topology` where this functions is being evaluated is
-  known.  The replacing is carried out by :meth:`Evaluable.prepare_eval`.
+  known.  The replacing is carried out by `prepare_eval`.
   '''
 
   __slots__ = '_geom', '_derivativestack'
-  __cache__ = 'prepare_eval'
 
   @types.apply_annotations
   def __init__(self, geom:asarray, *derivativestack):
@@ -2861,7 +2865,7 @@ class DelayedJacobian(Array):
     return DelayedJacobian(self._geom, *self._derivativestack, var)
 
   @util.positional_only
-  def prepare_eval(self, *, ndims, kwargs=...):
+  def _prepare_eval(self, *, ndims, kwargs=...):
     jac = functools.reduce(derivative, self._derivativestack, asarray(jacobian(self._geom, ndims)))
     return jac.prepare_eval(ndims=ndims, **kwargs)
 
@@ -3238,7 +3242,6 @@ class RevolutionAngle(Array):
   '''
 
   __slots__ = ()
-  __cache__ = 'prepare_eval'
 
   def __init__(self):
     super().__init__(args=[], shape=[], dtype=float)
@@ -3254,7 +3257,7 @@ class RevolutionAngle(Array):
     return (ones_like if isinstance(var, LocalCoords) and len(var) > 0 else zeros_like)(var)
 
   @util.positional_only
-  def prepare_eval(self, kwargs=...):
+  def _prepare_eval(self, kwargs=...):
     return zeros_like(self)
 
 class Opposite(Array):
@@ -3278,7 +3281,7 @@ class Opposite(Array):
     return Opposite(value)
 
   @util.positional_only
-  def prepare_eval(self, *, opposite=False, kwargs=...):
+  def _prepare_eval(self, *, opposite=False, kwargs=...):
     return self._value.prepare_eval(opposite=not opposite, **kwargs)
 
   def _derivative(self, var, seen):
