@@ -43,7 +43,7 @@ expensive and currently unsupported operation.
 """
 
 from . import util, types, numeric, cache, transform, transformseq, expression, warnings
-import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log
+import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log, weakref
 _ = numpy.newaxis
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
@@ -76,6 +76,124 @@ def as_canonical_length(value):
 asshape = types.tuple[as_canonical_length]
 
 class ExpensiveEvaluationWarning(warnings.NutilsInefficiencyWarning): pass
+
+def replace(func=None, lru=4):
+  '''decorator for deep object replacement
+
+  Generates a deep replacement method for general objects based on a callable
+  that is applied (recursively) on individual constructor arguments.
+
+  Args
+  ----
+  func
+      Callable which maps an object onto a new object, or `None` if no
+      replacement is made. It must have one positional argument for the object,
+      and may have any number of additional positional and/or keyword
+      arguments.
+  lru : :class:`int`
+      Maximum size of the least-recently-used cache. A persistent weak-key
+      dictionary is maintained for every unique set of function arguments. When
+      the size of `lru` is reached, the least recently used cache is dropped.
+
+  Returns
+  -------
+  :any:`callable`
+      The method that searches the object to perform the replacements.
+  '''
+
+  if func is None:
+    return functools.partial(replace, lru=lru)
+
+  signature = inspect.signature(func)
+  arguments = [] # list of past function arguments, least recently used last
+  caches = [] # list of weak-key dictionaries matching arguments (above)
+
+  remember = object() # token to signal that rstack[-1] can be cached as the replacement of fstack[-1]
+  recreate = object() # token to signal that all arguments for object recreation are ready on rstack
+  pending = object() # token to hold the place of a cachable object pending creation
+
+  @functools.wraps(func)
+  def wrapped(target, *funcargs, **funckwargs):
+
+    # retrieve or create a weak-key dictionary
+    bound = signature.bind(None, *funcargs, **funckwargs)
+    bound.apply_defaults()
+    try:
+      index = arguments.index(bound.arguments) # by using index, arguments need not be hashable
+    except ValueError:
+      index = -1
+      cache = weakref.WeakKeyDictionary()
+    else:
+      cache = caches[index]
+    if index != 0: # function arguments are not the most recent (possibly new)
+      if index > 0 or len(arguments) >= lru:
+        caches.pop(index) # pop matching (or oldest) item
+        arguments.pop(index)
+      caches.insert(0, cache) # insert popped (or new) item to front
+      arguments.insert(0, bound.arguments)
+
+    fstack = [target] # stack of unprocessed objects and command tokens
+    rstack = [] # stack of processed objects
+
+    while fstack:
+      obj = fstack.pop()
+
+      if obj is recreate:
+        args = [rstack.pop() for obj in range(fstack.pop())]
+        f = fstack.pop()
+        r = f(*args)
+        rstack.append(r)
+        continue
+
+      if obj is remember:
+        cache[fstack.pop()] = rstack[-1]
+        continue
+
+      if isinstance(obj, (tuple, list, dict, set, frozenset)):
+        if not obj:
+          rstack.append(obj) # shortcut to avoid recreation of empty container
+        else:
+          fstack.append(lambda *x, T=type(obj): T(x))
+          fstack.append(len(obj))
+          fstack.append(recreate)
+          fstack.extend(obj if not isinstance(obj, dict) else obj.items())
+        continue
+
+      try:
+        r = cache[obj]
+      except KeyError: # object can be weakly cached, but isn't
+        cache[obj] = pending
+        fstack.append(obj)
+        fstack.append(remember)
+      except TypeError: # object cannot be referenced or is not hashable
+        pass
+      else: # object is in cache
+        if r is pending:
+          pending_objs = [k for k, v in cache.items() if v is pending]
+          index = pending_objs.index(obj)
+          raise Exception('{}@replace caught in a circular dependence\n'.format(func.__name__) + Tuple(pending_objs[index:]).asciitree().split('\n', 1)[1])
+        rstack.append(r)
+        continue
+
+      newr = func(obj, *funcargs, **funckwargs)
+      if newr is not None:
+        rstack.append(newr)
+        continue
+
+      try:
+        f, args = obj.__reduce__()
+      except: # obj cannot be reduced into a constructor and its arguments
+        rstack.append(obj)
+      else:
+        fstack.append(f)
+        fstack.append(len(args))
+        fstack.append(recreate)
+        fstack.extend(args)
+
+    assert len(rstack) == 1
+    return rstack[0]
+
+  return wrapped
 
 class Evaluable(types.Singleton):
   'Base class'
@@ -3823,43 +3941,6 @@ def _inflate_scalar(arg, shape):
   for idim, length in enumerate(shape):
     arg = insertaxis(arg, idim, length)
   return arg
-
-def replace(func):
-  '''decorator for deep object replacement
-
-  Generates a deep replacement method for Immutable objects based on a callable
-  that is applied (recursively) on individual constructor arguments.
-
-  Args
-  ----
-  func
-      callable which maps (obj, ...) onto replaced_obj
-
-  Returns
-  -------
-  :any:`callable`
-      The method that searches the object to perform the replacements.
-  '''
-
-  @functools.wraps(func)
-  def wrapped(target, *funcargs, **funckwargs):
-    cache = {}
-    def op(obj):
-      try:
-        replaced = cache[obj]
-      except TypeError: # unhashable
-        replaced = obj
-      except KeyError:
-        replaced = func(obj, *funcargs, **funckwargs)
-        if replaced is None:
-          replaced = obj.edit(op) if isinstance(obj, types.Immutable) else obj
-        cache[obj] = replaced
-      return replaced
-    retval = op(target)
-    del op
-    return retval
-
-  return wrapped
 
 # FUNCTIONS
 
