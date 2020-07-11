@@ -214,7 +214,7 @@ class Evaluable(types.Singleton):
   'Base class'
 
   __slots__ = '__args',
-  __cache__ = 'dependencies', 'ordereddeps', 'dependencytree', 'simplified'
+  __cache__ = 'dependencies', 'ordereddeps', 'dependencytree'
 
   @types.apply_annotations
   def __init__(self, args:types.tuple[strictevaluable]):
@@ -343,8 +343,12 @@ class Evaluable(types.Singleton):
     return '\n'.join(lines)
 
   @property
-  def simplified(self):
-    return self.edit(lambda arg: arg.simplified if isevaluable(arg) else arg)
+  @replace(depthfirst=True, recursive=True)
+  def simplified(obj):
+    if isinstance(obj, Array):
+      retval = obj._simplified()
+      assert retval is None or isinstance(retval, Array) and retval.shape == obj.shape, '{}._simplified resulted in shape change'.format(type(obj).__name__)
+      return retval
 
   @property
   @replace(depthfirst=True)
@@ -401,7 +405,6 @@ POINTS = Points()
 class Tuple(Evaluable):
 
   __slots__ = 'items', 'indices'
-  __cache__ = 'simplified',
 
   @types.apply_annotations
   def __init__(self, items:tuple): # FIXME: shouldn't all items be Evaluable?
@@ -414,10 +417,6 @@ class Tuple(Evaluable):
         indices.append(i)
     self.indices = tuple(indices)
     super().__init__(args)
-
-  @property
-  def simplified(self):
-    return Tuple([item.simplified if isevaluable(item) else item for item in self.items])
 
   def edit(self, op):
     return Tuple([op(item) for item in self.items])
@@ -773,6 +772,9 @@ class Array(Evaluable):
   _kronecker = lambda self, axis, length, pos: None
   _inserted_axes = ()
 
+  def _simplified(self):
+    return
+
   def _optimized_for_numpy(self):
     if self.isconstant:
       const, = self.eval()
@@ -818,34 +820,23 @@ class Normal(Array):
 class Constant(Array):
 
   __slots__ = 'value',
-  __cache__ = 'simplified', '_isunit'
+  __cache__ = '_isunit'
 
   @types.apply_annotations
   def __init__(self, value:types.frozenarray):
     self.value = value
     super().__init__(args=[], shape=value.shape, dtype=value.dtype)
 
-  @property
-  def simplified(self):
+  def _simplified(self):
     if not self.value.any():
       return zeros_like(self)
-    # Find and replace invariant axes with InsertAxis.
-    value = self.value
-    invariant = []
-    for i in reversed(range(self.ndim)):
-      # Since `self.value.any()` is False for arrays with a zero-length axis,
-      # we can arrive here only if all axes have at least length one, hence the
-      # following statement should work.
-      first = numeric.get(value, i, 0)
-      if all(numpy.equal(first, numeric.get(value, i, j)).all() for j in range(1, value.shape[i])):
-        invariant.append(i)
-        value = first
-    if invariant:
-      value = Constant(value)
-      for i in reversed(invariant):
-        value = InsertAxis(value, i, self.shape[i])
-      return value.simplified
-    return self
+    for i, sh in enumerate(self.shape):
+      # Find and replace invariant axes with InsertAxis. Since `self.value.any()`
+      # is False for arrays with a zero-length axis, we can arrive here only if all
+      # axes have at least length one, hence the following statement should work.
+      first, *others = numpy.rollaxis(self.value, i)
+      if all(numpy.equal(first, other).all() for other in others):
+        return InsertAxis(Constant(first), i, sh)
 
   def evalf(self):
     return self.value[_]
@@ -913,7 +904,7 @@ class Constant(Array):
 class InsertAxis(Array):
 
   __slots__ = 'func', 'axis', 'length'
-  __cache__ = 'simplified', 'blocks'
+  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint, length:asarray):
@@ -924,14 +915,8 @@ class InsertAxis(Array):
     self.length = length
     super().__init__(args=[func, length], shape=func.shape[:axis]+(length,)+func.shape[axis:], dtype=func.dtype)
 
-  @property
-  def simplified(self):
-    func = self.func.simplified
-    retval = func._insertaxis(self.axis, self.length)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return InsertAxis(func, self.axis, self.length)
+  def _simplified(self):
+    return self.func._insertaxis(self.axis, self.length)
 
   def evalf(self, func, length):
     # We would like to return an array with stride zero for the inserted axis,
@@ -1036,7 +1021,7 @@ class InsertAxis(Array):
 class Transpose(Array):
 
   __slots__ = 'func', 'axes'
-  __cache__ = 'simplified', 'blocks'
+  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axes:types.tuple[types.strictint]):
@@ -1045,16 +1030,10 @@ class Transpose(Array):
     self.axes = axes
     super().__init__(args=[func], shape=[func.shape[n] for n in axes], dtype=func.dtype)
 
-  @property
-  def simplified(self):
-    func = self.func.simplified
+  def _simplified(self):
     if self.axes == tuple(range(self.ndim)):
-      return func
-    retval = func._transpose(self.axes)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Transpose(func, self.axes)
+      return self.func
+    return self.func._transpose(self.axes)
 
   def evalf(self, arr):
     return arr.transpose([0] + [n+1 for n in self.axes])
@@ -1135,7 +1114,6 @@ class Transpose(Array):
 class Get(Array):
 
   __slots__ = 'func', 'axis', 'item'
-  __cache__ = 'simplified',
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint, item:asarray):
@@ -1148,15 +1126,8 @@ class Get(Array):
       assert 0 <= item.eval()[0] < func.shape[axis], 'item is out of bounds'
     super().__init__(args=[func, item], shape=func.shape[:axis]+func.shape[axis+1:], dtype=func.dtype)
 
-  @property
-  def simplified(self):
-    func = self.func.simplified
-    item = self.item.simplified
-    retval = func._get(self.axis, item)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Get(func, self.axis, item)
+  def _simplified(self):
+    return self.func._get(self.axis, self.item)
 
   def evalf(self, arr, item):
     if len(item) == 1:
@@ -1180,23 +1151,16 @@ class Get(Array):
 class Product(Array):
 
   __slots__ = 'func',
-  __cache__ = 'simplified',
 
   @types.apply_annotations
   def __init__(self, func:asarray):
     self.func = func
     super().__init__(args=[func], shape=func.shape[:-1], dtype=func.dtype)
 
-  @property
-  def simplified(self):
+  def _simplified(self):
     if self.func.shape[-1] == 1:
-      return get(self.func, self.ndim, 0).simplified
-    func = self.func.simplified
-    retval = func._product()
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Product(func)
+      return get(self.func, self.ndim, 0)
+    return self.func._product()
 
   def evalf(self, arr):
     assert arr.ndim == self.ndim+2
@@ -1261,7 +1225,6 @@ class Inverse(Array):
   '''
 
   __slots__ = 'func',
-  __cache__ = 'simplified',
 
   @types.apply_annotations
   def __init__(self, func:asarray):
@@ -1269,14 +1232,8 @@ class Inverse(Array):
     self.func = func
     super().__init__(args=[func], shape=func.shape, dtype=float)
 
-  @property
-  def simplified(self):
-    func = self.func.simplified
-    retval = func._inverse()
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Inverse(func)
+  def _simplified(self):
+    return self.func._inverse()
 
   def evalf(self, arr):
     return numeric.inv(arr)
@@ -1317,7 +1274,7 @@ class Inverse(Array):
 class Concatenate(Array):
 
   __slots__ = 'funcs', 'axis'
-  __cache__ = '_withslices', 'simplified', 'blocks'
+  __cache__ = '_withslices', 'blocks'
 
   @types.apply_annotations
   def __init__(self, funcs:types.tuple[asarray], axis:types.strictint=0):
@@ -1344,23 +1301,22 @@ class Concatenate(Array):
   def _withslices(self):
     return tuple(zip(self._slices, self.funcs))
 
-  @property
-  def simplified(self):
-    funcs = tuple(func.simplified for func in self.funcs if func.shape[self.axis] != 0)
-    if all(iszero(func) for func in funcs):
+  def _simplified(self):
+    if any(func.shape[self.axis] == 0 for func in self.funcs):
+      return Concatenate([func for func in self.funcs if func.shape[self.axis] != 0], self.axis)
+    if all(iszero(func) for func in self.funcs):
       return zeros_like(self)
-    if len(funcs) == 1:
-      return funcs[0]
-    if all(isinstance(func, Inflate) or iszero(func) for func in funcs):
-      (dofmap, axis), *other = set((func.dofmap, func.axis) for func in funcs if isinstance(func, Inflate))
+    if len(self.funcs) == 1:
+      return self.funcs[0]
+    if all(isinstance(func, Inflate) or iszero(func) for func in self.funcs):
+      (dofmap, axis), *other = set((func.dofmap, func.axis) for func in self.funcs if isinstance(func, Inflate))
       if not other and axis != self.axis:
         # This is an Inflate-specific simplification that shouldn't appear
         # here, but currently cannot appear anywhere else due to design
         # choices. We need it here to fix a regression while awaiting a full
         # rewrite of this module to fundamentally take care of the issue.
-        concat_blocks = Concatenate([Take(func, dofmap, axis) if iszero(func) else func.func for func in funcs], self.axis)
-        return Inflate(concat_blocks, dofmap=dofmap, length=self.shape[axis], axis=axis).simplified
-    return Concatenate(funcs, self.axis)
+        concat_blocks = Concatenate([Take(func, dofmap, axis) for func in self.funcs], self.axis)
+        return Inflate(concat_blocks, dofmap=dofmap, length=self.shape[axis], axis=axis)
 
   def evalf(self, *arrays):
     shape = list(builtins.max(arrays, key=len).shape)
@@ -1486,7 +1442,6 @@ class Interpolate(Array):
 class Determinant(Array):
 
   __slots__ = 'func',
-  __cache__ = 'simplified',
 
   @types.apply_annotations
   def __init__(self, func:asarray):
@@ -1494,14 +1449,8 @@ class Determinant(Array):
     self.func = func
     super().__init__(args=[func], shape=func.shape[:-2], dtype=func.dtype)
 
-  @property
-  def simplified(self):
-    func = self.func.simplified
-    retval = func._determinant()
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Determinant(func)
+  def _simplified(self):
+    return self.func._determinant()
 
   def evalf(self, arr):
     assert arr.ndim == self.ndim+3
@@ -1529,7 +1478,7 @@ class Determinant(Array):
 class Multiply(Array):
 
   __slots__ = 'funcs',
-  __cache__ = 'simplified', 'blocks'
+  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, funcs:types.frozenmultiset[asarray]):
@@ -1541,18 +1490,9 @@ class Multiply(Array):
   def edit(self, op):
     return Multiply([op(func) for func in self.funcs])
 
-  @property
-  def simplified(self):
-    func1, func2 = [func.simplified for func in self.funcs]
-    retval = func1._multiply(func2)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    retval = func2._multiply(func1)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Multiply([func1, func2])
+  def _simplified(self):
+    func1, func2 = self.funcs
+    return func1._multiply(func2) or func2._multiply(func1)
 
   def _optimized_for_numpy(self):
     if not self.ndim:
@@ -1680,7 +1620,7 @@ class Multiply(Array):
 class Add(Array):
 
   __slots__ = 'funcs',
-  __cache__ = 'simplified', 'blocks'
+  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, funcs:types.frozenmultiset[asarray]):
@@ -1692,20 +1632,11 @@ class Add(Array):
   def edit(self, op):
     return Add([op(func) for func in self.funcs])
 
-  @property
-  def simplified(self):
-    func1, func2 = [func.simplified for func in self.funcs]
+  def _simplified(self):
+    func1, func2 = self.funcs
     if func1 == func2:
-      return multiply(func1, 2).simplified
-    retval = func1._add(func2)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    retval = func2._add(func1)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Add([func1, func2])
+      return multiply(func1, 2)
+    return func1._add(func2) or func2._add(func1)
 
   def evalf(self, arr1, arr2=None):
     return arr1 + arr2
@@ -1781,7 +1712,7 @@ class Einsum(Array):
 class Sum(Array):
 
   __slots__ = 'axis', 'func'
-  __cache__ = 'simplified', 'blocks'
+  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint):
@@ -1791,14 +1722,8 @@ class Sum(Array):
     shape = func.shape[:axis] + func.shape[axis+1:]
     super().__init__(args=[func], shape=shape, dtype=int if func.dtype == bool else func.dtype)
 
-  @property
-  def simplified(self):
-    func = self.func.simplified
-    retval = func._sum(self.axis)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Sum(func, self.axis)
+  def _simplified(self):
+    return self.func._sum(self.axis)
 
   def _optimized_for_numpy(self):
     func = self.func
@@ -1833,7 +1758,7 @@ class Sum(Array):
 class TakeDiag(Array):
 
   __slots__ = 'func', 'axis', 'rmaxis'
-  __cache__ = 'simplified', 'blocks'
+  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint, rmaxis:types.strictint):
@@ -1844,16 +1769,10 @@ class TakeDiag(Array):
     self.rmaxis = rmaxis
     super().__init__(args=[func], shape=func.shape[:rmaxis]+func.shape[rmaxis+1:], dtype=func.dtype)
 
-  @property
-  def simplified(self):
-    func = self.func.simplified
+  def _simplified(self):
     if self.shape[self.axis] == 1:
-      return get(func, self.rmaxis, 0).simplified
-    retval = func._takediag(self.axis, self.rmaxis)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return TakeDiag(func, self.axis, self.rmaxis)
+      return get(self.func, self.rmaxis, 0)
+    return self.func._takediag(self.axis, self.rmaxis)
 
   def evalf(self, arr):
     assert arr.ndim == self.ndim+2
@@ -1910,7 +1829,7 @@ class TakeDiag(Array):
 class Take(Array):
 
   __slots__ = 'func', 'axis', 'indices'
-  __cache__ = 'simplified', 'blocks'
+  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, indices:asarray, axis:types.strictint):
@@ -1922,36 +1841,27 @@ class Take(Array):
     shape = func.shape[:axis] + indices.shape + func.shape[axis+1:]
     super().__init__(args=[func,indices], shape=shape, dtype=func.dtype)
 
-  @property
-  def simplified(self):
+  def _simplified(self):
     if self.shape[self.axis] == 0:
-      return zeros(self.shape, dtype=self.dtype)
-    func = self.func.simplified
-    indices = self.indices.simplified
+      return zeros_like(self)
     length = self.func.shape[self.axis]
-    if indices == Range(length):
-      return func
-    if indices.isconstant:
-      indices_, = indices.eval()
-      ineg, = numpy.less(indices_, 0).nonzero()
-      if numeric.isint(length):
-        if len(ineg):
-          indices_ = indices_.copy()
-          indices_[ineg] += length
-          indices = Constant(types.frozenarray(indices_, copy=False))
-        if numpy.less(indices_[ineg], 0).any() or numpy.greater_equal(indices_, length).any():
-          raise IndexError('indices out of bounds: 0 !< {} !<= {}'.format(indices_, length))
-        if numpy.greater(numpy.diff(indices_), 0).all():
-          mask = numpy.zeros(length, dtype=bool)
-          mask[indices_] = True
-          return Mask(func, mask, self.axis).simplified
-      elif len(ineg):
-        raise IndexError('negative indices only allowed for constant-length axes')
-    retval = func._take(indices, self.axis)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Take(func, indices, self.axis)
+    if self.indices == Range(length):
+      return self.func
+    if self.indices.isconstant:
+      indices_, = self.indices.eval()
+      ineg = numpy.less(indices_, 0)
+      if not numeric.isint(length):
+        if ineg.any():
+          raise IndexError('negative indices only allowed for constant-length axes')
+      elif ineg.any():
+        if numpy.less(indices_, -length).any():
+          raise IndexError('indices out of bounds: {} < {}'.format(indices_, -length))
+        return Take(self.func, Constant(types.frozenarray(indices_ + ineg * length, copy=False)), self.axis)
+      elif numpy.greater_equal(indices_, length).any():
+        raise IndexError('indices out of bounds: {} >= {}'.format(indices_, length))
+      elif numpy.greater(numpy.diff(indices_), 0).all():
+        return Mask(self.func, numeric.asboolean(indices_, length), self.axis)
+    return self.func._take(self.indices, self.axis)
 
   def evalf(self, arr, indices):
     if indices.shape[0] != 1:
@@ -1987,7 +1897,6 @@ class Take(Array):
 class Power(Array):
 
   __slots__ = 'func', 'power'
-  __cache__ = 'simplified',
 
   @types.apply_annotations
   def __init__(self, func:asarray, power:asarray):
@@ -1996,17 +1905,10 @@ class Power(Array):
     self.power = power
     super().__init__(args=[func,power], shape=func.shape, dtype=float)
 
-  @property
-  def simplified(self):
-    func = self.func.simplified
-    power = self.power.simplified
-    if iszero(power):
-      return ones_like(self).simplified
-    retval = func._power(power)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Power(func, power)
+  def _simplified(self):
+    if iszero(self.power):
+      return ones_like(self)
+    return self.func._power(self.power)
 
   def evalf(self, base, exp):
     return numeric.power(base, exp)
@@ -2056,7 +1958,6 @@ class Pointwise(Array):
   '''
 
   __slots__ = 'args',
-  __cache__ = 'simplified',
 
   deriv = None
 
@@ -2086,13 +1987,10 @@ class Pointwise(Array):
     offsets = numpy.cumsum([0]+[arg.ndim for arg in args])
     return cls(*(prependaxes(appendaxes(arg, shape[r:]), shape[:l]) for arg, l, r in zip(args, offsets[:-1], offsets[1:])))
 
-  @property
-  def simplified(self):
-    args = [arg.simplified for arg in self.args]
-    if all(arg.isconstant for arg in args):
-      retval, = self.evalf(*[arg.eval() for arg in args])
-      return Constant(retval).simplified
-    return self.__class__(*args)
+  def _simplified(self):
+    if self.isconstant:
+      retval, = self.eval()
+      return Constant(retval)
 
   def _derivative(self, var, seen):
     if self.deriv is None:
@@ -2202,21 +2100,15 @@ class Int(Pointwise):
 class Sign(Array):
 
   __slots__ = 'func',
-  __cache__ = 'simplified', 'blocks'
+  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray):
     self.func = func
     super().__init__(args=[func], shape=func.shape, dtype=func.dtype)
 
-  @property
-  def simplified(self):
-    func = self.func.simplified
-    retval = func._sign()
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Sign(func)
+  def _simplified(self):
+    return self.func._sign()
 
   def evalf(self, arr):
     return numpy.sign(arr)
@@ -2275,7 +2167,6 @@ class Sampled(Array):
 class Elemwise(Array):
 
   __slots__ = 'data',
-  __cache__ = 'simplified',
 
   @types.apply_annotations
   def __init__(self, data:types.tuple[types.frozenarray], index:asarray, dtype:asdtype):
@@ -2288,11 +2179,9 @@ class Elemwise(Array):
     index, = index
     return self.data[index][_]
 
-  @property
-  def simplified(self):
-    if all(map(numeric.isint, self.shape)) and all(numpy.equal(self.data[0], self.data[i]).all() for i in range(1, len(self.data))):
+  def _simplified(self):
+    if all(map(numeric.isint, self.shape)) and all(self.data[0] == data for data in self.data[1:]):
       return Constant(self.data[0])
-    return self
 
 class ElemwiseFromCallable(Array):
 
@@ -2314,7 +2203,6 @@ class ElemwiseFromCallable(Array):
 class Eig(Evaluable):
 
   __slots__ = 'symmetric', 'func'
-  __cache__ = 'simplified',
 
   @types.apply_annotations
   def __init__(self, func:asarray, symmetric:bool=False):
@@ -2330,14 +2218,8 @@ class Eig(Evaluable):
     yield ArrayFromTuple(self, index=0, shape=self.func.shape[:-1], dtype=complex if not self.symmetric else float)
     yield ArrayFromTuple(self, index=1, shape=self.func.shape, dtype=complex if not self.symmetric or self.func.dtype == complex else float)
 
-  @property
-  def simplified(self):
-    func = self.func.simplified
-    retval = func._eig(self.symmetric)
-    if retval is not None:
-      assert len(retval) == 2
-      return retval.simplified
-    return Eig(func, self.symmetric)
+  def _simplified(self):
+    return self.func._eig(self.symmetric)
 
   def evalf(self, arr):
     return (numpy.linalg.eigh if self.symmetric else numpy.linalg.eig)(arr)
@@ -2431,7 +2313,7 @@ class Zeros(Array):
 class Inflate(Array):
 
   __slots__ = 'func', 'dofmap', 'length', 'axis'
-  __cache__ = 'simplified', 'blocks'
+  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, dofmap:asarray, length:types.strictint, axis:types.strictint):
@@ -2444,15 +2326,8 @@ class Inflate(Array):
     shape = func.shape[:axis] + (length,) + func.shape[axis+1:]
     super().__init__(args=[func,dofmap], shape=shape, dtype=func.dtype)
 
-  @property
-  def simplified(self):
-    func = self.func.simplified
-    dofmap = self.dofmap.simplified
-    retval = func._inflate(dofmap, self.length, self.axis)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Inflate(func, dofmap, self.length, self.axis)
+  def _simplified(self):
+    return self.func._inflate(self.dofmap, self.length, self.axis)
 
   def evalf(self, array, indices):
     assert indices.shape[0] == 1
@@ -2562,7 +2437,7 @@ class Inflate(Array):
 class Diagonalize(Array):
 
   __slots__ = 'func', 'axis', 'newaxis'
-  __cache__ = 'simplified', 'blocks'
+  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis=types.strictint, newaxis=types.strictint):
@@ -2572,16 +2447,10 @@ class Diagonalize(Array):
     self.newaxis = newaxis
     super().__init__(args=[func], shape=func.shape[:newaxis]+(func.shape[axis],)+func.shape[newaxis:], dtype=func.dtype)
 
-  @property
-  def simplified(self):
-    func = self.func.simplified
-    if func.shape[self.axis] == 1:
-      return insertaxis(func, self.newaxis, 1).simplified
-    retval = func._diagonalize(self.axis, self.newaxis)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Diagonalize(func, self.axis, self.newaxis)
+  def _simplified(self):
+    if self.shape[self.axis] == 1:
+      return insertaxis(self.func, self.newaxis, 1)
+    return self.func._diagonalize(self.axis, self.newaxis)
 
   def evalf(self, arr):
     assert arr.ndim == self.ndim
@@ -2889,7 +2758,7 @@ class DelayedJacobian(Array):
 class Ravel(Array):
 
   __slots__ = 'func', 'axis'
-  __cache__ = 'simplified', 'blocks'
+  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint):
@@ -2898,18 +2767,12 @@ class Ravel(Array):
     self.axis = axis
     super().__init__(args=[func], shape=func.shape[:axis]+(func.shape[axis]*func.shape[axis+1],)+func.shape[axis+2:], dtype=func.dtype)
 
-  @property
-  def simplified(self):
-    func = self.func.simplified
-    if func.shape[self.axis] == 1:
-      return get(func, self.axis, 0).simplified
-    if func.shape[self.axis+1] == 1:
-      return get(func, self.axis+1, 0).simplified
-    retval = func._ravel(self.axis)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Ravel(func, self.axis)
+  def _simplified(self):
+    if self.func.shape[self.axis] == 1:
+      return get(self.func, self.axis, 0)
+    if self.func.shape[self.axis+1] == 1:
+      return get(self.func, self.axis+1, 0)
+    return self.func._ravel(self.axis)
 
   def evalf(self, f):
     return f.reshape(f.shape[:self.axis+1] + (f.shape[self.axis+1]*f.shape[self.axis+2],) + f.shape[self.axis+3:])
@@ -3003,7 +2866,7 @@ class Ravel(Array):
 class Unravel(Array):
 
   __slots__ = 'func', 'axis', 'unravelshape'
-  __cache__ = 'simplified', 'blocks'
+  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint, shape:asshape):
@@ -3015,18 +2878,12 @@ class Unravel(Array):
     self.unravelshape = shape
     super().__init__(args=[func]+[asarray(sh) for sh in shape], shape=func.shape[:axis]+shape+func.shape[axis+1:], dtype=func.dtype)
 
-  @property
-  def simplified(self):
-    func = self.func.simplified
+  def _simplified(self):
     if self.shape[self.axis] == 1:
-      return InsertAxis(func, self.axis, 1).simplified
+      return InsertAxis(self.func, self.axis, 1)
     if self.shape[self.axis+1] == 1:
-      return InsertAxis(func, self.axis+1, 1).simplified
-    retval = func._unravel(self.axis, self.unravelshape)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Unravel(func, self.axis, self.unravelshape)
+      return InsertAxis(self.func, self.axis+1, 1)
+    return self.func._unravel(self.axis, self.unravelshape)
 
   def _derivative(self, var, seen):
     return unravel(derivative(self.func, var, seen), axis=self.axis, shape=self.unravelshape)
@@ -3075,7 +2932,7 @@ class Unravel(Array):
 class Mask(Array):
 
   __slots__ = 'func', 'axis', 'mask'
-  __cache__ = 'simplified', 'blocks'
+  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, mask:types.frozenarray, axis:types.strictint):
@@ -3085,18 +2942,12 @@ class Mask(Array):
     self.mask = mask
     super().__init__(args=[func], shape=func.shape[:axis]+(mask.sum(),)+func.shape[axis+1:], dtype=func.dtype)
 
-  @property
-  def simplified(self):
-    func = self.func.simplified
+  def _simplified(self):
     if self.mask.all():
-      return func
+      return self.func
     if not self.mask.any():
       return zeros_like(self)
-    retval = func._mask(self.mask, self.axis)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Mask(func, self.mask, self.axis)
+    return self.func._mask(self.mask, self.axis)
 
   def evalf(self, func):
     return func[(slice(None),)*(self.axis+1)+(numpy.asarray(self.mask),)]
@@ -3188,7 +3039,6 @@ class Polyval(Array):
   '''
 
   __slots__ = 'points_ndim', 'coeffs', 'points', 'ngrad'
-  __cache__ = 'simplified',
 
   @types.apply_annotations
   def __init__(self, coeffs:asarray, points:asarray, ngrad:types.strictint=0):
@@ -3242,16 +3092,12 @@ class Polyval(Array):
     else:
       return stack([self._const_helper(*j, k) for k in range(self.points_ndim)], axis=self.coeffs.ndim-self.points_ndim+self.ngrad-len(j)-1)
 
-  @property
-  def simplified(self):
-    self = self.edit(lambda arg: arg.simplified if isevaluable(arg) else arg)
+  def _simplified(self):
     degree = 0 if self.points_ndim == 0 else self.coeffs.shape[-1]-1 if isinstance(self.coeffs.shape[-1], int) else float('inf')
     if iszero(self.coeffs) or self.ngrad > degree:
       return zeros_like(self)
     elif self.ngrad == degree:
-      return self._const_helper().simplified
-    else:
-      return self
+      return self._const_helper()
 
 class RevolutionAngle(Array):
   '''
@@ -3280,7 +3126,6 @@ class RevolutionAngle(Array):
 class Opposite(Array):
 
   __slots__ = '_value'
-  __cache__ = 'simplified'
 
   @types.apply_annotations
   def __init__(self, value:asarray):
@@ -3290,12 +3135,9 @@ class Opposite(Array):
   def evalf(self, evalargs):
     raise Exception('Opposite should not be evaluated')
 
-  @property
-  def simplified(self):
-    value = self._value.simplified
-    if not any(isinstance(arg, SelectChain) for arg in value.dependencies):
-      return value
-    return Opposite(value)
+  def _simplified(self):
+    if not any(isinstance(arg, SelectChain) for arg in self._value.dependencies):
+      return self._value
 
   @util.positional_only
   def _prepare_eval(self, *, opposite=False, kwargs=...):
@@ -3307,7 +3149,7 @@ class Opposite(Array):
 class Kronecker(Array):
 
   __slots__ = 'func', 'axis', 'length', 'pos'
-  __cache__ = 'simplified', 'blocks'
+  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint, length:asarray, pos:asarray):
@@ -3319,16 +3161,10 @@ class Kronecker(Array):
     self.pos = pos
     super().__init__(args=[func, length, pos], shape=func.shape[:axis]+(length,)+func.shape[axis:], dtype=func.dtype)
 
-  @property
-  def simplified(self):
-    func = self.func.simplified
+  def _simplified(self):
     if self.shape[self.axis] == 1:
       return InsertAxis(self.func, axis=self.axis, length=1) # we assume without checking that pos correctly evaluates to 0
-    retval = func._kronecker(self.axis, self.length, self.pos)
-    if retval is not None:
-      assert retval.shape == self.shape
-      return retval.simplified
-    return Kronecker(func, self.axis, self.length, self.pos)
+    return self.func._kronecker(self.axis, self.length, self.pos)
 
   def evalf(self, func, length, pos):
     length, = length
