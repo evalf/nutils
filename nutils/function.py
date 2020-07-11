@@ -681,6 +681,9 @@ class Array(Evaluable):
     assert axis == array.ndim
     return array
 
+  def __bool__(self):
+    return True
+
   def __len__(self):
     if self.ndim == 0:
       raise TypeError('len() of unsized object')
