@@ -3590,12 +3590,8 @@ class Basis(Array):
     coeffshape = ElemwiseFromCallable(self.get_coeffshape, index, dtype=int, shape=self.coords.shape)
     return ElemwiseFromCallable(self.get_coefficients, index, dtype=float, shape=(self.f_ndofs(index), *coeffshape))
 
-  @property
-  def simplified(self):
-    return Inflate(Polyval(self.f_coefficients(self.index), self.coords), self.f_dofs(self.index), self.shape[0], axis=0).simplified
-
   def _derivative(self, var, seen):
-    return self.simplified._derivative(var, seen)
+    return self._asinflate._derivative(var, seen)
 
   def __getitem__(self, index):
     if numeric.isintarray(index) and index.ndim == 1 and numpy.all(numpy.greater(numpy.diff(index), 0)):
@@ -3604,6 +3600,23 @@ class Basis(Array):
       return MaskedBasis(self, numpy.where(index)[0])
     else:
       return super().__getitem__(index)
+
+  @property
+  def _asinflate(self):
+    return Inflate(Polyval(self.f_coefficients(self.index), self.coords), self.f_dofs(self.index), self.ndofs, axis=0)
+
+  @property
+  def blocks(self):
+    return self._asinflate.blocks
+
+  _multiply = lambda self, other: self._asinflate._multiply(other)
+  _insertaxis = lambda self, axis, length: self._asinflate._insertaxis(axis, length)
+  _add = lambda self, other: self._asinflate._add(other)
+  _sum = lambda self, axis: self._asinflate._sum(axis)
+  _take = lambda self, index, axis: self._asinflate._take(index, axis)
+  _inflate = lambda self, dofmap, length, axis: self._asinflate._inflate(dofmap, length, axis)
+  _mask = lambda self, maskvec, axis: self._asinflate._mask(maskvec, axis)
+  _kronecker = lambda self, axis, length, pos: self._asinflate._kronecker(axis, length, pos)
 
 strictbasis = types.strict[Basis]
 
