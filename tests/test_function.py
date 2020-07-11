@@ -430,7 +430,6 @@ _check('transpose1', lambda a: function.transpose(a,[0,2,1]), lambda a: a.transp
 _check('transpose2', lambda a: function.transpose(a,[1,2,0]), lambda a: a.transpose([0,2,3,1]), [(4,4,4)])
 _check('expand_dims', lambda a: function.expand_dims(a,1), lambda a: numpy.expand_dims(a,2), [(2,4)])
 _check('get', lambda a: function.get(a,1,1), lambda a: a[...,1,:], [(4,3,4)])
-_check('getvar', lambda a: function.get(function.Constant([[1,2],[3,4]]),1,function.Int(a)%2), lambda a: numpy.array([[1,2],[3,4]])[:,a.astype(int)%2].T, [()])
 _check('takediag141', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(1,4,1)])
 _check('takediag434', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(4,3,4)])
 _check('takediag343', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(3,4,3)])
