@@ -729,6 +729,7 @@ class Array(Evaluable):
   tangent = lambda self, vec: tangent(self, vec)
   ngrad = lambda self, geom, ndims=0: ngrad(self, geom, ndims)
   nsymgrad = lambda self, geom, ndims=0: nsymgrad(self, geom, ndims)
+  choose = lambda self, choices: Choose(self, _numpy_align(*choices))
 
   def vector(self, ndims):
     if self.ndim != 1:
@@ -3246,6 +3247,66 @@ class Kronecker(Array):
   @property
   def blocks(self):
     return tuple((ind[:self.axis] + (self.pos[_],) + ind[self.axis:], InsertAxis(f, self.axis, 1)) for ind, f in self.func.blocks)
+
+class Choose(Array):
+  '''Function equivalent of :func:`numpy.choose`.'''
+
+  @types.apply_annotations
+  def __init__(self, index:asarray, choices:types.tuple[asarray]):
+    if index.dtype != int:
+      raise Exception('index must be integer valued')
+    if index.ndim:
+      raise Exception('index must be a scalar')
+    dtype = _jointdtype(*[choice.dtype for choice in choices])
+    shape = choices[0].shape
+    if not all(choice.shape == shape for choice in choices[1:]):
+      raise Exception('shapes vary')
+    self.index = index
+    self.choices = choices
+    super().__init__(args=(index,)+choices, shape=shape, dtype=dtype)
+
+  def evalf(self, index, *choices):
+    if len(index) == 1:
+      return choices[index[0]]
+    retval = numpy.empty(index.shape + choices[0].shape[1:], dtype=self.dtype)
+    for i, n in enumerate(index):
+      choice = choices[n]
+      retval[i] = choice[i if len(choice) != 1 else 0]
+    return retval
+
+  def _derivative(self, var, seen):
+    return Choose(self.index, [derivative(choice, var, seen) for choice in self.choices])
+
+  def _simplified(self):
+    if all(choice == self.choices[0] for choice in self.choices[1:]):
+      return self.choices[0]
+    if self.index.isconstant:
+      index, = self.index.eval()
+      return self.choices[index]
+    if all(choice.isconstant for choice in self.choices):
+      return get(numpy.concatenate([choice.eval() for choice in self.choices], axis=0), 0, self.index)
+
+  def _multiply(self, other):
+    if isinstance(other, Choose) and self.index == other.index:
+      return Choose(self.index, map(multiply, self.choices, other.choices))
+
+  def _get(self, i, item):
+    return Choose(self.index, [get(choice, i, item) for choice in self.choices])
+
+  def _sum(self, axis):
+    return Choose(self.index, [sum(choice, axis) for choice in self.choices])
+
+  def _take(self, index, axis):
+    return Choose(self.index, [take(choice, index, axis) for choice in self.choices])
+
+  def _takediag(self, axis, rmaxis):
+    return Choose(self.index, [takediag(choice, axis, rmaxis) for choice in self.choices])
+
+  def _product(self):
+    return Choose(self.index, [Product(choice) for choice in self.choices])
+
+  def _mask(self, maskvec, axis):
+    return Choose(self.index, [mask(choice, maskvec, axis) for choice in self.choices])
 
 # BASES
 
