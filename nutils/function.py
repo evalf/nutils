@@ -1547,6 +1547,8 @@ class Multiply(Array):
     return Multiply([func1, func2])
 
   def _optimized_for_numpy(self):
+    if not self.ndim:
+      return
     func1, func2 = self.funcs
     mask = [3] * self.ndim
     for axis in func1._inserted_axes:
