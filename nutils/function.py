@@ -77,7 +77,7 @@ asshape = types.tuple[as_canonical_length]
 
 class ExpensiveEvaluationWarning(warnings.NutilsInefficiencyWarning): pass
 
-def replace(func=None, depthfirst=False, lru=4):
+def replace(func=None, depthfirst=False, recursive=False, lru=4):
   '''decorator for deep object replacement
 
   Generates a deep replacement method for general objects based on a callable
@@ -95,6 +95,9 @@ def replace(func=None, depthfirst=False, lru=4):
       all arguments as the objects are reconstructed. Otherwise apply `func`
       directly on each new object that is encountered in the decomposition,
       proceding only if the return value is `None`.
+  recursive : :class:`bool`
+      If `True`, repeat replacement for any object returned by `func` until it
+      returns `None`. Otherwise perform a single, non-recursive sweep.
   lru : :class:`int`
       Maximum size of the least-recently-used cache. A persistent weak-key
       dictionary is maintained for every unique set of function arguments. When
@@ -107,7 +110,7 @@ def replace(func=None, depthfirst=False, lru=4):
   '''
 
   if func is None:
-    return functools.partial(replace, depthfirst=depthfirst, lru=lru)
+    return functools.partial(replace, depthfirst=depthfirst, recursive=recursive, lru=lru)
 
   signature = inspect.signature(func)
   arguments = [] # list of past function arguments, least recently used last
@@ -139,6 +142,7 @@ def replace(func=None, depthfirst=False, lru=4):
 
     fstack = [target] # stack of unprocessed objects and command tokens
     rstack = [] # stack of processed objects
+    _stack = fstack if recursive else rstack
 
     while fstack:
       obj = fstack.pop()
@@ -150,7 +154,8 @@ def replace(func=None, depthfirst=False, lru=4):
         if depthfirst:
           newr = func(r, *funcargs, **funckwargs)
           if newr is not None:
-            r = newr
+            _stack.append(newr)
+            continue
         rstack.append(r)
         continue
 
@@ -187,7 +192,7 @@ def replace(func=None, depthfirst=False, lru=4):
       if not depthfirst:
         newr = func(obj, *funcargs, **funckwargs)
         if newr is not None:
-          rstack.append(newr)
+          _stack.append(newr)
           continue
 
       try:
