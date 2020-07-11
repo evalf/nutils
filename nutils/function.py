@@ -351,8 +351,9 @@ class Evaluable(types.Singleton):
       return retval
 
   @property
+  @types.apply_annotations
   @replace(depthfirst=True)
-  def optimized_for_numpy(obj):
+  def optimized_for_numpy(obj: simplified.fget):
     if isinstance(obj, Array):
       return obj._optimized_for_numpy()
 
