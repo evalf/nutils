@@ -209,7 +209,7 @@ class Evaluable(types.Singleton):
   'Base class'
 
   __slots__ = '__args',
-  __cache__ = 'dependencies', 'ordereddeps', 'dependencytree', 'simplified', 'optimized_for_numpy'
+  __cache__ = 'dependencies', 'ordereddeps', 'dependencytree', 'simplified'
 
   @types.apply_annotations
   def __init__(self, args:types.tuple[strictevaluable]):
@@ -342,8 +342,10 @@ class Evaluable(types.Singleton):
     return self.edit(lambda arg: arg.simplified if isevaluable(arg) else arg)
 
   @property
-  def optimized_for_numpy(self):
-    return self.edit(lambda arg: arg.optimized_for_numpy if isevaluable(arg) else arg)
+  @replace(depthfirst=True)
+  def optimized_for_numpy(obj):
+    if isinstance(obj, Array):
+      return obj._optimized_for_numpy()
 
   @replace
   @util.positional_only
@@ -636,7 +638,6 @@ class Array(Evaluable):
   '''
 
   __slots__ = 'shape', 'ndim', 'dtype'
-  __cache__ = 'optimized_for_numpy'
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
@@ -764,12 +765,10 @@ class Array(Evaluable):
   _kronecker = lambda self, axis, length, pos: None
   _inserted_axes = ()
 
-  @property
-  def optimized_for_numpy(self):
+  def _optimized_for_numpy(self):
     if self.isconstant:
       const, = self.eval()
       return Constant(const)
-    return super().optimized_for_numpy
 
   def _derivative(self, var, seen):
     if self.dtype in (bool, int) or var not in self.dependencies:
@@ -1522,7 +1521,7 @@ class Determinant(Array):
 class Multiply(Array):
 
   __slots__ = 'funcs',
-  __cache__ = 'simplified', 'optimized_for_numpy', 'blocks'
+  __cache__ = 'simplified', 'blocks'
 
   @types.apply_annotations
   def __init__(self, funcs:types.frozenmultiset[asarray]):
@@ -1547,9 +1546,8 @@ class Multiply(Array):
       return retval.simplified
     return Multiply([func1, func2])
 
-  @property
-  def optimized_for_numpy(self):
-    func1, func2 = [func.optimized_for_numpy for func in self.funcs]
+  def _optimized_for_numpy(self):
+    func1, func2 = self.funcs
     mask = [3] * self.ndim
     for axis in func1._inserted_axes:
       mask[axis] &= 2
@@ -1559,7 +1557,7 @@ class Multiply(Array):
       func2 = func2.func
     if all(mask): # should always be the case after simplify
       return Einsum(func1, func2, mask)
-    return Multiply([func1, func2])
+    warnings.warn('simplification failed for multiplication of InsertAxis', ExpensiveEvaluationWarning)
 
   def evalf(self, arr1, arr2):
     return arr1 * arr2
@@ -1773,7 +1771,7 @@ class Einsum(Array):
 class Sum(Array):
 
   __slots__ = 'axis', 'func'
-  __cache__ = 'simplified', 'optimized_for_numpy', 'blocks'
+  __cache__ = 'simplified', 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint):
@@ -1792,9 +1790,8 @@ class Sum(Array):
       return retval.simplified
     return Sum(func, self.axis)
 
-  @property
-  def optimized_for_numpy(self):
-    func = self.func.optimized_for_numpy
+  def _optimized_for_numpy(self):
+    func = self.func
     if isinstance(func, Einsum):
       mask = numpy.array(func.mask)
       axes, = mask.nonzero()
@@ -1802,7 +1799,7 @@ class Sum(Array):
       if mask[axis] == 3:
         mask[axis] = 0
         return Einsum(func.func1, func.func2, mask)
-    return Sum(func, self.axis)
+      warnings.warn('simplify failed for sum of multiplication with insertaxis', ExpensiveEvaluationWarning)
 
   def evalf(self, arr):
     assert arr.ndim == self.ndim+2
