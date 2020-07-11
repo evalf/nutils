@@ -3118,10 +3118,6 @@ class Opposite(Array):
   def evalf(self, evalargs):
     raise Exception('Opposite should not be evaluated')
 
-  def _simplified(self):
-    if not any(isinstance(arg, SelectChain) for arg in self._value.dependencies):
-      return self._value
-
   @util.positional_only
   def _prepare_eval(self, *, opposite=False, kwargs=...):
     return self._value.prepare_eval(opposite=not opposite, **kwargs)
