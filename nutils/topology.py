@@ -1935,7 +1935,7 @@ class HierarchicalTopology(Topology):
 
         # add the dofs and coefficients to the hierarchical basis
         hbasis_dofs.append(numpy.concatenate(trans_dofs))
-        hbasis_coeffs.append(numeric.poly_concatenate(trans_coeffs))
+        hbasis_coeffs.append(numeric.poly_concatenate(tuple(trans_coeffs)))
 
     return function.PlainBasis(hbasis_coeffs, hbasis_dofs, ndofs, self.f_index, self.f_coords)
 

@@ -172,7 +172,7 @@ class Reference(types.Singleton):
   @property
   def centroid(self):
     gauss = self.getpoints('gauss', 1)
-    return gauss.coords.T.dot(gauss.weights) / gauss.weights.sum()
+    return types.frozenarray(gauss.coords.T.dot(gauss.weights) / gauss.weights.sum(), copy=False)
 
   def trim(self, levels, maxrefine, ndivisions):
     'trim element along levelset'
@@ -384,7 +384,7 @@ class RevolutionReference(Reference):
     return vals,
 
   def get_poly_coeffs(self, basis, **kwargs):
-    return numpy.ones((1,1)) # single, constant basis function
+    return types.frozenarray([[1.]]) # single, constant basis function
 
 class SimplexReference(Reference):
   'simplex reference'
@@ -646,7 +646,7 @@ class TensorReference(Reference):
 
   @property
   def centroid(self):
-    return numpy.concatenate([self.ref1.centroid, self.ref2.centroid])
+    return types.frozenarray(numpy.concatenate([self.ref1.centroid, self.ref2.centroid]), copy=False)
 
   def nvertices_by_level(self, n):
     return self.ref1.nvertices_by_level(n) * self.ref2.nvertices_by_level(n)

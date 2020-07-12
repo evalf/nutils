@@ -2178,7 +2178,7 @@ class ElemwiseFromCallable(Array):
 
   def evalf(self, index):
     i, = index
-    return numpy.asarray(self._func(i))[numpy.newaxis]
+    return types.frozenarray(self._func(i))[numpy.newaxis]
 
 class Eig(Evaluable):
 
@@ -3034,8 +3034,6 @@ class Polyval(Array):
 
   def evalf(self, points, coeffs):
     assert points.shape[1] == self.points_ndim
-    points = types.frozenarray(points)
-    coeffs = types.frozenarray(coeffs)
     for igrad in range(self.ngrad):
       coeffs = numeric.poly_grad(coeffs, self.points_ndim)
     return numeric.poly_eval(coeffs, points)

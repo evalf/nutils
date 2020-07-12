@@ -23,7 +23,7 @@ The numeric module provides methods that are lacking from the numpy module.
 """
 
 from . import types, warnings
-import numpy, numbers, builtins, collections.abc, functools
+import numpy, numbers, builtins, collections.abc
 
 _abc = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' # indices for einsum
 
@@ -359,6 +359,7 @@ def binom(n, k):
     b *= i
   return a // b
 
+@types.frozenarray.lru
 def poly_outer_product(left, right):
   left, right = numpy.asarray(left), numpy.asarray(right)
   nleft, nright = left.ndim-1, right.ndim-1
@@ -366,30 +367,32 @@ def poly_outer_product(left, right):
   outer = numpy.zeros((left.shape[0], right.shape[0], *pshape), dtype=numpy.common_type(left, right))
   a = slice(None)
   outer[(a,a,*(map(slice, left.shape[1:]+right.shape[1:])))] = left[(a,None)+(a,)*nleft+(None,)*nright]*right[(None,a)+(None,)*nleft+(a,)*nright]
-  return types.frozenarray(outer.reshape(left.shape[0] * right.shape[0], *pshape), copy=False)
+  return outer.reshape(left.shape[0] * right.shape[0], *pshape)
 
+@types.frozenarray.lru
 def poly_concatenate(coeffs):
+  coeffs = numpy.asarray(coeffs)
   n = max(c.shape[1] for c in coeffs)
   coeffs = [numpy.pad(c, [(0,0)]+[(0,n-c.shape[1])]*(c.ndim-1), 'constant', constant_values=0) if c.shape[1] < n else c for c in coeffs]
   return numpy.concatenate(coeffs)
 
-@types.apply_annotations
-@functools.lru_cache()
-def poly_grad(coeffs:types.frozenarray, ndim:int):
+@types.frozenarray.lru
+def poly_grad(coeffs, ndim):
+  coeffs = numpy.asarray(coeffs)
   I = range(ndim)
   dcoeffs = [coeffs[(...,*(slice(1,None) if i==j else slice(0,-1) for j in I))] for i in I]
   if coeffs.shape[-1] > 2:
     a = numpy.arange(1, coeffs.shape[-1])
     dcoeffs = [a[tuple(slice(None) if i==j else numpy.newaxis for j in I)] * c for i, c in enumerate(dcoeffs)]
-  dcoeffs = numpy.stack(dcoeffs, axis=coeffs.ndim-ndim)
-  return types.frozenarray(dcoeffs, copy=False)
+  return numpy.stack(dcoeffs, axis=coeffs.ndim-ndim)
 
-@types.apply_annotations
-@functools.lru_cache()
-def poly_eval(coeffs:types.frozenarray, points:types.frozenarray):
+@types.frozenarray.lru
+def poly_eval(coeffs, points):
+  coeffs = numpy.asarray(coeffs)
+  points = numpy.asarray(points)
   assert points.ndim == 2
   if coeffs.shape[-1] == 0:
-    return types.frozenarray.full((points.shape[0],)+coeffs.shape[1:coeffs.ndim-points.shape[-1]], 0.)
+    return numpy.zeros((points.shape[0],)+coeffs.shape[1:coeffs.ndim-points.shape[-1]])
   for dim in reversed(range(points.shape[-1])):
     result = numpy.empty((points.shape[0], *coeffs.shape[1:-1]), dtype=float)
     result[:] = coeffs[...,-1]
@@ -398,9 +401,12 @@ def poly_eval(coeffs:types.frozenarray, points:types.frozenarray):
       result *= points_dim
       result += coeffs[...,j]
     coeffs = result
-  return types.frozenarray(coeffs, copy=False)
+  return coeffs
 
+@types.frozenarray.lru
 def poly_mul(p, q):
+  p = numpy.asarray(p)
+  q = numpy.asarray(q)
   assert p.ndim == q.ndim
   pq = numpy.zeros([n+m-1 for n, m in zip(p.shape, q.shape)])
   if q.size < p.size:
@@ -410,6 +416,7 @@ def poly_mul(p, q):
       pq[tuple(slice(o, o+m) for o, m in zip(i, q.shape))] += pi * q
   return pq
 
+@types.frozenarray.lru
 def poly_pow(p, n):
   assert isint(n) and n >= 0
   if n == 0:
