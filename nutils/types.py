@@ -1293,6 +1293,27 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
   cumsum = lambda self, *args, **kwargs: frozenarray(self.__base.cumsum(*args, **kwargs), copy=False)
   nonzero = lambda self, *args, **kwargs: frozenarray(self.__base.nonzero(*args, **kwargs), copy=False)
 
+  @classmethod
+  def lru(cls, func=None, maxsize=128):
+    if func is None:
+      return functools.partial(cls.lru, maxsize=maxsize)
+    cache = collections.OrderedDict()
+    @functools.wraps(func)
+    def wrapped(*args):
+      try:
+        value = cache[args]
+      except TypeError:
+        value = func(*args)
+      except KeyError:
+        if len(cache) == maxsize:
+          cache.popitem(last=False)
+        value = cls(func(*args), copy=False)
+        cache[args] = value
+      else:
+        cache.move_to_end(args)
+      return value
+    return wrapped
+
 class _c_arraymeta(type):
   def __getitem__(self, dtype):
     def constructor(value):
