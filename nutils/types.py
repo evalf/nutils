@@ -1133,7 +1133,7 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
       copied.
   '''
 
-  __slots__ = '__base'
+  __slots__ = '__base', '__keepalive'
   __cache__ = '__nutils_hash__', '__hash__'
 
   @staticmethod
@@ -1182,6 +1182,15 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
 
   @property
   def __array_struct__(self):
+    self.__keepalive = self.__base
+    # Numpy.asarray(self) forms a numpy.ndarray with data as exposed by the
+    # __array_struct__ and with self as its base attribute, relying on it to
+    # keep the data alive (relevant documentation: "objects exposing the
+    # __array_struct__ interface must also not reallocate their memory if other
+    # objects are referencing them"). However, if self subsequencly has its
+    # __base changed due to deduplication in __eq__ then this memory may get
+    # garbage collected. To prevent this we keep a reference in __keepalive as
+    # soon as the buffer has been exposed.
     return self.__base.__array_struct__
 
   def __reduce__(self):
