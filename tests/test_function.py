@@ -272,14 +272,6 @@ class check(TestCase):
         desired=desired,
         actual=function.kronecker(self.op_args, axis=idim, pos=1, length=3))
 
-  def test_edit(self):
-    def check_identity(arg):
-      if function.isevaluable(arg):
-        newarg = arg.edit(check_identity)
-        self.assertEqual(arg, newarg)
-      return arg
-    check_identity(self.op_args)
-
   def test_opposite(self):
     self.assertArrayAlmostEqual(decimal=14,
       desired=self.n_op(*self.ifacesmp.eval([function.opposite(arg) for arg in self.args])),

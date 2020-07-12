@@ -418,9 +418,6 @@ class Tuple(Evaluable):
     self.indices = tuple(indices)
     super().__init__(args)
 
-  def edit(self, op):
-    return Tuple([op(item) for item in self.items])
-
   def evalf(self, *items):
     'evaluate'
 
@@ -1289,9 +1286,6 @@ class Concatenate(Array):
     self.axis = axis
     super().__init__(args=funcs, shape=shape, dtype=dtype)
 
-  def edit(self, op):
-    return Concatenate([op(func) for func in self.funcs], self.axis)
-
   @property
   def _slices(self):
     shapes = [func.shape[self.axis] for func in self.funcs]
@@ -1487,9 +1481,6 @@ class Multiply(Array):
     assert func1.shape == func2.shape
     super().__init__(args=self.funcs, shape=func1.shape, dtype=_jointdtype(func1.dtype,func2.dtype))
 
-  def edit(self, op):
-    return Multiply([op(func) for func in self.funcs])
-
   def _simplified(self):
     func1, func2 = self.funcs
     return func1._multiply(func2) or func2._multiply(func1)
@@ -1628,9 +1619,6 @@ class Add(Array):
     func1, func2 = funcs
     assert func1.shape == func2.shape
     super().__init__(args=self.funcs, shape=func1.shape, dtype=_jointdtype(func1.dtype,func2.dtype))
-
-  def edit(self, op):
-    return Add([op(func) for func in self.funcs])
 
   def _simplified(self):
     func1, func2 = self.funcs
@@ -2197,9 +2185,6 @@ class ElemwiseFromCallable(Array):
     i, = index
     return numpy.asarray(self._func(i))[numpy.newaxis]
 
-  def edit(self, op):
-    return ElemwiseFromCallable(self._func, op(self._index), shape=[op(sh) if isarray(sh) else sh for sh in self.shape], dtype=self.dtype)
-
 class Eig(Evaluable):
 
   __slots__ = 'symmetric', 'func'
@@ -2256,9 +2241,6 @@ class Zeros(Array):
   @property
   def blocks(self):
     return ()
-
-  def edit(self, op):
-    return Zeros(tuple(map(op, self.shape)), self.dtype)
 
   def _add(self, other):
     return other
