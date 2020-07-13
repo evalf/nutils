@@ -189,10 +189,9 @@ class Sample(types.Singleton):
     # sizes are evaluated.
 
     offsets = numpy.empty((len(blocks), self.nelems+1), dtype=numpy.uint64)
-    if blocks:
-      sizefunc = function.stack([f.size for ifunc, ind, f in blocks]).simplified
-      for ielem, transforms in enumerate(zip(*self.transforms)):
-        offsets[:,ielem+1], = sizefunc.eval(_transforms=transforms, **arguments)
+    sizefunc = function.Tuple([f.size for ifunc, ind, f in blocks]).simplified
+    for ielem, transforms in enumerate(zip(*self.transforms)):
+      offsets[:,ielem+1] = sizefunc.eval(_transforms=transforms, **arguments)
 
     # In the second step the block sizes are accumulated to form offsets. Since
     # several blocks may belong to the same function, we post process the
