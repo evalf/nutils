@@ -3967,7 +3967,7 @@ def arctanh(arg):
   return .5 * (ln(1+arg) - ln(1-arg))
 
 def piecewise(level, intervals, *funcs):
-  return Get(stack(funcs, axis=0), axis=0, item=util.sum(Int(greater(level, interval)) for interval in intervals))
+  return util.sum(Int(greater(level, interval)) for interval in intervals).choose(funcs)
 
 def partition(f, *levels):
   '''Create a partition of unity for a scalar function f.
