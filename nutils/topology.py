@@ -80,6 +80,15 @@ class Topology(types.Singleton):
   def getitem(self, item):
     return self.empty
 
+  def slice(self, items):
+    # items: tuple[slice, ...]
+    # len(items): self.ndims
+    if len(items) != self.ndims:
+      raise ValueError('expected {} slices but got {}'.format(self.ndims, len(items)))
+    if all(item == slice(None) for item in items):
+      return self
+    raise ValueError('cannot slice this topology')
+
   def __getitem__(self, item):
     if numeric.isintarray(item):
       return self.compress(item)
@@ -87,6 +96,19 @@ class Topology(types.Singleton):
       item = item,
     if all(it in (...,slice(None)) for it in item):
       return self
+    if all(it == ... or isinstance(it, slice) for it in item):
+      # Expand ellipsis, append implicit `slice(None)`.
+      item = list(item)
+      if ... in item:
+        iell = item.index(...)
+        item[iell:iell+1] = [slice(None)]*max(0, self.ndims-len(item)-1)
+        if ... in item:
+          raise IndexError('an index can only have a single ellipsis')
+      else:
+        item.extend([slice(None)]*max(0, self.ndims-len(item)))
+      if len(item) != self.ndims:
+        raise IndexError('expected at most {} slices but got {}'.format(self.ndims, len(item)))
+      return self.slice(tuple(item))
     topo = self.getitem(item) if len(item) != 1 or not isinstance(item[0],str) \
        else functools.reduce(operator.or_, map(self.getitem, item[0].split(',')), self.empty)
     if not topo:
@@ -750,6 +772,14 @@ class WithGroupsTopology(Topology):
       return itemtopo if isinstance(itemtopo, Topology) else self.basetopo[itemtopo]
     return self.basetopo.getitem(item)
 
+  def slice(self, items):
+    if len(items) != self.ndims:
+      raise ValueError('expected {} slices but got {}'.format(self.ndims, len(items)))
+    if all(item == slice(None) for item in items):
+      return self
+    # Otherwise slice base. TODO: maintain groups
+    return self.basetopo.slice(items)
+
   @property
   def border_transforms(self):
     return self.basetopo.border_transforms
@@ -960,6 +990,22 @@ class StructuredLine(Topology):
     else:
       return SliceOfStructuredLine(self, start, stop)
 
+  def slice(self, items):
+    if len(items) != 1:
+      raise ValueError('expected 1 slice but got {}'.format(len(items)))
+    item = items[0]
+    if item == slice(None):
+      return self
+    start, stop, step = item.indices(len(self))
+    if step != 1:
+      raise ValueError('expected a slice with unit step but got {}'.format(item))
+    if start == stop:
+      return self.empty
+    elif start == 0 and stop == len(self):
+      return StructuredLine(self.roots[0], self.transforms, False, self._bnames)
+    else:
+      return SliceOfStructuredLine(self, start, stop)
+
   @property
   def connectivity(self):
     connectivity = numpy.stack([numpy.arange(1, len(self)+1), numpy.arange(-1, len(self)-1)], axis=1)
@@ -977,7 +1023,8 @@ class StructuredLine(Topology):
     btransforms = self.transforms.edges(self.references)[idx]
     btopo = PointsTopology(self.roots, btransforms, btransforms)
     if self._bnames:
-      btopo = btopo.withgroups(vgroups={bname: btopo[i:i+1] for i, bname in enumerate(self._bnames)})
+      btopos = (PointsTopology(self.roots, btransforms[:1], btransforms[:1]), PointsTopology(self.roots, btransforms[1:], btransforms[1:]))
+      btopo = btopo.withgroups(vgroups={bname: btopos[i] for i, bname in enumerate(self._bnames)})
     return btopo
 
   @property
@@ -1184,15 +1231,30 @@ class SliceOfStructuredLine(StructuredLine):
       return super().getitem(item)
     return self._line[r.start:r.stop]
 
+  def slice(self, items):
+    if len(items) != 1:
+      raise ValueError('expected 1 slice but got {}'.format(len(items)))
+    item = items[0]
+    start, stop, step = item.indices(len(self))
+    if step != 1:
+      raise ValueError('expected a slice with unit step but got {}'.format(item))
+    if start == stop:
+      return self.empty
+    else:
+      return SliceOfStructuredLine(self._line, self._start+start, self._start+stop)
+
   @property
   def boundary(self):
     idx = types.frozenarray([2*self._start+1, 2*self._stop-2], dtype=int)
     n = len(self._line)
     oppidx = types.frozenarray([1 if self._start == 0 else 2*self._start-2, 2*n-2 if self._stop == n else 2*self._stop+1])
     edges = self._line.transforms.edges(self.references)
-    btopo = PointsTopology(self.roots, edges[idx], edges[oppidx])
+    btransforms = edges[idx]
+    bopposites = edges[oppidx]
+    btopo = PointsTopology(self.roots, btransforms, bopposites)
     if self._bnames:
-      btopo = btopo.withgroups(vgroups={bname: btopo[i:i+1] for i, bname in enumerate(self._bnames)})
+      btopos = (PointsTopology(self.roots, btransforms[:1], btransforms[:1]), PointsTopology(self.roots, btransforms[1:], btransforms[1:]))
+      btopo = btopo.withgroups(vgroups={bname: btopos[i] for i, bname in enumerate(self._bnames)})
     return btopo
 
   @property
@@ -2345,6 +2407,15 @@ class ProductTopology(Topology):
       return left*right
     else:
       return (left or self._left).mul(right or self._right, self._leftopp, self._rightopp)
+
+  def slice(self, items):
+    if len(items) != self.ndims:
+      raise ValueError('expected {} slices but got {}'.format(self.ndims, len(items)))
+    if all(item == slice(None) for item in items):
+      return self
+    left = self._left.slice(items[:self._left.ndims])
+    right = self._right.slice(items[self._left.ndims:])
+    return ProductTopology(left, right, self._leftopp, self._rightopp)
 
   @property
   def boundary(self):
