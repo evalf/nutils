@@ -2161,8 +2161,7 @@ class Elemwise(Array):
   @types.apply_annotations
   def __init__(self, data:types.tuple[types.frozenarray], index:asarray, dtype:asdtype):
     self.data = data
-    ndim = self.data[0].ndim
-    shape = tuple(get([d.shape[i] for d in self.data], iax=0, item=index) for i in range(ndim))
+    shape = map(index.choose, zip(*[d.shape for d in data]))
     super().__init__(args=[index], shape=shape, dtype=dtype)
 
   def evalf(self, index):
