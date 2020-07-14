@@ -1303,7 +1303,7 @@ class StructuredTopology(Topology):
     mincoords, maxcoords = numpy.sort([geom0, geom0 + scale * self.shape], axis=0)
     outofbounds = numpy.less(coords, mincoords - eps) | numpy.greater(coords, maxcoords + eps)
     if outofbounds.any():
-      raise LocateError('failed to locate {}/{} points'.format(outofbounds.sum(), len(coords)))
+      raise LocateError('failed to locate {}/{} points'.format(outofbounds.any(axis=1).sum(), len(coords)))
     xi = (coords - geom0) / scale
     ielem = numpy.minimum(numpy.maximum(xi.astype(int), 0), numpy.array(self.shape)-1)
     return self._sample(numpy.ravel_multi_index(ielem.T, self.shape), xi - ielem)
