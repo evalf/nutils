@@ -58,7 +58,7 @@ class check(TestCase):
     with self.subTest('simplified'):
       self.assertArrayAlmostEqual(actual.simplified.eval(**evalargs), desired, decimal)
     with self.subTest('optimized'):
-      self.assertArrayAlmostEqual(actual.simplified.optimized_for_numpy.eval(**evalargs), desired, decimal)
+      self.assertArrayAlmostEqual(actual.optimized_for_numpy.eval(**evalargs), desired, decimal)
     with self.subTest('sample'):
       self.assertArrayAlmostEqual(self.sample.eval(actual), desired, decimal)
 
@@ -272,14 +272,6 @@ class check(TestCase):
         desired=desired,
         actual=function.kronecker(self.op_args, axis=idim, pos=1, length=3))
 
-  def test_edit(self):
-    def check_identity(arg):
-      if function.isevaluable(arg):
-        newarg = arg.edit(check_identity)
-        self.assertEqual(arg, newarg)
-      return arg
-    check_identity(self.op_args)
-
   def test_opposite(self):
     self.assertArrayAlmostEqual(decimal=14,
       desired=self.n_op(*self.ifacesmp.eval([function.opposite(arg) for arg in self.args])),
@@ -438,7 +430,6 @@ _check('transpose1', lambda a: function.transpose(a,[0,2,1]), lambda a: a.transp
 _check('transpose2', lambda a: function.transpose(a,[1,2,0]), lambda a: a.transpose([0,2,3,1]), [(4,4,4)])
 _check('expand_dims', lambda a: function.expand_dims(a,1), lambda a: numpy.expand_dims(a,2), [(2,4)])
 _check('get', lambda a: function.get(a,1,1), lambda a: a[...,1,:], [(4,3,4)])
-_check('getvar', lambda a: function.get(function.Constant([[1,2],[3,4]]),1,function.Int(a)%2), lambda a: numpy.array([[1,2],[3,4]])[:,a.astype(int)%2].T, [()])
 _check('takediag141', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(1,4,1)])
 _check('takediag434', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(4,3,4)])
 _check('takediag343', lambda a: function.takediag(a,0,2), lambda a: numeric.takediag(a,1,3), [(3,4,3)])
@@ -479,6 +470,7 @@ _check('unravel', lambda f: function.unravel(f,axis=1,shape=[2,2]), lambda a: a.
 _check('inflate', lambda f: function.Inflate(f,dofmap=function.Guard([0,3]),length=4,axis=1), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a), a[:,:,1:]], axis=2), [(4,2,4)])
 _check('inflate-constant', lambda f: function.Inflate(f,dofmap=[0,3],length=4,axis=1), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a), a[:,:,1:]], axis=2), [(4,2,4)])
 _check('vectorize', lambda a,b: function.vectorize([a, b]), lambda a,b: numpy.concatenate([numpy.stack([a, numpy.zeros_like(a)], axis=2), numpy.stack([numpy.zeros_like(b), b], axis=2)], axis=1), [(3,),(5,)])
+_check('choose', lambda a, b, c: function.Choose(function.Int(a)%2, [b,c]), lambda a, b, c: numpy.stack([b,c], axis=1)[numpy.arange(len(a)), a.astype(int)%2], [(), (3,3), (3,3)])
 
 _polyval_mask = lambda shape, ndim: 1 if ndim == 0 else numpy.array([sum(i[-ndim:]) < shape[-1] for i in numpy.ndindex(shape)], dtype=int).reshape(shape)
 _polyval_desired = lambda c, x: sum(c[(...,*i)]*(x[(slice(None),*[None]*(c.ndim-1-x.shape[1]))]**i).prod(-1) for i in itertools.product(*[range(c.shape[-1])]*x.shape[1]) if sum(i) < c.shape[-1])

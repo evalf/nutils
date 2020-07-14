@@ -175,7 +175,7 @@ class Sample(types.Singleton):
     # argument id, evaluable index, and evaluable values.
 
     funcs = self._prepare_funcs(funcs)
-    blocks = [(ifunc, function.Tuple(ind), f.simplified.optimized_for_numpy) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func)]
+    blocks = [(ifunc, function.Tuple(ind), f.optimized_for_numpy) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func)]
     block2func, indices, values = zip(*blocks) if blocks else ([],[],[])
 
     log.debug('integrating {} distinct blocks'.format('+'.join(
@@ -189,10 +189,9 @@ class Sample(types.Singleton):
     # sizes are evaluated.
 
     offsets = numpy.empty((len(blocks), self.nelems+1), dtype=numpy.uint64)
-    if blocks:
-      sizefunc = function.stack([f.size for ifunc, ind, f in blocks]).simplified
-      for ielem, transforms in enumerate(zip(*self.transforms)):
-        offsets[:,ielem+1], = sizefunc.eval(_transforms=transforms, **arguments)
+    sizefunc = function.Tuple([f.size for ifunc, ind, f in blocks]).simplified
+    for ielem, transforms in enumerate(zip(*self.transforms)):
+      offsets[:,ielem+1] = sizefunc.eval(_transforms=transforms, **arguments)
 
     # In the second step the block sizes are accumulated to form offsets. Since
     # several blocks may belong to the same function, we post process the
@@ -251,7 +250,7 @@ class Sample(types.Singleton):
 
     funcs = self._prepare_funcs(funcs)
     retvals = [parallel.shzeros((self.npoints,)+func.shape, dtype=func.dtype) for func in funcs]
-    idata = function.Tuple(function.Tuple([ifunc, function.Tuple(ind), f.simplified.optimized_for_numpy]) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func))
+    idata = function.Tuple(function.Tuple([ifunc, function.Tuple(ind), f.optimized_for_numpy]) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func))
 
     if graphviz:
       idata.graphviz(graphviz)

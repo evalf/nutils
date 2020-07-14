@@ -632,7 +632,7 @@ class Immutable(metaclass=ImmutableMeta):
     return self._hash
 
   def __eq__(self, other):
-    return self.__class__ is other.__class__ and self._hash == other._hash and self._args == other._args and self._kwargs == other._kwargs
+    return type(self) is type(other) and self._hash == other._hash and self._args == other._args and self._kwargs == other._kwargs
 
   @property
   def __nutils_hash__(self):
@@ -652,9 +652,6 @@ class Immutable(metaclass=ImmutableMeta):
 
   def __str__(self):
     return '{}({})'.format(self.__class__.__name__, ','.join(str(arg) for arg in self._args))
-
-  def edit(self, op):
-    return self.__class__(*[op(arg) for arg in self._args], **{name: op(value) for name, value in self._kwargs.items()})
 
 class SingletonMeta(ImmutableMeta):
 
@@ -961,7 +958,7 @@ class frozendict(collections.abc.Mapping, metaclass=_frozendictmeta):
   def __eq__(self, other):
     if self is other:
       return True
-    if not isinstance(other, frozendict):
+    if type(other) is not type(self):
       return False
     if self.__base is other.__base:
       return True
@@ -1090,7 +1087,7 @@ class frozenmultiset(collections.abc.Container, metaclass=_frozenmultisetmeta):
 
   __reduce__ = lambda self: (frozenmultiset, (self.__items,))
   __hash__ = lambda self: hash(self.__key)
-  __eq__ = lambda self, other: isinstance(other, frozenmultiset) and self.__key == other.__key
+  __eq__ = lambda self, other: type(other) is type(self) and self.__key == other.__key
   __contains__ = lambda self, item: item in self.__items
   __iter__ = lambda self: iter(self.__items)
   __len__ = lambda self: len(self.__items)
@@ -1193,7 +1190,7 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
   def __eq__(self, other):
     if self is other:
       return True
-    if not isinstance(other, frozenarray):
+    if type(other) is not type(self):
       return False
     if self.__base is other.__base:
       return True
