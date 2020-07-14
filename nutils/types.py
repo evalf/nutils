@@ -1133,7 +1133,7 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
       copied.
   '''
 
-  __slots__ = '__base'
+  __slots__ = '__base', '__keepalive'
   __cache__ = '__nutils_hash__', '__hash__'
 
   @staticmethod
@@ -1167,7 +1167,7 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
       if base.dtype == complex or base.dtype == float and dtype == int:
         raise ValueError('downcasting {!r} to {!r} is forbidden'.format(base.dtype, dtype))
     self = object.__new__(cls)
-    self.__base = numpy.array(base, dtype=dtype) if copy or not isinstance(base, numpy.ndarray) or dtype and dtype != base.dtype else base
+    self.__base = numpy.array(base, dtype=dtype, copy=copy)
     self.__base.flags.writeable = False
     return self
 
@@ -1182,6 +1182,15 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
 
   @property
   def __array_struct__(self):
+    self.__keepalive = self.__base
+    # Numpy.asarray(self) forms a numpy.ndarray with data as exposed by the
+    # __array_struct__ and with self as its base attribute, relying on it to
+    # keep the data alive (relevant documentation: "objects exposing the
+    # __array_struct__ interface must also not reallocate their memory if other
+    # objects are referencing them"). However, if self subsequencly has its
+    # __base changed due to deduplication in __eq__ then this memory may get
+    # garbage collected. To prevent this we keep a reference in __keepalive as
+    # soon as the buffer has been exposed.
     return self.__base.__array_struct__
 
   def __reduce__(self):
@@ -1283,6 +1292,27 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
   transpose = lambda self, *args, **kwargs: frozenarray(self.__base.transpose(*args, **kwargs), copy=False)
   cumsum = lambda self, *args, **kwargs: frozenarray(self.__base.cumsum(*args, **kwargs), copy=False)
   nonzero = lambda self, *args, **kwargs: frozenarray(self.__base.nonzero(*args, **kwargs), copy=False)
+
+  @classmethod
+  def lru(cls, func=None, maxsize=128):
+    if func is None:
+      return functools.partial(cls.lru, maxsize=maxsize)
+    cache = collections.OrderedDict()
+    @functools.wraps(func)
+    def wrapped(*args):
+      try:
+        value = cache[args]
+      except TypeError:
+        value = func(*args)
+      except KeyError:
+        if len(cache) == maxsize:
+          cache.popitem(last=False)
+        value = cls(func(*args), copy=False)
+        cache[args] = value
+      else:
+        cache.move_to_end(args)
+      return value
+    return wrapped
 
 class _c_arraymeta(type):
   def __getitem__(self, dtype):

@@ -29,6 +29,7 @@ _ = numpy.newaxis
 
 ## TRANSFORM CHAIN OPERATIONS
 
+@types.frozenarray.lru
 def apply(chain, points):
   for trans in reversed(chain):
     points = trans.apply(points)
@@ -222,6 +223,7 @@ class Square(Matrix):
   def isflipped(self):
     return self.fromdims > 0 and self.det < 0
 
+  @types.frozenarray.lru
   def transform_poly(self, coeffs):
     assert coeffs.ndim == self.fromdims + 1
     degree = coeffs.shape[1] - 1
@@ -236,7 +238,7 @@ class Square(Matrix):
       for idim, e in enumerate(eye):
         polys[(slice(None),)+tuple(e)] = self.linear[:,idim]
       # reduces polynomials to smallest nonzero power
-      polys = [poly[tuple(slice(None if p else 1) for p in poly[tuple(eye)])] for poly in polys]
+      polys = [types.frozenarray(poly[tuple(slice(None if p else 1) for p in poly[tuple(eye)])], copy=False) for poly in polys]
       # construct transform poly by transforming all monomials separately and summing
       M = numpy.zeros((degree+1,)*(2*self.fromdims), dtype=float)
       for powers in numpy.ndindex(*[degree+1]*self.fromdims):
