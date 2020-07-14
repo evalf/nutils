@@ -215,6 +215,23 @@ class TensorPoints(Points):
       return types.frozenarray(hull, copy=False)
     return super().hull
 
+  @property
+  def basis(self):
+    if self.ndimsnormal == 0:
+      return super().basis
+    basis1 = self.points1.basis
+    basis2 = self.points2.basis
+    if basis1.shape[0] != 1 or basis2.shape[0] != 1:
+      pointsshape = self.points1.npoints, self.points2.npoints
+    else:
+      pointsshape = 1, 1
+    basis = numpy.zeros(pointsshape+(self.ndims, self.ndims), dtype=float)
+    basis[:,:,:self.points1.ndims,:self.points1.ndimsmanifold] = basis1[:,numpy.newaxis,:,:self.points1.ndimsmanifold]
+    basis[:,:,:self.points1.ndims,self.ndimsmanifold:self.ndimsmanifold+self.points1.ndimsnormal] = basis1[:,numpy.newaxis,:,self.points1.ndimsmanifold:]
+    basis[:,:,self.points1.ndims:,self.points1.ndimsmanifold:self.ndimsmanifold] = basis2[numpy.newaxis,:,:,:self.points2.ndimsmanifold]
+    basis[:,:,self.points1.ndims:,self.ndimsmanifold+self.points1.ndimsnormal:] = basis2[numpy.newaxis,:,:,self.points2.ndimsmanifold:]
+    return types.frozenarray(basis.reshape(-1, self.ndims, self.ndims), copy=False)
+
   def __mul__(self, other):
     if not isinstance(other, Points):
       return NotImplemented
