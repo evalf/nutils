@@ -202,6 +202,9 @@ class TensorPoints(Points):
       # numeric.overlapping.
       tri12 = self.points1.tri[:,_,:,_] * self.points2.npoints + self.points2.tri[_,:,_,:] # ntri1 x ntri2 x 2 x ndimsmanifold
       return types.frozenarray(numeric.overlapping(tri12.reshape(-1, 2*self.ndimsmanifold), n=self.ndimsmanifold+1).reshape(-1, self.ndimsmanifold+1), copy=False)
+    if self.points2.ndimsmanifold == 1:
+      tri12 = self.points1.tri[:,_,_,:] * self.points2.npoints + self.points2.tri[_,:,:,_] # ntri1 x ntri2 x 2 x ndimsmanifold
+      return types.frozenarray(numeric.overlapping(tri12.reshape(-1, 2*self.ndimsmanifold), n=self.ndimsmanifold+1).reshape(-1, self.ndimsmanifold+1), copy=False)
     return super().tri
 
   @property
