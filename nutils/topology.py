@@ -499,7 +499,7 @@ class Topology(types.Singleton):
     return self[selected]
 
   @log.withcontext
-  def locate(self, geom, coords, *, tol, ischeme='vertex', scale=1, eps=0, maxiter=100, arguments=None):
+  def locate(self, geom, coords, *, tol, ischeme='vertex', scale=1, eps=0, maxiter=100, arguments=None, weights=None):
     '''Create a sample based on physical coordinates.
 
     In a finite element application, functions are commonly evaluated in points
@@ -543,6 +543,8 @@ class Topology(types.Singleton):
         Maximum allowed number of Newton iterations.
     arguments : :class:`dict` (default: None)
         Arguments for function evaluation.
+    weights : :class:`float` array (default: None)
+        Optional weights, in case ``coords`` are quadrature points.
 
     Returns
     -------
@@ -591,15 +593,16 @@ class Topology(types.Singleton):
             break
         else:
           raise LocateError('failed to locate point: {}'.format(coord))
-    return self._sample(ielems, xis)
+    return self._sample(ielems, xis, weights)
 
-  def _sample(self, ielems, coords):
+  def _sample(self, ielems, coords, weights=None):
     uielems = numpy.unique(ielems)
     points_ = []
     index = []
     for ielem in uielems:
       w, = numpy.equal(ielems, ielem).nonzero()
-      points_.append(points.CoordsPoints(coords[w]))
+      points_.append(points.CoordsPoints(coords[w]) if weights is None
+                else points.CoordsWeightsPoints(coords[w], weights[w]))
       index.append(w)
     transforms = self.transforms[uielems],
     if len(self.transforms) == 0 or self.opposites != self.transforms:
@@ -1301,30 +1304,35 @@ class StructuredTopology(Topology):
         else transformseq.BndAxis(i=axis.i*2,j=axis.j*2,ibound=axis.ibound,side=axis.side) for axis in self.axes]
     return StructuredTopology(self.root, axes, self.nrefine+1, bnames=self._bnames)
 
-  def locate(self, geom, coords, *, tol, eps=0, **kwargs):
+  def locate(self, geom, coords, *, tol, eps=0, weights=None, **kwargs):
     coords = numpy.asarray(coords, dtype=float)
     if geom.ndim == 0:
       geom = geom[_]
       coords = coords[...,_]
     if not geom.shape == coords.shape[1:] == (self.ndims,):
       raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
-    index = function.rootcoords(len(self.axes))[[axis.isdim for axis in self.axes]]
+    geom0, scale, index = self._asaffine(geom)
+    e = self.sample('uniform', 2).eval(function.norm2(geom0 + index * scale - geom)).max() # inf-norm on non-gauss sample
+    if e > tol:
+      return super().locate(geom, coords, eps=eps, tol=tol, weights=weights, **kwargs)
+    log.info('locate detected linear geometry: x = {} + {} xi ~{:+.1e}'.format(geom0, scale, e))
+    return self._locate(geom0, scale, coords, eps=eps, weights=weights)
+
+  def _asaffine(self, geom):
+    index = function.rootcoords(len(self.axes))[[axis.isdim for axis in self.axes]] * 2**self.nrefine - [axis.i for axis in self.axes if axis.isdim]
     basis = function.concatenate([function.eye(self.ndims), function.diagonalize(index)], axis=0)
     A, b = self.integrate([(basis[:,_,:] * basis[_,:,:]).sum(-1), (basis * geom).sum(-1)], degree=2)
     x = A.solve(b)
-    geom0 = x[:self.ndims]
-    scale = x[self.ndims:]
-    e = self.sample('uniform', 2).eval(function.norm2(geom0 + index * scale - geom)).max() # inf-norm on non-gauss sample
-    if e > tol:
-      return super().locate(geom, coords, eps=eps, tol=tol, **kwargs)
-    log.info('locate detected linear geometry: x = {} + {} xi ~{:+.1e}'.format(geom0, scale, e))
+    return x[:self.ndims], x[self.ndims:], index
+
+  def _locate(self, geom0, scale, coords, *, eps=0, weights=None):
     mincoords, maxcoords = numpy.sort([geom0, geom0 + scale * self.shape], axis=0)
     outofbounds = numpy.less(coords, mincoords - eps) | numpy.greater(coords, maxcoords + eps)
     if outofbounds.any():
-      raise LocateError('failed to locate {}/{} points'.format(outofbounds.sum(), len(coords)))
+      raise LocateError('failed to locate {}/{} points'.format(outofbounds.any(axis=1).sum(), len(coords)))
     xi = (coords - geom0) / scale
     ielem = numpy.minimum(numpy.maximum(xi.astype(int), 0), numpy.array(self.shape)-1)
-    return self._sample(numpy.ravel_multi_index(ielem.T, self.shape), xi - ielem)
+    return self._sample(numpy.ravel_multi_index(ielem.T, self.shape), xi - ielem, weights)
 
   def __str__(self):
     'string representation'
