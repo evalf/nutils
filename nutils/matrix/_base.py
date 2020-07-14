@@ -47,7 +47,7 @@ class Matrix:
   def __init__(self, shape):
     assert len(shape) == 2
     self.shape = shape
-    self._precon = object()
+    self._precon_args = None
 
   def __reduce__(self):
     from . import assemble
@@ -310,20 +310,20 @@ class Matrix:
       diag[irow] = data[indptr[irow]+idiag] if idiag < len(icols) and icols[idiag] == irow else 0
     return diag
 
-  def getprecon(self, precon):
-    if precon == self._precon:
+  def getprecon(self, precon, **args):
+    if (precon, args) == self._precon_args:
       return self._precon_object
     if self.shape[0] != self.shape[1]:
       raise MatrixError('matrix must be square')
     precon_method, precon_name = self._method('precon', precon)
     try:
       with treelog.context('constructing {} preconditioner'.format(precon_name)):
-        precon_object = precon_method()
+        precon_object = precon_method(**args)
     except MatrixError:
       raise
     except Exception as e:
       raise MatrixError('failed to create preconditioner: {}'.format(e)) from e
-    self._precon = precon
+    self._precon_args = precon, args
     self._precon_object = precon_object
     return precon_object
 
