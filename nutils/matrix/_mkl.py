@@ -66,7 +66,7 @@ class Pardiso:
    -12: 'pardiso_64 called from 32-bit library',
   }
 
-  def __init__(self, mtype, a, ia, ja, checkmatrix=False, verbose=False):
+  def __init__(self, mtype, a, ia, ja, verbose=False, iparm={}):
     self.pt = numpy.zeros(64, numpy.int64) # handle to data structure
     self.maxfct = c_int(1)
     self.mnum = c_int(1)
@@ -79,8 +79,10 @@ class Pardiso:
     self.iparm = numpy.zeros(64, dtype=numpy.int32) # https://software.intel.com/en-us/mkl-developer-reference-c-pardiso-iparm-parameter
     self.msglvl = c_int(verbose)
     libmkl.pardisoinit(self.pt.ctypes, byref(self.mtype), self.iparm.ctypes) # initialize iparm based on mtype
-    assert self.iparm[0] == 1, 'pardiso init failed'
-    self.iparm[26] = checkmatrix
+    if self.iparm[0] != 1:
+      raise MatrixError('pardiso init failed')
+    for n, v in iparm.items():
+      self.iparm[n] = v
     self.iparm[27] = 0 # double precision data
     self.iparm[34] = 0 # one-based indexing
     self.iparm[36] = 0 # csr matrix format
@@ -214,7 +216,7 @@ class MKLMatrix(Matrix):
       return self.data, (numpy.arange(self.shape[0]).repeat(self.rowptr[1:]-self.rowptr[:-1]), self.colidx-1)
     raise NotImplementedError('cannot export MKLMatrix to {!r}'.format(form))
 
-  def _solver_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12):
+  def _solver_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12, preconargs={}, **args):
     rci = c_int(0)
     n = c_int(len(rhs))
     b = numpy.array(rhs, dtype=numpy.float64)
@@ -234,7 +236,7 @@ class MKLMatrix(Matrix):
       ipar[10] = 0 # run the non-preconditioned version of the FGMRES method
     else:
       ipar[10] = 1 # run the preconditioned version of the FGMRES method
-      precon = self.getprecon(precon)
+      precon = self.getprecon(precon, **args, **preconargs)
     ipar[11] = 0 # do not perform the automatic test for zero norm of the currently generated vector: dpar[6] <= dpar[7]
     ipar[12] = 1 # update the solution to the vector b according to the computations done by the dfgmres routine
     ipar[13] = 0 # internal iteration counter that counts the number of iterations before the restart takes place; the initial value is 0
@@ -271,7 +273,7 @@ class MKLMatrix(Matrix):
     log.debug('performed {} fgmres iterations, {} restarts'.format(ipar[3], ipar[3]//ipar[14]))
     return b
 
-  def _precon_direct(self):
-    return Pardiso(mtype=11, a=self.data, ia=self.rowptr, ja=self.colidx)
+  def _precon_direct(self, **args):
+    return Pardiso(mtype=11, a=self.data, ia=self.rowptr, ja=self.colidx, **args)
 
 # vim:sw=2:sts=2:et
