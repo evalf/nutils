@@ -228,12 +228,12 @@ class Matrix:
       raise ToleranceNotReached(lhs)
     return lhs
 
-  def _solver_direct(self, rhs, atol):
-    solve = self.getprecon('direct')
+  def _solver_direct(self, rhs, atol, precon='direct', preconargs={}, **args):
+    solve = self.getprecon(precon, **args, **preconargs)
     return solve(rhs)
 
-  def _solver_arnoldi(self, rhs, atol, precon='direct', truncate=None):
-    solve = self.getprecon(precon)
+  def _solver_arnoldi(self, rhs, atol, precon='direct', truncate=None, preconargs={}, **args):
+    solve = self.getprecon(precon, **args, **preconargs)
     lhs = numpy.zeros_like(rhs)
     res = rhs
     resnorm = numpy.linalg.norm(res, axis=0).max()

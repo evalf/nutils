@@ -214,7 +214,7 @@ class MKLMatrix(Matrix):
       return self.data, (numpy.arange(self.shape[0]).repeat(self.rowptr[1:]-self.rowptr[:-1]), self.colidx-1)
     raise NotImplementedError('cannot export MKLMatrix to {!r}'.format(form))
 
-  def _solver_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12):
+  def _solver_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12, preconargs={}, **args):
     rci = c_int(0)
     n = c_int(len(rhs))
     b = numpy.array(rhs, dtype=numpy.float64)
@@ -234,7 +234,7 @@ class MKLMatrix(Matrix):
       ipar[10] = 0 # run the non-preconditioned version of the FGMRES method
     else:
       ipar[10] = 1 # run the preconditioned version of the FGMRES method
-      precon = self.getprecon(precon)
+      precon = self.getprecon(precon, **args, **preconargs)
     ipar[11] = 0 # do not perform the automatic test for zero norm of the currently generated vector: dpar[6] <= dpar[7]
     ipar[12] = 1 # update the solution to the vector b according to the computations done by the dfgmres routine
     ipar[13] = 0 # internal iteration counter that counts the number of iterations before the restart takes place; the initial value is 0
