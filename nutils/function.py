@@ -4460,12 +4460,17 @@ def _eval_ast(ast, functions):
       subs[arg._name] = value
     return replace_arguments(array, subs)
   elif op == 'call':
-    func, *args = args
+    func, generates, consumes, *args = args
     args = tuple(map(asarray, args))
-    shape = builtins.sum((arg.shape for arg in args), ())
-    result = functions[func](*args)
-    if result.shape != shape:
-      raise ValueError('expected an array with shape {} when calling {} but got {}'.format(shape, func, result.shape))
+    kwargs = {}
+    if generates:
+      kwargs['generates'] = generates
+    if consumes:
+      kwargs['consumes'] = consumes
+    result = functions[func](*args, **kwargs)
+    shape = builtins.sum((arg.shape[:arg.ndim-consumes] for arg in args), ())
+    if result.ndim != len(shape) + generates or result.shape[:len(shape)] != shape:
+      raise ValueError('expected an array with shape {} and {} additional axes when calling {} but got {}'.format(shape, generates, func, result.shape))
     return result
   elif op == 'jacobian':
     geom, ndims = args

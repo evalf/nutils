@@ -714,16 +714,28 @@ class _ExpressionParser:
       token = self._consume()
       name = token.data
       if name.startswith('?'):
-        indices = self._consume() if self._next.type == 'indices' else ''
+        indices = self._consume() if self._next.type == 'indices' else None
         value = self._get_arg(name[1:], indices)
-      elif name not in self.variables and self._next.type == '(': # assume function
-        self._consume()
+      elif name not in self.variables and next(t for t in self._tokens[self._index+1:] if t.type not in ('indices', 'consumes')).type == '(': # assume function
+        if self._next.type == 'indices':
+          generates_token = self._consume()
+          generates = generates_token.data
+          generates_shape = tuple(_Length(pos) for pos, index in enumerate(generates, generates_token.pos) if not '0' <= index <= '9')
+        else:
+          generates = ''
+          generates_shape = ()
+        consumes = self._consume().data if self._next.type == 'consumes' else ''
+        self._consume_assert_equal('(')
         args = self.parse_comma_separated(end=')', parse_item=self.parse_subexpression)
-        value = _Array._apply_indices(ast=('call', _(name), *(arg.ast for arg in args)),
+        if consumes:
+          if not all(set(consumes) <= set(arg.indices) for arg in args):
+            raise _IntermediateError('All axes to be consumed ({}) must be present in all arguments.'.format(consumes))
+          args = tuple(arg.transpose(''.join(i for i in arg.indices if i not in consumes)+consumes) for arg in args)
+        value = _Array._apply_indices(ast=('call', _(name), _(len(generates)), _(len(consumes)), *(arg.ast for arg in args)),
                                       offset=0,
-                                      indices=''.join(arg.indices for arg in args),
-                                      shape=sum((arg.shape for arg in args), ()),
-                                      summed=functools.reduce(operator.or_, (arg.summed for arg in args), frozenset()),
+                                      indices=''.join(arg.indices[:arg.ndim-len(consumes)] for arg in args)+generates,
+                                      shape=sum((arg.shape[:arg.ndim-len(consumes)] for arg in args), ())+generates_shape,
+                                      summed=functools.reduce(operator.or_, (arg.summed for arg in args), frozenset(consumes)),
                                       linked_lengths=functools.reduce(operator.or_, (arg.linked_lengths for arg in args), frozenset()))
       elif name in self.normal_symbols:
         if self._next.type == 'geometry':
@@ -1057,6 +1069,11 @@ class _ExpressionParser:
           parts += 1
         if parts == 0:
           raise _IntermediateError('Missing indices.', at=pos)
+        continue
+      m = re.match(r':([a-zA-Z]+)', self.expression[pos:])
+      if m:
+        tokens.append(_Token('consumes', m.group(1), pos+1))
+        pos += m.end()
         continue
       raise _IntermediateError('Unknown symbol: {!r}.'.format(self.expression[pos]), at=pos)
     tokens.append(_Token('EOF', '', pos))

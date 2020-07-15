@@ -811,14 +811,18 @@ class parse(TestCase):
 
   # FUNCTION
 
-  def test_function(self): self.assert_ast('func1(a)', '', ('call', _('func1'), v._a))
-  def test_function_1d(self): self.assert_ast('func1(a2_i)', 'i', ('call', _('func1'), v._a2))
-  def test_function_2d(self): self.assert_ast('func1(a23_ij)', 'ij', ('call', _('func1'), v._a23))
-  def test_function_0d_0d(self): self.assert_ast('func2(a, a)', '', ('call', _('func2'), v._a, v._a))
-  def test_function_1d_1d(self): self.assert_ast('func2(a2_i, a2_j)', 'ij', ('call', _('func2'), v._a2, v._a2))
-  def test_function_1d_1d_trace(self): self.assert_ast('func2(a2_i, a2_i)', '', ('trace', ('call', _('func2'), v._a2, v._a2), _(0), _(1)))
-  def test_function_2d_2d(self): self.assert_ast('func2(a23_ij, a32_kl)', 'ijkl', ('call', _('func2'), v._a23, v._a32))
-  def test_function_1d_1d_2d(self): self.assert_ast('func3(a2_i, a2_j, a23_kl)', 'ijkl', ('call', _('func3'), v._a2, v._a2, v._a23))
+  def test_function(self): self.assert_ast('func1(a)', '', ('call', _('func1'), _(0), _(0), v._a))
+  def test_function_1d(self): self.assert_ast('func1(a2_i)', 'i', ('call', _('func1'), _(0), _(0), v._a2))
+  def test_function_2d(self): self.assert_ast('func1(a23_ij)', 'ij', ('call', _('func1'), _(0), _(0), v._a23))
+  def test_function_0d_0d(self): self.assert_ast('func2(a, a)', '', ('call', _('func2'), _(0), _(0), v._a, v._a))
+  def test_function_1d_1d(self): self.assert_ast('func2(a2_i, a2_j)', 'ij', ('call', _('func2'), _(0), _(0), v._a2, v._a2))
+  def test_function_1d_1d_trace(self): self.assert_ast('func2(a2_i, a2_i)', '', ('trace', ('call', _('func2'), _(0), _(0), v._a2, v._a2), _(0), _(1)))
+  def test_function_2d_2d(self): self.assert_ast('func2(a23_ij, a32_kl)', 'ijkl', ('call', _('func2'), _(0), _(0), v._a23, v._a32))
+  def test_function_1d_1d_2d(self): self.assert_ast('func3(a2_i, a2_j, a23_kl)', 'ijkl', ('call', _('func3'), _(0), _(0), v._a2, v._a2, v._a23))
+  def test_function_generates(self): self.assert_ast('func_j(a2_i)', 'ij', ('call', _('func'), _(1), _(0), v._a2), fallback_length=2)
+  def test_function_generates_trace(self): self.assert_ast('func_i(a2_i)', '', ('trace', ('call', _('func'), _(1), _(0), v._a2), _(0), _(1)))
+  def test_function_consumes(self): self.assert_ast('sum:i(a2_i)', '', ('call', _('sum'), _(0), _(1), v._a2))
+  def test_function_consumes_transpose(self): self.assert_ast('sum:i(a23_ij)', 'j', ('call', _('sum'), _(0), _(1), ('transpose', v._a23, _((1,0)))))
 
   def test_function_triple_index(self):
     self.assert_syntax_error(
@@ -837,5 +841,11 @@ class parse(TestCase):
       "Expected '='.",
       "1_ij + funcoverride(a23_ij) + 1_ij", "ij",
       "                          ^")
+
+  def test_function_consumes_missing_index(self):
+    self.assert_syntax_error(
+      "All axes to be consumed (i) must be present in all arguments.",
+      "1 + sum:i(a) + 1", "",
+      "    ^^^^^^^^")
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

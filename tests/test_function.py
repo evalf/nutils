@@ -924,7 +924,7 @@ class eval_ast(TestCase):
 
   def test_call_invalid_shape(self):
     with self.assertRaisesRegex(ValueError, '^expected an array with shape'):
-      function._eval_ast(('call', (None, 'f'), (None, function.Zeros((2,), float)), (None, function.Zeros((3,), float))),
+      function._eval_ast(('call', (None, 'f'), (None, 0), (None, 0), (None, function.Zeros((2,), float)), (None, function.Zeros((3,), float))),
                          dict(f=lambda a, b: a[None,:] * b[:,None])) # result is transposed
 
   def test_surfgrad_deprecated(self):
