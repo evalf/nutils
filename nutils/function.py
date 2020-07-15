@@ -821,7 +821,13 @@ class Array(Evaluable):
   _unravel = lambda self, axis, shape: None
   _ravel = lambda self, axis: None
   _kronecker = lambda self, axis, length, pos: None
-  _inserted_axes = ()
+
+  def _uninsert(self, axis):
+    assert isinstance(self._axes[axis], Inserted)
+    item = Array(args=[EVALARGS], shape=(), dtype=int)
+    uninserted = _take(self, item, axis).simplified
+    assert item not in uninserted.dependencies, 'failed to uninsert axis'
+    return uninserted
 
   def _simplified(self):
     return
@@ -1008,18 +1014,18 @@ class InsertAxis(Array):
     return InsertAxis(Product(self.func), self.axis, self.length)
 
   def _power(self, n):
-    for axis in n._inserted_axes:
-      if axis in self._inserted_axes:
+    for axis in range(self.ndim):
+      if isinstance(self._axes[axis], Inserted) and isinstance(n._axes[axis], Inserted):
         return InsertAxis(Power(self._uninsert(axis), n._uninsert(axis)), axis, self.shape[axis])
 
   def _add(self, other):
-    for axis in other._inserted_axes:
-      if axis in self._inserted_axes:
+    for axis in range(self.ndim):
+      if isinstance(self._axes[axis], Inserted) and isinstance(other._axes[axis], Inserted):
         return InsertAxis(Add([self._uninsert(axis), other._uninsert(axis)]), axis, self.shape[axis])
 
   def _multiply(self, other):
-    for axis in other._inserted_axes:
-      if axis in self._inserted_axes:
+    for axis in range(self.ndim):
+      if isinstance(self._axes[axis], Inserted) and isinstance(other._axes[axis], Inserted):
         return InsertAxis(Multiply([self._uninsert(axis), other._uninsert(axis)]), axis, self.shape[axis])
 
   def _insertaxis(self, axis, length):
@@ -1054,13 +1060,6 @@ class InsertAxis(Array):
       return InsertAxis(InsertAxis(self.func, self.axis, shape[1]), self.axis, shape[0])
     else:
       return InsertAxis(Unravel(self.func, axis-(axis>self.axis), shape), self.axis+(axis<self.axis), self.length)
-
-  @property
-  def _inserted_axes(self):
-    return tuple([self.axis] + [axis + (axis>=self.axis) for axis in self.func._inserted_axes])
-
-  def _uninsert(self, axis):
-    return self.func if axis == self.axis else InsertAxis(self.func._uninsert(axis-(axis>self.axis)), self.axis-(axis<self.axis), self.length)
 
   def _sign(self):
     return InsertAxis(Sign(self.func), self.axis, self.length)
@@ -1578,12 +1577,13 @@ class Multiply(Array):
       return
     func1, func2 = self.funcs
     keep = numpy.ones([2, self.ndim], dtype=bool)
-    for axis in func1._inserted_axes:
-      keep[0, axis] = False
-      func1 = func1.func
-    for axis in func2._inserted_axes:
-      keep[1, axis] = False
-      func2 = func2.func
+    for i in reversed(range(self.ndim)):
+      if isinstance(func1._axes[i], Inserted):
+        keep[0, i] = False
+        func1 = func1._uninsert(i)
+      if isinstance(func2._axes[i], Inserted):
+        keep[1, i] = False
+        func2 = func2._uninsert(i)
     if not keep.any(0).all():
       warnings.warn('simplification failed for multiplication of InsertAxis', ExpensiveEvaluationWarning)
     return Einsum((func1, func2), tuple(mask.nonzero()[0] for mask in keep), tuple(range(self.ndim)))
@@ -1595,9 +1595,9 @@ class Multiply(Array):
     func1, func2 = self.funcs
     if self.shape[axis] == 1:
       return multiply(get(func1, axis, 0), get(func2, axis, 0))
-    if axis in func1._inserted_axes:
+    if isinstance(func1._axes[axis], Inserted):
       return multiply(func1._uninsert(axis), func2.sum(axis))
-    if axis in func2._inserted_axes:
+    if isinstance(func2._axes[axis], Inserted):
       return multiply(func1.sum(axis), func2._uninsert(axis))
 
   def _get(self, axis, item):
@@ -1658,10 +1658,9 @@ class Multiply(Array):
 
   def _inverse(self):
     func1, func2 = self.funcs
-    invaxes = {self.ndim-2, self.ndim-1}
-    if invaxes.issubset(func1._inserted_axes):
+    if all(isinstance(axis, Inserted) for axis in func1._axes[-2:]):
       return divide(Inverse(func2), func1)
-    if invaxes.issubset(func2._inserted_axes):
+    if all(isinstance(axis, Inserted) for axis in func2._axes[-2:]):
       return divide(Inverse(func1), func2)
 
   @property
@@ -2029,7 +2028,7 @@ class Power(Array):
     return Power(Unravel(self.func, axis, shape), Unravel(self.power, axis, shape))
 
   def _product(self):
-    if self.ndim-1 in self.power._inserted_axes:
+    if isinstance(self._axes[-1], Inserted):
       return Power(Product(self.func), self.power._uninsert(self.ndim-1))
 
 class Pointwise(Array):
@@ -3130,7 +3129,7 @@ class Range(Array):
     return InRange(self.length, self.offset, index)
 
   def _add(self, offset):
-    if 0 in offset._inserted_axes:
+    if isinstance(self._axes[0], Inserted):
       return Range(self.length, self.offset + offset._uninsert(0))
 
   def evalf(self, length, offset):
