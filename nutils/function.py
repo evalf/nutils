@@ -696,6 +696,7 @@ class Array(Evaluable):
   '''
 
   __slots__ = '_axes', 'dtype'
+  __cache__ = 'blocks'
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
@@ -792,7 +793,20 @@ class Array(Evaluable):
 
   @property
   def blocks(self):
-    return [(tuple(Range(n) for n in self.shape), self)]
+    blocks = []
+    pool = [(tuple(Range(sh) for sh in self.shape), self.simplified)]
+    while pool:
+      indices, f = pool.pop()
+      i = 0
+      for n, j in ((n, j) for n, index in enumerate(indices) for j in range(index.ndim)):
+        if isinstance(f._axes[i], Sparse):
+          pool.extend((indices[:n]+(_take(indices[n], ind, j).simplified,)+indices[n+1:], f.simplified) for ind, f in f._desparsify(i))
+          break
+        i += 1
+      else:
+        assert i == f.ndim
+        blocks.append((indices, f))
+    return _gatherblocks(blocks)
 
   def _asciitree_str(self):
     return '{}({})'.format(type(self).__name__, ','.join(map(repr, self._axes)))
@@ -828,6 +842,17 @@ class Array(Evaluable):
     uninserted = _take(self, item, axis).simplified
     assert item not in uninserted.dependencies, 'failed to uninsert axis'
     return uninserted
+
+  def _desparsify(self, axis):
+    if not isinstance(self._axes[axis], Sparse):
+      raise Exception('attempting to desparsify a non-sparse axis')
+    raise NotImplementedError('_desparsify implementation missing for {}'.format(type(self).__name__))
+
+  def _resparsify(self, axis):
+    if not isinstance(self._axes[axis], Sparse):
+      raise Exception('attempting to resparsify a non-sparse axis')
+    items = [_inflate(f, index, self.shape[axis], axis) for index, f in self._desparsify(axis)]
+    return util.sum(items) if items else zeros_like(self)
 
   def _simplified(self):
     return
@@ -969,7 +994,6 @@ class Constant(Array):
 class InsertAxis(Array):
 
   __slots__ = 'func', 'axis', 'length'
-  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint, length:asarray):
@@ -1072,14 +1096,15 @@ class InsertAxis(Array):
     if self.axis < self.ndim-2:
       return InsertAxis(Determinant(self.func), self.axis, self.length)
 
-  @property
-  def blocks(self):
-    return tuple((ind[:self.axis]+(Range(self.length),)+ind[self.axis:], InsertAxis(f, self.axis, self.length)) for ind, f in self.func.blocks)
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
+    assert axis != self.axis
+    return [(ind, InsertAxis(f, self.axis+(axis<self.axis)*(ind.ndim-1), self.length)) for ind, f in self.func._desparsify(axis-(axis>self.axis))]
 
 class Transpose(Array):
 
   __slots__ = 'func', 'axes'
-  __cache__ = 'blocks', '_invaxes'
+  __cache__ = '_invaxes'
 
   @classmethod
   @types.apply_annotations
@@ -1164,6 +1189,12 @@ class Transpose(Array):
   def _take(self, indices, axis):
     return Transpose(Take(self.func, indices, self.axes[axis]), self.axes)
 
+  def _axes_for(self, ndim, axis):
+    funcaxis = self.axes[axis]
+    axes = [ax+(ax>funcaxis)*(ndim-1) for ax in self.axes if ax != funcaxis]
+    axes[axis:axis] = range(funcaxis, funcaxis + ndim)
+    return axes
+
   def _mask(self, maskvec, axis):
     return Transpose(Mask(self.func, maskvec, self.axes[axis]), self.axes)
 
@@ -1192,9 +1223,9 @@ class Transpose(Array):
     if sorted(self.axes[-2:]) == [self.ndim-2, self.ndim-1]:
       return Transpose(Inverse(self.func), self.axes)
 
-  @property
-  def blocks(self):
-    return tuple((tuple(ind[n] for n in self.axes), Transpose(f, self.axes)) for ind, f in self.func.blocks)
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
+    return [(ind, Transpose(f, self._axes_for(ind.ndim, axis))) for ind, f in self.func._desparsify(self.axes[axis])]
 
 class Get(Array):
 
@@ -1226,6 +1257,10 @@ class Get(Array):
     tryget = self.func._get(i+(i>=self.axis), item)
     if tryget is not None:
       return Get(tryget, self.axis-(i<self.axis), self.item)
+
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
+    return [(ind, Get(f, self.axis, self.item)) for ind, f in self.func._desparsify(axis+(axis>=self.axis))]
 
 class Product(Array):
 
@@ -1266,6 +1301,9 @@ class Product(Array):
 
   def _takediag(self, axis, rmaxis):
     return Product(TakeDiag(self.func, axis, rmaxis))
+
+  def _desparsify(self, axis):
+    return [(ind, Product(f)) for ind, f in self.func._desparsify(axis)]
 
 class ApplyTransforms(Array):
 
@@ -1353,7 +1391,7 @@ class Inverse(Array):
 class Concatenate(Array):
 
   __slots__ = 'funcs', 'axis'
-  __cache__ = '_withslices', 'blocks'
+  __cache__ = '_withslices'
 
   @types.apply_annotations
   def __init__(self, funcs:types.tuple[asarray], axis:types.strictint=0):
@@ -1407,19 +1445,10 @@ class Concatenate(Array):
     assert n0 == retval.shape[self.axis+1]
     return retval
 
-  @property
-  def blocks(self):
-    blocks = []
-    for (ind1, ind2), ind_f in util.gather(((ind[:self.axis], ind[self.axis+1:]), (ind[self.axis]+n, f))
-      for n, func in zip(util.cumsum(func.shape[self.axis] for func in self.funcs), self.funcs)
-        for ind, f in func.blocks):
-      if len(ind_f) == 1:
-        ind, f = ind_f[0]
-      else:
-        ind = Concatenate([ind for ind, f in ind_f], axis=0)
-        f = Concatenate([f for ind, f in ind_f], axis=len(ind1))
-      blocks.append((ind1+(ind.simplified,)+ind2, f))
-    return tuple(blocks)
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
+    assert axis == self.axis
+    return [(ind + s.offset, f) for s, func in self._withslices for ind, f in func._desparsify(axis)]
 
   def _get(self, i, item):
     if i != self.axis:
@@ -1555,7 +1584,6 @@ class Determinant(Array):
 class Multiply(Array):
 
   __slots__ = 'funcs',
-  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, funcs:types.frozenmultiset[asarray]):
@@ -1663,39 +1691,18 @@ class Multiply(Array):
     if all(isinstance(axis, Inserted) for axis in func2._axes[-2:]):
       return divide(Inverse(func1), func2)
 
-  @property
-  def blocks(self):
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
     func1, func2 = self.funcs
-    blocks = []
-    for ind1, f1_ in func1.blocks:
-      for ind2, f2 in func2.blocks:
-        f1 = f1_
-        indices = []
-        for i, sh in enumerate(self.shape):
-          if ind1[i] == ind2[i]:
-            ind = ind1[i]
-          elif ind1[i] == Range(sh):
-            ind = ind2[i]
-            f1 = Take(f1, ind, axis=i)
-          elif ind2[i] == Range(sh):
-            ind = ind1[i]
-            f2 = Take(f2, ind, axis=i)
-          else:
-            ind, subind1, subind2 = Intersect(ind1[i], ind2[i])
-            if ind.shape[0] == 0:
-              break # blocks do not overlap
-            f1 = _take(f1, subind1, i)
-            f2 = _take(f2, subind2, i)
-          indices.append(asarray(ind))
-        else:
-          assert f1.shape == f2.shape == tuple(ind.shape[0] for ind in indices)
-          blocks.append((tuple(indices), Multiply([f1, f2])))
-    return _gatherblocks(blocks)
+    if not isinstance(func1._axes[axis], Sparse):
+      assert isinstance(func2._axes[axis], Sparse)
+      func1, func2 = func2, func1
+    assert isinstance(func1._axes[axis], Sparse)
+    return [(ind, multiply(f1, _take(func2, ind, axis))) for ind, f1 in func1._desparsify(axis)]
 
 class Add(Array):
 
   __slots__ = 'funcs',
-  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, funcs:types.frozenmultiset[asarray]):
@@ -1758,9 +1765,9 @@ class Add(Array):
   def _unravel(self, axis, shape):
     return Add([Unravel(func, axis, shape) for func in self.funcs])
 
-  @property
-  def blocks(self):
-    return _gatherblocks(block for func in self.funcs for block in func.blocks)
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
+    return _gatherblocks(block for func in self.funcs for block in func._desparsify(axis))
 
 class Einsum(Array):
 
@@ -1816,7 +1823,6 @@ class Einsum(Array):
 class Sum(Array):
 
   __slots__ = 'axis', 'func'
-  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint):
@@ -1844,14 +1850,13 @@ class Sum(Array):
   def _derivative(self, var, seen):
     return sum(derivative(self.func, var, seen), self.axis)
 
-  @property
-  def blocks(self):
-    return _gatherblocks((ind[:self.axis] + ind[self.axis+1:], f.sum(self.axis)) for ind, f in self.func.blocks)
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
+    return [(ind, f.sum(self.axis)) for ind, f in self.func._desparsify(axis+(axis>=self.axis))]
 
 class TakeDiag(Array):
 
   __slots__ = 'func', 'axis', 'rmaxis'
-  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint, rmaxis:types.strictint):
@@ -1898,29 +1903,14 @@ class TakeDiag(Array):
     if axis != self.axis:
       return TakeDiag(Sum(self.func, axis+(axis>=self.rmaxis)), self.axis-(axis<self.axis), self.rmaxis-(axis<self.rmaxis))
 
-  @property
-  def blocks(self):
-    blocks = []
-    for ind, f in self.func.blocks:
-      if ind[self.axis] != ind[self.rmaxis]:
-        if ind[self.rmaxis] == Range(self.func.shape[self.rmaxis]):
-          f = Take(f, ind[self.axis], axis=self.rmaxis)
-        elif ind[self.axis] == Range(self.func.shape[self.axis]):
-          f = Take(f, ind[self.rmaxis], axis=self.axis)
-          ind = ind[:self.axis] + (ind[self.rmaxis],) + ind[self.axis+1:]
-        else:
-          newind, subind1, subind2 = Intersect(ind[self.axis], ind[self.rmaxis])
-          if newind.shape[0] == 0:
-            break # blocks do not overlap
-          f = Take(Take(f, subind1, axis=self.axis), subind2, axis=self.rmaxis)
-          ind = ind[:self.axis] + (asarray(newind),) + ind[self.axis+1:]
-      blocks.append((ind[:self.rmaxis] + ind[self.rmaxis+1:], TakeDiag(f, self.axis, self.rmaxis)))
-    return tuple(blocks)
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
+    assert axis != self.axis
+    return [(ind, TakeDiag(f, self.axis+(axis<self.axis)*(ind.ndim-1), self.rmaxis+(axis<self.rmaxis)*(ind.ndim-1))) for ind, f in self.func._desparsify(axis+(axis>=self.rmaxis))]
 
 class Take(Array):
 
   __slots__ = 'func', 'axis', 'indices'
-  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, indices:asarray, axis:types.strictint):
@@ -1966,12 +1956,10 @@ class Take(Array):
     if axis != self.axis:
       return Take(Sum(self.func, axis), self.indices, self.axis-(axis<self.axis))
 
-  @property
-  def blocks(self):
-    fullrange = Range(self.shape[self.axis])
-    if not all(ind[self.axis] == fullrange for ind, f in self.func.blocks):
-      return super().blocks
-    return tuple((ind[:self.axis]+(fullrange,)+ind[self.axis+1:], Take(f, self.indices, self.axis)) for ind, f in self.func.blocks)
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
+    assert axis != self.axis
+    return [(ind, Take(f, self.indices, self.axis+(axis<self.axis)*(ind.ndim-1))) for ind, f in self.func._desparsify(axis)]
 
 class Power(Array):
 
@@ -2179,7 +2167,6 @@ class Int(Pointwise):
 class Sign(Array):
 
   __slots__ = 'func',
-  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray):
@@ -2213,9 +2200,9 @@ class Sign(Array):
   def _derivative(self, var, seen):
     return Zeros(self.shape + var.shape, dtype=self.dtype)
 
-  @property
-  def blocks(self):
-    return tuple((ind, Sign(f)) for ind, f in self.func.blocks)
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
+    return [(ind, Sign(f)) for ind, f in self.func._desparsify(axis)]
 
 class Sampled(Array):
   '''Basis-like identity operator.
@@ -2362,9 +2349,8 @@ class Zeros(Array):
       shape, = zip(*shape)
     return numpy.zeros((1,)+shape, dtype=self.dtype)
 
-  @property
-  def blocks(self):
-    return ()
+  def _desparsify(self, axis):
+    return []
 
   def _add(self, other):
     return other
@@ -2419,7 +2405,6 @@ class Zeros(Array):
 class Inflate(Array):
 
   __slots__ = 'func', 'dofmap', 'length', 'axis'
-  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, dofmap:asarray, length:asarray, axis:types.strictint):
@@ -2448,9 +2433,11 @@ class Inflate(Array):
     numpy.add.at(inflated, (slice(None),)*(self.axis+1)+(indices,), array)
     return inflated
 
-  @property
-  def blocks(self):
-    return tuple((ind[:self.axis] + (Take(self.dofmap, ind[self.axis], axis=0).simplified,) + ind[self.axis+1:], f) for ind, f in self.func.blocks)
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
+    if axis == self.axis:
+      return [(self.dofmap, self.func)]
+    return [(ind, Inflate(f, self.dofmap, self.length, self.axis+(axis<self.axis)*(ind.ndim-1))) for ind, f in self.func._desparsify(axis)]
 
   def _mask(self, maskvec, axis):
     if axis != self.axis:
@@ -2550,7 +2537,6 @@ class Inflate(Array):
 class Diagonalize(Array):
 
   __slots__ = 'func', 'axis', 'newaxis'
-  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis=types.strictint, newaxis=types.strictint):
@@ -2666,9 +2652,10 @@ class Diagonalize(Array):
     elif numeric.isint(self.shape[self.axis]) and self.shape[self.axis] > 1:
       return Zeros(self.shape[:-1], dtype=self.dtype)
 
-  @property
-  def blocks(self):
-    return tuple((ind[:self.newaxis] + (ind[self.axis],) + ind[self.newaxis:], Diagonalize(f, self.axis, self.newaxis)) for ind, f in self.func.blocks)
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
+    assert axis != self.axis and axis != self.newaxis
+    return [(ind, Diagonalize(f, self.axis+(axis<self.axis)*(ind.ndim-1), self.newaxis+(axis<self.newaxis)*(ind.ndim-1))) for ind, f in self.func._desparsify(axis-(axis>self.newaxis))]
 
 class Guard(Array):
   'bar all simplifications'
@@ -2871,14 +2858,15 @@ class DelayedJacobian(Array):
 class Ravel(Array):
 
   __slots__ = 'func', 'axis'
-  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint):
     assert 0 <= axis < func.ndim-1
     self.func = func
     self.axis = axis
-    super().__init__(args=[func], shape=func._axes[:axis]+(Raveled(func.shape[axis:axis+2]),)+func._axes[axis+2:], dtype=func.dtype)
+    ax1, ax2 = func._axes[axis:axis+2]
+    axisprop = Sparse(ax1.length * ax2.length) if isinstance(ax1, Sparse) or isinstance(ax2, Sparse) else Raveled((ax1.length, ax2.length))
+    super().__init__(args=[func], shape=func._axes[:axis]+(axisprop,)+func._axes[axis+2:], dtype=func.dtype)
 
   def _simplified(self):
     if self.func.shape[self.axis] == 1:
@@ -2972,14 +2960,20 @@ class Ravel(Array):
     if self.axis < self.ndim-2:
       return Ravel(Determinant(self.func), self.axis)
 
-  @property
-  def blocks(self):
-    return tuple(((ind[:self.axis] + (ravel(ind[self.axis][:,_] * self.func.shape[self.axis+1] + ind[self.axis+1][_,:], axis=0),) + ind[self.axis+2:]), ravel(f, axis=self.axis)) for ind, f in self.func.blocks)
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
+    if axis != self.axis:
+      return [(ind, Ravel(f, self.axis+(axis<self.axis)*(ind.ndim-1))) for ind, f in self.func._desparsify(axis+(axis>self.axis))]
+    if isinstance(self.func._axes[self.axis], Sparse):
+      items = [(ind1, Range(self.func.shape[self.axis+1]), f) for ind1, f in self.func._desparsify(self.axis)]
+    else:
+      assert isinstance(self.func._axes[self.axis+1], Sparse)
+      items = [(Range(self.func.shape[self.axis]), ind2, f) for ind2, f in self.func._desparsify(self.axis+1)]
+    return [(appendaxes(ind1, ind2.shape) * self.func.shape[self.axis+1] + prependaxes(ind2, ind1.shape), f) for ind1, ind2, f in items]
 
 class Unravel(Array):
 
   __slots__ = 'func', 'axis', 'unravelshape'
-  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint, shape:asshape):
@@ -3034,18 +3028,14 @@ class Unravel(Array):
     if not self.axis <= axis < self.axis+2:
       return Unravel(Sum(self.func, axis-(axis>self.axis)), self.axis-(axis<self.axis), self.unravelshape)
 
-  @property
-  def blocks(self):
-    fullrange = Range(self.func.shape[self.axis])
-    if not all(ind[self.axis] == fullrange for ind, f in self.func.blocks):
-      return super().blocks
-    ravelrange = Range(self.shape[self.axis]), Range(self.shape[self.axis+1])
-    return tuple((ind[:self.axis]+ravelrange+ind[self.axis+1:], Unravel(f, self.axis, self.unravelshape)) for ind, f in self.func.blocks)
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
+    assert axis != self.axis and axis != self.axis+1
+    return [(ind, Unravel(f, self.axis+(axis<self.axis)*(ind.ndim-1), self.unravelshape)) for ind, f in self.func._desparsify(axis-(axis>self.axis))]
 
 class Mask(Array):
 
   __slots__ = 'func', 'axis', 'mask'
-  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, mask:types.frozenarray, axis:types.strictint):
@@ -3094,21 +3084,10 @@ class Mask(Array):
     if axis != self.axis:
       return Mask(Sum(self.func, axis), self.mask, self.axis-(axis<self.axis))
 
-  @property
-  def blocks(self):
-    blocks = []
-    for ind, f in self.func.blocks:
-      if ind[self.axis] == Range(self.func.shape[self.axis]):
-        indi = Range(self.shape[self.axis])
-        newf = Mask(f, self.mask, axis=self.axis)
-      else:
-        renumber = numpy.repeat(self.mask.size, self.mask.size) # initialize with out of bounds
-        renumber[self.mask] = numpy.arange(self.mask.sum())
-        subind = Find(Take(self.mask, ind[self.axis], axis=0))
-        indi = Take(renumber, Take(ind[self.axis], subind, axis=0), axis=0)
-        newf = Take(f, subind, axis=self.axis)
-      blocks.append((ind[:self.axis] + (indi,) + ind[self.axis+1:], newf))
-    return tuple(blocks)
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
+    assert axis != self.axis
+    return [(ind, Mask(f, self.mask, self.axis+(axis<self.axis)*(ind.ndim-1))) for ind, f in self.func._desparsify(axis)]
 
 class Range(Array):
 
@@ -3272,7 +3251,6 @@ class Opposite(Array):
 class Kronecker(Array):
 
   __slots__ = 'func', 'axis', 'length', 'pos'
-  __cache__ = 'blocks'
 
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint, length:asarray, pos:asarray):
@@ -3388,9 +3366,11 @@ class Kronecker(Array):
       return Kronecker(self, newaxis, self.length, self.pos)
     return Kronecker(Diagonalize(self.func, axis-(axis>self.axis), newaxis-(newaxis>self.axis)), self.axis+(newaxis<=self.axis), self.length, self.pos)
 
-  @property
-  def blocks(self):
-    return tuple((ind[:self.axis] + (self.pos[_],) + ind[self.axis:], InsertAxis(f, self.axis, 1)) for ind, f in self.func.blocks)
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
+    if axis == self.axis:
+      return [(self.pos, self.func)]
+    return [(ind, Kronecker(f, self.axis+(axis<self.axis)*(ind.ndim-1), self.length, self.pos)) for ind, f in self.func._desparsify(axis-(axis>self.axis))]
 
 class Choose(Array):
   '''Function equivalent of :func:`numpy.choose`.'''
@@ -3481,7 +3461,7 @@ class Basis(Array):
     self.nelems = nelems
     self.index = index
     self.coords = coords
-    super().__init__(args=(index, coords), shape=(ndofs,), dtype=float)
+    super().__init__(args=(index, coords), shape=(Sparse(ndofs),), dtype=float)
 
   def evalf(self, index, coords):
     warnings.warn('using explicit basis evaluation; this is usually a bug.', ExpensiveEvaluationWarning)
@@ -3631,9 +3611,9 @@ class Basis(Array):
   def _asinflate(self):
     return Inflate(Polyval(self.f_coefficients(self.index), self.coords), self.f_dofs(self.index), self.ndofs, axis=0)
 
-  @property
-  def blocks(self):
-    return self._asinflate.blocks
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
+    return self._asinflate._desparsify(axis)
 
   _multiply = lambda self, other: self._asinflate._multiply(other)
   _insertaxis = lambda self, axis, length: self._asinflate._insertaxis(axis, length)

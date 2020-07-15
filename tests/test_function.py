@@ -277,6 +277,22 @@ class check(TestCase):
       desired=self.n_op(*self.ifacesmp.eval([function.opposite(arg) for arg in self.args])),
       actual=self.ifacesmp.eval(function.opposite(self.op_args)))
 
+  def test_desparsify(self):
+    args = []
+    for arg in self.args:
+      for i in range(arg.ndim):
+        arg = function._inflate(arg, function.Guard(numpy.arange(arg.shape[i])), arg.shape[i], i)
+      args.append(arg)
+    op_args = self.op(*args).simplified
+    _transforms = [trans[0] for trans in self.sample.transforms]
+    for axis, prop in enumerate(op_args._axes):
+      if isinstance(prop, function.Sparse):
+        actual = numpy.zeros_like(self.n_op_argsfun)
+        for ind, f in op_args._desparsify(axis):
+          _ind, = ind.eval(_transforms=_transforms)
+          actual[(slice(None),)*(axis+1)+(_ind,)] += f.eval(_transforms=_transforms, _points=self.sample.points[0].coords)
+        self.assertArrayAlmostEqual(actual, self.n_op_argsfun, decimal=15)
+
   def find(self, target, xi0):
     elemtrans, = self.sample.transforms[0]
     ndim, = self.geom.shape
