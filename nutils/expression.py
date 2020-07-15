@@ -1213,14 +1213,19 @@ def parse(expression, variables, indices, arg_shapes={}, default_geometry_name='
       mean of ``a_i + b_i``.
 
   *   A **function call** is denoted by a name — following the same rules as
-      for a variable name — directly followed by the left parenthesis ``(``,
-      without a space.  The arguments to the function are separated by a comma
-      and at least one space.  The function is applied pointwise to the
-      arguments and summation convection is applied to the result. Example:
-      assume ``mul(...)`` returns the product of its arguments, then ``mul(x_i,
-      y_j)`` is equivalent to ``x_i y_j`` and ``mul(x_i, y_i)`` to ``x_i y_i``.
-      Functions and variables share a namespace: defining a variable with the
-      same name as a function renders the function inaccessible.
+      for a variable name — optionally followed by ``_`` and indices,
+      optionally followed by ``:`` and indices, directly followed by the left
+      parenthesis ``(``, without a space.  The arguments to the function are
+      separated by a comma and at least one space.  The function is applied
+      pointwise to the arguments and summation convection is applied to the
+      result. Example: assume ``mul(...)`` returns the product of its
+      arguments, then ``mul(x_i, y_j)`` is equivalent to ``x_i y_j`` and
+      ``mul(x_i, y_i)`` to ``x_i y_i``. Functions and variables share a
+      namespace: defining a variable with the same name as a function renders
+      the function inaccessible. Functions of the form ``f_i(...)`` and
+      ``f_ij(...)`` etc. generate one and two axes, respectively. Functions
+      of the form ``f:i(...)`` and ``f:ij(...)`` etc. consume the axes labelled
+      ``i`` and ``i`` and ``j`` respectively.
 
   *   A **stack** of two or more arrays along an axis is denoted by a ``<``
       followed by comma and space separated arrays followed by ``>`` and an

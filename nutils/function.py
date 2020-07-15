@@ -4522,6 +4522,21 @@ def _eval_ast(ast, functions):
   else:
     raise ValueError('unknown opcode: {!r}'.format(op))
 
+def _sum_expr(arg, *, consumes=0):
+  if consumes == 0:
+    raise ValueError('sum must consume at least one axis but got zero')
+  return sum(arg, range(arg.ndim-consumes, arg.ndim))
+
+def _norm2_expr(arg, *, consumes=0):
+  if consumes == 0:
+    raise ValueError('sum must consume at least one axis but got zero')
+  return norm2(arg, range(arg.ndim-consumes, arg.ndim))
+
+def _J_expr(geom, *, consumes=0):
+  if consumes != 1:
+    raise ValueError('J consumes exactly one axis but got {}'.format(consumes))
+  return J(geom)
+
 class Namespace:
   '''Namespace for :class:`Array` objects supporting assignments with tensor expressions.
 
@@ -4652,6 +4667,7 @@ class Namespace:
     tanh=tanh, arcsin=arcsin, arccos=arccos, arctan=arctan, arctan2=ArcTan2.outer, arctanh=arctanh,
     exp=exp, abs=abs, ln=ln, log=ln, log2=log2, log10=log10, sqrt=sqrt,
     sign=sign, d=d, surfgrad=surfgrad, n=normal,
+    sum=_sum_expr, norm2=_norm2_expr, J=_J_expr,
   )
 
   @types.apply_annotations
