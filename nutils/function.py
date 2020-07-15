@@ -637,6 +637,47 @@ def swapaxes(arg, axis1, axis2):
   trans[axis1], trans[axis2] = trans[axis2], trans[axis1]
   return transpose(arg, trans)
 
+# AXIS PROPERTIES
+
+class Axis(types.Immutable):
+  __slots__ = 'length'
+  @types.apply_annotations
+  def __init__(self, length:as_canonical_length):
+    self.length = length
+  def __str__(self):
+    return '?' if isarray(self.length) else str(self.length)
+  def __repr__(self):
+    return '{}{}'.format(type(self).__name__[0].lower(), self)
+
+class Inserted(Axis):
+  __slots__ = ()
+
+class Raveled(Axis):
+  __slots__ = 'shape'
+  @types.apply_annotations
+  def __init__(self, shape:asshape):
+    assert len(shape) == 2
+    self.shape = shape
+    super().__init__(as_canonical_length(shape[0] * shape[1]))
+
+class Diagonal(Axis):
+  __slots__ = ()
+  @types.apply_annotations
+  def __init__(self, length:as_canonical_length, marker):
+    super().__init__(length)
+
+class Sparse(Axis):
+  __slots__ = 'mask'
+  @types.apply_annotations
+  def __init__(self, length:as_canonical_length, mask:types.frozenarray[bool]=types.frozenarray(False)):
+    self.mask = mask # True for indices that are certain to be filled, used to detect dense addition
+    super().__init__(length)
+
+def as_axis_property(value):
+  return value if isinstance(value, Axis) else Axis(value)
+
+# ARRAYS
+
 class Array(Evaluable):
   '''
   Base class for array valued functions.
@@ -652,16 +693,23 @@ class Array(Evaluable):
       The dtype of the array elements.
   '''
 
-  __slots__ = 'shape', 'ndim', 'dtype'
+  __slots__ = '_axes', 'dtype'
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
   @types.apply_annotations
-  def __init__(self, args:types.tuple[strictevaluable], shape:asshape, dtype:asdtype):
-    self.shape = shape
-    self.ndim = len(shape)
+  def __init__(self, args:types.tuple[strictevaluable], shape:types.tuple[as_axis_property], dtype:asdtype):
+    self._axes = shape
     self.dtype = dtype
     super().__init__(args=args)
+
+  @property
+  def shape(self):
+    return tuple(axis.length for axis in self._axes)
+
+  @property
+  def ndim(self):
+    return len(self._axes)
 
   def __getitem__(self, item):
     if not isinstance(item, tuple):
@@ -745,10 +793,10 @@ class Array(Evaluable):
     return [(tuple(Range(n) for n in self.shape), self)]
 
   def _asciitree_str(self):
-    return '{}({})'.format(type(self).__name__, ','.join(['?' if isarray(sh) else str(sh) for sh in self.shape]))
+    return '{}({})'.format(type(self).__name__, ','.join(map(repr, self._axes)))
 
   def _graphviz_node(self):
-    return r'shape=box,label="{}\n{}"'.format(type(self).__name__, ','.join('?' if isarray(sh) else str(sh) for sh in self.shape))
+    return r'shape=box,label="{}\n{}"'.format(type(self).__name__, ','.join(repr(axis) for axis in self._axes))
 
   # simplifications
   _multiply = lambda self, other: None
@@ -849,7 +897,7 @@ class Constant(Array):
         value = '(~{:.2e})'.format(self.value[()])
     else:
       value = ''
-    return r'shape=box,label="{}{}"'.format(type(self).__name__, value)
+    return r'shape=box,label="{}{}\n{}"'.format(type(self).__name__, value, ','.join(repr(axis) for axis in self._axes))
 
   @property
   def _isunit(self):
@@ -924,7 +972,7 @@ class InsertAxis(Array):
     self.func = func
     self.axis = axis
     self.length = length
-    super().__init__(args=[func, length], shape=func.shape[:axis]+(length,)+func.shape[axis:], dtype=func.dtype)
+    super().__init__(args=[func, length], shape=func._axes[:axis]+(Inserted(length),)+func._axes[axis:], dtype=func.dtype)
 
   def _simplified(self):
     return self.func._insertaxis(self.axis, self.length)
@@ -1059,7 +1107,7 @@ class Transpose(Array):
     assert sorted(axes) == list(range(func.ndim))
     self.func = func
     self.axes = axes
-    super().__init__(args=[func], shape=[func.shape[n] for n in axes], dtype=func.dtype)
+    super().__init__(args=[func], shape=[func._axes[n] for n in axes], dtype=func.dtype)
 
   @property
   def _invaxes(self):
@@ -1074,7 +1122,7 @@ class Transpose(Array):
     return arr.transpose([0] + [n+1 for n in self.axes])
 
   def _graphviz_node(self):
-    return r'shape=box,label="{}({})'.format(type(self).__name__)
+    return r'shape=box,label="{}({})\n{}"'.format(type(self).__name__, ','.join(map(str, self.axes)), ','.join(repr(axis) for axis in self._axes))
 
   def _transpose(self, axes):
     newaxes = [self.axes[i] for i in axes]
@@ -1162,7 +1210,7 @@ class Get(Array):
     assert 0 <= axis < func.ndim, 'axis is out of bounds'
     if item.isconstant and numeric.isint(func.shape[axis]):
       assert 0 <= item.eval()[0] < func.shape[axis], 'item is out of bounds'
-    super().__init__(args=[func, item], shape=func.shape[:axis]+func.shape[axis+1:], dtype=func.dtype)
+    super().__init__(args=[func, item], shape=func._axes[:axis]+func._axes[axis+1:], dtype=func.dtype)
 
   def _simplified(self):
     return self.func._get(self.axis, self.item)
@@ -1187,7 +1235,7 @@ class Product(Array):
   @types.apply_annotations
   def __init__(self, func:asarray):
     self.func = func
-    super().__init__(args=[func], shape=func.shape[:-1], dtype=func.dtype)
+    super().__init__(args=[func], shape=func._axes[:-1], dtype=func.dtype)
 
   def _simplified(self):
     if self.func.shape[-1] == 1:
@@ -1315,7 +1363,8 @@ class Concatenate(Array):
     assert 0 <= axis < ndim
     assert all(func.shape[:axis] == funcs[0].shape[:axis] and func.shape[axis+1:] == funcs[0].shape[axis+1:] for func in funcs[1:])
     length = util.sum(func.shape[axis] for func in funcs)
-    shape = funcs[0].shape[:axis] + (length,) + funcs[0].shape[axis+1:]
+    axistype = Sparse if all(isinstance(func._axes[axis], Sparse) for func in funcs) else Axis
+    shape = funcs[0].shape[:axis] + (axistype(length),) + funcs[0].shape[axis+1:]
     dtype = _jointdtype(*[func.dtype for func in funcs])
     self.funcs = funcs
     self.axis = axis
@@ -1514,7 +1563,11 @@ class Multiply(Array):
     self.funcs = funcs
     func1, func2 = funcs
     assert func1.shape == func2.shape
-    super().__init__(args=self.funcs, shape=func1.shape, dtype=_jointdtype(func1.dtype,func2.dtype))
+    axes = [axis1 if axis1 == axis2
+       else axis1 if isinstance(axis1, Sparse)
+       else axis2 if isinstance(axis2, Sparse)
+       else Axis(axis1.length) for axis1, axis2 in zip(func1._axes, func2._axes)]
+    super().__init__(args=self.funcs, shape=axes, dtype=_jointdtype(func1.dtype,func2.dtype))
 
   def _simplified(self):
     func1, func2 = self.funcs
@@ -1650,7 +1703,17 @@ class Add(Array):
     self.funcs = funcs
     func1, func2 = funcs
     assert func1.shape == func2.shape
-    super().__init__(args=self.funcs, shape=func1.shape, dtype=_jointdtype(func1.dtype,func2.dtype))
+    axes = [axis1 if axis1 == axis2 else Axis(axis1.length) for axis1, axis2 in zip(func1._axes, func2._axes)]
+    sparse = [i for i, (axis1, axis2) in enumerate(zip(func1._axes, func2._axes)) if isinstance(axis1, Sparse) and isinstance(axis2, Sparse)]
+    if len(sparse) > 1: # an addition of multiple sparse axes is always sparse
+      for i in sparse:
+        axes[i] = Sparse(axes[i].length)
+    elif len(sparse) == 1: # an addition of a single sparse axis may have become dense
+      i, = sparse
+      mask = func1._axes[i].mask | func2._axes[i].mask # axis positions that are certainly filled
+      if not mask.all():
+        axes[i] = Sparse(axes[i].length, mask)
+    super().__init__(args=self.funcs, shape=axes, dtype=_jointdtype(func1.dtype,func2.dtype))
 
   def _simplified(self):
     func1, func2 = self.funcs
@@ -1730,7 +1793,7 @@ class Einsum(Array):
     return numpy.core.multiarray.c_einsum(self._einsumfmt, arr1, arr2)
 
   def _graphviz_node(self):
-    return r'shape=box,label="{}({})"'.format(type(self).__name__, self._einsumfmt)
+    return r'shape=box,label="{}({})\n{}"'.format(type(self).__name__, self._einsumfmt, ','.join(repr(axis) for axis in self._axes))
 
 class Sum(Array):
 
@@ -1742,7 +1805,7 @@ class Sum(Array):
     self.axis = axis
     self.func = func
     assert 0 <= axis < func.ndim, 'axis out of bounds'
-    shape = func.shape[:axis] + func.shape[axis+1:]
+    shape = func._axes[:axis] + func._axes[axis+1:]
     super().__init__(args=[func], shape=shape, dtype=int if func.dtype == bool else func.dtype)
 
   def _simplified(self):
@@ -1790,7 +1853,8 @@ class TakeDiag(Array):
     self.func = func
     self.axis = axis
     self.rmaxis = rmaxis
-    super().__init__(args=[func], shape=func.shape[:rmaxis]+func.shape[rmaxis+1:], dtype=func.dtype)
+    shape = func._axes[:axis]+(Axis(func.shape[axis]),)+func._axes[axis+1:rmaxis]+func._axes[rmaxis+1:]
+    super().__init__(args=[func], shape=shape, dtype=func.dtype)
 
   def _simplified(self):
     if self.shape[self.axis] == 1:
@@ -1858,7 +1922,7 @@ class Take(Array):
     self.func = func
     self.axis = axis
     self.indices = indices
-    shape = func.shape[:axis] + indices.shape + func.shape[axis+1:]
+    shape = func._axes[:axis] + indices.shape + func._axes[axis+1:]
     super().__init__(args=[func,indices], shape=shape, dtype=func.dtype)
 
   def _simplified(self):
@@ -2113,7 +2177,7 @@ class Sign(Array):
   @types.apply_annotations
   def __init__(self, func:asarray):
     self.func = func
-    super().__init__(args=[func], shape=func.shape, dtype=func.dtype)
+    super().__init__(args=[func], shape=func._axes, dtype=func.dtype)
 
   def _simplified(self):
     return self.func._sign()
@@ -2284,7 +2348,7 @@ class Zeros(Array):
 
   @types.apply_annotations
   def __init__(self, shape:asshape, dtype:asdtype):
-    super().__init__(args=[asarray(sh) for sh in shape], shape=shape, dtype=dtype)
+    super().__init__(args=[asarray(sh) for sh in shape], shape=map(Sparse, shape), dtype=dtype)
 
   def evalf(self, *shape):
     if shape:
@@ -2358,7 +2422,8 @@ class Inflate(Array):
     self.axis = axis
     assert 0 <= axis < func.ndim
     assert func.shape[axis] == dofmap.shape[0]
-    shape = func.shape[:axis] + (length,) + func.shape[axis+1:]
+    mask = not isinstance(func._axes[axis], Sparse) and dofmap.isconstant and length.isconstant and numeric.asboolean(dofmap.eval().ravel(), length.eval()[0], ordered=False)
+    shape = func._axes[:axis] + (Sparse(length, mask),) + func._axes[axis+1:]
     super().__init__(args=[func,dofmap,length], shape=shape, dtype=func.dtype)
 
   def _simplified(self):
@@ -2486,7 +2551,8 @@ class Diagonalize(Array):
     self.func = func
     self.axis = axis
     self.newaxis = newaxis
-    super().__init__(args=[func], shape=func.shape[:newaxis]+(func.shape[axis],)+func.shape[newaxis:], dtype=func.dtype)
+    diagonal = Diagonal(func.shape[axis], object())
+    super().__init__(args=[func], shape=func._axes[:axis]+(diagonal,)+func._axes[axis+1:newaxis]+(diagonal,)+func._axes[newaxis:], dtype=func.dtype)
 
   def _simplified(self):
     if self.shape[self.axis] == 1:
@@ -2805,7 +2871,7 @@ class Ravel(Array):
     assert 0 <= axis < func.ndim-1
     self.func = func
     self.axis = axis
-    super().__init__(args=[func], shape=func.shape[:axis]+(func.shape[axis]*func.shape[axis+1],)+func.shape[axis+2:], dtype=func.dtype)
+    super().__init__(args=[func], shape=func._axes[:axis]+(Raveled(func.shape[axis:axis+2]),)+func._axes[axis+2:], dtype=func.dtype)
 
   def _simplified(self):
     if self.func.shape[self.axis] == 1:
@@ -2911,12 +2977,12 @@ class Unravel(Array):
   @types.apply_annotations
   def __init__(self, func:asarray, axis:types.strictint, shape:asshape):
     assert 0 <= axis < func.ndim
-    assert func.shape[axis] == as_canonical_length(Product(shape))
+    assert func.shape[axis] == as_canonical_length(shape[0] * shape[1])
     assert len(shape) == 2
     self.func = func
     self.axis = axis
     self.unravelshape = shape
-    super().__init__(args=[func]+[asarray(sh) for sh in shape], shape=func.shape[:axis]+shape+func.shape[axis+1:], dtype=func.dtype)
+    super().__init__(args=[func]+[asarray(sh) for sh in shape], shape=func._axes[:axis]+shape+func._axes[axis+1:], dtype=func.dtype)
 
   def _simplified(self):
     if self.shape[self.axis] == 1:
@@ -2980,7 +3046,7 @@ class Mask(Array):
     self.func = func
     self.axis = axis
     self.mask = mask
-    super().__init__(args=[func], shape=func.shape[:axis]+(mask.sum(),)+func.shape[axis+1:], dtype=func.dtype)
+    super().__init__(args=[func], shape=func._axes[:axis]+(mask.sum(),)+func._axes[axis+1:], dtype=func.dtype)
 
   def _simplified(self):
     if self.mask.all():
@@ -3209,7 +3275,8 @@ class Kronecker(Array):
     self.axis = axis
     self.length = length
     self.pos = pos
-    super().__init__(args=[func, length, pos], shape=func.shape[:axis]+(length,)+func.shape[axis:], dtype=func.dtype)
+    axisprop = Sparse(length, length.isconstant and pos.isconstant and numeric.asboolean(pos.eval(), length.eval()[0]))
+    super().__init__(args=[func, length, pos], shape=func._axes[:axis]+(axisprop,)+func._axes[axis:], dtype=func.dtype)
 
   def _simplified(self):
     if self.shape[self.axis] == 1:
