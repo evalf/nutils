@@ -744,9 +744,7 @@ class Array(Evaluable):
     return '{}({})'.format(type(self).__name__, ','.join(['?' if isarray(sh) else str(sh) for sh in self.shape]))
 
   def _graphviz_node(self):
-    if not self.ndim:
-      return r'shape=box,label="{}"'.format(type(self).__name__)
-    return r'shape=none,margin=0,label=<<table cellborder="0" cellspacing="0"><tr><td colspan="{}">{}</td></tr><tr>{}</tr></table>>'.format(self.ndim, type(self).__name__, ''.join('<td>{}</td>'.format(sh) for sh in self.shape))
+    return r'shape=box,label="{}\n{}"'.format(type(self).__name__, ','.join('?' if isarray(sh) else str(sh) for sh in self.shape))
 
   # simplifications
   _multiply = lambda self, other: None
