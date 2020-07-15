@@ -478,6 +478,49 @@ class _Array:
     return _Array(**kwargs)
 
 
+class _ArrayOmittedIndices:
+
+  def __init__(self, ast, shape):
+    self.ast = tuple(ast)
+    self.shape = tuple(shape)
+
+    self.ndim = len(self.shape)
+
+  def __add__(self, other):
+    if self.shape != other.shape:
+      raise _IntermediateError('Cannot add arrays with omitted indices because the shapes differ: {}, {}.'.format(self.shape, other.shape))
+    return _ArrayOmittedIndices(('add', self.ast, other.ast), self.shape)
+
+  def __sub__(self, other):
+    if self.shape != other.shape:
+      raise _IntermediateError('Cannot subtract arrays with omitted indices because the shapes differ: {}, {}.'.format(self.shape, other.shape))
+    return _ArrayOmittedIndices(('sub', self.ast, other.ast), self.shape)
+
+  def __mul__(self, other):
+    if self.ndim != 0:
+      raise _IntermediateError('Arrays with omitted indices cannot be multiplied.')
+    self_ast = self.ast
+    for n in other.shape:
+      self_ast = ('append_axis', self_ast, _(n))
+    return _ArrayOmittedIndices(('mul', self_ast, other.ast), other.shape)
+
+  def __neg__(self):
+    return _ArrayOmittedIndices(('neg', self.ast), self.shape)
+
+  def __truediv__(self, other):
+    if other.ndim > 0:
+      raise _IntermediateError('A denominator must have dimension 0.')
+    return _ArrayOmittedIndices(('truediv', self.ast, other.ast), self.shape)
+
+  def __pow__(self, other):
+    if other.ndim > 0:
+      raise _IntermediateError('An exponent must have dimension 0.')
+    return _ArrayOmittedIndices(('pow', self.ast, other.ast), self.shape)
+
+  def replace(self, ast=None):
+    return _ArrayOmittedIndices(self.ast if ast is None else ast, self.shape)
+
+
 class _ExpressionParser:
   '''Expression parser
 
@@ -575,8 +618,11 @@ class _ExpressionParser:
 
     return self._tokens[self._index+2] if self._next.type == 'whitespace' else self._next
 
-  def _asarray(self, ast, indices_token, shape):
+  def _asarray(self, ast, indices_token, shape, omitted_indices):
     indices = indices_token.data if indices_token else ''
+    if omitted_indices:
+      assert not indices
+      return _ArrayOmittedIndices(ast, shape)
     if len(indices) != len(shape):
       raise _IntermediateError('Expected {}, got {}.'.format(_sp(len(shape), 'index', 'indices'), len(indices)))
     linked_lengths = set()
@@ -617,7 +663,7 @@ class _ExpressionParser:
     else:
       shape = tuple(_Length(indices_token.pos+i) for i, j in enumerate(indices))
       self.arg_shapes[name] = shape
-    return self._asarray(('arg', _(name)) + tuple(map(_, shape)), indices_token, shape)
+    return self._asarray(('arg', _(name)) + tuple(map(_, shape)), indices_token, shape, False)
 
   @highlight
   def parse_lhs_arg(self, seen_lhs):
@@ -641,17 +687,17 @@ class _ExpressionParser:
     return self._get_arg(name, indices)
 
   @highlight
-  def parse_var(self):
+  def parse_var(self, omitted_indices):
     'parse a component of a term, e.g. "1", "a_i", "(2 a_i)", "a_i^2", "abs(x)"'
 
     if self._next.type == '(':
       self._consume()
-      value = self.parse_subexpression()
+      value = self.parse_subexpression_cast(omitted_indices)
       self._consume_assert_equal(')')
       value = value.replace(ast=('group', value.ast))
     elif self._next.type == '[':
       self._consume()
-      value = self.parse_subexpression()
+      value = self.parse_subexpression_cast(omitted_indices)
       self._consume_assert_equal(']')
       value = value.replace(ast=('jump', value.ast))
       if self._next.type == 'geometry':
@@ -659,17 +705,17 @@ class _ExpressionParser:
       else:
         geometry_name = self.default_geometry_name
       geom = self._get_geometry(geometry_name)
-      if self._next.type == 'indices':
+      if not omitted_indices and self._next.type == 'indices':
         warnings.deprecation('`[f]_i` and `[f]_x_i` are deprecated; use `[f] n({x}_i)` instead'.format(x=geometry_name))
-        value *= self._asarray(('normal', _(geom)), self._consume(), geom.shape)
+        value *= self._asarray(('normal', _(geom)), self._consume(), geom.shape, False)
     elif self._next.type == '{':
       self._consume()
-      value = self.parse_subexpression()
+      value = self.parse_subexpression_cast(omitted_indices)
       self._consume_assert_equal('}')
       value = value.replace(ast=('mean', value.ast))
-    elif self._next.type == '<':
+    elif not omitted_indices and self._next.type == '<':
       self._consume()
-      args = self.parse_comma_separated(end='>', parse_item=self.parse_subexpression)
+      args = self.parse_comma_separated(end='>', parse_item=functools.partial(self.parse_subexpression, omitted_indices=False))
       indices = self._consume()
       if indices.type != 'indices':
         raise _IntermediateError('Expected 1 index.', at=indices.pos, count=len(indices.data))
@@ -678,21 +724,21 @@ class _ExpressionParser:
       if '0' <= indices.data <= '9':
         raise _IntermediateError('Expected a non-numeric index, got {!r}.'.format(indices.data), at=indices.pos, count=len(indices.data))
       value = _Array.stack(args, indices.data)
-    elif self._next.type == 'jacobian':
+    elif not omitted_indices and self._next.type == 'jacobian':
       nbounds = len(self._consume().data)-1
       geometry_name = self._consume_assert_equal('geometry').data
       geom = self._get_geometry(geometry_name)
-      value = self._asarray(('jacobian', _(geom), _(len(geom)-nbounds)), '', ())
-    elif self._next.type == 'old-jacobian':
+      value = self._asarray(('jacobian', _(geom), _(len(geom)-nbounds)), None, (), False)
+    elif not omitted_indices and self._next.type == 'old-jacobian':
       self._consume()
       geometry_name = self._consume_assert_equal('geometry').data
       geom = self._get_geometry(geometry_name)
-      value = self._asarray(('jacobian', _(geom), _(None)), '', ())
-    elif self._next.type == 'derivative':
+      value = self._asarray(('jacobian', _(geom), _(None)), None, (), False)
+    elif not omitted_indices and self._next.type == 'derivative':
       self._consume()
       target = self._consume()
       assert target.type in ('geometry', 'argument')
-      indices = self._consume() if self._next.type == 'indices' else ''
+      indices = self._consume() if self._next.type == 'indices' else None
       if target.type == 'geometry':
         warnings.deprecation('the gradient syntax `dx_i:u` is deprecated; use `d(u, x_i)` instead')
         geom = self._get_geometry(target.data)
@@ -700,43 +746,66 @@ class _ExpressionParser:
         assert target.data.startswith('?')
         warnings.deprecation('the derivative syntax `d?a:u` is deprecated; use `d(u, ?a)` instead')
         arg = self._get_arg(target.data[1:], indices)
-      func = self.parse_var()
+      func = self.parse_var(False)
       if target.type == 'geometry':
-        return func.grad(indices and indices.data, geom, 'grad')
+        return func.grad(indices.data if indices else '', geom, 'grad')
       else:
         return func.derivative(arg)
-    elif self._next.type == 'eye':
+    elif not omitted_indices and self._next.type == 'eye':
       self._consume()
-      indices = self._consume() if self._next.type == 'indices' else ''
+      indices = self._consume() if self._next.type == 'indices' else None
       length = _Length(self._current.pos)
-      value = self._asarray(('eye', _(length)), indices, (length, length))
+      value = self._asarray(('eye', _(length)), indices, (length, length), False)
     elif self._next.type == 'variable':
       token = self._consume()
       name = token.data
-      if name.startswith('?'):
+      if not omitted_indices and name.startswith('?'):
         indices = self._consume() if self._next.type == 'indices' else None
         value = self._get_arg(name[1:], indices)
       elif name not in self.variables and next(t for t in self._tokens[self._index+1:] if t.type not in ('indices', 'consumes')).type == '(': # assume function
-        if self._next.type == 'indices':
+        if not omitted_indices and self._next.type == 'indices':
           generates_token = self._consume()
           generates = generates_token.data
           generates_shape = tuple(_Length(pos) for pos, index in enumerate(generates, generates_token.pos) if not '0' <= index <= '9')
         else:
           generates = ''
           generates_shape = ()
-        consumes = self._consume().data if self._next.type == 'consumes' else ''
+        consumes = self._consume().data if not omitted_indices and self._next.type == 'consumes' else ''
         self._consume_assert_equal('(')
-        args = self.parse_comma_separated(end=')', parse_item=self.parse_subexpression)
-        if consumes:
-          if not all(set(consumes) <= set(arg.indices) for arg in args):
-            raise _IntermediateError('All axes to be consumed ({}) must be present in all arguments.'.format(consumes))
-          args = tuple(arg.transpose(''.join(i for i in arg.indices if i not in consumes)+consumes) for arg in args)
-        value = _Array._apply_indices(ast=('call', _(name), _(len(generates)), _(len(consumes)), *(arg.ast for arg in args)),
-                                      offset=0,
-                                      indices=''.join(arg.indices[:arg.ndim-len(consumes)] for arg in args)+generates,
-                                      shape=sum((arg.shape[:arg.ndim-len(consumes)] for arg in args), ())+generates_shape,
-                                      summed=functools.reduce(operator.or_, (arg.summed for arg in args), frozenset(consumes)),
-                                      linked_lengths=functools.reduce(operator.or_, (arg.linked_lengths for arg in args), frozenset()))
+        args_omitted_indices = None
+        if omitted_indices:
+          args_omitted_indices = self.parse_comma_separated(end=')', parse_item=functools.partial(self.parse_subexpression, omitted_indices=True))
+        elif not consumes:
+          try:
+            index = self._index
+            args_omitted_indices = self.parse_comma_separated(end=')', parse_item=functools.partial(self.parse_subexpression, omitted_indices=True))
+          except ExpressionSyntaxError:
+            self._index = index
+        if args_omitted_indices:
+          if not all(arg.shape == args_omitted_indices[0].shape for arg in args_omitted_indices):
+            raise _IntermediateError('All arguments should have the same shape.')
+          ast = ('call', _(name), _(len(generates)), _(args_omitted_indices[0].ndim), *(arg.ast for arg in args_omitted_indices))
+          if omitted_indices:
+            value = _ArrayOmittedIndices(ast, generates_shape)
+          else:
+            value = _Array._apply_indices(ast,
+                                          offset=0,
+                                          indices=generates,
+                                          shape=generates_shape,
+                                          summed=frozenset(),
+                                          linked_lengths=frozenset())
+        else:
+          args = self.parse_comma_separated(end=')', parse_item=functools.partial(self.parse_subexpression, omitted_indices=False))
+          if consumes:
+            if not all(set(consumes) <= set(arg.indices) for arg in args):
+              raise _IntermediateError('All axes to be consumed ({}) must be present in all arguments.'.format(consumes))
+            args = tuple(arg.transpose(''.join(i for i in arg.indices if i not in consumes)+consumes) for arg in args)
+          value = _Array._apply_indices(ast=('call', _(name), _(len(generates)), _(len(consumes)), *(arg.ast for arg in args)),
+                                        offset=0,
+                                        indices=''.join(arg.indices[:arg.ndim-len(consumes)] for arg in args)+generates,
+                                        shape=sum((arg.shape[:arg.ndim-len(consumes)] for arg in args), ())+generates_shape,
+                                        summed=functools.reduce(operator.or_, (arg.summed for arg in args), frozenset(consumes)),
+                                        linked_lengths=functools.reduce(operator.or_, (arg.linked_lengths for arg in args), frozenset()))
       elif name in self.normal_symbols:
         if self._next.type == 'geometry':
           warnings.deprecation('the normal syntax with explicitly geometry `n:x_i` is deprecated; use `n(x_i)` instead')
@@ -744,20 +813,26 @@ class _ExpressionParser:
         else:
           geometry_name = self.default_geometry_name
         geom = self._get_geometry(geometry_name)
-        indices = self._consume() if self._next.type == 'indices' else ''
-        value = self._asarray(('normal', _(geom)), indices, geom.shape)
+        if omitted_indices:
+          value = _ArrayOmittedIndices(('normal', _(geom)), geom.shape)
+        else:
+          indices = self._consume() if self._next.type == 'indices' else None
+          value = self._asarray(('normal', _(geom)), indices, geom.shape, False)
       else:
         raw = self._get_variable(name)
-        indices = self._consume() if self._next.type == 'indices' else ''
-        value = self._asarray(_(raw), indices, raw.shape)
+        if omitted_indices:
+          value = _ArrayOmittedIndices(_(raw), raw.shape)
+        else:
+          indices = self._consume() if self._next.type == 'indices' else None
+          value = self._asarray(_(raw), indices, raw.shape, False)
     else:
       raise _IntermediateError('Expected a variable, group or function call.')
 
-    if self._next.type == 'gradient':
+    if not omitted_indices and self._next.type == 'gradient':
       gradient = self._consume()
       target = self._consume()
       assert target.type in ('geometry', 'argument')
-      indices = self._consume() if self._next.type == 'indices' else ''
+      indices = self._consume() if self._next.type == 'indices' else None
       if target.type == 'geometry':
         assert indices
         gradtype = {',': 'grad', ';': 'surfgrad'}[gradient.data]
@@ -775,26 +850,26 @@ class _ExpressionParser:
         warnings.deprecation('the derivative to argument syntax `u_,?a` is deprecated; use `d(u, ?a)` instead')
         arg = self._get_arg(target.data[1:], indices)
         value = value.derivative(arg)
-    elif self._next.type == 'indices':
+    elif not omitted_indices and self._next.type == 'indices':
       raise _IntermediateError("Indices can only be specified for variables, e.g. 'a_ij', not for groups, e.g. '(a+b)_ij'.", at=self._next.pos, count=len(self._next.data))
 
-    if self._next.type == '(':
+    if not omitted_indices and self._next.type == '(':
       self._consume()
       subs = self.parse_comma_separated(end=')', parse_item=functools.partial(self.parse_substitution, seen_lhs={}))
       if not subs:
         raise _IntermediateError("Zero substitutions are not allowed.")
       ast = ['substitute', value.ast]
-      links = []
+      links = [] # type: List[LinkedLengths]
       for lhs, rhs in subs:
         ast += [lhs.ast, rhs.ast]
-        links += [rhs.linked_lengths, frozenset(zip(lhs.shape, rhs.shape))]
-      value = value.replace(ast=ast, linked_lengths=value._join_lengths(*links))
+        links += [rhs.linked_lengths, frozenset(frozenset({l, r}) for l, r in zip(lhs.shape, rhs.shape))]
+      value = value.replace(ast=tuple(ast), linked_lengths=value._join_lengths(*links))
 
     if self._next.type == '^':
       token = self._consume()
       if self._next.type == '(':
         self._consume()
-        exponent = self.parse_subexpression()
+        exponent = self.parse_subexpression(omitted_indices)
         self._consume_assert_equal(')')
       else:
         if self._next.type == '-':
@@ -802,7 +877,7 @@ class _ExpressionParser:
           negate = True
         else:
           negate = False
-        exponent = self.parse_const_scalar()
+        exponent = self.parse_const_scalar(omitted_indices)
         if negate:
           exponent = -exponent
       value = value**exponent
@@ -810,17 +885,17 @@ class _ExpressionParser:
     return value
 
   @highlight
-  def parse_const_scalar(self):
+  def parse_const_scalar(self, omitted_indices):
     'parse a constant scalar, e.g. "1", "1.0", "0.1", "1e3", ".1e0", "1.2e03"'
 
     token = self._consume()
     if token.type == 'int':
-      value = self._asarray(_(int(token.data)), '', [])
+      value = self._asarray(_(int(token.data)), '', [], omitted_indices)
     elif token.type == 'float':
-      value = self._asarray(_(float(token.data)), '', [])
+      value = self._asarray(_(float(token.data)), '', [], omitted_indices)
     else:
       raise _IntermediateError('Expected a number.')
-    if self._next.type == 'gradient':
+    if not omitted_indices and self._next.type == 'gradient':
       self._consume()
       self._consume()
       if self._next.type  == 'indices':
@@ -830,11 +905,11 @@ class _ExpressionParser:
     return value
 
   @highlight
-  def parse_const(self):
+  def parse_const(self, omitted_indices):
     'parse a const, possibly with indices, e.g. "1_j"'
 
-    value = self.parse_const_scalar()
-    if self._next.type == 'indices':
+    value = self.parse_const_scalar(omitted_indices)
+    if not omitted_indices and self._next.type == 'indices':
       token = self._consume()
       indices = token.data
       for i, index in enumerate(indices):
@@ -843,7 +918,7 @@ class _ExpressionParser:
         if index in indices[1+i:]:
           raise _IntermediateError('Indices of a constant value may not be repeated.')
         value = value.append_axis(index, _Length(pos=token.pos+i))
-    if self._next.type == 'gradient':
+    if not omitted_indices and self._next.type == 'gradient':
       self._consume()
       self._consume()
       if self._next.type  == 'indices':
@@ -853,7 +928,7 @@ class _ExpressionParser:
       token = self._consume()
       if self._next.type == '(':
         self._consume()
-        exponent = self.parse_subexpression()
+        exponent = self.parse_subexpression_cast(omitted_indices)
         self._consume_assert_equal(')')
       else:
         if self._next.type == '-':
@@ -861,35 +936,35 @@ class _ExpressionParser:
           negate = True
         else:
           negate = False
-        exponent = self.parse_const_scalar()
+        exponent = self.parse_const_scalar(omitted_indices)
         if negate:
           exponent = -exponent
       value = value**exponent
     return value
 
   @highlight
-  def parse_numerator(self):
+  def parse_numerator(self, omitted_indices):
     'parse the numerator part of a fraction'
 
     if self._next.type in ('int', 'float'):
-      value = self.parse_const()
+      value = self.parse_const(omitted_indices)
     else:
-      value = self.parse_var()
+      value = self.parse_var(omitted_indices)
 
     while True:
       stop = self._next.pos
       if self._next_non_whitespace.type in (')', ']', '}', '>', 'EOF', '+', '-', '/', '|', ','):
         break
       self._consume_assert_whitespace()
-      value *= self.parse_var()
+      value *= self.parse_var(omitted_indices)
 
     return value
 
   @highlight
-  def parse_denominator(self):
+  def parse_denominator(self, omitted_indices):
     'parse the denominator part of a fraction'
 
-    value = self.parse_numerator()
+    value = self.parse_numerator(omitted_indices)
     if value.ndim > 0:
       raise _IntermediateError('A denominator must have dimension 0.')
     return value
@@ -918,28 +993,28 @@ class _ExpressionParser:
     self._consume_if_whitespace()
     self._consume_assert_equal('=')
     self._consume_if_whitespace()
-    rhs = self.parse_subexpression()
+    rhs = self.parse_subexpression(False)
     if set(lhs.indices) != set(rhs.indices):
       raise _IntermediateError('Left and right hand side should have the same indices, got {!r} and {!r}.'.format(lhs.indices, rhs.indices))
     rhs = rhs.transpose(lhs.indices)
     return lhs, rhs
 
   @highlight
-  def parse_term(self):
+  def parse_term(self, omitted_indices):
     'parse a term, e.g. "a b_i (2 c_i + 1)"'
 
-    value = self.parse_numerator()
+    value = self.parse_numerator(omitted_indices)
     if self._next_non_whitespace.type == '/':
       self._consume_assert_whitespace()
       token = self._consume()
       assert token.type == '/'
       self._consume_assert_whitespace()
-      denominator = self.parse_denominator()
+      denominator = self.parse_denominator(omitted_indices)
       value /= denominator
     return value
 
   @highlight
-  def parse_subexpression(self):
+  def parse_subexpression(self, omitted_indices):
     'parse a scope: the entire expression or a subexpression between parentheses'
 
     self._consume_if_whitespace()
@@ -947,7 +1022,7 @@ class _ExpressionParser:
     if negate:
       self._consume()
     self._consume_if_whitespace()
-    value = self.parse_term()
+    value = self.parse_term(omitted_indices)
     if negate:
       value = -value
 
@@ -957,11 +1032,25 @@ class _ExpressionParser:
       if op_token.type not in '+-':
         raise _IntermediateError('Expected {!r} or {!r}.'.format('+', '-'), at=op_token.pos, count=len(op_token.data))
       self._consume_assert_whitespace()
-      r_value = self.parse_term()
+      r_value = self.parse_term(omitted_indices)
       value = {'+': value.__add__, '-': value.__sub__}[op_token.type](r_value)
 
     self._consume_if_whitespace()
     return value
+
+  @highlight
+  def parse_subexpression_cast(self, omitted_indices):
+    if omitted_indices:
+      return self.parse_subexpression(omitted_indices)
+    try:
+      index = self._index
+      value = self.parse_subexpression(True)
+      if value.ndim == 0:
+        return _Array(value.ast, '', (), frozenset(), frozenset())
+    except ExpressionSyntaxError:
+      pass
+    self._index = index
+    return self.parse_subexpression(False)
 
   @highlight
   def tokenize(self):
@@ -1225,7 +1314,8 @@ def parse(expression, variables, indices, arg_shapes={}, default_geometry_name='
       the function inaccessible. Functions of the form ``f_i(...)`` and
       ``f_ij(...)`` etc. generate one and two axes, respectively. Functions
       of the form ``f:i(...)`` and ``f:ij(...)`` etc. consume the axes labelled
-      ``i`` and ``i`` and ``j`` respectively.
+      ``i`` and ``i`` and ``j`` respectively. If all axes are consumed, it is
+      allowed to omit the axes: ``sum(u)`` is equivalent to ``sum:i(u_i)``.
 
   *   A **stack** of two or more arrays along an axis is denoted by a ``<``
       followed by comma and space separated arrays followed by ``>`` and an
@@ -1309,7 +1399,14 @@ def parse(expression, variables, indices, arg_shapes={}, default_geometry_name='
     warnings.deprecation('argument `functions` is deprecated; the existence and number of arguments is not checked during parsing')
   parser = _ExpressionParser(expression, variables, arg_shapes, default_geometry_name, fixed_lengths or {})
   parser.tokenize()
-  value = parser.parse_subexpression()
+  if indices is None:
+    try:
+      value = parser.parse_subexpression(True)
+      return value.ast, arg_shapes
+    except ExpressionSyntaxError:
+      pass
+    parser._index = 0
+  value = parser.parse_subexpression(False)
   parser._consume_assert_equal('EOF', msg='Unexpected symbol at end of expression.')
   if indices is None:
     if value.ndim > 1:

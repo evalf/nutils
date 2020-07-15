@@ -4766,7 +4766,7 @@ class Namespace:
       raise AttributeError('{!r} object has no attribute {!r}'.format(type(self), name))
     else:
       name, indices = m.groups()
-      indices = indices[1:] if indices else ''
+      indices = indices[1:] if indices else None
       if isinstance(value, str):
         ast, arg_shapes = expression.parse(value, variables=self._attributes, indices=indices, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)
         value = _eval_ast(ast, self._functions)

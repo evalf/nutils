@@ -823,6 +823,7 @@ class parse(TestCase):
   def test_function_generates_trace(self): self.assert_ast('func_i(a2_i)', '', ('trace', ('call', _('func'), _(1), _(0), v._a2), _(0), _(1)))
   def test_function_consumes(self): self.assert_ast('sum:i(a2_i)', '', ('call', _('sum'), _(0), _(1), v._a2))
   def test_function_consumes_transpose(self): self.assert_ast('sum:i(a23_ij)', 'j', ('call', _('sum'), _(0), _(1), ('transpose', v._a23, _((1,0)))))
+  def test_function_consumes_omitted(self): self.assert_ast('sum(a2)', '', ('call', _('sum'), _(0), _(1), v._a2))
 
   def test_function_triple_index(self):
     self.assert_syntax_error(
@@ -847,5 +848,44 @@ class parse(TestCase):
       "All axes to be consumed (i) must be present in all arguments.",
       "1 + sum:i(a) + 1", "",
       "    ^^^^^^^^")
+
+  def test_function_consumes_omitted_shape_mismatch(self):
+    self.assert_syntax_error(
+      "All arguments should have the same shape.",
+      "1 + f(a2, a3) + 1", None,
+      "    ^^^^^^^^^")
+
+  # OMITTED INDICES
+
+  def test_omitted_add(self): self.assert_ast('a2 + a2', None, ('add', v._a2, v._a2))
+  def test_omitted_sub(self): self.assert_ast('a2 - a2', None, ('sub', v._a2, v._a2))
+  def test_omitted_truediv(self): self.assert_ast('a2 / a', None, ('truediv', v._a2, v._a))
+  def test_omitted_neg(self): self.assert_ast('-a2', None, ('neg', v._a2))
+  def test_omitted_pow(self): self.assert_ast('a2^2', None, ('pow', v._a2, _(2)))
+  def test_omitted_group(self): self.assert_ast('(a2)', None, ('group', v._a2))
+  def test_omitted_jump(self): self.assert_ast('[a2]', None, ('jump', v._a2))
+  def test_omitted_mean(self): self.assert_ast('{a2}', None, ('mean', v._a2))
+  def test_omitted_function(self): self.assert_ast('sum(a2)', None, ('call', _('sum'), _(0), _(1), v._a2))
+  def test_omitted_normal(self): self.assert_ast('n', None, ('normal', v._x))
+
+  def test_omitted_add_shape_mismatch(self):
+    with self.assertRaises(nutils.expression.ExpressionSyntaxError):
+      nutils.expression.parse("a2 + a3", v, None)
+
+  def test_omitted_sub_shape_mismatch(self):
+    with self.assertRaises(nutils.expression.ExpressionSyntaxError):
+      nutils.expression.parse("a2 - a3", v, None)
+
+  def test_omitted_mul(self):
+    with self.assertRaises(nutils.expression.ExpressionSyntaxError):
+      nutils.expression.parse("a2 a3", v, None)
+
+  def test_omitted_truediv_nonscalar_denominator(self):
+    with self.assertRaises(nutils.expression.ExpressionSyntaxError):
+      nutils.expression.parse("a2 / a3", v, None)
+
+  def test_omitted_pow_nonscalar_exponent(self):
+    with self.assertRaises(nutils.expression.ExpressionSyntaxError):
+      nutils.expression.parse("a2^(a3)", v, None)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2
