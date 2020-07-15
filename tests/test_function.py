@@ -492,18 +492,18 @@ class blocks(TestCase):
 
   def test_multiply_equal(self):
     ((i,), f), = function.multiply(function.Inflate([1,2], dofmap=[0,2], length=3, axis=0), function.Inflate([3,4], dofmap=[0,2], length=3, axis=0)).blocks
-    self.assertEqual(i, function.asarray([0,2]))
+    self.assertAllEqual(i.eval(), [0,2])
     self.assertAllEqual(f.eval(), [1*3,2*4])
 
   def test_multiply_embedded(self):
     ((i,), f), = function.multiply([1,2,3], function.Inflate([4,5], dofmap=[0,2], length=3, axis=0)).blocks
-    self.assertEqual(i, function.asarray([0,2]))
+    self.assertAllEqual(i.eval(), [0,2])
     self.assertAllEqual(f.eval(), [1*4,3*5])
 
   def test_multiply_overlapping(self):
     ((i,), f), = function.multiply(function.Inflate([1,2], dofmap=[0,1], length=3, axis=0), function.Inflate([3,4], dofmap=[1,2], length=3, axis=0)).blocks
-    self.assertEqual(i, function.asarray([1]))
-    self.assertAllEqual(f.eval(), 2*3)
+    self.assertAllEqual(i.eval(), [1])
+    self.assertAllEqual(f.eval(), [2*3])
 
   def test_multiply_disjoint(self):
     blocks = function.multiply(function.Inflate([1,2], dofmap=[0,2], length=4, axis=0), function.Inflate([3,4], dofmap=[1,3], length=4, axis=0)).blocks
@@ -511,28 +511,28 @@ class blocks(TestCase):
 
   def test_multiply_fallback(self):
     ((i,), f), = function.multiply(function.Inflate([1,2], dofmap=function.Guard([0,1]), length=3, axis=0), function.Inflate([3,4], dofmap=function.Guard([1,2]), length=3, axis=0)).blocks
-    self.assertEqual(i, function.Range(3))
+    self.assertAllEqual(i.eval(), [0,1,2])
     self.assertAllEqual(f.eval(), [0,2*3,0])
 
   def test_takediag(self):
     ((i,), f), = function.takediag([[1,2,3],[4,5,6],[7,8,9]]).blocks
-    self.assertEqual(i, function.Range(3))
+    self.assertAllEqual(i.eval(), [0,1,2])
     self.assertAllEqual(f.eval(), [1,5,9])
 
   def test_takediag_embedded_axis(self):
     ((i,), f), = function.takediag(function.Inflate([[1,2,3],[4,5,6]], dofmap=[0,2], length=3, axis=0)).blocks
-    self.assertEqual(i, function.asarray([0,2]))
+    self.assertAllEqual(i.eval(), [0,2])
     self.assertAllEqual(f.eval(), [1,6])
 
   def test_takediag_embedded_rmaxis(self):
     ((i,), f), = function.takediag(function.Inflate([[1,2],[3,4],[5,6]], dofmap=[0,2], length=3, axis=1)).blocks
-    self.assertEqual(i, function.asarray([0,2]))
+    self.assertAllEqual(i.eval(), [0,2])
     self.assertAllEqual(f.eval(), [1,6])
 
   def test_takediag_overlapping(self):
     ((i,), f), = function.takediag(function.Inflate(function.Inflate([[1,2],[3,4]], dofmap=[0,1], length=3, axis=0), dofmap=[1,2], length=3, axis=1)).blocks
-    self.assertEqual(i, function.asarray([1]))
-    self.assertAllEqual(f.eval(), 3)
+    self.assertAllEqual(i.eval(), [1])
+    self.assertAllEqual(f.eval(), [3])
 
   def test_takediag_disjoint(self):
     blocks = function.takediag(function.Inflate(function.Inflate([[1,2],[3,4]], dofmap=[0,2], length=4, axis=0), dofmap=[1,3], length=4, axis=1)).blocks
@@ -540,7 +540,7 @@ class blocks(TestCase):
 
   def test_takediag_fallback(self):
     ((i,), f), = function.takediag(function.Inflate(function.Inflate([[1,2],[3,4]], dofmap=function.Guard([0,1]), length=3, axis=0), dofmap=function.Guard([1,2]), length=3, axis=1)).blocks
-    self.assertEqual(i, function.Range(3))
+    self.assertAllEqual(i.eval(), [0,1,2])
     self.assertAllEqual(f.eval(), [0,3,0])
 
 
