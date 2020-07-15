@@ -1388,143 +1388,6 @@ class Inverse(Array):
     if axis < self.ndim-2:
       return Inverse(Unravel(self.func, axis, shape))
 
-class Concatenate(Array):
-
-  __slots__ = 'funcs', 'axis'
-  __cache__ = '_withslices'
-
-  @types.apply_annotations
-  def __init__(self, funcs:types.tuple[asarray], axis:types.strictint=0):
-    ndim = funcs[0].ndim
-    assert all(func.ndim == ndim for func in funcs)
-    assert 0 <= axis < ndim
-    assert all(func.shape[:axis] == funcs[0].shape[:axis] and func.shape[axis+1:] == funcs[0].shape[axis+1:] for func in funcs[1:])
-    length = util.sum(func.shape[axis] for func in funcs)
-    axistype = Sparse if all(isinstance(func._axes[axis], Sparse) for func in funcs) else Axis
-    shape = funcs[0].shape[:axis] + (axistype(length),) + funcs[0].shape[axis+1:]
-    dtype = _jointdtype(*[func.dtype for func in funcs])
-    self.funcs = funcs
-    self.axis = axis
-    super().__init__(args=funcs, shape=shape, dtype=dtype)
-
-  @property
-  def _slices(self):
-    shapes = [func.shape[self.axis] for func in self.funcs]
-    return tuple(map(Range, shapes, util.cumsum(shapes)))
-
-  @property
-  def _withslices(self):
-    return tuple(zip(self._slices, self.funcs))
-
-  def _simplified(self):
-    if any(func.shape[self.axis] == 0 for func in self.funcs):
-      return Concatenate([func for func in self.funcs if func.shape[self.axis] != 0], self.axis)
-    if all(iszero(func) for func in self.funcs):
-      return zeros_like(self)
-    if len(self.funcs) == 1:
-      return self.funcs[0]
-    if all(isinstance(func, Inflate) or iszero(func) for func in self.funcs):
-      (dofmap, axis), *other = set((func.dofmap, func.axis) for func in self.funcs if isinstance(func, Inflate))
-      if not other and axis != self.axis:
-        # This is an Inflate-specific simplification that shouldn't appear
-        # here, but currently cannot appear anywhere else due to design
-        # choices. We need it here to fix a regression while awaiting a full
-        # rewrite of this module to fundamentally take care of the issue.
-        concat_blocks = Concatenate([Take(func, dofmap, axis) for func in self.funcs], self.axis)
-        return Inflate(concat_blocks, dofmap=dofmap, length=self.shape[axis], axis=axis)
-
-  def evalf(self, *arrays):
-    shape = list(builtins.max(arrays, key=len).shape)
-    shape[self.axis+1] = builtins.sum(array.shape[self.axis+1] for array in arrays)
-    retval = numpy.empty(shape, dtype=self.dtype)
-    n0 = 0
-    for array in arrays:
-      n1 = n0 + array.shape[self.axis+1]
-      retval[(slice(None),)*(self.axis+1)+(slice(n0,n1),)] = array
-      n0 = n1
-    assert n0 == retval.shape[self.axis+1]
-    return retval
-
-  def _desparsify(self, axis):
-    assert isinstance(self._axes[axis], Sparse)
-    assert axis == self.axis
-    return [(ind + s.offset, f) for s, func in self._withslices for ind, f in func._desparsify(axis)]
-
-  def _get(self, i, item):
-    if i != self.axis:
-      axis = self.axis - (self.axis > i)
-      return Concatenate([Get(f, i, item) for f in self.funcs], axis=axis)
-    if item.isconstant:
-      item, = item.eval()
-      for f in self.funcs:
-        if item < f.shape[i]:
-          return Get(f, i, item)
-        item -= f.shape[i]
-      raise Exception
-
-  def _derivative(self, var, seen):
-    funcs = [derivative(func, var, seen) for func in self.funcs]
-    return concatenate(funcs, axis=self.axis)
-
-  def _multiply(self, other):
-    funcs = [Multiply([func, Take(other, s, self.axis)]) for s, func in self._withslices]
-    return Concatenate(funcs, self.axis)
-
-  def _add(self, other):
-    if isinstance(other, Concatenate) and self.axis == other.axis and [f1.shape[self.axis] for f1 in self.funcs] == [f2.shape[self.axis] for f2 in other.funcs]:
-      other_funcs = other.funcs
-    else:
-      other_funcs = [Take(other, s, self.axis) for s in self._slices]
-    return Concatenate([Add(f12) for f12 in zip(self.funcs, other_funcs)], self.axis)
-
-  def _sum(self, axis):
-    funcs = [Sum(func, axis) for func in self.funcs]
-    if axis == self.axis:
-      while len(funcs) > 1:
-        funcs[-2:] = Add(funcs[-2:]),
-      return funcs[0]
-    return Concatenate(funcs, self.axis - (axis<self.axis))
-
-  def _transpose(self, axes):
-    funcs = [Transpose(func, axes) for func in self.funcs]
-    axis = axes.index(self.axis)
-    return Concatenate(funcs, axis)
-
-  def _insertaxis(self, axis, length):
-    funcs = [InsertAxis(func, axis, length) for func in self.funcs]
-    return Concatenate(funcs, self.axis+(axis<=self.axis))
-
-  def _takediag(self, axis, rmaxis):
-    if self.axis == axis:
-      funcs = [TakeDiag(Take(func, s, rmaxis), axis, rmaxis) for s, func in self._withslices]
-      return Concatenate(funcs, axis=axis)
-    elif self.axis == rmaxis:
-      funcs = [TakeDiag(Take(func, s, axis), axis, rmaxis) for s, func in self._withslices]
-      return Concatenate(funcs, axis=axis)
-    else:
-      return Concatenate([TakeDiag(f, axis, rmaxis) for f in self.funcs], axis=self.axis-(self.axis>rmaxis))
-
-  def _take(self, indices, axis):
-    if axis != self.axis:
-      return Concatenate([Take(func, indices, axis) for func in self.funcs], self.axis)
-
-  def _power(self, n):
-    return Concatenate([Power(func, Take(n, s, self.axis)) for s, func in self._withslices], self.axis)
-
-  def _diagonalize(self, axis, newaxis):
-    if self.axis != axis:
-      return Concatenate([Diagonalize(func, axis, newaxis) for func in self.funcs], self.axis+(newaxis<=self.axis))
-
-  def _mask(self, maskvec, axis):
-    if axis != self.axis:
-      return Concatenate([Mask(func,maskvec,axis) for func in self.funcs], self.axis)
-    if all(s.isconstant for s, func in self._withslices):
-      return Concatenate([Mask(func, maskvec[s.eval()[0]], axis) for s, func in self._withslices], axis)
-
-  def _unravel(self, axis, shape):
-    if axis != self.axis:
-      return Concatenate([Unravel(func, axis, shape) for func in self.funcs], self.axis+(self.axis>axis))
-
 class Interpolate(Array):
   'interpolate uniformly spaced data; stepwise for now'
 
@@ -2416,7 +2279,7 @@ class Zeros(Array):
 
 class Inflate(Array):
 
-  __slots__ = 'func', 'dofmap', 'length', 'axis'
+  __slots__ = 'func', 'dofmap', 'length', 'axis', 'warn'
 
   @types.apply_annotations
   def __init__(self, func:asarray, dofmap:asarray, length:asarray, axis:types.strictint):
@@ -2428,6 +2291,7 @@ class Inflate(Array):
     assert func.shape[axis] == dofmap.shape[0]
     mask = not isinstance(func._axes[axis], Sparse) and dofmap.isconstant and length.isconstant and numeric.asboolean(dofmap.eval().ravel(), length.eval()[0], ordered=False)
     shape = func._axes[:axis] + (Sparse(length, mask),) + func._axes[axis+1:]
+    self.warn = not dofmap.isconstant
     super().__init__(args=[func,dofmap,length], shape=shape, dtype=func.dtype)
 
   def _simplified(self):
@@ -2438,7 +2302,8 @@ class Inflate(Array):
     indices, = indices
     length, = length
     assert array.ndim == self.ndim+1
-    warnings.warn('using explicit inflation; this is usually a bug.', ExpensiveEvaluationWarning)
+    if self.warn:
+      warnings.warn('using explicit inflation; this is usually a bug.', ExpensiveEvaluationWarning)
     shape = list(array.shape)
     shape[self.axis+1] = length
     inflated = numpy.zeros(shape, dtype=self.dtype)
@@ -2646,7 +2511,7 @@ class Diagonalize(Array):
     # consecutive sub-block
     ax = self.axis if axis == self.newaxis else self.newaxis
     masked = Diagonalize(Mask(self.func, maskvec, self.axis), self.axis, self.newaxis)
-    return Concatenate([Zeros(masked.shape[:ax] + (indices[0],) + masked.shape[ax+1:], dtype=self.dtype), masked, Zeros(masked.shape[:ax] + (self.shape[ax]-(indices[-1]+1),) + masked.shape[ax+1:], dtype=self.dtype)], axis=ax)
+    return concatenate([Zeros(masked.shape[:ax] + (indices[0],) + masked.shape[ax+1:], dtype=self.dtype), masked, Zeros(masked.shape[:ax] + (self.shape[ax]-(indices[-1]+1),) + masked.shape[ax+1:], dtype=self.dtype)], axis=ax)
 
   def _unravel(self, axis, shape):
     if axis == self.axis or axis == self.newaxis:
@@ -4239,8 +4104,7 @@ def insertaxis(arg, n, length):
 
 def stack(args, axis=0):
   aligned = _numpy_align(*args)
-  axis = numeric.normdim(aligned[0].ndim+1, axis)
-  return Concatenate([InsertAxis(arg, axis, 1) for arg in aligned], axis)
+  return util.sum(kronecker(arg, axis, len(args), i) for i, arg in enumerate(args))
 
 def chain(funcs):
   'chain'
@@ -4361,7 +4225,9 @@ def diagonalize(arg, axis=-1, newaxis=-1):
 def concatenate(args, axis=0):
   args = _matchndim(*args)
   axis = numeric.normdim(args[0].ndim, axis)
-  return Concatenate(args, axis)
+  length = util.sum(arg.shape[axis] for arg in args)
+  return util.sum(Inflate(arg, dofmap=Range(arg.shape[axis], offset), length=length, axis=axis)
+    for arg, offset in zip(args, util.cumsum(arg.shape[axis] for arg in args)))
 
 def cross(arg1, arg2, axis):
   arg1, arg2 = _numpy_align(arg1, arg2)
