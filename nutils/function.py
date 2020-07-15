@@ -1628,15 +1628,12 @@ class Multiply(Array):
           elif ind2[i] == Range(sh):
             ind = ind1[i]
             f2 = Take(f2, ind, axis=i)
-          elif ind1[i].isconstant and ind2[i].isconstant:
-            ind, subind1, subind2 = numpy.intersect1d(ind1[i].eval()[0], ind2[i].eval()[0], return_indices=True)
-            if not ind.size:
+          else:
+            ind, subind1, subind2 = Intersect(ind1[i], ind2[i])
+            if ind.shape[0] == 0:
               break # blocks do not overlap
             f1 = _take(f1, subind1, i)
             f2 = _take(f2, subind2, i)
-          else:
-            warnings.warn('failed to isolate sparsely multiplied blocks', ExpensiveEvaluationWarning)
-            return super().blocks
           indices.append(asarray(ind))
         else:
           assert f1.shape == f2.shape == tuple(ind.shape[0] for ind in indices)
@@ -1840,15 +1837,12 @@ class TakeDiag(Array):
         elif ind[self.axis] == Range(self.func.shape[self.axis]):
           f = Take(f, ind[self.rmaxis], axis=self.axis)
           ind = ind[:self.axis] + (ind[self.rmaxis],) + ind[self.axis+1:]
-        elif ind[self.axis].isconstant and ind[self.rmaxis].isconstant:
-          newind, subind1, subind2 = numpy.intersect1d(ind[self.axis].eval()[0], ind[self.rmaxis].eval()[0], return_indices=True)
-          if not newind.size:
+        else:
+          newind, subind1, subind2 = Intersect(ind[self.axis], ind[self.rmaxis])
+          if newind.shape[0] == 0:
             break # blocks do not overlap
           f = Take(Take(f, subind1, axis=self.axis), subind2, axis=self.rmaxis)
           ind = ind[:self.axis] + (asarray(newind),) + ind[self.axis+1:]
-        else:
-          warnings.warn('failed to preserve takediag sparsity', ExpensiveEvaluationWarning)
-          return super().blocks
       blocks.append((ind[:self.rmaxis] + ind[self.rmaxis+1:], TakeDiag(f, self.axis, self.rmaxis)))
     return tuple(blocks)
 
@@ -2234,13 +2228,47 @@ class Eig(Evaluable):
   def evalf(self, arr):
     return (numpy.linalg.eigh if self.symmetric else numpy.linalg.eig)(arr)
 
+class Intersect(Evaluable):
+
+  def __init__(self, index1, index2):
+    self.index1 = index1
+    self.index2 = index2
+    super().__init__(args=[index1, index2])
+
+  def evalf(self, index1, index2):
+    index1, = index1
+    index2, = index2
+    ind, subind1, subind2 = numpy.intersect1d(index1, index2, return_indices=True)
+    return ind[numpy.newaxis], subind1[numpy.newaxis], subind2[numpy.newaxis], numpy.array([len(ind)])
+
+  def __len__(self):
+    return 3
+
+  def __iter__(self):
+    if self.index1 == self.index2:
+      return iter([self.index1, Range(self.index1.shape[0]), Range(self.index1.shape[0])])
+    if all(isinstance(index, (Range, InRange)) and index.length.isconstant and index.offset.isconstant for index in (self.index1, self.index2)):
+      length1, = self.index1.length.eval()
+      offset1, = self.index1.offset.eval()
+      length2, = self.index2.length.eval()
+      offset2, = self.index2.offset.eval()
+      offset = builtins.max(offset1, offset2)
+      length = builtins.min(offset1 + length1, offset2 + length2) - offset
+      if length <= 0:
+        return (Zeros([0], dtype=int) for i in range(3))
+      if all(isinstance(index, Range) for index in (self.index1, self.index2)):
+        return (Range(length, offset-o) for o in (0, offset1, offset2))
+    if self.isconstant:
+      return (Constant(item[0]) for item in self.eval()[:3])
+    shape = ArrayFromTuple(self, 3, shape=(), dtype=int),
+    return (ArrayFromTuple(self, i, shape, dtype=int) for i in range(3))
+
 class ArrayFromTuple(Array):
 
   __slots__ = 'arrays', 'index'
 
   @types.apply_annotations
   def __init__(self, arrays:strictevaluable, index:types.strictint, shape:asshape, dtype:asdtype):
-    assert 0 <= index < len(arrays)
     self.arrays = arrays
     self.index = index
     super().__init__(args=[arrays], shape=shape, dtype=dtype)
@@ -2409,6 +2437,11 @@ class Inflate(Array):
       return Inflate(Take(self.func, index, axis), self.dofmap, self.length, self.axis)
     if index == self.dofmap:
       return self.func
+    ind, subind1, subind2 = Intersect(self.dofmap, index)
+    if ind.shape[0] == 0:
+      return Zeros(self.shape[:axis] + index.shape + self.shape[axis+1:], dtype=self.dtype)
+    if self.dofmap.ndim == 1 and index.ndim == 1:
+      return Inflate(_take(self.func, subind1, axis), subind2, index.shape[0], self.axis)
 
   def _diagonalize(self, axis, newaxis):
     if self.axis != axis:
@@ -3017,7 +3050,10 @@ class Range(Array):
     super().__init__(args=[length, offset], shape=[length], dtype=int)
 
   def _take(self, index, axis):
-    return add(index, self.offset)
+    if isinstance(index, Range) and self.isconstant and index.isconstant:
+      assert (index.offset + index.length).eval() <= self.length.eval()
+      return Range(index.length, self.offset + index.offset)
+    return InRange(self.length, self.offset, index)
 
   def _add(self, offset):
     if 0 in offset._inserted_axes:
@@ -3027,6 +3063,23 @@ class Range(Array):
     length, = length
     offset, = offset
     return numpy.arange(offset, offset+length)[_]
+
+class InRange(Array):
+
+  __slots__ = 'length', 'offset', 'index'
+
+  @types.apply_annotations
+  def __init__(self, length:asarray, offset:asarray, index:asarray):
+    self.length = length
+    self.offset = offset
+    self.index = index
+    super().__init__(args=[length, offset, index], shape=index.shape, dtype=int)
+
+  def evalf(self, length, offset, index):
+    length, = length
+    offset, = offset
+    assert index.size == 0 or 0 <= index.min() and index.max() < length
+    return index + offset
 
 class Polyval(Array):
   '''

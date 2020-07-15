@@ -509,10 +509,10 @@ class blocks(TestCase):
     blocks = function.multiply(function.Inflate([1,2], dofmap=[0,2], length=4, axis=0), function.Inflate([3,4], dofmap=[1,3], length=4, axis=0)).blocks
     self.assertEqual(blocks, ())
 
-  def test_multiply_fallback(self):
+  def test_multiply_overlap(self):
     ((i,), f), = function.multiply(function.Inflate([1,2], dofmap=function.Guard([0,1]), length=3, axis=0), function.Inflate([3,4], dofmap=function.Guard([1,2]), length=3, axis=0)).blocks
-    self.assertAllEqual(i.eval(), [0,1,2])
-    self.assertAllEqual(f.eval(), [0,2*3,0])
+    self.assertAllEqual(i.eval(), [1])
+    self.assertAllEqual(f.eval(), [2*3])
 
   def test_takediag(self):
     ((i,), f), = function.takediag([[1,2,3],[4,5,6],[7,8,9]]).blocks
@@ -538,10 +538,10 @@ class blocks(TestCase):
     blocks = function.takediag(function.Inflate(function.Inflate([[1,2],[3,4]], dofmap=[0,2], length=4, axis=0), dofmap=[1,3], length=4, axis=1)).blocks
     self.assertEqual(blocks, ())
 
-  def test_takediag_fallback(self):
+  def test_takediag_overlap(self):
     ((i,), f), = function.takediag(function.Inflate(function.Inflate([[1,2],[3,4]], dofmap=function.Guard([0,1]), length=3, axis=0), dofmap=function.Guard([1,2]), length=3, axis=1)).blocks
-    self.assertAllEqual(i.eval(), [0,1,2])
-    self.assertAllEqual(f.eval(), [0,3,0])
+    self.assertAllEqual(i.eval(), [1])
+    self.assertAllEqual(f.eval(), [3])
 
 
 class commutativity(TestCase):
