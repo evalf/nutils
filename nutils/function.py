@@ -4321,7 +4321,12 @@ def take(arg:asarray, index:asarray, axis:types.strictint):
 @types.apply_annotations
 def _take(arg:asarray, index:asarray, axis:types.strictint):
   axis = numeric.normdim(arg.ndim, axis)
-  return Take(arg, index, axis)
+  if index.ndim == 0:
+    return get(arg, axis, index)
+  elif index.ndim == 1:
+    return Take(arg, index, axis)
+  else:
+    return unravel(_take(arg, ravel(index, 0), axis), axis, index.shape[:2])
 
 def find(arg):
   'find'
