@@ -1611,8 +1611,8 @@ class Multiply(Array):
             ind, subind1, subind2 = numpy.intersect1d(ind1[i].eval()[0], ind2[i].eval()[0], return_indices=True)
             if not ind.size:
               break # blocks do not overlap
-            f1 = take(f1, subind1, i)
-            f2 = take(f2, subind2, i)
+            f1 = _take(f1, subind1, i)
+            f2 = _take(f2, subind2, i)
           else:
             warnings.warn('failed to isolate sparsely multiplied blocks', ExpensiveEvaluationWarning)
             return super().blocks
@@ -1852,20 +1852,8 @@ class Take(Array):
     length = self.func.shape[self.axis]
     if self.indices == Range(length):
       return self.func
-    if self.indices.isconstant:
-      indices_, = self.indices.eval()
-      ineg = numpy.less(indices_, 0)
-      if not numeric.isint(length):
-        if ineg.any():
-          raise IndexError('negative indices only allowed for constant-length axes')
-      elif ineg.any():
-        if numpy.less(indices_, -length).any():
-          raise IndexError('indices out of bounds: {} < {}'.format(indices_, -length))
-        return Take(self.func, Constant(types.frozenarray(indices_ + ineg * length, copy=False)), self.axis)
-      elif numpy.greater_equal(indices_, length).any():
-        raise IndexError('indices out of bounds: {} >= {}'.format(indices_, length))
-      elif numpy.greater(numpy.diff(indices_), 0).all():
-        return Mask(self.func, numeric.asboolean(indices_, length), self.axis)
+    if isinstance(self.indices, Range) and self.indices.isconstant:
+      return Mask(self.func, numeric.asboolean(self.indices.eval()[0], length), self.axis)
     return self.func._take(self.indices, self.axis)
 
   def evalf(self, arr, indices):
@@ -1874,7 +1862,7 @@ class Take(Array):
     return types.frozenarray(numpy.take(arr, indices[0], self.axis+1), copy=False)
 
   def _derivative(self, var, seen):
-    return take(derivative(self.func, var, seen), self.indices, self.axis)
+    return _take(derivative(self.func, var, seen), self.indices, self.axis)
 
   def _get(self, axis, item):
     if axis == self.axis:
@@ -2388,9 +2376,9 @@ class Inflate(Array):
 
   def _takediag(self, axis, rmaxis):
     if self.axis == axis:
-      return Inflate(TakeDiag(take(self.func, self.dofmap, rmaxis), axis, rmaxis), self.dofmap, self.length, axis)
+      return Inflate(TakeDiag(_take(self.func, self.dofmap, rmaxis), axis, rmaxis), self.dofmap, self.length, axis)
     elif self.axis == rmaxis:
-      return Inflate(TakeDiag(take(self.func, self.dofmap, axis), axis, rmaxis), self.dofmap, self.length, axis)
+      return Inflate(TakeDiag(_take(self.func, self.dofmap, axis), axis, rmaxis), self.dofmap, self.length, axis)
     else:
       return Inflate(TakeDiag(self.func, axis, rmaxis), self.dofmap, self.length, self.axis-(self.axis>rmaxis))
 
@@ -3072,7 +3060,7 @@ class Polyval(Array):
 
   def _take(self, index, axis):
     if axis < self.coeffs.ndim - self.points_ndim:
-      return Polyval(take(self.coeffs, index, axis), self.points, self.ngrad)
+      return Polyval(_take(self.coeffs, index, axis), self.points, self.ngrad)
 
   def _mask(self, maskvec, axis):
     if axis < self.coeffs.ndim - self.points_ndim:
@@ -3196,7 +3184,7 @@ class Kronecker(Array):
 
   def _take(self, index, axis):
     if axis != self.axis:
-      return Kronecker(take(self.func, index, axis-(axis>self.axis)), self.axis, self.length, self.pos)
+      return Kronecker(_take(self.func, index, axis-(axis>self.axis)), self.axis, self.length, self.pos)
     if self.pos.isconstant and index.isconstant:
       pos, = self.pos.eval()
       index, = index.eval()
@@ -3303,7 +3291,7 @@ class Choose(Array):
     return Choose(self.index, [sum(choice, axis) for choice in self.choices])
 
   def _take(self, index, axis):
-    return Choose(self.index, [take(choice, index, axis) for choice in self.choices])
+    return Choose(self.index, [_take(choice, index, axis) for choice in self.choices])
 
   def _takediag(self, axis, rmaxis):
     return Choose(self.index, [takediag(choice, axis, rmaxis) for choice in self.choices])
@@ -4258,7 +4246,7 @@ def cross(arg1, arg2, axis):
   assert arg1.shape[axis] == 3
   i = types.frozenarray([1, 2, 0])
   j = types.frozenarray([2, 0, 1])
-  return take(arg1, i, axis) * take(arg2, j, axis) - take(arg2, i, axis) * take(arg1, j, axis)
+  return _take(arg1, i, axis) * _take(arg2, j, axis) - _take(arg2, i, axis) * _take(arg1, j, axis)
 
 def outer(arg1, arg2=None, axis=0):
   'outer product'
@@ -4304,17 +4292,35 @@ def _takeslice(arg:asarray, s:types.strict[slice], axis:types.strictint):
     raise Exception('a non-unit slice requires a constant-length axis')
   return take(arg, index, axis)
 
-def take(arg, index, axis):
-  arg = asarray(arg)
-  axis = numeric.normdim(arg.ndim, axis)
-  index = asarray(index)
+@types.apply_annotations
+def take(arg:asarray, index:asarray, axis:types.strictint):
   assert index.ndim == 1
+  length = arg.shape[axis]
   if index.dtype == bool:
-    assert index.shape[0] == arg.shape[axis]
+    assert index.shape[0] == length
     if index.isconstant:
-      mask, = index.eval()
-      return Mask(arg, mask, axis)
+      maskvec, = index.eval()
+      return mask(arg, maskvec, axis)
     index = find(index)
+  elif index.isconstant:
+    index_, = index.eval()
+    ineg = numpy.less(index_, 0)
+    if not numeric.isint(length):
+      if ineg.any():
+        raise IndexError('negative indices only allowed for constant-length axes')
+    elif ineg.any():
+      if numpy.less(index_, -length).any():
+        raise IndexError('indices out of bounds: {} < {}'.format(index_, -length))
+      return _take(arg, Constant(types.frozenarray(index_ + ineg * length, copy=False)), axis)
+    elif numpy.greater_equal(index_, length).any():
+      raise IndexError('indices out of bounds: {} >= {}'.format(index_, length))
+    elif numpy.greater(numpy.diff(index_), 0).all():
+      return mask(arg, numeric.asboolean(index_, length), axis)
+  return _take(arg, index, axis)
+
+@types.apply_annotations
+def _take(arg:asarray, index:asarray, axis:types.strictint):
+  axis = numeric.normdim(arg.ndim, axis)
   return Take(arg, index, axis)
 
 def find(arg):
