@@ -2302,7 +2302,7 @@ class Inflate(Array):
   __cache__ = 'blocks'
 
   @types.apply_annotations
-  def __init__(self, func:asarray, dofmap:asarray, length:types.strictint, axis:types.strictint):
+  def __init__(self, func:asarray, dofmap:asarray, length:asarray, axis:types.strictint):
     self.func = func
     self.dofmap = dofmap
     self.length = length
@@ -2310,18 +2310,19 @@ class Inflate(Array):
     assert 0 <= axis < func.ndim
     assert func.shape[axis] == dofmap.shape[0]
     shape = func.shape[:axis] + (length,) + func.shape[axis+1:]
-    super().__init__(args=[func,dofmap], shape=shape, dtype=func.dtype)
+    super().__init__(args=[func,dofmap,length], shape=shape, dtype=func.dtype)
 
   def _simplified(self):
     return self.func._inflate(self.dofmap, self.length, self.axis)
 
-  def evalf(self, array, indices):
+  def evalf(self, array, indices, length):
     assert indices.shape[0] == 1
     indices, = indices
+    length, = length
     assert array.ndim == self.ndim+1
     warnings.warn('using explicit inflation; this is usually a bug.', ExpensiveEvaluationWarning)
     shape = list(array.shape)
-    shape[self.axis+1] = self.length
+    shape[self.axis+1] = length
     inflated = numpy.zeros(shape, dtype=self.dtype)
     numpy.add.at(inflated, (slice(None),)*(self.axis+1)+(indices,), array)
     return inflated
@@ -2508,9 +2509,8 @@ class Diagonalize(Array):
   def _take(self, index, axis):
     if axis not in (self.axis, self.newaxis):
       return Diagonalize(Take(self.func, index, axis-(axis>self.newaxis)), self.axis, self.newaxis)
-    if numeric.isint(self.func.shape[self.axis]):
-      diag = Diagonalize(Take(self.func, index, self.axis), self.axis, self.newaxis)
-      return Inflate(diag, index, self.func.shape[self.axis], self.newaxis if axis == self.axis else self.axis)
+    diag = Diagonalize(Take(self.func, index, self.axis), self.axis, self.newaxis)
+    return Inflate(diag, index, self.func.shape[self.axis], self.newaxis if axis == self.axis else self.axis)
 
   def _mask(self, maskvec, axis):
     if axis not in (self.axis, self.newaxis):
