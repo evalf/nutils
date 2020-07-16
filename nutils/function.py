@@ -4328,6 +4328,17 @@ def _take(arg:asarray, index:asarray, axis:types.strictint):
   else:
     return unravel(_take(arg, ravel(index, 0), axis), axis, index.shape[:2])
 
+@types.apply_annotations
+def _inflate(arg:asarray, dofmap:asarray, length:asarray, axis:types.strictint):
+  axis = numeric.normdim(arg.ndim+1-dofmap.ndim, axis)
+  assert dofmap.shape == arg.shape[axis:axis+dofmap.ndim]
+  if dofmap.ndim == 0:
+    return kronecker(arg, axis, length, dofmap)
+  elif dofmap.ndim == 1:
+    return Inflate(arg, dofmap, length, axis)
+  else:
+    return _inflate(ravel(arg, axis), ravel(dofmap, 0), length, axis)
+
 def find(arg):
   'find'
 
