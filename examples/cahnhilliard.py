@@ -71,10 +71,10 @@ def main(nelems:int, etype:str, btype:str, degree:int, epsilon:typing.Optional[f
   ns.dF = stab.value
   ns.dt = timestep
 
-  nrg_mix = domain.integral('F d:x' @ ns, degree=7)
-  nrg_iface = domain.integral('.5 d(c, x_k) d(c, x_k) d:x' @ ns, degree=7)
-  nrg_wall = domain.boundary.integral('(abs(ewall) + c ewall) d:x' @ ns, degree=7)
-  nrg = nrg_mix + nrg_iface + nrg_wall + domain.integral('(dF - m dc - .5 dt epsilon^2 d(m, x_k) d(m, x_k)) d:x' @ ns, degree=7)
+  nrg_mix = domain.integral('F J(x)' @ ns, degree=7)
+  nrg_iface = domain.integral('.5 sum:k(d(c, x_k)^2) J(x)' @ ns, degree=7)
+  nrg_wall = domain.boundary.integral('(abs(ewall) + c ewall) J(x)' @ ns, degree=7)
+  nrg = nrg_mix + nrg_iface + nrg_wall + domain.integral('(dF - m dc - .5 dt epsilon^2 sum:k(d(m, x_k)^2)) J(x)' @ ns, degree=7)
 
   numpy.random.seed(seed)
   state = dict(c=numpy.random.normal(0,.5,ns.cbasis.shape), m=numpy.random.normal(0,.5,ns.mbasis.shape)) # initial condition
@@ -85,7 +85,7 @@ def main(nelems:int, etype:str, btype:str, degree:int, epsilon:typing.Optional[f
     E = sample.eval_integrals(nrg_mix, nrg_iface, nrg_wall, **state)
     treelog.user('energy: {0:.3f} ({1[0]:.0f}% mixture, {1[1]:.0f}% interface, {1[2]:.0f}% wall)'.format(sum(E), 100*numpy.array(E)/sum(E)))
 
-    x, c, m = bezier.eval(['x_i', 'c', 'm'] @ ns, **state)
+    x, c, m = bezier.eval(['x', 'c', 'm'] @ ns, **state)
     export.triplot('phase.png', x, c, tri=bezier.tri, clim=(-1,1))
     export.triplot('chempot.png', x, m, tri=bezier.tri)
 

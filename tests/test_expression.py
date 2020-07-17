@@ -761,10 +761,7 @@ class parse(TestCase):
   # STACK
 
   def test_stack_1_0d(self): self.assert_ast('<a>_i', 'i', ('append_axis', v._a, _(1)))
-  def test_stack_1_1di_1(self): self.assert_ast('<a2_i>_i', 'i', v._a2)
   def test_stack_2_0d_0d(self): self.assert_ast('<a, a>_i', 'i', ('concatenate', ('append_axis', v._a, _(1)), ('append_axis', v._a, _(1))))
-  def test_stack_2_1di_0d(self): self.assert_ast('<a2_i, a>_i', 'i', ('concatenate', v._a2, ('append_axis', v._a, _(1))))
-  def test_stack_3_2di_1d_1d(self): self.assert_ast('<a23_ij, a3_j, 1_j>_i', 'ij', ('concatenate', v._a23, ('transpose',  ('append_axis', v._a3, _(1)), _((1,0))), ('transpose', ('append_axis', ('append_axis', _(1), _(3)), _(1)), _((1,0)))))
 
   def test_stack_no_indices(self):
     self.assert_syntax_error(
@@ -796,29 +793,44 @@ class parse(TestCase):
       "1_ij + <a2_j, a222_ijk>_i + 1_ij", "ij",
       "       ^^^^^^^^^^^^^^^^^^")
 
-  def test_stack_undetermined_length(self):
-    self.assert_syntax_error(
-      "Cannot determine the length of the stack axis, because the length at 12 is unknown.",
-      "1_i + <a, 1_i>_i + 1_i", "i",
-      "            ^")
-
   def test_stack_whitespace_left(self): self.assert_ast('< a, a>_i', 'i', ('concatenate', ('append_axis', v._a, _(1)), ('append_axis', v._a, _(1))))
   def test_stack_whitespace_right(self): self.assert_ast('<a, a >_i', 'i', ('concatenate', ('append_axis', v._a, _(1)), ('append_axis', v._a, _(1))))
   def test_stack_whitespace_before_comma(self): self.assert_ast('<a , a>_i', 'i', ('concatenate', ('append_axis', v._a, _(1)), ('append_axis', v._a, _(1))))
 
-  # FIXME: the following should work
-  # 'a2_j a2_i + <0j, δ_ij>_i'
+  def test_stack_1_1di_1(self):
+    with self.assertWarnsRegex(warnings.NutilsDeprecationWarning, 'Concatenating arrays .* is deprecated.$'):
+      self.assert_ast('<a2_i>_i', 'i', v._a2)
+
+  def test_stack_2_1di_0d(self):
+    with self.assertWarnsRegex(warnings.NutilsDeprecationWarning, 'Concatenating arrays .* is deprecated.$'):
+      self.assert_ast('<a2_i, a>_i', 'i', ('concatenate', v._a2, ('append_axis', v._a, _(1))))
+
+  def test_stack_3_2di_1d_1d(self):
+    with self.assertWarnsRegex(warnings.NutilsDeprecationWarning, 'Concatenating arrays .* is deprecated.$'):
+      self.assert_ast('<a23_ij, a3_j, 1_j>_i', 'ij', ('concatenate', v._a23, ('transpose',  ('append_axis', v._a3, _(1)), _((1,0))), ('transpose', ('append_axis', ('append_axis', _(1), _(3)), _(1)), _((1,0)))))
+
+  def test_stack_undetermined_length(self):
+    with self.assertWarnsRegex(warnings.NutilsDeprecationWarning, 'Concatenating arrays .* is deprecated.$'):
+      self.assert_syntax_error(
+        "Cannot determine the length of the stack axis, because the length at 12 is unknown.",
+        "1_i + <a, 1_i>_i + 1_i", "i",
+        "            ^")
 
   # FUNCTION
 
-  def test_function(self): self.assert_ast('func1(a)', '', ('call', _('func1'), v._a))
-  def test_function_1d(self): self.assert_ast('func1(a2_i)', 'i', ('call', _('func1'), v._a2))
-  def test_function_2d(self): self.assert_ast('func1(a23_ij)', 'ij', ('call', _('func1'), v._a23))
-  def test_function_0d_0d(self): self.assert_ast('func2(a, a)', '', ('call', _('func2'), v._a, v._a))
-  def test_function_1d_1d(self): self.assert_ast('func2(a2_i, a2_j)', 'ij', ('call', _('func2'), v._a2, v._a2))
-  def test_function_1d_1d_trace(self): self.assert_ast('func2(a2_i, a2_i)', '', ('trace', ('call', _('func2'), v._a2, v._a2), _(0), _(1)))
-  def test_function_2d_2d(self): self.assert_ast('func2(a23_ij, a32_kl)', 'ijkl', ('call', _('func2'), v._a23, v._a32))
-  def test_function_1d_1d_2d(self): self.assert_ast('func3(a2_i, a2_j, a23_kl)', 'ijkl', ('call', _('func3'), v._a2, v._a2, v._a23))
+  def test_function(self): self.assert_ast('func1(a)', '', ('call', _('func1'), _(0), _(0), v._a))
+  def test_function_1d(self): self.assert_ast('func1(a2_i)', 'i', ('call', _('func1'), _(0), _(0), v._a2))
+  def test_function_2d(self): self.assert_ast('func1(a23_ij)', 'ij', ('call', _('func1'), _(0), _(0), v._a23))
+  def test_function_0d_0d(self): self.assert_ast('func2(a, a)', '', ('call', _('func2'), _(0), _(0), v._a, v._a))
+  def test_function_1d_1d(self): self.assert_ast('func2(a2_i, a2_j)', 'ij', ('call', _('func2'), _(0), _(0), v._a2, v._a2))
+  def test_function_1d_1d_trace(self): self.assert_ast('func2(a2_i, a2_i)', '', ('trace', ('call', _('func2'), _(0), _(0), v._a2, v._a2), _(0), _(1)))
+  def test_function_2d_2d(self): self.assert_ast('func2(a23_ij, a32_kl)', 'ijkl', ('call', _('func2'), _(0), _(0), v._a23, v._a32))
+  def test_function_1d_1d_2d(self): self.assert_ast('func3(a2_i, a2_j, a23_kl)', 'ijkl', ('call', _('func3'), _(0), _(0), v._a2, v._a2, v._a23))
+  def test_function_generates(self): self.assert_ast('func_j(a2_i)', 'ij', ('call', _('func'), _(1), _(0), v._a2), fallback_length=2)
+  def test_function_generates_trace(self): self.assert_ast('func_i(a2_i)', '', ('trace', ('call', _('func'), _(1), _(0), v._a2), _(0), _(1)))
+  def test_function_consumes(self): self.assert_ast('sum:i(a2_i)', '', ('call', _('sum'), _(0), _(1), v._a2))
+  def test_function_consumes_transpose(self): self.assert_ast('sum:i(a23_ij)', 'j', ('call', _('sum'), _(0), _(1), ('transpose', v._a23, _((1,0)))))
+  def test_function_consumes_omitted(self): self.assert_ast('sum(a2)', '', ('call', _('sum'), _(0), _(1), v._a2))
 
   def test_function_triple_index(self):
     self.assert_syntax_error(
@@ -837,5 +849,50 @@ class parse(TestCase):
       "Expected '='.",
       "1_ij + funcoverride(a23_ij) + 1_ij", "ij",
       "                          ^")
+
+  def test_function_consumes_missing_index(self):
+    self.assert_syntax_error(
+      "All axes to be consumed (i) must be present in all arguments.",
+      "1 + sum:i(a) + 1", "",
+      "    ^^^^^^^^")
+
+  def test_function_consumes_omitted_shape_mismatch(self):
+    self.assert_syntax_error(
+      "All arguments should have the same shape.",
+      "1 + f(a2, a3) + 1", None,
+      "    ^^^^^^^^^")
+
+  # OMITTED INDICES
+
+  def test_omitted_add(self): self.assert_ast('a2 + a2', None, ('add', v._a2, v._a2))
+  def test_omitted_sub(self): self.assert_ast('a2 - a2', None, ('sub', v._a2, v._a2))
+  def test_omitted_truediv(self): self.assert_ast('a2 / a', None, ('truediv', v._a2, v._a))
+  def test_omitted_neg(self): self.assert_ast('-a2', None, ('neg', v._a2))
+  def test_omitted_pow(self): self.assert_ast('a2^2', None, ('pow', v._a2, _(2)))
+  def test_omitted_group(self): self.assert_ast('(a2)', None, ('group', v._a2))
+  def test_omitted_jump(self): self.assert_ast('[a2]', None, ('jump', v._a2))
+  def test_omitted_mean(self): self.assert_ast('{a2}', None, ('mean', v._a2))
+  def test_omitted_function(self): self.assert_ast('sum(a2)', None, ('call', _('sum'), _(0), _(1), v._a2))
+  def test_omitted_normal(self): self.assert_ast('n', None, ('normal', v._x))
+
+  def test_omitted_add_shape_mismatch(self):
+    with self.assertRaises(nutils.expression.ExpressionSyntaxError):
+      nutils.expression.parse("a2 + a3", v, None)
+
+  def test_omitted_sub_shape_mismatch(self):
+    with self.assertRaises(nutils.expression.ExpressionSyntaxError):
+      nutils.expression.parse("a2 - a3", v, None)
+
+  def test_omitted_mul(self):
+    with self.assertRaises(nutils.expression.ExpressionSyntaxError):
+      nutils.expression.parse("a2 a3", v, None)
+
+  def test_omitted_truediv_nonscalar_denominator(self):
+    with self.assertRaises(nutils.expression.ExpressionSyntaxError):
+      nutils.expression.parse("a2 / a3", v, None)
+
+  def test_omitted_pow_nonscalar_exponent(self):
+    with self.assertRaises(nutils.expression.ExpressionSyntaxError):
+      nutils.expression.parse("a2^(a3)", v, None)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

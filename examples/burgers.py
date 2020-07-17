@@ -36,18 +36,18 @@ def main(nelems:int, ndims:int, degree:int, timescale:float, newtontol:float, en
   ns.f = '.5 u^2'
   ns.C = 1
 
-  res = domain.integral('-d(basis_n, x_i) δ_i0 f d:x' @ ns, degree=5)
-  res += domain.interfaces.integral('-[basis_n] n(x_i) δ_i0 ({f} - .5 C [u] n(x_j) δ_j0) d:x' @ ns, degree=degree*2)
-  inertia = domain.integral('basis_n u d:x' @ ns, degree=5)
+  res = domain.integral('-d(basis_n, x_i) δ_i0 f J(x)' @ ns, degree=5)
+  res += domain.interfaces.integral('-[basis_n] n(x_i) δ_i0 ({f} - .5 C [u] n(x_j) δ_j0) J(x)' @ ns, degree=degree*2)
+  inertia = domain.integral('basis_n u J(x)' @ ns, degree=5)
 
-  sqr = domain.integral('(u - exp(-?y_i ?y_i)(y_i = 5 (x_i - 0.5_i)))^2 d:x' @ ns, degree=5)
+  sqr = domain.integral('(u - exp(-sum:i((5 (x_i - 0.5_i))^2)))^2 J(x)' @ ns, degree=5)
   lhs0 = solver.optimize('lhs', sqr)
 
   timestep = timescale/nelems
   bezier = domain.sample('bezier', 7)
   with treelog.iter.plain('timestep', solver.impliciteuler('lhs', res, inertia, timestep=timestep, arguments=dict(lhs=lhs0), newtontol=newtontol)) as steps:
     for itime, lhs in enumerate(steps):
-      x, u = bezier.eval(['x_i', 'u'] @ ns, lhs=lhs)
+      x, u = bezier.eval(['x', 'u'] @ ns, lhs=lhs)
       export.triplot('solution.png', x, u, tri=bezier.tri, hull=bezier.hull, clim=(0,1))
       if itime * timestep >= endtime:
         break

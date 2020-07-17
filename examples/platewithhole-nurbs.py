@@ -68,24 +68,24 @@ def main(nrefine:int, traction:float, radius:float, poisson:float):
   ns.uexact_i = 'scale (x_i ((k + 1) (0.5 + R2) + (1 - R2) R2 (x_0^2 - 3 x_1^2) / r2) - 2 δ_i1 x_1 (1 + (k - 1 + R2) R2))'
   ns.du_i = 'u_i - uexact_i'
 
-  sqr = domain.boundary['top,bottom'].integral('(u_i n_i)^2 d:x' @ ns, degree=9)
+  sqr = domain.boundary['top,bottom'].integral('(u_i n_i)^2 J(x)' @ ns, degree=9)
   cons = solver.optimize('lhs', sqr, droptol=1e-15)
-  sqr = domain.boundary['right'].integral('du_k du_k d:x' @ ns, degree=20)
+  sqr = domain.boundary['right'].integral('du_k du_k J(x)' @ ns, degree=20)
   cons = solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
 
   # construct residual
-  res = domain.integral('d(ubasis_ni, x_j) stress_ij d:x' @ ns, degree=9)
+  res = domain.integral('d(ubasis_ni, x_j) stress_ij J(x)' @ ns, degree=9)
 
   # solve system
   lhs = solver.solve_linear('lhs', res, constrain=cons)
 
   # vizualize result
   bezier = domain.sample('bezier', 9)
-  X, stressxx = bezier.eval(['X_i', 'stress_00'] @ ns, lhs=lhs)
+  X, stressxx = bezier.eval(['X', 'stress_00'] @ ns, lhs=lhs)
   export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull, clim=(numpy.nanmin(stressxx), numpy.nanmax(stressxx)))
 
   # evaluate error
-  err = domain.integral('<du_k du_k, d(du_i, x_j) d(du_i, x_j)>_n d:x' @ ns, degree=9).eval(lhs=lhs)**.5
+  err = domain.integral('<du_k du_k, sum:ij(d(du_i, x_j)^2)>_n J(x)' @ ns, degree=9).eval(lhs=lhs)**.5
   treelog.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
   return err, cons, lhs

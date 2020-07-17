@@ -9,6 +9,22 @@ features in inverse chronological order.
 New in v7.0 (in development)
 ----------------------------
 
+- Functions generating or consuming axes in expressions
+
+  The expression syntax now supports functions that generate and/or consume
+  axes. The namespace has built-in support for ``sum``, ``norm2`` and ``J``
+  (jacobian)::
+
+      'sum:i(u_ij)' # sum the first axis of `u`
+      'norm2:i(u_i)' # 2-norm of `u`
+      'J:i(x_i)' # jacobian of `x`
+
+  If all axes of function arguments are consumed, it is allowed to omit the
+  indices::
+
+      'norm2(u)'
+      'J(x)'
+
 - New derivative and normal syntax
 
   The :class:`~nutils.function.Namespace` now supports writing derivatives and

@@ -67,8 +67,8 @@ def main(nelems:int, etype:str, btype:str, degree:int):
   # spans its space. The result is an integral ``res`` that evaluates to a
   # vector matching the size of the function space.
 
-  res = domain.integral('d(basis_n, x_i) d(u, x_i) d:x' @ ns, degree=degree*2)
-  res -= domain.boundary['right'].integral('basis_n cos(1) cosh(x_1) d:x' @ ns, degree=degree*2)
+  res = domain.integral('d(basis_n, x_i) d(u, x_i) J(x)' @ ns, degree=degree*2)
+  res -= domain.boundary['right'].integral('basis_n cos(1) cosh(x_1) J(x)' @ ns, degree=degree*2)
 
   # The Dirichlet constraints are set by finding the coefficients that minimize
   # the error:
@@ -80,8 +80,8 @@ def main(nelems:int, etype:str, btype:str, degree:int):
   # All remaining entries are set to ``NaN``, signifying that these degrees of
   # freedom are unconstrained.
 
-  sqr = domain.boundary['left'].integral('u^2 d:x' @ ns, degree=degree*2)
-  sqr += domain.boundary['top'].integral('(u - cosh(1) sin(x_0))^2 d:x' @ ns, degree=degree*2)
+  sqr = domain.boundary['left'].integral('u^2 J(x)' @ ns, degree=degree*2)
+  sqr += domain.boundary['top'].integral('(u - cosh(1) sin(x_0))^2 J(x)' @ ns, degree=degree*2)
   cons = solver.optimize('lhs', sqr, droptol=1e-15)
 
   # The unconstrained entries of ``?lhs`` are to be determined such that the
@@ -100,13 +100,13 @@ def main(nelems:int, etype:str, btype:str, degree:int):
   # element outlines.
 
   bezier = domain.sample('bezier', 9)
-  x, u = bezier.eval(['x_i', 'u'] @ ns, lhs=lhs)
+  x, u = bezier.eval(['x', 'u'] @ ns, lhs=lhs)
   export.triplot('solution.png', x, u, tri=bezier.tri, hull=bezier.hull)
 
   # To confirm that our computation is correct, we use our knowledge of the
   # analytical solution to evaluate the L2-error of the discrete result.
 
-  err = domain.integral('(u - sin(x_0) cosh(x_1))^2 d:x' @ ns, degree=degree*2).eval(lhs=lhs)**.5
+  err = domain.integral('(u - sin(x_0) cosh(x_1))^2 J(x)' @ ns, degree=degree*2).eval(lhs=lhs)**.5
   treelog.user('L2 error: {:.2e}'.format(err))
 
   return cons, lhs, err

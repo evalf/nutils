@@ -4460,12 +4460,17 @@ def _eval_ast(ast, functions):
       subs[arg._name] = value
     return replace_arguments(array, subs)
   elif op == 'call':
-    func, *args = args
+    func, generates, consumes, *args = args
     args = tuple(map(asarray, args))
-    shape = builtins.sum((arg.shape for arg in args), ())
-    result = functions[func](*args)
-    if result.shape != shape:
-      raise ValueError('expected an array with shape {} when calling {} but got {}'.format(shape, func, result.shape))
+    kwargs = {}
+    if generates:
+      kwargs['generates'] = generates
+    if consumes:
+      kwargs['consumes'] = consumes
+    result = functions[func](*args, **kwargs)
+    shape = builtins.sum((arg.shape[:arg.ndim-consumes] for arg in args), ())
+    if result.ndim != len(shape) + generates or result.shape[:len(shape)] != shape:
+      raise ValueError('expected an array with shape {} and {} additional axes when calling {} but got {}'.format(shape, generates, func, result.shape))
     return result
   elif op == 'jacobian':
     geom, ndims = args
@@ -4516,6 +4521,21 @@ def _eval_ast(ast, functions):
     return getattr(operator, '__{}__'.format(op))(asarray(left), asarray(right))
   else:
     raise ValueError('unknown opcode: {!r}'.format(op))
+
+def _sum_expr(arg, *, consumes=0):
+  if consumes == 0:
+    raise ValueError('sum must consume at least one axis but got zero')
+  return sum(arg, range(arg.ndim-consumes, arg.ndim))
+
+def _norm2_expr(arg, *, consumes=0):
+  if consumes == 0:
+    raise ValueError('sum must consume at least one axis but got zero')
+  return norm2(arg, range(arg.ndim-consumes, arg.ndim))
+
+def _J_expr(geom, *, consumes=0):
+  if consumes != 1:
+    raise ValueError('J consumes exactly one axis but got {}'.format(consumes))
+  return J(geom)
 
 class Namespace:
   '''Namespace for :class:`Array` objects supporting assignments with tensor expressions.
@@ -4647,6 +4667,7 @@ class Namespace:
     tanh=tanh, arcsin=arcsin, arccos=arccos, arctan=arctan, arctan2=ArcTan2.outer, arctanh=arctanh,
     exp=exp, abs=abs, ln=ln, log=ln, log2=log2, log10=log10, sqrt=sqrt,
     sign=sign, d=d, surfgrad=surfgrad, n=normal,
+    sum=_sum_expr, norm2=_norm2_expr, J=_J_expr,
   )
 
   @types.apply_annotations
@@ -4745,7 +4766,7 @@ class Namespace:
       raise AttributeError('{!r} object has no attribute {!r}'.format(type(self), name))
     else:
       name, indices = m.groups()
-      indices = indices[1:] if indices else ''
+      indices = indices[1:] if indices else None
       if isinstance(value, str):
         ast, arg_shapes = expression.parse(value, variables=self._attributes, indices=indices, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)
         value = _eval_ast(ast, self._functions)
