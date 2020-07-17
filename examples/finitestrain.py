@@ -49,21 +49,21 @@ def main(nelems:int, etype:str, btype:str, degree:int, poisson:float, angle:floa
   ns.strain_ij = '.5 (d(u_i, x_j) + d(u_j, x_i))'
   ns.energy = 'lmbda strain_ii strain_jj + 2 mu strain_ij strain_ij'
 
-  sqr = domain.boundary['left'].integral('u_k u_k d:x' @ ns, degree=degree*2)
-  sqr += domain.boundary['right'].integral('((u_0 - x_1 sin(2 angle) - cos(angle) + 1)^2 + (u_1 - x_1 (cos(2 angle) - 1) + sin(angle))^2) d:x' @ ns, degree=degree*2)
+  sqr = domain.boundary['left'].integral('u_k u_k J(x)' @ ns, degree=degree*2)
+  sqr += domain.boundary['right'].integral('((u_0 - x_1 sin(2 angle) - cos(angle) + 1)^2 + (u_1 - x_1 (cos(2 angle) - 1) + sin(angle))^2) J(x)' @ ns, degree=degree*2)
   cons = solver.optimize('lhs', sqr, droptol=1e-15)
 
-  energy = domain.integral('energy d:x' @ ns, degree=degree*2)
+  energy = domain.integral('energy J(x)' @ ns, degree=degree*2)
   lhs0 = solver.optimize('lhs', energy, constrain=cons)
-  X, energy = bezier.eval(['X_i', 'energy'] @ ns, lhs=lhs0)
+  X, energy = bezier.eval(['X', 'energy'] @ ns, lhs=lhs0)
   export.triplot('linear.png', X, energy, tri=bezier.tri, hull=bezier.hull)
 
   ns.strain_ij = '.5 (d(u_i, x_j) + d(u_j, x_i) + d(u_k, x_i) d(u_k, x_j))'
   ns.energy = 'lmbda strain_ii strain_jj + 2 mu strain_ij strain_ij'
 
-  energy = domain.integral('energy d:x' @ ns, degree=degree*2)
+  energy = domain.integral('energy J(x)' @ ns, degree=degree*2)
   lhs1 = solver.minimize('lhs', energy, arguments=dict(lhs=lhs0), constrain=cons).solve(restol)
-  X, energy = bezier.eval(['X_i', 'energy'] @ ns, lhs=lhs1)
+  X, energy = bezier.eval(['X', 'energy'] @ ns, lhs=lhs1)
   export.triplot('nonlinear.png', X, energy, tri=bezier.tri, hull=bezier.hull)
 
   return lhs0, lhs1

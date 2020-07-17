@@ -65,19 +65,19 @@ def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float,
   ns.uwall_i = '0.5 rotation <-sin(phi), cos(phi)>_i'
 
   inflow = domain.boundary['outer'].select(-ns.uinf.dotnorm(ns.x), ischeme='gauss1') # upstream half of the exterior boundary
-  sqr = inflow.integral('(u_i - uinf_i) (u_i - uinf_i)' @ ns, degree=degree*2)
+  sqr = inflow.integral('sum((u - uinf)^2)' @ ns, degree=degree*2)
   ucons = solver.optimize('u', sqr, droptol=1e-15) # constrain inflow semicircle to uinf
   cons = dict(u=ucons)
 
   numpy.random.seed(seed)
-  sqr = domain.integral('(u_i - uinf_i) (u_i - uinf_i)' @ ns, degree=degree*2)
+  sqr = domain.integral('sum((u - uinf)^2)' @ ns, degree=degree*2)
   udofs0 = solver.optimize('u', sqr) * numpy.random.normal(1, .1, len(ns.ubasis)) # set initial condition to u=uinf with small random noise
   state0 = dict(u=udofs0)
 
-  ures = domain.integral('(ubasis_ni d(u_i, x_j) u_j + d(ubasis_ni, x_j) sigma_ij) d:x' @ ns, degree=9)
-  ures += domain.boundary['inner'].integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni sigma_ij n_j) d:x' @ ns, degree=9)
-  pres = domain.integral('pbasis_n d(u_k, x_k) d:x' @ ns, degree=9)
-  uinertia = domain.integral('ubasis_ni u_i d:x' @ ns, degree=9)
+  ures = domain.integral('(ubasis_ni d(u_i, x_j) u_j + d(ubasis_ni, x_j) sigma_ij) J(x)' @ ns, degree=9)
+  ures += domain.boundary['inner'].integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni sigma_ij n_j) J(x)' @ ns, degree=9)
+  pres = domain.integral('pbasis_n d(u_k, x_k) J(x)' @ ns, degree=9)
+  uinertia = domain.integral('ubasis_ni u_i J(x)' @ ns, degree=9)
 
   bbox = numpy.array([[-2,46/9],[-2,2]]) # bounding box for figure based on 16x9 aspect ratio
   bezier0 = domain.sample('bezier', 5)
@@ -90,7 +90,7 @@ def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float,
     for istep, state in enumerate(steps):
 
       t = istep * timestep
-      x, u, normu, p = bezier.eval(['x_i', 'u_i', 'sqrt(u_k u_k)', 'p'] @ ns, **state)
+      x, u, normu, p = bezier.eval(['x', 'u', 'norm2(u)', 'p'] @ ns, **state)
       ugrd = interpolate[xgrd](u)
 
       with export.mplfigure('flow.png', figsize=(12.8,7.2)) as fig:

@@ -43,16 +43,16 @@ def main(nelems:int, degree:int, reynolds:float):
   ns.N = 5 * degree * nelems # nitsche constant based on element size = 1/nelems
   ns.nitsche_ni = '(N ubasis_ni - (d(ubasis_ni, x_j) + d(ubasis_nj, x_i)) n(x_j)) / Re'
 
-  ures = domain.integral('d(ubasis_ni, x_j) stress_ij d:x' @ ns, degree=2*degree)
-  ures += domain.boundary.integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni stress_ij n(x_j)) d:x' @ ns, degree=2*degree)
-  pres = domain.integral('pbasis_n (d(u_k, x_k) + ?lm) d:x' @ ns, degree=2*degree)
-  lres = domain.integral('p d:x' @ ns, degree=2*degree)
+  ures = domain.integral('d(ubasis_ni, x_j) stress_ij J(x)' @ ns, degree=2*degree)
+  ures += domain.boundary.integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni stress_ij n(x_j)) J(x)' @ ns, degree=2*degree)
+  pres = domain.integral('pbasis_n (d(u_k, x_k) + ?lm) J(x)' @ ns, degree=2*degree)
+  lres = domain.integral('p J(x)' @ ns, degree=2*degree)
 
   with treelog.context('stokes'):
     state0 = solver.solve_linear(['u', 'p', 'lm'], [ures, pres, lres])
     postprocess(domain, ns, **state0)
 
-  ures += domain.integral('ubasis_ni d(u_i, x_j) u_j d:x' @ ns, degree=3*degree)
+  ures += domain.integral('ubasis_ni d(u_i, x_j) u_j J(x)' @ ns, degree=3*degree)
   with treelog.context('navierstokes'):
     state1 = solver.newton(('u', 'p', 'lm'), (ures, pres, lres), arguments=state0).solve(tol=1e-10)
     postprocess(domain, ns, **state1)
@@ -65,18 +65,18 @@ def main(nelems:int, degree:int, reynolds:float):
 
 def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
 
-  div = domain.integral('d(u_k, x_k)^2 d:x' @ ns, degree=1).eval(**arguments)**.5
+  div = domain.integral('d(u_k, x_k)^2 J(x)' @ ns, degree=1).eval(**arguments)**.5
   treelog.info('velocity divergence: {:.2e}'.format(div)) # confirm that velocity is pointwise divergence-free
 
   ns = ns.copy_() # copy namespace so that we don't modify the calling argument
   ns.streambasis = domain.basis('std', degree=2)[1:] # remove first dof to obtain non-singular system
   ns.stream = 'streambasis_n ?streamdofs_n' # stream function
   ns.ε = function.levicivita(2)
-  sqr = domain.integral('(u_i - ε_ij d(stream, x_j)) (u_i - ε_ij d(stream, x_j)) d:x' @ ns, degree=4)
+  sqr = domain.integral('sum:i((u_i - ε_ij d(stream, x_j))^2) J(x)' @ ns, degree=4)
   arguments['streamdofs'] = solver.optimize('streamdofs', sqr, arguments=arguments) # compute streamlines
 
   bezier = domain.sample('bezier', 9)
-  x, u, p, stream = bezier.eval(['x_i', 'sqrt(u_i u_i)', 'p', 'stream'] @ ns, **arguments)
+  x, u, p, stream = bezier.eval(['x', 'norm2(u)', 'p', 'stream'] @ ns, **arguments)
   with export.mplfigure('flow.png') as fig: # plot velocity as field, pressure as contours, streamlines as dashed
     ax = fig.add_axes([.1,.1,.8,.8], yticks=[], aspect='equal')
     import matplotlib.collections

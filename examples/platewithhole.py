@@ -54,19 +54,19 @@ def main(nelems:int, etype:str, btype:str, degree:int, traction:float, maxrefine
   ns.uexact_i = 'scale (x_i ((k + 1) (0.5 + R2) + (1 - R2) R2 (x_0^2 - 3 x_1^2) / r2) - 2 δ_i1 x_1 (1 + (k - 1 + R2) R2))'
   ns.du_i = 'u_i - uexact_i'
 
-  sqr = domain.boundary['left,bottom'].integral('(u_i n_i)^2 d:x' @ ns, degree=degree*2)
+  sqr = domain.boundary['left,bottom'].integral('(u_i n_i)^2 J(x)' @ ns, degree=degree*2)
   cons = solver.optimize('lhs', sqr, droptol=1e-15)
-  sqr = domain.boundary['top,right'].integral('du_k du_k d:x' @ ns, degree=20)
+  sqr = domain.boundary['top,right'].integral('du_k du_k J(x)' @ ns, degree=20)
   cons = solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
 
-  res = domain.integral('d(ubasis_ni, x_j) stress_ij d:x' @ ns, degree=degree*2)
+  res = domain.integral('d(ubasis_ni, x_j) stress_ij J(x)' @ ns, degree=degree*2)
   lhs = solver.solve_linear('lhs', res, constrain=cons)
 
   bezier = domain.sample('bezier', 5)
-  X, stressxx = bezier.eval(['X_i', 'stress_00'] @ ns, lhs=lhs)
+  X, stressxx = bezier.eval(['X', 'stress_00'] @ ns, lhs=lhs)
   export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull)
 
-  err = domain.integral('<du_k du_k, d(du_i, x_j) d(du_i, x_j)>_n d:x' @ ns, degree=max(degree,3)*2).eval(lhs=lhs)**.5
+  err = domain.integral('<du_k du_k, sum:ij(d(du_i, x_j)^2)>_n J(x)' @ ns, degree=max(degree,3)*2).eval(lhs=lhs)**.5
   treelog.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
   return err, cons, lhs
