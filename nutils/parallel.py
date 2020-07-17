@@ -57,7 +57,7 @@ def fork(nprocs=None):
 
   if nprocs is None or nprocs > _maxprocs:
     nprocs = _maxprocs
-  if nprocs == 1:
+  if nprocs <= 1:
     yield 0
     return
   if not hasattr(os, 'fork'):
@@ -105,7 +105,7 @@ def shempty(shape, dtype=float):
   else:
     assert all(numeric.isint(sh) for sh in shape)
   dtype = numpy.dtype(dtype)
-  size = (numpy.product(shape) if shape else 1) * dtype.itemsize
+  size = util.product(map(int, shape), int(dtype.itemsize))
   if size == 0 or _maxprocs == 1:
     return numpy.empty(shape, dtype)
   # `mmap(-1,...)` will allocate *anonymous* memory.  Although linux' man page

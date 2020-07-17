@@ -56,7 +56,7 @@ def simplified(value):
   return strictevaluable(value).simplified
 
 asdtype = lambda arg: arg if any(arg is dtype for dtype in (bool, int, float, complex)) else {'f': float, 'i': int, 'b': bool, 'c': complex}[numpy.dtype(arg).kind]
-asarray = lambda arg: arg if isarray(arg) else Constant(arg) if numeric.isarray(arg) or numpy.asarray(arg).dtype != object else stack(arg, axis=0)
+asarray = lambda arg: arg if isarray(arg) else stack(arg, axis=0) if _containsarray(arg) else Constant(arg)
 asarrays = types.tuple[asarray]
 
 def as_canonical_length(value):
@@ -2238,9 +2238,6 @@ class Zeros(Array):
   def _inflate(self, dofmap, length, axis):
     return Zeros(self.shape[:axis] + (length,) + self.shape[axis+1:], dtype=self.dtype)
 
-  def _power(self, n):
-    return self
-
   def _mask(self, maskvec, axis):
     return Zeros(self.shape[:axis] + (maskvec.sum(),) + self.shape[axis+1:], dtype=self.dtype)
 
@@ -2344,9 +2341,6 @@ class Inflate(Array):
   def _add(self, other):
     if isinstance(other, Inflate) and self.axis == other.axis and self.dofmap == other.dofmap:
       return Inflate(Add([self.func, other.func]), self.dofmap, self.length, self.axis)
-
-  def _power(self, n):
-    return Inflate(Power(self.func, Take(n, indices=self.dofmap, axis=self.axis)), self.dofmap, self.length, self.axis)
 
   def _takediag(self, axis, rmaxis):
     if self.axis == axis:
@@ -2512,9 +2506,6 @@ class Diagonalize(Array):
 
   def _sign(self):
     return Diagonalize(Sign(self.func), self.axis, self.newaxis)
-
-  def _power(self, n):
-    return Diagonalize(Power(self.func, TakeDiag(n, self.axis, self.newaxis)), self.axis, self.newaxis)
 
   def _product(self):
     if self.newaxis < self.ndim-1:
@@ -3199,9 +3190,6 @@ class Kronecker(Array):
     if item.isconstant and self.pos.isconstant: # inequality is implied by the previous test
       return zeros_like(self.func)
 
-  def _power(self, n):
-    return Kronecker(power(self.func, get(n, self.axis, self.pos)), self.axis, self.length, self.pos)
-
   def _add(self, other):
     if isinstance(other, Kronecker) and self.axis == other.axis and self.pos == other.pos:
       assert self.length == other.length
@@ -3840,6 +3828,9 @@ def replace(func):
 
 def isarray(arg):
   return isinstance(arg, Array)
+
+def _containsarray(arg):
+  return any(map(_containsarray, arg)) if isinstance(arg, (list, tuple)) else isarray(arg)
 
 def iszero(arg):
   return isinstance(arg.simplified, Zeros)

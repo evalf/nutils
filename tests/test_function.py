@@ -224,6 +224,12 @@ class check(TestCase):
       desired=self.n_op_argsfun**3,
       actual=(self.op_args**3))
 
+  def test_power0(self):
+    power = (numpy.arange(self.op_args.size) % 2).reshape(self.op_args.shape)
+    self.assertFunctionAlmostEqual(decimal=13,
+      desired=self.n_op_argsfun**power,
+      actual=self.op_args**power)
+
   def test_sign(self):
     if self.n_op_argsfun.dtype.kind != 'b':
       self.assertFunctionAlmostEqual(decimal=15,
