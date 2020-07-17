@@ -227,10 +227,12 @@ class Evaluable(types.Singleton):
   @property
   def dependencies(self):
     '''collection of all function arguments'''
-    deps = list(self.__args)
+    deps = {}
     for func in self.__args:
-      deps.extend(func.dependencies)
-    return frozenset(deps)
+      funcdeps = func.dependencies
+      deps.update(funcdeps)
+      deps[func] = len(funcdeps)
+    return deps
 
   @property
   def isconstant(self):
@@ -240,7 +242,9 @@ class Evaluable(types.Singleton):
   def ordereddeps(self):
     '''collection of all function arguments such that the arguments to
     dependencies[i] can be found in dependencies[:i]'''
-    return tuple([EVALARGS] + sorted(self.dependencies - {EVALARGS}, key=lambda f: len(f.dependencies)))
+    deps = self.dependencies.copy()
+    deps.pop(EVALARGS, None)
+    return tuple([EVALARGS] + sorted(deps, key=deps.__getitem__))
 
   @property
   def dependencytree(self):
