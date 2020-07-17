@@ -761,10 +761,7 @@ class parse(TestCase):
   # STACK
 
   def test_stack_1_0d(self): self.assert_ast('<a>_i', 'i', ('append_axis', v._a, _(1)))
-  def test_stack_1_1di_1(self): self.assert_ast('<a2_i>_i', 'i', v._a2)
   def test_stack_2_0d_0d(self): self.assert_ast('<a, a>_i', 'i', ('concatenate', ('append_axis', v._a, _(1)), ('append_axis', v._a, _(1))))
-  def test_stack_2_1di_0d(self): self.assert_ast('<a2_i, a>_i', 'i', ('concatenate', v._a2, ('append_axis', v._a, _(1))))
-  def test_stack_3_2di_1d_1d(self): self.assert_ast('<a23_ij, a3_j, 1_j>_i', 'ij', ('concatenate', v._a23, ('transpose',  ('append_axis', v._a3, _(1)), _((1,0))), ('transpose', ('append_axis', ('append_axis', _(1), _(3)), _(1)), _((1,0)))))
 
   def test_stack_no_indices(self):
     self.assert_syntax_error(
@@ -796,18 +793,28 @@ class parse(TestCase):
       "1_ij + <a2_j, a222_ijk>_i + 1_ij", "ij",
       "       ^^^^^^^^^^^^^^^^^^")
 
-  def test_stack_undetermined_length(self):
-    self.assert_syntax_error(
-      "Cannot determine the length of the stack axis, because the length at 12 is unknown.",
-      "1_i + <a, 1_i>_i + 1_i", "i",
-      "            ^")
-
   def test_stack_whitespace_left(self): self.assert_ast('< a, a>_i', 'i', ('concatenate', ('append_axis', v._a, _(1)), ('append_axis', v._a, _(1))))
   def test_stack_whitespace_right(self): self.assert_ast('<a, a >_i', 'i', ('concatenate', ('append_axis', v._a, _(1)), ('append_axis', v._a, _(1))))
   def test_stack_whitespace_before_comma(self): self.assert_ast('<a , a>_i', 'i', ('concatenate', ('append_axis', v._a, _(1)), ('append_axis', v._a, _(1))))
 
-  # FIXME: the following should work
-  # 'a2_j a2_i + <0j, δ_ij>_i'
+  def test_stack_1_1di_1(self):
+    with self.assertWarnsRegex(warnings.NutilsDeprecationWarning, 'Concatenating arrays .* is deprecated.$'):
+      self.assert_ast('<a2_i>_i', 'i', v._a2)
+
+  def test_stack_2_1di_0d(self):
+    with self.assertWarnsRegex(warnings.NutilsDeprecationWarning, 'Concatenating arrays .* is deprecated.$'):
+      self.assert_ast('<a2_i, a>_i', 'i', ('concatenate', v._a2, ('append_axis', v._a, _(1))))
+
+  def test_stack_3_2di_1d_1d(self):
+    with self.assertWarnsRegex(warnings.NutilsDeprecationWarning, 'Concatenating arrays .* is deprecated.$'):
+      self.assert_ast('<a23_ij, a3_j, 1_j>_i', 'ij', ('concatenate', v._a23, ('transpose',  ('append_axis', v._a3, _(1)), _((1,0))), ('transpose', ('append_axis', ('append_axis', _(1), _(3)), _(1)), _((1,0)))))
+
+  def test_stack_undetermined_length(self):
+    with self.assertWarnsRegex(warnings.NutilsDeprecationWarning, 'Concatenating arrays .* is deprecated.$'):
+      self.assert_syntax_error(
+        "Cannot determine the length of the stack axis, because the length at 12 is unknown.",
+        "1_i + <a, 1_i>_i + 1_i", "i",
+        "            ^")
 
   # FUNCTION
 

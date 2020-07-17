@@ -212,6 +212,8 @@ class _Array:
       raise _IntermediateError(
         'Cannot stack arrays with unmatched indices (excluding the stack index {!r}): {}.'
         .format(index, ', '.join(array.indices for array in arrays)))
+    if any(index in array.indices for array in arrays):
+      warnings.deprecation('Concatenating arrays with `<a_i, b_i>_i` syntax is deprecated.')
     indices = index + ''.join(i for i in arrays[0].indices if i != index)
     arrays = [(array.append_axis(index, 1) if index not in array.indices else array).transpose(indices) for array in arrays]
 
@@ -1319,11 +1321,8 @@ def parse(expression, variables, indices, arg_shapes={}, default_geometry_name='
 
   *   A **stack** of two or more arrays along an axis is denoted by a ``<``
       followed by comma and space separated arrays followed by ``>`` and an
-      index.  If an argument does not have an axis with the specified stack
-      index, the argument is expanded with an axis of length one.  Beside the
-      stack axis, all arguments should have the same shape.  Example: ``<1,
-      x_i>_i``, with ``x`` a vector of length three, creates an array with
-      components ``1``, ``x_0``, ``x_1``, ``x_2``.
+      index.  All arguments must have the same shape and must not have an axis labelled with the stack axis.
+      Example: ``<1, 2>_i`` creates an array with components ``1`` and ``2``.
 
   .. _`Einstein Summation Convection`: https://en.wikipedia.org/wiki/Einstein_notation
 

@@ -880,7 +880,7 @@ class eval_ast(TestCase):
     domain, x = mesh.rectilinear([2,2])
     self.ns = function.Namespace()
     self.ns.x = x
-    self.ns.altgeom_i = '<x_i, 0>_i'
+    self.ns.altgeom = function.concatenate([self.ns.x, [0]], 0)
     self.ns.basis = domain.basis('spline', degree=2)
     self.ns.a = 2
     self.ns.a2 = numpy.array([1,2])
@@ -903,7 +903,7 @@ class eval_ast(TestCase):
   def test_getitem(self): self.assertIdentical('a2_0', self.ns.a2[0])
   def test_trace(self): self.assertIdentical('a22_ii', function.trace(self.ns.a22, 0, 1))
   def test_sum(self): self.assertIdentical('a2_i a2_i', function.sum(self.ns.a2 * self.ns.a2, axis=0))
-  def test_concatenate(self): self.assertIdentical('<a, a2_i>_i', function.concatenate([self.ns.a[None],self.ns.a2], axis=0))
+  def test_concatenate(self): self.assertIdentical('<a, a>_i', function.concatenate([self.ns.a[None],self.ns.a[None]], axis=0))
   def test_grad(self): self.assertIdentical('basis_n,0', self.ns.basis.grad(self.ns.x)[:,0])
   def test_surfgrad(self): self.assertIdentical('surfgrad(basis_0, altgeom_i)', function.grad(self.ns.basis[0], self.ns.altgeom, len(self.ns.altgeom)-1))
   def test_derivative(self): self.assertIdentical('d(exp(?x), ?x)', function.derivative(function.exp(self.x), self.x))
