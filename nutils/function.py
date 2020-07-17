@@ -318,7 +318,7 @@ class Evaluable(types.Singleton):
     lines.append('}')
 
     with log.infofile('dot.'+imgtype, 'wb') as img:
-      status = subprocess.run([dotpath,'-T'+imgtype], input='\n'.join(lines).encode(), stdout=subprocess.PIPE)
+      status = subprocess.run([dotpath,'-Gstart=1','-T'+imgtype], input='\n'.join(lines).encode(), stdout=subprocess.PIPE)
       if status.returncode:
         log.warning('graphviz failed for error code', status.returncode)
       img.write(status.stdout)
