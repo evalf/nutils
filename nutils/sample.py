@@ -181,9 +181,6 @@ class Sample(types.Singleton):
     log.debug('integrating {} distinct blocks'.format('+'.join(
       str(block2func.count(ifunc)) for ifunc in range(len(funcs)))))
 
-    if graphviz:
-      function.Tuple(values).graphviz(graphviz)
-
     # To allocate (shared) memory for all block data we evaluate indexfunc to
     # build an nblocks x nelems+1 offset array. In the first step the block
     # sizes are evaluated.
@@ -211,11 +208,13 @@ class Sample(types.Singleton):
     # element has its own location so no locks are required.
 
     datas = [parallel.shempty(n, dtype=sparse.dtype(funcs[ifunc].shape)) for ifunc, n in enumerate(nvals)]
-    valueindexfunc = function.Tuple(function.Tuple([value]+list(index)) for value, index in zip(values, indices))
-    with parallel.ctxrange('integrating', self.nelems) as ielems:
+
+    with function.Tuple(function.Tuple([value, *index]) for value, index in zip(values, indices)).session(graphviz) as eval, \
+         parallel.ctxrange('integrating', self.nelems) as ielems:
+
       for ielem in ielems:
         points = self.points[ielem]
-        for iblock, (intdata, *indices) in enumerate(valueindexfunc.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=points.coords, **arguments)):
+        for iblock, (intdata, *indices) in enumerate(eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=points.coords, **arguments)):
           data = datas[block2func[iblock]][offsets[iblock,ielem]:offsets[iblock,ielem+1]].reshape(intdata.shape[1:])
           numpy.einsum('p,p...->...', points.weights, intdata, out=data['value'])
           for idim, ii in enumerate(indices):
@@ -250,14 +249,12 @@ class Sample(types.Singleton):
 
     funcs = self._prepare_funcs(funcs)
     retvals = [parallel.shzeros((self.npoints,)+func.shape, dtype=func.dtype) for func in funcs]
-    idata = function.Tuple(function.Tuple([ifunc, *ind, f.optimized_for_numpy]) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func))
 
-    if graphviz:
-      idata.graphviz(graphviz)
+    with function.Tuple(function.Tuple([i, *ind, f.optimized_for_numpy]) for i, func in enumerate(funcs) for ind, f in function.blocks(func)).session(graphviz) as eval, \
+         parallel.ctxrange('evaluating', self.nelems) as ielems:
 
-    with parallel.ctxrange('evaluating', self.nelems) as ielems:
       for ielem in ielems:
-        for ifunc, *inds, data in idata.eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=self.points[ielem].coords, **arguments):
+        for ifunc, *inds, data in eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=self.points[ielem].coords, **arguments):
           numpy.add.at(retvals[ifunc], numpy.ix_(self.getindex(ielem), *[ind for (ind,) in inds]), data)
 
     return retvals

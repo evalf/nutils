@@ -42,8 +42,8 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, types, numeric, cache, transform, transformseq, expression, warnings
-import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log, weakref
+from . import util, types, numeric, cache, transform, transformseq, expression, warnings, parallel
+import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log, weakref, time, contextlib, subprocess
 _ = numpy.newaxis
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
@@ -300,16 +300,50 @@ class Evaluable(types.Singleton):
     else:
       return values[-1]
 
-  @log.withcontext
-  def graphviz(self, dotpath='dot', imgtype='png'):
+  def eval_withtimes(self, **evalargs):
+    '''Evaluate function on a specified element, point set while measure time of each step.'''
+
+    serialized = self.serialized # prepare lazy attribute to exclude evaluation time
+    values = [(evalargs, time.perf_counter())]
+    try:
+      values.extend((op.evalf(*[values[i][0] for i in indices]), time.perf_counter()) for op, indices in serialized)
+    except KeyboardInterrupt:
+      raise
+    except Exception as e:
+      raise EvaluationError(self, [v for v, t in values]) from e
+    else:
+      return values[-1][0], numpy.diff([t for v, t in values])
+
+  @contextlib.contextmanager
+  def session(self, graphviz):
+    if graphviz is None:
+      yield self.eval
+      return
+    lock = parallel.multiprocessing.Lock()
+    times = parallel.shzeros(len(self.dependencies))
+    def eval(**args):
+      retval, _times = self.eval_withtimes(**args)
+      with lock:
+        times[:] += _times
+      return retval
+    with log.context('eval'):
+      yield eval
+      log.info('total time: {:.0f}ms\n'.format(builtins.sum(times)*1000) + '\n'.join('{:4.0f} {} ({})'.format(builtins.sum(dts)*1000, op.__name__,
+        '1 call' if len(dts) == 1 else '{} calls, {:.0f}..{:.0f} per call'.format(len(dts), builtins.min(dts)*1000, builtins.max(dts)*1000))
+          for op, dts in sorted(util.gather(zip(map(type, self.ordereddeps[1:]+(self,)), times)), reverse=True, key=lambda row: builtins.sum(row[1]))))
+      self.graphviz(graphviz, times=times)
+
+  def graphviz(self, dotpath='dot', *, imgtype='png', times=None):
     'create function graph'
 
-    import os, subprocess
+    if times is not None:
+      tfrac = numpy.hstack([0, times / times.max()])
+      style = lambda i: ',style="filled",fillcolor="0,{:.2f},1"'.format(tfrac[i])
+    else:
+      style = lambda i: ''
 
-    lines = []
-    lines.append('digraph {')
-    lines.append('graph [dpi=72];')
-    lines.extend('{} [{}];'.format(i, dep._graphviz_node()) for i, dep in enumerate(self.ordereddeps+(self,)))
+    lines = ['digraph {graph [dpi=72];']
+    lines.extend('{} [{}];'.format(i, dep._graphviz_node() + style(i)) for i, dep in enumerate(self.ordereddeps+(self,)))
     lines.extend('{} -> {};'.format(j, i) for i, indices in enumerate(self.dependencytree) for j in indices)
     lines.append('}')
 
