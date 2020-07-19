@@ -291,18 +291,14 @@ class Evaluable(types.Singleton):
     '''Evaluate function on a specified element, point set.'''
 
     values = [evalargs]
-    for op, indices in self.serialized:
-      try:
-        args = [values[i] for i in indices]
-        retval = op.evalf(*args)
-      except KeyboardInterrupt:
-        raise
-      except:
-        etype, evalue, traceback = sys.exc_info()
-        excargs = etype, evalue, self, values
-        raise EvaluationError(*excargs).with_traceback(traceback)
-      values.append(retval)
-    return values[-1]
+    try:
+      values.extend(op.evalf(*[values[i] for i in indices]) for op, indices in self.serialized)
+    except KeyboardInterrupt:
+      raise
+    except Exception as e:
+      raise EvaluationError(self, values) from e
+    else:
+      return values[-1]
 
   @log.withcontext
   def graphviz(self, dotpath='dot', imgtype='png'):
@@ -323,24 +319,22 @@ class Evaluable(types.Singleton):
         log.warning('graphviz failed for error code', status.returncode)
       img.write(status.stdout)
 
-  def stackstr(self, nlines=-1):
-    'print stack'
-
+  def _stack(self, values):
     lines = ['  %0 = EVALARGS']
-    for op, indices in self.serialized:
-      args = ['%{}'.format(idx) for idx in indices]
+    for (op, indices), v in zip(self.serialized, values):
+      lines[-1] += ' --> ' + type(v).__name__
+      if numeric.isarray(v):
+        lines[-1] += '({})'.format(','.join(map(str, v.shape)))
       try:
         code = op.evalf.__code__
         offset = 1 if getattr(op.evalf, '__self__', None) is not None else 0
         names = code.co_varnames[offset:code.co_argcount]
         names += tuple('{}[{}]'.format(code.co_varnames[code.co_argcount], n) for n in range(len(indices) - len(names)))
-        args = ['{}={}'.format(*item) for item in zip(names, args)]
+        args = map(' {}=%{}'.format, names, indices)
       except:
-        pass
-      lines.append('  %{} = {}({})'.format(len(lines), op._asciitree_str(), ', '.join(args)))
-      if len(lines) == nlines+1:
-        break
-    return '\n'.join(lines)
+        args = map(' %{}'.format, indices)
+      lines.append('  %{} = {}:{}'.format(len(lines), op._asciitree_str(), ','.join(args)))
+    return lines
 
   @property
   @replace(depthfirst=True, recursive=True)
@@ -372,23 +366,8 @@ class Evaluable(types.Singleton):
     return
 
 class EvaluationError(Exception):
-  'evaluation error'
-
-  def __init__(self, etype, evalue, evaluable, values):
-    'constructor'
-
-    self.etype = etype
-    self.evalue = evalue
-    self.evaluable = evaluable
-    self.values = values
-
-  def __repr__(self):
-    return 'EvaluationError{}'.format(self)
-
-  def __str__(self):
-    'string representation'
-
-    return '\n{} --> {}: {}'.format(self.evaluable.stackstr(nlines=len(self.values)), self.etype.__name__, self.evalue)
+  def __init__(self, f, values):
+    super().__init__('evaluation failed in step {}/{}\n'.format(len(values), len(f.dependencies)) + '\n'.join(f._stack(values)))
 
 EVALARGS = Evaluable(args=())
 
