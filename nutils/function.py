@@ -1598,6 +1598,18 @@ class Multiply(Array):
 
   def _simplified(self):
     func1, func2 = self.funcs
+    diagonals = {}
+    for i, axis in enumerate(self._axes):
+      if isinstance(axis, Inserted):
+        return InsertAxis(Multiply(func._uninsert(i) for func in self.funcs), i, axis.length)
+      if isinstance(axis, Sparse):
+        return self._resparsify(i)
+      if isinstance(axis, Raveled):
+        return ravel(Multiply(unravel(func, i, axis.shape) for func in self.funcs), i)
+      if isinstance(axis, Diagonal):
+        if axis in diagonals:
+          return diagonalize(Multiply(takediag(func, diagonals[axis], i) for func in self.funcs), diagonals[axis], i)
+        diagonals[axis] = i
     return func1._multiply(func2) or func2._multiply(func1)
 
   def _optimized_for_numpy(self):
