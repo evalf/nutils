@@ -42,8 +42,8 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, types, numeric, cache, transform, transformseq, expression, warnings
-import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log, weakref
+from . import util, types, numeric, cache, transform, transformseq, expression, warnings, parallel
+import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log, weakref, time, contextlib, subprocess
 _ = numpy.newaxis
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
@@ -227,10 +227,12 @@ class Evaluable(types.Singleton):
   @property
   def dependencies(self):
     '''collection of all function arguments'''
-    deps = list(self.__args)
+    deps = {}
     for func in self.__args:
-      deps.extend(func.dependencies)
-    return frozenset(deps)
+      funcdeps = func.dependencies
+      deps.update(funcdeps)
+      deps[func] = len(funcdeps)
+    return deps
 
   @property
   def isconstant(self):
@@ -240,7 +242,9 @@ class Evaluable(types.Singleton):
   def ordereddeps(self):
     '''collection of all function arguments such that the arguments to
     dependencies[i] can be found in dependencies[:i]'''
-    return tuple([EVALARGS] + sorted(self.dependencies - {EVALARGS}, key=lambda f: len(f.dependencies)))
+    deps = self.dependencies.copy()
+    deps.pop(EVALARGS, None)
+    return tuple([EVALARGS] + sorted(deps, key=deps.__getitem__))
 
   @property
   def dependencytree(self):
@@ -291,56 +295,84 @@ class Evaluable(types.Singleton):
     '''Evaluate function on a specified element, point set.'''
 
     values = [evalargs]
-    for op, indices in self.serialized:
-      try:
-        args = [values[i] for i in indices]
-        retval = op.evalf(*args)
-      except KeyboardInterrupt:
-        raise
-      except:
-        etype, evalue, traceback = sys.exc_info()
-        excargs = etype, evalue, self, values
-        raise EvaluationError(*excargs).with_traceback(traceback)
-      values.append(retval)
-    return values[-1]
+    try:
+      values.extend(op.evalf(*[values[i] for i in indices]) for op, indices in self.serialized)
+    except KeyboardInterrupt:
+      raise
+    except Exception as e:
+      raise EvaluationError(self, values) from e
+    else:
+      return values[-1]
 
-  @log.withcontext
-  def graphviz(self, dotpath='dot', imgtype='png'):
+  def eval_withtimes(self, **evalargs):
+    '''Evaluate function on a specified element, point set while measure time of each step.'''
+
+    serialized = self.serialized # prepare lazy attribute to exclude evaluation time
+    values = [(evalargs, time.perf_counter())]
+    try:
+      values.extend((op.evalf(*[values[i][0] for i in indices]), time.perf_counter()) for op, indices in serialized)
+    except KeyboardInterrupt:
+      raise
+    except Exception as e:
+      raise EvaluationError(self, [v for v, t in values]) from e
+    else:
+      return values[-1][0], numpy.diff([t for v, t in values])
+
+  @contextlib.contextmanager
+  def session(self, graphviz):
+    if graphviz is None:
+      yield self.eval
+      return
+    lock = parallel.multiprocessing.Lock()
+    times = parallel.shzeros(len(self.dependencies))
+    def eval(**args):
+      retval, _times = self.eval_withtimes(**args)
+      with lock:
+        times[:] += _times
+      return retval
+    with log.context('eval'):
+      yield eval
+      log.info('total time: {:.0f}ms\n'.format(builtins.sum(times)*1000) + '\n'.join('{:4.0f} {} ({})'.format(builtins.sum(dts)*1000, op.__name__,
+        '1 call' if len(dts) == 1 else '{} calls, {:.0f}..{:.0f} per call'.format(len(dts), builtins.min(dts)*1000, builtins.max(dts)*1000))
+          for op, dts in sorted(util.gather(zip(map(type, self.ordereddeps[1:]+(self,)), times)), reverse=True, key=lambda row: builtins.sum(row[1]))))
+      self.graphviz(graphviz, times=times)
+
+  def graphviz(self, dotpath='dot', *, imgtype='png', times=None):
     'create function graph'
 
-    import os, subprocess
+    if times is not None:
+      tfrac = numpy.hstack([0, times / times.max()])
+      style = lambda i: ',style="filled",fillcolor="0,{:.2f},1"'.format(tfrac[i])
+    else:
+      style = lambda i: ''
 
-    lines = []
-    lines.append('digraph {')
-    lines.append('graph [dpi=72];')
-    lines.extend('{} [{}];'.format(i, dep._graphviz_node()) for i, dep in enumerate(self.ordereddeps+(self,)))
+    lines = ['digraph {graph [dpi=72];']
+    lines.extend('{} [{}];'.format(i, dep._graphviz_node() + style(i)) for i, dep in enumerate(self.ordereddeps+(self,)))
     lines.extend('{} -> {};'.format(j, i) for i, indices in enumerate(self.dependencytree) for j in indices)
     lines.append('}')
 
     with log.infofile('dot.'+imgtype, 'wb') as img:
-      status = subprocess.run([dotpath,'-T'+imgtype], input='\n'.join(lines).encode(), stdout=subprocess.PIPE)
+      status = subprocess.run([dotpath,'-Gstart=1','-T'+imgtype], input='\n'.join(lines).encode(), stdout=subprocess.PIPE)
       if status.returncode:
         log.warning('graphviz failed for error code', status.returncode)
       img.write(status.stdout)
 
-  def stackstr(self, nlines=-1):
-    'print stack'
-
+  def _stack(self, values):
     lines = ['  %0 = EVALARGS']
-    for op, indices in self.serialized:
-      args = ['%{}'.format(idx) for idx in indices]
+    for (op, indices), v in zip(self.serialized, values):
+      lines[-1] += ' --> ' + type(v).__name__
+      if numeric.isarray(v):
+        lines[-1] += '({})'.format(','.join(map(str, v.shape)))
       try:
         code = op.evalf.__code__
         offset = 1 if getattr(op.evalf, '__self__', None) is not None else 0
         names = code.co_varnames[offset:code.co_argcount]
         names += tuple('{}[{}]'.format(code.co_varnames[code.co_argcount], n) for n in range(len(indices) - len(names)))
-        args = ['{}={}'.format(*item) for item in zip(names, args)]
+        args = map(' {}=%{}'.format, names, indices)
       except:
-        pass
-      lines.append('  %{} = {}({})'.format(len(lines), op._asciitree_str(), ', '.join(args)))
-      if len(lines) == nlines+1:
-        break
-    return '\n'.join(lines)
+        args = map(' %{}'.format, indices)
+      lines.append('  %{} = {}:{}'.format(len(lines), op._asciitree_str(), ','.join(args)))
+    return lines
 
   @property
   @replace(depthfirst=True, recursive=True)
@@ -372,23 +404,8 @@ class Evaluable(types.Singleton):
     return
 
 class EvaluationError(Exception):
-  'evaluation error'
-
-  def __init__(self, etype, evalue, evaluable, values):
-    'constructor'
-
-    self.etype = etype
-    self.evalue = evalue
-    self.evaluable = evaluable
-    self.values = values
-
-  def __repr__(self):
-    return 'EvaluationError{}'.format(self)
-
-  def __str__(self):
-    'string representation'
-
-    return '\n{} --> {}: {}'.format(self.evaluable.stackstr(nlines=len(self.values)), self.etype.__name__, self.evalue)
+  def __init__(self, f, values):
+    super().__init__('evaluation failed in step {}/{}\n'.format(len(values), len(f.dependencies)) + '\n'.join(f._stack(values)))
 
 EVALARGS = Evaluable(args=())
 
@@ -744,9 +761,7 @@ class Array(Evaluable):
     return '{}({})'.format(type(self).__name__, ','.join(['?' if isarray(sh) else str(sh) for sh in self.shape]))
 
   def _graphviz_node(self):
-    if not self.ndim:
-      return r'shape=box,label="{}"'.format(type(self).__name__)
-    return r'shape=none,margin=0,label=<<table cellborder="0" cellspacing="0"><tr><td colspan="{}">{}</td></tr><tr>{}</tr></table>>'.format(self.ndim, type(self).__name__, ''.join('<td>{}</td>'.format(sh) for sh in self.shape))
+    return r'shape=box,label="{}\n{}"'.format(type(self).__name__, ','.join('?' if isarray(sh) else str(sh) for sh in self.shape))
 
   # simplifications
   _multiply = lambda self, other: None
