@@ -564,7 +564,7 @@ class ChainedSample(Sample):
 
   @property
   def pointsiter(self):
-    return itertools.chain.fromiterable(sample.pointsiter for sample in self._samples)
+    return itertools.chain.from_iterable(sample.pointsiter for sample in self._samples)
 
   @property
   def indexiter(self):
