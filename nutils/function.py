@@ -3097,11 +3097,7 @@ class RevolutionAngle(Array):
   __slots__ = ()
 
   def __init__(self):
-    super().__init__(args=[], shape=[], dtype=float)
-
-  @property
-  def isconstant(self):
-    return False
+    super().__init__(args=[EVALARGS], shape=[], dtype=float)
 
   def evalf(self):
     raise Exception('RevolutionAngle should not be evaluated')
