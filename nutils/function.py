@@ -1803,6 +1803,12 @@ class Einsum(Array):
   def _graphviz_node(self):
     return r'shape=box,label="{}({})\n{}"'.format(type(self).__name__, self._einsumfmt, ','.join(repr(axis) for axis in self._axes))
 
+  def _simplified(self):
+    for i, arg in enumerate(self.args):
+      if isinstance(arg, Transpose): # absorb `Transpose`
+        idx = tuple(map(self.args_idx[i].__getitem__, numpy.argsort(arg.axes)))
+        return Einsum(self.args[:i]+(arg.func,)+self.args[i+1:], self.args_idx[:i]+(idx,)+self.args_idx[i+1:], self.out_idx)
+
   def _sum(self, axis):
     if not (0 <= axis < self.ndim):
       raise IndexError('Axis out of range.')
