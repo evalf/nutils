@@ -384,10 +384,12 @@ class Evaluable(types.Singleton):
 
   @property
   @types.apply_annotations
-  @replace(depthfirst=True)
+  @replace(depthfirst=True, recursive=True)
   def optimized_for_numpy(obj: simplified.fget):
     if isinstance(obj, Array):
-      return obj._optimized_for_numpy()
+      retval = obj._optimized_for_numpy() or obj._simplified()
+      assert retval is None or isinstance(retval, Array) and retval.shape == obj.shape, '{0}._optimized_for_numpy or {0}._simplified resulted in shape change'.format(type(obj).__name__)
+      return retval
 
   @replace
   @util.positional_only
@@ -825,9 +827,7 @@ class Array(Evaluable):
     return
 
   def _optimized_for_numpy(self):
-    if self.isconstant:
-      const, = self.eval()
-      return Constant(const)
+    return
 
   def _derivative(self, var, seen):
     if self.dtype in (bool, int) or var not in self.dependencies:
