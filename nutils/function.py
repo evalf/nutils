@@ -3097,11 +3097,7 @@ class RevolutionAngle(Array):
   __slots__ = ()
 
   def __init__(self):
-    super().__init__(args=[], shape=[], dtype=float)
-
-  @property
-  def isconstant(self):
-    return False
+    super().__init__(args=[EVALARGS], shape=[], dtype=float)
 
   def evalf(self):
     raise Exception('RevolutionAngle should not be evaluated')
@@ -4755,7 +4751,7 @@ class Namespace:
 
     if default_geometry_name is None:
       default_geometry_name = self.default_geometry_name
-    ns = Namespace(default_geometry_name=default_geometry_name, fallback_length=self._fallback_length, **{'length_{i}': l for i, l in self._fixed_lengths.items()})
+    ns = Namespace(default_geometry_name=default_geometry_name, fallback_length=self._fallback_length, functions=self._functions, **{'length_{i}': l for i, l in self._fixed_lengths.items()})
     for k, v in self._attributes.items():
       setattr(ns, k, v)
     return ns
