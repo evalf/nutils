@@ -1594,6 +1594,13 @@ class Einsum(Array):
       raise IndexError('Axis out of range.')
     return Einsum(self.args, self.args_idx, self.out_idx[:axis] + self.out_idx[axis+1:])
 
+  def _takediag(self, axis1, axis2):
+    if not (0 <= axis1 < axis2 < self.ndim):
+      raise IndexError('Axis out of range.')
+    ikeep, irm = self.out_idx[axis1], self.out_idx[axis2]
+    args_idx = tuple(tuple(ikeep if i == irm else i for i in idx) for idx in self.args_idx)
+    return Einsum(self.args, args_idx, self.out_idx[:axis1] + self.out_idx[axis1+1:axis2] + self.out_idx[axis2+1:] + (ikeep,))
+
 class Sum(Array):
 
   __slots__ = 'func'
