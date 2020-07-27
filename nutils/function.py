@@ -1765,7 +1765,7 @@ class Add(Array):
 
 class Einsum(Array):
 
-  __slots__ = 'args', 'out_idx', 'args_idx', '_einsumfmt'
+  __slots__ = 'args', 'out_idx', 'args_idx', '_einsumfmt', '_has_summed_axes'
 
   @types.apply_annotations
   def __init__(self, args:types.tuple[asarray], args_idx:types.tuple[types.tuple[types.strictint]], out_idx:types.tuple[types.strictint]):
@@ -1792,9 +1792,12 @@ class Einsum(Array):
     self.args_idx = args_idx
     self.out_idx = out_idx
     self._einsumfmt = ','.join('a'+''.join(chr(98+i) for i in idx) for idx in args_idx) + '->a' + ''.join(chr(98+i) for i in out_idx)
+    self._has_summed_axes = len(lengths) > len(out_idx)
     super().__init__(args=self.args, shape=shape, dtype=_jointdtype(*(arg.dtype for arg in args)))
 
   def evalf(self, *args):
+    if self._has_summed_axes:
+      args = map(numpy.asfortranarray, args)
     return numpy.core.multiarray.c_einsum(self._einsumfmt, *args)
 
   def _graphviz_node(self):
