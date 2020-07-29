@@ -175,7 +175,7 @@ class Sample(types.Singleton):
     # argument id, evaluable index, and evaluable values.
 
     funcs = self._prepare_funcs(funcs)
-    blocks = [(ifunc, function.Tuple(ind), f.optimized_for_numpy) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func)]
+    blocks = [(ifunc, function.Tuple(ind).optimized_for_numpy, f.optimized_for_numpy) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func)]
     block2func, indices, values = zip(*blocks) if blocks else ([],[],[])
 
     log.debug('integrating {} distinct blocks'.format('+'.join(
@@ -186,7 +186,7 @@ class Sample(types.Singleton):
     # sizes are evaluated.
 
     offsets = numpy.empty((len(blocks), self.nelems+1), dtype=numpy.uint64)
-    sizefunc = function.Tuple([f.size for ifunc, ind, f in blocks]).simplified
+    sizefunc = function.Tuple([f.size for ifunc, ind, f in blocks]).optimized_for_numpy
     for ielem, transforms in enumerate(zip(*self.transforms)):
       offsets[:,ielem+1] = sizefunc.eval(_transforms=transforms, **arguments)
 
@@ -250,7 +250,7 @@ class Sample(types.Singleton):
     funcs = self._prepare_funcs(funcs)
     retvals = [parallel.shzeros((self.npoints,)+func.shape, dtype=func.dtype) for func in funcs]
 
-    with function.Tuple(function.Tuple([i, *ind, f.optimized_for_numpy]) for i, func in enumerate(funcs) for ind, f in function.blocks(func)).session(graphviz) as eval, \
+    with function.Tuple(function.Tuple([i, *ind, f]).optimized_for_numpy for i, func in enumerate(funcs) for ind, f in function.blocks(func)).session(graphviz) as eval, \
          parallel.ctxrange('evaluating', self.nelems) as ielems:
 
       for ielem in ielems:
