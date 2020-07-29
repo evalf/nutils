@@ -2170,7 +2170,7 @@ class Elemwise(Array):
   @types.apply_annotations
   def __init__(self, data:types.tuple[types.frozenarray], index:asarray, dtype:asdtype):
     self.data = data
-    shape = map(index.choose, zip(*[d.shape for d in data]))
+    shape = get([d.shape for d in data], 0, index)
     super().__init__(args=[index], shape=shape, dtype=dtype)
 
   def evalf(self, index):
@@ -3285,8 +3285,6 @@ class Choose(Array):
     if self.index.isconstant:
       index, = self.index.eval()
       return self.choices[index]
-    if all(choice.isconstant for choice in self.choices):
-      return get(numpy.concatenate([choice.eval() for choice in self.choices], axis=0), 0, self.index)
 
   def _multiply(self, other):
     if isinstance(other, Choose) and self.index == other.index:
