@@ -855,6 +855,15 @@ class Constant(Array):
   def evalf(self):
     return self.value[_]
 
+  def _graphviz_node(self):
+    if self.value.ndim == 0:
+      value = '({})'.format(self.value[()])
+      if len(value) > 9:
+        value = '(~{:.2e})'.format(self.value[()])
+    else:
+      value = ''
+    return r'shape=box,label="{}{}"'.format(type(self).__name__, value)
+
   @property
   def _isunit(self):
     return numpy.equal(self.value, 1).all()
@@ -1051,6 +1060,9 @@ class Transpose(Array):
 
   def evalf(self, arr):
     return arr.transpose([0] + [n+1 for n in self.axes])
+
+  def _graphviz_node(self):
+    return r'shape=box,label="{}({})'.format(type(self).__name__)
 
   def _transpose(self, axes):
     newaxes = [self.axes[i] for i in axes]
@@ -1707,6 +1719,9 @@ class Einsum(Array):
 
   def evalf(self, arr1, arr2):
     return numpy.core.multiarray.c_einsum(self._einsumfmt, arr1, arr2)
+
+  def _graphviz_node(self):
+    return r'shape=box,label="{}({})"'.format(type(self).__name__, self._einsumfmt)
 
 class Sum(Array):
 
