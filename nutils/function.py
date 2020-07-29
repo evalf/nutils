@@ -2263,7 +2263,10 @@ class Diagonalize(Array):
     return self.func._diagonalize(self.ndim-2)
 
   def evalf(self, arr):
-    return numeric.diagonalize(arr)
+    result = numpy.zeros(arr.shape+(arr.shape[-1],), dtype=arr.dtype, order='F')
+    diag = numpy.core.multiarray.c_einsum('...ii->...i', result)
+    diag[:] = arr
+    return result
 
   def _derivative(self, var, seen):
     return diagonalize(derivative(self.func, var, seen), self.ndim-2, self.ndim-1)
