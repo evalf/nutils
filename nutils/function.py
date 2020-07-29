@@ -1372,6 +1372,10 @@ class Multiply(Array):
 
   def _simplified(self):
     func1, func2 = self.funcs
+    if isuniform(func1, 1):
+      return func2
+    if isuniform(func2, 1):
+      return func1
     diagonals = {}
     for i, axis in enumerate(self._axes):
       if isinstance(axis, Inserted):
@@ -2412,7 +2416,7 @@ class Argument(DerivativeTargetBase):
   >>> a = function.Argument('x', [])
   >>> b = function.Argument('y', [])
   >>> f = a**3 + b**2
-  >>> function.derivative(f, a).simplified == (3.*a**2).simplified
+  >>> function.derivative(f, a).simplified == (3*a**2).simplified
   True
 
   Furthermore, derivatives to the local cooardinates are remembered and applied

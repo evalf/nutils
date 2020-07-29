@@ -867,7 +867,7 @@ class namespace(TestCase):
   def test_d_arg(self):
     ns = function.Namespace()
     ns.a = '?a'
-    self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').simplified, function.asarray(2.))
+    self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').simplified, function.asarray(2))
 
   def test_n(self):
     ns = function.Namespace()
