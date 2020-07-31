@@ -1391,9 +1391,17 @@ class Multiply(Array):
     return func1._multiply(func2) or func2._multiply(func1)
 
   def _optimized_for_numpy(self):
+    func1, func2 = self.funcs
+    if isuniform(func1, -1) and func2.dtype != bool:
+      return Negative(func2)
+    if isuniform(func2, -1) and func1.dtype != bool:
+      return Negative(func1)
+    if func1 == sign(func2):
+      return Absolute(func2)
+    if func2 == sign(func1):
+      return Absolute(func1)
     if not self.ndim:
       return
-    func1, func2 = self.funcs
     keep = numpy.ones([2, self.ndim], dtype=bool)
     for i in reversed(range(self.ndim)):
       if isinstance(func1._axes[i], Inserted):
@@ -1739,6 +1747,18 @@ class Power(Array):
       return ones_like(self)
     return self.func._power(self.power)
 
+  def _optimized_for_numpy(self):
+    if isuniform(self.power, -1):
+      return Reciprocal(self.func)
+    elif isuniform(self.power, 2):
+      return Square(self.func)
+    elif isuniform(self.power, -2):
+      return Reciprocal(Square(self.func))
+    elif isuniform(self.power, 1):
+      return self.func
+    else:
+      return self._simplified()
+
   def evalf(self, base, exp):
     return numeric.power(base, exp)
 
@@ -1828,6 +1848,26 @@ class Pointwise(Array):
 
   def _unravel(self, axis, shape):
     return self.__class__(*[unravel(arg, axis, shape) for arg in self.args])
+
+class Reciprocal(Pointwise):
+  __slots__ = ()
+  evalf = numpy.reciprocal
+
+class Negative(Pointwise):
+  __slots__ = ()
+  evalf = numpy.negative
+
+class Square(Pointwise):
+  __slots__ = ()
+  evalf = numpy.square
+  def _sum(self, axis):
+    func, = self.args
+    idx = tuple(range(func.ndim))
+    return Einsum((func, func), (idx, idx), idx)._sum(axis)
+
+class Absolute(Pointwise):
+  __slots__ = ()
+  evalf = numpy.absolute
 
 class Cos(Pointwise):
   'Cosine, element-wise.'
