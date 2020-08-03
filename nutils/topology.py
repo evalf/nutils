@@ -623,7 +623,7 @@ class Topology(types.Singleton):
 
   def extruded(self, geom, nelems, periodic=False, bnames=('front','back')):
     assert geom.ndim == 1
-    root = transform.Identifier(self.ndims+1, 'extrude')
+    root = transform.Identifier(1, 'extrude')
     extopo = self * StructuredLine(root, i=0, j=nelems, periodic=periodic, bnames=bnames)
     exgeom = function.concatenate(function.bifurcate(geom, function.rootcoords(1)))
     return extopo, exgeom
