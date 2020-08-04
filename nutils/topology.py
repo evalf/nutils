@@ -490,7 +490,7 @@ class Topology(types.Singleton):
       subtopo = self[subtopo]
     values = numpy.zeros([len(self)], dtype=int)
     values[numpy.fromiter(map(self.transforms.index, subtopo.transforms), dtype=int)] = 1
-    return function.Get(values, axis=0, item=self.f_index)
+    return function.get(values, 0, self.f_index)
 
   def select(self, indicator, ischeme='bezier2', **kwargs):
     sample = self.sample(*element.parse_legacy_ischeme(ischeme))

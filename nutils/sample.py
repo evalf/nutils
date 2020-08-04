@@ -175,7 +175,7 @@ class Sample(types.Singleton):
     # argument id, evaluable index, and evaluable values.
 
     funcs = self._prepare_funcs(funcs)
-    blocks = [(ifunc, function.Tuple(ind), f.optimized_for_numpy) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func)]
+    blocks = [(ifunc, function.Tuple(ind).optimized_for_numpy, f.optimized_for_numpy) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func)]
     block2func, indices, values = zip(*blocks) if blocks else ([],[],[])
 
     log.debug('integrating {} distinct blocks'.format('+'.join(
@@ -186,7 +186,7 @@ class Sample(types.Singleton):
     # sizes are evaluated.
 
     offsets = numpy.empty((len(blocks), self.nelems+1), dtype=numpy.uint64)
-    sizefunc = function.Tuple([f.size for ifunc, ind, f in blocks]).simplified
+    sizefunc = function.Tuple([f.size for ifunc, ind, f in blocks]).optimized_for_numpy
     for ielem, transforms in enumerate(zip(*self.transforms)):
       offsets[:,ielem+1] = sizefunc.eval(_transforms=transforms, **arguments)
 
@@ -208,6 +208,7 @@ class Sample(types.Singleton):
     # element has its own location so no locks are required.
 
     datas = [parallel.shempty(n, dtype=sparse.dtype(funcs[ifunc].shape)) for ifunc, n in enumerate(nvals)]
+    trailingdims = [numpy.cumsum([0]+[ind.ndim for ind in index[:0:-1]])[::-1] for index in indices] # prepare index reshapes
 
     with function.Tuple(function.Tuple([value, *index]) for value, index in zip(values, indices)).session(graphviz) as eval, \
          parallel.ctxrange('integrating', self.nelems) as ielems:
@@ -217,8 +218,9 @@ class Sample(types.Singleton):
         for iblock, (intdata, *indices) in enumerate(eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=points.coords, **arguments)):
           data = datas[block2func[iblock]][offsets[iblock,ielem]:offsets[iblock,ielem+1]].reshape(intdata.shape[1:])
           numpy.einsum('p,p...->...', points.weights, intdata, out=data['value'])
+          td = trailingdims[iblock]
           for idim, ii in enumerate(indices):
-            data['index']['i'+str(idim)] = ii.reshape([-1]+[1]*(data.ndim-1-idim))
+            data['index']['i'+str(idim)] = ii.reshape(ii.shape[1:]+(1,)*td[idim]) # note: this could be implemented using newaxis, but reshape appears to be faster
 
     return datas
 
@@ -250,12 +252,12 @@ class Sample(types.Singleton):
     funcs = self._prepare_funcs(funcs)
     retvals = [parallel.shzeros((self.npoints,)+func.shape, dtype=func.dtype) for func in funcs]
 
-    with function.Tuple(function.Tuple([i, *ind, f.optimized_for_numpy]) for i, func in enumerate(funcs) for ind, f in function.blocks(func)).session(graphviz) as eval, \
+    with function.Tuple(function.Tuple([i, *ind, f]).optimized_for_numpy for i, func in enumerate(funcs) for ind, f in function.blocks(func)).session(graphviz) as eval, \
          parallel.ctxrange('evaluating', self.nelems) as ielems:
 
       for ielem in ielems:
         for ifunc, *inds, data in eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=self.points[ielem].coords, **arguments):
-          numpy.add.at(retvals[ifunc], numpy.ix_(self.getindex(ielem), *[ind for (ind,) in inds]), data)
+          numpy.add.at(retvals[ifunc], numpy.ix_(self.getindex(ielem), *[ind.ravel() for (ind,) in inds]), data.reshape([data.shape[0]] + [ind.size for ind in inds]))
 
     return retvals
 
@@ -273,7 +275,7 @@ class Sample(types.Singleton):
     index, tail = function.TransformsIndexWithTail(self.transforms[0], function.TRANS)
     I = function.Elemwise(self.index, index, dtype=int)
     B = function.Sampled(function.ApplyTransforms(tail), expect=function.take(self.allcoords, I, axis=0))
-    return function.Inflate(func=B, dofmap=I, length=self.npoints, axis=0)
+    return function._inflate(B, dofmap=I, length=self.npoints, axis=0)
 
   def asfunction(self, array):
     '''Convert sampled data to evaluable array.
