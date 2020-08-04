@@ -1044,10 +1044,6 @@ class InsertAxis(Array):
     else:
       return insertaxis(_takediag(self.func, axis1, axis2), self.ndim-3, self.length)
 
-  def _transpose(self, axes):
-    if axes[-1] == self.ndim-1:
-      return InsertAxis(Transpose(self.func, axes[:-1]), self.length)
-
   def _unravel(self, axis, shape):
     if axis == self.ndim - 1:
       return InsertAxis(InsertAxis(self.func, shape[0]), shape[1])
@@ -1188,6 +1184,27 @@ class Transpose(Array):
   def _inverse(self):
     if sorted(self.axes[-2:]) == [self.ndim-2, self.ndim-1]:
       return Transpose(Inverse(self.func), self.axes)
+
+  def _ravel(self, axis):
+    if self.axes[axis] == self.ndim-2 and self.axes[axis+1] == self.ndim-1:
+      return Transpose(Ravel(self.func), self.axes[:-1])
+
+  def _inflate(self, dofmap, length, axis):
+    i = self.axes[axis] if dofmap.ndim else self.func.ndim
+    if self.axes[axis:axis+dofmap.ndim] == tuple(range(i,i+dofmap.ndim)):
+      tryinflate = self.func._inflate(dofmap, length, i)
+      if tryinflate is not None:
+        axes = [ax-(ax>axis)*(dofmap.ndim-1) for ax in self.axes]
+        axes[axis:axis+dofmap.ndim] = i,
+        return Transpose(tryinflate, axes)
+
+  def _diagonalize(self, axis):
+    trydiagonalize = self.func._diagonalize(self.axes[axis])
+    if trydiagonalize is not None:
+      return Transpose(trydiagonalize, self.axes + (self.ndim,))
+
+  def _insertaxis(self, axis, length):
+    return Transpose(InsertAxis(self.func, length), self.axes[:axis] + (self.ndim,) + self.axes[axis:])
 
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
@@ -2227,10 +2244,6 @@ class Inflate(Array):
   def _derivative(self, var, seen):
     return _inflate(derivative(self.func, var, seen), self.dofmap, self.length, self.ndim-1)
 
-  def _transpose(self, axes):
-    if axes[-1] == self.ndim-1:
-      return Inflate(Transpose(self.func, axes), self.dofmap, self.length)
-
   def _insertaxis(self, axis, length):
     return _inflate(insertaxis(self.func, axis+self.dofmap.ndim-1, length), self.dofmap, self.length, self.ndim-1 if axis == self.ndim else -1)
 
@@ -2281,10 +2294,6 @@ class Inflate(Array):
   def _sign(self):
     return Inflate(Sign(self.func), self.dofmap, self.length)
 
-  def _transpose(self, axes):
-    if axes[-1] == self.ndim-1:
-      return Inflate(transpose(self.func, axes[:-1] + tuple(range(self.ndim-1, self.func.ndim))), self.dofmap, self.length)
-
 class Diagonalize(Array):
 
   __slots__ = 'func'
@@ -2328,10 +2337,6 @@ class Diagonalize(Array):
     if axis >= self.ndim - 2:
       return self.func
     return Diagonalize(sum(self.func, axis))
-
-  def _transpose(self, axes):
-    if builtins.min(axes[-2:]) == self.ndim-2:
-      return Diagonalize(Transpose(self.func, axes[:-2]+(self.ndim-2,)))
 
   def _insertaxis(self, axis, length):
     return diagonalize(insertaxis(self.func, builtins.min(axis, self.ndim-1), length), self.ndim-2+(axis<=self.ndim-2), self.ndim-1+(axis<=self.ndim-1))
@@ -2612,10 +2617,6 @@ class Ravel(Array):
 
   def _derivative(self, var, seen):
     return ravel(derivative(self.func, var, seen), axis=self.ndim-1)
-
-  def _transpose(self, axes):
-    if axes[-1] == self.ndim-1:
-      return Ravel(Transpose(self.func, axes+(self.ndim,)))
 
   def _takediag(self, axis1, axis2):
     assert axis1 < axis2
@@ -4432,7 +4433,9 @@ class Namespace:
 if __name__ == '__main__':
   # Diagnostics for the development for simplify operations.
   simplify_priority = (
-    Ravel, Inflate, Diagonalize, InsertAxis, Transpose, Multiply, Add, Sign, Power, Inverse, Unravel, # size preserving
+    Transpose, Ravel, # reinterpretation
+    Inflate, Diagonalize, InsertAxis, # size increasing
+    Multiply, Add, Sign, Power, Inverse, Unravel, # size preserving
     Product, Determinant, TakeDiag, Take, Sum) # size decreasing
   # The simplify priority defines the preferred order in which operations are
   # performed: shape decreasing operations such as Sum and Take should be done
