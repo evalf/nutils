@@ -427,6 +427,9 @@ class newton(cache.Recursion, length=1):
       relax = self.relax0
       yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
     while True:
+      from scipy import io, sparse
+      with log.infofile('system.mat', 'wb') as f:
+        io.savemat(f, dict(jac=sparse.csr_matrix(jac.export('csr')), res=res), do_compression=True)
       dlhs = -jac.solve_leniently(res, **self.solveargs) # compute new search vector
       res0 = res
       dres = jac@dlhs # == -res if dlhs was solved to infinite precision
