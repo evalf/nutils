@@ -308,6 +308,9 @@ def nutils_hash(data):
   elif t is types.MethodType:
     h.update(nutils_hash(data.__self__))
     h.update(nutils_hash(data.__name__))
+  elif hasattr(data, '__getnewargs__'):
+    for arg in data.__getnewargs__():
+      h.update(nutils_hash(arg))
   else:
     raise TypeError('unhashable type: {!r} {!r}'.format(data, t))
   return h.digest()

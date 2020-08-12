@@ -43,7 +43,7 @@ multiple integrals simultaneously, which has the advantage that it can
 efficiently combine common substructures.
 '''
 
-from . import types, points, util, function, parallel, numeric, matrix, transformseq, sparse
+from . import types, points, util, function, evaluable, parallel, numeric, matrix, transformseq, sparse
 from .pointsseq import PointsSequence
 import numpy, numbers, collections.abc, os, treelog as log, abc
 
@@ -167,6 +167,21 @@ class Sample(types.Singleton):
         Optional arguments for function evaluation.
     '''
 
+    return self.integrate_sparse_evaluable(self._prepare_funcs(funcs), arguments)
+
+  @util.single_or_multiple
+  @types.apply_annotations
+  def integrate_sparse_evaluable(self, funcs:types.tuple[evaluable.asarray], arguments:types.frozendict[str,types.frozenarray]=None):
+    '''Integrate functions into sparse data.
+
+    Args
+    ----
+    funcs : :class:`nutils.evaluable.Array` object or :class:`tuple` thereof.
+        The integrand(s).
+    arguments : :class:`dict` (default: None)
+        Optional arguments for function evaluation.
+    '''
+
     if arguments is None:
       arguments = {}
 
@@ -174,8 +189,7 @@ class Sample(types.Singleton):
     # chaining. Here we make a list of all blocks consisting of triplets of
     # argument id, evaluable index, and evaluable values.
 
-    funcs = self._prepare_funcs(funcs)
-    blocks = [(ifunc, function.Tuple(ind).optimized_for_numpy, f.optimized_for_numpy) for ifunc, func in enumerate(funcs) for ind, f in function.blocks(func)]
+    blocks = [(ifunc, evaluable.Tuple(ind).optimized_for_numpy, f.optimized_for_numpy) for ifunc, func in enumerate(funcs) for ind, f in evaluable.blocks(func)]
     block2func, indices, values = zip(*blocks) if blocks else ([],[],[])
 
     log.debug('integrating {} distinct blocks'.format('+'.join(
@@ -186,7 +200,7 @@ class Sample(types.Singleton):
     # sizes are evaluated.
 
     offsets = numpy.empty((len(blocks), self.nelems+1), dtype=numpy.uint64)
-    sizefunc = function.Tuple([f.size for ifunc, ind, f in blocks]).optimized_for_numpy
+    sizefunc = evaluable.Tuple([f.size for ifunc, ind, f in blocks]).optimized_for_numpy
     for ielem, transforms in enumerate(zip(*self.transforms)):
       offsets[:,ielem+1] = sizefunc.eval(_transforms=transforms, **arguments)
 
@@ -210,7 +224,7 @@ class Sample(types.Singleton):
     datas = [parallel.shempty(n, dtype=sparse.dtype(funcs[ifunc].shape)) for ifunc, n in enumerate(nvals)]
     trailingdims = [numpy.cumsum([0]+[ind.ndim for ind in index[:0:-1]])[::-1] for index in indices] # prepare index reshapes
 
-    with function.Tuple(function.Tuple([value, *index]) for value, index in zip(values, indices)).session(graphviz) as eval, \
+    with evaluable.Tuple(evaluable.Tuple([value, *index]) for value, index in zip(values, indices)).session(graphviz) as eval, \
          parallel.ctxrange('integrating', self.nelems) as ielems:
 
       for ielem in ielems:
@@ -233,6 +247,7 @@ class Sample(types.Singleton):
         Integrand.
     '''
 
+    func, = self._prepare_funcs([func])
     return Integral([(self, func)], shape=func.shape)
 
   @util.positional_only
@@ -250,9 +265,25 @@ class Sample(types.Singleton):
     '''
 
     funcs = self._prepare_funcs(funcs)
+    return self.eval_evaluable(funcs, **arguments)
+
+  @util.positional_only
+  @util.single_or_multiple
+  @types.apply_annotations
+  def eval_evaluable(self, funcs, arguments:argdict=...):
+    '''Evaluate function.
+
+    Args
+    ----
+    funcs : :class:`nutils.evaluable.Array` object or :class:`tuple` thereof.
+        The integrand(s).
+    arguments : :class:`dict` (default: None)
+        Optional arguments for function evaluation.
+    '''
+
     retvals = [parallel.shzeros((self.npoints,)+func.shape, dtype=func.dtype) for func in funcs]
 
-    with function.Tuple(function.Tuple([i, *ind, f]).optimized_for_numpy for i, func in enumerate(funcs) for ind, f in function.blocks(func)).session(graphviz) as eval, \
+    with evaluable.Tuple(evaluable.Tuple([i, *ind, f]).optimized_for_numpy for i, func in enumerate(funcs) for ind, f in evaluable.blocks(func)).session(graphviz) as eval, \
          parallel.ctxrange('evaluating', self.nelems) as ielems:
 
       for ielem in ielems:
@@ -272,10 +303,11 @@ class Sample(types.Singleton):
     '''Basis-like function that for every point in the sample evaluates to the
     unit vector corresponding to its index.'''
 
-    index, tail = function.TransformsIndexWithTail(self.transforms[0], function.TRANS)
+    index = function.transforms_index(self.transforms[0])
+    coords = function.transforms_coords(self.transforms[0], self.ndims)
     I = function.Elemwise(self.index, index, dtype=int)
-    B = function.Sampled(function.ApplyTransforms(tail), expect=function.take(self.allcoords, I, axis=0))
-    return function._inflate(B, dofmap=I, length=self.npoints, axis=0)
+    B = function.Sampled(coords, expect=function.take(self.allcoords, I, axis=0))
+    return function.inflate(B, indices=I, length=self.npoints, axis=0)
 
   def asfunction(self, array):
     '''Convert sampled data to evaluable array.
@@ -415,9 +447,9 @@ class Integral(types.Singleton):
   __cache__ = 'derivative', 'argshapes'
 
   @types.apply_annotations
-  def __init__(self, integrands:types.frozendict[strictsample, function.simplified], shape:types.tuple[int]):
+  def __init__(self, integrands:types.frozendict[strictsample, evaluable.simplified], shape:types.tuple[int]):
     assert all(ig.shape == shape for ig in integrands.values()), 'incompatible shapes: expected {}, got {}'.format(shape, ', '.join({str(ig.shape) for ig in integrands.values()}))
-    self._integrands = {topo: func for topo, func in integrands.items() if not function.iszero(func)}
+    self._integrands = {sample: func for sample, func in integrands.items() if not evaluable.iszero(func)}
     self.shape = shape
 
   @property
@@ -454,10 +486,12 @@ class Integral(types.Singleton):
     derivative : :class:`Integral`
     '''
 
-    if not isinstance(target, function.Argument):
-      target = function.Argument(target, self.argshapes[target])
+    if isinstance(target, function.Argument):
+      target = target.prepare_eval()
+    elif not isinstance(target, evaluable.Argument):
+      target = evaluable.Argument(target, self.argshapes[target])
     seen = {}
-    return Integral({di: function.derivative(integrand, var=target, seen=seen) for di, integrand in self._integrands.items()}, shape=self.shape+target.shape)
+    return Integral({di: evaluable.derivative(integrand, var=target, seen=seen) for di, integrand in self._integrands.items()}, shape=self.shape+target.shape)
 
   def replace(self, arguments):
     '''Return copy with arguments applied.
@@ -527,7 +561,7 @@ class Integral(types.Singleton):
 
   @property
   def argshapes(self):
-    items = [(dep._name, dep.shape[:dep.ndim-dep._nderiv]) for func in self._integrands.values() for dep in func.dependencies if isinstance(dep, function.Argument)]
+    items = [(dep._name, dep.shape[:dep.ndim]) for func in self._integrands.values() for dep in func.dependencies if isinstance(dep, evaluable.Argument)]
     shapes = dict(items)
     if any(shapes[name] != shape for name, shape in items):
       raise Exception('non-matching arguments shapes encountered')
@@ -590,7 +624,7 @@ def eval_integrals_sparse(*integrals: types.tuple[strictintegral], **arguments: 
   retvals = [[sparse.empty(integral.shape)] for integral in integrals] # initialize with zeros to set shape and avoid empty addition
   with log.iter.fraction('topology', util.gather((di, iint) for iint, integral in enumerate(integrals) for di in integral._integrands)) as gathered:
     for sample, iints in gathered:
-      for iint, retval in zip(iints, sample.integrate_sparse([integrals[iint]._integrands[sample] for iint in iints], arguments)):
+      for iint, retval in zip(iints, sample.integrate_sparse_evaluable([integrals[iint]._integrands[sample] for iint in iints], arguments)):
         retvals[iint].append(retval)
       del retval
 

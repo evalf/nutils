@@ -52,7 +52,7 @@ def overlapping(arr, axis=-1, n=2):
   overlapping.flags.writeable = False
   return overlapping
 
-def normdim(ndim, n):
+def normdim(ndim: int, n: int) -> int:
   'check bounds and make positive'
 
   assert isint(ndim) and ndim >= 0, 'ndim must be positive integer, got {}'.format(ndim)

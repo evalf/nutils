@@ -34,7 +34,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, parallel, numeric, cache, transform, transformseq, warnings, matrix, types, points, sparse
+from . import element, function, evaluable, util, parallel, numeric, cache, transform, transformseq, warnings, matrix, types, points, sparse
 from .sample import Sample
 from .elementseq import References
 from .pointsseq import PointsSequence
@@ -150,9 +150,8 @@ class Topology(types.Singleton):
 
   @property
   def _index_coords(self):
-    index, tail = function.TransformsIndexWithTail(self.transforms, function.TRANS)
-    coords = function.ApplyTransforms(tail)
-    assert coords.shape == (self.ndims,)
+    index = function.transforms_index(self.transforms)
+    coords = function.transforms_coords(self.transforms, self.ndims)
     return index, coords
 
   @property
@@ -298,7 +297,7 @@ class Topology(types.Singleton):
 
     elif ptype == 'nodal':
 
-      ## data = function.Tuple([fun, onto])
+      ## data = evaluable.Tuple([fun, onto])
       ## F = W = 0
       ## for elem in self:
       ##   f, w = data(elem, 'bezier2')
@@ -310,7 +309,7 @@ class Topology(types.Singleton):
       W = numpy.zeros(onto.shape[0])
       I = numpy.zeros(onto.shape[0], dtype=bool)
       fun = function.asarray(fun).prepare_eval()
-      data = function.Tuple(function.Tuple([fun, onto_f.simplified, function.Tuple(onto_ind)]) for onto_ind, onto_f in function.blocks(onto.prepare_eval()))
+      data = evaluable.Tuple(evaluable.Tuple([fun, onto_f.simplified, evaluable.Tuple(onto_ind)]) for onto_ind, onto_f in evaluable.blocks(onto.prepare_eval()))
       for ref, trans, opp in zip(self.references, self.transforms, self.opposites):
         ipoints, iweights = ref.getischeme('bezier2')
         for fun_, onto_f_, onto_ind_ in data.eval(_transforms=(trans, opp), _points=ipoints, **arguments or {}):
@@ -362,7 +361,7 @@ class Topology(types.Singleton):
     if arguments is None:
       arguments = {}
 
-    levelset = levelset.prepare_eval().simplified
+    levelset = levelset.prepare_eval().optimized_for_numpy
     refs = []
     if leveltopo is None:
       with log.iter.percentage('trimming', self.references, self.transforms, self.opposites) as items:
@@ -515,7 +514,7 @@ class Topology(types.Singleton):
     ielems = parallel.shempty(len(coords), dtype=int)
     xis = parallel.shempty((len(coords),len(geom)), dtype=float)
     J = function.localgradient(geom, self.ndims)
-    geom_J = function.Tuple((geom, J)).prepare_eval().simplified
+    geom_J = evaluable.Tuple((geom.prepare_eval(), J.prepare_eval())).simplified
     with parallel.ctxrange('locating', len(coords)) as ipoints:
       for ipoint in ipoints:
         coord = coords[ipoint]
@@ -2188,8 +2187,8 @@ class MultipatchTopology(Topology):
     'degree zero patchwise discontinuous basis'
 
     transforms = transformseq.PlainTransforms(tuple((patch.topo.root,) for patch in self.patches), self.ndims)
-    index, tail = function.TransformsIndexWithTail(transforms, function.TRANS)
-    coords = function.ApplyTransforms(tail)
+    index = function.transforms_index(transforms)
+    coords = function.transforms_coords(transforms, self.ndims)
     return function.DiscontBasis([types.frozenarray(1, dtype=int).reshape(1, *(1,)*self.ndims)]*len(self.patches), index, coords)
 
   @property
