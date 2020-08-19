@@ -262,7 +262,7 @@ class Reference(types.Singleton):
     if len(ctransforms) == 1:
       ctrans, = ctransforms
       assert not ctrans
-      return ((), self.getpoints('vertex', maxrefine).coords, allindices),
+      return ((), self.getpoints('vertex', maxrefine), allindices),
     if maxrefine == 0:
       raise Exception('maxrefine is too low')
     cbins = [set() for ichild in range(self.nchildren)]

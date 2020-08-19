@@ -1244,6 +1244,9 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
     retval = self.__base.__getitem__(item)
     return frozenarray(retval, copy=False) if isinstance(retval, numpy.ndarray) else retval
 
+  def __index__(self):
+    return self.__base.__index__()
+
   dtype = property(lambda self: self.__base.dtype)
   shape = property(lambda self: self.__base.shape)
   size = property(lambda self: self.__base.size)

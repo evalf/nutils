@@ -308,10 +308,10 @@ class Topology(types.Singleton):
       F = numpy.zeros(onto.shape[0])
       W = numpy.zeros(onto.shape[0])
       I = numpy.zeros(onto.shape[0], dtype=bool)
-      fun = function.asarray(fun).prepare_eval()
-      data = evaluable.Tuple(evaluable.Tuple([fun, onto_f.simplified, evaluable.Tuple(onto_ind)]) for onto_ind, onto_f in evaluable.blocks(onto.prepare_eval()))
+      fun = function.asarray(fun).prepare_eval(ndims=self.ndims)
+      data = evaluable.Tuple(evaluable.Tuple([fun, onto_f.simplified, evaluable.Tuple(onto_ind)]) for onto_ind, onto_f in evaluable.blocks(onto.prepare_eval(ndims=self.ndims)))
       for ref, trans, opp in zip(self.references, self.transforms, self.opposites):
-        ipoints, iweights = ref.getischeme('bezier2')
+        ipoints = ref.getpoints('bezier2')
         for fun_, onto_f_, onto_ind_ in data.eval(_transforms=(trans, opp), _points=ipoints, **arguments or {}):
           onto_f_ = onto_f_.swapaxes(0,1) # -> dof axis, point axis, ...
           indfun_ = fun_[(slice(None),)+numpy.ix_(*onto_ind_[1:])]
@@ -361,12 +361,12 @@ class Topology(types.Singleton):
     if arguments is None:
       arguments = {}
 
-    levelset = levelset.prepare_eval().optimized_for_numpy
+    levelset = levelset.prepare_eval(ndims=self.ndims).optimized_for_numpy
     refs = []
     if leveltopo is None:
       with log.iter.percentage('trimming', self.references, self.transforms, self.opposites) as items:
         for ref, trans, opp in items:
-          levels = levelset.eval(_transforms=(trans, opp), _points=ref.getpoints('vertex', maxrefine).coords, **arguments)
+          levels = levelset.eval(_transforms=(trans, opp), _points=ref.getpoints('vertex', maxrefine), **arguments)
           refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
     else:
       log.info('collecting leveltopo elements')
@@ -514,7 +514,7 @@ class Topology(types.Singleton):
     ielems = parallel.shempty(len(coords), dtype=int)
     xis = parallel.shempty((len(coords),len(geom)), dtype=float)
     J = function.localgradient(geom, self.ndims)
-    geom_J = evaluable.Tuple((geom.prepare_eval(), J.prepare_eval())).simplified
+    geom_J = evaluable.Tuple((geom.prepare_eval(ndims=self.ndims), J.prepare_eval(ndims=self.ndims))).simplified
     with parallel.ctxrange('locating', len(coords)) as ipoints:
       for ipoint in ipoints:
         coord = coords[ipoint]
@@ -527,7 +527,7 @@ class Topology(types.Singleton):
           w = p.weights
           xi = (numpy.dot(w,xi) / w.sum())[_] if len(xi) > 1 else xi.copy()
           for iiter in range(maxiter):
-            coord_xi, J_xi = geom_J.eval(_transforms=(self.transforms[ielem], self.opposites[ielem]), _points=xi, **arguments or {})
+            coord_xi, J_xi = geom_J.eval(_transforms=(self.transforms[ielem], self.opposites[ielem]), _points=points.CoordsPoints(xi), **arguments or {})
             err = numpy.linalg.norm(coord - coord_xi)
             if err < tol:
               converged = True

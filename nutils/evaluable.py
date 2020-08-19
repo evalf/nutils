@@ -397,15 +397,6 @@ class EvaluationError(Exception):
 
 EVALARGS = Evaluable(args=())
 
-class Points(Evaluable):
-  __slots__ = ()
-  def __init__(self):
-    super().__init__(args=[EVALARGS])
-  def evalf(self, evalargs):
-    points = evalargs['_points']
-    assert numeric.isarray(points) and points.ndim == 2
-    return types.frozenarray(points)
-
 class Tuple(Evaluable):
 
   __slots__ = 'items', 'indices'
@@ -540,7 +531,7 @@ class TransformsIndexWithTail(Evaluable):
 
   def evalf(self, trans):
     index, tail = self._transforms.index_with_tail(trans)
-    return numpy.array(index)[None], tail
+    return numpy.array(index), tail
 
   def __len__(self):
     return 2
@@ -838,6 +829,42 @@ class Array(Evaluable):
       return Zeros(self.shape + var.shape, dtype=self.dtype)
     raise NotImplementedError('derivative not defined for {}'.format(self.__class__.__name__))
 
+class NPoints(Array):
+  'The length of the points axis.'
+
+  __slots__ = ()
+
+  def __init__(self):
+    super().__init__(args=[EVALARGS], shape=(), dtype=int)
+
+  def evalf(self, evalargs):
+    points = evalargs['_points'].coords
+    return types.frozenarray(points.shape[0])
+
+class Points(Array):
+
+  __slots__ = ()
+
+  def __init__(self, npoints, ndim):
+    super().__init__(args=[EVALARGS], shape=(npoints, ndim), dtype=float)
+
+  def evalf(self, evalargs):
+    points = evalargs['_points'].coords
+    assert numeric.isarray(points) and points.ndim == 2
+    return types.frozenarray(points)
+
+class Weights(Array):
+
+  __slots__ = ()
+
+  def __init__(self, npoints):
+    super().__init__(args=[EVALARGS], shape=(npoints,), dtype=float)
+
+  def evalf(self, evalargs):
+    weights = evalargs['_points'].weights
+    assert numeric.isarray(weights) and weights.ndim == 1
+    return weights
+
 class Normal(Array):
   'normal'
 
@@ -845,9 +872,9 @@ class Normal(Array):
 
   @types.apply_annotations
   def __init__(self, lgrad:asarray):
-    assert lgrad.ndim == 2 and lgrad.shape[0] == lgrad.shape[1]
+    assert lgrad.ndim >= 2 and lgrad.shape[-2] == lgrad.shape[-1]
     self.lgrad = lgrad
-    super().__init__(args=[lgrad], shape=(len(lgrad),), dtype=float)
+    super().__init__(args=[lgrad], shape=lgrad.shape[:-1], dtype=float)
 
   def evalf(self, lgrad):
     n = lgrad[...,-1]
@@ -855,20 +882,22 @@ class Normal(Array):
       return numpy.sign(n)
     # orthonormalize n to G
     G = lgrad[...,:-1]
-    GG = numeric.contract(G[:,:,_,:], G[:,:,:,_], axis=1)
-    v1 = numeric.contract(G, n[:,:,_], axis=1)
+    GG = numeric.contract(G[...,:,_,:], G[...,:,:,_], axis=-3)
+    v1 = numeric.contract(G, n[...,:,_], axis=-2)
     v2 = numpy.linalg.solve(GG, v1)
-    v3 = numeric.contract(G, v2[:,_,:], axis=2)
+    v3 = numeric.contract(G, v2[...,_,:], axis=-1)
     return numeric.normalize(n - v3)
 
   def _derivative(self, var, seen):
-    if len(self) == 1:
+    if self.shape[-1] == 1:
       return zeros(self.shape + var.shape)
     G = self.lgrad[...,:-1]
-    GG = matmat(G.T, G)
+    m, n = G.shape[-2:]
+    GG = dot(insertaxis(G, -1, n), insertaxis(G, -2, n), -3)
+    GinvGG = dot(insertaxis(G, -1, n), insertaxis(inverse(GG), -3, m), -2)
     Gder = derivative(G, var, seen)
-    nGder = matmat(self, Gder)
-    return -matmat(G, inverse(GG), nGder)
+    nGder = dot(appendaxes(self, (n, *var.shape)), Gder, self.ndim)
+    return -dot(appendaxes(GinvGG, var.shape), insertaxis(nGder, self.ndim, m), self.ndim)
 
 class Constant(Array):
 
@@ -892,7 +921,7 @@ class Constant(Array):
         return insertaxis(Constant(first), i, sh)
 
   def evalf(self):
-    return self.value[_]
+    return self.value
 
   def _graphviz_node(self):
     if self.value.ndim == 0:
@@ -937,7 +966,7 @@ class Constant(Array):
 
   def _take(self, index, axis):
     if index.isconstant:
-      index_, = index.eval()
+      index_ = index.eval()
       return Constant(self.value.take(index_, axis))
 
   def _power(self, n):
@@ -979,7 +1008,7 @@ class InsertAxis(Array):
     # We would like to return an array with stride zero for the inserted axis,
     # but this appears to be *slower* (checked with examples/cylinderflow.py)
     # than the implementation below.
-    length, = length
+    assert length.ndim == 0
     func = numpy.asarray(func)[...,numpy.newaxis]
     if length != 1:
       func = numpy.repeat(func, length, -1)
@@ -1091,7 +1120,7 @@ class Transpose(Array):
     return self.func._transpose(self.axes)
 
   def evalf(self, arr):
-    return arr.transpose([0] + [n+1 for n in self.axes])
+    return arr.transpose(self.axes)
 
   def _graphviz_node(self):
     return r'shape=box,label="{}({})\n{}"'.format(type(self).__name__, ','.join(map(str, self.axes)), ','.join(repr(axis) for axis in self._axes))
@@ -1220,7 +1249,7 @@ class Product(Array):
     return self.func._product()
 
   def evalf(self, arr):
-    assert arr.ndim == self.ndim+2
+    assert arr.ndim == self.ndim+1
     return numpy.product(arr, axis=-1)
 
   def _derivative(self, var, seen):
@@ -1248,14 +1277,14 @@ class ApplyTransforms(Array):
   @types.apply_annotations
   def __init__(self, trans:types.strict[TransformChain], points):
     self.trans = trans
-    super().__init__(args=[points, trans], shape=[trans.todims], dtype=float)
+    super().__init__(args=[points, trans], shape=[points.shape[0], trans.todims], dtype=float)
 
   def evalf(self, points, chain):
     return transform.apply(chain, points)
 
   def _derivative(self, var, seen):
     if isinstance(var, LocalCoords) and len(var) > 0:
-      return LinearFrom(self.trans, len(var))
+      return prependaxes(LinearFrom(self.trans, len(var)), self.shape[:-1])
     return zeros(self.shape+var.shape)
 
 class LinearFrom(Array):
@@ -1269,7 +1298,7 @@ class LinearFrom(Array):
   def evalf(self, chain):
     todims, fromdims = self.shape
     assert not chain or chain[0].todims == todims
-    return transform.linearfrom(chain, fromdims)[_]
+    return transform.linearfrom(chain, fromdims)
 
 class Inverse(Array):
   '''
@@ -1346,13 +1375,13 @@ class Determinant(Array):
   def __init__(self, func:asarray):
     assert isarray(func) and func.ndim >= 2 and func.shape[-1] == func.shape[-2]
     self.func = func
-    super().__init__(args=[func], shape=func.shape[:-2], dtype=func.dtype)
+    super().__init__(args=[func], shape=func._axes[:-2], dtype=func.dtype)
 
   def _simplified(self):
     return self.func._determinant(self.ndim, self.ndim+1)
 
   def evalf(self, arr):
-    assert arr.ndim == self.ndim+3
+    assert arr.ndim == self.ndim+2
     # NOTE: numpy <= 1.12 cannot compute the determinant of an array with shape [...,0,0]
     return numpy.linalg.det(arr) if arr.shape[-1] else numpy.ones(arr.shape[:-2])
 
@@ -1367,6 +1396,10 @@ class Determinant(Array):
 
   def _takediag(self, axis1, axis2):
     return determinant(_takediag(self.func, axis1, axis2), (self.ndim-2, self.ndim-1))
+
+  def _desparsify(self, axis):
+    assert isinstance(self._axes[axis], Sparse)
+    return [(ind, Determinant(f)) for ind, f in self.func._desparsify(axis)]
 
 class Multiply(Array):
 
@@ -1597,13 +1630,13 @@ class Einsum(Array):
     self.args = args
     self.args_idx = args_idx
     self.out_idx = out_idx
-    self._einsumfmt = ','.join('a'+''.join(chr(98+i) for i in idx) for idx in args_idx) + '->a' + ''.join(chr(98+i) for i in out_idx)
+    self._einsumfmt = ','.join(''.join(chr(97+i) for i in idx) for idx in args_idx) + '->' + ''.join(chr(97+i) for i in out_idx)
     self._has_summed_axes = len(lengths) > len(out_idx)
     super().__init__(args=self.args, shape=shape, dtype=_jointdtype(*(arg.dtype for arg in args)))
 
   def evalf(self, *args):
     if self._has_summed_axes:
-      args = map(numpy.asfortranarray, args)
+      args = tuple(numpy.asarray(arg, order='F') for arg in args)
     return numpy.core.multiarray.c_einsum(self._einsumfmt, *args)
 
   def _graphviz_node(self):
@@ -1643,7 +1676,7 @@ class Sum(Array):
     return self.func._sum(self.ndim)
 
   def evalf(self, arr):
-    assert arr.ndim == self.ndim+2
+    assert arr.ndim == self.ndim+1
     return numpy.sum(arr, -1)
 
   def _sum(self, axis):
@@ -1678,7 +1711,7 @@ class TakeDiag(Array):
     return self.func._takediag(self.ndim-1, self.ndim)
 
   def evalf(self, arr):
-    assert arr.ndim == self.ndim+2
+    assert arr.ndim == self.ndim+1
     return numpy.einsum('...kk->...k', arr, optimize=False)
 
   def _derivative(self, var, seen):
@@ -1728,7 +1761,6 @@ class Take(Array):
     return self.func._take(self.indices, self.func.ndim-1)
 
   def evalf(self, arr, indices):
-    indices, = indices
     return arr[...,indices]
 
   def _derivative(self, var, seen):
@@ -1783,7 +1815,7 @@ class Power(Array):
   def _derivative(self, var, seen):
     ext = (...,)+(_,)*var.ndim
     if self.power.isconstant:
-      p, = self.power.eval()
+      p = self.power.eval()
       p_decr = p - (p!=0)
       return multiply(p, power(self.func, p_decr))[ext] * derivative(self.func, var, seen)
     # self = func**power
@@ -1850,7 +1882,7 @@ class Pointwise(Array):
 
   def _simplified(self):
     if self.isconstant:
-      retval, = self.eval()
+      retval = self.eval()
       return Constant(retval)
 
   def _derivative(self, var, seen):
@@ -2029,8 +2061,7 @@ class Sampled(Array):
 
   @types.apply_annotations
   def __init__(self, points:asarray, expect:asarray):
-    assert points.ndim == 1 and expect.ndim == 2 and expect.shape[1] == points.shape[0]
-    super().__init__(args=[points, expect], shape=expect.shape[:1], dtype=int)
+    super().__init__(args=[points, expect], shape=(points.shape[0], expect.shape[0]), dtype=int)
 
   def evalf(self, points, expect):
     assert numpy.equal(points, expect).all(), 'illegal point set'
@@ -2047,8 +2078,8 @@ class Elemwise(Array):
     super().__init__(args=[index], shape=shape, dtype=dtype)
 
   def evalf(self, index):
-    index, = index
-    return self.data[index][_]
+    assert index.ndim == 0
+    return self.data[index]
 
   def _simplified(self):
     if all(map(numeric.isint, self.shape)) and all(self.data[0] == data for data in self.data[1:]):
@@ -2065,8 +2096,8 @@ class ElemwiseFromCallable(Array):
     super().__init__(args=[index], shape=shape, dtype=dtype)
 
   def evalf(self, index):
-    i, = index
-    return types.frozenarray(self._func(i))[numpy.newaxis]
+    i = index.__index__()
+    return types.frozenarray(self._func(i))
 
 class Eig(Evaluable):
 
@@ -2100,10 +2131,8 @@ class Intersect(Evaluable):
     super().__init__(args=[index1, index2])
 
   def evalf(self, index1, index2):
-    index1, = index1
-    index2, = index2
     ind, subind1, subind2 = numpy.intersect1d(index1, index2, return_indices=True)
-    return ind[numpy.newaxis], subind1[numpy.newaxis], subind2[numpy.newaxis], numpy.array([len(ind)])
+    return ind, subind1, subind2, numpy.array(len(ind))
 
   def __len__(self):
     return 3
@@ -2112,10 +2141,10 @@ class Intersect(Evaluable):
     if self.index1 == self.index2:
       return iter([self.index1, Range(self.index1.shape[0]), Range(self.index1.shape[0])])
     if all(isinstance(index, (Range, InRange)) and index.length.isconstant and index.offset.isconstant for index in (self.index1, self.index2)):
-      length1, = self.index1.length.eval()
-      offset1, = self.index1.offset.eval()
-      length2, = self.index2.length.eval()
-      offset2, = self.index2.offset.eval()
+      length1 = self.index1.length.eval()
+      offset1 = self.index1.offset.eval()
+      length2 = self.index2.length.eval()
+      offset2 = self.index2.offset.eval()
       offset = builtins.max(offset1, offset2)
       length = builtins.min(offset1 + length1, offset2 + length2) - offset
       if length <= 0:
@@ -2123,7 +2152,7 @@ class Intersect(Evaluable):
       if all(isinstance(index, Range) for index in (self.index1, self.index2)):
         return (Range(length, offset-o) for o in (0, offset1, offset2))
     if self.isconstant:
-      return (Constant(item[0]) for item in self.eval()[:3])
+      return map(Constant, self.eval()[:3])
     shape = ArrayFromTuple(self, 3, shape=(), dtype=int),
     return (ArrayFromTuple(self, i, shape, dtype=int) for i in range(3))
 
@@ -2151,9 +2180,7 @@ class Zeros(Array):
     super().__init__(args=[asarray(sh) for sh in shape], shape=map(Sparse, shape), dtype=dtype)
 
   def evalf(self, *shape):
-    if shape:
-      shape, = zip(*shape)
-    return numpy.zeros((1,)+shape, dtype=self.dtype)
+    return numpy.zeros(shape, dtype=self.dtype)
 
   def _desparsify(self, axis):
     return []
@@ -2213,7 +2240,7 @@ class Inflate(Array):
     self.func = func
     self.dofmap = dofmap
     self.length = length
-    mask = not any(isinstance(ax, Sparse) for ax in func._axes[func.ndim-dofmap.ndim:]) and dofmap.isconstant and length.isconstant and numeric.asboolean(dofmap.eval().ravel(), length.eval()[0], ordered=False)
+    mask = not any(isinstance(ax, Sparse) for ax in func._axes[func.ndim-dofmap.ndim:]) and dofmap.isconstant and length.isconstant and numeric.asboolean(dofmap.eval().ravel(), length.eval(), ordered=False)
     shape = func._axes[:-1] + (Sparse(length, mask),)
     self.warn = not dofmap.isconstant
     super().__init__(args=[func,dofmap,length], shape=func._axes[:func.ndim-dofmap.ndim]+(Sparse(length, mask),), dtype=func.dtype)
@@ -2230,13 +2257,12 @@ class Inflate(Array):
     return self.func._inflate(self.dofmap, self.length, self.ndim-1)
 
   def evalf(self, array, indices, length):
-    assert indices.shape[0] == 1
-    indices, = indices
-    length, = length
+    assert indices.ndim == self.dofmap.ndim
+    assert length.ndim == 0
     if self.warn:
       warnings.warn('using explicit inflation; this is usually a bug.', ExpensiveEvaluationWarning)
     inflated = numpy.zeros(array.shape[:array.ndim-indices.ndim] + (length,), dtype=self.dtype)
-    numpy.add.at(inflated, (slice(None),)*self.ndim+(indices,), array)
+    numpy.add.at(inflated, (slice(None),)*(self.ndim-1)+(indices,), array)
     return inflated
 
   def _desparsify(self, axis):
@@ -2416,19 +2442,18 @@ class TrigNormal(Array):
 
   @types.apply_annotations
   def __init__(self, angle:asarray):
-    assert angle.ndim == 0
     self.angle = angle
-    super().__init__(args=[angle], shape=(2,), dtype=float)
+    super().__init__(args=[angle], shape=(*angle.shape, 2), dtype=float)
 
   def _derivative(self, var, seen):
-    return trigtangent(self.angle)[(...,)+(_,)*var.ndim] * derivative(self.angle, var, seen)
+    return trigtangent(self.angle)[(...,)+(_,)*var.ndim] * derivative(self.angle, var, seen)[:,_]
 
   def evalf(self, angle):
-    return numpy.array([numpy.cos(angle), numpy.sin(angle)]).T
+    return numpy.stack([numpy.cos(angle), numpy.sin(angle)], axis=self.ndim-1)
 
   def _simplified(self):
     if iszero(self.angle):
-      return kronecker(1, axis=0, length=2, pos=0)
+      return prependaxes(kronecker(1, axis=0, length=2, pos=0), self.shape[:1])
 
 class TrigTangent(Array):
   '-sin, cos'
@@ -2437,19 +2462,18 @@ class TrigTangent(Array):
 
   @types.apply_annotations
   def __init__(self, angle:asarray):
-    assert angle.ndim == 0
     self.angle = angle
-    super().__init__(args=[angle], shape=(2,), dtype=float)
+    super().__init__(args=[angle], shape=(*angle.shape, 2), dtype=float)
 
   def _derivative(self, var, seen):
-    return -trignormal(self.angle)[(...,)+(_,)*var.ndim] * derivative(self.angle, var, seen)
+    return -trignormal(self.angle)[(...,)+(_,)*var.ndim] * derivative(self.angle, var, seen)[:,_]
 
   def evalf(self, angle):
-    return numpy.array([-numpy.sin(angle), numpy.cos(angle)]).T
+    return numpy.stack([-numpy.sin(angle), numpy.cos(angle)], axis=self.ndim-1)
 
   def _simplified(self):
     if iszero(self.angle):
-      return kronecker(1, axis=0, length=2, pos=1)
+      return prependaxes(kronecker(1, axis=0, length=2, pos=1), self.shape[:1])
 
 class Find(Array):
   'indices of boolean index vector'
@@ -2463,10 +2487,7 @@ class Find(Array):
     super().__init__(args=[where], shape=[where.sum()], dtype=int)
 
   def evalf(self, where):
-    assert where.shape[0] == 1
-    where, = where
-    index, = where.nonzero()
-    return index[_]
+    return where.nonzero()[0]
 
 class DerivativeTargetBase(Array):
   'base class for derivative targets'
@@ -2516,7 +2537,7 @@ class Argument(DerivativeTargetBase):
       raise ValueError('argument {!r} missing'.format(self._name))
     else:
       assert numeric.isarray(value) and value.shape == self.shape
-      return value[_]
+      return value
 
   def _derivative(self, var, seen):
     if isinstance(var, Argument) and var._name == self._name:
@@ -2656,8 +2677,6 @@ class Unravel(Array):
     return unravel(derivative(self.func, var, seen), axis=self.ndim-2, shape=self.shape[-2:])
 
   def evalf(self, f, sh1, sh2):
-    sh1, = sh1
-    sh2, = sh2
     return f.reshape(f.shape[:-1] + (sh1, sh2))
 
   def _takediag(self, axis1, axis2):
@@ -2700,9 +2719,7 @@ class Range(Array):
       return Range(self.length, self.offset + offset._uninsert(0))
 
   def evalf(self, length, offset):
-    length, = length
-    offset, = offset
-    return numpy.arange(offset, offset+length)[_]
+    return numpy.arange(offset, offset+length)
 
 class InRange(Array):
 
@@ -2716,8 +2733,6 @@ class InRange(Array):
     super().__init__(args=[length, offset, index], shape=index.shape, dtype=int)
 
   def evalf(self, length, offset, index):
-    length, = length
-    offset, = offset
     assert index.size == 0 or 0 <= index.min() and index.max() < length
     return index + offset
 
@@ -2742,40 +2757,40 @@ class Polyval(Array):
 
   @types.apply_annotations
   def __init__(self, coeffs:asarray, points:asarray, ngrad:types.strictint=0):
-    if points.ndim != 1:
-      raise ValueError('argument `points` should have exactly one dimension')
-    if not numeric.isint(points.shape[0]):
-      raise ValueError('the shape of argument `points` should have be known, i.e. an `int`')
-    self.points_ndim = points.shape[0]
+    if points.ndim < 1:
+      raise ValueError('argument `points` should have at least one axis')
+    self.points_ndim = points.shape[-1]
+    if not numeric.isint(self.points_ndim):
+      raise ValueError('the last axis of argument `points` should be a constant integer')
     ndim = coeffs.ndim - self.points_ndim
-    if coeffs.ndim < ndim:
+    if ndim < 0:
       raise ValueError('argument `coeffs` should have at least one axis per spatial dimension')
     self.coeffs = coeffs
     self.points = points
     self.ngrad = ngrad
-    super().__init__(args=[points, coeffs], shape=coeffs.shape[:ndim]+(self.points_ndim,)*ngrad, dtype=float)
+    super().__init__(args=[points, coeffs], shape=points.shape[:-1]+coeffs.shape[:ndim]+(self.points_ndim,)*ngrad, dtype=float)
 
   def evalf(self, points, coeffs):
-    assert points.shape[1] == self.points_ndim
-    coeffs, = coeffs
     for igrad in range(self.ngrad):
       coeffs = numeric.poly_grad(coeffs, self.points_ndim)
     return numeric.poly_eval(coeffs, points)
 
   def _derivative(self, var, seen):
     # Derivative to argument `points`.
-    dpoints = dot(Polyval(self.coeffs, self.points, self.ngrad+1)[(...,*(_,)*var.ndim)], derivative(self.points, var, seen), self.ndim)
+    dpoints = dot(
+      appendaxes(Polyval(self.coeffs, self.points, self.ngrad+1), var.shape),
+      derivative(Transpose.to_end(appendaxes(self.points, self.shape[self.points.ndim-1:]), self.points.ndim-1), var, seen),
+      self.ndim)
     # Derivative to argument `coeffs`.  `trans` shuffles the coefficient axes
     # of `derivative(self.coeffs)` after the derivative axes.
-    shuffle = lambda a, b, c: (*range(0,a), *range(a+b,a+b+c), *range(a,a+b))
-    pretrans = shuffle(self.coeffs.ndim-self.points_ndim, self.points_ndim, var.ndim)
-    posttrans = shuffle(self.coeffs.ndim-self.points_ndim, var.ndim, self.ngrad)
-    dcoeffs = Transpose(Polyval(Transpose(derivative(self.coeffs, var, seen), pretrans), self.points, self.ngrad), posttrans)
+    dcoeffs = Transpose.from_end(Polyval(Transpose.to_end(derivative(self.coeffs, var, seen), *range(self.coeffs.ndim)), self.points, self.ngrad), *range(self.points.ndim-1, self.ndim))
     return dpoints + dcoeffs
 
   def _take(self, index, axis):
-    if axis < self.coeffs.ndim - self.points_ndim:
-      return Polyval(_take(self.coeffs, index, axis), self.points, self.ngrad)
+    if axis < self.points.ndim - 1:
+      return Polyval(self.coeffs, _take(self.points, index, axis), self.ngrad)
+    elif axis < self.points.ndim - 1 + self.coeffs.ndim - self.points_ndim:
+      return Polyval(_take(self.coeffs, index, axis - self.points.ndim + 1), self.points, self.ngrad)
 
   def _const_helper(self, *j):
     if len(j) == self.ngrad:
@@ -2792,7 +2807,7 @@ class Polyval(Array):
     if iszero(self.coeffs) or self.ngrad > degree:
       return zeros_like(self)
     elif self.ngrad == degree:
-      return self._const_helper()
+      return prependaxes(self._const_helper(), self.points.shape[:-1])
 
 class AssertEqual(Array):
 
@@ -2838,53 +2853,45 @@ class Choose(Array):
   def __init__(self, index:asarray, choices:types.tuple[asarray]):
     if index.dtype != int:
       raise Exception('index must be integer valued')
-    if index.ndim:
-      raise Exception('index must be a scalar')
     dtype = _jointdtype(*[choice.dtype for choice in choices])
-    shape = choices[0].shape
-    if not all(choice.shape == shape for choice in choices[1:]):
+    shape = index.shape
+    if not all(choice.shape == shape for choice in choices):
       raise Exception('shapes vary')
     self.index = index
     self.choices = choices
     super().__init__(args=(index,)+choices, shape=shape, dtype=dtype)
 
   def evalf(self, index, *choices):
-    if len(index) == 1:
-      return choices[index[0]]
-    retval = numpy.empty(index.shape + choices[0].shape[1:], dtype=self.dtype)
-    for i, n in enumerate(index):
-      choice = choices[n]
-      retval[i] = choice[i if len(choice) != 1 else 0]
-    return retval
+    return numpy.choose(index, choices)
 
   def _derivative(self, var, seen):
-    return Choose(self.index, [derivative(choice, var, seen) for choice in self.choices])
+    return Choose(appendaxes(self.index, var.shape), [derivative(choice, var, seen) for choice in self.choices])
 
   def _simplified(self):
     if all(choice == self.choices[0] for choice in self.choices[1:]):
       return self.choices[0]
-    if self.index.isconstant:
-      index, = self.index.eval()
-      return self.choices[index]
 
   def _multiply(self, other):
     if isinstance(other, Choose) and self.index == other.index:
       return Choose(self.index, map(multiply, self.choices, other.choices))
 
   def _get(self, i, item):
-    return Choose(self.index, [get(choice, i, item) for choice in self.choices])
+    return Choose(get(self.index, i, item), [get(choice, i, item) for choice in self.choices])
 
   def _sum(self, axis):
-    return Choose(self.index, [sum(choice, axis) for choice in self.choices])
+    if isinstance(self.index._axes[axis], Inserted):
+      return Choose(self.index._uninsert(axis), [sum(choice, axis) for choice in self.choices])
 
   def _take(self, index, axis):
-    return Choose(self.index, [_take(choice, index, axis) for choice in self.choices])
+    return Choose(_take(self.index, index, axis), [_take(choice, index, axis) for choice in self.choices])
 
   def _takediag(self, axis, rmaxis):
-    return Choose(self.index, [takediag(choice, axis, rmaxis) for choice in self.choices])
+    return Choose(takediag(self.index, axis, rmaxis), [takediag(choice, axis, rmaxis) for choice in self.choices])
 
   def _product(self):
-    return Choose(self.index, [Product(choice) for choice in self.choices])
+    axis = self.index.ndim-1
+    if isinstance(self.index._axes[axis], Inserted):
+      return Choose(self.index._uninsert(axis), [Product(choice) for choice in self.choices])
 
 class NormDim(Array):
 
@@ -2907,7 +2914,7 @@ class NormDim(Array):
 
   def _simplified(self):
     if self.length.isconstant and self.index.isconstant:
-      return Constant(self.eval()[0])
+      return Constant(self.eval())
 
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
@@ -3195,16 +3202,16 @@ def expand_dims(arg, n):
 
 def trignormal(angle):
   angle = asarray(angle)
-  assert angle.ndim == 0
-  if iszero(angle):
-    return kronecker(1, axis=0, length=2, pos=0)
+  # TODO:
+  #if iszero(angle):
+  #  return kronecker(1, axis=0, length=2, pos=0)
   return TrigNormal(angle)
 
 def trigtangent(angle):
   angle = asarray(angle)
-  assert angle.ndim == 0
-  if iszero(angle):
-    return kronecker(1, axis=0, length=2, pos=1)
+  # TODO:
+  #if iszero(angle):
+  #  return kronecker(1, axis=0, length=2, pos=1)
   return TrigTangent(angle)
 
 def eye(n, dtype=float):
@@ -3243,7 +3250,7 @@ def vectorize(args):
   :class:`Array`
   '''
 
-  return concatenate([kronecker(arg, axis=-1, length=len(args), pos=iarg) for iarg, arg in enumerate(args)])
+  return concatenate([kronecker(arg, axis=-1, length=len(args), pos=iarg) for iarg, arg in enumerate(args)], axis=1)
 
 def repeat(arg, length, axis):
   arg = asarray(arg)
@@ -3252,7 +3259,10 @@ def repeat(arg, length, axis):
 
 def get(arg, iax, item):
   if numeric.isint(item):
-    item = numeric.normdim(arg.shape[iax], item)
+    if numeric.isint(arg.shape[iax]):
+      item = numeric.normdim(arg.shape[iax], item)
+    else:
+      assert item >= 0
   return Take(Transpose.to_end(arg, iax), item)
 
 def jacobian(geom, ndims):
@@ -3262,23 +3272,24 @@ def jacobian(geom, ndims):
   ndims)``).
   '''
 
-  assert geom.ndim == 1
+  assert geom.ndim >= 1
   J = localgradient(geom, ndims)
-  cndims, = geom.shape
-  assert J.shape == (cndims,ndims), 'wrong jacobian shape: got {}, expected {}'.format(J.shape, (cndims, ndims))
+  cndims = geom.shape[-1]
+  assert J.shape[-2:] == (cndims,ndims), 'wrong jacobian shape: got {}, expected {}'.format(J.shape[-2:], (cndims, ndims))
   assert cndims >= ndims, 'geometry dimension < topology dimension'
   detJ = abs(determinant(J)) if cndims == ndims \
-    else Constant(1.) if ndims == 0 \
-    else abs(determinant((J[:,:,_] * J[:,_,:]).sum(0)))**.5
+    else ones(J.shape[:-2]) if ndims == 0 \
+    else abs(determinant((J[...,:,:,_] * J[...,:,_,:]).sum(-3)))**.5
   return detJ
 
 def matmat(arg0, *args):
-  'helper function, contracts last axis of arg0 with first axis of arg1, etc'
+  'helper function, contracts last axis of arg0 with the next to last axis or arg1, etc.'
   retval = asarray(arg0)
   for arg in args:
     arg = asarray(arg)
-    assert retval.shape[-1] == arg.shape[0], 'incompatible shapes'
-    retval = dot(retval[(...,)+(_,)*(arg.ndim-1)], arg[(_,)*(retval.ndim-1)], retval.ndim-1)
+    assert arg.ndim == retval.ndim
+    assert retval.shape[-1] == arg.shape[-2], 'incompatible shapes'
+    retval = dot(insertaxis(retval, -1, arg.shape[-1]), insertaxis(arg, -3, retval.shape[-2]), -2)
   return retval
 
 def determinant(arg, axes=(-2,-1)):
@@ -3391,7 +3402,7 @@ def take(arg:asarray, index:asarray, axis:types.strictint):
     assert index.shape[0] == length
     index = find(index)
   elif index.isconstant:
-    index_, = index.eval()
+    index_ = index.eval()
     ineg = numpy.less(index_, 0)
     if not numeric.isint(length):
       if ineg.any():
@@ -3424,7 +3435,7 @@ def find(arg):
   assert arg.ndim == 1 and arg.dtype == bool
 
   if arg.isconstant:
-    arg, = arg.eval()
+    arg = arg.eval()
     index, = arg.nonzero()
     return asarray(index)
 
@@ -3439,9 +3450,8 @@ def J(geometry, ndims=None):
   the local coordinate system with ``ndims`` dimensions (``localgradient(geom,
   ndims)``).
   '''
-  if ndims is None:
-    return DelayedJacobian(geometry)
-  elif ndims < 0:
+  assert ndims is not None
+  if ndims < 0:
     ndims += len(geometry)
   return jacobian(geometry, ndims)
 

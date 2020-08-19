@@ -1,8 +1,286 @@
-import numpy, itertools, pickle, warnings as _builtin_warnings
-from nutils import *
-from nutils import evaluable
+import numpy, itertools, pickle, warnings as _builtin_warnings, operator
+from nutils import evaluable, function, mesh, numeric, types, points, transformseq, transform, element
 from nutils.testing import *
 _ = numpy.newaxis
+
+
+class Array(TestCase):
+
+  def test_cast_ndim_mismatch(self):
+    with self.assertRaises(ValueError):
+      function.Array.cast([1,2], ndim=2)
+
+  def test_cast_dtype_mismatch(self):
+    with self.assertRaises(ValueError):
+      function.Array.cast([1.2,2.3], dtype=int)
+
+  def test_cast_invalid_argument(self):
+    with self.assertRaises(ValueError):
+      function.Array.cast('132')
+
+  def test_ndim(self):
+    self.assertEqual(function.Argument('a', (2,3)).ndim, 2)
+
+  def test_shape(self):
+    n = function.Argument('n', (), dtype=int)
+    l1, l2, l3 = function.Argument('a', (2, function.Array.cast(3),n)).shape
+    with self.subTest('int'):
+      self.assertEqual(l1, 2)
+    with self.subTest('const Array'):
+      self.assertEqual(l2, 3)
+    with self.subTest('unknown'):
+      self.assertEqual(l3.prepare_eval(npoints=None).simplified, n.prepare_eval(npoints=None).simplified)
+
+  def test_size_known(self):
+    self.assertEqual(function.Argument('a', (2,3)).size, 6)
+
+  def test_size_0d(self):
+    self.assertEqual(function.Argument('a', ()).size, 1)
+
+  def test_size_unknown(self):
+    n = function.Argument('n', (), dtype=int)
+    size = function.Argument('a', (2,n,3)).size
+    self.assertIsInstance(size, function.Array)
+    self.assertEqual(size.prepare_eval(npoints=None).simplified, (2*n*3).prepare_eval(npoints=None).simplified)
+
+  def test_len_0d(self):
+    with self.assertRaisesRegex(Exception, '^len\\(\\) of unsized object$'):
+      len(function.Array.cast(0))
+
+  def test_len_known(self):
+    self.assertEqual(len(function.Array.cast([1,2])), 2)
+
+  def test_len_unknown(self):
+    with self.assertRaisesRegex(Exception, '^unknown length$'):
+      len(function.Argument('a', [function.Argument('b', (), dtype=int)]))
+
+  def test_iter_0d(self):
+    with self.assertRaisesRegex(Exception, '^iteration over a 0-D array$'):
+      iter(function.Array.cast(0))
+
+  def test_iter_known(self):
+    a, b = function.Array.cast([1,2])
+    self.assertEqual(a.prepare_eval(npoints=None).eval(), 1)
+    self.assertEqual(b.prepare_eval(npoints=None).eval(), 2)
+
+  def test_iter_unknown(self):
+    with self.assertRaisesRegex(Exception, '^iteration over array with unknown length$'):
+      iter(function.Argument('a', [function.Argument('b', (), dtype=int)]))
+
+  def test_binop_notimplemented(self):
+    with self.assertRaises(TypeError):
+      function.Argument('a', ()) + '1'
+
+  def test_rbinop_notimplemented(self):
+    with self.assertRaises(TypeError):
+      '1' + function.Argument('a', ())
+
+  def test_deprecated_simplified(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      function.Array.cast([1,2]).simplified
+
+
+@parametrize
+class check(TestCase):
+
+  def setUp(self):
+    super().setUp()
+    numpy.random.seed(0)
+
+  def assertArrayAlmostEqual(self, actual, desired, decimal):
+    if actual.shape != desired.shape:
+      self.fail('shapes of actual {} and desired {} are incompatible.'.format(actual.shape, desired.shape))
+    error = actual - desired if not actual.dtype.kind == desired.dtype.kind == 'b' else actual ^ desired
+    approx = error.dtype.kind in 'fc'
+    mask = numpy.greater_equal(abs(error), 1.5 * 10**-decimal) if approx else error
+    indices = tuple(zip(*mask.nonzero())) if actual.ndim else ((),) if mask.any() else ()
+    if not indices:
+      return
+    lines = ['arrays are not equal']
+    if approx:
+      lines.append(' up to {} decimals'.format(decimal))
+    lines.append(' in {}/{} entries:'.format(len(indices), error.size))
+    n = 5
+    lines.extend('\n  {} actual={} desired={} difference={}'.format(index, actual[index], desired[index], error[index]) for index in indices[:n])
+    if len(indices) > 2*n:
+      lines.append('\n  ...')
+      n = -n
+    lines.extend('\n  {} actual={} desired={} difference={}'.format(index, actual[index], desired[index], error[index]) for index in indices[n:])
+    self.fail(''.join(lines))
+
+  def test_lower_eval(self):
+    args = tuple((numpy.random.randint if self.dtype == int else numpy.random.uniform)(size=shape, low=self.low, high=self.high) for shape in self.shapes)
+    actual = self.op(*args).prepare_eval(npoints=None).eval()
+    desired = self.n_op(*args)
+    self.assertArrayAlmostEqual(actual, desired, decimal=15)
+
+def _check(name, op, n_op, shapes, low=None, high=None, dtype=float):
+  if low is None:
+    low = 0 if dtype == int else -1
+  if high is None:
+    high = 20 if dtype == int else 1
+  check(name, op=op, n_op=n_op, shapes=shapes, low=low, high=high, dtype=dtype)
+
+_check('asarray', function.asarray, lambda a: a, [(2,4,2)])
+_check('zeros', lambda: function.zeros([1,4,3,4]), lambda: numpy.zeros([1,4,3,4]), [])
+_check('ones', lambda: function.ones([1,4,3,4]), lambda: numpy.ones([1,4,3,4]), [])
+_check('eye', lambda: function.eye(3), lambda: numpy.eye(3), [])
+
+_check('add', function.add, numpy.add, [(4,), (4,)])
+_check('Array_add', lambda a, b: function.Array.cast(a) + b, numpy.add, [(4,), (4,)])
+_check('Array_radd', lambda a, b: a + function.Array.cast(b), numpy.add, [(4,), (4,)])
+_check('subtract', function.subtract, numpy.subtract, [(4,), (4,)])
+_check('Array_sub', lambda a, b: function.Array.cast(a) - b, numpy.subtract, [(4,), (4,)])
+_check('Array_rsub', lambda a, b: a - function.Array.cast(b), numpy.subtract, [(4,), (4,)])
+_check('negative', function.negative, numpy.negative, [(4,)])
+_check('Array_neg', lambda a: -function.Array.cast(a), numpy.negative, [(4,)])
+_check('Array_pos', lambda a: +function.Array.cast(a), lambda a: a, [(4,)])
+_check('multiply', function.multiply, numpy.multiply, [(4,), (4,)])
+_check('Array_mul', lambda a, b: function.Array.cast(a) * b, numpy.multiply, [(4,), (4,)])
+_check('Array_rmul', lambda a, b: a * function.Array.cast(b), numpy.multiply, [(4,), (4,)])
+_check('divide', function.divide, numpy.divide, [(4,), (4,)])
+_check('Array_truediv', lambda a, b: function.Array.cast(a) / b, numpy.divide, [(4,), (4,)])
+_check('Array_rtruediv', lambda a, b: a / function.Array.cast(b), numpy.divide, [(4,), (4,)])
+_check('floor_divide', function.floor_divide, numpy.floor_divide, [(4,4,), (4,)], dtype=int, low=1, high=10)
+_check('Array_floordiv', lambda a, b: function.Array.cast(a) // b, numpy.floor_divide, [(4,4,), (4,)], dtype=int, low=1, high=10)
+_check('Array_rfloordiv', lambda a, b: a // function.Array.cast(b), numpy.floor_divide, [(4,4,), (4,)], dtype=int, low=1, high=10)
+_check('reciprocal', function.reciprocal, numpy.reciprocal, [(4,)])
+_check('power', function.power, numpy.power, [(4,), (4,)], low=1, high=2)
+_check('Array_pow', lambda a, b: function.Array.cast(a) ** b, numpy.power, [(4,), (4,)], low=1, high=2)
+_check('Array_rpow', lambda a, b: a ** function.Array.cast(b), numpy.power, [(4,), (4,)], low=1, high=2)
+_check('sqrt', function.sqrt, numpy.sqrt, [(4,)])
+_check('abs', function.abs, numpy.abs, [(4,)])
+_check('Array_abs', lambda a: abs(function.Array.cast(a)), numpy.abs, [(4,)])
+_check('sign', function.sign, numpy.sign, [(4,)])
+_check('mod', function.mod, numpy.mod, [(4,4), (4,)], dtype=int, low=1, high=10)
+_check('Array_mod', lambda a, b: function.Array.cast(a) % b, numpy.mod, [(4,4), (4,)], dtype=int, low=1, high=10)
+_check('Array_rmod', lambda a, b: a % function.Array.cast(b), numpy.mod, [(4,4), (4,)], dtype=int, low=1, high=10)
+
+_check('cos', function.cos, numpy.cos, [(4,)])
+_check('sin', function.sin, numpy.sin, [(4,)])
+_check('tan', function.tan, numpy.tan, [(4,)])
+_check('arccos', function.arccos, numpy.arccos, [(4,)])
+_check('arcsin', function.arcsin, numpy.arcsin, [(4,)])
+_check('arctan', function.arctan, numpy.arctan, [(4,)])
+_check('arctan2', function.arctan2, numpy.arctan2, [(4,1),(1,4)])
+_check('cosh', function.cosh, numpy.cosh, [(4,)])
+_check('sinh', function.sinh, numpy.sinh, [(4,)])
+_check('tanh', function.tanh, numpy.tanh, [(4,)])
+_check('arctanh', function.arctanh, numpy.arctanh, [(4,)])
+_check('exp', function.exp, numpy.exp, [(4,)])
+_check('log', function.log, numpy.log, [(4,)], low=0)
+_check('log2', function.log2, numpy.log2, [(4,)], low=0)
+_check('log10', function.log10, numpy.log10, [(4,)], low=0)
+
+_check('greater', function.greater, numpy.greater, [(4,1),(1,4)])
+_check('equal', function.equal, numpy.equal, [(4,1),(1,4)])
+_check('less', function.less, numpy.less, [(4,1),(1,4)])
+_check('min', function.min, numpy.minimum, [(4,4),(4,4)])
+_check('max', function.max, numpy.maximum, [(4,4),(4,4)])
+
+# TODO: opposite
+# TODO: mean
+# TODO: jump
+
+_check('sum', lambda a: function.sum(a,2), lambda a: a.sum(2), [(4,3,4)])
+_check('Array_sum', lambda a: function.Array.cast(a).sum(2), lambda a: a.sum(2), [(4,3,4)])
+_check('product', lambda a: function.product(a,2), lambda a: numpy.product(a,2), [(4,3,4)])
+_check('Array_prod', lambda a: function.Array.cast(a).prod(2), lambda a: numpy.product(a,2), [(4,3,4)])
+
+_check('dot', lambda a,b: function.dot(a,b,axes=2), lambda a,b: (a*b).sum(2), [(4,2,4),(4,2,4)])
+_check('Array_dot', lambda a,b: function.Array.cast(a).dot(b,axes=2), lambda a,b: (a*b).sum(2), [(4,2,4),(4,2,4)])
+_check('trace', function.trace, numpy.trace, [(3,3)])
+_check('norm2', function.norm2, lambda a: numpy.linalg.norm(a, axis=1), [(2,3)])
+_check('normalized', function.normalized, lambda a: a / numpy.linalg.norm(a, axis=1)[:,None], [(2,3)])
+_check('Array_normalized', lambda a: function.Array.cast(a).normalized(), lambda a: a / numpy.linalg.norm(a, axis=1)[:,None], [(2,3)])
+_check('inverse', lambda a: function.inverse(a+3*numpy.eye(3)), lambda a: numpy.linalg.inv(a+3*numpy.eye(3)), [(2,3,3)])
+_check('determinant', lambda a: function.determinant(a+3*numpy.eye(3)), lambda a: numpy.linalg.det(a+3*numpy.eye(3)), [(2,3,3)])
+_check('eigval', lambda a: function.eig(a)[0], lambda a: numpy.diag(numpy.linalg.eig(a)[0]), [(3,3)])
+_check('eigvec', lambda a: function.eig(a)[1], lambda a: numpy.linalg.eig(a)[1], [(3,3)])
+_check('eigval_symmetric', lambda a: function.eig(a+a.T)[0], lambda a: numpy.diag(numpy.linalg.eig(a+a.T)[0]), [(3,3)])
+_check('eigvec_symmetric', lambda a: function.eig(a+a.T)[1], lambda a: numpy.linalg.eig(a+a.T)[1], [(3,3)])
+_check('takediag', function.takediag, numpy.diag, [(3,3)])
+_check('diagonalize', function.diagonalize, numpy.diag, [(3,)])
+_check('cross', function.cross, numpy.cross, [(3,), (3,)])
+_check('outer', function.outer, lambda a, b: a[:,None]*b[None,:], [(2,3),(4,3)])
+_check('outer_self', function.outer, lambda a: a[:,None]*a[None,:], [(2,3)])
+
+_check('transpose', lambda a: function.transpose(a,[0,1,3,2]), lambda a: a.transpose([0,1,3,2]), [(1,2,3,4)], dtype=int)
+_check('Array_transpose', lambda a: function.Array.cast(a).transpose([0,1,3,2]), lambda a: a.transpose([0,1,3,2]), [(1,2,3,4)], dtype=int)
+_check('insertaxis', lambda a: function.insertaxis(a,2,3), lambda a: numpy.repeat(numpy.expand_dims(a,2), 3, 2), [(3,2,4)], dtype=int)
+_check('expand_dims', lambda a: function.expand_dims(a,1), lambda a: numpy.expand_dims(a,1), [(2,3)], dtype=int)
+_check('repeat', lambda a: function.repeat(a,3,1), lambda a: numpy.repeat(a,3,1), [(2,1,4)], dtype=int)
+_check('swapaxes', lambda a: function.swapaxes(a,1,2), lambda a: numpy.transpose(a, (0,2,1)), [(2,3,4)], dtype=int)
+_check('Array_swapaxes', lambda a: function.Array.cast(a).swapaxes(1,2), lambda a: numpy.transpose(a, (0,2,1)), [(2,3,4)], dtype=int)
+_check('ravel', lambda a: function.ravel(a,1), lambda a: numpy.reshape(a, (2,12,5)), [(2,3,4,5)], dtype=int)
+_check('unravel', lambda a: function.unravel(a,1,(3,4)), lambda a: numpy.reshape(a, (2,3,4,5)), [(2,12,5)], dtype=int)
+_check('take', lambda a: function.take(a, numpy.array([[0,2],[1,3]]), 1), lambda a: numpy.take(a, numpy.array([[0,2],[1,3]]), 1), [(3,4,5)], dtype=int)
+_check('take_bool', lambda a: function.take(a, numpy.array([False, True, False, True]), 1), lambda a: numpy.compress(numpy.array([False, True, False, True]), a, 1), [(3,4,5)], dtype=int)
+_check('get', lambda a: function.take(a, 1, 1), lambda a: numpy.take(a, 1, 1), [(3,4,5)], dtype=int)
+_check('inflate', lambda a: function.inflate(a,numpy.array([0,3]), 4, 1), lambda a: numpy.concatenate([a[:,:1], numpy.zeros_like(a), a[:,1:]], axis=1), [(4,2,4)])
+_check('kronecker', lambda a: function.kronecker(a,1,3,1), lambda a: numpy.stack([numpy.zeros_like(a), a, numpy.zeros_like(a)], axis=1), [(4,4)])
+_check('concatenate', lambda a, b: function.concatenate([a,b], axis=1), lambda a, b: numpy.concatenate([a,b], axis=1), [(4,2,1),(4,3,1)])
+_check('stack', lambda a,b: function.stack([a,b], 1), lambda a,b: numpy.stack([a,b], 1), [(4,2),(4,2)])
+
+_check('Array_getitem_scalar', lambda a: function.Array.cast(a)[0], lambda a: a[0], [(5,3,2)], dtype=int)
+_check('Array_getitem_scalar_scalar', lambda a: function.Array.cast(a)[0,1], lambda a: a[0,1], [(5,3,2)], dtype=int)
+_check('Array_getitem_slice_step', lambda a: function.Array.cast(a)[:,::2], lambda a: a[:,::2], [(5,3,2)], dtype=int)
+_check('Array_getitem_ellipsis_scalar', lambda a: function.Array.cast(a)[...,1], lambda a: a[...,1], [(5,3,2)], dtype=int)
+_check('Array_getitem_ellipsis_scalar_newaxis', lambda a: function.Array.cast(a)[...,1,None], lambda a: a[...,1,None], [(5,3,2)], dtype=int)
+
+_check('add_T', lambda a: function.add_T(a, (1, 2)), lambda a: a + a.transpose((0,2,1)), [(5,2,2)], dtype=int)
+_check('Array_add_T', lambda a: function.Array.cast(a).add_T((1, 2)), lambda a: a + a.transpose((0,2,1)), [(5,2,2)], dtype=int)
+
+
+class broadcasting(TestCase):
+
+  def test_singleton_expansion(self):
+    a = function.Argument('a', (1,2,3))
+    b = function.Argument('b', (3,1,3))
+    c = function.Argument('b', (3,1,1))
+    (a_, b_, c_), shape, dtype = function._broadcast(a, b, c)
+    self.assertEqual(shape, (3,2,3))
+    self.assertEqual(a_.shape, (3,2,3))
+    self.assertEqual(b_.shape, (3,2,3))
+    self.assertEqual(c_.shape, (3,2,3))
+
+  def test_prepend_axes(self):
+    a = function.Argument('a', (3,2,3))
+    b = function.Argument('b', (3,))
+    c = function.Argument('b', (2,3))
+    (a_, b_, c_), shape, dtype = function._broadcast(a, b, c)
+    self.assertEqual(shape, (3,2,3))
+    self.assertEqual(a_.shape, (3,2,3))
+    self.assertEqual(b_.shape, (3,2,3))
+    self.assertEqual(c_.shape, (3,2,3))
+
+  def test_both(self):
+    a = function.Argument('a', (3,2,3))
+    b = function.Argument('b', (3,))
+    c = function.Argument('b', (1,1))
+    (a_, b_, c_), shape, dtype = function._broadcast(a, b, c)
+    self.assertEqual(shape, (3,2,3))
+    self.assertEqual(a_.shape, (3,2,3))
+    self.assertEqual(b_.shape, (3,2,3))
+    self.assertEqual(c_.shape, (3,2,3))
+
+  def test_incompatible_shape(self):
+    a = function.Argument('a', (3,2,3))
+    b = function.Argument('b', (4,))
+    with self.assertRaisesRegex(Exception, 'incompatible lengths'):
+      function._broadcast(a, b)
+
+  def test_runtime_check(self):
+    n = function.Argument('n', (), dtype=int)
+    m = function.Argument('m', (), dtype=int)
+    a = function.Argument('a', (n,), dtype=int)
+    b = function.Argument('b', (m,), dtype=int)
+    (a_, b_), shape, dtype = function._broadcast(a, b)
+    with self.subTest('match'):
+      self.assertEqual(shape[0].prepare_eval(npoints=None).eval(n=numpy.array(2), m=numpy.array(2)), 2)
+    with self.subTest('mismatch'):
+      with self.assertRaises(evaluable.EvaluationError):
+        shape[0].prepare_eval(npoints=None).eval(n=numpy.array(2), m=numpy.array(3))
 
 
 @parametrize
@@ -75,18 +353,52 @@ class elemwise(TestCase):
   def test_evalf(self):
     for i, trans in enumerate(self.domain.transforms):
       with self.subTest(i=i):
-        numpy.testing.assert_array_almost_equal(self.func.prepare_eval().eval(_transforms=(trans,)), self.data[i][_])
+        numpy.testing.assert_array_almost_equal(self.func.prepare_eval(ndims=self.domain.ndims).eval(_transforms=(trans,), _points=points.SimplexGaussPoints(self.domain.ndims, 1)), self.data[i][_])
 
   def test_shape(self):
     for i, trans in enumerate(self.domain.transforms):
       with self.subTest(i=i):
-        self.assertEqual(self.func.size.prepare_eval().eval(_transforms=(trans,))[0], self.data[i].size)
+        self.assertEqual(self.func.size.prepare_eval(ndims=self.domain.ndims).eval(_transforms=(trans,)), self.data[i].size)
 
   def test_derivative(self):
     self.assertTrue(evaluable.iszero(function.localgradient(self.func, self.domain.ndims).prepare_eval(ndims=self.domain.ndims)))
 
   def test_shape_derivative(self):
     self.assertEqual(function.localgradient(self.func, self.domain.ndims).shape, self.func.shape+(self.domain.ndims,))
+
+
+class replace_arguments(TestCase):
+
+  def test_array(self):
+    a = function.Argument('a', (2,))
+    b = function.Array.cast([1,2])
+    self.assertEqual(function.replace_arguments(a, dict(a=b)).prepare_eval(npoints=None), b.prepare_eval(npoints=None))
+
+  def test_argument(self):
+    a = function.Argument('a', (2,))
+    b = function.Argument('b', (2,))
+    self.assertEqual(function.replace_arguments(a, dict(a=b)).prepare_eval(npoints=None), b.prepare_eval(npoints=None))
+
+  def test_argument_array(self):
+    a = function.Argument('a', (2,))
+    b = function.Argument('b', (2,))
+    c = function.Array.cast([1,2])
+    self.assertEqual(function.replace_arguments(function.replace_arguments(a, dict(a=b)), dict(b=c)).prepare_eval(npoints=None), c.prepare_eval(npoints=None))
+
+  def test_swap(self):
+    a = function.Argument('a', (2,))
+    b = function.Argument('b', (2,))
+    self.assertEqual(function.replace_arguments(2*a+3*b, dict(a=b, b=a)).prepare_eval(npoints=None), (2*b+3*a).prepare_eval(npoints=None))
+
+  def test_ignore_replaced(self):
+    a = function.Argument('a', (2,))
+    b = function.Array.cast([1,2])
+    c = function.Array.cast([2,3])
+    self.assertEqual(function.replace_arguments(function.replace_arguments(a, dict(a=b)), dict(a=c)).prepare_eval(npoints=None), b.prepare_eval(npoints=None))
+
+  def test_ignore_recursion(self):
+    a = function.Argument('a', (2,))
+    self.assertEqual(function.replace_arguments(a, dict(a=2*a)).prepare_eval(npoints=None), (2*a).prepare_eval(npoints=None))
 
 
 class namespace(TestCase):
@@ -146,8 +458,8 @@ class namespace(TestCase):
     with self.assertRaises(ValueError):
       function.Namespace(default_geometry_name='foo_bar')
 
-  def assertEqualLowered(self, actual, desired):
-    return self.assertEqual(actual.prepare_eval(), desired.prepare_eval())
+  def assertEqualLowered(self, actual, desired, **lowerargs):
+    return self.assertEqual(actual.prepare_eval(**lowerargs), desired.prepare_eval(**lowerargs))
 
   def test_default_geometry_property(self):
     ns = function.Namespace()
@@ -169,7 +481,7 @@ class namespace(TestCase):
     ns1.basis = domain.basis('spline', degree=2)
     ns2 = ns1.copy_(default_geometry_name='y')
     self.assertEqual(ns2.default_geometry_name, 'y')
-    self.assertEqualLowered(ns2.eval_ni('basis_n,i'), ns2.basis.grad(ns2.y))
+    self.assertEqualLowered(ns2.eval_ni('basis_n,i'), ns2.basis.grad(ns2.y), ndims=domain.ndims)
 
   def test_copy_preserve_geom(self):
     ns1 = function.Namespace(default_geometry_name='y')
@@ -177,7 +489,7 @@ class namespace(TestCase):
     ns1.basis = domain.basis('spline', degree=2)
     ns2 = ns1.copy_()
     self.assertEqual(ns2.default_geometry_name, 'y')
-    self.assertEqualLowered(ns2.eval_ni('basis_n,i'), ns2.basis.grad(ns2.y))
+    self.assertEqualLowered(ns2.eval_ni('basis_n,i'), ns2.basis.grad(ns2.y), ndims=domain.ndims)
 
   def test_copy_fixed_lengths(self):
     ns = function.Namespace(length_i=2)
@@ -253,7 +565,7 @@ class namespace(TestCase):
     orig.f = 'cosh(x_0)'
     pickled = pickle.loads(pickle.dumps(orig))
     for attr in ('x', 'v', 'u', 'f'):
-      self.assertEqualLowered(getattr(pickled, attr), getattr(orig, attr))
+      self.assertEqualLowered(getattr(pickled, attr), getattr(orig, attr), ndims=domain.ndims)
     self.assertEqual(pickled.arg_shapes['lhs'], orig.arg_shapes['lhs'])
 
   def test_pickle_default_geometry_name(self):
@@ -282,7 +594,7 @@ class namespace(TestCase):
   def test_d_geom(self):
     ns = function.Namespace()
     topo, ns.x = mesh.rectilinear([1])
-    self.assertEqualLowered(ns.eval_ij('d(x_i, x_j)'), function.grad(ns.x, ns.x))
+    self.assertEqualLowered(ns.eval_ij('d(x_i, x_j)'), function.grad(ns.x, ns.x), ndims=topo.ndims)
 
   def test_d_arg(self):
     ns = function.Namespace()
@@ -292,7 +604,7 @@ class namespace(TestCase):
   def test_n(self):
     ns = function.Namespace()
     topo, ns.x = mesh.rectilinear([1])
-    self.assertEqualLowered(ns.eval_i('n(x_i)'), function.normal(ns.x))
+    self.assertEqualLowered(ns.eval_i('n(x_i)'), function.normal(ns.x), ndims=topo.ndims)
 
   def test_functions(self):
     def sqr(a):
@@ -306,9 +618,20 @@ class namespace(TestCase):
     ns.a = numpy.array([1, 2, 3])
     ns.b = numpy.array([4, 5])
     ns.A = numpy.array([[6, 7, 8], [9, 10, 11]])
-    self.assertEqual(ns.eval_i('sqr(a_i)').shape, (3,))
-    self.assertEqual(ns.eval_ij('mul(a_i, b_j)').shape, (3,2))
-    self.assertEqual(ns.eval_('mul(b_i, A_ij, a_j)').shape, ())
+    l = lambda f: f.prepare_eval(npoints=None).simplified
+    self.assertEqual(l(ns.eval_i('sqr(a_i)')), l(sqr(ns.a)))
+    self.assertEqual(l(ns.eval_ij('mul(a_i, b_j)')), l(ns.eval_ij('a_i b_j')))
+    self.assertEqual(l(ns.eval_('mul(b_i, A_ij, a_j)')), l(ns.eval_('b_i A_ij a_j')))
+
+  def test_builtin_functions(self):
+    ns = function.Namespace()
+    domain, ns.x = mesh.rectilinear([1]*2)
+    ns.a = numpy.array([1, 2, 3])
+    ns.A = numpy.array([[6, 7, 8], [9, 10, 11]])
+    l = lambda f: f.prepare_eval(npoints=4, ndims=2).simplified
+    self.assertEqual(l(ns.eval_('norm2(a)')), l(function.norm2(ns.a)))
+    self.assertEqual(l(ns.eval_i('sum:j(A_ij)')), l(function.sum(ns.A, 1)))
+    self.assertEqual(l(ns.eval_('J:x')), l(function.jacobian(ns.x)))
 
 class eval_ast(TestCase):
 
@@ -406,57 +729,130 @@ class jacobian(TestCase):
     self.assertEqual(values.shape[1:], self.dJ.shape + otherarg.shape)
     self.assertAllEqual(values, 0)
 
-class grad(TestCase):
+@parametrize
+class derivative(TestCase):
 
   def assertEvalAlmostEqual(self, topo, factual, fdesired):
     actual, desired = topo.sample('uniform', 2).eval([function.asarray(factual), function.asarray(fdesired)])
     self.assertAllAlmostEqual(actual, desired)
 
-  def test_0d(self):
+  def test_grad_0d(self):
     domain, (x,) = mesh.rectilinear([1])
-    self.assertEvalAlmostEqual(domain, function.grad(x**2, x), 2*x)
+    x = 2*x-0.5
+    self.assertEvalAlmostEqual(domain, self.grad(x**2, x), 2*x)
 
-  def test_1d(self):
+  def test_grad_1d(self):
     domain, x = mesh.rectilinear([1]*2)
-    self.assertEvalAlmostEqual(domain, function.grad([x[0]**2, x[1]**2], x), [[2*x[0], 0], [0, 2*x[1]]])
+    x = 2*x-0.5
+    self.assertEvalAlmostEqual(domain, self.grad([x[0]**2*x[1], x[1]**2], x), [[2*x[0]*x[1], x[0]**2], [0, 2*x[1]]])
 
-  def test_2d(self):
+  def test_grad_2d(self):
     domain, x = mesh.rectilinear([1]*4)
+    x = 2*x-0.5
     x = function.unravel(x, 0, (2, 2))
-    self.assertEvalAlmostEqual(domain, function.grad(x, x), numpy.eye(4, 4).reshape(2, 2, 2, 2))
+    self.assertEvalAlmostEqual(domain, self.grad(x, x), numpy.eye(4, 4).reshape(2, 2, 2, 2))
 
-  def test_3d(self):
+  def test_grad_3d(self):
     domain, x = mesh.rectilinear([1]*4)
+    x = 2*x-0.5
     x = function.unravel(function.unravel(x, 0, (2, 2)), 0, (2, 1))
-    self.assertEvalAlmostEqual(domain, function.grad(x, x), numpy.eye(4, 4).reshape(2, 1, 2, 2, 1, 2))
+    self.assertEvalAlmostEqual(domain, self.grad(x, x), numpy.eye(4, 4).reshape(2, 1, 2, 2, 1, 2))
 
-class normal(TestCase):
+  def test_div(self):
+    domain, x = mesh.rectilinear([1]*2)
+    x = 2*x-0.5
+    self.assertEvalAlmostEqual(domain, self.div([x[0]**2+x[1], x[1]**2-x[0]], x), 2*x[0]+2*x[1])
 
-  def assertEvalAlmostEqual(self, topo, factual, fdesired):
-    actual, desired = topo.sample('uniform', 2).eval([function.asarray(factual), function.asarray(fdesired)])
-    self.assertAllAlmostEqual(actual, desired)
+  def test_laplace(self):
+    domain, x = mesh.rectilinear([1]*2)
+    x = 2*x-0.5
+    self.assertEvalAlmostEqual(domain, self.laplace(x[0]**2*x[1]-x[1]**2, x), 2*x[1]-2)
 
-  def test_0d(self):
+  def test_symgrad(self):
+    domain, x = mesh.rectilinear([1]*2)
+    x = 2*x-0.5
+    self.assertEvalAlmostEqual(domain, self.symgrad([x[0]**2*x[1], x[1]**2], x), [[2*x[0]*x[1], 0.5*x[0]**2], [0.5*x[0]**2, 2*x[1]]])
+
+  def test_normal_0d(self):
     domain, (x,) = mesh.rectilinear([1])
-    self.assertEvalAlmostEqual(domain.boundary['right'], function.normal(x), 1)
-    self.assertEvalAlmostEqual(domain.boundary['left'], function.normal(x), -1)
+    x = 2*x-0.5
+    self.assertEvalAlmostEqual(domain.boundary['right'], self.normal(x), 1)
+    self.assertEvalAlmostEqual(domain.boundary['left'], self.normal(x), -1)
 
-  def test_1d(self):
+  def test_normal_1d(self):
     domain, x = mesh.rectilinear([1]*2)
+    x = 2*x-0.5
     for bnd, n in ('right', [1, 0]), ('left', [-1, 0]), ('top', [0, 1]), ('bottom', [0, -1]):
-      self.assertEvalAlmostEqual(domain.boundary[bnd], function.normal(x), n)
+      self.assertEvalAlmostEqual(domain.boundary[bnd], self.normal(x), n)
 
-  def test_2d(self):
+  def test_normal_2d(self):
     domain, x = mesh.rectilinear([1]*2)
+    x = 2*x-0.5
     x = function.unravel(x, 0, [2, 1])
     for bnd, n in ('right', [1, 0]), ('left', [-1, 0]), ('top', [0, 1]), ('bottom', [0, -1]):
-      self.assertEvalAlmostEqual(domain.boundary[bnd], function.normal(x), numpy.array(n)[:,_])
+      self.assertEvalAlmostEqual(domain.boundary[bnd], self.normal(x), numpy.array(n)[:,_])
 
-  def test_3d(self):
+  def test_normal_3d(self):
     domain, x = mesh.rectilinear([1]*2)
+    x = 2*x-0.5
     x = function.unravel(function.unravel(x, 0, [2, 1]), 0, [1, 2])
     for bnd, n in ('right', [1, 0]), ('left', [-1, 0]), ('top', [0, 1]), ('bottom', [0, -1]):
-      self.assertEvalAlmostEqual(domain.boundary[bnd], function.normal(x), numpy.array(n)[_,:,_])
+      self.assertEvalAlmostEqual(domain.boundary[bnd], self.normal(x), numpy.array(n)[_,:,_])
+
+  def test_dotnorm(self):
+    domain, x = mesh.rectilinear([1]*2)
+    x = 2*x-0.5
+    for bnd, desired in ('right', 1), ('left', -1), ('top', 0), ('bottom', 0):
+      self.assertEvalAlmostEqual(domain.boundary[bnd], self.dotnorm([1, 0], x), desired)
+
+  def test_tangent(self):
+    domain, x = mesh.rectilinear([1]*2)
+    x = 2*x-0.5
+    for bnd, desired in ('right', [0, 1]), ('left', [0, 1]), ('top', [-1, 0]), ('bottom', [-1, 0]):
+      self.assertEvalAlmostEqual(domain.boundary[bnd], self.tangent(x, [-1, 1]), desired)
+
+  def test_ngrad(self):
+    domain, x = mesh.rectilinear([1]*2)
+    x = 2*x-0.5
+    for bnd, desired in ('right', [2*x[0]*x[1], 0]), ('left', [-2*x[0]*x[1], 0]), ('top', [x[0]**2, 2*x[1]]), ('bottom', [-x[0]**2, -2*x[1]]):
+      self.assertEvalAlmostEqual(domain.boundary[bnd], self.ngrad([x[0]**2*x[1], x[1]**2], x), desired)
+
+  def test_nsymgrad(self):
+    domain, x = mesh.rectilinear([1]*2)
+    x = 2*x-0.5
+    for bnd, desired in ('right', [2*x[0]*x[1], 0.5*x[0]**2]), ('left', [-2*x[0]*x[1], -0.5*x[0]**2]), ('top', [0.5*x[0]**2, 2*x[1]]), ('bottom', [-0.5*x[0]**2, -2*x[1]]):
+      self.assertEvalAlmostEqual(domain.boundary[bnd], self.nsymgrad([x[0]**2*x[1], x[1]**2], x), desired)
+
+derivative('function',
+           normal=function.normal,
+           tangent=function.tangent,
+           dotnorm=function.dotnorm,
+           grad=function.grad,
+           div=function.div,
+           laplace=function.laplace,
+           symgrad=function.symgrad,
+           ngrad=function.ngrad,
+           nsymgrad=function.nsymgrad)
+derivative('method',
+           normal=lambda geom: function.Array.cast(geom).normal(),
+           tangent=lambda geom, vec: function.Array.cast(geom).tangent(vec),
+           dotnorm=lambda vec, geom: function.Array.cast(vec).dotnorm(geom),
+           grad=lambda arg, geom: function.Array.cast(arg).grad(geom),
+           div=lambda arg, geom: function.Array.cast(arg).div(geom),
+           laplace=lambda arg, geom: function.Array.cast(arg).laplace(geom),
+           symgrad=lambda arg, geom: function.Array.cast(arg).symgrad(geom),
+           ngrad=lambda arg, geom: function.Array.cast(arg).ngrad(geom),
+           nsymgrad=lambda arg, geom: function.Array.cast(arg).nsymgrad(geom))
+
+class deprecations(TestCase):
+
+  def test_simplified(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      function.simplified(function.Argument('a', ()))
+
+  def test_iszero(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      function.iszero(function.Argument('a', ()))
 
 class CommonBasis:
 
@@ -607,7 +1003,7 @@ class CommonBasis:
     with _builtin_warnings.catch_warnings():
       _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
       for ielem in range(self.checknelems):
-        value = lowered.eval(_transforms=(self.checktransforms[ielem],), _points=points.coords)
+        value = lowered.eval(_transforms=(self.checktransforms[ielem],), _points=points)
         if value.shape[0] == 1:
           value = numpy.tile(value, (points.npoints, 1))
         self.assertEqual(value.tolist(), self.checkeval(ielem, points))
@@ -615,19 +1011,19 @@ class CommonBasis:
   def test_f_ndofs(self):
     for ielem in range(self.checknelems):
       a = self.basis.get_ndofs(ielem)
-      b, = self.basis.f_ndofs(ielem).eval()
+      b = int(self.basis.f_ndofs(ielem).eval()[()])
       self.assertEqual(a, b)
 
   def test_f_dofs(self):
     for ielem in range(self.checknelems):
       a = self.basis.get_dofs(ielem)
-      b, = self.basis.f_dofs(ielem).eval()
+      b = self.basis.f_dofs(ielem).eval()
       self.assertAllEqual(a, b)
 
   def test_f_coefficients(self):
     for ielem in range(self.checknelems):
       a = self.basis.get_coefficients(ielem)
-      b, = self.basis.f_coefficients(ielem).eval()
+      b = self.basis.f_coefficients(ielem).eval()
       self.assertAllEqual(a, b)
 
 class PlainBasis(CommonBasis, TestCase):
