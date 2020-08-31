@@ -387,7 +387,7 @@ class Evaluable(types.Singleton):
   @replace(depthfirst=True, recursive=True)
   def optimized_for_numpy(obj: simplified.fget):
     if isinstance(obj, Array):
-      retval = obj._optimized_for_numpy() or obj._simplified()
+      retval = obj._simplified() or obj._optimized_for_numpy()
       assert retval is None or isinstance(retval, Array) and retval.shape == obj.shape, '{0}._optimized_for_numpy or {0}._simplified resulted in shape change'.format(type(obj).__name__)
       return retval
 
