@@ -604,7 +604,7 @@ The optimization problem can also be solved by the
 .. console::
     >>> solver.optimize('lhs', sqr)
     optimize > solve > solving 5 dof system to machine precision using arnoldi solver
-    optimize > solve > solver returned with residual 0e+00
+    optimize > solve > solver returned with residual 0e+00±1e-15
     optimize > optimum value 0.00e+00±1e-15
     array([0.  , 0.25, 0.5 , 0.75, 1.  ])±1e-15
 
