@@ -828,7 +828,7 @@ class namespace(TestCase):
     orig = function.Namespace()
     domain, geom = mesh.unitsquare(2, 'square')
     orig.x = geom
-    orig.v = domain.basis('std', 1)
+    orig.v = function.stack([1, geom[0], geom[0]**2], 0)
     orig.u = 'v_n ?lhs_n'
     orig.f = 'cosh(x_0)'
     pickled = pickle.loads(pickle.dumps(orig))
