@@ -817,7 +817,7 @@ class Array(Evaluable):
   _add = lambda self, other: None
   _sum = lambda self, axis: None
   _take = lambda self, index, axis: None
-  _determinant = lambda self: None
+  _determinant = lambda self, axis1, axis2: None
   _inverse = lambda self, axis1, axis2: None
   _takediag = lambda self, axis1, axis2: None
   _diagonalize = lambda self, axis: None
@@ -974,9 +974,10 @@ class Constant(Array):
     shape = self.value.shape[:axis] + shape + self.value.shape[axis+1:]
     return Constant(self.value.reshape(shape))
 
-  def _determinant(self):
+  def _determinant(self, axis1, axis2):
+    value = numpy.transpose(self.value, tuple(i for i in range(self.ndim) if i != axis1 and i != axis2) + (axis1, axis2))
     # NOTE: numpy <= 1.12 cannot compute the determinant of an array with shape [...,0,0]
-    return Constant(numpy.linalg.det(self.value) if self.value.shape[-1] else numpy.ones(self.value.shape[:-2]))
+    return Constant(numpy.linalg.det(value) if value.shape[-1] else numpy.ones(value.shape[:-2]))
 
 class InsertAxis(Array):
 
@@ -1058,6 +1059,10 @@ class InsertAxis(Array):
     assert isinstance(self._axes[axis], Sparse)
     assert axis < self.ndim-1
     return [(ind, InsertAxis(f, self.length)) for ind, f in self.func._desparsify(axis)]
+
+  def _determinant(self, axis1, axis2):
+    if axis1 < self.ndim-1 and axis2 < self.ndim-1:
+      return InsertAxis(determinant(self.func, (axis1, axis2)), self.length)
 
   def _inverse(self, axis1, axis2):
     if axis1 < self.ndim-1 and axis2 < self.ndim-1:
@@ -1182,9 +1187,12 @@ class Transpose(Array):
     if self.axes[-1] == self.ndim-1:
       return Transpose(Product(self.func), self.axes[:-1])
 
-  def _determinant(self):
-    if sorted(self.axes[-2:]) == [self.ndim-2, self.ndim-1]:
-      return Transpose(Determinant(self.func), self.axes[:-2])
+  def _determinant(self, axis1, axis2):
+    orig1, orig2 = self.axes[axis1], self.axes[axis2]
+    trydet = self.func._determinant(orig1, orig2)
+    if trydet:
+      axes = [ax-(ax>orig1)-(ax>orig2) for ax in self.axes if ax != orig1 and ax != orig2]
+      return Transpose(trydet, axes)
 
   def _inverse(self, axis1, axis2):
     tryinv = self.func._inverse(self.axes[axis1], self.axes[axis2])
@@ -1312,8 +1320,9 @@ class Inverse(Array):
     eigval, eigvec = Eig(self.func, symmetric)
     return Tuple((reciprocal(eigval), eigvec))
 
-  def _determinant(self):
-    return reciprocal(Determinant(self.func))
+  def _determinant(self, axis1, axis2):
+    if sorted([axis1, axis2]) == [self.ndim-2, self.ndim-1]:
+      return reciprocal(Determinant(self.func))
 
   def _take(self, indices, axis):
     if axis < self.ndim - 2:
@@ -1359,7 +1368,7 @@ class Determinant(Array):
     super().__init__(args=[func], shape=func.shape[:-2], dtype=func.dtype)
 
   def _simplified(self):
-    return self.func._determinant()
+    return self.func._determinant(self.ndim, self.ndim+1)
 
   def evalf(self, arr):
     assert arr.ndim == self.ndim+3
@@ -1459,10 +1468,15 @@ class Multiply(Array):
       f = next(iter(self.funcs & other.funcs))
       return Multiply([f, Add(self.funcs + other.funcs - [f,f])])
 
-  def _determinant(self):
+  def _determinant(self, axis1, axis2):
     func1, func2 = self.funcs
-    if self.shape[-2:] == (1,1):
-      return Multiply([Determinant(func1), Determinant(func2)])
+    axis1, axis2 = sorted([axis1, axis2])
+    if self.shape[axis1] == self.shape[axis2] == 1:
+      return Multiply([determinant(func1, (axis1, axis2)), determinant(func2, (axis1, axis2))])
+    if all(isinstance(func1._axes[axis], Inserted) for axis in (axis1, axis2)):
+      return Multiply([func1._uninsert(axis2)._uninsert(axis1)**self.shape[axis1], determinant(func2, (axis1, axis2))])
+    if all(isinstance(func2._axes[axis], Inserted) for axis in (axis1, axis2)):
+      return Multiply([func2._uninsert(axis2)._uninsert(axis1)**self.shape[axis1], determinant(func1, (axis1, axis2))])
 
   def _product(self):
     func1, func2 = self.funcs
@@ -2194,11 +2208,14 @@ class Zeros(Array):
   def _ravel(self, axis):
     return Zeros(self.shape[:axis] + (self.shape[axis]*self.shape[axis+1],) + self.shape[axis+2:], self.dtype)
 
-  def _determinant(self):
-    if self.shape[-1] == 0:
-      return ones(self.shape[:-2], self.dtype)
+  def _determinant(self, axis1, axis2):
+    shape = list(self.shape)
+    assert axis1 != axis2
+    length, = set(map(shape.pop, sorted((axis1, axis2), reverse=True)))
+    if length == 0:
+      return ones(shape, self.dtype)
     else:
-      return Zeros(self.shape[:-2], self.dtype)
+      return Zeros(shape, self.dtype)
 
 class Inflate(Array):
 
@@ -2330,8 +2347,11 @@ class Diagonalize(Array):
     if sorted([axis1, axis2]) == [self.ndim-2, self.ndim-1]:
       return Diagonalize(reciprocal(self.func))
 
-  def _determinant(self):
-    return Product(self.func)
+  def _determinant(self, axis1, axis2):
+    if sorted([axis1, axis2]) == [self.ndim-2, self.ndim-1]:
+      return Product(self.func)
+    elif axis1 < self.ndim-2 and axis2 < self.ndim-2:
+      return Diagonalize(determinant(self.func, (axis1, axis2)))
 
   def _multiply(self, other):
     return Diagonalize(Multiply([self.func, TakeDiag(other)]))
