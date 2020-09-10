@@ -818,7 +818,7 @@ class Array(Evaluable):
   _sum = lambda self, axis: None
   _take = lambda self, index, axis: None
   _determinant = lambda self: None
-  _inverse = lambda self: None
+  _inverse = lambda self, axis1, axis2: None
   _takediag = lambda self, axis1, axis2: None
   _diagonalize = lambda self, axis: None
   _product = lambda self: None
@@ -936,8 +936,9 @@ class Constant(Array):
     if isinstance(other, Constant):
       return Constant(numpy.add(self.value, other.value))
 
-  def _inverse(self):
-    return Constant(numpy.linalg.inv(self.value))
+  def _inverse(self, axis1, axis2):
+    value = numpy.transpose(self.value, tuple(i for i in range(self.ndim) if i != axis1 and i != axis2) + (axis1, axis2))
+    return Constant(numpy.linalg.inv(value))
 
   def _product(self):
     return Constant(self.value.prod(-1))
@@ -1057,6 +1058,10 @@ class InsertAxis(Array):
     assert isinstance(self._axes[axis], Sparse)
     assert axis < self.ndim-1
     return [(ind, InsertAxis(f, self.length)) for ind, f in self.func._desparsify(axis)]
+
+  def _inverse(self, axis1, axis2):
+    if axis1 < self.ndim-1 and axis2 < self.ndim-1:
+      return InsertAxis(inverse(self.func, (axis1, axis2)), self.length)
 
 class Transpose(Array):
 
@@ -1181,9 +1186,10 @@ class Transpose(Array):
     if sorted(self.axes[-2:]) == [self.ndim-2, self.ndim-1]:
       return Transpose(Determinant(self.func), self.axes[:-2])
 
-  def _inverse(self):
-    if sorted(self.axes[-2:]) == [self.ndim-2, self.ndim-1]:
-      return Transpose(Inverse(self.func), self.axes)
+  def _inverse(self, axis1, axis2):
+    tryinv = self.func._inverse(self.axes[axis1], self.axes[axis2])
+    if tryinv:
+      return Transpose(tryinv, self.axes)
 
   def _ravel(self, axis):
     if self.axes[axis] == self.ndim-2 and self.axes[axis+1] == self.ndim-1:
@@ -1291,7 +1297,7 @@ class Inverse(Array):
     super().__init__(args=[func], shape=func.shape, dtype=float)
 
   def _simplified(self):
-    return self.func._inverse()
+    return self.func._inverse(self.ndim-2, self.ndim-1)
 
   def evalf(self, arr):
     return numeric.inv(arr)
@@ -1491,12 +1497,12 @@ class Multiply(Array):
   def _unravel(self, axis, shape):
     return Multiply([unravel(func, axis, shape) for func in self.funcs])
 
-  def _inverse(self):
+  def _inverse(self, axis1, axis2):
     func1, func2 = self.funcs
-    if all(isinstance(axis, Inserted) for axis in func1._axes[-2:]):
-      return divide(Inverse(func2), func1)
-    if all(isinstance(axis, Inserted) for axis in func2._axes[-2:]):
-      return divide(Inverse(func1), func2)
+    if all(isinstance(func1._axes[axis], Inserted) for axis in (axis1, axis2)):
+      return divide(inverse(func2, (axis1, axis2)), func1)
+    if all(isinstance(func2._axes[axis], Inserted) for axis in (axis1, axis2)):
+      return divide(inverse(func1, (axis1, axis2)), func2)
 
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
@@ -2320,8 +2326,9 @@ class Diagonalize(Array):
   def _derivative(self, var, seen):
     return diagonalize(derivative(self.func, var, seen), self.ndim-2, self.ndim-1)
 
-  def _inverse(self):
-    return Diagonalize(reciprocal(self.func))
+  def _inverse(self, axis1, axis2):
+    if sorted([axis1, axis2]) == [self.ndim-2, self.ndim-1]:
+      return Diagonalize(reciprocal(self.func))
 
   def _determinant(self):
     return Product(self.func)
