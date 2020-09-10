@@ -2789,6 +2789,7 @@ class Polyval(Array):
 
   def evalf(self, points, coeffs):
     assert points.shape[1] == self.points_ndim
+    coeffs, = coeffs
     for igrad in range(self.ngrad):
       coeffs = numeric.poly_grad(coeffs, self.points_ndim)
     return numeric.poly_eval(coeffs, points)
@@ -2955,7 +2956,7 @@ class Basis(Array):
   def evalf(self, index, coords):
     warnings.warn('using explicit basis evaluation; this is usually a bug.', ExpensiveEvaluationWarning)
     index, = index
-    values = numeric.poly_eval(self.get_coefficients(index)[None], coords)
+    values = numeric.poly_eval(self.get_coefficients(index), coords)
     inflated = numpy.zeros((coords.shape[0], self.ndofs), float)
     numpy.add.at(inflated, (slice(None), self.get_dofs(index)), values)
     return inflated

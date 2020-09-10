@@ -489,16 +489,6 @@ _check('vectorize', lambda a,b: function.vectorize([a, b]), lambda a,b: numpy.co
 _check('choose', lambda a, b, c: function.Choose(function.Int(a)%2, [b,c]), lambda a, b, c: numpy.stack([b,c], axis=1)[numpy.arange(len(a)), a.astype(int)%2], [(), (3,3), (3,3)])
 _check('slice', lambda a: function.asarray(a)[::2], lambda a: a[:,::2], [(5,3)])
 
-_polyval_mask = lambda shape, ndim: 1 if ndim == 0 else numpy.array([sum(i[-ndim:]) < shape[-1] for i in numpy.ndindex(shape)], dtype=int).reshape(shape)
-_polyval_desired = lambda c, x: sum(c[(...,*i)]*(x[(slice(None),*[None]*(c.ndim-1-x.shape[1]))]**i).prod(-1) for i in itertools.product(*[range(c.shape[-1])]*x.shape[1]) if sum(i) < c.shape[-1])
-_check('polyval_1d_p0', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2), function.asarray(x)), _polyval_desired, [(1,)], pass_geom=True, ndim=1)
-_check('polyval_1d_p1', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2), function.asarray(x)), _polyval_desired, [(2,)], pass_geom=True, ndim=1)
-_check('polyval_1d_p2', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2), function.asarray(x)), _polyval_desired, [(3,)], pass_geom=True, ndim=1)
-_check('polyval_2d_p0', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2), function.asarray(x)), _polyval_desired, [(1,1)], pass_geom=True, ndim=2)
-_check('polyval_2d_p1', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2), function.asarray(x)), _polyval_desired, [(2,2)], pass_geom=True, ndim=2)
-_check('polyval_2d_p2', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2), function.asarray(x)), _polyval_desired, [(3,3)], pass_geom=True, ndim=2)
-_check('polyval_2d_p1_23', lambda c, x: function.Polyval(c*_polyval_mask(c.shape,2), function.asarray(x)), _polyval_desired, [(2,3,2,2)], pass_geom=True, ndim=2)
-
 
 class blocks(TestCase):
 
@@ -1182,7 +1172,7 @@ class CommonBasis:
 
   def checkeval(self, ielem, points):
     result = numpy.zeros((points.shape[0], self.checkndofs,), dtype=float)
-    numpy.add.at(result, (slice(None),numpy.array(self.checkdofs[ielem], dtype=int)), numeric.poly_eval(numpy.array(self.checkcoeffs[ielem], dtype=float)[None], points))
+    numpy.add.at(result, (slice(None),numpy.array(self.checkdofs[ielem], dtype=int)), numeric.poly_eval(numpy.array(self.checkcoeffs[ielem], dtype=float), points))
     return result.tolist()
 
   def test_evalf(self):
