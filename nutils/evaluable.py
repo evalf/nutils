@@ -3047,9 +3047,6 @@ def tanh(arg):
 def arctanh(arg):
   return .5 * (ln(1+arg) - ln(1-arg))
 
-def trace(arg, n1=-2, n2=-1):
-  return sum(_takediag(arg, n1, n2), -1)
-
 def normalized(arg, axis=-1):
   return divide(arg, expand_dims(norm2(arg, axis=axis), axis))
 
