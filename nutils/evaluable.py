@@ -2466,6 +2466,10 @@ class Find(Array):
   def evalf(self, where):
     return where.nonzero()[0]
 
+  def _simplified(self):
+    if self.isconstant:
+      return Constant(self.eval())
+
 class DerivativeTargetBase(Array):
   'base class for derivative targets'
 
@@ -3150,7 +3154,7 @@ def take(arg:asarray, index:asarray, axis:types.strictint):
   length = arg.shape[axis]
   if index.dtype == bool:
     assert index.shape[0] == length
-    index = find(index)
+    index = Find(index)
   elif index.isconstant:
     index_ = index.eval()
     ineg = numpy.less(index_, 0)
@@ -3177,19 +3181,6 @@ def _inflate(arg:asarray, dofmap:asarray, length:asarray, axis:types.strictint):
   axis = numeric.normdim(arg.ndim+1-dofmap.ndim, axis)
   assert dofmap.shape == arg.shape[axis:axis+dofmap.ndim]
   return Transpose.from_end(Inflate(Transpose.to_end(arg, *range(axis, axis+dofmap.ndim)), dofmap, length), axis)
-
-def find(arg):
-  'find'
-
-  arg = asarray(arg)
-  assert arg.ndim == 1 and arg.dtype == bool
-
-  if arg.isconstant:
-    arg = arg.eval()
-    index, = arg.nonzero()
-    return asarray(index)
-
-  return Find(arg)
 
 def mask(arg, mask, axis=0):
   return take(arg, mask, axis)
