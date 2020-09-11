@@ -740,7 +740,6 @@ class Array(Evaluable):
   normalized = lambda self, axis=-1: normalized(self, axis)
   swapaxes = swapaxes
   transpose = transpose
-  add_T = lambda self, axes=(-2,-1): add_T(self, axes)
   choose = lambda self, choices: Choose(self, _numpy_align(*choices))
 
   @property
@@ -3062,9 +3061,6 @@ def divide(arg1, arg2):
 
 def subtract(arg1, arg2):
   return add(arg1, negative(arg2))
-
-def add_T(arg, axes=(-2,-1)):
-  return swapaxes(arg, *axes) + arg
 
 def blocks(arg):
   return asarray(arg).simplified.blocks
