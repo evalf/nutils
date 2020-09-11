@@ -749,8 +749,6 @@ class Array(Evaluable):
   div = lambda self, geom, ndims=0: div(self, geom, ndims)
   dotnorm = lambda self, geom, axis=-1: dotnorm(self, geom, axis)
   tangent = lambda self, vec: tangent(self, vec)
-  ngrad = lambda self, geom, ndims=0: ngrad(self, geom, ndims)
-  nsymgrad = lambda self, geom, ndims=0: nsymgrad(self, geom, ndims)
   choose = lambda self, choices: Choose(self, _numpy_align(*choices))
 
   def vector(self, ndims):
@@ -3016,12 +3014,6 @@ def div(arg, coords, ndims=0):
 def negative(arg):
   return multiply(arg, -1)
 
-def nsymgrad(arg, coords):
-  return (symgrad(arg,coords) * coords.normal()).sum(-1)
-
-def ngrad(arg, coords):
-  return (grad(arg,coords) * coords.normal()).sum(-1)
-
 def sin(x):
   return Sin(x)
 
@@ -3190,12 +3182,6 @@ def div(arg, geom, ndims=0):
 
 def tangent(geom, vec):
   return subtract(vec, multiply(dot(vec, normal(geom), -1)[...,_], normal(geom)))
-
-def ngrad(arg, geom, ndims=0):
-  return dotnorm(grad(arg, geom, ndims), geom)
-
-def nsymgrad(arg, geom, ndims=0):
-  return dotnorm(symgrad(arg, geom, ndims), geom)
 
 def expand_dims(arg, n):
   return insertaxis(arg, numeric.normdim(arg.ndim+1, n), 1)
@@ -3511,13 +3497,6 @@ def dotnorm(arg, geom, axis=-1):
   axis = numeric.normdim(arg.ndim, axis)
   assert geom.ndim == 1 and geom.shape[0] == arg.shape[axis]
   return dot(arg, normal(geom)[(slice(None),)+(_,)*(arg.ndim-axis-1)], axis)
-
-def _d1(arg, var):
-  return (derivative if isinstance(var, Argument) else grad)(arg, var)
-
-def d(arg, *vars):
-  'derivative of `arg` to `vars`'
-  return functools.reduce(_d1, vars, arg)
 
 def prependaxes(func, shape):
   'Prepend axes with specified `shape` to `func`.'
