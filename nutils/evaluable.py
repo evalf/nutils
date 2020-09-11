@@ -2430,7 +2430,7 @@ class TrigNormal(Array):
 
   def _simplified(self):
     if iszero(self.angle):
-      return prependaxes(kronecker(1, axis=0, length=2, pos=0), self.shape[:1])
+      return prependaxes(Inflate(1, 0, 2), self.shape[:1])
 
 class TrigTangent(Array):
   '-sin, cos'
@@ -2450,7 +2450,7 @@ class TrigTangent(Array):
 
   def _simplified(self):
     if iszero(self.angle):
-      return prependaxes(kronecker(1, axis=0, length=2, pos=1), self.shape[:1])
+      return prependaxes(Inflate(1, 1, 2), self.shape[:1])
 
 class Find(Array):
   'indices of boolean index vector'
@@ -3074,7 +3074,7 @@ def insertaxis(arg, n, length):
 
 def stack(args, axis=0):
   aligned = _numpy_align(*args)
-  return util.sum(kronecker(arg, axis, len(args), i) for i, arg in enumerate(args))
+  return Transpose.from_end(util.sum(Inflate(arg, i, len(args)) for i, arg in enumerate(args)), axis)
 
 def repeat(arg, length, axis):
   arg = asarray(arg)
@@ -3141,9 +3141,6 @@ def localgradient(arg, ndims):
   'local derivative'
 
   return derivative(arg, LocalCoords(ndims))
-
-def kronecker(arg, axis, length, pos):
-  return Transpose.from_end(Inflate(arg, pos, length), axis)
 
 def diagonalize(arg, axis=-1, newaxis=-1):
   arg = asarray(arg)

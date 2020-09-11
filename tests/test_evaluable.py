@@ -262,14 +262,6 @@ class check(TestCase):
         desired=self.n_op_argsfun.reshape(self.n_op_argsfun.shape[:idim]+unravelshape+self.n_op_argsfun.shape[idim+1:]),
         actual=evaluable.unravel(self.op_args, axis=idim, shape=unravelshape))
 
-  def test_kronecker(self):
-    for idim in range(self.op_args.ndim+1):
-      desired = numpy.zeros(self.n_op_argsfun.shape[:idim]+(3,)+self.n_op_argsfun.shape[idim:], dtype=self.n_op_argsfun.dtype)
-      desired[(slice(None),)*idim+(1,)] = self.n_op_argsfun
-      self.assertFunctionAlmostEqual(decimal=15,
-        desired=desired,
-        actual=evaluable.kronecker(self.op_args, axis=idim, pos=1, length=3))
-
   def test_desparsify(self):
     args = []
     for arg in self.args:
@@ -404,7 +396,6 @@ _check('eig', lambda a: evaluable.eig(a+a.swapaxes(1,2),symmetric=True)[1], lamb
 _check('trignormal', lambda a: evaluable.TrigNormal(a), lambda a: numpy.array([numpy.cos(a), numpy.sin(a)]).T, [()])
 _check('trigtangent', lambda a: evaluable.TrigTangent(a), lambda a: numpy.array([-numpy.sin(a), numpy.cos(a)]).T, [()])
 _check('mod', lambda a,b: evaluable.mod(a,b), lambda a,b: numpy.mod(a,b), [(4,),(4,)], hasgrad=False)
-_check('kronecker', lambda f: evaluable.kronecker(f,axis=3,length=4,pos=1), lambda a: numeric.kronecker(a,axis=3,length=4,pos=1), [(4,4,4,4)])
 _check('mask', lambda f: evaluable.mask(f,numpy.array([True,False,True,False,True,False,True]),axis=2), lambda a: a[:,:,::2], [(4,7,4)])
 _check('ravel', lambda f: evaluable.ravel(f,axis=2), lambda a: a.reshape(-1,4,4,4,4), [(4,2,2,4,4)])
 _check('unravel', lambda f: evaluable.unravel(f,axis=2,shape=[2,2]), lambda a: a.reshape(-1,4,2,2,4,4), [(4,4,4,4)])
