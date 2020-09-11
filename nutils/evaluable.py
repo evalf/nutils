@@ -743,7 +743,6 @@ class Array(Evaluable):
   grad = lambda self, geom, ndims=0: grad(self, geom, ndims)
   add_T = lambda self, axes=(-2,-1): add_T(self, axes)
   symgrad = lambda self, geom, ndims=0: symgrad(self, geom, ndims)
-  div = lambda self, geom, ndims=0: div(self, geom, ndims)
   choose = lambda self, choices: Choose(self, _numpy_align(*choices))
 
   @property
@@ -2985,9 +2984,6 @@ def grad(arg, coords, ndims=0):
 def symgrad(arg, coords, ndims=0):
   return asarray(arg).symgrad(coords, ndims)
 
-def div(arg, coords, ndims=0):
-  return asarray(arg).div(coords, ndims)
-
 def negative(arg):
   return multiply(arg, -1)
 
@@ -3094,9 +3090,6 @@ def bifurcate(arg1, arg2):
 
 def symgrad(arg, geom, ndims=0):
   return multiply(.5, add_T(arg.grad(geom, ndims)))
-
-def div(arg, geom, ndims=0):
-  return trace(arg.grad(geom, ndims))
 
 def expand_dims(arg, n):
   return insertaxis(arg, numeric.normdim(arg.ndim+1, n), 1)
