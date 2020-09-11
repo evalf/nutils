@@ -578,17 +578,11 @@ def power(arg, n):
   arg, n = _numpy_align(arg, n)
   return Power(arg, n)
 
-def dot(a, b, axes=None):
+def dot(a, b, axes):
   '''
   Contract ``a`` and ``b`` along ``axes``.
   '''
-  if axes is None:
-    a = asarray(a)
-    b = asarray(b)
-    assert b.ndim == 1 and b.shape[0] == a.shape[0]
-    for idim in range(1, a.ndim):
-      b = insertaxis(b, idim, a.shape[idim])
-    axes = 0,
+
   return multiply(a, b).sum(axes)
 
 def transpose(arg, trans=None):
