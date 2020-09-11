@@ -370,7 +370,7 @@ _check('norm2scalar', lambda a: evaluable.norm2(a,2), lambda a: abs(a.sum(-2)), 
 _check('sum', lambda a: evaluable.sum(a,2), lambda a: a.sum(-2), [(4,3,4)])
 _check('transpose1', lambda a: evaluable.transpose(a,[0,1,3,2]), lambda a: a.transpose([0,1,3,2]), [(4,4,4)], low=0, high=20)
 _check('transpose2', lambda a: evaluable.transpose(a,[0,2,3,1]), lambda a: a.transpose([0,2,3,1]), [(4,4,4)])
-_check('expand_dims', lambda a: evaluable.expand_dims(a,2), lambda a: numpy.expand_dims(a,2), [(2,4)])
+_check('insertaxis', lambda a: evaluable.insertaxis(a,2,3), lambda a: numpy.repeat(numpy.expand_dims(a,2), 3, 2), [(2,4)])
 _check('get', lambda a: evaluable.get(a,2,1), lambda a: a[...,1,:], [(4,3,4)])
 _check('takediag141', lambda a: evaluable.takediag(a,1,3), lambda a: numeric.takediag(a,1,3), [(1,4,1)])
 _check('takediag434', lambda a: evaluable.takediag(a,1,3), lambda a: numeric.takediag(a,1,3), [(4,3,4)])

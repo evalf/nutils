@@ -698,7 +698,7 @@ class Array(Evaluable):
       if numeric.isint(it):
         array = get(array, axis, item=it)
       else:
-        array = expand_dims(array, axis) if it is _ \
+        array = insertaxis(array, axis, 1) if it is _ \
            else _takeslice(array, it, axis) if isinstance(it, slice) \
            else take(array, it, axis)
         axis += 1
@@ -3065,9 +3065,6 @@ def _bifurcate(arg, side):
 
 bifurcate1 = functools.partial(_bifurcate, side=True)
 bifurcate2 = functools.partial(_bifurcate, side=False)
-
-def expand_dims(arg, n):
-  return insertaxis(arg, numeric.normdim(arg.ndim+1, n), 1)
 
 def eye(n, dtype=float):
   return diagonalize(ones([n], dtype=dtype))
