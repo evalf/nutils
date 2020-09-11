@@ -3272,17 +3272,6 @@ def find(arg):
 def mask(arg, mask, axis=0):
   return take(arg, mask, axis)
 
-def J(geometry, ndims=None):
-  '''
-  Return :math:`\\sqrt{|J^T J|}` with :math:`J` the gradient of ``geometry`` to
-  the local coordinate system with ``ndims`` dimensions (``localgradient(geom,
-  ndims)``).
-  '''
-  assert ndims is not None
-  if ndims < 0:
-    ndims += len(geometry)
-  return jacobian(geometry, ndims)
-
 def unravel(func, axis, shape):
   func = asarray(func)
   axis = numeric.normdim(func.ndim, axis)
