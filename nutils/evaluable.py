@@ -738,7 +738,6 @@ class Array(Evaluable):
   prod = product
   dot = dot
   normalized = lambda self, axis=-1: normalized(self, axis)
-  normal = lambda self, exterior=False: normal(self, exterior)
   curvature = lambda self, ndims=-1: curvature(self, ndims)
   swapaxes = swapaxes
   transpose = transpose
@@ -747,8 +746,6 @@ class Array(Evaluable):
   add_T = lambda self, axes=(-2,-1): add_T(self, axes)
   symgrad = lambda self, geom, ndims=0: symgrad(self, geom, ndims)
   div = lambda self, geom, ndims=0: div(self, geom, ndims)
-  dotnorm = lambda self, geom, axis=-1: dotnorm(self, geom, axis)
-  tangent = lambda self, vec: tangent(self, vec)
   choose = lambda self, choices: Choose(self, _numpy_align(*choices))
 
   def vector(self, ndims):
@@ -3180,9 +3177,6 @@ def symgrad(arg, geom, ndims=0):
 def div(arg, geom, ndims=0):
   return trace(arg.grad(geom, ndims))
 
-def tangent(geom, vec):
-  return subtract(vec, multiply(dot(vec, normal(geom), -1)[...,_], normal(geom)))
-
 def expand_dims(arg, n):
   return insertaxis(arg, numeric.normdim(arg.ndim+1, n), 1)
 
@@ -3314,14 +3308,6 @@ def localgradient(arg, ndims):
 
   return derivative(arg, LocalCoords(ndims))
 
-def dotnorm(arg, coords):
-  'normal component'
-
-  return sum(arg * coords.normal(), -1)
-
-def normal(geom):
-  return geom.normal()
-
 def kronecker(arg, axis, length, pos):
   return Transpose.from_end(Inflate(arg, pos, length), axis)
 
@@ -3452,25 +3438,6 @@ def ravel(func, axis):
   axis = numeric.normdim(func.ndim-1, axis)
   return Transpose.from_end(Ravel(Transpose.to_end(func, axis, axis+1)), axis)
 
-def normal(arg, exterior=False):
-  arg = asarray(arg)
-  if arg.ndim == 0:
-    return normal(insertaxis(arg, 0, 1), exterior)[...,0]
-  elif arg.ndim > 1:
-    arg = asarray(arg)
-    sh = arg.shape[-2:]
-    return unravel(normal(ravel(arg, arg.ndim-2), exterior), arg.ndim-2, sh)
-  else:
-    if not exterior:
-      lgrad = localgradient(arg, len(arg))
-      return Normal(lgrad)
-    lgrad = localgradient(arg, len(arg)-1)
-    if len(arg) == 2:
-      return asarray([lgrad[1,0], -lgrad[0,0]]).normalized()
-    if len(arg) == 3:
-      return cross(lgrad[:,0], lgrad[:,1], axis=0).normalized()
-    raise NotImplementedError
-
 def grad(func, geom, ndims=0):
   geom = asarray(geom)
   if geom.ndim == 0:
@@ -3492,11 +3459,6 @@ def grad(func, geom, ndims=0):
     else:
       raise Exception('cannot invert {}x{} jacobian'.format(J.shape))
     return dot(localgradient(func, ndims)[...,_], Jinv, -2)
-
-def dotnorm(arg, geom, axis=-1):
-  axis = numeric.normdim(arg.ndim, axis)
-  assert geom.ndim == 1 and geom.shape[0] == arg.shape[axis]
-  return dot(arg, normal(geom)[(slice(None),)+(_,)*(arg.ndim-axis-1)], axis)
 
 def prependaxes(func, shape):
   'Prepend axes with specified `shape` to `func`.'
