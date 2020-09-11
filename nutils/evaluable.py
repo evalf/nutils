@@ -3138,16 +3138,6 @@ def jacobian(geom, ndims):
     else abs(determinant((J[...,:,:,_] * J[...,:,_,:]).sum(-3)))**.5
   return detJ
 
-def matmat(arg0, *args):
-  'helper function, contracts last axis of arg0 with the next to last axis or arg1, etc.'
-  retval = asarray(arg0)
-  for arg in args:
-    arg = asarray(arg)
-    assert arg.ndim == retval.ndim
-    assert retval.shape[-1] == arg.shape[-2], 'incompatible shapes'
-    retval = dot(insertaxis(retval, -1, arg.shape[-1]), insertaxis(arg, -3, retval.shape[-2]), -2)
-  return retval
-
 def determinant(arg, axes=(-2,-1)):
   return Determinant(Transpose.to_end(arg, *axes))
 
