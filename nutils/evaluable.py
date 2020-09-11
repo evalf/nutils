@@ -3519,14 +3519,6 @@ def d(arg, *vars):
   'derivative of `arg` to `vars`'
   return functools.reduce(_d1, vars, arg)
 
-def _surfgrad1(arg, geom):
-  geom = asarray(geom)
-  return grad(arg, geom, len(geom)-1)
-
-def surfgrad(arg, *vars):
-  'surface gradient of `arg` to `vars`'
-  return functools.reduce(_surfgrad1, vars, arg)
-
 def prependaxes(func, shape):
   'Prepend axes with specified `shape` to `func`.'
 
