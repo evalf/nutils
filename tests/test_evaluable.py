@@ -639,3 +639,39 @@ class normal(TestCase):
     x = function.unravel(function.unravel(x, 0, [2, 1]), 0, [1, 2])
     for bnd, n in ('right', [1, 0]), ('left', [-1, 0]), ('top', [0, 1]), ('bottom', [0, -1]):
       self.assertEvalAlmostEqual(domain.boundary[bnd], function.normal(x), numpy.array(n)[_,:,_])
+
+class asciitree(TestCase):
+
+  @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
+  def test_plain(self):
+    f = evaluable.Sin(evaluable.Inflate(1, 1, 2)**evaluable.Diagonalize(evaluable.Argument('arg', (2,))))
+    self.assertEqual(f.asciitree(),
+                     '%9 = Sin(a2,a2)\n'
+                     ': %8 = Power(a2,a2)\n'
+                     '  : %7 = Transpose(i2,s2)\n'
+                     '  | : %6 = InsertAxis(s2,i2)\n'
+                     '  |   : %4 = Inflate(s2)\n'
+                     '  |   | : %1 = Constant()\n'
+                     '  |   | : %1\n'
+                     '  |   | : %2 = Constant()\n'
+                     '  |   : %2\n'
+                     '  : %5 = Diagonalize(d2,d2)\n'
+                     '    : %3 = Argument(a2)\n'
+                     '      : %0 = Evaluable')
+
+  @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
+  def test_rich(self):
+    f = evaluable.Sin(evaluable.Inflate(1, 1, 2)**evaluable.Diagonalize(evaluable.Argument('arg', (2,))))
+    self.assertEqual(f.asciitree(richoutput=True),
+                     '%9 = Sin(a2,a2)\n'
+                     '└ %8 = Power(a2,a2)\n'
+                     '  ├ %7 = Transpose(i2,s2)\n'
+                     '  │ └ %6 = InsertAxis(s2,i2)\n'
+                     '  │   ├ %4 = Inflate(s2)\n'
+                     '  │   │ ├ %1 = Constant()\n'
+                     '  │   │ ├ %1\n'
+                     '  │   │ └ %2 = Constant()\n'
+                     '  │   └ %2\n'
+                     '  └ %5 = Diagonalize(d2,d2)\n'
+                     '    └ %3 = Argument(a2)\n'
+                     '      └ %0 = Evaluable')
