@@ -3088,9 +3088,6 @@ def normalized(arg, axis=-1):
 def norm2(arg, axis=-1):
   return sqrt(sum(multiply(arg, arg), axis))
 
-def heaviside(arg):
-  return Int(greater(arg, 0))
-
 def divide(arg1, arg2):
   return multiply(arg1, reciprocal(arg2))
 
