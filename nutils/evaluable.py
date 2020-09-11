@@ -3086,10 +3086,6 @@ def trigtangent(angle):
 def eye(n, dtype=float):
   return diagonalize(ones([n], dtype=dtype))
 
-def levicivita(n: int, dtype=float):
-  'n-dimensional Levi-Civita symbol.'
-  return Constant(numeric.levicivita(n))
-
 def insertaxis(arg, n, length):
   return Transpose.from_end(InsertAxis(arg, length), n)
 
