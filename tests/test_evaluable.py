@@ -177,12 +177,6 @@ class check(TestCase):
         desired=numpy.product(self.n_op_argsfun, axis=iax),
         actual=evaluable.product(self.op_args, axis=iax))
 
-  def test_concatenate(self):
-    for idim in range(self.op_args.ndim):
-      self.assertFunctionAlmostEqual(decimal=15,
-        desired=numpy.concatenate([self.n_op_argsfun, self.shapearg], axis=idim),
-        actual=evaluable.concatenate([self.op_args, self.shapearg], axis=idim))
-
   def test_getslice(self):
     for idim in range(self.op_args.ndim):
       if self.op_args.shape[idim] == 1:
@@ -390,8 +384,6 @@ _check('greater', lambda a,b: evaluable.greater(a,b), numpy.greater, [(4,1),(1,4
 _check('less', lambda a,b: evaluable.less(a,b), numpy.less, [(4,1),(1,4)], zerograd=True)
 _check('arctan2', evaluable.arctan2, numpy.arctan2, [(4,1),(1,4)])
 _check('stack', lambda a,b: evaluable.stack([a,b], 1), lambda a,b: numpy.concatenate([a[...,_,:],b[...,_,:]], axis=-2), [(4,),(4,)])
-_check('concatenate1', lambda a,b: evaluable.concatenate([a,b],axis=1), lambda a,b: numpy.concatenate([a,b], axis=1), [(4,6),(2,6)])
-_check('concatenate2', lambda a,b: evaluable.concatenate([a,b],axis=2), lambda a,b: numpy.concatenate([a,b], axis=2), [(4,3),(4,1)])
 _check('eig', lambda a: evaluable.eig(a+a.swapaxes(1,2),symmetric=True)[1], lambda a: numpy.linalg.eigh(a+a.swapaxes(1,2))[1], [(4,4)], hasgrad=False)
 _check('trignormal', lambda a: evaluable.TrigNormal(a), lambda a: numpy.array([numpy.cos(a), numpy.sin(a)]).T, [()])
 _check('trigtangent', lambda a: evaluable.TrigTangent(a), lambda a: numpy.array([-numpy.sin(a), numpy.cos(a)]).T, [()])

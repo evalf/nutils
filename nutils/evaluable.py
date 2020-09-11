@@ -3149,13 +3149,6 @@ def diagonalize(arg, axis=-1, newaxis=-1):
   assert axis < newaxis
   return Transpose.from_end(Diagonalize(Transpose.to_end(arg, axis)), axis, newaxis)
 
-def concatenate(args, axis=0):
-  args = _matchndim(*args)
-  axis = numeric.normdim(args[0].ndim, axis)
-  length = util.sum(arg.shape[axis] for arg in args)
-  return util.sum(_inflate(arg, dofmap=Range(arg.shape[axis], offset), length=length, axis=axis)
-    for arg, offset in zip(args, util.cumsum(arg.shape[axis] for arg in args)))
-
 def sign(arg):
   arg = asarray(arg)
   return Sign(arg)
