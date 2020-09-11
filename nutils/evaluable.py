@@ -3009,15 +3009,6 @@ def sqrt(arg):
 def arctan2(arg1, arg2):
   return ArcTan2(*_numpy_align(arg1, arg2))
 
-def greater(arg1, arg2):
-  return Greater(*_numpy_align(arg1, arg2))
-
-def equal(arg1, arg2):
-  return Equal(*_numpy_align(arg1, arg2))
-
-def less(arg1, arg2):
-  return Less(*_numpy_align(arg1, arg2))
-
 def abs(arg):
   return arg * sign(arg)
 
