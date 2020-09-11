@@ -333,7 +333,7 @@ class Evaluable(types.Singleton):
     with log.context('eval'):
       yield eval
       log.info('total time: {:.0f}ms\n'.format(builtins.sum(times)*1000) + '\n'.join('{:4.0f} {} ({})'.format(builtins.sum(dts)*1000, op.__name__,
-        '1 call' if len(dts) == 1 else '{} calls, {:.0f}..{:.0f} per call'.format(len(dts), builtins.min(dts)*1000, builtins.max(dts)*1000))
+        '1 call' if len(dts) == 1 else '{} calls, {:.0f}..{:.0f} per call'.format(len(dts), min(dts)*1000, max(dts)*1000))
           for op, dts in sorted(util.gather(zip(map(type, self.ordereddeps[1:]+(self,)), times)), reverse=True, key=lambda row: builtins.sum(row[1]))))
       self.graphviz(graphviz, times=times)
 
@@ -2122,8 +2122,8 @@ class Intersect(Evaluable):
       offset1 = self.index1.offset.eval()
       length2 = self.index2.length.eval()
       offset2 = self.index2.offset.eval()
-      offset = builtins.max(offset1, offset2)
-      length = builtins.min(offset1 + length1, offset2 + length2) - offset
+      offset = max(offset1, offset2)
+      length = min(offset1 + length1, offset2 + length2) - offset
       if length <= 0:
         return (Zeros([0], dtype=int) for i in range(3))
       if all(isinstance(index, Range) for index in (self.index1, self.index2)):
@@ -2354,7 +2354,7 @@ class Diagonalize(Array):
     return Diagonalize(sum(self.func, axis))
 
   def _insertaxis(self, axis, length):
-    return diagonalize(insertaxis(self.func, builtins.min(axis, self.ndim-1), length), self.ndim-2+(axis<=self.ndim-2), self.ndim-1+(axis<=self.ndim-1))
+    return diagonalize(insertaxis(self.func, min(axis, self.ndim-1), length), self.ndim-2+(axis<=self.ndim-2), self.ndim-1+(axis<=self.ndim-1))
 
   def _takediag(self, axis1, axis2):
     if axis1 == self.ndim-2: # axis2 == self.ndim-1
@@ -2903,7 +2903,7 @@ def _jointdtype(*dtypes):
 
   type_order = bool, int, float
   kind_order = 'bif'
-  itype = builtins.max(kind_order.index(dtype.kind) if isinstance(dtype,numpy.dtype)
+  itype = max(kind_order.index(dtype.kind) if isinstance(dtype,numpy.dtype)
            else type_order.index(dtype) for dtype in dtypes)
   return type_order[itype]
 
@@ -2914,7 +2914,7 @@ def _numpy_align(*arrays):
   '''reshape arrays according to Numpy's broadcast conventions'''
   arrays = [asarray(array) for array in arrays]
   if len(arrays) > 1:
-    ndim = builtins.max([array.ndim for array in arrays])
+    ndim = max([array.ndim for array in arrays])
     for idim in range(ndim):
       lengths = [array.shape[idim] for array in arrays if array.ndim == ndim and array.shape[idim] != 1]
       length = lengths[0] if lengths else 1
@@ -3017,12 +3017,6 @@ def equal(arg1, arg2):
 
 def less(arg1, arg2):
   return Less(*_numpy_align(arg1, arg2))
-
-def min(a, b):
-  return Minimum(*_numpy_align(a, b))
-
-def max(a, b):
-  return Maximum(*_numpy_align(a, b))
 
 def abs(arg):
   return arg * sign(arg)
