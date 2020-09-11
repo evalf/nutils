@@ -2920,13 +2920,6 @@ def _matchndim(*arrays):
   ndim = builtins.max(array.ndim for array in arrays)
   return tuple(array[(_,)*(ndim-array.ndim)] for array in arrays)
 
-def _norm_and_sort(ndim, args):
-  'norm axes, sort, and assert unique'
-
-  normargs = tuple(sorted(numeric.normdim(ndim, arg) for arg in args))
-  assert _ascending(normargs) # strict
-  return normargs
-
 def _gatherblocks(blocks):
   return tuple((ind, util.sum(funcs)) for ind, funcs in util.gather(blocks))
 
