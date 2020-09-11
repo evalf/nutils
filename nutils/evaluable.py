@@ -3094,12 +3094,6 @@ def divide(arg1, arg2):
 def subtract(arg1, arg2):
   return add(arg1, negative(arg2))
 
-def mean(arg):
-  return .5 * (arg + opposite(arg))
-
-def jump(arg):
-  return opposite(arg) - arg
-
 def add_T(arg, axes=(-2,-1)):
   return swapaxes(arg, *axes) + arg
 
