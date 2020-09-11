@@ -2907,13 +2907,6 @@ def _jointdtype(*dtypes):
            else type_order.index(dtype) for dtype in dtypes)
   return type_order[itype]
 
-def _matchndim(*arrays):
-  'introduce singleton dimensions to match ndims'
-
-  arrays = [asarray(array) for array in arrays]
-  ndim = builtins.max(array.ndim for array in arrays)
-  return tuple(array[(_,)*(ndim-array.ndim)] for array in arrays)
-
 def _gatherblocks(blocks):
   return tuple((ind, util.sum(funcs)) for ind, funcs in util.gather(blocks))
 
@@ -3065,9 +3058,6 @@ def _bifurcate(arg, side):
 
 bifurcate1 = functools.partial(_bifurcate, side=True)
 bifurcate2 = functools.partial(_bifurcate, side=False)
-
-def eye(n, dtype=float):
-  return diagonalize(ones([n], dtype=dtype))
 
 def insertaxis(arg, n, length):
   return Transpose.from_end(InsertAxis(arg, length), n)
