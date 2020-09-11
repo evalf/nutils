@@ -1161,12 +1161,6 @@ class Transpose(Array):
     axes[axis:axis] = range(funcaxis, funcaxis + ndim)
     return axes
 
-  def _axes_for(self, ndim, axis):
-    funcaxis = self.axes[axis]
-    axes = [ax+(ax>funcaxis)*(ndim-1) for ax in self.axes if ax != funcaxis]
-    axes[axis:axis] = range(funcaxis, funcaxis + ndim)
-    return axes
-
   def _power(self, n):
     n_trans = Transpose(n, self._invaxes)
     return Transpose(Power(self.func, n_trans), self.axes)
