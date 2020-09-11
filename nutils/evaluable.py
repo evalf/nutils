@@ -3079,9 +3079,6 @@ def tanh(arg):
 def arctanh(arg):
   return .5 * (ln(1+arg) - ln(1-arg))
 
-def piecewise(level, intervals, *funcs):
-  return util.sum(Int(greater(level, interval)) for interval in intervals).choose(funcs)
-
 def partition(f, *levels):
   '''Create a partition of unity for a scalar function f.
 
