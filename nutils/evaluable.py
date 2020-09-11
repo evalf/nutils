@@ -738,7 +738,6 @@ class Array(Evaluable):
   prod = product
   dot = dot
   normalized = lambda self, axis=-1: normalized(self, axis)
-  curvature = lambda self, ndims=-1: curvature(self, ndims)
   swapaxes = swapaxes
   transpose = transpose
   grad = lambda self, geom, ndims=0: grad(self, geom, ndims)
@@ -3164,9 +3163,6 @@ bifurcate2 = functools.partial(_bifurcate, side=False)
 
 def bifurcate(arg1, arg2):
   return bifurcate1(arg1), bifurcate2(arg2)
-
-def curvature(geom, ndims=-1):
-  return geom.normal().div(geom, ndims=ndims)
 
 def laplace(arg, geom, ndims=0):
   return arg.grad(geom, ndims).div(geom, ndims)
