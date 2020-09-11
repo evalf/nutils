@@ -740,9 +740,7 @@ class Array(Evaluable):
   normalized = lambda self, axis=-1: normalized(self, axis)
   swapaxes = swapaxes
   transpose = transpose
-  grad = lambda self, geom, ndims=0: grad(self, geom, ndims)
   add_T = lambda self, axes=(-2,-1): add_T(self, axes)
-  symgrad = lambda self, geom, ndims=0: symgrad(self, geom, ndims)
   choose = lambda self, choices: Choose(self, _numpy_align(*choices))
 
   @property
@@ -2978,12 +2976,6 @@ def ones_like(arr):
 def reciprocal(arg):
   return power(arg, -1)
 
-def grad(arg, coords, ndims=0):
-  return asarray(arg).grad(coords, ndims)
-
-def symgrad(arg, coords, ndims=0):
-  return asarray(arg).symgrad(coords, ndims)
-
 def negative(arg):
   return multiply(arg, -1)
 
@@ -3087,9 +3079,6 @@ bifurcate2 = functools.partial(_bifurcate, side=False)
 
 def bifurcate(arg1, arg2):
   return bifurcate1(arg1), bifurcate2(arg2)
-
-def symgrad(arg, geom, ndims=0):
-  return multiply(.5, add_T(arg.grad(geom, ndims)))
 
 def expand_dims(arg, n):
   return insertaxis(arg, numeric.normdim(arg.ndim+1, n), 1)
@@ -3341,28 +3330,6 @@ def ravel(func, axis):
   func = asarray(func)
   axis = numeric.normdim(func.ndim-1, axis)
   return Transpose.from_end(Ravel(Transpose.to_end(func, axis, axis+1)), axis)
-
-def grad(func, geom, ndims=0):
-  geom = asarray(geom)
-  if geom.ndim == 0:
-    return grad(func, insertaxis(geom, 0, 1), ndims)[...,0]
-  elif geom.ndim > 1:
-    func = asarray(func)
-    sh = geom.shape[-2:]
-    return unravel(grad(func, ravel(geom, geom.ndim-2), ndims), func.ndim+geom.ndim-2, sh)
-  else:
-    if ndims <= 0:
-      ndims += geom.shape[0]
-    J = localgradient(geom, ndims)
-    if J.shape[0] == J.shape[1]:
-      Jinv = inverse(J)
-    elif J.shape[0] == J.shape[1] + 1: # gamma gradient
-      G = dot(J[:,:,_], J[:,_,:], 0)
-      Ginv = inverse(G)
-      Jinv = dot(J[_,:,:], Ginv[:,_,:], -1)
-    else:
-      raise Exception('cannot invert {}x{} jacobian'.format(J.shape))
-    return dot(localgradient(func, ndims)[...,_], Jinv, -2)
 
 def prependaxes(func, shape):
   'Prepend axes with specified `shape` to `func`.'
