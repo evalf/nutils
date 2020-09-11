@@ -3066,9 +3066,6 @@ def _bifurcate(arg, side):
 bifurcate1 = functools.partial(_bifurcate, side=True)
 bifurcate2 = functools.partial(_bifurcate, side=False)
 
-def bifurcate(arg1, arg2):
-  return bifurcate1(arg1), bifurcate2(arg2)
-
 def expand_dims(arg, n):
   return insertaxis(arg, numeric.normdim(arg.ndim+1, n), 1)
 
