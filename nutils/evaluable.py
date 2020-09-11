@@ -2423,7 +2423,7 @@ class TrigNormal(Array):
     super().__init__(args=[angle], shape=(*angle.shape, 2), dtype=float)
 
   def _derivative(self, var, seen):
-    return trigtangent(self.angle)[(...,)+(_,)*var.ndim] * derivative(self.angle, var, seen)[:,_]
+    return TrigTangent(self.angle)[(...,)+(_,)*var.ndim] * derivative(self.angle, var, seen)[:,_]
 
   def evalf(self, angle):
     return numpy.stack([numpy.cos(angle), numpy.sin(angle)], axis=self.ndim-1)
@@ -2443,7 +2443,7 @@ class TrigTangent(Array):
     super().__init__(args=[angle], shape=(*angle.shape, 2), dtype=float)
 
   def _derivative(self, var, seen):
-    return -trignormal(self.angle)[(...,)+(_,)*var.ndim] * derivative(self.angle, var, seen)[:,_]
+    return -TrigNormal(self.angle)[(...,)+(_,)*var.ndim] * derivative(self.angle, var, seen)[:,_]
 
   def evalf(self, angle):
     return numpy.stack([-numpy.sin(angle), numpy.cos(angle)], axis=self.ndim-1)
@@ -3069,20 +3069,6 @@ bifurcate2 = functools.partial(_bifurcate, side=False)
 def expand_dims(arg, n):
   return insertaxis(arg, numeric.normdim(arg.ndim+1, n), 1)
 
-def trignormal(angle):
-  angle = asarray(angle)
-  # TODO:
-  #if iszero(angle):
-  #  return kronecker(1, axis=0, length=2, pos=0)
-  return TrigNormal(angle)
-
-def trigtangent(angle):
-  angle = asarray(angle)
-  # TODO:
-  #if iszero(angle):
-  #  return kronecker(1, axis=0, length=2, pos=1)
-  return TrigTangent(angle)
-
 def eye(n, dtype=float):
   return diagonalize(ones([n], dtype=dtype))
 
@@ -3092,21 +3078,6 @@ def insertaxis(arg, n, length):
 def stack(args, axis=0):
   aligned = _numpy_align(*args)
   return util.sum(kronecker(arg, axis, len(args), i) for i, arg in enumerate(args))
-
-def vectorize(args):
-  '''
-  Combine scalar-valued bases into a vector-valued basis.
-
-  Args
-  ----
-  args : iterable of 1-dimensional :class:`nutils.evaluable.Array` objects
-
-  Returns
-  -------
-  :class:`Array`
-  '''
-
-  return concatenate([kronecker(arg, axis=-1, length=len(args), pos=iarg) for iarg, arg in enumerate(args)], axis=1)
 
 def repeat(arg, length, axis):
   arg = asarray(arg)

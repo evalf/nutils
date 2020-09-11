@@ -401,8 +401,8 @@ _check('stack', lambda a,b: evaluable.stack([a,b], 1), lambda a,b: numpy.concate
 _check('concatenate1', lambda a,b: evaluable.concatenate([a,b],axis=1), lambda a,b: numpy.concatenate([a,b], axis=1), [(4,6),(2,6)])
 _check('concatenate2', lambda a,b: evaluable.concatenate([a,b],axis=2), lambda a,b: numpy.concatenate([a,b], axis=2), [(4,3),(4,1)])
 _check('eig', lambda a: evaluable.eig(a+a.swapaxes(1,2),symmetric=True)[1], lambda a: numpy.linalg.eigh(a+a.swapaxes(1,2))[1], [(4,4)], hasgrad=False)
-_check('trignormal', lambda a: evaluable.trignormal(a), lambda a: numpy.array([numpy.cos(a), numpy.sin(a)]).T, [()])
-_check('trigtangent', lambda a: evaluable.trigtangent(a), lambda a: numpy.array([-numpy.sin(a), numpy.cos(a)]).T, [()])
+_check('trignormal', lambda a: evaluable.TrigNormal(a), lambda a: numpy.array([numpy.cos(a), numpy.sin(a)]).T, [()])
+_check('trigtangent', lambda a: evaluable.TrigTangent(a), lambda a: numpy.array([-numpy.sin(a), numpy.cos(a)]).T, [()])
 _check('mod', lambda a,b: evaluable.mod(a,b), lambda a,b: numpy.mod(a,b), [(4,),(4,)], hasgrad=False)
 _check('kronecker', lambda f: evaluable.kronecker(f,axis=3,length=4,pos=1), lambda a: numeric.kronecker(a,axis=3,length=4,pos=1), [(4,4,4,4)])
 _check('mask', lambda f: evaluable.mask(f,numpy.array([True,False,True,False,True,False,True]),axis=2), lambda a: a[:,:,::2], [(4,7,4)])
@@ -410,7 +410,6 @@ _check('ravel', lambda f: evaluable.ravel(f,axis=2), lambda a: a.reshape(-1,4,4,
 _check('unravel', lambda f: evaluable.unravel(f,axis=2,shape=[2,2]), lambda a: a.reshape(-1,4,2,2,4,4), [(4,4,4,4)])
 _check('inflate', lambda f: evaluable._inflate(f,dofmap=evaluable.Guard([0,3]),length=4,axis=2), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a), a[:,:,1:]], axis=2), [(4,2,4)])
 _check('inflate-constant', lambda f: evaluable._inflate(f,dofmap=[0,3],length=4,axis=2), lambda a: numpy.concatenate([a[:,:,:1], numpy.zeros_like(a), a[:,:,1:]], axis=2), [(4,2,4)])
-_check('vectorize', lambda a,b: evaluable.vectorize([a, b]), lambda a,b: numpy.concatenate([numpy.stack([a, numpy.zeros_like(a)], axis=2), numpy.stack([numpy.zeros_like(b), b], axis=2)], axis=1), [(3,),(5,)])
 _check('choose', lambda a, b, c: evaluable.Choose(evaluable.appendaxes(evaluable.Int(a)%2, (3,3)), [b,c]), lambda a, b, c: numpy.choose(a[:,_,_].astype(int)%2, [b,c]), [(), (3,3), (3,3)])
 _check('slice', lambda a: evaluable.asarray(a)[:,::2], lambda a: a[:,::2], [(5,3)])
 
