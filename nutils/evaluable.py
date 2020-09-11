@@ -3039,9 +3039,6 @@ def tanh(arg):
 def arctanh(arg):
   return .5 * (ln(1+arg) - ln(1-arg))
 
-def norm2(arg, axis=-1):
-  return sqrt(sum(multiply(arg, arg), axis))
-
 def divide(arg1, arg2):
   return multiply(arg1, reciprocal(arg2))
 
