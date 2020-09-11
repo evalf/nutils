@@ -3329,16 +3329,6 @@ def cross(arg1, arg2, axis):
   j = types.frozenarray([2, 0, 1])
   return _take(arg1, i, axis) * _take(arg2, j, axis) - _take(arg2, i, axis) * _take(arg1, j, axis)
 
-def outer(arg1, arg2=None, axis=0):
-  'outer product'
-
-  if arg2 is None:
-    arg2 = arg1
-  elif arg1.ndim != arg2.ndim:
-    raise ValueError('arg1 and arg2 have different dimensions')
-  axis = numeric.normdim(arg1.ndim, axis)
-  return expand_dims(arg1,axis+1) * expand_dims(arg2,axis)
-
 def sign(arg):
   arg = asarray(arg)
   return Sign(arg)
