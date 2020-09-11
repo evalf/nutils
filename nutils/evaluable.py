@@ -3093,15 +3093,6 @@ def stack(args, axis=0):
   aligned = _numpy_align(*args)
   return util.sum(kronecker(arg, axis, len(args), i) for i, arg in enumerate(args))
 
-def chain(funcs):
-  'chain'
-
-  funcs = [asarray(func) for func in funcs]
-  shapes = [func.shape[0] for func in funcs]
-  return [concatenate([func if i==j else zeros((sh,) + func.shape[1:])
-             for j, sh in enumerate(shapes)], axis=0)
-               for i, func in enumerate(funcs)]
-
 def vectorize(args):
   '''
   Combine scalar-valued bases into a vector-valued basis.
