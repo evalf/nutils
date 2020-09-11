@@ -747,11 +747,6 @@ class Array(Evaluable):
   div = lambda self, geom, ndims=0: div(self, geom, ndims)
   choose = lambda self, choices: Choose(self, _numpy_align(*choices))
 
-  def vector(self, ndims):
-    if not self.ndim:
-      raise Exception('a scalar function cannot be vectorized')
-    return ravel(diagonalize(insertaxis(self, 1, ndims), 1), 0)
-
   @property
   def blocks(self):
     blocks = []
