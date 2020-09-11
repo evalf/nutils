@@ -741,7 +741,6 @@ class Array(Evaluable):
   swapaxes = swapaxes
   transpose = transpose
   grad = lambda self, geom, ndims=0: grad(self, geom, ndims)
-  laplace = lambda self, geom, ndims=0: grad(self, geom, ndims).div(geom, ndims)
   add_T = lambda self, axes=(-2,-1): add_T(self, axes)
   symgrad = lambda self, geom, ndims=0: symgrad(self, geom, ndims)
   div = lambda self, geom, ndims=0: div(self, geom, ndims)
@@ -3092,9 +3091,6 @@ bifurcate2 = functools.partial(_bifurcate, side=False)
 
 def bifurcate(arg1, arg2):
   return bifurcate1(arg1), bifurcate2(arg2)
-
-def laplace(arg, geom, ndims=0):
-  return arg.grad(geom, ndims).div(geom, ndims)
 
 def symgrad(arg, geom, ndims=0):
   return multiply(.5, add_T(arg.grad(geom, ndims)))
