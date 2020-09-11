@@ -737,7 +737,6 @@ class Array(Evaluable):
   sum = sum
   prod = product
   dot = dot
-  normalized = lambda self, axis=-1: normalized(self, axis)
   swapaxes = swapaxes
   transpose = transpose
   choose = lambda self, choices: Choose(self, _numpy_align(*choices))
@@ -3046,9 +3045,6 @@ def tanh(arg):
 
 def arctanh(arg):
   return .5 * (ln(1+arg) - ln(1-arg))
-
-def normalized(arg, axis=-1):
-  return divide(arg, expand_dims(norm2(arg, axis=axis), axis))
 
 def norm2(arg, axis=-1):
   return sqrt(sum(multiply(arg, arg), axis))
