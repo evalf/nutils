@@ -219,14 +219,6 @@ class check(TestCase):
       desired=numpy.sin(self.n_op_argsfun).astype(float), # "astype" necessary for boolean operations (float16->float64)
       actual=evaluable.sin(self.op_args))
 
-  def test_cross(self):
-    triaxes = [iax for iax, sh in enumerate(self.op_args.shape) if sh == 3]
-    if triaxes:
-      for iax in triaxes:
-        self.assertFunctionAlmostEqual(decimal=15,
-          desired=numpy.cross(self.n_op_argsfun, self.shapearg, axis=iax),
-          actual=evaluable.cross(self.op_args, self.shapearg, axis=iax))
-
   def test_power(self):
     self.assertFunctionAlmostEqual(decimal=13,
       desired=self.n_op_argsfun**3,
@@ -399,7 +391,6 @@ _check('divide2', lambda a: evaluable.asarray(a)/2, lambda a: a/2, [(4,1)])
 _check('add', evaluable.add, numpy.add, [(4,1),(1,4)])
 _check('subtract', evaluable.subtract, numpy.subtract, [(4,1),(1,4)])
 _check('dot2', lambda a,b: evaluable.multiply(a,b).sum(-2), lambda a,b: (a*b).sum(-2), [(4,2,4),(1,2,4)])
-_check('cross', lambda a,b: evaluable.cross(a,b,-2), lambda a,b: numpy.cross(a,b,axis=-2), [(4,3,1),(4,3,4)])
 _check('min', lambda a,b: evaluable.min(a,b), numpy.minimum, [(4,1),(1,4)])
 _check('max', lambda a,b: evaluable.max(a,b), numpy.maximum, [(4,1),(1,4)])
 _check('equal', lambda a,b: evaluable.equal(a,b), numpy.equal, [(4,1),(1,4)], zerograd=True)

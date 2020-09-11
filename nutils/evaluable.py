@@ -3191,14 +3191,6 @@ def concatenate(args, axis=0):
   return util.sum(_inflate(arg, dofmap=Range(arg.shape[axis], offset), length=length, axis=axis)
     for arg, offset in zip(args, util.cumsum(arg.shape[axis] for arg in args)))
 
-def cross(arg1, arg2, axis):
-  arg1, arg2 = _numpy_align(arg1, arg2)
-  axis = numeric.normdim(arg1.ndim, axis)
-  assert arg1.shape[axis] == 3
-  i = types.frozenarray([1, 2, 0])
-  j = types.frozenarray([2, 0, 1])
-  return _take(arg1, i, axis) * _take(arg2, j, axis) - _take(arg2, i, axis) * _take(arg1, j, axis)
-
 def sign(arg):
   arg = asarray(arg)
   return Sign(arg)
