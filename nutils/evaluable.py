@@ -2947,6 +2947,29 @@ class Choose(Array):
   def _product(self):
     return Choose(self.index, [Product(choice) for choice in self.choices])
 
+class NormDim(Array):
+
+  @types.apply_annotations
+  def __init__(self, length: asarray, index: asarray):
+    assert length.dtype == int
+    assert index.dtype == int
+    self.length = length
+    self.index = index
+    super().__init__(args=[length, index], shape=index.shape, dtype=index.dtype)
+
+  def evalf(self, length, index):
+    assert length.shape == index.shape
+    assert length.dtype.kind == 'i'
+    assert index.dtype.kind == 'i'
+    result = numpy.empty(index.shape, dtype=int)
+    for i in numpy.ndindex(index.shape):
+      result[i] = numeric.normdim(length[i], index[i])
+    return result
+
+  def _simplified(self):
+    if self.length.isconstant and self.index.isconstant:
+      return Constant(self.eval()[0])
+
 # BASES
 
 class Basis(Array):
