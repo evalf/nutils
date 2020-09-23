@@ -499,20 +499,12 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
   nverts = len(coords)
   nelems, ncnodes = cnodes.shape
   ndims = nodes.shape[1] - 1
-  assert len(nodes) == nelems
+  degree = 1 if ncnodes == ndims+1 else int((ncnodes * math.factorial(ndims))**(1/ndims))-1
+
+  assert len(nodes) == nelems, 'number of simplex vertices and coordinates do not match'
   assert numpy.greater(nodes[:,1:], nodes[:,:-1]).all(), 'nodes must be sorted'
+  assert ncnodes == _comb(ndims + degree, degree), 'number of coordinate nodes does not correspond to uniformly refined simplex'
 
-  if ncnodes == ndims+1:
-    degree = 1
-    vnodes = cnodes
-  else:
-    degree = int((ncnodes * math.factorial(ndims))**(1/ndims))-1  # degree**ndims/ndims! < ncnodes < (degree+1)**ndims/ndims!
-    dims = numpy.arange(ndims)
-    strides = (dims+1+degree).cumprod() // (dims+1).cumprod() # (i+1+degree)!/(i+1)!
-    assert strides[-1] == ncnodes
-    vnodes = cnodes[:,(0,*strides-1)]
-
-  assert vnodes.shape == nodes.shape
   transforms = transformseq.IdentifierTransforms(ndims=ndims, name=name, length=nelems)
   root = function.Root(name, ndims)
   topo = topology.SimplexTopology(root, nodes, transforms, transforms)
@@ -668,5 +660,10 @@ def unitsquare(nelems, etype):
     raise Exception('invalid element type {!r}'.format(etype))
 
   return topo, geom/nelems
+
+try:
+  from math import comb as _comb # new in Python 3.8
+except ImportError:
+  _comb = lambda n, k: numpy.arange(1+max(k,n-k),1+n).prod() // math.factorial(min(k,n-k))
 
 # vim:sw=2:sts=2:et
