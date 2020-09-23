@@ -417,11 +417,13 @@ def parsegmsh(mshdata):
     if nd == ndims:
       vtags[name] = numpy.array(ielems)
     elif nd == ndims-1:
-      edgenodes = bnodes[ielems]
-      nodemask = numeric.asboolean(edgenodes.ravel(), size=nnodes, ordered=False)
-      ielems, = (nodemask[vnodes].sum(axis=1) >= ndims).nonzero() # all elements sharing at least ndims edgenodes
+      edgenodes = bnodes[ielems] # all edge elements in msh file
+      nodemask = numeric.asboolean(edgenodes.ravel(), size=nnodes, ordered=False) # all elements sharing at least 1 edge node
+      ielems, = (nodemask[vnodes].sum(axis=1) >= ndims).nonzero() # all elements sharing at least ndims edge nodes
       edgemap = {tuple(b): (ielem, iedge) for ielem, a in zip(ielems, vnodes[ielems[:,_,_], edge_vertices[_,:,:]]) for iedge, b in enumerate(a)}
-      btags[name] = numpy.array([edgemap[tuple(sorted(n))] for n in edgenodes])
+      belems = (edgemap.get(tuple(sorted(n))) for n in edgenodes) # map every edge element to its corresponding (ielem, iedge) combination
+      belems = filter(None, belems) # remove spurious edge elements that have no adjacent volume element
+      btags[name] = numpy.array(list(belems))
     elif nd == 0:
       ptags[name] = pnodes[ielems][...,0]
 
