@@ -1902,6 +1902,10 @@ class Square(Pointwise):
     idx = tuple(range(func.ndim))
     return Einsum((func, func), (idx, idx), idx)._sum(axis)
 
+class FloorDivide(Pointwise):
+  __slots__ = ()
+  evalf = numpy.floor_divide
+
 class Absolute(Pointwise):
   __slots__ = ()
   evalf = numpy.absolute
