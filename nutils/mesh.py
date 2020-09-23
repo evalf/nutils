@@ -341,6 +341,14 @@ def parsegmsh(mshdata):
   identities = numpy.zeros((0, 2), dtype=int) if not msh.gmsh_periodic \
     else numpy.concatenate([d for a, b, c, d in msh.gmsh_periodic], axis=0)
 
+  # It may happen that meshio provides periodicity relations for nodes that
+  # have no associated coordinate, typically because they are not part of any
+  # physical group. We need to filter these out to avoid errors further down.
+  mask = identities < len(coords)
+  keep = mask.any(axis=1)
+  assert mask[keep].all()
+  identities = identities[keep]
+
   # Tags is a list of (nd, name, ndelems) tuples that define topological groups
   # per dimension. Since meshio associates group names with cells, which are
   # concatenated in nodes, element ids are offset and concatenated to match.
