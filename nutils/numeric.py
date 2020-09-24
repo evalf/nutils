@@ -365,7 +365,7 @@ def poly_outer_product(left, right):
 
 @types.frozenarray.lru
 def poly_concatenate(coeffs):
-  coeffs = numpy.asarray(coeffs)
+  coeffs = [numpy.asarray(c) for c in coeffs]
   n = max(c.shape[1] for c in coeffs)
   coeffs = [numpy.pad(c, [(0,0)]+[(0,n-c.shape[1])]*(c.ndim-1), 'constant', constant_values=0) if c.shape[1] < n else c for c in coeffs]
   return numpy.concatenate(coeffs)
