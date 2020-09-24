@@ -318,6 +318,8 @@ def toarray(data):
   indices, values, shape = extract(data)
   if not shape:
     return values.sum()
+  if len(shape) == 1 and indices[0].shape[0] == shape[0] and (indices[0][:-1] < indices[0][1:]).all():
+    return values.copy()
   retval = numpy.zeros(shape, values.dtype)
   numpy.add.at(retval, indices, values)
   return retval
