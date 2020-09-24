@@ -9,6 +9,44 @@ features in inverse chronological order.
 New in v7.0 (in development)
 ----------------------------
 
+- Function module split into ``function`` and ``evaluable``
+
+  The function module has been split into a high-level, numpy-like ``function``
+  module and a lower-level ``evaluable`` module. The ``evaluable`` module is
+  agnostic to the so-called points axis. Scripts that don't use custom
+  implementations of ``function.Array`` should work without modification.
+
+  Custom implementations of the old ``function.Array`` should now derive from
+  ``evaluable.Array``. Furthermore, an accompanying implementation of
+  ``function.Array`` should be added with a ``prepare_eval`` method that
+  returns the former.
+
+  The following example implementation of an addition
+
+  >>> class Add(function.Array):
+  ...   def __init__(self, a, b):
+  ...     super().__init__(args=[a, b], shape=a.shape, dtype=a.dtype)
+  ...   def evalf(self, a, b):
+  ...     return a+b
+
+  should be converted to
+
+  >>> class Add(function.Array):
+  ...   def __init__(self, a: function.Array, b: function.Array) -> None:
+  ...     self.a = a
+  ...     self.b = b
+  ...     super().__init__(shape=a.shape, dtype=a.dtype)
+  ...   def prepare_eval(self, **kwargs) -> evaluable.Array:
+  ...     a = self.a.prepare_eval(**kwargs)
+  ...     b = self.b.prepare_eval(**kwargs)
+  ...     return Add_evaluable(a, b)
+  ...
+  >>> class Add_evaluable(evaluable.Array):
+  ...   def __init__(self, a, b):
+  ...     super().__init__(args=[a, b], shape=a.shape, dtype=a.dtype)
+  ...   def evalf(self, a, b):
+  ...     return a+b
+
 - Functions generating or consuming axes in expressions
 
   The expression syntax now supports functions that generate and/or consume
