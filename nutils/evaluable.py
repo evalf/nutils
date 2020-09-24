@@ -726,7 +726,7 @@ class Array(Evaluable):
   __pow__ = power
   __abs__ = lambda self: abs(self)
   __mod__  = lambda self, other: mod(self, other)
-  __str__ = __repr__ = lambda self: 'Array<{}>'.format(','.join(map(str, self.shape)) if hasattr(self, 'shape') else '?')
+  __str__ = __repr__ = lambda self: '{}.{}<{}>'.format(type(self).__module__, type(self).__name__, ','.join(map(str, self.shape)) if hasattr(self, 'shape') else '?')
 
   sum = sum
   prod = product
