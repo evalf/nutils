@@ -27,15 +27,14 @@ the ``export`` method.
 """
 
 from  .. import util, sparse, warnings
-import numpy, importlib
+import numpy, importlib, os
 
 from ._base import Matrix, MatrixError, BackendNotAvailable, ToleranceNotReached
 for cls in Matrix, MatrixError, BackendNotAvailable, ToleranceNotReached:
   cls.__module__ = __name__ # make it appear as if cls was defined here
 del cls # clean up for sphinx
 
-from ._numpy import assemble as _numpy_assemble
-_assemble = util.settable(_numpy_assemble)
+_assemble = util.settable(importlib.import_module('._'+(os.environ.get('NUTILS_MATRIX') or 'auto').lower(), __name__).assemble)
 
 def backend(s):
   if callable(s):

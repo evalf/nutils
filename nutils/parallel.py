@@ -28,7 +28,7 @@ will disable and a warning is printed.
 from . import numeric, warnings, util
 import os, multiprocessing, mmap, signal, contextlib, builtins, numpy, treelog
 
-_maxprocs = util.settable(1)
+_maxprocs = util.settable(int(os.environ.get('NUTILS_NPROCS') or 1))
 
 @util.positional_only
 def maxprocs(new: int):
