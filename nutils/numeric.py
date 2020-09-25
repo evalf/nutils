@@ -52,7 +52,7 @@ def overlapping(arr, axis=-1, n=2):
   overlapping.flags.writeable = False
   return overlapping
 
-def normdim(ndim, n):
+def normdim(ndim: int, n: int) -> int:
   'check bounds and make positive'
 
   assert isint(ndim) and ndim >= 0, 'ndim must be positive integer, got {}'.format(ndim)
@@ -207,12 +207,6 @@ def ix(args):
   idims = numpy.cumsum([0] + [arg.ndim for arg in args])
   ndims = idims[-1]
   return [arg.reshape((1,)*idim+(arg.size,)+(1,)*(ndims-idim-1)) for idim, arg in zip(idims, args)]
-
-def kronecker(arr, axis, length, pos):
-  axis = normdim(arr.ndim+1, axis)
-  kron = numpy.zeros(arr.shape[:axis]+(length,)+arr.shape[axis:], arr.dtype)
-  kron[(slice(None),)*axis + (pos,)] = arr
-  return kron
 
 class Broadcast1D:
   def __init__(self, arg):
@@ -390,13 +384,18 @@ def poly_grad(coeffs, ndim):
 def poly_eval(coeffs, points):
   coeffs = numpy.asarray(coeffs)
   points = numpy.asarray(points)
-  assert points.ndim == 2
-  if coeffs.shape[-1] == 0:
-    return numpy.zeros((points.shape[0],)+coeffs.shape[1:coeffs.ndim-points.shape[-1]])
-  for dim in reversed(range(points.shape[-1])):
-    result = numpy.empty((points.shape[0], *coeffs.shape[1:-1]), dtype=float)
-    result[:] = coeffs[...,-1]
-    points_dim = points[(slice(None),dim,*(numpy.newaxis,)*(result.ndim-1))]
+  assert points.ndim >= 1
+  coorddim = points.shape[-1]
+  if not coeffs.size:
+    return numpy.zeros(points.shape[:-1]+coeffs.shape[:coeffs.ndim-points.shape[-1]])
+  if coeffs.ndim == 0:
+    return numpy.full(points.shape[:-1], coeffs, dtype=float)
+  result = numpy.empty(points.shape[:-1]+coeffs.shape, dtype=float)
+  result[:] = coeffs
+  coeffs = result
+  for dim in reversed(range(coorddim)):
+    result = numpy.array(coeffs[...,-1], copy=True, dtype=float)
+    points_dim = points[(...,dim,*(numpy.newaxis,)*(result.ndim-points.ndim+1))]
     for j in reversed(range(coeffs.shape[-1]-1)):
       result *= points_dim
       result += coeffs[...,j]

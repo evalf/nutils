@@ -182,7 +182,7 @@ class Reference(types.Singleton):
       else self.empty if numpy.less_equal(levels, 0).all() \
       else self.with_children(cref.trim(clevels, maxrefine-1, ndivisions)
             for cref, clevels in zip(self.child_refs, self.child_divide(levels,maxrefine))) if maxrefine > 0 \
-      else self.slice(lambda vertices: numeric.dot(numeric.poly_eval(self._linear_bernstein[_], vertices), levels), ndivisions)
+      else self.slice(lambda vertices: numeric.dot(numeric.poly_eval(self._linear_bernstein, vertices), levels), ndivisions)
 
   @property
   def _linear_bernstein(self):
@@ -262,7 +262,7 @@ class Reference(types.Singleton):
     if len(ctransforms) == 1:
       ctrans, = ctransforms
       assert not ctrans
-      return ((), self.getpoints('vertex', maxrefine).coords, allindices),
+      return ((), self.getpoints('vertex', maxrefine), allindices),
     if maxrefine == 0:
       raise Exception('maxrefine is too low')
     cbins = [set() for ichild in range(self.nchildren)]

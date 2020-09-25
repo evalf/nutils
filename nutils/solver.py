@@ -50,7 +50,7 @@ In addition to ``solve_linear`` the solver module defines ``newton`` and
 time dependent problems.
 """
 
-from . import function, cache, numeric, sample, types, util, matrix, warnings, sparse
+from . import function, evaluable, cache, numeric, sample, types, util, matrix, warnings, sparse
 import abc, numpy, itertools, functools, numbers, collections, math, treelog as log
 
 
@@ -612,7 +612,7 @@ class pseudotime(cache.Recursion, length=1):
         raise ValueError('expected `inertia` with shape {} but got {}'.format(res.shape, inert.shape))
     self.target = target
     self.timesteptarget = '_pseudotime_timestep'
-    dt = function.Argument(self.timesteptarget, ())
+    dt = evaluable.Argument(self.timesteptarget, ())
     self.residuals = residual
     self.jacobians = _derivative([res + sample.Integral({smp: func/dt for smp, func in inert._integrands.items()} if inert else {}, shape=res.shape)
       for res, inert in zip(residual, inertia)], target)
@@ -716,10 +716,10 @@ class thetamethod(cache.Recursion, length=1, version=1):
     else:
       raise Exception('target0 is not supported in combination with multiple targets; use historysuffix instead')
     self.old_new.append((timetarget+historysuffix, timetarget))
-    subs0 = {new: function.Argument(old, self.lhs0[new].shape) for old, new in self.old_new}
-    dt = function.Argument(timetarget, ()) - subs0[timetarget]
-    self.residuals = [sample.Integral({smp: func * theta + function.replace_arguments(func, subs0) * (1-theta) for smp, func in res._integrands.items()}, shape=res.shape)
-                    + sample.Integral({smp: (func - function.replace_arguments(func, subs0)) / dt for smp, func in inert._integrands.items()} if inert else {}, shape=res.shape)
+    subs0 = {new: evaluable.Argument(old, self.lhs0[new].shape) for old, new in self.old_new}
+    dt = evaluable.Argument(timetarget, ()) - subs0[timetarget]
+    self.residuals = [sample.Integral({smp: func * theta + evaluable.replace_arguments(func, subs0) * (1-theta) for smp, func in res._integrands.items()}, shape=res.shape)
+                    + sample.Integral({smp: (func - evaluable.replace_arguments(func, subs0)) / dt for smp, func in inert._integrands.items()} if inert else {}, shape=res.shape)
                          for res, inert in zip(residual, inertia)]
     self.jacobians = _derivative(self.residuals, target)
 
@@ -882,7 +882,7 @@ def _parse_lhs_cons(lhs0, constrain, targets, argshapes, arguments):
 def _derivative(residual, target, jacobian=None):
   argshapes = _argshapes(residual)
   if jacobian is None:
-    jacobian = tuple(res.derivative(function.Argument(t, argshapes[t])) for res in residual for t in target)
+    jacobian = tuple(res.derivative(evaluable.Argument(t, argshapes[t])) for res in residual for t in target)
   elif len(jacobian) != len(residual) * len(target):
     raise ValueError('jacobian has incorrect length')
   elif any(jacobian[i*len(target)+j].shape != res.shape + argshapes[t] for i, res in enumerate(residual) for j, t in enumerate(target)):

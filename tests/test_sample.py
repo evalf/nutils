@@ -42,11 +42,11 @@ class rectilinear(TestCase):
     func = self.geom[0]**2 - self.geom[1]**2
     values = self.gauss2.eval(func)
     sampled = self.gauss2.asfunction(values)
-    with self.assertRaises(function.EvaluationError):
+    with self.assertRaises(evaluable.EvaluationError):
       self.bezier2.eval(sampled)
     self.assertAllEqual(self.gauss2.eval(sampled), values)
     arg = function.Argument('dofs', [2,3])
-    self.assertTrue(function.iszero(function.derivative(sampled, arg)))
+    self.assertTrue(evaluable.iszero(function.derivative(sampled, arg).prepare_eval(ndims=self.domain.ndims)))
 
 class integral(TestCase):
 
@@ -77,7 +77,7 @@ class integral(TestCase):
       places=15)
 
   def test_transpose(self):
-    with self.assertWarns(function.ExpensiveEvaluationWarning):
+    with self.assertWarns(evaluable.ExpensiveEvaluationWarning):
       self.assertAllAlmostEqual(
         self.topo.integrate(self.ns.eval_nm('basis_n (basis_m + 1_m) d:x'), degree=2).export('dense').T,
         self.topo.integral(self.ns.eval_nm('basis_n (basis_m + 1_m) d:x'), degree=2).T.eval().export('dense'),

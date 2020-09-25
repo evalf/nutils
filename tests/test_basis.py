@@ -8,7 +8,7 @@ class basisTest(TestCase):
     for regularity in range(continuity+1):
       elem_jumps = topo.interfaces.sample('gauss', 2).eval(function.jump(basis))
       self.assertAllAlmostEqual(elem_jumps, 0, places=10)
-      basis = function.grad(basis, geom)
+      basis = function.grad(basis, geom)[...,0]
 
   def assertPartitionOfUnity(self, topo, basis):
     sumbasis = topo.sample('uniform', 2).eval(basis.sum(0))

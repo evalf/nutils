@@ -9,6 +9,44 @@ features in inverse chronological order.
 New in v7.0 (in development)
 ----------------------------
 
+- Function module split into ``function`` and ``evaluable``
+
+  The function module has been split into a high-level, numpy-like ``function``
+  module and a lower-level ``evaluable`` module. The ``evaluable`` module is
+  agnostic to the so-called points axis. Scripts that don't use custom
+  implementations of ``function.Array`` should work without modification.
+
+  Custom implementations of the old ``function.Array`` should now derive from
+  ``evaluable.Array``. Furthermore, an accompanying implementation of
+  ``function.Array`` should be added with a ``prepare_eval`` method that
+  returns the former.
+
+  The following example implementation of an addition
+
+  >>> class Add(function.Array):
+  ...   def __init__(self, a, b):
+  ...     super().__init__(args=[a, b], shape=a.shape, dtype=a.dtype)
+  ...   def evalf(self, a, b):
+  ...     return a+b
+
+  should be converted to
+
+  >>> class Add(function.Array):
+  ...   def __init__(self, a: function.Array, b: function.Array) -> None:
+  ...     self.a = a
+  ...     self.b = b
+  ...     super().__init__(shape=a.shape, dtype=a.dtype)
+  ...   def prepare_eval(self, **kwargs) -> evaluable.Array:
+  ...     a = self.a.prepare_eval(**kwargs)
+  ...     b = self.b.prepare_eval(**kwargs)
+  ...     return Add_evaluable(a, b)
+  ...
+  >>> class Add_evaluable(evaluable.Array):
+  ...   def __init__(self, a, b):
+  ...     super().__init__(args=[a, b], shape=a.shape, dtype=a.dtype)
+  ...   def evalf(self, a, b):
+  ...     return a+b
+
 - Functions generating or consuming axes in expressions
 
   The expression syntax now supports functions that generate and/or consume
@@ -450,7 +488,7 @@ Release date: `2018-08-22 <https://github.com/evalf/nutils/releases/tag/v4.0>`_.
 
 - Eval arguments
 
-  Functions of type :class:`nutils.function.Evaluable` can receive
+  Functions of type ``nutils.function.Evaluable`` can receive
   arguments in addition to element and points by depending on instances
   of :func:`nutils.function.Argument` and having their values specified
   via `nutils.sample.Sample.eval`::
@@ -637,7 +675,7 @@ Release date: `2018-02-05 <https://github.com/evalf/nutils/releases/tag/v3.0>`_.
 
 - Changed: Evaluable.eval
 
-  The :func:`nutils.function.Evaluable.eval` method accepts a flexible
+  The ``nutils.function.Evaluable.eval`` method accepts a flexible
   number of keyword arguments, which are accessible to ``evalf`` by
   depending on the ``EVALARGS`` token. Standard keywords are
   ``_transforms`` for transformation chains, ``_points`` for integration
@@ -695,7 +733,7 @@ Release date: `2018-02-05 <https://github.com/evalf/nutils/releases/tag/v3.0>`_.
 
 - Changed: function derivatives
 
-  The :func:`nutils.function.derivative` ``axes`` argument has been
+  The ``nutils.function.derivative`` ``axes`` argument has been
   removed; ``derivative(func, var)`` now takes the derivative of
   ``func`` to all the axes in ``var``::
 
@@ -810,7 +848,7 @@ Release date: `2016-02-18 <https://github.com/evalf/nutils/releases/tag/v2.0>`_.
 
 - Changed: sum axis argument
 
-  The behaviour of :func:`nutils.function.sum` is inconsistent with that
+  The behaviour of ``nutils.function.sum`` is inconsistent with that
   of the Numpy counterparts. In case no axes argument is specified,
   Numpy sums over all axes, whereas Nutils sums over the last axis. To
   undo this mistake and transition to Numpy's behaviour, calling sum
@@ -827,7 +865,7 @@ Release date: `2016-02-18 <https://github.com/evalf/nutils/releases/tag/v2.0>`_.
 
 - Changed: Evaluable base class
 
-  Relevant only for custom :class:`nutils.function.Evaluable` objects,
+  Relevant only for custom ``nutils.function.Evaluable`` objects,
   the ``evalf`` method changes from constructor argument to
   instance/class method::
 

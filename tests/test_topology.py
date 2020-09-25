@@ -30,9 +30,9 @@ class TopologyAssertions:
             self.assertEqual(interfaces.opposites[index], opptrans)
           imask[index] += 1
           self.assertEqual(eref, opperef)
-          points = eref.getpoints('gauss', 2).coords
-          a0 = geom.prepare_eval().eval(_transforms=[trans], _points=points)
-          a1 = geom.prepare_eval().eval(_transforms=[opptrans], _points=points)
+          points = eref.getpoints('gauss', 2)
+          a0 = geom.prepare_eval(ndims=eref.ndims).eval(_transforms=[trans], _points=points)
+          a1 = geom.prepare_eval(ndims=eref.ndims).eval(_transforms=[opptrans], _points=points)
           numpy.testing.assert_array_almost_equal(a0, a1)
     self.assertTrue(numpy.equal(bmask, 1).all())
     self.assertTrue(numpy.equal(imask, 2).all())
@@ -65,38 +65,6 @@ class TopologyAssertions:
     if len(domain.boundary):
       rhs += domain.boundary.integrate((elemindicator*f*function.normal(geom)[None]).sum(axis=1)*function.J(geom), ischeme='gauss2')
     numpy.testing.assert_array_almost_equal(lhs, rhs)
-
-
-@parametrize
-class elem_project(TestCase):
-
-  def test_extraction(self):
-    topo, geom = mesh.rectilinear([numpy.linspace(-1,1,4)]*self.ndims)
-
-    splinebasis = topo.basis('spline', degree=self.degree)
-    bezierbasis = topo.basis('spline', degree=self.degree, knotmultiplicities=[numpy.array([self.degree+1]+[self.degree]*(n-1)+[self.degree+1]) for n in topo.shape])
-
-    sample = topo.sample('uniform', 2)
-    splinevals, beziervals = sample.eval([splinebasis,bezierbasis])
-    sextraction = topo.elem_project(splinebasis, degree=self.degree, check_exact=True)
-    bextraction = topo.elem_project(bezierbasis, degree=self.degree, check_exact=True)
-    self.assertEqual(len(sample.index), len(sextraction))
-    self.assertEqual(len(sample.index), len(bextraction))
-    for index, (sien,sext), (bien,bext) in zip(sample.index,sextraction,bextraction):
-      svals, bvals = splinevals[index], beziervals[index]
-      sien, bien = sien[0][0], bien[0][0]
-      self.assertEqual(len(sien), len(bien))
-      self.assertEqual(len(sien), sext.shape[0])
-      self.assertEqual(len(sien), sext.shape[1])
-      self.assertEqual(len(sien), bext.shape[0])
-      self.assertEqual(len(sien), bext.shape[1])
-      self.assertEqual(len(sien), (self.degree+1)**self.ndims)
-      numpy.testing.assert_array_almost_equal(bext, numpy.eye((self.degree+1)**self.ndims))
-      numpy.testing.assert_array_almost_equal(svals[:,sien], bvals[:,bien].dot(sext))
-
-for ndims in range(1, 4):
-  for degree in [2] if ndims == 3 else range(1, 4):
-    elem_project(ndims=ndims, degree=degree)
 
 
 @parametrize

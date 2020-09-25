@@ -33,6 +33,7 @@ __all__ = [
   'cli',
   'element',
   'elementseq',
+  'evaluable',
   'export',
   'expression',
   'function',

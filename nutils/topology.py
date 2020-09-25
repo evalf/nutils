@@ -34,7 +34,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, util, parallel, numeric, cache, transform, transformseq, warnings, matrix, types, points, sparse
+from . import element, function, evaluable, util, parallel, numeric, cache, transform, transformseq, warnings, matrix, types, points, sparse
 from .sample import Sample
 from .elementseq import References
 from .pointsseq import PointsSequence
@@ -150,9 +150,8 @@ class Topology(types.Singleton):
 
   @property
   def _index_coords(self):
-    index, tail = function.TransformsIndexWithTail(self.transforms, function.TRANS)
-    coords = function.ApplyTransforms(tail)
-    assert coords.shape == (self.ndims,)
+    index = function.transforms_index(self.transforms)
+    coords = function.transforms_coords(self.transforms, self.ndims)
     return index, coords
 
   @property
@@ -298,7 +297,7 @@ class Topology(types.Singleton):
 
     elif ptype == 'nodal':
 
-      ## data = function.Tuple([fun, onto])
+      ## data = evaluable.Tuple([fun, onto])
       ## F = W = 0
       ## for elem in self:
       ##   f, w = data(elem, 'bezier2')
@@ -309,10 +308,10 @@ class Topology(types.Singleton):
       F = numpy.zeros(onto.shape[0])
       W = numpy.zeros(onto.shape[0])
       I = numpy.zeros(onto.shape[0], dtype=bool)
-      fun = function.asarray(fun).prepare_eval()
-      data = function.Tuple(function.Tuple([fun, onto_f.simplified, function.Tuple(onto_ind)]) for onto_ind, onto_f in function.blocks(onto.prepare_eval()))
+      fun = function.asarray(fun).prepare_eval(ndims=self.ndims)
+      data = evaluable.Tuple(evaluable.Tuple([fun, onto_f.simplified, evaluable.Tuple(onto_ind)]) for onto_ind, onto_f in evaluable.blocks(onto.prepare_eval(ndims=self.ndims)))
       for ref, trans, opp in zip(self.references, self.transforms, self.opposites):
-        ipoints, iweights = ref.getischeme('bezier2')
+        ipoints = ref.getpoints('bezier2')
         for fun_, onto_f_, onto_ind_ in data.eval(_transforms=(trans, opp), _points=ipoints, **arguments or {}):
           onto_f_ = onto_f_.swapaxes(0,1) # -> dof axis, point axis, ...
           indfun_ = fun_[(slice(None),)+numpy.ix_(*onto_ind_[1:])]
@@ -362,12 +361,12 @@ class Topology(types.Singleton):
     if arguments is None:
       arguments = {}
 
-    levelset = levelset.prepare_eval().simplified
+    levelset = levelset.prepare_eval(ndims=self.ndims).optimized_for_numpy
     refs = []
     if leveltopo is None:
       with log.iter.percentage('trimming', self.references, self.transforms, self.opposites) as items:
         for ref, trans, opp in items:
-          levels = levelset.eval(_transforms=(trans, opp), _points=ref.getpoints('vertex', maxrefine).coords, **arguments)
+          levels = levelset.eval(_transforms=(trans, opp), _points=ref.getpoints('vertex', maxrefine), **arguments)
           refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
     else:
       log.info('collecting leveltopo elements')
@@ -415,56 +414,6 @@ class Topology(types.Singleton):
   withboundary   = lambda self, **kwargs: self.withgroups(bgroups=kwargs)
   withinterfaces = lambda self, **kwargs: self.withgroups(igroups=kwargs)
   withpoints     = lambda self, **kwargs: self.withgroups(pgroups=kwargs)
-
-  @util.single_or_multiple
-  def elem_project(self, funcs, degree, ischeme=None, check_exact=False, *, arguments=None):
-
-    if arguments is None:
-      arguments = {}
-
-    if ischeme is None:
-      ischeme = 'gauss{}'.format(degree*2)
-
-    blocks = function.Tuple([function.Tuple([function.Tuple((function.Tuple(ind), f.simplified))
-      for ind, f in function.blocks(func.prepare_eval())])
-        for func in funcs])
-
-    bases = {}
-    extractions = [[] for ifunc in range(len(funcs))]
-
-    with log.iter.percentage('projecting', self.references, self.transforms, self.opposites) as items:
-      for ref, trans, opp in items:
-
-        try:
-          points, projector, basis = bases[ref]
-        except KeyError:
-          points, weights = ref.getischeme(ischeme)
-          coeffs = ref.get_poly_coeffs('bernstein', degree=degree)
-          basis = numeric.poly_eval(coeffs[_], points)
-          npoints, nfuncs = basis.shape
-          A = numeric.dot(weights, basis[:,:,_] * basis[:,_,:])
-          projector = numpy.linalg.solve(A, basis.T * weights)
-          bases[ref] = points, projector, basis
-
-        for ifunc, ind_val in enumerate(blocks.eval(_transforms=(trans, opp), _points=points, **arguments)):
-
-          if len(ind_val) == 1:
-            (allind, sumval), = ind_val
-          else:
-            allind, where = zip(*[numpy.unique([i for ind, val in ind_val for i in ind[iax]], return_inverse=True) for iax in range(funcs[ifunc].ndim)])
-            sumval = numpy.zeros([len(n) for n in (points,) + allind])
-            for ind, val in ind_val:
-              I, where = zip(*[(w[:len(n)], w[len(n):]) for w, n in zip(where, ind)])
-              numpy.add.at(sumval, numpy.ix_(range(len(points)), *I), val)
-            assert not any(where)
-
-          ex = numeric.dot(projector, sumval)
-          if check_exact:
-            numpy.testing.assert_almost_equal(sumval, numeric.dot(basis, ex), decimal=15)
-
-          extractions[ifunc].append((allind, ex))
-
-    return extractions
 
   @log.withcontext
   def volume(self, geometry, ischeme='gauss', degree=1, *, arguments=None):
@@ -565,7 +514,7 @@ class Topology(types.Singleton):
     ielems = parallel.shempty(len(coords), dtype=int)
     xis = parallel.shempty((len(coords),len(geom)), dtype=float)
     J = function.localgradient(geom, self.ndims)
-    geom_J = function.Tuple((geom, J)).prepare_eval().simplified
+    geom_J = evaluable.Tuple((geom.prepare_eval(ndims=self.ndims), J.prepare_eval(ndims=self.ndims))).simplified
     with parallel.ctxrange('locating', len(coords)) as ipoints:
       for ipoint in ipoints:
         coord = coords[ipoint]
@@ -578,7 +527,7 @@ class Topology(types.Singleton):
           w = p.weights
           xi = (numpy.dot(w,xi) / w.sum())[_] if len(xi) > 1 else xi.copy()
           for iiter in range(maxiter):
-            coord_xi, J_xi = geom_J.eval(_transforms=(self.transforms[ielem], self.opposites[ielem]), _points=xi, **arguments or {})
+            coord_xi, J_xi = geom_J.eval(_transforms=(self.transforms[ielem], self.opposites[ielem]), _points=points.CoordsPoints(xi), **arguments or {})
             err = numpy.linalg.norm(coord - coord_xi)
             if err < tol:
               converged = True
@@ -2238,8 +2187,8 @@ class MultipatchTopology(Topology):
     'degree zero patchwise discontinuous basis'
 
     transforms = transformseq.PlainTransforms(tuple((patch.topo.root,) for patch in self.patches), self.ndims)
-    index, tail = function.TransformsIndexWithTail(transforms, function.TRANS)
-    coords = function.ApplyTransforms(tail)
+    index = function.transforms_index(transforms)
+    coords = function.transforms_coords(transforms, self.ndims)
     return function.DiscontBasis([types.frozenarray(1, dtype=int).reshape(1, *(1,)*self.ndims)]*len(self.patches), index, coords)
 
   @property
