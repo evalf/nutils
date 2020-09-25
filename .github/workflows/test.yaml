@@ -33,6 +33,7 @@ jobs:
           python -m pip install --upgrade .[docs,matrix_scipy,matrix_mkl,export_mpl,import_gmsh] coverage "Sphinx<3.1" ${{ matrix.dep }}
       - name: Test
         run: |
+          rm -rf devtools
           python -m coverage run -m unittest -b
           python -m coverage xml
       - name: Upload coverage
@@ -55,6 +56,7 @@ jobs:
           python -m pip install --upgrade .[matrix_mkl,export_mpl,import_gmsh] numpy==1.15 coverage
       - name: Test
         run: |
+          rm -rf devtools
           python -m coverage run -m unittest -b
           python -m coverage xml
       - name: Upload coverage
