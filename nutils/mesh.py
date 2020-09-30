@@ -381,6 +381,14 @@ def parsegmsh(mshdata):
   identities = numpy.zeros((0, 2), dtype=int) if not msh.gmsh_periodic \
     else numpy.concatenate([d for a, b, c, d in msh.gmsh_periodic], axis=0)
 
+  # It may happen that meshio provides periodicity relations for nodes that
+  # have no associated coordinate, typically because they are not part of any
+  # physical group. We need to filter these out to avoid errors further down.
+  mask = identities < len(coords)
+  keep = mask.any(axis=1)
+  assert mask[keep].all()
+  identities = identities[keep]
+
   # Tags is a list of (nd, name, ndelems) tuples that define topological groups
   # per dimension. Since meshio associates group names with cells, which are
   # concatenated in nodes, element ids are offset and concatenated to match.
@@ -449,11 +457,13 @@ def parsegmsh(mshdata):
     if nd == ndims:
       vtags[name] = numpy.array(ielems)
     elif nd == ndims-1:
-      edgenodes = bnodes[ielems]
-      nodemask = numeric.asboolean(edgenodes.ravel(), size=nnodes, ordered=False)
-      ielems, = (nodemask[vnodes].sum(axis=1) >= ndims).nonzero() # all elements sharing at least ndims edgenodes
+      edgenodes = bnodes[ielems] # all edge elements in msh file
+      nodemask = numeric.asboolean(edgenodes.ravel(), size=nnodes, ordered=False) # all elements sharing at least 1 edge node
+      ielems, = (nodemask[vnodes].sum(axis=1) >= ndims).nonzero() # all elements sharing at least ndims edge nodes
       edgemap = {tuple(b): (ielem, iedge) for ielem, a in zip(ielems, vnodes[ielems[:,_,_], edge_vertices[_,:,:]]) for iedge, b in enumerate(a)}
-      btags[name] = numpy.array([edgemap[tuple(sorted(n))] for n in edgenodes])
+      belems = (edgemap.get(tuple(sorted(n))) for n in edgenodes) # map every edge element to its corresponding (ielem, iedge) combination
+      belems = filter(None, belems) # remove spurious edge elements that have no adjacent volume element
+      btags[name] = numpy.array(list(belems))
     elif nd == 0:
       ptags[name] = pnodes[ielems][...,0]
 
@@ -529,20 +539,12 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
   nverts = len(coords)
   nelems, ncnodes = cnodes.shape
   ndims = nodes.shape[1] - 1
-  assert len(nodes) == nelems
+  degree = 1 if ncnodes == ndims+1 else int((ncnodes * math.factorial(ndims))**(1/ndims))-1
+
+  assert len(nodes) == nelems, 'number of simplex vertices and coordinates do not match'
   assert numpy.greater(nodes[:,1:], nodes[:,:-1]).all(), 'nodes must be sorted'
+  assert ncnodes == _comb(ndims + degree, degree), 'number of coordinate nodes does not correspond to uniformly refined simplex'
 
-  if ncnodes == ndims+1:
-    degree = 1
-    vnodes = cnodes
-  else:
-    degree = int((ncnodes * math.factorial(ndims))**(1/ndims))-1  # degree**ndims/ndims! < ncnodes < (degree+1)**ndims/ndims!
-    dims = numpy.arange(ndims)
-    strides = (dims+1+degree).cumprod() // (dims+1).cumprod() # (i+1+degree)!/(i+1)!
-    assert strides[-1] == ncnodes
-    vnodes = cnodes[:,(0,*strides-1)]
-
-  assert vnodes.shape == nodes.shape
   transforms = transformseq.IdentifierTransforms(ndims=ndims, name=name, length=nelems)
   topo = topology.SimplexTopology(nodes, transforms, transforms)
   coeffs = element.getsimplex(ndims).get_poly_coeffs('lagrange', degree=degree)
@@ -697,5 +699,10 @@ def unitsquare(nelems, etype):
     raise Exception('invalid element type {!r}'.format(etype))
 
   return topo, function.rootcoords(2) / nelems
+
+try:
+  from math import comb as _comb # new in Python 3.8
+except ImportError:
+  _comb = lambda n, k: numpy.arange(1+max(k,n-k),1+n).prod() // math.factorial(min(k,n-k))
 
 # vim:sw=2:sts=2:et
