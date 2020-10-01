@@ -675,3 +675,16 @@ class asciitree(TestCase):
                      '  └ %5 = Diagonalize(d2,d2)\n'
                      '    └ %3 = Argument(a2)\n'
                      '      └ %0 = Evaluable')
+
+class simplify(TestCase):
+
+  def test_multiply_transpose(self):
+    dummy = evaluable.Argument('dummy', shape=[2,2,2], dtype=float)
+    f = evaluable.multiply(dummy,
+          evaluable.Transpose(evaluable.multiply(dummy,
+            evaluable.Transpose(dummy, (2,0,1))), (2,0,1)))
+    # The test below is not only to verify that no simplifications are
+    # performed, but also to make sure that simplified does not get stuck in a
+    # circular dependence. This used to be the case prior to adding the
+    # isinstance(other_trans, Transpose) restriction in Transpose._multiply.
+    self.assertEqual(f.simplified, f)
