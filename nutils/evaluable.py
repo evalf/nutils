@@ -1125,7 +1125,9 @@ class Transpose(Array):
 
   def _multiply(self, other):
     other_trans = other._transpose(self._invaxes)
-    if other_trans is not None:
+    if other_trans is not None and not isinstance(other_trans, Transpose):
+      # The second clause is to avoid infinite recursions; see
+      # tests.test_evaluable.simplify.test_multiply_transpose.
       return Transpose(Multiply([self.func, other_trans]), self.axes)
     trymultiply = self.func._multiply(Transpose(other, self._invaxes))
     if trymultiply is not None:
