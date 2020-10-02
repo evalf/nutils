@@ -873,8 +873,8 @@ class Normal(Array):
     GG = dot(insertaxis(G, -1, n), insertaxis(G, -2, n), -3)
     GinvGG = dot(insertaxis(G, -1, n), insertaxis(inverse(GG), -3, m), -2)
     Gder = derivative(G, var, seen)
-    nGder = dot(appendaxes(self, (n, *var.shape)), Gder, self.ndim)
-    return -dot(appendaxes(GinvGG, var.shape), insertaxis(nGder, self.ndim, m), self.ndim)
+    nGder = dot(appendaxes(self, (n, *var.shape)), Gder, self.ndim-1)
+    return -dot(appendaxes(GinvGG, var.shape), insertaxis(nGder, self.ndim-1, m), self.ndim)
 
 class Constant(Array):
 
