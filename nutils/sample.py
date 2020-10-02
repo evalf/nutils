@@ -516,7 +516,8 @@ class Integral(types.Singleton):
     replaced : :class:`Integral`
     '''
 
-    return Integral({di: function.replace_arguments(integrand, arguments) for di, integrand in self._integrands.items()}, shape=self.shape)
+    arguments = {k: v if isinstance(v, evaluable.Array) else function.Array.cast(v).prepare_eval(npoints=None) for k, v in arguments.items()}
+    return Integral({di: evaluable.replace_arguments(integrand, arguments) for di, integrand in self._integrands.items()}, shape=self.shape)
 
   def contains(self, name):
     '''Test if target occurs in any of the integrands.
