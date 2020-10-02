@@ -13,16 +13,31 @@ defaults:
     shell: bash
 jobs:
   test:
-    name: ${{ matrix.os }}, Py${{ matrix.python-version }}
+    name: 'os: ${{ matrix.os }}, py: ${{ matrix.python-version }}, matrix: ${{ matrix.matrix-backend }}, nprocs: ${{ matrix.nprocs }}, numpy: ${{ matrix.numpy-version }}'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: [3.5, 3.6, 3.7, 3.8]
         include:
-          - os: windows-latest
-            dep: 'psutil'
+          # base
+          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
+          # os
+          - {os: windows-latest, python-version: 3.8, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
+          - {os: macos-latest  , python-version: 3.8, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
+          # python-version
+          - {os: ubuntu-latest , python-version: 3.5, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
+          - {os: ubuntu-latest , python-version: 3.6, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
+          - {os: ubuntu-latest , python-version: 3.7, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
+          # matrix-backend
+          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: scipy, nprocs: 1, numpy-version: latest}
+          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: mkl  , nprocs: 1, numpy-version: latest}
+          # nprocs
+          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: numpy, nprocs: 2, numpy-version: latest}
+          # numpy-version
+          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: numpy, nprocs: 1, numpy-version: 1.15  }
       fail-fast: false
+    env:
+      NUTILS_MATRIX: ${{ matrix.matrix-backend }}
+      NUTILS_NPROCS: ${{ matrix.nprocs }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -32,33 +47,24 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: |
-          python -u -m pip install --upgrade pip
-          python -u -m pip install --upgrade .[docs,matrix_scipy,matrix_mkl,export_mpl,import_gmsh] coverage ${{ matrix.dep }}
+          NUTILS_EXTRAS="export_mpl,import_gmsh"
+          DEPENDENCIES=
+          case "${{ matrix.os }}" in
+            windows-latest) DEPENDENCIES="$DEPENDENCIES psutil";;
+          esac
+          case "${{ matrix.matrix-backend }}" in
+            scipy) NUTILS_EXTRAS=$NUTILS_EXTRAS,matrix_scipy;;
+            mkl) NUTILS_EXTRAS=$NUTILS_EXTRAS,matrix_mkl;;
+          esac
+          case "${{ matrix.numpy-version }}" in
+            latest) NUTILS_EXTRAS="$NUTILS_EXTRAS,docs";;
+            *) DEPENDENCIES="$DEPENDENCIES numpy==${{ matrix.numpy-version }}";;
+          esac
+          python -u -m pip install --upgrade pip wheel
+          python -u -m pip install --upgrade .[$NUTILS_EXTRAS] coverage $DEPENDENCIES
       - name: Test
         run: |
-          python -u -m coverage run -m unittest -b
-          python -u -m coverage xml
-      - name: Upload coverage
-        uses: codecov/codecov-action@v1
-        with:
-          fail_ci_if_error: true
-  test-old-numpy:
-    name: 'ubuntu-latest, Py3.6, Numpy 1.15'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-      - name: Set up Python 3.6
-        uses: actions/setup-python@v1
-        with:
-          python-version: 3.6
-      - name: Install dependencies
-        run: |
-          python -u -m pip install --upgrade pip
-          python -u -m pip install --upgrade .[matrix_mkl,export_mpl,import_gmsh] numpy==1.15 coverage
-      - name: Test
-        run: |
-          python -u -m coverage run -m unittest -b
+          python -u -m coverage run -m unittest -bq
           python -u -m coverage xml
       - name: Upload coverage
         uses: codecov/codecov-action@v1
