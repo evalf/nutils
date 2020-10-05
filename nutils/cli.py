@@ -323,6 +323,9 @@ def setup(scriptname: str,
     consolellog = treelog.FilterLog(consolellog, minlevel=tuple(Level)[5-verbose])
   htmllog = _htmllog(outdir, scriptname, kwargs)
 
+  if nprocs == 1:
+    os.environ['MKL_THREADING_LAYER'] = 'SEQUENTIAL'
+
   with htmllog, \
        _status(outuri+'/'+htmllog.filename, richoutput), \
        treelog.set(treelog.TeeLog(consolellog, htmllog)), \

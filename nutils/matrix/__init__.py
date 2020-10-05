@@ -41,8 +41,8 @@ def backend(s):
   if callable(s):
     return _assemble.sets(s)
   elif isinstance(s, str):
-    name, *args = s.split(':')
-    return _import_backend(name).setassemble(_assemble.sets, *args)
+    backend = importlib.import_module('._'+s.lower(), __name__)
+    return _assemble.sets(backend.assemble)
   else:
     raise MatrixError('backend should be either a string or a callable')
 
@@ -68,17 +68,12 @@ def diag(d):
 def eye(n):
   return diag(numpy.ones(n))
 
-def _import_backend(name):
-  return importlib.import_module('._'+name.lower(), __name__)
-
-def _helper(name, *args):
+def _helper(name):
   warnings.deprecation("matrix.{0}(...) is deprecated; use matrix.backend('{0}', ...) instead".format(name))
   try:
-    backend = _import_backend(name)
+    return backend(name)
   except BackendNotAvailable:
     return None
-  else:
-    return backend.setassemble(_assemble.sets, *args)
 
 def Numpy():
   return _helper('Numpy')
@@ -86,7 +81,7 @@ def Numpy():
 def Scipy():
   return _helper('Scipy')
 
-def MKL(threading:str=None):
-  return _helper('MKL', threading)
+def MKL():
+  return _helper('MKL')
 
 # vim:sw=2:sts=2:et

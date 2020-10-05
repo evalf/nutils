@@ -226,10 +226,9 @@ class Scipy(Solver):
       with matrix.Scipy():
         pass
 
-@testing.parametrize
 class MKL(Solver):
   def setUp(self):
-    self.backend = 'mkl:' + self.threading
+    self.backend = 'mkl'
     self.args=[{},
       dict(solver='direct', atol=1e-8),
       dict(atol=1e-5, precon='diag', truncate=5),
@@ -241,8 +240,5 @@ class MKL(Solver):
     with self.assertWarns(warnings.NutilsDeprecationWarning):
       with matrix.MKL():
         pass
-
-MKL(threading='sequential')
-MKL(threading='tbb')
 
 del Solver
