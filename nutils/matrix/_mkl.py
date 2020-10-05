@@ -23,24 +23,13 @@ from .. import numeric, util, warnings
 from contextlib import contextmanager
 from ctypes import c_long, c_int, c_double, byref
 import treelog as log
-import numpy
+import os, numpy
 
 libmkl = util.loadlib(linux='libmkl_rt.so', darwin='libmkl_rt.dylib', win32='mkl_rt.dll')
 if not libmkl:
   raise BackendNotAvailable('the Intel MKL matrix backend requires libmkl to be installed (try: pip install mkl)')
 
-@contextmanager
-def setassemble(sets, threading:str=None):
-  if not threading:
-    from ..parallel import _maxprocs
-    threading = 'tbb' if _maxprocs.value > 1 else 'sequential'
-  value = dict(intel=0, sequential=1, pgi=2, gnu=3, tbb=4)[threading.lower()]
-  oldvalue = libmkl.mkl_set_threading_layer(byref(c_long(value)))
-  try:
-    with sets(assemble):
-      yield
-  finally:
-    libmkl.mkl_set_threading_layer(byref(c_long(oldvalue)))
+os.environ.setdefault('MKL_THREADING_LAYER', 'TBB')
 
 def assemble(data, index, shape):
   return MKLMatrix(data, index[0].searchsorted(numpy.arange(shape[0]+1))+1, index[1]+1, shape[1])

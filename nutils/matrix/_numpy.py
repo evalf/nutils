@@ -22,9 +22,6 @@ from ._base import Matrix, MatrixError
 from .. import numeric
 import numpy, functools
 
-def setassemble(sets):
-  return sets(assemble)
-
 def assemble(data, index, shape):
   array = numpy.zeros(shape, dtype=data.dtype)
   if len(data):

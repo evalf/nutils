@@ -27,9 +27,6 @@ try:
 except ImportError:
   raise BackendNotAvailable('the Scipy matrix backend requires scipy to be installed (try: pip install scipy)')
 
-def setassemble(sets):
-  return sets(assemble)
-
 def assemble(data, index, shape):
   return ScipyMatrix(scipy.sparse.csr_matrix((data, index), shape))
 
