@@ -12,6 +12,34 @@ def chunksize(n):
     sparse.chunksize = chunksize
 
 
+class dtype(unittest.TestCase):
+
+  def test_256(self):
+    dtype = sparse.dtype([256])
+    self.assertTrue(sparse.issparsedtype(dtype))
+    self.assertEqual(dtype.itemsize, 1+8)
+
+  def test_257_f8(self):
+    dtype = sparse.dtype([257], 'f8')
+    self.assertTrue(sparse.issparsedtype(dtype))
+    self.assertEqual(dtype.itemsize, 2+8)
+
+  def test_256_257_f4(self):
+    dtype = sparse.dtype([256, 257], 'f4')
+    self.assertTrue(sparse.issparsedtype(dtype))
+    self.assertEqual(dtype.itemsize, 3+4)
+
+  def test_65536(self):
+    dtype = sparse.dtype([65536])
+    self.assertTrue(sparse.issparsedtype(dtype))
+    self.assertEqual(dtype.itemsize, 2+8)
+
+  def test_65537_f2(self):
+    dtype = sparse.dtype([65537], 'f2')
+    self.assertTrue(sparse.issparsedtype(dtype))
+    self.assertEqual(dtype.itemsize, 4+2)
+
+
 class vector(unittest.TestCase):
 
   def setUp(self):

@@ -750,7 +750,7 @@ cranknicolson = functools.partial(thetamethod, theta=0.5)
 @log.withcontext
 @single_or_multiple
 @types.apply_annotations
-@cache.function
+@cache.function(version=1)
 def optimize(target, functional:sample.strictintegral, *, tol:types.strictfloat=0., arguments:argdict={}, droptol:float=None, constrain:arrayordict=None, lhs0:types.frozenarray[types.strictfloat]=None, relax0:float=1., linesearch=None, failrelax:types.strictfloat=1e-6, **kwargs):
   '''find the minimizer of a given functional
 
@@ -791,6 +791,12 @@ def optimize(target, functional:sample.strictintegral, *, tol:types.strictfloat=
   solveargs = _strip(kwargs, 'lin')
   if kwargs:
     raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
+  if any(t not in functional.argshapes for t in target):
+    if not droptol:
+      raise ValueError('target {} does not occur in integrand; consider setting droptol>0'.format(', '.join(t for t in target if t not in functional.argshapes)))
+    target = [t for t in target if t in functional.argshapes]
+    if not target:
+      return {}
   residual = [functional.derivative(t) for t in target]
   jacobian = _derivative(residual, target)
   lhs0, constrain = _parse_lhs_cons(lhs0, constrain, target, functional.argshapes, arguments)
