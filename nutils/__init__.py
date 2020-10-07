@@ -24,7 +24,7 @@ from distutils.version import LooseVersion
 assert sys.version_info >= (3, 5)
 assert LooseVersion(numpy.version.version) >= LooseVersion('1.15'), 'nutils requires numpy 1.15 or higher, got {}'.format(numpy.version.version)
 
-version = '6.2'
+version = '6.3a0'
 version_name = 'garak-guksu'
 long_version = ('{} "{}"' if version_name else '{}').format(version, version_name)
 
