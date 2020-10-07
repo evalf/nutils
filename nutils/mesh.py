@@ -380,6 +380,14 @@ def parsegmsh(mshdata):
   identities = numpy.zeros((0, 2), dtype=int) if not msh.gmsh_periodic \
     else numpy.concatenate([d for a, b, c, d in msh.gmsh_periodic], axis=0)
 
+  # It may happen that meshio provides periodicity relations for nodes that
+  # have no associated coordinate, typically because they are not part of any
+  # physical group. We need to filter these out to avoid errors further down.
+  mask = identities < len(coords)
+  keep = mask.any(axis=1)
+  assert mask[keep].all()
+  identities = identities[keep]
+
   # Tags is a list of (nd, name, ndelems) tuples that define topological groups
   # per dimension. Since meshio associates group names with cells, which are
   # concatenated in nodes, element ids are offset and concatenated to match.
@@ -448,11 +456,13 @@ def parsegmsh(mshdata):
     if nd == ndims:
       vtags[name] = numpy.array(ielems)
     elif nd == ndims-1:
-      edgenodes = bnodes[ielems]
-      nodemask = numeric.asboolean(edgenodes.ravel(), size=nnodes, ordered=False)
-      ielems, = (nodemask[vnodes].sum(axis=1) >= ndims).nonzero() # all elements sharing at least ndims edgenodes
+      edgenodes = bnodes[ielems] # all edge elements in msh file
+      nodemask = numeric.asboolean(edgenodes.ravel(), size=nnodes, ordered=False) # all elements sharing at least 1 edge node
+      ielems, = (nodemask[vnodes].sum(axis=1) >= ndims).nonzero() # all elements sharing at least ndims edge nodes
       edgemap = {tuple(b): (ielem, iedge) for ielem, a in zip(ielems, vnodes[ielems[:,_,_], edge_vertices[_,:,:]]) for iedge, b in enumerate(a)}
-      btags[name] = numpy.array([edgemap[tuple(sorted(n))] for n in edgenodes])
+      belems = (edgemap.get(tuple(sorted(n))) for n in edgenodes) # map every edge element to its corresponding (ielem, iedge) combination
+      belems = filter(None, belems) # remove spurious edge elements that have no adjacent volume element
+      btags[name] = numpy.array(list(belems))
     elif nd == 0:
       ptags[name] = pnodes[ielems][...,0]
 

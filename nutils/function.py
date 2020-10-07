@@ -583,9 +583,9 @@ class Array(Evaluable):
   nsymgrad = lambda self, geom, ndims=0: nsymgrad(self, geom, ndims)
 
   def vector(self, ndims):
-    if self.ndim != 1:
-      raise Exception('only a scalar basis van be vectorized')
-    return ravel(diagonalize(insertaxis(self, 1, ndims), 1, 2), 0)
+    if not self.ndim:
+      raise Exception('a scalar function cannot be vectorized')
+    return ravel(diagonalize(insertaxis(self, 1, ndims), 1), 0)
 
   @property
   def blocks(self):
@@ -3093,11 +3093,7 @@ class RevolutionAngle(Array):
   __cache__ = 'prepare_eval'
 
   def __init__(self):
-    super().__init__(args=[], shape=[], dtype=float)
-
-  @property
-  def isconstant(self):
-    return False
+    super().__init__(args=[EVALARGS], shape=[], dtype=float)
 
   def evalf(self):
     raise Exception('RevolutionAngle should not be evaluated')

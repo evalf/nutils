@@ -63,7 +63,7 @@ def issparse(data):
 
 def issparsedtype(dtype):
   return dtype.names == ('index', 'value') and all(
-    len(value) == 3 and isinstance(value[2], int) and 0 <= value[2] < 256**value[0].itemsize
+    len(value) == 3 and isinstance(value[2], int) and 0 <= value[2] <= 256**value[0].itemsize
       for value in dtype['index'].fields.values())
 
 def ndim(data):

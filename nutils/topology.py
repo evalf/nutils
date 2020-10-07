@@ -599,7 +599,7 @@ class Topology(types.Singleton):
 
   def extruded(self, geom, nelems, periodic=False, bnames=('front','back')):
     assert geom.ndim == 1
-    root = transform.Identifier(self.ndims+1, 'extrude')
+    root = transform.Identifier(1, 'extrude')
     extopo = self * StructuredLine(root, i=0, j=nelems, periodic=periodic, bnames=bnames)
     exgeom = function.concatenate(function.bifurcate(geom, function.rootcoords(1)))
     return extopo, exgeom
@@ -1290,7 +1290,7 @@ class StructuredTopology(Topology):
       coords = coords[...,_]
     if not geom.shape == coords.shape[1:] == (self.ndims,):
       raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
-    index = function.rootcoords(len(self.axes))[[axis.isdim for axis in self.axes]]
+    index = function.rootcoords(len(self.axes))[[axis.isdim for axis in self.axes]] * 2**self.nrefine - [axis.i for axis in self.axes if axis.isdim]
     basis = function.concatenate([function.eye(self.ndims), function.diagonalize(index)], axis=0)
     A, b = self.integrate([(basis[:,_,:] * basis[_,:,:]).sum(-1), (basis * geom).sum(-1)], degree=2)
     x = A.solve(b)
@@ -1303,7 +1303,7 @@ class StructuredTopology(Topology):
     mincoords, maxcoords = numpy.sort([geom0, geom0 + scale * self.shape], axis=0)
     outofbounds = numpy.less(coords, mincoords - eps) | numpy.greater(coords, maxcoords + eps)
     if outofbounds.any():
-      raise LocateError('failed to locate {}/{} points'.format(outofbounds.sum(), len(coords)))
+      raise LocateError('failed to locate {}/{} points'.format(outofbounds.any(axis=1).sum(), len(coords)))
     xi = (coords - geom0) / scale
     ielem = numpy.minimum(numpy.maximum(xi.astype(int), 0), numpy.array(self.shape)-1)
     return self._sample(numpy.ravel_multi_index(ielem.T, self.shape), xi - ielem)
