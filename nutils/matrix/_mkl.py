@@ -32,7 +32,12 @@ if not libmkl:
 os.environ.setdefault('MKL_THREADING_LAYER', 'TBB')
 
 def assemble(data, index, shape):
-  return MKLMatrix(data, index[0].searchsorted(numpy.arange(shape[0]+1))+1, index[1]+1, shape[1])
+  # In the increments below the output dtype is set to int32 not only to avoid
+  # an additional allocation, but crucially also to avoid truncation in case
+  # the incremented index overflows the original type.
+  return MKLMatrix(data, ncols=shape[1],
+    rowptr=numpy.add(index[0].searchsorted(numpy.arange(shape[0]+1)), 1, dtype=numpy.int32),
+    colidx=numpy.add(index[1], 1, dtype=numpy.int32))
 
 class Pardiso:
   '''Wrapper for libmkl.pardiso.
