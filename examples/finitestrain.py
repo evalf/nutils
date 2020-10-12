@@ -27,7 +27,7 @@ def main(nelems:int, etype:str, btype:str, degree:int, poisson:float, angle:floa
        Poisson's ratio, nonnegative and stricly smaller than 1/2.
      angle [20]
        Rotation angle for right clamp (degrees).
-     restol [1e-10]
+     restol [1e-8]
        Newton tolerance.
      trim [no]
        Create circular-shaped hole.
@@ -87,7 +87,7 @@ class test(testing.TestCase):
 
   @testing.requires('matplotlib')
   def test_default(self):
-    lhs0, lhs1 = main(nelems=4, etype='square', btype='std', degree=1, poisson=.25, angle=10, restol=1e-10, trim=False)
+    lhs0, lhs1 = main(nelems=4, etype='square', btype='std', degree=1, poisson=.25, angle=10, restol=1e-8, trim=False)
     with self.subTest('linear'): self.assertAlmostEqual64(lhs0, '''
       eNpjYMAE5ZeSL/HqJ146YeB4cbvhl/PzjPrOcVy8da7b4Og5W6Osc/rGt88+MvY+u+yC7NlcQ+GzEsYP
       z/w3nn1mvon7mdsXJM8oG304vdH45Oluk2WnlU1bTgMAv04qwA==''')
@@ -97,7 +97,7 @@ class test(testing.TestCase):
 
   @testing.requires('matplotlib')
   def test_mixed(self):
-    lhs0, lhs1 = main(nelems=4, etype='mixed', btype='std', degree=1, poisson=.25, angle=10, restol=1e-10, trim=False)
+    lhs0, lhs1 = main(nelems=4, etype='mixed', btype='std', degree=1, poisson=.25, angle=10, restol=1e-8, trim=False)
     with self.subTest('linear'): self.assertAlmostEqual64(lhs0, '''
       eNpjYICAqxfbL+Xov7kIYi80OA+mtxleOA+iVxjNPBdncOdc6sXT51yNgs8ZGX89e8/Y66zqBaOz/Ya8
       Z4WMX575ZTz5zAqTgDPKRh9O374geWaj8cnT3SbLTiubtpwGAJ6hLHk=''')
@@ -107,7 +107,7 @@ class test(testing.TestCase):
 
   @testing.requires('matplotlib')
   def test_spline(self):
-    lhs0, lhs1 = main(nelems=4, etype='square', btype='spline', degree=2, poisson=.25, angle=10, restol=1e-10, trim=False)
+    lhs0, lhs1 = main(nelems=4, etype='square', btype='spline', degree=2, poisson=.25, angle=10, restol=1e-8, trim=False)
     with self.subTest('linear'): self.assertAlmostEqual64(lhs0, '''
       eNpjYMAOrl3J0vmixaY7QS9N545+w9VaA5eLXYZp51MvVl/I1F164YeBxAVlI//zzMZB52KN35+dd+H9
       2Vd6b85yGx0/a22cd/aXMetZH5PTZ7ZfaDmzTL/nzFGj3DPPje3OLDBhPvPC5N7p2xckz/gZsJwRML5z
