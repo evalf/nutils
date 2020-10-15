@@ -68,31 +68,6 @@ for path in sorted((root/'docs').glob('**/*.rst')):
     doctest.addTest(DocTestCase(test, optionflags=_doctest.ELLIPSIS, checker=checker, requires=['matplotlib']))
 
 
-class sphinx(nutils.testing.TestCase):
-
-  def setUp(self):
-    super().setUp()
-    self.tmpdir = pathlib.Path(self.enter_context(tempfile.TemporaryDirectory(prefix='nutils')))
-
-  @nutils.testing.requires('sphinx', 'matplotlib', 'scipy')
-  def test(self):
-    from sphinx.application import Sphinx
-    app = Sphinx(srcdir=str(root/'docs'),
-                 confdir=str(root/'docs'),
-                 outdir=str(self.tmpdir/'html'),
-                 doctreedir=str(self.tmpdir/'doctree'),
-                 buildername='html',
-                 freshenv=True,
-                 warningiserror=True,
-                 confoverrides=dict(nitpicky=True))
-    app.build()
-    if app.statuscode:
-      self.fail('sphinx build failed with code {}'.format(app.statuscode))
-
-
 def load_tests(loader, suite, pattern):
   # Ignore default suite (containing `DocTestCase`).
-  suite = unittest.TestSuite()
-  suite.addTest(doctest)
-  suite.addTests(loader.loadTestsFromTestCase(sphinx))
-  return suite
+  return doctest

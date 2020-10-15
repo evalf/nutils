@@ -4,25 +4,63 @@ on:
   push:
     branches:
       - master
-      - v*.x
-env:
-  OMP_NUM_THREADS: 1
-  VECLIB_MAXIMUM_THREADS: 1
+      - release/*
 defaults:
   run:
     shell: bash
+env:
+  official_container_repository: ghcr.io/evalf/nutils
 jobs:
+  build-python-package:
+    name: Build Python package
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Install build dependencies
+        run: python3 -m pip install setuptools wheel
+      - name: Build package
+        run: |
+          # To make the wheels reproducible, set the timestamp of the (files in
+          # the) generated wheels to the date of the commit.
+          export SOURCE_DATE_EPOCH=`git show -s --format=%ct`
+          python3 setup.py sdist bdist_wheel
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: python-package
+          path: dist/
+          if-no-files-found: error
   test:
-    name: ${{ matrix.os }}, Py${{ matrix.python-version }}
+    needs: build-python-package
+    name: 'Test os: ${{ matrix.os }}, py: ${{ matrix.python-version }}, matrix: ${{ matrix.matrix-backend }}, nprocs: ${{ matrix.nprocs }}, numpy: ${{ matrix.numpy-version }}'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: [3.5, 3.6, 3.7, 3.8]
         include:
-          - os: windows-latest
-            dep: 'psutil'
+          # base
+          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
+          # os
+          - {os: windows-latest, python-version: 3.8, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
+          - {os: macos-latest  , python-version: 3.8, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
+          # python-version
+          - {os: ubuntu-latest , python-version: 3.5, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
+          - {os: ubuntu-latest , python-version: 3.6, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
+          - {os: ubuntu-latest , python-version: 3.7, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
+          # matrix-backend
+          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: scipy, nprocs: 1, numpy-version: latest}
+          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: mkl  , nprocs: 1, numpy-version: latest}
+          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: mkl  , nprocs: 2, numpy-version: latest}
+          # nprocs
+          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: numpy, nprocs: 2, numpy-version: latest}
+          # numpy-version
+          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: numpy, nprocs: 1, numpy-version: 1.15  }
       fail-fast: false
+    env:
+      NUTILS_MATRIX: ${{ matrix.matrix-backend }}
+      NUTILS_NPROCS: ${{ matrix.nprocs }}
+      OMP_NUM_THREADS: 1
+      VECLIB_MAXIMUM_THREADS: 1
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -30,37 +68,122 @@ jobs:
         uses: actions/setup-python@v1
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
+      - name: Download Python package artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: python-package
+          path: dist/
+      - name: Install Nutils and dependencies
+        id: install
+        env:
+          _os: ${{ matrix.os }}
+          _matrix: ${{ matrix.matrix-backend }}
+          _numpy: ${{ matrix.numpy-version }}
         run: |
-          python -u -m pip install --upgrade pip
-          python -u -m pip install --upgrade .[docs,matrix_scipy,matrix_mkl,export_mpl,import_gmsh] coverage ${{ matrix.dep }}
+          _deps="coverage treelog stringly matplotlib pillow meshio"
+          case "$_os" in
+            windows-latest) _deps="$_deps psutil";;
+          esac
+          case "$_matrix" in
+            scipy) _deps="$_deps scipy";;
+            mkl) _deps="$_deps mkl";;
+          esac
+          case "$_numpy" in
+            latest) _deps="$_deps numpy Sphinx scipy";;
+            *) _deps="$_deps numpy==$_numpy";;
+          esac
+          python -um pip install --upgrade wheel
+          python -um pip install --upgrade $_deps
+          # Install Nutils from `dist` dir created in job
+          # `build-python-package`.
+          python -um pip install --no-index --find-links ./dist nutils
       - name: Test
         run: |
-          python -u -m coverage run -m unittest -b
-          python -u -m coverage xml
+          mkdir testenv
+          cp -r examples docs tests .coveragerc testenv
+          cd testenv
+          python -um coverage run -m unittest -bq
+      - name: Post-process coverage
+        run: |
+          mv testenv/.coverage .
+          python -um devtools.gha.coverage_report_xml
       - name: Upload coverage
         uses: codecov/codecov-action@v1
-        with:
-          fail_ci_if_error: true
-  test-old-numpy:
-    name: 'ubuntu-latest, Py3.6, Numpy 1.15'
-    runs-on: ubuntu-latest
+  test-sphinx:
+    name: Test building docs
+    runs-on: ubuntu-20.04
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-      - name: Set up Python 3.6
-        uses: actions/setup-python@v1
-        with:
-          python-version: 3.6
       - name: Install dependencies
         run: |
-          python -u -m pip install --upgrade pip
-          python -u -m pip install --upgrade .[matrix_mkl,export_mpl,import_gmsh] numpy==1.15 coverage
-      - name: Test
-        run: |
-          python -u -m coverage run -m unittest -b
-          python -u -m coverage xml
-      - name: Upload coverage
-        uses: codecov/codecov-action@v1
+          python3 -um pip install setuptools wheel
+          python3 -um pip install --upgrade .[docs]
+      - name: Build docs
+        run: python3 setup.py build_sphinx --nitpicky --warning-is-error --keep-going
+  build-and-test-container-image:
+    name: Build container image
+    needs: build-python-package
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Download Python package artifact
+        uses: actions/download-artifact@v2
         with:
-          fail_ci_if_error: true
+          name: python-package
+          path: dist/
+      - name: Get base and image tags
+        id: tags
+        run: python3 -um devtools.gha.get_base_and_image_tags
+      - name: Pull container base image
+        env:
+          _base: ${{ env.official_container_repository }}:${{ steps.tags.outputs.base }}
+        run: podman pull "docker://$_base"
+      - name: Build container image
+        id: build
+        env:
+          _base: ${{ env.official_container_repository }}:${{ steps.tags.outputs.base }}
+          _name: ${{ env.official_container_repository }}:${{ steps.tags.outputs.image }}
+        run: python3 -um devtools.container.build --build-from-worktree --name "$_name" --base "$_base"
+      - name: Test examples/laplace.py
+        env:
+          _image: ${{ steps.build.outputs.id }}
+        run: |
+          mkdir /tmp/log
+          podman run --pull=never --rm -v /tmp/log:/log:rw "$_image" laplace
+          if [ ! -e /tmp/log/log.html ]; then
+            echo ::error ::"log file not generated"
+            exit 1
+          fi
+      - name: Run unit tests
+        env:
+          _image: ${{ steps.build.outputs.id }}
+        run: podman run --pull=never --rm -v "$PWD/tests:/app/tests:ro" -v "$PWD/examples:/app/examples:ro" "$_image" -m unittest -bq
+      - name: Push image to container registry
+        if: ${{ github.event_name == 'push' }}
+        env:
+          _username: ${{ secrets.DOCKER_USERNAME }}
+          _password: ${{ secrets.DOCKER_PASSWORD }}
+          _repository: ${{ secrets.DOCKER_REPOSITORY }}
+          _image_id: ${{ steps.build.outputs.id }}
+          _tag: ${{ steps.tags.outputs.image }}
+        run: |
+          # Push the image to the official container repository if this
+          # workflow is triggered from the official git repository, otherwise
+          # use the `DOCKER_REPOSITORY` secret.
+          case "$GITHUB_REPOSITORY" in
+            evalf/nutils)
+              _repository="$official_container_repository"
+              ;;
+            *)
+              if [ -z "$_repository" ]; then
+                echo ::error ::"Github secret DOCKER_REPOSITORY is empty"
+                exit 1
+              fi
+              ;;
+          esac
+          # Login without exposing the password via the command line as recommended by GitHub
+          # (https://docs.github.com/en/free-pro-team@latest/actions/reference/encrypted-secrets#using-encrypted-secrets-in-a-workflow).
+          printenv _password | podman login --username "$_username" --password-stdin "${_repository%%/*}"
+          podman push "$_image_id" "docker://$_repository:$_tag"

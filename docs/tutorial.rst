@@ -507,8 +507,6 @@ coordinate representation via the :meth:`Matrix.export()
 
 .. console::
     >>> M = topo.integral(ns.eval_nm('d(basis_n, x_i) d(basis_m, x_i) J(x)'), degree=1).eval()
-    >>> M
-    NumpyMatrix<5x5>
     >>> M.export('dense')
     array([[ 4., -4.,  0.,  0.,  0.],
            [-4.,  8., -4.,  0.,  0.],

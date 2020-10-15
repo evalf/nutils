@@ -25,52 +25,72 @@ applications.
 Installation
 ------------
 
-Nutils is platform independent and is known to work on Linux, Windows and OS X.
+Nutils is platform independent and is known to work on Linux, Windows and macOS.
 
 A working installation of Python 3.5 or higher is required. Many different
 installers exist and there are no known issues with any of them. When in doubt
 about which to use, a safe option is to go with the [official installer][2].
 
-With Python installed, the recommended way to install Nutils is to clone [the
-repository][3], followed by an editable installation using [pip][4] (included
-in the standard installer):
+With Python installed, the recommended way to install the latest stable version
+of Nutils is through [pip][4] (included in the standard installer):
 
-    $ git clone https://github.com/nutils/nutils.git
-    $ python3 -m pip install --user --editable nutils
+    python3 -m pip install --user nutils
 
-This will install Nutils locally along with all dependencies. Afterward a
-simple `git pull` in the project directory will suffice to update Nutils with
-no reinstallation required.
+By default and without explicitly specifying the source of the given packages,
+pip installs packages from the [Python Package Index][5]. To install the latest
+development version of Nutils, pass a zip of branch master of the [official
+repository][3] to pip:
 
-Alternatively it is possible to install Nutils directly:
+    python3 -m pip install --user https://github.com/evalf/nutils/archive/master.zip
 
-    $ python3 -m pip install --user nutils
+To view which version of Nutils is currently installed, run:
 
-This will download the latest stable version from the [Python Package Index][5]
-and install it along with dependencies. However, since this installation leaves
-no access to examples or unit tests, in the following is is assumed that the
-former approach was used.
+    python3 -m pip show nutils
 
 
 First steps
 -----------
 
-A good first step after installing Nutils is to confirm that all unit tests are
-passing. With the current working directory at the root of the repository:
+To confirm Nutils and its dependencies are installed correctly, try to run the
+Laplace example or any of the other examples included in this repostitory. Make
+sure to use the same version of an example as the version of Nutils that is
+currently installed.
 
-    $ python3 -m unittest -b
-
-Note that this might take a long time. After that, try to run any of the
-scripts in the examples directory, such as the Laplace problem:
-
-    $ python3 examples/laplace.py
-
-Log messages should appear in the terminal during operation. Simulateneously, a
-html file `log.html` and any produced figures are written to
-`public_html/laplace.py/yyyy/mm/dd/hh-mm-ss` in the home directory. In case a
+When running an example from a terminal or editor with Python console, log
+messages should appear in the terminal or console. Simulateneously, a html file
+`log.html` and any produced figures are written to
+`public_html/<script_name>/yyyy/mm/dd/hh-mm-ss` in the home directory. In case a
 webserver is running and configured for user directories this automatically
 makes simulations remotely accessible. For convenience, `public_html/log.html`
 always redirects to the most recent simulation.
+
+
+Docker
+------
+
+[Docker][10] container images with the latest and recent stable versions of
+Nutils preinstalled are available from [`ghcr.io/evalf/nutils`][11]. The
+container images includes all examples in this repository. To run an example,
+add the name of the example and any additional arguments to the command line.
+For example, you can run example `laplace` using the latest version of Nutils
+with
+
+    docker run --rm -it ghcr.io/evalf/nutils:latest laplace
+
+HTML log files are generated in the `/log` directory of the container. If
+you want to store the log files in `/path/to/log` on the
+host, add `-v /path/to/log:/log` to the command line before the
+name of the image. Extending the previous example:
+
+    docker run --rm -it -v /path/to/log:/log ghcr.io/evalf/nutils:latest laplace
+
+To run a Python script in this container, bind mount the directory
+containing the script, including all files necessary to run the script,
+to `/app` in the container and add the relative path to the script and
+any arguments to the command line. For example, you can run
+`/path/to/script/example.py` with Docker using
+
+    docker run --rm -it -v /path/to/script:/app:ro ghcr.io/evalf/nutils:latest example.py
 
 
 Next steps and support
@@ -92,10 +112,13 @@ Nutils][9].
 
 [1]: http://evalf.com/
 [2]: https://www.python.org/downloads/
-[3]: https://github.com/nutils/nutils
+[3]: https://github.com/evalf/nutils
 [4]: https://github.com/pypa/pip
 [5]: https://pypi.org/project/nutils/
 [6]: http://docs.nutils.org/en/examples/
 [7]: http://docs.nutils.org/en/nutils/
 [8]: https://matrix.to/#/#nutils-users:matrix.org
 [9]: https://doi.org/10.5281/zenodo.822369
+[10]: https://www.docker.com/
+[11]: https://github.com/orgs/evalf/packages/container/package/nutils
+[12]: https://raw.githubusercontent.com/evalf/nutils/master/examples/laplace.py
