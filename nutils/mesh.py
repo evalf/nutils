@@ -391,10 +391,10 @@ def parsegmsh(mshdata):
   # Tags is a list of (nd, name, ndelems) tuples that define topological groups
   # per dimension. Since meshio associates group names with cells, which are
   # concatenated in nodes, element ids are offset and concatenated to match.
-  tags = [(msh.field_data[name][1], name, numpy.concatenate([selection
+  tags = [(nd, name, numpy.concatenate([selection
     + sum(len(cells.data) for cells in msh.cells[:icell] if cells.type == msh.cells[icell].type) # offset into nodes
-        for icell, selection in enumerate(selections)]))
-           for name, selections in msh.cell_sets.items()]
+        for icell, selection in enumerate(msh.cell_sets[name])]))
+           for name, (itag, nd) in msh.field_data.items()]
 
   # determine the dimension of the topology
   ndims = max(nodes)
