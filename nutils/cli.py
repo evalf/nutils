@@ -248,6 +248,18 @@ def run(func, *, args=None, loaduserconfig=True):
     for path in os.path.join(home, '.config', 'nutils', 'config'), os.path.join(home, '.nutilsrc'):
       if os.path.isfile(path):
         setupargs.update(_load_rcfile(path))
+    for key, typ in (('cachedir', str),
+                     ('cache', bool),
+                     ('outrootdir', str),
+                     ('outrooturi', str),
+                     ('outdir', str),
+                     ('outuri', str),
+                     ('verbose', int),
+                     ('pdb', bool),
+                     ('gracefulexit', bool)):
+      val = os.environ.get('NUTILS_{}'.format(key.upper()))
+      if val:
+        setupargs[key] = stringly.loads(typ, val)
 
   for name, s in strargs.items():
     if name not in types:

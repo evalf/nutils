@@ -4,11 +4,33 @@ on:
   push:
     branches:
       - master
-      - v*.x
+      - release/*
+defaults:
+  run:
+    shell: bash
 env:
-  OMP_NUM_THREADS: 1
-  VECLIB_MAXIMUM_THREADS: 1
+  official_container_repository: ghcr.io/evalf/nutils
 jobs:
+  build-python-package:
+    name: Build Python package
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Install build dependencies
+        run: python3 -m pip install setuptools wheel
+      - name: Build package
+        run: |
+          # To make the wheels reproducible, set the timestamp of the (files in
+          # the) generated wheels to the date of the commit.
+          export SOURCE_DATE_EPOCH=`git show -s --format=%ct`
+          python3 setup.py sdist bdist_wheel
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: python-package
+          path: dist/
+          if-no-files-found: error
   test:
     name: ${{ matrix.os }}, Py${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
@@ -20,6 +42,9 @@ jobs:
           - os: windows-latest
             dep: 'psutil'
       fail-fast: false
+    env:
+      OMP_NUM_THREADS: 1
+      VECLIB_MAXIMUM_THREADS: 1
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -33,6 +58,7 @@ jobs:
           python -m pip install --upgrade .[docs,matrix_scipy,matrix_mkl,export_mpl,import_gmsh] coverage "Sphinx<3.1" ${{ matrix.dep }}
       - name: Test
         run: |
+          rm -rf devtools
           python -m coverage run -m unittest -b
           python -m coverage xml
       - name: Upload coverage
@@ -42,6 +68,9 @@ jobs:
   test-old-numpy:
     name: 'ubuntu-latest, Py3.6, Numpy 1.15'
     runs-on: ubuntu-latest
+    env:
+      OMP_NUM_THREADS: 1
+      VECLIB_MAXIMUM_THREADS: 1
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -55,9 +84,76 @@ jobs:
           python -m pip install --upgrade .[matrix_mkl,export_mpl,import_gmsh] numpy==1.15 coverage
       - name: Test
         run: |
+          rm -rf devtools
           python -m coverage run -m unittest -b
           python -m coverage xml
       - name: Upload coverage
         uses: codecov/codecov-action@v1
         with:
           fail_ci_if_error: true
+  build-and-test-container-image:
+    name: Build container image
+    needs: build-python-package
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Download Python package artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: python-package
+          path: dist/
+      - name: Get base and image tags
+        id: tags
+        run: python3 -um devtools.gha.get_base_and_image_tags
+      - name: Pull container base image
+        env:
+          _base: ${{ env.official_container_repository }}:${{ steps.tags.outputs.base }}
+        run: podman pull "docker://$_base"
+      - name: Build container image
+        id: build
+        env:
+          _base: ${{ env.official_container_repository }}:${{ steps.tags.outputs.base }}
+          _name: ${{ env.official_container_repository }}:${{ steps.tags.outputs.image }}
+        run: python3 -um devtools.container.build --build-from-worktree --name "$_name" --base "$_base"
+      - name: Test examples/laplace.py
+        env:
+          _image: ${{ steps.build.outputs.id }}
+        run: |
+          mkdir /tmp/log
+          podman run --pull=never --rm -v /tmp/log:/log:rw "$_image" laplace
+          if [ ! -e /tmp/log/log.html ]; then
+            echo ::error ::"log file not generated"
+            exit 1
+          fi
+      - name: Run unit tests
+        env:
+          _image: ${{ steps.build.outputs.id }}
+        run: podman run --pull=never --rm -v "$PWD/tests:/app/tests:ro" -v "$PWD/examples:/app/examples:ro" "$_image" -m unittest -bq
+      - name: Push image to container registry
+        if: ${{ github.event_name == 'push' }}
+        env:
+          _username: ${{ secrets.DOCKER_USERNAME }}
+          _password: ${{ secrets.DOCKER_PASSWORD }}
+          _repository: ${{ secrets.DOCKER_REPOSITORY }}
+          _image_id: ${{ steps.build.outputs.id }}
+          _tag: ${{ steps.tags.outputs.image }}
+        run: |
+          # Push the image to the official container repository if this
+          # workflow is triggered from the official git repository, otherwise
+          # use the `DOCKER_REPOSITORY` secret.
+          case "$GITHUB_REPOSITORY" in
+            evalf/nutils)
+              _repository="$official_container_repository"
+              ;;
+            *)
+              if [ -z "$_repository" ]; then
+                echo ::error ::"Github secret DOCKER_REPOSITORY is empty"
+                exit 1
+              fi
+              ;;
+          esac
+          # Login without exposing the password via the command line as recommended by GitHub
+          # (https://docs.github.com/en/free-pro-team@latest/actions/reference/encrypted-secrets#using-encrypted-secrets-in-a-workflow).
+          printenv _password | podman login --username "$_username" --password-stdin "${_repository%%/*}"
+          podman push "$_image_id" "docker://$_repository:$_tag"
