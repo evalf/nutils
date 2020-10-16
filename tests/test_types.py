@@ -141,6 +141,12 @@ class nutils_hash(TestCase):
     self.assertEqual(nutils.types.nutils_hash(frozenset([1,2])).hex(), '3862dc7e5321bc8a576c385ed2c12c71b96a375a')
     self.assertEqual(nutils.types.nutils_hash(frozenset(['spam','eggs'])).hex(), '2c75fd3db57f5e505e1425ae9ff6dcbbc77fd123')
 
+  @unittest.skipIf(sys.version_info < (3,7), "not supported in this Python version")
+  def test_dataclass(self):
+    import dataclasses
+    A = dataclasses.make_dataclass('A', [('n', int), ('f', float)])
+    self.assertEqual(nutils.types.nutils_hash(A(n=1, f=2.5)).hex(), 'e655f7e05f7fabbe9c5a5bea79c96e990bcd5988')
+
   def test_type_bool(self):
     self.assertEqual(nutils.types.nutils_hash(bool).hex(), 'feb912889d52d45fcd1e778c427b093a19a1ea78')
 

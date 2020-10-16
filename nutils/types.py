@@ -25,6 +25,11 @@ Module with general purpose types.
 import inspect, functools, hashlib, builtins, numbers, collections.abc, itertools, abc, sys, weakref, re, io, types
 import numpy
 
+try:
+  import dataclasses
+except ImportError:
+  dataclasses = None
+
 def aspreprocessor(apply):
   '''
   Convert ``apply`` into a preprocessor decorator.  When applied to a function,
@@ -308,6 +313,8 @@ def nutils_hash(data):
   elif t is types.MethodType:
     h.update(nutils_hash(data.__self__))
     h.update(nutils_hash(data.__name__))
+  elif dataclasses and dataclasses.is_dataclass(t):
+    h.update(nutils_hash(dataclasses.asdict(data, dict_factory=frozendict)))
   elif hasattr(data, '__getnewargs__'):
     for arg in data.__getnewargs__():
       h.update(nutils_hash(arg))
