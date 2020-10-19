@@ -177,6 +177,7 @@ _check('equal', function.equal, numpy.equal, [(4,1),(1,4)])
 _check('less', function.less, numpy.less, [(4,1),(1,4)])
 _check('min', function.min, numpy.minimum, [(4,4),(4,4)])
 _check('max', function.max, numpy.maximum, [(4,4),(4,4)])
+_check('heaviside', function.heaviside, lambda u: numpy.heaviside(u, .5), [(4,4)])
 
 # TODO: opposite
 # TODO: mean

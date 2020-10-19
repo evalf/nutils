@@ -2452,6 +2452,34 @@ def partition(f: IntoArray, *levels: float) -> Sequence[Array]:
   steps = map(subtract, signs[:-1], signs[1:])
   return [.5 - .5 * signs[0]] + [.5 * step for step in steps] + [.5 + .5 * signs[-1]]
 
+def heaviside(f: IntoArray):
+  '''Create a heaviside step-function based on a scalar function f.
+
+  .. math:: H(f) &= 0     && f < 0
+
+            H(f) &= 0.5   && f = 0
+
+            H(f) &= 1     && f > 0
+
+  Args
+  ----
+  f : :class:`Array`
+      Scalar-valued function
+
+  Returns
+  -------
+  :class:`Array`
+      The heaviside function.
+
+  See Also
+  --------
+
+  :func:`partition`: generalized version of :func:`heaviside`
+  :func:`sign`: like :func:`heaviside` but with different levels
+  '''
+
+  return sign(f) * .5 + .5
+
 def _eval_choose(_index: evaluable.Array, *_choices: evaluable.Array) -> evaluable.Array:
   return evaluable.Choose(_index, _choices)
 
