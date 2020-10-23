@@ -1373,7 +1373,7 @@ def product(__arg: IntoArray, axis: int) -> Array:
 
   arg = Array.cast(__arg)
   transposed = _Transpose.to_end(arg, axis)
-  return _Wrapper(evaluable.Product, transposed, shape=transposed.shape[:-1], dtype=transposed.dtype)
+  return _Wrapper(evaluable.Product, transposed, shape=transposed.shape[:-1], dtype=int if transposed.dtype == bool else transposed.dtype)
 
 # LINEAR ALGEBRA
 

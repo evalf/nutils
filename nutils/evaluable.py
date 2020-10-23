@@ -1223,7 +1223,7 @@ class Product(Array):
   @types.apply_annotations
   def __init__(self, func:asarray):
     self.func = func
-    super().__init__(args=[func], shape=func.shape[:-1], dtype=func.dtype)
+    super().__init__(args=[func], shape=func.shape[:-1], dtype=int if func.dtype == bool else func.dtype)
 
   def _simplified(self):
     if self.func.shape[-1] == 1:
