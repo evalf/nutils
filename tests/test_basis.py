@@ -77,9 +77,9 @@ class sparsity(TestCase):
     tA, tA_tol, hA = topo.sample('gauss', 5).integrate_sparse([ns.eval_ij('tbasis_i,k tbasis_j,k'), ns.eval_ij('tnotol_i,k tnotol_j,k'), ns.eval_ij('hbasis_i,k hbasis_j,k')])
 
     tA_nnz, tA_tol_nnz, hA_nnz = self.vals[self.ndim]
-    self.assertEqual(len(sparse.dedup(tA)), tA_nnz)
-    self.assertEqual(len(sparse.dedup(tA_tol)), tA_tol_nnz)
-    self.assertEqual(len(sparse.dedup(hA)), hA_nnz)
+    self.assertEqual(len(sparse.prune(sparse.dedup(tA))), tA_nnz)
+    self.assertEqual(len(sparse.prune(sparse.dedup(tA_tol))), tA_tol_nnz)
+    self.assertEqual(len(sparse.prune(sparse.dedup(hA))), hA_nnz)
 
 for ndim in 1, 2:
   sparsity(ndim=ndim)
