@@ -197,3 +197,29 @@ class levicivita(TestCase):
         for I in itertools.product(*[range(n)]*n):
           desired[I] = util.product(sign(b-a) for a, b in itertools.combinations(I, 2))
         self.assertAllEqual(numeric.levicivita(n, int), desired)
+
+class meshgrid(TestCase):
+
+  def test_unary(self):
+    m = numeric.meshgrid([1,2,3])
+    self.assertEqual(m.dtype, int)
+    self.assertEqual(m.shape, (1,3))
+    self.assertAllEqual(m, [[1,2,3]])
+
+  def test_binary(self):
+    m = numeric.meshgrid([1,2,3],[.4,.5])
+    self.assertEqual(m.dtype, float)
+    self.assertEqual(m.shape, (2,3,2))
+    self.assertAllEqual(m, [[[1,1],[2,2],[3,3]],[[.4,.5],[.4,.5],[.4,.5]]])
+
+  def test_ternary(self):
+    m = numeric.meshgrid([1,2,3],1j,[.4,.5])
+    self.assertEqual(m.dtype, complex)
+    self.assertEqual(m.shape, (3,3,2))
+    self.assertAllEqual(m, [[[1,1],[2,2],[3,3]],[[1j,1j],[1j,1j],[1j,1j]],[[.4,.5],[.4,.5],[.4,.5]]])
+
+  def test_dtype(self):
+    m = numeric.meshgrid(1, dtype=float)
+    self.assertEqual(m.dtype, float)
+    self.assertEqual(m.shape, (1,))
+    self.assertAllEqual(m, 1)

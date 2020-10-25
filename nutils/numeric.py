@@ -102,20 +102,41 @@ def dot(A, B, axis=-1):
 
   return numpy.einsum('{},{}->{}'.format(m,n,o), A, B, optimize=False)
 
-def meshgrid(*args):
-  'multi-dimensional meshgrid generalisation'
+def meshgrid(*args, dtype=None):
+  '''Multi-dimensional meshgrid generalisation.
+
+  Meshgrid stacks ``n`` arbitry-dimensional arrays into an array that is one
+  dimension higher than all dimensions combined, such that ``retval[i]`` equals
+  ``args[i]`` broadcasted to consecutive dimension slices. For two vector
+  arguments this is almost equal to :func:`numpy.meshgrid`, with the main
+  difference that dimensions are not swapped in the return values. The other
+  difference is that the return value is a single array, but since the stacked
+  axis is the first dimension the result can always be tuple unpacked.
+
+  Parameters
+  ----------
+  args : sequence of :class:`numpy.ndarray` objects or equivalent
+    The arrays that are to be grid-stacked.
+  dtype : :class:`type` of output array
+    If unspecified the dtype is determined automatically from the input arrays
+    using :func:`numpy.result_type`.
+
+  Returns
+  -------
+  :class:`numpy.ndarray`
+  '''
 
   args = [numpy.asarray(arg) for arg in args]
-  shape = [len(args)] + [arg.size for arg in args if arg.ndim]
-  dtype = int if all(isintarray(a) for a in args) else float
+  shape = [len(args)]
+  for arg in args:
+    shape.extend(arg.shape)
+  if dtype is None:
+    dtype = numpy.result_type(*(arg.dtype for arg in args))
   grid = numpy.empty(shape, dtype=dtype)
   n = len(shape)-1
   for i, arg in enumerate(args):
-    if arg.ndim:
-      n -= 1
-      grid[i] = arg[(slice(None),)+(numpy.newaxis,)*n]
-    else:
-      grid[i] = arg
+    n -= arg.ndim
+    grid[i] = arg[(...,)+(numpy.newaxis,)*n]
   assert n == 0
   return grid
 
