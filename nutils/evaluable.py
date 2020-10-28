@@ -2428,7 +2428,7 @@ class TrigNormal(Array):
     super().__init__(args=[angle], shape=(*angle.shape, 2), dtype=float)
 
   def _derivative(self, var, seen):
-    return TrigTangent(self.angle)[(...,)+(_,)*var.ndim] * derivative(self.angle, var, seen)[:,_]
+    return appendaxes(TrigTangent(self.angle), var.shape) * insertaxis(derivative(self.angle, var, seen), self.ndim-1, 2)
 
   def evalf(self, angle):
     return numpy.stack([numpy.cos(angle), numpy.sin(angle)], axis=self.ndim-1)
@@ -2448,7 +2448,7 @@ class TrigTangent(Array):
     super().__init__(args=[angle], shape=(*angle.shape, 2), dtype=float)
 
   def _derivative(self, var, seen):
-    return -TrigNormal(self.angle)[(...,)+(_,)*var.ndim] * derivative(self.angle, var, seen)[:,_]
+    return -appendaxes(TrigNormal(self.angle), var.shape) * insertaxis(derivative(self.angle, var, seen), self.ndim-1, 2)
 
   def evalf(self, angle):
     return numpy.stack([-numpy.sin(angle), numpy.cos(angle)], axis=self.ndim-1)
