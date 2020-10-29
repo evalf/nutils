@@ -42,7 +42,7 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, types, numeric, cache, transform, expression, warnings, parallel
+from . import util, types, numeric, cache, transform, expression, warnings, parallel, sparse
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph
 import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log, weakref, time, contextlib, subprocess
 _ = numpy.newaxis
@@ -432,6 +432,28 @@ class Tuple(Evaluable):
 
     return Tuple(tuple(other) + self.items)
 
+class SparseArray(Evaluable):
+  'sparse array'
+
+  @types.apply_annotations
+  def __init__(self, chunks:types.tuple[types.tuple[asarray]], shape:types.tuple[asarray], dtype:asdtype):
+    self._shape = shape
+    self._dtype = dtype
+    super().__init__(args=[Tuple(map(asarray, shape)), *map(Tuple, chunks)])
+
+  def evalf(self, shape, *chunks):
+    length = builtins.sum(values.size for *indices, values in chunks)
+    data = numpy.empty((length,), dtype=sparse.dtype(tuple(map(int, shape)), self._dtype))
+    start = 0
+    for *indices, values in chunks:
+      stop = start + values.size
+      d = data[start:stop].reshape(values.shape)
+      d['value'] = values
+      for idim, ii in enumerate(indices):
+        d['index']['i'+str(idim)] = ii
+      start = stop
+    return data
+
 # TRANSFORMCHAIN
 
 class TransformChain(Evaluable):
@@ -638,7 +660,41 @@ def as_axis_property(value):
 
 # ARRAYS
 
-class Array(Evaluable):
+if __debug__:
+
+  def _chunked_assparse_checker(orig):
+    assert isinstance(orig, property)
+    @property
+    def _assparse(self):
+      chunks = orig.fget(self)
+      assert isinstance(chunks, tuple)
+      assert all(isinstance(chunk, tuple) for chunk in chunks)
+      assert all(all(isinstance(item, Array) for item in chunk) for chunk in chunks)
+      if self.ndim:
+        for *indices, values in chunks:
+          assert len(indices) == self.ndim
+          assert all(idx.dtype == int for idx in indices)
+          assert all(idx.shape == values.shape for idx in indices)
+      elif chunks:
+        assert len(chunks) == 1
+        chunk, = chunks
+        assert len(chunk) == 1
+        values, = chunk
+        assert values.shape == ()
+      return chunks
+    return _assparse
+
+  class _ArrayMeta(type(Evaluable)):
+    def __new__(mcls, name, bases, namespace):
+      if '_assparse' in namespace:
+        namespace['_assparse'] = _chunked_assparse_checker(namespace['_assparse'])
+      return super().__new__(mcls, name, bases, namespace)
+
+else:
+
+  _ArrayMeta = type(Evaluable)
+
+class Array(Evaluable, metaclass=_ArrayMeta):
   '''
   Base class for array valued functions.
 
@@ -654,7 +710,7 @@ class Array(Evaluable):
   '''
 
   __slots__ = '_axes', 'dtype'
-  __cache__ = 'blocks'
+  __cache__ = 'blocks', 'assparse', '_assparse'
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
@@ -748,6 +804,41 @@ class Array(Evaluable):
         assert i == f.ndim
         blocks.append((indices, f))
     return _gatherblocks(blocks)
+
+  @property
+  def assparse(self):
+    'Convert to a :class:`SparseArray`.'
+
+    return SparseArray(self.simplified._assparse, self.shape, self.dtype)
+
+  @property
+  def _assparse(self):
+    # Convert to a sequence of sparse COO arrays. The returned data is a tuple
+    # of `(*indices, values)` tuples, where `values` is an `Array` with the
+    # same dtype as `self`, but this is not enforced yet, and each index in
+    # `indices` is an `Array` with dtype `int` and the exact same shape as
+    # `values`. The length of `indices` equals `self.ndim`. In addition, if
+    # `self` is 0d the length of `self._assparse` is at most one and the
+    # `values` array must be 0d as well.
+    #
+    # The sparse data can be reassembled after evaluation by
+    #
+    #     dense = numpy.zeros(self.shape)
+    #     for I0,...,Ik,V in self._assparse:
+    #       for i0,...,ik,v in zip(I0.eval().ravel(),...,Ik.eval().ravel(),V.eval().ravel()):
+    #         dense[i0,...,ik] = v
+
+    # Fallback using `blocks`.
+    if self.ndim:
+      chunks = []
+      for indices, values in self.blocks:
+        *offsets, ndim = (0, *itertools.accumulate(idx.ndim for idx in indices))
+        assert ndim == values.ndim
+        indices = (prependaxes(appendaxes(idx, values.shape[offset+idx.ndim:]), values.shape[:offset]) for idx, offset in zip(indices, offsets))
+        chunks.append((*indices, values))
+      return tuple(chunks)
+    else:
+      return (util.sum((values for indices, values in self.blocks), zeros((), self.dtype)),),
 
   def _node(self, cache, subgraph, times):
     if self in cache:
@@ -1057,6 +1148,10 @@ class InsertAxis(Array):
     if axis1 < self.ndim-1 and axis2 < self.ndim-1:
       return InsertAxis(inverse(self.func, (axis1, axis2)), self.length)
 
+  @property
+  def _assparse(self):
+    return tuple((*(InsertAxis(idx, self.length) for idx in indices), prependaxes(Range(self.length), values.shape), InsertAxis(values, self.length)) for *indices, values in self.func._assparse)
+
 class Transpose(Array):
 
   __slots__ = 'func', 'axes'
@@ -1209,6 +1304,10 @@ class Transpose(Array):
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
     return [(ind, Transpose(f, self._axes_for(ind.ndim, axis))) for ind, f in self.func._desparsify(self.axes[axis])]
+
+  @property
+  def _assparse(self):
+    return tuple((*(indices[i] for i in self.axes), values) for *indices, values in self.func._assparse)
 
 class Product(Array):
 
@@ -1511,6 +1610,20 @@ class Multiply(Array):
     assert isinstance(func1._axes[axis], Sparse)
     return [(ind, multiply(f1, _take(func2, ind, axis))) for ind, f1 in func1._desparsify(axis)]
 
+  @property
+  def _assparse(self):
+    func1, func2 = self.funcs
+    if all(isinstance(axis, Inserted) for axis in func1._axes):
+      for i in reversed(range(func1.ndim)):
+        func1 = func1._uninsert(i)
+      return tuple((*indices, appendaxes(func1, values.shape)*values) for *indices, values in func2._assparse)
+    elif all(isinstance(axis, Inserted) for axis in func2._axes):
+      for i in reversed(range(func2.ndim)):
+        func2 = func2._uninsert(i)
+      return tuple((*indices, values*appendaxes(func2, values.shape)) for *indices, values in func1._assparse)
+    else:
+      return super()._assparse
+
 class Add(Array):
 
   __slots__ = 'funcs',
@@ -1571,6 +1684,11 @@ class Add(Array):
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
     return _gatherblocks(block for func in self.funcs for block in func._desparsify(axis))
+
+  @property
+  def _assparse(self):
+    func1, func2 = self.funcs
+    return _gathersparsechunks(itertools.chain(func1._assparse, func2._assparse))
 
 class Einsum(Array):
 
@@ -1662,9 +1780,29 @@ class Sum(Array):
     assert isinstance(self._axes[axis], Sparse)
     return [(ind, Sum(f)) for ind, f in self.func._desparsify(axis)]
 
+  @property
+  def _assparse(self):
+    chunks = []
+    for *indices, _rmidx, values in self.func._assparse:
+      if values.dtype == bool:
+        values = Int(values)
+      while True:
+        for axis in reversed(range(values.ndim)):
+          if all(isinstance(idx._axes[axis], Inserted) for idx in indices):
+            indices = tuple(idx._uninsert(axis) for idx in indices)
+            values = sum(values, axis)
+        else:
+          break
+      if self.ndim == 0:
+        while values.ndim:
+          values = Sum(values)
+      chunks.append((*indices, values))
+    return _gathersparsechunks(chunks)
+
 class TakeDiag(Array):
 
   __slots__ = 'func'
+  __cache__ = '_assparse'
 
   @types.apply_annotations
   def __init__(self, func:asarray):
@@ -1704,6 +1842,18 @@ class TakeDiag(Array):
     assert isinstance(self._axes[axis], Sparse)
     assert axis != self.ndim-1
     return [(ind, TakeDiag(f)) for ind, f in self.func._desparsify(axis)]
+
+  @property
+  def _assparse(self):
+    chunks = []
+    for *indices, values in self.func._assparse:
+      if indices[-2] == indices[-1]:
+        chunks.append((*indices[:-1], values))
+      else:
+        *indices, values = map(_flat, (*indices, values))
+        mask = Equal(indices[-2], indices[-1])
+        chunks.append(tuple(take(arr, mask, 0) for arr in (*indices[:-1], values)))
+    return _gathersparsechunks(chunks)
 
 class Take(Array):
 
@@ -2124,6 +2274,7 @@ class Zeros(Array):
   'zero'
 
   __slots__ = ()
+  __cache__ = '_assparse'
 
   @types.apply_annotations
   def __init__(self, shape:asshape, dtype:asdtype):
@@ -2188,9 +2339,14 @@ class Zeros(Array):
     else:
       return Zeros(shape, self.dtype)
 
+  @property
+  def _assparse(self):
+    return ()
+
 class Inflate(Array):
 
   __slots__ = 'func', 'dofmap', 'length', 'warn'
+  __cache__ = '_assparse'
 
   @types.apply_annotations
   def __init__(self, func:asarray, dofmap:asarray, length:asarray):
@@ -2291,6 +2447,20 @@ class Inflate(Array):
     if self.dofmap.isconstant and _isunique(self.dofmap.eval()):
       return Inflate(Sign(self.func), self.dofmap, self.length)
 
+  @property
+  def _assparse(self):
+    chunks = []
+    flat_dofmap = _flat(self.dofmap)
+    keep_dim = self.func.ndim - self.dofmap.ndim
+    strides = (1, *itertools.accumulate(self.dofmap.shape[:0:-1], operator.mul))[::-1]
+    for *indices, values in self.func._assparse:
+      if self.dofmap.ndim:
+        inflate_indices = Take(flat_dofmap, functools.reduce(operator.add, map(operator.mul, indices[keep_dim:], strides)))
+      else:
+        inflate_indices = appendaxes(self.dofmap, values.shape)
+      chunks.append((*indices[:keep_dim], inflate_indices, values))
+    return tuple(chunks)
+
 class Diagonalize(Array):
 
   __slots__ = 'func'
@@ -2376,6 +2546,10 @@ class Diagonalize(Array):
     assert isinstance(self._axes[axis], Sparse)
     assert axis < self.ndim-2
     return [(ind, Diagonalize(f)) for ind, f in self.func._desparsify(axis)]
+
+  @property
+  def _assparse(self):
+    return tuple((*indices, indices[-1], values) for *indices, values in self.func._assparse)
 
 class Guard(Array):
   'bar all simplifications'
@@ -2630,6 +2804,10 @@ class Ravel(Array):
       items = [(Range(self.func.shape[-2]), ind2, f) for ind2, f in self.func._desparsify(self.ndim)]
     return [(appendaxes(ind1, ind2.shape) * self.func.shape[-1] + prependaxes(ind2, ind1.shape), f) for ind1, ind2, f in items]
 
+  @property
+  def _assparse(self):
+    return tuple((*indices[:-2], indices[-2]*self.func.shape[-1]+indices[-1], values) for *indices, values in self.func._assparse)
+
 class Unravel(Array):
 
   __slots__ = 'func'
@@ -2672,6 +2850,10 @@ class Unravel(Array):
     assert isinstance(self._axes[axis], Sparse)
     assert axis < self.ndim-2
     return [(ind, Unravel(f, *self.shape[-2:])) for ind, f in self.func._desparsify(axis)]
+
+  @property
+  def _assparse(self):
+    return tuple((*indices[:-1], FloorDivide(indices[-1], appendaxes(self.shape[-1], values.shape)), Mod(indices[-1], appendaxes(self.shape[-1], values.shape)), values) for *indices, values in self.func._assparse)
 
 class Range(Array):
 
@@ -2893,6 +3075,7 @@ class NormDim(Array):
     if self.length.isconstant and self.index.isconstant:
       return Constant(self.eval())
 
+
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
 _ascending = lambda arg: numpy.greater(numpy.diff(arg), 0).all()
@@ -2909,6 +3092,9 @@ def _jointdtype(*dtypes):
 
 def _gatherblocks(blocks):
   return tuple((ind, util.sum(funcs)) for ind, funcs in util.gather(blocks))
+
+def _gathersparsechunks(chunks):
+  return tuple((*ind, util.sum(funcs)) for ind, funcs in util.gather((tuple(ind), func) for *ind, func in chunks))
 
 def _numpy_align(*arrays):
   '''reshape arrays according to Numpy's broadcast conventions'''
@@ -3218,6 +3404,14 @@ def ravel(func, axis):
   func = asarray(func)
   axis = numeric.normdim(func.ndim-1, axis)
   return Transpose.from_end(Ravel(Transpose.to_end(func, axis, axis+1)), axis)
+
+def _flat(func):
+  func = asarray(func)
+  if func.ndim == 0:
+    return InsertAxis(func, 1)
+  while func.ndim > 1:
+    func = Ravel(func)
+  return func
 
 def prependaxes(func, shape):
   'Prepend axes with specified `shape` to `func`.'
