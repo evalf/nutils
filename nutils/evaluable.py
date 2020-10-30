@@ -1721,7 +1721,7 @@ class Take(Array):
       raise Exception('invalid indices argument for take')
     self.func = func
     self.indices = indices
-    shape = func._axes[:-1] + indices.shape
+    shape = (*func._axes[:-1], *(axis if isinstance(axis, Inserted) else Axis(axis.length) for axis in indices._axes))
     super().__init__(args=[func,indices], shape=shape, dtype=func.dtype)
 
   def _simplified(self):
@@ -1733,6 +1733,10 @@ class Take(Array):
     if self.indices.ndim == 1 and isinstance(self.indices._axes[-1], Raveled):
       shape = self.indices._axes[-1].shape
       return Ravel(Take(self.func, Unravel(self.indices, *shape)))
+    for iaxis in reversed(range(self.func.ndim-1, self.ndim)):
+      axis = self._axes[iaxis]
+      if isinstance(axis, Inserted):
+        return insertaxis(self._uninsert(iaxis), iaxis, axis.length)
     return self.func._take(self.indices, self.func.ndim-1)
 
   def evalf(self, arr, indices):
@@ -1751,6 +1755,12 @@ class Take(Array):
   def _sum(self, axis):
     if axis < self.func.ndim - 1:
       return Take(sum(self.func, axis), self.indices)
+
+  def _uninsert(self, axis):
+    if axis < self.func.ndim-1:
+      return Take(self.func._uninsert(axis), self.indices)
+    else:
+      return Take(self.func, self.indices._uninsert(axis-self.func.ndim+1))
 
   def _desparsify(self, axis):
     assert axis < self.func.ndim-1 and isinstance(self._axes[axis], Sparse)
