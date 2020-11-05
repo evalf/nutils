@@ -339,9 +339,9 @@ def solve_linear(target, residual:integraltuple, *, constrain:arrayordict=None, 
   solveargs = _strip(kwargs, 'lin')
   if kwargs:
     raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
-  lhs0, constrain = _parse_lhs_cons(lhs0, constrain, target, _argshapes(residual), arguments)
+  lhs0, constrain = _parse_lhs_cons(lhs0, constrain, target, _argobjs(residual), arguments)
   jacobian = _derivative(residual, target)
-  if any(jac.contains(t) for t in target for jac in jacobian):
+  if not set(target).isdisjoint(_argobjs(jacobian)):
     raise SolverError('problem is not linear')
   lhs, vlhs = _redict(lhs0, target)
   mask, vmask = _invert(constrain, target)
@@ -401,7 +401,7 @@ class newton(cache.Recursion, length=1):
     self.target = target
     self.residual = residual
     self.jacobian = _derivative(residual, target, jacobian)
-    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argshapes(residual), arguments)
+    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argobjs(residual), arguments)
     self.relax0 = relax0
     self.linesearch = linesearch or NormBased.legacy(kwargs)
     self.failrelax = failrelax
@@ -498,9 +498,9 @@ class minimize(cache.Recursion, length=1, version=3):
       raise ValueError('`energy` should be scalar')
     self.target = target
     self.energy = energy
-    self.residual = [energy.derivative(target) for target in self.target]
+    self.residual = tuple(energy.derivative(target) for target in self.target)
     self.jacobian = _derivative(self.residual, target)
-    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, energy.argshapes, arguments)
+    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argobjs((energy,)), arguments)
     self.rampup = rampup
     self.rampdown = rampdown
     self.failrelax = failrelax
@@ -614,9 +614,9 @@ class pseudotime(cache.Recursion, length=1):
     self.timesteptarget = '_pseudotime_timestep'
     dt = evaluable.Argument(self.timesteptarget, ())
     self.residuals = residual
-    self.jacobians = _derivative([res + sample.Integral({smp: func/dt for smp, func in inert._integrands.items()} if inert else {}, shape=res.shape)
-      for res, inert in zip(residual, inertia)], target)
-    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argshapes(residual+inertia), arguments)
+    self.jacobians = _derivative(tuple(res + sample.Integral({smp: func/dt for smp, func in inert._integrands.items()} if inert else {}, shape=res.shape)
+      for res, inert in zip(residual, inertia)), target)
+    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argobjs(residual+inertia), arguments)
     self.timestep = timestep
     self.solveargs = _strip(kwargs, 'lin')
     if kwargs:
@@ -706,7 +706,7 @@ class thetamethod(cache.Recursion, length=1, version=1):
     self.newtontol = newtontol
     self.timestep = timestep
     self.timetarget = timetarget
-    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argshapes(residual+inertia), arguments)
+    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argobjs(residual+inertia), arguments)
     self.lhs0[timetarget] = numpy.array(time0)
     if target0 is None:
       self.old_new = [(t+historysuffix, t) for t in target]
@@ -718,9 +718,9 @@ class thetamethod(cache.Recursion, length=1, version=1):
     self.old_new.append((timetarget+historysuffix, timetarget))
     subs0 = {new: evaluable.Argument(old, self.lhs0[new].shape) for old, new in self.old_new}
     dt = evaluable.Argument(timetarget, ()) - subs0[timetarget]
-    self.residuals = [sample.Integral({smp: func * theta + evaluable.replace_arguments(func, subs0) * (1-theta) for smp, func in res._integrands.items()}, shape=res.shape)
+    self.residuals = tuple(sample.Integral({smp: func * theta + evaluable.replace_arguments(func, subs0) * (1-theta) for smp, func in res._integrands.items()}, shape=res.shape)
                     + sample.Integral({smp: (func - evaluable.replace_arguments(func, subs0)) / dt for smp, func in inert._integrands.items()} if inert else {}, shape=res.shape)
-                         for res, inert in zip(residual, inertia)]
+                         for res, inert in zip(residual, inertia))
     self.jacobians = _derivative(self.residuals, target)
 
   def _step(self, lhs0, dt):
@@ -791,15 +791,16 @@ def optimize(target, functional:sample.strictintegral, *, tol:types.strictfloat=
   solveargs = _strip(kwargs, 'lin')
   if kwargs:
     raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
-  if any(t not in functional.argshapes for t in target):
+  argobjs = _argobjs((functional,))
+  if any(t not in argobjs for t in target):
     if not droptol:
-      raise ValueError('target {} does not occur in integrand; consider setting droptol>0'.format(', '.join(t for t in target if t not in functional.argshapes)))
-    target = [t for t in target if t in functional.argshapes]
+      raise ValueError('target {} does not occur in integrand; consider setting droptol>0'.format(', '.join(t for t in target if t not in argobjs)))
+    target = [t for t in target if t in argobjs]
     if not target:
       return {}
-  residual = [functional.derivative(t) for t in target]
+  residual = tuple(functional.derivative(t) for t in target)
   jacobian = _derivative(residual, target)
-  lhs0, constrain = _parse_lhs_cons(lhs0, constrain, target, functional.argshapes, arguments)
+  lhs0, constrain = _parse_lhs_cons(lhs0, constrain, target, argobjs, arguments)
   mask, vmask = _invert(constrain, target)
   lhs, vlhs = _redict(lhs0, target)
   val, res, jac = _integrate_blocks(functional, residual, jacobian, arguments=lhs, mask=mask)
@@ -812,7 +813,7 @@ def optimize(target, functional:sample.strictintegral, *, tol:types.strictfloat=
     vmask[vmask] = supp # dof is computed if it is supported and not constrained
     assert vmask.sum() == len(res)
   resnorm = numpy.linalg.norm(res)
-  if any(jacobian.contains(t) for jacobian in jacobian for t in target):
+  if not set(target).isdisjoint(_argobjs(jacobian)):
     if tol <= 0:
       raise ValueError('nonlinear optimization problem requires a nonzero "tol" argument')
     solveargs.setdefault('rtol', 1e-3)
@@ -853,7 +854,7 @@ def optimize(target, functional:sample.strictintegral, *, tol:types.strictfloat=
 def _strip(kwargs, prefix):
   return {key[len(prefix):]: kwargs.pop(key) for key in list(kwargs) if key.startswith(prefix)}
 
-def _parse_lhs_cons(lhs0, constrain, targets, argshapes, arguments):
+def _parse_lhs_cons(lhs0, constrain, targets, argobjs, arguments):
   arguments = arguments.copy()
   if lhs0 is not None:
     if len(targets) != 1:
@@ -868,9 +869,9 @@ def _parse_lhs_cons(lhs0, constrain, targets, argshapes, arguments):
   else:
     constrain = {}
   for target in targets:
-    if target not in argshapes:
+    if target not in argobjs:
       raise SolverError('target does not occur in functional: {!r}'.format(target))
-    shape = argshapes[target]
+    shape = argobjs[target].shape
     if target not in arguments:
       arguments[target] = numpy.zeros(shape)
     elif arguments[target].shape != shape:
@@ -886,12 +887,12 @@ def _parse_lhs_cons(lhs0, constrain, targets, argshapes, arguments):
   return arguments, constrain
 
 def _derivative(residual, target, jacobian=None):
-  argshapes = _argshapes(residual)
+  argobjs = _argobjs(residual)
   if jacobian is None:
-    jacobian = tuple(res.derivative(evaluable.Argument(t, argshapes[t])) for res in residual for t in target)
+    jacobian = tuple(res.derivative(argobjs[t]) for res in residual for t in target)
   elif len(jacobian) != len(residual) * len(target):
     raise ValueError('jacobian has incorrect length')
-  elif any(jacobian[i*len(target)+j].shape != res.shape + argshapes[t] for i, res in enumerate(residual) for j, t in enumerate(target)):
+  elif any(jacobian[i*len(target)+j].shape != res.shape + argobjs[t].shape for i, res in enumerate(residual) for j, t in enumerate(target)):
     raise ValueError('jacobian has incorrect shape')
   return jacobian
 
@@ -947,15 +948,19 @@ def _integrate_blocks(*blocks, arguments, mask):
   assert not list(data)
   return nrg + [sparse.toarray(sparse.block(res)), matrix.fromsparse(sparse.block(jac), inplace=True)]
 
-def _argshapes(integrals):
-  '''merge argshapes of multiple integrals'''
+def _argobjs(integrals):
+  '''get :class:`evaluable.Argument` dependencies of multiple integrals'''
 
-  argshapes = {}
-  for target, shape in (item for integral in integrals if integral for item in integral.argshapes.items()):
-    if target not in argshapes:
-      argshapes[target] = shape
-    elif argshapes[target] != shape:
-      raise ValueError('shapes do not match for target {!r}: {} != {}'.format(target, argshapes[target], shape))
-  return argshapes
+  argobjs = {}
+  for integral in filter(None, integrals):
+    for integrand in integral._integrands.values():
+      for arg in integrand.arguments:
+        if isinstance(arg, evaluable.Argument):
+          if arg._name in argobjs:
+            if argobjs[arg._name] != arg:
+              raise ValueError('shape or dtype mismatch for argument {}: {} != {}'.format(arg._name, argobjs[arg._name], arg))
+          else:
+            argobjs[arg._name] = arg
+  return argobjs
 
 # vim:sw=2:sts=2:et
