@@ -2492,7 +2492,9 @@ class Argument(DerivativeTargetBase):
     except KeyError:
       raise ValueError('argument {!r} missing'.format(self._name))
     else:
-      assert numeric.isarray(value) and value.shape == self.shape
+      value = numpy.asarray(value)
+      assert value.shape == self.shape
+      value = value.astype(self.dtype, casting='safe', copy=False)
       return value
 
   def _derivative(self, var, seen):
