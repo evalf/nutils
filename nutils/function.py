@@ -37,7 +37,7 @@ _dtypes = bool, int, float
 class Lowerable(Protocol):
   'Protocol for lowering to :class:`nutils.evaluable.Array`.'
 
-  def prepare_eval(self, *, ndims: int, opposite: bool = False, npoints: Optional[Union[int, evaluable.Array]] = evaluable.NPoints(), replacements: Optional[Mapping[str, 'Array']] = None) -> evaluable.Array:
+  def prepare_eval(self, *, ndims: int, opposite: bool = False, npoints: Optional[Union[int, evaluable.Array]] = evaluable.NPoints()) -> evaluable.Array:
     '''Lower this object to a :class:`nutils.evaluable.Array`.
 
     Parameters
@@ -52,9 +52,6 @@ class Lowerable(Protocol):
     npoints : :class:`int` or :class:`nutils.evaluable.Array` or :class:`None`
         The length of the points axis or ``None`` if the result should not have
         a points axis.
-    replacements : :class:`dict` of :class:`str` and :class:`Array`
-        Mapping of :class:`Argument` replacements. The keys refer to the
-        :attr:`Argument.name` attribute. The replacements are not applied recursively.
     '''
 
 if __debug__:
@@ -464,15 +461,7 @@ class Argument(Array):
   def __getnewargs__(self):
     return self.name, self.shape
 
-  def prepare_eval(self, *, replacements: Optional[Mapping[str, Array]] = None, **kwargs: Any) -> evaluable.Array:
-    if replacements and self.name in replacements:
-      replacement = replacements[self.name]
-      assert replacement.shape == self.shape
-      # The `replacements` are deliberately omitted while lowering
-      # `replacement`, as this could cause infinite recursions. Super
-      # replacements are applied to the replacements themselves by
-      # `_Replace.prepare_eval`.
-      return _prepend_points(_WithoutPoints(replacement).prepare_eval(**kwargs), **kwargs)
+  def prepare_eval(self, **kwargs: Any) -> evaluable.Array:
     shape = tuple(_WithoutPoints(n).prepare_eval(**kwargs) if isinstance(n, Array) else n for n in self.shape)
     return _prepend_points(evaluable.Argument(self.name, shape, self.dtype), **kwargs)
 
@@ -486,22 +475,10 @@ class _Replace(Array):
   def __getnewargs__(self):
     return self._arg, self._replacements
 
-  def prepare_eval(self, *, replacements: Optional[Mapping[str, Array]] = None, **kwargs: Any) -> evaluable.Array:
-    if replacements:
-      # Apply super `replacements` to `self._replacements`.
-      #
-      #   _Replace(_Replace(x, dict(x=y)), dict(y=z)) -> z
-      replacements = dict(replacements)
-      self_replacements = {k: _Replace(v, replacements) for k, v in self._replacements.items()}
-      new_replacements = dict(replacements)
-      # Merge with and overwrite super `replacements` with
-      # `self._replacements`.
-      #
-      #   _Replace(_Replace(x, dict(x=y)), dict(x=z)) -> y
-      new_replacements.update(self_replacements)
-    else:
-      new_replacements = dict(self._replacements)
-    return self._arg.prepare_eval(replacements=new_replacements, **kwargs)
+  def prepare_eval(self, **kwargs: Any) -> evaluable.Array:
+    arg = self._arg.prepare_eval(**kwargs)
+    replacements = {name: _WithoutPoints(value).prepare_eval(**kwargs) for name, value in self._replacements.items()}
+    return evaluable.replace_arguments(arg, replacements)
 
 class _Transpose(Array):
 

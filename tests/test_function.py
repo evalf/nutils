@@ -401,6 +401,11 @@ class replace_arguments(TestCase):
     a = function.Argument('a', (2,))
     self.assertEqual(function.replace_arguments(a, dict(a=2*a)).prepare_eval(npoints=None), (2*a).prepare_eval(npoints=None))
 
+  def test_replace_derivative(self):
+    a = function.Argument('a', ())
+    b = function.Argument('b', ())
+    self.assertEqual(function.replace_arguments(function.derivative(a, a), dict(a=b)).prepare_eval(npoints=None).simplified, evaluable.ones(()).simplified)
+
 
 class namespace(TestCase):
 
