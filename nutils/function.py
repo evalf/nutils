@@ -472,7 +472,7 @@ class Argument(Array):
       # `replacement`, as this could cause infinite recursions. Super
       # replacements are applied to the replacements themselves by
       # `_Replace.prepare_eval`.
-      return replacement.prepare_eval(**kwargs)
+      return _prepend_points(_WithoutPoints(replacement).prepare_eval(**kwargs), **kwargs)
     shape = tuple(_WithoutPoints(n).prepare_eval(**kwargs) if isinstance(n, Array) else n for n in self.shape)
     return _prepend_points(evaluable.Argument(self.name, shape, self.dtype), **kwargs)
 

@@ -554,7 +554,7 @@ class namespace(TestCase):
     ns.foo = function.Argument('arg', [2,3])
     ns.bar_ij = 'sin(foo_ij) + cos(2 foo_ij)'
     ns = ns(arg=function.zeros([2,3]))
-    self.assertEqualLowered(ns.foo, function.zeros([2,3]))
+    self.assertEqualLowered(ns.foo, function.zeros([2,3]), npoints=None)
     self.assertEqual(ns.default_geometry_name, 'y')
 
   def test_pickle(self):
