@@ -470,10 +470,10 @@ class namespace(TestCase):
   def test_default_geometry_property(self):
     ns = function.Namespace()
     ns.x = 1
-    self.assertEqualLowered(ns.default_geometry, ns.x)
+    self.assertEqualLowered(ns.default_geometry, ns.x, ndims=0)
     ns = function.Namespace(default_geometry_name='y')
     ns.y = 2
-    self.assertEqualLowered(ns.default_geometry, ns.y)
+    self.assertEqualLowered(ns.default_geometry, ns.y, ndims=0)
 
   def test_copy(self):
     ns = function.Namespace()
@@ -528,12 +528,12 @@ class namespace(TestCase):
   def test_matmul_0d(self):
     ns = function.Namespace()
     ns.foo = 2
-    self.assertEqualLowered('foo' @ ns, ns.foo)
+    self.assertEqualLowered('foo' @ ns, ns.foo, npoints=None)
 
   def test_matmul_1d(self):
     ns = function.Namespace()
     ns.foo = function.zeros([2])
-    self.assertEqualLowered('foo_i' @ ns, ns.foo)
+    self.assertEqualLowered('foo_i' @ ns, ns.foo, npoints=None)
 
   def test_matmul_2d(self):
     ns = function.Namespace()
@@ -605,7 +605,7 @@ class namespace(TestCase):
   def test_d_arg(self):
     ns = function.Namespace()
     ns.a = '?a'
-    self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').prepare_eval().simplified, function.asarray(2).prepare_eval().simplified)
+    self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').prepare_eval(npoints=None).simplified, function.asarray(2).prepare_eval(npoints=None).simplified)
 
   def test_n(self):
     ns = function.Namespace()
@@ -684,7 +684,7 @@ class eval_ast(TestCase):
   def test_substitute(self): self.assertEqualLowered('(?x_i^2)(x_i=a2_i)', self.ns.a2**2)
   def test_multisubstitute(self): self.assertEqualLowered('(a2_i + ?x_i + ?y_i)(x_i=?y_i, y_i=?x_i)', self.ns.a2 + function.Argument('y', [2]) + function.Argument('x', [2]))
   def test_call(self): self.assertEqualLowered('sin(a)', function.sin(self.ns.a))
-  def test_call2(self): self.assertEqual(self.ns.eval_ij('arctan2(a2_i, a3_j)').prepare_eval().simplified, function.arctan2(self.ns.a2[:,None], self.ns.a3[None,:]).prepare_eval().simplified)
+  def test_call2(self): self.assertEqual(self.ns.eval_ij('arctan2(a2_i, a3_j)').prepare_eval(ndims=2).simplified, function.arctan2(self.ns.a2[:,None], self.ns.a3[None,:]).prepare_eval(ndims=2).simplified)
   def test_eye(self): self.assertEqualLowered('δ_ij a2_i', function.dot(function.eye(2), self.ns.a2, axes=[0]))
   def test_normal(self): self.assertEqualLowered('n_i', self.ns.x.normal())
   def test_getitem(self): self.assertEqualLowered('a2_0', self.ns.a2[0])

@@ -37,28 +37,20 @@ _dtypes = bool, int, float
 class Lowerable(Protocol):
   'Protocol for lowering to :class:`nutils.evaluable.Array`.'
 
-  def prepare_eval(self, *, ndims: int, opposite: bool = False, npoints: Optional[Union[int, evaluable.Array]] = evaluable.NPoints()) -> evaluable.Array:
+  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), coordinates: Tuple[evaluable.Array] = ()) -> evaluable.Array:
     '''Lower this object to a :class:`nutils.evaluable.Array`.
 
     Parameters
     ----------
-    ndims : :class:`int`
-        The dimension of the :class:`~nutils.sample.Sample` on which the
-        resulting :class:`nutils.evaluable.Array` will be evaluated.
-    opposite : :class:`bool`
-        Indicates which transform chain to use when evaluating the resulting
-        :class:`~nutils.evaluable.Array`. This has no effect when there is only
-        one transform chain.
-    npoints : :class:`int` or :class:`nutils.evaluable.Array` or :class:`None`
-        The length of the points axis or ``None`` if the result should not have
-        a points axis.
+    transform_chains : sequence of :class:`nutils.evaluable.TransformChain` objects
+    coordinates : sequence of :class:`nutils.evaluable.Array` objects
     '''
 
 if __debug__:
-  def _prepare_eval(self, **kwargs):
-    result = self._ArrayMeta__prepare_eval(**kwargs)
+  def _lower(self, **kwargs):
+    result = self._ArrayMeta__lower(**kwargs)
     assert isinstance(result, evaluable.Array)
-    offset = 1 if kwargs.get('npoints', True) is not None and not type(self).__name__ == '_WithoutPoints' else 0
+    offset = 1 if kwargs.get('coordinates', ()) and not type(self).__name__ == '_WithoutPoints' else 0
     assert result.ndim == self.ndim + offset
     for n, m in zip(result.shape[offset:], self.shape):
       if isinstance(m, int):
@@ -66,9 +58,9 @@ if __debug__:
     return result
   class _ArrayMeta(type(Lowerable)):
     def __new__(mcls, name, bases, namespace):
-      if 'prepare_eval' in namespace:
-        namespace['_ArrayMeta__prepare_eval'] = namespace.pop('prepare_eval')
-        namespace['prepare_eval'] = _prepare_eval
+      if 'lower' in namespace:
+        namespace['_ArrayMeta__lower'] = namespace.pop('lower')
+        namespace['lower'] = _lower
       return super().__new__(mcls, name, bases, namespace)
 else:
   _ArrayMeta = type
@@ -130,12 +122,41 @@ class Array(Lowerable, metaclass=_ArrayMeta):
         # Try to convert `length` to an `int` by lowering to an `Evaluable` and
         # evaluating.
         try:
-          length = int(length.prepare_eval(npoints=None).eval())
+          length = int(length.lower().eval())
         except:
           pass
       shape_.append(length)
     self.shape = tuple(shape_)
     self.dtype = dtype
+
+  def prepare_eval(self, *, ndims: Optional[int] = None, opposite: bool = False, npoints: Optional[Union[int, evaluable.Array]] = evaluable.NPoints()) -> evaluable.Array:
+    '''Lower this object to a :class:`nutils.evaluable.Array`.
+
+    Parameters
+    ----------
+    ndims : :class:`int`
+        The dimension of the :class:`~nutils.sample.Sample` on which the
+        resulting :class:`nutils.evaluable.Array` will be evaluated.
+    opposite : :class:`bool`
+        Indicates which transform chain to use when evaluating the resulting
+        :class:`~nutils.evaluable.Array`. This has no effect when there is only
+        one transform chain.
+    npoints : :class:`int` or :class:`nutils.evaluable.Array` or :class:`None`
+        The length of the points axis or ``None`` if the result should not have
+        a points axis.
+    '''
+
+    transform_chains = evaluable.SelectChain(0), evaluable.SelectChain(1)
+    if opposite:
+      transform_chains = transform_chains[::-1]
+    if npoints is not None:
+      assert ndims is not None
+      coordinates = (evaluable.Points(npoints, ndims),)*2
+      if opposite:
+        coordinates = coordinates[::-1]
+    else:
+      coordinates = None
+    return self.lower(transform_chains=transform_chains, coordinates=coordinates)
 
   @property
   def ndim(self) -> int:
@@ -365,9 +386,9 @@ class Array(Lowerable, metaclass=_ArrayMeta):
     warnings.deprecation('`nutils.function.Array.simplified` is deprecated. This property returns the array unmodified and can safely be omitted.')
     return self
 
-def _prepend_points(__arg: evaluable.Array, *, npoints: Optional[Union[int, evaluable.Array]] = evaluable.NPoints(), **kwargs: Any) -> evaluable.Array:
-  if npoints is not None:
-    return evaluable.prependaxes(__arg, (npoints,))
+def _prepend_points(__arg: evaluable.Array, *, coordinates: Sequence[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
+  if coordinates:
+    return evaluable.prependaxes(__arg, coordinates[0].shape[:-1])
   else:
     return __arg
 
@@ -379,50 +400,50 @@ class _WithoutPoints(Lowerable):
   def __getnewargs__(self):
     return self._arg,
 
-  def prepare_eval(self, *, npoints: Optional[Union[int, evaluable.Array]] = evaluable.NPoints(), **kwargs):
-    return self._arg.prepare_eval(npoints=None, **kwargs)
+  def lower(self, *, coordinates: Tuple[evaluable.Array] = (), **kwargs):
+    return self._arg.lower(coordinates=(), **kwargs)
 
 class _Wrapper(Array):
 
   @classmethod
-  def broadcasted_arrays(cls, prepare_eval: Callable[..., evaluable.Array], *args: IntoArray, min_dtype: Optional[DType] = None, force_dtype: Optional[DType] = None) -> '_Wrapper':
+  def broadcasted_arrays(cls, lower: Callable[..., evaluable.Array], *args: IntoArray, min_dtype: Optional[DType] = None, force_dtype: Optional[DType] = None) -> '_Wrapper':
     broadcasted, shape, dtype = _broadcast(*args)
     assert not min_dtype or not force_dtype
     if min_dtype and (_dtypes.index(dtype) < _dtypes.index(min_dtype)):
       dtype = min_dtype
     if force_dtype:
       dtype = force_dtype
-    return cls(prepare_eval, *broadcasted, shape=shape, dtype=dtype)
+    return cls(lower, *broadcasted, shape=shape, dtype=dtype)
 
-  def __init__(self, prepare_eval: Callable[..., evaluable.Array], *args: Lowerable, shape: Shape, dtype: DType) -> None:
-    self._prepare_eval = prepare_eval
+  def __init__(self, lower: Callable[..., evaluable.Array], *args: Lowerable, shape: Shape, dtype: DType) -> None:
+    self._lower = lower
     self._args = args
-    assert all(hasattr(arg, 'prepare_eval') for arg in self._args)
+    assert all(hasattr(arg, 'lower') for arg in self._args)
     super().__init__(shape, dtype)
 
   def __getnewargs__(self):
-    return (self._prepare_eval, *self._args)
+    return (self._lower, *self._args)
 
-  def prepare_eval(self, **kwargs: Any) -> evaluable.Array:
-    return self._prepare_eval(*(arg.prepare_eval(**kwargs) for arg in self._args))
+  def lower(self, **kwargs: Any) -> evaluable.Array:
+    return self._lower(*(arg.lower(**kwargs) for arg in self._args))
 
 class _Zeros(Array):
 
   def __getnewargs__(self):
     return self.shape, self.dtype
 
-  def prepare_eval(self, npoints: Optional[Union[int, evaluable.Array]] = evaluable.NPoints(), **kwargs: Any) -> evaluable.Array:
-    shape = () if npoints is None else (npoints,)
-    return evaluable.Zeros((*shape, *(_WithoutPoints(Array.cast(n)).prepare_eval(**kwargs) for n in self.shape)), self.dtype)
+  def lower(self, coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
+    shape = coordinates[0].shape[:-1] if coordinates else ()
+    return evaluable.Zeros((*shape, *(_WithoutPoints(Array.cast(n)).lower(**kwargs) for n in self.shape)), self.dtype)
 
 class _Ones(Array):
 
   def __getnewargs__(self):
     return self.shape, self.dtype
 
-  def prepare_eval(self, npoints: Optional[Union[int, evaluable.Array]] = evaluable.NPoints(), **kwargs: Any) -> evaluable.Array:
-    shape = () if npoints is None else (npoints,)
-    return evaluable.ones((*shape, *(_WithoutPoints(Array.cast(n)).prepare_eval(**kwargs) for n in self.shape)), self.dtype)
+  def lower(self, coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
+    shape = coordinates[0].shape[:-1] if coordinates else ()
+    return evaluable.ones((*shape, *(_WithoutPoints(Array.cast(n)).lower(**kwargs) for n in self.shape)), self.dtype)
 
 class _Constant(Array):
 
@@ -433,7 +454,7 @@ class _Constant(Array):
   def __getnewargs__(self):
     return self._value,
 
-  def prepare_eval(self, **kwargs: Any) -> evaluable.Array:
+  def lower(self, **kwargs: Any) -> evaluable.Array:
     return _prepend_points(evaluable.Constant(self._value), **kwargs)
 
 class Argument(Array):
@@ -461,8 +482,8 @@ class Argument(Array):
   def __getnewargs__(self):
     return self.name, self.shape
 
-  def prepare_eval(self, **kwargs: Any) -> evaluable.Array:
-    shape = tuple(_WithoutPoints(n).prepare_eval(**kwargs) if isinstance(n, Array) else n for n in self.shape)
+  def lower(self, **kwargs: Any) -> evaluable.Array:
+    shape = tuple(_WithoutPoints(n).lower(**kwargs) if isinstance(n, Array) else n for n in self.shape)
     return _prepend_points(evaluable.Argument(self.name, shape, self.dtype), **kwargs)
 
 class _Replace(Array):
@@ -475,9 +496,9 @@ class _Replace(Array):
   def __getnewargs__(self):
     return self._arg, self._replacements
 
-  def prepare_eval(self, **kwargs: Any) -> evaluable.Array:
-    arg = self._arg.prepare_eval(**kwargs)
-    replacements = {name: _WithoutPoints(value).prepare_eval(**kwargs) for name, value in self._replacements.items()}
+  def lower(self, **kwargs: Any) -> evaluable.Array:
+    arg = self._arg.lower(**kwargs)
+    replacements = {name: _WithoutPoints(value).lower(**kwargs) for name, value in self._replacements.items()}
     return evaluable.replace_arguments(arg, replacements)
 
 class _Transpose(Array):
@@ -509,9 +530,9 @@ class _Transpose(Array):
   def __getnewargs__(self):
     return self._arg, self._axes
 
-  def prepare_eval(self, **kwargs: Any) -> evaluable.Array:
-    axes = (0, *(i+1 for i in self._axes)) if kwargs.get('npoints', True) is not None else self._axes
-    return evaluable.Transpose(self._arg.prepare_eval(**kwargs), axes)
+  def lower(self, **kwargs: Any) -> evaluable.Array:
+    axes = (0, *(i+1 for i in self._axes)) if kwargs.get('coordinates', ()) else self._axes
+    return evaluable.Transpose(self._arg.lower(**kwargs), axes)
 
 class _Opposite(Array):
 
@@ -522,8 +543,10 @@ class _Opposite(Array):
   def __getnewargs__(self):
     return self._arg,
 
-  def prepare_eval(self, *, opposite: bool = False, **kwargs: Any) -> evaluable.Array:
-    return self._arg.prepare_eval(opposite=not opposite, **kwargs)
+  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
+    if len(transform_chains) > 2 or len(coordinates) > 2:
+      raise ValueError('opposite is not defined if there are more than two transform chains or coordinates')
+    return self._arg.lower(transform_chains=transform_chains[::-1], coordinates=coordinates[::-1], **kwargs)
 
 class _LocalCoords(Array):
 
@@ -533,7 +556,7 @@ class _LocalCoords(Array):
   def __getnewargs__(self):
     return self.shape[0],
 
-  def prepare_eval(self, **kwargs: Any) -> evaluable.Array:
+  def lower(self, **kwargs: Any) -> evaluable.Array:
     raise ValueError('cannot be lowered')
 
 class _RootCoords(Array):
@@ -544,12 +567,9 @@ class _RootCoords(Array):
   def __getnewargs__(self):
     return self.shape[0],
 
-  def prepare_eval(self, *, ndims: int, npoints: Optional[Union[int, evaluable.Array]] = evaluable.NPoints(), opposite: bool = False, **kwargs) -> evaluable.Array:
-    assert npoints is not None
-    trans = evaluable.SelectChain(int(opposite))
-    trans = evaluable.PopHead(self.shape[0], trans)
-    points = evaluable.Points(npoints, ndims)
-    return evaluable.ApplyTransforms(trans, points)
+  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), coordinates: Tuple[evaluable.Array] = (), **kwargs) -> evaluable.Array:
+    assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
+    return evaluable.ApplyTransforms(transform_chains[0], coordinates[0], self.shape[0])
 
 class _TransformsIndex(Array):
 
@@ -560,9 +580,9 @@ class _TransformsIndex(Array):
   def __getnewargs__(self):
     return self._transforms,
 
-  def prepare_eval(self, *, opposite: bool = False, **kwargs: Any) -> evaluable.Array:
-    trans = evaluable.SelectChain(int(opposite))
-    index, tail = evaluable.TransformsIndexWithTail(self._transforms, trans)
+  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), **kwargs: Any) -> evaluable.Array:
+    assert transform_chains
+    index, tail = evaluable.TransformsIndexWithTail(self._transforms, transform_chains[0])
     return _prepend_points(index, **kwargs)
 
 class _TransformsCoords(Array):
@@ -574,11 +594,10 @@ class _TransformsCoords(Array):
   def __getnewargs__(self):
     return self._transforms, self.shape[0]
 
-  def prepare_eval(self, *, ndims: int, npoints: Optional[Union[int, evaluable.Array]] = evaluable.NPoints(), opposite: bool = False, **kwargs: Any) -> evaluable.Array:
-    assert npoints is not None
-    index, tail = evaluable.TransformsIndexWithTail(self._transforms, evaluable.SelectChain(int(opposite)))
-    points = evaluable.Points(npoints, ndims)
-    return evaluable.ApplyTransforms(tail, points)
+  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
+    assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
+    index, tail = evaluable.TransformsIndexWithTail(self._transforms, transform_chains[0])
+    return evaluable.ApplyTransforms(tail, coordinates[0], self.shape[0])
 
 class _Derivative(Array):
 
@@ -596,8 +615,8 @@ class _Derivative(Array):
   def __getnewargs__(self):
     return self._arg, self._var
 
-  def prepare_eval(self, **kwargs: Any) -> evaluable.Array:
-    arg = self._arg.prepare_eval(**kwargs)
+  def lower(self, **kwargs: Any) -> evaluable.Array:
+    arg = self._arg.lower(**kwargs)
     return evaluable.derivative(arg, self._eval_var)
 
 class _Jacobian(Array):
@@ -610,8 +629,10 @@ class _Jacobian(Array):
   def __getnewargs__(self):
     return self._geom,
 
-  def prepare_eval(self, *, ndims: int, **kwargs: Any) -> evaluable.Array:
-    return evaluable.jacobian(self._geom.prepare_eval(ndims=ndims, **kwargs), ndims)
+  def lower(self, *, coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
+    assert coordinates
+    ndims = coordinates[0].shape[-1]
+    return evaluable.jacobian(self._geom.lower(coordinates=coordinates, **kwargs), ndims)
 
 class _Elemwise(Array):
 
@@ -625,8 +646,8 @@ class _Elemwise(Array):
   def __getnewargs__(self):
     return self._data, self._index, self.dtype
 
-  def prepare_eval(self, **kwargs: Any) -> evaluable.Array:
-    return _prepend_points(evaluable.Elemwise(self._data, _WithoutPoints(self._index).prepare_eval(**kwargs), self.dtype), **kwargs)
+  def lower(self, **kwargs: Any) -> evaluable.Array:
+    return _prepend_points(evaluable.Elemwise(self._data, _WithoutPoints(self._index).lower(**kwargs), self.dtype), **kwargs)
 
 class RevolutionAngle(Array):
 
@@ -636,7 +657,7 @@ class RevolutionAngle(Array):
   def __getnewargs__(self):
     return ()
 
-  def prepare_eval(self, **kwargs: Any) -> evaluable.Array:
+  def lower(self, **kwargs: Any) -> evaluable.Array:
     return _prepend_points(evaluable.RevolutionAngle(), **kwargs)
 
 def _join_lengths(*lengths_: Union[int, Array]) -> Union[int, Array]:
@@ -2194,7 +2215,7 @@ def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
   '''
 
   geom = Array.cast(__geom)
-  # TODO: check `__ndims` with `ndims` argument passed to `prepare_eval`.
+  # TODO: check `__ndims` with `ndims` argument passed to `lower`.
   return _Jacobian(geom)
 
 def J(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
@@ -2556,10 +2577,10 @@ class Basis(Array):
     self.coords = coords
     super().__init__((ndofs,), float)
 
-  def prepare_eval(self, **kwargs: Any) -> evaluable.Array:
-    index = _WithoutPoints(self.index).prepare_eval(**kwargs)
+  def lower(self, **kwargs: Any) -> evaluable.Array:
+    index = _WithoutPoints(self.index).lower(**kwargs)
     coeffs = self.f_coefficients(index)
-    coords = self.coords.prepare_eval(**kwargs)
+    coords = self.coords.lower(**kwargs)
     return evaluable.Inflate(evaluable.Polyval(coeffs, coords), self.f_dofs(index), self.ndofs)
 
   @property

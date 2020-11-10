@@ -1235,19 +1235,20 @@ class Product(Array):
 
 class ApplyTransforms(Array):
 
-  __slots__ = 'trans',
+  __slots__ = 'trans', '_todims'
 
   @types.apply_annotations
-  def __init__(self, trans:types.strict[TransformChain], points):
+  def __init__(self, trans:types.strict[TransformChain], points, todims:types.strictint):
     self.trans = trans
-    super().__init__(args=[points, trans], shape=[points.shape[0], trans.todims], dtype=float)
+    self._todims = todims
+    super().__init__(args=[points, trans], shape=[points.shape[0], todims], dtype=float)
 
   def evalf(self, points, chain):
     return transform.apply(chain, points)
 
   def _derivative(self, var, seen):
     if isinstance(var, LocalCoords) and len(var) > 0:
-      return prependaxes(LinearFrom(self.trans, len(var)), self.shape[:-1])
+      return prependaxes(LinearFrom(self.trans, self._todims, len(var)), self.shape[:-1])
     return zeros(self.shape+var.shape)
 
 class LinearFrom(Array):
@@ -1255,8 +1256,8 @@ class LinearFrom(Array):
   __slots__ = ()
 
   @types.apply_annotations
-  def __init__(self, trans:types.strict[TransformChain], fromdims:types.strictint):
-    super().__init__(args=[trans], shape=(trans.todims, fromdims), dtype=float)
+  def __init__(self, trans:types.strict[TransformChain], todims:types.strictint, fromdims:types.strictint):
+    super().__init__(args=[trans], shape=(todims, fromdims), dtype=float)
 
   def evalf(self, chain):
     todims, fromdims = self.shape
