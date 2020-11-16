@@ -63,11 +63,7 @@ asarrays = types.tuple[asarray]
 
 def as_canonical_length(value):
   if isarray(value):
-    if value.ndim != 0 or value.dtype != int:
-      raise ValueError('length should be an `int` or `Array` with zero dimensions and dtype `int`, got {!r}'.format(value))
-    value = value.simplified
-    if value.isconstant:
-      value = int(value.eval()) # Ensure this is an `int`, not `numpy.int64`.
+    return value._as_canonical_length
   elif numeric.isint(value):
     value = int(value) # Ensure this is an `int`, not `numpy.int64`.
   else:
@@ -710,7 +706,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   '''
 
   __slots__ = '_axes', 'dtype'
-  __cache__ = 'blocks', 'assparse', '_assparse'
+  __cache__ = 'blocks', 'assparse', '_assparse', '_as_canonical_length'
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
@@ -895,6 +891,17 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     if self.dtype in (bool, int) or var not in self.dependencies:
       return Zeros(self.shape + var.shape, dtype=self.dtype)
     raise NotImplementedError('derivative not defined for {}'.format(self.__class__.__name__))
+
+  @property
+  def _as_canonical_length(self):
+    'convert to an :class:`int` if possible'
+
+    if self.ndim != 0 or self.dtype != int:
+      raise ValueError('expected an `Array` with dimension zero and dtype `int` but got {!r}'.format(self))
+    value = self.simplified
+    if value.isconstant:
+      value = int(value.eval()) # Ensure this is an `int`, not `numpy.int64`.
+    return value
 
 class NPoints(Array):
   'The length of the points axis.'
