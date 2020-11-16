@@ -3091,6 +3091,128 @@ class NormDim(Array):
     if self.length.isconstant and self.index.isconstant:
       return Constant(self.eval())
 
+class _SizesToOffsets(Array):
+
+  def __init__(self, sizes):
+    assert sizes.ndim == 1
+    assert sizes.dtype == int
+    self._sizes = sizes
+    super().__init__(args=[sizes], shape=(sizes.shape[0]+1,), dtype=int)
+
+  def evalf(self, sizes):
+    return numpy.cumsum([0, *sizes])
+
+  def _simplified(self):
+    if isinstance(self._sizes._axes[0], Inserted):
+      return Range(self.shape[0]) * appendaxes(self._sizes._uninsert(0), self.shape[:1])
+
+class LoopConcatenate(Array):
+
+  @types.apply_annotations
+  def __init__(self, func:asarray, start:asarray, stop:asarray, cc_length:asarray, index:types.strict[Argument], length:asarray):
+    if index.dtype != int or index.ndim != 0:
+      raise ValueError('expected an index with dtype int and dimension zero but got {}'.format(index))
+    if not func.ndim:
+      raise ValueError('expected an array with at least one axis')
+    if any(index in asarray(n).arguments for n in func.shape[:-1]):
+      raise ValueError('the shape of the function must not depend on the index')
+    if index in length.arguments:
+      raise ValueError('the length of the loop must not depend on the index')
+    if index in cc_length.arguments:
+      raise ValueError('the length of the concatenation axis must not depend on the index')
+
+    self.func = func
+    self.index = index
+    self.length = length
+    self.start = start
+    self.stop = stop
+    shape = (*func.shape[:-1], cc_length)
+
+    invariants = [*map(asarray, shape), length]
+    dependencies = []
+    cache = set()
+    _populate_dependencies_sans_invariants(self.start, index, invariants, dependencies, cache)
+    _populate_dependencies_sans_invariants(self.stop, index, invariants, dependencies, cache)
+    _populate_dependencies_sans_invariants(func, index, invariants, dependencies, cache)
+    indices = {d: i for i, d in enumerate(itertools.chain(invariants, [index], dependencies))}
+    self._slice_indices = indices[self.start], indices[self.stop]
+    self._result_index = indices[func]
+    self._serialized = tuple((dep, tuple(map(indices.__getitem__, dep._Evaluable__args))) for dep in dependencies)
+    self._invariants = tuple(invariants)
+
+    axes = (*func._axes[:-1], Axis(shape[-1]))
+    super().__init__(args=invariants, shape=axes, dtype=func.dtype)
+
+  def evalf(self, *args):
+    result = numpy.empty(tuple(map(int, args[:self.ndim])), self.dtype)
+    for index in range(int(args[self.ndim])):
+      values = list(args)
+      values.append(numpy.array(index))
+      values.extend(op.evalf(*[values[i] for i in indices]) for op, indices in self._serialized)
+      start, stop = (int(values[idx]) for idx in self._slice_indices)
+      result[...,start:stop] = values[self._result_index]
+    return result
+
+  def evalf_withtimes(self, times, *args):
+    times[self] = subtimes = collections.defaultdict(_Stats)
+    result = numpy.zeros(tuple(map(int, args[:self.ndim])), self.dtype)
+    for index in range(int(args[self.ndim])):
+      values = list(args)
+      values.append(numpy.array(index))
+      values.extend(op.evalf_withtimes(subtimes, *[values[i] for i in indices]) for op, indices in self._serialized)
+      start, stop = (int(values[idx]) for idx in self._slice_indices)
+      result[...,start:stop] = values[self._result_index]
+    return result
+
+  def _derivative(self, var, seen):
+    return Transpose.from_end(loop_concatenate(Transpose.to_end(derivative(self.func, var, seen), self.ndim-1), self.index, self.length), self.ndim-1)
+
+  def _node(self, cache, subgraph, times):
+    if self in cache:
+      return cache[self]
+    subcache = {}
+    for arg in self._invariants:
+      subcache[arg] = arg._node(cache, subgraph, times)
+    loopgraph = Subgraph('Loop', subgraph)
+    subcache[self.index] = RegularNode('LoopIndex', (), dict(length=self.length._node(cache, subgraph, times)), (type(self).__name__, _Stats()), loopgraph)
+    subtimes = times.get(self, collections.defaultdict(_Stats))
+    concat_kwargs = {'shape[{}]'.format(i): asarray(n)._node(cache, subgraph, times) for i, n in enumerate(self.shape)}
+    concat_kwargs['start'] = self.start._node(subcache, loopgraph, subtimes)
+    concat_kwargs['stop'] = self.stop._node(subcache, loopgraph, subtimes)
+    concat_kwargs['func'] = self.func._node(subcache, loopgraph, subtimes)
+    cache[self] = node = RegularNode('LoopConcatenate', (), concat_kwargs, (type(self).__name__, subtimes['concat']), loopgraph)
+    return node
+
+  def _simplified(self):
+    if iszero(self.func):
+      return zeros_like(self)
+    elif self.index not in self.func.arguments:
+      return Ravel(Transpose.from_end(InsertAxis(self.func, self.length), -2))
+    for iaxis, axis in enumerate(self.func._axes[:-1]):
+      if isinstance(axis, Inserted) and self.index not in asarray(axis.length).arguments:
+        return insertaxis(loop_concatenate(self.func._uninsert(iaxis), self.index, self.length), iaxis, axis.length)
+    if isinstance(self.func._axes[-1], Inserted) and self.index not in asarray(self.func.shape[-1]).arguments and self.func.shape[-1] != 1:
+      return Ravel(InsertAxis(loop_concatenate(InsertAxis(self.func._uninsert(self.func.ndim-1), 1), self.index, self.length), self.func.shape[-1]))
+
+  def _takediag(self, axis1, axis2):
+    if axis1 < self.ndim-1 and axis2 < self.ndim-1:
+      return Transpose.from_end(loop_concatenate(Transpose.to_end(_takediag(self.func, axis1, axis2), -2), self.index, self.length), -2)
+
+  def _take(self, index, axis):
+    if axis < self.ndim-1:
+      return loop_concatenate(_take(self.func, index, axis), self.index, self.length)
+
+  def _unravel(self, axis, shape):
+    if axis < self.ndim-1:
+      return loop_concatenate(unravel(self.func, axis, shape), self.index, self.length)
+
+  @property
+  def _assparse(self):
+    chunks = []
+    for *indices, last_index, values in self.func._assparse:
+      last_index = last_index + prependaxes(self.start, last_index.shape)
+      chunks.append(tuple(loop_concatenate(_flat(arr), self.index, self.length) for arr in (*indices, last_index, values)))
+    return tuple(chunks)
 
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
@@ -3137,6 +3259,19 @@ def _inflate_scalar(arg, shape):
 
 def _isunique(array):
   return numpy.unique(array).size == array.size
+
+def _populate_dependencies_sans_invariants(func, arg, invariants, dependencies, cache):
+  if func in cache:
+    return
+  cache.add(func)
+  if func == arg:
+    pass
+  elif arg in func.arguments:
+    for child in func._Evaluable__args:
+      _populate_dependencies_sans_invariants(child, arg, invariants, dependencies, cache)
+    dependencies.append(func)
+  else:
+    invariants.append(func)
 
 class _Stats:
 
@@ -3444,6 +3579,24 @@ def appendaxes(func, shape):
   for n in shape:
     func = insertaxis(func, func.ndim, n)
   return func
+
+def _loop_concatenate_data(func, index, length):
+  func = asarray(func)
+  chunk_size = asarray(func.shape[-1])
+  if chunk_size.isconstant:
+    chunk_sizes = InsertAxis(chunk_size, length)
+  else:
+    chunk_sizes = loop_concatenate(InsertAxis(func.shape[-1], 1), index, length)
+  offsets = _SizesToOffsets(chunk_sizes)
+  start = _take(offsets, index, 0)
+  stop = _take(offsets, index+1, 0)
+  cc_length = asarray(as_canonical_length(_take(offsets, length, 0)))
+  return func, start, stop, cc_length
+
+def loop_concatenate(func, index, length):
+  length = asarray(length)
+  func, start, stop, cc_length = _loop_concatenate_data(func, index, length)
+  return LoopConcatenate(func, start, stop, cc_length, index, length)
 
 @replace
 def replace_arguments(value, arguments):

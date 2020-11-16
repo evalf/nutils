@@ -268,6 +268,17 @@ class check(TestCase):
         desired=self.n_op_argsfun.reshape(self.n_op_argsfun.shape[:idim]+unravelshape+self.n_op_argsfun.shape[idim+1:]),
         actual=evaluable.unravel(self.op_args, axis=idim, shape=unravelshape))
 
+  def test_loopconcatenate(self):
+    index = evaluable.Argument('_testindex', (), int)
+    length = 3
+    for iarg, shape in enumerate(self.shapes):
+      testvalue = numpy.random.uniform(size=(length, *shape), low=self.low, high=self.high)
+      n_op_argsfun = numpy.concatenate([self.n_op(*self.arg_values[:iarg], v, *self.arg_values[iarg+1:]) for v in testvalue], axis=-1)
+      args = (*self.args[:iarg], evaluable.Guard(evaluable.get(evaluable.asarray(testvalue), 0, index)), *self.args[iarg+1:])
+      self.assertFunctionAlmostEqual(decimal=15,
+        actual=evaluable.loop_concatenate(self.op(*args), index, length),
+        desired=n_op_argsfun)
+
   def test_desparsify(self):
     args = []
     for arg in self.args:
@@ -400,6 +411,8 @@ _check('take', lambda f: evaluable.Take(f, [0,3,2]), lambda a: a[:,[0,3,2]], [(2
 _check('take-duplicate', lambda f: evaluable.Take(f, [0,3,0]), lambda a: a[:,[0,3,0]], [(2,4)])
 _check('choose', lambda a, b, c: evaluable.Choose(evaluable.appendaxes(evaluable.Int(a)%2, (3,3)), [b,c]), lambda a, b, c: numpy.choose(a[_,_].astype(int)%2, [b,c]), [(), (3,3), (3,3)])
 _check('slice', lambda a: evaluable.asarray(a)[::2], lambda a: a[::2], [(5,3)])
+_check('loopconcatenate1', lambda a: evaluable.loop_concatenate(a+evaluable.prependaxes(evaluable.Argument('index', (), int), a.shape), evaluable.Argument('index', (), int), 3), lambda a: a+numpy.arange(3)[None], [(2,1)])
+_check('loopconcatenate2', lambda: evaluable.loop_concatenate(evaluable.Elemwise([numpy.arange(48).reshape(4,4,3)[:,:,a:b] for a, b in util.pairwise([0,2,3])], evaluable.Argument('index', (), int), int), evaluable.Argument('index', (), int), 2), lambda: numpy.arange(48).reshape(4,4,3), [])
 
 _polyval_mask = lambda shape, ndim: 1 if ndim == 0 else numpy.array([sum(i[-ndim:]) < shape[-1] for i in numpy.ndindex(shape)], dtype=int).reshape(shape)
 _polyval_desired = lambda c, x: sum(c[(...,*i)]*(x[(slice(None),*[None]*(c.ndim-x.shape[1]))]**i).prod(-1) for i in itertools.product(*[range(c.shape[-1])]*x.shape[1]) if sum(i) < c.shape[-1])
@@ -654,6 +667,33 @@ class asciitree(TestCase):
                      '  │   └ 2\n'
                      '  └ %5 = Diagonalize; d2,d2\n'
                      '    └ Argument; arg; a2\n')
+
+  @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
+  def test_loop_concatenate(self):
+    i = evaluable.Argument('i', (), int)
+    f = evaluable.loop_concatenate(evaluable.InsertAxis(i, 1), i, evaluable.Constant(2))
+    self.assertEqual(f.asciitree(richoutput=True),
+                     'SUBGRAPHS\n'
+                     'A\n'
+                     '└ B = Loop\n'
+                     'NODES\n'
+                     '%B0 = LoopConcatenate\n'
+                     '├ shape[0] = 2\n'
+                     '├ start = %B1 = Take\n'
+                     '│ ├ %A2 = _SizesToOffsets; a3\n'
+                     '│ │ └ %A3 = InsertAxis; i2\n'
+                     '│ │   ├ 1\n'
+                     '│ │   └ 2\n'
+                     '│ └ %B4 = LoopIndex\n'
+                     '│   └ length = 2\n'
+                     '├ stop = %B5 = Take\n'
+                     '│ ├ %A2\n'
+                     '│ └ %B6 = Add\n'
+                     '│   ├ %B4\n'
+                     '│   └ 1\n'
+                     '└ func = %B7 = InsertAxis; i1\n'
+                     '  ├ %B4\n'
+                     '  └ 1\n')
 
 class simplify(TestCase):
 
