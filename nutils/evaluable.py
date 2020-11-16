@@ -1844,7 +1844,7 @@ class Pointwise(Array):
     retval = self.evalf(*[numpy.ones((), dtype=arg.dtype) for arg in args])
     shapes = set(arg.shape for arg in args)
     assert len(shapes) == 1, 'pointwise arguments have inconsistent shapes'
-    shape, = shapes
+    shape = tuple(axes[0] if len(set(axes)) == 1 and not isinstance(axes[0], Sparse) else Axis(axes[0].length) for axes in zip(*(arg._axes for arg in args)))
     self.args = args
     super().__init__(args=args, shape=shape, dtype=retval.dtype)
 
@@ -1869,6 +1869,12 @@ class Pointwise(Array):
     if self.isconstant:
       retval = self.eval()
       return Constant(retval)
+    if len(self.args) == 1 and isinstance(self.args[0], Transpose):
+      arg, = self.args
+      return Transpose(self.__class__(arg.func), arg.axes)
+    for i in reversed(range(self.ndim)):
+      if all(isinstance(arg._axes[i], Inserted) for arg in self.args):
+        return insertaxis(self.__class__(*(arg._uninsert(i) for arg in self.args)), i, self.shape[i])
 
   def _derivative(self, var, seen):
     if self.deriv is None:
