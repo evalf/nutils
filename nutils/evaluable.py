@@ -867,6 +867,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   _inflate = lambda self, dofmap, length, axis: None
   _unravel = lambda self, axis, shape: None
   _ravel = lambda self, axis: None
+  _loopsum = lambda self, index, length: None
 
   def _uninsert(self, axis):
     assert isinstance(self._axes[axis], Inserted)
@@ -1160,6 +1161,9 @@ class InsertAxis(Array):
     if axis1 < self.ndim-1 and axis2 < self.ndim-1:
       return InsertAxis(inverse(self.func, (axis1, axis2)), self.length)
 
+  def _loopsum(self, index, length):
+    return InsertAxis(LoopSum(self.func, index, length), self.length)
+
   @property
   def _assparse(self):
     return tuple((*(InsertAxis(idx, self.length) for idx in indices), prependaxes(Range(self.length), values.shape), InsertAxis(values, self.length)) for *indices, values in self.func._assparse)
@@ -1312,6 +1316,9 @@ class Transpose(Array):
 
   def _insertaxis(self, axis, length):
     return Transpose(InsertAxis(self.func, length), self.axes[:axis] + (self.ndim,) + self.axes[axis:])
+
+  def _loopsum(self, index, length):
+    return Transpose(LoopSum(self.func, index, length), self.axes)
 
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
@@ -1613,6 +1620,13 @@ class Multiply(Array):
     if all(isinstance(func2._axes[axis], Inserted) for axis in (axis1, axis2)):
       return divide(inverse(func1, (axis1, axis2)), func2)
 
+  def _loopsum(self, index, length):
+    func1, func2 = self.funcs
+    if func1 != index and index not in func1.dependencies:
+      return Multiply([func1, LoopSum(func2, index, length)])
+    if func2 != index and index not in func2.dependencies:
+      return Multiply([LoopSum(func1, index, length), func2])
+
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
     func1, func2 = self.funcs
@@ -1692,6 +1706,9 @@ class Add(Array):
 
   def _unravel(self, axis, shape):
     return Add([unravel(func, axis, shape) for func in self.funcs])
+
+  def _loopsum(self, index, length):
+    return Add([LoopSum(func, index, length) for func in self.funcs])
 
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
@@ -2554,6 +2571,9 @@ class Diagonalize(Array):
     if numeric.isint(self.shape[-1]) and self.shape[-1] > 1:
       return Zeros(self.shape[:-1], dtype=self.dtype)
 
+  def _loopsum(self, index, length):
+    return Diagonalize(LoopSum(self.func, index, length))
+
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
     assert axis < self.ndim-2
@@ -2808,6 +2828,9 @@ class Ravel(Array):
 
   def _product(self):
     return Product(Product(self.func))
+
+  def _loopsum(self, index, length):
+    return Ravel(LoopSum(self.func, index, length))
 
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
@@ -3090,6 +3113,105 @@ class NormDim(Array):
   def _simplified(self):
     if self.length.isconstant and self.index.isconstant:
       return Constant(self.eval())
+
+class LoopSum(Array):
+
+  @types.apply_annotations
+  def __init__(self, func: asarray, index:types.strict[Argument], length: asarray):
+    if index.dtype != int or index.ndim != 0:
+      raise ValueError('expected an index with dtype int and dimension zero but got {}'.format(index))
+    if any(index in asarray(n).arguments for n in func.shape):
+      raise ValueError('the shape of the function must not depend on the index')
+    if index in length.arguments:
+      raise ValueError('the length of the loop must not depend on the index')
+
+    self.func = func
+    self.index = index
+    self.length = length
+
+    invariants = [*map(asarray, func.shape), length]
+    dependencies = []
+    _populate_dependencies_sans_invariants(func, index, invariants, dependencies, set())
+    indices = {d: i for i, d in enumerate(itertools.chain(invariants, [index], dependencies))}
+    self._result_index = indices[func]
+    self._serialized = tuple((dep, tuple(map(indices.__getitem__, dep._Evaluable__args))) for dep in dependencies)
+
+    axes = tuple(Axis(axis.length) if isinstance(axis, Sparse) else axis for axis in func._axes)
+    super().__init__(args=invariants, shape=axes, dtype=func.dtype)
+
+  def evalf(self, *args):
+    result = numpy.zeros(tuple(map(int, args[:self.ndim])), self.dtype)
+    for index in range(int(args[self.ndim])):
+      values = list(args)
+      values.append(numpy.array(index))
+      values.extend(op.evalf(*[values[i] for i in indices]) for op, indices in self._serialized)
+      result += values[self._result_index]
+    return result
+
+  def evalf_withtimes(self, times, *args):
+    times[self] = subtimes = collections.defaultdict(_Stats)
+    result = numpy.zeros(tuple(map(int, args[:self.ndim])), self.dtype)
+    for index in range(int(args[self.ndim])):
+      values = list(args)
+      values.append(numpy.array(index))
+      values.extend(op.evalf_withtimes(subtimes, *[values[i] for i in indices]) for op, indices in self._serialized)
+      result += values[self._result_index]
+    return result
+
+  def _derivative(self, var, seen):
+    return LoopSum(derivative(self.func, var, seen), self.index, self.length)
+
+  def _node(self, cache, subgraph, times):
+    if self in cache:
+      return cache[self]
+    subcache = {}
+    for arg in self._Evaluable__args:
+      subcache[arg] = arg._node(cache, subgraph, times)
+    loopgraph = Subgraph('Loop', subgraph)
+    subcache[self.index] = RegularNode('LoopIndex', (), dict(length=self.length._node(cache, subgraph, times)), (type(self).__name__, _Stats()), loopgraph)
+    subtimes = times.get(self, collections.defaultdict(_Stats))
+    sum_kwargs = {'shape[{}]'.format(i): asarray(n)._node(cache, subgraph, times) for i, n in enumerate(self.shape)}
+    sum_kwargs['func'] = self.func._node(subcache, loopgraph, subtimes)
+    cache[self] = node = RegularNode('LoopSum', (), sum_kwargs, (type(self).__name__, subtimes['sum'], loopgraph))
+    return node
+
+  def _simplified(self):
+    if iszero(self.func):
+      return zeros_like(self)
+    elif self.index not in self.func.arguments:
+      return self.func * self.length
+    return self.func._loopsum(self.index, self.length)
+
+  def _takediag(self, axis1, axis2):
+    return LoopSum(_takediag(self.func, axis1, axis2), self.index, self.length)
+
+  def _take(self, index, axis):
+    return LoopSum(_take(self.func, index, axis), self.index, self.length)
+
+  def _unravel(self, axis, shape):
+    return LoopSum(unravel(self.func, axis, shape), self.index, self.length)
+
+  @property
+  def _assparse(self):
+    chunks = []
+    for *elem_indices, elem_values in self.func._assparse:
+      if self.ndim == 0:
+        values = loop_concatenate(InsertAxis(elem_values, 1), self.index, self.length)
+        while values.ndim:
+          values = Sum(values)
+        chunks.append((values,))
+      else:
+        if elem_values.ndim == 0:
+          *elem_indices, elem_values = (InsertAxis(arr, 1) for arr in (*elem_indices, elem_values))
+        else:
+          # minimize ravels by transposing all variable length axes to the end
+          variable = tuple(i for i, n in enumerate(elem_values.shape) if not numeric.isint(n) and self.index in n.arguments)
+          *elem_indices, elem_values = (Transpose.to_end(arr, *variable) for arr in (*elem_indices, elem_values))
+          for i in variable[:-1]:
+            *elem_indices, elem_values = map(Ravel, (*elem_indices, elem_values))
+          assert all(numeric.isint(n) for n in elem_values.shape[:-1])
+        chunks.append(tuple(loop_concatenate(arr, self.index, self.length) for arr in (*elem_indices, elem_values)))
+    return tuple(chunks)
 
 class _SizesToOffsets(Array):
 
@@ -3628,7 +3750,7 @@ if __name__ == '__main__':
   simplify_priority = (
     Transpose, Ravel, # reinterpretation
     Inflate, Diagonalize, InsertAxis, # size increasing
-    Multiply, Add, Sign, Power, Inverse, Unravel, # size preserving
+    Multiply, Add, LoopSum, Sign, Power, Inverse, Unravel, # size preserving
     Product, Determinant, TakeDiag, Take, Sum) # size decreasing
   # The simplify priority defines the preferred order in which operations are
   # performed: shape decreasing operations such as Sum and Take should be done

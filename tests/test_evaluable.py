@@ -268,6 +268,17 @@ class check(TestCase):
         desired=self.n_op_argsfun.reshape(self.n_op_argsfun.shape[:idim]+unravelshape+self.n_op_argsfun.shape[idim+1:]),
         actual=evaluable.unravel(self.op_args, axis=idim, shape=unravelshape))
 
+  def test_loopsum(self):
+    index = evaluable.Argument('_testindex', (), int)
+    length = 3
+    for iarg, shape in enumerate(self.shapes):
+      testvalue = numpy.random.uniform(size=(length, *shape), low=self.low, high=self.high)
+      n_op_argsfun = functools.reduce(operator.add, (self.n_op(*self.arg_values[:iarg], v, *self.arg_values[iarg+1:]) for v in testvalue))
+      args = (*self.args[:iarg], evaluable.Guard(evaluable.get(evaluable.asarray(testvalue), 0, index)), *self.args[iarg+1:])
+      self.assertFunctionAlmostEqual(decimal=15,
+        actual=evaluable.LoopSum(self.op(*args), index, length),
+        desired=n_op_argsfun)
+
   def test_loopconcatenate(self):
     index = evaluable.Argument('_testindex', (), int)
     length = 3
@@ -411,6 +422,10 @@ _check('take', lambda f: evaluable.Take(f, [0,3,2]), lambda a: a[:,[0,3,2]], [(2
 _check('take-duplicate', lambda f: evaluable.Take(f, [0,3,0]), lambda a: a[:,[0,3,0]], [(2,4)])
 _check('choose', lambda a, b, c: evaluable.Choose(evaluable.appendaxes(evaluable.Int(a)%2, (3,3)), [b,c]), lambda a, b, c: numpy.choose(a[_,_].astype(int)%2, [b,c]), [(), (3,3), (3,3)])
 _check('slice', lambda a: evaluable.asarray(a)[::2], lambda a: a[::2], [(5,3)])
+_check('loopsum1', lambda: evaluable.LoopSum(evaluable.Argument('index', (), int), evaluable.Argument('index', (), int), 3), lambda: numpy.array(3), [])
+_check('loopsum2', lambda a: evaluable.LoopSum(a, evaluable.Argument('index', (), int), 2), lambda a: 2*a, [(3,4,2,4)])
+_check('loopsum3', lambda a: evaluable.LoopSum(evaluable.get(a, 0, evaluable.Argument('index', (), int)), evaluable.Argument('index', (), int), 3), lambda a: numpy.sum(a, 0), [(3,4,2,4)])
+_check('loopsum4', lambda: evaluable.LoopSum(evaluable.Inflate(evaluable.Argument('index', (), int), 0, 2), evaluable.Argument('index', (), int), 3), lambda: numpy.array([3, 0]), [])
 _check('loopconcatenate1', lambda a: evaluable.loop_concatenate(a+evaluable.prependaxes(evaluable.Argument('index', (), int), a.shape), evaluable.Argument('index', (), int), 3), lambda a: a+numpy.arange(3)[None], [(2,1)])
 _check('loopconcatenate2', lambda: evaluable.loop_concatenate(evaluable.Elemwise([numpy.arange(48).reshape(4,4,3)[:,:,a:b] for a, b in util.pairwise([0,2,3])], evaluable.Argument('index', (), int), int), evaluable.Argument('index', (), int), 2), lambda: numpy.arange(48).reshape(4,4,3), [])
 
@@ -667,6 +682,19 @@ class asciitree(TestCase):
                      '  │   └ 2\n'
                      '  └ %5 = Diagonalize; d2,d2\n'
                      '    └ Argument; arg; a2\n')
+
+  @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
+  def test_loop_sum(self):
+    i = evaluable.Argument('i', (), int)
+    f = evaluable.LoopSum(i, i, evaluable.Constant(2))
+    self.assertEqual(f.asciitree(richoutput=True),
+                     'SUBGRAPHS\n'
+                     'A\n'
+                     '└ B = Loop\n'
+                     'NODES\n'
+                     '%A0 = LoopSum\n'
+                     '└ func = %B1 = LoopIndex\n'
+                     '  └ length = 2\n')
 
   @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
   def test_loop_concatenate(self):
