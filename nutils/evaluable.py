@@ -145,69 +145,76 @@ def replace(func=None, depthfirst=False, recursive=False, lru=4):
     rstack = [] # stack of processed objects
     _stack = fstack if recursive else rstack
 
-    while fstack:
-      obj = fstack.pop()
+    try:
+      while fstack:
+        obj = fstack.pop()
 
-      if obj is recreate:
-        args = [rstack.pop() for obj in range(fstack.pop())]
-        f = fstack.pop()
-        r = f(*args)
-        if depthfirst:
-          newr = func(r, *funcargs, **funckwargs)
+        if obj is recreate:
+          args = [rstack.pop() for obj in range(fstack.pop())]
+          f = fstack.pop()
+          r = f(*args)
+          if depthfirst:
+            newr = func(r, *funcargs, **funckwargs)
+            if newr is not None:
+              _stack.append(newr)
+              continue
+          rstack.append(r)
+          continue
+
+        if obj is remember:
+          obj = fstack.pop()
+          cache[obj] = rstack[-1] if rstack[-1] is not obj else identity
+          continue
+
+        if isinstance(obj, (tuple, list, dict, set, frozenset)):
+          if not obj:
+            rstack.append(obj) # shortcut to avoid recreation of empty container
+          else:
+            fstack.append(lambda *x, T=type(obj): T(x))
+            fstack.append(len(obj))
+            fstack.append(recreate)
+            fstack.extend(obj if not isinstance(obj, dict) else obj.items())
+          continue
+
+        try:
+          r = cache[obj]
+        except KeyError: # object can be weakly cached, but isn't
+          cache[obj] = pending
+          fstack.append(obj)
+          fstack.append(remember)
+        except TypeError: # object cannot be referenced or is not hashable
+          pass
+        else: # object is in cache
+          if r is pending:
+            pending_objs = [k for k, v in cache.items() if v is pending]
+            index = pending_objs.index(obj)
+            raise Exception('{}@replace caught in a circular dependence\n'.format(func.__name__) + Tuple(pending_objs[index:]).asciitree().split('\n', 1)[1])
+          rstack.append(r if r is not identity else obj)
+          continue
+
+        if not depthfirst:
+          newr = func(obj, *funcargs, **funckwargs)
           if newr is not None:
             _stack.append(newr)
             continue
-        rstack.append(r)
-        continue
 
-      if obj is remember:
-        obj = fstack.pop()
-        cache[obj] = rstack[-1] if rstack[-1] is not obj else identity
-        continue
-
-      if isinstance(obj, (tuple, list, dict, set, frozenset)):
-        if not obj:
-          rstack.append(obj) # shortcut to avoid recreation of empty container
+        try:
+          f, args = obj.__reduce__()
+        except: # obj cannot be reduced into a constructor and its arguments
+          rstack.append(obj)
         else:
-          fstack.append(lambda *x, T=type(obj): T(x))
-          fstack.append(len(obj))
+          fstack.append(f)
+          fstack.append(len(args))
           fstack.append(recreate)
-          fstack.extend(obj if not isinstance(obj, dict) else obj.items())
-        continue
+          fstack.extend(args)
 
-      try:
-        r = cache[obj]
-      except KeyError: # object can be weakly cached, but isn't
-        cache[obj] = pending
-        fstack.append(obj)
-        fstack.append(remember)
-      except TypeError: # object cannot be referenced or is not hashable
-        pass
-      else: # object is in cache
-        if r is pending:
-          pending_objs = [k for k, v in cache.items() if v is pending]
-          index = pending_objs.index(obj)
-          raise Exception('{}@replace caught in a circular dependence\n'.format(func.__name__) + Tuple(pending_objs[index:]).asciitree().split('\n', 1)[1])
-        rstack.append(r if r is not identity else obj)
-        continue
+      assert len(rstack) == 1
 
-      if not depthfirst:
-        newr = func(obj, *funcargs, **funckwargs)
-        if newr is not None:
-          _stack.append(newr)
-          continue
+    finally:
+      while fstack:
+        if fstack.pop() is remember:
+          assert cache.pop(fstack.pop()) is pending
 
-      try:
-        f, args = obj.__reduce__()
-      except: # obj cannot be reduced into a constructor and its arguments
-        rstack.append(obj)
-      else:
-        fstack.append(f)
-        fstack.append(len(args))
-        fstack.append(recreate)
-        fstack.extend(args)
-
-    assert len(rstack) == 1
     return rstack[0]
 
   return wrapped

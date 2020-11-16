@@ -706,3 +706,17 @@ class memory(TestCase):
     A.simplified # constant simplified to itself, which should be handled as a special case to avoid circular references
     A = weakref.ref(A)
     self.assertCollected(A)
+
+  def test_replace(self):
+    class MyException(Exception):
+      pass
+    class A(evaluable.Array):
+      def __init__(self):
+        super().__init__(args=[], shape=(), dtype=float)
+      def _simplified(self):
+        raise MyException
+    t = evaluable.Tuple([A()])
+    with self.assertRaises(MyException):
+      t.simplified
+    with self.assertRaises(MyException): # make sure no placeholders remain in the replacement cache
+      t.simplified
