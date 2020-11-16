@@ -119,6 +119,7 @@ def replace(func=None, depthfirst=False, recursive=False, lru=4):
   remember = object() # token to signal that rstack[-1] can be cached as the replacement of fstack[-1]
   recreate = object() # token to signal that all arguments for object recreation are ready on rstack
   pending = object() # token to hold the place of a cachable object pending creation
+  identity = object() # token to hold the place of the cache value in case it matches key, to avoid circular references
 
   @functools.wraps(func)
   def wrapped(target, *funcargs, **funckwargs):
@@ -160,7 +161,8 @@ def replace(func=None, depthfirst=False, recursive=False, lru=4):
         continue
 
       if obj is remember:
-        cache[fstack.pop()] = rstack[-1]
+        obj = fstack.pop()
+        cache[obj] = rstack[-1] if rstack[-1] is not obj else identity
         continue
 
       if isinstance(obj, (tuple, list, dict, set, frozenset)):
@@ -186,7 +188,7 @@ def replace(func=None, depthfirst=False, recursive=False, lru=4):
           pending_objs = [k for k, v in cache.items() if v is pending]
           index = pending_objs.index(obj)
           raise Exception('{}@replace caught in a circular dependence\n'.format(func.__name__) + Tuple(pending_objs[index:]).asciitree().split('\n', 1)[1])
-        rstack.append(r)
+        rstack.append(r if r is not identity else obj)
         continue
 
       if not depthfirst:
