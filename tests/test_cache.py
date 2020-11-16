@@ -154,7 +154,7 @@ class function(TestCase):
       with self.assertRaises(TestException) as cm:
         func()
       self.assertEqual(cm.exception.args[0], 'spam')
-      self.assertEqual(ncalls, 1)
+      self.assertEqual(ncalls, 2)
 
   def test_corruption(self):
 
@@ -313,7 +313,7 @@ class Recursion(TestCase):
       with self.assertRaises(TestException) as cm:
         read(R(), 4)
       self.assertEqual(cm.exception.args[0], 'spam')
-      self.assertEqual(received_history, untouched)
+      self.assertEqual(received_history, (1,))
 
   def test_corruption(self):
 

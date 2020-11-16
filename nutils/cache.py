@@ -207,39 +207,28 @@ def function(func=None, *, version=0):
       log.debug('[cache.function {}] lock acquired'.format(hkey))
       try:
         data = pickle.load(f)
-        if len(data) == 2: # For old caches.
-          value, log_ = data
-          fail = False
-        else:
+        if len(data) == 3: # For old caches.
           log_, fail, value = data
+          if fail:
+            raise pickle.UnpicklingError
+        else:
+          value, log_ = data
       except (EOFError, pickle.UnpicklingError, IndexError):
         log.debug('[cache.function {}] failed to load, cache will be rewritten'.format(hkey))
         pass
       else:
         log.debug('[cache.function {}] load'.format(hkey))
         log_.replay()
-        if fail:
-          raise value
-        else:
-          return value
+        return value
       # Seek back to the beginning, because pickle might have read garbage.
       f.seek(0)
       # Disable the cache temporarily to prevent caching subresults *in* `func`.
       log_ = log.RecordLog()
       with disable(), log.add(log_):
-        try:
-          value = func(*args, **kwargs)
-        except Exception as e:
-          value = e
-          fail = True
-        else:
-          fail = False
-      pickle.dump((log_, fail, value), f)
+        value = func(*args, **kwargs)
+      pickle.dump((value, log_), f)
       log.debug('[cache.function {}] store'.format(hkey))
-      if fail:
-        raise value
-      else:
-        return value
+      return value
 
   return wrapper
 
@@ -377,8 +366,6 @@ class Recursion(types.Immutable, metaclass=_RecursionMeta):
             else:
               log.debug('[cache.Recursion {}.{:04d}] load'.format(hkey, i))
               log_.replay()
-              if stop and value is None:
-                value = StopIteration
               history.append(value)
               if len(history) > length:
                 history = history[1:]
@@ -392,17 +379,14 @@ class Recursion(types.Immutable, metaclass=_RecursionMeta):
             with disable(), log.add(log_):
               try:
                 value = next(resume)
-              except Exception as e:
+              except StopIteration:
                 stop = True
-                value = e
+                value = None
             log.debug('[cache.Recursion {}.{}] store'.format(hkey, i))
             pickle.dump((log_, stop, value), f)
-        if not stop:
-          yield value
-        elif isinstance(value, StopIteration):
+        if stop:
           return
-        else:
-          raise value
+        yield value
 
   def resume_index(self, history, index):
     '''
