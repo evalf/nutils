@@ -871,13 +871,13 @@ class StructuredTopology(Topology):
     if nbounds == 0:
       opposites = transforms
     else:
-      axes = [transformseq.BndAxis(axis.i, axis.j, axis.ibound, not axis.side) if not axis.isdim and axis.ibound==nbounds-1 else axis for axis in self.axes]
+      axes = [axis.opposite(nbounds-1) for axis in self.axes]
       opposites = transformseq.StructuredTransforms(self.root, axes, self.nrefine)
 
     super().__init__(references, transforms, opposites)
 
   def __repr__(self):
-    return '{}<{}>'.format(type(self).__qualname__, 'x'.join(str(axis.j-axis.i)+('p' if axis.isperiodic else '') for axis in self.axes if isinstance(axis, transformseq.DimAxis)))
+    return '{}<{}>'.format(type(self).__qualname__, 'x'.join(str(axis.j-axis.i)+('p' if axis.isperiodic else '') for axis in self.axes if axis.isdim))
 
   def __len__(self):
     return numpy.prod(self.shape, dtype=int)
@@ -892,12 +892,7 @@ class StructuredTopology(Topology):
     idim = 0
     for axis in self.axes:
       if axis.isdim and idim < len(item):
-        s = item[idim]
-        if s != slice(None):
-          start, stop, stride = s.indices(axis.j - axis.i)
-          assert stride == 1
-          assert stop > start
-          axis = transformseq.DimAxis(axis.i+start, axis.i+stop, isperiodic=False)
+        axis = axis.getitem(item[idim])
         idim += 1
       axes.append(axis)
     return StructuredTopology(self.root, axes, self.nrefine, bnames=self._bnames)
@@ -928,9 +923,9 @@ class StructuredTopology(Topology):
     'boundary'
 
     nbounds = len(self.axes) - self.ndims
-    btopos = [StructuredTopology(root=self.root, axes=self.axes[:idim] + (transformseq.BndAxis(n,n if not axis.isperiodic else 0,nbounds,side),) + self.axes[idim+1:], nrefine=self.nrefine, bnames=self._bnames)
-      for idim, axis in enumerate(self.axes) if axis.isdim and not axis.isperiodic
-        for side, n in enumerate((axis.i,axis.j))]
+    btopos = [StructuredTopology(root=self.root, axes=self.axes[:idim] + (bndaxis,) + self.axes[idim+1:], nrefine=self.nrefine, bnames=self._bnames)
+      for idim, axis in enumerate(self.axes)
+        for bndaxis in axis.boundaries(nbounds)]
     if not btopos:
       return EmptyTopology(self.ndims-1)
     bnames = [bname for bnames, axis in zip(self._bnames, self.axes) if axis.isdim and not axis.isperiodic for bname in bnames]
@@ -946,9 +941,8 @@ class StructuredTopology(Topology):
     for idim, axis in enumerate(self.axes):
       if not axis.isdim:
         continue
-      intaxis = lambda side: (transformseq.PIntAxis if idim in self.periodic else transformseq.IntAxis)(axis.i, axis.j, nbounds, side)
-      axes = (*self.axes[:idim], intaxis(True), *self.axes[idim+1:])
-      oppaxes = (*self.axes[:idim], intaxis(False), *self.axes[idim+1:])
+      axes = (*self.axes[:idim], axis.intaxis(nbounds, side=True), *self.axes[idim+1:])
+      oppaxes = (*self.axes[:idim], axis.intaxis(nbounds, side=False), *self.axes[idim+1:])
       itransforms = transformseq.StructuredTransforms(self.root, axes, self.nrefine)
       iopposites = transformseq.StructuredTransforms(self.root, oppaxes, self.nrefine)
       ireferences = References.uniform(util.product(element.getsimplex(1 if a.isdim else 0) for a in axes), len(itransforms))
@@ -1248,8 +1242,7 @@ class StructuredTopology(Topology):
   def refined(self):
     'refine non-uniformly'
 
-    axes = [transformseq.DimAxis(i=axis.i*2,j=axis.j*2,isperiodic=axis.isperiodic) if axis.isdim
-        else transformseq.BndAxis(i=axis.i*2,j=axis.j*2,ibound=axis.ibound,side=axis.side) for axis in self.axes]
+    axes = [axis.refined for axis in self.axes]
     return StructuredTopology(self.root, axes, self.nrefine+1, bnames=self._bnames)
 
   def locate(self, geom, coords, *, tol, eps=0, weights=None, **kwargs):

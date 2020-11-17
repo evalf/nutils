@@ -458,6 +458,31 @@ class DimAxis(Axis):
   def map(self, index):
     return self.i+index
 
+  @property
+  def refined(self):
+    return DimAxis(i=self.i*2,j=self.j*2,isperiodic=self.isperiodic)
+
+  def opposite(self, ibound):
+    return self
+
+  def getitem(self, s):
+    if not isinstance(s, slice):
+      raise NotImplementedError
+    if s == slice(None):
+      return self
+    start, stop, stride = s.indices(self.j - self.i)
+    assert stride == 1
+    assert stop > start
+    return DimAxis(self.i+start, self.i+stop, isperiodic=False)
+
+  def boundaries(self, ibound):
+    if not self.isperiodic:
+      yield BndAxis(i=self.i, j=self.i, ibound=ibound, side=0)
+      yield BndAxis(i=self.j, j=self.j, ibound=ibound, side=1)
+
+  def intaxis(self, ibound, side):
+    return (PIntAxis if self.isperiodic else IntAxis)(self.i, self.j, ibound, side)
+
 class EdgeAxis(Axis):
 
   __slots__ = 'i', 'j', 'ibound', 'side'
@@ -485,6 +510,16 @@ class BndAxis(EdgeAxis):
 
   def map(self, index):
     return self.i-1 if self.side else self.j
+
+  @property
+  def refined(self):
+    return BndAxis(i=self.i*2, j=self.j*2, ibound=self.ibound, side=self.side)
+
+  def opposite(self, ibound):
+    return BndAxis(self.i, self.j, self.ibound, not self.side) if ibound == self.ibound else self
+
+  def boundaries(self, ibound):
+    return ()
 
 class IntAxis(EdgeAxis):
 
