@@ -74,8 +74,10 @@ def fork(nprocs=None):
       yield procid
   except BaseException as e:
     if amchild: # pragma: no cover
-      print('[parallel.fork] exception in child process:', e)
-      os._exit(1) # communicate failure to main process
+      try:
+        print('[parallel.fork] exception in child process:', e)
+      finally:
+        os._exit(1) # communicate failure to main process
     for pid in child_pids: # kill all child processes
       os.kill(pid, signal.SIGKILL)
     raise
@@ -83,7 +85,7 @@ def fork(nprocs=None):
     if amchild: # pragma: no cover
       os._exit(0) # communicate success to main process
     with treelog.context('waiting for child processes'):
-      nfails = sum(os.waitpid(pid, 0)[1] != 0 for pid in child_pids)
+      nfails = sum(not _wait(pid) for pid in child_pids)
     if nfails: # failure in child process: raise exception
       raise Exception('fork failed in {} out of {} processes'.format(nfails, nprocs))
   finally:
@@ -145,5 +147,26 @@ def _pct(name, n):
   i = yield name + ' 0%'
   while True:
     i = yield name + ' {:.0f}%'.format(100*(i+1)/n)
+
+def _wait(pid):
+  '''wait for process to finish and return True upon success,
+  False upon failure while logging the reason.'''
+  pid_, status = os.waitpid(pid, 0)
+  assert pid_ == pid
+  if os.WIFEXITED(status):
+    s = os.WEXITSTATUS(status)
+    if not s:
+      return True
+    msg = 'exited with status {}'.format(s)
+  elif os.WIFSIGNALED(status):
+    s = os.WTERMSIG(status)
+    msg = 'was killed with signal {} ({})'.format(s, signal.Signals(s).name)
+  elif os.WIFSTOPPED(status):
+    s = os.WSTOPSIG(status)
+    msg = 'was stopped with signal {} ({})'.format(s, signal.Signals(s).name)
+  else:
+    msg = 'died of unnatural causes'
+  treelog.error('process {} {}'.format(pid, msg))
+  return False
 
 # vim:sw=2:sts=2:et

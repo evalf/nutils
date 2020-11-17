@@ -1,4 +1,4 @@
-import numpy, itertools, pickle, warnings as _builtin_warnings
+import numpy, itertools, pickle, weakref, gc, warnings as _builtin_warnings
 from nutils import *
 from nutils.testing import *
 _ = numpy.newaxis
@@ -688,3 +688,35 @@ class simplify(TestCase):
     # circular dependence. This used to be the case prior to adding the
     # isinstance(other_trans, Transpose) restriction in Transpose._multiply.
     self.assertEqual(f.simplified, f)
+
+class memory(TestCase):
+
+  def assertCollected(self, ref):
+    gc.collect()
+    if ref() is not None:
+      self.fail('object was not garbage collected')
+
+  def test_general(self):
+    A = evaluable.Constant([1,2,3])
+    A = weakref.ref(A)
+    self.assertCollected(A)
+
+  def test_simplified(self):
+    A = evaluable.Constant([1,2,3])
+    A.simplified # constant simplified to itself, which should be handled as a special case to avoid circular references
+    A = weakref.ref(A)
+    self.assertCollected(A)
+
+  def test_replace(self):
+    class MyException(Exception):
+      pass
+    class A(evaluable.Array):
+      def __init__(self):
+        super().__init__(args=[], shape=(), dtype=float)
+      def _simplified(self):
+        raise MyException
+    t = evaluable.Tuple([A()])
+    with self.assertRaises(MyException):
+      t.simplified
+    with self.assertRaises(MyException): # make sure no placeholders remain in the replacement cache
+      t.simplified

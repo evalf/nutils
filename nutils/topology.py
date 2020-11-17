@@ -1270,8 +1270,8 @@ class StructuredTopology(Topology):
   def _asaffine(self, geom):
     index = function.rootcoords(len(self.axes))[[axis.isdim for axis in self.axes]] * 2**self.nrefine - [axis.i for axis in self.axes if axis.isdim]
     basis = function.concatenate([function.eye(self.ndims), function.diagonalize(index)], axis=0)
-    A, b = self.integrate([(basis[:,_,:] * basis[_,:,:]).sum(-1), (basis * geom).sum(-1)], degree=2)
-    x = A.solve(b)
+    A, b = map(sparse.toarray, self.sample('gauss', 2).integrate_sparse([(basis[:,_,:] * basis[_,:,:]).sum(-1), (basis * geom).sum(-1)]))
+    x = numpy.linalg.solve(A, b)
     return x[:self.ndims], x[self.ndims:], index
 
   def _locate(self, geom0, scale, coords, *, eps=0, weights=None):
