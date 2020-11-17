@@ -461,17 +461,18 @@ class Axis(types.Singleton):
 
 class DimAxis(Axis):
 
-  __slots__ = 'isperiodic'
+  __slots__ = 'isperiodic', 'refines'
   isdim = True
 
   @types.apply_annotations
-  def __init__(self, i:types.strictint, j:types.strictint, mod:types.strictint, isperiodic:bool):
+  def __init__(self, i:types.strictint, j:types.strictint, mod:types.strictint, isperiodic:bool, refines:bool=True):
     super().__init__(i, j, mod)
     self.isperiodic = isperiodic
+    self.refines = refines
 
   @property
   def refined(self):
-    return DimAxis(self.i*2, self.j*2, self.mod*2, self.isperiodic)
+    return DimAxis(self.i*2, self.j*2, self.mod*2, self.isperiodic, True) if self.refines else self
 
   def opposite(self, ibound):
     return self
@@ -484,33 +485,34 @@ class DimAxis(Axis):
     start, stop, stride = s.indices(self.j - self.i)
     assert stride == 1
     assert stop > start
-    return DimAxis(self.i+start, self.i+stop, mod=self.mod, isperiodic=False)
+    return DimAxis(self.i+start, self.i+stop, mod=self.mod, isperiodic=False, refines=self.refines)
 
   def boundaries(self, ibound):
     if not self.isperiodic:
-      yield IntAxis(self.i, self.i+1, self.mod, ibound, side=False)
-      yield IntAxis(self.j-1, self.j, self.mod, ibound, side=True)
+      yield IntAxis(self.i, self.i+1, self.mod, ibound, side=False, refines=self.refines)
+      yield IntAxis(self.j-1, self.j, self.mod, ibound, side=True, refines=self.refines)
 
   def intaxis(self, ibound, side):
-    return IntAxis(self.i-side+1-self.isperiodic, self.j-side, self.mod, ibound, side)
+    return IntAxis(self.i-side+1-self.isperiodic, self.j-side, self.mod, ibound, side, self.refines)
 
 class IntAxis(Axis):
 
-  __slots__ = 'ibound', 'side'
+  __slots__ = 'ibound', 'side', 'refines'
   isdim = False
 
   @types.apply_annotations
-  def __init__(self, i:types.strictint, j:types.strictint, mod:types.strictint, ibound:types.strictint, side:bool):
+  def __init__(self, i:types.strictint, j:types.strictint, mod:types.strictint, ibound:types.strictint, side:bool, refines:bool=True):
     super().__init__(i, j, mod)
     self.ibound = ibound
     self.side = side
+    self.refines = refines
 
   @property
   def refined(self):
-    return IntAxis(self.i*2+self.side, self.j*2+self.side-1, self.mod*2, self.ibound, self.side)
+    return IntAxis(self.i*2+self.side, self.j*2+self.side-1, self.mod*2, self.ibound, self.side, True) if self.refines else self
 
   def opposite(self, ibound):
-    return IntAxis(self.i+2*self.side-1, self.j+2*self.side-1, self.mod, self.ibound, not self.side) if ibound == self.ibound else self
+    return IntAxis(self.i+2*self.side-1, self.j+2*self.side-1, self.mod, self.ibound, not self.side, self.refines) if ibound == self.ibound else self
 
   def boundaries(self, ibound):
     return ()
@@ -536,8 +538,8 @@ class StructuredTransforms(Transforms):
     self._axes = axes
     self._nrefine = nrefine
 
-    ref = element.LineReference()**len(self._axes)
-    self._ctransforms = numeric.asobjvector(ref.child_transforms).reshape((2,)*len(self._axes))
+    ref = util.product(element.LineReference() if axis.refines else element.NonRefiningLine() for axis in axes)
+    self._ctransforms = numeric.asobjvector(ref.child_transforms).reshape([2 if axis.refines else 1 for axis in axes])
     self._cindices = {t: numpy.array(i, dtype=int) for i, t in numpy.ndenumerate(self._ctransforms)}
 
     etransforms = []
@@ -588,7 +590,7 @@ class StructuredTransforms(Transforms):
     # Match child transforms.
     for item in tail[:self._nrefine]:
       try:
-        indices = indices*2 + self._cindices[item]
+        indices = indices * numpy.array(self._ctransforms.shape) + self._cindices[item]
       except KeyError:
         raise ValueError
 

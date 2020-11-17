@@ -34,7 +34,7 @@ _ = numpy.newaxis
 # MESH GENERATORS
 
 @log.withcontext
-def rectilinear(richshape, periodic=(), name='rect'):
+def rectilinear(richshape, periodic=(), norefine=(), name='rect'):
   'rectilinear mesh'
 
   ndims = len(richshape)
@@ -57,7 +57,7 @@ def rectilinear(richshape, periodic=(), name='rect'):
       uniform = False
 
   root = transform.Identifier(ndims, name)
-  axes = [transformseq.DimAxis(i=0, j=n, mod=n if idim in periodic else 0, isperiodic=idim in periodic) for idim, n in enumerate(shape)]
+  axes = [transformseq.DimAxis(i=0, j=n, mod=n if idim in periodic else 0, isperiodic=idim in periodic, refines=idim not in norefine) for idim, n in enumerate(shape)]
   topo = topology.StructuredTopology(root, axes)
 
   if uniform:

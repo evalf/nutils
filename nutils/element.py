@@ -393,6 +393,76 @@ class RevolutionReference(Reference):
   def get_poly_coeffs(self, basis, **kwargs):
     return types.frozenarray([[1.]]) # single, constant basis function
 
+class NonRefiningLine(Reference):
+  'like Line, but returning self als only child'
+
+  __slots__ = ()
+  __cache__ = 'edge_refs', 'edge_transforms'
+
+  def __init__(self):
+    super().__init__(ndims=1)
+
+  @property
+  def vertices(self):
+    return types.frozenarray(numpy.array([[0.],[1.]]), copy=False)
+
+  @property
+  def edge_refs(self):
+    return (getsimplex(0),) * 2
+
+  @property
+  def edge_transforms(self):
+    return tuple(transform.SimplexEdge(1, i) for i in range(2))
+
+  @property
+  def child_refs(self):
+    return self,
+
+  @property
+  def child_transforms(self):
+    return transform.Identity(1),
+
+  @property
+  def ribbons(self):
+    return ((0,0),(1,0)),
+
+  def getpoints(self, ischeme, degree):
+    if ischeme == 'uniform':
+      return points.CoordsUniformPoints(numpy.arange(.5, degree)[:,_] / degree, 1)
+    if ischeme == 'gauss':
+      return points.SimplexGaussPoints(1, degree if numeric.isint(degree) else sum(degree))
+    if ischeme == 'vtk':
+      return points.SimplexBezierPoints(1, 2)
+    if ischeme == 'vertex':
+      return points.SimplexBezierPoints(1, 2**degree + 1)
+    if ischeme == 'bezier':
+      return points.SimplexBezierPoints(1, degree)
+    return super().getpoints(ischeme, degree)
+
+  @property
+  def simplices(self):
+    return (transform.Identity(1), LineReference()),
+
+  def get_ndofs(self, degree):
+    return degree+1
+
+  def get_poly_coeffs(self, basis, **kwargs):
+    return LineReference().get_poly_coeffs(basis, **kwargs)
+
+  def get_edge_dofs(self, degree, iedge):
+    return LineReference().get_edge_dofs(degree, iedge)
+
+  def inside(self, point, eps=0):
+    return numpy.greater_equal(point, -eps).all(axis=0) and numpy.less_equal(numpy.sum(point, axis=0), 1+eps)
+
+  def nvertices_by_level(self, n):
+    return 2
+
+  def child_divide(self, vals, n):
+    assert n > 0
+    assert len(vals) == 2
+    return vals,
+
 class SimplexReference(Reference):
   'simplex reference'
 

@@ -886,7 +886,7 @@ class StructuredTopology(Topology):
     self.shape = tuple(axis.j - axis.i for axis in self.axes if axis.isdim)
     self._bnames = bnames
 
-    references = References.uniform(util.product(element.getsimplex(1 if axis.isdim else 0) for axis in self.axes), len(self))
+    references = References.uniform(util.product(element.PointReference() if not axis.isdim else element.LineReference() if axis.refines else element.NonRefiningLine() for axis in self.axes), len(self))
     transforms = transformseq.StructuredTransforms(self.root, self.axes, self.nrefine)
     nbounds = len(self.axes) - len(self.shape)
     if nbounds == 0:
