@@ -1,4 +1,4 @@
-import numpy, itertools, pickle, weakref, gc, warnings as _builtin_warnings, collections
+import numpy, itertools, pickle, weakref, gc, warnings as _builtin_warnings, collections, sys, unittest
 from nutils import *
 from nutils.testing import *
 _ = numpy.newaxis
@@ -58,6 +58,15 @@ class check(TestCase):
     self.assertFunctionAlmostEqual(decimal=15,
       actual=self.op_args,
       desired=self.n_op_argsfun)
+
+  @unittest.skipIf(sys.version_info < (3,7), 'time.perf_counter_ns is not available')
+  def test_eval_withtimes(self):
+    evalargs = dict(zip(self.arg_names, self.arg_values))
+    without_times = self.op_args.eval(**evalargs)
+    stats = collections.defaultdict(evaluable._Stats)
+    with_times = self.op_args.eval_withtimes(stats, **evalargs)
+    self.assertArrayAlmostEqual(with_times, without_times, 15)
+    self.assertIn(self.op_args, stats)
 
   def test_getitem(self):
     for idim in range(self.op_args.ndim):
@@ -288,6 +297,24 @@ class check(TestCase):
           approx = ((fdvals[1] - fdvals[0]).T @ fdfactors).T / eps
           scale = numpy.linalg.norm(f0.ravel()) or 1
         self.assertArrayAlmostEqual(exact / scale, approx / scale, decimal=10)
+
+  @unittest.skipIf(sys.version_info < (3,7), 'time.perf_counter_ns is not available')
+  def test_node(self):
+    # This tests only whether `Evaluable._node` returns without exception.
+    cache = {}
+    times = collections.defaultdict(evaluable._Stats)
+    with self.subTest('new'):
+      node = self.op_args._node(cache, None, times)
+      if node:
+        self.assertIn(self.op_args, cache)
+        self.assertEqual(cache[self.op_args], node)
+    with self.subTest('from-cache'):
+      if node:
+        self.assertEqual(self.op_args._node(cache, None, times), node)
+    with self.subTest('with-times'):
+      times = collections.defaultdict(evaluable._Stats)
+      self.op_args.eval_withtimes(times, **dict(zip(self.arg_names, self.arg_values)))
+      self.op_args._node(cache, None, times)
 
 def _check(name, op, n_op, shapes, hasgrad=True, zerograd=False, ndim=2, low=-1, high=1):
   check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad, zerograd=zerograd, ndim=ndim, low=low, high=high)
@@ -604,38 +631,20 @@ class normal(TestCase):
 class asciitree(TestCase):
 
   @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
-  def test_plain(self):
-    f = evaluable.Sin(evaluable.Inflate(1, 1, 2)**evaluable.Diagonalize(evaluable.Argument('arg', (2,))))
-    self.assertEqual(f.asciitree(),
-                     '%9 = Sin(a2,a2)\n'
-                     ': %8 = Power(a2,a2)\n'
-                     '  : %7 = Transpose(i2,s2)\n'
-                     '  | : %6 = InsertAxis(s2,i2)\n'
-                     '  |   : %4 = Inflate(s2)\n'
-                     '  |   | : %1 = Constant()\n'
-                     '  |   | : %1\n'
-                     '  |   | : %2 = Constant()\n'
-                     '  |   : %2\n'
-                     '  : %5 = Diagonalize(d2,d2)\n'
-                     '    : %3 = Argument(a2)\n'
-                     '      : %0 = Evaluable')
-
-  @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
-  def test_rich(self):
-    f = evaluable.Sin(evaluable.Inflate(1, 1, 2)**evaluable.Diagonalize(evaluable.Argument('arg', (2,))))
+  def test_asciitree(self):
+    f = evaluable.Sin(evaluable.Inflate(1, evaluable.Zeros((), int), 2)**evaluable.Diagonalize(evaluable.Argument('arg', (2,))))
     self.assertEqual(f.asciitree(richoutput=True),
-                     '%9 = Sin(a2,a2)\n'
-                     '└ %8 = Power(a2,a2)\n'
-                     '  ├ %7 = Transpose(i2,s2)\n'
-                     '  │ └ %6 = InsertAxis(s2,i2)\n'
-                     '  │   ├ %4 = Inflate(s2)\n'
-                     '  │   │ ├ %1 = Constant()\n'
-                     '  │   │ ├ %1\n'
-                     '  │   │ └ %2 = Constant()\n'
-                     '  │   └ %2\n'
-                     '  └ %5 = Diagonalize(d2,d2)\n'
-                     '    └ %3 = Argument(a2)\n'
-                     '      └ %0 = Evaluable')
+                     '%0 = Sin; a2,a2\n'
+                     '└ %1 = Power; a2,a2\n'
+                     '  ├ %2 = Transpose; 1,0; i2,s2\n'
+                     '  │ └ %3 = InsertAxis; s2,i2\n'
+                     '  │   ├ %4 = Inflate; s2\n'
+                     '  │   │ ├ 1\n'
+                     '  │   │ ├ 0\n'
+                     '  │   │ └ 2\n'
+                     '  │   └ 2\n'
+                     '  └ %5 = Diagonalize; d2,d2\n'
+                     '    └ Argument; arg; a2\n')
 
 class simplify(TestCase):
 

@@ -43,6 +43,7 @@ expensive and currently unsupported operation.
 """
 
 from . import util, types, numeric, cache, transform, transformseq, expression, warnings, parallel
+from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph
 import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log, weakref, time, contextlib, subprocess
 _ = numpy.newaxis
 
@@ -233,6 +234,10 @@ class Evaluable(types.Singleton):
   def evalf(self, *args):
     raise NotImplementedError('Evaluable derivatives should implement the evalf method')
 
+  def evalf_withtimes(self, times, *args):
+    with times[self]:
+      return self.evalf(*args)
+
   @property
   def dependencies(self):
     '''collection of all function arguments'''
@@ -267,35 +272,22 @@ class Evaluable(types.Singleton):
   def serialized(self):
     return zip(self.ordereddeps[1:]+(self,), self.dependencytree[1:])
 
+  def _node(self, cache, subgraph, times):
+    if self in cache:
+      return cache[self]
+    args = tuple(arg._node(cache, subgraph, times) for arg in self.__args)
+    label = '\n'.join(filter(None, (type(self).__name__, self._node_details)))
+    cache[self] = node = RegularNode(label, args, {}, (type(self).__name__, times[self]), subgraph)
+    return node
+
+  @property
+  def _node_details(self):
+    return ''
+
   def asciitree(self, richoutput=False):
     'string representation'
 
-    if richoutput:
-      select = '├ ', '└ '
-      bridge = '│ ', '  '
-    else:
-      select = ': ', ': '
-      bridge = '| ', '  '
-    lines = []
-    ordereddeps = list(self.ordereddeps) + [self]
-    pool = [('', len(ordereddeps)-1)] # prefix, object tuples
-    while pool:
-      prefix, n = pool.pop()
-      s = '%{}'.format(n)
-      if prefix:
-        s = prefix[:-2] + select[bridge.index(prefix[-2:])] + s # locally change prefix into selector
-      if ordereddeps[n] is not None:
-        s += ' = ' + ordereddeps[n]._asciitree_str()
-        pool.extend((prefix + bridge[i==0], arg) for i, arg in enumerate(reversed(self.dependencytree[n])))
-        ordereddeps[n] = None
-      lines.append(s)
-    return '\n'.join(lines)
-
-  def _asciitree_str(self):
-    return str(self)
-
-  def _graphviz_node(self):
-    return 'label="{}"'.format(self)
+    return self._node({}, None, collections.defaultdict(_Stats)).generate_asciitree(richoutput)
 
   def __str__(self):
     return self.__class__.__name__
@@ -313,58 +305,37 @@ class Evaluable(types.Singleton):
     else:
       return values[-1]
 
-  def eval_withtimes(self, **evalargs):
+  def eval_withtimes(self, times, **evalargs):
     '''Evaluate function on a specified element, point set while measure time of each step.'''
 
-    serialized = self.serialized # prepare lazy attribute to exclude evaluation time
-    values = [(evalargs, time.perf_counter())]
+    values = [evalargs]
     try:
-      values.extend((op.evalf(*[values[i][0] for i in indices]), time.perf_counter()) for op, indices in serialized)
+      values.extend(op.evalf_withtimes(times, *[values[i] for i in indices]) for op, indices in self.serialized)
     except KeyboardInterrupt:
       raise
     except Exception as e:
-      raise EvaluationError(self, [v for v, t in values]) from e
+      raise EvaluationError(self, values) from e
     else:
-      return values[-1][0], numpy.diff([t for v, t in values])
+      return values[-1]
 
   @contextlib.contextmanager
   def session(self, graphviz):
     if graphviz is None:
       yield self.eval
       return
-    lock = parallel.multiprocessing.Lock()
-    times = parallel.shzeros(len(self.dependencies))
+    stats = collections.defaultdict(_Stats)
     def eval(**args):
-      retval, _times = self.eval_withtimes(**args)
-      with lock:
-        times[:] += _times
-      return retval
+      return self.eval_withtimes(stats, **args)
     with log.context('eval'):
       yield eval
-      log.info('total time: {:.0f}ms\n'.format(builtins.sum(times)*1000) + '\n'.join('{:4.0f} {} ({})'.format(builtins.sum(dts)*1000, op.__name__,
-        '1 call' if len(dts) == 1 else '{} calls, {:.0f}..{:.0f} per call'.format(len(dts), min(dts)*1000, max(dts)*1000))
-          for op, dts in sorted(util.gather(zip(map(type, self.ordereddeps[1:]+(self,)), times)), reverse=True, key=lambda row: builtins.sum(row[1]))))
-      self.graphviz(graphviz, times=times)
-
-  def graphviz(self, dotpath='dot', *, imgtype='png', times=None):
-    'create function graph'
-
-    if times is not None:
-      tfrac = numpy.hstack([0, times / times.max()])
-      style = lambda i: ',style="filled",fillcolor="0,{:.2f},1"'.format(tfrac[i])
-    else:
-      style = lambda i: ''
-
-    lines = ['digraph {graph [dpi=72];']
-    lines.extend('{} [{}];'.format(i, dep._graphviz_node() + style(i)) for i, dep in enumerate(self.ordereddeps+(self,)))
-    lines.extend('{} -> {};'.format(j, i) for i, indices in enumerate(self.dependencytree) for j in indices)
-    lines.append('}')
-
-    with log.infofile('dot.'+imgtype, 'wb') as img:
-      status = subprocess.run([dotpath,'-Gstart=1','-T'+imgtype], input='\n'.join(lines).encode(), stdout=subprocess.PIPE)
-      if status.returncode:
-        log.warning('graphviz failed for error code', status.returncode)
-      img.write(status.stdout)
+      node = self._node({}, None, stats)
+      maxtime = builtins.max(n.metadata[1].time for n in node.walk(set()))
+      tottime = builtins.sum(n.metadata[1].time for n in node.walk(set()))
+      aggstats = tuple((key, builtins.sum(v.time for v in values), builtins.sum(v.ncalls for v in values)) for key, values in util.gather(n.metadata for n in node.walk(set())))
+      fill_color = (lambda node: '0,{:.2f},1'.format(node.metadata[1].time/maxtime)) if maxtime else None
+      node.export_graphviz(fill_color=fill_color, dot_path=graphviz)
+      log.info('total time: {:.0f}ms\n'.format(tottime/1e6) + '\n'.join('{:4.0f} {} ({} calls, avg {:.3f} per call)'.format(t / 1e6, k, n, t / (1e6*n))
+        for k, t, n in sorted(aggstats, reverse=True, key=lambda item: item[1]) if n))
 
   def _stack(self, values):
     lines = ['  %0 = EVALARGS']
@@ -380,7 +351,7 @@ class Evaluable(types.Singleton):
         args = map(' {}=%{}'.format, names, indices)
       except:
         args = map(' %{}'.format, indices)
-      lines.append('  %{} = {}:{}'.format(len(lines), op._asciitree_str(), ','.join(args)))
+      lines.append('  %{} = {}:{}'.format(len(lines), op, ','.join(args)))
     return lines
 
   @property
@@ -404,7 +375,13 @@ class EvaluationError(Exception):
   def __init__(self, f, values):
     super().__init__('evaluation failed in step {}/{}\n'.format(len(values), len(f.dependencies)) + '\n'.join(f._stack(values)))
 
-EVALARGS = Evaluable(args=())
+class EVALARGS(Evaluable):
+  def __init__(self):
+    super().__init__(args=())
+  def _node(self, cache, subgraph, times):
+    return InvisibleNode((type(self).__name__, _Stats()))
+
+EVALARGS = EVALARGS()
 
 class Tuple(Evaluable):
 
@@ -484,8 +461,9 @@ class SelectChain(TransformChain):
     assert isinstance(trans, tuple)
     return trans
 
-  def _asciitree_str(self):
-    return 'SelectChain({})'.format(self.n)
+  @property
+  def _node_details(self):
+    return 'index={}'.format(self.n)
 
 class PopHead(TransformChain):
 
@@ -761,11 +739,13 @@ class Array(Evaluable):
         blocks.append((indices, f))
     return _gatherblocks(blocks)
 
-  def _asciitree_str(self):
-    return '{}({})'.format(type(self).__name__, ','.join(map(repr, self._axes)))
-
-  def _graphviz_node(self):
-    return r'shape=box,label="{}\n{}"'.format(type(self).__name__, ','.join(repr(axis) for axis in self._axes))
+  def _node(self, cache, subgraph, times):
+    if self in cache:
+      return cache[self]
+    args = tuple(arg._node(cache, subgraph, times) for arg in self._Evaluable__args)
+    label = '\n'.join(filter(None, (type(self).__name__, self._node_details, ','.join(map(repr, self._axes)))))
+    cache[self] = node = RegularNode(label, args, {}, (type(self).__name__, times[self]), subgraph)
+    return node
 
   # simplifications
   _multiply = lambda self, other: None
@@ -909,14 +889,17 @@ class Constant(Array):
   def evalf(self):
     return self.value
 
-  def _graphviz_node(self):
-    if self.value.ndim == 0:
-      value = '({})'.format(self.value[()])
-      if len(value) > 9:
-        value = '(~{:.2e})'.format(self.value[()])
+  def _node(self, cache, subgraph, times):
+    if self.ndim:
+      return super()._node(cache, subgraph, times)
+    elif self in cache:
+      return cache[self]
     else:
-      value = ''
-    return r'shape=box,label="{}{}\n{}"'.format(type(self).__name__, value, ','.join(repr(axis) for axis in self._axes))
+      label = '{}'.format(self.value[()])
+      if len(label) > 9:
+        label = '~{:.2e}'.format(self.value[()])
+      cache[self] = node = DuplicatedLeafNode(label, (type(self).__name__, times[self]))
+      return node
 
   @property
   def _isunit(self):
@@ -1108,8 +1091,9 @@ class Transpose(Array):
   def evalf(self, arr):
     return arr.transpose(self.axes)
 
-  def _graphviz_node(self):
-    return r'shape=box,label="{}({})\n{}"'.format(type(self).__name__, ','.join(map(str, self.axes)), ','.join(repr(axis) for axis in self._axes))
+  @property
+  def _node_details(self):
+    return ','.join(map(str, self.axes))
 
   def _transpose(self, axes):
     newaxes = [self.axes[i] for i in axes]
@@ -1614,8 +1598,9 @@ class Einsum(Array):
       args = tuple(numpy.asarray(arg, order='F') for arg in args)
     return numpy.core.multiarray.c_einsum(self._einsumfmt, *args)
 
-  def _graphviz_node(self):
-    return r'shape=box,label="{}({})\n{}"'.format(type(self).__name__, self._einsumfmt, ','.join(repr(axis) for axis in self._axes))
+  @property
+  def _node_details(self):
+    return self._einsumfmt
 
   def _simplified(self):
     for i, arg in enumerate(self.args):
@@ -2136,6 +2121,15 @@ class Zeros(Array):
   def evalf(self, *shape):
     return numpy.zeros(shape, dtype=self.dtype)
 
+  def _node(self, cache, subgraph, times):
+    if self.ndim:
+      return super()._node(cache, subgraph, times)
+    elif self in cache:
+      return cache[self]
+    else:
+      cache[self] = node = DuplicatedLeafNode('0', (type(self).__name__, times[self]))
+      return node
+
   def _desparsify(self, axis):
     return []
 
@@ -2512,6 +2506,14 @@ class Argument(DerivativeTargetBase):
 
   def __str__(self):
     return '{} {!r} <{}>'.format(self.__class__.__name__, self._name, ','.join(map(str, self.shape)))
+
+  def _node(self, cache, subgraph, times):
+    if self in cache:
+      return cache[self]
+    else:
+      label = '\n'.join(filter(None, (type(self).__name__, self._name, ','.join(map(repr, self._axes)))))
+      cache[self] = node = DuplicatedLeafNode(label, (type(self).__name__, times[self]))
+      return node
 
 class LocalCoords(DerivativeTargetBase):
   'local coords derivative target'
@@ -2920,6 +2922,30 @@ def _inflate_scalar(arg, shape):
 
 def _isunique(array):
   return numpy.unique(array).size == array.size
+
+class _Stats:
+
+  __slots__ = 'ncalls', 'time', '_start'
+
+  def __init__(self, ncalls: int = 0, time: int = 0) -> None:
+    self.ncalls = ncalls
+    self.time = time
+    self._start = None
+
+  def __repr__(self):
+    return '_Stats(ncalls={}, time={})'.format(self.ncalls, self.time)
+
+  def __add__(self, other):
+    if not isinstance(other, _Stats):
+      return NotImplemented
+    return _Stats(self.ncalls+other.ncalls, self.time+other.time)
+
+  def __enter__(self) -> None:
+    self._start = time.perf_counter_ns()
+
+  def __exit__(self, *exc_info) -> None:
+    self.time += time.perf_counter_ns() - self._start
+    self.ncalls += 1
 
 # FUNCTIONS
 
