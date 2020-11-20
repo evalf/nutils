@@ -2299,6 +2299,15 @@ class ArrayFromTuple(Array):
     assert isinstance(arrays, tuple)
     return arrays[self.index]
 
+  def _node(self, cache, subgraph, times):
+    if self in cache:
+      return cache[self]
+    elif hasattr(self.arrays, '_node_tuple'):
+      cache[self] = node = self.arrays._node_tuple(cache, subgraph, times)[self.index]
+      return node
+    else:
+      return super()._node(cache, subgraph, times)
+
 class Zeros(Array):
   'zero'
 
@@ -3336,6 +3345,96 @@ class LoopConcatenate(Array):
       chunks.append(tuple(loop_concatenate(_flat(arr), self.index, self.length) for arr in (*indices, last_index, values)))
     return tuple(chunks)
 
+class LoopConcatenateCombined(Evaluable):
+
+  @types.apply_annotations
+  def __init__(self, funcdata:types.tuple[types.tuple[asarray]], index:types.strict[Argument], length:asarray):
+    if index.dtype != int or index.ndim != 0:
+      raise ValueError('expected an index with dtype int and dimension zero but got {}'.format(index))
+    if any(not func.ndim for func, start, stop, cc_length in funcdata):
+      raise ValueError('expected an array with at least one axis')
+    if any(index in n.arguments for func, start, stop, cc_length in funcdata for n in (*map(asarray, func.shape[:-1]), cc_length)):
+      raise ValueError('the shape of the function must not depend on the index')
+    if index in length.arguments:
+      raise ValueError('the length of the loop must not depend on the index')
+
+    self._funcs, self._starts, self._stops, self._cc_lengths = zip(*funcdata)
+    self._index = index
+    self._length = length
+
+    invariants = []
+    for func, start, stop, cc_length in funcdata:
+      invariants.extend(map(asarray, func.shape[:-1]))
+      invariants.append(cc_length)
+    invariants.append(length)
+
+    dependencies = []
+    cache = set()
+    for obj in itertools.chain(self._starts, self._stops, self._funcs):
+      _populate_dependencies_sans_invariants(obj, index, invariants, dependencies, cache)
+
+    indices = {d: i for i, d in enumerate(itertools.chain(invariants, [index], dependencies))}
+    self._start_indices = tuple(map(indices.__getitem__, self._starts))
+    self._stop_indices = tuple(map(indices.__getitem__, self._stops))
+    self._result_indices = tuple(map(indices.__getitem__, self._funcs))
+    self._serialized = tuple((dep, tuple(map(indices.__getitem__, dep._Evaluable__args))) for dep in dependencies)
+    self._invariants = tuple(invariants)
+
+    super().__init__(args=invariants)
+
+  def evalf(self, *args):
+    i = 0
+    results = []
+    for func in self._funcs:
+      results.append(parallel.shempty(tuple(map(int, args[i:i+func.ndim])), dtype=func.dtype))
+      i += func.ndim
+    length = int(args[i])
+    with parallel.ctxrange('loop', length) as indices:
+      for index in indices:
+        values = list(args)
+        values.append(numpy.array(index))
+        values.extend(op.evalf(*[values[i] for i in indices]) for op, indices in self._serialized)
+        for result, result_id, start_id, stop_id in zip(results, self._result_indices, self._start_indices, self._stop_indices):
+          result[...,int(values[start_id]):int(values[stop_id])] = values[result_id]
+    return tuple(results)
+
+  def evalf_withtimes(self, times, *args):
+    times[self] = subtimes = collections.defaultdict(_Stats)
+    i = 0
+    results = []
+    for func in self._funcs:
+      with subtimes['concat', func]:
+        results.append(numpy.empty(tuple(map(int, args[i:i+func.ndim])), dtype=func.dtype))
+      i += func.ndim
+    length = int(args[i])
+    for index in range(length):
+      values = list(args)
+      values.append(numpy.array(index))
+      values.extend(op.evalf_withtimes(subtimes, *[values[i] for i in indices]) for op, indices in self._serialized)
+      for func, result, result_id, start_id, stop_id in zip(self._funcs, results, self._result_indices, self._start_indices, self._stop_indices):
+        with subtimes['concat', func]:
+          result[...,int(values[start_id]):int(values[stop_id])] = values[result_id]
+    return tuple(results)
+
+  def _node_tuple(self, cache, subgraph, times):
+    if (self, 'tuple') in cache:
+      return cache[self, 'tuple']
+    subcache = {}
+    for arg in self._invariants:
+      subcache[arg] = arg._node(cache, subgraph, times)
+    loopgraph = Subgraph('Loop', subgraph)
+    subcache[self._index] = RegularNode('LoopIndex', (), dict(length=self._length._node(cache, subgraph, times)), (type(self).__name__, _Stats()), loopgraph)
+    subtimes = times.get(self, collections.defaultdict(_Stats))
+    concats = []
+    for func, start, stop, cc_length in zip(self._funcs, self._starts, self._stops, self._cc_lengths):
+      concat_kwargs = {'shape[{}]'.format(i): asarray(n)._node(cache, subgraph, times) for i, n in enumerate((*func.shape[:-1], cc_length))}
+      concat_kwargs['start'] = start._node(subcache, loopgraph, subtimes)
+      concat_kwargs['stop'] = stop._node(subcache, loopgraph, subtimes)
+      concat_kwargs['func'] = func._node(subcache, loopgraph, subtimes)
+      concats.append(RegularNode('LoopConcatenate', (), concat_kwargs, (type(self).__name__, subtimes['concat', func]), loopgraph))
+    cache[self, 'tuple'] = concats = tuple(concats)
+    return concats
+
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
 _ascending = lambda arg: numpy.greater(numpy.diff(arg), 0).all()
@@ -3719,6 +3818,14 @@ def loop_concatenate(func, index, length):
   length = asarray(length)
   func, start, stop, cc_length = _loop_concatenate_data(func, index, length)
   return LoopConcatenate(func, start, stop, cc_length, index, length)
+
+def loop_concatenate_combined(funcs, index, length):
+  length = asarray(length)
+  unique_funcs = []
+  unique_funcs.extend(func for func in funcs if func not in unique_funcs)
+  unique_func_data = tuple(_loop_concatenate_data(func, index, length) for func in unique_funcs)
+  loop = LoopConcatenateCombined(unique_func_data, index, length)
+  return tuple(ArrayFromTuple(loop, unique_funcs.index(func), (*func.shape[:-1], cc_length), func.dtype) for func, start, stop, cc_length in unique_func_data)
 
 @replace
 def replace_arguments(value, arguments):

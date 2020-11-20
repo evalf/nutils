@@ -428,6 +428,7 @@ _check('loopsum3', lambda a: evaluable.LoopSum(evaluable.get(a, 0, evaluable.Arg
 _check('loopsum4', lambda: evaluable.LoopSum(evaluable.Inflate(evaluable.Argument('index', (), int), 0, 2), evaluable.Argument('index', (), int), 3), lambda: numpy.array([3, 0]), [])
 _check('loopconcatenate1', lambda a: evaluable.loop_concatenate(a+evaluable.prependaxes(evaluable.Argument('index', (), int), a.shape), evaluable.Argument('index', (), int), 3), lambda a: a+numpy.arange(3)[None], [(2,1)])
 _check('loopconcatenate2', lambda: evaluable.loop_concatenate(evaluable.Elemwise([numpy.arange(48).reshape(4,4,3)[:,:,a:b] for a, b in util.pairwise([0,2,3])], evaluable.Argument('index', (), int), int), evaluable.Argument('index', (), int), 2), lambda: numpy.arange(48).reshape(4,4,3), [])
+_check('loopconcatenatecombined', lambda a: evaluable.loop_concatenate_combined([a+evaluable.prependaxes(evaluable.Argument('index', (), int), a.shape)], evaluable.Argument('index', (), int), 3)[0], lambda a: a+numpy.arange(3)[None], [(2,1)], hasgrad=False)
 
 _polyval_mask = lambda shape, ndim: 1 if ndim == 0 else numpy.array([sum(i[-ndim:]) < shape[-1] for i in numpy.ndindex(shape)], dtype=int).reshape(shape)
 _polyval_desired = lambda c, x: sum(c[(...,*i)]*(x[(slice(None),*[None]*(c.ndim-x.shape[1]))]**i).prod(-1) for i in itertools.product(*[range(c.shape[-1])]*x.shape[1]) if sum(i) < c.shape[-1])
@@ -700,6 +701,33 @@ class asciitree(TestCase):
   def test_loop_concatenate(self):
     i = evaluable.Argument('i', (), int)
     f = evaluable.loop_concatenate(evaluable.InsertAxis(i, 1), i, evaluable.Constant(2))
+    self.assertEqual(f.asciitree(richoutput=True),
+                     'SUBGRAPHS\n'
+                     'A\n'
+                     '└ B = Loop\n'
+                     'NODES\n'
+                     '%B0 = LoopConcatenate\n'
+                     '├ shape[0] = 2\n'
+                     '├ start = %B1 = Take\n'
+                     '│ ├ %A2 = _SizesToOffsets; a3\n'
+                     '│ │ └ %A3 = InsertAxis; i2\n'
+                     '│ │   ├ 1\n'
+                     '│ │   └ 2\n'
+                     '│ └ %B4 = LoopIndex\n'
+                     '│   └ length = 2\n'
+                     '├ stop = %B5 = Take\n'
+                     '│ ├ %A2\n'
+                     '│ └ %B6 = Add\n'
+                     '│   ├ %B4\n'
+                     '│   └ 1\n'
+                     '└ func = %B7 = InsertAxis; i1\n'
+                     '  ├ %B4\n'
+                     '  └ 1\n')
+
+  @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
+  def test_loop_concatenatecombined(self):
+    i = evaluable.Argument('i', (), int)
+    f, = evaluable.loop_concatenate_combined([evaluable.InsertAxis(i, 1)], i, evaluable.Constant(2))
     self.assertEqual(f.asciitree(richoutput=True),
                      'SUBGRAPHS\n'
                      'A\n'
