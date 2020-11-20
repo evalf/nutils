@@ -2570,7 +2570,7 @@ class Ravel(Array):
     if isinstance(self._axes[-1], Sparse):
       return self._resparsify(self.ndim-1)
     if all(isinstance(axis, Inserted) for axis in self._axes[-2:]):
-      return InsertAxis(sef.func._uninsert(self.ndim)._uninsert(self.ndim-1), self.shape[-1])
+      return InsertAxis(self.func._uninsert(self.ndim)._uninsert(self.ndim-1), self.shape[-1])
     return self.func._ravel(self.ndim-1)
 
   def evalf(self, f):
