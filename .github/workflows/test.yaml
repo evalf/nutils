@@ -73,6 +73,9 @@ jobs:
         with:
           name: python-package
           path: dist/
+      - name: Install Graphviz
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: sudo apt install -y graphviz
       - name: Install Nutils and dependencies
         id: install
         env:
