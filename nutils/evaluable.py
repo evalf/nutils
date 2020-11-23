@@ -220,7 +220,7 @@ class Evaluable(types.Singleton):
   'Base class'
 
   __slots__ = '__args',
-  __cache__ = 'dependencies', 'ordereddeps', 'dependencytree'
+  __cache__ = 'dependencies', 'arguments', 'ordereddeps', 'dependencytree'
 
   @types.apply_annotations
   def __init__(self, args:types.tuple[strictevaluable]):
@@ -243,6 +243,11 @@ class Evaluable(types.Singleton):
       deps.update(funcdeps)
       deps[func] = len(funcdeps)
     return deps
+
+  @property
+  def arguments(self):
+    'a frozenset of all arguments of this evaluable'
+    return frozenset().union(*(child.arguments for child in self.__args))
 
   @property
   def isconstant(self):
@@ -2708,6 +2713,10 @@ class Argument(DerivativeTargetBase):
       label = '\n'.join(filter(None, (type(self).__name__, self._name, ','.join(map(repr, self._axes)))))
       cache[self] = node = DuplicatedLeafNode(label, (type(self).__name__, times[self]))
       return node
+
+  @property
+  def arguments(self):
+    return frozenset({self})
 
 class LocalCoords(DerivativeTargetBase):
   'local coords derivative target'
