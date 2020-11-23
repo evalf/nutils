@@ -42,7 +42,7 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, types, numeric, cache, transform, transformseq, expression, warnings, parallel
+from . import util, types, numeric, cache, transform, expression, warnings, parallel
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph
 import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log, weakref, time, contextlib, subprocess
 _ = numpy.newaxis
