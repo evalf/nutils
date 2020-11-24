@@ -129,7 +129,12 @@ class picklability(TestCase):
     self.assert_pickle_dump_load(basis)
 
 
+@parametrize
 class common_refine(TestCase):
+
+  def _shield(self, topo):
+    return topo if self.special \
+      else topology.Topology(references=topo.references, transforms=topo.transforms, opposites=topo.opposites)
 
   def test(self):
     dom, geom = mesh.rectilinear([[0,1,2],[0,1,2]])
@@ -154,7 +159,7 @@ class common_refine(TestCase):
 
     for a, b, n in ('1', '234', 16), ('1', '4', 10), ('123', '234', 16):
       with self.subTest('ref{}vs{}'.format(a, b)):
-        common = doms[a] & doms[b]
+        common = doms[a] & self._shield(doms[b])
         self.assertEqual(len(common), n)
         for c in a, b:
           testvals = common.integrate(funs[c]*function.J(geom), ischeme='gauss1')
@@ -165,19 +170,22 @@ class common_refine(TestCase):
     dom1 = dom[:1]
     dom2 = dom[1:]
     with self.subTest('equal'):
-      iface = dom1.boundary & ~dom2.boundary
+      iface = dom1.boundary & self._shield(~dom2.boundary)
       self.assertEqual(len(iface), 3)
       self.assertAlmostEqual(iface.integrate(function.J(geom), degree=1), 3)
     with self.subTest('refined-left'):
-      iface = dom1.refined.boundary['right'] & ~dom2.boundary
+      iface = dom1.refined.boundary['right'] & self._shield(~dom2.boundary)
       self.assertIs(iface, dom1.refined.boundary['right'])
     with self.subTest('refined-right'):
-      iface = dom1.boundary & ~dom2.refined.boundary['left']
+      iface = self._shield(dom1.boundary) & ~dom2.refined.boundary['left']
       self.assertIs(iface, ~dom2.refined.boundary['left'])
     with self.subTest('partial-refined-both'):
-      iface = dom1.refined_by([0]).boundary & ~dom2.refined_by([2]).boundary
+      iface = dom1.refined_by([0]).boundary & self._shield(~dom2.refined_by([2]).boundary)
       self.assertEqual(len(iface), 5)
       self.assertAlmostEqual(iface.integrate(function.J(geom), degree=1), 3)
+
+common_refine(special=True) # use special case union implementation
+common_refine(special=False) # use fallback union implementation
 
 @parametrize
 class revolved(TestCase):
