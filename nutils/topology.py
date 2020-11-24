@@ -1648,6 +1648,21 @@ class HierarchicalTopology(Topology):
 
     super().__init__(references, transformseq.chain(transforms, basetopo.ndims), transformseq.chain(opposites, basetopo.ndims))
 
+  def __and__(self, other):
+    if not isinstance(other, HierarchicalTopology) or self.basetopo != other.basetopo:
+      return super().__and__(other)
+    indices_per_level = []
+    levels = max(self.levels, other.levels, key=len)
+    for level, self_indices, other_indices in itertools.zip_longest(levels, self._indices_per_level, other._indices_per_level, fillvalue=()):
+      keep = numpy.zeros(len(level), dtype=bool)
+      for topo, topo_indices, indices in (other, other_indices, self_indices), (self, self_indices, other_indices):
+        mask = numeric.asboolean(topo_indices, len(level))
+        for index in indices: # keep common elements or elements which are finer than conterpart
+          keep[index] = mask[index] or topo.transforms.contains_with_tail(level.transforms[index])
+      indices, = keep.nonzero()
+      indices_per_level.append(indices)
+    return HierarchicalTopology(self.basetopo, indices_per_level)
+
   def getitem(self, item):
     itemtopo = self.basetopo.getitem(item)
     itemindices_per_level = []
