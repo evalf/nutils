@@ -141,7 +141,7 @@ class Sample(types.Singleton):
 
   def _prepare_funcs_eval(self, funcs):
     if self.npoints:
-      ielem = function.transforms_index(self.transforms[0]).prepare_eval(ndims=self.ndims)
+      ielem = function.transforms_index(self.transforms[0]).prepare_eval(ndims=self.ndims, npoints=None)
       indices = evaluable.ElemwiseFromCallable(self.getindex, ielem, (evaluable.NPoints(),), int)
       return [evaluable.Transpose.from_end(evaluable.Inflate(evaluable.Transpose.to_end(func, 0), indices, self.npoints), 0) for func in self._prepare_funcs(funcs)]
     else:

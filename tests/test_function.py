@@ -359,7 +359,7 @@ class elemwise(TestCase):
   def test_shape(self):
     for i, trans in enumerate(self.domain.transforms):
       with self.subTest(i=i):
-        self.assertEqual(self.func.size.prepare_eval(ndims=self.domain.ndims).eval(_transforms=(trans,)), self.data[i].size)
+        self.assertEqual(self.func.size.prepare_eval(ndims=self.domain.ndims, npoints=None).eval(_transforms=(trans,)), self.data[i].size)
 
   def test_derivative(self):
     self.assertTrue(evaluable.iszero(function.localgradient(self.func, self.domain.ndims).prepare_eval(ndims=self.domain.ndims)))
