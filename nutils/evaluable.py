@@ -1862,7 +1862,7 @@ class Pointwise(Array):
 
   def _derivative(self, var, seen):
     if self.deriv is None:
-      raise NotImplementedError('derivative is not defined for this operator')
+      return super()._derivative(var, seen)
     return util.sum(deriv(*self.args)[(...,)+(_,)*var.ndim] * derivative(arg, var, seen) for arg, deriv in zip(self.args, self.deriv))
 
   def _takediag(self, axis1, axis2):
