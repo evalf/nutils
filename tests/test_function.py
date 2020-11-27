@@ -637,7 +637,28 @@ class namespace(TestCase):
     l = lambda f: f.prepare_eval(npoints=4, ndims=2).simplified
     self.assertEqual(l(ns.eval_('norm2(a)')), l(function.norm2(ns.a)))
     self.assertEqual(l(ns.eval_i('sum:j(A_ij)')), l(function.sum(ns.A, 1)))
-    self.assertEqual(l(ns.eval_('J:x')), l(function.jacobian(ns.x)))
+
+  def test_builtin_jacobian_vector(self):
+    ns = function.Namespace()
+    domain, ns.x = mesh.rectilinear([1]*2)
+    l = lambda f: f.prepare_eval(npoints=4, ndims=2).simplified
+    self.assertEqual(l(ns.eval_('J(x)')), l(function.jacobian(ns.x)))
+
+  def test_builtin_jacobian_scalar(self):
+    ns = function.Namespace()
+    domain, (ns.t,) = mesh.rectilinear([1])
+    l = lambda f: f.prepare_eval(npoints=4, ndims=1).simplified
+    self.assertEqual(l(ns.eval_('J(t)')), l(function.jacobian(ns.t[None])))
+
+  def test_builtin_jacobian_matrix(self):
+    ns = function.Namespace()
+    ns.x = numpy.array([[1,2],[3,4]])
+    with self.assertRaises(ValueError):
+      ns.eval_('J(x)')
+
+  def test_builtin_jacobian_vectorization(self):
+    with self.assertRaises(NotImplementedError):
+      function._J_expr(function.Array.cast([[1,2],[3,4]]), consumes=1)
 
 class eval_ast(TestCase):
 

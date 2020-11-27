@@ -3091,8 +3091,12 @@ def _norm2_expr(arg: Array, *, consumes: int = 0) -> Array:
   return norm2(arg, range(arg.ndim-consumes, arg.ndim))
 
 def _J_expr(geom: Array, *, consumes: int = 0) -> Array:
-  if consumes != 1:
-    raise ValueError('J consumes exactly one axis but got {}'.format(consumes))
+  if geom.ndim == 0:
+    return J(insertaxis(geom, 0, 1))
+  if consumes > 1:
+    raise ValueError('J consumes at most one axis but got {}'.format(consumes))
+  if geom.ndim > consumes:
+    raise NotImplementedError('currently J cannot be vectorized')
   return J(geom)
 
 def _arctan2_expr(_a: Array, _b: Array) -> Array:
