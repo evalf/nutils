@@ -1223,7 +1223,7 @@ class Product(Array):
   @types.apply_annotations
   def __init__(self, func:asarray):
     self.func = func
-    super().__init__(args=[func], shape=func._axes[:-1], dtype=func.dtype)
+    super().__init__(args=[func], shape=func.shape[:-1], dtype=func.dtype)
 
   def _simplified(self):
     if self.func.shape[-1] == 1:
@@ -1248,9 +1248,6 @@ class Product(Array):
 
   def _takediag(self, axis1, axis2):
     return product(_takediag(self.func, axis1, axis2), self.ndim-2)
-
-  def _desparsify(self, axis):
-    return [(ind, Product(f)) for ind, f in self.func._desparsify(axis)]
 
 class ApplyTransforms(Array):
 
@@ -1357,7 +1354,7 @@ class Determinant(Array):
   def __init__(self, func:asarray):
     assert isarray(func) and func.ndim >= 2 and func.shape[-1] == func.shape[-2]
     self.func = func
-    super().__init__(args=[func], shape=func._axes[:-2], dtype=func.dtype)
+    super().__init__(args=[func], shape=func.shape[:-2], dtype=func.dtype)
 
   def _simplified(self):
     return self.func._determinant(self.ndim, self.ndim+1)
@@ -1378,10 +1375,6 @@ class Determinant(Array):
 
   def _takediag(self, axis1, axis2):
     return determinant(_takediag(self.func, axis1, axis2), (self.ndim-2, self.ndim-1))
-
-  def _desparsify(self, axis):
-    assert isinstance(self._axes[axis], Sparse)
-    return [(ind, Determinant(f)) for ind, f in self.func._desparsify(axis)]
 
 class Multiply(Array):
 
@@ -1997,7 +1990,7 @@ class Sign(Array):
   @types.apply_annotations
   def __init__(self, func:asarray):
     self.func = func
-    super().__init__(args=[func], shape=func._axes, dtype=func.dtype)
+    super().__init__(args=[func], shape=func.shape, dtype=func.dtype)
 
   def _simplified(self):
     return self.func._sign()
@@ -2019,10 +2012,6 @@ class Sign(Array):
 
   def _derivative(self, var, seen):
     return Zeros(self.shape + var.shape, dtype=self.dtype)
-
-  def _desparsify(self, axis):
-    assert isinstance(self._axes[axis], Sparse)
-    return [(ind, Sign(f)) for ind, f in self.func._desparsify(axis)]
 
 class Sampled(Array):
   '''Basis-like identity operator.
