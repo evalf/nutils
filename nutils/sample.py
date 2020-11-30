@@ -125,17 +125,6 @@ class Sample(types.Singleton):
 
     raise NotImplementedError
 
-  def _prepare_funcs(self, funcs):
-    return [function.asarray(func).prepare_eval(ndims=self.ndims) for func in funcs]
-
-  def _prepare_funcs_eval(self, funcs):
-    if self.npoints:
-      ielem = function.transforms_index(self.transforms[0]).prepare_eval(ndims=self.ndims, npoints=None)
-      indices = evaluable.ElemwiseFromCallable(self.getindex, ielem, (evaluable.NPoints(),), int)
-      return [evaluable.Transpose.from_end(evaluable.Inflate(evaluable.Transpose.to_end(func, 0), indices, self.npoints), 0) for func in self._prepare_funcs(funcs)]
-    else:
-      return [evaluable.Zeros((0, *func.shape[1:]), func.dtype) for func in funcs]
-
   @util.positional_only
   @util.single_or_multiple
   @types.apply_annotations
@@ -168,75 +157,6 @@ class Sample(types.Singleton):
     '''
 
     return eval_integrals_sparse(*map(self.integral, funcs), **(arguments or {}))
-
-  @util.single_or_multiple
-  @types.apply_annotations
-  def _eval(self, funcs:types.tuple[evaluable.asarray], arguments:types.frozendict[str,types.frozenarray]=None):
-    '''Evaluate evaluable.
-
-    Args
-    ----
-    funcs : :class:`nutils.evaluable.Array` object or :class:`tuple` thereof.
-        The integrand(s).
-    arguments : :class:`dict` (default: None)
-        Optional arguments for function evaluation.
-    '''
-
-    if arguments is None:
-      arguments = {}
-
-    # Functions may consist of several blocks, such as originating from
-    # chaining. Here we make a list of all blocks consisting of triplets of
-    # argument id, evaluable index, and evaluable values.
-
-    blocks = [(ifunc, evaluable.Tuple(ind).optimized_for_numpy, f.optimized_for_numpy) for ifunc, func in enumerate(funcs) for ind, f in evaluable.blocks(func)]
-    block2func, indices, values = zip(*blocks) if blocks else ([],[],[])
-
-    log.debug('integrating {} distinct blocks'.format('+'.join(
-      str(block2func.count(ifunc)) for ifunc in range(len(funcs)))))
-
-    # To allocate (shared) memory for all block data we evaluate indexfunc to
-    # build an nblocks x nelems+1 offset array. In the first step the block
-    # sizes are evaluated.
-
-    offsets = numpy.empty((len(blocks), self.nelems+1), dtype=numpy.uint64)
-    sizefunc = evaluable.Tuple([f.size for ifunc, ind, f in blocks]).optimized_for_numpy
-    for ielem, (*transforms, points) in enumerate(zip(*self.transforms, self.points)):
-      offsets[:,ielem+1] = sizefunc.eval(_transforms=transforms, _points=points, **arguments)
-
-    # In the second step the block sizes are accumulated to form offsets. Since
-    # several blocks may belong to the same function, we post process the
-    # offsets to form consecutive intervals in longer arrays. The length of
-    # these arrays is captured in the nvals array.
-
-    nvals = numpy.zeros(len(funcs), dtype=numpy.uint64)
-    for iblock, ifunc in enumerate(block2func):
-      v = offsets[iblock]
-      v[0] = nvals[ifunc]
-      numpy.cumsum(v, out=v) # in place accumulation
-      assert (v[1:] >= v[:-1]).all(), 'integer overflow'
-      nvals[ifunc] = v[-1]
-
-    # In a second, parallel element loop, value and index are evaluated and
-    # stored in shared memory using the offsets array for location. Each
-    # element has its own location so no locks are required.
-
-    datas = [parallel.shempty(n, dtype=sparse.dtype(funcs[ifunc].shape, vtype=funcs[ifunc].dtype)) for ifunc, n in enumerate(nvals)]
-    trailingdims = [numpy.cumsum([0]+[ind.ndim for ind in index[:0:-1]])[::-1] for index in indices] # prepare index reshapes
-
-    with evaluable.Tuple(evaluable.Tuple([value, *index]) for value, index in zip(values, indices)).session(graphviz) as eval, \
-         parallel.ctxrange('integrating', self.nelems) as ielems:
-
-      for ielem in ielems:
-        points = self.points[ielem]
-        for iblock, (intdata, *indices) in enumerate(eval(_transforms=tuple(t[ielem] for t in self.transforms), _points=points, **arguments)):
-          data = datas[block2func[iblock]][offsets[iblock,ielem]:offsets[iblock,ielem+1]].reshape(intdata.shape)
-          data['value'] = intdata
-          td = trailingdims[iblock]
-          for idim, ii in enumerate(indices):
-            data['index']['i'+str(idim)] = ii.reshape(ii.shape+(1,)*td[idim]) # note: this could be implemented using newaxis, but reshape appears to be faster
-
-    return datas
 
   def integral(self, func):
     '''Create Integral object for postponed integration.
@@ -281,8 +201,13 @@ class Sample(types.Singleton):
         Optional arguments for function evaluation.
     '''
 
-    funcs = self._prepare_funcs_eval(funcs)
-    return self._eval(funcs, arguments)
+    return eval_integrals_sparse(*map(self.__rmatmul__, funcs), **(arguments or {}))
+
+  def __rmatmul__(self, func: function.Array) -> function.Array:
+    if not isinstance(func, function.Array):
+      return NotImplemented
+    sampled = _AtSample(func, self)
+    return function.take(sampled, numpy.concatenate(self.index, 0), 0)
 
   @property
   def allcoords(self):
@@ -391,6 +316,11 @@ class _DefaultIndex(Sample):
   def hull(self):
     return self.points.hull
 
+  def __rmatmul__(self, func: function.Array) -> function.Array:
+    if not isinstance(func, function.Array):
+      return NotImplemented
+    return _AtSample(func, self)
+
 class _CustomIndex(Sample):
 
   __slots__ = '_index'
@@ -482,11 +412,26 @@ class _Integral(function.Array):
 
   def lower(self, *, transform_chains=None, coordinates=None, **kwargs) -> evaluable.Array:
     if transform_chains or coordinates:
-      raise ValueError('nested integrals are not yet supported')
+      raise ValueError('nested integrals or samples are not yet supported')
     ielem = evaluable.Argument('_ielem', (), dtype=int)
     transform_chains = tuple(evaluable.TransformChainFromSequence(t, ielem) for t in self._sample.transforms)
     coordinates = (self._sample.points.get_evaluable_coords(ielem),) * len(self._sample.transforms)
     integrand = self._integrand.lower(transform_chains=transform_chains, coordinates=coordinates, **kwargs)
     return evaluable.LoopSum(evaluable.dot(evaluable.appendaxes(self._sample.points.get_evaluable_weights(ielem), integrand.shape[1:]), integrand, 0), ielem, self._sample.nelems)
+
+class _AtSample(function.Array):
+
+  def __init__(self, func: function.Array, sample: Sample) -> None:
+    self._func = func
+    self._sample = sample
+    super().__init__(shape=(sample.points.npoints, *func.shape), dtype=func.dtype)
+
+  def lower(self, *, transform_chains=None, coordinates=None, **kwargs) -> evaluable.Array:
+    if transform_chains or coordinates:
+      raise ValueError('nested integrals or samples are not yet supported')
+    ielem = evaluable.Argument('_ielem', (), dtype=int)
+    transform_chains = tuple(evaluable.TransformChainFromSequence(t, ielem) for t in self._sample.transforms)
+    coordinates = (self._sample.points.get_evaluable_coords(ielem),) * len(self._sample.transforms)
+    return evaluable.Transpose.from_end(evaluable.loop_concatenate(evaluable.Transpose.to_end(self._func.lower(transform_chains=transform_chains, coordinates=coordinates, **kwargs), 0), ielem, self._sample.nelems), 0)
 
 # vim:sw=2:sts=2:et
