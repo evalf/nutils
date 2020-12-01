@@ -2094,39 +2094,6 @@ class Eig(Evaluable):
   def evalf(self, arr):
     return (numpy.linalg.eigh if self.symmetric else numpy.linalg.eig)(arr)
 
-class Intersect(Evaluable):
-
-  def __init__(self, index1, index2):
-    self.index1 = index1
-    self.index2 = index2
-    super().__init__(args=[index1, index2])
-
-  def evalf(self, index1, index2):
-    ind, subind1, subind2 = numpy.intersect1d(index1, index2, return_indices=True)
-    return ind, subind1, subind2, numpy.array(len(ind))
-
-  def __len__(self):
-    return 3
-
-  def __iter__(self):
-    if self.index1 == self.index2:
-      return iter([self.index1, Range(self.index1.shape[0]), Range(self.index1.shape[0])])
-    if all(isinstance(index, (Range, InRange)) and index.length.isconstant and index.offset.isconstant for index in (self.index1, self.index2)):
-      length1 = self.index1.length.eval()
-      offset1 = self.index1.offset.eval()
-      length2 = self.index2.length.eval()
-      offset2 = self.index2.offset.eval()
-      offset = max(offset1, offset2)
-      length = min(offset1 + length1, offset2 + length2) - offset
-      if length <= 0:
-        return (Zeros([0], dtype=int) for i in range(3))
-      if all(isinstance(index, Range) for index in (self.index1, self.index2)):
-        return (Range(length, offset-o) for o in (0, offset1, offset2))
-    if self.isconstant:
-      return map(Constant, self.eval()[:3])
-    shape = ArrayFromTuple(self, 3, shape=(), dtype=int),
-    return (ArrayFromTuple(self, i, shape, dtype=int) for i in range(3))
-
 class ArrayFromTuple(Array):
 
   __slots__ = 'arrays', 'index'
@@ -2272,13 +2239,16 @@ class Inflate(Array):
   def _take(self, index, axis):
     if axis != self.ndim-1:
       return Inflate(_take(self.func, index, axis), self.dofmap, self.length)
-    if index == self.dofmap:
+    if index == self.dofmap and (self.dofmap.size == 1 or self.dofmap.isconstant and _isunique(self.dofmap.eval().ravel())):
       return self.func
-    ind, subind1, subind2 = Intersect(self.dofmap, index)
-    if ind.shape[0] == 0:
-      return Zeros(self.shape[:axis] + index.shape + self.shape[axis+1:], dtype=self.dtype)
-    if self.dofmap.ndim == 1 and index.ndim == 1:
-      return Inflate(_take(self.func, subind1, axis), subind2, index.shape[0])
+    if self.dofmap.isconstant and index.isconstant:
+      ind1 = self.dofmap.eval()
+      ind2 = index.eval()
+      ind, subind1, subind2 = numpy.intersect1d(ind1, ind2, return_indices=True)
+      if ind.size == 0:
+        return Zeros(self.shape[:-1] + index.shape, dtype=self.dtype)
+      elif self.dofmap.ndim == index.ndim == 1 and _isunique(ind1) and _isunique(ind2):
+        return Inflate(Take(self.func, subind1), subind2, index.shape[0])
 
   def _diagonalize(self, axis):
     if axis != self.ndim-1:
@@ -2297,7 +2267,8 @@ class Inflate(Array):
       return Inflate(unravel(self.func, axis, shape), self.dofmap, self.length)
 
   def _sign(self):
-    return Inflate(Sign(self.func), self.dofmap, self.length)
+    if self.dofmap.isconstant and _isunique(self.dofmap.eval()):
+      return Inflate(Sign(self.func), self.dofmap, self.length)
 
 class Diagonalize(Array):
 
@@ -2930,6 +2901,9 @@ def _inflate_scalar(arg, shape):
   for idim, length in enumerate(shape):
     arg = insertaxis(arg, idim, length)
   return arg
+
+def _isunique(array):
+  return numpy.unique(array).size == array.size
 
 # FUNCTIONS
 

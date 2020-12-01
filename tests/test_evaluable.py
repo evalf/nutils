@@ -132,6 +132,14 @@ class check(TestCase):
           desired=numpy.take(self.n_op_argsfun, indices, axis=iax),
           actual=evaluable.take(self.op_args, indices, axis=iax))
 
+  def test_take_duplicate_indices(self):
+    for iax, sh in enumerate(self.op_args.shape):
+      if sh >= 2:
+        indices = [0,sh-1,0,0]
+        self.assertFunctionAlmostEqual(decimal=15,
+          desired=numpy.take(self.n_op_argsfun, indices, axis=iax),
+          actual=evaluable.take(self.op_args, evaluable.Guard(evaluable.asarray(indices)), axis=iax))
+
   def test_inflate(self):
     for iax, sh in enumerate(self.op_args.shape):
       dofmap = evaluable.Constant(numpy.arange(sh) * 2)
@@ -140,6 +148,15 @@ class check(TestCase):
       self.assertFunctionAlmostEqual(decimal=15,
         desired=desired,
         actual=evaluable._inflate(self.op_args, dofmap=dofmap, length=sh*2-1, axis=iax))
+
+  def test_inflate_duplicate_indices(self):
+    for iax, sh in enumerate(self.op_args.shape):
+      dofmap = numpy.arange(sh) % 2
+      desired = numpy.zeros(self.n_op_argsfun.shape[:iax] + (2,) + self.n_op_argsfun.shape[iax+1:], dtype=self.n_op_argsfun.dtype)
+      numpy.add.at(desired, (slice(None),)*iax+(dofmap,), self.n_op_argsfun)
+      self.assertFunctionAlmostEqual(decimal=15,
+        desired=desired,
+        actual=evaluable._inflate(self.op_args, dofmap=dofmap, length=2, axis=iax))
 
   def test_diagonalize(self):
     for axis in range(self.op_args.ndim):
@@ -246,7 +263,7 @@ class check(TestCase):
         actual = numpy.zeros_like(self.n_op_argsfun)
         for ind, f in op_args._desparsify(axis):
           _ind = ind.eval(**evalargs)
-          actual[(slice(None),)*(axis)+(_ind,)] += f.eval(**evalargs)
+          numpy.add.at(actual, (slice(None),)*(axis)+(_ind,), f.eval(**evalargs))
         self.assertArrayAlmostEqual(actual, self.n_op_argsfun, decimal=15)
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
@@ -342,6 +359,9 @@ _check('ravel', lambda f: evaluable.ravel(f,axis=1), lambda a: a.reshape(4,4,4,4
 _check('unravel', lambda f: evaluable.unravel(f,axis=1,shape=[2,2]), lambda a: a.reshape(4,2,2,4,4), [(4,4,4,4)])
 _check('inflate', lambda f: evaluable._inflate(f,dofmap=evaluable.Guard([0,3]),length=4,axis=1), lambda a: numpy.concatenate([a[:,:1], numpy.zeros_like(a), a[:,1:]], axis=1), [(4,2,4)])
 _check('inflate-constant', lambda f: evaluable._inflate(f,dofmap=[0,3],length=4,axis=1), lambda a: numpy.concatenate([a[:,:1], numpy.zeros_like(a), a[:,1:]], axis=1), [(4,2,4)])
+_check('inflate-duplicate', lambda f: evaluable.Inflate(f,dofmap=[0,1,0,3],length=4), lambda a: numpy.stack([a[:,0]+a[:,2], a[:,1], numpy.zeros_like(a[:,0]), a[:,3]], axis=1), [(2,4)])
+_check('take', lambda f: evaluable.Take(f, [0,3,2]), lambda a: a[:,[0,3,2]], [(2,4)])
+_check('take-duplicate', lambda f: evaluable.Take(f, [0,3,0]), lambda a: a[:,[0,3,0]], [(2,4)])
 _check('choose', lambda a, b, c: evaluable.Choose(evaluable.appendaxes(evaluable.Int(a)%2, (3,3)), [b,c]), lambda a, b, c: numpy.choose(a[_,_].astype(int)%2, [b,c]), [(), (3,3), (3,3)])
 _check('slice', lambda a: evaluable.asarray(a)[::2], lambda a: a[::2], [(5,3)])
 
@@ -381,11 +401,6 @@ class blocks(TestCase):
     blocks = evaluable.multiply(evaluable._inflate([1,2], dofmap=[0,2], length=4, axis=0), evaluable._inflate([3,4], dofmap=[1,3], length=4, axis=0)).blocks
     self.assertEqual(blocks, ())
 
-  def test_multiply_overlap(self):
-    ((i,), f), = evaluable.multiply(evaluable._inflate([1,2], dofmap=evaluable.Guard([0,1]), length=3, axis=0), evaluable._inflate([3,4], dofmap=evaluable.Guard([1,2]), length=3, axis=0)).blocks
-    self.assertAllEqual(i.eval(), [1])
-    self.assertAllEqual(f.eval(), [2*3])
-
   def test_takediag(self):
     ((i,), f), = evaluable.takediag([[1,2,3],[4,5,6],[7,8,9]]).blocks
     self.assertAllEqual(i.eval(), [0,1,2])
@@ -409,11 +424,6 @@ class blocks(TestCase):
   def test_takediag_disjoint(self):
     blocks = evaluable.takediag(evaluable._inflate(evaluable._inflate([[1,2],[3,4]], dofmap=[0,2], length=4, axis=0), dofmap=[1,3], length=4, axis=1)).blocks
     self.assertEqual(blocks, ())
-
-  def test_takediag_overlap(self):
-    ((i,), f), = evaluable.takediag(evaluable._inflate(evaluable._inflate([[1,2],[3,4]], dofmap=evaluable.Guard([0,1]), length=3, axis=0), dofmap=evaluable.Guard([1,2]), length=3, axis=1)).blocks
-    self.assertAllEqual(i.eval(), [1])
-    self.assertAllEqual(f.eval(), [3])
 
 
 class commutativity(TestCase):
