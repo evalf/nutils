@@ -431,36 +431,47 @@ class IdentifierTransforms(Transforms):
     raise ValueError
 
 class Axis(types.Singleton):
-  '''Abstract base class for axes of :class:`~nutils.topology.StructuredTopology`.'''
+  '''Base class for axes of :class:`~nutils.topology.StructuredTopology`.'''
 
-  __slots__ = ()
+  __slots__ = 'i', 'j', 'mod'
 
-class DimAxis(Axis):
-
-  __slots__ = 'i', 'j', 'isperiodic'
-  isdim = True
-
-  @types.apply_annotations
-  def __init__(self, i:types.strictint, j:types.strictint, isperiodic:bool):
-    super().__init__()
+  def __init__(self, i:types.strictint, j:types.strictint, mod:types.strictint):
     self.i = i
     self.j = j
-    self.isperiodic = isperiodic
+    self.mod = mod
 
   def __len__(self):
     return self.j - self.i
 
   def unmap(self, index):
-    if not self.i <= index < self.j:
+    ielem = index - self.i
+    if self.mod:
+      ielem %= self.mod
+    if not 0 <= ielem < len(self):
       raise ValueError
-    return index-self.i
+    return ielem
 
-  def map(self, index):
-    return self.i+index
+  def map(self, ielem):
+    assert 0 <= ielem < len(self)
+    index = self.i + ielem
+    if self.mod:
+      index %= self.mod
+    return index
+
+class DimAxis(Axis):
+
+  __slots__ = 'isperiodic'
+  isdim = True
+
+  @types.apply_annotations
+  def __init__(self, i:types.strictint, j:types.strictint, mod:types.strictint, isperiodic:bool):
+    assert 0 == i < j == mod if isperiodic else 0 <= i < j and mod == 0
+    super().__init__(i, j, mod)
+    self.isperiodic = isperiodic
 
   @property
   def refined(self):
-    return DimAxis(i=self.i*2,j=self.j*2,isperiodic=self.isperiodic)
+    return DimAxis(self.i*2, self.j*2, self.mod*2, self.isperiodic)
 
   def opposite(self, ibound):
     return self
@@ -473,83 +484,36 @@ class DimAxis(Axis):
     start, stop, stride = s.indices(self.j - self.i)
     assert stride == 1
     assert stop > start
-    return DimAxis(self.i+start, self.i+stop, isperiodic=False)
+    return DimAxis(self.i+start, self.i+stop, mod=self.mod, isperiodic=False)
 
   def boundaries(self, ibound):
     if not self.isperiodic:
-      yield BndAxis(i=self.i, j=self.i, ibound=ibound, side=0)
-      yield BndAxis(i=self.j, j=self.j, ibound=ibound, side=1)
+      yield IntAxis(self.i, self.i+1, self.mod, ibound, side=False)
+      yield IntAxis(self.j-1, self.j, self.mod, ibound, side=True)
 
   def intaxis(self, ibound, side):
-    return (PIntAxis if self.isperiodic else IntAxis)(self.i, self.j, ibound, side)
+    return IntAxis(self.i-side+1-self.isperiodic, self.j-side, self.mod, ibound, side)
 
-class EdgeAxis(Axis):
+class IntAxis(Axis):
 
-  __slots__ = 'i', 'j', 'ibound', 'side'
+  __slots__ = 'ibound', 'side'
   isdim = False
 
   @types.apply_annotations
-  def __init__(self, i:types.strictint, j:types.strictint, ibound:types.strictint, side:bool):
-    super().__init__()
-    self.i = i
-    self.j = j
+  def __init__(self, i:types.strictint, j:types.strictint, mod:types.strictint, ibound:types.strictint, side:bool):
+    super().__init__(i, j, mod)
     self.ibound = ibound
     self.side = side
 
-class BndAxis(EdgeAxis):
-
-  __slots__ = ()
-
-  def __len__(self):
-    return 1
-
-  def unmap(self, index):
-    if index != (self.i-1 if self.side else self.j):
-      raise ValueError
-    return 0
-
-  def map(self, index):
-    return self.i-1 if self.side else self.j
-
   @property
   def refined(self):
-    return BndAxis(i=self.i*2, j=self.j*2, ibound=self.ibound, side=self.side)
+    return IntAxis(self.i*2+self.side, self.j*2+self.side-1, self.mod*2, self.ibound, self.side)
 
   def opposite(self, ibound):
-    return BndAxis(self.i, self.j, self.ibound, not self.side) if ibound == self.ibound else self
+    return IntAxis(self.i+2*self.side-1, self.j+2*self.side-1, self.mod, self.ibound, not self.side) if ibound == self.ibound else self
 
   def boundaries(self, ibound):
     return ()
-
-class IntAxis(EdgeAxis):
-
-  __slots__ = ()
-
-  def __len__(self):
-    return self.j - self.i - 1
-
-  def unmap(self, index):
-    if not self.i < index + self.side < self.j:
-      raise ValueError
-    return index - self.i - (not self.side)
-
-  def map(self, index):
-    return index + self.i + (not self.side)
-
-class PIntAxis(EdgeAxis):
-
-  __slots__ = ()
-
-  def __len__(self):
-    return self.j - self.i
-
-  def unmap(self, index):
-    if not self.i <= index < self.j:
-      raise ValueError
-    return (index - self.i - (not self.side)) % len(self)
-
-  def map(self, index):
-    return self.i + ((index + (not self.side)) % len(self))
 
 class StructuredTransforms(Transforms):
   '''Transforms sequence for :class:`~nutils.topology.StructuredTopology`.
