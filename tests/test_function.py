@@ -1018,6 +1018,20 @@ class CommonBasis:
             self.assertEqual(maskedbasis.get_dofs(ielem).tolist(), numeric.sorted_index(indices, numpy.compress(m, self.checkdofs[ielem], axis=0)).tolist())
             self.assertEqual(maskedbasis.get_coefficients(ielem).tolist(), numpy.compress(m, self.checkcoeffs[ielem], axis=0).tolist())
 
+  def test_getitem_slice(self):
+    maskedbasis = self.basis[1:-1]
+    indices = numpy.arange(self.checkndofs)[1:-1]
+    for ielem in range(self.checknelems):
+      m = numpy.asarray(numeric.sorted_contains(indices, self.checkdofs[ielem]))
+      self.assertEqual(maskedbasis.get_dofs(ielem).tolist(), numeric.sorted_index(indices, numpy.compress(m, self.checkdofs[ielem], axis=0)).tolist())
+      self.assertEqual(maskedbasis.get_coefficients(ielem).tolist(), numpy.compress(m, self.checkcoeffs[ielem], axis=0).tolist())
+
+  def test_getitem_slice_all(self):
+    maskedbasis = self.basis[:]
+    for ielem in range(self.checknelems):
+      self.assertEqual(maskedbasis.get_dofs(ielem).tolist(), self.checkdofs[ielem])
+      self.assertEqual(maskedbasis.get_coefficients(ielem).tolist(), self.checkcoeffs[ielem])
+
   def checkeval(self, ielem, points):
     result = numpy.zeros((points.npoints, self.checkndofs,), dtype=float)
     numpy.add.at(result, (slice(None),numpy.array(self.checkdofs[ielem], dtype=int)), numeric.poly_eval(numpy.array(self.checkcoeffs[ielem], dtype=float), points.coords))

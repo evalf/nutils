@@ -2692,6 +2692,12 @@ class Basis(Array):
       return MaskedBasis(self, index)
     elif numeric.isboolarray(index) and index.shape == (self.ndofs,):
       return MaskedBasis(self, numpy.where(index)[0])
+    elif isinstance(index, slice):
+      start, stop, step = index.indices(self.ndofs)
+      if step == 1 and start == 0 and stop == self.ndofs:
+        return self
+      else:
+        return MaskedBasis(self, numpy.arange(start, stop, step))
     else:
       return super().__getitem__(index)
 
