@@ -1223,7 +1223,7 @@ class Product(Array):
   @types.apply_annotations
   def __init__(self, func:asarray):
     self.func = func
-    super().__init__(args=[func], shape=func._axes[:-1], dtype=func.dtype)
+    super().__init__(args=[func], shape=func.shape[:-1], dtype=int if func.dtype == bool else func.dtype)
 
   def _simplified(self):
     if self.func.shape[-1] == 1:
@@ -1248,9 +1248,6 @@ class Product(Array):
 
   def _takediag(self, axis1, axis2):
     return product(_takediag(self.func, axis1, axis2), self.ndim-2)
-
-  def _desparsify(self, axis):
-    return [(ind, Product(f)) for ind, f in self.func._desparsify(axis)]
 
 class ApplyTransforms(Array):
 
@@ -1357,7 +1354,7 @@ class Determinant(Array):
   def __init__(self, func:asarray):
     assert isarray(func) and func.ndim >= 2 and func.shape[-1] == func.shape[-2]
     self.func = func
-    super().__init__(args=[func], shape=func._axes[:-2], dtype=func.dtype)
+    super().__init__(args=[func], shape=func.shape[:-2], dtype=func.dtype)
 
   def _simplified(self):
     return self.func._determinant(self.ndim, self.ndim+1)
@@ -1378,10 +1375,6 @@ class Determinant(Array):
 
   def _takediag(self, axis1, axis2):
     return determinant(_takediag(self.func, axis1, axis2), (self.ndim-2, self.ndim-1))
-
-  def _desparsify(self, axis):
-    assert isinstance(self._axes[axis], Sparse)
-    return [(ind, Determinant(f)) for ind, f in self.func._desparsify(axis)]
 
 class Multiply(Array):
 
@@ -1869,7 +1862,7 @@ class Pointwise(Array):
 
   def _derivative(self, var, seen):
     if self.deriv is None:
-      raise NotImplementedError('derivative is not defined for this operator')
+      return super()._derivative(var, seen)
     return util.sum(deriv(*self.args)[(...,)+(_,)*var.ndim] * derivative(arg, var, seen) for arg, deriv in zip(self.args, self.deriv))
 
   def _takediag(self, axis1, axis2):
@@ -1997,7 +1990,7 @@ class Sign(Array):
   @types.apply_annotations
   def __init__(self, func:asarray):
     self.func = func
-    super().__init__(args=[func], shape=func._axes, dtype=func.dtype)
+    super().__init__(args=[func], shape=func.shape, dtype=func.dtype)
 
   def _simplified(self):
     return self.func._sign()
@@ -2019,10 +2012,6 @@ class Sign(Array):
 
   def _derivative(self, var, seen):
     return Zeros(self.shape + var.shape, dtype=self.dtype)
-
-  def _desparsify(self, axis):
-    assert isinstance(self._axes[axis], Sparse)
-    return [(ind, Sign(f)) for ind, f in self.func._desparsify(axis)]
 
 class Sampled(Array):
   '''Basis-like identity operator.
@@ -2104,39 +2093,6 @@ class Eig(Evaluable):
 
   def evalf(self, arr):
     return (numpy.linalg.eigh if self.symmetric else numpy.linalg.eig)(arr)
-
-class Intersect(Evaluable):
-
-  def __init__(self, index1, index2):
-    self.index1 = index1
-    self.index2 = index2
-    super().__init__(args=[index1, index2])
-
-  def evalf(self, index1, index2):
-    ind, subind1, subind2 = numpy.intersect1d(index1, index2, return_indices=True)
-    return ind, subind1, subind2, numpy.array(len(ind))
-
-  def __len__(self):
-    return 3
-
-  def __iter__(self):
-    if self.index1 == self.index2:
-      return iter([self.index1, Range(self.index1.shape[0]), Range(self.index1.shape[0])])
-    if all(isinstance(index, (Range, InRange)) and index.length.isconstant and index.offset.isconstant for index in (self.index1, self.index2)):
-      length1 = self.index1.length.eval()
-      offset1 = self.index1.offset.eval()
-      length2 = self.index2.length.eval()
-      offset2 = self.index2.offset.eval()
-      offset = max(offset1, offset2)
-      length = min(offset1 + length1, offset2 + length2) - offset
-      if length <= 0:
-        return (Zeros([0], dtype=int) for i in range(3))
-      if all(isinstance(index, Range) for index in (self.index1, self.index2)):
-        return (Range(length, offset-o) for o in (0, offset1, offset2))
-    if self.isconstant:
-      return map(Constant, self.eval()[:3])
-    shape = ArrayFromTuple(self, 3, shape=(), dtype=int),
-    return (ArrayFromTuple(self, i, shape, dtype=int) for i in range(3))
 
 class ArrayFromTuple(Array):
 
@@ -2283,13 +2239,16 @@ class Inflate(Array):
   def _take(self, index, axis):
     if axis != self.ndim-1:
       return Inflate(_take(self.func, index, axis), self.dofmap, self.length)
-    if index == self.dofmap:
+    if index == self.dofmap and (self.dofmap.size == 1 or self.dofmap.isconstant and _isunique(self.dofmap.eval().ravel())):
       return self.func
-    ind, subind1, subind2 = Intersect(self.dofmap, index)
-    if ind.shape[0] == 0:
-      return Zeros(self.shape[:axis] + index.shape + self.shape[axis+1:], dtype=self.dtype)
-    if self.dofmap.ndim == 1 and index.ndim == 1:
-      return Inflate(_take(self.func, subind1, axis), subind2, index.shape[0])
+    if self.dofmap.isconstant and index.isconstant:
+      ind1 = self.dofmap.eval()
+      ind2 = index.eval()
+      ind, subind1, subind2 = numpy.intersect1d(ind1, ind2, return_indices=True)
+      if ind.size == 0:
+        return Zeros(self.shape[:-1] + index.shape, dtype=self.dtype)
+      elif self.dofmap.ndim == index.ndim == 1 and _isunique(ind1) and _isunique(ind2):
+        return Inflate(Take(self.func, subind1), subind2, index.shape[0])
 
   def _diagonalize(self, axis):
     if axis != self.ndim-1:
@@ -2308,7 +2267,8 @@ class Inflate(Array):
       return Inflate(unravel(self.func, axis, shape), self.dofmap, self.length)
 
   def _sign(self):
-    return Inflate(Sign(self.func), self.dofmap, self.length)
+    if self.dofmap.isconstant and _isunique(self.dofmap.eval()):
+      return Inflate(Sign(self.func), self.dofmap, self.length)
 
 class Diagonalize(Array):
 
@@ -2428,7 +2388,7 @@ class TrigNormal(Array):
     super().__init__(args=[angle], shape=(*angle.shape, 2), dtype=float)
 
   def _derivative(self, var, seen):
-    return TrigTangent(self.angle)[(...,)+(_,)*var.ndim] * derivative(self.angle, var, seen)[:,_]
+    return appendaxes(TrigTangent(self.angle), var.shape) * insertaxis(derivative(self.angle, var, seen), self.ndim-1, 2)
 
   def evalf(self, angle):
     return numpy.stack([numpy.cos(angle), numpy.sin(angle)], axis=self.ndim-1)
@@ -2448,7 +2408,7 @@ class TrigTangent(Array):
     super().__init__(args=[angle], shape=(*angle.shape, 2), dtype=float)
 
   def _derivative(self, var, seen):
-    return -TrigNormal(self.angle)[(...,)+(_,)*var.ndim] * derivative(self.angle, var, seen)[:,_]
+    return -appendaxes(TrigNormal(self.angle), var.shape) * insertaxis(derivative(self.angle, var, seen), self.ndim-1, 2)
 
   def evalf(self, angle):
     return numpy.stack([-numpy.sin(angle), numpy.cos(angle)], axis=self.ndim-1)
@@ -2570,7 +2530,7 @@ class Ravel(Array):
     if isinstance(self._axes[-1], Sparse):
       return self._resparsify(self.ndim-1)
     if all(isinstance(axis, Inserted) for axis in self._axes[-2:]):
-      return InsertAxis(sef.func._uninsert(self.ndim)._uninsert(self.ndim-1), self.shape[-1])
+      return InsertAxis(self.func._uninsert(self.ndim)._uninsert(self.ndim-1), self.shape[-1])
     return self.func._ravel(self.ndim-1)
 
   def evalf(self, f):
@@ -2941,6 +2901,9 @@ def _inflate_scalar(arg, shape):
   for idim, length in enumerate(shape):
     arg = insertaxis(arg, idim, length)
   return arg
+
+def _isunique(array):
+  return numpy.unique(array).size == array.size
 
 # FUNCTIONS
 
