@@ -795,3 +795,60 @@ class memory(TestCase):
       t.simplified
     with self.assertRaises(MyException): # make sure no placeholders remain in the replacement cache
       t.simplified
+
+class combine_loop_concatenates(TestCase):
+
+  def test_same_index_same_length(self):
+    i = evaluable.Argument('i', (), int)
+    A = evaluable.LoopConcatenate(evaluable.InsertAxis(i, 1), i, i+1, 3, i, 3)
+    B = evaluable.LoopConcatenate(evaluable.InsertAxis(i, 2), i*2, i*2+2, 6, i, 3)
+    actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
+    L = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3), (evaluable.InsertAxis(i, 2), i*2, i*2+2, 6)), i, 3)
+    desired = evaluable.Tuple((evaluable.ArrayFromTuple(L, 0, (3,), int), evaluable.ArrayFromTuple(L, 1, (6,), int)))
+    self.assertEqual(actual, desired)
+
+  def test_same_index_different_length(self):
+    i = evaluable.Argument('i', (), int)
+    A = evaluable.LoopConcatenate(evaluable.InsertAxis(i, 1), i, i+1, 3, i, 3)
+    B = evaluable.LoopConcatenate(evaluable.InsertAxis(i, 1), i, i+1, 4, i, 4)
+    actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
+    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i, 3)
+    L2 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 4),), i, 4)
+    desired = evaluable.Tuple((evaluable.ArrayFromTuple(L1, 0, (3,), int), evaluable.ArrayFromTuple(L2, 0, (4,), int)))
+    self.assertEqual(actual, desired)
+
+  def test_different_index(self):
+    i = evaluable.Argument('i', (), int)
+    j = evaluable.Argument('j', (), int)
+    A = evaluable.LoopConcatenate(evaluable.InsertAxis(i, 1), i, i+1, 3, i, 3)
+    B = evaluable.LoopConcatenate(evaluable.InsertAxis(j, 1), j, j+1, 3, j, 3)
+    actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
+    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i, 3)
+    L2 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(j, 1), j, j+1, 3),), j, 3)
+    desired = evaluable.Tuple((evaluable.ArrayFromTuple(L1, 0, (3,), int), evaluable.ArrayFromTuple(L2, 0, (3,), int)))
+    self.assertEqual(actual, desired)
+
+  def test_nested_invariant(self):
+    i = evaluable.Argument('i', (), int)
+    A = evaluable.LoopConcatenate(evaluable.InsertAxis(i, 1), i, i+1, 3, i, 3)
+    B = evaluable.LoopConcatenate(A, i*3, i*3+3, 9, i, 3)
+    actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
+    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i, 3)
+    A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int)
+    L2 = evaluable.LoopConcatenateCombined(((A_, i*3, i*3+3, 9),), i, 3)
+    self.assertIn(A_, L2._Evaluable__args)
+    desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int)))
+    self.assertEqual(actual, desired)
+
+  def test_nested_variant(self):
+    i = evaluable.Argument('i', (), int)
+    j = evaluable.Argument('j', (), int)
+    A = evaluable.LoopConcatenate(evaluable.InsertAxis(i+j, 1), i, i+1, 3, i, 3)
+    B = evaluable.LoopConcatenate(A, j*3, j*3+3, 9, j, 3)
+    actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
+    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i+j, 1), i, i+1, 3),), i, 3)
+    A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int)
+    L2 = evaluable.LoopConcatenateCombined(((A_, j*3, j*3+3, 9),), j, 3)
+    self.assertNotIn(A_, L2._Evaluable__args)
+    desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int)))
+    self.assertEqual(actual, desired)

@@ -220,7 +220,7 @@ class Evaluable(types.Singleton):
   'Base class'
 
   __slots__ = '__args',
-  __cache__ = 'dependencies', 'arguments', 'ordereddeps', 'dependencytree'
+  __cache__ = 'dependencies', 'arguments', 'ordereddeps', 'dependencytree', 'optimized_for_numpy', '_loop_concatenate_deps'
 
   @types.apply_annotations
   def __init__(self, args:types.tuple[strictevaluable]):
@@ -364,13 +364,63 @@ class Evaluable(types.Singleton):
       return retval
 
   @property
+  def optimized_for_numpy(self):
+    retval = self._optimized_for_numpy1() or self
+    return retval._combine_loop_concatenates(frozenset())
+
   @types.apply_annotations
   @replace(depthfirst=True, recursive=True)
-  def optimized_for_numpy(obj: simplified.fget):
+  def _optimized_for_numpy1(obj: simplified.fget):
     if isinstance(obj, Array):
       retval = obj._simplified() or obj._optimized_for_numpy()
       assert retval is None or isinstance(retval, Array) and retval.shape == obj.shape, '{0}._optimized_for_numpy or {0}._simplified resulted in shape change'.format(type(obj).__name__)
       return retval
+
+  @property
+  def _loop_concatenate_deps(self):
+    deps = []
+    for arg in self.__args:
+      deps += [dep for dep in arg._loop_concatenate_deps if dep not in deps]
+    return tuple(deps)
+
+  def _combine_loop_concatenates(self, outer_exclude):
+    while True:
+      exclude = set(outer_exclude)
+      combine = {}
+      # Collect all top-level `LoopConcatenate` instances in `combine` and all
+      # their dependent `LoopConcatenate` instances in `exclude`.
+      for lc in self._loop_concatenate_deps:
+        lcs = combine.setdefault((lc.index, lc.length), [])
+        if lc not in lcs:
+          lcs.append(lc)
+          exclude.update(set(lc._loop_concatenate_deps) - {lc})
+      # Combine top-level `LoopConcatenate` instances excluding those in
+      # `exclude`.
+      replacements = {}
+      for (index, length), lcs in combine.items():
+        lcs = [lc for lc in lcs if lc not in exclude]
+        if not lcs:
+          continue
+        # We're extracting data from `LoopConcatenate` in favor of using
+        # `loop_concatenate_combined(lcs, ...)` because the later requires
+        # reapplying simplifications that are already applied in the former.
+        # For example, in `loop_concatenate_combined` the offsets (used by
+        # start, stop and the concatenation length) are formed by
+        # `loop_concatenate`-ing `func.shape[-1]`. If the shape is constant,
+        # this can be simplified to a `Range`.
+        data = Tuple((Tuple((lc.func, lc.start, lc.stop, asarray(lc.shape[-1]))) for lc in lcs))
+        # Combine `LoopConcatenate` instances in `data` excluding
+        # `outer_exclude` and those that will be processed in a subsequent loop
+        # (the remainder of `exclude`). The latter consists of loops that are
+        # invariant w.r.t. the current loop `index`.
+        data = data._combine_loop_concatenates(exclude)
+        combined = LoopConcatenateCombined(data, index, length)
+        for i, lc in enumerate(lcs):
+          replacements[lc] = ArrayFromTuple(combined, i, lc.shape, lc.dtype)
+      if replacements:
+        self = replace(lambda key: replacements.get(key) if isinstance(key, LoopConcatenate) else None, recursive=False, depthfirst=False)(self)
+      else:
+        return self
 
 class EvaluationError(Exception):
   def __init__(self, f, values):
@@ -3307,6 +3357,10 @@ class LoopConcatenate(Array):
       last_index = last_index + prependaxes(self.start, last_index.shape)
       chunks.append(tuple(loop_concatenate(_flat(arr), self.index, self.length) for arr in (*indices, last_index, values)))
     return tuple(chunks)
+
+  @property
+  def _loop_concatenate_deps(self):
+    return (self,) + super()._loop_concatenate_deps
 
 class LoopConcatenateCombined(Evaluable):
 
