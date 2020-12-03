@@ -2489,7 +2489,7 @@ class Inflate(Array):
   def evalf(self, array, indices, length):
     assert indices.ndim == self.dofmap.ndim
     assert length.ndim == 0
-    if self.warn:
+    if self.warn and int(length) > len(indices):
       warnings.warn('using explicit inflation; this is usually a bug.', ExpensiveEvaluationWarning)
     inflated = numpy.zeros(array.shape[:array.ndim-indices.ndim] + (length,), dtype=self.dtype)
     numpy.add.at(inflated, (slice(None),)*(self.ndim-1)+(indices,), array)
@@ -2531,16 +2531,21 @@ class Inflate(Array):
   def _take(self, index, axis):
     if axis != self.ndim-1:
       return Inflate(_take(self.func, index, axis), self.dofmap, self.length)
-    if index == self.dofmap and (self.dofmap.size == 1 or self.dofmap.isconstant and _isunique(self.dofmap.eval().ravel())):
-      return self.func
-    if self.dofmap.isconstant and index.isconstant:
-      ind1 = self.dofmap.eval()
-      ind2 = index.eval()
-      ind, subind1, subind2 = numpy.intersect1d(ind1, ind2, return_indices=True)
-      if ind.size == 0:
-        return Zeros(self.shape[:-1] + index.shape, dtype=self.dtype)
-      elif self.dofmap.ndim == index.ndim == 1 and _isunique(ind1) and _isunique(ind2):
-        return Inflate(Take(self.func, subind1), subind2, index.shape[0])
+    newindex, newdofmap = SwapInflateTake(self.dofmap, index)
+    if self.dofmap.ndim:
+      func = self.func
+      for i in range(self.dofmap.ndim-1):
+        func = Ravel(func)
+      intersection = Take(func, newindex)
+    else: # kronecker; newindex is all zeros (but of varying length)
+      intersection = InsertAxis(self.func, newindex.shape[0])
+    if index.ndim:
+      swapped = Inflate(intersection, newdofmap, index.size)
+      for i in range(index.ndim-1):
+        swapped = Unravel(swapped, index.shape[i], util.product(index.shape[i+1:]))
+    else: # get; newdofmap is all zeros (but of varying length)
+      swapped = Sum(intersection)
+    return swapped
 
   def _diagonalize(self, axis):
     if axis != self.ndim-1:
@@ -2575,6 +2580,45 @@ class Inflate(Array):
         inflate_indices = appendaxes(self.dofmap, values.shape)
       chunks.append((*indices[:keep_dim], inflate_indices, values))
     return tuple(chunks)
+
+class SwapInflateTake(Evaluable):
+
+  def __init__(self, inflateidx, takeidx):
+    self.inflateidx = inflateidx
+    self.takeidx = takeidx
+    super().__init__(args=[inflateidx, takeidx])
+
+  def __iter__(self):
+    shape = ArrayFromTuple(self, index=2, shape=(), dtype=int),
+    return (ArrayFromTuple(self, index=index, shape=shape, dtype=int) for index in range(2))
+
+  def evalf(self, inflateidx, takeidx):
+    uniqueinflate = _isunique(inflateidx)
+    uniquetake = _isunique(takeidx)
+    unique = uniqueinflate and uniquetake
+    # If both indices are unique (i.e. they do not contain duplicates) then the
+    # take and inflate operations can simply be restricted to the intersection,
+    # with the the location of the intersection in the original index vectors
+    # being the new indices for the swapped operations.
+    intersection, subinflate, subtake = numpy.intersect1d(inflateidx, takeidx, return_indices=True, assume_unique=unique)
+    if unique:
+      return subinflate, subtake, numpy.array(len(intersection))
+    # Otherwise, while still limiting the operations to the intersection, we
+    # need to add the appropriate duplications on either side. The easiest way
+    # to do this is to form the permutation matrix A for take (may contain
+    # multiple items per column) and B for inflate (may contain several items
+    # per row) and take the product AB for the combined operation. To then
+    # decompose AB into the equivalent take followed by inflate we can simply
+    # take the two index vectors from AB.nonzero() and form CD = AB. The
+    # algorithm below does precisely this without forming AB explicitly.
+    newinflate = []
+    newtake = []
+    for k, n in enumerate(intersection):
+      for i in [subtake[k]] if uniquetake else numpy.equal(takeidx.ravel(), n).nonzero()[0]:
+        for j in [subinflate[k]] if uniqueinflate else numpy.equal(inflateidx.ravel(), n).nonzero()[0]:
+          newinflate.append(i)
+          newtake.append(j)
+    return numpy.array(newtake), numpy.array(newinflate), numpy.array(len(newtake))
 
 class Diagonalize(Array):
 
