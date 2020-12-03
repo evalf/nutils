@@ -42,6 +42,12 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
+import typing
+if typing.TYPE_CHECKING:
+  from typing_extensions import Protocol
+else:
+  Protocol = object
+
 from . import util, types, numeric, cache, transform, expression, warnings, parallel, sparse
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph
 import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log, weakref, time, contextlib, subprocess
@@ -58,7 +64,15 @@ def simplified(value):
   return strictevaluable(value).simplified
 
 asdtype = lambda arg: arg if any(arg is dtype for dtype in (bool, int, float, complex)) else {'f': float, 'i': int, 'b': bool, 'c': complex}[numpy.dtype(arg).kind]
-asarray = lambda arg: arg if isarray(arg) else stack(arg, axis=0) if _containsarray(arg) else Constant(arg)
+
+def asarray(arg):
+  if hasattr(arg, 'as_evaluable_array'):
+    return arg.as_evaluable_array()
+  elif _containsarray(arg):
+    return stack(arg, axis=0)
+  else:
+    return Constant(arg)
+
 asarrays = types.tuple[asarray]
 
 def as_canonical_length(value):
@@ -745,6 +759,12 @@ else:
 
   _ArrayMeta = type(Evaluable)
 
+class AsEvaluableArray(Protocol):
+  'Protocol for conversion into an :class:`Array`.'
+
+  def as_evaluable_array(self) -> 'Array':
+    'Lower this object to a :class:`nutils.evaluable.Array`.'
+
 class Array(Evaluable, metaclass=_ArrayMeta):
   '''
   Base class for array valued functions.
@@ -947,6 +967,11 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     if self.dtype in (bool, int) or var not in self.dependencies:
       return Zeros(self.shape + var.shape, dtype=self.dtype)
     raise NotImplementedError('derivative not defined for {}'.format(self.__class__.__name__))
+
+  def as_evaluable_array(self):
+    'return self'
+
+    return self
 
   @property
   def _as_canonical_length(self):

@@ -129,6 +129,9 @@ class Array(Lowerable, metaclass=_ArrayMeta):
     self.shape = tuple(shape_)
     self.dtype = dtype
 
+  def as_evaluable_array(self) -> evaluable.Array:
+    return self.lower()
+
   def prepare_eval(self, *, ndims: Optional[int] = None, opposite: bool = False, npoints: Optional[Union[int, evaluable.Array]] = evaluable.NPoints()) -> evaluable.Array:
     '''Lower this object to a :class:`nutils.evaluable.Array`.
 
