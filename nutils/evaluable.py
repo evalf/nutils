@@ -2923,7 +2923,7 @@ def zeros_like(arr):
   return zeros(arr.shape, arr.dtype)
 
 def isuniform(arg, value):
-  while isinstance(arg, InsertAxis):
+  while isinstance(arg, (InsertAxis, Transpose)):
     arg = arg.func
   if isinstance(arg, Constant) and arg.ndim == 0:
     return arg.value[()] == value
