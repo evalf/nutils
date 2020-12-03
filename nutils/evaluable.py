@@ -465,6 +465,16 @@ class SelectChain(TransformChain):
   def _node_details(self):
     return 'index={}'.format(self.n)
 
+class TransformChainFromSequence(TransformChain):
+
+  @types.apply_annotations
+  def __init__(self, seq, index):
+    self._seq = seq
+    super().__init__(args=[index])
+
+  def evalf(self, index):
+    return self._seq[index.__index__()]
+
 class PopHead(TransformChain):
 
   __slots__ = 'trans',
@@ -3052,7 +3062,7 @@ def blocks(arg):
 
 @replace
 def _bifurcate(arg, side):
-  if isinstance(arg, SelectChain):
+  if isinstance(arg, (SelectChain, TransformChainFromSequence)):
     return SelectBifurcation(arg, side)
 
 bifurcate1 = functools.partial(_bifurcate, side=True)
