@@ -446,11 +446,11 @@ expression. For example, the following integrates ``1`` against geometry ``x``:
 .. console::
     >>> I = topo.integral('1 J(x)' @ ns, degree=0)
     >>> I
-    Integral<>
+    Array<>
 
-The resulting :class:`nutils.sample.Integral` object is a representation of the
+The resulting :class:`nutils.function.Array` object is a representation of the
 integral, as yet unevaluated. To compute the actual numbers, call the
-:meth:`Integral.eval() <nutils.sample.Integral.eval>` method:
+:meth:`Array.eval() <nutils.function.Array.eval>` method:
 
 .. console::
     >>> I.eval()
@@ -465,8 +465,8 @@ integrals are different:
     >>> topo.integral('1 + 1 J(x)' @ ns, degree=0).eval()
     5.0±1e-15
 
-The :class:`~nutils.sample.Integral` objects support additions and
-subtractions:
+Like any other :class:`~nutils.function.Array`, the integrals can be added or
+subtracted:
 
 .. console::
     >>> J = topo.integral('x_0 J(x)' @ ns, degree=1)
@@ -497,7 +497,7 @@ Integrating and evaluating a 1D :class:`~nutils.function.Array` results in a 1D
     array([0.125, 0.25 , 0.25 , 0.25 , 0.125])±1e-15
 
 Since the integrals of 2D :class:`~nutils.function.Array` functions are usually
-sparse, the :class:`Integral.eval() <nutils.sample.Integral.eval>` method does
+sparse, the :class:`Array.eval() <nutils.function.Array.eval>` method does
 not return a dense :class:`numpy.ndarray`, but a Nutils sparse matrix object: a
 subclass of :class:`nutils.matrix.Matrix`.  Nutils interfaces several linear
 solvers (more on this in Section :ref:`solvers` below) but if you want to use a
@@ -560,9 +560,9 @@ Alternatively, we can write this in the slightly more general form
 Taking the derivative of :math:`R_n` to :math:`\hat{u}_m` gives the above
 matrix :math:`A_{nm}`, and substituting for :math:`\hat{u}` the zero vector
 yields :math:`-f_n`.  Nutils can compute those derivatives for you, using the
-method :meth:`Integral.derivative() <nutils.sample.Integral.derivative>` to
+method :meth:`Array.derivative() <nutils.function.Array.derivative>` to
 compute the derivative with respect to an :class:`~nutils.function.Argument`,
-returning a new :class:`~nutils.sample.Integral`.
+returning a new :class:`~nutils.function.Array`.
 
 .. console::
     >>> A = res.derivative('lhs').eval()

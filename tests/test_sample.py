@@ -85,7 +85,7 @@ class integral(TestCase):
 
   def test_empty(self):
     shape = 2, 3
-    empty = sample.Integral({}, shape=shape)
+    empty = function.zeros(shape, float)
     array = empty.eval().export('dense')
     self.assertEqual(array.shape, shape)
     self.assertAllEqual(array.flat, 0)

@@ -626,7 +626,7 @@ Release date: `2018-02-05 <https://github.com/evalf/nutils/releases/tag/v3.0>`_.
   Analogous to :func:`nutils.topology.Topology.integrate`, which
   integrates a function and returns the result as a (sparse) array, the
   new method :func:`nutils.topology.Topology.integral` with identical
-  arguments results in an :class:`nutils.sample.Integral` object for
+  arguments results in an ``nutils.sample.Integral`` object for
   postponed evaluation::
 
       >>> x = domain.integrate(f, geometry=geom, degree=2) # direct

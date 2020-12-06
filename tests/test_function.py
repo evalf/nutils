@@ -363,7 +363,7 @@ class sampled(TestCase):
 
   def test_values(self):
     diff = self.domain.integrate(self.f - self.f_sampled, ischeme='gauss2')
-    self.assertEqual(diff, 0)
+    self.assertAllAlmostEqual(diff, 0)
 
   def test_pointset(self):
     with self.assertRaises(evaluable.EvaluationError):

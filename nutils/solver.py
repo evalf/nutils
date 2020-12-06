@@ -21,8 +21,8 @@
 """
 The solver module defines solvers for problems of the kind ``res = 0`` or
 ``∂inertia/∂t + res = 0``, where ``res`` is a
-:class:`nutils.sample.Integral`.  To demonstrate this consider the following
-setup:
+:class:`nutils.evaluable.AsEvaluableArray`.  To demonstrate this consider the
+following setup:
 
 >>> from nutils import mesh, function, solver
 >>> ns = function.Namespace()
@@ -59,16 +59,10 @@ import abc, numpy, itertools, functools, numbers, collections, math, inspect, tr
 argdict = types.frozendict[types.strictstr,types.frozenarray]
 
 def integraltuple(arg):
-  for obj in arg:
-    if not isinstance(obj, sample.Integral):
-      raise TypeError('expected integral, got {}'.format(type(obj)))
-  return tuple(arg)
+  return tuple(a.as_evaluable_array() for a in arg)
 
 def optionalintegraltuple(arg):
-  for obj in arg:
-    if obj is not None and not isinstance(obj, sample.Integral):
-      raise TypeError('expected integral or None, got {}'.format(type(obj)))
-  return tuple(arg)
+  return tuple(None if a is None else a.as_evaluable_array() for a in arg)
 
 def arrayordict(arg):
   return types.frozenarray(arg) if numeric.isarray(arg) else argdict(arg)
@@ -334,7 +328,7 @@ def solve_linear(target, residual:integraltuple, *, constrain:arrayordict=None, 
   ----------
   target : :class:`str`
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
-  residual : :class:`nutils.sample.Integral`
+  residual : :class:`nutils.evaluable.AsEvaluableArray`
       Residual integral, depends on ``target``
   constrain : :class:`numpy.ndarray` with dtype :class:`float`
       Defines the fixed entries of the coefficient vector
@@ -382,7 +376,7 @@ class newton(cache.Recursion, length=1):
   ----------
   target : :class:`str`
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
-  residual : :class:`nutils.sample.Integral`
+  residual : :class:`nutils.evaluable.AsEvaluableArray`
   lhs0 : :class:`numpy.ndarray`
       Coefficient vector, starting point of the iterative procedure.
   relax0 : :class:`float`
@@ -478,7 +472,7 @@ class minimize(cache.Recursion, length=1, version=3):
   ----------
   target : :class:`str`
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
-  residual : :class:`nutils.sample.Integral`
+  residual : :class:`nutils.evaluable.AsEvaluableArray`
   lhs0 : :class:`numpy.ndarray`
       Coefficient vector, starting point of the iterative procedure.
   constrain : :class:`numpy.ndarray` with dtype :class:`bool` or :class:`float`
@@ -504,13 +498,13 @@ class minimize(cache.Recursion, length=1, version=3):
   '''
 
   @types.apply_annotations
-  def __init__(self, target, energy:sample.strictintegral, lhs0:types.frozenarray[types.strictfloat]=None, constrain:arrayordict=None, rampup:types.strictfloat=.5, rampdown:types.strictfloat=-1., failrelax:types.strictfloat=-10., arguments:argdict={}, **kwargs):
+  def __init__(self, target, energy:evaluable.asarray, lhs0:types.frozenarray[types.strictfloat]=None, constrain:arrayordict=None, rampup:types.strictfloat=.5, rampdown:types.strictfloat=-1., failrelax:types.strictfloat=-10., arguments:argdict={}, **kwargs):
     super().__init__()
     if energy.shape != ():
       raise ValueError('`energy` should be scalar')
     self.target = target
     self.energy = energy
-    self.residual = tuple(energy.derivative(target) for target in self.target)
+    self.residual = _derivative((energy,), target)
     self.jacobian = _derivative(self.residual, target)
     self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argobjs((energy,)), arguments)
     self.rampup = rampup
@@ -590,8 +584,8 @@ class pseudotime(cache.Recursion, length=1):
   ----------
   target : :class:`str`
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
-  residual : :class:`nutils.sample.Integral`
-  inertia : :class:`nutils.sample.Integral`
+  residual : :class:`nutils.evaluable.AsEvaluableArray`
+  inertia : :class:`nutils.evaluable.AsEvaluableArray`
   timestep : :class:`float`
       Initial time step, will scale up as residual decreases
   lhs0 : :class:`numpy.ndarray`
@@ -626,8 +620,7 @@ class pseudotime(cache.Recursion, length=1):
     self.timesteptarget = '_pseudotime_timestep'
     dt = evaluable.Argument(self.timesteptarget, ())
     self.residuals = residual
-    self.jacobians = _derivative(tuple(res + sample.Integral({smp: func/dt for smp, func in inert._integrands.items()} if inert else {}, shape=res.shape)
-      for res, inert in zip(residual, inertia)), target)
+    self.jacobians = _derivative(tuple(res + (inert/dt if inert else 0) for res, inert in zip(residual, inertia)), target)
     self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argobjs(residual+inertia), arguments)
     self.timestep = timestep
     self.solveargs = _strip(kwargs, 'lin')
@@ -672,15 +665,15 @@ class thetamethod(cache.Recursion, length=1, version=1):
   ----------
   target : :class:`str`
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
-  residual : :class:`nutils.sample.Integral`
-  inertia : :class:`nutils.sample.Integral`
+  residual : :class:`nutils.evaluable.AsEvaluableArray`
+  inertia : :class:`nutils.evaluable.AsEvaluableArray`
   timestep : :class:`float`
       Initial time step, will scale up as residual decreases
   lhs0 : :class:`numpy.ndarray`
       Coefficient vector, starting point of the iterative procedure.
   theta : :class:`float`
       Theta value (theta=1 for implicit Euler, theta=0.5 for Crank-Nicolson)
-  residual0 : :class:`nutils.sample.Integral`
+  residual0 : :class:`nutils.evaluable.AsEvaluableArray`
       Optional additional residual component evaluated in previous timestep
   constrain : :class:`numpy.ndarray` with dtype :class:`bool` or :class:`float`
       Equal length to ``lhs0``, masks the free vector entries as ``False``
@@ -730,9 +723,7 @@ class thetamethod(cache.Recursion, length=1, version=1):
     self.old_new.append((timetarget+historysuffix, timetarget))
     subs0 = {new: evaluable.Argument(old, self.lhs0[new].shape) for old, new in self.old_new}
     dt = evaluable.Argument(timetarget, ()) - subs0[timetarget]
-    self.residuals = tuple(sample.Integral({smp: func * theta + evaluable.replace_arguments(func, subs0) * (1-theta) for smp, func in res._integrands.items()}, shape=res.shape)
-                    + sample.Integral({smp: (func - evaluable.replace_arguments(func, subs0)) / dt for smp, func in inert._integrands.items()} if inert else {}, shape=res.shape)
-                         for res, inert in zip(residual, inertia))
+    self.residuals = tuple(res * theta + evaluable.replace_arguments(res, subs0) * (1-theta) + ((inert - evaluable.replace_arguments(inert, subs0)) / dt if inert else 0) for res, inert in zip(residual, inertia))
     self.jacobians = _derivative(self.residuals, target)
 
   def _step(self, lhs0, dt):
@@ -763,14 +754,14 @@ cranknicolson = functools.partial(thetamethod, theta=0.5)
 @single_or_multiple
 @types.apply_annotations
 @cache.function(version=1)
-def optimize(target, functional:sample.strictintegral, *, tol:types.strictfloat=0., arguments:argdict={}, droptol:float=None, constrain:arrayordict=None, lhs0:types.frozenarray[types.strictfloat]=None, relax0:float=1., linesearch=None, failrelax:types.strictfloat=1e-6, **kwargs):
+def optimize(target, functional:evaluable.asarray, *, tol:types.strictfloat=0., arguments:argdict={}, droptol:float=None, constrain:arrayordict=None, lhs0:types.frozenarray[types.strictfloat]=None, relax0:float=1., linesearch=None, failrelax:types.strictfloat=1e-6, **kwargs):
   '''find the minimizer of a given functional
 
   Parameters
   ----------
   target : :class:`str`
       Name of the target: a :class:`nutils.function.Argument` in ``residual``.
-  functional : scalar :class:`nutils.sample.Integral`
+  functional : scalar :class:`nutils.evaluable.AsEvaluableArray`
       The functional the should be minimized by varying target
   tol : :class:`float`
       Target residual norm.
@@ -810,7 +801,7 @@ def optimize(target, functional:sample.strictintegral, *, tol:types.strictfloat=
     target = [t for t in target if t in argobjs]
     if not target:
       return {}
-  residual = tuple(functional.derivative(t) for t in target)
+  residual = _derivative((functional,), target)
   jacobian = _derivative(residual, target)
   lhs0, constrain = _parse_lhs_cons(lhs0, constrain, target, argobjs, arguments)
   mask, vmask = _invert(constrain, target)
@@ -901,7 +892,7 @@ def _parse_lhs_cons(lhs0, constrain, targets, argobjs, arguments):
 def _derivative(residual, target, jacobian=None):
   argobjs = _argobjs(residual)
   if jacobian is None:
-    jacobian = tuple(res.derivative(argobjs[t]) for res in residual for t in target)
+    jacobian = tuple(evaluable.derivative(res, argobjs[t]).simplified for res in residual for t in target)
   elif len(jacobian) != len(residual) * len(target):
     raise ValueError('jacobian has incorrect length')
   elif any(jacobian[i*len(target)+j].shape != res.shape + argobjs[t].shape for i, res in enumerate(residual) for j, t in enumerate(target)):
@@ -953,26 +944,25 @@ def _integrate_blocks(*blocks, arguments, mask):
   *scalars, residuals, jacobians = blocks
   assert len(residuals) == len(mask)
   assert len(jacobians) == len(mask)**2
-  data = iter(sample.eval_integrals_sparse(*(scalars + list(residuals) + list(jacobians)), **arguments))
+  data = iter(sample.eval_integrals_sparse(*scalars, *residuals, *jacobians, **arguments))
   nrg = [sparse.toarray(next(data)) for _ in range(len(scalars))]
   res = [sparse.take(next(data), [m]) for m in mask]
   jac = [[sparse.take(next(data), [mi, mj]) for mj in mask] for mi in mask]
   assert not list(data)
   return nrg + [sparse.toarray(sparse.block(res)), matrix.fromsparse(sparse.block(jac), inplace=True)]
 
-def _argobjs(integrals):
-  '''get :class:`evaluable.Argument` dependencies of multiple integrals'''
+def _argobjs(funcs):
+  '''get :class:`evaluable.Argument` dependencies of multiple functions'''
 
   argobjs = {}
-  for integral in filter(None, integrals):
-    for integrand in integral._integrands.values():
-      for arg in integrand.arguments:
-        if isinstance(arg, evaluable.Argument):
-          if arg._name in argobjs:
-            if argobjs[arg._name] != arg:
-              raise ValueError('shape or dtype mismatch for argument {}: {} != {}'.format(arg._name, argobjs[arg._name], arg))
-          else:
-            argobjs[arg._name] = arg
+  for func in filter(None, funcs):
+    for arg in func.arguments:
+      if isinstance(arg, evaluable.Argument):
+        if arg._name in argobjs:
+          if argobjs[arg._name] != arg:
+            raise ValueError('shape or dtype mismatch for argument {}: {} != {}'.format(arg._name, argobjs[arg._name], arg))
+        else:
+          argobjs[arg._name] = arg
   return argobjs
 
 # vim:sw=2:sts=2:et

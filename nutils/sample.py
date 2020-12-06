@@ -33,14 +33,6 @@ properties, representing a (n-dimensional) triangulation of the interior and
 boundary, respectively. Availability of these properties depends on the
 selected sample points, and is typically used in combination with the "bezier"
 set.
-
-In addition to :class:`Sample`, the sample module defines the :class:`Integral`
-class which represents postponed integration. Integrals are internally
-represented as pairs of :class:`Sample` and :class:`nutils.function.Array`
-objects. Evaluation proceeds via either the :func:`Integral.eval` method, or
-the :func:`eval_integrals` function. The latter can also be used to evaluate
-multiple integrals simultaneously, which has the advantage that it can
-efficiently combine common substructures.
 '''
 
 from . import types, points, util, function, evaluable, parallel, numeric, matrix, transformseq, sparse
@@ -136,9 +128,6 @@ class Sample(types.Singleton):
   def _prepare_funcs(self, funcs):
     return [function.asarray(func).prepare_eval(ndims=self.ndims) for func in funcs]
 
-  def _prepare_funcs_integrate(self, funcs):
-    return [evaluable.dot(evaluable.appendaxes(evaluable.Weights(evaluable.NPoints()), func.shape[1:]), func, 0) for func in self._prepare_funcs(funcs)]
-
   def _prepare_funcs_eval(self, funcs):
     if self.npoints:
       ielem = function.transforms_index(self.transforms[0]).prepare_eval(ndims=self.ndims, npoints=None)
@@ -178,7 +167,7 @@ class Sample(types.Singleton):
         Optional arguments for function evaluation.
     '''
 
-    return self._eval(self._prepare_funcs_integrate(funcs), arguments)
+    return eval_integrals_sparse(*map(self.integral, funcs), **(arguments or {}))
 
   @util.single_or_multiple
   @types.apply_annotations
@@ -258,8 +247,7 @@ class Sample(types.Singleton):
         Integrand.
     '''
 
-    func, = self._prepare_funcs_integrate([func])
-    return Integral([(self, func)], shape=func.shape)
+    return _Integral(func, self)
 
   @util.positional_only
   @util.single_or_multiple
@@ -422,170 +410,14 @@ class _CustomIndex(Sample):
   def getindex(self, ielem):
     return self._index[ielem]
 
-class Integral(types.Singleton):
-  '''Postponed integration.
-
-  The :class:`Integral` class represents postponed integration. Integrals are
-  internally represented as pairs of :class:`Sample` and
-  :class:`nutils.function.Array` objects. Evaluation proceeds via either the
-  :func:`eval` method, or the :func:`eval_integrals` function. The latter can
-  also be used to evaluate multiple integrals simultaneously, which has the
-  advantage that it can efficiently combine common substructures.
-
-  Integrals support basic arithmetic such as summation, subtraction, and scalar
-  multiplication and division. It also supports differentiation via the
-  :func:`derivative` method. This makes Integral particularly well suited for
-  use in combination with the :mod:`nutils.solver` module which provides linear
-  and non-linear solvers.
-
-  Args
-  ----
-  integrands : :class:`dict`
-      Dictionary representing a sum of integrals, where every key-value pair
-      binds together the sample set and the integrand.
-  shape : :class:`tuple`
-      Array dimensions of the integral.
-  '''
-
-  __slots__ = '_integrands', 'shape'
-  __cache__ = 'derivative', 'argshapes'
-
-  @types.apply_annotations
-  def __init__(self, integrands:types.frozendict[strictsample, evaluable.simplified], shape:types.tuple[int]):
-    assert all(ig.shape == shape for ig in integrands.values()), 'incompatible shapes: expected {}, got {}'.format(shape, ', '.join({str(ig.shape) for ig in integrands.values()}))
-    self._integrands = {sample: func for sample, func in integrands.items() if not evaluable.iszero(func)}
-    self.shape = shape
-
-  @property
-  def ndim(self):
-    return len(self.shape)
-
-  def __repr__(self):
-    return 'Integral<{}>'.format(','.join(map(str, self.shape)))
-
-  def eval(self, **kwargs):
-    '''Evaluate integral.
-
-    Equivalent to :func:`eval_integrals` (self, ...).
-    '''
-
-    retval, = eval_integrals(self, **kwargs)
-    return retval
-
-  def derivative(self, target):
-    '''Differentiate integral.
-
-    Return an Integral in which all integrands are differentiated with respect
-    to a target. This is typically used in combination with
-    :class:`nutils.function.Namespace`, in which targets are denoted with a
-    question mark (e.g. ``'?dofs_n'`` corresponds to target ``'dofs'``).
-
-    Args
-    ----
-    target : :class:`str`
-        Name of the derivative target.
-
-    Returns
-    -------
-    derivative : :class:`Integral`
-    '''
-
-    if isinstance(target, function.Argument):
-      target = target.prepare_eval()
-    elif not isinstance(target, evaluable.Argument):
-      target = evaluable.Argument(target, self.argshapes[target])
-    seen = {}
-    return Integral({di: evaluable.derivative(integrand, var=target, seen=seen) for di, integrand in self._integrands.items()}, shape=self.shape+target.shape)
-
-  def replace(self, arguments):
-    '''Return copy with arguments applied.
-
-    Return a copy of self in which all all arguments are edited into the
-    integrands. The effect is that ``self.eval(..., arguments=args)`` is
-    equivalent to ``self.replace(args).eval(...)``. Note, however, that after
-    the replacement it is no longer possible to take derivatives against any of
-    the targets in ``arguments``.
-
-    Args
-    ----
-    arguments : :class:`dict`
-        Arguments for function evaluation.
-
-    Returns
-    -------
-    replaced : :class:`Integral`
-    '''
-
-    arguments = {k: v if isinstance(v, evaluable.Array) else function.Array.cast(v).prepare_eval(npoints=None) for k, v in arguments.items()}
-    return Integral({di: evaluable.replace_arguments(integrand, arguments) for di, integrand in self._integrands.items()}, shape=self.shape)
-
-  def contains(self, name):
-    '''Test if target occurs in any of the integrands.
-
-    Args
-    ----
-    name : :class:`str`
-        Target name.
-
-    Returns
-    _______
-    iscontained : :class:`bool`
-    '''
-
-    return name in self.argshapes
-
-  def __add__(self, other):
-    if not isinstance(other, Integral):
-      return NotImplemented
-    assert self.shape == other.shape
-    integrands = self._integrands.copy()
-    for di, integrand in other._integrands.items():
-      try:
-        integrands[di] += integrand
-      except KeyError:
-        integrands[di] = integrand
-    return Integral(integrands.items(), shape=self.shape)
-
-  def __neg__(self):
-    return Integral({di: -integrand for di, integrand in self._integrands.items()}, shape=self.shape)
-
-  def __sub__(self, other):
-    return self + (-other)
-
-  def __mul__(self, other):
-    if not isinstance(other, numbers.Number):
-      return NotImplemented
-    return Integral({di: integrand * other for di, integrand in self._integrands.items()}, shape=self.shape)
-
-  __rmul__ = __mul__
-
-  def __truediv__(self, other):
-    if not isinstance(other, numbers.Number):
-      return NotImplemented
-    return self.__mul__(1/other)
-
-  @property
-  def argshapes(self):
-    items = [(dep._name, dep.shape[:dep.ndim]) for func in self._integrands.values() for dep in func.dependencies if isinstance(dep, evaluable.Argument)]
-    shapes = dict(items)
-    if any(shapes[name] != shape for name, shape in items):
-      raise Exception('non-matching arguments shapes encountered')
-    return types.frozendict(shapes)
-
-  @property
-  def T(self):
-    return Integral({sample: func.T for sample, func in self._integrands.items()}, shape=self.shape[::-1])
-
-strictintegral = types.strict[Integral]
-
 @types.apply_annotations
-def eval_integrals(*integrals: types.tuple[strictintegral], **arguments:argdict):
+def eval_integrals(*integrals: types.tuple, **arguments:argdict):
   '''Evaluate integrals.
 
   Evaluate one or several postponed integrals. By evaluating them
-  simultaneously, rather than using :func:`Integral.eval` on each integral
-  individually, integrations will be grouped per Sample and jointly executed,
-  potentially increasing efficiency.
+  simultaneously, rather than using :meth:`nutils.function.Array.eval` on each
+  integral individually, integrations will be grouped per Sample and jointly
+  executed, potentially increasing efficiency.
 
   Args
   ----
@@ -603,13 +435,13 @@ def eval_integrals(*integrals: types.tuple[strictintegral], **arguments:argdict)
     return [_convert(retval, inplace=True) for retval in retvals]
 
 @types.apply_annotations
-def eval_integrals_sparse(*integrals: types.tuple[strictintegral], **arguments: argdict):
+def eval_integrals_sparse(*integrals: types.tuple, **arguments: argdict):
   '''Evaluate integrals into sparse data.
 
   Evaluate one or several postponed integrals. By evaluating them
-  simultaneously, rather than using :func:`Integral.eval` on each integral
-  individually, integrations will be grouped per Sample and jointly executed,
-  potentially increasing efficiency.
+  simultaneously, rather than using :meth:`nutils.function.Array.eval` on each
+  integral individually, integrations will be grouped per Sample and jointly
+  executed, potentially increasing efficiency.
 
   Args
   ----
@@ -623,17 +455,9 @@ def eval_integrals_sparse(*integrals: types.tuple[strictintegral], **arguments: 
   results : :class:`tuple` of arrays and/or :class:`nutils.matrix.Matrix` objects.
   '''
 
-  if arguments is None:
-    arguments = types.frozendict({})
-
-  retvals = [[sparse.empty(integral.shape)] for integral in integrals] # initialize with zeros to set shape and avoid empty addition
-  with log.iter.fraction('topology', util.gather((di, iint) for iint, integral in enumerate(integrals) for di in integral._integrands)) as gathered:
-    for sample, iints in gathered:
-      for iint, retval in zip(iints, sample._eval([integrals[iint]._integrands[sample] for iint in iints], arguments)):
-        retvals[iint].append(retval)
-      del retval
-
-  return [sparse.add(retval) for retval in retvals]
+  integrals = tuple(integral.as_evaluable_array().assparse for integral in integrals)
+  with evaluable.Tuple(tuple(integrals)).optimized_for_numpy.session(graphviz=graphviz) as eval:
+    return eval(**arguments)
 
 def _convert(data, inplace=False):
   '''Convert a two-dimensional sparse object to an appropriate object.
@@ -648,5 +472,21 @@ def _convert(data, inplace=False):
   return sparse.toarray(data) if ndim < 2 \
     else matrix.fromsparse(data, inplace=inplace) if ndim == 2 \
     else sparse.prune(sparse.dedup(data, inplace=inplace), inplace=True)
+
+class _Integral(function.Array):
+
+  def __init__(self, integrand: function.Array, sample: Sample) -> None:
+    self._integrand = integrand
+    self._sample = sample
+    super().__init__(shape=integrand.shape, dtype=float if integrand.dtype in (bool, int) else integrand.dtype)
+
+  def lower(self, *, transform_chains=None, coordinates=None, **kwargs) -> evaluable.Array:
+    if transform_chains or coordinates:
+      raise ValueError('nested integrals are not yet supported')
+    ielem = evaluable.Argument('_ielem', (), dtype=int)
+    transform_chains = tuple(evaluable.TransformChainFromSequence(t, ielem) for t in self._sample.transforms)
+    coordinates = (self._sample.points.get_evaluable_coords(ielem),) * len(self._sample.transforms)
+    integrand = self._integrand.lower(transform_chains=transform_chains, coordinates=coordinates, **kwargs)
+    return evaluable.LoopSum(evaluable.dot(evaluable.appendaxes(self._sample.points.get_evaluable_weights(ielem), integrand.shape[1:]), integrand, 0), ielem, self._sample.nelems)
 
 # vim:sw=2:sts=2:et

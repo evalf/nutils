@@ -392,9 +392,8 @@ class Array(Lowerable, metaclass=_ArrayMeta):
   def eval(self, **arguments: Any) -> numpy.ndarray:
     'Evaluate this function.'
 
-    from .sample import graphviz, _convert
-    with self.as_evaluable_array().assparse.optimized_for_numpy.session(graphviz=graphviz) as eval:
-      return _convert(eval(**arguments), inplace=True)
+    from .sample import eval_integrals
+    return eval_integrals(self, **arguments)[0]
 
   def derivative(self, __var: Union[str, 'Argument']) -> 'Array':
     'Differentiate this function to `var`.'
