@@ -97,7 +97,13 @@ jobs:
           # Install Nutils from `dist` dir created in job
           # `build-python-package`.
           python -um pip install --no-index --find-links ./dist nutils
+      - name: Get library directory
+        id: get-lib-dir
+        if: ${{ matrix.matrix-backend == 'mkl' }}
+        run: python -um devtools.gha.get_lib_dir
       - name: Test
+        env:
+          LD_LIBRARY_PATH: ${{ steps.get-lib-dir.outputs.libdir }}
         run: |
           mkdir testenv
           cp -r examples docs tests .coveragerc testenv
