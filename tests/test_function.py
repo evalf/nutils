@@ -80,6 +80,68 @@ class Array(TestCase):
       function.Array.cast([1,2]).simplified
 
 
+class integral_compatibility(TestCase):
+
+  def test_eval(self):
+    v = numpy.array([1,2])
+    a = function.Argument('a', (2,), dtype=float)
+    self.assertAllAlmostEqual(a.eval(a=v), v)
+
+  def test_derivative(self):
+    v = numpy.array([1,2])
+    a = function.Argument('a', (2,), dtype=float)
+    f = 2*a.sum()
+    for name, obj in ('str', 'a'), ('argument', a):
+      with self.subTest(name):
+        self.assertAllAlmostEqual(f.derivative(obj).eval(a=v), numpy.array([2,2]))
+
+  def test_derivative_str_evaluable_shape(self):
+    a = function.Argument('a', (), dtype=int)
+    b = function.Argument('b', (a,), dtype=float)
+    f = b**2
+    with self.assertRaises(ValueError):
+      f.derivative('b')
+
+  def test_derivative_str_unknown_argument(self):
+    f = function.zeros((2,), dtype=float)
+    with self.assertRaises(ValueError):
+      f.derivative('a')
+
+  def test_derivative_invalid(self):
+    f = function.zeros((2,), dtype=float)
+    with self.assertRaises(ValueError):
+      f.derivative(1.)
+
+  def test_replace(self):
+    v = numpy.array([1,2])
+    a = function.Argument('a', (2,), dtype=int)
+    b = function.Argument('b', (2,), dtype=int)
+    f = a.replace(dict(a=b))
+    self.assertAllAlmostEqual(f.eval(b=v), v)
+
+  def test_contains(self):
+    f = 2*function.Argument('a', (2,), dtype=int)
+    self.assertTrue(f.contains('a'))
+    self.assertFalse(f.contains('b'))
+
+  def test_argshapes(self):
+    a = function.Argument('a', (2,3), dtype=int)
+    b = function.Argument('b', (3,), dtype=int)
+    f = (a * b[None]).sum(-1)
+    self.assertEqual(dict(f.argshapes), dict(a=(2,3), b=(3,)))
+
+  def test_argshapes_shape_mismatch(self):
+    f = function.Argument('a', (2,), dtype=int)[None] + function.Argument('a', (3,), dtype=int)[:,None]
+    with self.assertRaises(Exception):
+      f.argshapes
+
+  def test_argshapes_evaluable_shape(self):
+    a = function.Argument('a', (), dtype=int)
+    b = function.Argument('b', (a,), dtype=float)
+    f = b**2
+    with self.assertRaises(ValueError):
+      f.argshapes
+
 @parametrize
 class check(TestCase):
 

@@ -389,6 +389,51 @@ class Array(Lowerable, metaclass=_ArrayMeta):
     warnings.deprecation('`nutils.function.Array.simplified` is deprecated. This property returns the array unmodified and can safely be omitted.')
     return self
 
+  def eval(self, **arguments: Any) -> numpy.ndarray:
+    'Evaluate this function.'
+
+    from .sample import graphviz, _convert
+    with self.as_evaluable_array().assparse.optimized_for_numpy.session(graphviz=graphviz) as eval:
+      return _convert(eval(**arguments), inplace=True)
+
+  def derivative(self, __var: Union[str, 'Argument']) -> 'Array':
+    'Differentiate this function to `var`.'
+
+    if isinstance(__var, str):
+      for arg in self.as_evaluable_array().arguments:
+        if isinstance(arg, evaluable.Argument) and arg._name == __var:
+          if not all(isinstance(n, int) for n in arg.shape):
+            raise ValueError('arguments with variable shapes are not supported')
+          __var = Argument(__var, arg.shape, dtype=arg.dtype)
+          break
+      else:
+        raise ValueError('no such argument: {}'.format(__var))
+    if not isinstance(__var, Argument):
+      raise ValueError('expected an `Argument` but got `{!r}`'.format(__var))
+    return derivative(self, __var)
+
+  def replace(self, __arguments: Mapping[str, IntoArray]) -> 'Array':
+    'Return a copy with arguments applied.'
+    return replace_arguments(self, __arguments)
+
+  def contains(self, __name: str) -> bool:
+    'Test if target occurs in this function.'
+    return __name in self.argshapes
+
+  @property
+  def argshapes(self) -> Mapping[str, Tuple[int, ...]]:
+    shapes = {} # type: Dict[str, Tuple[int, ...]]
+    for arg in self.as_evaluable_array().arguments:
+      if isinstance(arg, evaluable.Argument):
+        if arg._name in shapes:
+          if shapes.get(arg._name, arg.shape) != arg.shape:
+            raise Exception('non-matching arguments shapes encountered')
+        elif not all(isinstance(n, int) for n in arg.shape):
+          raise ValueError('arguments with variable shapes are not supported')
+        else:
+          shapes[arg._name] = arg.shape
+    return shapes
+
 def _prepend_points(__arg: evaluable.Array, *, coordinates: Sequence[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
   if coordinates:
     return evaluable.prependaxes(__arg, coordinates[0].shape[:-1])
