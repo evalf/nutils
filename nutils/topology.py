@@ -495,7 +495,7 @@ class Topology(types.Singleton):
     return self[selected]
 
   @log.withcontext
-  def locate(self, geom, coords, *, tol, ischeme='vertex', scale=1, eps=0, maxiter=100, arguments=None, weights=None):
+  def locate(self, geom, coords, *, tol, eps=0, maxiter=100, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None):
     '''Create a sample based on physical coordinates.
 
     In a finite element application, functions are commonly evaluated in points
@@ -526,12 +526,6 @@ class Topology(types.Singleton):
         Array of coordinates with ``ndims`` columns.
     tol : :class:`float`
         Maximum allowed distance between original and located coordinate.
-    ischeme : :class:`str` (default: "vertex")
-        Sample points used to determine bounding boxes.
-    scale : :class:`float` (default: 1)
-        Bounding box amplification factor, useful when element shapes are
-        distorted. Setting this to >1 can increase computational effort but is
-        otherwise harmless.
     eps : :class:`float` (default: 0)
         Epsilon radius around element within which a point is considered to be
         inside.
@@ -541,23 +535,27 @@ class Topology(types.Singleton):
         Arguments for function evaluation.
     weights : :class:`float` array (default: None)
         Optional weights, in case ``coords`` are quadrature points.
+    maxdist : :class:`float` (default: None)
+        Speed up failure by setting a distance between point and element
+        centroid above which the element is rejected immediately. If all points
+        are expected to be located then this can safely be left unspecified.
 
     Returns
     -------
     located : :class:`nutils.sample.Sample`
     '''
 
+    if ischeme is not None:
+      warnings.deprecation('the ischeme argument is deprecated and will be removed in future')
+    if scale is not None:
+      warnings.deprecation('the scale argument is deprecated and will be removed in future')
     coords = numpy.asarray(coords, dtype=float)
     if geom.ndim == 0:
       geom = geom[_]
       coords = coords[...,_]
     if not geom.shape == coords.shape[1:] == (self.ndims,):
       raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
-    bboxsample = self.sample(*element.parse_legacy_ischeme(ischeme))
-    vertices = map(bboxsample.eval(geom, **arguments or {}).__getitem__, bboxsample.indexiter)
-    bboxes = numpy.array([numpy.mean(v,axis=0) * (1-scale) + numpy.array([numpy.min(v,axis=0), numpy.max(v,axis=0)]) * scale
-      for v in vertices]) # nelems x {min,max} x ndims
-    vref = element.getsimplex(0)
+    centroids = self.elem_mean(geom, geometry=geom, degree=2)
     ielems = parallel.shempty(len(coords), dtype=int)
     xis = parallel.shempty((len(coords),len(geom)), dtype=float)
     subsamplemetas = function.SubsampleMeta(roots=self.roots, ndimsnormal=sum(root.ndims for root in self.roots)-self.ndims, ndimspoints=self.ndims),
@@ -566,8 +564,9 @@ class Topology(types.Singleton):
     with parallel.ctxrange('locating', len(coords)) as ipoints:
       for ipoint in ipoints:
         coord = coords[ipoint]
-        ielemcandidates, = numpy.logical_and(numpy.greater_equal(coord, bboxes[:,0,:]), numpy.less_equal(coord, bboxes[:,1,:])).all(axis=-1).nonzero()
-        for ielem in sorted(ielemcandidates, key=lambda i: numpy.linalg.norm(bboxes[i].mean(0)-coord)):
+        dist = numpy.linalg.norm(centroids - coord, axis=1)
+        for ielem in numpy.argsort(dist) if maxdist is None \
+                else sorted((dist < maxdist).nonzero()[0], key=dist.__getitem__):
           converged = False
           ref = self.references[ielem]
           p = ref.getpoints('gauss', 1)
