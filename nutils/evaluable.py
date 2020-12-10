@@ -3257,43 +3257,15 @@ class LoopConcatenate(Array):
     self.length = length
     self.start = start
     self.stop = stop
-    shape = (*func.shape[:-1], cc_length)
+    self._lcc = LoopConcatenateCombined(((func, start, stop, cc_length),), index, length)
+    super().__init__(args=[self._lcc], shape=(*func._axes[:-1], Axis(cc_length)), dtype=func.dtype)
 
-    invariants = [*map(asarray, shape), length]
-    dependencies = []
-    cache = set()
-    _populate_dependencies_sans_invariants(self.start, index, invariants, dependencies, cache)
-    _populate_dependencies_sans_invariants(self.stop, index, invariants, dependencies, cache)
-    _populate_dependencies_sans_invariants(func, index, invariants, dependencies, cache)
-    indices = {d: i for i, d in enumerate(itertools.chain(invariants, [index], dependencies))}
-    self._slice_indices = indices[self.start], indices[self.stop]
-    self._result_index = indices[func]
-    self._serialized = tuple((dep, tuple(map(indices.__getitem__, dep._Evaluable__args))) for dep in dependencies)
-    self._invariants = tuple(invariants)
+  def evalf(self, arg):
+    return arg[0]
 
-    axes = (*func._axes[:-1], Axis(shape[-1]))
-    super().__init__(args=invariants, shape=axes, dtype=func.dtype)
-
-  def evalf(self, *args):
-    result = numpy.empty(tuple(map(int, args[:self.ndim])), self.dtype)
-    for index in range(int(args[self.ndim])):
-      values = list(args)
-      values.append(numpy.array(index))
-      values.extend(op.evalf(*[values[i] for i in indices]) for op, indices in self._serialized)
-      start, stop = (int(values[idx]) for idx in self._slice_indices)
-      result[...,start:stop] = values[self._result_index]
-    return result
-
-  def evalf_withtimes(self, times, *args):
-    times[self] = subtimes = collections.defaultdict(_Stats)
-    result = numpy.zeros(tuple(map(int, args[:self.ndim])), self.dtype)
-    for index in range(int(args[self.ndim])):
-      values = list(args)
-      values.append(numpy.array(index))
-      values.extend(op.evalf_withtimes(subtimes, *[values[i] for i in indices]) for op, indices in self._serialized)
-      start, stop = (int(values[idx]) for idx in self._slice_indices)
-      result[...,start:stop] = values[self._result_index]
-    return result
+  def evalf_withtimes(self, times, arg):
+    with times[self]:
+      return arg[0]
 
   def _derivative(self, var, seen):
     return Transpose.from_end(loop_concatenate(Transpose.to_end(derivative(self.func, var, seen), self.ndim-1), self.index, self.length), self.ndim-1)
@@ -3301,18 +3273,9 @@ class LoopConcatenate(Array):
   def _node(self, cache, subgraph, times):
     if self in cache:
       return cache[self]
-    subcache = {}
-    for arg in self._invariants:
-      subcache[arg] = arg._node(cache, subgraph, times)
-    loopgraph = Subgraph('Loop', subgraph)
-    subcache[self.index] = RegularNode('LoopIndex', (), dict(length=self.length._node(cache, subgraph, times)), (type(self).__name__, _Stats()), loopgraph)
-    subtimes = times.get(self, collections.defaultdict(_Stats))
-    concat_kwargs = {'shape[{}]'.format(i): asarray(n)._node(cache, subgraph, times) for i, n in enumerate(self.shape)}
-    concat_kwargs['start'] = self.start._node(subcache, loopgraph, subtimes)
-    concat_kwargs['stop'] = self.stop._node(subcache, loopgraph, subtimes)
-    concat_kwargs['func'] = self.func._node(subcache, loopgraph, subtimes)
-    cache[self] = node = RegularNode('LoopConcatenate', (), concat_kwargs, (type(self).__name__, subtimes['concat']), loopgraph)
-    return node
+    else:
+      cache[self] = node = self._lcc._node_tuple(cache, subgraph, times)[0]
+      return node
 
   def _simplified(self):
     if iszero(self.func):
