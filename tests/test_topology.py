@@ -1,7 +1,7 @@
 from nutils import *
 from nutils.testing import *
 from nutils.elementseq import References
-import numpy, copy, sys, pickle, subprocess, base64, itertools, os
+import numpy, copy, sys, pickle, subprocess, base64, itertools, os, unittest
 
 class TopologyAssertions:
 
@@ -357,6 +357,15 @@ class locate(TestCase):
   def test(self):
     target = numpy.array([(.2,.3), (.1,.9), (0,1)])
     sample = self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12)
+    located = sample.eval(self.geom)
+    self.assertAllAlmostEqual(located, target)
+
+  @parametrize.enable_if(lambda etype, mode, **kwargs: etype != 'square' or mode == 'nonlinear')
+  def test_maxdist(self):
+    target = numpy.array([(.2,.3), (.1,.9), (0,1)])
+    with self.assertRaises(topology.LocateError):
+      self.domain.locate(self.geom, [(0, .3)], eps=1e-15, tol=1e-12, maxdist=.001)
+    sample = self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12, maxdist=.5)
     located = sample.eval(self.geom)
     self.assertAllAlmostEqual(located, target)
 
