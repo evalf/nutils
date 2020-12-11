@@ -23,7 +23,7 @@ The util module provides a collection of general purpose methods.
 """
 
 from . import numeric
-import sys, os, numpy, collections.abc, inspect, functools, operator, numbers, pathlib, ctypes, site, io, contextlib
+import sys, os, numpy, collections.abc, inspect, functools, operator, numbers, pathlib, ctypes, io, contextlib
 
 supports_outdirfd = os.open in os.supports_dir_fd and os.listdir in os.supports_fd
 
@@ -356,9 +356,7 @@ def loadlib(**libname):
   Find and load a dynamic library using :any:`ctypes.CDLL`.  For each
   (supported) platform the name of the library should be specified as a keyword
   argument, including the extension, where the keywords should match the
-  possible values of :any:`sys.platform`.  In addition to the default
-  directories, this function searches :any:`site.PREFIXES` and
-  :func:`site.getuserbase()`.
+  possible values of :any:`sys.platform`.
 
   Example
   -------
@@ -368,29 +366,10 @@ def loadlib(**libname):
       loadlib(linux='libmkl_rt.so', darwin='libmkl_rt.dylib', win32='mkl_rt.dll')
   '''
 
-  if sys.platform not in libname:
-    return
-  libname = libname[sys.platform]
   try:
-    return ctypes.CDLL(libname)
+    return ctypes.CDLL(libname[sys.platform])
   except (OSError, KeyError):
     pass
-  libsubdir = dict(linux='lib', darwin='lib', win32='Library\\bin')[sys.platform]
-  prefixes = list(site.PREFIXES)
-  if hasattr(site, 'getuserbase'):
-    prefixes.append(site.getuserbase())
-  for prefix in prefixes:
-    libdir = os.path.join(prefix, libsubdir)
-    if not os.path.exists(os.path.join(libdir, libname)):
-      continue
-    if sys.platform == 'win32' and libdir not in os.environ.get('PATH', '').split(';'):
-      # Make sure dependencies of `libname` residing in the same directory are
-      # found.
-      os.environ['PATH'] = os.environ.get('PATH', '').rstrip(';')+';'+libdir
-    try:
-      return ctypes.CDLL(os.path.join(libdir, libname))
-    except (OSError, KeyError):
-      pass
 
 def readtext(path):
   '''Read file and return contents
