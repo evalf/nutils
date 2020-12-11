@@ -156,9 +156,7 @@ def _build_apply_annotations(signature):
           continue
         bound.arguments[name] = param.annotation(bound.arguments[name])
       return bound.args, bound.kwargs
-    # Copy the signature of `wrapped` without annotations.  This matches the
-    # behaviour of the compiled `apply` above.
-    apply.__signature__ = inspect.Signature(parameters=[param.replace(annotation=param.empty) for param in signature.parameters.values()])
+  apply.__signature__ = signature
   apply.returns_canonical_arguments = True
   return apply
 
