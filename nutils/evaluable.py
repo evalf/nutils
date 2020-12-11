@@ -372,10 +372,14 @@ class Evaluable(types.Singleton):
   @property
   @replace(depthfirst=True, recursive=True)
   def simplified(obj):
-    if isinstance(obj, Array):
+    if isinstance(obj, Evaluable):
       retval = obj._simplified()
-      assert retval is None or isinstance(retval, Array) and retval.shape == obj.shape, '{}._simplified resulted in shape change'.format(type(obj).__name__)
+      if retval is not None and isinstance(obj, Array):
+        assert isinstance(retval, Array) and retval.shape == obj.shape, '{}._simplified resulted in shape change'.format(type(obj).__name__)
       return retval
+
+  def _simplified(self):
+    return
 
   @property
   def optimized_for_numpy(self):
@@ -385,10 +389,14 @@ class Evaluable(types.Singleton):
   @types.apply_annotations
   @replace(depthfirst=True, recursive=True)
   def _optimized_for_numpy1(obj: simplified.fget):
-    if isinstance(obj, Array):
+    if isinstance(obj, Evaluable):
       retval = obj._simplified() or obj._optimized_for_numpy()
-      assert retval is None or isinstance(retval, Array) and retval.shape == obj.shape, '{0}._optimized_for_numpy or {0}._simplified resulted in shape change'.format(type(obj).__name__)
+      if retval is not None and isinstance(obj, Array):
+        assert isinstance(retval, Array) and retval.shape == obj.shape, '{0}._optimized_for_numpy or {0}._simplified resulted in shape change'.format(type(obj).__name__)
       return retval
+
+  def _optimized_for_numpy(self):
+    return
 
   @property
   def _loop_concatenate_deps(self):
@@ -956,12 +964,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
       raise Exception('attempting to resparsify a non-sparse axis')
     items = [_inflate(f, index, self.shape[axis], axis) for index, f in self._desparsify(axis)]
     return util.sum(items) if items else zeros_like(self)
-
-  def _simplified(self):
-    return
-
-  def _optimized_for_numpy(self):
-    return
 
   def _derivative(self, var, seen):
     if self.dtype in (bool, int) or var not in self.dependencies:
