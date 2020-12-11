@@ -9,6 +9,19 @@ features in inverse chronological order.
 New in v7.0 (in development)
 ----------------------------
 
+- Removed: loading libraries from .local
+
+  Libraries that are installed in odd locations will no longer be automatically
+  located by Nutils (see b8b7a6d5 for reasons). Instead the user will need to
+  set the appropriate environment variable, prior to starting Python. In
+  Windows this is the ``PATH`` variable, in Linux and OS X ``LD_LIBRARY_PATH``.
+
+  Crucially, this affects the MKL libraries when they are user-installed via
+  pip. By default Nutils selects the best available matrix backend that it
+  finds available, which could result in it silently falling back on Scipy or
+  Numpy. To confirm that the path variable is set correctly run your
+  application with ``matrix=mkl`` to force an error if MKL cannot be loaded.
+
 - Function module split into ``function`` and ``evaluable``
 
   The function module has been split into a high-level, numpy-like ``function``
