@@ -80,6 +80,68 @@ class Array(TestCase):
       function.Array.cast([1,2]).simplified
 
 
+class integral_compatibility(TestCase):
+
+  def test_eval(self):
+    v = numpy.array([1,2])
+    a = function.Argument('a', (2,), dtype=float)
+    self.assertAllAlmostEqual(a.eval(a=v), v)
+
+  def test_derivative(self):
+    v = numpy.array([1,2])
+    a = function.Argument('a', (2,), dtype=float)
+    f = 2*a.sum()
+    for name, obj in ('str', 'a'), ('argument', a):
+      with self.subTest(name):
+        self.assertAllAlmostEqual(f.derivative(obj).eval(a=v), numpy.array([2,2]))
+
+  def test_derivative_str_evaluable_shape(self):
+    a = function.Argument('a', (), dtype=int)
+    b = function.Argument('b', (a,), dtype=float)
+    f = b**2
+    with self.assertRaises(ValueError):
+      f.derivative('b')
+
+  def test_derivative_str_unknown_argument(self):
+    f = function.zeros((2,), dtype=float)
+    with self.assertRaises(ValueError):
+      f.derivative('a')
+
+  def test_derivative_invalid(self):
+    f = function.zeros((2,), dtype=float)
+    with self.assertRaises(ValueError):
+      f.derivative(1.)
+
+  def test_replace(self):
+    v = numpy.array([1,2])
+    a = function.Argument('a', (2,), dtype=int)
+    b = function.Argument('b', (2,), dtype=int)
+    f = a.replace(dict(a=b))
+    self.assertAllAlmostEqual(f.eval(b=v), v)
+
+  def test_contains(self):
+    f = 2*function.Argument('a', (2,), dtype=int)
+    self.assertTrue(f.contains('a'))
+    self.assertFalse(f.contains('b'))
+
+  def test_argshapes(self):
+    a = function.Argument('a', (2,3), dtype=int)
+    b = function.Argument('b', (3,), dtype=int)
+    f = (a * b[None]).sum(-1)
+    self.assertEqual(dict(f.argshapes), dict(a=(2,3), b=(3,)))
+
+  def test_argshapes_shape_mismatch(self):
+    f = function.Argument('a', (2,), dtype=int)[None] + function.Argument('a', (3,), dtype=int)[:,None]
+    with self.assertRaises(Exception):
+      f.argshapes
+
+  def test_argshapes_evaluable_shape(self):
+    a = function.Argument('a', (), dtype=int)
+    b = function.Argument('b', (a,), dtype=float)
+    f = b**2
+    with self.assertRaises(ValueError):
+      f.argshapes
+
 @parametrize
 class check(TestCase):
 
@@ -301,7 +363,7 @@ class sampled(TestCase):
 
   def test_values(self):
     diff = self.domain.integrate(self.f - self.f_sampled, ischeme='gauss2')
-    self.assertEqual(diff, 0)
+    self.assertAllAlmostEqual(diff, 0)
 
   def test_pointset(self):
     with self.assertRaises(evaluable.EvaluationError):
@@ -470,10 +532,10 @@ class namespace(TestCase):
   def test_default_geometry_property(self):
     ns = function.Namespace()
     ns.x = 1
-    self.assertEqualLowered(ns.default_geometry, ns.x)
+    self.assertEqualLowered(ns.default_geometry, ns.x, ndims=0)
     ns = function.Namespace(default_geometry_name='y')
     ns.y = 2
-    self.assertEqualLowered(ns.default_geometry, ns.y)
+    self.assertEqualLowered(ns.default_geometry, ns.y, ndims=0)
 
   def test_copy(self):
     ns = function.Namespace()
@@ -528,12 +590,12 @@ class namespace(TestCase):
   def test_matmul_0d(self):
     ns = function.Namespace()
     ns.foo = 2
-    self.assertEqualLowered('foo' @ ns, ns.foo)
+    self.assertEqualLowered('foo' @ ns, ns.foo, npoints=None)
 
   def test_matmul_1d(self):
     ns = function.Namespace()
     ns.foo = function.zeros([2])
-    self.assertEqualLowered('foo_i' @ ns, ns.foo)
+    self.assertEqualLowered('foo_i' @ ns, ns.foo, npoints=None)
 
   def test_matmul_2d(self):
     ns = function.Namespace()
@@ -605,7 +667,7 @@ class namespace(TestCase):
   def test_d_arg(self):
     ns = function.Namespace()
     ns.a = '?a'
-    self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').prepare_eval().simplified, function.asarray(2).prepare_eval().simplified)
+    self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').prepare_eval(npoints=None).simplified, function.asarray(2).prepare_eval(npoints=None).simplified)
 
   def test_n(self):
     ns = function.Namespace()
@@ -684,7 +746,7 @@ class eval_ast(TestCase):
   def test_substitute(self): self.assertEqualLowered('(?x_i^2)(x_i=a2_i)', self.ns.a2**2)
   def test_multisubstitute(self): self.assertEqualLowered('(a2_i + ?x_i + ?y_i)(x_i=?y_i, y_i=?x_i)', self.ns.a2 + function.Argument('y', [2]) + function.Argument('x', [2]))
   def test_call(self): self.assertEqualLowered('sin(a)', function.sin(self.ns.a))
-  def test_call2(self): self.assertEqual(self.ns.eval_ij('arctan2(a2_i, a3_j)').prepare_eval().simplified, function.arctan2(self.ns.a2[:,None], self.ns.a3[None,:]).prepare_eval().simplified)
+  def test_call2(self): self.assertEqual(self.ns.eval_ij('arctan2(a2_i, a3_j)').prepare_eval(ndims=2).simplified, function.arctan2(self.ns.a2[:,None], self.ns.a3[None,:]).prepare_eval(ndims=2).simplified)
   def test_eye(self): self.assertEqualLowered('δ_ij a2_i', function.dot(function.eye(2), self.ns.a2, axes=[0]))
   def test_normal(self): self.assertEqualLowered('n_i', self.ns.x.normal())
   def test_getitem(self): self.assertEqualLowered('a2_0', self.ns.a2[0])

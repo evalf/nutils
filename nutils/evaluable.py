@@ -42,7 +42,14 @@ possible only via inverting of the geometry function, which is a fundamentally
 expensive and currently unsupported operation.
 """
 
-from . import util, types, numeric, cache, transform, transformseq, expression, warnings, parallel
+import typing
+if typing.TYPE_CHECKING:
+  from typing_extensions import Protocol
+else:
+  Protocol = object
+
+from . import util, types, numeric, cache, transform, expression, warnings, parallel, sparse
+from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph
 import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log, weakref, time, contextlib, subprocess
 _ = numpy.newaxis
 
@@ -57,16 +64,20 @@ def simplified(value):
   return strictevaluable(value).simplified
 
 asdtype = lambda arg: arg if any(arg is dtype for dtype in (bool, int, float, complex)) else {'f': float, 'i': int, 'b': bool, 'c': complex}[numpy.dtype(arg).kind]
-asarray = lambda arg: arg if isarray(arg) else stack(arg, axis=0) if _containsarray(arg) else Constant(arg)
+
+def asarray(arg):
+  if hasattr(arg, 'as_evaluable_array'):
+    return arg.as_evaluable_array()
+  elif _containsarray(arg):
+    return stack(arg, axis=0)
+  else:
+    return Constant(arg)
+
 asarrays = types.tuple[asarray]
 
 def as_canonical_length(value):
   if isarray(value):
-    if value.ndim != 0 or value.dtype != int:
-      raise ValueError('length should be an `int` or `Array` with zero dimensions and dtype `int`, got {!r}'.format(value))
-    value = value.simplified
-    if value.isconstant:
-      value = int(value.eval()) # Ensure this is an `int`, not `numpy.int64`.
+    return value._as_canonical_length
   elif numeric.isint(value):
     value = int(value) # Ensure this is an `int`, not `numpy.int64`.
   else:
@@ -223,7 +234,7 @@ class Evaluable(types.Singleton):
   'Base class'
 
   __slots__ = '__args',
-  __cache__ = 'dependencies', 'ordereddeps', 'dependencytree'
+  __cache__ = 'dependencies', 'arguments', 'ordereddeps', 'dependencytree', 'optimized_for_numpy', '_loop_concatenate_deps'
 
   @types.apply_annotations
   def __init__(self, args:types.tuple[strictevaluable]):
@@ -232,6 +243,10 @@ class Evaluable(types.Singleton):
 
   def evalf(self, *args):
     raise NotImplementedError('Evaluable derivatives should implement the evalf method')
+
+  def evalf_withtimes(self, times, *args):
+    with times[self]:
+      return self.evalf(*args)
 
   @property
   def dependencies(self):
@@ -242,6 +257,11 @@ class Evaluable(types.Singleton):
       deps.update(funcdeps)
       deps[func] = len(funcdeps)
     return deps
+
+  @property
+  def arguments(self):
+    'a frozenset of all arguments of this evaluable'
+    return frozenset().union(*(child.arguments for child in self.__args))
 
   @property
   def isconstant(self):
@@ -267,35 +287,22 @@ class Evaluable(types.Singleton):
   def serialized(self):
     return zip(self.ordereddeps[1:]+(self,), self.dependencytree[1:])
 
+  def _node(self, cache, subgraph, times):
+    if self in cache:
+      return cache[self]
+    args = tuple(arg._node(cache, subgraph, times) for arg in self.__args)
+    label = '\n'.join(filter(None, (type(self).__name__, self._node_details)))
+    cache[self] = node = RegularNode(label, args, {}, (type(self).__name__, times[self]), subgraph)
+    return node
+
+  @property
+  def _node_details(self):
+    return ''
+
   def asciitree(self, richoutput=False):
     'string representation'
 
-    if richoutput:
-      select = '├ ', '└ '
-      bridge = '│ ', '  '
-    else:
-      select = ': ', ': '
-      bridge = '| ', '  '
-    lines = []
-    ordereddeps = list(self.ordereddeps) + [self]
-    pool = [('', len(ordereddeps)-1)] # prefix, object tuples
-    while pool:
-      prefix, n = pool.pop()
-      s = '%{}'.format(n)
-      if prefix:
-        s = prefix[:-2] + select[bridge.index(prefix[-2:])] + s # locally change prefix into selector
-      if ordereddeps[n] is not None:
-        s += ' = ' + ordereddeps[n]._asciitree_str()
-        pool.extend((prefix + bridge[i==0], arg) for i, arg in enumerate(reversed(self.dependencytree[n])))
-        ordereddeps[n] = None
-      lines.append(s)
-    return '\n'.join(lines)
-
-  def _asciitree_str(self):
-    return str(self)
-
-  def _graphviz_node(self):
-    return 'label="{}"'.format(self)
+    return self._node({}, None, collections.defaultdict(_Stats)).generate_asciitree(richoutput)
 
   def __str__(self):
     return self.__class__.__name__
@@ -313,58 +320,37 @@ class Evaluable(types.Singleton):
     else:
       return values[-1]
 
-  def eval_withtimes(self, **evalargs):
+  def eval_withtimes(self, times, **evalargs):
     '''Evaluate function on a specified element, point set while measure time of each step.'''
 
-    serialized = self.serialized # prepare lazy attribute to exclude evaluation time
-    values = [(evalargs, time.perf_counter())]
+    values = [evalargs]
     try:
-      values.extend((op.evalf(*[values[i][0] for i in indices]), time.perf_counter()) for op, indices in serialized)
+      values.extend(op.evalf_withtimes(times, *[values[i] for i in indices]) for op, indices in self.serialized)
     except KeyboardInterrupt:
       raise
     except Exception as e:
-      raise EvaluationError(self, [v for v, t in values]) from e
+      raise EvaluationError(self, values) from e
     else:
-      return values[-1][0], numpy.diff([t for v, t in values])
+      return values[-1]
 
   @contextlib.contextmanager
   def session(self, graphviz):
     if graphviz is None:
       yield self.eval
       return
-    lock = parallel.multiprocessing.Lock()
-    times = parallel.shzeros(len(self.dependencies))
+    stats = collections.defaultdict(_Stats)
     def eval(**args):
-      retval, _times = self.eval_withtimes(**args)
-      with lock:
-        times[:] += _times
-      return retval
+      return self.eval_withtimes(stats, **args)
     with log.context('eval'):
       yield eval
-      log.info('total time: {:.0f}ms\n'.format(builtins.sum(times)*1000) + '\n'.join('{:4.0f} {} ({})'.format(builtins.sum(dts)*1000, op.__name__,
-        '1 call' if len(dts) == 1 else '{} calls, {:.0f}..{:.0f} per call'.format(len(dts), min(dts)*1000, max(dts)*1000))
-          for op, dts in sorted(util.gather(zip(map(type, self.ordereddeps[1:]+(self,)), times)), reverse=True, key=lambda row: builtins.sum(row[1]))))
-      self.graphviz(graphviz, times=times)
-
-  def graphviz(self, dotpath='dot', *, imgtype='png', times=None):
-    'create function graph'
-
-    if times is not None:
-      tfrac = numpy.hstack([0, times / times.max()])
-      style = lambda i: ',style="filled",fillcolor="0,{:.2f},1"'.format(tfrac[i])
-    else:
-      style = lambda i: ''
-
-    lines = ['digraph {graph [dpi=72];']
-    lines.extend('{} [{}];'.format(i, dep._graphviz_node() + style(i)) for i, dep in enumerate(self.ordereddeps+(self,)))
-    lines.extend('{} -> {};'.format(j, i) for i, indices in enumerate(self.dependencytree) for j in indices)
-    lines.append('}')
-
-    with log.infofile('dot.'+imgtype, 'wb') as img:
-      status = subprocess.run([dotpath,'-Gstart=1','-T'+imgtype], input='\n'.join(lines).encode(), stdout=subprocess.PIPE)
-      if status.returncode:
-        log.warning('graphviz failed for error code', status.returncode)
-      img.write(status.stdout)
+      node = self._node({}, None, stats)
+      maxtime = builtins.max(n.metadata[1].time for n in node.walk(set()))
+      tottime = builtins.sum(n.metadata[1].time for n in node.walk(set()))
+      aggstats = tuple((key, builtins.sum(v.time for v in values), builtins.sum(v.ncalls for v in values)) for key, values in util.gather(n.metadata for n in node.walk(set())))
+      fill_color = (lambda node: '0,{:.2f},1'.format(node.metadata[1].time/maxtime)) if maxtime else None
+      node.export_graphviz(fill_color=fill_color, dot_path=graphviz)
+      log.info('total time: {:.0f}ms\n'.format(tottime/1e6) + '\n'.join('{:4.0f} {} ({} calls, avg {:.3f} per call)'.format(t / 1e6, k, n, t / (1e6*n))
+        for k, t, n in sorted(aggstats, reverse=True, key=lambda item: item[1]) if n))
 
   def _stack(self, values):
     lines = ['  %0 = EVALARGS']
@@ -380,7 +366,7 @@ class Evaluable(types.Singleton):
         args = map(' {}=%{}'.format, names, indices)
       except:
         args = map(' %{}'.format, indices)
-      lines.append('  %{} = {}:{}'.format(len(lines), op._asciitree_str(), ','.join(args)))
+      lines.append('  %{} = {}:{}'.format(len(lines), op, ','.join(args)))
     return lines
 
   @property
@@ -392,19 +378,75 @@ class Evaluable(types.Singleton):
       return retval
 
   @property
+  def optimized_for_numpy(self):
+    retval = self._optimized_for_numpy1() or self
+    return retval._combine_loop_concatenates(frozenset())
+
   @types.apply_annotations
   @replace(depthfirst=True, recursive=True)
-  def optimized_for_numpy(obj: simplified.fget):
+  def _optimized_for_numpy1(obj: simplified.fget):
     if isinstance(obj, Array):
       retval = obj._simplified() or obj._optimized_for_numpy()
       assert retval is None or isinstance(retval, Array) and retval.shape == obj.shape, '{0}._optimized_for_numpy or {0}._simplified resulted in shape change'.format(type(obj).__name__)
       return retval
 
+  @property
+  def _loop_concatenate_deps(self):
+    deps = []
+    for arg in self.__args:
+      deps += [dep for dep in arg._loop_concatenate_deps if dep not in deps]
+    return tuple(deps)
+
+  def _combine_loop_concatenates(self, outer_exclude):
+    while True:
+      exclude = set(outer_exclude)
+      combine = {}
+      # Collect all top-level `LoopConcatenate` instances in `combine` and all
+      # their dependent `LoopConcatenate` instances in `exclude`.
+      for lc in self._loop_concatenate_deps:
+        lcs = combine.setdefault((lc.index, lc.length), [])
+        if lc not in lcs:
+          lcs.append(lc)
+          exclude.update(set(lc._loop_concatenate_deps) - {lc})
+      # Combine top-level `LoopConcatenate` instances excluding those in
+      # `exclude`.
+      replacements = {}
+      for (index, length), lcs in combine.items():
+        lcs = [lc for lc in lcs if lc not in exclude]
+        if not lcs:
+          continue
+        # We're extracting data from `LoopConcatenate` in favor of using
+        # `loop_concatenate_combined(lcs, ...)` because the later requires
+        # reapplying simplifications that are already applied in the former.
+        # For example, in `loop_concatenate_combined` the offsets (used by
+        # start, stop and the concatenation length) are formed by
+        # `loop_concatenate`-ing `func.shape[-1]`. If the shape is constant,
+        # this can be simplified to a `Range`.
+        data = Tuple((Tuple((lc.func, lc.start, lc.stop, asarray(lc.shape[-1]))) for lc in lcs))
+        # Combine `LoopConcatenate` instances in `data` excluding
+        # `outer_exclude` and those that will be processed in a subsequent loop
+        # (the remainder of `exclude`). The latter consists of loops that are
+        # invariant w.r.t. the current loop `index`.
+        data = data._combine_loop_concatenates(exclude)
+        combined = LoopConcatenateCombined(data, index, length)
+        for i, lc in enumerate(lcs):
+          replacements[lc] = ArrayFromTuple(combined, i, lc.shape, lc.dtype)
+      if replacements:
+        self = replace(lambda key: replacements.get(key) if isinstance(key, LoopConcatenate) else None, recursive=False, depthfirst=False)(self)
+      else:
+        return self
+
 class EvaluationError(Exception):
   def __init__(self, f, values):
     super().__init__('evaluation failed in step {}/{}\n'.format(len(values), len(f.dependencies)) + '\n'.join(f._stack(values)))
 
-EVALARGS = Evaluable(args=())
+class EVALARGS(Evaluable):
+  def __init__(self):
+    super().__init__(args=())
+  def _node(self, cache, subgraph, times):
+    return InvisibleNode((type(self).__name__, _Stats()))
+
+EVALARGS = EVALARGS()
 
 class Tuple(Evaluable):
 
@@ -455,6 +497,28 @@ class Tuple(Evaluable):
 
     return Tuple(tuple(other) + self.items)
 
+class SparseArray(Evaluable):
+  'sparse array'
+
+  @types.apply_annotations
+  def __init__(self, chunks:types.tuple[types.tuple[asarray]], shape:types.tuple[asarray], dtype:asdtype):
+    self._shape = shape
+    self._dtype = dtype
+    super().__init__(args=[Tuple(map(asarray, shape)), *map(Tuple, chunks)])
+
+  def evalf(self, shape, *chunks):
+    length = builtins.sum(values.size for *indices, values in chunks)
+    data = numpy.empty((length,), dtype=sparse.dtype(tuple(map(int, shape)), self._dtype))
+    start = 0
+    for *indices, values in chunks:
+      stop = start + values.size
+      d = data[start:stop].reshape(values.shape)
+      d['value'] = values
+      for idim, ii in enumerate(indices):
+        d['index']['i'+str(idim)] = ii
+      start = stop
+    return data
+
 # TRANSFORMCHAIN
 
 class TransformChain(Evaluable):
@@ -484,8 +548,19 @@ class SelectChain(TransformChain):
     assert isinstance(trans, tuple)
     return trans
 
-  def _asciitree_str(self):
-    return 'SelectChain({})'.format(self.n)
+  @property
+  def _node_details(self):
+    return 'index={}'.format(self.n)
+
+class TransformChainFromSequence(TransformChain):
+
+  @types.apply_annotations
+  def __init__(self, seq, index):
+    self._seq = seq
+    super().__init__(args=[index])
+
+  def evalf(self, index):
+    return self._seq[index.__index__()]
 
 class PopHead(TransformChain):
 
@@ -650,7 +725,47 @@ def as_axis_property(value):
 
 # ARRAYS
 
-class Array(Evaluable):
+if __debug__:
+
+  def _chunked_assparse_checker(orig):
+    assert isinstance(orig, property)
+    @property
+    def _assparse(self):
+      chunks = orig.fget(self)
+      assert isinstance(chunks, tuple)
+      assert all(isinstance(chunk, tuple) for chunk in chunks)
+      assert all(all(isinstance(item, Array) for item in chunk) for chunk in chunks)
+      if self.ndim:
+        for *indices, values in chunks:
+          assert len(indices) == self.ndim
+          assert all(idx.dtype == int for idx in indices)
+          assert all(idx.shape == values.shape for idx in indices)
+      elif chunks:
+        assert len(chunks) == 1
+        chunk, = chunks
+        assert len(chunk) == 1
+        values, = chunk
+        assert values.shape == ()
+      return chunks
+    return _assparse
+
+  class _ArrayMeta(type(Evaluable)):
+    def __new__(mcls, name, bases, namespace):
+      if '_assparse' in namespace:
+        namespace['_assparse'] = _chunked_assparse_checker(namespace['_assparse'])
+      return super().__new__(mcls, name, bases, namespace)
+
+else:
+
+  _ArrayMeta = type(Evaluable)
+
+class AsEvaluableArray(Protocol):
+  'Protocol for conversion into an :class:`Array`.'
+
+  def as_evaluable_array(self) -> 'Array':
+    'Lower this object to a :class:`nutils.evaluable.Array`.'
+
+class Array(Evaluable, metaclass=_ArrayMeta):
   '''
   Base class for array valued functions.
 
@@ -666,7 +781,7 @@ class Array(Evaluable):
   '''
 
   __slots__ = '_axes', 'dtype'
-  __cache__ = 'blocks'
+  __cache__ = 'blocks', 'assparse', '_assparse', '_as_canonical_length'
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
@@ -761,11 +876,48 @@ class Array(Evaluable):
         blocks.append((indices, f))
     return _gatherblocks(blocks)
 
-  def _asciitree_str(self):
-    return '{}({})'.format(type(self).__name__, ','.join(map(repr, self._axes)))
+  @property
+  def assparse(self):
+    'Convert to a :class:`SparseArray`.'
 
-  def _graphviz_node(self):
-    return r'shape=box,label="{}\n{}"'.format(type(self).__name__, ','.join(repr(axis) for axis in self._axes))
+    return SparseArray(self.simplified._assparse, self.shape, self.dtype)
+
+  @property
+  def _assparse(self):
+    # Convert to a sequence of sparse COO arrays. The returned data is a tuple
+    # of `(*indices, values)` tuples, where `values` is an `Array` with the
+    # same dtype as `self`, but this is not enforced yet, and each index in
+    # `indices` is an `Array` with dtype `int` and the exact same shape as
+    # `values`. The length of `indices` equals `self.ndim`. In addition, if
+    # `self` is 0d the length of `self._assparse` is at most one and the
+    # `values` array must be 0d as well.
+    #
+    # The sparse data can be reassembled after evaluation by
+    #
+    #     dense = numpy.zeros(self.shape)
+    #     for I0,...,Ik,V in self._assparse:
+    #       for i0,...,ik,v in zip(I0.eval().ravel(),...,Ik.eval().ravel(),V.eval().ravel()):
+    #         dense[i0,...,ik] = v
+
+    # Fallback using `blocks`.
+    if self.ndim:
+      chunks = []
+      for indices, values in self.blocks:
+        *offsets, ndim = (0, *itertools.accumulate(idx.ndim for idx in indices))
+        assert ndim == values.ndim
+        indices = (prependaxes(appendaxes(idx, values.shape[offset+idx.ndim:]), values.shape[:offset]) for idx, offset in zip(indices, offsets))
+        chunks.append((*indices, values))
+      return tuple(chunks)
+    else:
+      return (util.sum((values for indices, values in self.blocks), zeros((), self.dtype)),),
+
+  def _node(self, cache, subgraph, times):
+    if self in cache:
+      return cache[self]
+    args = tuple(arg._node(cache, subgraph, times) for arg in self._Evaluable__args)
+    label = '\n'.join(filter(None, (type(self).__name__, self._node_details, ','.join(map(repr, self._axes)))))
+    cache[self] = node = RegularNode(label, args, {}, (type(self).__name__, times[self]), subgraph)
+    return node
 
   # simplifications
   _multiply = lambda self, other: None
@@ -785,6 +937,7 @@ class Array(Evaluable):
   _inflate = lambda self, dofmap, length, axis: None
   _unravel = lambda self, axis, shape: None
   _ravel = lambda self, axis: None
+  _loopsum = lambda self, index, length: None
 
   def _uninsert(self, axis):
     assert isinstance(self._axes[axis], Inserted)
@@ -814,6 +967,22 @@ class Array(Evaluable):
     if self.dtype in (bool, int) or var not in self.dependencies:
       return Zeros(self.shape + var.shape, dtype=self.dtype)
     raise NotImplementedError('derivative not defined for {}'.format(self.__class__.__name__))
+
+  def as_evaluable_array(self):
+    'return self'
+
+    return self
+
+  @property
+  def _as_canonical_length(self):
+    'convert to an :class:`int` if possible'
+
+    if self.ndim != 0 or self.dtype != int:
+      raise ValueError('expected an `Array` with dimension zero and dtype `int` but got {!r}'.format(self))
+    value = self.simplified
+    if value.isconstant:
+      value = int(value.eval()) # Ensure this is an `int`, not `numpy.int64`.
+    return value
 
 class NPoints(Array):
   'The length of the points axis.'
@@ -909,14 +1078,17 @@ class Constant(Array):
   def evalf(self):
     return self.value
 
-  def _graphviz_node(self):
-    if self.value.ndim == 0:
-      value = '({})'.format(self.value[()])
-      if len(value) > 9:
-        value = '(~{:.2e})'.format(self.value[()])
+  def _node(self, cache, subgraph, times):
+    if self.ndim:
+      return super()._node(cache, subgraph, times)
+    elif self in cache:
+      return cache[self]
     else:
-      value = ''
-    return r'shape=box,label="{}{}\n{}"'.format(type(self).__name__, value, ','.join(repr(axis) for axis in self._axes))
+      label = '{}'.format(self.value[()])
+      if len(label) > 9:
+        label = '~{:.2e}'.format(self.value[()])
+      cache[self] = node = DuplicatedLeafNode(label, (type(self).__name__, times[self]))
+      return node
 
   @property
   def _isunit(self):
@@ -1064,6 +1236,13 @@ class InsertAxis(Array):
     if axis1 < self.ndim-1 and axis2 < self.ndim-1:
       return InsertAxis(inverse(self.func, (axis1, axis2)), self.length)
 
+  def _loopsum(self, index, length):
+    return InsertAxis(LoopSum(self.func, index, length), self.length)
+
+  @property
+  def _assparse(self):
+    return tuple((*(InsertAxis(idx, self.length) for idx in indices), prependaxes(Range(self.length), values.shape), InsertAxis(values, self.length)) for *indices, values in self.func._assparse)
+
 class Transpose(Array):
 
   __slots__ = 'func', 'axes'
@@ -1108,8 +1287,9 @@ class Transpose(Array):
   def evalf(self, arr):
     return arr.transpose(self.axes)
 
-  def _graphviz_node(self):
-    return r'shape=box,label="{}({})\n{}"'.format(type(self).__name__, ','.join(map(str, self.axes)), ','.join(repr(axis) for axis in self._axes))
+  @property
+  def _node_details(self):
+    return ','.join(map(str, self.axes))
 
   def _transpose(self, axes):
     newaxes = [self.axes[i] for i in axes]
@@ -1212,9 +1392,16 @@ class Transpose(Array):
   def _insertaxis(self, axis, length):
     return Transpose(InsertAxis(self.func, length), self.axes[:axis] + (self.ndim,) + self.axes[axis:])
 
+  def _loopsum(self, index, length):
+    return Transpose(LoopSum(self.func, index, length), self.axes)
+
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
     return [(ind, Transpose(f, self._axes_for(ind.ndim, axis))) for ind, f in self.func._desparsify(self.axes[axis])]
+
+  @property
+  def _assparse(self):
+    return tuple((*(indices[i] for i in self.axes), values) for *indices, values in self.func._assparse)
 
 class Product(Array):
 
@@ -1251,19 +1438,20 @@ class Product(Array):
 
 class ApplyTransforms(Array):
 
-  __slots__ = 'trans',
+  __slots__ = 'trans', '_todims'
 
   @types.apply_annotations
-  def __init__(self, trans:types.strict[TransformChain], points):
+  def __init__(self, trans:types.strict[TransformChain], points, todims:types.strictint):
     self.trans = trans
-    super().__init__(args=[points, trans], shape=[points.shape[0], trans.todims], dtype=float)
+    self._todims = todims
+    super().__init__(args=[points, trans], shape=[points.shape[0], todims], dtype=float)
 
   def evalf(self, points, chain):
     return transform.apply(chain, points)
 
   def _derivative(self, var, seen):
     if isinstance(var, LocalCoords) and len(var) > 0:
-      return prependaxes(LinearFrom(self.trans, len(var)), self.shape[:-1])
+      return prependaxes(LinearFrom(self.trans, self._todims, len(var)), self.shape[:-1])
     return zeros(self.shape+var.shape)
 
 class LinearFrom(Array):
@@ -1271,8 +1459,8 @@ class LinearFrom(Array):
   __slots__ = ()
 
   @types.apply_annotations
-  def __init__(self, trans:types.strict[TransformChain], fromdims:types.strictint):
-    super().__init__(args=[trans], shape=(trans.todims, fromdims), dtype=float)
+  def __init__(self, trans:types.strict[TransformChain], todims:types.strictint, fromdims:types.strictint):
+    super().__init__(args=[trans], shape=(todims, fromdims), dtype=float)
 
   def evalf(self, chain):
     todims, fromdims = self.shape
@@ -1507,6 +1695,13 @@ class Multiply(Array):
     if all(isinstance(func2._axes[axis], Inserted) for axis in (axis1, axis2)):
       return divide(inverse(func1, (axis1, axis2)), func2)
 
+  def _loopsum(self, index, length):
+    func1, func2 = self.funcs
+    if func1 != index and index not in func1.dependencies:
+      return Multiply([func1, LoopSum(func2, index, length)])
+    if func2 != index and index not in func2.dependencies:
+      return Multiply([LoopSum(func1, index, length), func2])
+
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
     func1, func2 = self.funcs
@@ -1515,6 +1710,20 @@ class Multiply(Array):
       func1, func2 = func2, func1
     assert isinstance(func1._axes[axis], Sparse)
     return [(ind, multiply(f1, _take(func2, ind, axis))) for ind, f1 in func1._desparsify(axis)]
+
+  @property
+  def _assparse(self):
+    func1, func2 = self.funcs
+    if all(isinstance(axis, Inserted) for axis in func1._axes):
+      for i in reversed(range(func1.ndim)):
+        func1 = func1._uninsert(i)
+      return tuple((*indices, appendaxes(func1, values.shape)*values) for *indices, values in func2._assparse)
+    elif all(isinstance(axis, Inserted) for axis in func2._axes):
+      for i in reversed(range(func2.ndim)):
+        func2 = func2._uninsert(i)
+      return tuple((*indices, values*appendaxes(func2, values.shape)) for *indices, values in func1._assparse)
+    else:
+      return super()._assparse
 
 class Add(Array):
 
@@ -1573,9 +1782,17 @@ class Add(Array):
   def _unravel(self, axis, shape):
     return Add([unravel(func, axis, shape) for func in self.funcs])
 
+  def _loopsum(self, index, length):
+    return Add([LoopSum(func, index, length) for func in self.funcs])
+
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
     return _gatherblocks(block for func in self.funcs for block in func._desparsify(axis))
+
+  @property
+  def _assparse(self):
+    func1, func2 = self.funcs
+    return _gathersparsechunks(itertools.chain(func1._assparse, func2._assparse))
 
 class Einsum(Array):
 
@@ -1614,8 +1831,9 @@ class Einsum(Array):
       args = tuple(numpy.asarray(arg, order='F') for arg in args)
     return numpy.core.multiarray.c_einsum(self._einsumfmt, *args)
 
-  def _graphviz_node(self):
-    return r'shape=box,label="{}({})\n{}"'.format(type(self).__name__, self._einsumfmt, ','.join(repr(axis) for axis in self._axes))
+  @property
+  def _node_details(self):
+    return self._einsumfmt
 
   def _simplified(self):
     for i, arg in enumerate(self.args):
@@ -1666,9 +1884,29 @@ class Sum(Array):
     assert isinstance(self._axes[axis], Sparse)
     return [(ind, Sum(f)) for ind, f in self.func._desparsify(axis)]
 
+  @property
+  def _assparse(self):
+    chunks = []
+    for *indices, _rmidx, values in self.func._assparse:
+      if values.dtype == bool:
+        values = Int(values)
+      while True:
+        for axis in reversed(range(values.ndim)):
+          if all(isinstance(idx._axes[axis], Inserted) for idx in indices):
+            indices = tuple(idx._uninsert(axis) for idx in indices)
+            values = sum(values, axis)
+        else:
+          break
+      if self.ndim == 0:
+        while values.ndim:
+          values = Sum(values)
+      chunks.append((*indices, values))
+    return _gathersparsechunks(chunks)
+
 class TakeDiag(Array):
 
   __slots__ = 'func'
+  __cache__ = '_assparse'
 
   @types.apply_annotations
   def __init__(self, func:asarray):
@@ -1709,6 +1947,18 @@ class TakeDiag(Array):
     assert axis != self.ndim-1
     return [(ind, TakeDiag(f)) for ind, f in self.func._desparsify(axis)]
 
+  @property
+  def _assparse(self):
+    chunks = []
+    for *indices, values in self.func._assparse:
+      if indices[-2] == indices[-1]:
+        chunks.append((*indices[:-1], values))
+      else:
+        *indices, values = map(_flat, (*indices, values))
+        mask = Equal(indices[-2], indices[-1])
+        chunks.append(tuple(take(arr, mask, 0) for arr in (*indices[:-1], values)))
+    return _gathersparsechunks(chunks)
+
 class Take(Array):
 
   __slots__ = 'func', 'indices'
@@ -1721,7 +1971,7 @@ class Take(Array):
       raise Exception('invalid indices argument for take')
     self.func = func
     self.indices = indices
-    shape = func._axes[:-1] + indices.shape
+    shape = (*func._axes[:-1], *(axis if isinstance(axis, Inserted) else Axis(axis.length) for axis in indices._axes))
     super().__init__(args=[func,indices], shape=shape, dtype=func.dtype)
 
   def _simplified(self):
@@ -1733,6 +1983,10 @@ class Take(Array):
     if self.indices.ndim == 1 and isinstance(self.indices._axes[-1], Raveled):
       shape = self.indices._axes[-1].shape
       return Ravel(Take(self.func, Unravel(self.indices, *shape)))
+    for iaxis in reversed(range(self.func.ndim-1, self.ndim)):
+      axis = self._axes[iaxis]
+      if isinstance(axis, Inserted):
+        return insertaxis(self._uninsert(iaxis), iaxis, axis.length)
     return self.func._take(self.indices, self.func.ndim-1)
 
   def evalf(self, arr, indices):
@@ -1751,6 +2005,12 @@ class Take(Array):
   def _sum(self, axis):
     if axis < self.func.ndim - 1:
       return Take(sum(self.func, axis), self.indices)
+
+  def _uninsert(self, axis):
+    if axis < self.func.ndim-1:
+      return Take(self.func._uninsert(axis), self.indices)
+    else:
+      return Take(self.func, self.indices._uninsert(axis-self.func.ndim+1))
 
   def _desparsify(self, axis):
     assert axis < self.func.ndim-1 and isinstance(self._axes[axis], Sparse)
@@ -1834,7 +2094,7 @@ class Pointwise(Array):
     retval = self.evalf(*[numpy.ones((), dtype=arg.dtype) for arg in args])
     shapes = set(arg.shape for arg in args)
     assert len(shapes) == 1, 'pointwise arguments have inconsistent shapes'
-    shape, = shapes
+    shape = tuple(axes[0] if len(set(axes)) == 1 and not isinstance(axes[0], Sparse) else Axis(axes[0].length) for axes in zip(*(arg._axes for arg in args)))
     self.args = args
     super().__init__(args=args, shape=shape, dtype=retval.dtype)
 
@@ -1859,6 +2119,12 @@ class Pointwise(Array):
     if self.isconstant:
       retval = self.eval()
       return Constant(retval)
+    if len(self.args) == 1 and isinstance(self.args[0], Transpose):
+      arg, = self.args
+      return Transpose(self.__class__(arg.func), arg.axes)
+    for i in reversed(range(self.ndim)):
+      if all(isinstance(arg._axes[i], Inserted) for arg in self.args):
+        return insertaxis(self.__class__(*(arg._uninsert(i) for arg in self.args)), i, self.shape[i])
 
   def _derivative(self, var, seen):
     if self.deriv is None:
@@ -2108,10 +2374,20 @@ class ArrayFromTuple(Array):
     assert isinstance(arrays, tuple)
     return arrays[self.index]
 
+  def _node(self, cache, subgraph, times):
+    if self in cache:
+      return cache[self]
+    elif hasattr(self.arrays, '_node_tuple'):
+      cache[self] = node = self.arrays._node_tuple(cache, subgraph, times)[self.index]
+      return node
+    else:
+      return super()._node(cache, subgraph, times)
+
 class Zeros(Array):
   'zero'
 
   __slots__ = ()
+  __cache__ = '_assparse'
 
   @types.apply_annotations
   def __init__(self, shape:asshape, dtype:asdtype):
@@ -2119,6 +2395,15 @@ class Zeros(Array):
 
   def evalf(self, *shape):
     return numpy.zeros(shape, dtype=self.dtype)
+
+  def _node(self, cache, subgraph, times):
+    if self.ndim:
+      return super()._node(cache, subgraph, times)
+    elif self in cache:
+      return cache[self]
+    else:
+      cache[self] = node = DuplicatedLeafNode('0', (type(self).__name__, times[self]))
+      return node
 
   def _desparsify(self, axis):
     return []
@@ -2167,9 +2452,14 @@ class Zeros(Array):
     else:
       return Zeros(shape, self.dtype)
 
+  @property
+  def _assparse(self):
+    return ()
+
 class Inflate(Array):
 
   __slots__ = 'func', 'dofmap', 'length', 'warn'
+  __cache__ = '_assparse'
 
   @types.apply_annotations
   def __init__(self, func:asarray, dofmap:asarray, length:asarray):
@@ -2270,6 +2560,20 @@ class Inflate(Array):
     if self.dofmap.isconstant and _isunique(self.dofmap.eval()):
       return Inflate(Sign(self.func), self.dofmap, self.length)
 
+  @property
+  def _assparse(self):
+    chunks = []
+    flat_dofmap = _flat(self.dofmap)
+    keep_dim = self.func.ndim - self.dofmap.ndim
+    strides = (1, *itertools.accumulate(self.dofmap.shape[:0:-1], operator.mul))[::-1]
+    for *indices, values in self.func._assparse:
+      if self.dofmap.ndim:
+        inflate_indices = Take(flat_dofmap, functools.reduce(operator.add, map(operator.mul, indices[keep_dim:], strides)))
+      else:
+        inflate_indices = appendaxes(self.dofmap, values.shape)
+      chunks.append((*indices[:keep_dim], inflate_indices, values))
+    return tuple(chunks)
+
 class Diagonalize(Array):
 
   __slots__ = 'func'
@@ -2351,10 +2655,17 @@ class Diagonalize(Array):
     if numeric.isint(self.shape[-1]) and self.shape[-1] > 1:
       return Zeros(self.shape[:-1], dtype=self.dtype)
 
+  def _loopsum(self, index, length):
+    return Diagonalize(LoopSum(self.func, index, length))
+
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
     assert axis < self.ndim-2
     return [(ind, Diagonalize(f)) for ind, f in self.func._desparsify(axis)]
+
+  @property
+  def _assparse(self):
+    return tuple((*indices, indices[-1], values) for *indices, values in self.func._assparse)
 
 class Guard(Array):
   'bar all simplifications'
@@ -2482,7 +2793,9 @@ class Argument(DerivativeTargetBase):
     except KeyError:
       raise ValueError('argument {!r} missing'.format(self._name))
     else:
-      assert numeric.isarray(value) and value.shape == self.shape
+      value = numpy.asarray(value)
+      assert value.shape == self.shape
+      value = value.astype(self.dtype, casting='safe', copy=False)
       return value
 
   def _derivative(self, var, seen):
@@ -2496,6 +2809,18 @@ class Argument(DerivativeTargetBase):
 
   def __str__(self):
     return '{} {!r} <{}>'.format(self.__class__.__name__, self._name, ','.join(map(str, self.shape)))
+
+  def _node(self, cache, subgraph, times):
+    if self in cache:
+      return cache[self]
+    else:
+      label = '\n'.join(filter(None, (type(self).__name__, self._name, ','.join(map(repr, self._axes)))))
+      cache[self] = node = DuplicatedLeafNode(label, (type(self).__name__, times[self]))
+      return node
+
+  @property
+  def arguments(self):
+    return frozenset({self})
 
 class LocalCoords(DerivativeTargetBase):
   'local coords derivative target'
@@ -2588,6 +2913,9 @@ class Ravel(Array):
   def _product(self):
     return Product(Product(self.func))
 
+  def _loopsum(self, index, length):
+    return Ravel(LoopSum(self.func, index, length))
+
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
     if axis != self.ndim-1:
@@ -2598,6 +2926,10 @@ class Ravel(Array):
       assert isinstance(self.func._axes[-1], Sparse)
       items = [(Range(self.func.shape[-2]), ind2, f) for ind2, f in self.func._desparsify(self.ndim)]
     return [(appendaxes(ind1, ind2.shape) * self.func.shape[-1] + prependaxes(ind2, ind1.shape), f) for ind1, ind2, f in items]
+
+  @property
+  def _assparse(self):
+    return tuple((*indices[:-2], indices[-2]*self.func.shape[-1]+indices[-1], values) for *indices, values in self.func._assparse)
 
 class Unravel(Array):
 
@@ -2641,6 +2973,10 @@ class Unravel(Array):
     assert isinstance(self._axes[axis], Sparse)
     assert axis < self.ndim-2
     return [(ind, Unravel(f, *self.shape[-2:])) for ind, f in self.func._desparsify(axis)]
+
+  @property
+  def _assparse(self):
+    return tuple((*indices[:-1], FloorDivide(indices[-1], appendaxes(self.shape[-1], values.shape)), Mod(indices[-1], appendaxes(self.shape[-1], values.shape)), values) for *indices, values in self.func._assparse)
 
 class Range(Array):
 
@@ -2862,6 +3198,285 @@ class NormDim(Array):
     if self.length.isconstant and self.index.isconstant:
       return Constant(self.eval())
 
+class LoopSum(Array):
+
+  @types.apply_annotations
+  def __init__(self, func: asarray, index:types.strict[Argument], length: asarray):
+    if index.dtype != int or index.ndim != 0:
+      raise ValueError('expected an index with dtype int and dimension zero but got {}'.format(index))
+    if any(index in asarray(n).arguments for n in func.shape):
+      raise ValueError('the shape of the function must not depend on the index')
+    if index in length.arguments:
+      raise ValueError('the length of the loop must not depend on the index')
+
+    self.func = func
+    self.index = index
+    self.length = length
+
+    invariants = [*map(asarray, func.shape), length]
+    dependencies = []
+    _populate_dependencies_sans_invariants(func, index, invariants, dependencies, set())
+    indices = {d: i for i, d in enumerate(itertools.chain(invariants, [index], dependencies))}
+    self._result_index = indices[func]
+    self._serialized = tuple((dep, tuple(map(indices.__getitem__, dep._Evaluable__args))) for dep in dependencies)
+
+    axes = tuple(Axis(axis.length) if isinstance(axis, Sparse) else axis for axis in func._axes)
+    super().__init__(args=invariants, shape=axes, dtype=func.dtype)
+
+  def evalf(self, *args):
+    result = numpy.zeros(tuple(map(int, args[:self.ndim])), self.dtype)
+    for index in range(int(args[self.ndim])):
+      values = list(args)
+      values.append(numpy.array(index))
+      values.extend(op.evalf(*[values[i] for i in indices]) for op, indices in self._serialized)
+      result += values[self._result_index]
+    return result
+
+  def evalf_withtimes(self, times, *args):
+    times[self] = subtimes = collections.defaultdict(_Stats)
+    result = numpy.zeros(tuple(map(int, args[:self.ndim])), self.dtype)
+    for index in range(int(args[self.ndim])):
+      values = list(args)
+      values.append(numpy.array(index))
+      values.extend(op.evalf_withtimes(subtimes, *[values[i] for i in indices]) for op, indices in self._serialized)
+      result += values[self._result_index]
+    return result
+
+  def _derivative(self, var, seen):
+    return LoopSum(derivative(self.func, var, seen), self.index, self.length)
+
+  def _node(self, cache, subgraph, times):
+    if self in cache:
+      return cache[self]
+    subcache = {}
+    for arg in self._Evaluable__args:
+      subcache[arg] = arg._node(cache, subgraph, times)
+    loopgraph = Subgraph('Loop', subgraph)
+    subcache[self.index] = RegularNode('LoopIndex', (), dict(length=self.length._node(cache, subgraph, times)), (type(self).__name__, _Stats()), loopgraph)
+    subtimes = times.get(self, collections.defaultdict(_Stats))
+    sum_kwargs = {'shape[{}]'.format(i): asarray(n)._node(cache, subgraph, times) for i, n in enumerate(self.shape)}
+    sum_kwargs['func'] = self.func._node(subcache, loopgraph, subtimes)
+    cache[self] = node = RegularNode('LoopSum', (), sum_kwargs, (type(self).__name__, subtimes['sum'], loopgraph))
+    return node
+
+  def _simplified(self):
+    if iszero(self.func):
+      return zeros_like(self)
+    elif self.index not in self.func.arguments:
+      return self.func * self.length
+    return self.func._loopsum(self.index, self.length)
+
+  def _takediag(self, axis1, axis2):
+    return LoopSum(_takediag(self.func, axis1, axis2), self.index, self.length)
+
+  def _take(self, index, axis):
+    return LoopSum(_take(self.func, index, axis), self.index, self.length)
+
+  def _unravel(self, axis, shape):
+    return LoopSum(unravel(self.func, axis, shape), self.index, self.length)
+
+  @property
+  def _assparse(self):
+    chunks = []
+    for *elem_indices, elem_values in self.func._assparse:
+      if self.ndim == 0:
+        values = loop_concatenate(InsertAxis(elem_values, 1), self.index, self.length)
+        while values.ndim:
+          values = Sum(values)
+        chunks.append((values,))
+      else:
+        if elem_values.ndim == 0:
+          *elem_indices, elem_values = (InsertAxis(arr, 1) for arr in (*elem_indices, elem_values))
+        else:
+          # minimize ravels by transposing all variable length axes to the end
+          variable = tuple(i for i, n in enumerate(elem_values.shape) if not numeric.isint(n) and self.index in n.arguments)
+          *elem_indices, elem_values = (Transpose.to_end(arr, *variable) for arr in (*elem_indices, elem_values))
+          for i in variable[:-1]:
+            *elem_indices, elem_values = map(Ravel, (*elem_indices, elem_values))
+          assert all(numeric.isint(n) for n in elem_values.shape[:-1])
+        chunks.append(tuple(loop_concatenate(arr, self.index, self.length) for arr in (*elem_indices, elem_values)))
+    return tuple(chunks)
+
+class _SizesToOffsets(Array):
+
+  def __init__(self, sizes):
+    assert sizes.ndim == 1
+    assert sizes.dtype == int
+    self._sizes = sizes
+    super().__init__(args=[sizes], shape=(sizes.shape[0]+1,), dtype=int)
+
+  def evalf(self, sizes):
+    return numpy.cumsum([0, *sizes])
+
+  def _simplified(self):
+    if isinstance(self._sizes._axes[0], Inserted):
+      return Range(self.shape[0]) * appendaxes(self._sizes._uninsert(0), self.shape[:1])
+
+class LoopConcatenate(Array):
+
+  @types.apply_annotations
+  def __init__(self, func:asarray, start:asarray, stop:asarray, cc_length:asarray, index:types.strict[Argument], length:asarray):
+    if index.dtype != int or index.ndim != 0:
+      raise ValueError('expected an index with dtype int and dimension zero but got {}'.format(index))
+    if not func.ndim:
+      raise ValueError('expected an array with at least one axis')
+    if any(index in asarray(n).arguments for n in func.shape[:-1]):
+      raise ValueError('the shape of the function must not depend on the index')
+    if index in length.arguments:
+      raise ValueError('the length of the loop must not depend on the index')
+    if index in cc_length.arguments:
+      raise ValueError('the length of the concatenation axis must not depend on the index')
+
+    self.func = func
+    self.index = index
+    self.length = length
+    self.start = start
+    self.stop = stop
+    self._lcc = LoopConcatenateCombined(((func, start, stop, cc_length),), index, length)
+    super().__init__(args=[self._lcc], shape=(*func._axes[:-1], Axis(cc_length)), dtype=func.dtype)
+
+  def evalf(self, arg):
+    return arg[0]
+
+  def evalf_withtimes(self, times, arg):
+    with times[self]:
+      return arg[0]
+
+  def _derivative(self, var, seen):
+    return Transpose.from_end(loop_concatenate(Transpose.to_end(derivative(self.func, var, seen), self.ndim-1), self.index, self.length), self.ndim-1)
+
+  def _node(self, cache, subgraph, times):
+    if self in cache:
+      return cache[self]
+    else:
+      cache[self] = node = self._lcc._node_tuple(cache, subgraph, times)[0]
+      return node
+
+  def _simplified(self):
+    if iszero(self.func):
+      return zeros_like(self)
+    elif self.index not in self.func.arguments:
+      return Ravel(Transpose.from_end(InsertAxis(self.func, self.length), -2))
+    for iaxis, axis in enumerate(self.func._axes[:-1]):
+      if isinstance(axis, Inserted) and self.index not in asarray(axis.length).arguments:
+        return insertaxis(loop_concatenate(self.func._uninsert(iaxis), self.index, self.length), iaxis, axis.length)
+    if isinstance(self.func._axes[-1], Inserted) and self.index not in asarray(self.func.shape[-1]).arguments and self.func.shape[-1] != 1:
+      return Ravel(InsertAxis(loop_concatenate(InsertAxis(self.func._uninsert(self.func.ndim-1), 1), self.index, self.length), self.func.shape[-1]))
+
+  def _takediag(self, axis1, axis2):
+    if axis1 < self.ndim-1 and axis2 < self.ndim-1:
+      return Transpose.from_end(loop_concatenate(Transpose.to_end(_takediag(self.func, axis1, axis2), -2), self.index, self.length), -2)
+
+  def _take(self, index, axis):
+    if axis < self.ndim-1:
+      return loop_concatenate(_take(self.func, index, axis), self.index, self.length)
+
+  def _unravel(self, axis, shape):
+    if axis < self.ndim-1:
+      return loop_concatenate(unravel(self.func, axis, shape), self.index, self.length)
+
+  @property
+  def _assparse(self):
+    chunks = []
+    for *indices, last_index, values in self.func._assparse:
+      last_index = last_index + prependaxes(self.start, last_index.shape)
+      chunks.append(tuple(loop_concatenate(_flat(arr), self.index, self.length) for arr in (*indices, last_index, values)))
+    return tuple(chunks)
+
+  @property
+  def _loop_concatenate_deps(self):
+    return (self,) + super()._loop_concatenate_deps
+
+class LoopConcatenateCombined(Evaluable):
+
+  @types.apply_annotations
+  def __init__(self, funcdata:types.tuple[types.tuple[asarray]], index:types.strict[Argument], length:asarray):
+    if index.dtype != int or index.ndim != 0:
+      raise ValueError('expected an index with dtype int and dimension zero but got {}'.format(index))
+    if any(not func.ndim for func, start, stop, cc_length in funcdata):
+      raise ValueError('expected an array with at least one axis')
+    if any(index in n.arguments for func, start, stop, cc_length in funcdata for n in (*map(asarray, func.shape[:-1]), cc_length)):
+      raise ValueError('the shape of the function must not depend on the index')
+    if index in length.arguments:
+      raise ValueError('the length of the loop must not depend on the index')
+
+    self._funcs, self._starts, self._stops, self._cc_lengths = zip(*funcdata)
+    self._index = index
+    self._length = length
+
+    invariants = []
+    for func, start, stop, cc_length in funcdata:
+      invariants.extend(map(asarray, func.shape[:-1]))
+      invariants.append(cc_length)
+    invariants.append(length)
+
+    dependencies = []
+    cache = set()
+    for obj in itertools.chain(self._starts, self._stops, self._funcs):
+      _populate_dependencies_sans_invariants(obj, index, invariants, dependencies, cache)
+
+    indices = {d: i for i, d in enumerate(itertools.chain(invariants, [index], dependencies))}
+    self._start_indices = tuple(map(indices.__getitem__, self._starts))
+    self._stop_indices = tuple(map(indices.__getitem__, self._stops))
+    self._result_indices = tuple(map(indices.__getitem__, self._funcs))
+    self._serialized = tuple((dep, tuple(map(indices.__getitem__, dep._Evaluable__args))) for dep in dependencies)
+    self._invariants = tuple(invariants)
+
+    super().__init__(args=invariants)
+
+  def evalf(self, *args):
+    i = 0
+    results = []
+    for func in self._funcs:
+      results.append(parallel.shempty(tuple(map(int, args[i:i+func.ndim])), dtype=func.dtype))
+      i += func.ndim
+    length = int(args[i])
+    with parallel.ctxrange('loop', length) as indices:
+      for index in indices:
+        values = list(args)
+        values.append(numpy.array(index))
+        values.extend(op.evalf(*[values[i] for i in indices]) for op, indices in self._serialized)
+        for result, result_id, start_id, stop_id in zip(results, self._result_indices, self._start_indices, self._stop_indices):
+          result[...,int(values[start_id]):int(values[stop_id])] = values[result_id]
+    return tuple(results)
+
+  def evalf_withtimes(self, times, *args):
+    times[self] = subtimes = collections.defaultdict(_Stats)
+    i = 0
+    results = []
+    for func in self._funcs:
+      with subtimes['concat', func]:
+        results.append(numpy.empty(tuple(map(int, args[i:i+func.ndim])), dtype=func.dtype))
+      i += func.ndim
+    length = int(args[i])
+    for index in range(length):
+      values = list(args)
+      values.append(numpy.array(index))
+      values.extend(op.evalf_withtimes(subtimes, *[values[i] for i in indices]) for op, indices in self._serialized)
+      for func, result, result_id, start_id, stop_id in zip(self._funcs, results, self._result_indices, self._start_indices, self._stop_indices):
+        with subtimes['concat', func]:
+          result[...,int(values[start_id]):int(values[stop_id])] = values[result_id]
+    return tuple(results)
+
+  def _node_tuple(self, cache, subgraph, times):
+    if (self, 'tuple') in cache:
+      return cache[self, 'tuple']
+    subcache = {}
+    for arg in self._invariants:
+      subcache[arg] = arg._node(cache, subgraph, times)
+    loopgraph = Subgraph('Loop', subgraph)
+    subcache[self._index] = RegularNode('LoopIndex', (), dict(length=self._length._node(cache, subgraph, times)), (type(self).__name__, _Stats()), loopgraph)
+    subtimes = times.get(self, collections.defaultdict(_Stats))
+    concats = []
+    for func, start, stop, cc_length in zip(self._funcs, self._starts, self._stops, self._cc_lengths):
+      concat_kwargs = {'shape[{}]'.format(i): asarray(n)._node(cache, subgraph, times) for i, n in enumerate((*func.shape[:-1], cc_length))}
+      concat_kwargs['start'] = start._node(subcache, loopgraph, subtimes)
+      concat_kwargs['stop'] = stop._node(subcache, loopgraph, subtimes)
+      concat_kwargs['func'] = func._node(subcache, loopgraph, subtimes)
+      concats.append(RegularNode('LoopConcatenate', (), concat_kwargs, (type(self).__name__, subtimes['concat', func]), loopgraph))
+    cache[self, 'tuple'] = concats = tuple(concats)
+    return concats
+
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
 _ascending = lambda arg: numpy.greater(numpy.diff(arg), 0).all()
@@ -2870,14 +3485,17 @@ _normdims = lambda ndim, shapes: tuple(numeric.normdim(ndim,sh) for sh in shapes
 def _jointdtype(*dtypes):
   'determine joint dtype'
 
-  type_order = bool, int, float
-  kind_order = 'bif'
+  type_order = bool, int, float, complex
+  kind_order = 'bifc'
   itype = max(kind_order.index(dtype.kind) if isinstance(dtype,numpy.dtype)
            else type_order.index(dtype) for dtype in dtypes)
   return type_order[itype]
 
 def _gatherblocks(blocks):
   return tuple((ind, util.sum(funcs)) for ind, funcs in util.gather(blocks))
+
+def _gathersparsechunks(chunks):
+  return tuple((*ind, util.sum(funcs)) for ind, funcs in util.gather((tuple(ind), func) for *ind, func in chunks))
 
 def _numpy_align(*arrays):
   '''reshape arrays according to Numpy's broadcast conventions'''
@@ -2905,6 +3523,43 @@ def _inflate_scalar(arg, shape):
 def _isunique(array):
   return numpy.unique(array).size == array.size
 
+def _populate_dependencies_sans_invariants(func, arg, invariants, dependencies, cache):
+  if func in cache:
+    return
+  cache.add(func)
+  if func == arg:
+    pass
+  elif arg in func.arguments:
+    for child in func._Evaluable__args:
+      _populate_dependencies_sans_invariants(child, arg, invariants, dependencies, cache)
+    dependencies.append(func)
+  else:
+    invariants.append(func)
+
+class _Stats:
+
+  __slots__ = 'ncalls', 'time', '_start'
+
+  def __init__(self, ncalls: int = 0, time: int = 0) -> None:
+    self.ncalls = ncalls
+    self.time = time
+    self._start = None
+
+  def __repr__(self):
+    return '_Stats(ncalls={}, time={})'.format(self.ncalls, self.time)
+
+  def __add__(self, other):
+    if not isinstance(other, _Stats):
+      return NotImplemented
+    return _Stats(self.ncalls+other.ncalls, self.time+other.time)
+
+  def __enter__(self) -> None:
+    self._start = time.perf_counter_ns()
+
+  def __exit__(self, *exc_info) -> None:
+    self.time += time.perf_counter_ns() - self._start
+    self.ncalls += 1
+
 # FUNCTIONS
 
 def isarray(arg):
@@ -2923,7 +3578,7 @@ def zeros_like(arr):
   return zeros(arr.shape, arr.dtype)
 
 def isuniform(arg, value):
-  while isinstance(arg, InsertAxis):
+  while isinstance(arg, (InsertAxis, Transpose)):
     arg = arg.func
   if isinstance(arg, Constant) and arg.ndim == 0:
     return arg.value[()] == value
@@ -3007,7 +3662,7 @@ def blocks(arg):
 
 @replace
 def _bifurcate(arg, side):
-  if isinstance(arg, SelectChain):
+  if isinstance(arg, (SelectChain, TransformChainFromSequence)):
     return SelectBifurcation(arg, side)
 
 bifurcate1 = functools.partial(_bifurcate, side=True)
@@ -3164,6 +3819,14 @@ def ravel(func, axis):
   axis = numeric.normdim(func.ndim-1, axis)
   return Transpose.from_end(Ravel(Transpose.to_end(func, axis, axis+1)), axis)
 
+def _flat(func):
+  func = asarray(func)
+  if func.ndim == 0:
+    return InsertAxis(func, 1)
+  while func.ndim > 1:
+    func = Ravel(func)
+  return func
+
 def prependaxes(func, shape):
   'Prepend axes with specified `shape` to `func`.'
 
@@ -3179,6 +3842,32 @@ def appendaxes(func, shape):
   for n in shape:
     func = insertaxis(func, func.ndim, n)
   return func
+
+def _loop_concatenate_data(func, index, length):
+  func = asarray(func)
+  chunk_size = asarray(func.shape[-1])
+  if chunk_size.isconstant:
+    chunk_sizes = InsertAxis(chunk_size, length)
+  else:
+    chunk_sizes = loop_concatenate(InsertAxis(func.shape[-1], 1), index, length)
+  offsets = _SizesToOffsets(chunk_sizes)
+  start = _take(offsets, index, 0)
+  stop = _take(offsets, index+1, 0)
+  cc_length = asarray(as_canonical_length(_take(offsets, length, 0)))
+  return func, start, stop, cc_length
+
+def loop_concatenate(func, index, length):
+  length = asarray(length)
+  func, start, stop, cc_length = _loop_concatenate_data(func, index, length)
+  return LoopConcatenate(func, start, stop, cc_length, index, length)
+
+def loop_concatenate_combined(funcs, index, length):
+  length = asarray(length)
+  unique_funcs = []
+  unique_funcs.extend(func for func in funcs if func not in unique_funcs)
+  unique_func_data = tuple(_loop_concatenate_data(func, index, length) for func in unique_funcs)
+  loop = LoopConcatenateCombined(unique_func_data, index, length)
+  return tuple(ArrayFromTuple(loop, unique_funcs.index(func), (*func.shape[:-1], cc_length), func.dtype) for func, start, stop, cc_length in unique_func_data)
 
 @replace
 def replace_arguments(value, arguments):
@@ -3210,7 +3899,7 @@ if __name__ == '__main__':
   simplify_priority = (
     Transpose, Ravel, # reinterpretation
     Inflate, Diagonalize, InsertAxis, # size increasing
-    Multiply, Add, Sign, Power, Inverse, Unravel, # size preserving
+    Multiply, Add, LoopSum, Sign, Power, Inverse, Unravel, # size preserving
     Product, Determinant, TakeDiag, Take, Sum) # size decreasing
   # The simplify priority defines the preferred order in which operations are
   # performed: shape decreasing operations such as Sum and Take should be done

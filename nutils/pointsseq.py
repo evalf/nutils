@@ -20,7 +20,7 @@
 
 '''Sequences of :class:`~nutils.points.Points`.'''
 
-from . import types, numeric
+from . import types, numeric, evaluable
 from .points import Points
 from typing import Tuple, Sequence, Iterable, Iterator, Optional, Union, overload
 import abc, itertools, numpy
@@ -340,6 +340,16 @@ class PointsSequence(types.Singleton):
     hull.flags.writeable = False
     return hull
 
+  def get_evaluable_coords(self, index: evaluable.Array) -> evaluable.Array:
+    if index.ndim != 0 or index.dtype != int:
+      raise ValueError('expected an index array with dimension zero and dtype int but got {}'.format(index))
+    return _EvaluablePointsFromSequence(self, index).coords
+
+  def get_evaluable_weights(self, index: evaluable.Array) -> evaluable.Array:
+    if index.ndim != 0 or index.dtype != int:
+      raise ValueError('expected an index array with dimension zero and dtype int but got {}'.format(index))
+    return _EvaluablePointsFromSequence(self, index).weights
+
 class _Empty(PointsSequence):
 
   __slots__ = ()
@@ -431,6 +441,16 @@ class _Uniform(PointsSequence):
   @property
   def hull(self) -> numpy.ndarray:
     return self._mk_indices(self.item.hull)
+
+  def get_evaluable_coords(self, index: evaluable.Array) -> evaluable.Array:
+    if index.ndim != 0 or index.dtype != int:
+      raise ValueError('expected an index array with dimension zero and dtype int but got {}'.format(index))
+    return evaluable.Constant(self.item.coords)
+
+  def get_evaluable_weights(self, index: evaluable.Array) -> evaluable.Array:
+    if index.ndim != 0 or index.dtype != int:
+      raise ValueError('expected an index array with dimension zero and dtype int but got {}'.format(index))
+    return evaluable.Constant(self.item.weights)
 
 class _Take(PointsSequence):
 
@@ -642,5 +662,27 @@ def _check_compress(length, mask):
     raise IndexError('expected an array with dimension 1 but got {}'.format(mask.ndim))
   if len(mask) != length:
     raise IndexError('expected an array with length {} but got {}'.format(length, len(mask)))
+
+class _EvaluablePointsFromSequence(evaluable.Evaluable):
+
+  def __init__(self, seq: PointsSequence, index: evaluable.Array) -> None:
+    self._seq = seq
+    super().__init__(args=[index])
+
+  def evalf(self, index: numpy.ndarray) -> Tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+    pnts = self._seq.get(index.__index__())
+    return pnts.coords, getattr(pnts, 'weights', None), numpy.array(pnts.npoints)
+
+  @property
+  def coords(self) -> evaluable.Array:
+    return evaluable.ArrayFromTuple(self, index=0, shape=(self.npoints, self._seq.ndims), dtype=float)
+
+  @property
+  def weights(self) -> evaluable.Array:
+    return evaluable.ArrayFromTuple(self, index=1, shape=(self.npoints,), dtype=float)
+
+  @property
+  def npoints(self) -> evaluable.Array:
+    return evaluable.ArrayFromTuple(self, index=2, shape=(), dtype=int)
 
 # vim:sw=2:sts=2:et

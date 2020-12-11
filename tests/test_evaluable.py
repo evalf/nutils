@@ -1,4 +1,4 @@
-import numpy, itertools, pickle, weakref, gc, warnings as _builtin_warnings, collections
+import numpy, itertools, pickle, weakref, gc, warnings as _builtin_warnings, collections, sys, unittest
 from nutils import *
 from nutils.testing import *
 _ = numpy.newaxis
@@ -47,6 +47,15 @@ class check(TestCase):
       self.assertArrayAlmostEqual(actual.simplified.eval(**evalargs), desired, decimal)
     with self.subTest('optimized'):
       self.assertArrayAlmostEqual(actual.optimized_for_numpy.eval(**evalargs), desired, decimal)
+    with self.subTest('sparse'):
+      indices, values, shape = sparse.extract(actual.assparse.eval(**evalargs))
+      self.assertEqual(tuple(map(int, shape)), desired.shape)
+      if not indices:
+        dense = values.sum()
+      else:
+        dense = numpy.zeros(desired.shape, values.dtype)
+        numpy.add.at(dense, indices, values)
+      self.assertArrayAlmostEqual(dense, desired, decimal)
 
   def test_evalconst(self):
     constargs = [numpy.random.uniform(size=shape) for shape in self.shapes]
@@ -58,6 +67,15 @@ class check(TestCase):
     self.assertFunctionAlmostEqual(decimal=15,
       actual=self.op_args,
       desired=self.n_op_argsfun)
+
+  @unittest.skipIf(sys.version_info < (3,7), 'time.perf_counter_ns is not available')
+  def test_eval_withtimes(self):
+    evalargs = dict(zip(self.arg_names, self.arg_values))
+    without_times = self.op_args.eval(**evalargs)
+    stats = collections.defaultdict(evaluable._Stats)
+    with_times = self.op_args.eval_withtimes(stats, **evalargs)
+    self.assertArrayAlmostEqual(with_times, without_times, 15)
+    self.assertIn(self.op_args, stats)
 
   def test_getitem(self):
     for idim in range(self.op_args.ndim):
@@ -250,6 +268,28 @@ class check(TestCase):
         desired=self.n_op_argsfun.reshape(self.n_op_argsfun.shape[:idim]+unravelshape+self.n_op_argsfun.shape[idim+1:]),
         actual=evaluable.unravel(self.op_args, axis=idim, shape=unravelshape))
 
+  def test_loopsum(self):
+    index = evaluable.Argument('_testindex', (), int)
+    length = 3
+    for iarg, shape in enumerate(self.shapes):
+      testvalue = numpy.random.uniform(size=(length, *shape), low=self.low, high=self.high)
+      n_op_argsfun = functools.reduce(operator.add, (self.n_op(*self.arg_values[:iarg], v, *self.arg_values[iarg+1:]) for v in testvalue))
+      args = (*self.args[:iarg], evaluable.Guard(evaluable.get(evaluable.asarray(testvalue), 0, index)), *self.args[iarg+1:])
+      self.assertFunctionAlmostEqual(decimal=15,
+        actual=evaluable.LoopSum(self.op(*args), index, length),
+        desired=n_op_argsfun)
+
+  def test_loopconcatenate(self):
+    index = evaluable.Argument('_testindex', (), int)
+    length = 3
+    for iarg, shape in enumerate(self.shapes):
+      testvalue = numpy.random.uniform(size=(length, *shape), low=self.low, high=self.high)
+      n_op_argsfun = numpy.concatenate([self.n_op(*self.arg_values[:iarg], v, *self.arg_values[iarg+1:]) for v in testvalue], axis=-1)
+      args = (*self.args[:iarg], evaluable.Guard(evaluable.get(evaluable.asarray(testvalue), 0, index)), *self.args[iarg+1:])
+      self.assertFunctionAlmostEqual(decimal=15,
+        actual=evaluable.loop_concatenate(self.op(*args), index, length),
+        desired=n_op_argsfun)
+
   def test_desparsify(self):
     args = []
     for arg in self.args:
@@ -288,6 +328,24 @@ class check(TestCase):
           approx = ((fdvals[1] - fdvals[0]).T @ fdfactors).T / eps
           scale = numpy.linalg.norm(f0.ravel()) or 1
         self.assertArrayAlmostEqual(exact / scale, approx / scale, decimal=10)
+
+  @unittest.skipIf(sys.version_info < (3,7), 'time.perf_counter_ns is not available')
+  def test_node(self):
+    # This tests only whether `Evaluable._node` returns without exception.
+    cache = {}
+    times = collections.defaultdict(evaluable._Stats)
+    with self.subTest('new'):
+      node = self.op_args._node(cache, None, times)
+      if node:
+        self.assertIn(self.op_args, cache)
+        self.assertEqual(cache[self.op_args], node)
+    with self.subTest('from-cache'):
+      if node:
+        self.assertEqual(self.op_args._node(cache, None, times), node)
+    with self.subTest('with-times'):
+      times = collections.defaultdict(evaluable._Stats)
+      self.op_args.eval_withtimes(times, **dict(zip(self.arg_names, self.arg_values)))
+      self.op_args._node(cache, None, times)
 
 def _check(name, op, n_op, shapes, hasgrad=True, zerograd=False, ndim=2, low=-1, high=1):
   check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad, zerograd=zerograd, ndim=ndim, low=low, high=high)
@@ -364,6 +422,13 @@ _check('take', lambda f: evaluable.Take(f, [0,3,2]), lambda a: a[:,[0,3,2]], [(2
 _check('take-duplicate', lambda f: evaluable.Take(f, [0,3,0]), lambda a: a[:,[0,3,0]], [(2,4)])
 _check('choose', lambda a, b, c: evaluable.Choose(evaluable.appendaxes(evaluable.Int(a)%2, (3,3)), [b,c]), lambda a, b, c: numpy.choose(a[_,_].astype(int)%2, [b,c]), [(), (3,3), (3,3)])
 _check('slice', lambda a: evaluable.asarray(a)[::2], lambda a: a[::2], [(5,3)])
+_check('loopsum1', lambda: evaluable.LoopSum(evaluable.Argument('index', (), int), evaluable.Argument('index', (), int), 3), lambda: numpy.array(3), [])
+_check('loopsum2', lambda a: evaluable.LoopSum(a, evaluable.Argument('index', (), int), 2), lambda a: 2*a, [(3,4,2,4)])
+_check('loopsum3', lambda a: evaluable.LoopSum(evaluable.get(a, 0, evaluable.Argument('index', (), int)), evaluable.Argument('index', (), int), 3), lambda a: numpy.sum(a, 0), [(3,4,2,4)])
+_check('loopsum4', lambda: evaluable.LoopSum(evaluable.Inflate(evaluable.Argument('index', (), int), 0, 2), evaluable.Argument('index', (), int), 3), lambda: numpy.array([3, 0]), [])
+_check('loopconcatenate1', lambda a: evaluable.loop_concatenate(a+evaluable.prependaxes(evaluable.Argument('index', (), int), a.shape), evaluable.Argument('index', (), int), 3), lambda a: a+numpy.arange(3)[None], [(2,1)])
+_check('loopconcatenate2', lambda: evaluable.loop_concatenate(evaluable.Elemwise([numpy.arange(48).reshape(4,4,3)[:,:,a:b] for a, b in util.pairwise([0,2,3])], evaluable.Argument('index', (), int), int), evaluable.Argument('index', (), int), 2), lambda: numpy.arange(48).reshape(4,4,3), [])
+_check('loopconcatenatecombined', lambda a: evaluable.loop_concatenate_combined([a+evaluable.prependaxes(evaluable.Argument('index', (), int), a.shape)], evaluable.Argument('index', (), int), 3)[0], lambda a: a+numpy.arange(3)[None], [(2,1)], hasgrad=False)
 
 _polyval_mask = lambda shape, ndim: 1 if ndim == 0 else numpy.array([sum(i[-ndim:]) < shape[-1] for i in numpy.ndindex(shape)], dtype=int).reshape(shape)
 _polyval_desired = lambda c, x: sum(c[(...,*i)]*(x[(slice(None),*[None]*(c.ndim-x.shape[1]))]**i).prod(-1) for i in itertools.product(*[range(c.shape[-1])]*x.shape[1]) if sum(i) < c.shape[-1])
@@ -604,38 +669,87 @@ class normal(TestCase):
 class asciitree(TestCase):
 
   @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
-  def test_plain(self):
-    f = evaluable.Sin(evaluable.Inflate(1, 1, 2)**evaluable.Diagonalize(evaluable.Argument('arg', (2,))))
-    self.assertEqual(f.asciitree(),
-                     '%9 = Sin(a2,a2)\n'
-                     ': %8 = Power(a2,a2)\n'
-                     '  : %7 = Transpose(i2,s2)\n'
-                     '  | : %6 = InsertAxis(s2,i2)\n'
-                     '  |   : %4 = Inflate(s2)\n'
-                     '  |   | : %1 = Constant()\n'
-                     '  |   | : %1\n'
-                     '  |   | : %2 = Constant()\n'
-                     '  |   : %2\n'
-                     '  : %5 = Diagonalize(d2,d2)\n'
-                     '    : %3 = Argument(a2)\n'
-                     '      : %0 = Evaluable')
+  def test_asciitree(self):
+    f = evaluable.Sin(evaluable.Inflate(1, evaluable.Zeros((), int), 2)**evaluable.Diagonalize(evaluable.Argument('arg', (2,))))
+    self.assertEqual(f.asciitree(richoutput=True),
+                     '%0 = Sin; a2,a2\n'
+                     '└ %1 = Power; a2,a2\n'
+                     '  ├ %2 = Transpose; 1,0; i2,s2\n'
+                     '  │ └ %3 = InsertAxis; s2,i2\n'
+                     '  │   ├ %4 = Inflate; s2\n'
+                     '  │   │ ├ 1\n'
+                     '  │   │ ├ 0\n'
+                     '  │   │ └ 2\n'
+                     '  │   └ 2\n'
+                     '  └ %5 = Diagonalize; d2,d2\n'
+                     '    └ Argument; arg; a2\n')
 
   @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
-  def test_rich(self):
-    f = evaluable.Sin(evaluable.Inflate(1, 1, 2)**evaluable.Diagonalize(evaluable.Argument('arg', (2,))))
+  def test_loop_sum(self):
+    i = evaluable.Argument('i', (), int)
+    f = evaluable.LoopSum(i, i, evaluable.Constant(2))
     self.assertEqual(f.asciitree(richoutput=True),
-                     '%9 = Sin(a2,a2)\n'
-                     '└ %8 = Power(a2,a2)\n'
-                     '  ├ %7 = Transpose(i2,s2)\n'
-                     '  │ └ %6 = InsertAxis(s2,i2)\n'
-                     '  │   ├ %4 = Inflate(s2)\n'
-                     '  │   │ ├ %1 = Constant()\n'
-                     '  │   │ ├ %1\n'
-                     '  │   │ └ %2 = Constant()\n'
-                     '  │   └ %2\n'
-                     '  └ %5 = Diagonalize(d2,d2)\n'
-                     '    └ %3 = Argument(a2)\n'
-                     '      └ %0 = Evaluable')
+                     'SUBGRAPHS\n'
+                     'A\n'
+                     '└ B = Loop\n'
+                     'NODES\n'
+                     '%A0 = LoopSum\n'
+                     '└ func = %B1 = LoopIndex\n'
+                     '  └ length = 2\n')
+
+  @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
+  def test_loop_concatenate(self):
+    i = evaluable.Argument('i', (), int)
+    f = evaluable.loop_concatenate(evaluable.InsertAxis(i, 1), i, evaluable.Constant(2))
+    self.assertEqual(f.asciitree(richoutput=True),
+                     'SUBGRAPHS\n'
+                     'A\n'
+                     '└ B = Loop\n'
+                     'NODES\n'
+                     '%B0 = LoopConcatenate\n'
+                     '├ shape[0] = 2\n'
+                     '├ start = %B1 = Take\n'
+                     '│ ├ %A2 = _SizesToOffsets; a3\n'
+                     '│ │ └ %A3 = InsertAxis; i2\n'
+                     '│ │   ├ 1\n'
+                     '│ │   └ 2\n'
+                     '│ └ %B4 = LoopIndex\n'
+                     '│   └ length = 2\n'
+                     '├ stop = %B5 = Take\n'
+                     '│ ├ %A2\n'
+                     '│ └ %B6 = Add\n'
+                     '│   ├ %B4\n'
+                     '│   └ 1\n'
+                     '└ func = %B7 = InsertAxis; i1\n'
+                     '  ├ %B4\n'
+                     '  └ 1\n')
+
+  @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
+  def test_loop_concatenatecombined(self):
+    i = evaluable.Argument('i', (), int)
+    f, = evaluable.loop_concatenate_combined([evaluable.InsertAxis(i, 1)], i, evaluable.Constant(2))
+    self.assertEqual(f.asciitree(richoutput=True),
+                     'SUBGRAPHS\n'
+                     'A\n'
+                     '└ B = Loop\n'
+                     'NODES\n'
+                     '%B0 = LoopConcatenate\n'
+                     '├ shape[0] = 2\n'
+                     '├ start = %B1 = Take\n'
+                     '│ ├ %A2 = _SizesToOffsets; a3\n'
+                     '│ │ └ %A3 = InsertAxis; i2\n'
+                     '│ │   ├ 1\n'
+                     '│ │   └ 2\n'
+                     '│ └ %B4 = LoopIndex\n'
+                     '│   └ length = 2\n'
+                     '├ stop = %B5 = Take\n'
+                     '│ ├ %A2\n'
+                     '│ └ %B6 = Add\n'
+                     '│   ├ %B4\n'
+                     '│   └ 1\n'
+                     '└ func = %B7 = InsertAxis; i1\n'
+                     '  ├ %B4\n'
+                     '  └ 1\n')
 
 class simplify(TestCase):
 
@@ -681,3 +795,60 @@ class memory(TestCase):
       t.simplified
     with self.assertRaises(MyException): # make sure no placeholders remain in the replacement cache
       t.simplified
+
+class combine_loop_concatenates(TestCase):
+
+  def test_same_index_same_length(self):
+    i = evaluable.Argument('i', (), int)
+    A = evaluable.LoopConcatenate(evaluable.InsertAxis(i, 1), i, i+1, 3, i, 3)
+    B = evaluable.LoopConcatenate(evaluable.InsertAxis(i, 2), i*2, i*2+2, 6, i, 3)
+    actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
+    L = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3), (evaluable.InsertAxis(i, 2), i*2, i*2+2, 6)), i, 3)
+    desired = evaluable.Tuple((evaluable.ArrayFromTuple(L, 0, (3,), int), evaluable.ArrayFromTuple(L, 1, (6,), int)))
+    self.assertEqual(actual, desired)
+
+  def test_same_index_different_length(self):
+    i = evaluable.Argument('i', (), int)
+    A = evaluable.LoopConcatenate(evaluable.InsertAxis(i, 1), i, i+1, 3, i, 3)
+    B = evaluable.LoopConcatenate(evaluable.InsertAxis(i, 1), i, i+1, 4, i, 4)
+    actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
+    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i, 3)
+    L2 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 4),), i, 4)
+    desired = evaluable.Tuple((evaluable.ArrayFromTuple(L1, 0, (3,), int), evaluable.ArrayFromTuple(L2, 0, (4,), int)))
+    self.assertEqual(actual, desired)
+
+  def test_different_index(self):
+    i = evaluable.Argument('i', (), int)
+    j = evaluable.Argument('j', (), int)
+    A = evaluable.LoopConcatenate(evaluable.InsertAxis(i, 1), i, i+1, 3, i, 3)
+    B = evaluable.LoopConcatenate(evaluable.InsertAxis(j, 1), j, j+1, 3, j, 3)
+    actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
+    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i, 3)
+    L2 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(j, 1), j, j+1, 3),), j, 3)
+    desired = evaluable.Tuple((evaluable.ArrayFromTuple(L1, 0, (3,), int), evaluable.ArrayFromTuple(L2, 0, (3,), int)))
+    self.assertEqual(actual, desired)
+
+  def test_nested_invariant(self):
+    i = evaluable.Argument('i', (), int)
+    A = evaluable.LoopConcatenate(evaluable.InsertAxis(i, 1), i, i+1, 3, i, 3)
+    B = evaluable.LoopConcatenate(A, i*3, i*3+3, 9, i, 3)
+    actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
+    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i, 3)
+    A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int)
+    L2 = evaluable.LoopConcatenateCombined(((A_, i*3, i*3+3, 9),), i, 3)
+    self.assertIn(A_, L2._Evaluable__args)
+    desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int)))
+    self.assertEqual(actual, desired)
+
+  def test_nested_variant(self):
+    i = evaluable.Argument('i', (), int)
+    j = evaluable.Argument('j', (), int)
+    A = evaluable.LoopConcatenate(evaluable.InsertAxis(i+j, 1), i, i+1, 3, i, 3)
+    B = evaluable.LoopConcatenate(A, j*3, j*3+3, 9, j, 3)
+    actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
+    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i+j, 1), i, i+1, 3),), i, 3)
+    A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int)
+    L2 = evaluable.LoopConcatenateCombined(((A_, j*3, j*3+3, 9),), j, 3)
+    self.assertNotIn(A_, L2._Evaluable__args)
+    desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int)))
+    self.assertEqual(actual, desired)

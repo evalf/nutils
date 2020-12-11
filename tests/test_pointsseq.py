@@ -1,5 +1,5 @@
 from nutils.testing import TestCase, parametrize
-import nutils.pointsseq, nutils.element, nutils.points, nutils.warnings
+import nutils.pointsseq, nutils.element, nutils.points, nutils.warnings, nutils.evaluable
 import unittest, numpy, itertools, operator, functools
 
 line = nutils.element.LineReference().getpoints('bezier', 2)
@@ -132,6 +132,32 @@ class Common:
     for chain in self._op_or_meth('__add__', 'chain'):
       with self.assertRaises(ValueError):
         chain(nutils.pointsseq.PointsSequence.empty(self.checkndims+1))
+
+  def test_get_evaluable_coords(self):
+    coordinates = self.seq.get_evaluable_coords(nutils.evaluable.Argument('index', (), int))
+    for index, points in enumerate(self.check):
+      self.assertEqual(coordinates.eval(index=index), points.coords)
+
+  def test_get_evaluable_coords_invalid_ndims(self):
+    with self.assertRaises(ValueError):
+      self.seq.get_evaluable_coords(nutils.evaluable.Argument('index', (1,), int))
+
+  def test_get_evaluable_coords_invalid_dtype(self):
+    with self.assertRaises(ValueError):
+      self.seq.get_evaluable_coords(nutils.evaluable.Argument('index', (), float))
+
+  def test_get_evaluable_weights(self):
+    weights = self.seq.get_evaluable_weights(nutils.evaluable.Argument('index', (), int))
+    for index, points in enumerate(self.check):
+      self.assertEqual(weights.eval(index=index), points.weights)
+
+  def test_get_evaluable_weights_invalid_ndims(self):
+    with self.assertRaises(ValueError):
+      self.seq.get_evaluable_weights(nutils.evaluable.Argument('index', (1,), int))
+
+  def test_get_evaluable_weights_invalid_dtype(self):
+    with self.assertRaises(ValueError):
+      self.seq.get_evaluable_weights(nutils.evaluable.Argument('index', (), float))
 
 class TriHull:
 
