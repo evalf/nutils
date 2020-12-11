@@ -51,7 +51,7 @@ time dependent problems.
 """
 
 from . import function, evaluable, cache, numeric, sample, types, util, matrix, warnings, sparse
-import abc, numpy, itertools, functools, numbers, collections, math, treelog as log
+import abc, numpy, itertools, functools, numbers, collections, math, inspect, treelog as log
 
 
 ## TYPE COERCION
@@ -59,16 +59,12 @@ import abc, numpy, itertools, functools, numbers, collections, math, treelog as 
 argdict = types.frozendict[types.strictstr,types.frozenarray]
 
 def integraltuple(arg):
-  if isinstance(arg, sample.Integral):
-    return arg,
   for obj in arg:
     if not isinstance(obj, sample.Integral):
       raise TypeError('expected integral, got {}'.format(type(obj)))
   return tuple(arg)
 
 def optionalintegraltuple(arg):
-  if isinstance(arg, sample.Integral):
-    return arg,
   for obj in arg:
     if obj is not None and not isinstance(obj, sample.Integral):
       raise TypeError('expected integral or None, got {}'.format(type(obj)))
@@ -83,11 +79,19 @@ def arrayordict(arg):
 def single_or_multiple(f):
   '''add support for legacy string target + array return value'''
 
+  sig = inspect.signature(f)
+  tuple_params = tuple(p.name for p in sig.parameters.values() if p.annotation in (integraltuple, optionalintegraltuple))
+
   @functools.wraps(f)
   def wrapper(target, *args, **kwargs):
-    single = isinstance(target, str)
-    retval = f(tuple([target] if single else target), *args, **kwargs)
-    return retval[target] if single else retval
+    if isinstance(target, str):
+      ba = sig.bind((target,), *args, **kwargs)
+      for name in tuple_params:
+        if name in ba.arguments:
+          ba.arguments[name] = ba.arguments[name],
+      return f(*ba.args, **ba.kwargs)[target]
+    else:
+      return f(target, *args, **kwargs)
   return wrapper
 
 class iterable:
@@ -95,12 +99,20 @@ class iterable:
 
   @classmethod
   def single_or_multiple(cls, wrapped):
-    return type(wrapped.__name__, (cls,), dict(__wrapped__=wrapped, __doc__=cls.__doc__))
+    tuple_params = tuple(p.name for p in inspect.signature(wrapped).parameters.values() if p.annotation in (integraltuple, optionalintegraltuple))
+    return type(wrapped.__name__, (cls,), dict(__wrapped__=wrapped, __doc__=cls.__doc__, _tuple_params=tuple_params))
 
   def __init__(self, target, *args, **kwargs):
     self._target = target
     self._single = isinstance(target, str)
-    self._wrapped = self.__wrapped__(tuple([target] if self._single else target), *args, **kwargs)
+    if self._single:
+      ba = inspect.signature(self.__wrapped__).bind((target,), *args, **kwargs)
+      for name in self._tuple_params:
+        if name in ba.arguments:
+          ba.arguments[name] = ba.arguments[name],
+      self._wrapped = self.__wrapped__(*ba.args, **ba.kwargs)
+    else:
+      self._wrapped = self.__wrapped__(target, *args, **kwargs)
 
   @property
   def __nutils_hash__(self):
