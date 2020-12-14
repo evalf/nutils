@@ -1936,7 +1936,7 @@ class TakeDiag(Array):
     if axis < self.ndim - 1:
       return TakeDiag(_take(self.func, index, axis))
     func = _take(Take(self.func, index), index, self.ndim-1)
-    for i in range(self.ndim-1, self.ndim-1+index.ndim):
+    for i in reversed(range(self.ndim-1, self.ndim-1+index.ndim)):
       func = takediag(func, i, i+index.ndim)
     return func
 
