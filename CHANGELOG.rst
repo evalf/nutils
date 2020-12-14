@@ -9,6 +9,13 @@ features in inverse chronological order.
 New in v7.0 (in development)
 ----------------------------
 
+- Moved: unit from types to separate module
+
+  The ``unit`` type has been moved into its own :mod:`nutils.unit` module, with
+  the old location ``types.unit`` now holding a forward method. The forward
+  emits a deprecation warning prompting to change ``nutils.types.unit.create``
+  (or its shorthand ``nutils.types.unit``) to :func:`nutils.unit.create`.
+
 - Removed: loading libraries from .local
 
   Libraries that are installed in odd locations will no longer be automatically
@@ -354,11 +361,10 @@ Release date: `2020-04-29 <https://github.com/evalf/nutils/releases/tag/v6.0>`_.
 
 - Unit type
 
-  The new :class:`nutils.types.unit` allows for the creation of a unit
-  system for easy specification of physical quantities. Used in
-  conjunction with :func:`nutils.cli.run` this facilitates specifying
-  units from the command line, as well as providing a warning mechanism
-  against incompatible units::
+  The new ``nutils.types.unit`` allows for the creation of a unit system for
+  easy specification of physical quantities. Used in conjunction with
+  :func:`nutils.cli.run` this facilitates specifying units from the command
+  line, as well as providing a warning mechanism against incompatible units::
 
       >>> U = types.unit.create(m=1, s=1, g=1e-3, N='kg*m/s2', Pa='N/m2')
       >>> def main(length=U('2m'), F=U('5kN')):
