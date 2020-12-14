@@ -51,6 +51,7 @@ __all__ = [
   'transform',
   'transformseq',
   'types',
+  'unit',
   'util',
   'warnings',
 ]
