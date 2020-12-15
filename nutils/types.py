@@ -312,7 +312,10 @@ def nutils_hash(data):
     h.update(nutils_hash(data.__self__))
     h.update(nutils_hash(data.__name__))
   elif dataclasses and dataclasses.is_dataclass(t):
-    h.update(nutils_hash(dataclasses.asdict(data, dict_factory=frozendict)))
+    # Note: we cannot use dataclasses.asdict here as its built-in recursion
+    # makes nested dataclass instances indistinguishable from dictionaries.
+    for item in sorted(nutils_hash((field.name, getattr(data, field.name))) for field in dataclasses.fields(t)):
+      h.update(item)
   elif hasattr(data, '__getnewargs__'):
     for arg in data.__getnewargs__():
       h.update(nutils_hash(arg))
