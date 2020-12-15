@@ -706,8 +706,8 @@ class _ExpressionParser:
         geometry_name = self._consume().data
       else:
         geometry_name = self.default_geometry_name
-      geom = self._get_geometry(geometry_name)
       if not omitted_indices and self._next.type == 'indices':
+        geom = self._get_geometry(geometry_name)
         warnings.deprecation('`[f]_i` and `[f]_x_i` are deprecated; use `[f] n({x}_i)` instead'.format(x=geometry_name))
         value *= self._asarray(('normal', _(geom)), self._consume(), geom.shape, False)
     elif self._next.type == '{':
