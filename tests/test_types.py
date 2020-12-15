@@ -804,6 +804,10 @@ class frozenarray(TestCase):
     self.assertEqual(nutils.types.nutils_hash(a).hex(), '42cc3a5e1216c1f0a9921a61a3a2c67025c98d69')
     self.assertEqual(nutils.types.nutils_hash(b).hex(), '8f0c9f9a118c42c258f1e69e374aadda99b4be97')
 
+  def test_repr(self):
+    a = nutils.types.frozenarray(numpy.array([[1,2],[3,4]], numpy.int))
+    self.assertEqual(a.__repr__(), 'frozenarray([[1, 2],\n             [3, 4]])')
+
   def test_pickle(self):
     src = [[1,2],[3,4]]
     value = pickle.loads(pickle.dumps(nutils.types.frozenarray(src)))
