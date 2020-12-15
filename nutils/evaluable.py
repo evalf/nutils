@@ -3379,7 +3379,8 @@ class LoopConcatenate(Array):
     self.start = start
     self.stop = stop
     self._lcc = LoopConcatenateCombined(((func, start, stop, cc_length),), index, length)
-    super().__init__(args=[self._lcc], shape=(*func._axes[:-1], Axis(cc_length)), dtype=func.dtype)
+    axes = (*(Axis(axis.length) if isinstance(axis, Sparse) else axis for axis in func._axes[:-1]), Axis(cc_length))
+    super().__init__(args=[self._lcc], shape=axes, dtype=func.dtype)
 
   def evalf(self, arg):
     return arg[0]
