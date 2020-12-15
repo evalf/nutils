@@ -431,90 +431,89 @@ class IdentifierTransforms(Transforms):
     raise ValueError
 
 class Axis(types.Singleton):
-  '''Abstract base class for axes of :class:`~nutils.topology.StructuredTopology`.'''
+  '''Base class for axes of :class:`~nutils.topology.StructuredTopology`.'''
 
-  __slots__ = ()
+  __slots__ = 'i', 'j', 'mod'
+
+  def __init__(self, i:types.strictint, j:types.strictint, mod:types.strictint):
+    self.i = i
+    self.j = j
+    self.mod = mod
+
+  def __len__(self):
+    return self.j - self.i
+
+  def unmap(self, index):
+    ielem = index - self.i
+    if self.mod:
+      ielem %= self.mod
+    if not 0 <= ielem < len(self):
+      raise ValueError
+    return ielem
+
+  def map(self, ielem):
+    assert 0 <= ielem < len(self)
+    index = self.i + ielem
+    if self.mod:
+      index %= self.mod
+    return index
 
 class DimAxis(Axis):
 
-  __slots__ = 'i', 'j', 'isperiodic'
+  __slots__ = 'isperiodic'
   isdim = True
 
   @types.apply_annotations
-  def __init__(self, i:types.strictint, j:types.strictint, isperiodic:bool):
-    super().__init__()
-    self.i = i
-    self.j = j
+  def __init__(self, i:types.strictint, j:types.strictint, mod:types.strictint, isperiodic:bool):
+    assert 0 == i < j == mod if isperiodic else 0 <= i < j and mod == 0
+    super().__init__(i, j, mod)
     self.isperiodic = isperiodic
 
-  def __len__(self):
-    return self.j - self.i
+  @property
+  def refined(self):
+    return DimAxis(self.i*2, self.j*2, self.mod*2, self.isperiodic)
 
-  def unmap(self, index):
-    if not self.i <= index < self.j:
-      raise ValueError
-    return index-self.i
+  def opposite(self, ibound):
+    return self
 
-  def map(self, index):
-    return self.i+index
+  def getitem(self, s):
+    if not isinstance(s, slice):
+      raise NotImplementedError
+    if s == slice(None):
+      return self
+    start, stop, stride = s.indices(self.j - self.i)
+    assert stride == 1
+    assert stop > start
+    return DimAxis(self.i+start, self.i+stop, mod=self.mod, isperiodic=False)
 
-class EdgeAxis(Axis):
+  def boundaries(self, ibound):
+    if not self.isperiodic:
+      yield IntAxis(self.i, self.i+1, self.mod, ibound, side=False)
+      yield IntAxis(self.j-1, self.j, self.mod, ibound, side=True)
 
-  __slots__ = 'i', 'j', 'ibound', 'side'
+  def intaxis(self, ibound, side):
+    return IntAxis(self.i-side+1-self.isperiodic, self.j-side, self.mod, ibound, side)
+
+class IntAxis(Axis):
+
+  __slots__ = 'ibound', 'side'
   isdim = False
 
   @types.apply_annotations
-  def __init__(self, i:types.strictint, j:types.strictint, ibound:types.strictint, side:bool):
-    super().__init__()
-    self.i = i
-    self.j = j
+  def __init__(self, i:types.strictint, j:types.strictint, mod:types.strictint, ibound:types.strictint, side:bool):
+    super().__init__(i, j, mod)
     self.ibound = ibound
     self.side = side
 
-class BndAxis(EdgeAxis):
+  @property
+  def refined(self):
+    return IntAxis(self.i*2+self.side, self.j*2+self.side-1, self.mod*2, self.ibound, self.side)
 
-  __slots__ = ()
+  def opposite(self, ibound):
+    return IntAxis(self.i+2*self.side-1, self.j+2*self.side-1, self.mod, self.ibound, not self.side) if ibound == self.ibound else self
 
-  def __len__(self):
-    return 1
-
-  def unmap(self, index):
-    if index != (self.i-1 if self.side else self.j):
-      raise ValueError
-    return 0
-
-  def map(self, index):
-    return self.i-1 if self.side else self.j
-
-class IntAxis(EdgeAxis):
-
-  __slots__ = ()
-
-  def __len__(self):
-    return self.j - self.i - 1
-
-  def unmap(self, index):
-    if not self.i < index + self.side < self.j:
-      raise ValueError
-    return index - self.i - (not self.side)
-
-  def map(self, index):
-    return index + self.i + (not self.side)
-
-class PIntAxis(EdgeAxis):
-
-  __slots__ = ()
-
-  def __len__(self):
-    return self.j - self.i
-
-  def unmap(self, index):
-    if not self.i <= index < self.j:
-      raise ValueError
-    return (index - self.i - (not self.side)) % len(self)
-
-  def map(self, index):
-    return self.i + ((index + (not self.side)) % len(self))
+  def boundaries(self, ibound):
+    return ()
 
 class StructuredTransforms(Transforms):
   '''Transforms sequence for :class:`~nutils.topology.StructuredTopology`.

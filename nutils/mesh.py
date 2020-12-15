@@ -57,7 +57,7 @@ def rectilinear(richshape, periodic=(), name='rect'):
       uniform = False
 
   root = transform.Identifier(ndims, name)
-  axes = [transformseq.DimAxis(0,n,idim in periodic) for idim, n in enumerate(shape)]
+  axes = [transformseq.DimAxis(i=0, j=n, mod=n if idim in periodic else 0, isperiodic=idim in periodic) for idim, n in enumerate(shape)]
   topo = topology.StructuredTopology(root, axes)
 
   if uniform:
@@ -665,7 +665,7 @@ def unitsquare(nelems, etype):
   root = transform.Identifier(2, 'unitsquare')
 
   if etype == 'square':
-    topo = topology.StructuredTopology(root, [transformseq.DimAxis(0, nelems, False)] * 2)
+    topo = topology.StructuredTopology(root, [transformseq.DimAxis(i=0, j=nelems, mod=0, isperiodic=False)] * 2)
 
   elif etype in ('triangle', 'mixed'):
     simplices = numpy.concatenate([
