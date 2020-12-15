@@ -648,8 +648,16 @@ def add(a, b):
   a, b = _numpy_align(a, b)
   return Add([a, b])
 
+def bc_add(a, b):
+  a, b = _numpy_bc(a, b)
+  return Add([a, b])
+
 def multiply(a, b):
   a, b = _numpy_align(a, b)
+  return Multiply([a, b])
+
+def bc_mul(a, b):
+  a, b = _numpy_bc(a, b)
   return Multiply([a, b])
 
 def sum(arg, axis=None):
@@ -848,6 +856,8 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   T = property(lambda self: transpose(self))
 
   __add__ = __radd__ = add
+  __or__ = bc_add
+  __and__ = bc_mul
   __sub__ = lambda self, other: subtract(self, other)
   __rsub__ = lambda self, other: subtract(other, self)
   __mul__ = __rmul__ = multiply
@@ -3543,7 +3553,7 @@ def _gatherblocks(blocks):
 def _gathersparsechunks(chunks):
   return tuple((*ind, util.sum(funcs)) for ind, funcs in util.gather((tuple(ind), func) for *ind, func in chunks))
 
-def _numpy_align(*arrays):
+def _numpy_bc(*arrays):
   '''reshape arrays according to Numpy's broadcast conventions'''
   arrays = [asarray(array) for array in arrays]
   if len(arrays) > 1:
@@ -3557,6 +3567,17 @@ def _numpy_align(*arrays):
           arrays[i] = insertaxis(a, idim, length)
         elif a.shape[idim] != length:
           arrays[i] = repeat(a, length, idim)
+  return arrays
+
+def _numpy_align(*arrays):
+  '''reshape arrays according to Numpy's broadcast conventions'''
+  arrays = [asarray(array) for array in arrays]
+  if len(arrays) > 1:
+    shape = next((a.shape for a in arrays if a.ndim != 0), ())
+    for i, a in enumerate(arrays):
+      if a.ndim == 0:
+        arrays[i] = _inflate_scalar(a, shape)
+    assert all(shape == a.shape for a in arrays), [a.shape for a in arrays]
   return arrays
 
 def _inflate_scalar(arg, shape):
