@@ -1503,7 +1503,7 @@ class Inverse(Array):
     G = derivative(self.func, var, seen)
     n = var.ndim
     a = slice(None)
-    return -sum(self[(...,a,a,_,_)+(_,)*n] * G[(...,_,a,a,_)+(a,)*n] * self[(...,_,_,a,a)+(_,)*n], [-2-n, -3-n])
+    return -sum(self[(...,a,a,_,_)+(_,)*n] & G[(...,_,a,a,_)+(a,)*n] & self[(...,_,_,a,a)+(_,)*n], [-2-n, -3-n])
 
   def _eig(self, symmetric):
     eigval, eigvec = Eig(self.func, symmetric)
@@ -1568,7 +1568,7 @@ class Determinant(Array):
     Finv = swapaxes(inverse(self.func), -2, -1)
     G = derivative(self.func, var, seen)
     ext = (...,)+(_,)*var.ndim
-    return self[ext] * sum(Finv[ext] * G, axis=[-2-var.ndim,-1-var.ndim])
+    return self[ext] & sum(Finv[ext] & G, axis=[-2-var.ndim,-1-var.ndim])
 
   def _take(self, index, axis):
     return Determinant(_take(self.func, index, axis))
@@ -1683,8 +1683,8 @@ class Multiply(Array):
   def _derivative(self, var, seen):
     func1, func2 = self.funcs
     ext = (...,)+(_,)*var.ndim
-    return func1[ext] * derivative(func2, var, seen) \
-         + func2[ext] * derivative(func1, var, seen)
+    return func1[ext] & derivative(func2, var, seen) \
+         | func2[ext] & derivative(func1, var, seen)
 
   def _takediag(self, axis1, axis2):
     func1, func2 = self.funcs
@@ -2064,7 +2064,7 @@ class Power(Array):
     if self.power.isconstant:
       p = self.power.eval()
       p_decr = p - (p!=0)
-      return multiply(p, power(self.func, p_decr))[ext] * derivative(self.func, var, seen)
+      return multiply(p, power(self.func, p_decr))[ext] & derivative(self.func, var, seen)
     # self = func**power
     # ln self = power * ln func
     # self` / self = power` * ln func + power * func` / func
