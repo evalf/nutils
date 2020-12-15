@@ -3256,7 +3256,7 @@ class LoopSum(Array):
     subtimes = times.get(self, collections.defaultdict(_Stats))
     sum_kwargs = {'shape[{}]'.format(i): asarray(n)._node(cache, subgraph, times) for i, n in enumerate(self.shape)}
     sum_kwargs['func'] = self.func._node(subcache, loopgraph, subtimes)
-    cache[self] = node = RegularNode('LoopSum', (), sum_kwargs, (type(self).__name__, subtimes['sum'], loopgraph))
+    cache[self] = node = RegularNode('LoopSum', (), sum_kwargs, (type(self).__name__, subtimes['sum']), loopgraph)
     return node
 
   def _simplified(self):

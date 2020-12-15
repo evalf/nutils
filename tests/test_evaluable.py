@@ -693,7 +693,7 @@ class asciitree(TestCase):
                      'A\n'
                      '└ B = Loop\n'
                      'NODES\n'
-                     '%A0 = LoopSum\n'
+                     '%B0 = LoopSum\n'
                      '└ func = %B1 = LoopIndex\n'
                      '  └ length = 2\n')
 
