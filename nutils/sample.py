@@ -226,8 +226,7 @@ class Sample(types.Singleton):
   def __rmatmul__(self, func: function.Array) -> function.Array:
     if not isinstance(func, function.Array):
       return NotImplemented
-    sampled = _AtSample(func, self)
-    return function.take(sampled, numpy.concatenate(self.index, 0), 0)
+    return _AtSample(func, self)
 
   @property
   def allcoords(self):
@@ -341,11 +340,6 @@ class _DefaultIndex(Sample):
     offsets = evaluable._SizesToOffsets(evaluable.loop_concatenate(evaluable.InsertAxis(npoints, 1), ielem, self.nelems))
     return evaluable.Range(npoints, evaluable.get(offsets, 0, ielem))
 
-  def __rmatmul__(self, func: function.Array) -> function.Array:
-    if not isinstance(func, function.Array):
-      return NotImplemented
-    return _AtSample(func, self)
-
 class _CustomIndex(Sample):
 
   __slots__ = '_index'
@@ -457,6 +451,9 @@ class _AtSample(function.Array):
     ielem = evaluable.Argument('_ielem', (), dtype=int)
     transform_chains = tuple(evaluable.TransformChainFromSequence(t, ielem) for t in self._sample.transforms)
     coordinates = (self._sample.points.get_evaluable_coords(ielem),) * len(self._sample.transforms)
-    return evaluable.Transpose.from_end(evaluable.loop_concatenate(evaluable.Transpose.to_end(self._func.lower(transform_chains=transform_chains, coordinates=coordinates, **kwargs), 0), ielem, self._sample.nelems), 0)
+    func = self._func.lower(transform_chains=transform_chains, coordinates=coordinates)
+    indices = self._sample.get_evaluable_indices(ielem)
+    inflated = evaluable.Transpose.from_end(evaluable.Inflate(evaluable.Transpose.to_end(func, 0), indices, self._sample.npoints), 0)
+    return evaluable.LoopSum(inflated, ielem, self._sample.nelems)
 
 # vim:sw=2:sts=2:et
