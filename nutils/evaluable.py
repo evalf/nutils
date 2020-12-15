@@ -1436,7 +1436,7 @@ class Product(Array):
   def _derivative(self, var, seen):
     grad = derivative(self.func, var, seen)
     funcs = stack([util.product(self.func[...,j] for j in range(self.func.shape[-1]) if i != j) for i in range(self.func.shape[-1])], axis=self.ndim)
-    return (grad * funcs[(...,)+(_,)*var.ndim]).sum(self.ndim)
+    return (grad & funcs[(...,)+(_,)*var.ndim]).sum(self.ndim)
 
     ## this is a cleaner form, but is invalid if self.func contains zero values:
     #ext = (...,)+(_,)*len(shape)
@@ -2069,8 +2069,8 @@ class Power(Array):
     # ln self = power * ln func
     # self` / self = power` * ln func + power * func` / func
     # self` = power` * ln func * self + power * func` * func**(power-1)
-    return (self.power * power(self.func, self.power - 1))[ext] * derivative(self.func, var, seen) \
-         + (ln(self.func) * self)[ext] * derivative(self.power, var, seen)
+    return (self.power * power(self.func, self.power - 1))[ext] & derivative(self.func, var, seen) \
+         | (ln(self.func) * self)[ext] & derivative(self.power, var, seen)
 
   def _power(self, n):
     func = self.func
@@ -2141,7 +2141,7 @@ class Pointwise(Array):
   def _derivative(self, var, seen):
     if self.deriv is None:
       return super()._derivative(var, seen)
-    return util.sum(deriv(*self.args)[(...,)+(_,)*var.ndim] * derivative(arg, var, seen) for arg, deriv in zip(self.args, self.deriv))
+    return util.sum(deriv(*self.args)[(...,)+(_,)*var.ndim] & derivative(arg, var, seen) for arg, deriv in zip(self.args, self.deriv))
 
   def _takediag(self, axis1, axis2):
     return self.__class__(*[_takediag(arg, axis1, axis2) for arg in self.args])

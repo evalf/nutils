@@ -14,7 +14,7 @@ class check(TestCase):
     self.args = tuple(map(evaluable.Argument, self.arg_names, self.shapes))
     self.arg_values = [numpy.random.uniform(size=shape, low=self.low, high=self.high) for shape in self.shapes]
     self.n_op_argsfun = self.n_op(*self.arg_values)
-    self.op_args = self.op(*self.args)
+    self.op_args = self.op(*evaluable._numpy_bc(*self.args))
     self.shapearg = numpy.random.uniform(size=self.n_op_argsfun.shape, low=self.low, high=self.high)
     self.pairs = [(i, j) for i in range(self.op_args.ndim-1) for j in range(i+1, self.op_args.ndim) if self.op_args.shape[i] == self.op_args.shape[j]]
     _builtin_warnings.simplefilter('ignore', evaluable.ExpensiveEvaluationWarning)
@@ -61,7 +61,7 @@ class check(TestCase):
     constargs = [numpy.random.uniform(size=shape) for shape in self.shapes]
     self.assertFunctionAlmostEqual(decimal=15,
       desired=self.n_op(*[constarg for constarg in constargs]),
-      actual=self.op(*constargs))
+      actual=self.op(*evaluable._numpy_bc(*constargs)))
 
   def test_eval(self):
     self.assertFunctionAlmostEqual(decimal=15,
@@ -284,7 +284,7 @@ class check(TestCase):
       n_op_argsfun = functools.reduce(operator.add, (self.n_op(*self.arg_values[:iarg], v, *self.arg_values[iarg+1:]) for v in testvalue))
       args = (*self.args[:iarg], evaluable.Guard(evaluable.get(evaluable.asarray(testvalue), 0, index)), *self.args[iarg+1:])
       self.assertFunctionAlmostEqual(decimal=15,
-        actual=evaluable.LoopSum(self.op(*args), index, length),
+        actual=evaluable.LoopSum(self.op(*evaluable._numpy_bc(*args)), index, length),
         desired=n_op_argsfun)
 
   def test_loopconcatenate(self):
@@ -295,7 +295,7 @@ class check(TestCase):
       n_op_argsfun = numpy.concatenate([self.n_op(*self.arg_values[:iarg], v, *self.arg_values[iarg+1:]) for v in testvalue], axis=-1)
       args = (*self.args[:iarg], evaluable.Guard(evaluable.get(evaluable.asarray(testvalue), 0, index)), *self.args[iarg+1:])
       self.assertFunctionAlmostEqual(decimal=15,
-        actual=evaluable.loop_concatenate(self.op(*args), index, length),
+        actual=evaluable.loop_concatenate(self.op(*evaluable._numpy_bc(*args)), index, length),
         desired=n_op_argsfun)
 
   def test_desparsify(self):
@@ -304,7 +304,7 @@ class check(TestCase):
       for i in range(arg.ndim):
         arg = evaluable._inflate(arg, evaluable.Guard(numpy.arange(arg.shape[i])), arg.shape[i], i)
       args.append(arg)
-    op_args = self.op(*args).simplified
+    op_args = self.op(*evaluable._numpy_bc(*args)).simplified
     evalargs = dict(zip(self.arg_names, self.arg_values))
     for axis, prop in enumerate(op_args._axes):
       if isinstance(prop, evaluable.Sparse):
