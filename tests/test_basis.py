@@ -6,7 +6,7 @@ class basisTest(TestCase):
 
   def assertContinuous(self, topo, geom, basis, continuity):
     for regularity in range(continuity+1):
-      elem_jumps = topo.interfaces.sample('gauss', 2).eval(function.jump(basis))
+      elem_jumps = topo.sample('gauss', 2).eval(function.jump(basis))
       self.assertAllAlmostEqual(elem_jumps, 0, places=10)
       basis = function.grad(basis, geom)[...,0]
 
@@ -27,8 +27,13 @@ class basis(basisTest):
   def setUp(self):
     super().setUp()
     self.domain, self.geom = mesh.rectilinear([max(1, self.nelems-n) for n in range(self.ndims)], periodic=[0] if self.periodic else [])
-    for iref in range(self.nrefine):
-      self.domain = self.domain.refined_by([len(self.domain)-1])
+    if self.refine == 'uniform':
+      self.domain = self.domain.refined
+    elif self.refine == 'hierarchical':
+      for i in range(2):
+        self.domain = self.domain.refined_by([len(self.domain)-1])
+    else:
+      assert not self.refine
     if self.boundary:
       self.domain = self.domain.boundary[self.boundary]
     self.basis = self.domain.basis(self.btype, degree=self.degree)
@@ -36,8 +41,22 @@ class basis(basisTest):
 
   @parametrize.enable_if(lambda btype, degree, boundary, **params: btype != 'discont' and degree != 0 and not boundary)
   def test_continuity(self):
-    self.assertContinuous(topo=self.domain, geom=self.geom, basis=self.basis,
-      continuity=0 if self.btype.endswith('std') or self.nelems == 1 and self.nrefine == 0 and self.periodic else self.degree-1)
+    topos = dict(interfaces=self.domain.interfaces)
+    if self.refine != 'hierarchical':
+      # NOTE: the reason for excluding hierarchical refinements is that the
+      # HierarchicalTopology does not (yet) take opposites into account when
+      # forming its boundary, possibly resulting in elements that are coarser
+      # than their opposing neighbours.
+      if self.nelems > 1:
+        topos['rightinterior'] = self.domain[:1].boundary['right']
+        topos['leftinterior'] = self.domain[-1:].boundary['left']
+      if self.periodic:
+        topos['leftboundary'] = self.domain[:1].boundary['left']
+        topos['rightboundary'] = self.domain[-1:].boundary['right']
+    for name, topo in topos.items():
+      with self.subTest(name):
+        self.assertContinuous(topo=topo, geom=self.geom, basis=self.basis,
+          continuity=0 if self.btype.endswith('std') or self.nelems == 1 and not self.refine and self.periodic else self.degree-1)
 
   @parametrize.enable_if(lambda btype, **params: not btype.startswith('h-'))
   def test_pum(self):
@@ -50,11 +69,11 @@ class basis(basisTest):
 for ndims in range(1, 4):
   for btype in 'discont', 'h-std', 'th-std', 'h-spline', 'th-spline':
     for degree in range(0 if 'std' not in btype else 1, 4):
-      for nrefine in 0, 2:
+      for refine in False, 'uniform', 'hierarchical':
         for boundary in [None, 'bottom'] if ndims > 1 else [None]:
           for periodic in False, True:
-            for nelems in range(1, 4):
-              basis(btype=btype, degree=degree, ndims=ndims, nrefine=nrefine, boundary=boundary, periodic=periodic, nelems=nelems)
+            for nelems in range(1, 5-ndims):
+              basis(btype=btype, degree=degree, ndims=ndims, refine=refine, boundary=boundary, periodic=periodic, nelems=nelems)
 
 @parametrize
 class sparsity(TestCase):
@@ -101,7 +120,7 @@ class structured(basisTest):
     for p in range(1, 3):
       basis = self.domain.basis('std', degree=p)
       self.assertEqual(len(basis), (3+2*(p-1))*(4+3*(p-1)))
-      self.assertContinuous(topo=self.domain, geom=self.geom, basis=basis, continuity=0)
+      self.assertContinuous(topo=self.domain.interfaces, geom=self.geom, basis=basis, continuity=0)
       self.assertPartitionOfUnity(topo=self.domain, basis=basis)
       self.assertPolynomial(topo=self.domain, geom=self.geom, basis=basis, degree=p)
 
@@ -109,7 +128,7 @@ class structured(basisTest):
     for p in range(1, 3):
       basis = self.domain.basis('spline', degree=p)
       self.assertEqual(len(basis), (2+p)*(3+p))
-      self.assertContinuous(topo=self.domain, geom=self.geom, basis=basis, continuity=p-1)
+      self.assertContinuous(topo=self.domain.interfaces, geom=self.geom, basis=basis, continuity=p-1)
       self.assertPartitionOfUnity(topo=self.domain, basis=basis)
       self.assertPolynomial(topo=self.domain, geom=self.geom, basis=basis, degree=p)
 
@@ -132,7 +151,7 @@ class structured(basisTest):
   def test_knotvalues(self):
     # test refinement of knotvalues[0] -> [0,1/2,1]
     basis = self.domain.basis('spline', degree=2, knotvalues=[[0,1],[0,1/3,2/3,1]])
-    self.assertContinuous(topo=self.domain, geom=self.geom, basis=basis, continuity=1)
+    self.assertContinuous(topo=self.domain.interfaces, geom=self.geom, basis=basis, continuity=1)
     self.assertPartitionOfUnity(topo=self.domain, basis=basis)
     self.assertPolynomial(topo=self.domain, geom=self.geom, basis=basis, degree=2)
 
@@ -140,12 +159,12 @@ class structured(basisTest):
     # test refinement of knotmultiplicities[0] -> [3,1,3]
     basis = self.domain.basis('spline', degree=2, knotmultiplicities=[[3,3],[3,1,1,3]])
     self.assertEqual(len(basis), 4*5)
-    self.assertContinuous(topo=self.domain, geom=self.geom, basis=basis, continuity=1)
+    self.assertContinuous(topo=self.domain.interfaces, geom=self.geom, basis=basis, continuity=1)
     self.assertPartitionOfUnity(topo=self.domain, basis=basis)
     self.assertPolynomial(topo=self.domain, geom=self.geom, basis=basis, degree=2)
     basis = self.domain.basis('spline', degree=2, knotmultiplicities=[[3,3],[3,2,1,3]])
     self.assertEqual(len(basis), 4*6)
-    self.assertContinuous(topo=self.domain, geom=self.geom, basis=basis, continuity=0)
+    self.assertContinuous(topo=self.domain.interfaces, geom=self.geom, basis=basis, continuity=0)
     self.assertPartitionOfUnity(topo=self.domain, basis=basis)
     self.assertPolynomial(topo=self.domain, geom=self.geom, basis=basis, degree=2)
 
@@ -153,12 +172,12 @@ class structured(basisTest):
     # test refinement of knotmultiplicities[0] -> [3,1,3]
     basis = self.domain.basis('spline', degree=2, continuity=0)
     self.assertEqual(len(basis), 5*7)
-    self.assertContinuous(topo=self.domain, geom=self.geom, basis=basis, continuity=0)
+    self.assertContinuous(topo=self.domain.interfaces, geom=self.geom, basis=basis, continuity=0)
     self.assertPartitionOfUnity(topo=self.domain, basis=basis)
     self.assertPolynomial(topo=self.domain, geom=self.geom, basis=basis, degree=2)
     basis = self.domain.basis('spline', degree=2, continuity=0, knotmultiplicities=[[3,3],None])
     self.assertEqual(len(basis), 5*7)
-    self.assertContinuous(topo=self.domain, geom=self.geom, basis=basis, continuity=0)
+    self.assertContinuous(topo=self.domain.interfaces, geom=self.geom, basis=basis, continuity=0)
     self.assertPartitionOfUnity(topo=self.domain, basis=basis)
     self.assertPolynomial(topo=self.domain, geom=self.geom, basis=basis, degree=2)
 
@@ -176,7 +195,7 @@ class structured_line(basisTest):
 
   @parametrize.enable_if(lambda btype, **params: btype != 'discont')
   def test_continuity(self):
-    self.assertContinuous(topo=self.domain, geom=self.geom, basis=self.basis, continuity=0 if self.btype == 'std' else self.degree-1)
+    self.assertContinuous(topo=self.domain.interfaces, geom=self.geom, basis=self.basis, continuity=0 if self.btype == 'std' else self.degree-1)
 
   def test_pum(self):
     self.assertPartitionOfUnity(topo=self.domain, basis=self.basis)
@@ -203,7 +222,7 @@ class structured_rect1d(basisTest):
 
   @parametrize.enable_if(lambda continuity, **params: continuity >= 0)
   def test_continuity(self):
-    self.assertContinuous(topo=self.domain, geom=self.geom, basis=self.basis, continuity=self.continuity)
+    self.assertContinuous(topo=self.domain.interfaces, geom=self.geom, basis=self.basis, continuity=self.continuity)
 
   def test_pum(self):
     self.assertPartitionOfUnity(topo=self.domain, basis=self.basis)
@@ -226,7 +245,7 @@ class structured_rect1d_periodic_knotmultiplicities(basisTest):
       domain, geom = mesh.rectilinear([len(knotmultiplicities)-1], periodic=[0])
       basis = domain.basis('spline', degree=3, knotmultiplicities=[knotmultiplicities])
       self.assertEqual(len(basis), ndofs)
-      self.assertContinuous(topo=domain, geom=geom, basis=basis, continuity=0)
+      self.assertContinuous(topo=domain.interfaces, geom=geom, basis=basis, continuity=0)
       self.assertPartitionOfUnity(topo=domain, basis=basis)
 
   def test_discontinuous(self):

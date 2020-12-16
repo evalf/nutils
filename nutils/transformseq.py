@@ -436,6 +436,7 @@ class Axis(types.Singleton):
   __slots__ = 'i', 'j', 'mod'
 
   def __init__(self, i:types.strictint, j:types.strictint, mod:types.strictint):
+    assert i <= j
     self.i = i
     self.j = j
     self.mod = mod
@@ -465,7 +466,6 @@ class DimAxis(Axis):
 
   @types.apply_annotations
   def __init__(self, i:types.strictint, j:types.strictint, mod:types.strictint, isperiodic:bool):
-    assert 0 == i < j == mod if isperiodic else 0 <= i < j and mod == 0
     super().__init__(i, j, mod)
     self.isperiodic = isperiodic
 
