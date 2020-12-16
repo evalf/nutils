@@ -125,6 +125,26 @@ class Sample(types.Singleton):
 
     raise NotImplementedError
 
+  def get_evaluable_indices(self, ielem):
+    '''Return the evaluable indices for the given evaluable element index.
+
+    Parameters
+    ----------
+    ielem : :class:`nutils.evaluable.Array`, ndim: 0, dtype: :class:`int`
+        The element index.
+
+    Returns
+    -------
+    indices : :class:`nutils.evaluable.Array`
+        The indices of the points belonging to the given element as a 1D array.
+
+    See Also
+    --------
+    :meth:`getindex` : the non-evaluable equivalent
+    '''
+
+    return evaluable.ElemwiseFromCallable(self.getindex, ielem, self.points.get_evaluable_coords(ielem).shape[:1], int)
+
   @util.positional_only
   @util.single_or_multiple
   @types.apply_annotations
@@ -315,6 +335,11 @@ class _DefaultIndex(Sample):
   @property
   def hull(self):
     return self.points.hull
+
+  def get_evaluable_indices(self, ielem):
+    npoints = self.points.get_evaluable_coords(ielem).shape[0]
+    offsets = evaluable._SizesToOffsets(evaluable.loop_concatenate(evaluable.InsertAxis(npoints, 1), ielem, self.nelems))
+    return evaluable.Range(npoints, evaluable.get(offsets, 0, ielem))
 
   def __rmatmul__(self, func: function.Array) -> function.Array:
     if not isinstance(func, function.Array):
