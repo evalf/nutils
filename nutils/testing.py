@@ -181,7 +181,7 @@ class TestCase(unittest.TestCase):
     for args in numpy.broadcast(actual, desired):
       self.assertAlmostEqual(*args, **kwargs)
 
-  def assertAlmostEqual64(self, actual, desired, atol=2e-15, rtol=2e-3):
+  def assertAlmostEqual64(self, actual, desired, *, atol=2e-15, rtol=2e-3, dtype='int16'):
     '''Assert numerical equivalence with packed data.
 
     Test closeness of ``actual`` to ``desired`` data, where the latter are
@@ -189,9 +189,9 @@ class TestCase(unittest.TestCase):
     and :func:`nutils.numeric.unpack` for details on packing). The primary use
     case is embedded regression testing.
 
-    The ``atol`` and ``rtol`` arguments are used for both unpacking and
-    equivalence testing and cannot be changed independently of the base64 string.
-    Doing so will raise an exception with a suggested update.
+    The ``atol``, ``rtol`` and ``dtype`` arguments are used for both unpacking
+    and equivalence testing and cannot be changed independently of the base64
+    string. Doing so will raise an exception with a suggested update.
 
     Args
     ----
@@ -203,10 +203,12 @@ class TestCase(unittest.TestCase):
       Absolute tolerance
     rtol : :class:`float`
       Relative tolerance
+    dtype : :class:`str`
+      Packed dtype
     '''
 
     try:
-      desired = numeric.unpack(numpy.frombuffer(zlib.decompress(binascii.a2b_base64(desired)), dtype=numpy.int16), atol, rtol).reshape(actual.shape)
+      desired = numeric.unpack(numpy.frombuffer(zlib.decompress(binascii.a2b_base64(desired)), dtype=dtype), atol, rtol).reshape(actual.shape)
     except Exception as e:
       status = ['failed to decode data: {}'.format(e)]
     else:
@@ -223,7 +225,7 @@ class TestCase(unittest.TestCase):
         status[6:-5] = '...',
     status.append('If this is expected, update the base64 string to:')
     with warnings.via(status.append):
-      s = binascii.b2a_base64(zlib.compress(numeric.pack(actual, atol, rtol, numpy.int16).tobytes(), 9)).decode().rstrip()
+      s = binascii.b2a_base64(zlib.compress(numeric.pack(actual, atol, rtol, dtype).tobytes(), 9)).decode().rstrip()
     status.extend(s[i:i+80] for i in range(0, len(s), 80))
     self.fail('\n'.join(status))
 
