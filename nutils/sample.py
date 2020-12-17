@@ -125,6 +125,26 @@ class Sample(types.Singleton):
 
     raise NotImplementedError
 
+  def get_evaluable_indices(self, ielem):
+    '''Return the evaluable indices for the given evaluable element index.
+
+    Parameters
+    ----------
+    ielem : :class:`nutils.evaluable.Array`, ndim: 0, dtype: :class:`int`
+        The element index.
+
+    Returns
+    -------
+    indices : :class:`nutils.evaluable.Array`
+        The indices of the points belonging to the given element as a 1D array.
+
+    See Also
+    --------
+    :meth:`getindex` : the non-evaluable equivalent
+    '''
+
+    return evaluable.ElemwiseFromCallable(self.getindex, ielem, self.points.get_evaluable_coords(ielem).shape[:1], int)
+
   @util.positional_only
   @util.single_or_multiple
   @types.apply_annotations
@@ -206,8 +226,7 @@ class Sample(types.Singleton):
   def __rmatmul__(self, func: function.Array) -> function.Array:
     if not isinstance(func, function.Array):
       return NotImplemented
-    sampled = _AtSample(func, self)
-    return function.take(sampled, numpy.concatenate(self.index, 0), 0)
+    return _AtSample(func, self)
 
   @property
   def allcoords(self):
@@ -316,10 +335,10 @@ class _DefaultIndex(Sample):
   def hull(self):
     return self.points.hull
 
-  def __rmatmul__(self, func: function.Array) -> function.Array:
-    if not isinstance(func, function.Array):
-      return NotImplemented
-    return _AtSample(func, self)
+  def get_evaluable_indices(self, ielem):
+    npoints = self.points.get_evaluable_coords(ielem).shape[0]
+    offsets = evaluable._SizesToOffsets(evaluable.loop_concatenate(evaluable.InsertAxis(npoints, 1), ielem, self.nelems))
+    return evaluable.Range(npoints, evaluable.get(offsets, 0, ielem))
 
 class _CustomIndex(Sample):
 
@@ -432,6 +451,9 @@ class _AtSample(function.Array):
     ielem = evaluable.Argument('_ielem', (), dtype=int)
     transform_chains = tuple(evaluable.TransformChainFromSequence(t, ielem) for t in self._sample.transforms)
     coordinates = (self._sample.points.get_evaluable_coords(ielem),) * len(self._sample.transforms)
-    return evaluable.Transpose.from_end(evaluable.loop_concatenate(evaluable.Transpose.to_end(self._func.lower(transform_chains=transform_chains, coordinates=coordinates, **kwargs), 0), ielem, self._sample.nelems), 0)
+    func = self._func.lower(transform_chains=transform_chains, coordinates=coordinates)
+    indices = self._sample.get_evaluable_indices(ielem)
+    inflated = evaluable.Transpose.from_end(evaluable.Inflate(evaluable.Transpose.to_end(func, 0), indices, self._sample.npoints), 0)
+    return evaluable.LoopSum(inflated, ielem, self._sample.nelems)
 
 # vim:sw=2:sts=2:et
