@@ -1263,7 +1263,7 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
   T = property(lambda self: frozenarray(self.__base.T, copy=False))
 
   __len__ = lambda self: self.__base.__len__()
-  __repr__ = lambda self: 'frozenarray'+self.__base.__repr__()[5:]
+  __repr__ = lambda self: 'frozen'+self.__base.__repr__().replace('\n', '\n      ')
   __str__ = lambda self: self.__base.__str__()
   __add__ = lambda self, other: self.__base.__add__(other)
   __radd__ = lambda self, other: self.__base.__radd__(other)
