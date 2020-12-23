@@ -1545,7 +1545,7 @@ class Determinant(Array):
   def __init__(self, func:asarray):
     assert isarray(func) and func.ndim >= 2 and func.shape[-1] == func.shape[-2]
     self.func = func
-    super().__init__(args=[func], shape=func.shape[:-2], dtype=func.dtype)
+    super().__init__(args=[func], shape=func.shape[:-2], dtype=_jointdtype(func.dtype, float))
 
   def _simplified(self):
     return self.func._determinant(self.ndim, self.ndim+1)
