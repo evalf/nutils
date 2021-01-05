@@ -1271,6 +1271,7 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
   __rsub__ = lambda self, other: self.__base.__rsub__(other)
   __mul__ = lambda self, other: self.__base.__mul__(other)
   __rmul__ = lambda self, other: self.__base.__rmul__(other)
+  __matmul__ = lambda self, other: self.__base.__matmul__(other)
   __truediv__ = lambda self, other: self.__base.__truediv__(other)
   __rtruediv__ = lambda self, other: self.__base.__rtruediv__(other)
   __floordiv__ = lambda self, other: self.__base.__floordiv__(other)

@@ -508,7 +508,8 @@ class Topology(types.Singleton):
       coords = coords[...,_]
     if not geom.shape == coords.shape[1:] == (self.ndims,):
       raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
-    centroids = self.elem_mean(geom, geometry=geom, degree=2)
+    centroids = self.sample('_centroid', None).eval(geom)
+    assert len(centroids) == len(self)
     ielems = parallel.shempty(len(coords), dtype=int)
     xis = parallel.shempty((len(coords),len(geom)), dtype=float)
     J = function.localgradient(geom, self.ndims)
@@ -521,12 +522,9 @@ class Topology(types.Singleton):
                 else sorted((dist < maxdist).nonzero()[0], key=dist.__getitem__):
           converged = False
           ref = self.references[ielem]
-          p = ref.getpoints('gauss', 1)
-          xi = p.coords
-          w = p.weights
-          xi = (numpy.dot(w,xi) / w.sum())[_] if len(xi) > 1 else xi.copy()
+          xi = numpy.array(ref.centroid)
           for iiter in range(maxiter):
-            coord_xi, J_xi = geom_J.eval(_transforms=(self.transforms[ielem], self.opposites[ielem]), _points=points.CoordsPoints(xi), **arguments or {})
+            (coord_xi,), (J_xi,) = geom_J.eval(_transforms=(self.transforms[ielem], self.opposites[ielem]), _points=points.CoordsPoints(xi[_]), **arguments or {})
             err = numpy.linalg.norm(coord - coord_xi)
             if err < tol:
               converged = True
@@ -534,10 +532,13 @@ class Topology(types.Singleton):
             if iiter and err > prev_err:
               break
             prev_err = err
-            xi += numpy.linalg.solve(J_xi, coord - coord_xi)
-          if converged and ref.inside(xi[0], eps=eps):
+            try:
+              xi += numpy.linalg.solve(J_xi, coord - coord_xi)
+            except numpy.linalg.LinAlgError:
+              break
+          if converged and ref.inside(xi, eps=max(eps, *tol/abs(numpy.linalg.eigvals(J_xi)))):
             ielems[ipoint] = ielem
-            xis[ipoint], = xi
+            xis[ipoint] = xi
             break
         else:
           raise LocateError('failed to locate point: {}'.format(coord))
