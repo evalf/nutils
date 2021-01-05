@@ -691,7 +691,7 @@ def unitsquare(nelems, etype):
         connectivity = [c-numpy.greater(c,n*2) for c in connectivity]
       topo = topology.ConnectedTopology(References.from_iter(references, 2), transformseq.PlainTransforms(transforms, 2),transformseq.PlainTransforms(transforms, 2), tuple(types.frozenarray(c, copy=False) for c in connectivity))
 
-    x, y = topo.boundary.elem_mean(function.rootcoords(2), degree=1).T
+    x, y = topo.boundary.sample('_centroid', None).eval(function.rootcoords(2)).T
     bgroups = dict(left=x==0, right=x==nelems, bottom=y==0, top=y==nelems)
     topo = topo.withboundary(**{name: topo.boundary[numpy.where(mask)[0]] for name, mask in bgroups.items()})
 
