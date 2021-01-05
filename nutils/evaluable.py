@@ -48,7 +48,7 @@ if typing.TYPE_CHECKING:
 else:
   Protocol = object
 
-from . import util, types, numeric, cache, transform, expression, warnings, parallel, sparse
+from . import debug_flags, util, types, numeric, cache, transform, expression, warnings, parallel, sparse
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph
 import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log, weakref, time, contextlib, subprocess
 _ = numpy.newaxis
@@ -733,8 +733,9 @@ def as_axis_property(value):
 
 # ARRAYS
 
-if __debug__:
+_ArrayMeta = type(Evaluable)
 
+if debug_flags.sparse:
   def _chunked_assparse_checker(orig):
     assert isinstance(orig, property)
     @property
@@ -757,6 +758,13 @@ if __debug__:
       return chunks
     return _assparse
 
+  class _ArrayMeta(_ArrayMeta):
+    def __new__(mcls, name, bases, namespace):
+      if '_assparse' in namespace:
+        namespace['_assparse'] = _chunked_assparse_checker(namespace['_assparse'])
+      return super().__new__(mcls, name, bases, namespace)
+
+if debug_flags.evalf:
   class _evalf_checker:
     def __init__(self, orig):
       self.evalf_obj = getattr(orig, '__get__', lambda *args: orig)
@@ -771,17 +779,11 @@ if __debug__:
         return res
       return evalf_with_check
 
-  class _ArrayMeta(type(Evaluable)):
+  class _ArrayMeta(_ArrayMeta):
     def __new__(mcls, name, bases, namespace):
-      if '_assparse' in namespace:
-        namespace['_assparse'] = _chunked_assparse_checker(namespace['_assparse'])
       if 'evalf' in namespace:
         namespace['evalf'] = _evalf_checker(namespace['evalf'])
       return super().__new__(mcls, name, bases, namespace)
-
-else:
-
-  _ArrayMeta = type(Evaluable)
 
 class AsEvaluableArray(Protocol):
   'Protocol for conversion into an :class:`Array`.'
