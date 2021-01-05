@@ -532,7 +532,10 @@ class Topology(types.Singleton):
             if iiter and err > prev_err:
               break
             prev_err = err
-            xi += numpy.linalg.solve(J_xi, coord - coord_xi)
+            try:
+              xi += numpy.linalg.solve(J_xi, coord - coord_xi)
+            except numpy.linalg.LinAlgError:
+              break
           if converged and ref.inside(xi, eps=eps):
             ielems[ipoint] = ielem
             xis[ipoint] = xi
