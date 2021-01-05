@@ -155,6 +155,12 @@ class Reference(types.Singleton):
     return points.coords, getattr(points, 'weights', None)
 
   def getpoints(self, ischeme, degree):
+    if ischeme == '_centroid':
+      gauss = self.getpoints('gauss', 1)
+      if gauss.npoints == 1:
+        return gauss
+      volume = gauss.weights.sum()
+      return points.CoordsUniformPoints(gauss.coords.T[_] @ gauss.weights / volume, volume)
     raise Exception('unsupported ischeme for {}: {!r}'.format(self.__class__.__name__, ischeme))
 
   def with_children(self, child_refs):
@@ -167,12 +173,13 @@ class Reference(types.Singleton):
 
   @property
   def volume(self):
-    return self.getpoints('gauss', 1).weights.sum()
+    volume, = self.getpoints('_centroid', None).weights
+    return volume
 
   @property
   def centroid(self):
-    gauss = self.getpoints('gauss', 1)
-    return types.frozenarray(gauss.coords.T.dot(gauss.weights) / gauss.weights.sum(), copy=False)
+    centroid, = self.getpoints('_centroid', None).coords
+    return centroid
 
   def trim(self, levels, maxrefine, ndivisions):
     'trim element along levelset'
@@ -774,7 +781,7 @@ class Cone(Reference):
   'cone'
 
   __slots__ = 'edgeref', 'etrans', 'tip', 'extnorm', 'height'
-  __cache__ = 'vertices', 'edge_transforms', 'edge_refs', 'volume'
+  __cache__ = 'vertices', 'edge_transforms', 'edge_refs'
 
   @types.apply_annotations
   def __init__(self, edgeref, etrans, tip:types.frozenarray):
@@ -827,16 +834,15 @@ class Cone(Reference):
       tx, tw = points.gauss((degree + self.ndims - 1)//2)
       wx = tx**(self.ndims-1) * tw * self.extnorm * self.height
       return points.CoordsWeightsPoints((tx[:,_,_] * (self.etrans.apply(epoints.coords)-self.tip)[_,:,:] + self.tip).reshape(-1, self.ndims), (epoints.weights[_,:] * wx[:,_]).ravel())
-    if ischeme == 'uniform':
-      coords = numpy.concatenate([(self.etrans.apply(self.edgeref.getpoints('uniform', i+1).coords) - self.tip) * ((i+.5)/degree) + self.tip for i in range(degree)])
-      return points.CoordsUniformPoints(coords, self.volume)
+    if ischeme in ('_centroid', 'uniform'):
+      layers = [(i+1, (i+.5)/degree) for i in range(degree)] if ischeme == 'uniform' \
+          else [(None, self.ndims/(self.ndims+1))] # centroid
+      coords = numpy.concatenate([self.etrans.apply(self.edgeref.getpoints(ischeme, p).coords) * w + self.tip * (1-w) for p, w in layers])
+      volume = self.edgeref.volume * self.extnorm * self.height / self.ndims
+      return points.CoordsUniformPoints(coords, volume)
     if ischeme == 'vtk' and self.nverts == 5 and self.ndims==3: # pyramid
       return points.CoordsPoints(self.vertices[[1,2,4,3,0]])
     return points.ConePoints(self.edgeref.getpoints(ischeme, degree), self.etrans, self.tip)
-
-  @property
-  def volume(self):
-    return self.edgeref.volume * self.extnorm * self.height / self.ndims
 
   @property
   def simplices(self):
@@ -964,10 +970,15 @@ class WithChildrenReference(Reference):
   def getpoints(self, ischeme, degree):
     if ischeme == 'vertex':
       return self.baseref.getpoints(ischeme, degree)
+    if ischeme == '_centroid':
+      return super().getpoints(ischeme, degree)
     if ischeme == 'bezier':
-      childpoints = [points.TransformPoints(ref.getpoints('bezier', degree//2+1), trans) for trans, ref in self.children if ref]
-      return points.ConcatPoints(childpoints, points.find_duplicates(childpoints))
-    return points.ConcatPoints(points.TransformPoints(ref.getpoints(ischeme, degree), trans) for trans, ref in self.children if ref)
+      degree = degree//2+1 # modify child degree to keep (approximate) uniformity
+      dedup = True
+    else:
+      dedup = False
+    childpoints = [points.TransformPoints(ref.getpoints(ischeme, degree), trans) for trans, ref in self.children if ref]
+    return points.ConcatPoints(childpoints, points.find_duplicates(childpoints) if dedup else ())
 
   @property
   def simplices(self):
@@ -1120,8 +1131,14 @@ class MosaicReference(Reference):
   def getpoints(self, ischeme, degree):
     if ischeme == 'vertex':
       return self.baseref.getpoints(ischeme, degree)
+    if ischeme == '_centroid':
+      return super().getpoints(ischeme, degree)
     subpoints = [subvol.getpoints(ischeme, degree) for subvol in self.subrefs]
     dups = points.find_duplicates(subpoints) if ischeme == 'bezier' else ()
+    # NOTE We could consider postprocessing gauss1 to a single point scheme,
+    # rather than a concatenation, but for that we would have to verify that
+    # the centroid is contained in the element. We leave this optimization for
+    # later, to be combined with a reduction of gauss schemes of any degree.
     return points.ConcatPoints(subpoints, dups)
 
   def inside(self, point, eps=0):
