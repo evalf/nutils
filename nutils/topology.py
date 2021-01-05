@@ -536,7 +536,7 @@ class Topology(types.Singleton):
               xi += numpy.linalg.solve(J_xi, coord - coord_xi)
             except numpy.linalg.LinAlgError:
               break
-          if converged and ref.inside(xi, eps=eps):
+          if converged and ref.inside(xi, eps=max(eps, *tol/abs(numpy.linalg.eigvals(J_xi)))):
             ielems[ipoint] = ielem
             xis[ipoint] = xi
             break
