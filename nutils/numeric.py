@@ -474,6 +474,7 @@ def _sorted_index_mask(sorted_array, values):
   values = numpy.asarray(values)
   assert sorted_array.ndim == 1 and values.ndim == 1
   if len(sorted_array):
+    # searchsorted always returns an array with dtype np.int64 regardless of its arguments
     indices = numpy.searchsorted(sorted_array[:-1], values)
     mask = numpy.equal(sorted_array[indices], values)
   else:

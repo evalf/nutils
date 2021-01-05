@@ -2321,7 +2321,7 @@ class Elemwise(Array):
 
   def evalf(self, index):
     assert index.ndim == 0
-    return self.data[index]
+    return self.data[index].astype(self.dtype, copy=False, casting='same_kind')
 
   def _simplified(self):
     if all(map(numeric.isint, self.shape)) and all(self.data[0] == data for data in self.data[1:]):
@@ -2339,7 +2339,7 @@ class ElemwiseFromCallable(Array):
 
   def evalf(self, index):
     i = index.__index__()
-    return types.frozenarray(self._func(i))
+    return types.frozenarray(self._func(i), dtype=self.dtype)
 
 class Eig(Evaluable):
 
