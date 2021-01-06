@@ -448,7 +448,7 @@ class Topology(types.Singleton):
     return self[selected]
 
   @log.withcontext
-  def locate(self, geom, coords, *, tol, eps=0, maxiter=100, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None):
+  def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None):
     '''Create a sample based on physical coordinates.
 
     In a finite element application, functions are commonly evaluated in points
@@ -467,9 +467,10 @@ class Topology(types.Singleton):
     >>> sample.eval(geom).tolist()
     [[0.9, 0.4]]
 
-    Locate has a long list of arguments that can be used to steer the nonlinear
-    search process, but the default values should be fine for reasonably
-    standard situations.
+    Locate requires a geometry function, an array of coordinates, and at least
+    one of ``tol`` and ``eps`` to set the tolerance in physical of element
+    space, respectively; if both are specified the least restrictive takes
+    precedence.
 
     Args
     ----
@@ -477,21 +478,24 @@ class Topology(types.Singleton):
         Geometry function of length ``ndims``.
     coords : 2-dimensional :class:`float` array
         Array of coordinates with ``ndims`` columns.
-    tol : :class:`float`
-        Maximum allowed distance between original and located coordinate.
+    tol : :class:`float` (default: 0)
+        Maximum allowed distance in physical coordinates between target and
+        located point.
     eps : :class:`float` (default: 0)
-        Epsilon radius around element within which a point is considered to be
-        inside.
-    maxiter : :class:`int` (default: 100)
-        Maximum allowed number of Newton iterations.
+        Maximum allowed distance in element coordinates between target and
+        located point.
+    maxiter : :class:`int` (default: 0)
+        Maximum allowed number of Newton iterations, or 0 for unlimited.
     arguments : :class:`dict` (default: None)
         Arguments for function evaluation.
     weights : :class:`float` array (default: None)
-        Optional weights, in case ``coords`` are quadrature points.
+        Optional weights, in case ``coords`` are quadrature points, making the
+        resulting sample suitable for integration.
     maxdist : :class:`float` (default: None)
-        Speed up failure by setting a distance between point and element
-        centroid above which the element is rejected immediately. If all points
-        are expected to be located then this can safely be left unspecified.
+        Speed up failure by setting a physical distance between point and
+        element centroid above which the element is rejected immediately. If
+        all points are expected to be located then this can safely be left
+        unspecified.
 
     Returns
     -------
@@ -502,47 +506,62 @@ class Topology(types.Singleton):
       warnings.deprecation('the ischeme argument is deprecated and will be removed in future')
     if scale is not None:
       warnings.deprecation('the scale argument is deprecated and will be removed in future')
+    if max(tol, eps) <= 0:
+      raise ValueError('locate requires either tol or eps to be strictly positive')
     coords = numpy.asarray(coords, dtype=float)
     if geom.ndim == 0:
       geom = geom[_]
       coords = coords[...,_]
     if not geom.shape == coords.shape[1:] == (self.ndims,):
-      raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
+      raise ValueError('invalid geometry or point shape for {}D topology'.format(self.ndims))
     centroids = self.sample('_centroid', None).eval(geom)
     assert len(centroids) == len(self)
     ielems = parallel.shempty(len(coords), dtype=int)
-    xis = parallel.shempty((len(coords),len(geom)), dtype=float)
-    J = function.localgradient(geom, self.ndims)
-    geom_J = evaluable.Tuple((geom.prepare_eval(ndims=self.ndims), J.prepare_eval(ndims=self.ndims))).simplified
+    points = parallel.shempty((len(coords),len(geom)), dtype=float)
+    _ielem = evaluable.Argument('_locate_ielem', shape=(), dtype=int)
+    _point = evaluable.Argument('_locate_point', shape=(self.ndims,))
+    lower_args = dict(
+      transform_chains = (
+        evaluable.TransformChainFromSequence(self.transforms, _ielem),
+        evaluable.TransformChainFromSequence(self.opposites, _ielem)),
+      coordinates = (_point, _point))
+    xJ = evaluable.Tuple((geom.lower(**lower_args), function.localgradient(geom, self.ndims).lower(**lower_args))).simplified
+    arguments = dict(arguments or ())
     with parallel.ctxrange('locating', len(coords)) as ipoints:
       for ipoint in ipoints:
-        coord = coords[ipoint]
-        dist = numpy.linalg.norm(centroids - coord, axis=1)
+        xt = coords[ipoint] # target
+        dist = numpy.linalg.norm(centroids - xt, axis=1)
         for ielem in numpy.argsort(dist) if maxdist is None \
                 else sorted((dist < maxdist).nonzero()[0], key=dist.__getitem__):
-          converged = False
           ref = self.references[ielem]
-          xi = numpy.array(ref.centroid)
-          for iiter in range(maxiter):
-            (coord_xi,), (J_xi,) = geom_J.eval(_transforms=(self.transforms[ielem], self.opposites[ielem]), _points=points.CoordsPoints(xi[_]), **arguments or {})
-            err = numpy.linalg.norm(coord - coord_xi)
-            if err < tol:
-              converged = True
-              break
-            if iiter and err > prev_err:
-              break
-            prev_err = err
+          arguments['_locate_ielem'] = ielem
+          arguments['_locate_point'] = p = numpy.array(ref.centroid)
+          ex = ep = numpy.inf
+          iiter = 0
+          while ex > tol and ep > eps: # newton loop
+            if iiter > maxiter > 0:
+              break # maximum number of iterations reached
+            iiter += 1
+            xp, Jp = xJ.eval(**arguments)
+            dx = xt - xp
+            ex0 = ex
+            ex = numpy.linalg.norm(dx)
+            if ex >= ex0:
+              break # newton is diverging
             try:
-              xi += numpy.linalg.solve(J_xi, coord - coord_xi)
+              dp = numpy.linalg.solve(Jp, dx)
             except numpy.linalg.LinAlgError:
+              break # jacobian is singular
+            ep = numpy.linalg.norm(dp)
+            p += dp # NOTE: modifies arguments['_locate_point'] in place
+          else:
+            if ref.inside(p, max(eps, ep)):
+              ielems[ipoint] = ielem
+              points[ipoint] = p
               break
-          if converged and ref.inside(xi, eps=max(eps, *tol/abs(numpy.linalg.eigvals(J_xi)))):
-            ielems[ipoint] = ielem
-            xis[ipoint] = xi
-            break
         else:
-          raise LocateError('failed to locate point: {}'.format(coord))
-    return self._sample(ielems, xis, weights)
+          raise LocateError('failed to locate point: {}'.format(xt))
+    return self._sample(ielems, points, weights)
 
   def _sample(self, ielems, coords, weights=None):
     uielems = numpy.unique(ielems)
