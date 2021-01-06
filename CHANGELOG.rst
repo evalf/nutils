@@ -9,6 +9,17 @@ features in inverse chronological order.
 New in v7.0 (in development)
 ----------------------------
 
+- Changed: locate arguments
+
+  The :func:`nutils.topology.Topology.locate` method now allows ``tol`` to be
+  left unspecified if ``eps`` is specified instead, which is repurposed as stop
+  criterion for distances in element coordinates. Conversely, if only ``tol``
+  is specified, a corresponding minimal ``eps`` value is set automatically to
+  match points near element edges. The ``ischeme`` and ``scale`` arguments are
+  deprecated and replaced by ``maxdist``, which can be left unspecified in
+  general. The optional ``weights`` argument results in a sample that is
+  suitable for integration.
+
 - Moved: unit from types to separate module
 
   The ``unit`` type has been moved into its own :mod:`nutils.unit` module, with
