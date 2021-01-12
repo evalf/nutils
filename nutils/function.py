@@ -50,7 +50,7 @@ if __debug__:
   def _lower(self, **kwargs):
     result = self._ArrayMeta__lower(**kwargs)
     assert isinstance(result, evaluable.Array)
-    offset = 1 if kwargs.get('coordinates', ()) and not type(self).__name__ == '_WithoutPoints' else 0
+    offset = kwargs['coordinates'][0].ndim-1 if kwargs.get('coordinates', ()) else 0
     assert result.ndim == self.ndim + offset
     for n, m in zip(result.shape[offset:], self.shape):
       if isinstance(m, int):
@@ -578,7 +578,8 @@ class _Transpose(Array):
     return self._arg, self._axes
 
   def lower(self, **kwargs: Any) -> evaluable.Array:
-    axes = (0, *(i+1 for i in self._axes)) if kwargs.get('coordinates', ()) else self._axes
+    offset = kwargs['coordinates'][0].ndim-1 if kwargs.get('coordinates', ()) else 0
+    axes = (*range(offset), *(i+offset for i in self._axes))
     return evaluable.Transpose(self._arg.lower(**kwargs), axes)
 
 class _Opposite(Array):

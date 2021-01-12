@@ -1446,7 +1446,7 @@ class ApplyTransforms(Array):
   def __init__(self, trans:types.strict[TransformChain], points, todims:types.strictint):
     self.trans = trans
     self._todims = todims
-    super().__init__(args=[points, trans], shape=[points.shape[0], todims], dtype=float)
+    super().__init__(args=[points, trans], shape=points.shape[:-1]+(todims,), dtype=float)
 
   def evalf(self, points, chain):
     return transform.apply(chain, points)
@@ -2300,6 +2300,7 @@ class Sampled(Array):
 
   @types.apply_annotations
   def __init__(self, points:asarray, expect:asarray):
+    assert points.ndim == 2
     super().__init__(args=[points, expect], shape=(points.shape[0], expect.shape[0]), dtype=int)
 
   def evalf(self, points, expect):
@@ -2840,7 +2841,7 @@ class Argument(DerivativeTargetBase):
       raise ValueError('argument {!r} missing'.format(self._name))
     else:
       value = numpy.asarray(value)
-      assert value.shape == self.shape
+      assert value.shape == self.shape, 'invalid argument shape: got {}, expected {}'.format(value.shape, self.shape)
       value = value.astype(self.dtype, casting='safe', copy=False)
       return value
 
