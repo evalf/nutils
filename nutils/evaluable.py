@@ -1400,7 +1400,7 @@ class Transpose(Array):
     if self.axes[axis:axis+dofmap.ndim] == tuple(range(i,i+dofmap.ndim)):
       tryinflate = self.func._inflate(dofmap, length, i)
       if tryinflate is not None:
-        axes = [ax-(ax>axis)*(dofmap.ndim-1) for ax in self.axes]
+        axes = [ax-(ax>i)*(dofmap.ndim-1) for ax in self.axes]
         axes[axis:axis+dofmap.ndim] = i,
         return Transpose(tryinflate, axes)
 
