@@ -3166,6 +3166,15 @@ class Polyval(Array):
     elif self.ngrad == degree:
       return prependaxes(self._const_helper(), self.points.shape[:-1])
 
+class PolyOuterProduct(Array):
+
+  def __init__(self, left, right):
+    shape = (left.shape[0] * right.shape[0],) + (max(left.shape[1:], default=0) + max(right.shape[1:], default=0) - 1,) * (left.ndim + right.ndim - 2)
+    super().__init__(args=[left, right], shape=shape, dtype=float)
+
+  def evalf(self, left, right):
+    return numeric.poly_outer_product(left, right)
+
 class AssertEqual(Array):
 
   def __init__(self, *args):
