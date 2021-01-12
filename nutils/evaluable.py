@@ -3051,7 +3051,7 @@ class Unravel(Array):
 
   @property
   def _assparse(self):
-    return tuple((*indices[:-1], FloorDivide(indices[-1], appendaxes(self.shape[-1], values.shape)), Mod(indices[-1], appendaxes(self.shape[-1], values.shape)), values) for *indices, values in self.func._assparse)
+    return tuple((*indices[:-1], *divmod(indices[-1], appendaxes(self.shape[-1], values.shape)), values) for *indices, values in self.func._assparse)
 
 class Range(Array):
 
@@ -3696,6 +3696,11 @@ def exp(x):
 
 def ln(x):
   return Log(x)
+
+def divmod(x, y):
+  div = FloorDivide(*_numpy_align(x, y))
+  mod = x - div * y
+  return div, mod
 
 def mod(arg1, arg2):
   return Mod(*_numpy_align(arg1, arg2))
