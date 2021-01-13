@@ -2632,11 +2632,11 @@ class Basis(Array):
 
   @property
   def _computed_support(self) -> Tuple[types.frozenarray, ...]:
-    support = [set() for i in range(self.ndofs)] # type: List[Set[int]]
+    support = [[] for i in range(self.ndofs)] # type: List[List[int]]
     for ielem in range(self.nelems):
-      for dof in self.get_dofs(ielem):
-        support[dof].add(ielem)
-    return tuple(types.frozenarray(numpy.fromiter(sorted(ielems), dtype=int), copy=False) for ielems in support)
+      for dof in numpy.unique(self.get_dofs(ielem)):
+        support[dof].append(ielem)
+    return tuple(types.frozenarray(ielems, dtype=int) for ielems in support)
 
   def get_support(self, dof: Union[numbers.Integral, numpy.ndarray]) -> numpy.ndarray:
     '''Return the support of basis function ``dof``.
