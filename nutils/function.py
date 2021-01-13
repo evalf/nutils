@@ -2614,9 +2614,6 @@ class Basis(Array):
   if possible should redefine :meth:`get_support`.
   '''
 
-  __slots__ = 'ndofs', 'nelems', 'index', 'coords'
-  __cache__ = '_computed_support'
-
   def __init__(self, ndofs: int, nelems: int, index: Array, coords: Array) -> None:
     self.ndofs = ndofs
     self.nelems = nelems
@@ -2630,7 +2627,7 @@ class Basis(Array):
     coords = self.coords.lower(**kwargs)
     return evaluable.Inflate(evaluable.Polyval(coeffs, coords), self.f_dofs(index), self.ndofs)
 
-  @property
+  @util.cached_property
   def _computed_support(self) -> Tuple[numpy.ndarray, ...]:
     support = [[] for i in range(self.ndofs)] # type: List[List[int]]
     for ielem in range(self.nelems):
@@ -2790,8 +2787,6 @@ class PlainBasis(Basis):
       The element local coordinates.
   '''
 
-  __slots__ = '_coeffs', '_dofs'
-
   def __init__(self, coefficients: Sequence[numpy.ndarray], dofs: Sequence[numpy.ndarray], ndofs: int, index: Array, coords: Array) -> None:
     self._coeffs = tuple(types.arraydata(c) for c in coefficients)
     self._dofs = tuple(map(types.arraydata, dofs))
@@ -2834,8 +2829,6 @@ class DiscontBasis(Basis):
   coords : :class:`Array`
       The element local coordinates.
   '''
-
-  __slots__ = '_coeffs', '_offsets'
 
   def __init__(self, coefficients: Sequence[numpy.ndarray], index: Array, coords: Array) -> None:
     self._coeffs = tuple(types.arraydata(c) for c in coefficients)
@@ -2885,8 +2878,6 @@ class MaskedBasis(Basis):
       The strict monotonic increasing indices of ``parent`` basis functions to
       keep.
   '''
-
-  __slots__ = '_parent', '_indices'
 
   def __init__(self, parent: Basis, indices: numpy.ndarray) -> None:
     indices = types.frozenarray(indices)
@@ -2939,8 +2930,6 @@ class StructuredBasis(Basis):
   coords : :class:`Array`
       The element local coordinates.
   '''
-
-  __slots__ = '_coeffs', '_start_dofs', '_stop_dofs', '_dofs_shape', '_transforms_shape'
 
   def __init__(self, coeffs: Sequence[Sequence[numpy.ndarray]], start_dofs: Sequence[numpy.ndarray], stop_dofs: Sequence[numpy.ndarray], dofs_shape: Sequence[int], transforms_shape: Sequence[int], index: Array, coords: Array) -> None:
     self._coeffs = tuple(tuple(map(types.arraydata, c)) for c in coeffs)
@@ -3035,8 +3024,6 @@ class PrunedBasis(Basis):
   coords : :class:`Array`
       The element local coordinates.
   '''
-
-  __slots__ = '_parent', '_transmap', '_dofmap'
 
   def __init__(self, parent: Basis, transmap: numpy.ndarray, index: Array, coords: Array) -> None:
     self._parent = parent
