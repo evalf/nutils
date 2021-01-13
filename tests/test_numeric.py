@@ -134,6 +134,13 @@ class asboolean(TestCase):
     with self.assertRaises(Exception):
       numeric.asboolean([2,1], 3)
 
+class invmap(TestCase):
+
+  def test(self):
+    indices = numpy.array([3,1])
+    invmap = numeric.invmap(indices, length=5, missing=9)
+    self.assertAllEqual(invmap, [9,1,9,0,9])
+
 class istype(TestCase):
 
   def test_isint(self):
