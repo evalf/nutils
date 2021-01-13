@@ -1498,10 +1498,9 @@ class SubsetTopology(Topology):
 
   @property
   def connectivity(self):
-    mask = numpy.array([bool(ref) for ref in self.refs] + [False]) # trailing false serves to map -1 to -1
-    renumber = numpy.cumsum(mask)-1
-    renumber[~mask] = -1
-    return tuple(types.frozenarray(renumber.take(ioppelems).tolist() + [-1] * (ref.nedges - len(ioppelems))) for ref, ioppelems in zip(self.refs, self.basetopo.connectivity) if ref)
+    renumber = numeric.invmap([i for i, ref in enumerate(self.refs) if ref], length=len(self.refs)+1, missing=-1) # length=..+1 serves to map -1 to -1
+    return tuple(types.frozenarray(numpy.concatenate([renumber.take(ioppelems), numpy.repeat(-1, ref.nedges-len(ioppelems))]), copy=False)
+      for ref, ioppelems in zip(self.refs, self.basetopo.connectivity) if ref)
 
   @property
   def refined(self):
