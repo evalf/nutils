@@ -443,9 +443,6 @@ class _WithoutPoints(Lowerable):
   def __init__(self, __arg: Array) -> None:
     self._arg = __arg
 
-  def __getnewargs__(self):
-    return self._arg,
-
   def lower(self, *, coordinates: Tuple[evaluable.Array] = (), **kwargs):
     return self._arg.lower(coordinates=(), **kwargs)
 
@@ -467,25 +464,16 @@ class _Wrapper(Array):
     assert all(hasattr(arg, 'lower') for arg in self._args)
     super().__init__(shape, dtype)
 
-  def __getnewargs__(self):
-    return (self._lower, *self._args)
-
   def lower(self, **kwargs: Any) -> evaluable.Array:
     return self._lower(*(arg.lower(**kwargs) for arg in self._args))
 
 class _Zeros(Array):
-
-  def __getnewargs__(self):
-    return self.shape, self.dtype
 
   def lower(self, coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
     shape = coordinates[0].shape[:-1] if coordinates else ()
     return evaluable.Zeros((*shape, *(_WithoutPoints(Array.cast(n)).lower(**kwargs) for n in self.shape)), self.dtype)
 
 class _Ones(Array):
-
-  def __getnewargs__(self):
-    return self.shape, self.dtype
 
   def lower(self, coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
     shape = coordinates[0].shape[:-1] if coordinates else ()
@@ -496,9 +484,6 @@ class _Constant(Array):
   def __init__(self, value: Any) -> None:
     self._value = types.arraydata(value)
     super().__init__(self._value.shape, self._value.dtype)
-
-  def __getnewargs__(self):
-    return self._value,
 
   def lower(self, **kwargs: Any) -> evaluable.Array:
     return _prepend_points(evaluable.Constant(self._value), **kwargs)
@@ -525,9 +510,6 @@ class Argument(Array):
     self.name = name
     super().__init__(shape, dtype)
 
-  def __getnewargs__(self):
-    return self.name, self.shape
-
   def lower(self, **kwargs: Any) -> evaluable.Array:
     shape = tuple(_WithoutPoints(n).lower(**kwargs) if isinstance(n, Array) else n for n in self.shape)
     return _prepend_points(evaluable.Argument(self.name, shape, self.dtype), **kwargs)
@@ -538,9 +520,6 @@ class _Replace(Array):
     self._arg = arg
     self._replacements = replacements
     super().__init__(arg.shape, arg.dtype)
-
-  def __getnewargs__(self):
-    return self._arg, self._replacements
 
   def lower(self, **kwargs: Any) -> evaluable.Array:
     arg = self._arg.lower(**kwargs)
@@ -573,9 +552,6 @@ class _Transpose(Array):
     self._axes = axes
     super().__init__(tuple(arg.shape[axis] for axis in axes), arg.dtype)
 
-  def __getnewargs__(self):
-    return self._arg, self._axes
-
   def lower(self, **kwargs: Any) -> evaluable.Array:
     offset = kwargs['coordinates'][0].ndim-1 if kwargs.get('coordinates', ()) else 0
     axes = (*range(offset), *(i+offset for i in self._axes))
@@ -587,9 +563,6 @@ class _Opposite(Array):
     self._arg = arg
     super().__init__(arg.shape, arg.dtype)
 
-  def __getnewargs__(self):
-    return self._arg,
-
   def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
     if len(transform_chains) > 2 or len(coordinates) > 2:
       raise ValueError('opposite is not defined if there are more than two transform chains or coordinates')
@@ -600,9 +573,6 @@ class _LocalCoords(Array):
   def __init__(self, ndims: int) -> None:
     super().__init__((ndims,), float)
 
-  def __getnewargs__(self):
-    return self.shape[0],
-
   def lower(self, **kwargs: Any) -> evaluable.Array:
     raise ValueError('cannot be lowered')
 
@@ -610,9 +580,6 @@ class _RootCoords(Array):
 
   def __init__(self, ndims: int) -> None:
     super().__init__((ndims,), float)
-
-  def __getnewargs__(self):
-    return self.shape[0],
 
   def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), coordinates: Tuple[evaluable.Array] = (), **kwargs) -> evaluable.Array:
     assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
@@ -624,9 +591,6 @@ class _TransformsIndex(Array):
     self._transforms = transforms
     super().__init__((), int)
 
-  def __getnewargs__(self):
-    return self._transforms,
-
   def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), **kwargs: Any) -> evaluable.Array:
     assert transform_chains
     index, tail = evaluable.TransformsIndexWithTail(self._transforms, transform_chains[0])
@@ -637,9 +601,6 @@ class _TransformsCoords(Array):
   def __init__(self, transforms: Transforms, dim: int) -> None:
     self._transforms = transforms
     super().__init__((dim,), int)
-
-  def __getnewargs__(self):
-    return self._transforms, self.shape[0]
 
   def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
     assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
@@ -659,9 +620,6 @@ class _Derivative(Array):
       raise ValueError('Cannot differentiate `arg` to {!r}.'.format(var))
     super().__init__(arg.shape+var.shape, arg.dtype)
 
-  def __getnewargs__(self):
-    return self._arg, self._var
-
   def lower(self, **kwargs: Any) -> evaluable.Array:
     arg = self._arg.lower(**kwargs)
     return evaluable.derivative(arg, self._eval_var)
@@ -672,9 +630,6 @@ class _Jacobian(Array):
     assert geom.ndim == 1
     self._geom = geom
     super().__init__((), float)
-
-  def __getnewargs__(self):
-    return self._geom,
 
   def lower(self, *, coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
     assert coordinates
@@ -690,9 +645,6 @@ class _Elemwise(Array):
     shape = tuple(get(numpy.array([d.shape[i] for d in self._data]), 0, index) for i in range(ndim))
     super().__init__(shape, dtype)
 
-  def __getnewargs__(self):
-    return self._data, self._index, self.dtype
-
   def lower(self, **kwargs: Any) -> evaluable.Array:
     return _prepend_points(evaluable.Elemwise(self._data, _WithoutPoints(self._index).lower(**kwargs), self.dtype), **kwargs)
 
@@ -700,9 +652,6 @@ class RevolutionAngle(Array):
 
   def __init__(self):
     super().__init__((), float)
-
-  def __getnewargs__(self):
-    return ()
 
   def lower(self, **kwargs: Any) -> evaluable.Array:
     return _prepend_points(evaluable.RevolutionAngle(), **kwargs)
@@ -2791,9 +2740,6 @@ class PlainBasis(Basis):
     assert all(c.shape[0] == d.shape[0] for c, d in zip(self._coeffs, self._dofs))
     super().__init__(ndofs, len(coefficients), index, coords)
 
-  def __getnewargs__(self) -> Tuple[Tuple[types.arraydata, ...], Tuple[types.arraydata, ...], int, Array, Array]:
-    return self._coeffs, self._dofs, self.ndofs, self.index, self.coords
-
   def f_dofs_coeffs(self, index: evaluable.Array) -> Tuple[evaluable.Array,evaluable.Array]:
     dofs = evaluable.Elemwise(self._dofs, index, dtype=int)
     coeffs = evaluable.Elemwise(self._coeffs, index, dtype=float)
@@ -2818,9 +2764,6 @@ class DiscontBasis(Basis):
     assert all(c.ndim == 1+coords.shape[0] for c in self._coeffs)
     self._offsets = numpy.cumsum([0] + [c.shape[0] for c in self._coeffs])
     super().__init__(self._offsets[-1], len(coefficients), index, coords)
-
-  def __getnewargs__(self) -> Tuple[Tuple[types.arraydata, ...], Array, Array]:
-    return self._coeffs, self.index, self.coords
 
   def get_support(self, dof: Union[int, numpy.ndarray]) -> numpy.ndarray:
     if not isinstance(dof, numbers.Integral):
@@ -2857,9 +2800,6 @@ class MaskedBasis(Basis):
     self._indices = indices
     self._renumber = types.frozenarray(numeric.invmap(indices, length=parent.ndofs, missing=len(indices)), copy=False)
     super().__init__(len(indices), parent.nelems, parent.index, parent.coords)
-
-  def __getnewargs__(self) -> Tuple[Basis, numpy.ndarray]:
-    return self._parent, self._indices
 
   def get_support(self, dof: Union[int, numpy.ndarray]) -> numpy.ndarray:
     if numeric.isintarray(dof) and dof.ndim == 1 and numpy.any(numpy.less(dof, 0)):
@@ -2904,9 +2844,6 @@ class StructuredBasis(Basis):
     self._dofs_shape = tuple(map(int, dofs_shape))
     self._transforms_shape = tuple(map(int, transforms_shape))
     super().__init__(util.product(dofs_shape), util.product(transforms_shape), index, coords)
-
-  def __getnewargs__(self) -> Tuple[Tuple[Tuple[numpy.ndarray, ...], ...], Tuple[numpy.ndarray, ...], Tuple[numpy.ndarray, ...], Tuple[int, ...], Tuple[int, ...], Array, Array]:
-    return self._coeffs, self._start_dofs, self._stop_dofs, self._dofs_shape, self._transforms_shape, self.index, self.coords
 
   def get_support(self, dof: Union[int, numpy.ndarray]) -> numpy.ndarray:
     if not isinstance(dof, numbers.Integral):
@@ -2967,9 +2904,6 @@ class PrunedBasis(Basis):
     self._dofmap = parent.get_dofs(self._transmap)
     self._renumber = types.frozenarray(numeric.invmap(self._dofmap, length=parent.ndofs, missing=len(self._dofmap)), copy=False)
     super().__init__(len(self._dofmap), len(transmap), index, coords)
-
-  def __getnewargs__(self) -> Tuple[Basis, numpy.ndarray, Array, Array]:
-    return self._parent, self._transmap, self.index, self.coords
 
   def get_support(self, dof: Union[int, numpy.ndarray]) -> numpy.ndarray:
     if numeric.isintarray(dof) and dof.ndim == 1 and numpy.any(numpy.less(dof, 0)):
