@@ -875,7 +875,7 @@ def _parse_lhs_cons(lhs0, constrain, targets, argobjs, arguments):
   for target in targets:
     if target not in argobjs:
       raise SolverError('target does not occur in functional: {!r}'.format(target))
-    shape = argobjs[target].shape
+    shape = tuple(map(int, argobjs[target].shape))
     if target not in arguments:
       arguments[target] = numpy.zeros(shape)
     elif arguments[target].shape != shape:

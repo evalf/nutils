@@ -52,9 +52,12 @@ if debug_flags.lower:
   def _lower(self, **kwargs):
     result = self._ArrayMeta__lower(**kwargs)
     assert isinstance(result, evaluable.Array)
-    offset = kwargs['coordinates'][0].ndim-1 if kwargs.get('coordinates', ()) else 0
+    kwargs_nocoords = kwargs.copy()
+    coordinates = kwargs_nocoords.pop('coordinates', ())
+    offset = kwargs['coordinates'][0].ndim-1 if coordinates and not type(self).__name__ == '_WithoutPoints' else 0
     assert result.ndim == self.ndim + offset
-    assert all(m == n for m, n in zip(result.shape[offset:], self.shape) if isinstance(n, int)), 'shape mismatch'
+    self_shape = tuple(asarray(n).lower(**kwargs_nocoords) for n in self.shape)
+    assert evaluable.equalshape(result.shape[offset:], self_shape) != False, 'shape mismatch'
     return result
 
   class _ArrayMeta(_ArrayMeta):
@@ -400,9 +403,9 @@ class Array(Lowerable, metaclass=_ArrayMeta):
     if isinstance(__var, str):
       for arg in self.as_evaluable_array().arguments:
         if isinstance(arg, evaluable.Argument) and arg._name == __var:
-          if not all(isinstance(n, int) for n in arg.shape):
+          if not all(n.isconstant for n in arg.shape):
             raise ValueError('arguments with variable shapes are not supported')
-          __var = Argument(__var, arg.shape, dtype=arg.dtype)
+          __var = Argument(__var, tuple(map(int, arg.shape)), dtype=arg.dtype)
           break
       else:
         raise ValueError('no such argument: {}'.format(__var))
@@ -426,10 +429,10 @@ class Array(Lowerable, metaclass=_ArrayMeta):
         if arg._name in shapes:
           if shapes.get(arg._name, arg.shape) != arg.shape:
             raise Exception('non-matching arguments shapes encountered')
-        elif not all(isinstance(n, int) for n in arg.shape):
+        elif not all(n.isconstant for n in arg.shape):
           raise ValueError('arguments with variable shapes are not supported')
         else:
-          shapes[arg._name] = arg.shape
+          shapes[arg._name] = tuple(map(int, arg.shape))
     return shapes
 
 def _prepend_points(__arg: evaluable.Array, *, coordinates: Sequence[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
@@ -633,7 +636,7 @@ class _Jacobian(Array):
 
   def lower(self, *, coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
     assert coordinates
-    ndims = coordinates[0].shape[-1]
+    ndims = int(coordinates[0].shape[-1])
     return evaluable.jacobian(self._geom.lower(coordinates=coordinates, **kwargs), ndims)
 
 class _Elemwise(Array):
@@ -2607,7 +2610,7 @@ class Basis(Array):
     self._arg_dofs, self._arg_coeffs = [f.optimized_for_numpy for f in self.f_dofs_coeffs(_index)]
     assert self._arg_dofs.ndim == 1
     assert self._arg_coeffs.ndim == 1 + coords.shape[0]
-    assert self._arg_dofs.shape[0] == self._arg_coeffs.shape[0]
+    assert evaluable.equalindex(self._arg_dofs.shape[0], self._arg_coeffs.shape[0])
     self._arg_ndofs = evaluable.asarray(self._arg_dofs.shape[0])
 
   def lower(self, **kwargs: Any) -> evaluable.Array:

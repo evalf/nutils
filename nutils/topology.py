@@ -197,7 +197,7 @@ class Topology(types.Singleton):
     retvals = [sparse.toarray(retval) for retval in self.sample(ischeme, degree).integrate_sparse(
       [function.kronecker(func, pos=self.f_index, length=len(self), axis=0) for func in funcs], arguments=arguments)]
     if asfunction:
-      return [function.Elemwise(retval, self.f_index, dtype=float) for retval in retvals]
+      return [function.get(retval, 0, self.f_index) for retval in retvals]
     else:
       return retvals
 
