@@ -2348,20 +2348,6 @@ def Elemwise(data:types.tuple[types.arraydata], index:asarray, dtype:asdtype):
     elemwise = Unravel(elemwise, shape[i], cumprod[i+1])
   return elemwise
 
-class ElemwiseFromCallable(Array):
-
-  __slots__ = '_func', '_index'
-
-  @types.apply_annotations
-  def __init__(self, func, index:asarray, shape:asshape, dtype:asdtype):
-    self._func = func
-    self._index = index
-    super().__init__(args=[index], shape=shape, dtype=dtype)
-
-  def evalf(self, index):
-    i = index.__index__()
-    return types.frozenarray(self._func(i), dtype=self.dtype)
-
 class Eig(Evaluable):
 
   __slots__ = 'symmetric', 'func', '_w_dtype', '_vt_dtype'
