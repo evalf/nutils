@@ -2664,10 +2664,10 @@ class Basis(Array):
       dof = numpy.unique(dof)
       if dof[0] < 0 or dof[-1] >= self.ndofs:
         raise IndexError('dof out of bounds')
-      if self.get_support == __class__.get_support.__get__(self, __class__):
-        return numpy.unique([ielem for ielem in range(self.nelems) if numpy.in1d(self.get_dofs(ielem), dof, assume_unique=True).any()])
-      else:
-        return numpy.unique(numpy.fromiter(itertools.chain.from_iterable(map(self.get_support, dof)), dtype=int))
+      mask = numpy.zeros(self.nelems, dtype=bool)
+      for d in dof:
+        mask[numpy.asarray(self.get_support(d))] = True
+      return mask.nonzero()[0]
     elif numeric.isboolarray(dof):
       if dof.shape != (self.ndofs,):
         raise IndexError('dof has invalid shape')
