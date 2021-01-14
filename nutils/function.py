@@ -2543,6 +2543,39 @@ def rotmat(__arg: IntoArray) -> Array:
 
 # BASES
 
+def _int_or_vec(f, self, arg, argname, nargs, nvals):
+  if isinstance(arg, numbers.Integral):
+    return f(self, int(numeric.normdim(nargs, arg)))
+  if numeric.isboolarray(arg):
+    if arg.shape != (nargs,):
+      raise IndexError('{} has invalid shape'.format(argname))
+    arg, = arg.nonzero()
+  if numeric.isintarray(arg):
+    if arg.ndim != 1:
+      raise IndexError('{} has invalid number of dimensions'.format(argname))
+    if len(arg) == 0:
+      return numpy.array([], dtype=int)
+    arg = numpy.unique(arg)
+    if arg[0] < 0 or arg[-1] >= nargs:
+      raise IndexError('{} out of bounds'.format(argname))
+    mask = numpy.zeros(nvals, dtype=bool)
+    for d in arg:
+      mask[numpy.asarray(f(self, d))] = True
+    return mask.nonzero()[0]
+  raise IndexError('invalid {}'.format(argname))
+
+def _int_or_vec_dof(f):
+  @functools.wraps(f)
+  def wrapped(self, dof: Union[numbers.Integral, numpy.ndarray]) -> numpy.ndarray:
+    return _int_or_vec(f, self, arg=dof, argname='dof', nargs=self.ndofs, nvals=self.nelems)
+  return wrapped
+
+def _int_or_vec_ielem(f):
+  @functools.wraps(f)
+  def wrapped(self, ielem: Union[numbers.Integral, numpy.ndarray]) -> numpy.ndarray:
+    return _int_or_vec(f, self, arg=ielem, argname='ielem', nargs=self.nelems, nvals=self.ndofs)
+  return wrapped
+
 class Basis(Array):
   '''Abstract base class for bases.
 
@@ -2591,6 +2624,7 @@ class Basis(Array):
         support[dof].append(ielem)
     return tuple(types.frozenarray(ielems, dtype=int) for ielems in support)
 
+  @_int_or_vec_dof
   def get_support(self, dof: Union[numbers.Integral, numpy.ndarray]) -> numpy.ndarray:
     '''Return the support of basis function ``dof``.
 
@@ -2610,27 +2644,9 @@ class Basis(Array):
         The elements (as indices) where function ``dof`` has support.
     '''
 
-    if isinstance(dof, numbers.Integral):
-      return self._computed_support[int(dof)]
-    elif numeric.isintarray(dof):
-      if dof.ndim != 1:
-        raise IndexError('dof has invalid number of dimensions')
-      if len(dof) == 0:
-        return numpy.array([], dtype=int)
-      dof = numpy.unique(dof)
-      if dof[0] < 0 or dof[-1] >= self.ndofs:
-        raise IndexError('dof out of bounds')
-      mask = numpy.zeros(self.nelems, dtype=bool)
-      for d in dof:
-        mask[numpy.asarray(self.get_support(d))] = True
-      return mask.nonzero()[0]
-    elif numeric.isboolarray(dof):
-      if dof.shape != (self.ndofs,):
-        raise IndexError('dof has invalid shape')
-      return self.get_support(numpy.where(dof)[0])
-    else:
-      raise IndexError('invalid dof')
+    return self._computed_support[dof]
 
+  @_int_or_vec_ielem
   def get_dofs(self, ielem: Union[int, numpy.ndarray]) -> numpy.ndarray:
     '''Return an array of indices of basis functions with support on element ``ielem``.
 
@@ -2650,26 +2666,7 @@ class Basis(Array):
         A 1D Array of indices.
     '''
 
-    if isinstance(ielem, numbers.Integral):
-      return self._arg_dofs.eval(_index=numeric.normdim(self.nelems, ielem))
-    elif numeric.isintarray(ielem):
-      if ielem.ndim != 1:
-        raise IndexError('invalid ielem')
-      if len(ielem) == 0:
-        return numpy.array([], dtype=int)
-      ielem = numpy.unique(ielem)
-      if ielem[0] < 0 or ielem[-1] >= self.nelems:
-        raise IndexError('ielem out of bounds')
-      mask = numpy.zeros(self.ndofs, dtype=bool)
-      for i in ielem:
-        mask[self._arg_dofs.eval(_index=i)] = True
-      return numpy.nonzero(mask)[0]
-    elif numeric.isboolarray(ielem):
-      if ielem.shape != (self.nelems,):
-        raise IndexError('ielem has invalid shape')
-      return self.get_dofs(numpy.where(ielem)[0])
-    else:
-      raise IndexError('invalid index')
+    return self._arg_dofs.eval(_index=ielem)
 
   def get_ndofs(self, ielem: int) -> int:
     '''Return the number of basis functions with support on element ``ielem``.'''
@@ -2765,9 +2762,8 @@ class DiscontBasis(Basis):
     self._offsets = numpy.cumsum([0] + [c.shape[0] for c in self._coeffs])
     super().__init__(self._offsets[-1], len(coefficients), index, coords)
 
+  @_int_or_vec_dof
   def get_support(self, dof: Union[int, numpy.ndarray]) -> numpy.ndarray:
-    if not isinstance(dof, numbers.Integral):
-      return super().get_support(dof)
     ielem = numpy.searchsorted(self._offsets[:-1], numeric.normdim(self.ndofs, dof), side='right')-1
     return numpy.array([ielem], dtype=int)
 
@@ -2845,9 +2841,8 @@ class StructuredBasis(Basis):
     self._transforms_shape = tuple(map(int, transforms_shape))
     super().__init__(util.product(dofs_shape), util.product(transforms_shape), index, coords)
 
+  @_int_or_vec_dof
   def get_support(self, dof: Union[int, numpy.ndarray]) -> numpy.ndarray:
-    if not isinstance(dof, numbers.Integral):
-      return super().get_support(dof)
     dof = numeric.normdim(self.ndofs, dof)
     ndofs = 1
     ntrans = 1
