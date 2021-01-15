@@ -67,6 +67,7 @@ for path in sorted((root/'docs').glob('**/*.rst')):
   if test.examples:
     doctest.addTest(DocTestCase(test, optionflags=_doctest.ELLIPSIS, checker=checker, requires=['matplotlib']))
 
+del DocTestCase
 
 def load_tests(loader, suite, pattern):
   # Ignore default suite (containing `DocTestCase`).
