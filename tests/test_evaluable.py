@@ -567,7 +567,7 @@ class elemwise(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, geom = mesh.rectilinear([5])
+    self.domain, geom = mesh.rectilinear([7])
     self.index = self.domain.f_index.prepare_eval(ndims=self.domain.ndims, npoints=None)
     self.data = tuple(map(types.frozenarray, (
       numpy.arange(1, dtype=float).reshape(1,1),
@@ -575,6 +575,8 @@ class elemwise(TestCase):
       numpy.arange(3, dtype=float).reshape(3,1),
       numpy.arange(4, dtype=float).reshape(2,2),
       numpy.arange(6, dtype=float).reshape(3,2),
+      numpy.arange(4, dtype=float).reshape(2,2),
+      numpy.arange(3, dtype=float).reshape(3,1),
     )))
     self.func = evaluable.Elemwise(self.data, self.index, float)
 

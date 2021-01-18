@@ -2326,24 +2326,27 @@ class Sampled(Array):
     assert numpy.equal(points, expect).all(), 'illegal point set'
     return numpy.eye(len(points), dtype=int)
 
-class Elemwise(Array):
-
-  __slots__ = 'data',
-
-  @types.apply_annotations
-  def __init__(self, data:types.tuple[types.arraydata], index:asarray, dtype:asdtype):
-    assert all(d.dtype == dtype for d in data), 'data does not match dtype'
-    self.data = data
-    shape = get([d.shape for d in data], 0, index)
-    super().__init__(args=[index], shape=shape, dtype=dtype)
-
-  def evalf(self, index):
-    return numpy.asarray(self.data[index])
-
-  def _simplified(self):
-    d0 = self.data[0]
-    if all(di == d0 for di in self.data[1:]):
-      return Constant(d0)
+@types.apply_annotations
+def Elemwise(data:types.tuple[types.arraydata], index:asarray, dtype:asdtype):
+  unique, indices = util.unique(data)
+  if len(unique) == 1:
+    return Constant(unique[0])
+  shape = [Take(s, index).simplified for s in numpy.array([d.shape for d in data]).T] # use original index to avoid potential inconsistencies with other arrays
+  ndim = len(shape)
+  if len(unique) < len(data):
+    index = Take(indices, index)
+  raveled = list(map(numpy.ravel, unique))
+  concat = numpy.concatenate(raveled)
+  if ndim == 0:
+    return Take(concat, index)
+  cumprod = list(shape)
+  for i in reversed(range(ndim-1)):
+    cumprod[i] *= cumprod[i+1] # work backwards so that the shape check matches in Unravel
+  offsets = numpy.cumsum([0, *map(len, raveled[:-1])])
+  elemwise = Take(concat, Range(cumprod[0], Take(offsets, index)))
+  for i in range(ndim-1):
+    elemwise = Unravel(elemwise, shape[i], cumprod[i+1])
+  return elemwise
 
 class ElemwiseFromCallable(Array):
 
