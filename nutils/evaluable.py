@@ -48,7 +48,7 @@ if typing.TYPE_CHECKING:
 else:
   Protocol = object
 
-from . import util, types, numeric, cache, transform, expression, warnings, parallel, sparse
+from . import debug_flags, util, types, numeric, cache, transform, expression, warnings, parallel, sparse
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph
 import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log, weakref, time, contextlib, subprocess
 _ = numpy.newaxis
@@ -733,8 +733,9 @@ def as_axis_property(value):
 
 # ARRAYS
 
-if __debug__:
+_ArrayMeta = type(Evaluable)
 
+if debug_flags.sparse:
   def _chunked_assparse_checker(orig):
     assert isinstance(orig, property)
     @property
@@ -757,15 +758,32 @@ if __debug__:
       return chunks
     return _assparse
 
-  class _ArrayMeta(type(Evaluable)):
+  class _ArrayMeta(_ArrayMeta):
     def __new__(mcls, name, bases, namespace):
       if '_assparse' in namespace:
         namespace['_assparse'] = _chunked_assparse_checker(namespace['_assparse'])
       return super().__new__(mcls, name, bases, namespace)
 
-else:
+if debug_flags.evalf:
+  class _evalf_checker:
+    def __init__(self, orig):
+      self.evalf_obj = getattr(orig, '__get__', lambda *args: orig)
+    def __get__(self, instance, owner):
+      evalf = self.evalf_obj(instance, owner)
+      @functools.wraps(evalf)
+      def evalf_with_check(*args, **kwargs):
+        res = evalf(*args, **kwargs)
+        assert not hasattr(instance, 'dtype') or asdtype(res.dtype) == instance.dtype, ((instance.dtype, res.dtype), instance, res)
+        assert not hasattr(instance, 'ndim') or res.ndim == instance.ndim
+        assert not hasattr(instance, 'shape') or all(m == n for m, n in zip(res.shape, instance.shape) if isinstance(n, int)), 'shape mismatch'
+        return res
+      return evalf_with_check
 
-  _ArrayMeta = type(Evaluable)
+  class _ArrayMeta(_ArrayMeta):
+    def __new__(mcls, name, bases, namespace):
+      if 'evalf' in namespace:
+        namespace['evalf'] = _evalf_checker(namespace['evalf'])
+      return super().__new__(mcls, name, bases, namespace)
 
 class AsEvaluableArray(Protocol):
   'Protocol for conversion into an :class:`Array`.'
@@ -1545,7 +1563,7 @@ class Determinant(Array):
   def __init__(self, func:asarray):
     assert isarray(func) and func.ndim >= 2 and func.shape[-1] == func.shape[-2]
     self.func = func
-    super().__init__(args=[func], shape=func.shape[:-2], dtype=func.dtype)
+    super().__init__(args=[func], shape=func.shape[:-2], dtype=_jointdtype(func.dtype, float))
 
   def _simplified(self):
     return self.func._determinant(self.ndim, self.ndim+1)
@@ -2028,7 +2046,8 @@ class Power(Array):
     assert func.shape == power.shape
     self.func = func
     self.power = power
-    super().__init__(args=[func,power], shape=func.shape, dtype=float)
+    dtype = float if func.dtype == power.dtype == int else _jointdtype(func.dtype, power.dtype)
+    super().__init__(args=[func,power], shape=func.shape, dtype=dtype)
 
   def _simplified(self):
     if iszero(self.power):
@@ -2320,7 +2339,7 @@ class Elemwise(Array):
 
   def evalf(self, index):
     assert index.ndim == 0
-    return self.data[index]
+    return self.data[index].astype(self.dtype, copy=False, casting='same_kind')
 
   def _simplified(self):
     if all(map(numeric.isint, self.shape)) and all(self.data[0] == data for data in self.data[1:]):
@@ -2338,31 +2357,36 @@ class ElemwiseFromCallable(Array):
 
   def evalf(self, index):
     i = index.__index__()
-    return types.frozenarray(self._func(i))
+    return types.frozenarray(self._func(i), dtype=self.dtype)
 
 class Eig(Evaluable):
 
-  __slots__ = 'symmetric', 'func'
+  __slots__ = 'symmetric', 'func', '_w_dtype', '_vt_dtype'
 
   @types.apply_annotations
   def __init__(self, func:asarray, symmetric:bool=False):
     assert func.ndim >= 2 and func.shape[-1] == func.shape[-2]
     self.symmetric = symmetric
     self.func = func
+    self._w_dtype = float if symmetric else complex
+    self._vt_dtype = _jointdtype(float, func.dtype if symmetric else complex)
     super().__init__(args=[func])
 
   def __len__(self):
     return 2
 
   def __iter__(self):
-    yield ArrayFromTuple(self, index=0, shape=self.func.shape[:-1], dtype=complex if not self.symmetric else float)
-    yield ArrayFromTuple(self, index=1, shape=self.func.shape, dtype=complex if not self.symmetric or self.func.dtype == complex else float)
+    yield ArrayFromTuple(self, index=0, shape=self.func.shape[:-1], dtype=self._w_dtype)
+    yield ArrayFromTuple(self, index=1, shape=self.func.shape, dtype=self._vt_dtype)
 
   def _simplified(self):
     return self.func._eig(self.symmetric)
 
   def evalf(self, arr):
-    return (numpy.linalg.eigh if self.symmetric else numpy.linalg.eig)(arr)
+    w, vt = (numpy.linalg.eigh if self.symmetric else numpy.linalg.eig)(arr)
+    w = w.astype(self._w_dtype, copy=False)
+    vt = vt.astype(self._vt_dtype, copy=False)
+    return (w, vt)
 
 class ArrayFromTuple(Array):
 

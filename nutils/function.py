@@ -25,7 +25,7 @@ else:
   Protocol = object
 
 from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Dict, Mapping, overload, List, Set
-from . import evaluable, numeric, util, expression, types, warnings
+from . import evaluable, numeric, util, expression, types, warnings, debug_flags
 from .transformseq import Transforms
 import builtins, numpy, re, types as builtin_types, itertools, functools, operator, abc, numbers
 
@@ -46,24 +46,23 @@ class Lowerable(Protocol):
     coordinates : sequence of :class:`nutils.evaluable.Array` objects
     '''
 
-if __debug__:
+_ArrayMeta = type(Lowerable)
+
+if debug_flags.lower:
   def _lower(self, **kwargs):
     result = self._ArrayMeta__lower(**kwargs)
     assert isinstance(result, evaluable.Array)
     offset = kwargs['coordinates'][0].ndim-1 if kwargs.get('coordinates', ()) else 0
     assert result.ndim == self.ndim + offset
-    for n, m in zip(result.shape[offset:], self.shape):
-      if isinstance(m, int):
-        assert n == m, 'shape mismatch'
+    assert all(m == n for m, n in zip(result.shape[offset:], self.shape) if isinstance(n, int)), 'shape mismatch'
     return result
-  class _ArrayMeta(type(Lowerable)):
+
+  class _ArrayMeta(_ArrayMeta):
     def __new__(mcls, name, bases, namespace):
       if 'lower' in namespace:
         namespace['_ArrayMeta__lower'] = namespace.pop('lower')
         namespace['lower'] = _lower
       return super().__new__(mcls, name, bases, namespace)
-else:
-  _ArrayMeta = type
 
 class Array(Lowerable, metaclass=_ArrayMeta):
   '''Base class for array valued functions.

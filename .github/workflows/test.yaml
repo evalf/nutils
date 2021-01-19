@@ -107,6 +107,7 @@ jobs:
       - name: Test
         env:
           LD_LIBRARY_PATH: ${{ steps.get-lib-dir.outputs.libdir }}
+          NUTILS_DEBUG: all
         run: |
           mkdir testenv
           cp -r examples docs tests .coveragerc testenv
@@ -168,7 +169,7 @@ jobs:
       - name: Run unit tests
         env:
           _image: ${{ steps.build.outputs.id }}
-        run: podman run --pull=never --rm -v "$PWD/tests:/app/tests:ro" -v "$PWD/examples:/app/examples:ro" "$_image" -m unittest -bq
+        run: podman run --pull=never --rm -v "$PWD/tests:/app/tests:ro" -v "$PWD/examples:/app/examples:ro" --env NUTILS_DEBUG=all "$_image" -m unittest -bq
       - name: Push image to container registry
         if: ${{ github.event_name == 'push' }}
         env:
