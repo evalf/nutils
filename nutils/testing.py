@@ -162,6 +162,8 @@ class TestCase(unittest.TestCase):
   to ignore warnings for the entire class.
   '''
 
+  maxDiff = None # prevent assertEqual from shortening the diff error message
+
   def enter_context(self, ctx):
     retval = ctx.__enter__()
     self.addCleanup(ctx.__exit__, None, None, None)

@@ -858,7 +858,8 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   __pow__ = power
   __abs__ = lambda self: abs(self)
   __mod__  = lambda self, other: mod(self, other)
-  __str__ = __repr__ = lambda self: '{}.{}<{}>'.format(type(self).__module__, type(self).__name__, ','.join(map(str, self.shape)) if hasattr(self, 'shape') else '?')
+  __str__ = __repr__ = lambda self: '{}.{}<{}>'.format(type(self).__module__, type(self).__name__, self._shape_str(form=str))
+  _shape_str = lambda self, form: '{}:{}'.format(self.dtype.__name__[0] if hasattr(self, 'dtype') else '?', ','.join(map(form, self._axes)) if hasattr(self, '_axes') else '?')
 
   sum = sum
   prod = product
@@ -923,7 +924,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     if self in cache:
       return cache[self]
     args = tuple(arg._node(cache, subgraph, times) for arg in self._Evaluable__args)
-    label = '\n'.join(filter(None, (type(self).__name__, self._node_details, ','.join(map(repr, self._axes)))))
+    label = '\n'.join(filter(None, (type(self).__name__, self._node_details, self._shape_str(form=repr))))
     cache[self] = node = RegularNode(label, args, {}, (type(self).__name__, times[self]), subgraph)
     return node
 
@@ -2855,13 +2856,13 @@ class Argument(DerivativeTargetBase):
       return zeros(self.shape+var.shape)
 
   def __str__(self):
-    return '{} {!r} <{}>'.format(self.__class__.__name__, self._name, ','.join(map(str, self.shape)))
+    return '{} {!r} <{}>'.format(self.__class__.__name__, self._name, self._shape_str(form=str))
 
   def _node(self, cache, subgraph, times):
     if self in cache:
       return cache[self]
     else:
-      label = '\n'.join(filter(None, (type(self).__name__, self._name, ','.join(map(repr, self._axes)))))
+      label = '\n'.join(filter(None, (type(self).__name__, self._name, self._shape_str(form=repr))))
       cache[self] = node = DuplicatedLeafNode(label, (type(self).__name__, times[self]))
       return node
 
