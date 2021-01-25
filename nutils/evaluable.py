@@ -2644,7 +2644,7 @@ class SwapInflateTake(Evaluable):
         for j in [subinflate[k]] if uniqueinflate else numpy.equal(inflateidx.ravel(), n).nonzero()[0]:
           newinflate.append(i)
           newtake.append(j)
-    return numpy.array(newtake), numpy.array(newinflate), numpy.array(len(newtake))
+    return numpy.array(newtake, dtype=int), numpy.array(newinflate, dtype=int), numpy.array(len(newtake))
 
 class Diagonalize(Array):
 
