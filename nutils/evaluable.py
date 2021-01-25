@@ -2515,7 +2515,7 @@ class Inflate(Array):
   def evalf(self, array, indices, length):
     assert indices.ndim == self.dofmap.ndim
     assert length.ndim == 0
-    if self.warn and int(length) > len(indices):
+    if self.warn and int(length) > indices.size:
       warnings.warn('using explicit inflation; this is usually a bug.', ExpensiveEvaluationWarning)
     inflated = numpy.zeros(array.shape[:array.ndim-indices.ndim] + (length,), dtype=self.dtype)
     numpy.add.at(inflated, (slice(None),)*(self.ndim-1)+(indices,), array)
