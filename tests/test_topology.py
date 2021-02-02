@@ -18,7 +18,7 @@ class TopologyAssertions:
           index = boundary.transforms.index(trans)
           bmask[index] += 1
         else:
-          ioppedge = domain.connectivity[ioppelem].index(ielem)
+          ioppedge = util.index(domain.connectivity[ioppelem], ielem)
           oppetrans, opperef = domain.references[ioppelem].edges[ioppedge]
           opptrans = domain.transforms[ioppelem] + (oppetrans,)
           try:

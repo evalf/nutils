@@ -53,7 +53,7 @@ class elem(TestCase):
       for iedge, ioppchild in enumerate(edges):
         if ioppchild != -1:
           self.assertIn(ichild, self.ref.connectivity[ioppchild])
-          ioppedge = self.ref.connectivity[ioppchild].index(ichild)
+          ioppedge = util.index(self.ref.connectivity[ioppchild], ichild)
           self.assertEqual(
             self.ref.child_transforms[ichild] * self.ref.child_refs[ichild].edge_transforms[iedge],
             (self.ref.child_transforms[ioppchild] * self.ref.child_refs[ioppchild].edge_transforms[ioppedge]).flipped)

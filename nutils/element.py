@@ -947,7 +947,7 @@ class WithChildrenReference(Reference):
           continue # opposite is complete, so iedge cannot form a new external boundary
         eref = cref.edge_refs[iedge]
         if coppref: # opposite new child is not empty
-          eref -= coppref.edge_refs[self.baseref.connectivity[jchild].index(ichild)]
+          eref -= coppref.edge_refs[util.index(self.baseref.connectivity[jchild], ichild)]
         if eref:
           extra_edges.append((ichild, iedge, eref))
     return tuple(extra_edges)

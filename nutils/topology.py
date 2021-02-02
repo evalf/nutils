@@ -615,7 +615,7 @@ class Topology(types.Singleton):
             references.append(edgeref)
             selection.append(iglobaledge)
           else:
-            ioppedge = self.connectivity[ioppelem].index(ielem)
+            ioppedge = util.index(self.connectivity[ioppelem], ielem)
             ref = edgeref - self.references[ioppelem].edge_refs[ioppedge]
             if ref:
               references.append(ref)
@@ -646,7 +646,7 @@ class Topology(types.Singleton):
     for ielem, (ioppelems, elemref, elemtrans) in enumerate(zip(self.connectivity, self.references, self.transforms)):
       for (edgetrans, edgeref), ioppelem, iglobaledge in zip(elemref.edges, ioppelems, iglobaledgeiter):
         if edgeref and -1 < ioppelem < ielem:
-          ioppedge = self.connectivity[ioppelem].index(ielem)
+          ioppedge = util.index(self.connectivity[ioppelem], ielem)
           oppedgetrans, oppedgeref = self.references[ioppelem].edges[ioppedge]
           ref = oppedgeref and edgeref & oppedgeref
           if ref:
@@ -692,7 +692,7 @@ class Topology(types.Singleton):
       for iedge, jelem in enumerate(ioppelems): # loop over element neighbors and merge dofs
         if jelem < ielem:
           continue # either there is no neighbor along iedge or situation will be inspected from the other side
-        jedge = self.connectivity[jelem].index(ielem)
+        jedge = util.index(self.connectivity[jelem], ielem)
         idofs = offsets[ielem] + self.references[ielem].get_edge_dofs(degree, iedge)
         jdofs = offsets[jelem] + self.references[jelem].get_edge_dofs(degree, jedge)
         for idof, jdof in zip(idofs, jdofs):
@@ -1538,7 +1538,7 @@ class SubsetTopology(Topology):
           # If the edge did have an opposite in basetopology then there is a
           # possibility this opposite (partially) disappeared, in which case
           # the exposed part is added to the trimmed group.
-          ioppedge = baseconnectivity[ioppelem].index(ielem)
+          ioppedge = util.index(baseconnectivity[ioppelem], ielem)
           oppref = self.refs[ioppelem]
           edgeref -= oppref.edge_refs[ioppedge]
           if edgeref:
@@ -1623,7 +1623,7 @@ class RefinedTopology(Topology):
           for ichild, ichildedge in self.basetopo.references[ielem].edgechildren[iedge]:
             connectivity[offsets[ielem]+ichild][ichildedge] = -1
         elif jelem < ielem:
-          jedge = self.basetopo.connectivity[jelem].index(ielem)
+          jedge = util.index(self.basetopo.connectivity[jelem], ielem)
           for (ichild, ichildedge), (jchild, jchildedge) in zip(self.basetopo.references[ielem].edgechildren[iedge], self.basetopo.references[jelem].edgechildren[jedge]):
             connectivity[offsets[ielem]+ichild][ichildedge] = offsets[jelem]+jchild
             connectivity[offsets[jelem]+jchild][jchildedge] = offsets[ielem]+ichild

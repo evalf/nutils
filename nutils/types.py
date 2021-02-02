@@ -1154,7 +1154,7 @@ class _frozenarraymeta(CacheMeta):
       return self(value, dtype=dtype)
     return constructor
 
-class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
+class frozenarray(collections.abc.Iterable, metaclass=_frozenarraymeta):
   '''
   An immutable version (and drop-in replacement) of :class:`numpy.ndarray`.
 
@@ -1301,6 +1301,7 @@ class frozenarray(collections.abc.Sequence, metaclass=_frozenarraymeta):
   flat = property(lambda self: self.__base.flat)
   T = property(lambda self: frozenarray(self.__base.T, copy=False))
 
+  __iter__ = lambda self: (frozenarray(a, copy=False) for a in self.__base) if self.ndim > 1 else iter(self.__base)
   __len__ = lambda self: self.__base.__len__()
   __repr__ = lambda self: 'frozen'+self.__base.__repr__().replace('\n', '\n      ')
   __str__ = lambda self: self.__base.__str__()
