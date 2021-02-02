@@ -36,8 +36,8 @@ def main(nelems:int, ndims:int, degree:int, timescale:float, newtontol:float, en
   ns.f = '.5 u^2'
   ns.C = 1
 
-  res = domain.integral('-d(basis_n, x_i) δ_i0 f J(x)' @ ns, degree=5)
-  res += domain.interfaces.integral('-[basis_n] n(x_i) δ_i0 ({f} - .5 C [u] n(x_j) δ_j0) J(x)' @ ns, degree=degree*2)
+  res = domain.integral('-d(basis_n, x)_0 f J(x)' @ ns, degree=5)
+  res += domain.interfaces.integral('-[basis_n] n(x)_0 ({f} - .5 C [u] n(x)_0) J(x)' @ ns, degree=degree*2)
   inertia = domain.integral('basis_n u J(x)' @ ns, degree=5)
 
   sqr = domain.integral('(u - exp(-sum:i((5 (x_i - 0.5_i))^2)))^2 J(x)' @ ns, degree=5)

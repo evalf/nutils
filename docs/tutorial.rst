@@ -73,7 +73,7 @@ concepts involved.
     optimize > constrained 1/5 dofs
     optimize > optimum value 0.00e+00
 
-    >>> res = topo.integral('d(basis_n, x_i) d(u, x_i) J(x)' @ ns, degree=0)
+    >>> res = topo.integral('d(basis_n, x)_i d(u, x)_i J(x)' @ ns, degree=0)
     >>> res -= topo.boundary['right'].integral('basis_n J(x)' @ ns, degree=0)
     >>> lhs = solver.solve_linear('lhs', residual=res, constrain=cons)
     solve > solving 4 dof system to machine precision using arnoldi solver
@@ -376,9 +376,9 @@ statements are equivalent:
     >>> ns.g = ns.c[:,numpy.newaxis,numpy.newaxis]*ns.A[numpy.newaxis,:,:] # equivalent w/o expression
 
 Operator ``d`` returns the gradient of a variable with respect to a geometry.
-e.g. the gradient of the basis is ``d(basis_n, x_i)`` and the laplacian
-``d(basis_n, x_i, x_i)``.  This works with expressions as well, e.g. ``d(2
-basis_n + basis_n^2, x_i)`` is the gradient of ``2 basis_n + basis_n^2``.
+e.g. the gradient of the basis is ``d(basis_n, x)_i`` and the laplacian
+``d(basis_n, x, x)_ii``.  This works with expressions as well, e.g. ``d(2
+basis_n + basis_n^2, x)_i`` is the gradient of ``2 basis_n + basis_n^2``.
 
 Manual evaluation
 ~~~~~~~~~~~~~~~~~
@@ -506,7 +506,7 @@ coordinate representation via the :meth:`Matrix.export()
 <nutils.matrix.Matrix.export>` method.  An example:
 
 .. console::
-    >>> M = topo.integral(ns.eval_nm('d(basis_n, x_i) d(basis_m, x_i) J(x)'), degree=1).eval()
+    >>> M = topo.integral(ns.eval_nm('d(basis_n, x)_i d(basis_m, x)_i J(x)'), degree=1).eval()
     >>> M.export('dense')
     array([[ 4., -4.,  0.,  0.,  0.],
            [-4.,  8., -4.,  0.,  0.],
@@ -629,7 +629,7 @@ Consider again the Laplace problem stated above.  The residual
 :eq:`laplace_residual` is implemented as
 
 .. console::
-    >>> res = topo.integral('d(basis_n, x_i) d(u, x_i) J(x)' @ ns, degree=0)
+    >>> res = topo.integral('d(basis_n, x)_i d(u, x)_i J(x)' @ ns, degree=0)
     >>> res -= topo.boundary['right'].integral('basis_n J(x)' @ ns, degree=0)
 
 Since this problem is linear in argument ``lhs``, we can use the
@@ -794,7 +794,7 @@ example.
 The residual :eq:`laplace2_residual` is implemented as
 
 .. console::
-    >>> res = topo.integral('d(basis_n, x_i) d(u, x_i) J(x)' @ ns, degree=2)
+    >>> res = topo.integral('d(basis_n, x)_i d(u, x)_i J(x)' @ ns, degree=2)
     >>> res -= topo.boundary['right'].integral('basis_n cos(1) cosh(x_1) J(x)' @ ns, degree=2)
 
 The Dirichlet boundary conditions are rewritten as a least squares problem and

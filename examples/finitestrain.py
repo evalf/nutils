@@ -46,7 +46,7 @@ def main(nelems:int, etype:str, btype:str, degree:int, poisson:float, angle:floa
   ns.ubasis = domain.basis(btype, degree=degree)
   ns.u_i = 'ubasis_k ?lhs_ki'
   ns.X_i = 'x_i + u_i'
-  ns.strain_ij = '.5 (d(u_i, x_j) + d(u_j, x_i))'
+  ns.strain_ij = '.5 (d(u_i, x)_j + d(u_j, x)_i)'
   ns.energy = 'lmbda strain_ii strain_jj + 2 mu strain_ij strain_ij'
 
   sqr = domain.boundary['left'].integral('u_k u_k J(x)' @ ns, degree=degree*2)
@@ -58,7 +58,7 @@ def main(nelems:int, etype:str, btype:str, degree:int, poisson:float, angle:floa
   X, energy = bezier.eval(['X', 'energy'] @ ns, lhs=lhs0)
   export.triplot('linear.png', X, energy, tri=bezier.tri, hull=bezier.hull)
 
-  ns.strain_ij = '.5 (d(u_i, x_j) + d(u_j, x_i) + d(u_k, x_i) d(u_k, x_j))'
+  ns.strain_ij = '.5 (d(u_i, x)_j + d(u_j, x)_i + d(u_k, x)_i d(u_k, x)_j)'
   ns.energy = 'lmbda strain_ii strain_jj + 2 mu strain_ij strain_ij'
 
   energy = domain.integral('energy J(x)' @ ns, degree=degree*2)

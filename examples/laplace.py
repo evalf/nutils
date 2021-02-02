@@ -67,7 +67,7 @@ def main(nelems:int, etype:str, btype:str, degree:int):
   # spans its space. The result is an integral ``res`` that evaluates to a
   # vector matching the size of the function space.
 
-  res = domain.integral('d(basis_n, x_i) d(u, x_i) J(x)' @ ns, degree=degree*2)
+  res = domain.integral('d(basis_n, x)_i d(u, x)_i J(x)' @ ns, degree=degree*2)
   res -= domain.boundary['right'].integral('basis_n cos(1) cosh(x_1) J(x)' @ ns, degree=degree*2)
 
   # The Dirichlet constraints are set by finding the coefficients that minimize

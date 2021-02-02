@@ -538,17 +538,21 @@ class _ExpressionParser:
       See argument ``default_geometry_name`` of :func:`parse`.
   fixed_lengths : :class:`dict` of :class:`str` and :class:`int`
       See argument ``fixed_lengths`` of :func:`parse`.
+  function_shapes : :class:`dict` of callables
+      A mapping of function names to callables that return the shape of the
+      result of the call.
   '''
 
   eye_symbols = '$', 'δ'
   normal_symbols = 'n',
 
-  def __init__(self, expression, variables, arg_shapes, default_geometry_name, fixed_lengths):
+  def __init__(self, expression, variables, arg_shapes, default_geometry_name, fixed_lengths, function_shapes):
     self.expression = expression
     self.variables = variables
     self.arg_shapes = dict(arg_shapes)
     self.default_geometry_name = default_geometry_name
     self.fixed_lengths = fixed_lengths
+    self.function_shapes = function_shapes
 
   def highlight(f):
     'wrap ``f`` in a function that converts ``_IntermediateError`` objects'
@@ -689,6 +693,14 @@ class _ExpressionParser:
     return self._get_arg(name, indices)
 
   @highlight
+  def parse_consume_indices(self):
+    consumes = self._consume().data
+    for i, index in enumerate(consumes):
+      if index in consumes[i+1:]:
+        raise _IntermediateError('It is not allowed to consume the same index twice.')
+    return consumes
+
+  @highlight
   def parse_var(self, omitted_indices):
     'parse a component of a term, e.g. "1", "a_i", "(2 a_i)", "a_i^2", "abs(x)"'
 
@@ -768,23 +780,29 @@ class _ExpressionParser:
         if not omitted_indices and self._next.type == 'indices':
           generates_token = self._consume()
           generates = generates_token.data
-          generates_shape = tuple(_Length(pos) for pos, index in enumerate(generates, generates_token.pos) if not '0' <= index <= '9')
+          generates_shape = tuple(_Length(pos) for pos, index in enumerate(generates, generates_token.pos))
         else:
           generates = ''
           generates_shape = ()
-        consumes = self._consume().data if not omitted_indices and self._next.type == 'consumes' else ''
+        consumes = self.parse_consume_indices() if not omitted_indices and self._next.type == 'consumes' else ''
         self._consume_assert_equal('(')
-        args_omitted_indices = None
         if omitted_indices:
-          args_omitted_indices = self.parse_comma_separated(end=')', parse_item=functools.partial(self.parse_subexpression, omitted_indices=True))
-        elif not consumes:
-          try:
+          # The outer expression is parsed without indices, hence all arguments
+          # must be parsed without indices as well.
+          parse_arg = functools.partial(self.parse_subexpression, omitted_indices=True)
+        else:
+          # The outer expression is parsed with indices. Every argument is
+          # first parsed as an expression without indices and if this succeeds
+          # all axes will be consumed. If an argument is not parseable without
+          # indices, then none of the axes of that argument will be consumed.
+          def parse_arg():
             index = self._index
-            args_omitted_indices = self.parse_comma_separated(end=')', parse_item=functools.partial(self.parse_subexpression, omitted_indices=True))
-          except ExpressionSyntaxError:
-            self._index = index
-        if args_omitted_indices is None:
-          args = self.parse_comma_separated(end=')', parse_item=functools.partial(self.parse_subexpression, omitted_indices=False))
+            try:
+              return self.parse_subexpression(omitted_indices=True)
+            except ExpressionSyntaxError:
+              self._index = index
+            return self.parse_subexpression(omitted_indices=False)
+        args = self.parse_comma_separated(end=')', parse_item=parse_arg)
         # Parse trailing indices.
         if not omitted_indices and self._next.type == 'indices':
           if generates:
@@ -793,31 +811,71 @@ class _ExpressionParser:
           else:
             generates_token = self._consume()
             generates = generates_token.data
-            generates_shape = tuple(_Length(pos) for pos, index in enumerate(generates, generates_token.pos) if not '0' <= index <= '9')
-        if args_omitted_indices:
-          if not all(arg.shape == args_omitted_indices[0].shape for arg in args_omitted_indices):
-            raise _IntermediateError('All arguments should have the same shape.')
-          ast = ('call', _(name), _(len(generates)), _(args_omitted_indices[0].ndim), *(arg.ast for arg in args_omitted_indices))
-          if omitted_indices:
-            value = _ArrayOmittedIndices(ast, generates_shape)
-          else:
-            value = _Array._apply_indices(ast,
-                                          offset=0,
-                                          indices=generates,
-                                          shape=generates_shape,
-                                          summed=frozenset(),
-                                          linked_lengths=frozenset())
+            generates_shape = tuple(_Length(pos) for pos, index in enumerate(generates, generates_token.pos))
+        indices = ''
+        shape = []
+        if consumes:
+          # Populate `consumes_index` and the list of indices of the result
+          # of the function call. The `consumes_index` lists per argument per
+          # axis the position of this axis in the list of consumed indices, or
+          # -1 if the axis is not consumed.
+          cnt = dict.fromkeys(consumes, 0)
+          consumes_index = []
+          for iarg, arg in enumerate(args):
+            if isinstance(arg, _ArrayOmittedIndices):
+              if arg.ndim:
+                raise _IntermediateError('It is not allowed to use explicitly and implicitly consumed indices simultaneously.')
+              consumes_index.append(())
+            else: # `arg` is an instance of `_Array`
+              consumes_index_arg = []
+              for iaxis, (index, length) in enumerate(zip(arg.indices, arg.shape)):
+                if index in consumes:
+                  cnt[index] += 1
+                  consumes_index_arg.append(consumes.index(index))
+                else:
+                  indices += index
+                  shape.append(length)
+                  consumes_index_arg.append(-1)
+              consumes_index.append(tuple(consumes_index_arg))
+          for index in consumes:
+            if cnt[index] == 0:
+              raise _IntermediateError('Cannot consume index {} because this index does not appear any of the arguments.'.format(index))
+            elif cnt[index] > 1:
+              raise _IntermediateError('Index {} occurs more than twice.'.format(index))
         else:
-          if consumes:
-            if not all(set(consumes) <= set(arg.indices) for arg in args):
-              raise _IntermediateError('All axes to be consumed ({}) must be present in all arguments.'.format(consumes))
-            args = tuple(arg.transpose(''.join(i for i in arg.indices if i not in consumes)+consumes) for arg in args)
-          value = _Array._apply_indices(ast=('call', _(name), _(len(generates)), _(len(consumes)), *(arg.ast for arg in args)),
+          icons = 0
+          consumes_index = []
+          for iarg, arg in enumerate(args):
+            if isinstance(arg, _ArrayOmittedIndices):
+              consumes_index.append(tuple(range(icons, icons+arg.ndim)))
+              icons += arg.ndim
+            else:
+              consumes_index.append(tuple(-1 for i in range(arg.ndim)))
+              indices += arg.indices
+              shape.extend(arg.shape)
+        consumes_index = tuple(consumes_index)
+        linked_lengths = functools.reduce(operator.or_, (arg.linked_lengths for arg in args if isinstance(arg, _Array)), frozenset())
+        if name in self.function_shapes:
+          new_generates_shape = self.function_shapes[name](*(arg.shape for arg in args), ngenerated=len(generates), consumed=consumes_index)
+          assert len(new_generates_shape) == len(generates)
+          linked_lengths |= frozenset(zip(generates_shape, new_generates_shape))
+          generates_shape = new_generates_shape
+          ast = ('call-ext', _(name), _(consumes_index), _(len(generates)), *(map(_, generates_shape)), *(arg.ast for arg in args))
+        elif generates or consumes:
+          raise _IntermediateError('Function `{}` does not generate or consume axes.'.format(name))
+        else:
+          ast = ('call', _(name), *(arg.ast for arg in args))
+        indices = indices + generates
+        shape = tuple(shape) + tuple(generates_shape)
+        if omitted_indices:
+          value = _ArrayOmittedIndices(ast, shape)
+        else:
+          value = _Array._apply_indices(ast,
                                         offset=0,
-                                        indices=''.join(arg.indices[:arg.ndim-len(consumes)] for arg in args)+generates,
-                                        shape=sum((arg.shape[:arg.ndim-len(consumes)] for arg in args), ())+generates_shape,
-                                        summed=functools.reduce(operator.or_, (arg.summed for arg in args), frozenset(consumes)),
-                                        linked_lengths=functools.reduce(operator.or_, (arg.linked_lengths for arg in args), frozenset()))
+                                        indices=indices,
+                                        shape=shape,
+                                        summed=functools.reduce(operator.or_, (arg.summed for arg in args if isinstance(arg, _Array)), frozenset(consumes)),
+                                        linked_lengths=linked_lengths)
       elif name in self.normal_symbols:
         if self._next.type == 'geometry':
           warnings.deprecation('the normal syntax with explicitly geometry `n:x_i` is deprecated; use `n(x_i)` instead')
@@ -850,9 +908,9 @@ class _ExpressionParser:
         gradtype = {',': 'grad', ';': 'surfgrad'}[gradient.data]
         if target.data:
           if gradient.data == ',':
-            warnings.deprecation('the gradient syntax with explicit geometry `u_,x_i` is deprecated; use `d(u, x_i)` instead')
+            warnings.deprecation('the gradient syntax with explicit geometry `u_,x_i` is deprecated; use `d(u, x)_i` instead')
           else:
-            warnings.deprecation('the surface gradient syntax with explicit geometry `u_;x_i` is deprecated; use `surfgrad(u, x_i)` instead')
+            warnings.deprecation('the surface gradient syntax with explicit geometry `u_;x_i` is deprecated; use `surfgrad(u, x)_i` instead')
         geom = self._get_geometry(target.data or self.default_geometry_name)
         for i, index in enumerate(indices.data):
           value = value.grad(index, geom, gradtype)
@@ -1404,9 +1462,12 @@ def parse(expression, variables, indices, arg_shapes={}, default_geometry_name='
       ``expression``.
   '''
 
-  if functions is not None:
-    warnings.deprecation('argument `functions` is deprecated; the existence and number of arguments is not checked during parsing')
-  parser = _ExpressionParser(expression, variables, arg_shapes, default_geometry_name, fixed_lengths or {})
+  function_shapes = {}
+  if functions:
+    for name, s in functions.items():
+      if hasattr(s, 'shape'):
+        function_shapes[name] = s.shape
+  parser = _ExpressionParser(expression, variables, arg_shapes, default_geometry_name, fixed_lengths or {}, function_shapes)
   parser.tokenize()
   if indices is None:
     try:

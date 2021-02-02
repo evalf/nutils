@@ -33,7 +33,7 @@ def main(nelems:int, etype:str, degree:int, reynolds:float):
   ns.pbasis = domain.basis('std', degree=degree-1)
   ns.u_i = 'ubasis_ni ?u_n'
   ns.p = 'pbasis_n ?p_n'
-  ns.stress_ij = '(d(u_i, x_j) + d(u_j, x_i)) / Re - p δ_ij'
+  ns.stress_ij = '(d(u_i, x)_j + d(u_j, x)_i) / Re - p δ_ij'
 
   usqr = domain.boundary.integral('u_k u_k J(x)' @ ns, degree=degree*2)
   wallcons = solver.optimize('u', usqr, droptol=1e-15)
@@ -46,13 +46,13 @@ def main(nelems:int, etype:str, degree:int, reynolds:float):
   pcons[-1] = True # constrain pressure to zero in a point
   cons = dict(u=ucons, p=pcons)
 
-  ures = domain.integral('d(ubasis_ni, x_j) stress_ij J(x)' @ ns, degree=degree*2)
-  pres = domain.integral('pbasis_n d(u_k, x_k) J(x)' @ ns, degree=degree*2)
+  ures = domain.integral('d(ubasis_ni, x)_j stress_ij J(x)' @ ns, degree=degree*2)
+  pres = domain.integral('pbasis_n d(u_k, x)_k J(x)' @ ns, degree=degree*2)
   with treelog.context('stokes'):
     state0 = solver.solve_linear(('u', 'p'), (ures, pres), constrain=cons)
     postprocess(domain, ns, **state0)
 
-  ures += domain.integral('.5 (ubasis_ni d(u_i, x_j) - d(ubasis_ni, x_j) u_i) u_j J(x)' @ ns, degree=degree*3)
+  ures += domain.integral('.5 (ubasis_ni d(u_i, x)_j - d(ubasis_ni, x)_j u_i) u_j J(x)' @ ns, degree=degree*3)
   with treelog.context('navierstokes'):
     state1 = solver.newton(('u', 'p'), (ures, pres), arguments=state0, constrain=cons).solve(tol=1e-10)
     postprocess(domain, ns, **state1)
@@ -69,7 +69,7 @@ def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
   ns.streambasis = domain.basis('std', degree=2)[1:] # remove first dof to obtain non-singular system
   ns.stream = 'streambasis_n ?streamdofs_n' # stream function
   ns.ε = function.levicivita(2)
-  sqr = domain.integral('sum:i((u_i - ε_ij d(stream, x_j))^2) J(x)' @ ns, degree=4)
+  sqr = domain.integral('sum:i((u_i - ε_ij d(stream, x)_j)^2) J(x)' @ ns, degree=4)
   arguments['streamdofs'] = solver.optimize('streamdofs', sqr, arguments=arguments) # compute streamlines
 
   bezier = domain.sample('bezier', 9)

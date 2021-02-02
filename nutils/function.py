@@ -3301,17 +3301,23 @@ def _eval_ast(ast, functions):
       subs[arg.name] = value
     return replace_arguments(array, subs)
   elif op == 'call':
-    func, generates, consumes, *args = args
+    func, *args = args
     args = tuple(map(Array.cast, args))
-    kwargs = {}
-    if generates:
-      kwargs['generates'] = generates
-    if consumes:
-      kwargs['consumes'] = consumes
-    result = functions[func](*args, **kwargs)
-    shape = builtins.sum((arg.shape[:arg.ndim-consumes] for arg in args), ())
-    if result.ndim != len(shape) + generates or result.shape[:len(shape)] != shape:
-      raise ValueError('expected an array with shape {} and {} additional axes when calling {} but got {}'.format(shape, generates, func, result.shape))
+    result = functions[func](*args)
+    shape = tuple(itertools.chain.from_iterable(arg.shape for arg in args))
+    if result.shape != shape:
+      raise ValueError('expected an array with shape {} when calling {} but got {}'.format(shape, func, result.shape))
+    return result
+  elif op == 'call-ext':
+    func, consumed, ngenerated, *tail = args
+    generated, args = tuple(tail[:ngenerated]), tail[ngenerated:]
+    args = tuple(map(Array.cast, args))
+    assert len(args) == len(consumed)
+    assert all(len(arg.shape) == len(cons) for arg, cons in zip(args, consumed))
+    result = functions[func](*args, generated=generated, consumed=consumed)
+    shape = tuple(length for arg, consumed_arg in zip(args, consumed) for length, i in zip(arg.shape, consumed_arg) if i < 0)
+    if result.shape != shape + generated:
+      raise ValueError('expected an array with shape {} when calling {} but got {}'.format(shape + generated, func, result.shape))
     return result
   elif op == 'jacobian':
     geom, ndims = args
@@ -3363,24 +3369,69 @@ def _eval_ast(ast, functions):
   else:
     raise ValueError('unknown opcode: {!r}'.format(op))
 
-def _sum_expr(arg: Array, *, consumes:int = 0) -> Array:
-  if consumes == 0:
-    raise ValueError('sum must consume at least one axis but got zero')
-  return sum(arg, range(arg.ndim-consumes, arg.ndim))
+_ConstShape = Tuple[int, ...]
+_ExprCons = Tuple[Tuple[int, ...], ...]
+_ExprShape = Tuple[Union[int, expression._Length], ...]
 
-def _norm2_expr(arg: Array, *, consumes: int = 0) -> Array:
-  if consumes == 0:
-    raise ValueError('sum must consume at least one axis but got zero')
-  return norm2(arg, range(arg.ndim-consumes, arg.ndim))
+def _gen_sum_expr_shape(name: str):
+  def shape(arg: _ExprShape, *, ngenerated: int, consumed: _ExprCons) -> _ExprShape:
+    axes = tuple(i >= 0 for i in consumed[0])
+    if ngenerated:
+      raise expression._IntermediateError('{} does not generate axes'.format(name))
+    if not any(i >= 0 for i in consumed[0]):
+      raise expression._IntermediateError('{} must consume at least 1 axis but got 0'.format(name))
+    return tuple()
+  return shape
 
-def _J_expr(geom: Array, *, consumes: int = 0) -> Array:
-  if geom.ndim == 0:
-    return J(insertaxis(geom, 0, 1))
-  if consumes > 1:
-    raise ValueError('J consumes at most one axis but got {}'.format(consumes))
-  if geom.ndim > consumes:
-    raise NotImplementedError('currently J cannot be vectorized')
+def _sum_expr(arg: Array, *, generated: _ConstShape, consumed: _ExprCons) -> Array:
+  return sum(arg, tuple(i for i, j in enumerate(consumed[0]) if j >= 0))
+
+_sum_expr.shape = _gen_sum_expr_shape('sum')
+
+def _norm2_expr(arg: Array, *, generated: _ConstShape, consumed: _ExprCons) -> Array:
+  return norm2(arg, tuple(i for i, j in enumerate(consumed[0]) if j >= 0))
+
+_norm2_expr.shape = _gen_sum_expr_shape('norm2')
+
+def _J_expr(geom: Array, *, generated: _ConstShape, consumed: _ExprCons) -> Array:
   return J(geom)
+
+def _J_expr_shape(geom: _ExprShape, *, ngenerated: int, consumed: _ExprCons) -> _ExprShape:
+  if ngenerated:
+    raise expression._IntermediateError('J does not generate axes')
+  if not all(i >= 0 for i in consumed[0]):
+    raise expression._IntermediateError('J must consume all axes')
+  return ()
+
+_J_expr.shape = _J_expr_shape
+
+def _d_expr(__arg: Array, *vars: Array, generated: _ConstShape, consumed: _ExprCons) -> Array:
+  return d(__arg, *vars)
+
+def _d_expr_shape(__arg: _ExprShape, *vars: _ExprShape, ngenerated: int, consumed: _ExprCons) -> _ExprShape:
+  if any(i >= 0 for i in consumed[0]):
+    raise expression._IntermediateError('axes of the first argument cannot be consumed')
+  for iarg in range(1, len(vars)+1):
+    if not all(i >= 0 for i in consumed[iarg]):
+      raise expression._IntermediateError('all axes of argument {} must be consumed'.format(iarg+1))
+  nconsumed = builtins.sum(map(len, vars))
+  if nconsumed != ngenerated:
+    raise expression._IntermediateError('the number of consumed axes must equal the number of generated axes, but got {} and {} respectively'.format(nconsumed, ngenerated))
+  return tuple(itertools.chain(*vars))
+
+_d_expr.shape = _d_expr_shape
+
+def _n_expr(__geom: Array, *, generated: _ConstShape, consumed: _ExprCons) -> Array:
+  return normal(__geom)
+
+def _n_expr_shape(__arg: _ExprShape, *, ngenerated: int, consumed: _ExprCons) -> _ExprShape:
+  if not all(i >= 0 for i in consumed[0]):
+    raise expression._IntermediateError('all axes of argument 1 must be consumed')
+  if len(__arg) != ngenerated:
+    raise expression._IntermediateError('the number of consumed axes must equal the number of generated axes, but got {} and {} respectively'.format(len(__arg), ngenerated))
+  return __arg
+
+_n_expr.shape = _n_expr_shape
 
 def _arctan2_expr(_a: Array, _b: Array) -> Array:
   a = Array.cast(_a)
@@ -3516,7 +3567,7 @@ class Namespace:
     opposite=opposite, sin=sin, cos=cos, tan=tan, sinh=sinh, cosh=cosh,
     tanh=tanh, arcsin=arcsin, arccos=arccos, arctan=arctan, arctan2=_arctan2_expr, arctanh=arctanh,
     exp=exp, abs=abs, ln=ln, log=ln, log2=log2, log10=log10, sqrt=sqrt,
-    sign=sign, d=d, surfgrad=surfgrad, n=normal,
+    sign=sign, d=_d_expr, surfgrad=surfgrad, n=_n_expr,
     sum=_sum_expr, norm2=_norm2_expr, J=_J_expr,
   )
 
@@ -3598,7 +3649,7 @@ class Namespace:
     '''Get attribute ``name``.'''
 
     if name.startswith('eval_'):
-      return lambda expr: _eval_ast(expression.parse(expr, variables=self._attributes, indices=name[5:], arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)[0], self._functions)
+      return lambda expr: _eval_ast(expression.parse(expr, variables=self._attributes, indices=name[5:], arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length, functions=self._functions)[0], functions=self._functions)
     try:
       return self._attributes[name]
     except KeyError:
@@ -3617,7 +3668,7 @@ class Namespace:
       name, indices = m.groups()
       indices = indices[1:] if indices else None
       if isinstance(value, str):
-        ast, arg_shapes = expression.parse(value, variables=self._attributes, indices=indices, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)
+        ast, arg_shapes = expression.parse(value, variables=self._attributes, indices=indices, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length, functions=self._functions)
         value = _eval_ast(ast, self._functions)
         self._arg_shapes.update(arg_shapes)
       else:
@@ -3646,7 +3697,7 @@ class Namespace:
     if not isinstance(expr, str):
       return NotImplemented
     try:
-      ast = expression.parse(expr, variables=self._attributes, indices=None, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)[0]
+      ast = expression.parse(expr, variables=self._attributes, indices=None, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length, functions=self._functions)[0]
     except expression.AmbiguousAlignmentError:
       raise ValueError('`expression @ Namespace` cannot be used because the expression has more than one dimension.  Use `Namespace.eval_...(expression)` instead')
     return _eval_ast(ast, self._functions)

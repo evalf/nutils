@@ -1,5 +1,5 @@
 import numpy, itertools, pickle, warnings as _builtin_warnings, operator
-from nutils import evaluable, function, mesh, numeric, types, points, transformseq, transform, element
+from nutils import evaluable, function, mesh, numeric, types, points, transformseq, transform, element, expression
 from nutils.testing import *
 _ = numpy.newaxis
 
@@ -817,7 +817,7 @@ class namespace(TestCase):
   def test_d_geom(self):
     ns = function.Namespace()
     topo, ns.x = mesh.rectilinear([1])
-    self.assertEqualLowered(ns.eval_ij('d(x_i, x_j)'), function.grad(ns.x, ns.x), topo=topo)
+    self.assertEqualLowered(ns.eval_ij('d(x_i, x)_j'), function.grad(ns.x, ns.x), topo=topo)
 
   def test_d_arg(self):
     ns = function.Namespace()
@@ -827,7 +827,7 @@ class namespace(TestCase):
   def test_n(self):
     ns = function.Namespace()
     topo, ns.x = mesh.rectilinear([1])
-    self.assertEqualLowered(ns.eval_i('n(x_i)'), function.normal(ns.x), topo=topo.boundary)
+    self.assertEqualLowered(ns.eval_i('n(x)_i'), function.normal(ns.x), topo=topo.boundary)
 
   def test_functions(self):
     def sqr(a):
@@ -866,15 +866,11 @@ class namespace(TestCase):
     l = lambda f: evaluable.asarray(f @ domain.sample('gauss', 2)).simplified
     self.assertEqual(l(ns.eval_('J(t)')), l(function.jacobian(ns.t[None])))
 
-  def test_builtin_jacobian_matrix(self):
+  def test_builtin_jacobian_vectorization(self):
     ns = function.Namespace()
     ns.x = numpy.array([[1,2],[3,4]])
-    with self.assertRaises(ValueError):
-      ns.eval_('J(x)')
-
-  def test_builtin_jacobian_vectorization(self):
-    with self.assertRaises(NotImplementedError):
-      function._J_expr(function.Array.cast([[1,2],[3,4]]), consumes=1)
+    with self.assertRaises(expression.ExpressionSyntaxError):
+      ns.eval_('J:j(x_ij)')
 
 class eval_ast(TestCase):
 
@@ -909,6 +905,7 @@ class eval_ast(TestCase):
   def test_multisubstitute(self): self.assertEqualLowered('(a2_i + ?x_i + ?y_i)(x_i=?y_i, y_i=?x_i)', self.ns.a2 + function.Argument('y', [2]) + function.Argument('x', [2]))
   def test_call(self): self.assertEqualLowered('sin(a)', function.sin(self.ns.a))
   def test_call2(self): self.assertEqualLowered('arctan2(a2_i, a3_j)', function.arctan2(self.ns.a2[:,None], self.ns.a3[None,:]), indices='ij')
+  def test_callext(self): self.assertEqualLowered('sum:i(a32_ij)', self.ns.a32.sum(0), indices='j')
   def test_eye(self): self.assertEqualLowered('δ_ij a2_i', function.dot(function.eye(2), self.ns.a2, axes=[0]))
   def test_normal(self): self.assertEqualLowered('n_i', self.ns.x.normal(), topo=self.domain.boundary)
   def test_getitem(self): self.assertEqualLowered('a2_0', self.ns.a2[0])
@@ -935,8 +932,13 @@ class eval_ast(TestCase):
 
   def test_call_invalid_shape(self):
     with self.assertRaisesRegex(ValueError, '^expected an array with shape'):
-      function._eval_ast(('call', (None, 'f'), (None, 0), (None, 0), (None, function.zeros((2,), float)), (None, function.zeros((3,), float))),
+      function._eval_ast(('call', (None, 'f'), (None, function.zeros((2,), float)), (None, function.zeros((3,), float))),
                          dict(f=lambda a, b: a[None,:] * b[:,None])) # result is transposed
+
+  def test_callext_invalid_shape(self):
+    with self.assertRaisesRegex(ValueError, '^expected an array with shape'):
+      function._eval_ast(('call-ext', (None, 'f'), (None, ((-1,), (-1,))), (None, 2), (None, 1), (None, 2), (None, self.ns.a2), (None, self.ns.a3)),
+                         dict(f=lambda a, b, *, generated, consumed: function.zeros((*a.shape, *b.shape, 3, 2)))) # result has incorrect generate shape
 
   def test_surfgrad_deprecated(self):
     with self.assertWarns(warnings.NutilsDeprecationWarning):
@@ -945,6 +947,38 @@ class eval_ast(TestCase):
   def test_derivative_deprecated(self):
     with self.assertWarns(warnings.NutilsDeprecationWarning):
       self.assertEqualLowered('exp(?x)_,?x', function.derivative(function.exp(self.x), self.x))
+
+  def test_sum_generates(self):
+    with self.assertRaisesRegex(expression.ExpressionSyntaxError, '^sum does not generate axes'):
+      self.ns.eval_jk('sum:i(a2_i)_jk')
+
+  def test_sum_must_consume(self):
+    with self.assertRaisesRegex(expression.ExpressionSyntaxError, '^sum must consume at least 1 axis'):
+      self.ns.eval_('sum(a)')
+
+  def test_jacobian_generates(self):
+    with self.assertRaisesRegex(expression.ExpressionSyntaxError, '^J does not generate axes'):
+      self.ns.eval_jk('J(x)_jk')
+
+  def test_jacobian_must_consume_all(self):
+    with self.assertRaisesRegex(expression.ExpressionSyntaxError, '^J must consume all axes'):
+      self.ns.eval_i('J:j(a2_i x_j)')
+
+  def test_grad_consume_first_arg(self):
+    with self.assertRaisesRegex(expression.ExpressionSyntaxError, '^axes of the first argument cannot be consumed'):
+      self.ns.eval_('d:ij(a2_i, x_j)')
+
+  def test_grad_must_consume_second_arg(self):
+    with self.assertRaisesRegex(expression.ExpressionSyntaxError, '^all axes of argument 2 must be consumed'):
+      self.ns.eval_ik('d:j(a2_i, a2_j x_k)')
+
+  def test_normal_must_consume(self):
+    with self.assertRaisesRegex(expression.ExpressionSyntaxError, '^all axes of argument 1 must be consumed'):
+      self.ns.eval_jk('n:i(a2_i x_j)_k')
+
+  def test_normal_mismatch_generated_consumed(self):
+    with self.assertRaisesRegex(expression.ExpressionSyntaxError, '^the number of consumed axes must equal the number of generated axes'):
+      self.ns.eval_jk('n:i(x_i)_jk')
 
 class jacobian(TestCase):
 

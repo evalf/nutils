@@ -1,4 +1,5 @@
 import nutils.expression
+import nutils.function
 from nutils.testing import *
 
 _ = lambda arg: (None, arg)
@@ -53,11 +54,36 @@ class Variables:
 
 v = Variables(x=Array('x', [2]), altgeom=Array('altgeom', [3]), funcoverride=Array('funcoverride', []))
 
+def ftest1(a, *, generated, consumed):
+  pass
+
+def ftest1_shape(a, *, ngenerated, consumed):
+  assert all(i < 0 for c in consumed for i in c)
+  assert ngenerated == 1
+  return 2,
+
+ftest1.shape = ftest1_shape
+
+def ftest2(a, b, *, generated, consumed):
+  pass
+
+def ftest2_shape(a, b, *, ngenerated, consumed):
+  assert all(i >= 0 for c in consumed for i in c)
+  assert ngenerated == len(a) + len(b)
+  return a + b
+
+ftest1.shape = ftest1_shape
+
+def ftest3(a, b):
+  pass
+
 class parse(TestCase):
 
   def assert_ast(self, expression, indices, ast, variables=None, **parse_kwargs):
     if variables is None:
       variables = v
+    if 'functions' not in parse_kwargs:
+      parse_kwargs['functions'] = dict(sum=nutils.function._sum_expr, ftest1=ftest1, ftest2=ftest2, ftest3=ftest3)
     self.assertEqual(nutils.expression.parse(expression, variables, indices, **parse_kwargs)[0], ast)
 
   def assert_syntax_error(self, msg, expression, indices, highlight, arg_shapes={}, fixed_lengths=None, exccls=nutils.expression.ExpressionSyntaxError):
@@ -818,26 +844,28 @@ class parse(TestCase):
 
   # FUNCTION
 
-  def test_function(self): self.assert_ast('func1(a)', '', ('call', _('func1'), _(0), _(0), v._a))
-  def test_function_1d(self): self.assert_ast('func1(a2_i)', 'i', ('call', _('func1'), _(0), _(0), v._a2))
-  def test_function_2d(self): self.assert_ast('func1(a23_ij)', 'ij', ('call', _('func1'), _(0), _(0), v._a23))
-  def test_function_0d_0d(self): self.assert_ast('func2(a, a)', '', ('call', _('func2'), _(0), _(0), v._a, v._a))
-  def test_function_1d_1d(self): self.assert_ast('func2(a2_i, a2_j)', 'ij', ('call', _('func2'), _(0), _(0), v._a2, v._a2))
-  def test_function_1d_1d_trace(self): self.assert_ast('func2(a2_i, a2_i)', '', ('trace', ('call', _('func2'), _(0), _(0), v._a2, v._a2), _(0), _(1)))
-  def test_function_2d_2d(self): self.assert_ast('func2(a23_ij, a32_kl)', 'ijkl', ('call', _('func2'), _(0), _(0), v._a23, v._a32))
-  def test_function_1d_1d_2d(self): self.assert_ast('func3(a2_i, a2_j, a23_kl)', 'ijkl', ('call', _('func3'), _(0), _(0), v._a2, v._a2, v._a23))
-  def test_function_generates_leading(self): self.assert_ast('func_j(a2_i)', 'ij', ('call', _('func'), _(1), _(0), v._a2), fallback_length=2)
-  def test_function_generates_trailing(self): self.assert_ast('func(a2_i)_j', 'ij', ('call', _('func'), _(1), _(0), v._a2), fallback_length=2)
-  def test_function_generates_trace(self): self.assert_ast('func_i(a2_i)', '', ('trace', ('call', _('func'), _(1), _(0), v._a2), _(0), _(1)))
-  def test_function_consumes(self): self.assert_ast('sum:i(a2_i)', '', ('call', _('sum'), _(0), _(1), v._a2))
-  def test_function_consumes_transpose(self): self.assert_ast('sum:i(a23_ij)', 'j', ('call', _('sum'), _(0), _(1), ('transpose', v._a23, _((1,0)))))
-  def test_function_consumes_omitted(self): self.assert_ast('sum(a2)', '', ('call', _('sum'), _(0), _(1), v._a2))
+  def test_function(self): self.assert_ast('func1(a)', '', ('call', _('func1'), v._a))
+  def test_function_1d(self): self.assert_ast('func1(a2_i)', 'i', ('call', _('func1'), v._a2))
+  def test_function_2d(self): self.assert_ast('func1(a23_ij)', 'ij', ('call', _('func1'), v._a23))
+  def test_function_0d_0d(self): self.assert_ast('func2(a, a)', '', ('call', _('func2'), v._a, v._a))
+  def test_function_1d_1d(self): self.assert_ast('func2(a2_i, a2_j)', 'ij', ('call', _('func2'), v._a2, v._a2))
+  def test_function_1d_1d_trace(self): self.assert_ast('func2(a2_i, a2_i)', '', ('trace', ('call', _('func2'), v._a2, v._a2), _(0), _(1)))
+  def test_function_2d_2d(self): self.assert_ast('func2(a23_ij, a32_kl)', 'ijkl', ('call', _('func2'), v._a23, v._a32))
+  def test_function_1d_1d_2d(self): self.assert_ast('func3(a2_i, a2_j, a23_kl)', 'ijkl', ('call', _('func3'), v._a2, v._a2, v._a23))
+  def test_function_generates_leading(self): self.assert_ast('ftest1_j(a2_i)', 'ij', ('call-ext', _('ftest1'), _(((-1,),)), _(1), _(2), v._a2))
+  def test_function_generates_trailing(self): self.assert_ast('ftest1(a2_i)_j', 'ij', ('call-ext', _('ftest1'), _(((-1,),)), _(1), _(2), v._a2))
+  def test_function_generates_trace(self): self.assert_ast('ftest1_i(a2_i)', '', ('trace', ('call-ext', _('ftest1'), _(((-1,),)), _(1), _(2), v._a2), _(0), _(1)))
+  def test_function_generates_leading_getitem(self): self.assert_ast('ftest1_1(a)', '', ('getitem', ('call-ext', _('ftest1'), _(((),)), _(1), _(2), v._a), _(0), _(1)))
+  def test_function_generates_trailing_getitem(self): self.assert_ast('ftest1(a)_1', '', ('getitem', ('call-ext', _('ftest1'), _(((),)), _(1), _(2), v._a), _(0), _(1)))
+  def test_function_consumes(self): self.assert_ast('sum:i(a2_i)', '', ('call-ext', _('sum'), _(((0,),)), _(0), v._a2))
+  def test_function_consumes_transpose(self): self.assert_ast('sum:i(a23_ij)', 'j', ('call-ext', _('sum'), _(((0, -1),)), _(0), v._a23))
+  def test_function_consumes_omitted(self): self.assert_ast('sum(a2)', '', ('call-ext', _('sum'), _(((0,),)), _(0), v._a2))
 
   def test_function_triple_index(self):
     self.assert_syntax_error(
       "Index 'i' occurs more than twice.",
-      "1_i + func(a2_i, a2_i, a2_i) + 1_i", "i",
-      "      ^^^^^^^^^^^^^^^^^^^^^^")
+      "1_i + func3(a2_i, a2_i, a2_i) + 1_i", "i",
+      "      ^^^^^^^^^^^^^^^^^^^^^^^")
 
   def test_function_unmatched_shape(self):
     self.assert_syntax_error(
@@ -853,15 +881,33 @@ class parse(TestCase):
 
   def test_function_consumes_missing_index(self):
     self.assert_syntax_error(
-      "All axes to be consumed (i) must be present in all arguments.",
+      "Cannot consume index i because this index does not appear any of the arguments.",
       "1 + sum:i(a) + 1", "",
       "    ^^^^^^^^")
 
-  def test_function_consumes_omitted_shape_mismatch(self):
+  def test_function_consumes_twice(self):
     self.assert_syntax_error(
-      "All arguments should have the same shape.",
-      "1 + f(a2, a3) + 1", None,
-      "    ^^^^^^^^^")
+      "It is not allowed to consume the same index twice.",
+      "1 + sum:ii(a22_i) + 1", "",
+      "        ^^")
+
+  def test_function_triple_index(self):
+    self.assert_syntax_error(
+      "Index i occurs more than twice.",
+      "1 + ftest2:i(a2_i, a2_i) + 1", "",
+      "    ^^^^^^^^^^^^^^^^^^^^")
+
+  def test_function_implicit_explicit_consumes(self):
+    self.assert_syntax_error(
+      "It is not allowed to use explicitly and implicitly consumed indices simultaneously.",
+      "1_jk + ftest2:i(a2_i, a2)_jk + 1_jk", "jk",
+      "       ^^^^^^^^^^^^^^^^^^^^^")
+
+  def test_function_does_not_generate_consume(self):
+    self.assert_syntax_error(
+      "Function `ftest3` does not generate or consume axes.",
+      "1 + ftest3:i(a, a2_i) + 1", "",
+      "    ^^^^^^^^^^^^^^^^^")
 
   def test_function_leading_and_trailing(self):
     self.assert_syntax_error(
@@ -879,7 +925,7 @@ class parse(TestCase):
   def test_omitted_group(self): self.assert_ast('(a2)', None, ('group', v._a2))
   def test_omitted_jump(self): self.assert_ast('[a2]', None, ('jump', v._a2))
   def test_omitted_mean(self): self.assert_ast('{a2}', None, ('mean', v._a2))
-  def test_omitted_function(self): self.assert_ast('sum(a2)', None, ('call', _('sum'), _(0), _(1), v._a2))
+  def test_omitted_function(self): self.assert_ast('sum(a2)', None, ('call-ext', _('sum'), _(((0,),)), _(0), v._a2))
   def test_omitted_normal(self): self.assert_ast('n', None, ('normal', v._x))
 
   def test_omitted_add_shape_mismatch(self):

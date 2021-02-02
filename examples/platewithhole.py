@@ -45,7 +45,7 @@ def main(nelems:int, etype:str, btype:str, degree:int, traction:float, maxrefine
   ns.ubasis = domain.basis(btype, degree=degree).vector(2)
   ns.u_i = 'ubasis_ni ?lhs_n'
   ns.X_i = 'x_i + u_i'
-  ns.strain_ij = '(d(u_i, x_j) + d(u_j, x_i)) / 2'
+  ns.strain_ij = '(d(u_i, x)_j + d(u_j, x)_i) / 2'
   ns.stress_ij = 'lmbda strain_kk δ_ij + 2 mu strain_ij'
   ns.r2 = 'x_k x_k'
   ns.R2 = radius**2 / ns.r2
@@ -59,14 +59,14 @@ def main(nelems:int, etype:str, btype:str, degree:int, traction:float, maxrefine
   sqr = domain.boundary['top,right'].integral('du_k du_k J(x)' @ ns, degree=20)
   cons = solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
 
-  res = domain.integral('d(ubasis_ni, x_j) stress_ij J(x)' @ ns, degree=degree*2)
+  res = domain.integral('d(ubasis_ni, x)_j stress_ij J(x)' @ ns, degree=degree*2)
   lhs = solver.solve_linear('lhs', res, constrain=cons)
 
   bezier = domain.sample('bezier', 5)
   X, stressxx = bezier.eval(['X', 'stress_00'] @ ns, lhs=lhs)
   export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull)
 
-  err = domain.integral('<du_k du_k, sum:ij(d(du_i, x_j)^2)>_n J(x)' @ ns, degree=max(degree,3)*2).eval(lhs=lhs)**.5
+  err = domain.integral('<du_k du_k, sum:ij(d(du_i, x)_j^2)>_n J(x)' @ ns, degree=max(degree,3)*2).eval(lhs=lhs)**.5
   treelog.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
   return err, cons, lhs
