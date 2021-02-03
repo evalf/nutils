@@ -382,7 +382,7 @@ def binom(n, k):
     b *= i
   return a // b
 
-@types.frozenarray.lru
+@types.lru_cache
 def poly_outer_product(left, right):
   left, right = numpy.asarray(left), numpy.asarray(right)
   nleft, nright = left.ndim-1, right.ndim-1
@@ -390,16 +390,15 @@ def poly_outer_product(left, right):
   outer = numpy.zeros((left.shape[0], right.shape[0], *pshape), dtype=numpy.common_type(left, right))
   a = slice(None)
   outer[(a,a,*(map(slice, left.shape[1:]+right.shape[1:])))] = left[(a,None)+(a,)*nleft+(None,)*nright]*right[(None,a)+(None,)*nleft+(a,)*nright]
-  return outer.reshape(left.shape[0] * right.shape[0], *pshape)
+  return types.frozenarray(outer.reshape(left.shape[0] * right.shape[0], *pshape), copy=False)
 
-@types.frozenarray.lru
-def poly_concatenate(coeffs):
-  coeffs = [numpy.asarray(c) for c in coeffs]
+@types.lru_cache
+def poly_concatenate(*coeffs):
   n = max(c.shape[1] for c in coeffs)
   coeffs = [numpy.pad(c, [(0,0)]+[(0,n-c.shape[1])]*(c.ndim-1), 'constant', constant_values=0) if c.shape[1] < n else c for c in coeffs]
-  return numpy.concatenate(coeffs)
+  return types.frozenarray(numpy.concatenate(coeffs), copy=False)
 
-@types.frozenarray.lru
+@types.lru_cache
 def poly_grad(coeffs, ndim):
   coeffs = numpy.asarray(coeffs)
   I = range(ndim)
@@ -407,9 +406,9 @@ def poly_grad(coeffs, ndim):
   if coeffs.shape[-1] > 2:
     a = numpy.arange(1, coeffs.shape[-1])
     dcoeffs = [a[tuple(slice(None) if i==j else numpy.newaxis for j in I)] * c for i, c in enumerate(dcoeffs)]
-  return numpy.stack(dcoeffs, axis=coeffs.ndim-ndim)
+  return types.frozenarray(numpy.stack(dcoeffs, axis=coeffs.ndim-ndim), copy=False)
 
-@types.frozenarray.lru
+@types.lru_cache
 def poly_eval(coeffs, points):
   coeffs = numpy.asarray(coeffs)
   points = numpy.asarray(points)
@@ -429,9 +428,9 @@ def poly_eval(coeffs, points):
       result *= points_dim
       result += coeffs[...,j]
     coeffs = result
-  return coeffs
+  return types.frozenarray(coeffs, copy=False)
 
-@types.frozenarray.lru
+@types.lru_cache
 def poly_mul(p, q):
   p = numpy.asarray(p)
   q = numpy.asarray(q)
@@ -442,9 +441,9 @@ def poly_mul(p, q):
   for i, pi in numpy.ndenumerate(p):
     if pi:
       pq[tuple(slice(o, o+m) for o, m in zip(i, q.shape))] += pi * q
-  return pq
+  return types.frozenarray(pq, copy=False)
 
-@types.frozenarray.lru
+@types.lru_cache
 def poly_pow(p, n):
   assert isint(n) and n >= 0
   if n == 0:

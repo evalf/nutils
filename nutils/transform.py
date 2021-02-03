@@ -29,7 +29,7 @@ _ = numpy.newaxis
 
 ## TRANSFORM CHAIN OPERATIONS
 
-@types.frozenarray.lru
+@types.lru_cache
 def apply(chain, points):
   for trans in reversed(chain):
     points = trans.apply(points)
@@ -175,6 +175,7 @@ class Matrix(TransformItem):
     self.offset = numpy.asarray(offset)
     super().__init__(linear.shape[0], linear.shape[1])
 
+  @types.lru_cache
   def apply(self, points):
     assert points.shape[-1] == self.fromdims
     return types.frozenarray(numpy.dot(points, self.linear.T) + self.offset, copy=False)
@@ -212,6 +213,7 @@ class Square(Matrix):
     self._transform_matrix = {}
     super().__init__(linear, offset)
 
+  @types.lru_cache
   def invapply(self, points):
     return types.frozenarray(numpy.linalg.solve(self.linear, (points - self.offset).T).T, copy=False)
 
@@ -223,7 +225,7 @@ class Square(Matrix):
   def isflipped(self):
     return self.fromdims > 0 and self.det < 0
 
-  @types.frozenarray.lru
+  @types.lru_cache
   def transform_poly(self, coeffs):
     assert coeffs.ndim == self.fromdims + 1
     degree = coeffs.shape[1] - 1
@@ -246,7 +248,7 @@ class Square(Matrix):
           M_power = functools.reduce(numeric.poly_mul, [numeric.poly_pow(poly, power) for poly, power in zip(polys, powers)])
           M[tuple(slice(n) for n in M_power.shape)+powers] += M_power
       self._transform_matrix[degree] = M
-    return numpy.einsum('jk,ik', M.reshape([(degree+1)**self.fromdims]*2), coeffs.reshape(coeffs.shape[0],-1)).reshape(coeffs.shape)
+    return types.frozenarray(numpy.einsum('jk,ik', M.reshape([(degree+1)**self.fromdims]*2), coeffs.reshape(coeffs.shape[0],-1)).reshape(coeffs.shape), copy=False)
 
 class Shift(Square):
   '''Shift transformation :math:`x ↦ x + b`
@@ -266,9 +268,11 @@ class Shift(Square):
     assert offset.ndim == 1 and offset.dtype == float
     super().__init__(numpy.eye(offset.shape[0]), offset)
 
+  @types.lru_cache
   def apply(self, points):
     return types.frozenarray(points + self.offset, copy=False)
 
+  @types.lru_cache
   def invapply(self, points):
     return types.frozenarray(points - self.offset, copy=False)
 
@@ -317,9 +321,11 @@ class Scale(Square):
     self.scale = scale
     super().__init__(numpy.eye(offset.shape[0]) * scale, offset)
 
+  @types.lru_cache
   def apply(self, points):
     return types.frozenarray(self.scale * points + self.offset, copy=False)
 
+  @types.lru_cache
   def invapply(self, points):
     return types.frozenarray((points - self.offset) / self.scale, copy=False)
 
