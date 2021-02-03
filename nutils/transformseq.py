@@ -619,9 +619,10 @@ class MaskedTransforms(Transforms):
   __slots__ = '_parent', '_mask', '_indices'
 
   @types.apply_annotations
-  def __init__(self, parent:stricttransforms, indices:types.frozenarray[types.strictint]):
+  def __init__(self, parent:stricttransforms, indices:types.arraydata):
+    assert indices.dtype == int
     self._parent = parent
-    self._indices = indices
+    self._indices = numpy.asarray(indices)
     super().__init__(parent.fromdims)
 
   def __iter__(self):
@@ -659,9 +660,10 @@ class ReorderedTransforms(Transforms):
   __cache__ = '_rindices'
 
   @types.apply_annotations
-  def __init__(self, parent:stricttransforms, indices:types.frozenarray[types.strictint]):
+  def __init__(self, parent:stricttransforms, indices:types.arraydata):
+    assert indices.dtype == int
     self._parent = parent
-    self._indices = indices
+    self._indices = numpy.asarray(indices)
     super().__init__(parent.fromdims)
 
   @property

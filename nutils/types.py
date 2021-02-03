@@ -1329,6 +1329,7 @@ class frozenarray(collections.abc.Iterable, metaclass=_frozenarraymeta):
   __xor__ = lambda self, other: self.__base.__xor__(other)
   __rxor__ = lambda self, other: self.__base.__rxor__(other)
 
+  tobytes = lambda self, *args, **kwargs: self.__base.tobytes(*args, **kwargs)
   tolist = lambda self, *args, **kwargs: self.__base.tolist(*args, **kwargs)
   copy = lambda self, *args, **kwargs: self.__base.copy(*args, **kwargs)
   astype = lambda self, *args, **kwargs: self.__base.astype(*args, **kwargs)

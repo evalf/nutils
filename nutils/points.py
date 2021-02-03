@@ -129,24 +129,27 @@ class CoordsPoints(Points):
   '''Manually supplied points.'''
 
   @types.apply_annotations
-  def __init__(self, coords:types.frozenarray[float]):
-    self.coords = coords
+  def __init__(self, coords:types.arraydata):
+    assert coords.dtype == float
+    self.coords = numpy.asarray(coords)
     super().__init__(*coords.shape)
 
 class CoordsWeightsPoints(CoordsPoints):
   '''Manually supplied points and weights.'''
 
   @types.apply_annotations
-  def __init__(self, coords:types.frozenarray[float], weights:types.frozenarray[float]):
-    self.weights = weights
+  def __init__(self, coords:types.arraydata, weights:types.arraydata):
+    assert coords.dtype == float
+    assert weights.dtype == float
+    self.weights = numpy.asarray(weights)
     super().__init__(coords)
 
 class CoordsUniformPoints(CoordsPoints):
   '''Manually supplied points with uniform weights.'''
 
   @types.apply_annotations
-  def __init__(self, coords:types.frozenarray[float], volume:float):
-    self.weights = types.frozenarray.full([len(coords)], volume/len(coords))
+  def __init__(self, coords:types.arraydata, volume:float):
+    self.weights = types.frozenarray.full([coords.shape[0]], volume/coords.shape[0])
     super().__init__(coords)
 
 class TensorPoints(Points):
@@ -344,10 +347,10 @@ class ConePoints(Points):
   __cache__ = 'coords', 'tri'
 
   @types.apply_annotations
-  def __init__(self, edgepoints:strictpoints, edgeref:transform.stricttransformitem, tip:types.frozenarray):
+  def __init__(self, edgepoints:strictpoints, edgeref:transform.stricttransformitem, tip:types.arraydata):
     self.edgepoints = edgepoints
     self.edgeref = edgeref
-    self.tip = tip
+    self.tip = numpy.asarray(tip)
     super().__init__(edgepoints.npoints+1, edgepoints.ndims+1)
 
   @property

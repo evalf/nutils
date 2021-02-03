@@ -724,8 +724,9 @@ class Diagonal(Axis):
 class Sparse(Axis):
   __slots__ = 'mask'
   @types.apply_annotations
-  def __init__(self, length:as_canonical_length, mask:types.frozenarray[bool]=types.frozenarray(False)):
-    self.mask = mask # True for indices that are certain to be filled, used to detect dense addition
+  def __init__(self, length:as_canonical_length, mask:types.arraydata=False):
+    assert mask.dtype == bool
+    self.mask = numpy.asarray(mask) # True for indices that are certain to be filled, used to detect dense addition
     super().__init__(length)
 
 def as_axis_property(value):
@@ -1081,8 +1082,8 @@ class Constant(Array):
   __cache__ = '_isunit'
 
   @types.apply_annotations
-  def __init__(self, value:types.frozenarray):
-    self.value = value
+  def __init__(self, value:types.arraydata):
+    self.value = numpy.asarray(value)
     super().__init__(args=[], shape=value.shape, dtype=value.dtype)
 
   def _simplified(self):
@@ -1541,7 +1542,9 @@ class Interpolate(Array):
   __slots__ = 'xp', 'fp', 'left', 'right'
 
   @types.apply_annotations
-  def __init__(self, x:asarray, xp:types.frozenarray, fp:types.frozenarray, left:types.strictfloat=None, right:types.strictfloat=None):
+  def __init__(self, x:asarray, xp:types.arraydata, fp:types.arraydata, left:types.strictfloat=None, right:types.strictfloat=None):
+    xp = numpy.asarray(xp)
+    fp = numpy.asarray(fp)
     assert xp.ndim == fp.ndim == 1
     if not numpy.greater(numpy.diff(xp), 0).all():
       warnings.warn('supplied x-values are non-increasing')
@@ -2332,18 +2335,19 @@ class Elemwise(Array):
   __slots__ = 'data',
 
   @types.apply_annotations
-  def __init__(self, data:types.tuple[types.frozenarray], index:asarray, dtype:asdtype):
+  def __init__(self, data:types.tuple[types.arraydata], index:asarray, dtype:asdtype):
     assert all(d.dtype == dtype for d in data), 'data does not match dtype'
     self.data = data
     shape = get([d.shape for d in data], 0, index)
     super().__init__(args=[index], shape=shape, dtype=dtype)
 
   def evalf(self, index):
-    return self.data[index]
+    return numpy.asarray(self.data[index])
 
   def _simplified(self):
-    if all(map(numeric.isint, self.shape)) and all(self.data[0] == data for data in self.data[1:]):
-      return Constant(self.data[0])
+    d0 = self.data[0]
+    if all(di == d0 for di in self.data[1:]):
+      return Constant(d0)
 
 class ElemwiseFromCallable(Array):
 
@@ -3860,7 +3864,7 @@ def take(arg:asarray, index:asarray, axis:types.strictint):
     elif ineg.any():
       if numpy.less(index_, -length).any():
         raise IndexError('indices out of bounds: {} < {}'.format(index_, -length))
-      return _take(arg, Constant(types.frozenarray(index_ + ineg * length, copy=False)), axis)
+      return _take(arg, Constant(index_ + ineg * length), axis)
     elif numpy.greater_equal(index_, length).any():
       raise IndexError('indices out of bounds: {} >= {}'.format(index_, length))
     elif numpy.greater(numpy.diff(index_), 0).all():

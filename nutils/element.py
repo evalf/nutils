@@ -782,16 +782,16 @@ class Cone(Reference):
   __cache__ = 'vertices', 'edge_transforms', 'edge_refs'
 
   @types.apply_annotations
-  def __init__(self, edgeref, etrans, tip:types.frozenarray):
+  def __init__(self, edgeref, etrans, tip:types.arraydata):
     assert etrans.fromdims == edgeref.ndims
-    assert etrans.todims == len(tip)
-    super().__init__(len(tip))
+    assert etrans.todims == tip.shape[0]
+    super().__init__(etrans.todims)
     self.edgeref = edgeref
     self.etrans = etrans
-    self.tip = tip
+    self.tip = numpy.asarray(tip)
     ext = etrans.ext
     self.extnorm = numpy.linalg.norm(ext)
-    self.height = numpy.dot(etrans.offset - tip, ext) / self.extnorm
+    self.height = numpy.dot(etrans.offset - self.tip, ext) / self.extnorm
     assert self.height >= 0, 'tip is positioned at the negative side of edge'
 
   @property
@@ -1026,13 +1026,13 @@ class MosaicReference(Reference):
   __cache__ = 'vertices', 'subrefs'
 
   @types.apply_annotations
-  def __init__(self, baseref, edge_refs:tuple, midpoint:types.frozenarray):
+  def __init__(self, baseref, edge_refs:tuple, midpoint:types.arraydata):
     assert len(edge_refs) == baseref.nedges
     assert edge_refs != tuple(baseref.edge_refs)
 
     self.baseref = baseref
     self._edge_refs = edge_refs
-    self._midpoint = midpoint
+    self._midpoint = numpy.asarray(midpoint)
     self.edge_refs = list(edge_refs)
     self.edge_transforms = list(baseref.edge_transforms)
 
@@ -1041,7 +1041,7 @@ class MosaicReference(Reference):
       assert any(edge_refs) and not all(edge_refs), 'invalid 1D mosaic: exactly one edge should be non-empty'
       iedge, = [i for i, edge in enumerate(edge_refs) if edge]
       self.edge_refs.append(getsimplex(0))
-      self.edge_transforms.append(transform.Updim(linear=numpy.zeros((1,0)), offset=midpoint, isflipped=not baseref.edge_transforms[iedge].isflipped))
+      self.edge_transforms.append(transform.Updim(linear=numpy.zeros((1,0)), offset=self._midpoint, isflipped=not baseref.edge_transforms[iedge].isflipped))
 
     else:
 
@@ -1062,7 +1062,7 @@ class MosaicReference(Reference):
       tip = numpy.array([0]*(baseref.ndims-2)+[1], dtype=float)
       for etrans, trans, edge in newedges:
         b = etrans.apply(trans.offset)
-        A = numpy.hstack([numpy.dot(etrans.linear, trans.linear), (midpoint-b)[:,_]])
+        A = numpy.hstack([numpy.dot(etrans.linear, trans.linear), (self._midpoint-b)[:,_]])
         newtrans = transform.Updim(A, b, isflipped=etrans.isflipped^trans.isflipped^(baseref.ndims%2==1)) # isflipped logic tested up to 3D
         self.edge_transforms.append(newtrans)
         self.edge_refs.append(edge.cone(extrudetrans, tip))
@@ -1071,7 +1071,7 @@ class MosaicReference(Reference):
 
   @property
   def vertices(self):
-    vertices, indices = util.unique([vertex for etrans, eref in self.edges if eref for vertex in etrans.apply(eref.vertices)])
+    vertices, indices = util.unique([vertex for etrans, eref in self.edges if eref for vertex in etrans.apply(eref.vertices)], key=types.arraydata)
     return types.frozenarray(vertices)
 
   def __and__(self, other):

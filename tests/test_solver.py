@@ -9,7 +9,8 @@ def tmpcache():
       yield
 
 def _test_recursion_cache(testcase, solver_iter):
-  read = lambda n: tuple(item for i, item in zip(range(n), solver_iter()))
+  edit = lambda v: v.tolist() if numeric.isarray(v) else tuple(map(edit, v)) if isinstance(v, tuple) else v # convert arrays to lists
+  read = lambda n: tuple(edit(item) for i, item in zip(range(n), solver_iter()))
   reference = read(5)
   for lengths in [1,2,3], [1,3,2], [0,3,5]:
     with tmpcache():

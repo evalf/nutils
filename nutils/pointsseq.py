@@ -218,7 +218,7 @@ class PointsSequence(types.Singleton):
     elif len(indices) == 1:
       return _Uniform(self.get(indices[0]), 1)
     else:
-      return _Take(self, types.frozenarray(indices))
+      return _Take(self, types.arraydata(indices))
 
   def compress(self, mask: numpy.ndarray) -> 'PointsSequence':
     '''Return a selection of this sequence.
@@ -451,11 +451,11 @@ class _Take(PointsSequence):
   __slots__ = 'parent', 'indices'
 
   def __init__(self, parent, indices):
-    _check_take(len(parent), indices)
-    assert len(indices) > 1, 'inefficient; this should have been `_Empty` or `_Uniform`'
+    assert indices.shape[0] > 1, 'inefficient; this should have been `_Empty` or `_Uniform`'
     assert not isinstance(parent, _Uniform), 'inefficient; this should have been `_Uniform`'
     self.parent = parent
-    self.indices = indices
+    self.indices = numpy.asarray(indices)
+    _check_take(len(parent), self.indices)
     super().__init__(parent.ndims)
 
   def __len__(self) -> int:

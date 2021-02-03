@@ -136,7 +136,7 @@ class Common:
   def test_get_evaluable_coords(self):
     coordinates = self.seq.get_evaluable_coords(nutils.evaluable.Argument('index', (), int))
     for index, points in enumerate(self.check):
-      self.assertEqual(coordinates.eval(index=index), points.coords)
+      self.assertAllEqual(coordinates.eval(index=index), points.coords)
 
   def test_get_evaluable_coords_invalid_ndims(self):
     with self.assertRaises(ValueError):
@@ -149,7 +149,7 @@ class Common:
   def test_get_evaluable_weights(self):
     weights = self.seq.get_evaluable_weights(nutils.evaluable.Argument('index', (), int))
     for index, points in enumerate(self.check):
-      self.assertEqual(weights.eval(index=index), points.weights)
+      self.assertAllEqual(weights.eval(index=index), points.weights)
 
   def test_get_evaluable_weights_invalid_ndims(self):
     with self.assertRaises(ValueError):

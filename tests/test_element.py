@@ -30,7 +30,7 @@ class elem(TestCase):
         for (ctrans, cref), vals in zip(self.ref.children, self.ref.child_divide(points, n)):
           if cref:
             cpoints, cweights = cref.getischeme('vertex{}'.format(n-1))
-            numpy.testing.assert_equal(ctrans.apply(cpoints), vals)
+            self.assertAllEqual(ctrans.apply(cpoints), vals)
 
   @parametrize.enable_if(lambda ref, **kwargs: not isinstance(ref, element.MosaicReference) and ref.ndims >= 1)
   def test_swap(self):

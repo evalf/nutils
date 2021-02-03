@@ -1092,7 +1092,7 @@ class StructuredTopology(Topology):
     # such that unique[index[i,j]] == poly_outer_product(stdelems[0][i], stdelems[1][j])
     index = numpy.array(0)
     for stdelems_i in stdelems:
-      unique_i, index_i = util.unique(stdelems_i)
+      unique_i, index_i = util.unique(stdelems_i, key=types.arraydata)
       unique = unique_i if not index.ndim \
         else [numeric.poly_outer_product(a, b) for a in unique for b in unique_i]
       index = index[...,_] * len(unique_i) + index_i
@@ -1306,9 +1306,9 @@ class ConnectedTopology(Topology):
   __slots__ = 'connectivity',
 
   @types.apply_annotations
-  def __init__(self, references:types.strict[References], transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms, connectivity):
-    assert len(connectivity) == len(references) and all(len(c) == e.nedges for c, e in zip(connectivity, references))
-    self.connectivity = connectivity
+  def __init__(self, references:types.strict[References], transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms, connectivity:types.tuple[types.arraydata]):
+    assert len(connectivity) == len(references) and all(c.shape[0] == e.nedges for c, e in zip(connectivity, references))
+    self.connectivity = tuple(map(numpy.asarray, connectivity))
     super().__init__(references, transforms, opposites)
 
 class SimplexTopology(Topology):
@@ -1321,14 +1321,14 @@ class SimplexTopology(Topology):
     simplices = numpy.asarray(simplices)
     keep = numpy.zeros(simplices.max()+1, dtype=bool)
     keep[simplices.flat] = True
-    return types.frozenarray(simplices if keep.all() else (numpy.cumsum(keep)-1)[simplices], copy=False)
+    return types.arraydata(simplices if keep.all() else (numpy.cumsum(keep)-1)[simplices])
 
   @types.apply_annotations
   def __init__(self, simplices:_renumber, transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms):
     assert simplices.shape == (len(transforms), transforms.fromdims+1)
-    assert numpy.greater(simplices[:,1:], simplices[:,:-1]).all(), 'nodes should be sorted'
-    assert not numpy.equal(simplices[:,1:], simplices[:,:-1]).all(), 'duplicate nodes'
-    self.simplices = simplices
+    self.simplices = numpy.asarray(simplices)
+    assert numpy.greater(self.simplices[:,1:], self.simplices[:,:-1]).all(), 'nodes should be sorted'
+    assert not numpy.equal(self.simplices[:,1:], self.simplices[:,:-1]).all(), 'duplicate nodes'
     references = References.uniform(element.getsimplex(transforms.fromdims), len(transforms))
     super().__init__(references, transforms, opposites)
 
@@ -1407,7 +1407,7 @@ class UnionTopology(Topology):
           assert len(refs) < nrefs, 'incompatible elements in union'
         references.append(refs[0])
         assert len(set(self._topos[itopo].opposites[itrans] for itopo, itrans in indices)) == 1
-    selections = tuple(map(types.frozenarray[int], selections))
+    selections = tuple(types.frozenarray(s, dtype=int) for s in selections)
 
     super().__init__(
       References.from_iter(references, ndims),
@@ -1636,12 +1636,13 @@ class HierarchicalTopology(Topology):
   __cache__ = 'refined', 'boundary', 'interfaces'
 
   @types.apply_annotations
-  def __init__(self, basetopo:stricttopology, indices_per_level:types.tuple[types.frozenarray[types.strictint]]):
+  def __init__(self, basetopo:stricttopology, indices_per_level:types.tuple[types.arraydata]):
     'constructor'
 
+    assert all(ind.dtype == int for ind in indices_per_level)
     assert not isinstance(basetopo, HierarchicalTopology)
     self.basetopo = basetopo
-    self._indices_per_level = indices_per_level
+    self._indices_per_level = tuple(map(numpy.asarray, indices_per_level))
     self._offsets = numpy.cumsum([0, *map(len, self._indices_per_level)], dtype=int)
 
     level = None
@@ -1649,7 +1650,7 @@ class HierarchicalTopology(Topology):
     references = References.empty(basetopo.ndims)
     transforms = []
     opposites = []
-    for indices in indices_per_level:
+    for indices in self._indices_per_level:
       level = self.basetopo if level is None else level.refined
       levels.append(level)
       if len(indices):
@@ -1710,7 +1711,7 @@ class HierarchicalTopology(Topology):
 
   @property
   def refined(self):
-    refined_indices_per_level = [[]]
+    refined_indices_per_level = [numpy.array([], dtype=int)]
     fine = self.basetopo
     for coarse_indices in self._indices_per_level:
       coarse, fine = fine, fine.refined
@@ -1910,12 +1911,12 @@ class HierarchicalTopology(Topology):
               break
 
             try: # construct least-squares projection matrix
-              project = projectcache[mypoly]
+              project = projectcache[id(mypoly)][0]
             except KeyError:
               P = mypoly.reshape(len(mypoly), -1)
               U, S, V = numpy.linalg.svd(P) # (U * S).dot(V[:len(S)]) == P
               project = (V.T[:,:len(S)] / S).dot(U.T).reshape(mypoly.shape[1:]+mypoly.shape[:1])
-              projectcache[mypoly] = project
+              projectcache[id(mypoly)] = project, mypoly # NOTE: mypoly serves to keep array alive
 
         # add the dofs and coefficients to the hierarchical basis
         hbasis_dofs.append(numpy.concatenate(trans_dofs))
@@ -2023,10 +2024,10 @@ class Patch(types.Singleton):
   __slots__ = 'topo', 'verts', 'boundaries'
 
   @types.apply_annotations
-  def __init__(self, topo:stricttopology, verts:types.frozenarray, boundaries:types.tuple[types.strict[PatchBoundary]]):
+  def __init__(self, topo:stricttopology, verts:types.arraydata, boundaries:types.tuple[types.strict[PatchBoundary]]):
     super().__init__()
     self.topo = topo
-    self.verts = verts
+    self.verts = numpy.asarray(verts)
     self.boundaries = boundaries
 
 class MultipatchTopology(Topology):
