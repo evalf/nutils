@@ -1053,4 +1053,50 @@ class Py_buffer(TestCase):
     buf_of_a = nutils.types.Py_buffer(a)
     self.assertEqual(buf_of_a.buf, a.__array_interface__['data'][0])
 
+class arraydata(TestCase):
+
+  def _check(self, array, dtype):
+    arraydata = nutils.types.arraydata(array)
+    self.assertEqual(arraydata.shape, array.shape)
+    self.assertEqual(arraydata.ndim, array.ndim)
+    self.assertEqual(arraydata.dtype, dtype)
+    self.assertAllEqual(numpy.asarray(arraydata), array)
+
+  def test_bool(self):
+    self._check(numpy.array([True,False,True]), bool)
+
+  def test_int(self):
+    for d in 'int32', 'int64', 'uint32':
+      with self.subTest(d):
+        self._check(numpy.array([[1,2,3],[4,5,6]], dtype=d), int)
+
+  def test_float(self):
+    for d in 'float32', 'float64':
+      with self.subTest(d):
+        self._check(numpy.array([[.1,.2,.3],[.4,.5,.6]], dtype=d), float)
+
+  def test_complex(self):
+    self._check(numpy.array([1+2j,3+4j]), complex)
+
+  def test_rewrap(self):
+    w = nutils.types.arraydata(numpy.array([1,2,3]))
+    self.assertIs(w, nutils.types.arraydata(w))
+
+  def test_pickle(self):
+    import pickle
+    orig = nutils.types.arraydata([1,2,3])
+    s = pickle.dumps(orig)
+    unpickled = pickle.loads(s)
+    self.assertEqual(orig, unpickled)
+    self.assertAllEqual(numpy.asarray(unpickled), [1,2,3])
+
+  def test_hash(self):
+    a = nutils.types.arraydata(numpy.array([1,2,3], dtype=numpy.int32))
+    b = nutils.types.arraydata(numpy.array([1,2,3], dtype=numpy.int64))
+    c = nutils.types.arraydata(numpy.array([[1,2,3]], dtype=numpy.int64))
+    self.assertEqual(hash(a), hash(b))
+    self.assertEqual(a, b)
+    self.assertNotEqual(hash(a), hash(c)) # shapes differ
+    self.assertNotEqual(a, c)
+
 # vim:sw=2:sts=2:et

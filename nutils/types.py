@@ -713,6 +713,47 @@ class Singleton(Immutable, metaclass=SingletonMeta):
   __hash__ = Immutable.__hash__
   __eq__ = object.__eq__
 
+class arraydata(Singleton):
+  '''hashable array container.
+
+  The container can be used for fast equality checks and for dictionary keys.
+  Data is copied at construction and canonicalized by casting it to the
+  platform's primary data representation (e.g. int64 i/o int32). It can be
+  retrieved via :func:`numpy.asarray`. Additionally the ``arraydata`` object
+  provides direct access to the array's shape, dtype and bytes.
+
+  Example
+  -------
+  >>> a = numpy.array([1,2,3])
+  >>> w = arraydata(a)
+  >>> w == arraydata([1,2,4]) # NOTE: equality only if entire array matches
+  False
+  >>> numpy.asarray(w)
+  array([1, 2, 3])
+  '''
+
+  __slots__ = 'dtype', 'shape', 'bytes', 'ndim', '__array_interface__'
+
+  def __new__(cls, arg):
+    if isinstance(arg, cls):
+      return arg
+    array = numpy.asarray(arg)
+    dtype = dict(b=bool, u=int, i=int, f=float, c=complex)[array.dtype.kind]
+    return super().__new__(cls, dtype, array.shape, array.astype(dtype).tobytes())
+
+  def __init__(self, dtype, shape, bytes):
+    self.dtype = dtype
+    self.shape = shape
+    self.bytes = bytes
+    self.ndim = len(shape)
+    # By using the array interface and asarray (rather than frombuffer) we
+    # obtain an array object that has self (rather than bytes) as its base.
+    self.__array_interface__ = dict(
+      data=(Py_buffer(bytes).buf, True),
+      typestr=numpy.dtype(dtype).str,
+      shape=shape,
+      version=3)
+
 def strictint(value):
   '''
   Converts any type that is a subclass of :class:`numbers.Integral` (e.g.
@@ -1431,7 +1472,7 @@ def _array_bases(obj):
   while isinstance(obj, numpy.ndarray):
     yield obj
     obj = obj.base
-  assert obj is None
+  assert obj is None or isinstance(obj, arraydata)
 
 def _isimmutable(obj):
   return obj is None \
