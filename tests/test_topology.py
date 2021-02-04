@@ -270,7 +270,7 @@ class refined(TestCase):
   def test_boundary_gradient(self):
     ref = _refined_refs[self.etype]
     trans = (transform.Identifier(ref.ndims, 'root'),)
-    domain = topology.ConnectedTopology(References.uniform(ref, 1), transformseq.PlainTransforms([trans], ref.ndims), transformseq.PlainTransforms([trans], ref.ndims), ((-1,)*ref.nedges,)).refine(self.ref0)
+    domain = topology.ConnectedTopology(References.uniform(ref, 1), transformseq.PlainTransforms([trans], ref.ndims, ref.ndims), transformseq.PlainTransforms([trans], ref.ndims, ref.ndims), ((-1,)*ref.nedges,)).refine(self.ref0)
     geom = function.rootcoords(ref.ndims)
     basis = domain.basis('std', degree=1)
     u = domain.projection(geom.sum(), onto=basis, geometry=geom, degree=2)
@@ -635,7 +635,7 @@ class common(TestCase):
 
 common(
   'Topology',
-  topo=topology.Topology(References.uniform(element.PointReference(), 1), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0)),
+  topo=topology.Topology(References.uniform(element.PointReference(), 1), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0, 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0, 0)),
   hasboundary=False)
 common(
   'StructuredTopology:2D',

@@ -1273,7 +1273,7 @@ class CommonBasis:
 class PlainBasis(CommonBasis, TestCase):
 
   def setUp(self):
-    self.checktransforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
+    self.checktransforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0, 0)
     index, coords = self.mk_index_coords(0, self.checktransforms)
     self.checkcoeffs = [[1.],[2.,3.],[4.,5.],[6.]]
     self.checkdofs = [[0],[2,3],[1,3],[2]]
@@ -1284,7 +1284,7 @@ class PlainBasis(CommonBasis, TestCase):
 class DiscontBasis(CommonBasis, TestCase):
 
   def setUp(self):
-    self.checktransforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
+    self.checktransforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0, 0)
     index, coords = self.mk_index_coords(0, self.checktransforms)
     self.checkcoeffs = [[1.],[2.,3.],[4.,5.],[6.]]
     self.basis = function.DiscontBasis(self.checkcoeffs, index, coords)
@@ -1295,7 +1295,7 @@ class DiscontBasis(CommonBasis, TestCase):
 class MaskedBasis(CommonBasis, TestCase):
 
   def setUp(self):
-    self.checktransforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
+    self.checktransforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0, 0)
     index, coords = self.mk_index_coords(0, self.checktransforms)
     parent = function.PlainBasis([[1.],[2.,3.],[4.,5.],[6.]], [[0],[2,3],[1,3],[2]], 4, index, coords)
     self.basis = function.MaskedBasis(parent, [0,2])
@@ -1307,7 +1307,7 @@ class MaskedBasis(CommonBasis, TestCase):
 class PrunedBasis(CommonBasis, TestCase):
 
   def setUp(self):
-    parent_transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0)
+    parent_transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0, 0)
     parent_index, parent_coords = self.mk_index_coords(0, parent_transforms)
     indices = types.frozenarray([0,2])
     self.checktransforms = parent_transforms[indices]
