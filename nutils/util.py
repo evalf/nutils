@@ -468,4 +468,25 @@ def index(sequence, item):
       return i
   raise ValueError('index(sequence, item): item not in sequence')
 
+def unique(items, key=None):
+  '''Deduplicate items in sequence.
+
+  Return a tuple `(unique, indices)` such that `items[i] == unique[indices[i]]`
+  and `unique` does not contain duplicate items. An optional `key` is applied
+  to all items before testing for equality.
+  '''
+
+  seen = {}
+  unique = []
+  indices = []
+  for item in items:
+    k = item if key is None else key(item)
+    try:
+      index = seen[k]
+    except KeyError:
+      index = seen[k] = len(unique)
+      unique.append(item)
+    indices.append(index)
+  return unique, indices
+
 # vim:sw=2:sts=2:et

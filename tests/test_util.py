@@ -160,3 +160,15 @@ class index(TestCase):
 
   def test_set(self):
     self._check([{1,2}, {2,3}, {3,4}, {2,3}, {1,2}])
+
+class unique(TestCase):
+
+  def test_nokey(self):
+    unique, indices = util.unique([1,2,3,2])
+    self.assertEqual(unique, [1,2,3])
+    self.assertEqual(indices, [0,1,2,1])
+
+  def test_key(self):
+    unique, indices = util.unique([[1,2],[2,3],[2,1]], key=frozenset)
+    self.assertEqual(unique, [[1,2],[2,3]])
+    self.assertEqual(indices, [0,1,0])

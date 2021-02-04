@@ -1071,12 +1071,7 @@ class MosaicReference(Reference):
 
   @property
   def vertices(self):
-    vertices = []
-    for etrans, eref in self.edges:
-      if eref:
-        for vertex in etrans.apply(eref.vertices):
-          if vertex not in vertices:
-            vertices.append(vertex)
+    vertices, indices = util.unique([vertex for etrans, eref in self.edges if eref for vertex in etrans.apply(eref.vertices)])
     return types.frozenarray(vertices)
 
   def __and__(self, other):

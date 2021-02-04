@@ -1092,10 +1092,10 @@ class StructuredTopology(Topology):
     # such that unique[index[i,j]] == poly_outer_product(stdelems[0][i], stdelems[1][j])
     index = numpy.array(0)
     for stdelems_i in stdelems:
-      unique_i = tuple(set(stdelems_i))
+      unique_i, index_i = util.unique(stdelems_i)
       unique = unique_i if not index.ndim \
         else [numeric.poly_outer_product(a, b) for a in unique for b in unique_i]
-      index = index[...,_] * len(unique_i) + tuple(map(unique_i.index, stdelems_i))
+      index = index[...,_] * len(unique_i) + index_i
 
     coeffs = [unique[i] for i in index.flat]
     dofmap = [types.frozenarray(vertex_structure[S].ravel(), copy=False) for S in itertools.product(*slices)]
