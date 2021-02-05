@@ -256,7 +256,7 @@ class Evaluable(types.Singleton):
       funcdeps = func.dependencies
       deps.update(funcdeps)
       deps[func] = len(funcdeps)
-    return deps
+    return types.frozendict(deps)
 
   @property
   def arguments(self):

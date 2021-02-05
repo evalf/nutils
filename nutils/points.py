@@ -109,7 +109,7 @@ class Points(types.Singleton):
     elems, edges = divmod(numpy.lexsort(edge_simplices.reshape(-1, self.ndims).T), self.ndims+1)
     sorted_edge_simplices = edge_simplices[elems, edges] # (nelems x ndims+1) x ndims; matching edges are now adjacent
     notequal = numpy.not_equal(sorted_edge_simplices[1:], sorted_edge_simplices[:-1]).any(axis=1)
-    return sorted_edge_simplices[numpy.hstack([True,notequal]) & numpy.hstack([notequal,True])]
+    return types.frozenarray(sorted_edge_simplices[numpy.hstack([True,notequal]) & numpy.hstack([notequal,True])], copy=False)
 
   @property
   def onhull(self):
@@ -267,7 +267,7 @@ class TransformPoints(Points):
 
   @property
   def weights(self):
-    return self.points.weights * abs(float(self.trans.det))
+    return types.frozenarray(self.points.weights * abs(float(self.trans.det)), copy=False)
 
   @property
   def tri(self):
@@ -298,7 +298,7 @@ class ConcatPoints(Points):
     for pairs in self.duplicates:
       for i, j in pairs[1:]:
         masks[i][j] = False
-    return tuple(masks)
+    return tuple(types.frozenarray(m, copy=False) for m in masks)
 
   @property
   def coords(self):

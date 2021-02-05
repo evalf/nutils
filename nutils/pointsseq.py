@@ -317,9 +317,7 @@ class PointsSequence(types.Singleton):
     for points in self:
       tri.append(points.tri + offset)
       offset += points.npoints
-    tri = numpy.concatenate(tri) if tri else numpy.zeros((0,self.ndims+1), int)
-    tri.flags.writeable = False
-    return tri
+    return types.frozenarray(numpy.concatenate(tri) if tri else numpy.zeros((0,self.ndims+1), int), copy=False)
 
   @property
   def hull(self) -> numpy.ndarray:
@@ -336,9 +334,7 @@ class PointsSequence(types.Singleton):
     for points in self:
       hull.append(points.hull + offset)
       offset += points.npoints
-    hull = numpy.concatenate(hull) if hull else numpy.zeros((0,self.ndims), int)
-    hull.flags.writeable = False
-    return hull
+    return types.frozenarray(numpy.concatenate(hull) if hull else numpy.zeros((0,self.ndims), int), copy=False)
 
   def get_evaluable_coords(self, index: evaluable.Array) -> evaluable.Array:
     if index.ndim != 0 or index.dtype != int:
@@ -430,9 +426,7 @@ class _Uniform(PointsSequence):
   def _mk_indices(self, item: numpy.ndarray) -> numpy.ndarray:
     npoints = self.item.npoints
     ind = item[None] + numpy.arange(0, len(self)*npoints, npoints)[:,None,None]
-    ind = ind.reshape(len(self)*item.shape[0], item.shape[1])
-    ind.flags.writeable = False
-    return ind
+    return types.frozenarray(ind.reshape(len(self)*item.shape[0], item.shape[1]), copy=False)
 
   @property
   def tri(self) -> numpy.ndarray:
@@ -518,9 +512,7 @@ class _Repeat(PointsSequence):
   def _mk_indices(self, parent: numpy.ndarray) -> numpy.ndarray:
     npoints = self.parent.npoints
     ind = parent[None] + numpy.arange(0, self.count*npoints, npoints)[:,None,None]
-    ind = ind.reshape(self.count*parent.shape[0], parent.shape[1])
-    ind.flags.writeable = False
-    return ind
+    return types.frozenarray(ind.reshape(self.count*parent.shape[0], parent.shape[1]), copy=False)
 
   @property
   def tri(self) -> numpy.ndarray:

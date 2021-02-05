@@ -343,6 +343,7 @@ class _CacheMeta_property:
       cached_value = getattr(instance, self.cache_attr)
     except AttributeError:
       value = self.fget(instance)
+      assert _isimmutable(value)
       setattr(instance, self.cache_attr, value if value is not instance else self._self)
       return value
     else:
@@ -371,7 +372,7 @@ def _CacheMeta_method(func, cache_attr):
         value = self if cached_value is _self else cached_value
       except AttributeError:
         value = func(self)
-        assert hash(value), 'cannot cache function because the return value is not hashable'
+        assert _isimmutable(value)
         setattr(self, cache_attr, _self if value is self else value)
       return value
 
@@ -405,8 +406,7 @@ def _CacheMeta_method(func, cache_attr):
           return self if cached_value is _self else cached_value
 
       value = func(*args, **kwargs)
-
-      assert hash(value), 'cannot cache function because the return value is not hashable'
+      assert _isimmutable(value)
       setattr(self, cache_attr, (key, _self if value is self else value))
 
       return value
@@ -1380,5 +1380,19 @@ class _deprecation_wrapper:
   __call__ = create
 unit = _deprecation_wrapper()
 del _deprecation_wrapper
+
+def _array_bases(obj):
+  'all ndarray bases starting from and including `obj`'
+  while isinstance(obj, numpy.ndarray):
+    yield obj
+    obj = obj.base
+  assert obj is None
+
+def _isimmutable(obj):
+  return obj is None \
+    or isinstance(obj, (Immutable, bool, int, float, complex, str, bytes, frozenset, numpy.generic, frozenarray)) \
+    or isinstance(obj, builtins.tuple) and all(_isimmutable(item) for item in obj) \
+    or isinstance(obj, frozendict) and all(_isimmutable(value) for value in obj.values()) \
+    or isinstance(obj, numpy.ndarray) and not any(base.flags.writeable for base in _array_bases(obj))
 
 # vim:sw=2:sts=2:et

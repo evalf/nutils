@@ -810,7 +810,7 @@ class Cone(Reference):
           edge_transforms.append(newtrans)
     else:
       edge_transforms.append(transform.Updim(numpy.zeros((1,0)), self.tip, isflipped=not self.etrans.isflipped))
-    return edge_transforms
+    return tuple(edge_transforms)
 
   @property
   def edge_refs(self):
@@ -821,7 +821,7 @@ class Cone(Reference):
       edge_refs.extend(edge.cone(extrudetrans, tip) for edge in self.edgeref.edge_refs if edge)
     else:
       edge_refs.append(getsimplex(0))
-    return edge_refs
+    return tuple(edge_refs)
 
   def getpoints(self, ischeme, degree):
     if ischeme == 'gauss':
@@ -950,7 +950,7 @@ class WithChildrenReference(Reference):
           eref -= coppref.edge_refs[self.baseref.connectivity[jchild].index(ichild)]
         if eref:
           extra_edges.append((ichild, iedge, eref))
-    return extra_edges
+    return tuple(extra_edges)
 
   def subvertex(self, ichild, i):
     assert 0<=ichild<self.nchildren
@@ -1120,7 +1120,7 @@ class MosaicReference(Reference):
 
   @property
   def subrefs(self):
-    return [ref.cone(trans,self._midpoint) for trans, ref in zip(self.baseref.edge_transforms, self._edge_refs) if ref]
+    return tuple(ref.cone(trans,self._midpoint) for trans, ref in zip(self.baseref.edge_transforms, self._edge_refs) if ref)
 
   @property
   def simplices(self):

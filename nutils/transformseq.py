@@ -666,7 +666,7 @@ class ReorderedTransforms(Transforms):
 
   @property
   def _rindices(self):
-    return numpy.argsort(self._indices)
+    return types.frozenarray(numpy.argsort(self._indices), copy=False)
 
   def __iter__(self):
     for itrans in self._indices:

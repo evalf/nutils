@@ -586,9 +586,7 @@ class _Derived(References):
 
   @property
   def offsets(self) -> numpy.ndarray:
-    offsets = numpy.cumsum([0, *(len(self.derived_refs(ref)) for ref in self.parent)])
-    offsets.flags.writeable = False
-    return offsets
+    return types.frozenarray(numpy.cumsum([0, *(len(self.derived_refs(ref)) for ref in self.parent)]), copy=False)
 
   def __len__(self) -> int:
     return self.offsets[-1]

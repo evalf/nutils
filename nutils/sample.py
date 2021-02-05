@@ -322,7 +322,7 @@ class _DefaultIndex(Sample):
 
   @property
   def offsets(self):
-    return numpy.cumsum([0]+[p.npoints for p in self.points])
+    return types.frozenarray(numpy.cumsum([0]+[p.npoints for p in self.points]), copy=False)
 
   def getindex(self, ielem):
     return numpy.arange(self.offsets[ielem], self.offsets[ielem+1])

@@ -2093,11 +2093,11 @@ class MultipatchTopology(Topology):
     for patch in self.patches:
       for boundary in patch.boundaries:
         patchinterfaces.setdefault(boundary.id, []).append((patch.topo, boundary))
-    return {
+    return types.frozendict({
       boundaryid: tuple(data)
       for boundaryid, data in patchinterfaces.items()
       if len(data) > 1
-    }
+    })
 
   def getitem(self, key):
     for i in range(len(self.patches)):
