@@ -311,6 +311,9 @@ def nutils_hash(data):
   elif t is types.MethodType:
     h.update(nutils_hash(data.__self__))
     h.update(nutils_hash(data.__name__))
+  elif t is numpy.ndarray and not data.flags.writeable:
+    h.update('{}{}\0'.format(','.join(map(str, data.shape)), data.dtype.str).encode())
+    h.update(data.tobytes())
   elif dataclasses and dataclasses.is_dataclass(t):
     # Note: we cannot use dataclasses.asdict here as its built-in recursion
     # makes nested dataclass instances indistinguishable from dictionaries.

@@ -141,6 +141,15 @@ class nutils_hash(TestCase):
     self.assertEqual(nutils.types.nutils_hash(frozenset([1,2])).hex(), '3862dc7e5321bc8a576c385ed2c12c71b96a375a')
     self.assertEqual(nutils.types.nutils_hash(frozenset(['spam','eggs'])).hex(), '2c75fd3db57f5e505e1425ae9ff6dcbbc77fd123')
 
+  def test_ndarray(self):
+    a = numpy.array([1,2,3])
+    with self.assertRaises(TypeError):
+      nutils.types.nutils_hash(a)
+    a.flags.writeable = False
+    self.assertEqual(nutils.types.nutils_hash(a).hex(),
+            '299c2c796b4a71b7a2b310ddb29bba0440d77e26' if numpy.int_ == numpy.int64
+       else '9fee185ee111495718c129b4d3a8ae79975f3459')
+
   @unittest.skipIf(sys.version_info < (3,7), "not supported in this Python version")
   def test_dataclass(self):
     import dataclasses
