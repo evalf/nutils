@@ -2793,8 +2793,8 @@ class PlainBasis(Basis):
   __slots__ = '_coeffs', '_dofs'
 
   def __init__(self, coefficients: Sequence[numpy.ndarray], dofs: Sequence[numpy.ndarray], ndofs: int, index: Array, coords: Array) -> None:
-    self._coeffs = tuple(map(types.frozenarray, coefficients))
-    self._dofs = tuple(map(types.frozenarray, dofs))
+    self._coeffs = tuple(types.frozenarray(c, dtype=types.strictfloat) for c in coefficients)
+    self._dofs = tuple(types.frozenarray(d, dtype=types.strictint) for d in dofs)
     assert len(self._coeffs) == len(self._dofs)
     assert all(c.ndim == 1+coords.shape[0] for c in self._coeffs)
     assert all(len(c) == len(d) for c, d in zip(self._coeffs, self._dofs))
@@ -2838,7 +2838,7 @@ class DiscontBasis(Basis):
   __slots__ = '_coeffs', '_offsets'
 
   def __init__(self, coefficients: Sequence[numpy.ndarray], index: Array, coords: Array) -> None:
-    self._coeffs = tuple(map(types.frozenarray, coefficients))
+    self._coeffs = tuple(types.frozenarray(c, dtype=types.strictfloat) for c in coefficients)
     assert all(c.ndim == 1+coords.shape[0] for c in self._coeffs)
     self._offsets = types.frozenarray(numpy.cumsum([0, *map(len, self._coeffs)]), copy=False)
     super().__init__(self._offsets[-1], len(coefficients), index, coords)

@@ -459,14 +459,12 @@ class SimplexReference(Reference):
 
   def _get_poly_coeffs_bernstein(self, degree):
     ndofs = self.get_ndofs(degree)
-    if self.ndims == 0:
-      return types.frozenarray(numpy.ones((ndofs,), dtype=int), copy=False)
-    coeffs = numpy.zeros((ndofs,)+(degree+1,)*self.ndims, dtype=int)
+    coeffs = numpy.zeros((ndofs,)+(degree+1,)*self.ndims)
     for i, p in enumerate(self._integer_barycentric_coordinates(degree)):
       p = p[1:]
       for q in itertools.product(*[range(degree+1)]*self.ndims):
         if sum(p+q) <= degree:
-          coeffs[(i,)+tuple(map(operator.add, p, q))] = (-1)**sum(q)*math.factorial(degree)//(math.factorial(degree-sum(p+q))*util.product(map(math.factorial, p+q)))
+          coeffs[(i,)+tuple(map(operator.add, p, q))] = (-1)**sum(q)*math.factorial(degree)//util.product(map(math.factorial,(degree-sum(p+q),*p,*q)))
     assert i == ndofs - 1
     return types.frozenarray(coeffs, copy=False)
 

@@ -2333,13 +2333,13 @@ class Elemwise(Array):
 
   @types.apply_annotations
   def __init__(self, data:types.tuple[types.frozenarray], index:asarray, dtype:asdtype):
+    assert all(d.dtype == dtype for d in data), 'data does not match dtype'
     self.data = data
     shape = get([d.shape for d in data], 0, index)
     super().__init__(args=[index], shape=shape, dtype=dtype)
 
   def evalf(self, index):
-    assert index.ndim == 0
-    return self.data[index].astype(self.dtype, copy=False, casting='same_kind')
+    return self.data[index]
 
   def _simplified(self):
     if all(map(numeric.isint, self.shape)) and all(self.data[0] == data for data in self.data[1:]):

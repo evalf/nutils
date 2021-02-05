@@ -2216,7 +2216,7 @@ class MultipatchTopology(Topology):
     transforms = transformseq.PlainTransforms(tuple((patch.topo.root,) for patch in self.patches), self.ndims)
     index = function.transforms_index(transforms)
     coords = function.transforms_coords(transforms, self.ndims)
-    return function.DiscontBasis([types.frozenarray(1, dtype=int).reshape(1, *(1,)*self.ndims)]*len(self.patches), index, coords)
+    return function.DiscontBasis([types.frozenarray(1, dtype=float).reshape(1, *(1,)*self.ndims)]*len(self.patches), index, coords)
 
   @property
   def boundary(self):
