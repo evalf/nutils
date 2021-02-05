@@ -455,4 +455,17 @@ class settable:
     finally:
       self.value = oldvalue
 
+def index(sequence, item):
+  '''Index of first occurrence.
+
+  Generalization of `tuple.index`.
+  '''
+
+  if isinstance(sequence, (list, tuple)):
+    return sequence.index(item)
+  for i, v in enumerate(sequence):
+    if v == item:
+      return i
+  raise ValueError('index(sequence, item): item not in sequence')
+
 # vim:sw=2:sts=2:et
