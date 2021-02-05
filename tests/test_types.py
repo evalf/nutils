@@ -1117,4 +1117,50 @@ class lru_dict(TestCase):
     d['c'] = 40
     self.assertEqual(d, dict(a=10, c=40))
 
+class lru_cache(TestCase):
+
+  def setUp(self):
+    self.func.cache.clear()
+
+  @nutils.types.lru_cache(maxsize=2)
+  def func(self, *args):
+    self.called = True
+
+  def assertCached(self, *args):
+    self.called = False
+    self.func(*args)
+    self.assertFalse(self.called)
+
+  def assertNotCached(self, *args):
+    self.called = False
+    self.func(*args)
+    self.assertTrue(self.called)
+
+  def test_lru(self):
+    self.assertNotCached(1)
+    self.assertNotCached(2)
+    self.assertCached(1)
+    self.assertCached(2)
+    self.assertNotCached(3) # drops 1
+    self.assertNotCached(1)
+    self.assertCached(3)
+
+  def test_array(self):
+    a = numpy.array([1,2,3,4])
+    a.flags.writeable = False
+    self.assertNotCached(a[1:][:-1])
+    self.assertCached(a[:-1][1:])
+
+  def test_callback(self):
+    a = numpy.array([1,2,3,4])
+    a.flags.writeable = False
+    class dummy: pass
+    b = dummy()
+    r = weakref.ref(b)
+    self.assertNotCached(a, b)
+    del b
+    self.assertIsNot(r(), None)
+    del a
+    self.assertIs(r(), None)
+
 # vim:sw=2:sts=2:et

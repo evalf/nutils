@@ -1492,6 +1492,49 @@ class lru_dict(dict):
       lru = self._sorted_keys.pop()
     del self[lru]
 
+def lru_cache(func=None, maxsize=128):
+  '''Buffer-aware LRU cache.
+
+  Returns values from a cache for previously seen arguments. Arguments must be
+  hasheable objects or immutable Numpy arrays, the latter identified by the
+  underlying buffer. Destruction of the buffer triggers a callback that removes
+  the corresponding cache entry.
+
+  At present, any writeable array will silently disable caching. This bevaviour
+  is transitional, with future versions requiring that all arrays be immutable.
+  '''
+
+  if func is None:
+    return functools.partial(lru_cache, maxsize=maxsize)
+
+  cache = lru_dict(maxsize)
+
+  @functools.wraps(func)
+  def wrapped(*args):
+    key = []
+    bases = []
+    for arg in args:
+      if isinstance(arg, numpy.ndarray):
+        for base in _array_bases(arg):
+          if base.flags.writeable:
+            return func(*args)
+        bases.append(base if base.base is None else base.base)
+        key.append((Py_buffer(arg).buf, *arg.shape, *arg.strides, arg.dtype.str))
+      else:
+        key.append((type(arg), arg))
+    key = tuple(key)
+    try:
+      v = cache[key]
+    except KeyError:
+      v = cache[key] = func(*args)
+      assert _isimmutable(v)
+      for base in bases:
+        weakref.finalize(base, cache.pop, key, None)
+    return v
+
+  wrapped.cache = cache
+  return wrapped
+
 class attributes:
   '''
   Dictionary-like container with attributes instead of keys, instantiated using
