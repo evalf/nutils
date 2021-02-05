@@ -1386,4 +1386,19 @@ class _deprecation_wrapper:
 unit = _deprecation_wrapper()
 del _deprecation_wrapper
 
+_dtypes = bool, int, float, complex
+isdtype = lambda arg: any(arg is d for d in _dtypes)
+
+def asdtype(arg):
+  try:
+    return {'b': bool, 'i': int, 'u': int, 'f': float, 'c': complex}[numpy.dtype(arg).kind]
+  except:
+    raise ValueError('cannot cast {} to supported dtype'.format(arg))
+
+def jointdtype(dtypes):
+  dtypes = tuple(dtypes)
+  assert len(dtypes) > 0, 'empty sequence of dtypes'
+  assert all(isdtype(d) for d in dtypes), 'contain unsupported dtype: {}'.format(dtypes)
+  return _dtypes[max(_dtypes.index(dtype) for dtype in dtypes)]
+
 # vim:sw=2:sts=2:et

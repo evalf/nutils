@@ -100,12 +100,14 @@ class Array(Lowerable, metaclass=_ArrayMeta):
     if isinstance(value, Array):
       value = value
     elif numeric.isnumber(value) or numeric.isarray(value):
-      value = _Constant(value)
+      value = _Constant(value, dtype=dtype)
     elif isinstance(value, (list, tuple)):
-      value = stack(value, axis=0)
+      value = stack(value, axis=0) if len(value) > 0 else _Constant([], dtype or int)
     else:
       raise ValueError('cannot convert {}.{} to Array'.format(type(value).__module__, type(value).__qualname__))
-    if dtype is not None and _dtypes.index(value.dtype) > _dtypes.index(dtype):
+    if dtype is not None and not types.isdtype(dtype):
+      raise ValueError('unsupported dtype `{}`'.format(dtype))
+    if dtype is not None and not numpy.can_cast(value.dtype, dtype):
       raise ValueError('expected an array with dtype `{}` but got `{}`'.format(dtype.__name__, value.dtype.__name__))
     if ndim is not None and value.ndim != ndim:
       raise ValueError('expected an array with dimension `{}` but got `{}`'.format(ndim, value.ndim))
@@ -455,7 +457,7 @@ class _Wrapper(Array):
   def broadcasted_arrays(cls, lower: Callable[..., evaluable.Array], *args: IntoArray, min_dtype: Optional[DType] = None, force_dtype: Optional[DType] = None) -> '_Wrapper':
     broadcasted, shape, dtype = _broadcast(*args)
     assert not min_dtype or not force_dtype
-    if min_dtype and (_dtypes.index(dtype) < _dtypes.index(min_dtype)):
+    if min_dtype and numpy.can_cast(dtype, min_dtype):
       dtype = min_dtype
     if force_dtype:
       dtype = force_dtype
@@ -493,9 +495,9 @@ class _Ones(Array):
 
 class _Constant(Array):
 
-  def __init__(self, value: Any) -> None:
-    self._value = types.frozenarray(value)
-    super().__init__(self._value.shape, self._value.dtype)
+  def __init__(self, value: Any, dtype=None) -> None:
+    self._value = types.frozenarray(value, dtype)
+    super().__init__(self._value.shape, dtype=types.asdtype(self._value.dtype))
 
   def __getnewargs__(self):
     return self._value,
@@ -730,7 +732,7 @@ def _broadcast(*args_: IntoArray) -> Tuple[Tuple[Array, ...], Shape, DType]:
         arg = repeat(arg, n, i)
     arg = _prepend_axes(arg, shape[:ndim-arg.ndim])
     broadcasted.append(arg)
-  return tuple(broadcasted), shape, evaluable._jointdtype(*(arg.dtype for arg in args))
+  return tuple(broadcasted), shape, types.jointdtype(arg.dtype for arg in args)
 
 # CONSTRUCTORS
 
@@ -2971,7 +2973,7 @@ class StructuredBasis(Basis):
     for start_dofs_i, stop_dofs_i, ndofs_i, index_i in zip(self._start_dofs, self._stop_dofs, self._dofs_shape, indices):
       dofs_i = numpy.arange(start_dofs_i[index_i], stop_dofs_i[index_i], dtype=int) % ndofs_i
       dofs = numpy.add.outer(dofs*ndofs_i, dofs_i)
-    return types.frozenarray(dofs.ravel(), dtype=types.strictint, copy=False)
+    return types.frozenarray(dofs.ravel(), dtype=int, copy=False)
 
   def get_ndofs(self, ielem: int) -> int:
     indices = self._get_indices(ielem)
@@ -3019,7 +3021,7 @@ class StructuredBasis(Basis):
       ndofs *= ndofs_i
       ntrans *= ntrans_i
     assert dof == 0
-    return types.frozenarray(functools.reduce(numpy.add.outer, reversed(supports)).ravel(), copy=False, dtype=types.strictint)
+    return types.frozenarray(functools.reduce(numpy.add.outer, reversed(supports)).ravel(), copy=False, dtype=int)
 
 class PrunedBasis(Basis):
   '''A subset of another :class:`Basis`.
