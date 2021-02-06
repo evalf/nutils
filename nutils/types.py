@@ -570,15 +570,13 @@ class ImmutableMeta(CacheMeta):
     args = None, *args[1:]
     for preprocess in cls._pre_init:
       args, kwargs = preprocess(*args, **kwargs)
-    args = args[1:]
-    return cls._new(args, kwargs)
+    return cls._new(*args[1:], tuple(sorted(kwargs.items())))
 
-  def _new(cls, args, kwargs):
+  def _new(cls, *args):
     self = cls.__new__(cls)
     self._args = args
-    self._kwargs = kwargs
-    self._hash = hash(args + tuple((key, kwargs[key]) for key in sorted(kwargs)))
-    self._init(*args, **kwargs)
+    self._hash = hash(args)
+    self._init(*args[:-1], **dict(args[-1]))
     return self
 
 class Immutable(metaclass=ImmutableMeta):
@@ -633,26 +631,23 @@ class Immutable(metaclass=ImmutableMeta):
   True
   '''
 
-  __slots__ = '__weakref__', '_args', '_kwargs', '_hash'
+  __slots__ = '__weakref__', '_args', '_hash'
   __cache__ = '__nutils_hash__',
 
   def __reduce__(self):
-    return self.__class__._new, (self._args, self._kwargs)
+    return self.__class__._new, self._args
 
   def __hash__(self):
     return self._hash
 
   def __eq__(self, other):
-    return type(self) is type(other) and self._hash == other._hash and self._args == other._args and self._kwargs == other._kwargs
+    return self is other or type(self) is type(other) and self._args == other._args
 
   @property
   def __nutils_hash__(self):
     h = hashlib.sha1('{}.{}:{}\0'.format(type(self).__module__, type(self).__qualname__, type(self)._version).encode())
     for arg in self._args:
       h.update(nutils_hash(arg))
-    for name in sorted(self._kwargs):
-      h.update(nutils_hash(name))
-      h.update(nutils_hash(self._kwargs[name]))
     return h.digest()
 
   def __getstate__(self):
@@ -662,7 +657,8 @@ class Immutable(metaclass=ImmutableMeta):
     raise Exception('setstate should never be called')
 
   def __str__(self):
-    return '{}({})'.format(self.__class__.__name__, ','.join(str(arg) for arg in self._args))
+    *args, kwargs = self._args
+    return '{}({})'.format(self.__class__.__name__, ','.join([*map(str, args), *map('{0[0]}={0[1]}'.format, kwargs)]))
 
 class SingletonMeta(ImmutableMeta):
 
@@ -671,12 +667,11 @@ class SingletonMeta(ImmutableMeta):
     cls._cache = weakref.WeakValueDictionary()
     return cls
 
-  def _new(cls, args, kwargs):
-    key = args + tuple((key, kwargs[key]) for key in sorted(kwargs))
+  def _new(cls, *args):
     try:
-      self = cls._cache[key]
+      self = cls._cache[args]
     except KeyError:
-      cls._cache[key] = self = super()._new(args, kwargs)
+      self = cls._cache[args] = super()._new(*args)
     return self
 
 class Singleton(Immutable, metaclass=SingletonMeta):
