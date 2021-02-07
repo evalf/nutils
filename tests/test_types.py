@@ -1,7 +1,7 @@
 from nutils.testing import *
 import nutils.types
 import inspect, pickle, itertools, ctypes, stringly, tempfile, io, os
-import numpy
+import numpy, weakref
 
 class apply_annotations(TestCase):
 
@@ -1007,5 +1007,50 @@ class ImmutableFamily(TestCase):
 
 ImmutableFamily(cls=nutils.types.Immutable)
 ImmutableFamily(cls=nutils.types.Singleton)
+
+class Py_buffer(TestCase):
+
+  def test_bytes(self):
+    a = b'abc'
+    buf_of_a = nutils.types.Py_buffer(a, flags=nutils.types.Py_buffer.PyBUF_RECORDS_RO)
+    self.assertEqual(buf_of_a.buf, numpy.frombuffer(a, 'c').__array_interface__['data'][0])
+    self.assertIs(buf_of_a.obj, a)
+    self.assertEqual(buf_of_a.len, 3)
+    self.assertEqual(buf_of_a.itemsize, 1)
+    self.assertEqual(buf_of_a.ndim, 1)
+    self.assertEqual(buf_of_a.format, b'B')
+    self.assertEqual(buf_of_a.shape[0], 3)
+    self.assertEqual(buf_of_a.strides[0], 1)
+
+  def test_short_array(self):
+    a = numpy.array([1,2,3], dtype='int16')
+    buf_of_a = nutils.types.Py_buffer(a, flags=nutils.types.Py_buffer.PyBUF_RECORDS_RO)
+    self.assertEqual(buf_of_a.buf, a.__array_interface__['data'][0])
+    self.assertIs(buf_of_a.obj, a)
+    self.assertEqual(buf_of_a.len, 6)
+    self.assertEqual(buf_of_a.itemsize, 2)
+    self.assertEqual(buf_of_a.ndim, 1)
+    self.assertEqual(buf_of_a.format, b'h')
+    self.assertEqual(buf_of_a.shape[0], 3)
+    self.assertEqual(buf_of_a.strides[0], 2)
+
+  def test_float_array(self):
+    a = numpy.array([[1,2,3],[4,5,6]], dtype='float32')
+    buf_of_a = nutils.types.Py_buffer(a, flags=nutils.types.Py_buffer.PyBUF_RECORDS_RO)
+    self.assertEqual(buf_of_a.buf, a.__array_interface__['data'][0])
+    self.assertIs(buf_of_a.obj, a)
+    self.assertEqual(buf_of_a.len, 24)
+    self.assertEqual(buf_of_a.itemsize, 4)
+    self.assertEqual(buf_of_a.ndim, 2)
+    self.assertEqual(buf_of_a.format, b'f')
+    self.assertEqual(buf_of_a.shape[0], 2)
+    self.assertEqual(buf_of_a.shape[1], 3)
+    self.assertEqual(buf_of_a.strides[0], 12)
+    self.assertEqual(buf_of_a.strides[1], 4)
+
+  def test_noncontiguous_array(self):
+    a = numpy.array([[1,2,3],[4,5,6],[7,8,9]])[::-2,::2]
+    buf_of_a = nutils.types.Py_buffer(a)
+    self.assertEqual(buf_of_a.buf, a.__array_interface__['data'][0])
 
 # vim:sw=2:sts=2:et

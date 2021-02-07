@@ -22,9 +22,9 @@
 Module with general purpose types.
 """
 
-import inspect, functools, hashlib, builtins, numbers, collections.abc, itertools, abc, sys, weakref, re, io, types
-import numpy
-
+import inspect, functools, hashlib, builtins, numbers, collections.abc, itertools, abc, sys, weakref, re, io, types, numpy
+from ctypes import byref, c_int, c_ssize_t, c_void_p, c_char_p, py_object, pythonapi, Structure, POINTER
+c_ssize_p = POINTER(c_ssize_t)
 try:
   import dataclasses
 except ImportError:
@@ -1354,6 +1354,51 @@ class c_array(metaclass=_c_arraymeta):
   the third case, changes to either ``array`` or the returned ctypes array are
   not reflected by the other.
   '''
+
+class Py_buffer(Structure):
+  '''Low level access to Python buffers.
+
+  The buffer structure exposes information about the memory the underlies bytes
+  objects, Numpy arrays, and other objects that implement Python's buffer
+  protocol. This is useful for instance to establish if two separate objects
+  provide views into the same memory location, which can be a cheap alternative
+  to a full data comparison. To support this use case, the Py_buffer object is
+  hasheable and support equality testing.
+  '''
+
+  # Unfortunately, the buffer protocol does not have a Python facing API. The
+  # closest thing is memoryview, which exposes most of Py_buffer but not the
+  # actual address. While we could abuse Numpy's array interface, this turns
+  # out to be slower than the ctypes route even if obj already is an ndarray.
+
+  __slots__ = ()
+
+  # Structure definition: https://docs.python.org/3/c-api/buffer.html
+  _fields_ = [
+    ('buf', c_void_p),
+    ('obj', py_object),
+    ('len', c_ssize_t),
+    ('itemsize', c_ssize_t),
+    ('readonly', c_int),
+    ('ndim', c_int),
+    ('format', c_char_p),
+    ('shape', c_ssize_p),
+    ('strides', c_ssize_p),
+    ('suboffsets', c_ssize_p),
+    ('internal', c_void_p)]
+
+  # Flags definitions: https://github.com/python/cpython/blob/master/Include/cpython/object.h
+  PyBUF_FORMAT = 0x4
+  PyBUF_ND = 0x8
+  PyBUF_STRIDES = 0x10 | PyBUF_ND
+  PyBUF_RECORDS_RO = PyBUF_STRIDES | PyBUF_FORMAT
+
+  def __init__(self, obj, flags=PyBUF_STRIDES):
+    pythonapi.PyObject_GetBuffer(py_object(obj), byref(self), flags)
+
+  def __del__(self):
+    pythonapi.PyBuffer_Release(byref(self))
+
 
 class attributes:
   '''
