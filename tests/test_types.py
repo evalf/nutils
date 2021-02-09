@@ -1099,4 +1099,22 @@ class arraydata(TestCase):
     self.assertNotEqual(hash(a), hash(c)) # shapes differ
     self.assertNotEqual(a, c)
 
+class lru_dict(TestCase):
+
+  def test_set(self):
+    d = nutils.types.lru_dict(maxsize=2)
+    d['a'] = 10
+    d['b'] = 20
+    d['a'] = 30
+    d['c'] = 40
+    self.assertEqual(d, dict(a=30, c=40))
+
+  def test_get(self):
+    d = nutils.types.lru_dict(maxsize=2)
+    d['a'] = 10
+    d['b'] = 20
+    d['a'] # getitem
+    d['c'] = 40
+    self.assertEqual(d, dict(a=10, c=40))
+
 # vim:sw=2:sts=2:et
