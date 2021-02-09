@@ -564,16 +564,10 @@ class ImmutableMeta(CacheMeta):
     super().__init__(name, bases, namespace, **kwargs)
 
   def __call__(*args, **kwargs):
-    cls = args[0]
-    # Use `None` as temporary `self` argument, apply preprocessors and
-    # remove the temporary `self`.
-    args = None, *args[1:]
-    for preprocess in cls._pre_init:
-      args, kwargs = preprocess(*args, **kwargs)
-    return cls._new(*args[1:], tuple(sorted(kwargs.items())))
+    return args[0].__new__(*args, **kwargs)
 
   def _new(cls, *args):
-    self = cls.__new__(cls)
+    self = object.__new__(cls)
     self._args = args
     self._hash = hash(args)
     self._init(*args[:-1], **dict(args[-1]))
@@ -633,6 +627,12 @@ class Immutable(metaclass=ImmutableMeta):
 
   __slots__ = '__weakref__', '_args', '_hash'
   __cache__ = '__nutils_hash__',
+
+  def __new__(*args, **kwargs):
+    cls = args[0]
+    for preprocess in cls._pre_init:
+      args, kwargs = preprocess(*args, **kwargs) # NOTE: preprocessors ignore args[0]
+    return cls._new(*args[1:], tuple(sorted(kwargs.items())))
 
   def __reduce__(self):
     return self.__class__._new, self._args
