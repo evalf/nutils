@@ -156,8 +156,8 @@ class Topology(types.Singleton):
 
   @property
   def _index_coords(self):
-    index = function.transforms_index(self.transforms)
-    coords = function.transforms_coords(self.transforms, self.ndims)
+    index = function.transforms_index(self.space, self.transforms)
+    coords = function.transforms_coords(self.space, self.transforms)
     return index, coords
 
   @property
@@ -1237,7 +1237,7 @@ class StructuredTopology(Topology):
     return self._locate(geom0, scale, coords, eps=eps, weights=weights)
 
   def _asaffine(self, geom):
-    index = function.rootcoords(len(self.axes))[[axis.isdim for axis in self.axes]] * 2**self.nrefine - [axis.i for axis in self.axes if axis.isdim]
+    index = function.rootcoords(self.space, self.transforms.todims)[[axis.isdim for axis in self.axes]] * 2**self.nrefine - [axis.i for axis in self.axes if axis.isdim]
     basis = function.concatenate([function.eye(self.ndims), function.diagonalize(index)], axis=0)
     A, b = map(sparse.toarray, self.sample('gauss', 2).integrate_sparse([(basis[:,_,:] * basis[_,:,:]).sum(-1), (basis * geom).sum(-1)]))
     x = numpy.linalg.solve(A, b)
@@ -2103,8 +2103,8 @@ class MultipatchTopology(Topology):
     'degree zero patchwise discontinuous basis'
 
     transforms = transformseq.PlainTransforms(tuple((patch.topo.root,) for patch in self.patches), self.ndims, self.ndims)
-    index = function.transforms_index(transforms)
-    coords = function.transforms_coords(transforms, self.ndims)
+    index = function.transforms_index(self.space, transforms)
+    coords = function.transforms_coords(self.space, transforms)
     return function.DiscontBasis([types.frozenarray(1, dtype=float).reshape(1, *(1,)*self.ndims)]*len(self.patches), index, coords)
 
   @property

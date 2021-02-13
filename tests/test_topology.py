@@ -205,7 +205,7 @@ class refined(TestCase):
     ref = _refined_refs[self.etype]
     space = 'test'
     domain = topology.ConnectedTopology(space, References.uniform(ref, 1), transformseq.IdentifierTransforms(ref.ndims, 'root', 1), transformseq.IdentifierTransforms(ref.ndims, 'root', 1), ((-1,)*ref.nedges,)).refine(self.ref0)
-    geom = function.rootcoords(ref.ndims)
+    geom = function.rootcoords(space, ref.ndims)
     basis = domain.basis('std', degree=1)
     u = domain.projection(geom.sum(), onto=basis, geometry=geom, degree=2)
     bpoints = domain.refine(self.ref1).boundary.refine(self.ref2).sample('uniform', 1)
