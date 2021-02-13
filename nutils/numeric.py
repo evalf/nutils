@@ -196,7 +196,7 @@ def inv(A):
         Ainv[index] = numpy.nan
   return Ainv
 
-isarray = lambda a: isinstance(a, (numpy.ndarray, types.frozenarray))
+isarray = lambda a: isinstance(a, numpy.ndarray)
 isboolarray = lambda a: isarray(a) and a.dtype == bool
 isbool = lambda a: isboolarray(a) and a.ndim == 0 or type(a) == bool
 isint = lambda a: isinstance(a, numbers.Integral)

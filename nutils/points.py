@@ -55,7 +55,7 @@ class Points(types.Singleton):
     Number of spatial dimensions.
   '''
 
-  __cache__ = 'hull', 'onhull'
+  __cache__ = 'tri', 'hull', 'onhull'
 
   @types.apply_annotations
   def __init__(self, npoints:types.strictint, ndims:types.strictint):
@@ -149,7 +149,7 @@ class CoordsUniformPoints(CoordsPoints):
 
   @types.apply_annotations
   def __init__(self, coords:types.arraydata, volume:float):
-    self.weights = types.frozenarray.full([coords.shape[0]], volume/coords.shape[0])
+    self.weights = numeric.full(coords.shape[:1], fill_value=volume/coords.shape[0], dtype=float)
     super().__init__(coords)
 
 class TensorPoints(Points):

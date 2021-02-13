@@ -2631,7 +2631,7 @@ class Basis(Array):
     return evaluable.Inflate(evaluable.Polyval(coeffs, coords), self.f_dofs(index), self.ndofs)
 
   @property
-  def _computed_support(self) -> Tuple[types.frozenarray, ...]:
+  def _computed_support(self) -> Tuple[numpy.ndarray, ...]:
     support = [[] for i in range(self.ndofs)] # type: List[List[int]]
     for ielem in range(self.nelems):
       for dof in numpy.unique(self.get_dofs(ielem)):
@@ -2722,7 +2722,7 @@ class Basis(Array):
     return len(self.get_dofs(ielem))
 
   @abc.abstractmethod
-  def get_coefficients(self, ielem: int) -> types.frozenarray:
+  def get_coefficients(self, ielem: int) -> numpy.ndarray:
     '''Return an array of coefficients for all basis functions with support on element ``ielem``.
 
     Parameters
@@ -2732,7 +2732,7 @@ class Basis(Array):
 
     Returns
     -------
-    coefficients : :class:`nutils.types.frozenarray`
+    coefficients : :class:`numpy.ndarray`
         Array of coefficients with shape ``(nlocaldofs,)+(degree,)*ndims``,
         where the first axis corresponds to the dofs returned by
         :meth:`get_dofs`.
@@ -2777,10 +2777,10 @@ class PlainBasis(Basis):
 
   Parameters
   ----------
-  coefficients : :class:`tuple` of :class:`nutils.types.frozenarray` objects
+  coefficients : :class:`tuple` of :class:`numpy.ndarray` objects
       The coefficients of the basis functions per transform.  The order should
       match the ``transforms`` argument.
-  dofs : :class:`tuple` of :class:`nutils.types.frozenarray` objects
+  dofs : :class:`tuple` of :class:`numpy.ndarray` objects
       The dofs corresponding to the ``coefficients`` argument.
   ndofs : :class:`int`
       The number of basis functions.
@@ -2800,7 +2800,7 @@ class PlainBasis(Basis):
     assert all(c.shape[0] == d.shape[0] for c, d in zip(self._coeffs, self._dofs))
     super().__init__(ndofs, len(coefficients), index, coords)
 
-  def __getnewargs__(self) -> Tuple[Tuple[types.frozenarray], Tuple[types.frozenarray], int, Array, Array]:
+  def __getnewargs__(self) -> Tuple[Tuple[types.arraydata, ...], Tuple[types.arraydata, ...], int, Array, Array]:
     return self._coeffs, self._dofs, self.ndofs, self.index, self.coords
 
   def get_dofs(self, ielem: Union[int, numpy.ndarray]) -> numpy.ndarray:
@@ -2826,7 +2826,7 @@ class DiscontBasis(Basis):
 
   Parameters
   ----------
-  coefficients : :class:`tuple` of :class:`nutils.types.frozenarray` objects
+  coefficients : :class:`tuple` of :class:`numpy.ndarray` objects
       The coefficients of the basis functions per transform.  The order should
       match the ``transforms`` argument.
   index : :class:`Array`
@@ -2866,7 +2866,7 @@ class DiscontBasis(Basis):
 
   def f_ndofs(self, index: evaluable.Array) -> evaluable.Array:
     ndofs = numpy.diff(self._offsets)
-    return evaluable.get(types.frozenarray(ndofs, copy=False), 0, index)
+    return evaluable.get(ndofs, 0, index)
 
   def f_dofs(self, index: evaluable.Array) -> evaluable.Array:
     return evaluable.Range(self.f_ndofs(index), offset=evaluable.get(self._offsets, 0, index))
@@ -2900,7 +2900,7 @@ class MaskedBasis(Basis):
     self._indices = indices
     super().__init__(len(self._indices), parent.nelems, parent.index, parent.coords)
 
-  def __getnewargs__(self) -> Tuple[Basis, types.frozenarray]:
+  def __getnewargs__(self) -> Tuple[Basis, numpy.ndarray]:
     return self._parent, self._indices
 
   def get_dofs(self, ielem: Union[int, numpy.ndarray]) -> numpy.ndarray:
@@ -2950,7 +2950,7 @@ class StructuredBasis(Basis):
     self._transforms_shape = tuple(map(int, transforms_shape))
     super().__init__(util.product(dofs_shape), util.product(transforms_shape), index, coords)
 
-  def __getnewargs__(self) -> Tuple[Tuple[Tuple[types.frozenarray, ...], ...], Tuple[types.frozenarray, ...], Tuple[types.frozenarray, ...], Tuple[int, ...], Tuple[int, ...], Array, Array]:
+  def __getnewargs__(self) -> Tuple[Tuple[Tuple[numpy.ndarray, ...], ...], Tuple[numpy.ndarray, ...], Tuple[numpy.ndarray, ...], Tuple[int, ...], Tuple[int, ...], Array, Array]:
     return self._coeffs, self._start_dofs, self._stop_dofs, self._dofs_shape, self._transforms_shape, self.index, self.coords
 
   def _get_indices(self, ielem: int) -> Tuple[int, ...]:
@@ -2971,7 +2971,7 @@ class StructuredBasis(Basis):
     for start_dofs_i, stop_dofs_i, ndofs_i, index_i in zip(self._start_dofs, self._stop_dofs, self._dofs_shape, indices):
       dofs_i = numpy.arange(start_dofs_i[index_i], stop_dofs_i[index_i], dtype=int) % ndofs_i
       dofs = numpy.add.outer(dofs*ndofs_i, dofs_i)
-    return types.frozenarray(dofs.ravel(), dtype=types.strictint, copy=False)
+    return dofs.ravel()
 
   def get_ndofs(self, ielem: int) -> int:
     indices = self._get_indices(ielem)
@@ -3019,7 +3019,7 @@ class StructuredBasis(Basis):
       ndofs *= ndofs_i
       ntrans *= ntrans_i
     assert dof == 0
-    return types.frozenarray(functools.reduce(numpy.add.outer, reversed(supports)).ravel(), copy=False, dtype=types.strictint)
+    return numpy.asarray(functools.reduce(numpy.add.outer, reversed(supports)).ravel(), dtype=int)
 
 class PrunedBasis(Basis):
   '''A subset of another :class:`Basis`.
@@ -3044,15 +3044,15 @@ class PrunedBasis(Basis):
     self._dofmap = parent.get_dofs(self._transmap)
     super().__init__(len(self._dofmap), len(transmap), index, coords)
 
-  def __getnewargs__(self) -> Tuple[Basis, types.frozenarray, Array, Array]:
+  def __getnewargs__(self) -> Tuple[Basis, numpy.ndarray, Array, Array]:
     return self._parent, self._transmap, self.index, self.coords
 
   def get_dofs(self, ielem: Union[int, numpy.ndarray]) -> numpy.ndarray:
     if numeric.isintarray(ielem) and ielem.ndim == 1 and numpy.any(numpy.less(ielem, 0)):
       raise IndexError('dof out of bounds')
-    return types.frozenarray(numpy.searchsorted(self._dofmap, self._parent.get_dofs(self._transmap[ielem])), copy=False)
+    return numpy.searchsorted(self._dofmap, self._parent.get_dofs(self._transmap[ielem]))
 
-  def get_coefficients(self, ielem: int) -> types.frozenarray:
+  def get_coefficients(self, ielem: int) -> numpy.ndarray:
     return self._parent.get_coefficients(self._transmap[ielem])
 
   def get_support(self, dof: Union[int, numpy.ndarray]) -> numpy.ndarray:

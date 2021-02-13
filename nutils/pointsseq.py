@@ -593,13 +593,13 @@ class _Chain(PointsSequence):
     return self.sequence1.compress(mask[:n]).chain(self.sequence2.compress(mask[n:]))
 
   @property
-  def tri(self) -> types.frozenarray:
+  def tri(self) -> numpy.ndarray:
     tri1 = self.sequence1.tri
     tri2 = self.sequence2.tri
     return types.frozenarray(numpy.concatenate([tri1, tri2 + self.sequence1.npoints]), copy=False)
 
   @property
-  def hull(self) -> types.frozenarray:
+  def hull(self) -> numpy.ndarray:
     hull1 = self.sequence1.hull
     hull2 = self.sequence2.hull
     return types.frozenarray(numpy.concatenate([hull1, hull2 + self.sequence1.npoints]), copy=False)

@@ -631,7 +631,7 @@ class TensorReference(Reference):
   'tensor reference'
 
   __slots__ = 'ref1', 'ref2'
-  __cache__ = 'vertices', 'edge_transforms', 'ribbons', 'child_transforms', 'getpoints', 'get_poly_coeffs'
+  __cache__ = 'vertices', 'edge_transforms', 'ribbons', 'child_transforms', 'getpoints', 'get_poly_coeffs', 'centroid'
 
   def __init__(self, ref1, ref2):
     assert not isinstance(ref1, TensorReference)

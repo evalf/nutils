@@ -1,5 +1,5 @@
 from nutils.testing import TestCase, parametrize
-import nutils.pointsseq, nutils.element, nutils.points, nutils.warnings, nutils.evaluable
+import nutils.pointsseq, nutils.element, nutils.points, nutils.warnings, nutils.evaluable, nutils.types
 import unittest, numpy, itertools, operator, functools
 
 line = nutils.element.LineReference().getpoints('bezier', 2)
@@ -206,7 +206,7 @@ class Uniform(TestCase, Common, TriHull):
 class Take(TestCase, Common, TriHull):
 
   def setUp(self):
-    self.seq = nutils.pointsseq._Take(nutils.pointsseq.PointsSequence.from_iter([square, triangle, square], 2), nutils.types.frozenarray([1, 2], dtype=int))
+    self.seq = nutils.pointsseq._Take(nutils.pointsseq.PointsSequence.from_iter([square, triangle, square], 2), nutils.types.arraydata([1, 2]))
     self.check = [triangle, square]
     self.checkndims = 2
     super().setUp()

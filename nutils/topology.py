@@ -621,7 +621,7 @@ class Topology(types.Singleton):
               references.append(ref)
               selection.append(iglobaledge)
               refs_touched = True
-    selection = types.frozenarray(selection, int)
+    selection = types.frozenarray(selection, dtype=int)
     if refs_touched:
       references = References.from_iter(references, self.ndims-1)
     else:
@@ -655,8 +655,8 @@ class Topology(types.Singleton):
             oppselection.append(offset(ioppelem)+ioppedge)
             if ref != edgeref:
               refs_touched = True
-    selection = types.frozenarray(selection, int)
-    oppselection = types.frozenarray(oppselection, int)
+    selection = types.frozenarray(selection, dtype=int)
+    oppselection = types.frozenarray(oppselection, dtype=int)
     if refs_touched:
       references = References.from_iter(references, self.ndims-1)
     else:

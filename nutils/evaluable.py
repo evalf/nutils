@@ -1026,9 +1026,7 @@ class Points(Array):
     super().__init__(args=[EVALARGS], shape=(npoints, ndim), dtype=float)
 
   def evalf(self, evalargs):
-    points = evalargs['_points'].coords
-    assert numeric.isarray(points) and points.ndim == 2
-    return types.frozenarray(points)
+    return evalargs['_points'].coords
 
 class Weights(Array):
 
