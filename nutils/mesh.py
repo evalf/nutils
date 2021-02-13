@@ -65,7 +65,7 @@ def rectilinear(richshape, periodic=(), name='rect', space='X'):
       offset = offset[0]
     if all(s == scale[0] for s in scale[1:]):
       scale = scale[0]
-    geom = function.rootcoords(ndims) * scale + offset
+    geom = function.rootcoords(space, ndims) * scale + offset
   else:
     funcsp = topo.basis('spline', degree=1, periodic=())
     coords = numeric.meshgrid(*richshape).reshape(ndims, -1)
@@ -87,7 +87,7 @@ def line(nodes, periodic=False, bnames=None, *, space: str = 'X'):
     uniform = numpy.equal(nodes, offset + numpy.arange(nelems+1) * scale).all()
   root = transform.Identifier(1, 'line')
   domain = topology.StructuredLine(space, root, 0, nelems, periodic=periodic, bnames=bnames)
-  geom = function.rootcoords(1) * scale + offset if uniform else domain.basis('std', degree=1, periodic=[]).dot(nodes)
+  geom = function.rootcoords(space, 1) * scale + offset if uniform else domain.basis('std', degree=1, periodic=[]).dot(nodes)
   return domain, geom
 
 def newrectilinear(nodes, periodic=None, bnames=[['left','right'],['bottom','top'],['front','back']]):
@@ -694,10 +694,10 @@ def unitsquare(nelems, etype):
         connectivity = [c-numpy.greater(c,n*2) for c in connectivity]
       topo = topology.ConnectedTopology(space, References.from_iter(references, 2), transformseq.PlainTransforms(transforms, 2, 2), transformseq.PlainTransforms(transforms, 2, 2), connectivity)
 
-    x, y = topo.boundary.sample('_centroid', None).eval(function.rootcoords(2)).T
+    x, y = topo.boundary.sample('_centroid', None).eval(function.rootcoords(space, 2)).T
     bgroups = dict(left=x==0, right=x==nelems, bottom=y==0, top=y==nelems)
     topo = topo.withboundary(**{name: topo.boundary[numpy.where(mask)[0]] for name, mask in bgroups.items()})
-    return topo, function.rootcoords(2) / nelems
+    return topo, function.rootcoords(space, 2) / nelems
 
   else:
     raise Exception('invalid element type {!r}'.format(etype))

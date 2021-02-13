@@ -264,7 +264,7 @@ class Unlower(TestCase):
 
   def test(self):
     e = evaluable.Argument('arg', (2,3,4,5), int)
-    f = function._Unlower(e, (2,3), (), ())
+    f = function._Unlower(e, frozenset(), (2,3), (), ())
     self.assertEqual(f.shape, (4,5))
     self.assertEqual(f.dtype, int)
     self.assertEqual(f.lower(points_shape=(2,3), transform_chains=(), coordinates=()), e)
@@ -1109,8 +1109,9 @@ class CommonBasis:
 
   @staticmethod
   def mk_index_coords(coorddim, transforms):
-    index = function.transforms_index(transforms)
-    coords = function.transforms_coords(transforms, coorddim)
+    space = 'X'
+    index = function.transforms_index(space, transforms)
+    coords = function.transforms_coords(space, transforms)
     return index, coords
 
   def setUp(self):
