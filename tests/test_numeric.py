@@ -241,3 +241,14 @@ class overlapping(TestCase):
     for i in range(2):
       for j in range(2):
         self.assertAllEqual(b[i,...,j], a[i,0,j]+numpy.array([[0,2,4],[2,4,6]]))
+
+class full(TestCase):
+
+  def test(self):
+    f = numeric.full((2,3), fill_value=1, dtype=int)
+    self.assertIsNone(f.base)
+    self.assertFalse(f.flags.writeable)
+    self.assertEqual(f.dtype, int)
+    self.assertEqual(f.shape, (2,3))
+    self.assertEqual(f.strides, (0,0))
+    self.assertAllEqual(f, 1)

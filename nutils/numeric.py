@@ -50,6 +50,16 @@ def overlapping(arr, axis=-1, n=2):
   overlapping.flags.writeable = False
   return overlapping
 
+def full(shape, fill_value, dtype):
+  'read-only equivalent to :func:`numpy.full`'
+
+  z = (0,)*len(shape)
+  f = numpy.ndarray(shape=shape, strides=z, dtype=dtype)
+  if f.size:
+    f[z] = fill_value
+  f.flags.writeable = False
+  return f
+
 def normdim(ndim: int, n: int) -> int:
   'check bounds and make positive'
 
@@ -406,9 +416,9 @@ def poly_eval(coeffs, points):
   assert points.ndim >= 1
   coorddim = points.shape[-1]
   if not coeffs.size:
-    return numpy.zeros(points.shape[:-1]+coeffs.shape[:coeffs.ndim-points.shape[-1]])
+    return full(points.shape[:-1]+coeffs.shape[:coeffs.ndim-points.shape[-1]], fill_value=0, dtype=float)
   if coeffs.ndim == 0:
-    return numpy.full(points.shape[:-1], coeffs, dtype=float)
+    return full(points.shape[:-1], fill_value=coeffs, dtype=float)
   result = numpy.empty(points.shape[:-1]+coeffs.shape, dtype=float)
   result[:] = coeffs
   coeffs = result
@@ -438,7 +448,7 @@ def poly_mul(p, q):
 def poly_pow(p, n):
   assert isint(n) and n >= 0
   if n == 0:
-    return numpy.ones((1,)*p.ndim)
+    return full([1]*p.ndim, fill_value=1, dtype=float)
   if n == 1:
     return p
   q = poly_pow(poly_mul(p, p), n//2)
