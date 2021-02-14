@@ -223,3 +223,21 @@ class meshgrid(TestCase):
     self.assertEqual(m.dtype, float)
     self.assertEqual(m.shape, (1,))
     self.assertAllEqual(m, 1)
+
+class overlapping(TestCase):
+
+  def test_pairwise(self):
+    a = numpy.arange(4)
+    b = numeric.overlapping(a)
+    self.assertIs(b.base, a)
+    self.assertEqual(b.shape, (3,2))
+    self.assertEqual(b.tolist(), [[0,1],[1,2],[2,3]])
+
+  def test_multidim(self):
+    a = numpy.arange(.5, 16).reshape(2,4,2)
+    b = numeric.overlapping(a, axis=1, n=3)
+    self.assertIs(b.base, a.base)
+    self.assertEqual(b.shape, (2,2,3,2))
+    for i in range(2):
+      for j in range(2):
+        self.assertAllEqual(b[i,...,j], a[i,0,j]+numpy.array([[0,2,4],[2,4,6]]))

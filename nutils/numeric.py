@@ -43,12 +43,10 @@ def overlapping(arr, axis=-1, n=2):
   'reinterpret data with overlaps'
 
   arr = numpy.asarray(arr)
-  if axis < 0:
-    axis += arr.ndim
-  assert 0 <= axis < arr.ndim
-  shape = arr.shape[:axis] + (arr.shape[axis]-n+1,n) + arr.shape[axis+1:]
-  strides = arr.strides[:axis] + (arr.strides[axis],arr.strides[axis]) + arr.strides[axis+1:]
-  overlapping = numpy.lib.stride_tricks.as_strided(arr, shape, strides)
+  axis = normdim(arr.ndim, axis)
+  overlapping = numpy.ndarray(buffer=arr, dtype=arr.dtype,
+    shape = (*arr.shape[:axis], arr.shape[axis]-n+1, n, *arr.shape[axis+1:]),
+    strides = arr.strides[:axis+1] + arr.strides[axis:])
   overlapping.flags.writeable = False
   return overlapping
 
