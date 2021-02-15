@@ -917,6 +917,35 @@ class _Derivative(Array):
 def _root_derivative_target(space: str, dim: int) -> evaluable.DerivativeTargetBase:
   return evaluable.IdentifierDerivativeTarget(space, (dim,))
 
+class _Gradient(Array):
+  # Derivative of `func` to `geom` via a reference. The reference is the tensor
+  # product of (the root coordinates of) the given `spaces`, ordered by the
+  # `transform_chains` lower argument.
+
+  def __init__(self, func: Array, geom: Array, spaces: FrozenSet[str]) -> None:
+    assert spaces, '0d array'
+    common_shape = broadcast_shapes(func.shape, geom.shape[:-1])
+    self._func = broadcast_to(func, common_shape)
+    self._geom = broadcast_to(geom, (*common_shape, geom.shape[-1]))
+    self._spaces = spaces
+    super().__init__(self._geom.shape, float, func.spaces | geom.spaces)
+
+  def lower(self, *, transform_chains: Tuple[EvaluableTransformChain, ...] = (), **kwargs: Any) -> evaluable.Array:
+    func = self._func.lower(transform_chains=transform_chains, **kwargs)
+    geom = self._geom.lower(transform_chains=transform_chains, **kwargs)
+    space, = self._spaces
+    ref_dim = transform_chains[0].todims
+    roots = _root_derivative_target(space, ref_dim),
+    dfunc_dref = evaluable.concatenate([evaluable.derivative(func, root) for root in roots], axis=-1)
+    dgeom_dref = evaluable.concatenate([evaluable.derivative(geom, root) for root in roots], axis=-1)
+    if self._geom.shape[-1] == ref_dim:
+      dref_dgeom = evaluable.inverse(dgeom_dref)
+    elif self._geom.shape[-1] == ref_dim + 1: # gamma gradient
+      dref_dgeom = evaluable.einsum('Ajk,Aik->Aij', dgeom_dref, evaluable.inverse(evaluable.grammium(dgeom_dref)))
+    else:
+      raise Exception('cannot invert {}x{} jacobian'.format(self._geom.shape[-1], ref_dim))
+    return evaluable.einsum('Ai,Aij->Aj', dfunc_dref, dref_dgeom)
+
 class _Jacobian(Array):
 
   def __init__(self, geom: Array) -> None:
@@ -2403,20 +2432,9 @@ def grad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
     return grad(arg, _append_axes(geom, (1,)))[...,0]
   elif geom.ndim > 1:
     sh = geom.shape[-2:]
-    return unravel(grad(arg, ravel(geom, geom.ndim-2), ndims), arg.ndim+geom.ndim-2, sh)
+    return unravel(grad(arg, ravel(geom, geom.ndim-2)), arg.ndim+geom.ndim-2, sh)
   else:
-    if ndims <= 0:
-      ndims += geom.shape[0]
-    J = localgradient(geom, ndims)
-    if J.shape[0] == J.shape[1]:
-      Jinv = inverse(J)
-    elif J.shape[0] == J.shape[1] + 1: # gamma gradient
-      G = dot(J[:,:,numpy.newaxis], J[:,numpy.newaxis,:], 0)
-      Ginv = inverse(G)
-      Jinv = dot(J[numpy.newaxis,:,:], Ginv[:,numpy.newaxis,:], -1)
-    else:
-      raise Exception('cannot invert {}x{} jacobian'.format(J.shape[0], J.shape[1]))
-    return dot(_append_axes(localgradient(arg, ndims), Jinv.shape[-1:]), Jinv, -2)
+    return _Gradient(arg, geom, geom.spaces)
 
 def normal(__geom: IntoArray, exterior: bool = False) -> Array:
   '''Return the normal of the geometry.
