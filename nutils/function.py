@@ -900,6 +900,12 @@ class _Derivative(Array):
     arg = self._arg.lower(**kwargs)
     return evaluable.derivative(arg, self._eval_var)
 
+def _tip_derivative_target(space: str, dim: int) -> evaluable.DerivativeTargetBase:
+  return evaluable.IdentifierDerivativeTarget((space, 'tip'), (dim,))
+
+def _root_derivative_target(space: str, dim: int) -> evaluable.DerivativeTargetBase:
+  return evaluable.IdentifierDerivativeTarget((space, 'root'), (dim,))
+
 class _Jacobian(Array):
 
   def __init__(self, geom: Array) -> None:
