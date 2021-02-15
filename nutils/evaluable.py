@@ -4111,6 +4111,11 @@ def subtract(arg1, arg2):
 def insertaxis(arg, n, length):
   return Transpose.from_end(InsertAxis(arg, length), n)
 
+def concatenate(args, axis=0):
+  lengths = [arg.shape[axis] for arg in args]
+  *offsets, totlength = util.cumsum(lengths + [0])
+  return Transpose.from_end(util.sum(Inflate(Transpose.to_end(arg, axis), Range(length) + offset, totlength) for arg, length, offset in zip(args, lengths, offsets)), axis)
+
 def stack(args, axis=0):
   return Transpose.from_end(util.sum(Inflate(arg, i, len(args)) for i, arg in enumerate(args)), axis)
 
@@ -4146,6 +4151,18 @@ def jacobian(geom, ndims):
 
 def determinant(arg, axes=(-2,-1)):
   return Determinant(Transpose.to_end(arg, *axes))
+
+def grammium(arg, axes=(-2,-1)):
+  arg = Transpose.to_end(arg, *axes)
+  grammium = einsum('Aki,Akj->Aij', arg, arg)
+  return Transpose.from_end(grammium, *axes)
+
+def sqrt_abs_det_gram(arg, axes=(-2,-1)):
+  arg = Transpose.to_end(arg, *axes)
+  if equalindex(arg.shape[-1], arg.shape[-2]):
+    return abs(Determinant(arg))
+  else:
+    return sqrt(abs(Determinant(grammium(arg))))
 
 def inverse(arg, axes=(-2,-1)):
   return Transpose.from_end(Inverse(Transpose.to_end(arg, *axes)), *axes)
