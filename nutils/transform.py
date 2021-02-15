@@ -29,7 +29,7 @@ _ = numpy.newaxis
 
 ## TRANSFORM CHAIN OPERATIONS
 
-@types.frozenarray.lru
+@types.lru_cache
 def apply(chain, points):
   for trans in reversed(chain):
     points = trans.apply(points)
@@ -167,14 +167,15 @@ class Matrix(TransformItem):
   __slots__ = 'linear', 'offset'
 
   @types.apply_annotations
-  def __init__(self, linear:types.frozenarray, offset:types.frozenarray):
+  def __init__(self, linear:types.arraydata, offset:types.arraydata):
     assert linear.ndim == 2 and linear.dtype == float
     assert offset.ndim == 1 and offset.dtype == float
-    assert len(offset) == len(linear)
-    self.linear = linear
-    self.offset = offset
+    assert offset.shape[0] == linear.shape[0]
+    self.linear = numpy.asarray(linear)
+    self.offset = numpy.asarray(offset)
     super().__init__(linear.shape[0], linear.shape[1])
 
+  @types.lru_cache
   def apply(self, points):
     assert points.shape[-1] == self.fromdims
     return types.frozenarray(numpy.dot(points, self.linear.T) + self.offset, copy=False)
@@ -207,11 +208,12 @@ class Square(Matrix):
   __cache__ ='det',
 
   @types.apply_annotations
-  def __init__(self, linear:types.frozenarray, offset:types.frozenarray):
+  def __init__(self, linear:types.arraydata, offset:types.arraydata):
     assert linear.shape[0] == linear.shape[1]
     self._transform_matrix = {}
     super().__init__(linear, offset)
 
+  @types.lru_cache
   def invapply(self, points):
     return types.frozenarray(numpy.linalg.solve(self.linear, (points - self.offset).T).T, copy=False)
 
@@ -223,7 +225,7 @@ class Square(Matrix):
   def isflipped(self):
     return self.fromdims > 0 and self.det < 0
 
-  @types.frozenarray.lru
+  @types.lru_cache
   def transform_poly(self, coeffs):
     assert coeffs.ndim == self.fromdims + 1
     degree = coeffs.shape[1] - 1
@@ -238,7 +240,7 @@ class Square(Matrix):
       for idim, e in enumerate(eye):
         polys[(slice(None),)+tuple(e)] = self.linear[:,idim]
       # reduces polynomials to smallest nonzero power
-      polys = [types.frozenarray(poly[tuple(slice(None if p else 1) for p in poly[tuple(eye)])], copy=False) for poly in polys]
+      polys = [poly[tuple(slice(None if p else 1) for p in poly[tuple(eye)])] for poly in polys]
       # construct transform poly by transforming all monomials separately and summing
       M = numpy.zeros((degree+1,)*(2*self.fromdims), dtype=float)
       for powers in numpy.ndindex(*[degree+1]*self.fromdims):
@@ -246,7 +248,7 @@ class Square(Matrix):
           M_power = functools.reduce(numeric.poly_mul, [numeric.poly_pow(poly, power) for poly, power in zip(polys, powers)])
           M[tuple(slice(n) for n in M_power.shape)+powers] += M_power
       self._transform_matrix[degree] = M
-    return numpy.einsum('jk,ik', M.reshape([(degree+1)**self.fromdims]*2), coeffs.reshape(coeffs.shape[0],-1)).reshape(coeffs.shape)
+    return types.frozenarray(numpy.einsum('jk,ik', M.reshape([(degree+1)**self.fromdims]*2), coeffs.reshape(coeffs.shape[0],-1)).reshape(coeffs.shape), copy=False)
 
 class Shift(Square):
   '''Shift transformation :math:`x ↦ x + b`
@@ -262,13 +264,15 @@ class Shift(Square):
   det = 1.
 
   @types.apply_annotations
-  def __init__(self, offset:types.frozenarray):
+  def __init__(self, offset:types.arraydata):
     assert offset.ndim == 1 and offset.dtype == float
-    super().__init__(numpy.eye(len(offset)), offset)
+    super().__init__(numpy.eye(offset.shape[0]), offset)
 
+  @types.lru_cache
   def apply(self, points):
     return types.frozenarray(points + self.offset, copy=False)
 
+  @types.lru_cache
   def invapply(self, points):
     return types.frozenarray(points - self.offset, copy=False)
 
@@ -312,14 +316,16 @@ class Scale(Square):
   __slots__ = 'scale',
 
   @types.apply_annotations
-  def __init__(self, scale:float, offset:types.frozenarray):
+  def __init__(self, scale:float, offset:types.arraydata):
     assert offset.ndim == 1 and offset.dtype == float
     self.scale = scale
-    super().__init__(numpy.eye(len(offset)) * scale, offset)
+    super().__init__(numpy.eye(offset.shape[0]) * scale, offset)
 
+  @types.lru_cache
   def apply(self, points):
     return types.frozenarray(self.scale * points + self.offset, copy=False)
 
+  @types.lru_cache
   def invapply(self, points):
     return types.frozenarray((points - self.offset) / self.scale, copy=False)
 
@@ -351,7 +357,7 @@ class Updim(Matrix):
   __cache__ = 'ext',
 
   @types.apply_annotations
-  def __init__(self, linear:types.frozenarray, offset:types.frozenarray, isflipped:bool):
+  def __init__(self, linear:types.arraydata, offset:types.arraydata, isflipped:bool):
     assert linear.shape[0] == linear.shape[1] + 1
     self.isflipped = isflipped
     super().__init__(linear, offset)

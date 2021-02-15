@@ -356,3 +356,7 @@ intersphinx_mapping = {
     'scipy': ('https://docs.scipy.org/doc/scipy/reference/', None),
     'matplotlib': ('https://matplotlib.org/', None),
 }
+
+nitpick_ignore = [
+    ('py:class', '_ctypes.Structure'),
+]

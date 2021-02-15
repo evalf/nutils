@@ -56,7 +56,7 @@ import abc, numpy, itertools, functools, numbers, collections, math, inspect, tr
 
 ## TYPE COERCION
 
-argdict = types.frozendict[types.strictstr,types.frozenarray]
+argdict = types.frozendict[types.strictstr,types.arraydata]
 
 def integraltuple(arg):
   return tuple(a.as_evaluable_array() for a in arg)
@@ -65,7 +65,7 @@ def optionalintegraltuple(arg):
   return tuple(None if a is None else a.as_evaluable_array() for a in arg)
 
 def arrayordict(arg):
-  return types.frozenarray(arg) if numeric.isarray(arg) else argdict(arg)
+  return types.arraydata(arg) if numeric.isarray(arg) else argdict(arg)
 
 
 ## DECORATORS
@@ -321,7 +321,7 @@ class MedianBased(LineSearch, version=1):
 @single_or_multiple
 @types.apply_annotations
 @cache.function
-def solve_linear(target, residual:integraltuple, *, constrain:arrayordict=None, lhs0:types.frozenarray[types.strictfloat]=None, arguments:argdict={}, **kwargs):
+def solve_linear(target, residual:integraltuple, *, constrain:arrayordict=None, lhs0:types.arraydata=None, arguments:argdict={}, **kwargs):
   '''solve linear problem
 
   Parameters
@@ -402,7 +402,7 @@ class newton(cache.Recursion, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target, residual:integraltuple, jacobian:integraltuple=None, lhs0:types.frozenarray[types.strictfloat]=None, relax0:float=1., constrain:arrayordict=None, linesearch=None, failrelax:types.strictfloat=1e-6, arguments:argdict={}, **kwargs):
+  def __init__(self, target, residual:integraltuple, jacobian:integraltuple=None, lhs0:types.arraydata=None, relax0:float=1., constrain:arrayordict=None, linesearch=None, failrelax:types.strictfloat=1e-6, arguments:argdict={}, **kwargs):
     super().__init__()
     self.target = target
     self.residual = residual
@@ -498,7 +498,7 @@ class minimize(cache.Recursion, length=1, version=3):
   '''
 
   @types.apply_annotations
-  def __init__(self, target, energy:evaluable.asarray, lhs0:types.frozenarray[types.strictfloat]=None, constrain:arrayordict=None, rampup:types.strictfloat=.5, rampdown:types.strictfloat=-1., failrelax:types.strictfloat=-10., arguments:argdict={}, **kwargs):
+  def __init__(self, target, energy:evaluable.asarray, lhs0:types.arraydata=None, constrain:arrayordict=None, rampup:types.strictfloat=.5, rampdown:types.strictfloat=-1., failrelax:types.strictfloat=-10., arguments:argdict={}, **kwargs):
     super().__init__()
     if energy.shape != ():
       raise ValueError('`energy` should be scalar')
@@ -607,7 +607,7 @@ class pseudotime(cache.Recursion, length=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target, residual:integraltuple, inertia:optionalintegraltuple, timestep:types.strictfloat, lhs0:types.frozenarray[types.strictfloat]=None, constrain:arrayordict=None, arguments:argdict={}, **kwargs):
+  def __init__(self, target, residual:integraltuple, inertia:optionalintegraltuple, timestep:types.strictfloat, lhs0:types.arraydata=None, constrain:arrayordict=None, arguments:argdict={}, **kwargs):
     super().__init__()
     if target in arguments:
       raise ValueError('`target` should not be defined in `arguments`')
@@ -699,7 +699,7 @@ class thetamethod(cache.Recursion, length=1, version=1):
   '''
 
   @types.apply_annotations
-  def __init__(self, target, residual:integraltuple, inertia:optionalintegraltuple, timestep:types.strictfloat, theta:types.strictfloat, lhs0:types.frozenarray[types.strictfloat]=None, target0:types.strictstr=None, constrain:arrayordict=None, newtontol:types.strictfloat=1e-10, arguments:argdict={}, newtonargs:types.frozendict={}, timetarget:types.strictstr='_thetamethod_time', time0:types.strictfloat=0., historysuffix:types.strictstr='0'):
+  def __init__(self, target, residual:integraltuple, inertia:optionalintegraltuple, timestep:types.strictfloat, theta:types.strictfloat, lhs0:types.arraydata=None, target0:types.strictstr=None, constrain:arrayordict=None, newtontol:types.strictfloat=1e-10, arguments:argdict={}, newtonargs:types.frozendict={}, timetarget:types.strictstr='_thetamethod_time', time0:types.strictfloat=0., historysuffix:types.strictstr='0'):
     super().__init__()
     if len(residual) != len(inertia):
       raise Exception('length of residual and inertia do no match')
@@ -754,7 +754,7 @@ cranknicolson = functools.partial(thetamethod, theta=0.5)
 @single_or_multiple
 @types.apply_annotations
 @cache.function(version=1)
-def optimize(target, functional:evaluable.asarray, *, tol:types.strictfloat=0., arguments:argdict={}, droptol:float=None, constrain:arrayordict=None, lhs0:types.frozenarray[types.strictfloat]=None, relax0:float=1., linesearch=None, failrelax:types.strictfloat=1e-6, **kwargs):
+def optimize(target, functional:evaluable.asarray, *, tol:types.strictfloat=0., arguments:argdict={}, droptol:float=None, constrain:arrayordict=None, lhs0:types.arraydata=None, relax0:float=1., linesearch=None, failrelax:types.strictfloat=1e-6, **kwargs):
   '''find the minimizer of a given functional
 
   Parameters
@@ -858,17 +858,18 @@ def _strip(kwargs, prefix):
   return {key[len(prefix):]: kwargs.pop(key) for key in list(kwargs) if key.startswith(prefix)}
 
 def _parse_lhs_cons(lhs0, constrain, targets, argobjs, arguments):
-  arguments = arguments.copy()
+  arguments = {t: numpy.asarray(a) for t, a in arguments.items()}
   if lhs0 is not None:
+    assert lhs0.dtype == float
     if len(targets) != 1:
       raise SolverError('lhs0 argument cannot be used in combination with multiple targets')
-    arguments[targets[0]] = lhs0
-  if numeric.isarray(constrain):
+    arguments[targets[0]] = numpy.asarray(lhs0)
+  if isinstance(constrain, types.arraydata):
     if len(targets) != 1:
       raise SolverError('constrain argument must be a dictionary in combination with multiple targets')
-    constrain = {targets[0]: constrain}
+    constrain = {targets[0]: numpy.asarray(constrain)}
   elif constrain:
-    constrain = constrain.copy()
+    constrain = {t: numpy.asarray(c) for t, c in constrain.items()}
   else:
     constrain = {}
   for target in targets:

@@ -1,5 +1,5 @@
 from nutils.testing import TestCase, parametrize
-import nutils.pointsseq, nutils.element, nutils.points, nutils.warnings, nutils.evaluable
+import nutils.pointsseq, nutils.element, nutils.points, nutils.warnings, nutils.evaluable, nutils.types
 import unittest, numpy, itertools, operator, functools
 
 line = nutils.element.LineReference().getpoints('bezier', 2)
@@ -136,7 +136,7 @@ class Common:
   def test_get_evaluable_coords(self):
     coordinates = self.seq.get_evaluable_coords(nutils.evaluable.Argument('index', (), int))
     for index, points in enumerate(self.check):
-      self.assertEqual(coordinates.eval(index=index), points.coords)
+      self.assertAllEqual(coordinates.eval(index=index), points.coords)
 
   def test_get_evaluable_coords_invalid_ndims(self):
     with self.assertRaises(ValueError):
@@ -149,7 +149,7 @@ class Common:
   def test_get_evaluable_weights(self):
     weights = self.seq.get_evaluable_weights(nutils.evaluable.Argument('index', (), int))
     for index, points in enumerate(self.check):
-      self.assertEqual(weights.eval(index=index), points.weights)
+      self.assertAllEqual(weights.eval(index=index), points.weights)
 
   def test_get_evaluable_weights_invalid_ndims(self):
     with self.assertRaises(ValueError):
@@ -206,7 +206,7 @@ class Uniform(TestCase, Common, TriHull):
 class Take(TestCase, Common, TriHull):
 
   def setUp(self):
-    self.seq = nutils.pointsseq._Take(nutils.pointsseq.PointsSequence.from_iter([square, triangle, square], 2), nutils.types.frozenarray([1, 2], dtype=int))
+    self.seq = nutils.pointsseq._Take(nutils.pointsseq.PointsSequence.from_iter([square, triangle, square], 2), nutils.types.arraydata([1, 2]))
     self.check = [triangle, square]
     self.checkndims = 2
     super().setUp()

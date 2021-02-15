@@ -95,9 +95,9 @@ class bezier(TestCase):
       self.assertEqual(bezier.npoints, n*(n*(n+1))//2)
       self.assertEqual(len(bezier.tri), 3*(n-1)**3)
       self.assertEqual(len(bezier.hull), 8*(n-1)**2)
-      fullhull = super(points.TensorPoints, bezier).hull # contains additional internal faces for n >= 3
+      fullhull = super(points.TensorPoints, bezier).hull.tolist() # contains additional internal faces for n >= 3
       for h in bezier.hull: # assert that hull is a subset of fullfull
-        self.assertIn(h, fullhull)
+        self.assertIn(sorted(h), fullhull)
 
 @parametrize
 class cone(TestCase):
@@ -164,10 +164,10 @@ class trimmed(TestCase):
     for x in [0., .25, .5, .75, 1.]:
       for y in [0., .25, .5, .75, 1.]:
         if x or y:
-          self.assertIn(types.frozenarray([x,y]), self.bezier.coords)
-    self.assertIn(types.frozenarray([0.,.125]), self.bezier.coords)
-    self.assertIn(types.frozenarray([.0625,.0625]), self.bezier.coords)
-    self.assertIn(types.frozenarray([.125,0.]), self.bezier.coords)
+          self.assertIn([x,y], self.bezier.coords.tolist())
+    self.assertIn([0.,.125], self.bezier.coords.tolist())
+    self.assertIn([.0625,.0625], self.bezier.coords.tolist())
+    self.assertIn([.125,0.], self.bezier.coords.tolist())
 
   def test_tri(self):
     self.assertEqual(len(self.bezier.tri), 34)

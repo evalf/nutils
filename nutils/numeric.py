@@ -43,14 +43,22 @@ def overlapping(arr, axis=-1, n=2):
   'reinterpret data with overlaps'
 
   arr = numpy.asarray(arr)
-  if axis < 0:
-    axis += arr.ndim
-  assert 0 <= axis < arr.ndim
-  shape = arr.shape[:axis] + (arr.shape[axis]-n+1,n) + arr.shape[axis+1:]
-  strides = arr.strides[:axis] + (arr.strides[axis],arr.strides[axis]) + arr.strides[axis+1:]
-  overlapping = numpy.lib.stride_tricks.as_strided(arr, shape, strides)
+  axis = normdim(arr.ndim, axis)
+  overlapping = numpy.ndarray(buffer=arr, dtype=arr.dtype,
+    shape = (*arr.shape[:axis], arr.shape[axis]-n+1, n, *arr.shape[axis+1:]),
+    strides = arr.strides[:axis+1] + arr.strides[axis:])
   overlapping.flags.writeable = False
   return overlapping
+
+def full(shape, fill_value, dtype):
+  'read-only equivalent to :func:`numpy.full`'
+
+  z = (0,)*len(shape)
+  f = numpy.ndarray(shape=shape, strides=z, dtype=dtype)
+  if f.size:
+    f[z] = fill_value
+  f.flags.writeable = False
+  return f
 
 def normdim(ndim: int, n: int) -> int:
   'check bounds and make positive'
@@ -188,7 +196,7 @@ def inv(A):
         Ainv[index] = numpy.nan
   return Ainv
 
-isarray = lambda a: isinstance(a, (numpy.ndarray, types.frozenarray))
+isarray = lambda a: isinstance(a, numpy.ndarray)
 isboolarray = lambda a: isarray(a) and a.dtype == bool
 isbool = lambda a: isboolarray(a) and a.ndim == 0 or type(a) == bool
 isint = lambda a: isinstance(a, numbers.Integral)
@@ -374,7 +382,7 @@ def binom(n, k):
     b *= i
   return a // b
 
-@types.frozenarray.lru
+@types.lru_cache
 def poly_outer_product(left, right):
   left, right = numpy.asarray(left), numpy.asarray(right)
   nleft, nright = left.ndim-1, right.ndim-1
@@ -382,16 +390,15 @@ def poly_outer_product(left, right):
   outer = numpy.zeros((left.shape[0], right.shape[0], *pshape), dtype=numpy.common_type(left, right))
   a = slice(None)
   outer[(a,a,*(map(slice, left.shape[1:]+right.shape[1:])))] = left[(a,None)+(a,)*nleft+(None,)*nright]*right[(None,a)+(None,)*nleft+(a,)*nright]
-  return outer.reshape(left.shape[0] * right.shape[0], *pshape)
+  return types.frozenarray(outer.reshape(left.shape[0] * right.shape[0], *pshape), copy=False)
 
-@types.frozenarray.lru
-def poly_concatenate(coeffs):
-  coeffs = [numpy.asarray(c) for c in coeffs]
+@types.lru_cache
+def poly_concatenate(*coeffs):
   n = max(c.shape[1] for c in coeffs)
   coeffs = [numpy.pad(c, [(0,0)]+[(0,n-c.shape[1])]*(c.ndim-1), 'constant', constant_values=0) if c.shape[1] < n else c for c in coeffs]
-  return numpy.concatenate(coeffs)
+  return types.frozenarray(numpy.concatenate(coeffs), copy=False)
 
-@types.frozenarray.lru
+@types.lru_cache
 def poly_grad(coeffs, ndim):
   coeffs = numpy.asarray(coeffs)
   I = range(ndim)
@@ -399,18 +406,18 @@ def poly_grad(coeffs, ndim):
   if coeffs.shape[-1] > 2:
     a = numpy.arange(1, coeffs.shape[-1])
     dcoeffs = [a[tuple(slice(None) if i==j else numpy.newaxis for j in I)] * c for i, c in enumerate(dcoeffs)]
-  return numpy.stack(dcoeffs, axis=coeffs.ndim-ndim)
+  return types.frozenarray(numpy.stack(dcoeffs, axis=coeffs.ndim-ndim), copy=False)
 
-@types.frozenarray.lru
+@types.lru_cache
 def poly_eval(coeffs, points):
   coeffs = numpy.asarray(coeffs)
   points = numpy.asarray(points)
   assert points.ndim >= 1
   coorddim = points.shape[-1]
   if not coeffs.size:
-    return numpy.zeros(points.shape[:-1]+coeffs.shape[:coeffs.ndim-points.shape[-1]])
+    return full(points.shape[:-1]+coeffs.shape[:coeffs.ndim-points.shape[-1]], fill_value=0, dtype=float)
   if coeffs.ndim == 0:
-    return numpy.full(points.shape[:-1], coeffs, dtype=float)
+    return full(points.shape[:-1], fill_value=coeffs, dtype=float)
   result = numpy.empty(points.shape[:-1]+coeffs.shape, dtype=float)
   result[:] = coeffs
   coeffs = result
@@ -421,9 +428,9 @@ def poly_eval(coeffs, points):
       result *= points_dim
       result += coeffs[...,j]
     coeffs = result
-  return coeffs
+  return types.frozenarray(coeffs, copy=False)
 
-@types.frozenarray.lru
+@types.lru_cache
 def poly_mul(p, q):
   p = numpy.asarray(p)
   q = numpy.asarray(q)
@@ -434,13 +441,13 @@ def poly_mul(p, q):
   for i, pi in numpy.ndenumerate(p):
     if pi:
       pq[tuple(slice(o, o+m) for o, m in zip(i, q.shape))] += pi * q
-  return pq
+  return types.frozenarray(pq, copy=False)
 
-@types.frozenarray.lru
+@types.lru_cache
 def poly_pow(p, n):
   assert isint(n) and n >= 0
   if n == 0:
-    return numpy.ones((1,)*p.ndim)
+    return full([1]*p.ndim, fill_value=1, dtype=float)
   if n == 1:
     return p
   q = poly_pow(poly_mul(p, p), n//2)

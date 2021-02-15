@@ -1,7 +1,7 @@
 from nutils.testing import *
 import nutils.types
 import inspect, pickle, itertools, ctypes, stringly, tempfile, io, os
-import numpy
+import numpy, weakref
 
 class apply_annotations(TestCase):
 
@@ -140,6 +140,15 @@ class nutils_hash(TestCase):
   def test_frozenset(self):
     self.assertEqual(nutils.types.nutils_hash(frozenset([1,2])).hex(), '3862dc7e5321bc8a576c385ed2c12c71b96a375a')
     self.assertEqual(nutils.types.nutils_hash(frozenset(['spam','eggs'])).hex(), '2c75fd3db57f5e505e1425ae9ff6dcbbc77fd123')
+
+  def test_ndarray(self):
+    a = numpy.array([1,2,3])
+    with self.assertRaises(TypeError):
+      nutils.types.nutils_hash(a)
+    a.flags.writeable = False
+    self.assertEqual(nutils.types.nutils_hash(a).hex(),
+            '299c2c796b4a71b7a2b310ddb29bba0440d77e26' if numpy.int_ == numpy.int64
+       else '9fee185ee111495718c129b4d3a8ae79975f3459')
 
   @unittest.skipIf(sys.version_info < (3,7), "not supported in this Python version")
   def test_dataclass(self):
@@ -728,158 +737,54 @@ class frozenmultiset(TestCase):
 
 class frozenarray(TestCase):
 
-  def _test_constructor(self, src, frozen_dtype, src_types=(list,numpy.array,nutils.types.frozenarray)):
-    src = list(src)
-    for copy in True, False:
-      for src_type in src_types:
-        with self.subTest(copy=copy, src_type=src_type):
-          frozen = nutils.types.frozenarray(src_type(src), copy=copy, dtype=frozen_dtype)
-          self.assertIsInstance(frozen, nutils.types.frozenarray)
-          self.assertEqual(frozen.tolist(), src)
-  def _test_constructor_raises(self, src, frozen_dtype, exc_type, exc_regex):
-    src = list(src)
-    for copy in True, False:
-      for src_type in list, numpy.array, nutils.types.frozenarray:
-        with self.subTest(copy=copy, src_type=src_type), self.assertRaisesRegex(exc_type, exc_regex):
-          nutils.types.frozenarray(src_type(src), copy=copy, dtype=frozen_dtype)
-  def test_constructor_bool(self):
-    self._test_constructor((False, True), bool)
-  def test_constructor_bool_emptyarray(self):
-    self._test_constructor((), bool, src_types=[list])
-  def test_constructor_int(self):
-    self._test_constructor((0,1), int)
-  def test_constructor_int_upcast(self):
-    self._test_constructor((False,True), int)
-  def test_constructor_int_downcast(self):
-    self._test_constructor((0.,1.), int)
-  def test_constructor_int_emptyarray(self):
-    self._test_constructor((), int, src_types=[list])
-  def test_constructor_float(self):
-    self._test_constructor((0.,1.), float)
-  def test_constructor_float_upcast(self):
-    self._test_constructor((0,1), float)
-  def test_constructor_float_downcast(self):
-    src = [0.+0j,1.+0j]
-    for copy in True, False:
-      with self.subTest(copy=copy, src_type=list), self.assertRaises(TypeError):
-        nutils.types.frozenarray(src, copy=copy, dtype=float)
-      for src_type in numpy.array, nutils.types.frozenarray:
-        with self.subTest(copy=copy, src_type=src_type), self.assertWarns(numpy.ComplexWarning):
-          nutils.types.frozenarray(src_type(src), copy=copy, dtype=float)
-  def test_constructor_complex(self):
-    self._test_constructor((0+0j,1+1j), complex)
-  def test_constructor_strictint(self):
-    self._test_constructor((0,1), nutils.types.strictint)
-  def test_constructor_strictint_upcast(self):
-    self._test_constructor((False,True), nutils.types.strictint)
-  def test_constructor_strictint_downcast(self):
-    self._test_constructor_raises((0.,1.), nutils.types.strictint, ValueError, '^downcasting .* is forbidden$')
-  def test_constructor_strictint_emptyarray(self):
-    self._test_constructor((), nutils.types.strictint, src_types=[list])
-  def test_constructor_strictfloat(self):
-    self._test_constructor((0.,1.), nutils.types.strictfloat)
-  def test_constructor_strictfloat_upcast(self):
-    self._test_constructor((0,1), nutils.types.strictfloat)
-  def test_constructor_strictfloat_downcast(self):
-    self._test_constructor_raises((0.+0j,1.+0j), nutils.types.strictfloat, ValueError, '^downcasting .* is forbidden$')
-  def test_constructor_invalid_dtype(self):
-    self._test_constructor_raises((0,1), list, ValueError, '^unsupported dtype:')
+  def test_generic(self):
+    a = 1
+    f = nutils.types.frozenarray(a)
+    self.assertIsInstance(f, numpy.generic)
+    self.assertFalse(f.flags.writeable)
+    self.assertEqual(f.dtype, int)
 
-  def test_clsgetitem(self):
-    src = [0.,1.]
-    frozen = nutils.types.frozenarray[nutils.types.strictfloat](src)
-    self.assertIsInstance(frozen, nutils.types.frozenarray)
-    self.assertEqual(frozen.tolist(), src)
+  def test_generic_passthrough(self):
+    a = numpy.int_(1)
+    f = nutils.types.frozenarray(a)
+    self.assertIs(f, a)
 
-  def test_clsgetitem_invalid(self):
-    src = [0.,1.]
-    with self.assertRaises(ValueError):
-      nutils.types.frozenarray[nutils.types.strictint](src)
+  def test_array(self):
+    a = 1, 2, 3
+    f = nutils.types.frozenarray(a)
+    self.assertIsInstance(f, numpy.ndarray)
+    self.assertFalse(f.flags.writeable)
+    self.assertEqual(f.dtype, int)
 
-  def test_nutils_hash(self):
-    a = nutils.types.frozenarray(numpy.array([[1,2],[3,4]], numpy.int64))
-    b = nutils.types.frozenarray(numpy.array([[1,3],[2,4]], numpy.int64))
-    self.assertNotEqual(nutils.types.nutils_hash(a).hex(), nutils.types.nutils_hash(b).hex())
-    self.assertEqual(nutils.types.nutils_hash(a).hex(), nutils.types.nutils_hash(b.T).hex())
-    self.assertEqual(nutils.types.nutils_hash(a).hex(), '42cc3a5e1216c1f0a9921a61a3a2c67025c98d69')
-    self.assertEqual(nutils.types.nutils_hash(b).hex(), '8f0c9f9a118c42c258f1e69e374aadda99b4be97')
+  def test_cast(self):
+    a = numpy.array([1,2,3])
+    a.flags.writeable = False
+    f = nutils.types.frozenarray(a, dtype=float)
+    self.assertIsInstance(f, numpy.ndarray)
+    self.assertFalse(f.flags.writeable)
+    self.assertEqual(f.dtype, float)
 
-  def test_repr(self):
-    a = nutils.types.frozenarray(numpy.array([[1,2],[3,4]], numpy.int))
-    self.assertEqual(a.__repr__(), 'frozenarray([[1, 2],\n             [3, 4]])')
+  def test_passthrough(self):
+    a = numpy.array([1,2,3])
+    a.flags.writeable = False
+    b = a[1:][:-1] # multiple bases
+    f = nutils.types.frozenarray(b)
+    self.assertIs(f, b)
 
-  def test_pickle(self):
-    src = [[1,2],[3,4]]
-    value = pickle.loads(pickle.dumps(nutils.types.frozenarray(src)))
-    self.assertIsInstance(value, nutils.types.frozenarray)
-    self.assertEqual(value, nutils.types.frozenarray(src))
+  def test_copy(self):
+    a = numpy.array([1,2,3])
+    b = a[1:]
+    b.flags.writeable = False
+    f = nutils.types.frozenarray(b)
+    self.assertIsNot(f, b)
 
-  def test_eq_same_instance(self):
-    a = nutils.types.frozenarray([[1,2],[3,4]], int)
-    self.assertEqual(a, a)
-
-  def test_eq_not_frozenarray(self):
-    a = nutils.types.frozenarray([[1,2],[3,4]], int)
-    self.assertNotEqual(a, [[1,2],[3,4]])
-
-  def test_eq_same_base(self):
-    base = numpy.array([[1,2],[3,4]], int)
-    a = nutils.types.frozenarray(base, copy=False)
-    b = nutils.types.frozenarray(base, copy=False)
-    self.assertEqual(a, b)
-
-  def test_eq_different_array(self):
-    a = nutils.types.frozenarray([[1,2],[3,4]], int)
-    b = nutils.types.frozenarray([[1,3],[2,4]], int)
-    self.assertNotEqual(a, b)
-
-  def test_eq_different_dtype(self):
-    a = nutils.types.frozenarray([[1,2],[3,4]], int)
-    b = nutils.types.frozenarray([[1,2],[3,4]], float)
-    self.assertNotEqual(a, b)
-
-  def test_eq_different_base(self):
-    a = nutils.types.frozenarray([[1,2],[3,4]], int)
-    b = nutils.types.frozenarray([[1,2],[3,4]], int)
-    self.assertEqual(a, b)
-
-  def test_ineq_equal(self):
-    l = nutils.types.frozenarray([1,2], int)
-    r = nutils.types.frozenarray([1,2], int)
-    self.assertFalse(l < r)
-    self.assertTrue(l <= r)
-    self.assertFalse(l > r)
-    self.assertTrue(l >= r)
-
-  def test_ineq_smaller(self):
-    l = nutils.types.frozenarray([1,2], int)
-    r = nutils.types.frozenarray([2,1], int)
-    self.assertTrue(l < r)
-    self.assertTrue(l <= r)
-    self.assertFalse(l > r)
-    self.assertFalse(l >= r)
-
-  def test_ineq_larger(self):
-    l = nutils.types.frozenarray([2,1], int)
-    r = nutils.types.frozenarray([1,2], int)
-    self.assertFalse(l < r)
-    self.assertFalse(l <= r)
-    self.assertTrue(l > r)
-    self.assertTrue(l >= r)
-
-  def test_ineq_incomparable(self):
-    array = nutils.types.frozenarray([1,2], int)
-    for op in operator.lt, operator.le, operator.gt, operator.ge:
-      with self.subTest(op=op), self.assertRaises(TypeError):
-        op(array, 1)
-
-  def test_full(self):
-    self.assertEqual(nutils.types.frozenarray.full([2,3], 1.5), nutils.types.frozenarray([[1.5]*3]*2, float))
-
-  def test_as_numpy_array(self):
-
-    a = numpy.array(nutils.types.frozenarray([1,2]))
-    self.assertIsInstance(a, numpy.ndarray)
+  def test_nocopy(self):
+    a = numpy.array([1,2,3])
+    b = a[1:]
+    f = nutils.types.frozenarray(b, copy=False)
+    self.assertIs(f, b)
+    self.assertFalse(b.flags.writeable)
+    self.assertFalse(a.flags.writeable)
 
 class c_array(TestCase):
 
@@ -982,8 +887,8 @@ class ImmutableFamily(TestCase):
     self.assertNotEqual(nutils.types.nutils_hash(T(1, 2)).hex(), nutils.types.nutils_hash(T(2, 1)).hex())
     self.assertNotEqual(nutils.types.nutils_hash(T(1, 2)).hex(), nutils.types.nutils_hash(U(1, 2)).hex())
     # Since the hash does not include base classes, the hashes of Immutable and Singleton are the same.
-    self.assertEqual(nutils.types.nutils_hash(T(1, 2)).hex(), '8c3ba8f0d9eb054ab192f4e4e2ba7442564bdf85')
-    self.assertEqual(nutils.types.nutils_hash(T1(1, 2)).hex(), 'bab4ee65b5189f544a4242f0e386af76cfa6e31d')
+    self.assertEqual(nutils.types.nutils_hash(T(1, 2)).hex(), '2f7fb825b73398a20ef5f95649429c75d7a9d615')
+    self.assertEqual(nutils.types.nutils_hash(T1(1, 2)).hex(), 'b907c718a9a7e8c28300e028cfbb578a608f7620')
 
   @parametrize.enable_if(lambda cls: cls is nutils.types.Singleton)
   def test_deduplication(self):
@@ -1007,5 +912,160 @@ class ImmutableFamily(TestCase):
 
 ImmutableFamily(cls=nutils.types.Immutable)
 ImmutableFamily(cls=nutils.types.Singleton)
+
+class Py_buffer(TestCase):
+
+  def test_bytes(self):
+    a = b'abc'
+    buf_of_a = nutils.types.Py_buffer(a, flags=nutils.types.Py_buffer.PyBUF_RECORDS_RO)
+    self.assertEqual(buf_of_a.buf, numpy.frombuffer(a, 'c').__array_interface__['data'][0])
+    self.assertIs(buf_of_a.obj, a)
+    self.assertEqual(buf_of_a.len, 3)
+    self.assertEqual(buf_of_a.itemsize, 1)
+    self.assertEqual(buf_of_a.ndim, 1)
+    self.assertEqual(buf_of_a.format, b'B')
+    self.assertEqual(buf_of_a.shape[0], 3)
+    self.assertEqual(buf_of_a.strides[0], 1)
+
+  def test_short_array(self):
+    a = numpy.array([1,2,3], dtype='int16')
+    buf_of_a = nutils.types.Py_buffer(a, flags=nutils.types.Py_buffer.PyBUF_RECORDS_RO)
+    self.assertEqual(buf_of_a.buf, a.__array_interface__['data'][0])
+    self.assertIs(buf_of_a.obj, a)
+    self.assertEqual(buf_of_a.len, 6)
+    self.assertEqual(buf_of_a.itemsize, 2)
+    self.assertEqual(buf_of_a.ndim, 1)
+    self.assertEqual(buf_of_a.format, b'h')
+    self.assertEqual(buf_of_a.shape[0], 3)
+    self.assertEqual(buf_of_a.strides[0], 2)
+
+  def test_float_array(self):
+    a = numpy.array([[1,2,3],[4,5,6]], dtype='float32')
+    buf_of_a = nutils.types.Py_buffer(a, flags=nutils.types.Py_buffer.PyBUF_RECORDS_RO)
+    self.assertEqual(buf_of_a.buf, a.__array_interface__['data'][0])
+    self.assertIs(buf_of_a.obj, a)
+    self.assertEqual(buf_of_a.len, 24)
+    self.assertEqual(buf_of_a.itemsize, 4)
+    self.assertEqual(buf_of_a.ndim, 2)
+    self.assertEqual(buf_of_a.format, b'f')
+    self.assertEqual(buf_of_a.shape[0], 2)
+    self.assertEqual(buf_of_a.shape[1], 3)
+    self.assertEqual(buf_of_a.strides[0], 12)
+    self.assertEqual(buf_of_a.strides[1], 4)
+
+  def test_noncontiguous_array(self):
+    a = numpy.array([[1,2,3],[4,5,6],[7,8,9]])[::-2,::2]
+    buf_of_a = nutils.types.Py_buffer(a)
+    self.assertEqual(buf_of_a.buf, a.__array_interface__['data'][0])
+
+class arraydata(TestCase):
+
+  def _check(self, array, dtype):
+    arraydata = nutils.types.arraydata(array)
+    self.assertEqual(arraydata.shape, array.shape)
+    self.assertEqual(arraydata.ndim, array.ndim)
+    self.assertEqual(arraydata.dtype, dtype)
+    self.assertAllEqual(numpy.asarray(arraydata), array)
+
+  def test_bool(self):
+    self._check(numpy.array([True,False,True]), bool)
+
+  def test_int(self):
+    for d in 'int32', 'int64', 'uint32':
+      with self.subTest(d):
+        self._check(numpy.array([[1,2,3],[4,5,6]], dtype=d), int)
+
+  def test_float(self):
+    for d in 'float32', 'float64':
+      with self.subTest(d):
+        self._check(numpy.array([[.1,.2,.3],[.4,.5,.6]], dtype=d), float)
+
+  def test_complex(self):
+    self._check(numpy.array([1+2j,3+4j]), complex)
+
+  def test_rewrap(self):
+    w = nutils.types.arraydata(numpy.array([1,2,3]))
+    self.assertIs(w, nutils.types.arraydata(w))
+
+  def test_pickle(self):
+    import pickle
+    orig = nutils.types.arraydata([1,2,3])
+    s = pickle.dumps(orig)
+    unpickled = pickle.loads(s)
+    self.assertEqual(orig, unpickled)
+    self.assertAllEqual(numpy.asarray(unpickled), [1,2,3])
+
+  def test_hash(self):
+    a = nutils.types.arraydata(numpy.array([1,2,3], dtype=numpy.int32))
+    b = nutils.types.arraydata(numpy.array([1,2,3], dtype=numpy.int64))
+    c = nutils.types.arraydata(numpy.array([[1,2,3]], dtype=numpy.int64))
+    self.assertEqual(hash(a), hash(b))
+    self.assertEqual(a, b)
+    self.assertNotEqual(hash(a), hash(c)) # shapes differ
+    self.assertNotEqual(a, c)
+
+class lru_dict(TestCase):
+
+  def test_set(self):
+    d = nutils.types.lru_dict(maxsize=2)
+    d['a'] = 10
+    d['b'] = 20
+    d['a'] = 30
+    d['c'] = 40
+    self.assertEqual(d, dict(a=30, c=40))
+
+  def test_get(self):
+    d = nutils.types.lru_dict(maxsize=2)
+    d['a'] = 10
+    d['b'] = 20
+    d['a'] # getitem
+    d['c'] = 40
+    self.assertEqual(d, dict(a=10, c=40))
+
+class lru_cache(TestCase):
+
+  def setUp(self):
+    self.func.cache.clear()
+
+  @nutils.types.lru_cache(maxsize=2)
+  def func(self, *args):
+    self.called = True
+
+  def assertCached(self, *args):
+    self.called = False
+    self.func(*args)
+    self.assertFalse(self.called)
+
+  def assertNotCached(self, *args):
+    self.called = False
+    self.func(*args)
+    self.assertTrue(self.called)
+
+  def test_lru(self):
+    self.assertNotCached(1)
+    self.assertNotCached(2)
+    self.assertCached(1)
+    self.assertCached(2)
+    self.assertNotCached(3) # drops 1
+    self.assertNotCached(1)
+    self.assertCached(3)
+
+  def test_array(self):
+    a = numpy.array([1,2,3,4])
+    a.flags.writeable = False
+    self.assertNotCached(a[1:][:-1])
+    self.assertCached(a[:-1][1:])
+
+  def test_callback(self):
+    a = numpy.array([1,2,3,4])
+    a.flags.writeable = False
+    class dummy: pass
+    b = dummy()
+    r = weakref.ref(b)
+    self.assertNotCached(a, b)
+    del b
+    self.assertIsNot(r(), None)
+    del a
+    self.assertIs(r(), None)
 
 # vim:sw=2:sts=2:et

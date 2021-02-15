@@ -55,7 +55,7 @@ class Points(types.Singleton):
     Number of spatial dimensions.
   '''
 
-  __cache__ = 'hull', 'onhull'
+  __cache__ = 'tri', 'hull', 'onhull'
 
   @types.apply_annotations
   def __init__(self, npoints:types.strictint, ndims:types.strictint):
@@ -109,7 +109,7 @@ class Points(types.Singleton):
     elems, edges = divmod(numpy.lexsort(edge_simplices.reshape(-1, self.ndims).T), self.ndims+1)
     sorted_edge_simplices = edge_simplices[elems, edges] # (nelems x ndims+1) x ndims; matching edges are now adjacent
     notequal = numpy.not_equal(sorted_edge_simplices[1:], sorted_edge_simplices[:-1]).any(axis=1)
-    return sorted_edge_simplices[numpy.hstack([True,notequal]) & numpy.hstack([notequal,True])]
+    return types.frozenarray(sorted_edge_simplices[numpy.hstack([True,notequal]) & numpy.hstack([notequal,True])], copy=False)
 
   @property
   def onhull(self):
@@ -129,24 +129,27 @@ class CoordsPoints(Points):
   '''Manually supplied points.'''
 
   @types.apply_annotations
-  def __init__(self, coords:types.frozenarray[float]):
-    self.coords = coords
+  def __init__(self, coords:types.arraydata):
+    assert coords.dtype == float
+    self.coords = numpy.asarray(coords)
     super().__init__(*coords.shape)
 
 class CoordsWeightsPoints(CoordsPoints):
   '''Manually supplied points and weights.'''
 
   @types.apply_annotations
-  def __init__(self, coords:types.frozenarray[float], weights:types.frozenarray[float]):
-    self.weights = weights
+  def __init__(self, coords:types.arraydata, weights:types.arraydata):
+    assert coords.dtype == float
+    assert weights.dtype == float
+    self.weights = numpy.asarray(weights)
     super().__init__(coords)
 
 class CoordsUniformPoints(CoordsPoints):
   '''Manually supplied points with uniform weights.'''
 
   @types.apply_annotations
-  def __init__(self, coords:types.frozenarray[float], volume:float):
-    self.weights = types.frozenarray.full([len(coords)], volume/len(coords))
+  def __init__(self, coords:types.arraydata, volume:float):
+    self.weights = numeric.full(coords.shape[:1], fill_value=volume/coords.shape[0], dtype=float)
     super().__init__(coords)
 
 class TensorPoints(Points):
@@ -267,7 +270,7 @@ class TransformPoints(Points):
 
   @property
   def weights(self):
-    return self.points.weights * abs(float(self.trans.det))
+    return types.frozenarray(self.points.weights * abs(float(self.trans.det)), copy=False)
 
   @property
   def tri(self):
@@ -298,7 +301,7 @@ class ConcatPoints(Points):
     for pairs in self.duplicates:
       for i, j in pairs[1:]:
         masks[i][j] = False
-    return tuple(masks)
+    return tuple(types.frozenarray(m, copy=False) for m in masks)
 
   @property
   def coords(self):
@@ -344,10 +347,10 @@ class ConePoints(Points):
   __cache__ = 'coords', 'tri'
 
   @types.apply_annotations
-  def __init__(self, edgepoints:strictpoints, edgeref:transform.stricttransformitem, tip:types.frozenarray):
+  def __init__(self, edgepoints:strictpoints, edgeref:transform.stricttransformitem, tip:types.arraydata):
     self.edgepoints = edgepoints
     self.edgeref = edgeref
-    self.tip = tip
+    self.tip = numpy.asarray(tip)
     super().__init__(edgepoints.npoints+1, edgepoints.ndims+1)
 
   @property

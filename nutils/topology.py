@@ -615,13 +615,13 @@ class Topology(types.Singleton):
             references.append(edgeref)
             selection.append(iglobaledge)
           else:
-            ioppedge = self.connectivity[ioppelem].index(ielem)
+            ioppedge = util.index(self.connectivity[ioppelem], ielem)
             ref = edgeref - self.references[ioppelem].edge_refs[ioppedge]
             if ref:
               references.append(ref)
               selection.append(iglobaledge)
               refs_touched = True
-    selection = types.frozenarray(selection, int)
+    selection = types.frozenarray(selection, dtype=int)
     if refs_touched:
       references = References.from_iter(references, self.ndims-1)
     else:
@@ -646,7 +646,7 @@ class Topology(types.Singleton):
     for ielem, (ioppelems, elemref, elemtrans) in enumerate(zip(self.connectivity, self.references, self.transforms)):
       for (edgetrans, edgeref), ioppelem, iglobaledge in zip(elemref.edges, ioppelems, iglobaledgeiter):
         if edgeref and -1 < ioppelem < ielem:
-          ioppedge = self.connectivity[ioppelem].index(ielem)
+          ioppedge = util.index(self.connectivity[ioppelem], ielem)
           oppedgetrans, oppedgeref = self.references[ioppelem].edges[ioppedge]
           ref = oppedgeref and edgeref & oppedgeref
           if ref:
@@ -655,8 +655,8 @@ class Topology(types.Singleton):
             oppselection.append(offset(ioppelem)+ioppedge)
             if ref != edgeref:
               refs_touched = True
-    selection = types.frozenarray(selection, int)
-    oppselection = types.frozenarray(oppselection, int)
+    selection = types.frozenarray(selection, dtype=int)
+    oppselection = types.frozenarray(oppselection, dtype=int)
     if refs_touched:
       references = References.from_iter(references, self.ndims-1)
     else:
@@ -692,7 +692,7 @@ class Topology(types.Singleton):
       for iedge, jelem in enumerate(ioppelems): # loop over element neighbors and merge dofs
         if jelem < ielem:
           continue # either there is no neighbor along iedge or situation will be inspected from the other side
-        jedge = self.connectivity[jelem].index(ielem)
+        jedge = util.index(self.connectivity[jelem], ielem)
         idofs = offsets[ielem] + self.references[ielem].get_edge_dofs(degree, iedge)
         jdofs = offsets[jelem] + self.references[jelem].get_edge_dofs(degree, jedge)
         for idof, jdof in zip(idofs, jdofs):
@@ -1092,10 +1092,10 @@ class StructuredTopology(Topology):
     # such that unique[index[i,j]] == poly_outer_product(stdelems[0][i], stdelems[1][j])
     index = numpy.array(0)
     for stdelems_i in stdelems:
-      unique_i = tuple(set(stdelems_i))
+      unique_i, index_i = util.unique(stdelems_i, key=types.arraydata)
       unique = unique_i if not index.ndim \
         else [numeric.poly_outer_product(a, b) for a in unique for b in unique_i]
-      index = index[...,_] * len(unique_i) + tuple(map(unique_i.index, stdelems_i))
+      index = index[...,_] * len(unique_i) + index_i
 
     coeffs = [unique[i] for i in index.flat]
     dofmap = [types.frozenarray(vertex_structure[S].ravel(), copy=False) for S in itertools.product(*slices)]
@@ -1306,9 +1306,9 @@ class ConnectedTopology(Topology):
   __slots__ = 'connectivity',
 
   @types.apply_annotations
-  def __init__(self, references:types.strict[References], transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms, connectivity):
-    assert len(connectivity) == len(references) and all(len(c) == e.nedges for c, e in zip(connectivity, references))
-    self.connectivity = connectivity
+  def __init__(self, references:types.strict[References], transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms, connectivity:types.tuple[types.arraydata]):
+    assert len(connectivity) == len(references) and all(c.shape[0] == e.nedges for c, e in zip(connectivity, references))
+    self.connectivity = tuple(map(numpy.asarray, connectivity))
     super().__init__(references, transforms, opposites)
 
 class SimplexTopology(Topology):
@@ -1321,14 +1321,14 @@ class SimplexTopology(Topology):
     simplices = numpy.asarray(simplices)
     keep = numpy.zeros(simplices.max()+1, dtype=bool)
     keep[simplices.flat] = True
-    return types.frozenarray(simplices if keep.all() else (numpy.cumsum(keep)-1)[simplices], copy=False)
+    return types.arraydata(simplices if keep.all() else (numpy.cumsum(keep)-1)[simplices])
 
   @types.apply_annotations
   def __init__(self, simplices:_renumber, transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms):
     assert simplices.shape == (len(transforms), transforms.fromdims+1)
-    assert numpy.greater(simplices[:,1:], simplices[:,:-1]).all(), 'nodes should be sorted'
-    assert not numpy.equal(simplices[:,1:], simplices[:,:-1]).all(), 'duplicate nodes'
-    self.simplices = simplices
+    self.simplices = numpy.asarray(simplices)
+    assert numpy.greater(self.simplices[:,1:], self.simplices[:,:-1]).all(), 'nodes should be sorted'
+    assert not numpy.equal(self.simplices[:,1:], self.simplices[:,:-1]).all(), 'duplicate nodes'
     references = References.uniform(element.getsimplex(transforms.fromdims), len(transforms))
     super().__init__(references, transforms, opposites)
 
@@ -1407,7 +1407,7 @@ class UnionTopology(Topology):
           assert len(refs) < nrefs, 'incompatible elements in union'
         references.append(refs[0])
         assert len(set(self._topos[itopo].opposites[itrans] for itopo, itrans in indices)) == 1
-    selections = tuple(map(types.frozenarray[int], selections))
+    selections = tuple(types.frozenarray(s, dtype=int) for s in selections)
 
     super().__init__(
       References.from_iter(references, ndims),
@@ -1538,7 +1538,7 @@ class SubsetTopology(Topology):
           # If the edge did have an opposite in basetopology then there is a
           # possibility this opposite (partially) disappeared, in which case
           # the exposed part is added to the trimmed group.
-          ioppedge = baseconnectivity[ioppelem].index(ielem)
+          ioppedge = util.index(baseconnectivity[ioppelem], ielem)
           oppref = self.refs[ioppelem]
           edgeref -= oppref.edge_refs[ioppedge]
           if edgeref:
@@ -1623,7 +1623,7 @@ class RefinedTopology(Topology):
           for ichild, ichildedge in self.basetopo.references[ielem].edgechildren[iedge]:
             connectivity[offsets[ielem]+ichild][ichildedge] = -1
         elif jelem < ielem:
-          jedge = self.basetopo.connectivity[jelem].index(ielem)
+          jedge = util.index(self.basetopo.connectivity[jelem], ielem)
           for (ichild, ichildedge), (jchild, jchildedge) in zip(self.basetopo.references[ielem].edgechildren[iedge], self.basetopo.references[jelem].edgechildren[jedge]):
             connectivity[offsets[ielem]+ichild][ichildedge] = offsets[jelem]+jchild
             connectivity[offsets[jelem]+jchild][jchildedge] = offsets[ielem]+ichild
@@ -1636,12 +1636,13 @@ class HierarchicalTopology(Topology):
   __cache__ = 'refined', 'boundary', 'interfaces'
 
   @types.apply_annotations
-  def __init__(self, basetopo:stricttopology, indices_per_level:types.tuple[types.frozenarray[types.strictint]]):
+  def __init__(self, basetopo:stricttopology, indices_per_level:types.tuple[types.arraydata]):
     'constructor'
 
+    assert all(ind.dtype == int for ind in indices_per_level)
     assert not isinstance(basetopo, HierarchicalTopology)
     self.basetopo = basetopo
-    self._indices_per_level = indices_per_level
+    self._indices_per_level = tuple(map(numpy.asarray, indices_per_level))
     self._offsets = numpy.cumsum([0, *map(len, self._indices_per_level)], dtype=int)
 
     level = None
@@ -1649,7 +1650,7 @@ class HierarchicalTopology(Topology):
     references = References.empty(basetopo.ndims)
     transforms = []
     opposites = []
-    for indices in indices_per_level:
+    for indices in self._indices_per_level:
       level = self.basetopo if level is None else level.refined
       levels.append(level)
       if len(indices):
@@ -1710,7 +1711,7 @@ class HierarchicalTopology(Topology):
 
   @property
   def refined(self):
-    refined_indices_per_level = [[]]
+    refined_indices_per_level = [numpy.array([], dtype=int)]
     fine = self.basetopo
     for coarse_indices in self._indices_per_level:
       coarse, fine = fine, fine.refined
@@ -1910,16 +1911,16 @@ class HierarchicalTopology(Topology):
               break
 
             try: # construct least-squares projection matrix
-              project = projectcache[mypoly]
+              project = projectcache[id(mypoly)][0]
             except KeyError:
               P = mypoly.reshape(len(mypoly), -1)
               U, S, V = numpy.linalg.svd(P) # (U * S).dot(V[:len(S)]) == P
               project = (V.T[:,:len(S)] / S).dot(U.T).reshape(mypoly.shape[1:]+mypoly.shape[:1])
-              projectcache[mypoly] = project
+              projectcache[id(mypoly)] = project, mypoly # NOTE: mypoly serves to keep array alive
 
         # add the dofs and coefficients to the hierarchical basis
         hbasis_dofs.append(numpy.concatenate(trans_dofs))
-        hbasis_coeffs.append(numeric.poly_concatenate(tuple(trans_coeffs)))
+        hbasis_coeffs.append(numeric.poly_concatenate(*trans_coeffs))
 
     return function.PlainBasis(hbasis_coeffs, hbasis_dofs, ndofs, self.f_index, self.f_coords)
 
@@ -2023,10 +2024,10 @@ class Patch(types.Singleton):
   __slots__ = 'topo', 'verts', 'boundaries'
 
   @types.apply_annotations
-  def __init__(self, topo:stricttopology, verts:types.frozenarray, boundaries:types.tuple[types.strict[PatchBoundary]]):
+  def __init__(self, topo:stricttopology, verts:types.arraydata, boundaries:types.tuple[types.strict[PatchBoundary]]):
     super().__init__()
     self.topo = topo
-    self.verts = verts
+    self.verts = numpy.asarray(verts)
     self.boundaries = boundaries
 
 class MultipatchTopology(Topology):
@@ -2093,11 +2094,11 @@ class MultipatchTopology(Topology):
     for patch in self.patches:
       for boundary in patch.boundaries:
         patchinterfaces.setdefault(boundary.id, []).append((patch.topo, boundary))
-    return {
+    return types.frozendict({
       boundaryid: tuple(data)
       for boundaryid, data in patchinterfaces.items()
       if len(data) > 1
-    }
+    })
 
   def getitem(self, key):
     for i in range(len(self.patches)):
@@ -2216,7 +2217,7 @@ class MultipatchTopology(Topology):
     transforms = transformseq.PlainTransforms(tuple((patch.topo.root,) for patch in self.patches), self.ndims)
     index = function.transforms_index(transforms)
     coords = function.transforms_coords(transforms, self.ndims)
-    return function.DiscontBasis([types.frozenarray(1, dtype=int).reshape(1, *(1,)*self.ndims)]*len(self.patches), index, coords)
+    return function.DiscontBasis([types.frozenarray(1, dtype=float).reshape(1, *(1,)*self.ndims)]*len(self.patches), index, coords)
 
   @property
   def boundary(self):

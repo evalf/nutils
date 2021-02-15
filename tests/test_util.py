@@ -146,3 +146,29 @@ class positional_only(TestCase):
     def f(x, y=...):
       return x, y
     self.assertEqual(f(1, x=2, y=3), (1, {'x':2,'y':3}))
+
+class index(TestCase):
+
+  def _check(self, items):
+    for t in list, tuple, iter:
+      for i in range(2):
+        with self.subTest('{}:{}'.format(t.__name__, i)):
+          self.assertEqual(util.index(t(items), items[i]), i)
+
+  def test_int(self):
+    self._check([1,2,3,2,1])
+
+  def test_set(self):
+    self._check([{1,2}, {2,3}, {3,4}, {2,3}, {1,2}])
+
+class unique(TestCase):
+
+  def test_nokey(self):
+    unique, indices = util.unique([1,2,3,2])
+    self.assertEqual(unique, [1,2,3])
+    self.assertEqual(indices, [0,1,2,1])
+
+  def test_key(self):
+    unique, indices = util.unique([[1,2],[2,3],[2,1]], key=frozenset)
+    self.assertEqual(unique, [[1,2],[2,3]])
+    self.assertEqual(indices, [0,1,0])

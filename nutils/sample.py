@@ -43,8 +43,8 @@ graphviz = os.environ.get('NUTILS_GRAPHVIZ')
 
 def argdict(arguments):
   if len(arguments) == 1 and 'arguments' in arguments and isinstance(arguments['arguments'], collections.abc.Mapping):
-    arguments = arguments['arguments']
-  return types.frozendict[types.strictstr,types.frozenarray](arguments)
+    return arguments['arguments']
+  return arguments
 
 class Sample(types.Singleton):
   '''Collection of points on a topology.
@@ -69,7 +69,7 @@ class Sample(types.Singleton):
 
   @staticmethod
   @types.apply_annotations
-  def new(transforms:types.tuple[transformseq.stricttransforms], points:types.strict[PointsSequence], index:types.tuple[types.frozenarray[int]]=None):
+  def new(transforms:types.tuple[transformseq.stricttransforms], points:types.strict[PointsSequence], index:types.tuple[types.arraydata]=None):
     '''Create a new :class:`Sample`.
 
     Parameters
@@ -165,7 +165,7 @@ class Sample(types.Singleton):
 
   @util.single_or_multiple
   @types.apply_annotations
-  def integrate_sparse(self, funcs:types.tuple[function.asarray], arguments:types.frozendict[str,types.frozenarray]=None):
+  def integrate_sparse(self, funcs:types.tuple[function.asarray], arguments=None):
     '''Integrate functions into sparse data.
 
     Args
@@ -191,8 +191,7 @@ class Sample(types.Singleton):
 
   @util.positional_only
   @util.single_or_multiple
-  @types.apply_annotations
-  def eval(self, funcs, arguments:argdict=...):
+  def eval(self, funcs, arguments=...):
     '''Evaluate function.
 
     Args
@@ -210,7 +209,7 @@ class Sample(types.Singleton):
   @util.positional_only
   @util.single_or_multiple
   @types.apply_annotations
-  def eval_sparse(self, funcs:types.tuple[function.asarray], arguments:types.frozendict[str,types.frozenarray]=None):
+  def eval_sparse(self, funcs:types.tuple[function.asarray], arguments=None):
     '''Evaluate function.
 
     Args
@@ -322,7 +321,7 @@ class _DefaultIndex(Sample):
 
   @property
   def offsets(self):
-    return numpy.cumsum([0]+[p.npoints for p in self.points])
+    return types.frozenarray(numpy.cumsum([0]+[p.npoints for p in self.points]), copy=False)
 
   def getindex(self, ielem):
     return numpy.arange(self.offsets[ielem], self.offsets[ielem+1])
@@ -345,9 +344,11 @@ class _CustomIndex(Sample):
   __slots__ = '_index'
 
   def __init__(self, transforms, points, index):
-    self._index = index
+    if not all(i.dtype == int for i in index):
+      raise ValueError('non-integer index encountered')
     if len(index) != len(points):
       raise ValueError('expected an `index` with {} items but got {}'.format(len(points), len(index)))
+    self._index = tuple(map(numpy.asarray, index))
     if not all(len(i) == p.npoints for i, p in zip(self._index, points)):
       raise ValueError('lengths of indices does not match number of points per element')
     super().__init__(transforms, points)
@@ -360,7 +361,7 @@ class _CustomIndex(Sample):
     return self._index[ielem]
 
 @types.apply_annotations
-def eval_integrals(*integrals: types.tuple, **arguments:argdict):
+def eval_integrals(*integrals, **arguments:argdict):
   '''Evaluate integrals.
 
   Evaluate one or several postponed integrals. By evaluating them
@@ -383,8 +384,7 @@ def eval_integrals(*integrals: types.tuple, **arguments:argdict):
   with log.iter.fraction('assembling', eval_integrals_sparse(*integrals, **arguments)) as retvals:
     return [_convert(retval, inplace=True) for retval in retvals]
 
-@types.apply_annotations
-def eval_integrals_sparse(*integrals: types.tuple, **arguments: argdict):
+def eval_integrals_sparse(*integrals, **arguments):
   '''Evaluate integrals into sparse data.
 
   Evaluate one or several postponed integrals. By evaluating them

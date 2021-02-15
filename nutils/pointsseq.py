@@ -218,7 +218,7 @@ class PointsSequence(types.Singleton):
     elif len(indices) == 1:
       return _Uniform(self.get(indices[0]), 1)
     else:
-      return _Take(self, types.frozenarray(indices))
+      return _Take(self, types.arraydata(indices))
 
   def compress(self, mask: numpy.ndarray) -> 'PointsSequence':
     '''Return a selection of this sequence.
@@ -317,9 +317,7 @@ class PointsSequence(types.Singleton):
     for points in self:
       tri.append(points.tri + offset)
       offset += points.npoints
-    tri = numpy.concatenate(tri) if tri else numpy.zeros((0,self.ndims+1), int)
-    tri.flags.writeable = False
-    return tri
+    return types.frozenarray(numpy.concatenate(tri) if tri else numpy.zeros((0,self.ndims+1), int), copy=False)
 
   @property
   def hull(self) -> numpy.ndarray:
@@ -336,9 +334,7 @@ class PointsSequence(types.Singleton):
     for points in self:
       hull.append(points.hull + offset)
       offset += points.npoints
-    hull = numpy.concatenate(hull) if hull else numpy.zeros((0,self.ndims), int)
-    hull.flags.writeable = False
-    return hull
+    return types.frozenarray(numpy.concatenate(hull) if hull else numpy.zeros((0,self.ndims), int), copy=False)
 
   def get_evaluable_coords(self, index: evaluable.Array) -> evaluable.Array:
     if index.ndim != 0 or index.dtype != int:
@@ -430,9 +426,7 @@ class _Uniform(PointsSequence):
   def _mk_indices(self, item: numpy.ndarray) -> numpy.ndarray:
     npoints = self.item.npoints
     ind = item[None] + numpy.arange(0, len(self)*npoints, npoints)[:,None,None]
-    ind = ind.reshape(len(self)*item.shape[0], item.shape[1])
-    ind.flags.writeable = False
-    return ind
+    return types.frozenarray(ind.reshape(len(self)*item.shape[0], item.shape[1]), copy=False)
 
   @property
   def tri(self) -> numpy.ndarray:
@@ -457,11 +451,11 @@ class _Take(PointsSequence):
   __slots__ = 'parent', 'indices'
 
   def __init__(self, parent, indices):
-    _check_take(len(parent), indices)
-    assert len(indices) > 1, 'inefficient; this should have been `_Empty` or `_Uniform`'
+    assert indices.shape[0] > 1, 'inefficient; this should have been `_Empty` or `_Uniform`'
     assert not isinstance(parent, _Uniform), 'inefficient; this should have been `_Uniform`'
     self.parent = parent
-    self.indices = indices
+    self.indices = numpy.asarray(indices)
+    _check_take(len(parent), self.indices)
     super().__init__(parent.ndims)
 
   def __len__(self) -> int:
@@ -518,9 +512,7 @@ class _Repeat(PointsSequence):
   def _mk_indices(self, parent: numpy.ndarray) -> numpy.ndarray:
     npoints = self.parent.npoints
     ind = parent[None] + numpy.arange(0, self.count*npoints, npoints)[:,None,None]
-    ind = ind.reshape(self.count*parent.shape[0], parent.shape[1])
-    ind.flags.writeable = False
-    return ind
+    return types.frozenarray(ind.reshape(self.count*parent.shape[0], parent.shape[1]), copy=False)
 
   @property
   def tri(self) -> numpy.ndarray:
@@ -601,13 +593,13 @@ class _Chain(PointsSequence):
     return self.sequence1.compress(mask[:n]).chain(self.sequence2.compress(mask[n:]))
 
   @property
-  def tri(self) -> types.frozenarray:
+  def tri(self) -> numpy.ndarray:
     tri1 = self.sequence1.tri
     tri2 = self.sequence2.tri
     return types.frozenarray(numpy.concatenate([tri1, tri2 + self.sequence1.npoints]), copy=False)
 
   @property
-  def hull(self) -> types.frozenarray:
+  def hull(self) -> numpy.ndarray:
     hull1 = self.sequence1.hull
     hull2 = self.sequence2.hull
     return types.frozenarray(numpy.concatenate([hull1, hull2 + self.sequence1.npoints]), copy=False)

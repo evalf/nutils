@@ -30,7 +30,7 @@ class elem(TestCase):
         for (ctrans, cref), vals in zip(self.ref.children, self.ref.child_divide(points, n)):
           if cref:
             cpoints, cweights = cref.getischeme('vertex{}'.format(n-1))
-            numpy.testing.assert_equal(ctrans.apply(cpoints), vals)
+            self.assertAllEqual(ctrans.apply(cpoints), vals)
 
   @parametrize.enable_if(lambda ref, **kwargs: not isinstance(ref, element.MosaicReference) and ref.ndims >= 1)
   def test_swap(self):
@@ -53,7 +53,7 @@ class elem(TestCase):
       for iedge, ioppchild in enumerate(edges):
         if ioppchild != -1:
           self.assertIn(ichild, self.ref.connectivity[ioppchild])
-          ioppedge = self.ref.connectivity[ioppchild].index(ichild)
+          ioppedge = util.index(self.ref.connectivity[ioppchild], ichild)
           self.assertEqual(
             self.ref.child_transforms[ichild] * self.ref.child_refs[ichild].edge_transforms[iedge],
             (self.ref.child_transforms[ioppchild] * self.ref.child_refs[ioppchild].edge_transforms[ioppedge]).flipped)
@@ -73,15 +73,15 @@ class elem(TestCase):
 
 elem('point', ref=element.PointReference(), exactcentroid=numpy.zeros((0,)))
 elem('point2', ref=element.PointReference()**2, exactcentroid=numpy.zeros((0,)))
-elem('line', ref=element.LineReference(), exactcentroid=[.5])
-elem('triangle', ref=element.TriangleReference(), exactcentroid=[1/3]*2)
-elem('tetrahedron', ref=element.TetrahedronReference(), exactcentroid=[1/4]*3)
-elem('square', ref=element.LineReference()**2, exactcentroid=[.5]*2)
-elem('hexagon', ref=element.LineReference()**3, exactcentroid=[.5]*3)
-elem('prism1', ref=element.TriangleReference()*element.LineReference(), exactcentroid=[1/3,1/3,1/2])
-elem('prism2', ref=element.LineReference()*element.TriangleReference(), exactcentroid=[1/2,1/3,1/3])
+elem('line', ref=element.LineReference(), exactcentroid=numpy.array([.5]))
+elem('triangle', ref=element.TriangleReference(), exactcentroid=numpy.array([1/3]*2))
+elem('tetrahedron', ref=element.TetrahedronReference(), exactcentroid=numpy.array([1/4]*3))
+elem('square', ref=element.LineReference()**2, exactcentroid=numpy.array([.5]*2))
+elem('hexagon', ref=element.LineReference()**3, exactcentroid=numpy.array([.5]*3))
+elem('prism1', ref=element.TriangleReference()*element.LineReference(), exactcentroid=numpy.array([1/3,1/3,1/2]))
+elem('prism2', ref=element.LineReference()*element.TriangleReference(), exactcentroid=numpy.array([1/2,1/3,1/3]))
 line = element.LineReference()
 quad = line**2
-elem('withchildren1', ref=element.WithChildrenReference(quad, [quad,quad.empty,quad.empty,quad.empty]), exactcentroid=[1/4,1/4])
-elem('withchildren2', ref=element.WithChildrenReference(quad, [quad,quad,quad.empty,quad.empty]), exactcentroid=[1/4,1/2])
-elem('mosaic', ref=element.MosaicReference(quad, [line,line.empty,line,line.empty], [.25,.75]), exactcentroid=[2/3,2/3])
+elem('withchildren1', ref=element.WithChildrenReference(quad, [quad,quad.empty,quad.empty,quad.empty]), exactcentroid=numpy.array([1/4,1/4]))
+elem('withchildren2', ref=element.WithChildrenReference(quad, [quad,quad,quad.empty,quad.empty]), exactcentroid=numpy.array([1/4,1/2]))
+elem('mosaic', ref=element.MosaicReference(quad, [line,line.empty,line,line.empty], [.25,.75]), exactcentroid=numpy.array([2/3,2/3]))

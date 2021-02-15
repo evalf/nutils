@@ -1,5 +1,5 @@
 from nutils.testing import TestCase, parametrize
-import nutils.elementseq, nutils.element, nutils.warnings
+import nutils.elementseq, nutils.element, nutils.warnings, nutils.types
 import unittest, numpy, itertools, operator, functools
 
 line = nutils.element.LineReference()
@@ -161,7 +161,7 @@ class Uniform(TestCase, Common):
 class Take(TestCase, Common):
 
   def setUp(self):
-    self.seq = nutils.elementseq._Take(nutils.elementseq.References.from_iter([square, triangle, square], 2), nutils.types.frozenarray([1, 2], dtype=int))
+    self.seq = nutils.elementseq._Take(nutils.elementseq.References.from_iter([square, triangle, square], 2), nutils.types.arraydata([1, 2]))
     self.check = [triangle, square]
     self.checkndims = 2
     super().setUp()
