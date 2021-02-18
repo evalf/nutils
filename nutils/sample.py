@@ -38,6 +38,7 @@ set.
 from . import types, points, util, function, evaluable, parallel, numeric, matrix, sparse
 from .pointsseq import PointsSequence
 from .transformseq import Transforms
+from .transform import EvaluableTransformChain
 from typing import Iterable, Mapping, Optional, Sequence, Tuple, Union
 import numpy, numbers, collections.abc, os, treelog as log, abc
 
@@ -151,15 +152,15 @@ class Sample(types.Singleton):
 
     raise NotImplementedError
 
-  def _lower_for_loop(self, func: function.Array, *, points_shape: Tuple[evaluable.Array, ...] = (), **kwargs) -> Tuple[evaluable.Array, evaluable.Array]:
-    if kwargs.pop('transform_chains', None) or kwargs.pop('coordinates', None):
+  def _lower_for_loop(self, func: function.Array, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[EvaluableTransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()) -> Tuple[evaluable.Array, Tuple[evaluable.Array, ...], Tuple[EvaluableTransformChain, ...], Tuple[evaluable.Array, ...], evaluable.Array]:
+    if transform_chains or coordinates:
       raise ValueError('nested integrals or samples are not yet supported')
     ielem = evaluable.loop_index('_ielem', self.nelems)
-    coordinates = self.points.get_evaluable_coords(ielem)
-    return ielem, func.lower(**kwargs,
-      points_shape=points_shape+coordinates.shape[:-1],
-      transform_chains=tuple(t.get_evaluable(ielem) for t in self.transforms),
-      coordinates=(evaluable.prependaxes(coordinates, points_shape),) * len(self.transforms))
+    transform_chains = tuple(t.get_evaluable(ielem) for t in self.transforms)
+    coordinates = (evaluable.prependaxes(self.points.get_evaluable_coords(ielem), points_shape),)*len(transform_chains)
+    points_shape = points_shape + coordinates[0].shape[:-1]
+    lowered = func.lower(points_shape=points_shape, transform_chains=transform_chains, coordinates=coordinates)
+    return ielem, points_shape, transform_chains, coordinates, lowered
 
   @util.positional_only
   @util.single_or_multiple
@@ -433,10 +434,15 @@ class _Integral(function.Array):
     self._sample = sample
     super().__init__(shape=integrand.shape, dtype=float if integrand.dtype in (bool, int) else integrand.dtype, spaces=integrand.spaces - frozenset({sample.space}))
 
-  def lower(self, **kwargs) -> evaluable.Array:
-    ielem, integrand = self._sample._lower_for_loop(self._integrand, **kwargs)
-    contracted = evaluable.dot(evaluable.appendaxes(self._sample.points.get_evaluable_weights(ielem), integrand.shape[1:]), integrand, 0)
-    return evaluable.loop_sum(contracted, ielem)
+  def lower(self, **kwargs):
+    ielem, points_shape, transform_chains, coordinates, integrand = self._sample._lower_for_loop(self._integrand, **kwargs)
+    rootdim = self._sample.transforms[0].todims
+    manifolddim = self._sample.transforms[0].fromdims
+    assert manifolddim <= rootdim
+    jacobian = evaluable.sqrt_abs_det_gram(transform_chains[0].linear)
+    weights = self._sample.points.get_evaluable_weights(ielem)
+    elem_integral = evaluable.einsum(',B,ABC->AC', jacobian, weights, integrand, B=weights.ndim, C=self.ndim)
+    return evaluable.loop_sum(elem_integral, ielem)
 
 class _AtSample(function.Array):
 
@@ -448,7 +454,7 @@ class _AtSample(function.Array):
     super().__init__(shape=(sample.points.npoints, *func.shape), dtype=func.dtype, spaces=func.spaces - frozenset({sample.space}))
 
   def lower(self, **kwargs) -> evaluable.Array:
-    ielem, func = self._sample._lower_for_loop(self._func, **kwargs)
+    ielem, points_shape, transform_chains, coordinates, func = self._sample._lower_for_loop(self._func, **kwargs)
     indices = self._sample.get_evaluable_indices(ielem)
     inflated = evaluable.Transpose.from_end(evaluable.Inflate(evaluable.Transpose.to_end(func, 0), indices, self._sample.npoints), 0)
     return evaluable.loop_sum(inflated, ielem)

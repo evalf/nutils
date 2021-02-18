@@ -947,16 +947,35 @@ class _Gradient(Array):
     return evaluable.einsum('Ai,Aij->Aj', dfunc_dref, dref_dgeom)
 
 class _Jacobian(Array):
+  # The jacobian determinant of `geom` to the (root coordinates of the) given
+  # `spaces`. The last axis of `geom` is the coordinate axis and must have as
+  # length the sum of the dimensions of the given `spaces`.
 
-  def __init__(self, geom: Array) -> None:
-    assert geom.ndim == 1
+  def __init__(self, geom: Array, spaces: FrozenSet[str]) -> None:
+    assert geom.ndim >= 1
+    assert spaces, 'jacobian is one'
+    assert spaces <= geom.spaces, 'jacobian is zero'
     self._geom = geom
+    self._spaces = spaces
     super().__init__((), float, geom.spaces)
 
-  def lower(self, *, coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
-    assert coordinates
-    ndims = int(coordinates[0].shape[-1])
-    return evaluable.jacobian(self._geom.lower(coordinates=coordinates, **kwargs), ndims)
+  def lower(self, *, transform_chains: Tuple[EvaluableTransformChain, ...], **kwargs) -> evaluable.Array:
+    geom = self._geom.lower(transform_chains=transform_chains, **kwargs)
+    space, = self._spaces
+    transform_chains = {space: (transform_chains*2)[:2]}
+    J = []
+    scale = []
+    for space, (chain, opposite) in transform_chains.items():
+      if space not in self._spaces:
+        continue
+      dgeom_droot = evaluable.derivative(geom, _root_derivative_target(space, chain.todims))
+      if chain.fromdims < chain.todims:
+        tangents = chain.basis[:,:chain.fromdims]
+        J.append(evaluable.einsum('Aij,jk->Aik', dgeom_droot, tangents))
+        scale.append(1 / evaluable.sqrt_abs_det_gram(tangents))
+      else:
+        J.append(dgeom_droot)
+    return util.product((*scale, evaluable.sqrt_abs_det_gram(evaluable.concatenate(J, axis=-1))))
 
 class _Concatenate(Array):
 
@@ -2506,7 +2525,7 @@ def tangent(__geom: IntoArray, __vec: IntoArray) -> Array:
   vec = Array.cast(__vec)
   return subtract(vec, multiply(dot(vec, normal(geom), -1)[...,None], normal(geom)))
 
-def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
+def jacobian(__geom: IntoArray, __ndims: Optional[int] = None, *, spaces: Iterable[str] = None) -> Array:
   '''Return the absolute value of the determinant of the Jacobian matrix of the given geometry.
 
   Parameters
@@ -2525,16 +2544,22 @@ def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
   '''
 
   geom = Array.cast(__geom)
-  # TODO: check `__ndims` with `ndims` argument passed to `lower`.
-  return _Jacobian(geom)
+  if spaces is None:
+    spaces = geom.spaces
+  if not spaces:
+    return ones(geom.shape[:-1])
+  elif geom.shape[-1] == 0:
+    return zeros(geom.shape[:-1])
+  else:
+    return _Jacobian(geom, spaces)
 
-def J(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
+def J(__geom: IntoArray, __ndims: Optional[int] = None, *, spaces: Iterable[str] = None) -> Array:
   '''Return the absolute value of the determinant of the Jacobian matrix of the given geometry.
 
   Alias of :func:`jacobian`.
   '''
 
-  return jacobian(__geom, __ndims)
+  return jacobian(__geom, __ndims, spaces=spaces)
 
 def _d1(arg: IntoArray, var: IntoArray) -> Array:
   return derivative(arg, var) if isinstance(var, Argument) else grad(arg, var)
