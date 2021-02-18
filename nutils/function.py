@@ -977,6 +977,70 @@ class _Jacobian(Array):
         J.append(dgeom_droot)
     return util.product((*scale, evaluable.sqrt_abs_det_gram(evaluable.concatenate(J, axis=-1))))
 
+class _Normal(Array):
+
+  def __init__(self, geom: Array, spaces: FrozenSet[str]) -> None:
+    self._geom = geom
+    self._spaces = spaces
+    # TODO: Assert that spaces <= geom.spaces? Otherwise add `spaces` to `self.spaces`?
+    super().__init__(geom.shape, float, geom.spaces)
+
+  def lower(self, *, transform_chains: Tuple[EvaluableTransformChain, ...], **kwargs: Any) -> evaluable.Array:
+    geom = self._geom.lower(transform_chains=transform_chains, **kwargs)
+    space, = self._spaces
+    transform_chains = {space: (transform_chains*2)[:2]}
+    spaces_dim = builtins.sum(transform_chains[space][0].todims for space in self._spaces)
+    normal_dim = spaces_dim - builtins.sum(transform_chains[space][0].fromdims for space in self._spaces)
+    if self._geom.shape[-1] != spaces_dim:
+      raise ValueError('The dimension of geometry must equal the sum of the dimensions of the given spaces.')
+    if normal_dim == 0:
+      raise ValueError('Cannot compute the normal because the dimension of the normal space is zero.')
+    elif normal_dim > 1:
+      raise ValueError('Cannot unambiguously compute the normal because the dimension of the normal space is larger than one.')
+    tangents = []
+    normal = None
+    for space, (chain, opposite) in transform_chains.items():
+      if space not in self._spaces:
+        continue
+      rgrad = evaluable.derivative(geom, _root_derivative_target(space, chain.todims))
+      if chain.todims == chain.fromdims:
+        # `chain.basis` is `eye(chain.todims)`
+        tangents.append(rgrad)
+      else:
+        assert normal is None and chain.todims == chain.fromdims + 1
+        basis = evaluable.einsum('Aij,jk->Aik', rgrad, chain.basis)
+        tangents.append(basis[...,:chain.fromdims])
+        normal = basis[...,chain.fromdims:]
+    assert normal is not None
+    return evaluable.Normal(evaluable.concatenate((*tangents, normal), axis=-1))
+
+class _ExteriorNormal(Array):
+
+  def __init__(self, geom: Array, spaces: FrozenSet[str]) -> None:
+    self._geom = geom
+    self._spaces = spaces
+    # TODO: Assert that spaces <= geom.spaces? Otherwise add `spaces` to `self.spaces`?
+    super().__init__(geom.shape, float, geom.spaces)
+
+  def lower(self, *, transform_chains: Tuple[EvaluableTransformChain, ...], **kwargs: Any) -> evaluable.Array:
+    geom = self._geom.lower(transform_chains=transform_chains, **kwargs)
+    space, = self._spaces
+    transform_chains = {space: (transform_chains*2)[:2]}
+    spaces_dim = builtins.sum(transform_chains[space][0].todims for space in self._spaces)
+    if self._geom.shape[-1] != spaces_dim + 1:
+      raise ValueError('For the exterior normal the dimension of the geometry must be one larger than that of the root coordinate system, but got {} and {} respectively.'.format(self._geom.shape[-1], spaces_dim))
+    roots = tuple(_root_derivative_target(space, chain.todims) for space, (chain, opposite) in transform_chains.items() if space in self._spaces)
+    rgrad = evaluable.concatenate([evaluable.derivative(geom, root) for root in roots], axis=-1)
+    if self._geom.shape[-1] == 2:
+      normal = evaluable.stack([rgrad[...,1,0], -rgrad[...,0,0]], axis=-1)
+    elif self._geom.shape[-1] == 3:
+      i = evaluable.asarray([1, 2, 0])
+      j = evaluable.asarray([2, 0, 1])
+      normal = evaluable.Take(rgrad[...,0], i) * evaluable.Take(rgrad[...,1], j) - evaluable.Take(rgrad[...,1], i) * evaluable.Take(rgrad[...,0], j)
+    else:
+      raise NotImplementedError
+    return normal / evaluable.InsertAxis(evaluable.sqrt(evaluable.Sum(normal**2)), normal.shape[-1])
+
 class _Concatenate(Array):
 
   def __init__(self, __arrays: Sequence[IntoArray], axis: int) -> None:
@@ -2474,17 +2538,10 @@ def normal(__geom: IntoArray, exterior: bool = False) -> Array:
   elif geom.ndim > 1:
     sh = geom.shape[-2:]
     return unravel(normal(ravel(geom, geom.ndim-2), exterior), geom.ndim-2, sh)
+  elif not exterior:
+    return _Normal(geom, geom.spaces)
   else:
-    if not exterior:
-      lgrad = localgradient(geom, len(geom))
-      assert lgrad.ndim == 2 and lgrad.shape[0] == lgrad.shape[1]
-      return _Wrapper(evaluable.Normal, lgrad, shape=(lgrad.shape[0],), dtype=float)
-    lgrad = localgradient(geom, len(geom)-1)
-    if len(geom) == 2:
-      return Array.cast([lgrad[1,0], -lgrad[0,0]]).normalized()
-    if len(geom) == 3:
-      return cross(lgrad[:,0], lgrad[:,1], axis=0).normalized()
-    raise NotImplementedError
+    return _ExteriorNormal(geom, geom.spaces)
 
 def dotnorm(__arg: IntoArray, __geom: IntoArray, axis: int = -1) -> Array:
   '''Return the inner product of an array with the normal of the given geometry.
