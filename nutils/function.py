@@ -974,16 +974,28 @@ class _SurfaceGradient(Array):
     return evaluable.einsum('Ai,Aij->Aj', dfunc_dref, dref_dgeom)
 
 class _Jacobian(Array):
+  # The jacobian determinant of `geom` to the tip coordinates of the spaces of
+  # `geom`. The last axis of `geom` is the coordinate axis.
 
   def __init__(self, geom: Array) -> None:
-    assert geom.ndim == 1
+    assert geom.ndim >= 1
     self._geom = geom
     super().__init__((), float, geom.spaces)
 
-  def lower(self, *, coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
-    assert coordinates
-    ndims = int(coordinates[0].shape[-1])
-    return evaluable.jacobian(self._geom.lower(coordinates=coordinates, **kwargs), ndims)
+  def lower(self, *, transform_chains: Tuple[EvaluableTransformChain, ...], **kwargs) -> evaluable.Array:
+    geom = self._geom.lower(transform_chains=transform_chains, **kwargs)
+    space, = self._geom.spaces
+    transform_chains = {space: (transform_chains*2)[:2]}
+    tip_dim = builtins.sum(transform_chains[space][0].fromdims for space in self._geom.spaces)
+    if self._geom.shape[-1] < tip_dim:
+      raise ValueError('the dimension of the geometry cannot be lower than the dimension of the tip coords')
+    if not self._geom.spaces:
+      if self._geom.shape[-1] != 0:
+        raise ValueError('the jacobian of a constant geometry must have dimension zero')
+      return evaluable.ones(geom.shape[:-1])
+    tips = [_tip_derivative_target(space, chain.fromdims) for space, (chain, opposite) in transform_chains.items() if space in self._geom.spaces]
+    J = evaluable.concatenate([evaluable.derivative(geom, tip) for tip in tips], axis=-1)
+    return evaluable.sqrt_abs_det_gram(J)
 
 class _Concatenate(Array):
 
