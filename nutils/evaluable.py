@@ -1198,8 +1198,7 @@ class Constant(Array):
 
   def _determinant(self, axis1, axis2):
     value = numpy.transpose(self.value, tuple(i for i in range(self.ndim) if i != axis1 and i != axis2) + (axis1, axis2))
-    # NOTE: numpy <= 1.12 cannot compute the determinant of an array with shape [...,0,0]
-    return Constant(numpy.linalg.det(value) if value.shape[-1] else numpy.ones(value.shape[:-2]))
+    return Constant(numpy.linalg.det(value))
 
 class InsertAxis(Array):
 
@@ -1602,8 +1601,7 @@ class Determinant(Array):
 
   def evalf(self, arr):
     assert arr.ndim == self.ndim+2
-    # NOTE: numpy <= 1.12 cannot compute the determinant of an array with shape [...,0,0]
-    return numpy.linalg.det(arr) if arr.shape[-1] else numpy.ones(arr.shape[:-2])
+    return numpy.linalg.det(arr)
 
   def _derivative(self, var, seen):
     Finv = swapaxes(inverse(self.func), -2, -1)

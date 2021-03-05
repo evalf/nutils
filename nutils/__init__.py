@@ -22,7 +22,7 @@ import sys, numpy
 from distutils.version import LooseVersion
 
 assert sys.version_info >= (3, 5)
-assert LooseVersion(numpy.version.version) >= LooseVersion('1.15'), 'nutils requires numpy 1.15 or higher, got {}'.format(numpy.version.version)
+assert LooseVersion(numpy.version.version) >= LooseVersion('1.16'), 'nutils requires numpy 1.16 or higher, got {}'.format(numpy.version.version)
 
 version = '7.0a0'
 version_name = None
