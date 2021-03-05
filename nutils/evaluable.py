@@ -1183,14 +1183,12 @@ class InsertAxis(Array):
     return self.func._insertaxis(self.ndim-1, self.length)
 
   def evalf(self, func, length):
-    # We would like to return an array with stride zero for the inserted axis,
-    # but this appears to be *slower* (checked with examples/cylinderflow.py)
-    # than the implementation below.
-    assert length.ndim == 0
-    func = numpy.asarray(func)[...,numpy.newaxis]
-    if length != 1:
-      func = numpy.repeat(func, length, -1)
-    return func
+    if length == 1:
+      return func[...,numpy.newaxis]
+    try:
+      return numpy.ndarray(buffer=func, dtype=func.dtype, shape=(*func.shape, length), strides=(*func.strides, 0))
+    except ValueError: # non-contiguous data
+      return numpy.repeat(func[...,numpy.newaxis], length, -1)
 
   def _derivative(self, var, seen):
     return insertaxis(derivative(self.func, var, seen), self.ndim-1, self.length)
