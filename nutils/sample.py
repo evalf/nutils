@@ -84,10 +84,11 @@ class Sample(types.Singleton):
         increasing.
     '''
 
-    if index is None:
-      return _DefaultIndex(transforms, points)
-    else:
-      return _CustomIndex(transforms, points, index)
+    sample = _DefaultIndex(transforms, points)
+    if index is not None:
+      assert all(ind.shape == (pnt.npoints,) for ind, pnt in zip(index, points))
+      sample = _CustomIndex(sample, types.arraydata(numpy.concatenate(index)))
+    return sample
 
   def __init__(self, transforms, points):
     '''
@@ -124,6 +125,7 @@ class Sample(types.Singleton):
 
     raise NotImplementedError
 
+  @abc.abstractmethod
   def get_evaluable_indices(self, ielem):
     '''Return the evaluable indices for the given evaluable element index.
 
@@ -142,7 +144,7 @@ class Sample(types.Singleton):
     :meth:`getindex` : the non-evaluable equivalent
     '''
 
-    return evaluable.ElemwiseFromCallable(self.getindex, ielem, self.points.get_evaluable_coords(ielem).shape[:1], int)
+    raise NotImplementedError
 
   def _lower_for_loop(self, func, **kwargs):
     if kwargs.pop('transform_chains', None) or kwargs.pop('coordinates', None):
@@ -264,6 +266,7 @@ class Sample(types.Singleton):
     return function.matmat(self.basis(), array)
 
   @property
+  @abc.abstractmethod
   def tri(self):
     '''Triangulation of interior.
 
@@ -271,9 +274,10 @@ class Sample(types.Singleton):
     row defines a simplex by mapping vertices into the list of points.
     '''
 
-    return numpy.concatenate([self.getindex(ielem).take(points.tri) for ielem, points in enumerate(self.points)])
+    raise NotImplementedError
 
   @property
+  @abc.abstractmethod
   def hull(self):
     '''Triangulation of the exterior hull.
 
@@ -283,7 +287,7 @@ class Sample(types.Singleton):
     triangulations originating from separate elements are disconnected.
     '''
 
-    return numpy.concatenate([self.getindex(ielem).take(points.hull) for ielem, points in enumerate(self.points)])
+    raise NotImplementedError
 
   def subset(self, mask):
     '''Reduce the number of points.
@@ -320,7 +324,7 @@ class _DefaultIndex(Sample):
     return types.frozenarray(numpy.cumsum([0]+[p.npoints for p in self.points]), copy=False)
 
   def getindex(self, ielem):
-    return numpy.arange(self.offsets[ielem], self.offsets[ielem+1])
+    return types.frozenarray(numpy.arange(*self.offsets[ielem:ielem+2]), copy=False)
 
   @property
   def tri(self):
@@ -337,24 +341,27 @@ class _DefaultIndex(Sample):
 
 class _CustomIndex(Sample):
 
-  __slots__ = '_index'
+  __slots__ = '_parent', '_index'
 
-  def __init__(self, transforms, points, index):
-    if not all(i.dtype == int for i in index):
-      raise ValueError('non-integer index encountered')
-    if len(index) != len(points):
-      raise ValueError('expected an `index` with {} items but got {}'.format(len(points), len(index)))
-    self._index = tuple(map(numpy.asarray, index))
-    if not all(len(i) == p.npoints for i, p in zip(self._index, points)):
-      raise ValueError('lengths of indices does not match number of points per element')
-    super().__init__(transforms, points)
-
-  @property
-  def index(self):
-    return self._index
+  def __init__(self, parent, index):
+    assert index.shape == (parent.npoints,)
+    self._parent = parent
+    self._index = index
+    super().__init__(parent.transforms, parent.points)
 
   def getindex(self, ielem):
-    return self._index[ielem]
+    return numpy.take(self._index, self._parent.getindex(ielem))
+
+  def get_evaluable_indices(self, ielem):
+    return evaluable.Take(self._index, self._parent.get_evaluable_indices(ielem))
+
+  @property
+  def tri(self):
+    return numpy.take(self._index, self._parent.tri)
+
+  @property
+  def hull(self):
+    return numpy.take(self._index, self._parent.hull)
 
 @types.apply_annotations
 def eval_integrals(*integrals, **arguments:argdict):
