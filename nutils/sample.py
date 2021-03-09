@@ -145,6 +145,14 @@ class Sample(types.Singleton):
 
     return evaluable.ElemwiseFromCallable(self.getindex, ielem, self.points.get_evaluable_coords(ielem).shape[:1], int)
 
+  def _lower_for_loop(self, func, **kwargs):
+    if kwargs.pop('transform_chains', None) or kwargs.pop('coordinates', None):
+      raise ValueError('nested integrals or samples are not yet supported')
+    ielem = evaluable.Argument('_ielem', (), dtype=int)
+    return ielem, func.lower(**kwargs,
+      transform_chains=tuple(evaluable.TransformChainFromSequence(t, ielem) for t in self.transforms),
+      coordinates=(self.points.get_evaluable_coords(ielem),) * len(self.transforms))
+
   @util.positional_only
   @util.single_or_multiple
   @types.apply_annotations
@@ -429,14 +437,10 @@ class _Integral(function.Array):
     self._sample = sample
     super().__init__(shape=integrand.shape, dtype=float if integrand.dtype in (bool, int) else integrand.dtype)
 
-  def lower(self, *, transform_chains=None, coordinates=None, **kwargs) -> evaluable.Array:
-    if transform_chains or coordinates:
-      raise ValueError('nested integrals or samples are not yet supported')
-    ielem = evaluable.Argument('_ielem', (), dtype=int)
-    transform_chains = tuple(evaluable.TransformChainFromSequence(t, ielem) for t in self._sample.transforms)
-    coordinates = (self._sample.points.get_evaluable_coords(ielem),) * len(self._sample.transforms)
-    integrand = self._integrand.lower(transform_chains=transform_chains, coordinates=coordinates, **kwargs)
-    return evaluable.LoopSum(evaluable.dot(evaluable.appendaxes(self._sample.points.get_evaluable_weights(ielem), integrand.shape[1:]), integrand, 0), ielem, self._sample.nelems)
+  def lower(self, **kwargs) -> evaluable.Array:
+    ielem, integrand = self._sample._lower_for_loop(self._integrand, **kwargs)
+    contracted = evaluable.dot(evaluable.appendaxes(self._sample.points.get_evaluable_weights(ielem), integrand.shape[1:]), integrand, 0)
+    return evaluable.LoopSum(contracted, ielem, self._sample.nelems)
 
 class _AtSample(function.Array):
 
@@ -445,13 +449,8 @@ class _AtSample(function.Array):
     self._sample = sample
     super().__init__(shape=(sample.points.npoints, *func.shape), dtype=func.dtype)
 
-  def lower(self, *, transform_chains=None, coordinates=None, **kwargs) -> evaluable.Array:
-    if transform_chains or coordinates:
-      raise ValueError('nested integrals or samples are not yet supported')
-    ielem = evaluable.Argument('_ielem', (), dtype=int)
-    transform_chains = tuple(evaluable.TransformChainFromSequence(t, ielem) for t in self._sample.transforms)
-    coordinates = (self._sample.points.get_evaluable_coords(ielem),) * len(self._sample.transforms)
-    func = self._func.lower(transform_chains=transform_chains, coordinates=coordinates)
+  def lower(self, **kwargs) -> evaluable.Array:
+    ielem, func = self._sample._lower_for_loop(self._func, **kwargs)
     indices = self._sample.get_evaluable_indices(ielem)
     inflated = evaluable.Transpose.from_end(evaluable.Inflate(evaluable.Transpose.to_end(func, 0), indices, self._sample.npoints), 0)
     return evaluable.LoopSum(inflated, ielem, self._sample.nelems)
