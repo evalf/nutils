@@ -65,7 +65,6 @@ class Sample(types.Singleton):
   '''
 
   __slots__ = 'nelems', 'transforms', 'points', 'ndims'
-  __cache__ = 'allcoords'
 
   @staticmethod
   @types.apply_annotations
@@ -235,22 +234,11 @@ class Sample(types.Singleton):
       return NotImplemented
     return _AtSample(func, self)
 
-  @property
-  def allcoords(self):
-    coords = numpy.empty([self.npoints, self.ndims])
-    for ielem, points in enumerate(self.points):
-      coords[self.getindex(ielem)] = points.coords
-    return types.frozenarray(coords, copy=False)
-
   def basis(self):
     '''Basis-like function that for every point in the sample evaluates to the
     unit vector corresponding to its index.'''
 
-    index = function.transforms_index(self.transforms[0])
-    coords = function.transforms_coords(self.transforms[0], self.ndims)
-    I = function.Elemwise(self.index, index, dtype=int)
-    B = function.Sampled(coords, expect=function.take(self.allcoords, I, axis=0))
-    return function.inflate(B, indices=I, length=self.npoints, axis=0)
+    return _Basis(self)
 
   def asfunction(self, array):
     '''Convert sampled data to evaluable array.
@@ -344,8 +332,8 @@ class _DefaultIndex(Sample):
 
   def get_evaluable_indices(self, ielem):
     npoints = self.points.get_evaluable_coords(ielem).shape[0]
-    offsets = evaluable._SizesToOffsets(evaluable.loop_concatenate(evaluable.InsertAxis(npoints, 1), ielem, self.nelems))
-    return evaluable.Range(npoints, evaluable.get(offsets, 0, ielem))
+    offset = evaluable.get(_offsets(self.points), 0, ielem)
+    return evaluable.Range(npoints, offset)
 
 class _CustomIndex(Sample):
 
@@ -454,5 +442,25 @@ class _AtSample(function.Array):
     indices = self._sample.get_evaluable_indices(ielem)
     inflated = evaluable.Transpose.from_end(evaluable.Inflate(evaluable.Transpose.to_end(func, 0), indices, self._sample.npoints), 0)
     return evaluable.LoopSum(inflated, ielem, self._sample.nelems)
+
+class _Basis(function.Array):
+
+  def __init__(self, sample):
+    self._sample = sample
+    super().__init__(shape=(sample.npoints,), dtype=float)
+
+  def lower(self, *, transform_chains=(), coordinates=(), **kwargs):
+    assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
+    index, tail = evaluable.TransformsIndexWithTail(self._sample.transforms[0], transform_chains[0])
+    coords = evaluable.ApplyTransforms(tail, coordinates[0], self.shape[0])
+    expect = self._sample.points.get_evaluable_coords(index)
+    sampled = evaluable.Sampled(coords, expect)
+    indices = self._sample.get_evaluable_indices(index)
+    return evaluable.Inflate(sampled, dofmap=indices, length=self._sample.npoints)
+
+def _offsets(pointsseq):
+  ielem = evaluable.Argument('_ielem', shape=(), dtype=int)
+  npoints, ndims = pointsseq.get_evaluable_coords(ielem).shape
+  return evaluable._SizesToOffsets(evaluable.loop_concatenate(evaluable.InsertAxis(npoints, 1), ielem, len(pointsseq)))
 
 # vim:sw=2:sts=2:et
