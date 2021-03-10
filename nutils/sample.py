@@ -68,7 +68,7 @@ class Sample(types.Singleton):
 
   @staticmethod
   @types.apply_annotations
-  def new(transforms:types.tuple[transformseq.stricttransforms], points:types.strict[PointsSequence], index:types.tuple[types.arraydata]=None):
+  def new(transforms:types.tuple[transformseq.stricttransforms], points:types.strict[PointsSequence], index=None):
     '''Create a new :class:`Sample`.
 
     Parameters
@@ -78,16 +78,17 @@ class Sample(types.Singleton):
         contain points.
     points : :class:`~nutils.pointsseq.PointsSequence`
         Points sequence.
-    index : :class:`tuple` of integer arrays, optional
-        List of indices matching ``transforms``, defining the order on which
-        points show up in the evaluation. If absent the indices will be strict
-        increasing.
+    index : integer array or :class:`tuple` of integer arrays, optional
+        Indices defining the order in which points show up in the evaluation.
+        If absent the indices will be strictly increasing.
     '''
 
     sample = _DefaultIndex(transforms, points)
     if index is not None:
-      assert all(ind.shape == (pnt.npoints,) for ind, pnt in zip(index, points))
-      sample = _CustomIndex(sample, types.arraydata(numpy.concatenate(index)))
+      if isinstance(index, tuple):
+        assert all(ind.shape == (pnt.npoints,) for ind, pnt in zip(index, points))
+        index = numpy.concatenate(index)
+      sample = _CustomIndex(sample, types.arraydata(index))
     return sample
 
   def __init__(self, transforms, points):

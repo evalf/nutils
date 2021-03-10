@@ -564,18 +564,19 @@ class Topology(types.Singleton):
     return self._sample(ielems, points, weights)
 
   def _sample(self, ielems, coords, weights=None):
-    uielems = numpy.unique(ielems)
-    points_ = []
-    index = []
-    for ielem in uielems:
-      w, = numpy.equal(ielems, ielem).nonzero()
-      points_.append(points.CoordsPoints(coords[w]) if weights is None
-                else points.CoordsWeightsPoints(coords[w], weights[w]))
-      index.append(w)
-    transforms = self.transforms[uielems],
+    index = numpy.argsort(ielems, kind='stable')
+    sorted_ielems = ielems[index]
+    offsets = [0, *(sorted_ielems[:-1] != sorted_ielems[1:]).nonzero()[0]+1, len(index)]
+
+    unique_ielems = sorted_ielems[offsets[:-1]]
+    transforms = self.transforms[unique_ielems],
     if len(self.transforms) == 0 or self.opposites != self.transforms:
-      transforms += self.opposites[uielems],
-    points_ = PointsSequence.from_iter(points_, self.ndims)
+      transforms += self.opposites[unique_ielems],
+
+    slices = [index[n:m] for n, m in zip(offsets[:-1], offsets[1:])]
+    points_ = PointsSequence.from_iter([points.CoordsPoints(coords[s]) for s in slices] if weights is None
+               else [points.CoordsWeightsPoints(coords[s], weights[s]) for s in slices], self.ndims)
+
     return Sample.new(transforms, points_, index)
 
   def revolved(self, geom):
