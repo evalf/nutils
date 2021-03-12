@@ -54,7 +54,7 @@ jobs:
           # nprocs
           - {os: ubuntu-latest , python-version: 3.8, matrix-backend: numpy, nprocs: 2, numpy-version: latest}
           # numpy-version
-          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: numpy, nprocs: 1, numpy-version: 1.15  }
+          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: numpy, nprocs: 1, numpy-version: 1.16  }
       fail-fast: false
     env:
       NUTILS_MATRIX: ${{ matrix.matrix-backend }}

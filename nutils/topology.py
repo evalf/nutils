@@ -197,7 +197,7 @@ class Topology(types.Singleton):
     retvals = [sparse.toarray(retval) for retval in self.sample(ischeme, degree).integrate_sparse(
       [function.kronecker(func, pos=self.f_index, length=len(self), axis=0) for func in funcs], arguments=arguments)]
     if asfunction:
-      return [function.Elemwise(retval, self.f_index, dtype=float) for retval in retvals]
+      return [function.get(retval, 0, self.f_index) for retval in retvals]
     else:
       return retvals
 
@@ -564,18 +564,19 @@ class Topology(types.Singleton):
     return self._sample(ielems, points, weights)
 
   def _sample(self, ielems, coords, weights=None):
-    uielems = numpy.unique(ielems)
-    points_ = []
-    index = []
-    for ielem in uielems:
-      w, = numpy.equal(ielems, ielem).nonzero()
-      points_.append(points.CoordsPoints(coords[w]) if weights is None
-                else points.CoordsWeightsPoints(coords[w], weights[w]))
-      index.append(w)
-    transforms = self.transforms[uielems],
+    index = numpy.argsort(ielems, kind='stable')
+    sorted_ielems = ielems[index]
+    offsets = [0, *(sorted_ielems[:-1] != sorted_ielems[1:]).nonzero()[0]+1, len(index)]
+
+    unique_ielems = sorted_ielems[offsets[:-1]]
+    transforms = self.transforms[unique_ielems],
     if len(self.transforms) == 0 or self.opposites != self.transforms:
-      transforms += self.opposites[uielems],
-    points_ = PointsSequence.from_iter(points_, self.ndims)
+      transforms += self.opposites[unique_ielems],
+
+    slices = [index[n:m] for n, m in zip(offsets[:-1], offsets[1:])]
+    points_ = PointsSequence.from_iter([points.CoordsPoints(coords[s]) for s in slices] if weights is None
+               else [points.CoordsWeightsPoints(coords[s], weights[s]) for s in slices], self.ndims)
+
     return Sample.new(transforms, points_, index)
 
   def revolved(self, geom):
@@ -1498,10 +1499,9 @@ class SubsetTopology(Topology):
 
   @property
   def connectivity(self):
-    mask = numpy.array([bool(ref) for ref in self.refs] + [False]) # trailing false serves to map -1 to -1
-    renumber = numpy.cumsum(mask)-1
-    renumber[~mask] = -1
-    return tuple(types.frozenarray(renumber.take(ioppelems).tolist() + [-1] * (ref.nedges - len(ioppelems))) for ref, ioppelems in zip(self.refs, self.basetopo.connectivity) if ref)
+    renumber = numeric.invmap([i for i, ref in enumerate(self.refs) if ref], length=len(self.refs)+1, missing=-1) # length=..+1 serves to map -1 to -1
+    return tuple(types.frozenarray(numpy.concatenate([renumber.take(ioppelems), numpy.repeat(-1, ref.nedges-len(ioppelems))]), copy=False)
+      for ref, ioppelems in zip(self.refs, self.basetopo.connectivity) if ref)
 
   @property
   def refined(self):

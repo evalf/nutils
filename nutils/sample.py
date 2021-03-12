@@ -65,11 +65,10 @@ class Sample(types.Singleton):
   '''
 
   __slots__ = 'nelems', 'transforms', 'points', 'ndims'
-  __cache__ = 'allcoords'
 
   @staticmethod
   @types.apply_annotations
-  def new(transforms:types.tuple[transformseq.stricttransforms], points:types.strict[PointsSequence], index:types.tuple[types.arraydata]=None):
+  def new(transforms:types.tuple[transformseq.stricttransforms], points:types.strict[PointsSequence], index=None):
     '''Create a new :class:`Sample`.
 
     Parameters
@@ -79,16 +78,18 @@ class Sample(types.Singleton):
         contain points.
     points : :class:`~nutils.pointsseq.PointsSequence`
         Points sequence.
-    index : :class:`tuple` of integer arrays, optional
-        List of indices matching ``transforms``, defining the order on which
-        points show up in the evaluation. If absent the indices will be strict
-        increasing.
+    index : integer array or :class:`tuple` of integer arrays, optional
+        Indices defining the order in which points show up in the evaluation.
+        If absent the indices will be strictly increasing.
     '''
 
-    if index is None:
-      return _DefaultIndex(transforms, points)
-    else:
-      return _CustomIndex(transforms, points, index)
+    sample = _DefaultIndex(transforms, points)
+    if index is not None:
+      if isinstance(index, tuple):
+        assert all(ind.shape == (pnt.npoints,) for ind, pnt in zip(index, points))
+        index = numpy.concatenate(index)
+      sample = _CustomIndex(sample, types.arraydata(index))
+    return sample
 
   def __init__(self, transforms, points):
     '''
@@ -125,6 +126,7 @@ class Sample(types.Singleton):
 
     raise NotImplementedError
 
+  @abc.abstractmethod
   def get_evaluable_indices(self, ielem):
     '''Return the evaluable indices for the given evaluable element index.
 
@@ -143,7 +145,15 @@ class Sample(types.Singleton):
     :meth:`getindex` : the non-evaluable equivalent
     '''
 
-    return evaluable.ElemwiseFromCallable(self.getindex, ielem, self.points.get_evaluable_coords(ielem).shape[:1], int)
+    raise NotImplementedError
+
+  def _lower_for_loop(self, func, **kwargs):
+    if kwargs.pop('transform_chains', None) or kwargs.pop('coordinates', None):
+      raise ValueError('nested integrals or samples are not yet supported')
+    ielem = evaluable.Argument('_ielem', (), dtype=int)
+    return ielem, func.lower(**kwargs,
+      transform_chains=tuple(evaluable.TransformChainFromSequence(t, ielem) for t in self.transforms),
+      coordinates=(self.points.get_evaluable_coords(ielem),) * len(self.transforms))
 
   @util.positional_only
   @util.single_or_multiple
@@ -227,22 +237,11 @@ class Sample(types.Singleton):
       return NotImplemented
     return _AtSample(func, self)
 
-  @property
-  def allcoords(self):
-    coords = numpy.empty([self.npoints, self.ndims])
-    for ielem, points in enumerate(self.points):
-      coords[self.getindex(ielem)] = points.coords
-    return types.frozenarray(coords, copy=False)
-
   def basis(self):
     '''Basis-like function that for every point in the sample evaluates to the
     unit vector corresponding to its index.'''
 
-    index = function.transforms_index(self.transforms[0])
-    coords = function.transforms_coords(self.transforms[0], self.ndims)
-    I = function.Elemwise(self.index, index, dtype=int)
-    B = function.Sampled(coords, expect=function.take(self.allcoords, I, axis=0))
-    return function.inflate(B, indices=I, length=self.npoints, axis=0)
+    return _Basis(self)
 
   def asfunction(self, array):
     '''Convert sampled data to evaluable array.
@@ -268,6 +267,7 @@ class Sample(types.Singleton):
     return function.matmat(self.basis(), array)
 
   @property
+  @abc.abstractmethod
   def tri(self):
     '''Triangulation of interior.
 
@@ -275,9 +275,10 @@ class Sample(types.Singleton):
     row defines a simplex by mapping vertices into the list of points.
     '''
 
-    return numpy.concatenate([self.getindex(ielem).take(points.tri) for ielem, points in enumerate(self.points)])
+    raise NotImplementedError
 
   @property
+  @abc.abstractmethod
   def hull(self):
     '''Triangulation of the exterior hull.
 
@@ -287,7 +288,7 @@ class Sample(types.Singleton):
     triangulations originating from separate elements are disconnected.
     '''
 
-    return numpy.concatenate([self.getindex(ielem).take(points.hull) for ielem, points in enumerate(self.points)])
+    raise NotImplementedError
 
   def subset(self, mask):
     '''Reduce the number of points.
@@ -324,7 +325,7 @@ class _DefaultIndex(Sample):
     return types.frozenarray(numpy.cumsum([0]+[p.npoints for p in self.points]), copy=False)
 
   def getindex(self, ielem):
-    return numpy.arange(self.offsets[ielem], self.offsets[ielem+1])
+    return types.frozenarray(numpy.arange(*self.offsets[ielem:ielem+2]), copy=False)
 
   @property
   def tri(self):
@@ -336,29 +337,32 @@ class _DefaultIndex(Sample):
 
   def get_evaluable_indices(self, ielem):
     npoints = self.points.get_evaluable_coords(ielem).shape[0]
-    offsets = evaluable._SizesToOffsets(evaluable.loop_concatenate(evaluable.InsertAxis(npoints, 1), ielem, self.nelems))
-    return evaluable.Range(npoints, evaluable.get(offsets, 0, ielem))
+    offset = evaluable.get(_offsets(self.points), 0, ielem)
+    return evaluable.Range(npoints, offset)
 
 class _CustomIndex(Sample):
 
-  __slots__ = '_index'
+  __slots__ = '_parent', '_index'
 
-  def __init__(self, transforms, points, index):
-    if not all(i.dtype == int for i in index):
-      raise ValueError('non-integer index encountered')
-    if len(index) != len(points):
-      raise ValueError('expected an `index` with {} items but got {}'.format(len(points), len(index)))
-    self._index = tuple(map(numpy.asarray, index))
-    if not all(len(i) == p.npoints for i, p in zip(self._index, points)):
-      raise ValueError('lengths of indices does not match number of points per element')
-    super().__init__(transforms, points)
-
-  @property
-  def index(self):
-    return self._index
+  def __init__(self, parent, index):
+    assert index.shape == (parent.npoints,)
+    self._parent = parent
+    self._index = index
+    super().__init__(parent.transforms, parent.points)
 
   def getindex(self, ielem):
-    return self._index[ielem]
+    return numpy.take(self._index, self._parent.getindex(ielem))
+
+  def get_evaluable_indices(self, ielem):
+    return evaluable.Take(self._index, self._parent.get_evaluable_indices(ielem))
+
+  @property
+  def tri(self):
+    return numpy.take(self._index, self._parent.tri)
+
+  @property
+  def hull(self):
+    return numpy.take(self._index, self._parent.hull)
 
 @types.apply_annotations
 def eval_integrals(*integrals, **arguments:argdict):
@@ -429,14 +433,10 @@ class _Integral(function.Array):
     self._sample = sample
     super().__init__(shape=integrand.shape, dtype=float if integrand.dtype in (bool, int) else integrand.dtype)
 
-  def lower(self, *, transform_chains=None, coordinates=None, **kwargs) -> evaluable.Array:
-    if transform_chains or coordinates:
-      raise ValueError('nested integrals or samples are not yet supported')
-    ielem = evaluable.Argument('_ielem', (), dtype=int)
-    transform_chains = tuple(evaluable.TransformChainFromSequence(t, ielem) for t in self._sample.transforms)
-    coordinates = (self._sample.points.get_evaluable_coords(ielem),) * len(self._sample.transforms)
-    integrand = self._integrand.lower(transform_chains=transform_chains, coordinates=coordinates, **kwargs)
-    return evaluable.LoopSum(evaluable.dot(evaluable.appendaxes(self._sample.points.get_evaluable_weights(ielem), integrand.shape[1:]), integrand, 0), ielem, self._sample.nelems)
+  def lower(self, **kwargs) -> evaluable.Array:
+    ielem, integrand = self._sample._lower_for_loop(self._integrand, **kwargs)
+    contracted = evaluable.dot(evaluable.appendaxes(self._sample.points.get_evaluable_weights(ielem), integrand.shape[1:]), integrand, 0)
+    return evaluable.LoopSum(contracted, ielem, self._sample.nelems)
 
 class _AtSample(function.Array):
 
@@ -445,15 +445,30 @@ class _AtSample(function.Array):
     self._sample = sample
     super().__init__(shape=(sample.points.npoints, *func.shape), dtype=func.dtype)
 
-  def lower(self, *, transform_chains=None, coordinates=None, **kwargs) -> evaluable.Array:
-    if transform_chains or coordinates:
-      raise ValueError('nested integrals or samples are not yet supported')
-    ielem = evaluable.Argument('_ielem', (), dtype=int)
-    transform_chains = tuple(evaluable.TransformChainFromSequence(t, ielem) for t in self._sample.transforms)
-    coordinates = (self._sample.points.get_evaluable_coords(ielem),) * len(self._sample.transforms)
-    func = self._func.lower(transform_chains=transform_chains, coordinates=coordinates)
+  def lower(self, **kwargs) -> evaluable.Array:
+    ielem, func = self._sample._lower_for_loop(self._func, **kwargs)
     indices = self._sample.get_evaluable_indices(ielem)
     inflated = evaluable.Transpose.from_end(evaluable.Inflate(evaluable.Transpose.to_end(func, 0), indices, self._sample.npoints), 0)
     return evaluable.LoopSum(inflated, ielem, self._sample.nelems)
+
+class _Basis(function.Array):
+
+  def __init__(self, sample):
+    self._sample = sample
+    super().__init__(shape=(sample.npoints,), dtype=float)
+
+  def lower(self, *, transform_chains=(), coordinates=(), **kwargs):
+    assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
+    index, tail = evaluable.TransformsIndexWithTail(self._sample.transforms[0], transform_chains[0])
+    coords = evaluable.ApplyTransforms(tail, coordinates[0], self.shape[0])
+    expect = self._sample.points.get_evaluable_coords(index)
+    sampled = evaluable.Sampled(coords, expect)
+    indices = self._sample.get_evaluable_indices(index)
+    return evaluable.Inflate(sampled, dofmap=indices, length=self._sample.npoints)
+
+def _offsets(pointsseq):
+  ielem = evaluable.Argument('_ielem', shape=(), dtype=int)
+  npoints, ndims = pointsseq.get_evaluable_coords(ielem).shape
+  return evaluable._SizesToOffsets(evaluable.loop_concatenate(evaluable.InsertAxis(npoints, 1), ielem, len(pointsseq)))
 
 # vim:sw=2:sts=2:et

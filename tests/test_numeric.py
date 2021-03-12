@@ -1,4 +1,4 @@
-from nutils import numeric, util
+from nutils import numeric, util, types
 import numpy
 from nutils.testing import *
 import itertools
@@ -134,11 +134,18 @@ class asboolean(TestCase):
     with self.assertRaises(Exception):
       numeric.asboolean([2,1], 3)
 
-class types:
+class invmap(TestCase):
+
+  def test(self):
+    indices = numpy.array([3,1])
+    invmap = numeric.invmap(indices, length=5, missing=9)
+    self.assertAllEqual(invmap, [9,1,9,0,9])
+
+class istype(TestCase):
 
   def test_isint(self):
     self.assertTrue(numeric.isint(1))
-    self.assertTrue(numeric.isint(numpy.array(1)))
+    self.assertFalse(numeric.isint(numpy.array(1)))
     self.assertTrue(numeric.isint(numpy.int32(1)))
     self.assertTrue(numeric.isint(numpy.uint32(1)))
     self.assertFalse(numeric.isint(1.5))
@@ -152,19 +159,18 @@ class types:
 
   def test_isnumber(self):
     self.assertTrue(numeric.isnumber(1))
-    self.assertTrue(numeric.isnumber(numpy.array(1)))
+    self.assertFalse(numeric.isnumber(numpy.array(1)))
     self.assertTrue(numeric.isnumber(numpy.int32(1)))
     self.assertTrue(numeric.isnumber(numpy.uint32(1)))
     self.assertTrue(numeric.isnumber(1.5))
     self.assertTrue(numeric.isnumber(numpy.float64(1.5)))
-    self.assertTrue(numeric.isnumber(numpy.array(1.5)))
+    self.assertFalse(numeric.isnumber(numpy.array(1.5)))
     self.assertFalse(numeric.isnumber(numpy.array([1])))
 
   def test_isarray(self):
     self.assertTrue(numeric.isarray(numpy.array([1,2,3])))
     self.assertTrue(numeric.isarray(types.frozenarray([1,2,3])))
     self.assertTrue(numeric.isarray(numpy.array(1)))
-    self.assertTrue(numeric.isarray(types.frozenarray(1)))
 
   def test_isboolarray(self):
     self.assertTrue(numeric.isboolarray(numpy.array(True)))

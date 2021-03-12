@@ -555,6 +555,38 @@ def asboolean(array, size, ordered=True):
     barray[array] = True
   return barray
 
+def invmap(indices, length, missing=-1):
+  '''Create inverse index array.
+
+  Create the index array ``inverse`` with the given ``length`` such that
+  ``inverse[indices[i]] == i`` and ``inverse[j] == missing`` for all ``j`` not
+  in ``indices``. It is an error to pass an ``indices`` array with repeated
+  indices, in which case the result is undefined.
+
+  >>> m = invmap([3,1], length=5)
+  >>> m[3]
+  0
+  >>> m[1]
+  1
+
+  Args
+  ----
+  indices : :class:`int` array_like
+      Integer or index data.
+  length : :class:`int`
+      Target array length; must be larger than max(indices).
+  missing : :class:`int` (default: -1)
+      Value to insert for missing indices.
+
+  Returns
+  -------
+  :class:`numpy.ndarray`
+  '''
+
+  invmap = numpy.full(length, missing)
+  invmap[numpy.asarray(indices)] = numpy.arange(len(indices))
+  return invmap
+
 def levicivita(n: int, dtype=float):
   'n-dimensional Levi-Civita symbol.'
   if n < 2:
