@@ -306,7 +306,10 @@ def nutils_hash(data):
     pos = data.tell()
     h.update(str(pos).encode())
     data.seek(0)
-    map(h.update, iter(lambda: data.read(0x20000), b''))
+    chunk = data.read(0x20000)
+    while chunk:
+      h.update(chunk)
+      chunk = data.read(0x20000)
     data.seek(pos)
   elif t is types.MethodType:
     h.update(nutils_hash(data.__self__))
