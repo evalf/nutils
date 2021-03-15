@@ -48,6 +48,7 @@ class Matrix:
     assert len(shape) == 2
     self.shape = shape
     self._precon_args = None
+    self._cached_submatrix = None
 
   def __reduce__(self):
     from . import assemble
@@ -279,7 +280,12 @@ class Matrix:
     if rows.all() and cols.all():
       return self
 
-    return self._submatrix(rows, cols)
+    if self._cached_submatrix is None or (rows != self._cached_rows).any() or (cols != self._cached_cols).any():
+      self._cached_rows = rows
+      self._cached_cols = cols
+      self._cached_submatrix = self._submatrix(rows, cols)
+
+    return self._cached_submatrix
 
   @abc.abstractmethod
   def _submatrix(self, rows, cols):
