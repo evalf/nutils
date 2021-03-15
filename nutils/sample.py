@@ -85,7 +85,7 @@ class Sample(types.Singleton):
 
     sample = _DefaultIndex(transforms, points)
     if index is not None:
-      if isinstance(index, tuple):
+      if isinstance(index, (tuple, list)):
         assert all(ind.shape == (pnt.npoints,) for ind, pnt in zip(index, points))
         index = numpy.concatenate(index)
       sample = _CustomIndex(sample, types.arraydata(index))
