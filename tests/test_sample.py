@@ -46,7 +46,7 @@ class rectilinear(TestCase):
       self.bezier2.eval(sampled)
     self.assertAllEqual(self.gauss2.eval(sampled), values)
     arg = function.Argument('dofs', [2,3])
-    self.assertTrue(evaluable.iszero(function.derivative(sampled, arg).prepare_eval(ndims=self.domain.ndims)))
+    self.assertTrue(evaluable.iszero(evaluable.asarray(function.derivative(sampled, arg) @ self.gauss2)))
 
 class integral(TestCase):
 

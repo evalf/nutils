@@ -10,6 +10,7 @@ class TopologyAssertions:
     interfaces = domain.interfaces
     bmask = numpy.zeros(len(boundary), dtype=int)
     imask = numpy.zeros(len(interfaces), dtype=int)
+    lowered_geom = geom.lower(transform_chains=(evaluable.SelectChain(0),), coordinates=(evaluable.Points(evaluable.NPoints(), boundary.ndims),))
     for ielem, ioppelems in enumerate(domain.connectivity):
       for iedge, ioppelem in enumerate(ioppelems):
         etrans, eref = domain.references[ielem].edges[iedge]
@@ -31,8 +32,8 @@ class TopologyAssertions:
           imask[index] += 1
           self.assertEqual(eref, opperef)
           points = eref.getpoints('gauss', 2)
-          a0 = geom.prepare_eval(ndims=eref.ndims).eval(_transforms=[trans], _points=points)
-          a1 = geom.prepare_eval(ndims=eref.ndims).eval(_transforms=[opptrans], _points=points)
+          a0 = lowered_geom.eval(_transforms=[trans], _points=points)
+          a1 = lowered_geom.eval(_transforms=[opptrans], _points=points)
           numpy.testing.assert_array_almost_equal(a0, a1)
     self.assertTrue(numpy.equal(bmask, 1).all())
     self.assertTrue(numpy.equal(imask, 2).all())

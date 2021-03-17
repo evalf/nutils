@@ -308,11 +308,12 @@ class Topology(types.Singleton):
       F = numpy.zeros(onto.shape[0])
       W = numpy.zeros(onto.shape[0])
       I = numpy.zeros(onto.shape[0], dtype=bool)
-      fun = function.asarray(fun).prepare_eval(ndims=self.ndims)
-      data = evaluable.Tuple(evaluable.Tuple([fun, onto_f.simplified, evaluable.Tuple(onto_ind)]) for onto_ind, onto_f in evaluable.blocks(onto.prepare_eval(ndims=self.ndims)))
-      for ref, trans, opp in zip(self.references, self.transforms, self.opposites):
-        ipoints = ref.getpoints('bezier2')
-        for fun_, onto_f_, onto_ind_ in data.eval(_transforms=(trans, opp), _points=ipoints, **arguments or {}):
+      ielem_arg = evaluable.Argument('_project_index', (), dtype=int)
+      lower_args = dict(transform_chains=(evaluable.TransformChainFromSequence(self.transforms, ielem_arg), evaluable.TransformChainFromSequence(self.opposites, ielem_arg)), coordinates=(self.references.getpoints('bezier', 2).get_evaluable_coords(ielem_arg),)*2)
+      fun = function.lower(**lower_args)
+      data = evaluable.Tuple(evaluable.Tuple([fun, onto_f.simplified, evaluable.Tuple(onto_ind)]) for onto_ind, onto_f in evaluable.blocks(onto.lower(**lower_args))).optimized_for_numpy
+      for ielem in range(len(self)):
+        for fun_, onto_f_, onto_ind_ in data.eval(_project_index=ielem, **arguments or {}):
           onto_f_ = onto_f_.swapaxes(0,1) # -> dof axis, point axis, ...
           indfun_ = fun_[(slice(None),)+numpy.ix_(*onto_ind_[1:])]
           assert onto_f_.shape[0] == len(onto_ind_[0])
@@ -361,15 +362,17 @@ class Topology(types.Singleton):
     if arguments is None:
       arguments = {}
 
-    levelset = levelset.prepare_eval(ndims=self.ndims).optimized_for_numpy
     refs = []
     if leveltopo is None:
-      with log.iter.percentage('trimming', self.references, self.transforms, self.opposites) as items:
-        for ref, trans, opp in items:
-          levels = levelset.eval(_transforms=(trans, opp), _points=ref.getpoints('vertex', maxrefine), **arguments)
+      ielem_arg = evaluable.Argument('_trim_index', (), dtype=int)
+      levelset = levelset.lower(transform_chains=(evaluable.TransformChainFromSequence(self.transforms, ielem_arg), evaluable.TransformChainFromSequence(self.opposites, ielem_arg)), coordinates=(self.references.getpoints('vertex', maxrefine).get_evaluable_coords(ielem_arg),)*2).optimized_for_numpy
+      with log.iter.percentage('trimming', range(len(self)), self.references) as items:
+        for ielem, ref in items:
+          levels = levelset.eval(_trim_index=ielem, **arguments)
           refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
     else:
       log.info('collecting leveltopo elements')
+      levelset = levelset.lower(transform_chains=(evaluable.SelectChain(0), evaluable.SelectChain(1)), coordinates=(evaluable.Points(evaluable.NPoints(), self.ndims),)*2).optimized_for_numpy
       bins = [set() for ielem in range(len(self))]
       for trans in leveltopo.transforms:
         ielem, tail = self.transforms.index_with_tail(trans)

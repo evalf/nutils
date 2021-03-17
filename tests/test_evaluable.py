@@ -576,8 +576,7 @@ class elemwise(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, geom = mesh.rectilinear([7])
-    self.index = self.domain.f_index.prepare_eval(ndims=self.domain.ndims, npoints=None)
+    self.index = evaluable.Argument('index', (), int)
     self.data = tuple(map(types.frozenarray, (
       numpy.arange(1, dtype=float).reshape(1,1),
       numpy.arange(2, dtype=float).reshape(1,2),
@@ -590,20 +589,20 @@ class elemwise(TestCase):
     self.func = evaluable.Elemwise(self.data, self.index, float)
 
   def test_evalf(self):
-    for i, (trans, points) in enumerate(zip(self.domain.transforms, self.domain.sample('gauss', 1).points)):
+    for i in range(7):
       with self.subTest(i=i):
-        numpy.testing.assert_array_almost_equal(self.func.eval(_transforms=(trans,), _points=points), self.data[i])
+        numpy.testing.assert_array_almost_equal(self.func.eval(index=i), self.data[i])
 
   def test_shape(self):
-    for i, (trans, points) in enumerate(zip(self.domain.transforms, self.domain.sample('gauss', 1).points)):
+    for i in range(7):
       with self.subTest(i=i):
-        self.assertEqual(self.func.size.eval(_transforms=(trans,), _points=points), self.data[i].size)
+        self.assertEqual(self.func.size.eval(index=i), self.data[i].size)
 
   def test_derivative(self):
-    self.assertTrue(evaluable.iszero(evaluable.localgradient(self.func, self.domain.ndims).simplified))
+    self.assertTrue(evaluable.iszero(evaluable.localgradient(self.func, 2).simplified))
 
   def test_shape_derivative(self):
-    self.assertEqual(evaluable.localgradient(self.func, self.domain.ndims).shape, self.func.shape+(evaluable.Constant(self.domain.ndims),))
+    self.assertEqual(evaluable.localgradient(self.func, 2).shape, self.func.shape+(evaluable.Constant(2),))
 
 class jacobian(TestCase):
 
