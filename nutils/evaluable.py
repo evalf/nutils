@@ -3031,6 +3031,47 @@ class DerivativeTargetBase(Array):
   def isconstant(self):
     return False
 
+class WithDerivative(Array):
+  '''Wrap the given function and define the derivative to a target.
+
+  The wrapper is typically used together with a virtual derivative target like
+  :class:`IdentifierDerivativeTarget`. The wrapper is removed in the simplified
+  form.
+
+  Parameters
+  ----------
+  func : :class:`Array`
+      The function to wrap.
+  var : :class:`DerivativeTargetBase`
+      The derivative target.
+  derivative : :class:`Array`
+      The derivative with shape ``func.shape + var.shape``.
+
+  See Also
+  --------
+  :class:`IdentifierDerivativeTarget` : a virtual derivative target
+  '''
+
+  __slots__ = '_func', '_var', '_deriv'
+
+  def __init__(self, func: Array, var: DerivativeTargetBase, derivative: Array) -> None:
+    self._func = func
+    self._var = var
+    self._deriv = derivative
+    super().__init__(args=(func,), shape=func.shape, dtype=func.dtype)
+
+  def evalf(self, func: numpy.ndarray) -> numpy.ndarray:
+    return func
+
+  def _derivative(self, var: DerivativeTargetBase, seen) -> Array:
+    if var == self._var:
+      return self._deriv
+    else:
+      return derivative(self._func, var, seen)
+
+  def _simplified(self) -> Array:
+    return self._func
+
 class Argument(DerivativeTargetBase):
   '''Array argument, to be substituted before evaluation.
 
@@ -3119,6 +3160,10 @@ class IdentifierDerivativeTarget(DerivativeTargetBase):
       The identifier for this derivative target.
   shape : :class:`tuple` of :class:`Array` or :class:`int`
       The shape of this derivative target.
+
+  See Also
+  --------
+  :class:`WithDerivative` : :class:`Array` wrapper with additional derivative
   '''
 
   __slots__ = 'identifier'
