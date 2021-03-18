@@ -896,7 +896,7 @@ def _derivative(residual, target, jacobian=None):
     jacobian = tuple(evaluable.derivative(res, argobjs[t]).simplified for res in residual for t in target)
   elif len(jacobian) != len(residual) * len(target):
     raise ValueError('jacobian has incorrect length')
-  elif any(jacobian[i*len(target)+j].shape != res.shape + argobjs[t].shape for i, res in enumerate(residual) for j, t in enumerate(target)):
+  elif not all(evaluable.equalshape(jacobian[i*len(target)+j].shape, res.shape + argobjs[t].shape) for i, res in enumerate(residual) for j, t in enumerate(target)):
     raise ValueError('jacobian has incorrect shape')
   return jacobian
 
