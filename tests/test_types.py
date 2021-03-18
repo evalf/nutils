@@ -187,7 +187,7 @@ class nutils_hash(TestCase):
       os.close(fid)
       with open(path, 'rb') as f:
         f.seek(2)
-        self.assertEqual(nutils.types.nutils_hash(f).hex(), '4edef1af3aa845b9e8bbde2d8265be5f30be4c2a')
+        self.assertEqual(nutils.types.nutils_hash(f).hex(), '490e9467ce36ddf487999a7b43d554737385e42f')
         self.assertEqual(f.tell(), 2)
       with open(path, 'rb+') as f, self.assertRaises(TypeError):
         nutils.types.nutils_hash(f).hex()
