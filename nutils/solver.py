@@ -758,7 +758,163 @@ class thetamethod(cache.Recursion, length=1, version=1):
       yield lhs
 
 impliciteuler = functools.partial(thetamethod, theta=1)
-cranknicolson = functools.partial(thetamethod, theta=0.5)
+trapezoidal = functools.partial(thetamethod, theta=0.5)
+
+def cranknicolson(*args, **kwargs):
+  warnings.deprecation('''\
+Solver.cranknicolson was erroneously implemented as the trapezoidal rule. For
+backwards compatibility this behaviour will be maintained until the release of
+version 7; as of version 8 the error will be corrected and this warning will
+disappear. In the meantime true Crank-Nicolson integration is available as
+solver.gausslegendre2.''')
+  return trapezoidal(*args, **kwargs)
+
+
+@iterable.single_or_multiple
+class rungekutta(cache.Recursion, length=1, version=1):
+  '''solve time dependent problem using the Runge Kutta method
+
+  Parameters
+  ----------
+  target : :class:`str`
+      Name of the target: a :class:`nutils.function.Argument` in ``residual``.
+  residual : :class:`nutils.evaluable.AsEvaluableArray`
+  inertia : :class:`nutils.evaluable.AsEvaluableArray`
+  timestep : :class:`float`
+      Initial time step, will scale up as residual decreases
+  lhs0 : :class:`numpy.ndarray`
+      Coefficient vector, starting point of the iterative procedure.
+  rkmatrix : :class:`numpy.ndarray`
+      Runge-Kutta matrix, or `a` coefficients of the Butcher tableau.
+  rkweights : :class:`numpy.ndarray`
+      Runge-Kutta weights, or `b` coefficient or the Butcher tableau.
+  rknodes : :class:`numpy.ndarray` or `None`
+      Runge-Kutta nodes, or `c` coefficient or the Butcher tableau. Defaults to
+      `rknodes = rkmatrix.sum(axis=1)` if left unspecified.
+  constrain : :class:`numpy.ndarray` with dtype :class:`bool` or :class:`float`
+      Equal length to ``lhs0``, masks the free vector entries as ``False``
+      (boolean) or NaN (float). In the remaining positions the values of
+      ``lhs0`` are returned unchanged (boolean) or overruled by the values in
+      `constrain` (float).
+  newtontol : :class:`float`
+      Residual tolerance of individual timesteps
+  arguments : :class:`collections.abc.Mapping`
+      Defines the values for :class:`nutils.function.Argument` objects in
+      `residual`.  The ``target`` should not be present in ``arguments``.
+      Optional.
+  timetarget : :class:`str` or `None`
+      Name of the :class:`nutils.function.Argument` that represents time.
+      Optional.
+
+  Yields
+  ------
+  :class:`numpy.ndarray`
+      Coefficient vector for all timesteps after the initial condition.
+  '''
+
+  @types.apply_annotations
+  def __init__(self, target, residual:integraltuple, inertia:optionalintegraltuple, timestep:types.strictfloat, rkmatrix:types.arraydata, rkweights:types.arraydata, rknodes:types.arraydata=None, lhs0:types.arraydata=None, constrain:arrayordict=None, newtontol:types.strictfloat=1e-10, arguments:argdict={}, newtonargs:types.frozendict={}, timetarget:types.strictstr=None):
+    super().__init__()
+    if len(residual) != len(inertia):
+      raise Exception('length of residual and inertia do no match')
+    if not all(inert is None or inert.shape == res.shape for inert, res in zip(inertia, residual)):
+      raise ValueError('expected `inertia` with shape {} but got {}'.format(res.shape, inert.shape))
+
+    # butcher tableau
+    B = numpy.asarray(rkweights)
+    assert B.ndim == 1
+    assert B.sum() == 1
+    nrk, = B.shape
+    A = numpy.asarray(rkmatrix)
+    assert A.shape == (nrk, nrk)
+    if rknodes is None:
+      C = A.sum(axis=1)
+    else:
+      C = numpy.asarray(rknodes)
+      assert C.shape == (nrk,)
+
+    dt = timestep * evaluable.Argument('_rk_timescale', ())
+    if timetarget:
+      tt = evaluable.Argument(timetarget, ()) # time target for beginning of current timestep
+
+    argobjs = _argobjs(residual + inertia) # all the relevant dof targets
+    rktargets = {t: ['_rk{}_{}'.format(i, t) for i in range(nrk)] for t in target}
+    rkargobjs = {(t,i): evaluable.Argument(rktargets[t][i], argobjs[t].shape) for t in target for i in range(nrk)} # all the RK arguments
+
+    residuals = [] # all combined residual blocks
+    for n, (inert, res) in enumerate(zip(inertia, residual), start=1):
+      lincond = inert is None \
+        and timetarget not in res.arguments \
+        and not any(evaluable.derivative(res, argobjs[t]).simplified.arguments for t in target)
+      if lincond:
+        log.info('identified residual #{} as a linear condition'.format(n))
+        # Runge-Kutta produces update vectors k1, k2, .. such that, for all i:
+        # I,t(tn + ci h, yn + aij kj) + I,y(tn + ci h, yn + aij kj) ki/h +
+        # R(tn + ci h, yn + aij kj) = 0. This means that for blocks where I = 0
+        # and R is linear and independent of t, R(yn + aij kj) = 0. Since in
+        # general bj != sum:i aij, this condition does not carry over to yn+1.
+        # We therefore modify the condition in this scenario to R(yn + ki) = 0,
+        # which is consistent if R(yn) = 0 (true for n>1) and aij nonsingular.
+      for i in range(nrk):
+        resi = res
+        if inert is not None:
+          for t in target:
+            resi += (evaluable.derivative(inert, argobjs[t]) * rkargobjs[t,i]).sum(inert.ndim + numpy.arange(argobjs[t].ndim)) / dt
+          if timetarget:
+            resi += evaluable.derivative(inert, tt)
+        # target replacement table for RK level i
+        si = {t: argobjs[t] + (rkargobjs[t,i] if lincond # <- consistent modification
+                 else util.sum(rkargobjs[t,j] * A[i,j] for j in range(nrk))) for t in target}
+        if timetarget:
+          si[timetarget] = tt + dt * C[i]
+        residuals.append(evaluable.replace_arguments(resi, si))
+
+    self.newtonargs = newtonargs
+    self.newtontol = newtontol
+    self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argobjs(residual+inertia), arguments)
+    for t in target:
+      self.constrain.update(dict.fromkeys(rktargets[t], self.constrain.pop(t)))
+    self.target = tuple(trk for t in target for trk in rktargets[t]) # order must match residuals because of constraints
+    self.increments = [(t, tuple(zip(rktargets[t], B))) for t in target]
+    if timetarget:
+      self.increments.append((timetarget, (('_rk_timescale', timestep),)))
+      self.lhs0.setdefault(timetarget, 0.)
+    self.residuals = tuple(residuals)
+    self.jacobians = _derivative(residuals, self.target)
+
+  def _step(self, lhs0, timescale):
+    try:
+      lhs = newton(self.target, residual=self.residuals, jacobian=self.jacobians, constrain=self.constrain, arguments=dict(_rk_timescale=timescale, **lhs0), **self.newtonargs).solve(tol=self.newtontol)
+    except (SolverError, matrix.MatrixError) as e:
+      log.error('error: {}; retrying with {} timestep'.format(e, timescale/2))
+      return self._step(self._step(lhs0, timescale/2), timescale/2)
+    else:
+      return {t: sum([lhs[ti] * bi for ti, bi in increments], lhs[t]) for t, increments in self.increments}
+
+  def resume(self, history):
+    if history:
+      lhs, = history
+    else:
+      lhs = self.lhs0
+      yield lhs
+    while True:
+      lhs = self._step(lhs, 1.)
+      yield lhs
+
+gausslegendre2 = functools.partial(rungekutta,
+  rkmatrix=[[.5]],
+  rkweights=[1.],
+  rknodes=None)
+
+gausslegendre4 = functools.partial(rungekutta,
+  rkmatrix=[[.25, .25-numpy.sqrt(3)/6], [.25+numpy.sqrt(3)/6, .25]],
+  rkweights=[.5, .5],
+  rknodes=None)
+
+gausslegendre6 = functools.partial(rungekutta,
+  rkmatrix=[[5/36, 2/9-numpy.sqrt(15)/15, 5/36-numpy.sqrt(15)/30], [5/36+numpy.sqrt(15)/24, 2/9, 5/36-numpy.sqrt(15)/24], [5/36+numpy.sqrt(15)/30, 2/9+numpy.sqrt(15)/15, 5/36]],
+  rkweights=[5/18, 4/9, 5/18],
+  rknodes=None)
 
 
 @log.withcontext

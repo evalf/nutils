@@ -1,6 +1,6 @@
 from nutils import solver, mesh, function, cache, types, numeric, warnings, sample, sparse
 from nutils.testing import *
-import numpy, contextlib, tempfile, itertools, logging
+import numpy, contextlib, tempfile, itertools, logging, functools
 
 @contextlib.contextmanager
 def tmpcache():
@@ -260,4 +260,46 @@ class theta_time(TestCase):
     self.check(solver.impliciteuler, theta=1)
 
   def test_cranknicolson(self):
-    self.check(solver.cranknicolson, theta=0.5)
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.check(solver.cranknicolson, theta=0.5)
+
+
+class rungekutta_time(TestCase):
+
+  def check(self, method, f):
+    ns = function.Namespace()
+    topo, ns.x = mesh.rectilinear([1])
+    ns.u_n = '?u_n + <0>_n'
+    inertia = topo.integral('?u_n d:x' @ ns, degree=0)
+    residual = topo.integral('-<1>_n sin(?t) d:x' @ ns, degree=0)
+    timestep = 0.1
+    udesired = numpy.array([0.])
+    uactualiter = iter(method(target='u', residual=residual, inertia=inertia, timestep=timestep, lhs0=udesired, timetarget='t'))
+    for i in range(5):
+      with self.subTest(i=i):
+        uactual = next(uactualiter)
+        self.assertAllAlmostEqual(uactual, udesired)
+        udesired += timestep * f(i, timestep)
+
+  def test_cranknicolson(self):
+    self.check(solver.gausslegendre2, lambda i, timestep: numpy.sin((i+.5)*timestep))
+
+
+class rungekutta_res(TestCase):
+
+  def check(self, method, f):
+    ns = function.Namespace()
+    topo, ns.x = mesh.rectilinear([1])
+    ns.u_n = '?u_n + <0>_n'
+    inertia = residual = topo.integral('u_n d:x' @ ns, degree=0)
+    timestep = 0.1
+    udesired = numpy.array([1.])
+    uactualiter = iter(method(target='u', residual=residual, inertia=inertia, timestep=timestep, lhs0=udesired, timetarget='t'))
+    for i in range(5):
+      with self.subTest(i=i):
+        uactual = next(uactualiter)
+        self.assertAllAlmostEqual(uactual, udesired)
+        udesired += timestep * f(udesired, timestep)
+
+  def test_cranknicolson(self):
+    self.check(solver.gausslegendre2, lambda u, timestep: -u / (1+timestep/2))
