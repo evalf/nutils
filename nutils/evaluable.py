@@ -1834,7 +1834,8 @@ class Add(Array):
     return Add([unravel(func, axis, shape) for func in self.funcs])
 
   def _loopsum(self, index, length):
-    return Add([LoopSum(func, index, length) for func in self.funcs])
+    if any(index not in func.arguments for func in self.funcs):
+      return Add([LoopSum(func, index, length) for func in self.funcs])
 
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
