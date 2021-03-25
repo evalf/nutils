@@ -855,11 +855,17 @@ class _LocalCoords(Array):
 class _RootCoords(Array):
 
   def __init__(self, space: str, ndims: int) -> None:
+    self._space = space
     super().__init__((ndims,), float, frozenset({space}))
 
   def lower(self, *, transform_chains: Tuple[EvaluableTransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = (), **kwargs) -> evaluable.Array:
     assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
-    return evaluable.ApplyTransforms(transform_chains[0], coordinates[0], self.shape[0])
+    inv_linear = evaluable.diagonalize(evaluable.ones(self.shape))
+    inv_linear = _prepend_points(inv_linear, transform_chains=transform_chains, coordinates=coordinates, **kwargs)
+    tip_coords = coordinates[0]
+    tip_coords = evaluable.WithDerivative(tip_coords, _tip_derivative_target(self._space, tip_coords.shape[-1]), evaluable.Diagonalize(evaluable.ones(tip_coords.shape)))
+    coords = evaluable.ApplyTransforms(transform_chains[0], tip_coords, self.shape[0])
+    return evaluable.WithDerivative(coords, _root_derivative_target(self._space, self.shape[0]), inv_linear)
 
 class _TransformsIndex(Array):
 
