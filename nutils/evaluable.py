@@ -3093,6 +3093,27 @@ class LocalCoords(DerivativeTargetBase):
   def evalf(self):
     raise Exception('LocalCoords should not be evaluated')
 
+class IdentifierDerivativeTarget(DerivativeTargetBase):
+  '''Virtual derivative target distinguished by an identifier.
+
+  Parameters
+  ----------
+  identifier : hashable :class:`object`
+      The identifier for this derivative target.
+  shape : :class:`tuple` of :class:`Array` or :class:`int`
+      The shape of this derivative target.
+  '''
+
+  __slots__ = 'identifier'
+
+  @types.apply_annotations
+  def __init__(self, identifier, shape:asshape):
+    self.identifier = identifier
+    super().__init__(args=[], shape=shape, dtype=float)
+
+  def evalf(self):
+    raise Exception('{} cannot be evaluabled'.format(type(self).__name__))
+
 class Ravel(Array):
 
   __slots__ = 'func'
