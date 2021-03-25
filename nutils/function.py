@@ -881,13 +881,25 @@ class _TransformsIndex(Array):
 class _TransformsCoords(Array):
 
   def __init__(self, space: str, transforms: Transforms) -> None:
+    self._space = space
     self._transforms = transforms
     super().__init__((transforms.fromdims,), int, frozenset({space}))
 
   def lower(self, *, transform_chains: Tuple[EvaluableTransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
     assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
     index, tail = transform_chains[0].index_with_tail_in(self._transforms)
-    return evaluable.ApplyTransforms(tail, coordinates[0], self.shape[0])
+    head = self._transforms.get_evaluable(index)
+    L = head.linear
+    if self._transforms.todims > self._transforms.fromdims:
+      LTL = evaluable.einsum('ki,kj->ij', L, L)
+      Linv = evaluable.einsum('ik,jk->ij', evaluable.inverse(LTL), L)
+    else:
+      Linv = evaluable.inverse(L)
+    Linv = _prepend_points(Linv, transform_chains=transform_chains, coordinates=coordinates, **kwargs)
+    tip_coords = coordinates[0]
+    tip_coords = evaluable.WithDerivative(tip_coords, _tip_derivative_target(self._space, tip_coords.shape[-1]), evaluable.Diagonalize(evaluable.ones(tip_coords.shape)))
+    coords = evaluable.ApplyTransforms(tail, tip_coords, self._transforms.fromdims)
+    return evaluable.WithDerivative(coords, _root_derivative_target(self._space, self._transforms.todims), Linv)
 
 class _Derivative(Array):
 
