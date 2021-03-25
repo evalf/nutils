@@ -879,13 +879,23 @@ class _TransformsIndex(Array):
 class _TransformsCoords(Array):
 
   def __init__(self, space: str, transforms: Transforms) -> None:
+    self._space = space
     self._transforms = transforms
     super().__init__((transforms.fromdims,), int, frozenset({space}))
 
   def lower(self, *, transform_chains: Tuple[EvaluableTransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
     assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
     index, tail = self._transforms.evaluable_index_with_tail(transform_chains[0])
-    return evaluable.ApplyTransforms(tail, coordinates[0], self.shape[0])
+    head = self._transforms.get_evaluable(index)
+    L = head.linear
+    if self._transforms.todims > self._transforms.fromdims:
+      LTL = evaluable.einsum('ki,kj->ij', L, L)
+      Linv = evaluable.einsum('ik,jk->ij', evaluable.inverse(LTL), L)
+    else:
+      Linv = evaluable.inverse(L)
+    Linv = _prepend_points(Linv, transform_chains=transform_chains, coordinates=coordinates, **kwargs)
+    coords = evaluable.ApplyTransforms(tail, coordinates[0], self._transforms.fromdims)
+    return evaluable.WithDerivative(coords, _root_derivative_target(self._space, self._transforms.todims), Linv)
 
 class _Derivative(Array):
 
