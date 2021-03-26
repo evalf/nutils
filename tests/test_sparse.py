@@ -101,6 +101,15 @@ class vector(unittest.TestCase):
         self.assertEqual(prune.tolist(),
           [((4,),10), ((4,),20), ((3,),1), ((2,),30), ((1,),40), ((2,),50), ((3,),-1), ((0,),60)])
 
+  def test_prune_mask(self):
+    mask = (numpy.arange(9) % 2).astype(bool)
+    for inplace in False, True:
+      with self.subTest(inplace=inplace), chunksize(self.data.itemsize * 3):
+        prune = sparse.prune(self.data, inplace=inplace, mask=mask)
+        (self.assertIs if inplace else self.assertIsNot)(prune, self.data)
+        self.assertEqual(prune.tolist(),
+          [((4,),20), ((2,),30), ((2,),50), ((0,),0)])
+
   def test_block(self):
     A = self.data
     B = C = numpy.array([
@@ -217,6 +226,15 @@ class matrix(unittest.TestCase):
         (self.assertIs if inplace else self.assertIsNot)(prune, self.data)
         self.assertEqual(prune.tolist(),
           [((2,4),10), ((3,4),20), ((2,3),1), ((1,2),30), ((0,1),40), ((1,2),50), ((2,3),-1), ((2,0),60)])
+
+  def test_prune_mask(self):
+    mask = (numpy.arange(8) % 2).astype(bool)
+    for inplace in False, True:
+      with self.subTest(inplace=inplace), chunksize(self.data.itemsize * 3):
+        prune = sparse.prune(self.data, inplace=inplace, mask=mask)
+        (self.assertIs if inplace else self.assertIsNot)(prune, self.data)
+        self.assertEqual(prune.tolist(),
+          [((3,4),20), ((1,2),30), ((1,2),50), ((3,0),0)])
 
   def test_block(self):
     A = self.data
