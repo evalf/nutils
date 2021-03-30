@@ -401,5 +401,5 @@ class partialtrim(TestCase):
     # the base implementation should create the correct boundary topology but
     # without interface opposites and without the trimmed group
     for topo in self.topoA, self.topoB:
-      alttopo = topology.ConnectedTopology(topo.references, topo.transforms, topo.opposites, topo.connectivity)
+      alttopo = topology.ConnectedTopology(topo.space, topo.references, topo.transforms, topo.opposites, topo.connectivity)
       self.assertEqual(dict(zip(alttopo.boundary.transforms, alttopo.boundary.references)), dict(zip(topo.boundary.transforms, topo.boundary.references)))
