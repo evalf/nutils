@@ -20,8 +20,10 @@
 
 """The transformseq module."""
 
-from . import types, numeric, util, transform, element
+from typing import Tuple
+from . import types, numeric, util, transform, element, evaluable
 from .elementseq import References
+from .transform import TransformChain, EvaluableTransformChain
 import abc, itertools, operator, numpy
 
 class Transforms(types.Singleton):
@@ -318,6 +320,22 @@ class Transforms(types.Singleton):
     '''
 
     yield self
+
+  def get_evaluable(self, index: evaluable.Array) -> EvaluableTransformChain:
+    '''Return the evaluable transform chain at the given index.
+
+    Parameters
+    ----------
+    index : a scalar, integer :class:`nutils.evaluable.Array`
+        The index of the transform chain to return.
+
+    Returns
+    -------
+    :class:`nutils.transform.EvaluableTransformChain`
+        The evaluable transform chain at the given ``index``.
+    '''
+
+    return _EvaluableTransformChainFromSequence(self, index)
 
 stricttransforms = types.strict[Transforms]
 
@@ -926,5 +944,24 @@ def chain(items, todims, fromdims):
     return unchained[0]
   else:
     return ChainedTransforms(unchained)
+
+class _EvaluableTransformChainFromSequence(EvaluableTransformChain):
+
+  __slots__ = '_sequence', '_index'
+
+  def __init__(self, sequence: Transforms, index: evaluable.Array) -> None:
+    self._sequence = sequence
+    self._index = index
+    super().__init__((index,), sequence.todims, sequence.fromdims)
+
+  def evalf(self, index: numpy.ndarray) -> TransformChain:
+    return self._sequence[index.__index__()]
+
+  def index_with_tail_in(self, __sequence) -> Tuple[evaluable.Array, EvaluableTransformChain]:
+    if __sequence == self._sequence:
+      tails = EvaluableTransformChain.empty(self._sequence.todims)
+      return self._index, tails
+    else:
+      return super().index_with_tail_in(__sequence)
 
 # vim:sw=2:sts=2:et

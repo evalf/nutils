@@ -1,5 +1,5 @@
 from nutils.testing import TestCase, parametrize
-import nutils.transformseq, nutils.element
+import nutils.transformseq, nutils.element, nutils.evaluable
 from nutils.elementseq import References
 import unittest, numpy, itertools, functools, types
 
@@ -136,6 +136,12 @@ class Common:
     ctransforms = (trans+(ctrans,) for trans, ref in zip(self.check, self.checkrefs) for ctrans in ref.child_transforms)
     for i, trans in enumerate(ctransforms):
       self.assertEqual(refined.index(trans), i)
+
+  def test_get_evaluable(self):
+    eindex = nutils.evaluable.InRange(nutils.evaluable.Argument('index', (), int), len(self.check))
+    echain = self.seq.get_evaluable(eindex)
+    for index, chain in enumerate(self.check):
+      self.assertEqual(echain.eval(index=index), chain)
 
   def test_index_with_tail_in(self):
     assert len(self.check) == len(self.checkrefs)
