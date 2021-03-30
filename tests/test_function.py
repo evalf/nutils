@@ -276,7 +276,7 @@ class Custom(TestCase):
   def assertEvalAlmostEqual(self, factual, fdesired, **args):
     with self.subTest('0d-points'):
       self.assertAllAlmostEqual(factual.lower().eval(**args), fdesired.lower().eval(**args))
-    transform_chains = evaluable.TransformChainFromSequence(transformseq.IdentifierTransforms(2, 'test', 1), evaluable.Zeros((), int)),
+    transform_chains = transform.EvaluableTransformChain.from_argument('test', 2, 2),
     with self.subTest('1d-points'):
       coords = evaluable.Zeros((5,2), float)
       lower_args = dict(points_shape=coords.shape[:-1], coordinates=(coords,), transform_chains=transform_chains)
@@ -1261,7 +1261,7 @@ class CommonBasis:
     ref = element.PointReference() if self.basis.coords.shape[0] == 0 else element.LineReference()**self.basis.coords.shape[0]
     points = ref.getpoints('bezier', 4)
     coordinates = evaluable.Constant(points.coords)
-    lowered = self.basis.lower(points_shape=coordinates.shape[:-1], transform_chains=(evaluable.TransformChainFromSequence(self.checktransforms, evaluable.Argument('ielem', (), int)),), coordinates=(coordinates,))
+    lowered = self.basis.lower(points_shape=coordinates.shape[:-1], transform_chains=(self.checktransforms.get_evaluable(evaluable.Argument('ielem', (), int)),), coordinates=(coordinates,))
     with _builtin_warnings.catch_warnings():
       _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
       for ielem in range(self.checknelems):

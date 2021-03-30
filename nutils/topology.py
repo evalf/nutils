@@ -342,7 +342,7 @@ class Topology(types.Singleton):
     if leveltopo is None:
       ielem_arg = evaluable.Argument('_trim_index', (), dtype=int)
       coordinates = self.references.getpoints('vertex', maxrefine).get_evaluable_coords(ielem_arg)
-      levelset = levelset.lower(points_shape=coordinates.shape[:-1], transform_chains=(evaluable.TransformChainFromSequence(self.transforms, ielem_arg), evaluable.TransformChainFromSequence(self.opposites, ielem_arg)), coordinates=(coordinates,)*2).optimized_for_numpy
+      levelset = levelset.lower(points_shape=coordinates.shape[:-1], transform_chains=(self.transforms.get_evaluable(ielem_arg), self.opposites.get_evaluable(ielem_arg)), coordinates=(coordinates,)*2).optimized_for_numpy
       with log.iter.percentage('trimming', range(len(self)), self.references) as items:
         for ielem, ref in items:
           levels = levelset.eval(_trim_index=ielem, **arguments)
@@ -350,7 +350,8 @@ class Topology(types.Singleton):
     else:
       log.info('collecting leveltopo elements')
       coordinates = evaluable.Points(evaluable.NPoints(), self.ndims)
-      levelset = levelset.lower(points_shape=coordinates.shape[:-1], transform_chains=(evaluable.SelectChain(0), evaluable.SelectChain(1)), coordinates=(coordinates,)*2).optimized_for_numpy
+      transform_chain = transform.EvaluableTransformChain.from_argument('trans', self.transforms.todims, self.transforms.fromdims)
+      levelset = levelset.lower(points_shape=coordinates.shape[:-1], transform_chains=(transform_chain,), coordinates=(coordinates,)).optimized_for_numpy
       bins = [set() for ielem in range(len(self))]
       for trans in leveltopo.transforms:
         ielem, tail = self.transforms.index_with_tail(trans)
@@ -365,7 +366,7 @@ class Topology(types.Singleton):
           while mask.any():
             imax = numpy.argmax([mask[indices].sum() for tail, points, indices in cover])
             tail, points, indices = cover.pop(imax)
-            levels[indices] = levelset.eval(_transforms=(trans + tail,), _points=points, **arguments)
+            levels[indices] = levelset.eval(trans=trans + tail, _points=points, **arguments)
             mask[indices] = False
           refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
       log.debug('cache', fcache.stats)
@@ -507,9 +508,7 @@ class Topology(types.Singleton):
     _point = evaluable.Argument('_locate_point', shape=(self.ndims,))
     egeom = geom.lower(
       points_shape=(),
-      transform_chains = (
-        evaluable.TransformChainFromSequence(self.transforms, _ielem),
-        evaluable.TransformChainFromSequence(self.opposites, _ielem)),
+      transform_chains=(self.transforms.get_evaluable(_ielem), self.opposites.get_evaluable(_ielem)),
       coordinates = (_point, _point))
     xJ = evaluable.Tuple((egeom, evaluable.derivative(egeom, _point))).simplified
     arguments = dict(arguments or ())
