@@ -155,7 +155,7 @@ class Sample(types.Singleton):
     coordinates = self.points.get_evaluable_coords(ielem)
     return ielem, func.lower(**kwargs,
       points_shape=points_shape+coordinates.shape[:-1],
-      transform_chains=tuple(evaluable.TransformChainFromSequence(t, ielem) for t in self.transforms),
+      transform_chains=tuple(t.get_evaluable(ielem) for t in self.transforms),
       coordinates=(evaluable.prependaxes(coordinates, points_shape),) * len(self.transforms))
 
   @util.positional_only
@@ -454,7 +454,7 @@ class _Basis(function.Array):
 
   def lower(self, *, transform_chains=(), coordinates=(), **kwargs) -> evaluable.Array:
     assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
-    index, tail = evaluable.TransformsIndexWithTail(self._sample.transforms[0], transform_chains[0])
+    index, tail = self._sample.transforms[0].evaluable_index_with_tail(transform_chains[0])
     coords = evaluable.ApplyTransforms(tail, coordinates[0], self.shape[0])
     expect = self._sample.points.get_evaluable_coords(index)
     sampled = evaluable.Sampled(coords, expect)

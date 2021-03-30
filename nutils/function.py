@@ -26,6 +26,7 @@ else:
 
 from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, overload, List, Set
 from . import evaluable, numeric, util, expression, types, warnings, debug_flags
+from .transform import EvaluableTransformChain
 from .transformseq import Transforms
 import builtins, numpy, re, types as builtin_types, itertools, functools, operator, abc, numbers
 
@@ -37,7 +38,7 @@ _dtypes = bool, int, float
 class Lowerable(Protocol):
   'Protocol for lowering to :class:`nutils.evaluable.Array`.'
 
-  def lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()) -> evaluable.Array:
+  def lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[EvaluableTransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()) -> evaluable.Array:
     '''Lower this object to a :class:`nutils.evaluable.Array`.
 
     Parameters
@@ -45,7 +46,7 @@ class Lowerable(Protocol):
     points_shape : :class:`tuple` of scalar, integer :class:`nutils.evaluable.Array`
         The shape of the leading points axes that are to be added to the
         lowered :class:`nutils.evaluable.Array`.
-    transform_chains : sequence of :class:`nutils.evaluable.TransformChain` objects
+    transform_chains : sequence of :class:`nutils.transform.EvaluableTransformChain` objects
     coordinates : sequence of :class:`nutils.evaluable.Array` objects
         The coordinates at which the function will be evaluated.
     '''
@@ -76,7 +77,7 @@ if debug_flags.lower:
 # The lower cache introduced below should stay below the debug wrapper added
 # above. Otherwise the cached results are debugge again and again.
 
-def _cache_lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()) -> evaluable.Array:
+def _cache_lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[EvaluableTransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()) -> evaluable.Array:
   key = points_shape, transform_chains, coordinates
   cached_key, cached_result = getattr(self, '_ArrayMeta__cached_lower', (None, None))
   if cached_key == key:
@@ -144,7 +145,7 @@ class Array(metaclass=_ArrayMeta):
     self.shape = tuple(sh.__index__() for sh in shape)
     self.dtype = dtype
 
-  def lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()) -> evaluable.Array:
+  def lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[EvaluableTransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()) -> evaluable.Array:
     raise NotImplementedError
 
   @util.cached_property
@@ -432,7 +433,7 @@ def _prepend_points(__arg: evaluable.Array, *, points_shape: Tuple[evaluable.Arr
 
 class _Unlower(Array):
 
-  def __init__(self, array: evaluable.Array, points_shape: Tuple[evaluable.Array, ...], transform_chains: Tuple[evaluable.TransformChain, ...], coordinates: Tuple[evaluable.Array, ...]) -> None:
+  def __init__(self, array: evaluable.Array, points_shape: Tuple[evaluable.Array, ...], transform_chains: Tuple[EvaluableTransformChain, ...], coordinates: Tuple[evaluable.Array, ...]) -> None:
     self._array = array
     self._points_shape = points_shape
     self._transform_chains = transform_chains
@@ -440,7 +441,7 @@ class _Unlower(Array):
     shape = tuple(n.__index__() for n in array.shape[len(points_shape):])
     super().__init__(shape=shape, dtype=array.dtype)
 
-  def lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()):
+  def lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[EvaluableTransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()):
     if self._points_shape != points_shape or self._transform_chains != transform_chains or self._coordinates != coordinates:
       raise ValueError('_Unlower must be lowered with the same arguments as those with which it is instantiated.')
     return self._array
@@ -583,7 +584,7 @@ class Custom(Array):
     self._npointwise = npointwise
     super().__init__(shape=(*points_shape, *shape), dtype=dtype)
 
-  def lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()) -> evaluable.Array:
+  def lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[EvaluableTransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()) -> evaluable.Array:
     args = tuple(arg.lower(points_shape=points_shape, transform_chains=transform_chains, coordinates=coordinates) if isinstance(arg, Array) else evaluable.EvaluableConstant(arg) for arg in self._args) # type: Tuple[Union[evaluable.Array, evaluable.EvaluableConstant], ...]
     add_points_shape = tuple(map(evaluable.asarray, self.shape[:self._npointwise]))
     points_shape += add_points_shape
@@ -652,7 +653,7 @@ class Custom(Array):
 
 class _CustomEvaluable(evaluable.Array):
 
-  def __init__(self, name, evalf, partial_derivative, args: Tuple[Union[evaluable.Array, evaluable.EvaluableConstant], ...], shape: Tuple[int, ...], dtype: DType, points_shape: Tuple[evaluable.Array, ...], transform_chains: Tuple[evaluable.TransformChain, ...], coordinates: Tuple[evaluable.Array, ...]) -> None:
+  def __init__(self, name, evalf, partial_derivative, args: Tuple[Union[evaluable.Array, evaluable.EvaluableConstant], ...], shape: Tuple[int, ...], dtype: DType, points_shape: Tuple[evaluable.Array, ...], transform_chains: Tuple[EvaluableTransformChain, ...], coordinates: Tuple[evaluable.Array, ...]) -> None:
     assert all(isinstance(arg, (evaluable.Array, evaluable.EvaluableConstant)) for arg in args)
     self.name = name
     self.custom_evalf = evalf
@@ -823,7 +824,7 @@ class _Opposite(Array):
     self._arg = arg
     super().__init__(arg.shape, arg.dtype)
 
-  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
+  def lower(self, *, transform_chains: Tuple[EvaluableTransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
     if len(transform_chains) > 2 or len(coordinates) > 2:
       raise ValueError('opposite is not defined if there are more than two transform chains or coordinates')
     return self._arg.lower(transform_chains=transform_chains[::-1], coordinates=coordinates[::-1], **kwargs)
@@ -841,7 +842,7 @@ class _RootCoords(Array):
   def __init__(self, ndims: int) -> None:
     super().__init__((ndims,), float)
 
-  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = (), **kwargs) -> evaluable.Array:
+  def lower(self, *, transform_chains: Tuple[EvaluableTransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = (), **kwargs) -> evaluable.Array:
     assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
     return evaluable.ApplyTransforms(transform_chains[0], coordinates[0], self.shape[0])
 
@@ -851,9 +852,9 @@ class _TransformsIndex(Array):
     self._transforms = transforms
     super().__init__((), int)
 
-  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain, ...] = (), **kwargs: Any) -> evaluable.Array:
+  def lower(self, *, transform_chains: Tuple[EvaluableTransformChain, ...] = (), **kwargs: Any) -> evaluable.Array:
     assert transform_chains
-    index, tail = evaluable.TransformsIndexWithTail(self._transforms, transform_chains[0])
+    index, tail = self._transforms.evaluable_index_with_tail(transform_chains[0])
     return _prepend_points(index, **kwargs)
 
 class _TransformsCoords(Array):
@@ -862,9 +863,9 @@ class _TransformsCoords(Array):
     self._transforms = transforms
     super().__init__((dim,), int)
 
-  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
+  def lower(self, *, transform_chains: Tuple[EvaluableTransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
     assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
-    index, tail = evaluable.TransformsIndexWithTail(self._transforms, transform_chains[0])
+    index, tail = self._transforms.evaluable_index_with_tail(transform_chains[0])
     return evaluable.ApplyTransforms(tail, coordinates[0], self.shape[0])
 
 class _Derivative(Array):
