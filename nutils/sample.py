@@ -66,10 +66,10 @@ class Sample(types.Singleton):
   points, and is typically used in combination with the "bezier" set.
   '''
 
-  __slots__ = 'nelems', 'transforms', 'points', 'ndims'
+  __slots__ = 'nelems', 'space', 'transforms', 'points', 'ndims'
 
   @staticmethod
-  def new(transforms: Iterable[Transforms], points: PointsSequence, index: Optional[Union[numpy.ndarray, Sequence[numpy.ndarray]]] = None) -> 'Sample':
+  def new(space: str, transforms: Iterable[Transforms], points: PointsSequence, index: Optional[Union[numpy.ndarray, Sequence[numpy.ndarray]]] = None) -> 'Sample':
     '''Create a new :class:`Sample`.
 
     Parameters
@@ -84,7 +84,7 @@ class Sample(types.Singleton):
         If absent the indices will be strictly increasing.
     '''
 
-    sample = _DefaultIndex(tuple(transforms), points)
+    sample = _DefaultIndex(space, tuple(transforms), points)
     if index is not None:
       if isinstance(index, (tuple, list)):
         assert all(ind.shape == (pnt.npoints,) for ind, pnt in zip(index, points))
@@ -92,10 +92,12 @@ class Sample(types.Singleton):
       sample = _CustomIndex(sample, types.arraydata(index))
     return sample
 
-  def __init__(self, transforms: Tuple[Transforms, ...], points: PointsSequence) -> None:
+  def __init__(self, space: str, transforms: Tuple[Transforms, ...], points: PointsSequence) -> None:
     '''
     parameters
     ----------
+    space : ::class:`str`
+        The name of the space on which this sample is defined.
     transforms : :class:`tuple` or transformation chains
         List of transformation chains leading to local coordinate systems that
         contain points.
@@ -106,6 +108,7 @@ class Sample(types.Singleton):
     assert len(transforms) >= 1
     assert all(len(t) == len(points) for t in transforms)
     self.nelems = len(transforms[0])
+    self.space = space
     self.transforms = transforms
     self.points = points
     self.ndims = transforms[0].fromdims
@@ -309,7 +312,7 @@ class Sample(types.Singleton):
 
     selection = types.frozenarray([ielem for ielem in range(self.nelems) if __mask[self.getindex(ielem)].any()])
     transforms = tuple(transform[selection] for transform in self.transforms)
-    return Sample.new(transforms, self.points.take(selection))
+    return Sample.new(self.space, transforms, self.points.take(selection))
 
 class _DefaultIndex(Sample):
 
@@ -344,7 +347,7 @@ class _CustomIndex(Sample):
     assert index.shape == (parent.npoints,)
     self._parent = parent
     self._index = index
-    super().__init__(parent.transforms, parent.points)
+    super().__init__(parent.space, parent.transforms, parent.points)
 
   def getindex(self, ielem: int) -> numpy.ndarray:
     return numpy.take(self._index, self._parent.getindex(ielem))
