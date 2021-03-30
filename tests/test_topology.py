@@ -137,7 +137,7 @@ class common_refine(TestCase):
 
   def _shield(self, topo):
     return topo if self.special \
-      else topology.Topology(references=topo.references, transforms=topo.transforms, opposites=topo.opposites)
+      else topology.Topology(space=topo.space, references=topo.references, transforms=topo.transforms, opposites=topo.opposites)
 
   def test(self):
     dom, geom = mesh.rectilinear([[0,1,2],[0,1,2]])
@@ -203,8 +203,8 @@ class refined(TestCase):
 
   def test_boundary_gradient(self):
     ref = _refined_refs[self.etype]
-    trans = (transform.Identifier(ref.ndims, 'root'),)
-    domain = topology.ConnectedTopology(References.uniform(ref, 1), transformseq.PlainTransforms([trans], ref.ndims, ref.ndims), transformseq.PlainTransforms([trans], ref.ndims, ref.ndims), ((-1,)*ref.nedges,)).refine(self.ref0)
+    space = 'test'
+    domain = topology.ConnectedTopology(space, References.uniform(ref, 1), transformseq.IdentifierTransforms(ref.ndims, 'root', 1), transformseq.IdentifierTransforms(ref.ndims, 'root', 1), ((-1,)*ref.nedges,)).refine(self.ref0)
     geom = function.rootcoords(ref.ndims)
     basis = domain.basis('std', degree=1)
     u = domain.projection(geom.sum(), onto=basis, geometry=geom, degree=2)
@@ -226,7 +226,7 @@ class general(TestCase):
     super().setUp()
     self.domain, self.geom = mesh.rectilinear([3,4,5], periodic=[] if self.periodic is False else [self.periodic])
     if not self.isstructured:
-      self.domain = topology.ConnectedTopology(self.domain.references, self.domain.transforms, self.domain.opposites, self.domain.connectivity)
+      self.domain = topology.ConnectedTopology(self.domain.space, self.domain.references, self.domain.transforms, self.domain.opposites, self.domain.connectivity)
 
   def test_connectivity(self):
     nboundaries = 0
@@ -480,7 +480,7 @@ class multipatch_L(TestCase):
 
   def test_connectivity(self):
     interfaces1 = self.domain.interfaces
-    interfaces2 = topology.ConnectedTopology(self.domain.references, self.domain.transforms, self.domain.opposites, self.domain.connectivity).interfaces
+    interfaces2 = topology.ConnectedTopology(self.domain.space, self.domain.references, self.domain.transforms, self.domain.opposites, self.domain.connectivity).interfaces
     self.assertEqual(len(interfaces1), len(interfaces2))
     for trans1, opp1 in zip(interfaces1.transforms, interfaces1.opposites):
       try:
@@ -569,7 +569,7 @@ class common(TestCase):
 
 common(
   'Topology',
-  topo=topology.Topology(References.uniform(element.PointReference(), 1), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0, 0), transformseq.PlainTransforms([(transform.Identifier(0, 'test'),)], 0, 0)),
+  topo=topology.Topology('test', References.uniform(element.PointReference(), 1), transformseq.IdentifierTransforms(0, 'test', 1), transformseq.IdentifierTransforms(0, 'test', 1)),
   hasboundary=False)
 common(
   'StructuredTopology:2D',
