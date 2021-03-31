@@ -48,7 +48,7 @@ if typing.TYPE_CHECKING:
 else:
   Protocol = object
 
-from . import debug_flags, util, types, numeric, cache, transform, expression, warnings, parallel, sparse
+from . import debug_flags, util, types, numeric, cache, expression, warnings, parallel, sparse
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph
 import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log, weakref, time, contextlib, subprocess
 
@@ -657,7 +657,7 @@ class TransformsIndexWithTail(Evaluable):
   __slots__ = '_transforms'
 
   @types.apply_annotations
-  def __init__(self, transforms, trans:types.strict[TransformChain]):
+  def __init__(self, transforms, trans):
     self._transforms = transforms
     super().__init__(args=[trans])
 
@@ -1534,14 +1534,15 @@ class ApplyTransforms(Array):
   __slots__ = 'trans', '_points', '_todims'
 
   @types.apply_annotations
-  def __init__(self, trans:types.strict[TransformChain], points, todims:types.strictint):
+  def __init__(self, trans, points, todims:types.strictint):
     self.trans = trans
     self._points = points
     self._todims = todims
     super().__init__(args=[points, trans], shape=points.shape[:-1]+(todims,), dtype=float)
 
   def evalf(self, points, chain):
-    return transform.apply(chain, points)
+    from .transform import apply
+    return apply(chain, points)
 
   def _derivative(self, var, seen):
     if isinstance(var, LocalCoords) and len(var) > 0:
@@ -1554,14 +1555,15 @@ class LinearFrom(Array):
   __slots__ = 'todims', 'fromdims'
 
   @types.apply_annotations
-  def __init__(self, trans:types.strict[TransformChain], todims:types.strictint, fromdims:types.strictint):
+  def __init__(self, trans, todims:types.strictint, fromdims:types.strictint):
     self.todims = todims
     self.fromdims = fromdims
     super().__init__(args=[trans], shape=(todims, fromdims), dtype=float)
 
   def evalf(self, chain):
+    from .transform import linearfrom
     assert not chain or chain[0].todims == self.todims
-    return transform.linearfrom(chain, self.fromdims)
+    return linearfrom(chain, self.fromdims)
 
 class Inverse(Array):
   '''
