@@ -137,6 +137,24 @@ class Common:
     for i, trans in enumerate(ctransforms):
       self.assertEqual(refined.index(trans), i)
 
+  def test_index_with_tail_in(self):
+    assert len(self.check) == len(self.checkrefs)
+    echain = nutils.transform.EvaluableTransformChain.from_argument('chain', self.checktodims, self.checkfromdims)
+    eindex, etail = echain.index_with_tail_in(self.seq)
+    for i, (trans, ref) in enumerate(zip(self.check, self.checkrefs)):
+      self.assertEqual(int(eindex.eval(chain=trans)), i)
+      self.assertEqual(etail.eval(chain=trans), ())
+      for ctrans in ref.child_transforms:
+        self.assertEqual(self.seq.index_with_tail(trans+(ctrans,)), (i, (ctrans,)))
+    if self.checkfromdims > 0:
+      echain = nutils.transform.EvaluableTransformChain.from_argument('chain', self.checktodims, self.checkfromdims-1)
+      eindex, etail = echain.index_with_tail_in(self.seq)
+      for i, (trans, ref) in enumerate(zip(self.check, self.checkrefs)):
+        for etrans in ref.edge_transforms:
+          for shuffle in lambda t: t, nutils.transform.canonical:
+            self.assertEqual(int(eindex.eval(chain=shuffle(trans+(etrans,)))), i)
+            self.assertEqual(etail.eval(chain=shuffle(trans+(etrans,))), (etrans,))
+
 class Edges:
 
   def test_edges(self):

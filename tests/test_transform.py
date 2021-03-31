@@ -85,3 +85,77 @@ class SimplexChild(TestInvertible):
     super().setUp(trans=transform.SimplexChild(3, 1), linear=numpy.eye(3)/2, offset=[.5,0,0])
 
 del TestTransform, TestInvertible, TestUpdim
+
+
+class EvaluableTransformChainArgument(TestCase):
+
+  def test_evalf(self):
+    chain = transform.SimplexEdge(2, 0),
+    echain = transform.EvaluableTransformChain.from_argument('chain', 2, 1)
+    self.assertEqual(echain.eval(chain=chain), chain)
+
+  def test_todims(self):
+    echain = transform.EvaluableTransformChain.from_argument('chain', 2, 1)
+    self.assertEqual(echain.todims, 2)
+
+  def test_fromdims(self):
+    echain = transform.EvaluableTransformChain.from_argument('chain', 2, 1)
+    self.assertEqual(echain.fromdims, 1)
+
+  def test_linear(self):
+    chain = transform.SimplexEdge(2, 0),
+    echain = transform.EvaluableTransformChain.from_argument('chain', 2, 1)
+    self.assertAllAlmostEqual(echain.linear.eval(chain=chain), numpy.array([[-1.],[1.]]))
+
+  def test_linear_derivative(self):
+    echain = transform.EvaluableTransformChain.from_argument('chain', 2, 1)
+    self.assertTrue(evaluable.iszero(evaluable.derivative(echain.linear, evaluable.Argument('test', ())).simplified))
+
+  def test_basis(self):
+    chain = transform.SimplexEdge(2, 0),
+    echain = transform.EvaluableTransformChain.from_argument('chain', 2, 1)
+    self.assertAllAlmostEqual(echain.basis.eval(chain=chain), numpy.array([[-1.,1.],[1.,1.]]))
+
+  def test_basis_derivative(self):
+    echain = transform.EvaluableTransformChain.from_argument('chain', 2, 1)
+    self.assertTrue(evaluable.iszero(evaluable.derivative(echain.basis, evaluable.Argument('test', ())).simplified))
+
+  def test_apply(self):
+    chain = transform.SimplexEdge(2, 0),
+    echain = transform.EvaluableTransformChain.from_argument('chain', 2, 1)
+    ecoords = evaluable.Argument('coords', (5, echain.fromdims), float)
+    coords = numpy.linspace(0, 1, 5*echain.fromdims).reshape(5, echain.fromdims)
+    self.assertAllAlmostEqual(echain.apply(ecoords).eval(chain=chain, coords=coords), transform.apply(chain, coords))
+
+  def test_apply_derivative(self):
+    chain = transform.SimplexEdge(2, 0),
+    echain = transform.EvaluableTransformChain.from_argument('chain', 2, 1)
+    ecoords = evaluable.Argument('coords', (5, echain.fromdims), float)
+    coords = numpy.linspace(0, 1, 5*echain.fromdims).reshape(5, echain.fromdims)
+    actual = evaluable.derivative(echain.apply(ecoords), ecoords).eval(chain=chain)
+    desired = numpy.einsum('jk,iklm->ijlm', numpy.array([[-1.],[1.]]), numpy.eye(5*echain.fromdims).reshape(5, echain.fromdims, 5, echain.fromdims))
+    self.assertAllAlmostEqual(actual, desired)
+
+class EmptyEvaluableTransformChain(TestCase):
+
+  def setUp(self):
+    self.chain = transform.EvaluableTransformChain.empty(2)
+
+  def test_evalf(self):
+    self.assertEqual(self.chain.evalf(), ())
+
+  def test_todims(self):
+    self.assertEqual(self.chain.todims, 2)
+
+  def test_fromdims(self):
+    self.assertEqual(self.chain.fromdims, 2)
+
+  def test_linear(self):
+    self.assertAllAlmostEqual(self.chain.linear.eval(), numpy.diag([1,1]))
+
+  def test_basis(self):
+    self.assertAllAlmostEqual(self.chain.basis.eval(), numpy.diag([1,1]))
+
+  def test_apply(self):
+    coords = numpy.array([1.,2.])
+    self.assertAllAlmostEqual(self.chain.apply(evaluable.Argument('coords', (2,))).eval(coords=coords),  coords)
