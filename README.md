@@ -115,8 +115,8 @@ Nutils][9].
 [3]: https://github.com/evalf/nutils
 [4]: https://github.com/pypa/pip
 [5]: https://pypi.org/project/nutils/
-[6]: http://docs.nutils.org/en/examples/
-[7]: http://docs.nutils.org/en/nutils/
+[6]: http://docs.nutils.org/en/latest/examples/
+[7]: http://docs.nutils.org/en/latest/nutils/
 [8]: https://matrix.to/#/#nutils-users:matrix.org
 [9]: https://doi.org/10.5281/zenodo.822369
 [10]: https://www.docker.com/
