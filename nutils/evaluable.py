@@ -3094,7 +3094,7 @@ class Range(Array):
     if index.ndim == 1 and isinstance(index, Range) and self.isconstant and index.isconstant:
       assert (index.offset + index.length).eval() <= self.length.eval()
       return Range(index.length, self.offset + index.offset)
-    return InRange(self.length, self.offset, index)
+    return InRange(index, self.length) + self.offset
 
   def _add(self, offset):
     if isinstance(self._axes[0], Inserted):
@@ -3105,18 +3105,17 @@ class Range(Array):
 
 class InRange(Array):
 
-  __slots__ = 'length', 'offset', 'index'
+  __slots__ = 'index', 'length'
 
   @types.apply_annotations
-  def __init__(self, length:asarray, offset:asarray, index:asarray):
-    self.length = length
-    self.offset = offset
+  def __init__(self, index:asarray, length:asarray):
     self.index = index
-    super().__init__(args=[length, offset, index], shape=index.shape, dtype=int)
+    self.length = length
+    super().__init__(args=[index, length], shape=index.shape, dtype=int)
 
-  def evalf(self, length, offset, index):
+  def evalf(self, index, length):
     assert index.size == 0 or 0 <= index.min() and index.max() < length
-    return index + offset
+    return index
 
 class Polyval(Array):
   '''
