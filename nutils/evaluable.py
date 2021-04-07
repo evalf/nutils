@@ -1085,10 +1085,12 @@ class Normal(Array):
     self.lgrad = lgrad
     super().__init__(args=[lgrad], shape=lgrad.shape[:-1], dtype=float)
 
+  def _simplified(self):
+    if equalindex(self.shape[-1], 1):
+      return Sign(Take(self.lgrad, 0))
+
   def evalf(self, lgrad):
     n = lgrad[...,-1]
-    if equalindex(n.shape[-1], 1): # geom is 1D
-      return numpy.sign(n).astype(float)
     # orthonormalize n to G
     G = lgrad[...,:-1]
     GG = numeric.contract(G[...,:,_,:], G[...,:,:,_], axis=-3)
