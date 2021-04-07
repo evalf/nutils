@@ -1088,7 +1088,7 @@ class Normal(Array):
   def evalf(self, lgrad):
     n = lgrad[...,-1]
     if equalindex(n.shape[-1], 1): # geom is 1D
-      return numpy.sign(n)
+      return numpy.sign(n).astype(float)
     # orthonormalize n to G
     G = lgrad[...,:-1]
     GG = numeric.contract(G[...,:,_,:], G[...,:,:,_], axis=-3)
