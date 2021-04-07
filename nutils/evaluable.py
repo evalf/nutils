@@ -453,14 +453,14 @@ class Evaluable(types.Singleton):
       # Collect all top-level `LoopConcatenate` instances in `combine` and all
       # their dependent `LoopConcatenate` instances in `exclude`.
       for lc in self._loop_concatenate_deps:
-        lcs = combine.setdefault((lc.index, lc.length), [])
+        lcs = combine.setdefault(lc.index, [])
         if lc not in lcs:
           lcs.append(lc)
           exclude.update(set(lc._loop_concatenate_deps) - {lc})
       # Combine top-level `LoopConcatenate` instances excluding those in
       # `exclude`.
       replacements = {}
-      for (index, length), lcs in combine.items():
+      for index, lcs in combine.items():
         lcs = [lc for lc in lcs if lc not in exclude]
         if not lcs:
           continue
@@ -477,7 +477,7 @@ class Evaluable(types.Singleton):
         # (the remainder of `exclude`). The latter consists of loops that are
         # invariant w.r.t. the current loop `index`.
         data = data._combine_loop_concatenates(exclude)
-        combined = LoopConcatenateCombined(data, index, length)
+        combined = LoopConcatenateCombined(data, index._name, index.length)
         for i, lc in enumerate(lcs):
           replacements[lc] = ArrayFromTuple(combined, i, lc.shape, lc.dtype)
       if replacements:
@@ -1017,7 +1017,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   _inflate = lambda self, dofmap, length, axis: None
   _unravel = lambda self, axis, shape: None
   _ravel = lambda self, axis: None
-  _loopsum = lambda self, index, length: None
+  _loopsum = lambda self, loop_index: None # NOTE: type of `loop_index` is `_LoopIndex`
   _dot = lambda self, other, axis: None
 
   def _uninsert(self, axis):
@@ -1329,8 +1329,8 @@ class InsertAxis(Array):
     if axis1 < self.ndim-1 and axis2 < self.ndim-1:
       return InsertAxis(inverse(self.func, (axis1, axis2)), self.length)
 
-  def _loopsum(self, index, length):
-    return InsertAxis(LoopSum(self.func, index, length), self.length)
+  def _loopsum(self, index):
+    return InsertAxis(loop_sum(self.func, index), self.length)
 
   @property
   def _assparse(self):
@@ -1494,8 +1494,8 @@ class Transpose(Array):
   def _insertaxis(self, axis, length):
     return Transpose(InsertAxis(self.func, length), self.axes[:axis] + (self.ndim,) + self.axes[axis:])
 
-  def _loopsum(self, index, length):
-    return Transpose(LoopSum(self.func, index, length), self.axes)
+  def _loopsum(self, index):
+    return Transpose(loop_sum(self.func, index), self.axes)
 
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
@@ -1802,12 +1802,12 @@ class Multiply(Array):
     if all(isinstance(func2._axes[axis], Inserted) for axis in (axis1, axis2)):
       return divide(inverse(func1, (axis1, axis2)), func2)
 
-  def _loopsum(self, index, length):
+  def _loopsum(self, index):
     func1, func2 = self.funcs
     if func1 != index and index not in func1.dependencies:
-      return Multiply([func1, LoopSum(func2, index, length)])
+      return Multiply([func1, loop_sum(func2, index)])
     if func2 != index and index not in func2.dependencies:
-      return Multiply([LoopSum(func1, index, length), func2])
+      return Multiply([loop_sum(func1, index), func2])
 
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
@@ -1896,9 +1896,9 @@ class Add(Array):
   def _unravel(self, axis, shape):
     return Add([unravel(func, axis, shape) for func in self.funcs])
 
-  def _loopsum(self, index, length):
+  def _loopsum(self, index):
     if any(index not in func.arguments for func in self.funcs):
-      return Add([LoopSum(func, index, length) for func in self.funcs])
+      return Add([loop_sum(func, index) for func in self.funcs])
 
   def _dot(self, other, axis):
     func1, func2 = self.funcs
@@ -2922,8 +2922,8 @@ class Diagonalize(Array):
     if numeric.isint(self.shape[-1]) and self.shape[-1] > 1:
       return Zeros(self.shape[:-1], dtype=self.dtype)
 
-  def _loopsum(self, index, length):
-    return Diagonalize(LoopSum(self.func, index, length))
+  def _loopsum(self, index):
+    return Diagonalize(loop_sum(self.func, index))
 
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
@@ -3180,8 +3180,8 @@ class Ravel(Array):
   def _product(self):
     return Product(Product(self.func))
 
-  def _loopsum(self, index, length):
-    return Ravel(LoopSum(self.func, index, length))
+  def _loopsum(self, index):
+    return Ravel(loop_sum(self.func, index))
 
   def _desparsify(self, axis):
     assert isinstance(self._axes[axis], Sparse)
@@ -3507,6 +3507,32 @@ class NormDim(Array):
     else:
       return 0, upper_length - 1
 
+class _LoopIndex(Argument):
+
+  __slots__ = 'length'
+
+  @types.apply_annotations
+  def __init__(self, name: types.strictstr, length: asindex):
+    self.length = length
+    super().__init__(name, (), int)
+
+  def __str__(self):
+    try:
+      length = self.length.__index__()
+    except EvaluationError:
+      length = '?'
+    return 'LoopIndex({}, length={})'.format(self._name, length)
+
+  def _node(self, cache, subgraph, times):
+    if self in cache:
+      return cache[self]
+    cache[self] = node = RegularNode('LoopIndex', (), dict(length=self.length._node(cache, subgraph, times)), (type(self).__name__, _Stats()), subgraph)
+    return node
+
+  def _intbounds_impl(self):
+    lower_length, upper_length = self.length._intbounds
+    return 0, max(0, upper_length - 1)
+
 class LoopSum(Array):
 
   __cache__ = '_serialized'
@@ -3521,18 +3547,13 @@ class LoopSum(Array):
     return (arg, *arg.shape)
 
   @types.apply_annotations
-  def __init__(self, funcdata:prepare_funcdata, index:types.strict[Argument], length:asindex):
+  def __init__(self, funcdata:prepare_funcdata, index_name:types.strictstr, length:asindex):
     shape = Tuple(funcdata[1:])
-    if index.dtype != int or index.ndim != 0:
-      raise ValueError('expected an index with dtype int and dimension zero but got {}'.format(index))
-    if index in shape.arguments:
+    self.index = loop_index(index_name, length)
+    if self.index in shape.arguments:
       raise ValueError('the shape of the function must not depend on the index')
-    if index in length.arguments:
-      raise ValueError('the length of the loop must not depend on the index')
     self.func = funcdata[0]
-    self.index = index
-    self.length = length
-    self._invariants, self._dependencies = _dependencies_sans_invariants(self.func, index)
+    self._invariants, self._dependencies = _dependencies_sans_invariants(self.func, self.index)
     axes = tuple(Axis(axis.length) if isinstance(axis, Sparse) else axis for axis in self.func._axes)
     super().__init__(args=(shape, length, *self._invariants), shape=axes, dtype=self.func.dtype)
 
@@ -3563,7 +3584,7 @@ class LoopSum(Array):
     return result
 
   def _derivative(self, var, seen):
-    return LoopSum(derivative(self.func, var, seen), self.index, self.length)
+    return loop_sum(derivative(self.func, var, seen), self.index)
 
   def _node(self, cache, subgraph, times):
     if self in cache:
@@ -3572,7 +3593,6 @@ class LoopSum(Array):
     for arg in self._Evaluable__args:
       subcache[arg] = arg._node(cache, subgraph, times)
     loopgraph = Subgraph('Loop', subgraph)
-    subcache[self.index] = RegularNode('LoopIndex', (), dict(length=self.length._node(cache, subgraph, times)), (type(self).__name__, _Stats()), loopgraph)
     subtimes = times.get(self, collections.defaultdict(_Stats))
     sum_kwargs = {'shape[{}]'.format(i): n._node(cache, subgraph, times) for i, n in enumerate(self.shape)}
     sum_kwargs['func'] = self.func._node(subcache, loopgraph, subtimes)
@@ -3583,37 +3603,37 @@ class LoopSum(Array):
     if iszero(self.func):
       return zeros_like(self)
     elif self.index not in self.func.arguments:
-      return self.func * self.length
-    return self.func._loopsum(self.index, self.length)
+      return self.func * self.index.length
+    return self.func._loopsum(self.index)
 
   def _takediag(self, axis1, axis2):
-    return LoopSum(_takediag(self.func, axis1, axis2), self.index, self.length)
+    return loop_sum(_takediag(self.func, axis1, axis2), self.index)
 
   def _take(self, index, axis):
-    return LoopSum(_take(self.func, index, axis), self.index, self.length)
+    return loop_sum(_take(self.func, index, axis), self.index)
 
   def _unravel(self, axis, shape):
-    return LoopSum(unravel(self.func, axis, shape), self.index, self.length)
+    return loop_sum(unravel(self.func, axis, shape), self.index)
 
   def _sum(self, axis):
-    return LoopSum(sum(self.func, axis), self.index, self.length)
+    return loop_sum(sum(self.func, axis), self.index)
 
   def _add(self, other):
-    if isinstance(other, LoopSum) and other.length == self.length and other.index == self.index:
-      return LoopSum(self.func + other.func, self.index, self.length)
+    if isinstance(other, LoopSum) and other.index == self.index:
+      return loop_sum(self.func + other.func, self.index)
 
   def _dot(self, other, axis):
     if self.index not in other.arguments:
       trydot = self.func._dot(other, axis)
       if trydot is not None:
-        return LoopSum(trydot, self.index, self.length)
+        return loop_sum(trydot, self.index)
 
   @property
   def _assparse(self):
     chunks = []
     for *elem_indices, elem_values in self.func._assparse:
       if self.ndim == 0:
-        values = loop_concatenate(InsertAxis(elem_values, 1), self.index, self.length)
+        values = loop_concatenate(InsertAxis(elem_values, 1), self.index)
         while values.ndim:
           values = Sum(values)
         chunks.append((values,))
@@ -3627,7 +3647,7 @@ class LoopSum(Array):
           for i in variable[:-1]:
             *elem_indices, elem_values = map(Ravel, (*elem_indices, elem_values))
           assert all(n.isconstant for n in elem_values.shape[:-1])
-        chunks.append(tuple(loop_concatenate(arr, self.index, self.length) for arr in (*elem_indices, elem_values)))
+        chunks.append(tuple(loop_concatenate(arr, self.index) for arr in (*elem_indices, elem_values)))
     return tuple(chunks)
 
 class _SizesToOffsets(Array):
@@ -3648,18 +3668,15 @@ class _SizesToOffsets(Array):
 class LoopConcatenate(Array):
 
   @types.apply_annotations
-  def __init__(self, funcdata:asarrays, index:types.strict[Argument], length:asindex):
+  def __init__(self, funcdata:asarrays, index_name:types.strictstr, length:asindex):
     self.funcdata = funcdata
     self.func, self.start, stop, *shape = funcdata
+    self.index = loop_index(index_name, length)
     if not self.func.ndim:
       raise ValueError('expected an array with at least one axis')
-    if any(index in n.arguments for n in shape):
+    if any(self.index in n.arguments for n in shape):
       raise ValueError('the shape of the function must not depend on the index')
-    if index in length.arguments:
-      raise ValueError('the length of the loop must not depend on the index')
-    self.index = index
-    self.length = length
-    self._lcc = LoopConcatenateCombined((self.funcdata,), index, length)
+    self._lcc = LoopConcatenateCombined((self.funcdata,), index_name, length)
     axes = (*(Axis(axis.length) if isinstance(axis, Sparse) else axis for axis in self.func._axes[:-1]), Axis(shape[-1]))
     super().__init__(args=[self._lcc], shape=axes, dtype=self.func.dtype)
 
@@ -3671,7 +3688,7 @@ class LoopConcatenate(Array):
       return arg[0]
 
   def _derivative(self, var, seen):
-    return Transpose.from_end(loop_concatenate(Transpose.to_end(derivative(self.func, var, seen), self.ndim-1), self.index, self.length), self.ndim-1)
+    return Transpose.from_end(loop_concatenate(Transpose.to_end(derivative(self.func, var, seen), self.ndim-1), self.index), self.ndim-1)
 
   def _node(self, cache, subgraph, times):
     if self in cache:
@@ -3684,31 +3701,31 @@ class LoopConcatenate(Array):
     if iszero(self.func):
       return zeros_like(self)
     elif self.index not in self.func.arguments:
-      return Ravel(Transpose.from_end(InsertAxis(self.func, self.length), -2))
+      return Ravel(Transpose.from_end(InsertAxis(self.func, self.index.length), -2))
     for iaxis, axis in enumerate(self.func._axes[:-1]):
       if isinstance(axis, Inserted) and self.index not in axis.length.arguments:
-        return insertaxis(loop_concatenate(self.func._uninsert(iaxis), self.index, self.length), iaxis, axis.length)
+        return insertaxis(loop_concatenate(self.func._uninsert(iaxis), self.index), iaxis, axis.length)
     if isinstance(self.func._axes[-1], Inserted) and self.index not in self.func.shape[-1].arguments and not equalindex(self.func.shape[-1], 1):
-      return Ravel(InsertAxis(loop_concatenate(InsertAxis(self.func._uninsert(self.func.ndim-1), 1), self.index, self.length), self.func.shape[-1]))
+      return Ravel(InsertAxis(loop_concatenate(InsertAxis(self.func._uninsert(self.func.ndim-1), 1), self.index), self.func.shape[-1]))
 
   def _takediag(self, axis1, axis2):
     if axis1 < self.ndim-1 and axis2 < self.ndim-1:
-      return Transpose.from_end(loop_concatenate(Transpose.to_end(_takediag(self.func, axis1, axis2), -2), self.index, self.length), -2)
+      return Transpose.from_end(loop_concatenate(Transpose.to_end(_takediag(self.func, axis1, axis2), -2), self.index), -2)
 
   def _take(self, index, axis):
     if axis < self.ndim-1:
-      return loop_concatenate(_take(self.func, index, axis), self.index, self.length)
+      return loop_concatenate(_take(self.func, index, axis), self.index)
 
   def _unravel(self, axis, shape):
     if axis < self.ndim-1:
-      return loop_concatenate(unravel(self.func, axis, shape), self.index, self.length)
+      return loop_concatenate(unravel(self.func, axis, shape), self.index)
 
   @property
   def _assparse(self):
     chunks = []
     for *indices, last_index, values in self.func._assparse:
       last_index = last_index + prependaxes(self.start, last_index.shape)
-      chunks.append(tuple(loop_concatenate(_flat(arr), self.index, self.length) for arr in (*indices, last_index, values)))
+      chunks.append(tuple(loop_concatenate(_flat(arr), self.index) for arr in (*indices, last_index, values)))
     return tuple(chunks)
 
   @property
@@ -3720,22 +3737,17 @@ class LoopConcatenateCombined(Evaluable):
   __cache__ = '_serialized'
 
   @types.apply_annotations
-  def __init__(self, funcdatas:types.tuple[asarrays], index:types.strict[Argument], length:asindex):
+  def __init__(self, funcdatas:types.tuple[asarrays], index_name:types.strictstr, length:asindex):
     self._funcdatas = funcdatas
-    if index.dtype != int or index.ndim != 0:
-      raise ValueError('expected an index with dtype int and dimension zero but got {}'.format(index))
     self._funcs = tuple(func for func, start, stop, *shape in funcdatas)
+    self._index = loop_index(index_name, length)
     if any(not func.ndim for func in self._funcs):
       raise ValueError('expected an array with at least one axis')
     shapes = [Tuple(shape) for func, start, stop, *shape in funcdatas]
-    if any(index in shape.arguments for shape in shapes):
+    if any(self._index in shape.arguments for shape in shapes):
       raise ValueError('the shape of the function must not depend on the index')
-    if index in length.arguments:
-      raise ValueError('the length of the loop must not depend on the index')
-    self._index = index
-    self._length = length
     self._invariants, self._dependencies = _dependencies_sans_invariants(
-      Tuple([Tuple([start, stop, func]) for func, start, stop, *shape in funcdatas]), index)
+      Tuple([Tuple([start, stop, func]) for func, start, stop, *shape in funcdatas]), self._index)
     super().__init__(args=(Tuple(shapes), length, *self._invariants))
 
   @property
@@ -3775,7 +3787,6 @@ class LoopConcatenateCombined(Evaluable):
     for arg in self._invariants:
       subcache[arg] = arg._node(cache, subgraph, times)
     loopgraph = Subgraph('Loop', subgraph)
-    subcache[self._index] = RegularNode('LoopIndex', (), dict(length=self._length._node(cache, subgraph, times)), (type(self).__name__, _Stats()), loopgraph)
     subtimes = times.get(self, collections.defaultdict(_Stats))
     concats = []
     for func, start, stop, *shape in self._funcdatas:
@@ -4181,29 +4192,36 @@ def appendaxes(func, shape):
     func = insertaxis(func, func.ndim, n)
   return func
 
-def _loop_concatenate_data(func, index, length):
+def loop_index(name, length):
+  return _LoopIndex(name, length)
+
+def loop_sum(func, index):
   func = asarray(func)
+  index = types.strict[_LoopIndex](index)
+  return LoopSum(func, index._name, index.length)
+
+def _loop_concatenate_data(func, index):
+  func = asarray(func)
+  index = types.strict[_LoopIndex](index)
   chunk_size = func.shape[-1]
   if chunk_size.isconstant:
-    chunk_sizes = InsertAxis(chunk_size, length)
+    chunk_sizes = InsertAxis(chunk_size, index.length)
   else:
-    chunk_sizes = loop_concatenate(InsertAxis(func.shape[-1], 1), index, length)
+    chunk_sizes = loop_concatenate(InsertAxis(func.shape[-1], 1), index)
   offsets = _SizesToOffsets(chunk_sizes)
   start = Take(offsets, index)
   stop = Take(offsets, index+1)
-  return (func, start, stop, *func.shape[:-1], Take(offsets, length))
+  return (func, start, stop, *func.shape[:-1], Take(offsets, index.length))
 
-def loop_concatenate(func, index, length):
-  length = asindex(length)
-  funcdata = _loop_concatenate_data(func, index, length)
-  return LoopConcatenate(funcdata, index, length)
+def loop_concatenate(func, index):
+  funcdata = _loop_concatenate_data(func, index)
+  return LoopConcatenate(funcdata, index._name, index.length)
 
-def loop_concatenate_combined(funcs, index, length):
-  length = asindex(length)
+def loop_concatenate_combined(funcs, index):
   unique_funcs = []
   unique_funcs.extend(func for func in funcs if func not in unique_funcs)
-  unique_func_data = tuple(_loop_concatenate_data(func, index, length) for func in unique_funcs)
-  loop = LoopConcatenateCombined(unique_func_data, index, length)
+  unique_func_data = tuple(_loop_concatenate_data(func, index) for func in unique_funcs)
+  loop = LoopConcatenateCombined(unique_func_data, index._name, index.length)
   return tuple(ArrayFromTuple(loop, unique_funcs.index(func), shape, func.dtype) for func, start, stop, *shape in unique_func_data)
 
 @replace

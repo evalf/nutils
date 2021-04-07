@@ -150,7 +150,7 @@ class Sample(types.Singleton):
   def _lower_for_loop(self, func, **kwargs):
     if kwargs.pop('transform_chains', None) or kwargs.pop('coordinates', None):
       raise ValueError('nested integrals or samples are not yet supported')
-    ielem = evaluable.Argument('_ielem', (), dtype=int)
+    ielem = evaluable.loop_index('_ielem', self.nelems)
     return ielem, func.lower(**kwargs,
       transform_chains=tuple(evaluable.TransformChainFromSequence(t, ielem) for t in self.transforms),
       coordinates=(self.points.get_evaluable_coords(ielem),) * len(self.transforms))
@@ -436,7 +436,7 @@ class _Integral(function.Array):
   def lower(self, **kwargs) -> evaluable.Array:
     ielem, integrand = self._sample._lower_for_loop(self._integrand, **kwargs)
     contracted = evaluable.dot(evaluable.appendaxes(self._sample.points.get_evaluable_weights(ielem), integrand.shape[1:]), integrand, 0)
-    return evaluable.LoopSum(contracted, ielem, self._sample.nelems)
+    return evaluable.loop_sum(contracted, ielem)
 
 class _AtSample(function.Array):
 
@@ -449,7 +449,7 @@ class _AtSample(function.Array):
     ielem, func = self._sample._lower_for_loop(self._func, **kwargs)
     indices = self._sample.get_evaluable_indices(ielem)
     inflated = evaluable.Transpose.from_end(evaluable.Inflate(evaluable.Transpose.to_end(func, 0), indices, self._sample.npoints), 0)
-    return evaluable.LoopSum(inflated, ielem, self._sample.nelems)
+    return evaluable.loop_sum(inflated, ielem)
 
 class _Basis(function.Array):
 
@@ -467,8 +467,8 @@ class _Basis(function.Array):
     return evaluable.Inflate(sampled, dofmap=indices, length=self._sample.npoints)
 
 def _offsets(pointsseq):
-  ielem = evaluable.Argument('_ielem', shape=(), dtype=int)
+  ielem = evaluable.loop_index('_ielem', len(pointsseq))
   npoints, ndims = pointsseq.get_evaluable_coords(ielem).shape
-  return evaluable._SizesToOffsets(evaluable.loop_concatenate(evaluable.InsertAxis(npoints, 1), ielem, len(pointsseq)))
+  return evaluable._SizesToOffsets(evaluable.loop_concatenate(evaluable.InsertAxis(npoints, 1), ielem))
 
 # vim:sw=2:sts=2:et

@@ -285,25 +285,25 @@ class check(TestCase):
         actual=evaluable.unravel(self.op_args, axis=idim, shape=unravelshape))
 
   def test_loopsum(self):
-    index = evaluable.Argument('_testindex', (), int)
     length = 3
+    index = evaluable.loop_index('_testindex', length)
     for iarg, shape in enumerate(self.shapes):
       testvalue = numpy.random.uniform(size=(length, *shape), low=self.low, high=self.high)
       n_op_argsfun = functools.reduce(operator.add, (self.n_op(*self.arg_values[:iarg], v, *self.arg_values[iarg+1:]) for v in testvalue))
       args = (*self.args[:iarg], evaluable.Guard(evaluable.get(evaluable.asarray(testvalue), 0, index)), *self.args[iarg+1:])
       self.assertFunctionAlmostEqual(decimal=15,
-        actual=evaluable.LoopSum(self.op(*args), index, length),
+        actual=evaluable.loop_sum(self.op(*args), index),
         desired=n_op_argsfun)
 
   def test_loopconcatenate(self):
-    index = evaluable.Argument('_testindex', (), int)
     length = 3
+    index = evaluable.loop_index('_testindex', length)
     for iarg, shape in enumerate(self.shapes):
       testvalue = numpy.random.uniform(size=(length, *shape), low=self.low, high=self.high)
       n_op_argsfun = numpy.concatenate([self.n_op(*self.arg_values[:iarg], v, *self.arg_values[iarg+1:]) for v in testvalue], axis=-1)
       args = (*self.args[:iarg], evaluable.Guard(evaluable.get(evaluable.asarray(testvalue), 0, index)), *self.args[iarg+1:])
       self.assertFunctionAlmostEqual(decimal=15,
-        actual=evaluable.loop_concatenate(self.op(*args), index, length),
+        actual=evaluable.loop_concatenate(self.op(*args), index),
         desired=n_op_argsfun)
 
   def test_desparsify(self):
@@ -446,13 +446,14 @@ _check('slice', lambda a: evaluable.asarray(a)[::2], lambda a: a[::2], [(5,3)])
 _check('normal1d', lambda a: evaluable.Normal(a), lambda a: numpy.sign(a[...,0]), [(3,1,1)])
 _check('normal2d', lambda a: evaluable.Normal(a), lambda a: numpy.stack([Q[:,-1]*numpy.sign(R[-1,-1]) for ai in a for Q, R in [numpy.linalg.qr(ai, mode='complete')]], axis=0), [(1,2,2)])
 _check('normal3d', lambda a: evaluable.Normal(a), lambda a: numpy.stack([Q[:,-1]*numpy.sign(R[-1,-1]) for ai in a for Q, R in [numpy.linalg.qr(ai, mode='complete')]], axis=0), [(2,3,3)])
-_check('loopsum1', lambda: evaluable.LoopSum(evaluable.Argument('index', (), int), evaluable.Argument('index', (), int), 3), lambda: numpy.array(3), [])
-_check('loopsum2', lambda a: evaluable.LoopSum(a, evaluable.Argument('index', (), int), 2), lambda a: 2*a, [(3,4,2,4)])
-_check('loopsum3', lambda a: evaluable.LoopSum(evaluable.get(a, 0, evaluable.Argument('index', (), int)), evaluable.Argument('index', (), int), 3), lambda a: numpy.sum(a, 0), [(3,4,2,4)])
-_check('loopsum4', lambda: evaluable.LoopSum(evaluable.Inflate(evaluable.Argument('index', (), int), 0, 2), evaluable.Argument('index', (), int), 3), lambda: numpy.array([3, 0]), [])
-_check('loopconcatenate1', lambda a: evaluable.loop_concatenate(a+evaluable.prependaxes(evaluable.Argument('index', (), int), a.shape), evaluable.Argument('index', (), int), 3), lambda a: a+numpy.arange(3)[None], [(2,1)])
-_check('loopconcatenate2', lambda: evaluable.loop_concatenate(evaluable.Elemwise([numpy.arange(48).reshape(4,4,3)[:,:,a:b] for a, b in util.pairwise([0,2,3])], evaluable.Argument('index', (), int), int), evaluable.Argument('index', (), int), 2), lambda: numpy.arange(48).reshape(4,4,3), [])
-_check('loopconcatenatecombined', lambda a: evaluable.loop_concatenate_combined([a+evaluable.prependaxes(evaluable.Argument('index', (), int), a.shape)], evaluable.Argument('index', (), int), 3)[0], lambda a: a+numpy.arange(3)[None], [(2,1)], hasgrad=False)
+_check('loopsum1', lambda: evaluable.loop_sum(evaluable.loop_index('index', 3), evaluable.loop_index('index', 3)), lambda: numpy.array(3), [])
+_check('loopsum2', lambda a: evaluable.loop_sum(a, evaluable.loop_index('index', 2)), lambda a: 2*a, [(3,4,2,4)])
+_check('loopsum3', lambda a: evaluable.loop_sum(evaluable.get(a, 0, evaluable.loop_index('index', 3)), evaluable.loop_index('index', 3)), lambda a: numpy.sum(a, 0), [(3,4,2,4)])
+_check('loopsum4', lambda: evaluable.loop_sum(evaluable.Inflate(evaluable.loop_index('index', 3), 0, 2), evaluable.loop_index('index', 3)), lambda: numpy.array([3, 0]), [])
+_check('loopsum5', lambda: evaluable.loop_sum(evaluable.loop_index('index', 1), evaluable.loop_index('index', 1)), lambda: numpy.array(0), [])
+_check('loopconcatenate1', lambda a: evaluable.loop_concatenate(a+evaluable.prependaxes(evaluable.loop_index('index', 3), a.shape), evaluable.loop_index('index', 3)), lambda a: a+numpy.arange(3)[None], [(2,1)])
+_check('loopconcatenate2', lambda: evaluable.loop_concatenate(evaluable.Elemwise([numpy.arange(48).reshape(4,4,3)[:,:,a:b] for a, b in util.pairwise([0,2,3])], evaluable.loop_index('index', 2), int), evaluable.loop_index('index', 2)), lambda: numpy.arange(48).reshape(4,4,3), [])
+_check('loopconcatenatecombined', lambda a: evaluable.loop_concatenate_combined([a+evaluable.prependaxes(evaluable.loop_index('index', 3), a.shape)], evaluable.loop_index('index', 3))[0], lambda a: a+numpy.arange(3)[None], [(2,1)], hasgrad=False)
 
 _polyval_mask = lambda shape, ndim: 1 if ndim == 0 else numpy.array([sum(i[-ndim:]) < int(shape[-1]) for i in numpy.ndindex(shape)], dtype=int).reshape(shape)
 _polyval_desired = lambda c, x: sum(c[(...,*i)]*(x[(slice(None),*[None]*(c.ndim-x.shape[1]))]**i).prod(-1) for i in itertools.product(*[range(c.shape[-1])]*x.shape[1]) if sum(i) < c.shape[-1])
@@ -871,8 +872,8 @@ class asciitree(TestCase):
 
   @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
   def test_loop_sum(self):
-    i = evaluable.Argument('i', (), int)
-    f = evaluable.LoopSum(i, i, evaluable.Constant(2))
+    i = evaluable.loop_index('i', 2)
+    f = evaluable.loop_sum(i, i)
     self.assertEqual(f.asciitree(richoutput=True),
                      'SUBGRAPHS\n'
                      'A\n'
@@ -884,8 +885,8 @@ class asciitree(TestCase):
 
   @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
   def test_loop_concatenate(self):
-    i = evaluable.Argument('i', (), int)
-    f = evaluable.loop_concatenate(evaluable.InsertAxis(i, 1), i, evaluable.Constant(2))
+    i = evaluable.loop_index('i', 2)
+    f = evaluable.loop_concatenate(evaluable.InsertAxis(i, 1), i)
     self.assertEqual(f.asciitree(richoutput=True),
                      'SUBGRAPHS\n'
                      'A\n'
@@ -913,8 +914,8 @@ class asciitree(TestCase):
 
   @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
   def test_loop_concatenatecombined(self):
-    i = evaluable.Argument('i', (), int)
-    f, = evaluable.loop_concatenate_combined([evaluable.InsertAxis(i, 1)], i, evaluable.Constant(2))
+    i = evaluable.loop_index('i', 2)
+    f, = evaluable.loop_concatenate_combined([evaluable.InsertAxis(i, 1)], i)
     self.assertEqual(f.asciitree(richoutput=True),
                      'SUBGRAPHS\n'
                      'A\n'
@@ -987,57 +988,47 @@ class memory(TestCase):
 
 class combine_loop_concatenates(TestCase):
 
-  def test_same_index_same_length(self):
-    i = evaluable.Argument('i', (), int)
-    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 3,), i, 3)
-    B = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 2), i*2, i*2+2, 6,), i, 3)
+  def test_same_index(self):
+    i = evaluable.loop_index('i', 3)
+    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 3,), i._name, i.length)
+    B = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 2), i*2, i*2+2, 6,), i._name, i.length)
     actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-    L = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3), (evaluable.InsertAxis(i, 2), i*2, i*2+2, 6)), i, 3)
+    L = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3), (evaluable.InsertAxis(i, 2), i*2, i*2+2, 6)), i._name, i.length)
     desired = evaluable.Tuple((evaluable.ArrayFromTuple(L, 0, (3,), int), evaluable.ArrayFromTuple(L, 1, (6,), int)))
     self.assertEqual(actual, desired)
 
-  def test_same_index_different_length(self):
-    i = evaluable.Argument('i', (), int)
-    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 3,), i, 3)
-    B = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 4,), i, 4)
-    actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i, 3)
-    L2 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 4),), i, 4)
-    desired = evaluable.Tuple((evaluable.ArrayFromTuple(L1, 0, (3,), int), evaluable.ArrayFromTuple(L2, 0, (4,), int)))
-    self.assertEqual(actual, desired)
-
   def test_different_index(self):
-    i = evaluable.Argument('i', (), int)
-    j = evaluable.Argument('j', (), int)
-    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 3,), i, 3)
-    B = evaluable.LoopConcatenate((evaluable.InsertAxis(j, 1), j, j+1, 3,), j, 3)
+    i = evaluable.loop_index('i', 3)
+    j = evaluable.loop_index('j', 3)
+    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 3,), i._name, i.length)
+    B = evaluable.LoopConcatenate((evaluable.InsertAxis(j, 1), j, j+1, 3,), j._name, j.length)
     actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i, 3)
-    L2 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(j, 1), j, j+1, 3),), j, 3)
+    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i._name, i.length)
+    L2 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(j, 1), j, j+1, 3),), j._name, j.length)
     desired = evaluable.Tuple((evaluable.ArrayFromTuple(L1, 0, (3,), int), evaluable.ArrayFromTuple(L2, 0, (3,), int)))
     self.assertEqual(actual, desired)
 
   def test_nested_invariant(self):
-    i = evaluable.Argument('i', (), int)
-    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 3,), i, 3)
-    B = evaluable.LoopConcatenate((A, i*3, i*3+3, 9,), i, 3)
+    i = evaluable.loop_index('i', 3)
+    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 3,), i._name, i.length)
+    B = evaluable.LoopConcatenate((A, i*3, i*3+3, 9,), i._name, i.length)
     actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i, 3)
+    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i._name, i.length)
     A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int)
-    L2 = evaluable.LoopConcatenateCombined(((A_, i*3, i*3+3, 9),), i, 3)
+    L2 = evaluable.LoopConcatenateCombined(((A_, i*3, i*3+3, 9),), i._name, i.length)
     self.assertIn(A_, L2._Evaluable__args)
     desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int)))
     self.assertEqual(actual, desired)
 
   def test_nested_variant(self):
-    i = evaluable.Argument('i', (), int)
-    j = evaluable.Argument('j', (), int)
-    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i+j, 1), i, i+1, 3,), i, 3)
-    B = evaluable.LoopConcatenate((A, j*3, j*3+3, 9,), j, 3)
+    i = evaluable.loop_index('i', 3)
+    j = evaluable.loop_index('j', 3)
+    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i+j, 1), i, i+1, 3,), i._name, i.length)
+    B = evaluable.LoopConcatenate((A, j*3, j*3+3, 9,), j._name, j.length)
     actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i+j, 1), i, i+1, 3),), i, 3)
+    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i+j, 1), i, i+1, 3),), i._name, i.length)
     A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int)
-    L2 = evaluable.LoopConcatenateCombined(((A_, j*3, j*3+3, 9),), j, 3)
+    L2 = evaluable.LoopConcatenateCombined(((A_, j*3, j*3+3, 9),), j._name, j.length)
     self.assertNotIn(A_, L2._Evaluable__args)
     desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int)))
     self.assertEqual(actual, desired)
