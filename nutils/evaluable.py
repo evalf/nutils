@@ -3276,6 +3276,12 @@ class InRange(Array):
     assert index.size == 0 or 0 <= index.min() and index.max() < length
     return index
 
+  def _simplified(self):
+    lower_length, upper_length = self.length._intbounds
+    lower_index, upper_index = self.index._intbounds
+    if 0 <= lower_index <= upper_index < lower_length:
+      return self.index
+
   def _intbounds_impl(self):
     lower_index, upper_index = self.index._intbounds
     lower_length, upper_length = self.length._intbounds
