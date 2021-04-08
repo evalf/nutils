@@ -1918,6 +1918,8 @@ class Sum(Array):
     super().__init__(args=[func], shape=shape, dtype=int if func.dtype == bool else func.dtype)
 
   def _simplified(self):
+    if equalindex(self.func.shape[-1], 1):
+      return Take(self.func, 0)
     return self.func._sum(self.ndim)
 
   def evalf(self, arr):
