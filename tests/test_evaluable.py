@@ -435,6 +435,7 @@ _check('inflate-constant', lambda f: evaluable._inflate(f,dofmap=[0,3],length=4,
 _check('inflate-duplicate', lambda f: evaluable.Inflate(f,dofmap=[0,1,0,3],length=4), lambda a: numpy.stack([a[:,0]+a[:,2], a[:,1], numpy.zeros_like(a[:,0]), a[:,3]], axis=1), [(2,4)])
 _check('inflate-block', lambda f: evaluable.Inflate(f,dofmap=[[5,4,3],[2,1,0]],length=6), lambda a: a.ravel()[::-1], [(2,3)])
 _check('inflate-scalar', lambda f: evaluable.Inflate(f,dofmap=1,length=3), lambda a: numpy.array([0,a,0]), [()])
+_check('inflate-diagonal', lambda f: evaluable.Inflate(evaluable.Inflate(f,1,3),1,3), lambda a: numpy.diag(numpy.array([0,a,0])), [()])
 _check('take', lambda f: evaluable.Take(f, [0,3,2]), lambda a: a[:,[0,3,2]], [(2,4)])
 _check('take-duplicate', lambda f: evaluable.Take(f, [0,3,0]), lambda a: a[:,[0,3,0]], [(2,4)])
 _check('choose', lambda a, b, c: evaluable.Choose(evaluable.appendaxes(evaluable.Int(a)%2, (3,3)), [b,c]), lambda a, b, c: numpy.choose(a[_,_].astype(int)%2, [b,c]), [(), (3,3), (3,3)])

@@ -2556,6 +2556,8 @@ class Inflate(Array):
   def _inflate(self, dofmap, length, axis):
     if dofmap.ndim == 1 and axis == self.ndim-1:
       return Inflate(self.func, Take(dofmap, self.dofmap), length)
+    if dofmap.ndim == 0 and dofmap == self.dofmap and length == self.length:
+      return diagonalize(self, -1, axis)
 
   def _derivative(self, var, seen):
     return _inflate(derivative(self.func, var, seen), self.dofmap, self.length, self.ndim-1)
