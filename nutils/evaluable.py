@@ -3391,6 +3391,13 @@ class LoopSum(Array):
   def _unravel(self, axis, shape):
     return LoopSum(unravel(self.func, axis, shape), self.index, self.length)
 
+  def _sum(self, axis):
+    return LoopSum(sum(self.func, axis), self.index, self.length)
+
+  def _add(self, other):
+    if isinstance(other, LoopSum) and other.length == self.length and other.index == self.index:
+      return LoopSum(self.func + other.func, self.index, self.length)
+
   @property
   def _assparse(self):
     chunks = []
