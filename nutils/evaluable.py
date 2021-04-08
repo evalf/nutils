@@ -667,7 +667,7 @@ class TransformsIndexWithTail(Evaluable):
 
   @property
   def index(self):
-    return ArrayFromTuple(self, index=0, shape=(), dtype=int)
+    return ArrayFromTuple(self, index=0, shape=(), dtype=int, _lower=0, _upper=max(0, len(self._transforms)-1))
 
   @property
   def tail(self):
@@ -846,7 +846,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   '''
 
   __slots__ = '_axes', 'dtype', '__index'
-  __cache__ = 'blocks', 'assparse', '_assparse'
+  __cache__ = 'blocks', 'assparse', '_assparse', '_intbounds'
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
@@ -1045,6 +1045,22 @@ class Array(Evaluable, metaclass=_ArrayMeta):
 
     return self
 
+  @property
+  def _intbounds(self):
+    # inclusive lower and upper bounds
+    if self.ndim == 0 and self.dtype == int and self.isconstant:
+      value = self.__index__()
+      return value, value
+    else:
+      lower, upper = self._intbounds_impl()
+      assert isinstance(lower, int) or lower == float('-inf') or lower == float('inf')
+      assert isinstance(upper, int) or upper == float('-inf') or upper == float('inf')
+      assert lower <= upper
+      return lower, upper
+
+  def _intbounds_impl(self):
+    return float('-inf'), float('inf')
+
 class NPoints(Array):
   'The length of the points axis.'
 
@@ -1056,6 +1072,9 @@ class NPoints(Array):
   def evalf(self, evalargs):
     points = evalargs['_points'].coords
     return types.frozenarray(points.shape[0])
+
+  def _intbounds_impl(self):
+    return 0, float('inf')
 
 class Points(Array):
 
@@ -1207,6 +1226,12 @@ class Constant(Array):
     value = numpy.transpose(self.value, tuple(i for i in range(self.ndim) if i != axis1 and i != axis2) + (axis1, axis2))
     return Constant(numpy.linalg.det(value))
 
+  def _intbounds_impl(self):
+    if self.dtype == int and self.value.size:
+      return int(self.value.min()), int(self.value.max())
+    else:
+      return super()._intbounds_impl()
+
 class InsertAxis(Array):
 
   __slots__ = 'func', 'length'
@@ -1306,6 +1331,9 @@ class InsertAxis(Array):
   @property
   def _assparse(self):
     return tuple((*(InsertAxis(idx, self.length) for idx in indices), prependaxes(Range(self.length), values.shape), InsertAxis(values, self.length)) for *indices, values in self.func._assparse)
+
+  def _intbounds_impl(self):
+    return self.func._intbounds
 
 class Transpose(Array):
 
@@ -1472,6 +1500,9 @@ class Transpose(Array):
   @property
   def _assparse(self):
     return tuple((*(indices[i] for i in self.axes), values) for *indices, values in self.func._assparse)
+
+  def _intbounds_impl(self):
+    return self.func._intbounds
 
 class Product(Array):
 
@@ -1797,6 +1828,13 @@ class Multiply(Array):
     else:
       return super()._assparse
 
+  def _intbounds_impl(self):
+    func1, func2 = self.funcs
+    lower1, upper1 = func1._intbounds
+    lower2, upper2 = func2._intbounds
+    extrema = lower1 * lower2, lower1 * upper2, upper1 * lower2, upper1 * upper2
+    return min(extrema), max(extrema)
+
 class Add(Array):
 
   __slots__ = 'funcs',
@@ -1875,6 +1913,12 @@ class Add(Array):
   def _assparse(self):
     func1, func2 = self.funcs
     return _gathersparsechunks(itertools.chain(func1._assparse, func2._assparse))
+
+  def _intbounds_impl(self):
+    func1, func2 = self.funcs
+    lower1, upper1 = func1._intbounds
+    lower2, upper2 = func2._intbounds
+    return lower1 + lower2, upper1 + upper2
 
 class Einsum(Array):
 
@@ -1987,6 +2031,16 @@ class Sum(Array):
       chunks.append((*indices, values))
     return _gathersparsechunks(chunks)
 
+  def _intbounds_impl(self):
+    lower_func, upper_func = self.func._intbounds
+    lower_length, upper_length = self.func.shape[-1]._intbounds
+    if upper_length <= 0:
+      return 0, 0
+    elif lower_length <= 0:
+      return min(0, lower_func * upper_length), max(0, upper_func * upper_length)
+    else:
+      return min(lower_func * lower_length, lower_func * upper_length), max(upper_func * lower_length, upper_func * upper_length)
+
 class TakeDiag(Array):
 
   __slots__ = 'func'
@@ -2042,6 +2096,9 @@ class TakeDiag(Array):
         mask = Equal(indices[-2], indices[-1])
         chunks.append(tuple(take(arr, mask, 0) for arr in (*indices[:-1], values)))
     return _gathersparsechunks(chunks)
+
+  def _intbounds_impl(self):
+    return self.func._intbounds
 
 class Take(Array):
 
@@ -2099,6 +2156,9 @@ class Take(Array):
   def _desparsify(self, axis):
     assert axis < self.func.ndim-1 and isinstance(self._axes[axis], Sparse)
     return [(ind, Take(f, self.indices)) for ind, f in self.func._desparsify(axis)]
+
+  def _intbounds_impl(self):
+    return self.func._intbounds
 
 class Power(Array):
 
@@ -2234,6 +2294,10 @@ class Negative(Pointwise):
   __slots__ = ()
   evalf = numpy.negative
 
+  def _intbounds_impl(self):
+    lower, upper = self.args[0]._intbounds
+    return -upper, -lower
+
 class Square(Pointwise):
   __slots__ = ()
   evalf = numpy.square
@@ -2242,6 +2306,14 @@ class Square(Pointwise):
     idx = tuple(range(func.ndim))
     return Einsum((func, func), (idx, idx), idx)._sum(axis)
 
+  def _intbounds_impl(self):
+    lower, upper = self.args[0]._intbounds
+    extrema = lower**2, upper**2
+    if lower <= 0 and upper >= 0:
+      return 0, max(extrema)
+    else:
+      return min(extrema), max(extrema)
+
 class FloorDivide(Pointwise):
   __slots__ = ()
   evalf = numpy.floor_divide
@@ -2249,6 +2321,14 @@ class FloorDivide(Pointwise):
 class Absolute(Pointwise):
   __slots__ = ()
   evalf = numpy.absolute
+
+  def _intbounds_impl(self):
+    lower, upper = self.args[0]._intbounds
+    extrema = builtins.abs(lower), builtins.abs(upper)
+    if lower <= 0 and upper >= 0:
+      return 0, max(extrema)
+    else:
+      return min(extrema), max(extrema)
 
 class Cos(Pointwise):
   'Cosine, element-wise.'
@@ -2300,6 +2380,18 @@ class Mod(Pointwise):
   __slots__ = ()
   evalf = numpy.mod
 
+  def _intbounds_impl(self):
+    dividend, divisor = self.args
+    lower_divisor, upper_divisor = divisor._intbounds
+    if lower_divisor > 0:
+      lower_dividend, upper_dividend = dividend._intbounds
+      if 0 <= lower_dividend and upper_dividend < lower_divisor:
+        return lower_dividend, upper_dividend
+      else:
+        return 0, upper_divisor - 1
+    else:
+      return super()._intbounds_impl()
+
 class ArcTan2(Pointwise):
   __slots__ = ()
   evalf = numpy.arctan2
@@ -2335,6 +2427,12 @@ class Int(Pointwise):
   evalf = staticmethod(lambda a: a.astype(int))
   deriv = lambda a: Zeros(a.shape, int),
 
+  def _intbounds_impl(self):
+    if self.args[0].dtype == bool:
+      return 0, 1
+    else:
+      return self.args[0]._intbounds
+
 class Sign(Array):
 
   __slots__ = 'func',
@@ -2364,6 +2462,10 @@ class Sign(Array):
 
   def _derivative(self, var, seen):
     return Zeros(self.shape + var.shape, dtype=self.dtype)
+
+  def _intbounds_impl(self):
+    lower, upper = self.func._intbounds
+    return int(numpy.sign(lower)), int(numpy.sign(upper))
 
 class Sampled(Array):
   '''Basis-like identity operator.
@@ -2453,12 +2555,14 @@ class Eig(Evaluable):
 
 class ArrayFromTuple(Array):
 
-  __slots__ = 'arrays', 'index'
+  __slots__ = 'arrays', 'index', '_lower', '_upper'
 
   @types.apply_annotations
-  def __init__(self, arrays:strictevaluable, index:types.strictint, shape:asshape, dtype:asdtype):
+  def __init__(self, arrays:strictevaluable, index:types.strictint, shape:asshape, dtype:asdtype, *, _lower=float('-inf'), _upper=float('inf')):
     self.arrays = arrays
     self.index = index
+    self._lower = _lower
+    self._upper = _upper
     super().__init__(args=[arrays], shape=shape, dtype=dtype)
 
   def evalf(self, arrays):
@@ -2473,6 +2577,9 @@ class ArrayFromTuple(Array):
       return node
     else:
       return super()._node(cache, subgraph, times)
+
+  def _intbounds_impl(self):
+    return self._lower, self._upper
 
 class Zeros(Array):
   'zero'
@@ -2546,6 +2653,9 @@ class Zeros(Array):
   @property
   def _assparse(self):
     return ()
+
+  def _intbounds_impl(self):
+    return 0, 0
 
 class Inflate(Array):
 
@@ -2682,6 +2792,10 @@ class Inflate(Array):
       chunks.append((*indices[:keep_dim], inflate_indices, values))
     return tuple(chunks)
 
+  def _intbounds_impl(self):
+    lower, upper = self.func._intbounds
+    return min(lower, 0), max(upper, 0)
+
 class SwapInflateTake(Evaluable):
 
   def __init__(self, inflateidx, takeidx):
@@ -2690,7 +2804,7 @@ class SwapInflateTake(Evaluable):
     super().__init__(args=[inflateidx, takeidx])
 
   def __iter__(self):
-    shape = ArrayFromTuple(self, index=2, shape=(), dtype=int),
+    shape = ArrayFromTuple(self, index=2, shape=(), dtype=int, _lower=0),
     return (ArrayFromTuple(self, index=index, shape=shape, dtype=int) for index in range(2))
 
   def evalf(self, inflateidx, takeidx):
@@ -3140,6 +3254,14 @@ class Range(Array):
   def evalf(self, length):
     return numpy.arange(length)
 
+  def _intbounds_impl(self):
+    lower, upper = self.length._intbounds
+    # If the upper bound of the length `upper` is zero, or worse: negative, we
+    # define the bounds of this range as `[0,0]` and hope nobody actually cares
+    # about the bounds of an empty array. Note that `numpy.arange` returns an
+    # empty array when presented with a negative length.
+    return 0, max(0, upper - 1)
+
 class InRange(Array):
 
   __slots__ = 'index', 'length'
@@ -3153,6 +3275,12 @@ class InRange(Array):
   def evalf(self, index, length):
     assert index.size == 0 or 0 <= index.min() and index.max() < length
     return index
+
+  def _intbounds_impl(self):
+    lower_index, upper_index = self.index._intbounds
+    lower_length, upper_length = self.length._intbounds
+    upper = min(upper_index, max(0, upper_length - 1))
+    return max(0, min(lower_index, upper)), upper
 
 class Polyval(Array):
   '''
@@ -3346,6 +3474,16 @@ class NormDim(Array):
   def _simplified(self):
     if self.length.isconstant and self.index.isconstant:
       return Constant(self.eval())
+
+  def _intbounds_impl(self):
+    lower_length, upper_length = self.length._intbounds
+    lower_index, upper_index = self.index._intbounds
+    if lower_index >= 0:
+      return min(lower_index, upper_length - 1), min(upper_index, upper_length - 1)
+    elif upper_index < 0 and isinstance(lower_length, int) and lower_length == upper_length:
+      return max(lower_index + lower_length, 0), max(upper_index + lower_length, 0)
+    else:
+      return 0, upper_length - 1
 
 class LoopSum(Array):
 
