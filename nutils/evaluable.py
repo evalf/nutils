@@ -2369,21 +2369,30 @@ def Elemwise(data:types.tuple[types.arraydata], index:asarray, dtype:asdtype):
   if len(unique) == 1:
     return Constant(unique[0])
   shape = [Take(s, index).simplified for s in numpy.array([d.shape for d in data]).T] # use original index to avoid potential inconsistencies with other arrays
-  ndim = len(shape)
   if len(unique) < len(data):
     index = Take(indices, index)
-  raveled = list(map(numpy.ravel, unique))
-  concat = numpy.concatenate(raveled)
-  if ndim == 0:
+  # Move all axes with constant shape to the left and ravel the remainder.
+  is_constant = numpy.array([n.isconstant for n in shape], dtype=bool)
+  nconstant = is_constant.sum()
+  reorder = numpy.argsort(~is_constant)
+  shape = [shape[i] for i in reorder]
+  var_shape = shape[nconstant:]
+  reshape = [n.__index__() for n in shape[:nconstant]] + [-1]
+  raveled = [numpy.transpose(d, reorder).reshape(reshape) for d in unique]
+  # Concatenate the raveled axis, take slices, unravel and reorder the axes to
+  # the original position.
+  concat = numpy.concatenate(raveled, axis=-1)
+  if len(var_shape) == 0:
+    assert tuple(reorder) == tuple(range(nconstant))
     return Take(concat, index)
-  cumprod = list(shape)
-  for i in reversed(range(ndim-1)):
+  cumprod = list(var_shape)
+  for i in reversed(range(len(var_shape)-1)):
     cumprod[i] *= cumprod[i+1] # work backwards so that the shape check matches in Unravel
-  offsets = numpy.cumsum([0, *map(len, raveled[:-1])])
+  offsets = _SizesToOffsets(asarray([d.shape[-1] for d in raveled]))
   elemwise = Take(concat, Range(cumprod[0]) + Take(offsets, index))
-  for i in range(ndim-1):
-    elemwise = Unravel(elemwise, shape[i], cumprod[i+1])
-  return elemwise
+  for i in range(len(var_shape)-1):
+    elemwise = Unravel(elemwise, var_shape[i], cumprod[i+1])
+  return Transpose(elemwise, tuple(numpy.argsort(reorder)))
 
 class Eig(Evaluable):
 

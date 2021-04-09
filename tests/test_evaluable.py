@@ -574,35 +574,24 @@ piecewise(partition=True)
 
 class elemwise(TestCase):
 
-  def setUp(self):
-    super().setUp()
-    self.index = evaluable.Argument('index', (), int)
-    self.data = tuple(map(types.frozenarray, (
-      numpy.arange(1, dtype=float).reshape(1,1),
-      numpy.arange(2, dtype=float).reshape(1,2),
-      numpy.arange(3, dtype=float).reshape(3,1),
-      numpy.arange(4, dtype=float).reshape(2,2),
-      numpy.arange(6, dtype=float).reshape(3,2),
-      numpy.arange(4, dtype=float).reshape(2,2),
-      numpy.arange(3, dtype=float).reshape(3,1),
-    )))
-    self.func = evaluable.Elemwise(self.data, self.index, float)
+  def assertElemwise(self, items):
+    items = tuple(map(numpy.array, items))
+    index = evaluable.Argument('index', (), int)
+    elemwise = evaluable.Elemwise(items, index, int)
+    for i, item in enumerate(items):
+      self.assertEqual(elemwise.eval(index=i).tolist(), item.tolist())
 
-  def test_evalf(self):
-    for i in range(7):
-      with self.subTest(i=i):
-        numpy.testing.assert_array_almost_equal(self.func.eval(index=i), self.data[i])
+  def test_const_values(self):
+    self.assertElemwise((numpy.arange(2*3*4).reshape(2,3,4),)*3)
 
-  def test_shape(self):
-    for i in range(7):
-      with self.subTest(i=i):
-        self.assertEqual(self.func.size.eval(index=i), self.data[i].size)
+  def test_const_shape(self):
+    self.assertElemwise(numpy.arange(4*2*3*4).reshape(4,2,3,4))
 
-  def test_derivative(self):
-    self.assertTrue(evaluable.iszero(evaluable.localgradient(self.func, 2).simplified))
+  def test_mixed_shape(self):
+    self.assertElemwise(numpy.arange(4*i*j*3).reshape(4,i,j,3) for i, j in ((1,2),(2,4)))
 
-  def test_shape_derivative(self):
-    self.assertEqual(evaluable.localgradient(self.func, 2).shape, self.func.shape+(evaluable.Constant(2),))
+  def test_var_shape(self):
+    self.assertElemwise(numpy.arange(i*j).reshape(i,j) for i, j in ((1,2),(2,4)))
 
 class jacobian(TestCase):
 
