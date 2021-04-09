@@ -2536,6 +2536,8 @@ class Inflate(Array):
       if isinstance(self.func._axes[self.func.ndim-self.dofmap.ndim+axis], Sparse):
         items = [Inflate(f, _take(self.dofmap, ind, axis), self.shape[-1]) for ind, f in self.func._desparsify(self.func.ndim-self.dofmap.ndim+axis)]
         return util.sum(items) if items else zeros_like(self)
+    if self.dofmap.ndim == 0 and equalindex(self.dofmap, 0) and equalindex(self.length, 1):
+      return InsertAxis(self.func, 1)
     return self.func._inflate(self.dofmap, self.length, self.ndim-1)
 
   def evalf(self, array, indices, length):

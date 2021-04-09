@@ -436,6 +436,8 @@ _check('inflate-duplicate', lambda f: evaluable.Inflate(f,dofmap=[0,1,0,3],lengt
 _check('inflate-block', lambda f: evaluable.Inflate(f,dofmap=[[5,4,3],[2,1,0]],length=6), lambda a: a.ravel()[::-1], [(2,3)])
 _check('inflate-scalar', lambda f: evaluable.Inflate(f,dofmap=1,length=3), lambda a: numpy.array([0,a,0]), [()])
 _check('inflate-diagonal', lambda f: evaluable.Inflate(evaluable.Inflate(f,1,3),1,3), lambda a: numpy.diag(numpy.array([0,a,0])), [()])
+_check('inflate-one', lambda f: evaluable.Inflate(f,0,1), lambda a: numpy.array([a]), [()])
+_check('inflate-range', lambda f: evaluable.Inflate(f,evaluable.Range(3),3), lambda a: a, [(3,)])
 _check('take', lambda f: evaluable.Take(f, [0,3,2]), lambda a: a[:,[0,3,2]], [(2,4)])
 _check('take-duplicate', lambda f: evaluable.Take(f, [0,3,0]), lambda a: a[:,[0,3,0]], [(2,4)])
 _check('choose', lambda a, b, c: evaluable.Choose(evaluable.appendaxes(evaluable.Int(a)%2, (3,3)), [b,c]), lambda a, b, c: numpy.choose(a[_,_].astype(int)%2, [b,c]), [(), (3,3), (3,3)])
