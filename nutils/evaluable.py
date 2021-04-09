@@ -81,6 +81,8 @@ def asindex(arg):
   arg = asarray(arg)
   if arg.ndim or arg.dtype not in (int, bool): # NOTE: bool to be removed after introduction of Cast
     raise ValueError('argument is not an index: {}'.format(arg))
+  if arg.dtype == bool:
+    arg = Int(arg)
   return arg
 
 @types.apply_annotations
