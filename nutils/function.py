@@ -124,13 +124,14 @@ class Array(Lowerable, metaclass=_ArrayMeta):
         # Try to convert `length` to an `int` by lowering to an `Evaluable` and
         # evaluating.
         try:
-          length = int(length.lower().eval())
+          length = int(length.as_evaluable_array.eval())
         except:
           pass
       shape_.append(length)
     self.shape = tuple(shape_)
     self.dtype = dtype
 
+  @util.cached_property
   def as_evaluable_array(self) -> evaluable.Array:
     return self.lower()
 
@@ -401,7 +402,7 @@ class Array(Lowerable, metaclass=_ArrayMeta):
     'Differentiate this function to `var`.'
 
     if isinstance(__var, str):
-      for arg in self.as_evaluable_array().arguments:
+      for arg in self.as_evaluable_array.arguments:
         if isinstance(arg, evaluable.Argument) and arg._name == __var:
           if not all(n.isconstant for n in arg.shape):
             raise ValueError('arguments with variable shapes are not supported')
@@ -424,7 +425,7 @@ class Array(Lowerable, metaclass=_ArrayMeta):
   @property
   def argshapes(self) -> Mapping[str, Tuple[int, ...]]:
     shapes = {} # type: Dict[str, Tuple[int, ...]]
-    for arg in self.as_evaluable_array().arguments:
+    for arg in self.as_evaluable_array.arguments:
       if isinstance(arg, evaluable.Argument):
         if arg._name in shapes:
           if shapes.get(arg._name, arg.shape) != arg.shape:

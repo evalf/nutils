@@ -29,7 +29,7 @@ class Array(TestCase):
     with self.subTest('const Array'):
       self.assertEqual(l2, 3)
     with self.subTest('unknown'):
-      self.assertEqual(l3.as_evaluable_array().simplified, n.as_evaluable_array().simplified)
+      self.assertEqual(l3.as_evaluable_array.simplified, n.as_evaluable_array.simplified)
 
   def test_size_known(self):
     self.assertEqual(function.Argument('a', (2,3)).size, 6)
@@ -41,7 +41,7 @@ class Array(TestCase):
     n = function.Argument('n', (), dtype=int)
     size = function.Argument('a', (2,n,3)).size
     self.assertIsInstance(size, function.Array)
-    self.assertEqual(size.as_evaluable_array().simplified, (2*n*3).as_evaluable_array().simplified)
+    self.assertEqual(size.as_evaluable_array.simplified, (2*n*3).as_evaluable_array.simplified)
 
   def test_len_0d(self):
     with self.assertRaisesRegex(Exception, '^len\\(\\) of unsized object$'):
@@ -60,8 +60,8 @@ class Array(TestCase):
 
   def test_iter_known(self):
     a, b = function.Array.cast([1,2])
-    self.assertEqual(a.as_evaluable_array().eval(), 1)
-    self.assertEqual(b.as_evaluable_array().eval(), 2)
+    self.assertEqual(a.as_evaluable_array.eval(), 1)
+    self.assertEqual(b.as_evaluable_array.eval(), 2)
 
   def test_iter_unknown(self):
     with self.assertRaisesRegex(Exception, '^iteration over array with unknown length$'):
@@ -187,7 +187,7 @@ class check(TestCase):
 
   def test_lower_eval(self):
     args = tuple((numpy.random.randint if self.dtype == int else numpy.random.uniform)(size=shape, low=self.low, high=self.high) for shape in self.shapes)
-    actual = self.op(*args).as_evaluable_array().eval()
+    actual = self.op(*args).as_evaluable_array.eval()
     desired = self.n_op(*args)
     self.assertArrayAlmostEqual(actual, desired, decimal=15)
 
@@ -355,10 +355,10 @@ class broadcasting(TestCase):
     b = function.Argument('b', (m,), dtype=int)
     (a_, b_), shape, dtype = function._broadcast(a, b)
     with self.subTest('match'):
-      self.assertEqual(shape[0].as_evaluable_array().eval(n=numpy.array(2), m=numpy.array(2)), 2)
+      self.assertEqual(shape[0].as_evaluable_array.eval(n=numpy.array(2), m=numpy.array(2)), 2)
     with self.subTest('mismatch'):
       with self.assertRaises(evaluable.EvaluationError):
-        shape[0].as_evaluable_array().eval(n=numpy.array(2), m=numpy.array(3))
+        shape[0].as_evaluable_array.eval(n=numpy.array(2), m=numpy.array(3))
 
 
 @parametrize
@@ -430,12 +430,12 @@ class elemwise(TestCase):
   def test_evalf(self):
     for i in range(5):
       with self.subTest(i=i):
-        numpy.testing.assert_array_almost_equal(self.func.as_evaluable_array().eval(index=i), self.data[i])
+        numpy.testing.assert_array_almost_equal(self.func.as_evaluable_array.eval(index=i), self.data[i])
 
   def test_shape(self):
     for i in range(5):
       with self.subTest(i=i):
-        self.assertEqual(self.func.size.as_evaluable_array().eval(index=i), self.data[i].size)
+        self.assertEqual(self.func.size.as_evaluable_array.eval(index=i), self.data[i].size)
 
 
 class replace_arguments(TestCase):
@@ -443,38 +443,38 @@ class replace_arguments(TestCase):
   def test_array(self):
     a = function.Argument('a', (2,))
     b = function.Array.cast([1,2])
-    self.assertEqual(function.replace_arguments(a, dict(a=b)).as_evaluable_array(), b.as_evaluable_array())
+    self.assertEqual(function.replace_arguments(a, dict(a=b)).as_evaluable_array, b.as_evaluable_array)
 
   def test_argument(self):
     a = function.Argument('a', (2,))
     b = function.Argument('b', (2,))
-    self.assertEqual(function.replace_arguments(a, dict(a=b)).as_evaluable_array(), b.as_evaluable_array())
+    self.assertEqual(function.replace_arguments(a, dict(a=b)).as_evaluable_array, b.as_evaluable_array)
 
   def test_argument_array(self):
     a = function.Argument('a', (2,))
     b = function.Argument('b', (2,))
     c = function.Array.cast([1,2])
-    self.assertEqual(function.replace_arguments(function.replace_arguments(a, dict(a=b)), dict(b=c)).as_evaluable_array(), c.as_evaluable_array())
+    self.assertEqual(function.replace_arguments(function.replace_arguments(a, dict(a=b)), dict(b=c)).as_evaluable_array, c.as_evaluable_array)
 
   def test_swap(self):
     a = function.Argument('a', (2,))
     b = function.Argument('b', (2,))
-    self.assertEqual(function.replace_arguments(2*a+3*b, dict(a=b, b=a)).as_evaluable_array(), (2*b+3*a).as_evaluable_array())
+    self.assertEqual(function.replace_arguments(2*a+3*b, dict(a=b, b=a)).as_evaluable_array, (2*b+3*a).as_evaluable_array)
 
   def test_ignore_replaced(self):
     a = function.Argument('a', (2,))
     b = function.Array.cast([1,2])
     c = function.Array.cast([2,3])
-    self.assertEqual(function.replace_arguments(function.replace_arguments(a, dict(a=b)), dict(a=c)).as_evaluable_array(), b.as_evaluable_array())
+    self.assertEqual(function.replace_arguments(function.replace_arguments(a, dict(a=b)), dict(a=c)).as_evaluable_array, b.as_evaluable_array)
 
   def test_ignore_recursion(self):
     a = function.Argument('a', (2,))
-    self.assertEqual(function.replace_arguments(a, dict(a=2*a)).as_evaluable_array(), (2*a).as_evaluable_array())
+    self.assertEqual(function.replace_arguments(a, dict(a=2*a)).as_evaluable_array, (2*a).as_evaluable_array)
 
   def test_replace_derivative(self):
     a = function.Argument('a', ())
     b = function.Argument('b', ())
-    self.assertEqual(function.replace_arguments(function.derivative(a, a), dict(a=b)).as_evaluable_array().simplified, evaluable.ones(()).simplified)
+    self.assertEqual(function.replace_arguments(function.derivative(a, a), dict(a=b)).as_evaluable_array.simplified, evaluable.ones(()).simplified)
 
 
 class namespace(TestCase):
@@ -680,7 +680,7 @@ class namespace(TestCase):
   def test_d_arg(self):
     ns = function.Namespace()
     ns.a = '?a'
-    self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').as_evaluable_array().simplified, function.asarray(2).as_evaluable_array().simplified)
+    self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').as_evaluable_array.simplified, function.asarray(2).as_evaluable_array.simplified)
 
   def test_n(self):
     ns = function.Namespace()
@@ -699,7 +699,7 @@ class namespace(TestCase):
     ns.a = numpy.array([1, 2, 3])
     ns.b = numpy.array([4, 5])
     ns.A = numpy.array([[6, 7, 8], [9, 10, 11]])
-    l = lambda f: f.as_evaluable_array().simplified
+    l = lambda f: f.as_evaluable_array.simplified
     self.assertEqual(l(ns.eval_i('sqr(a_i)')), l(sqr(ns.a)))
     self.assertEqual(l(ns.eval_ij('mul(a_i, b_j)')), l(ns.eval_ij('a_i b_j')))
     self.assertEqual(l(ns.eval_('mul(b_i, A_ij, a_j)')), l(ns.eval_('b_i A_ij a_j')))
@@ -708,7 +708,7 @@ class namespace(TestCase):
     ns = function.Namespace()
     ns.a = numpy.array([1, 2, 3])
     ns.A = numpy.array([[6, 7, 8], [9, 10, 11]])
-    l = lambda f: f.as_evaluable_array().simplified
+    l = lambda f: f.as_evaluable_array.simplified
     self.assertEqual(l(ns.eval_('norm2(a)')), l(function.norm2(ns.a)))
     self.assertEqual(l(ns.eval_i('sum:j(A_ij)')), l(function.sum(ns.A, 1)))
 

@@ -66,9 +66,11 @@ def simplified(value):
 asdtype = lambda arg: arg if any(arg is dtype for dtype in (bool, int, float, complex)) else {'f': float, 'i': int, 'b': bool, 'c': complex}[numpy.dtype(arg).kind]
 
 def asarray(arg):
-  if hasattr(arg, 'as_evaluable_array'):
-    return arg.as_evaluable_array()
-  elif _containsarray(arg):
+  try:
+    return arg.as_evaluable_array
+  except AttributeError:
+    pass
+  if _containsarray(arg):
     return stack(arg, axis=0)
   else:
     return Constant(arg)
@@ -824,6 +826,7 @@ if debug_flags.evalf:
 class AsEvaluableArray(Protocol):
   'Protocol for conversion into an :class:`Array`.'
 
+  @property
   def as_evaluable_array(self) -> 'Array':
     'Lower this object to a :class:`nutils.evaluable.Array`.'
 
@@ -1035,6 +1038,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
       return Zeros(self.shape + var.shape, dtype=self.dtype)
     raise NotImplementedError('derivative not defined for {}'.format(self.__class__.__name__))
 
+  @property
   def as_evaluable_array(self):
     'return self'
 

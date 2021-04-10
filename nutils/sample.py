@@ -408,7 +408,7 @@ def eval_integrals_sparse(*integrals, **arguments):
   results : :class:`tuple` of arrays and/or :class:`nutils.matrix.Matrix` objects.
   '''
 
-  integrals = tuple(integral.as_evaluable_array().assparse for integral in integrals)
+  integrals = tuple(integral.as_evaluable_array.assparse for integral in integrals)
   with evaluable.Tuple(tuple(integrals)).optimized_for_numpy.session(graphviz=graphviz) as eval:
     return eval(**arguments)
 
