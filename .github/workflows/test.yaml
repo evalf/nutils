@@ -134,6 +134,9 @@ jobs:
     name: Build container image
     needs: build-python-package
     runs-on: ubuntu-20.04
+    env:
+      # Fixes https://github.com/actions/virtual-environments/issues/3080
+      STORAGE_OPTS: overlay.mount_program=/usr/bin/fuse-overlayfs
     steps:
       - name: Checkout
         uses: actions/checkout@v2
