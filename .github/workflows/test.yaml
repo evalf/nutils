@@ -39,20 +39,21 @@ jobs:
       matrix:
         include:
           # base
-          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
+          - {os: ubuntu-latest , python-version: 3.9, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
           # os
-          - {os: windows-latest, python-version: 3.8, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
-          - {os: macos-latest  , python-version: 3.8, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
+          - {os: windows-latest, python-version: 3.9, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
+          - {os: macos-latest  , python-version: 3.9, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
           # python-version
           - {os: ubuntu-latest , python-version: 3.5, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
           - {os: ubuntu-latest , python-version: 3.6, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
           - {os: ubuntu-latest , python-version: 3.7, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
+          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
           # matrix-backend
-          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: scipy, nprocs: 1, numpy-version: latest}
-          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: mkl  , nprocs: 1, numpy-version: latest}
-          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: mkl  , nprocs: 2, numpy-version: latest}
+          - {os: ubuntu-latest , python-version: 3.9, matrix-backend: scipy, nprocs: 1, numpy-version: latest}
+          - {os: ubuntu-latest , python-version: 3.9, matrix-backend: mkl  , nprocs: 1, numpy-version: latest}
+          - {os: ubuntu-latest , python-version: 3.9, matrix-backend: mkl  , nprocs: 2, numpy-version: latest}
           # nprocs
-          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: numpy, nprocs: 2, numpy-version: latest}
+          - {os: ubuntu-latest , python-version: 3.9, matrix-backend: numpy, nprocs: 2, numpy-version: latest}
           # numpy-version
           - {os: ubuntu-latest , python-version: 3.8, matrix-backend: numpy, nprocs: 1, numpy-version: 1.16  }
       fail-fast: false
