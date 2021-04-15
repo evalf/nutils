@@ -356,7 +356,7 @@ def parsegmsh(mshdata):
       if keep.all():
         renum = numpy.arange(len(cells.data))
       else:
-        msh.cells[icell] = cells._replace(data=cells.data[numpy.hstack([True, keep])])
+        msh.cells[icell] = type(cells)(type=cells.type, data=cells.data[numpy.hstack([True, keep])])
         renum = numpy.hstack([0, keep.cumsum()])
       renums.append(renum)
     for name, (itag, nd) in msh.field_data.items():
