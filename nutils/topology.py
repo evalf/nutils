@@ -433,8 +433,8 @@ class Topology(types.Singleton):
 
   @log.withcontext
   @types.apply_annotations
-  def partition(self, levelset:function.asarray, maxrefine:types.strictint, posname:types.strictstr, negname:types.strictstr, *, ndivisions=8, arguments=None):
-    partsroot = function.Root('parts', 0)
+  def partition(self, levelset:function.asarray, maxrefine:types.strictint, posname:types.strictstr, negname:types.strictstr, *, ndivisions=8, arguments=None, rootname:types.strictstr='parts'):
+    partsroot = function.Root(rootname, 0)
     pos = self._trim(levelset, maxrefine=maxrefine, ndivisions=ndivisions, arguments=arguments)
     refs = tuple((pref, bref-pref) for bref, pref in zip(self.references, pos))
     return PartitionedTopology(self, partsroot, refs, (posname, negname))
@@ -2643,6 +2643,13 @@ class PartitionedTopology(DisjointUnionTopology):
         return topo * EmptyTopology((self.partsroot,), 0)
       refs = tuple(tuple(ref & bref for ref in self.refs[self.basetopo.transforms.index(trans)]) for bref, trans in zip(topo.references, topo.transforms))
       return PartitionedTopology(topo, self.partsroot, refs, self.names)
+
+  def slice(self, items):
+    topo = self.basetopo.slice(items)
+    if not topo:
+      return topo * EmptyTopology((self.partsroot,), 0)
+    refs = tuple(tuple(ref & bref for ref in self.refs[self.basetopo.transforms.index(trans)]) for bref, trans in zip(topo.references, topo.transforms))
+    return PartitionedTopology(topo, self.partsroot, refs, self.names)
 
   @property
   def boundary(self):
