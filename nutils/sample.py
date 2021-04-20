@@ -338,7 +338,7 @@ class _DefaultIndex(Sample):
   def get_evaluable_indices(self, ielem):
     npoints = self.points.get_evaluable_coords(ielem).shape[0]
     offset = evaluable.get(_offsets(self.points), 0, ielem)
-    return evaluable.Range(npoints, offset)
+    return evaluable.Range(npoints) + offset
 
 class _CustomIndex(Sample):
 

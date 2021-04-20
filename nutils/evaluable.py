@@ -2380,7 +2380,7 @@ def Elemwise(data:types.tuple[types.arraydata], index:asarray, dtype:asdtype):
   for i in reversed(range(ndim-1)):
     cumprod[i] *= cumprod[i+1] # work backwards so that the shape check matches in Unravel
   offsets = numpy.cumsum([0, *map(len, raveled[:-1])])
-  elemwise = Take(concat, Range(cumprod[0], Take(offsets, index)))
+  elemwise = Take(concat, Range(cumprod[0]) + Take(offsets, index))
   for i in range(ndim-1):
     elemwise = Unravel(elemwise, shape[i], cumprod[i+1])
   return elemwise
@@ -3082,26 +3082,18 @@ class Unravel(Array):
 
 class Range(Array):
 
-  __slots__ = 'length', 'offset'
+  __slots__ = 'length'
 
   @types.apply_annotations
-  def __init__(self, length:asindex, offset:asindex=Zeros((), int)):
+  def __init__(self, length:asindex):
     self.length = length
-    self.offset = offset
-    super().__init__(args=[length, offset], shape=[length], dtype=int)
+    super().__init__(args=[length], shape=[length], dtype=int)
 
   def _take(self, index, axis):
-    if index.ndim == 1 and isinstance(index, Range) and self.isconstant and index.isconstant:
-      assert (index.offset + index.length).eval() <= self.length.eval()
-      return Range(index.length, self.offset + index.offset)
-    return InRange(index, self.length) + self.offset
+    return InRange(index, self.length)
 
-  def _add(self, offset):
-    if isinstance(self._axes[0], Inserted):
-      return Range(self.length, self.offset + offset._uninsert(0))
-
-  def evalf(self, length, offset):
-    return numpy.arange(offset, offset+length)
+  def evalf(self, length):
+    return numpy.arange(length)
 
 class InRange(Array):
 
@@ -3899,7 +3891,7 @@ def _takeslice(arg:asarray, s:types.strict[slice], axis:types.strictint):
     stop = n if s.stop is None else s.stop if s.stop >= 0 else s.stop + n
     if start == 0 and stop == n:
       return arg
-    index = Range(stop-start, start)
+    index = Range(stop-start) + start
   elif n.isconstant:
     index = Constant(numpy.arange(*s.indices(arg.shape[axis])))
   else:

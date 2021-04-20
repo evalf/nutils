@@ -1896,7 +1896,7 @@ def get(__array: IntoArray, __axis: int, __index: IntoArray) -> Array:
 def _range(__length: IntoArray, __offset: IntoArray) -> Array:
   length = Array.cast(__length, dtype=int, ndim=0)
   offset = Array.cast(__offset, dtype=int, ndim=0)
-  return _Wrapper(evaluable.Range, _WithoutPoints(length), _WithoutPoints(offset), shape=(length,), dtype=int)
+  return _Wrapper(lambda l, o: evaluable.Range(l) + o, _WithoutPoints(length), _WithoutPoints(offset), shape=(length,), dtype=int)
 
 def _takeslice(__array: IntoArray, __s: slice, __axis: int) -> Array:
   array = Array.cast(__array)
@@ -2772,7 +2772,7 @@ class DiscontBasis(Basis):
 
   def f_dofs_coeffs(self, index: evaluable.Array) -> Tuple[evaluable.Array,evaluable.Array]:
     coeffs = evaluable.Elemwise(self._coeffs, index, dtype=float)
-    dofs = evaluable.Range(coeffs.shape[0], evaluable.get(self._offsets, 0, index))
+    dofs = evaluable.Range(coeffs.shape[0]) + evaluable.get(self._offsets, 0, index)
     return dofs, coeffs
 
 class MaskedBasis(Basis):
@@ -2875,7 +2875,7 @@ class StructuredBasis(Basis):
     for lengths_i, offsets_i, ndofs_i, index_i in zip(self._ndofs, self._start_dofs, self._dofs_shape, indices):
       length = evaluable.get(lengths_i, 0, index_i)
       offset = evaluable.get(offsets_i, 0, index_i)
-      dofs_i = evaluable.Range(length, offset) % ndofs_i
+      dofs_i = (evaluable.Range(length) + offset) % ndofs_i
       dofs = dofs_i if dofs is None else evaluable.ravel(evaluable.insertaxis(dofs * ndofs_i, 1, length) + dofs_i, axis=0)
     coeffs = functools.reduce(evaluable.PolyOuterProduct,
       [evaluable.Elemwise(coeffs_i, index_i, float) for coeffs_i, index_i in zip(self._coeffs, indices)])
