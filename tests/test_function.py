@@ -417,7 +417,7 @@ class elemwise(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.index = function.Argument('index', (), dtype=int)
+    self.index = function._Wrapper(lambda: evaluable.InRange(evaluable.Argument('index', (), int), 5), shape=(), dtype=int)
     self.data = tuple(map(types.frozenarray, (
       numpy.arange(1, dtype=float).reshape(1,1),
       numpy.arange(2, dtype=float).reshape(1,2),

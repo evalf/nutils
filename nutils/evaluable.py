@@ -83,6 +83,8 @@ def asindex(arg):
     raise ValueError('argument is not an index: {}'.format(arg))
   if arg.dtype == bool:
     arg = Int(arg)
+  elif arg._intbounds[0] < 0:
+    raise ValueError('index must be non-negative')
   return arg
 
 @types.apply_annotations
@@ -2038,9 +2040,9 @@ class Sum(Array):
   def _intbounds_impl(self):
     lower_func, upper_func = self.func._intbounds
     lower_length, upper_length = self.func.shape[-1]._intbounds
-    if upper_length <= 0:
+    if upper_length == 0:
       return 0, 0
-    elif lower_length <= 0:
+    elif lower_length == 0:
       return min(0, lower_func * upper_length), max(0, upper_func * upper_length)
     else:
       return min(lower_func * lower_length, lower_func * upper_length), max(upper_func * lower_length, upper_func * upper_length)
@@ -3260,10 +3262,7 @@ class Range(Array):
 
   def _intbounds_impl(self):
     lower, upper = self.length._intbounds
-    # If the upper bound of the length `upper` is zero, or worse: negative, we
-    # define the bounds of this range as `[0,0]` and hope nobody actually cares
-    # about the bounds of an empty array. Note that `numpy.arange` returns an
-    # empty array when presented with a negative length.
+    assert lower >= 0
     return 0, max(0, upper - 1)
 
 class InRange(Array):
