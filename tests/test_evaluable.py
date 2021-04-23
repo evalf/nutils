@@ -214,10 +214,11 @@ class check(TestCase):
         actual=self.op_args[s])
 
   def test_sumaxis(self):
+    op_args = evaluable.Int(self.op_args) if self.op_args.dtype == bool else self.op_args
     for idim in range(self.op_args.ndim):
       self.assertFunctionAlmostEqual(decimal=14,
         desired=self.n_op_argsfun.sum(idim),
-        actual=self.op_args.sum(idim))
+        actual=op_args.sum(idim))
 
   def test_add(self):
     self.assertFunctionAlmostEqual(decimal=15,

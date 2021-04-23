@@ -1989,9 +1989,11 @@ class Sum(Array):
   def __init__(self, func:asarray):
     if func.ndim == 0:
       raise Exception('cannot sum a scalar function')
+    if func.dtype == bool:
+      raise Exception('cannot sum a boolean function')
     self.func = func
     shape = func._axes[:-1]
-    super().__init__(args=[func], shape=shape, dtype=int if func.dtype == bool else func.dtype)
+    super().__init__(args=[func], shape=shape, dtype=func.dtype)
 
   def _simplified(self):
     if equalindex(self.func.shape[-1], 1):
@@ -3000,7 +3002,7 @@ class Find(Array):
   def __init__(self, where:asarray):
     assert isarray(where) and where.ndim == 1 and where.dtype == bool
     self.where = where
-    super().__init__(args=[where], shape=[where.sum()], dtype=int)
+    super().__init__(args=[where], shape=[Int(where).sum()], dtype=int)
 
   def evalf(self, where):
     return where.nonzero()[0]
