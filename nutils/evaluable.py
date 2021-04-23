@@ -3478,6 +3478,12 @@ class NormDim(Array):
     return result
 
   def _simplified(self):
+    lower_length, upper_length = self.length._intbounds
+    lower_index, upper_index = self.index._intbounds
+    if 0 <= lower_index and upper_index < lower_length:
+      return self.index
+    if isinstance(lower_length, int) and lower_length == upper_length and -lower_length <= lower_index and upper_index < 0:
+      return self.index + lower_length
     if self.length.isconstant and self.index.isconstant:
       return Constant(self.eval())
 
