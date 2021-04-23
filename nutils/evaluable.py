@@ -3464,6 +3464,13 @@ class NormDim(Array):
   def __init__(self, length: asarray, index: asarray):
     assert length.dtype == int
     assert index.dtype == int
+    assert equalshape(length.shape, index.shape)
+    # The following corner cases makes the assertion fail, hence we can only
+    # assert the bounds if the arrays are guaranteed to be unempty:
+    #
+    #     Take(func, NormDim(func.shape[-1], Range(0) + func.shape[-1]))
+    if all(n._intbounds[0] > 0 for n in index.shape):
+      assert -length._intbounds[1] <= index._intbounds[0] and index._intbounds[1] <= length._intbounds[1] - 1
     self.length = length
     self.index = index
     super().__init__(args=[length, index], shape=index.shape, dtype=index.dtype)
