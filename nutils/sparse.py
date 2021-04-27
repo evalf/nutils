@@ -156,13 +156,14 @@ def dedup(data, inplace=False):
     numpy.add.at(dedup['value'], offsets, data['value'][1:])
     return dedup
 
-def prune(data, inplace=False):
+def prune(data, inplace=False, mask=None):
   '''Prune zero values.
 
-  Prune returns a sparse object with all zero values removed. If ``inplace`` is
-  true the returned object reuses the input array's memory. This may affect the
-  size of the array, which should no longer be used after pruning in place. In
-  case the input has no zeros the input array is returned.
+  Prune returns a sparse object with all zero values removed, or all entries
+  for which the boolean vector ``mask`` is true if it is specified. If
+  ``inplace`` is true the returned object reuses the input array's memory. This
+  may affect the size of the array, which should no longer be used after
+  pruning in place. In case the input has no zeros the input array is returned.
 
   >>> from nutils.sparse import dtype, prune
   >>> from numpy import array
@@ -172,11 +173,13 @@ def prune(data, inplace=False):
         dtype=[('index', [((2, 'i0'), 'u1'), ((2, 'i1'), 'u1')]), ('value', '<f8')])
   '''
 
-  if data['value'].all():
+  if mask is None:
+    mask = data['value']
+  if mask.all():
     return data
   elif inplace:
     buf = numpy.empty(chunksize // data.dtype.itemsize or 1, dtype=data.dtype)
-    nz, = data['value'].nonzero()
+    nz, = mask.nonzero()
     for i in range(0, len(nz), len(buf)):
       s = nz[i:i+len(buf)]
       overlap = i+len(s) > s[0]
@@ -186,7 +189,7 @@ def prune(data, inplace=False):
         data[i:i+len(s)] = chunk
     return _resize(data, len(nz))
   else:
-    return numpy.compress(data['value'], data)
+    return numpy.compress(mask, data)
 
 def add(datas):
   '''Add sparse objects.
