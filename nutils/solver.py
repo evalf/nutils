@@ -59,10 +59,10 @@ import abc, numpy, itertools, functools, numbers, collections, math, inspect, tr
 argdict = types.frozendict[types.strictstr,types.arraydata]
 
 def integraltuple(arg):
-  return tuple(a.as_evaluable_array() for a in arg)
+  return tuple(a.as_evaluable_array for a in arg)
 
 def optionalintegraltuple(arg):
-  return tuple(None if a is None else a.as_evaluable_array() for a in arg)
+  return tuple(None if a is None else a.as_evaluable_array for a in arg)
 
 def arrayordict(arg):
   return types.arraydata(arg) if numeric.isarray(arg) else argdict(arg)

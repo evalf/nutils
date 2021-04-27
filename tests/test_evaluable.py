@@ -214,10 +214,11 @@ class check(TestCase):
         actual=self.op_args[s])
 
   def test_sumaxis(self):
+    op_args = evaluable.Int(self.op_args) if self.op_args.dtype == bool else self.op_args
     for idim in range(self.op_args.ndim):
       self.assertFunctionAlmostEqual(decimal=14,
         desired=self.n_op_argsfun.sum(idim),
-        actual=self.op_args.sum(idim))
+        actual=op_args.sum(idim))
 
   def test_add(self):
     self.assertFunctionAlmostEqual(decimal=15,
@@ -284,25 +285,25 @@ class check(TestCase):
         actual=evaluable.unravel(self.op_args, axis=idim, shape=unravelshape))
 
   def test_loopsum(self):
-    index = evaluable.Argument('_testindex', (), int)
     length = 3
+    index = evaluable.loop_index('_testindex', length)
     for iarg, shape in enumerate(self.shapes):
       testvalue = numpy.random.uniform(size=(length, *shape), low=self.low, high=self.high)
       n_op_argsfun = functools.reduce(operator.add, (self.n_op(*self.arg_values[:iarg], v, *self.arg_values[iarg+1:]) for v in testvalue))
       args = (*self.args[:iarg], evaluable.Guard(evaluable.get(evaluable.asarray(testvalue), 0, index)), *self.args[iarg+1:])
       self.assertFunctionAlmostEqual(decimal=15,
-        actual=evaluable.LoopSum(self.op(*args), index, length),
+        actual=evaluable.loop_sum(self.op(*args), index),
         desired=n_op_argsfun)
 
   def test_loopconcatenate(self):
-    index = evaluable.Argument('_testindex', (), int)
     length = 3
+    index = evaluable.loop_index('_testindex', length)
     for iarg, shape in enumerate(self.shapes):
       testvalue = numpy.random.uniform(size=(length, *shape), low=self.low, high=self.high)
       n_op_argsfun = numpy.concatenate([self.n_op(*self.arg_values[:iarg], v, *self.arg_values[iarg+1:]) for v in testvalue], axis=-1)
       args = (*self.args[:iarg], evaluable.Guard(evaluable.get(evaluable.asarray(testvalue), 0, index)), *self.args[iarg+1:])
       self.assertFunctionAlmostEqual(decimal=15,
-        actual=evaluable.loop_concatenate(self.op(*args), index, length),
+        actual=evaluable.loop_concatenate(self.op(*args), index),
         desired=n_op_argsfun)
 
   def test_desparsify(self):
@@ -369,7 +370,7 @@ _check('identity', lambda f: evaluable.asarray(f), lambda a: a, [(2,4,2)])
 _check('const', lambda f: evaluable.asarray(numpy.arange(16, dtype=float).reshape(2,4,2)), lambda a: numpy.arange(16, dtype=float).reshape(2,4,2), [(2,4,2)])
 _check('zeros', lambda f: evaluable.zeros([1,4,3,4]), lambda a: numpy.zeros([1,4,3,4]), [(4,3,4)])
 _check('ones', lambda f: evaluable.ones([1,4,3,4]), lambda a: numpy.ones([1,4,3,4]), [(4,3,4)])
-_check('range', lambda f: evaluable.Range(4, offset=2)[numpy.newaxis], lambda a: numpy.arange(2,6)[numpy.newaxis], [(4,)])
+_check('range', lambda f: evaluable.Range(4) + 2, lambda a: numpy.arange(2,6), [(4,)])
 _check('sin', evaluable.sin, numpy.sin, [(4,)])
 _check('cos', evaluable.cos, numpy.cos, [(4,)])
 _check('tan', evaluable.tan, numpy.tan, [(4,)])
@@ -435,17 +436,24 @@ _check('inflate-constant', lambda f: evaluable._inflate(f,dofmap=[0,3],length=4,
 _check('inflate-duplicate', lambda f: evaluable.Inflate(f,dofmap=[0,1,0,3],length=4), lambda a: numpy.stack([a[:,0]+a[:,2], a[:,1], numpy.zeros_like(a[:,0]), a[:,3]], axis=1), [(2,4)])
 _check('inflate-block', lambda f: evaluable.Inflate(f,dofmap=[[5,4,3],[2,1,0]],length=6), lambda a: a.ravel()[::-1], [(2,3)])
 _check('inflate-scalar', lambda f: evaluable.Inflate(f,dofmap=1,length=3), lambda a: numpy.array([0,a,0]), [()])
+_check('inflate-diagonal', lambda f: evaluable.Inflate(evaluable.Inflate(f,1,3),1,3), lambda a: numpy.diag(numpy.array([0,a,0])), [()])
+_check('inflate-one', lambda f: evaluable.Inflate(f,0,1), lambda a: numpy.array([a]), [()])
+_check('inflate-range', lambda f: evaluable.Inflate(f,evaluable.Range(3),3), lambda a: a, [(3,)])
 _check('take', lambda f: evaluable.Take(f, [0,3,2]), lambda a: a[:,[0,3,2]], [(2,4)])
 _check('take-duplicate', lambda f: evaluable.Take(f, [0,3,0]), lambda a: a[:,[0,3,0]], [(2,4)])
 _check('choose', lambda a, b, c: evaluable.Choose(evaluable.appendaxes(evaluable.Int(a)%2, (3,3)), [b,c]), lambda a, b, c: numpy.choose(a[_,_].astype(int)%2, [b,c]), [(), (3,3), (3,3)])
 _check('slice', lambda a: evaluable.asarray(a)[::2], lambda a: a[::2], [(5,3)])
-_check('loopsum1', lambda: evaluable.LoopSum(evaluable.Argument('index', (), int), evaluable.Argument('index', (), int), 3), lambda: numpy.array(3), [])
-_check('loopsum2', lambda a: evaluable.LoopSum(a, evaluable.Argument('index', (), int), 2), lambda a: 2*a, [(3,4,2,4)])
-_check('loopsum3', lambda a: evaluable.LoopSum(evaluable.get(a, 0, evaluable.Argument('index', (), int)), evaluable.Argument('index', (), int), 3), lambda a: numpy.sum(a, 0), [(3,4,2,4)])
-_check('loopsum4', lambda: evaluable.LoopSum(evaluable.Inflate(evaluable.Argument('index', (), int), 0, 2), evaluable.Argument('index', (), int), 3), lambda: numpy.array([3, 0]), [])
-_check('loopconcatenate1', lambda a: evaluable.loop_concatenate(a+evaluable.prependaxes(evaluable.Argument('index', (), int), a.shape), evaluable.Argument('index', (), int), 3), lambda a: a+numpy.arange(3)[None], [(2,1)])
-_check('loopconcatenate2', lambda: evaluable.loop_concatenate(evaluable.Elemwise([numpy.arange(48).reshape(4,4,3)[:,:,a:b] for a, b in util.pairwise([0,2,3])], evaluable.Argument('index', (), int), int), evaluable.Argument('index', (), int), 2), lambda: numpy.arange(48).reshape(4,4,3), [])
-_check('loopconcatenatecombined', lambda a: evaluable.loop_concatenate_combined([a+evaluable.prependaxes(evaluable.Argument('index', (), int), a.shape)], evaluable.Argument('index', (), int), 3)[0], lambda a: a+numpy.arange(3)[None], [(2,1)], hasgrad=False)
+_check('normal1d', lambda a: evaluable.Normal(a), lambda a: numpy.sign(a[...,0]), [(3,1,1)])
+_check('normal2d', lambda a: evaluable.Normal(a), lambda a: numpy.stack([Q[:,-1]*numpy.sign(R[-1,-1]) for ai in a for Q, R in [numpy.linalg.qr(ai, mode='complete')]], axis=0), [(1,2,2)])
+_check('normal3d', lambda a: evaluable.Normal(a), lambda a: numpy.stack([Q[:,-1]*numpy.sign(R[-1,-1]) for ai in a for Q, R in [numpy.linalg.qr(ai, mode='complete')]], axis=0), [(2,3,3)])
+_check('loopsum1', lambda: evaluable.loop_sum(evaluable.loop_index('index', 3), evaluable.loop_index('index', 3)), lambda: numpy.array(3), [])
+_check('loopsum2', lambda a: evaluable.loop_sum(a, evaluable.loop_index('index', 2)), lambda a: 2*a, [(3,4,2,4)])
+_check('loopsum3', lambda a: evaluable.loop_sum(evaluable.get(a, 0, evaluable.loop_index('index', 3)), evaluable.loop_index('index', 3)), lambda a: numpy.sum(a, 0), [(3,4,2,4)])
+_check('loopsum4', lambda: evaluable.loop_sum(evaluable.Inflate(evaluable.loop_index('index', 3), 0, 2), evaluable.loop_index('index', 3)), lambda: numpy.array([3, 0]), [])
+_check('loopsum5', lambda: evaluable.loop_sum(evaluable.loop_index('index', 1), evaluable.loop_index('index', 1)), lambda: numpy.array(0), [])
+_check('loopconcatenate1', lambda a: evaluable.loop_concatenate(a+evaluable.prependaxes(evaluable.loop_index('index', 3), a.shape), evaluable.loop_index('index', 3)), lambda a: a+numpy.arange(3)[None], [(2,1)])
+_check('loopconcatenate2', lambda: evaluable.loop_concatenate(evaluable.Elemwise([numpy.arange(48).reshape(4,4,3)[:,:,a:b] for a, b in util.pairwise([0,2,3])], evaluable.loop_index('index', 2), int), evaluable.loop_index('index', 2)), lambda: numpy.arange(48).reshape(4,4,3), [])
+_check('loopconcatenatecombined', lambda a: evaluable.loop_concatenate_combined([a+evaluable.prependaxes(evaluable.loop_index('index', 3), a.shape)], evaluable.loop_index('index', 3))[0], lambda a: a+numpy.arange(3)[None], [(2,1)], hasgrad=False)
 
 _polyval_mask = lambda shape, ndim: 1 if ndim == 0 else numpy.array([sum(i[-ndim:]) < int(shape[-1]) for i in numpy.ndindex(shape)], dtype=int).reshape(shape)
 _polyval_desired = lambda c, x: sum(c[(...,*i)]*(x[(slice(None),*[None]*(c.ndim-x.shape[1]))]**i).prod(-1) for i in itertools.product(*[range(c.shape[-1])]*x.shape[1]) if sum(i) < c.shape[-1])
@@ -457,6 +465,177 @@ _check('polyval_2d_p1', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape,x
 _check('polyval_2d_p2', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape,x.shape[1]), x), _polyval_desired, [(3,3),(4,2)], ndim=2)
 _check('polyval_2d_p1_23', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape,x.shape[1]), x), _polyval_desired, [(2,3,2,2),(4,2)], ndim=2)
 
+class intbounds(TestCase):
+
+  @staticmethod
+  def R(start, shape):
+    # A range of numbers starting at `start` with the given `shape`.
+    if isinstance(shape, int):
+      size = shape
+      shape = shape,
+    else:
+      size = util.product(shape)
+    return evaluable.Constant(numpy.arange(start, start+size).reshape(*shape))
+
+  class S(evaluable.Array):
+    # An evaluable scalar argument with given bounds.
+    def __init__(self, argname, lower, upper):
+      self._argname = argname
+      self._lower = lower
+      self._upper = upper
+      super().__init__(args=(evaluable.EVALARGS,), shape=(), dtype=int)
+    def evalf(self, evalargs):
+      value = numpy.array(evalargs[self._argname])
+      assert self._lower <= value <= self._upper
+      return numpy.array(value)
+    @property
+    def _intbounds(self):
+      return self._lower, self._upper
+
+  def assertBounds(self, func, *, tight_lower=True, tight_upper=True, **evalargs):
+    lower, upper = func._intbounds
+    value = func.eval(**evalargs)
+    (self.assertEqual if tight_lower else self.assertLessEqual)(lower, value.min())
+    (self.assertEqual if tight_upper else self.assertGreaterEqual)(upper, value.max())
+
+  def test_default(self):
+    class Test(evaluable.Array):
+      def __init__(self):
+        super().__init__(args=(evaluable.Argument('dummy', (), int),), shape=(), dtype=int)
+      def evalf(self):
+        raise NotImplementedError
+    self.assertEqual(Test()._intbounds, (float('-inf'), float('inf')))
+
+  def test_constant(self):
+    self.assertEqual(self.R(-4,[2,3,4])._intbounds, (-4, 19))
+
+  def test_constant_empty(self):
+    self.assertEqual(self.R(0,[0])._intbounds, (float('-inf'), float('inf')))
+
+  def test_insertaxis(self):
+    arg = self.R(-4,[2,3,4])
+    self.assertEqual(evaluable.InsertAxis(arg, 2)._intbounds, arg._intbounds)
+
+  def test_transpose(self):
+    arg = self.R(-4,[2,3,4])
+    self.assertEqual(evaluable.Transpose(arg, (2,0,1))._intbounds, arg._intbounds)
+
+  def test_multiply(self):
+    args = tuple(self.R(low, [high+1-low]) for low, high in ((-13, -5), (-2, 7), (3, 11)))
+    for arg1 in args:
+      for arg2 in args:
+        self.assertBounds(evaluable.Multiply((evaluable.insertaxis(arg1, 1, arg2.shape[0]), evaluable.insertaxis(arg2, 0, arg1.shape[0]))))
+
+  def test_add(self):
+    self.assertBounds(evaluable.Add((evaluable.insertaxis(self.R(-5,[8]), 1, 5), evaluable.insertaxis(self.R(2,[5]), 0, 8))))
+
+  def test_sum_zero_axis(self):
+    self.assertEqual(evaluable.Sum(self.R(0,[0]))._intbounds, (0, 0))
+
+  def test_sum_variable_axis_including_zero(self):
+    self.assertEqual(evaluable.Sum(evaluable.Argument('test', (self.S('n', 0, 4),), int))._intbounds, (float('-inf'), float('inf')))
+
+  def test_sum_zero_size(self):
+    self.assertEqual(evaluable.Sum(self.R(0,[2,3,0]))._intbounds, (0, 0))
+
+  def test_sum_nonzero(self):
+    self.assertBounds(evaluable.Sum(self.R(-3,[9,1])))
+
+  def test_sum_unknown(self):
+    func = lambda l, h: evaluable.Sum(evaluable.InsertAxis(self.R(l,[h+1-l]), self.S('n',2,5)))
+    self.assertBounds(func(-3, 5), n=5)
+    self.assertBounds(func(-3, 5), n=5, tight_lower=False, tight_upper=False)
+    self.assertBounds(func(3, 5), n=5, tight_lower=False)
+    self.assertBounds(func(3, 5), n=2, tight_upper=False)
+    self.assertBounds(func(-3, -2), n=5, tight_upper=False)
+    self.assertBounds(func(-3, -2), n=2, tight_lower=False)
+
+  def test_takediag(self):
+    arg = self.R(-4,[2,3,3])
+    self.assertEqual(evaluable.TakeDiag(arg)._intbounds, arg._intbounds)
+
+  def test_take(self):
+    arg = self.R(-4,[2,3,4])
+    idx = self.R(0,[1])
+    self.assertEqual(evaluable.Take(arg, idx)._intbounds, arg._intbounds)
+
+  def test_negative(self):
+    self.assertBounds(evaluable.Negative(self.R(-4,[2,3,4])))
+
+  def test_square_negative(self):
+    self.assertBounds(evaluable.Square(self.R(-4,[4])))
+
+  def test_square_positive(self):
+    self.assertBounds(evaluable.Square(self.R(1,[4])))
+
+  def test_square_full(self):
+    self.assertBounds(evaluable.Square(self.R(-3,[7])))
+
+  def test_absolute_negative(self):
+    self.assertBounds(evaluable.Absolute(self.R(-4,[3])))
+
+  def test_absolute_positive(self):
+    self.assertBounds(evaluable.Absolute(self.R(1,[3])))
+
+  def test_absolute_full(self):
+    self.assertBounds(evaluable.Absolute(self.R(-3,[7])))
+
+  def test_mod_nowrap(self):
+    self.assertBounds(evaluable.Mod(evaluable.insertaxis(self.R(1,[4]), 1, 3), evaluable.insertaxis(self.R(5,[3]), 0, 4)))
+
+  def test_mod_wrap_negative(self):
+    self.assertBounds(evaluable.Mod(evaluable.insertaxis(self.R(-3,[7]), 1, 3), evaluable.insertaxis(self.R(5,[3]), 0, 7)))
+
+  def test_mod_wrap_positive(self):
+    self.assertBounds(evaluable.Mod(evaluable.insertaxis(self.R(3,[7]), 1, 3), evaluable.insertaxis(self.R(5,[3]), 0, 7)))
+
+  def test_mod_negative_divisor(self):
+    self.assertEqual(evaluable.Mod(evaluable.Argument('d', (2,), int), self.R(-3,[2]))._intbounds, (float('-inf'), float('inf')))
+
+  def test_sign(self):
+    for i in range(-2, 3):
+      for j in range(i, 3):
+        self.assertBounds(evaluable.Sign(self.R(i,[j-i+1])))
+
+  def test_zeros(self):
+    self.assertEqual(evaluable.Zeros((2,3), int)._intbounds, (0, 0))
+
+  def test_range(self):
+    self.assertEqual(evaluable.Range(self.S('n', 0, 0))._intbounds, (0, 0))
+    self.assertBounds(evaluable.Range(self.S('n', 1, 3)), n=3)
+
+  def test_inrange_loose(self):
+    self.assertEqual(evaluable.InRange(self.S('n', 3, 5), evaluable.Constant(6))._intbounds, (3, 5))
+
+  def test_inrange_strict(self):
+    self.assertEqual(evaluable.InRange(self.S('n', float('-inf'), float('inf')), self.S('m', 2, 4))._intbounds, (0, 3))
+
+  def test_inrange_empty(self):
+    self.assertEqual(evaluable.InRange(self.S('n', float('-inf'), float('inf')), evaluable.Constant(0))._intbounds, (0, 0))
+
+  def test_npoints(self):
+    self.assertEqual(evaluable.NPoints()._intbounds, (0, float('inf')))
+
+  def test_int_bool(self):
+    self.assertEqual(evaluable.Int(evaluable.Constant(numpy.array([False, True], dtype=bool)))._intbounds, (0, 1))
+
+  def test_int_int(self):
+    self.assertEqual(evaluable.Int(self.S('n', 3, 5))._intbounds, (3, 5))
+
+  def test_array_from_tuple(self):
+    self.assertEqual(evaluable.ArrayFromTuple(evaluable.Tuple((evaluable.Argument('n', (3,), int),)), 0, (3,), int, _lower=-2, _upper=3)._intbounds, (-2, 3))
+
+  def test_inflate(self):
+    self.assertEqual(evaluable.Inflate(self.R(4, (2,3)), evaluable.Constant(numpy.arange(6).reshape(2,3)), 7)._intbounds, (0, 9))
+
+  def test_normdim_positive(self):
+    self.assertEqual(evaluable.NormDim(self.S('l', 2, 4), self.S('i', 1, 3))._intbounds, (1, 3))
+
+  def test_normdim_negative(self):
+    self.assertEqual(evaluable.NormDim(self.S('l', 4, 4), self.S('i', -3, -1))._intbounds, (1, 3))
+
+  def test_normdim_mixed(self):
+    self.assertEqual(evaluable.NormDim(self.S('l', 4, 5), self.S('i', -3, 2))._intbounds, (0, 4))
 
 class blocks(TestCase):
 
@@ -568,36 +747,24 @@ piecewise(partition=True)
 
 class elemwise(TestCase):
 
-  def setUp(self):
-    super().setUp()
-    self.domain, geom = mesh.rectilinear([7])
-    self.index = self.domain.f_index.prepare_eval(ndims=self.domain.ndims, npoints=None)
-    self.data = tuple(map(types.frozenarray, (
-      numpy.arange(1, dtype=float).reshape(1,1),
-      numpy.arange(2, dtype=float).reshape(1,2),
-      numpy.arange(3, dtype=float).reshape(3,1),
-      numpy.arange(4, dtype=float).reshape(2,2),
-      numpy.arange(6, dtype=float).reshape(3,2),
-      numpy.arange(4, dtype=float).reshape(2,2),
-      numpy.arange(3, dtype=float).reshape(3,1),
-    )))
-    self.func = evaluable.Elemwise(self.data, self.index, float)
+  def assertElemwise(self, items):
+    items = tuple(map(numpy.array, items))
+    index = evaluable.Argument('index', (), int)
+    elemwise = evaluable.Elemwise(items, index, int)
+    for i, item in enumerate(items):
+      self.assertEqual(elemwise.eval(index=i).tolist(), item.tolist())
 
-  def test_evalf(self):
-    for i, (trans, points) in enumerate(zip(self.domain.transforms, self.domain.sample('gauss', 1).points)):
-      with self.subTest(i=i):
-        numpy.testing.assert_array_almost_equal(self.func.eval(_transforms=(trans,), _points=points), self.data[i])
+  def test_const_values(self):
+    self.assertElemwise((numpy.arange(2*3*4).reshape(2,3,4),)*3)
 
-  def test_shape(self):
-    for i, (trans, points) in enumerate(zip(self.domain.transforms, self.domain.sample('gauss', 1).points)):
-      with self.subTest(i=i):
-        self.assertEqual(self.func.size.eval(_transforms=(trans,), _points=points), self.data[i].size)
+  def test_const_shape(self):
+    self.assertElemwise(numpy.arange(4*2*3*4).reshape(4,2,3,4))
 
-  def test_derivative(self):
-    self.assertTrue(evaluable.iszero(evaluable.localgradient(self.func, self.domain.ndims).simplified))
+  def test_mixed_shape(self):
+    self.assertElemwise(numpy.arange(4*i*j*3).reshape(4,i,j,3) for i, j in ((1,2),(2,4)))
 
-  def test_shape_derivative(self):
-    self.assertEqual(evaluable.localgradient(self.func, self.domain.ndims).shape, self.func.shape+(evaluable.Constant(self.domain.ndims),))
+  def test_var_shape(self):
+    self.assertElemwise(numpy.arange(i*j).reshape(i,j) for i, j in ((1,2),(2,4)))
 
 class jacobian(TestCase):
 
@@ -705,8 +872,8 @@ class asciitree(TestCase):
 
   @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
   def test_loop_sum(self):
-    i = evaluable.Argument('i', (), int)
-    f = evaluable.LoopSum(i, i, evaluable.Constant(2))
+    i = evaluable.loop_index('i', 2)
+    f = evaluable.loop_sum(i, i)
     self.assertEqual(f.asciitree(richoutput=True),
                      'SUBGRAPHS\n'
                      'A\n'
@@ -718,8 +885,8 @@ class asciitree(TestCase):
 
   @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
   def test_loop_concatenate(self):
-    i = evaluable.Argument('i', (), int)
-    f = evaluable.loop_concatenate(evaluable.InsertAxis(i, 1), i, evaluable.Constant(2))
+    i = evaluable.loop_index('i', 2)
+    f = evaluable.loop_concatenate(evaluable.InsertAxis(i, 1), i)
     self.assertEqual(f.asciitree(richoutput=True),
                      'SUBGRAPHS\n'
                      'A\n'
@@ -747,8 +914,8 @@ class asciitree(TestCase):
 
   @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
   def test_loop_concatenatecombined(self):
-    i = evaluable.Argument('i', (), int)
-    f, = evaluable.loop_concatenate_combined([evaluable.InsertAxis(i, 1)], i, evaluable.Constant(2))
+    i = evaluable.loop_index('i', 2)
+    f, = evaluable.loop_concatenate_combined([evaluable.InsertAxis(i, 1)], i)
     self.assertEqual(f.asciitree(richoutput=True),
                      'SUBGRAPHS\n'
                      'A\n'
@@ -821,57 +988,47 @@ class memory(TestCase):
 
 class combine_loop_concatenates(TestCase):
 
-  def test_same_index_same_length(self):
-    i = evaluable.Argument('i', (), int)
-    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 3,), i, 3)
-    B = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 2), i*2, i*2+2, 6,), i, 3)
+  def test_same_index(self):
+    i = evaluable.loop_index('i', 3)
+    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 3,), i._name, i.length)
+    B = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 2), i*2, i*2+2, 6,), i._name, i.length)
     actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-    L = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3), (evaluable.InsertAxis(i, 2), i*2, i*2+2, 6)), i, 3)
+    L = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3), (evaluable.InsertAxis(i, 2), i*2, i*2+2, 6)), i._name, i.length)
     desired = evaluable.Tuple((evaluable.ArrayFromTuple(L, 0, (3,), int), evaluable.ArrayFromTuple(L, 1, (6,), int)))
     self.assertEqual(actual, desired)
 
-  def test_same_index_different_length(self):
-    i = evaluable.Argument('i', (), int)
-    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 3,), i, 3)
-    B = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 4,), i, 4)
-    actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i, 3)
-    L2 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 4),), i, 4)
-    desired = evaluable.Tuple((evaluable.ArrayFromTuple(L1, 0, (3,), int), evaluable.ArrayFromTuple(L2, 0, (4,), int)))
-    self.assertEqual(actual, desired)
-
   def test_different_index(self):
-    i = evaluable.Argument('i', (), int)
-    j = evaluable.Argument('j', (), int)
-    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 3,), i, 3)
-    B = evaluable.LoopConcatenate((evaluable.InsertAxis(j, 1), j, j+1, 3,), j, 3)
+    i = evaluable.loop_index('i', 3)
+    j = evaluable.loop_index('j', 3)
+    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 3,), i._name, i.length)
+    B = evaluable.LoopConcatenate((evaluable.InsertAxis(j, 1), j, j+1, 3,), j._name, j.length)
     actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i, 3)
-    L2 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(j, 1), j, j+1, 3),), j, 3)
+    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i._name, i.length)
+    L2 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(j, 1), j, j+1, 3),), j._name, j.length)
     desired = evaluable.Tuple((evaluable.ArrayFromTuple(L1, 0, (3,), int), evaluable.ArrayFromTuple(L2, 0, (3,), int)))
     self.assertEqual(actual, desired)
 
   def test_nested_invariant(self):
-    i = evaluable.Argument('i', (), int)
-    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 3,), i, 3)
-    B = evaluable.LoopConcatenate((A, i*3, i*3+3, 9,), i, 3)
+    i = evaluable.loop_index('i', 3)
+    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 3,), i._name, i.length)
+    B = evaluable.LoopConcatenate((A, i*3, i*3+3, 9,), i._name, i.length)
     actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i, 3)
+    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i._name, i.length)
     A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int)
-    L2 = evaluable.LoopConcatenateCombined(((A_, i*3, i*3+3, 9),), i, 3)
+    L2 = evaluable.LoopConcatenateCombined(((A_, i*3, i*3+3, 9),), i._name, i.length)
     self.assertIn(A_, L2._Evaluable__args)
     desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int)))
     self.assertEqual(actual, desired)
 
   def test_nested_variant(self):
-    i = evaluable.Argument('i', (), int)
-    j = evaluable.Argument('j', (), int)
-    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i+j, 1), i, i+1, 3,), i, 3)
-    B = evaluable.LoopConcatenate((A, j*3, j*3+3, 9,), j, 3)
+    i = evaluable.loop_index('i', 3)
+    j = evaluable.loop_index('j', 3)
+    A = evaluable.LoopConcatenate((evaluable.InsertAxis(i+j, 1), i, i+1, 3,), i._name, i.length)
+    B = evaluable.LoopConcatenate((A, j*3, j*3+3, 9,), j._name, j.length)
     actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i+j, 1), i, i+1, 3),), i, 3)
+    L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i+j, 1), i, i+1, 3),), i._name, i.length)
     A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int)
-    L2 = evaluable.LoopConcatenateCombined(((A_, j*3, j*3+3, 9),), j, 3)
+    L2 = evaluable.LoopConcatenateCombined(((A_, j*3, j*3+3, 9),), j._name, j.length)
     self.assertNotIn(A_, L2._Evaluable__args)
     desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int)))
     self.assertEqual(actual, desired)

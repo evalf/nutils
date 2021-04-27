@@ -29,7 +29,7 @@ class Array(TestCase):
     with self.subTest('const Array'):
       self.assertEqual(l2, 3)
     with self.subTest('unknown'):
-      self.assertEqual(l3.prepare_eval(npoints=None).simplified, n.prepare_eval(npoints=None).simplified)
+      self.assertEqual(l3.as_evaluable_array.simplified, n.as_evaluable_array.simplified)
 
   def test_size_known(self):
     self.assertEqual(function.Argument('a', (2,3)).size, 6)
@@ -41,7 +41,7 @@ class Array(TestCase):
     n = function.Argument('n', (), dtype=int)
     size = function.Argument('a', (2,n,3)).size
     self.assertIsInstance(size, function.Array)
-    self.assertEqual(size.prepare_eval(npoints=None).simplified, (2*n*3).prepare_eval(npoints=None).simplified)
+    self.assertEqual(size.as_evaluable_array.simplified, (2*n*3).as_evaluable_array.simplified)
 
   def test_len_0d(self):
     with self.assertRaisesRegex(Exception, '^len\\(\\) of unsized object$'):
@@ -60,8 +60,8 @@ class Array(TestCase):
 
   def test_iter_known(self):
     a, b = function.Array.cast([1,2])
-    self.assertEqual(a.prepare_eval(npoints=None).eval(), 1)
-    self.assertEqual(b.prepare_eval(npoints=None).eval(), 2)
+    self.assertEqual(a.as_evaluable_array.eval(), 1)
+    self.assertEqual(b.as_evaluable_array.eval(), 2)
 
   def test_iter_unknown(self):
     with self.assertRaisesRegex(Exception, '^iteration over array with unknown length$'):
@@ -79,6 +79,21 @@ class Array(TestCase):
     with self.assertWarns(warnings.NutilsDeprecationWarning):
       function.Array.cast([1,2]).simplified
 
+  def test_prepare_eval(self):
+    topo, geom = mesh.rectilinear([2])
+    f = topo.basis('discont', 0).dot([1, 2])
+    lowered = f.prepare_eval(ndims=topo.ndims, opposite=True)
+    smpl = topo.sample('bezier', 2)
+    with _builtin_warnings.catch_warnings():
+      _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
+      self.assertAllAlmostEqual(lowered.eval(_transforms=(smpl.transforms[0][0], smpl.transforms[0][0]), _points=smpl.points[0]), numpy.array([1, 1]))
+
+  def test_prepare_eval_without_points(self):
+    f = function.ones((2,), int)
+    lowered = f.prepare_eval(ndims=None, npoints=None)
+    with _builtin_warnings.catch_warnings():
+      _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
+      self.assertAllEqual(lowered.eval(), numpy.array([1, 1]))
 
 class integral_compatibility(TestCase):
 
@@ -172,7 +187,7 @@ class check(TestCase):
 
   def test_lower_eval(self):
     args = tuple((numpy.random.randint if self.dtype == int else numpy.random.uniform)(size=shape, low=self.low, high=self.high) for shape in self.shapes)
-    actual = self.op(*args).prepare_eval(npoints=None).eval()
+    actual = self.op(*args).as_evaluable_array.eval()
     desired = self.n_op(*args)
     self.assertArrayAlmostEqual(actual, desired, decimal=15)
 
@@ -340,10 +355,10 @@ class broadcasting(TestCase):
     b = function.Argument('b', (m,), dtype=int)
     (a_, b_), shape, dtype = function._broadcast(a, b)
     with self.subTest('match'):
-      self.assertEqual(shape[0].prepare_eval(npoints=None).eval(n=numpy.array(2), m=numpy.array(2)), 2)
+      self.assertEqual(shape[0].as_evaluable_array.eval(n=numpy.array(2), m=numpy.array(2)), 2)
     with self.subTest('mismatch'):
       with self.assertRaises(evaluable.EvaluationError):
-        shape[0].prepare_eval(npoints=None).eval(n=numpy.array(2), m=numpy.array(3))
+        shape[0].as_evaluable_array.eval(n=numpy.array(2), m=numpy.array(3))
 
 
 @parametrize
@@ -402,8 +417,7 @@ class elemwise(TestCase):
 
   def setUp(self):
     super().setUp()
-    self.domain, geom = mesh.rectilinear([5])
-    self.index = self.domain.f_index
+    self.index = function._Wrapper(lambda: evaluable.InRange(evaluable.Argument('index', (), int), 5), shape=(), dtype=int)
     self.data = tuple(map(types.frozenarray, (
       numpy.arange(1, dtype=float).reshape(1,1),
       numpy.arange(2, dtype=float).reshape(1,2),
@@ -414,20 +428,14 @@ class elemwise(TestCase):
     self.func = function.Elemwise(self.data, self.index, float)
 
   def test_evalf(self):
-    for i, trans in enumerate(self.domain.transforms):
+    for i in range(5):
       with self.subTest(i=i):
-        numpy.testing.assert_array_almost_equal(self.func.prepare_eval(ndims=self.domain.ndims).eval(_transforms=(trans,), _points=points.SimplexGaussPoints(self.domain.ndims, 1)), self.data[i][_])
+        numpy.testing.assert_array_almost_equal(self.func.as_evaluable_array.eval(index=i), self.data[i])
 
   def test_shape(self):
-    for i, trans in enumerate(self.domain.transforms):
+    for i in range(5):
       with self.subTest(i=i):
-        self.assertEqual(self.func.size.prepare_eval(ndims=self.domain.ndims, npoints=None).eval(_transforms=(trans,)), self.data[i].size)
-
-  def test_derivative(self):
-    self.assertTrue(evaluable.iszero(function.localgradient(self.func, self.domain.ndims).prepare_eval(ndims=self.domain.ndims)))
-
-  def test_shape_derivative(self):
-    self.assertEqual(function.localgradient(self.func, self.domain.ndims).shape, self.func.shape+(self.domain.ndims,))
+        self.assertEqual(self.func.size.as_evaluable_array.eval(index=i), self.data[i].size)
 
 
 class replace_arguments(TestCase):
@@ -435,38 +443,38 @@ class replace_arguments(TestCase):
   def test_array(self):
     a = function.Argument('a', (2,))
     b = function.Array.cast([1,2])
-    self.assertEqual(function.replace_arguments(a, dict(a=b)).prepare_eval(npoints=None), b.prepare_eval(npoints=None))
+    self.assertEqual(function.replace_arguments(a, dict(a=b)).as_evaluable_array, b.as_evaluable_array)
 
   def test_argument(self):
     a = function.Argument('a', (2,))
     b = function.Argument('b', (2,))
-    self.assertEqual(function.replace_arguments(a, dict(a=b)).prepare_eval(npoints=None), b.prepare_eval(npoints=None))
+    self.assertEqual(function.replace_arguments(a, dict(a=b)).as_evaluable_array, b.as_evaluable_array)
 
   def test_argument_array(self):
     a = function.Argument('a', (2,))
     b = function.Argument('b', (2,))
     c = function.Array.cast([1,2])
-    self.assertEqual(function.replace_arguments(function.replace_arguments(a, dict(a=b)), dict(b=c)).prepare_eval(npoints=None), c.prepare_eval(npoints=None))
+    self.assertEqual(function.replace_arguments(function.replace_arguments(a, dict(a=b)), dict(b=c)).as_evaluable_array, c.as_evaluable_array)
 
   def test_swap(self):
     a = function.Argument('a', (2,))
     b = function.Argument('b', (2,))
-    self.assertEqual(function.replace_arguments(2*a+3*b, dict(a=b, b=a)).prepare_eval(npoints=None), (2*b+3*a).prepare_eval(npoints=None))
+    self.assertEqual(function.replace_arguments(2*a+3*b, dict(a=b, b=a)).as_evaluable_array, (2*b+3*a).as_evaluable_array)
 
   def test_ignore_replaced(self):
     a = function.Argument('a', (2,))
     b = function.Array.cast([1,2])
     c = function.Array.cast([2,3])
-    self.assertEqual(function.replace_arguments(function.replace_arguments(a, dict(a=b)), dict(a=c)).prepare_eval(npoints=None), b.prepare_eval(npoints=None))
+    self.assertEqual(function.replace_arguments(function.replace_arguments(a, dict(a=b)), dict(a=c)).as_evaluable_array, b.as_evaluable_array)
 
   def test_ignore_recursion(self):
     a = function.Argument('a', (2,))
-    self.assertEqual(function.replace_arguments(a, dict(a=2*a)).prepare_eval(npoints=None), (2*a).prepare_eval(npoints=None))
+    self.assertEqual(function.replace_arguments(a, dict(a=2*a)).as_evaluable_array, (2*a).as_evaluable_array)
 
   def test_replace_derivative(self):
     a = function.Argument('a', ())
     b = function.Argument('b', ())
-    self.assertEqual(function.replace_arguments(function.derivative(a, a), dict(a=b)).prepare_eval(npoints=None).simplified, evaluable.ones(()).simplified)
+    self.assertEqual(function.replace_arguments(function.derivative(a, a), dict(a=b)).as_evaluable_array.simplified, evaluable.ones(()).simplified)
 
 
 class namespace(TestCase):
@@ -526,16 +534,21 @@ class namespace(TestCase):
     with self.assertRaises(ValueError):
       function.Namespace(default_geometry_name='foo_bar')
 
-  def assertEqualLowered(self, actual, desired, **lowerargs):
-    return self.assertEqual(actual.prepare_eval(**lowerargs), desired.prepare_eval(**lowerargs))
+  def assertEqualLowered(self, actual, desired, *, topo=None):
+    if topo:
+      smpl = topo.sample('gauss', 2)
+      lower = lambda f: evaluable.asarray(f @ smpl)
+    else:
+      lower = evaluable.asarray
+    return self.assertEqual(lower(actual), lower(desired))
 
   def test_default_geometry_property(self):
     ns = function.Namespace()
     ns.x = 1
-    self.assertEqualLowered(ns.default_geometry, ns.x, ndims=0)
+    self.assertEqualLowered(ns.default_geometry, ns.x)
     ns = function.Namespace(default_geometry_name='y')
     ns.y = 2
-    self.assertEqualLowered(ns.default_geometry, ns.y, ndims=0)
+    self.assertEqualLowered(ns.default_geometry, ns.y)
 
   def test_copy(self):
     ns = function.Namespace()
@@ -549,7 +562,7 @@ class namespace(TestCase):
     ns1.basis = domain.basis('spline', degree=2)
     ns2 = ns1.copy_(default_geometry_name='y')
     self.assertEqual(ns2.default_geometry_name, 'y')
-    self.assertEqualLowered(ns2.eval_ni('basis_n,i'), ns2.basis.grad(ns2.y), ndims=domain.ndims)
+    self.assertEqualLowered(ns2.eval_ni('basis_n,i'), ns2.basis.grad(ns2.y), topo=domain)
 
   def test_copy_preserve_geom(self):
     ns1 = function.Namespace(default_geometry_name='y')
@@ -557,7 +570,7 @@ class namespace(TestCase):
     ns1.basis = domain.basis('spline', degree=2)
     ns2 = ns1.copy_()
     self.assertEqual(ns2.default_geometry_name, 'y')
-    self.assertEqualLowered(ns2.eval_ni('basis_n,i'), ns2.basis.grad(ns2.y), ndims=domain.ndims)
+    self.assertEqualLowered(ns2.eval_ni('basis_n,i'), ns2.basis.grad(ns2.y), topo=domain)
 
   def test_copy_fixed_lengths(self):
     ns = function.Namespace(length_i=2)
@@ -590,12 +603,12 @@ class namespace(TestCase):
   def test_matmul_0d(self):
     ns = function.Namespace()
     ns.foo = 2
-    self.assertEqualLowered('foo' @ ns, ns.foo, npoints=None)
+    self.assertEqualLowered('foo' @ ns, ns.foo)
 
   def test_matmul_1d(self):
     ns = function.Namespace()
     ns.foo = function.zeros([2])
-    self.assertEqualLowered('foo_i' @ ns, ns.foo, npoints=None)
+    self.assertEqualLowered('foo_i' @ ns, ns.foo)
 
   def test_matmul_2d(self):
     ns = function.Namespace()
@@ -621,7 +634,7 @@ class namespace(TestCase):
     ns.foo = function.Argument('arg', [2,3])
     ns.bar_ij = 'sin(foo_ij) + cos(2 foo_ij)'
     ns = ns(arg=function.zeros([2,3]))
-    self.assertEqualLowered(ns.foo, function.zeros([2,3]), npoints=None)
+    self.assertEqualLowered(ns.foo, function.zeros([2,3]))
     self.assertEqual(ns.default_geometry_name, 'y')
 
   def test_pickle(self):
@@ -633,7 +646,7 @@ class namespace(TestCase):
     orig.f = 'cosh(x_0)'
     pickled = pickle.loads(pickle.dumps(orig))
     for attr in ('x', 'v', 'u', 'f'):
-      self.assertEqualLowered(getattr(pickled, attr), getattr(orig, attr), ndims=domain.ndims)
+      self.assertEqualLowered(getattr(pickled, attr), getattr(orig, attr), topo=domain)
     self.assertEqual(pickled.arg_shapes['lhs'], orig.arg_shapes['lhs'])
 
   def test_pickle_default_geometry_name(self):
@@ -662,17 +675,17 @@ class namespace(TestCase):
   def test_d_geom(self):
     ns = function.Namespace()
     topo, ns.x = mesh.rectilinear([1])
-    self.assertEqualLowered(ns.eval_ij('d(x_i, x_j)'), function.grad(ns.x, ns.x), ndims=topo.ndims)
+    self.assertEqualLowered(ns.eval_ij('d(x_i, x_j)'), function.grad(ns.x, ns.x), topo=topo)
 
   def test_d_arg(self):
     ns = function.Namespace()
     ns.a = '?a'
-    self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').prepare_eval(npoints=None).simplified, function.asarray(2).prepare_eval(npoints=None).simplified)
+    self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').as_evaluable_array.simplified, function.asarray(2).as_evaluable_array.simplified)
 
   def test_n(self):
     ns = function.Namespace()
     topo, ns.x = mesh.rectilinear([1])
-    self.assertEqualLowered(ns.eval_i('n(x_i)'), function.normal(ns.x), ndims=topo.ndims)
+    self.assertEqualLowered(ns.eval_i('n(x_i)'), function.normal(ns.x), topo=topo.boundary)
 
   def test_functions(self):
     def sqr(a):
@@ -686,30 +699,29 @@ class namespace(TestCase):
     ns.a = numpy.array([1, 2, 3])
     ns.b = numpy.array([4, 5])
     ns.A = numpy.array([[6, 7, 8], [9, 10, 11]])
-    l = lambda f: f.prepare_eval(npoints=None).simplified
+    l = lambda f: f.as_evaluable_array.simplified
     self.assertEqual(l(ns.eval_i('sqr(a_i)')), l(sqr(ns.a)))
     self.assertEqual(l(ns.eval_ij('mul(a_i, b_j)')), l(ns.eval_ij('a_i b_j')))
     self.assertEqual(l(ns.eval_('mul(b_i, A_ij, a_j)')), l(ns.eval_('b_i A_ij a_j')))
 
   def test_builtin_functions(self):
     ns = function.Namespace()
-    domain, ns.x = mesh.rectilinear([1]*2)
     ns.a = numpy.array([1, 2, 3])
     ns.A = numpy.array([[6, 7, 8], [9, 10, 11]])
-    l = lambda f: f.prepare_eval(npoints=4, ndims=2).simplified
+    l = lambda f: f.as_evaluable_array.simplified
     self.assertEqual(l(ns.eval_('norm2(a)')), l(function.norm2(ns.a)))
     self.assertEqual(l(ns.eval_i('sum:j(A_ij)')), l(function.sum(ns.A, 1)))
 
   def test_builtin_jacobian_vector(self):
     ns = function.Namespace()
     domain, ns.x = mesh.rectilinear([1]*2)
-    l = lambda f: f.prepare_eval(npoints=4, ndims=2).simplified
+    l = lambda f: evaluable.asarray(f @ domain.sample('gauss', 2)).simplified
     self.assertEqual(l(ns.eval_('J(x)')), l(function.jacobian(ns.x)))
 
   def test_builtin_jacobian_scalar(self):
     ns = function.Namespace()
     domain, (ns.t,) = mesh.rectilinear([1])
-    l = lambda f: f.prepare_eval(npoints=4, ndims=1).simplified
+    l = lambda f: evaluable.asarray(f @ domain.sample('gauss', 2)).simplified
     self.assertEqual(l(ns.eval_('J(t)')), l(function.jacobian(ns.t[None])))
 
   def test_builtin_jacobian_matrix(self):
@@ -726,11 +738,11 @@ class eval_ast(TestCase):
 
   def setUp(self):
     super().setUp()
-    domain, x = mesh.rectilinear([2,2])
+    self.domain, x = mesh.rectilinear([2,2])
     self.ns = function.Namespace()
     self.ns.x = x
     self.ns.altgeom = function.concatenate([self.ns.x, [0]], 0)
-    self.ns.basis = domain.basis('spline', degree=2)
+    self.ns.basis = self.domain.basis('spline', degree=2)
     self.ns.a = 2
     self.ns.a2 = numpy.array([1,2])
     self.ns.a3 = numpy.array([1,2,3])
@@ -738,17 +750,25 @@ class eval_ast(TestCase):
     self.ns.a32 = numpy.array([[1,2],[3,4],[5,6]])
     self.x = function.Argument('x',())
 
-  def assertEqualLowered(self, s, f):
-    self.assertEqual((s @ self.ns).prepare_eval(ndims=2).simplified, f.prepare_eval(ndims=2).simplified)
+  def assertEqualLowered(self, s, f, *, topo=None, indices=None):
+    if topo is None:
+      topo = self.domain
+    smpl = topo.sample('gauss', 2)
+    lower = lambda g: evaluable.asarray(g @ smpl).simplified
+    if indices:
+      evaluated = getattr(self.ns, 'eval_'+indices)(s)
+    else:
+      evaluated = s @ self.ns
+    self.assertEqual(lower(evaluated), lower(f))
 
   def test_group(self): self.assertEqualLowered('(a)', self.ns.a)
   def test_arg(self): self.assertEqualLowered('a2_i ?x_i', function.dot(self.ns.a2, function.Argument('x', [2]), axes=[0]))
   def test_substitute(self): self.assertEqualLowered('(?x_i^2)(x_i=a2_i)', self.ns.a2**2)
   def test_multisubstitute(self): self.assertEqualLowered('(a2_i + ?x_i + ?y_i)(x_i=?y_i, y_i=?x_i)', self.ns.a2 + function.Argument('y', [2]) + function.Argument('x', [2]))
   def test_call(self): self.assertEqualLowered('sin(a)', function.sin(self.ns.a))
-  def test_call2(self): self.assertEqual(self.ns.eval_ij('arctan2(a2_i, a3_j)').prepare_eval(ndims=2).simplified, function.arctan2(self.ns.a2[:,None], self.ns.a3[None,:]).prepare_eval(ndims=2).simplified)
+  def test_call2(self): self.assertEqualLowered('arctan2(a2_i, a3_j)', function.arctan2(self.ns.a2[:,None], self.ns.a3[None,:]), indices='ij')
   def test_eye(self): self.assertEqualLowered('δ_ij a2_i', function.dot(function.eye(2), self.ns.a2, axes=[0]))
-  def test_normal(self): self.assertEqualLowered('n_i', self.ns.x.normal())
+  def test_normal(self): self.assertEqualLowered('n_i', self.ns.x.normal(), topo=self.domain.boundary)
   def test_getitem(self): self.assertEqualLowered('a2_0', self.ns.a2[0])
   def test_trace(self): self.assertEqualLowered('a22_ii', function.trace(self.ns.a22, 0, 1))
   def test_sum(self): self.assertEqualLowered('a2_i a2_i', function.sum(self.ns.a2 * self.ns.a2, axis=0))
@@ -1098,11 +1118,11 @@ class CommonBasis:
   def test_lower(self):
     ref = element.PointReference() if self.basis.coords.shape[0] == 0 else element.LineReference()**self.basis.coords.shape[0]
     points = ref.getpoints('bezier', 4)
-    lowered = self.basis.prepare_eval(ndims=points.ndims)
+    lowered = self.basis.lower(transform_chains=(evaluable.TransformChainFromSequence(self.checktransforms, evaluable.Argument('ielem', (), int)),), coordinates=(evaluable.Constant(points.coords),))
     with _builtin_warnings.catch_warnings():
       _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
       for ielem in range(self.checknelems):
-        value = lowered.eval(_transforms=(self.checktransforms[ielem],), _points=points)
+        value = lowered.eval(ielem=ielem)
         if value.shape[0] == 1:
           value = numpy.tile(value, (points.npoints, 1))
         self.assertEqual(value.tolist(), self.checkeval(ielem, points))

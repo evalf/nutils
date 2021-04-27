@@ -675,6 +675,6 @@ class _EvaluablePointsFromSequence(evaluable.Evaluable):
 
   @property
   def npoints(self) -> evaluable.Array:
-    return evaluable.ArrayFromTuple(self, index=2, shape=(), dtype=int)
+    return evaluable.ArrayFromTuple(self, index=2, shape=(), dtype=int, _lower=0)
 
 # vim:sw=2:sts=2:et
