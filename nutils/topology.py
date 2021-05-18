@@ -2670,8 +2670,23 @@ class PartitionedTopology(DisjointUnionTopology):
       ielem, tail = self.basetopo.transforms.index_with_tail(etrans)
       ioppelem, opptail = self.basetopo.transforms.index_with_tail(oppetrans)
       todims = tuple(t[-1].fromdims for t in self.basetopo.transforms[ielem])
-      erefs = tuple(filter(lambda item: item[1], ((i, ref.edge_refs[transform.index_edge_transforms(ref.edge_transforms, tail, todims)]) for i, ref in zip(self.names, self.refs[ielem]))))
-      opperefs = tuple(filter(lambda item: item[1], ((i, ref.edge_refs[transform.index_edge_transforms(ref.edge_transforms, opptail, todims)]) for i, ref in zip(self.names, self.refs[ioppelem]))))
+      def get_sub_ref(ref, chains, todims):
+        if not any(chains):
+          return ref
+        else:
+          fromdims = tuple(chain[0].fromdims if chain else todim for chain, todim in zip(chains, todims))
+          if fromdims == todims:
+            ichild, chains = transform.index_child_transforms_with_tail(ref.child_transforms, chains, todims)
+            return get_sub_ref(ref.child_refs[ichild], chains, fromdims)
+          elif sum(todims) == sum(fromdims) + 1:
+            ichild, chains = transform.index_edge_transforms_with_tail(ref.edge_transforms, chains, todims)
+            return get_sub_ref(ref.edge_refs[ichild], chains, fromdims)
+          else:
+            raise NotImplementedError
+      tail = tuple(map(transform.canonical, tail))
+      opptail = tuple(map(transform.canonical, opptail))
+      erefs = tuple(filter(lambda item: item[1], ((i, get_sub_ref(ref, tail, todims)) for i, ref in zip(self.names, self.refs[ielem]))))
+      opperefs = tuple(filter(lambda item: item[1], ((i, get_sub_ref(ref, opptail, todims)) for i, ref in zip(self.names, self.refs[ioppelem]))))
       checkeref = eref.empty
       for aname, aeref in erefs:
         for bname, beref in opperefs:
@@ -2718,7 +2733,7 @@ class PartitionedTopology(DisjointUnionTopology):
             newtransforms[iface].append(addnewedge(ibase, aetrans.separate(todims)))
             newopposites[iface].append(addnewedge(ibase, betrans.separate(todims)))
 
-      assert not pool, 'some interal edges have no opposites'
+      assert not pool, 'some internal edges have no opposites'
 
     if newedges:
       newielems, newedges = zip(*sorted(newedges.items(), key=lambda item: item[0]))
@@ -2771,6 +2786,19 @@ class PartitionedTopology(DisjointUnionTopology):
                              for ctrans in transform.child_transforms(trans, ref)])
     refinedrefs = tuple(map(refinedrefs.__getitem__, indices))
     return PartitionedTopology(refbasetopo, self.partsroot, refinedrefs, self.names, _nrefined=self._nrefined+1)
+
+  def refined_by_base(self, base_indices):
+    refbasetopo = self.basetopo.refined_by(base_indices)
+    refbindex = refbasetopo.transforms.index
+    refinedrefs = [None]*len(refbasetopo)
+    for ibase, (bref, btrans) in enumerate(zip(self.basetopo.references, self.basetopo.transforms)):
+      prefs = self.refs[ibase]
+      if ibase in base_indices:
+        for ichild, ctrans in enumerate(bref.child_transforms):
+          refinedrefs[refbindex(transform.append_child(btrans, ctrans))] = tuple(ref.child_refs[ichild] for ref in prefs)
+      else:
+        refinedrefs[refbindex(btrans)] = prefs
+    return PartitionedTopology(refbasetopo, self.partsroot, refinedrefs, self.names, _nrefined=0)
 
 class _SubsetOfPartitionedTopology(DisjointUnionTopology):
 
