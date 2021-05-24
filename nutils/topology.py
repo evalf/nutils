@@ -400,10 +400,15 @@ class Topology(types.Singleton):
     refs = []
     levelset = levelset.prepare_eval(subsamples=(function.SubsampleMeta(roots=self.roots, ndimsnormal=sum(root.ndims for root in self.roots)-self.ndims),), transforms=(self.transforms, self.opposites)).simplified
     if leveltopo is None:
-      with log.iter.percentage('trimming', self.references, self.transforms, self.opposites) as items:
-        for ielem, (ref, trans, opp) in enumerate(items):
-          levels = levelset.eval(function.Subsample(roots=self.roots, transforms=(self.transforms, self.opposites), points=ref.getpoints('vertex', maxrefine), ielem=ielem), **arguments)
-          refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
+      from multiprocessing import Manager
+      with Manager() as manager:
+        refs = manager.list([None]*len(self))
+        with parallel.ctxrange('trimming', len(self)) as ielems:
+          for ielem in ielems:
+            ref, trans, opp = self.references[ielem], self.transforms[ielem], self.opposites[ielem]
+            levels = levelset.eval(function.Subsample(roots=self.roots, transforms=(self.transforms, self.opposites), points=ref.getpoints('vertex', maxrefine), ielem=ielem), **arguments)
+            refs[ielem] = ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions)
+        refs = list(refs)
     else:
       log.info('collecting leveltopo elements')
       bins = [dict() for ielem in range(len(self))]
