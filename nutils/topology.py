@@ -1416,39 +1416,44 @@ class TransformChainsTopology(Topology):
         if arguments is None:
             arguments = {}
 
-        refs = []
-        if leveltopo is None:
-            ielem_arg = evaluable.Argument('_trim_index', (), dtype=int)
-            coordinates = self.references.getpoints('vertex', maxrefine).get_evaluable_coords(ielem_arg)
-            transform_chains = self.transforms.get_evaluable(ielem_arg), self.opposites.get_evaluable(ielem_arg)
-            levelset = levelset.lower(function.LowerArgs.for_space(self.space, transform_chains, coordinates)).optimized_for_numpy
-            with log.iter.percentage('trimming', range(len(self)), self.references) as items:
-                for ielem, ref in items:
-                    levels = levelset.eval(_trim_index=ielem, **arguments)
-                    refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
-        else:
-            log.info('collecting leveltopo elements')
-            coordinates = evaluable.Points(evaluable.NPoints(), self.ndims)
-            transform_chain = transform.EvaluableTransformChain.from_argument('trans', self.transforms.todims, self.transforms.fromdims)
-            levelset = levelset.lower(function.LowerArgs.for_space(self.space, (transform_chain, transform_chain), coordinates)).optimized_for_numpy
-            bins = [set() for ielem in range(len(self))]
-            for trans in leveltopo.transforms:
-                ielem, tail = self.transforms.index_with_tail(trans)
-                bins[ielem].add(tail)
-            fcache = cache.WrapperCache()
-            with log.iter.percentage('trimming', self.references, self.transforms, bins) as items:
-                for ref, trans, ctransforms in items:
-                    levels = numpy.empty(ref._nlinear_by_level(maxrefine))
-                    cover = list(fcache[ref._linear_cover](frozenset(ctransforms), maxrefine))
-                    # confirm cover and greedily optimize order
-                    mask = numpy.ones(len(levels), dtype=bool)
-                    while mask.any():
-                        imax = numpy.argmax([mask[indices].sum() for tail, points, indices in cover])
-                        tail, points, indices = cover.pop(imax)
-                        levels[indices] = levelset.eval(trans=trans + tail, _points=points, **arguments)
-                        mask[indices] = False
-                    refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
-            log.debug('cache', fcache.stats)
+        with parallel.Manager() as manager:
+            refs = manager.list([None]*len(self))
+            if leveltopo is None:
+                ielem_arg = evaluable.Argument('_trim_index', (), dtype=int)
+                coordinates = self.references.getpoints('vertex', maxrefine).get_evaluable_coords(ielem_arg)
+                transform_chains = self.transforms.get_evaluable(ielem_arg), self.opposites.get_evaluable(ielem_arg)
+                levelset = levelset.lower(function.LowerArgs.for_space(self.space, transform_chains, coordinates)).optimized_for_numpy
+                with parallel.ctxrange('trimming', len(self)) as ielems:
+                    for ielem in ielems:
+                        levels = levelset.eval(_trim_index=ielem, **arguments)
+                        refs[ielem] = self.references[ielem].trim(levels, maxrefine=maxrefine, ndivisions=ndivisions)
+            else:
+                log.info('collecting leveltopo elements')
+                coordinates = evaluable.Points(evaluable.NPoints(), self.ndims)
+                transform_chain = transform.EvaluableTransformChain.from_argument('trans', self.transforms.todims, self.transforms.fromdims)
+                levelset = levelset.lower(function.LowerArgs.for_space(self.space, (transform_chain, transform_chain), coordinates)).optimized_for_numpy
+                bins = [set() for ielem in range(len(self))]
+                for trans in leveltopo.transforms:
+                    ielem, tail = self.transforms.index_with_tail(trans)
+                    bins[ielem].add(tail)
+                fcache = cache.WrapperCache()
+                with parallel.ctxrange('trimming', len(self)) as ielems:
+                    for ielem in ielems:
+                        ref = self.references[ielem]
+                        trans = self.transforms[ielem]
+                        ctransforms = bins[ielem]
+                        levels = numpy.empty(ref._nlinear_by_level(maxrefine))
+                        cover = list(fcache[ref._linear_cover](frozenset(ctransforms), maxrefine))
+                        # confirm cover and greedily optimize order
+                        mask = numpy.ones(len(levels), dtype=bool)
+                        while mask.any():
+                            imax = numpy.argmax([mask[indices].sum() for tail, points, indices in cover])
+                            tail, points, indices = cover.pop(imax)
+                            levels[indices] = levelset.eval(trans=trans + tail, _points=points, **arguments)
+                            mask[indices] = False
+                        refs[ielem] = ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions)
+                log.debug('cache', fcache.stats)
+            refs = tuple(refs)
         return SubsetTopology(self, refs, newboundary=name)
 
     def subset(self, topo, newboundary=None, strict=False):
