@@ -9,6 +9,27 @@ features in inverse chronological order.
 New in v7.0 (in development)
 ----------------------------
 
+- New: Runge-Kutta solver
+
+  The :class:`nutils.solver.rungekutta` implements the Runge-Kutta method.
+  Butcher-tableau values can be specified via the arguments ``rkmatrix``,
+  ``rkweights`` and ``rknodes``. Additionaly, the methods
+  ``solver.gausslegendre2``, ``solver.gausslegendre4`` and
+  ``solver.gausslegendre6`` provide preset values for well known Runge-Kutta
+  schemes.
+
+  For the moment all schemes are handled implicitly. In future the underlying
+  :class:`nutils.solver.newton` method will be enhanced to recognize and
+  optimize for one way dependencies, at which point triangular Butcher-tableaux
+  will automatically become explicit.
+
+  In the process, the existing ``solver.cranknicolson`` solver was found to
+  erroneous, performing the trapezoidal rule instead. To transition out of this
+  situation a deprecation warning was added, with a plan to change the
+  implementation as of Nutils 8. In the meantime, the correct Crank-Nicolson
+  implementation can be found at ``solver.gausslegendre2``, while for the
+  trapezoidal rule without the warning there is ``solver.trapezoidal``.
+
 - Changed: locate arguments
 
   The :func:`nutils.topology.Topology.locate` method now allows ``tol`` to be
