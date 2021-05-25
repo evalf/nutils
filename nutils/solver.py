@@ -723,8 +723,19 @@ class thetamethod(cache.Recursion, length=1, version=1):
     self.old_new.append((timetarget+historysuffix, timetarget))
     subs0 = {new: evaluable.Argument(old, self.lhs0[new].shape) for old, new in self.old_new}
     dt = evaluable.Argument(timetarget, ()) - subs0[timetarget]
-    self.residuals = tuple(res * theta + evaluable.replace_arguments(res, subs0) * (1-theta) + ((inert - evaluable.replace_arguments(inert, subs0)) / dt if inert else 0) for res, inert in zip(residual, inertia))
-    self.jacobians = _derivative(self.residuals, target)
+    residuals = []
+    for n, (res, inert) in enumerate(zip(residual, inertia), start=1):
+      if inert is None and timetarget not in res.arguments \
+          and not any(evaluable.derivative(res, arg).simplified.arguments for arg in res.arguments if arg._name in target):
+        log.info('identified residual #{} as a linear condition'.format(n))
+      else:
+        if theta < 1:
+          res = res * theta + evaluable.replace_arguments(res, subs0) * (1-theta)
+        if inert:
+          res += (inert - evaluable.replace_arguments(inert, subs0)) / dt
+      residuals.append(res)
+    self.residuals = tuple(residuals)
+    self.jacobians = _derivative(residuals, target)
 
   def _step(self, lhs0, dt):
     arguments = lhs0.copy()
