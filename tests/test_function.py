@@ -281,6 +281,201 @@ class Unlower(TestCase):
     with self.assertRaises(ValueError):
       f.lower(points_shape=(3,4), transform_chains=(), coordinates=())
 
+class Custom(TestCase):
+
+  def assertEvalAlmostEqual(self, factual, fdesired, **args):
+    with self.subTest('0d-points'):
+      self.assertAllAlmostEqual(factual.lower().eval(**args), fdesired.lower().eval(**args))
+    transform_chains = evaluable.TransformChainFromSequence(transformseq.IdentifierTransforms(2, 'test', 1), evaluable.Zeros((), int)),
+    with self.subTest('1d-points'):
+      coords = evaluable.Zeros((5,2), float)
+      lower_args = dict(points_shape=coords.shape[:-1], coordinates=(coords,), transform_chains=transform_chains)
+      self.assertAllAlmostEqual(factual.lower(**lower_args).eval(**args), fdesired.lower(**lower_args).eval(**args))
+    with self.subTest('2d-points'):
+      coords = evaluable.Zeros((5,6,2), float)
+      lower_args = dict(points_shape=coords.shape[:-1], coordinates=(coords,), transform_chains=transform_chains)
+      self.assertAllAlmostEqual(factual.lower(**lower_args).eval(**args), fdesired.lower(**lower_args).eval(**args))
+
+  def assertMultipy(self, leftval, rightval):
+
+   for npointwise in range(leftval. ndim):
+
+      class Multiply(function.Custom):
+
+        def __init__(self, left, right):
+          left = function.asarray(left)
+          right = function.asarray(right)
+          if left.shape != right.shape:
+            raise ValueError('left and right arguments not aligned')
+          super().__init__(args=(left, right), shape=left.shape[npointwise:], dtype=left.dtype, npointwise=npointwise)
+
+        @staticmethod
+        def evalf(left, right):
+          return left * right
+
+        @staticmethod
+        def partial_derivative(iarg, left, right):
+          if iarg == 0:
+            return functools.reduce(function.diagonalize, range(right.ndim), right)
+          elif iarg == 1:
+            return functools.reduce(function.diagonalize, range(left.ndim), left)
+          else:
+            raise NotImplementedError
+
+      args = dict(left=leftval, right=rightval)
+      left = function.Argument('left', args['left'].shape, dtype=float if leftval.dtype.kind == 'f' else int)
+      right = function.Argument('right', args['right'].shape, dtype=float if rightval.dtype.kind == 'f' else int)
+      actual = Multiply(left, right)
+      desired = left * right
+      self.assertEvalAlmostEqual(actual, desired, **args)
+      self.assertEvalAlmostEqual(actual.derivative('left'), desired.derivative('left'), **args)
+      self.assertEvalAlmostEqual(actual.derivative('right'), desired.derivative('right'), **args)
+
+  def test_multiply_float_float(self):
+    self.assertMultipy(numpy.array([[1,2,3],[4,5,6]], float), numpy.array([[2,3,4],[1,2,3]], float))
+
+  def test_multiply_float_int(self):
+    self.assertMultipy(numpy.array([[1,2,3],[4,5,6]], float), numpy.array([[2,3,4],[1,2,3]], int))
+
+  def test_multiply_int_int(self):
+    self.assertMultipy(numpy.array([[1,2,3],[4,5,6]], int), numpy.array([[2,3,4],[1,2,3]], int))
+
+  def test_singleton_points(self):
+
+    class Func(function.Custom):
+
+      def __init__(self):
+        super().__init__(args=(), shape=(3,), dtype=int)
+
+      def evalf(self):
+        return numpy.array([1,2,3])[None]
+
+    self.assertEvalAlmostEqual(Func(), function.Array.cast([1,2,3]))
+
+  def test_consts(self):
+
+    class Func(function.Custom):
+
+      def __init__(self, offset, base1, exp1, base2, exp2):
+        base1 = function.asarray(base1)
+        base2 = function.asarray(base2)
+        assert base1.shape == base2.shape
+        super().__init__(args=(offset, base1, exp1.__index__(), base2, exp2.__index__()), shape=base1.shape, dtype=float)
+
+      def evalf(self, offset, base1, exp1, base2, exp2):
+        return offset + base1**exp1 + base2**exp2
+
+      def partial_derivative(self, iarg, offset, base1, exp1, base2, exp2):
+        if iarg == 1:
+          if exp1 == 0:
+            return function.zeros(base1.shape + base1.shape)
+          else:
+            return functools.reduce(function.diagonalize, range(base1.ndim), exp1*base1**(exp1-1))
+          return exp1*base1**(exp1-1)
+        elif iarg == 3:
+          if exp2 == 0:
+            return function.zeros(base2.shape + base2.shape)
+          else:
+            return functools.reduce(function.diagonalize, range(base2.ndim), exp2*base2**(exp2-1))
+        else:
+          raise NotImplementedError
+
+    b1 = function.Argument('b1', (3,))
+    b2 = function.Argument('b2', (3,))
+    actual = Func(4, b1, 2, b2, 3)
+    desired = 4 + b1**2 + b2**3
+    args = dict(b1=numpy.array([1,2,3]), b2=numpy.array([4,5,6]))
+    self.assertEvalAlmostEqual(actual, desired, **args)
+    self.assertEvalAlmostEqual(actual.derivative('b1'), desired.derivative('b1'), **args)
+    self.assertEvalAlmostEqual(actual.derivative('b2'), desired.derivative('b2'), **args)
+
+  def test_deduplication(self):
+
+    class A(function.Custom):
+
+      @staticmethod
+      def evalf(self):
+        pass
+
+      @staticmethod
+      def partial_derivative(self, iarg):
+        pass
+
+    class B(function.Custom):
+
+      @staticmethod
+      def evalf(self):
+        pass
+
+      @staticmethod
+      def partial_derivative(self, iarg):
+        pass
+
+    a = A(args=(function.Argument('a', (2,3)),), shape=(), dtype=float).lower()
+    b = A(args=(function.Argument('a', (2,3)),), shape=(), dtype=float).lower()
+    c = B(args=(function.Argument('a', (2,3)),), shape=(), dtype=float).lower()
+    d = A(args=(function.Argument('a', (2,3)),), shape=(), dtype=int).lower()
+    e = A(args=(function.Argument('a', (2,3)),), shape=(2,3), dtype=float).lower()
+    f = A(args=(function.Argument('a', (2,3)), 1), shape=(), dtype=float).lower()
+    g = A(args=(function.Argument('b', (2,3)),), shape=(), dtype=float).lower()
+    h = A(args=(function.Argument('a', (2,3)),), shape=(), dtype=float, npointwise=1).lower()
+
+    self.assertIs(a, b)
+    self.assertEqual(len({b, c, d, e, f, g, h}), 7)
+
+  def test_node_details(self):
+
+    class A(function.Custom): pass
+
+    self.assertEqual(A(args=(), shape=(), dtype=float).lower()._node_details, 'A')
+
+  def test_evaluable_argument(self):
+    with self.assertRaisesRegex(ValueError, 'It is not allowed to call this function with a `nutils.evaluable.Evaluable` argument.'):
+      function.Custom(args=(evaluable.Argument('a', ()),), shape=(), dtype=float)
+
+  def test_pointwise_no_array_args(self):
+    with self.assertRaisesRegex(ValueError, 'Pointwise axes can only be used in combination with at least one `function.Array` argument.'):
+      function.Custom(args=(1, 2), shape=(), dtype=float, npointwise=3)
+
+  def test_pointwise_missing_axes(self):
+    with self.assertRaisesRegex(ValueError, 'All arrays must have at least 3 axes.'):
+      function.Custom(args=(function.Argument('a', (2,3)),), shape=(), dtype=float, npointwise=3)
+
+  def test_no_array_args_invalid_shape(self):
+
+    class Test(function.Custom):
+      @staticmethod
+      def evalf():
+        return numpy.array([1,2,3])
+
+    with self.assertRaises(evaluable.EvaluationError):
+      Test((), (), int).eval()
+
+  def test_pointwise_singleton_expansion(self):
+
+    class Test(function.Custom):
+      def __init__(self, args, shapes, npointwise):
+        super().__init__(args=(shapes, *args), shape=(), dtype=float, npointwise=npointwise)
+      @staticmethod
+      def evalf(shapes, *args):
+        for shape, arg in zip(shapes, args):
+          self.assertEqual(tuple(map(int, arg.shape)), shape)
+        return numpy.zeros(args[0].shape[:1], float)
+
+    Z = lambda *s: function.zeros(s)
+    Test((Z(1,3,2), Z(2,1,4)), ((6,2),(6,4)), 2).lower().eval()
+
+  def test_partial_derivative_invalid_shape(self):
+
+    class Test(function.Custom):
+      @staticmethod
+      def partial_derivative(iarg, arg):
+        return function.zeros((2,3,4))
+
+    arg = function.Argument('arg', (5,))
+    with self.assertRaisesRegex(ValueError, '`partial_derivative` to argument 0 returned an array with shape'):
+      Test((arg,), (5,), float).derivative(arg).lower()
+
 class broadcasting(TestCase):
 
   def assertBroadcasts(self, desired, *from_shapes):
