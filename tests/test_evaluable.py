@@ -766,6 +766,12 @@ class elemwise(TestCase):
   def test_var_shape(self):
     self.assertElemwise(numpy.arange(i*j).reshape(i,j) for i, j in ((1,2),(2,4)))
 
+class derivative(TestCase):
+
+  def test_int(self):
+    arg = evaluable.Argument('arg', (2,), int)
+    self.assertEqual(evaluable.derivative(arg[None], arg), evaluable.Zeros((1,2,2), int))
+
 class jacobian(TestCase):
 
   def setUp(self):

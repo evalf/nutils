@@ -3066,7 +3066,7 @@ class Argument(DerivativeTargetBase):
       return value
 
   def _derivative(self, var, seen):
-    if isinstance(var, Argument) and var._name == self._name:
+    if isinstance(var, Argument) and var._name == self._name and self.dtype == float:
       result = _inflate_scalar(1., self.shape)
       for i, sh in enumerate(self.shape):
         result = diagonalize(result, i, i+self.ndim)
@@ -4056,6 +4056,8 @@ def derivative(func, var, seen=None):
   'derivative'
 
   assert isinstance(var, DerivativeTargetBase), 'invalid derivative target {!r}'.format(var)
+  if var.dtype != float:
+    return Zeros(func.shape + var.shape, dtype=func.dtype)
   if seen is None:
     seen = {}
   func = asarray(func)
