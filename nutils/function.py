@@ -42,7 +42,7 @@ class Lowerable(Protocol):
 
     Parameters
     ----------
-    points_shape : :class:`tuple` of scalar, integer :class:`evaluable.Array`
+    points_shape : :class:`tuple` of scalar, integer :class:`nutils.evaluable.Array`
         The shape of the leading points axes that are to be added to the
         lowered :class:`nutils.evaluable.Array`.
     transform_chains : sequence of :class:`nutils.evaluable.TransformChain` objects
@@ -53,8 +53,8 @@ class Lowerable(Protocol):
 _ArrayMeta = type(Lowerable)
 
 if debug_flags.lower:
-  def _lower(self, **kwargs):
-    result = self._ArrayMeta__lower(**kwargs)
+  def _debug_lower(self, **kwargs):
+    result = self._ArrayMeta__debug_lower_orig(**kwargs)
     assert isinstance(result, evaluable.Array)
     points_shape = kwargs.get('points_shape', ())
     coordinates = kwargs.get('coordinates', ())
@@ -69,9 +69,29 @@ if debug_flags.lower:
   class _ArrayMeta(_ArrayMeta):
     def __new__(mcls, name, bases, namespace):
       if 'lower' in namespace:
-        namespace['_ArrayMeta__lower'] = namespace.pop('lower')
-        namespace['lower'] = _lower
+        namespace['_ArrayMeta__debug_lower_orig'] = namespace.pop('lower')
+        namespace['lower'] = _debug_lower
       return super().__new__(mcls, name, bases, namespace)
+
+# The lower cache introduced below should stay below the debug wrapper added
+# above. Otherwise the cached results are debugge again and again.
+
+def _cache_lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()) -> evaluable.Array:
+  key = points_shape, transform_chains, coordinates
+  cached_key, cached_result = getattr(self, '_ArrayMeta__cached_lower', (None, None))
+  if cached_key == key:
+    return cached_result
+  result = self._ArrayMeta__cache_lower_orig(points_shape=points_shape, transform_chains=transform_chains, coordinates=coordinates)
+  self._ArrayMeta__cached_lower = key, result
+  return result
+
+class _ArrayMeta(_ArrayMeta):
+  def __new__(mcls, name, bases, namespace):
+    if 'lower' in namespace:
+      namespace['_ArrayMeta__cache_lower_orig'] = namespace.pop('lower')
+      namespace['lower'] = _cache_lower
+    return super().__new__(mcls, name, bases, namespace)
+
 
 class Array(Lowerable, metaclass=_ArrayMeta):
   '''Base class for array valued functions.
@@ -155,7 +175,7 @@ class Array(Lowerable, metaclass=_ArrayMeta):
         coordinates = coordinates[::-1]
       points_shape = coordinates[0].shape[:-1]
     else:
-      coordinates = None
+      coordinates = ()
       points_shape = ()
     return self.lower(points_shape=points_shape, transform_chains=transform_chains, coordinates=coordinates)
 
