@@ -497,6 +497,33 @@ class EVALARGS(Evaluable):
 
 EVALARGS = EVALARGS()
 
+class EvaluableConstant(Evaluable):
+  '''Evaluate to the given constant value.
+
+  Parameters
+  ----------
+  value
+      The return value of ``eval``.
+  '''
+
+  __slots__ = 'value'
+
+  def __init__(self, value):
+    self.value = value
+    super().__init__(())
+
+  def evalf(self):
+    return self.value
+
+  @property
+  def _node_details(self):
+    s = repr(self.value)
+    if '\n' in s:
+      s = s.split('\n', 1)[0] + '...'
+    if len(s) > 20:
+      s = s[:17] + '...'
+    return s
+
 class Tuple(Evaluable):
 
   __slots__ = 'items', 'indices'

@@ -1038,3 +1038,22 @@ class combine_loop_concatenates(TestCase):
     self.assertNotIn(A_, L2._Evaluable__args)
     desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int)))
     self.assertEqual(actual, desired)
+
+class EvaluableConstant(TestCase):
+
+  def test_evalf(self):
+    self.assertEqual(evaluable.EvaluableConstant(1).evalf(), 1)
+    self.assertEqual(evaluable.EvaluableConstant('1').evalf(), '1')
+
+  def test_node_details(self):
+
+    class Test:
+      def __init__(self, s):
+        self.s = s
+      def __repr__(self):
+        return self.s
+
+    self.assertEqual(evaluable.EvaluableConstant(Test('some string'))._node_details, 'some string')
+    self.assertEqual(evaluable.EvaluableConstant(Test('a very long string that should be abbreviated'))._node_details, 'a very long strin...')
+    self.assertEqual(evaluable.EvaluableConstant(Test('a string with\nmultiple lines'))._node_details, 'a string with...')
+    self.assertEqual(evaluable.EvaluableConstant(Test('a very long string with\nmultiple lines'))._node_details, 'a very long strin...')
