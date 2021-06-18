@@ -526,27 +526,15 @@ class EvaluableConstant(Evaluable):
 
 class Tuple(Evaluable):
 
-  __slots__ = 'items', 'indices'
+  __slots__ = 'items'
 
   @types.apply_annotations
-  def __init__(self, items:tuple): # FIXME: shouldn't all items be Evaluable?
+  def __init__(self, items: types.tuple[strictevaluable]):
     self.items = items
-    args = []
-    indices = []
-    for i, item in enumerate(self.items):
-      if isevaluable(item):
-        args.append(item)
-        indices.append(i)
-    self.indices = tuple(indices)
-    super().__init__(args)
+    super().__init__(items)
 
   def evalf(self, *items):
-    'evaluate'
-
-    T = list(self.items)
-    for index, item in zip(self.indices, items):
-      T[index] = item
-    return tuple(T)
+    return items
 
   def __iter__(self):
     'iterate'
