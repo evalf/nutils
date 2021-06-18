@@ -147,13 +147,15 @@ class Sample(types.Singleton):
 
     raise NotImplementedError
 
-  def _lower_for_loop(self, func, **kwargs):
+  def _lower_for_loop(self, func, *, points_shape=(), **kwargs):
     if kwargs.pop('transform_chains', None) or kwargs.pop('coordinates', None):
       raise ValueError('nested integrals or samples are not yet supported')
     ielem = evaluable.loop_index('_ielem', self.nelems)
+    coordinates = self.points.get_evaluable_coords(ielem)
     return ielem, func.lower(**kwargs,
+      points_shape=points_shape+coordinates.shape[:-1],
       transform_chains=tuple(evaluable.TransformChainFromSequence(t, ielem) for t in self.transforms),
-      coordinates=(self.points.get_evaluable_coords(ielem),) * len(self.transforms))
+      coordinates=(evaluable.prependaxes(coordinates, points_shape),) * len(self.transforms))
 
   @util.positional_only
   @util.single_or_multiple

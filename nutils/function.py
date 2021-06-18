@@ -37,13 +37,17 @@ _dtypes = bool, int, float
 class Lowerable(Protocol):
   'Protocol for lowering to :class:`nutils.evaluable.Array`.'
 
-  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()) -> evaluable.Array:
+  def lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()) -> evaluable.Array:
     '''Lower this object to a :class:`nutils.evaluable.Array`.
 
     Parameters
     ----------
+    points_shape : :class:`tuple` of scalar, integer :class:`evaluable.Array`
+        The shape of the leading points axes that are to be added to the
+        lowered :class:`nutils.evaluable.Array`.
     transform_chains : sequence of :class:`nutils.evaluable.TransformChain` objects
     coordinates : sequence of :class:`nutils.evaluable.Array` objects
+        The coordinates at which the function will be evaluated.
     '''
 
 _ArrayMeta = type(Lowerable)
@@ -52,9 +56,12 @@ if debug_flags.lower:
   def _lower(self, **kwargs):
     result = self._ArrayMeta__lower(**kwargs)
     assert isinstance(result, evaluable.Array)
-    kwargs_nocoords = kwargs.copy()
-    coordinates = kwargs_nocoords.pop('coordinates', ())
-    offset = kwargs['coordinates'][0].ndim-1 if coordinates and not type(self).__name__ == '_WithoutPoints' else 0
+    points_shape = kwargs.get('points_shape', ())
+    coordinates = kwargs.get('coordinates', ())
+    if coordinates:
+      assert all(evaluable.equalshape(coords.shape[:-1], points_shape) for coords in coordinates)
+      assert len(kwargs['transform_chains']) == len(coordinates)
+    offset = 0 if type(self) == _WithoutPoints else len(points_shape)
     assert result.ndim == self.ndim + offset
     assert tuple(int(sh) for sh in result.shape[offset:]) == self.shape, 'shape mismatch'
     return result
@@ -146,9 +153,11 @@ class Array(Lowerable, metaclass=_ArrayMeta):
       coordinates = (evaluable.Points(npoints, ndims),)*2
       if opposite:
         coordinates = coordinates[::-1]
+      points_shape = coordinates[0].shape[:-1]
     else:
       coordinates = None
-    return self.lower(transform_chains=transform_chains, coordinates=coordinates)
+      points_shape = ()
+    return self.lower(points_shape=points_shape, transform_chains=transform_chains, coordinates=coordinates)
 
   @property
   def ndim(self) -> int:
@@ -418,19 +427,16 @@ class Array(Lowerable, metaclass=_ArrayMeta):
           shapes[arg._name] = tuple(map(int, arg.shape))
     return shapes
 
-def _prepend_points(__arg: evaluable.Array, *, coordinates: Sequence[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
-  if coordinates:
-    return evaluable.prependaxes(__arg, coordinates[0].shape[:-1])
-  else:
-    return __arg
+def _prepend_points(__arg: evaluable.Array, *, points_shape: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
+  return evaluable.prependaxes(__arg, points_shape)
 
 class _WithoutPoints(Lowerable):
 
   def __init__(self, __arg: Array) -> None:
     self._arg = __arg
 
-  def lower(self, *, coordinates: Tuple[evaluable.Array, ...] = (), **kwargs):
-    return self._arg.lower(coordinates=(), **kwargs)
+  def lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), coordinates: Tuple[evaluable.Array, ...] = (), **kwargs):
+    return self._arg.lower(points_shape=(), coordinates=(), **kwargs)
 
 class _Wrapper(Array):
 
@@ -455,15 +461,13 @@ class _Wrapper(Array):
 
 class _Zeros(Array):
 
-  def lower(self, coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
-    shape = coordinates[0].shape[:-1] if coordinates else ()
-    return evaluable.Zeros((*shape, *self.shape), self.dtype)
+  def lower(self, points_shape: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
+    return evaluable.Zeros((*points_shape, *self.shape), self.dtype)
 
 class _Ones(Array):
 
-  def lower(self, coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
-    shape = coordinates[0].shape[:-1] if coordinates else ()
-    return evaluable.ones((*shape, *self.shape), self.dtype)
+  def lower(self, points_shape: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
+    return evaluable.ones((*points_shape, *self.shape), self.dtype)
 
 class _Constant(Array):
 
@@ -538,7 +542,7 @@ class _Transpose(Array):
     super().__init__(tuple(arg.shape[axis] for axis in axes), arg.dtype)
 
   def lower(self, **kwargs: Any) -> evaluable.Array:
-    offset = kwargs['coordinates'][0].ndim-1 if kwargs.get('coordinates', ()) else 0
+    offset = len(kwargs.get('points_shape', ()))
     axes = (*range(offset), *(i+offset for i in self._axes))
     return evaluable.Transpose(self._arg.lower(**kwargs), axes)
 

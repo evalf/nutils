@@ -10,7 +10,8 @@ class TopologyAssertions:
     interfaces = domain.interfaces
     bmask = numpy.zeros(len(boundary), dtype=int)
     imask = numpy.zeros(len(interfaces), dtype=int)
-    lowered_geom = geom.lower(transform_chains=(evaluable.SelectChain(0),), coordinates=(evaluable.Points(evaluable.NPoints(), boundary.ndims),))
+    coordinates = evaluable.Points(evaluable.NPoints(), boundary.ndims)
+    lowered_geom = geom.lower(points_shape=coordinates.shape[:-1], transform_chains=(evaluable.SelectChain(0),), coordinates=(coordinates,))
     for ielem, ioppelems in enumerate(domain.connectivity):
       for iedge, ioppelem in enumerate(ioppelems):
         etrans, eref = domain.references[ielem].edges[iedge]
