@@ -251,6 +251,24 @@ class Points(Evaluable):
 
 POINTS = Points()
 
+class EvaluableConstant(Evaluable):
+  '''Evaluate to the given constant value.
+
+  Parameters
+  ----------
+  value
+      The return value of ``eval``.
+  '''
+
+  __slots__ = 'value'
+
+  def __init__(self, value):
+    self.value = value
+    super().__init__(())
+
+  def evalf(self):
+    return self.value
+
 class Tuple(Evaluable):
 
   __slots__ = 'items', 'indices'

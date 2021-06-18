@@ -694,6 +694,13 @@ class elemwise(TestCase):
     self.assertEqual(function.localgradient(self.func, self.domain.ndims).shape, self.func.shape+(self.domain.ndims,))
 
 
+class EvaluableConstant(TestCase):
+
+  def test_evalf(self):
+    self.assertEqual(function.EvaluableConstant(1).evalf(), 1)
+    self.assertEqual(function.EvaluableConstant('1').evalf(), '1')
+
+
 class namespace(TestCase):
 
   def test_set_scalar(self):
@@ -966,6 +973,7 @@ class jacobian(TestCase):
 
 jacobian(delayed=True)
 jacobian(delayed=False)
+
 
 @parametrize
 class basis(TestCase):
