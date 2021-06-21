@@ -1547,7 +1547,7 @@ class Product(Array):
   def _derivative(self, var, seen):
     grad = derivative(self.func, var, seen)
     funcs = stack([util.product(self.func[...,j] for j in range(self.func.shape[-1]) if i != j) for i in range(self.func.shape[-1])], axis=self.ndim)
-    return (grad * funcs[(...,)+(_,)*var.ndim]).sum(self.ndim)
+    return (grad * appendaxes(funcs, var.shape)).sum(self.ndim)
 
     ## this is a cleaner form, but is invalid if self.func contains zero values:
     #ext = (...,)+(_,)*len(shape)
@@ -1612,10 +1612,12 @@ class Inverse(Array):
     return numeric.inv(arr)
 
   def _derivative(self, var, seen):
+    S = appendaxes(self, var.shape)
     G = derivative(self.func, var, seen)
-    n = var.ndim
-    a = slice(None)
-    return -sum(self[(...,a,a,_,_)+(_,)*n] * G[(...,_,a,a,_)+(a,)*n] * self[(...,_,_,a,a)+(_,)*n], [-2-n, -3-n])
+    sh = self.shape[-1]
+    return -sum(insertaxis(insertaxis(S, self.ndim, sh), self.ndim+1, sh)
+              * insertaxis(insertaxis(G, self.ndim-2, sh), self.ndim+1, sh)
+              * insertaxis(insertaxis(S, self.ndim-2, sh), self.ndim-1, sh), [self.ndim-1, self.ndim])
 
   def _eig(self, symmetric):
     eigval, eigvec = Eig(self.func, symmetric)
@@ -1680,8 +1682,7 @@ class Determinant(Array):
   def _derivative(self, var, seen):
     Finv = swapaxes(inverse(self.func), -2, -1)
     G = derivative(self.func, var, seen)
-    ext = (...,)+(_,)*var.ndim
-    return self[ext] * sum(Finv[ext] * G, axis=[-2-var.ndim,-1-var.ndim])
+    return appendaxes(self, var.shape) * sum(appendaxes(Finv, var.shape) * G, axis=[-2-var.ndim,-1-var.ndim])
 
   def _take(self, index, axis):
     return Determinant(_take(self.func, index, axis))
@@ -1795,9 +1796,8 @@ class Multiply(Array):
 
   def _derivative(self, var, seen):
     func1, func2 = self.funcs
-    ext = (...,)+(_,)*var.ndim
-    return func1[ext] * derivative(func2, var, seen) \
-         + func2[ext] * derivative(func1, var, seen)
+    return appendaxes(func1, var.shape) * derivative(func2, var, seen) \
+         + appendaxes(func2, var.shape) * derivative(func1, var, seen)
 
   def _takediag(self, axis1, axis2):
     func1, func2 = self.funcs
@@ -2217,17 +2217,16 @@ class Power(Array):
     return numeric.power(base, exp)
 
   def _derivative(self, var, seen):
-    ext = (...,)+(_,)*var.ndim
     if self.power.isconstant:
       p = self.power.eval()
       p_decr = p - (p!=0)
-      return multiply(p, power(self.func, p_decr))[ext] * derivative(self.func, var, seen)
+      return appendaxes(multiply(p, power(self.func, p_decr)), var.shape) * derivative(self.func, var, seen)
     # self = func**power
     # ln self = power * ln func
     # self` / self = power` * ln func + power * func` / func
     # self` = power` * ln func * self + power * func` * func**(power-1)
-    return (self.power * power(self.func, self.power - 1))[ext] * derivative(self.func, var, seen) \
-         + (ln(self.func) * self)[ext] * derivative(self.power, var, seen)
+    return appendaxes(self.power * power(self.func, self.power - 1), var.shape) * derivative(self.func, var, seen) \
+         + appendaxes(ln(self.func) * self, var.shape) * derivative(self.power, var, seen)
 
   def _power(self, n):
     func = self.func
@@ -2299,7 +2298,7 @@ class Pointwise(Array):
   def _derivative(self, var, seen):
     if self.deriv is None:
       return super()._derivative(var, seen)
-    return util.sum(deriv(*self.args)[(...,)+(_,)*var.ndim] * derivative(arg, var, seen) for arg, deriv in zip(self.args, self.deriv))
+    return util.sum(appendaxes(deriv(*self.args), var.shape) * derivative(arg, var, seen) for arg, deriv in zip(self.args, self.deriv))
 
   def _takediag(self, axis1, axis2):
     return self.__class__(*[_takediag(arg, axis1, axis2) for arg in self.args])
@@ -3819,24 +3818,17 @@ def _gathersparsechunks(chunks):
   return tuple((*ind, util.sum(funcs)) for ind, funcs in util.gather((tuple(ind), func) for *ind, func in chunks))
 
 def _numpy_align(a, b):
-  '''reshape arrays according to Numpy's broadcast conventions'''
+  '''check shape consistency and inflate scalars'''
 
   a = asarray(a)
   b = asarray(b)
-  if a.ndim < b.ndim:
-    a = prependaxes(a, b.shape[:b.ndim-a.ndim])
-  else:
-    b = prependaxes(b, a.shape[:a.ndim-b.ndim])
-  assert a.ndim == b.ndim
-  for i, (ai, bi) in enumerate(zip(a.shape, b.shape)):
-    if not equalindex(ai, bi):
-      if a.shape[i].isconstant and int(ai) == 1:
-        a = repeat(a, bi, i)
-      elif b.shape[i].isconstant and int(bi) == 1:
-        b = repeat(b, ai, i)
-      else:
-        raise ValueError('incompatible shapes')
-  return a, b
+  if not a.ndim:
+    return _inflate_scalar(a, b.shape), b
+  if not b.ndim:
+    return a, _inflate_scalar(b, a.shape)
+  if equalshape(a.shape, b.shape):
+    return a, b
+  raise ValueError('incompatible shapes: {} != {}'.format(*[tuple(int(n) if n.isconstant else n for n in arg.shape) for arg in (a, b)]))
 
 def _inflate_scalar(arg, shape):
   arg = asarray(arg)
@@ -4036,7 +4028,7 @@ def jacobian(geom, ndims):
   assert cndims >= ndims, 'geometry dimension < topology dimension'
   detJ = abs(determinant(J)) if cndims == ndims \
     else ones(J.shape[:-2]) if ndims == 0 \
-    else abs(determinant((J[...,:,:,_] * J[...,:,_,:]).sum(-3)))**.5
+    else abs(determinant((insertaxis(J, -1, ndims) * insertaxis(J, -2, ndims)).sum(-3)))**.5
   return detJ
 
 def determinant(arg, axes=(-2,-1)):
