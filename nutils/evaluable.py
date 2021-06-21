@@ -118,7 +118,10 @@ def equalshape(N:asshape, M:asshape):
   time.
   '''
 
-  assert len(N) == len(M)
+  if N == M:
+    return True
+  if len(N) != len(M):
+    return False
   retval = True
   for eq in map(equalindex, N, M):
     if eq == False:
