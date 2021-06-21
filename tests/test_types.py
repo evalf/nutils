@@ -1068,4 +1068,45 @@ class lru_cache(TestCase):
     del a
     self.assertIs(r(), None)
 
+class hashable_function(TestCase):
+
+  def test_hash(self):
+    def func(): pass
+    self.assertEqual(nutils.types.nutils_hash(nutils.types.hashable_function('a')(func)).hex(), 'b4e9593d1bbb26059a5c6665b4a3bc15cf7a0d91')
+    self.assertEqual(nutils.types.nutils_hash(nutils.types.hashable_function('b')(func)).hex(), '4b0f56560e408925fc65fabc2ba220ed7d62e10d')
+
+  def test_equality(self):
+
+    @nutils.types.hashable_function('a')
+    def f(): pass
+
+    @nutils.types.hashable_function('a')
+    def g(): pass
+
+    @nutils.types.hashable_function('b')
+    def h(): pass
+
+    self.assertEqual(f, g)
+    self.assertEqual(hash(f), hash(g))
+    self.assertNotEqual(f, h)
+
+  def test_function(self):
+
+    @nutils.types.hashable_function('f')
+    def f(arg):
+      return arg
+
+    self.assertEqual(f(1), 1)
+
+  def test_method(self):
+
+    class Test:
+
+      @nutils.types.hashable_function('f')
+      def f(arg):
+        return arg
+
+    self.assertEqual(Test.f(1), 1)
+    self.assertEqual(Test().f(1), 1)
+
 # vim:sw=2:sts=2:et
