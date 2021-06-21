@@ -450,6 +450,21 @@ class Array(Lowerable, metaclass=_ArrayMeta):
 def _prepend_points(__arg: evaluable.Array, *, points_shape: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
   return evaluable.prependaxes(__arg, points_shape)
 
+class _Unlower(Array):
+
+  def __init__(self, array: evaluable.Array, points_shape: Tuple[evaluable.Array, ...], transform_chains: Tuple[evaluable.TransformChain, ...], coordinates: Tuple[evaluable.Array, ...]) -> None:
+    self._array = array
+    self._points_shape = points_shape
+    self._transform_chains = transform_chains
+    self._coordinates = coordinates
+    shape = tuple(n.__index__() for n in array.shape[len(points_shape):])
+    super().__init__(shape=shape, dtype=array.dtype)
+
+  def lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()):
+    if self._points_shape != points_shape or self._transform_chains != transform_chains or self._coordinates != coordinates:
+      raise ValueError('_Unlower must be lowered with the same arguments as those with which it is instantiated.')
+    return self._array
+
 class _WithoutPoints(Lowerable):
 
   def __init__(self, __arg: Array) -> None:

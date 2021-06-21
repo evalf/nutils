@@ -270,6 +270,16 @@ _check('Array_getitem_ellipsis_scalar_newaxis', lambda a: function.Array.cast(a)
 _check('add_T', lambda a: function.add_T(a, (1, 2)), lambda a: a + a.transpose((0,2,1)), [(5,2,2)], dtype=int)
 _check('Array_add_T', lambda a: function.Array.cast(a).add_T((1, 2)), lambda a: a + a.transpose((0,2,1)), [(5,2,2)], dtype=int)
 
+class Unlower(TestCase):
+
+  def test(self):
+    e = evaluable.Argument('arg', (2,3,4,5), int)
+    f = function._Unlower(e, (2,3), (), ())
+    self.assertEqual(f.shape, (4,5))
+    self.assertEqual(f.dtype, int)
+    self.assertEqual(f.lower(points_shape=(2,3), transform_chains=(), coordinates=()), e)
+    with self.assertRaises(ValueError):
+      f.lower(points_shape=(3,4), transform_chains=(), coordinates=())
 
 class broadcasting(TestCase):
 
