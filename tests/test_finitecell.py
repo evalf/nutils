@@ -395,7 +395,7 @@ class partialtrim(TestCase):
     self.assertEqual(set(self.topoB.boundary['trimmed'].transforms), set(self.topoA.boundary['trimmed'].opposites))
 
   def test_opposites(self):
-    ielem = function.Elemwise(numpy.arange(4), self.topo.f_index, dtype=int)
+    ielem = self.topo.f_index
     sampleA = self.topoA.boundary['trimmed'].sample('uniform', 1)
     sampleB = self.topoB.boundary['trimmed'].sample('uniform', 1)
     self.assertEqual(set(sampleB.eval(ielem)), {0,1})

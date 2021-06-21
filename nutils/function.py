@@ -24,13 +24,13 @@ if typing.TYPE_CHECKING:
 else:
   Protocol = object
 
-from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Dict, Mapping, overload, List, Set
+from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, overload, List, Set
 from . import evaluable, numeric, util, expression, types, warnings, debug_flags
 from .transformseq import Transforms
 import builtins, numpy, re, types as builtin_types, itertools, functools, operator, abc, numbers
 
 IntoArray = Union['Array', numpy.ndarray, bool, int, float]
-Shape = Sequence[Union[int, 'Array']]
+Shape = Sequence[int]
 DType = Type[Union[bool, int, float]]
 _dtypes = bool, int, float
 
@@ -56,8 +56,7 @@ if debug_flags.lower:
     coordinates = kwargs_nocoords.pop('coordinates', ())
     offset = kwargs['coordinates'][0].ndim-1 if coordinates and not type(self).__name__ == '_WithoutPoints' else 0
     assert result.ndim == self.ndim + offset
-    self_shape = tuple(asarray(n).lower(**kwargs_nocoords) for n in self.shape)
-    assert evaluable.equalshape(result.shape[offset:], self_shape) != False, 'shape mismatch'
+    assert tuple(int(sh) for sh in result.shape[offset:]) == self.shape, 'shape mismatch'
     return result
 
   class _ArrayMeta(_ArrayMeta):
@@ -72,14 +71,14 @@ class Array(Lowerable, metaclass=_ArrayMeta):
 
   Parameters
   ----------
-  shape : :class:`tuple` of :class:`int` or :class:`Array`
+  shape : :class:`tuple` of :class:`int`
       The shape of the array function.
   dtype : :class:`bool`, :class:`int` or :class:`float`
       The dtype of the array elements.
 
   Attributes
   ----------
-  shape : :class:`tuple` of :class:`int` or class:`Array`
+  shape : :class:`tuple` of :class:`int`
       The shape of this array function.
   ndim : :class:`int`
       The dimension of this array function.
@@ -115,20 +114,7 @@ class Array(Lowerable, metaclass=_ArrayMeta):
     return value
 
   def __init__(self, shape: Shape, dtype: DType) -> None:
-    shape_ = []
-    for iaxis, length in enumerate(shape):
-      if numeric.isint(length):
-        length = int(length)
-      else:
-        length = Array.cast(length, dtype=int, ndim=0)
-        # Try to convert `length` to an `int` by lowering to an `Evaluable` and
-        # evaluating.
-        try:
-          length = int(length.as_evaluable_array.eval())
-        except:
-          pass
-      shape_.append(length)
-    self.shape = tuple(shape_)
+    self.shape = tuple(sh.__index__() for sh in shape)
     self.dtype = dtype
 
   @util.cached_property
@@ -200,8 +186,6 @@ class Array(Lowerable, metaclass=_ArrayMeta):
 
     if self.ndim == 0:
       raise TypeError('len() of unsized object')
-    elif not isinstance(self.shape[0], int):
-      raise ValueError('unknown length')
     return self.shape[0]
 
   def __iter__(self) -> Iterator['Array']:
@@ -209,8 +193,6 @@ class Array(Lowerable, metaclass=_ArrayMeta):
 
     if self.ndim == 0:
       raise TypeError('iteration over a 0-D array')
-    elif not isinstance(self.shape[0], int):
-      raise ValueError('iteration over array with unknown length')
     return (self[i,...] for i in range(self.shape[0]))
 
   @property
@@ -385,7 +367,7 @@ class Array(Lowerable, metaclass=_ArrayMeta):
     return ravel(diagonalize(insertaxis(self, 1, ndims), 1), 0)
 
   def __repr__(self) -> str:
-    return 'Array<{}>'.format(','.join('?' if isinstance(n, Array) else str(n) for n in self.shape))
+    return 'Array<{}>'.format(','.join(str(n) for n in self.shape))
 
   @property
   def simplified(self):
@@ -475,13 +457,13 @@ class _Zeros(Array):
 
   def lower(self, coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
     shape = coordinates[0].shape[:-1] if coordinates else ()
-    return evaluable.Zeros((*shape, *(_WithoutPoints(Array.cast(n)).lower(**kwargs) for n in self.shape)), self.dtype)
+    return evaluable.Zeros((*shape, *self.shape), self.dtype)
 
 class _Ones(Array):
 
   def lower(self, coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
     shape = coordinates[0].shape[:-1] if coordinates else ()
-    return evaluable.ones((*shape, *(_WithoutPoints(Array.cast(n)).lower(**kwargs) for n in self.shape)), self.dtype)
+    return evaluable.ones((*shape, *self.shape), self.dtype)
 
 class _Constant(Array):
 
@@ -499,7 +481,7 @@ class Argument(Array):
   ----------
   name : str
       The name of this argument.
-  shape : :class:`tuple` of :class:`int` or :class:`Array`
+  shape : :class:`tuple` of :class:`int`
       The shape of this argument.
   dtype : :class:`bool`, :class:`int` or :class:`float`
       The dtype of the array elements.
@@ -515,8 +497,7 @@ class Argument(Array):
     super().__init__(shape, dtype)
 
   def lower(self, **kwargs: Any) -> evaluable.Array:
-    shape = tuple(_WithoutPoints(n).lower(**kwargs) if isinstance(n, Array) else n for n in self.shape)
-    return _prepend_points(evaluable.Argument(self.name, shape, self.dtype), **kwargs)
+    return _prepend_points(evaluable.Argument(self.name, self.shape, self.dtype), **kwargs)
 
 class _Replace(Array):
 
@@ -640,17 +621,21 @@ class _Jacobian(Array):
     ndims = int(coordinates[0].shape[-1])
     return evaluable.jacobian(self._geom.lower(coordinates=coordinates, **kwargs), ndims)
 
-class _Elemwise(Array):
+class _Concatenate(Array):
 
-  def __init__(self, data: Tuple[types.arraydata, ...], index: Array, dtype: DType) -> None:
-    self._data = data
-    self._index = Array.cast(index, dtype=int, ndim=0)
-    ndim = self._data[0].ndim if self._data else 0
-    shape = tuple(get(numpy.array([d.shape[i] for d in self._data]), 0, index) for i in range(ndim))
-    super().__init__(shape, dtype)
+  def __init__(self, __arrays: Sequence[IntoArray], axis: int) -> None:
+    self.arrays = tuple(map(Array.cast, __arrays))
+    shape0 = self.arrays[0].shape
+    self.axis = numeric.normdim(len(shape0), axis)
+    if any(array.shape[:self.axis] != shape0[:self.axis] or array.shape[self.axis+1:] != shape0[self.axis+1:] for array in self.arrays[1:]):
+      raise ValueError('all the input array dimensions except for the concatenation axis must match exactly')
+    super().__init__(
+      shape=(*shape0[:self.axis], builtins.sum(array.shape[self.axis] for array in self.arrays), *shape0[self.axis+1:]),
+      dtype=evaluable._jointdtype(*(array.dtype for array in self.arrays)))
 
-  def lower(self, **kwargs: Any) -> evaluable.Array:
-    return _prepend_points(evaluable.Elemwise(self._data, _WithoutPoints(self._index).lower(**kwargs), self.dtype), **kwargs)
+  def lower(self, **kwargs: Any):
+    return util.sum(evaluable._inflate(array.lower(**kwargs), evaluable.Range(array.shape[self.axis]) + offset, self.shape[self.axis], self.axis-self.ndim)
+      for array, offset in zip(self.arrays, util.cumsum(array.shape[self.axis] for array in self.arrays)))
 
 class RevolutionAngle(Array):
 
@@ -660,22 +645,18 @@ class RevolutionAngle(Array):
   def lower(self, **kwargs: Any) -> evaluable.Array:
     return _prepend_points(evaluable.RevolutionAngle(), **kwargs)
 
-def _join_lengths(*lengths_: Union[int, Array]) -> Union[int, Array]:
+def _join_lengths(lengths_: Iterable[int]) -> Union[int, Array]:
   lengths = set(lengths_)
-  if len(lengths) == 1:
-    return next(iter(lengths))
-  elif len(lengths - {1}) == 1:
-    return next(iter(lengths - {1}))
-  elif all(isinstance(length, int) for length in lengths):
-    raise ValueError('incompatible lengths: {}'.format(','.join(map(str, sorted(lengths)))))
-  else:
-    array_lengths = (Array.cast(length, dtype=int, ndim=0) for length in  lengths)
-    return _Wrapper(evaluable.AssertEqual, *array_lengths, shape=(), dtype=int)
+  if len(lengths) > 1:
+    lengths.discard(1)
+  if len(lengths) != 1:
+    raise ValueError('incompatible lengths: {}'.format(sorted(lengths)))
+  return next(iter(lengths))
 
 def _broadcast(*args_: IntoArray) -> Tuple[Tuple[Array, ...], Shape, DType]:
   args = tuple(map(Array.cast, args_))
   ndim = builtins.max(arg.ndim for arg in args)
-  shape = tuple(_join_lengths(*(arg.shape[i+arg.ndim-ndim] for arg in args if i+arg.ndim-ndim >= 0)) for i in range(ndim))
+  shape = tuple(_join_lengths(arg.shape[i+arg.ndim-ndim] for arg in args if i+arg.ndim-ndim >= 0) for i in range(ndim))
   broadcasted = []
   for arg in args:
     for i, (n, m) in enumerate(zip(shape[ndim-arg.ndim:], arg.shape)):
@@ -1683,7 +1664,6 @@ def transpose(__array: IntoArray, __axes: Optional[Sequence[int]] = None) -> Arr
 def _append_axes(__array: IntoArray, __shape: Shape) -> Array:
   array = Array.cast(__array)
   for n in __shape:
-    n = Array.cast(n, dtype=int, ndim=0)
     array = _Wrapper(evaluable.InsertAxis, array, _WithoutPoints(Array.cast(n)), shape=(*array.shape, n), dtype=array.dtype)
   return array
 
@@ -1692,7 +1672,7 @@ def _prepend_axes(__array: IntoArray, __shape: Shape) -> Array:
   appended = _append_axes(array, __shape)
   return _Transpose.from_end(appended, *range(len(__shape)))
 
-def insertaxis(__array: IntoArray, axis: int, length: IntoArray) -> Array:
+def insertaxis(__array: IntoArray, axis: int, length: int) -> Array:
   '''Insert an axis with given length.
 
   Parameters
@@ -1709,7 +1689,6 @@ def insertaxis(__array: IntoArray, axis: int, length: IntoArray) -> Array:
   :class:`Array`
   '''
 
-  length = Array.cast(length, ndim=0, dtype=int)
   appended = _append_axes(__array, (length,))
   return _Transpose.from_end(appended, axis)
 
@@ -1747,10 +1726,9 @@ def repeat(__array: IntoArray, __n: IntoArray, axis: int) -> Array:
   '''
 
   array = Array.cast(__array)
-  n = Array.cast(__n, dtype=int, ndim=0)
   if array.shape[axis] != 1:
     raise NotImplementedError('only axes with length 1 can be repeated')
-  return insertaxis(get(array, axis, 0), axis, n)
+  return insertaxis(get(array, axis, 0), axis, __n)
 
 def swapaxes(__array: IntoArray, __axis1: int, __axis2: int) -> Array:
   '''Swap two axes of an array.
@@ -1797,7 +1775,7 @@ def ravel(__array: IntoArray, axis: int) -> Array:
   raveled = _Wrapper(evaluable.Ravel, transposed, shape=(*transposed.shape[:-2], transposed.shape[-2]*transposed.shape[-1]), dtype=transposed.dtype)
   return _Transpose.from_end(raveled, axis)
 
-def unravel(__array: IntoArray, axis: int, shape: Tuple[IntoArray, IntoArray]) -> Array:
+def unravel(__array: IntoArray, axis: int, shape: Tuple[int, int]) -> Array:
   '''Unravel an axis to the given shape.
 
   Parameters
@@ -1805,7 +1783,7 @@ def unravel(__array: IntoArray, axis: int, shape: Tuple[IntoArray, IntoArray]) -
   array : :class:`Array` or something that can be :meth:`~Array.cast` into one
   axis : :class:`int`
       The axis to unravel.
-  shape : two-:class:`tuple` of :class:`int` or :class:`Array`
+  shape : two-:class:`tuple` of :class:`int`
       The shape of the unraveled axes.
 
   Returns
@@ -1818,12 +1796,14 @@ def unravel(__array: IntoArray, axis: int, shape: Tuple[IntoArray, IntoArray]) -
   :func:`ravel` : The reverse operation.
   '''
 
-  array = Array.cast(__array)
-  axis = numeric.normdim(array.ndim, axis)
-  shape_ = tuple(Array.cast(length, dtype=int, ndim=0) for length in shape)
-  assert len(shape_) == 2
-  transposed = _Transpose.to_end(array, axis)
-  unraveled = _Wrapper(evaluable.Unravel, transposed, *map(_WithoutPoints, shape_), shape=(*transposed.shape[:-1], *shape_), dtype=transposed.dtype)
+  assert len(shape) == 2 and all(isinstance(sh, int) for sh in shape), 'function.unravel: invalid shape: expected two integers, received {}'.format(shape)
+  transposed = _Transpose.to_end(Array.cast(__array), axis)
+  unraveled = _Wrapper(evaluable.Unravel,
+    transposed,
+    _WithoutPoints(Array.cast(shape[0])),
+    _WithoutPoints(Array.cast(shape[1])),
+    shape=(*transposed.shape[:-1], *shape),
+    dtype=transposed.dtype)
   return _Transpose.from_end(unraveled, axis, axis+1)
 
 def take(__array: IntoArray, __indices: IntoArray, axis: int) -> Array:
@@ -1849,21 +1829,17 @@ def take(__array: IntoArray, __indices: IntoArray, axis: int) -> Array:
   See Also
   --------
   :func:`get` : Special case of :func:`take` with scalar index.
-  :func:`inflate` : The complement operation.
   '''
 
   array = Array.cast(__array)
-  indices = Array.cast(__indices)
   axis = numeric.normdim(array.ndim, axis)
-  if indices.dtype == bool:
-    if indices.ndim != 1:
-      raise ValueError('The mask must be 1-D.')
-    length = array.shape[axis]
-    if indices.shape[0] != length:
+  if isinstance(__indices, numpy.ndarray) and __indices.ndim == 1 and __indices.dtype == bool \
+      or isinstance(__indices, (list, tuple)) and all(isinstance(index, bool) for index in __indices):
+    if len(__indices) != array.shape[axis]:
       raise ValueError('The length of the mask differs from the length of the given axis.')
-    indices = find(indices)
+    indices = Array.cast(numpy.nonzero(__indices)[0])
   else:
-    indices = _Wrapper.broadcasted_arrays(evaluable.NormDim, array.shape[axis], indices)
+    indices = _Wrapper.broadcasted_arrays(evaluable.NormDim, array.shape[axis], Array.cast(__indices, dtype=int))
   transposed = _Transpose.to_end(array, axis)
   taken = _Wrapper(evaluable.Take, transposed, _WithoutPoints(indices), shape=(*transposed.shape[:-1], *indices.shape), dtype=array.dtype)
   return _Transpose.from_end(taken, *range(axis, axis+indices.ndim))
@@ -1894,10 +1870,10 @@ def get(__array: IntoArray, __axis: int, __index: IntoArray) -> Array:
   index = Array.cast(__index, dtype=int, ndim=0)
   return take(array, index, axis)
 
-def _range(__length: IntoArray, __offset: IntoArray) -> Array:
+def _range(__length: int, __offset: int) -> Array:
   length = Array.cast(__length, dtype=int, ndim=0)
   offset = Array.cast(__offset, dtype=int, ndim=0)
-  return _Wrapper(lambda l, o: evaluable.Range(l) + o, _WithoutPoints(length), _WithoutPoints(offset), shape=(length,), dtype=int)
+  return _Wrapper(lambda l, o: evaluable.Range(l) + o, _WithoutPoints(length), _WithoutPoints(offset), shape=(__length,), dtype=int)
 
 def _takeslice(__array: IntoArray, __s: slice, __axis: int) -> Array:
   array = Array.cast(__array)
@@ -1916,41 +1892,6 @@ def _takeslice(__array: IntoArray, __s: slice, __axis: int) -> Array:
     raise Exception('a non-unit slice requires a constant-length axis')
   return take(array, index, axis)
 
-def inflate(__array: IntoArray, indices: IntoArray, length: IntoArray, axis: int) -> Array:
-  '''Inflate elements in an axis of given length.
-
-  Parameters
-  ----------
-  array : :class:`Array` or something that can be :meth:`~Array.cast` into one
-  indices : :class:`Array` with dtype :class:`int` or :class:`bool` or something that can be :meth:`~Array.cast` into one
-      The indices of elements in the resulting array. The array of indices may
-      have any dimension, including zero.
-  length : :class:`int` or :class:`Array`
-      The length of the inflated axis.
-  axis : :class:`int`
-      The axis to inflate. The elements are inflated from axes ``axis`` to
-      ``axis+indices.ndim`` of the input array.
-
-  Returns
-  -------
-  :class:`Array`
-      The inflated array with axes ``axis`` to ``axis+indices.ndim`` of the
-      input array inflated to the single ``axis``.
-
-  See Also
-  --------
-  :func:`kronecker` : Special case of :func:`inflate` with a scalar index.
-  :func:`take` : The complement operation.
-  '''
-
-  array = Array.cast(__array)
-  length = Array.cast(length, dtype=int, ndim=0)
-  indices = _Wrapper.broadcasted_arrays(evaluable.NormDim, length, Array.cast(indices, dtype=int))
-  axis = numeric.normdim(array.ndim+1-indices.ndim, axis)
-  transposed = _Transpose.to_end(array, *range(axis, axis+indices.ndim))
-  inflated = _Wrapper(evaluable.Inflate, transposed, _WithoutPoints(indices), _WithoutPoints(length), shape=(*transposed.shape[:transposed.ndim-indices.ndim], length), dtype=transposed.dtype)
-  return _Transpose.from_end(inflated, axis)
-
 def kronecker(__array: IntoArray, axis: int, length: IntoArray, pos: IntoArray) -> Array:
   '''Position an element in an axis of given length.
 
@@ -1960,7 +1901,7 @@ def kronecker(__array: IntoArray, axis: int, length: IntoArray, pos: IntoArray) 
   axis : :class:`int`
       The axis to inflate. The elements are inflated from axes ``axis`` to
       ``axis+indices.ndim`` of the input array.
-  length : :class:`int` or :class:`Array`
+  length : :class:`int`
       The length of the inflated axis.
   pos : :class:`int` or :class:`Array`
       The inde of the element in the resulting array.
@@ -1971,11 +1912,17 @@ def kronecker(__array: IntoArray, axis: int, length: IntoArray, pos: IntoArray) 
 
   See Also
   --------
-  :func:`inflate` : Inflate elements in an axis of given length.
   :func:`get` : The complement operation.
   '''
 
-  return inflate(__array, Array.cast(pos, dtype=int, ndim=0), length, axis)
+  array = Array.cast(__array)
+  inflated = _Wrapper(evaluable.Inflate,
+    array,
+    _WithoutPoints(Array.cast(pos)),
+    _WithoutPoints(Array.cast(length)),
+    shape=array.shape + (length,),
+    dtype=array.dtype)
+  return _Transpose.from_end(inflated, axis)
 
 def concatenate(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
   '''Join arrays along an existing axis.
@@ -1995,14 +1942,7 @@ def concatenate(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
   :func:`stack` : Join arrays along an new axis.
   '''
 
-  arrays = tuple(map(Array.cast, __arrays))
-  ndim = builtins.max(array.ndim for array in arrays)
-  if not all(array.ndim == ndim for array in arrays):
-    raise ValueError('all arrays must have the same dimension')
-  axis = numeric.normdim(ndim, axis)
-  length = util.sum(array.shape[axis] for array in arrays)
-  return util.sum(inflate(array, _range(array.shape[axis], offset), length, axis)
-    for array, offset in zip(arrays, util.cumsum(array.shape[axis] for array in arrays)))
+  return _Concatenate(__arrays, axis)
 
 def stack(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
   '''Join arrays along a new axis.
@@ -2024,22 +1964,6 @@ def stack(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
 
   aligned, shape, dtype = _broadcast(*__arrays)
   return util.sum(kronecker(array, axis, len(aligned), i) for i, array in enumerate(aligned))
-
-def find(__array: IntoArray) -> Array:
-  '''Return indices of true elements
-
-  Parameters
-  ----------
-  array : a boolean :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-  Returns
-  -------
-  :class:`Array` of :class:`int`
-  '''
-
-  array = Array.cast(__array)
-  assert array.ndim == 1 and array.dtype == bool
-  return _Wrapper(evaluable.Find, array, shape=(_array_int(array).sum(),), dtype=int)
 
 def replace_arguments(__array: IntoArray, __arguments: Mapping[str, IntoArray]) -> Array:
   '''Replace arguments with :class:`Array` objects.
@@ -2368,8 +2292,9 @@ def transforms_coords(transforms: Transforms, dim: int) -> Array:
 
 def Elemwise(__data: Sequence[numpy.ndarray], __index: IntoArray, dtype: DType) -> Array:
   'elemwise'
-  data = tuple(map(types.arraydata, __data))
-  return _Elemwise(data, Array.cast(__index, dtype=int, ndim=0), dtype)
+
+  warnings.deprecation('function.Elemwise is deprecated; use function.get instead')
+  return get(numpy.asarray(__data), 0, __index)
 
 def Sampled(__points: IntoArray, expect: IntoArray) -> Array:
   '''Basis-like identity operator.

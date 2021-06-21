@@ -9,6 +9,22 @@ features in inverse chronological order.
 New in v7.0 (in development)
 ----------------------------
 
+- Changed: function.Array shape must be constant
+
+  Resulting from to the function/evaluable split introduced in #574, variable
+  length axes such as relating to integration points or sparsity can stay
+  confined to the evaluable layer. In order to benefit from this situation and
+  improve compatibility with Numpy's arrays, :class:`nutils.function.Array`
+  objects are henceforth limited to constant shapes. Additionally:
+
+  * The sparsity construct ``nutils.function.inflate`` has been removed;
+  * The :func:`nutils.function.Elemwise` function requires all element arrays
+    to be of the same shape, and its remaining use has been deprecated in
+    favor of :func:`nutils.function.get`;
+  * Aligning with Numpy's API, :func:`nutils.function.concatenate` no longer
+    automatically broadcasts its arguments, but instead demands that all
+    dimensions except for the concatenation axis match exactly.
+
 - Changed: locate arguments
 
   The :func:`nutils.topology.Topology.locate` method now allows ``tol`` to be

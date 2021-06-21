@@ -21,27 +21,11 @@ class Array(TestCase):
   def test_ndim(self):
     self.assertEqual(function.Argument('a', (2,3)).ndim, 2)
 
-  def test_shape(self):
-    n = function.Argument('n', (), dtype=int)
-    l1, l2, l3 = function.Argument('a', (2, function.Array.cast(3),n)).shape
-    with self.subTest('int'):
-      self.assertEqual(l1, 2)
-    with self.subTest('const Array'):
-      self.assertEqual(l2, 3)
-    with self.subTest('unknown'):
-      self.assertEqual(l3.as_evaluable_array.simplified, n.as_evaluable_array.simplified)
-
   def test_size_known(self):
     self.assertEqual(function.Argument('a', (2,3)).size, 6)
 
   def test_size_0d(self):
     self.assertEqual(function.Argument('a', ()).size, 1)
-
-  def test_size_unknown(self):
-    n = function.Argument('n', (), dtype=int)
-    size = function.Argument('a', (2,n,3)).size
-    self.assertIsInstance(size, function.Array)
-    self.assertEqual(size.as_evaluable_array.simplified, (2*n*3).as_evaluable_array.simplified)
 
   def test_len_0d(self):
     with self.assertRaisesRegex(Exception, '^len\\(\\) of unsized object$'):
@@ -49,10 +33,6 @@ class Array(TestCase):
 
   def test_len_known(self):
     self.assertEqual(len(function.Array.cast([1,2])), 2)
-
-  def test_len_unknown(self):
-    with self.assertRaisesRegex(Exception, '^unknown length$'):
-      len(function.Argument('a', [function.Argument('b', (), dtype=int)]))
 
   def test_iter_0d(self):
     with self.assertRaisesRegex(Exception, '^iteration over a 0-D array$'):
@@ -62,10 +42,6 @@ class Array(TestCase):
     a, b = function.Array.cast([1,2])
     self.assertEqual(a.as_evaluable_array.eval(), 1)
     self.assertEqual(b.as_evaluable_array.eval(), 2)
-
-  def test_iter_unknown(self):
-    with self.assertRaisesRegex(Exception, '^iteration over array with unknown length$'):
-      iter(function.Argument('a', [function.Argument('b', (), dtype=int)]))
 
   def test_binop_notimplemented(self):
     with self.assertRaises(TypeError):
@@ -110,13 +86,6 @@ class integral_compatibility(TestCase):
       with self.subTest(name):
         self.assertAllAlmostEqual(f.derivative(obj).eval(a=v), numpy.array([2,2]))
 
-  def test_derivative_str_evaluable_shape(self):
-    a = function.Argument('a', (), dtype=int)
-    b = function.Argument('b', (a,), dtype=float)
-    f = b**2
-    with self.assertRaises(ValueError):
-      f.derivative('b')
-
   def test_derivative_str_unknown_argument(self):
     f = function.zeros((2,), dtype=float)
     with self.assertRaises(ValueError):
@@ -148,13 +117,6 @@ class integral_compatibility(TestCase):
   def test_argshapes_shape_mismatch(self):
     f = function.Argument('a', (2,), dtype=int)[None] + function.Argument('a', (3,), dtype=int)[:,None]
     with self.assertRaises(Exception):
-      f.argshapes
-
-  def test_argshapes_evaluable_shape(self):
-    a = function.Argument('a', (), dtype=int)
-    b = function.Argument('b', (a,), dtype=float)
-    f = b**2
-    with self.assertRaises(ValueError):
       f.argshapes
 
 @parametrize
@@ -295,7 +257,6 @@ _check('unravel', lambda a: function.unravel(a,1,(3,4)), lambda a: numpy.reshape
 _check('take', lambda a: function.take(a, numpy.array([[0,2],[1,3]]), 1), lambda a: numpy.take(a, numpy.array([[0,2],[1,3]]), 1), [(3,4,5)], dtype=int)
 _check('take_bool', lambda a: function.take(a, numpy.array([False, True, False, True]), 1), lambda a: numpy.compress(numpy.array([False, True, False, True]), a, 1), [(3,4,5)], dtype=int)
 _check('get', lambda a: function.take(a, 1, 1), lambda a: numpy.take(a, 1, 1), [(3,4,5)], dtype=int)
-_check('inflate', lambda a: function.inflate(a,numpy.array([0,3]), 4, 1), lambda a: numpy.concatenate([a[:,:1], numpy.zeros_like(a), a[:,1:]], axis=1), [(4,2,4)])
 _check('kronecker', lambda a: function.kronecker(a,1,3,1), lambda a: numpy.stack([numpy.zeros_like(a), a, numpy.zeros_like(a)], axis=1), [(4,4)])
 _check('concatenate', lambda a, b: function.concatenate([a,b], axis=1), lambda a, b: numpy.concatenate([a,b], axis=1), [(4,2,1),(4,3,1)])
 _check('stack', lambda a,b: function.stack([a,b], 1), lambda a,b: numpy.stack([a,b], 1), [(4,2),(4,2)])
@@ -347,18 +308,6 @@ class broadcasting(TestCase):
     b = function.Argument('b', (4,))
     with self.assertRaisesRegex(Exception, 'incompatible lengths'):
       function._broadcast(a, b)
-
-  def test_runtime_check(self):
-    n = function.Argument('n', (), dtype=int)
-    m = function.Argument('m', (), dtype=int)
-    a = function.Argument('a', (n,), dtype=int)
-    b = function.Argument('b', (m,), dtype=int)
-    (a_, b_), shape, dtype = function._broadcast(a, b)
-    with self.subTest('match'):
-      self.assertEqual(shape[0].as_evaluable_array.eval(n=numpy.array(2), m=numpy.array(2)), 2)
-    with self.subTest('mismatch'):
-      with self.assertRaises(evaluable.EvaluationError):
-        shape[0].as_evaluable_array.eval(n=numpy.array(2), m=numpy.array(3))
 
 
 @parametrize
@@ -419,13 +368,14 @@ class elemwise(TestCase):
     super().setUp()
     self.index = function._Wrapper(lambda: evaluable.InRange(evaluable.Argument('index', (), int), 5), shape=(), dtype=int)
     self.data = tuple(map(types.frozenarray, (
-      numpy.arange(1, dtype=float).reshape(1,1),
-      numpy.arange(2, dtype=float).reshape(1,2),
-      numpy.arange(3, dtype=float).reshape(3,1),
-      numpy.arange(4, dtype=float).reshape(2,2),
-      numpy.arange(6, dtype=float).reshape(3,2),
+      numpy.arange(1, 7, dtype=float).reshape(2,3),
+      numpy.arange(2, 8, dtype=float).reshape(2,3),
+      numpy.arange(3, 9, dtype=float).reshape(2,3),
+      numpy.arange(4, 10, dtype=float).reshape(2,3),
+      numpy.arange(6, 12, dtype=float).reshape(2,3),
     )))
-    self.func = function.Elemwise(self.data, self.index, float)
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      self.func = function.Elemwise(self.data, self.index, float)
 
   def test_evalf(self):
     for i in range(5):
@@ -435,7 +385,7 @@ class elemwise(TestCase):
   def test_shape(self):
     for i in range(5):
       with self.subTest(i=i):
-        self.assertEqual(self.func.size.as_evaluable_array.eval(index=i), self.data[i].size)
+        self.assertEqual(self.func.size, self.data[i].size)
 
 
 class replace_arguments(TestCase):
