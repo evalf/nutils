@@ -3377,24 +3377,6 @@ class PolyOuterProduct(Array):
   def evalf(self, left, right):
     return numeric.poly_outer_product(left, right)
 
-class AssertEqual(Array):
-
-  def __init__(self, *args):
-    self._args = args
-    assert len(set(arg.shape for arg in args)) == 1
-    assert len(set(arg.dtype for arg in args)) == 1
-    super().__init__(self._args, shape=args[0].shape, dtype=args[0].dtype)
-
-  def evalf(self, *args):
-    arg0 = args[0]
-    for arg in args[1:]:
-      numpy.testing.assert_array_equal(arg, arg0)
-    return arg0
-
-  def _simplified(self):
-    if len(set(self._args)) == 1:
-      return self._args[0]
-
 class RevolutionAngle(Array):
   '''
   Pseudo coordinates of a :class:`nutils.topology.RevolutionTopology`.
