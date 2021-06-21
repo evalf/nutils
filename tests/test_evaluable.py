@@ -771,7 +771,7 @@ class derivative(TestCase):
 
   def test_int(self):
     arg = evaluable.Argument('arg', (2,), int)
-    self.assertEqual(evaluable.derivative(arg[None], arg), evaluable.Zeros((1,2,2), int))
+    self.assertEqual(evaluable.derivative(evaluable.insertaxis(arg, 0, 1), arg), evaluable.Zeros((1,2,2), int))
 
 class jacobian(TestCase):
 

@@ -51,7 +51,6 @@ else:
 from . import debug_flags, util, types, numeric, cache, transform, expression, warnings, parallel, sparse
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph
 import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log, weakref, time, contextlib, subprocess
-_ = numpy.newaxis
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
 
@@ -889,25 +888,19 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   def __getitem__(self, item):
     if not isinstance(item, tuple):
       item = item,
-    iell = None
-    nx = self.ndim - len(item)
-    for i, it in enumerate(item):
-      if it is ...:
-        assert iell is None, 'at most one ellipsis allowed'
-        iell = i
-      elif it is _:
-        nx += 1
+    if ... in item:
+      iell = item.index(...)
+      if ... in item[iell+1:]:
+        raise IndexError('an index can have only a single ellipsis')
+      # replace ellipsis by the appropriate number of slice(None)
+      item = item[:iell] + (slice(None),)*(self.ndim-len(item)+1) + item[iell+1:]
+    if len(item) > self.ndim:
+      raise IndexError('too many indices for array')
     array = self
-    axis = 0
-    for it in item + (slice(None),)*nx if iell is None else item[:iell] + (slice(None),)*(nx+1) + item[iell+1:]:
-      if numeric.isint(it):
-        array = get(array, axis, item=it)
-      else:
-        array = insertaxis(array, axis, 1) if it is _ \
-           else _takeslice(array, it, axis) if isinstance(it, slice) \
-           else take(array, it, axis)
-        axis += 1
-    assert axis == array.ndim
+    for axis, it in reversed(tuple(enumerate(item))):
+      array = get(array, axis, item=it) if numeric.isint(it) \
+         else _takeslice(array, it, axis) if isinstance(it, slice) \
+         else take(array, it, axis)
     return array
 
   def __bool__(self):
@@ -1139,10 +1132,10 @@ class Normal(Array):
     n = lgrad[...,-1]
     # orthonormalize n to G
     G = lgrad[...,:-1]
-    GG = numeric.contract(G[...,:,_,:], G[...,:,:,_], axis=-3)
-    v1 = numeric.contract(G, n[...,:,_], axis=-2)
+    GG = numpy.einsum('...ki,...kj->...ij', G, G)
+    v1 = numpy.einsum('...ij,...i->...j', G, n)
     v2 = numpy.linalg.solve(GG, v1)
-    v3 = numeric.contract(G, v2[...,_,:], axis=-1)
+    v3 = numpy.einsum('...ij,...j->...i', G, v2)
     return numeric.normalize(n - v3)
 
   def _derivative(self, var, seen):
