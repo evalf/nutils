@@ -564,6 +564,53 @@ class commutativity(TestCase):
     self.assertEqual(function.add(self.A, self.B) * function.dot(self.A, self.B, axes=[0]), function.dot(self.B, self.A, axes=[0]) * function.add(self.B, self.A))
 
 
+class broadcasting(TestCase):
+
+  def assertBroadcasts(self, desired, *from_shapes):
+    with self.subTest('broadcast_arrays'):
+      broadcasted = function.broadcast_arrays(*(function.Argument('arg{}'.format(i), s) for i, s in enumerate(from_shapes)))
+      actual = tuple(array.shape for array in broadcasted)
+      self.assertEqual(actual, (desired,)*len(from_shapes))
+    with self.subTest('broadcast_shapes'):
+      actual = function.broadcast_shapes(*from_shapes)
+      self.assertEqual(actual, desired)
+
+  def test_singleton_expansion(self):
+    self.assertBroadcasts((3,2,3), (1,2,3), (3,1,3), (3,1,1))
+    l = function.Int(function.Argument('l', ()))
+    self.assertBroadcasts((3,l,3), (1,l,3), (3,1,3), (3,1,1))
+
+  def test_prepend_axes(self):
+    self.assertBroadcasts((3,2,3), (3,2,3), (3,), (2,3))
+
+  def test_both(self):
+    self.assertBroadcasts((3,2,3), (3,2,3), (3,), (1,1))
+
+  def test_incompatible_shape(self):
+    with self.assertRaisesRegex(ValueError, 'cannot broadcast'):
+      function.broadcast_shapes((1,2), (2,3))
+    l = function.Int(function.Argument('l', ()))
+    with self.assertRaisesRegex(ValueError, 'cannot broadcast'):
+      function.broadcast_shapes((1,l), (2,3))
+
+  def test_no_shapes(self):
+    with self.assertRaisesRegex(ValueError, 'expected at least one shape but got none'):
+      function.broadcast_shapes()
+
+  def test_broadcast_to_decrease_dimension(self):
+    with self.assertRaisesRegex(ValueError, 'cannot broadcast array .* because the dimension decreases'):
+      function.broadcast_to(function.Argument('a', (2,3,4)), (3,4))
+
+  def test_broadcast_to_invalid_length(self):
+    with self.assertRaisesRegex(ValueError, 'cannot broadcast array .* because input axis .* is neither singleton nor has the desired length'):
+      function.broadcast_to(function.Argument('a', (2,3,4)), (2,5,4))
+    l = function.Int(function.Argument('l', ()))
+    with self.assertRaisesRegex(ValueError, 'cannot broadcast'):
+      function.broadcast_to(function.Argument('a', (2,l,4)), (2,5,4))
+    with self.assertRaisesRegex(ValueError, 'cannot broadcast'):
+      function.broadcast_to(function.Argument('a', (2,3,4)), (2,l,4))
+
+
 @parametrize
 class sampled(TestCase):
 

@@ -4075,6 +4075,81 @@ def insertaxis(arg, n, length):
   n = numeric.normdim(arg.ndim+1, n)
   return InsertAxis(arg, n, length)
 
+def broadcast_arrays(*arrays):
+  '''Broadcast the given arrays.
+
+  Parameters
+  ----------
+  *arrays : :class:`Array` or similar
+
+  Returns
+  -------
+  :class:`tuple` of :class:`Array`
+      The broadcasted arrays.
+  '''
+
+  arrays_ = tuple(map(asarray, arrays))
+  shape = broadcast_shapes(*(arg.shape for arg in arrays_))
+  return tuple(broadcast_to(arg, shape) for arg in arrays_)
+
+def broadcast_shapes(*shapes):
+  '''Broadcast the given shapes into a single shape.
+
+  Parameters
+  ----------
+  *shapes : :class:`tuple` or :class:`int`
+
+  Returns
+  -------
+  :class:`tuple` of :class:`int`
+      The broadcasted shape.
+  '''
+
+  if not shapes:
+    raise ValueError('expected at least one shape but got none')
+  broadcasted = []
+  naxes = builtins.max(map(len, shapes))
+  aligned_shapes = ((*(1,) * (naxes - len(shape)), *shape) for shape in shapes)
+  for lengths in map(set, zip(*aligned_shapes)):
+    if len(lengths) > 1:
+      lengths.discard(1)
+    if len(lengths) != 1:
+      raise ValueError('cannot broadcast shapes {} because at least one or more axes have multiple lengths (excluding singletons)'.format(', '.join(map(str, shapes))))
+    broadcasted.append(next(iter(lengths)))
+  return tuple(broadcasted)
+
+def broadcast_to(array, shape):
+  '''Broadcast an array to a new shape.
+
+  Parameters
+  ----------
+  array : :class:`Array` or similar
+      The array to broadcast.
+  shape : :class:`tuple` of :class:`int`
+      The desired shape.
+
+  Returns
+  -------
+  :class:`Array`
+      The broadcasted array.
+  '''
+
+  broadcasted = asarray(array)
+  orig_shape = broadcasted.shape
+  if broadcasted.ndim > len(shape):
+    raise ValueError('cannot broadcast array with shape {} to {} because the dimension decreases'.format(orig_shape, shape))
+  nnew = len(shape) - broadcasted.ndim
+  for axis, length in enumerate(shape[:nnew]):
+    broadcasted = insertaxis(broadcasted, axis, length)
+  for axis, (actual, desired) in enumerate(zip(orig_shape, shape[nnew:])):
+    if actual == desired:
+      continue
+    elif actual == 1:
+      broadcasted = repeat(broadcasted, desired, axis + nnew)
+    else:
+      raise ValueError('cannot broadcast array with shape {} to {} because input axis {} is neither singleton nor has the desired length'.format(orig_shape, shape, axis))
+  return broadcasted
+
 def stack(args, axis=0):
   aligned = _numpy_align(*args)
   axis = numeric.normdim(aligned[0].ndim+1, axis)
