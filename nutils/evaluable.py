@@ -952,7 +952,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   dot = dot
   swapaxes = swapaxes
   transpose = transpose
-  choose = lambda self, choices: Choose(self, _numpy_align(*choices))
+  choose = lambda self, choices: Choose(self, choices)
 
   @property
   def blocks(self):
@@ -3815,39 +3815,25 @@ def _gatherblocks(blocks):
 def _gathersparsechunks(chunks):
   return tuple((*ind, util.sum(funcs)) for ind, funcs in util.gather((tuple(ind), func) for *ind, func in chunks))
 
-def _numpy_align(*arrays):
+def _numpy_align(a, b):
   '''reshape arrays according to Numpy's broadcast conventions'''
 
-  # NOTE: this routine largely repeats the logic of equalshape to reduce the
-  # number of comparisons. Ultimately _numpy_align will be removed from
-  # evaluable so this situation is temporary.
-
-  arrays = [asarray(array) for array in arrays]
-  if len(arrays) > 1:
-    ndim = max([array.ndim for array in arrays])
-    for idim in range(ndim):
-      lengths = {}
-      insert = []
-      for iarray, array in enumerate(arrays):
-        if array.ndim < ndim:
-          insert.append(iarray) # mark array for axis insertion
-        else:
-          lengths.setdefault(array.shape[idim], []).append(iarray)
-      if len(lengths) > 1: # shapes differ -> simplify to canonical form
-        for length in list(lengths):
-          simple = length.simplified
-          if length is not simple:
-            lengths.setdefault(simple, []).extend(lengths.pop(length))
-      expand = () if len(lengths) == 1 \
-          else lengths.pop(Constant(1), ()) # NOTE: this uses the fact that Constant(1) is simple
-      assert len(lengths) == 1 or all(l.isconstant for l in lengths) and len(set(map(int, lengths))) == 1, \
-        'incompatible shapes: {}'.format(' != '.join(str(l) for l in lengths))
-      length, _ = lengths.popitem()
-      for i in insert:
-        arrays[i] = insertaxis(arrays[i], idim, length)
-      for i in expand:
-        arrays[i] = repeat(arrays[i], length, idim)
-  return arrays
+  a = asarray(a)
+  b = asarray(b)
+  if a.ndim < b.ndim:
+    a = prependaxes(a, b.shape[:b.ndim-a.ndim])
+  else:
+    b = prependaxes(b, a.shape[:a.ndim-b.ndim])
+  assert a.ndim == b.ndim
+  for i, (ai, bi) in enumerate(zip(a.shape, b.shape)):
+    if not equalindex(ai, bi):
+      if a.shape[i].isconstant and int(ai) == 1:
+        a = repeat(a, bi, i)
+      elif b.shape[i].isconstant and int(bi) == 1:
+        b = repeat(b, ai, i)
+      else:
+        raise ValueError('incompatible shapes')
+  return a, b
 
 def _inflate_scalar(arg, shape):
   arg = asarray(arg)
@@ -4018,7 +4004,6 @@ def insertaxis(arg, n, length):
   return Transpose.from_end(InsertAxis(arg, length), n)
 
 def stack(args, axis=0):
-  aligned = _numpy_align(*args)
   return Transpose.from_end(util.sum(Inflate(arg, i, len(args)) for i, arg in enumerate(args)), axis)
 
 def repeat(arg, length, axis):
