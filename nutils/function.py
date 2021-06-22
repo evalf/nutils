@@ -462,13 +462,13 @@ class _Wrapper(Array):
 
   @classmethod
   def broadcasted_arrays(cls, lower: Callable[..., evaluable.Array], *args: IntoArray, min_dtype: Optional[DType] = None, force_dtype: Optional[DType] = None) -> '_Wrapper':
-    broadcasted, shape, dtype = _broadcast(*args)
-    assert not min_dtype or not force_dtype
-    if min_dtype and (_dtypes.index(dtype) < _dtypes.index(min_dtype)):
-      dtype = min_dtype
+    broadcasted = broadcast_arrays(*args)
     if force_dtype:
+      assert not min_dtype
       dtype = force_dtype
-    return cls(lower, *broadcasted, shape=shape, dtype=dtype)
+    else:
+      dtype = evaluable._jointdtype(min_dtype or bool, *(arg.dtype for arg in broadcasted))
+    return cls(lower, *broadcasted, shape=broadcasted[0].shape, dtype=dtype)
 
   def __init__(self, lower: Callable[..., evaluable.Array], *args: Lowerable, shape: Shape, dtype: DType) -> None:
     self._lower = lower
@@ -668,27 +668,6 @@ class RevolutionAngle(Array):
 
   def lower(self, **kwargs: Any) -> evaluable.Array:
     return _prepend_points(evaluable.RevolutionAngle(), **kwargs)
-
-def _join_lengths(lengths_: Iterable[int]) -> Union[int, Array]:
-  lengths = set(lengths_)
-  if len(lengths) > 1:
-    lengths.discard(1)
-  if len(lengths) != 1:
-    raise ValueError('incompatible lengths: {}'.format(sorted(lengths)))
-  return next(iter(lengths))
-
-def _broadcast(*args_: IntoArray) -> Tuple[Tuple[Array, ...], Shape, DType]:
-  args = tuple(map(Array.cast, args_))
-  ndim = builtins.max(arg.ndim for arg in args)
-  shape = tuple(_join_lengths(arg.shape[i+arg.ndim-ndim] for arg in args if i+arg.ndim-ndim >= 0) for i in range(ndim))
-  broadcasted = []
-  for arg in args:
-    for i, (n, m) in enumerate(zip(shape[ndim-arg.ndim:], arg.shape)):
-      if m == 1 and n != m:
-        arg = repeat(arg, n, i)
-    arg = _prepend_axes(arg, shape[:ndim-arg.ndim])
-    broadcasted.append(arg)
-  return tuple(broadcasted), shape, evaluable._jointdtype(*(arg.dtype for arg in args))
 
 # CONSTRUCTORS
 
@@ -1645,7 +1624,7 @@ def cross(__arg1: IntoArray, __arg2: IntoArray, axis: int = -1) -> Array:
   :func:`takediag` : The inverse operation.
   '''
 
-  (arg1, arg2), shape, dtype = _broadcast(__arg1, __arg2)
+  arg1, arg2 = broadcast_arrays(__arg1, __arg2)
   axis = numeric.normdim(arg1.ndim, axis)
   assert arg1.shape[axis] == 3
   i = Array.cast(types.frozenarray([1, 2, 0]))
@@ -1986,7 +1965,7 @@ def stack(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
   :func:`stack` : Join arrays along an new axis.
   '''
 
-  aligned, shape, dtype = _broadcast(*__arrays)
+  aligned = broadcast_arrays(*__arrays)
   return util.sum(kronecker(array, axis, len(aligned), i) for i, array in enumerate(aligned))
 
 def replace_arguments(__array: IntoArray, __arguments: Mapping[str, IntoArray]) -> Array:
@@ -2004,6 +1983,80 @@ def replace_arguments(__array: IntoArray, __arguments: Mapping[str, IntoArray]) 
   '''
 
   return _Replace(Array.cast(__array), {k: Array.cast(v) for k, v in __arguments.items()})
+
+def broadcast_arrays(*arrays: IntoArray) -> Tuple[Array, ...]:
+  '''Broadcast the given arrays.
+
+  Parameters
+  ----------
+  *arrays : :class:`Array` or similar
+
+  Returns
+  -------
+  :class:`tuple` of :class:`Array`
+      The broadcasted arrays.
+  '''
+
+  arrays_ = tuple(map(Array.cast, arrays))
+  shape = broadcast_shapes(*(arg.shape for arg in arrays_))
+  return tuple(broadcast_to(arg, shape) for arg in arrays_)
+
+def broadcast_shapes(*shapes: Shape) -> Tuple[int, ...]:
+  '''Broadcast the given shapes into a single shape.
+
+  Parameters
+  ----------
+  *shapes : :class:`tuple` or :class:`int`
+
+  Returns
+  -------
+  :class:`tuple` of :class:`int`
+      The broadcasted shape.
+  '''
+
+  if not shapes:
+    raise ValueError('expected at least one shape but got none')
+  broadcasted = []
+  naxes = builtins.max(map(len, shapes))
+  aligned_shapes = ((*(1,) * (naxes - len(shape)), *shape) for shape in shapes)
+  for lengths in map(set, zip(*aligned_shapes)):
+    if len(lengths) > 1:
+      lengths.discard(1)
+    if len(lengths) != 1:
+      raise ValueError('cannot broadcast shapes {} because at least one or more axes have multiple lengths (excluding singletons)'.format(', '.join(map(str, shapes))))
+    broadcasted.append(next(iter(lengths)))
+  return tuple(broadcasted)
+
+def broadcast_to(array: IntoArray, shape: Shape) -> Array:
+  '''Broadcast an array to a new shape.
+
+  Parameters
+  ----------
+  array : :class:`Array` or similar
+      The array to broadcast.
+  shape : :class:`tuple` of :class:`int`
+      The desired shape.
+
+  Returns
+  -------
+  :class:`Array`
+      The broadcasted array.
+  '''
+
+  broadcasted = Array.cast(array)
+  orig_shape = broadcasted.shape
+  if broadcasted.ndim > len(shape):
+    raise ValueError('cannot broadcast array with shape {} to {} because the dimension decreases'.format(orig_shape, shape))
+  nnew = len(shape) - broadcasted.ndim
+  broadcasted = _prepend_axes(broadcasted, shape[:nnew])
+  for axis, (actual, desired) in enumerate(zip(broadcasted.shape[nnew:], shape[nnew:])):
+    if actual == desired:
+      continue
+    elif actual == 1:
+      broadcasted = repeat(broadcasted, desired, axis + nnew)
+    else:
+      raise ValueError('cannot broadcast array with shape {} to {} because input axis {} is neither singleton nor has the desired length'.format(orig_shape, shape, axis))
+  return broadcasted
 
 # DERIVATIVES
 
@@ -2425,7 +2478,9 @@ def choose(__index: IntoArray, __choices: Sequence[IntoArray]) -> Array:
   index = Array.cast(__index)
   if index.ndim != 0:
     raise ValueError
-  choices, shape, dtype = _broadcast(*__choices)
+  choices = broadcast_arrays(*__choices)
+  shape = choices[0].shape
+  dtype = evaluable._jointdtype(*(choice.dtype for choice in choices))
   index = _append_axes(index, shape)
   return _Wrapper(_eval_choose, index, *choices, shape=shape, dtype=dtype)
 

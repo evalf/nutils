@@ -273,42 +273,39 @@ _check('Array_add_T', lambda a: function.Array.cast(a).add_T((1, 2)), lambda a: 
 
 class broadcasting(TestCase):
 
+  def assertBroadcasts(self, desired, *from_shapes):
+    with self.subTest('broadcast_arrays'):
+      broadcasted = function.broadcast_arrays(*(function.Argument('arg{}'.format(i), s) for i, s in enumerate(from_shapes)))
+      actual = tuple(array.shape for array in broadcasted)
+      self.assertEqual(actual, (desired,)*len(from_shapes))
+    with self.subTest('broadcast_shapes'):
+      actual = function.broadcast_shapes(*from_shapes)
+      self.assertEqual(actual, desired)
+
   def test_singleton_expansion(self):
-    a = function.Argument('a', (1,2,3))
-    b = function.Argument('b', (3,1,3))
-    c = function.Argument('b', (3,1,1))
-    (a_, b_, c_), shape, dtype = function._broadcast(a, b, c)
-    self.assertEqual(shape, (3,2,3))
-    self.assertEqual(a_.shape, (3,2,3))
-    self.assertEqual(b_.shape, (3,2,3))
-    self.assertEqual(c_.shape, (3,2,3))
+    self.assertBroadcasts((3,2,3), (1,2,3), (3,1,3), (3,1,1))
 
   def test_prepend_axes(self):
-    a = function.Argument('a', (3,2,3))
-    b = function.Argument('b', (3,))
-    c = function.Argument('b', (2,3))
-    (a_, b_, c_), shape, dtype = function._broadcast(a, b, c)
-    self.assertEqual(shape, (3,2,3))
-    self.assertEqual(a_.shape, (3,2,3))
-    self.assertEqual(b_.shape, (3,2,3))
-    self.assertEqual(c_.shape, (3,2,3))
+    self.assertBroadcasts((3,2,3), (3,2,3), (3,), (2,3))
 
   def test_both(self):
-    a = function.Argument('a', (3,2,3))
-    b = function.Argument('b', (3,))
-    c = function.Argument('b', (1,1))
-    (a_, b_, c_), shape, dtype = function._broadcast(a, b, c)
-    self.assertEqual(shape, (3,2,3))
-    self.assertEqual(a_.shape, (3,2,3))
-    self.assertEqual(b_.shape, (3,2,3))
-    self.assertEqual(c_.shape, (3,2,3))
+    self.assertBroadcasts((3,2,3), (3,2,3), (3,), (1,1))
 
   def test_incompatible_shape(self):
-    a = function.Argument('a', (3,2,3))
-    b = function.Argument('b', (4,))
-    with self.assertRaisesRegex(Exception, 'incompatible lengths'):
-      function._broadcast(a, b)
+    with self.assertRaisesRegex(ValueError, 'cannot broadcast'):
+      function.broadcast_shapes((1,2), (2,3))
 
+  def test_no_shapes(self):
+    with self.assertRaisesRegex(ValueError, 'expected at least one shape but got none'):
+      function.broadcast_shapes()
+
+  def test_broadcast_to_decrease_dimension(self):
+    with self.assertRaisesRegex(ValueError, 'cannot broadcast array .* because the dimension decreases'):
+      function.broadcast_to(function.Argument('a', (2,3,4)), (3,4))
+
+  def test_broadcast_to_invalid_length(self):
+    with self.assertRaisesRegex(ValueError, 'cannot broadcast array .* because input axis .* is neither singleton nor has the desired length'):
+      function.broadcast_to(function.Argument('a', (2,3,4)), (2,5,4))
 
 @parametrize
 class sampled(TestCase):
