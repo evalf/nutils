@@ -37,7 +37,7 @@ _dtypes = bool, int, float
 class Lowerable(Protocol):
   'Protocol for lowering to :class:`nutils.evaluable.Array`.'
 
-  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), coordinates: Tuple[evaluable.Array] = ()) -> evaluable.Array:
+  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()) -> evaluable.Array:
     '''Lower this object to a :class:`nutils.evaluable.Array`.
 
     Parameters
@@ -429,7 +429,7 @@ class _WithoutPoints(Lowerable):
   def __init__(self, __arg: Array) -> None:
     self._arg = __arg
 
-  def lower(self, *, coordinates: Tuple[evaluable.Array] = (), **kwargs):
+  def lower(self, *, coordinates: Tuple[evaluable.Array, ...] = (), **kwargs):
     return self._arg.lower(coordinates=(), **kwargs)
 
 class _Wrapper(Array):
@@ -455,13 +455,13 @@ class _Wrapper(Array):
 
 class _Zeros(Array):
 
-  def lower(self, coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
+  def lower(self, coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
     shape = coordinates[0].shape[:-1] if coordinates else ()
     return evaluable.Zeros((*shape, *self.shape), self.dtype)
 
 class _Ones(Array):
 
-  def lower(self, coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
+  def lower(self, coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
     shape = coordinates[0].shape[:-1] if coordinates else ()
     return evaluable.ones((*shape, *self.shape), self.dtype)
 
@@ -548,7 +548,7 @@ class _Opposite(Array):
     self._arg = arg
     super().__init__(arg.shape, arg.dtype)
 
-  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
+  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
     if len(transform_chains) > 2 or len(coordinates) > 2:
       raise ValueError('opposite is not defined if there are more than two transform chains or coordinates')
     return self._arg.lower(transform_chains=transform_chains[::-1], coordinates=coordinates[::-1], **kwargs)
@@ -566,7 +566,7 @@ class _RootCoords(Array):
   def __init__(self, ndims: int) -> None:
     super().__init__((ndims,), float)
 
-  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), coordinates: Tuple[evaluable.Array] = (), **kwargs) -> evaluable.Array:
+  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = (), **kwargs) -> evaluable.Array:
     assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
     return evaluable.ApplyTransforms(transform_chains[0], coordinates[0], self.shape[0])
 
@@ -576,7 +576,7 @@ class _TransformsIndex(Array):
     self._transforms = transforms
     super().__init__((), int)
 
-  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), **kwargs: Any) -> evaluable.Array:
+  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain, ...] = (), **kwargs: Any) -> evaluable.Array:
     assert transform_chains
     index, tail = evaluable.TransformsIndexWithTail(self._transforms, transform_chains[0])
     return _prepend_points(index, **kwargs)
@@ -587,7 +587,7 @@ class _TransformsCoords(Array):
     self._transforms = transforms
     super().__init__((dim,), int)
 
-  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
+  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
     assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
     index, tail = evaluable.TransformsIndexWithTail(self._transforms, transform_chains[0])
     return evaluable.ApplyTransforms(tail, coordinates[0], self.shape[0])
@@ -616,7 +616,7 @@ class _Jacobian(Array):
     self._geom = geom
     super().__init__((), float)
 
-  def lower(self, *, coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
+  def lower(self, *, coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
     assert coordinates
     ndims = int(coordinates[0].shape[-1])
     return evaluable.jacobian(self._geom.lower(coordinates=coordinates, **kwargs), ndims)
