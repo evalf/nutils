@@ -1461,7 +1461,7 @@ class unit:
     '''
     if unit[0] in '1234567890.*':
       raise ValueError('unit cannot start with a numeral')
-    return type('unit:'+unit, (float,), dict(unit=unit, __stringly_loads__=classmethod(self._loads), __stringly_dumps__=classmethod(self._dumps)))
+    return type('unit:'+unit, (float,), dict(unit=unit, __stringly_loads__=classmethod(lambda U, s: self._loads(U, s)), __stringly_dumps__=classmethod(lambda U, v: self._dumps(U, v))))
 
   def __call__(self, s):
     '''
