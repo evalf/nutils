@@ -253,7 +253,7 @@ def block(datas):
     out['value'] = data['value']
     for idim, iblock in enumerate(blockidx):
       outindex = out['index']['i'+str(idim)]
-      numpy.add(data['index']['i'+str(idim)], blocksizes[idim][:iblock].sum(), out=outindex, dtype=outindex.dtype)
+      numpy.add(data['index']['i'+str(idim)], blocksizes[idim][:iblock].sum(), out=outindex, dtype=outindex.dtype.type)
       # NOTE: Specifying the dtype is necessary because Numpy apparently does
       # not follow the out argument automatically, defaulting instead to a
       # dtype that may be to small to contain the result of the addition.

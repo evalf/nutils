@@ -497,29 +497,44 @@ class EVALARGS(Evaluable):
 
 EVALARGS = EVALARGS()
 
+class EvaluableConstant(Evaluable):
+  '''Evaluate to the given constant value.
+
+  Parameters
+  ----------
+  value
+      The return value of ``eval``.
+  '''
+
+  __slots__ = 'value'
+
+  def __init__(self, value):
+    self.value = value
+    super().__init__(())
+
+  def evalf(self):
+    return self.value
+
+  @property
+  def _node_details(self):
+    s = repr(self.value)
+    if '\n' in s:
+      s = s.split('\n', 1)[0] + '...'
+    if len(s) > 20:
+      s = s[:17] + '...'
+    return s
+
 class Tuple(Evaluable):
 
-  __slots__ = 'items', 'indices'
+  __slots__ = 'items'
 
   @types.apply_annotations
-  def __init__(self, items:tuple): # FIXME: shouldn't all items be Evaluable?
+  def __init__(self, items: types.tuple[strictevaluable]):
     self.items = items
-    args = []
-    indices = []
-    for i, item in enumerate(self.items):
-      if isevaluable(item):
-        args.append(item)
-        indices.append(i)
-    self.indices = tuple(indices)
-    super().__init__(args)
+    super().__init__(items)
 
   def evalf(self, *items):
-    'evaluate'
-
-    T = list(self.items)
-    for index, item in zip(self.indices, items):
-      T[index] = item
-    return tuple(T)
+    return items
 
   def __iter__(self):
     'iterate'
@@ -3066,7 +3081,7 @@ class Argument(DerivativeTargetBase):
       return value
 
   def _derivative(self, var, seen):
-    if isinstance(var, Argument) and var._name == self._name:
+    if isinstance(var, Argument) and var._name == self._name and self.dtype == float:
       result = _inflate_scalar(1., self.shape)
       for i, sh in enumerate(self.shape):
         result = diagonalize(result, i, i+self.ndim)
@@ -4056,6 +4071,8 @@ def derivative(func, var, seen=None):
   'derivative'
 
   assert isinstance(var, DerivativeTargetBase), 'invalid derivative target {!r}'.format(var)
+  if var.dtype != float:
+    return Zeros(func.shape + var.shape, dtype=func.dtype)
   if seen is None:
     seen = {}
   func = asarray(func)

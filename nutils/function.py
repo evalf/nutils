@@ -37,24 +37,31 @@ _dtypes = bool, int, float
 class Lowerable(Protocol):
   'Protocol for lowering to :class:`nutils.evaluable.Array`.'
 
-  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), coordinates: Tuple[evaluable.Array] = ()) -> evaluable.Array:
+  def lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()) -> evaluable.Array:
     '''Lower this object to a :class:`nutils.evaluable.Array`.
 
     Parameters
     ----------
+    points_shape : :class:`tuple` of scalar, integer :class:`nutils.evaluable.Array`
+        The shape of the leading points axes that are to be added to the
+        lowered :class:`nutils.evaluable.Array`.
     transform_chains : sequence of :class:`nutils.evaluable.TransformChain` objects
     coordinates : sequence of :class:`nutils.evaluable.Array` objects
+        The coordinates at which the function will be evaluated.
     '''
 
 _ArrayMeta = type(Lowerable)
 
 if debug_flags.lower:
-  def _lower(self, **kwargs):
-    result = self._ArrayMeta__lower(**kwargs)
+  def _debug_lower(self, **kwargs):
+    result = self._ArrayMeta__debug_lower_orig(**kwargs)
     assert isinstance(result, evaluable.Array)
-    kwargs_nocoords = kwargs.copy()
-    coordinates = kwargs_nocoords.pop('coordinates', ())
-    offset = kwargs['coordinates'][0].ndim-1 if coordinates and not type(self).__name__ == '_WithoutPoints' else 0
+    points_shape = kwargs.get('points_shape', ())
+    coordinates = kwargs.get('coordinates', ())
+    if coordinates:
+      assert all(evaluable.equalshape(coords.shape[:-1], points_shape) for coords in coordinates)
+      assert len(kwargs['transform_chains']) == len(coordinates)
+    offset = 0 if type(self) == _WithoutPoints else len(points_shape)
     assert result.ndim == self.ndim + offset
     assert tuple(int(sh) for sh in result.shape[offset:]) == self.shape, 'shape mismatch'
     return result
@@ -62,9 +69,29 @@ if debug_flags.lower:
   class _ArrayMeta(_ArrayMeta):
     def __new__(mcls, name, bases, namespace):
       if 'lower' in namespace:
-        namespace['_ArrayMeta__lower'] = namespace.pop('lower')
-        namespace['lower'] = _lower
+        namespace['_ArrayMeta__debug_lower_orig'] = namespace.pop('lower')
+        namespace['lower'] = _debug_lower
       return super().__new__(mcls, name, bases, namespace)
+
+# The lower cache introduced below should stay below the debug wrapper added
+# above. Otherwise the cached results are debugge again and again.
+
+def _cache_lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()) -> evaluable.Array:
+  key = points_shape, transform_chains, coordinates
+  cached_key, cached_result = getattr(self, '_ArrayMeta__cached_lower', (None, None))
+  if cached_key == key:
+    return cached_result
+  result = self._ArrayMeta__cache_lower_orig(points_shape=points_shape, transform_chains=transform_chains, coordinates=coordinates)
+  self._ArrayMeta__cached_lower = key, result
+  return result
+
+class _ArrayMeta(_ArrayMeta):
+  def __new__(mcls, name, bases, namespace):
+    if 'lower' in namespace:
+      namespace['_ArrayMeta__cache_lower_orig'] = namespace.pop('lower')
+      namespace['lower'] = _cache_lower
+    return super().__new__(mcls, name, bases, namespace)
+
 
 class Array(Lowerable, metaclass=_ArrayMeta):
   '''Base class for array valued functions.
@@ -146,9 +173,11 @@ class Array(Lowerable, metaclass=_ArrayMeta):
       coordinates = (evaluable.Points(npoints, ndims),)*2
       if opposite:
         coordinates = coordinates[::-1]
+      points_shape = coordinates[0].shape[:-1]
     else:
-      coordinates = None
-    return self.lower(transform_chains=transform_chains, coordinates=coordinates)
+      coordinates = ()
+      points_shape = ()
+    return self.lower(points_shape=points_shape, transform_chains=transform_chains, coordinates=coordinates)
 
   @property
   def ndim(self) -> int:
@@ -418,31 +447,299 @@ class Array(Lowerable, metaclass=_ArrayMeta):
           shapes[arg._name] = tuple(map(int, arg.shape))
     return shapes
 
-def _prepend_points(__arg: evaluable.Array, *, coordinates: Sequence[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
-  if coordinates:
-    return evaluable.prependaxes(__arg, coordinates[0].shape[:-1])
-  else:
-    return __arg
+def _prepend_points(__arg: evaluable.Array, *, points_shape: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
+  return evaluable.prependaxes(__arg, points_shape)
+
+class _Unlower(Array):
+
+  def __init__(self, array: evaluable.Array, points_shape: Tuple[evaluable.Array, ...], transform_chains: Tuple[evaluable.TransformChain, ...], coordinates: Tuple[evaluable.Array, ...]) -> None:
+    self._array = array
+    self._points_shape = points_shape
+    self._transform_chains = transform_chains
+    self._coordinates = coordinates
+    shape = tuple(n.__index__() for n in array.shape[len(points_shape):])
+    super().__init__(shape=shape, dtype=array.dtype)
+
+  def lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()):
+    if self._points_shape != points_shape or self._transform_chains != transform_chains or self._coordinates != coordinates:
+      raise ValueError('_Unlower must be lowered with the same arguments as those with which it is instantiated.')
+    return self._array
+
+class Custom(Array):
+  '''Combined :mod:`nutils.function` and :mod:`nutils.evaluable` array base class.
+
+  Ordinary :class:`Array` subclasses should define the ``Array.lower`` method,
+  which returns the corresponding :class:`nutils.evaluable.Array` with the
+  proper amount of points axes. In many cases the :class:`Array` subclass is
+  trivial and the corresponding :class:`nutils.evaluable.Array` contains all
+  the specifics. For those situations the :class:`Custom` base class exists.
+  Rather than defining the ``Array.lower`` method, this base class allows you
+  to define a :meth:`Custom.evalf` and optionally a
+  :meth:`Custom.partial_derivative`, which are used to instantiate a generic
+  :class:`nutils.evaluable.Array` automatically during lowering.
+
+  By default the :class:`Array` arguments passed to the constructor are
+  unmodified. Broadcasting and singleton expansion, if required, should be
+  applied before passing the arguments to the constructor of :class:`Custom`.
+  It is possible to declare ``npointwise`` leading axes as being pointwise. In
+  that case :class:`Custom` applies singleton expansion to the leading
+  pointwise axes and the shape of the result passed to :class:`Custom` should
+  not include the pointwise axes.
+
+  The lowered array does not have a Nutils hash by default. If this is desired,
+  the methods :meth:`evalf` and :meth:`partial_derivative` can be decorated
+  with :func:`nutils.types.hashable_function`.
+
+  Parameters
+  ----------
+  args : iterable of :class:`Array` objects or immutable and hashable objects
+      The arguments of this array function.
+  shape : :class:`tuple` of :class:`int` or :class:`Array`
+      The shape of the array function without leading pointwise axes.
+  dtype : :class:`bool`, :class:`int` or :class:`float`
+      The dtype of the array elements.
+  npointwise : :class:`int`
+      The number of leading pointwise axis.
+
+  Example
+  -------
+
+  The following class implements :func:`multiply` using :class:`Custom`
+  without broadcasting and for :class:`float` arrays only.
+
+  >>> class Multiply(Custom):
+  ...
+  ...   def __init__(self, left: IntoArray, right: IntoArray) -> None:
+  ...     # Broadcast the arrays. `broadcast_arrays` automatically casts the
+  ...     # arguments to `Array`.
+  ...     left, right = broadcast_arrays(left, right)
+  ...     # Dtype coercion is beyond the scope of this example.
+  ...     if left.dtype != float or right.dtype != float:
+  ...       raise ValueError('left and right arguments should have dtype float')
+  ...     # We treat all axes as pointwise, hence parameter `shape`, the shape
+  ...     # of the remainder, is empty and `npointwise` is the dimension of the
+  ...     # arrays.
+  ...     super().__init__(args=(left, right), shape=(), dtype=float, npointwise=left.ndim)
+  ...
+  ...   @staticmethod
+  ...   def evalf(left: numpy.ndarray, right: numpy.ndarray) -> numpy.ndarray:
+  ...     # Because all axes are pointwise, the evaluated `left` and `right`
+  ...     # arrays are 1d.
+  ...     return left * right
+  ...
+  ...   @staticmethod
+  ...   def partial_derivative(iarg: int, left: Array, right: Array) -> IntoArray:
+  ...     # The arguments passed to this function are of type `Array` and the
+  ...     # pointwise axes are omitted, hence `left` and `right` are 0d.
+  ...     if iarg == 0:
+  ...       return right
+  ...     elif iarg == 1:
+  ...       return left
+  ...     else:
+  ...       raise NotImplementedError
+  ...
+  >>> Multiply([1., 2.], [3., 4.]).eval()
+  array([ 3.,  8.])
+  >>> a = Argument('a', (2,))
+  >>> Multiply(a, [3., 4.]).derivative(a).eval(a=numpy.array([1., 2.])).export('dense')
+  array([[ 3.,  0.],
+         [ 0.,  4.]])
+
+  The following class wraps :func:`numpy.roll`, applied to the last axis of the
+  array argument, with constant shift.
+
+  >>> class Roll(Custom):
+  ...
+  ...   def __init__(self, array: IntoArray, shift: int) -> None:
+  ...     array = asarray(array)
+  ...     # We are being nit-picky here and cast `exponent` to an `int` without
+  ...     # truncation.
+  ...     shift = shift.__index__()
+  ...     # We treat all but the last axis of `array` as pointwise.
+  ...     super().__init__(args=(array, shift), shape=array.shape[-1:], dtype=array.dtype, npointwise=array.ndim-1)
+  ...
+  ...   @staticmethod
+  ...   def evalf(array: numpy.ndarray, shift: int) -> numpy.ndarray:
+  ...     # `array` is evaluated to a `numpy.ndarray` because we passed `array`
+  ...     # as an `Array` to the constructor. `shift`, however, is untouched
+  ...     # because it is not an `Array`. The `array` has two axes: a points
+  ...     # axis and the axis to be rolled.
+  ...     return numpy.roll(array, shift, 1)
+  ...
+  ...   @staticmethod
+  ...   def partial_derivative(iarg, array: Array, shift: int) -> IntoArray:
+  ...     if iarg == 0:
+  ...       return Roll(eye(array.shape[0]), shift).T
+  ...     else:
+  ...       # We don't implement the derivative to `shift`, because this is
+  ...       # a constant `int`.
+  ...       raise NotImplementedError
+  ...
+  >>> Roll([1, 2, 3], 1).eval()
+  array([3, 1, 2])
+  >>> b = Argument('b', (3,))
+  >>> Roll(b, 1).derivative(b).eval().export('dense')
+  array([[ 0.,  0.,  1.],
+         [ 1.,  0.,  0.],
+         [ 0.,  1.,  0.]])
+  '''
+
+  def __init__(self, args: Iterable[Any], shape: Tuple[int], dtype: DType, npointwise: int = 0):
+    args = tuple(args)
+    if any(isinstance(arg, evaluable.Evaluable) for arg in args):
+      raise ValueError('It is not allowed to call this function with a `nutils.evaluable.Evaluable` argument.')
+    if npointwise:
+      # Apply singleton expansion to the leading points axes.
+      points_shapes = tuple(arg.shape[:npointwise] for arg in args if isinstance(arg, Array))
+      if not all(len(points_shape) == npointwise for points_shape in points_shapes):
+        raise ValueError('All arrays must have at least {} axes.'.format(npointwise))
+      if len(points_shapes) == 0:
+        raise ValueError('Pointwise axes can only be used in combination with at least one `function.Array` argument.')
+      points_shape = broadcast_shapes(*points_shapes)
+      args = tuple(broadcast_to(arg, points_shape + arg.shape[npointwise:]) if isinstance(arg, Array) else arg for arg in args)
+    else:
+      points_shape = ()
+    self._args = args
+    self._npointwise = npointwise
+    super().__init__(shape=(*points_shape, *shape), dtype=dtype)
+
+  def lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()) -> evaluable.Array:
+    args = tuple(arg.lower(points_shape=points_shape, transform_chains=transform_chains, coordinates=coordinates) if isinstance(arg, Array) else evaluable.EvaluableConstant(arg) for arg in self._args) # type: Tuple[Union[evaluable.Array, evaluable.EvaluableConstant], ...]
+    add_points_shape = tuple(map(evaluable.asarray, self.shape[:self._npointwise]))
+    points_shape += add_points_shape
+    coordinates = tuple(evaluable.Transpose.to_end(evaluable.appendaxes(coords, add_points_shape), coords.ndim-1) for coords in coordinates)
+    return _CustomEvaluable(type(self).__name__, self.evalf, self.partial_derivative, args, self.shape[self._npointwise:], self.dtype, points_shape, transform_chains, coordinates)
+
+  def evalf(self, *args: Any) -> numpy.ndarray:
+    '''Evaluate this function for the given evaluated arguments.
+
+    This function is called with arguments that correspond to the arguments
+    that are passed to the constructor of :class:`Custom`: every instance of
+    :class:`Array` is evaluated to a :class:`numpy.ndarray` with one leading
+    axis compared to the :class:`Array` and all other instances are passed as
+    is. The return value of this method should also include a leading axis with
+    the same length as the other array arguments have, or length one if there
+    are no array arguments. If constructor argument ``npointwise`` is nonzero,
+    the pointwise axes of the :class:`Array` arguments are raveled and included
+    in the single leading axis of the evaluated array arguments as well.
+
+    If possible this method should not use ``self``, e.g. by decorating this
+    method with :func:`staticmethod`. The result of this function must only
+    depend on the arguments and must not mutate the arguments.
+
+    This method is equivalent to ``nutils.evaluable.Array.evalf`` up to
+    the treatment of the leading axis.
+
+    Parameters
+    ----------
+    *args
+        The evaluated arguments corresponding to the ``args`` parameter of the
+        :class:`Custom` constructor.
+
+    Returns
+    -------
+    :class:`numpy.ndarray`
+        The result of this function with one leading points axis.
+    '''
+
+    raise NotImplementedError # pragma: nocover
+
+  def partial_derivative(self, iarg: int, *args: Any) -> IntoArray:
+    '''Return the partial derivative of this function to :class:`Custom` constructor argument number ``iarg``.
+
+    This method is only called for those arguments that are instances of
+    :class:`Array` with dtype :class:`float` and have the derivative target as
+    a dependency. It is therefor allowed to omit an implementation for some or
+    all arguments if the above conditions are not met.
+
+    Axes that are declared pointwise via the ``npointwise`` constructor
+    argument are omitted.
+
+    Parameters
+    ----------
+    iarg : :class:`int`
+        The index of the argument to compute the derivative for.
+    *args
+        The arguments as passed to the constructor of :class:`Custom`.
+
+    Returns
+    -------
+    :class:`Array` or similar
+        The partial derivative of this function to the given argument.
+    '''
+
+    raise NotImplementedError('The partial derivative of {} to argument {} (counting from 0) is not defined.'.format(type(self).__name__, iarg)) # pragma: nocover
+
+class _CustomEvaluable(evaluable.Array):
+
+  def __init__(self, name, evalf, partial_derivative, args: Tuple[Union[evaluable.Array, evaluable.EvaluableConstant], ...], shape: Tuple[int, ...], dtype: DType, points_shape: Tuple[evaluable.Array, ...], transform_chains: Tuple[evaluable.TransformChain, ...], coordinates: Tuple[evaluable.Array, ...]) -> None:
+    assert all(isinstance(arg, (evaluable.Array, evaluable.EvaluableConstant)) for arg in args)
+    self.name = name
+    self.custom_evalf = evalf
+    self.custom_partial_derivative = partial_derivative
+    self.args = args
+    self.points_dim = len(points_shape)
+    self.lower_args = dict(points_shape=points_shape, transform_chains=transform_chains, coordinates=coordinates)
+    super().__init__((evaluable.Tuple(points_shape), *args), shape=points_shape+shape, dtype=dtype)
+
+  @property
+  def _node_details(self) -> str:
+    return self.name
+
+  def evalf(self, points_shape: Tuple[numpy.ndarray, ...], *args: Any) -> numpy.ndarray:
+    points_shape = tuple(n.__index__() for n in points_shape)
+    npoints = util.product(points_shape, 1)
+    # Flatten the points axes of the array arguments and call `custom_evalf`.
+    flattened = (arg.reshape(npoints, *arg.shape[self.points_dim:]) if isinstance(origarg, evaluable.Array) else arg for arg, origarg in zip(args, self.args))
+    result = self.custom_evalf(*flattened)
+    assert result.ndim == self.ndim + 1 - self.points_dim
+    # Unflatten the points axes of the result. If there are no array arguments,
+    # the points axis must have length one. Otherwise the length must be
+    # `npoints` (checked by `reshape`).
+    if not any(isinstance(origarg, evaluable.Array) for origarg in self.args):
+      if result.shape[0] != 1:
+        raise ValueError('Expected a points axis of length one but got {}.'.format(result.shape[0]))
+      return numpy.broadcast_to(result[0], points_shape + result.shape[1:])
+    else:
+      return result.reshape(points_shape + result.shape[1:])
+
+  def _derivative(self, var: evaluable.Array, seen: Dict[evaluable.Array, evaluable.Array]) -> evaluable.Array:
+    if self.dtype != float:
+      return super()._derivative(var, seen)
+    result = evaluable.Zeros(self.shape + var.shape, dtype=self.dtype)
+    unlowered_args = tuple(_Unlower(arg, **self.lower_args) if isinstance(arg, evaluable.Array) else arg.value for arg in self.args)
+    for iarg, arg in enumerate(self.args):
+      if not isinstance(arg, evaluable.Array) or arg.dtype != float or var not in arg.dependencies and var != arg:
+        continue
+      fpd = Array.cast(self.custom_partial_derivative(iarg, *unlowered_args))
+      fpd_expected_shape = tuple(n.__index__() for n in self.shape[self.points_dim:] + arg.shape[self.points_dim:])
+      if fpd.shape != fpd_expected_shape:
+        raise ValueError('`partial_derivative` to argument {} returned an array with shape {} but was expected.'.format(iarg, fpd.shape, fpd_expected_shape))
+      epd = evaluable.appendaxes(fpd.lower(**self.lower_args), var.shape)
+      eda = evaluable.derivative(arg, var, seen)
+      eda = evaluable.Transpose.from_end(evaluable.appendaxes(eda, self.shape[self.points_dim:]), *range(self.points_dim, self.ndim))
+      result += (epd * eda).sum(range(self.ndim, self.ndim + arg.ndim - self.points_dim))
+    return result
 
 class _WithoutPoints(Lowerable):
 
   def __init__(self, __arg: Array) -> None:
     self._arg = __arg
 
-  def lower(self, *, coordinates: Tuple[evaluable.Array] = (), **kwargs):
-    return self._arg.lower(coordinates=(), **kwargs)
+  def lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), coordinates: Tuple[evaluable.Array, ...] = (), **kwargs):
+    return self._arg.lower(points_shape=(), coordinates=(), **kwargs)
 
 class _Wrapper(Array):
 
   @classmethod
   def broadcasted_arrays(cls, lower: Callable[..., evaluable.Array], *args: IntoArray, min_dtype: Optional[DType] = None, force_dtype: Optional[DType] = None) -> '_Wrapper':
-    broadcasted, shape, dtype = _broadcast(*args)
-    assert not min_dtype or not force_dtype
-    if min_dtype and (_dtypes.index(dtype) < _dtypes.index(min_dtype)):
-      dtype = min_dtype
+    broadcasted = broadcast_arrays(*args)
     if force_dtype:
+      assert not min_dtype
       dtype = force_dtype
-    return cls(lower, *broadcasted, shape=shape, dtype=dtype)
+    else:
+      dtype = evaluable._jointdtype(min_dtype or bool, *(arg.dtype for arg in broadcasted))
+    return cls(lower, *broadcasted, shape=broadcasted[0].shape, dtype=dtype)
 
   def __init__(self, lower: Callable[..., evaluable.Array], *args: Lowerable, shape: Shape, dtype: DType) -> None:
     self._lower = lower
@@ -455,15 +752,13 @@ class _Wrapper(Array):
 
 class _Zeros(Array):
 
-  def lower(self, coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
-    shape = coordinates[0].shape[:-1] if coordinates else ()
-    return evaluable.Zeros((*shape, *self.shape), self.dtype)
+  def lower(self, points_shape: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
+    return evaluable.Zeros((*points_shape, *self.shape), self.dtype)
 
 class _Ones(Array):
 
-  def lower(self, coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
-    shape = coordinates[0].shape[:-1] if coordinates else ()
-    return evaluable.ones((*shape, *self.shape), self.dtype)
+  def lower(self, points_shape: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
+    return evaluable.ones((*points_shape, *self.shape), self.dtype)
 
 class _Constant(Array):
 
@@ -538,7 +833,7 @@ class _Transpose(Array):
     super().__init__(tuple(arg.shape[axis] for axis in axes), arg.dtype)
 
   def lower(self, **kwargs: Any) -> evaluable.Array:
-    offset = kwargs['coordinates'][0].ndim-1 if kwargs.get('coordinates', ()) else 0
+    offset = len(kwargs.get('points_shape', ()))
     axes = (*range(offset), *(i+offset for i in self._axes))
     return evaluable.Transpose(self._arg.lower(**kwargs), axes)
 
@@ -548,7 +843,7 @@ class _Opposite(Array):
     self._arg = arg
     super().__init__(arg.shape, arg.dtype)
 
-  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
+  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
     if len(transform_chains) > 2 or len(coordinates) > 2:
       raise ValueError('opposite is not defined if there are more than two transform chains or coordinates')
     return self._arg.lower(transform_chains=transform_chains[::-1], coordinates=coordinates[::-1], **kwargs)
@@ -566,7 +861,7 @@ class _RootCoords(Array):
   def __init__(self, ndims: int) -> None:
     super().__init__((ndims,), float)
 
-  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), coordinates: Tuple[evaluable.Array] = (), **kwargs) -> evaluable.Array:
+  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = (), **kwargs) -> evaluable.Array:
     assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
     return evaluable.ApplyTransforms(transform_chains[0], coordinates[0], self.shape[0])
 
@@ -576,7 +871,7 @@ class _TransformsIndex(Array):
     self._transforms = transforms
     super().__init__((), int)
 
-  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), **kwargs: Any) -> evaluable.Array:
+  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain, ...] = (), **kwargs: Any) -> evaluable.Array:
     assert transform_chains
     index, tail = evaluable.TransformsIndexWithTail(self._transforms, transform_chains[0])
     return _prepend_points(index, **kwargs)
@@ -587,7 +882,7 @@ class _TransformsCoords(Array):
     self._transforms = transforms
     super().__init__((dim,), int)
 
-  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain] = (), coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
+  def lower(self, *, transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
     assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
     index, tail = evaluable.TransformsIndexWithTail(self._transforms, transform_chains[0])
     return evaluable.ApplyTransforms(tail, coordinates[0], self.shape[0])
@@ -616,7 +911,7 @@ class _Jacobian(Array):
     self._geom = geom
     super().__init__((), float)
 
-  def lower(self, *, coordinates: Tuple[evaluable.Array] = (), **kwargs: Any) -> evaluable.Array:
+  def lower(self, *, coordinates: Tuple[evaluable.Array, ...] = (), **kwargs: Any) -> evaluable.Array:
     assert coordinates
     ndims = int(coordinates[0].shape[-1])
     return evaluable.jacobian(self._geom.lower(coordinates=coordinates, **kwargs), ndims)
@@ -644,27 +939,6 @@ class RevolutionAngle(Array):
 
   def lower(self, **kwargs: Any) -> evaluable.Array:
     return _prepend_points(evaluable.RevolutionAngle(), **kwargs)
-
-def _join_lengths(lengths_: Iterable[int]) -> Union[int, Array]:
-  lengths = set(lengths_)
-  if len(lengths) > 1:
-    lengths.discard(1)
-  if len(lengths) != 1:
-    raise ValueError('incompatible lengths: {}'.format(sorted(lengths)))
-  return next(iter(lengths))
-
-def _broadcast(*args_: IntoArray) -> Tuple[Tuple[Array, ...], Shape, DType]:
-  args = tuple(map(Array.cast, args_))
-  ndim = builtins.max(arg.ndim for arg in args)
-  shape = tuple(_join_lengths(arg.shape[i+arg.ndim-ndim] for arg in args if i+arg.ndim-ndim >= 0) for i in range(ndim))
-  broadcasted = []
-  for arg in args:
-    for i, (n, m) in enumerate(zip(shape[ndim-arg.ndim:], arg.shape)):
-      if m == 1 and n != m:
-        arg = repeat(arg, n, i)
-    arg = _prepend_axes(arg, shape[:ndim-arg.ndim])
-    broadcasted.append(arg)
-  return tuple(broadcasted), shape, evaluable._jointdtype(*(arg.dtype for arg in args))
 
 # CONSTRUCTORS
 
@@ -1621,7 +1895,7 @@ def cross(__arg1: IntoArray, __arg2: IntoArray, axis: int = -1) -> Array:
   :func:`takediag` : The inverse operation.
   '''
 
-  (arg1, arg2), shape, dtype = _broadcast(__arg1, __arg2)
+  arg1, arg2 = broadcast_arrays(__arg1, __arg2)
   axis = numeric.normdim(arg1.ndim, axis)
   assert arg1.shape[axis] == 3
   i = Array.cast(types.frozenarray([1, 2, 0]))
@@ -1962,7 +2236,7 @@ def stack(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
   :func:`stack` : Join arrays along an new axis.
   '''
 
-  aligned, shape, dtype = _broadcast(*__arrays)
+  aligned = broadcast_arrays(*__arrays)
   return util.sum(kronecker(array, axis, len(aligned), i) for i, array in enumerate(aligned))
 
 def replace_arguments(__array: IntoArray, __arguments: Mapping[str, IntoArray]) -> Array:
@@ -1980,6 +2254,80 @@ def replace_arguments(__array: IntoArray, __arguments: Mapping[str, IntoArray]) 
   '''
 
   return _Replace(Array.cast(__array), {k: Array.cast(v) for k, v in __arguments.items()})
+
+def broadcast_arrays(*arrays: IntoArray) -> Tuple[Array, ...]:
+  '''Broadcast the given arrays.
+
+  Parameters
+  ----------
+  *arrays : :class:`Array` or similar
+
+  Returns
+  -------
+  :class:`tuple` of :class:`Array`
+      The broadcasted arrays.
+  '''
+
+  arrays_ = tuple(map(Array.cast, arrays))
+  shape = broadcast_shapes(*(arg.shape for arg in arrays_))
+  return tuple(broadcast_to(arg, shape) for arg in arrays_)
+
+def broadcast_shapes(*shapes: Shape) -> Tuple[int, ...]:
+  '''Broadcast the given shapes into a single shape.
+
+  Parameters
+  ----------
+  *shapes : :class:`tuple` or :class:`int`
+
+  Returns
+  -------
+  :class:`tuple` of :class:`int`
+      The broadcasted shape.
+  '''
+
+  if not shapes:
+    raise ValueError('expected at least one shape but got none')
+  broadcasted = []
+  naxes = builtins.max(map(len, shapes))
+  aligned_shapes = ((*(1,) * (naxes - len(shape)), *shape) for shape in shapes)
+  for lengths in map(set, zip(*aligned_shapes)):
+    if len(lengths) > 1:
+      lengths.discard(1)
+    if len(lengths) != 1:
+      raise ValueError('cannot broadcast shapes {} because at least one or more axes have multiple lengths (excluding singletons)'.format(', '.join(map(str, shapes))))
+    broadcasted.append(next(iter(lengths)))
+  return tuple(broadcasted)
+
+def broadcast_to(array: IntoArray, shape: Shape) -> Array:
+  '''Broadcast an array to a new shape.
+
+  Parameters
+  ----------
+  array : :class:`Array` or similar
+      The array to broadcast.
+  shape : :class:`tuple` of :class:`int`
+      The desired shape.
+
+  Returns
+  -------
+  :class:`Array`
+      The broadcasted array.
+  '''
+
+  broadcasted = Array.cast(array)
+  orig_shape = broadcasted.shape
+  if broadcasted.ndim > len(shape):
+    raise ValueError('cannot broadcast array with shape {} to {} because the dimension decreases'.format(orig_shape, shape))
+  nnew = len(shape) - broadcasted.ndim
+  broadcasted = _prepend_axes(broadcasted, shape[:nnew])
+  for axis, (actual, desired) in enumerate(zip(broadcasted.shape[nnew:], shape[nnew:])):
+    if actual == desired:
+      continue
+    elif actual == 1:
+      broadcasted = repeat(broadcasted, desired, axis + nnew)
+    else:
+      raise ValueError('cannot broadcast array with shape {} to {} because input axis {} is neither singleton nor has the desired length'.format(orig_shape, shape, axis))
+  return broadcasted
 
 # DERIVATIVES
 
@@ -2401,7 +2749,9 @@ def choose(__index: IntoArray, __choices: Sequence[IntoArray]) -> Array:
   index = Array.cast(__index)
   if index.ndim != 0:
     raise ValueError
-  choices, shape, dtype = _broadcast(*__choices)
+  choices = broadcast_arrays(*__choices)
+  shape = choices[0].shape
+  dtype = evaluable._jointdtype(*(choice.dtype for choice in choices))
   index = _append_axes(index, shape)
   return _Wrapper(_eval_choose, index, *choices, shape=shape, dtype=dtype)
 
