@@ -741,18 +741,15 @@ class MKLMatrix(Matrix):
   def solve_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12):
     rci = ctypes.c_int32(0)
     n = ctypes.c_int32(len(rhs))
-    b = numpy.array(rhs, dtype=numpy.float64)
+    b = numpy.array(rhs, dtype=numpy.float64, copy=False)
     x = numpy.zeros_like(b)
-    ipar = numpy.zeros(128, dtype=numpy.int32)
-    ipar[0] = len(rhs) # problem size
-    ipar[1] = 6 # output on screen
-    ipar[2] = 1 # current stage of the RCI FGMRES computations; the initial value is 1
-    ipar[3] = 0 # current iteration number; the initial value is 0
-    ipar[4] = 0 # maximum number of iterations
-    ipar[5] = 1 # output error messages in accordance with the parameter ipar[1]
-    ipar[6] = 1 # output warning messages in accordance with the parameter ipar[1]
-    ipar[7] = 0 # do not perform the stopping test for the maximum number of iterations: ipar[3] <= ipar[4]
-    ipar[8] = 0 # do not perform the residual stopping test: dpar[4] <= dpar[3]
+    N = min(restart, len(rhs))
+    ipar = numpy.empty(128, dtype=numpy.int32)
+    dpar = numpy.empty(128, dtype=numpy.float64)
+    tmp = numpy.empty((2*N+1)*len(rhs)+(N*(N+9))//2+1, dtype=numpy.float64)
+    self.libmkl.dfgmres_init(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes)
+    ipar[7] = 0 # do not perform the stopping test for the maximum number of iterations
+    ipar[8] = 0 # do not perform the residual stopping test
     ipar[9] = 1 # perform the user-defined stopping test by setting RCI_request=2
     if precon is None:
       ipar[10] = 0 # run the non-preconditioned version of the FGMRES method
@@ -768,13 +765,12 @@ class MKLMatrix(Matrix):
       elif not callable(precon):
         raise MatrixError('invalid preconditioner {!r}'.format(precon))
     ipar[11] = 0 # do not perform the automatic test for zero norm of the currently generated vector: dpar[6] <= dpar[7]
-    ipar[12] = 1 # update the solution to the vector b according to the computations done by the dfgmres routine
-    ipar[13] = 0 # internal iteration counter that counts the number of iterations before the restart takes place; the initial value is 0
-    ipar[14] = min(restart, len(rhs)) # the number of non-restarted FGMRES iterations
-    dpar = numpy.zeros(128, dtype=numpy.float64)
-    tmp = numpy.zeros((2*ipar[14]+1)*ipar[0]+(ipar[14]*(ipar[14]+9))//2+1, dtype=numpy.float64)
+    ipar[12] = 0 # update the solution to the vector x according to the computations done by the dfgmres routine
+    ipar[14] = N # the number of non-restarted FGMRES iterations
     self.libmkl.dfgmres_check(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes)
-    if rci.value != 0:
+    if rci.value in (-1001, -1010, -1011):
+      warnings.warn('dgmres ' + ' and '.join(['wrote some warnings to stdout', 'changed some parameters to make them consistent or correct'][1 if rci.value==-1010 else 0:1 if rci.value==-1001 else 2]))
+    elif rci.value != 0:
       raise MatrixError('dgmres check failed with error code {}'.format(rci.value))
     with log.context('fgmres {:.0f}%', 0, 0) as format:
       while True:
@@ -784,9 +780,8 @@ class MKLMatrix(Matrix):
         elif rci.value == 2: # perform the stopping test
           if dpar[4] < atol:
             self.libmkl.dfgmres_get(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes, ctypes.byref(ctypes.c_int32(0)))
-            if numpy.linalg.norm(self @ b - rhs) < atol:
+            if numpy.linalg.norm(self @ x - b) < atol:
               break
-            b[:] = rhs # reset rhs vector for restart
           format(100 * numpy.log(dpar[2]/dpar[4]) / numpy.log(dpar[2]/atol))
           if ipar[3] > maxiter > 0:
             break
@@ -795,13 +790,13 @@ class MKLMatrix(Matrix):
         elif rci.value == 4: # check if the norm of the current orthogonal vector is zero
           if dpar[6] < ztol:
             self.libmkl.dfgmres_get(ctypes.byref(n), x.ctypes, b.ctypes, ctypes.byref(rci), ipar.ctypes, dpar.ctypes, tmp.ctypes, ctypes.byref(ctypes.c_int32(0)))
-            if numpy.linalg.norm(self @ b - rhs) < atol:
+            if numpy.linalg.norm(self @ x - b) < atol:
               break
             raise MatrixError('singular matrix')
         else:
           raise MatrixError('this should not have occurred: rci={}'.format(rci.value))
     log.debug('performed {} fgmres iterations, {} restarts'.format(ipar[3], ipar[3]//ipar[14]))
-    return b
+    return x
 
 ## MODULE METHODS
 

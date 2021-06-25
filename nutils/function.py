@@ -251,6 +251,24 @@ class Points(Evaluable):
 
 POINTS = Points()
 
+class EvaluableConstant(Evaluable):
+  '''Evaluate to the given constant value.
+
+  Parameters
+  ----------
+  value
+      The return value of ``eval``.
+  '''
+
+  __slots__ = 'value'
+
+  def __init__(self, value):
+    self.value = value
+    super().__init__(())
+
+  def evalf(self):
+    return self.value
+
 class Tuple(Evaluable):
 
   __slots__ = 'items', 'indices'
@@ -3258,6 +3276,101 @@ class Kronecker(Array):
   def blocks(self):
     return tuple((ind[:self.axis] + (self.pos[_],) + ind[self.axis:], InsertAxis(f, self.axis, 1)) for ind, f in self.func.blocks)
 
+class Custom(Array):
+  '''Backport for forward compatibility with version 7.
+
+  Parameters
+  ----------
+  args : iterable of :class:`Array` objects or immutable and hashable objects
+      The arguments of this array function.
+  shape : :class:`tuple` of :class:`int` or :class:`Array`
+      The shape of the array function.
+  dtype : :class:`bool`, :class:`int` or :class:`float`
+      The dtype of the array elements.
+
+  Example
+  -------
+
+  The following class implements ``multiply`` using :class:`Custom`
+  without broadcasting and for :class:`float` arrays only.
+
+  >>> class Multiply(Custom):
+  ...
+  ...   def __init__(self, left, right):
+  ...     left, right = broadcast_arrays(left, right)
+  ...     # Dtype coercion is beyond the scope of this example.
+  ...     if left.dtype != right.dtype:
+  ...       raise ValueError('left and right arguments should have the same dtype')
+  ...     super().__init__(args=(left, right), shape=left.shape, dtype=left.dtype)
+  ...
+  ...   @staticmethod
+  ...   def evalf(left, right):
+  ...     return left * right
+  ...
+  ...   @staticmethod
+  ...   def partial_derivative(iarg, left, right):
+  ...     if iarg == 0:
+  ...       return functools.reduce(diagonalize, range(left.ndim), right)
+  ...     elif iarg == 1:
+  ...       return functools.reduce(diagonalize, range(right.ndim), left)
+  ...     else:
+  ...       raise NotImplementedError
+  ...
+  >>> Multiply(asarray([1., 2.]), asarray([3., 4.])).eval()
+  array([[ 3.,  8.]])
+  >>> a = Argument('a', (2,))
+  >>> derivative(Multiply(a, asarray([3., 4.])), a).eval(a=numpy.array([1., 2.]))
+  array([[[ 3.,  0.],
+          [ 0.,  4.]]])
+  '''
+
+  def __init__(self, args, shape, dtype):
+    self.__args = tuple(args)
+    evaluable_args = tuple(arg if isinstance(arg, Evaluable) else EvaluableConstant(arg) for arg in self.__args)
+    super().__init__(args=evaluable_args, shape=shape, dtype=dtype)
+
+  def partial_derivative(self, iarg, *args):
+    '''Return the partial derivative of this function to :class:`Custom` constructor argument number ``iarg``.
+
+    This method is only called for those arguments that are instances of
+    :class:`Array` with dtype :class:`float` and have the derivative target as
+    a dependency. It is therefor allowed to omit an implementation for some or
+    all arguments if the above conditions are not met.
+
+    Parameters
+    ----------
+    iarg : :class:`int`
+        The index of the argument to compute the derivative for.
+    *args
+        The arguments as passed to the constructor of :class:`Custom`.
+
+    Returns
+    -------
+    :class:`Array` or similar
+        The partial derivative of this function to the given argument.
+    '''
+
+    raise NotImplementedError('The partial derivative of {} to argument {} (counting from 0) is not defined.'.format(type(self).__name__, iarg)) # pragma: nocover
+
+  def _derivative(self, var, seen):
+    if self.dtype != float:
+      return super()._derivative(var, seen)
+    result = Zeros(self.shape + var.shape, dtype=self.dtype)
+    for iarg, arg in enumerate(self.__args):
+      if not isinstance(arg, Array) or arg.dtype != float or var not in arg.dependencies and var != arg:
+        continue
+      pd = asarray(self.partial_derivative(iarg, *self.__args))
+      pd_expected_shape = self.shape + arg.shape
+      if pd.shape != pd_expected_shape:
+        raise ValueError('`partial_derivative` to argument {} returned an array with shape {} but was expected.'.format(iarg, pd.shape, pd_expected_shape))
+      for i, n in enumerate(var.shape, pd.ndim):
+        pd = insertaxis(pd, i, n)
+      da = derivative(arg, var, seen)
+      for i, n in enumerate(self.shape):
+        da = insertaxis(da, i, n)
+      result += (pd * da).sum(range(self.ndim, self.ndim + arg.ndim))
+    return result
+
 # BASES
 
 class Basis(Array):
@@ -4074,6 +4187,81 @@ def insertaxis(arg, n, length):
   arg = asarray(arg)
   n = numeric.normdim(arg.ndim+1, n)
   return InsertAxis(arg, n, length)
+
+def broadcast_arrays(*arrays):
+  '''Broadcast the given arrays.
+
+  Parameters
+  ----------
+  *arrays : :class:`Array` or similar
+
+  Returns
+  -------
+  :class:`tuple` of :class:`Array`
+      The broadcasted arrays.
+  '''
+
+  arrays_ = tuple(map(asarray, arrays))
+  shape = broadcast_shapes(*(arg.shape for arg in arrays_))
+  return tuple(broadcast_to(arg, shape) for arg in arrays_)
+
+def broadcast_shapes(*shapes):
+  '''Broadcast the given shapes into a single shape.
+
+  Parameters
+  ----------
+  *shapes : :class:`tuple` or :class:`int`
+
+  Returns
+  -------
+  :class:`tuple` of :class:`int`
+      The broadcasted shape.
+  '''
+
+  if not shapes:
+    raise ValueError('expected at least one shape but got none')
+  broadcasted = []
+  naxes = builtins.max(map(len, shapes))
+  aligned_shapes = ((*(1,) * (naxes - len(shape)), *shape) for shape in shapes)
+  for lengths in map(set, zip(*aligned_shapes)):
+    if len(lengths) > 1:
+      lengths.discard(1)
+    if len(lengths) != 1:
+      raise ValueError('cannot broadcast shapes {} because at least one or more axes have multiple lengths (excluding singletons)'.format(', '.join(map(str, shapes))))
+    broadcasted.append(next(iter(lengths)))
+  return tuple(broadcasted)
+
+def broadcast_to(array, shape):
+  '''Broadcast an array to a new shape.
+
+  Parameters
+  ----------
+  array : :class:`Array` or similar
+      The array to broadcast.
+  shape : :class:`tuple` of :class:`int`
+      The desired shape.
+
+  Returns
+  -------
+  :class:`Array`
+      The broadcasted array.
+  '''
+
+  broadcasted = asarray(array)
+  orig_shape = broadcasted.shape
+  if broadcasted.ndim > len(shape):
+    raise ValueError('cannot broadcast array with shape {} to {} because the dimension decreases'.format(orig_shape, shape))
+  nnew = len(shape) - broadcasted.ndim
+  for axis, length in enumerate(shape[:nnew]):
+    broadcasted = insertaxis(broadcasted, axis, length)
+  for axis, (actual, desired) in enumerate(zip(orig_shape, shape[nnew:])):
+    if actual == desired:
+      continue
+    elif actual == 1:
+      broadcasted = repeat(broadcasted, desired, axis + nnew)
+    else:
+      raise ValueError('cannot broadcast array with shape {} to {} because input axis {} is neither singleton nor has the desired length'.format(orig_shape, shape, axis))
+  return broadcasted
 
 def stack(args, axis=0):
   aligned = _numpy_align(*args)

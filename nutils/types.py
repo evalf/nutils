@@ -1461,7 +1461,7 @@ class unit:
     '''
     if unit[0] in '1234567890.*':
       raise ValueError('unit cannot start with a numeral')
-    return type('unit:'+unit, (float,), dict(unit=unit, __stringly_loads__=classmethod(self._loads), __stringly_dumps__=classmethod(self._dumps)))
+    return type('unit:'+unit, (float,), dict(unit=unit, __stringly_loads__=classmethod(lambda U, s: self._loads(U, s)), __stringly_dumps__=classmethod(lambda U, v: self._dumps(U, v))))
 
   def __call__(self, s):
     '''
@@ -1518,5 +1518,81 @@ def _f2s(v):
     return '0.' + '0' * -pos + s
   else:
     return s[:pos] + '.' + s[pos:]
+
+class _hashable_function_wrapper:
+
+  def __init__(self, wrapped, identifier):
+    self.__nutils_hash__ = nutils_hash(('hashable_function', identifier))
+    functools.update_wrapper(self, wrapped)
+
+  def __call__(*args, **kwargs):
+    return args[0].__wrapped__(*args[1:], **kwargs)
+
+  def __get__(self, instance, owner):
+    return self
+
+  def __hash__(self):
+    return hash(self.__nutils_hash__)
+
+  def __eq__(self, other):
+    return type(self) is type(other) and self.__nutils_hash__ == other.__nutils_hash__
+
+def hashable_function(identifier):
+  '''Decorator that wraps the decorated function and adds a Nutils hash.
+
+  Return a decorator that wraps the decorated function and adds a Nutils hash
+  based solely on the given ``identifier``. The identifier can be anything that has a
+  Nutils hash. The identifier should represent the behavior of the function and
+  should be changed when the behavior of the function changes.
+
+  If used on methods, this decorator behaves like :func:`staticmethod`.
+
+  Examples
+  --------
+
+  Make some function ``func`` hashable:
+
+  >>> @hashable_function('func v1')
+  ... def func(a, b):
+  ...   return a + b
+  ...
+
+  The Nutils hash can be obtained by calling ``nutils_hash`` on ``func``:
+
+  >>> nutils_hash(func).hex()
+  'b7fed72647f6a88dd3ce3808b2710eede7d7b5a5'
+
+  Note that the hash is based solely on the identifier passed to the decorator.
+  If we create another function ``other`` with the same identifier as ``func``,
+  then both have the same hash, despite returning different values.
+
+  >>> @hashable_function('func v1')
+  ... def other(a, b):
+  ...   return a * b
+  ...
+  >>> nutils_hash(other) == nutils_hash(func)
+  True
+  >>> func(1, 2) == other(1, 2)
+  False
+
+  The decorator can also be applied on methods:
+
+  >>> class Spam:
+  ...   @hashable_function('Spam.eggs v1')
+  ...   def eggs(a, b):
+  ...     # NOTE: `self` is absent because `hashable_function` behaves like `staticmethod`.
+  ...     return a + b
+  ...
+
+  The hash of ``eggs`` accessed via the class or an instance is the same:
+
+  >>> spam = Spam()
+  >>> nutils_hash(Spam.eggs).hex()
+  'dfdbb0ce20b617b17c3b854c23b2b9f7deb94cc6'
+  >>> nutils_hash(spam.eggs).hex()
+  'dfdbb0ce20b617b17c3b854c23b2b9f7deb94cc6'
+  '''
+
+  return functools.partial(_hashable_function_wrapper, identifier=identifier)
 
 # vim:sw=2:sts=2:et

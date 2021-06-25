@@ -564,6 +564,184 @@ class commutativity(TestCase):
     self.assertEqual(function.add(self.A, self.B) * function.dot(self.A, self.B, axes=[0]), function.dot(self.B, self.A, axes=[0]) * function.add(self.B, self.A))
 
 
+class Custom(TestCase):
+
+  def assertEvalAlmostEqual(self, factual, fdesired, **args):
+    args['_npoints'] = 4
+    self.assertAllAlmostEqual(factual.eval(**args), fdesired.eval(**args))
+
+  def test_array_arguments(self):
+
+    class Multiply(function.Custom):
+
+      def __init__(self, left, right):
+        if left.shape != right.shape:
+          raise ValueError('left and right arguments not aligned')
+        super().__init__(args=(left, right), shape=left.shape, dtype=left.dtype)
+
+      @staticmethod
+      def evalf(left, right):
+        return left * right
+
+      @staticmethod
+      def partial_derivative(iarg, left, right):
+        if iarg == 0:
+          return functools.reduce(function.diagonalize, range(right.ndim), right)
+        elif iarg == 1:
+          return functools.reduce(function.diagonalize, range(left.ndim), left)
+        else:
+          raise NotImplementedError
+
+    args = dict(left=numpy.array([[1,2,3],[4,5,6]], float), right=numpy.array([[2,3,4],[1,2,3]], float))
+    left = function.Argument('left', args['left'].shape)
+    right = function.Argument('right', args['right'].shape)
+    actual = Multiply(left, right)
+    desired = left * right
+    self.assertEvalAlmostEqual(actual, desired, **args)
+    self.assertEvalAlmostEqual(function.derivative(actual, left), function.derivative(desired, left), **args)
+    self.assertEvalAlmostEqual(function.derivative(actual, right), function.derivative(desired, right), **args)
+
+  def test_singleton_points(self):
+
+    class Func(function.Custom):
+
+      def __init__(self):
+        super().__init__(args=(), shape=(3,), dtype=int)
+
+      def evalf(self):
+        return numpy.array([1,2,3])[None]
+
+    self.assertEvalAlmostEqual(Func(), function.asarray([1,2,3]))
+
+  def test_consts(self):
+
+    class Func(function.Custom):
+
+      def __init__(self, offset, base1, exp1, base2, exp2):
+        base1 = function.asarray(base1)
+        base2 = function.asarray(base2)
+        assert base1.shape == base2.shape
+        super().__init__(args=(offset, base1, exp1.__index__(), base2, exp2.__index__()), shape=base1.shape, dtype=float)
+
+      def evalf(self, offset, base1, exp1, base2, exp2):
+        return offset + base1**exp1 + base2**exp2
+
+      def partial_derivative(self, iarg, offset, base1, exp1, base2, exp2):
+        if iarg == 1:
+          if exp1 == 0:
+            return function.zeros(base1.shape + base1.shape)
+          else:
+            return functools.reduce(function.diagonalize, range(base1.ndim), exp1*base1**(exp1-1))
+          return exp1*base1**(exp1-1)
+        elif iarg == 3:
+          if exp2 == 0:
+            return function.zeros(base2.shape + base2.shape)
+          else:
+            return functools.reduce(function.diagonalize, range(base2.ndim), exp2*base2**(exp2-1))
+        else:
+          raise NotImplementedError
+
+    b1 = function.Argument('b1', (3,))
+    b2 = function.Argument('b2', (3,))
+    actual = Func(4, b1, 2, b2, 3)
+    desired = 4 + b1**2 + b2**3
+    args = dict(b1=numpy.array([1,2,3]), b2=numpy.array([4,5,6]))
+    self.assertEvalAlmostEqual(actual, desired, **args)
+    self.assertEvalAlmostEqual(function.derivative(actual, b1), function.derivative(desired, b1), **args)
+    self.assertEvalAlmostEqual(function.derivative(actual, b2), function.derivative(desired, b2), **args)
+
+  def test_deduplication(self):
+
+    class A(function.Custom):
+
+      @staticmethod
+      def evalf(self):
+        pass
+
+      @staticmethod
+      def partial_derivative(self, iarg):
+        pass
+
+    class B(function.Custom):
+
+      @staticmethod
+      def evalf(self):
+        pass
+
+      @staticmethod
+      def partial_derivative(self, iarg):
+        pass
+
+    a = A(args=(function.Argument('a', (2,3)),), shape=(), dtype=float)
+    b = A(args=(function.Argument('a', (2,3)),), shape=(), dtype=float)
+    c = B(args=(function.Argument('a', (2,3)),), shape=(), dtype=float)
+    d = A(args=(function.Argument('a', (2,3)),), shape=(), dtype=int)
+    e = A(args=(function.Argument('a', (2,3)),), shape=(2,3), dtype=float)
+    f = A(args=(function.Argument('a', (2,3)), 1), shape=(), dtype=float)
+    g = A(args=(function.Argument('b', (2,3)),), shape=(), dtype=float)
+
+    self.assertIs(a, b)
+    self.assertEqual(len({b, c, d, e, f, g}), 6)
+
+  def test_partial_derivative_invalid_shape(self):
+
+    class Test(function.Custom):
+      @staticmethod
+      def partial_derivative(iarg, arg):
+        return function.zeros((2,3,4))
+
+    arg = function.Argument('arg', (5,))
+    with self.assertRaisesRegex(ValueError, '`partial_derivative` to argument 0 returned an array with shape'):
+      function.derivative(Test((arg,), (5,), float), arg)
+
+
+class broadcasting(TestCase):
+
+  def assertBroadcasts(self, desired, *from_shapes):
+    with self.subTest('broadcast_arrays'):
+      broadcasted = function.broadcast_arrays(*(function.Argument('arg{}'.format(i), s) for i, s in enumerate(from_shapes)))
+      actual = tuple(array.shape for array in broadcasted)
+      self.assertEqual(actual, (desired,)*len(from_shapes))
+    with self.subTest('broadcast_shapes'):
+      actual = function.broadcast_shapes(*from_shapes)
+      self.assertEqual(actual, desired)
+
+  def test_singleton_expansion(self):
+    self.assertBroadcasts((3,2,3), (1,2,3), (3,1,3), (3,1,1))
+    l = function.Int(function.Argument('l', ()))
+    self.assertBroadcasts((3,l,3), (1,l,3), (3,1,3), (3,1,1))
+
+  def test_prepend_axes(self):
+    self.assertBroadcasts((3,2,3), (3,2,3), (3,), (2,3))
+
+  def test_both(self):
+    self.assertBroadcasts((3,2,3), (3,2,3), (3,), (1,1))
+
+  def test_incompatible_shape(self):
+    with self.assertRaisesRegex(ValueError, 'cannot broadcast'):
+      function.broadcast_shapes((1,2), (2,3))
+    l = function.Int(function.Argument('l', ()))
+    with self.assertRaisesRegex(ValueError, 'cannot broadcast'):
+      function.broadcast_shapes((1,l), (2,3))
+
+  def test_no_shapes(self):
+    with self.assertRaisesRegex(ValueError, 'expected at least one shape but got none'):
+      function.broadcast_shapes()
+
+  def test_broadcast_to_decrease_dimension(self):
+    with self.assertRaisesRegex(ValueError, 'cannot broadcast array .* because the dimension decreases'):
+      function.broadcast_to(function.Argument('a', (2,3,4)), (3,4))
+
+  def test_broadcast_to_invalid_length(self):
+    with self.assertRaisesRegex(ValueError, 'cannot broadcast array .* because input axis .* is neither singleton nor has the desired length'):
+      function.broadcast_to(function.Argument('a', (2,3,4)), (2,5,4))
+    l = function.Int(function.Argument('l', ()))
+    with self.assertRaisesRegex(ValueError, 'cannot broadcast'):
+      function.broadcast_to(function.Argument('a', (2,l,4)), (2,5,4))
+    with self.assertRaisesRegex(ValueError, 'cannot broadcast'):
+      function.broadcast_to(function.Argument('a', (2,3,4)), (2,l,4))
+
+
 @parametrize
 class sampled(TestCase):
 
@@ -645,6 +823,13 @@ class elemwise(TestCase):
 
   def test_shape_derivative(self):
     self.assertEqual(function.localgradient(self.func, self.domain.ndims).shape, self.func.shape+(self.domain.ndims,))
+
+
+class EvaluableConstant(TestCase):
+
+  def test_evalf(self):
+    self.assertEqual(function.EvaluableConstant(1).evalf(), 1)
+    self.assertEqual(function.EvaluableConstant('1').evalf(), '1')
 
 
 class namespace(TestCase):
@@ -919,6 +1104,7 @@ class jacobian(TestCase):
 
 jacobian(delayed=True)
 jacobian(delayed=False)
+
 
 @parametrize
 class basis(TestCase):
