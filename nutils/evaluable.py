@@ -1539,12 +1539,8 @@ class Product(Array):
 
   def _derivative(self, var, seen):
     grad = derivative(self.func, var, seen)
-    funcs = stack([util.product(self.func[...,j] for j in range(self.func.shape[-1]) if i != j) for i in range(self.func.shape[-1])], axis=self.ndim)
+    funcs = Product(insertaxis(self.func, -2, self.func.shape[-1]) + Diagonalize(1 - self.func)) # replace diagonal entries by 1
     return (grad * appendaxes(funcs, var.shape)).sum(self.ndim)
-
-    ## this is a cleaner form, but is invalid if self.func contains zero values:
-    #ext = (...,)+(_,)*len(shape)
-    #return self[ext] * (derivative(self.func,var,shape,seen) / self.func[ext]).sum(self.ndim)
 
   def _take(self, indices, axis):
     return Product(_take(self.func, indices, axis))
