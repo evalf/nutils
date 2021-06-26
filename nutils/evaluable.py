@@ -1142,12 +1142,8 @@ class Normal(Array):
     if equalindex(self.shape[-1], 1):
       return zeros(self.shape + var.shape)
     G = self.lgrad[...,:-1]
-    m, n = G.shape[-2:]
-    GG = dot(insertaxis(G, -1, n), insertaxis(G, -2, n), -3)
-    GinvGG = dot(insertaxis(G, -1, n), insertaxis(inverse(GG), -3, m), -2)
-    Gder = derivative(G, var, seen)
-    nGder = dot(appendaxes(self, (n, *var.shape)), Gder, self.ndim-1)
-    return -dot(appendaxes(GinvGG, var.shape), insertaxis(nGder, self.ndim-1, m), self.ndim)
+    invGG = inverse(einsum('Aki,Akj->Aij', G, G))
+    return -einsum('Ail,Alj,Ak,AkjB->AiB', G, invGG, self, derivative(G, var, seen))
 
 class Constant(Array):
 
@@ -1540,7 +1536,7 @@ class Product(Array):
   def _derivative(self, var, seen):
     grad = derivative(self.func, var, seen)
     funcs = Product(insertaxis(self.func, -2, self.func.shape[-1]) + Diagonalize(1 - self.func)) # replace diagonal entries by 1
-    return (grad * appendaxes(funcs, var.shape)).sum(self.ndim)
+    return einsum('Ai,AiB->AB', funcs, grad)
 
   def _take(self, indices, axis):
     return Product(_take(self.func, indices, axis))
@@ -1601,12 +1597,7 @@ class Inverse(Array):
     return numeric.inv(arr)
 
   def _derivative(self, var, seen):
-    S = appendaxes(self, var.shape)
-    G = derivative(self.func, var, seen)
-    sh = self.shape[-1]
-    return -sum(insertaxis(insertaxis(S, self.ndim, sh), self.ndim+1, sh)
-              * insertaxis(insertaxis(G, self.ndim-2, sh), self.ndim+1, sh)
-              * insertaxis(insertaxis(S, self.ndim-2, sh), self.ndim-1, sh), [self.ndim-1, self.ndim])
+    return -einsum('Aij,AjkB,Akl->AilB', self, derivative(self.func, var, seen), self)
 
   def _eig(self, symmetric):
     eigval, eigvec = Eig(self.func, symmetric)
@@ -1669,9 +1660,7 @@ class Determinant(Array):
     return numpy.linalg.det(arr)
 
   def _derivative(self, var, seen):
-    Finv = swapaxes(inverse(self.func), -2, -1)
-    G = derivative(self.func, var, seen)
-    return appendaxes(self, var.shape) * sum(appendaxes(Finv, var.shape) * G, axis=[-2-var.ndim,-1-var.ndim])
+    return einsum('A,Aji,AijB->AB', self, inverse(self.func), derivative(self.func, var, seen))
 
   def _take(self, index, axis):
     return Determinant(_take(self.func, index, axis))
@@ -1785,8 +1774,8 @@ class Multiply(Array):
 
   def _derivative(self, var, seen):
     func1, func2 = self.funcs
-    return appendaxes(func1, var.shape) * derivative(func2, var, seen) \
-         + appendaxes(func2, var.shape) * derivative(func1, var, seen)
+    return einsum('A,AB->AB', func1, derivative(func2, var, seen)) \
+         + einsum('A,AB->AB', func2, derivative(func1, var, seen))
 
   def _takediag(self, axis1, axis2):
     func1, func2 = self.funcs
@@ -2208,14 +2197,13 @@ class Power(Array):
   def _derivative(self, var, seen):
     if self.power.isconstant:
       p = self.power.eval()
-      p_decr = p - (p!=0)
-      return appendaxes(multiply(p, power(self.func, p_decr)), var.shape) * derivative(self.func, var, seen)
+      return einsum('A,A,AB->AB', p, power(self.func, p - (p!=0)), derivative(self.func, var, seen))
     # self = func**power
     # ln self = power * ln func
     # self` / self = power` * ln func + power * func` / func
     # self` = power` * ln func * self + power * func` * func**(power-1)
-    return appendaxes(self.power * power(self.func, self.power - 1), var.shape) * derivative(self.func, var, seen) \
-         + appendaxes(ln(self.func) * self, var.shape) * derivative(self.power, var, seen)
+    return einsum('A,A,AB->AB', self.power, power(self.func, self.power - 1), derivative(self.func, var, seen)) \
+         + einsum('A,A,AB->AB', ln(self.func), self, derivative(self.power, var, seen))
 
   def _power(self, n):
     func = self.func
@@ -2287,7 +2275,7 @@ class Pointwise(Array):
   def _derivative(self, var, seen):
     if self.deriv is None:
       return super()._derivative(var, seen)
-    return util.sum(appendaxes(deriv(*self.args), var.shape) * derivative(arg, var, seen) for arg, deriv in zip(self.args, self.deriv))
+    return util.sum(einsum('A,AB->AB', deriv(*self.args), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.deriv))
 
   def _takediag(self, axis1, axis2):
     return self.__class__(*[_takediag(arg, axis1, axis2) for arg in self.args])
@@ -2972,7 +2960,7 @@ class TrigNormal(Array):
     super().__init__(args=[angle], shape=(*angle.shape, 2), dtype=float)
 
   def _derivative(self, var, seen):
-    return appendaxes(TrigTangent(self.angle), var.shape) * insertaxis(derivative(self.angle, var, seen), self.ndim-1, 2)
+    return einsum('Ai,AB->AiB', TrigTangent(self.angle), derivative(self.angle, var, seen))
 
   def evalf(self, angle):
     return numpy.stack([numpy.cos(angle), numpy.sin(angle)], axis=self.ndim-1)
@@ -2992,7 +2980,7 @@ class TrigTangent(Array):
     super().__init__(args=[angle], shape=(*angle.shape, 2), dtype=float)
 
   def _derivative(self, var, seen):
-    return -appendaxes(TrigNormal(self.angle), var.shape) * insertaxis(derivative(self.angle, var, seen), self.ndim-1, 2)
+    return -einsum('Ai,AB->AiB', TrigNormal(self.angle), derivative(self.angle, var, seen))
 
   def evalf(self, angle):
     return numpy.stack([-numpy.sin(angle), numpy.cos(angle)], axis=self.ndim-1)
@@ -3337,13 +3325,7 @@ class Polyval(Array):
     return numeric.poly_eval(coeffs, points)
 
   def _derivative(self, var, seen):
-    # Derivative to argument `points`.
-    dpoints = dot(
-      appendaxes(Polyval(self.coeffs, self.points, self.ngrad+1), var.shape),
-      derivative(Transpose.to_end(appendaxes(self.points, self.shape[self.points.ndim-1:]), self.points.ndim-1), var, seen),
-      self.ndim)
-    # Derivative to argument `coeffs`.  `trans` shuffles the coefficient axes
-    # of `derivative(self.coeffs)` after the derivative axes.
+    dpoints = einsum('ABi,AiD->ABD', Polyval(self.coeffs, self.points, self.ngrad+1), derivative(self.points, var, seen), A=self.points.ndim-1)
     dcoeffs = Transpose.from_end(Polyval(Transpose.to_end(derivative(self.coeffs, var, seen), *range(self.coeffs.ndim)), self.points, self.ngrad), *range(self.points.ndim-1, self.ndim))
     return dpoints + dcoeffs
 
@@ -4017,7 +3999,7 @@ def jacobian(geom, ndims):
   assert cndims >= ndims, 'geometry dimension < topology dimension'
   detJ = abs(determinant(J)) if cndims == ndims \
     else ones(J.shape[:-2]) if ndims == 0 \
-    else abs(determinant((insertaxis(J, -1, ndims) * insertaxis(J, -2, ndims)).sum(-3)))**.5
+    else abs(determinant(einsum('Aki,Akj->Aij', J, J)))**.5
   return detJ
 
 def determinant(arg, axes=(-2,-1)):
@@ -4216,6 +4198,87 @@ def replace_arguments(value, arguments):
     v = asarray(arguments[value._name])
     assert equalshape(value.shape, v.shape)
     return v
+
+def einsum(fmt, *args, **dims):
+  '''Multiply and/or contract arrays via format string.
+
+  The format string consists of a comma separated list of axis labels, followed
+  by ``->`` and the axis labels of the return value. For example, the following
+  swaps the axes of a matrix:
+
+  >>> einsum('ij->ji', ones([2,3]))
+  nutils.evaluable.Transpose<f:3,2>
+
+  Axis labels that do not occur in the return value are summed. For example,
+  the following performs a dot product of three matrices:
+
+  >>> einsum('ij,jk,kl->il', ones([2,3]), ones([3,4]), ones([4,5]))
+  nutils.evaluable.Sum<f:2,5>
+
+  In case the dimension of the input and output arrays may vary, a variable
+  length axes group can be denoted by a capital. Its length is automatically
+  established based on the dimension of the input arrays. The following example
+  performs a tensor product of an array and a vector:
+
+  >>> einsum('A,i->Ai', ones([2,3,4]), ones([5]))
+  nutils.evaluable.Multiply<f:2,3,4,5>
+
+  The format string may contain multiple variable length axes groups, but their
+  lengths must be resolvable from left to right. In case this is not possible,
+  lengths may be specified as keyword arguments.
+
+  >>> einsum('AjB,i->AijB', ones([2,3,4]), ones([5]), B=1)
+  nutils.evaluable.Multiply<f:2,5,3,4>
+  '''
+
+  sin, sout = fmt.split('->')
+  sin = sin.split(',')
+
+  if len(sin) != len(args):
+    raise ValueError('number of arguments does not match format string')
+
+  if any(len(s) != len(set(s)) for s in (*sin, sout)):
+    raise ValueError('internal repetitions are not supported')
+
+  if any(n < 0 for n in dims.values()):
+    raise ValueError('axis group dimensions cannot be negative')
+
+  for c in 'abcdefghijklmnopqrstuvwxyz':
+    dims.setdefault(c, 1) # lowercase characters default to single dimension
+
+  for s, arg in zip(sin, args):
+    missing_dims = arg.ndim - builtins.sum(dims.get(c, 0) for c in s)
+    unknown_axes = [c for c in s if c not in dims]
+    if len(unknown_axes) == 1 and missing_dims >= 0:
+      dims[unknown_axes[0]] = missing_dims
+    elif len(unknown_axes) > 1:
+      raise ValueError('cannot establish length of variable groups {}'.format(', '.join(unknown_axes)))
+    elif missing_dims:
+      raise ValueError('argument dimensions are inconsistent with format string')
+
+  # expand characters to match argument dimension
+  *sin, sout = [[(c, d) for c in s for d in range(dims[c])] for s in (*sin, sout)]
+  sall = sout + sorted({c for s in sin for c in s if c not in sout})
+
+  shapes = {}
+  for s, arg in zip(sin, args):
+    assert len(s) == arg.ndim
+    for c, sh in zip(s, arg.shape):
+      if not equalindex(shapes.setdefault(c, sh), sh):
+        raise ValueError('shapes do not match for axis {0[0]}{0[1]}'.format(c))
+
+  ret = None
+  for s, arg in zip(sin, args):
+    index = {c: i for i, c in enumerate(s)}
+    for c in sall:
+      if c not in index:
+        index[c] = arg.ndim
+        arg = InsertAxis(arg, shapes[c])
+    v = Transpose(arg, [index[c] for c in sall])
+    ret = v if ret is None else ret * v
+  for i in range(len(sout), len(sall)):
+    ret = Sum(ret)
+  return ret
 
 if __name__ == '__main__':
   # Diagnostics for the development for simplify operations.

@@ -1056,3 +1056,69 @@ class EvaluableConstant(TestCase):
     self.assertEqual(evaluable.EvaluableConstant(Test('a very long string that should be abbreviated'))._node_details, 'a very long strin...')
     self.assertEqual(evaluable.EvaluableConstant(Test('a string with\nmultiple lines'))._node_details, 'a string with...')
     self.assertEqual(evaluable.EvaluableConstant(Test('a very long string with\nmultiple lines'))._node_details, 'a very long strin...')
+
+class Einsum(TestCase):
+
+  def test_swapaxes(self):
+    arg = numpy.arange(6).reshape(2,3)
+    ret = evaluable.einsum('ij->ji', evaluable.asarray(arg))
+    self.assertAllEqual(ret.eval(), arg.T)
+
+  def test_rollaxes(self):
+    arg = numpy.arange(6).reshape(1,2,3)
+    ret = evaluable.einsum('Ai->iA', evaluable.asarray(arg))
+    self.assertAllEqual(ret.eval(), arg.transpose([2,0,1]))
+
+  def test_swapgroups(self):
+    arg = numpy.arange(24).reshape(1,2,3,4)
+    ret = evaluable.einsum('AB->BA', evaluable.asarray(arg), B=2)
+    self.assertAllEqual(ret.eval(), arg.transpose([2,3,0,1]))
+
+  def test_matvec(self):
+    arg1 = numpy.arange(6).reshape(2,3)
+    arg2 = numpy.arange(6).reshape(3,2)
+    ret = evaluable.einsum('ij,jk->ik', evaluable.asarray(arg1), evaluable.asarray(arg2))
+    self.assertAllEqual(ret.eval(), arg1 @ arg2)
+
+  def test_multidot(self):
+    arg1 = numpy.arange(6).reshape(2,3)
+    arg2 = numpy.arange(9).reshape(3,3)
+    arg3 = numpy.arange(6).reshape(3,2)
+    ret = evaluable.einsum('ij,jk,kl->il', evaluable.asarray(arg1), evaluable.asarray(arg2), evaluable.asarray(arg3))
+    self.assertAllEqual(ret.eval(), arg1 @ arg2 @ arg3)
+
+  def test_wrong_args(self):
+    arg = numpy.arange(6).reshape(2,3)
+    with self.assertRaisesRegex(ValueError, 'number of arguments does not match format string'):
+      evaluable.einsum('ij,jk->ik', arg)
+
+  def test_wrong_ellipse(self):
+    arg = numpy.arange(6)
+    with self.assertRaisesRegex(ValueError, 'argument dimensions are inconsistent with format string'):
+      evaluable.einsum('iAj->jAi', arg)
+
+  def test_wrong_dimension(self):
+    arg = numpy.arange(9).reshape(3,3)
+    with self.assertRaisesRegex(ValueError, 'argument dimensions are inconsistent with format string'):
+      evaluable.einsum('ijk->kji', arg)
+
+  def test_wrong_multi_ellipse(self):
+    arg = numpy.arange(6)
+    with self.assertRaisesRegex(ValueError, 'cannot establish length of variable groups A, B'):
+      evaluable.einsum('AB->BA', arg)
+
+  def test_wrong_indices(self):
+    arg = numpy.arange(9).reshape(3,3)
+    with self.assertRaisesRegex(ValueError, 'internal repetitions are not supported'):
+      evaluable.einsum('kk->', arg)
+
+  def test_wrong_shapes(self):
+    arg1 = numpy.arange(6).reshape(2,3)
+    arg2 = numpy.arange(6).reshape(3,2)
+    with self.assertRaisesRegex(ValueError, 'shapes do not match for axis i0'):
+      ret = evaluable.einsum('ij,ik->jk', evaluable.asarray(arg1), evaluable.asarray(arg2))
+
+  def test_wrong_group_dimension(self):
+    arg = numpy.arange(6)
+    with self.assertRaisesRegex(ValueError, 'axis group dimensions cannot be negative'):
+      evaluable.einsum('Aij->ijA', arg, A=-1)
