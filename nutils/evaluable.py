@@ -4161,7 +4161,7 @@ def appendaxes(func, shape):
 
   func = asarray(func)
   for n in shape:
-    func = insertaxis(func, func.ndim, n)
+    func = InsertAxis(func, n)
   return func
 
 def loop_index(name, length):
