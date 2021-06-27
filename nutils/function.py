@@ -148,37 +148,6 @@ class Array(Lowerable, metaclass=_ArrayMeta):
   def as_evaluable_array(self) -> evaluable.Array:
     return self.lower()
 
-  def prepare_eval(self, *, ndims: Optional[int] = None, opposite: bool = False, npoints: Optional[Union[int, evaluable.Array]] = evaluable.NPoints()) -> evaluable.Array:
-    '''Lower this object to a :class:`nutils.evaluable.Array`.
-
-    Parameters
-    ----------
-    ndims : :class:`int`
-        The dimension of the :class:`~nutils.sample.Sample` on which the
-        resulting :class:`nutils.evaluable.Array` will be evaluated.
-    opposite : :class:`bool`
-        Indicates which transform chain to use when evaluating the resulting
-        :class:`~nutils.evaluable.Array`. This has no effect when there is only
-        one transform chain.
-    npoints : :class:`int` or :class:`nutils.evaluable.Array` or :class:`None`
-        The length of the points axis or ``None`` if the result should not have
-        a points axis.
-    '''
-
-    transform_chains = evaluable.SelectChain(0), evaluable.SelectChain(1)
-    if opposite:
-      transform_chains = transform_chains[::-1]
-    if npoints is not None:
-      assert ndims is not None
-      coordinates = (evaluable.Points(npoints, ndims),)*2
-      if opposite:
-        coordinates = coordinates[::-1]
-      points_shape = coordinates[0].shape[:-1]
-    else:
-      coordinates = ()
-      points_shape = ()
-    return self.lower(points_shape=points_shape, transform_chains=transform_chains, coordinates=coordinates)
-
   @property
   def ndim(self) -> int:
     return len(self.shape)
