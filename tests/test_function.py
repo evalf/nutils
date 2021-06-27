@@ -55,22 +55,6 @@ class Array(TestCase):
     with self.assertWarns(warnings.NutilsDeprecationWarning):
       function.Array.cast([1,2]).simplified
 
-  def test_prepare_eval(self):
-    topo, geom = mesh.rectilinear([2])
-    f = topo.basis('discont', 0).dot([1, 2])
-    lowered = f.prepare_eval(ndims=topo.ndims, opposite=True)
-    smpl = topo.sample('bezier', 2)
-    with _builtin_warnings.catch_warnings():
-      _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
-      self.assertAllAlmostEqual(lowered.eval(_transforms=(smpl.transforms[0][0], smpl.transforms[0][0]), _points=smpl.points[0]), numpy.array([1, 1]))
-
-  def test_prepare_eval_without_points(self):
-    f = function.ones((2,), int)
-    lowered = f.prepare_eval(ndims=None, npoints=None)
-    with _builtin_warnings.catch_warnings():
-      _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
-      self.assertAllEqual(lowered.eval(), numpy.array([1, 1]))
-
 class integral_compatibility(TestCase):
 
   def test_eval(self):
