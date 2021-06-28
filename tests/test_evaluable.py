@@ -385,7 +385,7 @@ _check('cosh', evaluable.cosh, numpy.cosh, [(4,)])
 _check('sinh', evaluable.sinh, numpy.sinh, [(4,)])
 _check('abs', evaluable.abs, numpy.abs, [(4,)])
 _check('sign', evaluable.sign, numpy.sign, [(4,4)], zerograd=True)
-_check('power', evaluable.power, numpy.power, [(4,1),(1,4)], low=0)
+_check('power', evaluable.power, numpy.power, [(4,4),(4,4)], low=0)
 _check('negative', evaluable.negative, numpy.negative, [(4,)])
 _check('reciprocal', evaluable.reciprocal, numpy.reciprocal, [(4,)], low=-2, high=-1)
 _check('arcsin', evaluable.arcsin, numpy.arcsin, [(4,)])
@@ -405,24 +405,24 @@ _check('determinant141', lambda a: evaluable.determinant(a,(0,2)), lambda a: num
 _check('determinant434', lambda a: evaluable.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(0,1)), [(4,3,4)])
 _check('determinant4433', lambda a: evaluable.determinant(a,(2,3)), lambda a: numpy.linalg.det(a), [(4,4,3,3)])
 _check('determinant200', lambda a: evaluable.determinant(a,(1,2)), lambda a: numpy.linalg.det(a) if a.shape[-1] else numpy.ones(a.shape[:-2], float), [(2,0,0)], zerograd=True)
-_check('inverse141', lambda a: evaluable.inverse(a+evaluable.Diagonalize(evaluable.ones([1]))[:,None],(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(0,1)+numpy.eye(1)).swapaxes(0,1), [(1,4,1)])
-_check('inverse434', lambda a: evaluable.inverse(a+5*evaluable.Diagonalize(evaluable.ones([4]))[:,None],(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(0,1)+5*numpy.eye(4)).swapaxes(0,1), [(4,3,4)])
-_check('inverse4422', lambda a: evaluable.inverse(a+evaluable.Diagonalize(evaluable.ones([2]))), lambda a: numpy.linalg.inv(a+numpy.eye(2)), [(4,4,2,2)])
+_check('inverse141', lambda a: evaluable.inverse(a+1,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(0,1)+1).swapaxes(0,1), [(1,4,1)])
+_check('inverse434', lambda a: evaluable.inverse(a+5*evaluable.insertaxis(evaluable.Diagonalize(evaluable.ones([4])), 1, 3),(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(0,1)+5*numpy.eye(4)).swapaxes(0,1), [(4,3,4)])
+_check('inverse4422', lambda a: evaluable.inverse(a+evaluable.prependaxes(evaluable.Diagonalize(evaluable.ones([2])), (4,4))), lambda a: numpy.linalg.inv(a+numpy.eye(2)), [(4,4,2,2)])
 _check('repeat', lambda a: evaluable.repeat(a,3,1), lambda a: numpy.repeat(a,3,1), [(4,1,4)])
 _check('diagonalize', lambda a: evaluable.diagonalize(a,1,3), lambda a: numeric.diagonalize(a,1,3), [(4,4,4,4)])
-_check('multiply', evaluable.multiply, numpy.multiply, [(4,1),(4,4)])
+_check('multiply', evaluable.multiply, numpy.multiply, [(4,4),(4,4)])
 _check('dot', lambda a,b: evaluable.dot(a,b,axes=1), lambda a,b: (a*b).sum(1), [(4,2,4),(4,2,4)])
-_check('divide', evaluable.divide, lambda a, b: a * b**-1, [(4,4),(1,4)], low=-2, high=-1)
+_check('divide', evaluable.divide, lambda a, b: a * b**-1, [(4,4),(4,4)], low=-2, high=-1)
 _check('divide2', lambda a: evaluable.asarray(a)/2, lambda a: a/2, [(4,1)])
-_check('add', evaluable.add, numpy.add, [(4,1),(1,4)])
-_check('subtract', evaluable.subtract, numpy.subtract, [(4,1),(1,4)])
-_check('dot2', lambda a,b: evaluable.multiply(a,b).sum(-2), lambda a,b: (a*b).sum(-2), [(4,2,4),(1,2,4)])
+_check('add', evaluable.add, numpy.add, [(4,4),(4,4)])
+_check('subtract', evaluable.subtract, numpy.subtract, [(4,4),(4,4)])
+_check('dot2', lambda a,b: evaluable.multiply(a,b).sum(-2), lambda a,b: (a*b).sum(-2), [(4,2,4),(4,2,4)])
 _check('min', lambda a,b: evaluable.Minimum(a,b), numpy.minimum, [(4,4),(4,4)])
 _check('max', lambda a,b: evaluable.Maximum(a,b), numpy.maximum, [(4,4),(4,4)])
-_check('equal', lambda a,b: evaluable.Equal(*evaluable._numpy_align(a,b)), numpy.equal, [(4,1),(1,4)], zerograd=True)
-_check('greater', lambda a,b: evaluable.Greater(*evaluable._numpy_align(a,b)), numpy.greater, [(4,1),(1,4)], zerograd=True)
-_check('less', lambda a,b: evaluable.Less(*evaluable._numpy_align(a,b)), numpy.less, [(4,1),(1,4)], zerograd=True)
-_check('arctan2', evaluable.arctan2, numpy.arctan2, [(4,1),(1,4)])
+_check('equal', evaluable.Equal, numpy.equal, [(4,4),(4,4)], zerograd=True)
+_check('greater', evaluable.Greater, numpy.greater, [(4,4),(4,4)], zerograd=True)
+_check('less', evaluable.Less, numpy.less, [(4,4),(4,4)], zerograd=True)
+_check('arctan2', evaluable.arctan2, numpy.arctan2, [(4,4),(4,4)])
 _check('stack', lambda a,b: evaluable.stack([a,b], 0), lambda a,b: numpy.concatenate([a[_,:],b[_,:]], axis=0), [(4,),(4,)])
 _check('eig', lambda a: evaluable.eig(a+a.swapaxes(0,1),symmetric=True)[1], lambda a: numpy.linalg.eigh(a+a.swapaxes(0,1))[1], [(4,4)], hasgrad=False)
 _check('trignormal', lambda a: evaluable.TrigNormal(a), lambda a: numpy.array([numpy.cos(a), numpy.sin(a)]), [()])
@@ -705,7 +705,8 @@ class commutativity(TestCase):
     self.assertEqual(evaluable.dot(self.A, self.B, axes=[0]), evaluable.dot(self.B, self.A, axes=[0]))
 
   def test_combined(self):
-    self.assertEqual(evaluable.add(self.A, self.B) * evaluable.dot(self.A, self.B, axes=[0]), evaluable.dot(self.B, self.A, axes=[0]) * evaluable.add(self.B, self.A))
+    self.assertEqual(evaluable.add(self.A, self.B) * evaluable.insertaxis(evaluable.dot(self.A, self.B, axes=[0]), 0, 2),
+                     evaluable.insertaxis(evaluable.dot(self.B, self.A, axes=[0]), 0, 2) * evaluable.add(self.B, self.A))
 
 
 class sampled(TestCase):
@@ -770,7 +771,7 @@ class derivative(TestCase):
 
   def test_int(self):
     arg = evaluable.Argument('arg', (2,), int)
-    self.assertEqual(evaluable.derivative(arg[None], arg), evaluable.Zeros((1,2,2), int))
+    self.assertEqual(evaluable.derivative(evaluable.insertaxis(arg, 0, 1), arg), evaluable.Zeros((1,2,2), int))
 
 class jacobian(TestCase):
 
@@ -862,18 +863,16 @@ class asciitree(TestCase):
 
   @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
   def test_asciitree(self):
-    f = evaluable.Sin(evaluable.Inflate(1, evaluable.Zeros((), int), 2)**evaluable.Diagonalize(evaluable.Argument('arg', (2,))))
+    f = evaluable.Sin((evaluable.Zeros((), int))**evaluable.Diagonalize(evaluable.Argument('arg', (2,))))
     self.assertEqual(f.asciitree(richoutput=True),
                      '%0 = Sin; f:a2,a2\n'
                      '└ %1 = Power; f:a2,a2\n'
-                     '  ├ %2 = Transpose; 1,0; i:i2,s2\n'
-                     '  │ └ %3 = InsertAxis; i:s2,i2\n'
-                     '  │   ├ %4 = Inflate; i:s2\n'
-                     '  │   │ ├ 1\n'
-                     '  │   │ ├ 0\n'
-                     '  │   │ └ 2\n'
-                     '  │   └ 2\n'
-                     '  └ %5 = Diagonalize; f:d2,d2\n'
+                     '  ├ %2 = InsertAxis; i:i2,i2\n'
+                     '  │ ├ %3 = InsertAxis; i:i2\n'
+                     '  │ │ ├ 0\n'
+                     '  │ │ └ 2\n'
+                     '  │ └ 2\n'
+                     '  └ %4 = Diagonalize; f:d2,d2\n'
                      '    └ Argument; arg; f:a2\n')
 
   @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
@@ -1057,3 +1056,69 @@ class EvaluableConstant(TestCase):
     self.assertEqual(evaluable.EvaluableConstant(Test('a very long string that should be abbreviated'))._node_details, 'a very long strin...')
     self.assertEqual(evaluable.EvaluableConstant(Test('a string with\nmultiple lines'))._node_details, 'a string with...')
     self.assertEqual(evaluable.EvaluableConstant(Test('a very long string with\nmultiple lines'))._node_details, 'a very long strin...')
+
+class Einsum(TestCase):
+
+  def test_swapaxes(self):
+    arg = numpy.arange(6).reshape(2,3)
+    ret = evaluable.einsum('ij->ji', evaluable.asarray(arg))
+    self.assertAllEqual(ret.eval(), arg.T)
+
+  def test_rollaxes(self):
+    arg = numpy.arange(6).reshape(1,2,3)
+    ret = evaluable.einsum('Ai->iA', evaluable.asarray(arg))
+    self.assertAllEqual(ret.eval(), arg.transpose([2,0,1]))
+
+  def test_swapgroups(self):
+    arg = numpy.arange(24).reshape(1,2,3,4)
+    ret = evaluable.einsum('AB->BA', evaluable.asarray(arg), B=2)
+    self.assertAllEqual(ret.eval(), arg.transpose([2,3,0,1]))
+
+  def test_matvec(self):
+    arg1 = numpy.arange(6).reshape(2,3)
+    arg2 = numpy.arange(6).reshape(3,2)
+    ret = evaluable.einsum('ij,jk->ik', evaluable.asarray(arg1), evaluable.asarray(arg2))
+    self.assertAllEqual(ret.eval(), arg1 @ arg2)
+
+  def test_multidot(self):
+    arg1 = numpy.arange(6).reshape(2,3)
+    arg2 = numpy.arange(9).reshape(3,3)
+    arg3 = numpy.arange(6).reshape(3,2)
+    ret = evaluable.einsum('ij,jk,kl->il', evaluable.asarray(arg1), evaluable.asarray(arg2), evaluable.asarray(arg3))
+    self.assertAllEqual(ret.eval(), arg1 @ arg2 @ arg3)
+
+  def test_wrong_args(self):
+    arg = numpy.arange(6).reshape(2,3)
+    with self.assertRaisesRegex(ValueError, 'number of arguments does not match format string'):
+      evaluable.einsum('ij,jk->ik', arg)
+
+  def test_wrong_ellipse(self):
+    arg = numpy.arange(6)
+    with self.assertRaisesRegex(ValueError, 'argument dimensions are inconsistent with format string'):
+      evaluable.einsum('iAj->jAi', arg)
+
+  def test_wrong_dimension(self):
+    arg = numpy.arange(9).reshape(3,3)
+    with self.assertRaisesRegex(ValueError, 'argument dimensions are inconsistent with format string'):
+      evaluable.einsum('ijk->kji', arg)
+
+  def test_wrong_multi_ellipse(self):
+    arg = numpy.arange(6)
+    with self.assertRaisesRegex(ValueError, 'cannot establish length of variable groups A, B'):
+      evaluable.einsum('AB->BA', arg)
+
+  def test_wrong_indices(self):
+    arg = numpy.arange(9).reshape(3,3)
+    with self.assertRaisesRegex(ValueError, 'internal repetitions are not supported'):
+      evaluable.einsum('kk->', arg)
+
+  def test_wrong_shapes(self):
+    arg1 = numpy.arange(6).reshape(2,3)
+    arg2 = numpy.arange(6).reshape(3,2)
+    with self.assertRaisesRegex(ValueError, 'shapes do not match for axis i0'):
+      ret = evaluable.einsum('ij,ik->jk', evaluable.asarray(arg1), evaluable.asarray(arg2))
+
+  def test_wrong_group_dimension(self):
+    arg = numpy.arange(6)
+    with self.assertRaisesRegex(ValueError, 'axis group dimensions cannot be negative'):
+      evaluable.einsum('Aij->ijA', arg, A=-1)

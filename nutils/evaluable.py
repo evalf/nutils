@@ -51,7 +51,6 @@ else:
 from . import debug_flags, util, types, numeric, cache, transform, expression, warnings, parallel, sparse
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph
 import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log, weakref, time, contextlib, subprocess
-_ = numpy.newaxis
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
 
@@ -118,7 +117,10 @@ def equalshape(N:asshape, M:asshape):
   time.
   '''
 
-  assert len(N) == len(M)
+  if N == M:
+    return True
+  if len(N) != len(M):
+    return False
   retval = True
   for eq in map(equalindex, N, M):
     if eq == False:
@@ -886,25 +888,19 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   def __getitem__(self, item):
     if not isinstance(item, tuple):
       item = item,
-    iell = None
-    nx = self.ndim - len(item)
-    for i, it in enumerate(item):
-      if it is ...:
-        assert iell is None, 'at most one ellipsis allowed'
-        iell = i
-      elif it is _:
-        nx += 1
+    if ... in item:
+      iell = item.index(...)
+      if ... in item[iell+1:]:
+        raise IndexError('an index can have only a single ellipsis')
+      # replace ellipsis by the appropriate number of slice(None)
+      item = item[:iell] + (slice(None),)*(self.ndim-len(item)+1) + item[iell+1:]
+    if len(item) > self.ndim:
+      raise IndexError('too many indices for array')
     array = self
-    axis = 0
-    for it in item + (slice(None),)*nx if iell is None else item[:iell] + (slice(None),)*(nx+1) + item[iell+1:]:
-      if numeric.isint(it):
-        array = get(array, axis, item=it)
-      else:
-        array = insertaxis(array, axis, 1) if it is _ \
-           else _takeslice(array, it, axis) if isinstance(it, slice) \
-           else take(array, it, axis)
-        axis += 1
-    assert axis == array.ndim
+    for axis, it in reversed(tuple(enumerate(item))):
+      array = get(array, axis, item=it) if numeric.isint(it) \
+         else _takeslice(array, it, axis) if isinstance(it, slice) \
+         else take(array, it, axis)
     return array
 
   def __bool__(self):
@@ -952,7 +948,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   dot = dot
   swapaxes = swapaxes
   transpose = transpose
-  choose = lambda self, choices: Choose(self, _numpy_align(*choices))
+  choose = lambda self, choices: Choose(self, choices)
 
   @property
   def blocks(self):
@@ -1136,22 +1132,18 @@ class Normal(Array):
     n = lgrad[...,-1]
     # orthonormalize n to G
     G = lgrad[...,:-1]
-    GG = numeric.contract(G[...,:,_,:], G[...,:,:,_], axis=-3)
-    v1 = numeric.contract(G, n[...,:,_], axis=-2)
+    GG = numpy.einsum('...ki,...kj->...ij', G, G)
+    v1 = numpy.einsum('...ij,...i->...j', G, n)
     v2 = numpy.linalg.solve(GG, v1)
-    v3 = numeric.contract(G, v2[...,_,:], axis=-1)
+    v3 = numpy.einsum('...ij,...j->...i', G, v2)
     return numeric.normalize(n - v3)
 
   def _derivative(self, var, seen):
     if equalindex(self.shape[-1], 1):
       return zeros(self.shape + var.shape)
     G = self.lgrad[...,:-1]
-    m, n = G.shape[-2:]
-    GG = dot(insertaxis(G, -1, n), insertaxis(G, -2, n), -3)
-    GinvGG = dot(insertaxis(G, -1, n), insertaxis(inverse(GG), -3, m), -2)
-    Gder = derivative(G, var, seen)
-    nGder = dot(appendaxes(self, (n, *var.shape)), Gder, self.ndim-1)
-    return -dot(appendaxes(GinvGG, var.shape), insertaxis(nGder, self.ndim-1, m), self.ndim)
+    invGG = inverse(einsum('Aki,Akj->Aij', G, G))
+    return -einsum('Ail,Alj,Ak,AkjB->AiB', G, invGG, self, derivative(G, var, seen))
 
 class Constant(Array):
 
@@ -1543,12 +1535,8 @@ class Product(Array):
 
   def _derivative(self, var, seen):
     grad = derivative(self.func, var, seen)
-    funcs = stack([util.product(self.func[...,j] for j in range(self.func.shape[-1]) if i != j) for i in range(self.func.shape[-1])], axis=self.ndim)
-    return (grad * funcs[(...,)+(_,)*var.ndim]).sum(self.ndim)
-
-    ## this is a cleaner form, but is invalid if self.func contains zero values:
-    #ext = (...,)+(_,)*len(shape)
-    #return self[ext] * (derivative(self.func,var,shape,seen) / self.func[ext]).sum(self.ndim)
+    funcs = Product(insertaxis(self.func, -2, self.func.shape[-1]) + Diagonalize(1 - self.func)) # replace diagonal entries by 1
+    return einsum('Ai,AiB->AB', funcs, grad)
 
   def _take(self, indices, axis):
     return Product(_take(self.func, indices, axis))
@@ -1609,10 +1597,7 @@ class Inverse(Array):
     return numeric.inv(arr)
 
   def _derivative(self, var, seen):
-    G = derivative(self.func, var, seen)
-    n = var.ndim
-    a = slice(None)
-    return -sum(self[(...,a,a,_,_)+(_,)*n] * G[(...,_,a,a,_)+(a,)*n] * self[(...,_,_,a,a)+(_,)*n], [-2-n, -3-n])
+    return -einsum('Aij,AjkB,Akl->AilB', self, derivative(self.func, var, seen), self)
 
   def _eig(self, symmetric):
     eigval, eigvec = Eig(self.func, symmetric)
@@ -1675,10 +1660,7 @@ class Determinant(Array):
     return numpy.linalg.det(arr)
 
   def _derivative(self, var, seen):
-    Finv = swapaxes(inverse(self.func), -2, -1)
-    G = derivative(self.func, var, seen)
-    ext = (...,)+(_,)*var.ndim
-    return self[ext] * sum(Finv[ext] * G, axis=[-2-var.ndim,-1-var.ndim])
+    return einsum('A,Aji,AijB->AB', self, inverse(self.func), derivative(self.func, var, seen))
 
   def _take(self, index, axis):
     return Determinant(_take(self.func, index, axis))
@@ -1792,9 +1774,8 @@ class Multiply(Array):
 
   def _derivative(self, var, seen):
     func1, func2 = self.funcs
-    ext = (...,)+(_,)*var.ndim
-    return func1[ext] * derivative(func2, var, seen) \
-         + func2[ext] * derivative(func1, var, seen)
+    return einsum('A,AB->AB', func1, derivative(func2, var, seen)) \
+         + einsum('A,AB->AB', func2, derivative(func1, var, seen))
 
   def _takediag(self, axis1, axis2):
     func1, func2 = self.funcs
@@ -2214,17 +2195,15 @@ class Power(Array):
     return numeric.power(base, exp)
 
   def _derivative(self, var, seen):
-    ext = (...,)+(_,)*var.ndim
     if self.power.isconstant:
       p = self.power.eval()
-      p_decr = p - (p!=0)
-      return multiply(p, power(self.func, p_decr))[ext] * derivative(self.func, var, seen)
+      return einsum('A,A,AB->AB', p, power(self.func, p - (p!=0)), derivative(self.func, var, seen))
     # self = func**power
     # ln self = power * ln func
     # self` / self = power` * ln func + power * func` / func
     # self` = power` * ln func * self + power * func` * func**(power-1)
-    return (self.power * power(self.func, self.power - 1))[ext] * derivative(self.func, var, seen) \
-         + (ln(self.func) * self)[ext] * derivative(self.power, var, seen)
+    return einsum('A,A,AB->AB', self.power, power(self.func, self.power - 1), derivative(self.func, var, seen)) \
+         + einsum('A,A,AB->AB', ln(self.func), self, derivative(self.power, var, seen))
 
   def _power(self, n):
     func = self.func
@@ -2296,7 +2275,7 @@ class Pointwise(Array):
   def _derivative(self, var, seen):
     if self.deriv is None:
       return super()._derivative(var, seen)
-    return util.sum(deriv(*self.args)[(...,)+(_,)*var.ndim] * derivative(arg, var, seen) for arg, deriv in zip(self.args, self.deriv))
+    return util.sum(einsum('A,AB->AB', deriv(*self.args), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.deriv))
 
   def _takediag(self, axis1, axis2):
     return self.__class__(*[_takediag(arg, axis1, axis2) for arg in self.args])
@@ -2981,7 +2960,7 @@ class TrigNormal(Array):
     super().__init__(args=[angle], shape=(*angle.shape, 2), dtype=float)
 
   def _derivative(self, var, seen):
-    return appendaxes(TrigTangent(self.angle), var.shape) * insertaxis(derivative(self.angle, var, seen), self.ndim-1, 2)
+    return einsum('Ai,AB->AiB', TrigTangent(self.angle), derivative(self.angle, var, seen))
 
   def evalf(self, angle):
     return numpy.stack([numpy.cos(angle), numpy.sin(angle)], axis=self.ndim-1)
@@ -3001,7 +2980,7 @@ class TrigTangent(Array):
     super().__init__(args=[angle], shape=(*angle.shape, 2), dtype=float)
 
   def _derivative(self, var, seen):
-    return -appendaxes(TrigNormal(self.angle), var.shape) * insertaxis(derivative(self.angle, var, seen), self.ndim-1, 2)
+    return -einsum('Ai,AB->AiB', TrigNormal(self.angle), derivative(self.angle, var, seen))
 
   def evalf(self, angle):
     return numpy.stack([-numpy.sin(angle), numpy.cos(angle)], axis=self.ndim-1)
@@ -3346,13 +3325,7 @@ class Polyval(Array):
     return numeric.poly_eval(coeffs, points)
 
   def _derivative(self, var, seen):
-    # Derivative to argument `points`.
-    dpoints = dot(
-      appendaxes(Polyval(self.coeffs, self.points, self.ngrad+1), var.shape),
-      derivative(Transpose.to_end(appendaxes(self.points, self.shape[self.points.ndim-1:]), self.points.ndim-1), var, seen),
-      self.ndim)
-    # Derivative to argument `coeffs`.  `trans` shuffles the coefficient axes
-    # of `derivative(self.coeffs)` after the derivative axes.
+    dpoints = einsum('ABi,AiD->ABD', Polyval(self.coeffs, self.points, self.ngrad+1), derivative(self.points, var, seen), A=self.points.ndim-1)
     dcoeffs = Transpose.from_end(Polyval(Transpose.to_end(derivative(self.coeffs, var, seen), *range(self.coeffs.ndim)), self.points, self.ngrad), *range(self.points.ndim-1, self.ndim))
     return dpoints + dcoeffs
 
@@ -3815,39 +3788,18 @@ def _gatherblocks(blocks):
 def _gathersparsechunks(chunks):
   return tuple((*ind, util.sum(funcs)) for ind, funcs in util.gather((tuple(ind), func) for *ind, func in chunks))
 
-def _numpy_align(*arrays):
-  '''reshape arrays according to Numpy's broadcast conventions'''
+def _numpy_align(a, b):
+  '''check shape consistency and inflate scalars'''
 
-  # NOTE: this routine largely repeats the logic of equalshape to reduce the
-  # number of comparisons. Ultimately _numpy_align will be removed from
-  # evaluable so this situation is temporary.
-
-  arrays = [asarray(array) for array in arrays]
-  if len(arrays) > 1:
-    ndim = max([array.ndim for array in arrays])
-    for idim in range(ndim):
-      lengths = {}
-      insert = []
-      for iarray, array in enumerate(arrays):
-        if array.ndim < ndim:
-          insert.append(iarray) # mark array for axis insertion
-        else:
-          lengths.setdefault(array.shape[idim], []).append(iarray)
-      if len(lengths) > 1: # shapes differ -> simplify to canonical form
-        for length in list(lengths):
-          simple = length.simplified
-          if length is not simple:
-            lengths.setdefault(simple, []).extend(lengths.pop(length))
-      expand = () if len(lengths) == 1 \
-          else lengths.pop(Constant(1), ()) # NOTE: this uses the fact that Constant(1) is simple
-      assert len(lengths) == 1 or all(l.isconstant for l in lengths) and len(set(map(int, lengths))) == 1, \
-        'incompatible shapes: {}'.format(' != '.join(str(l) for l in lengths))
-      length, _ = lengths.popitem()
-      for i in insert:
-        arrays[i] = insertaxis(arrays[i], idim, length)
-      for i in expand:
-        arrays[i] = repeat(arrays[i], length, idim)
-  return arrays
+  a = asarray(a)
+  b = asarray(b)
+  if not a.ndim:
+    return _inflate_scalar(a, b.shape), b
+  if not b.ndim:
+    return a, _inflate_scalar(b, a.shape)
+  if equalshape(a.shape, b.shape):
+    return a, b
+  raise ValueError('incompatible shapes: {} != {}'.format(*[tuple(int(n) if n.isconstant else n for n in arg.shape) for arg in (a, b)]))
 
 def _inflate_scalar(arg, shape):
   arg = asarray(arg)
@@ -4018,7 +3970,6 @@ def insertaxis(arg, n, length):
   return Transpose.from_end(InsertAxis(arg, length), n)
 
 def stack(args, axis=0):
-  aligned = _numpy_align(*args)
   return Transpose.from_end(util.sum(Inflate(arg, i, len(args)) for i, arg in enumerate(args)), axis)
 
 def repeat(arg, length, axis):
@@ -4048,7 +3999,7 @@ def jacobian(geom, ndims):
   assert cndims >= ndims, 'geometry dimension < topology dimension'
   detJ = abs(determinant(J)) if cndims == ndims \
     else ones(J.shape[:-2]) if ndims == 0 \
-    else abs(determinant((J[...,:,:,_] * J[...,:,_,:]).sum(-3)))**.5
+    else abs(determinant(einsum('Aki,Akj->Aij', J, J)))**.5
   return detJ
 
 def determinant(arg, axes=(-2,-1)):
@@ -4188,7 +4139,7 @@ def appendaxes(func, shape):
 
   func = asarray(func)
   for n in shape:
-    func = insertaxis(func, func.ndim, n)
+    func = InsertAxis(func, n)
   return func
 
 def loop_index(name, length):
@@ -4247,6 +4198,87 @@ def replace_arguments(value, arguments):
     v = asarray(arguments[value._name])
     assert equalshape(value.shape, v.shape)
     return v
+
+def einsum(fmt, *args, **dims):
+  '''Multiply and/or contract arrays via format string.
+
+  The format string consists of a comma separated list of axis labels, followed
+  by ``->`` and the axis labels of the return value. For example, the following
+  swaps the axes of a matrix:
+
+  >>> einsum('ij->ji', ones([2,3]))
+  nutils.evaluable.Transpose<f:3,2>
+
+  Axis labels that do not occur in the return value are summed. For example,
+  the following performs a dot product of three matrices:
+
+  >>> einsum('ij,jk,kl->il', ones([2,3]), ones([3,4]), ones([4,5]))
+  nutils.evaluable.Sum<f:2,5>
+
+  In case the dimension of the input and output arrays may vary, a variable
+  length axes group can be denoted by a capital. Its length is automatically
+  established based on the dimension of the input arrays. The following example
+  performs a tensor product of an array and a vector:
+
+  >>> einsum('A,i->Ai', ones([2,3,4]), ones([5]))
+  nutils.evaluable.Multiply<f:2,3,4,5>
+
+  The format string may contain multiple variable length axes groups, but their
+  lengths must be resolvable from left to right. In case this is not possible,
+  lengths may be specified as keyword arguments.
+
+  >>> einsum('AjB,i->AijB', ones([2,3,4]), ones([5]), B=1)
+  nutils.evaluable.Multiply<f:2,5,3,4>
+  '''
+
+  sin, sout = fmt.split('->')
+  sin = sin.split(',')
+
+  if len(sin) != len(args):
+    raise ValueError('number of arguments does not match format string')
+
+  if any(len(s) != len(set(s)) for s in (*sin, sout)):
+    raise ValueError('internal repetitions are not supported')
+
+  if any(n < 0 for n in dims.values()):
+    raise ValueError('axis group dimensions cannot be negative')
+
+  for c in 'abcdefghijklmnopqrstuvwxyz':
+    dims.setdefault(c, 1) # lowercase characters default to single dimension
+
+  for s, arg in zip(sin, args):
+    missing_dims = arg.ndim - builtins.sum(dims.get(c, 0) for c in s)
+    unknown_axes = [c for c in s if c not in dims]
+    if len(unknown_axes) == 1 and missing_dims >= 0:
+      dims[unknown_axes[0]] = missing_dims
+    elif len(unknown_axes) > 1:
+      raise ValueError('cannot establish length of variable groups {}'.format(', '.join(unknown_axes)))
+    elif missing_dims:
+      raise ValueError('argument dimensions are inconsistent with format string')
+
+  # expand characters to match argument dimension
+  *sin, sout = [[(c, d) for c in s for d in range(dims[c])] for s in (*sin, sout)]
+  sall = sout + sorted({c for s in sin for c in s if c not in sout})
+
+  shapes = {}
+  for s, arg in zip(sin, args):
+    assert len(s) == arg.ndim
+    for c, sh in zip(s, arg.shape):
+      if not equalindex(shapes.setdefault(c, sh), sh):
+        raise ValueError('shapes do not match for axis {0[0]}{0[1]}'.format(c))
+
+  ret = None
+  for s, arg in zip(sin, args):
+    index = {c: i for i, c in enumerate(s)}
+    for c in sall:
+      if c not in index:
+        index[c] = arg.ndim
+        arg = InsertAxis(arg, shapes[c])
+    v = Transpose(arg, [index[c] for c in sall])
+    ret = v if ret is None else ret * v
+  for i in range(len(sout), len(sall)):
+    ret = Sum(ret)
+  return ret
 
 if __name__ == '__main__':
   # Diagnostics for the development for simplify operations.
