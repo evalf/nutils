@@ -20,6 +20,7 @@
 
 """The transformseq module."""
 
+from typing import Tuple
 from . import types, numeric, util, transform, element, evaluable
 from .elementseq import References
 from .transform import TransformChain, EvaluableTransformChain
@@ -333,6 +334,12 @@ class Transforms(types.Singleton):
     '''
 
     return _EvaluableTransformChainFromSequence(self, index)
+
+  def evaluable_index_with_tail(self, chain: EvaluableTransformChain) -> Tuple[evaluable.Array, EvaluableTransformChain]:
+    index_tail = _EvaluableIndexWithTail(self, chain)
+    index = evaluable.ArrayFromTuple(index_tail, 0, (), int, _lower=0, _upper=len(self) - 1)
+    tails = _EvaluableTransformChainFromTuple(index_tail, 1, self.fromdims, chain.fromdims)
+    return index, tails
 
 stricttransforms = types.strict[Transforms]
 
@@ -952,5 +959,28 @@ class _EvaluableTransformChainFromSequence(EvaluableTransformChain):
 
   def evalf(self, index: numpy.ndarray) -> TransformChain:
     return self._sequence[index.__index__()]
+
+class _EvaluableIndexWithTail(evaluable.Evaluable):
+
+  __slots__ = '_sequence'
+
+  def __init__(self, sequence: Transforms, chain: EvaluableTransformChain) -> None:
+    self._sequence = sequence
+    super().__init__((chain,))
+
+  def evalf(self, chain: TransformChain) -> Tuple[numpy.ndarray, TransformChain]:
+    index, tails = self._sequence.index_with_tail(chain)
+    return numpy.array(index), tails
+
+class _EvaluableTransformChainFromTuple(EvaluableTransformChain):
+
+  __slots__ = '_index'
+
+  def __init__(self, items: evaluable.Evaluable, index: int, todims: int, fromdims: int) -> None:
+    self._index = index
+    super().__init__((items,), todims, fromdims)
+
+  def evalf(self, items: tuple) -> TransformChain:
+    return items[self._index]
 
 # vim:sw=2:sts=2:et
