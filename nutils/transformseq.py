@@ -809,50 +809,6 @@ class UniformDerivedTransforms(Transforms):
     iderived = self._derived_transforms.index(tail[0])
     return iparent*len(self._derived_transforms) + iderived, tail[1:]
 
-class ProductTransforms(Transforms):
-  '''The product of two :class:`Transforms` objects.
-
-  The order of the resulting transforms is: ``transforms1[0]*transforms2[0],
-  transforms1[0]*transforms2[1], ..., transforms1[1]*transforms2[0],
-  transforms1[1]*transforms2[1], ...``.
-
-  Parameters
-  ----------
-  transforms1 : :class:`Transforms`
-      The first sequence of transforms.
-  transforms2 : :class:`Transforms`
-      The second sequence of transforms.
-  '''
-
-  __slots__ = '_transforms1', '_transforms2'
-
-  @types.apply_annotations
-  def __init__(self, transforms1:stricttransforms, transforms2:stricttransforms):
-    self._transforms1 = transforms1
-    self._transforms2 = transforms2
-    super().__init__(transforms1.fromdims+transforms2.fromdims)
-
-  def __iter__(self):
-    for trans1 in self._transforms1:
-      for trans2 in self._transforms2:
-        yield transform.Bifurcate(trans1, trans2),
-
-  def __getitem__(self, index):
-    if not numeric.isint(index):
-      return super().__getitem__(index)
-    index1, index2 = divmod(numeric.normdim(len(self), index), len(self._transforms2))
-    return transform.Bifurcate(self._transforms1[index1], self._transforms2[index2]),
-
-  def __len__(self):
-    return len(self._transforms1) * len(self._transforms2)
-
-  def index_with_tail(self, trans):
-    bf = trans[0]
-    assert isinstance(bf, transform.Bifurcate)
-    index1, tail1 = self._transforms1.index_with_tail(bf.trans1[:-1])
-    index2, tail2 = self._transforms2.index_with_tail(bf.trans2[:-1])
-    return index1*len(self._transforms2)+index2, None # FIXME
-
 class ChainedTransforms(Transforms):
   '''A sequence of chained :class:`Transforms` objects.
 
