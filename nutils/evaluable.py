@@ -640,23 +640,6 @@ class PopHead(TransformChain):
     assert trans[0].fromdims == self.todims
     return trans[1:]
 
-class SelectBifurcation(TransformChain):
-
-  __slots__ = 'trans', 'first'
-
-  @types.apply_annotations
-  def __init__(self, trans:strictevaluable, first:bool, todims:types.strictint=None):
-    self.trans = trans
-    self.first = first
-    super().__init__(args=[trans], todims=todims)
-
-  def evalf(self, trans):
-    assert isinstance(trans, tuple)
-    bf = trans[0]
-    assert isinstance(bf, transform.Bifurcate)
-    selected = bf.trans1 if self.first else bf.trans2
-    return selected + trans[1:]
-
 class TransformChainFromTuple(TransformChain):
 
   __slots__ = 'index',
@@ -4056,14 +4039,6 @@ def divide(arg1, arg2):
 
 def subtract(arg1, arg2):
   return add(arg1, negative(arg2))
-
-@replace
-def _bifurcate(arg, side):
-  if isinstance(arg, (SelectChain, TransformChainFromSequence)):
-    return SelectBifurcation(arg, side)
-
-bifurcate1 = functools.partial(_bifurcate, side=True)
-bifurcate2 = functools.partial(_bifurcate, side=False)
 
 def insertaxis(arg, n, length):
   return Transpose.from_end(InsertAxis(arg, length), n)

@@ -136,23 +136,6 @@ class TransformItem(types.Singleton):
 stricttransformitem = types.strict[TransformItem]
 stricttransform = types.tuple[stricttransformitem]
 
-class Bifurcate(TransformItem):
-
-  __slots__ = 'trans1', 'trans2'
-
-  @types.apply_annotations
-  def __init__(self, trans1:canonical, trans2:canonical):
-    fromdims = trans1[-1].fromdims + trans2[-1].fromdims
-    self.trans1 = trans1 + (Slice(0, trans1[-1].fromdims, fromdims),)
-    self.trans2 = trans2 + (Slice(trans1[-1].fromdims, fromdims, fromdims),)
-    super().__init__(todims=trans1[0].todims if trans1[0].todims == trans2[0].todims else None, fromdims=fromdims)
-
-  def __str__(self):
-    return '{}<>{}'.format(self.trans1, self.trans2)
-
-  def apply(self, points):
-    return apply(self.trans1, points), apply(self.trans2, points)
-
 class Matrix(TransformItem):
   '''Affine transformation :math:`x ↦ A x + b`, with :math:`A` an :math:`n×m` matrix, :math:`n≥m`
 
@@ -444,20 +427,6 @@ class SimplexChild(Square):
     else:
       raise NotImplementedError('SimplexChild(ndims={}, ichild={})'.format(ndims, ichild))
     super().__init__(linear, offset)
-
-class Slice(Matrix):
-
-  __slots__ = 's',
-
-  @types.apply_annotations
-  def __init__(self, i1:int, i2:int, fromdims:int):
-    todims = i2-i1
-    assert 0 <= todims <= fromdims
-    self.s = slice(i1,i2)
-    super().__init__(numpy.eye(fromdims)[self.s], numpy.zeros(todims))
-
-  def apply(self, points):
-    return types.frozenarray(points[:,self.s])
 
 class ScaledUpdim(Updim):
 

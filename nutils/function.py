@@ -2806,17 +2806,6 @@ def add_T(__arg: IntoArray, axes: Tuple[int, int] = (-2,-1)) -> Array:
   arg = Array.cast(__arg)
   return swapaxes(arg, *axes) + arg
 
-def bifurcate1(__arg: IntoArray) -> Array:
-  arg = Array.cast(__arg)
-  return _Wrapper(evaluable.bifurcate1, arg, shape=arg.shape, dtype=arg.dtype)
-
-def bifurcate2(__arg: IntoArray) -> Array:
-  arg = Array.cast(__arg)
-  return _Wrapper(evaluable.bifurcate2, arg, shape=arg.shape, dtype=arg.dtype)
-
-def bifurcate(__arg1: IntoArray, __arg2: IntoArray) -> Tuple[Array, Array]:
-  return bifurcate1(__arg1), bifurcate2(__arg2)
-
 def trignormal(_angle: IntoArray) -> Array:
   angle = Array.cast(_angle)
   assert angle.ndim == 0
