@@ -844,14 +844,6 @@ class _Opposite(Array):
       raise ValueError('opposite is not defined if there are more than two transform chains or coordinates')
     return self._arg.lower(transform_chains=transform_chains[::-1], coordinates=coordinates[::-1], **kwargs)
 
-class _LocalCoords(Array):
-
-  def __init__(self, ndims: int) -> None:
-    super().__init__((ndims,), float, frozenset(()))
-
-  def lower(self, **kwargs: Any) -> evaluable.Array:
-    raise ValueError('cannot be lowered')
-
 class _RootCoords(Array):
 
   def __init__(self, space: str, ndims: int) -> None:
@@ -862,7 +854,7 @@ class _RootCoords(Array):
     assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
     inv_linear = evaluable.diagonalize(evaluable.ones(self.shape))
     inv_linear = _prepend_points(inv_linear, transform_chains=transform_chains, coordinates=coordinates, **kwargs)
-    coords = evaluable.ApplyTransforms(transform_chains[0], coordinates[0], self.shape[0])
+    coords = transform_chains[0].apply(coordinates[0])
     return evaluable.WithDerivative(coords, _root_derivative_target(self._space, self.shape[0]), inv_linear)
 
 class _TransformsIndex(Array):
@@ -894,7 +886,7 @@ class _TransformsCoords(Array):
     else:
       Linv = evaluable.inverse(L)
     Linv = _prepend_points(Linv, transform_chains=transform_chains, coordinates=coordinates, **kwargs)
-    coords = evaluable.ApplyTransforms(tail, coordinates[0], self._transforms.fromdims)
+    coords = tail.apply(coordinates[0])
     return evaluable.WithDerivative(coords, _root_derivative_target(self._space, self._transforms.todims), Linv)
 
 class _Derivative(Array):
@@ -904,8 +896,6 @@ class _Derivative(Array):
     self._var = var
     if isinstance(var, Argument):
       self._eval_var = evaluable.Argument(var.name, var.shape)
-    elif isinstance(var, _LocalCoords):
-      self._eval_var = evaluable.LocalCoords(var.shape[0])
     else:
       raise ValueError('Cannot differentiate `arg` to {!r}.'.format(var))
     super().__init__(arg.shape+var.shape, arg.dtype, arg.spaces | var.spaces)
@@ -2478,22 +2468,6 @@ def derivative(__arg: IntoArray, __var: IntoArray) -> Array:
   arg = Array.cast(__arg)
   var = Array.cast(__var)
   return _Derivative(arg, var)
-
-def localgradient(__arg: IntoArray, __ndims: int) -> Array:
-  '''Return the gradient of the argument to the local coordinate system.
-
-  Parameters
-  ----------
-  arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-  ndims : :class:`int`
-      The dimension of the local coordinate system.
-
-  Returns
-  -------
-  :class:`Array`
-  '''
-
-  return derivative(__arg, _LocalCoords(__ndims))
 
 def grad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
   '''Return the gradient of the argument to the given geometry.
