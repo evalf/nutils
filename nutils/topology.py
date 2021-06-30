@@ -501,13 +501,13 @@ class Topology(types.Singleton):
     points = parallel.shempty((len(coords),len(geom)), dtype=float)
     _ielem = evaluable.Argument('_locate_ielem', shape=(), dtype=int)
     _point = evaluable.Argument('_locate_point', shape=(self.ndims,))
-    lower_args = dict(
+    egeom = geom.lower(
       points_shape=(),
       transform_chains = (
         evaluable.TransformChainFromSequence(self.transforms, _ielem),
         evaluable.TransformChainFromSequence(self.opposites, _ielem)),
       coordinates = (_point, _point))
-    xJ = evaluable.Tuple((geom.lower(**lower_args), function.localgradient(geom, self.ndims).lower(**lower_args))).simplified
+    xJ = evaluable.Tuple((egeom, evaluable.derivative(egeom, _point))).simplified
     arguments = dict(arguments or ())
     with parallel.ctxrange('locating', len(coords)) as ipoints:
       for ipoint in ipoints:
