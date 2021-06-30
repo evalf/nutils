@@ -584,102 +584,6 @@ class SparseArray(Evaluable):
       start = stop
     return data
 
-# TRANSFORMCHAIN
-
-class TransformChain(Evaluable):
-  '''Chain of affine transformations.
-
-  Evaluates to a tuple of :class:`nutils.transform.TransformItem` objects.
-  '''
-
-  __slots__ = 'todims',
-
-  @types.apply_annotations
-  def __init__(self, args:types.tuple[strictevaluable], todims:types.strictint=None):
-    self.todims = todims
-    super().__init__(args)
-
-class SelectChain(TransformChain):
-
-  __slots__ = 'n'
-
-  @types.apply_annotations
-  def __init__(self, n:types.strictint=0):
-    self.n = n
-    super().__init__(args=[EVALARGS])
-
-  def evalf(self, evalargs):
-    trans = evalargs['_transforms'][self.n]
-    assert isinstance(trans, tuple)
-    return trans
-
-  @property
-  def _node_details(self):
-    return 'index={}'.format(self.n)
-
-class TransformChainFromSequence(TransformChain):
-
-  @types.apply_annotations
-  def __init__(self, seq, index):
-    self._seq = seq
-    super().__init__(args=[index])
-
-  def evalf(self, index):
-    return self._seq[index.__index__()]
-
-class PopHead(TransformChain):
-
-  __slots__ = 'trans',
-
-  @types.apply_annotations
-  def __init__(self, todims:types.strictint, trans):
-    self.trans = trans
-    super().__init__(args=[self.trans], todims=todims)
-
-  def evalf(self, trans):
-    assert trans[0].fromdims == self.todims
-    return trans[1:]
-
-class TransformChainFromTuple(TransformChain):
-
-  __slots__ = 'index',
-
-  def __init__(self, values:strictevaluable, index:types.strictint, todims:types.strictint=None):
-    assert 0 <= index < len(values)
-    self.index = index
-    super().__init__(args=[values], todims=todims)
-
-  def evalf(self, values):
-    return values[self.index]
-
-class TransformsIndexWithTail(Evaluable):
-
-  __slots__ = '_transforms'
-
-  @types.apply_annotations
-  def __init__(self, transforms, trans):
-    self._transforms = transforms
-    super().__init__(args=[trans])
-
-  def evalf(self, trans):
-    index, tail = self._transforms.index_with_tail(trans)
-    return numpy.array(index), tail
-
-  def __len__(self):
-    return 2
-
-  @property
-  def index(self):
-    return ArrayFromTuple(self, index=0, shape=(), dtype=int, _lower=0, _upper=max(0, len(self._transforms)-1))
-
-  @property
-  def tail(self):
-    return TransformChainFromTuple(self, index=1, todims=self._transforms.fromdims)
-
-  def __iter__(self):
-    yield self.index
-    yield self.tail
-
 # ARRAYFUNC
 #
 # The main evaluable. Closely mimics a numpy array.
@@ -1539,42 +1443,6 @@ class Product(Array):
 
   def _takediag(self, axis1, axis2):
     return product(_takediag(self.func, axis1, axis2), self.ndim-2)
-
-class ApplyTransforms(Array):
-
-  __slots__ = 'trans', '_points', '_todims'
-
-  @types.apply_annotations
-  def __init__(self, trans, points, todims:types.strictint):
-    self.trans = trans
-    self._points = points
-    self._todims = todims
-    super().__init__(args=[points, trans], shape=points.shape[:-1]+(todims,), dtype=float)
-
-  def evalf(self, points, chain):
-    from .transform import apply
-    return apply(chain, points)
-
-  def _derivative(self, var, seen):
-    if isinstance(var, LocalCoords) and len(var) > 0:
-      return prependaxes(LinearFrom(self.trans, self._todims, len(var)), self.shape[:-1])
-    else:
-      return einsum('ij,AjB->AiB', LinearFrom(self.trans, self._todims, self._points.shape[-1].__index__()), derivative(self._points, var, seen), B=var.ndim)
-
-class LinearFrom(Array):
-
-  __slots__ = 'todims', 'fromdims'
-
-  @types.apply_annotations
-  def __init__(self, trans, todims:types.strictint, fromdims:types.strictint):
-    self.todims = todims
-    self.fromdims = fromdims
-    super().__init__(args=[trans], shape=(todims, fromdims), dtype=float)
-
-  def evalf(self, chain):
-    from .transform import linearfrom
-    assert not chain or chain[0].todims == self.todims
-    return linearfrom(chain, self.fromdims)
 
 class Inverse(Array):
   '''
@@ -3139,18 +3007,6 @@ class Argument(DerivativeTargetBase):
   def arguments(self):
     return frozenset({self})
 
-class LocalCoords(DerivativeTargetBase):
-  'local coords derivative target'
-
-  __slots__ = ()
-
-  @types.apply_annotations
-  def __init__(self, ndims:types.strictint):
-    super().__init__(args=[], shape=[ndims], dtype=float)
-
-  def evalf(self):
-    raise Exception('LocalCoords should not be evaluated')
-
 class IdentifierDerivativeTarget(DerivativeTargetBase):
   '''Virtual derivative target distinguished by an identifier.
 
@@ -4132,23 +3988,6 @@ def get(arg, iax, item):
       assert item >= 0
   return Take(Transpose.to_end(arg, iax), item)
 
-def jacobian(geom, ndims):
-  '''
-  Return :math:`\\sqrt{|J^T J|}` with :math:`J` the gradient of ``geom`` to the
-  local coordinate system with ``ndims`` dimensions (``localgradient(geom,
-  ndims)``).
-  '''
-
-  assert geom.ndim >= 1
-  J = localgradient(geom, ndims)
-  cndims = int(geom.shape[-1])
-  assert int(J.shape[-2]) == cndims and int(J.shape[-1]) == ndims, 'wrong jacobian shape: got {}, expected {}'.format((int(J.shape[-2]), int(J.shape[-1])), (cndims, ndims))
-  assert cndims >= ndims, 'geometry dimension < topology dimension'
-  detJ = abs(determinant(J)) if cndims == ndims \
-    else ones(J.shape[:-2]) if ndims == 0 \
-    else abs(determinant(einsum('Aki,Akj->Aij', J, J)))**.5
-  return detJ
-
 def determinant(arg, axes=(-2,-1)):
   return Determinant(Transpose.to_end(arg, *axes))
 
@@ -4193,11 +4032,6 @@ def derivative(func, var, seen=None):
     seen[func] = result
   assert equalshape(result.shape, func.shape+var.shape), 'bug in {}._derivative'.format(type(func).__name__)
   return result
-
-def localgradient(arg, ndims):
-  'local derivative'
-
-  return derivative(arg, LocalCoords(ndims))
 
 def diagonalize(arg, axis=-1, newaxis=-1):
   arg = asarray(arg)

@@ -467,7 +467,7 @@ class _Basis(function.Array):
   def lower(self, *, transform_chains=(), coordinates=(), **kwargs) -> evaluable.Array:
     assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
     index, tail = transform_chains[0].index_with_tail_in(self._sample.transforms[0])
-    coords = evaluable.ApplyTransforms(tail, coordinates[0], self.shape[0])
+    coords = tail.apply(coordinates[0])
     expect = self._sample.points.get_evaluable_coords(index)
     sampled = evaluable.Sampled(coords, expect)
     indices = self._sample.get_evaluable_indices(index)
