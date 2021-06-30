@@ -50,7 +50,7 @@ class Lowerable(Protocol):
         The coordinates at which the function will be evaluated.
     '''
 
-_ArrayMeta = type(Lowerable)
+_ArrayMeta = type
 
 if debug_flags.lower:
   def _debug_lower(self, **kwargs):
@@ -93,7 +93,7 @@ class _ArrayMeta(_ArrayMeta):
     return super().__new__(mcls, name, bases, namespace)
 
 
-class Array(Lowerable, metaclass=_ArrayMeta):
+class Array(metaclass=_ArrayMeta):
   '''Base class for array valued functions.
 
   Parameters
@@ -143,6 +143,9 @@ class Array(Lowerable, metaclass=_ArrayMeta):
   def __init__(self, shape: Shape, dtype: DType) -> None:
     self.shape = tuple(sh.__index__() for sh in shape)
     self.dtype = dtype
+
+  def lower(self, *, points_shape: Tuple[evaluable.Array, ...] = (), transform_chains: Tuple[evaluable.TransformChain, ...] = (), coordinates: Tuple[evaluable.Array, ...] = ()) -> evaluable.Array:
+    raise NotImplementedError
 
   @util.cached_property
   def as_evaluable_array(self) -> evaluable.Array:
@@ -698,7 +701,7 @@ class _CustomEvaluable(evaluable.Array):
       result += (epd * eda).sum(range(self.ndim, self.ndim + arg.ndim - self.points_dim))
     return result
 
-class _WithoutPoints(Lowerable):
+class _WithoutPoints:
 
   def __init__(self, __arg: Array) -> None:
     self._arg = __arg
