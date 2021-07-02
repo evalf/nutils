@@ -62,10 +62,10 @@ class trimmedboundary(TestCase):
     self.domain2 = self.domain1.refined_by(filter(self.domain1.transforms.contains, self.domain0[:,1:].transforms))
 
   def test_boundary_length(self):
-    self.assertEqual(self.domain2.boundary.integrate(function.J(self.geom), ischeme='gauss1'), 6 if self.gridline else 6.5)
+    self.assertAlmostEqual(self.domain2.boundary.integrate(function.J(self.geom), ischeme='gauss1'), 6 if self.gridline else 6.5)
 
   def test_trimmed_boundary_length(self):
-    self.assertEqual(self.domain2.boundary['trimmed'].integrate(function.J(self.geom), ischeme='gauss1'), 2)
+    self.assertAlmostEqual(self.domain2.boundary['trimmed'].integrate(function.J(self.geom), ischeme='gauss1'), 2)
 
   @parametrize.enable_if(lambda gridline, **params: gridline)
   def test_trimmed_boundary(self):
