@@ -346,7 +346,7 @@ class Topology(types.Singleton):
     if leveltopo is None:
       ielem_arg = evaluable.Argument('_trim_index', (), dtype=int)
       coordinates = self.references.getpoints('vertex', maxrefine).get_evaluable_coords(ielem_arg)
-      levelset = levelset.lower(points_shape=coordinates.shape[:-1], transform_chains=(self.transforms.get_evaluable(ielem_arg), self.opposites.get_evaluable(ielem_arg)), coordinates=(coordinates,)*2).optimized_for_numpy
+      levelset = levelset.lower(coordinates.shape[:-1], {self.space: (self.transforms.get_evaluable(ielem_arg), self.opposites.get_evaluable(ielem_arg))}, {self.space: coordinates}).optimized_for_numpy
       with log.iter.percentage('trimming', range(len(self)), self.references) as items:
         for ielem, ref in items:
           levels = levelset.eval(_trim_index=ielem, **arguments)
@@ -355,7 +355,7 @@ class Topology(types.Singleton):
       log.info('collecting leveltopo elements')
       coordinates = evaluable.Points(evaluable.NPoints(), self.ndims)
       transform_chain = transform.EvaluableTransformChain.from_argument('trans', self.transforms.todims, self.transforms.fromdims)
-      levelset = levelset.lower(points_shape=coordinates.shape[:-1], transform_chains=(transform_chain,), coordinates=(coordinates,)).optimized_for_numpy
+      levelset = levelset.lower(coordinates.shape[:-1], {self.space: (transform_chain, transform_chain)}, {self.space: coordinates}).optimized_for_numpy
       bins = [set() for ielem in range(len(self))]
       for trans in leveltopo.transforms:
         ielem, tail = self.transforms.index_with_tail(trans)
@@ -510,10 +510,7 @@ class Topology(types.Singleton):
     points = parallel.shempty((len(coords),len(geom)), dtype=float)
     _ielem = evaluable.Argument('_locate_ielem', shape=(), dtype=int)
     _point = evaluable.Argument('_locate_point', shape=(self.ndims,))
-    egeom = geom.lower(
-      points_shape=(),
-      transform_chains=(self.transforms.get_evaluable(_ielem), self.opposites.get_evaluable(_ielem)),
-      coordinates = (_point, _point))
+    egeom = geom.lower((), {self.space: (self.transforms.get_evaluable(_ielem), self.opposites.get_evaluable(_ielem))}, {self.space: _point})
     xJ = evaluable.Tuple((egeom, evaluable.derivative(egeom, _point))).simplified
     arguments = dict(arguments or ())
     with parallel.ctxrange('locating', len(coords)) as ipoints:
