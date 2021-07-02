@@ -12,7 +12,7 @@ class TopologyAssertions:
     imask = numpy.zeros(len(interfaces), dtype=int)
     coordinates = evaluable.Points(evaluable.NPoints(), boundary.ndims)
     transform_chain = transform.EvaluableTransformChain.from_argument('trans', domain.transforms.todims, boundary.ndims)
-    lowered_geom = geom.lower(points_shape=coordinates.shape[:-1], transform_chains=(transform_chain,), coordinates=(coordinates,))
+    lowered_geom = geom.lower(coordinates.shape[:-1], {domain.space: (transform_chain,)*2}, {domain.space: coordinates})
     for ielem, ioppelems in enumerate(domain.connectivity):
       for iedge, ioppelem in enumerate(ioppelems):
         etrans, eref = domain.references[ielem].edges[iedge]

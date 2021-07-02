@@ -264,27 +264,27 @@ class Unlower(TestCase):
 
   def test(self):
     e = evaluable.Argument('arg', (2,3,4,5), int)
-    f = function._Unlower(e, frozenset(), (2,3), (), ())
+    f = function._Unlower(e, frozenset(), (2,3), {}, {})
     self.assertEqual(f.shape, (4,5))
     self.assertEqual(f.dtype, int)
-    self.assertEqual(f.lower(points_shape=(2,3), transform_chains=(), coordinates=()), e)
+    self.assertEqual(f.lower((2,3), {}, {}), e)
     with self.assertRaises(ValueError):
-      f.lower(points_shape=(3,4), transform_chains=(), coordinates=())
+      f.lower((3,4), {}, {})
 
 class Custom(TestCase):
 
   def assertEvalAlmostEqual(self, factual, fdesired, **args):
     with self.subTest('0d-points'):
-      self.assertAllAlmostEqual(factual.lower().eval(**args), fdesired.lower().eval(**args))
-    transform_chains = transform.EvaluableTransformChain.from_argument('test', 2, 2),
+      self.assertAllAlmostEqual(factual.as_evaluable_array.eval(**args), fdesired.as_evaluable_array.eval(**args))
+    transform_chains = dict(test=(transform.EvaluableTransformChain.from_argument('test', 2, 2),)*2)
     with self.subTest('1d-points'):
       coords = evaluable.Zeros((5,2), float)
-      lower_args = dict(points_shape=coords.shape[:-1], coordinates=(coords,), transform_chains=transform_chains)
-      self.assertAllAlmostEqual(factual.lower(**lower_args).eval(**args), fdesired.lower(**lower_args).eval(**args))
+      lower_args = coords.shape[:-1], transform_chains, dict(test=coords)
+      self.assertAllAlmostEqual(factual.lower(*lower_args).eval(**args), fdesired.lower(*lower_args).eval(**args))
     with self.subTest('2d-points'):
       coords = evaluable.Zeros((5,6,2), float)
-      lower_args = dict(points_shape=coords.shape[:-1], coordinates=(coords,), transform_chains=transform_chains)
-      self.assertAllAlmostEqual(factual.lower(**lower_args).eval(**args), fdesired.lower(**lower_args).eval(**args))
+      lower_args = coords.shape[:-1], transform_chains, dict(test=coords)
+      self.assertAllAlmostEqual(factual.lower(*lower_args).eval(**args), fdesired.lower(*lower_args).eval(**args))
 
   def assertMultipy(self, leftval, rightval):
 
@@ -401,14 +401,14 @@ class Custom(TestCase):
       def partial_derivative(self, iarg):
         pass
 
-    a = A(args=(function.Argument('a', (2,3)),), shape=(), dtype=float).lower()
-    b = A(args=(function.Argument('a', (2,3)),), shape=(), dtype=float).lower()
-    c = B(args=(function.Argument('a', (2,3)),), shape=(), dtype=float).lower()
-    d = A(args=(function.Argument('a', (2,3)),), shape=(), dtype=int).lower()
-    e = A(args=(function.Argument('a', (2,3)),), shape=(2,3), dtype=float).lower()
-    f = A(args=(function.Argument('a', (2,3)), 1), shape=(), dtype=float).lower()
-    g = A(args=(function.Argument('b', (2,3)),), shape=(), dtype=float).lower()
-    h = A(args=(function.Argument('a', (2,3)),), shape=(), dtype=float, npointwise=1).lower()
+    a = A(args=(function.Argument('a', (2,3)),), shape=(), dtype=float).as_evaluable_array
+    b = A(args=(function.Argument('a', (2,3)),), shape=(), dtype=float).as_evaluable_array
+    c = B(args=(function.Argument('a', (2,3)),), shape=(), dtype=float).as_evaluable_array
+    d = A(args=(function.Argument('a', (2,3)),), shape=(), dtype=int).as_evaluable_array
+    e = A(args=(function.Argument('a', (2,3)),), shape=(2,3), dtype=float).as_evaluable_array
+    f = A(args=(function.Argument('a', (2,3)), 1), shape=(), dtype=float).as_evaluable_array
+    g = A(args=(function.Argument('b', (2,3)),), shape=(), dtype=float).as_evaluable_array
+    h = A(args=(function.Argument('a', (2,3)),), shape=(), dtype=float, npointwise=1).as_evaluable_array
 
     self.assertIs(a, b)
     self.assertEqual(len({b, c, d, e, f, g, h}), 7)
@@ -417,7 +417,7 @@ class Custom(TestCase):
 
     class A(function.Custom): pass
 
-    self.assertEqual(A(args=(), shape=(), dtype=float).lower()._node_details, 'A')
+    self.assertEqual(A(args=(), shape=(), dtype=float).as_evaluable_array._node_details, 'A')
 
   def test_evaluable_argument(self):
     with self.assertRaisesRegex(ValueError, 'It is not allowed to call this function with a `nutils.evaluable.Evaluable` argument.'):
@@ -453,7 +453,7 @@ class Custom(TestCase):
         return numpy.zeros(args[0].shape[:1], float)
 
     Z = lambda *s: function.zeros(s)
-    Test((Z(1,3,2), Z(2,1,4)), ((6,2),(6,4)), 2).lower().eval()
+    Test((Z(1,3,2), Z(2,1,4)), ((6,2),(6,4)), 2).as_evaluable_array.eval()
 
   def test_partial_derivative_invalid_shape(self):
 
@@ -464,7 +464,7 @@ class Custom(TestCase):
 
     arg = function.Argument('arg', (5,))
     with self.assertRaisesRegex(ValueError, '`partial_derivative` to argument 0 returned an array with shape'):
-      Test((arg,), (5,), float).derivative(arg).lower()
+      Test((arg,), (5,), float).derivative(arg).as_evaluable_array
 
 class broadcasting(TestCase):
 
@@ -1262,7 +1262,7 @@ class CommonBasis:
     ref = element.PointReference() if self.basis.coords.shape[0] == 0 else element.LineReference()**self.basis.coords.shape[0]
     points = ref.getpoints('bezier', 4)
     coordinates = evaluable.Constant(points.coords)
-    lowered = self.basis.lower(points_shape=coordinates.shape[:-1], transform_chains=(self.checktransforms.get_evaluable(evaluable.Argument('ielem', (), int)),), coordinates=(coordinates,))
+    lowered = self.basis.lower(coordinates.shape[:-1], dict(X=(self.checktransforms.get_evaluable(evaluable.Argument('ielem', (), int)),)*2), dict(X=coordinates))
     with _builtin_warnings.catch_warnings():
       _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
       for ielem in range(self.checknelems):
