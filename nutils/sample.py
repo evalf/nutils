@@ -35,13 +35,15 @@ selected sample points, and is typically used in combination with the "bezier"
 set.
 '''
 
-from . import types, points, util, function, evaluable, parallel, numeric, matrix, transformseq, sparse
+from . import types, points, util, function, evaluable, parallel, numeric, matrix, sparse
 from .pointsseq import PointsSequence
+from .transformseq import Transforms
+from typing import Iterable, Mapping, Optional, Sequence, Tuple, Union
 import numpy, numbers, collections.abc, os, treelog as log, abc
 
 graphviz = os.environ.get('NUTILS_GRAPHVIZ')
 
-def argdict(arguments):
+def argdict(arguments) -> Mapping[str, numpy.ndarray]:
   if len(arguments) == 1 and 'arguments' in arguments and isinstance(arguments['arguments'], collections.abc.Mapping):
     return arguments['arguments']
   return arguments
@@ -67,8 +69,7 @@ class Sample(types.Singleton):
   __slots__ = 'nelems', 'transforms', 'points', 'ndims'
 
   @staticmethod
-  @types.apply_annotations
-  def new(transforms:types.tuple[transformseq.stricttransforms], points:types.strict[PointsSequence], index=None):
+  def new(transforms: Iterable[Transforms], points: PointsSequence, index: Optional[Union[numpy.ndarray, Sequence[numpy.ndarray]]] = None) -> 'Sample':
     '''Create a new :class:`Sample`.
 
     Parameters
@@ -83,7 +84,7 @@ class Sample(types.Singleton):
         If absent the indices will be strictly increasing.
     '''
 
-    sample = _DefaultIndex(transforms, points)
+    sample = _DefaultIndex(tuple(transforms), points)
     if index is not None:
       if isinstance(index, (tuple, list)):
         assert all(ind.shape == (pnt.npoints,) for ind, pnt in zip(index, points))
@@ -91,7 +92,7 @@ class Sample(types.Singleton):
       sample = _CustomIndex(sample, types.arraydata(index))
     return sample
 
-  def __init__(self, transforms, points):
+  def __init__(self, transforms: Tuple[Transforms, ...], points: PointsSequence) -> None:
     '''
     parameters
     ----------
@@ -109,25 +110,25 @@ class Sample(types.Singleton):
     self.points = points
     self.ndims = transforms[0].fromdims
 
-  def __repr__(self):
+  def __repr__(self) -> str:
     return '{}.{}<{}D, {} elems, {} points>'.format(type(self).__module__, type(self).__qualname__, self.ndims, self.nelems, self.npoints)
 
   @property
-  def npoints(self):
+  def npoints(self) -> int:
     return self.points.npoints
 
   @property
-  def index(self):
+  def index(self) -> Tuple[numpy.ndarray, ...]:
     return tuple(map(self.getindex, range(self.nelems)))
 
   @abc.abstractmethod
-  def getindex(self, ielem):
+  def getindex(self, __ielem: int) -> numpy.ndarray:
     '''Return the indices of `Sample.points[ielem]` in results of `Sample.eval`.'''
 
     raise NotImplementedError
 
   @abc.abstractmethod
-  def get_evaluable_indices(self, ielem):
+  def get_evaluable_indices(self, __ielem: evaluable.Array) -> evaluable.Array:
     '''Return the evaluable indices for the given evaluable element index.
 
     Parameters
@@ -147,7 +148,7 @@ class Sample(types.Singleton):
 
     raise NotImplementedError
 
-  def _lower_for_loop(self, func, *, points_shape=(), **kwargs):
+  def _lower_for_loop(self, func: function.Array, *, points_shape: Tuple[evaluable.Array, ...] = (), **kwargs) -> Tuple[evaluable.Array, evaluable.Array]:
     if kwargs.pop('transform_chains', None) or kwargs.pop('coordinates', None):
       raise ValueError('nested integrals or samples are not yet supported')
     ielem = evaluable.loop_index('_ielem', self.nelems)
@@ -159,8 +160,7 @@ class Sample(types.Singleton):
 
   @util.positional_only
   @util.single_or_multiple
-  @types.apply_annotations
-  def integrate(self, funcs, arguments:argdict=...):
+  def integrate(self, funcs: Iterable[function.IntoArray], arguments: Mapping[str, numpy.ndarray] = ...) -> Tuple[numpy.ndarray, ...]:
     '''Integrate functions.
 
     Args
@@ -171,13 +171,12 @@ class Sample(types.Singleton):
         Optional arguments for function evaluation.
     '''
 
-    datas = self.integrate_sparse(funcs, arguments)
+    datas = self.integrate_sparse(funcs, argdict(arguments))
     with log.iter.fraction('assembling', datas) as items:
-      return [_convert(data, inplace=True) for data in items]
+      return tuple(_convert(data, inplace=True) for data in items)
 
   @util.single_or_multiple
-  @types.apply_annotations
-  def integrate_sparse(self, funcs:types.tuple[function.asarray], arguments=None):
+  def integrate_sparse(self, funcs: Iterable[function.IntoArray], arguments: Optional[Mapping[str, numpy.ndarray]] = None) -> Tuple[numpy.ndarray, ...]:
     '''Integrate functions into sparse data.
 
     Args
@@ -190,7 +189,7 @@ class Sample(types.Singleton):
 
     return eval_integrals_sparse(*map(self.integral, funcs), **(arguments or {}))
 
-  def integral(self, func):
+  def integral(self, __func: function.IntoArray) -> function.Array:
     '''Create Integral object for postponed integration.
 
     Args
@@ -199,11 +198,11 @@ class Sample(types.Singleton):
         Integrand.
     '''
 
-    return _Integral(func, self)
+    return _Integral(function.Array.cast(__func), self)
 
   @util.positional_only
   @util.single_or_multiple
-  def eval(self, funcs, arguments=...):
+  def eval(self, funcs: Iterable[function.IntoArray], arguments: Mapping[str, numpy.ndarray] = ...) -> Tuple[numpy.ndarray, ...]:
     '''Evaluate function.
 
     Args
@@ -220,8 +219,7 @@ class Sample(types.Singleton):
 
   @util.positional_only
   @util.single_or_multiple
-  @types.apply_annotations
-  def eval_sparse(self, funcs:types.tuple[function.asarray], arguments=None):
+  def eval_sparse(self, funcs: Iterable[function.IntoArray], arguments: Optional[Mapping[str, numpy.ndarray]] = None) -> Tuple[numpy.ndarray, ...]:
     '''Evaluate function.
 
     Args
@@ -234,18 +232,16 @@ class Sample(types.Singleton):
 
     return eval_integrals_sparse(*map(self.__rmatmul__, funcs), **(arguments or {}))
 
-  def __rmatmul__(self, func: function.Array) -> function.Array:
-    if not isinstance(func, function.Array):
-      return NotImplemented
-    return _AtSample(func, self)
+  def __rmatmul__(self, __func: function.IntoArray) -> function.Array:
+    return _AtSample(function.Array.cast(__func), self)
 
-  def basis(self):
+  def basis(self) -> function.Array:
     '''Basis-like function that for every point in the sample evaluates to the
     unit vector corresponding to its index.'''
 
     return _Basis(self)
 
-  def asfunction(self, array):
+  def asfunction(self, array: numpy.ndarray) -> function.Array:
     '''Convert sampled data to evaluable array.
 
     Using the result of :func:`Sample.eval`, create a
@@ -270,7 +266,7 @@ class Sample(types.Singleton):
 
   @property
   @abc.abstractmethod
-  def tri(self):
+  def tri(self) -> numpy.ndarray:
     '''Triangulation of interior.
 
     A two-dimensional integer array with ``ndims+1`` columns, of which every
@@ -281,7 +277,7 @@ class Sample(types.Singleton):
 
   @property
   @abc.abstractmethod
-  def hull(self):
+  def hull(self) -> numpy.ndarray:
     '''Triangulation of the exterior hull.
 
     A two-dimensional integer array with ``ndims`` columns, of which every row
@@ -292,7 +288,7 @@ class Sample(types.Singleton):
 
     raise NotImplementedError
 
-  def subset(self, mask):
+  def subset(self, __mask: numpy.ndarray) -> 'Sample':
     '''Reduce the number of points.
 
     Simple selection mechanism that returns a reduced Sample based on a
@@ -311,11 +307,9 @@ class Sample(types.Singleton):
     subset : :class:`Sample`
     '''
 
-    selection = types.frozenarray([ielem for ielem in range(self.nelems) if mask[self.getindex(ielem)].any()])
+    selection = types.frozenarray([ielem for ielem in range(self.nelems) if __mask[self.getindex(ielem)].any()])
     transforms = tuple(transform[selection] for transform in self.transforms)
     return Sample.new(transforms, self.points.take(selection))
-
-strictsample = types.strict[Sample]
 
 class _DefaultIndex(Sample):
 
@@ -323,21 +317,21 @@ class _DefaultIndex(Sample):
   __cache__ = 'offsets'
 
   @property
-  def offsets(self):
+  def offsets(self) -> numpy.ndarray:
     return types.frozenarray(numpy.cumsum([0]+[p.npoints for p in self.points]), copy=False)
 
-  def getindex(self, ielem):
+  def getindex(self, ielem: int) -> numpy.ndarray:
     return types.frozenarray(numpy.arange(*self.offsets[ielem:ielem+2]), copy=False)
 
   @property
-  def tri(self):
+  def tri(self) -> numpy.ndarray:
     return self.points.tri
 
   @property
-  def hull(self):
+  def hull(self) -> numpy.ndarray:
     return self.points.hull
 
-  def get_evaluable_indices(self, ielem):
+  def get_evaluable_indices(self, ielem: evaluable.Array) -> evaluable.Array:
     npoints = self.points.get_evaluable_coords(ielem).shape[0]
     offset = evaluable.get(_offsets(self.points), 0, ielem)
     return evaluable.Range(npoints) + offset
@@ -346,28 +340,27 @@ class _CustomIndex(Sample):
 
   __slots__ = '_parent', '_index'
 
-  def __init__(self, parent, index):
+  def __init__(self, parent: Sample, index: numpy.ndarray) -> None:
     assert index.shape == (parent.npoints,)
     self._parent = parent
     self._index = index
     super().__init__(parent.transforms, parent.points)
 
-  def getindex(self, ielem):
+  def getindex(self, ielem: int) -> numpy.ndarray:
     return numpy.take(self._index, self._parent.getindex(ielem))
 
-  def get_evaluable_indices(self, ielem):
+  def get_evaluable_indices(self, ielem: evaluable.Array) -> evaluable.Array:
     return evaluable.Take(self._index, self._parent.get_evaluable_indices(ielem))
 
   @property
-  def tri(self):
+  def tri(self) -> numpy.ndarray:
     return numpy.take(self._index, self._parent.tri)
 
   @property
-  def hull(self):
+  def hull(self) -> numpy.ndarray:
     return numpy.take(self._index, self._parent.hull)
 
-@types.apply_annotations
-def eval_integrals(*integrals, **arguments:argdict):
+def eval_integrals(*integrals: evaluable.AsEvaluableArray, **arguments: Mapping[str, numpy.ndarray]) -> Tuple[Union[numpy.ndarray, matrix.Matrix], ...]:
   '''Evaluate integrals.
 
   Evaluate one or several postponed integrals. By evaluating them
@@ -387,10 +380,10 @@ def eval_integrals(*integrals, **arguments:argdict):
   results : :class:`tuple` of arrays and/or :class:`nutils.matrix.Matrix` objects.
   '''
 
-  with log.iter.fraction('assembling', eval_integrals_sparse(*integrals, **arguments)) as retvals:
-    return [_convert(retval, inplace=True) for retval in retvals]
+  with log.iter.fraction('assembling', eval_integrals_sparse(*integrals, **argdict(arguments))) as retvals:
+    return tuple(_convert(retval, inplace=True) for retval in retvals)
 
-def eval_integrals_sparse(*integrals, **arguments):
+def eval_integrals_sparse(*integrals: evaluable.AsEvaluableArray, **arguments: Mapping[str, numpy.ndarray]) -> Tuple[numpy.ndarray, ...]:
   '''Evaluate integrals into sparse data.
 
   Evaluate one or several postponed integrals. By evaluating them
@@ -414,7 +407,7 @@ def eval_integrals_sparse(*integrals, **arguments):
   with evaluable.Tuple(tuple(integrals)).optimized_for_numpy.session(graphviz=graphviz) as eval:
     return eval(**arguments)
 
-def _convert(data, inplace=False):
+def _convert(data: numpy.ndarray, inplace: bool = False) -> Union[numpy.ndarray, matrix.Matrix]:
   '''Convert a two-dimensional sparse object to an appropriate object.
 
   The return type is determined based on dimension: a zero-dimensional object
@@ -455,11 +448,11 @@ class _AtSample(function.Array):
 
 class _Basis(function.Array):
 
-  def __init__(self, sample):
+  def __init__(self, sample: Sample) -> None:
     self._sample = sample
     super().__init__(shape=(sample.npoints,), dtype=float)
 
-  def lower(self, *, transform_chains=(), coordinates=(), **kwargs):
+  def lower(self, *, transform_chains=(), coordinates=(), **kwargs) -> evaluable.Array:
     assert transform_chains and coordinates and len(transform_chains) == len(coordinates)
     index, tail = evaluable.TransformsIndexWithTail(self._sample.transforms[0], transform_chains[0])
     coords = evaluable.ApplyTransforms(tail, coordinates[0], self.shape[0])
@@ -468,7 +461,7 @@ class _Basis(function.Array):
     indices = self._sample.get_evaluable_indices(index)
     return evaluable.Inflate(sampled, dofmap=indices, length=self._sample.npoints)
 
-def _offsets(pointsseq):
+def _offsets(pointsseq: PointsSequence) -> evaluable.Array:
   ielem = evaluable.loop_index('_ielem', len(pointsseq))
   npoints, ndims = pointsseq.get_evaluable_coords(ielem).shape
   return evaluable._SizesToOffsets(evaluable.loop_concatenate(evaluable.InsertAxis(npoints, 1), ielem))
