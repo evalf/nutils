@@ -453,6 +453,9 @@ class IdentifierTransforms(Transforms):
     index = int(index) # make sure that index is a Python integer rather than numpy.intxx
     return transform.Identifier(self.fromdims, (self._name, numeric.normdim(self._length, index))),
 
+  def get_evaluable(self, index: evaluable.Array) -> EvaluableTransformChain:
+    return _EvaluableIdentifierChain(self.fromdims, self._name, evaluable.InRange(index, self._length))
+
   def __len__(self):
     return self._length
 
@@ -982,5 +985,24 @@ class _EvaluableTransformChainFromTuple(EvaluableTransformChain):
 
   def evalf(self, items: tuple) -> TransformChain:
     return items[self._index]
+
+class _EvaluableIdentifierChain(EvaluableTransformChain):
+
+  __slots__ = '_ndim', '_name'
+
+  def __init__(self, ndim: int, name: str, index: evaluable.Array) -> None:
+    self._ndim = ndim
+    self._name = name
+    super().__init__((index,), ndim, ndim)
+
+  def evalf(self, index: numpy.ndarray) -> TransformChain:
+    return transform.Identifier(self._ndim, (self._name, index.__index__())),
+
+  def apply(self, points: evaluable.Array) -> evaluable.Array:
+    return points
+
+  @property
+  def linear(self) -> evaluable.Array:
+    return evaluable.diagonalize(evaluable.ones((self.todims,)))
 
 # vim:sw=2:sts=2:et
