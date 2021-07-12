@@ -38,7 +38,7 @@ from . import element, function, evaluable, util, parallel, numeric, cache, tran
 from .sample import Sample
 from .elementseq import References
 from .pointsseq import PointsSequence
-from typing import Any, FrozenSet, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import Any, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 import numpy, functools, collections.abc, itertools, functools, operator, numbers, pathlib, abc, treelog as log
 _ = numpy.newaxis
 
@@ -50,6 +50,13 @@ class Topology(types.Singleton):
   'topology base class'
 
   __slots__ = 'spaces', 'space_dims', 'references', 'ndims'
+
+  @staticmethod
+  def empty(spaces: Tuple[str, ...], space_dims: Tuple[int, ...], ndims: int) -> 'Topology':
+    return _Empty(spaces, space_dims, ndims)
+
+  def empty_like(__topo: 'Topology') -> 'Topology':
+    return Topology.empty(__topo.spaces, __topo.space_dims, __topo.ndims)
 
   def __init__(self, spaces: Tuple[str, ...], space_dims: Tuple[int, ...], references: References) -> None:
     self.spaces = spaces
@@ -480,6 +487,67 @@ class Topology(types.Singleton):
     unknown = set(spaces) - set(self.spaces)
     if unknown:
       raise ValueError('This topology is not defined on the following spaces: {}.'.format(', '.join(sorted(unknown))))
+
+class _Empty(Topology):
+
+  def __init__(self, spaces: Tuple[str, ...], space_dims: Tuple[int, ...], ndims: int) -> None:
+    super().__init__(spaces, space_dims, References.empty(ndims))
+
+  def __invert__(self) -> Topology:
+    return self
+
+  def __and__(self, other: Any) -> Topology:
+    if not isinstance(other, Topology):
+      return NotImplemented
+    elif self.spaces != other.spaces or self.space_dims != other.space_dims or self.ndims != other.ndims:
+      raise ValueError('The topologies must have the same spaces and dimensions.')
+    else:
+      return self
+
+  __rand__ = __and__
+
+  def __or__(self, other: Any) -> Topology:
+    if not isinstance(other, Topology):
+      return NotImplemented
+    elif self.spaces != other.spaces or self.space_dims != other.space_dims or self.ndims != other.ndims:
+      raise ValueError('The topologies must have the same spaces and dimensions.')
+    else:
+      return other
+
+  __ror__ = __or__
+
+  @property
+  def connectivity(self) -> Sequence[Sequence[int]]:
+    return tuple()
+
+  def indicator(self, subtopo: Union[str, Topology]) -> Topology:
+    return function.zeros((), int)
+
+  def refine_spaces(self, spaces: Iterable[str]) -> Topology:
+    return self
+
+  def boundary_spaces(self, spaces: Iterable[str]) -> Topology:
+    self._check_has_spaces(spaces)
+    if self.ndims:
+      return _Empty(self.spaces, self.space_dims, self.ndims - 1)
+    else:
+      return super().boundary
+
+  def interfaces_spaces(self, spaces: Iterable[str]) -> Topology:
+    self._check_has_spaces(spaces)
+    if self.ndims:
+      return _Empty(self.spaces, self.space_dims, self.ndims - 1)
+    else:
+      return super().interfaces
+
+  def basis_std(self, degree: int, *args, **kwargs) -> function.Array:
+    return self.basis_discont(degree)
+
+  def basis_spline(self, degree: int, *args, **kwargs) -> function.Array:
+    return self.basis_discont(degree)
+
+  def sample(self, ischeme: str, degree: int) -> Sample:
+    return Sample.empty(self.spaces, self.ndims)
 
 class TransformChainsTopology(Topology):
   'base class for topologies with transform chains'
