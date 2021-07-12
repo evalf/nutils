@@ -113,6 +113,12 @@ class Topology(types.Singleton):
   def __getitem__(self, item: Any) -> 'Topology':
     raise NotImplementedError
 
+  def __mul__(self, other: Any) -> 'Topology':
+    if isinstance(other, Topology):
+      return _Mul(self, other)
+    else:
+      return NotImplemented
+
   @property
   def border_transforms(self) -> transformseq.Transforms:
     raise NotImplementedError
@@ -637,6 +643,160 @@ class _DisjointUnion(Topology):
     else:
       raise ValueError('ambiguous')
 
+class _Mul(Topology):
+
+  def __init__(self, topo1: Topology, topo2: Topology) -> None:
+    if set(topo1.spaces) & set(topo2.spaces):
+      raise ValueError('Cannot take the product of topologies defined on the same spaces.')
+    self.topo1 = topo1
+    self.topo2 = topo2
+    super().__init__(topo1.spaces + topo2.spaces, topo1.space_dims + topo2.space_dims, topo1.references * topo2.references)
+
+  def _split_spaces(self, spaces: Iterable[str]) -> Tuple[FrozenSet[str], FrozenSet[str]]:
+    spaces = frozenset(spaces)
+    self._check_has_spaces(spaces)
+    return spaces & frozenset(self.topo1.spaces), spaces & frozenset(self.topo2.spaces)
+
+  def __invert__(self) -> Topology:
+    return ~self.topo1 * ~self.topo2
+
+  @property
+  def f_index(self) -> function.Array:
+    return self.topo1.f_index * len(self.topo2) + self.topo2.f_index
+
+  @property
+  def f_coords(self) -> function.Array:
+    return function.concatenate(self.topo1.f_coords, self.topo2.f_coords)
+
+  @property
+  def connectivity(self) -> Sequence[Sequence[int]]:
+    connectivity1 = self.topo1.connectivity
+    connectivity2 = self.topo2.connectivity
+    s = len(self.topo2)
+    return tuple(tuple(-1 if n2 < 0 else i1 * s + n2 for n2 in N2) + tuple(-1 if n1 < 0 else n1 * s + i2 for n1 in N1) for i1, N1 in enumerate(connectivity1) for i2, N2 in enumerate(connectivity2))
+
+  def get_groups(self, *groups: str) -> Topology:
+    subtopo1 = self.topo1.get_groups(*groups)
+    subtopo2 = self.topo2.get_groups(*groups)
+    if subtopo1 or subtopo2:
+      return (subtopo1 or self.topo1) * (subtopo2 or self.topo2)
+    else:
+      return subtopo1 * subtopo2
+
+  def take(self, indices: Union[numpy.ndarray, Sequence[int]], idim: int, ndim: int) -> Topology:
+    if idim + ndim <= self.topo1.ndims:
+      return self.topo1.take(indices, idim, ndim) * self.topo2
+    elif idim >= self.topo1.ndims:
+      return self.topo1 * self.topo2.take(indices, idim - self.topo1.ndims, ndim)
+    else:
+      return super().take(indices, idim, ndim)
+
+  def slice(self, indices: slice, idim: int) -> Topology:
+    if idim < self.topo1.ndims:
+      return self.topo1.slice(indices, idim) * self.topo2
+    elif idim >= self.topo1.ndims:
+      return self.topo1 * self.topo2.slice(indices, idim - self.topo1.ndims)
+    else:
+      return super().slice(indices, idim)
+
+  def indicator(self, subtopo: Union[str, Topology]) -> Topology:
+    if isinstance(subtopo, str):
+      hassub1 = bool(self.topo1.get_groups(subtopo))
+      hassub2 = bool(self.topo2.get_groups(subtopo))
+      if hassub1 and hassub2:
+        return self.topo1.indicator(subtopo) * self.topo2.indicator(subtopo)
+      elif hassub1:
+        return self.topo1.indicator(subtopo)
+      elif hassub2:
+        return self.topo2.indicator(subtopo)
+      else:
+        return function.zeros((), int)
+    else:
+      return super().indicator(subtopo)
+
+  def refine_spaces(self, spaces: Iterable[str]) -> Topology:
+    spaces1, spaces2 = self._split_spaces(spaces)
+    return self.topo1.refine_spaces(spaces1) * self.topo2.refine_spaces(spaces2)
+
+  def boundary_spaces(self, spaces: Iterable[str]) -> Topology:
+    spaces1, spaces2 = self._split_spaces(spaces)
+    boundaries = []
+    if self.topo2.ndims and spaces2:
+      boundaries.append(self.topo1 * self.topo2.boundary_spaces(spaces2))
+    if self.topo1.ndims and spaces1:
+      boundaries.append(self.topo1.boundary_spaces(spaces1) * self.topo2)
+    if not boundaries:
+      return super().boundary_spaces(spaces)
+    return Topology.disjoint_union(*boundaries)
+
+  def interfaces_spaces(self, spaces: Iterable[str]) -> Topology:
+    spaces1, spaces2 = self._split_spaces(spaces)
+    interfaces = []
+    if self.topo2.ndims and spaces2:
+      interfaces.append(self.topo1 * self.topo2.interfaces_spaces(spaces2))
+    if self.topo1.ndims and spaces1:
+      interfaces.append(self.topo1.interfaces_spaces(spaces1) * self.topo2)
+    if not interfaces:
+      return super().interfaces_spaces(spaces)
+    return Topology.disjoint_union(*interfaces)
+
+  def basis(self, name: str, degree: Union[int, Sequence[int]], **kwargs) -> function.Basis:
+    kwargs['degree'] = degree
+    kwargs1 = {}
+    kwargs2 = {}
+
+    for attr in 'degree', 'continuity':
+      val = kwargs.pop(attr, None)
+      if val is None:
+        pass
+      elif isinstance(val, int):
+        kwargs1[attr] = kwargs2[attr] = val
+      elif isinstance(val, Sequence) and all(isinstance(v, int) for v in val):
+        if len(val) != self.ndims:
+          raise ValueError('argument `{}` must have length {} but got {}'.format(attr, self.ndims, len(val)))
+        kwargs1[attr] = val[:self.topo1.ndims]
+        kwargs2[attr] = val[self.topo1.ndims:]
+      else:
+        raise ValueError('argument `{}` must be `None`, an `int` or sequence of `int`'.format(attr))
+
+    periodic = kwargs.pop('periodic', None)
+    if periodic is None:
+      pass
+    elif isinstance(periodic, Sequence) and all(isinstance(p, int) for p in periodic):
+      kwargs1['periodic'] = tuple(p for p in periodic if p < self.topo1.ndims)
+      kwargs2['periodic'] = tuple(p for p in periodic if p >= self.topo1.ndims)
+    else:
+      raise ValueError('argument `periodic` must be `None` or a sequence of `int`')
+
+    for attr, typ in ('knotvalues', (int, float)), ('knotmultiplicities', int), ('removedofs', int):
+      val = kwargs.pop(attr, None)
+      if val is None:
+        pass
+      elif isinstance(val, Sequence) and all(isinstance(v, typ) for v in val):
+        kwargs1[attr] = kwargs2[attr] = val
+      elif isinstance(val, Sequence) and all(v is None or isinstance(v, Sequence) and all(isinstance(w, typ) for w in v) for v in val):
+        if len(val) != self.ndims:
+          raise ValueError('argument `{}` must have length {} but got {}'.format(attr, self.ndims, len(val)))
+        kwargs1[attr] = val[:self.topo1.ndims]
+        kwargs2[attr] = val[self.topo1.ndims:]
+      else:
+        raise ValueError('argument `{}` must be `None`, a sequence or a sequence of sequence'.format(attr))
+
+    kwargs1.update(kwargs)
+    kwargs2.update(kwargs)
+
+    basis1 = self.topo1.basis(name, **kwargs1)
+    basis2 = self.topo2.basis(name, **kwargs2)
+    basis = function.insertaxis(basis1, 1, basis2.shape[0]) * function.insertaxis(basis2, 0, basis1.shape[0])
+    return function.ravel(basis, axis=0)
+
+  def sample(self, ischeme: str, degree: int) -> Sample:
+    return self.topo1.sample(ischeme, degree) * self.topo2.sample(ischeme, degree)
+
+  @property
+  def periodic(self) -> Tuple[int, ...]:
+    return self.topo1.periodic + tuple(self.topo1.ndims + i for i in self.topo2.periodic)
+
 class TransformChainsTopology(Topology):
   'base class for topologies with transform chains'
 
@@ -722,9 +882,6 @@ class TransformChainsTopology(Topology):
   def __rsub__(self, other):
     assert isinstance(other, TransformChainsTopology) and other.space == self.space and other.ndims == self.ndims
     return other - other.subset(self, newboundary=getattr(self,'boundary',None))
-
-  def __mul__(self, other):
-    return ProductTopology(self, other)
 
   @property
   def border_transforms(self):
