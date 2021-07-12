@@ -92,11 +92,8 @@ def line(nodes, periodic=False, bnames=None, *, space: str = 'X'):
 
 def newrectilinear(nodes, periodic=None, bnames=[['left','right'],['bottom','top'],['front','back']]):
   if periodic is None:
-    periodic = numpy.zeros(len(nodes), dtype=bool)
-  else:
-    periodic = numpy.asarray(periodic)
-    assert len(periodic) == len(nodes) and periodic.ndim == 1 and periodic.dtype == bool
-  dims = [line(nodesi, periodici, bnamesi) for nodesi, periodici, bnamesi, namei in zip(nodes, periodic, tuple(bnames)+(None,)*len(nodes))]
+    periodic = []
+  dims = [line(nodesi, i in periodic, bnamesi) for i, (nodesi, bnamesi) in zip(nodes, tuple(bnames)+(None,)*len(nodes))]
   domain, geom = dims.pop(0)
   for domaini, geomi in dims:
     domain = domain * domaini
