@@ -181,6 +181,7 @@ class structured_line(basisTest):
     super().setUp()
     verts = numpy.linspace(0, 1, self.nelems+1)
     self.domain, self.geom = mesh.line(verts, periodic=self.periodic)
+    self.geom = self.geom[None]
     self.basis = self.domain.basis(self.btype, degree=self.degree)
 
   @parametrize.enable_if(lambda btype, **params: btype != 'discont')
