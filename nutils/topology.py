@@ -242,12 +242,38 @@ class Topology(types.Singleton):
 
   @property
   def refined(self) -> 'Topology':
+    return self.refine_spaces(self.spaces)
+
+  def refine(self, __arg: Union[int, Iterable[str], Mapping[str, int]]) -> 'Topology':
+    if isinstance(__arg, int):
+      return self.refine_count(__arg)
+    elif isinstance(__arg, Mapping):
+      return self.refine_spaces_count(__arg)
+    elif isinstance(__arg, Iterable):
+      return self.refine_spaces(__arg)
+    else:
+      raise ValueError
+
+  def refine_count(self, count: int) -> 'Topology':
+    topo = self
+    for i in range(count):
+      topo = topo.refined
+    return topo
+
+  def refine_spaces(self, spaces: Iterable[str]) -> 'Topology':
+    self._check_has_spaces(spaces)
     raise NotImplementedError
 
-  def refine(self, n: int) -> 'Topology':
-    'refine entire topology n times'
-
-    raise NotImplementedError
+  def refine_spaces_count(self, count: Mapping[str, int]) -> 'Topology':
+    if not all(n >= 0 for n in count.values()):
+      raise ValueError('Negative counts are invalid.')
+    topo = self
+    for i in itertools.count():
+      spaces = tuple(space for space, n in count.items() if n > i)
+      if not spaces:
+        break
+      topo = topo.refine_spaces(spaces)
+    return topo
 
   def trim(self, levelset: function.Array, maxrefine: int, ndivisions: int = 8, name: str = 'trimmed', leveltopo: Optional['Topology'] = None, *, arguments: Optional[_ArgDict] = None) -> 'Topology':
     'trim element along levelset'
@@ -409,6 +435,11 @@ class Topology(types.Singleton):
   def periodic(self) -> Tuple[int, ...]:
     raise NotImplementedError
 
+  def _check_has_spaces(self, spaces: Iterable[str]) -> None:
+    unknown = set(spaces) - set(self.spaces)
+    if unknown:
+      raise ValueError('This topology is not defined on the following spaces: {}.'.format(', '.join(sorted(unknown))))
+
 class TransformChainsTopology(Topology):
   'base class for topologies with transform chains'
 
@@ -530,6 +561,16 @@ class TransformChainsTopology(Topology):
   @property
   def refined(self):
     return RefinedTopology(self)
+
+  def refine_spaces(self, spaces: Iterable[str]) -> 'TransformChainsTopology':
+    # Since every `TransformChainsTopology` has exactly one space, we implement
+    # `refine_spaces` here for all subclasses and return `self.refined` if the
+    # space of this topology is in the given `spaces`. Subclasses can redefine
+    # the `refined` property.
+    self._check_has_spaces(spaces)
+    if not tuple(spaces):
+      return self
+    return self.refined
 
   def refine(self, n):
     if numpy.iterable(n):
