@@ -58,6 +58,20 @@ class Topology(types.Singleton):
   def empty_like(__topo: 'Topology') -> 'Topology':
     return Topology.empty(__topo.spaces, __topo.space_dims, __topo.ndims)
 
+  def disjoint_union(*topos: 'Topology') -> 'Topology':
+    if len(topos) == 0:
+      raise ValueError('Cannot take the disjoint union of zero topologies. \
+                        Suggestion: include an empty topology (see \
+                        `Topology.empty_like`).')
+    spaces_dims = topos[0].spaces, topos[0].space_dims, topos[0].ndims
+    if not all((topo.spaces, topo.space_dims, topo.ndims) == spaces_dims for topo in topos):
+      raise ValueError('All topologies must have the exact same spaces and dimensions.')
+    unempty = tuple(filter(None, topos))
+    if unempty:
+      return functools.reduce(_DisjointUnion, unempty)
+    else:
+      return Topology.empty_like(topos[0])
+
   def __init__(self, spaces: Tuple[str, ...], space_dims: Tuple[int, ...], references: References) -> None:
     self.spaces = spaces
     self.space_dims = space_dims
@@ -548,6 +562,80 @@ class _Empty(Topology):
 
   def sample(self, ischeme: str, degree: int) -> Sample:
     return Sample.empty(self.spaces, self.ndims)
+
+class _DisjointUnion(Topology):
+
+  def __init__(self, topo1: Topology, topo2: Topology) -> None:
+    if topo1.spaces != topo2.spaces or topo1.space_dims != topo2.space_dims or topo1.ndims != topo2.ndims:
+      raise ValueError('Cannot take the disjoint union of topologies defined different spaces.')
+    self.topo1 = topo1
+    self.topo2 = topo2
+    super().__init__(topo1.spaces, topo1.space_dims, topo1.references + topo2.references)
+
+  def __invert__(self) -> Topology:
+    return Topology.disjoint_union(~self.topo1, ~self.topo2)
+
+  def __and__(self, other: Any) -> Topology:
+    if not isinstance(other, Topology):
+      return NotImplemented
+    elif self.spaces != other.spaces or self.space_dims != other.space_dims or self.ndims != other.ndims:
+      raise ValueError('The topologies must have the same spaces and dimensions.')
+    else:
+      return Topology.disjoint_union(self.topo1 & other, self.topo2 & other)
+
+  __rand__ = __and__
+
+  def __or__(self, other: Any) -> Topology:
+    if not isinstance(other, Topology):
+      return NotImplemented
+    elif self.spaces != other.spaces or self.space_dims != other.space_dims or self.ndims != other.ndims:
+      raise ValueError('The topologies must have the same spaces and dimensions.')
+    else:
+      return Topology.disjoint_union(self.topo1 | other, self.topo2 | other)
+
+  __ror__ = __or__
+
+  @property
+  def connectivity(self) -> Sequence[Sequence[int]]:
+    o = len(self.topo1)
+    return tuple(self.topo1.connectivity) + tuple(tuple(-1 if n < 0 else n + o for n in N) for N in self.topo2.connectivity)
+
+  def get_groups(self, *groups: str) -> Topology:
+    return Topology.disjoint_union(self.topo1.get_groups(*groups), self.topo2.get_groups(*groups))
+
+  def refine_spaces(self, spaces: Iterable[str]) -> Topology:
+    return Topology.disjoint_union(self.topo1.refine_spaces(spaces), self.topo2.refine_spaces(spaces))
+
+  def boundary_spaces(self, spaces: Iterable[str]) -> Topology:
+    return Topology.disjoint_union(self.topo1.boundary_spaces(spaces), self.topo2.boundary_spaces(spaces))
+
+  def interfaces_spaces(self, spaces: Iterable[str]) -> Topology:
+    return Topology.disjoint_union(self.topo1.interfaces_spaces(spaces), self.topo2.interfaces_spaces(spaces))
+
+  def sample(self, ischeme: str, degree: int) -> Sample:
+    return self.topo1.sample(ischeme, degree) + self.topo2.sample(ischeme, degree)
+
+  def trim(self, levelset: function.Array, maxrefine: int, ndivisions: int = 8, name: str = 'trimmed', leveltopo: Optional[Topology] = None, *, arguments: Optional[_ArgDict] = None) -> Topology:
+    if leveltopo is not None:
+      return super().trim(levelset, maxrefine, ndivisions, name, leveltopo, arguments=arguments)
+    else:
+      topo1 = self.topo1.trim(levelset, maxrefine, ndivisions, name, arguments=arguments)
+      topo2 = self.topo2.trim(levelset, maxrefine, ndivisions, name, arguments=arguments)
+      return Topology.disjoint_union(topo1, topo2)
+
+  def select(self, indicator: function.Array, ischeme: str = 'bezier2', **kwargs: numpy.ndarray) -> Topology:
+    topo1 = self.topo1.select(indicator, ischeme, **kwargs)
+    topo2 = self.topo2.select(indicator, ischeme, **kwargs)
+    return Topology.disjoint_union(topo1, topo2)
+
+  @property
+  def periodic(self) -> Tuple[int, ...]:
+    periodic1 = self.topo1.periodic
+    periodic2 = self.topo2.periodic
+    if periodic1 == periodic2:
+      return periodic1
+    else:
+      raise ValueError('ambiguous')
 
 class TransformChainsTopology(Topology):
   'base class for topologies with transform chains'
