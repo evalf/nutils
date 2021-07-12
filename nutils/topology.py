@@ -72,6 +72,46 @@ class Topology(types.Singleton):
 
   __slots__ = 'spaces', 'space_dims', 'references', 'ndims'
 
+  @staticmethod
+  def empty(spaces: Iterable[str], space_dims: Iterable[int], ndims: int) -> 'Topology':
+    '''Return an empty topology.
+
+    Parameters
+    ----------
+    spaces : :class:`tuple` of :class:`str`
+        The unique, ordered list of spaces on which the empty topology is defined.
+    space_dims : :class:`tuple` of :class:`int`
+        The dimension of each space in :attr:`spaces`.
+    ndims : :class:`int`
+        The dimension of the empty topology.
+
+    Returns
+    -------
+    :class:`Topology`
+        The empty topology.
+
+    See Also
+    --------
+    :meth:`empty_like` : create an empty topology with spaces and dimension copied from another topology
+    '''
+
+    return _Empty(tuple(spaces), tuple(space_dims), ndims)
+
+  def empty_like(self) -> 'Topology':
+    '''Return an empty topology with the same spaces and dimensions as this topology.
+
+    Returns
+    -------
+    :class:`Topology`
+        The empty topology.
+
+    See Also
+    --------
+    :meth:`empty_like` : create an empty topology with custom spaces and dimension
+    '''
+
+    return Topology.empty(self.spaces, self.space_dims, self.ndims)
+
   def __init__(self, spaces: Tuple[str, ...], space_dims: Tuple[int, ...], references: References) -> None:
     self.spaces = spaces
     self.space_dims = space_dims
@@ -775,6 +815,51 @@ class Topology(types.Singleton):
     else:
       coeffs = [ref.get_poly_coeffs('bernstein', degree=degree) for ref in self.references]
     return function.DiscontBasis(coeffs, self.f_index, self.f_coords)
+
+class _EmptyUnlowerable(function.Array):
+
+  def lower(self, points_shape, transform_chains, coordinates) -> evaluable.Array:
+    raise ValueError('cannot lower')
+
+class _Empty(Topology):
+
+  def __init__(self, spaces: Tuple[str, ...], space_dims: Tuple[int, ...], ndims: int) -> None:
+    super().__init__(spaces, space_dims, References.empty(ndims))
+
+  def __invert__(self) -> Topology:
+    return self
+
+  @property
+  def connectivity(self) -> Sequence[Sequence[int]]:
+    return tuple()
+
+  def indicator(self, subtopo: Union[str, Topology]) -> Topology:
+    return function.zeros((), int)
+
+  @property
+  def f_index(self) -> function.Array:
+    return _EmptyUnlowerable((), int, self.spaces)
+
+  @property
+  def f_coords(self) -> function.Array:
+    return _EmptyUnlowerable((self.ndims,), float, self.spaces)
+
+  def refine_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
+    return self
+
+  def boundary_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
+    return _Empty(self.spaces, self.space_dims, self.ndims - 1)
+
+  def interfaces_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
+    return _Empty(self.spaces, self.space_dims, self.ndims - 1)
+
+  def basis_std(self, degree: int, *args, **kwargs) -> function.Array:
+    return function.zeros((0,))
+
+  basis_spline = basis_std
+
+  def sample(self, ischeme: str, degree: int) -> Sample:
+    return Sample.empty(self.spaces, self.ndims)
 
 class TransformChainsTopology(Topology):
   'base class for topologies with transform chains'
