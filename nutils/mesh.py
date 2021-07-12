@@ -90,15 +90,15 @@ def line(nodes, periodic=False, bnames=None, *, space: str = 'X'):
   geom = function.rootcoords(space, 1)[0] * scale + offset if uniform else domain.basis('std', degree=1, periodic=[]).dot(nodes)
   return domain, geom
 
-def newrectilinear(nodes, periodic=None, bnames=[['left','right'],['bottom','top'],['front','back']]):
+def newrectilinear(nodes, periodic=None, bnames=[['left','right'],['bottom','top'],['front','back']], spaces=None):
   if periodic is None:
     periodic = []
-  dims = [line(nodesi, i in periodic, bnamesi) for i, (nodesi, bnamesi) in zip(nodes, tuple(bnames)+(None,)*len(nodes))]
-  domain, geom = dims.pop(0)
-  for domaini, geomi in dims:
-    domain = domain * domaini
-    geom = function.concatenate(function.bifurcate(geom,geomi[None]))
-  return domain, geom
+  if not spaces:
+    spaces = 'XYZ' if len(nodes) <= 3 else map('R{}'.format, range(len(nodes)))
+  else:
+    assert len(spaces) == len(nodes)
+  domains, geoms = zip(*(line(nodesi, i in periodic, bnamesi, space=spacei) for i, (nodesi, bnamesi, spacei) in enumerate(zip(nodes, tuple(bnames)+(None,)*len(nodes), spaces))))
+  return util.product(domains), function.stack(geoms)
 
 @log.withcontext
 def multipatch(patches, nelems, patchverts=None, name='multipatch'):
