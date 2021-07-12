@@ -100,6 +100,11 @@ def newrectilinear(nodes, periodic=None, name='rect', bnames=[['left','right'],[
   domains, geoms = zip(*(line(nodesi, i in periodic, bnamesi, name=name, space=spacei) for i, (nodesi, bnamesi, spacei) in enumerate(zip(nodes, tuple(bnames)+(None,)*len(nodes), spaces))))
   return util.product(domains), function.stack(geoms)
 
+if os.environ.get('NUTILS_TENSORIAL'):
+  def rectilinear(richshape, periodic=(), name='rect', space='X'):
+    spaces = tuple(space+str(i) for i in range(len(richshape)))
+    return newrectilinear(richshape, periodic, name, spaces=spaces)
+
 @log.withcontext
 def multipatch(patches, nelems, patchverts=None, name='multipatch'):
   '''multipatch rectilinear mesh generator

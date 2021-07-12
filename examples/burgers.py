@@ -92,6 +92,9 @@ class test(testing.TestCase):
   @testing.requires('matplotlib')
   def test_2d_p1(self):
     lhs = main(ndims=2, nelems=4, timescale=.1, degree=1, endtime=.01, newtontol=1e-5)
+    import os
+    if os.environ.get('NUTILS_TENSORIAL'):
+      lhs = lhs.reshape(4,2,4,2).transpose(0,2,1,3).ravel()
     self.assertAlmostEqual64(lhs, '''
       eNoNyKENhEAQRuGEQsCv2SEzyQZHDbRACdsDJNsBjqBxSBxBHIgJ9xsqQJ1Drro1L1/eYBZceGz8njrR
       yacm8UQLBvPYCw1airpyUVYSJLhKijK4IC01WDnqqxvX8OTl427aU73sctPGr3qqceBnRzOjo0xy9JpJ
