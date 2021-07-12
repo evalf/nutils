@@ -636,6 +636,9 @@ class StructuredTransforms(Transforms):
 
     return flatindex, tail
 
+  def get_evaluable(self, index: evaluable.Array) -> EvaluableTransformChain:
+    return _EvaluableTransformChainFromStructured(self, index)
+
 class MaskedTransforms(Transforms):
   '''An order preserving subset of another :class:`Transforms` object.
 
@@ -985,5 +988,71 @@ class _EvaluableIdentifierChain(EvaluableTransformChain):
   @property
   def linear(self) -> evaluable.Array:
     return evaluable.diagonalize(evaluable.ones((self.todims,)))
+
+class _EvaluableTransformChainFromStructured(EvaluableTransformChain):
+
+  __slots__ = '_sequence', '_index'
+
+  def __init__(self, sequence: StructuredTransforms, index: evaluable.Array) -> None:
+    self._sequence = sequence
+    self._index = index
+    super().__init__((index,), sequence.todims, sequence.fromdims)
+
+  def evalf(self, index: numpy.ndarray) -> TransformChain:
+    return self._sequence[index.__index__()]
+
+  def apply(self, points: evaluable.Array) -> evaluable.Array:
+    if len(self._sequence._axes) != 1:
+      return super().apply(points)
+    desired = super().apply(points)
+    axis = self._sequence._axes[0]
+    # axis.map
+    index = self._index + axis.i
+    if axis.mod:
+      index %= axis.mod
+    # edge
+    if axis.isdim:
+      assert evaluable.equalindex(points.shape[-1], 1)
+    else:
+      assert evaluable.equalindex(points.shape[-1], 0)
+      points = evaluable.appendaxes(axis.side, (*points.shape[:-1], 1))
+    # children
+    for i in range(self._sequence._nrefine):
+      index, ichild = evaluable.divmod(index, 2)
+      points = .5 * (points + evaluable.appendaxes(ichild, points.shape))
+    # shift
+    return points + evaluable.appendaxes(index, points.shape)
+
+  @property
+  def linear(self) -> evaluable.Array:
+    if not len(self._sequence):
+      return super().linear
+    chain = self._sequence[0]
+    linear = numpy.eye(self.fromdims)
+    for item in reversed(chain):
+      linear = item.linear @ linear
+    assert linear.shape == (self.todims, self.fromdims)
+    return evaluable.asarray(linear)
+
+  @property
+  def basis(self) -> evaluable.Array:
+    if not len(self._sequence) or self.fromdims == self.todims:
+      return super().basis
+    chain = self._sequence[0]
+    basis = numpy.eye(self.fromdims)
+    for item in reversed(chain):
+      basis = item.linear @ basis
+      assert item.fromdims <= item.todims <= item.fromdims + 1
+      if item.todims == item.fromdims + 1:
+        basis = numpy.concatenate([basis, item.ext[:,None]], axis=1)
+    assert basis.shape == (self.todims, self.todims)
+    return evaluable.asarray(basis)
+
+  def index_with_tail_in(self, __sequence) -> Tuple[evaluable.Array, EvaluableTransformChain]:
+    if __sequence == self._sequence:
+      tails = EvaluableTransformChain.empty(self._sequence.todims)
+      return self._index, tails
+    else:
+      return super().index_with_tail_in(__sequence)
 
 # vim:sw=2:sts=2:et
