@@ -415,11 +415,29 @@ class Topology(types.Singleton):
       The boundary of this topology.
     '''
 
-    raise NotImplementedError
+    return self.boundary_spaces(self.spaces)
+
+  def boundary_spaces(self, spaces: Iterable[str]) -> 'Topology':
+    self._check_has_spaces(spaces)
+    if self.ndims == 0:
+      raise ValueError('A 0D topology has no boundaries.')
+    elif set(spaces) != set(self.spaces):
+      raise ValueError('Cannot take the boundary of a subset of spaces.')
+    else:
+      raise NotImplementedError
 
   @property
   def interfaces(self) -> 'Topology':
-    raise NotImplementedError
+    return self.interfaces_spaces(self.spaces)
+
+  def interfaces_spaces(self) -> 'Topology':
+    self._check_has_spaces(spaces)
+    if self.ndims == 0:
+      raise ValueError('A 0D topology has no interfaces.')
+    elif set(spaces) != set(self.spaces):
+      raise ValueError('Cannot take the interfaces of a subset of spaces.')
+    else:
+      raise NotImplementedError
 
   def basis_discont(self, degree: int) -> function.Basis:
     'discontinuous shape functions'
@@ -718,6 +736,11 @@ class TransformChainsTopology(Topology):
 
     return Sample.new(self.space, transforms, points_, index)
 
+  def boundary_spaces(self, spaces: Iterable[str]) -> 'TransformChainsTopology':
+    if tuple(spaces) != (self.space,):
+      raise ValueError
+    return self.boundary
+
   @property
   @log.withcontext
   def boundary(self):
@@ -745,6 +768,11 @@ class TransformChainsTopology(Topology):
       references = self.references.edges[selection]
     transforms = self.transforms.edges(self.references)[selection]
     return TransformChainsTopology(self.space, references, transforms, transforms)
+
+  def interfaces_spaces(self, spaces: Iterable[str]) -> 'TransformChainsTopology':
+    if tuple(spaces) != (self.space,):
+      raise ValueError
+    return self.interfaces
 
   @property
   @log.withcontext
