@@ -263,12 +263,146 @@ class Topology(types.Singleton):
 
   @property
   def refined(self) -> 'Topology':
+    return self.refine_spaces(self.spaces)
+
+  def refine(self, __arg: Union[int, Iterable[str], Mapping[str, int]]) -> 'Topology':
+    '''Return the refined topology.
+
+    If the argument is an :class:`int`, then this method behaves like
+    :meth:`refine_count`. If the argument is a sequence of :class:`str`, then
+    this method behaves like :meth:`refine_spaces`. If the argument is a
+    dictionary of :class:`str` and :class:`int`, then this method behaves like
+    :meth:`refine_spaces_count`.
+
+    Returns
+    -------
+    :class:`Topology`
+        The refined topology.
+
+    See Also
+    --------
+    :meth:`refine_count` : refine a topology the given amount times
+    :meth:`refine_spaces` : refine the given spaces of the topology
+    :meth:`refine_spaces_count` : refine the given spaces the given amount times
+    '''
+
+    if isinstance(__arg, int):
+      return self.refine_count(__arg)
+    elif isinstance(__arg, Mapping):
+      return self.refine_spaces_count(__arg)
+    elif isinstance(__arg, Iterable):
+      return self.refine_spaces(__arg)
+    else:
+      raise ValueError
+
+  def refine_count(self, count: int) -> 'Topology':
+    '''Return the topology refined `count` times.
+
+    Parameters
+    ----------
+    count : :class:`int`
+        The number of times to refine. `count` is allowed to be zero, in which
+        case the original topology is returned, but not negative.
+
+    Returns
+    -------
+    :class:`Topology`
+        The refined topology.
+
+    See Also
+    --------
+    :meth:`refine_spaces` : refine the given spaces of the topology
+    :meth:`refine_spaces_count` : refine the given spaces the given amount times
+    '''
+
+    if count < 0:
+      raise ValueError('Negative counts are invalid.')
+    topo = self
+    for i in range(count):
+      topo = topo.refined
+    return topo
+
+  def refine_spaces(self, __spaces: Iterable[str]) -> 'Topology':
+    '''Return the topology with the given spaces refined once.
+
+    Parameters
+    ----------
+    spaces : iterable of :class:`str`
+        The spaces to refine. It is an error to specify spaces that do not
+        exist in this topology. It is allowed to specify no spaces, in which
+        case the original topology is returned.
+
+    Returns
+    -------
+    :class:`Topology`
+        The refined topology.
+
+    See Also
+    --------
+    :meth:`refine_count` : refine a topology the given amount times
+    :meth:`refine_spaces_count` : refine the given spaces the given amount times
+    '''
+
+    spaces = frozenset(__spaces)
+    for space in sorted(spaces):
+      if space not in self.spaces:
+        raise ValueError('This topology does not have space {}.'.format(space))
+    return self.refine_spaces_unchecked(spaces)
+
+  def refine_spaces_unchecked(self, __spaces: FrozenSet[str]) -> 'Topology':
+    '''Return the topology with the given spaces refined once.
+
+    Parameters
+    ----------
+    spaces : iterable of :class:`str`
+        The spaces to refine. It is an error to specify spaces that do not
+        exist in this topology. It is allowed to specify no spaces, in which
+        case the original topology is returned.
+
+    Returns
+    -------
+    :class:`Topology`
+        The refined topology.
+
+    Notes
+    -----
+    This method does not check the validity of the arguments. Use
+    :meth:`refine_spaces` instead unless you're absolutely sure what you are
+    doing.
+    '''
+
     raise NotImplementedError
 
-  def refine(self, n: int) -> 'Topology':
-    'refine entire topology n times'
+  def refine_spaces_count(self, count: Mapping[str, int]) -> 'Topology':
+    '''Return the topology with the given spaces refined the given amount times.
 
-    raise NotImplementedError
+    Parameters
+    ----------
+    spaces : mapping of :class:`str` to :class:`int`
+        The spaces to refine together with the count. It is an error to specify
+        spaces that do not exist in this topology. It is allowed to specify no
+        spaces, in which case the original topology is returned.
+
+    Returns
+    -------
+    :class:`Topology`
+        The refined topology.
+
+    See Also
+    --------
+    :meth:`refine_count` : refine a topology the given amount times
+    :meth:`refine_spaces` : refine the given spaces of the topology
+    '''
+
+    if not all(n >= 0 for n in count.values()):
+      raise ValueError('Negative counts are invalid.')
+    topo = self
+    for i in itertools.count():
+      spaces = tuple(space for space, n in count.items() if n > i)
+      if not spaces:
+        break
+      topo = topo.refine_spaces(spaces)
+    return topo
 
   def trim(self, levelset: function.Array, maxrefine: int, ndivisions: int = 8, name: str = 'trimmed', leveltopo: Optional['Topology'] = None, *, arguments: Optional[_ArgDict] = None) -> 'Topology':
     'trim element along levelset'
@@ -529,6 +663,15 @@ class TransformChainsTopology(Topology):
   @property
   def refined(self):
     return RefinedTopology(self)
+
+  def refine_spaces_unchecked(self, spaces: Iterable[str]) -> 'TransformChainsTopology':
+    # Since every `TransformChainsTopology` has exactly one space, we implement
+    # `refine_spaces` here for all subclasses and return `self.refined` if the
+    # space of this topology is in the given `spaces`. Subclasses can redefine
+    # the `refined` property.
+    if not spaces:
+      return self
+    return self.refined
 
   def refine(self, n):
     if numpy.iterable(n):
