@@ -87,7 +87,7 @@ def line(nodes, periodic=False, bnames=None):
     uniform = numpy.equal(nodes, offset + numpy.arange(nelems+1) * scale).all()
   root = transform.Identifier(1, 'line')
   domain = topology.StructuredLine(root, 0, nelems, periodic=periodic, bnames=bnames)
-  geom = function.rootcoords(1) * scale + offset if uniform else domain.basis('std', degree=1, periodic=False).dot(nodes)
+  geom = function.rootcoords(1) * scale + offset if uniform else domain.basis('std', degree=1, periodic=[]).dot(nodes)
   return domain, geom
 
 def newrectilinear(nodes, periodic=None, bnames=[['left','right'],['bottom','top'],['front','back']]):
