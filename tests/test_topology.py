@@ -137,7 +137,7 @@ class common_refine(TestCase):
 
   def _shield(self, topo):
     return topo if self.special \
-      else topology.Topology(space=topo.space, references=topo.references, transforms=topo.transforms, opposites=topo.opposites)
+      else topology.TransformChainsTopology(space=topo.space, references=topo.references, transforms=topo.transforms, opposites=topo.opposites)
 
   def test(self):
     dom, geom = mesh.rectilinear([[0,1,2],[0,1,2]])
@@ -636,7 +636,7 @@ class common(TestCase):
 
 common(
   'Topology',
-  topo=topology.Topology('test', References.uniform(element.PointReference(), 1), transformseq.IdentifierTransforms(0, 'test', 1), transformseq.IdentifierTransforms(0, 'test', 1)),
+  topo=topology.TransformChainsTopology('test', References.uniform(element.PointReference(), 1), transformseq.IdentifierTransforms(0, 'test', 1), transformseq.IdentifierTransforms(0, 'test', 1)),
   hasboundary=False)
 common(
   'StructuredTopology:2D',

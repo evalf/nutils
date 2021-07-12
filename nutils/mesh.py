@@ -579,7 +579,7 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
     for pname, inodes in ptags.items():
       ptransforms = transformseq.PlainTransforms([topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode]], ndims, 0)
       preferences = References.uniform(element.getsimplex(0), len(ptransforms))
-      pgroups[pname] = topology.Topology(space, preferences, ptransforms, ptransforms)
+      pgroups[pname] = topology.TransformChainsTopology(space, preferences, ptransforms, ptransforms)
 
   vgroups = {}
   for name, ielems in tags.items():
@@ -623,7 +623,7 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex'):
     for pname, inodes in ptags.items():
       ptransforms = transformseq.PlainTransforms([topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode] if keep[ielem]], ndims, 0)
       preferences = References.uniform(element.getsimplex(0), len(ptransforms))
-      vpgroups[pname] = topology.Topology(space, preferences, ptransforms, ptransforms)
+      vpgroups[pname] = topology.TransformChainsTopology(space, preferences, ptransforms, ptransforms)
     vgroups[name] = vtopo.withgroups(bgroups=vbgroups, igroups=vigroups, pgroups=vpgroups)
 
   return topo.withgroups(vgroups=vgroups, bgroups=bgroups, igroups=igroups, pgroups=pgroups), geom
@@ -657,7 +657,7 @@ def unitsquare(nelems, etype):
 
   Returns
   -------
-  :class:`nutils.topology.Topology`:
+  :class:`nutils.topology.TransformChainsTopology`:
       The structured/unstructured topology.
   :class:`nutils.function.Array`:
       The geometry function.
