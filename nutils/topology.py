@@ -524,10 +524,112 @@ class Topology(types.Singleton):
       The boundary of this topology.
     '''
 
+    return self.boundary_spaces(self.spaces)
+
+  def boundary_spaces(self, __spaces: Iterable[str]) -> 'Topology':
+    '''Return the boundary in the given spaces.
+
+    Parameters
+    ----------
+    spaces : iterable of :class:`str`
+        Nonstrict subset of :attr:`spaces`. Duplicates are silently ignored.
+
+    Returns
+    -------
+    :class:`Topology`
+        The boundary in the given spaces.
+
+    Raises
+    ------
+    :class:`ValueError`
+        If the topology is 0D or the set of spaces is empty or not a subset of :attr:`spaces`.
+    '''
+
+    spaces = frozenset(__spaces)
+    for space in sorted(spaces):
+      if space not in self.spaces:
+        raise ValueError('This topology does not have space {}.'.format(space))
+    if self.ndims == 0 or sum(self.space_dims[self.spaces.index(space)] for space in spaces) == 0:
+      raise ValueError('A 0D topology has no boundary.')
+    return self.boundary_spaces_unchecked(spaces)
+
+  def boundary_spaces_unchecked(self, __spaces: FrozenSet[str]) -> 'Topology':
+    '''Return the boundary in the given spaces.
+
+    The topology must be at least one-dimensional.
+
+    Parameters
+    ----------
+    spaces : :class:`frozenset` of :class:`str`
+        Unempty, nonstrict subset of :attr:`spaces`.
+
+    Returns
+    -------
+    :class:`Topology`
+        The boundary in the given spaces.
+
+    Notes
+    -----
+    This method does not check the validity of the arguments or the dimension
+    of the topology. Use :meth:`boundary_spaces` instead unless you're
+    absolutely sure what you are doing.
+    '''
+
     raise NotImplementedError
 
   @property
   def interfaces(self) -> 'Topology':
+    return self.interfaces_spaces(self.spaces)
+
+  def interfaces_spaces(self, __spaces: Iterable[str]) -> 'Topology':
+    '''Return the interfaces in the given spaces.
+
+    Parameters
+    ----------
+    spaces : iterable of :class:`str`
+        Nonstrict subset of :attr:`spaces`. Duplicates are silently ignored.
+
+    Returns
+    -------
+    :class:`Topology`
+        The interfaces in the given spaces.
+
+    Raises
+    ------
+    :class:`ValueError`
+        If the topology is 0D or the set of spaces is empty or not a subset of :attr:`spaces`.
+    '''
+
+    spaces = frozenset(__spaces)
+    for space in sorted(spaces):
+      if space not in self.spaces:
+        raise ValueError('This topology does not have space {}.'.format(space))
+    if self.ndims == 0 or sum(self.space_dims[self.spaces.index(space)] for space in spaces) == 0:
+      raise ValueError('A 0D topology has no interfaces.')
+    return self.interfaces_spaces_unchecked(spaces)
+
+  def interfaces_spaces_unchecked(self, __spaces: FrozenSet[str]) -> 'Topology':
+    '''Return the interfaces in the given spaces.
+
+    The topology must be at least one-dimensional.
+
+    Parameters
+    ----------
+    spaces : :class:`frozenset` of :class:`str`
+        Unempty, nonstrict subset of :attr:`spaces`.
+
+    Returns
+    -------
+    :class:`Topology`
+        The interfaces in the given spaces.
+
+    Notes
+    -----
+    This method does not check the validity of the arguments or the dimension
+    of the topology. Use :meth:`interfaces_spaces` instead unless you're
+    absolutely sure what you are doing.
+    '''
+
     raise NotImplementedError
 
   def basis_discont(self, degree: int) -> function.Basis:
@@ -819,6 +921,9 @@ class TransformChainsTopology(Topology):
 
     return Sample.new(self.space, transforms, points_, index)
 
+  def boundary_spaces_unchecked(self, spaces: FrozenSet[str]) -> 'TransformChainsTopology':
+    return self.boundary
+
   @property
   @log.withcontext
   def boundary(self):
@@ -846,6 +951,9 @@ class TransformChainsTopology(Topology):
       references = self.references.edges[selection]
     transforms = self.transforms.edges(self.references)[selection]
     return TransformChainsTopology(self.space, references, transforms, transforms)
+
+  def interfaces_spaces_unchecked(self, spaces: FrozenSet[str]) -> 'TransformChainsTopology':
+    return self.interfaces
 
   @property
   @log.withcontext
