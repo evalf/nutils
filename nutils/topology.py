@@ -38,7 +38,7 @@ from . import element, function, evaluable, util, parallel, numeric, cache, tran
 from .sample import Sample
 from .elementseq import References
 from .pointsseq import PointsSequence
-from typing import Any, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, FrozenSet, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
 import numpy, functools, collections.abc, itertools, functools, operator, numbers, pathlib, abc, treelog as log
 _ = numpy.newaxis
 
@@ -361,8 +361,11 @@ class Topology(types.Singleton):
 
     raise NotImplementedError
 
-  def withgroups(self, vgroups: Mapping[str, 'Topology'] = {}, bgroups: Mapping[str, 'Topology'] = {}, igroups: Mapping[str, 'Topology'] = {}, pgroups: Mapping[str, 'Topology'] = {}) -> 'Topology':
-    raise NotImplementedError
+  def withgroups(self, vgroups: Mapping[str, Union[str, 'Topology']] = {}, bgroups: Mapping[str, Union[str, 'Topology']] = {}, igroups: Mapping[str, Union[str, 'Topology']] = {}, pgroups: Mapping[str, Union[str, 'Topology']] = {}) -> 'Topology':
+    if all(isinstance(v, str) for g in (vgroups, bgroups, igroups) for v in g.values()) and not pgroups:
+      return _WithGroupAliases(self, types.frozendict(vgroups), types.frozendict(bgroups), types.frozendict(igroups))
+    else:
+      raise NotImplementedError
 
   def withsubdomain(self, **kwargs: 'Topology') -> 'Topology':
     return self.withgroups(vgroups=kwargs)
@@ -822,6 +825,74 @@ class _Mul(Topology):
   @property
   def periodic(self) -> Tuple[int, ...]:
     return self.topo1.periodic + tuple(self.topo1.ndims + i for i in self.topo2.periodic)
+
+class _WithGroupAliases(Topology):
+
+  def __init__(self, parent: Topology, vgroups: Mapping[str, str] = {}, bgroups: Mapping[str, str] = {}, igroups: Mapping[str, str] = {}) -> None:
+    self.parent = parent
+    self.vgroups = vgroups
+    self.bgroups = bgroups
+    self.igroups = igroups
+    super().__init__(parent.spaces, parent.space_dims, parent.references)
+
+  def _rewrite_groups(self, groups: Iterable[str]) -> Iterator[str]:
+    for group in groups:
+      if group in self.vgroups:
+        yield from self.vgroups[group].split(',')
+      else:
+        yield group
+
+  def get_groups(self, *groups: str) -> Topology:
+    return self.parent.get_groups(*self._rewrite_groups(groups))
+
+  def take(self, indices: Union[numpy.ndarray, Sequence[int]], idim: int, ndim: int) -> 'Topology':
+    # NOTE: the groups are gone after take
+    return self.parent.take(indices, idim, ndim)
+
+  def slice(self, indices: slice, idim: int) -> 'Topology':
+    # NOTE: the groups are gone after take
+    return self.parent.slice(indices, idim)
+
+  @property
+  def f_index(self) -> evaluable.Array:
+    return self.parent.f_index
+
+  @property
+  def f_coords(self) -> evaluable.Array:
+    return self.parent.f_coords
+
+  @property
+  def connectivity(self) -> Sequence[Sequence[int]]:
+    return self.parent.connectivity
+
+  def basis(self, name: str, *args, **kwargs) -> function.Basis:
+    return self.parent.basis(name, *args, **kwargs)
+
+  def sample(self, ischeme: str, degree: int) -> Sample:
+    return self.parent.sample(ischeme, degree)
+
+  def refine_spaces(self, spaces: Iterable[str]) -> Topology:
+    return _WithGroupAliases(self.parent.refine_spaces(spaces), self.vgroups, self.bgroups, self.igroups)
+
+  def indicator(self, subtopo: Union[str, Topology]) -> Topology:
+    if isinstance(subtopo, str):
+      return self.parent.subtopo(','.join(self._rewrite_groups(subtopo.split(','))))
+    else:
+      return super().indicator(subtopo)
+
+  def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None) -> Sample:
+    return self.parent.locate(geom, coords, tol=tol, eps=eps, maxiter=maxiter, arguments=arguments, weights=weights, maxdist=maxdist, ischeme=ischeme, scale=scale)
+
+  def boundary_spaces(self, spaces: Iterable[str]) -> Topology:
+    return _WithGroupAliases(self.parent.boundary_spaces(spaces), self.bgroups, types.frozendict({}), types.frozendict({}))
+
+  @property
+  def interfaces_spaces(self, spaces: Iterable[str]) -> Topology:
+    return _WithGroupAliases(self.parent.interfaces_spaces(spaces), self.igroups, types.frozendict({}), types.frozendict({}))
+
+  @property
+  def periodic(self) -> Tuple[int, ...]:
+    return self.parent.periodic
 
 class TransformChainsTopology(Topology):
   'base class for topologies with transform chains'
