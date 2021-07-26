@@ -2835,7 +2835,7 @@ class SwapInflateTake(Evaluable):
 
   def __iter__(self):
     shape = ArrayFromTuple(self, index=2, shape=(), dtype=int, _lower=0),
-    return (ArrayFromTuple(self, index=index, shape=shape, dtype=int) for index in range(2))
+    return (ArrayFromTuple(self, index=index, shape=shape, dtype=int, _lower=0) for index in range(2))
 
   def evalf(self, inflateidx, takeidx):
     uniqueinflate = _isunique(inflateidx)
