@@ -614,7 +614,7 @@ class pseudotime(cache.Recursion, length=1):
     if len(residual) != len(inertia):
       raise Exception('length of residual and inertia do no match')
     for inert, res in zip(inertia, residual):
-      if inert and inert.shape != res.shape:
+      if inert and not evaluable.equalshape(inert.shape, res.shape):
         raise ValueError('expected `inertia` with shape {} but got {}'.format(res.shape, inert.shape))
     self.target = target
     self.timesteptarget = '_pseudotime_timestep'
@@ -704,7 +704,7 @@ class thetamethod(cache.Recursion, length=1, version=1):
     if len(residual) != len(inertia):
       raise Exception('length of residual and inertia do no match')
     for inert, res in zip(inertia, residual):
-      if inert and inert.shape != res.shape:
+      if inert and not evaluable.equalshape(inert.shape, res.shape):
         raise ValueError('expected `inertia` with shape {} but got {}'.format(res.shape, inert.shape))
     self.target = target
     self.newtonargs = newtonargs
