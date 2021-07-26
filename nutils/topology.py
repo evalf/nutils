@@ -111,7 +111,33 @@ class Topology(types.Singleton):
       raise NotImplementedError
 
   def __getitem__(self, item: Any) -> 'Topology':
-    raise NotImplementedError
+    if isinstance(item, str):
+      topo = self.get_groups(*item.split(','))
+    elif isinstance(item, Sequence) and all(isinstance(i, str) for i in item):
+      topo = self.get_groups(*item) if item else self
+    elif isinstance(item, slice):
+      return self.slice(item, 0)
+    elif isinstance(item, Sequence) and all(isinstance(i, (slice, Ellipsis)) for i in item):
+      if ... in item:
+        item = list(item)
+        i = item.index(...)
+        if ... in item[i+1:]:
+          raise ValueError('only one ellipsis is supported')
+        item[i:i+i] = [slice(None)] * max(0, self.ndims - len(item) + 1)
+      if len(item) > self.ndims:
+        raise ValueError('too many indices: topology is {}-dimension, but {} were indexed'.format(self.ndims, len(item)))
+      topo = self
+      for idim, indices in enumerate(item):
+        if indices != slice(None):
+          topo = topo.slice(indices, idim)
+      return topo
+    elif numeric.isintarray(item) and item.ndim == 1 or isinstance(item, Sequence) and all(isinstance(i, int) for i in item):
+      return self.take(item, 0, self.ndims)
+    else:
+      raise NotImplementedError
+    if not topo:
+      raise KeyError(item)
+    return topo
 
   def __mul__(self, other: Any) -> 'Topology':
     if isinstance(other, Topology):
@@ -825,20 +851,6 @@ class TransformChainsTopology(Topology):
 
   def getitem(self, item):
     return EmptyTopology(self.space, self.transforms.todims, self.ndims)
-
-  def __getitem__(self, item):
-    if numeric.isintarray(item):
-      item = types.frozenarray(item)
-      return TransformChainsTopology(self.space, self.references[item], self.transforms[item], self.opposites[item])
-    if not isinstance(item, tuple):
-      item = item,
-    if all(it in (...,slice(None)) for it in item):
-      return self
-    topo = self.getitem(item) if len(item) != 1 or not isinstance(item[0],str) \
-       else functools.reduce(operator.or_, map(self.getitem, item[0].split(',')), EmptyTopology(self.space, self.transforms.todims, self.ndims))
-    if not topo:
-      raise KeyError(item)
-    return topo
 
   def __invert__(self):
     return OppositeTopology(self)
