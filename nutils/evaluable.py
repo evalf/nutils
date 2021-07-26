@@ -3457,6 +3457,10 @@ class _LoopIndex(Argument):
     lower_length, upper_length = self.length._intbounds
     return 0, max(0, upper_length - 1)
 
+  def _simplified(self):
+    if equalindex(self.length, 1):
+      return Zeros((), int)
+
 class LoopSum(Array):
 
   __cache__ = '_serialized'
