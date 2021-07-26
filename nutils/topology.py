@@ -168,7 +168,7 @@ class Topology(types.Singleton):
         The union of the given groups.
     '''
 
-    raise NotImplementedError
+    return self.empty_like()
 
   def take(self, __indices: Union[numpy.ndarray, Sequence[int]]) -> 'Topology':
     '''Return the selected elements as a disconnected topology.
