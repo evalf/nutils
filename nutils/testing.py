@@ -237,7 +237,7 @@ ContextTestCase = TestCase
 
 class FloatNeighborhoodOutputChecker(doctest.OutputChecker):
 
-  posnum = '(?:[0-9]+|[0-9]+[.]|[.][0-9]+)(?:e[+-]?[0-9]+)?'
+  posnum = '(?:[0-9]+[.][0-9]*|[.][0-9]+|[0-9]+)(?:e[+-]?[0-9]+)?'
   re_spread = re.compile('\\b((?:-?{posnum}|array[(][^()]*[)])±{posnum})\\b'.format(posnum=posnum))
 
   def check_output(self, want, got, optionflags):
