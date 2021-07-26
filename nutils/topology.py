@@ -88,7 +88,7 @@ class Topology(types.Singleton):
     return len(self.references)
 
   def get_groups(self, *groups: str) -> 'Topology':
-    raise NotImplementedError
+    return self.empty_like()
 
   def take(self, __indices: Union[numpy.ndarray, Sequence[int]], __idim: int, __ndim: int) -> 'Topology':
     if not 0 <= __idim < __idim + __ndim <= self.ndims:
