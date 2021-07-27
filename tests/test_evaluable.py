@@ -621,6 +621,12 @@ class intbounds(TestCase):
   def test_normdim_mixed(self):
     self.assertEqual(evaluable.NormDim(self.S('l', 4, 5), self.S('i', -3, 2))._intbounds, (0, 4))
 
+  def test_minimum(self):
+    self.assertEqual(evaluable.Minimum(self.S('a', 0, 4), self.S('b', 1, 3))._intbounds, (0, 3))
+
+  def test_maximum(self):
+    self.assertEqual(evaluable.Maximum(self.S('a', 0, 4), self.S('b', 1, 3))._intbounds, (1, 4))
+
 class simplifications(TestCase):
 
   def test_minimum_maximum_bounds(self):
