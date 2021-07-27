@@ -3483,7 +3483,7 @@ class LoopSum(Array):
 
   def evalf_withtimes(self, times, shape, length, *args):
     serialized = self._serialized
-    times[self] = subtimes = collections.defaultdict(_Stats)
+    subtimes = times.setdefault(self, collections.defaultdict(_Stats))
     result = numpy.zeros(shape, self.dtype)
     for index in range(length):
       values = [numpy.array(index)]
@@ -3686,7 +3686,7 @@ class LoopConcatenateCombined(Evaluable):
 
   def evalf_withtimes(self, times, shapes, length, *args):
     serialized = self._serialized
-    times[self] = subtimes = collections.defaultdict(_Stats)
+    subtimes = times.setdefault(self, collections.defaultdict(_Stats))
     results = [parallel.shempty(tuple(map(int, shape)), dtype=func.dtype) for func, shape in zip(self._funcs, shapes)]
     for index in range(length):
       values = [numpy.array(index)]
