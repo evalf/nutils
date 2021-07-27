@@ -962,7 +962,7 @@ class combine_loop_concatenates(TestCase):
     B = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 2), i*2, i*2+2, 6,), i._name, i.length)
     actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
     L = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3), (evaluable.InsertAxis(i, 2), i*2, i*2+2, 6)), i._name, i.length)
-    desired = evaluable.Tuple((evaluable.ArrayFromTuple(L, 0, (3,), int), evaluable.ArrayFromTuple(L, 1, (6,), int)))
+    desired = evaluable.Tuple((evaluable.ArrayFromTuple(L, 0, (3,), int, **dict(zip(('_lower', '_upper'), A._intbounds))), evaluable.ArrayFromTuple(L, 1, (6,), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
     self.assertEqual(actual, desired)
 
   def test_different_index(self):
@@ -973,7 +973,7 @@ class combine_loop_concatenates(TestCase):
     actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
     L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i._name, i.length)
     L2 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(j, 1), j, j+1, 3),), j._name, j.length)
-    desired = evaluable.Tuple((evaluable.ArrayFromTuple(L1, 0, (3,), int), evaluable.ArrayFromTuple(L2, 0, (3,), int)))
+    desired = evaluable.Tuple((evaluable.ArrayFromTuple(L1, 0, (3,), int, **dict(zip(('_lower', '_upper'), A._intbounds))), evaluable.ArrayFromTuple(L2, 0, (3,), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
     self.assertEqual(actual, desired)
 
   def test_nested_invariant(self):
@@ -982,10 +982,10 @@ class combine_loop_concatenates(TestCase):
     B = evaluable.LoopConcatenate((A, i*3, i*3+3, 9,), i._name, i.length)
     actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
     L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i._name, i.length)
-    A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int)
+    A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int, **dict(zip(('_lower', '_upper'), A._intbounds)))
     L2 = evaluable.LoopConcatenateCombined(((A_, i*3, i*3+3, 9),), i._name, i.length)
     self.assertIn(A_, L2._Evaluable__args)
-    desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int)))
+    desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
     self.assertEqual(actual, desired)
 
   def test_nested_variant(self):
@@ -995,10 +995,10 @@ class combine_loop_concatenates(TestCase):
     B = evaluable.LoopConcatenate((A, j*3, j*3+3, 9,), j._name, j.length)
     actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
     L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i+j, 1), i, i+1, 3),), i._name, i.length)
-    A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int)
+    A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int, **dict(zip(('_lower', '_upper'), A._intbounds)))
     L2 = evaluable.LoopConcatenateCombined(((A_, j*3, j*3+3, 9),), j._name, j.length)
     self.assertNotIn(A_, L2._Evaluable__args)
-    desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int)))
+    desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
     self.assertEqual(actual, desired)
 
 class EvaluableConstant(TestCase):
