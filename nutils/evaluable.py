@@ -1587,7 +1587,11 @@ class Inverse(Array):
     super().__init__(args=[func], shape=func.shape, dtype=float)
 
   def _simplified(self):
-    return self.func._inverse(self.ndim-2, self.ndim-1)
+    result = self.func._inverse(self.ndim-2, self.ndim-1)
+    if result is not None:
+      return result
+    if equalindex(self.func.shape[-2], 1) and equalindex(self.func.shape[-1], 1):
+      return reciprocal(self.func)
 
   def evalf(self, arr):
     return numeric.inv(arr)
