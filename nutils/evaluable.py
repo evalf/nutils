@@ -993,7 +993,8 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     if self in cache:
       return cache[self]
     args = tuple(arg._node(cache, subgraph, times) for arg in self._Evaluable__args)
-    label = '\n'.join(filter(None, (type(self).__name__, self._node_details, self._shape_str(form=repr))))
+    bounds = '[{},{}]'.format(*self._intbounds) if self.dtype == int else None
+    label = '\n'.join(filter(None, (type(self).__name__, self._node_details, self._shape_str(form=repr), bounds)))
     cache[self] = node = RegularNode(label, args, {}, (type(self).__name__, times[self]), subgraph)
     return node
 
