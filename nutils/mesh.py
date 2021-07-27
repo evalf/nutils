@@ -73,7 +73,7 @@ def rectilinear(richshape, periodic=(), name='rect', space='X'):
 
   return topo, geom
 
-def line(nodes, periodic=False, bnames=None, *, space: str = 'X'):
+def line(nodes, periodic=False, bnames=None, *, name: str = 'line', space: str = 'X'):
   if isinstance(nodes, int):
     uniform = True
     assert nodes > 0
@@ -85,19 +85,19 @@ def line(nodes, periodic=False, bnames=None, *, space: str = 'X'):
     scale = (nodes[-1]-nodes[0]) / nelems
     offset = nodes[0]
     uniform = numpy.equal(nodes, offset + numpy.arange(nelems+1) * scale).all()
-  root = transform.Identifier(1, 'line')
+  root = transform.Identifier(1, name)
   domain = topology.StructuredLine(space, root, 0, nelems, periodic=periodic, bnames=bnames)
   geom = function.rootcoords(space, 1)[0] * scale + offset if uniform else domain.basis('std', degree=1, periodic=[]).dot(nodes)
   return domain, geom
 
-def newrectilinear(nodes, periodic=None, bnames=[['left','right'],['bottom','top'],['front','back']], spaces=None):
+def newrectilinear(nodes, periodic=None, name='rect', bnames=[['left','right'],['bottom','top'],['front','back']], spaces=None):
   if periodic is None:
     periodic = []
   if not spaces:
     spaces = 'XYZ' if len(nodes) <= 3 else map('R{}'.format, range(len(nodes)))
   else:
     assert len(spaces) == len(nodes)
-  domains, geoms = zip(*(line(nodesi, i in periodic, bnamesi, space=spacei) for i, (nodesi, bnamesi, spacei) in enumerate(zip(nodes, tuple(bnames)+(None,)*len(nodes), spaces))))
+  domains, geoms = zip(*(line(nodesi, i in periodic, bnamesi, name=name, space=spacei) for i, (nodesi, bnamesi, spacei) in enumerate(zip(nodes, tuple(bnames)+(None,)*len(nodes), spaces))))
   return util.product(domains), function.stack(geoms)
 
 @log.withcontext
