@@ -479,7 +479,8 @@ class Evaluable(types.Singleton):
         data = data._combine_loop_concatenates(exclude)
         combined = LoopConcatenateCombined(data, index._name, index.length)
         for i, lc in enumerate(lcs):
-          replacements[lc] = ArrayFromTuple(combined, i, lc.shape, lc.dtype)
+          intbounds = dict(zip(('_lower', '_upper'), lc._intbounds)) if lc.dtype == int else {}
+          replacements[lc] = ArrayFromTuple(combined, i, lc.shape, lc.dtype, **intbounds)
       if replacements:
         self = replace(lambda key: replacements.get(key) if isinstance(key, LoopConcatenate) else None, recursive=False, depthfirst=False)(self)
       else:
@@ -3719,6 +3720,9 @@ class LoopConcatenate(Array):
   @property
   def _loop_concatenate_deps(self):
     return (self,) + super()._loop_concatenate_deps
+
+  def _intbounds_impl(self):
+    return self.func._intbounds
 
 class LoopConcatenateCombined(Evaluable):
 
