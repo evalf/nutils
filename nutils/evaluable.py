@@ -3719,6 +3719,7 @@ class _SizesToOffsets(Array):
   def __init__(self, sizes):
     assert sizes.ndim == 1
     assert sizes.dtype == int
+    assert sizes._intbounds[0] >= 0
     self._sizes = sizes
     super().__init__(args=[sizes], shape=(sizes.shape[0]+1,), dtype=int)
 
@@ -3729,6 +3730,11 @@ class _SizesToOffsets(Array):
     unaligned, where = unalign(self._sizes)
     if not where:
       return Range(self.shape[0]) * appendaxes(unaligned, self.shape[:1])
+
+  def _intbounds_impl(self):
+    n = self._sizes.size._intbounds[1]
+    m = self._sizes._intbounds[1]
+    return 0, (0 if n == 0 or m == 0 else n * m)
 
 class LoopConcatenate(Array):
 
