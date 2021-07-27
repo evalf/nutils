@@ -2240,7 +2240,7 @@ class Pointwise(Array):
 
 class Reciprocal(Pointwise):
   __slots__ = ()
-  evalf = numpy.reciprocal
+  evalf = functools.partial(numpy.reciprocal, dtype=float)
 
 class Negative(Pointwise):
   __slots__ = ()
