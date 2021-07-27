@@ -2366,6 +2366,14 @@ class Mod(Pointwise):
     else:
       return super()._intbounds_impl()
 
+  def _simplified(self):
+    dividend, divisor = self.args
+    lower_divisor, upper_divisor = divisor._intbounds
+    if lower_divisor > 0:
+      lower_dividend, upper_dividend = dividend._intbounds
+      if 0 <= lower_dividend and upper_dividend < lower_divisor:
+        return dividend
+
 class ArcTan2(Pointwise):
   __slots__ = ()
   evalf = numpy.arctan2
