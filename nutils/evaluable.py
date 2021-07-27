@@ -2414,6 +2414,11 @@ class Minimum(Pointwise):
         return self.args[1]
     return super()._simplified()
 
+  def _intbounds_impl(self):
+    lower1, upper1 = self.args[0]._intbounds
+    lower2, upper2 = self.args[1]._intbounds
+    return min(lower1, lower2), min(upper1, upper2)
+
 class Maximum(Pointwise):
   __slots__ = ()
   evalf = numpy.maximum
@@ -2428,6 +2433,11 @@ class Maximum(Pointwise):
       elif upper1 <= lower2:
         return self.args[1]
     return super()._simplified()
+
+  def _intbounds_impl(self):
+    lower1, upper1 = self.args[0]._intbounds
+    lower2, upper2 = self.args[1]._intbounds
+    return max(lower1, lower2), max(upper1, upper2)
 
 class Int(Pointwise):
   __slots__ = ()
