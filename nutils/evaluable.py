@@ -2399,10 +2399,30 @@ class Minimum(Pointwise):
   evalf = numpy.minimum
   deriv = Less, lambda x, y: 1 - Less(x, y)
 
+  def _simplified(self):
+    if self.dtype == int:
+      lower1, upper1 = self.args[0]._intbounds
+      lower2, upper2 = self.args[1]._intbounds
+      if upper1 <= lower2:
+        return self.args[0]
+      elif upper2 <= lower1:
+        return self.args[1]
+    return super()._simplified()
+
 class Maximum(Pointwise):
   __slots__ = ()
   evalf = numpy.maximum
   deriv = lambda x, y: 1 - Less(x, y), Less
+
+  def _simplified(self):
+    if self.dtype == int:
+      lower1, upper1 = self.args[0]._intbounds
+      lower2, upper2 = self.args[1]._intbounds
+      if upper2 <= lower1:
+        return self.args[0]
+      elif upper1 <= lower2:
+        return self.args[1]
+    return super()._simplified()
 
 class Int(Pointwise):
   __slots__ = ()

@@ -621,6 +621,34 @@ class intbounds(TestCase):
   def test_normdim_mixed(self):
     self.assertEqual(evaluable.NormDim(self.S('l', 4, 5), self.S('i', -3, 2))._intbounds, (0, 4))
 
+class simplifications(TestCase):
+
+  def test_minimum_maximum_bounds(self):
+
+    class R(evaluable.Array):
+      # An evaluable scalar argument with given bounds.
+      def __init__(self, lower, upper):
+        self._lower = lower
+        self._upper = upper
+        super().__init__(args=(evaluable.EVALARGS,), shape=(), dtype=int)
+      def evalf(self, evalargs):
+        raise NotImplementedError
+      @property
+      def _intbounds(self):
+        return self._lower, self._upper
+
+    a = R(0, 2)
+    b = R(2, 4)
+
+    with self.subTest('min-left'):
+      self.assertEqual(evaluable.Minimum(a, b).simplified, a)
+    with self.subTest('min-right'):
+      self.assertEqual(evaluable.Minimum(b, a).simplified, a)
+    with self.subTest('max-left'):
+      self.assertEqual(evaluable.Maximum(b, a).simplified, b)
+    with self.subTest('max-right'):
+      self.assertEqual(evaluable.Maximum(a, b).simplified, b)
+
 
 class commutativity(TestCase):
 
