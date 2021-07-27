@@ -1653,7 +1653,11 @@ class Determinant(Array):
     super().__init__(args=[func], shape=func.shape[:-2], dtype=_jointdtype(func.dtype, float))
 
   def _simplified(self):
-    return self.func._determinant(self.ndim, self.ndim+1)
+    result = self.func._determinant(self.ndim, self.ndim+1)
+    if result is not None:
+      return result
+    if equalindex(self.func.shape[-2], 1) and equalindex(self.func.shape[-1], 1):
+      return Take(Take(self.func, zeros((), int)), zeros((), int))
 
   def evalf(self, arr):
     assert arr.ndim == self.ndim+2
