@@ -451,7 +451,39 @@ class _CustomIndex(_TransformChainsSample):
   def hull(self) -> numpy.ndarray:
     return numpy.take(self._index, self._parent.hull)
 
-class _Empty(Sample):
+if os.environ.get('NUTILS_TENSORIAL', None) == 'test': # pragma: nocover
+
+  from unittest import SkipTest
+
+  class _TensorialSample(Sample):
+
+    def getindex(self, ielem: int) -> numpy.ndarray:
+      raise SkipTest('`{}` does not implement `Sample.getindex`'.format(type(self).__qualname__))
+
+    def get_evaluable_indices(self, __ielem: evaluable.Array) -> evaluable.Array:
+      raise SkipTest('`{}` does not implement `Sample.get_evaluable_indices`'.format(type(self).__qualname__))
+
+    def get_evaluable_weights(self, __ielem: evaluable.Array) -> evaluable.Array:
+      raise SkipTest('`{}` does not implement `Sample.get_evaluable_weights`'.format(type(self).__qualname__))
+
+    def update_lower_args(self, __ielem: evaluable.Array, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> Tuple[_PointsShape, _TransformChainsMap, _CoordinatesMap]:
+      raise SkipTest('`{}` does not implement `Sample.update_lower_args`'.format(type(self).__qualname__))
+
+    @property
+    def transforms(self) -> Tuple[Transforms, ...]:
+      raise SkipTest('`{}` does not implement `Sample.transforms`'.format(type(self).__qualname__))
+
+    @property
+    def points(self) -> Tuple[Transforms, ...]:
+      raise SkipTest('`{}` does not implement `Sample.points`'.format(type(self).__qualname__))
+
+    def basis(self) -> function.Array:
+      raise SkipTest('`{}` does not implement `Sample.basis`'.format(type(self).__qualname__))
+
+else:
+  _TensorialSample = Sample
+
+class _Empty(_TensorialSample):
 
   def __init__(self, spaces: Tuple[str, ...], ndims: int) -> None:
     super().__init__(spaces, ndims, 0, 0)
@@ -488,7 +520,7 @@ class _Empty(Sample):
   def basis(self) -> function.Array:
     return function.zeros((0,), float)
 
-class _Add(Sample):
+class _Add(_TensorialSample):
 
   def __init__(self, sample1: Sample, sample2: Sample) -> None:
     assert sample1.spaces == sample2.spaces
@@ -534,7 +566,7 @@ class _Add(Sample):
   def __rmatmul__(self, func: function.IntoArray) -> function.Array:
     return function.concatenate([func @ self._sample1, func @ self._sample2])
 
-class _Mul(Sample):
+class _Mul(_TensorialSample):
 
   def __init__(self, sample1: Sample, sample2: Sample) -> None:
     assert set(sample1.spaces).isdisjoint(set(sample2.spaces))
@@ -612,7 +644,7 @@ class _Mul(Sample):
     basis2 = self._sample2.basis()
     return function.ravel(basis1[:,None] * basis2[None,:], axis=0)
 
-class _TakeElements(Sample):
+class _TakeElements(_TensorialSample):
 
   __cache__ = '_offsets'
 

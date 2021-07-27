@@ -46,6 +46,9 @@ class DocTestCase(nutils.testing.ContextTestCase, _doctest.DocTestCase):
 
   __str__ = __repr__
 
+if os.environ.get('NUTILS_TENSORIAL', None):
+  DocTestCase = unittest.skip('disabled for tensorial topologies')(DocTestCase)
+
 doctest = unittest.TestSuite()
 parser = _doctest.DocTestParser()
 finder = _doctest.DocTestFinder(parser=parser)

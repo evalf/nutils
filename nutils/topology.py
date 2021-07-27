@@ -39,7 +39,7 @@ from .sample import Sample
 from .elementseq import References
 from .pointsseq import PointsSequence
 from typing import Any, FrozenSet, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
-import numpy, functools, collections.abc, itertools, functools, operator, numbers, pathlib, abc, treelog as log
+import numpy, functools, collections.abc, itertools, functools, operator, numbers, pathlib, abc, treelog as log, os
 _ = numpy.newaxis
 
 _identity = lambda x: x
@@ -878,12 +878,93 @@ class Topology(types.Singleton):
       coeffs = [ref.get_poly_coeffs('bernstein', degree=degree) for ref in self.references]
     return function.DiscontBasis(coeffs, self.f_index, self.f_coords)
 
+if os.environ.get('NUTILS_TENSORIAL', None) == 'test': # pragma: nocover
+
+  from unittest import SkipTest
+
+  class _TensorialTopology(Topology):
+
+    def take_unchecked(self, __indices: numpy.ndarray, __idim: int, __ndim: int) -> Topology:
+      raise SkipTest('`{}` does not implement `Topology.take_unchecked`'.format(type(self).__qualname__))
+
+    def __and__(self, other: Any) -> Topology:
+      result = super().__and__(other)
+      if type(self) == type(other) and result is NotImplemented:
+        raise SkipTest('`{}` does not implement `Topology.__and__`'.format(type(self).__qualname__))
+      return result
+
+    def __rand__(self, other: Any) -> Topology:
+      result = super().__and__(other)
+      if result is NotImplemented:
+        raise SkipTest('`{}` does not implement `Topology.__and__`'.format(type(self).__qualname__))
+      return result
+
+    def __sub__(self, other: Any) -> Topology:
+      if type(self) == type(other):
+        raise SkipTest('`{}` does not implement `Topology.__sub__`'.format(type(self).__qualname__))
+      else:
+        return NotImplemented
+
+    def __rsub__(self, other: Any) -> Topology:
+      if isinstance(other, Topology):
+        raise SkipTest('`{}` does not implement `Topology.__sub__`'.format(type(self).__qualname__))
+      else:
+        return NotImplemented
+
+    @property
+    def space(self) -> str:
+      raise SkipTest('`{}` does not implement `Topology.space`'.format(type(self).__qualname__))
+
+    @property
+    def transforms(self) -> transformseq.Transforms:
+      raise SkipTest('`{}` does not implement `Topology.transforms`'.format(type(self).__qualname__))
+
+    @property
+    def opposites(self) -> transformseq.Transforms:
+      raise SkipTest('`{}` does not implement `Topology.opposites`'.format(type(self).__qualname__))
+
+    @property
+    def border_transforms(self) -> transformseq.Transforms:
+      raise SkipTest('`{}` does not implement `Topology.border_transforms`'.format(type(self).__qualname__))
+
+    @property
+    def f_index(self) -> function.Array:
+      raise SkipTest('`{}` does not implement `Topology.f_index`'.format(type(self).__qualname__))
+
+    @property
+    def f_coords(self) -> function.Array:
+      raise SkipTest('`{}` does not implement `Topology.f_coords`'.format(type(self).__qualname__))
+
+    def refined_by(self, refine: Iterable[int]) -> Topology:
+      raise SkipTest('`{}` does not implement `Topology.refined_by`'.format(type(self).__qualname__))
+
+    def trim(self, levelset: function.Array, maxrefine: int, ndivisions: int = 8, name: str = 'trimmed', leveltopo: Optional[Topology] = None, *, arguments: Optional[_ArgDict] = None) -> Topology:
+      raise SkipTest('`{}` does not implement `Topology.trim`'.format(type(self).__qualname__))
+
+    def subset(self, topo: Topology, newboundary: Optional[Union[str, Topology]] = None, strict: bool = False) -> Topology:
+      raise SkipTest('`{}` does not implement `Topology.subset`'.format(type(self).__qualname__))
+
+    def withgroups(self, vgroups: Mapping[str, Union[str, Topology]] = {}, bgroups: Mapping[str, Union[str, Topology]] = {}, igroups: Mapping[str, Union[str, Topology]] = {}, pgroups: Mapping[str, Union[str, Topology]] = {}) -> Topology:
+      try:
+        return super().withgroups(vgroups, bgroups, igroups, pgroups)
+      except NotImplementedError:
+        raise SkipTest('`{}` does not implement `Topology.withgroups`'.format(type(self).__qualname__))
+
+    def indicator(self, subtopo: Union[str, Topology]) -> Topology:
+      raise SkipTest('`{}` does not implement `Topology.indicator`'.format(type(self).__qualname__))
+
+    def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None) -> Sample:
+      raise SkipTest('`{}` does not implement `Topology.locate`'.format(type(self).__qualname__))
+
+else:
+  _TensorialTopology = Topology
+
 class _EmptyUnlowerable(function.Array):
 
   def lower(self, points_shape, transform_chains, coordinates) -> evaluable.Array:
     raise ValueError('cannot lower')
 
-class _Empty(Topology):
+class _Empty(_TensorialTopology):
 
   def __init__(self, spaces: Tuple[str, ...], space_dims: Tuple[int, ...], ndims: int) -> None:
     super().__init__(spaces, space_dims, References.empty(ndims))
@@ -923,7 +1004,7 @@ class _Empty(Topology):
   def sample(self, ischeme: str, degree: int) -> Sample:
     return Sample.empty(self.spaces, self.ndims)
 
-class _DisjointUnion(Topology):
+class _DisjointUnion(_TensorialTopology):
 
   def __init__(self, topo1: Topology, topo2: Topology) -> None:
     if topo1.spaces != topo2.spaces or topo1.space_dims != topo2.space_dims or topo1.ndims != topo2.ndims:
@@ -989,7 +1070,7 @@ class _DisjointUnion(Topology):
     topo2 = self.topo2.select(indicator, ischeme, **kwargs)
     return Topology.disjoint_union(topo1, topo2)
 
-class _Mul(Topology):
+class _Mul(_TensorialTopology):
 
   def __init__(self, topo1: Topology, topo2: Topology) -> None:
     if not set(topo1.spaces).isdisjoint(topo2.spaces):
@@ -1124,7 +1205,7 @@ class _Mul(Topology):
   def sample(self, ischeme: str, degree: int) -> Sample:
     return self.topo1.sample(ischeme, degree) * self.topo2.sample(ischeme, degree)
 
-class _Take(Topology):
+class _Take(_TensorialTopology):
 
   def __init__(self, parent: Topology, indices: types.arraydata) -> None:
     self.parent = parent
@@ -1137,7 +1218,7 @@ class _Take(Topology):
   def sample(self, ischeme: str, degree: int) -> Sample:
     return self.parent.sample(ischeme, degree).take_elements(self.indices)
 
-class _WithGroupAliases(Topology):
+class _WithGroupAliases(_TensorialTopology):
 
   def __init__(self, parent: Topology, vgroups: Mapping[str, str] = {}, bgroups: Mapping[str, str] = {}, igroups: Mapping[str, str] = {}) -> None:
     self.parent = parent
