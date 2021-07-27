@@ -405,6 +405,10 @@ class Topology(types.Singleton):
       coeffs = [ref.get_poly_coeffs('bernstein', degree=degree) for ref in self.references]
     return function.DiscontBasis(coeffs, self.f_index, self.f_coords)
 
+  @property
+  def periodic(self) -> Tuple[int, ...]:
+    raise NotImplementedError
+
 class TransformChainsTopology(Topology):
   'base class for topologies with transform chains'
 
