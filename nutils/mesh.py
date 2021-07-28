@@ -662,12 +662,12 @@ def unitsquare(nelems, etype):
       The geometry function.
   '''
 
-  root = transform.Identifier(2, 'unitsquare')
-
   if etype == 'square':
-    topo = topology.StructuredTopology(root, [transformseq.DimAxis(i=0, j=nelems, mod=0, isperiodic=False)] * 2)
+    topo, geom = rectilinear([nelems, nelems], name='unitsquare')
+    return topo, geom / nelems
 
   elif etype in ('triangle', 'mixed'):
+    root = transform.Identifier(2, 'unitsquare')
     simplices = numpy.concatenate([
       numpy.take([i*(nelems+1)+j, i*(nelems+1)+j+1, (i+1)*(nelems+1)+j, (i+1)*(nelems+1)+j+1], [[0,1,2],[1,2,3]] if i%2==j%2 else [[0,1,3],[0,2,3]], axis=0)
         for i in range(nelems) for j in range(nelems)])
@@ -694,11 +694,10 @@ def unitsquare(nelems, etype):
     x, y = topo.boundary.sample('_centroid', None).eval(function.rootcoords(2)).T
     bgroups = dict(left=x==0, right=x==nelems, bottom=y==0, top=y==nelems)
     topo = topo.withboundary(**{name: topo.boundary[numpy.where(mask)[0]] for name, mask in bgroups.items()})
+    return topo, function.rootcoords(2) / nelems
 
   else:
     raise Exception('invalid element type {!r}'.format(etype))
-
-  return topo, function.rootcoords(2) / nelems
 
 try:
   from math import comb as _comb # new in Python 3.8
