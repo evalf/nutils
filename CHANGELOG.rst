@@ -830,7 +830,7 @@ Release date: `2018-02-05 <https://github.com/evalf/nutils/releases/tag/v3.0>`_.
 - New: circular symmetry
 
   Any topology can be revolved using the new
-  :func:`nutils.topology.Topology.revolved` method, which interprets the
+  ``nutils.topology.Topology.revolved`` method, which interprets the
   first geometry dimension as a radius and replaces it by two new
   dimensions, shifting the remaining axes backward. In addition to the
   modified topology and geometry, simplifying function is returned as

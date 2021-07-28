@@ -565,24 +565,6 @@ class Topology(types.Singleton):
 
     return Sample.new(transforms, points_, index)
 
-  def revolved(self, geom):
-    '''Create revolved topology, geometry.'''
-
-    assert geom.ndim == 1
-    revdomain = self * RevolutionTopology()
-    angle = function.RevolutionAngle()
-    geom, angle = function.bifurcate(geom, angle)
-    revgeom = function.concatenate([geom[0] * function.trignormal(angle), geom[1:]])
-    simplify = _identity
-    return revdomain, revgeom, simplify
-
-  def extruded(self, geom, nelems, periodic=False, bnames=('front','back')):
-    assert geom.ndim == 1
-    root = transform.Identifier(1, 'extrude')
-    extopo = self * StructuredLine(root, i=0, j=nelems, periodic=periodic, bnames=bnames)
-    exgeom = function.concatenate(function.bifurcate(geom, function.rootcoords(1)))
-    return extopo, exgeom
-
   @property
   @log.withcontext
   def boundary(self):
@@ -1949,27 +1931,6 @@ class ProductTopology(Topology):
   @property
   def interfaces(self):
     return self.topo1 * self.topo2.interfaces + self.topo1.interfaces * self.topo2
-
-class RevolutionTopology(Topology):
-  'topology consisting of a single revolution element'
-
-  __slots__ = 'boundary', '_root'
-
-  connectivity = numpy.empty([1,0], dtype=int)
-
-  def __init__(self):
-    self._root = transform.Identifier(1, 'angle')
-    self.boundary = EmptyTopology(ndims=0)
-    transforms = transformseq.PlainTransforms([(self._root,)], 1)
-    references = References.uniform(element.RevolutionReference(), 1)
-    super().__init__(references, transforms, transforms)
-
-  @property
-  def refined(self):
-    return self
-
-  def basis(self, name, *args, **kwargs):
-    return function.asarray([1.])
 
 class PatchBoundary(types.Singleton):
 
