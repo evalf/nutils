@@ -78,22 +78,6 @@ def promote(chain, ndims):
       return canonical(chain[:i+1]) + uppermost(chain[i+1:])
   return chain # NOTE at this point promotion essentially failed, maybe it's better to raise an exception
 
-def linearfrom(chain, fromdims):
-  todims = chain[0].todims if chain else fromdims
-  while chain and fromdims < chain[-1].fromdims:
-    chain = chain[:-1]
-  if not chain:
-    assert todims == fromdims
-    return numpy.eye(fromdims)
-  linear = numpy.eye(chain[-1].fromdims)
-  for transitem in reversed(uppermost(chain)):
-    linear = numpy.dot(transitem.linear, linear)
-    if transitem.todims == transitem.fromdims + 1:
-      linear = numpy.concatenate([linear, transitem.ext[:,_]], axis=1)
-  assert linear.shape[0] == todims
-  return linear[:,:fromdims] if linear.shape[1] >= fromdims \
-    else numpy.concatenate([linear, numpy.zeros((todims, fromdims-linear.shape[1]))], axis=1)
-
 ## TRANSFORM ITEMS
 
 class TransformItem(types.Singleton):
