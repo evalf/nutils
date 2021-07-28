@@ -3380,25 +3380,6 @@ class PolyOuterProduct(Array):
   def evalf(self, left, right):
     return numeric.poly_outer_product(left, right)
 
-class RevolutionAngle(Array):
-  '''
-  Pseudo coordinates of a :class:`nutils.topology.RevolutionTopology`.
-  '''
-
-  __slots__ = ()
-
-  def __init__(self):
-    super().__init__(args=[EVALARGS], shape=[], dtype=float)
-
-  def evalf(self, evalargs):
-    raise Exception('RevolutionAngle should not be evaluated')
-
-  def _derivative(self, var, seen):
-    return (ones_like if isinstance(var, LocalCoords) and len(var) > 0 else zeros_like)(var)
-
-  def _optimized_for_numpy(self):
-    return Zeros(self.shape, float)
-
 class Choose(Array):
   '''Function equivalent of :func:`numpy.choose`.'''
 

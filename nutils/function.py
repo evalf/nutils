@@ -940,14 +940,6 @@ class _Concatenate(Array):
     return util.sum(evaluable._inflate(array.lower(**kwargs), evaluable.Range(array.shape[self.axis]) + offset, self.shape[self.axis], self.axis-self.ndim)
       for array, offset in zip(self.arrays, util.cumsum(array.shape[self.axis] for array in self.arrays)))
 
-class RevolutionAngle(Array):
-
-  def __init__(self):
-    super().__init__((), float)
-
-  def lower(self, **kwargs: Any) -> evaluable.Array:
-    return _prepend_points(evaluable.RevolutionAngle(), **kwargs)
-
 # CONSTRUCTORS
 
 def asarray(__arg: IntoArray) -> Array:
