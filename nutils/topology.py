@@ -423,9 +423,13 @@ class Topology(types.Singleton):
     return function.get(values, 0, self.f_index)
 
   def select(self, indicator, ischeme='bezier2', **kwargs):
+    # Select elements where `indicator` is strict positive at any of the
+    # integration points defined by `ischeme`. We sample `indicator > 0`
+    # together with the element index (`self.f_index`) and keep all indices
+    # with at least one positive result.
     sample = self.sample(*element.parse_legacy_ischeme(ischeme))
-    isactive = numpy.greater(sample.eval(indicator, **kwargs), 0)
-    selected = types.frozenarray(tuple(i for i, index in enumerate(sample.index) if isactive[index].any()), dtype=int)
+    isactive, ielem = sample.eval([function.greater(indicator, 0), self.f_index], **kwargs)
+    selected = types.frozenarray(numpy.unique(ielem[isactive]))
     return self[selected]
 
   @log.withcontext
