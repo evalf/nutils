@@ -1910,64 +1910,6 @@ class HierarchicalTopology(Topology):
 
     return function.PlainBasis(hbasis_coeffs, hbasis_dofs, ndofs, self.f_index, self.f_coords)
 
-class ProductTopology(Topology):
-  'product topology'
-
-  __slots__ = 'topo1', 'topo2'
-  __cache__ = 'boundary', 'interfaces'
-
-  @types.apply_annotations
-  def __init__(self, topo1:stricttopology, topo2:stricttopology):
-    assert not isinstance(topo1, ProductTopology)
-    self.topo1 = topo1
-    self.topo2 = topo2
-    references = self.topo1.references * self.topo2.references
-    transforms = transformseq.ProductTransforms(self.topo1.transforms, self.topo2.transforms)
-    if (self.topo1.opposites != self.topo1.transforms) != (self.topo2.opposites != self.topo2.transforms):
-      opposites = transformseq.ProductTransforms(self.topo1.opposites, self.topo2.opposites)
-    else:
-      opposites = transforms
-    super().__init__(references, transforms, opposites)
-
-  def __mul__(self, other):
-    return ProductTopology(self.topo1, self.topo2 * other)
-
-  @property
-  def refined(self):
-    return self.topo1.refined * self.topo2.refined
-
-  def refine(self, n):
-    if numpy.iterable(n):
-      assert len(n) == self.ndims
-    else:
-      n = (n,)*self.ndims
-    return self.topo1.refine(n[:self.topo1.ndims]) * self.topo2.refine(n[self.topo1.ndims:])
-
-  def getitem(self, item):
-    return self.topo1.getitem(item) * self.topo2 | self.topo1 * self.topo2.getitem(item) if isinstance(item, str) \
-      else self.topo1[item[:self.topo1.ndims]] * self.topo2[item[self.topo1.ndims:]]
-
-  def basis(self, name, *args, **kwargs):
-    def _split(arg):
-      if not numpy.iterable(arg):
-        return arg, arg
-      assert len(arg) == self.ndims
-      return tuple(a[0] if all(ai == a[0] for ai in a[1:]) else a for a in (arg[:self.topo1.ndims], arg[self.topo1.ndims:]))
-    splitargs = [_split(arg) for arg in args]
-    splitkwargs = [(name,)+_split(arg) for name, arg in kwargs.items()]
-    basis1, basis2 = function.bifurcate(
-      self.topo1.basis(name, *[arg1 for arg1, arg2 in splitargs], **{name: arg1 for name, arg1, arg2 in splitkwargs}),
-      self.topo2.basis(name, *[arg2 for arg1, arg2 in splitargs], **{name: arg2 for name, arg1, arg2 in splitkwargs}))
-    return function.ravel(function.outer(basis1,basis2), axis=0)
-
-  @property
-  def boundary(self):
-    return self.topo1 * self.topo2.boundary + self.topo1.boundary * self.topo2
-
-  @property
-  def interfaces(self):
-    return self.topo1 * self.topo2.interfaces + self.topo1.interfaces * self.topo2
-
 class PatchBoundary(types.Singleton):
 
   __slots__ = 'id', 'dim', 'side', 'reverse', 'transpose'
