@@ -3545,11 +3545,11 @@ class LoopSum(Array):
           *elem_indices, elem_values = (InsertAxis(arr, 1) for arr in (*elem_indices, elem_values))
         else:
           # minimize ravels by transposing all variable length axes to the end
-          variable = tuple(i for i, n in enumerate(elem_values.shape) if not numeric.isint(n) and self.index in n.arguments)
+          variable = tuple(i for i, n in enumerate(elem_values.shape) if self.index in n.arguments)
           *elem_indices, elem_values = (Transpose.to_end(arr, *variable) for arr in (*elem_indices, elem_values))
           for i in variable[:-1]:
             *elem_indices, elem_values = map(Ravel, (*elem_indices, elem_values))
-          assert all(n.isconstant for n in elem_values.shape[:-1])
+          assert all(self.index not in n.arguments for n in elem_values.shape[:-1])
         chunks.append(tuple(loop_concatenate(arr, self.index) for arr in (*elem_indices, elem_values)))
     return tuple(chunks)
 
