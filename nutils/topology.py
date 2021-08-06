@@ -38,7 +38,7 @@ from . import element, function, evaluable, util, parallel, numeric, cache, tran
 from .sample import Sample
 from .elementseq import References
 from .pointsseq import PointsSequence
-from typing import Any, FrozenSet, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import Any, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 import numpy, functools, collections.abc, itertools, functools, operator, numbers, pathlib, abc, treelog as log
 _ = numpy.newaxis
 
@@ -87,8 +87,142 @@ class Topology(types.Singleton):
   def __len__(self) -> int:
     return len(self.references)
 
-  def __getitem__(self, item: Any) -> 'Topology':
+  def get_groups(self, *groups: str) -> 'Topology':
+    '''Return the union of the given groups.
+
+    Parameters
+    ----------
+    *groups : :class:`str`
+        The identifiers of the groups.
+
+    Returns
+    -------
+    :class:`Topology`
+        The union of the given groups.
+    '''
+
     raise NotImplementedError
+
+  def take(self, __indices: Union[numpy.ndarray, Sequence[int]]) -> 'Topology':
+    '''Return the selected elements as a disconnected topology.
+
+    The indices refer to the raveled list of elements in this topology. The
+    indices are treated as a set: duplicate indices are silently ignored and
+    the returned elements have the same order as in this topology.
+
+    Parameters
+    ----------
+    indices : integer :class:`numpy.ndarray` or similar
+        The one-dimensional array of element indices.
+
+    Returns
+    -------
+    :class:`Topology`
+        The selected elements.
+
+    See Also
+    --------
+    :meth:`compress` : select elements using a mask
+    '''
+
+    indices = numpy.asarray(__indices)
+    if indices.ndim != 1:
+      raise ValueError('expected a one-dimensional array')
+    if not indices.size:
+      return self.empty_like()
+    indices = numpy.unique(indices.astype(int, casting='same_kind'))
+    if indices[0] < 0 or indices[-1] >= len(self):
+      raise IndexError('element index out of range')
+    return self.take_unchecked(indices)
+
+  def take_unchecked(self, __indices: numpy.ndarray) -> 'Topology':
+    raise NotImplementedError
+
+  def compress(self, __mask: Union[numpy.ndarray, Sequence[bool]]) -> 'Topology':
+    '''Return the selected elements as a disconnected topology.
+
+    The mask refers to the raveled list of elements in this topology.
+
+    Parameters
+    ----------
+    mask : boolean :class:`numpy.ndarray` or similar
+        The one-dimensional array of elements to select.
+
+    Returns
+    -------
+    :class:`Topology`
+        The selected elements.
+
+    See Also
+    --------
+    :meth:`take` : select elements by index
+    '''
+
+    mask = numpy.asarray(__mask)
+    if mask.ndim != 1:
+      raise ValueError('expected a one-dimensional array')
+    if len(mask) != len(self):
+      raise ValueError('length of mask does not match number of elements')
+    indices, = numpy.where(__mask)
+    if len(indices):
+      return self.take_unchecked(indices)
+    else:
+      return self.empty_like()
+
+  def slice(self, __s: slice, __idim: int) -> 'Topology':
+    '''Return a slice of the given dimension index.
+
+    Parameters
+    ----------
+    s : :class:`slice`
+        The slice.
+    idim : :class:`int`
+        The dimension index.
+
+    Returns
+    -------
+    :class:`Topology`
+        The slice.
+    '''
+
+    if not 0 <= __idim < self.ndims:
+      raise IndexError('dimension index out of range')
+    return self.slice_unchecked(__s, __idim)
+
+  def slice_unchecked(self, __s: slice, __idim: int) -> 'Topology':
+    raise ValueError('cannot slice an unstructured topology')
+
+  def __getitem__(self, item: Any) -> 'Topology':
+    if isinstance(item, str):
+      topo = self.get_groups(*item.split(','))
+    elif isinstance(item, Sequence) and all(isinstance(i, str) for i in item):
+      topo = self.get_groups(*item) if item else self
+    elif isinstance(item, slice):
+      if item == slice(None):
+        return self
+      else:
+        return self.slice(item, 0)
+    elif isinstance(item, Sequence) and all(i == ... or isinstance(i, slice) for i in item):
+      if ... in item:
+        item = list(item)
+        i = item.index(...)
+        if ... in item[i+1:]:
+          raise ValueError('only one ellipsis is allowed')
+        item[i:i+1] = [slice(None)] * max(0, self.ndims - len(item) + 1)
+      if len(item) > self.ndims:
+        raise ValueError('too many indices: topology is {}-dimension, but {} were indexed'.format(self.ndims, len(item)))
+      topo = self
+      for idim, indices in enumerate(item):
+        if indices != slice(None):
+          topo = topo.slice(indices, idim)
+      return topo
+    elif numeric.isintarray(item) and item.ndim == 1 or isinstance(item, Sequence) and all(isinstance(i, int) for i in item):
+      return self.take(item)
+    else:
+      raise NotImplementedError
+    if not topo:
+      raise KeyError(item)
+    return topo
 
   @property
   def border_transforms(self) -> transformseq.Transforms:
@@ -658,22 +792,15 @@ class TransformChainsTopology(Topology):
     self.opposites = opposites
     super().__init__((space,), (transforms.todims,), references)
 
-  def getitem(self, item):
+  def empty_like(self) -> 'TransformChainsTopology':
     return EmptyTopology(self.space, self.transforms.todims, self.ndims)
 
-  def __getitem__(self, item):
-    if numeric.isintarray(item):
-      item = types.frozenarray(item)
-      return TransformChainsTopology(self.space, self.references[item], self.transforms[item], self.opposites[item])
-    if not isinstance(item, tuple):
-      item = item,
-    if all(it in (...,slice(None)) for it in item):
-      return self
-    topo = self.getitem(item) if len(item) != 1 or not isinstance(item[0],str) \
-       else functools.reduce(operator.or_, map(self.getitem, item[0].split(',')), EmptyTopology(self.space, self.transforms.todims, self.ndims))
-    if not topo:
-      raise KeyError(item)
-    return topo
+  def get_groups(self, *groups):
+    return self.empty_like()
+
+  def take_unchecked(self, indices: numpy.ndarray) -> 'TransformChainsTopology':
+    indices = types.frozenarray(indices, dtype=int)
+    return TransformChainsTopology(self.space, self.references.take(indices), self.transforms[indices], self.opposites[indices])
 
   def __invert__(self):
     return OppositeTopology(self)
@@ -1066,11 +1193,28 @@ class WithGroupsTopology(TransformChainsTopology):
   def __len__(self):
     return len(self.basetopo)
 
-  def getitem(self, item):
-    if isinstance(item, str) and item in self.vgroups:
-      itemtopo = self.vgroups[item]
-      return itemtopo if isinstance(itemtopo, TransformChainsTopology) else self.basetopo[itemtopo]
-    return self.basetopo.getitem(item)
+  def get_groups(self, *groups: str) -> TransformChainsTopology:
+    topos = []
+    basegroups = []
+    for group in groups:
+      if group in self.vgroups:
+        item = self.vgroups[group]
+        assert isinstance(item, (TransformChainsTopology, str))
+        if isinstance(item, TransformChainsTopology):
+          topos.append(item)
+        else:
+          basegroups.extend(item.split(','))
+      else:
+        basegroups.append(group)
+    if basegroups:
+      topos.append(self.basetopo.get_groups(*basegroups))
+    return functools.reduce(operator.or_, topos, self.empty_like())
+
+  def take_unchecked(self, __indices: numpy.ndarray) -> TransformChainsTopology:
+    return self.basetopo.take_unchecked(__indices)
+
+  def slice_unchecked(self, __s: slice, __idim: int) -> TransformChainsTopology:
+    return self.basetopo.slice_unchecked(__s, __idim)
 
   @property
   def border_transforms(self):
@@ -1135,8 +1279,14 @@ class OppositeTopology(TransformChainsTopology):
     self.basetopo = basetopo
     super().__init__(basetopo.space, basetopo.references, basetopo.opposites, basetopo.transforms)
 
-  def getitem(self, item):
-    return ~(self.basetopo.getitem(item))
+  def get_groups(self, *groups: str) -> TransformChainsTopology:
+    return ~(self.basetopo.get_groups(*groups))
+
+  def take_unchecked(self, __indices: numpy.ndarray) -> TransformChainsTopology:
+    return ~(self.basetopo.take_unchecked(__indices))
+
+  def slice_unchecked(self, __s: slice, __idim: int) -> TransformChainsTopology:
+    return ~(self.basetopo.slice_unchecked(__s, __idim))
 
   def __len__(self):
     return len(self.basetopo)
@@ -1201,18 +1351,15 @@ class StructuredTopology(TransformChainsTopology):
   def __len__(self):
     return numpy.prod(self.shape, dtype=int)
 
-  def getitem(self, item):
-    if not isinstance(item, tuple):
-      return EmptyTopology(self.space, self.transforms.todims, self.ndims)
-    assert all(isinstance(it,slice) for it in item) and len(item) <= self.ndims
-    if all(it == slice(None) for it in item): # shortcut
+  def slice_unchecked(self, indices: slice, idim: int) -> TransformChainsTopology:
+    if indices == slice(None):
       return self
     axes = []
-    idim = 0
     for axis in self.axes:
-      if axis.isdim and idim < len(item):
-        axis = axis.getitem(item[idim])
-        idim += 1
+      if axis.isdim:
+        if idim == 0:
+          axis = axis.getitem(indices)
+        idim -= 1
       axes.append(axis)
     return StructuredTopology(self.space, self.root, axes, self.nrefine, bnames=self._bnames)
 
@@ -1716,11 +1863,13 @@ class UnionTopology(TransformChainsTopology):
       transformseq.chain((topo.transforms[selection] for topo, selection in zip(topos, selections)), topos[0].transforms.todims, ndims),
       transformseq.chain((topo.opposites[selection] for topo, selection in zip(topos, selections)), topos[0].transforms.todims, ndims))
 
-  def getitem(self, item):
-    topos = [topo if name == item else topo.getitem(item) for topo, name in itertools.zip_longest(self._topos, self._names)]
-    return functools.reduce(operator.or_, topos, EmptyTopology(self.space, self.transforms.todims, self.ndims))
+  def get_groups(self, *groups: str) -> TransformChainsTopology:
+    topos = (topo if name in groups else topo.get_groups(*groups) for topo, name in itertools.zip_longest(self._topos, self._names))
+    return functools.reduce(operator.or_, filter(None, topos), self.empty_like())
 
   def __or__(self, other):
+    if not isinstance(other, TransformChainsTopology):
+      return super().__or__(other)
     if not isinstance(other, UnionTopology):
       return UnionTopology(self._topos + (other,), self._names)
     return UnionTopology(self._topos[:len(self._names)] + other._topos + self._topos[len(self._names):], self._names + other._names)
@@ -1749,11 +1898,11 @@ class DisjointUnionTopology(TransformChainsTopology):
       transformseq.chain((topo.transforms for topo in self._topos), topos[0].transforms.todims, ndims),
       transformseq.chain((topo.opposites for topo in self._topos), topos[0].transforms.todims, ndims))
 
-  def getitem(self, item):
-    topos = [topo if name == item else topo.getitem(item) for topo, name in itertools.zip_longest(self._topos, self._names)]
-    topos = [topo for topo in topos if not isinstance(topo, EmptyTopology)]
+  def get_groups(self, *groups: str) -> TransformChainsTopology:
+    topos = (topo if name in groups else topo.get_groups(*groups) for topo, name in itertools.zip_longest(self._topos, self._names))
+    topos = tuple(filter(None, topos))
     if len(topos) == 0:
-      return EmptyTopology(self.space, self.transforms.todims, self.ndims)
+      return self.empty_like()
     elif len(topos) == 1:
       return topos[0]
     else:
@@ -1784,8 +1933,8 @@ class SubsetTopology(TransformChainsTopology):
     opposites = self.basetopo.opposites[self._indices]
     super().__init__(basetopo.space, references, transforms, opposites)
 
-  def getitem(self, item):
-    return self.basetopo.getitem(item).subset(self, strict=False)
+  def get_groups(self, *groups: str) -> TransformChainsTopology:
+    return self.basetopo.get_groups(*groups).subset(self, strict=False)
 
   def __rsub__(self, other):
     if self.basetopo == other:
@@ -1911,8 +2060,8 @@ class RefinedTopology(TransformChainsTopology):
       self.basetopo.transforms.refined(self.basetopo.references),
       self.basetopo.opposites.refined(self.basetopo.references))
 
-  def getitem(self, item):
-    return self.basetopo.getitem(item).refined
+  def get_groups(self, *groups: str) -> TransformChainsTopology:
+    return self.basetopo.get_groups(*groups).refined
 
   @property
   def boundary(self):
@@ -1981,8 +2130,8 @@ class HierarchicalTopology(TransformChainsTopology):
       indices_per_level.append(indices)
     return HierarchicalTopology(self.basetopo, indices_per_level)
 
-  def getitem(self, item):
-    itemtopo = self.basetopo.getitem(item)
+  def get_groups(self, *groups: str) -> TransformChainsTopology:
+    itemtopo = self.basetopo.get_groups(*groups)
     itemindices_per_level = []
     for baseindices, baselevel, itemlevel in zip(self._indices_per_level, self.basetopo.refine_iter, itemtopo.refine_iter):
       itemindices = []
@@ -2330,12 +2479,15 @@ class MultipatchTopology(TransformChainsTopology):
       if len(data) > 1
     })
 
-  def getitem(self, key):
-    for i in range(len(self.patches)):
-      if key == 'patch{}'.format(i):
-        return self.patches[i].topo
+  def get_groups(self, *groups: str) -> TransformChainsTopology:
+    topos = (patch.topo if 'patch{}'.format(i) in groups else patch.topo.get_groups(*groups) for i, patch in enumerate(self.patches))
+    topos = tuple(filter(None, topos))
+    if len(topos) == 0:
+      return self.empty_like()
+    elif len(topos) == 1:
+      return topos[0]
     else:
-      return DisjointUnionTopology(patch.topo.getitem(key) for patch in self.patches)
+      return DisjointUnionTopology(topos)
 
   def basis_spline(self, degree, patchcontinuous=True, knotvalues=None, knotmultiplicities=None, *, continuity=-1):
     '''spline from vertices
