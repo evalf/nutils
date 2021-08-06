@@ -66,6 +66,9 @@ class Topology(types.Singleton):
   def __len__(self) -> int:
     return len(self.references)
 
+  def get_groups(self, *groups: str) -> 'Topology':
+    raise NotImplementedError
+
   def __getitem__(self, item: Any) -> 'Topology':
     raise NotImplementedError
 
@@ -473,6 +476,9 @@ class TransformChainsTopology(Topology):
     self.transforms = transforms
     self.opposites = opposites
     super().__init__((space,), (transforms.todims,), references)
+
+  def get_groups(self, *groups):
+    return functools.reduce(operator.or_, map(self.getitem, groups), EmptyTopology(self.space, self.transforms.todims, self.ndims))
 
   def getitem(self, item):
     return EmptyTopology(self.space, self.transforms.todims, self.ndims)
