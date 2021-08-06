@@ -69,6 +69,26 @@ class Topology(types.Singleton):
   def get_groups(self, *groups: str) -> 'Topology':
     raise NotImplementedError
 
+  def take(self, __indices: Union[numpy.ndarray, Sequence[int]], __idim: int, __ndim: int) -> 'Topology':
+    if not 0 <= __idim < __idim + __ndim <= self.ndims:
+      raise ValueError('dimension indices out of range')
+    indices = numpy.asarray(__indices).astype(int, casting='no')
+    if indices.ndim != 1:
+      raise ValueError('expected a one-dimensional array of integers')
+    raise NotImplementedError
+
+  def compress(self, __mask: Union[numpy.ndarray, Sequence[bool]], __idim: int, __ndim: int) -> 'Topology':
+    indices, = numpy.where(__mask)
+    return self.take(indices, __idim, __ndim)
+
+  def slice(self, __s: slice, __idim: int) -> 'Topology':
+    if not 0 <= __idim < self.ndims:
+      raise ValueError('dimension index out of range')
+    if __s == slice(None):
+      return self
+    else:
+      raise NotImplementedError
+
   def __getitem__(self, item: Any) -> 'Topology':
     raise NotImplementedError
 
@@ -479,6 +499,13 @@ class TransformChainsTopology(Topology):
 
   def get_groups(self, *groups):
     return functools.reduce(operator.or_, map(self.getitem, groups), EmptyTopology(self.space, self.transforms.todims, self.ndims))
+
+  def take(self, indices: Union[numpy.ndarray, Sequence[int]], idim: int, ndim: int) -> 'TransformChainsTopology':
+    if idim == 0 and ndim == self.ndims:
+      indices = types.frozenarray(indices)
+      return TransformChainsTopology(self.space, self.references[indices], self.transforms[indices], self.opposites[indices])
+    else:
+      return super().take(indices, idim, ndim)
 
   def getitem(self, item):
     return EmptyTopology(self.space, self.transforms.todims, self.ndims)
@@ -1042,6 +1069,20 @@ class StructuredTopology(TransformChainsTopology):
 
   def __len__(self):
     return numpy.prod(self.shape, dtype=int)
+
+  def slice(self, indices: slice, idim: int) -> 'TransformChainsTopology':
+    if not 0 <= idim < self.ndims:
+      return super().slice(indices, idim)
+    if indices == slice(None):
+      return self
+    axes = []
+    for axis in self.axes:
+      if axis.isdim:
+        if idim == 0:
+          axis = axis.getitem(indices)
+        idim -= 1
+      axes.append(axis)
+    return StructuredTopology(self.space, self.root, axes, self.nrefine, bnames=self._bnames)
 
   def getitem(self, item):
     if not isinstance(item, tuple):
