@@ -847,7 +847,7 @@ class Point(Topology):
 
 def StructuredLine(root:transform.stricttransformitem, i:types.strictint, j:types.strictint, periodic:bool=False, bnames:types.tuple[types.strictstr]=None):
   if bnames is None:
-    bnames = ('_structured_line_dummy_boundary_name_',) * 2
+    bnames = '_structured_line_dummy_boundary_left', '_structured_line_dummy_boundary_right'
   return StructuredTopology(root, axes=(transformseq.DimAxis(i,j,j if periodic else 0,periodic),), nrefine=0, bnames=(bnames,))
 
 class StructuredTopology(Topology):
