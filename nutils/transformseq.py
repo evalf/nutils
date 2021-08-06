@@ -336,6 +336,10 @@ class Transforms(types.Singleton):
     return _EvaluableTransformChainFromSequence(self, index)
 
   def evaluable_index_with_tail(self, chain: EvaluableTransformChain) -> Tuple[evaluable.Array, EvaluableTransformChain]:
+    if isinstance(chain, _EvaluableTransformChainFromSequence) and chain._sequence == self:
+      index = chain._Evaluable__args[0]
+      tails = EvaluableTransformChain.empty(self.todims)
+      return index, tails
     index_tail = _EvaluableIndexWithTail(self, chain)
     index = evaluable.ArrayFromTuple(index_tail, 0, (), int, _lower=0, _upper=len(self) - 1)
     tails = _EvaluableTransformChainFromTuple(index_tail, 1, self.fromdims, chain.fromdims)
