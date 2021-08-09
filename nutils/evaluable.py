@@ -867,7 +867,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   '''
 
   __slots__ = '_axes', 'dtype', '__index'
-  __cache__ = 'blocks', 'assparse', '_assparse', '_intbounds'
+  __cache__ = 'assparse', '_assparse', '_intbounds'
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
@@ -946,23 +946,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   choose = lambda self, choices: Choose(self, choices)
 
   @property
-  def blocks(self):
-    blocks = []
-    pool = [(tuple(Range(sh) for sh in self.shape), self.simplified)]
-    while pool:
-      indices, f = pool.pop()
-      i = 0
-      for n, j in ((n, j) for n, index in enumerate(indices) for j in range(index.ndim)):
-        if isinstance(f._axes[i], Sparse):
-          pool.extend((indices[:n]+(_take(indices[n], ind, j).simplified,)+indices[n+1:], f.simplified) for ind, f in f._desparsify(i))
-          break
-        i += 1
-      else:
-        assert i == f.ndim
-        blocks.append((indices, f))
-    return _gatherblocks(blocks)
-
-  @property
   def assparse(self):
     'Convert to a :class:`SparseArray`.'
 
@@ -985,17 +968,8 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     #       for i0,...,ik,v in zip(I0.eval().ravel(),...,Ik.eval().ravel(),V.eval().ravel()):
     #         dense[i0,...,ik] = v
 
-    # Fallback using `blocks`.
-    if self.ndim:
-      chunks = []
-      for indices, values in self.blocks:
-        *offsets, ndim = (0, *itertools.accumulate(idx.ndim for idx in indices))
-        assert ndim == values.ndim
-        indices = (prependaxes(appendaxes(idx, values.shape[offset+idx.ndim:]), values.shape[:offset]) for idx, offset in zip(indices, offsets))
-        chunks.append((*indices, values))
-      return tuple(chunks)
-    else:
-      return (util.sum((values for indices, values in self.blocks), zeros((), self.dtype)),),
+    indices = [prependaxes(appendaxes(Range(length), self.shape[i+1:]), self.shape[:i]) for i, length in enumerate(self.shape)]
+    return (*indices, self),
 
   def _node(self, cache, subgraph, times):
     if self in cache:
@@ -3948,9 +3922,6 @@ def divide(arg1, arg2):
 def subtract(arg1, arg2):
   return add(arg1, negative(arg2))
 
-def blocks(arg):
-  return asarray(arg).simplified.blocks
-
 @replace
 def _bifurcate(arg, side):
   if isinstance(arg, (SelectChain, TransformChainFromSequence)):
@@ -4286,7 +4257,7 @@ if __name__ == '__main__':
   # Diagonalize as late as possible. In shuffling the order of operations the
   # two classes might annihilate each other, for example when a Sum passes
   # through a Diagonalize. Any shape increasing operations that remain should
-  # end up at the surface, exposing sparsity by means of the blocks method.
+  # end up at the surface, exposing sparsity by means of the assparse method.
   attrs = ['_'+cls.__name__.lower() for cls in simplify_priority]
   # The simplify operations responsible for swapping (a.o.) are methods named
   # '_add', '_multiply', etc. In order to avoid recursions the operations
