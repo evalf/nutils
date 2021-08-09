@@ -296,34 +296,9 @@ class Topology(types.Singleton):
       constrain[N] = u[N] / scale[N]
 
     elif ptype == 'nodal':
-
-      ## data = evaluable.Tuple([fun, onto])
-      ## F = W = 0
-      ## for elem in self:
-      ##   f, w = data(elem, 'bezier2')
-      ##   W += w.sum(axis=-1).sum(axis=0)
-      ##   F += numeric.contract(f[:,_,:], w, axis=[0,2])
-      ## I = (W!=0)
-
-      F = numpy.zeros(onto.shape[0])
-      W = numpy.zeros(onto.shape[0])
-      I = numpy.zeros(onto.shape[0], dtype=bool)
-      ielem_arg = evaluable.Argument('_project_index', (), dtype=int)
-      coordinates = self.references.getpoints('bezier', 2).get_evaluable_coords(ielem_arg)
-      lower_args = dict(points_shape=coordinates.shape[:-1], transform_chains=(evaluable.TransformChainFromSequence(self.transforms, ielem_arg), evaluable.TransformChainFromSequence(self.opposites, ielem_arg)), coordinates=(coordinates,)*2)
-      fun = function.lower(**lower_args)
-      data = evaluable.Tuple(evaluable.Tuple([fun, onto_f.simplified, evaluable.Tuple(onto_ind)]) for onto_ind, onto_f in evaluable.blocks(onto.lower(**lower_args))).optimized_for_numpy
-      for ielem in range(len(self)):
-        for fun_, onto_f_, onto_ind_ in data.eval(_project_index=ielem, **arguments or {}):
-          onto_f_ = onto_f_.swapaxes(0,1) # -> dof axis, point axis, ...
-          indfun_ = fun_[(slice(None),)+numpy.ix_(*onto_ind_[1:])]
-          assert onto_f_.shape[0] == len(onto_ind_[0])
-          assert onto_f_.shape[1:] == indfun_.shape
-          W[onto_ind_[0]] += onto_f_.reshape(onto_f_.shape[0],-1).sum(1)
-          F[onto_ind_[0]] += (onto_f_ * indfun_).reshape(onto_f_.shape[0],-1).sum(1)
-          I[onto_ind_[0]] = True
-
-      I[constrain.where] = False
+      bezier = self.sample('bezier', 2)
+      W, F = bezier.integrate([onto, fun * onto])
+      I = ~constrain.where
       constrain[I] = F[I] / W[I]
 
     else:
