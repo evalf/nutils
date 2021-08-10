@@ -1559,11 +1559,12 @@ class Product(Array):
 
 class ApplyTransforms(Array):
 
-  __slots__ = 'trans', '_todims'
+  __slots__ = 'trans', '_points', '_todims'
 
   @types.apply_annotations
   def __init__(self, trans:types.strict[TransformChain], points, todims:types.strictint):
     self.trans = trans
+    self._points = points
     self._todims = todims
     super().__init__(args=[points, trans], shape=points.shape[:-1]+(todims,), dtype=float)
 
@@ -1573,7 +1574,8 @@ class ApplyTransforms(Array):
   def _derivative(self, var, seen):
     if isinstance(var, LocalCoords) and len(var) > 0:
       return prependaxes(LinearFrom(self.trans, self._todims, len(var)), self.shape[:-1])
-    return zeros(self.shape+var.shape)
+    else:
+      return einsum('ij,AjB->AiB', LinearFrom(self.trans, self._todims, self._points.shape[-1].__index__()), derivative(self._points, var, seen), B=var.ndim)
 
 class LinearFrom(Array):
 
