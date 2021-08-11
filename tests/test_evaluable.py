@@ -816,15 +816,15 @@ class asciitree(TestCase):
   def test_asciitree(self):
     f = evaluable.Sin((evaluable.Zeros((), int))**evaluable.Diagonalize(evaluable.Argument('arg', (2,))))
     self.assertEqual(f.asciitree(richoutput=True),
-                     '%0 = Sin; f:a2,a2\n'
-                     '└ %1 = Power; f:a2,a2\n'
-                     '  ├ %2 = InsertAxis; i:i2,i2\n'
-                     '  │ ├ %3 = InsertAxis; i:i2\n'
+                     '%0 = Sin; f:2,2\n'
+                     '└ %1 = Power; f:2,2\n'
+                     '  ├ %2 = InsertAxis; i:2,2\n'
+                     '  │ ├ %3 = InsertAxis; i:2\n'
                      '  │ │ ├ 0\n'
                      '  │ │ └ 2\n'
                      '  │ └ 2\n'
-                     '  └ %4 = Diagonalize; f:d2,d2\n'
-                     '    └ Argument; arg; f:a2\n')
+                     '  └ %4 = Diagonalize; f:2,2\n'
+                     '    └ Argument; arg; f:2\n')
 
   @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
   def test_loop_sum(self):
@@ -850,8 +850,8 @@ class asciitree(TestCase):
                      'NODES\n'
                      '%B0 = LoopConcatenate\n'
                      '├ shape[0] = %A1 = Take; i:\n'
-                     '│ ├ %A2 = _SizesToOffsets; i:a3\n'
-                     '│ │ └ %A3 = InsertAxis; i:i2\n'
+                     '│ ├ %A2 = _SizesToOffsets; i:3\n'
+                     '│ │ └ %A3 = InsertAxis; i:2\n'
                      '│ │   ├ 1\n'
                      '│ │   └ 2\n'
                      '│ └ 2\n'
@@ -864,7 +864,7 @@ class asciitree(TestCase):
                      '│ └ %B7 = Add; i:\n'
                      '│   ├ %B5\n'
                      '│   └ 1\n'
-                     '└ func = %B8 = InsertAxis; i:i1\n'
+                     '└ func = %B8 = InsertAxis; i:1\n'
                      '  ├ %B5\n'
                      '  └ 1\n')
 
@@ -879,8 +879,8 @@ class asciitree(TestCase):
                      'NODES\n'
                      '%B0 = LoopConcatenate\n'
                      '├ shape[0] = %A1 = Take; i:\n'
-                     '│ ├ %A2 = _SizesToOffsets; i:a3\n'
-                     '│ │ └ %A3 = InsertAxis; i:i2\n'
+                     '│ ├ %A2 = _SizesToOffsets; i:3\n'
+                     '│ │ └ %A3 = InsertAxis; i:2\n'
                      '│ │   ├ 1\n'
                      '│ │   └ 2\n'
                      '│ └ 2\n'
@@ -893,7 +893,7 @@ class asciitree(TestCase):
                      '│ └ %B7 = Add; i:\n'
                      '│   ├ %B5\n'
                      '│   └ 1\n'
-                     '└ func = %B8 = InsertAxis; i:i1\n'
+                     '└ func = %B8 = InsertAxis; i:1\n'
                      '  ├ %B5\n'
                      '  └ 1\n')
 

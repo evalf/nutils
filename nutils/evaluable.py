@@ -996,7 +996,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   __mod__  = lambda self, other: mod(self, other)
   __int__ = __index__
   __str__ = __repr__ = lambda self: '{}.{}<{}>'.format(type(self).__module__, type(self).__name__, self._shape_str(form=str))
-  _shape_str = lambda self, form: '{}:{}'.format(self.dtype.__name__[0] if hasattr(self, 'dtype') else '?', ','.join(map(form, self._axes)) if hasattr(self, '_axes') else '?')
+  _shape_str = lambda self, form: '{}:{}'.format(self.dtype.__name__[0] if hasattr(self, 'dtype') else '?', ','.join(str(int(length)) if length.isconstant else '?' for length in self.shape) if hasattr(self, 'shape') else '?')
 
   sum = sum
   prod = product
