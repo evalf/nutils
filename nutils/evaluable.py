@@ -65,10 +65,8 @@ def simplified(value):
 asdtype = lambda arg: arg if any(arg is dtype for dtype in (bool, int, float, complex)) else {'f': float, 'i': int, 'b': bool, 'c': complex}[numpy.dtype(arg).kind]
 
 def asarray(arg):
-  try:
+  if hasattr(type(arg), 'as_evaluable_array'):
     return arg.as_evaluable_array
-  except AttributeError:
-    pass
   if _containsarray(arg):
     return stack(arg, axis=0)
   else:
