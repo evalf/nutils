@@ -1230,6 +1230,10 @@ class InsertAxis(Array):
     super().__init__(args=[func, length], shape=(*func.shape, length), dtype=func.dtype)
 
   @property
+  def _diagonals(self):
+    return self.func._diagonals
+
+  @property
   def _inflations(self):
     return tuple((axis, types.frozendict((dofmap, InsertAxis(func, self.length)) for dofmap, func in parts.items())) for axis, parts in self.func._inflations)
 
@@ -1268,6 +1272,16 @@ class InsertAxis(Array):
     unaligned1, unaligned2, where = unalign(self, other)
     if len(where) != self.ndim:
       return align(unaligned1 + unaligned2, where, self.shape)
+
+  def _diagonalize(self, axis):
+    if axis < self.ndim - 1:
+      return insertaxis(diagonalize(self.func, axis, self.ndim - 1), self.ndim - 1, self.length)
+
+  def _inflate(self, dofmap, length, axis):
+    if axis + dofmap.ndim < self.ndim:
+      return InsertAxis(_inflate(self.func, dofmap, length, axis), self.length)
+    elif axis == self.ndim:
+      return insertaxis(Inflate(self.func, dofmap, length), self.ndim - 1, self.length)
 
   def _insertaxis(self, axis, length):
     if axis == self.ndim - 1:
@@ -2666,9 +2680,6 @@ class Inflate(Array):
   def _derivative(self, var, seen):
     return _inflate(derivative(self.func, var, seen), self.dofmap, self.length, self.ndim-1)
 
-  def _insertaxis(self, axis, length):
-    return _inflate(insertaxis(self.func, axis+self.dofmap.ndim-1, length), self.dofmap, self.length, self.ndim-1 if axis == self.ndim else -1)
-
   def _multiply(self, other):
     return Inflate(Multiply([self.func, Take(other, self.dofmap)]), self.dofmap, self.length)
 
@@ -2804,6 +2815,12 @@ class Diagonalize(Array):
         diagonals.append(axes)
     return tuple(diagonals)
 
+  @property
+  def _inflations(self):
+    return tuple((axis, types.frozendict((dofmap, Diagonalize(func)) for dofmap, func in parts.items()))
+                 for axis, parts in self.func._inflations
+                 if axis < self.ndim-2)
+
   def _simplified(self):
     if self.shape[-1] == 1:
       return InsertAxis(self.func, 1)
@@ -2832,9 +2849,6 @@ class Diagonalize(Array):
     if axis >= self.ndim - 2:
       return self.func
     return Diagonalize(sum(self.func, axis))
-
-  def _insertaxis(self, axis, length):
-    return diagonalize(insertaxis(self.func, min(axis, self.ndim-1), length), self.ndim-2+(axis<=self.ndim-2), self.ndim-1+(axis<=self.ndim-1))
 
   def _takediag(self, axis1, axis2):
     if axis1 == self.ndim-2: # axis2 == self.ndim-1
@@ -4224,7 +4238,7 @@ if __name__ == '__main__':
   # Diagnostics for the development for simplify operations.
   simplify_priority = (
     Transpose, Ravel, # reinterpretation
-    Inflate, Diagonalize, InsertAxis, # size increasing
+    InsertAxis, Inflate, Diagonalize, # size increasing
     Multiply, Add, LoopSum, Sign, Power, Inverse, Unravel, # size preserving
     Product, Determinant, TakeDiag, Take, Sum) # size decreasing
   # The simplify priority defines the preferred order in which operations are
