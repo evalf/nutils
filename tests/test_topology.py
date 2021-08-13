@@ -1,7 +1,244 @@
 from nutils import *
 from nutils.testing import *
 from nutils.elementseq import References
+from nutils.topology import Topology
 import numpy, copy, sys, pickle, subprocess, base64, itertools, os, unittest
+
+def as_rounded_list(data):
+  return numpy.round(data, 5).tolist()
+
+def pairwise(items):
+  return [[i,j] for i, j in zip(items[:-1], items[1:])]
+
+def subdiv(V):
+  V = iter(V)
+  items = [next(V)]
+  for v in V:
+    items += [(items[-1] + v) / 2, v]
+  return items
+
+class Common:
+
+  def assertVertices(self, topo, desired_coords):
+    assert len(desired_coords) == len(topo)
+    bezier = topo.sample('bezier', 2)
+    actual_coords_flat = as_rounded_list(bezier.eval(self.geom))
+    for ielem, desired_elem_coords in enumerate(desired_coords):
+      actual_elem_coords = numpy.take(actual_coords_flat, bezier.getindex(ielem), axis=0)
+      self.assertEqual(actual_elem_coords.tolist(), desired_elem_coords)
+
+  def assertUnorderedVertices(self, topo, desired_coords):
+    assert len(desired_coords) == len(topo)
+    bezier = topo.sample('bezier', 2)
+    actual_coords_flat = as_rounded_list(bezier.eval(self.geom))
+    actual_coords = []
+    for ielem, desired_elem_coords in enumerate(desired_coords):
+      actual_elem_coords = numpy.take(actual_coords_flat, bezier.getindex(ielem), axis=0)
+      actual_coords.append(actual_elem_coords.tolist())
+    self.assertEqual(sorted(actual_coords), sorted(desired_coords))
+
+  def test_spaces(self):
+    self.assertEqual(self.topo.spaces, self.desired_spaces)
+
+  def test_space_dims(self):
+    self.assertEqual(self.topo.space_dims, self.desired_space_dims)
+
+  def test_ndims(self):
+    self.assertEqual(self.topo.ndims, self.desired_ndims)
+
+  def test_len(self):
+    self.assertEqual(len(self.topo), self.desired_nelems)
+
+  def test_references(self):
+    assert len(self.desired_references) == self.desired_nelems
+    self.assertSequenceEqual(self.topo.references, self.desired_references)
+
+  def test_elements(self):
+    # This sort of tests the `self.topo.transforms` by evaluating `self.geom`
+    # and comparing with `self.desired_vertices`.
+    self.assertVertices(self.topo, self.desired_vertices)
+
+  def test_f_index(self):
+    self.assertEqual(self.topo.sample('gauss', 0).eval(self.topo.f_index).tolist(), list(range(self.desired_nelems)))
+
+  def test_unit_integral(self):
+    self.assertAlmostEqual(self.topo.integral(function.J(self.geom), degree=0).eval(), self.desired_volume)
+
+  def test_unit_integrate(self):
+    self.assertAlmostEqual(self.topo.integrate(function.J(self.geom), degree=0), self.desired_volume)
+
+  def test_refine_spaces_none(self):
+    self.assertEqual(self.topo.refine_spaces([]), self.topo)
+
+class Conforming:
+
+  @property
+  def edge_map(self):
+    # Mapping from edge vertices to pairs of element and edge indices based on
+    # `self.desired_references` and `self.desired_vertices`.
+    assert len(self.desired_references) == len(self.desired_vertices) == self.desired_nelems
+    edge_map = {}
+    for ielem, (ref, verts) in enumerate(zip(self.desired_references, self.desired_vertices)):
+      local_verts = as_rounded_list(ref.vertices)
+      for iedge, (trans, edge) in enumerate(ref.edges):
+        local_edge_verts = as_rounded_list(trans.apply(edge.vertices))
+        edge_verts = tuple(tuple(verts[local_verts.index(v)]) for v in local_edge_verts)
+        edge_map.setdefault(edge_verts, set()).add((ielem, iedge))
+    return edge_map
+
+  @property
+  def connectivity(self):
+    assert len(self.desired_references) == self.desired_nelems
+    connectivity = [[-1] * ref.nedges for ref in self.desired_references]
+    for sides in self.edge_map.values():
+      assert len(sides) <= 2
+      if len(sides) == 2:
+        (ielem1, iedge1), (ielem2, iedge2) = sides
+        connectivity[ielem1][iedge1] = ielem2
+        connectivity[ielem2][iedge2] = ielem1
+    return connectivity
+
+  def test_connectivity(self):
+    self.assertEqual(list(map(list, self.topo.connectivity)), self.connectivity)
+
+  def test_boundary_all_spaces(self):
+    boundary_vertices = [list(map(list, verts)) for verts, sides in self.edge_map.items() if len(sides) == 1]
+    self.assertUnorderedVertices(self.topo.boundary, boundary_vertices)
+
+  def test_interfaces_all_spaces(self):
+    interface_vertices = [list(map(list, verts)) for verts, sides in self.edge_map.items() if len(sides) == 2]
+    self.assertUnorderedVertices(self.topo.interfaces, interface_vertices)
+
+  def test_basis_std_degree1(self):
+    basis = self.topo.basis('std', degree=1)
+    values, verts = self.topo.sample('bezier', 2).eval([basis, self.geom])
+    dofs_to_verts = {}
+    verts_to_dofs = {}
+    for val, vert in zip(map(as_rounded_list, values), (tuple(as_rounded_list(v)) for v in verts)):
+      self.assertCountEqual(val, [1]+[0]*(len(val)-1))
+      dof = val.index(1)
+      if dof in dofs_to_verts:
+        self.assertEqual(dofs_to_verts[dof], vert)
+      else:
+        dofs_to_verts[dof] = vert
+      if vert in verts_to_dofs:
+        self.assertEqual(verts_to_dofs[vert], dof)
+      else:
+        verts_to_dofs[vert] = dof
+    self.assertEqual(sorted(dofs_to_verts), list(range(len(basis))))
+    self.assertEqual(sorted(verts_to_dofs), sorted(set(tuple(v) for e in self.desired_vertices for v in e)))
+
+class NewEmpty(TestCase, Common, Conforming):
+
+  def setUp(self):
+    super().setUp()
+    self.desired_spaces = 'a', 'b'
+    self.desired_space_dims = 1, 2
+    self.desired_ndims = 3
+    self.topo = Topology.empty(self.desired_spaces, self.desired_space_dims, self.desired_ndims)
+    self.geom = function.stack([function.rootcoords(space, dim) for space, dim in zip(self.desired_spaces, self.desired_space_dims)])
+    self.desired_nelems = 0
+    self.desired_volume = 0
+    self.desired_references = []
+    self.desired_vertices = []
+
+  def test_f_index(self):
+    with self.assertRaises(NotImplementedError):
+      self.topo.f_index
+
+class NewDisjointUnion(TestCase, Common, Conforming):
+
+  def setUp(self):
+    super().setUp()
+    topo, self.geom = mesh.newrectilinear([8,3], spaces='XY')
+    self.topo = Topology.disjoint_union(topo.slice(slice(0, 3), 0), topo.slice(slice(4, 8), 0).slice(slice(0, 2), 1))
+    self.desired_spaces = 'X', 'Y'
+    self.desired_space_dims = 1, 1
+    self.desired_ndims = 2
+    self.desired_nelems = 17
+    self.desired_volume = 17.0
+    self.desired_references = [element.LineReference()**2]*17
+    self.desired_vertices = self.mkverts(pairwise(range(4)), pairwise(range(4))) + self.mkverts(pairwise(range(4, 9)), pairwise(range(3)))
+
+  @staticmethod
+  def mkverts(XX, YY):
+    return [[[x,y] for x in X for y in Y] for X in XX for Y in YY]
+
+  def test_refine(self):
+    self.assertVertices(self.topo.refine_spaces([]), self.mkverts(pairwise(range(4)), pairwise(range(4))) + self.mkverts(pairwise(range(4,9)), pairwise(range(3))))
+    self.assertVertices(self.topo.refine_spaces(['X']), self.mkverts(pairwise(subdiv(range(4))), pairwise(range(4))) + self.mkverts(pairwise(subdiv(range(4,9))), pairwise(range(3))))
+    self.assertVertices(self.topo.refine_spaces(['Y']), self.mkverts(pairwise(range(4)), pairwise(subdiv(range(4)))) + self.mkverts(pairwise(range(4,9)), pairwise(subdiv(range(3)))))
+    self.assertVertices(self.topo.refine_spaces(['X','Y']), self.mkverts(pairwise(subdiv(range(4))), pairwise(subdiv(range(4)))) + self.mkverts(pairwise(subdiv(range(4,9))), pairwise(subdiv(range(3)))))
+
+  #def test_take(self):
+  #  self.assertVertices(self.topo.take([0], 0, 2), self.mkverts([[0,1]], [[0,1]]))
+  #  self.assertVertices(self.topo.take([9,10], 0, 2), self.mkverts([[4,5]], pairwise([0,1,2])))
+
+  def test_f_index(self):
+    with self.assertRaises(NotImplementedError):
+      self.topo.f_index
+
+  def test_basis_std_degree1(self):
+    with self.assertRaises(Exception):
+      self.topo.basis('std', degree=1)
+
+class NewMul(TestCase, Common, Conforming):
+
+  def setUp(self):
+    super().setUp()
+    self.topo1, self.x = mesh.line([0,1,2], bnames=['a','b'], space='X')
+    self.topo2, self.y = mesh.line([0,1,2,3], bnames=['c','d'], space='Y')
+    self.topo = self.topo1 * self.topo2
+    self.geom = function.stack([self.x, self.y])
+    self.desired_spaces = 'X', 'Y'
+    self.desired_space_dims = 1, 1
+    self.desired_ndims = 2
+    self.desired_nelems = 6
+    self.desired_volume = 6.0
+    self.desired_references = [element.LineReference()**2]*6
+    self.desired_vertices = self.mkverts(pairwise(range(3)), pairwise(range(4)))
+
+  @staticmethod
+  def mkverts(XX, YY):
+    return [[[x,y] for x in X for y in Y] for X in XX for Y in YY]
+
+  def test_refine_spaces(self):
+    self.assertVertices(self.topo.refine_spaces([]), self.mkverts(pairwise(range(3)), pairwise(range(4))))
+    self.assertVertices(self.topo.refine_spaces(['X']), self.mkverts(pairwise(subdiv(range(3))), pairwise(range(4))))
+    self.assertVertices(self.topo.refine_spaces(['Y']), self.mkverts(pairwise(range(3)), pairwise(subdiv(range(4)))))
+    self.assertVertices(self.topo.refine_spaces(['X','Y']), self.mkverts(pairwise(subdiv(range(3))), pairwise(subdiv(range(4)))))
+
+  def test_boundary_spaces(self):
+    bX = self.mkverts([[0],[2]], pairwise(range(4)))
+    bY = self.mkverts(pairwise(range(3)), [[0],[3]])
+    self.assertVertices(self.topo.boundary_spaces(['X']), bX)
+    self.assertVertices(self.topo.boundary_spaces(['Y']), bY)
+    self.assertVertices(self.topo.boundary_spaces(['X','Y']), bY+bX)
+
+  def test_interfaces_spaces(self):
+    iX = self.mkverts([[1]], pairwise(range(4)))
+    iY = self.mkverts(pairwise(range(3)), [[1],[2]])
+    self.assertVertices(self.topo.interfaces_spaces(['X']), iX)
+    self.assertVertices(self.topo.interfaces_spaces(['Y']), iY)
+    self.assertVertices(self.topo.interfaces_spaces(['X','Y']), iY+iX)
+
+  def test_take(self):
+    self.assertVertices(self.topo.take([0], 0, 1), self.mkverts([[0,1]], pairwise(range(4))))
+    self.assertVertices(self.topo.take([0,2], 1, 1), self.mkverts(pairwise(range(3)), [[0,1],[2,3]]))
+
+  def test_slice(self):
+    self.assertVertices(self.topo.slice(slice(0, 1), 0), self.mkverts([[0,1]], pairwise(range(4))))
+    self.assertVertices(self.topo.slice(slice(1, 3), 1), self.mkverts(pairwise(range(3)), pairwise(range(1, 4))))
+
+  def test_get_groups(self):
+    topo = self.topo1.withsubdomain(e=self.topo1[:1]) * self.topo2.withsubdomain(e=self.topo2[:1], f=self.topo2[1:])
+    self.assertVertices(topo.get_groups('e'), self.mkverts([[0,1]], [[0,1]]))
+    self.assertVertices(topo.get_groups('f'), self.mkverts(pairwise(range(3)), pairwise(range(1, 4))))
+
+  def test_indicator(self):
+    topo = self.topo1.withsubdomain(e=self.topo1[:1]) * self.topo2.withsubdomain(e=self.topo2[:1], f=self.topo2[1:])
+    self.assertEqual(self.topo.sample('gauss', 0).eval(topo.indicator('e')).round(5).tolist(), [1,0,0,0,0,0])
+    self.assertEqual(self.topo.sample('gauss', 0).eval(topo.indicator('f')).round(5).tolist(), [0,1,1,0,1,1])
 
 class TopologyAssertions:
 

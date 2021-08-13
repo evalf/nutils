@@ -509,7 +509,7 @@ class Topology(types.Singleton):
   def interfaces(self) -> 'Topology':
     return self.interfaces_spaces(self.spaces)
 
-  def interfaces_spaces(self) -> 'Topology':
+  def interfaces_spaces(self, spaces: Iterable[str]) -> 'Topology':
     self._check_has_spaces(spaces)
     if self.ndims == 0:
       raise ValueError('A 0D topology has no interfaces.')
@@ -686,10 +686,10 @@ class _Empty(_TensorialTopology):
       return super().interfaces
 
   def basis_std(self, degree: int, *args, **kwargs) -> function.Array:
-    return self.basis_discont(degree)
+    return function.zeros((0,))
 
   def basis_spline(self, degree: int, *args, **kwargs) -> function.Array:
-    return self.basis_discont(degree)
+    return function.zeros((0,))
 
   def sample(self, ischeme: str, degree: int) -> Sample:
     return Sample.empty(self.spaces, self.ndims)
@@ -733,6 +733,14 @@ class _DisjointUnion(_TensorialTopology):
 
   def get_groups(self, *groups: str) -> Topology:
     return Topology.disjoint_union(self.topo1.get_groups(*groups), self.topo2.get_groups(*groups))
+
+  def take(self, __indices: Union[numpy.ndarray, Sequence[int]], __idim: int, __ndim: int) -> 'Topology':
+    if __ndim == self.ndims and __idim == 0 and numpy.less(__indices, len(self.topo1)).all():
+      return self.topo1.take(__indices, __idim, __ndim)
+    elif __ndim == self.ndims and __idim == 0 and numpy.greater_equal(__indices, len(self.topo1)).all():
+      return self.topo2.take(numpy.subtract(__indices, len(self.topo1)), __idim, __ndim)
+    else:
+      return super().take(__indices, __idim, __ndim)
 
   def refine_spaces(self, spaces: Iterable[str]) -> Topology:
     return Topology.disjoint_union(self.topo1.refine_spaces(spaces), self.topo2.refine_spaces(spaces))
@@ -798,7 +806,7 @@ class _Mul(_TensorialTopology):
     connectivity1 = self.topo1.connectivity
     connectivity2 = self.topo2.connectivity
     s = len(self.topo2)
-    return tuple(tuple(-1 if n2 < 0 else i1 * s + n2 for n2 in N2) + tuple(-1 if n1 < 0 else n1 * s + i2 for n1 in N1) for i1, N1 in enumerate(connectivity1) for i2, N2 in enumerate(connectivity2))
+    return tuple(tuple(-1 if n1 < 0 else n1 * s + i2 for n1 in N1) + tuple(-1 if n2 < 0 else i1 * s + n2 for n2 in N2) for i1, N1 in enumerate(connectivity1) for i2, N2 in enumerate(connectivity2))
 
   def get_groups(self, *groups: str) -> Topology:
     subtopo1 = self.topo1.get_groups(*groups)
