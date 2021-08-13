@@ -73,6 +73,8 @@ def rectilinear(richshape, periodic=(), name='rect', space='X'):
 
   return topo, geom
 
+_oldrectilinear = rectilinear # reference for internal unittests
+
 def line(nodes, periodic=False, bnames=None, *, name: str = 'line', space: str = 'X'):
   if isinstance(nodes, int):
     uniform = True
