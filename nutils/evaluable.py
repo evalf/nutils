@@ -1065,6 +1065,8 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   def _unaligned(self):
     return self, tuple(range(self.ndim))
 
+  _diagonals = ()
+
   def _desparsify(self, axis):
     if not isinstance(self._axes[axis], Sparse):
       raise Exception('attempting to desparsify a non-sparse axis')
@@ -1380,7 +1382,7 @@ class InsertAxis(Array):
 class Transpose(Array):
 
   __slots__ = 'func', 'axes'
-  __cache__ = '_invaxes', '_axes', '_unaligned'
+  __cache__ = '_invaxes', '_axes', '_unaligned', '_diagonals'
 
   @classmethod
   @types.apply_annotations
@@ -1412,6 +1414,10 @@ class Transpose(Array):
   @property
   def _axes(self):
     return tuple(self.func._axes[n] for n in self.axes)
+
+  @property
+  def _diagonals(self):
+    return tuple(frozenset(self._invaxes[i] for i in axes) for axes in self.func._diagonals)
 
   @property
   def _unaligned(self):
@@ -1747,16 +1753,13 @@ class Multiply(Array):
     unaligned1, unaligned2, where = unalign(func1, func2)
     if len(where) != self.ndim:
       return align(unaligned1 * unaligned2, where, self.shape)
-    diagonals = {}
+    for axis1, axis2, *other in map(sorted, func1._diagonals or func2._diagonals):
+      return diagonalize(Multiply(takediag(func, axis1, axis2) for func in self.funcs), axis1, axis2)
     for i, axis in enumerate(self._axes):
       if isinstance(axis, Sparse):
         return self._resparsify(i)
       if isinstance(axis, Raveled):
         return ravel(Multiply(unravel(func, i, axis.shape) for func in self.funcs), i)
-      if isinstance(axis, Diagonal):
-        if axis in diagonals:
-          return diagonalize(Multiply(takediag(func, diagonals[axis], i) for func in self.funcs), diagonals[axis], i)
-        diagonals[axis] = i
     return func1._multiply(func2) or func2._multiply(func1)
 
   def _optimized_for_numpy(self):
@@ -1920,6 +1923,11 @@ class Add(Array):
     func1, func2 = self.funcs
     if func1 == func2:
       return multiply(func1, 2)
+    for axes1 in func1._diagonals:
+      for axes2 in func2._diagonals:
+        if len(axes1 & axes2) >= 2:
+          axes = sorted(axes1 & axes2)[:2]
+          return diagonalize(takediag(func1, *axes) + takediag(func2, *axes), *axes)
     return func1._add(func2) or func2._add(func1)
 
   def evalf(self, arr1, arr2=None):
@@ -2718,7 +2726,7 @@ class Zeros(Array):
 class Inflate(Array):
 
   __slots__ = 'func', 'dofmap', 'length', 'warn'
-  __cache__ = '_assparse', '_axes'
+  __cache__ = '_assparse', '_axes', '_diagonals'
 
   @types.apply_annotations
   def __init__(self, func:asarray, dofmap:asarray, length:asindex):
@@ -2734,6 +2742,10 @@ class Inflate(Array):
   def _axes(self):
     mask = not any(isinstance(ax, Sparse) for ax in self.func._axes[self.func.ndim-self.dofmap.ndim:]) and self.dofmap.isconstant and self.length.isconstant and numeric.asboolean(self.dofmap.eval().ravel(), int(self.length), ordered=False)
     return (*self.func._axes[:self.func.ndim-self.dofmap.ndim], Sparse(self.length, mask))
+
+  @property
+  def _diagonals(self):
+    return tuple(axes for axes in self.func._diagonals if all(axis < self.ndim-1 for axis in axes))
 
   def _simplified(self):
     if self.dofmap == Range(self.length):
@@ -2899,7 +2911,7 @@ class SwapInflateTake(Evaluable):
 class Diagonalize(Array):
 
   __slots__ = 'func'
-  __cache__ = '_axes'
+  __cache__ = '_axes', '_diagonals'
 
   @types.apply_annotations
   def __init__(self, func:asarray):
@@ -2912,6 +2924,16 @@ class Diagonalize(Array):
   def _axes(self):
     diagonal = Diagonal(self.func.shape[-1], object())
     return (*self.func._axes[:-1], diagonal, diagonal)
+
+  @property
+  def _diagonals(self):
+    diagonals = [frozenset([self.ndim-2, self.ndim-1])]
+    for axes in self.func._diagonals:
+      if axes & diagonals[0]:
+        diagonals[0] |= axes
+      else:
+        diagonals.append(axes)
+    return tuple(diagonals)
 
   def _simplified(self):
     if self.shape[-1] == 1:
@@ -2936,13 +2958,6 @@ class Diagonalize(Array):
       return Product(self.func)
     elif axis1 < self.ndim-2 and axis2 < self.ndim-2:
       return Diagonalize(determinant(self.func, (axis1, axis2)))
-
-  def _multiply(self, other):
-    return Diagonalize(Multiply([self.func, TakeDiag(other)]))
-
-  def _add(self, other):
-    if isinstance(other, Diagonalize):
-      return Diagonalize(Add([self.func, other.func]))
 
   def _sum(self, axis):
     if axis >= self.ndim - 2:
