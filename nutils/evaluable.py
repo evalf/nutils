@@ -1830,9 +1830,7 @@ class Multiply(Array):
 
   def _intbounds_impl(self):
     func1, func2 = self.funcs
-    lower1, upper1 = func1._intbounds
-    lower2, upper2 = func2._intbounds
-    extrema = lower1 * lower2, lower1 * upper2, upper1 * lower2, upper1 * upper2
+    extrema = [b1 and b2 and b1 * b2 for b1 in func1._intbounds for b2 in func2._intbounds]
     return min(extrema), max(extrema)
 
 class Add(Array):
