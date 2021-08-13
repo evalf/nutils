@@ -2734,7 +2734,7 @@ class Inflate(Array):
     if axis2 == self.ndim-1:
       func = _take(self.func, self.dofmap, axis1)
       for i in range(self.dofmap.ndim):
-        func = _takediag(func, axis1, axis2-i)
+        func = _takediag(func, axis1, axis2+self.dofmap.ndim-1-i)
       return Inflate(func, self.dofmap, self.length)
     else:
       return _inflate(_takediag(self.func, axis1, axis2), self.dofmap, self.length, self.ndim-3)
