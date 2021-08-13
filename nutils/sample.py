@@ -123,6 +123,8 @@ class Sample(types.Singleton):
   def __add__(self, other: 'Sample') -> 'Sample':
     if not isinstance(other, Sample):
       return NotImplemented
+    elif self.spaces != other.spaces:
+      raise ValueError('Cannot add samples with different spaces.')
     elif other.npoints == 0:
       return self
     elif self.npoints == 0:
@@ -131,10 +133,12 @@ class Sample(types.Singleton):
       return _Add(self, other)
 
   def __mul__(self, other: 'Sample') -> 'Sample':
-    if isinstance(other, Sample):
-      return _Mul(self, other)
-    else:
+    if not isinstance(other, Sample):
       return NotImplemented
+    elif not set(self.spaces).isdisjoint(set(other.spaces)):
+      raise ValueError('Cannot multiply samples with common spaces.')
+    else:
+      return _Mul(self, other)
 
   def __repr__(self) -> str:
     return '{}.{}<{}D, {} elems, {} points>'.format(type(self).__module__, type(self).__qualname__, self.ndims, self.nelems, self.npoints)
@@ -143,13 +147,11 @@ class Sample(types.Singleton):
   def index(self) -> Tuple[numpy.ndarray, ...]:
     return tuple(map(self.getindex, range(self.nelems)))
 
-  @abc.abstractmethod
   def getindex(self, __ielem: int) -> numpy.ndarray:
     '''Return the indices of `Sample.points[ielem]` in results of `Sample.eval`.'''
 
     raise NotImplementedError
 
-  @abc.abstractmethod
   def get_evaluable_indices(self, __ielem: evaluable.Array) -> evaluable.Array:
     '''Return the evaluable indices for the given evaluable element index.
 
@@ -290,7 +292,7 @@ class Sample(types.Singleton):
     row defines a simplex by mapping vertices into the list of points.
     '''
 
-    return numpy.concatenate([numpy.take(self.getindex(i), self.get_element_tri(i)) for i in range(self.nelems)], axis=0)
+    return numpy.concatenate([numpy.take(self.getindex(i), self.get_element_tri(i)) for i in range(self.nelems)], axis=0) if self.nelems else numpy.zeros((0,self.ndims+1), int)
 
   def get_element_tri(self, __ielem: int) -> numpy.ndarray:
     raise NotImplementedError
@@ -305,7 +307,7 @@ class Sample(types.Singleton):
     triangulations originating from separate elements are disconnected.
     '''
 
-    return numpy.concatenate([numpy.take(self.getindex(i), self.get_element_hull(i)) for i in range(self.nelems)], axis=0)
+    return numpy.concatenate([numpy.take(self.getindex(i), self.get_element_hull(i)) for i in range(self.nelems)], axis=0) if self.nelems else numpy.zeros((0,self.ndims), int)
 
   def get_element_hull(self, __ielem: int) -> numpy.ndarray:
     raise NotImplementedError
@@ -366,7 +368,7 @@ class _TransformChainsSample(Sample):
 
   def update_lower_args(self, __ielem: evaluable.Array, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> Tuple[_PointsShape, _TransformChainsMap, _CoordinatesMap]:
     if self.space in transform_chains or self.space in coordinates:
-      raise ValueError('nested integrals or samples in the same space are not supported')
+      raise ValueError('Nested integrals or samples in the same space are not supported.')
 
     transform_chains = dict(transform_chains)
     transform_chains[self.space] = space_transform_chains = tuple(t.get_evaluable(__ielem) for t in (self.transforms*2)[:2])
@@ -389,9 +391,13 @@ class _TransformChainsSample(Sample):
     return Sample.new(self.space, transforms, self.points.take(selection))
 
   def get_element_tri(self, ielem: int) -> numpy.ndarray:
+    if not 0 <= ielem < self.nelems:
+      raise IndexError('index ouf of range')
     return self.points.get(ielem).tri
 
   def get_element_hull(self, ielem: int) -> numpy.ndarray:
+    if not 0 <= ielem < self.nelems:
+      raise IndexError('index ouf of range')
     return self.points.get(ielem).hull
 
 class _DefaultIndex(_TransformChainsSample):
@@ -404,6 +410,8 @@ class _DefaultIndex(_TransformChainsSample):
     return types.frozenarray(numpy.cumsum([0]+[p.npoints for p in self.points]), copy=False)
 
   def getindex(self, ielem: int) -> numpy.ndarray:
+    if not 0 <= ielem < self.nelems:
+      raise IndexError('index out of range')
     return types.frozenarray(numpy.arange(*self.offsets[ielem:ielem+2]), copy=False)
 
   @property
@@ -480,6 +488,9 @@ class _Empty(_TensorialSample):
   def __init__(self, spaces: Tuple[str, ...], ndims: int) -> None:
     super().__init__(spaces, ndims, 0, 0)
 
+  def getindex(self, __ielem: int) -> numpy.ndarray:
+    raise IndexError('index out of range')
+
   def get_evaluable_indices(self, __ielem: evaluable.Array) -> evaluable.Array:
     return evaluable.Zeros((0,) * len(self.spaces), dtype=int)
 
@@ -490,10 +501,10 @@ class _Empty(_TensorialSample):
     return points_shape, transform_chains, coordinates
 
   def get_element_tri(self, ielem: int) -> numpy.ndarray:
-    return numpy.zeros((0, self.ndims + 1), int)
+    raise IndexError('index out of range')
 
   def get_element_hull(self, ielem: int) -> numpy.ndarray:
-    return numpy.zeros((0, self.ndims + 1), int)
+    raise IndexError('index out of range')
 
   def take_elements(self, __indices: numpy.ndarray) -> Sample:
     return self
@@ -512,11 +523,16 @@ class _Empty(_TensorialSample):
 class _Add(_TensorialSample):
 
   def __init__(self, sample1: Sample, sample2: Sample) -> None:
-    if sample1.spaces != sample2.spaces:
-      raise ValueError('Cannot add the given `Sample` objects because the spaces differ.')
+    assert sample1.spaces == sample2.spaces
     self._sample1 = sample1
     self._sample2 = sample2
     super().__init__(sample1.spaces, sample1.ndims, sample1.nelems + sample2.nelems, sample1.npoints + sample2.npoints)
+
+  def getindex(self, ielem: int) -> numpy.ndarray:
+    if ielem < self._sample1.nelems:
+      return self._sample1.getindex(ielem)
+    else:
+      return self._sample2.getindex(ielem - self._sample1.nelems) + self._sample1.npoints
 
   def get_element_tri(self, ielem: int) -> numpy.ndarray:
     if ielem < self._sample1.nelems:
@@ -532,14 +548,14 @@ class _Add(_TensorialSample):
 
   @property
   def tri(self) -> numpy.ndarray:
-    return numpy.concatenate([self._sample1.tri, self._sample1.tri + self._sample1.npoints])
+    return numpy.concatenate([self._sample1.tri, self._sample2.tri + self._sample1.npoints])
 
   @property
   def hull(self) -> numpy.ndarray:
-    return numpy.concatenate([self._sample1.hull, self._sample1.hull + self._sample1.npoints])
+    return numpy.concatenate([self._sample1.hull, self._sample2.hull + self._sample1.npoints])
 
   def take_elements(self, __indices: numpy.ndarray) -> Sample:
-    mask = numpy.lesser(__indices, self._sample1.nelems)
+    mask = numpy.less(__indices, self._sample1.nelems)
     sample1 = self._sample1.take_elements(__indices[mask])
     sample2 = self._sample2.take_elements(__indices[~mask] - self._sample1.nelems)
     return sample1 + sample2
@@ -553,8 +569,7 @@ class _Add(_TensorialSample):
 class _Mul(_TensorialSample):
 
   def __init__(self, sample1: Sample, sample2: Sample) -> None:
-    if set(sample1.spaces) & set(sample2.spaces):
-      raise ValueError('Cannot add the given `Sample` objects because there are common spaces.')
+    assert set(sample1.spaces).isdisjoint(set(sample2.spaces))
     self._sample1 = sample1
     self._sample2 = sample2
     super().__init__(sample1.spaces + sample2.spaces, sample1.ndims + sample2.ndims, sample1.nelems * sample2.nelems, sample1.npoints * sample2.npoints)
@@ -569,7 +584,7 @@ class _Mul(_TensorialSample):
     ielem1, ielem2 = evaluable.divmod(__ielem, self._sample2.nelems)
     index1 = self._sample1.get_evaluable_indices(ielem1)
     index2 = self._sample2.get_evaluable_indices(ielem2)
-    return evaluable.einsum('A,B->AB', index1 * self._sample2.npoints, index2)
+    return evaluable.appendaxes(index1 * self._sample2.npoints, index2.shape) + evaluable.prependaxes(index2, index1.shape)
 
   def get_evaluable_weights(self, __ielem: evaluable.Array) -> evaluable.Array:
     ielem1, ielem2 = evaluable.divmod(__ielem, self._sample2.nelems)
@@ -644,6 +659,8 @@ class _TakeElements(_TensorialSample):
     return types.frozenarray(numpy.cumsum([0]+[len(self._parent.getindex(i)) for i in self._indices]))
 
   def getindex(self, ielem: int) -> numpy.ndarray:
+    if not 0 <= ielem < self.nelems:
+      raise IndexError('index out of range')
     return numpy.arange(self._offsets[ielem], self._offsets[ielem+1])
 
   def get_evaluable_indices(self, __ielem: evaluable.Array) -> evaluable.Array:
@@ -657,7 +674,7 @@ class _TakeElements(_TensorialSample):
     pshape = [shape[-1]]
     for n in reversed(shape[:-1]):
       pshape.insert(0, pshape[0] * n)
-    indices = evaluable.Range(evaluable.Take(sizes, __ielem)) + evaluable.Take(offsets, __ielem)
+    indices = evaluable.Range(pshape[0]) + evaluable.Take(offsets, __ielem)
     for a, b in zip(shape[:-1], pshape[1:]):
       indices = evaluable.Unravel(indices, a, b)
     return indices
@@ -669,9 +686,13 @@ class _TakeElements(_TensorialSample):
     return self._parent.update_lower_args(evaluable.Take(self._indices, __ielem), points_shape, transform_chains, coordinates)
 
   def get_element_tri(self, __ielem: int) -> numpy.ndarray:
+    if not 0 <= __ielem < self.nelems:
+      raise IndexError('index ouf of range')
     return self._parent.get_element_tri(numpy.take(self._indices, __ielem))
 
   def get_element_hull(self, __ielem: int) -> numpy.ndarray:
+    if not 0 <= __ielem < self.nelems:
+      raise IndexError('index ouf of range')
     return self._parent.get_element_hull(numpy.take(self._indices, __ielem))
 
   def take_elements(self, __indices: numpy.ndarray) -> Sample:
