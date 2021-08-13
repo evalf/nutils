@@ -984,6 +984,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   _add = lambda self, other: None
   _sum = lambda self, axis: None
   _take = lambda self, index, axis: None
+  _rtake = lambda self, index, axis: None
   _determinant = lambda self, axis1, axis2: None
   _inverse = lambda self, axis1, axis2: None
   _takediag = lambda self, axis1, axis2: None
@@ -1277,6 +1278,9 @@ class InsertAxis(Array):
     if axis == self.ndim - 1:
       return appendaxes(self.func, index.shape)
     return InsertAxis(_take(self.func, index, axis), self.length)
+
+  def _rtake(self, func, axis):
+    return insertaxis(_take(func, self.func, axis), axis+self.ndim-1, self.length)
 
   def _takediag(self, axis1, axis2):
     assert axis1 < axis2
@@ -2117,17 +2121,8 @@ class Take(Array):
   def _simplified(self):
     if self.indices.size == 0:
       return zeros_like(self)
-    length = self.func.shape[-1]
-    if self.indices == Range(length):
-      return self.func
-    if self.indices.ndim == 1 and isinstance(self.indices._axes[-1], Raveled):
-      shape = self.indices._axes[-1].shape
-      return Ravel(Take(self.func, Unravel(self.indices, *shape)))
-    for iaxis in reversed(range(self.func.ndim-1, self.ndim)):
-      axis = self._axes[iaxis]
-      if isinstance(axis, Inserted):
-        return insertaxis(self._uninsert(iaxis), iaxis, axis.length)
-    return self.func._take(self.indices, self.func.ndim-1)
+    return self.func._take(self.indices, self.func.ndim-1) or \
+           self.indices._rtake(self.func, self.func.ndim-1)
 
   def evalf(self, arr, indices):
     return arr[...,indices]
@@ -3168,6 +3163,10 @@ class Ravel(Array):
     if axis != self.ndim-1:
       return Ravel(_take(self.func, index, axis))
 
+  def _rtake(self, func, axis):
+    if self.ndim == 1:
+      return Ravel(Take(func, self.func))
+
   def _unravel(self, axis, shape):
     if axis != self.ndim-1:
       return Ravel(unravel(self.func, axis, shape))
@@ -3280,6 +3279,10 @@ class Range(Array):
 
   def _take(self, index, axis):
     return InRange(index, self.length)
+
+  def _rtake(self, func, axis):
+    if self.length == func.shape[axis]:
+      return func
 
   def evalf(self, length):
     return numpy.arange(length)
