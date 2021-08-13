@@ -1764,9 +1764,6 @@ class Multiply(Array):
       return align(unaligned1 * unaligned2, where, self.shape)
     for axis1, axis2, *other in map(sorted, func1._diagonals or func2._diagonals):
       return diagonalize(Multiply(takediag(func, axis1, axis2) for func in self.funcs), axis1, axis2)
-    for i, axis in enumerate(self._axes):
-      if isinstance(axis, Raveled):
-        return ravel(Multiply(unravel(func, i, axis.shape) for func in self.funcs), i)
     for i, parts in func1._inflations:
       return util.sum(_inflate(f * _take(func2, dofmap, i), dofmap, self.shape[i], i) for dofmap, f in parts.items())
     for i, parts in func2._inflations:
