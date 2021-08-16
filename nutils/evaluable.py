@@ -1376,6 +1376,8 @@ class Transpose(Array):
   def _takediag(self, axis1, axis2):
     assert axis1 < axis2
     orig1, orig2 = sorted(self.axes[axis] for axis in [axis1, axis2])
+    if orig1 == self.ndim-2:
+      return Transpose(TakeDiag(self.func), (*self.axes[:axis1], *self.axes[axis1+1:axis2], *self.axes[axis2+1:], self.ndim-2))
     trytakediag = self.func._takediag(orig1, orig2)
     if trytakediag is not None:
       return Transpose(trytakediag, [ax-(ax>orig1)-(ax>orig2) for ax in self.axes[:axis1] + self.axes[axis1+1:axis2] + self.axes[axis2+1:]] + [self.ndim-2])
