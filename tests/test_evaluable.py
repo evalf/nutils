@@ -306,22 +306,6 @@ class check(TestCase):
         actual=evaluable.loop_concatenate(self.op(*args), index),
         desired=n_op_argsfun)
 
-  def test_desparsify(self):
-    args = []
-    for arg in self.args:
-      for i in range(arg.ndim):
-        arg = evaluable._inflate(arg, evaluable.Guard(numpy.arange(int(arg.shape[i]))), arg.shape[i], i)
-      args.append(arg)
-    op_args = self.op(*args).simplified
-    evalargs = dict(zip(self.arg_names, self.arg_values))
-    for axis, prop in enumerate(op_args._axes):
-      if isinstance(prop, evaluable.Sparse):
-        actual = numpy.zeros_like(self.n_op_argsfun)
-        for ind, f in op_args._desparsify(axis):
-          _ind = ind.eval(**evalargs)
-          numpy.add.at(actual, (slice(None),)*(axis)+(_ind,), f.eval(**evalargs))
-        self.assertArrayAlmostEqual(actual, self.n_op_argsfun, decimal=15)
-
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_derivative(self):
     eps = 1e-4
