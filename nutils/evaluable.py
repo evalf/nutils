@@ -911,11 +911,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
       raise TypeError('len() of unsized object')
     return self.shape[0]
 
-  def __iter__(self):
-    if not self.shape:
-      raise TypeError('iteration over a 0-d array')
-    return (self[i,...] for i in range(self.shape[0]))
-
   def __index__(self):
     try:
       index = self.__index
