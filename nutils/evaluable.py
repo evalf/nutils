@@ -3161,6 +3161,9 @@ class Ravel(Array):
     assert axis1 < axis2
     if axis2 <= self.ndim-2:
       return ravel(_takediag(self.func, axis1, axis2), self.ndim-3)
+    else:
+      unraveled = unravel(self.func, axis1, self.func.shape[-2:])
+      return Ravel(_takediag(_takediag(unraveled, axis1, -2), axis1, -2))
 
   def _take(self, index, axis):
     if axis != self.ndim-1:
