@@ -1721,13 +1721,9 @@ class Multiply(Array):
 
   def _add(self, other):
     func1, func2 = self.funcs
-    if other == func1:
-      return Multiply([func1, Add([func2, ones_like(func2)])])
-    if other == func2:
-      return Multiply([func2, Add([func1, ones_like(func1)])])
-    if isinstance(other, Multiply) and not self.funcs.isdisjoint(other.funcs):
-      f = next(iter(self.funcs & other.funcs))
-      return Multiply([f, Add(self.funcs + other.funcs - [f,f])])
+    if isinstance(other, Multiply):
+      for common in self.funcs & other.funcs:
+        return common * Add(self.funcs + other.funcs - [common, common])
 
   def _determinant(self, axis1, axis2):
     func1, func2 = self.funcs
