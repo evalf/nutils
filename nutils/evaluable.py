@@ -1370,6 +1370,12 @@ class Transpose(Array):
     return ','.join(map(str, self.axes))
 
   def _transpose(self, axes):
+    if axes == self._invaxes:
+      # NOTE: While we could leave this particular simplification to be dealt
+      # with by Transpose, the benefit of handling it directly is that _add and
+      # _multiply can rely on _transpose for the right hand side without having
+      # to separately account for the trivial case.
+      return self.func
     newaxes = [self.axes[i] for i in axes]
     return Transpose(self.func, newaxes)
 
@@ -1409,11 +1415,13 @@ class Transpose(Array):
       return Transpose(trydot, [ax-(ax>invaxis) for ax in self.axes if ax != invaxis])
 
   def _add(self, other):
-    if isinstance(other, Transpose) and self.axes == other.axes:
-      return Transpose(Add([self.func, other.func]), self.axes)
     other_trans = other._transpose(self._invaxes)
-    if other_trans is not None:
-      return Transpose(Add([self.func, other_trans]), self.axes)
+    if other_trans is not None and not isinstance(other_trans, Transpose):
+      # The second clause is to avoid infinite recursions
+      return Transpose(self.func + other_trans, self.axes)
+    tryadd = self.func._add(Transpose(other, self._invaxes))
+    if tryadd is not None:
+      return Transpose(tryadd, self.axes)
 
   def _take(self, indices, axis):
     trytake = self.func._take(indices, self.axes[axis])
