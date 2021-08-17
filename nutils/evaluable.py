@@ -1018,7 +1018,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   _unravel = lambda self, axis, shape: None
   _ravel = lambda self, axis: None
   _loopsum = lambda self, loop_index: None # NOTE: type of `loop_index` is `_LoopIndex`
-  _dot = lambda self, other, axis: None
 
   @property
   def _unaligned(self):
@@ -1272,11 +1271,6 @@ class InsertAxis(Array):
     if len(where) != self.ndim:
       return align(unaligned1 + unaligned2, where, self.shape)
 
-  def _dot(self, other, sumaxis):
-    unaligned, where = unalign(self)
-    if sumaxis not in where:
-      return align(unaligned, [i-(i>sumaxis) for i in where], self.shape[:sumaxis]+self.shape[sumaxis+1:]) * sum(other, sumaxis)
-
   def _insertaxis(self, axis, length):
     if axis == self.ndim - 1:
       return InsertAxis(InsertAxis(self.func, length), self.length)
@@ -1422,12 +1416,6 @@ class Transpose(Array):
     trymultiply = self.func._multiply(Transpose(other, self._invaxes))
     if trymultiply is not None:
       return Transpose(trymultiply, self.axes)
-
-  def _dot(self, other, axis):
-    invaxis = self.axes[axis]
-    trydot = self.func._dot(Transpose(other, self._invaxes), invaxis)
-    if trydot is not None:
-      return Transpose(trydot, [ax-(ax>invaxis) for ax in self.axes if ax != invaxis])
 
   def _add(self, other):
     other_trans = other._transpose(self._invaxes)
@@ -1713,12 +1701,12 @@ class Multiply(Array):
 
   def _sum(self, axis):
     func1, func2 = self.funcs
-    trydot1 = func1._dot(func2, axis)
-    if trydot1 is not None:
-      return trydot1
-    trydot2 = func2._dot(func1, axis)
-    if trydot2 is not None:
-      return trydot2
+    unaligned, where = unalign(func1)
+    if axis not in where:
+      return align(unaligned, [i-(i>axis) for i in where], self.shape[:axis]+self.shape[axis+1:]) * sum(func2, axis)
+    unaligned, where = unalign(func2)
+    if axis not in where:
+      return sum(func1, axis) * align(unaligned, [i-(i>axis) for i in where], self.shape[:axis]+self.shape[axis+1:])
 
   def _add(self, other):
     func1, func2 = self.funcs
@@ -1917,15 +1905,6 @@ class Add(Array):
       # are sparse, we can be certain that subsequent simpifications will
       # irreversibly process the new terms before reaching this point.
       return (func1 * other) + (func2 * other)
-
-  def _dot(self, other, axis):
-    func1, func2 = self.funcs
-    trydot1 = func1._dot(other, axis)
-    trydot2 = func2._dot(other, axis)
-    if trydot1 is not None or trydot2 is not None:
-      dot1 = sum(func1 * other, axis) if trydot1 is None else trydot1
-      dot2 = sum(func2 * other, axis) if trydot2 is None else trydot2
-      return dot1 + dot2
 
   @property
   def _assparse(self):
@@ -2694,14 +2673,6 @@ class Inflate(Array):
 
   def _multiply(self, other):
     return Inflate(Multiply([self.func, Take(other, self.dofmap)]), self.dofmap, self.length)
-
-  def _dot(self, other, axis):
-    if axis == self.ndim - 1:
-      return self._multiply(other)._sum(axis)
-    else:
-      trydot = self.func._dot(Take(other, self.dofmap), axis)
-      if trydot is not None:
-        return Inflate(trydot, self.dofmap, self.length)
 
   def _add(self, other):
     if isinstance(other, Inflate) and self.dofmap == other.dofmap:
@@ -3561,12 +3532,6 @@ class LoopSum(Array):
   def _add(self, other):
     if isinstance(other, LoopSum) and other.index == self.index:
       return loop_sum(self.func + other.func, self.index)
-
-  def _dot(self, other, axis):
-    if self.index not in other.arguments:
-      trydot = self.func._dot(other, axis)
-      if trydot is not None:
-        return loop_sum(trydot, self.index)
 
   @property
   def _assparse(self):
