@@ -3178,6 +3178,10 @@ class Ravel(Array):
   def _inflate(self, dofmap, length, axis):
     if axis < self.ndim-dofmap.ndim:
       return Ravel(_inflate(self.func, dofmap, length, axis))
+    elif dofmap.ndim == 0:
+      return ravel(Inflate(self.func, dofmap, length), self.ndim-1)
+    else:
+      return _inflate(self.func, Unravel(dofmap, *self.func.shape[-2:]), length, axis)
 
   def _diagonalize(self, axis):
     if axis != self.ndim-1:
