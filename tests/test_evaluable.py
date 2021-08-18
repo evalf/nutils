@@ -306,22 +306,6 @@ class check(TestCase):
         actual=evaluable.loop_concatenate(self.op(*args), index),
         desired=n_op_argsfun)
 
-  def test_desparsify(self):
-    args = []
-    for arg in self.args:
-      for i in range(arg.ndim):
-        arg = evaluable._inflate(arg, evaluable.Guard(numpy.arange(int(arg.shape[i]))), arg.shape[i], i)
-      args.append(arg)
-    op_args = self.op(*args).simplified
-    evalargs = dict(zip(self.arg_names, self.arg_values))
-    for axis, prop in enumerate(op_args._axes):
-      if isinstance(prop, evaluable.Sparse):
-        actual = numpy.zeros_like(self.n_op_argsfun)
-        for ind, f in op_args._desparsify(axis):
-          _ind = ind.eval(**evalargs)
-          numpy.add.at(actual, (slice(None),)*(axis)+(_ind,), f.eval(**evalargs))
-        self.assertArrayAlmostEqual(actual, self.n_op_argsfun, decimal=15)
-
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_derivative(self):
     eps = 1e-4
@@ -637,55 +621,6 @@ class intbounds(TestCase):
   def test_normdim_mixed(self):
     self.assertEqual(evaluable.NormDim(self.S('l', 4, 5), self.S('i', -3, 2))._intbounds, (0, 4))
 
-class blocks(TestCase):
-
-  def setUp(self):
-    super().setUp()
-    _builtin_warnings.simplefilter('ignore', evaluable.ExpensiveEvaluationWarning)
-
-  def test_multiply_equal(self):
-    ((i,), f), = evaluable.multiply(evaluable._inflate([1,2], dofmap=[0,2], length=3, axis=0), evaluable._inflate([3,4], dofmap=[0,2], length=3, axis=0)).blocks
-    self.assertAllEqual(i.eval(), [0,2])
-    self.assertAllEqual(f.eval(), [1*3,2*4])
-
-  def test_multiply_embedded(self):
-    ((i,), f), = evaluable.multiply([1,2,3], evaluable._inflate([4,5], dofmap=[0,2], length=3, axis=0)).blocks
-    self.assertAllEqual(i.eval(), [0,2])
-    self.assertAllEqual(f.eval(), [1*4,3*5])
-
-  def test_multiply_overlapping(self):
-    ((i,), f), = evaluable.multiply(evaluable._inflate([1,2], dofmap=[0,1], length=3, axis=0), evaluable._inflate([3,4], dofmap=[1,2], length=3, axis=0)).blocks
-    self.assertAllEqual(i.eval(), [1])
-    self.assertAllEqual(f.eval(), [2*3])
-
-  def test_multiply_disjoint(self):
-    blocks = evaluable.multiply(evaluable._inflate([1,2], dofmap=[0,2], length=4, axis=0), evaluable._inflate([3,4], dofmap=[1,3], length=4, axis=0)).blocks
-    self.assertEqual(blocks, ())
-
-  def test_takediag(self):
-    ((i,), f), = evaluable.takediag([[1,2,3],[4,5,6],[7,8,9]]).blocks
-    self.assertAllEqual(i.eval(), [0,1,2])
-    self.assertAllEqual(f.eval(), [1,5,9])
-
-  def test_takediag_embedded_axis(self):
-    ((i,), f), = evaluable.takediag(evaluable._inflate([[1,2,3],[4,5,6]], dofmap=[0,2], length=3, axis=0)).blocks
-    self.assertAllEqual(i.eval(), [0,2])
-    self.assertAllEqual(f.eval(), [1,6])
-
-  def test_takediag_embedded_rmaxis(self):
-    ((i,), f), = evaluable.takediag(evaluable._inflate([[1,2],[3,4],[5,6]], dofmap=[0,2], length=3, axis=1)).blocks
-    self.assertAllEqual(i.eval(), [0,2])
-    self.assertAllEqual(f.eval(), [1,6])
-
-  def test_takediag_overlapping(self):
-    ((i,), f), = evaluable.takediag(evaluable._inflate(evaluable._inflate([[1,2],[3,4]], dofmap=[0,1], length=3, axis=0), dofmap=[1,2], length=3, axis=1)).blocks
-    self.assertAllEqual(i.eval(), [1])
-    self.assertAllEqual(f.eval(), [3])
-
-  def test_takediag_disjoint(self):
-    blocks = evaluable.takediag(evaluable._inflate(evaluable._inflate([[1,2],[3,4]], dofmap=[0,2], length=4, axis=0), dofmap=[1,3], length=4, axis=1)).blocks
-    self.assertEqual(blocks, ())
-
 
 class commutativity(TestCase):
 
@@ -865,15 +800,15 @@ class asciitree(TestCase):
   def test_asciitree(self):
     f = evaluable.Sin((evaluable.Zeros((), int))**evaluable.Diagonalize(evaluable.Argument('arg', (2,))))
     self.assertEqual(f.asciitree(richoutput=True),
-                     '%0 = Sin; f:a2,a2\n'
-                     '└ %1 = Power; f:a2,a2\n'
-                     '  ├ %2 = InsertAxis; i:i2,i2\n'
-                     '  │ ├ %3 = InsertAxis; i:i2\n'
+                     '%0 = Sin; f:2,2\n'
+                     '└ %1 = Power; f:2,2\n'
+                     '  ├ %2 = InsertAxis; i:2,2\n'
+                     '  │ ├ %3 = InsertAxis; i:2\n'
                      '  │ │ ├ 0\n'
                      '  │ │ └ 2\n'
                      '  │ └ 2\n'
-                     '  └ %4 = Diagonalize; f:d2,d2\n'
-                     '    └ Argument; arg; f:a2\n')
+                     '  └ %4 = Diagonalize; f:2,2\n'
+                     '    └ Argument; arg; f:2\n')
 
   @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
   def test_loop_sum(self):
@@ -899,8 +834,8 @@ class asciitree(TestCase):
                      'NODES\n'
                      '%B0 = LoopConcatenate\n'
                      '├ shape[0] = %A1 = Take; i:\n'
-                     '│ ├ %A2 = _SizesToOffsets; i:a3\n'
-                     '│ │ └ %A3 = InsertAxis; i:i2\n'
+                     '│ ├ %A2 = _SizesToOffsets; i:3\n'
+                     '│ │ └ %A3 = InsertAxis; i:2\n'
                      '│ │   ├ 1\n'
                      '│ │   └ 2\n'
                      '│ └ 2\n'
@@ -913,7 +848,7 @@ class asciitree(TestCase):
                      '│ └ %B7 = Add; i:\n'
                      '│   ├ %B5\n'
                      '│   └ 1\n'
-                     '└ func = %B8 = InsertAxis; i:i1\n'
+                     '└ func = %B8 = InsertAxis; i:1\n'
                      '  ├ %B5\n'
                      '  └ 1\n')
 
@@ -928,8 +863,8 @@ class asciitree(TestCase):
                      'NODES\n'
                      '%B0 = LoopConcatenate\n'
                      '├ shape[0] = %A1 = Take; i:\n'
-                     '│ ├ %A2 = _SizesToOffsets; i:a3\n'
-                     '│ │ └ %A3 = InsertAxis; i:i2\n'
+                     '│ ├ %A2 = _SizesToOffsets; i:3\n'
+                     '│ │ └ %A3 = InsertAxis; i:2\n'
                      '│ │   ├ 1\n'
                      '│ │   └ 2\n'
                      '│ └ 2\n'
@@ -942,7 +877,7 @@ class asciitree(TestCase):
                      '│ └ %B7 = Add; i:\n'
                      '│   ├ %B5\n'
                      '│   └ 1\n'
-                     '└ func = %B8 = InsertAxis; i:i1\n'
+                     '└ func = %B8 = InsertAxis; i:1\n'
                      '  ├ %B5\n'
                      '  └ 1\n')
 

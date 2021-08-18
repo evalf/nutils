@@ -649,3 +649,25 @@ common(
   topo=topology.DisjointUnionTopology([mesh.rectilinear([8])[0][l:r] for l, r in [[0,2],[4,6]]]),
   hasboundary=False,
   hasbasis=False)
+
+
+class project(TestCase):
+
+  def setUp(self):
+    self.topo, self.geom = mesh.rectilinear([8])
+    self.basis = self.topo.basis('std', degree=1)
+
+  def test_lsqr(self):
+    exact = numpy.sin(numpy.arange(9))
+    projected = self.topo.project(self.basis.dot(exact), onto=self.basis, geometry=self.geom, ptype='lsqr', degree=2)
+    self.assertAllAlmostEqual(exact, projected)
+
+  def test_nodal(self):
+    exact = numpy.sin(numpy.arange(9))
+    projected = self.topo.project(self.basis.dot(exact), onto=self.basis, geometry=self.geom, ptype='nodal', degree=2)
+    self.assertAllAlmostEqual(exact, projected)
+
+  def test_convolute(self):
+    exact = numpy.repeat(numpy.pi, 9)
+    projected = self.topo.project(self.basis.dot(exact), onto=self.basis, geometry=self.geom, ptype='convolute', degree=2)
+    self.assertAllAlmostEqual(exact, projected)
