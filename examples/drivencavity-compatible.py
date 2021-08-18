@@ -124,8 +124,8 @@ class test(testing.TestCase):
   def test_p3(self):
     state0, state1 = main(nelems=3, reynolds=100, degree=3)
     with self.subTest('stokes-velocity'): self.assertAlmostEqual64(state0['u'], '''
-      eNo7aLjtjIjJxZN7zVgvZJ9jOv3lfK05gnUQLmt/Ttlk5qm9ZgKGQeeXmj0zZoCCD+fWGUSflDpz0PDu
-      6XRT55MANiIlLw==''')
+      eNqbo3f7/AeDb2dmGGtd7r+odk7icoQJgjUHLpty8b/BvrMzjF/rll9qMD5kwAAFopc6dRvO2J2fo8d4
+      3sko4wwAjL4lyw==''', atol=1e-14)
     with self.subTest('stokes-pressure'): self.assertAlmostEqual64(state0['p'], '''
       eNpbrN+us+Z8qWHMyfcXrly013l1ZocRAxwI6uvoHbwsZuxxNvZC5eUQg+5zS8wAElAT9w==''')
     with self.subTest('stokes-multiplier'): self.assertAlmostEqual(state0['lm'], 0)
