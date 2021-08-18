@@ -3146,8 +3146,7 @@ class Ravel(Array):
     return Ravel(Multiply([self.func, Unravel(other, *self.func.shape[-2:])]))
 
   def _add(self, other):
-    if isinstance(other, Ravel) and equalshape(other.func.shape[-2:], self.func.shape[-2:]):
-      return Ravel(Add([self.func, other.func]))
+    return Ravel(self.func + Unravel(other, *self.func.shape[-2:]))
 
   def _sum(self, axis):
     if axis == self.ndim-1:
