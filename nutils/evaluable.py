@@ -1980,8 +1980,13 @@ class Take(Array):
   def _simplified(self):
     if self.indices.size == 0:
       return zeros_like(self)
-    return self.func._take(self.indices, self.func.ndim-1) or \
-           self.indices._rtake(self.func, self.func.ndim-1)
+    trytake = self.func._take(self.indices, self.func.ndim-1) or \
+              self.indices._rtake(self.func, self.func.ndim-1)
+    if trytake:
+      return trytake
+    for axis, parts in self.func._inflations:
+      if axis == self.func.ndim - 1:
+        return util.sum(Inflate(func, dofmap, self.func.shape[-1])._take(self.indices, self.func.ndim - 1) for dofmap, func in parts.items())
 
   def evalf(self, arr, indices):
     return arr[...,indices]
@@ -3018,6 +3023,7 @@ class IdentifierDerivativeTarget(DerivativeTargetBase):
 class Ravel(Array):
 
   __slots__ = 'func'
+  __cache__ = '_inflations'
 
   @types.apply_annotations
   def __init__(self, func:asarray):
@@ -3025,6 +3031,22 @@ class Ravel(Array):
       raise Exception('cannot ravel function of dimension < 2')
     self.func = func
     super().__init__(args=[func], shape=(*func.shape[:-2], func.shape[-2] * func.shape[-1]), dtype=func.dtype)
+
+  @property
+  def _inflations(self):
+    inflations = []
+    stride = self.func.shape[-1]
+    n = None
+    for axis, old_parts in self.func._inflations:
+      if axis == self.ndim - 1 and n is None:
+        n = self.func.shape[-1]
+        inflations.append((self.ndim - 1, types.frozendict((InsertAxis(dofmap, n) * stride + prependaxes(Range(n), dofmap.shape), func) for dofmap, func in old_parts.items())))
+      elif axis == self.ndim and n is None:
+        n = self.func.shape[-2]
+        inflations.append((self.ndim - 1, types.frozendict((insertaxis(dofmap, 0, n) + appendaxes(Range(n), dofmap.shape) * stride, func) for dofmap, func in old_parts.items())))
+      elif axis < self.ndim - 1:
+        inflations.append((axis, types.frozendict((dofmap, Ravel(func)) for dofmap, func in old_parts.items())))
+    return tuple(inflations)
 
   def _simplified(self):
     if equalindex(self.func.shape[-2], 1):
