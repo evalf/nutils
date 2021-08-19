@@ -1678,13 +1678,6 @@ class Multiply(Array):
     if set(unalign(func2)[1]).isdisjoint((axis1, axis2)):
       return divide(inverse(func1, (axis1, axis2)), func2)
 
-  def _loopsum(self, index):
-    func1, func2 = self.funcs
-    if func1 != index and index not in func1.dependencies:
-      return Multiply([func1, loop_sum(func2, index)])
-    if func2 != index and index not in func2.dependencies:
-      return Multiply([loop_sum(func1, index), func2])
-
   @property
   def _assparse(self):
     func1, func2 = self.funcs
@@ -3587,6 +3580,9 @@ class LoopSum(Array):
   def _add(self, other):
     if isinstance(other, LoopSum) and other.index == self.index:
       return loop_sum(self.func + other.func, self.index)
+
+  def _multiply(self, other):
+    return loop_sum(self.func * other, self.index)
 
   @property
   def _assparse(self):
