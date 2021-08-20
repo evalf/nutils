@@ -1617,6 +1617,13 @@ class Multiply(Array):
 
   def _multiply(self, other):
     func1, func2 = self.funcs
+    args = tuple(unalign(f)[0].arguments for f in (func1, func2, other))
+    if args[0] | args[1] < self.arguments:
+      return # we stop here to prevent cycles
+    elif args[0] | args[2] < self.arguments:
+      return (func1 * other) * func2
+    elif args[1] | args[2] < self.arguments:
+      return func1 * (func2 * other)
     func1_other = func1._multiply(other)
     if func1_other is not None:
       return Multiply([func1_other, func2])
