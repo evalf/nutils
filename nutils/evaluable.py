@@ -1777,6 +1777,23 @@ class Multiply(Array):
     func2_other = func2._multiply(other)
     if func2_other is not None:
       return Multiply([func1, func2_other])
+    # Reorder the multiplications such that the amount of flops is minimized.
+    # The flops are counted based on the lower int bounds of the shape and loop
+    # lengths, excluding common inserted axes and invariant loops of the inner
+    # product.
+    sizes = []
+    unaligned = tuple(map(unalign, (func1, func2, other)))
+    for (f1, w1), (f2, w2) in itertools.combinations(unaligned, 2):
+      lengths = [self.shape[i] for i in set(w1) | set(w2)]
+      lengths += [arg.length for arg in f1.arguments | f2.arguments if isinstance(arg, _LoopIndex)]
+      sizes.append(util.product((max(1, length._intbounds[0]) for length in lengths), 1))
+    min_size = min(sizes)
+    if sizes[0] == min_size:
+      return # status quo
+    elif sizes[1] == min_size:
+      return (func1 * other) * func2
+    elif sizes[2] == min_size:
+      return (func2 * other) * func1
 
   def _derivative(self, var, seen):
     func1, func2 = self.funcs
