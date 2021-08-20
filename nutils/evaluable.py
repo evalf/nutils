@@ -3208,6 +3208,18 @@ class Ravel(Array):
     return Ravel(loop_sum(self.func, index))
 
   @property
+  def _unaligned(self):
+    unaligned, where = unalign(self.func)
+    for i in self.ndim - 1, self.ndim:
+      if i not in where:
+        unaligned = InsertAxis(unaligned, self.func.shape[i])
+        where += i,
+    if where[-2:] != (self.ndim - 1, self.ndim):
+      unaligned = Transpose(unaligned, numpy.argsort(where))
+      where = tuple(sorted(where))
+    return Ravel(unaligned), where[:-1]
+
+  @property
   def _assparse(self):
     return tuple((*indices[:-2], indices[-2]*self.func.shape[-1]+indices[-1], values) for *indices, values in self.func._assparse)
 
