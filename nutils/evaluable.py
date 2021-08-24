@@ -902,6 +902,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   _sign = lambda self: None
   _eig = lambda self, symmetric: None
   _inflate = lambda self, dofmap, length, axis: None
+  _rinflate = lambda self, func, length, axis: None
   _unravel = lambda self, axis, shape: None
   _ravel = lambda self, axis: None
   _loopsum = lambda self, loop_index: None # NOTE: type of `loop_index` is `_LoopIndex`
@@ -2563,8 +2564,6 @@ class Inflate(Array):
     return tuple(inflations)
 
   def _simplified(self):
-    if self.dofmap == Range(self.length):
-      return self.func
     for axis in range(self.dofmap.ndim):
       if equalindex(self.dofmap.shape[axis], 1):
         return Inflate(_take(self.func, 0, self.func.ndim-self.dofmap.ndim+axis), _take(self.dofmap, 0, axis), self.length)
@@ -2574,7 +2573,8 @@ class Inflate(Array):
         return util.sum(Inflate(f, _take(self.dofmap, ind, i), self.length) for ind, f in parts.items())
     if self.dofmap.ndim == 0 and equalindex(self.dofmap, 0) and equalindex(self.length, 1):
       return InsertAxis(self.func, 1)
-    return self.func._inflate(self.dofmap, self.length, self.ndim-1)
+    return self.func._inflate(self.dofmap, self.length, self.ndim-1) \
+       or self.dofmap._rinflate(self.func, self.length, self.ndim-1)
 
   def evalf(self, array, indices, length):
     assert indices.ndim == self.dofmap.ndim
@@ -3040,10 +3040,10 @@ class Ravel(Array):
     for axis, old_parts in self.func._inflations:
       if axis == self.ndim - 1 and n is None:
         n = self.func.shape[-1]
-        inflations.append((self.ndim - 1, types.frozendict((InsertAxis(dofmap, n) * stride + prependaxes(Range(n), dofmap.shape), func) for dofmap, func in old_parts.items())))
+        inflations.append((self.ndim - 1, types.frozendict((RavelIndex(dofmap, Range(n), *self.func.shape[-2:]), func) for dofmap, func in old_parts.items())))
       elif axis == self.ndim and n is None:
         n = self.func.shape[-2]
-        inflations.append((self.ndim - 1, types.frozendict((insertaxis(dofmap, 0, n) + appendaxes(Range(n), dofmap.shape) * stride, func) for dofmap, func in old_parts.items())))
+        inflations.append((self.ndim - 1, types.frozendict((RavelIndex(Range(n), dofmap, *self.func.shape[-2:]), func) for dofmap, func in old_parts.items())))
       elif axis < self.ndim - 1:
         inflations.append((axis, types.frozendict((dofmap, Ravel(func)) for dofmap, func in old_parts.items())))
     return tuple(inflations)
@@ -3169,6 +3169,39 @@ class Unravel(Array):
   def _assparse(self):
     return tuple((*indices[:-1], *divmod(indices[-1], appendaxes(self.shape[-1], values.shape)), values) for *indices, values in self.func._assparse)
 
+class RavelIndex(Array):
+
+  @types.apply_annotations
+  def __init__(self, a:asarray, b:asarray, m:asindex, n:asindex):
+    self.a = a
+    self.b = b
+    self.m = m
+    self.n = n
+    super().__init__(args=[a,b,n], shape=a.shape+b.shape, dtype=int)
+
+  def evalf(self, a, b, n):
+    return a[(...,)+(numpy.newaxis,)*b.ndim] * n + b
+
+  def _take(self, index, axis):
+    if axis < self.a.ndim:
+      return RavelIndex(_take(self.a, index, axis), self.b, self.m, self.n)
+    else:
+      return RavelIndex(self.a, _take(self.b, index, axis - self.a.ndim), self.m, self.n)
+
+  def _rtake(self, func, axis):
+    if equalindex(func.shape[-1], self.m * self.n):
+      return Take(_take(Unravel(func, self.m, self.n), self.a, -2), self.b)
+
+  def _rinflate(self, func, length, axis):
+    if equalindex(length, self.m * self.n):
+      return Ravel(Inflate(_inflate(func, self.a, self.m, func.ndim - self.ndim), self.b, self.n))
+
+  def _intbounds_impl(self):
+    nmin, nmax = self.n._intbounds
+    amin, amax = self.a._intbounds
+    bmin, bmax = self.b._intbounds
+    return amin * nmin + bmin, amax * nmax + bmax
+
 class Range(Array):
 
   __slots__ = 'length'
@@ -3183,6 +3216,10 @@ class Range(Array):
 
   def _rtake(self, func, axis):
     if self.length == func.shape[axis]:
+      return func
+
+  def _rinflate(self, func, length, axis):
+    if length == self.length:
       return func
 
   def evalf(self, length):

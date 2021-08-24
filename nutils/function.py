@@ -3230,8 +3230,7 @@ class StructuredBasis(Basis):
       length = evaluable.get(lengths_i, 0, index_i)
       offset = evaluable.get(offsets_i, 0, index_i)
       dofs_i = (evaluable.Range(length) + offset) % ndofs_i
-      dofs = dofs_i if dofs is None else evaluable.ravel(evaluable.insertaxis(dofs * ndofs_i, 1, length)
-                                                       + evaluable.insertaxis(dofs_i, 0, dofs.shape[0]), axis=0)
+      dofs = dofs_i if dofs is None else evaluable.Ravel(evaluable.RavelIndex(dofs, dofs_i, dofs.shape[0], ndofs_i))
     coeffs = functools.reduce(evaluable.PolyOuterProduct,
       [evaluable.Elemwise(coeffs_i, index_i, float) for coeffs_i, index_i in zip(self._coeffs, indices)])
     return dofs, coeffs
