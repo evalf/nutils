@@ -1013,6 +1013,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   _sign = lambda self: None
   _eig = lambda self, symmetric: None
   _inflate = lambda self, dofmap, length, axis: None
+  _rinflate = lambda self, func, length, axis: None
   _unravel = lambda self, axis, shape: None
   _ravel = lambda self, axis: None
   _loopsum = lambda self, loop_index: None # NOTE: type of `loop_index` is `_LoopIndex`
@@ -2701,8 +2702,6 @@ class Inflate(Array):
     return tuple(inflations)
 
   def _simplified(self):
-    if self.dofmap == Range(self.length):
-      return self.func
     for axis in range(self.dofmap.ndim):
       if equalindex(self.dofmap.shape[axis], 1):
         return Inflate(_take(self.func, 0, self.func.ndim-self.dofmap.ndim+axis), _take(self.dofmap, 0, axis), self.length)
@@ -2712,7 +2711,8 @@ class Inflate(Array):
         return util.sum(Inflate(f, _take(self.dofmap, ind, i), self.length) for ind, f in parts.items())
     if self.dofmap.ndim == 0 and equalindex(self.dofmap, 0) and equalindex(self.length, 1):
       return InsertAxis(self.func, 1)
-    return self.func._inflate(self.dofmap, self.length, self.ndim-1)
+    return self.func._inflate(self.dofmap, self.length, self.ndim-1) \
+       or self.dofmap._rinflate(self.func, self.length, self.ndim-1)
 
   def evalf(self, array, indices, length):
     assert indices.ndim == self.dofmap.ndim
@@ -3236,6 +3236,40 @@ class Unravel(Array):
   def _assparse(self):
     return tuple((*indices[:-1], *divmod(indices[-1], appendaxes(self.shape[-1], values.shape)), values) for *indices, values in self.func._assparse)
 
+class RavelIndex(Array):
+
+  @types.apply_annotations
+  def __init__(self, ia:asarray, ib:asarray, na:asindex, nb:asindex):
+    self._ia = ia
+    self._ib = ib
+    self._na = na
+    self._nb = nb
+    self._length = na * nb
+    super().__init__(args=[ia, ib, nb], shape=ia.shape + ib.shape, dtype=int)
+
+  def evalf(self, ia, ib, nb):
+    return ia[(...,)+(numpy.newaxis,)*ib.ndim] * nb + ib
+
+  def _take(self, index, axis):
+    if axis < self._ia.ndim:
+      return RavelIndex(_take(self._ia, index, axis), self._ib, self._na, self._nb)
+    else:
+      return RavelIndex(self._ia, _take(self._ib, index, axis - self._ia.ndim), self._na, self._nb)
+
+  def _rtake(self, func, axis):
+    if equalindex(func.shape[-1], self._length):
+      return Take(_take(Unravel(func, self._na, self._nb), self._ia, -2), self._ib)
+
+  def _rinflate(self, func, length, axis):
+    if equalindex(length, self._length):
+      return Ravel(Inflate(_inflate(func, self._ia, self._na, func.ndim - self.ndim), self._ib, self._nb))
+
+  def _intbounds_impl(self):
+    nbmin, nbmax = self._nb._intbounds
+    iamin, iamax = self._ia._intbounds
+    ibmin, ibmax = self._ib._intbounds
+    return iamin * nbmin + ibmin, iamax * nbmax + ibmax
+
 class Range(Array):
 
   __slots__ = 'length'
@@ -3250,6 +3284,10 @@ class Range(Array):
 
   def _rtake(self, func, axis):
     if self.length == func.shape[axis]:
+      return func
+
+  def _rinflate(self, func, length, axis):
+    if length == self.length:
       return func
 
   def evalf(self, length):
