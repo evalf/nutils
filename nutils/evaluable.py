@@ -3409,6 +3409,9 @@ class Choose(Array):
   def _simplified(self):
     if all(choice == self.choices[0] for choice in self.choices[1:]):
       return self.choices[0]
+    index, *choices, where = unalign(self.index, *self.choices)
+    if len(where) < self.ndim:
+      return align(Choose(index, choices), where, self.shape)
 
   def _multiply(self, other):
     if isinstance(other, Choose) and self.index == other.index:
