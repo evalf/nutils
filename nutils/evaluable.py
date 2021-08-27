@@ -1102,6 +1102,16 @@ class Normal(Array):
   def _simplified(self):
     if equalindex(self.shape[-1], 1):
       return Sign(Take(self.lgrad, 0))
+    unaligned, where = unalign(self.lgrad)
+    for axis in self.ndim - 1, self.ndim:
+      if axis not in where:
+        unaligned = InsertAxis(unaligned, self.lgrad.shape[axis])
+        where += axis,
+    if len(where) < self.ndim + 1:
+      if where[-2:] != (self.ndim - 1, self.ndim):
+        unaligned = Transpose(unaligned, numpy.argsort(where))
+        where = tuple(sorted(where))
+      return align(Normal(unaligned), where[:-1], self.shape)
 
   def evalf(self, lgrad):
     n = lgrad[...,-1]
