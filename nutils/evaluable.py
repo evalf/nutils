@@ -2134,8 +2134,13 @@ class Take(Array):
   def _simplified(self):
     if self.indices.size == 0:
       return zeros_like(self)
-    return self.func._take(self.indices, self.func.ndim-1) or \
-           self.indices._rtake(self.func, self.func.ndim-1)
+    trytake = self.func._take(self.indices, self.func.ndim-1) or \
+              self.indices._rtake(self.func, self.func.ndim-1)
+    if trytake:
+      return trytake
+    for axis, parts in self.func._inflations:
+      if axis == self.func.ndim - 1:
+        return util.sum(Inflate(func, dofmap, self.func.shape[-1])._take(self.indices, self.func.ndim - 1) for dofmap, func in parts.items())
 
   def evalf(self, arr, indices):
     return arr[...,indices]
