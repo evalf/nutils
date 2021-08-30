@@ -546,15 +546,6 @@ class intbounds(TestCase):
   def test_negative(self):
     self.assertBounds(evaluable.Negative(self.R(-4,[2,3,4])))
 
-  def test_square_negative(self):
-    self.assertBounds(evaluable.Square(self.R(-4,[4])))
-
-  def test_square_positive(self):
-    self.assertBounds(evaluable.Square(self.R(1,[4])))
-
-  def test_square_full(self):
-    self.assertBounds(evaluable.Square(self.R(-3,[7])))
-
   def test_absolute_negative(self):
     self.assertBounds(evaluable.Absolute(self.R(-4,[3])))
 

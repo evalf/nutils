@@ -2198,17 +2198,18 @@ class Power(Array):
   def _simplified(self):
     if iszero(self.power):
       return ones_like(self)
-    return self.func._power(self.power)
+    elif isuniform(self.power, 1):
+      return self.func
+    elif isuniform(self.power, 2):
+      return self.func * self.func
+    else:
+      return self.func._power(self.power)
 
   def _optimized_for_numpy(self):
     if isuniform(self.power, -1):
       return Reciprocal(self.func)
-    elif isuniform(self.power, 2):
-      return Square(self.func)
     elif isuniform(self.power, -2):
-      return Reciprocal(Square(self.func))
-    elif isuniform(self.power, 1):
-      return self.func
+      return Reciprocal(self.func * self.func)
     else:
       return self._simplified()
 
@@ -2312,22 +2313,6 @@ class Negative(Pointwise):
   def _intbounds_impl(self):
     lower, upper = self.args[0]._intbounds
     return -upper, -lower
-
-class Square(Pointwise):
-  __slots__ = ()
-  evalf = numpy.square
-  def _sum(self, axis):
-    func, = self.args
-    idx = tuple(range(func.ndim))
-    return Einsum((func, func), (idx, idx), idx)._sum(axis)
-
-  def _intbounds_impl(self):
-    lower, upper = self.args[0]._intbounds
-    extrema = lower**2, upper**2
-    if lower <= 0 and upper >= 0:
-      return 0, max(extrema)
-    else:
-      return min(extrema), max(extrema)
 
 class FloorDivide(Pointwise):
   __slots__ = ()
