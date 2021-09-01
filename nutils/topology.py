@@ -423,9 +423,13 @@ class Topology(types.Singleton):
     return function.get(values, 0, self.f_index)
 
   def select(self, indicator, ischeme='bezier2', **kwargs):
+    # Select elements where `indicator` is strict positive at any of the
+    # integration points defined by `ischeme`. We sample `indicator > 0`
+    # together with the element index (`self.f_index`) and keep all indices
+    # with at least one positive result.
     sample = self.sample(*element.parse_legacy_ischeme(ischeme))
-    isactive = numpy.greater(sample.eval(indicator, **kwargs), 0)
-    selected = types.frozenarray(tuple(i for i, index in enumerate(sample.index) if isactive[index].any()), dtype=int)
+    isactive, ielem = sample.eval([function.greater(indicator, 0), self.f_index], **kwargs)
+    selected = types.frozenarray(numpy.unique(ielem[isactive]))
     return self[selected]
 
   @log.withcontext
@@ -501,13 +505,13 @@ class Topology(types.Singleton):
     points = parallel.shempty((len(coords),len(geom)), dtype=float)
     _ielem = evaluable.Argument('_locate_ielem', shape=(), dtype=int)
     _point = evaluable.Argument('_locate_point', shape=(self.ndims,))
-    lower_args = dict(
+    egeom = geom.lower(
       points_shape=(),
       transform_chains = (
         evaluable.TransformChainFromSequence(self.transforms, _ielem),
         evaluable.TransformChainFromSequence(self.opposites, _ielem)),
       coordinates = (_point, _point))
-    xJ = evaluable.Tuple((geom.lower(**lower_args), function.localgradient(geom, self.ndims).lower(**lower_args))).simplified
+    xJ = evaluable.Tuple((egeom, evaluable.derivative(egeom, _point))).simplified
     arguments = dict(arguments or ())
     with parallel.ctxrange('locating', len(coords)) as ipoints:
       for ipoint in ipoints:
@@ -847,7 +851,7 @@ class Point(Topology):
 
 def StructuredLine(root:transform.stricttransformitem, i:types.strictint, j:types.strictint, periodic:bool=False, bnames:types.tuple[types.strictstr]=None):
   if bnames is None:
-    bnames = ('_structured_line_dummy_boundary_name_',) * 2
+    bnames = '_structured_line_dummy_boundary_left', '_structured_line_dummy_boundary_right'
   return StructuredTopology(root, axes=(transformseq.DimAxis(i,j,j if periodic else 0,periodic),), nrefine=0, bnames=(bnames,))
 
 class StructuredTopology(Topology):

@@ -62,6 +62,9 @@ jobs:
       NUTILS_NPROCS: ${{ matrix.nprocs }}
       OMP_NUM_THREADS: 1
       VECLIB_MAXIMUM_THREADS: 1
+      MKL_DYNAMIC: FALSE
+      MKL_NUM_THREADS: 1
+      PYTHONHASHSEED: 0
     steps:
       - name: Checkout
         uses: actions/checkout@v2

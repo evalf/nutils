@@ -306,6 +306,14 @@ class Array(Lowerable, metaclass=_ArrayMeta):
     'See :func:`mod`.'
     return self._rbinop(mod, __other)
 
+  def __divmod__(self, __other: IntoArray) -> Any:
+    'See :func:`divmod`.'
+    return self._binop(divmod, __other)
+
+  def __rdivmod__(self, __other: IntoArray) -> Any:
+    'See :func:`divmod`.'
+    return self._rbinop(divmod, __other)
+
   def __pos__(self) -> 'Array':
     'Return `self`.'
     return self
@@ -1195,6 +1203,20 @@ def mod(__dividend: IntoArray, __divisor: IntoArray) -> Array:
   '''
 
   return _Wrapper.broadcasted_arrays(evaluable.Mod, __dividend, __divisor)
+
+def divmod(__dividend: IntoArray, __divisor: IntoArray) -> Tuple[Array, Array]:
+  '''Return the floor-division and remainder, elementwise.
+
+  Parameters
+  ----------
+  dividend, divisor : :class:`Array` or something that can be :meth:`~Array.cast` into one
+
+  Returns
+  -------
+  :class:`tuple` of :class:`Array` and :class:`Array`
+  '''
+
+  return floor_divide(__dividend, __divisor), mod(__dividend, __divisor)
 
 # TRIGONOMETRIC
 
@@ -3127,7 +3149,7 @@ class StructuredBasis(Basis):
     ntrans = 1
     supports = []
     for start_dofs_i, stop_dofs_i, ndofs_i, ntrans_i in zip(reversed(self._start_dofs), reversed(self._stop_dofs), reversed(self._dofs_shape), reversed(self._transforms_shape)):
-      dof, dof_i = divmod(dof, ndofs_i)
+      dof, dof_i = builtins.divmod(dof, ndofs_i)
       supports_i = []
       while dof_i < stop_dofs_i[-1]:
         stop_ielem = numpy.searchsorted(start_dofs_i, dof_i, side='right')
@@ -3152,8 +3174,7 @@ class StructuredBasis(Basis):
       length = evaluable.get(lengths_i, 0, index_i)
       offset = evaluable.get(offsets_i, 0, index_i)
       dofs_i = (evaluable.Range(length) + offset) % ndofs_i
-      dofs = dofs_i if dofs is None else evaluable.ravel(evaluable.insertaxis(dofs * ndofs_i, 1, length)
-                                                       + evaluable.insertaxis(dofs_i, 0, dofs.shape[0]), axis=0)
+      dofs = dofs_i if dofs is None else evaluable.Ravel(evaluable.RavelIndex(dofs, dofs_i, dofs.shape[0], ndofs_i))
     coeffs = functools.reduce(evaluable.PolyOuterProduct,
       [evaluable.Elemwise(coeffs_i, index_i, float) for coeffs_i, index_i in zip(self._coeffs, indices)])
     return dofs, coeffs

@@ -546,15 +546,6 @@ class intbounds(TestCase):
   def test_negative(self):
     self.assertBounds(evaluable.Negative(self.R(-4,[2,3,4])))
 
-  def test_square_negative(self):
-    self.assertBounds(evaluable.Square(self.R(-4,[4])))
-
-  def test_square_positive(self):
-    self.assertBounds(evaluable.Square(self.R(1,[4])))
-
-  def test_square_full(self):
-    self.assertBounds(evaluable.Square(self.R(-3,[7])))
-
   def test_absolute_negative(self):
     self.assertBounds(evaluable.Absolute(self.R(-4,[3])))
 
@@ -620,6 +611,40 @@ class intbounds(TestCase):
 
   def test_normdim_mixed(self):
     self.assertEqual(evaluable.NormDim(self.S('l', 4, 5), self.S('i', -3, 2))._intbounds, (0, 4))
+
+  def test_minimum(self):
+    self.assertEqual(evaluable.Minimum(self.S('a', 0, 4), self.S('b', 1, 3))._intbounds, (0, 3))
+
+  def test_maximum(self):
+    self.assertEqual(evaluable.Maximum(self.S('a', 0, 4), self.S('b', 1, 3))._intbounds, (1, 4))
+
+class simplifications(TestCase):
+
+  def test_minimum_maximum_bounds(self):
+
+    class R(evaluable.Array):
+      # An evaluable scalar argument with given bounds.
+      def __init__(self, lower, upper):
+        self._lower = lower
+        self._upper = upper
+        super().__init__(args=(evaluable.EVALARGS,), shape=(), dtype=int)
+      def evalf(self, evalargs):
+        raise NotImplementedError
+      @property
+      def _intbounds(self):
+        return self._lower, self._upper
+
+    a = R(0, 2)
+    b = R(2, 4)
+
+    with self.subTest('min-left'):
+      self.assertEqual(evaluable.Minimum(a, b).simplified, a)
+    with self.subTest('min-right'):
+      self.assertEqual(evaluable.Minimum(b, a).simplified, a)
+    with self.subTest('max-left'):
+      self.assertEqual(evaluable.Maximum(b, a).simplified, b)
+    with self.subTest('max-right'):
+      self.assertEqual(evaluable.Maximum(a, b).simplified, b)
 
 
 class commutativity(TestCase):
@@ -802,8 +827,8 @@ class asciitree(TestCase):
     self.assertEqual(f.asciitree(richoutput=True),
                      '%0 = Sin; f:2,2\n'
                      '└ %1 = Power; f:2,2\n'
-                     '  ├ %2 = InsertAxis; i:2,2\n'
-                     '  │ ├ %3 = InsertAxis; i:2\n'
+                     '  ├ %2 = InsertAxis; i:2,2; [0,0]\n'
+                     '  │ ├ %3 = InsertAxis; i:2; [0,0]\n'
                      '  │ │ ├ 0\n'
                      '  │ │ └ 2\n'
                      '  │ └ 2\n'
@@ -833,22 +858,22 @@ class asciitree(TestCase):
                      '└ B = Loop\n'
                      'NODES\n'
                      '%B0 = LoopConcatenate\n'
-                     '├ shape[0] = %A1 = Take; i:\n'
-                     '│ ├ %A2 = _SizesToOffsets; i:3\n'
-                     '│ │ └ %A3 = InsertAxis; i:2\n'
+                     '├ shape[0] = %A1 = Take; i:; [2,2]\n'
+                     '│ ├ %A2 = _SizesToOffsets; i:3; [0,2]\n'
+                     '│ │ └ %A3 = InsertAxis; i:2; [1,1]\n'
                      '│ │   ├ 1\n'
                      '│ │   └ 2\n'
                      '│ └ 2\n'
-                     '├ start = %B4 = Take; i:\n'
+                     '├ start = %B4 = Take; i:; [0,2]\n'
                      '│ ├ %A2\n'
                      '│ └ %B5 = LoopIndex\n'
                      '│   └ length = 2\n'
-                     '├ stop = %B6 = Take; i:\n'
+                     '├ stop = %B6 = Take; i:; [0,2]\n'
                      '│ ├ %A2\n'
-                     '│ └ %B7 = Add; i:\n'
+                     '│ └ %B7 = Add; i:; [1,2]\n'
                      '│   ├ %B5\n'
                      '│   └ 1\n'
-                     '└ func = %B8 = InsertAxis; i:1\n'
+                     '└ func = %B8 = InsertAxis; i:1; [0,1]\n'
                      '  ├ %B5\n'
                      '  └ 1\n')
 
@@ -862,22 +887,22 @@ class asciitree(TestCase):
                      '└ B = Loop\n'
                      'NODES\n'
                      '%B0 = LoopConcatenate\n'
-                     '├ shape[0] = %A1 = Take; i:\n'
-                     '│ ├ %A2 = _SizesToOffsets; i:3\n'
-                     '│ │ └ %A3 = InsertAxis; i:2\n'
+                     '├ shape[0] = %A1 = Take; i:; [2,2]\n'
+                     '│ ├ %A2 = _SizesToOffsets; i:3; [0,2]\n'
+                     '│ │ └ %A3 = InsertAxis; i:2; [1,1]\n'
                      '│ │   ├ 1\n'
                      '│ │   └ 2\n'
                      '│ └ 2\n'
-                     '├ start = %B4 = Take; i:\n'
+                     '├ start = %B4 = Take; i:; [0,2]\n'
                      '│ ├ %A2\n'
                      '│ └ %B5 = LoopIndex\n'
                      '│   └ length = 2\n'
-                     '├ stop = %B6 = Take; i:\n'
+                     '├ stop = %B6 = Take; i:; [0,2]\n'
                      '│ ├ %A2\n'
-                     '│ └ %B7 = Add; i:\n'
+                     '│ └ %B7 = Add; i:; [1,2]\n'
                      '│   ├ %B5\n'
                      '│   └ 1\n'
-                     '└ func = %B8 = InsertAxis; i:1\n'
+                     '└ func = %B8 = InsertAxis; i:1; [0,1]\n'
                      '  ├ %B5\n'
                      '  └ 1\n')
 
@@ -934,7 +959,7 @@ class combine_loop_concatenates(TestCase):
     B = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 2), i*2, i*2+2, 6,), i._name, i.length)
     actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
     L = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3), (evaluable.InsertAxis(i, 2), i*2, i*2+2, 6)), i._name, i.length)
-    desired = evaluable.Tuple((evaluable.ArrayFromTuple(L, 0, (3,), int), evaluable.ArrayFromTuple(L, 1, (6,), int)))
+    desired = evaluable.Tuple((evaluable.ArrayFromTuple(L, 0, (3,), int, **dict(zip(('_lower', '_upper'), A._intbounds))), evaluable.ArrayFromTuple(L, 1, (6,), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
     self.assertEqual(actual, desired)
 
   def test_different_index(self):
@@ -945,7 +970,7 @@ class combine_loop_concatenates(TestCase):
     actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
     L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i._name, i.length)
     L2 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(j, 1), j, j+1, 3),), j._name, j.length)
-    desired = evaluable.Tuple((evaluable.ArrayFromTuple(L1, 0, (3,), int), evaluable.ArrayFromTuple(L2, 0, (3,), int)))
+    desired = evaluable.Tuple((evaluable.ArrayFromTuple(L1, 0, (3,), int, **dict(zip(('_lower', '_upper'), A._intbounds))), evaluable.ArrayFromTuple(L2, 0, (3,), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
     self.assertEqual(actual, desired)
 
   def test_nested_invariant(self):
@@ -954,10 +979,10 @@ class combine_loop_concatenates(TestCase):
     B = evaluable.LoopConcatenate((A, i*3, i*3+3, 9,), i._name, i.length)
     actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
     L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i._name, i.length)
-    A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int)
+    A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int, **dict(zip(('_lower', '_upper'), A._intbounds)))
     L2 = evaluable.LoopConcatenateCombined(((A_, i*3, i*3+3, 9),), i._name, i.length)
     self.assertIn(A_, L2._Evaluable__args)
-    desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int)))
+    desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
     self.assertEqual(actual, desired)
 
   def test_nested_variant(self):
@@ -967,10 +992,10 @@ class combine_loop_concatenates(TestCase):
     B = evaluable.LoopConcatenate((A, j*3, j*3+3, 9,), j._name, j.length)
     actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
     L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i+j, 1), i, i+1, 3),), i._name, i.length)
-    A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int)
+    A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int, **dict(zip(('_lower', '_upper'), A._intbounds)))
     L2 = evaluable.LoopConcatenateCombined(((A_, j*3, j*3+3, 9),), j._name, j.length)
     self.assertNotIn(A_, L2._Evaluable__args)
-    desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int)))
+    desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
     self.assertEqual(actual, desired)
 
 class EvaluableConstant(TestCase):
