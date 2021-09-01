@@ -1,3 +1,5 @@
+.. _install:
+
 Installation
 ============
 
@@ -162,17 +164,17 @@ setting can be specified one-off in the form of a prefix::
 
     OMP_NUM_THREADS=1 NUTILS_NPROCS=8 python myscript.py
 
-Consider a faster interpretor
+Consider a faster interpreter
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The most commonly used Python interpretor is without doubt the `CPython
+The most commonly used Python interpreter is without doubt the `CPython
 <https://github.com/python/cpython>`_ reference implementation, but it is not
 the only option. Before taking an application in production it may be worth
 testing if `other implementations
 <https://www.python.org/download/alternatives/>`_ have useful performance
 benefits.
 
-One interpretor of note is `Pyston <https://www.pyston.org/>`_, which brings
+One interpreter of note is `Pyston <https://www.pyston.org/>`_, which brings
 just-in-time compilation enhancements that in a typical application can yield a
 20% speed improvement. After Pyston is installed, Nutils and dependencies can
 be installed as before simply replacing ``python`` by ``pyston3``. As packages
