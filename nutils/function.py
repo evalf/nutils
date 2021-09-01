@@ -311,6 +311,14 @@ class Array(metaclass=_ArrayMeta):
     'See :func:`abs`.'
     return abs(self)
 
+  def __matmul__(self, other):
+    'See :func:`matmul`.'
+    return self._binop(matmul, other)
+
+  def __rmatmul__(self, other):
+    'See :func:`matmul`.'
+    return self._rbinop(matmul, other)
+
   def sum(self, axis: Optional[Union[int, Sequence[int]]] = None) -> 'Array':
     'See :func:`sum`.'
     return sum(self, axis)
@@ -1280,6 +1288,35 @@ def abs(__arg: IntoArray) -> Array:
 
   arg = Array.cast(__arg)
   return arg * sign(arg)
+
+def matmul(__arg1: IntoArray, __arg2: IntoArray) -> Array:
+  '''Return the matrix product of two arrays.
+
+  Parameters
+  ----------
+  arg1, arg2 : :class:`Array` or something that can be :meth:`~Array.cast` into one
+      Input arrays.
+
+  Returns
+  -------
+  :class:`Array`
+
+  See Also
+  --------
+
+  :any:`numpy.matmul` : the equivalent Numpy function.
+  '''
+
+  arg1 = Array.cast(__arg1)
+  arg2 = Array.cast(__arg2)
+  if not arg1.ndim or not arg2.ndim:
+    raise ValueError('cannot contract zero-dimensional array')
+  if arg2.ndim == 1:
+    return (arg1 * arg2).sum(-1)
+  elif arg1.ndim == 1:
+    return (arg1[:,numpy.newaxis] * arg2).sum(-2)
+  else:
+    return (arg1[...,:,:,numpy.newaxis] * arg2[...,numpy.newaxis,:,:]).sum(-2)
 
 def sign(__arg: IntoArray) -> Array:
   '''Return the sign of the argument, elementwise.

@@ -184,6 +184,11 @@ _check('Array_divmod_div', lambda a, b: divmod(function.Array.cast(a), b)[0], la
 _check('Array_divmod_mod', lambda a, b: divmod(function.Array.cast(a), b)[1], lambda a, b: numpy.divmod(a, b)[1], [(4,4), (4,)], dtype=int, low=1, high=10)
 _check('Array_rdivmod_div', lambda a, b: divmod(a, function.Array.cast(b))[0], lambda a, b: numpy.divmod(a, b)[0], [(4,4), (4,)], dtype=int, low=1, high=10)
 _check('Array_rdivmod_mod', lambda a, b: divmod(a, function.Array.cast(b))[1], lambda a, b: numpy.divmod(a, b)[1], [(4,4), (4,)], dtype=int, low=1, high=10)
+_check('matmul', function.matmul, numpy.matmul, [(4,), (4,)])
+_check('Array_matmul_vecvec', lambda a, b: function.Array.cast(a) @ b, numpy.matmul, [(4,), (4,)])
+_check('Array_matmul_vecmat', lambda a, b: function.Array.cast(a) @ b, numpy.matmul, [(4,), (4,3)])
+_check('Array_matmul_matvec', lambda a, b: function.Array.cast(a) @ b, numpy.matmul, [(3,4), (4,)])
+_check('Array_matmul_matmat', lambda a, b: function.Array.cast(a) @ b, numpy.matmul, [(3,4), (4,5)])
 
 _check('cos', function.cos, numpy.cos, [(4,)])
 _check('sin', function.sin, numpy.sin, [(4,)])
