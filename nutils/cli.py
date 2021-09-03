@@ -174,8 +174,18 @@ def _load_rcfile(path):
 def _htmllog(outdir, scriptname, kwargs):
   htmllog = treelog.HtmlLog(outdir, title=scriptname, htmltitle='<a href="http://www.nutils.org">{}</a> {}'.format(SVGLOGO, html.escape(scriptname)), favicon=FAVICON)
   if kwargs:
-    htmllog.write('<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">{}</ul>'.format(''.join(
-      '<li>{}={} <span style="color: gray;">{}</span></li>'.format(name, value, doc) for name, value, doc in kwargs)), level=Level.info, escape=False)
+    try:
+      htmllog_inject = htmllog.inject
+    except AttributeError: # fallback for treelog < 2.0
+      htmllog_inject = functools.partial(htmllog.write, level=Level.info, escape=False)
+    parts = ['<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">']
+    for name, value, doc in kwargs:
+      item = '{}={}'.format(name, value)
+      if doc:
+        item += ' <span style="color: gray;">{}</span>'.format(doc.replace('\n', ' '))
+      parts.append('<li>{}</li>'.format(item))
+    parts.append('</ul>')
+    htmllog_inject(''.join(parts)) # NOTE once we drop the fallback we can switch to injecting individual parts
   return htmllog
 
 def run(func, *, args=None, loaduserconfig=True):
