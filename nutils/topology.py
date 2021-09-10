@@ -203,7 +203,7 @@ class Topology(types.Singleton):
     return self.take_unchecked(indices)
 
   def take_unchecked(self, __indices: numpy.ndarray) -> 'Topology':
-    raise NotImplementedError
+    return _Take(self, types.arraydata(__indices))
 
   def compress(self, __mask: Union[numpy.ndarray, Sequence[bool]]) -> 'Topology':
     '''Return the selected elements as a disconnected topology.
@@ -1120,6 +1120,19 @@ class _Mul(Topology):
 
   def sample(self, ischeme: str, degree: int) -> Sample:
     return self.topo1.sample(ischeme, degree) * self.topo2.sample(ischeme, degree)
+
+class _Take(Topology):
+
+  def __init__(self, parent: Topology, indices: types.arraydata) -> None:
+    self.parent = parent
+    self.indices = indices = numpy.asarray(indices)
+    assert indices.ndim == 1 and indices.size
+    assert numpy.greater(indices[1:], indices[:-1]).all()
+    assert 0 <= indices[0] and indices[-1] < len(self.parent)
+    super().__init__(parent.spaces, parent.space_dims, parent.references.take(self.indices))
+
+  def sample(self, ischeme: str, degree: int) -> Sample:
+    return self.parent.sample(ischeme, degree).take_elements(self.indices)
 
 class TransformChainsTopology(Topology):
   'base class for topologies with transform chains'
