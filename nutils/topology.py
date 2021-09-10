@@ -291,6 +291,32 @@ class Topology(types.Singleton):
       raise KeyError(item)
     return topo
 
+  def __and__(self, other: Any) -> 'Topology':
+    if not isinstance(other, Topology):
+      return NotImplemented
+    elif self.spaces != other.spaces or self.space_dims != other.space_dims or self.ndims != other.ndims:
+      raise ValueError('The topologies must have the same spaces and dimensions.')
+    elif not self or not other:
+      return self.empty_like()
+    else:
+      return NotImplemented
+
+  __rand__ = __and__
+
+  def __or__(self, other: Any) -> 'Topology':
+    if not isinstance(other, Topology):
+      return NotImplemented
+    elif self.spaces != other.spaces or self.space_dims != other.space_dims or self.ndims != other.ndims:
+      raise ValueError('The topologies must have the same spaces and dimensions.')
+    elif not self:
+      return other
+    elif not other:
+      return self
+    else:
+      return NotImplemented
+
+  __ror__ = __or__
+
   @property
   def border_transforms(self) -> transformseq.Transforms:
     raise NotImplementedError
@@ -985,7 +1011,7 @@ class TransformChainsTopology(Topology):
 
   def __or__(self, other):
     if not isinstance(other, TransformChainsTopology) or other.space != self.space and other.ndims != self.ndims:
-      return NotImplemented
+      return super().__or__(other)
     return other if not self \
       else self if not other \
       else NotImplemented if isinstance(other, UnionTopology) \
@@ -995,7 +1021,7 @@ class TransformChainsTopology(Topology):
 
   def __and__(self, other):
     if not isinstance(other, TransformChainsTopology) or other.space != self.space:
-      return NotImplemented
+      return super().__and__(other)
     keep_self = numpy.array(list(map(other.transforms.contains_with_tail, self.transforms)), dtype=bool)
     if keep_self.all():
       return self
