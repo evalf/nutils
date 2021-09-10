@@ -35,19 +35,9 @@ def apply(chain, points):
     points = trans.apply(points)
   return points
 
-def n_ascending(chain):
-  # number of ascending transform items counting from root (0). this is a
-  # temporary hack required to deal with Bifurcate/Slice; as soon as we have
-  # proper tensorial topologies we can switch back to strictly ascending
-  # transformation chains.
-  for n, trans in enumerate(chain):
-    if trans.todims is not None and trans.todims < trans.fromdims:
-      return n
-  return len(chain)
-
 def canonical(chain):
   # keep at lowest ndims possible; this is the required form for bisection
-  n = n_ascending(chain)
+  n = len(chain)
   if n < 2:
     return tuple(chain)
   items = list(chain)
@@ -63,7 +53,7 @@ def canonical(chain):
 
 def uppermost(chain):
   # bring to highest ndims possible
-  n = n_ascending(chain)
+  n = len(chain)
   if n < 2:
     return tuple(chain)
   items = list(chain)
