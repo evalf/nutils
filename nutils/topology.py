@@ -831,24 +831,6 @@ class EmptyTopology(Topology):
   def __rsub__(self, other):
     return other
 
-class Point(Topology):
-  'point'
-
-  __slots__ = ()
-
-  @types.aspreprocessor
-  @types.apply_annotations
-  def _preprocess_init(self, trans:transform.stricttransform, opposite:transform.stricttransform=None):
-    return (self, trans, trans if opposite is None else opposite), {}
-
-  @_preprocess_init
-  def __init__(self, trans, opposite):
-    assert trans[-1].fromdims == 0
-    references = References.uniform(element.getsimplex(0), 1)
-    transforms = transformseq.PlainTransforms((trans,), 0)
-    opposites = transforms if opposite is None else transformseq.PlainTransforms((opposite,), 0)
-    super().__init__(references, transforms, opposites)
-
 def StructuredLine(root:transform.stricttransformitem, i:types.strictint, j:types.strictint, periodic:bool=False, bnames:types.tuple[types.strictstr]=None):
   if bnames is None:
     bnames = '_structured_line_dummy_boundary_left', '_structured_line_dummy_boundary_right'
