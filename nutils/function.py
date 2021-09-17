@@ -2506,7 +2506,12 @@ def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
   geom = Array.cast(__geom)
   if __ndims is not None:
     warnings.deprecation('the ndims argument is deprecated')
-  return _Jacobian(geom)
+  if geom.ndim == 0:
+    return jacobian(insertaxis(geom, 0, 1))
+  elif geom.ndim > 1:
+    return jacobian(ravel(geom, geom.ndim-2))
+  else:
+    return _Jacobian(geom)
 
 def J(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
   '''Return the absolute value of the determinant of the Jacobian matrix of the given geometry.
