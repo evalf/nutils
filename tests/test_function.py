@@ -1352,3 +1352,68 @@ class StructuredBasis2D(CommonBasis, TestCase):
     self.checkdofs = [[0,1,3,4],[1,2,4,5],[3,4,6,7],[4,5,7,8]]
     self.checkndofs = 9
     super().setUp()
+
+@parametrize
+class SurfaceGradient(TestCase):
+
+  K = 3 # mean curvature
+
+  def setUp(self):
+    if self.boundary:
+      if self.etype == 'cube':
+        topo, (x, y, z) = mesh.rectilinear([1,2,3])
+        self.u = x * y * (2-y) * z * (3-z)
+      else:
+        topo, (x, y) = mesh.unitsquare(nelems=2, etype=self.etype)
+        self.u = x * y * (1-y)
+      self.manifold = topo.boundary['right']
+    else:
+      if self.etype == 'line':
+        self.manifold, y = mesh.line(2)
+        self.u = y * (2-y)
+      else:
+        self.manifold, (y, z) = mesh.unitsquare(nelems=2, etype=self.etype)
+        self.u = y * (1-y) * z * (1-z)
+      x = 1
+    # geometry describes a circle/sphere with curvature K
+    self.geom = (x/self.K) * function.stack(
+           (function.cos(y), function.sin(y)) if self.manifold.ndims == 1
+      else (function.cos(y), function.sin(y) * function.cos(z), function.sin(y) * function.sin(z)))
+    self.normal = function.normal(self.geom, exterior=not self.boundary)
+
+  @property
+  def P(self):
+    n = len(self.normal)
+    return function.eye(n) - self.normal[:,numpy.newaxis] * self.normal
+
+  def test_grad_u(self):
+    grad = function.surfgrad(self.u, self.geom)
+    if self.boundary: # test the entire vector
+      expect = (self.P * function.grad(self.u, self.geom)).sum(-1)
+      self.assertAllAlmostEqual(*self.manifold.sample('uniform', 2).eval([grad, expect]))
+    else: # test that vector is tangent to the manifold
+      ngrad = (grad * self.normal).sum(-1)
+      self.assertAllAlmostEqual(self.manifold.sample('uniform', 2).eval(ngrad), 0)
+
+  def test_grad_x(self):
+    P = function.surfgrad(self.geom, self.geom)
+    self.assertAllAlmostEqual(*self.manifold.sample('uniform', 2).eval([P, self.P]))
+
+  def test_div_n(self):
+    # https://en.wikipedia.org/wiki/Mean_curvature#Surfaces_in_3D_space
+    K = function.div(self.normal, self.geom, -1) / self.manifold.ndims
+    self.assertAllAlmostEqual(self.manifold.sample('uniform', 2).eval(K), self.K)
+
+  def test_stokes(self):
+    # https://en.wikipedia.org/wiki/Laplace%E2%80%93Beltrami_operator#Formal_self-adjointness
+    grad = function.surfgrad(self.u, self.geom)
+    lapl = function.laplace(self.u, self.geom, -1)
+    J = function.J(self.geom)
+    self.assertAlmostEqual(*self.manifold.integrate([function.dot(grad, grad) * J, -self.u * lapl * J], degree=9))
+
+SurfaceGradient(boundary=False, etype='line')
+SurfaceGradient(boundary=False, etype='square')
+SurfaceGradient(boundary=False, etype='triangle')
+SurfaceGradient(boundary=True, etype='square')
+SurfaceGradient(boundary=True, etype='triangle')
+SurfaceGradient(boundary=True, etype='cube')
