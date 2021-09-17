@@ -2526,11 +2526,7 @@ def _d1(arg: IntoArray, var: IntoArray) -> Array:
 def d(__arg: IntoArray, *vars: IntoArray) -> Array:
   return functools.reduce(_d1, vars, Array.cast(__arg))
 
-def _surfgrad1(arg: IntoArray, geom: IntoArray) -> Array:
-  geom = Array.cast(geom)
-  return grad(arg, geom, len(geom)-1)
-
-def surfgrad(__arg: IntoArray, *vars: IntoArray) -> Array:
+def surfgrad(__arg: IntoArray, geom: IntoArray) -> Array:
   '''Return the surface gradient of the argument to the given geometry.
 
   Parameters
@@ -2542,7 +2538,7 @@ def surfgrad(__arg: IntoArray, *vars: IntoArray) -> Array:
   :class:`Array`
   '''
 
-  return functools.reduce(_surfgrad1, vars, Array.cast(__arg))
+  return grad(__arg, geom, -1)
 
 def curvature(__geom: IntoArray, ndims: int = -1) -> Array:
   '''Return the curvature of the given geometry.
