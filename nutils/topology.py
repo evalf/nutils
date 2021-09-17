@@ -206,7 +206,7 @@ class Topology(types.Singleton):
     ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
     funcs = (1,)+funcs
     if geometry is not None:
-      funcs = [func * function.J(geometry, self.ndims) for func in funcs]
+      funcs = [func * function.J(geometry) for func in funcs]
     area, *integrals = self.integrate_elementwise(funcs, ischeme=ischeme, degree=degree, **kwargs)
     return [integral / area[(slice(None),)+(_,)*(integral.ndim-1)] for integral in integrals]
 
@@ -266,7 +266,7 @@ class Topology(types.Singleton):
       else:
         raise Exception
       assert fun2.ndim == 0
-      J = function.J(geometry, self.ndims)
+      J = function.J(geometry)
       A, b, f2, area = self.integrate([Afun*J,bfun*J,fun2*J,J], ischeme=ischeme, edit=edit, arguments=arguments)
       N = A.rowsupp(droptol)
       if numpy.equal(b, 0).all():
@@ -290,7 +290,7 @@ class Topology(types.Singleton):
         afun = function.norm2(onto)
       else:
         raise Exception
-      J = function.J(geometry, self.ndims)
+      J = function.J(geometry)
       u, scale = self.integrate([ufun*J, afun*J], ischeme=ischeme, edit=edit, arguments=arguments)
       N = ~constrain.where & (scale > droptol)
       constrain[N] = u[N] / scale[N]
@@ -398,7 +398,7 @@ class Topology(types.Singleton):
 
   @log.withcontext
   def volume(self, geometry, ischeme='gauss', degree=1, *, arguments=None):
-    return self.integrate(function.J(geometry, self.ndims), ischeme=ischeme, degree=degree, arguments=arguments)
+    return self.integrate(function.J(geometry), ischeme=ischeme, degree=degree, arguments=arguments)
 
   @log.withcontext
   def check_boundary(self, geometry, elemwise=False, ischeme='gauss', degree=1, tol=1e-15, print=print, *, arguments=None):
@@ -406,7 +406,7 @@ class Topology(types.Singleton):
       for ref in self.references:
         ref.check_edges(tol=tol, print=print)
     volume = self.volume(geometry, ischeme=ischeme, degree=degree, arguments=arguments)
-    J = function.J(geometry, self.ndims-1)
+    J = function.J(geometry)
     zeros, volumes = self.boundary.integrate([geometry.normal()*J, geometry*geometry.normal()*J], ischeme=ischeme, degree=degree, arguments=arguments)
     if numpy.greater(abs(zeros), tol).any():
       print('divergence check failed: {} != 0'.format(zeros))

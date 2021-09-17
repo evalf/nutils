@@ -2495,13 +2495,8 @@ def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
 
   Parameters
   ----------
-  arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-      The array.
   geom : :class:`Array` or something that can be :meth:`~Array.cast` into one
-      The geometry. This must be a 1-D array.
-  axis : :class:`int`
-      The axis of ``arg`` along which the inner product should be performed.
-      Defaults to the last axis.
+      The geometry.
 
   Returns
   -------
@@ -2509,7 +2504,8 @@ def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
   '''
 
   geom = Array.cast(__geom)
-  # TODO: check `__ndims` with `ndims` argument passed to `lower`.
+  if __ndims is not None:
+    warnings.deprecation('the ndims argument is deprecated')
   return _Jacobian(geom)
 
 def J(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:

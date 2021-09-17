@@ -742,7 +742,7 @@ class jacobian(TestCase):
     arg = function.Argument('dofs', [4])
     self.v = self.basis.dot(arg)
     self.X = (self.geom[numpy.newaxis,:] * [[0,1],[-self.v,0]]).sum(-1) # X_i = <x_1, -2 x_0>_i
-    self.J = function.J(self.X, 2)
+    self.J = function.J(self.X)
     self.dJ = function.derivative(self.J, arg)
 
   def test_shape(self):
