@@ -74,7 +74,7 @@ class Common:
       if self.checkfromdims > 0:
         for etrans in ref.edge_transforms:
           for shuffle in lambda t: t, nutils.transform.canonical:
-            self.assertEqual(self.seq.index_with_tail(shuffle(trans+(ctrans,))), (i, (ctrans,)))
+            self.assertEqual(self.seq.index_with_tail(shuffle(trans+(etrans,))), (i, (etrans,)))
 
   def test_index_with_tail_missing(self):
     for trans in self.checkmissing:
