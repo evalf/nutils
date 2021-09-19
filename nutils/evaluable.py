@@ -3719,6 +3719,7 @@ class LoopConcatenateCombined(Evaluable):
   def __init__(self, funcdatas:types.tuple[asarrays], index_name:types.strictstr, length:asindex):
     self._funcdatas = funcdatas
     self._funcs = tuple(func for func, start, stop, *shape in funcdatas)
+    self._index_name = index_name
     self._index = loop_index(index_name, length)
     if any(not func.ndim for func in self._funcs):
       raise ValueError('expected an array with at least one axis')
@@ -3737,7 +3738,7 @@ class LoopConcatenateCombined(Evaluable):
   def evalf(self, shapes, length, *args):
     serialized = self._serialized
     results = [parallel.shempty(tuple(map(int, shape)), dtype=func.dtype) for func, shape in zip(self._funcs, shapes)]
-    with parallel.ctxrange('loop', int(length)) as indices:
+    with parallel.ctxrange('loop {}'.format(self._index_name), int(length)) as indices:
       for index in indices:
         values = [numpy.array(index)]
         values.extend(args)
