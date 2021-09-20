@@ -345,54 +345,6 @@ class EmptyLike(Reference):
   def inside(self, point, eps=0):
     return False
 
-class RevolutionReference(Reference):
-  'modify gauss integration to always return a single point'
-
-  __slots__ = ()
-  __cache__ = 'getpoints',
-
-  def __init__(self):
-    super().__init__(ndims=1)
-
-  @property
-  def vertices(self):
-    return types.frozenarray([[0.]])
-
-  @property
-  def edge_transforms(self): # only used in check_edges
-    return transform.Updim(numpy.zeros((1,0)), [-numpy.pi], isflipped=True), transform.Updim(numpy.zeros((1,0)), [+numpy.pi], isflipped=False)
-
-  @property
-  def edge_refs(self): # idem edge_transforms
-    return PointReference(), PointReference()
-
-  @property
-  def child_transforms(self):
-    return transform.Identity(1),
-
-  @property
-  def child_refs(self):
-    return self,
-
-  @property
-  def simplices(self):
-    return (transform.Identity(self.ndims), self),
-
-  def getpoints(self, ischeme, degree):
-    return points.CoordsWeightsPoints([[0.]], [2 * numpy.pi])
-
-  def inside(self, point, eps=0):
-    return True
-
-  def nvertices_by_level(self, n):
-    return 1
-
-  def child_divide(self, vals, n):
-    return vals,
-
-  def get_poly_coeffs(self, basis, **kwargs):
-    return types.frozenarray([[1.]]) # single, constant basis function
-
 class SimplexReference(Reference):
   'simplex reference'
 

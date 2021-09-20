@@ -62,10 +62,10 @@ class trimmedboundary(TestCase):
     self.domain2 = self.domain1.refined_by(filter(self.domain1.transforms.contains, self.domain0[:,1:].transforms))
 
   def test_boundary_length(self):
-    self.assertEqual(self.domain2.boundary.integrate(function.J(self.geom), ischeme='gauss1'), 6 if self.gridline else 6.5)
+    self.assertAlmostEqual(self.domain2.boundary.integrate(function.J(self.geom), ischeme='gauss1'), 6 if self.gridline else 6.5)
 
   def test_trimmed_boundary_length(self):
-    self.assertEqual(self.domain2.boundary['trimmed'].integrate(function.J(self.geom), ischeme='gauss1'), 2)
+    self.assertAlmostEqual(self.domain2.boundary['trimmed'].integrate(function.J(self.geom), ischeme='gauss1'), 2)
 
   @parametrize.enable_if(lambda gridline, **params: gridline)
   def test_trimmed_boundary(self):
@@ -197,15 +197,9 @@ class cutdomain(TestCase):
 
   def setUp(self):
     super().setUp()
-    domain, geom = mesh.rectilinear((numpy.linspace(0,1,self.nelems+1),)*3)
-    if self.ndims == 3:
-      self.domain = domain
-      self.geom = geom
-    elif self.ndims == 2: # create a 3d boundary instead of a plain 2d domain for added complexity
-      self.domain = domain.boundary['back']
-      self.geom = geom[:2]
-    else:
+    if self.ndims not in (2, 3):
       raise Exception('invalid dimension: ndims={}'.format(self.ndims))
+    self.domain, self.geom = mesh.rectilinear((numpy.linspace(0,1,self.nelems+1),)*self.ndims)
     self.radius = numpy.sqrt(.5)
     levelset = self.radius**2 - (self.geom**2).sum(-1)
     self.pos = self.domain.trim(levelset=levelset, maxrefine=self.maxrefine)
@@ -407,5 +401,5 @@ class partialtrim(TestCase):
     # the base implementation should create the correct boundary topology but
     # without interface opposites and without the trimmed group
     for topo in self.topoA, self.topoB:
-      alttopo = topology.ConnectedTopology(topo.references, topo.transforms, topo.opposites, topo.connectivity)
+      alttopo = topology.ConnectedTopology(topo.space, topo.references, topo.transforms, topo.opposites, topo.connectivity)
       self.assertEqual(dict(zip(alttopo.boundary.transforms, alttopo.boundary.references)), dict(zip(topo.boundary.transforms, topo.boundary.references)))

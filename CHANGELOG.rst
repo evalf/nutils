@@ -9,6 +9,24 @@ features in inverse chronological order.
 New in v7.0 (in development)
 ----------------------------
 
+- Changed: bifurcate has been replaced by spaces
+
+  In the past using functions on products of :class:`~nutils.topology.Topology`
+  instances required using ``function.bifurcate``. This has been replaced by
+  the concept of 'spaces'. Every topology is defined in a space, identified by
+  a name (:class:`str`). Functions defined on some topology are considered
+  constant on other topologies (defined on other spaces).
+
+  If you want to multiply two topologies, you have to make sure that the
+  topologies have different spaces, e.g. via the ``space`` parameter of
+  :func:`nutils.mesh.rectilinear`. Example:
+
+  >>> from nutils import mesh, function
+  >>> Xtopo, x = mesh.rectilinear([4], space='X')
+  >>> Ytopo, y = mesh.rectilinear([2], space='Y')
+  >>> topo = Xtopo * Ytopo
+  >>> geom = function.concatenate([x, y])
+
 - Changed: function.Array shape must be constant
 
   Resulting from to the function/evaluable split introduced in #574, variable
@@ -830,7 +848,7 @@ Release date: `2018-02-05 <https://github.com/evalf/nutils/releases/tag/v3.0>`_.
 - New: circular symmetry
 
   Any topology can be revolved using the new
-  :func:`nutils.topology.Topology.revolved` method, which interprets the
+  ``nutils.topology.Topology.revolved`` method, which interprets the
   first geometry dimension as a radius and replaces it by two new
   dimensions, shifting the remaining axes backward. In addition to the
   modified topology and geometry, simplifying function is returned as

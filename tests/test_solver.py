@@ -53,7 +53,7 @@ class navierstokes(TestCase):
     domain, geom = mesh.rectilinear([numpy.linspace(0,1,9)] * 2)
     gauss = domain.sample('gauss', 5)
     uin = geom[1] * (1-geom[1])
-    dx = function.J(geom, 2)
+    dx = function.J(geom)
     ubasis = domain.basis('std', degree=2)
     pbasis = domain.basis('std', degree=1)
     if self.single:

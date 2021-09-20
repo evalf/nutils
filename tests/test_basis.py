@@ -103,18 +103,11 @@ class sparsity(TestCase):
 for ndim in 1, 2:
   sparsity(ndim=ndim)
 
-@parametrize
 class structured(basisTest):
 
   def setUp(self):
     super().setUp()
-    if not self.product:
-      self.domain, self.geom = mesh.rectilinear([2,3])
-    else:
-      domain1, geom1 = mesh.rectilinear([2])
-      domain2, geom2 = mesh.rectilinear([3])
-      self.domain = domain1 * domain2
-      self.geom = function.concatenate(function.bifurcate(geom1, geom2), axis=0)
+    self.domain, self.geom = mesh.rectilinear([2,3])
 
   def test_std_equalorder(self):
     for p in range(1, 3):
@@ -181,9 +174,6 @@ class structured(basisTest):
     self.assertPartitionOfUnity(topo=self.domain, basis=basis)
     self.assertPolynomial(topo=self.domain, geom=self.geom, basis=basis, degree=2)
 
-structured(product=False)
-structured(product=True)
-
 @parametrize
 class structured_line(basisTest):
 
@@ -191,6 +181,7 @@ class structured_line(basisTest):
     super().setUp()
     verts = numpy.linspace(0, 1, self.nelems+1)
     self.domain, self.geom = mesh.line(verts, periodic=self.periodic)
+    self.geom = self.geom[None]
     self.basis = self.domain.basis(self.btype, degree=self.degree)
 
   @parametrize.enable_if(lambda btype, **params: btype != 'discont')
@@ -267,17 +258,18 @@ class unstructured_topology(TestCase):
       nverts = 25
     elif self.variant == 'tensor':
       structured, geom = mesh.rectilinear([numpy.linspace(0, 1, 5-i) for i in range(self.ndims)])
-      domain = topology.ConnectedTopology(structured.references, structured.transforms, structured.opposites, structured.connectivity)
+      domain = topology.ConnectedTopology(structured.space, structured.references, structured.transforms, structured.opposites, structured.connectivity)
       nverts = numpy.product([5-i for i in range(self.ndims)])
     elif self.variant == 'simplex':
       numpy.random.seed(0)
       nverts = 20
       simplices = numeric.overlapping(numpy.arange(nverts), n=self.ndims+1)
       coords = numpy.random.normal(size=(nverts, self.ndims))
+      space = 'test'
       root = transform.Identifier(self.ndims, 'test')
-      transforms = transformseq.PlainTransforms([(root, transform.Square((c[1:]-c[0]).T, c[0])) for c in coords[simplices]], self.ndims)
-      domain = topology.SimplexTopology(simplices, transforms, transforms)
-      geom = function.rootcoords(self.ndims)
+      transforms = transformseq.PlainTransforms([(root, transform.Square((c[1:]-c[0]).T, c[0])) for c in coords[simplices]], self.ndims, self.ndims)
+      domain = topology.SimplexTopology(space, simplices, transforms, transforms)
+      geom = function.rootcoords(space, self.ndims)
     else:
       raise NotImplementedError
     self.domain = domain

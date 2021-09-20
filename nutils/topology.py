@@ -38,135 +38,315 @@ from . import element, function, evaluable, util, parallel, numeric, cache, tran
 from .sample import Sample
 from .elementseq import References
 from .pointsseq import PointsSequence
-import numpy, functools, collections.abc, itertools, functools, operator, numbers, pathlib, abc, treelog as log
+from typing import Any, FrozenSet, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
+import numpy, functools, collections.abc, itertools, functools, operator, numbers, pathlib, abc, treelog as log, os
 _ = numpy.newaxis
 
 _identity = lambda x: x
+_strictspace = types.strictstr
+_ArgDict = Mapping[str, numpy.ndarray]
 
 class Topology(types.Singleton):
-  'topology base class'
+  '''topology base class
 
-  __slots__ = 'references', 'transforms', 'opposites', 'ndims'
-  __cache__ = 'border_transforms', 'boundary', 'interfaces'
+  Parameters
+  ----------
+  spaces : :class:`tuple` of :class:`str`
+      The unique, ordered list of spaces on which this topology is defined.
+  space_dims : :class:`tuple` of :class:`int`
+      The dimension of each space in :attr:`spaces`.
+  references : :class:`nutils.elementseq.References`
+      The references.
 
-  @types.apply_annotations
-  def __init__(self, references:types.strict[References], transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms):
-    assert references.ndims == opposites.fromdims == transforms.fromdims
-    assert len(references) == len(transforms) == len(opposites)
+  Attributes
+  ----------
+  spaces : :class:`tuple` of :class:`str`
+      The unique, ordered list of spaces on which this topology is defined.
+  space_dims : :class:`tuple` of :class:`int`
+      The dimension of each space in :attr:`spaces`.
+  references : :class:`nutils.elementseq.References`
+      The references.
+  ndims : :class:`int`
+      The dimension of this topology.
+  '''
+
+  __slots__ = 'spaces', 'space_dims', 'references', 'ndims'
+
+  @staticmethod
+  def empty(spaces: Iterable[str], space_dims: Iterable[int], ndims: int) -> 'Topology':
+    '''Return an empty topology.
+
+    Parameters
+    ----------
+    spaces : :class:`tuple` of :class:`str`
+        The unique, ordered list of spaces on which the empty topology is defined.
+    space_dims : :class:`tuple` of :class:`int`
+        The dimension of each space in :attr:`spaces`.
+    ndims : :class:`int`
+        The dimension of the empty topology.
+
+    Returns
+    -------
+    :class:`Topology`
+        The empty topology.
+
+    See Also
+    --------
+    :meth:`empty_like` : create an empty topology with spaces and dimension copied from another topology
+    '''
+
+    return _Empty(tuple(spaces), tuple(space_dims), ndims)
+
+  def empty_like(self) -> 'Topology':
+    '''Return an empty topology with the same spaces and dimensions as this topology.
+
+    Returns
+    -------
+    :class:`Topology`
+        The empty topology.
+
+    See Also
+    --------
+    :meth:`empty_like` : create an empty topology with custom spaces and dimension
+    '''
+
+    return Topology.empty(self.spaces, self.space_dims, self.ndims)
+
+  def disjoint_union(*topos: 'Topology') -> 'Topology':
+    '''Return the union of the given disjoint topologies.
+
+    Parameters
+    ----------
+    *topos : :class:`Topology`
+        The disjoint parts.
+
+    Returns
+    -------
+    :class:`Topology`
+        The union.
+    '''
+
+    if len(topos) == 0:
+      raise ValueError('Cannot take the disjoint union of zero topologies. \
+                        Suggestion: include an empty topology (see \
+                        `Topology.empty_like`).')
+    empty = Topology.empty_like(topos[0])
+    if not all(topo.spaces == empty.spaces and topo.space_dims == empty.space_dims and topo.ndims == empty.ndims for topo in topos):
+      raise ValueError('The topologies must have the same spaces and dimensions.')
+    unempty = tuple(filter(None, topos))
+    if unempty:
+      return functools.reduce(_DisjointUnion, unempty)
+    else:
+      return empty
+
+  def __init__(self, spaces: Tuple[str, ...], space_dims: Tuple[int, ...], references: References) -> None:
+    self.spaces = spaces
+    self.space_dims = space_dims
     self.references = references
-    self.transforms = transforms
-    self.opposites = opposites
-    self.ndims = transforms.fromdims
+    self.ndims = references.ndims
     super().__init__()
 
-  def __str__(self):
+  def __str__(self) -> str:
     'string representation'
 
     return '{}(#{})'.format(self.__class__.__name__, len(self))
 
-  def __len__(self):
+  def __len__(self) -> int:
     return len(self.references)
 
-  def getitem(self, item):
-    return EmptyTopology(self.ndims)
+  def get_groups(self, *groups: str) -> 'Topology':
+    '''Return the union of the given groups.
 
-  def __getitem__(self, item):
-    if numeric.isintarray(item):
-      item = types.frozenarray(item)
-      return Topology(self.references[item], self.transforms[item], self.opposites[item])
-    if not isinstance(item, tuple):
-      item = item,
-    if all(it in (...,slice(None)) for it in item):
-      return self
-    topo = self.getitem(item) if len(item) != 1 or not isinstance(item[0],str) \
-       else functools.reduce(operator.or_, map(self.getitem, item[0].split(',')), EmptyTopology(self.ndims))
+    Parameters
+    ----------
+    *groups : :class:`str`
+        The identifiers of the groups.
+
+    Returns
+    -------
+    :class:`Topology`
+        The union of the given groups.
+    '''
+
+    return self.empty_like()
+
+  def take(self, __indices: Union[numpy.ndarray, Sequence[int]]) -> 'Topology':
+    '''Return the selected elements as a disconnected topology.
+
+    The indices refer to the raveled list of elements in this topology. The
+    indices are treated as a set: duplicate indices are silently ignored and
+    the returned elements have the same order as in this topology.
+
+    Parameters
+    ----------
+    indices : integer :class:`numpy.ndarray` or similar
+        The one-dimensional array of element indices.
+
+    Returns
+    -------
+    :class:`Topology`
+        The selected elements.
+
+    See Also
+    --------
+    :meth:`compress` : select elements using a mask
+    '''
+
+    indices = numpy.asarray(__indices)
+    if indices.ndim != 1:
+      raise ValueError('expected a one-dimensional array')
+    if not indices.size:
+      return self.empty_like()
+    indices = numpy.unique(indices.astype(int, casting='same_kind'))
+    if indices[0] < 0 or indices[-1] >= len(self):
+      raise IndexError('element index out of range')
+    return self.take_unchecked(indices)
+
+  def take_unchecked(self, __indices: numpy.ndarray) -> 'Topology':
+    return _Take(self, types.arraydata(__indices))
+
+  def compress(self, __mask: Union[numpy.ndarray, Sequence[bool]]) -> 'Topology':
+    '''Return the selected elements as a disconnected topology.
+
+    The mask refers to the raveled list of elements in this topology.
+
+    Parameters
+    ----------
+    mask : boolean :class:`numpy.ndarray` or similar
+        The one-dimensional array of elements to select.
+
+    Returns
+    -------
+    :class:`Topology`
+        The selected elements.
+
+    See Also
+    --------
+    :meth:`take` : select elements by index
+    '''
+
+    mask = numpy.asarray(__mask)
+    if mask.ndim != 1:
+      raise ValueError('expected a one-dimensional array')
+    if len(mask) != len(self):
+      raise ValueError('length of mask does not match number of elements')
+    indices, = numpy.where(__mask)
+    if len(indices):
+      return self.take_unchecked(indices)
+    else:
+      return self.empty_like()
+
+  def slice(self, __s: slice, __idim: int) -> 'Topology':
+    '''Return a slice of the given dimension index.
+
+    Parameters
+    ----------
+    s : :class:`slice`
+        The slice.
+    idim : :class:`int`
+        The dimension index.
+
+    Returns
+    -------
+    :class:`Topology`
+        The slice.
+    '''
+
+    if not 0 <= __idim < self.ndims:
+      raise IndexError('dimension index out of range')
+    return self.slice_unchecked(__s, __idim)
+
+  def slice_unchecked(self, __s: slice, __idim: int) -> 'Topology':
+    raise ValueError('cannot slice an unstructured topology')
+
+  def __getitem__(self, item: Any) -> 'Topology':
+    if isinstance(item, str):
+      topo = self.get_groups(*item.split(','))
+    elif isinstance(item, Sequence) and all(isinstance(i, str) for i in item):
+      topo = self.get_groups(*item) if item else self
+    elif isinstance(item, slice):
+      if item == slice(None):
+        return self
+      else:
+        return self.slice(item, 0)
+    elif isinstance(item, Sequence) and all(i == ... or isinstance(i, slice) for i in item):
+      if ... in item:
+        item = list(item)
+        i = item.index(...)
+        if ... in item[i+1:]:
+          raise ValueError('only one ellipsis is allowed')
+        item[i:i+1] = [slice(None)] * max(0, self.ndims - len(item) + 1)
+      if len(item) > self.ndims:
+        raise ValueError('too many indices: topology is {}-dimension, but {} were indexed'.format(self.ndims, len(item)))
+      topo = self
+      for idim, indices in enumerate(item):
+        if indices != slice(None):
+          topo = topo.slice(indices, idim)
+      return topo
+    elif numeric.isintarray(item) and item.ndim == 1 or isinstance(item, Sequence) and all(isinstance(i, int) for i in item):
+      return self.take(item)
+    else:
+      raise NotImplementedError
     if not topo:
       raise KeyError(item)
     return topo
 
-  def __invert__(self):
-    return OppositeTopology(self)
+  def __mul__(self, other: Any) -> 'Topology':
+    if isinstance(other, Topology):
+      return _Mul(self, other)
+    else:
+      return NotImplemented
 
-  def __or__(self, other):
-    assert isinstance(other, Topology) and other.ndims == self.ndims
-    return other if not self \
-      else self if not other \
-      else NotImplemented if isinstance(other, UnionTopology) \
-      else UnionTopology((self,other))
+  def __and__(self, other: Any) -> 'Topology':
+    if not isinstance(other, Topology):
+      return NotImplemented
+    elif self.spaces != other.spaces or self.space_dims != other.space_dims or self.ndims != other.ndims:
+      raise ValueError('The topologies must have the same spaces and dimensions.')
+    elif not self or not other:
+      return self.empty_like()
+    else:
+      return NotImplemented
 
-  __ror__ = lambda self, other: self.__or__(other)
+  __rand__ = __and__
 
-  def __and__(self, other):
-    keep_self = numpy.array(list(map(other.transforms.contains_with_tail, self.transforms)), dtype=bool)
-    if keep_self.all():
-      return self
-    keep_other = numpy.array(list(map(self.transforms.contains_with_tail, other.transforms)), dtype=bool)
-    if keep_other.all():
+  def __or__(self, other: Any) -> 'Topology':
+    if not isinstance(other, Topology):
+      return NotImplemented
+    elif self.spaces != other.spaces or self.space_dims != other.space_dims or self.ndims != other.ndims:
+      raise ValueError('The topologies must have the same spaces and dimensions.')
+    elif not self:
       return other
-    ind_self = types.frozenarray(keep_self.nonzero()[0], copy=False)
-    ind_other = types.frozenarray([i for i, trans in enumerate(other.transforms) if keep_other[i] and not self.transforms.contains(trans)], dtype=int)
-    # The last condition is to avoid duplicate elements. Note that we could
-    # have reused the result of an earlier lookup to avoid a new (using index
-    # instead of contains) but we choose to trade some speed for simplicity.
-    references = self.references.take(ind_self).chain(other.references.take(ind_other))
-    transforms = transformseq.chain([self.transforms[ind_self], other.transforms[ind_other]], self.ndims)
-    opposites = transformseq.chain([self.opposites[ind_self], other.opposites[ind_other]], self.ndims)
-    return Topology(references, transforms, opposites)
+    elif not other:
+      return self
+    else:
+      return NotImplemented
 
-  __rand__ = lambda self, other: self.__and__(other)
-
-  def __add__(self, other):
-    return self | other
-
-  def __sub__(self, other):
-    assert isinstance(other, Topology) and other.ndims == self.ndims
-    return other.__rsub__(self)
-
-  def __rsub__(self, other):
-    assert isinstance(other, Topology) and other.ndims == self.ndims
-    return other - other.subset(self, newboundary=getattr(self,'boundary',None))
-
-  def __mul__(self, other):
-    return ProductTopology(self, other)
+  __ror__ = __or__
 
   @property
-  def border_transforms(self):
-    indices = set()
-    for btrans in self.boundary.transforms:
-      try:
-        ielem, tail = self.transforms.index_with_tail(btrans)
-      except ValueError:
-        pass
-      else:
-        indices.add(ielem)
-    return self.transforms[numpy.array(sorted(indices), dtype=int)]
+  def border_transforms(self) -> transformseq.Transforms:
+    raise NotImplementedError
 
   @property
-  def refine_iter(self):
+  def refine_iter(self) -> 'Topology':
     topo = self
     while True:
       yield topo
       topo = topo.refined
 
   @property
-  def _index_coords(self):
-    index = function.transforms_index(self.transforms)
-    coords = function.transforms_coords(self.transforms, self.ndims)
-    return index, coords
-
-  @property
-  def f_index(self):
+  def f_index(self) -> function.Array:
     '''The evaluable index of the element in this topology.'''
 
-    return self._index_coords[0]
+    raise NotImplementedError
 
   @property
-  def f_coords(self):
+  def f_coords(self) -> function.Array:
     '''The evaluable element local coordinates.'''
 
-    return self._index_coords[1]
+    raise NotImplementedError
 
-  def basis(self, name, *args, **kwargs):
+  def basis(self, name: str, *args, **kwargs) -> function.Basis:
     '''
     Create a basis.
     '''
@@ -180,18 +360,13 @@ class Topology(types.Singleton):
     f = getattr(self, 'basis_' + name)
     return f(*args, **kwargs)
 
-  def sample(self, ischeme, degree):
+  def sample(self, ischeme: str, degree: int) -> Sample:
     'Create sample.'
 
-    points = PointsSequence.from_iter((ischeme(reference, degree) for reference in self.references), self.ndims) if callable(ischeme) \
-        else self.references.getpoints(ischeme, degree)
-    transforms = self.transforms,
-    if len(self.transforms) == 0 or self.opposites != self.transforms:
-      transforms += self.opposites,
-    return Sample.new(transforms, points)
+    raise NotImplementedError
 
   @util.single_or_multiple
-  def integrate_elementwise(self, funcs, *, degree, asfunction=False, ischeme='gauss', arguments=None):
+  def integrate_elementwise(self, funcs: Iterable[function.Array], *, degree: int, asfunction: bool = False, ischeme: str = 'gauss', arguments: Optional[_ArgDict] = None) -> Union[List[numpy.ndarray], List[function.Array]]:
     'element-wise integration'
 
     retvals = [sparse.toarray(retval) for retval in self.sample(ischeme, degree).integrate_sparse(
@@ -202,16 +377,16 @@ class Topology(types.Singleton):
       return retvals
 
   @util.single_or_multiple
-  def elem_mean(self, funcs, geometry=None, ischeme='gauss', degree=None, **kwargs):
+  def elem_mean(self, funcs: Iterable[function.Array], geometry: Optional[function.Array] = None, ischeme: str = 'gauss', degree: Optional[int] = None, **kwargs) -> List[numpy.ndarray]:
     ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
     funcs = (1,)+funcs
     if geometry is not None:
-      funcs = [func * function.J(geometry, self.ndims) for func in funcs]
+      funcs = [func * function.J(geometry) for func in funcs]
     area, *integrals = self.integrate_elementwise(funcs, ischeme=ischeme, degree=degree, **kwargs)
     return [integral / area[(slice(None),)+(_,)*(integral.ndim-1)] for integral in integrals]
 
   @util.single_or_multiple
-  def integrate(self, funcs, ischeme='gauss', degree=None, edit=None, *, arguments=None, title='integrate'):
+  def integrate(self, funcs: Iterable[function.IntoArray], ischeme: str = 'gauss', degree: Optional[int] = None, edit=None, *, arguments: Optional[_ArgDict] = None) -> Tuple[numpy.ndarray, ...]:
     'integrate functions'
 
     ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
@@ -219,7 +394,7 @@ class Topology(types.Singleton):
       funcs = [edit(func) for func in funcs]
     return self.sample(ischeme, degree).integrate(funcs, **arguments or {})
 
-  def integral(self, func, ischeme='gauss', degree=None, edit=None):
+  def integral(self, func: function.IntoArray, ischeme: str = 'gauss', degree: Optional[int] = None, edit=None) -> function.Array:
     'integral'
 
     ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
@@ -227,14 +402,14 @@ class Topology(types.Singleton):
       funcs = edit(func)
     return self.sample(ischeme, degree).integral(func)
 
-  def projection(self, fun, onto, geometry, **kwargs):
+  def projection(self, fun: function.Array, onto: function.Array, geometry: function.Array, **kwargs) -> function.Array:
     'project and return as function'
 
     weights = self.project(fun, onto, geometry, **kwargs)
     return onto.dot(weights)
 
   @log.withcontext
-  def project(self, fun, onto, geometry, ischeme='gauss', degree=None, droptol=1e-12, exact_boundaries=False, constrain=None, verify=None, ptype='lsqr', edit=None, *, arguments=None, **solverargs):
+  def project(self, fun: function.Array, onto: function.Array, geometry: function.Array, ischeme: str = 'gauss', degree: Optional[int] = None, droptol: float = 1e-12, exact_boundaries: bool = False, constrain=None, verify=None, ptype='lsqr', edit=None, *, arguments: Optional[_ArgDict] = None, **solverargs) -> numpy.ndarray:
     'L2 projection of function onto function space'
 
     log.debug('projection type:', ptype)
@@ -266,7 +441,7 @@ class Topology(types.Singleton):
       else:
         raise Exception
       assert fun2.ndim == 0
-      J = function.J(geometry, self.ndims)
+      J = function.J(geometry)
       A, b, f2, area = self.integrate([Afun*J,bfun*J,fun2*J,J], ischeme=ischeme, edit=edit, arguments=arguments)
       N = A.rowsupp(droptol)
       if numpy.equal(b, 0).all():
@@ -290,7 +465,7 @@ class Topology(types.Singleton):
         afun = function.norm2(onto)
       else:
         raise Exception
-      J = function.J(geometry, self.ndims)
+      J = function.J(geometry)
       u, scale = self.integrate([ufun*J, afun*J], ischeme=ischeme, edit=edit, arguments=arguments)
       N = ~constrain.where & (scale > droptol)
       constrain[N] = u[N] / scale[N]
@@ -314,115 +489,205 @@ class Topology(types.Singleton):
 
     return constrain
 
-  def refined_by(self, refine):
+  def refined_by(self, refine: Iterable[int]) -> 'Topology':
     'create refined space by refining dofs in existing one'
 
-    return HierarchicalTopology(self, [numpy.arange(len(self))]).refined_by(refine)
+    raise NotImplementedError
 
   @property
-  def refined(self):
-    return RefinedTopology(self)
+  def refined(self) -> 'Topology':
+    return self.refine_spaces(self.spaces)
 
-  def refine(self, n):
-    'refine entire topology n times'
+  def refine(self, __arg: Union[int, Iterable[str], Mapping[str, int]]) -> 'Topology':
+    '''Return the refined topology.
 
-    if numpy.iterable(n):
-      assert len(n) == self.ndims
-      assert all(ni == n[0] for ni in n)
-      n = n[0]
-    return self if n <= 0 else self.refined.refine(n-1)
+    If the argument is an :class:`int`, then this method behaves like
+    :meth:`refine_count`. If the argument is a sequence of :class:`str`, then
+    this method behaves like :meth:`refine_spaces`. If the argument is a
+    dictionary of :class:`str` and :class:`int`, then this method behaves like
+    :meth:`refine_spaces_count`.
 
-  def trim(self, levelset, maxrefine, ndivisions=8, name='trimmed', leveltopo=None, *, arguments=None):
+    Returns
+    -------
+    :class:`Topology`
+        The refined topology.
+
+    See Also
+    --------
+    :meth:`refine_count` : refine a topology the given amount times
+    :meth:`refine_spaces` : refine the given spaces of the topology
+    :meth:`refine_spaces_count` : refine the given spaces the given amount times
+    '''
+
+    if isinstance(__arg, int):
+      return self.refine_count(__arg)
+    elif isinstance(__arg, Mapping):
+      return self.refine_spaces_count(__arg)
+    elif isinstance(__arg, Iterable):
+      return self.refine_spaces(__arg)
+    else:
+      raise ValueError
+
+  def refine_count(self, count: int) -> 'Topology':
+    '''Return the topology refined `count` times.
+
+    Parameters
+    ----------
+    count : :class:`int`
+        The number of times to refine. `count` is allowed to be zero, in which
+        case the original topology is returned, but not negative.
+
+    Returns
+    -------
+    :class:`Topology`
+        The refined topology.
+
+    See Also
+    --------
+    :meth:`refine_spaces` : refine the given spaces of the topology
+    :meth:`refine_spaces_count` : refine the given spaces the given amount times
+    '''
+
+    if count < 0:
+      raise ValueError('Negative counts are invalid.')
+    topo = self
+    for i in range(count):
+      topo = topo.refined
+    return topo
+
+  def refine_spaces(self, __spaces: Iterable[str]) -> 'Topology':
+    '''Return the topology with the given spaces refined once.
+
+    Parameters
+    ----------
+    spaces : iterable of :class:`str`
+        The spaces to refine. It is an error to specify spaces that do not
+        exist in this topology. It is allowed to specify no spaces, in which
+        case the original topology is returned.
+
+    Returns
+    -------
+    :class:`Topology`
+        The refined topology.
+
+    See Also
+    --------
+    :meth:`refine_count` : refine a topology the given amount times
+    :meth:`refine_spaces_count` : refine the given spaces the given amount times
+    '''
+
+    spaces = frozenset(__spaces)
+    for space in sorted(spaces):
+      if space not in self.spaces:
+        raise ValueError('This topology does not have space {}.'.format(space))
+    return self.refine_spaces_unchecked(spaces)
+
+  def refine_spaces_unchecked(self, __spaces: FrozenSet[str]) -> 'Topology':
+    '''Return the topology with the given spaces refined once.
+
+    Parameters
+    ----------
+    spaces : iterable of :class:`str`
+        The spaces to refine. It is an error to specify spaces that do not
+        exist in this topology. It is allowed to specify no spaces, in which
+        case the original topology is returned.
+
+    Returns
+    -------
+    :class:`Topology`
+        The refined topology.
+
+    Notes
+    -----
+    This method does not check the validity of the arguments. Use
+    :meth:`refine_spaces` instead unless you're absolutely sure what you are
+    doing.
+    '''
+
+    raise NotImplementedError
+
+  def refine_spaces_count(self, count: Mapping[str, int]) -> 'Topology':
+    '''Return the topology with the given spaces refined the given amount times.
+
+    Parameters
+    ----------
+    spaces : mapping of :class:`str` to :class:`int`
+        The spaces to refine together with the count. It is an error to specify
+        spaces that do not exist in this topology. It is allowed to specify no
+        spaces, in which case the original topology is returned.
+
+    Returns
+    -------
+    :class:`Topology`
+        The refined topology.
+
+    See Also
+    --------
+    :meth:`refine_count` : refine a topology the given amount times
+    :meth:`refine_spaces` : refine the given spaces of the topology
+    '''
+
+    if not all(n >= 0 for n in count.values()):
+      raise ValueError('Negative counts are invalid.')
+    topo = self
+    for i in itertools.count():
+      spaces = tuple(space for space, n in count.items() if n > i)
+      if not spaces:
+        break
+      topo = topo.refine_spaces(spaces)
+    return topo
+
+  def trim(self, levelset: function.Array, maxrefine: int, ndivisions: int = 8, name: str = 'trimmed', leveltopo: Optional['Topology'] = None, *, arguments: Optional[_ArgDict] = None) -> 'Topology':
     'trim element along levelset'
 
-    if arguments is None:
-      arguments = {}
+    raise NotImplementedError
 
-    refs = []
-    if leveltopo is None:
-      ielem_arg = evaluable.Argument('_trim_index', (), dtype=int)
-      coordinates = self.references.getpoints('vertex', maxrefine).get_evaluable_coords(ielem_arg)
-      levelset = levelset.lower(points_shape=coordinates.shape[:-1], transform_chains=(evaluable.TransformChainFromSequence(self.transforms, ielem_arg), evaluable.TransformChainFromSequence(self.opposites, ielem_arg)), coordinates=(coordinates,)*2).optimized_for_numpy
-      with log.iter.percentage('trimming', range(len(self)), self.references) as items:
-        for ielem, ref in items:
-          levels = levelset.eval(_trim_index=ielem, **arguments)
-          refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
-    else:
-      log.info('collecting leveltopo elements')
-      coordinates = evaluable.Points(evaluable.NPoints(), self.ndims)
-      levelset = levelset.lower(points_shape=coordinates.shape[:-1], transform_chains=(evaluable.SelectChain(0), evaluable.SelectChain(1)), coordinates=(coordinates,)*2).optimized_for_numpy
-      bins = [set() for ielem in range(len(self))]
-      for trans in leveltopo.transforms:
-        ielem, tail = self.transforms.index_with_tail(trans)
-        bins[ielem].add(tail)
-      fcache = cache.WrapperCache()
-      with log.iter.percentage('trimming', self.references, self.transforms, bins) as items:
-        for ref, trans, ctransforms in items:
-          levels = numpy.empty(ref.nvertices_by_level(maxrefine))
-          cover = list(fcache[ref.vertex_cover](frozenset(ctransforms), maxrefine))
-          # confirm cover and greedily optimize order
-          mask = numpy.ones(len(levels), dtype=bool)
-          while mask.any():
-            imax = numpy.argmax([mask[indices].sum() for tail, points, indices in cover])
-            tail, points, indices = cover.pop(imax)
-            levels[indices] = levelset.eval(_transforms=(trans + tail,), _points=points, **arguments)
-            mask[indices] = False
-          refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
-      log.debug('cache', fcache.stats)
-    return SubsetTopology(self, refs, newboundary=name)
-
-  def subset(self, topo, newboundary=None, strict=False):
+  def subset(self, topo: 'Topology', newboundary: Optional[Union[str, 'Topology']] = None, strict: bool = False) -> 'Topology':
     'intersection'
-    refs = [ref.empty for ref in self.references]
-    for ref, trans in zip(topo.references, topo.transforms):
-      try:
-        ielem = self.transforms.index(trans)
-      except ValueError:
-        assert not strict, 'elements do not form a strict subset'
-      else:
-        subref = self.references[ielem] & ref
-        if strict:
-          assert subref == ref, 'elements do not form a strict subset'
-        refs[ielem] = subref
-    if not any(refs):
-      return EmptyTopology(self.ndims)
-    return SubsetTopology(self, refs, newboundary)
 
-  def withgroups(self, vgroups={}, bgroups={}, igroups={}, pgroups={}):
-    return WithGroupsTopology(self, vgroups, bgroups, igroups, pgroups) if vgroups or bgroups or igroups or pgroups else self
+    raise NotImplementedError
 
-  withsubdomain  = lambda self, **kwargs: self.withgroups(vgroups=kwargs)
-  withboundary   = lambda self, **kwargs: self.withgroups(bgroups=kwargs)
-  withinterfaces = lambda self, **kwargs: self.withgroups(igroups=kwargs)
-  withpoints     = lambda self, **kwargs: self.withgroups(pgroups=kwargs)
+  def withgroups(self, vgroups: Mapping[str, Union[str, 'Topology']] = {}, bgroups: Mapping[str, Union[str, 'Topology']] = {}, igroups: Mapping[str, Union[str, 'Topology']] = {}, pgroups: Mapping[str, Union[str, 'Topology']] = {}) -> 'Topology':
+    if all(isinstance(v, str) for g in (vgroups, bgroups, igroups) for v in g.values()) and not pgroups:
+      return _WithGroupAliases(self, types.frozendict(vgroups), types.frozendict(bgroups), types.frozendict(igroups))
+    else:
+      raise NotImplementedError
+
+  def withsubdomain(self, **kwargs: 'Topology') -> 'Topology':
+    return self.withgroups(vgroups=kwargs)
+
+  def withboundary(self, **kwargs: 'Topology') -> 'Topology':
+    return self.withgroups(bgroups=kwargs)
+
+  def withinterfaces(self, **kwargs: 'Topology') -> 'Topology':
+    return self.withgroups(igroups=kwargs)
+
+  def withpoints(self, **kwargs: 'Topology') -> 'Topology':
+    return self.withgroups(pgroups=kwargs)
 
   @log.withcontext
-  def volume(self, geometry, ischeme='gauss', degree=1, *, arguments=None):
-    return self.integrate(function.J(geometry, self.ndims), ischeme=ischeme, degree=degree, arguments=arguments)
+  def volume(self, geometry: function.Array, ischeme: str = 'gauss', degree: int = 1, *, arguments: Optional[_ArgDict] = None) -> numpy.ndarray:
+    return self.integrate(function.J(geometry), ischeme=ischeme, degree=degree, arguments=arguments)
 
   @log.withcontext
-  def check_boundary(self, geometry, elemwise=False, ischeme='gauss', degree=1, tol=1e-15, print=print, *, arguments=None):
+  def check_boundary(self, geometry: function.Array, elemwise: bool = False, ischeme: str = 'gauss', degree: int = 1, tol: float = 1e-15, print=print, *, arguments: Optional[_ArgDict] = None) -> None:
     if elemwise:
       for ref in self.references:
         ref.check_edges(tol=tol, print=print)
     volume = self.volume(geometry, ischeme=ischeme, degree=degree, arguments=arguments)
-    J = function.J(geometry, self.ndims-1)
+    J = function.J(geometry)
     zeros, volumes = self.boundary.integrate([geometry.normal()*J, geometry*geometry.normal()*J], ischeme=ischeme, degree=degree, arguments=arguments)
     if numpy.greater(abs(zeros), tol).any():
       print('divergence check failed: {} != 0'.format(zeros))
     if numpy.greater(abs(volumes - volume), tol).any():
       print('divergence check failed: {} != {}'.format(volumes, volume))
 
-  def indicator(self, subtopo):
+  def indicator(self, subtopo: Union[str, 'Topology']) -> 'Topology':
     '''Create an indicator function for a subtopology.'''
 
-    if isinstance(subtopo, str):
-      subtopo = self[subtopo]
-    values = numpy.zeros([len(self)], dtype=int)
-    values[numpy.fromiter(map(self.transforms.index, subtopo.transforms), dtype=int)] = 1
-    return function.get(values, 0, self.f_index)
+    raise NotImplementedError
 
-  def select(self, indicator, ischeme='bezier2', **kwargs):
+  def select(self, indicator: function.Array, ischeme: str = 'bezier2', **kwargs: numpy.ndarray) -> 'Topology':
     # Select elements where `indicator` is strict positive at any of the
     # integration points defined by `ischeme`. We sample `indicator > 0`
     # together with the element index (`self.f_index`) and keep all indices
@@ -432,8 +697,7 @@ class Topology(types.Singleton):
     selected = types.frozenarray(numpy.unique(ielem[isactive]))
     return self[selected]
 
-  @log.withcontext
-  def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None):
+  def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None) -> Sample:
     '''Create a sample based on physical coordinates.
 
     In a finite element application, functions are commonly evaluated in points
@@ -487,6 +751,732 @@ class Topology(types.Singleton):
     located : :class:`nutils.sample.Sample`
     '''
 
+    raise NotImplementedError
+
+  @property
+  def boundary(self) -> 'Topology':
+    '''
+    :class:`Topology`:
+      The boundary of this topology.
+    '''
+
+    return self.boundary_spaces(self.spaces)
+
+  def boundary_spaces(self, __spaces: Iterable[str]) -> 'Topology':
+    '''Return the boundary in the given spaces.
+
+    Parameters
+    ----------
+    spaces : iterable of :class:`str`
+        Nonstrict subset of :attr:`spaces`. Duplicates are silently ignored.
+
+    Returns
+    -------
+    :class:`Topology`
+        The boundary in the given spaces.
+
+    Raises
+    ------
+    :class:`ValueError`
+        If the topology is 0D or the set of spaces is empty or not a subset of :attr:`spaces`.
+    '''
+
+    spaces = frozenset(__spaces)
+    for space in sorted(spaces):
+      if space not in self.spaces:
+        raise ValueError('This topology does not have space {}.'.format(space))
+    if self.ndims == 0 or sum(self.space_dims[self.spaces.index(space)] for space in spaces) == 0:
+      raise ValueError('A 0D topology has no boundary.')
+    return self.boundary_spaces_unchecked(spaces)
+
+  def boundary_spaces_unchecked(self, __spaces: FrozenSet[str]) -> 'Topology':
+    '''Return the boundary in the given spaces.
+
+    The topology must be at least one-dimensional.
+
+    Parameters
+    ----------
+    spaces : :class:`frozenset` of :class:`str`
+        Unempty, nonstrict subset of :attr:`spaces`.
+
+    Returns
+    -------
+    :class:`Topology`
+        The boundary in the given spaces.
+
+    Notes
+    -----
+    This method does not check the validity of the arguments or the dimension
+    of the topology. Use :meth:`boundary_spaces` instead unless you're
+    absolutely sure what you are doing.
+    '''
+
+    raise NotImplementedError
+
+  @property
+  def interfaces(self) -> 'Topology':
+    return self.interfaces_spaces(self.spaces)
+
+  def interfaces_spaces(self, __spaces: Iterable[str]) -> 'Topology':
+    '''Return the interfaces in the given spaces.
+
+    Parameters
+    ----------
+    spaces : iterable of :class:`str`
+        Nonstrict subset of :attr:`spaces`. Duplicates are silently ignored.
+
+    Returns
+    -------
+    :class:`Topology`
+        The interfaces in the given spaces.
+
+    Raises
+    ------
+    :class:`ValueError`
+        If the topology is 0D or the set of spaces is empty or not a subset of :attr:`spaces`.
+    '''
+
+    spaces = frozenset(__spaces)
+    for space in sorted(spaces):
+      if space not in self.spaces:
+        raise ValueError('This topology does not have space {}.'.format(space))
+    if self.ndims == 0 or sum(self.space_dims[self.spaces.index(space)] for space in spaces) == 0:
+      raise ValueError('A 0D topology has no interfaces.')
+    return self.interfaces_spaces_unchecked(spaces)
+
+  def interfaces_spaces_unchecked(self, __spaces: FrozenSet[str]) -> 'Topology':
+    '''Return the interfaces in the given spaces.
+
+    The topology must be at least one-dimensional.
+
+    Parameters
+    ----------
+    spaces : :class:`frozenset` of :class:`str`
+        Unempty, nonstrict subset of :attr:`spaces`.
+
+    Returns
+    -------
+    :class:`Topology`
+        The interfaces in the given spaces.
+
+    Notes
+    -----
+    This method does not check the validity of the arguments or the dimension
+    of the topology. Use :meth:`interfaces_spaces` instead unless you're
+    absolutely sure what you are doing.
+    '''
+
+    raise NotImplementedError
+
+  def basis_discont(self, degree: int) -> function.Basis:
+    'discontinuous shape functions'
+
+    assert numeric.isint(degree) and degree >= 0
+    if self.references.isuniform:
+      coeffs = [self.references[0].get_poly_coeffs('bernstein', degree=degree)]*len(self.references)
+    else:
+      coeffs = [ref.get_poly_coeffs('bernstein', degree=degree) for ref in self.references]
+    return function.DiscontBasis(coeffs, self.f_index, self.f_coords)
+
+if os.environ.get('NUTILS_TENSORIAL', None) == 'test': # pragma: nocover
+
+  from unittest import SkipTest
+
+  class _TensorialTopology(Topology):
+
+    def take_unchecked(self, __indices: numpy.ndarray) -> Topology:
+      raise SkipTest('`{}` does not implement `Topology.take_unchecked`'.format(type(self).__qualname__))
+
+    def __and__(self, other: Any) -> Topology:
+      result = super().__and__(other)
+      if type(self) == type(other) and result is NotImplemented:
+        raise SkipTest('`{}` does not implement `Topology.__and__`'.format(type(self).__qualname__))
+      return result
+
+    def __rand__(self, other: Any) -> Topology:
+      result = super().__and__(other)
+      if result is NotImplemented:
+        raise SkipTest('`{}` does not implement `Topology.__and__`'.format(type(self).__qualname__))
+      return result
+
+    def __sub__(self, other: Any) -> Topology:
+      if type(self) == type(other):
+        raise SkipTest('`{}` does not implement `Topology.__sub__`'.format(type(self).__qualname__))
+      else:
+        return NotImplemented
+
+    def __rsub__(self, other: Any) -> Topology:
+      if isinstance(other, Topology):
+        raise SkipTest('`{}` does not implement `Topology.__sub__`'.format(type(self).__qualname__))
+      else:
+        return NotImplemented
+
+    @property
+    def space(self) -> str:
+      raise SkipTest('`{}` does not implement `Topology.space`'.format(type(self).__qualname__))
+
+    @property
+    def transforms(self) -> transformseq.Transforms:
+      raise SkipTest('`{}` does not implement `Topology.transforms`'.format(type(self).__qualname__))
+
+    @property
+    def opposites(self) -> transformseq.Transforms:
+      raise SkipTest('`{}` does not implement `Topology.opposites`'.format(type(self).__qualname__))
+
+    @property
+    def border_transforms(self) -> transformseq.Transforms:
+      raise SkipTest('`{}` does not implement `Topology.border_transforms`'.format(type(self).__qualname__))
+
+    @property
+    def f_index(self) -> function.Array:
+      raise SkipTest('`{}` does not implement `Topology.f_index`'.format(type(self).__qualname__))
+
+    @property
+    def f_coords(self) -> function.Array:
+      raise SkipTest('`{}` does not implement `Topology.f_coords`'.format(type(self).__qualname__))
+
+    def refined_by(self, refine: Iterable[int]) -> Topology:
+      raise SkipTest('`{}` does not implement `Topology.refined_by`'.format(type(self).__qualname__))
+
+    def trim(self, levelset: function.Array, maxrefine: int, ndivisions: int = 8, name: str = 'trimmed', leveltopo: Optional[Topology] = None, *, arguments: Optional[_ArgDict] = None) -> Topology:
+      raise SkipTest('`{}` does not implement `Topology.trim`'.format(type(self).__qualname__))
+
+    def subset(self, topo: Topology, newboundary: Optional[Union[str, Topology]] = None, strict: bool = False) -> Topology:
+      raise SkipTest('`{}` does not implement `Topology.subset`'.format(type(self).__qualname__))
+
+    def withgroups(self, vgroups: Mapping[str, Union[str, Topology]] = {}, bgroups: Mapping[str, Union[str, Topology]] = {}, igroups: Mapping[str, Union[str, Topology]] = {}, pgroups: Mapping[str, Union[str, Topology]] = {}) -> Topology:
+      try:
+        return super().withgroups(vgroups, bgroups, igroups, pgroups)
+      except NotImplementedError:
+        raise SkipTest('`{}` does not implement `Topology.withgroups`'.format(type(self).__qualname__))
+
+    def indicator(self, subtopo: Union[str, Topology]) -> Topology:
+      raise SkipTest('`{}` does not implement `Topology.indicator`'.format(type(self).__qualname__))
+
+    def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None) -> Sample:
+      raise SkipTest('`{}` does not implement `Topology.locate`'.format(type(self).__qualname__))
+
+else:
+  _TensorialTopology = Topology
+
+class _EmptyUnlowerable(function.Array):
+
+  def lower(self, points_shape, transform_chains, coordinates) -> evaluable.Array:
+    raise ValueError('cannot lower')
+
+class _Empty(_TensorialTopology):
+
+  def __init__(self, spaces: Tuple[str, ...], space_dims: Tuple[int, ...], ndims: int) -> None:
+    super().__init__(spaces, space_dims, References.empty(ndims))
+
+  def __invert__(self) -> Topology:
+    return self
+
+  @property
+  def connectivity(self) -> Sequence[Sequence[int]]:
+    return tuple()
+
+  def indicator(self, subtopo: Union[str, Topology]) -> Topology:
+    return function.zeros((), int)
+
+  @property
+  def f_index(self) -> function.Array:
+    return _EmptyUnlowerable((), int, self.spaces)
+
+  @property
+  def f_coords(self) -> function.Array:
+    return _EmptyUnlowerable((self.ndims,), float, self.spaces)
+
+  def refine_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
+    return self
+
+  def boundary_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
+    return _Empty(self.spaces, self.space_dims, self.ndims - 1)
+
+  def interfaces_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
+    return _Empty(self.spaces, self.space_dims, self.ndims - 1)
+
+  def basis_std(self, degree: int, *args, **kwargs) -> function.Array:
+    return function.zeros((0,))
+
+  basis_spline = basis_std
+
+  def sample(self, ischeme: str, degree: int) -> Sample:
+    return Sample.empty(self.spaces, self.ndims)
+
+class _DisjointUnion(_TensorialTopology):
+
+  def __init__(self, topo1: Topology, topo2: Topology) -> None:
+    if topo1.spaces != topo2.spaces or topo1.space_dims != topo2.space_dims or topo1.ndims != topo2.ndims:
+      raise ValueError('The topologies must have the same spaces and dimensions.')
+    self.topo1 = topo1
+    self.topo2 = topo2
+    super().__init__(topo1.spaces, topo1.space_dims, topo1.references + topo2.references)
+
+  def __invert__(self) -> Topology:
+    return Topology.disjoint_union(~self.topo1, ~self.topo2)
+
+  def __and__(self, other: Any) -> Topology:
+    if not isinstance(other, Topology):
+      return NotImplemented
+    elif self.spaces != other.spaces or self.space_dims != other.space_dims or self.ndims != other.ndims:
+      raise ValueError('The topologies must have the same spaces and dimensions.')
+    else:
+      return Topology.disjoint_union(self.topo1 & other, self.topo2 & other)
+
+  __rand__ = __and__
+
+  @property
+  def connectivity(self) -> Sequence[Sequence[int]]:
+    o = len(self.topo1)
+    return tuple(self.topo1.connectivity) + tuple(tuple(-1 if n < 0 else n + o for n in N) for N in self.topo2.connectivity)
+
+  def get_groups(self, *groups: str) -> Topology:
+    return Topology.disjoint_union(self.topo1.get_groups(*groups), self.topo2.get_groups(*groups))
+
+  def take_unchecked(self, __indices: numpy.ndarray) -> Topology:
+    nelems1 = len(self.topo1)
+    split = numpy.searchsorted(__indices, nelems1)
+    topo1 = self.topo1.take_unchecked(__indices[:split]) if split else self.topo1.empty_like()
+    topo2 = self.topo2.take_unchecked(__indices[split:] - nelems1) if split < len(__indices) else self.topo2.empty_like()
+    return Topology.disjoint_union(topo1, topo2)
+
+  def refine_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
+    return Topology.disjoint_union(self.topo1.refine_spaces(spaces), self.topo2.refine_spaces(spaces))
+
+  def boundary_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
+    return Topology.disjoint_union(self.topo1.boundary_spaces(spaces), self.topo2.boundary_spaces(spaces))
+
+  def interfaces_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
+    return Topology.disjoint_union(self.topo1.interfaces_spaces(spaces), self.topo2.interfaces_spaces(spaces))
+
+  @util.single_or_multiple
+  def integrate_elementwise(self, funcs: Iterable[function.Array], *, degree: int, asfunction: bool = False, ischeme: str = 'gauss', arguments: Optional[_ArgDict] = None) -> Union[List[numpy.ndarray], List[function.Array]]:
+    return list(map(numpy.concatenate, zip(*(topo.integrate_elementwise(funcs, degree=degree, ischeme=ischeme, arguments=arguments) for topo in (self.topo1, self.topo2)))))
+
+  def sample(self, ischeme: str, degree: int) -> Sample:
+    return self.topo1.sample(ischeme, degree) + self.topo2.sample(ischeme, degree)
+
+  def trim(self, levelset: function.Array, maxrefine: int, ndivisions: int = 8, name: str = 'trimmed', leveltopo: Optional[Topology] = None, *, arguments: Optional[_ArgDict] = None) -> Topology:
+    if leveltopo is not None:
+      return super().trim(levelset, maxrefine, ndivisions, name, leveltopo, arguments=arguments)
+    else:
+      topo1 = self.topo1.trim(levelset, maxrefine, ndivisions, name, arguments=arguments)
+      topo2 = self.topo2.trim(levelset, maxrefine, ndivisions, name, arguments=arguments)
+      return Topology.disjoint_union(topo1, topo2)
+
+  def select(self, indicator: function.Array, ischeme: str = 'bezier2', **kwargs: numpy.ndarray) -> Topology:
+    topo1 = self.topo1.select(indicator, ischeme, **kwargs)
+    topo2 = self.topo2.select(indicator, ischeme, **kwargs)
+    return Topology.disjoint_union(topo1, topo2)
+
+class _Mul(_TensorialTopology):
+
+  def __init__(self, topo1: Topology, topo2: Topology) -> None:
+    if not set(topo1.spaces).isdisjoint(topo2.spaces):
+      raise ValueError('Cannot multiply two topologies (partially) defined on the same spaces.')
+    self.topo1 = topo1
+    self.topo2 = topo2
+    super().__init__(topo1.spaces + topo2.spaces, topo1.space_dims + topo2.space_dims, topo1.references * topo2.references)
+
+  def __invert__(self) -> Topology:
+    return ~self.topo1 * ~self.topo2
+
+  @property
+  def f_index(self) -> function.Array:
+    return self.topo1.f_index * len(self.topo2) + self.topo2.f_index
+
+  @property
+  def f_coords(self) -> function.Array:
+    return function.concatenate([self.topo1.f_coords, self.topo2.f_coords])
+
+  @property
+  def connectivity(self) -> Sequence[Sequence[int]]:
+    connectivity1 = self.topo1.connectivity
+    connectivity2 = self.topo2.connectivity
+    s = len(self.topo2)
+    return tuple(tuple(-1 if n1 < 0 else n1 * s + i2 for n1 in N1) + tuple(-1 if n2 < 0 else i1 * s + n2 for n2 in N2) for i1, N1 in enumerate(connectivity1) for i2, N2 in enumerate(connectivity2))
+
+  def get_groups(self, *groups: str) -> Topology:
+    subtopo1 = self.topo1.get_groups(*groups)
+    subtopo2 = self.topo2.get_groups(*groups)
+    if subtopo1 and subtopo2:
+      raise NotImplementedError
+    elif subtopo1:
+      return subtopo1 * self.topo2
+    elif subtopo2:
+      return self.topo1 * subtopo2
+    else:
+      return self.empty_like()
+
+  def slice_unchecked(self, indices: slice, idim: int) -> Topology:
+    if idim < self.topo1.ndims:
+      return self.topo1.slice_unchecked(indices, idim) * self.topo2
+    else:
+      return self.topo1 * self.topo2.slice_unchecked(indices, idim - self.topo1.ndims)
+
+  def indicator(self, subtopo: Union[str, Topology]) -> Topology:
+    if isinstance(subtopo, str):
+      groups = subtopo.split(',')
+      hassub1 = bool(self.topo1.get_groups(*groups))
+      hassub2 = bool(self.topo2.get_groups(*groups))
+      if hassub1 and hassub2:
+        raise NotImplementedError
+      elif hassub1:
+        return self.topo1.indicator(subtopo)
+      elif hassub2:
+        return self.topo2.indicator(subtopo)
+      else:
+        return function.zeros((), int)
+    else:
+      return super().indicator(subtopo)
+
+  def refine_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
+    return self.topo1.refine_spaces(spaces & frozenset(self.topo1.spaces)) * self.topo2.refine_spaces(spaces & frozenset(self.topo2.spaces))
+
+  def boundary_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
+    spaces1 = spaces & frozenset(self.topo1.spaces)
+    spaces2 = spaces & frozenset(self.topo2.spaces)
+    boundaries = []
+    if self.topo2.ndims and spaces2 or not spaces1:
+      boundaries.append(self.topo1 * self.topo2.boundary_spaces(spaces2))
+    if self.topo1.ndims and spaces1 or not spaces2:
+      boundaries.append(self.topo1.boundary_spaces(spaces1) * self.topo2)
+    return Topology.disjoint_union(*boundaries)
+
+  def interfaces_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
+    spaces1 = spaces & frozenset(self.topo1.spaces)
+    spaces2 = spaces & frozenset(self.topo2.spaces)
+    interfaces = []
+    if self.topo2.ndims and spaces2 or not spaces1:
+      interfaces.append(self.topo1 * self.topo2.interfaces_spaces(spaces2))
+    if self.topo1.ndims and spaces1 or not spaces2:
+      interfaces.append(self.topo1.interfaces_spaces(spaces1) * self.topo2)
+    return Topology.disjoint_union(*interfaces)
+
+  def basis(self, name: str, degree: Union[int, Sequence[int]], **kwargs) -> function.Basis:
+    kwargs['degree'] = degree
+    kwargs1 = {}
+    kwargs2 = {}
+
+    for attr in 'degree', 'continuity':
+      val = kwargs.pop(attr, None)
+      if val is None:
+        pass
+      elif isinstance(val, int):
+        kwargs1[attr] = kwargs2[attr] = val
+      elif isinstance(val, Sequence) and all(isinstance(v, int) for v in val):
+        if len(val) != self.ndims:
+          raise ValueError('argument `{}` must have length {} but got {}'.format(attr, self.ndims, len(val)))
+        kwargs1[attr] = val[:self.topo1.ndims]
+        kwargs2[attr] = val[self.topo1.ndims:]
+      else:
+        raise ValueError('argument `{}` must be `None`, an `int` or sequence of `int`'.format(attr))
+
+    periodic = kwargs.pop('periodic', None)
+    if periodic is None:
+      pass
+    elif isinstance(periodic, Sequence) and all(isinstance(p, int) for p in periodic):
+      kwargs1['periodic'] = tuple(p for p in periodic if p < self.topo1.ndims)
+      kwargs2['periodic'] = tuple(p - self.topo1.ndims for p in periodic if p >= self.topo1.ndims)
+    else:
+      raise ValueError('argument `periodic` must be `None` or a sequence of `int`')
+
+    for attr, typ in ('knotvalues', (int, float)), ('knotmultiplicities', int), ('removedofs', int):
+      val = kwargs.pop(attr, None)
+      if val is None:
+        pass
+      elif isinstance(val, Sequence) and all(v is None or isinstance(v, Sequence) and all(isinstance(w, typ) for w in v) for v in val):
+        if len(val) != self.ndims:
+          raise ValueError('argument `{}` must have length {} but got {}'.format(attr, self.ndims, len(val)))
+        kwargs1[attr] = val[:self.topo1.ndims]
+        kwargs2[attr] = val[self.topo1.ndims:]
+      else:
+        raise ValueError('argument `{}` must be `None`, a sequence or a sequence of sequence'.format(attr))
+
+    kwargs1.update(kwargs)
+    kwargs2.update(kwargs)
+
+    basis1 = self.topo1.basis(name, **kwargs1)
+    basis2 = self.topo2.basis(name, **kwargs2)
+    basis = function.insertaxis(basis1, 1, basis2.shape[0]) * function.insertaxis(basis2, 0, basis1.shape[0])
+    return function.ravel(basis, axis=0)
+
+  def sample(self, ischeme: str, degree: int) -> Sample:
+    return self.topo1.sample(ischeme, degree) * self.topo2.sample(ischeme, degree)
+
+class _Take(_TensorialTopology):
+
+  def __init__(self, parent: Topology, indices: types.arraydata) -> None:
+    self.parent = parent
+    self.indices = indices = numpy.asarray(indices)
+    assert indices.ndim == 1 and indices.size
+    assert numpy.greater(indices[1:], indices[:-1]).all()
+    assert 0 <= indices[0] and indices[-1] < len(self.parent)
+    super().__init__(parent.spaces, parent.space_dims, parent.references.take(self.indices))
+
+  def sample(self, ischeme: str, degree: int) -> Sample:
+    return self.parent.sample(ischeme, degree).take_elements(self.indices)
+
+class _WithGroupAliases(_TensorialTopology):
+
+  def __init__(self, parent: Topology, vgroups: Mapping[str, str] = {}, bgroups: Mapping[str, str] = {}, igroups: Mapping[str, str] = {}) -> None:
+    self.parent = parent
+    self.vgroups = vgroups
+    self.bgroups = bgroups
+    self.igroups = igroups
+    super().__init__(parent.spaces, parent.space_dims, parent.references)
+
+  def _rewrite_groups(self, groups: Iterable[str]) -> Iterator[str]:
+    for group in groups:
+      if group in self.vgroups:
+        yield from self.vgroups[group].split(',')
+      else:
+        yield group
+
+  def get_groups(self, *groups: str) -> Topology:
+    return self.parent.get_groups(*self._rewrite_groups(groups))
+
+  def take_unchecked(self, indices: numpy.ndarray) -> Topology:
+    # NOTE: the groups are gone after take
+    return self.parent.take_unchecked(indices)
+
+  def slice_unchecked(self, indices: slice, idim: int) -> Topology:
+    # NOTE: the groups are gone after take
+    return self.parent.slice_unchecked(indices, idim)
+
+  @property
+  def f_index(self) -> function.Array:
+    return self.parent.f_index
+
+  @property
+  def f_coords(self) -> function.Array:
+    return self.parent.f_coords
+
+  @property
+  def connectivity(self) -> Sequence[Sequence[int]]:
+    return self.parent.connectivity
+
+  def basis(self, name: str, *args, **kwargs) -> function.Basis:
+    return self.parent.basis(name, *args, **kwargs)
+
+  def sample(self, ischeme: str, degree: int) -> Sample:
+    return self.parent.sample(ischeme, degree)
+
+  def refine_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
+    return _WithGroupAliases(self.parent.refine_spaces(spaces), self.vgroups, self.bgroups, self.igroups)
+
+  def indicator(self, subtopo: Union[str, Topology]) -> Topology:
+    if isinstance(subtopo, str):
+      return self.parent.indicator(','.join(self._rewrite_groups(subtopo.split(','))))
+    else:
+      return super().indicator(subtopo)
+
+  def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None) -> Sample:
+    return self.parent.locate(geom, coords, tol=tol, eps=eps, maxiter=maxiter, arguments=arguments, weights=weights, maxdist=maxdist, ischeme=ischeme, scale=scale)
+
+  def boundary_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
+    return _WithGroupAliases(self.parent.boundary_spaces_unchecked(spaces), self.bgroups, types.frozendict({}), types.frozendict({}))
+
+  def interfaces_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
+    return _WithGroupAliases(self.parent.interfaces_spaces_unchecked(spaces), self.igroups, types.frozendict({}), types.frozendict({}))
+
+class TransformChainsTopology(Topology):
+  'base class for topologies with transform chains'
+
+  __slots__ = 'space', 'transforms', 'opposites'
+  __cache__ = 'border_transforms', 'boundary', 'interfaces'
+
+  @types.apply_annotations
+  def __init__(self, space:_strictspace, references:types.strict[References], transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms):
+    assert transforms.todims == opposites.todims
+    assert references.ndims == opposites.fromdims == transforms.fromdims
+    assert len(references) == len(transforms) == len(opposites)
+    self.space = space
+    self.transforms = transforms
+    self.opposites = opposites
+    super().__init__((space,), (transforms.todims,), references)
+
+  def empty_like(self) -> 'TransformChainsTopology':
+    return EmptyTopology(self.space, self.transforms.todims, self.ndims)
+
+  def get_groups(self, *groups):
+    return self.empty_like()
+
+  def take_unchecked(self, indices: numpy.ndarray) -> 'TransformChainsTopology':
+    indices = types.frozenarray(indices, dtype=int)
+    return TransformChainsTopology(self.space, self.references.take(indices), self.transforms[indices], self.opposites[indices])
+
+  def __invert__(self):
+    return OppositeTopology(self)
+
+  def __or__(self, other):
+    if not isinstance(other, TransformChainsTopology) or other.space != self.space and other.ndims != self.ndims:
+      return super().__or__(other)
+    return other if not self \
+      else self if not other \
+      else NotImplemented if isinstance(other, UnionTopology) \
+      else UnionTopology((self,other))
+
+  __ror__ = lambda self, other: self.__or__(other)
+
+  def __and__(self, other):
+    if not isinstance(other, TransformChainsTopology) or other.space != self.space:
+      return super().__and__(other)
+    keep_self = numpy.array(list(map(other.transforms.contains_with_tail, self.transforms)), dtype=bool)
+    if keep_self.all():
+      return self
+    keep_other = numpy.array(list(map(self.transforms.contains_with_tail, other.transforms)), dtype=bool)
+    if keep_other.all():
+      return other
+    ind_self = types.frozenarray(keep_self.nonzero()[0], copy=False)
+    ind_other = types.frozenarray([i for i, trans in enumerate(other.transforms) if keep_other[i] and not self.transforms.contains(trans)], dtype=int)
+    # The last condition is to avoid duplicate elements. Note that we could
+    # have reused the result of an earlier lookup to avoid a new (using index
+    # instead of contains) but we choose to trade some speed for simplicity.
+    references = self.references.take(ind_self).chain(other.references.take(ind_other))
+    transforms = transformseq.chain([self.transforms[ind_self], other.transforms[ind_other]], self.transforms.todims, self.ndims)
+    opposites = transformseq.chain([self.opposites[ind_self], other.opposites[ind_other]], self.transforms.todims, self.ndims)
+    return TransformChainsTopology(self.space, references, transforms, opposites)
+
+  __rand__ = lambda self, other: self.__and__(other)
+
+  def __add__(self, other):
+    return self | other
+
+  def __sub__(self, other):
+    assert isinstance(other, TransformChainsTopology) and other.space == self.space and other.ndims == self.ndims
+    return other.__rsub__(self)
+
+  def __rsub__(self, other):
+    assert isinstance(other, TransformChainsTopology) and other.space == self.space and other.ndims == self.ndims
+    return other - other.subset(self, newboundary=getattr(self,'boundary',None))
+
+  @property
+  def border_transforms(self):
+    indices = set()
+    for btrans in self.boundary.transforms:
+      try:
+        ielem, tail = self.transforms.index_with_tail(btrans)
+      except ValueError:
+        pass
+      else:
+        indices.add(ielem)
+    return self.transforms[numpy.array(sorted(indices), dtype=int)]
+
+  @property
+  def _index_coords(self):
+    index = function.transforms_index(self.space, self.transforms)
+    coords = function.transforms_coords(self.space, self.transforms)
+    return index, coords
+
+  @property
+  def f_index(self):
+    return self._index_coords[0]
+
+  @property
+  def f_coords(self):
+    return self._index_coords[1]
+
+  def sample(self, ischeme, degree):
+    'Create sample.'
+
+    points = PointsSequence.from_iter((ischeme(reference, degree) for reference in self.references), self.ndims) if callable(ischeme) \
+        else self.references.getpoints(ischeme, degree)
+    transforms = self.transforms,
+    if len(self.transforms) == 0 or self.opposites != self.transforms:
+      transforms += self.opposites,
+    return Sample.new(self.space, transforms, points)
+
+  def refined_by(self, refine):
+    return HierarchicalTopology(self, [numpy.arange(len(self))]).refined_by(refine)
+
+  @property
+  def refined(self):
+    return RefinedTopology(self)
+
+  def refine_spaces_unchecked(self, spaces: Iterable[str]) -> 'TransformChainsTopology':
+    # Since every `TransformChainsTopology` has exactly one space, we implement
+    # `refine_spaces` here for all subclasses and return `self.refined` if the
+    # space of this topology is in the given `spaces`. Subclasses can redefine
+    # the `refined` property.
+    if not spaces:
+      return self
+    return self.refined
+
+  def refine(self, n):
+    if numpy.iterable(n):
+      assert len(n) == self.ndims
+      assert all(ni == n[0] for ni in n)
+      n = n[0]
+    return self if n <= 0 else self.refined.refine(n-1)
+
+  def trim(self, levelset, maxrefine, ndivisions=8, name='trimmed', leveltopo=None, *, arguments=None):
+    if arguments is None:
+      arguments = {}
+
+    refs = []
+    if leveltopo is None:
+      ielem_arg = evaluable.Argument('_trim_index', (), dtype=int)
+      coordinates = self.references.getpoints('vertex', maxrefine).get_evaluable_coords(ielem_arg)
+      levelset = levelset.lower(coordinates.shape[:-1], {self.space: (self.transforms.get_evaluable(ielem_arg), self.opposites.get_evaluable(ielem_arg))}, {self.space: coordinates}).optimized_for_numpy
+      with log.iter.percentage('trimming', range(len(self)), self.references) as items:
+        for ielem, ref in items:
+          levels = levelset.eval(_trim_index=ielem, **arguments)
+          refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
+    else:
+      log.info('collecting leveltopo elements')
+      coordinates = evaluable.Points(evaluable.NPoints(), self.ndims)
+      transform_chain = transform.EvaluableTransformChain.from_argument('trans', self.transforms.todims, self.transforms.fromdims)
+      levelset = levelset.lower(coordinates.shape[:-1], {self.space: (transform_chain, transform_chain)}, {self.space: coordinates}).optimized_for_numpy
+      bins = [set() for ielem in range(len(self))]
+      for trans in leveltopo.transforms:
+        ielem, tail = self.transforms.index_with_tail(trans)
+        bins[ielem].add(tail)
+      fcache = cache.WrapperCache()
+      with log.iter.percentage('trimming', self.references, self.transforms, bins) as items:
+        for ref, trans, ctransforms in items:
+          levels = numpy.empty(ref.nvertices_by_level(maxrefine))
+          cover = list(fcache[ref.vertex_cover](frozenset(ctransforms), maxrefine))
+          # confirm cover and greedily optimize order
+          mask = numpy.ones(len(levels), dtype=bool)
+          while mask.any():
+            imax = numpy.argmax([mask[indices].sum() for tail, points, indices in cover])
+            tail, points, indices = cover.pop(imax)
+            levels[indices] = levelset.eval(trans=trans + tail, _points=points, **arguments)
+            mask[indices] = False
+          refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
+      log.debug('cache', fcache.stats)
+    return SubsetTopology(self, refs, newboundary=name)
+
+  def subset(self, topo, newboundary=None, strict=False):
+    refs = [ref.empty for ref in self.references]
+    for ref, trans in zip(topo.references, topo.transforms):
+      try:
+        ielem = self.transforms.index(trans)
+      except ValueError:
+        assert not strict, 'elements do not form a strict subset'
+      else:
+        subref = self.references[ielem] & ref
+        if strict:
+          assert subref == ref, 'elements do not form a strict subset'
+        refs[ielem] = subref
+    if not any(refs):
+      return EmptyTopology(self.space, self.transforms.todims, self.ndims)
+    return SubsetTopology(self, refs, newboundary)
+
+  def withgroups(self, vgroups={}, bgroups={}, igroups={}, pgroups={}):
+    return WithGroupsTopology(self, vgroups, bgroups, igroups, pgroups) if vgroups or bgroups or igroups or pgroups else self
+
+  def indicator(self, subtopo):
+    if isinstance(subtopo, str):
+      subtopo = self[subtopo]
+    values = numpy.zeros([len(self)], dtype=int)
+    values[numpy.fromiter(map(self.transforms.index, subtopo.transforms), dtype=int)] = 1
+    return function.get(values, 0, self.f_index)
+
+  @log.withcontext
+  def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None):
     if ischeme is not None:
       warnings.deprecation('the ischeme argument is deprecated and will be removed in future')
     if scale is not None:
@@ -505,12 +1495,7 @@ class Topology(types.Singleton):
     points = parallel.shempty((len(coords),len(geom)), dtype=float)
     _ielem = evaluable.Argument('_locate_ielem', shape=(), dtype=int)
     _point = evaluable.Argument('_locate_point', shape=(self.ndims,))
-    egeom = geom.lower(
-      points_shape=(),
-      transform_chains = (
-        evaluable.TransformChainFromSequence(self.transforms, _ielem),
-        evaluable.TransformChainFromSequence(self.opposites, _ielem)),
-      coordinates = (_point, _point))
+    egeom = geom.lower((), {self.space: (self.transforms.get_evaluable(_ielem), self.opposites.get_evaluable(_ielem))}, {self.space: _point})
     xJ = evaluable.Tuple((egeom, evaluable.derivative(egeom, _point))).simplified
     arguments = dict(arguments or ())
     with parallel.ctxrange('locating', len(coords)) as ipoints:
@@ -563,34 +1548,14 @@ class Topology(types.Singleton):
     points_ = PointsSequence.from_iter([points.CoordsPoints(coords[s]) for s in slices] if weights is None
                else [points.CoordsWeightsPoints(coords[s], weights[s]) for s in slices], self.ndims)
 
-    return Sample.new(transforms, points_, index)
+    return Sample.new(self.space, transforms, points_, index)
 
-  def revolved(self, geom):
-    '''Create revolved topology, geometry.'''
-
-    assert geom.ndim == 1
-    revdomain = self * RevolutionTopology()
-    angle = function.RevolutionAngle()
-    geom, angle = function.bifurcate(geom, angle)
-    revgeom = function.concatenate([geom[0] * function.trignormal(angle), geom[1:]])
-    simplify = _identity
-    return revdomain, revgeom, simplify
-
-  def extruded(self, geom, nelems, periodic=False, bnames=('front','back')):
-    assert geom.ndim == 1
-    root = transform.Identifier(1, 'extrude')
-    extopo = self * StructuredLine(root, i=0, j=nelems, periodic=periodic, bnames=bnames)
-    exgeom = function.concatenate(function.bifurcate(geom, function.rootcoords(1)))
-    return extopo, exgeom
+  def boundary_spaces_unchecked(self, spaces: FrozenSet[str]) -> 'TransformChainsTopology':
+    return self.boundary
 
   @property
   @log.withcontext
   def boundary(self):
-    '''
-    :class:`Topology`:
-      The boundary of this topology.
-    '''
-
     references = []
     selection = []
     iglobaledgeiter = itertools.count()
@@ -614,7 +1579,10 @@ class Topology(types.Singleton):
     else:
       references = self.references.edges[selection]
     transforms = self.transforms.edges(self.references)[selection]
-    return Topology(references, transforms, transforms)
+    return TransformChainsTopology(self.space, references, transforms, transforms)
+
+  def interfaces_spaces_unchecked(self, spaces: FrozenSet[str]) -> 'TransformChainsTopology':
+    return self.interfaces
 
   @property
   @log.withcontext
@@ -648,21 +1616,11 @@ class Topology(types.Singleton):
       references = References.from_iter(references, self.ndims-1)
     else:
       references = self.references.edges[selection]
-    return Topology(references, edges[selection], edges[oppselection])
+    return TransformChainsTopology(self.space, references, edges[selection], edges[oppselection])
 
   def basis_spline(self, degree):
     assert degree == 1
     return self.basis('std', degree)
-
-  def basis_discont(self, degree):
-    'discontinuous shape functions'
-
-    assert numeric.isint(degree) and degree >= 0
-    if self.references.isuniform:
-      coeffs = [self.references[0].get_poly_coeffs('bernstein', degree=degree)]*len(self.references)
-    else:
-      coeffs = [ref.get_poly_coeffs('bernstein', degree=degree) for ref in self.references]
-    return function.DiscontBasis(coeffs, self.f_index, self.f_coords)
 
   def _basis_c0_structured(self, name, degree):
     'C^0-continuous shape functions with lagrange stucture'
@@ -717,7 +1675,7 @@ stricttopology = types.strict[Topology]
 class LocateError(Exception):
   pass
 
-class WithGroupsTopology(Topology):
+class WithGroupsTopology(TransformChainsTopology):
   'item topology'
 
   __slots__ = 'basetopo', 'vgroups', 'bgroups', 'igroups', 'pgroups'
@@ -731,17 +1689,34 @@ class WithGroupsTopology(Topology):
     self.bgroups = bgroups
     self.igroups = igroups
     self.pgroups = pgroups
-    super().__init__(basetopo.references, basetopo.transforms, basetopo.opposites)
-    assert all(topo is Ellipsis or isinstance(topo, str) or isinstance(topo, Topology) and topo.ndims == basetopo.ndims for topo in self.vgroups.values())
+    super().__init__(basetopo.space, basetopo.references, basetopo.transforms, basetopo.opposites)
+    assert all(topo is Ellipsis or isinstance(topo, str) or isinstance(topo, TransformChainsTopology) and topo.ndims == basetopo.ndims for topo in self.vgroups.values())
 
   def __len__(self):
     return len(self.basetopo)
 
-  def getitem(self, item):
-    if isinstance(item, str) and item in self.vgroups:
-      itemtopo = self.vgroups[item]
-      return itemtopo if isinstance(itemtopo, Topology) else self.basetopo[itemtopo]
-    return self.basetopo.getitem(item)
+  def get_groups(self, *groups: str) -> TransformChainsTopology:
+    topos = []
+    basegroups = []
+    for group in groups:
+      if group in self.vgroups:
+        item = self.vgroups[group]
+        assert isinstance(item, (TransformChainsTopology, str))
+        if isinstance(item, TransformChainsTopology):
+          topos.append(item)
+        else:
+          basegroups.extend(item.split(','))
+      else:
+        basegroups.append(group)
+    if basegroups:
+      topos.append(self.basetopo.get_groups(*basegroups))
+    return functools.reduce(operator.or_, topos, self.empty_like())
+
+  def take_unchecked(self, __indices: numpy.ndarray) -> TransformChainsTopology:
+    return self.basetopo.take_unchecked(__indices)
+
+  def slice_unchecked(self, __s: slice, __idim: int) -> TransformChainsTopology:
+    return self.basetopo.slice_unchecked(__s, __idim)
 
   @property
   def border_transforms(self):
@@ -760,7 +1735,7 @@ class WithGroupsTopology(Topology):
     baseitopo = self.basetopo.interfaces
     igroups = self.igroups.copy()
     for name, topo in self.igroups.items():
-      if isinstance(topo, Topology):
+      if isinstance(topo, TransformChainsTopology):
         # last minute orientation fix
         s = []
         for transs in zip(topo.transforms, topo.opposites):
@@ -773,7 +1748,7 @@ class WithGroupsTopology(Topology):
           else:
             raise ValueError('group is not a subset of topology')
         s = types.frozenarray(tuple(sorted(s)), dtype=int)
-        igroups[name] = Topology(baseitopo.references[s], baseitopo.transforms[s], baseitopo.opposites[s])
+        igroups[name] = TransformChainsTopology(self.space, baseitopo.references[s], baseitopo.transforms[s], baseitopo.opposites[s])
     return baseitopo.withgroups(igroups)
 
   @property
@@ -794,20 +1769,26 @@ class WithGroupsTopology(Topology):
 
   @property
   def refined(self):
-    groups = [{name: topo.refined if isinstance(topo,Topology) else topo for name, topo in groups.items()} for groups in (self.vgroups,self.bgroups,self.igroups,self.pgroups)]
+    groups = [{name: topo.refined if isinstance(topo,TransformChainsTopology) else topo for name, topo in groups.items()} for groups in (self.vgroups,self.bgroups,self.igroups,self.pgroups)]
     return self.basetopo.refined.withgroups(*groups)
 
-class OppositeTopology(Topology):
+class OppositeTopology(TransformChainsTopology):
   'opposite topology'
 
   __slots__ = 'basetopo',
 
   def __init__(self, basetopo):
     self.basetopo = basetopo
-    super().__init__(basetopo.references, basetopo.opposites, basetopo.transforms)
+    super().__init__(basetopo.space, basetopo.references, basetopo.opposites, basetopo.transforms)
 
-  def getitem(self, item):
-    return ~(self.basetopo.getitem(item))
+  def get_groups(self, *groups: str) -> TransformChainsTopology:
+    return ~(self.basetopo.get_groups(*groups))
+
+  def take_unchecked(self, __indices: numpy.ndarray) -> TransformChainsTopology:
+    return ~(self.basetopo.take_unchecked(__indices))
+
+  def slice_unchecked(self, __s: slice, __idim: int) -> TransformChainsTopology:
+    return ~(self.basetopo.slice_unchecked(__s, __idim))
 
   def __len__(self):
     return len(self.basetopo)
@@ -815,53 +1796,36 @@ class OppositeTopology(Topology):
   def __invert__(self):
     return self.basetopo
 
-class EmptyTopology(Topology):
+class EmptyTopology(TransformChainsTopology):
   'empty topology'
 
   __slots__ = ()
 
   @types.apply_annotations
-  def __init__(self, ndims:types.strictint):
-    super().__init__(References.empty(ndims), transformseq.EmptyTransforms(ndims), transformseq.EmptyTransforms(ndims))
+  def __init__(self, space:_strictspace, todims: types.strictint, fromdims: types.strictint):
+    super().__init__(space, References.empty(fromdims), transformseq.EmptyTransforms(todims, fromdims), transformseq.EmptyTransforms(todims, fromdims))
 
   def __or__(self, other):
-    assert self.ndims == other.ndims
+    if self.space != other.space or self.ndims != other.ndims:
+      return NotImplemented
     return other
 
   def __rsub__(self, other):
     return other
 
-class Point(Topology):
-  'point'
-
-  __slots__ = ()
-
-  @types.aspreprocessor
-  @types.apply_annotations
-  def _preprocess_init(self, trans:transform.stricttransform, opposite:transform.stricttransform=None):
-    return (self, trans, trans if opposite is None else opposite), {}
-
-  @_preprocess_init
-  def __init__(self, trans, opposite):
-    assert trans[-1].fromdims == 0
-    references = References.uniform(element.getsimplex(0), 1)
-    transforms = transformseq.PlainTransforms((trans,), 0)
-    opposites = transforms if opposite is None else transformseq.PlainTransforms((opposite,), 0)
-    super().__init__(references, transforms, opposites)
-
-def StructuredLine(root:transform.stricttransformitem, i:types.strictint, j:types.strictint, periodic:bool=False, bnames:types.tuple[types.strictstr]=None):
+def StructuredLine(space, root:transform.stricttransformitem, i:types.strictint, j:types.strictint, periodic:bool=False, bnames:types.tuple[types.strictstr]=None):
   if bnames is None:
     bnames = '_structured_line_dummy_boundary_left', '_structured_line_dummy_boundary_right'
-  return StructuredTopology(root, axes=(transformseq.DimAxis(i,j,j if periodic else 0,periodic),), nrefine=0, bnames=(bnames,))
+  return StructuredTopology(space, root, axes=(transformseq.DimAxis(i,j,j if periodic else 0,periodic),), nrefine=0, bnames=(bnames,))
 
-class StructuredTopology(Topology):
+class StructuredTopology(TransformChainsTopology):
   'structured topology'
 
   __slots__ = 'root', 'axes', 'nrefine', 'shape', '_bnames'
   __cache__ = 'connectivity', 'boundary', 'interfaces'
 
   @types.apply_annotations
-  def __init__(self, root:transform.stricttransformitem, axes:types.tuple[types.strict[transformseq.Axis]], nrefine:types.strictint=0, bnames:types.tuple[types.tuple[types.strictstr]]=(('left', 'right'), ('bottom', 'top'), ('front', 'back'))):
+  def __init__(self, space, root:transform.stricttransformitem, axes:types.tuple[types.strict[transformseq.Axis]], nrefine:types.strictint=0, bnames:types.tuple[types.tuple[types.strictstr]]=(('left', 'right'), ('bottom', 'top'), ('front', 'back'))):
     'constructor'
 
     assert all(len(bname) == 2 for bname in bnames)
@@ -881,7 +1845,7 @@ class StructuredTopology(Topology):
       axes = [axis.opposite(nbounds-1) for axis in self.axes]
       opposites = transformseq.StructuredTransforms(self.root, axes, self.nrefine)
 
-    super().__init__(references, transforms, opposites)
+    super().__init__(space, references, transforms, opposites)
 
   def __repr__(self):
     return '{}<{}>'.format(type(self).__qualname__, 'x'.join(str(axis.j-axis.i)+('p' if axis.isperiodic else '') for axis in self.axes if axis.isdim))
@@ -889,20 +1853,17 @@ class StructuredTopology(Topology):
   def __len__(self):
     return numpy.prod(self.shape, dtype=int)
 
-  def getitem(self, item):
-    if not isinstance(item, tuple):
-      return EmptyTopology(self.ndims)
-    assert all(isinstance(it,slice) for it in item) and len(item) <= self.ndims
-    if all(it == slice(None) for it in item): # shortcut
+  def slice_unchecked(self, indices: slice, idim: int) -> TransformChainsTopology:
+    if indices == slice(None):
       return self
     axes = []
-    idim = 0
     for axis in self.axes:
-      if axis.isdim and idim < len(item):
-        axis = axis.getitem(item[idim])
-        idim += 1
+      if axis.isdim:
+        if idim == 0:
+          axis = axis.getitem(indices)
+        idim -= 1
       axes.append(axis)
-    return StructuredTopology(self.root, axes, self.nrefine, bnames=self._bnames)
+    return StructuredTopology(self.space, self.root, axes, self.nrefine, bnames=self._bnames)
 
   @property
   def periodic(self):
@@ -930,11 +1891,11 @@ class StructuredTopology(Topology):
     'boundary'
 
     nbounds = len(self.axes) - self.ndims
-    btopos = [StructuredTopology(root=self.root, axes=self.axes[:idim] + (bndaxis,) + self.axes[idim+1:], nrefine=self.nrefine, bnames=self._bnames)
+    btopos = [StructuredTopology(self.space, root=self.root, axes=self.axes[:idim] + (bndaxis,) + self.axes[idim+1:], nrefine=self.nrefine, bnames=self._bnames)
       for idim, axis in enumerate(self.axes)
         for bndaxis in axis.boundaries(nbounds)]
     if not btopos:
-      return EmptyTopology(self.ndims-1)
+      return EmptyTopology(self.space, self.transforms.todims, self.ndims-1)
     bnames = [bname for bnames, axis in zip(self._bnames, self.axes) if axis.isdim and not axis.isperiodic for bname in bnames]
     return DisjointUnionTopology(btopos, bnames)
 
@@ -953,7 +1914,7 @@ class StructuredTopology(Topology):
       itransforms = transformseq.StructuredTransforms(self.root, axes, self.nrefine)
       iopposites = transformseq.StructuredTransforms(self.root, oppaxes, self.nrefine)
       ireferences = References.uniform(util.product(element.getsimplex(1 if a.isdim else 0) for a in axes), len(itransforms))
-      itopos.append(Topology(ireferences, itransforms, iopposites))
+      itopos.append(TransformChainsTopology(self.space, ireferences, itransforms, iopposites))
     assert len(itopos) == self.ndims
     return DisjointUnionTopology(itopos, names=['dir{}'.format(idim) for idim in range(self.ndims)])
 
@@ -1250,7 +2211,7 @@ class StructuredTopology(Topology):
     'refine non-uniformly'
 
     axes = [axis.refined for axis in self.axes]
-    return StructuredTopology(self.root, axes, self.nrefine+1, bnames=self._bnames)
+    return StructuredTopology(self.space, self.root, axes, self.nrefine+1, bnames=self._bnames)
 
   def locate(self, geom, coords, *, tol, eps=0, weights=None, **kwargs):
     coords = numpy.asarray(coords, dtype=float)
@@ -1267,7 +2228,7 @@ class StructuredTopology(Topology):
     return self._locate(geom0, scale, coords, eps=eps, weights=weights)
 
   def _asaffine(self, geom):
-    index = function.rootcoords(len(self.axes))[[axis.isdim for axis in self.axes]] * 2**self.nrefine - [axis.i for axis in self.axes if axis.isdim]
+    index = function.rootcoords(self.space, self.transforms.todims)[[axis.isdim for axis in self.axes]] * 2**self.nrefine - [axis.i for axis in self.axes if axis.isdim]
     basis = function.concatenate([function.eye(self.ndims), function.diagonalize(index)], axis=0)
     A, b = map(sparse.toarray, self.sample('gauss', 2).integrate_sparse([(basis[:,_,:] * basis[_,:,:]).sum(-1), (basis * geom).sum(-1)]))
     x = numpy.linalg.solve(A, b)
@@ -1287,18 +2248,18 @@ class StructuredTopology(Topology):
 
     return '{}({})'.format(self.__class__.__name__, 'x'.join(str(n) for n in self.shape))
 
-class ConnectedTopology(Topology):
+class ConnectedTopology(TransformChainsTopology):
   'unstructured topology with connectivity'
 
   __slots__ = 'connectivity',
 
   @types.apply_annotations
-  def __init__(self, references:types.strict[References], transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms, connectivity:types.tuple[types.arraydata]):
+  def __init__(self, space, references:types.strict[References], transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms, connectivity:types.tuple[types.arraydata]):
     assert len(connectivity) == len(references) and all(c.shape[0] == e.nedges for c, e in zip(connectivity, references))
     self.connectivity = tuple(map(numpy.asarray, connectivity))
-    super().__init__(references, transforms, opposites)
+    super().__init__(space, references, transforms, opposites)
 
-class SimplexTopology(Topology):
+class SimplexTopology(TransformChainsTopology):
   'simpex topology'
 
   __slots__ = 'simplices', 'references', 'transforms', 'opposites'
@@ -1311,13 +2272,13 @@ class SimplexTopology(Topology):
     return types.arraydata(simplices if keep.all() else (numpy.cumsum(keep)-1)[simplices])
 
   @types.apply_annotations
-  def __init__(self, simplices:_renumber, transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms):
+  def __init__(self, space, simplices:_renumber, transforms:transformseq.stricttransforms, opposites:transformseq.stricttransforms):
     assert simplices.shape == (len(transforms), transforms.fromdims+1)
     self.simplices = numpy.asarray(simplices)
     assert numpy.greater(self.simplices[:,1:], self.simplices[:,:-1]).all(), 'nodes should be sorted'
     assert not numpy.equal(self.simplices[:,1:], self.simplices[:,:-1]).all(), 'duplicate nodes'
     references = References.uniform(element.getsimplex(transforms.fromdims), len(transforms))
-    super().__init__(references, transforms, opposites)
+    super().__init__(space, references, transforms, opposites)
 
   @property
   def connectivity(self):
@@ -1355,7 +2316,7 @@ class SimplexTopology(Topology):
     nmap = [types.frozenarray(numpy.hstack([idofs, nverts+ielem]), copy=False) for ielem, idofs in enumerate(self.simplices)]
     return function.PlainBasis([coeffs] * len(self), nmap, ndofs, self.f_index, self.f_coords)
 
-class UnionTopology(Topology):
+class UnionTopology(TransformChainsTopology):
   'grouped topology'
 
   __slots__ = '_topos', '_names', 'references', 'transforms', 'opposites'
@@ -1367,6 +2328,8 @@ class UnionTopology(Topology):
     assert len(set(self._names)) == len(self._names), 'duplicate name'
     ndims = self._topos[0].ndims
     assert all(topo.ndims == ndims for topo in self._topos)
+    space = self._topos[0].space
+    assert all(topo.space == space for topo in self._topos)
 
     references = []
     selections = [[] for topo in topos]
@@ -1397,15 +2360,18 @@ class UnionTopology(Topology):
     selections = tuple(types.frozenarray(s, dtype=int) for s in selections)
 
     super().__init__(
+      space,
       References.from_iter(references, ndims),
-      transformseq.chain((topo.transforms[selection] for topo, selection in zip(topos, selections)), ndims),
-      transformseq.chain((topo.opposites[selection] for topo, selection in zip(topos, selections)), ndims))
+      transformseq.chain((topo.transforms[selection] for topo, selection in zip(topos, selections)), topos[0].transforms.todims, ndims),
+      transformseq.chain((topo.opposites[selection] for topo, selection in zip(topos, selections)), topos[0].transforms.todims, ndims))
 
-  def getitem(self, item):
-    topos = [topo if name == item else topo.getitem(item) for topo, name in itertools.zip_longest(self._topos, self._names)]
-    return functools.reduce(operator.or_, topos, EmptyTopology(self.ndims))
+  def get_groups(self, *groups: str) -> TransformChainsTopology:
+    topos = (topo if name in groups else topo.get_groups(*groups) for topo, name in itertools.zip_longest(self._topos, self._names))
+    return functools.reduce(operator.or_, filter(None, topos), self.empty_like())
 
   def __or__(self, other):
+    if not isinstance(other, TransformChainsTopology):
+      return super().__or__(other)
     if not isinstance(other, UnionTopology):
       return UnionTopology(self._topos + (other,), self._names)
     return UnionTopology(self._topos[:len(self._names)] + other._topos + self._topos[len(self._names):], self._names + other._names)
@@ -1414,7 +2380,7 @@ class UnionTopology(Topology):
   def refined(self):
     return UnionTopology([topo.refined for topo in self._topos], self._names)
 
-class DisjointUnionTopology(Topology):
+class DisjointUnionTopology(TransformChainsTopology):
   'grouped topology'
 
   __slots__ = '_topos', '_names'
@@ -1426,16 +2392,19 @@ class DisjointUnionTopology(Topology):
     assert len(set(self._names)) == len(self._names), 'duplicate name'
     ndims = self._topos[0].ndims
     assert all(topo.ndims == ndims for topo in self._topos)
+    space = self._topos[0].space
+    assert all(topo.space == space for topo in self._topos)
     super().__init__(
+      space,
       util.sum(topo.references for topo in self._topos),
-      transformseq.chain((topo.transforms for topo in self._topos), ndims),
-      transformseq.chain((topo.opposites for topo in self._topos), ndims))
+      transformseq.chain((topo.transforms for topo in self._topos), topos[0].transforms.todims, ndims),
+      transformseq.chain((topo.opposites for topo in self._topos), topos[0].transforms.todims, ndims))
 
-  def getitem(self, item):
-    topos = [topo if name == item else topo.getitem(item) for topo, name in itertools.zip_longest(self._topos, self._names)]
-    topos = [topo for topo in topos if not isinstance(topo, EmptyTopology)]
+  def get_groups(self, *groups: str) -> TransformChainsTopology:
+    topos = (topo if name in groups else topo.get_groups(*groups) for topo, name in itertools.zip_longest(self._topos, self._names))
+    topos = tuple(filter(None, topos))
     if len(topos) == 0:
-      return EmptyTopology(self.ndims)
+      return self.empty_like()
     elif len(topos) == 1:
       return topos[0]
     else:
@@ -1445,7 +2414,7 @@ class DisjointUnionTopology(Topology):
   def refined(self):
     return DisjointUnionTopology([topo.refined for topo in self._topos], self._names)
 
-class SubsetTopology(Topology):
+class SubsetTopology(TransformChainsTopology):
   'trimmed'
 
   __slots__ = 'refs', 'basetopo', 'newboundary', '_indices'
@@ -1454,7 +2423,7 @@ class SubsetTopology(Topology):
   @types.apply_annotations
   def __init__(self, basetopo:stricttopology, refs:types.tuple[element.strictreference], newboundary=None):
     if newboundary is not None:
-      assert isinstance(newboundary, str) or isinstance(newboundary, Topology) and newboundary.ndims == basetopo.ndims-1
+      assert isinstance(newboundary, str) or isinstance(newboundary, TransformChainsTopology) and newboundary.ndims == basetopo.ndims-1
     assert len(refs) == len(basetopo)
     self.refs = refs
     self.basetopo = basetopo
@@ -1464,15 +2433,15 @@ class SubsetTopology(Topology):
     references = References.from_iter(self.refs, self.basetopo.ndims).take(self._indices)
     transforms = self.basetopo.transforms[self._indices]
     opposites = self.basetopo.opposites[self._indices]
-    super().__init__(references, transforms, opposites)
+    super().__init__(basetopo.space, references, transforms, opposites)
 
-  def getitem(self, item):
-    return self.basetopo.getitem(item).subset(self, strict=False)
+  def get_groups(self, *groups: str) -> TransformChainsTopology:
+    return self.basetopo.get_groups(*groups).subset(self, strict=False)
 
   def __rsub__(self, other):
     if self.basetopo == other:
       refs = [baseref - ref for baseref, ref in zip(self.basetopo.references, self.refs)]
-      return SubsetTopology(self.basetopo, refs, ~self.newboundary if isinstance(self.newboundary,Topology) else self.newboundary)
+      return SubsetTopology(self.basetopo, refs, ~self.newboundary if isinstance(self.newboundary,TransformChainsTopology) else self.newboundary)
     return super().__rsub__(other)
 
   def __or__(self, other):
@@ -1494,8 +2463,8 @@ class SubsetTopology(Topology):
     child_refs = self.references.children
     indices = types.frozenarray(numpy.array([i for i, ref in enumerate(child_refs) if ref], dtype=int), copy=False)
     refined_transforms = self.transforms.refined(self.references)[indices]
-    self_refined = Topology(child_refs[indices], refined_transforms, refined_transforms)
-    return self.basetopo.refined.subset(self_refined, self.newboundary.refined if isinstance(self.newboundary,Topology) else self.newboundary, strict=True)
+    self_refined = TransformChainsTopology(self.space, child_refs[indices], refined_transforms, refined_transforms)
+    return self.basetopo.refined.subset(self_refined, self.newboundary.refined if isinstance(self.newboundary,TransformChainsTopology) else self.newboundary, strict=True)
 
   @property
   def boundary(self):
@@ -1538,13 +2507,13 @@ class SubsetTopology(Topology):
         trimmedtransforms.append(elemtrans+(edgetrans,))
         trimmedopposites.append(elemtrans+(edgetrans.flipped,))
     origboundary = SubsetTopology(baseboundary, brefs)
-    if isinstance(self.newboundary, Topology):
+    if isinstance(self.newboundary, TransformChainsTopology):
       trimmedbrefs = [ref.empty for ref in self.newboundary.references]
       for ref, trans in zip(trimmedreferences, trimmedtransforms):
         trimmedbrefs[self.newboundary.transforms.index(trans)] = ref
       trimboundary = SubsetTopology(self.newboundary, trimmedbrefs)
     else:
-      trimboundary = Topology(References.from_iter(trimmedreferences, self.ndims-1), transformseq.PlainTransforms(trimmedtransforms, self.ndims-1), transformseq.PlainTransforms(trimmedopposites, self.ndims-1))
+      trimboundary = TransformChainsTopology(self.space, References.from_iter(trimmedreferences, self.ndims-1), transformseq.PlainTransforms(trimmedtransforms, self.transforms.todims, self.ndims-1), transformseq.PlainTransforms(trimmedopposites, self.transforms.todims, self.ndims-1))
     return DisjointUnionTopology([trimboundary, origboundary], names=[self.newboundary] if isinstance(self.newboundary,str) else [])
 
   @property
@@ -1578,7 +2547,7 @@ class SubsetTopology(Topology):
             raise LocateError('failed to locate point: {}'.format(coords[sample.getindex(isampleelem)[i]]))
     return sample
 
-class RefinedTopology(Topology):
+class RefinedTopology(TransformChainsTopology):
   'refinement'
 
   __slots__ = 'basetopo',
@@ -1588,12 +2557,13 @@ class RefinedTopology(Topology):
   def __init__(self, basetopo:stricttopology):
     self.basetopo = basetopo
     super().__init__(
+      self.basetopo.space,
       self.basetopo.references.children,
       self.basetopo.transforms.refined(self.basetopo.references),
       self.basetopo.opposites.refined(self.basetopo.references))
 
-  def getitem(self, item):
-    return self.basetopo.getitem(item).refined
+  def get_groups(self, *groups: str) -> TransformChainsTopology:
+    return self.basetopo.get_groups(*groups).refined
 
   @property
   def boundary(self):
@@ -1615,7 +2585,7 @@ class RefinedTopology(Topology):
             connectivity[offsets[jelem]+jchild][jchildedge] = offsets[ielem]+ichild
     return tuple(types.frozenarray(c, copy=False) for c in connectivity)
 
-class HierarchicalTopology(Topology):
+class HierarchicalTopology(TransformChainsTopology):
   'collection of nested topology elments'
 
   __slots__ = 'basetopo', 'levels', '_indices_per_level', '_offsets'
@@ -1645,7 +2615,7 @@ class HierarchicalTopology(Topology):
         opposites.append(level.opposites[indices])
     self.levels = tuple(levels)
 
-    super().__init__(references, transformseq.chain(transforms, basetopo.ndims), transformseq.chain(opposites, basetopo.ndims))
+    super().__init__(basetopo.space, references, transformseq.chain(transforms, basetopo.transforms.todims, basetopo.ndims), transformseq.chain(opposites, basetopo.transforms.todims, basetopo.ndims))
 
   def __and__(self, other):
     if not isinstance(other, HierarchicalTopology) or self.basetopo != other.basetopo:
@@ -1662,8 +2632,8 @@ class HierarchicalTopology(Topology):
       indices_per_level.append(indices)
     return HierarchicalTopology(self.basetopo, indices_per_level)
 
-  def getitem(self, item):
-    itemtopo = self.basetopo.getitem(item)
+  def get_groups(self, *groups: str) -> TransformChainsTopology:
+    itemtopo = self.basetopo.get_groups(*groups)
     itemindices_per_level = []
     for baseindices, baselevel, itemlevel in zip(self._indices_per_level, self.basetopo.refine_iter, itemtopo.refine_iter):
       itemindices = []
@@ -1760,7 +2730,7 @@ class HierarchicalTopology(Topology):
         hreferences = hreferences.chain(level.interfaces.references.take(selection))
         htransforms.append(level.interfaces.transforms[selection])
         hopposites.append(level.interfaces.opposites[selection])
-    return Topology(hreferences, transformseq.chain(htransforms, self.ndims-1), transformseq.chain(hopposites, self.ndims-1))
+    return TransformChainsTopology(self.space, hreferences, transformseq.chain(htransforms, self.transforms.todims, self.ndims-1), transformseq.chain(hopposites, self.transforms.todims, self.ndims-1))
 
   @log.withcontext
   def basis(self, name, *args, truncation_tolerance=1e-15, **kwargs):
@@ -1910,85 +2880,6 @@ class HierarchicalTopology(Topology):
 
     return function.PlainBasis(hbasis_coeffs, hbasis_dofs, ndofs, self.f_index, self.f_coords)
 
-class ProductTopology(Topology):
-  'product topology'
-
-  __slots__ = 'topo1', 'topo2'
-  __cache__ = 'boundary', 'interfaces'
-
-  @types.apply_annotations
-  def __init__(self, topo1:stricttopology, topo2:stricttopology):
-    assert not isinstance(topo1, ProductTopology)
-    self.topo1 = topo1
-    self.topo2 = topo2
-    references = self.topo1.references * self.topo2.references
-    transforms = transformseq.ProductTransforms(self.topo1.transforms, self.topo2.transforms)
-    if (self.topo1.opposites != self.topo1.transforms) != (self.topo2.opposites != self.topo2.transforms):
-      opposites = transformseq.ProductTransforms(self.topo1.opposites, self.topo2.opposites)
-    else:
-      opposites = transforms
-    super().__init__(references, transforms, opposites)
-
-  def __mul__(self, other):
-    return ProductTopology(self.topo1, self.topo2 * other)
-
-  @property
-  def refined(self):
-    return self.topo1.refined * self.topo2.refined
-
-  def refine(self, n):
-    if numpy.iterable(n):
-      assert len(n) == self.ndims
-    else:
-      n = (n,)*self.ndims
-    return self.topo1.refine(n[:self.topo1.ndims]) * self.topo2.refine(n[self.topo1.ndims:])
-
-  def getitem(self, item):
-    return self.topo1.getitem(item) * self.topo2 | self.topo1 * self.topo2.getitem(item) if isinstance(item, str) \
-      else self.topo1[item[:self.topo1.ndims]] * self.topo2[item[self.topo1.ndims:]]
-
-  def basis(self, name, *args, **kwargs):
-    def _split(arg):
-      if not numpy.iterable(arg):
-        return arg, arg
-      assert len(arg) == self.ndims
-      return tuple(a[0] if all(ai == a[0] for ai in a[1:]) else a for a in (arg[:self.topo1.ndims], arg[self.topo1.ndims:]))
-    splitargs = [_split(arg) for arg in args]
-    splitkwargs = [(name,)+_split(arg) for name, arg in kwargs.items()]
-    basis1, basis2 = function.bifurcate(
-      self.topo1.basis(name, *[arg1 for arg1, arg2 in splitargs], **{name: arg1 for name, arg1, arg2 in splitkwargs}),
-      self.topo2.basis(name, *[arg2 for arg1, arg2 in splitargs], **{name: arg2 for name, arg1, arg2 in splitkwargs}))
-    return function.ravel(function.outer(basis1,basis2), axis=0)
-
-  @property
-  def boundary(self):
-    return self.topo1 * self.topo2.boundary + self.topo1.boundary * self.topo2
-
-  @property
-  def interfaces(self):
-    return self.topo1 * self.topo2.interfaces + self.topo1.interfaces * self.topo2
-
-class RevolutionTopology(Topology):
-  'topology consisting of a single revolution element'
-
-  __slots__ = 'boundary', '_root'
-
-  connectivity = numpy.empty([1,0], dtype=int)
-
-  def __init__(self):
-    self._root = transform.Identifier(1, 'angle')
-    self.boundary = EmptyTopology(ndims=0)
-    transforms = transformseq.PlainTransforms([(self._root,)], 1)
-    references = References.uniform(element.RevolutionReference(), 1)
-    super().__init__(references, transforms, transforms)
-
-  @property
-  def refined(self):
-    return self
-
-  def basis(self, name, *args, **kwargs):
-    return function.asarray([1.])
-
 class PatchBoundary(types.Singleton):
 
   __slots__ = 'id', 'dim', 'side', 'reverse', 'transpose'
@@ -2016,7 +2907,7 @@ class Patch(types.Singleton):
     self.verts = numpy.asarray(verts)
     self.boundaries = boundaries
 
-class MultipatchTopology(Topology):
+class MultipatchTopology(TransformChainsTopology):
   'multipatch topology'
 
   __slots__ = 'patches',
@@ -2057,6 +2948,9 @@ class MultipatchTopology(Topology):
 
     self.patches = patches
 
+    space = patches[0].topo.space
+    assert all(patch.topo.space == space for patch in patches)
+
     for boundaryid, patchdata in self._patchinterfaces.items():
       if len(patchdata) == 1:
         continue
@@ -2070,9 +2964,10 @@ class MultipatchTopology(Topology):
         raise NotImplementedError('patch interfaces must have the same order of axes and the same orientation per axis')
 
     super().__init__(
+      space,
       util.sum(patch.topo.references for patch in self.patches),
-      transformseq.chain([patch.topo.transforms for patch in self.patches], self.patches[0].topo.ndims),
-      transformseq.chain([patch.topo.opposites for patch in self.patches], self.patches[0].topo.ndims))
+      transformseq.chain([patch.topo.transforms for patch in self.patches], self.patches[0].topo.transforms.todims, self.patches[0].topo.ndims),
+      transformseq.chain([patch.topo.opposites for patch in self.patches], self.patches[0].topo.transforms.todims, self.patches[0].topo.ndims))
 
   @property
   def _patchinterfaces(self):
@@ -2086,12 +2981,15 @@ class MultipatchTopology(Topology):
       if len(data) > 1
     })
 
-  def getitem(self, key):
-    for i in range(len(self.patches)):
-      if key == 'patch{}'.format(i):
-        return self.patches[i].topo
+  def get_groups(self, *groups: str) -> TransformChainsTopology:
+    topos = (patch.topo if 'patch{}'.format(i) in groups else patch.topo.get_groups(*groups) for i, patch in enumerate(self.patches))
+    topos = tuple(filter(None, topos))
+    if len(topos) == 0:
+      return self.empty_like()
+    elif len(topos) == 1:
+      return topos[0]
     else:
-      return DisjointUnionTopology(patch.topo.getitem(key) for patch in self.patches)
+      return DisjointUnionTopology(topos)
 
   def basis_spline(self, degree, patchcontinuous=True, knotvalues=None, knotmultiplicities=None, *, continuity=-1):
     '''spline from vertices
@@ -2200,9 +3098,9 @@ class MultipatchTopology(Topology):
   def basis_patch(self):
     'degree zero patchwise discontinuous basis'
 
-    transforms = transformseq.PlainTransforms(tuple((patch.topo.root,) for patch in self.patches), self.ndims)
-    index = function.transforms_index(transforms)
-    coords = function.transforms_coords(transforms, self.ndims)
+    transforms = transformseq.PlainTransforms(tuple((patch.topo.root,) for patch in self.patches), self.ndims, self.ndims)
+    index = function.transforms_index(self.space, transforms)
+    coords = function.transforms_coords(self.space, transforms)
     return function.DiscontBasis([types.frozenarray(1, dtype=float).reshape(1, *(1,)*self.ndims)]*len(self.patches), index, coords)
 
   @property
@@ -2219,7 +3117,7 @@ class MultipatchTopology(Topology):
         subtopos.append(patch.topo.boundary[name])
         subnames.append('patch{}-{}'.format(i, name))
     if len(subtopos) == 0:
-      return EmptyTopology(self.ndims-1)
+      return EmptyTopology(self.space, self.transforms.todims, self.ndims-1)
     else:
       return DisjointUnionTopology(subtopos, subnames)
 
@@ -2232,7 +3130,7 @@ class MultipatchTopology(Topology):
     patch via ``'intrapatch'``.
     '''
 
-    intrapatchtopo = EmptyTopology(self.ndims-1) if not self.patches else \
+    intrapatchtopo = EmptyTopology(self.space, self.transforms.todims, self.ndims-1) if not self.patches else \
       DisjointUnionTopology(patch.topo.interfaces for patch in self.patches)
 
     btopos = []
@@ -2256,9 +3154,9 @@ class MultipatchTopology(Topology):
       # create structured topology of joined element pairs
       references = References.from_iter(references, self.ndims-1)
       transforms, opposites = pairs
-      transforms = transformseq.PlainTransforms(transforms, self.ndims-1)
-      opposites = transformseq.PlainTransforms(opposites, self.ndims-1)
-      btopos.append(Topology(references, transforms, opposites))
+      transforms = transformseq.PlainTransforms(transforms, self.transforms.todims, self.ndims-1)
+      opposites = transformseq.PlainTransforms(opposites, self.transforms.todims, self.ndims-1)
+      btopos.append(TransformChainsTopology(self.space, references, transforms, opposites))
       bconnectivity.append(numpy.array(boundaryid).reshape((2,)*(self.ndims-1)))
     # create multipatch topology of interpatch boundaries
     interpatchtopo = MultipatchTopology(tuple(map(Patch, btopos, bconnectivity, self.build_boundarydata(bconnectivity))))
