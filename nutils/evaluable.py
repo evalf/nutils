@@ -1801,7 +1801,7 @@ class Add(Array):
 
   def _multiply(self, other):
     func1, func2 = self.funcs
-    if func1._inflations and func2._inflations:
+    if (func1._inflations or func1._diagonals) and (func2._inflations or func2._diagonals):
       # NOTE: As this operation is the precise opposite of Multiply._add, there
       # appears to be a great risk of recursion. However, since both factors
       # are sparse, we can be certain that subsequent simpifications will
