@@ -919,6 +919,23 @@ class simplify(TestCase):
     # isinstance(other_trans, Transpose) restriction in Transpose._multiply.
     self.assertEqual(f.simplified, f)
 
+  def test_add_sparse(self):
+    a = evaluable.Inflate(
+      func=evaluable.Argument('a', shape=[2,3,2], dtype=float),
+      dofmap=evaluable.Argument('dofmap', shape=[2], dtype=int),
+      length=3)
+    b = evaluable.Diagonalize(
+      func=evaluable.Argument('b', shape=[2,3], dtype=float))
+    c = evaluable.Argument('c', shape=[2,3,3], dtype=float)
+    # Since a and b are both sparse, we expect (a+b)*c to be simplified to a*c+b*c.
+    self.assertIsInstance(((a + b) * c).simplified, evaluable.Add)
+    # If the sparsity of the terms is equal then sparsity propagates through the addition.
+    self.assertIsInstance(((a + a) * c).simplified, evaluable.Inflate)
+    self.assertIsInstance(((b + b) * c).simplified, evaluable.Diagonalize)
+    # If either term in the addition is dense, the original structure remains.
+    self.assertIsInstance(((a + c) * c).simplified, evaluable.Multiply)
+    self.assertIsInstance(((c + b) * c).simplified, evaluable.Multiply)
+
 class memory(TestCase):
 
   def assertCollected(self, ref):
