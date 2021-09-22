@@ -1071,13 +1071,13 @@ class _ExpressionParser:
         pos += 1
         continue
       m = re.match(r'(J\^*):([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)', self.expression[pos:])
-      if m:
+      if m and self.expression[pos+m.end():pos+m.end()+1] not in ('(', '[', '{'):
         tokens.append(_Token('jacobian', m.group(1), pos))
         tokens.append(_Token('geometry', m.group(2), 1+len(m.group(1))))
         pos += m.end()
         continue
       m = re.match(r'd:[a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*', self.expression[pos:])
-      if m:
+      if m and self.expression[pos+m.end():pos+m.end()+1] not in ('(', '[', '{'):
         tokens.append(_Token('old-jacobian', m.group(0)[:1], pos))
         tokens.append(_Token('geometry', m.group(0)[2:], pos+2))
         pos += m.end()
@@ -1091,7 +1091,7 @@ class _ExpressionParser:
         pos += m.end()
         continue
       m = re.match(r'({}):([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)_([a-zA-Z0-9])'.format('|'.join(map(re.escape, self.normal_symbols))), self.expression[pos:])
-      if m:
+      if m and self.expression[pos+m.end():pos+m.end()+1] not in ('(', '[', '{'):
         tokens.append(_Token('variable', m.group(1), pos))
         tokens.append(_Token('geometry', m.group(2), pos+m.start(2)))
         tokens.append(_Token('indices', m.group(3), pos+m.start(3)))
