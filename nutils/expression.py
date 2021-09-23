@@ -783,6 +783,17 @@ class _ExpressionParser:
             args_omitted_indices = self.parse_comma_separated(end=')', parse_item=functools.partial(self.parse_subexpression, omitted_indices=True))
           except ExpressionSyntaxError:
             self._index = index
+        if args_omitted_indices is None:
+          args = self.parse_comma_separated(end=')', parse_item=functools.partial(self.parse_subexpression, omitted_indices=False))
+        # Parse trailing indices.
+        if not omitted_indices and self._next.type == 'indices':
+          if generates:
+            self._consume()
+            raise _IntermediateError('A function may have leading or trailing indices for generated axes, but not both.')
+          else:
+            generates_token = self._consume()
+            generates = generates_token.data
+            generates_shape = tuple(_Length(pos) for pos, index in enumerate(generates, generates_token.pos) if not '0' <= index <= '9')
         if args_omitted_indices:
           if not all(arg.shape == args_omitted_indices[0].shape for arg in args_omitted_indices):
             raise _IntermediateError('All arguments should have the same shape.')
@@ -797,7 +808,6 @@ class _ExpressionParser:
                                           summed=frozenset(),
                                           linked_lengths=frozenset())
         else:
-          args = self.parse_comma_separated(end=')', parse_item=functools.partial(self.parse_subexpression, omitted_indices=False))
           if consumes:
             if not all(set(consumes) <= set(arg.indices) for arg in args):
               raise _IntermediateError('All axes to be consumed ({}) must be present in all arguments.'.format(consumes))

@@ -826,7 +826,8 @@ class parse(TestCase):
   def test_function_1d_1d_trace(self): self.assert_ast('func2(a2_i, a2_i)', '', ('trace', ('call', _('func2'), _(0), _(0), v._a2, v._a2), _(0), _(1)))
   def test_function_2d_2d(self): self.assert_ast('func2(a23_ij, a32_kl)', 'ijkl', ('call', _('func2'), _(0), _(0), v._a23, v._a32))
   def test_function_1d_1d_2d(self): self.assert_ast('func3(a2_i, a2_j, a23_kl)', 'ijkl', ('call', _('func3'), _(0), _(0), v._a2, v._a2, v._a23))
-  def test_function_generates(self): self.assert_ast('func_j(a2_i)', 'ij', ('call', _('func'), _(1), _(0), v._a2), fallback_length=2)
+  def test_function_generates_leading(self): self.assert_ast('func_j(a2_i)', 'ij', ('call', _('func'), _(1), _(0), v._a2), fallback_length=2)
+  def test_function_generates_trailing(self): self.assert_ast('func(a2_i)_j', 'ij', ('call', _('func'), _(1), _(0), v._a2), fallback_length=2)
   def test_function_generates_trace(self): self.assert_ast('func_i(a2_i)', '', ('trace', ('call', _('func'), _(1), _(0), v._a2), _(0), _(1)))
   def test_function_consumes(self): self.assert_ast('sum:i(a2_i)', '', ('call', _('sum'), _(0), _(1), v._a2))
   def test_function_consumes_transpose(self): self.assert_ast('sum:i(a23_ij)', 'j', ('call', _('sum'), _(0), _(1), ('transpose', v._a23, _((1,0)))))
@@ -861,6 +862,12 @@ class parse(TestCase):
       "All arguments should have the same shape.",
       "1 + f(a2, a3) + 1", None,
       "    ^^^^^^^^^")
+
+  def test_function_leading_and_trailing(self):
+    self.assert_syntax_error(
+      "A function may have leading or trailing indices for generated axes, but not both.",
+      "1_ij + f_i(a)_j + 1_ij", "ij",
+      "       ^^^^^^^^")
 
   # OMITTED INDICES
 
