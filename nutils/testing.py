@@ -22,10 +22,15 @@
 Extensions of the :mod:`unittest` module.
 '''
 
-import unittest, sys, types as builtin_types, operator, contextlib, treelog, functools, importlib, doctest, re, zlib, binascii
+import unittest, sys, types as builtin_types, operator, contextlib, treelog, functools, importlib, doctest, re, zlib, binascii, logging
 import numpy
 from nutils import warnings, numeric
 
+
+class PrintHandler(logging.Handler):
+  'similar to StreamHandler except using always the current sys.stdout'
+  def emit(self, record):
+    print(record.msg)
 
 def _not_has_module(module):
   try:
@@ -140,7 +145,12 @@ class TestCase(unittest.TestCase):
 
   def setUp(self):
     super().setUp()
-    self.enter_context(treelog.set(treelog.TeeLog(treelog.StdoutLog(), treelog.LoggingLog())))
+    print_handler = PrintHandler()
+    nutils_logger = logging.getLogger('nutils')
+    nutils_logger.setLevel('INFO') # handle events of level INFO and up
+    nutils_logger.addHandler(print_handler)
+    self.addCleanup(nutils_logger.removeHandler, print_handler)
+    self.enter_context(treelog.set(treelog.LoggingLog('nutils')))
 
   def assertAllEqual(self, actual, desired):
     for args in numpy.broadcast(actual, desired):
