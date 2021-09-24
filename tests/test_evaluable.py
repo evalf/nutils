@@ -992,12 +992,16 @@ class memory(TestCase):
       self.fail('object was not garbage collected')
 
   def test_general(self):
-    A = evaluable.Constant([1,2,3])
+    # NOTE: The list of numbers must be unique in the entire test suite. If
+    # not, a test leaking this specific array will cause this test to fail.
+    A = evaluable.Constant([1,2,3,98,513])
     A = weakref.ref(A)
     self.assertCollected(A)
 
   def test_simplified(self):
-    A = evaluable.Constant([1,2,3])
+    # NOTE: The list of numbers must be unique in the entire test suite. If
+    # not, a test leaking this specific array will cause this test to fail.
+    A = evaluable.Constant([1,2,3,99,514])
     A.simplified # constant simplified to itself, which should be handled as a special case to avoid circular references
     A = weakref.ref(A)
     self.assertCollected(A)
