@@ -13,6 +13,7 @@ class specialcases(TestCase):
 class TestTransform(TestCase):
 
   def setUp(self, trans, linear, offset):
+    super().setUp()
     self.trans = trans
     self.linear = linear
     self.offset = offset
@@ -139,6 +140,7 @@ class EvaluableTransformChainArgument(TestCase):
 class EmptyEvaluableTransformChain(TestCase):
 
   def setUp(self):
+    super().setUp()
     self.chain = transform.EvaluableTransformChain.empty(2)
 
   def test_evalf(self):

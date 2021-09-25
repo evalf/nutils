@@ -1359,6 +1359,7 @@ class SurfaceGradient(TestCase):
   K = 3 # mean curvature
 
   def setUp(self):
+    super().setUp()
     if self.boundary:
       if self.etype == 'cube':
         topo, (x, y, z) = mesh.rectilinear([1,2,3])
