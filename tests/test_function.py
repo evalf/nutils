@@ -249,6 +249,7 @@ _check('unravel', lambda a: function.unravel(a,1,(3,4)), lambda a: numpy.reshape
 _check('take', lambda a: function.take(a, numpy.array([[0,2],[1,3]]), 1), lambda a: numpy.take(a, numpy.array([[0,2],[1,3]]), 1), [(3,4,5)], dtype=int)
 _check('take_bool', lambda a: function.take(a, numpy.array([False, True, False, True]), 1), lambda a: numpy.compress(numpy.array([False, True, False, True]), a, 1), [(3,4,5)], dtype=int)
 _check('get', lambda a: function.take(a, 1, 1), lambda a: numpy.take(a, 1, 1), [(3,4,5)], dtype=int)
+_check('scatter', lambda a: function.scatter(a,3,[2,0]), lambda a: numpy.stack([a[:,1], numpy.zeros([4]), a[:,0]], axis=1), [(4,2)])
 _check('kronecker', lambda a: function.kronecker(a,1,3,1), lambda a: numpy.stack([numpy.zeros_like(a), a, numpy.zeros_like(a)], axis=1), [(4,4)])
 _check('concatenate', lambda a, b: function.concatenate([a,b], axis=1), lambda a, b: numpy.concatenate([a,b], axis=1), [(4,2,1),(4,3,1)])
 _check('stack', lambda a,b: function.stack([a,b], 1), lambda a,b: numpy.stack([a,b], 1), [(4,2),(4,2)])

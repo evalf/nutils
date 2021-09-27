@@ -2295,7 +2295,42 @@ def _takeslice(__array: IntoArray, __s: slice, __axis: int) -> Array:
     raise Exception('a non-unit slice requires a constant-length axis')
   return take(array, index, axis)
 
-def kronecker(__array: IntoArray, axis: int, length: IntoArray, pos: IntoArray) -> Array:
+def scatter(__array: IntoArray, length: int, indices: IntoArray) -> Array:
+  '''Distribute the last dimensions of an array over a new axis.
+
+  Parameters
+  ----------
+  array : :class:`Array` or something that can be :meth:`~Array.cast` into one
+  length : :class:`int`
+      The target length of the scattered axis.
+  indices : :class:`Array`
+      The indices of the elements in the resulting array.
+
+  Returns
+  -------
+  :class:`Array`
+
+  Notes
+  -----
+  Scatter strictly reorganizes array entries, it cannot assign multiple
+  entries to the same position. In other words, the provided indices must be
+  unique.
+
+  See Also
+  --------
+  :func:`take` : The complement operation.
+  '''
+
+  array = Array.cast(__array)
+  indices = Array.cast(indices)
+  return _Wrapper(evaluable.Inflate,
+    array,
+    _WithoutPoints(indices),
+    _WithoutPoints(Array.cast(length)),
+    shape=array.shape[:array.ndim-indices.ndim] + (length,),
+    dtype=array.dtype)
+
+def kronecker(__array: IntoArray, axis: int, length: int, pos: IntoArray) -> Array:
   '''Position an element in an axis of given length.
 
   Parameters
@@ -2307,7 +2342,7 @@ def kronecker(__array: IntoArray, axis: int, length: IntoArray, pos: IntoArray) 
   length : :class:`int`
       The length of the inflated axis.
   pos : :class:`int` or :class:`Array`
-      The inde of the element in the resulting array.
+      The index of the element in the resulting array.
 
   Returns
   -------
@@ -2318,14 +2353,7 @@ def kronecker(__array: IntoArray, axis: int, length: IntoArray, pos: IntoArray) 
   :func:`get` : The complement operation.
   '''
 
-  array = Array.cast(__array)
-  inflated = _Wrapper(evaluable.Inflate,
-    array,
-    _WithoutPoints(Array.cast(pos)),
-    _WithoutPoints(Array.cast(length)),
-    shape=array.shape + (length,),
-    dtype=array.dtype)
-  return _Transpose.from_end(inflated, axis)
+  return _Transpose.from_end(scatter(__array, length, pos), axis)
 
 def concatenate(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
   '''Join arrays along an existing axis.
