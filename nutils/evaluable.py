@@ -3218,6 +3218,12 @@ class RavelIndex(Array):
     if equalindex(length, self._length):
       return Ravel(Inflate(_inflate(func, self._ia, self._na, func.ndim - self.ndim), self._ib, self._nb))
 
+  def _unravel(self, axis, shape):
+    if axis < self._ia.ndim:
+      return RavelIndex(unravel(self._ia, axis, shape), self._ib, self._na, self._nb)
+    else:
+      return RavelIndex(self._ia, unravel(self._ib, axis-self._ia.ndim, shape), self._na, self._nb)
+
   def _intbounds_impl(self):
     nbmin, nbmax = self._nb._intbounds
     iamin, iamax = self._ia._intbounds
