@@ -3233,7 +3233,7 @@ class Range(Array):
     return InRange(index, self.length)
 
   def _rtake(self, func, axis):
-    if self.length == func.shape[axis]:
+    if equalindex(self.length, func.shape[axis]):
       return func
 
   def _rinflate(self, func, length, axis):
