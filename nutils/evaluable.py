@@ -1192,9 +1192,6 @@ class InsertAxis(Array):
       return appendaxes(self.func, index.shape)
     return InsertAxis(_take(self.func, index, axis), self.length)
 
-  def _rtake(self, func, axis):
-    return insertaxis(_take(func, self.func, axis), axis+self.ndim-1, self.length)
-
   def _takediag(self, axis1, axis2):
     assert axis1 < axis2
     if axis2 == self.ndim-1:
@@ -2001,6 +1998,10 @@ class Take(Array):
   def _simplified(self):
     if self.indices.size == 0:
       return zeros_like(self)
+    unaligned, where = unalign(self.indices)
+    if len(where) < self.indices.ndim:
+      n = self.func.ndim-1
+      return align(Take(self.func, unaligned), (*range(n), *(n+i for i in where)), self.shape)
     trytake = self.func._take(self.indices, self.func.ndim-1) or \
               self.indices._rtake(self.func, self.func.ndim-1)
     if trytake:
