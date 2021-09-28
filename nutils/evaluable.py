@@ -2843,7 +2843,7 @@ class TrigNormal(Array):
 
   def _simplified(self):
     if iszero(self.angle):
-      return prependaxes(Inflate(1, 0, 2), self.shape[:1])
+      return prependaxes(Inflate(1, 0, 2), self.angle.shape)
 
 class TrigTangent(Array):
   '-sin, cos'
@@ -2863,7 +2863,7 @@ class TrigTangent(Array):
 
   def _simplified(self):
     if iszero(self.angle):
-      return prependaxes(Inflate(1, 1, 2), self.shape[:1])
+      return prependaxes(Inflate(1, 1, 2), self.angle.shape)
 
 class Find(Array):
   'indices of boolean index vector'
