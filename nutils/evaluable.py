@@ -3207,8 +3207,8 @@ class RavelIndex(Array):
       return RavelIndex(self._ia, _take(self._ib, index, axis - self._ia.ndim), self._na, self._nb)
 
   def _rtake(self, func, axis):
-    if equalindex(func.shape[-1], self._length):
-      return Take(_take(Unravel(func, self._na, self._nb), self._ia, -2), self._ib)
+    if equalindex(func.shape[axis], self._length):
+      return _take(_take(unravel(func, axis, (self._na, self._nb)), self._ib, axis+1), self._ia, axis)
 
   def _rinflate(self, func, length, axis):
     if equalindex(length, self._length):
