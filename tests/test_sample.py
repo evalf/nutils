@@ -102,7 +102,7 @@ class Common:
   def test_get_element_hull(self):
     if self.desired_ndims > 1:
       for ielem, desired in enumerate(self._desired_element_hull):
-        self.assertEqual(self.sample.get_element_hull(ielem).tolist(), desired)
+        self.assertEqual(sorted(self.sample.get_element_hull(ielem).tolist()), sorted(desired))
       with self.assertRaises(IndexError):
         self.sample.get_element_hull(-1)
       with self.assertRaises(IndexError):
@@ -207,9 +207,41 @@ class Mul(TestCase, Common):
     self.desired_points = [[p1, p2] for p1 in points1 for p2 in points2]
     self.desired_indices = tuple([[j+i*10 for j in J] for i in I] for I in [[0,1],[2,3]] for J in [[0,1,2,3],[4,5,6],[7,8,9]])
 
-#  def test_unimplemented_tri_hull(self):
-#    with self.assertRaises(NotImplementedError):
-#      Sample.empty(
+class Mul_left0d(TestCase, Common):
+
+  def setUp(self):
+    super().setUp()
+    points1 = [element.getsimplex(0).getpoints('bezier', 2)]
+    points2 = [(element.getsimplex(1)**2).getpoints('bezier', 2)] + [element.getsimplex(2).getpoints('bezier', 2)]*2
+    transforms1 = IdentifierTransforms(0, 'a', 1)
+    transforms2 = IdentifierTransforms(2, 'b', 3)
+    sample1 = Sample.new('a', (transforms1, transforms1), PointsSequence.from_iter(points1, 0))
+    sample2 = Sample.new('b', (transforms2, transforms2), PointsSequence.from_iter(points2, 2))
+    self.sample = sample1 * sample2
+    self.desired_spaces = 'a', 'b'
+    self.desired_ndims = 2
+    self.desired_nelems = 3
+    self.desired_transform_chains = [(c1, c2) for c1 in transforms1 for c2 in transforms2]
+    self.desired_points = [[p1, p2] for p1 in points1 for p2 in points2]
+    self.desired_indices = tuple([[[0,1,2,3]],[[4,5,6]],[[7,8,9]]])
+
+class Mul_right0d(TestCase, Common):
+
+  def setUp(self):
+    super().setUp()
+    points1 = [(element.getsimplex(1)**2).getpoints('bezier', 2)] + [element.getsimplex(2).getpoints('bezier', 2)]*2
+    points2 = [element.getsimplex(0).getpoints('bezier', 2)]
+    transforms1 = IdentifierTransforms(2, 'a', 3)
+    transforms2 = IdentifierTransforms(0, 'b', 1)
+    sample1 = Sample.new('a', (transforms1, transforms1), PointsSequence.from_iter(points1, 2))
+    sample2 = Sample.new('b', (transforms2, transforms2), PointsSequence.from_iter(points2, 0))
+    self.sample = sample1 * sample2
+    self.desired_spaces = 'a', 'b'
+    self.desired_ndims = 2
+    self.desired_nelems = 3
+    self.desired_transform_chains = [(c1, c2) for c1 in transforms1 for c2 in transforms2]
+    self.desired_points = [[p1, p2] for p1 in points1 for p2 in points2]
+    self.desired_indices = tuple([[[0],[1],[2],[3]],[[4],[5],[6]],[[7],[8],[9]]])
 
 class TakeElements(TestCase, Common):
 

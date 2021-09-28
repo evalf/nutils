@@ -603,6 +603,10 @@ class _Mul(_TensorialSample):
       npoints2 = len(self._sample2.getindex(ielem2))
       tri12 = self._sample1.get_element_tri(ielem1)[:,None,:,None] * npoints2 + self._sample2.get_element_tri(ielem2)[None,:,None,:] # ntri1 x ntri2 x 2 x ndims
       return numeric.overlapping(tri12.reshape(-1, 2*self.ndims), n=self.ndims+1).reshape(-1, self.ndims+1)
+    elif self._sample1.npoints == 1:
+      return self._sample2.get_element_tri(ielem)
+    elif self._sample2.npoints == 1:
+      return self._sample1.get_element_tri(ielem)
     else:
       return super().get_element_tri(ielem)
 
@@ -613,6 +617,10 @@ class _Mul(_TensorialSample):
       hull1 = self._sample1.get_element_hull(ielem1)[:,None,:,None] * npoints2 + self._sample2.get_element_tri(ielem2)[None,:,None,:] # 2 x ntri2 x 1 x ndims
       hull2 = self._sample1.get_element_tri(ielem1)[:,None,:,None] * npoints2 + self._sample2.get_element_hull(ielem2)[None,:,None,:] # ntri1 x nhull2 x 2 x ndims-1
       return numpy.concatenate([hull1.reshape(-1, self.ndims), numeric.overlapping(hull2.reshape(-1, 2*(self.ndims-1)), n=self.ndims).reshape(-1, self.ndims)])
+    elif self._sample1.npoints == 1:
+      return self._sample2.get_element_hull(ielem)
+    elif self._sample2.npoints == 1:
+      return self._sample1.get_element_hull(ielem)
     else:
       return super().get_element_hull(ielem)
 
