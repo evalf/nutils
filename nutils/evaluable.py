@@ -3144,6 +3144,9 @@ class Ravel(Array):
   def _assparse(self):
     return tuple((*indices[:-2], indices[-2]*self.func.shape[-1]+indices[-1], values) for *indices, values in self.func._assparse)
 
+  def _intbounds_impl(self):
+    return self.func._intbounds_impl()
+
 class Unravel(Array):
 
   __slots__ = 'func'
