@@ -3234,11 +3234,13 @@ class StructuredBasis(Basis):
     indices.append(index)
     indices.reverse()
     dofs = None
+    ndofs = None
     for lengths_i, offsets_i, ndofs_i, index_i in zip(self._ndofs, self._start_dofs, self._dofs_shape, indices):
       length = evaluable.get(lengths_i, 0, index_i)
       offset = evaluable.get(offsets_i, 0, index_i)
       dofs_i = (evaluable.Range(length) + offset) % ndofs_i
-      dofs = dofs_i if dofs is None else evaluable.Ravel(evaluable.RavelIndex(dofs, dofs_i, dofs.shape[0], ndofs_i))
+      ndofs = ndofs_i if ndofs is None else ndofs * ndofs_i
+      dofs = dofs_i if dofs is None else evaluable.Ravel(evaluable.RavelIndex(dofs, dofs_i, ndofs, ndofs_i))
     coeffs = functools.reduce(evaluable.PolyOuterProduct,
       [evaluable.Elemwise(coeffs_i, index_i, float) for coeffs_i, index_i in zip(self._coeffs, indices)])
     return dofs, coeffs
