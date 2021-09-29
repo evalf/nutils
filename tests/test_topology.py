@@ -928,7 +928,8 @@ class hierarchical(TestCase, TopologyAssertions):
 
   def setUp(self):
     super().setUp()
-    self.domain, self.geom = mesh.rectilinear([numpy.linspace(0, 1, 7)]*self.ndims, periodic=self.periodic)
+    self.nelems = 6
+    self.domain, self.geom = mesh.rectilinear([numpy.linspace(0, 1, self.nelems+1)]*self.ndims, periodic=self.periodic)
     # Refine `self.domain` near `self.pos`.
     distance = ((self.geom-self.pos)**2).sum(0)**0.5
     for threshold in 0.3, 0.15:
@@ -940,6 +941,11 @@ class hierarchical(TestCase, TopologyAssertions):
 
   def test_interfaces(self):
     self.assertInterfaces(self.domain, self.geom, self.periodic)
+
+  def test_slice(self):
+    for idim in range(self.ndims):
+      self.assertAlmostEqual(self.domain[(slice(None),)*idim+(slice(1),)].integrate(function.J(self.geom), degree=1), 1/self.nelems)
+    self.assertAlmostEqual(self.domain[(slice(1),)*self.ndims].integrate(function.J(self.geom), degree=1), 1/self.nelems**self.ndims)
 
 hierarchical('3d_l_rrr', pos=0, ndims=3, periodic=[])
 hierarchical('3d_l_rpr', pos=0, ndims=3, periodic=[1])
