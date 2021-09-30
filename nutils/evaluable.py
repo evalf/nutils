@@ -2382,23 +2382,23 @@ def Elemwise(data:types.tuple[types.arraydata], index:asarray, dtype:asdtype):
   unique, indices = util.unique(data)
   if len(unique) == 1:
     return Constant(unique[0])
-  shape = [Take(s, index).simplified for s in numpy.array([d.shape for d in data]).T] # use original index to avoid potential inconsistencies with other arrays
+  # Create shape from data and index, rather than unique and the modified
+  # index, in order to avoid potential shape inconsistencies later on.
+  shapes = numpy.array([d.shape for d in data])
+  shape = [Take(s, index) for s in shapes.T]
   if len(unique) < len(data):
     index = Take(indices, index)
   # Move all axes with constant shape to the left and ravel the remainder.
-  is_constant = numpy.array([n.isconstant for n in shape], dtype=bool)
+  is_constant = numpy.all(shapes[1:] == shapes[0], axis=0)
   nconstant = is_constant.sum()
   reorder = numpy.argsort(~is_constant)
-  shape = [shape[i] for i in reorder]
-  var_shape = shape[nconstant:]
-  reshape = [n.__index__() for n in shape[:nconstant]] + [-1]
-  raveled = [numpy.transpose(d, reorder).reshape(reshape) for d in unique]
+  raveled = [numpy.transpose(d, reorder).reshape(*shapes[0, reorder[:nconstant]], -1) for d in unique]
   # Concatenate the raveled axis, take slices, unravel and reorder the axes to
   # the original position.
   concat = numpy.concatenate(raveled, axis=-1)
-  if len(var_shape) == 0:
-    assert tuple(reorder) == tuple(range(nconstant))
+  if is_constant.all():
     return Take(concat, index)
+  var_shape = tuple(shape[i] for i in reorder[nconstant:])
   cumprod = list(var_shape)
   for i in reversed(range(len(var_shape)-1)):
     cumprod[i] *= cumprod[i+1] # work backwards so that the shape check matches in Unravel
