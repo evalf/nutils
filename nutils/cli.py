@@ -345,14 +345,13 @@ def setup(scriptname: str,
   consolellog = treelog.RichOutputLog() if richoutput else treelog.StdoutLog()
   if verbose is not None:
     consolellog = treelog.FilterLog(consolellog, minlevel=tuple(Level)[5-verbose])
-  htmllog = _htmllog(outdir, scriptname, kwargs)
 
   if nprocs == 1:
     os.environ['MKL_THREADING_LAYER'] = 'SEQUENTIAL'
 
-  with htmllog, \
+  with treelog.set(consolellog), \
+       _htmllog(outdir, scriptname, kwargs) as htmllog, treelog.add(htmllog), \
        _status(outuri+'/'+htmllog.filename, richoutput), \
-       treelog.set(treelog.TeeLog(consolellog, htmllog)), \
        _traceback(richoutput=richoutput, postmortem=pdb, exit=gracefulexit), \
        warnings.via(treelog.warning), \
        _cache.enable(os.path.join(outdir, cachedir)) if cache else _cache.disable(), \

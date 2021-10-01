@@ -1100,6 +1100,7 @@ class multipatch_errors(TestCase):
 class groups(TestCase):
 
   def setUp(self):
+    super().setUp()
     self.topo, geom = mesh.rectilinear([2,2])
 
   def test_subdomain(self):
@@ -1219,6 +1220,7 @@ class UnionTopology(TestCase, CommonTests, TransformChainsTests):
 class DisjointUnionTopology(TestCase, CommonTests, TransformChainsTests):
 
   def setUp(self):
+    super().setUp()
     self.line, self.geom = mesh._oldrectilinear([8])
     part1 = self.line[0:2].withsubdomain(a=self.line[1:2])
     part2 = self.line[4:6].withsubdomain(a=self.line[5:6])
@@ -1240,6 +1242,7 @@ class DisjointUnionTopology(TestCase, CommonTests, TransformChainsTests):
 class project(TestCase):
 
   def setUp(self):
+    super().setUp()
     self.topo, self.geom = mesh.rectilinear([8])
     self.basis = self.topo.basis('std', degree=1)
 

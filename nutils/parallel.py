@@ -65,7 +65,10 @@ def fork(nprocs=None):
       if not pid: # pragma: no cover
         amchild = True
         signal.signal(signal.SIGINT, signal.SIG_IGN) # disable sigint (ctrl+c) handler
-        treelog.current = treelog.NullLog() # silence treelog
+        setter = treelog.set(treelog.NullLog())
+        setter.__enter__() # silence treelog
+        # NOTE for treelog >= 2.0 we must hold a reference to setter until
+        # os.exit_ to save the formerly active logger from being destructed
         break
       child_pids.append(pid)
     else:

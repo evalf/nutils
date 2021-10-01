@@ -1,9 +1,6 @@
 import doctest as _doctest, unittest, importlib, os, tempfile, pathlib, functools, warnings, subprocess, sys, treelog
 import nutils.testing
 
-info = treelog.proto.Level.info if hasattr(treelog, 'proto') else 1
-_doctestlog = treelog.FilterLog(treelog.StdoutLog(), minlevel=info)
-
 class DocTestCase(nutils.testing.ContextTestCase, _doctest.DocTestCase):
 
   def __init__(self, test, *, requires=None, **kwargs):
@@ -31,7 +28,6 @@ class DocTestCase(nutils.testing.ContextTestCase, _doctest.DocTestCase):
     super().setUp()
     self.enter_context(warnings.catch_warnings())
     warnings.simplefilter('ignore')
-    self.enter_context(treelog.set(_doctestlog))
     import numpy
     printoptions = numpy.get_printoptions()
     if 'legacy' in printoptions:

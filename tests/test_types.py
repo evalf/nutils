@@ -1025,6 +1025,7 @@ class lru_dict(TestCase):
 class lru_cache(TestCase):
 
   def setUp(self):
+    super().setUp()
     self.func.cache.clear()
 
   @nutils.types.lru_cache(maxsize=2)
