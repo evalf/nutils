@@ -629,6 +629,31 @@ class replace_arguments(TestCase):
     self.assertEqual(function.replace_arguments(function.derivative(a, a), dict(a=b)).as_evaluable_array.simplified, evaluable.ones(()).simplified)
 
 
+class dotarg(TestCase):
+
+  def assertEvalAlmostEqual(self, f_actual, desired, **arguments):
+    self.assertEqual(f_actual.shape, desired.shape)
+    actual = f_actual.as_evaluable_array.eval(**arguments)
+    self.assertEqual(actual.shape, desired.shape)
+    self.assertAllAlmostEqual(actual, desired)
+
+  def test(self):
+    a = numpy.ones((), dtype=float)
+    a2 = numpy.arange(2, dtype=float)
+    a23 = numpy.arange(6, dtype=float).reshape(2, 3)
+    a24 = numpy.arange(8, dtype=float).reshape(2, 4)
+    a243 = numpy.arange(24, dtype=float).reshape(2, 4, 3)
+    a4 = numpy.arange(4, dtype=float)
+    a45 = numpy.arange(20, dtype=float).reshape(4, 5)
+    self.assertEvalAlmostEqual(function.dotarg('arg'), a, arg=a)
+    self.assertEvalAlmostEqual(function.dotarg('arg', shape=(2,3)), a23, arg=a23)
+    self.assertEvalAlmostEqual(function.dotarg('arg', a4), numpy.einsum('i,i->', a4, a4), arg=a4)
+    self.assertEvalAlmostEqual(function.dotarg('arg', a45), numpy.einsum('i,ij->j', a4, a45), arg=a4)
+    self.assertEvalAlmostEqual(function.dotarg('arg', a24, shape=(3,)), numpy.einsum('ij,ik->jk', a23, a24), arg=a23)
+    self.assertEvalAlmostEqual(function.dotarg('arg', a2, a45), numpy.einsum('ij,i,jk->k', a24, a2, a45), arg=a24)
+    self.assertEvalAlmostEqual(function.dotarg('arg', a2, a45, shape=(3,)), numpy.einsum('ijk,i,jl->kl', a243, a2, a45), arg=a243)
+
+
 class jacobian(TestCase):
 
   def setUp(self):
