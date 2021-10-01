@@ -105,7 +105,9 @@ else:
       return cls
   class Protocol(metaclass=_Protocol): pass
 
-from typing import Callable, FrozenSet, Generic, Iterable, Iterator, List, Optional, Set, Tuple, TypeVar, Union
+from typing import Callable, FrozenSet, Generic, Iterable, Iterator, List, Optional, Sequence, Set, Tuple, TypeVar, Union
+import functools, numpy
+from . import function
 
 T = TypeVar('T')
 
@@ -530,3 +532,251 @@ class _Parser(Generic[T]):
       else:
         result_indices += index
     return array, result_indices, frozenset(summed_indices)
+
+class Namespace:
+  '''Namespace for :class:`~nutils.function.Array` objects supporting assignments with tensor expressions.
+
+  The :class:`Namespace` object is used to store :class:`~nutils.function.Array` objects.
+
+  >>> from nutils import function
+  >>> ns = Namespace()
+  >>> ns.A = function.zeros([2, 3])
+  >>> ns.x = function.zeros([3])
+  >>> ns.c = 2
+
+  In addition to the assignment of :class:`~nutils.function.Array` objects, it is also possible
+  to specify an array using a tensor expression string — see
+  :mod:`nutils.expression_v2` for the syntax.  All attributes defined in this
+  namespace are available as variables in the expression.  If the array defined
+  by the expression has one or more dimensions the indices of the axes should
+  be appended to the attribute name.  Example:
+
+  >>> ns.cAx_i = 'c A_ij x_j'
+
+  It is also possible to simply evaluate an expression without storing its
+  value in the namespace using ``expression @ ns``:
+
+  >>> '2 c' @ ns
+  Array<>
+  >>> 'c A_ij x_j' @ ns
+  Array<2>
+  >>> 'A_ij' @ ns # indices are ordered alphabetically
+  Array<2,3>
+
+  Note that evaluating an expression with an incompatible length raises an
+  exception:
+
+  >>> 'A_ij + A_ji' @ ns
+  Traceback (most recent call last):
+  ...
+  nutils.expression_V2.ExpressionSyntaxError: Length of index i is fixed at 2 but the expression has length 3.
+  a_i
+    ^
+
+  When evaluating an expression through this namespace the following functions
+  are available: ``opposite``, ``sin``, ``cos``, ``tan``, ``sinh``, ``cosh``,
+  ``tanh``, ``arcsin``, ``arccos``, ``arctanh``, ``exp``, ``abs``, ``ln``,
+  ``log``, ``log2``, ``log10``, ``sqrt`` and ``sign``.
+
+  Additional pointwise functions can be assigned to the namespace similar to variables:
+
+  >>> ns.sqr = lambda u: u**2
+  >>> 'sqr(x_i)' @ ns # same as 'x_i^2'
+  Array<3>
+  '''
+
+  def __init__(self) -> None:
+    self.opposite = function.opposite
+    self.sin = function.sin
+    self.cos = function.cos
+    self.tan = function.tan
+    self.sinh = function.sinh
+    self.cosh = function.cosh
+    self.tanh = function.tanh
+    self.arcsin = function.arcsin
+    self.arccos = function.arccos
+    self.arctan = function.arctan
+    self.arctanh = function.arctanh
+    self.exp = function.exp
+    self.abs = function.abs
+    self.ln = function.ln
+    self.log = function.ln
+    self.log2 = function.log2
+    self.log10 = function.log10
+    self.sqrt = function.sqrt
+    self.sign = function.sign
+
+  def __setattr__(self, attr: str, value: Union[function.Array, str]) -> None:
+    name, underscore, indices = attr.partition('_')
+    if isinstance(value, (int, float, complex, numpy.ndarray)):
+      value = function.Array.cast(value)
+    if isinstance(value, function.Array):
+      if underscore:
+        raise AttributeError('Cannot assign an array to an attribute with an underscore.')
+      super().__setattr__(name, value)
+    elif isinstance(value, str):
+      if not all('a' <= index <= 'z' for index in indices):
+        raise AttributeError('Only lower case latin characters are allowed as indices.')
+      if len(set(indices)) != len(indices):
+        raise AttributeError('All indices must be unique.')
+      ops = _FunctionArrayOps(self)
+      array, expression_indices, summed = _Parser(ops).parse_expression(_Substring(value))
+      if expression_indices != indices:
+        for index in sorted(set(indices) - set(expression_indices)):
+          raise AttributeError('Index {} of the namespace attribute is missing in the expression.'.format(index))
+        for index in sorted(set(expression_indices) - set(indices)):
+          raise AttributeError('Index {} of the expression is missing in the namespace attribute.'.format(index))
+        array = ops.align(array, expression_indices, indices)
+      super().__setattr__(name, array)
+    elif isinstance(value, Callable):
+      if underscore:
+        raise AttributeError('Cannot assign a function to an attribute with an underscore.')
+      super().__setattr__(name, value)
+    else:
+      raise AttributeError('Cannot assign an object of type {} to the namespace.'.format(type(value)))
+
+  def __rmatmul__(self, expression):
+    ops = _FunctionArrayOps(self)
+    parser = _Parser(ops)
+    if isinstance(expression, str):
+      array, indices, summed = parser.parse_expression(_Substring(expression))
+      array = ops.align(array, indices, ''.join(sorted(indices)))
+      return array
+    elif isinstance(expression, tuple):
+      return tuple(item @ self for item in expression)
+    elif isinstance(expression, list):
+      return list(item @ self for item in expression)
+    else:
+      return NotImplemented
+
+  def define_for(self, __name: str, *, gradient: Optional[str] = None, normal: Optional[str] = None, jacobians: Sequence[str] = ()) -> None:
+    '''Define gradient, normal or jacobian for the given geometry.
+
+    Parameters
+    ----------
+    name : :class:`str`
+        Define the gradient, normal or jacobian for the geometry with the given
+        name in this namespace.
+    gradient : :class:`str`, optional
+        Define the gradient function with the given name. The function
+        generates axes with the same shape as the given geometry.
+    normal : :class:`str`, optional
+        Define the normal with the given name. The normal has the same shape as
+        the geometry.
+    jacobians : sequence of :class:`str`, optional
+        Define the jacobians for decreasing dimensions, starting at the
+        dimensions of the geometry. The jacobians are always scalars.
+
+    Example
+    -------
+
+    >>> from nutils import function, mesh
+    >>> ns = Namespace()
+    >>> topo, ns.x = mesh.rectilinear([2, 2])
+    >>> ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'ds'))
+    >>> ns.basis = topo.basis('spline', degree=1)
+    >>> ns.u = function.dotarg(ns.basis, 'u')
+    >>> ns.v = function.dotarg(ns.basis, 'v')
+    >>> res = topo.integral('-∇_i(v) ∇_i(u) dV' @ ns, degree=2)
+    >>> res += topo.boundary.integral('∇_i(v) u n_i ds' @ ns, degree=2)
+    '''
+
+    geom = getattr(self, __name)
+    if gradient:
+      setattr(self, gradient, lambda arg: function.grad(arg, geom))
+    if normal:
+      setattr(self, normal, function.normal(geom))
+    if len(jacobians) > geom.size + 1:
+      raise ValueError('Cannot define the jacobian for negative dimensions.')
+    for jacobian, ndim in zip(jacobians, range(geom.size, -1, -1)):
+      setattr(self, jacobian, function.jacobian(geom, ndim))
+
+  def copy_(self) -> 'Namespace':
+    '''Return a copy of this namespace.'''
+
+    ns = Namespace()
+    for attr, value in vars(self).items():
+      setattr(ns, attr, value)
+    return ns
+
+class _FunctionArrayOps:
+
+  def __init__(self, namespace: Namespace) -> None:
+    self.namespace = namespace
+
+  def align(self, array: function.Array, in_indices: str, out_indices: str) -> function.Array:
+    assert set(in_indices) == set(out_indices) and len(in_indices) == len(out_indices) == len(set(in_indices))
+    return self.transpose(array, tuple(map(in_indices.index, out_indices)))
+
+  def get_shape(self, array: function.Array) -> Tuple[int, ...]:
+    return array.shape
+
+  def from_int(self, value: int) -> function.Array:
+    return function.Array.cast(value)
+
+  def from_float(self, value: float) -> function.Array:
+    return function.Array.cast(value)
+
+  def get_variable(self, name: str, ndim: int) -> Optional[Union[function.Array, _InvalidDimension]]:
+    try:
+      array = getattr(self.namespace, name)
+    except AttributeError:
+      return None
+    if not isinstance(array, function.Array):
+      return None
+    if array.ndim == ndim:
+      return array
+    else:
+      return _InvalidDimension(array.ndim)
+
+  def call(self, name: str, ngenerates: int, arg: function.Array) -> Optional[Union[function.Array, _InvalidDimension]]:
+    try:
+      func = getattr(self.namespace, name)
+    except AttributeError:
+      return None
+    array = func(arg)
+    assert isinstance(array, function.Array)
+    assert array.shape[:arg.ndim] == arg.shape
+    if array.ndim == arg.ndim + ngenerates:
+      return array
+    else:
+      return _InvalidDimension(array.ndim - arg.ndim)
+
+  def get_element(self, array: function.Array, axis: int, index: int) -> function.Array:
+    assert 0 <= axis < array.ndim and 0 <= index < array.shape[axis]
+    return function.get(array, axis, index)
+
+  def transpose(self, array: function.Array, axes: Tuple[int, ...]) -> function.Array:
+    assert array.ndim == len(axes)
+    return function.transpose(array, axes)
+
+  def trace(self, array: function.Array, axis1: int, axis2: int) -> function.Array:
+    return function.trace(array, axis1, axis2)
+
+  def scope(self, array: function.Array) -> function.Array:
+    return array
+
+  def mean(self, array: function.Array) -> function.Array:
+    return function.mean(array)
+
+  def jump(self, array: function.Array) -> function.Array:
+    return function.jump(array)
+
+  def add(self, *args: Tuple[bool, function.Array]) -> function.Array:
+    assert all(arg.shape == args[0][1].shape for neg, arg in args[1:])
+    negated = (-arg if neg else arg for neg, arg in args)
+    return functools.reduce(function.add, negated)
+
+  def multiply(self, *args: function.Array) -> function.Array:
+    result = args[0]
+    for arg in args[1:]:
+      result = function.multiply(function._append_axes(result, arg.shape), function._prepend_axes(arg, result.shape))
+    return result
+
+  def divide(self, numerator: function.Array, denominator: function.Array) -> function.Array:
+    assert denominator.ndim == 0
+    return function.divide(numerator, function._append_axes(denominator, numerator.shape))
+
+  def power(self, base: function.Array, exponent: function.Array) -> function.Array:
+    assert exponent.ndim == 0
+    return function.power(base, function._append_axes(exponent, base.shape))
