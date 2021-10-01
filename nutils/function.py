@@ -2974,6 +2974,34 @@ def rotmat(__arg: IntoArray) -> Array:
   arg = Array.cast(__arg)
   return stack([trignormal(arg), trigtangent(arg)], 0)
 
+def dotarg(__array: IntoArray, __argname: str, *, shape: Tuple[int, ...] = ()) -> Array:
+  '''Return the inner product of the given array with an argument with the given name.
+
+  The array must have at least one axis. The argument has as shape the length
+  of this axis, optionally appended with the given ``shape``. The inner product
+  is applied to the first axis and all other axes are treated as an outer
+  product.
+
+  Parameters
+  ----------
+  array : :class:`Array` or something that can be :meth:`~Array.cast` into one
+  argname : :class:`str`
+      The name of the argument.
+  shape : :class:`tuple` of :class:`int`, optional
+      The shape to be appended to the argument.
+
+  Returns
+  -------
+  :class:`Array`
+      The inner product with shape ``array.shape + shape``.
+  '''
+
+  array = Array.cast(__array)
+  arg = Argument(__argname, (array.shape[0], *shape), dtype=float)
+  aligned_array = _append_axes(array, shape)
+  aligned_arg = _Transpose.from_end(_append_axes(arg, array.shape[1:]), *range(1, array.ndim))
+  return sum(multiply(aligned_array, aligned_arg), 0)
+
 # BASES
 
 def _int_or_vec(f, self, arg, argname, nargs, nvals):
