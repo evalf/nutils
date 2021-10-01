@@ -36,6 +36,7 @@ __all__ = [
   'evaluable',
   'export',
   'expression_v1',
+  'expression_v2',
   'function',
   'matrix',
   'mesh',
