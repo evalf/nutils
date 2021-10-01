@@ -2269,7 +2269,7 @@ class Less(Pointwise):
 class Minimum(Pointwise):
   __slots__ = ()
   evalf = numpy.minimum
-  deriv = Less, lambda x, y: 1 - Less(x, y)
+  deriv = lambda x, y: .5 - .5 * Sign(x - y), lambda x, y: .5 + .5 * Sign(x - y)
 
   def _simplified(self):
     if self.dtype == int:
@@ -2289,7 +2289,7 @@ class Minimum(Pointwise):
 class Maximum(Pointwise):
   __slots__ = ()
   evalf = numpy.maximum
-  deriv = lambda x, y: 1 - Less(x, y), Less
+  deriv = lambda x, y: .5 + .5 * Sign(x - y), lambda x, y: .5 - .5 * Sign(x - y)
 
   def _simplified(self):
     if self.dtype == int:
