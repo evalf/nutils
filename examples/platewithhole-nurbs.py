@@ -8,6 +8,7 @@
 # and Engineering, Elsevier, 2005, 194, 4135-4195.
 
 from nutils import mesh, function, solver, export, cli, testing
+from nutils.expression_v2 import Namespace
 import numpy, treelog
 
 def main(nrefine:int, traction:float, radius:float, poisson:float):
@@ -52,14 +53,16 @@ def main(nrefine:int, traction:float, radius:float, poisson:float):
     controlweights = domain.project(weightfunc, onto=bsplinebasis, geometry=geom0, ischeme='gauss9')
     nurbsbasis = bsplinebasis * controlweights / weightfunc
 
-  ns = function.Namespace()
+  ns = Namespace()
+  ns.δ = function.eye(domain.ndims)
   ns.x = geom
+  ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
   ns.lmbda = 2 * poisson
   ns.mu = 1 - poisson
   ns.ubasis = nurbsbasis.vector(2)
-  ns.u_i = 'ubasis_ni ?lhs_n'
+  ns.u = function.dotarg('lhs', ns.ubasis)
   ns.X_i = 'x_i + u_i'
-  ns.strain_ij = '(d(u_i, x_j) + d(u_j, x_i)) / 2'
+  ns.strain_ij = '(∇_j(u_i) + ∇_i(u_j)) / 2'
   ns.stress_ij = 'lmbda strain_kk δ_ij + 2 mu strain_ij'
   ns.r2 = 'x_k x_k'
   ns.R2 = radius**2 / ns.r2
@@ -68,24 +71,24 @@ def main(nrefine:int, traction:float, radius:float, poisson:float):
   ns.uexact_i = 'scale (x_i ((k + 1) (0.5 + R2) + (1 - R2) R2 (x_0^2 - 3 x_1^2) / r2) - 2 δ_i1 x_1 (1 + (k - 1 + R2) R2))'
   ns.du_i = 'u_i - uexact_i'
 
-  sqr = domain.boundary['top,bottom'].integral('(u_i n_i)^2 J(x)' @ ns, degree=9)
+  sqr = domain.boundary['top,bottom'].integral('(u_i n_i)^2 dS' @ ns, degree=9)
   cons = solver.optimize('lhs', sqr, droptol=1e-15)
-  sqr = domain.boundary['right'].integral('du_k du_k J(x)' @ ns, degree=20)
+  sqr = domain.boundary['right'].integral('du_k du_k dS' @ ns, degree=20)
   cons = solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
 
   # construct residual
-  res = domain.integral('d(ubasis_ni, x_j) stress_ij J(x)' @ ns, degree=9)
+  res = domain.integral('∇_j(ubasis_ni) stress_ij dV' @ ns, degree=9)
 
   # solve system
   lhs = solver.solve_linear('lhs', res, constrain=cons)
 
   # vizualize result
   bezier = domain.sample('bezier', 9)
-  X, stressxx = bezier.eval(['X', 'stress_00'] @ ns, lhs=lhs)
+  X, stressxx = bezier.eval(['X_i', 'stress_00'] @ ns, lhs=lhs)
   export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull, clim=(numpy.nanmin(stressxx), numpy.nanmax(stressxx)))
 
   # evaluate error
-  err = domain.integral('<du_k du_k, sum:ij(d(du_i, x_j)^2)>_n J(x)' @ ns, degree=9).eval(lhs=lhs)**.5
+  err = function.sqrt(domain.integral(['du_k du_k dV', '∇_j(du_i) ∇_j(du_i) dV'] @ ns, degree=9)).eval(lhs=lhs)
   treelog.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
   return err, cons, lhs
