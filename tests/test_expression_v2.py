@@ -1,6 +1,6 @@
-import functools, operator
+import functools, numpy, operator
 from nutils.testing import TestCase
-from nutils import expression_v2
+from nutils import expression_v2, mesh, sample
 
 class SerializedOps:
 
@@ -425,3 +425,116 @@ class Parser(TestCase):
       'Expected a float.',
       '-1.2',
       '^^^^')
+
+class Namespace(TestCase):
+
+  def test_set_int(self):
+    ns = expression_v2.Namespace()
+    ns.a = 1
+
+  def test_set_float(self):
+    ns = expression_v2.Namespace()
+    ns.a = 1.2
+
+  def test_set_complex(self):
+    ns = expression_v2.Namespace()
+    ns.a = 1+1j
+
+  def test_set_numpy(self):
+    ns = expression_v2.Namespace()
+    ns.a = numpy.array([1, 2])
+
+  def test_set_numpy_indices(self):
+    ns = expression_v2.Namespace()
+    a = numpy.array([1, 2])
+    with self.assertRaisesRegex(AttributeError, '^Cannot assign an array to an attribute with an underscore.'):
+      ns.a_i = a
+
+  def test_set_expression_0d(self):
+    ns = expression_v2.Namespace()
+    ns.a = '1.2'
+
+  def test_set_expression_1d(self):
+    ns = expression_v2.Namespace()
+    ns.a = numpy.array([1, 2])
+    ns.b_i = '2 a_i'
+
+  def test_set_expression_2d(self):
+    ns = expression_v2.Namespace()
+    ns.a = numpy.array([1, 2])
+    ns.b_ij = 'a_i a_j'
+    ns.c_ji = 'a_i a_j'
+
+  def test_set_expression_invalid_indices(self):
+    ns = expression_v2.Namespace()
+    ns.a = numpy.array([1, 2])
+    with self.assertRaisesRegex(AttributeError, '^Only lower case latin characters are allowed as indices.'):
+      ns.b_α = 'a_α'
+
+  def test_set_expression_duplicate_indices(self):
+    ns = expression_v2.Namespace()
+    ns.a = numpy.array([1, 2])
+    with self.assertRaisesRegex(AttributeError, '^All indices must be unique.'):
+      ns.b_ii = 'a_i a_i'
+
+  def test_set_expression_missing_indices(self):
+    ns = expression_v2.Namespace()
+    ns.a = numpy.array([1, 2])
+    with self.assertRaisesRegex(AttributeError, '^Index i of the expression is missing in the namespace attribute.'):
+      ns.b_j = 'a_i a_j'
+    with self.assertRaisesRegex(AttributeError, '^Index j of the namespace attribute is missing in the expression.'):
+      ns.b_ij = 'a_i'
+
+  def test_set_function(self):
+    ns = expression_v2.Namespace()
+    ns.f = lambda a: a**2
+    self.assertAlmostEqual(('f(2)' @ ns).eval(), 4)
+
+  def test_set_function_unexpected_indices(self):
+    ns = expression_v2.Namespace()
+    with self.assertRaisesRegex(AttributeError, '^Cannot assign a function to an attribute with an underscore.'):
+      ns.f_i = lambda a: function.stack([a, a], axis=-1)
+
+  def test_set_other(self):
+    ns = expression_v2.Namespace()
+    with self.assertRaisesRegex(AttributeError, '^Cannot assign an object of type'):
+      ns.a = object()
+
+  def test_eval(self):
+    ns = expression_v2.Namespace()
+    ns.a = numpy.array([1, 2])
+    ns.b = numpy.array([1, 2, 3])
+    self.assertEqual(('1' @ ns).eval().tolist(), 1)
+    self.assertEqual(('a_i' @ ns).eval().tolist(), [1, 2])
+    self.assertEqual(('a_i b_j' @ ns).eval().export('dense').tolist(), [[1, 2, 3], [2, 4, 6]])
+    self.assertEqual(('b_j a_i' @ ns).eval().export('dense').tolist(), [[1, 2, 3], [2, 4, 6]])
+
+  def test_eval_tuple_list(self):
+    ns = expression_v2.Namespace()
+    self.assertEqual(sample.eval_integrals(*(('1', '2', '3') @ ns)), (1, 2, 3))
+    self.assertEqual(sample.eval_integrals(*(['1', '2', '3'] @ ns)), (1, 2, 3))
+
+  def test_define_for_0d(self):
+    ns = expression_v2.Namespace()
+    topo, ns.t = mesh.line(numpy.linspace(0, 1, 3), bnames=['past', 'future'])
+    ns.define_for('t', gradient='∂t', normal='nt', jacobians=['dt', 'dtb'])
+    ns.basis = topo.basis('spline', degree=1)
+    self.assertAlmostEqual(topo.integral('dt' @ ns, degree=2).eval(), 1)
+    self.assertAlmostEqual(topo.integral('∂t(t^2) dt' @ ns, degree=2).eval(), 1)
+    self.assertAlmostEqual(topo.boundary['future'].integral('nt dtb' @ ns, degree=2).eval(), 1)
+    self.assertAlmostEqual(topo.boundary['past'].integral('nt dtb' @ ns, degree=2).eval(), -1)
+
+  def test_define_for_1d(self):
+    ns = expression_v2.Namespace()
+    topo, ns.x = mesh.rectilinear([numpy.linspace(0, 1, 3), numpy.linspace(0, 1, 5)])
+    ns.define_for('x', gradient='∇', normal='n', jacobians=['dV', 'dS'])
+    self.assertAlmostEqual(topo.integral('dV' @ ns, degree=2).eval(), 1)
+    self.assertAlmostEqual(topo.integral('∇_i(x_i^2) dV' @ ns, degree=2).eval(), 2)
+    self.assertAlmostEqual(topo.boundary['right'].integral('n_0 dS' @ ns, degree=2).eval(), 1)
+    self.assertAlmostEqual(topo.boundary['bottom'].integral('n_1 dS' @ ns, degree=2).eval(), -1)
+
+  def test_copy(self):
+    ns1 = expression_v2.Namespace()
+    ns1.a = 1
+    ns2 = ns1.copy_()
+    self.assertAlmostEqual(ns2.a.eval(), 1)
