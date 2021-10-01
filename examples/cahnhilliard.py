@@ -4,6 +4,7 @@
 # unmixing of two phases under the effect of surface tension.
 
 from nutils import mesh, function, solver, sample, export, cli, testing
+from nutils.expression_v2 import Namespace
 import numpy, treelog, itertools, enum, typing
 
 class stab(enum.Enum):
@@ -55,26 +56,27 @@ def main(nelems:int, etype:str, btype:str, degree:int, epsilon:typing.Optional[f
   domain, geom = mesh.unitsquare(nelems, etype)
   bezier = domain.sample('bezier', 5) # sample for plotting
 
-  ns = function.Namespace()
+  ns = Namespace()
   if not circle:
     ns.x = geom
   else:
     angle = (geom-.5) * (numpy.pi/2)
     ns.x = function.sin(angle) * function.cos(angle)[[1,0]] / numpy.sqrt(2)
+  ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
   ns.epsilon = epsilon
   ns.ewall = .5 * numpy.cos(contactangle * numpy.pi / 180)
   ns.cbasis = ns.mbasis = domain.basis('std', degree=degree)
-  ns.c = 'cbasis_n ?c_n'
-  ns.dc = 'cbasis_n (?c_n - ?c0_n)'
-  ns.m = 'mbasis_n ?m_n'
+  ns.c = function.dotarg(ns.cbasis, 'c')
+  ns.dc = ns.c - function.dotarg(ns.cbasis, 'c0')
+  ns.m = function.dotarg(ns.mbasis, 'm')
   ns.F = '.5 (c^2 - 1)^2 / epsilon^2'
   ns.dF = stab.value
   ns.dt = timestep
 
-  nrg_mix = domain.integral('F J(x)' @ ns, degree=7)
-  nrg_iface = domain.integral('.5 sum:k(d(c, x_k)^2) J(x)' @ ns, degree=7)
-  nrg_wall = domain.boundary.integral('(abs(ewall) + c ewall) J(x)' @ ns, degree=7)
-  nrg = nrg_mix + nrg_iface + nrg_wall + domain.integral('(dF - m dc - .5 dt epsilon^2 sum:k(d(m, x_k)^2)) J(x)' @ ns, degree=7)
+  nrg_mix = domain.integral('F dV' @ ns, degree=7)
+  nrg_iface = domain.integral('.5 ∇_k(c) ∇_k(c) dV' @ ns, degree=7)
+  nrg_wall = domain.boundary.integral('(abs(ewall) + c ewall) dS' @ ns, degree=7)
+  nrg = nrg_mix + nrg_iface + nrg_wall + domain.integral('(dF - m dc - .5 dt epsilon^2 ∇_k(m) ∇_k(m)) dV' @ ns, degree=7)
 
   numpy.random.seed(seed)
   state = dict(c=numpy.random.normal(0,.5,ns.cbasis.shape), m=numpy.random.normal(0,.5,ns.mbasis.shape)) # initial condition
@@ -85,7 +87,7 @@ def main(nelems:int, etype:str, btype:str, degree:int, epsilon:typing.Optional[f
     E = sample.eval_integrals(nrg_mix, nrg_iface, nrg_wall, **state)
     treelog.user('energy: {0:.3f} ({1[0]:.0f}% mixture, {1[1]:.0f}% interface, {1[2]:.0f}% wall)'.format(sum(E), 100*numpy.array(E)/sum(E)))
 
-    x, c, m = bezier.eval(['x', 'c', 'm'] @ ns, **state)
+    x, c, m = bezier.eval(['x_i', 'c', 'm'] @ ns, **state)
     export.triplot('phase.png', x, c, tri=bezier.tri, clim=(-1,1))
     export.triplot('chempot.png', x, m, tri=bezier.tri)
 

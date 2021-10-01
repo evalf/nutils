@@ -8,6 +8,7 @@
 # removed by means of the Finite Cell Method (FCM).
 
 from nutils import mesh, function, solver, export, cli, testing
+from nutils.expression_v2 import Namespace
 import numpy, treelog
 
 def main(nelems:int, etype:str, btype:str, degree:int, traction:float, maxrefine:int, radius:float, poisson:float):
@@ -38,14 +39,17 @@ def main(nelems:int, etype:str, btype:str, degree:int, traction:float, maxrefine
   domain0, geom = mesh.unitsquare(nelems, etype)
   domain = domain0.trim(function.norm2(geom) - radius, maxrefine=maxrefine)
 
-  ns = function.Namespace()
+  ns = Namespace()
+  ns.δ = function.eye(domain.ndims)
+  ns.Σ = function.ones([domain.ndims])
   ns.x = geom
+  ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
   ns.lmbda = 2 * poisson
   ns.mu = 1 - poisson
   ns.ubasis = domain.basis(btype, degree=degree).vector(2)
-  ns.u_i = 'ubasis_ni ?lhs_n'
+  ns.u = function.dotarg(ns.ubasis, 'lhs')
   ns.X_i = 'x_i + u_i'
-  ns.strain_ij = '(d(u_i, x_j) + d(u_j, x_i)) / 2'
+  ns.strain_ij = '(∇_j(u_i) + ∇_i(u_j)) / 2'
   ns.stress_ij = 'lmbda strain_kk δ_ij + 2 mu strain_ij'
   ns.r2 = 'x_k x_k'
   ns.R2 = radius**2 / ns.r2
@@ -54,19 +58,19 @@ def main(nelems:int, etype:str, btype:str, degree:int, traction:float, maxrefine
   ns.uexact_i = 'scale (x_i ((k + 1) (0.5 + R2) + (1 - R2) R2 (x_0^2 - 3 x_1^2) / r2) - 2 δ_i1 x_1 (1 + (k - 1 + R2) R2))'
   ns.du_i = 'u_i - uexact_i'
 
-  sqr = domain.boundary['left,bottom'].integral('(u_i n_i)^2 J(x)' @ ns, degree=degree*2)
+  sqr = domain.boundary['left,bottom'].integral('(u_i n_i)^2 dS' @ ns, degree=degree*2)
   cons = solver.optimize('lhs', sqr, droptol=1e-15)
-  sqr = domain.boundary['top,right'].integral('du_k du_k J(x)' @ ns, degree=20)
+  sqr = domain.boundary['top,right'].integral('du_k du_k dS' @ ns, degree=20)
   cons = solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
 
-  res = domain.integral('d(ubasis_ni, x_j) stress_ij J(x)' @ ns, degree=degree*2)
+  res = domain.integral('∇_j(ubasis_ni) stress_ij dV' @ ns, degree=degree*2)
   lhs = solver.solve_linear('lhs', res, constrain=cons)
 
   bezier = domain.sample('bezier', 5)
-  X, stressxx = bezier.eval(['X', 'stress_00'] @ ns, lhs=lhs)
+  X, stressxx = bezier.eval(['X_i', 'stress_00'] @ ns, lhs=lhs)
   export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull)
 
-  err = domain.integral('<du_k du_k, sum:ij(d(du_i, x_j)^2)>_n J(x)' @ ns, degree=max(degree,3)*2).eval(lhs=lhs)**.5
+  err = domain.integral(function.stack(['du_k du_k dV', 'Σ_i Σ_j ∇_j(du_i)^2 dV'] @ ns), degree=max(degree,3)*2).eval(lhs=lhs)**.5
   treelog.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
   return err, cons, lhs

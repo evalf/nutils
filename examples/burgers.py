@@ -5,6 +5,7 @@
 # the first coordinate.
 
 from nutils import mesh, function, solver, export, cli, testing
+from nutils.expression_v2 import Namespace
 import numpy, treelog
 
 def main(nelems:int, ndims:int, degree:int, timescale:float, newtontol:float, endtime:float):
@@ -29,25 +30,27 @@ def main(nelems:int, ndims:int, degree:int, timescale:float, newtontol:float, en
 
   domain, geom = mesh.rectilinear([numpy.linspace(0,1,nelems+1)]*ndims, periodic=range(ndims))
 
-  ns = function.Namespace()
+  ns = Namespace()
   ns.x = geom
+  ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
   ns.basis = domain.basis('discont', degree=degree)
-  ns.u = 'basis_n ?lhs_n'
+  ns.u = function.dotarg(ns.basis, 'lhs')
   ns.f = '.5 u^2'
   ns.C = 1
+  ns.δ = function.ones((domain.ndims,))
 
-  res = domain.integral('-d(basis_n, x_i) δ_i0 f J(x)' @ ns, degree=5)
-  res += domain.interfaces.integral('-[basis_n] n(x_i) δ_i0 ({f} - .5 C [u] n(x_j) δ_j0) J(x)' @ ns, degree=degree*2)
-  inertia = domain.integral('basis_n u J(x)' @ ns, degree=5)
+  res = domain.integral('-∇_0(basis_n) f dV' @ ns, degree=5)
+  res += domain.interfaces.integral('-[basis_n] n_0 ({f} - .5 C [u] n_0) dS' @ ns, degree=degree*2)
+  inertia = domain.integral('basis_n u dV' @ ns, degree=5)
 
-  sqr = domain.integral('(u - exp(-sum:i((5 (x_i - 0.5_i))^2)))^2 J(x)' @ ns, degree=5)
+  sqr = domain.integral('(u - exp(-(5 (x_i - 0.5 δ_i)) (5 (x_i - 0.5 δ_i))))^2 dV' @ ns, degree=5)
   lhs0 = solver.optimize('lhs', sqr)
 
   timestep = timescale/nelems
   bezier = domain.sample('bezier', 7)
   with treelog.iter.plain('timestep', solver.impliciteuler('lhs', res, inertia, timestep=timestep, arguments=dict(lhs=lhs0), newtontol=newtontol)) as steps:
     for itime, lhs in enumerate(steps):
-      x, u = bezier.eval(['x', 'u'] @ ns, lhs=lhs)
+      x, u = bezier.eval(['x_i', 'u'] @ ns, lhs=lhs)
       export.triplot('solution.png', x, u, tri=bezier.tri, hull=bezier.hull, clim=(0,1))
       if itime * timestep >= endtime:
         break
