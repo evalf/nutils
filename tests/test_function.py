@@ -200,6 +200,8 @@ _check('exp', function.exp, numpy.exp, [(4,)])
 _check('log', function.log, numpy.log, [(4,)], low=0)
 _check('log2', function.log2, numpy.log2, [(4,)], low=0)
 _check('log10', function.log10, numpy.log10, [(4,)], low=0)
+_check('trignormal', function.trignormal, lambda x: numpy.array([numpy.cos(x), numpy.sin(x)]), [()])
+_check('trigtangent', function.trigtangent, lambda x: numpy.array([-numpy.sin(x), numpy.cos(x)]), [()])
 
 _check('greater', function.greater, numpy.greater, [(4,1),(1,4)])
 _check('equal', function.equal, numpy.equal, [(4,1),(1,4)])
