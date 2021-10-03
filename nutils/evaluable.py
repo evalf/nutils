@@ -2922,6 +2922,10 @@ class WithDerivative(Array):
     self._deriv = derivative
     super().__init__(args=(func,), shape=func.shape, dtype=func.dtype)
 
+  @property
+  def arguments(self):
+    return self._func.arguments | {self._var}
+
   def evalf(self, func: numpy.ndarray) -> numpy.ndarray:
     return func
 
