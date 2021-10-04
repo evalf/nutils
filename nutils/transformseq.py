@@ -1015,7 +1015,7 @@ class _EvaluableTransformChainFromStructured(EvaluableTransformChain):
       assert evaluable.equalindex(points.shape[-1], 1)
     else:
       assert evaluable.equalindex(points.shape[-1], 0)
-      points = evaluable.appendaxes(axis.side, (*points.shape[:-1], 1))
+      points = evaluable.appendaxes(float(axis.side), (*points.shape[:-1], 1))
     # children
     for i in range(self._sequence._nrefine):
       index, ichild = evaluable.divmod(index, 2)

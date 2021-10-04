@@ -220,8 +220,10 @@ _check('heaviside', function.heaviside, lambda u: numpy.heaviside(u, .5), [(4,4)
 # TODO: jump
 
 _check('sum', lambda a: function.sum(a,2), lambda a: a.sum(2), [(4,3,4)])
+_check('sum-bool', lambda a: function.sum(function.greater(a,0),2), lambda a: (a>0).sum(2), [(4,3,4)])
 _check('Array_sum', lambda a: function.Array.cast(a).sum(2), lambda a: a.sum(2), [(4,3,4)])
 _check('product', lambda a: function.product(a,2), lambda a: numpy.product(a,2), [(4,3,4)])
+_check('product-bool', lambda a: function.product(function.greater(a,0),2), lambda a: numpy.product((a>0),2), [(4,3,4)])
 _check('Array_prod', lambda a: function.Array.cast(a).prod(2), lambda a: numpy.product(a,2), [(4,3,4)])
 
 _check('dot', lambda a,b: function.dot(a,b,axes=2), lambda a,b: (a*b).sum(2), [(4,2,4),(4,2,4)])
@@ -592,7 +594,7 @@ class replace_arguments(TestCase):
 
   def test_array(self):
     a = function.Argument('a', (2,))
-    b = function.Array.cast([1,2])
+    b = function.Array.cast([1,2.])
     self.assertEqual(function.replace_arguments(a, dict(a=b)).as_evaluable_array, b.as_evaluable_array)
 
   def test_argument(self):
@@ -603,7 +605,7 @@ class replace_arguments(TestCase):
   def test_argument_array(self):
     a = function.Argument('a', (2,))
     b = function.Argument('b', (2,))
-    c = function.Array.cast([1,2])
+    c = function.Array.cast([1,2.])
     self.assertEqual(function.replace_arguments(function.replace_arguments(a, dict(a=b)), dict(b=c)).as_evaluable_array, c.as_evaluable_array)
 
   def test_swap(self):
@@ -613,8 +615,8 @@ class replace_arguments(TestCase):
 
   def test_ignore_replaced(self):
     a = function.Argument('a', (2,))
-    b = function.Array.cast([1,2])
-    c = function.Array.cast([2,3])
+    b = function.Array.cast([1,2.])
+    c = function.Array.cast([2,3.])
     self.assertEqual(function.replace_arguments(function.replace_arguments(a, dict(a=b)), dict(a=c)).as_evaluable_array, b.as_evaluable_array)
 
   def test_ignore_recursion(self):
@@ -830,7 +832,7 @@ class namespace(TestCase):
   def test_d_arg(self):
     ns = function.Namespace()
     ns.a = '?a'
-    self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').as_evaluable_array.simplified, function.asarray(2).as_evaluable_array.simplified)
+    self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').as_evaluable_array.simplified, function.asarray(2.).as_evaluable_array.simplified)
 
   def test_n(self):
     ns = function.Namespace()
@@ -894,7 +896,7 @@ class eval_ast(TestCase):
     self.ns.altgeom = function.concatenate([self.ns.x, [0]], 0)
     self.ns.basis = self.domain.basis('spline', degree=2)
     self.ns.a = 2
-    self.ns.a2 = numpy.array([1,2])
+    self.ns.a2 = numpy.array([1,2.])
     self.ns.a3 = numpy.array([1,2,3])
     self.ns.a22 = numpy.array([[1,2],[3,4]])
     self.ns.a32 = numpy.array([[1,2],[3,4],[5,6]])

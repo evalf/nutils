@@ -209,6 +209,8 @@ class check(TestCase):
           actual=evaluable.diagonalize(self.actual, axis, newaxis))
 
   def test_product(self):
+    if self.desired.dtype == bool:
+      return
     for iax in range(self.actual.ndim):
       self.assertFunctionAlmostEqual(decimal=14,
         desired=numpy.product(self.desired, axis=iax),
@@ -224,11 +226,12 @@ class check(TestCase):
         actual=self.actual[s])
 
   def test_sumaxis(self):
-    actual = evaluable.Int(self.actual) if self.actual.dtype == bool else self.actual
+    if self.desired.dtype == bool:
+      return
     for idim in range(self.actual.ndim):
       self.assertFunctionAlmostEqual(decimal=14,
         desired=self.desired.sum(idim),
-        actual=actual.sum(idim))
+        actual=self.actual.sum(idim))
 
   def test_add(self):
     self.assertFunctionAlmostEqual(decimal=14,
@@ -295,6 +298,8 @@ class check(TestCase):
         actual=evaluable.unravel(self.actual, axis=idim, shape=unravelshape))
 
   def test_loopsum(self):
+    if self.desired.dtype == bool:
+      return
     length = 3
     index = evaluable.loop_index('_testindex', length)
     for iarg, arg_value in enumerate(self.arg_values):
@@ -869,12 +874,13 @@ class asciitree(TestCase):
     self.assertEqual(f.asciitree(richoutput=True),
                      '%0 = Sin; f:2,2\n'
                      '└ %1 = Power; f:2,2\n'
-                     '  ├ %2 = InsertAxis; i:2,2; [0,0]\n'
-                     '  │ ├ %3 = InsertAxis; i:2; [0,0]\n'
-                     '  │ │ ├ 0\n'
+                     '  ├ %2 = InsertAxis; f:2,2\n'
+                     '  │ ├ %3 = InsertAxis; f:2\n'
+                     '  │ │ ├ %4 = Float; f:\n'
+                     '  │ │ │ └ 0\n'
                      '  │ │ └ 2\n'
                      '  │ └ 2\n'
-                     '  └ %4 = Diagonalize; f:2,2\n'
+                     '  └ %5 = Diagonalize; f:2,2\n'
                      '    └ Argument; arg; f:2\n')
 
   @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
