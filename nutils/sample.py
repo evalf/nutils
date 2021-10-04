@@ -253,7 +253,10 @@ class Sample(types.Singleton):
     return eval_integrals_sparse(*map(self.__rmatmul__, funcs), **(arguments or {}))
 
   def __rmatmul__(self, __func: function.IntoArray) -> function.Array:
-    return _AtSample(function.Array.cast(__func), self)
+    func = _ConcatenatePoints(function.Array.cast(__func), self)
+    ielem = evaluable.loop_index('_sample_' + '_'.join(self.spaces), self.nelems)
+    indices = evaluable.loop_concatenate(evaluable._flat(self.get_evaluable_indices(ielem)), ielem)
+    return _ReorderPoints(func, indices)
 
   def basis(self) -> function.Array:
     '''Basis-like function that for every point in the sample evaluates to the
@@ -426,6 +429,9 @@ class _DefaultIndex(_TransformChainsSample):
     npoints = self.points.get_evaluable_coords(ielem).shape[0]
     offset = evaluable.get(_offsets(self.points), 0, ielem)
     return evaluable.Range(npoints) + offset
+
+  def __rmatmul__(self, __func: function.IntoArray) -> function.Array:
+    return _ConcatenatePoints(function.Array.cast(__func), self)
 
 class _CustomIndex(_TransformChainsSample):
 
@@ -782,7 +788,7 @@ class _Integral(function.Array):
     elem_integral = evaluable.einsum('B,ABC->AC', weights, integrand, B=weights.ndim, C=self.ndim)
     return evaluable.loop_sum(elem_integral, ielem)
 
-class _AtSample(function.Array):
+class _ConcatenatePoints(function.Array):
 
   def __init__(self, func: function.Array, sample: _TransformChainsSample) -> None:
     self._func = func
@@ -793,11 +799,24 @@ class _AtSample(function.Array):
     axis = len(points_shape)
     ielem = evaluable.loop_index('_sample_' + '_'.join(self._sample.spaces), self._sample.nelems)
     points_shape, transform_chains, coordinates = self._sample.update_lower_args(ielem, points_shape, transform_chains, coordinates)
-    indices = self._sample.get_evaluable_indices(ielem)
-    axes = range(axis, axis + indices.ndim)
     func = self._func.lower(points_shape, transform_chains, coordinates)
-    inflated = evaluable.Transpose.from_end(evaluable.Inflate(evaluable.Transpose.to_end(func, *axes), indices, self._sample.npoints), axis)
-    return evaluable.loop_sum(inflated, ielem)
+    func = evaluable.Transpose.to_end(func, *range(axis, len(points_shape)))
+    for i in range(len(points_shape) - axis - 1):
+      func = evaluable.Ravel(func)
+    func = evaluable.loop_concatenate(func, ielem)
+    return evaluable.Transpose.from_end(func, axis)
+
+class _ReorderPoints(function.Array):
+
+  def __init__(self, func: function.Array, indices: evaluable.Array) -> None:
+    self._func = func
+    self._indices = indices
+    assert indices.ndim == 1 and func.shape[0] == indices.shape[0].__index__()
+    super().__init__(shape=func.shape, dtype=func.dtype, spaces=func.spaces)
+
+  def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
+    func = self._func.lower(points_shape, transform_chains, coordinates)
+    return evaluable.take(func, self._indices, axis=0)
 
 class _Basis(function.Array):
 
