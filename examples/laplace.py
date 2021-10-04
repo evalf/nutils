@@ -54,11 +54,17 @@ def main(nelems:int, etype:str, btype:str, degree:int):
   # a scalar ``basis``, and the solution ``u``. The latter is formed by
   # contracting the basis with a to-be-determined solution vector ``?lhs``.
 
-  ns = Namespace()
-  ns.x = geom
+  unit_system = function.UnitSystem('m', 'K')
+
+  ns = Namespace(unit_system=unit_system)
+  ns.x = '#m' @ ns * geom
   ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
   ns.basis = domain.basis(btype, degree=degree)
-  ns.u = function.dotarg(ns.basis, 'lhs')
+  ns.u = function.dotarg('basis_n #K' @ ns, 'u')
+  ns.v = function.dotarg('basis_n / #K' @ ns, 'v')
+  ns.fright = 'cos(1) cosh(x_1 / #m) #K / #m'
+  ns.udtop = 'cosh(1) sin(x_0 / #m) #K'
+  ns.uexact = 'sin(x_0 / #m) cosh(x_1 / #m) #K'
 
   # We are now ready to implement the Laplace equation. In weak form, the
   # solution is a scalar field :math:`u` for which:
@@ -69,8 +75,8 @@ def main(nelems:int, etype:str, btype:str, degree:int):
   # spans its space. The result is an integral ``res`` that evaluates to a
   # vector matching the size of the function space.
 
-  res = domain.integral('∇_i(basis_n) ∇_i(u) dV' @ ns, degree=degree*2)
-  res -= domain.boundary['right'].integral('basis_n cos(1) cosh(x_1) dS' @ ns, degree=degree*2)
+  res = domain.integral('∇_i(v) ∇_i(u) dV' @ ns, degree=degree*2)
+  res -= domain.boundary['right'].integral('v fright dS' @ ns, degree=degree*2)
 
   # The Dirichlet constraints are set by finding the coefficients that minimize
   # the error:
@@ -83,8 +89,8 @@ def main(nelems:int, etype:str, btype:str, degree:int):
   # freedom are unconstrained.
 
   sqr = domain.boundary['left'].integral('u^2 dS' @ ns, degree=degree*2)
-  sqr += domain.boundary['top'].integral('(u - cosh(1) sin(x_0))^2 dS' @ ns, degree=degree*2)
-  cons = solver.optimize('lhs', sqr, droptol=1e-15)
+  sqr += domain.boundary['top'].integral('(u - udtop)^2 dS' @ ns, degree=degree*2)
+  cons = solver.optimize(['u'], sqr / ('#m #K^2' @ ns), droptol=1e-15)
 
   # The unconstrained entries of ``?lhs`` are to be determined such that the
   # residual vector evaluates to zero in the corresponding entries. This step
@@ -92,7 +98,7 @@ def main(nelems:int, etype:str, btype:str, degree:int):
   # right hand side vector that are subsequently assembled and solved. The
   # resulting ``lhs`` array matches ``cons`` in the constrained entries.
 
-  lhs = solver.solve_linear('lhs', res, constrain=cons)
+  state = solver.solve_linear(['u'], [res.derivative('v')], constrain=cons)
 
   # Once all entries of ``?lhs`` are establised, the corresponding solution can
   # be vizualised by sampling values of ``ns.u`` along with physical
@@ -102,16 +108,16 @@ def main(nelems:int, etype:str, btype:str, degree:int):
   # element outlines.
 
   bezier = domain.sample('bezier', 9)
-  x, u = bezier.eval(['x_i', 'u'] @ ns, lhs=lhs)
+  x, u = bezier.eval(['x_i / #m', 'u / #K'] @ ns, **state)
   export.triplot('solution.png', x, u, tri=bezier.tri, hull=bezier.hull)
 
   # To confirm that our computation is correct, we use our knowledge of the
   # analytical solution to evaluate the L2-error of the discrete result.
 
-  err = domain.integral('(u - sin(x_0) cosh(x_1))^2 dV' @ ns, degree=degree*2).eval(lhs=lhs)**.5
+  err = domain.integral('(u - uexact)^2 dV / (#K #m)^2' @ ns, degree=degree*2).eval(**state)**.5
   treelog.user('L2 error: {:.2e}'.format(err))
 
-  return cons, lhs, err
+  return cons, state, err
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line. For
@@ -132,10 +138,10 @@ class test(testing.TestCase):
 
   @testing.requires('matplotlib')
   def test_default(self):
-    cons, lhs, err = main(nelems=4, etype='square', btype='std', degree=1)
-    with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
+    cons, state, err = main(nelems=4, etype='square', btype='std', degree=1)
+    with self.subTest('constraints'): self.assertAlmostEqual64(cons['u'], '''
       eNrbKPv1QZ3ip9sL1BgaILDYFMbaZwZj5ZnDWNfNAeWPESU=''')
-    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(state['u'], '''
       eNoBMgDN/7Ed9eB+IfLboCaXNKc01DQaNXM14jXyNR82ZTa+NpI2oTbPNhU3bjf7Ngo3ODd+N9c3SNEU
       1g==''')
     with self.subTest('L2-error'):
@@ -143,10 +149,10 @@ class test(testing.TestCase):
 
   @testing.requires('matplotlib')
   def test_spline(self):
-    cons, lhs, err = main(nelems=4, etype='square', btype='spline', degree=2)
-    with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
+    cons, state, err = main(nelems=4, etype='square', btype='spline', degree=2)
+    with self.subTest('constraints'): self.assertAlmostEqual64(cons['u'], '''
       eNqrkmN+sEfhzF0xleRbDA0wKGeCYFuaIdjK5gj2aiT2VXMAJB0VAQ==''')
-    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(state['u'], '''
       eNqrkmN+sEfhzF0xleRbrsauxsnGc43fGMuZJJgmmNaZ7jBlN7M08wLCDLNFZh/NlM0vmV0y+2CmZV5p
       vtr8j9kfMynzEPPF5lfNAcuhGvs=''')
     with self.subTest('L2-error'):
@@ -154,11 +160,11 @@ class test(testing.TestCase):
 
   @testing.requires('matplotlib')
   def test_mixed(self):
-    cons, lhs, err = main(nelems=4, etype='mixed', btype='std', degree=2)
-    with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
+    cons, state, err = main(nelems=4, etype='mixed', btype='std', degree=2)
+    with self.subTest('constraints'): self.assertAlmostEqual64(cons['u'], '''
       eNorfLZF2ucJQwMC3pR7+QDG9lCquAtj71Rlu8XQIGfC0FBoiqweE1qaMTTsNsOvRtmcoSHbHL+a1UD5
       q+YAxhcu1g==''')
-    with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
+    with self.subTest('left-hand side'): self.assertAlmostEqual64(state['u'], '''
       eNorfLZF2ueJq7GrcYjxDJPpJstNbsq9fOBr3Gh8xWS7iYdSxd19xseMP5hImu5UZbv1xljOxM600DTW
       NN/0k2mC6SPTx6Z1pnNMGc3kzdaaPjRNMbMyEzWzNOsy223mBYRRZpPNJpktMks1azM7Z7bRbIXZabNX
       ZiLmH82UzS3Ns80vmj004za/ZPYHCD+Y8ZlLmVuYq5kHm9eahwDxavPF5lfNAWFyPdk=''')

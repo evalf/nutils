@@ -47,6 +47,9 @@ class SerializedOps:
       return expression_v2._InvalidDimension(len(gen_sh))
     return Serialized('call({}, {})'.format(name, str(arg)), arg.sh + gen_sh)
 
+  def unit(self, expression):
+    return Serialized('unit({})'.format(expression), ())
+
 class Serialized:
 
   def __init__(self, ser, sh):
@@ -183,7 +186,7 @@ class Parser(TestCase):
       'a^ 2',
       '  ^')
     assertRaises(
-      'Expected a number, variable, scope, mean, jump or function call.',
+      'Expected a number, variable, scope, mean, jump, unit or function call.',
       '^2',
       '^')
 
@@ -204,7 +207,7 @@ class Parser(TestCase):
       'a^ 2',
       '  ^')
     assertRaises(
-      'Expected a variable, scope, mean, jump or function call.',
+      'Expected a variable, scope, mean, jump, unit or function call.',
       '^2',
       '^')
     assertRaises(
@@ -269,7 +272,7 @@ class Parser(TestCase):
     assertParses('f23_i0(a2_k)', 'get(call(f23, a2), 2, 0)', 'ki', 2, 2)
     assertParses('f23_1j(a2_k)', 'get(call(f23, a2), 1, 1)', 'kj', 2, 3)
     assertRaises(
-      'Expected a number, variable, scope, mean, jump or function call.',
+      'Expected a number, variable, scope, mean, jump, unit or function call.',
       'f()',
       '  ^')
     assertRaises(
@@ -308,25 +311,25 @@ class Parser(TestCase):
   def test_parse_item_number(self):
     assertParses, assertRaises = self.mkasserts(lambda s: self.parser.parse_item(s, allow_number=True))
     assertRaises(
-      'Expected a number, variable, scope, mean, jump or function call.',
+      'Expected a number, variable, scope, mean, jump, unit or function call.',
       '   ',
       '^^^', check_trim=False)
     assertRaises(
-      'Expected a number, variable, scope, mean, jump or function call.',
+      'Expected a number, variable, scope, mean, jump, unit or function call.',
       '1a',
       '^^')
     assertRaises(
-      'Expected a number, variable, scope, mean, jump or function call. '
+      'Expected a number, variable, scope, mean, jump, unit or function call. '
       'Hint: the operators `+`, `-` and `/` must be surrounded by spaces.',
       '1+a',
       '^^^')
     assertRaises(
-      'Expected a number, variable, scope, mean, jump or function call. '
+      'Expected a number, variable, scope, mean, jump, unit or function call. '
       'Hint: the operators `+`, `-` and `/` must be surrounded by spaces.',
       '1-a',
       '^^^')
     assertRaises(
-      'Expected a number, variable, scope, mean, jump or function call. '
+      'Expected a number, variable, scope, mean, jump, unit or function call. '
       'Hint: the operators `+`, `-` and `/` must be surrounded by spaces.',
       '1/a',
       '^^^')
@@ -334,7 +337,7 @@ class Parser(TestCase):
   def test_parse_item_nonumber(self):
     assertParses, assertRaises = self.mkasserts(lambda s: self.parser.parse_item(s, allow_number=False))
     assertRaises(
-      'Expected a variable, scope, mean, jump or function call.',
+      'Expected a variable, scope, mean, jump, unit or function call.',
       '   ',
       '^^^', check_trim=False)
     assertRaises(
@@ -346,19 +349,19 @@ class Parser(TestCase):
       '1a',
       '^^')
     assertRaises(
-      'Expected a variable, scope, mean, jump or function call.',
+      'Expected a variable, scope, mean, jump, unit or function call.',
       'f[a]',
       '^^^^')
     assertRaises(
-      'Expected a variable, scope, mean, jump or function call.',
+      'Expected a variable, scope, mean, jump, unit or function call.',
       'f{a}',
       '^^^^')
     assertRaises(
-      'Expected a variable, scope, mean, jump or function call.',
+      'Expected a variable, scope, mean, jump, unit or function call.',
       'f<a>',
       '^^^^')
     assertRaises(
-      'Expected a variable, scope, mean, jump or function call.',
+      'Expected a variable, scope, mean, jump, unit or function call.',
       '<a>',
       '^^^')
 
@@ -392,6 +395,11 @@ class Parser(TestCase):
     assertParses, assertRaises = self.mkasserts(lambda s: self.parser.parse_item(s, allow_number=False))
     assertParses('[1 + 2]', 'jump(add(1i, 2i))', '')
     assertParses('[(a2_i)]', 'jump(scope(a2))', 'i', 2)
+
+  def test_parse_unit(self):
+    assertParses, assertRaises = self.mkasserts(lambda s: self.parser.parse_item(s, allow_number=False))
+    assertParses('#m', 'unit(m)', '')
+    assertParses('#N*m/s2', 'unit(N*m/s2)', '')
 
   def test_parse_signed_int(self):
     assertParses, assertRaises = self.mkasserts(self.parser.parse_signed_int)
