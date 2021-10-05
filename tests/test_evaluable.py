@@ -389,6 +389,9 @@ def _check(name, op, n_op, *arg_values, hasgrad=True, zerograd=False, ndim=2):
   check(name, op=op, n_op=n_op, arg_values=arg_values, hasgrad=hasgrad, zerograd=zerograd, ndim=ndim)
 
 _check('identity', lambda f: evaluable.asarray(f), lambda a: a, ANY(2,4,2))
+_check('int', lambda f: evaluable.Int(f), lambda a: a.astype(int), INT(2,4,2))
+_check('float', lambda f: evaluable.Float(f), lambda a: a.astype(float), ANY(2,4,2))
+_check('complex', lambda f: evaluable.Complex(f), lambda a: a.astype(complex), ANY(2,4,2))
 _check('const', lambda f: evaluable.asarray(numpy.arange(16, dtype=float).reshape(2,4,2)), lambda a: numpy.arange(16, dtype=float).reshape(2,4,2), ANY(2,4,2))
 _check('zeros', lambda f: evaluable.zeros([1,4,3,4]), lambda a: numpy.zeros([1,4,3,4]), ANY(4,3,4))
 _check('ones', lambda f: evaluable.ones([1,4,3,4]), lambda a: numpy.ones([1,4,3,4]), ANY(4,3,4))
@@ -1138,3 +1141,30 @@ class Einsum(TestCase):
     arg = numpy.arange(6)
     with self.assertRaisesRegex(ValueError, 'axis group dimensions cannot be negative'):
       evaluable.einsum('Aij->ijA', arg, A=-1)
+
+@parametrize
+class AsType(TestCase):
+
+  def test_bool(self):
+    self.assertEqual(evaluable.astype[self.dtype](True).dtype, self.dtype)
+
+  def test_int(self):
+    self.assertEqual(evaluable.astype[self.dtype](1).dtype, self.dtype)
+
+  def test_float(self):
+    if self.dtype in (float, complex):
+      self.assertEqual(evaluable.astype[self.dtype](1.).dtype, self.dtype)
+    else:
+      with self.assertRaises(TypeError):
+        evaluable.astype[self.dtype](1.)
+
+  def test_complex(self):
+    if self.dtype == complex:
+      self.assertEqual(evaluable.astype[self.dtype](1j).dtype, self.dtype)
+    else:
+      with self.assertRaises(TypeError):
+        evaluable.astype[self.dtype](1j)
+
+AsType(dtype=int)
+AsType(dtype=float)
+AsType(dtype=complex)

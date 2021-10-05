@@ -2307,16 +2307,43 @@ class Maximum(Pointwise):
     lower2, upper2 = self.args[1]._intbounds
     return max(lower1, lower2), max(upper1, upper2)
 
-class Int(Pointwise):
-  __slots__ = ()
-  evalf = staticmethod(lambda a: a.astype(int))
-  deriv = lambda a: Zeros(a.shape, int),
+class AsType(Pointwise):
+
+  @types.apply_annotations
+  def __init__(self, arg: asarray):
+    super().__init__(arg)
+    dtypes = bool, int, float, complex
+    if self.dtype in dtypes[:dtypes.index(arg.dtype)]:
+      raise TypeError('invalid cast from {} to {}'.format(arg.dtype, self.dtype))
+
+  def _derivative(self, var, seen):
+    arg, = self.args
+    return self.__class__(derivative(arg, var, seen))
+
+  def _simplified(self):
+    arg, = self.args
+    if arg.dtype == self.dtype:
+      return arg
+    if iszero(arg):
+      return zeros_like(self)
+    for axis, parts in arg._inflations:
+      return util.sum(_inflate(self.__class__(func), dofmap, self.shape[axis], axis) for dofmap, func in parts.items())
+    return super()._simplified()
 
   def _intbounds_impl(self):
     if self.args[0].dtype == bool:
       return 0, 1
     else:
       return self.args[0]._intbounds
+
+class Int(AsType):
+  evalf = functools.partial(numpy.array, copy=False, dtype=int)
+class Float(AsType):
+  evalf = functools.partial(numpy.array, copy=False, dtype=float)
+class Complex(AsType):
+  evalf = functools.partial(numpy.array, copy=False, dtype=complex)
+
+astype = {int: Int, float: Float, complex: Complex}
 
 class Sign(Array):
 
