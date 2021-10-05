@@ -267,9 +267,9 @@ class Sample(types.Singleton):
   def asfunction(self, array: numpy.ndarray) -> function.Array:
     '''Convert sampled data to evaluable array.
 
-    Using the result of :func:`Sample.eval`, create a
-    :class:`nutils.function.Sampled` array that upon evaluation recovers the
-    original function in the set of points matching the original sampling.
+    Using the result of :func:`Sample.eval`, create a sampled array that upon
+    evaluation recovers the original function in the set of points matching the
+    original sampling.
 
     >>> from nutils import mesh
     >>> domain, geom = mesh.rectilinear([1,2])

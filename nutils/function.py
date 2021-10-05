@@ -2827,26 +2827,6 @@ def Elemwise(__data: Sequence[numpy.ndarray], __index: IntoArray, dtype: DType) 
   warnings.deprecation('function.Elemwise is deprecated; use function.get instead')
   return get(numpy.asarray(__data), 0, __index)
 
-def Sampled(__points: IntoArray, expect: IntoArray) -> Array:
-  '''Basis-like identity operator.
-
-  Basis-like function that for every point in a predefined set evaluates to the
-  unit vector corresponding to its index.
-
-  Args
-  ----
-  points : 1d :class:`Array`
-      Present point coordinates.
-  expect : 2d :class:`Array`
-      Elementwise constant that evaluates to the predefined point coordinates;
-      used for error checking and to inherit the shape.
-  '''
-
-  points = Array.cast(__points)
-  expect = Array.cast(expect)
-  assert points.ndim == 1 and expect.ndim == 2 and expect.shape[1] == points.shape[0]
-  return _Wrapper(evaluable.Sampled, points, _WithoutPoints(expect), shape=(expect.shape[0],), dtype=float)
-
 def piecewise(level: IntoArray, intervals: Sequence[IntoArray], *funcs: IntoArray) -> Array:
   'piecewise'
   level = Array.cast(level)
