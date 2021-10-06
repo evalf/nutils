@@ -4031,11 +4031,10 @@ def derivative(func, var, seen=None):
   'derivative'
 
   assert isinstance(var, DerivativeTargetBase), 'invalid derivative target {!r}'.format(var)
-  if var.dtype != float:
+  if var.dtype != float or var not in func.arguments:
     return Zeros(func.shape + var.shape, dtype=func.dtype)
   if seen is None:
     seen = {}
-  func = asarray(func)
   if func in seen:
     result = seen[func]
   else:
