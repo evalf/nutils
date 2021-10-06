@@ -3233,14 +3233,13 @@ class StructuredBasis(Basis):
       indices.append(ielem)
     indices.append(index)
     indices.reverse()
-    dofs = None
-    ndofs = None
-    for lengths_i, offsets_i, ndofs_i, index_i in zip(self._ndofs, self._start_dofs, self._dofs_shape, indices):
-      length = evaluable.get(lengths_i, 0, index_i)
-      offset = evaluable.get(offsets_i, 0, index_i)
-      dofs_i = (evaluable.Range(length) + offset) % ndofs_i
-      ndofs = ndofs_i if ndofs is None else ndofs * ndofs_i
-      dofs = dofs_i if dofs is None else evaluable.Ravel(evaluable.RavelIndex(dofs, dofs_i, ndofs, ndofs_i))
+    ranges = [evaluable.Range(evaluable.get(lengths_i, 0, index_i)) + evaluable.get(offsets_i, 0, index_i)
+      for lengths_i, offsets_i, index_i in zip(self._ndofs, self._start_dofs, indices)]
+    ndofs = self._dofs_shape[0]
+    dofs = ranges[0] % ndofs
+    for range_i, ndofs_i in zip(ranges[1:], self._dofs_shape[1:]):
+      dofs = evaluable.Ravel(evaluable.RavelIndex(dofs, range_i % ndofs_i, ndofs, ndofs_i))
+      ndofs = ndofs * ndofs_i
     coeffs = functools.reduce(evaluable.PolyOuterProduct,
       [evaluable.Elemwise(coeffs_i, index_i, float) for coeffs_i, index_i in zip(self._coeffs, indices)])
     return dofs, coeffs
