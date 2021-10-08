@@ -76,11 +76,9 @@ asarrays = types.tuple[asarray]
 
 def asindex(arg):
   arg = asarray(arg)
-  if arg.ndim or arg.dtype not in (int, bool): # NOTE: bool to be removed after introduction of Cast
+  if arg.ndim or arg.dtype != int:
     raise ValueError('argument is not an index: {}'.format(arg))
-  if arg.dtype == bool:
-    arg = Int(arg)
-  elif arg._intbounds[0] < 0:
+  if arg._intbounds[0] < 0:
     raise ValueError('index must be non-negative')
   return arg
 
@@ -416,7 +414,7 @@ class Evaluable(types.Singleton):
     if isinstance(obj, Evaluable):
       retval = obj._simplified()
       if retval is not None and isinstance(obj, Array):
-        assert isinstance(retval, Array) and equalshape(retval.shape, obj.shape), '{}._simplified resulted in shape change'.format(type(obj).__name__)
+        assert isinstance(retval, Array) and equalshape(retval.shape, obj.shape) and retval.dtype == obj.dtype, '{} --simplify--> {}'.format(obj, retval)
       return retval
 
   def _simplified(self):
@@ -1095,14 +1093,14 @@ class Constant(Array):
 
   def _power(self, n):
     if isinstance(n, Constant):
-      return Constant(numeric.power(self.value, n.value))
+      return Constant(numpy.power(self.value, n.value))
 
   def _eig(self, symmetric):
     eigval, eigvec = (numpy.linalg.eigh if symmetric else numpy.linalg.eig)(self.value)
     return Tuple((Constant(eigval), Constant(eigvec)))
 
   def _sign(self):
-    return Constant(numeric.sign(self.value))
+    return Constant(numpy.sign(self.value))
 
   def _unravel(self, axis, shape):
     shape = self.value.shape[:axis] + shape + self.value.shape[axis+1:]
@@ -1157,11 +1155,11 @@ class InsertAxis(Array):
 
   def _sum(self, i):
     if i == self.ndim - 1:
-      return Multiply([self.func, _inflate_scalar(self.length, self.func.shape)])
+      return self.func * self.length
     return InsertAxis(sum(self.func, i), self.length)
 
   def _product(self):
-    return Power(self.func, _inflate_scalar(self.length, self.func.shape))
+    return self.func**self.length
 
   def _power(self, n):
     unaligned1, unaligned2, where = unalign(self, n)
@@ -1191,9 +1189,6 @@ class InsertAxis(Array):
     if axis == self.ndim - 1:
       return appendaxes(self.func, index.shape)
     return InsertAxis(_take(self.func, index, axis), self.length)
-
-  def _rtake(self, func, axis):
-    return insertaxis(_take(func, self.func, axis), axis+self.ndim-1, self.length)
 
   def _takediag(self, axis1, axis2):
     assert axis1 < axis2
@@ -1421,8 +1416,9 @@ class Product(Array):
 
   @types.apply_annotations
   def __init__(self, func:asarray):
+    assert func.dtype != bool, 'Product({})'.format(func)
     self.func = func
-    super().__init__(args=[func], shape=func.shape[:-1], dtype=int if func.dtype == bool else func.dtype)
+    super().__init__(args=[func], shape=func.shape[:-1], dtype=func.dtype)
 
   def _simplified(self):
     if equalindex(self.func.shape[-1], 1):
@@ -1456,7 +1452,7 @@ class Inverse(Array):
   def __init__(self, func:asarray):
     assert func.ndim >= 2 and equalindex(func.shape[-1], func.shape[-2])
     self.func = func
-    super().__init__(args=[func], shape=func.shape, dtype=float)
+    super().__init__(args=[func], shape=func.shape, dtype=complex if func.dtype == complex else float)
 
   def _simplified(self):
     result = self.func._inverse(self.ndim-2, self.ndim-1)
@@ -1522,7 +1518,7 @@ class Determinant(Array):
   def __init__(self, func:asarray):
     assert isarray(func) and func.ndim >= 2 and equalindex(func.shape[-1], func.shape[-2])
     self.func = func
-    super().__init__(args=[func], shape=func.shape[:-2], dtype=_jointdtype(func.dtype, float))
+    super().__init__(args=[func], shape=func.shape[:-2], dtype=complex if func.dtype == complex else float)
 
   def _simplified(self):
     result = self.func._determinant(self.ndim, self.ndim+1)
@@ -1552,8 +1548,8 @@ class Multiply(Array):
   def __init__(self, funcs:types.frozenmultiset[asarray]):
     self.funcs = funcs
     func1, func2 = funcs
-    assert equalshape(func1.shape, func2.shape)
-    super().__init__(args=self.funcs, shape=func1.shape, dtype=_jointdtype(func1.dtype,func2.dtype))
+    assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype != bool, 'Multiply({}, {})'.format(func1, func2)
+    super().__init__(args=self.funcs, shape=func1.shape, dtype=func1.dtype)
 
   def _simplified(self):
     func1, func2 = self.funcs
@@ -1712,8 +1708,8 @@ class Add(Array):
   def __init__(self, funcs:types.frozenmultiset[asarray]):
     self.funcs = funcs
     func1, func2 = funcs
-    assert equalshape(func1.shape, func2.shape)
-    super().__init__(args=self.funcs, shape=func1.shape, dtype=_jointdtype(func1.dtype,func2.dtype))
+    assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype != bool, 'Add({}, {})'.format(func1, func2)
+    super().__init__(args=self.funcs, shape=func1.shape, dtype=func1.dtype)
 
   @property
   def _inflations(self):
@@ -1830,7 +1826,9 @@ class Einsum(Array):
     for iarg, (idx, arg) in enumerate(zip(args_idx, args), 1):
       if len(idx) != arg.ndim:
         raise ValueError('Expected one index for every axis of argument {}, but got {} and {}, respectively.'.format(iarg, len(idx), arg.ndim))
-
+    dtype = args[0].dtype
+    if dtype == bool or any(arg.dtype != dtype for arg in args[1:]):
+      raise ValueError('Inconsistent or invalid dtypes.')
     if len(out_idx) != len(set(out_idx)):
       raise ValueError('Repeated output indices.')
     lengths = {}
@@ -1849,7 +1847,7 @@ class Einsum(Array):
     self.out_idx = out_idx
     self._einsumfmt = ','.join(''.join(chr(97+i) for i in idx) for idx in args_idx) + '->' + ''.join(chr(97+i) for i in out_idx)
     self._has_summed_axes = len(lengths) > len(out_idx)
-    super().__init__(args=self.args, shape=shape, dtype=_jointdtype(*(arg.dtype for arg in args)))
+    super().__init__(args=self.args, shape=shape, dtype=dtype)
 
   def evalf(self, *args):
     if self._has_summed_axes:
@@ -1884,6 +1882,7 @@ class Sum(Array):
 
   @types.apply_annotations
   def __init__(self, func:asarray):
+    assert func.dtype != bool, 'Sum({})'.format(func)
     self.func = func
     super().__init__(args=[func], shape=func.shape[:-1], dtype=func.dtype)
 
@@ -1908,8 +1907,6 @@ class Sum(Array):
   def _assparse(self):
     chunks = []
     for *indices, _rmidx, values in self.func._assparse:
-      if values.dtype == bool:
-        values = Int(values)
       if self.ndim == 0:
         nsum = values.ndim
       else:
@@ -2001,6 +1998,10 @@ class Take(Array):
   def _simplified(self):
     if self.indices.size == 0:
       return zeros_like(self)
+    unaligned, where = unalign(self.indices)
+    if len(where) < self.indices.ndim:
+      n = self.func.ndim-1
+      return align(Take(self.func, unaligned), (*range(n), *(n+i for i in where)), self.shape)
     trytake = self.func._take(self.indices, self.func.ndim-1) or \
               self.indices._rtake(self.func, self.func.ndim-1)
     if trytake:
@@ -2035,11 +2036,12 @@ class Power(Array):
 
   @types.apply_annotations
   def __init__(self, func:asarray, power:asarray):
-    assert equalshape(func.shape, power.shape)
+    assert equalshape(func.shape, power.shape) and func.dtype == power.dtype != bool, 'Power({}, {})'.format(func, power)
+    if power.dtype == int:
+      assert power._intbounds[0] >= 0
     self.func = func
     self.power = power
-    dtype = float if func.dtype == power.dtype == int else _jointdtype(func.dtype, power.dtype)
-    super().__init__(args=[func,power], shape=func.shape, dtype=dtype)
+    super().__init__(args=[func,power], shape=func.shape, dtype=func.dtype)
 
   def _simplified(self):
     if iszero(self.power):
@@ -2060,7 +2062,7 @@ class Power(Array):
       return self._simplified()
 
   def evalf(self, base, exp):
-    return numeric.power(base, exp)
+    return numpy.power(base, exp)
 
   def _derivative(self, var, seen):
     if self.power.isconstant:
@@ -2269,7 +2271,7 @@ class Less(Pointwise):
 class Minimum(Pointwise):
   __slots__ = ()
   evalf = numpy.minimum
-  deriv = Less, lambda x, y: 1 - Less(x, y)
+  deriv = lambda x, y: .5 - .5 * Sign(x - y), lambda x, y: .5 + .5 * Sign(x - y)
 
   def _simplified(self):
     if self.dtype == int:
@@ -2289,7 +2291,7 @@ class Minimum(Pointwise):
 class Maximum(Pointwise):
   __slots__ = ()
   evalf = numpy.maximum
-  deriv = lambda x, y: 1 - Less(x, y), Less
+  deriv = lambda x, y: .5 + .5 * Sign(x - y), lambda x, y: .5 - .5 * Sign(x - y)
 
   def _simplified(self):
     if self.dtype == int:
@@ -2306,16 +2308,43 @@ class Maximum(Pointwise):
     lower2, upper2 = self.args[1]._intbounds
     return max(lower1, lower2), max(upper1, upper2)
 
-class Int(Pointwise):
-  __slots__ = ()
-  evalf = staticmethod(lambda a: a.astype(int))
-  deriv = lambda a: Zeros(a.shape, int),
+class AsType(Pointwise):
+
+  @types.apply_annotations
+  def __init__(self, arg: asarray):
+    super().__init__(arg)
+    dtypes = bool, int, float, complex
+    if self.dtype in dtypes[:dtypes.index(arg.dtype)]:
+      raise TypeError('invalid cast from {} to {}'.format(arg.dtype, self.dtype))
+
+  def _derivative(self, var, seen):
+    arg, = self.args
+    return self.__class__(derivative(arg, var, seen))
+
+  def _simplified(self):
+    arg, = self.args
+    if arg.dtype == self.dtype:
+      return arg
+    if iszero(arg):
+      return zeros_like(self)
+    for axis, parts in arg._inflations:
+      return util.sum(_inflate(self.__class__(func), dofmap, self.shape[axis], axis) for dofmap, func in parts.items())
+    return super()._simplified()
 
   def _intbounds_impl(self):
     if self.args[0].dtype == bool:
       return 0, 1
     else:
       return self.args[0]._intbounds
+
+class Int(AsType):
+  evalf = functools.partial(numpy.array, copy=False, dtype=int)
+class Float(AsType):
+  evalf = functools.partial(numpy.array, copy=False, dtype=float)
+class Complex(AsType):
+  evalf = functools.partial(numpy.array, copy=False, dtype=complex)
+
+astype = {int: Int, float: Float, complex: Complex}
 
 class Sign(Array):
 
@@ -2371,34 +2400,34 @@ class Sampled(Array):
   @types.apply_annotations
   def __init__(self, points:asarray, expect:asarray):
     assert points.ndim == 2
-    super().__init__(args=[points, expect], shape=(points.shape[0], expect.shape[0]), dtype=int)
+    super().__init__(args=[points, expect], shape=(points.shape[0], expect.shape[0]), dtype=float)
 
   def evalf(self, points, expect):
     assert numpy.equal(points, expect).all(), 'illegal point set'
-    return numpy.eye(len(points), dtype=int)
+    return numpy.eye(len(points))
 
 @types.apply_annotations
 def Elemwise(data:types.tuple[types.arraydata], index:asarray, dtype:asdtype):
   unique, indices = util.unique(data)
   if len(unique) == 1:
     return Constant(unique[0])
-  shape = [Take(s, index).simplified for s in numpy.array([d.shape for d in data]).T] # use original index to avoid potential inconsistencies with other arrays
+  # Create shape from data and index, rather than unique and the modified
+  # index, in order to avoid potential shape inconsistencies later on.
+  shapes = numpy.array([d.shape for d in data])
+  shape = [Take(s, index) for s in shapes.T]
   if len(unique) < len(data):
     index = Take(indices, index)
   # Move all axes with constant shape to the left and ravel the remainder.
-  is_constant = numpy.array([n.isconstant for n in shape], dtype=bool)
+  is_constant = numpy.all(shapes[1:] == shapes[0], axis=0)
   nconstant = is_constant.sum()
   reorder = numpy.argsort(~is_constant)
-  shape = [shape[i] for i in reorder]
-  var_shape = shape[nconstant:]
-  reshape = [n.__index__() for n in shape[:nconstant]] + [-1]
-  raveled = [numpy.transpose(d, reorder).reshape(reshape) for d in unique]
+  raveled = [numpy.transpose(d, reorder).reshape(*shapes[0, reorder[:nconstant]], -1) for d in unique]
   # Concatenate the raveled axis, take slices, unravel and reorder the axes to
   # the original position.
   concat = numpy.concatenate(raveled, axis=-1)
-  if len(var_shape) == 0:
-    assert tuple(reorder) == tuple(range(nconstant))
+  if is_constant.all():
     return Take(concat, index)
+  var_shape = tuple(shape[i] for i in reorder[nconstant:])
   cumprod = list(var_shape)
   for i in reversed(range(len(var_shape)-1)):
     cumprod[i] *= cumprod[i+1] # work backwards so that the shape check matches in Unravel
@@ -2418,7 +2447,7 @@ class Eig(Evaluable):
     self.symmetric = symmetric
     self.func = func
     self._w_dtype = float if symmetric else complex
-    self._vt_dtype = _jointdtype(float, func.dtype if symmetric else complex)
+    self._vt_dtype = float if symmetric and func.dtype != complex else complex
     super().__init__(args=[func])
 
   def __len__(self):
@@ -2843,7 +2872,7 @@ class TrigNormal(Array):
 
   def _simplified(self):
     if iszero(self.angle):
-      return prependaxes(Inflate(1, 0, 2), self.shape[:1])
+      return prependaxes(Inflate(1., 0, 2), self.angle.shape)
 
 class TrigTangent(Array):
   '-sin, cos'
@@ -2863,7 +2892,7 @@ class TrigTangent(Array):
 
   def _simplified(self):
     if iszero(self.angle):
-      return prependaxes(Inflate(1, 1, 2), self.shape[:1])
+      return prependaxes(Inflate(1., 1, 2), self.angle.shape)
 
 class Find(Array):
   'indices of boolean index vector'
@@ -2874,7 +2903,7 @@ class Find(Array):
   def __init__(self, where:asarray):
     assert isarray(where) and where.ndim == 1 and where.dtype == bool
     self.where = where
-    super().__init__(args=[where], shape=[Int(where).sum()], dtype=int)
+    super().__init__(args=[where], shape=[Sum(Int(where))], dtype=int)
 
   def evalf(self, where):
     return where.nonzero()[0]
@@ -2920,6 +2949,10 @@ class WithDerivative(Array):
     self._var = var
     self._deriv = derivative
     super().__init__(args=(func,), shape=func.shape, dtype=func.dtype)
+
+  @property
+  def arguments(self):
+    return self._func.arguments | {self._var}
 
   def evalf(self, func: numpy.ndarray) -> numpy.ndarray:
     return func
@@ -3144,6 +3177,9 @@ class Ravel(Array):
   def _assparse(self):
     return tuple((*indices[:-2], indices[-2]*self.func.shape[-1]+indices[-1], values) for *indices, values in self.func._assparse)
 
+  def _intbounds_impl(self):
+    return self.func._intbounds_impl()
+
 class Unravel(Array):
 
   __slots__ = 'func'
@@ -3207,12 +3243,18 @@ class RavelIndex(Array):
       return RavelIndex(self._ia, _take(self._ib, index, axis - self._ia.ndim), self._na, self._nb)
 
   def _rtake(self, func, axis):
-    if equalindex(func.shape[-1], self._length):
-      return Take(_take(Unravel(func, self._na, self._nb), self._ia, -2), self._ib)
+    if equalindex(func.shape[axis], self._length):
+      return _take(_take(unravel(func, axis, (self._na, self._nb)), self._ib, axis+1), self._ia, axis)
 
   def _rinflate(self, func, length, axis):
     if equalindex(length, self._length):
       return Ravel(Inflate(_inflate(func, self._ia, self._na, func.ndim - self.ndim), self._ib, self._nb))
+
+  def _unravel(self, axis, shape):
+    if axis < self._ia.ndim:
+      return RavelIndex(unravel(self._ia, axis, shape), self._ib, self._na, self._nb)
+    else:
+      return RavelIndex(self._ia, unravel(self._ib, axis-self._ia.ndim, shape), self._na, self._nb)
 
   def _intbounds_impl(self):
     nbmin, nbmax = self._nb._intbounds
@@ -3233,7 +3275,7 @@ class Range(Array):
     return InRange(index, self.length)
 
   def _rtake(self, func, axis):
-    if self.length == func.shape[axis]:
+    if equalindex(self.length, func.shape[axis]):
       return func
 
   def _rinflate(self, func, length, axis):
@@ -3371,7 +3413,9 @@ class Choose(Array):
   def __init__(self, index:asarray, choices:asarrays):
     if index.dtype != int:
       raise Exception('index must be integer valued')
-    dtype = _jointdtype(*[choice.dtype for choice in choices])
+    dtype = choices[0].dtype
+    if any(choice.dtype != dtype for choice in choices[1:]):
+      raise Exception('dtypes vary')
     shape = index.shape
     if not all(equalshape(choice.shape, shape) for choice in choices):
       raise Exception('shapes vary')
@@ -3513,6 +3557,7 @@ class LoopSum(Array):
     if self.index in shape.arguments:
       raise ValueError('the shape of the function must not depend on the index')
     self.func = funcdata[0]
+    assert self.func.dtype != bool
     self._invariants, self._dependencies = _dependencies_sans_invariants(self.func, self.index)
     super().__init__(args=(shape, length, *self._invariants), shape=self.func.shape, dtype=self.func.dtype)
 
@@ -3783,15 +3828,6 @@ class LoopConcatenateCombined(Evaluable):
 _ascending = lambda arg: numpy.greater(numpy.diff(arg), 0).all()
 _normdims = lambda ndim, shapes: tuple(numeric.normdim(ndim,sh) for sh in shapes)
 
-def _jointdtype(*dtypes):
-  'determine joint dtype'
-
-  type_order = bool, int, float, complex
-  kind_order = 'bifc'
-  itype = max(kind_order.index(dtype.kind) if isinstance(dtype,numpy.dtype)
-           else type_order.index(dtype) for dtype in dtypes)
-  return type_order[itype]
-
 def _gatherblocks(blocks):
   return tuple((ind, util.sum(funcs)) for ind, funcs in util.gather(blocks))
 
@@ -3803,6 +3839,12 @@ def _numpy_align(a, b):
 
   a = asarray(a)
   b = asarray(b)
+  if a.dtype != b.dtype:
+    type_order = bool, int, float, complex
+    if type_order.index(a.dtype) < type_order.index(b.dtype):
+      a = astype[b.dtype](a)
+    else:
+      b = astype[a.dtype](b)
   if not a.ndim:
     return _inflate_scalar(a, b.shape), b
   if not b.ndim:
@@ -3891,7 +3933,7 @@ def ones_like(arr):
   return ones(arr.shape, arr.dtype)
 
 def reciprocal(arg):
-  return power(arg, -1)
+  return power(arg, -1.)
 
 def negative(arg):
   return multiply(arg, -1)
@@ -4017,11 +4059,10 @@ def derivative(func, var, seen=None):
   'derivative'
 
   assert isinstance(var, DerivativeTargetBase), 'invalid derivative target {!r}'.format(var)
-  if var.dtype != float:
+  if var.dtype != float or var not in func.arguments:
     return Zeros(func.shape + var.shape, dtype=func.dtype)
   if seen is None:
     seen = {}
-  func = asarray(func)
   if func in seen:
     result = seen[func]
   else:
@@ -4186,7 +4227,8 @@ def replace_arguments(value, arguments):
   '''
   if isinstance(value, Argument) and value._name in arguments:
     v = asarray(arguments[value._name])
-    assert equalshape(value.shape, v.shape)
+    assert equalshape(value.shape, v.shape), (value.shape, v.shape)
+    assert value.dtype == v.dtype, (value.dtype, v.dtype)
     return v
 
 def einsum(fmt, *args, **dims):

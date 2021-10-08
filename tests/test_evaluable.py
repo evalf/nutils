@@ -10,17 +10,20 @@ class check(TestCase):
   def setUp(self):
     super().setUp()
     numpy.random.seed(0)
-    self.arg_names = tuple(map('arg{}'.format, range(len(self.shapes))))
-    self.args = tuple(map(evaluable.Argument, self.arg_names, self.shapes))
-    self.arg_values = [numpy.random.uniform(size=shape, low=self.low, high=self.high) for shape in self.shapes]
-    self.n_op_argsfun = self.n_op(*self.arg_values)
-    self.op_args = self.op(*self.args)
-    self.shapearg = numpy.random.uniform(size=self.n_op_argsfun.shape, low=self.low, high=self.high)
-    self.pairs = [(i, j) for i in range(self.op_args.ndim-1) for j in range(i+1, self.op_args.ndim) if self.op_args.shape[i] == self.op_args.shape[j]]
+    self.arg_names = tuple(map('arg{}'.format, range(len(self.arg_values))))
+    self.args = tuple(evaluable.Argument(name, value.shape, value.dtype) for name, value in zip(self.arg_names, self.arg_values))
+    self.actual = self.op(*self.args)
+    self.desired = self.n_op(*self.arg_values)
+    assert numpy.isfinite(self.desired).all(), 'something is wrong with the design of this unit test'
+    self.other = numpy.random.normal(size=self.desired.shape)
+    self.pairs = [(i, j) for i in range(self.actual.ndim-1) for j in range(i+1, self.actual.ndim) if self.actual.shape[i] == self.actual.shape[j]]
     _builtin_warnings.simplefilter('ignore', evaluable.ExpensiveEvaluationWarning)
 
-  def assertShapes(self):
-    self.assertEqual(self.n_op_argsfun.shape, tuple(map(int, self.op_args.shape)))
+  def test_dtype(self):
+    self.assertEqual(self.desired.dtype, self.actual.dtype)
+
+  def test_shapes(self):
+    self.assertEqual(self.desired.shape, tuple(n.__index__() for n in self.actual.shape))
 
   def assertArrayAlmostEqual(self, actual, desired, decimal):
     if actual.shape != desired.shape:
@@ -65,246 +68,260 @@ class check(TestCase):
     self.assertEqual(str(a),'nutils.evaluable.Array<f:2,3>')
 
   def test_evalconst(self):
-    constargs = [numpy.random.uniform(size=shape) for shape in self.shapes]
-    self.assertFunctionAlmostEqual(decimal=15,
-      desired=self.n_op(*[constarg for constarg in constargs]),
-      actual=self.op(*constargs))
+    self.assertFunctionAlmostEqual(decimal=14,
+      desired=self.n_op(*self.arg_values),
+      actual=self.op(*self.arg_values))
+
+  def test_evalzero(self):
+    for iarg, arg_value in enumerate(self.arg_values):
+      if 0 in arg_value.flat:
+        args = (*self.arg_values[:iarg], numpy.zeros_like(arg_value), *self.arg_values[iarg+1:])
+        self.assertFunctionAlmostEqual(decimal=14,
+          desired=self.n_op(*args),
+          actual=self.op(*args))
 
   def test_eval(self):
-    self.assertFunctionAlmostEqual(decimal=15,
-      actual=self.op_args,
-      desired=self.n_op_argsfun)
+    self.assertFunctionAlmostEqual(decimal=14,
+      actual=self.actual,
+      desired=self.desired)
 
   @unittest.skipIf(sys.version_info < (3,7), 'time.perf_counter_ns is not available')
   def test_eval_withtimes(self):
     evalargs = dict(zip(self.arg_names, self.arg_values))
-    without_times = self.op_args.eval(**evalargs)
+    without_times = self.actual.eval(**evalargs)
     stats = collections.defaultdict(evaluable._Stats)
-    with_times = self.op_args.eval_withtimes(stats, **evalargs)
+    with_times = self.actual.eval_withtimes(stats, **evalargs)
     self.assertArrayAlmostEqual(with_times, without_times, 15)
-    self.assertIn(self.op_args, stats)
+    self.assertIn(self.actual, stats)
 
   def test_getitem(self):
-    for idim in range(self.op_args.ndim):
-      for item in range(self.n_op_argsfun.shape[idim]):
-        s = (Ellipsis,) + (slice(None),)*idim + (item,) + (slice(None),)*(self.op_args.ndim-idim-1)
-        self.assertFunctionAlmostEqual(decimal=15,
-          desired=self.n_op_argsfun[s],
-          actual=self.op_args[s])
+    for idim in range(self.actual.ndim):
+      for item in range(self.desired.shape[idim]):
+        s = (Ellipsis,) + (slice(None),)*idim + (item,) + (slice(None),)*(self.actual.ndim-idim-1)
+        self.assertFunctionAlmostEqual(decimal=14,
+          desired=self.desired[s],
+          actual=self.actual[s])
 
   def test_transpose(self):
-    trans = numpy.arange(self.op_args.ndim,0,-1) % self.op_args.ndim
-    self.assertFunctionAlmostEqual(decimal=15,
-      desired=numpy.transpose(self.n_op_argsfun, trans),
-      actual=evaluable.transpose(self.op_args, trans))
+    trans = numpy.arange(self.actual.ndim,0,-1) % self.actual.ndim
+    self.assertFunctionAlmostEqual(decimal=14,
+      desired=numpy.transpose(self.desired, trans),
+      actual=evaluable.transpose(self.actual, trans))
 
   def test_insertaxis(self):
-    for axis in range(self.op_args.ndim+1):
+    for axis in range(self.actual.ndim+1):
       with self.subTest(axis=axis):
-        self.assertFunctionAlmostEqual(decimal=15,
-          desired=numpy.repeat(numpy.expand_dims(self.n_op_argsfun, axis), 2, axis),
-          actual=evaluable.insertaxis(self.op_args, axis, 2))
+        self.assertFunctionAlmostEqual(decimal=14,
+          desired=numpy.repeat(numpy.expand_dims(self.desired, axis), 2, axis),
+          actual=evaluable.insertaxis(self.actual, axis, 2))
 
   def test_takediag(self):
     for ax1, ax2 in self.pairs:
-      self.assertFunctionAlmostEqual(decimal=15,
-        desired=numeric.takediag(self.n_op_argsfun, ax1, ax2),
-        actual=evaluable.takediag(self.op_args, ax1, ax2))
+      self.assertFunctionAlmostEqual(decimal=14,
+        desired=numeric.takediag(self.desired, ax1, ax2),
+        actual=evaluable.takediag(self.actual, ax1, ax2))
 
   def test_eig(self):
-    if self.op_args.dtype == float:
+    if self.actual.dtype == float:
       for ax1, ax2 in self.pairs:
-        A, L, V = evaluable.Tuple((self.op_args, *evaluable.eig(self.op_args, axes=(ax1,ax2)))).eval(**dict(zip(self.arg_names, self.arg_values)))
+        A, L, V = evaluable.Tuple((self.actual, *evaluable.eig(self.actual, axes=(ax1,ax2)))).eval(**dict(zip(self.arg_names, self.arg_values)))
         self.assertArrayAlmostEqual(decimal=11,
           actual=(numpy.expand_dims(V,ax2) * numpy.expand_dims(L,ax2+1).swapaxes(ax1,ax2+1)).sum(ax2+1),
           desired=(numpy.expand_dims(A,ax2) * numpy.expand_dims(V,ax2+1).swapaxes(ax1,ax2+1)).sum(ax2+1))
 
   def test_inv(self):
     for ax1, ax2 in self.pairs:
-      trans = [i for i in range(self.n_op_argsfun.ndim) if i not in (ax1,ax2)] + [ax1,ax2]
+      trans = [i for i in range(self.desired.ndim) if i not in (ax1,ax2)] + [ax1,ax2]
       invtrans = list(map(trans.index, range(len(trans))))
       self.assertFunctionAlmostEqual(decimal=10,
-        desired=numeric.inv(self.n_op_argsfun.transpose(trans)).transpose(invtrans),
-        actual=evaluable.inverse(self.op_args, axes=(ax1,ax2)))
+        desired=numeric.inv(self.desired.transpose(trans)).transpose(invtrans),
+        actual=evaluable.inverse(self.actual, axes=(ax1,ax2)))
 
   def test_determinant(self):
     for ax1, ax2 in self.pairs:
       self.assertFunctionAlmostEqual(decimal=11,
-        desired=numpy.linalg.det(self.n_op_argsfun.transpose([i for i in range(self.n_op_argsfun.ndim) if i not in (ax1,ax2)] + [ax1,ax2])),
-        actual=evaluable.determinant(self.op_args, axes=(ax1,ax2)))
+        desired=numpy.linalg.det(self.desired.transpose([i for i in range(self.desired.ndim) if i not in (ax1,ax2)] + [ax1,ax2])),
+        actual=evaluable.determinant(self.actual, axes=(ax1,ax2)))
 
   def test_take(self):
     indices = [0,-1]
-    for iax, sh in enumerate(self.n_op_argsfun.shape):
+    for iax, sh in enumerate(self.desired.shape):
       if sh >= 2:
-        self.assertFunctionAlmostEqual(decimal=15,
-          desired=numpy.take(self.n_op_argsfun, indices, axis=iax),
-          actual=evaluable.take(self.op_args, indices, axis=iax))
+        self.assertFunctionAlmostEqual(decimal=14,
+          desired=numpy.take(self.desired, indices, axis=iax),
+          actual=evaluable.take(self.actual, indices, axis=iax))
 
   def test_take_block(self):
-    for iax, sh in enumerate(self.n_op_argsfun.shape):
+    for iax, sh in enumerate(self.desired.shape):
       if sh >= 2:
         indices = [[0,sh-1],[sh-1,0]]
-        self.assertFunctionAlmostEqual(decimal=15,
-          desired=numpy.take(self.n_op_argsfun, indices, axis=iax),
-          actual=evaluable._take(self.op_args, indices, axis=iax))
+        self.assertFunctionAlmostEqual(decimal=14,
+          desired=numpy.take(self.desired, indices, axis=iax),
+          actual=evaluable._take(self.actual, indices, axis=iax))
 
   def test_take_nomask(self):
-    for iax, sh in enumerate(self.n_op_argsfun.shape):
+    for iax, sh in enumerate(self.desired.shape):
       if sh >= 2:
         indices = [0,sh-1]
-        self.assertFunctionAlmostEqual(decimal=15,
-          desired=numpy.take(self.n_op_argsfun, indices, axis=iax),
-          actual=evaluable.take(self.op_args, evaluable.Guard(evaluable.asarray(indices)), axis=iax))
+        self.assertFunctionAlmostEqual(decimal=14,
+          desired=numpy.take(self.desired, indices, axis=iax),
+          actual=evaluable.take(self.actual, evaluable.Guard(evaluable.asarray(indices)), axis=iax))
 
   def test_take_reversed(self):
     indices = [-1,0]
-    for iax, sh in enumerate(self.n_op_argsfun.shape):
+    for iax, sh in enumerate(self.desired.shape):
       if sh >= 2:
-        self.assertFunctionAlmostEqual(decimal=15,
-          desired=numpy.take(self.n_op_argsfun, indices, axis=iax),
-          actual=evaluable.take(self.op_args, indices, axis=iax))
+        self.assertFunctionAlmostEqual(decimal=14,
+          desired=numpy.take(self.desired, indices, axis=iax),
+          actual=evaluable.take(self.actual, indices, axis=iax))
 
   def test_take_duplicate_indices(self):
-    for iax, sh in enumerate(self.n_op_argsfun.shape):
+    for iax, sh in enumerate(self.desired.shape):
       if sh >= 2:
         indices = [0,sh-1,0,0]
-        self.assertFunctionAlmostEqual(decimal=15,
-          desired=numpy.take(self.n_op_argsfun, indices, axis=iax),
-          actual=evaluable.take(self.op_args, evaluable.Guard(evaluable.asarray(indices)), axis=iax))
+        self.assertFunctionAlmostEqual(decimal=14,
+          desired=numpy.take(self.desired, indices, axis=iax),
+          actual=evaluable.take(self.actual, evaluable.Guard(evaluable.asarray(indices)), axis=iax))
 
   def test_inflate(self):
-    for iax, sh in enumerate(self.n_op_argsfun.shape):
+    for iax, sh in enumerate(self.desired.shape):
       dofmap = evaluable.Constant(numpy.arange(int(sh)) * 2)
-      desired = numpy.zeros(self.n_op_argsfun.shape[:iax] + (int(sh)*2-1,) + self.n_op_argsfun.shape[iax+1:], dtype=self.n_op_argsfun.dtype)
-      desired[(slice(None),)*iax+(slice(None,None,2),)] = self.n_op_argsfun
-      self.assertFunctionAlmostEqual(decimal=15,
+      desired = numpy.zeros(self.desired.shape[:iax] + (int(sh)*2-1,) + self.desired.shape[iax+1:], dtype=self.desired.dtype)
+      desired[(slice(None),)*iax+(slice(None,None,2),)] = self.desired
+      self.assertFunctionAlmostEqual(decimal=14,
         desired=desired,
-        actual=evaluable._inflate(self.op_args, dofmap=dofmap, length=sh*2-1, axis=iax))
+        actual=evaluable._inflate(self.actual, dofmap=dofmap, length=sh*2-1, axis=iax))
 
   def test_inflate_duplicate_indices(self):
-    for iax, sh in enumerate(self.n_op_argsfun.shape):
+    for iax, sh in enumerate(self.desired.shape):
       dofmap = numpy.arange(sh) % 2
-      desired = numpy.zeros(self.n_op_argsfun.shape[:iax] + (2,) + self.n_op_argsfun.shape[iax+1:], dtype=self.n_op_argsfun.dtype)
-      numpy.add.at(desired, (slice(None),)*iax+(dofmap,), self.n_op_argsfun)
-      self.assertFunctionAlmostEqual(decimal=15,
+      desired = numpy.zeros(self.desired.shape[:iax] + (2,) + self.desired.shape[iax+1:], dtype=self.desired.dtype)
+      numpy.add.at(desired, (slice(None),)*iax+(dofmap,), self.desired)
+      self.assertFunctionAlmostEqual(decimal=14,
         desired=desired,
-        actual=evaluable._inflate(self.op_args, dofmap=dofmap, length=2, axis=iax))
+        actual=evaluable._inflate(self.actual, dofmap=dofmap, length=2, axis=iax))
 
   def test_diagonalize(self):
-    for axis in range(self.op_args.ndim):
-      for newaxis in range(axis+1, self.op_args.ndim+1):
-        self.assertFunctionAlmostEqual(decimal=15,
-          desired=numeric.diagonalize(self.n_op_argsfun, axis, newaxis),
-          actual=evaluable.diagonalize(self.op_args, axis, newaxis))
+    for axis in range(self.actual.ndim):
+      for newaxis in range(axis+1, self.actual.ndim+1):
+        self.assertFunctionAlmostEqual(decimal=14,
+          desired=numeric.diagonalize(self.desired, axis, newaxis),
+          actual=evaluable.diagonalize(self.actual, axis, newaxis))
 
   def test_product(self):
-    for iax in range(self.op_args.ndim):
-      self.assertFunctionAlmostEqual(decimal=15,
-        desired=numpy.product(self.n_op_argsfun, axis=iax),
-        actual=evaluable.product(self.op_args, axis=iax))
+    if self.desired.dtype == bool:
+      return
+    for iax in range(self.actual.ndim):
+      self.assertFunctionAlmostEqual(decimal=14,
+        desired=numpy.product(self.desired, axis=iax),
+        actual=evaluable.product(self.actual, axis=iax))
 
   def test_getslice(self):
-    for idim in range(self.op_args.ndim):
-      if self.n_op_argsfun.shape[idim] == 1:
+    for idim in range(self.actual.ndim):
+      if self.desired.shape[idim] == 1:
         continue
-      s = (Ellipsis,) + (slice(None),)*idim + (slice(0,int(self.n_op_argsfun.shape[idim])-1),) + (slice(None),)*(self.op_args.ndim-idim-1)
-      self.assertFunctionAlmostEqual(decimal=15,
-        desired=self.n_op_argsfun[s],
-        actual=self.op_args[s])
+      s = (Ellipsis,) + (slice(None),)*idim + (slice(0,int(self.desired.shape[idim])-1),) + (slice(None),)*(self.actual.ndim-idim-1)
+      self.assertFunctionAlmostEqual(decimal=14,
+        desired=self.desired[s],
+        actual=self.actual[s])
 
   def test_sumaxis(self):
-    op_args = evaluable.Int(self.op_args) if self.op_args.dtype == bool else self.op_args
-    for idim in range(self.op_args.ndim):
+    if self.desired.dtype == bool:
+      return
+    for idim in range(self.actual.ndim):
       self.assertFunctionAlmostEqual(decimal=14,
-        desired=self.n_op_argsfun.sum(idim),
-        actual=op_args.sum(idim))
+        desired=self.desired.sum(idim),
+        actual=self.actual.sum(idim))
 
   def test_add(self):
-    self.assertFunctionAlmostEqual(decimal=15,
-      desired=self.n_op_argsfun + self.shapearg,
-      actual=(self.op_args + self.shapearg))
+    self.assertFunctionAlmostEqual(decimal=14,
+      desired=self.desired + self.other,
+      actual=(self.actual + self.other))
 
   def test_multiply(self):
-    self.assertFunctionAlmostEqual(decimal=15,
-      desired=self.n_op_argsfun * self.shapearg,
-      actual=(self.op_args * self.shapearg))
+    self.assertFunctionAlmostEqual(decimal=14,
+      desired=self.desired * self.other,
+      actual=(self.actual * self.other))
 
   def test_dot(self):
-    for iax in range(self.op_args.ndim):
+    for iax in range(self.actual.ndim):
       self.assertFunctionAlmostEqual(decimal=13,
-        desired=numeric.contract(self.n_op_argsfun, self.shapearg, axis=iax),
-        actual=evaluable.dot(self.op_args, self.shapearg, axes=iax))
+        desired=numeric.contract(self.desired, self.other, axis=iax),
+        actual=evaluable.dot(self.actual, self.other, axes=iax))
 
   def test_pointwise(self):
-    self.assertFunctionAlmostEqual(decimal=15,
-      desired=numpy.sin(self.n_op_argsfun).astype(float), # "astype" necessary for boolean operations (float16->float64)
-      actual=evaluable.sin(self.op_args))
+    self.assertFunctionAlmostEqual(decimal=14,
+      desired=numpy.sin(self.desired).astype(float), # "astype" necessary for boolean operations (float16->float64)
+      actual=evaluable.sin(self.actual))
 
   def test_power(self):
     self.assertFunctionAlmostEqual(decimal=13,
-      desired=self.n_op_argsfun**3,
-      actual=(self.op_args**3))
+      desired=self.desired**3,
+      actual=(self.actual**3))
 
   def test_power0(self):
-    power = (numpy.arange(self.n_op_argsfun.size) % 2).reshape(self.n_op_argsfun.shape)
+    power = (numpy.arange(self.desired.size) % 2).reshape(self.desired.shape)
     self.assertFunctionAlmostEqual(decimal=13,
-      desired=self.n_op_argsfun**power,
-      actual=self.op_args**power)
+      desired=self.desired**power,
+      actual=self.actual**power)
 
   def test_sign(self):
-    if self.n_op_argsfun.dtype.kind != 'b':
-      self.assertFunctionAlmostEqual(decimal=15,
-        desired=numpy.sign(self.n_op_argsfun),
-        actual=evaluable.sign(self.op_args))
+    if self.desired.dtype.kind != 'b':
+      self.assertFunctionAlmostEqual(decimal=14,
+        desired=numpy.sign(self.desired),
+        actual=evaluable.sign(self.actual))
 
   def test_mask(self):
-    for idim in range(self.op_args.ndim):
-      if self.n_op_argsfun.shape[idim] <= 1:
+    for idim in range(self.actual.ndim):
+      if self.desired.shape[idim] <= 1:
         continue
-      mask = numpy.ones(self.n_op_argsfun.shape[idim], dtype=bool)
+      mask = numpy.ones(self.desired.shape[idim], dtype=bool)
       mask[0] = False
-      if self.n_op_argsfun.shape[idim] > 2:
+      if self.desired.shape[idim] > 2:
         mask[-1] = False
-      self.assertFunctionAlmostEqual(decimal=15,
-        desired=self.n_op_argsfun[(slice(None,),)*idim+(mask,)],
-        actual=evaluable.mask(self.op_args, mask, axis=idim))
+      self.assertFunctionAlmostEqual(decimal=14,
+        desired=self.desired[(slice(None,),)*idim+(mask,)],
+        actual=evaluable.mask(self.actual, mask, axis=idim))
 
   def test_ravel(self):
-    for idim in range(self.op_args.ndim-1):
-      self.assertFunctionAlmostEqual(decimal=15,
-        desired=self.n_op_argsfun.reshape(self.n_op_argsfun.shape[:idim]+(-1,)+self.n_op_argsfun.shape[idim+2:]),
-        actual=evaluable.ravel(self.op_args, axis=idim))
+    for idim in range(self.actual.ndim-1):
+      self.assertFunctionAlmostEqual(decimal=14,
+        desired=self.desired.reshape(self.desired.shape[:idim]+(-1,)+self.desired.shape[idim+2:]),
+        actual=evaluable.ravel(self.actual, axis=idim))
 
   def test_unravel(self):
-    for idim in range(self.op_args.ndim):
-      length = self.n_op_argsfun.shape[idim]
+    for idim in range(self.actual.ndim):
+      length = self.desired.shape[idim]
       unravelshape = (length//3,3) if (length%3==0) else (length//2,2) if (length%2==0) else (length,1)
-      self.assertFunctionAlmostEqual(decimal=15,
-        desired=self.n_op_argsfun.reshape(self.n_op_argsfun.shape[:idim]+unravelshape+self.n_op_argsfun.shape[idim+1:]),
-        actual=evaluable.unravel(self.op_args, axis=idim, shape=unravelshape))
+      self.assertFunctionAlmostEqual(decimal=14,
+        desired=self.desired.reshape(self.desired.shape[:idim]+unravelshape+self.desired.shape[idim+1:]),
+        actual=evaluable.unravel(self.actual, axis=idim, shape=unravelshape))
 
   def test_loopsum(self):
+    if self.desired.dtype == bool:
+      return
     length = 3
     index = evaluable.loop_index('_testindex', length)
-    for iarg, shape in enumerate(self.shapes):
-      testvalue = numpy.random.uniform(size=(length, *shape), low=self.low, high=self.high)
-      n_op_argsfun = functools.reduce(operator.add, (self.n_op(*self.arg_values[:iarg], v, *self.arg_values[iarg+1:]) for v in testvalue))
+    for iarg, arg_value in enumerate(self.arg_values):
+      testvalue = numpy.repeat(arg_value[numpy.newaxis], length, axis=0)
+      numpy.random.shuffle(testvalue.ravel())
+      desired = functools.reduce(operator.add, (self.n_op(*self.arg_values[:iarg], v, *self.arg_values[iarg+1:]) for v in testvalue))
       args = (*self.args[:iarg], evaluable.Guard(evaluable.get(evaluable.asarray(testvalue), 0, index)), *self.args[iarg+1:])
-      self.assertFunctionAlmostEqual(decimal=15,
+      self.assertFunctionAlmostEqual(decimal=14,
         actual=evaluable.loop_sum(self.op(*args), index),
-        desired=n_op_argsfun)
+        desired=desired)
 
   def test_loopconcatenate(self):
     length = 3
     index = evaluable.loop_index('_testindex', length)
-    for iarg, shape in enumerate(self.shapes):
-      testvalue = numpy.random.uniform(size=(length, *shape), low=self.low, high=self.high)
-      n_op_argsfun = numpy.concatenate([self.n_op(*self.arg_values[:iarg], v, *self.arg_values[iarg+1:]) for v in testvalue], axis=-1)
+    for iarg, arg_value in enumerate(self.arg_values):
+      testvalue = numpy.repeat(arg_value[numpy.newaxis], length, axis=0)
+      numpy.random.shuffle(testvalue.ravel())
+      desired = numpy.concatenate([self.n_op(*self.arg_values[:iarg], v, *self.arg_values[iarg+1:]) for v in testvalue], axis=-1)
       args = (*self.args[:iarg], evaluable.Guard(evaluable.get(evaluable.asarray(testvalue), 0, index)), *self.args[iarg+1:])
-      self.assertFunctionAlmostEqual(decimal=15,
+      self.assertFunctionAlmostEqual(decimal=14,
         actual=evaluable.loop_concatenate(self.op(*args), index),
-        desired=n_op_argsfun)
+        desired=desired)
 
   @parametrize.enable_if(lambda hasgrad, **kwargs: hasgrad)
   def test_derivative(self):
@@ -312,16 +329,18 @@ class check(TestCase):
     fddeltas = numpy.array([1,2,3])
     fdfactors = numpy.linalg.solve(2*fddeltas**numpy.arange(1,1+2*len(fddeltas),2)[:,None], [1]+[0]*(len(fddeltas)-1))
     for arg, arg_name, x0 in zip(self.args, self.arg_names, self.arg_values):
+      if arg.dtype != float:
+        continue
       with self.subTest(arg_name):
         dx = numpy.random.normal(size=x0.shape)
         evalargs = dict(zip(self.arg_names, self.arg_values))
-        f0 = evaluable.derivative(self.op_args, arg).eval(**evalargs)
-        exact = numeric.contract(f0, dx, range(self.op_args.ndim, self.op_args.ndim+dx.ndim))
+        f0 = evaluable.derivative(self.actual, arg).eval(**evalargs)
+        exact = numeric.contract(f0, dx, range(self.actual.ndim, self.actual.ndim+dx.ndim))
         if exact.dtype.kind in 'bi' or self.zerograd:
           approx = numpy.zeros_like(exact)
           scale = 1
         else:
-          fdvals = numpy.stack([self.op_args.eval(**collections.ChainMap({arg_name: numpy.asarray(x0+eps*n*dx)}, evalargs)) for n in (*-fddeltas, *fddeltas)], axis=0)
+          fdvals = numpy.stack([self.actual.eval(**collections.ChainMap({arg_name: numpy.asarray(x0+eps*n*dx)}, evalargs)) for n in (*-fddeltas, *fddeltas)], axis=0)
           if fdvals.dtype.kind == 'i':
             fdvals = fdvals.astype(float)
           fdvals = fdvals.reshape(2, len(fddeltas), *fdvals.shape[1:])
@@ -335,119 +354,147 @@ class check(TestCase):
     cache = {}
     times = collections.defaultdict(evaluable._Stats)
     with self.subTest('new'):
-      node = self.op_args._node(cache, None, times)
+      node = self.actual._node(cache, None, times)
       if node:
-        self.assertIn(self.op_args, cache)
-        self.assertEqual(cache[self.op_args], node)
+        self.assertIn(self.actual, cache)
+        self.assertEqual(cache[self.actual], node)
     with self.subTest('from-cache'):
       if node:
-        self.assertEqual(self.op_args._node(cache, None, times), node)
+        self.assertEqual(self.actual._node(cache, None, times), node)
     with self.subTest('with-times'):
       times = collections.defaultdict(evaluable._Stats)
-      self.op_args.eval_withtimes(times, **dict(zip(self.arg_names, self.arg_values)))
-      self.op_args._node(cache, None, times)
+      self.actual.eval_withtimes(times, **dict(zip(self.arg_names, self.arg_values)))
+      self.actual._node(cache, None, times)
 
-def _check(name, op, n_op, shapes, hasgrad=True, zerograd=False, ndim=2, low=-1, high=1):
-  check(name, op=op, n_op=n_op, shapes=shapes, hasgrad=hasgrad, zerograd=zerograd, ndim=ndim, low=low, high=high)
+def generate(*shape, real, zero, negative):
+  'generate array values that cover certain numerical classes'
+  size = numpy.prod(shape, dtype=int)
+  a = numpy.arange(size)
+  if negative:
+    iz = size // 2
+    a -= iz
+  else:
+    iz = 0
+  assert a[iz] == 0
+  if not zero:
+    a[iz:] += 1
+  if not a[-1]: # no positive numbers
+    raise Exception('shape is too small to test at least one of all selected number categories')
+  if real:
+    a = numpy.tanh(2 * a / a[-1]) # map to (-1,1)
+  return a.reshape(shape)
 
-_check('identity', lambda f: evaluable.asarray(f), lambda a: a, [(2,4,2)])
-_check('const', lambda f: evaluable.asarray(numpy.arange(16, dtype=float).reshape(2,4,2)), lambda a: numpy.arange(16, dtype=float).reshape(2,4,2), [(2,4,2)])
-_check('zeros', lambda f: evaluable.zeros([1,4,3,4]), lambda a: numpy.zeros([1,4,3,4]), [(4,3,4)])
-_check('ones', lambda f: evaluable.ones([1,4,3,4]), lambda a: numpy.ones([1,4,3,4]), [(4,3,4)])
-_check('range', lambda f: evaluable.Range(4) + 2, lambda a: numpy.arange(2,6), [(4,)])
-_check('sin', evaluable.sin, numpy.sin, [(4,)])
-_check('cos', evaluable.cos, numpy.cos, [(4,)])
-_check('tan', evaluable.tan, numpy.tan, [(4,)])
-_check('sqrt', evaluable.sqrt, numpy.sqrt, [(4,)], low=0)
-_check('log', evaluable.ln, numpy.log, [(4,)], low=0)
-_check('log2', evaluable.log2, numpy.log2, [(4,)], low=0)
-_check('log10', evaluable.log10, numpy.log10, [(4,)], low=0)
-_check('exp', evaluable.exp, numpy.exp, [(4,)])
-_check('arctanh', evaluable.arctanh, numpy.arctanh, [(4,)])
-_check('tanh', evaluable.tanh, numpy.tanh, [(4,)])
-_check('cosh', evaluable.cosh, numpy.cosh, [(4,)])
-_check('sinh', evaluable.sinh, numpy.sinh, [(4,)])
-_check('abs', evaluable.abs, numpy.abs, [(4,)])
-_check('sign', evaluable.sign, numpy.sign, [(4,4)], zerograd=True)
-_check('power', evaluable.power, numpy.power, [(4,4),(4,4)], low=0)
-_check('negative', evaluable.negative, numpy.negative, [(4,)])
-_check('reciprocal', evaluable.reciprocal, numpy.reciprocal, [(4,)], low=-2, high=-1)
-_check('arcsin', evaluable.arcsin, numpy.arcsin, [(4,)])
-_check('arccos', evaluable.arccos, numpy.arccos, [(4,)])
-_check('arctan', evaluable.arctan, numpy.arctan, [(4,)])
-_check('ln', evaluable.ln, numpy.log, [(4,)], low=0)
-_check('product', lambda a: evaluable.product(a,2), lambda a: numpy.product(a,2), [(4,3,4)])
-_check('sum', lambda a: evaluable.sum(a,2), lambda a: a.sum(2), [(4,3,4)])
-_check('transpose1', lambda a: evaluable.transpose(a,[0,1,3,2]), lambda a: a.transpose([0,1,3,2]), [(2,3,4,5)], low=0, high=20)
-_check('transpose2', lambda a: evaluable.transpose(a,[0,2,3,1]), lambda a: a.transpose([0,2,3,1]), [(2,3,4,5)])
-_check('insertaxis', lambda a: evaluable.insertaxis(a,1,3), lambda a: numpy.repeat(a[:,None], 3, 1), [(2,4)])
-_check('get', lambda a: evaluable.get(a,2,1), lambda a: a[:,:,1], [(4,3,4)])
-_check('takediag141', lambda a: evaluable.takediag(a,0,2), lambda a: numeric.takediag(a,0,2), [(1,4,1)])
-_check('takediag434', lambda a: evaluable.takediag(a,0,2), lambda a: numeric.takediag(a,0,2), [(4,3,4)])
-_check('takediag343', lambda a: evaluable.takediag(a,0,2), lambda a: numeric.takediag(a,0,2), [(3,4,3)])
-_check('determinant141', lambda a: evaluable.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(0,1)), [(1,4,1)])
-_check('determinant434', lambda a: evaluable.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(0,1)), [(4,3,4)])
-_check('determinant4433', lambda a: evaluable.determinant(a,(2,3)), lambda a: numpy.linalg.det(a), [(4,4,3,3)])
-_check('determinant200', lambda a: evaluable.determinant(a,(1,2)), lambda a: numpy.linalg.det(a) if a.shape[-1] else numpy.ones(a.shape[:-2], float), [(2,0,0)], zerograd=True)
-_check('inverse141', lambda a: evaluable.inverse(a+1,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(0,1)+1).swapaxes(0,1), [(1,4,1)])
-_check('inverse434', lambda a: evaluable.inverse(a+5*evaluable.insertaxis(evaluable.Diagonalize(evaluable.ones([4])), 1, 3),(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(0,1)+5*numpy.eye(4)).swapaxes(0,1), [(4,3,4)])
-_check('inverse4422', lambda a: evaluable.inverse(a+evaluable.prependaxes(evaluable.Diagonalize(evaluable.ones([2])), (4,4))), lambda a: numpy.linalg.inv(a+numpy.eye(2)), [(4,4,2,2)])
-_check('repeat', lambda a: evaluable.repeat(a,3,1), lambda a: numpy.repeat(a,3,1), [(4,1,4)])
-_check('diagonalize', lambda a: evaluable.diagonalize(a,1,3), lambda a: numeric.diagonalize(a,1,3), [(4,4,4,4)])
-_check('multiply', evaluable.multiply, numpy.multiply, [(4,4),(4,4)])
-_check('dot', lambda a,b: evaluable.dot(a,b,axes=1), lambda a,b: (a*b).sum(1), [(4,2,4),(4,2,4)])
-_check('divide', evaluable.divide, lambda a, b: a * b**-1, [(4,4),(4,4)], low=-2, high=-1)
-_check('divide2', lambda a: evaluable.asarray(a)/2, lambda a: a/2, [(4,1)])
-_check('add', evaluable.add, numpy.add, [(4,4),(4,4)])
-_check('subtract', evaluable.subtract, numpy.subtract, [(4,4),(4,4)])
-_check('dot2', lambda a,b: evaluable.multiply(a,b).sum(-2), lambda a,b: (a*b).sum(-2), [(4,2,4),(4,2,4)])
-_check('min', lambda a,b: evaluable.Minimum(a,b), numpy.minimum, [(4,4),(4,4)])
-_check('max', lambda a,b: evaluable.Maximum(a,b), numpy.maximum, [(4,4),(4,4)])
-_check('equal', evaluable.Equal, numpy.equal, [(4,4),(4,4)], zerograd=True)
-_check('greater', evaluable.Greater, numpy.greater, [(4,4),(4,4)], zerograd=True)
-_check('less', evaluable.Less, numpy.less, [(4,4),(4,4)], zerograd=True)
-_check('arctan2', evaluable.arctan2, numpy.arctan2, [(4,4),(4,4)])
-_check('stack', lambda a,b: evaluable.stack([a,b], 0), lambda a,b: numpy.concatenate([a[_,:],b[_,:]], axis=0), [(4,),(4,)])
-_check('eig', lambda a: evaluable.eig(a+a.swapaxes(0,1),symmetric=True)[1], lambda a: numpy.linalg.eigh(a+a.swapaxes(0,1))[1], [(4,4)], hasgrad=False)
-_check('trignormal', lambda a: evaluable.TrigNormal(a), lambda a: numpy.array([numpy.cos(a), numpy.sin(a)]), [()])
-_check('trigtangent', lambda a: evaluable.TrigTangent(a), lambda a: numpy.array([-numpy.sin(a), numpy.cos(a)]), [()])
-_check('mod', lambda a,b: evaluable.mod(a,b), lambda a,b: numpy.mod(a,b), [(4,),(4,)], hasgrad=False)
-_check('mask', lambda f: evaluable.mask(f,numpy.array([True,False,True,False,True,False,True]),axis=1), lambda a: a[:,::2], [(4,7,4)])
-_check('ravel', lambda f: evaluable.ravel(f,axis=1), lambda a: a.reshape(4,4,4,4), [(4,2,2,4,4)])
-_check('unravel', lambda f: evaluable.unravel(f,axis=1,shape=[2,2]), lambda a: a.reshape(4,2,2,4,4), [(4,4,4,4)])
-_check('inflate', lambda f: evaluable._inflate(f,dofmap=evaluable.Guard([0,3]),length=4,axis=1), lambda a: numpy.concatenate([a[:,:1], numpy.zeros_like(a), a[:,1:]], axis=1), [(4,2,4)])
-_check('inflate-constant', lambda f: evaluable._inflate(f,dofmap=[0,3],length=4,axis=1), lambda a: numpy.concatenate([a[:,:1], numpy.zeros_like(a), a[:,1:]], axis=1), [(4,2,4)])
-_check('inflate-duplicate', lambda f: evaluable.Inflate(f,dofmap=[0,1,0,3],length=4), lambda a: numpy.stack([a[:,0]+a[:,2], a[:,1], numpy.zeros_like(a[:,0]), a[:,3]], axis=1), [(2,4)])
-_check('inflate-block', lambda f: evaluable.Inflate(f,dofmap=[[5,4,3],[2,1,0]],length=6), lambda a: a.ravel()[::-1], [(2,3)])
-_check('inflate-scalar', lambda f: evaluable.Inflate(f,dofmap=1,length=3), lambda a: numpy.array([0,a,0]), [()])
-_check('inflate-diagonal', lambda f: evaluable.Inflate(evaluable.Inflate(f,1,3),1,3), lambda a: numpy.diag(numpy.array([0,a,0])), [()])
-_check('inflate-one', lambda f: evaluable.Inflate(f,0,1), lambda a: numpy.array([a]), [()])
-_check('inflate-range', lambda f: evaluable.Inflate(f,evaluable.Range(3),3), lambda a: a, [(3,)])
-_check('take', lambda f: evaluable.Take(f, [0,3,2]), lambda a: a[:,[0,3,2]], [(2,4)])
-_check('take-duplicate', lambda f: evaluable.Take(f, [0,3,0]), lambda a: a[:,[0,3,0]], [(2,4)])
-_check('choose', lambda a, b, c: evaluable.Choose(evaluable.appendaxes(evaluable.Int(a)%2, (3,3)), [b,c]), lambda a, b, c: numpy.choose(a[_,_].astype(int)%2, [b,c]), [(), (3,3), (3,3)])
-_check('slice', lambda a: evaluable.asarray(a)[::2], lambda a: a[::2], [(5,3)])
-_check('normal1d', lambda a: evaluable.Normal(a), lambda a: numpy.sign(a[...,0]), [(3,1,1)])
-_check('normal2d', lambda a: evaluable.Normal(a), lambda a: numpy.stack([Q[:,-1]*numpy.sign(R[-1,-1]) for ai in a for Q, R in [numpy.linalg.qr(ai, mode='complete')]], axis=0), [(1,2,2)])
-_check('normal3d', lambda a: evaluable.Normal(a), lambda a: numpy.stack([Q[:,-1]*numpy.sign(R[-1,-1]) for ai in a for Q, R in [numpy.linalg.qr(ai, mode='complete')]], axis=0), [(2,3,3)])
-_check('loopsum1', lambda: evaluable.loop_sum(evaluable.loop_index('index', 3), evaluable.loop_index('index', 3)), lambda: numpy.array(3), [])
-_check('loopsum2', lambda a: evaluable.loop_sum(a, evaluable.loop_index('index', 2)), lambda a: 2*a, [(3,4,2,4)])
-_check('loopsum3', lambda a: evaluable.loop_sum(evaluable.get(a, 0, evaluable.loop_index('index', 3)), evaluable.loop_index('index', 3)), lambda a: numpy.sum(a, 0), [(3,4,2,4)])
-_check('loopsum4', lambda: evaluable.loop_sum(evaluable.Inflate(evaluable.loop_index('index', 3), 0, 2), evaluable.loop_index('index', 3)), lambda: numpy.array([3, 0]), [])
-_check('loopsum5', lambda: evaluable.loop_sum(evaluable.loop_index('index', 1), evaluable.loop_index('index', 1)), lambda: numpy.array(0), [])
-_check('loopconcatenate1', lambda a: evaluable.loop_concatenate(a+evaluable.prependaxes(evaluable.loop_index('index', 3), a.shape), evaluable.loop_index('index', 3)), lambda a: a+numpy.arange(3)[None], [(2,1)])
-_check('loopconcatenate2', lambda: evaluable.loop_concatenate(evaluable.Elemwise([numpy.arange(48).reshape(4,4,3)[:,:,a:b] for a, b in util.pairwise([0,2,3])], evaluable.loop_index('index', 2), int), evaluable.loop_index('index', 2)), lambda: numpy.arange(48).reshape(4,4,3), [])
-_check('loopconcatenatecombined', lambda a: evaluable.loop_concatenate_combined([a+evaluable.prependaxes(evaluable.loop_index('index', 3), a.shape)], evaluable.loop_index('index', 3))[0], lambda a: a+numpy.arange(3)[None], [(2,1)], hasgrad=False)
+INT = functools.partial(generate, real=False, zero=True, negative=False)
+ANY = functools.partial(generate, real=True, zero=True, negative=True)
+NZ  = functools.partial(generate, real=True, zero=False, negative=True)
+POS = functools.partial(generate, real=True, zero=False, negative=False)
+NN  = functools.partial(generate, real=True, zero=True, negative=False)
+
+def _check(name, op, n_op, *arg_values, hasgrad=True, zerograd=False, ndim=2):
+  check(name, op=op, n_op=n_op, arg_values=arg_values, hasgrad=hasgrad, zerograd=zerograd, ndim=ndim)
+
+_check('identity', lambda f: evaluable.asarray(f), lambda a: a, ANY(2,4,2))
+_check('int', lambda f: evaluable.Int(f), lambda a: a.astype(int), INT(2,4,2))
+_check('float', lambda f: evaluable.Float(f), lambda a: a.astype(float), ANY(2,4,2))
+_check('complex', lambda f: evaluable.Complex(f), lambda a: a.astype(complex), ANY(2,4,2))
+_check('const', lambda f: evaluable.asarray(numpy.arange(16, dtype=float).reshape(2,4,2)), lambda a: numpy.arange(16, dtype=float).reshape(2,4,2), ANY(2,4,2))
+_check('zeros', lambda f: evaluable.zeros([1,4,3,4]), lambda a: numpy.zeros([1,4,3,4]), ANY(4,3,4))
+_check('ones', lambda f: evaluable.ones([1,4,3,4]), lambda a: numpy.ones([1,4,3,4]), ANY(4,3,4))
+_check('range', lambda f: evaluable.Range(4) + 2, lambda a: numpy.arange(2,6), ANY(4))
+_check('sin', evaluable.sin, numpy.sin, ANY(4,4))
+_check('cos', evaluable.cos, numpy.cos, ANY(4,4))
+_check('tan', evaluable.tan, numpy.tan, ANY(4,4))
+_check('sqrt', evaluable.sqrt, numpy.sqrt, NN(4,4))
+_check('log', evaluable.ln, numpy.log, POS(2,2))
+_check('log2', evaluable.log2, numpy.log2, POS(2,2))
+_check('log10', evaluable.log10, numpy.log10, POS(2,2))
+_check('exp', evaluable.exp, numpy.exp, ANY(4,4))
+_check('arctanh', evaluable.arctanh, numpy.arctanh, ANY(3,3))
+_check('tanh', evaluable.tanh, numpy.tanh, ANY(4,4))
+_check('cosh', evaluable.cosh, numpy.cosh, ANY(4,4))
+_check('sinh', evaluable.sinh, numpy.sinh, ANY(4,4))
+_check('abs', evaluable.abs, numpy.abs, ANY(4,4))
+_check('sign', evaluable.sign, numpy.sign, ANY(4,4), zerograd=True)
+_check('power', evaluable.power, numpy.power, POS(4,4), ANY(4,4))
+_check('negative', evaluable.negative, numpy.negative, ANY(4,4))
+_check('reciprocal', evaluable.reciprocal, numpy.reciprocal, NZ(4,4))
+_check('arcsin', evaluable.arcsin, numpy.arcsin, ANY(4,4))
+_check('arccos', evaluable.arccos, numpy.arccos, ANY(4,4))
+_check('arctan', evaluable.arctan, numpy.arctan, ANY(4,4))
+_check('ln', evaluable.ln, numpy.log, POS(4,4))
+_check('product', lambda a: evaluable.product(a,2), lambda a: numpy.product(a,2), ANY(4,3,4))
+_check('sum', lambda a: evaluable.sum(a,2), lambda a: a.sum(2), ANY(4,3,4))
+_check('transpose1', lambda a: evaluable.transpose(a,[0,1,3,2]), lambda a: a.transpose([0,1,3,2]), ANY(2,3,4,5))
+_check('transpose2', lambda a: evaluable.transpose(a,[0,2,3,1]), lambda a: a.transpose([0,2,3,1]), ANY(2,3,4,5))
+_check('insertaxis', lambda a: evaluable.insertaxis(a,1,3), lambda a: numpy.repeat(a[:,None], 3, 1), ANY(2,4))
+_check('get', lambda a: evaluable.get(a,2,1), lambda a: a[:,:,1], ANY(4,3,4))
+_check('takediag141', lambda a: evaluable.takediag(a,0,2), lambda a: numeric.takediag(a,0,2), ANY(1,4,1))
+_check('takediag434', lambda a: evaluable.takediag(a,0,2), lambda a: numeric.takediag(a,0,2), ANY(4,3,4))
+_check('takediag343', lambda a: evaluable.takediag(a,0,2), lambda a: numeric.takediag(a,0,2), ANY(3,4,3))
+_check('determinant141', lambda a: evaluable.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(0,1)), ANY(1,4,1))
+_check('determinant434', lambda a: evaluable.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(0,1)), ANY(4,3,4))
+_check('determinant4433', lambda a: evaluable.determinant(a,(2,3)), lambda a: numpy.linalg.det(a), ANY(4,4,3,3))
+_check('determinant200', lambda a: evaluable.determinant(a,(1,2)), lambda a: numpy.linalg.det(a) if a.shape[-1] else numpy.ones(a.shape[:-2], float), numpy.empty((2,0,0)), zerograd=True)
+_check('inverse141', lambda a: evaluable.inverse(a,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(0,1)).swapaxes(0,1), NZ(1,4,1))
+_check('inverse434', lambda a: evaluable.inverse(a,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(0,1)).swapaxes(0,1), POS(4,3,4)+numpy.eye(4,4)[:,numpy.newaxis,:])
+_check('inverse4422', lambda a: evaluable.inverse(a), lambda a: numpy.linalg.inv(a), POS(4,4,2,2)+numpy.eye(2))
+_check('repeat', lambda a: evaluable.repeat(a,3,1), lambda a: numpy.repeat(a,3,1), ANY(4,1,4))
+_check('diagonalize', lambda a: evaluable.diagonalize(a,1,3), lambda a: numeric.diagonalize(a,1,3), ANY(4,4,4,4))
+_check('multiply', evaluable.multiply, numpy.multiply, ANY(4,4), ANY(4,4))
+_check('dot', lambda a,b: evaluable.dot(a,b,axes=1), lambda a,b: (a*b).sum(1), ANY(4,2,4), ANY(4,2,4))
+_check('divide', evaluable.divide, lambda a, b: a * b**-1, ANY(4,4), NZ(4,4))
+_check('divide2', lambda a: evaluable.asarray(a)/2, lambda a: a/2, ANY(4,1))
+_check('add', evaluable.add, numpy.add, ANY(4,4), ANY(4,4))
+_check('subtract', evaluable.subtract, numpy.subtract, ANY(4,4), ANY(4,4))
+_check('dot2', lambda a,b: evaluable.multiply(a,b).sum(-2), lambda a,b: (a*b).sum(-2), ANY(4,2,4), ANY(4,2,4))
+_check('min', lambda a,b: evaluable.Minimum(a,b), numpy.minimum, ANY(4,4), ANY(4,4))
+_check('max', lambda a,b: evaluable.Maximum(a,b), numpy.maximum, ANY(4,4), ANY(4,4))
+_check('equal', evaluable.Equal, numpy.equal, ANY(4,4), ANY(4,4), zerograd=True)
+_check('greater', evaluable.Greater, numpy.greater, ANY(4,4), ANY(4,4), zerograd=True)
+_check('less', evaluable.Less, numpy.less, ANY(4,4), ANY(4,4), zerograd=True)
+_check('arctan2', evaluable.arctan2, numpy.arctan2, ANY(4,4), ANY(4,4))
+_check('stack', lambda a,b: evaluable.stack([a,b], 0), lambda a,b: numpy.concatenate([a[_,:],b[_,:]], axis=0), ANY(4), ANY(4))
+_check('eig', lambda a: evaluable.eig(a+a.swapaxes(0,1),symmetric=True)[1], lambda a: numpy.linalg.eigh(a+a.swapaxes(0,1))[1], ANY(4,4), hasgrad=False)
+_check('trignormal', lambda a: evaluable.TrigNormal(a), lambda a: numpy.array([numpy.cos(a), numpy.sin(a)]).T, ANY(3))
+_check('trigtangent', lambda a: evaluable.TrigTangent(a), lambda a: numpy.array([-numpy.sin(a), numpy.cos(a)]).T, ANY(3))
+_check('mod', lambda a,b: evaluable.mod(a,b), lambda a,b: numpy.mod(a,b), ANY(4), NZ(4), hasgrad=False)
+_check('mask', lambda f: evaluable.mask(f,numpy.array([True,False,True,False,True,False,True]),axis=1), lambda a: a[:,::2], ANY(4,7,4))
+_check('ravel', lambda f: evaluable.ravel(f,axis=1), lambda a: a.reshape(4,4,4,4), ANY(4,2,2,4,4))
+_check('unravel', lambda f: evaluable.unravel(f,axis=1,shape=[2,2]), lambda a: a.reshape(4,2,2,4,4), ANY(4,4,4,4))
+_check('ravelindex', lambda a, b: evaluable.RavelIndex(a, b, 12, 20), lambda a, b: a[...,_,_] * 20 + b, INT(3,4), INT(4,5))
+_check('inflate', lambda f: evaluable._inflate(f,dofmap=evaluable.Guard([0,3]),length=4,axis=1), lambda a: numpy.concatenate([a[:,:1], numpy.zeros_like(a), a[:,1:]], axis=1), ANY(4,2,4))
+_check('inflate-constant', lambda f: evaluable._inflate(f,dofmap=[0,3],length=4,axis=1), lambda a: numpy.concatenate([a[:,:1], numpy.zeros_like(a), a[:,1:]], axis=1), ANY(4,2,4))
+_check('inflate-duplicate', lambda f: evaluable.Inflate(f,dofmap=[0,1,0,3],length=4), lambda a: numpy.stack([a[:,0]+a[:,2], a[:,1], numpy.zeros_like(a[:,0]), a[:,3]], axis=1), ANY(2,4))
+_check('inflate-block', lambda f: evaluable.Inflate(f,dofmap=[[5,4,3],[2,1,0]],length=6), lambda a: a.ravel()[::-1], ANY(2,3))
+_check('inflate-scalar', lambda f: evaluable.Inflate(f,dofmap=1,length=3), lambda a: numpy.array([0,a,0]), numpy.array(.5))
+_check('inflate-diagonal', lambda f: evaluable.Inflate(evaluable.Inflate(f,1,3),1,3), lambda a: numpy.diag(numpy.array([0,a,0])), numpy.array(.5))
+_check('inflate-one', lambda f: evaluable.Inflate(f,0,1), lambda a: numpy.array([a]), numpy.array(.5))
+_check('inflate-range', lambda f: evaluable.Inflate(f,evaluable.Range(3),3), lambda a: a, ANY(3))
+_check('take', lambda f: evaluable.Take(f, [0,3,2]), lambda a: a[:,[0,3,2]], ANY(2,4))
+_check('take-duplicate', lambda f: evaluable.Take(f, [0,3,0]), lambda a: a[:,[0,3,0]], ANY(2,4))
+_check('choose', lambda a, b, c: evaluable.Choose(a%2, [b,c]), lambda a, b, c: numpy.choose(a%2, [b,c]), INT(3,3), ANY(3,3), ANY(3,3))
+_check('slice', lambda a: evaluable.asarray(a)[::2], lambda a: a[::2], ANY(5,3))
+_check('normal1d', lambda a: evaluable.Normal(a), lambda a: numpy.sign(a[...,0]), NZ(3,1,1))
+_check('normal2d', lambda a: evaluable.Normal(a), lambda a: numpy.stack([Q[:,-1]*numpy.sign(R[-1,-1]) for ai in a for Q, R in [numpy.linalg.qr(ai, mode='complete')]], axis=0), POS(1,2,2)+numpy.eye(2))
+_check('normal3d', lambda a: evaluable.Normal(a), lambda a: numpy.stack([Q[:,-1]*numpy.sign(R[-1,-1]) for ai in a for Q, R in [numpy.linalg.qr(ai, mode='complete')]], axis=0), POS(2,3,3)+numpy.eye(3))
+_check('loopsum1', lambda: evaluable.loop_sum(evaluable.loop_index('index', 3), evaluable.loop_index('index', 3)), lambda: numpy.array(3))
+_check('loopsum2', lambda a: evaluable.loop_sum(a, evaluable.loop_index('index', 2)), lambda a: 2*a, ANY(3,4,2,4))
+_check('loopsum3', lambda a: evaluable.loop_sum(evaluable.get(a, 0, evaluable.loop_index('index', 3)), evaluable.loop_index('index', 3)), lambda a: numpy.sum(a, 0), ANY(3,4,2,4))
+_check('loopsum4', lambda: evaluable.loop_sum(evaluable.Inflate(evaluable.loop_index('index', 3), 0, 2), evaluable.loop_index('index', 3)), lambda: numpy.array([3, 0]))
+_check('loopsum5', lambda: evaluable.loop_sum(evaluable.loop_index('index', 1), evaluable.loop_index('index', 1)), lambda: numpy.array(0))
+_check('loopconcatenate1', lambda a: evaluable.loop_concatenate(a+evaluable.prependaxes(evaluable.loop_index('index', 3), a.shape), evaluable.loop_index('index', 3)), lambda a: a+numpy.arange(3)[None], ANY(3,1))
+_check('loopconcatenate2', lambda: evaluable.loop_concatenate(evaluable.Elemwise([numpy.arange(48).reshape(4,4,3)[:,:,a:b] for a, b in util.pairwise([0,2,3])], evaluable.loop_index('index', 2), int), evaluable.loop_index('index', 2)), lambda: numpy.arange(48).reshape(4,4,3))
+_check('loopconcatenatecombined', lambda a: evaluable.loop_concatenate_combined([a+evaluable.prependaxes(evaluable.loop_index('index', 3), a.shape)], evaluable.loop_index('index', 3))[0], lambda a: a+numpy.arange(3)[None], ANY(3,1), hasgrad=False)
 
 _polyval_mask = lambda shape, ndim: 1 if ndim == 0 else numpy.array([sum(i[-ndim:]) < int(shape[-1]) for i in numpy.ndindex(shape)], dtype=int).reshape(shape)
 _polyval_desired = lambda c, x: sum(c[(...,*i)]*(x[(slice(None),*[None]*(c.ndim-x.shape[1]))]**i).prod(-1) for i in itertools.product(*[range(c.shape[-1])]*x.shape[1]) if sum(i) < c.shape[-1])
-_check('polyval_1d_p0', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape,x.shape[1]), x), _polyval_desired, [(1,),(4,1)], ndim=1)
-_check('polyval_1d_p1', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape,x.shape[1]), x), _polyval_desired, [(2,),(4,1)], ndim=1)
-_check('polyval_1d_p2', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape,x.shape[1]), x), _polyval_desired, [(3,),(4,1)], ndim=1)
-_check('polyval_2d_p0', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape,x.shape[1]), x), _polyval_desired, [(1,1),(4,2)], ndim=2)
-_check('polyval_2d_p1', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape,x.shape[1]), x), _polyval_desired, [(2,2),(4,2)], ndim=2)
-_check('polyval_2d_p2', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape,x.shape[1]), x), _polyval_desired, [(3,3),(4,2)], ndim=2)
-_check('polyval_2d_p1_23', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape,x.shape[1]), x), _polyval_desired, [(2,3,2,2),(4,2)], ndim=2)
+_check('polyval_1d_p0', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape,x.shape[1]), x), _polyval_desired, POS(1), ANY(4,1), ndim=1)
+_check('polyval_1d_p1', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape,x.shape[1]), x), _polyval_desired, NZ(2), ANY(4,1), ndim=1)
+_check('polyval_1d_p2', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape,x.shape[1]), x), _polyval_desired, ANY(3), ANY(4,1), ndim=1)
+_check('polyval_2d_p0', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape,x.shape[1]), x), _polyval_desired, POS(1,1), ANY(4,2), ndim=2)
+_check('polyval_2d_p1', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape,x.shape[1]), x), _polyval_desired, ANY(2,2), ANY(4,2), ndim=2)
+_check('polyval_2d_p2', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape,x.shape[1]), x), _polyval_desired, ANY(3,3), ANY(4,2), ndim=2)
+_check('polyval_2d_p1_23', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape,x.shape[1]), x), _polyval_desired, ANY(2,3,2,2), ANY(4,2), ndim=2)
 
 class intbounds(TestCase):
 
@@ -827,12 +874,13 @@ class asciitree(TestCase):
     self.assertEqual(f.asciitree(richoutput=True),
                      '%0 = Sin; f:2,2\n'
                      '└ %1 = Power; f:2,2\n'
-                     '  ├ %2 = InsertAxis; i:2,2; [0,0]\n'
-                     '  │ ├ %3 = InsertAxis; i:2; [0,0]\n'
-                     '  │ │ ├ 0\n'
+                     '  ├ %2 = InsertAxis; f:2,2\n'
+                     '  │ ├ %3 = InsertAxis; f:2\n'
+                     '  │ │ ├ %4 = Float; f:\n'
+                     '  │ │ │ └ 0\n'
                      '  │ │ └ 2\n'
                      '  │ └ 2\n'
-                     '  └ %4 = Diagonalize; f:2,2\n'
+                     '  └ %5 = Diagonalize; f:2,2\n'
                      '    └ Argument; arg; f:2\n')
 
   @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
@@ -1099,3 +1147,30 @@ class Einsum(TestCase):
     arg = numpy.arange(6)
     with self.assertRaisesRegex(ValueError, 'axis group dimensions cannot be negative'):
       evaluable.einsum('Aij->ijA', arg, A=-1)
+
+@parametrize
+class AsType(TestCase):
+
+  def test_bool(self):
+    self.assertEqual(evaluable.astype[self.dtype](True).dtype, self.dtype)
+
+  def test_int(self):
+    self.assertEqual(evaluable.astype[self.dtype](1).dtype, self.dtype)
+
+  def test_float(self):
+    if self.dtype in (float, complex):
+      self.assertEqual(evaluable.astype[self.dtype](1.).dtype, self.dtype)
+    else:
+      with self.assertRaises(TypeError):
+        evaluable.astype[self.dtype](1.)
+
+  def test_complex(self):
+    if self.dtype == complex:
+      self.assertEqual(evaluable.astype[self.dtype](1j).dtype, self.dtype)
+    else:
+      with self.assertRaises(TypeError):
+        evaluable.astype[self.dtype](1j)
+
+AsType(dtype=int)
+AsType(dtype=float)
+AsType(dtype=complex)

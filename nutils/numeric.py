@@ -30,9 +30,6 @@ _abc = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ' # indices for eins
 def round(arr):
   return numpy.round(arr).astype(int)
 
-def sign(arr):
-  return numpy.sign(arr).astype(int)
-
 def floor(arr):
   return numpy.floor(arr).astype(int)
 
@@ -264,13 +261,6 @@ def ext(A):
   else:
     raise NotImplementedError('shape={}'.format(A.shape))
   return ext
-
-def power(a, b):
-  a = numpy.asarray(a)
-  b = numpy.asarray(b)
-  if a.dtype == int and b.dtype == int:
-    b = b.astype(float)
-  return numpy.power(a, b)
 
 def unpack(n, atol, rtol):
   '''Convert packed representation to floating point data.

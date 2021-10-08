@@ -184,6 +184,11 @@ _check('Array_divmod_div', lambda a, b: divmod(function.Array.cast(a), b)[0], la
 _check('Array_divmod_mod', lambda a, b: divmod(function.Array.cast(a), b)[1], lambda a, b: numpy.divmod(a, b)[1], [(4,4), (4,)], dtype=int, low=1, high=10)
 _check('Array_rdivmod_div', lambda a, b: divmod(a, function.Array.cast(b))[0], lambda a, b: numpy.divmod(a, b)[0], [(4,4), (4,)], dtype=int, low=1, high=10)
 _check('Array_rdivmod_mod', lambda a, b: divmod(a, function.Array.cast(b))[1], lambda a, b: numpy.divmod(a, b)[1], [(4,4), (4,)], dtype=int, low=1, high=10)
+_check('matmul', function.matmul, numpy.matmul, [(4,), (4,)])
+_check('Array_matmul_vecvec', lambda a, b: function.Array.cast(a) @ b, numpy.matmul, [(4,), (4,)])
+_check('Array_matmul_vecmat', lambda a, b: function.Array.cast(a) @ b, numpy.matmul, [(4,), (4,3)])
+_check('Array_matmul_matvec', lambda a, b: function.Array.cast(a) @ b, numpy.matmul, [(3,4), (4,)])
+_check('Array_matmul_matmat', lambda a, b: function.Array.cast(a) @ b, numpy.matmul, [(3,4), (4,5)])
 
 _check('cos', function.cos, numpy.cos, [(4,)])
 _check('sin', function.sin, numpy.sin, [(4,)])
@@ -200,6 +205,8 @@ _check('exp', function.exp, numpy.exp, [(4,)])
 _check('log', function.log, numpy.log, [(4,)], low=0)
 _check('log2', function.log2, numpy.log2, [(4,)], low=0)
 _check('log10', function.log10, numpy.log10, [(4,)], low=0)
+_check('trignormal', function.trignormal, lambda x: numpy.array([numpy.cos(x), numpy.sin(x)]), [()])
+_check('trigtangent', function.trigtangent, lambda x: numpy.array([-numpy.sin(x), numpy.cos(x)]), [()])
 
 _check('greater', function.greater, numpy.greater, [(4,1),(1,4)])
 _check('equal', function.equal, numpy.equal, [(4,1),(1,4)])
@@ -213,8 +220,10 @@ _check('heaviside', function.heaviside, lambda u: numpy.heaviside(u, .5), [(4,4)
 # TODO: jump
 
 _check('sum', lambda a: function.sum(a,2), lambda a: a.sum(2), [(4,3,4)])
+_check('sum-bool', lambda a: function.sum(function.greater(a,0),2), lambda a: (a>0).sum(2), [(4,3,4)])
 _check('Array_sum', lambda a: function.Array.cast(a).sum(2), lambda a: a.sum(2), [(4,3,4)])
 _check('product', lambda a: function.product(a,2), lambda a: numpy.product(a,2), [(4,3,4)])
+_check('product-bool', lambda a: function.product(function.greater(a,0),2), lambda a: numpy.product((a>0),2), [(4,3,4)])
 _check('Array_prod', lambda a: function.Array.cast(a).prod(2), lambda a: numpy.product(a,2), [(4,3,4)])
 
 _check('dot', lambda a,b: function.dot(a,b,axes=2), lambda a,b: (a*b).sum(2), [(4,2,4),(4,2,4)])
@@ -247,6 +256,7 @@ _check('unravel', lambda a: function.unravel(a,1,(3,4)), lambda a: numpy.reshape
 _check('take', lambda a: function.take(a, numpy.array([[0,2],[1,3]]), 1), lambda a: numpy.take(a, numpy.array([[0,2],[1,3]]), 1), [(3,4,5)], dtype=int)
 _check('take_bool', lambda a: function.take(a, numpy.array([False, True, False, True]), 1), lambda a: numpy.compress(numpy.array([False, True, False, True]), a, 1), [(3,4,5)], dtype=int)
 _check('get', lambda a: function.take(a, 1, 1), lambda a: numpy.take(a, 1, 1), [(3,4,5)], dtype=int)
+_check('scatter', lambda a: function.scatter(a,3,[2,0]), lambda a: numpy.stack([a[:,1], numpy.zeros([4]), a[:,0]], axis=1), [(4,2)])
 _check('kronecker', lambda a: function.kronecker(a,1,3,1), lambda a: numpy.stack([numpy.zeros_like(a), a, numpy.zeros_like(a)], axis=1), [(4,4)])
 _check('concatenate', lambda a, b: function.concatenate([a,b], axis=1), lambda a, b: numpy.concatenate([a,b], axis=1), [(4,2,1),(4,3,1)])
 _check('stack', lambda a,b: function.stack([a,b], 1), lambda a,b: numpy.stack([a,b], 1), [(4,2),(4,2)])
@@ -584,7 +594,7 @@ class replace_arguments(TestCase):
 
   def test_array(self):
     a = function.Argument('a', (2,))
-    b = function.Array.cast([1,2])
+    b = function.Array.cast([1,2.])
     self.assertEqual(function.replace_arguments(a, dict(a=b)).as_evaluable_array, b.as_evaluable_array)
 
   def test_argument(self):
@@ -595,7 +605,7 @@ class replace_arguments(TestCase):
   def test_argument_array(self):
     a = function.Argument('a', (2,))
     b = function.Argument('b', (2,))
-    c = function.Array.cast([1,2])
+    c = function.Array.cast([1,2.])
     self.assertEqual(function.replace_arguments(function.replace_arguments(a, dict(a=b)), dict(b=c)).as_evaluable_array, c.as_evaluable_array)
 
   def test_swap(self):
@@ -605,8 +615,8 @@ class replace_arguments(TestCase):
 
   def test_ignore_replaced(self):
     a = function.Argument('a', (2,))
-    b = function.Array.cast([1,2])
-    c = function.Array.cast([2,3])
+    b = function.Array.cast([1,2.])
+    c = function.Array.cast([2,3.])
     self.assertEqual(function.replace_arguments(function.replace_arguments(a, dict(a=b)), dict(a=c)).as_evaluable_array, b.as_evaluable_array)
 
   def test_ignore_recursion(self):
@@ -822,7 +832,7 @@ class namespace(TestCase):
   def test_d_arg(self):
     ns = function.Namespace()
     ns.a = '?a'
-    self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').as_evaluable_array.simplified, function.asarray(2).as_evaluable_array.simplified)
+    self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').as_evaluable_array.simplified, function.asarray(2.).as_evaluable_array.simplified)
 
   def test_n(self):
     ns = function.Namespace()
@@ -886,7 +896,7 @@ class eval_ast(TestCase):
     self.ns.altgeom = function.concatenate([self.ns.x, [0]], 0)
     self.ns.basis = self.domain.basis('spline', degree=2)
     self.ns.a = 2
-    self.ns.a2 = numpy.array([1,2])
+    self.ns.a2 = numpy.array([1,2.])
     self.ns.a3 = numpy.array([1,2,3])
     self.ns.a22 = numpy.array([[1,2],[3,4]])
     self.ns.a32 = numpy.array([[1,2],[3,4],[5,6]])

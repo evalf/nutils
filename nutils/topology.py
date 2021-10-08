@@ -2632,10 +2632,9 @@ class HierarchicalTopology(TransformChainsTopology):
       indices_per_level.append(indices)
     return HierarchicalTopology(self.basetopo, indices_per_level)
 
-  def get_groups(self, *groups: str) -> TransformChainsTopology:
-    itemtopo = self.basetopo.get_groups(*groups)
+  def _rebase(self, newbasetopo: Topology) -> 'HierarchicalTopology':
     itemindices_per_level = []
-    for baseindices, baselevel, itemlevel in zip(self._indices_per_level, self.basetopo.refine_iter, itemtopo.refine_iter):
+    for baseindices, baselevel, itemlevel in zip(self._indices_per_level, self.basetopo.refine_iter, newbasetopo.refine_iter):
       itemindices = []
       itemindex = itemlevel.transforms.index
       for basetrans in map(baselevel.transforms.__getitem__, baseindices):
@@ -2644,7 +2643,13 @@ class HierarchicalTopology(TransformChainsTopology):
         except ValueError:
           pass
       itemindices_per_level.append(numpy.unique(numpy.array(itemindices, dtype=int)))
-    return HierarchicalTopology(itemtopo, itemindices_per_level)
+    return HierarchicalTopology(newbasetopo, itemindices_per_level)
+
+  def slice_unchecked(self, __s: slice, __idim: int) -> 'HierarchicalTopology':
+    return self._rebase(self.basetopo.slice_unchecked(__s, __idim))
+
+  def get_groups(self, *groups: str) -> 'HierarchicalTopology':
+    return self._rebase(self.basetopo.get_groups(*groups))
 
   def refined_by(self, refine):
     refine = tuple(refine)
