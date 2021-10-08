@@ -30,7 +30,7 @@ suitable function space such that any :math:`u ∈ H_0(Ω)` satisfies :math:`u =
 element :math:`u ∈ H_0(Ω)` for which :math:`R(v, u) = 0` for all test functions
 :math:`v ∈ H_0(Ω)`, with :math:`R` the bilinear functional
 
-.. math:: R(v, u) := ∫_Ω \frac{∂v}{∂x_i} \frac{∂u}{∂x_i} \ dx - ∫_{Γ_\text{right}} v \ dx.
+.. math:: R(v, u) := ∫_Ω \frac{∂v}{∂x_i} \frac{∂u}{∂x_i} \ dV - ∫_{Γ_\text{right}} v \ dS.
    :label: laplace_residual
 
 We next restrict ourselves to a finite dimensional subspace, to which end we
@@ -58,30 +58,32 @@ concepts involved.
 
 .. console::
     >>> from nutils import function, mesh, solver
+    >>> from nutils.expression_v2 import Namespace
     >>> import numpy
     >>> from matplotlib import pyplot as plt
 
     >>> topo, geom = mesh.rectilinear([numpy.linspace(0, 1, 5)])
 
-    >>> ns = function.Namespace()
+    >>> ns = Namespace()
     >>> ns.x = geom
+    >>> ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     >>> ns.basis = topo.basis('spline', degree=1)
-    >>> ns.u = 'basis_n ?lhs_n'
+    >>> ns.u = function.dotarg(ns.basis, 'lhs')
 
-    >>> sqr = topo.boundary['left'].integral('u^2 J(x)' @ ns, degree=2)
+    >>> sqr = topo.boundary['left'].integral('u^2 dS' @ ns, degree=2)
     >>> cons = solver.optimize('lhs', sqr, droptol=1e-15)
     optimize > constrained 1/5 dofs
     optimize > optimum value 0.00e+00
 
-    >>> res = topo.integral('d(basis_n, x_i) d(u, x_i) J(x)' @ ns, degree=0)
-    >>> res -= topo.boundary['right'].integral('basis_n J(x)' @ ns, degree=0)
+    >>> res = topo.integral('∇_i(basis_n) ∇_i(u) dV' @ ns, degree=0)
+    >>> res -= topo.boundary['right'].integral('basis_n dS' @ ns, degree=0)
     >>> lhs = solver.solve_linear('lhs', residual=res, constrain=cons)
     solve > solving 4 dof system to machine precision using arnoldi solver
     solve > solver returned with residual 9e-16±1e-15
 
     >>> bezier = topo.sample('bezier', 32)
     >>> nanjoin = lambda array, tri: numpy.insert(array.take(tri.flat, 0).astype(float), slice(tri.shape[1], tri.size, tri.shape[1]), numpy.nan, axis=0)
-    >>> sampled_x = nanjoin(bezier.eval(ns.x[0]), bezier.tri)
+    >>> sampled_x = nanjoin(bezier.eval('x_0' @ ns), bezier.tri)
     >>> def plot_line(func, **arguments):
     ...   plt.plot(sampled_x, nanjoin(bezier.eval(func, **arguments), bezier.tri))
     ...   plt.xlabel('x_0')
@@ -276,6 +278,21 @@ above is precisely the way to evaluate the resulting function. What remains now
 is to establish the coefficients for which this function solves the Laplace
 problem.
 
+Arguments
+~~~~~~~~~
+
+A discrete model is often written in terms of an unknown, or a vector of
+unknowns.  In Nutils this translates to a function argument,
+:class:`nutils.function.Argument`. Usually an argument is used in an inner
+product with a basis. For this purpose there exists the
+:func:`nutils.function.dotarg` function. For example, the discrete solution
+:eq:`discrete_solution` can be written as
+
+.. console::
+    >>> ns.u = function.dotarg(ns.basis, 'lhs')
+
+with the argument identified by ``'lhs'`` the vector of unknowns :math:`\hat{u}_n`.
+
 Namespace
 ---------
 
@@ -286,25 +303,40 @@ lengthy, littered with colons and brackets, and hard to read. *Namespaces*
 provide an alternative, cleaner syntax for a prominent subset of array
 manipulations.
 
-A :class:`nutils.function.Namespace` is a collection of
+A :class:`nutils.expression_v2.Namespace` is a collection of
 :class:`~nutils.function.Array` functions.  An empty
-:class:`~nutils.function.Namespace` is created as follows:
+:class:`~nutils.expression_v2.Namespace` is created as follows:
 
 .. console::
-    >>> ns = function.Namespace()
+    >>> ns = Namespace()
 
-New entries are added to a :class:`~nutils.function.Namespace` by assigning an
+New entries are added to a :class:`~nutils.expression_v2.Namespace` by assigning an
 :class:`~nutils.function.Array` to an attribute.  For example, to assign the
 geometry ``geom`` to ``ns.x``, simply type
 
 .. console::
     >>> ns.x = geom
 
-You can now use ``ns.x`` where you would use ``geom``.  Similarly, to assign a
-linear basis to ``ns.basis``, type
+You can now use ``ns.x`` where you would use ``geom``. Usually you want to add
+the gradient, normal and jacobian of this geometry to the namespace as well.
+This can be done using :func:`~nutils.expression_v2.Namespace.define_for`
+naming the geometry (as present in the namespace) and names for the gradient,
+normal, and the jacobian as keyword arguments:
+
+.. console::
+    >>> ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
+
+Note that any keyword argument is optional.
+
+To assign a linear basis to ``ns.basis``, type
 
 .. console::
     >>> ns.basis = topo.basis('spline', degree=1)
+
+and to assign the discrete solution as the inner product of this basis with argument ``'lhs'``, type
+
+.. console::
+    >>> ns.u = function.dotarg(ns.basis, 'lhs')
 
 You can also assign numbers and :class:`numpy.ndarray` objects:
 
@@ -320,7 +352,7 @@ Expressions
 In addition to inserting ready objects, a namespace's real power lies in its
 ability to be assigned string expressions. These expressions may reference any
 :class:`~nutils.function.Array` function present in the
-:class:`~nutils.function.Namespace`, and must explicitly name all array
+:class:`~nutils.expression_v2.Namespace`, and must explicitly name all array
 dimensions, with the object of both aiding readibility and facilitating high
 order tensor manipulations. A short explanation of the syntax follows; see
 :func:`nutils.expression.parse` for the complete documentation.
@@ -348,7 +380,7 @@ just as a local variable:
     >>> ns.f = '2 localvar'
     Traceback (most recent call last):
       ...
-    nutils.expression.ExpressionSyntaxError: Unknown variable: 'localvar'.
+    nutils.expression_v2.ExpressionSyntaxError: No such variable: `localvar`.
     2 localvar
       ^^^^^^^^
 
@@ -375,18 +407,19 @@ statements are equivalent:
     >>> ns.g_kji = 'c_k A_ji'
     >>> ns.g = ns.c[:,numpy.newaxis,numpy.newaxis]*ns.A[numpy.newaxis,:,:] # equivalent w/o expression
 
-Operator ``d`` returns the gradient of a variable with respect to a geometry.
-e.g. the gradient of the basis is ``d(basis_n, x_i)`` and the laplacian
-``d(basis_n, x_i, x_i)``.  This works with expressions as well, e.g. ``d(2
-basis_n + basis_n^2, x_i)`` is the gradient of ``2 basis_n + basis_n^2``.
+Function ``∇``, introduced to the namespace with
+:meth:`~nutils.expression_v2.Namespace.define_for` using geometry ``ns.x``,
+returns the gradient of a variable with respect ``ns.x``, e.g. the gradient of
+the basis is ``∇_i(basis_n)``.  This works with expressions as well, e.g.
+``∇_i(2 basis_n + basis_n^2)`` is the gradient of ``2 basis_n + basis_n^2``.
 
 Manual evaluation
 ~~~~~~~~~~~~~~~~~
 
 Sometimes it is useful to evaluate an expression to an
 :class:`~nutils.function.Array` without inserting the result in the namespace.
-For scalar or vector expressions, this can be done using the ``<expression> @
-<namespace>`` notation.  An example with a scalar expression:
+This can be done using the ``<expression> @ <namespace>`` notation.  An example
+with a scalar expression:
 
 .. console::
     >>> '2 a / 3 b' @ ns
@@ -402,32 +435,15 @@ An example with a vector expression:
     >>> 2*ns.c # equivalent w/o `... @ ns`
     Array<2>
 
-If an expression has more than one remaining index, the order of the indices
-must be specified explicitly. For this situation there is the
-``<namespace>.eval_<indices>(<expression>)`` notation.  An example:
+If an expression has more than one remaining index, the axes of the evaluated array
+are ordered alphabetically:
 
 .. console::
-    >>> ns.eval_ijk('c_i A_jk')
+    >>> 'c_i A_jk' @ ns
     Array<2,2,2>
-    >>> ns.c[:,numpy.newaxis,numpy.newaxis]*ns.A[numpy.newaxis,:,:] # equivalent w/o `ns.eval_...(...)`
+    >>> ns.c[:,numpy.newaxis,numpy.newaxis]*ns.A[numpy.newaxis,:,:] # equivalent w/o `... @ ns`
     Array<2,2,2>
 
-Arguments
-~~~~~~~~~
-
-A discrete model is often written in terms of an unknown, or a vector of
-unknowns.  In Nutils this translates to a function argument,
-:class:`nutils.function.Argument`.  In an expression an
-:class:`~nutils.function.Argument` is denoted by a ``?`` folowed by an
-identifier.  For example, the discrete solution :eq:`discrete_solution` can be
-written as
-
-.. console::
-    >>> ns.u = 'basis_n ?lhs_n'
-
-with argument ``lhs`` the vector of unknowns :math:`\hat{u}_n`.  The shape of
-the argument ``lhs`` is resolved from the expression.  In the above example,
-the argument ``lhs`` has the same shape as ``ns.basis``.
 
 Integrals
 ---------
@@ -440,11 +456,13 @@ topology, in particular the :meth:`integral()
 The integral method takes a :class:`~nutils.function.Array` function as first
 argument and the degree as keyword argument. The function should contain the
 Jacobian of the geometry against which the function should be integrated, using
-either :func:`nutils.function.J` or the ``J`` operator in a namespace
-expression. For example, the following integrates ``1`` against geometry ``x``:
+either :func:`nutils.function.J` or ``dV`` in a namespace
+expression (assuming the jacobian has been added to the namespace using
+``ns.define_for(..., jacobians=('dV', 'dS'))``). For example, the following integrates
+``1`` against geometry ``x``:
 
 .. console::
-    >>> I = topo.integral('1 J(x)' @ ns, degree=0)
+    >>> I = topo.integral('1 dV' @ ns, degree=0)
     >>> I
     Array<>
 
@@ -460,16 +478,16 @@ Be careful with including the Jacobian in your integrands.  The following two
 integrals are different:
 
 .. console::
-    >>> topo.integral('(1 + 1) J(x)' @ ns, degree=0).eval()
+    >>> topo.integral('(1 + 1) dV' @ ns, degree=0).eval()
     2.0±1e-15
-    >>> topo.integral('1 + 1 J(x)' @ ns, degree=0).eval()
+    >>> topo.integral('1 + 1 dV' @ ns, degree=0).eval()
     5.0±1e-15
 
 Like any other :class:`~nutils.function.Array`, the integrals can be added or
 subtracted:
 
 .. console::
-    >>> J = topo.integral('x_0 J(x)' @ ns, degree=1)
+    >>> J = topo.integral('x_0 dV' @ ns, degree=1)
     >>> (I+J).eval()
     1.5±1e-15
 
@@ -478,13 +496,13 @@ object, and hence it supports integration.  For example, to integrate the
 geometry ``x`` over the entire boundary, write
 
 .. console::
-    >>> topo.boundary.integral('x_0 J(x)' @ ns, degree=1).eval()
+    >>> topo.boundary.integral('x_0 dS' @ ns, degree=1).eval()
     1.0±1e-15
 
 To limit the integral to the right boundary, write
 
 .. console::
-    >>> topo.boundary['right'].integral('x_0 J(x)' @ ns, degree=1).eval()
+    >>> topo.boundary['right'].integral('x_0 dS' @ ns, degree=1).eval()
     1.0±1e-15
 
 Note that this boundary is simply a point and the integral a point evaluation.
@@ -493,7 +511,7 @@ Integrating and evaluating a 1D :class:`~nutils.function.Array` results in a 1D
 :class:`numpy.ndarray`:
 
 .. console::
-    >>> topo.integral('basis_i J(x)' @ ns, degree=1).eval()
+    >>> topo.integral('basis_i dV' @ ns, degree=1).eval()
     array([0.125, 0.25 , 0.25 , 0.25 , 0.125])±1e-15
 
 Since the integrals of 2D :class:`~nutils.function.Array` functions are usually
@@ -506,7 +524,7 @@ coordinate representation via the :meth:`Matrix.export()
 <nutils.matrix.Matrix.export>` method.  An example:
 
 .. console::
-    >>> M = topo.integral(ns.eval_nm('d(basis_n, x_i) d(basis_m, x_i) J(x)'), degree=1).eval()
+    >>> M = topo.integral('∇_i(basis_m) ∇_i(basis_n) dV' @ ns, degree=1).eval()
     >>> M.export('dense')
     array([[ 4., -4.,  0.,  0.,  0.],
            [-4.,  8., -4.,  0.,  0.],
@@ -537,14 +555,14 @@ Taking the geometry component :math:`x_0` as an example, to project it onto the
 basis :math:`\{φ_n\}` means finding the coefficients :math:`\hat{u}_n` such
 that
 
-.. math:: \left(∫_Ω φ_n φ_m \ dx\right) \hat u_m = ∫_Ω φ_n x_0 \ dx
+.. math:: \left(∫_Ω φ_n φ_m \ dV\right) \hat u_m = ∫_Ω φ_n x_0 \ dV
 
 for all :math:`φ_n`, or :math:`A_{nm} \hat{u}_m = f_n`. This is implemented as
 follows:
 
 .. console::
-    >>> A = topo.integral(ns.eval_nm('basis_n basis_m J(x)'), degree=2).eval()
-    >>> f = topo.integral('basis_n x_0 J(x)' @ ns, degree=2).eval()
+    >>> A = topo.integral('basis_m basis_n dV' @ ns, degree=2).eval()
+    >>> f = topo.integral('basis_n x_0 dV' @ ns, degree=2).eval()
     >>> A.solve(f)
     solve > solving 5 dof system to machine precision using arnoldi solver
     solve > solver returned with residual 3e-17±1e-15
@@ -552,10 +570,10 @@ follows:
 
 Alternatively, we can write this in the slightly more general form
 
-.. math:: R_n := ∫_Ω φ_n (u - x_0) \ dx = 0.
+.. math:: R_n := ∫_Ω φ_n (u - x_0) \ dV = 0.
 
 .. console::
-    >>> res = topo.integral('basis_n (u - x_0) J(x)' @ ns, degree=2)
+    >>> res = topo.integral('basis_n (u - x_0) dV' @ ns, degree=2)
 
 Taking the derivative of :math:`R_n` to :math:`\hat{u}_m` gives the above
 matrix :math:`A_{nm}`, and substituting for :math:`\hat{u}` the zero vector
@@ -583,13 +601,13 @@ The above three lines are so common that they are combined in the function
 
 We can take this formulation one step further.  Minimizing
 
-.. math:: S := ∫_Ω (u - x_0)^2 \ dx
+.. math:: S := ∫_Ω (u - x_0)^2 \ dV
 
 for :math:`\hat{u}` is equivalent to the above two variants.  The derivative of
 :math:`S` to :math:`\hat{u}_n` gives :math:`2 R_n`:
 
 .. console::
-    >>> sqr = topo.integral('(u - x_0)^2 J(x)' @ ns, degree=2)
+    >>> sqr = topo.integral('(u - x_0)^2 dV' @ ns, degree=2)
     >>> solver.solve_linear('lhs', sqr.derivative('lhs'))
     solve > solving 5 dof system to machine precision using arnoldi solver
     solve > solver returned with residual 6e-17±1e-15
@@ -611,7 +629,7 @@ problem stated above, the Dirichlet boundary condition at :math:`Γ_\text{left}`
 minimizes the following functional:
 
 .. console::
-    >>> sqr = topo.boundary['left'].integral('(u - 0)^2 J(x)' @ ns, degree=2)
+    >>> sqr = topo.boundary['left'].integral('(u - 0)^2 dS' @ ns, degree=2)
 
 By passing the ``droptol`` argument, :func:`nutils.solver.optimize` returns an
 array with ``nan`` ('not a number') for every entry for which the optimization
@@ -629,8 +647,8 @@ Consider again the Laplace problem stated above.  The residual
 :eq:`laplace_residual` is implemented as
 
 .. console::
-    >>> res = topo.integral('d(basis_n, x_i) d(u, x_i) J(x)' @ ns, degree=0)
-    >>> res -= topo.boundary['right'].integral('basis_n J(x)' @ ns, degree=0)
+    >>> res = topo.integral('∇_i(basis_n) ∇_i(u) dV' @ ns, degree=0)
+    >>> res -= topo.boundary['right'].integral('basis_n dS' @ ns, degree=0)
 
 Since this problem is linear in argument ``lhs``, we can use the
 :func:`nutils.solver.solve_linear` method to solve this problem.  The
@@ -751,7 +769,7 @@ boundary :math:`Γ`, on which the following boundary conditions apply:
 The 2D homogeneous Laplace solution is the field :math:`u` for which
 :math:`R(v, u) = 0` for all v, where
 
-.. math:: R(v, u) := ∫_Ω \frac{∂v}{∂x_i} \frac{∂u}{∂x_i} \ dx - ∫_{Γ_\text{right}} v \cos(1) \cosh(x_1) \ dx.
+.. math:: R(v, u) := ∫_Ω \frac{∂v}{∂x_i} \frac{∂u}{∂x_i} \ dV - ∫_{Γ_\text{right}} v \cos(1) \cosh(x_1) \ dS.
    :label: laplace2_residual
 
 Adopting a Finite Element basis :math:`\{φ_n\}` we obtain the discrete solution
@@ -783,10 +801,11 @@ linear basis and define the solution ``ns.u`` as the contraction of the basis
 with argument ``lhs``.
 
 .. console::
-    >>> ns = function.Namespace()
+    >>> ns = Namespace()
     >>> ns.x = geom
+    >>> ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     >>> ns.basis = topo.basis('std', degree=1)
-    >>> ns.u = 'basis_n ?lhs_n'
+    >>> ns.u = function.dotarg(ns.basis, 'lhs')
 
 Note that the above statements are identical to those of the one-dimensional
 example.
@@ -794,15 +813,15 @@ example.
 The residual :eq:`laplace2_residual` is implemented as
 
 .. console::
-    >>> res = topo.integral('d(basis_n, x_i) d(u, x_i) J(x)' @ ns, degree=2)
-    >>> res -= topo.boundary['right'].integral('basis_n cos(1) cosh(x_1) J(x)' @ ns, degree=2)
+    >>> res = topo.integral('∇_i(basis_n) ∇_i(u) dV' @ ns, degree=2)
+    >>> res -= topo.boundary['right'].integral('basis_n cos(1) cosh(x_1) dS' @ ns, degree=2)
 
 The Dirichlet boundary conditions are rewritten as a least squares problem and
 solved for ``lhs``, yielding the constraints vector ``cons``:
 
 .. console::
-    >>> sqr = topo.boundary['left'].integral('u^2 J(x)' @ ns, degree=2)
-    >>> sqr += topo.boundary['top'].integral('(u - cosh(1) sin(x_0))^2 J(x)' @ ns, degree=2)
+    >>> sqr = topo.boundary['left'].integral('u^2 dS' @ ns, degree=2)
+    >>> sqr += topo.boundary['top'].integral('(u - cosh(1) sin(x_0))^2 dS' @ ns, degree=2)
     >>> cons = solver.optimize('lhs', sqr, droptol=1e-15)
     optimize > solve > solving 21 dof system to machine precision using arnoldi solver
     optimize > solve > solver returned with residual 3e-17±2e-15
@@ -822,7 +841,7 @@ object from ``topo`` and evaluate the geometry and the solution:
 
 .. console::
     >>> bezier = topo.sample('bezier', 9)
-    >>> x, u = bezier.eval(['x', 'u'] @ ns, lhs=lhs)
+    >>> x, u = bezier.eval(['x_i', 'u'] @ ns, lhs=lhs)
 
 We use :func:`plt.tripcolor <matplotlib.pyplot.tripcolor>` to plot the sampled
 ``x`` and ``u``:
