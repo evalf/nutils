@@ -972,19 +972,25 @@ class _Jacobian(Array):
   # The jacobian determinant of `geom` to the tip coordinates of the spaces of
   # `geom`. The last axis of `geom` is the coordinate axis.
 
-  def __init__(self, geom: Array) -> None:
+  def __init__(self, geom: Array, tip_dim: Optional[int] = None) -> None:
     assert geom.ndim >= 1
+    if not geom.spaces and geom.shape[-1] != 0:
+      raise ValueError('The jacobian of a constant (in space) geometry must have dimension zero.')
+    if tip_dim is not None and tip_dim > geom.shape[-1]:
+      raise ValueError('Expected a dimension of the tip coordinate system '
+                       'not greater than the dimension of the geometry.')
+    self._tip_dim = tip_dim
     self._geom = geom
     super().__init__((), float, geom.spaces)
 
   def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
     geom = self._geom.lower(points_shape, transform_chains, coordinates)
     tip_dim = builtins.sum(transform_chains[space][0].fromdims for space in self._geom.spaces)
+    if self._tip_dim is not None and self._tip_dim != tip_dim:
+      raise ValueError('Expected a tip dimension of {} but got {}.'.format(self._tip_dim, tip_dim))
     if self._geom.shape[-1] < tip_dim:
       raise ValueError('the dimension of the geometry cannot be lower than the dimension of the tip coords')
     if not self._geom.spaces:
-      if self._geom.shape[-1] != 0:
-        raise ValueError('the jacobian of a constant geometry must have dimension zero')
       return evaluable.ones(geom.shape[:-1])
     tips = [_tip_derivative_target(space, chain.fromdims) for space, (chain, opposite) in transform_chains.items() if space in self._geom.spaces]
     J = evaluable.concatenate([evaluable.derivative(geom, tip) for tip in tips], axis=-1)
@@ -2668,14 +2674,12 @@ def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
   '''
 
   geom = Array.cast(__geom)
-  if __ndims is not None:
-    warnings.deprecation('the ndims argument is deprecated')
   if geom.ndim == 0:
-    return jacobian(insertaxis(geom, 0, 1))
+    return jacobian(insertaxis(geom, 0, 1), __ndims)
   elif geom.ndim > 1:
-    return jacobian(ravel(geom, geom.ndim-2))
+    return jacobian(ravel(geom, geom.ndim-2), __ndims)
   else:
-    return _Jacobian(geom)
+    return _Jacobian(geom, __ndims)
 
 def J(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
   '''Return the absolute value of the determinant of the Jacobian matrix of the given geometry.
