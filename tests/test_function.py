@@ -995,6 +995,17 @@ class jacobian(TestCase):
     with self.assertRaisesRegex(ValueError, 'The jacobian of a constant \\(in space\\) geometry must have dimension zero.'):
       function.jacobian(function.ones((1,)))
 
+  def test_tip_larger_than_geom(self):
+    topo, geom = mesh.newrectilinear([2,3])
+    with self.assertRaisesRegex(ValueError, 'Expected a dimension of the tip coordinate system not greater than'):
+      function.jacobian(geom, 3)
+
+  def test_invalid_tip_dim(self):
+    topo, geom = mesh.newrectilinear([2,3])
+    J = function.jacobian(geom, 2)
+    with self.assertRaisesRegex(ValueError, 'Expected a tip dimension of 2 but got 1.'):
+      topo.boundary.integral(J, degree=0).as_evaluable_array
+
 @parametrize
 class derivative(TestCase):
 
