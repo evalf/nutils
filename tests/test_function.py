@@ -55,6 +55,14 @@ class Array(TestCase):
     with self.assertWarns(warnings.NutilsDeprecationWarning):
       function.Array.cast([1,2]).simplified
 
+  def test_different_argument_shapes(self):
+    with self.assertRaisesRegex(ValueError, "Argument 'a' has two different shapes"):
+      function.Argument('a', (2,)).sum() + function.Argument('a', (3,4)).sum()
+
+  def test_different_argument_dtypes(self):
+    with self.assertRaisesRegex(ValueError, "Argument 'a' has two different dtypes"):
+      function.Argument('a', (), dtype=float) + function.Argument('a', (), dtype=int)
+
 class integral_compatibility(TestCase):
 
   def test_eval(self):
@@ -99,9 +107,8 @@ class integral_compatibility(TestCase):
     self.assertEqual(dict(f.argshapes), dict(a=(2,3), b=(3,)))
 
   def test_argshapes_shape_mismatch(self):
-    f = function.Argument('a', (2,), dtype=int)[None] + function.Argument('a', (3,), dtype=int)[:,None]
     with self.assertRaises(Exception):
-      f.argshapes
+      f = function.Argument('a', (2,), dtype=int)[None] + function.Argument('a', (3,), dtype=int)[:,None]
 
 @parametrize
 class check(TestCase):
@@ -274,9 +281,11 @@ class Unlower(TestCase):
 
   def test(self):
     e = evaluable.Argument('arg', (2,3,4,5), int)
-    f = function._Unlower(e, frozenset(), (2,3), {}, {})
+    arguments = {'arg': ((2,3), int)}
+    f = function._Unlower(e, frozenset(), arguments, (2,3), {}, {})
     self.assertEqual(f.shape, (4,5))
     self.assertEqual(f.dtype, int)
+    self.assertEqual(f.arguments, arguments)
     self.assertEqual(f.lower((2,3), {}, {}), e)
     with self.assertRaises(ValueError):
       f.lower((3,4), {}, {})
@@ -626,7 +635,22 @@ class replace_arguments(TestCase):
   def test_replace_derivative(self):
     a = function.Argument('a', ())
     b = function.Argument('b', ())
-    self.assertEqual(function.replace_arguments(function.derivative(a, a), dict(a=b)).as_evaluable_array.simplified, evaluable.ones(()).simplified)
+    actual = function.replace_arguments(function.derivative(a, a), dict(a=b))
+    self.assertEqual(actual.as_evaluable_array.simplified, evaluable.ones(()).simplified)
+    actual = function.replace_arguments(function.derivative(a, b), dict(a=b))
+    self.assertEqual(actual.as_evaluable_array.simplified, evaluable.zeros(()).simplified)
+    actual = function.derivative(function.replace_arguments(a, dict(a=b)), b)
+    self.assertEqual(actual.as_evaluable_array.simplified, evaluable.ones(()).simplified)
+    actual = function.derivative(function.replace_arguments(a, dict(a=b)), a)
+    self.assertEqual(actual.as_evaluable_array.simplified, evaluable.zeros(()).simplified)
+
+  def test_different_shape(self):
+    with self.assertRaisesRegex(ValueError, "Argument 'foo' has shape \\(2,\\) but the replacement has shape \\(3, 4\\)."):
+      function.replace_arguments(function.Argument('foo', (2,), dtype=float), dict(foo=function.zeros((3,4), dtype=float)))
+
+  def test_different_dtype(self):
+    with self.assertRaisesRegex(ValueError, "Argument 'foo' has dtype int but the replacement has dtype float."):
+      function.replace_arguments(function.Argument('foo', (), dtype=int), dict(foo=function.zeros((), dtype=float)))
 
 
 class dotarg(TestCase):
@@ -802,6 +826,13 @@ class derivative(TestCase):
     with self.assertRaisesRegex(ValueError, 'Expected an instance of `Argument`'):
       function.derivative(function.ones(()), function.zeros(()))
 
+  def test_different_argument_shape(self):
+    with self.assertRaisesRegex(ValueError, "Argument 'foo' has shape \\(2,\\) in the function, but the derivative to 'foo' with shape \\(3, 4\\) was requested."):
+      function.derivative(function.Argument('foo', (2,)), function.Argument('foo', (3,4)))
+
+  def test_different_argument_dtype(self):
+    with self.assertRaisesRegex(ValueError, "Argument 'foo' has dtype int in the function, but the derivative to 'foo' with dtype float was requested."):
+      function.derivative(function.Argument('foo', (), dtype=int), function.Argument('foo', (), dtype=float))
 
 derivative('function',
            normal=function.normal,

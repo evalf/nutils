@@ -978,11 +978,11 @@ class _Empty(_TensorialTopology):
 
   @property
   def f_index(self) -> function.Array:
-    return _EmptyUnlowerable((), int, self.spaces)
+    return _EmptyUnlowerable((), int, self.spaces, {})
 
   @property
   def f_coords(self) -> function.Array:
-    return _EmptyUnlowerable((self.ndims,), float, self.spaces)
+    return _EmptyUnlowerable((self.ndims,), float, self.spaces, {})
 
   def refine_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
     return self
