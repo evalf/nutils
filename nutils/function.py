@@ -448,7 +448,7 @@ class Array(metaclass=_ArrayMeta):
 
   def contains(self, __name: str) -> bool:
     'Test if target occurs in this function.'
-    return __name in self.argshapes
+    return __name in self.arguments
 
   @property
   def argshapes(self) -> Mapping[str, Tuple[int, ...]]:
