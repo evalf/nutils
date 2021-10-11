@@ -752,13 +752,11 @@ class arraydata(Singleton):
     self.shape = shape
     self.bytes = bytes
     self.ndim = len(shape)
-    # By using the array interface and asarray (rather than frombuffer) we
-    # obtain an array object that has self (rather than bytes) as its base.
-    self.__array_interface__ = dict(
-      data=(Py_buffer(bytes).buf, True),
-      typestr=numpy.dtype(dtype).str,
-      shape=shape,
-      version=3)
+    # Note: we define __array_interface__ rather that __array_struct__ to
+    # achieve that asarray(self) has its base attribute set equal to self,
+    # rather than self.bytes, so that lru_cache recognizes successive asarrays
+    # to be equal via their common weak referenceable base.
+    self.__array_interface__ = numpy.frombuffer(bytes, dtype).reshape(shape).__array_interface__
 
 def strictint(value):
   '''
@@ -1216,50 +1214,6 @@ class c_array(metaclass=_c_arraymeta):
   not reflected by the other.
   '''
 
-class Py_buffer(Structure):
-  '''Low level access to Python buffers.
-
-  The buffer structure exposes information about the memory the underlies bytes
-  objects, Numpy arrays, and other objects that implement Python's buffer
-  protocol. This is useful for instance to establish if two separate objects
-  provide views into the same memory location, which can be a cheap alternative
-  to a full data comparison. To support this use case, the Py_buffer object is
-  hasheable and support equality testing.
-  '''
-
-  # Unfortunately, the buffer protocol does not have a Python facing API. The
-  # closest thing is memoryview, which exposes most of Py_buffer but not the
-  # actual address. While we could abuse Numpy's array interface, this turns
-  # out to be slower than the ctypes route even if obj already is an ndarray.
-
-  __slots__ = ()
-
-  # Structure definition: https://docs.python.org/3/c-api/buffer.html
-  _fields_ = [
-    ('buf', c_void_p),
-    ('obj', py_object),
-    ('len', c_ssize_t),
-    ('itemsize', c_ssize_t),
-    ('readonly', c_int),
-    ('ndim', c_int),
-    ('format', c_char_p),
-    ('shape', c_ssize_p),
-    ('strides', c_ssize_p),
-    ('suboffsets', c_ssize_p),
-    ('internal', c_void_p)]
-
-  # Flags definitions: https://github.com/python/cpython/blob/master/Include/cpython/object.h
-  PyBUF_FORMAT = 0x4
-  PyBUF_ND = 0x8
-  PyBUF_STRIDES = 0x10 | PyBUF_ND
-  PyBUF_RECORDS_RO = PyBUF_STRIDES | PyBUF_FORMAT
-
-  def __init__(self, obj, flags=PyBUF_STRIDES):
-    pythonapi.PyObject_GetBuffer(py_object(obj), byref(self), flags)
-
-  def __del__(self):
-    pythonapi.PyBuffer_Release(byref(self))
-
 class lru_dict(dict):
   '''
   Dictionary with limited capacity.
@@ -1344,7 +1298,7 @@ def lru_cache(func=None, maxsize=128):
           if base.flags.writeable:
             return func(*args)
         bases.append(base if base.base is None else base.base)
-        key.append((Py_buffer(arg).buf, *arg.shape, *arg.strides, arg.dtype.str))
+        key.append(tuple(map(arg.__array_interface__.__getitem__, ['data', 'strides', 'shape', 'typestr'])))
       else:
         key.append((type(arg), arg))
     key = tuple(key)
