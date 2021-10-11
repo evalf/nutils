@@ -722,7 +722,7 @@ class _CustomEvaluable(evaluable.Array):
       fpd = Array.cast(self.custom_partial_derivative(iarg, *unlowered_args))
       fpd_expected_shape = tuple(n.__index__() for n in self.shape[self.points_dim:] + arg.shape[self.points_dim:])
       if fpd.shape != fpd_expected_shape:
-        raise ValueError('`partial_derivative` to argument {} returned an array with shape {} but was expected.'.format(iarg, fpd.shape, fpd_expected_shape))
+        raise ValueError('`partial_derivative` to argument {} returned an array with shape {} but {} was expected.'.format(iarg, fpd.shape, fpd_expected_shape))
       epd = evaluable.appendaxes(fpd.lower(*self.lower_args), var.shape)
       eda = evaluable.derivative(arg, var, seen)
       eda = evaluable.Transpose.from_end(evaluable.appendaxes(eda, self.shape[self.points_dim:]), *range(self.points_dim, self.ndim))
