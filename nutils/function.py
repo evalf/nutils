@@ -452,17 +452,7 @@ class Array(metaclass=_ArrayMeta):
 
   @property
   def argshapes(self) -> Mapping[str, Tuple[int, ...]]:
-    shapes = {} # type: Dict[str, Tuple[int, ...]]
-    for arg in self.as_evaluable_array.arguments:
-      if isinstance(arg, evaluable.Argument):
-        if arg._name in shapes:
-          if shapes.get(arg._name, arg.shape) != arg.shape:
-            raise Exception('non-matching arguments shapes encountered')
-        elif not all(n.isconstant for n in arg.shape):
-          raise ValueError('arguments with variable shapes are not supported')
-        else:
-          shapes[arg._name] = tuple(map(int, arg.shape))
-    return shapes
+    return {name: shape for name, (shape, dtype) in self.arguments.items()}
 
 class _Unlower(Array):
 
