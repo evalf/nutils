@@ -432,17 +432,15 @@ class Array(metaclass=_ArrayMeta):
     'Differentiate this function to `var`.'
 
     if isinstance(__var, str):
-      for arg in self.as_evaluable_array.arguments:
-        if isinstance(arg, evaluable.Argument) and arg._name == __var:
-          if not all(n.isconstant for n in arg.shape):
-            raise ValueError('arguments with variable shapes are not supported')
-          __var = Argument(__var, tuple(map(int, arg.shape)), dtype=arg.dtype)
-          break
-      else:
+      if __var not in self.arguments:
         raise ValueError('no such argument: {}'.format(__var))
-    if not isinstance(__var, Argument):
+      shape, dtype = self.arguments[__var]
+      var = Argument(__var, shape, dtype=dtype)
+    elif not isinstance(__var, Argument):
       raise ValueError('expected an `Argument` but got `{!r}`'.format(__var))
-    return derivative(self, __var)
+    else:
+      var = __var
+    return derivative(self, var)
 
   def replace(self, __arguments: Mapping[str, IntoArray]) -> 'Array':
     'Return a copy with arguments applied.'
