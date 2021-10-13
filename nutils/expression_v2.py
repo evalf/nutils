@@ -696,13 +696,13 @@ class Namespace:
     for jacobian, ndim in zip(jacobians, range(geom.size, -1, -1)):
       setattr(self, jacobian, function.jacobian(geom, ndim))
 
-  def copy_(self) -> 'Namespace':
+  def copy_(self, **subs) -> 'Namespace':
     '''Return a copy of this namespace.'''
 
     ns = Namespace()
     super().__setattr__('unit_system', self.unit_system)
     for attr, value in vars(self).items():
-      object.__setattr__(ns, attr, value)
+      object.__setattr__(ns, attr, function.replace_arguments(value, subs) if subs and function.isarray(value) else value)
     return ns
 
 class _FunctionArrayOps:
