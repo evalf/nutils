@@ -991,6 +991,10 @@ class jacobian(TestCase):
     self.assertEqual(values.shape[1:], self.dJ.shape + otherarg.shape)
     self.assertAllEqual(values, numpy.zeros((smpl.npoints, *self.dJ.shape, *otherarg.shape)))
 
+  def test_invalid_dimension_spaceless_geometry(self):
+    with self.assertRaisesRegex(ValueError, 'The jacobian of a constant \\(in space\\) geometry must have dimension zero.'):
+      function.jacobian(function.ones((1,)))
+
 @parametrize
 class derivative(TestCase):
 

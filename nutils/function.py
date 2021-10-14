@@ -975,6 +975,8 @@ class _Jacobian(Array):
 
   def __init__(self, geom: Array) -> None:
     assert geom.ndim >= 1
+    if not geom.spaces and geom.shape[-1] != 0:
+      raise ValueError('The jacobian of a constant (in space) geometry must have dimension zero.')
     self._geom = geom
     super().__init__((), float, geom.spaces)
 
@@ -984,8 +986,6 @@ class _Jacobian(Array):
     if self._geom.shape[-1] < tip_dim:
       raise ValueError('the dimension of the geometry cannot be lower than the dimension of the tip coords')
     if not self._geom.spaces:
-      if self._geom.shape[-1] != 0:
-        raise ValueError('the jacobian of a constant geometry must have dimension zero')
       return evaluable.ones(geom.shape[:-1])
     tips = [_tip_derivative_target(space, chain.fromdims) for space, (chain, opposite) in transform_chains.items() if space in self._geom.spaces]
     J = evaluable.concatenate([evaluable.derivative(geom, tip) for tip in tips], axis=-1)
