@@ -884,9 +884,6 @@ if os.environ.get('NUTILS_TENSORIAL', None) == 'test': # pragma: nocover
 
   class _TensorialTopology(Topology):
 
-    def take_unchecked(self, __indices: numpy.ndarray) -> Topology:
-      raise SkipTest('`{}` does not implement `Topology.take_unchecked`'.format(type(self).__qualname__))
-
     def __and__(self, other: Any) -> Topology:
       result = super().__and__(other)
       if type(self) == type(other) and result is NotImplemented:

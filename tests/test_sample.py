@@ -134,6 +134,11 @@ class Common:
   def test_ones_at(self):
     self.assertEqual((function.ones((), int) @ self.sample).eval().tolist(), [1]*self.desired_npoints)
 
+  def test_at_in_integral(self):
+    topo, geom = mesh.line(2, space='parent-integral')
+    actual = topo.integral(function.jacobian(geom) @ self.sample, degree=0)
+    self.assertEqual(actual.eval().round(5).tolist(), [2]*self.desired_npoints)
+
   def test_asfunction(self):
     func = self.sample.asfunction(numpy.arange(self.sample.npoints))
     self.assertEqual((func @ self.sample).eval().tolist(), numpy.arange(self.desired_npoints).tolist())

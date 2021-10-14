@@ -138,15 +138,16 @@ class Array(metaclass=_ArrayMeta):
         The value to cast.
     '''
 
-    value = __value
-    if isinstance(value, Array):
-      value = value
-    elif numeric.isnumber(value) or numeric.isarray(value):
-      value = _Constant(value)
-    elif isinstance(value, (list, tuple)):
-      value = stack(value, axis=0)
+    if isinstance(__value, Array):
+      value = __value
     else:
-      raise ValueError('cannot convert {}.{} to Array'.format(type(value).__module__, type(value).__qualname__))
+      try:
+        value = _Constant(__value)
+      except:
+        if isinstance(__value, (list, tuple)):
+          value = stack(__value, axis=0)
+        else:
+          raise ValueError('cannot convert {}.{} to Array'.format(type(__value).__module__, type(__value).__qualname__))
     if dtype is not None and _dtypes.index(value.dtype) > _dtypes.index(dtype):
       raise ValueError('expected an array with dtype `{}` but got `{}`'.format(dtype.__name__, value.dtype.__name__))
     if ndim is not None and value.ndim != ndim:
