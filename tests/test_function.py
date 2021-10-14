@@ -1268,7 +1268,7 @@ class CommonBasis:
   def checkeval(self, ielem, points):
     result = numpy.zeros((points.npoints, self.checkndofs,), dtype=float)
     numpy.add.at(result, (slice(None),numpy.array(self.checkdofs[ielem], dtype=int)), numeric.poly_eval(numpy.array(self.checkcoeffs[ielem], dtype=float), points.coords))
-    return result.tolist()
+    return result
 
   def test_lower(self):
     ref = element.PointReference() if self.basis.coords.shape[0] == 0 else element.LineReference()**self.basis.coords.shape[0]
@@ -1281,7 +1281,7 @@ class CommonBasis:
         value = lowered.eval(ielem=ielem)
         if value.shape[0] == 1:
           value = numpy.tile(value, (points.npoints, 1))
-        self.assertEqual(value.tolist(), self.checkeval(ielem, points))
+        self.assertAllAlmostEqual(value, self.checkeval(ielem, points))
 
 class PlainBasis(CommonBasis, TestCase):
 
