@@ -1238,7 +1238,8 @@ class CommonBasis:
       self.basis.get_support(numpy.array([[True]*self.checkndofs], dtype=bool))
 
   def test_getitem_array(self):
-    for mask in itertools.product(*[[False, True]]*self.checkndofs):
+    checkmasks = getattr(self, 'checkmasks', itertools.product(*[[False, True]]*self.checkndofs))
+    for mask in checkmasks:
       mask = numpy.array(mask, dtype=bool)
       indices, = numpy.where(mask)
       for value in mask, indices:
