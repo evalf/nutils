@@ -2203,6 +2203,11 @@ class StructuredTopology(TransformChainsTopology):
   def basis_std(self, *args, **kwargs):
     return __class__.basis_spline(self, *args, continuity=0, **kwargs)
 
+  def basis_legendre(self, degree: int):
+    if self.ndims != 1:
+      raise NotImplementedError('legendre is only implemented for 1D topologies')
+    return function.LegendreBasis(degree, len(self), self.f_index, self.f_coords)
+
   @property
   def refined(self):
     'refine non-uniformly'

@@ -1305,6 +1305,18 @@ class DiscontBasis(CommonBasis, TestCase):
     self.checkndofs = 6
     super().setUp()
 
+class LegendreBasis(CommonBasis, TestCase):
+
+  def setUp(self):
+    self.checktransforms = transformseq.IdentifierTransforms(1, 'test', 3)
+    index, coords = self.mk_index_coords(0, self.checktransforms)
+    self.checkcoeffs = [[[1,0,0,0],[-1,2,0,0],[1,-6,6,0],[-1,12,-30,20]]]*3
+    self.basis = function.LegendreBasis(3, 3, index, coords)
+    self.checkdofs = [[0,1,2,3],[4,5,6,7],[8,9,10,11]]
+    self.checkndofs = 12
+    self.checkmasks = [[i in [0,1,4,5,7] for i in range(12)]]
+    super().setUp()
+
 class MaskedBasis(CommonBasis, TestCase):
 
   def setUp(self):
