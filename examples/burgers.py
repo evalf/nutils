@@ -7,7 +7,7 @@
 from nutils import mesh, function, solver, export, cli, testing
 import numpy, treelog
 
-def main(nelems:int, ndims:int, degree:int, timescale:float, newtontol:float, endtime:float):
+def main(nelems:int, ndims:int, btype:str, degree:int, timescale:float, newtontol:float, endtime:float):
   '''
   Burgers equation on a 1D or 2D periodic domain.
 
@@ -17,6 +17,8 @@ def main(nelems:int, ndims:int, degree:int, timescale:float, newtontol:float, en
        Number of elements along a single dimension.
      ndims [1]
        Number of spatial dimensions.
+     btype [discont]
+       Type of basis function (discont/legendre).
      degree [1]
        Polynomial degree for discontinuous basis functions.
      timescale [.5]
@@ -31,7 +33,7 @@ def main(nelems:int, ndims:int, degree:int, timescale:float, newtontol:float, en
 
   ns = function.Namespace()
   ns.x = geom
-  ns.basis = domain.basis('discont', degree=degree)
+  ns.basis = domain.basis(btype, degree=degree)
   ns.u = 'basis_n ?lhs_n'
   ns.f = '.5 u^2'
   ns.C = 1
@@ -72,26 +74,39 @@ class test(testing.TestCase):
 
   @testing.requires('matplotlib')
   def test_1d_p0(self):
-    lhs = main(ndims=1, nelems=10, timescale=.1, degree=0, endtime=.01, newtontol=1e-5)
+    lhs = main(ndims=1, nelems=10, timescale=.1, btype='discont', degree=0, endtime=.01, newtontol=1e-5)
     self.assertAlmostEqual64(lhs, '''
       eNrz1ttqGGOiZSZlrmbuZdZgcsEwUg8AOqwFug==''')
 
   @testing.requires('matplotlib')
   def test_1d_p1(self):
-    lhs = main(ndims=1, nelems=10, timescale=.1, degree=1, endtime=.01, newtontol=1e-5)
+    lhs = main(ndims=1, nelems=10, timescale=.1, btype='discont', degree=1, endtime=.01, newtontol=1e-5)
     self.assertAlmostEqual64(lhs, '''
       eNrbocann6u3yqjTyMLUwfSw2TWzKPNM8+9mH8wyTMNNZxptMirW49ffpwYAI6cOVA==''')
 
   @testing.requires('matplotlib')
   def test_1d_p2(self):
-    lhs = main(ndims=1, nelems=10, timescale=.1, degree=2, endtime=.01, newtontol=1e-5)
+    lhs = main(ndims=1, nelems=10, timescale=.1, btype='discont', degree=2, endtime=.01, newtontol=1e-5)
     self.assertAlmostEqual64(lhs, '''
       eNrr0c7SrtWfrD/d4JHRE6Ofxj6mnqaKZofNDpjZmQeYB5pHmL8we23mb5ZvWmjKY/LV6KPRFIMZ+o36
       8dp92gCxZxZG''')
 
   @testing.requires('matplotlib')
+  def test_1d_p1_legendre(self):
+    lhs = main(ndims=1, nelems=10, timescale=.1, btype='legendre', degree=1, endtime=.01, newtontol=1e-5)
+    self.assertAlmostEqual64(lhs, '''
+      eNrbpbtGt9VQyNDfxMdYzczERNZczdjYnOdsoNmc01kmE870Gj49t0c36BIAAhsO1g==''')
+
+  @testing.requires('matplotlib')
+  def test_1d_p2_legendre(self):
+    lhs = main(ndims=1, nelems=10, timescale=.1, btype='legendre', degree=2, endtime=.01, newtontol=1e-5)
+    self.assertAlmostEqual64(lhs, '''
+      eNoBPADD/8ot2y2/K4UxITFFLk00RTNNLyY2KzTTKx43QjOOzzM3Ss0pz1A2qsvhKGk0jsyXL48xzc5j
+      LswtIdLIK5SlF78=''')
+
+  @testing.requires('matplotlib')
   def test_2d_p1(self):
-    lhs = main(ndims=2, nelems=4, timescale=.1, degree=1, endtime=.01, newtontol=1e-5)
+    lhs = main(ndims=2, nelems=4, timescale=.1, btype='discont', degree=1, endtime=.01, newtontol=1e-5)
     import os
     if os.environ.get('NUTILS_TENSORIAL'):
       lhs = lhs.reshape(4,2,4,2).transpose(0,2,1,3).ravel()
