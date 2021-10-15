@@ -986,9 +986,10 @@ class jacobian(TestCase):
 
   def test_zeroderivative(self):
     otherarg = function.Argument('otherdofs', (10,))
-    values = self.domain.sample('uniform', 2).eval(function.derivative(self.dJ, otherarg))
+    smpl = self.domain.sample('uniform', 2)
+    values = smpl.eval(function.derivative(self.dJ, otherarg))
     self.assertEqual(values.shape[1:], self.dJ.shape + otherarg.shape)
-    self.assertAllEqual(values, 0)
+    self.assertAllEqual(values, numpy.zeros((smpl.npoints, *self.dJ.shape, *otherarg.shape)))
 
 @parametrize
 class derivative(TestCase):
@@ -1404,7 +1405,7 @@ class SurfaceGradient(TestCase):
       self.assertAllAlmostEqual(*self.manifold.sample('uniform', 2).eval([grad, expect]))
     else: # test that vector is tangent to the manifold
       ngrad = (grad * self.normal).sum(-1)
-      self.assertAllAlmostEqual(self.manifold.sample('uniform', 2).eval(ngrad), 0)
+      self.assertAllAlmostEqual(*self.manifold.sample('uniform', 2).eval([ngrad, 0]))
 
   def test_grad_x(self):
     P = function.surfgrad(self.geom, self.geom)
@@ -1413,7 +1414,7 @@ class SurfaceGradient(TestCase):
   def test_div_n(self):
     # https://en.wikipedia.org/wiki/Mean_curvature#Surfaces_in_3D_space
     K = function.div(self.normal, self.geom, -1) / self.manifold.ndims
-    self.assertAllAlmostEqual(self.manifold.sample('uniform', 2).eval(K), self.K)
+    self.assertAllAlmostEqual(*self.manifold.sample('uniform', 2).eval([K, self.K]))
 
   def test_stokes(self):
     # https://en.wikipedia.org/wiki/Laplace%E2%80%93Beltrami_operator#Formal_self-adjointness

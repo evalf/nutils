@@ -6,13 +6,15 @@ class basisTest(TestCase):
 
   def assertContinuous(self, topo, geom, basis, continuity):
     for regularity in range(continuity+1):
-      elem_jumps = topo.sample('gauss', 2).eval(function.jump(basis))
-      self.assertAllAlmostEqual(elem_jumps, 0, places=10)
+      smpl = topo.sample('gauss', 2)
+      elem_jumps = smpl.eval(function.jump(basis))
+      self.assertAllAlmostEqual(elem_jumps, numpy.zeros((smpl.npoints, *basis.shape)), places=10)
       basis = function.grad(basis, geom)[...,0]
 
   def assertPartitionOfUnity(self, topo, basis):
-    sumbasis = topo.sample('uniform', 2).eval(basis.sum(0))
-    self.assertAllAlmostEqual(sumbasis, 1, places=10)
+    smpl = topo.sample('uniform', 2)
+    sumbasis = smpl.eval(basis.sum(0))
+    self.assertAllAlmostEqual(sumbasis, numpy.ones((smpl.npoints,)), places=10)
 
   def assertPolynomial(self, topo, geom, basis, degree):
     target = (geom**degree).sum(-1)

@@ -377,5 +377,4 @@ class integral(TestCase):
     shape = 2, 3
     empty = function.zeros(shape, float)
     array = empty.eval().export('dense')
-    self.assertEqual(array.shape, shape)
-    self.assertAllEqual(array.flat, 0)
+    self.assertAllEqual(array, numpy.zeros((2,3)))

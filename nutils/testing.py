@@ -186,10 +186,16 @@ class TestCase(unittest.TestCase):
     _builtin_warnings.simplefilter('error', warnings.NutilsWarning)
 
   def assertAllEqual(self, actual, desired):
+    actual = numpy.asarray(actual)
+    desired = numpy.asarray(desired)
+    self.assertEqual(actual.shape, desired.shape)
     for args in numpy.broadcast(actual, desired):
       self.assertEqual(*args)
 
   def assertAllAlmostEqual(self, actual, desired, **kwargs):
+    actual = numpy.asarray(actual)
+    desired = numpy.asarray(desired)
+    self.assertEqual(actual.shape, desired.shape)
     for args in numpy.broadcast(actual, desired):
       self.assertAlmostEqual(*args, **kwargs)
 
