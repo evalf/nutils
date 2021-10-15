@@ -22,8 +22,8 @@ class gmsh(TestCase):
     for group, exact_volume in ((),2), ('left',1), ('right',1):
       with self.subTest(group or 'all'):
         volumes = self.domain[group].boundary.integrate(self.geom*self.geom.normal()*function.J(self.geom), ischeme='gauss1')
-        self.assertAllAlmostEqual(volumes[:2], exact_volume, places=10)
-        self.assertAllAlmostEqual(volumes[2:], 0, places=10)
+        self.assertAllAlmostEqual(volumes[:2], [exact_volume]*2, places=10)
+        self.assertAllAlmostEqual(volumes[2:], numpy.zeros((self.domain.ndims-2,)), places=10)
 
   @requires('meshio')
   def test_length(self):
@@ -49,16 +49,18 @@ class gmsh(TestCase):
     for name in 'iface', 'left', 'right':
       with self.subTest(name):
         topo = (self.domain.interfaces if name == 'iface' else self.domain[name].boundary)['iface']
-        x1, x2 = topo.sample('uniform', 2).eval([self.geom, function.opposite(self.geom)])
-        self.assertAllAlmostEqual(x1[:,0], 1, places=13)
-        self.assertAllAlmostEqual(x2[:,0], 1, places=13)
+        smpl = topo.sample('uniform', 2)
+        x1, x2 = smpl.eval([self.geom, function.opposite(self.geom)])
+        self.assertAllAlmostEqual(x1[:,0], numpy.ones((smpl.npoints,)), places=13)
+        self.assertAllAlmostEqual(x2[:,0], numpy.ones((smpl.npoints,)), places=13)
         self.assertAllAlmostEqual(x1, x2, places=13)
 
   @requires('meshio')
   def test_pointeval(self):
-    x = self.domain.points.sample('gauss', 1).eval(self.geom)
-    self.assertAllAlmostEqual(x[:,0], 1, places=15)
-    self.assertAllAlmostEqual(x[:,1], 0, places=15)
+    smpl = self.domain.points.sample('gauss', 1)
+    x = smpl.eval(self.geom)
+    self.assertAllAlmostEqual(x[:,0], numpy.ones((smpl.npoints,)), places=15)
+    self.assertAllAlmostEqual(x[:,1], numpy.zeros((smpl.npoints,)), places=15)
 
   @requires('meshio')
   def test_refine(self):

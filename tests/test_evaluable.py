@@ -485,6 +485,7 @@ _check('loopsum5', lambda: evaluable.loop_sum(evaluable.loop_index('index', 1), 
 _check('loopconcatenate1', lambda a: evaluable.loop_concatenate(a+evaluable.prependaxes(evaluable.loop_index('index', 3), a.shape), evaluable.loop_index('index', 3)), lambda a: a+numpy.arange(3)[None], ANY(3,1))
 _check('loopconcatenate2', lambda: evaluable.loop_concatenate(evaluable.Elemwise([numpy.arange(48).reshape(4,4,3)[:,:,a:b] for a, b in util.pairwise([0,2,3])], evaluable.loop_index('index', 2), int), evaluable.loop_index('index', 2)), lambda: numpy.arange(48).reshape(4,4,3))
 _check('loopconcatenatecombined', lambda a: evaluable.loop_concatenate_combined([a+evaluable.prependaxes(evaluable.loop_index('index', 3), a.shape)], evaluable.loop_index('index', 3))[0], lambda a: a+numpy.arange(3)[None], ANY(3,1), hasgrad=False)
+_check('legendre', lambda a: evaluable.Legendre(evaluable.asarray(a), 5), lambda a: numpy.moveaxis(numpy.polynomial.legendre.legval(a, numpy.eye(6)), 0, -1), ANY(3,4,3))
 
 _polyval_mask = lambda shape, ndim: 1 if ndim == 0 else numpy.array([sum(i[-ndim:]) < int(shape[-1]) for i in numpy.ndindex(shape)], dtype=int).reshape(shape)
 _polyval_desired = lambda c, x: sum(c[(...,*i)]*(x[(slice(None),*[None]*(c.ndim-x.shape[1]))]**i).prod(-1) for i in itertools.product(*[range(c.shape[-1])]*x.shape[1]) if sum(i) < c.shape[-1])
@@ -779,92 +780,6 @@ class derivative(TestCase):
   def test_int(self):
     arg = evaluable.Argument('arg', (2,), int)
     self.assertEqual(evaluable.derivative(evaluable.insertaxis(arg, 0, 1), arg), evaluable.Zeros((1,2,2), int))
-
-class jacobian(TestCase):
-
-  def setUp(self):
-    super().setUp()
-    self.domain, self.geom = mesh.unitsquare(1, 'square')
-    self.basis = self.domain.basis('std', degree=1)
-    arg = function.Argument('dofs', [4])
-    self.v = self.basis.dot(arg)
-    self.X = (self.geom[numpy.newaxis,:] * [[0,1],[-self.v,0]]).sum(-1) # X_i = <x_1, -2 x_0>_i
-    self.J = function.J(self.X)
-    self.dJ = function.derivative(self.J, arg)
-
-  def test_shape(self):
-    self.assertEqual(self.J.shape, ())
-    self.assertEqual(self.dJ.shape, (4,))
-
-  def test_value(self):
-    values = self.domain.sample('uniform', 2).eval(self.J, dofs=[2]*4)
-    numpy.testing.assert_almost_equal(values, [2]*4)
-    values1, values2 = self.domain.sample('uniform', 2).eval([self.J,
-      self.v + self.v.grad(self.geom)[0] * self.geom[0]], dofs=[1,2,3,10])
-    numpy.testing.assert_almost_equal(values1, values2)
-
-  def test_derivative(self):
-    values1, values2 = self.domain.sample('uniform', 2).eval([self.dJ,
-      self.basis + self.basis.grad(self.geom)[:,0] * self.geom[0]], dofs=[1,2,3,10])
-    numpy.testing.assert_almost_equal(values1, values2)
-
-  def test_zeroderivative(self):
-    otherarg = function.Argument('otherdofs', (10,))
-    values = self.domain.sample('uniform', 2).eval(function.derivative(self.dJ, otherarg))
-    self.assertEqual(values.shape[1:], self.dJ.shape + otherarg.shape)
-    self.assertAllEqual(values, 0)
-
-class grad(TestCase):
-
-  def assertEvalAlmostEqual(self, topo, factual, fdesired):
-    actual, desired = topo.sample('uniform', 2).eval([function.asarray(factual), function.asarray(fdesired)])
-    self.assertAllAlmostEqual(actual, desired)
-
-  def test_0d(self):
-    domain, (x,) = mesh.rectilinear([1])
-    self.assertEvalAlmostEqual(domain, function.grad(x**2, x), 2*x)
-
-  def test_1d(self):
-    domain, x = mesh.rectilinear([1]*2)
-    self.assertEvalAlmostEqual(domain, function.grad([x[0]**2, x[1]**2], x), [[2*x[0], 0], [0, 2*x[1]]])
-
-  def test_2d(self):
-    domain, x = mesh.rectilinear([1]*4)
-    x = function.unravel(x, 0, (2, 2))
-    self.assertEvalAlmostEqual(domain, function.grad(x, x), numpy.eye(4, 4).reshape(2, 2, 2, 2))
-
-  def test_3d(self):
-    domain, x = mesh.rectilinear([1]*4)
-    x = function.unravel(function.unravel(x, 0, (2, 2)), 0, (2, 1))
-    self.assertEvalAlmostEqual(domain, function.grad(x, x), numpy.eye(4, 4).reshape(2, 1, 2, 2, 1, 2))
-
-class normal(TestCase):
-
-  def assertEvalAlmostEqual(self, topo, factual, fdesired):
-    actual, desired = topo.sample('uniform', 2).eval([function.asarray(factual), function.asarray(fdesired)])
-    self.assertAllAlmostEqual(actual, desired)
-
-  def test_0d(self):
-    domain, (x,) = mesh.rectilinear([1])
-    self.assertEvalAlmostEqual(domain.boundary['right'], function.normal(x), 1)
-    self.assertEvalAlmostEqual(domain.boundary['left'], function.normal(x), -1)
-
-  def test_1d(self):
-    domain, x = mesh.rectilinear([1]*2)
-    for bnd, n in ('right', [1, 0]), ('left', [-1, 0]), ('top', [0, 1]), ('bottom', [0, -1]):
-      self.assertEvalAlmostEqual(domain.boundary[bnd], function.normal(x), n)
-
-  def test_2d(self):
-    domain, x = mesh.rectilinear([1]*2)
-    x = function.unravel(x, 0, [2, 1])
-    for bnd, n in ('right', [1, 0]), ('left', [-1, 0]), ('top', [0, 1]), ('bottom', [0, -1]):
-      self.assertEvalAlmostEqual(domain.boundary[bnd], function.normal(x), numpy.array(n)[:,_])
-
-  def test_3d(self):
-    domain, x = mesh.rectilinear([1]*2)
-    x = function.unravel(function.unravel(x, 0, [2, 1]), 0, [1, 2])
-    for bnd, n in ('right', [1, 0]), ('left', [-1, 0]), ('top', [0, 1]), ('bottom', [0, -1]):
-      self.assertEvalAlmostEqual(domain.boundary[bnd], function.normal(x), numpy.array(n)[_,:,_])
 
 class asciitree(TestCase):
 

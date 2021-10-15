@@ -3406,6 +3406,56 @@ class PolyOuterProduct(Array):
   def evalf(self, left, right):
     return numeric.poly_outer_product(left, right)
 
+class Legendre(Array):
+  '''Series of Legendre polynomial up to and including the given degree.
+
+  Parameters
+  ---------
+  x : :class:`Array`
+      The coordinates to evaluate the series at.
+  degree : :class:`int`
+      The degree of the last polynomial of the series.
+  '''
+
+  def __init__(self, x: Array, degree: int) -> None:
+    assert x.dtype == float
+    self._x = x
+    self._degree = degree
+    super().__init__(args=(x,), shape=(*x.shape, degree+1), dtype=float)
+
+  def evalf(self, x: numpy.ndarray) -> numpy.ndarray:
+    P = numpy.empty((*x.shape, self._degree+1), dtype=float)
+    P[...,0] = 1
+    if self._degree:
+      P[...,1] = x
+    for i in range(2, self._degree+1):
+      P[...,i] = (2-1/i)*P[...,1]*P[...,i-1] - (1-1/i)*P[...,i-2]
+    return P
+
+  def _derivative(self, var, seen):
+    d = numpy.zeros((self._degree+1,)*2, dtype=int)
+    for i in range(self._degree+1):
+      d[i,i+1::2] = 2*i+1
+    dself = einsum('Ai,ij->Aj', self, d)
+    return einsum('Ai,AB->AiB', dself, derivative(self._x, var, seen))
+
+  def _simplified(self):
+    unaligned, where = unalign(self._x)
+    if where != tuple(range(self._x.ndim)):
+      return align(Legendre(unaligned, self._degree), (*where, self.ndim-1), self.shape)
+
+  def _takediag(self, axis1, axis2):
+    if axis1 < self.ndim - 1 and axis2 < self.ndim - 1:
+      return Transpose.to_end(Legendre(_takediag(self._x, axis1, axis2), self._degree), -2)
+
+  def _take(self, index, axis):
+    if axis < self.ndim - 1:
+      return Legendre(_take(self._x, index, axis), self._degree)
+
+  def _unravel(self, axis, shape):
+    if axis < self.ndim - 1:
+      return Legendre(unravel(self._x, axis, shape), self._degree)
+
 class Choose(Array):
   '''Function equivalent of :func:`numpy.choose`.'''
 

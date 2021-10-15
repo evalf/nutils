@@ -3202,6 +3202,49 @@ class DiscontBasis(Basis):
     dofs = evaluable.Range(coeffs.shape[0]) + evaluable.get(self._offsets, 0, index)
     return dofs, coeffs
 
+class LegendreBasis(Basis):
+  '''A discontinuous Legendre basis.
+
+  Parameters
+  ----------
+  degree : :class:`int`
+      The degree of the basis.
+  nelems : :class:`int`
+      The number of elements.
+  index : :class:`Array`
+      The element index.
+  coords : :class:`Array`
+      The element local coordinates.
+  '''
+
+  def __init__(self, degree: int, nelems: int, index: Array, coords: Array) -> None:
+    if coords.shape[-1] != 1:
+      raise NotImplementedError('The Legendre basis is only implemented for dimension 1.')
+    self._degree = degree
+    super().__init__(nelems * (degree+1), nelems, index, coords)
+
+  @_int_or_vec_dof
+  def get_support(self, dof: Union[int, numpy.ndarray]) -> numpy.ndarray:
+    if isinstance(dof, int):
+      dof = numpy.array([dof])
+    return numpy.unique(dof // (self._degree+1))
+
+  def f_dofs_coeffs(self, index: evaluable.Array) -> Tuple[evaluable.Array,evaluable.Array]:
+    dofs = evaluable.Range(self._degree+1) + index * (self._degree+1)
+    coeffs = numpy.zeros((self._degree+1,)*2, dtype=int)
+    for n in range(self._degree+1):
+      for k in range(n+1):
+        coeffs[n,k] = (-1 if (n+k) % 2 else 1) * numeric.binom(n, k) * numeric.binom(n+k, k)
+    return dofs, evaluable.Float(evaluable.asarray(coeffs))
+
+  def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
+    index = _WithoutPoints(self.index).lower(points_shape, transform_chains, coordinates)
+    coords = self.coords.lower(points_shape, transform_chains, coordinates)
+    assert evaluable.equalindex(coords.shape[-1], 1)
+    leg = evaluable.Legendre(evaluable.get(coords, coords.ndim-1, 0) * 2 - 1, self._degree)
+    dofs = evaluable.Range(self._degree+1) + index * (self._degree+1)
+    return evaluable.Inflate(leg, dofs, self.ndofs)
+
 class MaskedBasis(Basis):
   '''An order preserving subset of another :class:`Basis`.
 

@@ -986,9 +986,10 @@ class jacobian(TestCase):
 
   def test_zeroderivative(self):
     otherarg = function.Argument('otherdofs', (10,))
-    values = self.domain.sample('uniform', 2).eval(function.derivative(self.dJ, otherarg))
+    smpl = self.domain.sample('uniform', 2)
+    values = smpl.eval(function.derivative(self.dJ, otherarg))
     self.assertEqual(values.shape[1:], self.dJ.shape + otherarg.shape)
-    self.assertAllEqual(values, 0)
+    self.assertAllEqual(values, numpy.zeros((smpl.npoints, *self.dJ.shape, *otherarg.shape)))
 
 @parametrize
 class derivative(TestCase):
@@ -1237,7 +1238,8 @@ class CommonBasis:
       self.basis.get_support(numpy.array([[True]*self.checkndofs], dtype=bool))
 
   def test_getitem_array(self):
-    for mask in itertools.product(*[[False, True]]*self.checkndofs):
+    checkmasks = getattr(self, 'checkmasks', itertools.product(*[[False, True]]*self.checkndofs))
+    for mask in checkmasks:
       mask = numpy.array(mask, dtype=bool)
       indices, = numpy.where(mask)
       for value in mask, indices:
@@ -1266,7 +1268,7 @@ class CommonBasis:
   def checkeval(self, ielem, points):
     result = numpy.zeros((points.npoints, self.checkndofs,), dtype=float)
     numpy.add.at(result, (slice(None),numpy.array(self.checkdofs[ielem], dtype=int)), numeric.poly_eval(numpy.array(self.checkcoeffs[ielem], dtype=float), points.coords))
-    return result.tolist()
+    return result
 
   def test_lower(self):
     ref = element.PointReference() if self.basis.coords.shape[0] == 0 else element.LineReference()**self.basis.coords.shape[0]
@@ -1279,7 +1281,7 @@ class CommonBasis:
         value = lowered.eval(ielem=ielem)
         if value.shape[0] == 1:
           value = numpy.tile(value, (points.npoints, 1))
-        self.assertEqual(value.tolist(), self.checkeval(ielem, points))
+        self.assertAllAlmostEqual(value, self.checkeval(ielem, points))
 
 class PlainBasis(CommonBasis, TestCase):
 
@@ -1301,6 +1303,18 @@ class DiscontBasis(CommonBasis, TestCase):
     self.basis = function.DiscontBasis(self.checkcoeffs, index, coords)
     self.checkdofs = [[0],[1,2],[3,4],[5]]
     self.checkndofs = 6
+    super().setUp()
+
+class LegendreBasis(CommonBasis, TestCase):
+
+  def setUp(self):
+    self.checktransforms = transformseq.IdentifierTransforms(1, 'test', 3)
+    index, coords = self.mk_index_coords(0, self.checktransforms)
+    self.checkcoeffs = [[[1,0,0,0],[-1,2,0,0],[1,-6,6,0],[-1,12,-30,20]]]*3
+    self.basis = function.LegendreBasis(3, 3, index, coords)
+    self.checkdofs = [[0,1,2,3],[4,5,6,7],[8,9,10,11]]
+    self.checkndofs = 12
+    self.checkmasks = [[i in [0,1,4,5,7] for i in range(12)]]
     super().setUp()
 
 class MaskedBasis(CommonBasis, TestCase):
@@ -1404,7 +1418,7 @@ class SurfaceGradient(TestCase):
       self.assertAllAlmostEqual(*self.manifold.sample('uniform', 2).eval([grad, expect]))
     else: # test that vector is tangent to the manifold
       ngrad = (grad * self.normal).sum(-1)
-      self.assertAllAlmostEqual(self.manifold.sample('uniform', 2).eval(ngrad), 0)
+      self.assertAllAlmostEqual(*self.manifold.sample('uniform', 2).eval([ngrad, 0]))
 
   def test_grad_x(self):
     P = function.surfgrad(self.geom, self.geom)
@@ -1413,7 +1427,7 @@ class SurfaceGradient(TestCase):
   def test_div_n(self):
     # https://en.wikipedia.org/wiki/Mean_curvature#Surfaces_in_3D_space
     K = function.div(self.normal, self.geom, -1) / self.manifold.ndims
-    self.assertAllAlmostEqual(self.manifold.sample('uniform', 2).eval(K), self.K)
+    self.assertAllAlmostEqual(*self.manifold.sample('uniform', 2).eval([K, self.K]))
 
   def test_stokes(self):
     # https://en.wikipedia.org/wiki/Laplace%E2%80%93Beltrami_operator#Formal_self-adjointness

@@ -41,7 +41,7 @@ class TestInvertible(TestTransform):
   def test_invapply(self):
     coords = numpy.array([self.offset, numpy.arange(.5,self.trans.fromdims)/self.trans.fromdims])
     a, b = self.trans.invapply(coords)
-    self.assertAllAlmostEqual(a, 0)
+    self.assertAllAlmostEqual(a, numpy.zeros((self.trans.todims,)))
     self.assertAllAlmostEqual(b, numpy.linalg.solve(self.linear, (coords[1] - self.offset)))
 
 class TestUpdim(TestTransform):
