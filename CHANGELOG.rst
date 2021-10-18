@@ -9,6 +9,18 @@ features in inverse chronological order.
 New in v7.0 (in development)
 ----------------------------
 
+- New: expression and namespace version 2
+
+  The ``nutils.expression`` module has been renamed to
+  :mod:`nutils.expression_v1`, the ``nutils.function.Namespace`` class to
+  :class:`nutils.expression_v1.Namespace` and the :mod:`nutils.expression_v2`
+  module has been added, featuring a new
+  :class:`~nutils.expression_v2.Namespace`. The version 2 of the namespace v2
+  has an expression language that differs slightly from version 1, most notably
+  in the way derivatives are written. The old namespace remains available for
+  the time being. All examples are updated to the new namespace. You are
+  encouraged to use the new namespace for newly written code.
+
 - Changed: bifurcate has been replaced by spaces
 
   In the past using functions on products of :class:`~nutils.topology.Topology`
@@ -111,44 +123,6 @@ New in v7.0 (in development)
   ...     super().__init__(args=[a, b], shape=a.shape, dtype=a.dtype)
   ...   def evalf(self, a, b):
   ...     return a+b
-
-- Functions generating or consuming axes in expressions
-
-  The expression syntax now supports functions that generate and/or consume
-  axes. The namespace has built-in support for ``sum``, ``norm2`` and ``J``
-  (jacobian)::
-
-      'sum:i(u_ij)' # sum the first axis of `u`
-      'norm2:i(u_i)' # 2-norm of `u`
-      'J:i(x_i)' # jacobian of `x`
-
-  If all axes of function arguments are consumed, it is allowed to omit the
-  indices::
-
-      'norm2(u)'
-      'J(x)'
-
-- New derivative and normal syntax
-
-  The :class:`~nutils.expression_v1.Namespace` now supports writing derivatives and
-  normals as functions::
-
-      'd(u, x_i)' # alternative for 'u_,i', deprecates 'u_,x_i'
-      'd(u, x_i, x_j)' # alternative for 'u_,ij'
-      'surfgrad(u, x_i)' # alternative for 'u_;i', deprecates 'u_;x_i'
-      'd(u, ?a)' # deprecates 'u_,?a'
-      'n(x_i)' # deprecates 'n:x_i'
-
-- User-defined functions in :class:`~nutils.expression_v1.Namespace`
-
-  The :class:`~nutils.expression_v1.Namespace` can be initialized with a dictionary
-  of user-defined functions::
-
-      >>> def mul(a, b):
-      ...   return a[(...,)+(None,)*b.ndim] * b[(None,)*a.ndim]
-      >>> ns = Namespace(functions=dict(mul=mul))
-
-      >>> 'mul(a_i, b_j)' @ ns # equivalent to `'a_i b_j' @ ns`
 
 - Solve multiple residuals to multiple targets
 
