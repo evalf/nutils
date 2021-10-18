@@ -130,7 +130,7 @@ New in v7.0 (in development)
 
 - New derivative and normal syntax
 
-  The :class:`~nutils.function.Namespace` now supports writing derivatives and
+  The :class:`~nutils.expression_v1.Namespace` now supports writing derivatives and
   normals as functions::
 
       'd(u, x_i)' # alternative for 'u_,i', deprecates 'u_,x_i'
@@ -139,9 +139,9 @@ New in v7.0 (in development)
       'd(u, ?a)' # deprecates 'u_,?a'
       'n(x_i)' # deprecates 'n:x_i'
 
-- User-defined functions in :class:`~nutils.function.Namespace`
+- User-defined functions in :class:`~nutils.expression_v1.Namespace`
 
-  The :class:`~nutils.function.Namespace` can be initialized with a dictionary
+  The :class:`~nutils.expression_v1.Namespace` can be initialized with a dictionary
   of user-defined functions::
 
       >>> def mul(a, b):
@@ -379,7 +379,7 @@ Release date: `2020-04-29 <https://github.com/evalf/nutils/releases/tag/v6.0>`_.
 
 - Fixed and fallback lengths in (namespace) expressions
 
-  The :class:`nutils.function.Namespace` has two new arguments:
+  The ``nutils.function.Namespace`` has two new arguments:
   ``length_<indices>`` and ``fallback_length``. The former can be used
   to assign fixed lengths to specific indices in expressions, say index
   ``i`` should have length 2, which is used for verification and
@@ -658,7 +658,7 @@ Release date: `2018-02-05 <https://github.com/evalf/nutils/releases/tag/v3.0>`_.
 
 - New: function.Namespace
 
-  The :class:`nutils.function.Namespace` object represents a container
+  The ``nutils.function.Namespace`` object represents a container
   of :class:`nutils.function.Array` instances::
 
       >>> ns = function.Namespace()
