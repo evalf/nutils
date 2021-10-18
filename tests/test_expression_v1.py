@@ -1,4 +1,4 @@
-import nutils.expression
+from nutils import expression_v1
 from nutils.testing import *
 
 _ = lambda arg: (None, arg)
@@ -42,7 +42,7 @@ class Variables:
     if name.startswith('_'):
       return _(getattr(self, name[1:]))
     elif name.startswith('a'):
-      return Array(name, tuple(self._lengths.get(i, nutils.expression._Length(ord(i))) for i in name[1:]))
+      return Array(name, tuple(self._lengths.get(i, expression_v1._Length(ord(i))) for i in name[1:]))
     else:
       raise AttributeError(name)
   def get(self, name, default):
@@ -58,11 +58,11 @@ class parse(TestCase):
   def assert_ast(self, expression, indices, ast, variables=None, **parse_kwargs):
     if variables is None:
       variables = v
-    self.assertEqual(nutils.expression.parse(expression, variables, indices, **parse_kwargs)[0], ast)
+    self.assertEqual(expression_v1.parse(expression, variables, indices, **parse_kwargs)[0], ast)
 
-  def assert_syntax_error(self, msg, expression, indices, highlight, arg_shapes={}, fixed_lengths=None, exccls=nutils.expression.ExpressionSyntaxError):
+  def assert_syntax_error(self, msg, expression, indices, highlight, arg_shapes={}, fixed_lengths=None, exccls=expression_v1.ExpressionSyntaxError):
     with self.assertRaises(exccls) as cm:
-      nutils.expression.parse(expression, v, indices, arg_shapes, fixed_lengths=fixed_lengths)
+      expression_v1.parse(expression, v, indices, arg_shapes, fixed_lengths=fixed_lengths)
     self.assertEqual(str(cm.exception), msg + '\n' + expression + '\n' + highlight)
 
   # OTHER
@@ -75,7 +75,7 @@ class parse(TestCase):
       "Cannot unambiguously align the array because the array has more than one dimension.",
       "a23_ij", None,
       "^^^^^^",
-      exccls=nutils.expression.AmbiguousAlignmentError)
+      exccls=expression_v1.AmbiguousAlignmentError)
 
   def test_mul_2(self):
     self.assert_ast('a2_i a3_j', 'ij',
@@ -876,23 +876,23 @@ class parse(TestCase):
   def test_omitted_normal(self): self.assert_ast('n', None, ('normal', v._x))
 
   def test_omitted_add_shape_mismatch(self):
-    with self.assertRaises(nutils.expression.ExpressionSyntaxError):
-      nutils.expression.parse("a2 + a3", v, None)
+    with self.assertRaises(expression_v1.ExpressionSyntaxError):
+      expression_v1.parse("a2 + a3", v, None)
 
   def test_omitted_sub_shape_mismatch(self):
-    with self.assertRaises(nutils.expression.ExpressionSyntaxError):
-      nutils.expression.parse("a2 - a3", v, None)
+    with self.assertRaises(expression_v1.ExpressionSyntaxError):
+      expression_v1.parse("a2 - a3", v, None)
 
   def test_omitted_mul(self):
-    with self.assertRaises(nutils.expression.ExpressionSyntaxError):
-      nutils.expression.parse("a2 a3", v, None)
+    with self.assertRaises(expression_v1.ExpressionSyntaxError):
+      expression_v1.parse("a2 a3", v, None)
 
   def test_omitted_truediv_nonscalar_denominator(self):
-    with self.assertRaises(nutils.expression.ExpressionSyntaxError):
-      nutils.expression.parse("a2 / a3", v, None)
+    with self.assertRaises(expression_v1.ExpressionSyntaxError):
+      expression_v1.parse("a2 / a3", v, None)
 
   def test_omitted_pow_nonscalar_exponent(self):
-    with self.assertRaises(nutils.expression.ExpressionSyntaxError):
-      nutils.expression.parse("a2^(a3)", v, None)
+    with self.assertRaises(expression_v1.ExpressionSyntaxError):
+      expression_v1.parse("a2^(a3)", v, None)
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

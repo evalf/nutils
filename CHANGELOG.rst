@@ -666,7 +666,7 @@ Release date: `2018-02-05 <https://github.com/evalf/nutils/releases/tag/v3.0>`_.
       >>> ns.basis = domain.basis('std', degree=1).vector(2)
 
   In addition to bundling arrays, arrays can be manipulated using index
-  notation via string expressions using the :mod:`nutils.expression`
+  notation via string expressions using the ``nutils.expression``
   syntax::
 
       >>> ns.sol_i = 'basis_ni ?dofs_n'

@@ -1329,7 +1329,7 @@ def parse(expression, variables, indices, arg_shapes={}, default_geometry_name='
   Args
   ----
   expression : :class:`str`
-      The expression to parse.  See :mod:`~nutils.expression` for the
+      The expression to parse.  See :mod:`~nutils.expression_v1` for the
       expression syntax.
   variables : :class:`dict` of :class:`str` and :class:`nutils.function.Array` pairs
       A :class:`dict` of variable names and array pairs.  All variables used in

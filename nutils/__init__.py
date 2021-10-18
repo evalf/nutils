@@ -35,7 +35,7 @@ __all__ = [
   'elementseq',
   'evaluable',
   'export',
-  'expression',
+  'expression_v1',
   'function',
   'matrix',
   'mesh',

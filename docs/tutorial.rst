@@ -323,7 +323,7 @@ ability to be assigned string expressions. These expressions may reference any
 :class:`~nutils.function.Namespace`, and must explicitly name all array
 dimensions, with the object of both aiding readibility and facilitating high
 order tensor manipulations. A short explanation of the syntax follows; see
-:func:`nutils.expression.parse` for the complete documentation.
+:func:`nutils.expression_v1.parse` for the complete documentation.
 
 A *term* is written by joining variables with spaces, optionally preceeded by a
 single number, e.g. ``2 a b``.  A *fraction* is written as two terms joined by
@@ -348,7 +348,7 @@ just as a local variable:
     >>> ns.f = '2 localvar'
     Traceback (most recent call last):
       ...
-    nutils.expression.ExpressionSyntaxError: Unknown variable: 'localvar'.
+    nutils.expression_v1.ExpressionSyntaxError: Unknown variable: 'localvar'.
     2 localvar
       ^^^^^^^^
 
