@@ -18,9 +18,138 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-'''
-This module defines the function :func:`parse`, which parses a tensor
-expression.
+'''Expression parser version 1 and namespace.
+
+The syntax of ``expression`` is as follows:
+
+*   **Integers** or **decimal numbers** are denoted in the usual way.
+    Examples: ``1``, ``1.2``, ``.2``.  A number may not start with a zero,
+    except when followed by a dot: ``0.1`` is valid, but ``01`` is not.
+
+*   **Variables** are denoted with a string of alphanumeric characters.  The
+    first character may not be a numeral.  Unlike Python variables,
+    underscores are not allowed, as they have a special meaning.  If the
+    variable is an array with one or more axes, all those axes should be
+    labeled with a latin character, the index, and appended to the variable
+    with an underscore.  For example an array ``a`` with two axes can be
+    denoted with ``a_ij``.  Optionally, a single numeral may be used to
+    select an item at the concerning axis.  Example: in ``a_i0`` the first
+    axis of ``a`` is labeled ``i`` and the first element of the second axis
+    is selected.  If the same index occurs twice, the trace is taken along
+    the concerning axes.  Example: the trace of the first and third axes of
+    ``b`` is denoted by ``b_iji``.  It is invalid to specify an index more
+    than twice.  The following names cannot be used as variables: ``n``,
+    ``δ``, ``$``.  The variable named ``x``, or the value of argument
+    ``default_geometry_name``, has a special meaning, detailed below.
+
+*   A term, the **product** of two or more arrays or scalars, is denoted by
+    space-separated variables, constants or compound expressions.  Example:
+    ``a b c`` denotes the product of the scalars ``a``, ``b`` and ``c``.  A
+    term may start with a number, but a number is not allowed in other parts
+    of the term.  Example: ``2 a`` denotes two times ``a``; ``2 2 a`` and ``2
+    a 2``` are invalid.  When two arrays in a term have the same index, this
+    index is summed.  Example: ``a_i b_i`` denotes the inner product of ``a``
+    and ``b`` and ``A_ij b_j``` a matrix vector product.  It is not allowed
+    to use an index more than twice in a term.
+
+*   The operator ``/`` denotes a **fraction**.  Example: in ``a b / c d`` ``a
+    b`` is the numerator and ``c d`` the denominator.  Both the numerator and
+    the denominator may start with a number.  Example: ``2 a / 3 b``.  The
+    denominator must be a scalar.  Example: ``2 / a_i b_i`` is valid, but ``2
+    a_i / b_i`` is not.
+
+    .. warning::
+
+        This syntax is different from the Python syntax.  In Python ``a*b /
+        c*d`` is mathematically equivalent to ``a*b*d/c``.
+
+*   The operators ``+`` and ``-`` denote **add** and **subtract**.  Both
+    operators should be surrounded by whitespace, e.g. ``a + b``.  Both
+    operands should have the same shape.  Example: ``a_ij + b_i c_j`` is a
+    valid, provided that the lengths of the axes with the same indices match,
+    but ``a_ij + b_i`` is invalid.  At the beginning of an expression or a
+    compound ``-`` may be used to negate the following term.  Example: in
+    ``-a b + c`` the term ``a b`` is negated before adding ``c``.  It is not
+    allowed to negate other terms: ``a + -b`` is invalid, so is ``a -b``.
+
+*   An expression surrounded by parentheses is a **compound expression** and
+    can be used as single entity in a term.  Example: ``(a_i + b_i) c_i``
+    denotes the inner product of ``a_i + b_i`` with ``c_i``.
+
+*   **Exponentiation** is denoted by a ``^``, where the left and right
+    operands should be a number, variable or compound expression and the
+    right operand should be a scalar.  Example: ``a^2`` denotes the square of
+    ``a``, ``a^-2`` denotes ``a`` to the power ``-2`` and ``a^(1 / 2)`` the
+    square root of ``a``.
+
+*   An **argument** is denoted by a name — following the same rules as a
+    variable name — prefixed with a question mark.  An argument is a scalar
+    or array with a yet unknown value.  Example: ``basis_i ?coeffs_i``
+    denotes the inner product of a basis with unknown coefficient vector
+    ``?coeffs``.  If possible the shape of the argument is deduced from the
+    expression.  In the previous example the shape of ``?coeffs`` is equal to
+    the shape of ``basis``.  If the shape cannot be deduced from the
+    expression the shape should be defined manually (see :func:`parse`).
+    Arguments and variables live in separate namespaces: ``?x`` and ``x`` are
+    different entities.
+
+*   An argument may be **substituted** by appending without whitespace
+    ``(arg = value)`` to a variable of compound expression, where ``arg`` is
+    an argument and ``value`` the substitution.  The substitution applies to
+    the variable of compound expression only.  The value may be an
+    expression.  Example: ``2 ?x(x = 3 + y)`` is equivalent to ``2 (3 + y)``
+    and ``2 ?x(x=y) + 3`` is equivalent to ``2 (y) + 3``.  It is possible to
+    apply multiple substitutions.  Example: ``(?x + ?y)(x = 1, y = )2`` is
+    equivalent to ``1 + 2``.
+
+*   The **gradient** of a variable to the default geometry — the default
+    geometry is variable ``x`` unless overriden by the argument
+    ``default_geometry_name`` — is denoted by an underscore, a comma and an
+    index.  If the variable is an array with more than one axis, the
+    underscore is omitted.  Example: ``a_,i`` denotes the gradient of the
+    scalar ``a`` to the geometry and ``b_i,j`` the gradient of vector ``b``.
+    The gradient of a compound expression is denoted by an underscore, a
+    comma and an index.  Example: ``(a_i + b_j)_,k`` denotes the gradient of
+    ``a_i + b_j``.  The usual summation rules apply and it is allowed to use
+    a numeral as index.  The **surface gradient** is denoted with a semicolon
+    instead of a comma, but follows the same rules as the gradient otherwise.
+    Example: ``a_i;j`` is the sufrace gradient of ``a_i`` to the geometry.
+
+*   The **normal** of the default geometry is denoted by ``n_i``, where the
+    index ``i`` may be replaced with an index of choice.
+
+*   A **dirac** is denoted by ``δ`` or ``$`` and takes two indices.  The
+    shape of the dirac is deduced from the expression.  Example: let ``A`` be
+    a square matrix with three rows and columns, then ``δ_ij`` in ``(A_ij - λ
+    δ_ij) x_j`` has three rows and columns as well.
+
+*   An expression surrounded by square brackets or curly braces denotes the
+    **jump** or **mean**, respectively, of the enclosed expression.  Example:
+    ``[ a_i ]`` denotes the jump of ``a_i`` and ``{ a_i + b_i }`` denotes the
+    mean of ``a_i + b_i``.
+
+*   A **function call** is denoted by a name — following the same rules as
+    for a variable name — optionally followed by ``_`` and indices,
+    optionally followed by ``:`` and indices, directly followed by the left
+    parenthesis ``(``, without a space.  The arguments to the function are
+    separated by a comma and at least one space.  The function is applied
+    pointwise to the arguments and summation convection is applied to the
+    result. Example: assume ``mul(...)`` returns the product of its
+    arguments, then ``mul(x_i, y_j)`` is equivalent to ``x_i y_j`` and
+    ``mul(x_i, y_i)`` to ``x_i y_i``. Functions and variables share a
+    namespace: defining a variable with the same name as a function renders
+    the function inaccessible. Functions of the form ``f_i(...)`` and
+    ``f_ij(...)`` etc. generate one and two axes, respectively. Functions
+    of the form ``f:i(...)`` and ``f:ij(...)`` etc. consume the axes labelled
+    ``i`` and ``i`` and ``j`` respectively. If all axes are consumed, it is
+    allowed to omit the axes: ``sum(u)`` is equivalent to ``sum:i(u_i)``.
+
+*   A **stack** of two or more arrays along an axis is denoted by a ``<``
+    followed by comma and space separated arrays followed by ``>`` and an
+    index.  All arguments must have the same shape and must not have an axis labelled with the stack axis.
+    Example: ``<1, 2>_i`` creates an array with components ``1`` and ``2``.
+
+.. _`Einstein Summation Convection`: https://en.wikipedia.org/wiki/Einstein_notation
 '''
 
 import re, collections, functools, itertools, operator, types as builtin_types
@@ -1196,136 +1325,7 @@ def parse(expression, variables, indices, arg_shapes={}, default_geometry_name='
 
   This function parses a tensor expression with `Einstein Summation
   Convection`_ stored in a :class:`str` and returns an Abstract Syntax Tree
-  (AST).  The syntax of ``expression`` is as follows:
-
-  *   **Integers** or **decimal numbers** are denoted in the usual way.
-      Examples: ``1``, ``1.2``, ``.2``.  A number may not start with a zero,
-      except when followed by a dot: ``0.1`` is valid, but ``01`` is not.
-
-  *   **Variables** are denoted with a string of alphanumeric characters.  The
-      first character may not be a numeral.  Unlike Python variables,
-      underscores are not allowed, as they have a special meaning.  If the
-      variable is an array with one or more axes, all those axes should be
-      labeled with a latin character, the index, and appended to the variable
-      with an underscore.  For example an array ``a`` with two axes can be
-      denoted with ``a_ij``.  Optionally, a single numeral may be used to
-      select an item at the concerning axis.  Example: in ``a_i0`` the first
-      axis of ``a`` is labeled ``i`` and the first element of the second axis
-      is selected.  If the same index occurs twice, the trace is taken along
-      the concerning axes.  Example: the trace of the first and third axes of
-      ``b`` is denoted by ``b_iji``.  It is invalid to specify an index more
-      than twice.  The following names cannot be used as variables: ``n``,
-      ``δ``, ``$``.  The variable named ``x``, or the value of argument
-      ``default_geometry_name``, has a special meaning, detailed below.
-
-  *   A term, the **product** of two or more arrays or scalars, is denoted by
-      space-separated variables, constants or compound expressions.  Example:
-      ``a b c`` denotes the product of the scalars ``a``, ``b`` and ``c``.  A
-      term may start with a number, but a number is not allowed in other parts
-      of the term.  Example: ``2 a`` denotes two times ``a``; ``2 2 a`` and ``2
-      a 2``` are invalid.  When two arrays in a term have the same index, this
-      index is summed.  Example: ``a_i b_i`` denotes the inner product of ``a``
-      and ``b`` and ``A_ij b_j``` a matrix vector product.  It is not allowed
-      to use an index more than twice in a term.
-
-  *   The operator ``/`` denotes a **fraction**.  Example: in ``a b / c d`` ``a
-      b`` is the numerator and ``c d`` the denominator.  Both the numerator and
-      the denominator may start with a number.  Example: ``2 a / 3 b``.  The
-      denominator must be a scalar.  Example: ``2 / a_i b_i`` is valid, but ``2
-      a_i / b_i`` is not.
-
-      .. warning::
-
-          This syntax is different from the Python syntax.  In Python ``a*b /
-          c*d`` is mathematically equivalent to ``a*b*d/c``.
-
-  *   The operators ``+`` and ``-`` denote **add** and **subtract**.  Both
-      operators should be surrounded by whitespace, e.g. ``a + b``.  Both
-      operands should have the same shape.  Example: ``a_ij + b_i c_j`` is a
-      valid, provided that the lengths of the axes with the same indices match,
-      but ``a_ij + b_i`` is invalid.  At the beginning of an expression or a
-      compound ``-`` may be used to negate the following term.  Example: in
-      ``-a b + c`` the term ``a b`` is negated before adding ``c``.  It is not
-      allowed to negate other terms: ``a + -b`` is invalid, so is ``a -b``.
-
-  *   An expression surrounded by parentheses is a **compound expression** and
-      can be used as single entity in a term.  Example: ``(a_i + b_i) c_i``
-      denotes the inner product of ``a_i + b_i`` with ``c_i``.
-
-  *   **Exponentiation** is denoted by a ``^``, where the left and right
-      operands should be a number, variable or compound expression and the
-      right operand should be a scalar.  Example: ``a^2`` denotes the square of
-      ``a``, ``a^-2`` denotes ``a`` to the power ``-2`` and ``a^(1 / 2)`` the
-      square root of ``a``.
-
-  *   An **argument** is denoted by a name — following the same rules as a
-      variable name — prefixed with a question mark.  An argument is a scalar
-      or array with a yet unknown value.  Example: ``basis_i ?coeffs_i``
-      denotes the inner product of a basis with unknown coefficient vector
-      ``?coeffs``.  If possible the shape of the argument is deduced from the
-      expression.  In the previous example the shape of ``?coeffs`` is equal to
-      the shape of ``basis``.  If the shape cannot be deduced from the
-      expression the shape should be defined manually (see :func:`parse`).
-      Arguments and variables live in separate namespaces: ``?x`` and ``x`` are
-      different entities.
-
-  *   An argument may be **substituted** by appending without whitespace
-      ``(arg = value)`` to a variable of compound expression, where ``arg`` is
-      an argument and ``value`` the substitution.  The substitution applies to
-      the variable of compound expression only.  The value may be an
-      expression.  Example: ``2 ?x(x = 3 + y)`` is equivalent to ``2 (3 + y)``
-      and ``2 ?x(x=y) + 3`` is equivalent to ``2 (y) + 3``.  It is possible to
-      apply multiple substitutions.  Example: ``(?x + ?y)(x = 1, y = )2`` is
-      equivalent to ``1 + 2``.
-
-  *   The **gradient** of a variable to the default geometry — the default
-      geometry is variable ``x`` unless overriden by the argument
-      ``default_geometry_name`` — is denoted by an underscore, a comma and an
-      index.  If the variable is an array with more than one axis, the
-      underscore is omitted.  Example: ``a_,i`` denotes the gradient of the
-      scalar ``a`` to the geometry and ``b_i,j`` the gradient of vector ``b``.
-      The gradient of a compound expression is denoted by an underscore, a
-      comma and an index.  Example: ``(a_i + b_j)_,k`` denotes the gradient of
-      ``a_i + b_j``.  The usual summation rules apply and it is allowed to use
-      a numeral as index.  The **surface gradient** is denoted with a semicolon
-      instead of a comma, but follows the same rules as the gradient otherwise.
-      Example: ``a_i;j`` is the sufrace gradient of ``a_i`` to the geometry.
-
-  *   The **normal** of the default geometry is denoted by ``n_i``, where the
-      index ``i`` may be replaced with an index of choice.
-
-  *   A **dirac** is denoted by ``δ`` or ``$`` and takes two indices.  The
-      shape of the dirac is deduced from the expression.  Example: let ``A`` be
-      a square matrix with three rows and columns, then ``δ_ij`` in ``(A_ij - λ
-      δ_ij) x_j`` has three rows and columns as well.
-
-  *   An expression surrounded by square brackets or curly braces denotes the
-      **jump** or **mean**, respectively, of the enclosed expression.  Example:
-      ``[ a_i ]`` denotes the jump of ``a_i`` and ``{ a_i + b_i }`` denotes the
-      mean of ``a_i + b_i``.
-
-  *   A **function call** is denoted by a name — following the same rules as
-      for a variable name — optionally followed by ``_`` and indices,
-      optionally followed by ``:`` and indices, directly followed by the left
-      parenthesis ``(``, without a space.  The arguments to the function are
-      separated by a comma and at least one space.  The function is applied
-      pointwise to the arguments and summation convection is applied to the
-      result. Example: assume ``mul(...)`` returns the product of its
-      arguments, then ``mul(x_i, y_j)`` is equivalent to ``x_i y_j`` and
-      ``mul(x_i, y_i)`` to ``x_i y_i``. Functions and variables share a
-      namespace: defining a variable with the same name as a function renders
-      the function inaccessible. Functions of the form ``f_i(...)`` and
-      ``f_ij(...)`` etc. generate one and two axes, respectively. Functions
-      of the form ``f:i(...)`` and ``f:ij(...)`` etc. consume the axes labelled
-      ``i`` and ``i`` and ``j`` respectively. If all axes are consumed, it is
-      allowed to omit the axes: ``sum(u)`` is equivalent to ``sum:i(u_i)``.
-
-  *   A **stack** of two or more arrays along an axis is denoted by a ``<``
-      followed by comma and space separated arrays followed by ``>`` and an
-      index.  All arguments must have the same shape and must not have an axis labelled with the stack axis.
-      Example: ``<1, 2>_i`` creates an array with components ``1`` and ``2``.
-
-  .. _`Einstein Summation Convection`: https://en.wikipedia.org/wiki/Einstein_notation
+  (AST).
 
   Args
   ----
