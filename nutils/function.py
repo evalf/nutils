@@ -24,11 +24,11 @@ if typing.TYPE_CHECKING:
 else:
   Protocol = object
 
-from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, overload, List, Set, FrozenSet
-from . import evaluable, numeric, util, expression, types, warnings, debug_flags
+from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, List, FrozenSet
+from . import evaluable, numeric, util, types, warnings, debug_flags
 from .transform import EvaluableTransformChain
 from .transformseq import Transforms
-import builtins, numpy, re, types as builtin_types, itertools, functools, operator, abc, numbers
+import builtins, numpy, functools, operator, numbers
 
 IntoArray = Union['Array', numpy.ndarray, bool, int, float]
 Shape = Sequence[int]
@@ -722,7 +722,7 @@ class _CustomEvaluable(evaluable.Array):
       fpd = Array.cast(self.custom_partial_derivative(iarg, *unlowered_args))
       fpd_expected_shape = tuple(n.__index__() for n in self.shape[self.points_dim:] + arg.shape[self.points_dim:])
       if fpd.shape != fpd_expected_shape:
-        raise ValueError('`partial_derivative` to argument {} returned an array with shape {} but was expected.'.format(iarg, fpd.shape, fpd_expected_shape))
+        raise ValueError('`partial_derivative` to argument {} returned an array with shape {} but {} was expected.'.format(iarg, fpd.shape, fpd_expected_shape))
       epd = evaluable.appendaxes(fpd.lower(*self.lower_args), var.shape)
       eda = evaluable.derivative(arg, var, seen)
       eda = evaluable.Transpose.from_end(evaluable.appendaxes(eda, self.shape[self.points_dim:]), *range(self.points_dim, self.ndim))
@@ -973,19 +973,25 @@ class _Jacobian(Array):
   # The jacobian determinant of `geom` to the tip coordinates of the spaces of
   # `geom`. The last axis of `geom` is the coordinate axis.
 
-  def __init__(self, geom: Array) -> None:
+  def __init__(self, geom: Array, tip_dim: Optional[int] = None) -> None:
     assert geom.ndim >= 1
+    if not geom.spaces and geom.shape[-1] != 0:
+      raise ValueError('The jacobian of a constant (in space) geometry must have dimension zero.')
+    if tip_dim is not None and tip_dim > geom.shape[-1]:
+      raise ValueError('Expected a dimension of the tip coordinate system '
+                       'not greater than the dimension of the geometry.')
+    self._tip_dim = tip_dim
     self._geom = geom
     super().__init__((), float, geom.spaces)
 
   def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
     geom = self._geom.lower(points_shape, transform_chains, coordinates)
     tip_dim = builtins.sum(transform_chains[space][0].fromdims for space in self._geom.spaces)
+    if self._tip_dim is not None and self._tip_dim != tip_dim:
+      raise ValueError('Expected a tip dimension of {} but got {}.'.format(self._tip_dim, tip_dim))
     if self._geom.shape[-1] < tip_dim:
       raise ValueError('the dimension of the geometry cannot be lower than the dimension of the tip coords')
     if not self._geom.spaces:
-      if self._geom.shape[-1] != 0:
-        raise ValueError('the jacobian of a constant geometry must have dimension zero')
       return evaluable.ones(geom.shape[:-1])
     tips = [_tip_derivative_target(space, chain.fromdims) for space, (chain, opposite) in transform_chains.items() if space in self._geom.spaces]
     J = evaluable.concatenate([evaluable.derivative(geom, tip) for tip in tips], axis=-1)
@@ -2669,14 +2675,12 @@ def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
   '''
 
   geom = Array.cast(__geom)
-  if __ndims is not None:
-    warnings.deprecation('the ndims argument is deprecated')
   if geom.ndim == 0:
-    return jacobian(insertaxis(geom, 0, 1))
+    return jacobian(insertaxis(geom, 0, 1), __ndims)
   elif geom.ndim > 1:
-    return jacobian(ravel(geom, geom.ndim-2))
+    return jacobian(ravel(geom, geom.ndim-2), __ndims)
   else:
-    return _Jacobian(geom)
+    return _Jacobian(geom, __ndims)
 
 def J(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
   '''Return the absolute value of the determinant of the Jacobian matrix of the given geometry.
@@ -2970,6 +2974,37 @@ def trigtangent(_angle: IntoArray) -> Array:
 def rotmat(__arg: IntoArray) -> Array:
   arg = Array.cast(__arg)
   return stack([trignormal(arg), trigtangent(arg)], 0)
+
+def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = ()) -> Array:
+  '''Return the inner product of the first axes of the given arrays with an argument with the given name.
+
+  An argument with shape ``(arrays[0].shape[0], ..., arrays[-1].shape[0]) +
+  shape`` will be created. Repeatedly the inner product of the result, starting
+  with the argument, with every array from ``arrays`` is taken, where all but
+  the first axis are treated as an outer product.
+
+  Parameters
+  ----------
+  argname : :class:`str`
+      The name of the argument.
+  *arrays : :class:`Array` or something that can be :meth:`~Array.cast` into one
+      The arrays to take inner products with.
+  shape : :class:`tuple` of :class:`int`, optional
+      The shape to be appended to the argument.
+
+  Returns
+  -------
+  :class:`Array`
+      The inner product with shape ``shape + arrays[0].shape[1:] + ... + arrays[-1].shape[1:]``.
+  '''
+
+  arrays_ = map(Array.cast, arrays)
+  result = Argument(__argname, tuple(array.shape[0] for array in arrays) + tuple(shape), dtype=float)
+  for array in arrays_:
+    axes = (0, *range(result.ndim, result.ndim+array.ndim-1), *range(1, result.ndim))
+    result, array = _append_axes(result, array.shape[1:]), transpose(_append_axes(array, result.shape[1:]), axes)
+    result = (result * array).sum(0)
+  return result
 
 # BASES
 
@@ -3384,378 +3419,6 @@ class PrunedBasis(Basis):
     dofs = evaluable.take(self._renumber, p_dofs, axis=0)
     return dofs, p_coeffs
 
-# NAMESPACE
-
-def _eval_ast(ast, functions):
-  '''evaluate ``ast`` generated by :func:`nutils.expression.parse`'''
-
-  op, *args = ast
-  if op is None:
-    value, = args
-    return value
-
-  args = (_eval_ast(arg, functions) for arg in args)
-  if op == 'group':
-    array, = args
-    return array
-  elif op == 'arg':
-    name, *shape = args
-    return Argument(name, shape)
-  elif op == 'substitute':
-    array, *arg_value_pairs = args
-    subs = {}
-    assert len(arg_value_pairs) % 2 == 0
-    for arg, value in zip(arg_value_pairs[0::2], arg_value_pairs[1::2]):
-      assert arg.name not in subs
-      subs[arg.name] = value
-    return replace_arguments(array, subs)
-  elif op == 'call':
-    func, generates, consumes, *args = args
-    args = tuple(map(Array.cast, args))
-    kwargs = {}
-    if generates:
-      kwargs['generates'] = generates
-    if consumes:
-      kwargs['consumes'] = consumes
-    result = functions[func](*args, **kwargs)
-    shape = builtins.sum((arg.shape[:arg.ndim-consumes] for arg in args), ())
-    if result.ndim != len(shape) + generates or result.shape[:len(shape)] != shape:
-      raise ValueError('expected an array with shape {} and {} additional axes when calling {} but got {}'.format(shape, generates, func, result.shape))
-    return result
-  elif op == 'jacobian':
-    geom, ndims = args
-    return J(geom, ndims)
-  elif op == 'eye':
-    length, = args
-    return eye(length)
-  elif op == 'normal':
-    geom, = args
-    return normal(geom)
-  elif op == 'getitem':
-    array, dim, index = args
-    return get(array, dim, index)
-  elif op == 'trace':
-    array, n1, n2 = args
-    return trace(array, n1, n2)
-  elif op == 'sum':
-    array, axis = args
-    return sum(array, axis)
-  elif op == 'concatenate':
-    return concatenate(args, axis=0)
-  elif op == 'grad':
-    array, geom = args
-    return grad(array, geom)
-  elif op == 'surfgrad':
-    array, geom = args
-    return grad(array, geom, len(geom)-1)
-  elif op == 'derivative':
-    func, target = args
-    return derivative(func, target)
-  elif op == 'append_axis':
-    array, length = args
-    return insertaxis(array, -1, length)
-  elif op == 'transpose':
-    array, trans = args
-    return transpose(array, trans)
-  elif op == 'jump':
-    array, = args
-    return jump(array)
-  elif op == 'mean':
-    array, = args
-    return mean(array)
-  elif op == 'neg':
-    array, = args
-    return -Array.cast(array)
-  elif op in ('add', 'sub', 'mul', 'truediv', 'pow'):
-    left, right = args
-    return getattr(operator, '__{}__'.format(op))(Array.cast(left), Array.cast(right))
-  else:
-    raise ValueError('unknown opcode: {!r}'.format(op))
-
-def _sum_expr(arg: Array, *, consumes:int = 0) -> Array:
-  if consumes == 0:
-    raise ValueError('sum must consume at least one axis but got zero')
-  return sum(arg, range(arg.ndim-consumes, arg.ndim))
-
-def _norm2_expr(arg: Array, *, consumes: int = 0) -> Array:
-  if consumes == 0:
-    raise ValueError('sum must consume at least one axis but got zero')
-  return norm2(arg, range(arg.ndim-consumes, arg.ndim))
-
-def _J_expr(geom: Array, *, consumes: int = 0) -> Array:
-  if geom.ndim == 0:
-    return J(insertaxis(geom, 0, 1))
-  if consumes > 1:
-    raise ValueError('J consumes at most one axis but got {}'.format(consumes))
-  if geom.ndim > consumes:
-    raise NotImplementedError('currently J cannot be vectorized')
-  return J(geom)
-
-def _arctan2_expr(_a: Array, _b: Array) -> Array:
-  a = Array.cast(_a)
-  b = Array.cast(_b)
-  return arctan2(_append_axes(a, b.shape), _prepend_axes(b, a.shape))
-
-class Namespace:
-  '''Namespace for :class:`Array` objects supporting assignments with tensor expressions.
-
-  The :class:`Namespace` object is used to store :class:`Array` objects.
-
-  >>> from nutils import function
-  >>> ns = function.Namespace()
-  >>> ns.A = function.zeros([3, 3])
-  >>> ns.x = function.zeros([3])
-  >>> ns.c = 2
-
-  In addition to the assignment of :class:`Array` objects, it is also possible
-  to specify an array using a tensor expression string — see
-  :func:`nutils.expression.parse` for the syntax.  All attributes defined in
-  this namespace are available as variables in the expression.  If the array
-  defined by the expression has one or more dimensions the indices of the axes
-  should be appended to the attribute name.  Examples:
-
-  >>> ns.cAx_i = 'c A_ij x_j'
-  >>> ns.xAx = 'x_i A_ij x_j'
-
-  It is also possible to simply evaluate an expression without storing its
-  value in the namespace by passing the expression to the method ``eval_``
-  suffixed with appropriate indices:
-
-  >>> ns.eval_('2 c')
-  Array<>
-  >>> ns.eval_i('c A_ij x_j')
-  Array<3>
-  >>> ns.eval_ij('A_ij + A_ji')
-  Array<3,3>
-
-  For zero and one dimensional expressions the following shorthand can be used:
-
-  >>> '2 c' @ ns
-  Array<>
-  >>> 'A_ij x_j' @ ns
-  Array<3>
-
-  Sometimes the dimension of an expression cannot be determined, e.g. when
-  evaluating the identity array:
-
-  >>> ns.eval_ij('δ_ij')
-  Traceback (most recent call last):
-  ...
-  nutils.expression.ExpressionSyntaxError: Length of axis cannot be determined from the expression.
-  δ_ij
-    ^
-
-  There are two ways to inform the namespace of the correct lengths.  The first is to
-  assign fixed lengths to certain indices via keyword argument ``length_<indices>``:
-
-  >>> ns_fixed = function.Namespace(length_ij=2)
-  >>> ns_fixed.eval_ij('δ_ij')
-  Array<2,2>
-
-  Note that evaluating an expression with an incompatible length raises an
-  exception:
-
-  >>> ns = function.Namespace(length_i=2)
-  >>> ns.a = numpy.array([1,2,3])
-  >>> 'a_i' @ ns
-  Traceback (most recent call last):
-  ...
-  nutils.expression.ExpressionSyntaxError: Length of index i is fixed at 2 but the expression has length 3.
-  a_i
-    ^
-
-  The second is to define a fallback length via the ``fallback_length`` argument:
-
-  >>> ns_fallback = function.Namespace(fallback_length=2)
-  >>> ns_fallback.eval_ij('δ_ij')
-  Array<2,2>
-
-  When evaluating an expression through this namespace the following functions
-  are available: ``opposite``, ``sin``, ``cos``, ``tan``, ``sinh``, ``cosh``,
-  ``tanh``, ``arcsin``, ``arccos``, ``arctan2``, ``arctanh``, ``exp``, ``abs``,
-  ``ln``, ``log``, ``log2``, ``log10``, ``sqrt`` and ``sign``.
-
-  Additional pointwise functions can be passed to argument ``functions``. All
-  functions should take :class:`Array` objects as arguments and must return an
-  :class:`Array` with as shape the sum of all shapes of the arguments.
-
-  >>> def sqr(a):
-  ...   return a**2
-  >>> def mul(a, b):
-  ...   return a[(...,)+(None,)*b.ndim] * b[(None,)*a.ndim]
-  >>> ns_funcs = function.Namespace(functions=dict(sqr=sqr, mul=mul))
-  >>> ns_funcs.a = numpy.array([1,2,3])
-  >>> ns_funcs.b = numpy.array([4,5])
-  >>> 'sqr(a_i)' @ ns_funcs # same as 'a_i^2'
-  Array<3>
-  >>> ns_funcs.eval_ij('mul(a_i, b_j)') # same as 'a_i b_j'
-  Array<3,2>
-  >>> 'mul(a_i, a_i)' @ ns_funcs # same as 'a_i a_i'
-  Array<>
-
-  Args
-  ----
-  default_geometry_name : :class:`str`
-      The name of the default geometry.  This argument is passed to
-      :func:`nutils.expression.parse`.  Default: ``'x'``.
-  fallback_length : :class:`int`, optional
-      The fallback length of an axis if the length cannot be determined from
-      the expression.
-  length_<indices> : :class:`int`
-      The fixed length of ``<indices>``.  All axes in the expression marked
-      with one of the ``<indices>`` are asserted to have the specified length.
-  functions : :class:`dict`, optional
-      Pointwise functions that should be available in the namespace,
-      supplementing the default functions listed above. All functions should
-      return arrays with as shape the sum of all shapes of the arguments.
-
-  Attributes
-  ----------
-  arg_shapes : :class:`dict`
-      A readonly map of argument names and shapes.
-  default_geometry_name : :class:`str`
-      The name of the default geometry.  See argument with the same name.
-  '''
-
-  __slots__ = '_attributes', '_arg_shapes', 'default_geometry_name', '_fixed_lengths', '_fallback_length', '_functions'
-
-  _re_assign = re.compile('^([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)(_[a-z]+)?$')
-
-  _default_functions = dict(
-    opposite=opposite, sin=sin, cos=cos, tan=tan, sinh=sinh, cosh=cosh,
-    tanh=tanh, arcsin=arcsin, arccos=arccos, arctan=arctan, arctan2=_arctan2_expr, arctanh=arctanh,
-    exp=exp, abs=abs, ln=ln, log=ln, log2=log2, log10=log10, sqrt=sqrt,
-    sign=sign, d=d, surfgrad=surfgrad, n=normal,
-    sum=_sum_expr, norm2=_norm2_expr, J=_J_expr,
-  )
-
-  def __init__(self, *, default_geometry_name: str = 'x', fallback_length: Optional[int] = None, functions: Optional[Mapping[str, Callable]] = None, **kwargs: Any) -> None:
-    if not isinstance(default_geometry_name, str):
-      raise ValueError('default_geometry_name: Expected a str, got {!r}.'.format(default_geometry_name))
-    if '_' in default_geometry_name or not self._re_assign.match(default_geometry_name):
-      raise ValueError('default_geometry_name: Invalid variable name: {!r}.'.format(default_geometry_name))
-    fixed_lengths = {}
-    for name, value in kwargs.items():
-      if not name.startswith('length_'):
-        raise TypeError('__init__() got an unexpected keyword argument {!r}'.format(name))
-      for index in name[7:]:
-        if index in fixed_lengths:
-          raise ValueError('length of index {} specified more than once'.format(index))
-        fixed_lengths[index] = value
-    super().__setattr__('_attributes', {})
-    super().__setattr__('_arg_shapes', {})
-    super().__setattr__('_fixed_lengths', types.frozendict({i: l for indices, l in fixed_lengths.items() for i in indices} if fixed_lengths else {}))
-    super().__setattr__('_fallback_length', fallback_length)
-    super().__setattr__('default_geometry_name', default_geometry_name)
-    super().__setattr__('_functions', dict(itertools.chain(self._default_functions.items(), () if functions is None else functions.items())))
-    super().__init__()
-
-  def __getstate__(self) -> Dict[str, Any]:
-    'Pickle instructions'
-    attrs = '_arg_shapes', '_attributes', 'default_geometry_name', '_fixed_lengths', '_fallback_length', '_functions'
-    return {k: getattr(self, k) for k in attrs}
-
-  def __setstate__(self, d: Mapping[str, Any]) -> None:
-    'Unpickle instructions'
-    for k, v in d.items(): super().__setattr__(k, v)
-
-  @property
-  def arg_shapes(self) -> Mapping[str, Shape]:
-    return builtin_types.MappingProxyType(self._arg_shapes)
-
-  @property
-  def default_geometry(self) -> str:
-    ''':class:`nutils.function.Array`: The default geometry, shorthand for ``getattr(ns, ns.default_geometry_name)``.'''
-    return getattr(self, self.default_geometry_name)
-
-  def __call__(*args, **subs: IntoArray) -> 'Namespace':
-    '''Return a copy with arguments replaced by ``subs``.
-
-    Return a copy of this namespace with :class:`Argument` objects replaced
-    according to ``subs``.
-
-    Args
-    ----
-    **subs : :class:`dict` of :class:`str` and :class:`nutils.function.Array` objects
-        Replacements of the :class:`Argument` objects, identified by their names.
-
-    Returns
-    -------
-    ns : :class:`Namespace`
-        The copy of this namespace with replaced :class:`Argument` objects.
-    '''
-
-    if len(args) != 1:
-      raise TypeError('{} instance takes 1 positional argument but {} were given'.format(type(args[0]).__name__, len(args)))
-    self, = args
-    ns = Namespace(default_geometry_name=self.default_geometry_name)
-    for k, v in self._attributes.items():
-      setattr(ns, k, replace_arguments(v, subs))
-    return ns
-
-  def copy_(self, *, default_geometry_name: Optional[str] = None) -> 'Namespace':
-    '''Return a copy of this namespace.'''
-
-    if default_geometry_name is None:
-      default_geometry_name = self.default_geometry_name
-    ns = Namespace(default_geometry_name=default_geometry_name, fallback_length=self._fallback_length, functions=self._functions, **{'length_{i}': l for i, l in self._fixed_lengths.items()})
-    for k, v in self._attributes.items():
-      setattr(ns, k, v)
-    return ns
-
-  def __getattr__(self, name: str) -> Any:
-    '''Get attribute ``name``.'''
-
-    if name.startswith('eval_'):
-      return lambda expr: _eval_ast(expression.parse(expr, variables=self._attributes, indices=name[5:], arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)[0], self._functions)
-    try:
-      return self._attributes[name]
-    except KeyError:
-      pass
-    raise AttributeError(name)
-
-  def __setattr__(self, name: str, value: Any) -> Any:
-    '''Set attribute ``name`` to ``value``.'''
-
-    if name in self.__slots__:
-      raise AttributeError('readonly')
-    m = self._re_assign.match(name)
-    if not m or m.group(2) and len(set(m.group(2))) != len(m.group(2)):
-      raise AttributeError('{!r} object has no attribute {!r}'.format(type(self), name))
-    else:
-      name, indices = m.groups()
-      indices = indices[1:] if indices else None
-      if isinstance(value, str):
-        ast, arg_shapes = expression.parse(value, variables=self._attributes, indices=indices, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)
-        value = _eval_ast(ast, self._functions)
-        self._arg_shapes.update(arg_shapes)
-      else:
-        assert not indices
-      self._attributes[name] = Array.cast(value)
-
-  def __delattr__(self, name: str) -> None:
-    '''Delete attribute ``name``.'''
-
-    if name in self.__slots__:
-      raise AttributeError('readonly')
-    elif name in self._attributes:
-      del self._attributes[name]
-    else:
-      raise AttributeError('{!r} object has no attribute {!r}'.format(type(self), name))
-
-  @overload
-  def __rmatmul__(self, expr: str) -> Array: ...
-  @overload
-  def __rmatmul__(self, expr: Union[Tuple[str, ...], List[str]]) -> Tuple[Array, ...]: ...
-  def __rmatmul__(self, expr: Union[str, Tuple[str, ...], List[str]]) -> Union[Array, Tuple[Array, ...]]:
-    '''Evaluate zero or one dimensional ``expr`` or a list of expressions.'''
-
-    if isinstance(expr, (tuple, list)):
-      return tuple(map(self.__rmatmul__, expr))
-    if not isinstance(expr, str):
-      return NotImplemented
-    try:
-      ast = expression.parse(expr, variables=self._attributes, indices=None, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)[0]
-    except expression.AmbiguousAlignmentError:
-      raise ValueError('`expression @ Namespace` cannot be used because the expression has more than one dimension.  Use `Namespace.eval_...(expression)` instead')
-    return _eval_ast(ast, self._functions)
+def Namespace(*args, **kwargs):
+  from .expression_v1 import Namespace
+  return Namespace(*args, **kwargs)

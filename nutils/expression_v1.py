@@ -18,13 +18,143 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-'''
-This module defines the function :func:`parse`, which parses a tensor
-expression.
+'''Expression parser version 1 and namespace.
+
+The syntax of an expression is as follows:
+
+*   **Integers** or **decimal numbers** are denoted in the usual way.
+    Examples: ``1``, ``1.2``, ``.2``.  A number may not start with a zero,
+    except when followed by a dot: ``0.1`` is valid, but ``01`` is not.
+
+*   **Variables** are denoted with a string of alphanumeric characters.  The
+    first character may not be a numeral.  Unlike Python variables,
+    underscores are not allowed, as they have a special meaning.  If the
+    variable is an array with one or more axes, all those axes should be
+    labeled with a latin character, the index, and appended to the variable
+    with an underscore.  For example an array ``a`` with two axes can be
+    denoted with ``a_ij``.  Optionally, a single numeral may be used to
+    select an item at the concerning axis.  Example: in ``a_i0`` the first
+    axis of ``a`` is labeled ``i`` and the first element of the second axis
+    is selected.  If the same index occurs twice, the trace is taken along
+    the concerning axes.  Example: the trace of the first and third axes of
+    ``b`` is denoted by ``b_iji``.  It is invalid to specify an index more
+    than twice.  The following names cannot be used as variables: ``n``,
+    ``δ``, ``$``.  The variable named ``x``, or the value of argument
+    ``default_geometry_name``, has a special meaning, detailed below.
+
+*   A term, the **product** of two or more arrays or scalars, is denoted by
+    space-separated variables, constants or compound expressions.  Example:
+    ``a b c`` denotes the product of the scalars ``a``, ``b`` and ``c``.  A
+    term may start with a number, but a number is not allowed in other parts
+    of the term.  Example: ``2 a`` denotes two times ``a``; ``2 2 a`` and ``2
+    a 2``` are invalid.  When two arrays in a term have the same index, this
+    index is summed.  Example: ``a_i b_i`` denotes the inner product of ``a``
+    and ``b`` and ``A_ij b_j``` a matrix vector product.  It is not allowed
+    to use an index more than twice in a term.
+
+*   The operator ``/`` denotes a **fraction**.  Example: in ``a b / c d`` ``a
+    b`` is the numerator and ``c d`` the denominator.  Both the numerator and
+    the denominator may start with a number.  Example: ``2 a / 3 b``.  The
+    denominator must be a scalar.  Example: ``2 / a_i b_i`` is valid, but ``2
+    a_i / b_i`` is not.
+
+    .. warning::
+
+        This syntax is different from the Python syntax.  In Python ``a*b /
+        c*d`` is mathematically equivalent to ``a*b*d/c``.
+
+*   The operators ``+`` and ``-`` denote **add** and **subtract**.  Both
+    operators should be surrounded by whitespace, e.g. ``a + b``.  Both
+    operands should have the same shape.  Example: ``a_ij + b_i c_j`` is a
+    valid, provided that the lengths of the axes with the same indices match,
+    but ``a_ij + b_i`` is invalid.  At the beginning of an expression or a
+    compound ``-`` may be used to negate the following term.  Example: in
+    ``-a b + c`` the term ``a b`` is negated before adding ``c``.  It is not
+    allowed to negate other terms: ``a + -b`` is invalid, so is ``a -b``.
+
+*   An expression surrounded by parentheses is a **compound expression** and
+    can be used as single entity in a term.  Example: ``(a_i + b_i) c_i``
+    denotes the inner product of ``a_i + b_i`` with ``c_i``.
+
+*   **Exponentiation** is denoted by a ``^``, where the left and right
+    operands should be a number, variable or compound expression and the
+    right operand should be a scalar.  Example: ``a^2`` denotes the square of
+    ``a``, ``a^-2`` denotes ``a`` to the power ``-2`` and ``a^(1 / 2)`` the
+    square root of ``a``.
+
+*   An **argument** is denoted by a name — following the same rules as a
+    variable name — prefixed with a question mark.  An argument is a scalar
+    or array with a yet unknown value.  Example: ``basis_i ?coeffs_i``
+    denotes the inner product of a basis with unknown coefficient vector
+    ``?coeffs``.  If possible the shape of the argument is deduced from the
+    expression.  In the previous example the shape of ``?coeffs`` is equal to
+    the shape of ``basis``.  If the shape cannot be deduced from the
+    expression the shape should be defined manually (see :func:`parse`).
+    Arguments and variables live in separate namespaces: ``?x`` and ``x`` are
+    different entities.
+
+*   An argument may be **substituted** by appending without whitespace
+    ``(arg = value)`` to a variable of compound expression, where ``arg`` is
+    an argument and ``value`` the substitution.  The substitution applies to
+    the variable of compound expression only.  The value may be an
+    expression.  Example: ``2 ?x(x = 3 + y)`` is equivalent to ``2 (3 + y)``
+    and ``2 ?x(x=y) + 3`` is equivalent to ``2 (y) + 3``.  It is possible to
+    apply multiple substitutions.  Example: ``(?x + ?y)(x = 1, y = )2`` is
+    equivalent to ``1 + 2``.
+
+*   The **gradient** of a variable to the default geometry — the default
+    geometry is variable ``x`` unless overriden by the argument
+    ``default_geometry_name`` — is denoted by an underscore, a comma and an
+    index.  If the variable is an array with more than one axis, the
+    underscore is omitted.  Example: ``a_,i`` denotes the gradient of the
+    scalar ``a`` to the geometry and ``b_i,j`` the gradient of vector ``b``.
+    The gradient of a compound expression is denoted by an underscore, a
+    comma and an index.  Example: ``(a_i + b_j)_,k`` denotes the gradient of
+    ``a_i + b_j``.  The usual summation rules apply and it is allowed to use
+    a numeral as index.  The **surface gradient** is denoted with a semicolon
+    instead of a comma, but follows the same rules as the gradient otherwise.
+    Example: ``a_i;j`` is the sufrace gradient of ``a_i`` to the geometry.
+
+*   The **normal** of the default geometry is denoted by ``n_i``, where the
+    index ``i`` may be replaced with an index of choice.
+
+*   A **dirac** is denoted by ``δ`` or ``$`` and takes two indices.  The
+    shape of the dirac is deduced from the expression.  Example: let ``A`` be
+    a square matrix with three rows and columns, then ``δ_ij`` in ``(A_ij - λ
+    δ_ij) x_j`` has three rows and columns as well.
+
+*   An expression surrounded by square brackets or curly braces denotes the
+    **jump** or **mean**, respectively, of the enclosed expression.  Example:
+    ``[ a_i ]`` denotes the jump of ``a_i`` and ``{ a_i + b_i }`` denotes the
+    mean of ``a_i + b_i``.
+
+*   A **function call** is denoted by a name — following the same rules as
+    for a variable name — optionally followed by ``_`` and indices,
+    optionally followed by ``:`` and indices, directly followed by the left
+    parenthesis ``(``, without a space.  The arguments to the function are
+    separated by a comma and at least one space.  The function is applied
+    pointwise to the arguments and summation convection is applied to the
+    result. Example: assume ``mul(...)`` returns the product of its
+    arguments, then ``mul(x_i, y_j)`` is equivalent to ``x_i y_j`` and
+    ``mul(x_i, y_i)`` to ``x_i y_i``. Functions and variables share a
+    namespace: defining a variable with the same name as a function renders
+    the function inaccessible. Functions of the form ``f_i(...)`` and
+    ``f_ij(...)`` etc. generate one and two axes, respectively. Functions
+    of the form ``f:i(...)`` and ``f:ij(...)`` etc. consume the axes labelled
+    ``i`` and ``i`` and ``j`` respectively. If all axes are consumed, it is
+    allowed to omit the axes: ``sum(u)`` is equivalent to ``sum:i(u_i)``.
+
+*   A **stack** of two or more arrays along an axis is denoted by a ``<``
+    followed by comma and space separated arrays followed by ``>`` and an
+    index.  All arguments must have the same shape and must not have an axis labelled with the stack axis.
+    Example: ``<1, 2>_i`` creates an array with components ``1`` and ``2``.
+
+.. _`Einstein Summation Convection`: https://en.wikipedia.org/wiki/Einstein_notation
 '''
 
-import re, collections, functools, operator
-from . import warnings
+import re, collections, functools, itertools, operator, types as builtin_types
+from typing import Any, Callable, Dict, List, Mapping, Optional, overload, Tuple, Union
+from . import function, types, warnings
 
 
 # Convenience function to create a constant in ExpressionAST (details in
@@ -1193,143 +1323,13 @@ def _replace_lengths(ast, lengths):
 def parse(expression, variables, indices, arg_shapes={}, default_geometry_name='x', fixed_lengths=None, fallback_length=None, functions=None):
   '''Parse ``expression`` and return AST.
 
-  This function parses a tensor expression with `Einstein Summation
-  Convection`_ stored in a :class:`str` and returns an Abstract Syntax Tree
-  (AST).  The syntax of ``expression`` is as follows:
-
-  *   **Integers** or **decimal numbers** are denoted in the usual way.
-      Examples: ``1``, ``1.2``, ``.2``.  A number may not start with a zero,
-      except when followed by a dot: ``0.1`` is valid, but ``01`` is not.
-
-  *   **Variables** are denoted with a string of alphanumeric characters.  The
-      first character may not be a numeral.  Unlike Python variables,
-      underscores are not allowed, as they have a special meaning.  If the
-      variable is an array with one or more axes, all those axes should be
-      labeled with a latin character, the index, and appended to the variable
-      with an underscore.  For example an array ``a`` with two axes can be
-      denoted with ``a_ij``.  Optionally, a single numeral may be used to
-      select an item at the concerning axis.  Example: in ``a_i0`` the first
-      axis of ``a`` is labeled ``i`` and the first element of the second axis
-      is selected.  If the same index occurs twice, the trace is taken along
-      the concerning axes.  Example: the trace of the first and third axes of
-      ``b`` is denoted by ``b_iji``.  It is invalid to specify an index more
-      than twice.  The following names cannot be used as variables: ``n``,
-      ``δ``, ``$``.  The variable named ``x``, or the value of argument
-      ``default_geometry_name``, has a special meaning, detailed below.
-
-  *   A term, the **product** of two or more arrays or scalars, is denoted by
-      space-separated variables, constants or compound expressions.  Example:
-      ``a b c`` denotes the product of the scalars ``a``, ``b`` and ``c``.  A
-      term may start with a number, but a number is not allowed in other parts
-      of the term.  Example: ``2 a`` denotes two times ``a``; ``2 2 a`` and ``2
-      a 2``` are invalid.  When two arrays in a term have the same index, this
-      index is summed.  Example: ``a_i b_i`` denotes the inner product of ``a``
-      and ``b`` and ``A_ij b_j``` a matrix vector product.  It is not allowed
-      to use an index more than twice in a term.
-
-  *   The operator ``/`` denotes a **fraction**.  Example: in ``a b / c d`` ``a
-      b`` is the numerator and ``c d`` the denominator.  Both the numerator and
-      the denominator may start with a number.  Example: ``2 a / 3 b``.  The
-      denominator must be a scalar.  Example: ``2 / a_i b_i`` is valid, but ``2
-      a_i / b_i`` is not.
-
-      .. warning::
-
-          This syntax is different from the Python syntax.  In Python ``a*b /
-          c*d`` is mathematically equivalent to ``a*b*d/c``.
-
-  *   The operators ``+`` and ``-`` denote **add** and **subtract**.  Both
-      operators should be surrounded by whitespace, e.g. ``a + b``.  Both
-      operands should have the same shape.  Example: ``a_ij + b_i c_j`` is a
-      valid, provided that the lengths of the axes with the same indices match,
-      but ``a_ij + b_i`` is invalid.  At the beginning of an expression or a
-      compound ``-`` may be used to negate the following term.  Example: in
-      ``-a b + c`` the term ``a b`` is negated before adding ``c``.  It is not
-      allowed to negate other terms: ``a + -b`` is invalid, so is ``a -b``.
-
-  *   An expression surrounded by parentheses is a **compound expression** and
-      can be used as single entity in a term.  Example: ``(a_i + b_i) c_i``
-      denotes the inner product of ``a_i + b_i`` with ``c_i``.
-
-  *   **Exponentiation** is denoted by a ``^``, where the left and right
-      operands should be a number, variable or compound expression and the
-      right operand should be a scalar.  Example: ``a^2`` denotes the square of
-      ``a``, ``a^-2`` denotes ``a`` to the power ``-2`` and ``a^(1 / 2)`` the
-      square root of ``a``.
-
-  *   An **argument** is denoted by a name — following the same rules as a
-      variable name — prefixed with a question mark.  An argument is a scalar
-      or array with a yet unknown value.  Example: ``basis_i ?coeffs_i``
-      denotes the inner product of a basis with unknown coefficient vector
-      ``?coeffs``.  If possible the shape of the argument is deduced from the
-      expression.  In the previous example the shape of ``?coeffs`` is equal to
-      the shape of ``basis``.  If the shape cannot be deduced from the
-      expression the shape should be defined manually (see :func:`parse`).
-      Arguments and variables live in separate namespaces: ``?x`` and ``x`` are
-      different entities.
-
-  *   An argument may be **substituted** by appending without whitespace
-      ``(arg = value)`` to a variable of compound expression, where ``arg`` is
-      an argument and ``value`` the substitution.  The substitution applies to
-      the variable of compound expression only.  The value may be an
-      expression.  Example: ``2 ?x(x = 3 + y)`` is equivalent to ``2 (3 + y)``
-      and ``2 ?x(x=y) + 3`` is equivalent to ``2 (y) + 3``.  It is possible to
-      apply multiple substitutions.  Example: ``(?x + ?y)(x = 1, y = )2`` is
-      equivalent to ``1 + 2``.
-
-  *   The **gradient** of a variable to the default geometry — the default
-      geometry is variable ``x`` unless overriden by the argument
-      ``default_geometry_name`` — is denoted by an underscore, a comma and an
-      index.  If the variable is an array with more than one axis, the
-      underscore is omitted.  Example: ``a_,i`` denotes the gradient of the
-      scalar ``a`` to the geometry and ``b_i,j`` the gradient of vector ``b``.
-      The gradient of a compound expression is denoted by an underscore, a
-      comma and an index.  Example: ``(a_i + b_j)_,k`` denotes the gradient of
-      ``a_i + b_j``.  The usual summation rules apply and it is allowed to use
-      a numeral as index.  The **surface gradient** is denoted with a semicolon
-      instead of a comma, but follows the same rules as the gradient otherwise.
-      Example: ``a_i;j`` is the sufrace gradient of ``a_i`` to the geometry.
-
-  *   The **normal** of the default geometry is denoted by ``n_i``, where the
-      index ``i`` may be replaced with an index of choice.
-
-  *   A **dirac** is denoted by ``δ`` or ``$`` and takes two indices.  The
-      shape of the dirac is deduced from the expression.  Example: let ``A`` be
-      a square matrix with three rows and columns, then ``δ_ij`` in ``(A_ij - λ
-      δ_ij) x_j`` has three rows and columns as well.
-
-  *   An expression surrounded by square brackets or curly braces denotes the
-      **jump** or **mean**, respectively, of the enclosed expression.  Example:
-      ``[ a_i ]`` denotes the jump of ``a_i`` and ``{ a_i + b_i }`` denotes the
-      mean of ``a_i + b_i``.
-
-  *   A **function call** is denoted by a name — following the same rules as
-      for a variable name — optionally followed by ``_`` and indices,
-      optionally followed by ``:`` and indices, directly followed by the left
-      parenthesis ``(``, without a space.  The arguments to the function are
-      separated by a comma and at least one space.  The function is applied
-      pointwise to the arguments and summation convection is applied to the
-      result. Example: assume ``mul(...)`` returns the product of its
-      arguments, then ``mul(x_i, y_j)`` is equivalent to ``x_i y_j`` and
-      ``mul(x_i, y_i)`` to ``x_i y_i``. Functions and variables share a
-      namespace: defining a variable with the same name as a function renders
-      the function inaccessible. Functions of the form ``f_i(...)`` and
-      ``f_ij(...)`` etc. generate one and two axes, respectively. Functions
-      of the form ``f:i(...)`` and ``f:ij(...)`` etc. consume the axes labelled
-      ``i`` and ``i`` and ``j`` respectively. If all axes are consumed, it is
-      allowed to omit the axes: ``sum(u)`` is equivalent to ``sum:i(u_i)``.
-
-  *   A **stack** of two or more arrays along an axis is denoted by a ``<``
-      followed by comma and space separated arrays followed by ``>`` and an
-      index.  All arguments must have the same shape and must not have an axis labelled with the stack axis.
-      Example: ``<1, 2>_i`` creates an array with components ``1`` and ``2``.
-
-  .. _`Einstein Summation Convection`: https://en.wikipedia.org/wiki/Einstein_notation
+  This function parses a tensor expression according to the syntax described in
+  module :mod:`nutils.expression_v1` and returns an Abstract Syntax Tree (AST).
 
   Args
   ----
   expression : :class:`str`
-      The expression to parse.  See :mod:`~nutils.expression` for the
+      The expression to parse.  See :mod:`~nutils.expression_v1` for the
       expression syntax.
   variables : :class:`dict` of :class:`str` and :class:`nutils.function.Array` pairs
       A :class:`dict` of variable names and array pairs.  All variables used in
@@ -1435,5 +1435,387 @@ def parse(expression, variables, indices, arg_shapes={}, default_geometry_name='
   for arg, shape in parser.arg_shapes.items():
     arg_shapes[arg] = tuple(lengths.get(i, i) for i in shape)
   return _replace_lengths(ast, lengths), arg_shapes
+
+def _eval_ast(ast, functions):
+  '''evaluate ``ast`` generated by :func:`parse`'''
+
+  op, *args = ast
+  if op is None:
+    value, = args
+    return value
+
+  args = (_eval_ast(arg, functions) for arg in args)
+  if op == 'group':
+    array, = args
+    return array
+  elif op == 'arg':
+    name, *shape = args
+    return function.Argument(name, shape)
+  elif op == 'substitute':
+    array, *arg_value_pairs = args
+    subs = {}
+    assert len(arg_value_pairs) % 2 == 0
+    for arg, value in zip(arg_value_pairs[0::2], arg_value_pairs[1::2]):
+      assert arg.name not in subs
+      subs[arg.name] = value
+    return function.replace_arguments(array, subs)
+  elif op == 'call':
+    func, generates, consumes, *args = args
+    args = tuple(map(function.Array.cast, args))
+    kwargs = {}
+    if generates:
+      kwargs['generates'] = generates
+    if consumes:
+      kwargs['consumes'] = consumes
+    result = functions[func](*args, **kwargs)
+    shape = sum((arg.shape[:arg.ndim-consumes] for arg in args), ())
+    if result.ndim != len(shape) + generates or result.shape[:len(shape)] != shape:
+      raise ValueError('expected an array with shape {} and {} additional axes when calling {} but got {}'.format(shape, generates, func, result.shape))
+    return result
+  elif op == 'jacobian':
+    geom, ndims = args
+    return function.J(geom, ndims)
+  elif op == 'eye':
+    length, = args
+    return function.eye(length)
+  elif op == 'normal':
+    geom, = args
+    return function.normal(geom)
+  elif op == 'getitem':
+    array, dim, index = args
+    return function.get(array, dim, index)
+  elif op == 'trace':
+    array, n1, n2 = args
+    return function.trace(array, n1, n2)
+  elif op == 'sum':
+    array, axis = args
+    return function.sum(array, axis)
+  elif op == 'concatenate':
+    return function.concatenate(args, axis=0)
+  elif op == 'grad':
+    array, geom = args
+    return function.grad(array, geom)
+  elif op == 'surfgrad':
+    array, geom = args
+    return function.grad(array, geom, len(geom)-1)
+  elif op == 'derivative':
+    func, target = args
+    return function.derivative(func, target)
+  elif op == 'append_axis':
+    array, length = args
+    return function.insertaxis(array, -1, length)
+  elif op == 'transpose':
+    array, trans = args
+    return function.transpose(array, trans)
+  elif op == 'jump':
+    array, = args
+    return function.jump(array)
+  elif op == 'mean':
+    array, = args
+    return function.mean(array)
+  elif op == 'neg':
+    array, = args
+    return -function.Array.cast(array)
+  elif op in ('add', 'sub', 'mul', 'truediv', 'pow'):
+    left, right = args
+    return getattr(operator, '__{}__'.format(op))(function.Array.cast(left), function.Array.cast(right))
+  else:
+    raise ValueError('unknown opcode: {!r}'.format(op))
+
+def _sum_expr(arg: function.Array, *, consumes:int = 0) -> function.Array:
+  if consumes == 0:
+    raise ValueError('sum must consume at least one axis but got zero')
+  return function.sum(arg, range(arg.ndim-consumes, arg.ndim))
+
+def _norm2_expr(arg: function.Array, *, consumes: int = 0) -> function.Array:
+  if consumes == 0:
+    raise ValueError('sum must consume at least one axis but got zero')
+  return function.norm2(arg, range(arg.ndim-consumes, arg.ndim))
+
+def _J_expr(geom: function.Array, *, consumes: int = 0) -> function.Array:
+  if geom.ndim == 0:
+    return function.J(function.insertaxis(geom, 0, 1))
+  if consumes > 1:
+    raise ValueError('J consumes at most one axis but got {}'.format(consumes))
+  if geom.ndim > consumes:
+    raise NotImplementedError('currently J cannot be vectorized')
+  return function.J(geom)
+
+def _arctan2_expr(_a: function.Array, _b: function.Array) -> function.Array:
+  a = function.Array.cast(_a)
+  b = function.Array.cast(_b)
+  return function.arctan2(function._append_axes(a, b.shape), function._prepend_axes(b, a.shape))
+
+class Namespace:
+  '''Namespace for :class:`~nutils.function.Array` objects supporting assignments with tensor expressions.
+
+  The :class:`Namespace` object is used to store
+  :class:`~nutils.function.Array` objects.
+
+  >>> from nutils import expression_v1, function
+  >>> ns = expression_v1.Namespace()
+  >>> ns.A = function.zeros([3, 3])
+  >>> ns.x = function.zeros([3])
+  >>> ns.c = 2
+
+  In addition to the assignment of :class:`~nutils.function.Array` objects, it
+  is also possible to specify an array using a tensor expression string — see
+  :mod:`nutils.expression_v1` for the syntax.  All attributes defined in this
+  namespace are available as variables in the expression.  If the array defined
+  by the expression has one or more dimensions the indices of the axes should
+  be appended to the attribute name.  Examples:
+
+  >>> ns.cAx_i = 'c A_ij x_j'
+  >>> ns.xAx = 'x_i A_ij x_j'
+
+  It is also possible to simply evaluate an expression without storing its
+  value in the namespace by passing the expression to the method ``eval_``
+  suffixed with appropriate indices:
+
+  >>> ns.eval_('2 c')
+  Array<>
+  >>> ns.eval_i('c A_ij x_j')
+  Array<3>
+  >>> ns.eval_ij('A_ij + A_ji')
+  Array<3,3>
+
+  For zero and one dimensional expressions the following shorthand can be used:
+
+  >>> '2 c' @ ns
+  Array<>
+  >>> 'A_ij x_j' @ ns
+  Array<3>
+
+  Sometimes the dimension of an expression cannot be determined, e.g. when
+  evaluating the identity array:
+
+  >>> ns.eval_ij('δ_ij')
+  Traceback (most recent call last):
+  ...
+  nutils.expression_v1.ExpressionSyntaxError: Length of axis cannot be determined from the expression.
+  δ_ij
+    ^
+
+  There are two ways to inform the namespace of the correct lengths.  The first is to
+  assign fixed lengths to certain indices via keyword argument ``length_<indices>``:
+
+  >>> ns_fixed = expression_v1.Namespace(length_ij=2)
+  >>> ns_fixed.eval_ij('δ_ij')
+  Array<2,2>
+
+  Note that evaluating an expression with an incompatible length raises an
+  exception:
+
+  >>> import numpy
+  >>> ns = expression_v1.Namespace(length_i=2)
+  >>> ns.a = numpy.array([1,2,3])
+  >>> 'a_i' @ ns
+  Traceback (most recent call last):
+  ...
+  nutils.expression_v1.ExpressionSyntaxError: Length of index i is fixed at 2 but the expression has length 3.
+  a_i
+    ^
+
+  The second is to define a fallback length via the ``fallback_length`` argument:
+
+  >>> ns_fallback = expression_v1.Namespace(fallback_length=2)
+  >>> ns_fallback.eval_ij('δ_ij')
+  Array<2,2>
+
+  When evaluating an expression through this namespace the following functions
+  are available: ``opposite``, ``sin``, ``cos``, ``tan``, ``sinh``, ``cosh``,
+  ``tanh``, ``arcsin``, ``arccos``, ``arctan2``, ``arctanh``, ``exp``, ``abs``,
+  ``ln``, ``log``, ``log2``, ``log10``, ``sqrt`` and ``sign``.
+
+  Additional pointwise functions can be passed to argument ``functions``. All
+  functions should take :class:`~nutils.function.Array` objects as arguments
+  and must return an :class:`~nutils.function.Array` with as shape the sum of
+  all shapes of the arguments.
+
+  >>> def sqr(a):
+  ...   return a**2
+  >>> def mul(a, b):
+  ...   return a[(...,)+(None,)*b.ndim] * b[(None,)*a.ndim]
+  >>> ns_funcs = expression_v1.Namespace(functions=dict(sqr=sqr, mul=mul))
+  >>> ns_funcs.a = numpy.array([1,2,3])
+  >>> ns_funcs.b = numpy.array([4,5])
+  >>> 'sqr(a_i)' @ ns_funcs # same as 'a_i^2'
+  Array<3>
+  >>> ns_funcs.eval_ij('mul(a_i, b_j)') # same as 'a_i b_j'
+  Array<3,2>
+  >>> 'mul(a_i, a_i)' @ ns_funcs # same as 'a_i a_i'
+  Array<>
+
+  Args
+  ----
+  default_geometry_name : :class:`str`
+      The name of the default geometry.  This argument is passed to
+      :func:`nutils.expression_v1.parse`.  Default: ``'x'``.
+  fallback_length : :class:`int`, optional
+      The fallback length of an axis if the length cannot be determined from
+      the expression.
+  length_<indices> : :class:`int`
+      The fixed length of ``<indices>``.  All axes in the expression marked
+      with one of the ``<indices>`` are asserted to have the specified length.
+  functions : :class:`dict`, optional
+      Pointwise functions that should be available in the namespace,
+      supplementing the default functions listed above. All functions should
+      return arrays with as shape the sum of all shapes of the arguments.
+
+  Attributes
+  ----------
+  arg_shapes : :class:`dict`
+      A readonly map of argument names and shapes.
+  default_geometry_name : :class:`str`
+      The name of the default geometry.  See argument with the same name.
+  '''
+
+  __slots__ = '_attributes', '_arg_shapes', 'default_geometry_name', '_fixed_lengths', '_fallback_length', '_functions'
+
+  _re_assign = re.compile('^([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)(_[a-z]+)?$')
+
+  _default_functions = dict(
+    opposite=function.opposite, sin=function.sin, cos=function.cos,
+    tan=function.tan, sinh=function.sinh, cosh=function.cosh,
+    tanh=function.tanh, arcsin=function.arcsin, arccos=function.arccos,
+    arctan=function.arctan, arctan2=_arctan2_expr,
+    arctanh=function.arctanh, exp=function.exp, abs=function.abs,
+    ln=function.ln, log=function.ln, log2=function.log2, log10=function.log10,
+    sqrt=function.sqrt, sign=function.sign, d=function.d,
+    surfgrad=function.surfgrad, n=function.normal, sum=_sum_expr,
+    norm2=_norm2_expr, J=_J_expr,
+  )
+
+  def __init__(self, *, default_geometry_name: str = 'x', fallback_length: Optional[int] = None, functions: Optional[Mapping[str, Callable]] = None, **kwargs: Any) -> None:
+    if not isinstance(default_geometry_name, str):
+      raise ValueError('default_geometry_name: Expected a str, got {!r}.'.format(default_geometry_name))
+    if '_' in default_geometry_name or not self._re_assign.match(default_geometry_name):
+      raise ValueError('default_geometry_name: Invalid variable name: {!r}.'.format(default_geometry_name))
+    fixed_lengths = {}
+    for name, value in kwargs.items():
+      if not name.startswith('length_'):
+        raise TypeError('__init__() got an unexpected keyword argument {!r}'.format(name))
+      for index in name[7:]:
+        if index in fixed_lengths:
+          raise ValueError('length of index {} specified more than once'.format(index))
+        fixed_lengths[index] = value
+    super().__setattr__('_attributes', {})
+    super().__setattr__('_arg_shapes', {})
+    super().__setattr__('_fixed_lengths', types.frozendict({i: l for indices, l in fixed_lengths.items() for i in indices} if fixed_lengths else {}))
+    super().__setattr__('_fallback_length', fallback_length)
+    super().__setattr__('default_geometry_name', default_geometry_name)
+    super().__setattr__('_functions', dict(itertools.chain(self._default_functions.items(), () if functions is None else functions.items())))
+    super().__init__()
+
+  def __getstate__(self) -> Dict[str, Any]:
+    'Pickle instructions'
+    attrs = '_arg_shapes', '_attributes', 'default_geometry_name', '_fixed_lengths', '_fallback_length', '_functions'
+    return {k: getattr(self, k) for k in attrs}
+
+  def __setstate__(self, d: Mapping[str, Any]) -> None:
+    'Unpickle instructions'
+    for k, v in d.items(): super().__setattr__(k, v)
+
+  @property
+  def arg_shapes(self) -> Mapping[str, function.Shape]:
+    return builtin_types.MappingProxyType(self._arg_shapes)
+
+  @property
+  def default_geometry(self) -> str:
+    ''':class:`nutils.function.Array`: The default geometry, shorthand for ``getattr(ns, ns.default_geometry_name)``.'''
+    return getattr(self, self.default_geometry_name)
+
+  def __call__(*args, **subs: function.IntoArray) -> 'Namespace':
+    '''Return a copy with arguments replaced by ``subs``.
+
+    Return a copy of this namespace with :class:`~nutils.function.Argument`
+    objects replaced according to ``subs``.
+
+    Args
+    ----
+    **subs : :class:`dict` of :class:`str` and :class:`nutils.function.Array` objects
+        Replacements of the :class:`~nutils.function.Argument` objects,
+        identified by their names.
+
+    Returns
+    -------
+    ns : :class:`Namespace`
+        The copy of this namespace with replaced :class:`~nutils.function.Argument` objects.
+    '''
+
+    if len(args) != 1:
+      raise TypeError('{} instance takes 1 positional argument but {} were given'.format(type(args[0]).__name__, len(args)))
+    self, = args
+    ns = Namespace(default_geometry_name=self.default_geometry_name)
+    for k, v in self._attributes.items():
+      setattr(ns, k, function.replace_arguments(v, subs))
+    return ns
+
+  def copy_(self, *, default_geometry_name: Optional[str] = None) -> 'Namespace':
+    '''Return a copy of this namespace.'''
+
+    if default_geometry_name is None:
+      default_geometry_name = self.default_geometry_name
+    ns = Namespace(default_geometry_name=default_geometry_name, fallback_length=self._fallback_length, functions=self._functions, **{'length_{i}': l for i, l in self._fixed_lengths.items()})
+    for k, v in self._attributes.items():
+      setattr(ns, k, v)
+    return ns
+
+  def __getattr__(self, name: str) -> Any:
+    '''Get attribute ``name``.'''
+
+    if name.startswith('eval_'):
+      return lambda expr: _eval_ast(parse(expr, variables=self._attributes, indices=name[5:], arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)[0], self._functions)
+    try:
+      return self._attributes[name]
+    except KeyError:
+      pass
+    raise AttributeError(name)
+
+  def __setattr__(self, name: str, value: Any) -> Any:
+    '''Set attribute ``name`` to ``value``.'''
+
+    if name in self.__slots__:
+      raise AttributeError('readonly')
+    m = self._re_assign.match(name)
+    if not m or m.group(2) and len(set(m.group(2))) != len(m.group(2)):
+      raise AttributeError('{!r} object has no attribute {!r}'.format(type(self), name))
+    else:
+      name, indices = m.groups()
+      indices = indices[1:] if indices else None
+      if isinstance(value, str):
+        ast, arg_shapes = parse(value, variables=self._attributes, indices=indices, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)
+        value = _eval_ast(ast, self._functions)
+        self._arg_shapes.update(arg_shapes)
+      else:
+        assert not indices
+      self._attributes[name] = function.Array.cast(value)
+
+  def __delattr__(self, name: str) -> None:
+    '''Delete attribute ``name``.'''
+
+    if name in self.__slots__:
+      raise AttributeError('readonly')
+    elif name in self._attributes:
+      del self._attributes[name]
+    else:
+      raise AttributeError('{!r} object has no attribute {!r}'.format(type(self), name))
+
+  @overload
+  def __rmatmul__(self, expr: str) -> function.Array: ...
+  @overload
+  def __rmatmul__(self, expr: Union[Tuple[str, ...], List[str]]) -> Tuple[function.Array, ...]: ...
+  def __rmatmul__(self, expr: Union[str, Tuple[str, ...], List[str]]) -> Union[function.Array, Tuple[function.Array, ...]]:
+    '''Evaluate zero or one dimensional ``expr`` or a list of expressions.'''
+
+    if isinstance(expr, (tuple, list)):
+      return tuple(map(self.__rmatmul__, expr))
+    if not isinstance(expr, str):
+      return NotImplemented
+    try:
+      ast = parse(expr, variables=self._attributes, indices=None, arg_shapes=self._arg_shapes, default_geometry_name=self.default_geometry_name, fixed_lengths=self._fixed_lengths, fallback_length=self._fallback_length)[0]
+    except AmbiguousAlignmentError:
+      raise ValueError('`expression @ Namespace` cannot be used because the expression has more than one dimension.  Use `Namespace.eval_...(expression)` instead')
+    return _eval_ast(ast, self._functions)
 
 # vim:sw=2:sts=2:et

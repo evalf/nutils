@@ -8,6 +8,7 @@
 # placed at large (configurable) distance.
 
 from nutils import mesh, function, solver, util, export, cli, testing
+from nutils.expression_v2 import Namespace
 import numpy, treelog
 
 def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float, maxradius:float, seed:int, endtime:float):
@@ -44,40 +45,43 @@ def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float,
   domain, geom = mesh.rectilinear([melems, nelems], periodic=(1,))
   domain = domain.withboundary(inner='left', outer='right')
 
-  ns = function.Namespace()
-  ns.uinf = 1, 0
+  ns = Namespace()
+  ns.δ = function.eye(domain.ndims)
+  ns.Σ = function.ones([domain.ndims])
+  ns.uinf = function.Array.cast([1, 0])
   ns.r = .5 * function.exp(elemangle * geom[0])
   ns.Re = reynolds
   ns.phi = geom[1] * elemangle # add small angle to break element symmetry
-  ns.x_i = 'r <cos(phi), sin(phi)>_i'
+  ns.x_i = 'r (cos(phi) δ_i0 + sin(phi) δ_i1)'
+  ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
   J = ns.x.grad(geom)
   detJ = function.determinant(J)
   ns.ubasis = function.matmat(function.vectorize([
     domain.basis('spline', degree=(degree,degree-1), removedofs=((0,),None)),
     domain.basis('spline', degree=(degree-1,degree))]), J.T) / detJ
   ns.pbasis = domain.basis('spline', degree=degree-1) / detJ
-  ns.u_i = 'ubasis_ni ?u_n'
-  ns.p = 'pbasis_n ?p_n'
-  ns.sigma_ij = '(d(u_i, x_j) + d(u_j, x_i)) / Re - p δ_ij'
+  ns.u = function.dotarg('u', ns.ubasis)
+  ns.p = function.dotarg('p', ns.pbasis)
+  ns.sigma_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
   ns.N = 10 * degree / elemangle # Nitsche constant based on element size = elemangle/2
-  ns.nitsche_ni = '(N ubasis_ni - (d(ubasis_ni, x_j) + d(ubasis_nj, x_i)) n_j) / Re'
+  ns.nitsche_ni = '(N ubasis_ni - (∇_j(ubasis_ni) + ∇_i(ubasis_nj)) n_j) / Re'
   ns.rotation = rotation
-  ns.uwall_i = '0.5 rotation <-sin(phi), cos(phi)>_i'
+  ns.uwall_i = '0.5 rotation (-sin(phi) δ_i0 + cos(phi) δ_i1)'
 
   inflow = domain.boundary['outer'].select(-ns.uinf.dotnorm(ns.x), ischeme='gauss1') # upstream half of the exterior boundary
-  sqr = inflow.integral('sum((u - uinf)^2)' @ ns, degree=degree*2)
+  sqr = inflow.integral('Σ_i (u_i - uinf_i)^2' @ ns, degree=degree*2)
   ucons = solver.optimize('u', sqr, droptol=1e-15) # constrain inflow semicircle to uinf
   cons = dict(u=ucons)
 
   numpy.random.seed(seed)
-  sqr = domain.integral('sum((u - uinf)^2)' @ ns, degree=degree*2)
+  sqr = domain.integral('Σ_i (u_i - uinf_i)^2' @ ns, degree=degree*2)
   udofs0 = solver.optimize('u', sqr) * numpy.random.normal(1, .1, len(ns.ubasis)) # set initial condition to u=uinf with small random noise
   state0 = dict(u=udofs0)
 
-  ures = domain.integral('(ubasis_ni d(u_i, x_j) u_j + d(ubasis_ni, x_j) sigma_ij) J(x)' @ ns, degree=9)
-  ures += domain.boundary['inner'].integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni sigma_ij n_j) J(x)' @ ns, degree=9)
-  pres = domain.integral('pbasis_n d(u_k, x_k) J(x)' @ ns, degree=9)
-  uinertia = domain.integral('ubasis_ni u_i J(x)' @ ns, degree=9)
+  ures = domain.integral('(ubasis_ni ∇_j(u_i) u_j + ∇_j(ubasis_ni) sigma_ij) dV' @ ns, degree=9)
+  ures += domain.boundary['inner'].integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni sigma_ij n_j) dS' @ ns, degree=9)
+  pres = domain.integral('pbasis_n ∇_k(u_k) dV' @ ns, degree=9)
+  uinertia = domain.integral('ubasis_ni u_i dV' @ ns, degree=9)
 
   bbox = numpy.array([[-2,46/9],[-2,2]]) # bounding box for figure based on 16x9 aspect ratio
   bezier0 = domain.sample('bezier', 5)
@@ -90,7 +94,7 @@ def main(nelems:int, degree:int, reynolds:float, rotation:float, timestep:float,
     for istep, state in enumerate(steps):
 
       t = istep * timestep
-      x, u, normu, p = bezier.eval(['x', 'u', 'norm2(u)', 'p'] @ ns, **state)
+      x, u, normu, p = bezier.eval(['x_i', 'u_i', 'sqrt(u_i u_i)', 'p'] @ ns, **state)
       ugrd = interpolate[xgrd](u)
 
       with export.mplfigure('flow.png', figsize=(12.8,7.2)) as fig:

@@ -9,6 +9,18 @@ features in inverse chronological order.
 New in v7.0 (in development)
 ----------------------------
 
+- New: expression and namespace version 2
+
+  The ``nutils.expression`` module has been renamed to
+  :mod:`nutils.expression_v1`, the ``nutils.function.Namespace`` class to
+  :class:`nutils.expression_v1.Namespace` and the :mod:`nutils.expression_v2`
+  module has been added, featuring a new
+  :class:`~nutils.expression_v2.Namespace`. The version 2 of the namespace v2
+  has an expression language that differs slightly from version 1, most notably
+  in the way derivatives are written. The old namespace remains available for
+  the time being. All examples are updated to the new namespace. You are
+  encouraged to use the new namespace for newly written code.
+
 - Changed: bifurcate has been replaced by spaces
 
   In the past using functions on products of :class:`~nutils.topology.Topology`
@@ -111,44 +123,6 @@ New in v7.0 (in development)
   ...     super().__init__(args=[a, b], shape=a.shape, dtype=a.dtype)
   ...   def evalf(self, a, b):
   ...     return a+b
-
-- Functions generating or consuming axes in expressions
-
-  The expression syntax now supports functions that generate and/or consume
-  axes. The namespace has built-in support for ``sum``, ``norm2`` and ``J``
-  (jacobian)::
-
-      'sum:i(u_ij)' # sum the first axis of `u`
-      'norm2:i(u_i)' # 2-norm of `u`
-      'J:i(x_i)' # jacobian of `x`
-
-  If all axes of function arguments are consumed, it is allowed to omit the
-  indices::
-
-      'norm2(u)'
-      'J(x)'
-
-- New derivative and normal syntax
-
-  The :class:`~nutils.function.Namespace` now supports writing derivatives and
-  normals as functions::
-
-      'd(u, x_i)' # alternative for 'u_,i', deprecates 'u_,x_i'
-      'd(u, x_i, x_j)' # alternative for 'u_,ij'
-      'surfgrad(u, x_i)' # alternative for 'u_;i', deprecates 'u_;x_i'
-      'd(u, ?a)' # deprecates 'u_,?a'
-      'n(x_i)' # deprecates 'n:x_i'
-
-- User-defined functions in :class:`~nutils.function.Namespace`
-
-  The :class:`~nutils.function.Namespace` can be initialized with a dictionary
-  of user-defined functions::
-
-      >>> def mul(a, b):
-      ...   return a[(...,)+(None,)*b.ndim] * b[(None,)*a.ndim]
-      >>> ns = Namespace(functions=dict(mul=mul))
-
-      >>> 'mul(a_i, b_j)' @ ns # equivalent to `'a_i b_j' @ ns`
 
 - Solve multiple residuals to multiple targets
 
@@ -379,7 +353,7 @@ Release date: `2020-04-29 <https://github.com/evalf/nutils/releases/tag/v6.0>`_.
 
 - Fixed and fallback lengths in (namespace) expressions
 
-  The :class:`nutils.function.Namespace` has two new arguments:
+  The ``nutils.function.Namespace`` has two new arguments:
   ``length_<indices>`` and ``fallback_length``. The former can be used
   to assign fixed lengths to specific indices in expressions, say index
   ``i`` should have length 2, which is used for verification and
@@ -658,7 +632,7 @@ Release date: `2018-02-05 <https://github.com/evalf/nutils/releases/tag/v3.0>`_.
 
 - New: function.Namespace
 
-  The :class:`nutils.function.Namespace` object represents a container
+  The ``nutils.function.Namespace`` object represents a container
   of :class:`nutils.function.Array` instances::
 
       >>> ns = function.Namespace()
@@ -666,7 +640,7 @@ Release date: `2018-02-05 <https://github.com/evalf/nutils/releases/tag/v3.0>`_.
       >>> ns.basis = domain.basis('std', degree=1).vector(2)
 
   In addition to bundling arrays, arrays can be manipulated using index
-  notation via string expressions using the :mod:`nutils.expression`
+  notation via string expressions using the ``nutils.expression``
   syntax::
 
       >>> ns.sol_i = 'basis_ni ?dofs_n'
