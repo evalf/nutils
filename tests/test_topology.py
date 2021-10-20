@@ -882,14 +882,14 @@ class locate(TestCase):
     self.geom = geom
 
   def test(self):
-    target = numpy.array([(.2,.3), (.1,.9), (0,1)])
+    target = numpy.array([(.2,.3), (.1,.9), (0,1), (.1,.3)])
     sample = self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12)
     located = sample.eval(self.geom)
     self.assertAllAlmostEqual(located, target)
 
   @parametrize.enable_if(lambda etype, mode, **kwargs: etype != 'square' or mode == 'nonlinear')
   def test_maxdist(self):
-    target = numpy.array([(.2,.3), (.1,.9), (0,1)])
+    target = numpy.array([(.2,.3), (.1,.9), (0,1), (.1,.3)])
     with self.assertRaises(topology.LocateError):
       self.domain.locate(self.geom, [(0, .3)], eps=1e-15, tol=1e-12, maxdist=.001)
     sample = self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12, maxdist=.5)
