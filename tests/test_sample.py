@@ -1,5 +1,5 @@
 from nutils import *
-import random, itertools, functools
+import random, itertools, functools, warnings as _builtin_warnings
 from nutils.testing import *
 from nutils.sample import Sample
 from nutils.pointsseq import PointsSequence
@@ -279,6 +279,61 @@ class TakeElements(TestCase, Common):
   def test_asfunction(self):
     with self.assertRaises(NotImplementedError):
       super().test_asfunction()
+
+class DefaultIndex(TestCase, Common):
+
+  def setUp(self):
+    super().setUp()
+    line = element.getsimplex(1)
+    triangle = element.getsimplex(2)
+    points = [ref.getpoints('bezier', 2) for ref in (line**2, triangle, line**2)]
+    self.transforms = IdentifierTransforms(2, 'test', 3)
+    self.sample = Sample.new('a', (self.transforms, self.transforms), PointsSequence.from_iter(points, 2))
+    self.desired_spaces = 'a',
+    self.desired_ndims = 2
+    self.desired_nelems = 3
+    self.desired_transform_chains = [[t] for t in self.transforms]
+    self.desired_points = [[p] for p in points]
+    self.desired_indices = [0,1,2,3],[4,5,6],[7,8,9,10]
+
+  def test_at(self):
+    self.geom = function.rootcoords('a', 2) + numpy.array([0,2]) * function.transforms_index('a', self.transforms)
+    actual = (self.geom @ self.sample).as_evaluable_array.eval()
+    desired = numpy.array([[0,0],[0,1],[1,0],[1,1],[0,2],[1,2],[0,3],[0,4],[0,5],[1,4],[1,5]])
+    self.assertAllAlmostEqual(actual, desired)
+
+  def test_basis(self):
+    with _builtin_warnings.catch_warnings():
+      _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
+      self.assertAllAlmostEqual((self.sample.basis() @ self.sample).as_evaluable_array.eval(), numpy.eye(11))
+
+class CustomIndex(TestCase, Common):
+
+  def setUp(self):
+    super().setUp()
+    line = element.getsimplex(1)
+    triangle = element.getsimplex(2)
+    points = [ref.getpoints('bezier', 2) for ref in (line**2, triangle, line**2)]
+    self.transforms = IdentifierTransforms(2, 'test', 3)
+    self.desired_indices = [5,10,4,9],[2,0,6],[7,8,3,1]
+    self.sample = Sample.new('a', (self.transforms, self.transforms), PointsSequence.from_iter(points, 2), tuple(map(numpy.array, self.desired_indices)))
+    self.desired_spaces = 'a',
+    self.desired_ndims = 2
+    self.desired_nelems = 3
+    self.desired_transform_chains = [[t] for t in self.transforms]
+    self.desired_points = [[p] for p in points]
+
+  def test_at(self):
+    self.geom = function.rootcoords('a', 2) + numpy.array([0,2]) * function.transforms_index('a', self.transforms)
+    actual = (self.geom @ self.sample).as_evaluable_array.eval()
+    desired = numpy.array([[0,0],[0,1],[1,0],[1,1],[0,2],[1,2],[0,3],[0,4],[0,5],[1,4],[1,5]])
+    desired = numpy.take(desired, numpy.argsort(numpy.concatenate(self.desired_indices), axis=0), axis=0)
+    self.assertAllAlmostEqual(actual, desired)
+
+  def test_basis(self):
+    with _builtin_warnings.catch_warnings():
+      _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
+      self.assertAllAlmostEqual((self.sample.basis() @ self.sample).as_evaluable_array.eval(), numpy.eye(11))
 
 class Special(TestCase):
 

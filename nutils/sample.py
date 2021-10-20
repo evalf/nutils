@@ -816,7 +816,8 @@ class _ReorderPoints(function.Array):
 
   def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
     func = self._func.lower(points_shape, transform_chains, coordinates)
-    return evaluable.take(func, self._indices, axis=len(points_shape))
+    axis = len(points_shape)
+    return evaluable.Transpose.from_end(evaluable.Inflate(evaluable.Transpose.to_end(func, axis), self._indices, self._indices.shape[0]), axis)
 
 class _Basis(function.Array):
 
