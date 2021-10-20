@@ -389,6 +389,10 @@ class Array(metaclass=_ArrayMeta):
     'See :func:`div`.'
     return div(self, __geom, ndims)
 
+  def curl(self, __geom: IntoArray) -> 'Array':
+    'See :func:`curl`.'
+    return curl(self, __geom)
+
   def dotnorm(self, __geom: IntoArray, axis: int = -1) -> 'Array':
     'See :func:`dotnorm`.'
     return dotnorm(self, __geom, axis)
@@ -2635,6 +2639,28 @@ def grad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
     return _SurfaceGradient(arg, geom)
   else:
     raise NotImplementedError
+
+def curl(__arg: IntoArray, __geom: IntoArray) -> Array:
+  '''Return the curl of the argument w.r.t. the given geometry.
+
+  Parameters
+  ----------
+  arg, geom : :class:`Array` or something that can be :meth:`~Array.cast` into one
+
+  Returns
+  -------
+  :class:`Array`
+  '''
+
+  arg = Array.cast(__arg)
+  geom = Array.cast(__geom)
+  if geom.shape != (3,):
+    raise ValueError('Expected a geometry with shape (3,) but got {}.'.format(geom.shape))
+  if not arg.ndim:
+    raise ValueError('Expected a function with at least 1 axis but got 0.')
+  if arg.shape[-1] != 3:
+    raise ValueError('Expected a function with a trailing axis of length 3 but got {}.'.format(arg.shape[-1]))
+  return (levicivita(3).T * _append_axes(grad(arg, geom), (3,))).sum((-3, -2))
 
 def normal(__geom: IntoArray, exterior: bool = False) -> Array:
   '''Return the normal of the geometry.

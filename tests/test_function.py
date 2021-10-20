@@ -757,6 +757,20 @@ class derivative(TestCase):
     x = function.unravel(function.unravel(x, 0, (2, 2)), 0, (2, 1))
     self.assertEvalAlmostEqual(domain, self.grad(x, x), numpy.eye(4, 4).reshape(2, 1, 2, 2, 1, 2))
 
+  def test_curl(self):
+    domain, geom = mesh.rectilinear([[-1,1]]*3)
+    x, y, z = geom
+    self.assertEvalAlmostEqual(domain, self.curl([y, -x, z], geom), [0, 0, -2])
+    self.assertEvalAlmostEqual(domain, self.curl([0, -x**2, 0], geom), [0, 0, -2*x])
+    self.assertEvalAlmostEqual(domain, self.curl([[x, -z, y], [0, x*z, 0]], geom), [[2, 0, 0], [-x, 0, z]])
+    self.assertEvalAlmostEqual(domain, self.curl(self.grad(x*y+z, geom), geom), [0, 0, 0])
+    with self.assertRaisesRegex(ValueError, 'Expected a geometry with shape'):
+      self.curl([x, y, z], geom[:2])
+    with self.assertRaisesRegex(ValueError, 'Expected a function with at least 1 axis but got 0.'):
+      self.curl(function.zeros(()), geom)
+    with self.assertRaisesRegex(ValueError, 'Expected a function with a trailing axis of length 3'):
+      self.curl(function.zeros((3,2)), geom)
+
   def test_div(self):
     domain, x = mesh.rectilinear([1]*2)
     x = 2*x-0.5
@@ -840,6 +854,7 @@ derivative('function',
            dotnorm=function.dotnorm,
            grad=function.grad,
            div=function.div,
+           curl=function.curl,
            laplace=function.laplace,
            symgrad=function.symgrad,
            ngrad=function.ngrad,
@@ -850,6 +865,7 @@ derivative('method',
            dotnorm=lambda vec, geom: function.Array.cast(vec).dotnorm(geom),
            grad=lambda arg, geom: function.Array.cast(arg).grad(geom),
            div=lambda arg, geom: function.Array.cast(arg).div(geom),
+           curl=lambda arg, geom: function.Array.cast(arg).curl(geom),
            laplace=lambda arg, geom: function.Array.cast(arg).laplace(geom),
            symgrad=lambda arg, geom: function.Array.cast(arg).symgrad(geom),
            ngrad=lambda arg, geom: function.Array.cast(arg).ngrad(geom),
