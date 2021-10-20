@@ -1,6 +1,6 @@
 import functools, numpy, operator
 from nutils.testing import TestCase
-from nutils import expression_v2, mesh, sample
+from nutils import expression_v2, function, mesh, sample
 
 class SerializedOps:
 
@@ -523,6 +523,8 @@ class Namespace(TestCase):
     self.assertAlmostEqual(topo.integral('∂t(t^2) dt' @ ns, degree=2).eval(), 1)
     self.assertAlmostEqual(topo.boundary['future'].integral('nt dtb' @ ns, degree=2).eval(), 1)
     self.assertAlmostEqual(topo.boundary['past'].integral('nt dtb' @ ns, degree=2).eval(), -1)
+    with self.assertRaisesRegex(ValueError, 'The curl can only be defined for a geometry with shape'):
+      ns.define_for('t', curl='curl')
 
   def test_define_for_1d(self):
     ns = expression_v2.Namespace()
@@ -532,6 +534,23 @@ class Namespace(TestCase):
     self.assertAlmostEqual(topo.integral('∇_i(x_i^2) dV' @ ns, degree=2).eval(), 2)
     self.assertAlmostEqual(topo.boundary['right'].integral('n_0 dS' @ ns, degree=2).eval(), 1)
     self.assertAlmostEqual(topo.boundary['bottom'].integral('n_1 dS' @ ns, degree=2).eval(), -1)
+    with self.assertRaisesRegex(ValueError, 'The curl can only be defined for a geometry with shape'):
+      ns.define_for('x', curl='curl')
+
+  def test_define_for_3d(self):
+    ns = expression_v2.Namespace()
+    topo, ns.X = mesh.rectilinear([numpy.linspace(-1, 1, 3)]*3)
+    ns.x, ns.y, ns.z = ns.X
+    ns.define_for('X', gradient='∇', curl='curl')
+    ns.δ = function.eye(3)
+    ns.ε = function.levicivita(3)
+    ns.f = function.Array.cast([['x', '-z', 'y'], ['0', 'x z', '0']] @ ns)
+    smpl = topo.sample('gauss', 5)
+    assertEvalAlmostEqual = lambda *args: self.assertAllAlmostEqual(*((f @ smpl).as_evaluable_array.eval() for f in args))
+    assertEvalAlmostEqual('curl_ij(y δ_j0 - x δ_j1 + z δ_j2)' @ ns, '-2 δ_i2' @ ns)
+    assertEvalAlmostEqual('curl_ij(-x^2 δ_j1)' @ ns, '-2 x δ_i2' @ ns)
+    assertEvalAlmostEqual('curl_ij((x δ_j0 - z δ_j1 + y δ_j2) δ_k0 + x z δ_j1 δ_k1)' @ ns, '2 δ_i0 δ_k0 - x δ_i0 δ_k1 + z δ_i2 δ_k1' @ ns)
+    assertEvalAlmostEqual('curl_ij(∇_j(x y + z))' @ ns, function.zeros((3,)))
 
   def test_copy(self):
     ns1 = expression_v2.Namespace()
