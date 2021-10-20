@@ -798,6 +798,11 @@ class derivative(TestCase):
     for bnd, desired in ('right', [2*x[0]*x[1], 0.5*x[0]**2]), ('left', [-2*x[0]*x[1], -0.5*x[0]**2]), ('top', [0.5*x[0]**2, 2*x[1]]), ('bottom', [-0.5*x[0]**2, -2*x[1]]):
       self.assertEvalAlmostEqual(domain.boundary[bnd], self.nsymgrad([x[0]**2*x[1], x[1]**2], x), desired)
 
+  def test_not_an_argument(self):
+    with self.assertRaisesRegex(ValueError, 'Expected an instance of `Argument`'):
+      function.derivative(function.ones(()), function.zeros(()))
+
+
 derivative('function',
            normal=function.normal,
            tangent=function.tangent,

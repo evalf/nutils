@@ -905,13 +905,11 @@ class _TransformsCoords(Array):
 
 class _Derivative(Array):
 
-  def __init__(self, arg: Array, var: Array) -> None:
+  def __init__(self, arg: Array, var: Argument) -> None:
+    assert isinstance(var, Argument)
     self._arg = arg
     self._var = var
-    if isinstance(var, Argument):
-      self._eval_var = evaluable.Argument(var.name, var.shape)
-    else:
-      raise ValueError('Cannot differentiate `arg` to {!r}.'.format(var))
+    self._eval_var = evaluable.Argument(var.name, var.shape, var.dtype)
     super().__init__(arg.shape+var.shape, arg.dtype, arg.spaces | var.spaces)
 
   def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
@@ -2554,7 +2552,7 @@ def broadcast_to(array: IntoArray, shape: Shape) -> Array:
 
 # DERIVATIVES
 
-def derivative(__arg: IntoArray, __var: IntoArray) -> Array:
+def derivative(__arg: IntoArray, __var: Argument) -> Array:
   '''Differentiate `arg` to `var`.
 
   Parameters
@@ -2567,8 +2565,9 @@ def derivative(__arg: IntoArray, __var: IntoArray) -> Array:
   '''
 
   arg = Array.cast(__arg)
-  var = Array.cast(__var)
-  return _Derivative(arg, var)
+  if not isinstance(__var, Argument):
+    raise ValueError('Expected an instance of `Argument` as second argument of `derivative` but got a `{}.{}`.'.format(type(__var).__module__, type(__var).__qualname__))
+  return _Derivative(arg, __var)
 
 def grad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
   '''Return the gradient of the argument to the given geometry.
