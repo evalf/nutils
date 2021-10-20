@@ -658,7 +658,7 @@ class Namespace:
     else:
       return NotImplemented
 
-  def define_for(self, __name: str, *, gradient: Optional[str] = None, normal: Optional[str] = None, jacobians: Sequence[str] = ()) -> None:
+  def define_for(self, __name: str, *, gradient: Optional[str] = None, curl: Optional[str] = None, normal: Optional[str] = None, jacobians: Sequence[str] = ()) -> None:
     '''Define gradient, normal or jacobian for the given geometry.
 
     Parameters
@@ -669,6 +669,10 @@ class Namespace:
     gradient : :class:`str`, optional
         Define the gradient function with the given name. The function
         generates axes with the same shape as the given geometry.
+    curl : :class:`str`, optional
+        Define the curl function with the given name. The function generates
+        two axes of length 3 where the last axis should be traced with an axis
+        of the argument, e.g. `curl_ij(u_j)`.
     normal : :class:`str`, optional
         Define the normal with the given name. The normal has the same shape as
         the geometry.
@@ -693,6 +697,12 @@ class Namespace:
     geom = getattr(self, __name)
     if gradient:
       setattr(self, gradient, lambda arg: function.grad(arg, geom))
+    if curl:
+      if geom.shape != (3,):
+        raise ValueError('The curl can only be defined for a geometry with shape (3,) but got {}.'.format(geom.shape))
+      # Definition: `curl_ki(u_...)` := `ε_kji ∇_j(u_...)`. Should be used as
+      # `curl_ki(u_i)`, which is equivalent to `ε_kji ∇_j(u_i)`.
+      setattr(self, curl, lambda arg: (function.levicivita(3) * function.grad(arg, geom)[...,numpy.newaxis,:,numpy.newaxis]).sum(-2))
     if normal:
       setattr(self, normal, function.normal(geom))
     for i, jacobian in enumerate(jacobians):
