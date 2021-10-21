@@ -105,7 +105,7 @@ class _ArrayMeta(_ArrayMeta):
     return super().__new__(mcls, name, bases, namespace)
 
 
-class Array(metaclass=_ArrayMeta):
+class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
   '''Base class for array valued functions.
 
   Parameters
@@ -136,6 +136,20 @@ class Array(metaclass=_ArrayMeta):
   '''
 
   __array_priority__ = 1. # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
+
+  def __array_ufunc__(self, ufunc, method, *inputs, out=None, **kwargs):
+    if method != '__call__' or ufunc not in HANDLED_FUNCTIONS:
+      return NotImplemented
+    try:
+      arrays = [Array.cast(v) for v in inputs]
+    except ValueError:
+      return NotImplemented
+    return HANDLED_FUNCTIONS[ufunc](*arrays, **kwargs)
+
+  def __array_function__(self, func, types, args, kwargs):
+    if func not in HANDLED_FUNCTIONS:
+      return NotImplemented
+    return HANDLED_FUNCTIONS[func](*args, **kwargs)
 
   @classmethod
   def cast(cls, __value: IntoArray, dtype: Optional[DType] = None, ndim: Optional[int] = None) -> 'Array':
@@ -232,104 +246,6 @@ class Array(metaclass=_ArrayMeta):
     'The transposed array.'
 
     return transpose(self)
-
-  def _binop(self, op: Callable[['Array', 'Array'], 'Array'], other_: IntoArray) -> Any:
-    try:
-      other = Array.cast(other_)
-    except ValueError:
-      return NotImplemented
-    return op(self, other)
-
-  def _rbinop(self, op: Callable[['Array', 'Array'], 'Array'], other_: IntoArray) -> Any:
-    try:
-      other = Array.cast(other_)
-    except ValueError:
-      return NotImplemented
-    return op(other, self)
-
-  def __add__(self, __other: IntoArray) -> Any:
-    'See :func:`add`.'
-    return self._binop(add, __other)
-
-  def __radd__(self, __other: IntoArray) -> Any:
-    'See :func:`add`.'
-    return self._rbinop(add, __other)
-
-  def __sub__(self, __other: IntoArray) -> Any:
-    'See :func:`subtract`.'
-    return self._binop(subtract, __other)
-
-  def __rsub__(self, __other: IntoArray) -> Any:
-    'See :func:`subtract`.'
-    return self._rbinop(subtract, __other)
-
-  def __mul__(self, __other: IntoArray) -> Any:
-    'See :func:`multiply`.'
-    return self._binop(multiply, __other)
-
-  def __rmul__(self, __other: IntoArray) -> Any:
-    'See :func:`multiply`.'
-    return self._rbinop(multiply, __other)
-
-  def __truediv__(self, __other: IntoArray) -> Any:
-    'See :func:`divide`.'
-    return self._binop(divide, __other)
-
-  def __rtruediv__(self, __other: IntoArray) -> Any:
-    'See :func:`divide`.'
-    return self._rbinop(divide, __other)
-
-  def __floordiv__(self, __other: IntoArray) -> Any:
-    'See :func:`floor_divide`.'
-    return self._binop(floor_divide, __other)
-
-  def __rfloordiv__(self, __other: IntoArray) -> Any:
-    'See :func:`floor_divide`.'
-    return self._rbinop(floor_divide, __other)
-
-  def __pow__(self, __other: IntoArray) -> Any:
-    'See :func:`power`.'
-    return self._binop(power, __other)
-
-  def __rpow__(self, __other: IntoArray) -> Any:
-    'See :func:`power`.'
-    return self._rbinop(power, __other)
-
-  def __mod__(self, __other: IntoArray) -> Any:
-    'See :func:`mod`.'
-    return self._binop(mod, __other)
-
-  def __rmod__(self, __other: IntoArray) -> Any:
-    'See :func:`mod`.'
-    return self._rbinop(mod, __other)
-
-  def __divmod__(self, __other: IntoArray) -> Any:
-    'See :func:`divmod`.'
-    return self._binop(divmod, __other)
-
-  def __rdivmod__(self, __other: IntoArray) -> Any:
-    'See :func:`divmod`.'
-    return self._rbinop(divmod, __other)
-
-  def __pos__(self) -> 'Array':
-    'Return `self`.'
-    return self
-
-  def __neg__(self) -> 'Array':
-    'See :func:`negative`.'
-    return negative(self)
-
-  def __abs__(self) -> 'Array':
-    'See :func:`abs`.'
-    return abs(self)
-
-  def __matmul__(self, other):
-    'See :func:`matmul`.'
-    return self._binop(matmul, other)
-
-  def __rmatmul__(self, other):
-    'See :func:`matmul`.'
-    return self._rbinop(matmul, other)
 
   def astype(self, dtype):
     if dtype == self.dtype:
@@ -1118,6 +1034,15 @@ def _join_arguments(args_list: Iterable[Mapping[str, Argument]]) -> Dict[str, Ar
 
 # CONSTRUCTORS
 
+HANDLED_FUNCTIONS = {}
+
+def implements(np_function):
+  'Register an ``__array_function__`` or ``__array_ufunc__`` implementation for Array objects.'
+  def decorator(func):
+    HANDLED_FUNCTIONS[np_function] = func
+    return func
+  return decorator
+
 def asarray(__arg: IntoArray) -> Array:
   '''Cast a value to an :class:`Array`.
 
@@ -1203,6 +1128,7 @@ def levicivita(__n: int, dtype: DType = float) -> Array:
 
 # ARITHMETIC
 
+@implements(numpy.add)
 def add(__left: IntoArray, __right: IntoArray) -> Array:
   '''Return the sum of the arguments, elementwise.
 
@@ -1217,6 +1143,7 @@ def add(__left: IntoArray, __right: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.add, __left, __right)
 
+@implements(numpy.subtract)
 def subtract(__left: IntoArray, __right: IntoArray) -> Array:
   '''Return the difference of the arguments, elementwise.
 
@@ -1231,6 +1158,7 @@ def subtract(__left: IntoArray, __right: IntoArray) -> Array:
 
   return add(__left, negative(__right))
 
+@implements(numpy.negative)
 def negative(__arg: IntoArray) -> Array:
   '''Return the negation of the argument, elementwise.
 
@@ -1245,6 +1173,7 @@ def negative(__arg: IntoArray) -> Array:
 
   return multiply(__arg, -1)
 
+@implements(numpy.multiply)
 def multiply(__left: IntoArray, __right: IntoArray) -> Array:
   '''Return the product of the arguments, elementwise.
 
@@ -1259,6 +1188,7 @@ def multiply(__left: IntoArray, __right: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.multiply, __left, __right)
 
+@implements(numpy.true_divide)
 def divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
   '''Return the true-division of the arguments, elementwise.
 
@@ -1273,6 +1203,7 @@ def divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
 
   return multiply(__dividend, reciprocal(__divisor))
 
+@implements(numpy.floor_divide)
 def floor_divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
   '''Return the floor-division of the arguments, elementwise.
 
@@ -1287,6 +1218,7 @@ def floor_divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.FloorDivide, __dividend, __divisor)
 
+@implements(numpy.reciprocal)
 def reciprocal(__arg: IntoArray) -> Array:
   '''Return the reciprocal of the argument, elementwise.
 
@@ -1301,6 +1233,7 @@ def reciprocal(__arg: IntoArray) -> Array:
 
   return power(__arg, -1.)
 
+@implements(numpy.power)
 def power(__base: IntoArray, __exponent: IntoArray) -> Array:
   '''Return the exponentiation of the arguments, elementwise.
 
@@ -1315,6 +1248,7 @@ def power(__base: IntoArray, __exponent: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.power, __base, __exponent, min_dtype=int)
 
+@implements(numpy.sqrt)
 def sqrt(__arg: IntoArray) -> Array:
   '''Return the square root of the argument, elementwise.
 
@@ -1329,6 +1263,7 @@ def sqrt(__arg: IntoArray) -> Array:
 
   return power(__arg, .5)
 
+@implements(numpy.absolute)
 def abs(__arg: IntoArray) -> Array:
   '''Return the absolute value of the argument, elementwise.
 
@@ -1344,6 +1279,7 @@ def abs(__arg: IntoArray) -> Array:
   arg = Array.cast(__arg)
   return arg * sign(arg)
 
+@implements(numpy.matmul)
 def matmul(__arg1: IntoArray, __arg2: IntoArray) -> Array:
   '''Return the matrix product of two arrays.
 
@@ -1373,6 +1309,7 @@ def matmul(__arg1: IntoArray, __arg2: IntoArray) -> Array:
   else:
     return (arg1[...,:,:,numpy.newaxis] * arg2[...,numpy.newaxis,:,:]).sum(-2)
 
+@implements(numpy.sign)
 def sign(__arg: IntoArray) -> Array:
   '''Return the sign of the argument, elementwise.
 
@@ -1387,6 +1324,7 @@ def sign(__arg: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.Sign, __arg)
 
+@implements(numpy.mod)
 def mod(__dividend: IntoArray, __divisor: IntoArray) -> Array:
   '''Return the remainder of the floored division, elementwise.
 
@@ -1401,6 +1339,7 @@ def mod(__dividend: IntoArray, __divisor: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.Mod, __dividend, __divisor)
 
+@implements(numpy.divmod)
 def divmod(__dividend: IntoArray, __divisor: IntoArray) -> Tuple[Array, Array]:
   '''Return the floor-division and remainder, elementwise.
 
@@ -1417,6 +1356,7 @@ def divmod(__dividend: IntoArray, __divisor: IntoArray) -> Tuple[Array, Array]:
 
 # TRIGONOMETRIC
 
+@implements(numpy.cos)
 def cos(__arg: IntoArray) -> Array:
   '''Return the trigonometric cosine of the argument, elementwise.
 
@@ -1431,6 +1371,7 @@ def cos(__arg: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.Cos, __arg, min_dtype=float)
 
+@implements(numpy.sin)
 def sin(__arg: IntoArray) -> Array:
   '''Return the trigonometric sine of the argument, elementwise.
 
@@ -1445,6 +1386,7 @@ def sin(__arg: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.Sin, __arg, min_dtype=float)
 
+@implements(numpy.tan)
 def tan(__arg: IntoArray) -> Array:
   '''Return the trigonometric tangent of the argument, elementwise.
 
@@ -1459,6 +1401,7 @@ def tan(__arg: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.Tan, __arg, min_dtype=float)
 
+@implements(numpy.arccos)
 def arccos(__arg: IntoArray) -> Array:
   '''Return the trigonometric inverse cosine of the argument, elementwise.
 
@@ -1473,6 +1416,7 @@ def arccos(__arg: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.ArcCos, __arg, min_dtype=float)
 
+@implements(numpy.arcsin)
 def arcsin(__arg: IntoArray) -> Array:
   '''Return the trigonometric inverse sine of the argument, elementwise.
 
@@ -1487,6 +1431,7 @@ def arcsin(__arg: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.ArcSin, __arg, min_dtype=float)
 
+@implements(numpy.arctan)
 def arctan(__arg: IntoArray) -> Array:
   '''Return the trigonometric inverse tangent of the argument, elementwise.
 
@@ -1501,6 +1446,7 @@ def arctan(__arg: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.ArcTan, __arg, min_dtype=float)
 
+@implements(numpy.arctan2)
 def arctan2(__dividend: IntoArray, __divisor: IntoArray) -> Array:
   '''Return the trigonometric inverse tangent of the ``dividend / divisor``, elementwise.
 
@@ -1515,6 +1461,7 @@ def arctan2(__dividend: IntoArray, __divisor: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.ArcTan2, __dividend, __divisor, min_dtype=float)
 
+@implements(numpy.cosh)
 def cosh(__arg: IntoArray) -> Array:
   '''Return the hyperbolic cosine of the argument, elementwise.
 
@@ -1530,6 +1477,7 @@ def cosh(__arg: IntoArray) -> Array:
   arg = Array.cast(__arg)
   return .5 * (exp(arg) + exp(-arg))
 
+@implements(numpy.sinh)
 def sinh(__arg: IntoArray) -> Array:
   '''Return the hyperbolic sine of the argument, elementwise.
 
@@ -1545,6 +1493,7 @@ def sinh(__arg: IntoArray) -> Array:
   arg = Array.cast(__arg)
   return .5 * (exp(arg) - exp(-arg))
 
+@implements(numpy.tanh)
 def tanh(__arg: IntoArray) -> Array:
   '''Return the hyperbolic tangent of the argument, elementwise.
 
@@ -1560,6 +1509,7 @@ def tanh(__arg: IntoArray) -> Array:
   arg = Array.cast(__arg)
   return 1 - 2. / (exp(2*arg) + 1)
 
+@implements(numpy.arctanh)
 def arctanh(__arg: IntoArray) -> Array:
   '''Return the hyperbolic inverse tangent of the argument, elementwise.
 
@@ -1575,6 +1525,7 @@ def arctanh(__arg: IntoArray) -> Array:
   arg = Array.cast(__arg)
   return .5 * (ln(1+arg) - ln(1-arg))
 
+@implements(numpy.exp)
 def exp(__arg: IntoArray) -> Array:
   '''Return the exponential of the argument, elementwise.
 
@@ -1589,6 +1540,7 @@ def exp(__arg: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.Exp, __arg, min_dtype=float)
 
+@implements(numpy.log)
 def log(__arg: IntoArray) -> Array:
   '''Return the natural logarithm of the argument, elementwise.
 
@@ -1605,6 +1557,7 @@ def log(__arg: IntoArray) -> Array:
 
 ln = log
 
+@implements(numpy.log2)
 def log2(__arg: IntoArray) -> Array:
   '''Return the base 2 logarithm of the argument, elementwise.
 
@@ -1619,6 +1572,7 @@ def log2(__arg: IntoArray) -> Array:
 
   return log(__arg) / log(2)
 
+@implements(numpy.log10)
 def log10(__arg: IntoArray) -> Array:
   '''Return the base 10 logarithm of the argument, elementwise.
 
@@ -1635,6 +1589,7 @@ def log10(__arg: IntoArray) -> Array:
 
 # COMPARISON
 
+@implements(numpy.greater)
 def greater(__left: IntoArray, __right: IntoArray) -> Array:
   '''Return if the first argument is greater than the second, elementwise.
 
@@ -1649,6 +1604,7 @@ def greater(__left: IntoArray, __right: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.Greater, __left, __right, force_dtype=bool)
 
+@implements(numpy.equal)
 def equal(__left: IntoArray, __right: IntoArray) -> Array:
   '''Return if the first argument equals the second, elementwise.
 
@@ -1663,6 +1619,7 @@ def equal(__left: IntoArray, __right: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.Equal, __left, __right, force_dtype=bool)
 
+@implements(numpy.less)
 def less(__left: IntoArray, __right: IntoArray) -> Array:
   '''Return if the first argument is less than the second, elementwise.
 
@@ -1677,6 +1634,7 @@ def less(__left: IntoArray, __right: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.Less, __left, __right, force_dtype=bool)
 
+@implements(numpy.min)
 def min(__a: IntoArray, __b: IntoArray) -> Array:
   '''Return the minimum of the arguments, elementwise.
 
@@ -1691,6 +1649,7 @@ def min(__a: IntoArray, __b: IntoArray) -> Array:
 
   return _Wrapper.broadcasted_arrays(evaluable.Minimum, __a, __b)
 
+@implements(numpy.max)
 def max(__a: IntoArray, __b: IntoArray) -> Array:
   '''Return the maximum of the arguments, elementwise.
 
@@ -1828,6 +1787,7 @@ def jump(__arg: IntoArray) -> Array:
 
 # REDUCTION
 
+@implements(numpy.sum)
 def sum(__arg: IntoArray, axis: Optional[Union[int, Sequence[int]]] = None) -> Array:
   '''Return the sum of array elements over the given axes.
 
@@ -1855,6 +1815,7 @@ def sum(__arg: IntoArray, axis: Optional[Union[int, Sequence[int]]] = None) -> A
     summed = _Wrapper(evaluable.Sum, summed, shape=summed.shape[:-1], dtype=summed.dtype)
   return summed
 
+@implements(numpy.product)
 def product(__arg: IntoArray, axis: int) -> Array:
   '''Return the product of array elements over the given axes.
 
@@ -1903,6 +1864,7 @@ def dot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]
     axes = 0,
   return sum(multiply(a, b), axes)
 
+@implements(numpy.trace)
 def trace(__arg: IntoArray, axis1: int = -2, axis2: int = -1) -> Array:
   '''Return the trace, the sum of the diagonal, of an array over the two given axes, elementwise over the remanining axes.
 
@@ -2138,6 +2100,7 @@ def outer(arg1, arg2=None, axis=0):
 
 # ARRAY OPS
 
+@implements(numpy.transpose)
 def transpose(__array: IntoArray, __axes: Optional[Sequence[int]] = None) -> Array:
   '''Permute the axes of an array.
 
@@ -2207,6 +2170,7 @@ def expand_dims(__array: IntoArray, axis: int) -> Array:
 
   return insertaxis(__array, axis, 1)
 
+@implements(numpy.repeat)
 def repeat(__array: IntoArray, __n: IntoArray, axis: int) -> Array:
   '''Repeat the given axis of an array `n` times.
 
@@ -2228,6 +2192,7 @@ def repeat(__array: IntoArray, __n: IntoArray, axis: int) -> Array:
     raise NotImplementedError('only axes with length 1 can be repeated')
   return insertaxis(get(array, axis, 0), axis, __n)
 
+@implements(numpy.swapaxes)
 def swapaxes(__array: IntoArray, __axis1: int, __axis2: int) -> Array:
   '''Swap two axes of an array.
 
@@ -2304,6 +2269,7 @@ def unravel(__array: IntoArray, axis: int, shape: Tuple[int, int]) -> Array:
     dtype=transposed.dtype)
   return _Transpose.from_end(unraveled, axis, axis+1)
 
+@implements(numpy.take)
 def take(__array: IntoArray, __indices: IntoArray, axis: int) -> Array:
   '''Take elements from an array along an axis.
 
@@ -2450,6 +2416,7 @@ def kronecker(__array: IntoArray, axis: int, length: int, pos: IntoArray) -> Arr
 
   return _Transpose.from_end(scatter(__array, length, pos), axis)
 
+@implements(numpy.concatenate)
 def concatenate(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
   '''Join arrays along an existing axis.
 
@@ -2470,6 +2437,7 @@ def concatenate(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
 
   return _Concatenate(__arrays, axis)
 
+@implements(numpy.stack)
 def stack(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
   '''Join arrays along a new axis.
 
@@ -2567,6 +2535,7 @@ def broadcast_shapes(*shapes: Shape) -> Tuple[int, ...]:
     broadcasted.append(next(iter(lengths)))
   return tuple(broadcasted)
 
+@implements(numpy.broadcast_to)
 def broadcast_to(array: IntoArray, shape: Shape) -> Array:
   '''Broadcast an array to a new shape.
 

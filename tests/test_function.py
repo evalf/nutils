@@ -44,11 +44,11 @@ class Array(TestCase):
     self.assertEqual(b.as_evaluable_array.eval(), 2)
 
   def test_binop_notimplemented(self):
-    with self.assertRaises(TypeError):
+    with self.assertRaisesRegex(TypeError, '^operand type\(s\) all returned NotImplemented from __array_ufunc__'):
       function.Argument('a', ()) + '1'
 
   def test_rbinop_notimplemented(self):
-    with self.assertRaises(TypeError):
+    with self.assertRaisesRegex(TypeError, '^operand type\(s\) all returned NotImplemented from __array_ufunc__'):
       '1' + function.Argument('a', ())
 
   def test_deprecated_simplified(self):
