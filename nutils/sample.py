@@ -250,9 +250,9 @@ class Sample(types.Singleton):
         Optional arguments for function evaluation.
     '''
 
-    return eval_integrals_sparse(*map(self.__rmatmul__, funcs), **(arguments or {}))
+    return eval_integrals_sparse(*map(self, funcs), **(arguments or {}))
 
-  def __rmatmul__(self, __func: function.IntoArray) -> function.Array:
+  def __call__(self, __func: function.IntoArray) -> function.Array:
     func = _ConcatenatePoints(function.Array.cast(__func), self)
     ielem = evaluable.loop_index('_sample_' + '_'.join(self.spaces), self.nelems)
     indices = evaluable.loop_concatenate(evaluable._flat(self.get_evaluable_indices(ielem)), ielem)
@@ -430,7 +430,7 @@ class _DefaultIndex(_TransformChainsSample):
     offset = evaluable.get(_offsets(self.points), 0, ielem)
     return evaluable.Range(npoints) + offset
 
-  def __rmatmul__(self, __func: function.IntoArray) -> function.Array:
+  def __call__(self, __func: function.IntoArray) -> function.Array:
     return _ConcatenatePoints(function.Array.cast(__func), self)
 
 class _CustomIndex(_TransformChainsSample):
@@ -519,7 +519,7 @@ class _Empty(_TensorialSample):
     func = function.Array.cast(__func)
     return function.zeros(func.shape, func.dtype)
 
-  def __rmatmul__(self, __func: function.IntoArray) -> function.Array:
+  def __call__(self, __func: function.IntoArray) -> function.Array:
     func = function.Array.cast(__func)
     return function.zeros((0, *func.shape), func.dtype)
 
@@ -569,8 +569,8 @@ class _Add(_TensorialSample):
   def integral(self, func: function.IntoArray) -> function.Array:
     return self._sample1.integral(func) + self._sample2.integral(func)
 
-  def __rmatmul__(self, func: function.IntoArray) -> function.Array:
-    return function.concatenate([func @ self._sample1, func @ self._sample2])
+  def __call__(self, func: function.IntoArray) -> function.Array:
+    return function.concatenate([self._sample1(func), self._sample2(func)])
 
 class _Mul(_TensorialSample):
 
@@ -650,8 +650,8 @@ class _Mul(_TensorialSample):
   def integral(self, func: function.IntoArray) -> function.Array:
     return self._sample1.integral(self._sample2.integral(func))
 
-  def __rmatmul__(self, func: function.IntoArray) -> function.Array:
-    return function.ravel(func @ self._sample2 @ self._sample1, axis=0)
+  def __call__(self, func: function.IntoArray) -> function.Array:
+    return function.ravel(self._sample1(self._sample2(func)), axis=0)
 
   def basis(self) -> Sample:
     basis1 = self._sample1.basis()
