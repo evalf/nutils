@@ -494,9 +494,18 @@ class Custom(Array):
   pointwise axes and the shape of the result passed to :class:`Custom` should
   not include the pointwise axes.
 
+  For internal reasons, both ``evalf`` and ``partial_derivative`` must be
+  decorated as ``classmethod`` or ``staticmethod``, meaning that they will not
+  receive a reference to ``self`` when called. Instead, all relevant data
+  should be passed to ``evalf`` via the constructor argument ``args``. The
+  constructor will automatically distinguish between Array and non-Array
+  arguments, and pass the latter on to ``evalf`` unchanged. The
+  ``partial_derivative`` will not be called for those arguments.
+
   The lowered array does not have a Nutils hash by default. If this is desired,
   the methods :meth:`evalf` and :meth:`partial_derivative` can be decorated
-  with :func:`nutils.types.hashable_function`.
+  with :func:`nutils.types.hashable_function` in addition to ``classmethod`` or
+  ``staticmethod``.
 
   Parameters
   ----------
@@ -620,7 +629,8 @@ class Custom(Array):
     coordinates = {space: evaluable.Transpose.to_end(evaluable.appendaxes(coords, add_points_shape), coords.ndim-1) for space, coords in coordinates.items()}
     return _CustomEvaluable(type(self).__name__, self.evalf, self.partial_derivative, args, self.shape[self._npointwise:], self.dtype, self.spaces, types.frozendict(self.arguments), points_shape, tuple(transform_chains.items()), tuple(coordinates.items()))
 
-  def evalf(self, *args: Any) -> numpy.ndarray:
+  @classmethod
+  def evalf(cls, *args: Any) -> numpy.ndarray:
     '''Evaluate this function for the given evaluated arguments.
 
     This function is called with arguments that correspond to the arguments
@@ -654,7 +664,8 @@ class Custom(Array):
 
     raise NotImplementedError # pragma: nocover
 
-  def partial_derivative(self, iarg: int, *args: Any) -> IntoArray:
+  @classmethod
+  def partial_derivative(cls, iarg: int, *args: Any) -> IntoArray:
     '''Return the partial derivative of this function to :class:`Custom` constructor argument number ``iarg``.
 
     This method is only called for those arguments that are instances of
@@ -678,7 +689,7 @@ class Custom(Array):
         The partial derivative of this function to the given argument.
     '''
 
-    raise NotImplementedError('The partial derivative of {} to argument {} (counting from 0) is not defined.'.format(type(self).__name__, iarg)) # pragma: nocover
+    raise NotImplementedError('The partial derivative of {} to argument {} (counting from 0) is not defined.'.format(cls.__name__, iarg)) # pragma: nocover
 
 class _CustomEvaluable(evaluable.Array):
 

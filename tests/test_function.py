@@ -356,7 +356,8 @@ class Custom(TestCase):
       def __init__(self):
         super().__init__(args=(), shape=(3,), dtype=int)
 
-      def evalf(self):
+      @staticmethod
+      def evalf():
         return numpy.array([1,2,3])[None]
 
     self.assertEvalAlmostEqual(Func(), function.Array.cast([1,2,3]))
@@ -371,10 +372,12 @@ class Custom(TestCase):
         assert base1.shape == base2.shape
         super().__init__(args=(offset, base1, exp1.__index__(), base2, exp2.__index__()), shape=base1.shape, dtype=float)
 
-      def evalf(self, offset, base1, exp1, base2, exp2):
+      @staticmethod
+      def evalf(offset, base1, exp1, base2, exp2):
         return offset + base1**exp1 + base2**exp2
 
-      def partial_derivative(self, iarg, offset, base1, exp1, base2, exp2):
+      @staticmethod
+      def partial_derivative(iarg, offset, base1, exp1, base2, exp2):
         if iarg == 1:
           if exp1 == 0:
             return function.zeros(base1.shape + base1.shape)
@@ -403,21 +406,21 @@ class Custom(TestCase):
     class A(function.Custom):
 
       @staticmethod
-      def evalf(self):
+      def evalf():
         pass
 
       @staticmethod
-      def partial_derivative(self, iarg):
+      def partial_derivative(iarg):
         pass
 
     class B(function.Custom):
 
       @staticmethod
-      def evalf(self):
+      def evalf():
         pass
 
       @staticmethod
-      def partial_derivative(self, iarg):
+      def partial_derivative(iarg):
         pass
 
     a = A(args=(function.Argument('a', (2,3)),), shape=(), dtype=float).as_evaluable_array
