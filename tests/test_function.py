@@ -63,6 +63,15 @@ class Array(TestCase):
     with self.assertRaisesRegex(ValueError, "Argument 'a' has two different dtypes"):
       function.Argument('a', (), dtype=float) + function.Argument('a', (), dtype=int)
 
+  def test_index(self):
+    self.assertEqual(function.Array.cast(2).__index__(), 2)
+    with self.assertRaisesRegex(ValueError, "cannot convert non-constant array to index: arguments=foo"):
+      function.Argument('foo', shape=(), dtype=int).__index__()
+    with self.assertRaisesRegex(ValueError, "cannot convert non-scalar array to index: shape=\(2,\)"):
+      function.Array.cast([2,3]).__index__()
+    with self.assertRaisesRegex(ValueError, "cannot convert non-integer array to index: dtype=float"):
+      function.Array.cast(2.5).__index__()
+
 class integral_compatibility(TestCase):
 
   def test_eval(self):

@@ -190,6 +190,16 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
   def as_evaluable_array(self) -> evaluable.Array:
     return self.lower((), {}, {})
 
+  def __index__(self):
+    if self.arguments or self.spaces:
+      raise ValueError('cannot convert non-constant array to index: arguments={}'.format(','.join(self.arguments)))
+    elif self.ndim:
+      raise ValueError('cannot convert non-scalar array to index: shape={}'.format(self.shape))
+    elif self.dtype != int:
+      raise ValueError('cannot convert non-integer array to index: dtype={}'.format(self.dtype.__name__))
+    else:
+      return self.as_evaluable_array.__index__()
+
   @property
   def ndim(self) -> int:
     return len(self.shape)
