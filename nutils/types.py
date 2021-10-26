@@ -1303,12 +1303,12 @@ def lru_cache(func=None, maxsize=128):
         key.append((type(arg), arg))
     key = tuple(key)
     try:
-      v = cache[key]
+      v, refs_ = cache[key]
     except KeyError:
-      v = cache[key] = func(*args)
+      v = func(*args)
       assert _isimmutable(v)
-      for base in bases:
-        weakref.finalize(base, cache.pop, key, None)
+      popkey = functools.partial(cache.pop, key)
+      cache[key] = v, [weakref.ref(base, popkey) for base in bases]
     return v
 
   wrapped.cache = cache
