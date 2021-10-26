@@ -1214,63 +1214,6 @@ class c_array(metaclass=_c_arraymeta):
   not reflected by the other.
   '''
 
-class lru_dict(dict):
-  '''
-  Dictionary with limited capacity.
-  '''
-
-  __slots__ = 'maxsize', '_sorted_keys', '_last_sorted'
-
-  count = 0
-
-  class key_wrapper:
-    __slots__ = 'key', 'count'
-    def __init__(self, key):
-      self.key = key
-      self.touch()
-    def touch(self):
-      self.count = lru_dict.count
-      lru_dict.count += 1
-    def __hash__(self):
-      return hash(self.key)
-    def __repr__(self):
-      return repr(self.key)
-    def __lt__(self, other):
-      return self.count > other.count # True if younger
-    def __eq__(self, other):
-      if self.key == other:
-        self.touch()
-        return True
-      else:
-        return False
-
-  def __init__(self, maxsize):
-    self.maxsize = maxsize.__index__()
-    self._sorted_keys = []
-
-  def __setitem__(self, key, value):
-    super().__setitem__(self.key_wrapper(key), value)
-    if len(self) > self.maxsize:
-      self.del_lru()
-
-  def clear(self):
-    super().clear()
-    self._sorted_keys.clear()
-
-  def update(self, items):
-    raise NotImplementedError
-
-  def del_lru(self):
-    while self._sorted_keys:
-      lru = self._sorted_keys.pop()
-      if lru.count < self._last_sorted: # not touched since last sort
-        break
-    else:
-      self._sorted_keys = sorted(self) # youngest first
-      self._last_sorted = self.count
-      lru = self._sorted_keys.pop()
-    del self[lru]
-
 def lru_cache(func):
   '''Buffer-aware cache.
 
