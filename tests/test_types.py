@@ -986,7 +986,7 @@ class lru_cache(TestCase):
   class obj(nutils.types.Immutable):
     'weak referencable object'
 
-  @nutils.types.lru_cache(maxsize=2)
+  @nutils.types.lru_cache
   def func(self, *args):
     self.called = True
     return self.obj()
@@ -1002,22 +1002,6 @@ class lru_cache(TestCase):
     self.called = False
     yield
     self.assertTrue(self.called)
-
-  def test_lru(self):
-    with self.assertNotCached():
-      self.func(1)
-    with self.assertNotCached():
-      self.func(2)
-    with self.assertCached():
-      self.func(1)
-    with self.assertCached():
-      self.func(2)
-    with self.assertNotCached():
-      self.func(3) # drops 1
-    with self.assertNotCached():
-      self.func(1)
-    with self.assertCached():
-      self.func(3)
 
   def test_array_identification(self):
     a = numpy.array([1,2,3,4])

@@ -1271,8 +1271,8 @@ class lru_dict(dict):
       lru = self._sorted_keys.pop()
     del self[lru]
 
-def lru_cache(func=None, maxsize=128):
-  '''Buffer-aware LRU cache.
+def lru_cache(func):
+  '''Buffer-aware cache.
 
   Returns values from a cache for previously seen arguments. Arguments must be
   hasheable objects or immutable Numpy arrays, the latter identified by the
@@ -1283,10 +1283,7 @@ def lru_cache(func=None, maxsize=128):
   is transitional, with future versions requiring that all arrays be immutable.
   '''
 
-  if func is None:
-    return functools.partial(lru_cache, maxsize=maxsize)
-
-  cache = lru_dict(maxsize)
+  cache = {}
 
   @functools.wraps(func)
   def wrapped(*args):
@@ -1301,6 +1298,8 @@ def lru_cache(func=None, maxsize=128):
         key.append(tuple(map(arg.__array_interface__.__getitem__, ['data', 'strides', 'shape', 'typestr'])))
       else:
         key.append((type(arg), arg))
+    if not bases:
+      raise ValueError('arguments must include at least one array')
     key = tuple(key)
     try:
       v, refs_ = cache[key]
