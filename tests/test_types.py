@@ -1,7 +1,7 @@
 from nutils.testing import *
 import nutils.types
 import inspect, pickle, itertools, ctypes, stringly, tempfile, io, os
-import numpy, weakref
+import numpy, weakref, contextlib
 
 class apply_annotations(TestCase):
 
@@ -1028,46 +1028,82 @@ class lru_cache(TestCase):
     super().setUp()
     self.func.cache.clear()
 
+  class obj(nutils.types.Immutable):
+    'weak referencable object'
+
   @nutils.types.lru_cache(maxsize=2)
   def func(self, *args):
     self.called = True
+    return self.obj()
 
+  @contextlib.contextmanager
   def assertCached(self, *args):
     self.called = False
-    self.func(*args)
+    yield
     self.assertFalse(self.called)
 
+  @contextlib.contextmanager
   def assertNotCached(self, *args):
     self.called = False
-    self.func(*args)
+    yield
     self.assertTrue(self.called)
 
   def test_lru(self):
-    self.assertNotCached(1)
-    self.assertNotCached(2)
-    self.assertCached(1)
-    self.assertCached(2)
-    self.assertNotCached(3) # drops 1
-    self.assertNotCached(1)
-    self.assertCached(3)
+    with self.assertNotCached():
+      self.func(1)
+    with self.assertNotCached():
+      self.func(2)
+    with self.assertCached():
+      self.func(1)
+    with self.assertCached():
+      self.func(2)
+    with self.assertNotCached():
+      self.func(3) # drops 1
+    with self.assertNotCached():
+      self.func(1)
+    with self.assertCached():
+      self.func(3)
 
-  def test_array(self):
+  def test_array_identification(self):
     a = numpy.array([1,2,3,4])
     a.flags.writeable = False
-    self.assertNotCached(a[1:][:-1])
-    self.assertCached(a[:-1][1:])
+    with self.assertNotCached():
+      self.func(a[1:][:-1])
+    with self.assertCached():
+      self.func(a[:-1][1:])
 
-  def test_callback(self):
+  def test_destruction_arrays(self):
     a = numpy.array([1,2,3,4])
     a.flags.writeable = False
-    class dummy: pass
-    b = dummy()
-    r = weakref.ref(b)
-    self.assertNotCached(a, b)
-    del b
-    self.assertIsNot(r(), None)
+    b = numpy.array([5,6,7,8])
+    b.flags.writeable = False
+    with self.assertNotCached():
+      ret_ = weakref.ref(self.func(a, b))
+    with self.assertCached():
+      self.assertIs(ret_(), self.func(a, b))
     del a
-    self.assertIs(r(), None)
+    self.assertIs(ret_(), None)
+
+  def test_destruction_array_obj(self):
+    a = numpy.array([1,2,3,4])
+    a.flags.writeable = False
+    b = self.obj()
+    b_ = weakref.ref(b)
+    with self.assertNotCached():
+      ret_ = weakref.ref(self.func(a, b))
+    del b
+    self.assertIsNot(b_(), None)
+    self.assertIsNot(ret_(), None)
+    del a
+    self.assertIs(b_(), None)
+    self.assertIs(ret_(), None)
+
+  def test_mutable(self):
+    a = numpy.array([1,2,3,4])
+    with self.assertNotCached():
+      self.func(a)
+    with self.assertNotCached():
+      self.func(a)
 
 class hashable_function(TestCase):
 
