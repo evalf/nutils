@@ -1224,6 +1224,15 @@ def lru_cache(func):
 
   At present, any writeable array will silently disable caching. This bevaviour
   is transitional, with future versions requiring that all arrays be immutable.
+
+  .. caution::
+
+      When a decorated function returns an object that references its argument
+      (for instance, by returning the argument itself), the cached value keeps
+      an argument's reference count from falling to zero, causing the object to
+      remain in cache indefinitely. For this reason, care must be taken that
+      the decorator is only applied to functions that return objects with no
+      references to its arguments.
   '''
 
   cache = {}
