@@ -32,8 +32,10 @@ TransformChain = Tuple['TransformItem']
 
 ## TRANSFORM CHAIN OPERATIONS
 
-@types.lru_cache
 def apply(chain, points):
+  # NOTE: we explicitly do not lru_cache apply, as doing so would create a
+  # cyclic reference when chain is empty or contains only Identity transforms.
+  # Instead we rely on the caching of individual transform items.
   for trans in reversed(chain):
     points = trans.apply(points)
   return points
