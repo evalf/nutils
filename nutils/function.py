@@ -3078,12 +3078,9 @@ def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = ()) -> A
       The inner product with shape ``shape + arrays[0].shape[1:] + ... + arrays[-1].shape[1:]``.
   '''
 
-  arrays_ = map(Array.cast, arrays)
   result = Argument(__argname, tuple(array.shape[0] for array in arrays) + tuple(shape), dtype=float)
-  for array in arrays_:
-    axes = (0, *range(result.ndim, result.ndim+array.ndim-1), *range(1, result.ndim))
-    result, array = _append_axes(result, array.shape[1:]), transpose(_append_axes(array, result.shape[1:]), axes)
-    result = (result * array).sum(0)
+  for array in arrays:
+    result = numpy.sum(_append_axes(result.transpose((*range(1, result.ndim), 0)), array.shape[1:]) * array, result.ndim-1)
   return result
 
 # BASES
