@@ -349,18 +349,8 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     return eval_integrals(self, **arguments)[0]
 
   def derivative(self, __var: Union[str, 'Argument']) -> 'Array':
-    'Differentiate this function to `var`.'
-
-    if isinstance(__var, str):
-      if __var not in self.arguments:
-        raise ValueError('no such argument: {}'.format(__var))
-      shape, dtype = self.arguments[__var]
-      var = Argument(__var, shape, dtype=dtype)
-    elif not isinstance(__var, Argument):
-      raise ValueError('expected an `Argument` but got `{!r}`'.format(__var))
-    else:
-      var = __var
-    return derivative(self, var)
+    'See :func:`derivative`.'
+    return derivative(self, __var)
 
   def replace(self, __arguments: Mapping[str, IntoArray]) -> 'Array':
     'Return a copy with arguments applied.'
@@ -2592,7 +2582,7 @@ def broadcast_to(array: IntoArray, shape: Shape) -> Array:
 
 # DERIVATIVES
 
-def derivative(__arg: IntoArray, __var: Argument) -> Array:
+def derivative(__arg: IntoArray, __var: Union[str, 'Argument']) -> Array:
   '''Differentiate `arg` to `var`.
 
   Parameters
@@ -2605,7 +2595,12 @@ def derivative(__arg: IntoArray, __var: Argument) -> Array:
   '''
 
   arg = Array.cast(__arg)
-  if not isinstance(__var, Argument):
+  if isinstance(__var, str):
+    if __var not in arg.arguments:
+      raise ValueError('no such argument: {}'.format(__var))
+    shape, dtype = arg.arguments[__var]
+    __var = Argument(__var, shape, dtype=dtype)
+  elif not isinstance(__var, Argument):
     raise ValueError('Expected an instance of `Argument` as second argument of `derivative` but got a `{}.{}`.'.format(type(__var).__module__, type(__var).__qualname__))
   if __var.name in arg.arguments:
     shape, dtype = arg.arguments[__var.name]
