@@ -60,12 +60,12 @@ def plotlines_(ax, xy, lines, **kwargs):
   ax.add_collection(lc)
   return lc
 
-def triplot(name, points, values=None, *, tri=None, hull=None, cmap=None, clim=None, linewidth=.1, linecolor='k'):
+def triplot(name, points, values=None, *, tri=None, hull=None, cmap=None, clim=None, linewidth=.1, linecolor='k', plabel=None, vlabel=None):
   if (tri is None) != (values is None):
     raise Exception('tri and values can only be specified jointly')
   with mplfigure(name) as fig:
     if points.shape[1] == 1:
-      ax = fig.add_subplot(111)
+      ax = fig.add_subplot(111, xlabel=plabel, ylabel=vlabel)
       if tri is not None:
         plotlines_(ax, [points[:,0], values], tri)
       if hull is not None:
@@ -77,12 +77,12 @@ def triplot(name, points, values=None, *, tri=None, hull=None, cmap=None, clim=N
       else:
         ax.set_ylim(clim)
     elif points.shape[1] == 2:
-      ax = fig.add_subplot(111, aspect='equal')
+      ax = fig.add_subplot(111, xlabel=plabel, ylabel=plabel, aspect='equal')
       if tri is not None:
         im = ax.tripcolor(*points.T, tri, values, shading='gouraud', cmap=cmap, rasterized=True)
         if clim is not None:
           im.set_clim(clim)
-        fig.colorbar(im)
+        fig.colorbar(im, label=vlabel)
       if hull is not None:
         plotlines_(ax, points.T, hull, colors=linecolor, linewidths=linewidth, alpha=1 if tri is None else .5)
       ax.autoscale(enable=True, axis='both', tight=True)
