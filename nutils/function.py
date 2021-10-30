@@ -1158,6 +1158,21 @@ def subtract(__left: IntoArray, __right: IntoArray) -> Array:
 
   return add(__left, negative(__right))
 
+@implements(numpy.positive)
+def positive(__arg: IntoArray) -> Array:
+  '''Return the argument unchanged.
+
+  Parameters
+  ----------
+  arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
+
+  Returns
+  -------
+  :class:`Array`
+  '''
+
+  return Array.cast(__arg)
+
 @implements(numpy.negative)
 def negative(__arg: IntoArray) -> Array:
   '''Return the negation of the argument, elementwise.
@@ -1262,6 +1277,14 @@ def sqrt(__arg: IntoArray) -> Array:
   '''
 
   return power(__arg, .5)
+
+@implements(numpy.square)
+def square(__arg: IntoArray) -> Array:
+  return power(__arg, 2)
+
+@implements(numpy.hypot)
+def hypot(__array1: IntoArray, __array2: IntoArray) -> Array:
+  return sqrt(square(__array1) + square(__array2))
 
 @implements(numpy.absolute)
 def abs(__arg: IntoArray) -> Array:
