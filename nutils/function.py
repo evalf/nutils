@@ -25,7 +25,7 @@ else:
   Protocol = object
 
 from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, List, FrozenSet
-from . import evaluable, numeric, util, types, warnings, debug_flags
+from . import evaluable, numeric, util, types, warnings, debug_flags, sparse
 from .transform import EvaluableTransformChain
 from .transformseq import Transforms
 import builtins, numpy, functools, operator, numbers
@@ -2873,6 +2873,24 @@ def nsymgrad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
   return dotnorm(symgrad(arg, geom, ndims), geom)
 
 # MISC
+
+@util.single_or_multiple
+def eval(funcs: evaluable.AsEvaluableArray, **arguments: Mapping[str, numpy.ndarray]) -> Tuple[numpy.ndarray, ...]:
+  '''Evaluate one or several Array objects.
+
+  Args
+  ----
+  funcs : :class:`tuple` of Array objects
+      Arrays to be evaluated.
+  arguments : :class:`dict` (default: None)
+      Optional arguments for function evaluation.
+
+  Returns
+  -------
+  results : :class:`tuple` of arrays
+  '''
+
+  return map(sparse.toarray, evaluable.eval_sparse(funcs, **arguments))
 
 def isarray(__arg: Any) -> bool:
   'Test if the argument is an instance of :class:`Array`.'

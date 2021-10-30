@@ -1213,3 +1213,16 @@ SurfaceGradient(boundary=False, etype='triangle')
 SurfaceGradient(boundary=True, etype='square')
 SurfaceGradient(boundary=True, etype='triangle')
 SurfaceGradient(boundary=True, etype='cube')
+
+class Eval(TestCase):
+
+  def test_single(self):
+    f = function.dotarg('v', numpy.array([1,2,3]))
+    retval = function.eval(f, v=numpy.array([4,5,6]))
+    self.assertEqual(retval, 4+10+18)
+
+  def test_multiple(self):
+    f = function.dotarg('v', numpy.array([1,2,3]))
+    g = function.dotarg('v', numpy.array([3,2,1]))
+    retvals = function.eval([f, g], v=numpy.array([4,5,6]))
+    self.assertEqual(retvals, (4+10+18, 12+10+6))
