@@ -3,7 +3,7 @@
 # In this script we solve the Cahn-Hiilliard equation, which models the
 # unmixing of two phases under the effect of surface tension.
 
-from nutils import mesh, function, solver, sample, export, cli, testing
+from nutils import mesh, function, solver, export, cli, testing
 from nutils.expression_v2 import Namespace
 import numpy, treelog, itertools, enum, typing
 
@@ -84,7 +84,7 @@ def main(nelems:int, etype:str, btype:str, degree:int, epsilon:typing.Optional[f
   with treelog.iter.plain('timestep', itertools.count()) as steps:
    for istep in steps:
 
-    E = sample.eval_integrals(nrg_mix, nrg_iface, nrg_wall, **state)
+    E = function.eval([nrg_mix, nrg_iface, nrg_wall], **state)
     treelog.user('energy: {0:.3f} ({1[0]:.0f}% mixture, {1[1]:.0f}% interface, {1[2]:.0f}% wall)'.format(sum(E), 100*numpy.array(E)/sum(E)))
 
     x, c, m = bezier.eval(['x_i', 'c', 'm'] @ ns, **state)
