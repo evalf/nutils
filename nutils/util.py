@@ -253,7 +253,7 @@ def obj2str(obj):
     else str(obj).strip('0').rstrip('.') or '0' if isinstance(obj, numbers.Real) \
     else str(obj)
 
-def single_or_multiple(f):
+class single_or_multiple:
   """
   Method wrapper, converts first positional argument to tuple: tuples/lists
   are passed on as tuples, other objects are turned into tuple singleton.
@@ -283,28 +283,32 @@ def single_or_multiple(f):
       Wrapped method.
   """
 
-  @functools.wraps(f)
-  def wrapped(*args, **kwargs):
-    if len(args) <= 1:
-      raise TypeError('{} requires at least 1 positional argument'.format(f.__name__))
-    ismultiple = isinstance(args[1], (list,tuple))
-    retvals = tuple(f(args[0], tuple(args[1]) if ismultiple else args[1:2], *args[2:], **kwargs))
+  def __init__(self, f):
+    functools.update_wrapper(self, f)
+
+  def __get__(self, instance, owner):
+    return single_or_multiple(self.__wrapped__.__get__(instance, owner))
+
+  def __call__(self, *args, **kwargs):
+    if not args:
+      raise TypeError('{} requires at least 1 positional argument'.format(self.__wrapped__.__name__))
+    ismultiple = isinstance(args[0], (list,tuple,map))
+    retvals = tuple(self.__wrapped__(tuple(args[0]) if ismultiple else args[:1], *args[1:], **kwargs))
     if not ismultiple:
       retvals, = retvals
     return retvals
-  return wrapped
 
-def positional_only(f):
+class positional_only:
   '''Change all positional-or-keyword arguments to positional-only.
 
-  Python has no explicit syntax for defining positional-only parameters, but
-  the effect can be achieved by using a wrapper with a var-positional argument.
-  The :func:`positional_only` decorator uses this technique to treat all
-  positional-or-keyword arguments as positional-only. In order to avoid name
-  clashes between the positional-only arguments and variable keyword arguments,
-  the wrapper additionally introduces the convention that the last argument
-  receives the variable keyword argument dictionary in case is has a default
-  value of ... (ellipsis).
+  Python introduces syntax to define positional-only parameters in version 3.8,
+  but the same effect can be achieved in older versions by using a wrapper with
+  a var-positional argument. The :func:`positional_only` decorator uses this
+  technique to treat all positional-or-keyword arguments as positional-only. In
+  order to avoid name clashes between the positional-only arguments and
+  variable keyword arguments, the wrapper additionally introduces the
+  convention that the last argument receives the variable keyword argument
+  dictionary in case is has a default value of ... (ellipsis).
 
   Example:
 
@@ -326,30 +330,36 @@ def positional_only(f):
       Function to be wrapped.
   '''
 
-  signature = inspect.signature(f)
-  parameters = list(signature.parameters.values())
-  keywords = []
-  varkw = None
-  for i, param in enumerate(parameters):
-    if param.kind is param.VAR_KEYWORD:
-      raise Exception('positional_only decorated function must use ellipses to mark a variable keyword argument')
-    if i == len(parameters)-1 and param.default is ...:
-      parameters[i] = param.replace(kind=inspect.Parameter.VAR_KEYWORD, default=inspect.Parameter.empty)
-      varkw = param.name
-    elif param.kind is param.POSITIONAL_OR_KEYWORD:
-      parameters[i] = param.replace(kind=param.POSITIONAL_ONLY)
-    elif param.kind is param.KEYWORD_ONLY:
-      keywords.append(param.name)
-  @functools.wraps(f)
-  def wrapped(*args, **kwargs):
-    wrappedkwargs = {name: kwargs.pop(name) for name in keywords if name in kwargs}
-    if varkw:
-      wrappedkwargs[varkw] = kwargs
+  def __init__(self, f):
+    signature = inspect.signature(f)
+    parameters = list(signature.parameters.values())
+    keywords = []
+    varkw = None
+    for i, param in enumerate(parameters):
+      if param.kind is param.VAR_KEYWORD:
+        raise Exception('positional_only decorated function must use ellipses to mark a variable keyword argument')
+      if i == len(parameters)-1 and param.default is ...:
+        parameters[i] = param.replace(kind=inspect.Parameter.VAR_KEYWORD, default=inspect.Parameter.empty)
+        varkw = param.name
+      elif param.kind is param.POSITIONAL_OR_KEYWORD:
+        parameters[i] = param.replace(kind=param.POSITIONAL_ONLY)
+      elif param.kind is param.KEYWORD_ONLY:
+        keywords.append(param.name)
+    self.__keywords = tuple(keywords)
+    self.__varkw = varkw
+    self.__signature__ = signature.replace(parameters=parameters)
+    functools.update_wrapper(self, f)
+
+  def __get__(self, instance, owner):
+    return positional_only(self.__wrapped__.__get__(instance, owner))
+
+  def __call__(self, *args, **kwargs):
+    wrappedkwargs = {name: kwargs.pop(name) for name in self.__keywords if name in kwargs}
+    if self.__varkw:
+      wrappedkwargs[self.__varkw] = kwargs
     elif kwargs:
-      raise TypeError('{}() got an unexpected keyword argument {!r}'.format(f.__name__, *kwargs))
-    return f(*args, **wrappedkwargs)
-  f.__signature__ = signature.replace(parameters=parameters)
-  return wrapped
+      raise TypeError('{}() got an unexpected keyword argument {!r}'.format(self.__wrapped__.__name__, *kwargs))
+    return self.__wrapped__(*args, **wrappedkwargs)
 
 def loadlib(**libname):
   '''
