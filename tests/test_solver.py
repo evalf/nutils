@@ -1,4 +1,4 @@
-from nutils import solver, mesh, function, cache, types, numeric, warnings, sample, sparse
+from nutils import solver, mesh, function, cache, types, numeric, warnings, evaluable, sparse
 from nutils.testing import *
 import numpy, contextlib, tempfile, itertools, logging
 
@@ -86,7 +86,7 @@ class navierstokes(TestCase):
   def assert_resnorm(self, lhs):
     res = self.residual.eval(arguments=dict(dofs=lhs))[numpy.isnan(self.cons)] if self.single \
       else numpy.concatenate([sparse.toarray(sparse.take(r, [numpy.isnan(self.cons[d])]) if d in self.cons else r)
-        for d, r in zip(self.dofs, sample.eval_integrals_sparse(*self.residual, **lhs))])
+        for d, r in zip(self.dofs, evaluable.eval_sparse(self.residual, **lhs))])
     resnorm = numpy.linalg.norm(res)
     self.assertLess(resnorm, self.tol)
 
@@ -142,7 +142,7 @@ class finitestrain(TestCase):
     self.tol = 1e-10
 
   def assert_resnorm(self, lhs):
-    res, = sample.eval_integrals_sparse(self.residual, dofs=lhs)
+    res = evaluable.eval_sparse(self.residual, dofs=lhs)
     resnorm = numpy.linalg.norm(sparse.toarray(res)[~self.boolcons])
     self.assertLess(resnorm, self.tol)
 

@@ -50,7 +50,7 @@ In addition to ``solve_linear`` the solver module defines ``newton`` and
 time dependent problems.
 """
 
-from . import function, evaluable, cache, numeric, sample, types, util, matrix, warnings, sparse
+from . import function, evaluable, cache, numeric, types, util, matrix, warnings, sparse
 import abc, numpy, itertools, functools, numbers, collections, math, inspect, treelog as log
 
 
@@ -945,7 +945,7 @@ def _integrate_blocks(*blocks, arguments, mask):
   *scalars, residuals, jacobians = blocks
   assert len(residuals) == len(mask)
   assert len(jacobians) == len(mask)**2
-  data = iter(sample.eval_integrals_sparse(*scalars, *residuals, *jacobians, **arguments))
+  data = iter(evaluable.eval_sparse((*scalars, *residuals, *jacobians), **arguments))
   nrg = [sparse.toarray(next(data)) for _ in range(len(scalars))]
   res = [sparse.take(next(data), [m]) for m in mask]
   jac = [[sparse.take(next(data), [mi, mj]) for mj in mask] for mi in mask]

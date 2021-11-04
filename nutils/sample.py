@@ -35,7 +35,7 @@ selected sample points, and is typically used in combination with the "bezier"
 set.
 '''
 
-from . import types, points, util, function, evaluable, parallel, numeric, matrix, sparse
+from . import types, points, util, function, evaluable, parallel, numeric, matrix, sparse, warnings
 from .pointsseq import PointsSequence
 from .transformseq import Transforms
 from .transform import EvaluableTransformChain
@@ -45,8 +45,6 @@ import numpy, numbers, collections.abc, os, treelog as log, abc
 _PointsShape = Tuple[evaluable.Array, ...]
 _TransformChainsMap = Mapping[str, Tuple[EvaluableTransformChain, EvaluableTransformChain]]
 _CoordinatesMap = Mapping[str, evaluable.Array]
-
-graphviz = os.environ.get('NUTILS_GRAPHVIZ')
 
 def argdict(arguments) -> Mapping[str, numpy.ndarray]:
   if len(arguments) == 1 and 'arguments' in arguments and isinstance(arguments['arguments'], collections.abc.Mapping):
@@ -207,7 +205,7 @@ class Sample(types.Singleton):
         Optional arguments for function evaluation.
     '''
 
-    return eval_integrals_sparse(*map(self.integral, funcs), **(arguments or {}))
+    return evaluable.eval_sparse(map(self.integral, funcs), **(arguments or {}))
 
   def integral(self, __func: function.IntoArray) -> function.Array:
     '''Create Integral object for postponed integration.
@@ -250,7 +248,7 @@ class Sample(types.Singleton):
         Optional arguments for function evaluation.
     '''
 
-    return eval_integrals_sparse(*map(self, funcs), **(arguments or {}))
+    return evaluable.eval_sparse(map(self, funcs), **(arguments or {}))
 
   def __call__(self, __func: function.IntoArray) -> function.Array:
     func = _ConcatenatePoints(function.Array.cast(__func), self)
@@ -732,11 +730,15 @@ def eval_integrals(*integrals: evaluable.AsEvaluableArray, **arguments: Mapping[
   results : :class:`tuple` of arrays and/or :class:`nutils.matrix.Matrix` objects.
   '''
 
-  with log.iter.fraction('assembling', eval_integrals_sparse(*integrals, **argdict(arguments))) as retvals:
+  with log.iter.fraction('assembling', evaluable.eval_sparse(integrals, **argdict(arguments))) as retvals:
     return tuple(_convert(retval, inplace=True) for retval in retvals)
 
 def eval_integrals_sparse(*integrals: evaluable.AsEvaluableArray, **arguments: Mapping[str, numpy.ndarray]) -> Tuple[numpy.ndarray, ...]:
-  '''Evaluate integrals into sparse data.
+  '''
+  .. deprecated:: 7.0
+      sample.eval_integrals_sparse is deprecated, use function.eval_sparse instead
+
+  Evaluate integrals into sparse data.
 
   Evaluate one or several postponed integrals. By evaluating them
   simultaneously, rather than using :meth:`nutils.function.Array.eval` on each
@@ -755,9 +757,8 @@ def eval_integrals_sparse(*integrals: evaluable.AsEvaluableArray, **arguments: M
   results : :class:`tuple` of arrays and/or :class:`nutils.matrix.Matrix` objects.
   '''
 
-  integrals = tuple(integral.as_evaluable_array.assparse for integral in integrals)
-  with evaluable.Tuple(tuple(integrals)).optimized_for_numpy.session(graphviz=graphviz) as eval:
-    return eval(**arguments)
+  warnings.deprecation('sample.eval_integrals_sparse is deprecated, use function.eval_sparse instead')
+  return function.eval_sparse(integrals, **arguments)
 
 def _convert(data: numpy.ndarray, inplace: bool = False) -> Union[numpy.ndarray, matrix.Matrix]:
   '''Convert a two-dimensional sparse object to an appropriate object.
