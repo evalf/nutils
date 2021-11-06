@@ -546,7 +546,7 @@ class Namespace(TestCase):
     ns.ε = function.levicivita(3)
     ns.f = function.Array.cast([['x', '-z', 'y'], ['0', 'x z', '0']] @ ns)
     smpl = topo.sample('gauss', 5)
-    assertEvalAlmostEqual = lambda *args: self.assertAllAlmostEqual(*((f @ smpl).as_evaluable_array.eval() for f in args))
+    assertEvalAlmostEqual = lambda *args: self.assertAllAlmostEqual(*(smpl(f).as_evaluable_array.eval() for f in args))
     assertEvalAlmostEqual('curl_ij(y δ_j0 - x δ_j1 + z δ_j2)' @ ns, '-2 δ_i2' @ ns)
     assertEvalAlmostEqual('curl_ij(-x^2 δ_j1)' @ ns, '-2 x δ_i2' @ ns)
     assertEvalAlmostEqual('curl_ij((x δ_j0 - z δ_j1 + y δ_j2) δ_k0 + x z δ_j1 δ_k1)' @ ns, '2 δ_i0 δ_k0 - x δ_i0 δ_k1 + z δ_i2 δ_k1' @ ns)

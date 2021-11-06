@@ -44,11 +44,11 @@ class Array(TestCase):
     self.assertEqual(b.as_evaluable_array.eval(), 2)
 
   def test_binop_notimplemented(self):
-    with self.assertRaises(TypeError):
+    with self.assertRaisesRegex(TypeError, '^operand type\(s\) all returned NotImplemented from __array_ufunc__'):
       function.Argument('a', ()) + '1'
 
   def test_rbinop_notimplemented(self):
-    with self.assertRaises(TypeError):
+    with self.assertRaisesRegex(TypeError, '^operand type\(s\) all returned NotImplemented from __array_ufunc__'):
       '1' + function.Argument('a', ())
 
   def test_deprecated_simplified(self):
@@ -62,6 +62,15 @@ class Array(TestCase):
   def test_different_argument_dtypes(self):
     with self.assertRaisesRegex(ValueError, "Argument 'a' has two different dtypes"):
       function.Argument('a', (), dtype=float) + function.Argument('a', (), dtype=int)
+
+  def test_index(self):
+    self.assertEqual(function.Array.cast(2).__index__(), 2)
+    with self.assertRaisesRegex(ValueError, "cannot convert non-constant array to index: arguments=foo"):
+      function.Argument('foo', shape=(), dtype=int).__index__()
+    with self.assertRaisesRegex(ValueError, "cannot convert non-scalar array to index: shape=\(2,\)"):
+      function.Array.cast([2,3]).__index__()
+    with self.assertRaisesRegex(ValueError, "cannot convert non-integer array to index: dtype=float"):
+      function.Array.cast(2.5).__index__()
 
 class integral_compatibility(TestCase):
 
@@ -163,6 +172,7 @@ _check('subtract', function.subtract, numpy.subtract, [(4,), (4,)])
 _check('Array_sub', lambda a, b: function.Array.cast(a) - b, numpy.subtract, [(4,), (4,)])
 _check('Array_rsub', lambda a, b: a - function.Array.cast(b), numpy.subtract, [(4,), (4,)])
 _check('negative', function.negative, numpy.negative, [(4,)])
+_check('positive', function.positive, numpy.positive, [(4,)])
 _check('Array_neg', lambda a: -function.Array.cast(a), numpy.negative, [(4,)])
 _check('Array_pos', lambda a: +function.Array.cast(a), lambda a: a, [(4,)])
 _check('multiply', function.multiply, numpy.multiply, [(4,), (4,)])
@@ -250,6 +260,8 @@ _check('diagonalize', function.diagonalize, numpy.diag, [(3,)])
 _check('cross', function.cross, numpy.cross, [(3,), (3,)])
 _check('outer', function.outer, lambda a, b: a[:,None]*b[None,:], [(2,3),(4,3)])
 _check('outer_self', function.outer, lambda a: a[:,None]*a[None,:], [(2,3)])
+_check('square', function.square, numpy.square, [(4,)])
+_check('hypot', function.hypot, numpy.hypot, [(4,4),(4,4)])
 
 _check('transpose', lambda a: function.transpose(a,[0,1,3,2]), lambda a: a.transpose([0,1,3,2]), [(1,2,3,4)], dtype=int)
 _check('Array_transpose', lambda a: function.Array.cast(a).transpose([0,1,3,2]), lambda a: a.transpose([0,1,3,2]), [(1,2,3,4)], dtype=int)
@@ -356,7 +368,8 @@ class Custom(TestCase):
       def __init__(self):
         super().__init__(args=(), shape=(3,), dtype=int)
 
-      def evalf(self):
+      @staticmethod
+      def evalf():
         return numpy.array([1,2,3])[None]
 
     self.assertEvalAlmostEqual(Func(), function.Array.cast([1,2,3]))
@@ -371,10 +384,12 @@ class Custom(TestCase):
         assert base1.shape == base2.shape
         super().__init__(args=(offset, base1, exp1.__index__(), base2, exp2.__index__()), shape=base1.shape, dtype=float)
 
-      def evalf(self, offset, base1, exp1, base2, exp2):
+      @staticmethod
+      def evalf(offset, base1, exp1, base2, exp2):
         return offset + base1**exp1 + base2**exp2
 
-      def partial_derivative(self, iarg, offset, base1, exp1, base2, exp2):
+      @staticmethod
+      def partial_derivative(iarg, offset, base1, exp1, base2, exp2):
         if iarg == 1:
           if exp1 == 0:
             return function.zeros(base1.shape + base1.shape)
@@ -403,21 +418,21 @@ class Custom(TestCase):
     class A(function.Custom):
 
       @staticmethod
-      def evalf(self):
+      def evalf():
         pass
 
       @staticmethod
-      def partial_derivative(self, iarg):
+      def partial_derivative(iarg):
         pass
 
     class B(function.Custom):
 
       @staticmethod
-      def evalf(self):
+      def evalf():
         pass
 
       @staticmethod
-      def partial_derivative(self, iarg):
+      def partial_derivative(iarg):
         pass
 
     a = A(args=(function.Argument('a', (2,3)),), shape=(), dtype=float).as_evaluable_array
@@ -1207,3 +1222,16 @@ SurfaceGradient(boundary=False, etype='triangle')
 SurfaceGradient(boundary=True, etype='square')
 SurfaceGradient(boundary=True, etype='triangle')
 SurfaceGradient(boundary=True, etype='cube')
+
+class Eval(TestCase):
+
+  def test_single(self):
+    f = function.dotarg('v', numpy.array([1,2,3]))
+    retval = function.eval(f, v=numpy.array([4,5,6]))
+    self.assertEqual(retval, 4+10+18)
+
+  def test_multiple(self):
+    f = function.dotarg('v', numpy.array([1,2,3]))
+    g = function.dotarg('v', numpy.array([3,2,1]))
+    retvals = function.eval([f, g], v=numpy.array([4,5,6]))
+    self.assertEqual(retvals, (4+10+18, 12+10+6))

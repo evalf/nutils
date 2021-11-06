@@ -55,7 +55,7 @@ jobs:
           # nprocs
           - {os: ubuntu-latest , python-version: 3.9, matrix-backend: numpy, nprocs: 2, numpy-version: latest}
           # numpy-version
-          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: numpy, nprocs: 1, numpy-version: 1.16  }
+          - {os: ubuntu-latest , python-version: 3.6, matrix-backend: numpy, nprocs: 1, numpy-version: 1.17  }
           # tensorial
           - {os: ubuntu-latest , python-version: 3.9, matrix-backend: numpy, nprocs: 1, numpy-version: latest, tensorial: test}
       fail-fast: false

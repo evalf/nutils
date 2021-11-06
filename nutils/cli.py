@@ -283,7 +283,10 @@ def run(func, *, args=None, loaduserconfig=True):
       sys.exit(2)
     (funcargs if name in sig.parameters else setupargs)[name] = value
 
-  kwargs = [(param.name, stringly.dumps(types[param.name], funcargs.get(param.name, param.default)), argdocs.get(param.name)) for param in sig.parameters.values()]
+  kwargs = [(param.name,
+             strargs[param.name] if param.name in strargs
+        else stringly.dumps(types[param.name], funcargs.get(param.name, param.default)),
+             argdocs.get(param.name)) for param in sig.parameters.values()]
 
   with setup(scriptname=scriptname, kwargs=kwargs, **setupargs):
     func(**funcargs)

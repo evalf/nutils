@@ -50,7 +50,9 @@ else:
 
 from . import debug_flags, util, types, numeric, cache, warnings, parallel, sparse
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph
-import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log, weakref, time, contextlib, subprocess
+import numpy, sys, itertools, functools, operator, inspect, numbers, builtins, re, types as builtin_types, abc, collections.abc, math, treelog as log, weakref, time, contextlib, subprocess, os
+
+graphviz = os.environ.get('NUTILS_GRAPHVIZ')
 
 isevaluable = lambda arg: isinstance(arg, Evaluable)
 
@@ -4361,6 +4363,27 @@ def einsum(fmt, *args, **dims):
   for i in range(len(sout), len(sall)):
     ret = Sum(ret)
   return ret
+
+@util.single_or_multiple
+def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.ndarray]) -> typing.Tuple[numpy.ndarray, ...]:
+  '''Evaluate one or several Array objects as sparse data.
+
+  Args
+  ----
+  funcs : :class:`tuple` of Array objects
+      Arrays to be evaluated.
+  arguments : :class:`dict` (default: None)
+      Optional arguments for function evaluation.
+
+  Returns
+  -------
+  results : :class:`tuple` of sparse data arrays
+  '''
+
+  funcs = tuple(func.as_evaluable_array.assparse for func in funcs)
+  with Tuple(funcs).optimized_for_numpy.session(graphviz=graphviz) as eval:
+    return eval(**arguments)
+
 
 if __name__ == '__main__':
   # Diagnostics for the development for simplify operations.

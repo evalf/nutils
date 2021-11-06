@@ -956,7 +956,7 @@ class namespace(TestCase):
   def assertEqualLowered(self, actual, desired, *, topo=None):
     if topo:
       smpl = topo.sample('gauss', 2)
-      lower = lambda f: evaluable.asarray(f @ smpl)
+      lower = lambda f: evaluable.asarray(smpl(f))
     else:
       lower = evaluable.asarray
     return self.assertEqual(lower(actual), lower(desired))
@@ -1134,13 +1134,13 @@ class namespace(TestCase):
   def test_builtin_jacobian_vector(self):
     ns = expression_v1.Namespace()
     domain, ns.x = mesh.rectilinear([1]*2)
-    l = lambda f: evaluable.asarray(f @ domain.sample('gauss', 2)).simplified
+    l = lambda f: evaluable.asarray(domain.sample('gauss', 2)(f)).simplified
     self.assertEqual(l(ns.eval_('J(x)')), l(function.jacobian(ns.x)))
 
   def test_builtin_jacobian_scalar(self):
     ns = expression_v1.Namespace()
     domain, (ns.t,) = mesh.rectilinear([1])
-    l = lambda f: evaluable.asarray(f @ domain.sample('gauss', 2)).simplified
+    l = lambda f: evaluable.asarray(domain.sample('gauss', 2)(f)).simplified
     self.assertEqual(l(ns.eval_('J(t)')), l(function.jacobian(ns.t[None])))
 
   def test_builtin_jacobian_matrix(self):
@@ -1173,7 +1173,7 @@ class eval_ast(TestCase):
     if topo is None:
       topo = self.domain
     smpl = topo.sample('gauss', 2)
-    lower = lambda g: evaluable.asarray(g @ smpl).simplified
+    lower = lambda g: evaluable.asarray(smpl(g)).simplified
     if indices:
       evaluated = getattr(self.ns, 'eval_'+indices)(s)
     else:

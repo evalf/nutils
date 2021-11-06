@@ -132,16 +132,16 @@ class Common:
     self.assertEqual(take.npoints, 0)
 
   def test_ones_at(self):
-    self.assertEqual((function.ones((), int) @ self.sample).eval().tolist(), [1]*self.desired_npoints)
+    self.assertEqual(self.sample(function.ones((), int)).eval().tolist(), [1]*self.desired_npoints)
 
   def test_at_in_integral(self):
     topo, geom = mesh.line(2, space='parent-integral')
-    actual = topo.integral(function.jacobian(geom) @ self.sample, degree=0)
+    actual = topo.integral(self.sample(function.jacobian(geom)), degree=0)
     self.assertEqual(actual.eval().round(5).tolist(), [2]*self.desired_npoints)
 
   def test_asfunction(self):
     func = self.sample.asfunction(numpy.arange(self.sample.npoints))
-    self.assertEqual((func @ self.sample).eval().tolist(), numpy.arange(self.desired_npoints).tolist())
+    self.assertEqual(self.sample(func).eval().tolist(), numpy.arange(self.desired_npoints).tolist())
 
 class Empty(TestCase, Common):
 
@@ -298,14 +298,14 @@ class DefaultIndex(TestCase, Common):
 
   def test_at(self):
     self.geom = function.rootcoords('a', 2) + numpy.array([0,2]) * function.transforms_index('a', self.transforms)
-    actual = (self.geom @ self.sample).as_evaluable_array.eval()
+    actual = self.sample(self.geom).as_evaluable_array.eval()
     desired = numpy.array([[0,0],[0,1],[1,0],[1,1],[0,2],[1,2],[0,3],[0,4],[0,5],[1,4],[1,5]])
     self.assertAllAlmostEqual(actual, desired)
 
   def test_basis(self):
     with _builtin_warnings.catch_warnings():
       _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
-      self.assertAllAlmostEqual((self.sample.basis() @ self.sample).as_evaluable_array.eval(), numpy.eye(11))
+      self.assertAllAlmostEqual(self.sample(self.sample.basis()).as_evaluable_array.eval(), numpy.eye(11))
 
 class CustomIndex(TestCase, Common):
 
@@ -325,7 +325,7 @@ class CustomIndex(TestCase, Common):
 
   def test_at(self):
     self.geom = function.rootcoords('a', 2) + numpy.array([0,2]) * function.transforms_index('a', self.transforms)
-    actual = (self.geom @ self.sample).as_evaluable_array.eval()
+    actual = self.sample(self.geom).as_evaluable_array.eval()
     desired = numpy.array([[0,0],[0,1],[1,0],[1,1],[0,2],[1,2],[0,3],[0,4],[0,5],[1,4],[1,5]])
     desired = numpy.take(desired, numpy.argsort(numpy.concatenate(self.desired_indices), axis=0), axis=0)
     self.assertAllAlmostEqual(actual, desired)
@@ -333,7 +333,7 @@ class CustomIndex(TestCase, Common):
   def test_basis(self):
     with _builtin_warnings.catch_warnings():
       _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
-      self.assertAllAlmostEqual((self.sample.basis() @ self.sample).as_evaluable_array.eval(), numpy.eye(11))
+      self.assertAllAlmostEqual(self.sample(self.sample.basis()).as_evaluable_array.eval(), numpy.eye(11))
 
 class Special(TestCase):
 
@@ -391,7 +391,7 @@ class rectilinear(TestCase):
       self.bezier2.eval(sampled)
     self.assertAllEqual(self.gauss2.eval(sampled), values)
     arg = function.Argument('dofs', [2,3])
-    self.assertTrue(evaluable.iszero(evaluable.asarray(function.derivative(sampled, arg) @ self.gauss2)))
+    self.assertTrue(evaluable.iszero(evaluable.asarray(self.gauss2(function.derivative(sampled, arg)))))
 
 class integral(TestCase):
 
