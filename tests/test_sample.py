@@ -393,6 +393,10 @@ class rectilinear(TestCase):
     arg = function.Argument('dofs', [2,3])
     self.assertTrue(evaluable.iszero(evaluable.asarray(self.gauss2(function.derivative(sampled, arg)))))
 
+  def test_weights(self):
+    self.assertAllAlmostEqual(self.gauss2.weights, [.25] * self.gauss2.npoints)
+
+
 class integral(TestCase):
 
   def setUp(self):

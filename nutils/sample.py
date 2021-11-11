@@ -70,6 +70,7 @@ class Sample(types.Singleton):
   '''
 
   __slots__ = 'spaces', 'ndims', 'nelems', 'npoints'
+  __cache__ = 'weights'
 
   @staticmethod
   def new(space: str, transforms: Iterable[Transforms], points: PointsSequence, index: Optional[Union[numpy.ndarray, Sequence[numpy.ndarray]]] = None) -> 'Sample':
@@ -339,6 +340,17 @@ class Sample(types.Singleton):
       return _TakeElements(self, types.arraydata(__indices))
     else:
       return Sample.empty(self.spaces, self.ndims)
+
+  @property
+  def weights(self):
+    i = evaluable.loop_index('_i', self.nelems)
+    #return evaluable.loop_sum(evaluable.Inflate(self.get_evaluable_weights(i), self.get_evaluable_indices(i), self.npoints), i).eval()
+    elemweights, elemindices = evaluable.Tuple([
+      evaluable.loop_concatenate(self.get_evaluable_weights(i), i),
+      evaluable.loop_concatenate(self.get_evaluable_indices(i), i)]).eval()
+    weights = numpy.zeros(self.npoints)
+    weights[elemindices] = elemweights
+    return types.frozenarray(weights, copy=False)
 
 class _TransformChainsSample(Sample):
 
