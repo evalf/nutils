@@ -409,6 +409,15 @@ class integral(TestCase):
       self.topo.integral('basis_n d:x' @ self.ns, degree=2).eval(),
       places=15)
 
+  def test_eval_integrals(self):
+    v, = sample.eval_integrals(self.topo.integral('basis_n d:x' @ self.ns, degree=2))
+    self.assertAllAlmostEqual(self.topo.integrate('basis_n d:x' @ self.ns, degree=2), v, places=15)
+
+  def test_eval_integrals_sparse(self):
+    with self.assertWarns(warnings.NutilsDeprecationWarning):
+      data, = sample.eval_integrals_sparse(self.topo.integral('basis_n d:x' @ self.ns, degree=2))
+    self.assertAllAlmostEqual(self.topo.integrate('basis_n d:x' @ self.ns, degree=2), sparse.toarray(data), places=15)
+
   def test_args(self):
     self.assertAlmostEqual(
       self.topo.integrate('v d:x' @ self.ns, degree=2, arguments=dict(lhs=self.lhs)),
