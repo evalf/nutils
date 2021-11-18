@@ -757,8 +757,8 @@ def eval_integrals_sparse(*integrals: evaluable.AsEvaluableArray, **arguments: M
   results : :class:`tuple` of arrays and/or :class:`nutils.matrix.Matrix` objects.
   '''
 
-  warnings.deprecation('sample.eval_integrals_sparse is deprecated, use function.eval_sparse instead')
-  return function.eval_sparse(integrals, **arguments)
+  warnings.deprecation('sample.eval_integrals_sparse is deprecated, use evaluable.eval_sparse instead')
+  return evaluable.eval_sparse(integrals, **argdict(arguments))
 
 def _convert(data: numpy.ndarray, inplace: bool = False) -> Union[numpy.ndarray, matrix.Matrix]:
   '''Convert a two-dimensional sparse object to an appropriate object.
