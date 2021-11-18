@@ -5,6 +5,7 @@ from nutils.testing import *
 class rectilinear(TestCase):
 
   def setUp(self):
+    super().setUp()
     self.domain, self.geom = mesh.rectilinear([2,1])
     self.bezier2 = self.domain.sample('bezier', 2)
     self.bezier3 = self.domain.sample('bezier', 3)
@@ -50,6 +51,7 @@ class rectilinear(TestCase):
 class integral(TestCase):
 
   def setUp(self):
+    super().setUp()
     self.ns = function.Namespace()
     self.topo, self.ns.x = mesh.rectilinear([5])
     self.ns.basis = self.topo.basis('std', degree=1)

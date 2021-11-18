@@ -1011,6 +1011,7 @@ ImmutableFamily(cls=nutils.types.Singleton)
 class Unit(TestCase):
 
   def setUp(self):
+    super().setUp()
     self.U = nutils.types.unit(m=1, s=1, g=1e-3,
       Pa='N/m2', N='kg*m/s2', lb='453.59237g', h='3600s', **{'in': '.0254m'})
 

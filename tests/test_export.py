@@ -4,10 +4,10 @@ import nutils, numpy
 
 class mplfigure(TestCase):
 
-  def setUpContext(self, stack):
-    super().setUpContext(stack)
-    self.outdir = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory()))
-    stack.enter_context(treelog.set(treelog.DataLog(str(self.outdir))))
+  def setUp(self):
+    super().setUp()
+    self.outdir = pathlib.Path(self.enter_context(tempfile.TemporaryDirectory()))
+    self.enter_context(treelog.set(treelog.DataLog(str(self.outdir))))
 
   @nutils.testing.requires('matplotlib', 'PIL')
   def test_autodetect_imagetype(self):
@@ -26,6 +26,7 @@ class mplfigure(TestCase):
 class vtk(TestCase):
 
   def setUp(self):
+    super().setUp()
     if self.ndims == 2:
       self.x = numpy.array([[0,0],[0,1],[1,0],[1,1]], dtype=self.xtype)
       self.tri = numpy.array([[0,1,2],[1,2,3]])

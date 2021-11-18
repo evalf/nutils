@@ -55,7 +55,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --upgrade .[docs,matrix_scipy,matrix_mkl,export_mpl,import_gmsh] coverage "Sphinx<3.1" ${{ matrix.dep }}
+          python -m pip install --upgrade .[docs,matrix_scipy,matrix_mkl,export_mpl,import_gmsh] coverage "Sphinx" ${{ matrix.dep }}
       - name: Configure MKL
         id: configure-mkl
         if: ${{ runner.os == 'Linux' }}

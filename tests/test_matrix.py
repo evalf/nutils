@@ -7,10 +7,10 @@ class solver(TestCase):
 
   n = 100
 
-  def setUpContext(self, stack):
-    super().setUpContext(stack)
+  def setUp(self):
+    super().setUp()
     if self.backend:
-      stack.enter_context(self.backend)
+      self.enter_context(self.backend)
       self.exact = 2 * numpy.eye(self.n) - numpy.eye(self.n, self.n, -1) - numpy.eye(self.n, self.n, +1)
       data = sparse.prune(sparse.fromarray(self.exact), inplace=True)
       assert len(data) == self.n*3-2

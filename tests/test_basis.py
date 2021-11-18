@@ -93,6 +93,7 @@ for ndim in 1, 2:
 class structured(basisTest):
 
   def setUp(self):
+    super().setUp()
     if not self.product:
       self.domain, self.geom = mesh.rectilinear([2,3])
     else:
@@ -173,6 +174,7 @@ structured(product=True)
 class structured_line(basisTest):
 
   def setUp(self):
+    super().setUp()
     verts = numpy.linspace(0, 1, self.nelems+1)
     self.domain, self.geom = mesh.line(verts, periodic=self.periodic)
     self.basis = self.domain.basis(self.btype, degree=self.degree)
@@ -198,6 +200,7 @@ for btype in ['discont', 'spline', 'std']:
 class structured_rect1d(basisTest):
 
   def setUp(self):
+    super().setUp()
     verts = numpy.linspace(0, 1, self.nelems+1)
     self.domain, self.geom = mesh.rectilinear([verts], periodic=(0,) if self.periodic else ())
     self.basis = self.domain.basis(self.btype, degree=self.degree) if self.btype != 'spline' \
@@ -244,6 +247,7 @@ class structured_rect1d_periodic_knotmultiplicities(basisTest):
 class unstructured_topology(TestCase):
 
   def setUp(self):
+    super().setUp()
     if self.ndims == 2:
       domain, geom = mesh.unitsquare(4, self.variant)
       nverts = 25

@@ -173,6 +173,7 @@ class optimize(TestCase):
 class burgers(TestCase):
 
   def setUp(self):
+    super().setUp()
     ns = function.Namespace()
     domain, ns.x = mesh.rectilinear([10], periodic=(0,))
     ns.basis = domain.basis('discont', degree=1)

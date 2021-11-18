@@ -15,9 +15,9 @@ class run(testing.TestCase):
 
   scriptname = 'test.py'
 
-  def setUpContext(self, stack):
-    super().setUpContext(stack)
-    self.outrootdir = stack.enter_context(tempfile.TemporaryDirectory())
+  def setUp(self):
+    super().setUp()
+    self.outrootdir = self.enter_context(tempfile.TemporaryDirectory())
 
   def _cli(self, *args, funcname='main'):
     _savestreams = sys.stdout, sys.stderr

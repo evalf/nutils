@@ -1,9 +1,6 @@
 import doctest as _doctest, unittest, importlib, os, tempfile, pathlib, functools, warnings, subprocess, sys, treelog
 import nutils.testing
 
-info = treelog.proto.Level.info if hasattr(treelog, 'proto') else 1
-_doctestlog = treelog.FilterLog(treelog.StdoutLog(), minlevel=info)
-
 class DocTestCase(nutils.testing.ContextTestCase, _doctest.DocTestCase):
 
   def __init__(self, test, *, requires=None, **kwargs):
@@ -11,7 +8,7 @@ class DocTestCase(nutils.testing.ContextTestCase, _doctest.DocTestCase):
     self.__requires = tuple(requires) if requires else ()
     super().__init__(test, **kwargs)
 
-  def setUpContext(self, stack):
+  def setUp(self):
     lines = self.__test.docstring.splitlines()
     indent = min((len(line) - len(line.lstrip()) for line in lines[1:] if line.strip()), default=0)
     blank = True
@@ -28,14 +25,13 @@ class DocTestCase(nutils.testing.ContextTestCase, _doctest.DocTestCase):
       import matplotlib.testing
       matplotlib.testing.setup()
 
-    super().setUpContext(stack)
-    stack.enter_context(warnings.catch_warnings())
+    super().setUp()
+    self.enter_context(warnings.catch_warnings())
     warnings.simplefilter('ignore')
-    stack.enter_context(treelog.set(_doctestlog))
     import numpy
     printoptions = numpy.get_printoptions()
     if 'legacy' in printoptions:
-      stack.callback(numpy.set_printoptions, **printoptions)
+      self.addCleanup(numpy.set_printoptions, **printoptions)
       numpy.set_printoptions(legacy='1.13')
 
   def shortDescription(self):
@@ -73,9 +69,9 @@ for path in sorted((root/'docs').glob('**/*.rst')):
 
 class sphinx(nutils.testing.TestCase):
 
-  def setUpContext(self, stack):
-    super().setUpContext(stack)
-    self.tmpdir = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory(prefix='nutils')))
+  def setUp(self):
+    super().setUp()
+    self.tmpdir = pathlib.Path(self.enter_context(tempfile.TemporaryDirectory(prefix='nutils')))
 
   @nutils.testing.requires('sphinx', 'matplotlib', 'scipy')
   def test(self):
