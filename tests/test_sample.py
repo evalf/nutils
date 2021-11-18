@@ -248,6 +248,46 @@ class Mul_right0d(TestCase, Common):
     self.desired_points = [[p1, p2] for p1 in points1 for p2 in points2]
     self.desired_indices = tuple([[[0],[1],[2],[3]],[[4],[5],[6]],[[7],[8],[9]]])
 
+@parametrize
+class Zip(TestCase):
+
+  def setUp(self):
+    topoY, self.geomY = mesh.line(numpy.linspace(0,1,6), space='Y')
+    topoX, self.geomX = mesh.unitsquare(nelems=3, etype=self.etype)
+    self.sampleY = topoY.sample('uniform', 3)
+    self.slope = numpy.array([1, .5]) # geomX == geomY * slope
+    self.sampleX = topoX.locate(self.geomX, self.sampleY.eval(self.geomY * self.slope), tol=1e-10)
+    self.stitched = self.sampleY.zip(self.sampleX)
+
+  def test_eval(self):
+    geomY, geomX = self.stitched.eval([self.geomY, self.geomX])
+    self.assertAllAlmostEqual(geomY, self.sampleY.eval(self.geomY))
+    self.assertAllAlmostEqual(geomX, geomY[:,numpy.newaxis] * self.slope)
+
+  def test_integrate(self):
+    self.assertAlmostEqual(self.stitched.integrate(function.J(self.geomY)), 1)
+    self.assertAlmostEqual(self.stitched.integrate(function.J(self.geomX)), 5/9) # NOTE: != norm(slope)
+
+  def test_nested(self):
+    with self.assertRaisesRegex(ValueError, 'Nested integrals or samples in the same space are not supported.'):
+      self.stitched.integral(self.stitched.integral(1)).eval()
+    topoZ, geomZ = mesh.line(2, space='Z')
+    inner = self.stitched.integral((geomZ - self.geomX) * function.J(self.geomY))
+    outer = topoZ.integral(inner * function.J(geomZ), degree=2)
+    self.assertAllAlmostEqual(outer.eval(), 2 - self.slope) # ∫_0^2 dz ∫_0^1 (z - α x) dx = ∫_0^2 (z - .5 α) dz = 2 - α
+
+  def test_triplet(self):
+    topoZ, geomZ = mesh.line(3, space='Z')
+    sampleZ = topoZ.sample('uniform', 5)
+    triplet = Sample.zip(self.sampleY, self.sampleX, sampleZ)
+    geomX, geomY, geomZ = triplet.eval([self.geomX, self.geomY, geomZ])
+    self.assertAllAlmostEqual(geomX, geomY[:,numpy.newaxis] * self.slope)
+    self.assertAllAlmostEqual(geomY, geomZ / 3)
+
+Zip(etype='square')
+Zip(etype='triangle')
+Zip(etype='mixed')
+
 class TakeElements(TestCase, Common):
 
   def setUp(self):
