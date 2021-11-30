@@ -1956,6 +1956,28 @@ def dot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]
     axes = 0,
   return sum(multiply(a, b), axes)
 
+@implements(numpy.vdot)
+def vdot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> Array:
+  '''Return the dot product of two vectors.
+
+  If the arguments are not 1D, the arguments are flattened. The dot product is
+  then defined as
+
+      sum(conjugate(a) * b)
+
+  Parameters
+  ----------
+  a : :class:`Array` or something that can be :meth:`~Array.cast` into one
+  b : :class:`Array` or something that can be :meth:`~Array.cast` into one
+
+  Returns
+  -------
+  :class:`Array`
+  '''
+
+  a, b = broadcast_arrays(__a, __b)
+  return sum(multiply(conjugate(a), b), range(a.ndim))
+
 @implements(numpy.trace)
 def trace(__arg: IntoArray, axis1: int = -2, axis2: int = -1) -> Array:
   '''Return the trace, the sum of the diagonal, of an array over the two given axes, elementwise over the remanining axes.
