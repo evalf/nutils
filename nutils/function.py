@@ -1316,7 +1316,7 @@ def abs(__arg: IntoArray) -> Array:
   '''
 
   arg = Array.cast(__arg)
-  return arg * sign(arg)
+  return _Wrapper(evaluable.abs, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
 
 @implements(numpy.matmul)
 def matmul(__arg1: IntoArray, __arg2: IntoArray) -> Array:

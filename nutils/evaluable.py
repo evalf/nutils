@@ -4160,7 +4160,10 @@ def arctan2(arg1, arg2):
   return ArcTan2(*_numpy_align(arg1, arg2))
 
 def abs(arg):
-  return arg * sign(arg)
+  if arg.dtype == complex:
+    return sqrt(arg.real**2 + arg.imag**2)
+  else:
+    return arg * sign(arg)
 
 def sinh(arg):
   return .5 * (exp(arg) - exp(-arg))
