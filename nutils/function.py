@@ -1074,6 +1074,18 @@ def asarray(__arg: IntoArray) -> Array:
 
   return Array.cast(__arg)
 
+@implements(numpy.shape)
+def shape(__arg: IntoArray) -> Tuple[int, ...]:
+    return asarray(__arg).shape
+
+@implements(numpy.ndim)
+def ndim(__arg: IntoArray) -> int:
+    return asarray(__arg).ndim
+
+@implements(numpy.size)
+def size(__arg: IntoArray) -> int:
+    return asarray(__arg).size
+
 def zeros(shape: Shape, dtype: DType = float) -> Array:
   '''Create a new :class:`Array` of given shape and dtype, filled with zeros.
 
