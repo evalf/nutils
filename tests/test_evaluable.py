@@ -266,7 +266,7 @@ class check(TestCase):
       actual=self.actual**power)
 
   def test_sign(self):
-    if self.desired.dtype.kind != 'b':
+    if self.desired.dtype.kind not in ('b', 'c'):
       self.assertFunctionAlmostEqual(decimal=14,
         desired=numpy.sign(self.desired),
         actual=evaluable.sign(self.actual))

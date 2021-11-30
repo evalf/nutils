@@ -890,6 +890,7 @@ class _Gradient(Array):
 
   def __init__(self, func: Array, geom: Array) -> None:
     assert geom.spaces, '0d array'
+    assert geom.dtype == float
     common_shape = broadcast_shapes(func.shape, geom.shape[:-1])
     self._func = broadcast_to(func, common_shape)
     self._geom = broadcast_to(geom, (*common_shape, geom.shape[-1]))
@@ -914,6 +915,7 @@ class _SurfaceGradient(Array):
 
   def __init__(self, func: Array, geom: Array) -> None:
     assert geom.spaces, '0d array'
+    assert geom.dtype == float
     common_shape = broadcast_shapes(func.shape, geom.shape[:-1])
     self._func = broadcast_to(func, common_shape)
     self._geom = broadcast_to(geom, (*common_shape, geom.shape[-1]))
@@ -938,6 +940,7 @@ class _Jacobian(Array):
 
   def __init__(self, geom: Array, tip_dim: Optional[int] = None) -> None:
     assert geom.ndim >= 1
+    assert geom.dtype == float
     if not geom.spaces and geom.shape[-1] != 0:
       raise ValueError('The jacobian of a constant (in space) geometry must have dimension zero.')
     if tip_dim is not None and tip_dim > geom.shape[-1]:
@@ -964,6 +967,7 @@ class _Normal(Array):
 
   def __init__(self, geom: Array) -> None:
     self._geom = geom
+    assert geom.dtype == float
     super().__init__(geom.shape, float, geom.spaces, geom.arguments)
 
   def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
@@ -996,6 +1000,7 @@ class _Normal(Array):
 class _ExteriorNormal(Array):
 
   def __init__(self, geom: Array) -> None:
+    assert geom.dtype == float
     self._geom = geom
     super().__init__(geom.shape, float, geom.spaces, geom.arguments)
 
@@ -1361,6 +1366,9 @@ def sign(__arg: IntoArray) -> Array:
   :class:`Array`
   '''
 
+  arg = Array.cast(__arg)
+  if arg.dtype == complex:
+    raise ValueError('sign is not defined for complex numbers')
   return _Wrapper.broadcasted_arrays(evaluable.Sign, __arg)
 
 @implements(numpy.mod)
@@ -1498,7 +1506,10 @@ def arctan2(__dividend: IntoArray, __divisor: IntoArray) -> Array:
   :class:`Array`
   '''
 
-  return _Wrapper.broadcasted_arrays(evaluable.ArcTan2, __dividend, __divisor, min_dtype=float)
+  dividend, divisor = broadcast_arrays(*typecast_arrays(__dividend, __divisor, min_dtype=float))
+  if dividend.dtype == complex:
+    raise ValueError('arctan2 is not defined for complex numbers')
+  return _Wrapper(evaluable.ArcTan2, dividend, divisor, shape=dividend.shape, dtype=float)
 
 @implements(numpy.cosh)
 def cosh(__arg: IntoArray) -> Array:
@@ -1641,7 +1652,10 @@ def greater(__left: IntoArray, __right: IntoArray) -> Array:
   :class:`Array`
   '''
 
-  return _Wrapper.broadcasted_arrays(evaluable.Greater, __left, __right, force_dtype=bool)
+  left, right = map(Array.cast, (__left, __right))
+  if left.dtype ==  complex or right.dtype == complex:
+    raise ValueError('Complex numbers have no total order.')
+  return _Wrapper.broadcasted_arrays(evaluable.Greater, left, right, force_dtype=bool)
 
 @implements(numpy.equal)
 def equal(__left: IntoArray, __right: IntoArray) -> Array:
@@ -1671,7 +1685,10 @@ def less(__left: IntoArray, __right: IntoArray) -> Array:
   :class:`Array`
   '''
 
-  return _Wrapper.broadcasted_arrays(evaluable.Less, __left, __right, force_dtype=bool)
+  left, right = map(Array.cast, (__left, __right))
+  if left.dtype ==  complex or right.dtype == complex:
+    raise ValueError('Complex numbers have no total order.')
+  return _Wrapper.broadcasted_arrays(evaluable.Less, left, right, force_dtype=bool)
 
 @implements(numpy.min)
 def min(__a: IntoArray, __b: IntoArray) -> Array:
@@ -1686,7 +1703,10 @@ def min(__a: IntoArray, __b: IntoArray) -> Array:
   :class:`Array`
   '''
 
-  return _Wrapper.broadcasted_arrays(evaluable.Minimum, __a, __b)
+  a, b = map(Array.cast, (__a, __b))
+  if a.dtype == complex or b.dtype == complex:
+    raise ValueError('Complex numbers have no total order.')
+  return _Wrapper.broadcasted_arrays(evaluable.Minimum, a, b)
 
 @implements(numpy.max)
 def max(__a: IntoArray, __b: IntoArray) -> Array:
@@ -1701,7 +1721,10 @@ def max(__a: IntoArray, __b: IntoArray) -> Array:
   :class:`Array`
   '''
 
-  return _Wrapper.broadcasted_arrays(evaluable.Maximum, __a, __b)
+  a, b = map(Array.cast, (__a, __b))
+  if a.dtype == complex or b.dtype == complex:
+    raise ValueError('Complex numbers have no total order.')
+  return _Wrapper.broadcasted_arrays(evaluable.Maximum, a, b)
 
 # OPPOSITE
 
@@ -2728,6 +2751,8 @@ def grad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
 
   arg = Array.cast(__arg)
   geom = Array.cast(__geom)
+  if geom.dtype != float:
+    raise ValueError('The geometry must be real-valued.')
   if geom.ndim == 0:
     return grad(arg, _append_axes(geom, (1,)))[...,0]
   elif geom.ndim > 1:
@@ -2754,6 +2779,8 @@ def curl(__arg: IntoArray, __geom: IntoArray) -> Array:
 
   arg = Array.cast(__arg)
   geom = Array.cast(__geom)
+  if geom.dtype != float:
+    raise ValueError('The geometry must be real-valued.')
   if geom.shape != (3,):
     raise ValueError('Expected a geometry with shape (3,) but got {}.'.format(geom.shape))
   if not arg.ndim:
@@ -2776,6 +2803,8 @@ def normal(__geom: IntoArray, exterior: bool = False) -> Array:
   '''
 
   geom = Array.cast(__geom)
+  if geom.dtype != float:
+    raise ValueError('The geometry must be real-valued.')
   if geom.ndim == 0:
     return normal(insertaxis(geom, 0, 1), exterior)[...,0]
   elif geom.ndim > 1:
@@ -2839,6 +2868,8 @@ def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
   '''
 
   geom = Array.cast(__geom)
+  if geom.dtype != float:
+    raise ValueError('The geometry must be real-valued.')
   if geom.ndim == 0:
     return jacobian(insertaxis(geom, 0, 1), __ndims)
   elif geom.ndim > 1:

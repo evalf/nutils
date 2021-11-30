@@ -1028,6 +1028,7 @@ class Normal(Array):
   @types.apply_annotations
   def __init__(self, lgrad:asarray):
     assert lgrad.ndim >= 2 and equalindex(lgrad.shape[-2], lgrad.shape[-1])
+    assert lgrad.dtype != complex
     self.lgrad = lgrad
     super().__init__(args=[lgrad], shape=lgrad.shape[:-1], dtype=float)
 
@@ -1558,11 +1559,12 @@ class Interpolate(Array):
     if not numpy.greater(numpy.diff(xp), 0).all():
       warnings.warn('supplied x-values are non-increasing')
     assert x.ndim == 0
+    assert x.dtype != complex and xp.dtype.kind != 'c'
     self.xp = xp
     self.fp = fp
     self.left = left
     self.right = right
-    super().__init__(args=[x], shape=(), dtype=float)
+    super().__init__(args=[x], shape=(), dtype=complex if fp.dtype.kind == 'c' else float)
 
   def evalf(self, x):
     return numpy.interp(x, self.xp, self.fp, self.left, self.right)
@@ -1631,9 +1633,9 @@ class Multiply(Array):
       return Negative(func2)
     if func2._const_uniform == -1 and func1.dtype != bool:
       return Negative(func1)
-    if func1 == sign(func2):
+    if self.dtype != complex and func1 == sign(func2):
       return Absolute(func2)
-    if func2 == sign(func1):
+    if self.dtype != complex and func2 == sign(func1):
       return Absolute(func1)
     if not self.ndim:
       return
@@ -2314,10 +2316,22 @@ class ArcTan2(Pointwise):
   evalf = numpy.arctan2
   deriv = lambda x, y: y / (x**2 + y**2), lambda x, y: -x / (x**2 + y**2)
 
+  @types.apply_annotations
+  def __init__(self,  left:asarray, right:asarray):
+    if left.dtype == complex or right.dtype == complex:
+      raise ValueError('arctan2 is not defined for complex numbers')
+    super().__init__(left, right)
+
 class Greater(Pointwise):
   __slots__ = ()
   evalf = numpy.greater
   deriv = (lambda a, b: Zeros(a.shape, dtype=int),) * 2
+
+  @types.apply_annotations
+  def __init__(self,  left:asarray, right:asarray):
+    if left.dtype == complex or right.dtype == complex:
+      raise ValueError('Complex numbers have no total order.')
+    super().__init__(left, right)
 
 class Equal(Pointwise):
   __slots__ = ()
@@ -2329,10 +2343,22 @@ class Less(Pointwise):
   evalf = numpy.less
   deriv = (lambda a, b: Zeros(a.shape, dtype=int),) * 2
 
+  @types.apply_annotations
+  def __init__(self,  left:asarray, right:asarray):
+    if left.dtype == complex or right.dtype == complex:
+      raise ValueError('Complex numbers have no total order.')
+    super().__init__(left, right)
+
 class Minimum(Pointwise):
   __slots__ = ()
   evalf = numpy.minimum
   deriv = lambda x, y: .5 - .5 * Sign(x - y), lambda x, y: .5 + .5 * Sign(x - y)
+
+  @types.apply_annotations
+  def __init__(self,  left:asarray, right:asarray):
+    if left.dtype == complex or right.dtype == complex:
+      raise ValueError('Complex numbers have no total order.')
+    super().__init__(left, right)
 
   def _simplified(self):
     if self.dtype == int:
@@ -2353,6 +2379,12 @@ class Maximum(Pointwise):
   __slots__ = ()
   evalf = numpy.maximum
   deriv = lambda x, y: .5 + .5 * Sign(x - y), lambda x, y: .5 - .5 * Sign(x - y)
+
+  @types.apply_annotations
+  def __init__(self,  left:asarray, right:asarray):
+    if left.dtype == complex or right.dtype == complex:
+      raise ValueError('Complex numbers have no total order.')
+    super().__init__(left, right)
 
   def _simplified(self):
     if self.dtype == int:
@@ -2524,6 +2556,7 @@ class Sign(Array):
 
   @types.apply_annotations
   def __init__(self, func:asarray):
+    assert func.dtype != complex
     self.func = func
     super().__init__(args=[func], shape=func.shape, dtype=func.dtype)
 
@@ -3469,6 +3502,7 @@ class Polyval(Array):
 
   @types.apply_annotations
   def __init__(self, coeffs:asarray, points:asarray, ngrad:types.strictint=0):
+    assert coeffs.dtype != complex and points.dtype != complex
     if points.ndim < 1:
       raise ValueError('argument `points` should have at least one axis')
     if not points.shape[-1].isconstant:
@@ -4260,6 +4294,8 @@ def diagonalize(arg, axis=-1, newaxis=-1):
 
 def sign(arg):
   arg = asarray(arg)
+  if arg.dtype == complex:
+    raise ValueError('sign is not defined for complex numbers')
   return Sign(arg)
 
 def eig(arg, axes=(-2,-1), symmetric=False):
