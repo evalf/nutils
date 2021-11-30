@@ -374,6 +374,22 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
   def argshapes(self) -> Mapping[str, Tuple[int, ...]]:
     return {name: shape for name, (shape, dtype) in self.arguments.items()}
 
+  def conjugate(self):
+    'See :func:`conjugate`.'
+    return conjugate(self)
+
+  conj = conjugate
+
+  @property
+  def real(self):
+    'See :func:`real`.'
+    return real(self)
+
+  @property
+  def imag(self):
+    'See :func:`imag`.'
+    return imag(self)
+
 class _Unlower(Array):
 
   def __init__(self, array: evaluable.Array, spaces: FrozenSet[str], arguments: Mapping[str, Tuple[Shape, DType]], points_shape: Tuple[evaluable.Array, ...], transform_chains: Tuple[EvaluableTransformChain, ...], coordinates: Tuple[evaluable.Array, ...]) -> None:
@@ -1861,6 +1877,59 @@ def product(__arg: IntoArray, axis: int) -> Array:
   return _Wrapper(evaluable.Product, transposed, shape=transposed.shape[:-1], dtype=arg.dtype)
 
 # LINEAR ALGEBRA
+
+@implements(numpy.conjugate)
+def conjugate(__arg: IntoArray) -> Array:
+  '''Return the complex conjugate, elementwise.
+
+  Parameters
+  ----------
+  arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
+
+  Returns
+  -------
+  :class:`Array`
+      The complex conjugate.
+  '''
+
+  arg = Array.cast(__arg)
+  return _Wrapper(evaluable.conjugate, arg, shape=arg.shape, dtype=arg.dtype)
+
+conj = conjugate
+
+@implements(numpy.real)
+def real(__arg: IntoArray) -> Array:
+  '''Return the real part of the complex argument.
+
+  Parameters
+  ----------
+  arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
+
+  Returns
+  -------
+  :class:`Array`
+      The real part of the complex argument.
+  '''
+
+  arg = Array.cast(__arg)
+  return _Wrapper(evaluable.real, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
+
+@implements(numpy.imag)
+def imag(__arg: IntoArray) -> Array:
+  '''Return the imaginary part of the complex argument.
+
+  Parameters
+  ----------
+  arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
+
+  Returns
+  -------
+  :class:`Array`
+      The imaginary part of the complex argument.
+  '''
+
+  arg = Array.cast(__arg)
+  return _Wrapper(evaluable.imag, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
 
 def dot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> Array:
   '''Return the inner product of the arguments over the given axes, elementwise over the remanining axes.

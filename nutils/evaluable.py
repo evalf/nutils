@@ -622,6 +622,29 @@ def dot(a, b, axes):
 
   return multiply(a, b).sum(axes)
 
+def conjugate(arg):
+  arg = asarray(arg)
+  if arg.dtype == complex:
+    return Conjugate(arg)
+  else:
+    return arg
+
+conjugate
+
+def real(arg):
+  arg = asarray(arg)
+  if arg.dtype == complex:
+    return Real(arg)
+  else:
+    return arg
+
+def imag(arg):
+  arg = asarray(arg)
+  if arg.dtype == complex:
+    return Imag(arg)
+  else:
+    return zeros_like(arg)
+
 def transpose(arg, trans=None):
   arg = asarray(arg)
   if trans is None:
@@ -850,6 +873,15 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   swapaxes = swapaxes
   transpose = transpose
   choose = lambda self, choices: Choose(self, choices)
+  conjugate = conjugate
+
+  @property
+  def real(self):
+    return real(self)
+
+  @property
+  def imag(self):
+    return imag(self)
 
   @property
   def assparse(self):
@@ -907,6 +939,9 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   _unravel = lambda self, axis, shape: None
   _ravel = lambda self, axis: None
   _loopsum = lambda self, loop_index: None # NOTE: type of `loop_index` is `_LoopIndex`
+  _real = lambda self: None
+  _imag = lambda self: None
+  _conjugate = lambda self: None
 
   @property
   def _unaligned(self):
@@ -2334,6 +2369,57 @@ class Maximum(Pointwise):
     lower2, upper2 = self.args[1]._intbounds
     return max(lower1, lower2), max(upper1, upper2)
 
+class Conjugate(Pointwise):
+  __slots__ = ()
+
+  @types.apply_annotations
+  def __init__(self, arg: asarray):
+    assert arg.dtype == complex
+    super().__init__(arg)
+
+  def evalf(self, arg):
+    return numpy.conjugate(arg)
+
+  def _simplified(self):
+    retval = self.args[0]._conjugate()
+    if retval is not None:
+      return retval
+    return super()._simplified()
+
+class Real(Pointwise):
+  __slots__ = ()
+
+  @types.apply_annotations
+  def __init__(self, arg: asarray):
+    assert arg.dtype == complex
+    super().__init__(arg)
+
+  def evalf(self, arg):
+    return numpy.real(arg)
+
+  def _simplified(self):
+    retval = self.args[0]._real()
+    if retval is not None:
+      return retval
+    return super()._simplified()
+
+class Imag(Pointwise):
+  __slots__ = ()
+
+  @types.apply_annotations
+  def __init__(self, arg: asarray):
+    assert arg.dtype == complex
+    super().__init__(arg)
+
+  def evalf(self, arg):
+    return numpy.imag(arg)
+
+  def _simplified(self):
+    retval = self.args[0]._imag()
+    if retval is not None:
+      return retval
+    return super()._simplified()
+
 class Cast(Pointwise):
 
   @types.apply_annotations
@@ -2412,6 +2498,15 @@ class FloatToComplex(Cast):
 
   def _product(self):
     return __class__(product(self.args[0], -1))
+
+  def _real(self):
+    return self.args[0]
+
+  def _imag(self):
+    return zeros_like(self.args[0])
+
+  def _conjugate(self):
+    return self
 
 def astype(arg, dtype):
   arg = asarray(arg)

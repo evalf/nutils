@@ -583,7 +583,8 @@ class Namespace:
   When evaluating an expression through this namespace the following functions
   are available: ``opposite``, ``sin``, ``cos``, ``tan``, ``sinh``, ``cosh``,
   ``tanh``, ``arcsin``, ``arccos``, ``arctanh``, ``exp``, ``abs``, ``ln``,
-  ``log``, ``log2``, ``log10``, ``sqrt`` and ``sign``.
+  ``log``, ``log2``, ``log10``, ``sqrt``, ``sign``, ``conj``, ``real`` and
+  ``imag``.
 
   Additional pointwise functions can be assigned to the namespace similar to variables:
 
@@ -612,6 +613,9 @@ class Namespace:
     self.log10 = function.log10
     self.sqrt = function.sqrt
     self.sign = function.sign
+    self.conj = function.conj
+    self.real = function.real
+    self.imag = function.imag
 
   def __setattr__(self, attr: str, value: Union[function.Array, str]) -> None:
     name, underscore, indices = attr.partition('_')
