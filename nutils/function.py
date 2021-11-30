@@ -30,10 +30,10 @@ from .transform import EvaluableTransformChain
 from .transformseq import Transforms
 import builtins, numpy, functools, operator, numbers
 
-IntoArray = Union['Array', numpy.ndarray, bool, int, float]
+IntoArray = Union['Array', numpy.ndarray, bool, int, float, complex]
 Shape = Sequence[int]
-DType = Type[Union[bool, int, float]]
-_dtypes = bool, int, float
+DType = Type[Union[bool, int, float, complex]]
+_dtypes = bool, int, float, complex
 
 _PointsShape = Tuple[evaluable.Array, ...]
 _TransformChainsMap = Mapping[str, Tuple[EvaluableTransformChain, EvaluableTransformChain]]
@@ -112,7 +112,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
   ----------
   shape : :class:`tuple` of :class:`int`
       The shape of the array function.
-  dtype : :class:`bool`, :class:`int` or :class:`float`
+  dtype : :class:`bool`, :class:`int`, :class:`float` or :class:`complex`
       The dtype of the array elements.
   spaces : :class:`frozenset` of :class:`str`
       The spaces this array function is defined on.
@@ -126,7 +126,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
       The shape of this array function.
   ndim : :class:`int`
       The dimension of this array function.
-  dtype : :class:`bool`, :class:`int` or :class:`float`
+  dtype : :class:`bool`, :class:`int`, :class:`float` or :class:`complex`
       The dtype of the array elements.
   spaces : :class:`frozenset` of :class:`str`
       The spaces this array function is defined on.
@@ -429,7 +429,7 @@ class Custom(Array):
       The arguments of this array function.
   shape : :class:`tuple` of :class:`int` or :class:`Array`
       The shape of the array function without leading pointwise axes.
-  dtype : :class:`bool`, :class:`int` or :class:`float`
+  dtype : :class:`bool`, :class:`int`, :class:`float` or :class:`complex`
       The dtype of the array elements.
   npointwise : :class:`int`
       The number of leading pointwise axis.
@@ -716,7 +716,7 @@ class Argument(Array):
       The name of this argument.
   shape : :class:`tuple` of :class:`int`
       The shape of this argument.
-  dtype : :class:`bool`, :class:`int` or :class:`float`
+  dtype : :class:`bool`, :class:`int`, :class:`float` or :class:`complex`
       The dtype of the array elements.
 
   Attributes
