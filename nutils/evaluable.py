@@ -2137,6 +2137,8 @@ class Power(Array):
          + einsum('A,A,AB->AB', ln(self.func), self, derivative(self.power, var, seen))
 
   def _power(self, n):
+    if self.dtype == complex or n.dtype == complex:
+      return
     func = self.func
     newpower = Multiply([self.power, n])
     if iszero(self.power % 2) and not iszero(newpower % 2):
