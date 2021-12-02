@@ -2129,6 +2129,8 @@ class Power(Array):
     if self.power.isconstant:
       p = self.power.eval()
       return einsum('A,A,AB->AB', p, power(self.func, p - (p!=0)), derivative(self.func, var, seen))
+    if self.dtype == complex:
+      raise NotImplementedError('The complex derivative is not implemented.')
     # self = func**power
     # ln self = power * ln func
     # self` / self = power` * ln func + power * func` / func
@@ -2162,6 +2164,7 @@ class Pointwise(Array):
   __slots__ = 'args',
 
   deriv = None
+  complex_deriv = None
 
   @types.apply_annotations
   def __init__(self, *args:asarrays):
@@ -2202,9 +2205,14 @@ class Pointwise(Array):
       return Constant(retval)
 
   def _derivative(self, var, seen):
-    if self.deriv is None:
+    if self.complex_deriv is not None:
+      return util.sum(einsum('A,AB->AB', deriv(*self.args), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.complex_deriv))
+    elif self.dtype == complex or var.dtype == complex:
+      raise NotImplementedError('The complex derivative is not implemented.')
+    elif self.deriv is not None:
+      return util.sum(einsum('A,AB->AB', deriv(*self.args), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.deriv))
+    else:
       return super()._derivative(var, seen)
-    return util.sum(einsum('A,AB->AB', deriv(*self.args), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.deriv))
 
   def _takediag(self, axis1, axis2):
     return self.__class__(*[_takediag(arg, axis1, axis2) for arg in self.args])
@@ -2247,47 +2255,47 @@ class Cos(Pointwise):
   'Cosine, element-wise.'
   __slots__ = ()
   evalf = numpy.cos
-  deriv = lambda x: -Sin(x),
+  complex_deriv = lambda x: -Sin(x),
 
 class Sin(Pointwise):
   'Sine, element-wise.'
   __slots__ = ()
   evalf = numpy.sin
-  deriv = Cos,
+  complex_deriv = Cos,
 
 class Tan(Pointwise):
   'Tangent, element-wise.'
   __slots__ = ()
   evalf = numpy.tan
-  deriv = lambda x: Cos(x)**-2,
+  complex_deriv = lambda x: Cos(x)**-2,
 
 class ArcSin(Pointwise):
   'Inverse sine, element-wise.'
   __slots__ = ()
   evalf = numpy.arcsin
-  deriv = lambda x: reciprocal(sqrt(1-x**2)),
+  complex_deriv = lambda x: reciprocal(sqrt(1-x**2)),
 
 class ArcCos(Pointwise):
   'Inverse cosine, element-wise.'
   __slots__ = ()
   evalf = numpy.arccos
-  deriv = lambda x: -reciprocal(sqrt(1-x**2)),
+  complex_deriv = lambda x: -reciprocal(sqrt(1-x**2)),
 
 class ArcTan(Pointwise):
   'Inverse tangent, element-wise.'
   __slots__ = ()
   evalf = numpy.arctan
-  deriv = lambda x: reciprocal(1+x**2),
+  complex_deriv = lambda x: reciprocal(1+x**2),
 
 class Exp(Pointwise):
   __slots__ = ()
   evalf = numpy.exp
-  deriv = lambda x: Exp(x),
+  complex_deriv = lambda x: Exp(x),
 
 class Log(Pointwise):
   __slots__ = ()
   evalf = numpy.log
-  deriv = lambda x: reciprocal(x),
+  complex_deriv = lambda x: reciprocal(x),
 
 class Mod(Pointwise):
   __slots__ = ()
@@ -2466,6 +2474,8 @@ class Cast(Pointwise):
     return numpy.array(arg, dtype=self.to_type)
 
   def _derivative(self, var, seen):
+    if var.dtype == complex and self.__class__.to_type == complex:
+      raise ValueError('The complex derivative does not exist.')
     arg, = self.args
     return self.__class__(derivative(arg, var, seen))
 
@@ -3177,8 +3187,8 @@ class Argument(DerivativeTargetBase):
       return value
 
   def _derivative(self, var, seen):
-    if isinstance(var, Argument) and var._name == self._name and self.dtype == float:
-      result = _inflate_scalar(1., self.shape)
+    if isinstance(var, Argument) and var._name == self._name and self.dtype in (float, complex):
+      result = ones(self.shape, self.dtype)
       for i, sh in enumerate(self.shape):
         result = diagonalize(result, i, i+self.ndim)
       return result
@@ -3524,6 +3534,8 @@ class Polyval(Array):
     return numeric.poly_eval(coeffs, points)
 
   def _derivative(self, var, seen):
+    if self.dtype == complex:
+      raise NotImplementedError('The complex derivative is not implemented.')
     dpoints = einsum('ABi,AiD->ABD', Polyval(self.coeffs, self.points, self.ngrad+1), derivative(self.points, var, seen), A=self.points.ndim-1)
     dcoeffs = Transpose.from_end(Polyval(Transpose.to_end(derivative(self.coeffs, var, seen), *range(self.coeffs.ndim)), self.points, self.ngrad), *range(self.points.ndim-1, self.ndim))
     return dpoints + dcoeffs
@@ -3601,6 +3613,8 @@ class Legendre(Array):
     return P
 
   def _derivative(self, var, seen):
+    if self.dtype == complex:
+      raise NotImplementedError('The complex derivative is not implemented.')
     d = numpy.zeros((self._degree+1,)*2, dtype=int)
     for i in range(self._degree+1):
       d[i,i+1::2] = 2*i+1
@@ -4275,7 +4289,7 @@ def derivative(func, var, seen=None):
   'derivative'
 
   assert isinstance(var, DerivativeTargetBase), 'invalid derivative target {!r}'.format(var)
-  if var.dtype != float or var not in func.arguments:
+  if var.dtype in (bool, int) or var not in func.arguments:
     return Zeros(func.shape + var.shape, dtype=func.dtype)
   if seen is None:
     seen = {}

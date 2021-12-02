@@ -659,12 +659,12 @@ class _CustomEvaluable(evaluable.Array):
       return result.reshape(points_shape + result.shape[1:])
 
   def _derivative(self, var: evaluable.Array, seen: Dict[evaluable.Array, evaluable.Array]) -> evaluable.Array:
-    if self.dtype != float:
+    if self.dtype in (bool, int):
       return super()._derivative(var, seen)
     result = evaluable.Zeros(self.shape + var.shape, dtype=self.dtype)
     unlowered_args = tuple(_Unlower(arg, self.spaces, self.function_arguments, *self.lower_args) if isinstance(arg, evaluable.Array) else arg.value for arg in self.args)
     for iarg, arg in enumerate(self.args):
-      if not isinstance(arg, evaluable.Array) or arg.dtype != float or var not in arg.dependencies and var != arg:
+      if not isinstance(arg, evaluable.Array) or arg.dtype in (bool, int) or var not in arg.dependencies and var != arg:
         continue
       fpd = Array.cast(self.custom_partial_derivative(iarg, *unlowered_args))
       fpd_expected_shape = tuple(n.__index__() for n in self.shape[self.points_dim:] + arg.shape[self.points_dim:])
@@ -873,7 +873,7 @@ class _Derivative(Array):
     self._var = var
     self._eval_var = evaluable.Argument(var.name, var.shape, var.dtype)
     arguments = _join_arguments((arg.arguments, var.arguments))
-    super().__init__(arg.shape+var.shape, arg.dtype, arg.spaces | var.spaces, arguments)
+    super().__init__(arg.shape+var.shape, complex if var.dtype == complex else arg.dtype, arg.spaces | var.spaces, arguments)
 
   def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
     arg = self._arg.lower(points_shape, transform_chains, coordinates)
@@ -895,7 +895,7 @@ class _Gradient(Array):
     self._func = broadcast_to(func, common_shape)
     self._geom = broadcast_to(geom, (*common_shape, geom.shape[-1]))
     arguments = _join_arguments((func.arguments, geom.arguments))
-    super().__init__(self._geom.shape, float, func.spaces | geom.spaces, arguments)
+    super().__init__(self._geom.shape, complex if func.dtype == complex else float, func.spaces | geom.spaces, arguments)
 
   def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
     func = self._func.lower(points_shape, transform_chains, coordinates)
@@ -920,7 +920,7 @@ class _SurfaceGradient(Array):
     self._func = broadcast_to(func, common_shape)
     self._geom = broadcast_to(geom, (*common_shape, geom.shape[-1]))
     arguments = _join_arguments((func.arguments, geom.arguments))
-    super().__init__(self._geom.shape, float, func.spaces | geom.spaces, arguments)
+    super().__init__(self._geom.shape, complex if func.dtype == complex else float, func.spaces | geom.spaces, arguments)
 
   def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
     func = self._func.lower(points_shape, transform_chains, coordinates)
