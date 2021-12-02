@@ -251,7 +251,7 @@ class check(TestCase):
 
   def test_pointwise(self):
     self.assertFunctionAlmostEqual(decimal=14,
-      desired=numpy.sin(self.desired).astype(float), # "astype" necessary for boolean operations (float16->float64)
+      desired=numpy.sin(self.desired).astype(complex if self.desired.dtype.kind == 'c' else float), # "astype" necessary for boolean operations (float16->float64)
       actual=evaluable.sin(self.actual))
 
   def test_power(self):
@@ -270,6 +270,21 @@ class check(TestCase):
       self.assertFunctionAlmostEqual(decimal=14,
         desired=numpy.sign(self.desired),
         actual=evaluable.sign(self.actual))
+
+  def test_real(self):
+    self.assertFunctionAlmostEqual(decimal=14,
+      desired=numpy.real(self.desired),
+      actual=evaluable.real(self.actual))
+
+  def test_imag(self):
+    self.assertFunctionAlmostEqual(decimal=14,
+      desired=numpy.imag(self.desired),
+      actual=evaluable.imag(self.actual))
+
+  def test_conjugate(self):
+    self.assertFunctionAlmostEqual(decimal=14,
+      desired=numpy.conjugate(self.desired),
+      actual=evaluable.conjugate(self.actual))
 
   def test_mask(self):
     for idim in range(self.actual.ndim):
@@ -329,10 +344,12 @@ class check(TestCase):
     fddeltas = numpy.array([1,2,3])
     fdfactors = numpy.linalg.solve(2*fddeltas**numpy.arange(1,1+2*len(fddeltas),2)[:,None], [1]+[0]*(len(fddeltas)-1))
     for arg, arg_name, x0 in zip(self.args, self.arg_names, self.arg_values):
-      if arg.dtype != float:
+      if arg.dtype in (bool, int):
         continue
       with self.subTest(arg_name):
         dx = numpy.random.normal(size=x0.shape)
+        if arg.dtype == bool:
+          dx = dx + 1j*numpy.random.normal(size=x0.shape)
         evalargs = dict(zip(self.arg_names, self.arg_values))
         f0 = evaluable.derivative(self.actual, arg).eval(**evalargs)
         exact = numeric.contract(f0, dx, range(self.actual.ndim, self.actual.ndim+dx.ndim))
@@ -366,11 +383,11 @@ class check(TestCase):
       self.actual.eval_withtimes(times, **dict(zip(self.arg_names, self.arg_values)))
       self.actual._node(cache, None, times)
 
-def generate(*shape, real, zero, negative):
+def generate(*shape, real, imag, zero, negative):
   'generate array values that cover certain numerical classes'
   size = numpy.prod(shape, dtype=int)
   a = numpy.arange(size)
-  if negative:
+  if negative and not (real and imag):
     iz = size // 2
     a -= iz
   else:
@@ -380,15 +397,23 @@ def generate(*shape, real, zero, negative):
     a[iz:] += 1
   if not a[-1]: # no positive numbers
     raise Exception('shape is too small to test at least one of all selected number categories')
-  if real:
+  if real or imag:
     a = numpy.tanh(2 * a / a[-1]) # map to (-1,1)
+    if real and imag:
+      assert negative
+      a = a * numpy.exp(1j * numpy.arange(size)**2)
+    elif imag:
+      a = a * 1j
   return a.reshape(shape)
 
-INT = functools.partial(generate, real=False, zero=True, negative=False)
-ANY = functools.partial(generate, real=True, zero=True, negative=True)
-NZ  = functools.partial(generate, real=True, zero=False, negative=True)
-POS = functools.partial(generate, real=True, zero=False, negative=False)
-NN  = functools.partial(generate, real=True, zero=True, negative=False)
+INT = functools.partial(generate, real=False, imag=False, zero=True, negative=False)
+ANY = functools.partial(generate, real=True, imag=False, zero=True, negative=True)
+NZ  = functools.partial(generate, real=True, imag=False, zero=False, negative=True)
+POS = functools.partial(generate, real=True, imag=False, zero=False, negative=False)
+NN  = functools.partial(generate, real=True, imag=False, zero=True, negative=False)
+IM  = functools.partial(generate, real=False, imag=True, zero=True, negative=True)
+ANC = functools.partial(generate, real=True, imag=True, zero=True, negative=True)
+NZC = functools.partial(generate, real=True, imag=True, zero=False, negative=True)
 
 def _check(name, op, n_op, *arg_values, hasgrad=True, zerograd=False, ndim=2):
   check(name, op=op, n_op=n_op, arg_values=arg_values, hasgrad=hasgrad, zerograd=zerograd, ndim=ndim)
@@ -397,33 +422,62 @@ _check('identity', lambda f: evaluable.asarray(f), lambda a: a, ANY(2,4,2))
 _check('int', lambda f: evaluable.astype(f, int), lambda a: a.astype(int), INT(2,4,2))
 _check('float', lambda f: evaluable.astype(f, float), lambda a: a.astype(float), INT(2,4,2))
 _check('complex', lambda f: evaluable.astype(f, complex), lambda a: a.astype(complex), ANY(2,4,2))
+_check('real', lambda f: evaluable.real(f), lambda a: a.real, ANY(2,4,2))
+_check('real-complex', lambda f: evaluable.real(f), lambda a: a.real, ANC(2,4,2), hasgrad=False)
+_check('imag', lambda f: evaluable.imag(f), lambda a: a.imag, ANY(2,4,2))
+_check('imag-complex', lambda f: evaluable.imag(f), lambda a: a.imag, ANC(2,4,2), hasgrad=False)
+_check('conjugate', lambda f: evaluable.conjugate(f), lambda a: a.conjugate(), ANY(2,4,2))
+_check('conjugate-complex', lambda f: evaluable.conjugate(f), lambda a: a.conjugate(), ANC(2,4,2), hasgrad=False)
 _check('const', lambda f: evaluable.asarray(numpy.arange(16, dtype=float).reshape(2,4,2)), lambda a: numpy.arange(16, dtype=float).reshape(2,4,2), ANY(2,4,2))
 _check('zeros', lambda f: evaluable.zeros([1,4,3,4]), lambda a: numpy.zeros([1,4,3,4]), ANY(4,3,4))
 _check('ones', lambda f: evaluable.ones([1,4,3,4]), lambda a: numpy.ones([1,4,3,4]), ANY(4,3,4))
 _check('range', lambda f: evaluable.Range(4) + 2, lambda a: numpy.arange(2,6), ANY(4))
 _check('sin', evaluable.sin, numpy.sin, ANY(4,4))
+_check('sin-complex', evaluable.sin, numpy.sin, ANC(4,4))
 _check('cos', evaluable.cos, numpy.cos, ANY(4,4))
+_check('cos-complex', evaluable.cos, numpy.cos, ANC(4,4))
 _check('tan', evaluable.tan, numpy.tan, ANY(4,4))
+_check('tan-complex', evaluable.tan, numpy.tan, ANC(4,4))
 _check('sqrt', evaluable.sqrt, numpy.sqrt, NN(4,4))
+_check('sqrt-complex', evaluable.sqrt, numpy.sqrt, ANC(4,4))
 _check('log', evaluable.ln, numpy.log, POS(2,2))
+_check('log-complex', evaluable.ln, numpy.log, NZC(2,2))
 _check('log2', evaluable.log2, numpy.log2, POS(2,2))
+_check('log2-complex', evaluable.log2, numpy.log2, NZC(2,2))
 _check('log10', evaluable.log10, numpy.log10, POS(2,2))
+_check('log10-complex', evaluable.log10, numpy.log10, NZC(2,2))
 _check('exp', evaluable.exp, numpy.exp, ANY(4,4))
+_check('exp-complex', evaluable.exp, numpy.exp, ANC(4,4))
 _check('arctanh', evaluable.arctanh, numpy.arctanh, ANY(3,3))
+_check('arctanh-complex', evaluable.arctanh, numpy.arctanh, ANC(3,3))
 _check('tanh', evaluable.tanh, numpy.tanh, ANY(4,4))
+_check('tanh-complex', evaluable.tanh, numpy.tanh, ANC(4,4))
 _check('cosh', evaluable.cosh, numpy.cosh, ANY(4,4))
+_check('cosh-complex', evaluable.cosh, numpy.cosh, ANC(4,4))
 _check('sinh', evaluable.sinh, numpy.sinh, ANY(4,4))
+_check('sinh-complex', evaluable.sinh, numpy.sinh, ANC(4,4))
 _check('abs', evaluable.abs, numpy.abs, ANY(4,4))
+_check('abs-complex', evaluable.abs, numpy.abs, .2-.2j+ANC(4,4), hasgrad=False)
 _check('sign', evaluable.sign, numpy.sign, ANY(4,4), zerograd=True)
 _check('power', evaluable.power, numpy.power, POS(4,4), ANY(4,4))
+_check('power-complex', evaluable.power, numpy.power, NZC(4,4), (2-2j)*ANC(4,4), hasgrad=False)
+_check('power-complex-int', lambda a: evaluable.power(a, 2), lambda a: numpy.power(a, 2), ANC(4,4))
 _check('negative', evaluable.negative, numpy.negative, ANY(4,4))
+_check('negative-complex', evaluable.negative, numpy.negative, ANC(4,4))
 _check('reciprocal', evaluable.reciprocal, numpy.reciprocal, NZ(4,4))
+_check('reciprocal-complex', evaluable.reciprocal, numpy.reciprocal, 10*NZC(4,4))
 _check('arcsin', evaluable.arcsin, numpy.arcsin, ANY(4,4))
+_check('arcsin-complex', evaluable.arcsin, numpy.arcsin, ANC(4,4))
 _check('arccos', evaluable.arccos, numpy.arccos, ANY(4,4))
+_check('arccos-complex', evaluable.arccos, numpy.arccos, ANC(4,4))
 _check('arctan', evaluable.arctan, numpy.arctan, ANY(4,4))
+_check('arctan-complex', evaluable.arctan, numpy.arctan, ANC(4,4))
 _check('ln', evaluable.ln, numpy.log, POS(4,4))
+_check('ln-complex', evaluable.ln, numpy.log, NZC(4,4))
 _check('product', lambda a: evaluable.product(a,2), lambda a: numpy.product(a,2), ANY(4,3,4))
+_check('product-complex', lambda a: evaluable.product(a,2), lambda a: numpy.product(a,2), ANC(4,3,4))
 _check('sum', lambda a: evaluable.sum(a,2), lambda a: a.sum(2), ANY(4,3,4))
+_check('sum-complex', lambda a: evaluable.sum(a,2), lambda a: a.sum(2), ANC(4,3,4))
 _check('transpose1', lambda a: evaluable.transpose(a,[0,1,3,2]), lambda a: a.transpose([0,1,3,2]), ANY(2,3,4,5))
 _check('transpose2', lambda a: evaluable.transpose(a,[0,2,3,1]), lambda a: a.transpose([0,2,3,1]), ANY(2,3,4,5))
 _check('insertaxis', lambda a: evaluable.insertaxis(a,1,3), lambda a: numpy.repeat(a[:,None], 3, 1), ANY(2,4))
@@ -432,21 +486,32 @@ _check('takediag141', lambda a: evaluable.takediag(a,0,2), lambda a: numeric.tak
 _check('takediag434', lambda a: evaluable.takediag(a,0,2), lambda a: numeric.takediag(a,0,2), ANY(4,3,4))
 _check('takediag343', lambda a: evaluable.takediag(a,0,2), lambda a: numeric.takediag(a,0,2), ANY(3,4,3))
 _check('determinant141', lambda a: evaluable.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(0,1)), ANY(1,4,1))
+_check('determinant141-complex', lambda a: evaluable.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(0,1)), ANC(1,4,1))
 _check('determinant434', lambda a: evaluable.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(0,1)), ANY(4,3,4))
+_check('determinant434-complex', lambda a: evaluable.determinant(a,(0,2)), lambda a: numpy.linalg.det(a.swapaxes(0,1)), ANC(4,3,4))
 _check('determinant4433', lambda a: evaluable.determinant(a,(2,3)), lambda a: numpy.linalg.det(a), ANY(4,4,3,3))
+_check('determinant4433-complex', lambda a: evaluable.determinant(a,(2,3)), lambda a: numpy.linalg.det(a), ANC(4,4,3,3))
 _check('determinant200', lambda a: evaluable.determinant(a,(1,2)), lambda a: numpy.linalg.det(a) if a.shape[-1] else numpy.ones(a.shape[:-2], float), numpy.empty((2,0,0)), zerograd=True)
+_check('determinant200-complex', lambda a: evaluable.determinant(a,(1,2)), lambda a: numpy.linalg.det(a) if a.shape[-1] else numpy.ones(a.shape[:-2], complex), numpy.empty((2,0,0), dtype=complex), zerograd=True)
 _check('inverse141', lambda a: evaluable.inverse(a,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(0,1)).swapaxes(0,1), NZ(1,4,1))
+_check('inverse141-complex', lambda a: evaluable.inverse(a,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(0,1)).swapaxes(0,1), NZC(1,4,1))
 _check('inverse434', lambda a: evaluable.inverse(a,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(0,1)).swapaxes(0,1), POS(4,3,4)+numpy.eye(4,4)[:,numpy.newaxis,:])
+_check('inverse434-complex', lambda a: evaluable.inverse(a,(0,2)), lambda a: numpy.linalg.inv(a.swapaxes(0,1)).swapaxes(0,1), ANC(4,3,4)+numpy.eye(4,4)[:,numpy.newaxis,:])
 _check('inverse4422', lambda a: evaluable.inverse(a), lambda a: numpy.linalg.inv(a), POS(4,4,2,2)+numpy.eye(2))
+_check('inverse4422-complex', lambda a: evaluable.inverse(a), lambda a: numpy.linalg.inv(a), ANC(4,4,2,2)+numpy.eye(2))
 _check('repeat', lambda a: evaluable.repeat(a,3,1), lambda a: numpy.repeat(a,3,1), ANY(4,1,4))
 _check('diagonalize', lambda a: evaluable.diagonalize(a,1,3), lambda a: numeric.diagonalize(a,1,3), ANY(4,4,4,4))
 _check('multiply', evaluable.multiply, numpy.multiply, ANY(4,4), ANY(4,4))
+_check('multiply-complex', evaluable.multiply, numpy.multiply, ANC(4,4), 1-1j+ANC(4,4))
 _check('dot', lambda a,b: evaluable.dot(a,b,axes=1), lambda a,b: (a*b).sum(1), ANY(4,2,4), ANY(4,2,4))
 _check('divide', evaluable.divide, lambda a, b: a * b**-1, ANY(4,4), NZ(4,4))
 _check('divide2', lambda a: evaluable.asarray(a)/2, lambda a: a/2, ANY(4,1))
+_check('divide-complex', evaluable.divide, lambda a, b: a * b**-1, ANC(4,4), NZC(4,4).T)
 _check('add', evaluable.add, numpy.add, ANY(4,4), ANY(4,4))
+_check('add-complex', evaluable.add, numpy.add, ANC(4,4), numpy.exp(.2j)*ANC(4,4))
 _check('subtract', evaluable.subtract, numpy.subtract, ANY(4,4), ANY(4,4))
-_check('dot2', lambda a,b: evaluable.multiply(a,b).sum(-2), lambda a,b: (a*b).sum(-2), ANY(4,2,4), ANY(4,2,4))
+_check('subtract-complex', evaluable.subtract, numpy.subtract, ANC(4,4), numpy.exp(.2j)*ANC(4,4))
+_check('mulsum', lambda a,b: evaluable.multiply(a,b).sum(-2), lambda a,b: (a*b).sum(-2), ANY(4,2,4), ANY(4,2,4))
 _check('min', lambda a,b: evaluable.Minimum(a,b), numpy.minimum, ANY(4,4), ANY(4,4))
 _check('max', lambda a,b: evaluable.Maximum(a,b), numpy.maximum, ANY(4,4), ANY(4,4))
 _check('equal', evaluable.Equal, numpy.equal, ANY(4,4), ANY(4,4), zerograd=True)
@@ -455,6 +520,7 @@ _check('less', evaluable.Less, numpy.less, ANY(4,4), ANY(4,4), zerograd=True)
 _check('arctan2', evaluable.arctan2, numpy.arctan2, ANY(4,4), ANY(4,4))
 _check('stack', lambda a,b: evaluable.stack([a,b], 0), lambda a,b: numpy.concatenate([a[_,:],b[_,:]], axis=0), ANY(4), ANY(4))
 _check('eig', lambda a: evaluable.eig(a+a.swapaxes(0,1),symmetric=True)[1], lambda a: numpy.linalg.eigh(a+a.swapaxes(0,1))[1], ANY(4,4), hasgrad=False)
+_check('eig-complex', lambda a: evaluable.eig(a+a.swapaxes(0,1))[1], lambda a: numpy.linalg.eig(a+a.swapaxes(0,1))[1], ANC(4,4), hasgrad=False)
 _check('mod', lambda a,b: evaluable.mod(a,b), lambda a,b: numpy.mod(a,b), ANY(4), NZ(4), hasgrad=False)
 _check('mask', lambda f: evaluable.mask(f,numpy.array([True,False,True,False,True,False,True]),axis=1), lambda a: a[:,::2], ANY(4,7,4))
 _check('ravel', lambda f: evaluable.ravel(f,axis=1), lambda a: a.reshape(4,4,4,4), ANY(4,2,2,4,4))
