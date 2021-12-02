@@ -3186,7 +3186,7 @@ def rotmat(__arg: IntoArray) -> Array:
   arg = Array.cast(__arg)
   return stack([trignormal(arg), trigtangent(arg)], 0)
 
-def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = ()) -> Array:
+def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtype: DType = float) -> Array:
   '''Return the inner product of the first axes of the given arrays with an argument with the given name.
 
   An argument with shape ``(arrays[0].shape[0], ..., arrays[-1].shape[0]) +
@@ -3202,6 +3202,8 @@ def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = ()) -> A
       The arrays to take inner products with.
   shape : :class:`tuple` of :class:`int`, optional
       The shape to be appended to the argument.
+  dtype : :class:`bool`, :class:`int`, :class:`float` or :class:`complex`
+      The dtype of the argument.
 
   Returns
   -------
@@ -3209,7 +3211,7 @@ def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = ()) -> A
       The inner product with shape ``shape + arrays[0].shape[1:] + ... + arrays[-1].shape[1:]``.
   '''
 
-  result = Argument(__argname, tuple(array.shape[0] for array in arrays) + tuple(shape), dtype=float)
+  result = Argument(__argname, tuple(array.shape[0] for array in arrays) + tuple(shape), dtype=dtype)
   for array in arrays:
     result = numpy.sum(_append_axes(result.transpose((*range(1, result.ndim), 0)), array.shape[1:]) * array, result.ndim-1)
   return result
