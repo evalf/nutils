@@ -697,7 +697,7 @@ class Topology(types.Singleton):
     selected = types.frozenarray(numpy.unique(ielem[isactive]))
     return self[selected]
 
-  def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None) -> Sample:
+  def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None, skip_missing=False) -> Sample:
     '''Create a sample based on physical coordinates.
 
     In a finite element application, functions are commonly evaluated in points
@@ -745,6 +745,10 @@ class Topology(types.Singleton):
         element centroid above which the element is rejected immediately. If
         all points are expected to be located then this can safely be left
         unspecified.
+    skip_missing : :class:`bool` (default: False)
+        When set to true, skip points that are not found (for instance because
+        they fall outside the domain) in the returned sample. When set to false
+        (the default) missing points raise a ``LocateError``.
 
     Returns
     -------
@@ -950,7 +954,7 @@ if os.environ.get('NUTILS_TENSORIAL', None) == 'test': # pragma: nocover
     def indicator(self, subtopo: Union[str, Topology]) -> Topology:
       raise SkipTest('`{}` does not implement `Topology.indicator`'.format(type(self).__qualname__))
 
-    def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None) -> Sample:
+    def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None, skip_missing=False) -> Sample:
       raise SkipTest('`{}` does not implement `Topology.locate`'.format(type(self).__qualname__))
 
 else:
@@ -1269,8 +1273,8 @@ class _WithGroupAliases(_TensorialTopology):
     else:
       return super().indicator(subtopo)
 
-  def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None) -> Sample:
-    return self.parent.locate(geom, coords, tol=tol, eps=eps, maxiter=maxiter, arguments=arguments, weights=weights, maxdist=maxdist, ischeme=ischeme, scale=scale)
+  def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None, skip_missing=False) -> Sample:
+    return self.parent.locate(geom, coords, tol=tol, eps=eps, maxiter=maxiter, arguments=arguments, weights=weights, maxdist=maxdist, ischeme=ischeme, scale=scale, skip_missing=skip_missing)
 
   def boundary_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
     return _WithGroupAliases(self.parent.boundary_spaces_unchecked(spaces), self.bgroups, types.frozendict({}), types.frozendict({}))
@@ -1473,7 +1477,7 @@ class TransformChainsTopology(Topology):
     return function.get(values, 0, self.f_index)
 
   @log.withcontext
-  def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None):
+  def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None, skip_missing=False):
     if ischeme is not None:
       warnings.deprecation('the ischeme argument is deprecated and will be removed in future')
     if scale is not None:
@@ -1495,6 +1499,10 @@ class TransformChainsTopology(Topology):
     egeom = geom.lower((), {self.space: (self.transforms.get_evaluable(_ielem), self.opposites.get_evaluable(_ielem))}, {self.space: _point})
     xJ = evaluable.Tuple((egeom, evaluable.derivative(egeom, _point))).simplified
     arguments = dict(arguments or ())
+    if skip_missing:
+      if weights is not None:
+        raise ValueError('weights and skip_missing are mutually exclusive')
+      missing = parallel.shzeros(len(coords), dtype=bool)
     with parallel.ctxrange('locating', len(coords)) as ipoints:
       for ipoint in ipoints:
         xt = coords[ipoint] # target
@@ -1528,7 +1536,13 @@ class TransformChainsTopology(Topology):
               points[ipoint] = p
               break
         else:
-          raise LocateError('failed to locate point: {}'.format(xt))
+          if skip_missing:
+            missing[ipoint] = True
+          else:
+            raise LocateError('failed to locate point: {}'.format(xt))
+    if skip_missing:
+      ielems = ielems[~missing]
+      points = points[~missing]
     return self._sample(ielems, points, weights)
 
   def _sample(self, ielems, coords, weights=None):
@@ -2215,7 +2229,7 @@ class StructuredTopology(TransformChainsTopology):
     axes = [axis.refined for axis in self.axes]
     return StructuredTopology(self.space, self.root, axes, self.nrefine+1, bnames=self._bnames)
 
-  def locate(self, geom, coords, *, tol, eps=0, weights=None, **kwargs):
+  def locate(self, geom, coords, *, tol, eps=0, weights=None, skip_missing=False, **kwargs):
     coords = numpy.asarray(coords, dtype=float)
     if geom.ndim == 0:
       geom = geom[_]
@@ -2225,9 +2239,9 @@ class StructuredTopology(TransformChainsTopology):
     geom0, scale, index = self._asaffine(geom)
     e = self.sample('uniform', 2).eval(function.norm2(geom0 + index * scale - geom)).max() # inf-norm on non-gauss sample
     if e > tol:
-      return super().locate(geom, coords, eps=eps, tol=tol, weights=weights, **kwargs)
+      return super().locate(geom, coords, eps=eps, tol=tol, weights=weights, skip_missing=skip_missing, **kwargs)
     log.info('locate detected linear geometry: x = {} + {} xi ~{:+.1e}'.format(geom0, scale, e))
-    return self._locate(geom0, scale, coords, eps=eps, weights=weights)
+    return self._locate(geom0, scale, coords, eps=eps, weights=weights, skip_missing=skip_missing)
 
   def _asaffine(self, geom):
     p0 = p1 = self
@@ -2243,14 +2257,19 @@ class StructuredTopology(TransformChainsTopology):
     scale = (geom1 - geom0) / numpy.array(self.shape)
     return geom0, scale, index
 
-  def _locate(self, geom0, scale, coords, *, eps=0, weights=None):
+  def _locate(self, geom0, scale, coords, *, eps=0, weights=None, skip_missing=False):
     mincoords, maxcoords = numpy.sort([geom0, geom0 + scale * self.shape], axis=0)
-    outofbounds = numpy.less(coords, mincoords - eps) | numpy.greater(coords, maxcoords + eps)
-    if outofbounds.any():
-      raise LocateError('failed to locate {}/{} points'.format(outofbounds.any(axis=1).sum(), len(coords)))
+    missing = numpy.any(numpy.less(coords, mincoords - eps) | numpy.greater(coords, maxcoords + eps), axis=1)
+    if not skip_missing and missing.any():
+      raise LocateError('failed to locate {}/{} points'.format(missing.sum(), len(coords)))
     xi = (coords - geom0) / scale
     ielem = numpy.minimum(numpy.maximum(xi.astype(int), 0), numpy.array(self.shape)-1)
-    return self._sample(numpy.ravel_multi_index(ielem.T, self.shape), xi - ielem, weights)
+    ielems = numpy.ravel_multi_index(ielem.T, self.shape)
+    points = xi - ielem
+    if skip_missing:
+      ielems = ielems[~missing]
+      points = points[~missing]
+    return self._sample(ielems, points, weights)
 
   def __str__(self):
     'string representation'
