@@ -145,6 +145,54 @@ def meshgrid(*args, dtype=None):
   assert n == 0
   return grid
 
+def _simplex_grid_helper(bounds):
+  if bounds.ndim != 1 or len(bounds) == 0:
+    raise ValueError
+  nd = len(bounds)
+  spacing = [numpy.sqrt((1+i/2)/(1+i)) for i in range(nd)] # simplex height orthogonal to lower dimension
+  grid = meshgrid(*[numpy.arange(bound, step=step) for step, bound in zip(spacing, bounds)])
+  out_of_bounds = []
+  for idim in range(nd-1):
+    stripes = grid[(idim,)+(slice(None),)*(idim+1)+(slice(1,None,2),)]
+    stripes += spacing[idim] * (idim+1) / (idim+2)
+    if stripes.size and stripes.flat[-1] >= bounds[idim]:
+      out_of_bounds.append(idim)
+  if out_of_bounds:
+    select = numpy.ones(grid.shape[1:], dtype=bool)
+    for idim in out_of_bounds:
+      select[(slice(None),)*(idim)+(-1,)+(slice(1,None,2),)] = False
+    points = grid[:,select].T
+  else:
+    points = grid.reshape(nd, -1).T
+  d = numpy.subtract(bounds, points.max(axis=0))
+  assert (d > 0).all()
+  points += d / 2
+  return points
+
+def simplex_grid(shape, spacing):
+  '''Multi-dimensional generator for equilateral simplex grids.
+
+  Simplex_grid generates a point cloud within an n-dimensional orthotope, which
+  ranges from zero to a specified shape. The point coordinates are spaced in
+  such a way that the nearest neighbours are at distance `spacing`, thus
+  forming vertices of regular simplices. The returned array is two-dimensional,
+  with the first axis being the spatial dimension (matching `shape`) and the
+  second a stacking of the generated points.
+
+  Parameters
+  ----------
+  shape : :class:`tuple`
+    list or tuple of dimensions of the orthotope to be filled.
+  spacing : :class:`float`
+    minimum spacing in the generated point cloud.
+
+  Returns
+  -------
+  :class:`numpy.ndarray`
+  '''
+
+  return _simplex_grid_helper(numpy.divide(shape, spacing)) * spacing
+
 def takediag(A, axis=-2, rmaxis=-1):
   axis = normdim(A.ndim, axis)
   rmaxis = normdim(A.ndim, rmaxis)

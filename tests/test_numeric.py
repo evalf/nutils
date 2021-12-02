@@ -226,6 +226,31 @@ class meshgrid(TestCase):
     self.assertEqual(m.dtype, float)
     self.assertAllEqual(m, numpy.ones((1,)))
 
+class simplex_grid(TestCase):
+
+  def simplex_grid(self, shape, spacing):
+    coords = numeric.simplex_grid(shape, spacing)
+    self.assertEqual(coords.ndim, 2)
+    self.assertEqual(coords.shape[1], len(shape))
+    self.assertTrue((coords > 0).all())
+    self.assertTrue((coords < shape).all())
+    mindist = min(numpy.linalg.norm(c1 - c2) for i, c1 in enumerate(coords) for c2 in coords[:i])
+    self.assertAlmostEqual(mindist, spacing)
+    return coords
+
+  def test_1d(self):
+    coords = self.simplex_grid([2], .8)
+    self.assertEqual(len(coords), 3)
+    self.assertAllAlmostEqual(coords[:,0], [.2,1,1.8])
+
+  def test_2d(self):
+    coords = self.simplex_grid([2,3], .8)
+    self.assertEqual(len(coords), 13)
+
+  def test_3d(self):
+    coords = self.simplex_grid([2,3,4], .8)
+    self.assertEqual(len(coords), 82)
+
 class overlapping(TestCase):
 
   def test_pairwise(self):
