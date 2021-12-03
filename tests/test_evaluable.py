@@ -394,9 +394,9 @@ def _check(name, op, n_op, *arg_values, hasgrad=True, zerograd=False, ndim=2):
   check(name, op=op, n_op=n_op, arg_values=arg_values, hasgrad=hasgrad, zerograd=zerograd, ndim=ndim)
 
 _check('identity', lambda f: evaluable.asarray(f), lambda a: a, ANY(2,4,2))
-_check('int', lambda f: evaluable.Int(f), lambda a: a.astype(int), INT(2,4,2))
-_check('float', lambda f: evaluable.Float(f), lambda a: a.astype(float), ANY(2,4,2))
-_check('complex', lambda f: evaluable.Complex(f), lambda a: a.astype(complex), ANY(2,4,2))
+_check('int', lambda f: evaluable.astype(f, int), lambda a: a.astype(int), INT(2,4,2))
+_check('float', lambda f: evaluable.astype(f, float), lambda a: a.astype(float), INT(2,4,2))
+_check('complex', lambda f: evaluable.astype(f, complex), lambda a: a.astype(complex), ANY(2,4,2))
 _check('const', lambda f: evaluable.asarray(numpy.arange(16, dtype=float).reshape(2,4,2)), lambda a: numpy.arange(16, dtype=float).reshape(2,4,2), ANY(2,4,2))
 _check('zeros', lambda f: evaluable.zeros([1,4,3,4]), lambda a: numpy.zeros([1,4,3,4]), ANY(4,3,4))
 _check('ones', lambda f: evaluable.ones([1,4,3,4]), lambda a: numpy.ones([1,4,3,4]), ANY(4,3,4))
@@ -637,11 +637,8 @@ class intbounds(TestCase):
   def test_npoints(self):
     self.assertEqual(evaluable.NPoints()._intbounds, (0, float('inf')))
 
-  def test_int_bool(self):
-    self.assertEqual(evaluable.Int(evaluable.Constant(numpy.array([False, True], dtype=bool)))._intbounds, (0, 1))
-
-  def test_int_int(self):
-    self.assertEqual(evaluable.Int(self.S('n', 3, 5))._intbounds, (3, 5))
+  def test_bool_to_int(self):
+    self.assertEqual(evaluable.BoolToInt(evaluable.Constant(numpy.array([False, True], dtype=bool)))._intbounds, (0, 1))
 
   def test_array_from_tuple(self):
     self.assertEqual(evaluable.ArrayFromTuple(evaluable.Tuple((evaluable.Argument('n', (3,), int),)), 0, (3,), int, _lower=-2, _upper=3)._intbounds, (-2, 3))
@@ -789,7 +786,7 @@ class asciitree(TestCase):
                      '└ %1 = Power; f:2,2\n'
                      '  ├ %2 = InsertAxis; f:2,2\n'
                      '  │ ├ %3 = InsertAxis; f:2\n'
-                     '  │ │ ├ %4 = Float; f:\n'
+                     '  │ │ ├ %4 = IntToFloat; f:\n'
                      '  │ │ │ └ 0\n'
                      '  │ │ └ 2\n'
                      '  │ └ 2\n'
@@ -1069,24 +1066,24 @@ class Einsum(TestCase):
 class AsType(TestCase):
 
   def test_bool(self):
-    self.assertEqual(evaluable.astype[self.dtype](True).dtype, self.dtype)
+    self.assertEqual(evaluable.astype(True, self.dtype).dtype, self.dtype)
 
   def test_int(self):
-    self.assertEqual(evaluable.astype[self.dtype](1).dtype, self.dtype)
+    self.assertEqual(evaluable.astype(1, self.dtype).dtype, self.dtype)
 
   def test_float(self):
     if self.dtype in (float, complex):
-      self.assertEqual(evaluable.astype[self.dtype](1.).dtype, self.dtype)
+      self.assertEqual(evaluable.astype(1., self.dtype).dtype, self.dtype)
     else:
       with self.assertRaises(TypeError):
-        evaluable.astype[self.dtype](1.)
+        evaluable.astype(1., self.dtype)
 
   def test_complex(self):
     if self.dtype == complex:
-      self.assertEqual(evaluable.astype[self.dtype](1j).dtype, self.dtype)
+      self.assertEqual(evaluable.astype(1j, self.dtype).dtype, self.dtype)
     else:
       with self.assertRaises(TypeError):
-        evaluable.astype[self.dtype](1j)
+        evaluable.astype(1j, self.dtype)
 
 AsType(dtype=int)
 AsType(dtype=float)

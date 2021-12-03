@@ -64,7 +64,8 @@ def strictevaluable(value):
 def simplified(value):
   return strictevaluable(value).simplified
 
-asdtype = lambda arg: arg if any(arg is dtype for dtype in (bool, int, float, complex)) else {'f': float, 'i': int, 'b': bool, 'c': complex}[numpy.dtype(arg).kind]
+_type_order = bool, int, float, complex
+asdtype = lambda arg: arg if any(arg is dtype for dtype in _type_order) else {'f': float, 'i': int, 'b': bool, 'c': complex}[numpy.dtype(arg).kind]
 
 def asarray(arg):
   if hasattr(type(arg), 'as_evaluable_array'):
@@ -2310,14 +2311,16 @@ class Maximum(Pointwise):
     lower2, upper2 = self.args[1]._intbounds
     return max(lower1, lower2), max(upper1, upper2)
 
-class AsType(Pointwise):
+class Cast(Pointwise):
 
   @types.apply_annotations
   def __init__(self, arg: asarray):
+    if arg.dtype != self.from_type:
+      raise TypeError('Expected an array with dtype {} but got {}.'.format(self.from_type.__name__, arg.dtype.__name__))
     super().__init__(arg)
-    dtypes = bool, int, float, complex
-    if self.dtype in dtypes[:dtypes.index(arg.dtype)]:
-      raise TypeError('invalid cast from {} to {}'.format(arg.dtype, self.dtype))
+
+  def evalf(self, arg):
+    return numpy.array(arg, dtype=self.to_type)
 
   def _derivative(self, var, seen):
     arg, = self.args
@@ -2325,8 +2328,6 @@ class AsType(Pointwise):
 
   def _simplified(self):
     arg, = self.args
-    if arg.dtype == self.dtype:
-      return arg
     if iszero(arg):
       return zeros_like(self)
     for axis, parts in arg._inflations:
@@ -2339,14 +2340,59 @@ class AsType(Pointwise):
     else:
       return self.args[0]._intbounds
 
-class Int(AsType):
-  evalf = functools.partial(numpy.array, copy=False, dtype=int)
-class Float(AsType):
-  evalf = functools.partial(numpy.array, copy=False, dtype=float)
-class Complex(AsType):
-  evalf = functools.partial(numpy.array, copy=False, dtype=complex)
+class BoolToInt(Cast):
+  from_type = bool
+  to_type = int
 
-astype = {int: Int, float: Float, complex: Complex}
+class IntToFloat(Cast):
+  from_type = int
+  to_type = float
+
+  def _add(self, other):
+    if isinstance(other, __class__):
+      return __class__(self.args[0] + other.args[0])
+
+  def _multiply(self, other):
+    if isinstance(other, __class__):
+      return __class__(self.args[0] * other.args[0])
+
+  def _sum(self, axis):
+    return __class__(sum(self.args[0], axis))
+
+  def _product(self):
+    return __class__(product(self.args[0], -1))
+
+  def _sign(self):
+    assert self.dtype != complex
+    return __class__(sign(self.args[0]))
+
+class FloatToComplex(Cast):
+  from_type = float
+  to_type = complex
+
+  def _add(self, other):
+    if isinstance(other, __class__):
+      return __class__(self.args[0] + other.args[0])
+
+  def _multiply(self, other):
+    if isinstance(other, __class__):
+      return __class__(self.args[0] * other.args[0])
+
+  def _sum(self, axis):
+    return __class__(sum(self.args[0], axis))
+
+  def _product(self):
+    return __class__(product(self.args[0], -1))
+
+def astype(arg, dtype):
+  arg = asarray(arg)
+  i = _type_order.index(arg.dtype)
+  j = _type_order.index(dtype)
+  if i > j:
+    raise TypeError('Downcasting is forbidden.')
+  for cast in (BoolToInt, IntToFloat, FloatToComplex)[i:j]:
+    arg = cast(arg)
+  return arg
 
 class Sign(Array):
 
@@ -2865,7 +2911,7 @@ class Find(Array):
   def __init__(self, where:asarray):
     assert isarray(where) and where.ndim == 1 and where.dtype == bool
     self.where = where
-    super().__init__(args=[where], shape=[Sum(Int(where))], dtype=int)
+    super().__init__(args=[where], shape=[Sum(BoolToInt(where))], dtype=int)
 
   def evalf(self, where):
     return where.nonzero()[0]
@@ -2942,7 +2988,7 @@ class Argument(DerivativeTargetBase):
   >>> a = evaluable.Argument('x', [])
   >>> b = evaluable.Argument('y', [])
   >>> f = a**3 + b**2
-  >>> evaluable.derivative(f, a).simplified == (3*a**2).simplified
+  >>> evaluable.derivative(f, a).simplified == (3.*a**2).simplified
   True
 
   Args
@@ -3852,11 +3898,10 @@ def _numpy_align(a, b):
   a = asarray(a)
   b = asarray(b)
   if a.dtype != b.dtype:
-    type_order = bool, int, float, complex
-    if type_order.index(a.dtype) < type_order.index(b.dtype):
-      a = astype[b.dtype](a)
+    if _type_order.index(a.dtype) < _type_order.index(b.dtype):
+      a = astype(a, b.dtype)
     else:
-      b = astype[a.dtype](b)
+      b = astype(b, a.dtype)
   if not a.ndim:
     return _inflate_scalar(a, b.shape), b
   if not b.ndim:
@@ -3935,17 +3980,19 @@ def zeros_like(arr):
   return zeros(arr.shape, arr.dtype)
 
 def isuniform(arg, value):
+  if not arg.isconstant:
+    return False
   unaligned, where = unalign(arg)
-  return not where and isinstance(unaligned, Constant) and unaligned.value[()] == value
+  return not where and numpy.equal(unaligned.eval(), value)
 
 def ones(shape, dtype=float):
-  return _inflate_scalar(numpy.ones((), dtype=dtype), shape)
+  return _inflate_scalar(astype(numpy.ones((), dtype=int), dtype), shape)
 
 def ones_like(arr):
   return ones(arr.shape, arr.dtype)
 
 def reciprocal(arg):
-  return power(arg, -1.)
+  return power(arg, astype(-1, float))
 
 def negative(arg):
   return multiply(arg, -1)

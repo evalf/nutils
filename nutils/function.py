@@ -261,7 +261,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     if dtype == self.dtype:
       return self
     else:
-      return _Wrapper(evaluable.astype[dtype], self, shape=self.shape, dtype=dtype)
+      return _Wrapper(functools.partial(evaluable.astype, dtype=dtype), self, shape=self.shape, dtype=dtype)
 
   def sum(self, axis: Optional[Union[int, Sequence[int]]] = None) -> 'Array':
     'See :func:`sum`.'
@@ -3356,7 +3356,7 @@ class LegendreBasis(Basis):
     for n in range(self._degree+1):
       for k in range(n+1):
         coeffs[n,k] = (-1 if (n+k) % 2 else 1) * numeric.binom(n, k) * numeric.binom(n+k, k)
-    return dofs, evaluable.Float(evaluable.asarray(coeffs))
+    return dofs, evaluable.astype(evaluable.asarray(coeffs), float)
 
   def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
     index = _WithoutPoints(self.index).lower(points_shape, transform_chains, coordinates)
