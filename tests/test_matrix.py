@@ -242,3 +242,9 @@ backend('mkl',
     dict(atol=1e-5, precon='diag', truncate=5),
     dict(solver='fgmres', atol=1e-8),
     dict(solver='fgmres', atol=1e-8, precon='diag')])
+
+backend('mkl:complex',
+  backend = 'mkl',
+  complex = True,
+  solve_args = [{},
+    dict(solver='direct', atol=1e-8)])
