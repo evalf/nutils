@@ -349,7 +349,8 @@ def solve_linear(target, residual:integraltuple, *, constrain:arrayordict=None, 
   jacobian = _derivative(residual, target)
   if not set(target).isdisjoint(_argobjs(jacobian)):
     raise SolverError('problem is not linear')
-  lhs, vlhs = _redict(lhs0, target)
+  dtype = _determine_dtype(target, residual, lhs0, constrain)
+  lhs, vlhs = _redict(lhs0, target, dtype)
   mask, vmask = _invert(constrain, target)
   res, jac = _integrate_blocks(residual, jacobian, arguments=lhs, mask=mask)
   vlhs[vmask] -= jac.solve(res, **solveargs)
@@ -408,6 +409,7 @@ class newton(cache.Recursion, length=1):
     self.residual = residual
     self.jacobian = _derivative(residual, target, jacobian)
     self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argobjs(residual), arguments)
+    self.dtype = _determine_dtype(target, residual, self.lhs0, self.constrain)
     self.relax0 = relax0
     self.linesearch = linesearch or NormBased.legacy(kwargs)
     self.failrelax = failrelax
@@ -423,12 +425,12 @@ class newton(cache.Recursion, length=1):
     mask, vmask = _invert(self.constrain, self.target)
     if history:
       lhs, info = history[-1]
-      lhs, vlhs = _redict(lhs, self.target)
+      lhs, vlhs = _redict(lhs, self.target, self.dtype)
       res, jac = self._eval(lhs, mask)
       assert numpy.linalg.norm(res) == info.resnorm
       relax = info.relax
     else:
-      lhs, vlhs = _redict(self.lhs0, self.target)
+      lhs, vlhs = _redict(self.lhs0, self.target, self.dtype)
       res, jac = self._eval(lhs, mask)
       relax = self.relax0
       yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
@@ -507,6 +509,7 @@ class minimize(cache.Recursion, length=1, version=3):
     self.residual = _derivative((energy,), target)
     self.jacobian = _derivative(self.residual, target)
     self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argobjs((energy,)), arguments)
+    self.dtype = _determine_dtype(target, (energy,), self.lhs0, self.constrain)
     self.rampup = rampup
     self.rampdown = rampdown
     self.failrelax = failrelax
@@ -522,13 +525,13 @@ class minimize(cache.Recursion, length=1, version=3):
     mask, vmask = _invert(self.constrain, self.target)
     if history:
       lhs, info = history[-1]
-      lhs, vlhs = _redict(lhs, self.target)
+      lhs, vlhs = _redict(lhs, self.target, self.dtype)
       nrg, res, jac = self._eval(lhs, mask)
       assert nrg == info.energy
       assert numpy.linalg.norm(res) == info.resnorm
       relax = info.relax
     else:
-      lhs, vlhs = _redict(self.lhs0, self.target)
+      lhs, vlhs = _redict(self.lhs0, self.target, self.dtype)
       nrg, res, jac = self._eval(lhs, mask)
       relax = 0
       yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
@@ -623,6 +626,7 @@ class pseudotime(cache.Recursion, length=1):
     self.residuals = residual
     self.jacobians = _derivative(tuple(res + (inert/dt if inert else 0) for res, inert in zip(residual, inertia)), target)
     self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argobjs(residual+inertia), arguments)
+    self.dtype = _determine_dtype(target, residual+inertia, self.lhs0, self.constrain)
     self.timestep = timestep
     self.solveargs = _strip(kwargs, 'lin')
     if kwargs:
@@ -636,14 +640,14 @@ class pseudotime(cache.Recursion, length=1):
     mask, vmask = _invert(self.constrain, self.target)
     if history:
       lhs, info = history[-1]
-      lhs, vlhs = _redict(lhs, self.target)
+      lhs, vlhs = _redict(lhs, self.target, self.dtype)
       resnorm0 = info.resnorm0
       timestep = info.timestep
       res, jac = self._eval(lhs, mask, timestep)
       resnorm = numpy.linalg.norm(res)
       assert resnorm == info.resnorm
     else:
-      lhs, vlhs = _redict(self.lhs0, self.target)
+      lhs, vlhs = _redict(self.lhs0, self.target, self.dtype)
       timestep = self.timestep
       res, jac = self._eval(lhs, mask, timestep)
       resnorm = resnorm0 = numpy.linalg.norm(res)
@@ -806,8 +810,9 @@ def optimize(target, functional:evaluable.asarray, *, tol:types.strictfloat=0., 
   residual = _derivative((functional,), target)
   jacobian = _derivative(residual, target)
   lhs0, constrain = _parse_lhs_cons(lhs0, constrain, target, argobjs, arguments)
+  dtype = _determine_dtype(target, (functional,), lhs0, constrain)
   mask, vmask = _invert(constrain, target)
-  lhs, vlhs = _redict(lhs0, target)
+  lhs, vlhs = _redict(lhs0, target, dtype)
   val, res, jac = _integrate_blocks(functional, residual, jacobian, arguments=lhs, mask=mask)
   if droptol is not None:
     supp = jac.rowsupp(droptol)
@@ -910,10 +915,10 @@ def _progress(name, tol):
   while True:
     lhs, info = yield (name + ' {:.0f}%').format(100 * numpy.log(resnorm0/max(info.resnorm,tol)) / numpy.log(resnorm0/tol) if tol else 0 if info.resnorm else 100)
 
-def _redict(lhs, targets):
+def _redict(lhs, targets, dtype=float):
   '''copy argument dictionary referencing a newly allocated contiguous array'''
 
-  vlhs = numpy.empty(sum(lhs[target].size for target in targets))
+  vlhs = numpy.empty(sum(lhs[target].size for target in targets), dtype)
   lhs = lhs.copy()
   offset = 0
   for target in targets:
@@ -967,5 +972,17 @@ def _argobjs(funcs):
         else:
           argobjs[arg._name] = arg
   return argobjs
+
+def _determine_dtype(targets, residuals, lhs0, constrain):
+  argobjs = _argobjs(residuals)
+  dtype = complex if (
+    any(argobjs[target].dtype == complex for target in targets)
+    or any(residual.dtype == complex for residual in residuals if residual is not None)
+    or any(vec.dtype.kind == 'c' for vec in lhs0.values())
+    or any(vec.dtype.kind == 'c' for vec in constrain.values())
+  ) else float
+  if not all(argobjs[target].dtype == dtype for target in targets):
+    raise ValueError('All targets must have dtype {}.'.format(dtype.__name___))
+  return dtype
 
 # vim:sw=2:sts=2:et
