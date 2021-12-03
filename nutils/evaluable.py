@@ -2129,15 +2129,17 @@ class Pointwise(Array):
     return cls(*(prependaxes(appendaxes(arg, shape[r:]), shape[:l]) for arg, l, r in zip(args, offsets[:-1], offsets[1:])))
 
   def _simplified(self):
-    if self.isconstant:
-      retval = self.eval()
-      return Constant(retval)
     if len(self.args) == 1 and isinstance(self.args[0], Transpose):
       arg, = self.args
       return Transpose(self.__class__(arg.func), arg.axes)
     *uninserted, where = unalign(*self.args)
     if len(where) != self.ndim:
       return align(self.__class__(*uninserted), where, self.shape)
+
+  def _optimized_for_numpy(self):
+    if self.isconstant:
+      retval = self.eval()
+      return Constant(retval)
 
   def _derivative(self, var, seen):
     if self.deriv is None:
