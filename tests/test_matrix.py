@@ -224,7 +224,7 @@ backend('scipy',
   solve_args = [{},
     dict(solver='direct', atol=1e-8),
     dict(atol=1e-5, precon='diag', truncate=5),
-    dict(solver='gmres', atol=1e-5, restart=100, precon='spilu'),
+    dict(solver='gmres', atol=1e-5, restart=100, precon='spilu0'),
     dict(solver='gmres', atol=1e-5, precon='splu'),
     dict(solver='cg', atol=1e-5, precon='diag')] + [
     dict(solver=s, atol=1e-5) for s in ('bicg', 'bicgstab', 'cg', 'cgs', 'lgmres')])

@@ -114,6 +114,9 @@ class ScipyMatrix(Matrix):
   def _precon_spilu(self, **kwargs):
     return scipy.sparse.linalg.spilu(self.core.tocsc(), **kwargs).solve
 
+  def _precon_spilu0(self, **kwargs):
+    return self._precon_spilu(fill_factor=1., **kwargs)
+
   def _submatrix(self, rows, cols):
     return ScipyMatrix(self.core[rows,:][:,cols])
 
