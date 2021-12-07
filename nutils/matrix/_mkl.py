@@ -110,7 +110,7 @@ class MKLMatrix(Matrix):
     self.data = numpy.ascontiguousarray(data, dtype=numpy.float64)
     self.rowptr = numpy.ascontiguousarray(rowptr, dtype=numpy.int32)
     self.colidx = numpy.ascontiguousarray(colidx, dtype=numpy.int32)
-    super().__init__((len(rowptr)-1, ncols))
+    super().__init__((len(rowptr)-1, ncols), self.data.dtype)
 
   def convert(self, mat):
     if not isinstance(mat, Matrix):

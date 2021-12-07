@@ -44,9 +44,10 @@ class ToleranceNotReached(MatrixError):
 class Matrix:
   'matrix base class'
 
-  def __init__(self, shape):
+  def __init__(self, shape, dtype):
     assert len(shape) == 2
     self.shape = shape
+    self.dtype = dtype
     self._precon_args = None
     self._cached_submatrix = None
 
@@ -156,11 +157,11 @@ class Matrix:
     # otherwise we need to do some pre- and post-processing
     nrows, ncols = self.shape
     if rhs is None:
-      rhs = numpy.zeros(nrows)
+      rhs = numpy.zeros(nrows, self.dtype)
     if lhs0 is None:
-      lhs = numpy.zeros((ncols,)+rhs.shape[1:])
+      lhs = numpy.zeros((ncols,)+rhs.shape[1:], self.dtype)
     else:
-      lhs = numpy.array(lhs0, dtype=float)
+      lhs = numpy.array(lhs0, dtype=self.dtype)
       while lhs.ndim < rhs.ndim:
         lhs = lhs[...,numpy.newaxis].repeat(rhs.shape[lhs.ndim], axis=lhs.ndim)
       assert lhs.shape == (ncols,)+rhs.shape[1:]
@@ -307,7 +308,7 @@ class Matrix:
     if nrows != ncols:
       raise MatrixError('failed to extract diagonal: matrix is not square')
     data, indices, indptr = self.export('csr')
-    diag = numpy.empty(nrows)
+    diag = numpy.empty(nrows, self.dtype)
     for irow in range(nrows):
       icols = indices[indptr[irow]:indptr[irow+1]]
       idiag = numpy.searchsorted(icols, irow)

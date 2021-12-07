@@ -35,7 +35,7 @@ class ScipyMatrix(Matrix):
 
   def __init__(self, core):
     self.core = core
-    super().__init__(core.shape)
+    super().__init__(core.shape, core.dtype)
 
   def convert(self, mat):
     if not isinstance(mat, Matrix):
