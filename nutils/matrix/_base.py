@@ -341,14 +341,16 @@ class Matrix:
     return '{}<{}x{}>'.format(type(self).__qualname__, *self.shape)
 
 def _vdot(a, b=None):
-  # Dot product that uses numpy.sum rather than a direct reduction for
+  # Complex dot product that uses numpy.sum rather than a direct reduction for
   # slightly higher accuracy due to partial pairwise summation, see
   # https://numpy.org/doc/stable/reference/generated/numpy.sum.html
   a = numpy.asarray(a)
   if b is None:
-    ab = numpy.square(a, order='F')
+    ab = numpy.square(a.real, order='F')
+    if a.dtype.kind == 'c':
+      ab += numpy.square(a.imag, order='F')
   else:
-    ab = numpy.multiply(a, b, order='F')
+    ab = numpy.multiply(a.conj(), b, order='F')
   return ab.sum(0)
 
 # vim:sw=2:sts=2:et
