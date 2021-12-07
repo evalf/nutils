@@ -242,14 +242,12 @@ class Matrix:
     while resnorm > atol:
       k = solve(res)
       v = self @ k
-      # In the following we use sum rather than dot for slightly higher accuracy due to partial
-      # pairwise summation, see https://numpy.org/doc/stable/reference/generated/numpy.sum.html
       for k_, v_, v2_ in krylov: # orthogonolize v (modified Gramm-Schmidt)
-        c = numpy.multiply(v, v_, order='F').sum(0) / v2_
+        c = _vdot(v, v_) / v2_
         k -= k_ * c
         v -= v_ * c
-      v2 = numpy.square(v, order='F').sum(0)
-      c = numpy.multiply(v, res, order='F').sum(0) / v2 # min_c |res - c v| => c = res.v / v.v
+      v2 = _vdot(v)
+      c = _vdot(v, res) / v2 # min_c |res - c v| => c = v.res / v.v
       newlhs = lhs + k * c
       res = rhs - self @ newlhs # recompute rather than update to avoid drift
       newresnorm = numpy.linalg.norm(res, axis=0).max()
@@ -341,5 +339,16 @@ class Matrix:
 
   def __repr__(self):
     return '{}<{}x{}>'.format(type(self).__qualname__, *self.shape)
+
+def _vdot(a, b=None):
+  # Dot product that uses numpy.sum rather than a direct reduction for
+  # slightly higher accuracy due to partial pairwise summation, see
+  # https://numpy.org/doc/stable/reference/generated/numpy.sum.html
+  a = numpy.asarray(a)
+  if b is None:
+    ab = numpy.square(a, order='F')
+  else:
+    ab = numpy.multiply(a, b, order='F')
+  return ab.sum(0)
 
 # vim:sw=2:sts=2:et
