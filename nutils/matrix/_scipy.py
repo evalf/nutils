@@ -82,11 +82,13 @@ class ScipyMatrix(Matrix):
   def T(self):
     return ScipyMatrix(self.core.transpose())
 
-  def _solver(self, rhs, solver, **kwargs):
-    if solver in ['bicg', 'bicgstab', 'cg', 'cgs', 'gmres', 'lgmres', 'minres']:
-      kwargs['method'] = solver
-      solver = 'scipy'
-    return super()._solver(rhs, solver, **kwargs)
+  _solver_bicg = lambda self, rhs, atol, **kwargs: self._solver_scipy(rhs, 'bicg', atol, **kwargs)
+  _solver_bicgstab = lambda self, rhs, atol, **kwargs: self._solver_scipy(rhs, 'bicgstab', atol, **kwargs)
+  _solver_cg = lambda self, rhs, atol, **kwargs: self._solver_scipy(rhs, 'cg', atol, **kwargs)
+  _solver_cgs = lambda self, rhs, atol, **kwargs: self._solver_scipy(rhs, 'cgs', atol, **kwargs)
+  _solver_gmres = lambda self, rhs, atol, **kwargs: self._solver_scipy(rhs, 'gmres', atol, callback_type='pr_norm', **kwargs)
+  _solver_lgmres = lambda self, rhs, atol, **kwargs: self._solver_scipy(rhs, 'lgmres', atol, **kwargs)
+  _solver_minres = lambda self, rhs, atol, **kwargs: self._solver_scipy(rhs, 'minres', atol, **kwargs)
 
   def _solver_scipy(self, rhs, method, atol, callback=None, precon=None, preconargs={}, **solverargs):
     rhsnorm = numpy.linalg.norm(rhs)
