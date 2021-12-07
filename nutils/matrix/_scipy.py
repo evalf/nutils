@@ -88,26 +88,22 @@ class ScipyMatrix(Matrix):
   _solver_cgs = lambda self, rhs, atol, **kwargs: self._solver_scipy(rhs, 'cgs', atol, **kwargs)
   _solver_gmres = lambda self, rhs, atol, **kwargs: self._solver_scipy(rhs, 'gmres', atol, callback_type='pr_norm', **kwargs)
   _solver_lgmres = lambda self, rhs, atol, **kwargs: self._solver_scipy(rhs, 'lgmres', atol, **kwargs)
-  _solver_minres = lambda self, rhs, atol, **kwargs: self._solver_scipy(rhs, 'minres', atol, **kwargs)
 
   def _solver_scipy(self, rhs, method, atol, callback=None, precon=None, preconargs={}, **solverargs):
-    rhsnorm = numpy.linalg.norm(rhs)
     solverfun = getattr(scipy.sparse.linalg, method)
-    myrhs = rhs / rhsnorm # normalize right hand side vector for best control over scipy's stopping criterion
-    mytol = atol / rhsnorm
     if precon is not None:
-      precon = scipy.sparse.linalg.LinearOperator(self.shape, self.getprecon(precon, **preconargs), dtype=float)
+      precon = scipy.sparse.linalg.LinearOperator(self.shape, self.getprecon(precon, **preconargs), dtype=self.dtype)
     with log.context(method + ' {:.0f}%', 0) as reformat:
       def mycallback(arg):
         # some solvers provide the residual, others the left hand side vector
-        res = numpy.linalg.norm(myrhs - self @ arg) if numpy.ndim(arg) == 1 else float(arg)
+        res = numpy.linalg.norm(rhs - self @ arg) if numpy.ndim(arg) == 1 else float(arg)
         if callback:
           callback(res)
-        reformat(100 * numpy.log10(max(mytol, res)) / numpy.log10(mytol))
-      mylhs, status = solverfun(self.core, myrhs, M=precon, tol=mytol, callback=mycallback, **solverargs)
+        reformat(100 * numpy.log10(max(atol, res)) / numpy.log10(atol))
+      lhs, status = solverfun(self.core, rhs, M=precon, tol=0., atol=atol, callback=mycallback, **solverargs)
     if status != 0:
       raise Exception('status {}'.format(status))
-    return mylhs * rhsnorm
+    return lhs
 
   def _precon_direct(self):
     return scipy.sparse.linalg.factorized(self.core.tocsc())
