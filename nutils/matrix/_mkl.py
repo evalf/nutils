@@ -277,4 +277,14 @@ class MKLMatrix(Matrix):
   def _precon_direct(self, **args):
     return Pardiso(mtype=dict(f=11, c=13)[self.dtype.kind], a=self.data, ia=self.rowptr, ja=self.colidx, **args)
 
+  def _precon_sym_direct(self, **args):
+    upper = numpy.zeros(len(self.data), dtype=bool)
+    rowptr = numpy.empty_like(self.rowptr)
+    rowptr[0] = 1
+    for irow, (n, m) in enumerate(numeric.overlapping(self.rowptr-1)):
+      n += self.colidx[n:m].searchsorted(irow+1)
+      upper[n:m] = True
+      rowptr[irow+1] = rowptr[irow] + (m-n)
+    return Pardiso(mtype=dict(f=-2, c=6)[self.dtype.kind], a=self.data[upper], ia=rowptr, ja=self.colidx[upper], **args)
+
 # vim:sw=2:sts=2:et

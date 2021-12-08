@@ -320,10 +320,15 @@ class Matrix:
       return self._precon_object
     if self.shape[0] != self.shape[1]:
       raise MatrixError('matrix must be square')
-    precon_method, precon_name = self._method('precon', precon)
+    precon_args = args.copy() # keep original args for caching purposes
+    if precon_args.pop('symmetric', False) and isinstance(precon, str) and hasattr(self, '_precon_sym_' + precon):
+      precon_method = getattr(self, '_precon_sym_' + precon)
+      precon_name = 'symmetric ' + precon
+    else:
+      precon_method, precon_name = self._method('precon', precon)
     try:
       with treelog.context('constructing {} preconditioner'.format(precon_name)):
-        precon_object = precon_method(**args)
+        precon_object = precon_method(**precon_args)
     except MatrixError:
       raise
     except Exception as e:
