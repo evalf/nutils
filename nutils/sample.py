@@ -340,6 +340,44 @@ class Sample(types.Singleton):
     else:
       return Sample.empty(self.spaces, self.ndims)
 
+  def zip(*samples: 'Sample') -> 'Sample':
+    '''
+    Join multiple samples, with identical point count but differing spaces, into
+    a new sample with the same point count and the total of spaces. The result is
+    a sample that is able to evaluate any function that is evaluable on at least
+    one of the individual samples.
+
+    >>> from . import mesh
+    >>> topo1, geom1 = mesh.line([0,.5,1], space='X')
+    >>> topo2, geom2 = mesh.line([0,.2,1], space='Y')
+    >>> sample1 = topo1.sample('uniform', 3)
+    >>> sample2 = topo2.locate(geom2, sample1.eval(geom1), tol=1e-10)
+    >>> zipped = sample1.zip(sample2)
+    >>> numpy.linalg.norm(zipped.eval(geom1 - geom2))
+    0.±1e-10
+
+    Though zipping is almost entirely symmetric, the first argument has special
+    status in case the zipped sample is used to form an integral, in which
+    case the first sample provides the quadrature weights. This means that
+    integrals involving any but the first sample's geometry scale incorrectly.
+
+    >>> zipped.integrate(function.J(geom1)) # correct
+    1.0
+    >>> zipped.integrate(function.J(geom2)) # wrong (expected 1)
+    1.4±1e-10
+
+    Args
+    ----
+    samples : :class:`Sample`
+        Samples that are to be zipped together.
+
+    Returns
+    -------
+    zipped : :class:`Sample`
+    '''
+
+    return _Zip(*samples)
+
 class _TransformChainsSample(Sample):
 
   __slots__ = 'space', 'transforms', 'points'
@@ -655,6 +693,62 @@ class _Mul(_TensorialSample):
     basis1 = self._sample1.basis()
     basis2 = self._sample2.basis()
     return function.ravel(basis1[:,None] * basis2[None,:], axis=0)
+
+class _Zip(Sample):
+
+  def __init__(self, *samples):
+    npoints = samples[0].npoints
+    spaces = util.sum(sample.spaces for sample in samples)
+    if not all(sample.npoints == npoints for sample in samples):
+      raise ValueError('points do not match')
+    if len(set(spaces)) < len(spaces):
+      raise ValueError('spaces overlap')
+
+    self._samples = samples
+
+    ielems = numpy.empty((len(samples), npoints), dtype=int)
+    ilocals = numpy.empty((len(samples), npoints), dtype=int)
+    for isample, sample in enumerate(samples):
+      for ielem in range(sample.nelems):
+        indices = sample.getindex(ielem)
+        ielems[isample, indices] = ielem
+        ilocals[isample, indices] = numpy.arange(indices.shape[0])
+
+    nelems = tuple(sample.nelems for sample in samples)
+    flat_ielems = numpy.ravel_multi_index(ielems, nelems)
+    flat_ielems, inverse, sizes = numpy.unique(flat_ielems, return_inverse=True, return_counts=True)
+    self._offsets = types.frozenarray(numpy.cumsum([0, *sizes]), copy=False)
+    self._sizes = types.frozenarray(sizes, copy=False)
+    self._indices = types.frozenarray(numpy.argsort(inverse), copy=False)
+    self._ielems = tuple(types.frozenarray(array, copy=False) for array in numpy.unravel_index(flat_ielems, nelems))
+    self._ilocals = types.frozenarray(numpy.take(ilocals, self._indices, axis=1), copy=False)
+
+    super().__init__(spaces=spaces, ndims=samples[0].ndims, nelems=len(self._sizes), npoints=npoints)
+
+  def getindex(self, ielem):
+    return self._indices[self._offsets[ielem]:self._offsets[ielem+1]]
+
+  def _getslice(self, array, ielem):
+    s = evaluable.Take(self._offsets, ielem) + evaluable.Range(evaluable.Take(self._sizes, ielem))
+    return evaluable.Take(array, s)
+
+  def update_lower_args(self, ielem, points_shape, transform_chains, coordinates):
+    if set(self.spaces) & set(transform_chains):
+      raise ValueError('Nested integrals or samples in the same space are not supported.')
+    size = evaluable.Take(self._sizes, ielem)
+    coordinates = {space: evaluable.insertaxis(coords, -2, size) for space, coords in coordinates.items()}
+    for samplei, ielemsi, ilocalsi in zip(self._samples, self._ielems, self._ilocals):
+      _, transform_chains, coordinatesi = samplei.update_lower_args(evaluable.Take(ielemsi, ielem), (), transform_chains, {})
+      for space, coords in coordinatesi.items():
+        coordinates[space] = evaluable.prependaxes(evaluable._take(coords, self._getslice(ilocalsi, ielem), axis=0), points_shape)
+    return (*points_shape, size), transform_chains, coordinates
+
+  def get_evaluable_indices(self, ielem):
+    return self._getslice(self._indices, ielem)
+
+  def get_evaluable_weights(self, ielem):
+    weights = self._samples[0].get_evaluable_weights(evaluable.Take(self._ielems[0], ielem))
+    return self._getslice(weights, ielem)
 
 class _TakeElements(_TensorialSample):
 
