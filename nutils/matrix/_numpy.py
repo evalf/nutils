@@ -34,7 +34,7 @@ class NumpyMatrix(Matrix):
   def __init__(self, core):
     assert numeric.isarray(core)
     self.core = core
-    super().__init__(core.shape)
+    super().__init__(core.shape, core.dtype)
 
   def convert(self, mat):
     if not isinstance(mat, Matrix):

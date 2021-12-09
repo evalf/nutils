@@ -21,7 +21,7 @@
 from ._base import Matrix, MatrixError, BackendNotAvailable
 from .. import numeric, util, warnings
 from contextlib import contextmanager
-from ctypes import c_long, c_int, c_double, byref
+from ctypes import c_int, byref
 import treelog as log
 import os, numpy
 
@@ -42,7 +42,8 @@ def assemble(data, index, shape):
 class Pardiso:
   '''Wrapper for libmkl.pardiso.
 
-  https://software.intel.com/en-us/mkl-developer-reference-c-pardiso
+  https://www.intel.com/content/www/us/en/develop/documentation/onemkl-developer-reference-c/top/
+    sparse-solver-routines/onemkl-pardiso-parallel-direct-sparse-solver-iface.html
   '''
 
   _errorcodes = {
@@ -61,6 +62,7 @@ class Pardiso:
   }
 
   def __init__(self, mtype, a, ia, ja, verbose=False, iparm={}):
+    self.dtype = a.dtype
     self.pt = numpy.zeros(64, numpy.int64) # handle to data structure
     self.maxfct = c_int(1)
     self.mnum = c_int(1)
@@ -77,6 +79,7 @@ class Pardiso:
       raise MatrixError('pardiso init failed')
     for n, v in iparm.items():
       self.iparm[n] = v
+    self.iparm[12] = 0 # disable (non-)symmetric weighted matching https://community.intel.com/t5/Intel-oneAPI-Math-Kernel-Library/MKL-Pardiso-fails-to-solve-complex-unsymmetric-sparse-matrix/td-p/1081486
     self.iparm[27] = 0 # double precision data
     self.iparm[34] = 0 # one-based indexing
     self.iparm[36] = 0 # csr matrix format
@@ -84,7 +87,7 @@ class Pardiso:
     log.debug('peak memory use {:,d}k'.format(max(self.iparm[14], self.iparm[15]+self.iparm[16])))
 
   def __call__(self, rhs):
-    rhsflat = numpy.ascontiguousarray(rhs.reshape(rhs.shape[0], -1).T, dtype=numpy.float64)
+    rhsflat = numpy.ascontiguousarray(rhs.reshape(rhs.shape[0], -1).T, dtype=self.dtype)
     lhsflat = numpy.empty_like(rhsflat)
     self._phase(33, rhsflat.shape[0], rhsflat.ctypes, lhsflat.ctypes) # solve, iterative refinement
     return lhsflat.T.reshape(rhs.shape)
@@ -107,39 +110,44 @@ class MKLMatrix(Matrix):
 
   def __init__(self, data, rowptr, colidx, ncols):
     assert len(data) == len(colidx) == rowptr[-1]-1
-    self.data = numpy.ascontiguousarray(data, dtype=numpy.float64)
+    self.data = numpy.ascontiguousarray(data, dtype=numpy.complex128 if data.dtype.kind == 'c' else numpy.float64)
     self.rowptr = numpy.ascontiguousarray(rowptr, dtype=numpy.int32)
     self.colidx = numpy.ascontiguousarray(colidx, dtype=numpy.int32)
-    super().__init__((len(rowptr)-1, ncols))
+    super().__init__((len(rowptr)-1, ncols), self.data.dtype)
+
+  def mkl_(self, name, *args):
+    attr = 'mkl_' + dict(f='d', c='z')[self.dtype.kind] + name
+    return getattr(libmkl, attr)(*args)
 
   def convert(self, mat):
     if not isinstance(mat, Matrix):
       raise TypeError('cannot convert {} to Matrix'.format(type(mat).__name__))
     if self.shape != mat.shape:
       raise MatrixError('non-matching shapes')
-    if isinstance(mat, MKLMatrix):
+    if isinstance(mat, MKLMatrix) and mat.dtype == self.dtype:
       return mat
     data, colidx, rowptr = mat.export('csr')
-    return MKLMatrix(data, rowptr+1, colidx+1, self.shape[1])
+    return MKLMatrix(data.astype(self.dtype, copy=False), rowptr+1, colidx+1, self.shape[1])
 
   def __add__(self, other):
     other = self.convert(other)
-    assert self.shape == other.shape
+    assert self.shape == other.shape and self.dtype == other.dtype
     request = c_int(1)
     info = c_int()
     rowptr = numpy.empty(self.shape[0]+1, dtype=numpy.int32)
+    one = numpy.array(1, dtype=self.dtype)
     args = ["N", byref(request), byref(c_int(0)),
       byref(c_int(self.shape[0])), byref(c_int(self.shape[1])),
-      self.data.ctypes, self.colidx.ctypes, self.rowptr.ctypes, byref(c_double(1.)),
+      self.data.ctypes, self.colidx.ctypes, self.rowptr.ctypes, one.ctypes,
       other.data.ctypes, other.colidx.ctypes, other.rowptr.ctypes,
       None, None, rowptr.ctypes, None, byref(info)]
-    libmkl.mkl_dcsradd(*args)
+    self.mkl_('csradd', *args)
     assert info.value == 0
     colidx = numpy.empty(rowptr[-1]-1, dtype=numpy.int32)
-    data = numpy.empty(rowptr[-1]-1, dtype=numpy.float64)
+    data = numpy.empty(rowptr[-1]-1, dtype=self.dtype)
     request.value = 2
     args[12:14] = data.ctypes, colidx.ctypes
-    libmkl.mkl_dcsradd(*args)
+    self.mkl_('csradd', *args)
     assert info.value == 0
     return MKLMatrix(data, rowptr, colidx, self.shape[1])
 
@@ -153,17 +161,19 @@ class MKLMatrix(Matrix):
       raise TypeError
     if other.shape[0] != self.shape[1]:
       raise MatrixError
-    x = numpy.ascontiguousarray(other.T, dtype=numpy.float64)
-    y = numpy.empty(x.shape[:-1] + self.shape[:1], dtype=numpy.float64)
+    x = numpy.ascontiguousarray(other.T, dtype=self.dtype)
+    y = numpy.empty(x.shape[:-1] + self.shape[:1], dtype=self.dtype)
     if other.ndim == 1:
-      libmkl.mkl_dcsrgemv('N', byref(c_int(self.shape[0])),
+      self.mkl_('csrgemv', 'N', byref(c_int(self.shape[0])),
         self.data.ctypes, self.rowptr.ctypes, self.colidx.ctypes, x.ctypes, y.ctypes)
     else:
-      libmkl.mkl_dcsrmm('N', byref(c_int(self.shape[0])),
+      zero = numpy.array(0, dtype=self.dtype)
+      one = numpy.array(1, dtype=self.dtype)
+      self.mkl_('csrmm', 'N', byref(c_int(self.shape[0])),
         byref(c_int(other.size//other.shape[0])),
-        byref(c_int(self.shape[1])), byref(c_double(1.)), 'GXXFXX',
+        byref(c_int(self.shape[1])), one.ctypes, 'GXXFXX',
         self.data.ctypes, self.colidx.ctypes, self.rowptr.ctypes, self.rowptr[1:].ctypes,
-        x.ctypes, byref(c_int(other.shape[0])), byref(c_double(0.)),
+        x.ctypes, byref(c_int(other.shape[0])), zero.ctypes,
         y.ctypes, byref(c_int(other.shape[0])))
     return y.T
 
@@ -179,7 +189,7 @@ class MKLMatrix(Matrix):
     rowptr = numpy.empty_like(self.rowptr)
     colidx = numpy.empty_like(self.colidx)
     info = c_int()
-    libmkl.mkl_dcsrcsc(job.ctypes,
+    self.mkl_('csrcsc', job.ctypes,
       byref(c_int(self.shape[0])), self.data.ctypes,
       self.colidx.ctypes, self.rowptr.ctypes, data.ctypes, colidx.ctypes,
       rowptr.ctypes, byref(info))
@@ -200,7 +210,7 @@ class MKLMatrix(Matrix):
 
   def export(self, form):
     if form == 'dense':
-      dense = numpy.zeros(self.shape)
+      dense = numpy.zeros(self.shape, self.dtype)
       for row, i, j in zip(dense, self.rowptr[:-1]-1, self.rowptr[1:]-1):
         row[self.colidx[i:j]-1] = self.data[i:j]
       return dense
@@ -211,6 +221,8 @@ class MKLMatrix(Matrix):
     raise NotImplementedError('cannot export MKLMatrix to {!r}'.format(form))
 
   def _solver_fgmres(self, rhs, atol, maxiter=0, restart=150, precon=None, ztol=1e-12, preconargs={}, **args):
+    if self.dtype.kind == 'c':
+      raise MatrixError("MKL's fgmres does not support complex data")
     rci = c_int(0)
     n = c_int(len(rhs))
     b = numpy.array(rhs, dtype=numpy.float64, copy=False)
@@ -263,6 +275,16 @@ class MKLMatrix(Matrix):
     return x
 
   def _precon_direct(self, **args):
-    return Pardiso(mtype=11, a=self.data, ia=self.rowptr, ja=self.colidx, **args)
+    return Pardiso(mtype=dict(f=11, c=13)[self.dtype.kind], a=self.data, ia=self.rowptr, ja=self.colidx, **args)
+
+  def _precon_sym_direct(self, **args):
+    upper = numpy.zeros(len(self.data), dtype=bool)
+    rowptr = numpy.empty_like(self.rowptr)
+    rowptr[0] = 1
+    for irow, (n, m) in enumerate(numeric.overlapping(self.rowptr-1)):
+      n += self.colidx[n:m].searchsorted(irow+1)
+      upper[n:m] = True
+      rowptr[irow+1] = rowptr[irow] + (m-n)
+    return Pardiso(mtype=dict(f=-2, c=6)[self.dtype.kind], a=self.data[upper], ia=rowptr, ja=self.colidx[upper], **args)
 
 # vim:sw=2:sts=2:et

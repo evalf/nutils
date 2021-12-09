@@ -35,7 +35,7 @@ class ScipyMatrix(Matrix):
 
   def __init__(self, core):
     self.core = core
-    super().__init__(core.shape)
+    super().__init__(core.shape, core.dtype)
 
   def convert(self, mat):
     if not isinstance(mat, Matrix):
@@ -82,30 +82,28 @@ class ScipyMatrix(Matrix):
   def T(self):
     return ScipyMatrix(self.core.transpose())
 
-  def _solver(self, rhs, solver, **kwargs):
-    if solver in ['bicg', 'bicgstab', 'cg', 'cgs', 'gmres', 'lgmres', 'minres']:
-      kwargs['method'] = solver
-      solver = 'scipy'
-    return super()._solver(rhs, solver, **kwargs)
+  _solver_bicg = lambda self, rhs, atol, **kwargs: self._solver_scipy(rhs, 'bicg', atol, **kwargs)
+  _solver_bicgstab = lambda self, rhs, atol, **kwargs: self._solver_scipy(rhs, 'bicgstab', atol, **kwargs)
+  _solver_cg = lambda self, rhs, atol, **kwargs: self._solver_scipy(rhs, 'cg', atol, **kwargs)
+  _solver_cgs = lambda self, rhs, atol, **kwargs: self._solver_scipy(rhs, 'cgs', atol, **kwargs)
+  _solver_gmres = lambda self, rhs, atol, **kwargs: self._solver_scipy(rhs, 'gmres', atol, callback_type='pr_norm', **kwargs)
+  _solver_lgmres = lambda self, rhs, atol, **kwargs: self._solver_scipy(rhs, 'lgmres', atol, **kwargs)
 
   def _solver_scipy(self, rhs, method, atol, callback=None, precon=None, preconargs={}, **solverargs):
-    rhsnorm = numpy.linalg.norm(rhs)
     solverfun = getattr(scipy.sparse.linalg, method)
-    myrhs = rhs / rhsnorm # normalize right hand side vector for best control over scipy's stopping criterion
-    mytol = atol / rhsnorm
     if precon is not None:
-      precon = scipy.sparse.linalg.LinearOperator(self.shape, self.getprecon(precon, **preconargs), dtype=float)
+      precon = scipy.sparse.linalg.LinearOperator(self.shape, self.getprecon(precon, **preconargs), dtype=self.dtype)
     with log.context(method + ' {:.0f}%', 0) as reformat:
       def mycallback(arg):
         # some solvers provide the residual, others the left hand side vector
-        res = numpy.linalg.norm(myrhs - self @ arg) if numpy.ndim(arg) == 1 else float(arg)
+        res = numpy.linalg.norm(rhs - self @ arg) if numpy.ndim(arg) == 1 else float(arg)
         if callback:
           callback(res)
-        reformat(100 * numpy.log10(max(mytol, res)) / numpy.log10(mytol))
-      mylhs, status = solverfun(self.core, myrhs, M=precon, tol=mytol, callback=mycallback, **solverargs)
+        reformat(100 * numpy.log10(max(atol, res)) / numpy.log10(atol))
+      lhs, status = solverfun(self.core, rhs, M=precon, tol=0., atol=atol, callback=mycallback, **solverargs)
     if status != 0:
       raise Exception('status {}'.format(status))
-    return mylhs * rhsnorm
+    return lhs
 
   def _precon_direct(self):
     return scipy.sparse.linalg.factorized(self.core.tocsc())
@@ -115,6 +113,9 @@ class ScipyMatrix(Matrix):
 
   def _precon_spilu(self, **kwargs):
     return scipy.sparse.linalg.spilu(self.core.tocsc(), **kwargs).solve
+
+  def _precon_spilu0(self, **kwargs):
+    return self._precon_spilu(fill_factor=1., **kwargs)
 
   def _submatrix(self, rows, cols):
     return ScipyMatrix(self.core[rows,:][:,cols])

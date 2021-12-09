@@ -511,6 +511,7 @@ class minimize(cache.Recursion, length=1, version=3):
     self.rampdown = rampdown
     self.failrelax = failrelax
     self.solveargs = _strip(kwargs, 'lin')
+    self.solveargs['symmetric'] = True
     if kwargs:
       raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
 
@@ -792,6 +793,7 @@ def optimize(target, functional:evaluable.asarray, *, tol:types.strictfloat=0., 
   if linesearch is None:
     linesearch = NormBased.legacy(kwargs)
   solveargs = _strip(kwargs, 'lin')
+  solveargs['symmetric'] = True
   if kwargs:
     raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
   argobjs = _argobjs((functional,))

@@ -1,9 +1,11 @@
 import numpy, pickle
 from nutils import matrix, sparse, testing, warnings
 
-class Solver(testing.TestCase):
+@testing.parametrize
+class backend(testing.TestCase):
 
   n = 100
+  complex = False
 
   def setUp(self):
     super().setUp()
@@ -11,7 +13,8 @@ class Solver(testing.TestCase):
       self.enter_context(matrix.backend(self.backend))
     except matrix.BackendNotAvailable:
       self.skipTest('backend is unavailable')
-    self.exact = 2 * numpy.eye(self.n) - numpy.eye(self.n, self.n, -1) - numpy.eye(self.n, self.n, +1)
+    self.offdiag = -1+.5j if self.complex else -1
+    self.exact = 2 * numpy.eye(self.n) + self.offdiag * numpy.eye(self.n, self.n, 1) + self.offdiag * numpy.eye(self.n, self.n, -1)
     data = sparse.prune(sparse.fromarray(self.exact), inplace=True)
     assert len(data) == self.n*3-2
     self.matrix = matrix.fromsparse(data, inplace=True)
@@ -31,18 +34,18 @@ class Solver(testing.TestCase):
     numpy.testing.assert_equal(data[0::3], 2)
     numpy.testing.assert_equal(row[1::3], numpy.arange(self.n-1))
     numpy.testing.assert_equal(col[1::3], numpy.arange(1, self.n))
-    numpy.testing.assert_equal(data[1::3], -1)
+    numpy.testing.assert_equal(data[1::3], self.offdiag)
     numpy.testing.assert_equal(row[2::3], numpy.arange(1, self.n))
     numpy.testing.assert_equal(col[2::3], numpy.arange(self.n-1))
-    numpy.testing.assert_equal(data[2::3], -1)
+    numpy.testing.assert_equal(data[2::3], self.offdiag)
 
   def test_export_csr(self):
     data, indices, indptr = self.matrix.export('csr')
     self.assertEqual(indptr[0], 0)
     self.assertEqual(indptr[-1], len(data))
     numpy.testing.assert_equal(data[0::3], 2)
-    numpy.testing.assert_equal(data[1::3], -1)
-    numpy.testing.assert_equal(data[2::3], -1)
+    numpy.testing.assert_equal(data[1::3], self.offdiag)
+    numpy.testing.assert_equal(data[2::3], self.offdiag)
     numpy.testing.assert_equal(indices[0::3], numpy.arange(self.n))
     numpy.testing.assert_equal(indices[1::3], numpy.arange(1, self.n))
     numpy.testing.assert_equal(indices[2::3], numpy.arange(self.n-1))
@@ -63,13 +66,21 @@ class Solver(testing.TestCase):
     b = numpy.zeros(self.n)
     b[0] = -1
     b[-1] = self.n
+    if self.complex:
+      b = b + x * 1j
+      b[0] += .5j
+      b[-1] -= .5j * self.n
     numpy.testing.assert_equal(actual=self.matrix @ x, desired=b)
 
   def test_matmat(self):
     X = numpy.arange(self.n*2).reshape(-1,2)
     B = numpy.zeros((self.n,2))
     B[0] = -2, -1
-    B[-1] = 2*self.n, 2*self.n+1
+    B[-1] = 2*self.n, 2*(self.n+.5)
+    if self.complex:
+      B = B + numpy.arange(self.n*2).reshape(-1,2) * 1j
+      B[0] += 1j, .5j
+      B[-1] -= 1j * self.n, 1j * (self.n+.5)
     numpy.testing.assert_equal(actual=self.matrix @ X, desired=B)
     with self.assertRaises(TypeError):
       self.matrix @ 'foo'
@@ -123,7 +134,7 @@ class Solver(testing.TestCase):
 
   def test_solve(self):
     rhs = numpy.arange(self.matrix.shape[0])
-    for args in self.args:
+    for args in self.solve_args:
       for lhs0 in None, numpy.arange(rhs.size)/rhs.size:
         with self.subTest('{},lhs0={}'.format(args.get('solver', 'direct'), 'none' if lhs0 is None else 'single')):
           lhs = self.matrix.solve(rhs, lhs0=lhs0, **args)
@@ -141,13 +152,13 @@ class Solver(testing.TestCase):
   def test_singular(self):
     singularmatrix = matrix.assemble(numpy.arange(self.n)-self.n//2, numpy.arange(self.n)[numpy.newaxis].repeat(2,0), shape=(self.n, self.n))
     rhs = numpy.ones(self.n)
-    for args in self.args:
+    for args in self.solve_args:
       with self.subTest(args.get('solver', 'direct')), self.assertRaises(matrix.MatrixError):
         lhs = singularmatrix.solve(rhs, **args)
 
   def test_solve_repeated(self):
     rhs = numpy.arange(self.matrix.shape[0])
-    for args in self.args:
+    for args in self.solve_args:
       with self.subTest(args.get('solver', 'direct')):
         for i in range(3):
           lhs = self.matrix.solve(rhs, **args)
@@ -159,7 +170,7 @@ class Solver(testing.TestCase):
     cons[:] = numpy.nan
     cons[0] = 10
     cons[-1] = 20
-    for args in self.args:
+    for args in self.solve_args:
       with self.subTest(args.get('solver', 'direct')):
         lhs = self.matrix.solve(constrain=cons, **args)
         self.assertEqual(lhs[0], cons[0])
@@ -172,7 +183,7 @@ class Solver(testing.TestCase):
     cols = self.n//2 + numpy.array([-1, 0, 2])
     array = self.matrix.submatrix(rows, cols).export('dense')
     self.assertEqual(array.shape, (2, 3))
-    numpy.testing.assert_equal(actual=array, desired=[[-1, 2, 0], [0, -1, -1]])
+    numpy.testing.assert_equal(actual=array, desired=self.exact[numpy.ix_(rows, cols)])
 
   def test_submatrix_specialcases(self):
     mat = matrix.assemble(numpy.array([1,2,3,4]), numpy.array([[0,0,2,2],[0,2,0,2]]), (3,3))
@@ -196,49 +207,46 @@ class Solver(testing.TestCase):
   def test_diagonal(self):
     self.assertAllEqual(self.matrix.diagonal(), numpy.diag(self.exact))
 
-class Numpy(Solver):
-  def setUp(self):
-    self.backend = 'numpy'
-    self.args = [{},
-      dict(solver='direct', atol=1e-8),
-      dict(atol=1e-5, precon='diag', truncate=5)]
-    super().setUp()
+backend('numpy',
+  backend = 'numpy',
+  solve_args = [{},
+    dict(solver='direct', atol=1e-8),
+    dict(atol=1e-5, precon='diag')])
 
-  def test_deprecated_context(self):
-    with self.assertWarns(warnings.NutilsDeprecationWarning):
-      with matrix.Numpy():
-        pass
+backend('numpy:complex',
+  backend = 'numpy',
+  complex = True,
+  solve_args = [{},
+    dict(solver='direct', atol=1e-8)])
 
-class Scipy(Solver):
-  def setUp(self):
-    self.backend = 'scipy'
-    self.args = [{},
-      dict(solver='direct', atol=1e-8),
-      dict(atol=1e-5, precon='diag', truncate=5),
-      dict(solver='gmres', atol=1e-5, restart=100, precon='spilu'),
-      dict(solver='gmres', atol=1e-5, precon='splu'),
-      dict(solver='cg', atol=1e-5, precon='diag')] + [
-      dict(solver=s, atol=1e-5) for s in ('bicg', 'bicgstab', 'cg', 'cgs', 'lgmres', 'minres')]
-    super().setUp()
+backend('scipy',
+  backend = 'scipy',
+  solve_args = [{},
+    dict(solver='direct', atol=1e-8),
+    dict(atol=1e-5, precon='diag', truncate=5),
+    dict(solver='gmres', atol=1e-5, restart=100, precon='spilu0'),
+    dict(solver='gmres', atol=1e-5, precon='splu'),
+    dict(solver='cg', atol=1e-5, precon='diag')] + [
+    dict(solver=s, atol=1e-5) for s in ('bicg', 'bicgstab', 'cg', 'cgs', 'lgmres')])
 
-  def test_deprecated_context(self):
-    with self.assertWarns(warnings.NutilsDeprecationWarning):
-      with matrix.Scipy():
-        pass
+backend('scipy:complex',
+  backend = 'scipy',
+  complex = True,
+  solve_args = [{},
+    dict(solver='direct', atol=1e-8)])
 
-class MKL(Solver):
-  def setUp(self):
-    self.backend = 'mkl'
-    self.args=[{},
-      dict(solver='direct', atol=1e-8),
-      dict(atol=1e-5, precon='diag', truncate=5),
-      dict(solver='fgmres', atol=1e-8),
-      dict(solver='fgmres', atol=1e-8, precon='diag')]
-    super().setUp()
+backend('mkl',
+  backend = 'mkl',
+  solve_args = [{},
+    dict(solver='direct', atol=1e-8),
+    dict(solver='direct', symmetric=True, atol=1e-8),
+    dict(atol=1e-5, precon='diag', truncate=5),
+    dict(solver='fgmres', atol=1e-8),
+    dict(solver='fgmres', atol=1e-8, precon='diag')])
 
-  def test_deprecated_context(self):
-    with self.assertWarns(warnings.NutilsDeprecationWarning):
-      with matrix.MKL():
-        pass
-
-del Solver
+backend('mkl:complex',
+  backend = 'mkl',
+  complex = True,
+  solve_args = [{},
+    dict(solver='direct', atol=1e-8),
+    dict(solver='direct', symmetric=True, atol=1e-8)])

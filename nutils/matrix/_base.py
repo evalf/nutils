@@ -44,10 +44,12 @@ class ToleranceNotReached(MatrixError):
 class Matrix:
   'matrix base class'
 
-  def __init__(self, shape):
+  def __init__(self, shape, dtype):
     assert len(shape) == 2
     self.shape = shape
+    self.dtype = dtype
     self._precon_args = None
+    self._cached_submatrix = None
 
   def __reduce__(self):
     from . import assemble
@@ -155,11 +157,11 @@ class Matrix:
     # otherwise we need to do some pre- and post-processing
     nrows, ncols = self.shape
     if rhs is None:
-      rhs = numpy.zeros(nrows)
+      rhs = numpy.zeros(nrows, self.dtype)
     if lhs0 is None:
-      lhs = numpy.zeros((ncols,)+rhs.shape[1:])
+      lhs = numpy.zeros((ncols,)+rhs.shape[1:], self.dtype)
     else:
-      lhs = numpy.array(lhs0, dtype=float)
+      lhs = numpy.array(lhs0, dtype=self.dtype)
       while lhs.ndim < rhs.ndim:
         lhs = lhs[...,numpy.newaxis].repeat(rhs.shape[lhs.ndim], axis=lhs.ndim)
       assert lhs.shape == (ncols,)+rhs.shape[1:]
@@ -241,14 +243,12 @@ class Matrix:
     while resnorm > atol:
       k = solve(res)
       v = self @ k
-      # In the following we use sum rather than dot for slightly higher accuracy due to partial
-      # pairwise summation, see https://numpy.org/doc/stable/reference/generated/numpy.sum.html
       for k_, v_, v2_ in krylov: # orthogonolize v (modified Gramm-Schmidt)
-        c = numpy.multiply(v, v_, order='F').sum(0) / v2_
+        c = _vdot(v, v_) / v2_
         k -= k_ * c
         v -= v_ * c
-      v2 = numpy.square(v, order='F').sum(0)
-      c = numpy.multiply(v, res, order='F').sum(0) / v2 # min_c |res - c v| => c = res.v / v.v
+      v2 = _vdot(v)
+      c = _vdot(v, res) / v2 # min_c |res - c v| => c = v.res / v.v
       newlhs = lhs + k * c
       res = rhs - self @ newlhs # recompute rather than update to avoid drift
       newresnorm = numpy.linalg.norm(res, axis=0).max()
@@ -279,7 +279,12 @@ class Matrix:
     if rows.all() and cols.all():
       return self
 
-    return self._submatrix(rows, cols)
+    if self._cached_submatrix is None or (rows != self._cached_rows).any() or (cols != self._cached_cols).any():
+      self._cached_rows = rows
+      self._cached_cols = cols
+      self._cached_submatrix = self._submatrix(rows, cols)
+
+    return self._cached_submatrix
 
   @abc.abstractmethod
   def _submatrix(self, rows, cols):
@@ -303,7 +308,7 @@ class Matrix:
     if nrows != ncols:
       raise MatrixError('failed to extract diagonal: matrix is not square')
     data, indices, indptr = self.export('csr')
-    diag = numpy.empty(nrows)
+    diag = numpy.empty(nrows, self.dtype)
     for irow in range(nrows):
       icols = indices[indptr[irow]:indptr[irow+1]]
       idiag = numpy.searchsorted(icols, irow)
@@ -315,10 +320,15 @@ class Matrix:
       return self._precon_object
     if self.shape[0] != self.shape[1]:
       raise MatrixError('matrix must be square')
-    precon_method, precon_name = self._method('precon', precon)
+    precon_args = args.copy() # keep original args for caching purposes
+    if precon_args.pop('symmetric', False) and isinstance(precon, str) and hasattr(self, '_precon_sym_' + precon):
+      precon_method = getattr(self, '_precon_sym_' + precon)
+      precon_name = 'symmetric ' + precon
+    else:
+      precon_method, precon_name = self._method('precon', precon)
     try:
       with treelog.context('constructing {} preconditioner'.format(precon_name)):
-        precon_object = precon_method(**args)
+        precon_object = precon_method(**precon_args)
     except MatrixError:
       raise
     except Exception as e:
@@ -335,5 +345,18 @@ class Matrix:
 
   def __repr__(self):
     return '{}<{}x{}>'.format(type(self).__qualname__, *self.shape)
+
+def _vdot(a, b=None):
+  # Complex dot product that uses numpy.sum rather than a direct reduction for
+  # slightly higher accuracy due to partial pairwise summation, see
+  # https://numpy.org/doc/stable/reference/generated/numpy.sum.html
+  a = numpy.asarray(a)
+  if b is None:
+    ab = numpy.square(a.real, order='F')
+    if a.dtype.kind == 'c':
+      ab += numpy.square(a.imag, order='F')
+  else:
+    ab = numpy.multiply(a.conj(), b, order='F')
+  return ab.sum(0)
 
 # vim:sw=2:sts=2:et
