@@ -64,7 +64,8 @@ def strictevaluable(value):
 def simplified(value):
   return strictevaluable(value).simplified
 
-asdtype = lambda arg: arg if any(arg is dtype for dtype in (bool, int, float, complex)) else {'f': float, 'i': int, 'b': bool, 'c': complex}[numpy.dtype(arg).kind]
+_type_order = bool, int, float, complex
+asdtype = lambda arg: arg if any(arg is dtype for dtype in _type_order) else {'f': float, 'i': int, 'b': bool, 'c': complex}[numpy.dtype(arg).kind]
 
 def asarray(arg):
   if hasattr(type(arg), 'as_evaluable_array'):
@@ -621,6 +622,29 @@ def dot(a, b, axes):
 
   return multiply(a, b).sum(axes)
 
+def conjugate(arg):
+  arg = asarray(arg)
+  if arg.dtype == complex:
+    return Conjugate(arg)
+  else:
+    return arg
+
+conjugate
+
+def real(arg):
+  arg = asarray(arg)
+  if arg.dtype == complex:
+    return Real(arg)
+  else:
+    return arg
+
+def imag(arg):
+  arg = asarray(arg)
+  if arg.dtype == complex:
+    return Imag(arg)
+  else:
+    return zeros_like(arg)
+
 def transpose(arg, trans=None):
   arg = asarray(arg)
   if trans is None:
@@ -849,6 +873,15 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   swapaxes = swapaxes
   transpose = transpose
   choose = lambda self, choices: Choose(self, choices)
+  conjugate = conjugate
+
+  @property
+  def real(self):
+    return real(self)
+
+  @property
+  def imag(self):
+    return imag(self)
 
   @property
   def assparse(self):
@@ -906,6 +939,9 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   _unravel = lambda self, axis, shape: None
   _ravel = lambda self, axis: None
   _loopsum = lambda self, loop_index: None # NOTE: type of `loop_index` is `_LoopIndex`
+  _real = lambda self: None
+  _imag = lambda self: None
+  _conjugate = lambda self: None
 
   @property
   def _unaligned(self):
@@ -940,6 +976,12 @@ class Array(Evaluable, metaclass=_ArrayMeta):
 
   def _intbounds_impl(self):
     return float('-inf'), float('inf')
+
+  @property
+  def _const_uniform(self):
+    if self.dtype == int:
+      lower, upper = self._intbounds
+      return lower if lower == upper else None
 
 class NPoints(Array):
   'The length of the points axis.'
@@ -986,6 +1028,7 @@ class Normal(Array):
   @types.apply_annotations
   def __init__(self, lgrad:asarray):
     assert lgrad.ndim >= 2 and equalindex(lgrad.shape[-2], lgrad.shape[-1])
+    assert lgrad.dtype != complex
     self.lgrad = lgrad
     super().__init__(args=[lgrad], shape=lgrad.shape[:-1], dtype=float)
 
@@ -1118,6 +1161,11 @@ class Constant(Array):
     else:
       return super()._intbounds_impl()
 
+  @property
+  def _const_uniform(self):
+    if self.ndim == 0:
+      return self.dtype(self.value[()])
+
 class InsertAxis(Array):
 
   __slots__ = 'func', 'length'
@@ -1225,6 +1273,10 @@ class InsertAxis(Array):
 
   def _intbounds_impl(self):
     return self.func._intbounds
+
+  @property
+  def _const_uniform(self):
+    return self.func._const_uniform
 
 class Transpose(Array):
 
@@ -1412,6 +1464,10 @@ class Transpose(Array):
   def _intbounds_impl(self):
     return self.func._intbounds
 
+  @property
+  def _const_uniform(self):
+    return self.func._const_uniform
+
 class Product(Array):
 
   __slots__ = 'func',
@@ -1503,11 +1559,12 @@ class Interpolate(Array):
     if not numpy.greater(numpy.diff(xp), 0).all():
       warnings.warn('supplied x-values are non-increasing')
     assert x.ndim == 0
+    assert x.dtype != complex and xp.dtype.kind != 'c'
     self.xp = xp
     self.fp = fp
     self.left = left
     self.right = right
-    super().__init__(args=[x], shape=(), dtype=float)
+    super().__init__(args=[x], shape=(), dtype=complex if fp.dtype.kind == 'c' else float)
 
   def evalf(self, x):
     return numpy.interp(x, self.xp, self.fp, self.left, self.right)
@@ -1555,9 +1612,9 @@ class Multiply(Array):
 
   def _simplified(self):
     func1, func2 = self.funcs
-    if isuniform(func1, 1):
+    if func1._const_uniform == 1:
       return func2
-    if isuniform(func2, 1):
+    if func2._const_uniform == 1:
       return func1
     unaligned1, unaligned2, where = unalign(func1, func2)
     if len(where) != self.ndim:
@@ -1572,13 +1629,13 @@ class Multiply(Array):
 
   def _optimized_for_numpy(self):
     func1, func2 = self.funcs
-    if isuniform(func1, -1) and func2.dtype != bool:
+    if func1._const_uniform == -1 and func2.dtype != bool:
       return Negative(func2)
-    if isuniform(func2, -1) and func1.dtype != bool:
+    if func2._const_uniform == -1 and func1.dtype != bool:
       return Negative(func1)
-    if func1 == sign(func2):
+    if self.dtype != complex and func1 == sign(func2):
       return Absolute(func2)
-    if func2 == sign(func1):
+    if self.dtype != complex and func2 == sign(func1):
       return Absolute(func1)
     if not self.ndim:
       return
@@ -2048,17 +2105,19 @@ class Power(Array):
   def _simplified(self):
     if iszero(self.power):
       return ones_like(self)
-    elif isuniform(self.power, 1):
+    p = self.power._const_uniform
+    if p == 1:
       return self.func
-    elif isuniform(self.power, 2):
+    elif p == 2:
       return self.func * self.func
     else:
       return self.func._power(self.power)
 
   def _optimized_for_numpy(self):
-    if isuniform(self.power, -1):
+    p = self.power._const_uniform
+    if p == -1:
       return Reciprocal(self.func)
-    elif isuniform(self.power, -2):
+    elif p == -2:
       return Reciprocal(self.func * self.func)
     else:
       return self._simplified()
@@ -2070,6 +2129,8 @@ class Power(Array):
     if self.power.isconstant:
       p = self.power.eval()
       return einsum('A,A,AB->AB', p, power(self.func, p - (p!=0)), derivative(self.func, var, seen))
+    if self.dtype == complex:
+      raise NotImplementedError('The complex derivative is not implemented.')
     # self = func**power
     # ln self = power * ln func
     # self` / self = power` * ln func + power * func` / func
@@ -2078,6 +2139,8 @@ class Power(Array):
          + einsum('A,A,AB->AB', ln(self.func), self, derivative(self.power, var, seen))
 
   def _power(self, n):
+    if self.dtype == complex or n.dtype == complex:
+      return
     func = self.func
     newpower = Multiply([self.power, n])
     if iszero(self.power % 2) and not iszero(newpower % 2):
@@ -2101,6 +2164,7 @@ class Pointwise(Array):
   __slots__ = 'args',
 
   deriv = None
+  complex_deriv = None
 
   @types.apply_annotations
   def __init__(self, *args:asarrays):
@@ -2128,9 +2192,6 @@ class Pointwise(Array):
     return cls(*(prependaxes(appendaxes(arg, shape[r:]), shape[:l]) for arg, l, r in zip(args, offsets[:-1], offsets[1:])))
 
   def _simplified(self):
-    if self.isconstant:
-      retval = self.eval()
-      return Constant(retval)
     if len(self.args) == 1 and isinstance(self.args[0], Transpose):
       arg, = self.args
       return Transpose(self.__class__(arg.func), arg.axes)
@@ -2138,10 +2199,20 @@ class Pointwise(Array):
     if len(where) != self.ndim:
       return align(self.__class__(*uninserted), where, self.shape)
 
+  def _optimized_for_numpy(self):
+    if self.isconstant:
+      retval = self.eval()
+      return Constant(retval)
+
   def _derivative(self, var, seen):
-    if self.deriv is None:
+    if self.complex_deriv is not None:
+      return util.sum(einsum('A,AB->AB', deriv(*self.args), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.complex_deriv))
+    elif self.dtype == complex or var.dtype == complex:
+      raise NotImplementedError('The complex derivative is not implemented.')
+    elif self.deriv is not None:
+      return util.sum(einsum('A,AB->AB', deriv(*self.args), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.deriv))
+    else:
       return super()._derivative(var, seen)
-    return util.sum(einsum('A,AB->AB', deriv(*self.args), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.deriv))
 
   def _takediag(self, axis1, axis2):
     return self.__class__(*[_takediag(arg, axis1, axis2) for arg in self.args])
@@ -2154,7 +2225,7 @@ class Pointwise(Array):
 
 class Reciprocal(Pointwise):
   __slots__ = ()
-  evalf = functools.partial(numpy.reciprocal, dtype=float)
+  evalf = numpy.reciprocal
 
 class Negative(Pointwise):
   __slots__ = ()
@@ -2184,47 +2255,47 @@ class Cos(Pointwise):
   'Cosine, element-wise.'
   __slots__ = ()
   evalf = numpy.cos
-  deriv = lambda x: -Sin(x),
+  complex_deriv = lambda x: -Sin(x),
 
 class Sin(Pointwise):
   'Sine, element-wise.'
   __slots__ = ()
   evalf = numpy.sin
-  deriv = Cos,
+  complex_deriv = Cos,
 
 class Tan(Pointwise):
   'Tangent, element-wise.'
   __slots__ = ()
   evalf = numpy.tan
-  deriv = lambda x: Cos(x)**-2,
+  complex_deriv = lambda x: Cos(x)**-2,
 
 class ArcSin(Pointwise):
   'Inverse sine, element-wise.'
   __slots__ = ()
   evalf = numpy.arcsin
-  deriv = lambda x: reciprocal(sqrt(1-x**2)),
+  complex_deriv = lambda x: reciprocal(sqrt(1-x**2)),
 
 class ArcCos(Pointwise):
   'Inverse cosine, element-wise.'
   __slots__ = ()
   evalf = numpy.arccos
-  deriv = lambda x: -reciprocal(sqrt(1-x**2)),
+  complex_deriv = lambda x: -reciprocal(sqrt(1-x**2)),
 
 class ArcTan(Pointwise):
   'Inverse tangent, element-wise.'
   __slots__ = ()
   evalf = numpy.arctan
-  deriv = lambda x: reciprocal(1+x**2),
+  complex_deriv = lambda x: reciprocal(1+x**2),
 
 class Exp(Pointwise):
   __slots__ = ()
   evalf = numpy.exp
-  deriv = lambda x: Exp(x),
+  complex_deriv = lambda x: Exp(x),
 
 class Log(Pointwise):
   __slots__ = ()
   evalf = numpy.log
-  deriv = lambda x: reciprocal(x),
+  complex_deriv = lambda x: reciprocal(x),
 
 class Mod(Pointwise):
   __slots__ = ()
@@ -2255,10 +2326,22 @@ class ArcTan2(Pointwise):
   evalf = numpy.arctan2
   deriv = lambda x, y: y / (x**2 + y**2), lambda x, y: -x / (x**2 + y**2)
 
+  @types.apply_annotations
+  def __init__(self,  left:asarray, right:asarray):
+    if left.dtype == complex or right.dtype == complex:
+      raise ValueError('arctan2 is not defined for complex numbers')
+    super().__init__(left, right)
+
 class Greater(Pointwise):
   __slots__ = ()
   evalf = numpy.greater
   deriv = (lambda a, b: Zeros(a.shape, dtype=int),) * 2
+
+  @types.apply_annotations
+  def __init__(self,  left:asarray, right:asarray):
+    if left.dtype == complex or right.dtype == complex:
+      raise ValueError('Complex numbers have no total order.')
+    super().__init__(left, right)
 
 class Equal(Pointwise):
   __slots__ = ()
@@ -2270,10 +2353,22 @@ class Less(Pointwise):
   evalf = numpy.less
   deriv = (lambda a, b: Zeros(a.shape, dtype=int),) * 2
 
+  @types.apply_annotations
+  def __init__(self,  left:asarray, right:asarray):
+    if left.dtype == complex or right.dtype == complex:
+      raise ValueError('Complex numbers have no total order.')
+    super().__init__(left, right)
+
 class Minimum(Pointwise):
   __slots__ = ()
   evalf = numpy.minimum
   deriv = lambda x, y: .5 - .5 * Sign(x - y), lambda x, y: .5 + .5 * Sign(x - y)
+
+  @types.apply_annotations
+  def __init__(self,  left:asarray, right:asarray):
+    if left.dtype == complex or right.dtype == complex:
+      raise ValueError('Complex numbers have no total order.')
+    super().__init__(left, right)
 
   def _simplified(self):
     if self.dtype == int:
@@ -2295,6 +2390,12 @@ class Maximum(Pointwise):
   evalf = numpy.maximum
   deriv = lambda x, y: .5 + .5 * Sign(x - y), lambda x, y: .5 - .5 * Sign(x - y)
 
+  @types.apply_annotations
+  def __init__(self,  left:asarray, right:asarray):
+    if left.dtype == complex or right.dtype == complex:
+      raise ValueError('Complex numbers have no total order.')
+    super().__init__(left, right)
+
   def _simplified(self):
     if self.dtype == int:
       lower1, upper1 = self.args[0]._intbounds
@@ -2310,23 +2411,76 @@ class Maximum(Pointwise):
     lower2, upper2 = self.args[1]._intbounds
     return max(lower1, lower2), max(upper1, upper2)
 
-class AsType(Pointwise):
+class Conjugate(Pointwise):
+  __slots__ = ()
 
   @types.apply_annotations
   def __init__(self, arg: asarray):
+    assert arg.dtype == complex
     super().__init__(arg)
-    dtypes = bool, int, float, complex
-    if self.dtype in dtypes[:dtypes.index(arg.dtype)]:
-      raise TypeError('invalid cast from {} to {}'.format(arg.dtype, self.dtype))
+
+  def evalf(self, arg):
+    return numpy.conjugate(arg)
+
+  def _simplified(self):
+    retval = self.args[0]._conjugate()
+    if retval is not None:
+      return retval
+    return super()._simplified()
+
+class Real(Pointwise):
+  __slots__ = ()
+
+  @types.apply_annotations
+  def __init__(self, arg: asarray):
+    assert arg.dtype == complex
+    super().__init__(arg)
+
+  def evalf(self, arg):
+    return numpy.real(arg)
+
+  def _simplified(self):
+    retval = self.args[0]._real()
+    if retval is not None:
+      return retval
+    return super()._simplified()
+
+class Imag(Pointwise):
+  __slots__ = ()
+
+  @types.apply_annotations
+  def __init__(self, arg: asarray):
+    assert arg.dtype == complex
+    super().__init__(arg)
+
+  def evalf(self, arg):
+    return numpy.imag(arg)
+
+  def _simplified(self):
+    retval = self.args[0]._imag()
+    if retval is not None:
+      return retval
+    return super()._simplified()
+
+class Cast(Pointwise):
+
+  @types.apply_annotations
+  def __init__(self, arg: asarray):
+    if arg.dtype != self.from_type:
+      raise TypeError('Expected an array with dtype {} but got {}.'.format(self.from_type.__name__, arg.dtype.__name__))
+    super().__init__(arg)
+
+  def evalf(self, arg):
+    return numpy.array(arg, dtype=self.to_type)
 
   def _derivative(self, var, seen):
+    if var.dtype == complex and self.__class__.to_type == complex:
+      raise ValueError('The complex derivative does not exist.')
     arg, = self.args
     return self.__class__(derivative(arg, var, seen))
 
   def _simplified(self):
     arg, = self.args
-    if arg.dtype == self.dtype:
-      return arg
     if iszero(arg):
       return zeros_like(self)
     for axis, parts in arg._inflations:
@@ -2339,14 +2493,74 @@ class AsType(Pointwise):
     else:
       return self.args[0]._intbounds
 
-class Int(AsType):
-  evalf = functools.partial(numpy.array, copy=False, dtype=int)
-class Float(AsType):
-  evalf = functools.partial(numpy.array, copy=False, dtype=float)
-class Complex(AsType):
-  evalf = functools.partial(numpy.array, copy=False, dtype=complex)
+  @property
+  def _const_uniform(self):
+    value = self.args[0]._const_uniform
+    if value is not None:
+      return self.to_type(value)
 
-astype = {int: Int, float: Float, complex: Complex}
+class BoolToInt(Cast):
+  from_type = bool
+  to_type = int
+
+class IntToFloat(Cast):
+  from_type = int
+  to_type = float
+
+  def _add(self, other):
+    if isinstance(other, __class__):
+      return __class__(self.args[0] + other.args[0])
+
+  def _multiply(self, other):
+    if isinstance(other, __class__):
+      return __class__(self.args[0] * other.args[0])
+
+  def _sum(self, axis):
+    return __class__(sum(self.args[0], axis))
+
+  def _product(self):
+    return __class__(product(self.args[0], -1))
+
+  def _sign(self):
+    assert self.dtype != complex
+    return __class__(sign(self.args[0]))
+
+class FloatToComplex(Cast):
+  from_type = float
+  to_type = complex
+
+  def _add(self, other):
+    if isinstance(other, __class__):
+      return __class__(self.args[0] + other.args[0])
+
+  def _multiply(self, other):
+    if isinstance(other, __class__):
+      return __class__(self.args[0] * other.args[0])
+
+  def _sum(self, axis):
+    return __class__(sum(self.args[0], axis))
+
+  def _product(self):
+    return __class__(product(self.args[0], -1))
+
+  def _real(self):
+    return self.args[0]
+
+  def _imag(self):
+    return zeros_like(self.args[0])
+
+  def _conjugate(self):
+    return self
+
+def astype(arg, dtype):
+  arg = asarray(arg)
+  i = _type_order.index(arg.dtype)
+  j = _type_order.index(dtype)
+  if i > j:
+    raise TypeError('Downcasting is forbidden.')
+  for cast in (BoolToInt, IntToFloat, FloatToComplex)[i:j]:
+    arg = cast(arg)
+  return arg
 
 class Sign(Array):
 
@@ -2354,6 +2568,7 @@ class Sign(Array):
 
   @types.apply_annotations
   def __init__(self, func:asarray):
+    assert func.dtype != complex
     self.func = func
     super().__init__(args=[func], shape=func.shape, dtype=func.dtype)
 
@@ -2856,46 +3071,6 @@ class Guard(Array):
   def _derivative(self, var, seen):
     return Guard(derivative(self.fun, var, seen))
 
-class TrigNormal(Array):
-  'cos, sin'
-
-  __slots__ = 'angle',
-
-  @types.apply_annotations
-  def __init__(self, angle:asarray):
-    self.angle = angle
-    super().__init__(args=[angle], shape=(*angle.shape, 2), dtype=float)
-
-  def _derivative(self, var, seen):
-    return einsum('Ai,AB->AiB', TrigTangent(self.angle), derivative(self.angle, var, seen))
-
-  def evalf(self, angle):
-    return numpy.stack([numpy.cos(angle), numpy.sin(angle)], axis=self.ndim-1)
-
-  def _simplified(self):
-    if iszero(self.angle):
-      return prependaxes(Inflate(1., 0, 2), self.angle.shape)
-
-class TrigTangent(Array):
-  '-sin, cos'
-
-  __slots__ = 'angle',
-
-  @types.apply_annotations
-  def __init__(self, angle:asarray):
-    self.angle = angle
-    super().__init__(args=[angle], shape=(*angle.shape, 2), dtype=float)
-
-  def _derivative(self, var, seen):
-    return -einsum('Ai,AB->AiB', TrigNormal(self.angle), derivative(self.angle, var, seen))
-
-  def evalf(self, angle):
-    return numpy.stack([-numpy.sin(angle), numpy.cos(angle)], axis=self.ndim-1)
-
-  def _simplified(self):
-    if iszero(self.angle):
-      return prependaxes(Inflate(1., 1, 2), self.angle.shape)
-
 class Find(Array):
   'indices of boolean index vector'
 
@@ -2905,7 +3080,7 @@ class Find(Array):
   def __init__(self, where:asarray):
     assert isarray(where) and where.ndim == 1 and where.dtype == bool
     self.where = where
-    super().__init__(args=[where], shape=[Sum(Int(where))], dtype=int)
+    super().__init__(args=[where], shape=[Sum(BoolToInt(where))], dtype=int)
 
   def evalf(self, where):
     return where.nonzero()[0]
@@ -2982,7 +3157,7 @@ class Argument(DerivativeTargetBase):
   >>> a = evaluable.Argument('x', [])
   >>> b = evaluable.Argument('y', [])
   >>> f = a**3 + b**2
-  >>> evaluable.derivative(f, a).simplified == (3*a**2).simplified
+  >>> evaluable.derivative(f, a).simplified == (3.*a**2).simplified
   True
 
   Args
@@ -3012,8 +3187,8 @@ class Argument(DerivativeTargetBase):
       return value
 
   def _derivative(self, var, seen):
-    if isinstance(var, Argument) and var._name == self._name and self.dtype == float:
-      result = _inflate_scalar(1., self.shape)
+    if isinstance(var, Argument) and var._name == self._name and self.dtype in (float, complex):
+      result = ones(self.shape, self.dtype)
       for i, sh in enumerate(self.shape):
         result = diagonalize(result, i, i+self.ndim)
       return result
@@ -3339,6 +3514,7 @@ class Polyval(Array):
 
   @types.apply_annotations
   def __init__(self, coeffs:asarray, points:asarray, ngrad:types.strictint=0):
+    assert coeffs.dtype != complex and points.dtype != complex
     if points.ndim < 1:
       raise ValueError('argument `points` should have at least one axis')
     if not points.shape[-1].isconstant:
@@ -3358,6 +3534,8 @@ class Polyval(Array):
     return numeric.poly_eval(coeffs, points)
 
   def _derivative(self, var, seen):
+    if self.dtype == complex:
+      raise NotImplementedError('The complex derivative is not implemented.')
     dpoints = einsum('ABi,AiD->ABD', Polyval(self.coeffs, self.points, self.ngrad+1), derivative(self.points, var, seen), A=self.points.ndim-1)
     dcoeffs = Transpose.from_end(Polyval(Transpose.to_end(derivative(self.coeffs, var, seen), *range(self.coeffs.ndim)), self.points, self.ngrad), *range(self.points.ndim-1, self.ndim))
     return dpoints + dcoeffs
@@ -3435,6 +3613,8 @@ class Legendre(Array):
     return P
 
   def _derivative(self, var, seen):
+    if self.dtype == complex:
+      raise NotImplementedError('The complex derivative is not implemented.')
     d = numpy.zeros((self._degree+1,)*2, dtype=int)
     for i in range(self._degree+1):
       d[i,i+1::2] = 2*i+1
@@ -3892,11 +4072,10 @@ def _numpy_align(a, b):
   a = asarray(a)
   b = asarray(b)
   if a.dtype != b.dtype:
-    type_order = bool, int, float, complex
-    if type_order.index(a.dtype) < type_order.index(b.dtype):
-      a = astype[b.dtype](a)
+    if _type_order.index(a.dtype) < _type_order.index(b.dtype):
+      a = astype(a, b.dtype)
     else:
-      b = astype[a.dtype](b)
+      b = astype(b, a.dtype)
   if not a.ndim:
     return _inflate_scalar(a, b.shape), b
   if not b.ndim:
@@ -3974,18 +4153,14 @@ def zeros(shape, dtype=float):
 def zeros_like(arr):
   return zeros(arr.shape, arr.dtype)
 
-def isuniform(arg, value):
-  unaligned, where = unalign(arg)
-  return not where and isinstance(unaligned, Constant) and unaligned.value[()] == value
-
 def ones(shape, dtype=float):
-  return _inflate_scalar(numpy.ones((), dtype=dtype), shape)
+  return _inflate_scalar(astype(numpy.ones((), dtype=int), dtype), shape)
 
 def ones_like(arr):
   return ones(arr.shape, arr.dtype)
 
 def reciprocal(arg):
-  return power(arg, -1.)
+  return power(arg, astype(-1, float))
 
 def negative(arg):
   return multiply(arg, -1)
@@ -4035,7 +4210,10 @@ def arctan2(arg1, arg2):
   return ArcTan2(*_numpy_align(arg1, arg2))
 
 def abs(arg):
-  return arg * sign(arg)
+  if arg.dtype == complex:
+    return sqrt(arg.real**2 + arg.imag**2)
+  else:
+    return arg * sign(arg)
 
 def sinh(arg):
   return .5 * (exp(arg) - exp(-arg))
@@ -4111,7 +4289,7 @@ def derivative(func, var, seen=None):
   'derivative'
 
   assert isinstance(var, DerivativeTargetBase), 'invalid derivative target {!r}'.format(var)
-  if var.dtype != float or var not in func.arguments:
+  if var.dtype in (bool, int) or var not in func.arguments:
     return Zeros(func.shape + var.shape, dtype=func.dtype)
   if seen is None:
     seen = {}
@@ -4132,6 +4310,8 @@ def diagonalize(arg, axis=-1, newaxis=-1):
 
 def sign(arg):
   arg = asarray(arg)
+  if arg.dtype == complex:
+    raise ValueError('sign is not defined for complex numbers')
   return Sign(arg)
 
 def eig(arg, axes=(-2,-1), symmetric=False):

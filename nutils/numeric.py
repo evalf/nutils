@@ -185,7 +185,7 @@ def inv(A):
     Ainv = numpy.linalg.inv(A)
   except numpy.linalg.LinAlgError:
     warnings.warn('singular matrix', RuntimeWarning)
-    Ainv = numpy.empty(A.shape, dtype=float)
+    Ainv = numpy.empty(A.shape, dtype=complex if A.dtype.kind == 'c' else float)
     for index in numpy.ndindex(A.shape[:-2]):
       try:
         Ainv[index] = numpy.linalg.inv(A[index])

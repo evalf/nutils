@@ -1099,7 +1099,7 @@ class namespace(TestCase):
   def test_d_arg(self):
     ns = expression_v1.Namespace()
     ns.a = '?a'
-    self.assertEqual(ns.eval_('d(2 ?a + 1, ?a)').as_evaluable_array.simplified, function.asarray(2.).as_evaluable_array.simplified)
+    self.assertEqual(ns.eval_('d(2. ?a + 1., ?a)').as_evaluable_array.simplified, function.asarray(2.).as_evaluable_array.simplified)
 
   def test_n(self):
     ns = expression_v1.Namespace()

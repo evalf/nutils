@@ -30,10 +30,10 @@ from .transform import EvaluableTransformChain
 from .transformseq import Transforms
 import builtins, numpy, functools, operator, numbers
 
-IntoArray = Union['Array', numpy.ndarray, bool, int, float]
+IntoArray = Union['Array', numpy.ndarray, bool, int, float, complex]
 Shape = Sequence[int]
-DType = Type[Union[bool, int, float]]
-_dtypes = bool, int, float
+DType = Type[Union[bool, int, float, complex]]
+_dtypes = bool, int, float, complex
 
 _PointsShape = Tuple[evaluable.Array, ...]
 _TransformChainsMap = Mapping[str, Tuple[EvaluableTransformChain, EvaluableTransformChain]]
@@ -112,7 +112,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
   ----------
   shape : :class:`tuple` of :class:`int`
       The shape of the array function.
-  dtype : :class:`bool`, :class:`int` or :class:`float`
+  dtype : :class:`bool`, :class:`int`, :class:`float` or :class:`complex`
       The dtype of the array elements.
   spaces : :class:`frozenset` of :class:`str`
       The spaces this array function is defined on.
@@ -126,7 +126,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
       The shape of this array function.
   ndim : :class:`int`
       The dimension of this array function.
-  dtype : :class:`bool`, :class:`int` or :class:`float`
+  dtype : :class:`bool`, :class:`int`, :class:`float` or :class:`complex`
       The dtype of the array elements.
   spaces : :class:`frozenset` of :class:`str`
       The spaces this array function is defined on.
@@ -261,7 +261,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     if dtype == self.dtype:
       return self
     else:
-      return _Wrapper(evaluable.astype[dtype], self, shape=self.shape, dtype=dtype)
+      return _Wrapper(functools.partial(evaluable.astype, dtype=dtype), self, shape=self.shape, dtype=dtype)
 
   def sum(self, axis: Optional[Union[int, Sequence[int]]] = None) -> 'Array':
     'See :func:`sum`.'
@@ -374,6 +374,22 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
   def argshapes(self) -> Mapping[str, Tuple[int, ...]]:
     return {name: shape for name, (shape, dtype) in self.arguments.items()}
 
+  def conjugate(self):
+    'See :func:`conjugate`.'
+    return conjugate(self)
+
+  conj = conjugate
+
+  @property
+  def real(self):
+    'See :func:`real`.'
+    return real(self)
+
+  @property
+  def imag(self):
+    'See :func:`imag`.'
+    return imag(self)
+
 class _Unlower(Array):
 
   def __init__(self, array: evaluable.Array, spaces: FrozenSet[str], arguments: Mapping[str, Tuple[Shape, DType]], points_shape: Tuple[evaluable.Array, ...], transform_chains: Tuple[EvaluableTransformChain, ...], coordinates: Tuple[evaluable.Array, ...]) -> None:
@@ -429,7 +445,7 @@ class Custom(Array):
       The arguments of this array function.
   shape : :class:`tuple` of :class:`int` or :class:`Array`
       The shape of the array function without leading pointwise axes.
-  dtype : :class:`bool`, :class:`int` or :class:`float`
+  dtype : :class:`bool`, :class:`int`, :class:`float` or :class:`complex`
       The dtype of the array elements.
   npointwise : :class:`int`
       The number of leading pointwise axis.
@@ -643,12 +659,12 @@ class _CustomEvaluable(evaluable.Array):
       return result.reshape(points_shape + result.shape[1:])
 
   def _derivative(self, var: evaluable.Array, seen: Dict[evaluable.Array, evaluable.Array]) -> evaluable.Array:
-    if self.dtype != float:
+    if self.dtype in (bool, int):
       return super()._derivative(var, seen)
     result = evaluable.Zeros(self.shape + var.shape, dtype=self.dtype)
     unlowered_args = tuple(_Unlower(arg, self.spaces, self.function_arguments, *self.lower_args) if isinstance(arg, evaluable.Array) else arg.value for arg in self.args)
     for iarg, arg in enumerate(self.args):
-      if not isinstance(arg, evaluable.Array) or arg.dtype != float or var not in arg.dependencies and var != arg:
+      if not isinstance(arg, evaluable.Array) or arg.dtype in (bool, int) or var not in arg.dependencies and var != arg:
         continue
       fpd = Array.cast(self.custom_partial_derivative(iarg, *unlowered_args))
       fpd_expected_shape = tuple(n.__index__() for n in self.shape[self.points_dim:] + arg.shape[self.points_dim:])
@@ -716,7 +732,7 @@ class Argument(Array):
       The name of this argument.
   shape : :class:`tuple` of :class:`int`
       The shape of this argument.
-  dtype : :class:`bool`, :class:`int` or :class:`float`
+  dtype : :class:`bool`, :class:`int`, :class:`float` or :class:`complex`
       The dtype of the array elements.
 
   Attributes
@@ -857,7 +873,7 @@ class _Derivative(Array):
     self._var = var
     self._eval_var = evaluable.Argument(var.name, var.shape, var.dtype)
     arguments = _join_arguments((arg.arguments, var.arguments))
-    super().__init__(arg.shape+var.shape, arg.dtype, arg.spaces | var.spaces, arguments)
+    super().__init__(arg.shape+var.shape, complex if var.dtype == complex else arg.dtype, arg.spaces | var.spaces, arguments)
 
   def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
     arg = self._arg.lower(points_shape, transform_chains, coordinates)
@@ -874,11 +890,12 @@ class _Gradient(Array):
 
   def __init__(self, func: Array, geom: Array) -> None:
     assert geom.spaces, '0d array'
+    assert geom.dtype == float
     common_shape = broadcast_shapes(func.shape, geom.shape[:-1])
     self._func = broadcast_to(func, common_shape)
     self._geom = broadcast_to(geom, (*common_shape, geom.shape[-1]))
     arguments = _join_arguments((func.arguments, geom.arguments))
-    super().__init__(self._geom.shape, float, func.spaces | geom.spaces, arguments)
+    super().__init__(self._geom.shape, complex if func.dtype == complex else float, func.spaces | geom.spaces, arguments)
 
   def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
     func = self._func.lower(points_shape, transform_chains, coordinates)
@@ -898,11 +915,12 @@ class _SurfaceGradient(Array):
 
   def __init__(self, func: Array, geom: Array) -> None:
     assert geom.spaces, '0d array'
+    assert geom.dtype == float
     common_shape = broadcast_shapes(func.shape, geom.shape[:-1])
     self._func = broadcast_to(func, common_shape)
     self._geom = broadcast_to(geom, (*common_shape, geom.shape[-1]))
     arguments = _join_arguments((func.arguments, geom.arguments))
-    super().__init__(self._geom.shape, float, func.spaces | geom.spaces, arguments)
+    super().__init__(self._geom.shape, complex if func.dtype == complex else float, func.spaces | geom.spaces, arguments)
 
   def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
     func = self._func.lower(points_shape, transform_chains, coordinates)
@@ -922,6 +940,7 @@ class _Jacobian(Array):
 
   def __init__(self, geom: Array, tip_dim: Optional[int] = None) -> None:
     assert geom.ndim >= 1
+    assert geom.dtype == float
     if not geom.spaces and geom.shape[-1] != 0:
       raise ValueError('The jacobian of a constant (in space) geometry must have dimension zero.')
     if tip_dim is not None and tip_dim > geom.shape[-1]:
@@ -948,6 +967,7 @@ class _Normal(Array):
 
   def __init__(self, geom: Array) -> None:
     self._geom = geom
+    assert geom.dtype == float
     super().__init__(geom.shape, float, geom.spaces, geom.arguments)
 
   def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
@@ -980,6 +1000,7 @@ class _Normal(Array):
 class _ExteriorNormal(Array):
 
   def __init__(self, geom: Array) -> None:
+    assert geom.dtype == float
     self._geom = geom
     super().__init__(geom.shape, float, geom.spaces, geom.arguments)
 
@@ -1300,7 +1321,7 @@ def abs(__arg: IntoArray) -> Array:
   '''
 
   arg = Array.cast(__arg)
-  return arg * sign(arg)
+  return _Wrapper(evaluable.abs, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
 
 @implements(numpy.matmul)
 def matmul(__arg1: IntoArray, __arg2: IntoArray) -> Array:
@@ -1345,6 +1366,9 @@ def sign(__arg: IntoArray) -> Array:
   :class:`Array`
   '''
 
+  arg = Array.cast(__arg)
+  if arg.dtype == complex:
+    raise ValueError('sign is not defined for complex numbers')
   return _Wrapper.broadcasted_arrays(evaluable.Sign, __arg)
 
 @implements(numpy.mod)
@@ -1482,7 +1506,10 @@ def arctan2(__dividend: IntoArray, __divisor: IntoArray) -> Array:
   :class:`Array`
   '''
 
-  return _Wrapper.broadcasted_arrays(evaluable.ArcTan2, __dividend, __divisor, min_dtype=float)
+  dividend, divisor = broadcast_arrays(*typecast_arrays(__dividend, __divisor, min_dtype=float))
+  if dividend.dtype == complex:
+    raise ValueError('arctan2 is not defined for complex numbers')
+  return _Wrapper(evaluable.ArcTan2, dividend, divisor, shape=dividend.shape, dtype=float)
 
 @implements(numpy.cosh)
 def cosh(__arg: IntoArray) -> Array:
@@ -1625,7 +1652,10 @@ def greater(__left: IntoArray, __right: IntoArray) -> Array:
   :class:`Array`
   '''
 
-  return _Wrapper.broadcasted_arrays(evaluable.Greater, __left, __right, force_dtype=bool)
+  left, right = map(Array.cast, (__left, __right))
+  if left.dtype ==  complex or right.dtype == complex:
+    raise ValueError('Complex numbers have no total order.')
+  return _Wrapper.broadcasted_arrays(evaluable.Greater, left, right, force_dtype=bool)
 
 @implements(numpy.equal)
 def equal(__left: IntoArray, __right: IntoArray) -> Array:
@@ -1655,7 +1685,10 @@ def less(__left: IntoArray, __right: IntoArray) -> Array:
   :class:`Array`
   '''
 
-  return _Wrapper.broadcasted_arrays(evaluable.Less, __left, __right, force_dtype=bool)
+  left, right = map(Array.cast, (__left, __right))
+  if left.dtype ==  complex or right.dtype == complex:
+    raise ValueError('Complex numbers have no total order.')
+  return _Wrapper.broadcasted_arrays(evaluable.Less, left, right, force_dtype=bool)
 
 @implements(numpy.min)
 def min(__a: IntoArray, __b: IntoArray) -> Array:
@@ -1670,7 +1703,10 @@ def min(__a: IntoArray, __b: IntoArray) -> Array:
   :class:`Array`
   '''
 
-  return _Wrapper.broadcasted_arrays(evaluable.Minimum, __a, __b)
+  a, b = map(Array.cast, (__a, __b))
+  if a.dtype == complex or b.dtype == complex:
+    raise ValueError('Complex numbers have no total order.')
+  return _Wrapper.broadcasted_arrays(evaluable.Minimum, a, b)
 
 @implements(numpy.max)
 def max(__a: IntoArray, __b: IntoArray) -> Array:
@@ -1685,7 +1721,10 @@ def max(__a: IntoArray, __b: IntoArray) -> Array:
   :class:`Array`
   '''
 
-  return _Wrapper.broadcasted_arrays(evaluable.Maximum, __a, __b)
+  a, b = map(Array.cast, (__a, __b))
+  if a.dtype == complex or b.dtype == complex:
+    raise ValueError('Complex numbers have no total order.')
+  return _Wrapper.broadcasted_arrays(evaluable.Maximum, a, b)
 
 # OPPOSITE
 
@@ -1862,6 +1901,59 @@ def product(__arg: IntoArray, axis: int) -> Array:
 
 # LINEAR ALGEBRA
 
+@implements(numpy.conjugate)
+def conjugate(__arg: IntoArray) -> Array:
+  '''Return the complex conjugate, elementwise.
+
+  Parameters
+  ----------
+  arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
+
+  Returns
+  -------
+  :class:`Array`
+      The complex conjugate.
+  '''
+
+  arg = Array.cast(__arg)
+  return _Wrapper(evaluable.conjugate, arg, shape=arg.shape, dtype=arg.dtype)
+
+conj = conjugate
+
+@implements(numpy.real)
+def real(__arg: IntoArray) -> Array:
+  '''Return the real part of the complex argument.
+
+  Parameters
+  ----------
+  arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
+
+  Returns
+  -------
+  :class:`Array`
+      The real part of the complex argument.
+  '''
+
+  arg = Array.cast(__arg)
+  return _Wrapper(evaluable.real, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
+
+@implements(numpy.imag)
+def imag(__arg: IntoArray) -> Array:
+  '''Return the imaginary part of the complex argument.
+
+  Parameters
+  ----------
+  arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
+
+  Returns
+  -------
+  :class:`Array`
+      The imaginary part of the complex argument.
+  '''
+
+  arg = Array.cast(__arg)
+  return _Wrapper(evaluable.imag, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
+
 def dot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> Array:
   '''Return the inner product of the arguments over the given axes, elementwise over the remanining axes.
 
@@ -1886,6 +1978,28 @@ def dot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]
     b = _append_axes(b, a.shape[1:])
     axes = 0,
   return sum(multiply(a, b), axes)
+
+@implements(numpy.vdot)
+def vdot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> Array:
+  '''Return the dot product of two vectors.
+
+  If the arguments are not 1D, the arguments are flattened. The dot product is
+  then defined as
+
+      sum(conjugate(a) * b)
+
+  Parameters
+  ----------
+  a : :class:`Array` or something that can be :meth:`~Array.cast` into one
+  b : :class:`Array` or something that can be :meth:`~Array.cast` into one
+
+  Returns
+  -------
+  :class:`Array`
+  '''
+
+  a, b = broadcast_arrays(__a, __b)
+  return sum(multiply(conjugate(a), b), range(a.ndim))
 
 @implements(numpy.trace)
 def trace(__arg: IntoArray, axis1: int = -2, axis2: int = -1) -> Array:
@@ -1921,7 +2035,7 @@ def norm2(__arg: IntoArray, axis: Union[int, Sequence[int]] = -1) -> Array:
   '''
 
   arg = Array.cast(__arg)
-  return sqrt(sum(multiply(arg, arg), axis))
+  return sqrt(sum(multiply(arg, conjugate(arg)), axis))
 
 def normalized(__arg: IntoArray, axis: int = -1) -> Array:
   '''Return the argument normalized over the given axis, elementwise over the remanining axes.
@@ -1968,10 +2082,11 @@ def inverse(__arg: IntoArray, __axes: Tuple[int, int] = (-2,-1)) -> Array:
   :class:`Array`
   '''
 
-  transposed = _Transpose.to_end(Array.cast(__arg), *__axes)
+  arg, = typecast_arrays(__arg, min_dtype=float)
+  transposed = _Transpose.to_end(arg, *__axes)
   if transposed.shape[-2] != transposed.shape[-1]:
     raise ValueError('cannot compute the inverse along two axes with different lengths')
-  inverted = _Wrapper(evaluable.Inverse, transposed, shape=transposed.shape, dtype=float)
+  inverted = _Wrapper(evaluable.Inverse, transposed, shape=transposed.shape, dtype=arg.dtype)
   return _Transpose.from_end(inverted, *__axes)
 
 def determinant(__arg: IntoArray, __axes: Tuple[int, int] = (-2,-1)) -> Array:
@@ -2636,6 +2751,8 @@ def grad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
 
   arg = Array.cast(__arg)
   geom = Array.cast(__geom)
+  if geom.dtype != float:
+    raise ValueError('The geometry must be real-valued.')
   if geom.ndim == 0:
     return grad(arg, _append_axes(geom, (1,)))[...,0]
   elif geom.ndim > 1:
@@ -2662,6 +2779,8 @@ def curl(__arg: IntoArray, __geom: IntoArray) -> Array:
 
   arg = Array.cast(__arg)
   geom = Array.cast(__geom)
+  if geom.dtype != float:
+    raise ValueError('The geometry must be real-valued.')
   if geom.shape != (3,):
     raise ValueError('Expected a geometry with shape (3,) but got {}.'.format(geom.shape))
   if not arg.ndim:
@@ -2684,6 +2803,8 @@ def normal(__geom: IntoArray, exterior: bool = False) -> Array:
   '''
 
   geom = Array.cast(__geom)
+  if geom.dtype != float:
+    raise ValueError('The geometry must be real-valued.')
   if geom.ndim == 0:
     return normal(insertaxis(geom, 0, 1), exterior)[...,0]
   elif geom.ndim > 1:
@@ -2747,6 +2868,8 @@ def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
   '''
 
   geom = Array.cast(__geom)
+  if geom.dtype != float:
+    raise ValueError('The geometry must be real-valued.')
   if geom.ndim == 0:
     return jacobian(insertaxis(geom, 0, 1), __ndims)
   elif geom.ndim > 1:
@@ -3053,19 +3176,17 @@ def add_T(__arg: IntoArray, axes: Tuple[int, int] = (-2,-1)) -> Array:
 
 def trignormal(_angle: IntoArray) -> Array:
   angle = Array.cast(_angle)
-  assert angle.ndim == 0
-  return _Wrapper(evaluable.TrigNormal, angle, shape=(2,), dtype=float)
+  return stack([cos(angle), sin(angle)], axis=-1)
 
 def trigtangent(_angle: IntoArray) -> Array:
   angle = Array.cast(_angle)
-  assert angle.ndim == 0
-  return _Wrapper(evaluable.TrigTangent, angle, shape=(2,), dtype=float)
+  return stack([-sin(angle), cos(angle)], axis=-1)
 
 def rotmat(__arg: IntoArray) -> Array:
   arg = Array.cast(__arg)
   return stack([trignormal(arg), trigtangent(arg)], 0)
 
-def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = ()) -> Array:
+def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtype: DType = float) -> Array:
   '''Return the inner product of the first axes of the given arrays with an argument with the given name.
 
   An argument with shape ``(arrays[0].shape[0], ..., arrays[-1].shape[0]) +
@@ -3081,6 +3202,8 @@ def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = ()) -> A
       The arrays to take inner products with.
   shape : :class:`tuple` of :class:`int`, optional
       The shape to be appended to the argument.
+  dtype : :class:`bool`, :class:`int`, :class:`float` or :class:`complex`
+      The dtype of the argument.
 
   Returns
   -------
@@ -3088,7 +3211,7 @@ def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = ()) -> A
       The inner product with shape ``shape + arrays[0].shape[1:] + ... + arrays[-1].shape[1:]``.
   '''
 
-  result = Argument(__argname, tuple(array.shape[0] for array in arrays) + tuple(shape), dtype=float)
+  result = Argument(__argname, tuple(array.shape[0] for array in arrays) + tuple(shape), dtype=dtype)
   for array in arrays:
     result = numpy.sum(_append_axes(result.transpose((*range(1, result.ndim), 0)), array.shape[1:]) * array, result.ndim-1)
   return result
@@ -3358,7 +3481,7 @@ class LegendreBasis(Basis):
     for n in range(self._degree+1):
       for k in range(n+1):
         coeffs[n,k] = (-1 if (n+k) % 2 else 1) * numeric.binom(n, k) * numeric.binom(n+k, k)
-    return dofs, evaluable.Float(evaluable.asarray(coeffs))
+    return dofs, evaluable.astype(evaluable.asarray(coeffs), float)
 
   def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
     index = _WithoutPoints(self.index).lower(points_shape, transform_chains, coordinates)
