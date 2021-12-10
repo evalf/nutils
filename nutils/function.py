@@ -2059,10 +2059,11 @@ def inverse(__arg: IntoArray, __axes: Tuple[int, int] = (-2,-1)) -> Array:
   :class:`Array`
   '''
 
-  transposed = _Transpose.to_end(Array.cast(__arg), *__axes)
+  arg, = typecast_arrays(__arg, min_dtype=float)
+  transposed = _Transpose.to_end(arg, *__axes)
   if transposed.shape[-2] != transposed.shape[-1]:
     raise ValueError('cannot compute the inverse along two axes with different lengths')
-  inverted = _Wrapper(evaluable.Inverse, transposed, shape=transposed.shape, dtype=float)
+  inverted = _Wrapper(evaluable.Inverse, transposed, shape=transposed.shape, dtype=arg.dtype)
   return _Transpose.from_end(inverted, *__axes)
 
 def determinant(__arg: IntoArray, __axes: Tuple[int, int] = (-2,-1)) -> Array:
