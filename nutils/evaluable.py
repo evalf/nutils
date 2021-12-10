@@ -942,6 +942,12 @@ class Array(Evaluable, metaclass=_ArrayMeta):
   def _intbounds_impl(self):
     return float('-inf'), float('inf')
 
+  @property
+  def _const_uniform(self):
+    if self.dtype == int:
+      lower, upper = self._intbounds
+      return lower if lower == upper else None
+
 class NPoints(Array):
   'The length of the points axis.'
 
@@ -1119,6 +1125,11 @@ class Constant(Array):
     else:
       return super()._intbounds_impl()
 
+  @property
+  def _const_uniform(self):
+    if self.ndim == 0:
+      return self.dtype(self.value[()])
+
 class InsertAxis(Array):
 
   __slots__ = 'func', 'length'
@@ -1226,6 +1237,10 @@ class InsertAxis(Array):
 
   def _intbounds_impl(self):
     return self.func._intbounds
+
+  @property
+  def _const_uniform(self):
+    return self.func._const_uniform
 
 class Transpose(Array):
 
@@ -1413,6 +1428,10 @@ class Transpose(Array):
   def _intbounds_impl(self):
     return self.func._intbounds
 
+  @property
+  def _const_uniform(self):
+    return self.func._const_uniform
+
 class Product(Array):
 
   __slots__ = 'func',
@@ -1556,9 +1575,9 @@ class Multiply(Array):
 
   def _simplified(self):
     func1, func2 = self.funcs
-    if isuniform(func1, 1):
+    if func1._const_uniform == 1:
       return func2
-    if isuniform(func2, 1):
+    if func2._const_uniform == 1:
       return func1
     unaligned1, unaligned2, where = unalign(func1, func2)
     if len(where) != self.ndim:
@@ -1573,9 +1592,9 @@ class Multiply(Array):
 
   def _optimized_for_numpy(self):
     func1, func2 = self.funcs
-    if isuniform(func1, -1) and func2.dtype != bool:
+    if func1._const_uniform == -1 and func2.dtype != bool:
       return Negative(func2)
-    if isuniform(func2, -1) and func1.dtype != bool:
+    if func2._const_uniform == -1 and func1.dtype != bool:
       return Negative(func1)
     if func1 == sign(func2):
       return Absolute(func2)
@@ -2049,17 +2068,19 @@ class Power(Array):
   def _simplified(self):
     if iszero(self.power):
       return ones_like(self)
-    elif isuniform(self.power, 1):
+    p = self.power._const_uniform
+    if p == 1:
       return self.func
-    elif isuniform(self.power, 2):
+    elif p == 2:
       return self.func * self.func
     else:
       return self.func._power(self.power)
 
   def _optimized_for_numpy(self):
-    if isuniform(self.power, -1):
+    p = self.power._const_uniform
+    if p == -1:
       return Reciprocal(self.func)
-    elif isuniform(self.power, -2):
+    elif p == -2:
       return Reciprocal(self.func * self.func)
     else:
       return self._simplified()
@@ -2341,6 +2362,12 @@ class Cast(Pointwise):
       return 0, 1
     else:
       return self.args[0]._intbounds
+
+  @property
+  def _const_uniform(self):
+    value = self.args[0]._const_uniform
+    if value is not None:
+      return self.to_type(value)
 
 class BoolToInt(Cast):
   from_type = bool
@@ -3980,12 +4007,6 @@ def zeros(shape, dtype=float):
 
 def zeros_like(arr):
   return zeros(arr.shape, arr.dtype)
-
-def isuniform(arg, value):
-  if not arg.isconstant:
-    return False
-  unaligned, where = unalign(arg)
-  return not where and numpy.equal(unaligned.eval(), value)
 
 def ones(shape, dtype=float):
   return _inflate_scalar(astype(numpy.ones((), dtype=int), dtype), shape)
