@@ -79,7 +79,6 @@ class Pardiso:
       raise MatrixError('pardiso init failed')
     for n, v in iparm.items():
       self.iparm[n] = v
-    self.iparm[12] = 0 # disable (non-)symmetric weighted matching https://community.intel.com/t5/Intel-oneAPI-Math-Kernel-Library/MKL-Pardiso-fails-to-solve-complex-unsymmetric-sparse-matrix/td-p/1081486
     self.iparm[27] = 0 # double precision data
     self.iparm[34] = 0 # one-based indexing
     self.iparm[36] = 0 # csr matrix format
