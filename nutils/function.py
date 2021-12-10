@@ -3053,13 +3053,11 @@ def add_T(__arg: IntoArray, axes: Tuple[int, int] = (-2,-1)) -> Array:
 
 def trignormal(_angle: IntoArray) -> Array:
   angle = Array.cast(_angle)
-  assert angle.ndim == 0
-  return _Wrapper(evaluable.TrigNormal, angle, shape=(2,), dtype=float)
+  return stack([cos(angle), sin(angle)], axis=-1)
 
 def trigtangent(_angle: IntoArray) -> Array:
   angle = Array.cast(_angle)
-  assert angle.ndim == 0
-  return _Wrapper(evaluable.TrigTangent, angle, shape=(2,), dtype=float)
+  return stack([-sin(angle), cos(angle)], axis=-1)
 
 def rotmat(__arg: IntoArray) -> Array:
   arg = Array.cast(__arg)

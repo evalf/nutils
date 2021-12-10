@@ -2856,46 +2856,6 @@ class Guard(Array):
   def _derivative(self, var, seen):
     return Guard(derivative(self.fun, var, seen))
 
-class TrigNormal(Array):
-  'cos, sin'
-
-  __slots__ = 'angle',
-
-  @types.apply_annotations
-  def __init__(self, angle:asarray):
-    self.angle = angle
-    super().__init__(args=[angle], shape=(*angle.shape, 2), dtype=float)
-
-  def _derivative(self, var, seen):
-    return einsum('Ai,AB->AiB', TrigTangent(self.angle), derivative(self.angle, var, seen))
-
-  def evalf(self, angle):
-    return numpy.stack([numpy.cos(angle), numpy.sin(angle)], axis=self.ndim-1)
-
-  def _simplified(self):
-    if iszero(self.angle):
-      return prependaxes(Inflate(1., 0, 2), self.angle.shape)
-
-class TrigTangent(Array):
-  '-sin, cos'
-
-  __slots__ = 'angle',
-
-  @types.apply_annotations
-  def __init__(self, angle:asarray):
-    self.angle = angle
-    super().__init__(args=[angle], shape=(*angle.shape, 2), dtype=float)
-
-  def _derivative(self, var, seen):
-    return -einsum('Ai,AB->AiB', TrigNormal(self.angle), derivative(self.angle, var, seen))
-
-  def evalf(self, angle):
-    return numpy.stack([-numpy.sin(angle), numpy.cos(angle)], axis=self.ndim-1)
-
-  def _simplified(self):
-    if iszero(self.angle):
-      return prependaxes(Inflate(1., 1, 2), self.angle.shape)
-
 class Find(Array):
   'indices of boolean index vector'
 
