@@ -1990,7 +1990,7 @@ def norm2(__arg: IntoArray, axis: Union[int, Sequence[int]] = -1) -> Array:
   '''
 
   arg = Array.cast(__arg)
-  return sqrt(sum(multiply(arg, arg), axis))
+  return sqrt(sum(multiply(arg, conjugate(arg)), axis))
 
 def normalized(__arg: IntoArray, axis: int = -1) -> Array:
   '''Return the argument normalized over the given axis, elementwise over the remanining axes.
