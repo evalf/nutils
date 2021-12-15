@@ -713,7 +713,7 @@ class Topology(types.Singleton):
     >>> from . import mesh
     >>> domain, geom = mesh.unitsquare(nelems=3, etype='mixed')
     >>> sample = domain.locate(geom, [[.9, .4]], tol=1e-12)
-    >>> sample.eval(geom).tolist()
+    >>> sample.eval(geom).round(5).tolist()
     [[0.9, 0.4]]
 
     Locate requires a geometry function, an array of coordinates, and at least
