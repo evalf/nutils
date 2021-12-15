@@ -1138,7 +1138,7 @@ class CommonBasis:
 class PlainBasis(CommonBasis, TestCase):
 
   def setUp(self):
-    self.checktransforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0, 0)
+    self.checktransforms = transformseq.IndexTransforms(0, 4)
     index, coords = self.mk_index_coords(0, self.checktransforms)
     self.checkcoeffs = [[1.],[2.,3.],[4.,5.],[6.]]
     self.checkdofs = [[0],[2,3],[1,3],[2]]
@@ -1149,7 +1149,7 @@ class PlainBasis(CommonBasis, TestCase):
 class DiscontBasis(CommonBasis, TestCase):
 
   def setUp(self):
-    self.checktransforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0, 0)
+    self.checktransforms = transformseq.IndexTransforms(0, 4)
     index, coords = self.mk_index_coords(0, self.checktransforms)
     self.checkcoeffs = [[1.],[2.,3.],[4.,5.],[6.]]
     self.basis = function.DiscontBasis(self.checkcoeffs, index, coords)
@@ -1172,7 +1172,7 @@ class LegendreBasis(CommonBasis, TestCase):
 class MaskedBasis(CommonBasis, TestCase):
 
   def setUp(self):
-    self.checktransforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0, 0)
+    self.checktransforms = transformseq.IndexTransforms(0, 4)
     index, coords = self.mk_index_coords(0, self.checktransforms)
     parent = function.PlainBasis([[1.],[2.,3.],[4.,5.],[6.]], [[0],[2,3],[1,3],[2]], 4, index, coords)
     self.basis = function.MaskedBasis(parent, [0,2])
@@ -1184,7 +1184,7 @@ class MaskedBasis(CommonBasis, TestCase):
 class PrunedBasis(CommonBasis, TestCase):
 
   def setUp(self):
-    parent_transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0, 0)
+    parent_transforms = transformseq.IndexTransforms(0, 4)
     parent_index, parent_coords = self.mk_index_coords(0, parent_transforms)
     indices = types.frozenarray([0,2])
     self.checktransforms = parent_transforms[indices]
@@ -1199,7 +1199,7 @@ class PrunedBasis(CommonBasis, TestCase):
 class StructuredBasis1D(CommonBasis, TestCase):
 
   def setUp(self):
-    self.checktransforms = transformseq.StructuredTransforms(transform.Identifier(1, 'test'), [transformseq.DimAxis(0,4,0,False)], 0)
+    self.checktransforms = transformseq.IndexTransforms(1, 4)
     index, coords = self.mk_index_coords(1, self.checktransforms)
     self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]], [[0,1,2,3]], [[2,3,4,5]], [5], [4], index, coords)
     self.checkcoeffs = [[[1.],[2.]],[[3.],[4.]],[[5.],[6.]],[[7.],[8.]]]
@@ -1210,7 +1210,7 @@ class StructuredBasis1D(CommonBasis, TestCase):
 class StructuredBasis1DPeriodic(CommonBasis, TestCase):
 
   def setUp(self):
-    self.checktransforms = transformseq.StructuredTransforms(transform.Identifier(1, 'test'), [transformseq.DimAxis(0,4,4,True)], 0)
+    self.checktransforms = transformseq.IndexTransforms(1, 4)
     index, coords = self.mk_index_coords(1, self.checktransforms)
     self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]], [[0,1,2,3]], [[2,3,4,5]], [4], [4], index, coords)
     self.checkcoeffs = [[[1.],[2.]],[[3.],[4.]],[[5.],[6.]],[[7.],[8.]]]
@@ -1221,7 +1221,7 @@ class StructuredBasis1DPeriodic(CommonBasis, TestCase):
 class StructuredBasis2D(CommonBasis, TestCase):
 
   def setUp(self):
-    self.checktransforms = transformseq.StructuredTransforms(transform.Identifier(2, 'test'), [transformseq.DimAxis(0,2,0,False),transformseq.DimAxis(0,2,0,False)], 0)
+    self.checktransforms = transformseq.IndexTransforms(2, 4)
     index, coords = self.mk_index_coords(2, self.checktransforms)
     self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]]],[[[5],[6]],[[7],[8]]]], [[0,1],[0,1]], [[2,3],[2,3]], [3,3], [2,2], index, coords)
     self.checkcoeffs = [[[[5.]],[[6.]],[[10.]],[[12.]]],[[[7.]],[[8.]],[[14.]],[[16.]]],[[[15.]],[[18.]],[[20.]],[[24.]]],[[[21.]],[[24.]],[[28.]],[[32.]]]]

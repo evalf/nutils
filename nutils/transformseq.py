@@ -146,21 +146,21 @@ class Transforms(types.Singleton):
     Example
     -------
 
-    Consider the following plain sequence of two shift transforms:
+    Consider the following plain sequence of two index transforms:
 
-    >>> from nutils.transform import Shift, Scale
-    >>> transforms = PlainTransforms([(Shift([0.]),), (Shift([1.]),)], 1, 1)
+    >>> from nutils.transform import Index, SimplexChild
+    >>> transforms = PlainTransforms([(Index(1, 0),), (Index(1, 1),)], 1, 1)
 
     Calling :meth:`index_with_tail` with the first transform gives index ``0``
     and no tail:
 
-    >>> transforms.index_with_tail((Shift([0.]),))
+    >>> transforms.index_with_tail((Index(1, 0),))
     (0, ())
 
     Calling with an additional scale gives:
 
-    >>> transforms.index_with_tail((Shift([0.]), Scale(0.5, [0.])))
-    (0, (Scale([0]+0.5*x),))
+    >>> transforms.index_with_tail((Index(1, 0), SimplexChild(1, 0)))
+    (0, (SimplexChild([0]+[.5]*x0),))
     '''
 
     raise NotImplementedError
@@ -191,23 +191,23 @@ class Transforms(types.Singleton):
     Example
     -------
 
-    Consider the following plain sequence of two shift transforms:
+    Consider the following plain sequence of two index transforms:
 
-    >>> from nutils.transform import Shift, Scale
-    >>> transforms = PlainTransforms([(Shift([0.]),), (Shift([1.]),)], 1, 1)
+    >>> from nutils.transform import Index, SimplexChild
+    >>> transforms = PlainTransforms([(Index(1, 0),), (Index(1, 1),)], 1, 1)
 
     Calling :meth:`index` with the first transform gives index ``0``:
 
-    >>> transforms.index((Shift([0.]),))
+    >>> transforms.index((Index(1, 0),))
     0
 
     Calling with an additional scale raises an exception, because the transform
     is not present in ``transforms``.
 
-    >>> transforms.index((Shift([0.]), Scale(0.5, [0.])))
+    >>> transforms.index((Index(1, 0), SimplexChild(1, 0)))
     Traceback (most recent call last):
       ...
-    ValueError: (Shift([0]+x), Scale([0]+0.5*x)) not in sequence of transforms
+    ValueError: (Index(1, 0), SimplexChild([0]+[.5]*x0)) not in sequence of transforms
     '''
 
     index, tail = self.index_with_tail(trans)

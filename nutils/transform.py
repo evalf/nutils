@@ -212,36 +212,7 @@ class Square(Matrix):
       self._transform_matrix[degree] = M
     return types.frozenarray(numpy.einsum('jk,ik', M.reshape([(degree+1)**self.fromdims]*2), coeffs.reshape(coeffs.shape[0],-1)).reshape(coeffs.shape), copy=False)
 
-class Shift(Square):
-  '''Shift transformation :math:`x ↦ x + b`
-
-  Parameters
-  ----------
-  offset : :class:`numpy.ndarray`
-      The offset :math:`b`.
-  '''
-
-  __slots__ = ()
-
-  det = 1.
-
-  @types.apply_annotations
-  def __init__(self, offset:types.arraydata):
-    assert offset.ndim == 1 and offset.dtype == float
-    super().__init__(numpy.eye(offset.shape[0]), offset)
-
-  @types.lru_cache
-  def apply(self, points):
-    return types.frozenarray(points + self.offset, copy=False)
-
-  @types.lru_cache
-  def invapply(self, points):
-    return types.frozenarray(points - self.offset, copy=False)
-
-  def __str__(self):
-    return '{}+x'.format(util.obj2str(self.offset))
-
-class Identity(Shift):
+class Identity(Square):
   '''Identity transformation :math:`x ↦ x`
 
   Parameters
@@ -252,8 +223,10 @@ class Identity(Shift):
 
   __slots__ = ()
 
+  det = 1.
+
   def __init__(self, ndims):
-    super().__init__(numpy.zeros(ndims))
+    super().__init__(numpy.eye(ndims), numpy.zeros(ndims))
 
   def apply(self, points):
     return points
@@ -281,46 +254,6 @@ class Index(Identity):
 
   def __repr__(self):
     return 'Index({}, {})'.format(self.todims, self.index)
-
-class Scale(Square):
-  '''Affine transformation :math:`x ↦ a x + b`, with :math:`a` a scalar
-
-  Parameters
-  ----------
-  scale : :class:`float`
-      The scalar :math:`a`.
-  offset : :class:`numpy.ndarray`
-      The offset :math:`b`.
-  '''
-
-  __slots__ = 'scale',
-
-  @types.apply_annotations
-  def __init__(self, scale:float, offset:types.arraydata):
-    assert offset.ndim == 1 and offset.dtype == float
-    self.scale = scale
-    super().__init__(numpy.eye(offset.shape[0]) * scale, offset)
-
-  @types.lru_cache
-  def apply(self, points):
-    return types.frozenarray(self.scale * points + self.offset, copy=False)
-
-  @types.lru_cache
-  def invapply(self, points):
-    return types.frozenarray((points - self.offset) / self.scale, copy=False)
-
-  @property
-  def det(self):
-    return self.scale**self.todims
-
-  def __str__(self):
-    return '{}+{}*x'.format(util.obj2str(self.offset), self.scale)
-
-  def __mul__(self, other):
-    assert isinstance(other, Matrix) and self.fromdims == other.todims
-    if isinstance(other, Scale):
-      return Scale(self.scale * other.scale, self.apply(other.offset))
-    return super().__mul__(other)
 
 class Updim(Matrix):
   '''Affine transformation :math:`x ↦ A x + b`, with :math:`A` an :math:`n×(n-1)` matrix
@@ -529,24 +462,6 @@ class TensorChild(Square):
   @property
   def det(self):
     return self.trans1.det * self.trans2.det
-
-class Identifier(Identity):
-  '''Generic identifier
-
-  This transformation serves as an element-specific or topology-specific token
-  to form the basis of transformation lookups. Otherwise, the transform behaves
-  like an identity.
-  '''
-
-  __slots__ = 'token'
-
-  @types.apply_annotations
-  def __init__(self, ndims:int, token):
-    self.token = token
-    super().__init__(ndims)
-
-  def __str__(self):
-    return ':'.join(map(str, self._args))
 
 ## EVALUABLE TRANSFORM CHAIN
 

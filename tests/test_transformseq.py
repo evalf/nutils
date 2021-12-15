@@ -175,7 +175,7 @@ line = nutils.element.LineReference()
 square = line*line
 triangle = nutils.element.TriangleReference()
 
-l1, x1, r1 = sorted([nutils.transform.Identifier(1, n) for n in ('l1', 'x1', 'r1')], key=id)
+l1, x1, r1 = nutils.transform.Index(1, 100), nutils.transform.Index(1, 101), nutils.transform.Index(1, 102)
 
 i10 = nutils.transform.Index(1, 0)
 i11 = nutils.transform.Index(1, 1)
@@ -190,7 +190,7 @@ i23 = nutils.transform.Index(2, 3)
 c0,c1 = line.child_transforms
 e0,e1 = line.edge_transforms
 
-l2, x2, r2 = sorted([nutils.transform.Identifier(2, n) for n in ('l2', 'x2', 'r2')], key=id)
+l2, x2, r2 = nutils.transform.Index(2, 100), nutils.transform.Index(2, 101), nutils.transform.Index(2, 102)
 
 c00,c01,c10,c11 = square.child_transforms
 e00,e01,e10,e11 = square.edge_transforms

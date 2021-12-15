@@ -3,11 +3,11 @@ from nutils.testing import *
 
 class specialcases(TestCase):
 
-  def test_tensoredge_swapup_identifier(self):
+  def test_tensoredge_swapup_index(self):
     lineedge = transform.SimplexEdge(1, 0, False)
     for edge in transform.TensorEdge1(lineedge, 1), transform.TensorEdge2(1, lineedge):
       with self.subTest(type(edge).__name__):
-        idnt = transform.Identifier(1, 'test')
+        idnt = transform.Index(1, 0)
         self.assertEqual(edge.swapup(idnt), None)
 
 class TestTransform(TestCase):
@@ -60,11 +60,6 @@ class Qquare(TestInvertible):
   def setUp(self):
     super().setUp(trans=transform.Square([[1.,2],[1,3]], [5.,6]), linear=[[1,2],[1,3]], offset=[5,6])
 
-class Shift(TestInvertible):
-
-  def setUp(self):
-    super().setUp(trans=transform.Shift([1.,2]), linear=[[1,0],[0,1]], offset=[1,2])
-
 class Identity(TestInvertible):
 
   def setUp(self):
@@ -74,11 +69,6 @@ class Index(TestInvertible):
 
   def setUp(self):
     super().setUp(trans=transform.Index(2, 3), linear=[[1,0],[0,1]], offset=[0,0])
-
-class Scale(TestInvertible):
-
-  def setUp(self):
-    super().setUp(trans=transform.Scale(2, offset=[1.,2]), linear=[[2,0],[0,2]], offset=[1,2])
 
 class SimplexEdge(TestUpdim):
 
