@@ -658,34 +658,36 @@ def unitsquare(nelems, etype):
     return topo, geom / nelems
 
   elif etype in ('triangle', 'mixed'):
-    root = transform.Identifier(2, 'unitsquare')
     simplices = numpy.concatenate([
       numpy.take([i*(nelems+1)+j, i*(nelems+1)+j+1, (i+1)*(nelems+1)+j, (i+1)*(nelems+1)+j+1], [[0,1,2],[1,2,3]] if i%2==j%2 else [[0,1,3],[0,2,3]], axis=0)
         for i in range(nelems) for j in range(nelems)])
 
     v = numpy.arange(nelems+1, dtype=float)
     coords = numeric.meshgrid(v, v).reshape(2,-1).T
-    transforms = transformseq.PlainTransforms([(root, transform.Square((c[1:]-c[0]).T, c[0])) for c in coords[simplices]], 2, 2)
+    transforms = transformseq.IndexTransforms(2, len(simplices))
     topo = topology.SimplexTopology(space, simplices, transforms, transforms)
 
     if etype == 'mixed':
       references = list(topo.references)
-      transforms = list(topo.transforms)
       square = element.getsimplex(1)**2
       connectivity = list(topo.connectivity)
       isquares = [i * nelems + j for i in range(nelems) for j in range(nelems) if i%2==j%3]
+      dofs = list(simplices)
       for n in sorted(isquares, reverse=True):
         i, j = divmod(n, nelems)
         references[n*2:(n+1)*2] = square,
-        transforms[n*2:(n+1)*2] = (root, transform.Shift([float(i),float(j)])),
         connectivity[n*2:(n+1)*2] = numpy.concatenate(connectivity[n*2:(n+1)*2])[[3,2,4,1] if i%2==j%2 else [3,2,0,5]],
         connectivity = [c-numpy.greater(c,n*2) for c in connectivity]
-      topo = topology.ConnectedTopology(space, References.from_iter(references, 2), transformseq.PlainTransforms(transforms, 2, 2), transformseq.PlainTransforms(transforms, 2, 2), connectivity)
+        dofs[n*2:(n+1)*2] = numpy.unique([*dofs[n*2], *dofs[n*2+1]]),
+      coords = coords[numpy.argsort(numpy.unique(numpy.concatenate(dofs), return_index=True)[1])]
+      transforms = transformseq.IndexTransforms(2, len(connectivity))
+      topo = topology.ConnectedTopology(space, References.from_iter(references, 2), transforms, transforms, connectivity)
 
-    x, y = topo.boundary.sample('_centroid', None).eval(function.rootcoords(space, 2)).T
-    bgroups = dict(left=x==0, right=x==nelems, bottom=y==0, top=y==nelems)
+    geom = (topo.basis('std', degree=1) * coords.T).sum(-1)
+    x, y = topo.boundary.sample('_centroid', None).eval(geom).T
+    bgroups = dict(left=x<.1, right=x>nelems-.1, bottom=y<.1, top=y>nelems-.1)
     topo = topo.withboundary(**{name: topo.boundary[numpy.where(mask)[0]] for name, mask in bgroups.items()})
-    return topo, function.rootcoords(space, 2) / nelems
+    return topo, geom / nelems
 
   else:
     raise Exception('invalid element type {!r}'.format(etype))
