@@ -70,6 +70,11 @@ class Identity(TestInvertible):
   def setUp(self):
     super().setUp(trans=transform.Identity(2), linear=[[1,0],[0,1]], offset=[0,0])
 
+class Index(TestInvertible):
+
+  def setUp(self):
+    super().setUp(trans=transform.Index(2, 3), linear=[[1,0],[0,1]], offset=[0,0])
+
 class Scale(TestInvertible):
 
   def setUp(self):

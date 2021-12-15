@@ -264,6 +264,24 @@ class Identity(Shift):
   def __str__(self):
     return 'x'
 
+class Index(Identity):
+  '''Identity transform with index
+
+  This transformation serves as an element-specific or topology-specific index
+  to form the basis of transformation lookups. Otherwise, the transform behaves
+  like an identity.
+  '''
+
+  __slots__ = 'index'
+
+  @types.apply_annotations
+  def __init__(self, ndims:int, index:int):
+    self.index = index
+    super().__init__(ndims)
+
+  def __repr__(self):
+    return 'Index({}, {})'.format(self.todims, self.index)
+
 class Scale(Square):
   '''Affine transformation :math:`x ↦ a x + b`, with :math:`a` a scalar
 
