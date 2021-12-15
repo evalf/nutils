@@ -37,39 +37,17 @@ _ = numpy.newaxis
 def rectilinear(richshape, periodic=(), name='rect', space='X'):
   'rectilinear mesh'
 
-  ndims = len(richshape)
-  shape = []
-  offset = []
-  scale = []
-  uniform = True
-  for v in richshape:
-    if numeric.isint(v):
-      assert v > 0
-      shape.append(v)
-      scale.append(1)
-      offset.append(0)
-    elif numpy.equal(v, numpy.linspace(v[0],v[-1],len(v))).all():
-      shape.append(len(v)-1)
-      scale.append((v[-1]-v[0]) / float(len(v)-1))
-      offset.append(v[0])
-    else:
-      shape.append(len(v)-1)
-      uniform = False
+  verts = [numpy.arange(v + 1) if numeric.isint(v) else v for v in richshape]
+  shape = [len(v) - 1 for v in verts]
+  ndims = len(shape)
 
   root = transform.Identifier(ndims, name)
   axes = [transformseq.DimAxis(i=0, j=n, mod=n if idim in periodic else 0, isperiodic=idim in periodic) for idim, n in enumerate(shape)]
   topo = topology.StructuredTopology(space, root, axes)
 
-  if uniform:
-    if all(o == offset[0] for o in offset[1:]):
-      offset = offset[0]
-    if all(s == scale[0] for s in scale[1:]):
-      scale = scale[0]
-    geom = function.rootcoords(space, ndims) * scale + offset
-  else:
-    funcsp = topo.basis('spline', degree=1, periodic=())
-    coords = numeric.meshgrid(*richshape).reshape(ndims, -1)
-    geom = (funcsp * coords).sum(-1)
+  funcsp = topo.basis('spline', degree=1, periodic=())
+  coords = numeric.meshgrid(*verts).reshape(ndims, -1)
+  geom = (funcsp * coords).sum(-1)
 
   return topo, geom
 
@@ -77,19 +55,10 @@ _oldrectilinear = rectilinear # reference for internal unittests
 
 def line(nodes, periodic=False, bnames=None, *, name: str = 'line', space: str = 'X'):
   if isinstance(nodes, int):
-    uniform = True
-    assert nodes > 0
-    nelems = nodes
-    scale = 1
-    offset = 0
-  else:
-    nelems = len(nodes)-1
-    scale = (nodes[-1]-nodes[0]) / nelems
-    offset = nodes[0]
-    uniform = numpy.equal(nodes, offset + numpy.arange(nelems+1) * scale).all()
+    nodes = numpy.arange(nodes + 1)
   root = transform.Identifier(1, name)
-  domain = topology.StructuredLine(space, root, 0, nelems, periodic=periodic, bnames=bnames)
-  geom = function.rootcoords(space, 1)[0] * scale + offset if uniform else domain.basis('std', degree=1, periodic=[]).dot(nodes)
+  domain = topology.StructuredLine(space, root, 0, len(nodes) - 1, periodic=periodic, bnames=bnames)
+  geom = domain.basis('std', degree=1, periodic=[]).dot(nodes)
   return domain, geom
 
 def newrectilinear(nodes, periodic=None, name='rect', bnames=[['left','right'],['bottom','top'],['front','back']], spaces=None):
