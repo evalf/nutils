@@ -594,23 +594,23 @@ class StructuredTransforms(Transforms):
     for i in range(self._nrefine):
       indices, r = divmod(indices, self._ctransforms.shape)
       ctransforms.insert(0, self._ctransforms[tuple(r)])
-    trans0 = transform.Shift(types.frozenarray(indices, dtype=float, copy=False))
-    return (self._root, trans0, *ctransforms, *self._etransforms)
+    trans0 = (transform.Index(len(self._axes), index) for index in indices)
+    return (self._root, *trans0, *ctransforms, *self._etransforms)
 
   def __len__(self):
     return util.product(map(len, self._axes))
 
   def index_with_tail(self, trans):
-    if len(trans) < 2 + self._nrefine + len(self._etransforms):
+    if len(trans) < 1 + len(self._axes) + self._nrefine + len(self._etransforms):
       raise ValueError
 
-    root, shift, tail = trans[0], trans[1], transform.uppermost(trans[2:])
+    root, indices, tail = trans[0], trans[1:1+len(self._axes)], transform.uppermost(trans[1+len(self._axes):])
     if root != self._root:
       raise ValueError
 
-    if not isinstance(shift, transform.Shift) or len(shift.offset) != len(self._axes) or not numpy.equal(shift.offset.astype(int), shift.offset).all():
+    if not all(isinstance(index, transform.Index) and index.todims == len(self._axes) for index in indices):
       raise ValueError
-    indices = numpy.array(shift.offset, dtype=int)
+    indices = numpy.array([index.index for index in indices], dtype=int)
 
     # Match child transforms.
     for item in tail[:self._nrefine]:
