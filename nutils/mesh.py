@@ -194,31 +194,16 @@ def multipatch(patches, nelems, patchverts=None, name='multipatch'):
   >>> from nutils import function
   >>> topo, cube = multipatch(
   ...   patches=[
-  ...     [0,1,2,3], # left,   normal: x
-  ...     [4,5,6,7], # right,  normal: x
-  ...     [0,1,4,5], # bottom, normal: -y
-  ...     [2,3,6,7], # top,    normal: -y
-  ...     [0,2,4,6], # front,  normal: z
-  ...     [1,3,5,7], # back,   normal: z
+  ...     [0,1,2,3], # x=-1
+  ...     [4,5,6,7], # x= 1
+  ...     [0,1,4,5], # y=-1
+  ...     [2,3,6,7], # y= 1
+  ...     [0,2,4,6], # z=-1
+  ...     [1,3,5,7], # z= 1
   ...   ],
   ...   patchverts=tuple(itertools.product(*([[-1,1]]*3))),
   ...   nelems=1)
   >>> sphere = function.normalized(cube)
-
-  The normals of the patches are determined by the order of the vertex numbers.
-  An outward normal for the cube is obtained by flipping the left, top and
-  front faces:
-
-  >>> cubenormal = cube.normal(exterior=True) * topo.basis('patch').dot([-1,1,1,-1,-1,1])
-
-  At the centroids of the faces the outward normal should equal the cube geometry:
-
-  >>> numpy.testing.assert_allclose(*topo.sample('gauss', 1).eval([cubenormal, cube]))
-
-  Similarly, the outward normal of the sphere is obtained by:
-
-  >>> spherenormal = sphere.normal(exterior=True) * topo.basis('patch').dot([-1,1,1,-1,-1,1])
-  >>> numpy.testing.assert_allclose(*topo.sample('gauss', 1).eval([spherenormal, cube]))
 
   Args
   ----

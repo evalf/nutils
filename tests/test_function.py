@@ -1244,19 +1244,22 @@ class SurfaceGradient(TestCase):
         topo, (x, y) = mesh.unitsquare(nelems=2, etype=self.etype)
         self.u = x * y * (1-y)
       self.manifold = topo.boundary['right']
+      refgeom = None
     else:
       if self.etype == 'line':
         self.manifold, y = mesh.line(2)
         self.u = y * (2-y)
+        refgeom = numpy.stack([y])
       else:
         self.manifold, (y, z) = mesh.unitsquare(nelems=2, etype=self.etype)
         self.u = y * (1-y) * z * (1-z)
+        refgeom = numpy.stack([y,z])
       x = 1
     # geometry describes a circle/sphere with curvature K
     self.geom = (x/self.K) * function.stack(
            (function.cos(y), function.sin(y)) if self.manifold.ndims == 1
       else (function.cos(y), function.sin(y) * function.cos(z), function.sin(y) * function.sin(z)))
-    self.normal = function.normal(self.geom, exterior=not self.boundary)
+    self.normal = function.normal(self.geom, refgeom=refgeom)
 
   @property
   def P(self):
