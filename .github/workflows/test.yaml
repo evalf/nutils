@@ -33,35 +33,30 @@ jobs:
           if-no-files-found: error
   test:
     needs: build-python-package
-    name: 'Test os: ${{ matrix.os }}, py: ${{ matrix.python-version }}, matrix: ${{ matrix.matrix-backend }}, nprocs: ${{ matrix.nprocs }}, numpy: ${{ matrix.numpy-version }}, tensorial: ${{ matrix.tensorial }}'
+    name: 'Test ${{ matrix.name }}'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
-          # base
-          - {os: ubuntu-latest , python-version: 3.9, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
-          # os
-          - {os: windows-latest, python-version: 3.9, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
-          - {os: macos-latest  , python-version: 3.9, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
-          # python-version
-          - {os: ubuntu-latest , python-version: 3.5, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
-          - {os: ubuntu-latest , python-version: 3.6, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
-          - {os: ubuntu-latest , python-version: 3.7, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
-          - {os: ubuntu-latest , python-version: 3.8, matrix-backend: numpy, nprocs: 1, numpy-version: latest}
-          # matrix-backend
-          - {os: ubuntu-latest , python-version: 3.9, matrix-backend: scipy, nprocs: 1, numpy-version: latest}
-          - {os: ubuntu-latest , python-version: 3.9, matrix-backend: mkl  , nprocs: 1, numpy-version: latest}
-          - {os: ubuntu-latest , python-version: 3.9, matrix-backend: mkl  , nprocs: 2, numpy-version: latest}
-          # nprocs
-          - {os: ubuntu-latest , python-version: 3.9, matrix-backend: numpy, nprocs: 2, numpy-version: latest}
-          # numpy-version
-          - {os: ubuntu-latest , python-version: 3.6, matrix-backend: numpy, nprocs: 1, numpy-version: 1.17  }
-          # tensorial
-          - {os: ubuntu-latest , python-version: 3.9, matrix-backend: numpy, nprocs: 1, numpy-version: latest, tensorial: test}
+          - {name: "baseline", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1}
+          - {name: "windows", os: windows-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1}
+          - {name: "macos", os: macos-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1}
+          - {name: "python 3.5", os: ubuntu-latest, python-version: "3.5", matrix-backend: numpy, nprocs: 1}
+          - {name: "python 3.6", os: ubuntu-latest, python-version: "3.6", matrix-backend: numpy, nprocs: 1}
+          - {name: "python 3.7", os: ubuntu-latest, python-version: "3.7", matrix-backend: numpy, nprocs: 1}
+          - {name: "python 3.8", os: ubuntu-latest, python-version: "3.8", matrix-backend: numpy, nprocs: 1}
+          - {name: "python 3.9", os: ubuntu-latest, python-version: "3.9", matrix-backend: numpy, nprocs: 1}
+          - {name: "scipy matrix", os: ubuntu-latest, python-version: "3.10", matrix-backend: scipy, nprocs: 1}
+          - {name: "mkl matrix", os: ubuntu-latest, python-version: "3.10", matrix-backend: mkl, nprocs: 1}
+          - {name: "mkl matrix parallel", os: ubuntu-latest, python-version: "3.10", matrix-backend: mkl, nprocs: 2}
+          - {name: "parallel", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 2}
+          - {name: "numpy 1.17", os: ubuntu-latest, python-version: "3.6", matrix-backend: numpy, nprocs: 1, numpy-version: ==1.17}
+          - {name: "tensorial", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1, tensorial: test}
       fail-fast: false
     env:
       NUTILS_MATRIX: ${{ matrix.matrix-backend }}
       NUTILS_NPROCS: ${{ matrix.nprocs }}
+      NUTILS_DEBUG: all
       OMP_NUM_THREADS: 1
       VECLIB_MAXIMUM_THREADS: 1
       MKL_DYNAMIC: FALSE
@@ -71,6 +66,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v2
+      - name: Move nutils directory
+        run: mv nutils _nutils
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v1
         with:
@@ -86,45 +83,62 @@ jobs:
       - name: Install Nutils and dependencies
         id: install
         env:
-          _os: ${{ matrix.os }}
-          _matrix: ${{ matrix.matrix-backend }}
-          _numpy: ${{ matrix.numpy-version }}
+          _numpy_version: ${{ matrix.numpy-version }}
         run: |
-          _deps="coverage treelog stringly matplotlib pillow meshio"
-          case "$_os" in
-            windows-latest) _deps="$_deps psutil";;
-          esac
-          case "$_matrix" in
-            scipy) _deps="$_deps scipy";;
-            mkl) _deps="$_deps mkl";;
-          esac
-          case "$_numpy" in
-            latest) _deps="$_deps numpy Sphinx scipy";;
-            *) _deps="$_deps numpy==$_numpy";;
-          esac
           python -um pip install --upgrade wheel
-          python -um pip install --upgrade $_deps
-          # Install Nutils from `dist` dir created in job
-          # `build-python-package`.
+          python -um pip install --upgrade coverage treelog stringly meshio numpy$_numpy_version
+          # Install Nutils from `dist` dir created in job `build-python-package`.
           python -um pip install --no-index --find-links ./dist nutils
+      - name: Install Scipy
+        if: ${{ matrix.matrix-backend == 'scipy' }}
+        run: python -um pip install --upgrade scipy
       - name: Configure MKL
-        id: configure-mkl
         if: ${{ matrix.matrix-backend == 'mkl' }}
-        run: python -um devtools.gha.configure_mkl
+        run: |
+          python -um pip install --upgrade mkl
+          python -um devtools.gha.configure_mkl
       - name: Test
-        env:
-          NUTILS_DEBUG: all
-        run: |
-          mkdir testenv
-          cp -r examples docs tests .coveragerc testenv
-          cd testenv
-          python -um coverage run -m unittest -bq
+        run: python -um coverage run -m unittest discover -b -q -t . -s tests
       - name: Post-process coverage
-        run: |
-          mv testenv/.coverage .
-          python -um devtools.gha.coverage_report_xml
+        run: python -um devtools.gha.coverage_report_xml
       - name: Upload coverage
         uses: codecov/codecov-action@v1
+  test-examples:
+    needs: build-python-package
+    name: 'Test examples ${{ matrix.os }}'
+    runs-on: ${{ matrix.os }}-latest
+    strategy:
+      matrix:
+        os: [ubuntu, macos, windows]
+      fail-fast: false
+    env:
+      NUTILS_MATRIX: scipy
+      NUTILS_NPROCS: 1
+      NUTILS_DEBUG: all
+      OMP_NUM_THREADS: 1
+      VECLIB_MAXIMUM_THREADS: 1
+      PYTHONHASHSEED: 0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Move nutils directory
+        run: mv nutils _nutils
+      - name: Set up Python
+        uses: actions/setup-python@v1
+      - name: Download Python package artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: python-package
+          path: dist/
+      - name: Install Nutils and dependencies
+        id: install
+        run: |
+          python -um pip install --upgrade wheel
+          python -um pip install --upgrade treelog stringly matplotlib scipy pillow numpy
+          # Install Nutils from `dist` dir created in job `build-python-package`.
+          python -um pip install --no-index --find-links ./dist nutils
+      - name: Test
+        run: python -um unittest discover -b -q -t . -s examples
   test-sphinx:
     name: Test building docs
     runs-on: ubuntu-20.04
