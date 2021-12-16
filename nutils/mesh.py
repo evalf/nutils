@@ -28,20 +28,30 @@ provided at this point.
 
 from . import topology, function, util, element, numeric, transform, transformseq, warnings, types, cache
 from .elementseq import References
+from .transform import TransformItem
+from .topology import Topology
+from typing import Optional, Sequence, Tuple, Union
 import numpy, os, itertools, re, math, treelog as log, io, contextlib
 _ = numpy.newaxis
 
 # MESH GENERATORS
 
 @log.withcontext
-def rectilinear(richshape, periodic=(), name='rect', space='X'):
+def rectilinear(richshape: Sequence[Union[int, Sequence[float]]], periodic: Sequence[int] = (), name: Optional[str] = None, space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
   'rectilinear mesh'
 
   verts = [numpy.arange(v + 1) if numeric.isint(v) else v for v in richshape]
   shape = [len(v) - 1 for v in verts]
   ndims = len(shape)
 
-  root = transform.Identifier(ndims, name)
+  if name is not None:
+    warnings.deprecation('Argument `name` is deprecated; use `root` with a `TransformItem` instead.')
+    if root is not None:
+      raise ValueError('Arguments `name` and `root` cannot be used simultaneously.')
+    root = transform.Index(hash(name))
+  elif root is None:
+    root = transform.Index(ndims, 0)
+
   axes = [transformseq.DimAxis(i=0, j=n, mod=n if idim in periodic else 0, isperiodic=idim in periodic) for idim, n in enumerate(shape)]
   topo = topology.StructuredTopology(space, root, axes)
 
@@ -53,31 +63,37 @@ def rectilinear(richshape, periodic=(), name='rect', space='X'):
 
 _oldrectilinear = rectilinear # reference for internal unittests
 
-def line(nodes, periodic=False, bnames=None, *, name: str = 'line', space: str = 'X'):
+def line(nodes: Union[int, Sequence[float]], periodic: bool = False, bnames: Optional[Sequence[Tuple[str, str]]] = None, *, name: Optional[str] = None, space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
+  if name is not None:
+    warnings.deprecation('Argument `name` is deprecated; use `root` with a `transform.transformitem` instead.')
+    if root is not None:
+      raise ValueError('Arguments `name` and `root` cannot be used simultaneously.')
+    root = transform.Index(hash(name))
+  elif root is None:
+    root = transform.Index(1, 0)
   if isinstance(nodes, int):
     nodes = numpy.arange(nodes + 1)
-  root = transform.Identifier(1, name)
   domain = topology.StructuredLine(space, root, 0, len(nodes) - 1, periodic=periodic, bnames=bnames)
   geom = domain.basis('std', degree=1, periodic=[]).dot(nodes)
   return domain, geom
 
-def newrectilinear(nodes, periodic=None, name='rect', bnames=[['left','right'],['bottom','top'],['front','back']], spaces=None):
+def newrectilinear(nodes: Sequence[Union[int, Sequence[float]]], periodic: Optional[Sequence[int]] = None, name: Optional[str] = None, bnames=[['left','right'],['bottom','top'],['front','back']], spaces: Optional[Sequence[str]] = None, root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
   if periodic is None:
     periodic = []
   if not spaces:
     spaces = 'XYZ' if len(nodes) <= 3 else map('R{}'.format, range(len(nodes)))
   else:
     assert len(spaces) == len(nodes)
-  domains, geoms = zip(*(line(nodesi, i in periodic, bnamesi, name=name, space=spacei) for i, (nodesi, bnamesi, spacei) in enumerate(zip(nodes, tuple(bnames)+(None,)*len(nodes), spaces))))
+  domains, geoms = zip(*(line(nodesi, i in periodic, bnamesi, name=name, space=spacei, root=root) for i, (nodesi, bnamesi, spacei) in enumerate(zip(nodes, tuple(bnames)+(None,)*len(nodes), spaces))))
   return util.product(domains), function.stack(geoms)
 
 if os.environ.get('NUTILS_TENSORIAL'):
-  def rectilinear(richshape, periodic=(), name='rect', space='X'):
+  def rectilinear(richshape: Sequence[Union[int, Sequence[float]]], periodic: Sequence[int] = (), name: Optional[str] = None, space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
     spaces = tuple(space+str(i) for i in range(len(richshape)))
-    return newrectilinear(richshape, periodic, name, spaces=spaces)
+    return newrectilinear(richshape, periodic, name=name, spaces=spaces, root=root)
 
 @log.withcontext
-def multipatch(patches, nelems, patchverts=None, name='multipatch'):
+def multipatch(patches, nelems, patchverts=None, name: Optional[str] = None):
   '''multipatch rectilinear mesh generator
 
   Generator for a :class:`~nutils.topology.MultipatchTopology` and geometry.
@@ -195,6 +211,9 @@ def multipatch(patches, nelems, patchverts=None, name='multipatch'):
       if ``patchverts`` is not specified.
   '''
 
+  if name is not None:
+    warnings.deprecation('Argument `name` is deprecated and can safely be omitted.')
+
   patches = numpy.array(patches)
   if patches.dtype != int:
     raise ValueError('`patches` should be an array of ints.')
@@ -254,7 +273,7 @@ def multipatch(patches, nelems, patchverts=None, name='multipatch'):
         raise ValueError('duplicate number of elements specified for patch {} in dimension {}'.format(i, dim))
       shape.append(nelems_sides[0])
     # create patch topology
-    topos.append(rectilinear(shape, name='{}{}'.format(name, i))[0])
+    topos.append(rectilinear(shape, root=transform.Index(ndims, i))[0])
     # compute patch geometry
     patchcoords = [numpy.linspace(0, 1, n+1) for n in shape]
     patchcoords = numeric.meshgrid(*patchcoords).reshape(ndims, -1)
@@ -623,7 +642,7 @@ def unitsquare(nelems, etype):
   space = 'X'
 
   if etype == 'square':
-    topo, geom = rectilinear([nelems, nelems], name='unitsquare', space=space)
+    topo, geom = rectilinear([nelems, nelems], space=space)
     return topo, geom / nelems
 
   elif etype in ('triangle', 'mixed'):
