@@ -534,7 +534,7 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex', *, space=
   assert numpy.greater(nodes[:,1:], nodes[:,:-1]).all(), 'nodes must be sorted'
   assert ncnodes == _comb(ndims + degree, degree), 'number of coordinate nodes does not correspond to uniformly refined simplex'
 
-  transforms = transformseq.IdentifierTransforms(ndims=ndims, name=name, length=nelems)
+  transforms = transformseq.IndexTransforms(ndims=ndims, length=nelems)
   topo = topology.SimplexTopology(space, nodes, transforms, transforms)
   coeffs = element.getsimplex(ndims).get_poly_coeffs('lagrange', degree=degree)
   basis = function.PlainBasis([coeffs] * nelems, cnodes, nverts, topo.f_index, topo.f_coords)

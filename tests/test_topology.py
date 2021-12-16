@@ -401,15 +401,15 @@ class NewEmpty(TestCase, CommonTests, ConformingTests):
     self.assertEqual(len(~self.topo), 0)
 
   def test_intersection(self):
-    atrans = transformseq.IdentifierTransforms(1, 'a', 1)
-    btrans = transformseq.IdentifierTransforms(2, 'b', 1)
+    atrans = transformseq.IndexTransforms(1, 1, 0)
+    btrans = transformseq.IndexTransforms(2, 1, 1)
     other = topology.SimplexTopology('a', numpy.array([[0,1]]), atrans, atrans) * topology.SimplexTopology('b', numpy.array([[0,1,2]]), btrans, btrans)
     self.assertEqual(self.topo & other, self.topo)
     self.assertEqual(other & self.topo, self.topo)
 
   def test_union(self):
-    atrans = transformseq.IdentifierTransforms(1, 'a', 1)
-    btrans = transformseq.IdentifierTransforms(2, 'b', 1)
+    atrans = transformseq.IndexTransforms(1, 1, 0)
+    btrans = transformseq.IndexTransforms(2, 1, 1)
     other = topology.SimplexTopology('a', numpy.array([[0,1]]), atrans, atrans) * topology.SimplexTopology('b', numpy.array([[0,1,2]]), btrans, btrans)
     self.assertEqual(self.topo | other, other)
     self.assertEqual(other | self.topo, other)
@@ -794,7 +794,7 @@ class refined(TestCase):
   def test_boundary_gradient(self):
     ref = _refined_refs[self.etype]
     space = 'test'
-    domain = topology.ConnectedTopology(space, References.uniform(ref, 1), transformseq.IdentifierTransforms(ref.ndims, 'root', 1), transformseq.IdentifierTransforms(ref.ndims, 'root', 1), ((-1,)*ref.nedges,)).refine(self.ref0)
+    domain = topology.ConnectedTopology(space, References.uniform(ref, 1), transformseq.IndexTransforms(ref.ndims, 1), transformseq.IndexTransforms(ref.ndims, 1), ((-1,)*ref.nedges,)).refine(self.ref0)
     geom = function.rootcoords(space, ref.ndims)
     basis = domain.basis('std', degree=1)
     u = domain.projection(geom.sum(), onto=basis, geometry=geom, degree=2)
@@ -1169,7 +1169,7 @@ class TransformChainsTopology(TestCase, CommonTests, TransformChainsTests):
   def setUp(self):
     super().setUp()
     references = References.uniform(element.PointReference(), 1)
-    transforms = transformseq.IdentifierTransforms(0, 'test', 1)
+    transforms = transformseq.IndexTransforms(0, 1)
     self.topo = topology.TransformChainsTopology('test', references, transforms, transforms)
     self.geom = self.topo.f_coords
     self.desired_nelems = 1

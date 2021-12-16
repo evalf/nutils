@@ -419,46 +419,42 @@ class PlainTransforms(Transforms):
       raise ValueError('{!r} not in sequence of transforms'.format(orig_trans))
     return self._indices[i], trans[len(match):]
 
-class IdentifierTransforms(Transforms):
-  '''A sequence of :class:`nutils.transform.Identifier` singletons.
-
-  Every identifier is instantiated with three arguments: the dimension, the
-  name string, and an integer index matching its position in the sequence.
+class IndexTransforms(Transforms):
+  '''A sequence of :class:`nutils.transform.Index` singletons.
 
   Parameters
   ----------
   ndims : :class:`int`
       Dimension of the transformation.
-  name : :class:`str`
-      Identifying name string.
   length : :class:`int`
       Length of the sequence.
+  offset : :class:`int`
+      The index of the first :class:`nutils.transform.Index` in this sequence.
   '''
 
-  __slots__ = '_name', '_length'
+  __slots__ = '_length', '_offset'
 
   @types.apply_annotations
-  def __init__(self, ndims:types.strictint, name:str, length:int):
-    self._name = name
+  def __init__(self, ndims:types.strictint, length:int, offset:int = 0):
     self._length = length
+    self._offset = offset
     super().__init__(ndims, ndims)
 
   def __getitem__(self, index):
     if not numeric.isint(index):
       return super().__getitem__(index)
-    index = int(index) # make sure that index is a Python integer rather than numpy.intxx
-    return transform.Identifier(self.fromdims, (self._name, numeric.normdim(self._length, index))),
+    return transform.Index(self.fromdims, self._offset + numeric.normdim(self._length, index.__index__())),
 
   def get_evaluable(self, index: evaluable.Array) -> EvaluableTransformChain:
-    return _EvaluableIdentifierChain(self.fromdims, self._name, evaluable.InRange(index, self._length))
+    return _EvaluableIndexChain(self.fromdims, self._offset + evaluable.InRange(index, self._length))
 
   def __len__(self):
     return self._length
 
   def index_with_tail(self, trans):
     root = trans[0]
-    if root.fromdims == self.fromdims and isinstance(root, transform.Identifier) and isinstance(root.token, tuple) and len(root.token) == 2 and root.token[0] == self._name and 0 <= root.token[1] < self._length:
-      return root.token[1], trans[1:]
+    if root.fromdims == self.fromdims and isinstance(root, transform.Index) and 0 <= root.index - self._offset < self._length:
+      return root.index - self._offset, trans[1:]
     raise ValueError
 
 class Axis(types.Singleton):
@@ -970,17 +966,16 @@ class _EvaluableTransformChainFromSequence(EvaluableTransformChain):
     else:
       return super().index_with_tail_in(__sequence)
 
-class _EvaluableIdentifierChain(EvaluableTransformChain):
+class _EvaluableIndexChain(EvaluableTransformChain):
 
-  __slots__ = '_ndim', '_name'
+  __slots__ = '_ndim'
 
-  def __init__(self, ndim: int, name: str, index: evaluable.Array) -> None:
+  def __init__(self, ndim: int, index: evaluable.Array) -> None:
     self._ndim = ndim
-    self._name = name
     super().__init__((index,), ndim, ndim)
 
   def evalf(self, index: numpy.ndarray) -> TransformChain:
-    return transform.Identifier(self._ndim, (self._name, index.__index__())),
+    return transform.Index(self._ndim, index.__index__()),
 
   def apply(self, points: evaluable.Array) -> evaluable.Array:
     return points

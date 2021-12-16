@@ -1160,7 +1160,7 @@ class DiscontBasis(CommonBasis, TestCase):
 class LegendreBasis(CommonBasis, TestCase):
 
   def setUp(self):
-    self.checktransforms = transformseq.IdentifierTransforms(1, 'test', 3)
+    self.checktransforms = transformseq.IndexTransforms(1, 3)
     index, coords = self.mk_index_coords(0, self.checktransforms)
     self.checkcoeffs = [[[1,0,0,0],[-1,2,0,0],[1,-6,6,0],[-1,12,-30,20]]]*3
     self.basis = function.LegendreBasis(3, 3, index, coords)

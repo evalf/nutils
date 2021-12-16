@@ -379,12 +379,12 @@ class StructuredTransforms2DRefined(TestCase, Common, Edges):
     self.checktodims = 2
     self.checkfromdims = 2
 
-class IdentifierTransforms(TestCase, Common, Edges):
+class IndexTransforms(TestCase, Common, Edges):
   def setUp(self):
     super().setUp()
-    self.seq = nutils.transformseq.IdentifierTransforms(ndims=2, name='foo', length=4)
-    self.check = [(nutils.transform.Identifier(2, ('foo', i)),) for i in range(4)]
-    self.checkmissing = (nutils.transform.Identifier(1, ('foo', 0)),), (nutils.transform.Identifier(2, ('foo', -1)),), (nutils.transform.Identifier(2, ('foo', 4)),), (nutils.transform.Identifier(2, ('bar', 0)),)
+    self.seq = nutils.transformseq.IndexTransforms(ndims=2, length=4, offset=2)
+    self.check = [(nutils.transform.Index(2, i),) for i in range(2, 6)]
+    self.checkmissing = (nutils.transform.Index(1, 0),), (nutils.transform.Index(2, -1),), (nutils.transform.Index(2, 6,),)
     self.checkrefs = References.uniform(triangle, 4)
     self.checktodims = 2
     self.checkfromdims = 2
