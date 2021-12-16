@@ -111,7 +111,6 @@ if __name__ == '__main__':
 
 class test(testing.TestCase):
 
-  @testing.requires('matplotlib')
   def test_p2(self):
     state0, state1 = main(nelems=3, reynolds=100, degree=2)
     with self.subTest('stokes-velocity'): self.assertAlmostEqual64(state0['u'], '''
@@ -125,7 +124,6 @@ class test(testing.TestCase):
       eNpbqpasrWa46TSTfoT+krO/de/pntA3Pnf2zFNtn2u2hglmAOKVDlE=''')
     with self.subTest('navier-stokes-multiplier'): self.assertAlmostEqual(state1['lm'], 0)
 
-  @testing.requires('matplotlib')
   def test_p3(self):
     state0, state1 = main(nelems=3, reynolds=100, degree=3)
     with self.subTest('stokes-velocity'): self.assertAlmostEqual64(state0['u'], '''

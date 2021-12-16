@@ -113,7 +113,6 @@ if __name__ == '__main__':
 
 class test(testing.TestCase):
 
-  @testing.requires('matplotlib')
   def test_initial(self):
     state = main(nelems=3, etype='square', btype='std', degree=2, epsilon=None, contactangle=90, timestep=1, mtol=float('inf'), seed=0, circle=False, stab=stab.linear)
     with self.subTest('concentration'): self.assertAlmostEqual64(state['c'], '''
@@ -123,7 +122,6 @@ class test(testing.TestCase):
       eNoBYgCd/w7NQModNFjLtckB0VA0rDCiM+zKBMzPygjMcMr4yJcy0MsUyXY0OcoxMFo19zE5Np/JMDTG
       yk7KGstQzFgwvMnDNXk0Msm+Njc3SjZizebJEjbPy1w25zLsNfQzSjURLRk3Qt4uBQ==''')
 
-  @testing.requires('matplotlib')
   def test_square(self):
     state = main(nelems=3, etype='square', btype='std', degree=2, epsilon=None, contactangle=90, timestep=1, mtol=.1, seed=0, circle=False, stab=stab.linear)
     with self.subTest('concentration'): self.assertAlmostEqual64(state['c'], '''
@@ -133,7 +131,6 @@ class test(testing.TestCase):
       eNpVyU0KgCAABeGrK9SiQCiQCsrwB8GjzLF8uJNvNYzBsuP5yGKmWlhxXKMSmxzchPGceF4iVU55+Ck0
       masD28JDNQ==''')
 
-  @testing.requires('matplotlib')
   def test_contactangle(self):
     state = main(nelems=3, etype='square', btype='std', degree=2, epsilon=None, contactangle=45, timestep=1, mtol=.1, seed=0, circle=False, stab=stab.linear)
     with self.subTest('concentration'): self.assertAlmostEqual64(state['c'], '''
@@ -143,7 +140,6 @@ class test(testing.TestCase):
       eNoNzCEOggAYgNFLvbPguILeQRpWgyQPoAYCuBGhWHVzGshOLegMSvffS1/5EqmF2sUnTKJylbO3l6mZ
       pb2TZ5jLrDWObmGlUDroDWFjq43H3dcvaqdz9TCGP1tYLVU=''')
 
-  @testing.requires('matplotlib')
   def test_mixedcircle(self):
     state = main(nelems=3, etype='mixed', btype='std', degree=2, epsilon=None, contactangle=90, timestep=1, mtol=.1, seed=0, circle=True, stab=stab.linear)
     with self.subTest('concentration'): self.assertAlmostEqual64(state['c'], '''

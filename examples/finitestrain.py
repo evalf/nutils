@@ -87,7 +87,6 @@ if __name__ == '__main__':
 
 class test(testing.TestCase):
 
-  @testing.requires('matplotlib')
   def test_default(self):
     lhs0, lhs1 = main(nelems=4, etype='square', btype='std', degree=1, poisson=.25, angle=10, restol=1e-8, trim=False)
     with self.subTest('linear'): self.assertAlmostEqual64(lhs0, '''
@@ -97,7 +96,6 @@ class test(testing.TestCase):
       eNpjYMAEZdrKl2/p37soY1h84aKh2/lmI4Zz7loq5y0MD55rNtI652Rcefa48aUzzZcjzj4ylDjrYnz6
       jIBJ8Zl2E9Yzty9InlE2+nB6o/HJ090my04rm7acBgAKcSdV''')
 
-  @testing.requires('matplotlib')
   def test_mixed(self):
     lhs0, lhs1 = main(nelems=4, etype='mixed', btype='std', degree=1, poisson=.25, angle=10, restol=1e-8, trim=False)
     with self.subTest('linear'): self.assertAlmostEqual64(lhs0, '''
@@ -107,7 +105,6 @@ class test(testing.TestCase):
       eNpjYIAA7fv2l6UMEi6C2H8N7l0A0VcMzc+D6H4jznPyhpfOdelwnm80EjznYTz57CnjG2eWX0o/+9VQ
       +KyT8cUzzCbZZ2abiJ9RNvpw+vYFyTMbjU+e7jZZdlrZtOU0AJN4KHY=''')
 
-  @testing.requires('matplotlib')
   def test_spline(self):
     lhs0, lhs1 = main(nelems=4, etype='square', btype='spline', degree=2, poisson=.25, angle=10, restol=1e-8, trim=False)
     with self.subTest('linear'): self.assertAlmostEqual64(lhs0, '''

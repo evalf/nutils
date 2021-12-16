@@ -130,7 +130,6 @@ if __name__ == '__main__':
 
 class test(testing.TestCase):
 
-  @testing.requires('matplotlib')
   def test_default(self):
     cons, lhs, err = main(nelems=4, etype='square', btype='std', degree=1)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
@@ -141,7 +140,6 @@ class test(testing.TestCase):
     with self.subTest('L2-error'):
       self.assertAlmostEqual(err, 1.63e-3, places=5)
 
-  @testing.requires('matplotlib')
   def test_spline(self):
     cons, lhs, err = main(nelems=4, etype='square', btype='spline', degree=2)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
@@ -152,7 +150,6 @@ class test(testing.TestCase):
     with self.subTest('L2-error'):
       self.assertAlmostEqual(err, 8.04e-5, places=7)
 
-  @testing.requires('matplotlib')
   def test_mixed(self):
     cons, lhs, err = main(nelems=4, etype='mixed', btype='std', degree=2)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''

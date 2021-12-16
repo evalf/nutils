@@ -75,39 +75,33 @@ if __name__ == '__main__':
 
 class test(testing.TestCase):
 
-  @testing.requires('matplotlib')
   def test_1d_p0(self):
     lhs = main(ndims=1, nelems=10, timescale=.1, btype='discont', degree=0, endtime=.01, newtontol=1e-5)
     self.assertAlmostEqual64(lhs, '''
       eNrz1ttqGGOiZSZlrmbuZdZgcsEwUg8AOqwFug==''')
 
-  @testing.requires('matplotlib')
   def test_1d_p1(self):
     lhs = main(ndims=1, nelems=10, timescale=.1, btype='discont', degree=1, endtime=.01, newtontol=1e-5)
     self.assertAlmostEqual64(lhs, '''
       eNrbocann6u3yqjTyMLUwfSw2TWzKPNM8+9mH8wyTMNNZxptMirW49ffpwYAI6cOVA==''')
 
-  @testing.requires('matplotlib')
   def test_1d_p2(self):
     lhs = main(ndims=1, nelems=10, timescale=.1, btype='discont', degree=2, endtime=.01, newtontol=1e-5)
     self.assertAlmostEqual64(lhs, '''
       eNrr0c7SrtWfrD/d4JHRE6Ofxj6mnqaKZofNDpjZmQeYB5pHmL8we23mb5ZvWmjKY/LV6KPRFIMZ+o36
       8dp92gCxZxZG''')
 
-  @testing.requires('matplotlib')
   def test_1d_p1_legendre(self):
     lhs = main(ndims=1, nelems=10, timescale=.1, btype='legendre', degree=1, endtime=.01, newtontol=1e-5)
     self.assertAlmostEqual64(lhs, '''
       eNrbpbtGt9VQyNDfxMdYzczERNZczdjYnOdsoNmc01kmE870Gj49t0c36BIAAhsO1g==''')
 
-  @testing.requires('matplotlib')
   def test_1d_p2_legendre(self):
     lhs = main(ndims=1, nelems=10, timescale=.1, btype='legendre', degree=2, endtime=.01, newtontol=1e-5)
     self.assertAlmostEqual64(lhs, '''
       eNoBPADD/8ot2y2/K4UxITFFLk00RTNNLyY2KzTTKx43QjOOzzM3Ss0pz1A2qsvhKGk0jsyXL48xzc5j
       LswtIdLIK5SlF78=''')
 
-  @testing.requires('matplotlib')
   def test_2d_p1(self):
     lhs = main(ndims=2, nelems=4, timescale=.1, btype='discont', degree=1, endtime=.01, newtontol=1e-5)
     import os
