@@ -1229,7 +1229,10 @@ def multiply(__left: IntoArray, __right: IntoArray) -> Array:
   :class:`Array`
   '''
 
-  return _Wrapper.broadcasted_arrays(evaluable.multiply, __left, __right)
+  left, right = typecast_arrays(__left, __right)
+  return right if _is_unit_scalar(__left) \
+    else left if _is_unit_scalar(__right) \
+    else _Wrapper.broadcasted_arrays(evaluable.multiply, left, right)
 
 @implements(numpy.true_divide)
 def divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
@@ -1244,7 +1247,10 @@ def divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
   :class:`Array`
   '''
 
-  return multiply(__dividend, reciprocal(__divisor))
+  dividend, divisor = typecast_arrays(__dividend, __divisor, min_dtype=float)
+  return dividend if _is_unit_scalar(__divisor) \
+    else reciprocal(divisor) if _is_unit_scalar(__dividend) \
+    else _Wrapper.broadcasted_arrays(evaluable.divide, dividend, divisor)
 
 @implements(numpy.floor_divide)
 def floor_divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
@@ -3648,3 +3654,7 @@ class PrunedBasis(Basis):
 def Namespace(*args, **kwargs):
   from .expression_v1 import Namespace
   return Namespace(*args, **kwargs)
+
+def _is_unit_scalar(v):
+  T = type(v)
+  return T in _dtypes and v == T(1)
