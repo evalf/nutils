@@ -141,7 +141,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     if method != '__call__' or ufunc not in HANDLED_FUNCTIONS:
       return NotImplemented
     try:
-      arrays = [Array.cast(v) for v in inputs]
+      arrays = [v if isinstance(v, (Array, bool, int, float, complex, numpy.ndarray)) else Array.cast(v) for v in inputs]
     except ValueError:
       return NotImplemented
     return HANDLED_FUNCTIONS[ufunc](*arrays, **kwargs)
