@@ -91,7 +91,6 @@ if __name__ == '__main__':
 
 class test(testing.TestCase):
 
-  @testing.requires('matplotlib')
   def test_spline(self):
     err, cons, lhs = main(nelems=4, etype='square', btype='spline', degree=2, traction=.1, maxrefine=2, radius=.5, poisson=.3)
     with self.subTest('l2-error'):
@@ -106,7 +105,6 @@ class test(testing.TestCase):
       5D7vaTjnnIFhzbmlQPH5xhV39Y3vXlxtJHoh2EjvvLXR63MbgOIbjRdfrTXeecnUeO+Fn0Yrzj818j1/
       FCh+xPjt1bnGay+lGd+9YGZ8+ryqcc55AK+AP/0=''')
 
-  @testing.requires('matplotlib')
   def test_mixed(self):
     err, cons, lhs = main(nelems=4, etype='mixed', btype='std', degree=2, traction=.1, maxrefine=2, radius=.5, poisson=.3)
     with self.subTest('l2-error'):

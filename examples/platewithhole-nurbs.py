@@ -109,7 +109,6 @@ if __name__ == '__main__':
 
 class test(testing.TestCase):
 
-  @testing.requires('matplotlib')
   def test0(self):
     err, cons, lhs = main(nrefine=0, traction=.1, radius=.5, poisson=.3)
     with self.subTest('l2-error'):
@@ -121,7 +120,6 @@ class test(testing.TestCase):
     with self.subTest('left-hand side'): self.assertAlmostEqual64(lhs, '''
       eNpjYJh07qLhhnOTjb0vTDdmAAKVcy/1u85lGYforQDzFc6pGSedlzd+eP4ykA8AvkQRaA==''')
 
-  @testing.requires('matplotlib')
   def test2(self):
     err, cons, lhs = main(nrefine=2, traction=.1, radius=.5, poisson=.3)
     with self.subTest('l2-error'):

@@ -106,7 +106,6 @@ if __name__ == '__main__':
 
 class test(testing.TestCase):
 
-  @testing.requires('matplotlib')
   def test_square(self):
     state0, state1 = main(nelems=3, etype='square', reynolds=100, degree=3)
     with self.subTest('stokes-velocity'): self.assertAlmostEqual64(state0['u'], '''
@@ -129,7 +128,6 @@ class test(testing.TestCase):
       eNoNiT0OQEAYBdd5xD1cSOIMiIJGVJuIiliS9VNYKolkNG6j9BUvmZlnmJnoSAnx6RmFNSUVjgErRVOQ
       iFtWKTUZMQ2n/BuGnJaFi52bl48D73Fis+wjCpT6AWgsRHE=''')
 
-  @testing.requires('matplotlib')
   def test_mixed(self):
     state0, state1 = main(nelems=3, etype='mixed', reynolds=100, degree=2)
     with self.subTest('stokes-velocity'): self.assertAlmostEqual64(state0['u'], '''

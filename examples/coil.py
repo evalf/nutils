@@ -184,7 +184,6 @@ def main(nelems: int = 50, degree: int = 3, freq: float = 0., nturns: int = 1, r
 
 class test(testing.TestCase):
 
-  @testing.requires('matplotlib')
   def test_dc(self):
     state = main(nelems=16, degree=2)
     with self.subTest('A.real'): self.assertAlmostEqual64(state['A'].real, '''
@@ -197,7 +196,6 @@ class test(testing.TestCase):
       5JDUS01ILmEYOWzEJB/nKGep1y22j/AYD3AH3chjD6oRxRu+yDVcpN3U49K2wAV+xqP8kPu5i9u4jjfw
       HI1Ta9ihya2zLdRCh+kg7adGqqMtlKZVFKNpN+JyboFL2f8Z6oV2''')
 
-  @testing.requires('matplotlib')
   def test_ac_5(self):
     state = main(nelems=16, degree=2, freq=1000, nturns=5)
     with self.subTest('A.imag'): self.assertAlmostEqual64(state['A'].imag, '''

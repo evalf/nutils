@@ -129,7 +129,6 @@ if __name__ == '__main__':
 
 class test(testing.TestCase):
 
-  @testing.requires('matplotlib', 'scipy')
   def test_rot0(self):
     state0, state = main(nelems=6, degree=3, reynolds=100, rotation=0, timestep=.1, maxradius=25, seed=0, endtime=.05)
     with self.subTest('initial condition'): self.assertAlmostEqual64(state0['u'], '''
@@ -144,7 +143,6 @@ class test(testing.TestCase):
       eNoBSAC3/4zF18aozR866DpHNSk8JDonOdw4k8VzNaHBk8PFOyI+Gj9vPPRA/T/LQDtBIECaP0i5yLsA
       wL9FwkabQsJJTbc2ubJHw7ZvRq/qITA=''')
 
-  @testing.requires('matplotlib', 'scipy')
   def test_rot1(self):
     state0, state = main(nelems=6, degree=3, reynolds=100, rotation=1, timestep=.1, maxradius=25, seed=0, endtime=.05)
     with self.subTest('initial condition'): self.assertAlmostEqual64(state0['u'], '''

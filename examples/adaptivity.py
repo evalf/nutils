@@ -96,7 +96,6 @@ if __name__ == '__main__':
 
 class test(testing.TestCase):
 
-  @testing.requires('matplotlib')
   def test_square_quadratic(self):
     ndofs, error, lhs = main(nrefine=2, btype='h-std', etype='square', degree=2)
     with self.subTest('degrees of freedom'):
@@ -112,7 +111,6 @@ class test(testing.TestCase):
       7AYLvMPpsqGkCTPumzWf+qV92kKevjK36ozDP/FSnh1iteWiqWuf+oMaKuyKaC1i52rKPokiF2WLA/20
       bya+ZCPbWKRPpvgFaedebw==''')
 
-  @testing.requires('matplotlib')
   def test_triangle_quadratic(self):
     ndofs, error, lhs = main(nrefine=2, btype='h-std', etype='triangle', degree=2)
     with self.subTest('degrees of freedom'):
@@ -126,7 +124,6 @@ class test(testing.TestCase):
       bQbyXYEiQWbKZjNM7wJVzjBlYICoPW8CMiXH+LXRR9NwoPkg82xN5IB2MZu2mGabSBnnAbGscYEJj3GV
       YQAQg/TVGfaA7RI0BsErRjeNeowDgDQPmF9gkmciaJxtArGjzrAKCGWNpYAQAL0kOBE=''')
 
-  @testing.requires('matplotlib')
   def test_mixed_linear(self):
     ndofs, error, lhs = main(nrefine=2, btype='h-std', etype='mixed', degree=1)
     with self.subTest('degrees of freedom'):

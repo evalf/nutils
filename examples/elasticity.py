@@ -70,7 +70,6 @@ if __name__ == '__main__':
 
 class test(testing.TestCase):
 
-  @testing.requires('matplotlib')
   def test_default(self):
     cons, lhs = main(nelems=4, etype='square', btype='std', degree=1, poisson=.25)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
@@ -79,7 +78,6 @@ class test(testing.TestCase):
       eNpjYMAEKcaiRmLGQQZCxgwMYsbrzqcYvz672KTMaIKJimG7CQPDBJM75xabdJ3NMO0xSjG1MUw0Beox
       PXIuw7Tk7A/TXqMfQLEfQLEfQLEfpsVnAUzzHtI=''')
 
-  @testing.requires('matplotlib')
   def test_mixed(self):
     cons, lhs = main(nelems=4, etype='mixed', btype='std', degree=1, poisson=.25)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
@@ -88,7 +86,6 @@ class test(testing.TestCase):
       eNpjYICAJGMOI3ljcQMwx3i/JohSMr51HkQnGP8422eiYrjcJM+o3aToWq/Jy3PLTKafzTDtM0oxtTRM
       MF2okmJ67lyGacnZH6aOhj9Mu41+mMZq/DA9dO6HaflZAAMdIls=''')
 
-  @testing.requires('matplotlib')
   def test_quadratic(self):
     cons, lhs = main(nelems=4, etype='square', btype='std', degree=2, poisson=.25)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
@@ -100,7 +97,6 @@ class test(testing.TestCase):
       PjER/0DIDAE/6ICVCjh2Id/ZiBdslY+LrpiOmLaYhJ90IibhNdcW0xHTFTPhUzPhX8h5W3rRuZicV1zO
       N3bCgXRUeDFedjxvSc/ai/G86jzfWi87Xswfg5Nx3Q==''')
 
-  @testing.requires('matplotlib')
   def test_poisson(self):
     cons, lhs = main(nelems=4, etype='square', btype='std', degree=1, poisson=.4)
     with self.subTest('constraints'): self.assertAlmostEqual64(cons, '''
