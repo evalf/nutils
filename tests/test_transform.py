@@ -80,6 +80,11 @@ class SimplexChild(TestInvertible):
   def setUp(self):
     super().setUp(trans=transform.SimplexChild(3, 1), linear=numpy.eye(3)/2, offset=[.5,0,0])
 
+class Point(TestTransform):
+
+  def setUp(self):
+    super().setUp(trans=transform.Point(numpy.array([1.,2.,3.])), linear=numpy.zeros((3,0)), offset=[1.,2.,3.])
+
 del TestTransform, TestInvertible, TestUpdim
 
 

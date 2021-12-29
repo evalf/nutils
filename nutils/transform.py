@@ -463,6 +463,12 @@ class TensorChild(Square):
   def det(self):
     return self.trans1.det * self.trans2.det
 
+class Point(Matrix):
+
+  @types.apply_annotations
+  def __init__(self, offset:types.arraydata):
+    super().__init__(numpy.zeros((offset.shape[0],0)), offset)
+
 ## EVALUABLE TRANSFORM CHAIN
 
 class EvaluableTransformChain(Evaluable):
