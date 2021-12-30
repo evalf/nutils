@@ -3,7 +3,7 @@ import random, itertools, functools, warnings as _builtin_warnings
 from nutils.testing import *
 from nutils.sample import Sample
 from nutils.pointsseq import PointsSequence
-from nutils.transformseq import IdentifierTransforms
+from nutils.transformseq import IndexTransforms
 
 class Common:
 
@@ -166,8 +166,8 @@ class Add(TestCase, Common):
     super().setUp()
     points1 = [element.getsimplex(2).getpoints('bezier', 2)]*3
     points2 = [element.getsimplex(2).getpoints('bezier', 3)]*2
-    transforms1 = IdentifierTransforms(2, 'a', 3)
-    transforms2 = IdentifierTransforms(2, 'b', 2)
+    transforms1 = IndexTransforms(2, 3, 0)
+    transforms2 = IndexTransforms(2, 2, 3)
     sample1 = Sample.new('a', (transforms1, transforms1), PointsSequence.from_iter(points1, 2))
     sample2 = Sample.new('a', (transforms2, transforms2), PointsSequence.from_iter(points2, 2))
     self.sample = sample1 + sample2
@@ -200,8 +200,8 @@ class Mul(TestCase, Common):
     super().setUp()
     points1 = [element.getsimplex(1).getpoints('bezier', 2)]*2
     points2 = [(element.getsimplex(1)**2).getpoints('bezier', 2)] + [element.getsimplex(2).getpoints('bezier', 2)]*2
-    transforms1 = IdentifierTransforms(1, 'a', 2)
-    transforms2 = IdentifierTransforms(2, 'b', 3)
+    transforms1 = IndexTransforms(1, 2, 0)
+    transforms2 = IndexTransforms(2, 3, 2)
     sample1 = Sample.new('a', (transforms1, transforms1), PointsSequence.from_iter(points1, 1))
     sample2 = Sample.new('b', (transforms2, transforms2), PointsSequence.from_iter(points2, 2))
     self.sample = sample1 * sample2
@@ -218,8 +218,8 @@ class Mul_left0d(TestCase, Common):
     super().setUp()
     points1 = [element.getsimplex(0).getpoints('bezier', 2)]
     points2 = [(element.getsimplex(1)**2).getpoints('bezier', 2)] + [element.getsimplex(2).getpoints('bezier', 2)]*2
-    transforms1 = IdentifierTransforms(0, 'a', 1)
-    transforms2 = IdentifierTransforms(2, 'b', 3)
+    transforms1 = IndexTransforms(0, 1, 0)
+    transforms2 = IndexTransforms(2, 3, 1)
     sample1 = Sample.new('a', (transforms1, transforms1), PointsSequence.from_iter(points1, 0))
     sample2 = Sample.new('b', (transforms2, transforms2), PointsSequence.from_iter(points2, 2))
     self.sample = sample1 * sample2
@@ -236,8 +236,8 @@ class Mul_right0d(TestCase, Common):
     super().setUp()
     points1 = [(element.getsimplex(1)**2).getpoints('bezier', 2)] + [element.getsimplex(2).getpoints('bezier', 2)]*2
     points2 = [element.getsimplex(0).getpoints('bezier', 2)]
-    transforms1 = IdentifierTransforms(2, 'a', 3)
-    transforms2 = IdentifierTransforms(0, 'b', 1)
+    transforms1 = IndexTransforms(2, 3, 0)
+    transforms2 = IndexTransforms(0, 1, 3)
     sample1 = Sample.new('a', (transforms1, transforms1), PointsSequence.from_iter(points1, 2))
     sample2 = Sample.new('b', (transforms2, transforms2), PointsSequence.from_iter(points2, 0))
     self.sample = sample1 * sample2
@@ -295,9 +295,9 @@ class TakeElements(TestCase, Common):
     points1 = [element.getsimplex(1).getpoints('bezier', 2)]*2
     points2 = [element.getsimplex(1).getpoints('bezier', 2), element.getsimplex(1).getpoints('bezier', 3), element.getsimplex(1).getpoints('bezier', 4)]
     points3 = [element.getsimplex(2).getpoints('bezier', 2)] + [(element.getsimplex(1)**2).getpoints('bezier', 2)]
-    transforms1 = IdentifierTransforms(1, 'a', 2)
-    transforms2 = IdentifierTransforms(1, 'b', 3)
-    transforms3 = IdentifierTransforms(2, 'c', 2)
+    transforms1 = IndexTransforms(1, 2, 0)
+    transforms2 = IndexTransforms(1, 3, 2)
+    transforms3 = IndexTransforms(2, 2, 5)
     sample1 = Sample.new('a', (transforms1, transforms1), PointsSequence.from_iter(points1, 1))
     sample2 = Sample.new('b', (transforms2, transforms2), PointsSequence.from_iter(points2, 1))
     sample3 = Sample.new('c', (transforms3, transforms3), PointsSequence.from_iter(points3, 2))
@@ -327,7 +327,7 @@ class DefaultIndex(TestCase, Common):
     line = element.getsimplex(1)
     triangle = element.getsimplex(2)
     points = [ref.getpoints('bezier', 2) for ref in (line**2, triangle, line**2)]
-    self.transforms = IdentifierTransforms(2, 'test', 3)
+    self.transforms = IndexTransforms(2, 3)
     self.sample = Sample.new('a', (self.transforms, self.transforms), PointsSequence.from_iter(points, 2))
     self.desired_spaces = 'a',
     self.desired_ndims = 2
@@ -354,7 +354,7 @@ class CustomIndex(TestCase, Common):
     line = element.getsimplex(1)
     triangle = element.getsimplex(2)
     points = [ref.getpoints('bezier', 2) for ref in (line**2, triangle, line**2)]
-    self.transforms = IdentifierTransforms(2, 'test', 3)
+    self.transforms = IndexTransforms(2, 3)
     self.desired_indices = [5,10,4,9],[2,0,6],[7,8,3,1]
     self.sample = Sample.new('a', (self.transforms, self.transforms), PointsSequence.from_iter(points, 2), tuple(map(numpy.array, self.desired_indices)))
     self.desired_spaces = 'a',

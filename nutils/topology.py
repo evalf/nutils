@@ -713,7 +713,7 @@ class Topology(types.Singleton):
     >>> from . import mesh
     >>> domain, geom = mesh.unitsquare(nelems=3, etype='mixed')
     >>> sample = domain.locate(geom, [[.9, .4]], tol=1e-12)
-    >>> sample.eval(geom).tolist()
+    >>> sample.eval(geom).round(5).tolist()
     [[0.9, 0.4]]
 
     Locate requires a geometry function, an array of coordinates, and at least
@@ -2230,11 +2230,18 @@ class StructuredTopology(TransformChainsTopology):
     return self._locate(geom0, scale, coords, eps=eps, weights=weights)
 
   def _asaffine(self, geom):
-    index = function.rootcoords(self.space, self.transforms.todims)[[axis.isdim for axis in self.axes]] * 2**self.nrefine - [axis.i for axis in self.axes if axis.isdim]
-    basis = function.concatenate([function.eye(self.ndims), function.diagonalize(index)], axis=0)
-    A, b = map(sparse.toarray, self.sample('gauss', 2).integrate_sparse([(basis[:,_,:] * basis[_,:,:]).sum(-1), (basis * geom).sum(-1)]))
-    x = numpy.linalg.solve(A, b)
-    return x[:self.ndims], x[self.ndims:], index
+    p0 = p1 = self
+    for (b0, b1), axis in zip(self._bnames, self.axes):
+      if axis.isdim:
+        p0 = p0[:].boundary[b0]
+        p1 = p1[:].boundary[b1]
+    geom0, = p0.sample('gauss', 0).eval(geom)
+    geom1, = p1.sample('gauss', 0).eval(geom)
+    funcsp = self.basis('std', degree=1, periodic=())
+    verts = numeric.meshgrid(*map(numpy.arange, numpy.array(self.shape)+1)).reshape(self.ndims, -1)
+    index = (funcsp * verts).sum(-1)
+    scale = (geom1 - geom0) / numpy.array(self.shape)
+    return geom0, scale, index
 
   def _locate(self, geom0, scale, coords, *, eps=0, weights=None):
     mincoords, maxcoords = numpy.sort([geom0, geom0 + scale * self.shape], axis=0)

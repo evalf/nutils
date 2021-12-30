@@ -28,87 +28,72 @@ provided at this point.
 
 from . import topology, function, util, element, numeric, transform, transformseq, warnings, types, cache
 from .elementseq import References
+from .transform import TransformItem
+from .topology import Topology
+from typing import Optional, Sequence, Tuple, Union
 import numpy, os, itertools, re, math, treelog as log, io, contextlib
 _ = numpy.newaxis
 
 # MESH GENERATORS
 
 @log.withcontext
-def rectilinear(richshape, periodic=(), name='rect', space='X'):
+def rectilinear(richshape: Sequence[Union[int, Sequence[float]]], periodic: Sequence[int] = (), name: Optional[str] = None, space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
   'rectilinear mesh'
 
-  ndims = len(richshape)
-  shape = []
-  offset = []
-  scale = []
-  uniform = True
-  for v in richshape:
-    if numeric.isint(v):
-      assert v > 0
-      shape.append(v)
-      scale.append(1)
-      offset.append(0)
-    elif numpy.equal(v, numpy.linspace(v[0],v[-1],len(v))).all():
-      shape.append(len(v)-1)
-      scale.append((v[-1]-v[0]) / float(len(v)-1))
-      offset.append(v[0])
-    else:
-      shape.append(len(v)-1)
-      uniform = False
+  verts = [numpy.arange(v + 1) if numeric.isint(v) else v for v in richshape]
+  shape = [len(v) - 1 for v in verts]
+  ndims = len(shape)
 
-  root = transform.Identifier(ndims, name)
+  if name is not None:
+    warnings.deprecation('Argument `name` is deprecated; use `root` with a `TransformItem` instead.')
+    if root is not None:
+      raise ValueError('Arguments `name` and `root` cannot be used simultaneously.')
+    root = transform.Index(hash(name))
+  elif root is None:
+    root = transform.Index(ndims, 0)
+
   axes = [transformseq.DimAxis(i=0, j=n, mod=n if idim in periodic else 0, isperiodic=idim in periodic) for idim, n in enumerate(shape)]
   topo = topology.StructuredTopology(space, root, axes)
 
-  if uniform:
-    if all(o == offset[0] for o in offset[1:]):
-      offset = offset[0]
-    if all(s == scale[0] for s in scale[1:]):
-      scale = scale[0]
-    geom = function.rootcoords(space, ndims) * scale + offset
-  else:
-    funcsp = topo.basis('spline', degree=1, periodic=())
-    coords = numeric.meshgrid(*richshape).reshape(ndims, -1)
-    geom = (funcsp * coords).sum(-1)
+  funcsp = topo.basis('spline', degree=1, periodic=())
+  coords = numeric.meshgrid(*verts).reshape(ndims, -1)
+  geom = (funcsp * coords).sum(-1)
 
   return topo, geom
 
 _oldrectilinear = rectilinear # reference for internal unittests
 
-def line(nodes, periodic=False, bnames=None, *, name: str = 'line', space: str = 'X'):
+def line(nodes: Union[int, Sequence[float]], periodic: bool = False, bnames: Optional[Sequence[Tuple[str, str]]] = None, *, name: Optional[str] = None, space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
+  if name is not None:
+    warnings.deprecation('Argument `name` is deprecated; use `root` with a `transform.transformitem` instead.')
+    if root is not None:
+      raise ValueError('Arguments `name` and `root` cannot be used simultaneously.')
+    root = transform.Index(hash(name))
+  elif root is None:
+    root = transform.Index(1, 0)
   if isinstance(nodes, int):
-    uniform = True
-    assert nodes > 0
-    nelems = nodes
-    scale = 1
-    offset = 0
-  else:
-    nelems = len(nodes)-1
-    scale = (nodes[-1]-nodes[0]) / nelems
-    offset = nodes[0]
-    uniform = numpy.equal(nodes, offset + numpy.arange(nelems+1) * scale).all()
-  root = transform.Identifier(1, name)
-  domain = topology.StructuredLine(space, root, 0, nelems, periodic=periodic, bnames=bnames)
-  geom = function.rootcoords(space, 1)[0] * scale + offset if uniform else domain.basis('std', degree=1, periodic=[]).dot(nodes)
+    nodes = numpy.arange(nodes + 1)
+  domain = topology.StructuredLine(space, root, 0, len(nodes) - 1, periodic=periodic, bnames=bnames)
+  geom = domain.basis('std', degree=1, periodic=[]).dot(nodes)
   return domain, geom
 
-def newrectilinear(nodes, periodic=None, name='rect', bnames=[['left','right'],['bottom','top'],['front','back']], spaces=None):
+def newrectilinear(nodes: Sequence[Union[int, Sequence[float]]], periodic: Optional[Sequence[int]] = None, name: Optional[str] = None, bnames=[['left','right'],['bottom','top'],['front','back']], spaces: Optional[Sequence[str]] = None, root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
   if periodic is None:
     periodic = []
   if not spaces:
     spaces = 'XYZ' if len(nodes) <= 3 else map('R{}'.format, range(len(nodes)))
   else:
     assert len(spaces) == len(nodes)
-  domains, geoms = zip(*(line(nodesi, i in periodic, bnamesi, name=name, space=spacei) for i, (nodesi, bnamesi, spacei) in enumerate(zip(nodes, tuple(bnames)+(None,)*len(nodes), spaces))))
+  domains, geoms = zip(*(line(nodesi, i in periodic, bnamesi, name=name, space=spacei, root=root) for i, (nodesi, bnamesi, spacei) in enumerate(zip(nodes, tuple(bnames)+(None,)*len(nodes), spaces))))
   return util.product(domains), function.stack(geoms)
 
 if os.environ.get('NUTILS_TENSORIAL'):
-  def rectilinear(richshape, periodic=(), name='rect', space='X'):
+  def rectilinear(richshape: Sequence[Union[int, Sequence[float]]], periodic: Sequence[int] = (), name: Optional[str] = None, space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
     spaces = tuple(space+str(i) for i in range(len(richshape)))
-    return newrectilinear(richshape, periodic, name, spaces=spaces)
+    return newrectilinear(richshape, periodic, name=name, spaces=spaces, root=root)
 
 @log.withcontext
-def multipatch(patches, nelems, patchverts=None, name='multipatch'):
+def multipatch(patches, nelems, patchverts=None, name: Optional[str] = None):
   '''multipatch rectilinear mesh generator
 
   Generator for a :class:`~nutils.topology.MultipatchTopology` and geometry.
@@ -194,31 +179,16 @@ def multipatch(patches, nelems, patchverts=None, name='multipatch'):
   >>> from nutils import function
   >>> topo, cube = multipatch(
   ...   patches=[
-  ...     [0,1,2,3], # left,   normal: x
-  ...     [4,5,6,7], # right,  normal: x
-  ...     [0,1,4,5], # bottom, normal: -y
-  ...     [2,3,6,7], # top,    normal: -y
-  ...     [0,2,4,6], # front,  normal: z
-  ...     [1,3,5,7], # back,   normal: z
+  ...     [0,1,2,3], # x=-1
+  ...     [4,5,6,7], # x= 1
+  ...     [0,1,4,5], # y=-1
+  ...     [2,3,6,7], # y= 1
+  ...     [0,2,4,6], # z=-1
+  ...     [1,3,5,7], # z= 1
   ...   ],
   ...   patchverts=tuple(itertools.product(*([[-1,1]]*3))),
   ...   nelems=1)
   >>> sphere = function.normalized(cube)
-
-  The normals of the patches are determined by the order of the vertex numbers.
-  An outward normal for the cube is obtained by flipping the left, top and
-  front faces:
-
-  >>> cubenormal = cube.normal(exterior=True) * topo.basis('patch').dot([-1,1,1,-1,-1,1])
-
-  At the centroids of the faces the outward normal should equal the cube geometry:
-
-  >>> numpy.testing.assert_allclose(*topo.sample('gauss', 1).eval([cubenormal, cube]))
-
-  Similarly, the outward normal of the sphere is obtained by:
-
-  >>> spherenormal = sphere.normal(exterior=True) * topo.basis('patch').dot([-1,1,1,-1,-1,1])
-  >>> numpy.testing.assert_allclose(*topo.sample('gauss', 1).eval([spherenormal, cube]))
 
   Args
   ----
@@ -240,6 +210,9 @@ def multipatch(patches, nelems, patchverts=None, name='multipatch'):
       The geometry defined by the ``patchverts`` or a unit hypercube per patch
       if ``patchverts`` is not specified.
   '''
+
+  if name is not None:
+    warnings.deprecation('Argument `name` is deprecated and can safely be omitted.')
 
   patches = numpy.array(patches)
   if patches.dtype != int:
@@ -300,7 +273,7 @@ def multipatch(patches, nelems, patchverts=None, name='multipatch'):
         raise ValueError('duplicate number of elements specified for patch {} in dimension {}'.format(i, dim))
       shape.append(nelems_sides[0])
     # create patch topology
-    topos.append(rectilinear(shape, name='{}{}'.format(name, i))[0])
+    topos.append(rectilinear(shape, root=transform.Index(ndims, i))[0])
     # compute patch geometry
     patchcoords = [numpy.linspace(0, 1, n+1) for n in shape]
     patchcoords = numeric.meshgrid(*patchcoords).reshape(ndims, -1)
@@ -549,7 +522,7 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex', *, space=
   assert numpy.greater(nodes[:,1:], nodes[:,:-1]).all(), 'nodes must be sorted'
   assert ncnodes == _comb(ndims + degree, degree), 'number of coordinate nodes does not correspond to uniformly refined simplex'
 
-  transforms = transformseq.IdentifierTransforms(ndims=ndims, name=name, length=nelems)
+  transforms = transformseq.IndexTransforms(ndims=ndims, length=nelems)
   topo = topology.SimplexTopology(space, nodes, transforms, transforms)
   coeffs = element.getsimplex(ndims).get_poly_coeffs('lagrange', degree=degree)
   basis = function.PlainBasis([coeffs] * nelems, cnodes, nverts, topo.f_index, topo.f_coords)
@@ -577,7 +550,7 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex', *, space=
 
   pgroups = {}
   if ptags:
-    ptrans = [transform.Matrix(linear=numpy.zeros(shape=(ndims,0)), offset=offset) for offset in numpy.eye(ndims+1)[:,1:]]
+    ptrans = [transform.Point(offset) for offset in numpy.eye(ndims+1)[:,1:]]
     pmap = {inode: numpy.array(numpy.equal(nodes, inode).nonzero()).T for inode in set.union(*map(set, ptags.values()))}
     for pname, inodes in ptags.items():
       ptransforms = transformseq.PlainTransforms([topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode]], ndims, 0)
@@ -669,38 +642,40 @@ def unitsquare(nelems, etype):
   space = 'X'
 
   if etype == 'square':
-    topo, geom = rectilinear([nelems, nelems], name='unitsquare', space=space)
+    topo, geom = rectilinear([nelems, nelems], space=space)
     return topo, geom / nelems
 
   elif etype in ('triangle', 'mixed'):
-    root = transform.Identifier(2, 'unitsquare')
     simplices = numpy.concatenate([
       numpy.take([i*(nelems+1)+j, i*(nelems+1)+j+1, (i+1)*(nelems+1)+j, (i+1)*(nelems+1)+j+1], [[0,1,2],[1,2,3]] if i%2==j%2 else [[0,1,3],[0,2,3]], axis=0)
         for i in range(nelems) for j in range(nelems)])
 
     v = numpy.arange(nelems+1, dtype=float)
     coords = numeric.meshgrid(v, v).reshape(2,-1).T
-    transforms = transformseq.PlainTransforms([(root, transform.Square((c[1:]-c[0]).T, c[0])) for c in coords[simplices]], 2, 2)
+    transforms = transformseq.IndexTransforms(2, len(simplices))
     topo = topology.SimplexTopology(space, simplices, transforms, transforms)
 
     if etype == 'mixed':
       references = list(topo.references)
-      transforms = list(topo.transforms)
       square = element.getsimplex(1)**2
       connectivity = list(topo.connectivity)
       isquares = [i * nelems + j for i in range(nelems) for j in range(nelems) if i%2==j%3]
+      dofs = list(simplices)
       for n in sorted(isquares, reverse=True):
         i, j = divmod(n, nelems)
         references[n*2:(n+1)*2] = square,
-        transforms[n*2:(n+1)*2] = (root, transform.Shift([float(i),float(j)])),
         connectivity[n*2:(n+1)*2] = numpy.concatenate(connectivity[n*2:(n+1)*2])[[3,2,4,1] if i%2==j%2 else [3,2,0,5]],
         connectivity = [c-numpy.greater(c,n*2) for c in connectivity]
-      topo = topology.ConnectedTopology(space, References.from_iter(references, 2), transformseq.PlainTransforms(transforms, 2, 2), transformseq.PlainTransforms(transforms, 2, 2), connectivity)
+        dofs[n*2:(n+1)*2] = numpy.unique([*dofs[n*2], *dofs[n*2+1]]),
+      coords = coords[numpy.argsort(numpy.unique(numpy.concatenate(dofs), return_index=True)[1])]
+      transforms = transformseq.IndexTransforms(2, len(connectivity))
+      topo = topology.ConnectedTopology(space, References.from_iter(references, 2), transforms, transforms, connectivity)
 
-    x, y = topo.boundary.sample('_centroid', None).eval(function.rootcoords(space, 2)).T
-    bgroups = dict(left=x==0, right=x==nelems, bottom=y==0, top=y==nelems)
+    geom = (topo.basis('std', degree=1) * coords.T).sum(-1)
+    x, y = topo.boundary.sample('_centroid', None).eval(geom).T
+    bgroups = dict(left=x<.1, right=x>nelems-.1, bottom=y<.1, top=y>nelems-.1)
     topo = topo.withboundary(**{name: topo.boundary[numpy.where(mask)[0]] for name, mask in bgroups.items()})
-    return topo, function.rootcoords(space, 2) / nelems
+    return topo, geom / nelems
 
   else:
     raise Exception('invalid element type {!r}'.format(etype))

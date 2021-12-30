@@ -146,21 +146,21 @@ class Transforms(types.Singleton):
     Example
     -------
 
-    Consider the following plain sequence of two shift transforms:
+    Consider the following plain sequence of two index transforms:
 
-    >>> from nutils.transform import Shift, Scale
-    >>> transforms = PlainTransforms([(Shift([0.]),), (Shift([1.]),)], 1, 1)
+    >>> from nutils.transform import Index, SimplexChild
+    >>> transforms = PlainTransforms([(Index(1, 0),), (Index(1, 1),)], 1, 1)
 
     Calling :meth:`index_with_tail` with the first transform gives index ``0``
     and no tail:
 
-    >>> transforms.index_with_tail((Shift([0.]),))
+    >>> transforms.index_with_tail((Index(1, 0),))
     (0, ())
 
     Calling with an additional scale gives:
 
-    >>> transforms.index_with_tail((Shift([0.]), Scale(0.5, [0.])))
-    (0, (Scale([0]+0.5*x),))
+    >>> transforms.index_with_tail((Index(1, 0), SimplexChild(1, 0)))
+    (0, (SimplexChild([0]+[.5]*x0),))
     '''
 
     raise NotImplementedError
@@ -191,23 +191,23 @@ class Transforms(types.Singleton):
     Example
     -------
 
-    Consider the following plain sequence of two shift transforms:
+    Consider the following plain sequence of two index transforms:
 
-    >>> from nutils.transform import Shift, Scale
-    >>> transforms = PlainTransforms([(Shift([0.]),), (Shift([1.]),)], 1, 1)
+    >>> from nutils.transform import Index, SimplexChild
+    >>> transforms = PlainTransforms([(Index(1, 0),), (Index(1, 1),)], 1, 1)
 
     Calling :meth:`index` with the first transform gives index ``0``:
 
-    >>> transforms.index((Shift([0.]),))
+    >>> transforms.index((Index(1, 0),))
     0
 
     Calling with an additional scale raises an exception, because the transform
     is not present in ``transforms``.
 
-    >>> transforms.index((Shift([0.]), Scale(0.5, [0.])))
+    >>> transforms.index((Index(1, 0), SimplexChild(1, 0)))
     Traceback (most recent call last):
       ...
-    ValueError: (Shift([0]+x), Scale([0]+0.5*x)) not in sequence of transforms
+    ValueError: (Index(1, 0), SimplexChild([0]+[.5]*x0)) not in sequence of transforms
     '''
 
     index, tail = self.index_with_tail(trans)
@@ -419,46 +419,42 @@ class PlainTransforms(Transforms):
       raise ValueError('{!r} not in sequence of transforms'.format(orig_trans))
     return self._indices[i], trans[len(match):]
 
-class IdentifierTransforms(Transforms):
-  '''A sequence of :class:`nutils.transform.Identifier` singletons.
-
-  Every identifier is instantiated with three arguments: the dimension, the
-  name string, and an integer index matching its position in the sequence.
+class IndexTransforms(Transforms):
+  '''A sequence of :class:`nutils.transform.Index` singletons.
 
   Parameters
   ----------
   ndims : :class:`int`
       Dimension of the transformation.
-  name : :class:`str`
-      Identifying name string.
   length : :class:`int`
       Length of the sequence.
+  offset : :class:`int`
+      The index of the first :class:`nutils.transform.Index` in this sequence.
   '''
 
-  __slots__ = '_name', '_length'
+  __slots__ = '_length', '_offset'
 
   @types.apply_annotations
-  def __init__(self, ndims:types.strictint, name:str, length:int):
-    self._name = name
+  def __init__(self, ndims:types.strictint, length:int, offset:int = 0):
     self._length = length
+    self._offset = offset
     super().__init__(ndims, ndims)
 
   def __getitem__(self, index):
     if not numeric.isint(index):
       return super().__getitem__(index)
-    index = int(index) # make sure that index is a Python integer rather than numpy.intxx
-    return transform.Identifier(self.fromdims, (self._name, numeric.normdim(self._length, index))),
+    return transform.Index(self.fromdims, self._offset + numeric.normdim(self._length, index.__index__())),
 
   def get_evaluable(self, index: evaluable.Array) -> EvaluableTransformChain:
-    return _EvaluableIdentifierChain(self.fromdims, self._name, evaluable.InRange(index, self._length))
+    return _EvaluableIndexChain(self.fromdims, self._offset + evaluable.InRange(index, self._length))
 
   def __len__(self):
     return self._length
 
   def index_with_tail(self, trans):
     root = trans[0]
-    if root.fromdims == self.fromdims and isinstance(root, transform.Identifier) and isinstance(root.token, tuple) and len(root.token) == 2 and root.token[0] == self._name and 0 <= root.token[1] < self._length:
-      return root.token[1], trans[1:]
+    if root.fromdims == self.fromdims and isinstance(root, transform.Index) and 0 <= root.index - self._offset < self._length:
+      return root.index - self._offset, trans[1:]
     raise ValueError
 
 class Axis(types.Singleton):
@@ -598,23 +594,23 @@ class StructuredTransforms(Transforms):
     for i in range(self._nrefine):
       indices, r = divmod(indices, self._ctransforms.shape)
       ctransforms.insert(0, self._ctransforms[tuple(r)])
-    trans0 = transform.Shift(types.frozenarray(indices, dtype=float, copy=False))
-    return (self._root, trans0, *ctransforms, *self._etransforms)
+    trans0 = (transform.Index(len(self._axes), index) for index in indices)
+    return (self._root, *trans0, *ctransforms, *self._etransforms)
 
   def __len__(self):
     return util.product(map(len, self._axes))
 
   def index_with_tail(self, trans):
-    if len(trans) < 2 + self._nrefine + len(self._etransforms):
+    if len(trans) < 1 + len(self._axes) + self._nrefine + len(self._etransforms):
       raise ValueError
 
-    root, shift, tail = trans[0], trans[1], transform.uppermost(trans[2:])
+    root, indices, tail = trans[0], trans[1:1+len(self._axes)], transform.uppermost(trans[1+len(self._axes):])
     if root != self._root:
       raise ValueError
 
-    if not isinstance(shift, transform.Shift) or len(shift.offset) != len(self._axes) or not numpy.equal(shift.offset.astype(int), shift.offset).all():
+    if not all(isinstance(index, transform.Index) and index.todims == len(self._axes) for index in indices):
       raise ValueError
-    indices = numpy.array(shift.offset, dtype=int)
+    indices = numpy.array([index.index for index in indices], dtype=int)
 
     # Match child transforms.
     for item in tail[:self._nrefine]:
@@ -970,17 +966,16 @@ class _EvaluableTransformChainFromSequence(EvaluableTransformChain):
     else:
       return super().index_with_tail_in(__sequence)
 
-class _EvaluableIdentifierChain(EvaluableTransformChain):
+class _EvaluableIndexChain(EvaluableTransformChain):
 
-  __slots__ = '_ndim', '_name'
+  __slots__ = '_ndim'
 
-  def __init__(self, ndim: int, name: str, index: evaluable.Array) -> None:
+  def __init__(self, ndim: int, index: evaluable.Array) -> None:
     self._ndim = ndim
-    self._name = name
     super().__init__((index,), ndim, ndim)
 
   def evalf(self, index: numpy.ndarray) -> TransformChain:
-    return transform.Identifier(self._ndim, (self._name, index.__index__())),
+    return transform.Index(self._ndim, index.__index__()),
 
   def apply(self, points: evaluable.Array) -> evaluable.Array:
     return points

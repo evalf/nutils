@@ -1138,7 +1138,7 @@ class CommonBasis:
 class PlainBasis(CommonBasis, TestCase):
 
   def setUp(self):
-    self.checktransforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0, 0)
+    self.checktransforms = transformseq.IndexTransforms(0, 4)
     index, coords = self.mk_index_coords(0, self.checktransforms)
     self.checkcoeffs = [[1.],[2.,3.],[4.,5.],[6.]]
     self.checkdofs = [[0],[2,3],[1,3],[2]]
@@ -1149,7 +1149,7 @@ class PlainBasis(CommonBasis, TestCase):
 class DiscontBasis(CommonBasis, TestCase):
 
   def setUp(self):
-    self.checktransforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0, 0)
+    self.checktransforms = transformseq.IndexTransforms(0, 4)
     index, coords = self.mk_index_coords(0, self.checktransforms)
     self.checkcoeffs = [[1.],[2.,3.],[4.,5.],[6.]]
     self.basis = function.DiscontBasis(self.checkcoeffs, index, coords)
@@ -1160,7 +1160,7 @@ class DiscontBasis(CommonBasis, TestCase):
 class LegendreBasis(CommonBasis, TestCase):
 
   def setUp(self):
-    self.checktransforms = transformseq.IdentifierTransforms(1, 'test', 3)
+    self.checktransforms = transformseq.IndexTransforms(1, 3)
     index, coords = self.mk_index_coords(0, self.checktransforms)
     self.checkcoeffs = [[[1,0,0,0],[-1,2,0,0],[1,-6,6,0],[-1,12,-30,20]]]*3
     self.basis = function.LegendreBasis(3, 3, index, coords)
@@ -1172,7 +1172,7 @@ class LegendreBasis(CommonBasis, TestCase):
 class MaskedBasis(CommonBasis, TestCase):
 
   def setUp(self):
-    self.checktransforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0, 0)
+    self.checktransforms = transformseq.IndexTransforms(0, 4)
     index, coords = self.mk_index_coords(0, self.checktransforms)
     parent = function.PlainBasis([[1.],[2.,3.],[4.,5.],[6.]], [[0],[2,3],[1,3],[2]], 4, index, coords)
     self.basis = function.MaskedBasis(parent, [0,2])
@@ -1184,7 +1184,7 @@ class MaskedBasis(CommonBasis, TestCase):
 class PrunedBasis(CommonBasis, TestCase):
 
   def setUp(self):
-    parent_transforms = transformseq.PlainTransforms([(transform.Identifier(0,k),) for k in 'abcd'], 0, 0)
+    parent_transforms = transformseq.IndexTransforms(0, 4)
     parent_index, parent_coords = self.mk_index_coords(0, parent_transforms)
     indices = types.frozenarray([0,2])
     self.checktransforms = parent_transforms[indices]
@@ -1199,7 +1199,7 @@ class PrunedBasis(CommonBasis, TestCase):
 class StructuredBasis1D(CommonBasis, TestCase):
 
   def setUp(self):
-    self.checktransforms = transformseq.StructuredTransforms(transform.Identifier(1, 'test'), [transformseq.DimAxis(0,4,0,False)], 0)
+    self.checktransforms = transformseq.IndexTransforms(1, 4)
     index, coords = self.mk_index_coords(1, self.checktransforms)
     self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]], [[0,1,2,3]], [[2,3,4,5]], [5], [4], index, coords)
     self.checkcoeffs = [[[1.],[2.]],[[3.],[4.]],[[5.],[6.]],[[7.],[8.]]]
@@ -1210,7 +1210,7 @@ class StructuredBasis1D(CommonBasis, TestCase):
 class StructuredBasis1DPeriodic(CommonBasis, TestCase):
 
   def setUp(self):
-    self.checktransforms = transformseq.StructuredTransforms(transform.Identifier(1, 'test'), [transformseq.DimAxis(0,4,4,True)], 0)
+    self.checktransforms = transformseq.IndexTransforms(1, 4)
     index, coords = self.mk_index_coords(1, self.checktransforms)
     self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]],[[5],[6]],[[7],[8]]]], [[0,1,2,3]], [[2,3,4,5]], [4], [4], index, coords)
     self.checkcoeffs = [[[1.],[2.]],[[3.],[4.]],[[5.],[6.]],[[7.],[8.]]]
@@ -1221,7 +1221,7 @@ class StructuredBasis1DPeriodic(CommonBasis, TestCase):
 class StructuredBasis2D(CommonBasis, TestCase):
 
   def setUp(self):
-    self.checktransforms = transformseq.StructuredTransforms(transform.Identifier(2, 'test'), [transformseq.DimAxis(0,2,0,False),transformseq.DimAxis(0,2,0,False)], 0)
+    self.checktransforms = transformseq.IndexTransforms(2, 4)
     index, coords = self.mk_index_coords(2, self.checktransforms)
     self.basis = function.StructuredBasis([[[[1],[2]],[[3],[4]]],[[[5],[6]],[[7],[8]]]], [[0,1],[0,1]], [[2,3],[2,3]], [3,3], [2,2], index, coords)
     self.checkcoeffs = [[[[5.]],[[6.]],[[10.]],[[12.]]],[[[7.]],[[8.]],[[14.]],[[16.]]],[[[15.]],[[18.]],[[20.]],[[24.]]],[[[21.]],[[24.]],[[28.]],[[32.]]]]
@@ -1244,19 +1244,22 @@ class SurfaceGradient(TestCase):
         topo, (x, y) = mesh.unitsquare(nelems=2, etype=self.etype)
         self.u = x * y * (1-y)
       self.manifold = topo.boundary['right']
+      refgeom = None
     else:
       if self.etype == 'line':
         self.manifold, y = mesh.line(2)
         self.u = y * (2-y)
+        refgeom = numpy.stack([y])
       else:
         self.manifold, (y, z) = mesh.unitsquare(nelems=2, etype=self.etype)
         self.u = y * (1-y) * z * (1-z)
+        refgeom = numpy.stack([y,z])
       x = 1
     # geometry describes a circle/sphere with curvature K
     self.geom = (x/self.K) * function.stack(
            (function.cos(y), function.sin(y)) if self.manifold.ndims == 1
       else (function.cos(y), function.sin(y) * function.cos(z), function.sin(y) * function.sin(z)))
-    self.normal = function.normal(self.geom, exterior=not self.boundary)
+    self.normal = function.normal(self.geom, refgeom=refgeom)
 
   @property
   def P(self):

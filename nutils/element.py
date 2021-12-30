@@ -778,8 +778,11 @@ class Cone(Reference):
   def getpoints(self, ischeme, degree):
     if ischeme == 'gauss':
       if self.nverts == self.ndims+1: # use optimal gauss schemes for simplex-like cones
-        trans = transform.Square((self.etrans.apply(self.edgeref.vertices) - self.tip).T, self.tip)
-        return points.TransformPoints(getsimplex(self.ndims).getpoints(ischeme, degree), trans)
+        pnts = getsimplex(self.ndims).getpoints(ischeme, degree)
+        linearT = self.etrans.apply(self.edgeref.vertices) - self.tip
+        coords = pnts.coords @ linearT + self.tip
+        weights = pnts.weights * abs(numpy.linalg.det(linearT))
+        return points.CoordsWeightsPoints(coords, weights)
       epoints = self.edgeref.getpoints('gauss', degree)
       tx, tw = points.gauss((degree + self.ndims - 1)//2)
       wx = tx**(self.ndims-1) * tw * self.extnorm * self.height
