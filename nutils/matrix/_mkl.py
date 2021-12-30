@@ -29,8 +29,6 @@ libmkl = util.loadlib(linux='libmkl_rt.so', darwin='libmkl_rt.dylib', win32='mkl
 if not libmkl:
   raise BackendNotAvailable('the Intel MKL matrix backend requires libmkl to be installed (try: pip install mkl)')
 
-os.environ.setdefault('MKL_THREADING_LAYER', 'TBB')
-
 def assemble(data, index, shape):
   # In the increments below the output dtype is set to int32 not only to avoid
   # an additional allocation, but crucially also to avoid truncation in case
