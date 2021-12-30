@@ -57,9 +57,10 @@ with ExitStack() as stack:
   if not examples.exists():
     raise SystemExit(f'cannot find example dir: {examples}')
 
-  container = stack.enter_context(Container.new_from(base, network='none', mounts=[Mount(src=dist, dst='/mnt')]))
+  container = stack.enter_context(Container.new_from(base, mounts=[Mount(src=dist, dst='/mnt')]))
 
   container.run('pip', 'install', '--no-cache-dir', '--no-index', '--find-links', 'file:///mnt/', 'nutils', env=dict(PYTHONHASHSEED='0'))
+  container.run('pip', 'install', '--no-cache-dir', 'https://github.com/evalf/nutils-SI/archive/main.tar.gz', env=dict(PYTHONHASHSEED='0'))
   container.add_label('org.opencontainers.image.url', 'https://github.com/evalf/nutils')
   container.add_label('org.opencontainers.image.source', 'https://github.com/evalf/nutils')
   container.add_label('org.opencontainers.image.authors', 'Evalf')
