@@ -5,17 +5,17 @@ import numpy
 
 class almostequal64(TestCase):
 
-  maxDiff = 5000
-  actual = numpy.arange(16).reshape(2, 4, 2)
-  desired = 'eNpjYAgyX2tRbsluVW51yUreOsl6rvVFa0YbXZtQmyqbOTYAmAYJvQ=='
+    maxDiff = 5000
+    actual = numpy.arange(16).reshape(2, 4, 2)
+    desired = 'eNpjYAgyX2tRbsluVW51yUreOsl6rvVFa0YbXZtQmyqbOTYAmAYJvQ=='
 
-  def test_equal(self):
-    self.assertAlmostEqual64(self.actual, self.desired)
+    def test_equal(self):
+        self.assertAlmostEqual64(self.actual, self.desired)
 
-  def test_notequal(self):
-    with self.assertRaises(AssertionError) as cm:
-      self.assertAlmostEqual64(self.actual, 'eNpjYFhrwW51ySrJ+qK1rk2VzR6b7zY6tjG27bbrba/YfrcFALIODB0=')
-    self.assertEqual(str(cm.exception), '''15/16 values do not match up to atol=2.00e-15, rtol=2.00e-03:
+    def test_notequal(self):
+        with self.assertRaises(AssertionError) as cm:
+            self.assertAlmostEqual64(self.actual, 'eNpjYFhrwW51ySrJ+qK1rk2VzR6b7zY6tjG27bbrba/YfrcFALIODB0=')
+        self.assertEqual(str(cm.exception), '''15/16 values do not match up to atol=2.00e-15, rtol=2.00e-03:
 [0, 0, 1] desired: +2.0014e+00, actual: +1.0000e+00, spacing: 4.0e-03
 [0, 1, 0] desired: +3.9981e+00, actual: +2.0000e+00, spacing: 8.0e-03
 [0, 1, 1] desired: +6.0004e+00, actual: +3.0000e+00, spacing: 1.2e-02
@@ -30,9 +30,9 @@ class almostequal64(TestCase):
 If this is expected, update the base64 string to:
 ''' + self.desired)
 
-  def test_fail(self):
-    with self.assertRaises(AssertionError) as cm:
-      self.assertAlmostEqual64(self.actual, 'invalid')
-    self.assertEqual(str(cm.exception), '''failed to decode data: Incorrect padding
+    def test_fail(self):
+        with self.assertRaises(AssertionError) as cm:
+            self.assertAlmostEqual64(self.actual, 'invalid')
+        self.assertEqual(str(cm.exception), '''failed to decode data: Incorrect padding
 If this is expected, update the base64 string to:
 ''' + self.desired)
