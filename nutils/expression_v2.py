@@ -595,33 +595,33 @@ class Namespace:
 
   def __init__(self) -> None:
     self.opposite = function.opposite
-    self.sin = function.sin
-    self.cos = function.cos
-    self.tan = function.tan
-    self.sinh = function.sinh
-    self.cosh = function.cosh
-    self.tanh = function.tanh
-    self.arcsin = function.arcsin
-    self.arccos = function.arccos
-    self.arctan = function.arctan
-    self.arctanh = function.arctanh
-    self.exp = function.exp
-    self.abs = function.abs
-    self.ln = function.ln
-    self.log = function.ln
-    self.log2 = function.log2
-    self.log10 = function.log10
-    self.sqrt = function.sqrt
-    self.sign = function.sign
-    self.conj = function.conj
-    self.real = function.real
-    self.imag = function.imag
+    self.sin = numpy.sin
+    self.cos = numpy.cos
+    self.tan = numpy.tan
+    self.sinh = numpy.sinh
+    self.cosh = numpy.cosh
+    self.tanh = numpy.tanh
+    self.arcsin = numpy.arcsin
+    self.arccos = numpy.arccos
+    self.arctan = numpy.arctan
+    self.arctanh = numpy.arctanh
+    self.exp = numpy.exp
+    self.abs = numpy.abs
+    self.ln = numpy.log
+    self.log = numpy.log
+    self.log2 = numpy.log2
+    self.log10 = numpy.log10
+    self.sqrt = numpy.sqrt
+    self.sign = numpy.sign
+    self.conj = numpy.conj
+    self.real = numpy.real
+    self.imag = numpy.imag
 
   def __setattr__(self, attr: str, value: Union[function.Array, str]) -> None:
     name, underscore, indices = attr.partition('_')
     if isinstance(value, (int, float, complex, numpy.ndarray)):
       value = function.Array.cast(value)
-    if isinstance(value, function.Array):
+    if hasattr(value, '__array_ufunc__') and hasattr(value, '__array_function__'):
       if underscore:
         raise AttributeError('Cannot assign an array to an attribute with an underscore.')
       super().__setattr__(name, value)
@@ -632,7 +632,7 @@ class Namespace:
         raise AttributeError('All indices must be unique.')
       ops = _FunctionArrayOps(self)
       array, shape, expression_indices, summed = _Parser(ops).parse_expression(_Substring(value))
-      assert array.shape == shape
+      assert numpy.shape(array) == shape
       if expression_indices != indices:
         for index in sorted(set(indices) - set(expression_indices)):
           raise AttributeError('Index {} of the namespace attribute is missing in the expression.'.format(index))
@@ -640,7 +640,7 @@ class Namespace:
           raise AttributeError('Index {} of the expression is missing in the namespace attribute.'.format(index))
         array = ops.align(array, expression_indices, indices)
       super().__setattr__(name, array)
-    elif isinstance(value, Callable):
+    elif callable(value):
       if underscore:
         raise AttributeError('Cannot assign a function to an attribute with an underscore.')
       super().__setattr__(name, value)
@@ -652,7 +652,7 @@ class Namespace:
     parser = _Parser(ops)
     if isinstance(expression, str):
       array, shape, indices, summed = parser.parse_expression(_Substring(expression))
-      assert array.shape == shape
+      assert numpy.shape(array) == shape
       array = ops.align(array, indices, ''.join(sorted(indices)))
       return array
     elif isinstance(expression, tuple):
@@ -702,17 +702,17 @@ class Namespace:
     if gradient:
       setattr(self, gradient, lambda arg: function.grad(arg, geom))
     if curl:
-      if geom.shape != (3,):
-        raise ValueError('The curl can only be defined for a geometry with shape (3,) but got {}.'.format(geom.shape))
+      if numpy.shape(geom) != (3,):
+        raise ValueError('The curl can only be defined for a geometry with shape (3,) but got {}.'.format(numpy.shape(geom)))
       # Definition: `curl_ki(u_...)` := `ε_kji ∇_j(u_...)`. Should be used as
       # `curl_ki(u_i)`, which is equivalent to `ε_kji ∇_j(u_i)`.
       setattr(self, curl, lambda arg: (function.levicivita(3) * function.grad(arg, geom)[...,numpy.newaxis,:,numpy.newaxis]).sum(-2))
     if normal:
       setattr(self, normal, function.normal(geom))
     for i, jacobian in enumerate(jacobians):
-      if i > geom.size:
+      if i > numpy.size(geom):
         raise ValueError('Cannot define the jacobian {!r}: dimension is negative.'.format(jacobian))
-      setattr(self, jacobian, function.jacobian(geom, geom.size - i))
+      setattr(self, jacobian, function.jacobian(geom, numpy.size(geom) - i))
 
   def copy_(self, **replacements: Mapping[str, function.Array]) -> 'Namespace':
     '''Return a copy of this namespace.
@@ -755,12 +755,12 @@ class _FunctionArrayOps:
       array = getattr(self.namespace, name)
     except AttributeError:
       return None
-    if not isinstance(array, function.Array):
+    if callable(array):
       return None
-    if array.ndim == ndim:
-      return array, array.shape
+    elif numpy.ndim(array) == ndim:
+      return array, numpy.shape(array)
     else:
-      return _InvalidDimension(array.ndim)
+      return _InvalidDimension(numpy.ndim(array))
 
   def call(self, name: str, ngenerates: int, arg: function.Array) -> Optional[Union[Tuple[function.Array, _Shape],_InvalidDimension]]:
     try:
@@ -768,23 +768,22 @@ class _FunctionArrayOps:
     except AttributeError:
       return None
     array = func(arg)
-    assert isinstance(array, function.Array)
-    assert array.shape[:arg.ndim] == arg.shape
-    if array.ndim == arg.ndim + ngenerates:
-      return array, array.shape[arg.ndim:]
+    assert numpy.shape(array)[:numpy.ndim(arg)] == numpy.shape(arg)
+    if numpy.ndim(array) == numpy.ndim(arg) + ngenerates:
+      return array, numpy.shape(array)[numpy.ndim(arg):]
     else:
-      return _InvalidDimension(array.ndim - arg.ndim)
+      return _InvalidDimension(numpy.ndim(array) - numpy.ndim(arg))
 
   def get_element(self, array: function.Array, axis: int, index: int) -> function.Array:
-    assert 0 <= axis < array.ndim and 0 <= index < array.shape[axis]
-    return function.get(array, axis, index)
+    assert 0 <= axis < numpy.ndim(array) and 0 <= index < numpy.shape(array)[axis]
+    return numpy.take(array, index, axis)
 
   def transpose(self, array: function.Array, axes: Tuple[int, ...]) -> function.Array:
-    assert array.ndim == len(axes)
-    return function.transpose(array, axes)
+    assert numpy.ndim(array) == len(axes)
+    return numpy.transpose(array, axes)
 
   def trace(self, array: function.Array, axis1: int, axis2: int) -> function.Array:
-    return function.trace(array, axis1, axis2)
+    return numpy.trace(array, axis1, axis2)
 
   def scope(self, array: function.Array) -> function.Array:
     return array
@@ -796,20 +795,24 @@ class _FunctionArrayOps:
     return function.jump(array)
 
   def add(self, *args: Tuple[bool, function.Array]) -> function.Array:
-    assert all(arg.shape == args[0][1].shape for neg, arg in args[1:])
+    assert all(numpy.shape(arg) == numpy.shape(args[0][1]) for neg, arg in args[1:])
     negated = (-arg if neg else arg for neg, arg in args)
-    return functools.reduce(function.add, negated)
+    return functools.reduce(numpy.add, negated)
+
+  def append_axes(self, array, shape):
+    shuffle = numpy.concatenate([len(shape) + numpy.arange(numpy.ndim(array)), numpy.arange(len(shape))])
+    return numpy.transpose(numpy.broadcast_to(array, shape + numpy.shape(array)), shuffle)
 
   def multiply(self, *args: function.Array) -> function.Array:
     result = args[0]
     for arg in args[1:]:
-      result = function.multiply(function._append_axes(result, arg.shape), function._prepend_axes(arg, result.shape))
+      result = numpy.multiply(self.append_axes(result, numpy.shape(arg)), arg)
     return result
 
   def divide(self, numerator: function.Array, denominator: function.Array) -> function.Array:
-    assert denominator.ndim == 0
-    return function.divide(numerator, function._append_axes(denominator, numerator.shape))
+    assert numpy.ndim(denominator) == 0
+    return numpy.true_divide(numerator, denominator)
 
   def power(self, base: function.Array, exponent: function.Array) -> function.Array:
-    assert exponent.ndim == 0
-    return function.power(base, function._append_axes(exponent, base.shape))
+    assert numpy.ndim(exponent) == 0
+    return numpy.power(base, exponent)

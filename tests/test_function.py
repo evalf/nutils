@@ -1310,3 +1310,21 @@ class Eval(TestCase):
     g = function.dotarg('v', numpy.array([3,2,1]))
     retvals = function.eval([f, g], v=numpy.array([4,5,6]))
     self.assertEqual(retvals, (4+10+18, 12+10+6))
+
+class simplifications(TestCase):
+
+  def test_multiply(self):
+    f = function.Argument('test', shape=(2,3), dtype=float)
+    self.assertIs(f * 1, f)
+    self.assertIs(f * 1., f)
+    f = function.Argument('test', shape=(2,3), dtype=int)
+    self.assertIs(f * 1, f)
+    self.assertIsNot(f * 1., f)
+
+  def test_divide(self):
+    f = function.Argument('test', shape=(2,3), dtype=float)
+    self.assertIs(f / 1, f)
+    self.assertIs(f / 1., f)
+    f = function.Argument('test', shape=(2,3), dtype=int)
+    self.assertIsNot(f / 1, f)
+    self.assertIsNot(f / 1., f)

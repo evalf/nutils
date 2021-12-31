@@ -189,9 +189,10 @@ class Sample(types.Singleton):
         Optional arguments for function evaluation.
     '''
 
+    funcs, funcscales = zip(*map(function.Array.cast_withscale, funcs))
     datas = self.integrate_sparse(funcs, argdict(arguments))
     with log.iter.fraction('assembling', datas) as items:
-      return tuple(_convert(data, inplace=True) for data in items)
+      return tuple(_convert(data, inplace=True) * scale for data, scale in zip(items, funcscales))
 
   @util.single_or_multiple
   def integrate_sparse(self, funcs: Iterable[function.IntoArray], arguments: Optional[Mapping[str, numpy.ndarray]] = None) -> Tuple[numpy.ndarray, ...]:
@@ -216,7 +217,8 @@ class Sample(types.Singleton):
         Integrand.
     '''
 
-    return _Integral(function.Array.cast(__func), self)
+    func, funcscale = function.Array.cast_withscale(__func)
+    return _Integral(func, self) * funcscale
 
   @util.positional_only
   @util.single_or_multiple
@@ -231,9 +233,10 @@ class Sample(types.Singleton):
         Optional arguments for function evaluation.
     '''
 
+    funcs, funcscales = zip(*map(function.Array.cast_withscale, funcs))
     datas = self.eval_sparse(funcs, arguments)
     with log.iter.fraction('assembling', datas) as items:
-      return tuple(map(sparse.toarray, items))
+      return tuple(sparse.toarray(data) * funcscale for data, funcscale in zip(datas, funcscales))
 
   @util.positional_only
   @util.single_or_multiple
@@ -251,10 +254,10 @@ class Sample(types.Singleton):
     return evaluable.eval_sparse(map(self, funcs), **(arguments or {}))
 
   def __call__(self, __func: function.IntoArray) -> function.Array:
-    func = _ConcatenatePoints(function.Array.cast(__func), self)
+    func, funcscale = function.Array.cast_withscale(__func)
     ielem = evaluable.loop_index('_sample_' + '_'.join(self.spaces), self.nelems)
     indices = evaluable.loop_concatenate(evaluable._flat(self.get_evaluable_indices(ielem)), ielem)
-    return _ReorderPoints(func, indices)
+    return _ReorderPoints(_ConcatenatePoints(func, self), indices) * funcscale
 
   def basis(self) -> function.Array:
     '''Basis-like function that for every point in the sample evaluates to the

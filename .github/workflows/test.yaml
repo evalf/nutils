@@ -134,7 +134,7 @@ jobs:
         id: install
         run: |
           python -um pip install --upgrade wheel
-          python -um pip install --upgrade treelog stringly matplotlib scipy pillow numpy
+          python -um pip install --upgrade treelog stringly matplotlib scipy pillow numpy git+https://github.com/evalf/nutils-SI.git
           # Install Nutils from `dist` dir created in job `build-python-package`.
           python -um pip install --no-index --find-links ./dist nutils
       - name: Test
