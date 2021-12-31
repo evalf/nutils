@@ -26,6 +26,7 @@ Contents
    :maxdepth: 1
 
    intro
+   install
    tutorial
    examples
    changelog
