@@ -85,17 +85,17 @@ jobs:
         env:
           _numpy_version: ${{ matrix.numpy-version }}
         run: |
-          python -um pip install --upgrade wheel
-          python -um pip install --upgrade coverage treelog stringly meshio numpy$_numpy_version
+          python -um pip install --upgrade --upgrade-strategy eager wheel
+          python -um pip install --upgrade --upgrade-strategy eager coverage treelog stringly meshio numpy$_numpy_version
           # Install Nutils from `dist` dir created in job `build-python-package`.
           python -um pip install --no-index --find-links ./dist nutils
       - name: Install Scipy
         if: ${{ matrix.matrix-backend == 'scipy' }}
-        run: python -um pip install --upgrade scipy
+        run: python -um pip install --upgrade --upgrade-strategy eager scipy
       - name: Configure MKL
         if: ${{ matrix.matrix-backend == 'mkl' }}
         run: |
-          python -um pip install --upgrade mkl
+          python -um pip install --upgrade --upgrade-strategy eager mkl
           python -um devtools.gha.configure_mkl
       - name: Test
         run: python -um coverage run -m unittest discover -b -q -t . -s tests
@@ -133,8 +133,8 @@ jobs:
       - name: Install Nutils and dependencies
         id: install
         run: |
-          python -um pip install --upgrade wheel
-          python -um pip install --upgrade treelog stringly matplotlib scipy pillow numpy git+https://github.com/evalf/nutils-SI.git
+          python -um pip install --upgrade --upgrade-strategy eager wheel
+          python -um pip install --upgrade --upgrade-strategy eager treelog stringly matplotlib scipy pillow numpy git+https://github.com/evalf/nutils-SI.git
           # Install Nutils from `dist` dir created in job `build-python-package`.
           python -um pip install --no-index --find-links ./dist nutils
       - name: Test
@@ -148,7 +148,7 @@ jobs:
       - name: Install dependencies
         run: |
           python3 -um pip install setuptools wheel
-          python3 -um pip install --upgrade .[docs]
+          python3 -um pip install --upgrade --upgrade-strategy eager .[docs]
       - name: Build docs
         run: python3 setup.py build_sphinx --nitpicky --warning-is-error --keep-going
   build-and-test-container-image:
