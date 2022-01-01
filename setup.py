@@ -1,3 +1,5 @@
+import re
+import os
 from setuptools import setup
 
 long_description = """
@@ -19,31 +21,30 @@ transition from academic research projects to full scale, real world
 applications.
 """
 
-import os, re
 with open(os.path.join('nutils', '__init__.py')) as f:
-  version = next(filter(None, map(re.compile("^version = '([a-zA-Z0-9.]+)'$").match, f))).group(1)
+    version = next(filter(None, map(re.compile("^version = '([a-zA-Z0-9.]+)'$").match, f))).group(1)
 
 setup(
-  name = 'nutils',
-  version = version,
-  description = 'Numerical Utilities for Finite Element Analysis',
-  author = 'Evalf',
-  author_email = 'info@nutils.org',
-  url = 'http://nutils.org',
-  download_url = 'https://github.com/nutils/nutils/releases',
-  packages = ['nutils', 'nutils.matrix'],
-  long_description = long_description,
-  license = 'MIT',
-  python_requires = '>=3.5',
-  install_requires = ['numpy>=1.17', 'treelog>=1.0b5', 'stringly'],
-  extras_require = dict(
-    docs=['Sphinx>=1.6','scipy>=0.13','matplotlib>=1.3'],
-    matrix_scipy=['scipy>=0.13'],
-    matrix_mkl=['mkl'],
-    export_mpl=['matplotlib>=1.3','pillow>2.6'],
-    import_gmsh=['meshio'],
-  ),
-  command_options = dict(
-    test=dict(test_loader=('setup.py', 'unittest:TestLoader')),
-  ),
+    name='nutils',
+    version=version,
+    description='Numerical Utilities for Finite Element Analysis',
+    author='Evalf',
+    author_email='info@nutils.org',
+    url='http://nutils.org',
+    download_url='https://github.com/nutils/nutils/releases',
+    packages=['nutils', 'nutils.matrix'],
+    long_description=long_description,
+    license='MIT',
+    python_requires='>=3.5',
+    install_requires=['numpy>=1.17', 'treelog>=1.0b5', 'stringly'],
+    extras_require=dict(
+        docs=['Sphinx>=1.6', 'scipy>=0.13', 'matplotlib>=1.3'],
+        matrix_scipy=['scipy>=0.13'],
+        matrix_mkl=['mkl'],
+        export_mpl=['matplotlib>=1.3', 'pillow>2.6'],
+        import_gmsh=['meshio'],
+    ),
+    command_options=dict(
+        test=dict(test_loader=('setup.py', 'unittest:TestLoader')),
+    ),
 )

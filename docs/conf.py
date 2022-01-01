@@ -12,12 +12,14 @@
 # All configuration values have a default; values that are commented out
 # serve to show the default.
 
-import sys, os, re
+import sys
+import os
+import re
 
 try:
-  from sphinx import version_info as _sphinx_version_info
+    from sphinx import version_info as _sphinx_version_info
 except ImportError:
-  _sphinx_version_info = ()
+    _sphinx_version_info = ()
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
@@ -65,7 +67,7 @@ copyright = u'2014, Evalf'
 # built documents.
 #
 with open(os.path.join('..', 'nutils', '__init__.py'), encoding='utf-8') as f:
-  nutils_version = next(filter(None, map(re.compile("^version = '([a-zA-Z0-9.]+)'$").match, f))).group(1)
+    nutils_version = next(filter(None, map(re.compile("^version = '([a-zA-Z0-9.]+)'$").match, f))).group(1)
 # The short X.Y version.
 version = re.search('^[0-9]+\\.[0-9]+', nutils_version).group(0)
 # The full version, including alpha/beta/rc tags.
@@ -104,7 +106,7 @@ exclude_patterns = []
 pygments_style = 'sphinx'
 
 # A list of ignored prefixes for module index sorting.
-modindex_common_prefix = [ 'nutils.' ]
+modindex_common_prefix = ['nutils.']
 
 # If true, keep warnings as "system message" paragraphs in the built documents.
 #keep_warnings = False
@@ -198,22 +200,22 @@ htmlhelp_basename = 'nutilsdoc'
 # -- Options for LaTeX output ---------------------------------------------
 
 latex_elements = {
-# The paper size ('letterpaper' or 'a4paper').
-#'papersize': 'letterpaper',
+    # The paper size ('letterpaper' or 'a4paper').
+    # 'papersize': 'letterpaper',
 
-# The font size ('10pt', '11pt' or '12pt').
-#'pointsize': '10pt',
+    # The font size ('10pt', '11pt' or '12pt').
+    # 'pointsize': '10pt',
 
-# Additional stuff for the LaTeX preamble.
-#'preamble': '',
+    # Additional stuff for the LaTeX preamble.
+    # 'preamble': '',
 }
 
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-  ('index', 'nutils.tex', u'nutils Documentation',
-   u'Evalf', 'manual'),
+    ('index', 'nutils.tex', u'nutils Documentation',
+     u'Evalf', 'manual'),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of
@@ -256,9 +258,9 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-  ('index', 'nutils', u'nutils Documentation',
-   u'Evalf', 'nutils', 'One line description of project.',
-   'Miscellaneous'),
+    ('index', 'nutils', u'nutils Documentation',
+     u'Evalf', 'nutils', 'One line description of project.',
+     'Miscellaneous'),
 ]
 
 # Documents to append as an appendix to all manuals.
@@ -344,11 +346,11 @@ epub_exclude_files = ['search.html']
 #epub_use_index = True
 
 autodoc_member_order = 'bysource'
-if _sphinx_version_info >= (1,8):
-    autodoc_default_options = {'members':None, 'special-members':None, 'show-inheritance':None}
+if _sphinx_version_info >= (1, 8):
+    autodoc_default_options = {'members': None, 'special-members': None, 'show-inheritance': None}
 else:
     autodoc_default_flags = ['members', 'special-members', 'show-inheritance']
-autodoc_inherit_docstrings = False # i.e. don't document implementations of abstract methods (if the implementation does not have a docstring)
+autodoc_inherit_docstrings = False  # i.e. don't document implementations of abstract methods (if the implementation does not have a docstring)
 
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),

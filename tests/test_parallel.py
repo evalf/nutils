@@ -1,60 +1,66 @@
-import unittest, os, multiprocessing, time, sys, warnings as _builtin_warnings
+import unittest
+import os
+import multiprocessing
+import time
+import sys
+import warnings as _builtin_warnings
 from nutils import parallel, testing, warnings
 
 canfork = hasattr(os, 'fork')
 
+
 @unittest.skipIf(sys.platform == 'darwin', 'fork is unreliable (in combination with matplotlib)')
 class Test(testing.TestCase):
 
-  def setUp(self):
-    super().setUp()
-    self.enter_context(parallel.maxprocs(3))
-    _builtin_warnings.filterwarnings('ignore', 'fork is unavailable on this platform', warnings.NutilsWarning)
+    def setUp(self):
+        super().setUp()
+        self.enter_context(parallel.maxprocs(3))
+        _builtin_warnings.filterwarnings('ignore', 'fork is unavailable on this platform', warnings.NutilsWarning)
 
-  def test_maxprocs(self):
-    with parallel.maxprocs(4):
-      self.assertEqual(parallel._maxprocs.value, 4)
-    self.assertEqual(parallel._maxprocs.value, 3)
+    def test_maxprocs(self):
+        with parallel.maxprocs(4):
+            self.assertEqual(parallel._maxprocs.value, 4)
+        self.assertEqual(parallel._maxprocs.value, 3)
 
-  def test_fork(self):
-    mask = multiprocessing.RawValue('i', 0)
-    lock = multiprocessing.Lock()
-    with parallel.fork() as procid, lock:
-      mask.value |= 1 << procid
-    self.assertEqual(mask.value, 0b111 if canfork else 1)
+    def test_fork(self):
+        mask = multiprocessing.RawValue('i', 0)
+        lock = multiprocessing.Lock()
+        with parallel.fork() as procid, lock:
+            mask.value |= 1 << procid
+        self.assertEqual(mask.value, 0b111 if canfork else 1)
 
-  def test_shzeros(self):
-    a = parallel.shzeros([3], dtype=int)
-    with parallel.fork() as procid:
-      a[procid] = 1
-    self.assertEqual(a.tolist(), [1,1,1] if canfork else [1,0,0])
+    def test_shzeros(self):
+        a = parallel.shzeros([3], dtype=int)
+        with parallel.fork() as procid:
+            a[procid] = 1
+        self.assertEqual(a.tolist(), [1, 1, 1] if canfork else [1, 0, 0])
 
-  def test_failinmain(self):
-    with self.assertRaises(ZeroDivisionError), parallel.fork() as procid:
-      if procid == 0:
-        1/0
+    def test_failinmain(self):
+        with self.assertRaises(ZeroDivisionError), parallel.fork() as procid:
+            if procid == 0:
+                1/0
 
-  @unittest.skipIf(not canfork, 'fork is not available on this system')
-  def test_failinchild(self):
-    with self.assertRaisesRegex(Exception, 'fork failed in 2 out of 3 processes'), parallel.fork() as procid:
-      if procid != 0:
-        1/0
+    @unittest.skipIf(not canfork, 'fork is not available on this system')
+    def test_failinchild(self):
+        with self.assertRaisesRegex(Exception, 'fork failed in 2 out of 3 processes'), parallel.fork() as procid:
+            if procid != 0:
+                1/0
 
-  def test_range(self):
-    a = parallel.shempty([32], dtype=int)
-    a[:] = -1
-    r = parallel.range(len(a))
-    with parallel.fork() as procid:
-      for i in r:
-        a[i] = procid
-        time.sleep(.01)
-    self.assertEqual(min(a), 0)
-    self.assertEqual(max(a), 2 if canfork else 0)
+    def test_range(self):
+        a = parallel.shempty([32], dtype=int)
+        a[:] = -1
+        r = parallel.range(len(a))
+        with parallel.fork() as procid:
+            for i in r:
+                a[i] = procid
+                time.sleep(.01)
+        self.assertEqual(min(a), 0)
+        self.assertEqual(max(a), 2 if canfork else 0)
 
-  def test_ctxrange(self):
-    a = parallel.shzeros([32], dtype=int)
-    with parallel.ctxrange('test', len(a)) as r:
-      for i in r:
-        a[i] = 1
-        time.sleep(.01)
-    self.assertEqual(a.tolist(), [1]*len(a))
+    def test_ctxrange(self):
+        a = parallel.shzeros([32], dtype=int)
+        with parallel.ctxrange('test', len(a)) as r:
+            for i in r:
+                a[i] = 1
+                time.sleep(.01)
+        self.assertEqual(a.tolist(), [1]*len(a))
