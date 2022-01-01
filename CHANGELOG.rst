@@ -6,8 +6,8 @@ The following overview lists user facing changes as well as newly added
 features in inverse chronological order.
 
 
-New in v7.0 (in development)
-----------------------------
+New in v7.0 "hiyamugi"
+----------------------
 
 - New: expression and namespace version 2
 
