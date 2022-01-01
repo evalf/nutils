@@ -228,8 +228,8 @@ class test(testing.TestCase):
                      endtime=parse('1h'), seed=0, circle=False, stab=stab.linear, showflux=True)
         with self.subTest('concentration'):
             self.assertAlmostEqual64(state['φ0'], '''
-      eNoBYgCd/xM3LjTtNYs3MDcUyt41uc14zjo0LzKzNm812jFhNNMzwDYgzbMzV8o0yCM1rzWeypE3Tcnx
-      L07NzTa4NlMyETREyrPIGMxYMl82VDbjy1/M8clZyf3IRjday6XLmMl6NRnJMF4tqQ==''')
+                eNoBYgCd/xM3LjTtNYs3MDcUyt41uc14zjo0LzKzNm812jFhNNMzwDYgzbMzV8o0yCM1rzWeypE3Tcnx
+                L07NzTa4NlMyETREyrPIGMxYMl82VDbjy1/M8clZyf3IRjday6XLmMl6NRnJMF4tqQ==''')
 
     def test_square(self):
         state = main(size=parse('10cm'), epsilon=parse('5cm'), mobility=parse('1μL*s/kg'),
@@ -238,12 +238,12 @@ class test(testing.TestCase):
                      endtime=parse('2h'), seed=0, circle=False, stab=stab.linear, showflux=True)
         with self.subTest('concentration'):
             self.assertAlmostEqual64(state['φ'], '''
-      eNoBYgCd/zE1EjX1NaA2+TXiMxkz0TS9NL01ajaRNZoxYNElNRM1LDUlNZQw0cqgysI1nTWcNN4xLsuk
-      ybDJvDWaNTQ07s7nysnJ6ckPNQY1CzNozKjK58kOysQ0zTQKM73M3coVyjfKR9cuPg==''')
+                eNoBYgCd/zE1EjX1NaA2+TXiMxkz0TS9NL01ajaRNZoxYNElNRM1LDUlNZQw0cqgysI1nTWcNN4xLsuk
+                ybDJvDWaNTQ07s7nysnJ6ckPNQY1CzNozKjK58kOysQ0zTQKM73M3coVyjfKR9cuPg==''')
         with self.subTest('chemical-potential'):
             self.assertAlmostEqual64(state['η'], '''
-      eNoBYgCd/3TIkccBNkQ6IDqIN3/MF8cSx9Y02TmdOVHLMcecxxLIEjQUOAHOa8a1xWw3izb2M9UzPMc0
-      xmnGpzibODY34tETyJHHp8hbyWU2xzZTydfIOsrNyo3Gi8jCyyXIm8hkzD3K1IAxtQ==''')
+                eNoBYgCd/3TIkccBNkQ6IDqIN3/MF8cSx9Y02TmdOVHLMcecxxLIEjQUOAHOa8a1xWw3izb2M9UzPMc0
+                xmnGpzibODY34tETyJHHp8hbyWU2xzZTydfIOsrNyo3Gi8jCyyXIm8hkzD3K1IAxtQ==''')
 
     def test_mixedcircle(self):
         state = main(size=parse('10cm'), epsilon=parse('5cm'), mobility=parse('1μL*s/kg'),
@@ -252,9 +252,9 @@ class test(testing.TestCase):
                      endtime=parse('2h'), seed=0, circle=True, stab=stab.linear, showflux=True)
         with self.subTest('concentration'):
             self.assertAlmostEqual64(state['φ'], '''
-      eNoBYgCd/w01AjX+NAw1IjXTNMw0iTRPNDI1vDQcNTk0uzJ9NFM0HS4P0SbMcssOy0wzZjNw0b0zljHK
-      z6U0ps8zM/LPjspVypDKUsuLzk3MgM3OzYnN7s/61KfP2zH4MADNhst3z7DMoBcvyQ==''')
+                eNoBYgCd/w01AjX+NAw1IjXTNMw0iTRPNDI1vDQcNTk0uzJ9NFM0HS4P0SbMcssOy0wzZjNw0b0zljHK
+                z6U0ps8zM/LPjspVypDKUsuLzk3MgM3OzYnN7s/61KfP2zH4MADNhst3z7DMoBcvyQ==''')
         with self.subTest('chemical-potential'):
             self.assertAlmostEqual64(state['η'], '''
-      eNoBYgCd/+s1Bcp4ztI3gjYFyZk4YzVjyfA2AzdAMj032zfLNTE4fMm7yLnGisbqxZPJ2MsfyD81csiv
-      x+E5xDhjOJA3msZ1xZTFa8ddx/fG88eCx73H1MieM/c0WDihMUrLvMYZNpvIrWQ0sw==''')
+                eNoBYgCd/+s1Bcp4ztI3gjYFyZk4YzVjyfA2AzdAMj032zfLNTE4fMm7yLnGisbqxZPJ2MsfyD81csiv
+                x+E5xDhjOJA3msZ1xZTFa8ddx/fG88eCx73H1MieM/c0WDihMUrLvMYZNpvIrWQ0sw==''')

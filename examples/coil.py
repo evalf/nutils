@@ -191,27 +191,27 @@ class test(testing.TestCase):
         state = main(nelems=16, degree=2)
         with self.subTest('A.real'):
             self.assertAlmostEqual64(state['A'].real, '''
-      eNoNke9rzWEYh5NzVmtnvud5nvv+3PdzTn7lIIRlL3Rq/wArinFGaytFo6xjTedISMwsJsNksbJYtlIS
-      U9pqLcqJKL9ytL3xYm92kpkQ2vL9B67P9el6TS/oHuVpPb13zW7WZu2U2WaG4t8CF8xWVsS+YgZF3MYu
-      /OYLTHyFyijrXllrNxvEqxaVa1S/yJBk5CfaEUMnz1MzPXcxV23JVAWjOq4D2qAL9YakZBAp9HKE99F9
-      99E+NcWgw5/yaT+tJzWm3WLlEiI4wu9oKdW6TTYTL/m//oPf4T9rvU7IXvmE7RjjFB+lAXfZjsRrk2uT
-      qxM3fcSfDTfaJSqn8YubeJhKbtIG5kdiImESHX5ez2iFXpWk9MHjPE/Rckq4jDnhO/0xv8SPhfwZOScq
-      d7EG/VzGW0ODHvNdS+GDa7pTy/WJNMgcrmMlBln4ALW6l2aZrtCk/pO3cksaRaSALCrRx8pt1OX+mLzk
-      5JDUS01ILmEYOWzEJB/nKGep1y22j/AYD3AH3chjD6oRxRu+yDVcpN3U49K2wAV+xqP8kPu5i9u4jjfw
-      HI1Ta9ihya2zLdRCh+kg7adGqqMtlKZVFKNpN+JyboFL2f8Z6oV2''')
+                eNoNke9rzWEYh5NzVmtnvud5nvv+3PdzTn7lIIRlL3Rq/wArinFGaytFo6xjTedISMwsJsNksbJYtlIS
+                U9pqLcqJKL9ytL3xYm92kpkQ2vL9B67P9el6TS/oHuVpPb13zW7WZu2U2WaG4t8CF8xWVsS+YgZF3MYu
+                /OYLTHyFyijrXllrNxvEqxaVa1S/yJBk5CfaEUMnz1MzPXcxV23JVAWjOq4D2qAL9YakZBAp9HKE99F9
+                99E+NcWgw5/yaT+tJzWm3WLlEiI4wu9oKdW6TTYTL/m//oPf4T9rvU7IXvmE7RjjFB+lAXfZjsRrk2uT
+                qxM3fcSfDTfaJSqn8YubeJhKbtIG5kdiImESHX5ez2iFXpWk9MHjPE/Rckq4jDnhO/0xv8SPhfwZOScq
+                d7EG/VzGW0ODHvNdS+GDa7pTy/WJNMgcrmMlBln4ALW6l2aZrtCk/pO3cksaRaSALCrRx8pt1OX+mLzk
+                5JDUS01ILmEYOWzEJB/nKGep1y22j/AYD3AH3chjD6oRxRu+yDVcpN3U49K2wAV+xqP8kPu5i9u4jjfw
+                HI1Ta9ihya2zLdRCh+kg7adGqqMtlKZVFKNpN+JyboFL2f8Z6oV2''')
 
     def test_ac_5(self):
         state = main(nelems=16, degree=2, freq=1000, nturns=5)
         with self.subTest('A.imag'):
             self.assertAlmostEqual64(state['A'].imag, '''
-      eNoNkEtIlGEYhRcWBqVWNgsxujBImxJmIIwEc2FJCYVaQxEErRIvkyFOhqTB4CLSpE3TxQiLCjXQEdJN
-      QUkZKMxCyxYhmpvvPe/7ft//K11AvPSvzuJZnPOcOZ3TeV1SX3PtERu3n2zEfXRNXqkfXU6s9P5O8wiP
-      8nue5kXeLhXyRHL0mVbZApfn1fj1K4MYwgjeYQLzWEcZpzhPXkqtHrAhF/Pqlzdpg9YpG/kIowb3wGjg
-      rTImSU3YUTfhN9MNaqcEdVIfDdIaNeAPUnxGQpplS12Fn0+7KItCVBhkLSVpC17jNG/wFxnWRbvgtZmk
-      +WxumQ4zY6rNX/ODmrGfp7hH4vrIdnuPzQuTMU9Nv/lpeswe+h407Aic6qRcr9iT3jE6SoepjE5RJXXR
-      MOXiPkI8xBfkoEbtNu859dNAsGycvhFRGHFM4Xjwx3nZqbvtrCtCEQ4hivLALoE+zGIvt/IvvhbwTX3j
-      0khjDB8wjQX8QyFXcidP8j7plbCuaZeLcYwv8VVu5HZ+wG85w6sckZsyI+c0xza6YimWiJTICamSy3Jd
-      7spAwLL1rKa12t5xLdqirdqmtzWp3ZrSVzquGXVaYC/ar/ah+w/zsU82''')
+                eNoNkEtIlGEYhRcWBqVWNgsxujBImxJmIIwEc2FJCYVaQxEErRIvkyFOhqTB4CLSpE3TxQiLCjXQEdJN
+                QUkZKMxCyxYhmpvvPe/7ft//K11AvPSvzuJZnPOcOZ3TeV1SX3PtERu3n2zEfXRNXqkfXU6s9P5O8wiP
+                8nue5kXeLhXyRHL0mVbZApfn1fj1K4MYwgjeYQLzWEcZpzhPXkqtHrAhF/Pqlzdpg9YpG/kIowb3wGjg
+                rTImSU3YUTfhN9MNaqcEdVIfDdIaNeAPUnxGQpplS12Fn0+7KItCVBhkLSVpC17jNG/wFxnWRbvgtZmk
+                +WxumQ4zY6rNX/ODmrGfp7hH4vrIdnuPzQuTMU9Nv/lpeswe+h407Aic6qRcr9iT3jE6SoepjE5RJXXR
+                MOXiPkI8xBfkoEbtNu859dNAsGycvhFRGHFM4Xjwx3nZqbvtrCtCEQ4hivLALoE+zGIvt/IvvhbwTX3j
+                0khjDB8wjQX8QyFXcidP8j7plbCuaZeLcYwv8VVu5HZ+wG85w6sckZsyI+c0xza6YimWiJTICamSy3Jd
+                7spAwLL1rKa12t5xLdqirdqmtzWp3ZrSVzquGXVaYC/ar/ah+w/zsU82''')
 
 
 if __name__ == '__main__':

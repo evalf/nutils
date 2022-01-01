@@ -137,11 +137,11 @@ class test(testing.TestCase):
         cons, lhs, err = main(nelems=4, etype='square', btype='std', degree=1)
         with self.subTest('constraints'):
             self.assertAlmostEqual64(cons, '''
-      eNrbKPv1QZ3ip9sL1BgaILDYFMbaZwZj5ZnDWNfNAeWPESU=''')
+                eNrbKPv1QZ3ip9sL1BgaILDYFMbaZwZj5ZnDWNfNAeWPESU=''')
         with self.subTest('left-hand side'):
             self.assertAlmostEqual64(lhs, '''
-      eNoBMgDN/7Ed9eB+IfLboCaXNKc01DQaNXM14jXyNR82ZTa+NpI2oTbPNhU3bjf7Ngo3ODd+N9c3SNEU
-      1g==''')
+                eNoBMgDN/7Ed9eB+IfLboCaXNKc01DQaNXM14jXyNR82ZTa+NpI2oTbPNhU3bjf7Ngo3ODd+N9c3SNEU
+                1g==''')
         with self.subTest('L2-error'):
             self.assertAlmostEqual(err, 1.63e-3, places=5)
 
@@ -149,11 +149,11 @@ class test(testing.TestCase):
         cons, lhs, err = main(nelems=4, etype='square', btype='spline', degree=2)
         with self.subTest('constraints'):
             self.assertAlmostEqual64(cons, '''
-      eNqrkmN+sEfhzF0xleRbDA0wKGeCYFuaIdjK5gj2aiT2VXMAJB0VAQ==''')
+                eNqrkmN+sEfhzF0xleRbDA0wKGeCYFuaIdjK5gj2aiT2VXMAJB0VAQ==''')
         with self.subTest('left-hand side'):
             self.assertAlmostEqual64(lhs, '''
-      eNqrkmN+sEfhzF0xleRbrsauxsnGc43fGMuZJJgmmNaZ7jBlN7M08wLCDLNFZh/NlM0vmV0y+2CmZV5p
-      vtr8j9kfMynzEPPF5lfNAcuhGvs=''')
+                eNqrkmN+sEfhzF0xleRbrsauxsnGc43fGMuZJJgmmNaZ7jBlN7M08wLCDLNFZh/NlM0vmV0y+2CmZV5p
+                vtr8j9kfMynzEPPF5lfNAcuhGvs=''')
         with self.subTest('L2-error'):
             self.assertAlmostEqual(err, 8.04e-5, places=7)
 
@@ -161,12 +161,12 @@ class test(testing.TestCase):
         cons, lhs, err = main(nelems=4, etype='mixed', btype='std', degree=2)
         with self.subTest('constraints'):
             self.assertAlmostEqual64(cons, '''
-      eNorfLZF2ucJQwMC3pR7+QDG9lCquAtj71Rlu8XQIGfC0FBoiqweE1qaMTTsNsOvRtmcoSHbHL+a1UD5
-      q+YAxhcu1g==''')
+                eNorfLZF2ucJQwMC3pR7+QDG9lCquAtj71Rlu8XQIGfC0FBoiqweE1qaMTTsNsOvRtmcoSHbHL+a1UD5
+                q+YAxhcu1g==''')
         with self.subTest('left-hand side'):
             self.assertAlmostEqual64(lhs, '''
-      eNorfLZF2ueJq7GrcYjxDJPpJstNbsq9fOBr3Gh8xWS7iYdSxd19xseMP5hImu5UZbv1xljOxM600DTW
-      NN/0k2mC6SPTx6Z1pnNMGc3kzdaaPjRNMbMyEzWzNOsy223mBYRRZpPNJpktMks1azM7Z7bRbIXZabNX
-      ZiLmH82UzS3Ns80vmj004za/ZPYHCD+Y8ZlLmVuYq5kHm9eahwDxavPF5lfNAWFyPdk=''')
+                eNorfLZF2ueJq7GrcYjxDJPpJstNbsq9fOBr3Gh8xWS7iYdSxd19xseMP5hImu5UZbv1xljOxM600DTW
+                NN/0k2mC6SPTx6Z1pnNMGc3kzdaaPjRNMbMyEzWzNOsy223mBYRRZpPNJpktMks1azM7Z7bRbIXZabNX
+                ZiLmH82UzS3Ns80vmj004za/ZPYHCD+Y8ZlLmVuYq5kHm9eahwDxavPF5lfNAWFyPdk=''')
         with self.subTest('L2-error'):
             self.assertAlmostEqual(err, 1.25e-4, places=6)

@@ -120,18 +120,18 @@ class test(testing.TestCase):
         state0, state1 = main(nelems=3, reynolds=100, degree=2)
         with self.subTest('stokes-velocity'):
             self.assertAlmostEqual64(state0['u'], '''
-      eNrzu9Bt8OuUndkD/eTTSqezzP2g/E3698/ZmZlf2GjSaHJS3/90/Wm/C4qGh04CAErOF+g=''')
+                eNrzu9Bt8OuUndkD/eTTSqezzP2g/E3698/ZmZlf2GjSaHJS3/90/Wm/C4qGh04CAErOF+g=''')
         with self.subTest('stokes-pressure'):
             self.assertAlmostEqual64(state0['p'], '''
-      eNoBIADf/0fSMC4P0ZLKjCk4JC7Pwy901sjb0jA90Lkt0NHxLm41+KgP+Q==''')
+                eNoBIADf/0fSMC4P0ZLKjCk4JC7Pwy901sjb0jA90Lkt0NHxLm41+KgP+Q==''')
         with self.subTest('stokes-multiplier'):
             self.assertAlmostEqual(state0['lm'], 0)
         with self.subTest('navier-stokes-velocity'):
             self.assertAlmostEqual64(state1['u'], '''
-      eNoBMADP/2XOWjJSy5k1jS+yyzvLODfgL1rO0MrINpsxHM2ZNSrPqDTANCPVQsxCzeAvcc04yT3AF9c=''')
+                eNoBMADP/2XOWjJSy5k1jS+yyzvLODfgL1rO0MrINpsxHM2ZNSrPqDTANCPVQsxCzeAvcc04yT3AF9c=''')
         with self.subTest('navier-stokes-pressure'):
             self.assertAlmostEqual64(state1['p'], '''
-      eNpbqpasrWa46TSTfoT+krO/de/pntA3Pnf2zFNtn2u2hglmAOKVDlE=''')
+                eNpbqpasrWa46TSTfoT+krO/de/pntA3Pnf2zFNtn2u2hglmAOKVDlE=''')
         with self.subTest('navier-stokes-multiplier'):
             self.assertAlmostEqual(state1['lm'], 0)
 
@@ -139,20 +139,20 @@ class test(testing.TestCase):
         state0, state1 = main(nelems=3, reynolds=100, degree=3)
         with self.subTest('stokes-velocity'):
             self.assertAlmostEqual64(state0['u'], '''
-      eNqbo3f7/AeDb2dmGGtd7r+odk7icoQJgjUHLpty8b/BvrMzjF/rll9qMD5kwAAFopc6dRvO2J2fo8d4
-      3sko4wwAjL4lyw==''', atol=1e-14)
+                eNqbo3f7/AeDb2dmGGtd7r+odk7icoQJgjUHLpty8b/BvrMzjF/rll9qMD5kwAAFopc6dRvO2J2fo8d4
+                3sko4wwAjL4lyw==''', atol=1e-14)
         with self.subTest('stokes-pressure'):
             self.assertAlmostEqual64(state0['p'], '''
-      eNpbrN+us+Z8qWHMyfcXrly013l1ZocRAxwI6uvoHbwsZuxxNvZC5eUQg+5zS8wAElAT9w==''')
+                eNpbrN+us+Z8qWHMyfcXrly013l1ZocRAxwI6uvoHbwsZuxxNvZC5eUQg+5zS8wAElAT9w==''')
         with self.subTest('stokes-multiplier'):
             self.assertAlmostEqual(state0['lm'], 0)
         with self.subTest('navier-stokes-velocity'):
             self.assertAlmostEqual64(state1['u'], '''
-      eNoBUACv/14yGcxyNPbJYTahLj/LSDE7yy43SM9WMsXJoDR+N3Iw8s1hM5zJODeizcE0X8phNrQwUDOO
-      NbMzJi+ty4s1oDFqzxIzysjWzXIwFM3tNMjIpDMlJw==''')
+                eNoBUACv/14yGcxyNPbJYTahLj/LSDE7yy43SM9WMsXJoDR+N3Iw8s1hM5zJODeizcE0X8phNrQwUDOO
+                NbMzJi+ty4s1oDFqzxIzysjWzXIwFM3tNMjIpDMlJw==''')
         with self.subTest('navier-stokes-pressure'):
             self.assertAlmostEqual64(state1['p'], '''
-      eNoBMgDN/yoxvDHizaEy88kDLgoviCt4znIzMy7jL7nTRMzqzhAwBTA/LE0w6czY2GQwoNEYMHE3NDUW
-      DQ==''')
+                eNoBMgDN/yoxvDHizaEy88kDLgoviCt4znIzMy7jL7nTRMzqzhAwBTA/LE0w6czY2GQwoNEYMHE3NDUW
+                DQ==''')
         with self.subTest('navier-stokes-multiplier'):
             self.assertAlmostEqual(state1['lm'], 0)

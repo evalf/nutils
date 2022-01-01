@@ -77,41 +77,41 @@ class test(testing.TestCase):
         cons, lhs = main(nelems=4, etype='square', btype='std', degree=1, poisson=.25)
         with self.subTest('constraints'):
             self.assertAlmostEqual64(cons, '''
-      eNpjYMACGsiHP0wxMQBKlBdi''')
+                eNpjYMACGsiHP0wxMQBKlBdi''')
         with self.subTest('left-hand side'):
             self.assertAlmostEqual64(lhs, '''
-      eNpjYMAEKcaiRmLGQQZCxgwMYsbrzqcYvz672KTMaIKJimG7CQPDBJM75xabdJ3NMO0xSjG1MUw0Beox
-      PXIuw7Tk7A/TXqMfQLEfQLEfQLEfpsVnAUzzHtI=''')
+                eNpjYMAEKcaiRmLGQQZCxgwMYsbrzqcYvz672KTMaIKJimG7CQPDBJM75xabdJ3NMO0xSjG1MUw0Beox
+                PXIuw7Tk7A/TXqMfQLEfQLEfQLEfpsVnAUzzHtI=''')
 
     def test_mixed(self):
         cons, lhs = main(nelems=4, etype='mixed', btype='std', degree=1, poisson=.25)
         with self.subTest('constraints'):
             self.assertAlmostEqual64(cons, '''
-      eNpjYICCBiiEsdFpIuEPU0wMAG6UF2I=''')
+                eNpjYICCBiiEsdFpIuEPU0wMAG6UF2I=''')
         with self.subTest('left-hand side'):
             self.assertAlmostEqual64(lhs, '''
-      eNpjYICAJGMOI3ljcQMwx3i/JohSMr51HkQnGP8422eiYrjcJM+o3aToWq/Jy3PLTKafzTDtM0oxtTRM
-      MF2okmJ67lyGacnZH6aOhj9Mu41+mMZq/DA9dO6HaflZAAMdIls=''')
+                eNpjYICAJGMOI3ljcQMwx3i/JohSMr51HkQnGP8422eiYrjcJM+o3aToWq/Jy3PLTKafzTDtM0oxtTRM
+                MF2okmJ67lyGacnZH6aOhj9Mu41+mMZq/DA9dO6HaflZAAMdIls=''')
 
     def test_quadratic(self):
         cons, lhs = main(nelems=4, etype='square', btype='std', degree=2, poisson=.25)
         with self.subTest('constraints'):
             self.assertAlmostEqual64(cons, '''
-      eNpjYCACNIxc+MOUMAYA/+NOFg==''')
+                eNpjYCACNIxc+MOUMAYA/+NOFg==''')
         with self.subTest('left-hand side'):
             self.assertAlmostEqual64(lhs, '''
-      eNqFzL9KA0EQx/HlLI5wprBJCol/rtfN7MxobZEXOQIJQdBCwfgAItwVStQmZSAvcOmtVW6z5wP4D2yE
-      aKOwEhTnDRz4VvPhp9T/1zeP0ILF5hhSnUK5cQlKpaDvx3DoWvA57Zt128PIMO5CjHvNOn5s1lCpOi6V
-      MZ5PGS/k/1U0qGcqVMIcQ5jhmX4XM8N9N8dvWyFtG3RVjOjADOkNBrQMGV3rlJTKaMcN6NUOqWZHlBVV
-      PjER/0DIDAE/6ICVCjh2Id/ZiBdslY+LrpiOmLaYhJ90IibhNdcW0xHTFTPhUzPhX8h5W3rRuZicV1zO
-      N3bCgXRUeDFedjxvSc/ai/G86jzfWi87Xswfg5Nx3Q==''')
+                eNqFzL9KA0EQx/HlLI5wprBJCol/rtfN7MxobZEXOQIJQdBCwfgAItwVStQmZSAvcOmtVW6z5wP4D2yE
+                aKOwEhTnDRz4VvPhp9T/1zeP0ILF5hhSnUK5cQlKpaDvx3DoWvA57Zt128PIMO5CjHvNOn5s1lCpOi6V
+                MZ5PGS/k/1U0qGcqVMIcQ5jhmX4XM8N9N8dvWyFtG3RVjOjADOkNBrQMGV3rlJTKaMcN6NUOqWZHlBVV
+                PjER/0DIDAE/6ICVCjh2Id/ZiBdslY+LrpiOmLaYhJ90IibhNdcW0xHTFTPhUzPhX8h5W3rRuZicV1zO
+                N3bCgXRUeDFedjxvSc/ai/G86jzfWi87Xswfg5Nx3Q==''')
 
     def test_poisson(self):
         cons, lhs = main(nelems=4, etype='square', btype='std', degree=1, poisson=.4)
         with self.subTest('constraints'):
             self.assertAlmostEqual64(cons, '''
-      eNpjYMACGsiHP0wxMQBKlBdi''')
+                eNpjYMACGsiHP0wxMQBKlBdi''')
         with self.subTest('left-hand side'):
             self.assertAlmostEqual64(lhs, '''
-      eNpjYMAEFsaTjdcYvTFcasTAsMZI5JyFce6ZKSavjbNMFhhFmDAwZJkknJ1iInom0ZTJJNx0q1GgKQND
-      uKn32UTTf6d/mLKY/DDdZvQDKPbD1OvsD9M/pwGZyh9l''')
+                eNpjYMAEFsaTjdcYvTFcasTAsMZI5JyFce6ZKSavjbNMFhhFmDAwZJkknJ1iInom0ZTJJNx0q1GgKQND
+                uKn32UTTf6d/mLKY/DDdZvQDKPbD1OvsD9M/pwGZyh9l''')
