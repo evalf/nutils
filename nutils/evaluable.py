@@ -2408,7 +2408,6 @@ class ArcTan2(Pointwise):
 class Greater(Pointwise):
     __slots__ = ()
     evalf = numpy.greater
-    deriv = (lambda a, b: Zeros(a.shape, dtype=int),) * 2
 
     @types.apply_annotations
     def __init__(self,  left: asarray, right: asarray):
@@ -2420,13 +2419,11 @@ class Greater(Pointwise):
 class Equal(Pointwise):
     __slots__ = ()
     evalf = numpy.equal
-    deriv = (lambda a, b: Zeros(a.shape, dtype=int),) * 2
 
 
 class Less(Pointwise):
     __slots__ = ()
     evalf = numpy.less
-    deriv = (lambda a, b: Zeros(a.shape, dtype=int),) * 2
 
     @types.apply_annotations
     def __init__(self,  left: asarray, right: asarray):
