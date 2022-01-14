@@ -2554,12 +2554,6 @@ class Cast(Pointwise):
     def evalf(self, arg):
         return numpy.array(arg, dtype=self.to_type)
 
-    def _derivative(self, var, seen):
-        if var.dtype == complex and self.__class__.to_type == complex:
-            raise ValueError('The complex derivative does not exist.')
-        arg, = self.args
-        return self.__class__(derivative(arg, var, seen))
-
     def _simplified(self):
         arg, = self.args
         if iszero(arg):
@@ -2608,6 +2602,9 @@ class IntToFloat(Cast):
         assert self.dtype != complex
         return __class__(sign(self.args[0]))
 
+    def _derivative(self, var, seen):
+        return Zeros(self.shape + var.shape, dtype=self.dtype)
+
 
 class FloatToComplex(Cast):
     from_type = float
@@ -2635,6 +2632,12 @@ class FloatToComplex(Cast):
 
     def _conjugate(self):
         return self
+
+    def _derivative(self, var, seen):
+        if var.dtype == complex:
+            raise ValueError('The complex derivative does not exist.')
+        arg, = self.args
+        return FloatToComplex(derivative(arg, var, seen))
 
 
 def astype(arg, dtype):
