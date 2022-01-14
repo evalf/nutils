@@ -863,6 +863,11 @@ class derivative(TestCase):
         arg = evaluable.Argument('arg', (2,), int)
         self.assertEqual(evaluable.derivative(evaluable.insertaxis(arg, 0, 1), arg), evaluable.Zeros((1, 2, 2), int))
 
+    def test_int_to_float(self):
+        arg = evaluable.Argument('arg', (), float)
+        func = evaluable.IntToFloat(evaluable.BoolToInt(evaluable.Greater(arg, 0.)))
+        self.assertTrue(evaluable.iszero(evaluable.derivative(func, arg)))
+
 
 class asciitree(TestCase):
 
