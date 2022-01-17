@@ -2408,7 +2408,6 @@ class ArcTan2(Pointwise):
 class Greater(Pointwise):
     __slots__ = ()
     evalf = numpy.greater
-    deriv = (lambda a, b: Zeros(a.shape, dtype=int),) * 2
 
     @types.apply_annotations
     def __init__(self,  left: asarray, right: asarray):
@@ -2420,13 +2419,11 @@ class Greater(Pointwise):
 class Equal(Pointwise):
     __slots__ = ()
     evalf = numpy.equal
-    deriv = (lambda a, b: Zeros(a.shape, dtype=int),) * 2
 
 
 class Less(Pointwise):
     __slots__ = ()
     evalf = numpy.less
-    deriv = (lambda a, b: Zeros(a.shape, dtype=int),) * 2
 
     @types.apply_annotations
     def __init__(self,  left: asarray, right: asarray):
@@ -2554,12 +2551,6 @@ class Cast(Pointwise):
     def evalf(self, arg):
         return numpy.array(arg, dtype=self.to_type)
 
-    def _derivative(self, var, seen):
-        if var.dtype == complex and self.__class__.to_type == complex:
-            raise ValueError('The complex derivative does not exist.')
-        arg, = self.args
-        return self.__class__(derivative(arg, var, seen))
-
     def _simplified(self):
         arg, = self.args
         if iszero(arg):
@@ -2608,6 +2599,9 @@ class IntToFloat(Cast):
         assert self.dtype != complex
         return __class__(sign(self.args[0]))
 
+    def _derivative(self, var, seen):
+        return Zeros(self.shape + var.shape, dtype=self.dtype)
+
 
 class FloatToComplex(Cast):
     from_type = float
@@ -2635,6 +2629,12 @@ class FloatToComplex(Cast):
 
     def _conjugate(self):
         return self
+
+    def _derivative(self, var, seen):
+        if var.dtype == complex:
+            raise ValueError('The complex derivative does not exist.')
+        arg, = self.args
+        return FloatToComplex(derivative(arg, var, seen))
 
 
 def astype(arg, dtype):
@@ -4464,7 +4464,7 @@ def derivative(func, var, seen=None):
     else:
         result = func._derivative(var, seen)
         seen[func] = result
-    assert equalshape(result.shape, func.shape+var.shape), 'bug in {}._derivative'.format(type(func).__name__)
+    assert equalshape(result.shape, func.shape+var.shape) and result.dtype == func.dtype, 'bug in {}._derivative'.format(type(func).__name__)
     return result
 
 
