@@ -4464,7 +4464,7 @@ def derivative(func, var, seen=None):
     else:
         result = func._derivative(var, seen)
         seen[func] = result
-    assert equalshape(result.shape, func.shape+var.shape), 'bug in {}._derivative'.format(type(func).__name__)
+    assert equalshape(result.shape, func.shape+var.shape) and result.dtype == func.dtype, 'bug in {}._derivative'.format(type(func).__name__)
     return result
 
 
