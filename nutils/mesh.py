@@ -365,7 +365,7 @@ def parsegmsh(mshdata):
     # concatenated in nodes, element ids are offset and concatenated to match.
     tags = [(nd, name, numpy.concatenate([selection
                                           + sum(len(cells.data) for cells in msh.cells[:icell] if cells.type == msh.cells[icell].type)  # offset into nodes
-                                          for icell, selection in enumerate(msh.cell_sets[name])]))
+                                          for icell, selection in enumerate(msh.cell_sets[name]) if len(selection)]))
             for name, (itag, nd) in msh.field_data.items()]
 
     # determine the dimension of the topology
