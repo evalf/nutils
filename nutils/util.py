@@ -30,16 +30,11 @@ def cumsum(seq):
 
 
 def gather(items):
-    gathered = []
-    d = {}
+    gathered = collections.defaultdict(list)
+    # NOTE: defaultdict is subclass of dict, so it maintains the insertion order
     for key, value in items:
-        try:
-            values = d[key]
-        except KeyError:
-            d[key] = values = []
-            gathered.append((key, values))
-        values.append(value)
-    return gathered
+        gathered[key].append(value)
+    return gathered.items()
 
 
 def pairwise(items, *, periodic=False):
