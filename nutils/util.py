@@ -437,8 +437,7 @@ def binaryfile(path):
         return open(path, 'rb')
 
     if isinstance(path, io.BufferedIOBase):
-        return contextlib.nullcontext(path) if hasattr(contextlib, 'nullcontext') \
-            else contextlib.contextmanager(iter)([path])  # Python <= 3.6
+        return contextlib.nullcontext(path)
 
     raise TypeError('binaryfile requires a path-like or file-like argument')
 
