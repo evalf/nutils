@@ -35,7 +35,7 @@ setup(
     packages=['nutils', 'nutils.matrix'],
     long_description=long_description,
     license='MIT',
-    python_requires='>=3.5',
+    python_requires='>=3.7',
     install_requires=['numpy>=1.17', 'treelog>=1.0b5', 'stringly'],
     extras_require=dict(
         docs=['Sphinx>=1.6', 'scipy>=0.13', 'matplotlib>=1.3'],
