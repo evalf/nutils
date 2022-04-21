@@ -42,44 +42,45 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
     domain = domain.trim(exact-1e-15, maxrefine=0)
     linreg = util.linear_regressor()
 
-    with treelog.iter.fraction('level', range(nrefine+1)) as lrange:
-        for irefine in lrange:
+    for irefine in treelog.iter.fraction('level', range(nrefine+1)):
 
-            if irefine:
-                refdom = domain.refined
-                ns.refbasis = refdom.basis(btype, degree=degree)
-                indicator = refdom.integral('∇_k(refbasis_n) ∇_k(u) dV' @ ns, degree=degree*2).eval(lhs=lhs)
-                indicator -= refdom.boundary.integral('refbasis_n ∇_k(u) n_k dS' @ ns, degree=degree*2).eval(lhs=lhs)
-                supp = ns.refbasis.get_support(indicator**2 > numpy.mean(indicator**2))
-                domain = domain.refined_by(refdom.transforms[supp])
+        if irefine:
+            refdom = domain.refined
+            refbasis = refdom.basis(btype, degree=degree)
+            ns.add_field('vref', refbasis)
+            res = refdom.integral('∇_k(vref) ∇_k(u) dV' @ ns, degree=degree*2)
+            res -= refdom.boundary.integral('vref ∇_k(u) n_k dS' @ ns, degree=degree*2)
+            indicator = res.derivative('vref').eval(**args)
+            supp = refbasis.get_support(indicator**2 > numpy.mean(indicator**2))
+            domain = domain.refined_by(refdom.transforms[supp])
 
-            ns = Namespace()
-            ns.x = geom
-            ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
-            ns.basis = domain.basis(btype, degree=degree)
-            ns.u = function.dotarg('lhs', ns.basis)
-            ns.du = ns.u - exact
+        ns = Namespace()
+        ns.x = geom
+        ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
+        ns.add_field(('u', 'v'), domain.basis(btype, degree=degree))
+        ns.uexact = exact
+        ns.du = 'u - uexact'
 
-            sqr = domain.boundary['trimmed'].integral('u^2 dS' @ ns, degree=degree*2)
-            cons = solver.optimize('lhs', sqr, droptol=1e-15)
+        sqr = domain.boundary['trimmed'].integral('u^2 dS' @ ns, degree=degree*2)
+        cons = solver.optimize('u,', sqr, droptol=1e-15)
 
-            sqr = domain.boundary.integral('du^2 dS' @ ns, degree=7)
-            cons = solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
+        sqr = domain.boundary.integral('du^2 dS' @ ns, degree=7)
+        cons = solver.optimize('u,', sqr, droptol=1e-15, constrain=cons)
 
-            res = domain.integral('∇_k(basis_n) ∇_k(u) dV' @ ns, degree=degree*2)
-            lhs = solver.solve_linear('lhs', res, constrain=cons)
+        res = domain.integral('∇_k(v) ∇_k(u) dV' @ ns, degree=degree*2)
+        args = solver.solve_linear('u:v', res, constrain=cons)
 
-            ndofs = len(ns.basis)
-            error = function.sqrt(domain.integral(['du du dV', '∇_k(du) ∇_k(du) dV'] @ ns, degree=7)).eval(lhs=lhs)
-            rate, offset = linreg.add(numpy.log(len(ns.basis)), numpy.log(error))
-            treelog.user('ndofs: {ndofs}, L2 error: {error[0]:.2e} ({rate[0]:.2f}), H1 error: {error[1]:.2e} ({rate[1]:.2f})'.format(ndofs=len(ns.basis), error=error, rate=rate))
+        ndofs = len(args['u'])
+        error = function.sqrt(domain.integral(['du du dV', '∇_k(du) ∇_k(du) dV'] @ ns, degree=7)).eval(**args)
+        rate, offset = linreg.add(numpy.log(ndofs), numpy.log(error))
+        treelog.user(f'ndofs: {ndofs}, L2 error: {error[0]:.2e} ({rate[0]:.2f}), H1 error: {error[1]:.2e} ({rate[1]:.2f})')
 
-            bezier = domain.sample('bezier', 9)
-            x, u, du = bezier.eval(['x_i', 'u', 'du'] @ ns, lhs=lhs)
-            export.triplot('sol.png', x, u, tri=bezier.tri, hull=bezier.hull)
-            export.triplot('err.png', x, du, tri=bezier.tri, hull=bezier.hull)
+        bezier = domain.sample('bezier', 9)
+        xsmp, usmp, dusmp = bezier.eval(['x_i', 'u', 'du'] @ ns, **args)
+        export.triplot('sol.png', xsmp, usmp, tri=bezier.tri, hull=bezier.hull)
+        export.triplot('err.png', xsmp, dusmp, tri=bezier.tri, hull=bezier.hull)
 
-    return ndofs, error, lhs
+    return error, args['u']
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line. For
@@ -101,15 +102,15 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
     def test_square_quadratic(self):
-        ndofs, error, lhs = main(nrefine=2, btype='h-std', etype='square', degree=2)
+        error, u = main(nrefine=2, btype='h-std', etype='square', degree=2)
         with self.subTest('degrees of freedom'):
-            self.assertEqual(ndofs, 149)
+            self.assertEqual(len(u), 149)
         with self.subTest('L2-error'):
             self.assertAlmostEqual(error[0], 0.00065, places=5)
         with self.subTest('H1-error'):
             self.assertAlmostEqual(error[1], 0.03461, places=5)
         with self.subTest('left-hand side'):
-            self.assertAlmostEqual64(lhs, '''
+            self.assertAlmostEqual64(u, '''
                 eNo1j6FrQmEUxT8RBi4KllVfMsl3z/nK4zEmLC6bhsKCw2gSw5IPFsymGbZiWnr+By8Ii7Yhsk3BMtC4
                 Z9sJ223ncs85vzvmM9+Yhix8hDIjtnkdHqQSdDDDj1Qajr5qPXN/07MZ2vI4V7UOIvmdO/oEZY45xYDn
                 oR7ikLHAHVpcs2A1TLhChDO+MOeWt5xjYzm6fOQrGxxiZPeoMGaf37hCyU72hB0u6PglPcQcKxRI/KUd
@@ -117,28 +118,28 @@ class test(testing.TestCase):
                 bya+ZCPbWKRPpvgFaedebw==''')
 
     def test_triangle_quadratic(self):
-        ndofs, error, lhs = main(nrefine=2, btype='h-std', etype='triangle', degree=2)
+        error, u = main(nrefine=2, btype='h-std', etype='triangle', degree=2)
         with self.subTest('degrees of freedom'):
-            self.assertEqual(ndofs, 98)
+            self.assertEqual(len(u), 98)
         with self.subTest('L2-error'):
             self.assertAlmostEqual(error[0], 0.00138, places=5)
         with self.subTest('H1-error'):
             self.assertAlmostEqual(error[1], 0.05324, places=5)
         with self.subTest('left-hand side'):
-            self.assertAlmostEqual64(lhs, '''
+            self.assertAlmostEqual64(u, '''
                 eNprMV1oesqU2VTO1Nbko6myWbhpq+kckwST90avjRgYzptYm+YYMwBBk3GQWavZb1NXs2+mm83um1WY
                 bQbyXYEiQWbKZjNM7wJVzjBlYICoPW8CMiXH+LXRR9NwoPkg82xN5IB2MZu2mGabSBnnAbGscYEJj3GV
                 YQAQg/TVGfaA7RI0BsErRjeNeowDgDQPmF9gkmciaJxtArGjzrAKCGWNpYAQAL0kOBE=''')
 
     def test_mixed_linear(self):
-        ndofs, error, lhs = main(nrefine=2, btype='h-std', etype='mixed', degree=1)
+        error, u = main(nrefine=2, btype='h-std', etype='mixed', degree=1)
         with self.subTest('degrees of freedom'):
-            self.assertEqual(ndofs, 34)
+            self.assertEqual(len(u), 34)
         with self.subTest('L2-error'):
             self.assertAlmostEqual(error[0], 0.00450, places=5)
         with self.subTest('H1-error'):
             self.assertAlmostEqual(error[1], 0.11683, places=5)
         with self.subTest('left-hand side'):
-            self.assertAlmostEqual64(lhs, '''
+            self.assertAlmostEqual64(u, '''
                 eNprMT1u6mQyxUTRzMCUAQhazL6b3jNrMYPxp5iA5FtMD+lcMgDxHa4aXzS+6HDV+fKO85cMnC8zMBzS
                 AQDBThbY''')

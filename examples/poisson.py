@@ -22,15 +22,15 @@ def main(nelems: int):
     u = function.dotarg('udofs', domain.basis('std', degree=1))
     g = u.grad(x)
     J = function.J(x)
-    cons = solver.optimize('udofs',
+    cons = solver.optimize('udofs,',
                            domain.boundary.integral(u**2 * J, degree=2), droptol=1e-12)
-    udofs = solver.optimize('udofs',
+    args = solver.optimize('udofs,',
                             domain.integral((g @ g / 2 - u) * J, degree=1), constrain=cons)
     bezier = domain.sample('bezier', 3)
-    x, u = bezier.eval([x, u], udofs=udofs)
+    x, u = bezier.eval([x, u], **args)
     export.triplot('u.png', x, u, tri=bezier.tri, hull=bezier.hull)
 
-    return udofs
+    return args['udofs']
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line. To

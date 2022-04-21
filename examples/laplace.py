@@ -52,26 +52,21 @@ def main(nelems: int, etype: str, btype: str, degree: int):
 
     # To be able to write index based tensor contractions, we need to bundle all
     # relevant functions together in a namespace. Here we add the geometry ``x``,
-    # a scalar ``basis``, and the solution ``u``. The latter is formed by
-    # contracting the basis with a to-be-determined solution vector ``?lhs``.
+    # a test function ``v``, and the solution ``u``. The latter two are formed by
+    # contracting a basis with function arguments of the same name.
 
     ns = Namespace()
     ns.x = geom
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
-    ns.basis = domain.basis(btype, degree=degree)
-    ns.u = function.dotarg('lhs', ns.basis)
+    ns.add_field(('u', 'v'), domain.basis(btype, degree=degree))
 
     # We are now ready to implement the Laplace equation. In weak form, the
     # solution is a scalar field :math:`u` for which:
     #
     # .. math:: ∀ v: ∫_Ω \frac{dv}{dx_i} \frac{du}{dx_i} - ∫_{Γ_n} v f = 0.
-    #
-    # By linearity the test function :math:`v` can be replaced by the basis that
-    # spans its space. The result is an integral ``res`` that evaluates to a
-    # vector matching the size of the function space.
 
-    res = domain.integral('∇_i(basis_n) ∇_i(u) dV' @ ns, degree=degree*2)
-    res -= domain.boundary['right'].integral('basis_n cos(1) cosh(x_1) dS' @ ns, degree=degree*2)
+    res = domain.integral('∇_i(v) ∇_i(u) dV' @ ns, degree=degree*2)
+    res -= domain.boundary['right'].integral('v cos(1) cosh(x_1) dS' @ ns, degree=degree*2)
 
     # The Dirichlet constraints are set by finding the coefficients that minimize
     # the error:
@@ -79,40 +74,37 @@ def main(nelems: int, etype: str, btype: str, degree: int):
     # .. math:: \min_u ∫_{\Gamma_d} (u - u_d)^2
     #
     # The resulting ``cons`` array holds numerical values for all the entries of
-    # ``?lhs`` that contribute (up to ``droptol``) to the minimization problem.
-    # All remaining entries are set to ``NaN``, signifying that these degrees of
-    # freedom are unconstrained.
+    # the function argument ``u`` that contribute (up to ``droptol``) to the
+    # minimization problem. All remaining entries are set to ``NaN``,
+    # signifying that these degrees of freedom are unconstrained.
 
     sqr = domain.boundary['left'].integral('u^2 dS' @ ns, degree=degree*2)
     sqr += domain.boundary['top'].integral('(u - cosh(1) sin(x_0))^2 dS' @ ns, degree=degree*2)
-    cons = solver.optimize('lhs', sqr, droptol=1e-15)
+    cons = solver.optimize('u,', sqr, droptol=1e-15)
 
-    # The unconstrained entries of ``?lhs`` are to be determined such that the
-    # residual vector evaluates to zero in the corresponding entries. This step
-    # involves a linearization of ``res``, resulting in a jacobian matrix and
-    # right hand side vector that are subsequently assembled and solved. The
-    # resulting ``lhs`` array matches ``cons`` in the constrained entries.
+    # The unconstrained entries of ``u`` are to be determined such that the
+    # residual evaluates to zero for all possible values of ``v``. The
+    # resulting array ``u`` array matches ``cons`` in the constrained entries.
 
-    lhs = solver.solve_linear('lhs', res, constrain=cons)
+    args = solver.solve_linear('u:v', res, constrain=cons)
 
-    # Once all entries of ``?lhs`` are establised, the corresponding solution can
-    # be vizualised by sampling values of ``ns.u`` along with physical
-    # coordinates ``ns.x``, with the solution vector provided via the
-    # ``arguments`` dictionary. The sample members ``tri`` and ``hull`` provide
-    # additional inter-point information required for drawing the mesh and
-    # element outlines.
+    # Once all arguments are establised, the corresponding solution can be
+    # vizualised by sampling values of ``ns.u`` along with physical coordinates
+    # ``ns.x``, with the solution vector provided via keyword arguments. The
+    # sample members ``tri`` and ``hull`` provide additional inter-point
+    # information required for drawing the mesh and element outlines.
 
     bezier = domain.sample('bezier', 9)
-    x, u = bezier.eval(['x_i', 'u'] @ ns, lhs=lhs)
-    export.triplot('solution.png', x, u, tri=bezier.tri, hull=bezier.hull)
+    xsmp, usmp = bezier.eval(['x_i', 'u'] @ ns, **args)
+    export.triplot('solution.png', xsmp, usmp, tri=bezier.tri, hull=bezier.hull)
 
     # To confirm that our computation is correct, we use our knowledge of the
     # analytical solution to evaluate the L2-error of the discrete result.
 
-    err = domain.integral('(u - sin(x_0) cosh(x_1))^2 dV' @ ns, degree=degree*2).eval(lhs=lhs)**.5
+    err = domain.integral('(u - sin(x_0) cosh(x_1))^2 dV' @ ns, degree=degree*2).eval(**args)**.5
     treelog.user('L2 error: {:.2e}'.format(err))
 
-    return cons, lhs, err
+    return cons['u'], args['u'], err
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line. For
@@ -134,37 +126,37 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
     def test_default(self):
-        cons, lhs, err = main(nelems=4, etype='square', btype='std', degree=1)
+        cons, u, err = main(nelems=4, etype='square', btype='std', degree=1)
         with self.subTest('constraints'):
             self.assertAlmostEqual64(cons, '''
                 eNrbKPv1QZ3ip9sL1BgaILDYFMbaZwZj5ZnDWNfNAeWPESU=''')
         with self.subTest('left-hand side'):
-            self.assertAlmostEqual64(lhs, '''
+            self.assertAlmostEqual64(u, '''
                 eNoBMgDN/7Ed9eB+IfLboCaXNKc01DQaNXM14jXyNR82ZTa+NpI2oTbPNhU3bjf7Ngo3ODd+N9c3SNEU
                 1g==''')
         with self.subTest('L2-error'):
             self.assertAlmostEqual(err, 1.63e-3, places=5)
 
     def test_spline(self):
-        cons, lhs, err = main(nelems=4, etype='square', btype='spline', degree=2)
+        cons, u, err = main(nelems=4, etype='square', btype='spline', degree=2)
         with self.subTest('constraints'):
             self.assertAlmostEqual64(cons, '''
                 eNqrkmN+sEfhzF0xleRbDA0wKGeCYFuaIdjK5gj2aiT2VXMAJB0VAQ==''')
         with self.subTest('left-hand side'):
-            self.assertAlmostEqual64(lhs, '''
+            self.assertAlmostEqual64(u, '''
                 eNqrkmN+sEfhzF0xleRbrsauxsnGc43fGMuZJJgmmNaZ7jBlN7M08wLCDLNFZh/NlM0vmV0y+2CmZV5p
                 vtr8j9kfMynzEPPF5lfNAcuhGvs=''')
         with self.subTest('L2-error'):
             self.assertAlmostEqual(err, 8.04e-5, places=7)
 
     def test_mixed(self):
-        cons, lhs, err = main(nelems=4, etype='mixed', btype='std', degree=2)
+        cons, u, err = main(nelems=4, etype='mixed', btype='std', degree=2)
         with self.subTest('constraints'):
             self.assertAlmostEqual64(cons, '''
                 eNorfLZF2ucJQwMC3pR7+QDG9lCquAtj71Rlu8XQIGfC0FBoiqweE1qaMTTsNsOvRtmcoSHbHL+a1UD5
                 q+YAxhcu1g==''')
         with self.subTest('left-hand side'):
-            self.assertAlmostEqual64(lhs, '''
+            self.assertAlmostEqual64(u, '''
                 eNorfLZF2ueJq7GrcYjxDJPpJstNbsq9fOBr3Gh8xWS7iYdSxd19xseMP5hImu5UZbv1xljOxM600DTW
                 NN/0k2mC6SPTx6Z1pnNMGc3kzdaaPjRNMbMyEzWzNOsy223mBYRRZpPNJpktMks1azM7Z7bRbIXZabNX
                 ZiLmH82UzS3Ns80vmj004za/ZPYHCD+Y8ZlLmVuYq5kHm9eahwDxavPF5lfNAWFyPdk=''')
