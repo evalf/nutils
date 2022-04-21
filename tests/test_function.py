@@ -377,13 +377,13 @@ class Unlower(TestCase):
     def test(self):
         e = evaluable.Argument('arg', (2, 3, 4, 5), int)
         arguments = {'arg': ((2, 3), int)}
-        f = function._Unlower(e, frozenset(), arguments, (2, 3), {}, {})
+        f = function._Unlower(e, frozenset(), arguments, function.LowerArgs((2, 3), {}, {}))
         self.assertEqual(f.shape, (4, 5))
         self.assertEqual(f.dtype, int)
         self.assertEqual(f.arguments, arguments)
-        self.assertEqual(f.lower((2, 3), {}, {}), e)
+        self.assertEqual(f.lower(function.LowerArgs((2, 3), {}, {})), e)
         with self.assertRaises(ValueError):
-            f.lower((3, 4), {}, {})
+            f.lower(function.LowerArgs((3, 4), {}, {}))
 
 
 class Custom(TestCase):
@@ -394,12 +394,12 @@ class Custom(TestCase):
         transform_chains = dict(test=(transform.EvaluableTransformChain.from_argument('test', 2, 2),)*2)
         with self.subTest('1d-points'):
             coords = evaluable.Zeros((5, 2), float)
-            lower_args = coords.shape[:-1], transform_chains, dict(test=coords)
-            self.assertAllAlmostEqual(factual.lower(*lower_args).eval(**args), fdesired.lower(*lower_args).eval(**args))
+            lower_args = function.LowerArgs(coords.shape[:-1], transform_chains, dict(test=coords))
+            self.assertAllAlmostEqual(factual.lower(lower_args).eval(**args), fdesired.lower(lower_args).eval(**args))
         with self.subTest('2d-points'):
             coords = evaluable.Zeros((5, 6, 2), float)
-            lower_args = coords.shape[:-1], transform_chains, dict(test=coords)
-            self.assertAllAlmostEqual(factual.lower(*lower_args).eval(**args), fdesired.lower(*lower_args).eval(**args))
+            lower_args = function.LowerArgs(coords.shape[:-1], transform_chains, dict(test=coords))
+            self.assertAllAlmostEqual(factual.lower(lower_args).eval(**args), fdesired.lower(lower_args).eval(**args))
 
     def assertMultipy(self, leftval, rightval):
 
@@ -1148,7 +1148,7 @@ class CommonBasis:
         ref = element.PointReference() if self.basis.coords.shape[0] == 0 else element.LineReference()**self.basis.coords.shape[0]
         points = ref.getpoints('bezier', 4)
         coordinates = evaluable.Constant(points.coords)
-        lowered = self.basis.lower(coordinates.shape[:-1], dict(X=(self.checktransforms.get_evaluable(evaluable.Argument('ielem', (), int)),)*2), dict(X=coordinates))
+        lowered = self.basis.lower(function.LowerArgs(coordinates.shape[:-1], dict(X=(self.checktransforms.get_evaluable(evaluable.Argument('ielem', (), int)),)*2), dict(X=coordinates)))
         with _builtin_warnings.catch_warnings():
             _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
             for ielem in range(self.checknelems):

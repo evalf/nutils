@@ -4,7 +4,7 @@ if typing.TYPE_CHECKING:
 else:
     Protocol = object
 
-from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, List, FrozenSet
+from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, List, FrozenSet, NamedTuple
 from . import evaluable, numeric, util, types, warnings, debug_flags, sparse
 from .transform import EvaluableTransformChain
 from .transformseq import Transforms
@@ -19,10 +19,22 @@ Shape = Sequence[int]
 DType = Type[Union[bool, int, float, complex]]
 _dtypes = bool, int, float, complex
 
-_PointsShape = Tuple[evaluable.Array, ...]
-_TransformChainsMap = Mapping[str, Tuple[EvaluableTransformChain, EvaluableTransformChain]]
-_CoordinatesMap = Mapping[str, evaluable.Array]
+class LowerArgs(NamedTuple):
+    '''Arguments for Lowerable.lower
 
+    Parameters
+    ----------
+    points_shape : :class:`tuple` of scalar, integer :class:`nutils.evaluable.Array`
+        The shape of the leading points axes that are to be added to the
+        lowered :class:`nutils.evaluable.Array`.
+    transform_chains : mapping of :class:`str` to :class:`nutils.transform.EvaluableTransformChain` pairs
+    coordinates : mapping of :class:`str` to :class:`nutils.evaluable.Array` objects
+        The coordinates at which the function will be evaluated.
+    '''
+
+    points_shape: Tuple[evaluable.Array, ...]
+    transform_chains: Mapping[str, Tuple[EvaluableTransformChain, EvaluableTransformChain]]
+    coordinates: Mapping[str, evaluable.Array]
 
 class Lowerable(Protocol):
     'Protocol for lowering to :class:`nutils.evaluable.Array`.'
@@ -33,29 +45,24 @@ class Lowerable(Protocol):
     @property
     def arguments(self) -> Mapping[str, Tuple[Shape, DType]]: ...
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
+    def lower(self, args: LowerArgs) -> evaluable.Array:
         '''Lower this object to a :class:`nutils.evaluable.Array`.
 
         Parameters
         ----------
-        points_shape : :class:`tuple` of scalar, integer :class:`nutils.evaluable.Array`
-            The shape of the leading points axes that are to be added to the
-            lowered :class:`nutils.evaluable.Array`.
-        transform_chains : mapping of :class:`str` to :class:`nutils.transform.EvaluableTransformChain` pairs
-        coordinates : mapping of :class:`str` to :class:`nutils.evaluable.Array` objects
-            The coordinates at which the function will be evaluated.
+        args : :class:`LowerArgs`
         '''
 
 
 _ArrayMeta = type
 
 if debug_flags.lower:
-    def _debug_lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        result = self._ArrayMeta__debug_lower_orig(points_shape, transform_chains, coordinates)
+    def _debug_lower(self, args: LowerArgs) -> evaluable.Array:
+        result = self._ArrayMeta__debug_lower_orig(args)
         assert isinstance(result, evaluable.Array)
-        assert all(evaluable.equalshape(coords.shape[:-1], points_shape) for coords in coordinates.values())
-        assert all(space in transform_chains for space in coordinates)
-        offset = 0 if type(self) == _WithoutPoints else len(points_shape)
+        assert all(evaluable.equalshape(coords.shape[:-1], args.points_shape) for coords in args.coordinates.values())
+        assert all(space in args.transform_chains for space in args.coordinates)
+        offset = 0 if type(self) == _WithoutPoints else len(args.points_shape)
         assert result.ndim == self.ndim + offset
         assert tuple(int(sh) for sh in result.shape[offset:]) == self.shape, 'shape mismatch'
         assert result.dtype == self.dtype, ('dtype mismatch', self.__class__)
@@ -72,16 +79,15 @@ if debug_flags.lower:
 # above. Otherwise the cached results are debugge again and again.
 
 
-def _cache_lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-    key = points_shape, transform_chains, coordinates
-    cached_key, cached_result = getattr(self, '_ArrayMeta__cached_lower', (None, None))
-    if cached_key == key:
+def _cache_lower(self, args: LowerArgs) -> evaluable.Array:
+    cached_args, cached_result = getattr(self, '_ArrayMeta__cached_lower', (None, None))
+    if cached_args == args:
         return cached_result
-    missing_spaces = self.spaces - set(transform_chains)
+    missing_spaces = self.spaces - set(args.transform_chains)
     if missing_spaces:
         raise ValueError('Cannot lower {} because the following spaces are unspecified: {}.'.format(self, missing_spaces))
-    result = self._ArrayMeta__cache_lower_orig(points_shape, transform_chains, coordinates)
-    self._ArrayMeta__cached_lower = key, result
+    result = self._ArrayMeta__cache_lower_orig(args)
+    self._ArrayMeta__cached_lower = args, result
     return result
 
 
@@ -182,12 +188,12 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         self.spaces = frozenset(spaces)
         self.arguments = dict(arguments)
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
+    def lower(self, args: LowerArgs) -> evaluable.Array:
         raise NotImplementedError
 
     @util.cached_property
     def as_evaluable_array(self) -> evaluable.Array:
-        return self.lower((), {}, {})
+        return self.lower(LowerArgs((), {}, {}))
 
     def __index__(self):
         if self.arguments or self.spaces:
@@ -392,16 +398,14 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
 
 class _Unlower(Array):
 
-    def __init__(self, array: evaluable.Array, spaces: FrozenSet[str], arguments: Mapping[str, Tuple[Shape, DType]], points_shape: Tuple[evaluable.Array, ...], transform_chains: Tuple[EvaluableTransformChain, ...], coordinates: Tuple[evaluable.Array, ...]) -> None:
+    def __init__(self, array: evaluable.Array, spaces: FrozenSet[str], arguments: Mapping[str, Tuple[Shape, DType]], lower_args: LowerArgs) -> None:
         self._array = array
-        self._points_shape = points_shape
-        self._transform_chains = transform_chains
-        self._coordinates = coordinates
-        shape = tuple(n.__index__() for n in array.shape[len(points_shape):])
+        self._lower_args = lower_args
+        shape = tuple(n.__index__() for n in array.shape[len(lower_args.points_shape):])
         super().__init__(shape=shape, dtype=array.dtype, spaces=spaces, arguments=arguments)
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        if self._points_shape != points_shape or self._transform_chains != transform_chains or self._coordinates != coordinates:
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        if args != self._lower_args:
             raise ValueError('_Unlower must be lowered with the same arguments as those with which it is instantiated.')
         return self._array
 
@@ -555,12 +559,12 @@ class Custom(Array):
         arguments = _join_arguments(arg.arguments for arg in args if isinstance(arg, Array))
         super().__init__(shape=(*points_shape, *shape), dtype=dtype, spaces=spaces, arguments=arguments)
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        args = tuple(arg.lower(points_shape, transform_chains, coordinates) if isinstance(arg, Array) else evaluable.EvaluableConstant(arg) for arg in self._args)  # type: Tuple[Union[evaluable.Array, evaluable.EvaluableConstant], ...]
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        evalargs = tuple(arg.lower(args) if isinstance(arg, Array) else evaluable.EvaluableConstant(arg) for arg in self._args)  # type: Tuple[Union[evaluable.Array, evaluable.EvaluableConstant], ...]
         add_points_shape = tuple(map(evaluable.asarray, self.shape[:self._npointwise]))
-        points_shape += add_points_shape
-        coordinates = {space: evaluable.Transpose.to_end(evaluable.appendaxes(coords, add_points_shape), coords.ndim-1) for space, coords in coordinates.items()}
-        return _CustomEvaluable(type(self).__name__, self.evalf, self.partial_derivative, args, self.shape[self._npointwise:], self.dtype, self.spaces, types.frozendict(self.arguments), points_shape, tuple(transform_chains.items()), tuple(coordinates.items()))
+        points_shape = args.points_shape + add_points_shape
+        coordinates = {space: evaluable.Transpose.to_end(evaluable.appendaxes(coords, add_points_shape), coords.ndim-1) for space, coords in args.coordinates.items()}
+        return _CustomEvaluable(type(self).__name__, self.evalf, self.partial_derivative, evalargs, self.shape[self._npointwise:], self.dtype, self.spaces, types.frozendict(self.arguments), LowerArgs(points_shape, types.frozendict(args.transform_chains), types.frozendict(coordinates)))
 
     @classmethod
     def evalf(cls, *args: Any) -> numpy.ndarray:
@@ -627,17 +631,17 @@ class Custom(Array):
 
 class _CustomEvaluable(evaluable.Array):
 
-    def __init__(self, name, evalf, partial_derivative, args: Tuple[Union[evaluable.Array, evaluable.EvaluableConstant], ...], shape: Tuple[int, ...], dtype: DType, spaces: FrozenSet[str], arguments: types.frozendict, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> None:
+    def __init__(self, name, evalf, partial_derivative, args: Tuple[Union[evaluable.Array, evaluable.EvaluableConstant], ...], shape: Tuple[int, ...], dtype: DType, spaces: FrozenSet[str], arguments: types.frozendict, lower_args: LowerArgs) -> None:
         assert all(isinstance(arg, (evaluable.Array, evaluable.EvaluableConstant)) for arg in args)
         self.name = name
         self.custom_evalf = evalf
         self.custom_partial_derivative = partial_derivative
         self.args = args
-        self.points_dim = len(points_shape)
-        self.lower_args = points_shape, dict(transform_chains), dict(coordinates)
+        self.points_dim = len(lower_args.points_shape)
+        self.lower_args = lower_args
         self.spaces = spaces
         self.function_arguments = arguments
-        super().__init__((evaluable.Tuple(points_shape), *args), shape=points_shape+shape, dtype=dtype)
+        super().__init__((evaluable.Tuple(lower_args.points_shape), *args), shape=lower_args.points_shape+shape, dtype=dtype)
 
     @property
     def _node_details(self) -> str:
@@ -664,7 +668,7 @@ class _CustomEvaluable(evaluable.Array):
         if self.dtype in (bool, int):
             return super()._derivative(var, seen)
         result = evaluable.Zeros(self.shape + var.shape, dtype=self.dtype)
-        unlowered_args = tuple(_Unlower(arg, self.spaces, self.function_arguments, *self.lower_args) if isinstance(arg, evaluable.Array) else arg.value for arg in self.args)
+        unlowered_args = tuple(_Unlower(arg, self.spaces, self.function_arguments, self.lower_args) if isinstance(arg, evaluable.Array) else arg.value for arg in self.args)
         for iarg, arg in enumerate(self.args):
             if not isinstance(arg, evaluable.Array) or arg.dtype in (bool, int) or var not in arg.dependencies and var != arg:
                 continue
@@ -672,7 +676,7 @@ class _CustomEvaluable(evaluable.Array):
             fpd_expected_shape = tuple(n.__index__() for n in self.shape[self.points_dim:] + arg.shape[self.points_dim:])
             if fpd.shape != fpd_expected_shape:
                 raise ValueError('`partial_derivative` to argument {} returned an array with shape {} but {} was expected.'.format(iarg, fpd.shape, fpd_expected_shape))
-            epd = evaluable.appendaxes(fpd.lower(*self.lower_args), var.shape)
+            epd = evaluable.appendaxes(fpd.lower(self.lower_args), var.shape)
             eda = evaluable.derivative(arg, var, seen)
             eda = evaluable.Transpose.from_end(evaluable.appendaxes(eda, self.shape[self.points_dim:]), *range(self.points_dim, self.ndim))
             result += (epd * eda).sum(range(self.ndim, self.ndim + arg.ndim - self.points_dim))
@@ -686,8 +690,8 @@ class _WithoutPoints:
         self.spaces = __arg.spaces
         self.arguments = __arg.arguments
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        return self._arg.lower((), transform_chains, {})
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        return self._arg.lower(LowerArgs((), args.transform_chains, {}))
 
 
 class _Wrapper(Array):
@@ -705,20 +709,20 @@ class _Wrapper(Array):
         arguments = _join_arguments(arg.arguments for arg in self._args)
         super().__init__(shape, dtype, spaces, arguments)
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        return self._lower(*(arg.lower(points_shape, transform_chains, coordinates) for arg in self._args))
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        return self._lower(*(arg.lower(args) for arg in self._args))
 
 
 class _Zeros(Array):
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        return evaluable.Zeros((*points_shape, *self.shape), self.dtype)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        return evaluable.Zeros((*args.points_shape, *self.shape), self.dtype)
 
 
 class _Ones(Array):
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        return evaluable.ones((*points_shape, *self.shape), self.dtype)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        return evaluable.ones((*args.points_shape, *self.shape), self.dtype)
 
 
 class _Constant(Array):
@@ -727,8 +731,8 @@ class _Constant(Array):
         self._value = types.arraydata(value)
         super().__init__(self._value.shape, self._value.dtype, frozenset(()), {})
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        return evaluable.prependaxes(evaluable.Constant(self._value), points_shape)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        return evaluable.prependaxes(evaluable.Constant(self._value), args.points_shape)
 
 
 class Argument(Array):
@@ -753,8 +757,8 @@ class Argument(Array):
         self.name = name
         super().__init__(shape, dtype, frozenset(()), {name: (tuple(shape), dtype)})
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        return evaluable.prependaxes(evaluable.Argument(self.name, self.shape, self.dtype), points_shape)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        return evaluable.prependaxes(evaluable.Argument(self.name, self.shape, self.dtype), args.points_shape)
 
 
 class _Replace(Array):
@@ -778,9 +782,9 @@ class _Replace(Array):
                 arguments.append(replacement.arguments)
         super().__init__(arg.shape, arg.dtype, arg.spaces, _join_arguments(arguments))
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        arg = self._arg.lower(points_shape, transform_chains, coordinates)
-        replacements = {name: _WithoutPoints(value).lower(points_shape, transform_chains, coordinates) for name, value in self._replacements.items()}
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        arg = self._arg.lower(args)
+        replacements = {name: _WithoutPoints(value).lower(args) for name, value in self._replacements.items()}
         return evaluable.replace_arguments(arg, replacements)
 
 
@@ -810,9 +814,9 @@ class _Transpose(Array):
         self._axes = axes
         super().__init__(tuple(arg.shape[axis] for axis in axes), arg.dtype, arg.spaces, arg.arguments)
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        arg = self._arg.lower(points_shape, transform_chains, coordinates)
-        offset = len(points_shape)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        arg = self._arg.lower(args)
+        offset = len(args.points_shape)
         axes = (*range(offset), *(i+offset for i in self._axes))
         return evaluable.Transpose(arg, axes)
 
@@ -824,10 +828,10 @@ class _Opposite(Array):
         self._space = space
         super().__init__(arg.shape, arg.dtype, arg.spaces, arg.arguments)
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        transform_chains = dict(transform_chains)
-        transform_chains[self._space] = transform_chains[self._space][::-1]
-        return self._arg.lower(points_shape, transform_chains, coordinates)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        oppargs = LowerArgs(args.points_shape, dict(args.transform_chains), args.coordinates)
+        oppargs.transform_chains[self._space] = args.transform_chains[self._space][::-1]
+        return self._arg.lower(oppargs)
 
 
 class _RootCoords(Array):
@@ -836,12 +840,12 @@ class _RootCoords(Array):
         self._space = space
         super().__init__((ndims,), float, frozenset({space}), {})
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
+    def lower(self, args: LowerArgs) -> evaluable.Array:
         inv_linear = evaluable.diagonalize(evaluable.ones(self.shape))
-        inv_linear = evaluable.prependaxes(inv_linear, points_shape)
-        tip_coords = coordinates[self._space]
+        inv_linear = evaluable.prependaxes(inv_linear, args.points_shape)
+        tip_coords = args.coordinates[self._space]
         tip_coords = evaluable.WithDerivative(tip_coords, _tip_derivative_target(self._space, tip_coords.shape[-1]), evaluable.Diagonalize(evaluable.ones(tip_coords.shape)))
-        coords = transform_chains[self._space][0].apply(tip_coords)
+        coords = args.transform_chains[self._space][0].apply(tip_coords)
         return evaluable.WithDerivative(coords, _root_derivative_target(self._space, self.shape[0]), inv_linear)
 
 
@@ -852,9 +856,9 @@ class _TransformsIndex(Array):
         self._transforms = transforms
         super().__init__((), int, frozenset({space}), {})
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        index, tail = transform_chains[self._space][0].index_with_tail_in(self._transforms)
-        return evaluable.prependaxes(index, points_shape)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        index, tail = args.transform_chains[self._space][0].index_with_tail_in(self._transforms)
+        return evaluable.prependaxes(index, args.points_shape)
 
 
 class _TransformsCoords(Array):
@@ -864,8 +868,8 @@ class _TransformsCoords(Array):
         self._transforms = transforms
         super().__init__((transforms.fromdims,), float, frozenset({space}), {})
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        index, tail = transform_chains[self._space][0].index_with_tail_in(self._transforms)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        index, tail = args.transform_chains[self._space][0].index_with_tail_in(self._transforms)
         head = self._transforms.get_evaluable(index)
         L = head.linear
         if self._transforms.todims > self._transforms.fromdims:
@@ -873,8 +877,8 @@ class _TransformsCoords(Array):
             Linv = evaluable.einsum('ik,jk->ij', evaluable.inverse(LTL), L)
         else:
             Linv = evaluable.inverse(L)
-        Linv = evaluable.prependaxes(Linv, points_shape)
-        tip_coords = coordinates[self._space]
+        Linv = evaluable.prependaxes(Linv, args.points_shape)
+        tip_coords = args.coordinates[self._space]
         tip_coords = evaluable.WithDerivative(tip_coords, _tip_derivative_target(self._space, tip_coords.shape[-1]), evaluable.Diagonalize(evaluable.ones(tip_coords.shape)))
         coords = tail.apply(tip_coords)
         return evaluable.WithDerivative(coords, _root_derivative_target(self._space, self._transforms.todims), Linv)
@@ -890,8 +894,8 @@ class _Derivative(Array):
         arguments = _join_arguments((arg.arguments, var.arguments))
         super().__init__(arg.shape+var.shape, complex if var.dtype == complex else arg.dtype, arg.spaces | var.spaces, arguments)
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        arg = self._arg.lower(points_shape, transform_chains, coordinates)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        arg = self._arg.lower(args)
         return evaluable.derivative(arg, self._eval_var)
 
 
@@ -915,13 +919,13 @@ class _Gradient(Array):
         arguments = _join_arguments((func.arguments, geom.arguments))
         super().__init__(self._geom.shape, complex if func.dtype == complex else float, func.spaces | geom.spaces, arguments)
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        func = self._func.lower(points_shape, transform_chains, coordinates)
-        geom = self._geom.lower(points_shape, transform_chains, coordinates)
-        ref_dim = builtins.sum(transform_chains[space][0].todims for space in self._geom.spaces)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        func = self._func.lower(args)
+        geom = self._geom.lower(args)
+        ref_dim = builtins.sum(args.transform_chains[space][0].todims for space in self._geom.spaces)
         if self._geom.shape[-1] != ref_dim:
             raise Exception('cannot invert {}x{} jacobian'.format(self._geom.shape[-1], ref_dim))
-        refs = tuple(_root_derivative_target(space, chain.todims) for space, (chain, opposite) in transform_chains.items() if space in self._geom.spaces)
+        refs = tuple(_root_derivative_target(space, chain.todims) for space, (chain, opposite) in args.transform_chains.items() if space in self._geom.spaces)
         dfunc_dref = evaluable.concatenate([evaluable.derivative(func, ref) for ref in refs], axis=-1)
         dgeom_dref = evaluable.concatenate([evaluable.derivative(geom, ref) for ref in refs], axis=-1)
         dref_dgeom = evaluable.inverse(dgeom_dref)
@@ -941,13 +945,13 @@ class _SurfaceGradient(Array):
         arguments = _join_arguments((func.arguments, geom.arguments))
         super().__init__(self._geom.shape, complex if func.dtype == complex else float, func.spaces | geom.spaces, arguments)
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        func = self._func.lower(points_shape, transform_chains, coordinates)
-        geom = self._geom.lower(points_shape, transform_chains, coordinates)
-        ref_dim = builtins.sum(transform_chains[space][0].fromdims for space in self._geom.spaces)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        func = self._func.lower(args)
+        geom = self._geom.lower(args)
+        ref_dim = builtins.sum(args.transform_chains[space][0].fromdims for space in self._geom.spaces)
         if self._geom.shape[-1] != ref_dim + 1:
             raise ValueError('expected a {}d geometry but got a {}d geometry'.format(ref_dim + 1, self._geom.shape[-1]))
-        refs = tuple((_root_derivative_target if chain.todims == chain.fromdims else _tip_derivative_target)(space, chain.fromdims) for space, (chain, opposite) in transform_chains.items() if space in self._geom.spaces)
+        refs = tuple((_root_derivative_target if chain.todims == chain.fromdims else _tip_derivative_target)(space, chain.fromdims) for space, (chain, opposite) in args.transform_chains.items() if space in self._geom.spaces)
         dfunc_dref = evaluable.concatenate([evaluable.derivative(func, ref) for ref in refs], axis=-1)
         dgeom_dref = evaluable.concatenate([evaluable.derivative(geom, ref) for ref in refs], axis=-1)
         dref_dgeom = evaluable.einsum('Ajk,Aik->Aij', dgeom_dref, evaluable.inverse(evaluable.grammium(dgeom_dref)))
@@ -970,16 +974,16 @@ class _Jacobian(Array):
         self._geom = geom
         super().__init__((), float, geom.spaces, geom.arguments)
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        geom = self._geom.lower(points_shape, transform_chains, coordinates)
-        tip_dim = builtins.sum(transform_chains[space][0].fromdims for space in self._geom.spaces)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        geom = self._geom.lower(args)
+        tip_dim = builtins.sum(args.transform_chains[space][0].fromdims for space in self._geom.spaces)
         if self._tip_dim is not None and self._tip_dim != tip_dim:
             raise ValueError('Expected a tip dimension of {} but got {}.'.format(self._tip_dim, tip_dim))
         if self._geom.shape[-1] < tip_dim:
             raise ValueError('the dimension of the geometry cannot be lower than the dimension of the tip coords')
         if not self._geom.spaces:
             return evaluable.ones(geom.shape[:-1])
-        tips = [_tip_derivative_target(space, chain.fromdims) for space, (chain, opposite) in transform_chains.items() if space in self._geom.spaces]
+        tips = [_tip_derivative_target(space, chain.fromdims) for space, (chain, opposite) in args.transform_chains.items() if space in self._geom.spaces]
         J = evaluable.concatenate([evaluable.derivative(geom, tip) for tip in tips], axis=-1)
         return evaluable.sqrt_abs_det_gram(J)
 
@@ -991,10 +995,10 @@ class _Normal(Array):
         assert geom.dtype == float
         super().__init__(geom.shape, float, geom.spaces, geom.arguments)
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        geom = self._geom.lower(points_shape, transform_chains, coordinates)
-        spaces_dim = builtins.sum(transform_chains[space][0].todims for space in self._geom.spaces)
-        normal_dim = spaces_dim - builtins.sum(transform_chains[space][0].fromdims for space in self._geom.spaces)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        geom = self._geom.lower(args)
+        spaces_dim = builtins.sum(args.transform_chains[space][0].todims for space in self._geom.spaces)
+        normal_dim = spaces_dim - builtins.sum(args.transform_chains[space][0].fromdims for space in self._geom.spaces)
         if self._geom.shape[-1] != spaces_dim:
             raise ValueError('The dimension of geometry must equal the sum of the dimensions of the given spaces.')
         if normal_dim == 0:
@@ -1003,7 +1007,7 @@ class _Normal(Array):
             raise ValueError('Cannot unambiguously compute the normal because the dimension of the normal space is larger than one.')
         tangents = []
         normal = None
-        for space, (chain, opposite) in transform_chains.items():
+        for space, (chain, opposite) in args.transform_chains.items():
             if space not in self._geom.spaces:
                 continue
             rgrad = evaluable.derivative(geom, _root_derivative_target(space, chain.todims))
@@ -1026,8 +1030,8 @@ class _ExteriorNormal(Array):
         self._rgrad = rgrad
         super().__init__(rgrad.shape[:-1], float, rgrad.spaces, rgrad.arguments)
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        rgrad = self._rgrad.lower(points_shape, transform_chains, coordinates)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        rgrad = self._rgrad.lower(args)
         if self._rgrad.shape[-2] == 2:
             normal = evaluable.stack([rgrad[..., 1, 0], -rgrad[..., 0, 0]], axis=-1)
         elif self._rgrad.shape[-2] == 3:
@@ -1053,8 +1057,8 @@ class _Concatenate(Array):
             spaces=functools.reduce(operator.or_, (array.spaces for array in self.arrays)),
             arguments=_join_arguments(array.arguments for array in self.arrays))
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        return util.sum(evaluable._inflate(array.lower(points_shape, transform_chains, coordinates), evaluable.Range(array.shape[self.axis]) + offset, self.shape[self.axis], self.axis-self.ndim)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        return util.sum(evaluable._inflate(array.lower(args), evaluable.Range(array.shape[self.axis]) + offset, self.shape[self.axis], self.axis-self.ndim)
                         for array, offset in zip(self.arrays, util.cumsum(array.shape[self.axis] for array in self.arrays)))
 
 
@@ -3473,10 +3477,10 @@ class Basis(Array):
         assert evaluable.equalindex(self._arg_dofs.shape[0], self._arg_coeffs.shape[0])
         self._arg_ndofs = evaluable.asarray(self._arg_dofs.shape[0])
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        index = _WithoutPoints(self.index).lower(points_shape, transform_chains, coordinates)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        index = _WithoutPoints(self.index).lower(args)
         dofs, coeffs = self.f_dofs_coeffs(index)
-        coords = self.coords.lower(points_shape, transform_chains, coordinates)
+        coords = self.coords.lower(args)
         return evaluable.Inflate(evaluable.Polyval(coeffs, coords), dofs, self.ndofs)
 
     @util.cached_property
@@ -3673,9 +3677,9 @@ class LegendreBasis(Basis):
                 coeffs[n, k] = (-1 if (n+k) % 2 else 1) * numeric.binom(n, k) * numeric.binom(n+k, k)
         return dofs, evaluable.astype(evaluable.asarray(coeffs), float)
 
-    def lower(self, points_shape: _PointsShape, transform_chains: _TransformChainsMap, coordinates: _CoordinatesMap) -> evaluable.Array:
-        index = _WithoutPoints(self.index).lower(points_shape, transform_chains, coordinates)
-        coords = self.coords.lower(points_shape, transform_chains, coordinates)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        index = _WithoutPoints(self.index).lower(args)
+        coords = self.coords.lower(args)
         assert evaluable.equalindex(coords.shape[-1], 1)
         leg = evaluable.Legendre(evaluable.get(coords, coords.ndim-1, 0) * 2 - 1, self._degree)
         dofs = evaluable.Range(self._degree+1) + index * (self._degree+1)
