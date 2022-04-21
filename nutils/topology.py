@@ -955,7 +955,7 @@ else:
 
 class _EmptyUnlowerable(function.Array):
 
-    def lower(self, points_shape, transform_chains, coordinates) -> evaluable.Array:
+    def lower(self, args: function.LowerArgs) -> evaluable.Array:
         raise ValueError('cannot lower')
 
 
@@ -1419,7 +1419,7 @@ class TransformChainsTopology(Topology):
         if leveltopo is None:
             ielem_arg = evaluable.Argument('_trim_index', (), dtype=int)
             coordinates = self.references.getpoints('vertex', maxrefine).get_evaluable_coords(ielem_arg)
-            levelset = levelset.lower(coordinates.shape[:-1], {self.space: (self.transforms.get_evaluable(ielem_arg), self.opposites.get_evaluable(ielem_arg))}, {self.space: coordinates}).optimized_for_numpy
+            levelset = levelset.lower(function.LowerArgs(coordinates.shape[:-1], {self.space: (self.transforms.get_evaluable(ielem_arg), self.opposites.get_evaluable(ielem_arg))}, {self.space: coordinates})).optimized_for_numpy
             with log.iter.percentage('trimming', range(len(self)), self.references) as items:
                 for ielem, ref in items:
                     levels = levelset.eval(_trim_index=ielem, **arguments)
@@ -1428,7 +1428,7 @@ class TransformChainsTopology(Topology):
             log.info('collecting leveltopo elements')
             coordinates = evaluable.Points(evaluable.NPoints(), self.ndims)
             transform_chain = transform.EvaluableTransformChain.from_argument('trans', self.transforms.todims, self.transforms.fromdims)
-            levelset = levelset.lower(coordinates.shape[:-1], {self.space: (transform_chain, transform_chain)}, {self.space: coordinates}).optimized_for_numpy
+            levelset = levelset.lower(function.LowerArgs(coordinates.shape[:-1], {self.space: (transform_chain, transform_chain)}, {self.space: coordinates})).optimized_for_numpy
             bins = [set() for ielem in range(len(self))]
             for trans in leveltopo.transforms:
                 ielem, tail = self.transforms.index_with_tail(trans)
@@ -1496,7 +1496,7 @@ class TransformChainsTopology(Topology):
         points = parallel.shempty((len(coords), len(geom)), dtype=float)
         _ielem = evaluable.Argument('_locate_ielem', shape=(), dtype=int)
         _point = evaluable.Argument('_locate_point', shape=(self.ndims,))
-        egeom = geom.lower((), {self.space: (self.transforms.get_evaluable(_ielem), self.opposites.get_evaluable(_ielem))}, {self.space: _point})
+        egeom = geom.lower(function.LowerArgs((), {self.space: (self.transforms.get_evaluable(_ielem), self.opposites.get_evaluable(_ielem))}, {self.space: _point}))
         xJ = evaluable.Tuple((egeom, evaluable.derivative(egeom, _point))).simplified
         if skip_missing:
             if weights is not None:
