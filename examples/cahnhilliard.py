@@ -151,22 +151,19 @@ def main(size: Length, epsilon: Length, mobility: Time/Density, stens: Tension,
 
     bezier = domain.sample('bezier', 5)  # sample for surface plots
     grid = domain.locate(geom, numeric.simplex_grid([1, 1], 1/40), maxdist=1/nelems, skip_missing=True, tol=1e-5)  # sample for quivers
-
-    φbasis = ηbasis = domain.basis('std', degree=degree)
-    ηbasis *= stens / epsilon  # basis scaling to give η the required unit
+    basis = domain.basis('std', degree=degree)
 
     ns = Namespace()
     ns.x = size * geom
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
+    ns.add_field(('φ', 'φ0'), basis)
+    ns.add_field('η', basis * stens / epsilon) # basis scaling to give η the required unit
     ns.ε = epsilon
     ns.σ = stens
-    ns.φ = function.dotarg('φ', φbasis)
     ns.σmean = (wtensp + wtensn) / 2
     ns.σdiff = (wtensp - wtensn) / 2
     ns.σwall = 'σmean + φ σdiff'
-    ns.φ0 = function.dotarg('φ0', φbasis)
     ns.dφ = 'φ - φ0'
-    ns.η = function.dotarg('η', ηbasis)
     ns.ψ = '.25 (φ^2 - 1)^2'
     ns.δψ = stab.value
     ns.M = mobility
@@ -179,7 +176,7 @@ def main(size: Length, epsilon: Length, mobility: Time/Density, stens: Tension,
     nrg = nrg_mix + nrg_iface + nrg_wall + domain.integral('(δψ σ / ε - η dφ + .5 dt J_k ∇_k(η)) dV' @ ns, degree=7)
 
     numpy.random.seed(seed)
-    state = dict(φ=numpy.random.normal(0, .5, φbasis.shape))  # initial condition
+    state = dict(φ=numpy.random.normal(0, .5, basis.shape)) # initial condition
 
     with log.iter.fraction('timestep', range(round(endtime / timestep))) as steps:
         for istep in steps:

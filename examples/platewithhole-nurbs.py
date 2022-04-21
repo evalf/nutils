@@ -57,43 +57,42 @@ def main(nrefine: int, traction: float, radius: float, poisson: float):
 
     ns = Namespace()
     ns.δ = function.eye(domain.ndims)
-    ns.x = geom
-    ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
-    ns.lmbda = 2 * poisson
-    ns.mu = 1 - poisson
-    ns.ubasis = nurbsbasis.vector(2)
-    ns.u = function.dotarg('lhs', ns.ubasis)
-    ns.X_i = 'x_i + u_i'
-    ns.strain_ij = '(∇_j(u_i) + ∇_i(u_j)) / 2'
-    ns.stress_ij = 'lmbda strain_kk δ_ij + 2 mu strain_ij'
-    ns.r2 = 'x_k x_k'
+    ns.X = geom
+    ns.define_for('X', gradient='∇', normal='n', jacobians=('dV', 'dS'))
+    ns.λ = 2 * poisson
+    ns.μ = 1 - poisson
+    ns.add_field(('u', 'v'), nurbsbasis, shape=[2])
+    ns.x_i = 'X_i + u_i'
+    ns.ε_ij = '(∇_j(u_i) + ∇_i(u_j)) / 2'
+    ns.σ_ij = 'λ ε_kk δ_ij + 2 μ ε_ij'
+    ns.r2 = 'X_k X_k'
     ns.R2 = radius**2 / ns.r2
     ns.k = (3-poisson) / (1+poisson)  # plane stress parameter
     ns.scale = traction * (1+poisson) / 2
-    ns.uexact_i = 'scale (x_i ((k + 1) (0.5 + R2) + (1 - R2) R2 (x_0^2 - 3 x_1^2) / r2) - 2 δ_i1 x_1 (1 + (k - 1 + R2) R2))'
+    ns.uexact_i = 'scale (X_i ((k + 1) (0.5 + R2) + (1 - R2) R2 (X_0^2 - 3 X_1^2) / r2) - 2 δ_i1 X_1 (1 + (k - 1 + R2) R2))'
     ns.du_i = 'u_i - uexact_i'
 
     sqr = domain.boundary['top,bottom'].integral('(u_i n_i)^2 dS' @ ns, degree=9)
-    cons = solver.optimize('lhs', sqr, droptol=1e-15)
+    cons = solver.optimize('u', sqr, droptol=1e-15)
     sqr = domain.boundary['right'].integral('du_k du_k dS' @ ns, degree=20)
-    cons = solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
+    cons = solver.optimize('u', sqr, droptol=1e-15, constrain=cons)
 
     # construct residual
-    res = domain.integral('∇_j(ubasis_ni) stress_ij dV' @ ns, degree=9)
+    res = domain.integral('∇_j(v_i) σ_ij dV' @ ns, degree=9)
 
     # solve system
-    lhs = solver.solve_linear('lhs', res, constrain=cons)
+    u = solver.solve_linear('u:v', res, constrain=cons)
 
     # vizualize result
     bezier = domain.sample('bezier', 9)
-    X, stressxx = bezier.eval(['X_i', 'stress_00'] @ ns, lhs=lhs)
-    export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull, clim=(numpy.nanmin(stressxx), numpy.nanmax(stressxx)))
+    x, σxx = bezier.eval(['x_i', 'σ_00'] @ ns, u=u)
+    export.triplot('stressxx.png', x, σxx, tri=bezier.tri, hull=bezier.hull, clim=(numpy.nanmin(σxx), numpy.nanmax(σxx)))
 
     # evaluate error
-    err = function.sqrt(domain.integral(['du_k du_k dV', '∇_j(du_i) ∇_j(du_i) dV'] @ ns, degree=9)).eval(lhs=lhs)
+    err = function.sqrt(domain.integral(['du_k du_k dV', '∇_j(du_i) ∇_j(du_i) dV'] @ ns, degree=9)).eval(u=u)
     treelog.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
-    return err, cons, lhs
+    return err, cons, u
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line. For
@@ -114,7 +113,7 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
     def test0(self):
-        err, cons, lhs = main(nrefine=0, traction=.1, radius=.5, poisson=.3)
+        err, cons, u = main(nrefine=0, traction=.1, radius=.5, poisson=.3)
         with self.subTest('l2-error'):
             self.assertAlmostEqual(err[0], .00199, places=5)
         with self.subTest('h1-error'):
@@ -123,11 +122,11 @@ class test(testing.TestCase):
             self.assertAlmostEqual64(cons, '''
                 eNpjYGBoQIIggMZXOKdmnHRe3vjh+cvGDAwA6w0LgQ==''')
         with self.subTest('left-hand side'):
-            self.assertAlmostEqual64(lhs, '''
+            self.assertAlmostEqual64(u, '''
                 eNpjYJh07qLhhnOTjb0vTDdmAAKVcy/1u85lGYforQDzFc6pGSedlzd+eP4ykA8AvkQRaA==''')
 
     def test2(self):
-        err, cons, lhs = main(nrefine=2, traction=.1, radius=.5, poisson=.3)
+        err, cons, u = main(nrefine=2, traction=.1, radius=.5, poisson=.3)
         with self.subTest('l2-error'):
             self.assertAlmostEqual(err[0], .00009, places=5)
         with self.subTest('h1-error'):
@@ -136,7 +135,7 @@ class test(testing.TestCase):
             self.assertAlmostEqual64(cons, '''
                 eNpjYGBoIAKCwCBXp3kuysDjnLXR+3NPjTzPqxrnAnHeeQvjk+dTjZ9d2GG85soJYwYGAPkhPtE=''')
         with self.subTest('left-hand side'):
-            self.assertAlmostEqual64(lhs, '''
+            self.assertAlmostEqual64(u, '''
                 eNpjYOg890mv85yM4axz0kYHz+00Yj6vZJxzPtWY+0KPMffFucaml+caMwBB5LlCvYhzCw0qzu0wPHyu
                 0sjlPIsx14VoY/6LvcaxlxYZz7myCKzO+dwWPZdzBwzqz20z/Hguxmj2+TtGHRdsjHdfbDB2v7zUeMXV
                 pWB1VucC9B3OORmuOCdhZHR+ktGu87eNbC6oGstfLDA+eWm1seG19WB1Buf+6ruce2p469wco9Dzb4wm

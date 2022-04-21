@@ -43,38 +43,37 @@ def main(nelems: int, etype: str, btype: str, degree: int, traction: float, maxr
 
     ns = Namespace()
     ns.δ = function.eye(domain.ndims)
-    ns.x = geom
-    ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
-    ns.lmbda = 2 * poisson
-    ns.mu = 1 - poisson
-    ns.ubasis = domain.basis(btype, degree=degree).vector(2)
-    ns.u = function.dotarg('lhs', ns.ubasis)
-    ns.X_i = 'x_i + u_i'
-    ns.strain_ij = '(∇_j(u_i) + ∇_i(u_j)) / 2'
-    ns.stress_ij = 'lmbda strain_kk δ_ij + 2 mu strain_ij'
-    ns.r2 = 'x_k x_k'
+    ns.X = geom
+    ns.define_for('X', gradient='∇', normal='n', jacobians=('dV', 'dS'))
+    ns.λ = 2 * poisson
+    ns.μ = 1 - poisson
+    ns.add_field(('u', 'v'), domain.basis(btype, degree=degree), shape=[2])
+    ns.x_i = 'X_i + u_i'
+    ns.ε_ij = '(∇_j(u_i) + ∇_i(u_j)) / 2'
+    ns.σ_ij = 'λ ε_kk δ_ij + 2 μ ε_ij'
+    ns.r2 = 'X_k X_k'
     ns.R2 = radius**2 / ns.r2
     ns.k = (3-poisson) / (1+poisson)  # plane stress parameter
     ns.scale = traction * (1+poisson) / 2
-    ns.uexact_i = 'scale (x_i ((k + 1) (0.5 + R2) + (1 - R2) R2 (x_0^2 - 3 x_1^2) / r2) - 2 δ_i1 x_1 (1 + (k - 1 + R2) R2))'
+    ns.uexact_i = 'scale (X_i ((k + 1) (0.5 + R2) + (1 - R2) R2 (X_0^2 - 3 X_1^2) / r2) - 2 δ_i1 X_1 (1 + (k - 1 + R2) R2))'
     ns.du_i = 'u_i - uexact_i'
 
     sqr = domain.boundary['left,bottom'].integral('(u_i n_i)^2 dS' @ ns, degree=degree*2)
-    cons = solver.optimize('lhs', sqr, droptol=1e-15)
+    cons = solver.optimize('u', sqr, droptol=1e-15)
     sqr = domain.boundary['top,right'].integral('du_k du_k dS' @ ns, degree=20)
-    cons = solver.optimize('lhs', sqr, droptol=1e-15, constrain=cons)
+    cons = solver.optimize('u', sqr, droptol=1e-15, constrain=cons)
 
-    res = domain.integral('∇_j(ubasis_ni) stress_ij dV' @ ns, degree=degree*2)
-    lhs = solver.solve_linear('lhs', res, constrain=cons)
+    res = domain.integral('∇_j(v_i) σ_ij dV' @ ns, degree=degree*2)
+    u = solver.solve_linear('u:v', res, constrain=cons)
 
     bezier = domain.sample('bezier', 5)
-    X, stressxx = bezier.eval(['X_i', 'stress_00'] @ ns, lhs=lhs)
-    export.triplot('stressxx.png', X, stressxx, tri=bezier.tri, hull=bezier.hull)
+    x, σxx = bezier.eval(['x_i', 'σ_00'] @ ns, u=u)
+    export.triplot('stressxx.png', x, σxx, tri=bezier.tri, hull=bezier.hull)
 
-    err = domain.integral(function.stack(['du_k du_k dV', '∇_j(du_i) ∇_j(du_i) dV'] @ ns), degree=max(degree, 3)*2).eval(lhs=lhs)**.5
+    err = domain.integral(function.stack(['du_k du_k dV', '∇_j(du_i) ∇_j(du_i) dV'] @ ns), degree=max(degree, 3)*2).eval(u=u)**.5
     treelog.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
-    return err, cons, lhs
+    return err, cons, u
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line. For
@@ -96,7 +95,7 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
     def test_spline(self):
-        err, cons, lhs = main(nelems=4, etype='square', btype='spline', degree=2, traction=.1, maxrefine=2, radius=.5, poisson=.3)
+        err, cons, u = main(nelems=4, etype='square', btype='spline', degree=2, traction=.1, maxrefine=2, radius=.5, poisson=.3)
         with self.subTest('l2-error'):
             self.assertAlmostEqual(err[0], .00033, places=5)
         with self.subTest('h1-error'):
@@ -106,13 +105,13 @@ class test(testing.TestCase):
                 eNpjaGBoYGBAxvrnGBow4X89g3NQFSjQwLAGq7i10Wus4k+NfM8fNWZgOGL89upc47WX0ozvXjAzPn1e
                 1TjnPACrACoJ''')
         with self.subTest('left-hand side'):
-            self.assertAlmostEqual64(lhs, '''
+            self.assertAlmostEqual64(u, '''
                 eNpbZHbajIHhxzkGBhMgtgdi/XPypyRPvjFxO/PccPq5Vn2vcxr6luf+6xmcm2LMwLDQePf5c0bTzx8x
                 5D7vaTjnnIFhzbmlQPH5xhV39Y3vXlxtJHoh2EjvvLXR63MbgOIbjRdfrTXeecnUeO+Fn0Yrzj818j1/
                 FCh+xPjt1bnGay+lGd+9YGZ8+ryqcc55AK+AP/0=''')
 
     def test_mixed(self):
-        err, cons, lhs = main(nelems=4, etype='mixed', btype='std', degree=2, traction=.1, maxrefine=2, radius=.5, poisson=.3)
+        err, cons, u = main(nelems=4, etype='mixed', btype='std', degree=2, traction=.1, maxrefine=2, radius=.5, poisson=.3)
         with self.subTest('l2-error'):
             self.assertAlmostEqual(err[0], .00024, places=5)
         with self.subTest('h1-error'):
@@ -122,7 +121,7 @@ class test(testing.TestCase):
                 eNpjaGDADhlwiOEU1z8HZusbgukkg5BzRJqKFRoa1oD1HzfceA5NH9FmgKC10SuwOdONpM7DxDYa77gM
                 MueoMQPDEePzV2Hic42XXmoynnQRxvc3dryQbnz3Aoj91Mj3vJnx6fOqxjnnAQzkV94=''')
         with self.subTest('left-hand side'):
-            self.assertAlmostEqual64(lhs, '''
+            self.assertAlmostEqual64(u, '''
                 eNoNzE8og3EcBvC3uUo5rNUOnBSK9/19n0Ic0Eo5oJBmRxcaB04kUnPgoETmT2w7LVrtMBy4auMw+35/
                 7/vaykFSFEopKTnIe/jU01PPU6FNWcQIn+Or5CBfSqCGD1uDYhi7/KbW+dma5aK65gX6Y8Po8HSzZQ7y
                 vBniHyvFV9aq17V7TK42O9kwFS9YUzxhjXIcZxLCnIzjTsfxah/BMFJotjUlZYz6xYeoPqEPKaigbKhb

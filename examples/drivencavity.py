@@ -34,12 +34,12 @@ def main(nelems: int, etype: str, degree: int, reynolds: float):
     ns.Σ = function.ones([domain.ndims])
     ns.Re = reynolds
     ns.x = geom
+
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
-    ns.ubasis = domain.basis('std', degree=degree).vector(domain.ndims)
-    ns.pbasis = domain.basis('std', degree=degree-1)
-    ns.u = function.dotarg('u', ns.ubasis)
-    ns.p = function.dotarg('p', ns.pbasis)
-    ns.stress_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
+    ns.add_field(('u', 'v'), domain.basis('std', degree=degree), shape=(domain.ndims,))
+    ns.add_field(('p', 'q'), domain.basis('std', degree=degree-1))
+
+    ns.σ_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
 
     usqr = domain.boundary.integral('u_k u_k dS' @ ns, degree=degree*2)
     wallcons = solver.optimize('u', usqr, droptol=1e-15)
@@ -47,20 +47,19 @@ def main(nelems: int, etype: str, degree: int, reynolds: float):
     usqr = domain.boundary['top'].integral('(u_0 - 1)^2 dS' @ ns, degree=degree*2)
     lidcons = solver.optimize('u', usqr, droptol=1e-15)
 
-    ucons = numpy.choose(numpy.isnan(lidcons), [lidcons, wallcons])
-    pcons = numpy.zeros(len(ns.pbasis), dtype=bool)
-    pcons[-1] = True  # constrain pressure to zero in a point
-    cons = dict(u=ucons, p=pcons)
+    psqr = domain.locate(ns.x, [(1,1)], weights=numpy.array([1.]), tol=1e-10).integral(ns.p**2)
+    ppointcons = solver.optimize('p', psqr, droptol=1e-15)
 
-    ures = domain.integral('∇_j(ubasis_ni) stress_ij dV' @ ns, degree=degree*2)
-    pres = domain.integral('pbasis_n ∇_k(u_k) dV' @ ns, degree=degree*2)
+    cons = dict(u=numpy.choose(numpy.isnan(lidcons), [lidcons, wallcons]), p=ppointcons)
+
+    res = domain.integral('(∇_j(v_i) σ_ij + q ∇_k(u_k)) dV' @ ns, degree=degree*2)
     with treelog.context('stokes'):
-        state0 = solver.solve_linear(('u', 'p'), (ures, pres), constrain=cons)
+        state0 = solver.solve_linear('u:v,p:q', res, constrain=cons)
         postprocess(domain, ns, **state0)
 
-    ures += domain.integral('.5 (ubasis_ni ∇_j(u_i) - ∇_j(ubasis_ni) u_i) u_j dV' @ ns, degree=degree*3)
+    res += domain.integral('.5 (v_i ∇_j(u_i) - u_i ∇_j(v_i)) u_j dV' @ ns, degree=degree*3)
     with treelog.context('navierstokes'):
-        state1 = solver.newton(('u', 'p'), (ures, pres), arguments=state0, constrain=cons).solve(tol=1e-10)
+        state1 = solver.newton('u:v,p:q', res, arguments=state0, constrain=cons).solve(tol=1e-10)
         postprocess(domain, ns, **state1)
 
     return state0, state1

@@ -82,13 +82,9 @@ def main(nelems: int = 50, degree: int = 3, freq: float = 0., nturns: int = 1, r
     ns.eθ = function.stack(['-sin(θ)', 'cos(θ)', '0'] @ ns)
 
     X = RZ * REV
-    #ns.x = function.stack(['r cos(θ)', 'r sin(θ)', 'z'] @ ns)
     ns.x = ns.rz @ ns.rot
     ns.define_for('x', gradient='∇', jacobians=('dV', 'dS'), curl='curl')
-
-    ns.basis = RZ.basis('spline', degree=degree, removedofs=[[0, -1], [-1]])
-    ns.A = function.dotarg('A', ns.basis, dtype=complex) * ns.eθ
-    ns.Atest = function.dotarg('Atest', ns.basis, dtype=float) * ns.eθ
+    ns.add_field(('A', 'Atest'), (RZ.basis('spline', degree=degree, removedofs=[[0, -1], [-1]]), ns.eθ[numpy.newaxis]), dtype=complex)
     ns.B_i = 'curl_ij(A_j)'
     ns.E_i = '-j ω A_i'
     ns.Jind_i = 'σ E_i'
@@ -99,18 +95,16 @@ def main(nelems: int = 50, degree: int = 3, freq: float = 0., nturns: int = 1, r
     res = REV.integral(RZ.integral('-∇_j(Atest_i) ∇_j(A_i) dV' @ ns, degree=2*degree), degree=0)
     res += REV.integral(RZ['coil'].integral('μ0 Atest_i J_i dV' @ ns, degree=2*degree), degree=0)
 
-    state = solver.solve_linear(('A',), (res.derivative('Atest'),))
+    state = solver.solve_linear('A:Atest,', res)
 
     # Since the coordinate transformation is singular at r=0 we can't evaluate
     # `B` (the curl of `A`) at r=0. We circumvent this problem by projecting `B`
     # on a basis.
 
     ns.Borig = ns.B
-    ns.Bbasis = RZ.basis('spline', degree=degree)
-    ns.B = function.dotarg('B', ns.Bbasis, dtype=complex, shape=(2,)) @ ns.rot
-    ns.Btest = function.dotarg('Btest', ns.Bbasis, shape=(2,)) @ ns.rot
+    ns.add_field(('B', 'Btest'), (RZ.basis('spline', degree=degree), ns.rot), dtype=complex)
     res = REV.integral(RZ.integral('Btest_i (B_i - Borig_i) dV' @ ns, degree=2*degree), degree=0)
-    state = solver.solve_linear(('B',), (res.derivative('Btest'),), arguments=state)
+    state = solver.solve_linear('B:Btest,', res, arguments=state)
 
     with export.mplfigure('magnetic-potential-1.png', dpi=300) as fig:
         ax = fig.add_subplot(111, aspect='equal', xlabel='$x_0$', ylabel='$x_2$', adjustable='datalim')
