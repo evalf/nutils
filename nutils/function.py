@@ -36,6 +36,12 @@ class LowerArgs(NamedTuple):
     transform_chains: Mapping[str, Tuple[EvaluableTransformChain, EvaluableTransformChain]]
     coordinates: Mapping[str, evaluable.Array]
 
+    def consistent(self):
+        return all(
+            evaluable.equalshape(coords.shape[:-1], self.points_shape)
+            and space in self.transform_chains
+                for space, coords in self.coordinates.items())
+
 class Lowerable(Protocol):
     'Protocol for lowering to :class:`nutils.evaluable.Array`.'
 
@@ -58,10 +64,9 @@ _ArrayMeta = type
 
 if debug_flags.lower:
     def _debug_lower(self, args: LowerArgs) -> evaluable.Array:
+        assert args.consistent()
         result = self._ArrayMeta__debug_lower_orig(args)
         assert isinstance(result, evaluable.Array)
-        assert all(evaluable.equalshape(coords.shape[:-1], args.points_shape) for coords in args.coordinates.values())
-        assert all(space in args.transform_chains for space in args.coordinates)
         offset = 0 if type(self) == _WithoutPoints else len(args.points_shape)
         assert result.ndim == self.ndim + offset
         assert tuple(int(sh) for sh in result.shape[offset:]) == self.shape, 'shape mismatch'
