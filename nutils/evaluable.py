@@ -229,7 +229,7 @@ def replace(func=None, depthfirst=False, recursive=False, lru=4):
                     cache[obj] = rstack[-1] if rstack[-1] is not obj else identity
                     continue
 
-                if isinstance(obj, (tuple, list, dict, set, frozenset)):
+                if obj.__class__ in (tuple, list, dict, set, frozenset):
                     if not obj:
                         rstack.append(obj)  # shortcut to avoid recreation of empty container
                     else:
