@@ -114,7 +114,7 @@ class withsolve(iterable):
     def __iter__(self):
         return ((retval[self._target], info) for retval, info in self._wrapped) if self._single else iter(self._wrapped)
 
-    def solve(self, tol=0., maxiter=float('inf')):
+    def solve(self, tol=0., maxiter=float('inf'), miniter=0):
         '''execute nonlinear solver, return lhs
 
         Iterates over nonlinear solver until tolerance is reached. Example::
@@ -127,6 +127,8 @@ class withsolve(iterable):
             Target residual norm
         maxiter : :class:`int`
             Maximum number of iterations
+        miniter : :class:`int`
+            Minimum number of iterations
 
         Returns
         -------
@@ -134,12 +136,12 @@ class withsolve(iterable):
             Coefficient vector that corresponds to a smaller than ``tol`` residual.
         '''
 
-        lhs, info = self.solve_withinfo(tol=tol, maxiter=maxiter)
+        lhs, info = self.solve_withinfo(tol=tol, maxiter=maxiter, miniter=miniter)
         return lhs
 
     @types.apply_annotations
     @cache.function
-    def solve_withinfo(self, tol, maxiter=float('inf')):
+    def solve_withinfo(self, tol, maxiter=float('inf'), miniter=0):
         '''execute nonlinear solver, return lhs and info
 
         Like :func:`solve`, but return a 2-tuple of the solution and the
@@ -147,10 +149,11 @@ class withsolve(iterable):
         norm and other generator-dependent information.
         '''
 
+        assert miniter < maxiter
         with log.iter.wrap(_progress(self.__class__.__name__, tol), self) as items:
             i = 0
             for lhs, info in items:
-                if info.resnorm <= tol:
+                if info.resnorm <= tol and i >= miniter:
                     break
                 if i > maxiter:
                     raise SolverError('failed to reach target tolerance')
