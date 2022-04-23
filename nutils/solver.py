@@ -77,42 +77,30 @@ def single_or_multiple(f):
             return f(*ba.args, **ba.kwargs)[target]
         else:
             return f(target, *args, **kwargs)
+
+    del wrapper.__wrapped__ # required for sphinx until issue #10414 is fixed (https://github.com/sphinx-doc/sphinx/issues/10414)
+
     return wrapper
 
 
-class iterable:
-    '''iterable equivalent of single_or_multiple'''
+class withsolve(types.Immutable):
+    '''add a .solve method to iterables'''
 
     @classmethod
-    def single_or_multiple(cls, wrapped):
-        tuple_params = tuple(p.name for p in inspect.signature(wrapped).parameters.values() if p.annotation in (integraltuple, optionalintegraltuple))
-        return type(wrapped.__name__, (cls,), dict(__wrapped__=wrapped, __doc__=cls.__doc__, _tuple_params=tuple_params))
+    def wrap(cls, f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            return cls(f(*args, **kwargs))
+        return wrapper
 
-    def __init__(self, target, *args, **kwargs):
-        self._target = target
-        self._single = isinstance(target, str)
-        if self._single:
-            ba = inspect.signature(self.__wrapped__).bind((target,), *args, **kwargs)
-            for name in self._tuple_params:
-                if name in ba.arguments:
-                    ba.arguments[name] = ba.arguments[name],
-            self._wrapped = self.__wrapped__(*ba.args, **ba.kwargs)
-        else:
-            self._wrapped = self.__wrapped__(target, *args, **kwargs)
-
-    @property
-    def __nutils_hash__(self):
-        return types.nutils_hash(self._wrapped)
+    def __init__(self, wrapped):
+        self._wrapped = wrapped
 
     def __iter__(self):
-        return (retval[self._target] for retval in self._wrapped) if self._single else iter(self._wrapped)
+        return iter(self._wrapped)
 
-
-class withsolve(iterable):
-    '''add a .solve method to (lhs,resnorm) iterators'''
-
-    def __iter__(self):
-        return ((retval[self._target], info) for retval, info in self._wrapped) if self._single else iter(self._wrapped)
+    def __getitem__(self, item):
+        return withsolve(self._wrapped[item])
 
     def solve(self, tol=0., maxiter=float('inf'), miniter=0):
         '''execute nonlinear solver, return lhs
@@ -151,7 +139,7 @@ class withsolve(iterable):
 
         if miniter > maxiter:
             raise ValueError('The minimum number of iterations cannot be larger than the maximum.')
-        with log.iter.wrap(_progress(self.__class__.__name__, tol), self) as items:
+        with log.iter.wrap(_progress(self._wrapped.__class__.__name__, tol), self) as items:
             i = 0
             for lhs, info in items:
                 if info.resnorm <= tol and i >= miniter:
@@ -357,7 +345,8 @@ def solve_linear(target, residual: integraltuple, *, constrain: arrayordict = No
     return lhs
 
 
-@withsolve.single_or_multiple
+@single_or_multiple
+@withsolve.wrap
 class newton(cache.Recursion, length=1):
     '''iteratively solve nonlinear problem by gradient descent
 
@@ -454,8 +443,11 @@ class newton(cache.Recursion, length=1):
             relax = min(relax * scale, 1)
             yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
 
+    def __getitem__(self, item):
+        return ((res[item], info) for (res, info) in self)
 
-@withsolve.single_or_multiple
+@single_or_multiple
+@withsolve.wrap
 class minimize(cache.Recursion, length=1, version=3):
     '''iteratively minimize nonlinear functional by gradient descent
 
@@ -575,8 +567,11 @@ class minimize(cache.Recursion, length=1, version=3):
 
             yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
 
+    def __getitem__(self, item):
+        return ((res[item], info) for (res, info) in self)
 
-@withsolve.single_or_multiple
+@single_or_multiple
+@withsolve.wrap
 class pseudotime(cache.Recursion, length=1):
     '''iteratively solve nonlinear problem by pseudo time stepping
 
@@ -661,8 +656,10 @@ class pseudotime(cache.Recursion, length=1):
             resnorm = numpy.linalg.norm(res)
             yield lhs, types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
 
+    def __getitem__(self, item):
+        return ((res[item], info) for (res, info) in self)
 
-@iterable.single_or_multiple
+@single_or_multiple
 class thetamethod(cache.Recursion, length=1, version=1):
     '''solve time dependent problem using the theta method
 
@@ -750,6 +747,9 @@ class thetamethod(cache.Recursion, length=1, version=1):
         while True:
             lhs = self._step(lhs, self.timestep)
             yield lhs
+
+    def __getitem__(self, item):
+        return (res[item] for res in self)
 
 
 impliciteuler = functools.partial(thetamethod, theta=1)
