@@ -774,7 +774,7 @@ class Argument(Array):
         The name of this argument.
     '''
 
-    def __init__(self, name: str, shape: Shape, *, dtype: DType = float) -> None:
+    def __init__(self, name: str, shape: Shape, dtype: DType = float) -> None:
         self.name = name
         super().__init__(shape, dtype, frozenset(()), {name: (tuple(shape), dtype)})
 
