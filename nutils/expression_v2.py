@@ -709,6 +709,26 @@ class Namespace:
                 raise ValueError('Cannot define the jacobian {!r}: dimension is negative.'.format(jacobian))
             setattr(self, jacobian, function.jacobian(geom, numpy.size(geom) - i))
 
+    def add_field(self, __names: tuple, __bases: tuple = (), shape: Tuple[int, ...] = (), dtype: function.DType = float):
+        '''Add field(s) of the form ns.x = function.dotarg('x', ...)
+
+        Parameters
+        ----------
+        names : :class:`str` or iterable thereof
+            Name of both the generated field and the function argument.
+        bases : :class:`Array` or something that can be :meth:`~Array.cast` into one, or iterable thereof
+            The arrays to take inner products with.
+        shape : :class:`tuple` of :class:`int`, optional
+            The shape to be appended to the argument.
+        dtype : :class:`bool`, :class:`int`, :class:`float` or :class:`complex`
+            The dtype of the argument.
+        '''
+
+        names = (__names,) if isinstance(__names, str) else tuple(__names)
+        bases = tuple(__bases) if isinstance(__bases, (tuple, list)) else (__bases,)
+        for name in names:
+            setattr(self, name, function.dotarg(name, *bases, shape=shape, dtype=dtype))
+
     def copy_(self, **replacements: Mapping[str, function.Array]) -> 'Namespace':
         '''Return a copy of this namespace.
 
