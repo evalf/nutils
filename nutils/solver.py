@@ -65,18 +65,32 @@ def single_or_multiple(f):
     '''add support for legacy string target + array return value'''
 
     sig = inspect.signature(f)
-    tuple_params = tuple(p.name for p in sig.parameters.values() if p.annotation in (integraltuple, optionalintegraltuple))
 
     @functools.wraps(f)
     def wrapper(target, *args, **kwargs):
+        is_single = isinstance(target, str) and ',' not in target
         if isinstance(target, str):
-            ba = sig.bind((target,), *args, **kwargs)
-            for name in tuple_params:
-                if name in ba.arguments:
-                    ba.arguments[name] = ba.arguments[name],
-            return f(*ba.args, **ba.kwargs)[target]
-        else:
-            return f(target, *args, **kwargs)
+            target = target.rstrip(',').split(',')
+        is_functional = ':' in target[0]
+        if any((':' in t) != is_functional for t in target[1:]):
+            raise ValueError('inconsistent arguments')
+        if is_functional:
+            target, test = zip(*[t.split(':', 1) for t in target])
+        ba = sig.bind(tuple(target), *args, **kwargs)
+        tuple_args = [name for name in ba.arguments if sig.parameters[name].annotation in (integraltuple, optionalintegraltuple)]
+        if is_functional:
+            arguments = function._join_arguments(ba.arguments[name].arguments for name in tuple_args)
+            test = [function.Argument(t, *arguments[t]) for t in test]
+        for name in tuple_args:
+            v = ba.arguments[name]
+            if is_functional:
+                v = map(v.derivative, test)
+            elif is_single:
+                v = v,
+            ba.arguments[name] = tuple(v)
+        retval = f(*ba.args, **ba.kwargs)
+        return retval[target[0]] if is_single else retval
+
     return wrapper
 
 
