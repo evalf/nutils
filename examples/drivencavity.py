@@ -37,9 +37,7 @@ def main(nelems: int, etype: str, degree: int, reynolds: float):
 
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     ns.add_field(('u', 'v'), domain.basis('std', degree=degree), shape=(domain.ndims,))
-    ns.add_field(('p', 'q'), domain.basis('std', degree=degree-1))
-
-    ns.σ_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
+    ns.add_field('p', domain.basis('std', degree=degree-1))
 
     usqr = domain.boundary.integral('u_k u_k dS' @ ns, degree=degree*2)
     wallcons = solver.optimize('u', usqr, droptol=1e-15)
@@ -52,11 +50,12 @@ def main(nelems: int, etype: str, degree: int, reynolds: float):
 
     cons = dict(u=numpy.choose(numpy.isnan(lidcons), [lidcons, wallcons]), p=ppointcons)
 
-    res = domain.integral('(∇_j(v_i) σ_ij + q ∇_k(u_k)) dV' @ ns, degree=degree*2)
+    res = domain.integral('(.5 ∇_j(u_i) (∇_j(u_i) + ∇_i(u_j)) / Re - ∇_k(u_k) p) dV' @ ns, degree=degree*2)
     with treelog.context('stokes'):
-        state0 = solver.solve_linear('u:v,p:q', res, constrain=cons)
+        state0 = solver.solve_linear('u:u,p:p', res, constrain=cons)
         postprocess(domain, ns, **state0)
 
+    res = function.linearize(res, 'u:v,p:q')
     res += domain.integral('.5 (v_i ∇_j(u_i) - u_i ∇_j(v_i)) u_j dV' @ ns, degree=degree*3)
     with treelog.context('navierstokes'):
         state1 = solver.newton('u:v,p:q', res, arguments=state0, constrain=cons).solve(tol=1e-10)
