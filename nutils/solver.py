@@ -149,7 +149,8 @@ class withsolve(iterable):
         norm and other generator-dependent information.
         '''
 
-        assert miniter < maxiter
+        if miniter > maxiter:
+            raise ValueError('The minimum number of iterations cannot be larger than the maximum.')
         with log.iter.wrap(_progress(self.__class__.__name__, tol), self) as items:
             i = 0
             for lhs, info in items:
