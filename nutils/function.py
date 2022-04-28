@@ -2751,6 +2751,17 @@ def replace_arguments(__array: IntoArray, __arguments: Mapping[str, IntoArray]) 
     return _Replace(Array.cast(__array), {k: Array.cast(v) for k, v in __arguments.items()})
 
 
+def linearize(__array: IntoArray, arg):
+    array, scale = Array.cast_withscale(__array)
+    args = arg.split(',') if isinstance(arg, str) else arg.items() if isinstance(arg, dict) else arg
+    parts = []
+    for kv in args:
+        k, v = kv.split(':', 1) if isinstance(kv, str) else kv
+        f = derivative(array, k)
+        parts.append(sum(f * Argument(v, f.shape[array.ndim:]), range(array.ndim, f.ndim)))
+    return util.sum(parts) * scale
+
+
 def broadcast_arrays(*arrays: IntoArray) -> Tuple[Array, ...]:
     '''Broadcast the given arrays.
 
