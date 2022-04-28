@@ -912,44 +912,49 @@ class locate(TestCase):
         if self.mode == 'trimmed':
             domain = domain.trim(.2 - geom[0], maxrefine=0)
         self.domain = domain
-        self.geom = geom
+        self.geom = geom * (function.Argument('scale', ()) / .123)
 
     def test(self):
         target = numpy.array([(.2, .3), (.1, .9), (0, 1), (.1, .3)])
-        sample = self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12)
-        located = sample.eval(self.geom)
+        sample = self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12, arguments=dict(scale=.123))
+        located = sample.eval(self.geom, scale=.123)
         self.assertAllAlmostEqual(located, target)
 
     @parametrize.enable_if(lambda etype, mode, **kwargs: etype != 'square' or mode == 'nonlinear')
     def test_maxdist(self):
         target = numpy.array([(.2, .3), (.1, .9), (0, 1), (.1, .3)])
         with self.assertRaises(topology.LocateError):
-            self.domain.locate(self.geom, [(0, .3)], eps=1e-15, tol=1e-12, maxdist=.001)
-        sample = self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12, maxdist=.5)
-        located = sample.eval(self.geom)
+            self.domain.locate(self.geom, [(0, .3)], eps=1e-15, tol=1e-12, maxdist=.001, arguments=dict(scale=.123))
+        sample = self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12, maxdist=.5, arguments=dict(scale=.123))
+        located = sample.eval(self.geom, scale=.123)
         self.assertAllAlmostEqual(located, target)
 
     def test_invalidargs(self):
         target = numpy.array([(.2,), (.1,), (0,)])
         with self.assertRaises(Exception):
-            self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12)
+            self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12, arguments=dict(scale=.123))
 
     def test_invalidpoint(self):
         target = numpy.array([(.3, 1)])  # outside domain, but inside basetopo for mode==trimmed
         with self.assertRaises(topology.LocateError):
-            self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12)
+            self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12, arguments=dict(scale=.123))
 
     def test_boundary(self):
         target = numpy.array([(.2,), (.1,), (0,)])
-        sample = self.domain.boundary['bottom'].locate(self.geom[:1], target, eps=1e-15, tol=1e-12)
-        located = sample.eval(self.geom[:1])
+        sample = self.domain.boundary['bottom'].locate(self.geom[:1], target, eps=1e-15, tol=1e-12, arguments=dict(scale=.123))
+        located = sample.eval(self.geom[:1], scale=.123)
         self.assertAllAlmostEqual(located, target)
 
     def test_boundary_scalar(self):
         target = numpy.array([.3, .9, 1])
-        sample = self.domain.boundary['left'].locate(self.geom[1], target, eps=1e-15, tol=1e-12)
-        located = sample.eval(self.geom[1])
+        sample = self.domain.boundary['left'].locate(self.geom[1], target, eps=1e-15, tol=1e-12, arguments=dict(scale=.123))
+        located = sample.eval(self.geom[1], scale=.123)
         self.assertAllAlmostEqual(located, target)
+
+    def test_missing_argument(self):
+        target = numpy.array([(.2, .3)])
+        with self.assertRaises(Exception):
+            self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12)
 
 
 for etype in 'square', 'triangle', 'mixed':
