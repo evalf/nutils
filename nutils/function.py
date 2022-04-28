@@ -2850,7 +2850,8 @@ def replace_arguments(__array: IntoArray, __arguments: Mapping[str, IntoArray]) 
     :class:`Array`
     '''
 
-    return _Replace(Array.cast(__array), {k: Array.cast(v) for k, v in __arguments.items()})
+    array, scale = Array.cast_withscale(__array)
+    return _Replace(array, {k: Array.cast(v) for k, v in __arguments.items()}) * scale
 
 
 def broadcast_arrays(*arrays: IntoArray) -> Tuple[Array, ...]:
