@@ -2854,6 +2854,46 @@ def replace_arguments(__array: IntoArray, __arguments: Mapping[str, IntoArray]) 
     return _Replace(array, {k: Array.cast(v) for k, v in __arguments.items()}) * scale
 
 
+def linearize(__array: IntoArray, __arguments: Union[str, Dict[str, str], Iterable[str], Iterable[Tuple[str, str]]]):
+    '''Linearize functional.
+
+    Similar to :func:`derivative`, linearize takes the derivative of an array
+    to one or more arguments, but with the derivative directions represented by
+    arguments rather than array axes. The result is by definition linear in the
+    new arguments.
+
+    Parameters
+    ----------
+    array : :class:`Array` or something that can be :meth:`~Array.cast` into one
+    arguments : :class:`str`, :class:`dict` or iterable of strings
+
+    Example
+    -------
+
+    The following example demonstrates the use of linearize with four
+    equivalent argument specifications:
+
+    >>> u, v, p, q = [Argument(s, (), float) for f in 'uvpq']
+    >>> f = u**2 + p
+    >>> lin1 = linearize(f, 'u:v,p:q')
+    >>> lin2 = linearize(f, dict(u='v', p='q'))
+    >>> lin3 = linearize(f, ('u:v', 'p:q'))
+    >>> lin4 = linearize(f, (('u', 'v'), ('p', 'q')))
+    # lin1 = lin2 == lin3 == lin4 == 2 * u * v + q
+    '''
+
+    array, scale = Array.cast_withscale(__array)
+    args = __arguments.split(',') if isinstance(__arguments, str) \
+      else __arguments.items() if isinstance(__arguments, dict) \
+      else __arguments
+    parts = []
+    for kv in args:
+        k, v = kv.split(':', 1) if isinstance(kv, str) else kv
+        f = derivative(array, k)
+        parts.append(numpy.sum(f * Argument(v, f.shape[array.ndim:]), tuple(range(array.ndim, f.ndim))))
+    return util.sum(parts) * scale
+
+
 def broadcast_arrays(*arrays: IntoArray) -> Tuple[Array, ...]:
     '''Broadcast the given arrays.
 
