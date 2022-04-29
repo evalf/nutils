@@ -3420,10 +3420,7 @@ def _int_or_vec(f, arg, argname, nargs, nvals):
         arg = numpy.unique(arg)
         if arg[0] < 0 or arg[-1] >= nargs:
             raise IndexError('{} out of bounds'.format(argname))
-        mask = numpy.zeros(nvals, dtype=bool)
-        for d in arg:
-            mask[numpy.asarray(f(d))] = True
-        return mask.nonzero()[0]
+        return functools.reduce(numpy.union1d, map(f, arg))
     raise IndexError('invalid {}'.format(argname))
 
 
