@@ -3405,9 +3405,9 @@ def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtyp
 # BASES
 
 
-def _int_or_vec(f, self, arg, argname, nargs, nvals):
+def _int_or_vec(f, arg, argname, nargs, nvals):
     if isinstance(arg, numbers.Integral):
-        return f(self, int(numeric.normdim(nargs, arg)))
+        return f(int(numeric.normdim(nargs, arg)))
     if numeric.isboolarray(arg):
         if arg.shape != (nargs,):
             raise IndexError('{} has invalid shape'.format(argname))
@@ -3422,7 +3422,7 @@ def _int_or_vec(f, self, arg, argname, nargs, nvals):
             raise IndexError('{} out of bounds'.format(argname))
         mask = numpy.zeros(nvals, dtype=bool)
         for d in arg:
-            mask[numpy.asarray(f(self, d))] = True
+            mask[numpy.asarray(f(d))] = True
         return mask.nonzero()[0]
     raise IndexError('invalid {}'.format(argname))
 
@@ -3430,14 +3430,14 @@ def _int_or_vec(f, self, arg, argname, nargs, nvals):
 def _int_or_vec_dof(f):
     @functools.wraps(f)
     def wrapped(self, dof: Union[numbers.Integral, numpy.ndarray]) -> numpy.ndarray:
-        return _int_or_vec(f, self, arg=dof, argname='dof', nargs=self.ndofs, nvals=self.nelems)
+        return _int_or_vec(f.__get__(self), arg=dof, argname='dof', nargs=self.ndofs, nvals=self.nelems)
     return wrapped
 
 
 def _int_or_vec_ielem(f):
     @functools.wraps(f)
     def wrapped(self, ielem: Union[numbers.Integral, numpy.ndarray]) -> numpy.ndarray:
-        return _int_or_vec(f, self, arg=ielem, argname='ielem', nargs=self.nelems, nvals=self.ndofs)
+        return _int_or_vec(f.__get__(self), arg=ielem, argname='ielem', nargs=self.nelems, nvals=self.ndofs)
     return wrapped
 
 
