@@ -428,31 +428,30 @@ class newton(cache.Recursion, length=1):
             lhs, vlhs = _redict(lhs, self.target, self.dtype)
             res, jac = self._eval(lhs, mask)
             assert numpy.linalg.norm(res) == info.resnorm
-            relax = info.relax
         else:
             lhs, vlhs = _redict(self.lhs0, self.target, self.dtype)
             res, jac = self._eval(lhs, mask)
-            relax = self.relax0
-            yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
+            info = types.attributes(resnorm=numpy.linalg.norm(res), relax=self.relax0, niter=0)
+            yield lhs, info
         while True:
             dlhs = -jac.solve_leniently(res, **self.solveargs)  # compute new search vector
             res0 = res
             dres = jac@dlhs  # == -res if dlhs was solved to infinite precision
+            relax = info.relax
             vlhs[vmask] += relax * dlhs
             res, jac = self._eval(lhs, mask)
             scale, accept = self.linesearch(res0, relax*dres, res, relax*(jac@dlhs))
             while not accept:  # line search
                 assert scale < 1
-                oldrelax = relax
-                relax *= scale
-                if relax <= self.failrelax:
+                if relax * scale <= self.failrelax:
                     raise SolverError('stuck in local minimum')
-                vlhs[vmask] += (relax - oldrelax) * dlhs
+                vlhs[vmask] += relax * (scale-1) * dlhs
+                relax *= scale
                 res, jac = self._eval(lhs, mask)
                 scale, accept = self.linesearch(res0, relax*dres, res, relax*(jac@dlhs))
             log.info('update accepted at relaxation', round(relax, 5))
-            relax = min(relax * scale, 1)
-            yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
+            info = types.attributes(resnorm=numpy.linalg.norm(res), relax=min(relax*scale,1), niter=info.niter+1)
+            yield lhs, info
 
     def __getitem__(self, item):
         return ((res[item], info) for (res, info) in self)
