@@ -987,7 +987,7 @@ def _determine_dtype(targets, residuals, lhs0, constrain):
         or any(vec.dtype.kind == 'c' for vec in constrain.values())
     ) else float
     if not all(argobjs[target].dtype == dtype for target in targets):
-        raise ValueError('All targets must have dtype {}.'.format(dtype.__name___))
+        raise ValueError('All targets must have dtype {}.'.format(dtype.__name__))
     return dtype
 
 # vim:sw=2:sts=2:et
