@@ -76,6 +76,11 @@ class Array(TestCase):
         with self.assertRaisesRegex(ValueError, "cannot convert non-integer array to index: dtype=float"):
             function.Array.cast(2.5).__index__()
 
+    def test_truthiness(self):
+        topo, geom = mesh.unitsquare(4, 'square')
+        with self.assertRaisesRegex(ValueError, 'The truth value of a nutils Array is ambiguous'):
+            min(geom, 1)
+
 
 class integral_compatibility(TestCase):
 
