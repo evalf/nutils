@@ -239,7 +239,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         return array
 
     def __bool__(self) -> bool:
-        return True
+        raise ValueError('The truth value of a nutils Array is ambiguous')
 
     def __len__(self) -> int:
         'Length of the first axis.'

@@ -1362,3 +1362,11 @@ class simplifications(TestCase):
         f = function.Argument('test', shape=(2, 3), dtype=int)
         self.assertIsNot(f / 1, f)
         self.assertIsNot(f / 1., f)
+
+
+class misc(TestCase):
+
+    def test_truthiness(self):
+        topo, geom = mesh.unitsquare(4, 'square')
+        with self.assertRaisesRegex(ValueError, 'The truth value of a nutils Array is ambiguous'):
+            min(geom, 1)
