@@ -1220,7 +1220,7 @@ def subtract(__left: IntoArray, __right: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    return add(__left, negative(__right))
+    return _Wrapper.broadcasted_arrays(evaluable.subtract, __left, __right)
 
 
 @implements(numpy.positive)
@@ -1252,7 +1252,7 @@ def negative(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    return multiply(__arg, -1)
+    return _Wrapper.broadcasted_arrays(evaluable.negative, __arg)
 
 
 @implements(numpy.multiply)
@@ -1322,7 +1322,7 @@ def reciprocal(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    return power(__arg, -1.)
+    return _Wrapper.broadcasted_arrays(evaluable.reciprocal, __arg)
 
 
 @implements(numpy.power)
@@ -1354,7 +1354,7 @@ def sqrt(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    return power(__arg, .5)
+    return _Wrapper.broadcasted_arrays(evaluable.sqrt, __arg, min_dtype=float)
 
 
 @implements(numpy.square)
@@ -1596,8 +1596,7 @@ def cosh(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    arg = Array.cast(__arg)
-    return .5 * (exp(arg) + exp(-arg))
+    return _Wrapper.broadcasted_arrays(evaluable.cosh, __arg, min_dtype=float)
 
 
 @implements(numpy.sinh)
@@ -1613,8 +1612,7 @@ def sinh(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    arg = Array.cast(__arg)
-    return .5 * (exp(arg) - exp(-arg))
+    return _Wrapper.broadcasted_arrays(evaluable.sinh, __arg, min_dtype=float)
 
 
 @implements(numpy.tanh)
@@ -1630,8 +1628,7 @@ def tanh(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    arg = Array.cast(__arg)
-    return 1 - 2. / (exp(2*arg) + 1)
+    return _Wrapper.broadcasted_arrays(evaluable.tanh, __arg, min_dtype=float)
 
 
 @implements(numpy.arctanh)
@@ -1647,8 +1644,7 @@ def arctanh(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    arg = Array.cast(__arg)
-    return .5 * (ln(1+arg) - ln(1-arg))
+    return _Wrapper.broadcasted_arrays(evaluable.arctanh, __arg, min_dtype=float)
 
 
 @implements(numpy.exp)
@@ -1699,7 +1695,7 @@ def log2(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    return log(__arg) / log(2)
+    return _Wrapper.broadcasted_arrays(evaluable.log2, __arg, min_dtype=float)
 
 
 @implements(numpy.log10)
@@ -1715,7 +1711,7 @@ def log10(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    return log(__arg) / log(10)
+    return _Wrapper.broadcasted_arrays(evaluable.log10, __arg, min_dtype=float)
 
 # COMPARISON
 
