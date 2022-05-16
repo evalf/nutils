@@ -1489,7 +1489,8 @@ class TransformChainsTopology(Topology):
             coords = coords[..., _]
         if not geom.shape == coords.shape[1:] == (self.ndims,):
             raise ValueError('invalid geometry or point shape for {}D topology'.format(self.ndims))
-        centroids = self.sample('_centroid', None).eval(geom)
+        arguments = dict(arguments or ())
+        centroids = self.sample('_centroid', None).eval(geom, **arguments)
         assert len(centroids) == len(self)
         ielems = parallel.shempty(len(coords), dtype=int)
         points = parallel.shempty((len(coords), len(geom)), dtype=float)
@@ -1497,7 +1498,6 @@ class TransformChainsTopology(Topology):
         _point = evaluable.Argument('_locate_point', shape=(self.ndims,))
         egeom = geom.lower((), {self.space: (self.transforms.get_evaluable(_ielem), self.opposites.get_evaluable(_ielem))}, {self.space: _point})
         xJ = evaluable.Tuple((egeom, evaluable.derivative(egeom, _point))).simplified
-        arguments = dict(arguments or ())
         if skip_missing:
             if weights is not None:
                 raise ValueError('weights and skip_missing are mutually exclusive')
@@ -2235,33 +2235,37 @@ class StructuredTopology(TransformChainsTopology):
         axes = [axis.refined for axis in self.axes]
         return StructuredTopology(self.space, self.root, axes, self.nrefine+1, bnames=self._bnames)
 
-    def locate(self, geom, coords, *, tol, eps=0, weights=None, skip_missing=False, **kwargs):
+    def locate(self, geom, coords, *, tol, eps=0, weights=None, skip_missing=False, arguments=None, **kwargs):
         coords = numpy.asarray(coords, dtype=float)
         if geom.ndim == 0:
             geom = geom[_]
             coords = coords[..., _]
         if not geom.shape == coords.shape[1:] == (self.ndims,):
             raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
-        geom0, scale, index = self._asaffine(geom)
-        e = self.sample('uniform', 2).eval(function.norm2(geom0 + index * scale - geom)).max()  # inf-norm on non-gauss sample
+        arguments = dict(arguments or ())
+        geom0, scale, e = self._asaffine(geom, arguments)
         if e > tol:
-            return super().locate(geom, coords, eps=eps, tol=tol, weights=weights, skip_missing=skip_missing, **kwargs)
+            return super().locate(geom, coords, eps=eps, tol=tol, weights=weights, skip_missing=skip_missing, arguments=arguments, **kwargs)
         log.info('locate detected linear geometry: x = {} + {} xi ~{:+.1e}'.format(geom0, scale, e))
         return self._locate(geom0, scale, coords, eps=eps, weights=weights, skip_missing=skip_missing)
 
-    def _asaffine(self, geom):
-        p0 = p1 = self
-        for (b0, b1), axis in zip(self._bnames, self.axes):
-            if axis.isdim:
-                p0 = p0[:].boundary[b0]
-                p1 = p1[:].boundary[b1]
-        geom0, = p0.sample('gauss', 0).eval(geom)
-        geom1, = p1.sample('gauss', 0).eval(geom)
+    def _asaffine(self, geom, arguments):
+        # determine geom0, scale, error such that geom ~= geom0 + index * scale + error
         funcsp = self.basis('std', degree=1, periodic=())
         verts = numeric.meshgrid(*map(numpy.arange, numpy.array(self.shape)+1)).reshape(self.ndims, -1)
         index = (funcsp * verts).sum(-1)
-        scale = (geom1 - geom0) / numpy.array(self.shape)
-        return geom0, scale, index
+        # strategy: fit an affine plane through the minima and maxima of a
+        # uniform sample, and evaluate the error as the largest difference on
+        # the remaining sample points
+        geom_, index_ = self.sample('uniform', 2 + (1 in self.shape)).eval((geom, index), **arguments)
+        imin = geom_.argmin(axis=0)
+        imax = geom_.argmax(axis=0)
+        R = numpy.arange(self.ndims)
+        scale = (geom_[imax,R] - geom_[imin,R]) / (index_[imax,R] - index_[imin,R])
+        geom0 = geom_[imin,R] - index_[imin,R] * scale # geom_[im..,R] = index_[im..,R] * scale + geom0
+        error = numpy.linalg.norm(geom0 + index_ * scale - geom_, axis=1).max()
+
+        return geom0, scale, error
 
     def _locate(self, geom0, scale, coords, *, eps=0, weights=None, skip_missing=False):
         mincoords, maxcoords = numpy.sort([geom0, geom0 + scale * self.shape], axis=0)
