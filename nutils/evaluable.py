@@ -2356,6 +2356,34 @@ class ArcTan(Pointwise):
     complex_deriv = lambda x: reciprocal(1+x**2),
 
 
+class CosH(Pointwise):
+    'Hyperbolic cosine, element-wise.'
+    __slots__ = ()
+    evalf = numpy.cosh
+    complex_deriv = lambda x: SinH(x),
+
+
+class SinH(Pointwise):
+    'Hyperbolic sine, element-wise.'
+    __slots__ = ()
+    evalf = numpy.sinh
+    complex_deriv = CosH,
+
+
+class TanH(Pointwise):
+    'Hyperbolic tangent, element-wise.'
+    __slots__ = ()
+    evalf = numpy.tanh
+    complex_deriv = lambda x: 1 - TanH(x)**2,
+
+
+class ArcTanH(Pointwise):
+    'Inverse tangent, element-wise.'
+    __slots__ = ()
+    evalf = numpy.arctanh
+    complex_deriv = lambda x: reciprocal(1-x**2),
+
+
 class Exp(Pointwise):
     __slots__ = ()
     evalf = numpy.exp
@@ -4365,19 +4393,19 @@ def abs(arg):
 
 
 def sinh(arg):
-    return .5 * (exp(arg) - exp(-arg))
+    return SinH(arg)
 
 
 def cosh(arg):
-    return .5 * (exp(arg) + exp(-arg))
+    return CosH(arg)
 
 
 def tanh(arg):
-    return 1 - 2. / (exp(2*arg) + 1)
+    return TanH(arg)
 
 
 def arctanh(arg):
-    return .5 * (ln(1+arg) - ln(1-arg))
+    return ArcTanH(arg)
 
 
 def divide(arg1, arg2):

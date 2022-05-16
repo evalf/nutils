@@ -408,6 +408,8 @@ def generate(*shape, real, imag, zero, negative):
         raise Exception('shape is too small to test at least one of all selected number categories')
     if real or imag:
         a = numpy.tanh(2 * a / a[-1])  # map to (-1,1)
+        if negative:
+            a[:iz] -= a[iz-1] / 2 # introduce asymmetry to reduce risk of singular matrices
         if real and imag:
             assert negative
             a = a * numpy.exp(1j * numpy.arange(size)**2)
