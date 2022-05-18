@@ -7,7 +7,7 @@
 # exponentially with radius such that the artificial exterior boundary is
 # placed at large (configurable) distance.
 
-from nutils import mesh, function, solver, util, export, cli, testing
+from nutils import mesh, function, solver, util, export, cli, testing, numeric
 from nutils.expression_v2 import Namespace
 import numpy
 import treelog
@@ -23,12 +23,37 @@ class PostProcessor:
         self.spacing = spacing
         self.timestep = timestep
         self.t = 0.
-        self.interpolate = util.tri_interpolator(self.bezier.tri, self.bezier.eval(ns.x), mergetol=1e-5)
-        self.xgrd = util.regularize(self.bbox, self.spacing)
+        self.initialize_xgrd()
+        self.topo = topo
+
+    def initialize_xgrd(self):
+        self.orig = numeric.floor(self.bbox[:,0] / (2*self.spacing)) * 2 - 1
+        nx, ny = numeric.ceil(self.bbox[:,1] / (2*self.spacing)) * 2 + 2 - self.orig
+        self.vacant = numpy.hypot(
+            self.orig[0] + numpy.arange(nx)[:,numpy.newaxis],
+            self.orig[1] + numpy.arange(ny)) > self.ns.R.eval() / self.spacing
+        self.xgrd = (numpy.stack(self.vacant[1::2,1::2].nonzero(), axis=1) * 2 + self.orig + 1) * self.spacing
+
+    def regularize_xgrd(self):
+        # use grid rounding to detect and remove oldest points that have close
+        # neighbours and introduce new points into vacant spots
+        keep = numpy.zeros(len(self.xgrd), dtype=bool)
+        vacant = self.vacant.copy()
+        for i, ind in enumerate(numeric.round(self.xgrd / self.spacing) - self.orig): # points are ordered young to old
+            if all(ind >= 0) and all(ind < vacant.shape) and vacant[tuple(ind)]:
+                vacant[tuple(ind)] = False
+                keep[i] = True
+        roll = numpy.arange(vacant.ndim)-1
+        for _ in roll: # coarsen all dimensions using 3-point window
+            vacant = numeric.overlapping(vacant.transpose(roll), axis=0, n=3)[::2].all(1)
+        newpoints = numpy.stack(vacant.nonzero(), axis=1) * 2 + self.orig + 1
+        self.xgrd = numpy.concatenate([newpoints * self.spacing, self.xgrd[keep]], axis=0)
 
     def __call__(self, args):
-        x, u, p = self.bezier.eval(['x_i', 'u_i', 'p'] @ self.ns, **args)
-        ugrd = self.interpolate[self.xgrd](u)
+        x, p = self.bezier.eval(['x_i', 'p'] @ self.ns, **args)
+        logr = numpy.log(numpy.hypot(*self.xgrd.T) / self.ns.R.eval())
+        φ = numpy.arctan2(self.xgrd[:,1], self.xgrd[:,0]) + numpy.pi
+        ugrd = self.topo.locate(self.ns.grid, numpy.stack([logr, φ], axis=1), eps=1, tol=1e-5).eval(self.ns.u, **args)
         with export.mplfigure('flow.png', figsize=self.figsize) as fig:
             ax = fig.add_axes([0, 0, 1, 1], yticks=[], xticks=[], frame_on=False, xlim=self.bbox[0], ylim=self.bbox[1])
             im = ax.tripcolor(*x.T, self.bezier.tri, p, shading='gouraud', cmap='jet')
@@ -39,7 +64,8 @@ class PostProcessor:
             cax.tick_params(labelsize='large')
             fig.colorbar(im, cax=cax)
         self.t += self.timestep
-        self.xgrd = util.regularize(self.bbox, self.spacing, self.xgrd + ugrd * self.timestep)
+        self.xgrd += ugrd * self.timestep
+        self.regularize_xgrd()
 
 
 def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: float, timestep: float, maxradius: float, seed: int, endtime: float):
