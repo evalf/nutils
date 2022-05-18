@@ -13,6 +13,35 @@ import numpy
 import treelog
 
 
+class PostProcessor:
+
+    def __init__(self, topo, ns, timestep, region=4., aspect=16/9, figscale=7.2, spacing=.05):
+        self.ns = ns
+        self.figsize = aspect * figscale, figscale
+        self.bbox = numpy.array([[-.5, aspect-.5], [-.5, .5]]) * region
+        self.bezier = topo.select(function.min(*(ns.x-self.bbox[:,0])*(self.bbox[:,1]-ns.x))).sample('bezier', 5)
+        self.spacing = spacing
+        self.timestep = timestep
+        self.t = 0.
+        self.interpolate = util.tri_interpolator(self.bezier.tri, self.bezier.eval(ns.x), mergetol=1e-5)
+        self.xgrd = util.regularize(self.bbox, self.spacing)
+
+    def __call__(self, args):
+        x, u, p = self.bezier.eval(['x_i', 'u_i', 'p'] @ self.ns, **args)
+        ugrd = self.interpolate[self.xgrd](u)
+        with export.mplfigure('flow.png', figsize=self.figsize) as fig:
+            ax = fig.add_axes([0, 0, 1, 1], yticks=[], xticks=[], frame_on=False, xlim=self.bbox[0], ylim=self.bbox[1])
+            im = ax.tripcolor(*x.T, self.bezier.tri, p, shading='gouraud', cmap='jet')
+            export.plotlines_(ax, x.T, self.bezier.hull, colors='k', linewidths=.1, alpha=.5)
+            ax.quiver(*self.xgrd.T, *ugrd.T, angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9, alpha=.5, pivot='tip')
+            ax.plot(0, 0, 'k', marker=(3, 2, self.t*self.ns.rotation.eval()*180/numpy.pi-90), markersize=20)
+            cax = fig.add_axes([0.9, 0.1, 0.01, 0.8])
+            cax.tick_params(labelsize='large')
+            fig.colorbar(im, cax=cax)
+        self.t += self.timestep
+        self.xgrd = util.regularize(self.bbox, self.spacing, self.xgrd + ugrd * self.timestep)
+
+
 def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: float, maxradius: float, seed: int, endtime: float):
     '''
     Flow around a cylinder.
@@ -82,35 +111,15 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: f
     res += domain.integral('q ∇_k(u_k) dV' @ ns, degree=9)
     uinertia = domain.integral('v_i u_i dV' @ ns, degree=9)
 
-    bbox = numpy.array([[-2, 46/9], [-2, 2]])  # bounding box for figure based on 16x9 aspect ratio
-    bezier0 = domain.sample('bezier', 5)
-    bezier = bezier0.subset((bezier0.eval((ns.x-bbox[:, 0]) * (bbox[:, 1]-ns.x)) > 0).all(axis=1))
-    interpolate = util.tri_interpolator(bezier.tri, bezier.eval(ns.x), mergetol=1e-5)  # interpolator for quivers
-    spacing = .05  # initial quiver spacing
-    xgrd = util.regularize(bbox, spacing)
+    postprocess = PostProcessor(domain, ns, timestep)
 
     with treelog.iter.plain('timestep', solver.impliciteuler('u:v,p:q', residual=res, inertia=uinertia, arguments=args0, timestep=timestep, constrain=cons, newtontol=1e-10)) as steps:
         for istep, args in enumerate(steps):
 
-            t = istep * timestep
-            x, u, normu, p = bezier.eval(['x_i', 'u_i', 'sqrt(u_i u_i)', 'p'] @ ns, **args)
-            ugrd = interpolate[xgrd](u)
+            postprocess(args)
 
-            with export.mplfigure('flow.png', figsize=(12.8, 7.2)) as fig:
-                ax = fig.add_axes([0, 0, 1, 1], yticks=[], xticks=[], frame_on=False, xlim=bbox[0], ylim=bbox[1])
-                im = ax.tripcolor(x[:, 0], x[:, 1], bezier.tri, p, shading='gouraud', cmap='jet')
-                import matplotlib.collections
-                ax.add_collection(matplotlib.collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1, alpha=.5))
-                ax.quiver(xgrd[:, 0], xgrd[:, 1], ugrd[:, 0], ugrd[:, 1], angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9, alpha=.5)
-                ax.plot(0, 0, 'k', marker=(3, 2, t*rotation*180/numpy.pi-90), markersize=20)
-                cax = fig.add_axes([0.9, 0.1, 0.01, 0.8])
-                cax.tick_params(labelsize='large')
-                fig.colorbar(im, cax=cax)
-
-            if t >= endtime:
+            if istep * timestep >= endtime:
                 break
-
-            xgrd = util.regularize(bbox, spacing, xgrd + ugrd * timestep)
 
     return args0, args
 
