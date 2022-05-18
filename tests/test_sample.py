@@ -54,25 +54,25 @@ class Common:
             desired = functools.reduce(lambda l, r: numpy.einsum('...,i->...i', l, r), (p.weights for p in points))
             self.assertAllAlmostEqual(actual.eval(ielem=ielem).tolist(), desired.tolist())
 
-    def test_update_lower_args(self):
+    def test_get_lower_args(self):
         assert len(self.desired_transform_chains) == len(self.desired_points) == self.desired_nelems
-        points_shape, transform_chains, coords = self.sample.update_lower_args(evaluable.Argument('ielem', (), int), (), {}, {})
+        args = self.sample.get_lower_args(evaluable.Argument('ielem', (), int))
         for ielem, (desired_chains, desired_points) in enumerate(zip(self.desired_transform_chains, self.desired_points)):
             assert len(desired_chains) == len(desired_points) == len(self.desired_spaces)
             desired_shape = tuple(p.coords.shape[0] for p in desired_points)
-            actual_shape = tuple(n.__index__() for n in evaluable.Tuple(points_shape).eval(ielem=ielem))
+            actual_shape = tuple(n.__index__() for n in evaluable.Tuple(args.points_shape).eval(ielem=ielem))
             self.assertEqual(actual_shape, desired_shape)
             offset = 0
             for space, desired_chain, desired_point in zip(self.desired_spaces, desired_chains, desired_points):
-                self.assertEqual(transform_chains[space][0].eval(ielem=ielem), desired_chain)
+                self.assertEqual(args.transform_chains[space][0].eval(ielem=ielem), desired_chain)
                 desired_coords = desired_point.coords
-                desired_coords = numpy.lib.stride_tricks.as_strided(desired_coords, shape=(*desired_shape, desired_point.ndims,), strides=(0,)*offset+desired_coords.strides[:-1]+(0,)*(len(points_shape)-offset-desired_coords.ndim+1)+desired_coords.strides[-1:])
-                actual_coords = coords[space].eval(ielem=ielem)
+                desired_coords = numpy.lib.stride_tricks.as_strided(desired_coords, shape=(*desired_shape, desired_point.ndims,), strides=(0,)*offset+desired_coords.strides[:-1]+(0,)*(len(args.points_shape)-offset-desired_coords.ndim+1)+desired_coords.strides[-1:])
+                actual_coords = args.coordinates[space].eval(ielem=ielem)
                 self.assertEqual(actual_coords.shape, desired_coords.shape)
                 self.assertAllAlmostEqual(actual_coords, desired_coords)
                 offset += desired_point.coords.ndim - 1
         with self.assertRaisesRegex(ValueError, '^Nested'):
-            self.sample.update_lower_args(evaluable.Argument('ielem2', (), int), points_shape, transform_chains, coords)
+            args | self.sample.get_lower_args(evaluable.Argument('ielem2', (), int))
 
     @property
     def _desired_element_tri(self):
@@ -126,9 +126,9 @@ class Common:
             take = self.sample.take_elements(numpy.array([ielem]))
             self.assertEqual(take.nelems, 1)
             self.assertEqual(take.ndims, self.desired_ndims)
-            points_shape, transform_chains, coords = take.update_lower_args(evaluable.Argument('ielem', (), int), (), {}, {})
+            args = take.get_lower_args(evaluable.Argument('ielem', (), int))
             for space, desired_chain in zip(self.desired_spaces, self.desired_transform_chains[ielem]):
-                self.assertEqual(transform_chains[space][0].eval(ielem=0), desired_chain)
+                self.assertEqual(args.transform_chains[space][0].eval(ielem=0), desired_chain)
 
     def test_take_elements_empty(self):
         take = self.sample.take_elements(numpy.array([], int))
@@ -162,7 +162,7 @@ class Empty(TestCase, Common):
         self.desired_tri = ()
         self.desired_hull = ()
 
-    def test_update_lower_args(self):
+    def test_get_lower_args(self):
         pass
 
 
@@ -192,9 +192,9 @@ class Add(TestCase, Common):
         with self.assertRaises(NotImplementedError):
             super().test_get_evaluable_weights()
 
-    def test_update_lower_args(self):
+    def test_get_lower_args(self):
         with self.assertRaises(NotImplementedError):
-            super().test_update_lower_args()
+            super().test_get_lower_args()
 
     def test_asfunction(self):
         with self.assertRaises(NotImplementedError):
@@ -279,7 +279,7 @@ class Zip(TestCase):
         self.assertAlmostEqual(self.stitched.integrate(function.J(self.geomX)), 5/9)  # NOTE: != norm(slope)
 
     def test_nested(self):
-        with self.assertRaisesRegex(ValueError, 'Nested integrals or samples in the same space are not supported.'):
+        with self.assertRaisesRegex(ValueError, 'Nested integrals or samples in the same space: X, Y.'):
             self.stitched.integral(self.stitched.integral(1)).eval()
         topoZ, geomZ = mesh.line(2, space='Z')
         inner = self.stitched.integral((geomZ - self.geomX) * function.J(self.geomY))
