@@ -42,6 +42,10 @@ class LowerArgs(NamedTuple):
             and space in self.transform_chains
                 for space, coords in self.coordinates.items())
 
+    @classmethod
+    def for_space(cls, space: str, transform_chains: Tuple[EvaluableTransformChain, EvaluableTransformChain], coordinates: evaluable.Array) -> 'LowerArgs':
+        return cls(coordinates.shape[:-1], {space: transform_chains}, {space: coordinates})
+
 class Lowerable(Protocol):
     'Protocol for lowering to :class:`nutils.evaluable.Array`.'
 
