@@ -46,6 +46,18 @@ class LowerArgs(NamedTuple):
     def for_space(cls, space: str, transform_chains: Tuple[EvaluableTransformChain, EvaluableTransformChain], coordinates: evaluable.Array) -> 'LowerArgs':
         return cls(coordinates.shape[:-1], {space: transform_chains}, {space: coordinates})
 
+    def __or__(self, other: 'LowerArgs') -> 'LowerArgs':
+        duplicates = set(self.transform_chains) & set(other.transform_chains)
+        if duplicates:
+            raise ValueError(f'Nested integrals or samples in the same space: {", ".join(sorted(duplicates))}.')
+        transform_chains = self.transform_chains.copy()
+        transform_chains.update(other.transform_chains)
+        coordinates = {space: evaluable.Transpose.to_end(evaluable.appendaxes(coords, other.points_shape), coords.ndim - 1) for space, coords in self.coordinates.items()}
+        coordinates.update({space: evaluable.prependaxes(coords, self.points_shape) for space, coords in other.coordinates.items()})
+        points_shape = self.points_shape + other.points_shape
+        return LowerArgs(points_shape, transform_chains, coordinates)
+
+
 class Lowerable(Protocol):
     'Protocol for lowering to :class:`nutils.evaluable.Array`.'
 

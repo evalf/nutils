@@ -160,7 +160,7 @@ class Sample(types.Singleton):
     def get_evaluable_weights(self, __ielem: evaluable.Array) -> evaluable.Array:
         raise NotImplementedError
 
-    def update_lower_args(self, __ielem: evaluable.Array, args: function.LowerArgs) -> Tuple[_PointsShape, _TransformChainsMap, _CoordinatesMap]:
+    def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
         raise NotImplementedError
 
     @util.positional_only
@@ -396,21 +396,8 @@ class _TransformChainsSample(Sample):
     def get_evaluable_weights(self, __ielem: evaluable.Array) -> evaluable.Array:
         return self.points.get_evaluable_weights(__ielem)
 
-    def update_lower_args(self, __ielem: evaluable.Array, args: function.LowerArgs) -> Tuple[_PointsShape, _TransformChainsMap, _CoordinatesMap]:
-        if self.space in args.transform_chains or self.space in args.coordinates:
-            raise ValueError('Nested integrals or samples in the same space are not supported.')
-
-        transform_chains = dict(args.transform_chains)
-        transform_chains[self.space] = space_transform_chains = tuple(t.get_evaluable(__ielem) for t in (self.transforms*2)[:2])
-
-        space_coordinates = self.points.get_evaluable_coords(__ielem)
-        assert space_coordinates.ndim == 2  # axes: points, coord dim
-        coordinates = {space: evaluable.Transpose.to_end(evaluable.appendaxes(coords, space_coordinates.shape[:-1]), coords.ndim - 1) for space, coords in args.coordinates.items()}
-        coordinates[self.space] = evaluable.prependaxes(space_coordinates, args.points_shape)
-
-        points_shape = args.points_shape + space_coordinates.shape[:-1]
-
-        return function.LowerArgs(points_shape, transform_chains, coordinates)
+    def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
+        return function.LowerArgs.for_space(self.space, tuple(t.get_evaluable(__ielem) for t in (self.transforms*2)[:2]), self.points.get_evaluable_coords(__ielem))
 
     def basis(self) -> function.Array:
         return _Basis(self)
@@ -502,8 +489,8 @@ if os.environ.get('NUTILS_TENSORIAL', None) == 'test':  # pragma: nocover
         def get_evaluable_weights(self, __ielem: evaluable.Array) -> evaluable.Array:
             raise SkipTest('`{}` does not implement `Sample.get_evaluable_weights`'.format(type(self).__qualname__))
 
-        def update_lower_args(self, __ielem: evaluable.Array, args: function.LowerArgs) -> Tuple[_PointsShape, _TransformChainsMap, _CoordinatesMap]:
-            raise SkipTest('`{}` does not implement `Sample.update_lower_args`'.format(type(self).__qualname__))
+        def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
+            raise SkipTest('`{}` does not implement `Sample.get_lower_args`'.format(type(self).__qualname__))
 
         @property
         def transforms(self) -> Tuple[Transforms, ...]:
@@ -534,8 +521,8 @@ class _Empty(_TensorialSample):
     def get_evaluable_weights(self, __ielem: evaluable.Array) -> evaluable.Array:
         return evaluable.Zeros((0,) * len(self.spaces), dtype=float)
 
-    def update_lower_args(self, __ielem: evaluable.Array, args: function.LowerArgs) -> Tuple[_PointsShape, _TransformChainsMap, _CoordinatesMap]:
-        return args
+    def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
+        return function.LowerArgs((), {}, {})
 
     def get_element_tri(self, ielem: int) -> numpy.ndarray:
         raise IndexError('index out of range')
@@ -631,10 +618,9 @@ class _Mul(_TensorialSample):
         weights2 = self._sample2.get_evaluable_weights(ielem2)
         return evaluable.einsum('A,B->AB', weights1, weights2)
 
-    def update_lower_args(self, __ielem: evaluable.Array, args: function.LowerArgs) -> Tuple[_PointsShape, _TransformChainsMap, _CoordinatesMap]:
+    def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
         ielem1, ielem2 = evaluable.divmod(__ielem, self._sample2.nelems)
-        args = self._sample1.update_lower_args(ielem1, args)
-        return self._sample2.update_lower_args(ielem2, args)
+        return self._sample1.get_lower_args(ielem1) | self._sample2.get_lower_args(ielem2)
 
     def get_element_tri(self, ielem: int) -> numpy.ndarray:
         if self._sample1.ndims == 1:
@@ -730,18 +716,16 @@ class _Zip(Sample):
         s = evaluable.Take(self._offsets, ielem) + evaluable.Range(evaluable.Take(self._sizes, ielem))
         return evaluable.Take(array, s)
 
-    def update_lower_args(self, ielem: evaluable.Array, args: function.LowerArgs):
-        if set(self.spaces) & set(args.transform_chains):
-            raise ValueError('Nested integrals or samples in the same space are not supported.')
-        size = evaluable.Take(self._sizes, ielem)
-        coordinates = {space: evaluable.insertaxis(coords, -2, size) for space, coords in args.coordinates.items()}
-        transform_chains = args.transform_chains
+    def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
+        points_shape = evaluable.Take(self._sizes, __ielem),
+        coordinates = {}
+        transform_chains = {}
         for samplei, ielemsi, ilocalsi in zip(self._samples, self._ielems, self._ilocals):
-            argsi = samplei.update_lower_args(evaluable.Take(ielemsi, ielem), function.LowerArgs((), transform_chains, {}))
-            transform_chains = argsi.transform_chains
-            for space, coords in argsi.coordinates.items():
-                coordinates[space] = evaluable.prependaxes(evaluable._take(coords, self._getslice(ilocalsi, ielem), axis=0), args.points_shape)
-        return function.LowerArgs((*args.points_shape, size), transform_chains, coordinates)
+            argsi = samplei.get_lower_args(evaluable.Take(ielemsi, __ielem))
+            slicei = self._getslice(ilocalsi, __ielem)
+            transform_chains.update(argsi.transform_chains)
+            coordinates.update({space: evaluable._take(coords, slicei, axis=0) for space, coords in argsi.coordinates.items()})
+        return function.LowerArgs(points_shape, transform_chains, coordinates)
 
     def get_evaluable_indices(self, ielem):
         return self._getslice(self._indices, ielem)
@@ -789,8 +773,8 @@ class _TakeElements(_TensorialSample):
     def get_evaluable_weights(self, __ielem: evaluable.Array) -> evaluable.Array:
         return self._parent.get_evaluable_weights(evaluable.Take(self._indices, __ielem))
 
-    def update_lower_args(self, __ielem: evaluable.Array, args: function.LowerArgs) -> Tuple[_PointsShape, _TransformChainsMap, _CoordinatesMap]:
-        return self._parent.update_lower_args(evaluable.Take(self._indices, __ielem), args)
+    def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
+        return self._parent.get_lower_args(evaluable.Take(self._indices, __ielem))
 
     def get_element_tri(self, __ielem: int) -> numpy.ndarray:
         if not 0 <= __ielem < self.nelems:
@@ -882,9 +866,8 @@ class _Integral(function.Array):
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
         ielem = evaluable.loop_index('_sample_' + '_'.join(self._sample.spaces), self._sample.nelems)
-        args = self._sample.update_lower_args(ielem, args)
         weights = self._sample.get_evaluable_weights(ielem)
-        integrand = self._integrand.lower(args)
+        integrand = self._integrand.lower(args | self._sample.get_lower_args(ielem))
         elem_integral = evaluable.einsum('B,ABC->AC', weights, integrand, B=weights.ndim, C=self.ndim)
         return evaluable.loop_sum(elem_integral, ielem)
 
@@ -899,7 +882,7 @@ class _ConcatenatePoints(function.Array):
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
         axis = len(args.points_shape)
         ielem = evaluable.loop_index('_sample_' + '_'.join(self._sample.spaces), self._sample.nelems)
-        args = self._sample.update_lower_args(ielem, args)
+        args |= self._sample.get_lower_args(ielem)
         func = self._func.lower(args)
         func = evaluable.Transpose.to_end(func, *range(axis, len(args.points_shape)))
         for i in range(len(args.points_shape) - axis - 1):
