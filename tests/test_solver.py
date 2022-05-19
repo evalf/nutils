@@ -49,6 +49,26 @@ class laplace(TestCase):
                 self.assertLess(resnorm, 1e-13)
 
 
+class laplace_field(TestCase):
+
+    def setUp(self):
+        super().setUp()
+        domain, geom = mesh.rectilinear([8, 8])
+        basis = domain.basis('std', degree=1)
+        u = function.dotarg('u', basis)
+        v = function.dotarg('v', basis)
+        sqr = domain.boundary['left'].integral(u**2, degree=2)
+        self.cons = solver.optimize('u,', sqr)
+        self.residual = domain.integral((v.grad(geom) @ u.grad(geom))*function.J(geom), degree=2) \
+            + domain.boundary['top'].integral(v*function.J(geom), degree=2)
+
+    def test_res(self):
+        args = solver.solve_linear('u:v', residual=self.residual, constrain=self.cons)
+        res = self.residual.derivative('v').eval(**args)
+        resnorm = numpy.linalg.norm(res[numpy.isnan(self.cons['u'])])
+        self.assertLess(resnorm, 1e-13)
+
+
 @parametrize
 class navierstokes(TestCase):
 

@@ -151,22 +151,19 @@ def main(size: Length, epsilon: Length, mobility: Time/Density, stens: Tension,
 
     bezier = domain.sample('bezier', 5)  # sample for surface plots
     grid = domain.locate(geom, numeric.simplex_grid([1, 1], 1/40), maxdist=1/nelems, skip_missing=True, tol=1e-5)  # sample for quivers
-
-    φbasis = ηbasis = domain.basis('std', degree=degree)
-    ηbasis *= stens / epsilon  # basis scaling to give η the required unit
+    basis = domain.basis('std', degree=degree)
 
     ns = Namespace()
     ns.x = size * geom
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
+    ns.add_field(('φ', 'φ0'), basis)
+    ns.add_field('η', basis * stens / epsilon) # basis scaling to give η the required unit
     ns.ε = epsilon
     ns.σ = stens
-    ns.φ = function.dotarg('φ', φbasis)
     ns.σmean = (wtensp + wtensn) / 2
     ns.σdiff = (wtensp - wtensn) / 2
     ns.σwall = 'σmean + φ σdiff'
-    ns.φ0 = function.dotarg('φ0', φbasis)
     ns.dφ = 'φ - φ0'
-    ns.η = function.dotarg('η', ηbasis)
     ns.ψ = '.25 (φ^2 - 1)^2'
     ns.δψ = stab.value
     ns.M = mobility
@@ -179,31 +176,31 @@ def main(size: Length, epsilon: Length, mobility: Time/Density, stens: Tension,
     nrg = nrg_mix + nrg_iface + nrg_wall + domain.integral('(δψ σ / ε - η dφ + .5 dt J_k ∇_k(η)) dV' @ ns, degree=7)
 
     numpy.random.seed(seed)
-    state = dict(φ=numpy.random.normal(0, .5, φbasis.shape))  # initial condition
+    args = dict(φ=numpy.random.normal(0, .5, basis.shape)) # initial condition
 
     with log.iter.fraction('timestep', range(round(endtime / timestep))) as steps:
         for istep in steps:
 
-            E = numpy.stack(function.eval([nrg_mix, nrg_iface, nrg_wall], **state))
+            E = numpy.stack(function.eval([nrg_mix, nrg_iface, nrg_wall], **args))
             log.user('energy: {0:,.0μJ/m} ({1[0]:.0f}% mixture, {1[1]:.0f}% interface, {1[2]:.0f}% wall)'.format(numpy.sum(E), 100*E/numpy.sum(E)))
 
-            state['φ0'] = state['φ']
-            state = solver.optimize(['φ', 'η'], nrg / tol, arguments=state, tol=1)
+            args['φ0'] = args['φ']
+            args = solver.optimize(['φ', 'η'], nrg / tol, arguments=args, tol=1)
 
             with export.mplfigure('phase.png') as fig:
                 ax = fig.add_subplot(aspect='equal', xlabel='[mm]', ylabel='[mm]')
-                x, φ = bezier.eval(['x_i', 'φ'] @ ns, **state)
+                x, φ = bezier.eval(['x_i', 'φ'] @ ns, **args)
                 im = ax.tripcolor(*(x/'mm').T, bezier.tri, φ, shading='gouraud', cmap='bwr')
                 im.set_clim(-1, 1)
                 fig.colorbar(im)
                 if showflux:
-                    x, J = grid.eval(['x_i', 'J_i'] @ ns, **state)
+                    x, J = grid.eval(['x_i', 'J_i'] @ ns, **args)
                     log.info('largest flux: {:.1mm/h}'.format(numpy.max(numpy.hypot(J[:, 0], J[:, 1]))))
                     ax.quiver(*(x/'mm').T, *(J/'m/s').T, color='r')
                     ax.quiver(*(x/'mm').T, *-(J/'m/s').T, color='b')
                 ax.autoscale(enable=True, axis='both', tight=True)
 
-    return state
+    return args
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line.
@@ -222,39 +219,39 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
     def test_initial(self):
-        state = main(size=parse('10cm'), epsilon=parse('5cm'), mobility=parse('1μL*s/kg'),
+        args = main(size=parse('10cm'), epsilon=parse('5cm'), mobility=parse('1μL*s/kg'),
                      stens=parse('50mN/m'), wtensn=parse('30mN/m'), wtensp=parse('20mN/m'), nelems=3,
                      etype='square', degree=2, timestep=parse('1h'), tol=parse('1nJ/m'),
                      endtime=parse('1h'), seed=0, circle=False, stab=stab.linear, showflux=True)
         with self.subTest('concentration'):
-            self.assertAlmostEqual64(state['φ0'], '''
+            self.assertAlmostEqual64(args['φ0'], '''
                 eNoBYgCd/xM3LjTtNYs3MDcUyt41uc14zjo0LzKzNm812jFhNNMzwDYgzbMzV8o0yCM1rzWeypE3Tcnx
                 L07NzTa4NlMyETREyrPIGMxYMl82VDbjy1/M8clZyf3IRjday6XLmMl6NRnJMF4tqQ==''')
 
     def test_square(self):
-        state = main(size=parse('10cm'), epsilon=parse('5cm'), mobility=parse('1μL*s/kg'),
+        args = main(size=parse('10cm'), epsilon=parse('5cm'), mobility=parse('1μL*s/kg'),
                      stens=parse('50mN/m'), wtensn=parse('30mN/m'), wtensp=parse('20mN/m'), nelems=3,
                      etype='square', degree=2, timestep=parse('1h'), tol=parse('1nJ/m'),
                      endtime=parse('2h'), seed=0, circle=False, stab=stab.linear, showflux=True)
         with self.subTest('concentration'):
-            self.assertAlmostEqual64(state['φ'], '''
+            self.assertAlmostEqual64(args['φ'], '''
                 eNoBYgCd/zE1EjX1NaA2+TXiMxkz0TS9NL01ajaRNZoxYNElNRM1LDUlNZQw0cqgysI1nTWcNN4xLsuk
                 ybDJvDWaNTQ07s7nysnJ6ckPNQY1CzNozKjK58kOysQ0zTQKM73M3coVyjfKR9cuPg==''')
         with self.subTest('chemical-potential'):
-            self.assertAlmostEqual64(state['η'], '''
+            self.assertAlmostEqual64(args['η'], '''
                 eNoBYgCd/3TIkccBNkQ6IDqIN3/MF8cSx9Y02TmdOVHLMcecxxLIEjQUOAHOa8a1xWw3izb2M9UzPMc0
                 xmnGpzibODY34tETyJHHp8hbyWU2xzZTydfIOsrNyo3Gi8jCyyXIm8hkzD3K1IAxtQ==''')
 
     def test_mixedcircle(self):
-        state = main(size=parse('10cm'), epsilon=parse('5cm'), mobility=parse('1μL*s/kg'),
+        args = main(size=parse('10cm'), epsilon=parse('5cm'), mobility=parse('1μL*s/kg'),
                      stens=parse('50mN/m'), wtensn=parse('30mN/m'), wtensp=parse('20mN/m'), nelems=3,
                      etype='mixed', degree=2, timestep=parse('1h'), tol=parse('1nJ/m'),
                      endtime=parse('2h'), seed=0, circle=True, stab=stab.linear, showflux=True)
         with self.subTest('concentration'):
-            self.assertAlmostEqual64(state['φ'], '''
+            self.assertAlmostEqual64(args['φ'], '''
                 eNoBYgCd/w01AjX+NAw1IjXTNMw0iTRPNDI1vDQcNTk0uzJ9NFM0HS4P0SbMcssOy0wzZjNw0b0zljHK
                 z6U0ps8zM/LPjspVypDKUsuLzk3MgM3OzYnN7s/61KfP2zH4MADNhst3z7DMoBcvyQ==''')
         with self.subTest('chemical-potential'):
-            self.assertAlmostEqual64(state['η'], '''
+            self.assertAlmostEqual64(args['η'], '''
                 eNoBYgCd/+s1Bcp4ztI3gjYFyZk4YzVjyfA2AzdAMj032zfLNTE4fMm7yLnGisbqxZPJ2MsfyD81csiv
                 x+E5xDhjOJA3msZ1xZTFa8ddx/fG88eCx73H1MieM/c0WDihMUrLvMYZNpvIrWQ0sw==''')

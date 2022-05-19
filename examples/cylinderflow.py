@@ -58,32 +58,29 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: f
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     J = ns.x.grad(geom)
     detJ = function.determinant(J)
-    ns.ubasis = function.matmat(function.vectorize([
+    ns.add_field(('u', 'v'), function.matmat(function.vectorize([
         domain.basis('spline', degree=(degree, degree-1), removedofs=((0,), None)),
-        domain.basis('spline', degree=(degree-1, degree))]), J.T) / detJ
-    ns.pbasis = domain.basis('spline', degree=degree-1) / detJ
-    ns.u = function.dotarg('u', ns.ubasis)
-    ns.p = function.dotarg('p', ns.pbasis)
+        domain.basis('spline', degree=(degree-1, degree))]), J.T) / detJ)
+    ns.add_field(('p', 'q'), domain.basis('spline', degree=degree-1) / detJ)
     ns.sigma_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
     ns.N = 10 * degree / elemangle  # Nitsche constant based on element size = elemangle/2
-    ns.nitsche_ni = '(N ubasis_ni - (∇_j(ubasis_ni) + ∇_i(ubasis_nj)) n_j) / Re'
+    ns.nitsche_i = '(N v_i - (∇_j(v_i) + ∇_i(v_j)) n_j) / Re'
     ns.rotation = rotation
     ns.uwall_i = '0.5 rotation (-sin(phi) δ_i0 + cos(phi) δ_i1)'
 
     inflow = domain.boundary['outer'].select(-ns.uinf.dotnorm(ns.x), ischeme='gauss1')  # upstream half of the exterior boundary
     sqr = inflow.integral('Σ_i (u_i - uinf_i)^2' @ ns, degree=degree*2)
-    ucons = solver.optimize('u', sqr, droptol=1e-15)  # constrain inflow semicircle to uinf
-    cons = dict(u=ucons)
+    cons = solver.optimize('u,', sqr, droptol=1e-15)  # constrain inflow semicircle to uinf
 
     numpy.random.seed(seed)
     sqr = domain.integral('Σ_i (u_i - uinf_i)^2' @ ns, degree=degree*2)
-    udofs0 = solver.optimize('u', sqr) * numpy.random.normal(1, .1, len(ns.ubasis))  # set initial condition to u=uinf with small random noise
-    state0 = dict(u=udofs0)
+    args0 = solver.optimize('u,', sqr) # set initial condition to u=uinf
+    args0['u'] = args0['u'] * numpy.random.normal(1, .1, len(args0['u'])) # add small random noise
 
-    ures = domain.integral('(ubasis_ni ∇_j(u_i) u_j + ∇_j(ubasis_ni) sigma_ij) dV' @ ns, degree=9)
-    ures += domain.boundary['inner'].integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni sigma_ij n_j) dS' @ ns, degree=9)
-    pres = domain.integral('pbasis_n ∇_k(u_k) dV' @ ns, degree=9)
-    uinertia = domain.integral('ubasis_ni u_i dV' @ ns, degree=9)
+    res = domain.integral('(v_i ∇_j(u_i) u_j + ∇_j(v_i) sigma_ij) dV' @ ns, degree=9)
+    res += domain.boundary['inner'].integral('(nitsche_i (u_i - uwall_i) - v_i sigma_ij n_j) dS' @ ns, degree=9)
+    res += domain.integral('q ∇_k(u_k) dV' @ ns, degree=9)
+    uinertia = domain.integral('v_i u_i dV' @ ns, degree=9)
 
     bbox = numpy.array([[-2, 46/9], [-2, 2]])  # bounding box for figure based on 16x9 aspect ratio
     bezier0 = domain.sample('bezier', 5)
@@ -92,11 +89,11 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: f
     spacing = .05  # initial quiver spacing
     xgrd = util.regularize(bbox, spacing)
 
-    with treelog.iter.plain('timestep', solver.impliciteuler(('u', 'p'), residual=(ures, pres), inertia=(uinertia, None), arguments=state0, timestep=timestep, constrain=cons, newtontol=1e-10)) as steps:
-        for istep, state in enumerate(steps):
+    with treelog.iter.plain('timestep', solver.impliciteuler('u:v,p:q', residual=res, inertia=uinertia, arguments=args0, timestep=timestep, constrain=cons, newtontol=1e-10)) as steps:
+        for istep, args in enumerate(steps):
 
             t = istep * timestep
-            x, u, normu, p = bezier.eval(['x_i', 'u_i', 'sqrt(u_i u_i)', 'p'] @ ns, **state)
+            x, u, normu, p = bezier.eval(['x_i', 'u_i', 'sqrt(u_i u_i)', 'p'] @ ns, **args)
             ugrd = interpolate[xgrd](u)
 
             with export.mplfigure('flow.png', figsize=(12.8, 7.2)) as fig:
@@ -115,7 +112,7 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: f
 
             xgrd = util.regularize(bbox, spacing, xgrd + ugrd * timestep)
 
-    return state0, state
+    return args0, args
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line.
@@ -134,35 +131,35 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
     def test_rot0(self):
-        state0, state = main(nelems=6, degree=3, reynolds=100, rotation=0, timestep=.1, maxradius=25, seed=0, endtime=.05)
+        args0, args = main(nelems=6, degree=3, reynolds=100, rotation=0, timestep=.1, maxradius=25, seed=0, endtime=.05)
         with self.subTest('initial condition'):
-            self.assertAlmostEqual64(state0['u'], '''
+            self.assertAlmostEqual64(args0['u'], '''
                 eNoNzLEJwkAYQOHXuYZgJyZHLjmMCIJY2WcEwQFcwcYFbBxCEaytzSVnuM7CQkEDqdVCG//uNe/rqEcI
                 p+pSwTzQAez90cM06kZQuLWDrV5oGJf9EupEJ7CyqYXUTAyM7C2HmZyNf8p57S2lB95It8KNgmH1PcNB
                 /UTEvUVpojqGdpEV8IlfIt7znSiZ+QPSaDIR''', atol=2e-13)
         with self.subTest('velocity'):
-            self.assertAlmostEqual64(state['u'], '''
+            self.assertAlmostEqual64(args['u'], '''
                 eNoBkABv/+o0szWg04bKlsogMVI4JjcmMXXI+cfizb05/Dk4MBHGEcaPNDo8ljuTNibE4sNpznI9VD02
                 M5zCnsJazE0+Hj76NsPByMH/yl43nDNlyGnIsy+YNz44MspbyD/IWcwHOMM4AzXAxsPGGjAJOUM7GcgU
                 xePEqckvO+g8+DcOwyfD4zfjPFY+sMfJwavBhDNPPpLTRUE=''')
         with self.subTest('pressure'):
-            self.assertAlmostEqual64(state['p'], '''
+            self.assertAlmostEqual64(args['p'], '''
                 eNoBSAC3/4zF18aozR866DpHNSk8JDonOdw4k8VzNaHBk8PFOyI+Gj9vPPRA/T/LQDtBIECaP0i5yLsA
                 wL9FwkabQsJJTbc2ubJHw7ZvRq/qITA=''')
 
     def test_rot1(self):
-        state0, state = main(nelems=6, degree=3, reynolds=100, rotation=1, timestep=.1, maxradius=25, seed=0, endtime=.05)
+        args0, args = main(nelems=6, degree=3, reynolds=100, rotation=1, timestep=.1, maxradius=25, seed=0, endtime=.05)
         with self.subTest('initial condition'):
-            self.assertAlmostEqual64(state0['u'], '''
+            self.assertAlmostEqual64(args0['u'], '''
                 eNoNzLEJwkAYQOHXuYZgJyZHLjmMCIJY2WcEwQFcwcYFbBxCEaytzSVnuM7CQkEDqdVCG//uNe/rqEcI
                 p+pSwTzQAez90cM06kZQuLWDrV5oGJf9EupEJ7CyqYXUTAyM7C2HmZyNf8p57S2lB95It8KNgmH1PcNB
                 /UTEvUVpojqGdpEV8IlfIt7znSiZ+QPSaDIR''', atol=2e-13)
         with self.subTest('velocity'):
-            self.assertAlmostEqual64(state['u'], '''
+            self.assertAlmostEqual64(args['u'], '''
                 eNoBkABv/+M0tzVcKYfKlMr1MFE4JzdBMXbI+cfMzb05/Dk/MBHGEcaPNDo8ljuUNibE4sNjznI9VD02
                 M5zCnsJazE0+Hj76NsPByMH/ynk3WTR/yH7I5TGsNzk4HcpUyDnILMwBOMQ4BzXBxsTGpDAKOUM7GMgU
                 xePEp8kvO+g8+DcOwyfD5DfkPFY+sMfJwavBhDNPPpo5RbI=''')
         with self.subTest('pressure'):
-            self.assertAlmostEqual64(state['p'], '''
+            self.assertAlmostEqual64(args['p'], '''
                 eNoBSAC3/4rF3Ma4ziE65zoUNSg8JToqOd04k8VbNaDBlMPJOyI+Gj9sPPRA/T/MQDtBH0CYP0e5yLsD
                 wL9FwkaaQsJJTbc3ubJHw7ZvRqV7IP8=''')

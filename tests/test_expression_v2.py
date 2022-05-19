@@ -557,6 +557,32 @@ class Namespace(TestCase):
         assertEvalAlmostEqual('curl_ij((x δ_j0 - z δ_j1 + y δ_j2) δ_k0 + x z δ_j1 δ_k1)' @ ns, '2 δ_i0 δ_k0 - x δ_i0 δ_k1 + z δ_i2 δ_k1' @ ns)
         assertEvalAlmostEqual('curl_ij(∇_j(x y + z))' @ ns, function.zeros((3,)))
 
+    def test_add_single_field(self):
+        ns = expression_v2.Namespace()
+        ns.add_field('u', numpy.array([1,2,3]))
+        self.assertEquals(ns.u.argshapes, dict(u=(3,)))
+        self.assertEquals(ns.u.shape, ())
+
+    def test_add_multiple_fields(self):
+        ns = expression_v2.Namespace()
+        ns.add_field(('u', 'v'), numpy.array([1,2,3]))
+        self.assertEquals(ns.u.argshapes, dict(u=(3,)))
+        self.assertEquals(ns.u.shape, ())
+        self.assertEquals(ns.v.argshapes, dict(v=(3,)))
+        self.assertEquals(ns.v.shape, ())
+
+    def test_add_single_field_multiple_bases(self):
+        ns = expression_v2.Namespace()
+        ns.add_field('u', numpy.array([1,2,3]), numpy.array([4,5,6,7]))
+        self.assertEquals(ns.u.argshapes, dict(u=(3,4)))
+        self.assertEquals(ns.u.shape, ())
+
+    def test_add_single_field_with_shape(self):
+        ns = expression_v2.Namespace()
+        ns.add_field('u', numpy.array([1,2,3]), shape=(2,))
+        self.assertEquals(ns.u.argshapes, dict(u=(3,2)))
+        self.assertEquals(ns.u.shape, (2,))
+
     def test_copy(self):
         ns1 = expression_v2.Namespace()
         ns1.a = 1

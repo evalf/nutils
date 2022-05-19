@@ -36,35 +36,35 @@ def main(nelems: int, degree: int, reynolds: float):
     ns.δ = function.eye(domain.ndims)
     ns.Σ = function.ones([domain.ndims])
     ns.x = geom
-    ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     ns.Re = reynolds
-    ns.ubasis = function.vectorize([
+
+    ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
+    ns.add_field(('u', 'v'), function.vectorize([
         domain.basis('spline', degree=(degree, degree-1), removedofs=((0, -1), None)),
-        domain.basis('spline', degree=(degree-1, degree), removedofs=(None, (0, -1)))])
-    ns.pbasis = domain.basis('spline', degree=degree-1)
-    ns.u = function.dotarg('u', ns.ubasis)
-    ns.p = function.dotarg('p', ns.pbasis)
-    ns.lm = function.Argument('lm', ())
-    ns.stress_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
+        domain.basis('spline', degree=(degree-1, degree), removedofs=(None, (0, -1)))]))
+    ns.add_field(('p', 'q'), domain.basis('spline', degree=degree-1))
+    ns.add_field(('λ', 'μ'))
+
+    ns.σ_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
     ns.uwall = function.stack([domain.boundary.indicator('top'), 0])
     ns.N = 5 * degree * nelems  # nitsche constant based on element size = 1/nelems
-    ns.nitsche_ni = '(N ubasis_ni - (∇_j(ubasis_ni) + ∇_i(ubasis_nj)) n_j) / Re'
+    ns.nitsche_i = '(N v_i - (∇_j(v_i) + ∇_i(v_j)) n_j) / Re'
 
-    ures = domain.integral('∇_j(ubasis_ni) stress_ij dV' @ ns, degree=2*degree)
-    ures += domain.boundary.integral('(nitsche_ni (u_i - uwall_i) - ubasis_ni stress_ij n_j) dS' @ ns, degree=2*degree)
-    pres = domain.integral('pbasis_n (∇_k(u_k) + lm) dV' @ ns, degree=2*degree)
-    lres = domain.integral('p dV' @ ns, degree=2*degree)
+    res = domain.integral('∇_j(v_i) σ_ij dV' @ ns, degree=2*degree)
+    res += domain.boundary.integral('(nitsche_i (u_i - uwall_i) - v_i σ_ij n_j) dS' @ ns, degree=2*degree)
+    res += domain.integral('q (∇_k(u_k) + λ) dV' @ ns, degree=2*degree)
+    res += domain.integral('μ p dV' @ ns, degree=2*degree)
 
     with treelog.context('stokes'):
-        state0 = solver.solve_linear(['u', 'p', 'lm'], [ures, pres, lres])
-        postprocess(domain, ns, **state0)
+        args0 = solver.solve_linear('u:v,p:q,λ:μ', res)
+        postprocess(domain, ns, **args0)
 
-    ures += domain.integral('ubasis_ni ∇_j(u_i) u_j dV' @ ns, degree=3*degree)
+    res += domain.integral('v_i ∇_j(u_i) u_j dV' @ ns, degree=3*degree)
     with treelog.context('navierstokes'):
-        state1 = solver.newton(('u', 'p', 'lm'), (ures, pres, lres), arguments=state0).solve(tol=1e-10)
-        postprocess(domain, ns, **state1)
+        args1 = solver.newton('u:v,p:q,λ:μ', res, arguments=args0).solve(tol=1e-10)
+        postprocess(domain, ns, **args1)
 
-    return state0, state1
+    return args0, args1
 
 # Postprocessing in this script is separated so that it can be reused for the
 # results of Stokes and Navier-Stokes, and because of the extra steps required
@@ -76,12 +76,11 @@ def postprocess(domain, ns, every=.05, spacing=.01, **arguments):
     div = domain.integral('∇_k(u_k)^2 dV' @ ns, degree=1).eval(**arguments)**.5
     treelog.info('velocity divergence: {:.2e}'.format(div))  # confirm that velocity is pointwise divergence-free
 
-    ns = ns.copy_()  # copy namespace so that we don't modify the calling argument
-    ns.streambasis = domain.basis('std', degree=2)[1:]  # remove first dof to obtain non-singular system
-    ns.stream = function.dotarg('streamdofs', ns.streambasis)  # stream function
+    ns = ns.copy_() # copy namespace so that we don't modify the calling argument
+    ns.add_field('stream', domain.basis('std', degree=2)[1:]) # stream function (sans first dof to obtain non-singular system)
     ns.ε = function.levicivita(2)
     sqr = domain.integral('Σ_i (u_i - ε_ij ∇_j(stream))^2 dV' @ ns, degree=4)
-    arguments['streamdofs'] = solver.optimize('streamdofs', sqr, arguments=arguments)  # compute streamlines
+    arguments = solver.optimize('stream,', sqr, arguments=arguments) # compute streamlines
 
     bezier = domain.sample('bezier', 9)
     x, u, p, stream = bezier.eval(['x_i', 'sqrt(u_i u_i)', 'p', 'stream'] @ ns, **arguments)
@@ -117,42 +116,42 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
     def test_p2(self):
-        state0, state1 = main(nelems=3, reynolds=100, degree=2)
+        args0, args1 = main(nelems=3, reynolds=100, degree=2)
         with self.subTest('stokes-velocity'):
-            self.assertAlmostEqual64(state0['u'], '''
+            self.assertAlmostEqual64(args0['u'], '''
                 eNrzu9Bt8OuUndkD/eTTSqezzP2g/E3698/ZmZlf2GjSaHJS3/90/Wm/C4qGh04CAErOF+g=''')
         with self.subTest('stokes-pressure'):
-            self.assertAlmostEqual64(state0['p'], '''
+            self.assertAlmostEqual64(args0['p'], '''
                 eNoBIADf/0fSMC4P0ZLKjCk4JC7Pwy901sjb0jA90Lkt0NHxLm41+KgP+Q==''')
         with self.subTest('stokes-multiplier'):
-            self.assertAlmostEqual(state0['lm'], 0)
+            self.assertAlmostEqual(args0['λ'], 0)
         with self.subTest('navier-stokes-velocity'):
-            self.assertAlmostEqual64(state1['u'], '''
+            self.assertAlmostEqual64(args1['u'], '''
                 eNoBMADP/2XOWjJSy5k1jS+yyzvLODfgL1rO0MrINpsxHM2ZNSrPqDTANCPVQsxCzeAvcc04yT3AF9c=''')
         with self.subTest('navier-stokes-pressure'):
-            self.assertAlmostEqual64(state1['p'], '''
+            self.assertAlmostEqual64(args1['p'], '''
                 eNpbqpasrWa46TSTfoT+krO/de/pntA3Pnf2zFNtn2u2hglmAOKVDlE=''')
         with self.subTest('navier-stokes-multiplier'):
-            self.assertAlmostEqual(state1['lm'], 0)
+            self.assertAlmostEqual(args1['λ'], 0)
 
     def test_p3(self):
-        state0, state1 = main(nelems=3, reynolds=100, degree=3)
+        args0, args1 = main(nelems=3, reynolds=100, degree=3)
         with self.subTest('stokes-velocity'):
-            self.assertAlmostEqual64(state0['u'], '''
+            self.assertAlmostEqual64(args0['u'], '''
                 eNqbo3f7/AeDb2dmGGtd7r+odk7icoQJgjUHLpty8b/BvrMzjF/rll9qMD5kwAAFopc6dRvO2J2fo8d4
                 3sko4wwAjL4lyw==''', atol=1e-14)
         with self.subTest('stokes-pressure'):
-            self.assertAlmostEqual64(state0['p'], '''
+            self.assertAlmostEqual64(args0['p'], '''
                 eNpbrN+us+Z8qWHMyfcXrly013l1ZocRAxwI6uvoHbwsZuxxNvZC5eUQg+5zS8wAElAT9w==''')
         with self.subTest('stokes-multiplier'):
-            self.assertAlmostEqual(state0['lm'], 0)
+            self.assertAlmostEqual(args0['λ'], 0)
         with self.subTest('navier-stokes-velocity'):
-            self.assertAlmostEqual64(state1['u'], '''
+            self.assertAlmostEqual64(args1['u'], '''
                 eNoBUACv/14yGcxyNPbJYTahLj/LSDE7yy43SM9WMsXJoDR+N3Iw8s1hM5zJODeizcE0X8phNrQwUDOO
                 NbMzJi+ty4s1oDFqzxIzysjWzXIwFM3tNMjIpDMlJw==''')
         with self.subTest('navier-stokes-pressure'):
-            self.assertAlmostEqual64(state1['p'], '''
+            self.assertAlmostEqual64(args1['p'], '''
                 eNoBMgDN/yoxvDHizaEy88kDLgoviCt4znIzMy7jL7nTRMzqzhAwBTA/LE0w6czY2GQwoNEYMHE3NDUW
                 DQ==''')
         with self.subTest('navier-stokes-multiplier'):
-            self.assertAlmostEqual(state1['lm'], 0)
+            self.assertAlmostEqual(args1['λ'], 0)

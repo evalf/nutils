@@ -82,13 +82,9 @@ def main(nelems: int = 50, degree: int = 3, freq: float = 0., nturns: int = 1, r
     ns.eθ = function.stack(['-sin(θ)', 'cos(θ)', '0'] @ ns)
 
     X = RZ * REV
-    #ns.x = function.stack(['r cos(θ)', 'r sin(θ)', 'z'] @ ns)
     ns.x = ns.rz @ ns.rot
     ns.define_for('x', gradient='∇', jacobians=('dV', 'dS'), curl='curl')
-
-    ns.basis = RZ.basis('spline', degree=degree, removedofs=[[0, -1], [-1]])
-    ns.A = function.dotarg('A', ns.basis, dtype=complex) * ns.eθ
-    ns.Atest = function.dotarg('Atest', ns.basis, dtype=float) * ns.eθ
+    ns.add_field(('A', 'Atest'), RZ.basis('spline', degree=degree, removedofs=[[0, -1], [-1]])[:,numpy.newaxis] * ns.eθ, dtype=complex)
     ns.B_i = 'curl_ij(A_j)'
     ns.E_i = '-j ω A_i'
     ns.Jind_i = 'σ E_i'
@@ -99,25 +95,23 @@ def main(nelems: int = 50, degree: int = 3, freq: float = 0., nturns: int = 1, r
     res = REV.integral(RZ.integral('-∇_j(Atest_i) ∇_j(A_i) dV' @ ns, degree=2*degree), degree=0)
     res += REV.integral(RZ['coil'].integral('μ0 Atest_i J_i dV' @ ns, degree=2*degree), degree=0)
 
-    state = solver.solve_linear(('A',), (res.derivative('Atest'),))
+    args = solver.solve_linear('A:Atest,', res)
 
     # Since the coordinate transformation is singular at r=0 we can't evaluate
     # `B` (the curl of `A`) at r=0. We circumvent this problem by projecting `B`
     # on a basis.
 
     ns.Borig = ns.B
-    ns.Bbasis = RZ.basis('spline', degree=degree)
-    ns.B = function.dotarg('B', ns.Bbasis, dtype=complex, shape=(2,)) @ ns.rot
-    ns.Btest = function.dotarg('Btest', ns.Bbasis, shape=(2,)) @ ns.rot
+    ns.add_field(('B', 'Btest'), RZ.basis('spline', degree=degree), ns.rot, dtype=complex)
     res = REV.integral(RZ.integral('Btest_i (B_i - Borig_i) dV' @ ns, degree=2*degree), degree=0)
-    state = solver.solve_linear(('B',), (res.derivative('Btest'),), arguments=state)
+    args = solver.solve_linear('B:Btest,', res, arguments=args)
 
     with export.mplfigure('magnetic-potential-1.png', dpi=300) as fig:
         ax = fig.add_subplot(111, aspect='equal', xlabel='$x_0$', ylabel='$x_2$', adjustable='datalim')
         # Magnetic vector potential. `r < 0` is the imaginary part, `r > 0` the
         # real part.
         smpl = REV0 * RZ[:-1, :-1].sample('bezier', 5)
-        r, z, A, Bmag = smpl.eval(['r', 'z', 'A_1', 'sqrt(real(B_i) real(B_i)) + sqrt(imag(B_i) imag(B_i)) j'] @ ns, **state)
+        r, z, A, Bmag = smpl.eval(['r', 'z', 'A_1', 'sqrt(real(B_i) real(B_i)) + sqrt(imag(B_i) imag(B_i)) j'] @ ns, **args)
         Amax = abs(A).max()
         Bmax = abs(Bmag).max()
         levels = numpy.linspace(-Amax, Amax, 32)[1:-1]
@@ -136,7 +130,7 @@ def main(nelems: int = 50, degree: int = 3, freq: float = 0., nturns: int = 1, r
         # Current density (wires only). `r < 0` is the imaginary part, `r > 0` the
         # real part.
         smpl = REV0 * RZ['coil'].sample('bezier', 5)
-        r, z, J = smpl.eval(['r', 'z', 'J_1'] @ ns, **state)
+        r, z, J = smpl.eval(['r', 'z', 'J_1'] @ ns, **args)
         Jmax = abs(J).max()
         r = numpy.concatenate([r, r], axis=0)
         z = numpy.concatenate([z, -z], axis=0)
@@ -167,7 +161,7 @@ def main(nelems: int = 50, degree: int = 3, freq: float = 0., nturns: int = 1, r
         # Reference: https://physics.stackexchange.com/a/355183
         ns.Bexact = ns.δ[2] * ns.μ0 * ns.I * ns.rcoil**2 / 2 * ((ns.rcoil**2 + (ns.z - ns.zwires)**2)**(-3/2)).sum()
         smpl = REV0 * RZ[:-1, :-1].boundary['left'].sample('bezier', 5)
-        B, Bexact, z = smpl.eval(['real(B_2)', 'Bexact_2', 'z'] @ ns, **state)
+        B, Bexact, z = smpl.eval(['real(B_2)', 'Bexact_2', 'z'] @ ns, **args)
         z = numpy.concatenate([-z[::-1], z])
         B = numpy.concatenate([B[::-1], B])
         Bexact = numpy.concatenate([Bexact[::-1], Bexact])
@@ -182,15 +176,15 @@ def main(nelems: int = 50, degree: int = 3, freq: float = 0., nturns: int = 1, r
             ax.tick_params(axis='x', direction='in', which='minor', bottom=True, top=True)
             ax.set_xlim(-2*rcoil, 2*rcoil)
 
-    return state
+    return args
 
 
 class test(testing.TestCase):
 
     def test_dc(self):
-        state = main(nelems=16, degree=2)
+        args = main(nelems=16, degree=2)
         with self.subTest('A.real'):
-            self.assertAlmostEqual64(state['A'].real, '''
+            self.assertAlmostEqual64(args['A'].real, '''
                 eNoNke9rzWEYh5NzVmtnvud5nvv+3PdzTn7lIIRlL3Rq/wArinFGaytFo6xjTedISMwsJsNksbJYtlIS
                 U9pqLcqJKL9ytL3xYm92kpkQ2vL9B67P9el6TS/oHuVpPb13zW7WZu2U2WaG4t8CF8xWVsS+YgZF3MYu
                 /OYLTHyFyijrXllrNxvEqxaVa1S/yJBk5CfaEUMnz1MzPXcxV23JVAWjOq4D2qAL9YakZBAp9HKE99F9
@@ -201,9 +195,9 @@ class test(testing.TestCase):
                 HI1Ta9ihya2zLdRCh+kg7adGqqMtlKZVFKNpN+JyboFL2f8Z6oV2''')
 
     def test_ac_5(self):
-        state = main(nelems=16, degree=2, freq=1000, nturns=5)
+        args = main(nelems=16, degree=2, freq=1000, nturns=5)
         with self.subTest('A.imag'):
-            self.assertAlmostEqual64(state['A'].imag, '''
+            self.assertAlmostEqual64(args['A'].imag, '''
                 eNoNkEtIlGEYhRcWBqVWNgsxujBImxJmIIwEc2FJCYVaQxEErRIvkyFOhqTB4CLSpE3TxQiLCjXQEdJN
                 QUkZKMxCyxYhmpvvPe/7ft//K11AvPSvzuJZnPOcOZ3TeV1SX3PtERu3n2zEfXRNXqkfXU6s9P5O8wiP
                 8nue5kXeLhXyRHL0mVbZApfn1fj1K4MYwgjeYQLzWEcZpzhPXkqtHrAhF/Pqlzdpg9YpG/kIowb3wGjg
