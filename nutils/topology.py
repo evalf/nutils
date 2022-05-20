@@ -1787,6 +1787,9 @@ class WithGroupsTopology(TransformChainsTopology):
         groups = [{name: topo.refined if isinstance(topo, TransformChainsTopology) else topo for name, topo in groups.items()} for groups in (self.vgroups, self.bgroups, self.igroups, self.pgroups)]
         return self.basetopo.refined.withgroups(*groups)
 
+    def locate(self, geom, coords, **kwargs):
+        return self.basetopo.locate(geom, coords, **kwargs)
+
 
 class OppositeTopology(TransformChainsTopology):
     'opposite topology'
