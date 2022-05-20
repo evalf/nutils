@@ -42,7 +42,7 @@ class PostProcessor:
         self.xgrd = util.regularize(self.bbox, self.spacing, self.xgrd + ugrd * self.timestep)
 
 
-def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: float, maxradius: float, seed: int, endtime: float):
+def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: float, timestep: float, maxradius: float, seed: int, endtime: float):
     '''
     Flow around a cylinder.
 
@@ -57,6 +57,8 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: f
          less.
        reynolds [1000]
          Reynolds number, taking the cylinder radius as characteristic length.
+       radius [.5]
+         Cylinder radius.
        rotation [0]
          Cylinder rotation speed.
        timestep [.04]
@@ -80,10 +82,12 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: f
     ns.δ = function.eye(domain.ndims)
     ns.Σ = function.ones([domain.ndims])
     ns.uinf = function.Array.cast([1, 0])
-    ns.r = .5 * function.exp(elemangle * geom[0])
     ns.Re = reynolds
-    ns.phi = geom[1] * elemangle  # add small angle to break element symmetry
-    ns.x_i = 'r (cos(phi) δ_i0 + sin(phi) δ_i1)'
+    ns.grid = geom * elemangle
+    ns.R = radius
+    ns.r = 'R exp(grid_0)'
+    ns.φ = 'grid_1'
+    ns.x_i = 'r (cos(φ) δ_i0 + sin(φ) δ_i1)'
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     J = ns.x.grad(geom)
     detJ = function.determinant(J)
@@ -95,7 +99,7 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: f
     ns.N = 10 * degree / elemangle  # Nitsche constant based on element size = elemangle/2
     ns.nitsche_i = '(N v_i - (∇_j(v_i) + ∇_i(v_j)) n_j) / Re'
     ns.rotation = rotation
-    ns.uwall_i = '0.5 rotation (-sin(phi) δ_i0 + cos(phi) δ_i1)'
+    ns.uwall_i = '0.5 rotation (-sin(φ) δ_i0 + cos(φ) δ_i1)'
 
     inflow = domain.boundary['outer'].select(-ns.uinf.dotnorm(ns.x), ischeme='gauss1')  # upstream half of the exterior boundary
     sqr = inflow.integral('Σ_i (u_i - uinf_i)^2' @ ns, degree=degree*2)
@@ -140,7 +144,7 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
     def test_rot0(self):
-        args0, args = main(nelems=6, degree=3, reynolds=100, rotation=0, timestep=.1, maxradius=25, seed=0, endtime=.05)
+        args0, args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=0, timestep=.1, maxradius=25, seed=0, endtime=.05)
         with self.subTest('initial condition'):
             self.assertAlmostEqual64(args0['u'], '''
                 eNoNzLEJwkAYQOHXuYZgJyZHLjmMCIJY2WcEwQFcwcYFbBxCEaytzSVnuM7CQkEDqdVCG//uNe/rqEcI
@@ -157,7 +161,7 @@ class test(testing.TestCase):
                 wL9FwkabQsJJTbc2ubJHw7ZvRq/qITA=''')
 
     def test_rot1(self):
-        args0, args = main(nelems=6, degree=3, reynolds=100, rotation=1, timestep=.1, maxradius=25, seed=0, endtime=.05)
+        args0, args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=1, timestep=.1, maxradius=25, seed=0, endtime=.05)
         with self.subTest('initial condition'):
             self.assertAlmostEqual64(args0['u'], '''
                 eNoNzLEJwkAYQOHXuYZgJyZHLjmMCIJY2WcEwQFcwcYFbBxCEaytzSVnuM7CQkEDqdVCG//uNe/rqEcI
