@@ -2237,7 +2237,7 @@ class StructuredTopology(TransformChainsTopology):
         axes = [axis.refined for axis in self.axes]
         return StructuredTopology(self.space, self.root, axes, self.nrefine+1, bnames=self._bnames)
 
-    def locate(self, geom, coords, *, tol, eps=0, weights=None, skip_missing=False, arguments=None, **kwargs):
+    def locate(self, geom, coords, *, tol=0, eps=0, weights=None, skip_missing=False, arguments=None, **kwargs):
         coords = numpy.asarray(coords, dtype=float)
         if geom.ndim == 0:
             geom = geom[_]
@@ -2245,11 +2245,12 @@ class StructuredTopology(TransformChainsTopology):
         if not geom.shape == coords.shape[1:] == (self.ndims,):
             raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
         arguments = dict(arguments or ())
-        geom0, scale, e = self._asaffine(geom, arguments)
-        if e > tol:
-            return super().locate(geom, coords, eps=eps, tol=tol, weights=weights, skip_missing=skip_missing, arguments=arguments, **kwargs)
-        log.info('locate detected linear geometry: x = {} + {} xi ~{:+.1e}'.format(geom0, scale, e))
-        return self._locate(geom0, scale, coords, eps=eps, weights=weights, skip_missing=skip_missing)
+        if tol:
+            geom0, scale, error = self._asaffine(geom, arguments)
+            if error <= tol:
+                log.info('locate detected linear geometry: x = {} + {} xi ~{:+.1e}'.format(geom0, scale, error))
+                return self._locate(geom0, scale, coords, eps=eps, weights=weights, skip_missing=skip_missing)
+        return super().locate(geom, coords, eps=eps, tol=tol, weights=weights, skip_missing=skip_missing, arguments=arguments, **kwargs)
 
     def _asaffine(self, geom, arguments):
         # determine geom0, scale, error such that geom ~= geom0 + index * scale + error
