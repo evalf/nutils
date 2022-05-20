@@ -1843,7 +1843,7 @@ def StructuredLine(space, root: transform.stricttransformitem, i: types.strictin
 class StructuredTopology(TransformChainsTopology):
     'structured topology'
 
-    __slots__ = 'root', 'axes', 'nrefine', 'shape', '_bnames'
+    __slots__ = 'root', 'axes', 'nrefine', 'shape', '_bnames', '_asaffine_geom', '_asaffine_retval'
     __cache__ = 'connectivity', 'boundary', 'interfaces'
 
     @types.apply_annotations
@@ -2247,9 +2247,15 @@ class StructuredTopology(TransformChainsTopology):
             coords = coords[..., _]
         if not geom.shape == coords.shape[1:] == (self.ndims,):
             raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
-        arguments = dict(arguments or ())
         if tol or eps:
-            geom0, scale, error = self._asaffine(geom, arguments)
+            if arguments:
+                geom0, scale, error = self._asaffine(geom, arguments)
+            elif geom is getattr(self, '_asaffine_geom', None):
+                log.debug('locate found previously computed affine values')
+                geom0, scale, error = self._asaffine_retval
+            else:
+                self._asaffine_geom = geom
+                geom0, scale, error = self._asaffine_retval = self._asaffine(geom, {})
             if all(error <= numpy.maximum(tol, eps * scale)):
                 log.debug('locate detected linear geometry: x = {} + {} xi ~{}'.format(geom0, scale, error))
                 return self._locate(geom0, scale, coords, eps=eps, weights=weights, skip_missing=skip_missing)
