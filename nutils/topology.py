@@ -2251,7 +2251,7 @@ class StructuredTopology(TransformChainsTopology):
         if tol or eps:
             geom0, scale, error = self._asaffine(geom, arguments)
             if all(error <= numpy.maximum(tol, eps * scale)):
-                log.info('locate detected linear geometry: x = {} + {} xi ~{}'.format(geom0, scale, error))
+                log.debug('locate detected linear geometry: x = {} + {} xi ~{}'.format(geom0, scale, error))
                 return self._locate(geom0, scale, coords, eps=eps, weights=weights, skip_missing=skip_missing)
         return super().locate(geom, coords, eps=eps, tol=tol, weights=weights, skip_missing=skip_missing, arguments=arguments, **kwargs)
 

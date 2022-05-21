@@ -959,7 +959,7 @@ class locate(TestCase):
     @parametrize.enable_if(lambda etype, mode, **kwargs: etype == 'square' and mode != 'nonlinear')
     def test_detect_linear(self):
         target = numpy.array([(.2, .3)])
-        with self.assertLogs('nutils', level='INFO') as cm:
+        with self.assertLogs('nutils', level='DEBUG') as cm:
             self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12, arguments=dict(scale=.123))
         self.assertRegex(cm.output[0], 'locate detected linear geometry')
 
