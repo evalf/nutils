@@ -2245,10 +2245,10 @@ class StructuredTopology(TransformChainsTopology):
         if not geom.shape == coords.shape[1:] == (self.ndims,):
             raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
         arguments = dict(arguments or ())
-        if tol:
+        if tol or eps:
             geom0, scale, error = self._asaffine(geom, arguments)
-            if error <= tol:
-                log.info('locate detected linear geometry: x = {} + {} xi ~{:+.1e}'.format(geom0, scale, error))
+            if all(error <= numpy.maximum(tol, eps * scale)):
+                log.info('locate detected linear geometry: x = {} + {} xi ~{}'.format(geom0, scale, error))
                 return self._locate(geom0, scale, coords, eps=eps, weights=weights, skip_missing=skip_missing)
         return super().locate(geom, coords, eps=eps, tol=tol, weights=weights, skip_missing=skip_missing, arguments=arguments, **kwargs)
 
@@ -2266,7 +2266,7 @@ class StructuredTopology(TransformChainsTopology):
         R = numpy.arange(self.ndims)
         scale = (geom_[imax,R] - geom_[imin,R]) / (index_[imax,R] - index_[imin,R])
         geom0 = geom_[imin,R] - index_[imin,R] * scale # geom_[im..,R] = index_[im..,R] * scale + geom0
-        error = numpy.linalg.norm(geom0 + index_ * scale - geom_, axis=1).max()
+        error = numpy.abs(geom0 + index_ * scale - geom_).max(axis=0)
 
         return geom0, scale, error
 
