@@ -153,14 +153,13 @@ class withsolve(types.Immutable):
         if miniter > maxiter:
             raise ValueError('The minimum number of iterations cannot be larger than the maximum.')
         with log.iter.wrap(_progress(self._wrapped.__class__.__name__, tol), self) as items:
-            i = 0
-            for lhs, info in items:
+            for i, (lhs, info) in enumerate(items):
                 if info.resnorm <= tol and i >= miniter:
                     break
                 if i > maxiter:
                     raise SolverError('failed to reach target tolerance')
-                i += 1
-            log.info('converged in {} steps to residual {:.1e}'.format(i, info.resnorm))
+            log.info(f'converged in {i} steps to residual {info.resnorm:.1e}')
+        info.niter = i
         return lhs, info
 
 
