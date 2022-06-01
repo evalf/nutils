@@ -669,7 +669,7 @@ class thetamethod(cache.Recursion, length=1, version=1):
     residual : :class:`nutils.evaluable.AsEvaluableArray`
     inertia : :class:`nutils.evaluable.AsEvaluableArray`
     timestep : :class:`float`
-        Initial time step, will scale up as residual decreases
+        The time step.
     lhs0 : :class:`numpy.ndarray`
         Coefficient vector, starting point of the iterative procedure.
     theta : :class:`float`
