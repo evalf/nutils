@@ -9,6 +9,14 @@ features in inverse chronological order.
 New in v8.0 (in development)
 ----------------------------
 
+- New: iteration count via info.niter
+
+  The info struct returned by ``solve_withinfo`` newly contains the amount of
+  iterations as the ``niter`` attribute:
+
+  >>> res, info = solver.newton('u:v', res).solve_withinfo(1e-10, maxiter=10)
+  >>> assert info.niter <= 10
+
 - New: test fields and residual functionals
 
   The :mod:`nutils.solver` methods have been generalized to accept scalar
