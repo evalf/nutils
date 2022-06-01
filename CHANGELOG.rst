@@ -6,6 +6,54 @@ The following overview lists user facing changes as well as newly added
 features in inverse chronological order.
 
 
+New in v8.0 (in development)
+----------------------------
+
+- New: test fields and residual functionals
+
+  The :mod:`nutils.solver` methods have been generalized to accept scalar
+  valued functionals, from which residual vectors are derived through
+  differentiation. To this end, a trial/test function pair can be specified as
+  a solve target separated by a colon, as in the following example:
+
+  >>> ns.add_field(('u', 'v'), topo.basis('std', degree=1))
+  >>> res = topo.integral('∇_i(u) ∇_i(v) dV' @ ns, degree=2)
+  >>> args = solver.newton('u:v', res).solve(1e-10)
+
+  Multiple fields can either comma-joined or provided as a tuple. Note that the
+  colon automatically triggers a new-style dictionary return value, even in
+  absence of a trialing comma as in the above example.
+
+- New: Namespace.add_field
+
+  The namespace from the :mod:`nutils.expression_v2` module newly provides the
+  :func:`nutils.expression_v2.Namespace.add_field` method, as a convenient
+  shorthand for creating fields with the same name as their arguments. That is:
+
+  >>> ns.add_field(('u', 'v'), topo.basis('std', degree=1), shape=(2,))
+
+  is equivalent to
+
+  >>> basis = topo.basis('std', degree=1)
+  >>> ns.u = function.dotarg('u', basis, shape=(2,))
+  >>> ns.v = function.dotarg('v', basis, shape=(2,))
+
+- New: shorthand notation for multiple solver targets
+
+  Multiple solver targets can now be specified as a comma-separated string, as
+  a shorthand for the string tuple that will remain a valid argument. This
+  means the following two invocations are equivalent:
+
+  >>> args = solver.newton(('u', 'p'), (ures, pres)).solve(1e-10)
+  >>> args = solver.newton('u,p', (ures, pres)).solve(1e-10)
+
+  To distinguish single-length tuples from the single argument legacy notation,
+  the former requires a trailing comma. I.e., the following are NOT equivalent:
+
+  >>> args = solver.newton('u,', (ures,)).solve(1e-10)
+  >>> u = solver.newton('u', ures).solve(1e-10)
+
+
 New in v7.0 "hiyamugi"
 ----------------------
 
