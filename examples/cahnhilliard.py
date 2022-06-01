@@ -40,7 +40,7 @@
 #
 # with the equivalent weak formulation::
 #
-#     ∂/∂η ∫_Ω [ η (φ - φ0) + .5 dt J(η)·∇η ] = 0
+#     ∂/∂η ∫_Ω [ .5 dt J(η)·∇η - η (φ - φ0) ] = 0
 #     ∂/∂φ ∫_Ω [ E(φ) + δψ(φ, φ0) σ / ε - η φ ] = 0
 #
 # For stability we wish for the perturbation δψ to be such that the time
