@@ -1787,6 +1787,9 @@ class WithGroupsTopology(TransformChainsTopology):
         groups = [{name: topo.refined if isinstance(topo, TransformChainsTopology) else topo for name, topo in groups.items()} for groups in (self.vgroups, self.bgroups, self.igroups, self.pgroups)]
         return self.basetopo.refined.withgroups(*groups)
 
+    def locate(self, geom, coords, **kwargs):
+        return self.basetopo.locate(geom, coords, **kwargs)
+
 
 class OppositeTopology(TransformChainsTopology):
     'opposite topology'
@@ -1840,7 +1843,7 @@ def StructuredLine(space, root: transform.stricttransformitem, i: types.strictin
 class StructuredTopology(TransformChainsTopology):
     'structured topology'
 
-    __slots__ = 'root', 'axes', 'nrefine', 'shape', '_bnames'
+    __slots__ = 'root', 'axes', 'nrefine', 'shape', '_bnames', '_asaffine_geom', '_asaffine_retval'
     __cache__ = 'connectivity', 'boundary', 'interfaces'
 
     @types.apply_annotations
@@ -2237,37 +2240,42 @@ class StructuredTopology(TransformChainsTopology):
         axes = [axis.refined for axis in self.axes]
         return StructuredTopology(self.space, self.root, axes, self.nrefine+1, bnames=self._bnames)
 
-    def locate(self, geom, coords, *, tol, eps=0, weights=None, skip_missing=False, arguments=None, **kwargs):
+    def locate(self, geom, coords, *, tol=0, eps=0, weights=None, skip_missing=False, arguments=None, **kwargs):
         coords = numpy.asarray(coords, dtype=float)
         if geom.ndim == 0:
             geom = geom[_]
             coords = coords[..., _]
         if not geom.shape == coords.shape[1:] == (self.ndims,):
             raise Exception('invalid geometry or point shape for {}D topology'.format(self.ndims))
-        arguments = dict(arguments or ())
-        geom0, scale, e = self._asaffine(geom, arguments)
-        if e > tol:
-            return super().locate(geom, coords, eps=eps, tol=tol, weights=weights, skip_missing=skip_missing, arguments=arguments, **kwargs)
-        log.info('locate detected linear geometry: x = {} + {} xi ~{:+.1e}'.format(geom0, scale, e))
-        return self._locate(geom0, scale, coords, eps=eps, weights=weights, skip_missing=skip_missing)
+        if tol or eps:
+            if arguments:
+                geom0, scale, error = self._asaffine(geom, arguments)
+            elif geom is getattr(self, '_asaffine_geom', None):
+                log.debug('locate found previously computed affine values')
+                geom0, scale, error = self._asaffine_retval
+            else:
+                self._asaffine_geom = geom
+                geom0, scale, error = self._asaffine_retval = self._asaffine(geom, {})
+            if all(error <= numpy.maximum(tol, eps * scale)):
+                log.debug('locate detected linear geometry: x = {} + {} xi ~{}'.format(geom0, scale, error))
+                return self._locate(geom0, scale, coords, eps=eps, weights=weights, skip_missing=skip_missing)
+        return super().locate(geom, coords, eps=eps, tol=tol, weights=weights, skip_missing=skip_missing, arguments=arguments, **kwargs)
 
     def _asaffine(self, geom, arguments):
         # determine geom0, scale, error such that geom ~= geom0 + index * scale + error
-        funcsp = self.basis('std', degree=1, periodic=())
-        verts = numeric.meshgrid(*map(numpy.arange, numpy.array(self.shape)+1)).reshape(self.ndims, -1)
-        index = (funcsp * verts).sum(-1)
-        # strategy: fit an affine plane through the minima and maxima of a
-        # uniform sample, and evaluate the error as the largest difference on
-        # the remaining sample points
-        geom_, index_ = self.sample('uniform', 2 + (1 in self.shape)).eval((geom, index), **arguments)
-        imin = geom_.argmin(axis=0)
-        imax = geom_.argmax(axis=0)
-        R = numpy.arange(self.ndims)
-        scale = (geom_[imax,R] - geom_[imin,R]) / (index_[imax,R] - index_[imin,R])
-        geom0 = geom_[imin,R] - index_[imin,R] * scale # geom_[im..,R] = index_[im..,R] * scale + geom0
-        error = numpy.linalg.norm(geom0 + index_ * scale - geom_, axis=1).max()
-
-        return geom0, scale, error
+        n = 2 + (1 in self.shape) # number of sample points required to establish nonlinearity
+        sampleshape = numpy.multiply(self.shape, n) # shape of uniform sample
+        geom_ = self.sample('uniform', n).eval(geom, **arguments) \
+            .reshape(*self.shape, *[n] * self.ndims, self.ndims) \
+            .transpose(*(i+j for i in range(self.ndims) for j in (0, self.ndims)), self.ndims*2) \
+            .reshape(*sampleshape, self.ndims)
+        # strategy: fit an affine plane through the minima and maxima of a uniform sample,
+        # and evaluate the error as the largest difference on the remaining sample points
+        xmin, xmax = geom_.reshape(-1, self.ndims)[[0, -1]]
+        dx = (xmax - xmin) / (sampleshape-1) # x = x0 + dx * (i + .5) => xmax - xmin = dx * (sampleshape-1)
+        for idim in range(self.ndims):
+            geom_[...,idim] -= xmin[idim] + dx[idim] * numpy.arange(sampleshape[idim]).reshape([-1 if i == idim else 1 for i in range(self.ndims)])
+        return xmin - dx/2, dx * n, numpy.abs(geom_).reshape(-1, self.ndims).max(axis=0)
 
     def _locate(self, geom0, scale, coords, *, eps=0, weights=None, skip_missing=False):
         mincoords, maxcoords = numpy.sort([geom0, geom0 + scale * self.shape], axis=0)

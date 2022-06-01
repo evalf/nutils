@@ -7,13 +7,68 @@
 # exponentially with radius such that the artificial exterior boundary is
 # placed at large (configurable) distance.
 
-from nutils import mesh, function, solver, util, export, cli, testing
+from nutils import mesh, function, solver, util, export, cli, testing, numeric
 from nutils.expression_v2 import Namespace
 import numpy
 import treelog
 
 
-def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: float, maxradius: float, seed: int, endtime: float):
+class PostProcessor:
+
+    def __init__(self, topo, ns, timestep, region=4., aspect=16/9, figscale=7.2, spacing=.05):
+        self.ns = ns
+        self.figsize = aspect * figscale, figscale
+        self.bbox = numpy.array([[-.5, aspect-.5], [-.5, .5]]) * region
+        self.bezier = topo.select(function.min(*(ns.x-self.bbox[:,0])*(self.bbox[:,1]-ns.x))).sample('bezier', 5)
+        self.spacing = spacing
+        self.timestep = timestep
+        self.t = 0.
+        self.initialize_xgrd()
+        self.topo = topo
+
+    def initialize_xgrd(self):
+        self.orig = numeric.floor(self.bbox[:,0] / (2*self.spacing)) * 2 - 1
+        nx, ny = numeric.ceil(self.bbox[:,1] / (2*self.spacing)) * 2 + 2 - self.orig
+        self.vacant = numpy.hypot(
+            self.orig[0] + numpy.arange(nx)[:,numpy.newaxis],
+            self.orig[1] + numpy.arange(ny)) > self.ns.R.eval() / self.spacing
+        self.xgrd = (numpy.stack(self.vacant[1::2,1::2].nonzero(), axis=1) * 2 + self.orig + 1) * self.spacing
+
+    def regularize_xgrd(self):
+        # use grid rounding to detect and remove oldest points that have close
+        # neighbours and introduce new points into vacant spots
+        keep = numpy.zeros(len(self.xgrd), dtype=bool)
+        vacant = self.vacant.copy()
+        for i, ind in enumerate(numeric.round(self.xgrd / self.spacing) - self.orig): # points are ordered young to old
+            if all(ind >= 0) and all(ind < vacant.shape) and vacant[tuple(ind)]:
+                vacant[tuple(ind)] = False
+                keep[i] = True
+        roll = numpy.arange(vacant.ndim)-1
+        for _ in roll: # coarsen all dimensions using 3-point window
+            vacant = numeric.overlapping(vacant.transpose(roll), axis=0, n=3)[::2].all(1)
+        newpoints = numpy.stack(vacant.nonzero(), axis=1) * 2 + self.orig + 1
+        self.xgrd = numpy.concatenate([newpoints * self.spacing, self.xgrd[keep]], axis=0)
+
+    def __call__(self, args):
+        x, p = self.bezier.eval(['x_i', 'p'] @ self.ns, **args)
+        logr = numpy.log(numpy.hypot(*self.xgrd.T) / self.ns.R.eval())
+        φ = numpy.arctan2(self.xgrd[:,1], self.xgrd[:,0]) + numpy.pi
+        ugrd = self.topo.locate(self.ns.grid, numpy.stack([logr, φ], axis=1), eps=1, tol=1e-5).eval(self.ns.u, **args)
+        with export.mplfigure('flow.png', figsize=self.figsize) as fig:
+            ax = fig.add_axes([0, 0, 1, 1], yticks=[], xticks=[], frame_on=False, xlim=self.bbox[0], ylim=self.bbox[1])
+            im = ax.tripcolor(*x.T, self.bezier.tri, p, shading='gouraud', cmap='jet')
+            export.plotlines_(ax, x.T, self.bezier.hull, colors='k', linewidths=.1, alpha=.5)
+            ax.quiver(*self.xgrd.T, *ugrd.T, angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9, alpha=.5, pivot='tip')
+            ax.plot(0, 0, 'k', marker=(3, 2, self.t*self.ns.rotation.eval()*180/numpy.pi-90), markersize=20)
+            cax = fig.add_axes([0.9, 0.1, 0.01, 0.8])
+            cax.tick_params(labelsize='large')
+            fig.colorbar(im, cax=cax)
+        self.t += self.timestep
+        self.xgrd += ugrd * self.timestep
+        self.regularize_xgrd()
+
+
+def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: float, timestep: float, maxradius: float, seed: int, endtime: float):
     '''
     Flow around a cylinder.
 
@@ -28,6 +83,8 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: f
          less.
        reynolds [1000]
          Reynolds number, taking the cylinder radius as characteristic length.
+       radius [.5]
+         Cylinder radius.
        rotation [0]
          Cylinder rotation speed.
        timestep [.04]
@@ -51,10 +108,12 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: f
     ns.δ = function.eye(domain.ndims)
     ns.Σ = function.ones([domain.ndims])
     ns.uinf = function.Array.cast([1, 0])
-    ns.r = .5 * function.exp(elemangle * geom[0])
     ns.Re = reynolds
-    ns.phi = geom[1] * elemangle  # add small angle to break element symmetry
-    ns.x_i = 'r (cos(phi) δ_i0 + sin(phi) δ_i1)'
+    ns.grid = geom * elemangle
+    ns.R = radius
+    ns.r = 'R exp(grid_0)'
+    ns.φ = 'grid_1'
+    ns.x_i = 'r (cos(φ) δ_i0 + sin(φ) δ_i1)'
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     J = ns.x.grad(geom)
     detJ = function.determinant(J)
@@ -66,7 +125,7 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: f
     ns.N = 10 * degree / elemangle  # Nitsche constant based on element size = elemangle/2
     ns.nitsche_i = '(N v_i - (∇_j(v_i) + ∇_i(v_j)) n_j) / Re'
     ns.rotation = rotation
-    ns.uwall_i = '0.5 rotation (-sin(phi) δ_i0 + cos(phi) δ_i1)'
+    ns.uwall_i = '0.5 rotation (-sin(φ) δ_i0 + cos(φ) δ_i1)'
 
     inflow = domain.boundary['outer'].select(-ns.uinf.dotnorm(ns.x), ischeme='gauss1')  # upstream half of the exterior boundary
     sqr = inflow.integral('Σ_i (u_i - uinf_i)^2' @ ns, degree=degree*2)
@@ -82,35 +141,15 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: f
     res += domain.integral('q ∇_k(u_k) dV' @ ns, degree=9)
     uinertia = domain.integral('v_i u_i dV' @ ns, degree=9)
 
-    bbox = numpy.array([[-2, 46/9], [-2, 2]])  # bounding box for figure based on 16x9 aspect ratio
-    bezier0 = domain.sample('bezier', 5)
-    bezier = bezier0.subset((bezier0.eval((ns.x-bbox[:, 0]) * (bbox[:, 1]-ns.x)) > 0).all(axis=1))
-    interpolate = util.tri_interpolator(bezier.tri, bezier.eval(ns.x), mergetol=1e-5)  # interpolator for quivers
-    spacing = .05  # initial quiver spacing
-    xgrd = util.regularize(bbox, spacing)
+    postprocess = PostProcessor(domain, ns, timestep)
 
     with treelog.iter.plain('timestep', solver.impliciteuler('u:v,p:q', residual=res, inertia=uinertia, arguments=args0, timestep=timestep, constrain=cons, newtontol=1e-10)) as steps:
         for istep, args in enumerate(steps):
 
-            t = istep * timestep
-            x, u, normu, p = bezier.eval(['x_i', 'u_i', 'sqrt(u_i u_i)', 'p'] @ ns, **args)
-            ugrd = interpolate[xgrd](u)
+            postprocess(args)
 
-            with export.mplfigure('flow.png', figsize=(12.8, 7.2)) as fig:
-                ax = fig.add_axes([0, 0, 1, 1], yticks=[], xticks=[], frame_on=False, xlim=bbox[0], ylim=bbox[1])
-                im = ax.tripcolor(x[:, 0], x[:, 1], bezier.tri, p, shading='gouraud', cmap='jet')
-                import matplotlib.collections
-                ax.add_collection(matplotlib.collections.LineCollection(x[bezier.hull], colors='k', linewidths=.1, alpha=.5))
-                ax.quiver(xgrd[:, 0], xgrd[:, 1], ugrd[:, 0], ugrd[:, 1], angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9, alpha=.5)
-                ax.plot(0, 0, 'k', marker=(3, 2, t*rotation*180/numpy.pi-90), markersize=20)
-                cax = fig.add_axes([0.9, 0.1, 0.01, 0.8])
-                cax.tick_params(labelsize='large')
-                fig.colorbar(im, cax=cax)
-
-            if t >= endtime:
+            if istep * timestep >= endtime:
                 break
-
-            xgrd = util.regularize(bbox, spacing, xgrd + ugrd * timestep)
 
     return args0, args
 
@@ -131,7 +170,7 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
     def test_rot0(self):
-        args0, args = main(nelems=6, degree=3, reynolds=100, rotation=0, timestep=.1, maxradius=25, seed=0, endtime=.05)
+        args0, args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=0, timestep=.1, maxradius=25, seed=0, endtime=.05)
         with self.subTest('initial condition'):
             self.assertAlmostEqual64(args0['u'], '''
                 eNoNzLEJwkAYQOHXuYZgJyZHLjmMCIJY2WcEwQFcwcYFbBxCEaytzSVnuM7CQkEDqdVCG//uNe/rqEcI
@@ -148,7 +187,7 @@ class test(testing.TestCase):
                 wL9FwkabQsJJTbc2ubJHw7ZvRq/qITA=''')
 
     def test_rot1(self):
-        args0, args = main(nelems=6, degree=3, reynolds=100, rotation=1, timestep=.1, maxradius=25, seed=0, endtime=.05)
+        args0, args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=1, timestep=.1, maxradius=25, seed=0, endtime=.05)
         with self.subTest('initial condition'):
             self.assertAlmostEqual64(args0['u'], '''
                 eNoNzLEJwkAYQOHXuYZgJyZHLjmMCIJY2WcEwQFcwcYFbBxCEaytzSVnuM7CQkEDqdVCG//uNe/rqEcI
