@@ -444,102 +444,19 @@ impl Operator {
         ]
     }
     pub fn swap_with_children(&self, other: Children) -> Option<(Vec<Self>, Children)> {
-        match self {
-            Self::Take(Take { indices, len }) => Some((
-                Self::swap_reduce_repeat(
-                    self.clone(),
-                    *len,
-                    indices.len() as Index,
-                    other.simplex.nchildren(),
-                ),
-                other,
-            )),
-            Self::Transpose(Transpose { len1, len2 }) => Some((
-                Self::swap_reduce_repeat(
-                    self.clone(),
-                    len1 * len2,
-                    len1 * len2,
-                    other.simplex.nchildren(),
-                ),
-                other,
-            )),
-            Self::Children(slf) if !dimensions_overlap(slf, &other) => {
-                let trans = Self::new_transpose(slf.simplex.nchildren(), other.simplex.nchildren());
-                Some((vec![self.clone(), trans], other))
-            }
-            Self::Edges(slf) => {
-                let trans = Self::new_transpose(slf.simplex.nedges(), other.simplex.nchildren());
-                match compare_dimensions(slf, &other) {
-                    Some(Ordering::Less) => {
-                        let mut other = other;
-                        other.offset += 1;
-                        Some((vec![self.clone(), trans], other))
-                    }
-                    Some(Ordering::Greater) => Some((vec![self.clone(), trans], other)),
-                    Some(Ordering::Equal) => {
-                        let indices = slf.simplex.swap_edges_children_map();
-                        let take =
-                            Self::new_take(indices, slf.simplex.nchildren() * slf.simplex.nedges());
-                        Some((
-                            vec![self.clone(), take],
-                            Children::new(slf.simplex, other.offset),
-                        ))
-                    }
-                    None => None,
-                }
-            }
-            _ => None,
+        let mut other = other;
+        if let Some(tail) = other.swap(self) {
+            Some((tail, other))
+        } else {
+            None
         }
     }
     pub fn swap_with_edges(&self, other: Edges) -> Option<(Vec<Self>, Edges)> {
-        match self {
-            Self::Take(Take { indices, len }) => Some((
-                Self::swap_reduce_repeat(
-                    self.clone(),
-                    *len,
-                    indices.len() as Index,
-                    other.simplex.nedges(),
-                ),
-                other,
-            )),
-            Self::Transpose(Transpose { len1, len2 }) => Some((
-                Self::swap_reduce_repeat(
-                    self.clone(),
-                    len1 * len2,
-                    len1 * len2,
-                    other.simplex.nedges(),
-                ),
-                other,
-            )),
-            Self::Children(slf) => {
-                let trans = Self::new_transpose(slf.simplex.nchildren(), other.simplex.nedges());
-                match compare_dimensions(slf, &other) {
-                    Some(Ordering::Less) => Some((vec![self.clone(), trans], other)),
-                    Some(Ordering::Greater) => {
-                        let mut slf = slf.clone();
-                        slf.offset -= 1;
-                        Some((vec![slf.into(), trans], other))
-                    }
-                    Some(Ordering::Equal) | None => None,
-                }
-            }
-            Self::Edges(slf) => {
-                let trans = Self::new_transpose(slf.simplex.nedges(), other.simplex.nedges());
-                match compare_dimensions(slf, &other) {
-                    Some(Ordering::Less) => {
-                        let mut other = other;
-                        other.offset += 1;
-                        Some((vec![self.clone(), trans], other))
-                    }
-                    Some(Ordering::Greater) => {
-                        let mut slf = slf.clone();
-                        slf.offset -= 1;
-                        Some((vec![slf.into(), trans], other))
-                    }
-                    Some(Ordering::Equal) | None => None,
-                }
-            }
-            _ => None,
+        let mut other = other;
+        if let Some(tail) = other.swap(self) {
+            Some((tail, other))
+        } else {
+            None
         }
     }
 }
@@ -552,6 +469,145 @@ impl SequenceTransformation for Operator {
     dispatch! {fn apply_many_inplace(&self, index: Index, coordinates: &mut [f64], dim: Dim) -> Index}
     dispatch! {fn apply(&self, index: Index, coordinate: &[f64]) -> (Index, Vec<f64>)}
     dispatch! {fn apply_many(&self, index: Index, coordinates: &[f64], dim: Dim) -> (Index, Vec<f64>)}
+}
+
+trait Swap<L> {
+    fn swap(&mut self, other: &L) -> Option<Vec<Operator>>;
+}
+
+impl Swap<Children> for Children {
+    fn swap(&mut self, other: &Children) -> Option<Vec<Operator>> {
+        match compare_dimensions(other, self) {
+            Some(Ordering::Equal) | None => None,
+            Some(Ordering::Less) | Some(Ordering::Greater) => {
+                let trans =
+                    Operator::new_transpose(other.simplex.nchildren(), self.simplex.nchildren());
+                Some(vec![other.clone().into(), trans])
+            }
+        }
+    }
+}
+
+impl Swap<Edges> for Children {
+    fn swap(&mut self, other: &Edges) -> Option<Vec<Operator>> {
+        let trans = Operator::new_transpose(other.simplex.nedges(), self.simplex.nchildren());
+        match compare_dimensions(other, self) {
+            Some(Ordering::Less) => {
+                self.offset += 1;
+                Some(vec![other.clone().into(), trans])
+            }
+            Some(Ordering::Greater) => Some(vec![other.clone().into(), trans]),
+            Some(Ordering::Equal) => {
+                let indices = other.simplex.swap_edges_children_map();
+                let take =
+                    Operator::new_take(indices, other.simplex.nchildren() * other.simplex.nedges());
+                self.simplex = other.simplex;
+                Some(vec![other.clone().into(), take])
+            }
+            None => None,
+        }
+    }
+}
+
+impl Swap<Children> for Edges {
+    fn swap(&mut self, other: &Children) -> Option<Vec<Operator>> {
+        let trans = Operator::new_transpose(other.simplex.nchildren(), self.simplex.nedges());
+        match compare_dimensions(other, self) {
+            Some(Ordering::Less) => Some(vec![other.clone().into(), trans]),
+            Some(Ordering::Greater) => {
+                let mut other = other.clone();
+                other.offset -= 1;
+                Some(vec![other.into(), trans])
+            }
+            Some(Ordering::Equal) | None => None,
+        }
+    }
+}
+
+impl Swap<Edges> for Edges {
+    fn swap(&mut self, other: &Edges) -> Option<Vec<Operator>> {
+        let trans = Operator::new_transpose(other.simplex.nedges(), self.simplex.nedges());
+        match compare_dimensions(other, self) {
+            Some(Ordering::Less) => {
+                self.offset += 1;
+                Some(vec![other.clone().into(), trans])
+            }
+            Some(Ordering::Greater) => {
+                let mut other = other.clone();
+                other.offset -= 1;
+                Some(vec![other.into(), trans])
+            }
+            Some(Ordering::Equal) | None => None,
+        }
+    }
+}
+
+impl Swap<Take> for Children {
+    fn swap(&mut self, other: &Take) -> Option<Vec<Operator>> {
+        Some(Operator::swap_reduce_repeat(
+            other.clone().into(),
+            other.len,
+            other.indices.len() as Index,
+            self.simplex.nchildren(),
+        ))
+    }
+}
+
+impl Swap<Take> for Edges {
+    fn swap(&mut self, other: &Take) -> Option<Vec<Operator>> {
+        Some(Operator::swap_reduce_repeat(
+            other.clone().into(),
+            other.len,
+            other.indices.len() as Index,
+            self.simplex.nedges(),
+        ))
+    }
+}
+
+impl Swap<Transpose> for Children {
+    fn swap(&mut self, other: &Transpose) -> Option<Vec<Operator>> {
+        Some(Operator::swap_reduce_repeat(
+            other.clone().into(),
+            other.len1 * other.len2,
+            other.len1 * other.len2,
+            self.simplex.nchildren(),
+        ))
+    }
+}
+
+impl Swap<Transpose> for Edges {
+    fn swap(&mut self, other: &Transpose) -> Option<Vec<Operator>> {
+        Some(Operator::swap_reduce_repeat(
+            other.clone().into(),
+            other.len1 * other.len2,
+            other.len1 * other.len2,
+            self.simplex.nedges(),
+        ))
+    }
+}
+
+impl Swap<Operator> for Children {
+    fn swap(&mut self, other: &Operator) -> Option<Vec<Operator>> {
+        match other {
+            Operator::Transpose(val) => self.swap(val),
+            Operator::Take(val) => self.swap(val),
+            Operator::Children(val) => self.swap(val),
+            Operator::Edges(val) => self.swap(val),
+            _ => None,
+        }
+    }
+}
+
+impl Swap<Operator> for Edges {
+    fn swap(&mut self, other: &Operator) -> Option<Vec<Operator>> {
+        match other {
+            Operator::Transpose(val) => self.swap(val),
+            Operator::Take(val) => self.swap(val),
+            Operator::Children(val) => self.swap(val),
+            Operator::Edges(val) => self.swap(val),
+            _ => None,
+        }
+    }
 }
 
 /// A chain of [`Operator`]s.
