@@ -95,6 +95,27 @@ impl PartialOrd for DimSlice {
     }
 }
 
+trait InputDimSlice {
+    fn input_dim_slice(&self) -> DimSlice;
+}
+
+trait OutputDimSlice {
+    fn output_dim_slice(&self) -> DimSlice;
+}
+
+fn compare_dimensions(left: &impl InputDimSlice, right: &impl OutputDimSlice) -> Option<Ordering> {
+    let left = left.input_dim_slice();
+    let right = right.output_dim_slice();
+    left.partial_cmp(&right)
+}
+
+fn dimensions_overlap(left: &impl InputDimSlice, right: &impl OutputDimSlice) -> bool {
+    match compare_dimensions(left, right) {
+        Some(Ordering::Equal) | None => true,
+        Some(Ordering::Less) | Some(Ordering::Greater) => false,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Transpose {
     len1: Index,
@@ -197,6 +218,20 @@ impl SequenceTransformation for Children {
     }
 }
 
+impl InputDimSlice for Children {
+    #[inline]
+    fn input_dim_slice(&self) -> DimSlice {
+        DimSlice::new(self.offset, self.simplex.dim())
+    }
+}
+
+impl OutputDimSlice for Children {
+    #[inline]
+    fn output_dim_slice(&self) -> DimSlice {
+        DimSlice::new(self.offset, self.simplex.dim())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Edges {
     simplex: Simplex,
@@ -227,6 +262,20 @@ impl SequenceTransformation for Edges {
     fn apply_inplace(&self, index: Index, coordinate: &mut [f64]) -> Index {
         self.simplex
             .apply_edge_inplace(index, &mut coordinate[self.offset as usize..])
+    }
+}
+
+impl InputDimSlice for Edges {
+    #[inline]
+    fn input_dim_slice(&self) -> DimSlice {
+        DimSlice::new(self.offset, self.simplex.edge_dim())
+    }
+}
+
+impl OutputDimSlice for Edges {
+    #[inline]
+    fn output_dim_slice(&self) -> DimSlice {
+        DimSlice::new(self.offset, self.simplex.dim())
     }
 }
 
@@ -395,7 +444,6 @@ impl Operator {
         ]
     }
     pub fn swap_with_children(&self, other: Children) -> Option<(Vec<Self>, Children)> {
-        let other_slice = DimSlice::new(other.offset, other.simplex.dim());
         match self {
             Self::Take(Take { indices, len }) => Some((
                 Self::swap_reduce_repeat(
@@ -415,15 +463,13 @@ impl Operator {
                 ),
                 other,
             )),
-            Self::Children(slf)
-                if !other_slice.overlaps(&DimSlice::new(slf.offset, slf.simplex.dim())) =>
-            {
+            Self::Children(slf) if !dimensions_overlap(slf, &other) => {
                 let trans = Self::new_transpose(slf.simplex.nchildren(), other.simplex.nchildren());
                 Some((vec![self.clone(), trans], other))
             }
             Self::Edges(slf) => {
                 let trans = Self::new_transpose(slf.simplex.nedges(), other.simplex.nchildren());
-                match DimSlice::new(slf.offset, slf.simplex.edge_dim()).partial_cmp(&other_slice) {
+                match compare_dimensions(slf, &other) {
                     Some(Ordering::Less) => {
                         let mut other = other;
                         other.offset += 1;
@@ -446,7 +492,6 @@ impl Operator {
         }
     }
     pub fn swap_with_edges(&self, other: Edges) -> Option<(Vec<Self>, Edges)> {
-        let other_slice = DimSlice::new(other.offset, other.simplex.dim());
         match self {
             Self::Take(Take { indices, len }) => Some((
                 Self::swap_reduce_repeat(
@@ -468,7 +513,7 @@ impl Operator {
             )),
             Self::Children(slf) => {
                 let trans = Self::new_transpose(slf.simplex.nchildren(), other.simplex.nedges());
-                match DimSlice::new(slf.offset, slf.simplex.dim()).partial_cmp(&other_slice) {
+                match compare_dimensions(slf, &other) {
                     Some(Ordering::Less) => Some((vec![self.clone(), trans], other)),
                     Some(Ordering::Greater) => {
                         let mut slf = slf.clone();
@@ -480,7 +525,7 @@ impl Operator {
             }
             Self::Edges(slf) => {
                 let trans = Self::new_transpose(slf.simplex.nedges(), other.simplex.nedges());
-                match DimSlice::new(slf.offset, slf.simplex.edge_dim()).partial_cmp(&other_slice) {
+                match compare_dimensions(slf, &other) {
                     Some(Ordering::Less) => {
                         let mut other = other;
                         other.offset += 1;
