@@ -1137,17 +1137,17 @@ def asarray(__arg: IntoArray) -> Array:
     return Array.cast(__arg)
 
 
-@implements(numpy.shape)
+@_use_instead('numpy.shape')
 def shape(__arg: IntoArray) -> Tuple[int, ...]:
     return asarray(__arg).shape
 
 
-@implements(numpy.ndim)
+@_use_instead('numpy.ndim')
 def ndim(__arg: IntoArray) -> int:
     return asarray(__arg).ndim
 
 
-@implements(numpy.size)
+@_use_instead('numpy.size')
 def size(__arg: IntoArray) -> int:
     return asarray(__arg).size
 
@@ -3863,3 +3863,18 @@ def Namespace(*args, **kwargs):
 def _is_unit_scalar(v):
     T = type(v)
     return T in _dtypes and v == T(1)
+
+
+class __implementations__:
+
+    @implements(numpy.shape)
+    def shape(arg: Array) -> Tuple[int, ...]:
+        return arg.shape
+
+    @implements(numpy.ndim)
+    def ndim(arg: Array) -> int:
+        return arg.ndim
+    
+    @implements(numpy.size)
+    def size(arg: Array) -> int:
+        return arg.size
