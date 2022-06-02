@@ -1806,7 +1806,7 @@ def less(__left: IntoArray, __right: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Less, left, right, force_dtype=bool)
 
 
-@implements(numpy.min)
+@_use_instead('numpy.minimum')
 def min(__a: IntoArray, __b: IntoArray) -> Array:
     '''Return the minimum of the arguments, elementwise.
 
@@ -1825,7 +1825,7 @@ def min(__a: IntoArray, __b: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Minimum, a, b)
 
 
-@implements(numpy.max)
+@_use_instead('numpy.maximum')
 def max(__a: IntoArray, __b: IntoArray) -> Array:
     '''Return the maximum of the arguments, elementwise.
 
@@ -4040,3 +4040,17 @@ class __implementations__:
         if left.dtype == complex or right.dtype == complex:
             raise ValueError('Complex numbers have no total order.')
         return _Wrapper.broadcasted_arrays(evaluable.Less, left, right, force_dtype=bool)
+
+    @implements(numpy.minimum)
+    def minimum(a: IntoArray, b: IntoArray) -> Array:
+        a, b = map(Array.cast, (a, b))
+        if a.dtype == complex or b.dtype == complex:
+            raise ValueError('Complex numbers have no total order.')
+        return _Wrapper.broadcasted_arrays(evaluable.Minimum, a, b)
+
+    @implements(numpy.maximum)
+    def maximum(a: IntoArray, b: IntoArray) -> Array:
+        a, b = map(Array.cast, (a, b))
+        if a.dtype == complex or b.dtype == complex:
+            raise ValueError('Complex numbers have no total order.')
+        return _Wrapper.broadcasted_arrays(evaluable.Maximum, a, b)

@@ -301,8 +301,8 @@ _check('greater', lambda a, b: numpy.greater(a, function.Array.cast(b)), numpy.g
 _check('equal', lambda a, b: numpy.equal(a, function.Array.cast(b)), numpy.equal, ANY(4, 1), ANY(1, 4))
 _check('equal-complex', lambda a, b: numpy.equal(a, function.Array.cast(b)), numpy.equal, ANC(4, 1), ANC(1, 4))
 _check('less', lambda a, b: numpy.less(a, function.Array.cast(b)), numpy.less, ANY(4, 1), ANY(1, 4))
-_check('min', function.min, numpy.minimum, ANY(4, 1), ANY(1, 4))
-_check('max', function.max, numpy.maximum, ANY(4, 1), ANY(1, 4))
+_check('min', lambda a, b: numpy.minimum(a, function.Array.cast(b)), numpy.minimum, ANY(4, 1), ANY(1, 4))
+_check('max', lambda a, b: numpy.maximum(a, function.Array.cast(b)), numpy.maximum, ANY(4, 1), ANY(1, 4))
 _check('heaviside', function.heaviside, lambda u: numpy.heaviside(u, .5), ANY(4, 4))
 
 ## TODO: opposite
