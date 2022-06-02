@@ -1420,7 +1420,7 @@ def abs(__arg: IntoArray) -> Array:
     return _Wrapper(evaluable.abs, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
 
 
-@implements(numpy.matmul)
+@_use_instead('numpy.matmul or the @ operator')
 def matmul(__arg1: IntoArray, __arg2: IntoArray) -> Array:
     '''Return the matrix product of two arrays.
 
@@ -3949,3 +3949,16 @@ class __implementations__:
         if arg.dtype == complex:
             raise ValueError('sign is not defined for complex numbers')
         return _Wrapper.broadcasted_arrays(evaluable.Sign, arg)
+
+    @implements(numpy.matmul)
+    def matmul(arg1: IntoArray, arg2: IntoArray) -> Array:
+        arg1 = Array.cast(arg1)
+        arg2 = Array.cast(arg2)
+        if not arg1.ndim or not arg2.ndim:
+            raise ValueError('cannot contract zero-dimensional array')
+        if arg2.ndim == 1:
+            return (arg1 * arg2).sum(-1)
+        elif arg1.ndim == 1:
+            return (arg1[:, numpy.newaxis] * arg2).sum(-2)
+        else:
+            return (arg1[..., :, :, numpy.newaxis] * arg2[..., numpy.newaxis, :, :]).sum(-2)
