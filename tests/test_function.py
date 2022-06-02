@@ -61,7 +61,7 @@ class Array(TestCase):
 
     def test_different_argument_shapes(self):
         with self.assertRaisesRegex(ValueError, "Argument 'a' has two different shapes"):
-            function.Argument('a', (2,)).sum() + function.Argument('a', (3, 4)).sum()
+            function.Argument('a', (2,)).sum() + function.Argument('a', (3, 4)).sum(-1)
 
     def test_different_argument_dtypes(self):
         with self.assertRaisesRegex(ValueError, "Argument 'a' has two different dtypes"):
@@ -309,13 +309,13 @@ _check('heaviside', function.heaviside, lambda u: numpy.heaviside(u, .5), ANY(4,
 ## TODO: mean
 ## TODO: jump
 #
-_check('sum', lambda a: function.sum(a, 2), lambda a: a.sum(2), ANY(4, 3, 4))
-_check('sum-bool', lambda a: function.sum(numpy.greater(a, 0), 2), lambda a: (a > 0).sum(2), ANY(4, 3, 4))
-_check('sum-complex', lambda a: function.sum(a, 2), lambda a: a.sum(2), ANC(4, 3, 4))
+_check('sum', lambda a: numpy.sum(function.Array.cast(a), 2), lambda a: a.sum(2), ANY(4, 3, 4))
+_check('sum-bool', lambda a: numpy.sum(function.Array.cast(a > 0), 2), lambda a: (a > 0).sum(2), ANY(4, 3, 4))
+_check('sum-complex', lambda a: numpy.sum(function.Array.cast(a), 2), lambda a: a.sum(2), ANC(4, 3, 4))
 _check('Array_sum', lambda a: function.Array.cast(a).sum(2), lambda a: a.sum(2), ANY(4, 3, 4))
-_check('product', lambda a: function.product(a, 2), lambda a: numpy.product(a, 2), ANY(4, 3, 4))
-_check('product-bool', lambda a: function.product(numpy.greater(a, 0), 2), lambda a: numpy.product((a > 0), 2), ANY(4, 3, 4))
-_check('product-complex', lambda a: function.product(a, 2), lambda a: numpy.product(a, 2), ANC(4, 3, 4))
+_check('product', lambda a: numpy.product(function.Array.cast(a), 2), lambda a: numpy.product(a, 2), ANY(4, 3, 4))
+_check('product-bool', lambda a: numpy.product(function.Array.cast(a > 0), 2), lambda a: numpy.product((a > 0), 2), ANY(4, 3, 4))
+_check('product-complex', lambda a: numpy.product(function.Array.cast(a), 2), lambda a: numpy.product(a, 2), ANC(4, 3, 4))
 _check('Array_prod', lambda a: function.Array.cast(a).prod(2), lambda a: numpy.product(a, 2), ANY(4, 3, 4))
 
 _check('dot', lambda a, b: function.dot(a, b, axes=2), lambda a, b: (a*b).sum(2), ANY(4, 2, 4), ANY(4, 2, 4).T)

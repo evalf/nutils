@@ -290,12 +290,51 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
             return _Wrapper(functools.partial(evaluable.astype, dtype=dtype), self, shape=self.shape, dtype=dtype)
 
     def sum(self, axis: Optional[Union[int, Sequence[int]]] = None) -> 'Array':
-        'See :func:`sum`.'
-        return sum(self, axis)
+        '''Return the sum of array elements over the given axes.
+
+        .. warning::
+
+           This method will change in future to match Numpy's equivalent
+           method, which sums over all axes by default. During transition, use
+           of this method without an axis argument will raise a warning, and
+           later an error, if the input array is of ndim >= 2.
+
+        Parameters
+        ----------
+        arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
+        axis : :class:`int`, a sequence of :class:`int`, or ``None``
+            The axis or axes to sum. ``None``, the default, implies summation
+            over the last axis.
+
+        Returns
+        -------
+        :class:`Array`
+        '''
+        if axis is None and self.ndim != 1:
+            warnings.deprecation(
+                "The default summation axis will change from being the last axis (old behaviour)\n"
+                "to being ALL axes (numpy's behaviour). To facilitate the transition, the axis\n"
+                "argument will be made MANDATORY for arrays with dimension > 1, for the duration\n"
+                "of at least one release cycle.")
+            axis = -1
+
+        return numpy.sum(self, axis)
 
     def prod(self, __axis: int) -> 'Array':
-        'See :func:`prod`.'
-        return product(self, __axis)
+        '''Return the product of array elements over the given axes.
+
+        Parameters
+        ----------
+        axis : :class:`int`, a sequence of :class:`int`, or ``None``
+            The axis or axes along which the product is performed. ``None``, the
+            default, implies all axes.
+
+        Returns
+        -------
+        :class:`Array`
+        '''
+
+        return numpy.product(self, __axis)
 
     def dot(self, __other: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> 'Array':
         'See :func:`dot`.'
@@ -1970,7 +2009,7 @@ def jump(__arg: IntoArray) -> Array:
 # REDUCTION
 
 
-@implements(numpy.sum)
+@_use_instead('numpy.sum')
 def sum(__arg: IntoArray, axis: Optional[Union[int, Sequence[int]]] = None) -> Array:
     '''Return the sum of array elements over the given axes.
 
@@ -1999,7 +2038,7 @@ def sum(__arg: IntoArray, axis: Optional[Union[int, Sequence[int]]] = None) -> A
     return summed
 
 
-@implements(numpy.product)
+@_use_instead('numpy.product')
 def product(__arg: IntoArray, axis: int) -> Array:
     '''Return the product of array elements over the given axes.
 
@@ -2104,7 +2143,7 @@ def dot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]
         assert b.ndim == 1 and b.shape[0] == a.shape[0]
         b = _append_axes(b, a.shape[1:])
         axes = 0,
-    return sum(a * b, axes)
+    return numpy.sum(a * b, axes)
 
 
 @implements(numpy.vdot)
@@ -2127,7 +2166,7 @@ def vdot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]
     '''
 
     a, b = broadcast_arrays(__a, __b)
-    return sum(conjugate(a) * b, range(a.ndim))
+    return numpy.sum(conjugate(a) * b, range(a.ndim))
 
 
 @implements(numpy.trace)
@@ -2147,7 +2186,7 @@ def trace(__arg: IntoArray, axis1: int = -2, axis2: int = -1) -> Array:
     :class:`Array`
     '''
 
-    return sum(_takediag(__arg, axis1, axis2), -1)
+    return numpy.sum(_takediag(__arg, axis1, axis2), -1)
 
 
 def norm2(__arg: IntoArray, axis: Union[int, Sequence[int]] = -1) -> Array:
@@ -2165,7 +2204,7 @@ def norm2(__arg: IntoArray, axis: Union[int, Sequence[int]] = -1) -> Array:
     '''
 
     arg = Array.cast(__arg)
-    return numpy.sqrt(sum(arg * conjugate(arg), axis))
+    return numpy.sqrt(numpy.sum(arg * conjugate(arg), axis))
 
 
 def normalized(__arg: IntoArray, axis: int = -1) -> Array:
@@ -4054,3 +4093,25 @@ class __implementations__:
         if a.dtype == complex or b.dtype == complex:
             raise ValueError('Complex numbers have no total order.')
         return _Wrapper.broadcasted_arrays(evaluable.Maximum, a, b)
+
+    @implements(numpy.sum)
+    def sum(arg: IntoArray, axis: Optional[Union[int, Sequence[int]]] = None) -> Array:
+        arg = Array.cast(arg)
+        if arg.dtype == bool:
+            arg = arg.astype(int)
+        axes = range(arg.ndim) if axis is None else [axis] if isinstance(axis, numbers.Integral) else axis
+        summed = _Transpose.to_end(arg, *axes)
+        for i in range(len(axes)):
+            summed = _Wrapper(evaluable.Sum, summed, shape=summed.shape[:-1], dtype=summed.dtype)
+        return summed
+
+    @implements(numpy.product)
+    def product(arg: IntoArray, axis: int) -> Array:
+        arg = Array.cast(arg)
+        if arg.dtype == bool:
+            arg = arg.astype(int)
+        axes = range(arg.ndim) if axis is None else [axis] if isinstance(axis, numbers.Integral) else axis
+        multiplied = _Transpose.to_end(arg, *axes)
+        for i in range(len(axes)):
+            multiplied = _Wrapper(evaluable.Product, multiplied, shape=multiplied.shape[:-1], dtype=multiplied.dtype)
+        return multiplied
