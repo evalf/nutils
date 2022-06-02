@@ -337,8 +337,46 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         return numpy.product(self, __axis)
 
     def dot(self, __other: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> 'Array':
-        'See :func:`dot`.'
-        return dot(self, __other, axes)
+        '''Return the inner product of the arguments over the given axes, elementwise over the remanining axes.
+
+        .. warning::
+
+           This method will change in future to match Numpy's equivalent
+           method, which does not support an axis argument and has different
+           behaviour in case of higher dimensional input. During transition,
+           use of this method for any situation other than the contraction of
+           two vectors will raise a warning, and later an error. For
+           continuity, use numpy.dot, numpy.matmul, or the @ operator instead.
+
+        Parameters
+        ----------
+        arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
+        axis : :class:`int`, a sequence of :class:`int`, or ``None``
+            The axis or axes along which the inner product is performed. If the
+            second argument has one dimension and axes is ``None``, the default, the
+            inner product of the second argument with the first axis of the first
+            argument is computed. Otherwise ``axes=None`` is not allowed.
+
+        Returns
+        -------
+        :class:`Array`
+        '''
+        other = Array.cast(__other)
+        if axes is None and self.ndim == other.ndim == 1:
+            # this is the only scenario in which the old implementation of dot
+            # was compatible with that of numpy
+            return numpy.dot(self, other)
+        warnings.warn(
+            'The implementation of Array.dot will change in the next release cycle to make\n'
+            'it equal to that of Numpy: the axis argument will be removed and contraction\n'
+            'will happen over the last axis of the first argument, rather than the first.\n'
+            'To prepare for this transition, please update your code to use numpy.dot,\n'
+            'numpy.matmul, the @ operator, or a combination of multiply and sum instead.')
+        if axes is None:
+            assert other.ndim == 1 and other.shape[0] == self.shape[0]
+            other = _append_axes(other, self.shape[1:])
+            axes = 0,
+        return numpy.sum(self * other, axes)
 
     def normalized(self, __axis: int = -1) -> 'Array':
         'See :func:`normalized`.'
@@ -2138,6 +2176,7 @@ def imag(__arg: IntoArray) -> Array:
     return _Wrapper(evaluable.imag, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
 
 
+@_use_instead('numpy.dot, matmul or a combination of multiply and sum')
 def dot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> Array:
     '''Return the inner product of the arguments over the given axes, elementwise over the remanining axes.
 
@@ -2253,7 +2292,7 @@ def matmat(__arg0: IntoArray, *args: IntoArray) -> Array:
     for arg in map(Array.cast, args):
         if retval.shape[-1] != arg.shape[0]:
             raise ValueError('incompatible shapes')
-        retval = dot(retval[(...,)+(numpy.newaxis,)*(arg.ndim-1)], arg[(numpy.newaxis,)*(retval.ndim-1)], retval.ndim-1)
+        retval = numpy.sum(_append_axes(retval, arg.shape[1:]) * arg, retval.ndim-1)
     return retval
 
 
@@ -3068,10 +3107,7 @@ def dotnorm(__arg: IntoArray, __geom: IntoArray, axis: int = -1) -> Array:
     :class:`Array`
     '''
 
-    arg = _Transpose.to_end(Array.cast(__arg), axis)
-    geom = Array.cast(__geom, ndim=1)
-    assert geom.shape[0] == arg.shape[-1]
-    return dot(arg, _prepend_axes(normal(geom), arg.shape[:-1]), -1)
+    return _Transpose.to_end(Array.cast(__arg), axis) @ normal(__geom)
 
 
 def tangent(__geom: IntoArray, __vec: IntoArray) -> Array:
@@ -3086,9 +3122,9 @@ def tangent(__geom: IntoArray, __vec: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    geom = Array.cast(__geom)
+    norm = normal(__geom)
     vec = Array.cast(__vec)
-    return vec - dot(vec, normal(geom), -1)[..., None] * normal(geom)
+    return vec - (vec @ norm)[..., None] * norm
 
 
 def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
@@ -4152,3 +4188,17 @@ class __implementations__:
     def vdot(a: IntoArray, b: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> Array:
         a, b = broadcast_arrays(a, b)
         return numpy.sum(numpy.conjugate(a) * b, range(a.ndim))
+
+    @implements(numpy.dot)
+    def dot(a: IntoArray, b: IntoArray) -> Array:
+        a = Array.cast(a)
+        b = Array.cast(b)
+        if a.ndim == 0 or b.ndim == 0:
+            return (a * b)
+        if a.shape[-1] != b.shape[-1 if b.ndim == 1 else -2]:
+            raise ValueError(f'shapes {a.shape} and {b.shape} are not aligned')
+        if b.ndim > 1:
+            b = _Transpose.to_end(b, -2)
+            a = _Transpose.to_end(_append_axes(a, b.shape[:-1]), a.ndim-1)
+            assert a.shape[-b.ndim:] == b.shape
+        return numpy.sum(a * b, -1)

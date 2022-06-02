@@ -318,9 +318,9 @@ _check('product-bool', lambda a: numpy.product(function.Array.cast(a > 0), 2), l
 _check('product-complex', lambda a: numpy.product(function.Array.cast(a), 2), lambda a: numpy.product(a, 2), ANC(4, 3, 4))
 _check('Array_prod', lambda a: function.Array.cast(a).prod(2), lambda a: numpy.product(a, 2), ANY(4, 3, 4))
 
-_check('dot', lambda a, b: function.dot(a, b, axes=2), lambda a, b: (a*b).sum(2), ANY(4, 2, 4), ANY(4, 2, 4).T)
-_check('dot-complex', lambda a, b: function.dot(a, b, axes=2), lambda a, b: (a*b).sum(2), ANC(4, 2, 4), ANC(4, 2, 4).T)
-_check('Array_dot', lambda a, b: function.Array.cast(a).dot(b, axes=2), lambda a, b: (a*b).sum(2), ANY(4, 2, 4), ANY(4, 2, 4).T)
+_check('dot', lambda a, b: numpy.dot(a, function.Array.cast(b)), numpy.dot, ANY(1, 2, 5), ANY(3, 5, 4))
+_check('dot-complex', lambda a, b: numpy.dot(a, function.Array.cast(b)), numpy.dot, ANC(1, 2, 5), ANC(3, 5, 4))
+_check('Array_dot', lambda a, b: function.Array.cast(a).dot(b), lambda a, b: a.dot(b), ANY(4), ANY(4))
 _check('vdot', lambda a, b: numpy.vdot(a, function.Array.cast(b)), numpy.vdot, ANY(4, 2, 4), ANY(4, 2, 4).T)
 _check('vdot-complex', lambda a, b: numpy.vdot(a, function.Array.cast(b)), numpy.vdot, ANC(4, 2, 4) / 10, ANC(4, 2, 4).T / 10)
 _check('trace', function.trace, numpy.trace, ANY(3, 3))
@@ -1320,7 +1320,7 @@ class SurfaceGradient(TestCase):
         grad = function.surfgrad(self.u, self.geom)
         lapl = function.laplace(self.u, self.geom, -1)
         J = function.J(self.geom)
-        self.assertAlmostEqual(*self.manifold.integrate([function.dot(grad, grad) * J, -self.u * lapl * J], degree=9))
+        self.assertAlmostEqual(*self.manifold.integrate([(grad @ grad) * J, -self.u * lapl * J], degree=9))
 
 
 SurfaceGradient(boundary=False, etype='line')

@@ -86,8 +86,8 @@ class navierstokes(TestCase):
         if self.single:
             ubasis, pbasis = function.chain([ubasis.vector(2), pbasis])
             dofs = function.Argument('dofs', [len(ubasis)])
-            u = ubasis.dot(dofs)
-            p = pbasis.dot(dofs)
+            u = dofs @ ubasis
+            p = dofs @ pbasis
             dofs = 'dofs'
             ures = gauss.integral((self.viscosity * (ubasis.grad(geom) * (u.grad(geom) + u.grad(geom).T)).sum([-1, -2]) - ubasis.div(geom) * p) * dx)
             dres = gauss.integral((ubasis * (u.grad(geom) * u).sum(-1)).sum(-1) * dx)
@@ -158,9 +158,9 @@ class finitestrain(TestCase):
         domain, geom = mesh.rectilinear([numpy.linspace(0, 1, 9)] * 2)
         ubasis = domain.basis('std', degree=2)
         if self.vector:
-            u = ubasis.vector(2).dot(function.Argument('dofs', [len(ubasis)*2]))
+            u = function.dotarg('dofs', ubasis.vector(2))
         else:
-            u = (ubasis[:, numpy.newaxis] * function.Argument('dofs', [len(ubasis), 2])).sum(0)
+            u = function.dotarg('dofs', ubasis, shape=(2,))
         Geom = geom * [1.1, 1] + u
         self.cons = solver.optimize('dofs', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15)
         self.boolcons = ~numpy.isnan(self.cons)

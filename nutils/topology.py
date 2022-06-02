@@ -396,8 +396,7 @@ class Topology(types.Singleton):
     def projection(self, fun: function.Array, onto: function.Array, geometry: function.Array, **kwargs) -> function.Array:
         'project and return as function'
 
-        weights = self.project(fun, onto, geometry, **kwargs)
-        return onto.dot(weights)
+        return self.project(fun, onto, geometry, **kwargs) @ onto
 
     @log.withcontext
     def project(self, fun: function.Array, onto: function.Array, geometry: function.Array, ischeme: str = 'gauss', degree: Optional[int] = None, droptol: float = 1e-12, exact_boundaries: bool = False, constrain=None, verify=None, ptype='lsqr', edit=None, *, arguments: Optional[_ArgDict] = None, **solverargs) -> numpy.ndarray:
