@@ -1,6 +1,5 @@
 use crate::simplex::Simplex;
 use crate::types::{Dim, Index};
-use std::cmp::Ordering;
 use std::iter;
 use std::ops::Mul;
 
@@ -16,7 +15,9 @@ trait SequenceTransformation: Clone {
     /// Returns the length of the output sequence given the length of the input sequence.
     fn len(&self, parent_len: Index) -> Index;
     /// Increment the offset of the coordinate transformation, if applicable.
-    fn increment_offset(&mut self, increment: Dim);
+    fn increment_offset(&mut self, amount: Dim);
+    /// Increment the offset of the coordinate transformation, if applicable.
+    fn decrement_offset(&mut self, amount: Dim);
     /// Map the index and coordinate of an element in the output sequence to
     /// the input sequence. The index is returned, the coordinate is adjusted
     /// in-place. If the coordinate dimension of the input sequence is larger
@@ -52,9 +53,7 @@ trait SequenceTransformation: Clone {
         let delta_dim = self.delta_dim();
         let to_dim = dim + delta_dim;
         let mut result = Vec::with_capacity(ncoords * to_dim as usize);
-        let mut result_index = 0;
         for coord in coordinates.chunks(dim as usize) {
-            let offset = result.len();
             result.extend_from_slice(&coord);
             result.extend(iter::repeat(0.0).take(delta_dim as usize));
         }
@@ -64,55 +63,28 @@ trait SequenceTransformation: Clone {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct DimSlice {
-    offset: Dim,
-    len: Dim,
+enum OperatorKind {
+    Index(Index, Index),
+    Coordinate(Dim, Dim, Dim, Index),
 }
 
-impl DimSlice {
-    fn new(offset: Dim, len: Dim) -> Self {
-        Self { offset, len }
+trait DescribeOperator {
+    fn operator_kind(&self) -> OperatorKind;
+    #[inline]
+    fn as_children(&self) -> Option<&Children> {
+        None
     }
-    fn overlaps(&self, other: &DimSlice) -> bool {
-        match self.partial_cmp(other) {
-            Some(Ordering::Equal) | None => true,
-            Some(Ordering::Less) | Some(Ordering::Greater) => false,
-        }
+    #[inline]
+    fn as_children_mut(&mut self) -> Option<&mut Children> {
+        None
     }
-}
-
-impl PartialOrd for DimSlice {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self.offset + self.len <= other.offset {
-            Some(Ordering::Less)
-        } else if other.offset + other.len <= self.offset {
-            Some(Ordering::Greater)
-        } else if self == other {
-            Some(Ordering::Equal)
-        } else {
-            None
-        }
+    #[inline]
+    fn as_edges(&self) -> Option<&Edges> {
+        None
     }
-}
-
-trait InputDimSlice {
-    fn input_dim_slice(&self) -> DimSlice;
-}
-
-trait OutputDimSlice {
-    fn output_dim_slice(&self) -> DimSlice;
-}
-
-fn compare_dimensions(left: &impl InputDimSlice, right: &impl OutputDimSlice) -> Option<Ordering> {
-    let left = left.input_dim_slice();
-    let right = right.output_dim_slice();
-    left.partial_cmp(&right)
-}
-
-fn dimensions_overlap(left: &impl InputDimSlice, right: &impl OutputDimSlice) -> bool {
-    match compare_dimensions(left, right) {
-        Some(Ordering::Equal) | None => true,
-        Some(Ordering::Less) | Some(Ordering::Greater) => false,
+    #[inline]
+    fn as_edges_mut(&mut self) -> Option<&mut Edges> {
+        None
     }
 }
 
@@ -139,13 +111,22 @@ impl SequenceTransformation for Transpose {
         parent_len
     }
     #[inline]
-    fn increment_offset(&mut self, _increment: Dim) {}
+    fn increment_offset(&mut self, _amount: Dim) {}
+    #[inline]
+    fn decrement_offset(&mut self, _amount: Dim) {}
     #[inline]
     fn apply_inplace(&self, index: Index, _coordinate: &mut [f64]) -> Index {
         let low2 = index % self.len2;
         let low1 = (index / self.len2) % self.len1;
         let high = index / (self.len1 * self.len2);
         high * (self.len1 * self.len2) + low2 * self.len1 + low1
+    }
+}
+
+impl DescribeOperator for Transpose {
+    #[inline]
+    fn operator_kind(&self) -> OperatorKind {
+        OperatorKind::Index(self.len1 * self.len2, self.len1 * self.len2)
     }
 }
 
@@ -175,13 +156,22 @@ impl SequenceTransformation for Take {
         (parent_len / self.len) * self.indices.len() as Index
     }
     #[inline]
-    fn increment_offset(&mut self, _increment: Dim) {}
+    fn increment_offset(&mut self, _amount: Dim) {}
+    #[inline]
+    fn decrement_offset(&mut self, _amount: Dim) {}
     #[inline]
     fn apply_inplace(&self, index: Index, _coordinate: &mut [f64]) -> Index {
         let nindices = self.indices.len() as Index;
         let low = index % nindices;
         let high = index / nindices;
         high * self.len + self.indices[low as usize]
+    }
+}
+
+impl DescribeOperator for Take {
+    #[inline]
+    fn operator_kind(&self) -> OperatorKind {
+        OperatorKind::Index(self.len, self.indices.len() as Index)
     }
 }
 
@@ -208,8 +198,12 @@ impl SequenceTransformation for Children {
         parent_len * self.simplex.nchildren()
     }
     #[inline]
-    fn increment_offset(&mut self, increment: Dim) {
-        self.offset += increment;
+    fn increment_offset(&mut self, amount: Dim) {
+        self.offset += amount;
+    }
+    #[inline]
+    fn decrement_offset(&mut self, amount: Dim) {
+        self.offset -= amount;
     }
     #[inline]
     fn apply_inplace(&self, index: Index, coordinate: &mut [f64]) -> Index {
@@ -218,17 +212,23 @@ impl SequenceTransformation for Children {
     }
 }
 
-impl InputDimSlice for Children {
+impl DescribeOperator for Children {
     #[inline]
-    fn input_dim_slice(&self) -> DimSlice {
-        DimSlice::new(self.offset, self.simplex.dim())
+    fn operator_kind(&self) -> OperatorKind {
+        OperatorKind::Coordinate(
+            self.offset,
+            self.simplex.dim(),
+            self.simplex.dim(),
+            self.simplex.nchildren(),
+        )
     }
-}
-
-impl OutputDimSlice for Children {
     #[inline]
-    fn output_dim_slice(&self) -> DimSlice {
-        DimSlice::new(self.offset, self.simplex.dim())
+    fn as_children(&self) -> Option<&Children> {
+        Some(self)
+    }
+    #[inline]
+    fn as_children_mut(&mut self) -> Option<&mut Children> {
+        Some(self)
     }
 }
 
@@ -255,8 +255,12 @@ impl SequenceTransformation for Edges {
         parent_len * self.simplex.nedges()
     }
     #[inline]
-    fn increment_offset(&mut self, increment: Dim) {
-        self.offset += increment;
+    fn increment_offset(&mut self, amount: Dim) {
+        self.offset += amount;
+    }
+    #[inline]
+    fn decrement_offset(&mut self, amount: Dim) {
+        self.offset -= amount;
     }
     #[inline]
     fn apply_inplace(&self, index: Index, coordinate: &mut [f64]) -> Index {
@@ -265,17 +269,30 @@ impl SequenceTransformation for Edges {
     }
 }
 
-impl InputDimSlice for Edges {
+impl DescribeOperator for Edges {
     #[inline]
-    fn input_dim_slice(&self) -> DimSlice {
-        DimSlice::new(self.offset, self.simplex.edge_dim())
+    fn operator_kind(&self) -> OperatorKind {
+        OperatorKind::Coordinate(
+            self.offset,
+            self.simplex.dim(),
+            self.simplex.edge_dim(),
+            self.simplex.nedges(),
+        )
+    }
+    #[inline]
+    fn as_edges(&self) -> Option<&Edges> {
+        Some(self)
+    }
+    #[inline]
+    fn as_edges_mut(&mut self) -> Option<&mut Edges> {
+        Some(self)
     }
 }
 
-impl OutputDimSlice for Edges {
+impl DescribeOperator for UniformPoints {
     #[inline]
-    fn output_dim_slice(&self) -> DimSlice {
-        DimSlice::new(self.offset, self.simplex.dim())
+    fn operator_kind(&self) -> OperatorKind {
+        OperatorKind::Coordinate(self.offset, self.point_dim, 0, self.npoints())
     }
 }
 
@@ -294,6 +311,9 @@ impl UniformPoints {
             offset,
         }
     }
+    pub fn npoints(&self) -> Index {
+        (self.points.len() / self.point_dim as usize) as Index
+    }
 }
 
 impl SequenceTransformation for UniformPoints {
@@ -306,8 +326,12 @@ impl SequenceTransformation for UniformPoints {
         parent_len * (self.points.len() as Index / self.point_dim as Index)
     }
     #[inline]
-    fn increment_offset(&mut self, increment: Dim) {
-        self.offset += increment;
+    fn increment_offset(&mut self, amount: Dim) {
+        self.offset += amount;
+    }
+    #[inline]
+    fn decrement_offset(&mut self, amount: Dim) {
+        self.offset -= amount;
     }
     fn apply_inplace(&self, index: Index, coordinate: &mut [f64]) -> Index {
         let point_dim = self.point_dim as usize;
@@ -359,6 +383,35 @@ macro_rules! impl_from_for_operator {
     )*}
 }
 
+impl_from_for_operator! {Transpose, Take, Children, Edges, UniformPoints}
+
+impl Operator {
+    /// Construct a new operator that transposes a sequence of elements.
+    pub fn new_transpose(len1: Index, len2: Index) -> Self {
+        Transpose::new(len1, len2).into()
+    }
+    /// Construct a new operator that takes a subset of a sequence of elements.
+    pub fn new_take(indices: impl Into<Box<[Index]>>, len: Index) -> Self {
+        Take::new(indices, len).into()
+    }
+    /// Construct a new operator that maps a sequence of elements to its children.
+    pub fn new_children(simplex: Simplex, offset: Dim) -> Self {
+        Children::new(simplex, offset).into()
+    }
+    /// Construct a new operator that maps a sequence of elements to its edges.
+    pub fn new_edges(simplex: Simplex, offset: Dim) -> Self {
+        Edges::new(simplex, offset).into()
+    }
+    /// Construct a new operator that adds points to every element of a sequence.
+    pub fn new_uniform_points(points: Box<[f64]>, point_dim: Dim, offset: Dim) -> Self {
+        UniformPoints::new(points, point_dim, offset).into()
+    }
+    pub fn swap(&self, other: &Self) -> Option<Vec<Self>> {
+        let mut other = other.clone();
+        swap(self, &mut other).map(|tail| iter::once(other).chain(tail.into_iter()).collect())
+    }
+}
+
 macro_rules! dispatch {
     ($vis:vis fn $fn:ident(&$self:ident $(, $arg:ident: $ty:ty)*) $($ret:tt)*) => {
         #[inline]
@@ -386,227 +439,62 @@ macro_rules! dispatch {
     };
 }
 
-impl_from_for_operator! {Transpose, Take, Children, Edges, UniformPoints}
-
-impl Operator {
-    /// Construct a new operator that transposes a sequence of elements.
-    pub fn new_transpose(len1: Index, len2: Index) -> Self {
-        Transpose::new(len1, len2).into()
-    }
-    /// Construct a new operator that takes a subset of a sequence of elements.
-    pub fn new_take(indices: impl Into<Box<[Index]>>, len: Index) -> Self {
-        Take::new(indices, len).into()
-    }
-    /// Construct a new operator that maps a sequence of elements to its children.
-    pub fn new_children(simplex: Simplex, offset: Dim) -> Self {
-        Children::new(simplex, offset).into()
-    }
-    /// Construct a new operator that maps a sequence of elements to its edges.
-    pub fn new_edges(simplex: Simplex, offset: Dim) -> Self {
-        Edges::new(simplex, offset).into()
-    }
-    /// Construct a new operator that adds points to every element of a sequence.
-    pub fn new_uniform_points(points: Box<[f64]>, point_dim: Dim, offset: Dim) -> Self {
-        UniformPoints::new(points, point_dim, offset).into()
-    }
-    pub fn swap(&self, other: &Self) -> Option<Vec<Self>> {
-        match (self, other) {
-            (_, Self::Children(children)) => {
-                if let Some((ops, children)) = self.swap_with_children(*children) {
-                    Some(iter::once(children.into()).chain(ops.into_iter()).collect())
-                } else {
-                    None
-                }
-            }
-            (_, Self::Edges(edges)) => {
-                if let Some((ops, edges)) = self.swap_with_edges(*edges) {
-                    Some(iter::once(edges.into()).chain(ops.into_iter()).collect())
-                } else {
-                    None
-                }
-            }
-            (Self::Transpose(a), Self::Transpose(b)) if a.len1 == b.len2 && a.len2 == b.len1 => {
-                Some(vec![])
-            }
-            _ => None,
-        }
-    }
-    fn swap_reduce_repeat(
-        reduce: Operator,
-        reduce_before: Index,
-        reduce_after: Index,
-        nrepeat: Index,
-    ) -> Vec<Self> {
-        vec![
-            Self::new_transpose(nrepeat, reduce_before),
-            reduce,
-            Self::new_transpose(reduce_after, nrepeat),
-        ]
-    }
-    pub fn swap_with_children(&self, other: Children) -> Option<(Vec<Self>, Children)> {
-        let mut other = other;
-        if let Some(tail) = other.swap(self) {
-            Some((tail, other))
-        } else {
-            None
-        }
-    }
-    pub fn swap_with_edges(&self, other: Edges) -> Option<(Vec<Self>, Edges)> {
-        let mut other = other;
-        if let Some(tail) = other.swap(self) {
-            Some((tail, other))
-        } else {
-            None
-        }
-    }
-}
-
 impl SequenceTransformation for Operator {
     dispatch! {fn delta_dim(&self) -> Dim}
     dispatch! {fn len(&self, parent_len: Index) -> Index}
-    dispatch! {fn increment_offset(&mut self, increment: Dim)}
+    dispatch! {fn increment_offset(&mut self, amount: Dim)}
+    dispatch! {fn decrement_offset(&mut self, amount: Dim)}
     dispatch! {fn apply_inplace(&self, index: Index, coordinate: &mut [f64]) -> Index}
     dispatch! {fn apply_many_inplace(&self, index: Index, coordinates: &mut [f64], dim: Dim) -> Index}
     dispatch! {fn apply(&self, index: Index, coordinate: &[f64]) -> (Index, Vec<f64>)}
     dispatch! {fn apply_many(&self, index: Index, coordinates: &[f64], dim: Dim) -> (Index, Vec<f64>)}
 }
 
-trait Swap<L> {
-    fn swap(&mut self, other: &L) -> Option<Vec<Operator>>;
+impl DescribeOperator for Operator {
+    dispatch! {fn operator_kind(&self) -> OperatorKind}
+    dispatch! {fn as_children(&self) -> Option<&Children>}
+    dispatch! {fn as_children_mut(&mut self) -> Option<&mut Children>}
+    dispatch! {fn as_edges(&self) -> Option<&Edges>}
+    dispatch! {fn as_edges_mut(&mut self) -> Option<&mut Edges>}
 }
 
-impl Swap<Children> for Children {
-    fn swap(&mut self, other: &Children) -> Option<Vec<Operator>> {
-        match compare_dimensions(other, self) {
-            Some(Ordering::Equal) | None => None,
-            Some(Ordering::Less) | Some(Ordering::Greater) => {
-                let trans =
-                    Operator::new_transpose(other.simplex.nchildren(), self.simplex.nchildren());
-                Some(vec![other.clone().into(), trans])
-            }
+fn swap<L, R>(l: &L, r: &mut R) -> Option<Vec<Operator>>
+where
+    L: DescribeOperator + SequenceTransformation + Into<Operator>,
+    R: DescribeOperator + SequenceTransformation,
+{
+    if let (Some(edges), Some(children)) = (l.as_edges(), r.as_children_mut()) {
+        if edges.offset == children.offset && edges.simplex.edge_dim() == children.simplex.dim() {
+            let simplex = edges.simplex;
+            let indices = simplex.swap_edges_children_map();
+            let take = Operator::new_take(indices, simplex.nchildren() * simplex.nedges());
+            children.simplex = simplex;
+            return Some(vec![l.clone().into(), take]);
         }
     }
-}
-
-impl Swap<Edges> for Children {
-    fn swap(&mut self, other: &Edges) -> Option<Vec<Operator>> {
-        let trans = Operator::new_transpose(other.simplex.nedges(), self.simplex.nchildren());
-        match compare_dimensions(other, self) {
-            Some(Ordering::Less) => {
-                self.offset += 1;
-                Some(vec![other.clone().into(), trans])
+    use OperatorKind::*;
+    match (l.operator_kind(), r.operator_kind()) {
+        (Index(l_nout, l_nin), Coordinate(_, _, _, r_gen)) => Some(vec![
+            Operator::new_transpose(r_gen, l_nout),
+            l.clone().into(),
+            Operator::new_transpose(l_nin, r_gen),
+        ]),
+        (Coordinate(l_off, _, l_nin, l_gen), Coordinate(r_off, r_nout, _, r_gen)) => {
+            if l_off + l_nin <= r_off {
+                r.increment_offset(l.delta_dim());
+                Some(vec![
+                    l.clone().into(),
+                    Operator::new_transpose(l_gen, r_gen),
+                ])
+            } else if l_off >= r_off + r_nout {
+                let mut l = l.clone();
+                l.decrement_offset(r.delta_dim());
+                Some(vec![l.into(), Operator::new_transpose(l_gen, r_gen)])
+            } else {
+                None
             }
-            Some(Ordering::Greater) => Some(vec![other.clone().into(), trans]),
-            Some(Ordering::Equal) => {
-                let indices = other.simplex.swap_edges_children_map();
-                let take =
-                    Operator::new_take(indices, other.simplex.nchildren() * other.simplex.nedges());
-                self.simplex = other.simplex;
-                Some(vec![other.clone().into(), take])
-            }
-            None => None,
         }
-    }
-}
-
-impl Swap<Children> for Edges {
-    fn swap(&mut self, other: &Children) -> Option<Vec<Operator>> {
-        let trans = Operator::new_transpose(other.simplex.nchildren(), self.simplex.nedges());
-        match compare_dimensions(other, self) {
-            Some(Ordering::Less) => Some(vec![other.clone().into(), trans]),
-            Some(Ordering::Greater) => {
-                let mut other = other.clone();
-                other.offset -= 1;
-                Some(vec![other.into(), trans])
-            }
-            Some(Ordering::Equal) | None => None,
-        }
-    }
-}
-
-impl Swap<Edges> for Edges {
-    fn swap(&mut self, other: &Edges) -> Option<Vec<Operator>> {
-        let trans = Operator::new_transpose(other.simplex.nedges(), self.simplex.nedges());
-        match compare_dimensions(other, self) {
-            Some(Ordering::Less) => {
-                self.offset += 1;
-                Some(vec![other.clone().into(), trans])
-            }
-            Some(Ordering::Greater) => {
-                let mut other = other.clone();
-                other.offset -= 1;
-                Some(vec![other.into(), trans])
-            }
-            Some(Ordering::Equal) | None => None,
-        }
-    }
-}
-
-impl Swap<Take> for Children {
-    fn swap(&mut self, other: &Take) -> Option<Vec<Operator>> {
-        Some(Operator::swap_reduce_repeat(
-            other.clone().into(),
-            other.len,
-            other.indices.len() as Index,
-            self.simplex.nchildren(),
-        ))
-    }
-}
-
-impl Swap<Take> for Edges {
-    fn swap(&mut self, other: &Take) -> Option<Vec<Operator>> {
-        Some(Operator::swap_reduce_repeat(
-            other.clone().into(),
-            other.len,
-            other.indices.len() as Index,
-            self.simplex.nedges(),
-        ))
-    }
-}
-
-impl Swap<Transpose> for Children {
-    fn swap(&mut self, other: &Transpose) -> Option<Vec<Operator>> {
-        Some(Operator::swap_reduce_repeat(
-            other.clone().into(),
-            other.len1 * other.len2,
-            other.len1 * other.len2,
-            self.simplex.nchildren(),
-        ))
-    }
-}
-
-impl Swap<Transpose> for Edges {
-    fn swap(&mut self, other: &Transpose) -> Option<Vec<Operator>> {
-        Some(Operator::swap_reduce_repeat(
-            other.clone().into(),
-            other.len1 * other.len2,
-            other.len1 * other.len2,
-            self.simplex.nedges(),
-        ))
-    }
-}
-
-impl Swap<Operator> for Children {
-    fn swap(&mut self, other: &Operator) -> Option<Vec<Operator>> {
-        match other {
-            Operator::Transpose(val) => self.swap(val),
-            Operator::Take(val) => self.swap(val),
-            Operator::Children(val) => self.swap(val),
-            Operator::Edges(val) => self.swap(val),
-            _ => None,
-        }
-    }
-}
-
-impl Swap<Operator> for Edges {
-    fn swap(&mut self, other: &Operator) -> Option<Vec<Operator>> {
-        match other {
-            Operator::Transpose(val) => self.swap(val),
-            Operator::Take(val) => self.swap(val),
-            Operator::Children(val) => self.swap(val),
-            Operator::Edges(val) => self.swap(val),
-            _ => None,
-        }
+        _ => None,
     }
 }
 
@@ -688,9 +576,15 @@ impl SequenceTransformation for Chain {
             .rfold(parent_len, |len, op| op.len(len))
     }
     #[inline]
-    fn increment_offset(&mut self, increment: Dim) {
+    fn increment_offset(&mut self, amount: Dim) {
         for op in self.rev_operators.iter_mut() {
-            op.increment_offset(increment);
+            op.increment_offset(amount);
+        }
+    }
+    #[inline]
+    fn decrement_offset(&mut self, amount: Dim) {
+        for op in self.rev_operators.iter_mut() {
+            op.decrement_offset(amount);
         }
     }
     #[inline]
