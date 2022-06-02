@@ -1360,7 +1360,7 @@ def reciprocal(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.reciprocal, __arg)
 
 
-@implements(numpy.power)
+@_use_instead('numpy.power')
 def power(__base: IntoArray, __exponent: IntoArray) -> Array:
     '''Return the exponentiation of the arguments, elementwise.
 
@@ -1376,7 +1376,7 @@ def power(__base: IntoArray, __exponent: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.power, __base, __exponent, min_dtype=int)
 
 
-@implements(numpy.sqrt)
+@_use_instead('numpy.sqrt')
 def sqrt(__arg: IntoArray) -> Array:
     '''Return the square root of the argument, elementwise.
 
@@ -1392,14 +1392,15 @@ def sqrt(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.sqrt, __arg, min_dtype=float)
 
 
-@implements(numpy.square)
+@_use_instead('numpy.square')
 def square(__arg: IntoArray) -> Array:
-    return power(__arg, 2)
+    warnings.deprecation('function.square is deprecated; use numpy.square instead')
+    return Array.cast(numpy.square(__arg))
 
 
 @implements(numpy.hypot)
 def hypot(__array1: IntoArray, __array2: IntoArray) -> Array:
-    return sqrt(square(__array1) + square(__array2))
+    return numpy.sqrt(numpy.square(__array1) + numpy.square(__array2))
 
 
 @implements(numpy.absolute)
@@ -2164,7 +2165,7 @@ def norm2(__arg: IntoArray, axis: Union[int, Sequence[int]] = -1) -> Array:
     '''
 
     arg = Array.cast(__arg)
-    return sqrt(sum(arg * conjugate(arg), axis))
+    return numpy.sqrt(sum(arg * conjugate(arg), axis))
 
 
 def normalized(__arg: IntoArray, axis: int = -1) -> Array:
@@ -3920,3 +3921,15 @@ class __implementations__:
     @implements(numpy.divmod)
     def divmod(dividend: IntoArray, divisor: IntoArray) -> Tuple[Array, Array]:
         return numpy.floor_divide(dividend, divisor), numpy.mod(dividend, divisor)
+
+    @implements(numpy.power)
+    def power(base: IntoArray, exponent: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.power, base, exponent, min_dtype=int)
+
+    @implements(numpy.sqrt)
+    def sqrt(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.sqrt, arg, min_dtype=float)
+
+    @implements(numpy.square)
+    def square(arg: Array) -> Array:
+        return numpy.power(arg, 2)

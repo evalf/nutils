@@ -71,7 +71,7 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
         args = solver.solve_linear('u:v', res, constrain=cons)
 
         ndofs = len(args['u'])
-        error = function.sqrt(domain.integral(['du du dV', '∇_k(du) ∇_k(du) dV'] @ ns, degree=7)).eval(**args)
+        error = numpy.sqrt(domain.integral(['du du dV', '∇_k(du) ∇_k(du) dV'] @ ns, degree=7)).eval(**args)
         rate, offset = linreg.add(numpy.log(ndofs), numpy.log(error))
         treelog.user(f'ndofs: {ndofs}, L2 error: {error[0]:.2e} ({rate[0]:.2f}), H1 error: {error[1]:.2e} ({rate[1]:.2f})')
 
