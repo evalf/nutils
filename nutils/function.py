@@ -1752,7 +1752,7 @@ def log10(__arg: IntoArray) -> Array:
 # COMPARISON
 
 
-@implements(numpy.greater)
+@_use_instead('numpy.greater or the > operator')
 def greater(__left: IntoArray, __right: IntoArray) -> Array:
     '''Return if the first argument is greater than the second, elementwise.
 
@@ -1771,7 +1771,7 @@ def greater(__left: IntoArray, __right: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Greater, left, right, force_dtype=bool)
 
 
-@implements(numpy.equal)
+@_use_instead('numpy.equal or the == operator')
 def equal(__left: IntoArray, __right: IntoArray) -> Array:
     '''Return if the first argument equals the second, elementwise.
 
@@ -1787,7 +1787,7 @@ def equal(__left: IntoArray, __right: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Equal, __left, __right, force_dtype=bool)
 
 
-@implements(numpy.less)
+@_use_instead('numpy.less or the < operator')
 def less(__left: IntoArray, __right: IntoArray) -> Array:
     '''Return if the first argument is less than the second, elementwise.
 
@@ -3253,7 +3253,7 @@ def Elemwise(__data: Sequence[numpy.ndarray], __index: IntoArray, dtype: DType) 
 def piecewise(level: IntoArray, intervals: Sequence[IntoArray], *funcs: IntoArray) -> Array:
     'piecewise'
     level = Array.cast(level)
-    return util.sum(greater(level, interval).astype(int) for interval in intervals).choose(funcs)
+    return util.sum((level > interval).astype(int) for interval in intervals).choose(funcs)
 
 
 def partition(f: IntoArray, *levels: float) -> Sequence[Array]:
@@ -4022,3 +4022,21 @@ class __implementations__:
     @implements(numpy.log10)
     def log10(arg: IntoArray) -> Array:
         return _Wrapper.broadcasted_arrays(evaluable.log10, arg, min_dtype=float)
+
+    @implements(numpy.greater)
+    def greater(left: IntoArray, right: IntoArray) -> Array:
+        left, right = map(Array.cast, (left, right))
+        if left.dtype == complex or right.dtype == complex:
+            raise ValueError('Complex numbers have no total order.')
+        return _Wrapper.broadcasted_arrays(evaluable.Greater, left, right, force_dtype=bool)
+
+    @implements(numpy.equal)
+    def equal(left: IntoArray, right: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.Equal, left, right, force_dtype=bool)
+
+    @implements(numpy.less)
+    def less(left: IntoArray, right: IntoArray) -> Array:
+        left, right = map(Array.cast, (left, right))
+        if left.dtype == complex or right.dtype == complex:
+            raise ValueError('Complex numbers have no total order.')
+        return _Wrapper.broadcasted_arrays(evaluable.Less, left, right, force_dtype=bool)

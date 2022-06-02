@@ -684,7 +684,7 @@ class Topology(types.Singleton):
         # together with the element index (`self.f_index`) and keep all indices
         # with at least one positive result.
         sample = self.sample(*element.parse_legacy_ischeme(ischeme))
-        isactive, ielem = sample.eval([function.greater(indicator, 0), self.f_index], **kwargs)
+        isactive, ielem = sample.eval([indicator > 0, self.f_index], **kwargs)
         selected = types.frozenarray(numpy.unique(ielem[isactive]))
         return self[selected]
 

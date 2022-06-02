@@ -297,10 +297,10 @@ _check('log10-complex', lambda a: numpy.log10(function.Array.cast(a)), numpy.log
 _check('trignormal', function.trignormal, lambda x: numpy.stack([numpy.cos(x), numpy.sin(x)], axis=-1), ANY(4))
 _check('trigtangent', function.trigtangent, lambda x: numpy.stack([-numpy.sin(x), numpy.cos(x)], axis=-1), ANY(4))
 
-_check('greater', function.greater, numpy.greater, ANY(4, 1), ANY(1, 4))
-_check('equal', function.equal, numpy.equal, ANY(4, 1), ANY(1, 4))
-_check('equal-complex', function.equal, numpy.equal, ANC(4, 1), ANC(1, 4))
-_check('less', function.less, numpy.less, ANY(4, 1), ANY(1, 4))
+_check('greater', lambda a, b: numpy.greater(a, function.Array.cast(b)), numpy.greater, ANY(4, 1), ANY(1, 4))
+_check('equal', lambda a, b: numpy.equal(a, function.Array.cast(b)), numpy.equal, ANY(4, 1), ANY(1, 4))
+_check('equal-complex', lambda a, b: numpy.equal(a, function.Array.cast(b)), numpy.equal, ANC(4, 1), ANC(1, 4))
+_check('less', lambda a, b: numpy.less(a, function.Array.cast(b)), numpy.less, ANY(4, 1), ANY(1, 4))
 _check('min', function.min, numpy.minimum, ANY(4, 1), ANY(1, 4))
 _check('max', function.max, numpy.maximum, ANY(4, 1), ANY(1, 4))
 _check('heaviside', function.heaviside, lambda u: numpy.heaviside(u, .5), ANY(4, 4))
@@ -310,11 +310,11 @@ _check('heaviside', function.heaviside, lambda u: numpy.heaviside(u, .5), ANY(4,
 ## TODO: jump
 #
 _check('sum', lambda a: function.sum(a, 2), lambda a: a.sum(2), ANY(4, 3, 4))
-_check('sum-bool', lambda a: function.sum(function.greater(a, 0), 2), lambda a: (a > 0).sum(2), ANY(4, 3, 4))
+_check('sum-bool', lambda a: function.sum(numpy.greater(a, 0), 2), lambda a: (a > 0).sum(2), ANY(4, 3, 4))
 _check('sum-complex', lambda a: function.sum(a, 2), lambda a: a.sum(2), ANC(4, 3, 4))
 _check('Array_sum', lambda a: function.Array.cast(a).sum(2), lambda a: a.sum(2), ANY(4, 3, 4))
 _check('product', lambda a: function.product(a, 2), lambda a: numpy.product(a, 2), ANY(4, 3, 4))
-_check('product-bool', lambda a: function.product(function.greater(a, 0), 2), lambda a: numpy.product((a > 0), 2), ANY(4, 3, 4))
+_check('product-bool', lambda a: function.product(numpy.greater(a, 0), 2), lambda a: numpy.product((a > 0), 2), ANY(4, 3, 4))
 _check('product-complex', lambda a: function.product(a, 2), lambda a: numpy.product(a, 2), ANC(4, 3, 4))
 _check('Array_prod', lambda a: function.Array.cast(a).prod(2), lambda a: numpy.product(a, 2), ANY(4, 3, 4))
 
