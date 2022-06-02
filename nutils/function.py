@@ -440,20 +440,38 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         return {name: shape for name, (shape, dtype) in self.arguments.items()}
 
     def conjugate(self):
-        'See :func:`conjugate`.'
-        return conjugate(self)
+        '''Return the complex conjugate, elementwise.
+
+        Returns
+        -------
+        :class:`Array`
+            The complex conjugate.
+        '''
+        return numpy.conjugate(self)
 
     conj = conjugate
 
     @property
     def real(self):
-        'See :func:`real`.'
-        return real(self)
+        '''Return the real part of the complex argument.
+
+        Returns
+        -------
+        :class:`Array`
+            The real part of the complex argument.
+        '''
+        return numpy.real(self)
 
     @property
     def imag(self):
-        'See :func:`imag`.'
-        return imag(self)
+        '''Return the imaginary part of the complex argument.
+
+        Returns
+        -------
+        :class:`Array`
+            The imaginary part of the complex argument.
+        '''
+        return numpy.imag(self)
 
 
 class _Unlower(Array):
@@ -2063,7 +2081,7 @@ def product(__arg: IntoArray, axis: int) -> Array:
 # LINEAR ALGEBRA
 
 
-@implements(numpy.conjugate)
+@_use_instead('numpy.conjugate')
 def conjugate(__arg: IntoArray) -> Array:
     '''Return the complex conjugate, elementwise.
 
@@ -2084,7 +2102,7 @@ def conjugate(__arg: IntoArray) -> Array:
 conj = conjugate
 
 
-@implements(numpy.real)
+@_use_instead('numpy.real')
 def real(__arg: IntoArray) -> Array:
     '''Return the real part of the complex argument.
 
@@ -2102,7 +2120,7 @@ def real(__arg: IntoArray) -> Array:
     return _Wrapper(evaluable.real, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
 
 
-@implements(numpy.imag)
+@_use_instead('numpy.imag')
 def imag(__arg: IntoArray) -> Array:
     '''Return the imaginary part of the complex argument.
 
@@ -2146,7 +2164,7 @@ def dot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]
     return numpy.sum(a * b, axes)
 
 
-@implements(numpy.vdot)
+@_use_instead('numpy.vdot')
 def vdot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> Array:
     '''Return the dot product of two vectors.
 
@@ -2166,7 +2184,7 @@ def vdot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]
     '''
 
     a, b = broadcast_arrays(__a, __b)
-    return numpy.sum(conjugate(a) * b, range(a.ndim))
+    return numpy.sum(numpy.conjugate(a) * b, range(a.ndim))
 
 
 @implements(numpy.trace)
@@ -2204,7 +2222,7 @@ def norm2(__arg: IntoArray, axis: Union[int, Sequence[int]] = -1) -> Array:
     '''
 
     arg = Array.cast(__arg)
-    return numpy.sqrt(numpy.sum(arg * conjugate(arg), axis))
+    return numpy.sqrt(numpy.sum(arg * numpy.conjugate(arg), axis))
 
 
 def normalized(__arg: IntoArray, axis: int = -1) -> Array:
@@ -4115,3 +4133,22 @@ class __implementations__:
         for i in range(len(axes)):
             multiplied = _Wrapper(evaluable.Product, multiplied, shape=multiplied.shape[:-1], dtype=multiplied.dtype)
         return multiplied
+
+    @implements(numpy.conjugate)
+    def conjugate(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.conjugate, arg)
+
+    @implements(numpy.real)
+    def real(arg: IntoArray) -> Array:
+        arg = Array.cast(arg)
+        return _Wrapper(evaluable.real, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
+
+    @implements(numpy.imag)
+    def imag(arg: IntoArray) -> Array:
+        arg = Array.cast(arg)
+        return _Wrapper(evaluable.imag, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
+
+    @implements(numpy.vdot)
+    def vdot(a: IntoArray, b: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> Array:
+        a, b = broadcast_arrays(a, b)
+        return numpy.sum(numpy.conjugate(a) * b, range(a.ndim))
