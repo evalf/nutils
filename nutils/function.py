@@ -1226,7 +1226,7 @@ def levicivita(__n: int, dtype: DType = float) -> Array:
 # ARITHMETIC
 
 
-@implements(numpy.add)
+@_use_instead('numpy.add')
 def add(__left: IntoArray, __right: IntoArray) -> Array:
     '''Return the sum of the arguments, elementwise.
 
@@ -1242,7 +1242,7 @@ def add(__left: IntoArray, __right: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.add, __left, __right)
 
 
-@implements(numpy.subtract)
+@_use_instead('numpy.subtract')
 def subtract(__left: IntoArray, __right: IntoArray) -> Array:
     '''Return the difference of the arguments, elementwise.
 
@@ -3030,7 +3030,7 @@ def tangent(__geom: IntoArray, __vec: IntoArray) -> Array:
 
     geom = Array.cast(__geom)
     vec = Array.cast(__vec)
-    return subtract(vec, multiply(dot(vec, normal(geom), -1)[..., None], normal(geom)))
+    return vec - multiply(dot(vec, normal(geom), -1)[..., None], normal(geom))
 
 
 def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
@@ -3296,8 +3296,7 @@ def partition(f: IntoArray, *levels: float) -> Sequence[Array]:
 
     f = Array.cast(f)
     signs = [sign(f - level) for level in levels]
-    steps = map(subtract, signs[:-1], signs[1:])
-    return [.5 - .5 * signs[0]] + [.5 * step for step in steps] + [.5 + .5 * signs[-1]]
+    return [.5 - .5 * signs[0]] + [.5 * (a - b) for a, b in zip(signs[:-1], signs[1:])] + [.5 + .5 * signs[-1]]
 
 
 def heaviside(f: IntoArray):
@@ -3878,3 +3877,11 @@ class __implementations__:
     @implements(numpy.size)
     def size(arg: Array) -> int:
         return arg.size
+
+    @implements(numpy.add)
+    def add(left: IntoArray, right: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.add, left, right)
+    
+    @implements(numpy.subtract)
+    def subtract(left: IntoArray, right: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.subtract, left, right)
