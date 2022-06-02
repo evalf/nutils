@@ -136,6 +136,7 @@ import re
 import collections
 import functools
 import itertools
+import numpy
 import operator
 import types as builtin_types
 from typing import Any, Callable, Dict, List, Mapping, Optional, overload, Tuple, Union
@@ -1435,7 +1436,7 @@ def _eval_ast(ast, functions):
         value, = args
         return value
 
-    args = (_eval_ast(arg, functions) for arg in args)
+    args = [_eval_ast(arg, functions) for arg in args]
     if op == 'group':
         array, = args
         return array
@@ -1477,12 +1478,12 @@ def _eval_ast(ast, functions):
         return function.get(array, dim, index)
     elif op == 'trace':
         array, n1, n2 = args
-        return function.trace(array, n1, n2)
+        return numpy.trace(array, n1, n2)
     elif op == 'sum':
         array, axis = args
-        return function.sum(array, axis)
+        return numpy.sum(array, axis)
     elif op == 'concatenate':
-        return function.concatenate(args, axis=0)
+        return numpy.concatenate(args, axis=0)
     elif op == 'grad':
         array, geom = args
         return function.grad(array, geom)
@@ -1497,7 +1498,7 @@ def _eval_ast(ast, functions):
         return function.insertaxis(array, -1, length)
     elif op == 'transpose':
         array, trans = args
-        return function.transpose(array, trans)
+        return numpy.transpose(array, trans)
     elif op == 'jump':
         array, = args
         return function.jump(array)
@@ -1517,7 +1518,7 @@ def _eval_ast(ast, functions):
 def _sum_expr(arg: function.Array, *, consumes: int = 0) -> function.Array:
     if consumes == 0:
         raise ValueError('sum must consume at least one axis but got zero')
-    return function.sum(arg, range(arg.ndim-consumes, arg.ndim))
+    return numpy.sum(arg, range(arg.ndim-consumes, arg.ndim))
 
 
 def _norm2_expr(arg: function.Array, *, consumes: int = 0) -> function.Array:
@@ -1539,7 +1540,7 @@ def _J_expr(geom: function.Array, *, consumes: int = 0) -> function.Array:
 def _arctan2_expr(_a: function.Array, _b: function.Array) -> function.Array:
     a = function.Array.cast(_a)
     b = function.Array.cast(_b)
-    return function.arctan2(function._append_axes(a, b.shape), function._prepend_axes(b, a.shape))
+    return numpy.arctan2(function._append_axes(a, b.shape), function._prepend_axes(b, a.shape))
 
 
 class Namespace:
@@ -1671,13 +1672,13 @@ class Namespace:
     _re_assign = re.compile('^([a-zA-Zα-ωΑ-Ω][a-zA-Zα-ωΑ-Ω0-9]*)(_[a-z]+)?$')
 
     _default_functions = dict(
-        opposite=function.opposite, sin=function.sin, cos=function.cos,
-        tan=function.tan, sinh=function.sinh, cosh=function.cosh,
-        tanh=function.tanh, arcsin=function.arcsin, arccos=function.arccos,
-        arctan=function.arctan, arctan2=_arctan2_expr,
-        arctanh=function.arctanh, exp=function.exp, abs=function.abs,
-        ln=function.ln, log=function.ln, log2=function.log2, log10=function.log10,
-        sqrt=function.sqrt, sign=function.sign, d=function.d,
+        opposite=function.opposite, sin=numpy.sin, cos=numpy.cos,
+        tan=numpy.tan, sinh=numpy.sinh, cosh=numpy.cosh,
+        tanh=numpy.tanh, arcsin=numpy.arcsin, arccos=numpy.arccos,
+        arctan=numpy.arctan, arctan2=_arctan2_expr,
+        arctanh=numpy.arctanh, exp=numpy.exp, abs=numpy.abs,
+        ln=numpy.log, log=numpy.log, log2=numpy.log2, log10=numpy.log10,
+        sqrt=numpy.sqrt, sign=numpy.sign, d=function.d,
         surfgrad=function.surfgrad, n=function.normal, sum=_sum_expr,
         norm2=_norm2_expr, J=_J_expr,
     )
