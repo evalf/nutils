@@ -1619,7 +1619,7 @@ def arctan2(__dividend: IntoArray, __divisor: IntoArray) -> Array:
     return _Wrapper(evaluable.ArcTan2, dividend, divisor, shape=dividend.shape, dtype=float)
 
 
-@implements(numpy.cosh)
+@_use_instead('numpy.cosh')
 def cosh(__arg: IntoArray) -> Array:
     '''Return the hyperbolic cosine of the argument, elementwise.
 
@@ -1635,7 +1635,7 @@ def cosh(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.cosh, __arg, min_dtype=float)
 
 
-@implements(numpy.sinh)
+@_use_instead('numpy.sinh')
 def sinh(__arg: IntoArray) -> Array:
     '''Return the hyperbolic sine of the argument, elementwise.
 
@@ -1651,7 +1651,7 @@ def sinh(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.sinh, __arg, min_dtype=float)
 
 
-@implements(numpy.tanh)
+@_use_instead('numpy.tanh')
 def tanh(__arg: IntoArray) -> Array:
     '''Return the hyperbolic tangent of the argument, elementwise.
 
@@ -1667,7 +1667,7 @@ def tanh(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.tanh, __arg, min_dtype=float)
 
 
-@implements(numpy.arctanh)
+@_use_instead('numpy.arctanh')
 def arctanh(__arg: IntoArray) -> Array:
     '''Return the hyperbolic inverse tangent of the argument, elementwise.
 
@@ -3990,3 +3990,19 @@ class __implementations__:
         if dividend.dtype == complex:
             raise ValueError('arctan2 is not defined for complex numbers')
         return _Wrapper(evaluable.ArcTan2, dividend, divisor, shape=dividend.shape, dtype=float)
+
+    @implements(numpy.cosh)
+    def cosh(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.cosh, arg, min_dtype=float)
+
+    @implements(numpy.sinh)
+    def sinh(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.sinh, arg, min_dtype=float)
+
+    @implements(numpy.tanh)
+    def tanh(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.tanh, arg, min_dtype=float)
+
+    @implements(numpy.arctanh)
+    def arctanh(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.arctanh, arg, min_dtype=float)
