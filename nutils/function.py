@@ -1258,7 +1258,7 @@ def subtract(__left: IntoArray, __right: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.subtract, __left, __right)
 
 
-@implements(numpy.positive)
+@_use_instead('numpy.positive')
 def positive(__arg: IntoArray) -> Array:
     '''Return the argument unchanged.
 
@@ -1274,7 +1274,7 @@ def positive(__arg: IntoArray) -> Array:
     return Array.cast(__arg)
 
 
-@implements(numpy.negative)
+@_use_instead('numpy.negative')
 def negative(__arg: IntoArray) -> Array:
     '''Return the negation of the argument, elementwise.
 
@@ -3885,3 +3885,11 @@ class __implementations__:
     @implements(numpy.subtract)
     def subtract(left: IntoArray, right: IntoArray) -> Array:
         return _Wrapper.broadcasted_arrays(evaluable.subtract, left, right)
+
+    @implements(numpy.positive)
+    def positive(arg: Array) -> Array:
+        return arg
+
+    @implements(numpy.negative)
+    def negative(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.negative, arg)
