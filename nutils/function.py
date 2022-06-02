@@ -1683,7 +1683,7 @@ def arctanh(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.arctanh, __arg, min_dtype=float)
 
 
-@implements(numpy.exp)
+@_use_instead('numpy.exp')
 def exp(__arg: IntoArray) -> Array:
     '''Return the exponential of the argument, elementwise.
 
@@ -1699,7 +1699,7 @@ def exp(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Exp, __arg, min_dtype=float)
 
 
-@implements(numpy.log)
+@_use_instead('numpy.log')
 def log(__arg: IntoArray) -> Array:
     '''Return the natural logarithm of the argument, elementwise.
 
@@ -1718,7 +1718,7 @@ def log(__arg: IntoArray) -> Array:
 ln = log
 
 
-@implements(numpy.log2)
+@_use_instead('numpy.log2')
 def log2(__arg: IntoArray) -> Array:
     '''Return the base 2 logarithm of the argument, elementwise.
 
@@ -1734,7 +1734,7 @@ def log2(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.log2, __arg, min_dtype=float)
 
 
-@implements(numpy.log10)
+@_use_instead('numpy.log10')
 def log10(__arg: IntoArray) -> Array:
     '''Return the base 10 logarithm of the argument, elementwise.
 
@@ -4006,3 +4006,19 @@ class __implementations__:
     @implements(numpy.arctanh)
     def arctanh(arg: IntoArray) -> Array:
         return _Wrapper.broadcasted_arrays(evaluable.arctanh, arg, min_dtype=float)
+
+    @implements(numpy.exp)
+    def exp(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.Exp, arg, min_dtype=float)
+
+    @implements(numpy.log)
+    def log(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.Log, arg, min_dtype=float)
+
+    @implements(numpy.log2)
+    def log2(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.log2, arg, min_dtype=float)
+
+    @implements(numpy.log10)
+    def log10(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.log10, arg, min_dtype=float)
