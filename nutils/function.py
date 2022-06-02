@@ -1328,7 +1328,7 @@ def divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
         else _Wrapper.broadcasted_arrays(evaluable.divide, dividend, divisor)
 
 
-@implements(numpy.floor_divide)
+@_use_instead('numpy.floor_divide')
 def floor_divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
     '''Return the floor-division of the arguments, elementwise.
 
@@ -1469,7 +1469,7 @@ def sign(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Sign, __arg)
 
 
-@implements(numpy.mod)
+@_use_instead('numpy.mod')
 def mod(__dividend: IntoArray, __divisor: IntoArray) -> Array:
     '''Return the remainder of the floored division, elementwise.
 
@@ -1485,7 +1485,7 @@ def mod(__dividend: IntoArray, __divisor: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Mod, __dividend, __divisor)
 
 
-@implements(numpy.divmod)
+@_use_instead('numpy.divmod')
 def divmod(__dividend: IntoArray, __divisor: IntoArray) -> Tuple[Array, Array]:
     '''Return the floor-division and remainder, elementwise.
 
@@ -3908,3 +3908,15 @@ class __implementations__:
     @implements(numpy.reciprocal)
     def reciprocal(arg: Array) -> Array:
         return _Wrapper.broadcasted_arrays(evaluable.reciprocal, arg)
+
+    @implements(numpy.floor_divide)
+    def floor_divide(dividend: IntoArray, divisor: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.FloorDivide, dividend, divisor)
+
+    @implements(numpy.mod)
+    def mod(dividend: IntoArray, divisor: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.Mod, dividend, divisor)
+
+    @implements(numpy.divmod)
+    def divmod(dividend: IntoArray, divisor: IntoArray) -> Tuple[Array, Array]:
+        return numpy.floor_divide(dividend, divisor), numpy.mod(dividend, divisor)
