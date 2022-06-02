@@ -1,12 +1,15 @@
 use crate::simplex::Simplex;
 use crate::types::{Dim, Index};
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::iter;
 use std::ops::Mul;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Shape {
     Point,
     Simplex(Simplex),
+    Other,
 }
 
 trait SequenceTransformation: Clone {
@@ -59,7 +62,7 @@ trait SequenceTransformation: Clone {
         }
         (self.apply_many_inplace(index, &mut result, to_dim), result)
     }
-    //fn shape(&self, shape: Shape, offset: Dim) -> Option<Shape>;
+    //fn shape(&self, shape: Shape, offset: Dim) -> (Shape, Dim);
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -69,6 +72,7 @@ enum OperatorKind {
 }
 
 trait DescribeOperator {
+    /// Returns the kind of operation the operator applies to its parent sequence.
     fn operator_kind(&self) -> OperatorKind;
     #[inline]
     fn as_children(&self) -> Option<&Children> {
@@ -88,7 +92,7 @@ trait DescribeOperator {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Transpose {
     len1: Index,
     len2: Index,
@@ -130,7 +134,7 @@ impl DescribeOperator for Transpose {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Take {
     indices: Box<[Index]>,
     len: Index,
@@ -175,7 +179,7 @@ impl DescribeOperator for Take {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Children {
     simplex: Simplex,
     offset: Dim,
@@ -232,7 +236,7 @@ impl DescribeOperator for Children {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Edges {
     simplex: Simplex,
     offset: Dim,
@@ -289,22 +293,33 @@ impl DescribeOperator for Edges {
     }
 }
 
-impl DescribeOperator for UniformPoints {
-    #[inline]
-    fn operator_kind(&self) -> OperatorKind {
-        OperatorKind::Coordinate(self.offset, self.point_dim, 0, self.npoints())
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[repr(transparent)]
+struct FiniteF64(pub f64);
+
+impl Eq for FiniteF64 {}
+
+impl Ord for FiniteF64 {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if let Some(ord) = self.0.partial_cmp(&other.0) {
+            ord
+        } else {
+            panic!("not finite");
+        }
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct UniformPoints {
-    points: Box<[f64]>,
+    points: Box<[FiniteF64]>,
     point_dim: Dim,
     offset: Dim,
 }
 
 impl UniformPoints {
     pub fn new(points: Box<[f64]>, point_dim: Dim, offset: Dim) -> Self {
+        // TODO: assert that the points are actually finite.
+        let points: Box<[FiniteF64]> = unsafe { std::mem::transmute(points) };
         Self {
             points,
             point_dim,
@@ -340,8 +355,17 @@ impl SequenceTransformation for UniformPoints {
         let npoints = (self.points.len() / point_dim) as Index;
         let ipoint = index % npoints;
         let offset = ipoint as usize * point_dim;
-        coordinate[..point_dim].copy_from_slice(&self.points[offset..offset + point_dim]);
+        let points: &[f64] =
+            unsafe { std::mem::transmute(&self.points[offset..offset + point_dim]) };
+        coordinate[..point_dim].copy_from_slice(points);
         index / npoints
+    }
+}
+
+impl DescribeOperator for UniformPoints {
+    #[inline]
+    fn operator_kind(&self) -> OperatorKind {
+        OperatorKind::Coordinate(self.offset, self.point_dim, 0, self.npoints())
     }
 }
 
@@ -356,7 +380,7 @@ impl SequenceTransformation for UniformPoints {
 /// and [`Operator::UniformPoints`], or to consecutive chunks of the input
 /// sequence, in which case the size of the chunks is included in the variant
 /// and the input sequence is assumed to be a multiple of the chunk size long.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Operator {
     /// The transpose of a sequence: the input sequence is reshaped to `(_,
     /// len1, len2)`, the last two axes are swapped and the result is
@@ -458,6 +482,10 @@ impl DescribeOperator for Operator {
     dispatch! {fn as_edges_mut(&mut self) -> Option<&mut Edges>}
 }
 
+impl std::fmt::Debug for Operator {
+    dispatch! {fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result}
+}
+
 fn swap<L, R>(l: &L, r: &mut R) -> Option<Vec<Operator>>
 where
     L: DescribeOperator + SequenceTransformation + Into<Operator>,
@@ -499,7 +527,7 @@ where
 }
 
 /// A chain of [`Operator`]s.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Chain {
     rev_operators: Vec<Operator>,
 }
@@ -530,21 +558,70 @@ impl Chain {
     pub fn iter_operators(&self) -> impl Iterator<Item = &Operator> + DoubleEndedIterator {
         self.rev_operators.iter().rev()
     }
+    fn split_heads(&self) -> BTreeMap<Operator, Vec<Operator>> {
+        let mut heads = BTreeMap::new();
+        'a: for (i, head) in self.rev_operators.iter().enumerate() {
+            let mut rev_tail: Vec<_> = self.rev_operators.iter().take(i).cloned().collect();
+            let mut head = head.clone();
+            for op in self.rev_operators.iter().skip(i + 1) {
+                if let Some(ops) = swap(op, &mut head) {
+                    rev_tail.extend(ops.into_iter().rev());
+                } else {
+                    continue 'a;
+                }
+            }
+            heads.insert(head, rev_tail);
+        }
+        'b: for (i, op) in self.rev_operators.iter().enumerate() {
+            if let Operator::Edges(Edges {
+                simplex: Simplex::Line,
+                offset,
+            }) = op
+            {
+                let simplex = Simplex::Line;
+                let mut rev_tail: Vec<_> = self.rev_operators.iter().take(i).cloned().collect();
+                let mut head = Operator::new_children(simplex, *offset);
+                let indices = simplex.swap_edges_children_map();
+                let take = Operator::new_take(indices, simplex.nchildren() * simplex.nedges());
+                rev_tail.push(take);
+                rev_tail.push(op.clone());
+                for op in self.rev_operators.iter().skip(i + 1) {
+                    if let Some(ops) = swap(op, &mut head) {
+                        rev_tail.extend(ops.into_iter().rev());
+                    } else {
+                        continue 'b;
+                    }
+                }
+                heads.insert(head, rev_tail);
+            }
+        }
+        heads
+    }
     /// Remove and return the common prefix of two chains, transforming either if necessary.
     pub fn remove_common_prefix(&self, other: &Self) -> (Self, Self, Self) {
         let mut common = Vec::new();
         let mut rev_a = self.rev_operators.clone();
         let mut rev_b = other.rev_operators.clone();
+        let mut i = 0;
         while !rev_a.is_empty() && !rev_b.is_empty() {
+            i += 1;
+            if i > 10 {
+                break;
+            }
             if rev_a.last() == rev_b.last() {
                 common.push(rev_a.pop().unwrap());
                 rev_b.pop();
                 continue;
             }
-            // [Edges(Line)], [Children(Line)] -> [Children(Line), Take, Edges(Line)], [Children(Line)]
-            // List all edges and children that can be moved to the front
-            // and remove the common operator with the least amount of
-            // operators in front.
+            let heads_a = Chain::new(rev_a.iter().rev().cloned()).split_heads();
+            let heads_b = Chain::new(rev_b.iter().rev().cloned()).split_heads();
+            let candidates: Vec<_> = heads_a.iter().filter_map(|(h, a)| heads_b.get(h).map(|b| (h, a, b))).collect();
+            if let Some((head, a, b)) = candidates.into_iter().min_by_key(|(_, a, b)| std::cmp::max(a.len(), b.len())) {
+                common.push(head.clone());
+                rev_a = a.clone();
+                rev_b = b.clone();
+                continue;
+            }
             break;
         }
         let common = if rev_a.is_empty()
@@ -958,5 +1035,40 @@ mod tests {
         swap_unoverlapping_edges_gt_edges, 6, Line;
         Operator::new_edges(Line, 2),
         Operator::new_edges(Triangle, 0),
+    }
+
+    #[test]
+    fn split_heads() {
+        let chain = Chain::new([
+            Operator::new_edges(Triangle, 1),
+            Operator::new_children(Line, 0),
+            Operator::new_edges(Line, 2),
+            Operator::new_children(Line, 1),
+            Operator::new_children(Line, 0),
+        ]);
+        let desired = chain
+            .iter_operators()
+            .cloned()
+            .fold(Topology::new(4, 1), |topo, op| topo.derive(op));
+        for (head, tail) in chain.split_heads().into_iter() {
+            let actual = iter::once(head)
+                .chain(tail.into_iter().rev())
+                .fold(Topology::new(4, 1), |topo, op| topo.derive(op));
+            assert_equiv_topo!(actual, desired, Line, Line);
+        }
+    }
+
+    #[test]
+    fn remove_common_prefix() {
+        let a = Chain::new([Operator::new_children(Line, 0), Operator::new_children(Line, 0)]);
+        let b = Chain::new([Operator::new_edges(Line, 0)]);
+        assert_eq!(
+            a.remove_common_prefix(&b),
+            (
+                Chain::new([Operator::new_children(Line, 0), Operator::new_children(Line, 0)]),
+                Chain::new([]),
+                Chain::new([Operator::new_edges(Line, 0), Operator::new_take([2, 1], 4), Operator::new_take([2, 1], 4)]),
+            )
+        );
     }
 }

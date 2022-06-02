@@ -1,7 +1,7 @@
 use crate::types::{Dim, Index};
 
 /// Simplex.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Simplex {
     Line,
     Triangle,
