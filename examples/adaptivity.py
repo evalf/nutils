@@ -38,7 +38,7 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
     domain, geom = mesh.unitsquare(2, etype)
 
     x, y = geom - .5
-    exact = (x**2 + y**2)**(1/3) * function.cos(function.arctan2(y+x, y-x) * (2/3))
+    exact = (x**2 + y**2)**(1/3) * numpy.cos(numpy.arctan2(y+x, y-x) * (2/3))
     domain = domain.trim(exact-1e-15, maxrefine=0)
     linreg = util.linear_regressor()
 

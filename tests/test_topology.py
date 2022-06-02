@@ -907,7 +907,7 @@ class locate(TestCase):
         super().setUp()
         domain, geom = mesh.unitsquare(4, etype=self.etype)
         if self.mode == 'nonlinear':
-            geom = function.sin(geom * numpy.pi / 2)  # nonlinear map from [0,1] to [0,1]
+            geom = numpy.sin(geom * numpy.pi / 2)  # nonlinear map from [0,1] to [0,1]
         geom = geom * (.32 if self.mode == 'trimmed' else .2, .7) + (0, .3)  # trimmed: keep 2.5 elements in x-direction
         if self.mode == 'trimmed':
             domain = domain.trim(.2 - geom[0], maxrefine=0)

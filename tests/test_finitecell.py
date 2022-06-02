@@ -238,7 +238,7 @@ class cutdomain(TestCase):
         self.assertLess(totalerr, self.errtol, 'total surface tolerance not met')
 
     def test_locate(self):
-        curvegeom = self.geom * (1 + .1 * function.sin(function.norm2(self.geom)*numpy.pi/self.radius))  # interface preserving non-polynomial scaling
+        curvegeom = self.geom * (1 + .1 * numpy.sin(function.norm2(self.geom)*numpy.pi/self.radius))  # interface preserving non-polynomial scaling
         for p in numpy.linspace(.001, .999, 20):
             with self.subTest(p=p):
                 point = p * .5**numpy.arange(self.domain.ndims)

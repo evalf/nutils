@@ -1504,7 +1504,7 @@ def divmod(__dividend: IntoArray, __divisor: IntoArray) -> Tuple[Array, Array]:
 # TRIGONOMETRIC
 
 
-@implements(numpy.cos)
+@_use_instead('numpy.cos')
 def cos(__arg: IntoArray) -> Array:
     '''Return the trigonometric cosine of the argument, elementwise.
 
@@ -1520,7 +1520,7 @@ def cos(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Cos, __arg, min_dtype=float)
 
 
-@implements(numpy.sin)
+@_use_instead('numpy.sin')
 def sin(__arg: IntoArray) -> Array:
     '''Return the trigonometric sine of the argument, elementwise.
 
@@ -1536,7 +1536,7 @@ def sin(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Sin, __arg, min_dtype=float)
 
 
-@implements(numpy.tan)
+@_use_instead('numpy.tab')
 def tan(__arg: IntoArray) -> Array:
     '''Return the trigonometric tangent of the argument, elementwise.
 
@@ -1552,7 +1552,7 @@ def tan(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Tan, __arg, min_dtype=float)
 
 
-@implements(numpy.arccos)
+@_use_instead('numpy.arccos')
 def arccos(__arg: IntoArray) -> Array:
     '''Return the trigonometric inverse cosine of the argument, elementwise.
 
@@ -1568,7 +1568,7 @@ def arccos(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.ArcCos, __arg, min_dtype=float)
 
 
-@implements(numpy.arcsin)
+@_use_instead('numpy.arcsin')
 def arcsin(__arg: IntoArray) -> Array:
     '''Return the trigonometric inverse sine of the argument, elementwise.
 
@@ -1584,7 +1584,7 @@ def arcsin(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.ArcSin, __arg, min_dtype=float)
 
 
-@implements(numpy.arctan)
+@_use_instead('numpy.arctan')
 def arctan(__arg: IntoArray) -> Array:
     '''Return the trigonometric inverse tangent of the argument, elementwise.
 
@@ -1600,7 +1600,7 @@ def arctan(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.ArcTan, __arg, min_dtype=float)
 
 
-@implements(numpy.arctan2)
+@_use_instead('numpy.arctan2')
 def arctan2(__dividend: IntoArray, __divisor: IntoArray) -> Array:
     '''Return the trigonometric inverse tangent of the ``dividend / divisor``, elementwise.
 
@@ -3389,18 +3389,15 @@ def add_T(__arg: IntoArray, axes: Tuple[int, int] = (-2, -1)) -> Array:
 
 
 def trignormal(_angle: IntoArray) -> Array:
-    angle = Array.cast(_angle)
-    return stack([cos(angle), sin(angle)], axis=-1)
+    return stack([numpy.cos(_angle), numpy.sin(_angle)], axis=-1)
 
 
 def trigtangent(_angle: IntoArray) -> Array:
-    angle = Array.cast(_angle)
-    return stack([-sin(angle), cos(angle)], axis=-1)
+    return stack([-numpy.sin(_angle), numpy.cos(_angle)], axis=-1)
 
 
 def rotmat(__arg: IntoArray) -> Array:
-    arg = Array.cast(__arg)
-    return stack([trignormal(arg), trigtangent(arg)], 0)
+    return stack([trignormal(__arg), trigtangent(__arg)], 0)
 
 
 def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtype: DType = float) -> Array:
@@ -3962,3 +3959,34 @@ class __implementations__:
             return (arg1[:, numpy.newaxis] * arg2).sum(-2)
         else:
             return (arg1[..., :, :, numpy.newaxis] * arg2[..., numpy.newaxis, :, :]).sum(-2)
+
+    @implements(numpy.sin)
+    def sin(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.Sin, arg, min_dtype=float)
+
+    @implements(numpy.cos)
+    def cos(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.Cos, arg, min_dtype=float)
+
+    @implements(numpy.tan)
+    def tan(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.Tan, arg, min_dtype=float)
+
+    @implements(numpy.arcsin)
+    def arcsin(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.ArcSin, arg, min_dtype=float)
+
+    @implements(numpy.arccos)
+    def arccos(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.ArcCos, arg, min_dtype=float)
+
+    @implements(numpy.arctan)
+    def arctan(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.ArcTan, arg, min_dtype=float)
+
+    @implements(numpy.arctan2)
+    def arctan2(dividend: IntoArray, divisor: IntoArray) -> Array:
+        dividend, divisor = broadcast_arrays(*typecast_arrays(dividend, divisor, min_dtype=float))
+        if dividend.dtype == complex:
+            raise ValueError('arctan2 is not defined for complex numbers')
+        return _Wrapper(evaluable.ArcTan2, dividend, divisor, shape=dividend.shape, dtype=float)

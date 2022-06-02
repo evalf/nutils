@@ -265,19 +265,19 @@ _check('conjugate', function.conjugate, numpy.conjugate, ANY(4))
 _check('conjugate-complex', function.conjugate, numpy.conjugate, ANC(4))
 _check('Aray_conjugate-complex', lambda a: function.Array.cast(a).conjugate(), numpy.conjugate, ANC(4))
 
-_check('cos', function.cos, numpy.cos, ANY(4))
-_check('cos-complex', function.cos, numpy.cos, ANC(4))
-_check('sin', function.sin, numpy.sin, ANY(4))
-_check('sin-complex', function.sin, numpy.sin, ANC(4))
-_check('tan', function.tan, numpy.tan, ANY(4))
-_check('tan-complex', function.tan, numpy.tan, ANC(4))
-_check('arccos', function.arccos, numpy.arccos, ANY(4))
-_check('arccos-complex', function.arccos, numpy.arccos, ANC(4))
-_check('arcsin', function.arcsin, numpy.arcsin, ANY(4))
-_check('arcsin-complex', function.arcsin, numpy.arcsin, ANC(4))
-_check('arctan', function.arctan, numpy.arctan, ANY(4))
-_check('arctan-complex', function.arctan, numpy.arctan, ANC(4))
-_check('arctan2', function.arctan2, numpy.arctan2, ANY(4, 1), ANY(1, 4))
+_check('cos', lambda a: numpy.cos(function.Array.cast(a)), numpy.cos, ANY(4))
+_check('cos-complex', lambda a: numpy.cos(function.Array.cast(a)), numpy.cos, ANC(4))
+_check('sin', lambda a: numpy.sin(function.Array.cast(a)), numpy.sin, ANY(4))
+_check('sin-complex', lambda a: numpy.sin(function.Array.cast(a)), numpy.sin, ANC(4))
+_check('tan', lambda a: numpy.tan(function.Array.cast(a)), numpy.tan, ANY(4))
+_check('tan-complex', lambda a: numpy.tan(function.Array.cast(a)), numpy.tan, ANC(4))
+_check('arccos', lambda a: numpy.arccos(function.Array.cast(a)), numpy.arccos, ANY(4))
+_check('arccos-complex', lambda a: numpy.arccos(function.Array.cast(a)), numpy.arccos, ANC(4))
+_check('arcsin', lambda a: numpy.arcsin(function.Array.cast(a)), numpy.arcsin, ANY(4))
+_check('arcsin-complex', lambda a: numpy.arcsin(function.Array.cast(a)), numpy.arcsin, ANC(4))
+_check('arctan', lambda a: numpy.arctan(function.Array.cast(a)), numpy.arctan, ANY(4))
+_check('arctan-complex', lambda a: numpy.arctan(function.Array.cast(a)), numpy.arctan, ANC(4))
+_check('arctan2', lambda a, b: numpy.arctan2(a, function.Array.cast(b)), numpy.arctan2, ANY(4, 1), ANY(1, 4))
 _check('cosh', function.cosh, numpy.cosh, ANY(4))
 _check('cosh-complex', function.cosh, numpy.cosh, ANC(4))
 _check('sinh', function.sinh, numpy.sinh, ANY(4))
@@ -661,9 +661,9 @@ class piecewise(TestCase):
         x, = self.geom
         if self.partition:
             left, mid, right = function.partition(x, .2, .8)
-            self.f = left + function.sin(x) * mid + x**2 * right
+            self.f = left + numpy.sin(x) * mid + x**2 * right
         else:
-            self.f = function.piecewise(x, [.2, .8], 1, function.sin(x), x**2)
+            self.f = function.piecewise(x, [.2, .8], 1, numpy.sin(x), x**2)
 
     def test_evalf(self):
         f_ = self.domain.sample('uniform', 4).eval(self.f)  # x=.125, .375, .625, .875
@@ -1288,8 +1288,8 @@ class SurfaceGradient(TestCase):
             x = 1
         # geometry describes a circle/sphere with curvature K
         self.geom = (x/self.K) * function.stack(
-            (function.cos(y), function.sin(y)) if self.manifold.ndims == 1
-            else (function.cos(y), function.sin(y) * function.cos(z), function.sin(y) * function.sin(z)))
+            (numpy.cos(y), numpy.sin(y)) if self.manifold.ndims == 1
+            else (numpy.cos(y), numpy.sin(y) * numpy.cos(z), numpy.sin(y) * numpy.sin(z)))
         self.normal = function.normal(self.geom, refgeom=refgeom)
 
     @property
