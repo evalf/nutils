@@ -1398,12 +1398,12 @@ def square(__arg: IntoArray) -> Array:
     return Array.cast(numpy.square(__arg))
 
 
-@implements(numpy.hypot)
+@_use_instead('numpy.hypot')
 def hypot(__array1: IntoArray, __array2: IntoArray) -> Array:
     return numpy.sqrt(numpy.square(__array1) + numpy.square(__array2))
 
 
-@implements(numpy.absolute)
+@_use_instead('abs or numpy.abs')
 def abs(__arg: IntoArray) -> Array:
     '''Return the absolute value of the argument, elementwise.
 
@@ -1451,7 +1451,7 @@ def matmul(__arg1: IntoArray, __arg2: IntoArray) -> Array:
         return (arg1[..., :, :, numpy.newaxis] * arg2[..., numpy.newaxis, :, :]).sum(-2)
 
 
-@implements(numpy.sign)
+@_use_instead('numpy.sign')
 def sign(__arg: IntoArray) -> Array:
     '''Return the sign of the argument, elementwise.
 
@@ -3296,7 +3296,7 @@ def partition(f: IntoArray, *levels: float) -> Sequence[Array]:
     '''
 
     f = Array.cast(f)
-    signs = [sign(f - level) for level in levels]
+    signs = [numpy.sign(f - level) for level in levels]
     return [.5 - .5 * signs[0]] + [.5 * (a - b) for a, b in zip(signs[:-1], signs[1:])] + [.5 + .5 * signs[-1]]
 
 
@@ -3326,7 +3326,7 @@ def heaviside(f: IntoArray):
     :func:`sign`: like :func:`heaviside` but with different levels
     '''
 
-    return sign(f) * .5 + .5
+    return Array.cast(numpy.sign(f) * .5 + .5)
 
 
 def _eval_choose(_index: evaluable.Array, *_choices: evaluable.Array) -> evaluable.Array:
@@ -3933,3 +3933,19 @@ class __implementations__:
     @implements(numpy.square)
     def square(arg: Array) -> Array:
         return numpy.power(arg, 2)
+
+    @implements(numpy.hypot)
+    def hypot(array1: IntoArray, array2: IntoArray) -> Array:
+        return numpy.sqrt(numpy.square(array1) + numpy.square(array2))
+
+    @implements(numpy.absolute)
+    def abs(arg: IntoArray) -> Array:
+        arg = Array.cast(arg)
+        return _Wrapper(evaluable.abs, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
+
+    @implements(numpy.sign)
+    def sign(arg: IntoArray) -> Array:
+        arg = Array.cast(arg)
+        if arg.dtype == complex:
+            raise ValueError('sign is not defined for complex numbers')
+        return _Wrapper.broadcasted_arrays(evaluable.Sign, arg)
