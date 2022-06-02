@@ -1290,7 +1290,7 @@ def negative(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.negative, __arg)
 
 
-@implements(numpy.multiply)
+@_use_instead('numpy.multiply')
 def multiply(__left: IntoArray, __right: IntoArray) -> Array:
     '''Return the product of the arguments, elementwise.
 
@@ -1309,7 +1309,7 @@ def multiply(__left: IntoArray, __right: IntoArray) -> Array:
         else _Wrapper.broadcasted_arrays(evaluable.multiply, left, right)
 
 
-@implements(numpy.true_divide)
+@_use_instead('numpy.divide')
 def divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
     '''Return the true-division of the arguments, elementwise.
 
@@ -1344,7 +1344,7 @@ def floor_divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.FloorDivide, __dividend, __divisor)
 
 
-@implements(numpy.reciprocal)
+@_use_instead('numpy.reciprocal')
 def reciprocal(__arg: IntoArray) -> Array:
     '''Return the reciprocal of the argument, elementwise.
 
@@ -2103,7 +2103,7 @@ def dot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]
         assert b.ndim == 1 and b.shape[0] == a.shape[0]
         b = _append_axes(b, a.shape[1:])
         axes = 0,
-    return sum(multiply(a, b), axes)
+    return sum(a * b, axes)
 
 
 @implements(numpy.vdot)
@@ -2126,7 +2126,7 @@ def vdot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]
     '''
 
     a, b = broadcast_arrays(__a, __b)
-    return sum(multiply(conjugate(a), b), range(a.ndim))
+    return sum(conjugate(a) * b, range(a.ndim))
 
 
 @implements(numpy.trace)
@@ -2164,7 +2164,7 @@ def norm2(__arg: IntoArray, axis: Union[int, Sequence[int]] = -1) -> Array:
     '''
 
     arg = Array.cast(__arg)
-    return sqrt(sum(multiply(arg, conjugate(arg)), axis))
+    return sqrt(sum(arg * conjugate(arg), axis))
 
 
 def normalized(__arg: IntoArray, axis: int = -1) -> Array:
@@ -2186,7 +2186,7 @@ def normalized(__arg: IntoArray, axis: int = -1) -> Array:
     '''
 
     arg = Array.cast(__arg)
-    return divide(arg, insertaxis(norm2(arg, axis), axis, 1))
+    return arg / insertaxis(norm2(arg, axis), axis, 1)
 
 
 def matmat(__arg0: IntoArray, *args: IntoArray) -> Array:
@@ -3030,7 +3030,7 @@ def tangent(__geom: IntoArray, __vec: IntoArray) -> Array:
 
     geom = Array.cast(__geom)
     vec = Array.cast(__vec)
-    return vec - multiply(dot(vec, normal(geom), -1)[..., None], normal(geom))
+    return vec - dot(vec, normal(geom), -1)[..., None] * normal(geom)
 
 
 def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
@@ -3163,7 +3163,7 @@ def symgrad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
 
     arg = Array.cast(__arg)
     geom = Array.cast(__geom)
-    return multiply(.5, add_T(arg.grad(geom, ndims)))
+    return .5 * add_T(arg.grad(geom, ndims))
 
 
 def ngrad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
@@ -3893,3 +3893,18 @@ class __implementations__:
     @implements(numpy.negative)
     def negative(arg: Array) -> Array:
         return _Wrapper.broadcasted_arrays(evaluable.negative, arg)
+
+    @implements(numpy.multiply)
+    def multiply(left: IntoArray, right: IntoArray) -> Array:
+        return typecast_arrays(left, right)[1] if _is_unit_scalar(left) \
+          else typecast_arrays(left, right)[0] if _is_unit_scalar(right) \
+          else _Wrapper.broadcasted_arrays(evaluable.multiply, left, right)
+    
+    @implements(numpy.true_divide)
+    def divide(dividend: IntoArray, divisor: IntoArray) -> Array:
+        return typecast_arrays(dividend, divisor, min_dtype=float)[0] if _is_unit_scalar(divisor) \
+          else _Wrapper.broadcasted_arrays(evaluable.divide, dividend, divisor, min_dtype=float)
+
+    @implements(numpy.reciprocal)
+    def reciprocal(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.reciprocal, arg)
