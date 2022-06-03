@@ -281,7 +281,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     def T(self) -> 'Array':
         'The transposed array.'
 
-        return transpose(self)
+        return numpy.transpose(self)
 
     def astype(self, dtype):
         if dtype == self.dtype:
@@ -391,12 +391,10 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         return curvature(self, ndims)
 
     def swapaxes(self, __axis1: int, __axis2: int) -> 'Array':
-        'See :func:`swapaxes`.'
-        return swapaxes(self, __axis1, __axis2)
+        return numpy.swapaxes(self, __axis1, __axis2)
 
     def transpose(self, __axes: Optional[Sequence[int]]) -> 'Array':
-        'See :func:`transpose`.'
-        return transpose(self, __axes)
+        return numpy.transpose(self, __axes)
 
     def add_T(self, axes: Tuple[int, int]) -> 'Array':
         'See :func:`add_T`.'
@@ -2226,7 +2224,7 @@ def vdot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]
     return numpy.sum(numpy.conjugate(a) * b, range(a.ndim))
 
 
-@implements(numpy.trace)
+@_use_instead('numpy.trace')
 def trace(__arg: IntoArray, axis1: int = -2, axis2: int = -1) -> Array:
     '''Return the trace, the sum of the diagonal, of an array over the two given axes, elementwise over the remanining axes.
 
@@ -2477,7 +2475,7 @@ def outer(arg1, arg2=None, axis=0):
 # ARRAY OPS
 
 
-@implements(numpy.transpose)
+@_use_instead('numpy.transpose')
 def transpose(__array: IntoArray, __axes: Optional[Sequence[int]] = None) -> Array:
     '''Permute the axes of an array.
 
@@ -2552,7 +2550,7 @@ def expand_dims(__array: IntoArray, axis: int) -> Array:
     return insertaxis(__array, axis, 1)
 
 
-@implements(numpy.repeat)
+@_use_instead('numpy.repeat')
 def repeat(__array: IntoArray, __n: IntoArray, axis: int) -> Array:
     '''Repeat the given axis of an array `n` times.
 
@@ -2575,7 +2573,7 @@ def repeat(__array: IntoArray, __n: IntoArray, axis: int) -> Array:
     return insertaxis(get(array, axis, 0), axis, __n)
 
 
-@implements(numpy.swapaxes)
+@_use_instead('numpy.swapaxes')
 def swapaxes(__array: IntoArray, __axis1: int, __axis2: int) -> Array:
     '''Swap two axes of an array.
 
@@ -2961,7 +2959,7 @@ def broadcast_to(array: IntoArray, shape: Shape) -> Array:
         if actual == desired:
             continue
         elif actual == 1:
-            broadcasted = repeat(broadcasted, desired, axis + nnew)
+            broadcasted = numpy.repeat(broadcasted, desired, axis + nnew)
         else:
             raise ValueError('cannot broadcast array with shape {} to {} because input axis {} is neither singleton nor has the desired length'.format(orig_shape, shape, axis))
     return broadcasted
@@ -3207,7 +3205,7 @@ def div(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
     '''
 
     geom = Array.cast(__geom, ndim=1)
-    return trace(grad(__arg, geom, ndims))
+    return numpy.trace(grad(__arg, geom, ndims), -2, -1)
 
 
 def laplace(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
@@ -3464,7 +3462,7 @@ def iszero(__arg: IntoArray) -> bool:
 def add_T(__arg: IntoArray, axes: Tuple[int, int] = (-2, -1)) -> Array:
     'add transposed'
     arg = Array.cast(__arg)
-    return swapaxes(arg, *axes) + arg
+    return numpy.swapaxes(arg, *axes) + arg
 
 
 def trignormal(_angle: IntoArray) -> Array:
@@ -4234,3 +4232,24 @@ class __implementations__:
     @implements(numpy.ravel)
     def ravel(arg: Array):
         return numpy.reshape(arg, -1)
+
+    @implements(numpy.trace)
+    def trace(arg: Array, axis1: int = 0, axis2: int = 1) -> Array:
+        return numpy.sum(_takediag(arg, axis1, axis2), -1)
+
+    @implements(numpy.transpose)
+    def transpose(array: Array, axes: Optional[Sequence[int]] = None) -> Array:
+        return _Transpose(array, tuple(reversed(range(array.ndim)) if axes is None else axes))
+
+    @implements(numpy.repeat)
+    def repeat(array: IntoArray, n: IntoArray, axis: int) -> Array:
+        array = Array.cast(array)
+        if array.shape[axis] != 1:
+            raise NotImplementedError('only axes with length 1 can be repeated')
+        return insertaxis(get(array, axis, 0), axis, n)
+
+    @implements(numpy.swapaxes)
+    def swapaxes(array: Array, axis1: int, axis2: int) -> Array:
+        trans = list(range(array.ndim))
+        trans[axis1], trans[axis2] = trans[axis2], trans[axis1]
+        return numpy.transpose(array, trans)
