@@ -664,7 +664,7 @@ class Custom(Array):
             if len(points_shapes) == 0:
                 raise ValueError('Pointwise axes can only be used in combination with at least one `function.Array` argument.')
             points_shape = broadcast_shapes(*points_shapes)
-            args = tuple(broadcast_to(arg, points_shape + arg.shape[npointwise:]) if isinstance(arg, Array) else arg for arg in args)
+            args = tuple(numpy.broadcast_to(arg, points_shape + arg.shape[npointwise:]) if isinstance(arg, Array) else arg for arg in args)
         else:
             points_shape = ()
         self._args = args
@@ -1028,8 +1028,8 @@ class _Gradient(Array):
         assert geom.spaces, '0d array'
         assert geom.dtype == float
         common_shape = broadcast_shapes(func.shape, geom.shape[:-1])
-        self._func = broadcast_to(func, common_shape)
-        self._geom = broadcast_to(geom, (*common_shape, geom.shape[-1]))
+        self._func = numpy.broadcast_to(func, common_shape)
+        self._geom = numpy.broadcast_to(geom, (*common_shape, geom.shape[-1]))
         arguments = _join_arguments((func.arguments, geom.arguments))
         super().__init__(self._geom.shape, complex if func.dtype == complex else float, func.spaces | geom.spaces, arguments)
 
@@ -1054,8 +1054,8 @@ class _SurfaceGradient(Array):
         assert geom.spaces, '0d array'
         assert geom.dtype == float
         common_shape = broadcast_shapes(func.shape, geom.shape[:-1])
-        self._func = broadcast_to(func, common_shape)
-        self._geom = broadcast_to(geom, (*common_shape, geom.shape[-1]))
+        self._func = numpy.broadcast_to(func, common_shape)
+        self._geom = numpy.broadcast_to(geom, (*common_shape, geom.shape[-1]))
         arguments = _join_arguments((func.arguments, geom.arguments))
         super().__init__(self._geom.shape, complex if func.dtype == complex else float, func.spaces | geom.spaces, arguments)
 
@@ -2881,7 +2881,7 @@ def broadcast_arrays(*arrays: IntoArray) -> Tuple[Array, ...]:
 
     arrays_ = tuple(map(Array.cast, arrays))
     shape = broadcast_shapes(*(arg.shape for arg in arrays_))
-    return tuple(broadcast_to(arg, shape) for arg in arrays_)
+    return tuple(numpy.broadcast_to(arg, shape) for arg in arrays_)
 
 
 def typecast_arrays(*arrays: IntoArray, min_dtype: DType = bool):
@@ -2929,7 +2929,7 @@ def broadcast_shapes(*shapes: Shape) -> Tuple[int, ...]:
     return tuple(broadcasted)
 
 
-@implements(numpy.broadcast_to)
+@_use_instead('numpy.broadcast_to')
 def broadcast_to(array: IntoArray, shape: Shape) -> Array:
     '''Broadcast an array to a new shape.
 
@@ -4283,3 +4283,20 @@ class __implementations__:
     def stack(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
         aligned = broadcast_arrays(*typecast_arrays(*__arrays))
         return util.sum(kronecker(array, axis, len(aligned), i) for i, array in enumerate(aligned))
+
+    @implements(numpy.broadcast_to)
+    def broadcast_to(array: IntoArray, shape: Shape) -> Array:
+        broadcasted = Array.cast(array)
+        orig_shape = broadcasted.shape
+        if broadcasted.ndim > len(shape):
+            raise ValueError('cannot broadcast array with shape {} to {} because the dimension decreases'.format(orig_shape, shape))
+        nnew = len(shape) - broadcasted.ndim
+        broadcasted = _prepend_axes(broadcasted, shape[:nnew])
+        for axis, (actual, desired) in enumerate(zip(broadcasted.shape[nnew:], shape[nnew:])):
+            if actual == desired:
+                continue
+            elif actual == 1:
+                broadcasted = numpy.repeat(broadcasted, desired, axis + nnew)
+            else:
+                raise ValueError('cannot broadcast array with shape {} to {} because input axis {} is neither singleton nor has the desired length'.format(orig_shape, shape, axis))
+        return broadcasted

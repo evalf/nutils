@@ -618,11 +618,11 @@ class broadcasting(TestCase):
 
     def test_broadcast_to_decrease_dimension(self):
         with self.assertRaisesRegex(ValueError, 'cannot broadcast array .* because the dimension decreases'):
-            function.broadcast_to(function.Argument('a', (2, 3, 4)), (3, 4))
+            numpy.broadcast_to(function.Argument('a', (2, 3, 4)), (3, 4))
 
     def test_broadcast_to_invalid_length(self):
         with self.assertRaisesRegex(ValueError, 'cannot broadcast array .* because input axis .* is neither singleton nor has the desired length'):
-            function.broadcast_to(function.Argument('a', (2, 3, 4)), (2, 5, 4))
+            numpy.broadcast_to(function.Argument('a', (2, 3, 4)), (2, 5, 4))
 
 
 @parametrize
