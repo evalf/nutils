@@ -1195,8 +1195,8 @@ class _Mul(_TensorialTopology):
 
         basis1 = self.topo1.basis(name, **kwargs1)
         basis2 = self.topo2.basis(name, **kwargs2)
-        basis = function.insertaxis(basis1, 1, basis2.shape[0]) * function.insertaxis(basis2, 0, basis1.shape[0])
-        return function.ravel(basis, axis=0)
+        assert basis1.ndim == basis2.ndim == 1
+        return numpy.ravel(basis1[:,None] * basis2[None,:])
 
     def sample(self, ischeme: str, degree: int) -> Sample:
         return self.topo1.sample(ischeme, degree) * self.topo2.sample(ischeme, degree)

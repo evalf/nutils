@@ -445,7 +445,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     def vector(self, ndims):
         if not self.ndim:
             raise Exception('a scalar function cannot be vectorized')
-        return ravel(diagonalize(insertaxis(self, 1, ndims), 1), 0)
+        return numpy.reshape(diagonalize(insertaxis(self, 1, ndims), 1), (self.shape[0] * ndims, ndims, *self.shape[1:]))
 
     def __repr__(self) -> str:
         return 'Array<{}>'.format(','.join(str(n) for n in self.shape))
@@ -2598,6 +2598,7 @@ def swapaxes(__array: IntoArray, __axis1: int, __axis2: int) -> Array:
     return transpose(array, trans)
 
 
+@_use_instead('numpy.ravel or numpy.reshape')
 def ravel(__array: IntoArray, axis: int) -> Array:
     '''Ravel two consecutive axes of an array.
 
@@ -3015,18 +3016,13 @@ def grad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
     geom, geomscale = Array.cast_withscale(__geom)
     if geom.dtype != float:
         raise ValueError('The geometry must be real-valued.')
-    if geom.ndim == 0:
-        ret = grad(arg, _append_axes(geom, (1,)))[..., 0]
-    elif geom.ndim > 1:
-        sh = geom.shape[-2:]
-        ret = unravel(grad(arg, ravel(geom, geom.ndim-2)), arg.ndim+geom.ndim-2, sh)
-    elif ndims == 0 or ndims == geom.shape[0]:
-        ret = _Gradient(arg, geom)
-    elif ndims == -1 or ndims == geom.shape[0] - 1:
-        ret = _SurfaceGradient(arg, geom)
+    if ndims == 0 or ndims == geom.size:
+        op = _Gradient
+    elif ndims == -1 or ndims == geom.size - 1:
+        op = _SurfaceGradient
     else:
         raise NotImplementedError
-    return ret * (argscale / geomscale)
+    return numpy.reshape(op(arg, numpy.ravel(geom)), arg.shape + geom.shape) * (argscale / geomscale)
 
 
 def curl(__arg: IntoArray, __geom: IntoArray) -> Array:
@@ -3074,19 +3070,15 @@ def normal(__geom: IntoArray, refgeom: Optional[Array] = None) -> Array:
     geom, geomscale_ = Array.cast_withscale(__geom)
     if geom.dtype != float:
         raise ValueError('The geometry must be real-valued.')
-    if geom.ndim == 0:
-        return normal(insertaxis(geom, 0, 1), refgeom)[..., 0]
-    elif geom.ndim > 1:
-        sh = geom.shape[-2:]
-        return unravel(normal(ravel(geom, geom.ndim-2), refgeom), geom.ndim-2, sh)
-    elif refgeom is None:
-        return _Normal(geom)
-    elif refgeom.dtype != float:
-        raise ValueError('The reference geometry must be real-valued.')
-    elif refgeom.shape != (geom.shape[0]-1,):
-        raise ValueError('The reference geometry must have shape ({},) but got {}.'.format(geom.shape[0]-1, refgeom.shape))
+    if refgeom is None:
+        normal = _Normal(numpy.ravel(geom))
     else:
-        return _ExteriorNormal(grad(geom, refgeom))
+        if refgeom.dtype != float:
+            raise ValueError('The reference geometry must be real-valued.')
+        if refgeom.size != geom.size-1:
+            raise ValueError(f'The reference geometry must have size {geom.size-1}, but got {refgeom.size}.')
+        normal = _ExteriorNormal(grad(numpy.ravel(geom), numpy.ravel(refgeom)))
+    return numpy.reshape(normal, geom.shape)
 
 
 def dotnorm(__arg: IntoArray, __geom: IntoArray, axis: int = -1) -> Array:
@@ -3149,13 +3141,7 @@ def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
         scale = 1.
     else:
         raise ValueError('scaled arrays require an explicit dimension')
-    if geom.ndim == 0:
-        J = jacobian(insertaxis(geom, 0, 1), __ndims)
-    elif geom.ndim > 1:
-        J = jacobian(ravel(geom, geom.ndim-2), __ndims)
-    else:
-        J = _Jacobian(geom, __ndims)
-    return J * scale
+    return _Jacobian(numpy.ravel(geom), __ndims) * scale
 
 
 def J(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
@@ -4202,3 +4188,49 @@ class __implementations__:
             a = _Transpose.to_end(_append_axes(a, b.shape[:-1]), a.ndim-1)
             assert a.shape[-b.ndim:] == b.shape
         return numpy.sum(a * b, -1)
+
+    @implements(numpy.reshape)
+    def reshape(arg: Array, newshape):
+        if isinstance(newshape, numbers.Integral):
+            newshape = newshape,
+        if -1 in newshape:
+            i = newshape.index(-1)
+            if -1 in newshape[i+1:]:
+                raise ValueError('can only specify one unknown dimension')
+            length, remainder = builtins.divmod(arg.size, numpy.prod(newshape, initial=-1))
+            if remainder:
+                raise ValueError(f'cannot reshape array of size {arg.size} into shape {newshape}')
+            newshape = (*newshape[:i], length, *newshape[i+1:])
+        elif numpy.prod(newshape, initial=1) != arg.size:
+            raise ValueError(f'cannot reshape array of size {arg.size} into shape {newshape}')
+        ncommon = 0
+        while arg.ndim > ncommon and len(newshape) > ncommon and arg.shape[ncommon] == newshape[ncommon]:
+            ncommon += 1
+        # The first ncommon axes are already of the right shape, so these we
+        # will not touch. The remaining axes will be ravelled and unravelled
+        # until an axis of the desired length is formed, working from end to
+        # beginning, and rolling finished axes to the front to reduce the
+        # number of transposes.
+        for i, s in enumerate(reversed(newshape[ncommon:])):
+            if arg.ndim == ncommon + i: # the first i axes are finished so we need to append a new singleton axis to continue
+                assert s == 1
+                arg = _Wrapper(evaluable.InsertAxis, arg, _WithoutPoints(Array.cast(1)), shape=(*arg.shape, 1), dtype=arg.dtype)
+            else:
+                while arg.shape[-1] % s:
+                    assert arg.ndim > ncommon + i + 1
+                    arg = _Wrapper(evaluable.Ravel, arg, shape=(*arg.shape[:-2], arg.shape[-2]*arg.shape[-1]), dtype=arg.dtype)
+                if arg.shape[-1] != s:
+                    n = arg.shape[-1] // s
+                    arg = _Wrapper(evaluable.Unravel, arg, _WithoutPoints(Array.cast(n)), _WithoutPoints(Array.cast(s)), shape=(*arg.shape[:-1], n, s), dtype=arg.dtype)
+            arg = _Transpose.from_end(arg, ncommon) # move axis to front so that we can continue to operate on the end
+        # If the original array had a surplus of singleton axes, these may
+        # still be present in the tail. We take them away one by one.
+        while arg.ndim > len(newshape):
+            assert arg.shape[-1] == 1
+            arg = _Wrapper(evaluable.Take, arg, _WithoutPoints(Array.cast(0)), shape=arg.shape[:-1], dtype=arg.dtype)
+        assert arg.shape == newshape
+        return arg
+
+    @implements(numpy.ravel)
+    def ravel(arg: Array):
+        return numpy.reshape(arg, -1)
