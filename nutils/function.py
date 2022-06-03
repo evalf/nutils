@@ -1111,6 +1111,16 @@ def implements(np_function):
     return decorator
 
 
+def _use_instead(alternative):
+    def wrapper(f):
+        @functools.wraps(f)
+        def wrapped(*args, **kwargs):
+            warnings.deprecation(f'function.{f.__name__} is deprecated; use {alternative} instead')
+            return f(*args, **kwargs)
+        return wrapped
+    return wrapper
+
+
 def asarray(__arg: IntoArray) -> Array:
     '''Cast a value to an :class:`Array`.
 
