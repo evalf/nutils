@@ -1193,17 +1193,6 @@ def _join_arguments(args_list: Iterable[Mapping[str, Argument]]) -> Dict[str, Ar
 # CONSTRUCTORS
 
 
-HANDLED_FUNCTIONS = {}
-
-
-def implements(np_function):
-    'Register an ``__array_function__`` or ``__array_ufunc__`` implementation for Array objects.'
-    def decorator(func):
-        HANDLED_FUNCTIONS[np_function] = func
-        return func
-    return decorator
-
-
 def _use_instead(alternative):
     def wrapper(f):
         @functools.wraps(f)
@@ -3936,7 +3925,16 @@ def _is_unit_scalar(v):
     return T in _dtypes and v == T(1)
 
 
+HANDLED_FUNCTIONS = {}
+
 class __implementations__:
+
+    def implements(np_function):
+        'Register an ``__array_function__`` or ``__array_ufunc__`` implementation for Array objects.'
+        def decorator(func):
+            HANDLED_FUNCTIONS[np_function] = func
+            return func
+        return decorator
 
     @implements(numpy.shape)
     def shape(arg: Array) -> Tuple[int, ...]:
