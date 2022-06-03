@@ -589,7 +589,7 @@ class _Add(_TensorialSample):
         return self._sample1.integral(func) + self._sample2.integral(func)
 
     def __call__(self, func: function.IntoArray) -> function.Array:
-        return function.concatenate([self._sample1(func), self._sample2(func)])
+        return numpy.concatenate([self._sample1(func), self._sample2(func)])
 
 
 class _Mul(_TensorialSample):

@@ -183,7 +183,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
                 value = _Constant(__value)
             except:
                 if isinstance(__value, (list, tuple)):
-                    value = stack(__value, axis=0)
+                    value = numpy.stack([Array.cast(v) for v in __value], axis=0)
                 else:
                     raise ValueError('cannot convert {}.{} to Array'.format(type(__value).__module__, type(__value).__qualname__))
         if dtype is not None and _dtypes.index(value.dtype) > _dtypes.index(dtype):
@@ -2804,7 +2804,7 @@ def kronecker(__array: IntoArray, axis: int, length: int, pos: IntoArray) -> Arr
     return _Transpose.from_end(scatter(__array, length, pos), axis)
 
 
-@implements(numpy.concatenate)
+@_use_instead('numpy.concatenate')
 def concatenate(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
     '''Join arrays along an existing axis.
 
@@ -2826,7 +2826,7 @@ def concatenate(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
     return _Concatenate(__arrays, axis)
 
 
-@implements(numpy.stack)
+@_use_instead('numpy.stack')
 def stack(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
     '''Join arrays along a new axis.
 
@@ -3425,8 +3425,8 @@ def chain(_funcs: Sequence[IntoArray]) -> Sequence[Array]:
 
     funcs = tuple(map(Array.cast, _funcs))
     shapes = [func.shape[0] for func in funcs]
-    return [concatenate([func if i == j else zeros((sh,) + func.shape[1:])
-                         for j, sh in enumerate(shapes)], axis=0)
+    return [numpy.concatenate([func if i == j else zeros((sh,) + func.shape[1:])
+        for j, sh in enumerate(shapes)], axis=0)
             for i, func in enumerate(funcs)]
 
 
@@ -3443,7 +3443,7 @@ def vectorize(args: Sequence[IntoArray]) -> Array:
     :class:`Array`
     '''
 
-    return concatenate([kronecker(arg, axis=-1, length=len(args), pos=iarg) for iarg, arg in enumerate(args)])
+    return numpy.concatenate([kronecker(arg, axis=-1, length=len(args), pos=iarg) for iarg, arg in enumerate(args)])
 
 
 def simplified(__arg: IntoArray) -> Array:
@@ -3463,15 +3463,15 @@ def add_T(__arg: IntoArray, axes: Tuple[int, int] = (-2, -1)) -> Array:
 
 
 def trignormal(_angle: IntoArray) -> Array:
-    return stack([numpy.cos(_angle), numpy.sin(_angle)], axis=-1)
+    return Array.cast(numpy.stack([numpy.cos(_angle), numpy.sin(_angle)], axis=-1))
 
 
 def trigtangent(_angle: IntoArray) -> Array:
-    return stack([-numpy.sin(_angle), numpy.cos(_angle)], axis=-1)
+    return Array.cast(numpy.stack([-numpy.sin(_angle), numpy.cos(_angle)], axis=-1))
 
 
 def rotmat(__arg: IntoArray) -> Array:
-    return stack([trignormal(__arg), trigtangent(__arg)], 0)
+    return Array.cast(numpy.stack([trignormal(__arg), trigtangent(__arg)], 0))
 
 
 def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtype: DType = float) -> Array:
@@ -4274,3 +4274,12 @@ class __implementations__:
             raise ValueError(f'expected a condition of length {length} but received {len(condition)}')
         indices, = numpy.nonzero(condition)
         return numpy.take(array, indices, axis)
+
+    @implements(numpy.concatenate)
+    def concatenate(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
+        return _Concatenate(__arrays, axis)
+
+    @implements(numpy.stack)
+    def stack(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
+        aligned = broadcast_arrays(*typecast_arrays(*__arrays))
+        return util.sum(kronecker(array, axis, len(aligned), i) for i, array in enumerate(aligned))

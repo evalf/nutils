@@ -1084,7 +1084,7 @@ class _Mul(_TensorialTopology):
 
     @property
     def f_coords(self) -> function.Array:
-        return function.concatenate([self.topo1.f_coords, self.topo2.f_coords])
+        return numpy.concatenate([self.topo1.f_coords, self.topo2.f_coords])
 
     @property
     def connectivity(self) -> Sequence[Sequence[int]]:

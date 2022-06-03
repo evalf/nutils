@@ -70,7 +70,7 @@ def main(nelems: int, etype: str, btype: str, degree: int, traction: float, maxr
     x, σxx = bezier.eval(['x_i', 'σ_00'] @ ns, **args)
     export.triplot('stressxx.png', x, σxx, tri=bezier.tri, hull=bezier.hull)
 
-    err = domain.integral(function.stack(['du_k du_k dV', '∇_j(du_i) ∇_j(du_i) dV'] @ ns), degree=max(degree, 3)*2).eval(**args)**.5
+    err = domain.integral(numpy.stack(['du_k du_k dV', '∇_j(du_i) ∇_j(du_i) dV'] @ ns), degree=max(degree, 3)*2).eval(**args)**.5
     treelog.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
     return err, cons['u'], args['u']

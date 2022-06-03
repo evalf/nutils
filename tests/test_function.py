@@ -360,8 +360,8 @@ _check('compress', lambda a: numpy.compress(numpy.array([False, True, False, Tru
 _check('get', lambda a: function.get(a, 1, 1), lambda a: numpy.take(a, 1, 1), INT(3, 4, 5))
 _check('scatter', lambda a: function.scatter(a, 3, [2, 0]), lambda a: numpy.stack([a[:, 1], numpy.zeros([4]), a[:, 0]], axis=1), INT(4, 2))
 _check('kronecker', lambda a: function.kronecker(a, 1, 3, 1), lambda a: numpy.stack([numpy.zeros_like(a), a, numpy.zeros_like(a)], axis=1), INT(4, 4))
-_check('concatenate', lambda a, b: function.concatenate([a, b], axis=1), lambda a, b: numpy.concatenate([a, b], axis=1), INT(4, 2, 1), INT(4, 3, 1))
-_check('stack', lambda a, b: function.stack([a, b], 1), lambda a, b: numpy.stack([a, b], 1), INT(4, 2), INT(4, 2))
+_check('concatenate', lambda a, b: numpy.concatenate([a, function.Array.cast(b)], axis=1), lambda a, b: numpy.concatenate([a, b], axis=1), INT(4, 2, 1), INT(4, 3, 1))
+_check('stack', lambda a, b: numpy.stack([a, function.Array.cast(b)], 1), lambda a, b: numpy.stack([a, b], 1), INT(4, 2), INT(4, 2))
 
 _check('Array_getitem_scalar', lambda a: function.Array.cast(a)[0], lambda a: a[0], INT(5, 3, 2))
 _check('Array_getitem_scalar_scalar', lambda a: function.Array.cast(a)[0, 1], lambda a: a[0, 1], INT(5, 3, 2))
@@ -1288,7 +1288,7 @@ class SurfaceGradient(TestCase):
                 refgeom = numpy.stack([y, z])
             x = 1
         # geometry describes a circle/sphere with curvature K
-        self.geom = (x/self.K) * function.stack(
+        self.geom = (x/self.K) * numpy.stack(
             (numpy.cos(y), numpy.sin(y)) if self.manifold.ndims == 1
             else (numpy.cos(y), numpy.sin(y) * numpy.cos(z), numpy.sin(y) * numpy.sin(z)))
         self.normal = function.normal(self.geom, refgeom=refgeom)
