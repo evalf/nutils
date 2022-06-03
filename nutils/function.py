@@ -249,7 +249,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
             else:
                 array = expand_dims(array, axis) if it is numpy.newaxis \
                     else _takeslice(array, it, axis) if isinstance(it, slice) \
-                    else take(array, it, axis)
+                    else numpy.take(array, it, axis)
                 axis += 1
         assert axis == array.ndim
         return array
@@ -2459,7 +2459,7 @@ def cross(__arg1: IntoArray, __arg2: IntoArray, axis: int = -1) -> Array:
     assert arg1.shape[axis] == 3
     i = Array.cast(types.frozenarray([1, 2, 0]))
     j = Array.cast(types.frozenarray([2, 0, 1]))
-    return take(arg1, i, axis) * take(arg2, j, axis) - take(arg2, i, axis) * take(arg1, j, axis)
+    return numpy.take(arg1, i, axis) * numpy.take(arg2, j, axis) - numpy.take(arg2, i, axis) * numpy.take(arg1, j, axis)
 
 
 def outer(arg1, arg2=None, axis=0):
@@ -2654,7 +2654,7 @@ def unravel(__array: IntoArray, axis: int, shape: Tuple[int, int]) -> Array:
     return _Transpose.from_end(unraveled, axis, axis+1)
 
 
-@implements(numpy.take)
+@_use_instead('numpy.take')
 def take(__array: IntoArray, __indices: IntoArray, axis: int) -> Array:
     '''Take elements from an array along an axis.
 
@@ -2715,10 +2715,7 @@ def get(__array: IntoArray, __axis: int, __index: IntoArray) -> Array:
     :func:`kronecker` : The complement operation.
     '''
 
-    array = Array.cast(__array)
-    axis = __axis
-    index = Array.cast(__index, dtype=int, ndim=0)
-    return take(array, index, axis)
+    return numpy.take(Array.cast(__array), Array.cast(__index, dtype=int, ndim=0), __axis)
 
 
 def _range(__length: int, __offset: int) -> Array:
@@ -2742,7 +2739,7 @@ def _takeslice(__array: IntoArray, __s: slice, __axis: int) -> Array:
         index = Array.cast(numpy.arange(*s.indices(int(n))))
     else:
         raise Exception('a non-unit slice requires a constant-length axis')
-    return take(array, index, axis)
+    return numpy.take(array, index, axis)
 
 
 def scatter(__array: IntoArray, length: int, indices: IntoArray) -> Array:
@@ -4253,3 +4250,27 @@ class __implementations__:
         trans = list(range(array.ndim))
         trans[axis1], trans[axis2] = trans[axis2], trans[axis1]
         return numpy.transpose(array, trans)
+
+    @implements(numpy.take)
+    def take(array: IntoArray, indices: IntoArray, axis: Optional[int] = None) -> Array:
+        array = Array.cast(array)
+        if axis is None:
+            array = numpy.ravel(array)
+            axis = 0
+        else:
+            axis = numeric.normdim(array.ndim, axis)
+        indices = _Wrapper.broadcasted_arrays(evaluable.NormDim, array.shape[axis], Array.cast(indices, dtype=int))
+        transposed = _Transpose.to_end(array, axis)
+        taken = _Wrapper(evaluable.Take, transposed, _WithoutPoints(indices), shape=(*transposed.shape[:-1], *indices.shape), dtype=array.dtype)
+        return _Transpose.from_end(taken, *range(axis, axis+indices.ndim))
+
+    @implements(numpy.compress)
+    def compress(condition: Sequence[bool], array: Array, axis: Optional[int] = None) -> Array:
+        length = array.size if axis is None else array.shape[axis]
+        if len(condition) != length:
+            # NOTE: we are a bit stricter here than numpy, which does not check
+            # the length of the condition but only whether the selected indices
+            # are within bounds.
+            raise ValueError(f'expected a condition of length {length} but received {len(condition)}')
+        indices, = numpy.nonzero(condition)
+        return numpy.take(array, indices, axis)
