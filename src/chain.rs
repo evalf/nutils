@@ -21,12 +21,14 @@ trait SequenceTransformation: Clone {
     fn increment_offset(&mut self, amount: Dim);
     /// Increment the offset of the coordinate transformation, if applicable.
     fn decrement_offset(&mut self, amount: Dim);
+    /// Map the index.
+    fn apply_index(&self, index: usize) -> usize;
     /// Map the index and coordinate of an element in the output sequence to
     /// the input sequence. The index is returned, the coordinate is adjusted
     /// in-place. If the coordinate dimension of the input sequence is larger
     /// than that of the output sequence, the [Operator::delta_dim()] last
     /// elements of the coordinate are discarded.
-    fn apply_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize;
+    fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize;
     /// Map the index and multiple coordinates of an element in the output
     /// sequence to the input sequence. The index is returned, the coordinates
     /// are adjusted in-place.
@@ -34,19 +36,19 @@ trait SequenceTransformation: Clone {
         let dim = dim as usize;
         let mut result_index = 0;
         for i in 0..coordinates.len() / dim {
-            result_index = self.apply_inplace(index, &mut coordinates[i * dim..(i + 1) * dim]);
+            result_index = self.apply_one_inplace(index, &mut coordinates[i * dim..(i + 1) * dim]);
         }
         result_index
     }
     /// Map the index and coordinate of an element in the output sequence to
     /// the input sequence.
-    fn apply(&self, index: usize, coordinate: &[f64]) -> (usize, Vec<f64>) {
+    fn apply_one(&self, index: usize, coordinate: &[f64]) -> (usize, Vec<f64>) {
         let delta_dim = self.delta_dim() as usize;
         let to_dim = coordinate.len() + delta_dim;
         let mut result = Vec::with_capacity(to_dim);
         result.extend_from_slice(coordinate);
         result.extend(iter::repeat(0.0).take(delta_dim));
-        (self.apply_inplace(index, &mut result), result)
+        (self.apply_one_inplace(index, &mut result), result)
     }
     /// Map the index and multiple coordinates of an element in the output
     /// sequence to the input sequence.
@@ -119,11 +121,19 @@ impl SequenceTransformation for Transpose {
     #[inline]
     fn decrement_offset(&mut self, _amount: Dim) {}
     #[inline]
-    fn apply_inplace(&self, index: usize, _coordinate: &mut [f64]) -> usize {
+    fn apply_index(&self, index: usize) -> usize {
         let low2 = index % self.len2;
         let low1 = (index / self.len2) % self.len1;
         let high = index / (self.len1 * self.len2);
         high * (self.len1 * self.len2) + low2 * self.len1 + low1
+    }
+    #[inline]
+    fn apply_one_inplace(&self, index: usize, _coordinate: &mut [f64]) -> usize {
+        self.apply_index(index)
+    }
+    #[inline]
+    fn apply_many_inplace(&self, index: usize, _coordinate: &mut [f64], _dim: Dim) -> usize {
+        self.apply_index(index)
     }
 }
 
@@ -164,11 +174,19 @@ impl SequenceTransformation for Take {
     #[inline]
     fn decrement_offset(&mut self, _amount: Dim) {}
     #[inline]
-    fn apply_inplace(&self, index: usize, _coordinate: &mut [f64]) -> usize {
+    fn apply_index(&self, index: usize) -> usize {
         let nindices = self.indices.len();
         let low = index % nindices;
         let high = index / nindices;
         high * self.len + self.indices[low]
+    }
+    #[inline]
+    fn apply_one_inplace(&self, index: usize, _coordinate: &mut [f64]) -> usize {
+        self.apply_index(index)
+    }
+    #[inline]
+    fn apply_many_inplace(&self, index: usize, _coordinate: &mut [f64], _dim: Dim) -> usize {
+        self.apply_index(index)
     }
 }
 
@@ -210,7 +228,11 @@ impl SequenceTransformation for Children {
         self.offset -= amount;
     }
     #[inline]
-    fn apply_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
+    fn apply_index(&self, index: usize) -> usize {
+        self.simplex.apply_child_index(index)
+    }
+    #[inline]
+    fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
         self.simplex
             .apply_child_inplace(index, &mut coordinate[self.offset as usize..])
     }
@@ -267,7 +289,11 @@ impl SequenceTransformation for Edges {
         self.offset -= amount;
     }
     #[inline]
-    fn apply_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
+    fn apply_index(&self, index: usize) -> usize {
+        self.simplex.apply_edge_index(index)
+    }
+    #[inline]
+    fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
         self.simplex
             .apply_edge_inplace(index, &mut coordinate[self.offset as usize..])
     }
@@ -326,7 +352,8 @@ impl UniformPoints {
             offset,
         }
     }
-    pub fn npoints(&self) -> usize {
+    #[inline]
+    pub const fn npoints(&self) -> usize {
         self.points.len() / self.point_dim as usize
     }
 }
@@ -338,7 +365,7 @@ impl SequenceTransformation for UniformPoints {
     }
     #[inline]
     fn len(&self, parent_len: usize) -> usize {
-        parent_len * (self.points.len() / self.point_dim as usize)
+        parent_len * self.npoints()
     }
     #[inline]
     fn increment_offset(&mut self, amount: Dim) {
@@ -348,17 +375,20 @@ impl SequenceTransformation for UniformPoints {
     fn decrement_offset(&mut self, amount: Dim) {
         self.offset -= amount;
     }
-    fn apply_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
+    #[inline]
+    fn apply_index(&self, index: usize) -> usize {
+        index / self.npoints()
+    }
+    fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
         let point_dim = self.point_dim as usize;
         let coordinate = &mut coordinate[self.offset as usize..];
         coordinate.copy_within(..coordinate.len() - point_dim, point_dim);
-        let npoints = self.points.len() / point_dim;
-        let ipoint = index % npoints;
+        let ipoint = index % self.npoints();
         let offset = ipoint as usize * point_dim;
         let points: &[f64] =
             unsafe { std::mem::transmute(&self.points[offset..offset + point_dim]) };
         coordinate[..point_dim].copy_from_slice(points);
-        index / npoints
+        index / self.npoints()
     }
 }
 
@@ -468,9 +498,10 @@ impl SequenceTransformation for Operator {
     dispatch! {fn len(&self, parent_len: usize) -> usize}
     dispatch! {fn increment_offset(&mut self, amount: Dim)}
     dispatch! {fn decrement_offset(&mut self, amount: Dim)}
-    dispatch! {fn apply_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize}
+    dispatch! {fn apply_index(&self, index: usize) -> usize}
+    dispatch! {fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize}
     dispatch! {fn apply_many_inplace(&self, index: usize, coordinates: &mut [f64], dim: Dim) -> usize}
-    dispatch! {fn apply(&self, index: usize, coordinate: &[f64]) -> (usize, Vec<f64>)}
+    dispatch! {fn apply_one(&self, index: usize, coordinate: &[f64]) -> (usize, Vec<f64>)}
     dispatch! {fn apply_many(&self, index: usize, coordinates: &[f64], dim: Dim) -> (usize, Vec<f64>)}
 }
 
@@ -615,8 +646,14 @@ impl Chain {
             }
             let heads_a = Chain::new(rev_a.iter().rev().cloned()).split_heads();
             let heads_b = Chain::new(rev_b.iter().rev().cloned()).split_heads();
-            let candidates: Vec<_> = heads_a.iter().filter_map(|(h, a)| heads_b.get(h).map(|b| (h, a, b))).collect();
-            if let Some((head, a, b)) = candidates.into_iter().min_by_key(|(_, a, b)| std::cmp::max(a.len(), b.len())) {
+            let candidates: Vec<_> = heads_a
+                .iter()
+                .filter_map(|(h, a)| heads_b.get(h).map(|b| (h, a, b)))
+                .collect();
+            if let Some((head, a, b)) = candidates
+                .into_iter()
+                .min_by_key(|(_, a, b)| std::cmp::max(a.len(), b.len()))
+            {
                 common.push(head.clone());
                 rev_a = a.clone();
                 rev_b = b.clone();
@@ -665,10 +702,16 @@ impl SequenceTransformation for Chain {
         }
     }
     #[inline]
-    fn apply_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
+    fn apply_index(&self, index: usize) -> usize {
         self.rev_operators
             .iter()
-            .fold(index, |index, op| op.apply_inplace(index, coordinate))
+            .fold(index, |index, op| op.apply_index(index))
+    }
+    #[inline]
+    fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
+        self.rev_operators
+            .iter()
+            .fold(index, |index, op| op.apply_one_inplace(index, coordinate))
     }
     #[inline]
     fn apply_many_inplace(&self, index: usize, coordinates: &mut [f64], dim: Dim) -> usize {
@@ -679,7 +722,105 @@ impl SequenceTransformation for Chain {
 }
 
 //#[derive(Debug, Clone)]
-//pub struct ConcatChain(Vec<(Chain, usize)>);
+//struct AbsoluteChains {
+//    tip_dim: Dim,
+//    delta_dim: Dim,
+//    chains: Vec<(usize, Chain)>,
+//}
+//
+//#[derive(Debug, Clone, PartialEq)]
+//enum NewAbsoluteChainsError {
+//    DeltaDimensionMismatch,
+//}
+//
+//impl std::error::Error for NewAbsoluteChainsError {}
+//
+//impl std::fmt::Display for NewAbsoluteChainsError {
+//    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//        std::fmt::Debug::fmt(self, f)
+//    }
+//}
+//
+//impl AbsoluteChains {
+//    pub fn new(
+//        tip_dim: Dim,
+//        delta_dim: Dim,
+//        chains: Vec<(usize, Chain)>,
+//    ) -> Result<Self, NewAbsoluteChainsError> {
+//        if chains
+//            .iter()
+//            .any(|(_, chain)| chain.delta_dim() != delta_dim)
+//        {
+//            Err(NewAbsoluteChainsError::DeltaDimensionMismatch)
+//        } else {
+//            Ok(Self {
+//                tip_dim,
+//                delta_dim,
+//                chains,
+//            })
+//        }
+//    }
+//    #[inline]
+//    pub fn len(&self) -> usize {
+//        self.chains.iter().map(|(len, _)| len).sum()
+//    }
+//    #[inline]
+//    pub fn root_dim(&self) -> Dim {
+//        self.tip_dim + self.delta_dim
+//    }
+//    #[inline]
+//    pub fn tip_dim(&self) -> Dim {
+//        self.tip_dim
+//    }
+//    fn get_chain(&self, mut index: usize) -> Option<(&Chain, usize)> {
+//        for (len, chain) in self.chains.iter() {
+//            if index < *len {
+//                return Some((&chain, index));
+//            }
+//            index -= len;
+//        }
+//        None
+//    }
+//    #[inline]
+//    pub fn apply_inplace(&self, index: usize, coordinate: &mut [f64]) -> Option<usize> {
+//        self.get_chain(index)
+//            .map(|(chain, index)| chain.apply_many_inplace(index, coordinate, self.root_dim()))
+//    }
+//    #[inline]
+//    pub fn apply(&self, index: usize, coordinates: &[f64]) -> Option<(usize, Vec<f64>)> {
+//        self.get_chain(index)
+//            .map(|(chain, index)| chain.apply_many(index, coordinates, self.tip_dim()))
+//    }
+//}
+//
+//pub struct AbsoluteChain {
+//    tip_dim: Dim,
+//    delta_dim: Dim,
+//    tip_len: usize,
+//    chain: Chain,
+//}
+//
+//pub struct RelativeChain {
+//    tip_dim: Dim,
+//    delta_dim: Dim,
+//    order: Vec<usize>,
+//    chains: Vec<usize, AbsoluteChain>,
+//}
+//
+//impl RelativeChain {
+//    pub fn get_chain(&self, index: usize) -> Option<(Chain, usize, usize)> {
+//        for (offset, indices, 
+//    pub fn apply_inplace(&self, index: usize, coordinates: &mut [f64]) -> Option<usize> {
+//        self.get_chain(index).map(|(chain, offset, index)| {
+//            offset + chain.apply_many_inplace(index, coordinates, self.tip_dim())
+//        })
+//    }
+//    pub fn apply(&self, index: usize, coordinates: &[f64]) -> Option<(usize, Vec<f64>)> {
+//        self.get_chain(index).map(|(chain, offset, index)| {
+//            offset + chain.apply_many(index, coordinates, self.tip_dim())
+//        })
+//    }
+//}
 
 #[derive(Debug, Clone)]
 pub struct Topology {
@@ -750,7 +891,7 @@ mod tests {
             for i in ic.len()..oc.len() {
                 work[i] = 0.0;
             }
-            assert_eq!($op.apply_inplace($ii, &mut work), $oi);
+            assert_eq!($op.apply_one_inplace($ii, &mut work), $oi);
             assert_abs_diff_eq!(work[..], oc[..]);
         }};
     }
@@ -808,7 +949,7 @@ mod tests {
             for j in 0..2 {
                 for k in 0..3 {
                     assert_eq!(
-                        op.apply((i * 2 + j) * 3 + k, &[]),
+                        op.apply_one((i * 2 + j) * 3 + k, &[]),
                         ((i * 3 + k) * 2 + j, vec![])
                     );
                 }
@@ -899,8 +1040,8 @@ mod tests {
             for i in 0..topo1.len {
                 let ielem = i / (npoints / nelems);
                 assert_eq!(
-                    topo1.transforms.apply_inplace(i, &mut coord1),
-                    topo2.transforms.apply_inplace(i, &mut coord2),
+                    topo1.transforms.apply_one_inplace(i, &mut coord1),
+                    topo2.transforms.apply_one_inplace(i, &mut coord2),
                     "topo1 and topo2 map element {ielem} to different root elements"
                 );
                 assert_abs_diff_eq!(coord1[..], coord2[..]);
@@ -1060,14 +1201,24 @@ mod tests {
 
     #[test]
     fn remove_common_prefix() {
-        let a = Chain::new([Operator::new_children(Line, 0), Operator::new_children(Line, 0)]);
+        let a = Chain::new([
+            Operator::new_children(Line, 0),
+            Operator::new_children(Line, 0),
+        ]);
         let b = Chain::new([Operator::new_edges(Line, 0)]);
         assert_eq!(
             a.remove_common_prefix(&b),
             (
-                Chain::new([Operator::new_children(Line, 0), Operator::new_children(Line, 0)]),
+                Chain::new([
+                    Operator::new_children(Line, 0),
+                    Operator::new_children(Line, 0)
+                ]),
                 Chain::new([]),
-                Chain::new([Operator::new_edges(Line, 0), Operator::new_take([2, 1], 4), Operator::new_take([2, 1], 4)]),
+                Chain::new([
+                    Operator::new_edges(Line, 0),
+                    Operator::new_take([2, 1], 4),
+                    Operator::new_take([2, 1], 4)
+                ]),
             )
         );
     }

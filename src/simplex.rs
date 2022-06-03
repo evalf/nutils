@@ -117,6 +117,12 @@ impl Simplex {
             }
         }
     }
+    pub const fn apply_child_index(&self, index: usize) -> usize {
+        match self {
+            Self::Line => index / 2,
+            Self::Triangle => index / 4,
+        }
+    }
     /// Transform the given edge `coordinate` for edge `index` to this parent
     /// simplex in-place. The returned index is the index of the parent in an
     /// infinite, uniform sequence.
@@ -146,6 +152,12 @@ impl Simplex {
                 }
                 index / 3
             }
+        }
+    }
+    pub const fn apply_edge_index(&self, index: usize) -> usize {
+        match self {
+            Self::Line => index / 2,
+            Self::Triangle => index / 3,
         }
     }
 }
