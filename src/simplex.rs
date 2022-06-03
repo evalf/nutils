@@ -1,4 +1,4 @@
-use crate::types::{Dim, Index};
+use crate::types::Dim;
 
 /// Simplex.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -23,7 +23,7 @@ impl Simplex {
     }
     /// Returns the number of edges of the simplex.
     #[inline]
-    pub const fn nedges(&self) -> Index {
+    pub const fn nedges(&self) -> usize {
         match self {
             Self::Line => 2,
             Self::Triangle => 3,
@@ -31,27 +31,27 @@ impl Simplex {
     }
     /// Returns the number of children of the simplex.
     #[inline]
-    pub const fn nchildren(&self) -> Index {
+    pub const fn nchildren(&self) -> usize {
         match self {
             Self::Line => 2,
             Self::Triangle => 4,
         }
     }
 
-    const LINE_SWAP_EDGES_CHILDREN_MAP: [Index; 2] = [2, 1];
-    const TRIANGLE_SWAP_EDGES_CHILDREN_MAP: [Index; 6] = [3, 6, 1, 7, 2, 5];
+    const LINE_SWAP_EDGES_CHILDREN_MAP: [usize; 2] = [2, 1];
+    const TRIANGLE_SWAP_EDGES_CHILDREN_MAP: [usize; 6] = [3, 6, 1, 7, 2, 5];
 
     /// Returns an array of indices of edges of children corresponding to children of edges.
     #[inline]
-    pub const fn swap_edges_children_map(&self) -> &'static [Index] {
+    pub const fn swap_edges_children_map(&self) -> &'static [usize] {
         match self {
             Self::Line => &Self::LINE_SWAP_EDGES_CHILDREN_MAP,
             Self::Triangle => &Self::TRIANGLE_SWAP_EDGES_CHILDREN_MAP,
         }
     }
 
-    const LINE_CONNECTIVITY: [Option<Index>; 4] = [Some(3), None, None, Some(0)];
-    const TRIANGLE_CONNECTIVITY: [Option<Index>; 12] = [
+    const LINE_CONNECTIVITY: [Option<usize>; 4] = [Some(3), None, None, Some(0)];
+    const TRIANGLE_CONNECTIVITY: [Option<usize>; 12] = [
         Some(11),
         None,
         None,
@@ -69,7 +69,7 @@ impl Simplex {
     /// Returns an array of indices of opposite edges of children, or `None` if
     /// an edge lies on the boundary of the simplex.
     #[inline]
-    pub const fn connectivity(&self) -> &'static [Option<Index>] {
+    pub const fn connectivity(&self) -> &'static [Option<usize>] {
         match self {
             Self::Line => &Self::LINE_CONNECTIVITY,
             Self::Triangle => &Self::TRIANGLE_CONNECTIVITY,
@@ -91,7 +91,7 @@ impl Simplex {
     /// Transform the given child `coordinate` for child `index` to this parent
     /// simplex in-place. The returned index is the index of the parent in an
     /// infinite, uniform sequence.
-    pub fn apply_child_inplace(&self, index: Index, coordinate: &mut [f64]) -> Index {
+    pub fn apply_child_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
         match self {
             Self::Line => {
                 coordinate[0] = 0.5 * (coordinate[0] + (index % 2) as f64);
@@ -120,7 +120,7 @@ impl Simplex {
     /// Transform the given edge `coordinate` for edge `index` to this parent
     /// simplex in-place. The returned index is the index of the parent in an
     /// infinite, uniform sequence.
-    pub fn apply_edge_inplace(&self, index: Index, coordinate: &mut [f64]) -> Index {
+    pub fn apply_edge_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
         coordinate.copy_within(
             self.edge_dim() as usize..coordinate.len() - 1,
             self.dim() as usize,
@@ -248,7 +248,7 @@ mod tests {
         for (i, j) in Line.swap_edges_children_map().iter().cloned().enumerate() {
             let mut x = [0.5];
             let mut y = [0.5];
-            Line.apply_edge_inplace(i as Index, &mut x);
+            Line.apply_edge_inplace(i, &mut x);
             Line.apply_child_inplace(Line.apply_edge_inplace(j, &mut y), &mut y);
             assert_abs_diff_eq!(x[..], y[..]);
         }
@@ -264,7 +264,7 @@ mod tests {
         {
             let mut x = [0.5, 0.5];
             let mut y = [0.5, 0.5];
-            Triangle.apply_edge_inplace(Line.apply_child_inplace(i as Index, &mut x), &mut x);
+            Triangle.apply_edge_inplace(Line.apply_child_inplace(i, &mut x), &mut x);
             Triangle.apply_child_inplace(Triangle.apply_edge_inplace(j, &mut y), &mut y);
             assert_abs_diff_eq!(x[..], y[..]);
         }
@@ -276,7 +276,7 @@ mod tests {
             if let Some(j) = j {
                 let mut x = [0.5];
                 let mut y = [0.5];
-                Line.apply_child_inplace(Line.apply_edge_inplace(i as Index, &mut x), &mut x);
+                Line.apply_child_inplace(Line.apply_edge_inplace(i, &mut x), &mut x);
                 Line.apply_child_inplace(Line.apply_edge_inplace(j, &mut y), &mut y);
                 assert_abs_diff_eq!(x[..], y[..]);
             }
@@ -287,7 +287,6 @@ mod tests {
     fn triangle_connectivity() {
         for (i, j) in Triangle.connectivity().iter().cloned().enumerate() {
             if let Some(j) = j {
-                let i = i as Index;
                 let mut x = [0.5, 0.5];
                 let mut y = [0.5, 0.5];
                 Triangle.apply_child_inplace(Triangle.apply_edge_inplace(i, &mut x), &mut x);

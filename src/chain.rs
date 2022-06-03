@@ -1,5 +1,5 @@
 use crate::simplex::Simplex;
-use crate::types::{Dim, Index};
+use crate::types::Dim;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::iter;
@@ -16,7 +16,7 @@ trait SequenceTransformation: Clone {
     /// Returns the difference between the dimension of the input and the output sequence.
     fn delta_dim(&self) -> Dim;
     /// Returns the length of the output sequence given the length of the input sequence.
-    fn len(&self, parent_len: Index) -> Index;
+    fn len(&self, parent_len: usize) -> usize;
     /// Increment the offset of the coordinate transformation, if applicable.
     fn increment_offset(&mut self, amount: Dim);
     /// Increment the offset of the coordinate transformation, if applicable.
@@ -26,11 +26,11 @@ trait SequenceTransformation: Clone {
     /// in-place. If the coordinate dimension of the input sequence is larger
     /// than that of the output sequence, the [Operator::delta_dim()] last
     /// elements of the coordinate are discarded.
-    fn apply_inplace(&self, index: Index, coordinate: &mut [f64]) -> Index;
+    fn apply_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize;
     /// Map the index and multiple coordinates of an element in the output
     /// sequence to the input sequence. The index is returned, the coordinates
     /// are adjusted in-place.
-    fn apply_many_inplace(&self, index: Index, coordinates: &mut [f64], dim: Dim) -> Index {
+    fn apply_many_inplace(&self, index: usize, coordinates: &mut [f64], dim: Dim) -> usize {
         let dim = dim as usize;
         let mut result_index = 0;
         for i in 0..coordinates.len() / dim {
@@ -40,7 +40,7 @@ trait SequenceTransformation: Clone {
     }
     /// Map the index and coordinate of an element in the output sequence to
     /// the input sequence.
-    fn apply(&self, index: Index, coordinate: &[f64]) -> (Index, Vec<f64>) {
+    fn apply(&self, index: usize, coordinate: &[f64]) -> (usize, Vec<f64>) {
         let delta_dim = self.delta_dim() as usize;
         let to_dim = coordinate.len() + delta_dim;
         let mut result = Vec::with_capacity(to_dim);
@@ -50,7 +50,7 @@ trait SequenceTransformation: Clone {
     }
     /// Map the index and multiple coordinates of an element in the output
     /// sequence to the input sequence.
-    fn apply_many(&self, index: Index, coordinates: &[f64], dim: Dim) -> (Index, Vec<f64>) {
+    fn apply_many(&self, index: usize, coordinates: &[f64], dim: Dim) -> (usize, Vec<f64>) {
         assert_eq!(coordinates.len() % dim as usize, 0);
         let ncoords = coordinates.len() / dim as usize;
         let delta_dim = self.delta_dim();
@@ -67,8 +67,8 @@ trait SequenceTransformation: Clone {
 
 #[derive(Debug, Clone, PartialEq)]
 enum OperatorKind {
-    Index(Index, Index),
-    Coordinate(Dim, Dim, Dim, Index),
+    Index(usize, usize),
+    Coordinate(Dim, Dim, Dim, usize),
 }
 
 trait DescribeOperator {
@@ -94,13 +94,13 @@ trait DescribeOperator {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Transpose {
-    len1: Index,
-    len2: Index,
+    len1: usize,
+    len2: usize,
 }
 
 impl Transpose {
     #[inline]
-    pub fn new(len1: Index, len2: Index) -> Self {
+    pub fn new(len1: usize, len2: usize) -> Self {
         Self { len1, len2 }
     }
 }
@@ -111,7 +111,7 @@ impl SequenceTransformation for Transpose {
         0
     }
     #[inline]
-    fn len(&self, parent_len: Index) -> Index {
+    fn len(&self, parent_len: usize) -> usize {
         parent_len
     }
     #[inline]
@@ -119,7 +119,7 @@ impl SequenceTransformation for Transpose {
     #[inline]
     fn decrement_offset(&mut self, _amount: Dim) {}
     #[inline]
-    fn apply_inplace(&self, index: Index, _coordinate: &mut [f64]) -> Index {
+    fn apply_inplace(&self, index: usize, _coordinate: &mut [f64]) -> usize {
         let low2 = index % self.len2;
         let low1 = (index / self.len2) % self.len1;
         let high = index / (self.len1 * self.len2);
@@ -136,13 +136,13 @@ impl DescribeOperator for Transpose {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Take {
-    indices: Box<[Index]>,
-    len: Index,
+    indices: Box<[usize]>,
+    len: usize,
 }
 
 impl Take {
     #[inline]
-    pub fn new(indices: impl Into<Box<[Index]>>, len: Index) -> Self {
+    pub fn new(indices: impl Into<Box<[usize]>>, len: usize) -> Self {
         Self {
             indices: indices.into(),
             len,
@@ -156,26 +156,26 @@ impl SequenceTransformation for Take {
         0
     }
     #[inline]
-    fn len(&self, parent_len: Index) -> Index {
-        (parent_len / self.len) * self.indices.len() as Index
+    fn len(&self, parent_len: usize) -> usize {
+        (parent_len / self.len) * self.indices.len()
     }
     #[inline]
     fn increment_offset(&mut self, _amount: Dim) {}
     #[inline]
     fn decrement_offset(&mut self, _amount: Dim) {}
     #[inline]
-    fn apply_inplace(&self, index: Index, _coordinate: &mut [f64]) -> Index {
-        let nindices = self.indices.len() as Index;
+    fn apply_inplace(&self, index: usize, _coordinate: &mut [f64]) -> usize {
+        let nindices = self.indices.len();
         let low = index % nindices;
         let high = index / nindices;
-        high * self.len + self.indices[low as usize]
+        high * self.len + self.indices[low]
     }
 }
 
 impl DescribeOperator for Take {
     #[inline]
     fn operator_kind(&self) -> OperatorKind {
-        OperatorKind::Index(self.len, self.indices.len() as Index)
+        OperatorKind::Index(self.len, self.indices.len())
     }
 }
 
@@ -198,7 +198,7 @@ impl SequenceTransformation for Children {
         0
     }
     #[inline]
-    fn len(&self, parent_len: Index) -> Index {
+    fn len(&self, parent_len: usize) -> usize {
         parent_len * self.simplex.nchildren()
     }
     #[inline]
@@ -210,7 +210,7 @@ impl SequenceTransformation for Children {
         self.offset -= amount;
     }
     #[inline]
-    fn apply_inplace(&self, index: Index, coordinate: &mut [f64]) -> Index {
+    fn apply_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
         self.simplex
             .apply_child_inplace(index, &mut coordinate[self.offset as usize..])
     }
@@ -255,7 +255,7 @@ impl SequenceTransformation for Edges {
         1
     }
     #[inline]
-    fn len(&self, parent_len: Index) -> Index {
+    fn len(&self, parent_len: usize) -> usize {
         parent_len * self.simplex.nedges()
     }
     #[inline]
@@ -267,7 +267,7 @@ impl SequenceTransformation for Edges {
         self.offset -= amount;
     }
     #[inline]
-    fn apply_inplace(&self, index: Index, coordinate: &mut [f64]) -> Index {
+    fn apply_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
         self.simplex
             .apply_edge_inplace(index, &mut coordinate[self.offset as usize..])
     }
@@ -326,8 +326,8 @@ impl UniformPoints {
             offset,
         }
     }
-    pub fn npoints(&self) -> Index {
-        (self.points.len() / self.point_dim as usize) as Index
+    pub fn npoints(&self) -> usize {
+        self.points.len() / self.point_dim as usize
     }
 }
 
@@ -337,8 +337,8 @@ impl SequenceTransformation for UniformPoints {
         self.point_dim
     }
     #[inline]
-    fn len(&self, parent_len: Index) -> Index {
-        parent_len * (self.points.len() as Index / self.point_dim as Index)
+    fn len(&self, parent_len: usize) -> usize {
+        parent_len * (self.points.len() / self.point_dim as usize)
     }
     #[inline]
     fn increment_offset(&mut self, amount: Dim) {
@@ -348,11 +348,11 @@ impl SequenceTransformation for UniformPoints {
     fn decrement_offset(&mut self, amount: Dim) {
         self.offset -= amount;
     }
-    fn apply_inplace(&self, index: Index, coordinate: &mut [f64]) -> Index {
+    fn apply_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
         let point_dim = self.point_dim as usize;
         let coordinate = &mut coordinate[self.offset as usize..];
         coordinate.copy_within(..coordinate.len() - point_dim, point_dim);
-        let npoints = (self.points.len() / point_dim) as Index;
+        let npoints = self.points.len() / point_dim;
         let ipoint = index % npoints;
         let offset = ipoint as usize * point_dim;
         let points: &[f64] =
@@ -411,11 +411,11 @@ impl_from_for_operator! {Transpose, Take, Children, Edges, UniformPoints}
 
 impl Operator {
     /// Construct a new operator that transposes a sequence of elements.
-    pub fn new_transpose(len1: Index, len2: Index) -> Self {
+    pub fn new_transpose(len1: usize, len2: usize) -> Self {
         Transpose::new(len1, len2).into()
     }
     /// Construct a new operator that takes a subset of a sequence of elements.
-    pub fn new_take(indices: impl Into<Box<[Index]>>, len: Index) -> Self {
+    pub fn new_take(indices: impl Into<Box<[usize]>>, len: usize) -> Self {
         Take::new(indices, len).into()
     }
     /// Construct a new operator that maps a sequence of elements to its children.
@@ -465,13 +465,13 @@ macro_rules! dispatch {
 
 impl SequenceTransformation for Operator {
     dispatch! {fn delta_dim(&self) -> Dim}
-    dispatch! {fn len(&self, parent_len: Index) -> Index}
+    dispatch! {fn len(&self, parent_len: usize) -> usize}
     dispatch! {fn increment_offset(&mut self, amount: Dim)}
     dispatch! {fn decrement_offset(&mut self, amount: Dim)}
-    dispatch! {fn apply_inplace(&self, index: Index, coordinate: &mut [f64]) -> Index}
-    dispatch! {fn apply_many_inplace(&self, index: Index, coordinates: &mut [f64], dim: Dim) -> Index}
-    dispatch! {fn apply(&self, index: Index, coordinate: &[f64]) -> (Index, Vec<f64>)}
-    dispatch! {fn apply_many(&self, index: Index, coordinates: &[f64], dim: Dim) -> (Index, Vec<f64>)}
+    dispatch! {fn apply_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize}
+    dispatch! {fn apply_many_inplace(&self, index: usize, coordinates: &mut [f64], dim: Dim) -> usize}
+    dispatch! {fn apply(&self, index: usize, coordinate: &[f64]) -> (usize, Vec<f64>)}
+    dispatch! {fn apply_many(&self, index: usize, coordinates: &[f64], dim: Dim) -> (usize, Vec<f64>)}
 }
 
 impl DescribeOperator for Operator {
@@ -647,7 +647,7 @@ impl SequenceTransformation for Chain {
         self.rev_operators.iter().map(|op| op.delta_dim()).sum()
     }
     #[inline]
-    fn len(&self, parent_len: Index) -> Index {
+    fn len(&self, parent_len: usize) -> usize {
         self.rev_operators
             .iter()
             .rfold(parent_len, |len, op| op.len(len))
@@ -665,13 +665,13 @@ impl SequenceTransformation for Chain {
         }
     }
     #[inline]
-    fn apply_inplace(&self, index: Index, coordinate: &mut [f64]) -> Index {
+    fn apply_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
         self.rev_operators
             .iter()
             .fold(index, |index, op| op.apply_inplace(index, coordinate))
     }
     #[inline]
-    fn apply_many_inplace(&self, index: Index, coordinates: &mut [f64], dim: Dim) -> Index {
+    fn apply_many_inplace(&self, index: usize, coordinates: &mut [f64], dim: Dim) -> usize {
         self.rev_operators.iter().fold(index, |index, op| {
             op.apply_many_inplace(index, coordinates, dim)
         })
@@ -679,18 +679,18 @@ impl SequenceTransformation for Chain {
 }
 
 //#[derive(Debug, Clone)]
-//pub struct ConcatChain(Vec<(Chain, Index)>);
+//pub struct ConcatChain(Vec<(Chain, usize)>);
 
 #[derive(Debug, Clone)]
 pub struct Topology {
     transforms: Chain,
     dim: Dim,
-    root_len: Index,
-    len: Index,
+    root_len: usize,
+    len: usize,
 }
 
 impl Topology {
-    pub fn new(dim: Dim, len: Index) -> Self {
+    pub fn new(dim: Dim, len: usize) -> Self {
         Self {
             transforms: Chain::new([]),
             dim,
