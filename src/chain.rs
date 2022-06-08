@@ -5,24 +5,17 @@ use std::collections::BTreeMap;
 use std::iter;
 use std::ops::Mul;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Shape {
-    Point,
-    Simplex(Simplex),
-    Other,
-}
-
-trait SequenceTransformation: Clone {
+pub(crate) trait UnsizedSequence: Clone {
     /// Returns the difference between the dimension of the input and the output sequence.
     fn delta_dim(&self) -> Dim;
-    /// Returns the length of the output sequence given the length of the input sequence.
-    fn len(&self, parent_len: usize) -> usize;
-    /// Increment the offset of the coordinate transformation, if applicable.
+    fn delta_len(&self) -> (usize, usize);
     fn increment_offset(&mut self, amount: Dim);
     /// Increment the offset of the coordinate transformation, if applicable.
     fn decrement_offset(&mut self, amount: Dim);
     /// Map the index.
     fn apply_index(&self, index: usize) -> usize;
+    /// Returns all indices that map to the given indices. TODO: examples with take and children?
+    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize>;
     /// Map the index and coordinate of an element in the output sequence to
     /// the input sequence. The index is returned, the coordinate is adjusted
     /// in-place. If the coordinate dimension of the input sequence is larger
@@ -59,18 +52,18 @@ trait SequenceTransformation: Clone {
         let to_dim = dim + delta_dim;
         let mut result = Vec::with_capacity(ncoords * to_dim as usize);
         for coord in coordinates.chunks(dim as usize) {
-            result.extend_from_slice(&coord);
+            result.extend_from_slice(coord);
             result.extend(iter::repeat(0.0).take(delta_dim as usize));
         }
         (self.apply_many_inplace(index, &mut result, to_dim), result)
     }
-    //fn shape(&self, shape: Shape, offset: Dim) -> (Shape, Dim);
 }
 
 #[derive(Debug, Clone, PartialEq)]
 enum OperatorKind {
     Index(usize, usize),
     Coordinate(Dim, Dim, Dim, usize),
+    Other,
 }
 
 trait DescribeOperator {
@@ -95,6 +88,54 @@ trait DescribeOperator {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Offset(usize);
+
+impl Offset {
+    #[inline]
+    pub fn new(offset: usize) -> Self {
+        Self(offset)
+    }
+}
+
+impl UnsizedSequence for Offset {
+    #[inline]
+    fn delta_dim(&self) -> Dim {
+        0
+    }
+    #[inline]
+    fn delta_len(&self) -> (usize, usize) {
+        (1, 1)
+    }
+    #[inline]
+    fn increment_offset(&mut self, _amount: Dim) {}
+    #[inline]
+    fn decrement_offset(&mut self, _amount: Dim) {}
+    #[inline]
+    fn apply_index(&self, index: usize) -> usize {
+        index + self.0
+    }
+    #[inline]
+    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+        indices.iter().filter_map(|i| i.checked_sub(self.0)).collect()
+    }
+    #[inline]
+    fn apply_one_inplace(&self, index: usize, _coordinate: &mut [f64]) -> usize {
+        self.apply_index(index)
+    }
+    #[inline]
+    fn apply_many_inplace(&self, index: usize, _coordinate: &mut [f64], _dim: Dim) -> usize {
+        self.apply_index(index)
+    }
+}
+
+impl DescribeOperator for Offset {
+    #[inline]
+    fn operator_kind(&self) -> OperatorKind {
+        OperatorKind::Other
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Transpose {
     len1: usize,
     len2: usize,
@@ -107,14 +148,14 @@ impl Transpose {
     }
 }
 
-impl SequenceTransformation for Transpose {
+impl UnsizedSequence for Transpose {
     #[inline]
     fn delta_dim(&self) -> Dim {
         0
     }
     #[inline]
-    fn len(&self, parent_len: usize) -> usize {
-        parent_len
+    fn delta_len(&self) -> (usize, usize) {
+        (1, 1)
     }
     #[inline]
     fn increment_offset(&mut self, _amount: Dim) {}
@@ -123,9 +164,20 @@ impl SequenceTransformation for Transpose {
     #[inline]
     fn apply_index(&self, index: usize) -> usize {
         let low2 = index % self.len2;
-        let low1 = (index / self.len2) % self.len1;
-        let high = index / (self.len1 * self.len2);
-        high * (self.len1 * self.len2) + low2 * self.len1 + low1
+        let index = index / self.len2;
+        let low1 = index % self.len1;
+        let index = index / self.len1;
+        index * (self.len1 * self.len2) + low2 * self.len1 + low1
+    }
+    #[inline]
+    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+        indices.iter().map(|index| {
+            let low1 = index % self.len1;
+            let index = index / self.len1;
+            let low2 = index % self.len2;
+            let index = index / self.len2;
+            index * (self.len1 * self.len2) + low1 * self.len2 + low2
+        }).collect()
     }
     #[inline]
     fn apply_one_inplace(&self, index: usize, _coordinate: &mut [f64]) -> usize {
@@ -144,6 +196,8 @@ impl DescribeOperator for Transpose {
     }
 }
 
+// TODO: add StrictMonotonicIncreasingTake
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Take {
     indices: Box<[usize]>,
@@ -160,14 +214,14 @@ impl Take {
     }
 }
 
-impl SequenceTransformation for Take {
+impl UnsizedSequence for Take {
     #[inline]
     fn delta_dim(&self) -> Dim {
         0
     }
     #[inline]
-    fn len(&self, parent_len: usize) -> usize {
-        (parent_len / self.len) * self.indices.len()
+    fn delta_len(&self) -> (usize, usize) {
+        (self.indices.len(), self.len)
     }
     #[inline]
     fn increment_offset(&mut self, _amount: Dim) {}
@@ -179,6 +233,14 @@ impl SequenceTransformation for Take {
         let low = index % nindices;
         let high = index / nindices;
         high * self.len + self.indices[low]
+    }
+    #[inline]
+    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+        indices.iter().filter_map(|index| {
+            let low = index % self.len;
+            let high = index / self.len;
+            self.indices.iter().position(|i| *i == low).map(|i| i + high * self.indices.len())
+        }).collect()
     }
     #[inline]
     fn apply_one_inplace(&self, index: usize, _coordinate: &mut [f64]) -> usize {
@@ -210,14 +272,14 @@ impl Children {
     }
 }
 
-impl SequenceTransformation for Children {
+impl UnsizedSequence for Children {
     #[inline]
     fn delta_dim(&self) -> Dim {
         0
     }
     #[inline]
-    fn len(&self, parent_len: usize) -> usize {
-        parent_len * self.simplex.nchildren()
+    fn delta_len(&self) -> (usize, usize) {
+        (self.simplex.nchildren(), 1)
     }
     #[inline]
     fn increment_offset(&mut self, amount: Dim) {
@@ -230,6 +292,10 @@ impl SequenceTransformation for Children {
     #[inline]
     fn apply_index(&self, index: usize) -> usize {
         self.simplex.apply_child_index(index)
+    }
+    #[inline]
+    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+        self.simplex.unapply_child_indices(indices)
     }
     #[inline]
     fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
@@ -271,14 +337,14 @@ impl Edges {
     }
 }
 
-impl SequenceTransformation for Edges {
+impl UnsizedSequence for Edges {
     #[inline]
     fn delta_dim(&self) -> Dim {
         1
     }
     #[inline]
-    fn len(&self, parent_len: usize) -> usize {
-        parent_len * self.simplex.nedges()
+    fn delta_len(&self) -> (usize, usize) {
+        (self.simplex.nedges(), 1)
     }
     #[inline]
     fn increment_offset(&mut self, amount: Dim) {
@@ -291,6 +357,10 @@ impl SequenceTransformation for Edges {
     #[inline]
     fn apply_index(&self, index: usize) -> usize {
         self.simplex.apply_edge_index(index)
+    }
+    #[inline]
+    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+        self.simplex.unapply_edge_indices(indices)
     }
     #[inline]
     fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
@@ -319,11 +389,17 @@ impl DescribeOperator for Edges {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(transparent)]
 struct FiniteF64(pub f64);
 
 impl Eq for FiniteF64 {}
+
+impl PartialOrd for FiniteF64 {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
 
 impl Ord for FiniteF64 {
     fn cmp(&self, other: &Self) -> Ordering {
@@ -358,14 +434,14 @@ impl UniformPoints {
     }
 }
 
-impl SequenceTransformation for UniformPoints {
+impl UnsizedSequence for UniformPoints {
     #[inline]
     fn delta_dim(&self) -> Dim {
         self.point_dim
     }
     #[inline]
-    fn len(&self, parent_len: usize) -> usize {
-        parent_len * self.npoints()
+    fn delta_len(&self) -> (usize, usize) {
+        (self.npoints(), 1)
     }
     #[inline]
     fn increment_offset(&mut self, amount: Dim) {
@@ -378,6 +454,16 @@ impl SequenceTransformation for UniformPoints {
     #[inline]
     fn apply_index(&self, index: usize) -> usize {
         index / self.npoints()
+    }
+    #[inline]
+    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+        let mut point_indices = Vec::with_capacity(indices.len() * self.npoints());
+        for index in indices.iter() {
+            for ipoint in 0..self.npoints() {
+                point_indices.push(index * self.npoints() + ipoint);
+            }
+        }
+        point_indices
     }
     fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
         let point_dim = self.point_dim as usize;
@@ -412,6 +498,7 @@ impl DescribeOperator for UniformPoints {
 /// and the input sequence is assumed to be a multiple of the chunk size long.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Operator {
+    Offset(Offset),
     /// The transpose of a sequence: the input sequence is reshaped to `(_,
     /// len1, len2)`, the last two axes are swapped and the result is
     /// flattened.
@@ -437,9 +524,12 @@ macro_rules! impl_from_for_operator {
     )*}
 }
 
-impl_from_for_operator! {Transpose, Take, Children, Edges, UniformPoints}
+impl_from_for_operator! {Offset, Transpose, Take, Children, Edges, UniformPoints}
 
 impl Operator {
+    pub fn new_offset(offset: usize) -> Self {
+        Offset::new(offset).into()
+    }
     /// Construct a new operator that transposes a sequence of elements.
     pub fn new_transpose(len1: usize, len2: usize) -> Self {
         Transpose::new(len1, len2).into()
@@ -471,6 +561,7 @@ macro_rules! dispatch {
         #[inline]
         $vis fn $fn(&$self $(, $arg: $ty)*) $($ret)* {
             match $self {
+                Operator::Offset(var) => var.$fn($($arg),*),
                 Operator::Transpose(var) => var.$fn($($arg),*),
                 Operator::Take(var) => var.$fn($($arg),*),
                 Operator::Children(var) => var.$fn($($arg),*),
@@ -483,6 +574,7 @@ macro_rules! dispatch {
         #[inline]
         $vis fn $fn(&mut $self $(, $arg: $ty)*) $($ret)* {
             match $self {
+                Operator::Offset(var) => var.$fn($($arg),*),
                 Operator::Transpose(var) => var.$fn($($arg),*),
                 Operator::Take(var) => var.$fn($($arg),*),
                 Operator::Children(var) => var.$fn($($arg),*),
@@ -493,12 +585,13 @@ macro_rules! dispatch {
     };
 }
 
-impl SequenceTransformation for Operator {
+impl UnsizedSequence for Operator {
     dispatch! {fn delta_dim(&self) -> Dim}
-    dispatch! {fn len(&self, parent_len: usize) -> usize}
+    dispatch! {fn delta_len(&self) -> (usize, usize)}
     dispatch! {fn increment_offset(&mut self, amount: Dim)}
     dispatch! {fn decrement_offset(&mut self, amount: Dim)}
     dispatch! {fn apply_index(&self, index: usize) -> usize}
+    dispatch! {fn unapply_indices(&self, indices: &[usize]) -> Vec<usize>}
     dispatch! {fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize}
     dispatch! {fn apply_many_inplace(&self, index: usize, coordinates: &mut [f64], dim: Dim) -> usize}
     dispatch! {fn apply_one(&self, index: usize, coordinate: &[f64]) -> (usize, Vec<f64>)}
@@ -519,8 +612,8 @@ impl std::fmt::Debug for Operator {
 
 fn swap<L, R>(l: &L, r: &mut R) -> Option<Vec<Operator>>
 where
-    L: DescribeOperator + SequenceTransformation + Into<Operator>,
-    R: DescribeOperator + SequenceTransformation,
+    L: DescribeOperator + UnsizedSequence + Into<Operator>,
+    R: DescribeOperator + UnsizedSequence,
 {
     if let (Some(edges), Some(children)) = (l.as_edges(), r.as_children_mut()) {
         if edges.offset == children.offset && edges.simplex.edge_dim() == children.simplex.dim() {
@@ -533,6 +626,7 @@ where
     }
     use OperatorKind::*;
     match (l.operator_kind(), r.operator_kind()) {
+        (Index(1, 1), Coordinate(_, _, _, _)) => Some(vec![l.clone().into()]),
         (Index(l_nout, l_nin), Coordinate(_, _, _, r_gen)) => Some(vec![
             Operator::new_transpose(r_gen, l_nout),
             l.clone().into(),
@@ -559,22 +653,31 @@ where
 
 /// A chain of [`Operator`]s.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Chain {
+pub struct UnsizedChain {
     rev_operators: Vec<Operator>,
 }
 
-impl Chain {
+impl UnsizedChain {
     #[inline]
     pub fn new<Operators>(operators: Operators) -> Self
     where
         Operators: IntoIterator<Item = Operator>,
         Operators::IntoIter: DoubleEndedIterator,
     {
-        Chain {
+        UnsizedChain {
             rev_operators: operators.into_iter().rev().collect(),
         }
     }
-    /// Returns a clone of this [`Chain`] with the given `operator` appended.
+    #[inline]
+    pub fn empty() -> Self {
+        UnsizedChain {
+            rev_operators: Vec::new(),
+        }
+    }
+    pub fn push(&mut self, operator: impl Into<Operator>) {
+        self.rev_operators.insert(0, operator.into())
+    }
+    /// Returns a clone of this [`UnsizedChain`] with the given `operator` appended.
     #[inline]
     pub fn clone_and_push(&self, operator: Operator) -> Self {
         Self::new(
@@ -586,7 +689,7 @@ impl Chain {
         )
     }
     #[inline]
-    pub fn iter_operators(&self) -> impl Iterator<Item = &Operator> + DoubleEndedIterator {
+    pub fn iter(&self) -> impl Iterator<Item = &Operator> + DoubleEndedIterator {
         self.rev_operators.iter().rev()
     }
     fn split_heads(&self) -> BTreeMap<Operator, Vec<Operator>> {
@@ -644,14 +747,11 @@ impl Chain {
                 rev_b.pop();
                 continue;
             }
-            let heads_a = Chain::new(rev_a.iter().rev().cloned()).split_heads();
-            let heads_b = Chain::new(rev_b.iter().rev().cloned()).split_heads();
-            let candidates: Vec<_> = heads_a
+            let heads_a = UnsizedChain::new(rev_a.iter().rev().cloned()).split_heads();
+            let heads_b = UnsizedChain::new(rev_b.iter().rev().cloned()).split_heads();
+            if let Some((head, a, b)) = heads_a
                 .iter()
                 .filter_map(|(h, a)| heads_b.get(h).map(|b| (h, a, b)))
-                .collect();
-            if let Some((head, a, b)) = candidates
-                .into_iter()
                 .min_by_key(|(_, a, b)| std::cmp::max(a.len(), b.len()))
             {
                 common.push(head.clone());
@@ -678,16 +778,17 @@ impl Chain {
     }
 }
 
-impl SequenceTransformation for Chain {
+impl UnsizedSequence for UnsizedChain {
     #[inline]
     fn delta_dim(&self) -> Dim {
         self.rev_operators.iter().map(|op| op.delta_dim()).sum()
     }
     #[inline]
-    fn len(&self, parent_len: usize) -> usize {
-        self.rev_operators
-            .iter()
-            .rfold(parent_len, |len, op| op.len(len))
+    fn delta_len(&self) -> (usize, usize) {
+        self.rev_operators.iter().rfold((1, 1), |(n, d), op| {
+            let (opn, opd) = op.delta_len();
+            (n * opn, d * opd)
+        })
     }
     #[inline]
     fn increment_offset(&mut self, amount: Dim) {
@@ -708,6 +809,14 @@ impl SequenceTransformation for Chain {
             .fold(index, |index, op| op.apply_index(index))
     }
     #[inline]
+    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+        let indices = indices.iter().cloned().collect();
+        self.rev_operators
+            .iter()
+            .rev()
+            .fold(indices, |indices, op| op.unapply_indices(&indices))
+    }
+    #[inline]
     fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
         self.rev_operators
             .iter()
@@ -718,6 +827,25 @@ impl SequenceTransformation for Chain {
         self.rev_operators.iter().fold(index, |index, op| {
             op.apply_many_inplace(index, coordinates, dim)
         })
+    }
+}
+
+impl IntoIterator for UnsizedChain {
+    type Item = Operator;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.rev_operators.into_iter()
+    }
+}
+
+impl FromIterator<Operator> for UnsizedChain {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = Operator>,
+    {
+        let ops: Vec<_> = iter.into_iter().collect();
+        UnsizedChain::new(ops)
     }
 }
 
@@ -809,7 +937,7 @@ impl SequenceTransformation for Chain {
 //
 //impl RelativeChain {
 //    pub fn get_chain(&self, index: usize) -> Option<(Chain, usize, usize)> {
-//        for (offset, indices, 
+//        for (offset, indices,
 //    pub fn apply_inplace(&self, index: usize, coordinates: &mut [f64]) -> Option<usize> {
 //        self.get_chain(index).map(|(chain, offset, index)| {
 //            offset + chain.apply_many_inplace(index, coordinates, self.tip_dim())
@@ -824,7 +952,7 @@ impl SequenceTransformation for Chain {
 
 #[derive(Debug, Clone)]
 pub struct Topology {
-    transforms: Chain,
+    transforms: UnsizedChain,
     dim: Dim,
     root_len: usize,
     len: usize,
@@ -833,16 +961,17 @@ pub struct Topology {
 impl Topology {
     pub fn new(dim: Dim, len: usize) -> Self {
         Self {
-            transforms: Chain::new([]),
+            transforms: UnsizedChain::new([]),
             dim,
             root_len: len,
             len,
         }
     }
     pub fn derive(&self, operator: Operator) -> Self {
+        let (n, d) = operator.delta_len();
         Self {
             root_len: self.root_len,
-            len: operator.len(self.len),
+            len: self.len * n / d,
             dim: self.dim - operator.delta_dim(),
             transforms: self.transforms.clone_and_push(operator),
         }
@@ -854,14 +983,14 @@ impl Mul for &Topology {
 
     fn mul(self, other: &Topology) -> Topology {
         Topology {
-            transforms: Chain::new(
+            transforms: UnsizedChain::new(
                 iter::once(Operator::new_transpose(other.root_len, self.root_len))
-                    .chain(self.transforms.iter_operators().cloned())
+                    .chain(self.transforms.iter().cloned())
                     .chain(iter::once(Operator::new_transpose(
                         self.len,
                         other.root_len,
                     )))
-                    .chain(other.transforms.iter_operators().map(|op| {
+                    .chain(other.transforms.iter().map(|op| {
                         let mut op = op.clone();
                         op.increment_offset(self.dim);
                         op
@@ -879,6 +1008,44 @@ mod tests {
     use super::*;
     use approx::assert_abs_diff_eq;
     use Simplex::*;
+
+    #[test]
+    fn unapply_indices_offset() {
+        let offset = Offset::new(4);
+        assert_eq!(offset.unapply_indices(&[3, 4, 6]), vec![0, 2]);
+        assert_eq!(offset.unapply_indices(&[3]), vec![]);
+    }
+
+    #[test]
+    fn unapply_indices_transpose() {
+        let transpose = Transpose::new(2, 3);
+        assert_eq!(transpose.unapply_indices(&[0, 1, 3, 8, 13, 14]), vec![0, 3, 4, 7, 15, 13]);
+    }
+
+    #[test]
+    fn unapply_indices_take() {
+        let take = Take::new([4, 1], 5);
+        assert_eq!(take.unapply_indices(&[0, 1, 4, 5, 8, 9]), vec![1, 0, 2]);
+        assert_eq!(take.unapply_indices(&[0]), vec![]);
+    }
+
+    #[test]
+    fn unapply_indices_children() {
+        let children = Children::new(Triangle, 0);
+        assert_eq!(children.unapply_indices(&[0, 2]), vec![0, 1, 2, 3, 8, 9, 10, 11]);
+    }
+
+    #[test]
+    fn unapply_indices_edges() {
+        let edges = Edges::new(Triangle, 0);
+        assert_eq!(edges.unapply_indices(&[0, 2]), vec![0, 1, 2, 6, 7, 8]);
+    }
+
+    #[test]
+    fn unapply_indices_uniform_points() {
+        let points = UniformPoints::new(Box::new([0.0, 0.0, 1.0, 0.0, 0.0, 1.0]), 2, 0);
+        assert_eq!(points.unapply_indices(&[0, 2]), vec![0, 1, 2, 6, 7, 8]);
+    }
 
     macro_rules! assert_eq_op_apply {
         ($op:expr, $ii:expr, $ic:expr, $oi:expr, $oc:expr) => {{
@@ -1180,7 +1347,7 @@ mod tests {
 
     #[test]
     fn split_heads() {
-        let chain = Chain::new([
+        let chain = UnsizedChain::new([
             Operator::new_edges(Triangle, 1),
             Operator::new_children(Line, 0),
             Operator::new_edges(Line, 2),
@@ -1188,7 +1355,7 @@ mod tests {
             Operator::new_children(Line, 0),
         ]);
         let desired = chain
-            .iter_operators()
+            .iter()
             .cloned()
             .fold(Topology::new(4, 1), |topo, op| topo.derive(op));
         for (head, tail) in chain.split_heads().into_iter() {
@@ -1201,20 +1368,20 @@ mod tests {
 
     #[test]
     fn remove_common_prefix() {
-        let a = Chain::new([
+        let a = UnsizedChain::new([
             Operator::new_children(Line, 0),
             Operator::new_children(Line, 0),
         ]);
-        let b = Chain::new([Operator::new_edges(Line, 0)]);
+        let b = UnsizedChain::new([Operator::new_edges(Line, 0)]);
         assert_eq!(
             a.remove_common_prefix(&b),
             (
-                Chain::new([
+                UnsizedChain::new([
                     Operator::new_children(Line, 0),
                     Operator::new_children(Line, 0)
                 ]),
-                Chain::new([]),
-                Chain::new([
+                UnsizedChain::new([]),
+                UnsizedChain::new([
                     Operator::new_edges(Line, 0),
                     Operator::new_take([2, 1], 4),
                     Operator::new_take([2, 1], 4)

@@ -123,6 +123,17 @@ impl Simplex {
             Self::Triangle => index / 4,
         }
     }
+
+    pub fn unapply_child_indices(&self, indices: &[usize]) -> Vec<usize> {
+        let mut child_indices = Vec::with_capacity(indices.len() * self.nchildren());
+        for index in indices.iter() {
+            for ichild in 0..self.nchildren() {
+                child_indices.push(index * self.nchildren() + ichild);
+            }
+        }
+        child_indices
+    }
+
     /// Transform the given edge `coordinate` for edge `index` to this parent
     /// simplex in-place. The returned index is the index of the parent in an
     /// infinite, uniform sequence.
@@ -159,6 +170,16 @@ impl Simplex {
             Self::Line => index / 2,
             Self::Triangle => index / 3,
         }
+    }
+
+    pub fn unapply_edge_indices(&self, indices: &[usize]) -> Vec<usize> {
+        let mut edge_indices = Vec::with_capacity(indices.len() * self.nedges());
+        for index in indices.iter() {
+            for iedge in 0..self.nedges() {
+                edge_indices.push(index * self.nedges() + iedge);
+            }
+        }
+        edge_indices
     }
 }
 
