@@ -51,15 +51,15 @@ class PostProcessor:
 
     def __call__(self, args):
         x, p = self.bezier.eval(['x_i', 'p'] @ self.ns, **args)
-        logr = numpy.log(numpy.hypot(*self.xgrd.T) / self.ns.R.eval())
-        φ = numpy.arctan2(self.xgrd[:,1], self.xgrd[:,0]) % (2 * numpy.pi)
-        ugrd = self.topo.locate(self.ns.grid, numpy.stack([logr, φ], axis=1), eps=1, tol=1e-5).eval(self.ns.u, **args)
+        grid0 = numpy.log(numpy.hypot(*self.xgrd.T) / self.ns.R.eval())
+        grid1 = numpy.arctan2(*self.xgrd.T) % (2 * numpy.pi)
+        ugrd = self.topo.locate(self.ns.grid, numpy.stack([grid0, grid1], axis=1), eps=1, tol=1e-5).eval(self.ns.u, **args)
         with export.mplfigure('flow.png', figsize=self.figsize) as fig:
             ax = fig.add_axes([0, 0, 1, 1], yticks=[], xticks=[], frame_on=False, xlim=self.bbox[0], ylim=self.bbox[1])
             im = ax.tripcolor(*x.T, self.bezier.tri, p, shading='gouraud', cmap='jet')
             export.plotlines_(ax, x.T, self.bezier.hull, colors='k', linewidths=.1, alpha=.5)
             ax.quiver(*self.xgrd.T, *ugrd.T, angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9, alpha=.5, pivot='tip')
-            ax.plot(0, 0, 'k', marker=(3, 2, self.t*self.ns.rotation.eval()*180/numpy.pi-90), markersize=20)
+            ax.plot(0, 0, 'k', marker=(3, 2, -self.t*self.ns.rotation.eval()*180/numpy.pi-90), markersize=20)
             cax = fig.add_axes([0.9, 0.1, 0.01, 0.8])
             cax.tick_params(labelsize='large')
             fig.colorbar(im, cax=cax)
@@ -68,16 +68,17 @@ class PostProcessor:
         self.regularize_xgrd()
 
 
-def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: float, timestep: float, maxradius: float, seed: int, endtime: float):
+def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: float, timestep: float, maxradius: float, endtime: float):
     '''
     Flow around a cylinder.
 
     .. arguments::
 
-       nelems [24]
+       nelems [63]
          Element size expressed in number of elements along the cylinder wall.
          All elements have similar shape with approximately unit aspect ratio,
-         with elements away from the cylinder wall growing exponentially.
+         with elements away from the cylinder wall growing exponentially. Use
+         an odd number to break symmetry and promote early bifurcation.
        degree [3]
          Polynomial degree for velocity space; the pressure space is one degree
          less.
@@ -92,8 +93,6 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: flo
        maxradius [25]
          Target exterior radius; the actual domain size is subject to integer
          multiples of the configured element size.
-       seed [0]
-         Random seed for small velocity noise in the intial condition.
        endtime [inf]
          Stopping time.
     '''
@@ -107,13 +106,12 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: flo
     ns = Namespace()
     ns.δ = function.eye(domain.ndims)
     ns.Σ = function.ones([domain.ndims])
-    ns.uinf = function.Array.cast([1, 0])
+    ns.ε = function.levicivita(2)
+    ns.uinf_i = 'δ_i0' # unit horizontal flow
     ns.Re = reynolds
     ns.grid = geom * elemangle
     ns.R = radius
-    ns.r = 'R exp(grid_0)'
-    ns.φ = 'grid_1'
-    ns.x_i = 'r (cos(φ) δ_i0 + sin(φ) δ_i1)'
+    ns.x_i = 'R exp(grid_0) (sin(grid_1) δ_i0 + cos(grid_1) δ_i1)' # polar coordinates
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     J = ns.x.grad(geom)
     detJ = function.determinant(J)
@@ -125,16 +123,14 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: flo
     ns.N = 10 * degree / elemangle  # Nitsche constant based on element size = elemangle/2
     ns.nitsche_i = '(N v_i - (∇_j(v_i) + ∇_i(v_j)) n_j) / Re'
     ns.rotation = rotation
-    ns.uwall_i = '0.5 rotation (-sin(φ) δ_i0 + cos(φ) δ_i1)'
+    ns.uwall_i = 'rotation ε_ij x_j' # clockwise positive rotation
 
     inflow = domain.boundary['outer'].select(-ns.uinf.dotnorm(ns.x), ischeme='gauss1')  # upstream half of the exterior boundary
     sqr = inflow.integral('Σ_i (u_i - uinf_i)^2' @ ns, degree=degree*2)
     cons = solver.optimize('u,', sqr, droptol=1e-15)  # constrain inflow semicircle to uinf
 
-    numpy.random.seed(seed)
     sqr = domain.integral('Σ_i (u_i - uinf_i)^2' @ ns, degree=degree*2)
     args0 = solver.optimize('u,', sqr) # set initial condition to u=uinf
-    args0['u'] = args0['u'] * numpy.random.normal(1, .1, len(args0['u'])) # add small random noise
 
     res = domain.integral('(v_i ∇_j(u_i) u_j + ∇_j(v_i) sigma_ij) dV' @ ns, degree=9)
     res += domain.boundary['inner'].integral('(nitsche_i (u_i - uwall_i) - v_i sigma_ij n_j) dS' @ ns, degree=9)
@@ -151,7 +147,7 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: flo
             if istep * timestep >= endtime:
                 break
 
-    return args0, args
+    return args
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line.
@@ -170,35 +166,25 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
     def test_rot0(self):
-        args0, args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=0, timestep=.1, maxradius=25, seed=0, endtime=.05)
-        with self.subTest('initial condition'):
-            self.assertAlmostEqual64(args0['u'], '''
-                eNoNzLEJwkAYQOHXuYZgJyZHLjmMCIJY2WcEwQFcwcYFbBxCEaytzSVnuM7CQkEDqdVCG//uNe/rqEcI
-                p+pSwTzQAez90cM06kZQuLWDrV5oGJf9EupEJ7CyqYXUTAyM7C2HmZyNf8p57S2lB95It8KNgmH1PcNB
-                /UTEvUVpojqGdpEV8IlfIt7znSiZ+QPSaDIR''', atol=2e-13)
+        args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=0, timestep=.1, maxradius=25, endtime=.05)
         with self.subTest('velocity'):
             self.assertAlmostEqual64(args['u'], '''
-                eNoBkABv/+o0szWg04bKlsogMVI4JjcmMXXI+cfizb05/Dk4MBHGEcaPNDo8ljuTNibE4sNpznI9VD02
-                M5zCnsJazE0+Hj76NsPByMH/yl43nDNlyGnIsy+YNz44MspbyD/IWcwHOMM4AzXAxsPGGjAJOUM7GcgU
-                xePEqckvO+g8+DcOwyfD4zfjPFY+sMfJwavBhDNPPpLTRUE=''')
+                eNoBkABv/wU0mssiy5rLBTRYNUU21MkkyNTJRTbGN7Y4PMcNxjzHtjgDOrQ6VMXew1TFtDoaPFU8nsNk
+                wp7DVTyqPS49usKawbrCLj2APt3Jf8hXyqk1gTcjNnTJNsgtydM2yjeMNhfIqsY5yMc3VjnpNxLGxMT/
+                xQE6PDvuORDErMIxxM87VD3wO8XCY8H1wgs9nT47PVrfRY0=''')
         with self.subTest('pressure'):
             self.assertAlmostEqual64(args['p'], '''
-                eNoBSAC3/4zF18aozR866DpHNSk8JDonOdw4k8VzNaHBk8PFOyI+Gj9vPPRA/T/LQDtBIECaP0i5yLsA
-                wL9FwkabQsJJTbc2ubJHw7ZvRq/qITA=''')
+                eNoBSAC3/6Q1pDmzOqQ5pDVKx8g50DjFxdA4yDltOjA83D3yPtw9MDyoypFBJUEvPyVBkUHqQUlFhUUj
+                RoVFSUXORNtISkgbuUpI20hBSZT+HlY=''')
 
     def test_rot1(self):
-        args0, args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=1, timestep=.1, maxradius=25, seed=0, endtime=.05)
-        with self.subTest('initial condition'):
-            self.assertAlmostEqual64(args0['u'], '''
-                eNoNzLEJwkAYQOHXuYZgJyZHLjmMCIJY2WcEwQFcwcYFbBxCEaytzSVnuM7CQkEDqdVCG//uNe/rqEcI
-                p+pSwTzQAez90cM06kZQuLWDrV5oGJf9EupEJ7CyqYXUTAyM7C2HmZyNf8p57S2lB95It8KNgmH1PcNB
-                /UTEvUVpojqGdpEV8IlfIt7znSiZ+QPSaDIR''', atol=2e-13)
+        args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=1, timestep=.1, maxradius=25, endtime=.05)
         with self.subTest('velocity'):
             self.assertAlmostEqual64(args['u'], '''
-                eNoBkABv/+M0tzVcKYfKlMr1MFE4JzdBMXbI+cfMzb05/Dk/MBHGEcaPNDo8ljuUNibE4sNjznI9VD02
-                M5zCnsJazE0+Hj76NsPByMH/ynk3WTR/yH7I5TGsNzk4HcpUyDnILMwBOMQ4BzXBxsTGpDAKOUM7GMgU
-                xePEp8kvO+g8+DcOwyfD5DfkPFY+sMfJwavBhDNPPpo5RbI=''')
+                eNoBkABv/ww0o8siy5LL/jNYNUY21skkyNLJRDbGN7Y4PMcNxjzHtjgDOrQ6VMXew1TFtDoaPFU8nsNk
+                wp7DVTyqPS49usKawbrCLj2APrbJaMgTylo1aTf5NX/JPMg5yd420TeXNhXIqcY4yMU3VTnmNxLGxMT/
+                xQE6PDvuORDErMIxxM87VD3wO8XCY8H1wgs9nT47PeQBRqk=''')
         with self.subTest('pressure'):
             self.assertAlmostEqual64(args['p'], '''
-                eNoBSAC3/4rF3Ma4ziE65zoUNSg8JToqOd04k8VbNaDBlMPJOyI+Gj9sPPRA/T/MQDtBH0CYP0e5yLsD
-                wL9FwkaaQsJJTbc3ubJHw7ZvRqV7IP8=''')
+                eNoBSAC3/701qDmzOp85ijVKx8o50jjFxc04xjltOjI83T3yPts9LjyoypFBJUEvPyRBkUHqQUlFhUUj
+                RoVFSEXORNtISkgbuUpI20hBSZUcHlE=''')
