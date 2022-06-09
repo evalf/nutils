@@ -52,7 +52,7 @@ class PostProcessor:
     def __call__(self, args):
         x, p = self.bezier.eval(['x_i', 'p'] @ self.ns, **args)
         logr = numpy.log(numpy.hypot(*self.xgrd.T) / self.ns.R.eval())
-        φ = numpy.arctan2(self.xgrd[:,1], self.xgrd[:,0]) + numpy.pi
+        φ = numpy.arctan2(self.xgrd[:,1], self.xgrd[:,0]) % (2 * numpy.pi)
         ugrd = self.topo.locate(self.ns.grid, numpy.stack([logr, φ], axis=1), eps=1, tol=1e-5).eval(self.ns.u, **args)
         with export.mplfigure('flow.png', figsize=self.figsize) as fig:
             ax = fig.add_axes([0, 0, 1, 1], yticks=[], xticks=[], frame_on=False, xlim=self.bbox[0], ylim=self.bbox[1])
