@@ -125,11 +125,11 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: flo
     ns.rotation = rotation
     ns.uwall_i = 'rotation ε_ij x_j' # clockwise positive rotation
 
-    sqr = domain.boundary['inflow'].integral('Σ_i (u_i - uinf_i)^2' @ ns, degree=degree*2)
-    cons = solver.optimize('u,', sqr, droptol=1e-15)  # constrain inflow semicircle to uinf
+    sqr = domain.boundary['inflow'].integral('Σ_i (u_i - uinf_i)^2 dS' @ ns, degree=degree*2)
+    cons = solver.optimize('u,', sqr, droptol=1e-15) # constrain inflow boundary to unit horizontal flow
 
-    sqr = domain.integral('Σ_i (u_i - uinf_i)^2' @ ns, degree=degree*2)
-    args0 = solver.optimize('u,', sqr) # set initial condition to u=uinf
+    sqr = domain.integral('(.5 Σ_i (u_i - uinf_i)^2 - ∇_k(u_k) p) dV' @ ns, degree=degree*2)
+    args0 = solver.optimize('u,p', sqr, constrain=cons) # set initial condition to potential flow
 
     res = domain.integral('(v_i ∇_j(u_i) u_j + ∇_j(v_i) σ_ij) dV' @ ns, degree=9)
     res += domain.boundary['inner'].integral('(nitsche_i (u_i - uwall_i) - v_i σ_ij n_j) dS' @ ns, degree=9)
@@ -168,22 +168,22 @@ class test(testing.TestCase):
         args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=0, timestep=.1, maxradius=25, endtime=.05)
         with self.subTest('velocity'):
             self.assertAlmostEqual64(args['u'], '''
-                eNoBkABv/wU0mssiy5rLBTRYNUU21MkkyNTJRTbGN7Y4PMcNxjzHtjgDOrQ6VMXew1TFtDoaPFU8nsNk
-                wp7DVTyqPS49usKawbrCLj2APt3Jf8hXyqk1gTcjNnTJNsgtydM2yjeMNhfIqsY5yMc3VjnpNxLGxMT/
-                xQE6PDvuORDErMIxxM87VD3wO8XCY8H1wgs9nT47PVrfRY0=''')
+                eNoBkABv//AzussRy7rL8DNVNU42sskxyLLJTjbPN7Q4SscGxkrHtDj9ObM6SMXmw0jFszofPFU8nsNk
+                wp7DVTyqPS49usKawbrCLj2APuHJi8hHyrk1dTcfNmbJJMhDyb023DeaNiPItMYoyNg3TDndNwnGv8QO
+                xvI5QTv3ORTErsIqxNY7Uj3sO8XCY8H1wgs9nT47Pc/9SG4=''')
         with self.subTest('pressure'):
             self.assertAlmostEqual64(args['p'], '''
-                eNoBSAC3/6Q1pDmzOqQ5pDVKx8g50DjFxdA4yDltOjA83D3yPtw9MDyoypFBJUEvPyVBkUHqQUlFhUUj
-                RoVFSUXORNtISkgbuUpI20hBSZT+HlY=''')
+                eNoBSAC3/7w0bzXBzG81vDRXytwzezW0y3s13DOXyYfOxzVVM8c1h87LyJTJ3DezN9w3lMkBxzTIDDgz
+                Ogw4NMhAxu42Ij1DxCI97jZ+wirgIsM=''')
 
     def test_rot1(self):
         args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=1, timestep=.1, maxradius=25, endtime=.05)
         with self.subTest('velocity'):
             self.assertAlmostEqual64(args['u'], '''
-                eNoBkABv/ww0o8siy5LL/jNYNUY21skkyNLJRDbGN7Y4PMcNxjzHtjgDOrQ6VMXew1TFtDoaPFU8nsNk
-                wp7DVTyqPS49usKawbrCLj2APrbJaMgTylo1aTf5NX/JPMg5yd420TeXNhXIqcY4yMU3VTnmNxLGxMT/
-                xQE6PDvuORDErMIxxM87VD3wO8XCY8H1wgs9nT47PeQBRqk=''')
+                eNoBkABv//czw8sRy7HL6TNVNU82tckxyLDJTTbPN7Q4SscGxkrHszj9ObM6SMXmw0jFszofPFU8nsNk
+                wp7DVTyqPS49usKawbrCLj2APrnJdMgEym01XDf1NXHJKshPyck24jelNiHIs8YnyNc3SznaNwnGv8QO
+                xvI5QTv4ORTErcIqxNY7Uj3sO8XCY8H1wgs9nT47PdHgSI0=''')
         with self.subTest('pressure'):
             self.assertAlmostEqual64(args['p'], '''
-                eNoBSAC3/701qDmzOp85ijVKx8o50jjFxc04xjltOjI83T3yPts9LjyoypFBJUEvPyRBkUHqQUlFhUUj
-                RoVFSEXORNtISkgbuUpI20hBSZUcHlE=''')
+                eNoBSAC3/+M0kjXDzEs1kjRXyvszijW0y2w1ujOXyV0tAzZXM4I1Dc3LyA7KDTizN6Y3MckBxybJpDgz
+                OjE3j8dAxr84Pz1DxAQ9I8p9wpetHyk=''')
