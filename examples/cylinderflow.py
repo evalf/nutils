@@ -101,7 +101,7 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: flo
     melems = int(numpy.log(2*maxradius) / elemangle + .5)
     treelog.info('creating {}x{} mesh, outer radius {:.2f}'.format(melems, nelems, .5*numpy.exp(elemangle*melems)))
     domain, geom = mesh.rectilinear([melems, nelems], periodic=(1,))
-    domain = domain.withboundary(inner='left', outer='right')
+    domain = domain.withboundary(inner='left', inflow=domain.boundary['right'][nelems//2:])
 
     ns = Namespace()
     ns.δ = function.eye(domain.ndims)
@@ -125,8 +125,7 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: flo
     ns.rotation = rotation
     ns.uwall_i = 'rotation ε_ij x_j' # clockwise positive rotation
 
-    inflow = domain.boundary['outer'].select(-ns.uinf.dotnorm(ns.x), ischeme='gauss1')  # upstream half of the exterior boundary
-    sqr = inflow.integral('Σ_i (u_i - uinf_i)^2' @ ns, degree=degree*2)
+    sqr = domain.boundary['inflow'].integral('Σ_i (u_i - uinf_i)^2' @ ns, degree=degree*2)
     cons = solver.optimize('u,', sqr, droptol=1e-15)  # constrain inflow semicircle to uinf
 
     sqr = domain.integral('Σ_i (u_i - uinf_i)^2' @ ns, degree=degree*2)
