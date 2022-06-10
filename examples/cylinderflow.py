@@ -16,12 +16,14 @@ import treelog
 
 class PostProcessor:
 
-    def __init__(self, topo, ns, region=4., aspect=16/9, figscale=7.2, spacing=.05):
+    def __init__(self, topo, ns, region=4., aspect=16/9, figscale=7.2, spacing=.05, pstep=.1, vortlim=20):
         self.ns = ns
         self.figsize = aspect * figscale, figscale
         self.bbox = numpy.array([[-.5, aspect-.5], [-.5, .5]]) * region
         self.bezier = topo.select(numpy.minimum(*(ns.x-self.bbox[:,0])*(self.bbox[:,1]-ns.x))).sample('bezier', 5)
         self.spacing = spacing
+        self.pstep = pstep
+        self.vortlim = vortlim
         self.t = 0.
         self.initialize_xgrd()
         self.topo = topo
@@ -50,19 +52,17 @@ class PostProcessor:
         self.xgrd = numpy.concatenate([newpoints * self.spacing, self.xgrd[keep]], axis=0)
 
     def __call__(self, args):
-        x, p = self.bezier.eval(['x_i', 'p'] @ self.ns, **args)
+        x, p, ω = self.bezier.eval(['x_i', 'p', 'ω'] @ self.ns, **args)
         grid0 = numpy.log(numpy.hypot(*self.xgrd.T) / self.ns.R.eval())
         grid1 = numpy.arctan2(*self.xgrd.T) % (2 * numpy.pi)
         ugrd = self.topo.locate(self.ns.grid, numpy.stack([grid0, grid1], axis=1), eps=1, tol=1e-5).eval(self.ns.u, **args)
         with export.mplfigure('flow.png', figsize=self.figsize) as fig:
             ax = fig.add_axes([0, 0, 1, 1], yticks=[], xticks=[], frame_on=False, xlim=self.bbox[0], ylim=self.bbox[1])
-            im = ax.tripcolor(*x.T, self.bezier.tri, p, shading='gouraud', cmap='jet')
+            ax.tripcolor(*x.T, self.bezier.tri, ω, shading='gouraud', cmap='seismic').set_clim(-self.vortlim, self.vortlim)
+            ax.tricontour(*x.T, self.bezier.tri, p, numpy.arange(numpy.min(p)//1, numpy.max(p), self.pstep), colors='k', linestyles='solid', linewidths=.5, zorder=9)
             export.plotlines_(ax, x.T, self.bezier.hull, colors='k', linewidths=.1, alpha=.5)
             ax.quiver(*self.xgrd.T, *ugrd.T, angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9, alpha=.5, pivot='tip')
             ax.plot(0, 0, 'k', marker=(3, 2, -self.t*self.ns.rotation.eval()*180/numpy.pi-90), markersize=20)
-            cax = fig.add_axes([0.9, 0.1, 0.01, 0.8])
-            cax.tick_params(labelsize='large')
-            fig.colorbar(im, cax=cax)
         dt = self.ns.dt.eval()
         self.t += dt
         self.xgrd += ugrd * dt
@@ -123,6 +123,7 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: flo
     ns.dt = timestep
     ns.DuDt_i = '(u_i - u0_i) / dt + ∇_j(u_i) u_j' # material derivative
     ns.σ_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
+    ns.ω = 'ε_ij ∇_j(u_i)'
     ns.N = 10 * degree / elemangle  # Nitsche constant based on element size = elemangle/2
     ns.nitsche_i = '(N v_i - (∇_j(v_i) + ∇_i(v_j)) n_j) / Re'
     ns.rotation = rotation
