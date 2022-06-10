@@ -9,19 +9,19 @@
 
 from nutils import mesh, function, solver, util, export, cli, testing, numeric
 from nutils.expression_v2 import Namespace
+import itertools
 import numpy
 import treelog
 
 
 class PostProcessor:
 
-    def __init__(self, topo, ns, timestep, region=4., aspect=16/9, figscale=7.2, spacing=.05):
+    def __init__(self, topo, ns, region=4., aspect=16/9, figscale=7.2, spacing=.05):
         self.ns = ns
         self.figsize = aspect * figscale, figscale
         self.bbox = numpy.array([[-.5, aspect-.5], [-.5, .5]]) * region
         self.bezier = topo.select(numpy.minimum(*(ns.x-self.bbox[:,0])*(self.bbox[:,1]-ns.x))).sample('bezier', 5)
         self.spacing = spacing
-        self.timestep = timestep
         self.t = 0.
         self.initialize_xgrd()
         self.topo = topo
@@ -63,8 +63,9 @@ class PostProcessor:
             cax = fig.add_axes([0.9, 0.1, 0.01, 0.8])
             cax.tick_params(labelsize='large')
             fig.colorbar(im, cax=cax)
-        self.t += self.timestep
-        self.xgrd += ugrd * self.timestep
+        dt = self.ns.dt.eval()
+        self.t += dt
+        self.xgrd += ugrd * dt
         self.regularize_xgrd()
 
 
@@ -115,10 +116,12 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: flo
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     J = ns.x.grad(geom)
     detJ = function.determinant(J)
-    ns.add_field(('u', 'v'), function.matmat(function.vectorize([
+    ns.add_field(('u', 'u0', 'v'), function.matmat(function.vectorize([
         domain.basis('spline', degree=(degree, degree-1), removedofs=((0,), None)),
         domain.basis('spline', degree=(degree-1, degree))]), J.T) / detJ)
     ns.add_field(('p', 'q'), domain.basis('spline', degree=degree-1) / detJ)
+    ns.dt = timestep
+    ns.DuDt_i = '(u_i - u0_i) / dt + ∇_j(u_i) u_j' # material derivative
     ns.σ_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
     ns.N = 10 * degree / elemangle  # Nitsche constant based on element size = elemangle/2
     ns.nitsche_i = '(N v_i - (∇_j(v_i) + ∇_i(v_j)) n_j) / Re'
@@ -129,22 +132,20 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: flo
     cons = solver.optimize('u,', sqr, droptol=1e-15) # constrain inflow boundary to unit horizontal flow
 
     sqr = domain.integral('(.5 Σ_i (u_i - uinf_i)^2 - ∇_k(u_k) p) dV' @ ns, degree=degree*2)
-    args0 = solver.optimize('u,p', sqr, constrain=cons) # set initial condition to potential flow
+    args = solver.optimize('u,p', sqr, constrain=cons) # set initial condition to potential flow
 
-    res = domain.integral('(v_i ∇_j(u_i) u_j + ∇_j(v_i) σ_ij) dV' @ ns, degree=9)
+    res = domain.integral('(v_i DuDt_i + ∇_j(v_i) σ_ij + q ∇_k(u_k)) dV' @ ns, degree=9)
     res += domain.boundary['inner'].integral('(nitsche_i (u_i - uwall_i) - v_i σ_ij n_j) dS' @ ns, degree=9)
-    res += domain.integral('q ∇_k(u_k) dV' @ ns, degree=9)
-    uinertia = domain.integral('v_i u_i dV' @ ns, degree=9)
 
-    postprocess = PostProcessor(domain, ns, timestep)
+    postprocess = PostProcessor(domain, ns)
 
-    with treelog.iter.plain('timestep', solver.impliciteuler('u:v,p:q', residual=res, inertia=uinertia, arguments=args0, timestep=timestep, constrain=cons, newtontol=1e-10)) as steps:
-        for istep, args in enumerate(steps):
+    steps = treelog.iter.fraction('timestep', range(round(endtime / timestep))) if endtime < float('inf') \
+       else treelog.iter.plain('timestep', itertools.count())
 
-            postprocess(args)
-
-            if istep * timestep >= endtime:
-                break
+    for _ in steps:
+        args['u0'] = args['u']
+        args = solver.newton('u:v,p:q', residual=res, arguments=args, constrain=cons).solve(1e-10)
+        postprocess(args)
 
     return args
 
@@ -165,7 +166,7 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
     def test_rot0(self):
-        args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=0, timestep=.1, maxradius=25, endtime=.05)
+        args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=0, timestep=.1, maxradius=25, endtime=.1)
         with self.subTest('velocity'):
             self.assertAlmostEqual64(args['u'], '''
                 eNoBkABv//AzussRy7rL8DNVNU42sskxyLLJTjbPN7Q4SscGxkrHtDj9ObM6SMXmw0jFszofPFU8nsNk
@@ -177,7 +178,7 @@ class test(testing.TestCase):
                 Ogw4NMhAxu42Ij1DxCI97jZ+wirgIsM=''')
 
     def test_rot1(self):
-        args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=1, timestep=.1, maxradius=25, endtime=.05)
+        args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=1, timestep=.1, maxradius=25, endtime=.1)
         with self.subTest('velocity'):
             self.assertAlmostEqual64(args['u'], '''
                 eNoBkABv//czw8sRy7HL6TNVNU82tckxyLDJTTbPN7Q4SscGxkrHszj9ObM6SMXmw0jFszofPFU8nsNk
