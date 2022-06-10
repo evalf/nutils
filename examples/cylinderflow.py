@@ -69,7 +69,7 @@ class PostProcessor:
         self.regularize_xgrd()
 
 
-def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: float, extdiam: float, endtime: float):
+def main(nelems: int, degree: int, reynolds: float, uwall: float, timestep: float, extdiam: float, endtime: float):
     '''
     Flow around a cylinder.
 
@@ -85,8 +85,8 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: f
          less.
        reynolds [1000]
          Reynolds number, taking the cylinder diameter as characteristic length.
-       rotation [0]
-         Cylinder rotation speed.
+       uwall [0]
+         Cylinder wall velocity.
        timestep [.04]
          Time step
        extdiam [50]
@@ -123,7 +123,7 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: f
     ns.ω = 'ε_ij ∇_j(u_i)'
     ns.N = 10 * degree / elemangle  # Nitsche constant based on element size = elemangle/2
     ns.nitsche_i = '(N v_i - (∇_j(v_i) + ∇_i(v_j)) n_j) / Re'
-    ns.rotation = rotation
+    ns.rotation = uwall / .5
     ns.uwall_i = 'rotation ε_ij x_j' # clockwise positive rotation
 
     sqr = domain.boundary['inflow'].integral('Σ_i (u_i - uinf_i)^2 dS' @ ns, degree=degree*2)
@@ -164,7 +164,7 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
     def test_rot0(self):
-        args = main(nelems=6, degree=3, reynolds=100, rotation=0, timestep=.1, extdiam=50, endtime=.1)
+        args = main(nelems=6, degree=3, reynolds=100, uwall=0, timestep=.1, extdiam=50, endtime=.1)
         with self.subTest('velocity'):
             self.assertAlmostEqual64(args['u'], '''
                 eNoBkABv//AzussRy7rL8DNVNU42sskxyLLJTjbPN7Q4SscGxkrHtDj9ObM6SMXmw0jFszofPFU8nsNk
@@ -176,7 +176,7 @@ class test(testing.TestCase):
                 Ogw4NMhAxu42Ij1DxCI97jZ+wirgIsM=''')
 
     def test_rot1(self):
-        args = main(nelems=6, degree=3, reynolds=100, rotation=1, timestep=.1, extdiam=50, endtime=.1)
+        args = main(nelems=6, degree=3, reynolds=100, uwall=.5, timestep=.1, extdiam=50, endtime=.1)
         with self.subTest('velocity'):
             self.assertAlmostEqual64(args['u'], '''
                 eNoBkABv//czw8sRy7HL6TNVNU82tckxyLDJTTbPN7Q4SscGxkrHszj9ObM6SMXmw0jFszofPFU8nsNk
