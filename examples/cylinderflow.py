@@ -134,6 +134,7 @@ def main(nelems: int, degree: int, reynolds: float, uwall: float, timestep: floa
 
     res = domain.integral('(v_i DuDt_i + ∇_j(v_i) σ_ij + q ∇_k(u_k)) dV' @ ns, degree=degree*3)
     res += domain.boundary['inner'].integral('(nitsche_i (u_i - uwall_i) - v_i σ_ij n_j) dS' @ ns, degree=degree*2)
+    div = numpy.sqrt(domain.integral('∇_k(u_k)^2 dV' @ ns, degree=2)) # L2 norm of velocity divergence
 
     postprocess = PostProcessor(domain, ns)
 
@@ -141,6 +142,7 @@ def main(nelems: int, degree: int, reynolds: float, uwall: float, timestep: floa
        else treelog.iter.plain('timestep', itertools.count())
 
     for _ in steps:
+        treelog.info(f'velocity divergence: {div.eval(**args):.0e}')
         args['u0'] = args['u']
         args = solver.newton('u:v,p:q', residual=res, arguments=args, constrain=cons).solve(1e-10)
         postprocess(args)
