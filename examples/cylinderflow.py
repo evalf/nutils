@@ -119,7 +119,7 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: flo
         domain.basis('spline', degree=(degree, degree-1), removedofs=((0,), None)),
         domain.basis('spline', degree=(degree-1, degree))]), J.T) / detJ)
     ns.add_field(('p', 'q'), domain.basis('spline', degree=degree-1) / detJ)
-    ns.sigma_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
+    ns.σ_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
     ns.N = 10 * degree / elemangle  # Nitsche constant based on element size = elemangle/2
     ns.nitsche_i = '(N v_i - (∇_j(v_i) + ∇_i(v_j)) n_j) / Re'
     ns.rotation = rotation
@@ -131,8 +131,8 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: flo
     sqr = domain.integral('Σ_i (u_i - uinf_i)^2' @ ns, degree=degree*2)
     args0 = solver.optimize('u,', sqr) # set initial condition to u=uinf
 
-    res = domain.integral('(v_i ∇_j(u_i) u_j + ∇_j(v_i) sigma_ij) dV' @ ns, degree=9)
-    res += domain.boundary['inner'].integral('(nitsche_i (u_i - uwall_i) - v_i sigma_ij n_j) dS' @ ns, degree=9)
+    res = domain.integral('(v_i ∇_j(u_i) u_j + ∇_j(v_i) σ_ij) dV' @ ns, degree=9)
+    res += domain.boundary['inner'].integral('(nitsche_i (u_i - uwall_i) - v_i σ_ij n_j) dS' @ ns, degree=9)
     res += domain.integral('q ∇_k(u_k) dV' @ ns, degree=9)
     uinertia = domain.integral('v_i u_i dV' @ ns, degree=9)
 
