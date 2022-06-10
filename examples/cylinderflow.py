@@ -1,11 +1,60 @@
 #! /usr/bin/env python3
 #
-# In this script we solve the Navier-Stokes equations around a cylinder, using
-# the same Raviart-Thomas discretization as in
-# :ref:`examples/drivencavity-compatible.py` but in curvilinear coordinates.
-# The mesh is constructed such that all elements are shape similar, growing
-# exponentially with radius such that the artificial exterior boundary is
-# placed at large (configurable) distance.
+# In this script we solve the Navier-Stokes equations around a cylinder,
+# demonstrating different flow regimes at different Reynolds numbers.
+#
+# The general conservation laws are:
+#
+#     Dρ/Dt = 0 (mass)
+#     ρ Du_i/Dt = ∇_j(σ_ij) (momentum)
+#
+# where we used the material derivative D·/Dt := ∂·/∂t + ∇_j(· u_j). The stress
+# tensor is σ_ij := μ (∇_j(u_i) + ∇_i(u_j) - 2 ∇_k(u_k) δ_ij / δ_nn) - p δ_ij,
+# with pressure p and dynamic viscosity μ, and ρ is the density.
+#
+# Assuming incompressible flow, we take density to be constant. Further
+# introducing a reference length L and reference velocity U, we make the
+# equations dimensionless by taking spatial coordinates relative to L, velocity
+# relative to U, time relative to L / U, and pressure relative to ρ U^2. This
+# reduces the conservation laws to:
+#
+#     ∇_k(u_k) = 0 (mass)
+#     Du_i/Dt = ∇_j(σ_ij) (momentum)
+#
+# where the material derivative simplifies to D·/Dt := ∂·/∂t + ∇_j(·) u_j, and
+# the stress tensor becomes σ_ij := (∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij, with
+# Reynolds number Re = ρ U L / μ.
+#
+# The weak form is obtained by multiplication of a test function and partial
+# integration of the right hand side of the momentum balance.
+#
+#     ∀ q: ∫_Ω q ∇_k(u_k) = 0 (mass)
+#     ∀ v: ∫_Ω (v_i Du_i/Dt + ∇_j(v_i) σ_ij) = ∫_Γ v_i σ_ij n_j (momentum)
+#
+# The exterior boundary is strongly constrained to uniform inflow in the
+# upstream section, and traction-free in the downstream section, in both cases
+# eliminating the right hand boundary integral. The no-slip condition at the
+# interior boundary is constrained strongly in the normal component, and
+# weakly in the tangential component using Nitsche's method. The added boundary
+# integral is scaled to dominate the right hand side of the momentum balance.
+#
+# For the initial condition we take potential flow, meaning the velocity equals
+# the gradient of a harmonic potential field. In order to obtain coefficients
+# against the required basis the flow problem is solved as a coupled first
+# order system: ∇_k(u_k) = 0 and u_i = uinf_i - ∇_i(p), where the free flow
+# velocity uinf is introduced so that the scalar field p is zero at infinity.
+# The weak formulation takes the form of an optimization problem:
+#
+#     ∂/∂(u,p) ∫_Ω (.5 Σ_i (u_i - uinf_i)^2 - ∇_i(u_i) p) = 0
+#
+# The script uses a Raviart-Thomas discretization in curvilinear coordinates,
+# resulting in a pointwise divergence-free velocity field. The polar mesh is
+# constructed such that all elements are geometrically similar, growing
+# exponentially with radius and placing the artificial exterior boundary at
+# large (configurable) distance. The reference length is set equal to the
+# diameter of the cylinder and the referency velocity to the magnitude of the
+# inflow velocity, meaning that both quantities are simulated at unit value.
+
 
 from nutils import mesh, function, solver, util, export, cli, testing, numeric
 from nutils.expression_v2 import Namespace
@@ -84,16 +133,20 @@ def main(nelems: int, degree: int, reynolds: float, uwall: float, timestep: floa
          Polynomial degree for velocity space; the pressure space is one degree
          less.
        reynolds [1000]
-         Reynolds number, taking the cylinder diameter as characteristic length.
+         Reynolds number, taking the cylinder diameter as characteristic length
+         and the inflow velocity as characteristic velocity.
        uwall [0]
-         Cylinder wall velocity.
+         Cylinder wall velocity, relative to inflow velocity.
        timestep [.04]
-         Time step
+         Time step, relative to the ratio of cylinder diameter to inflow
+         velocity.
        extdiam [50]
-         Target exterior diameter; the actual domain size is subject to integer
-         multiples of the configured element size.
+         Target exterior diameter, relative to cylinder diameter; the actual
+         domain size is rounded to integer multiples of the configured element
+         size.
        endtime [inf]
-         Stopping time.
+         Stopping time, relative to the ratio of cylinder diameter to inflow
+         velocity.
     '''
 
     elemangle = 2 * numpy.pi / nelems
