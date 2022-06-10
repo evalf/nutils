@@ -33,7 +33,7 @@ class PostProcessor:
         nx, ny = numeric.ceil(self.bbox[:,1] / (2*self.spacing)) * 2 + 2 - self.orig
         self.vacant = numpy.hypot(
             self.orig[0] + numpy.arange(nx)[:,numpy.newaxis],
-            self.orig[1] + numpy.arange(ny)) > self.ns.R.eval() / self.spacing
+            self.orig[1] + numpy.arange(ny)) > .5 / self.spacing
         self.xgrd = (numpy.stack(self.vacant[1::2,1::2].nonzero(), axis=1) * 2 + self.orig + 1) * self.spacing
 
     def regularize_xgrd(self):
@@ -53,7 +53,7 @@ class PostProcessor:
 
     def __call__(self, args):
         x, p, ω = self.bezier.eval(['x_i', 'p', 'ω'] @ self.ns, **args)
-        grid0 = numpy.log(numpy.hypot(*self.xgrd.T) / self.ns.R.eval())
+        grid0 = numpy.log(numpy.hypot(*self.xgrd.T) / .5)
         grid1 = numpy.arctan2(*self.xgrd.T) % (2 * numpy.pi)
         ugrd = self.topo.locate(self.ns.grid, numpy.stack([grid0, grid1], axis=1), eps=1, tol=1e-5).eval(self.ns.u, **args)
         with export.mplfigure('flow.png', figsize=self.figsize) as fig:
@@ -69,7 +69,7 @@ class PostProcessor:
         self.regularize_xgrd()
 
 
-def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: float, timestep: float, maxradius: float, endtime: float):
+def main(nelems: int, degree: int, reynolds: float, rotation: float, timestep: float, maxradius: float, endtime: float):
     '''
     Flow around a cylinder.
 
@@ -84,9 +84,7 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: flo
          Polynomial degree for velocity space; the pressure space is one degree
          less.
        reynolds [1000]
-         Reynolds number, taking the cylinder radius as characteristic length.
-       radius [.5]
-         Cylinder radius.
+         Reynolds number, taking the cylinder diameter as characteristic length.
        rotation [0]
          Cylinder rotation speed.
        timestep [.04]
@@ -111,8 +109,7 @@ def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: flo
     ns.uinf_i = 'δ_i0' # unit horizontal flow
     ns.Re = reynolds
     ns.grid = geom * elemangle
-    ns.R = radius
-    ns.x_i = 'R exp(grid_0) (sin(grid_1) δ_i0 + cos(grid_1) δ_i1)' # polar coordinates
+    ns.x_i = '.5 exp(grid_0) (sin(grid_1) δ_i0 + cos(grid_1) δ_i1)' # polar coordinates
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     J = ns.x.grad(geom)
     detJ = function.determinant(J)
@@ -167,7 +164,7 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
     def test_rot0(self):
-        args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=0, timestep=.1, maxradius=25, endtime=.1)
+        args = main(nelems=6, degree=3, reynolds=100, rotation=0, timestep=.1, maxradius=25, endtime=.1)
         with self.subTest('velocity'):
             self.assertAlmostEqual64(args['u'], '''
                 eNoBkABv//AzussRy7rL8DNVNU42sskxyLLJTjbPN7Q4SscGxkrHtDj9ObM6SMXmw0jFszofPFU8nsNk
@@ -179,7 +176,7 @@ class test(testing.TestCase):
                 Ogw4NMhAxu42Ij1DxCI97jZ+wirgIsM=''')
 
     def test_rot1(self):
-        args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=1, timestep=.1, maxradius=25, endtime=.1)
+        args = main(nelems=6, degree=3, reynolds=100, rotation=1, timestep=.1, maxradius=25, endtime=.1)
         with self.subTest('velocity'):
             self.assertAlmostEqual64(args['u'], '''
                 eNoBkABv//czw8sRy7HL6TNVNU82tckxyLDJTTbPN7Q4SscGxkrHszj9ObM6SMXmw0jFszofPFU8nsNk
