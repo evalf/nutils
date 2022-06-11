@@ -113,9 +113,9 @@ def main(nelems: int, degree: int, reynolds: float, uwall: float, timestep: floa
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     J = ns.x.grad(geom)
     detJ = function.determinant(J)
-    ns.add_field(('u', 'u0', 'v'), function.matmat(function.vectorize([
+    ns.add_field(('u', 'u0', 'v'), function.vectorize([
         domain.basis('spline', degree=(degree, degree-1), removedofs=((0,), None)),
-        domain.basis('spline', degree=(degree-1, degree))]), J.T) / detJ)
+        domain.basis('spline', degree=(degree-1, degree))]) @ J.T / detJ)
     ns.add_field(('p', 'q'), domain.basis('spline', degree=degree-1) / detJ)
     ns.dt = timestep
     ns.DuDt_i = '(u_i - u0_i) / dt + ∇_j(u_i) u_j' # material derivative
