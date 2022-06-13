@@ -67,9 +67,11 @@ class Pardiso:
             raise MatrixError('pardiso init failed')
         for n, v in iparm.items():
             self.iparm[n] = v
-        self.iparm[27] = 0  # double precision data
-        self.iparm[34] = 0  # one-based indexing
-        self.iparm[36] = 0  # csr matrix format
+        self.iparm[10] = 1 # enable scaling (default for nonsymmetric matrices, recommended for highly indefinite symmetric matrices)
+        self.iparm[12] = 1 # enable matching (default for nonsymmetric matrices, recommended for highly indefinite symmetric matrices)
+        self.iparm[27] = 0 # double precision data
+        self.iparm[34] = 0 # one-based indexing
+        self.iparm[36] = 0 # csr matrix format
         self._phase(12)  # analysis, numerical factorization
         log.debug('peak memory use {:,d}k'.format(max(self.iparm[14], self.iparm[15]+self.iparm[16])))
 
