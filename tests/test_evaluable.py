@@ -811,32 +811,6 @@ class sampled(TestCase):
             f.eval()
 
 
-@parametrize
-class piecewise(TestCase):
-
-    def setUp(self):
-        super().setUp()
-        self.domain, self.geom = mesh.rectilinear([1])
-        x, = self.geom
-        if self.partition:
-            left, mid, right = function.partition(x, .2, .8)
-            self.f = left + function.sin(x) * mid + x**2 * right
-        else:
-            self.f = function.piecewise(x, [.2, .8], 1, function.sin(x), x**2)
-
-    def test_evalf(self):
-        f_ = self.domain.sample('uniform', 4).eval(self.f)  # x=.125, .375, .625, .875
-        assert numpy.equal(f_, [1, numpy.sin(.375), numpy.sin(.625), .875**2]).all()
-
-    def test_deriv(self):
-        g_ = self.domain.sample('uniform', 4).eval(function.grad(self.f, self.geom))  # x=.125, .375, .625, .875
-        assert numpy.equal(g_, [[0], [numpy.cos(.375)], [numpy.cos(.625)], [2*.875]]).all()
-
-
-piecewise(partition=False)
-piecewise(partition=True)
-
-
 class elemwise(TestCase):
 
     def assertElemwise(self, items):

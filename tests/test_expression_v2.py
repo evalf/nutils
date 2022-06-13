@@ -498,7 +498,7 @@ class Namespace(TestCase):
     def test_set_function_unexpected_indices(self):
         ns = expression_v2.Namespace()
         with self.assertRaisesRegex(AttributeError, '^Cannot assign a function to an attribute with an underscore.'):
-            ns.f_i = lambda a: function.stack([a, a], axis=-1)
+            ns.f_i = lambda a: numpy.stack([a, a], axis=-1)
 
     def test_set_other(self):
         ns = expression_v2.Namespace()

@@ -75,11 +75,11 @@ def main(nelems: int = 50, degree: int = 3, freq: float = 0., nturns: int = 1, r
     # `rcoil,zwires`.
 
     ns.zwires = (numpy.arange(nturns) - (nturns - 1) / 2) * 4 * rwire
-    ns.dwires = ns.rwire - numpy.sqrt((ns.r - ns.rcoil)**2 + functools.reduce(function.min, (ns.z - ns.zwires)**2))
+    ns.dwires = ns.rwire - numpy.sqrt((ns.r - ns.rcoil)**2 + functools.reduce(numpy.minimum, (ns.z - ns.zwires)**2))
     RZ = RZ.withsubdomain(coil=RZ[:-1, :-1].trim(ns.dwires/ns.rwire, maxrefine=4))
 
-    ns.rot = function.stack([function.scatter(function.trignormal(ns.θ), 3, [0, 1]), function.kronecker(1., 0, 3, 2)])
-    ns.eθ = function.stack(['-sin(θ)', 'cos(θ)', '0'] @ ns)
+    ns.rot = numpy.stack([function.scatter(function.trignormal(ns.θ), 3, [0, 1]), function.kronecker(1., 0, 3, 2)])
+    ns.eθ = numpy.stack(['-sin(θ)', 'cos(θ)', '0'] @ ns)
 
     X = RZ * REV
     ns.x = ns.rz @ ns.rot

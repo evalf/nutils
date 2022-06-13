@@ -46,7 +46,7 @@ def main(nelems: int, degree: int, reynolds: float):
     ns.add_field(('λ', 'μ'))
 
     ns.σ_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
-    ns.uwall = function.stack([domain.boundary.indicator('top'), 0])
+    ns.uwall = numpy.stack([domain.boundary.indicator('top'), 0])
     ns.N = 5 * degree * nelems  # nitsche constant based on element size = 1/nelems
     ns.nitsche_i = '(N v_i - (∇_j(v_i) + ∇_i(v_j)) n_j) / Re'
 

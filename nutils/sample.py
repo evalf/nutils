@@ -589,7 +589,7 @@ class _Add(_TensorialSample):
         return self._sample1.integral(func) + self._sample2.integral(func)
 
     def __call__(self, func: function.IntoArray) -> function.Array:
-        return function.concatenate([self._sample1(func), self._sample2(func)])
+        return numpy.concatenate([self._sample1(func), self._sample2(func)])
 
 
 class _Mul(_TensorialSample):
@@ -670,12 +670,13 @@ class _Mul(_TensorialSample):
         return self._sample1.integral(self._sample2.integral(func))
 
     def __call__(self, func: function.IntoArray) -> function.Array:
-        return function.ravel(self._sample1(self._sample2(func)), axis=0)
+        return numpy.reshape(self._sample1(self._sample2(func)), (-1, *func.shape))
 
     def basis(self) -> Sample:
         basis1 = self._sample1.basis()
         basis2 = self._sample2.basis()
-        return function.ravel(basis1[:, None] * basis2[None, :], axis=0)
+        assert basis1.ndim == basis2.ndim == 1
+        return numpy.ravel(basis1[:, None] * basis2[None, :])
 
 
 class _Zip(Sample):

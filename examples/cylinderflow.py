@@ -19,7 +19,7 @@ class PostProcessor:
         self.ns = ns
         self.figsize = aspect * figscale, figscale
         self.bbox = numpy.array([[-.5, aspect-.5], [-.5, .5]]) * region
-        self.bezier = topo.select(function.min(*(ns.x-self.bbox[:,0])*(self.bbox[:,1]-ns.x))).sample('bezier', 5)
+        self.bezier = topo.select(numpy.minimum(*(ns.x-self.bbox[:,0])*(self.bbox[:,1]-ns.x))).sample('bezier', 5)
         self.spacing = spacing
         self.timestep = timestep
         self.t = 0.

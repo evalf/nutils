@@ -38,7 +38,7 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
     domain, geom = mesh.unitsquare(2, etype)
 
     x, y = geom - .5
-    exact = (x**2 + y**2)**(1/3) * function.cos(function.arctan2(y+x, y-x) * (2/3))
+    exact = (x**2 + y**2)**(1/3) * numpy.cos(numpy.arctan2(y+x, y-x) * (2/3))
     domain = domain.trim(exact-1e-15, maxrefine=0)
     linreg = util.linear_regressor()
 
@@ -71,7 +71,7 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
         args = solver.solve_linear('u:v', res, constrain=cons)
 
         ndofs = len(args['u'])
-        error = function.sqrt(domain.integral(['du du dV', '∇_k(du) ∇_k(du) dV'] @ ns, degree=7)).eval(**args)
+        error = numpy.sqrt(domain.integral(['du du dV', '∇_k(du) ∇_k(du) dV'] @ ns, degree=7)).eval(**args)
         rate, offset = linreg.add(numpy.log(ndofs), numpy.log(error))
         treelog.user(f'ndofs: {ndofs}, L2 error: {error[0]:.2e} ({rate[0]:.2f}), H1 error: {error[1]:.2e} ({rate[1]:.2f})')
 

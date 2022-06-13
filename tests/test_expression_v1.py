@@ -1074,7 +1074,7 @@ class namespace(TestCase):
         orig = expression_v1.Namespace()
         domain, geom = mesh.unitsquare(2, 'square')
         orig.x = geom
-        orig.v = function.stack([1, geom[0], geom[0]**2], 0)
+        orig.v = numpy.stack([1, geom[0], geom[0]**2], 0)
         orig.u = 'v_n ?lhs_n'
         orig.f = 'cosh(x_0)'
         pickled = pickle.loads(pickle.dumps(orig))
@@ -1144,7 +1144,7 @@ class namespace(TestCase):
         ns.A = numpy.array([[6, 7, 8], [9, 10, 11]])
         l = lambda f: f.as_evaluable_array.simplified
         self.assertEqual(l(ns.eval_('norm2(a)')), l(function.norm2(ns.a)))
-        self.assertEqual(l(ns.eval_i('sum:j(A_ij)')), l(function.sum(ns.A, 1)))
+        self.assertEqual(l(ns.eval_i('sum:j(A_ij)')), l(numpy.sum(ns.A, 1)))
 
     def test_builtin_jacobian_vector(self):
         ns = expression_v1.Namespace()
@@ -1176,7 +1176,7 @@ class eval_ast(TestCase):
         self.domain, x = mesh.rectilinear([2, 2])
         self.ns = expression_v1.Namespace()
         self.ns.x = x
-        self.ns.altgeom = function.concatenate([self.ns.x, [0]], 0)
+        self.ns.altgeom = numpy.concatenate([self.ns.x, [0]], 0)
         self.ns.basis = self.domain.basis('spline', degree=2)
         self.ns.a = 2
         self.ns.a2 = numpy.array([1, 2.])
@@ -1197,22 +1197,22 @@ class eval_ast(TestCase):
         self.assertEqual(lower(evaluated), lower(f))
 
     def test_group(self): self.assertEqualLowered('(a)', self.ns.a)
-    def test_arg(self): self.assertEqualLowered('a2_i ?x_i', function.dot(self.ns.a2, function.Argument('x', [2]), axes=[0]))
+    def test_arg(self): self.assertEqualLowered('a2_i ?x_i', numpy.matmul(self.ns.a2, function.Argument('x', [2])))
     def test_substitute(self): self.assertEqualLowered('(?x_i^2)(x_i=a2_i)', self.ns.a2**2)
     def test_multisubstitute(self): self.assertEqualLowered('(a2_i + ?x_i + ?y_i)(x_i=?y_i, y_i=?x_i)', self.ns.a2 + function.Argument('y', [2]) + function.Argument('x', [2]))
-    def test_call(self): self.assertEqualLowered('sin(a)', function.sin(self.ns.a))
-    def test_call2(self): self.assertEqualLowered('arctan2(a2_i, a3_j)', function.arctan2(self.ns.a2[:, None], self.ns.a3[None, :]), indices='ij')
-    def test_eye(self): self.assertEqualLowered('δ_ij a2_i', function.dot(function.eye(2), self.ns.a2, axes=[0]))
+    def test_call(self): self.assertEqualLowered('sin(a)', numpy.sin(self.ns.a))
+    def test_call2(self): self.assertEqualLowered('arctan2(a2_i, a3_j)', numpy.arctan2(self.ns.a2[:, None], self.ns.a3[None, :]), indices='ij')
+    def test_eye(self): self.assertEqualLowered('δ_ij a2_i', numpy.matmul(function.eye(2), self.ns.a2))
     def test_normal(self): self.assertEqualLowered('n_i', self.ns.x.normal(), topo=self.domain.boundary)
     def test_getitem(self): self.assertEqualLowered('a2_0', self.ns.a2[0])
-    def test_trace(self): self.assertEqualLowered('a22_ii', function.trace(self.ns.a22, 0, 1))
-    def test_sum(self): self.assertEqualLowered('a2_i a2_i', function.sum(self.ns.a2 * self.ns.a2, axis=0))
-    def test_concatenate(self): self.assertEqualLowered('<a, a>_i', function.concatenate([self.ns.a[None], self.ns.a[None]], axis=0))
+    def test_trace(self): self.assertEqualLowered('a22_ii', numpy.trace(self.ns.a22, 0, 1))
+    def test_sum(self): self.assertEqualLowered('a2_i a2_i', numpy.sum(self.ns.a2 * self.ns.a2, axis=0))
+    def test_concatenate(self): self.assertEqualLowered('<a, a>_i', numpy.concatenate([self.ns.a[None], self.ns.a[None]], axis=0))
     def test_grad(self): self.assertEqualLowered('basis_n,0', self.ns.basis.grad(self.ns.x)[:, 0])
     def test_surfgrad(self): self.assertEqualLowered('surfgrad(basis_0, altgeom_i)', function.grad(self.ns.basis[0], self.ns.altgeom, len(self.ns.altgeom)-1))
-    def test_derivative(self): self.assertEqualLowered('d(exp(?x), ?x)', function.derivative(function.exp(self.x), self.x))
+    def test_derivative(self): self.assertEqualLowered('d(exp(?x), ?x)', function.derivative(numpy.exp(self.x), self.x))
     def test_append_axis(self): self.assertEqualLowered('a a2_i', self.ns.a[None]*self.ns.a2)
-    def test_transpose(self): self.assertEqualLowered('a22_ij a22_ji', function.dot(self.ns.a22, self.ns.a22.T, axes=[0, 1]))
+    def test_transpose(self): self.assertEqualLowered('a22_ij a22_ji', numpy.sum(self.ns.a22 * self.ns.a22.T, [0,1]))
     def test_jump(self): self.assertEqualLowered('[a]', function.jump(self.ns.a))
     def test_mean(self): self.assertEqualLowered('{a}', function.mean(self.ns.a))
     def test_neg(self): self.assertEqualLowered('-a', -self.ns.a)
@@ -1237,6 +1237,6 @@ class eval_ast(TestCase):
 
     def test_derivative_deprecated(self):
         with self.assertWarns(warnings.NutilsDeprecationWarning):
-            self.assertEqualLowered('exp(?x)_,?x', function.derivative(function.exp(self.x), self.x))
+            self.assertEqualLowered('exp(?x)_,?x', function.derivative(numpy.exp(self.x), self.x))
 
 # vim:shiftwidth=2:softtabstop=2:expandtab:foldmethod=indent:foldnestmax=2

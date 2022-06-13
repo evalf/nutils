@@ -1,4 +1,5 @@
 from nutils import solver, mesh, function, cache, types, numeric, warnings, evaluable, sparse
+from nutils.expression_v2 import Namespace
 from nutils.testing import *
 import numpy
 import contextlib
@@ -85,8 +86,8 @@ class navierstokes(TestCase):
         if self.single:
             ubasis, pbasis = function.chain([ubasis.vector(2), pbasis])
             dofs = function.Argument('dofs', [len(ubasis)])
-            u = ubasis.dot(dofs)
-            p = pbasis.dot(dofs)
+            u = dofs @ ubasis
+            p = dofs @ pbasis
             dofs = 'dofs'
             ures = gauss.integral((self.viscosity * (ubasis.grad(geom) * (u.grad(geom) + u.grad(geom).T)).sum([-1, -2]) - ubasis.div(geom) * p) * dx)
             dres = gauss.integral((ubasis * (u.grad(geom) * u).sum(-1)).sum(-1) * dx)
@@ -157,9 +158,9 @@ class finitestrain(TestCase):
         domain, geom = mesh.rectilinear([numpy.linspace(0, 1, 9)] * 2)
         ubasis = domain.basis('std', degree=2)
         if self.vector:
-            u = ubasis.vector(2).dot(function.Argument('dofs', [len(ubasis)*2]))
+            u = function.dotarg('dofs', ubasis.vector(2))
         else:
-            u = (ubasis[:, numpy.newaxis] * function.Argument('dofs', [len(ubasis), 2])).sum(0)
+            u = function.dotarg('dofs', ubasis, shape=(2,))
         Geom = geom * [1.1, 1] + u
         self.cons = solver.optimize('dofs', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15)
         self.boolcons = ~numpy.isnan(self.cons)
@@ -204,10 +205,10 @@ class optimize(TestCase):
 
     def setUp(self):
         super().setUp()
-        self.ns = function.Namespace()
-        self.domain, self.ns.geom = mesh.rectilinear([2, 2])
-        self.ns.ubasis = self.domain.basis('std', degree=1)
-        self.ns.u = 'ubasis_n ?dofs_n'
+        self.domain, geom = mesh.rectilinear([2, 2])
+        self.ubasis = self.domain.basis('std', degree=1)
+        self.ns = Namespace()
+        self.ns.u = function.dotarg('dofs', self.ubasis)
 
     def test_linear(self):
         err = self.domain.boundary['bottom'].integral('(u - 1)^2' @ self.ns, degree=2)
@@ -215,13 +216,13 @@ class optimize(TestCase):
         numpy.testing.assert_almost_equal(cons, numpy.take([1, numpy.nan], [0, 1, 1, 0, 1, 1, 0, 1, 1]), decimal=15)
 
     def test_nonlinear(self):
-        err = self.domain.boundary['bottom'].integral('(u + .25 u^3 - 1.25)^2 d:geom' @ self.ns, degree=6)
+        err = self.domain.boundary['bottom'].integral('(u + .25 u^3 - 1.25)^2' @ self.ns, degree=6)
         cons = solver.optimize('dofs', err, droptol=1e-15, tol=1e-15)
         numpy.testing.assert_almost_equal(cons, numpy.take([1, numpy.nan], [0, 1, 1, 0, 1, 1, 0, 1, 1]), decimal=15)
 
     def test_nonlinear_multipleroots(self):
         err = self.domain.boundary['bottom'].integral('(u + u^2 - .75)^2' @ self.ns, degree=2)
-        cons = solver.optimize('dofs', err, droptol=1e-15, lhs0=numpy.ones(len(self.ns.ubasis)), tol=1e-10)
+        cons = solver.optimize('dofs', err, droptol=1e-15, lhs0=numpy.ones(len(self.ubasis)), tol=1e-10)
         numpy.testing.assert_almost_equal(cons, numpy.take([.5, numpy.nan], [0, 1, 1, 0, 1, 1, 0, 1, 1]), decimal=15)
 
     def test_nanres(self):
@@ -245,36 +246,41 @@ class burgers(TestCase):
 
     def setUp(self):
         super().setUp()
-        ns = function.Namespace()
-        domain, ns.x = mesh.rectilinear([10], periodic=(0,))
-        ns.basis = domain.basis('discont', degree=1)
-        ns.u = 'basis_n ?dofs_n'
+        domain, geom = mesh.rectilinear([10], periodic=(0,))
+        basis = domain.basis('discont', degree=1)
+        ns = Namespace()
+        ns.x = geom
+        ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
+        ns.add_field(('u', 'v'), basis)
         ns.f = '.5 u^2'
-        self.residual = domain.integral('-basis_n,0 f d:x' @ ns, degree=2)
-        self.residual += domain.interfaces.integral('-[basis_n] n_0 ({f} - .5 [u] n_0) d:x' @ ns, degree=4)
-        self.inertia = domain.integral('basis_n u d:x' @ ns, degree=5)
-        self.lhs0 = numpy.sin(numpy.arange(len(ns.basis)))  # "random" initial vector
+        self.residual = domain.integral('-∇_0(v) f dV' @ ns, degree=2)
+        self.residual += domain.interfaces.integral('-[v] n_0 ({f} - .5 [u] n_0) dS' @ ns, degree=4)
+        self.inertia = domain.integral('v u dV' @ ns, degree=5)
+        self.lhs0 = numpy.sin(numpy.arange(len(basis)))  # "random" initial vector
 
     def test_iters(self):
-        it = iter(solver.impliciteuler('dofs', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=100))  # involves 2-level timestep scaling
-        assert numpy.equal(next(it), self.lhs0).all()
-        self.assertAlmostEqual64(next(it), 'eNpzNBA1NjHuNHQ3FDsTfCbAuNz4nUGZgeyZiDOZxlONmQwU9W3OFJ/pNQAADZIOPA==')
+        it = iter(solver.impliciteuler('u:v', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=100))  # involves 2-level timestep scaling
+        assert numpy.equal(next(it)['u'], self.lhs0).all()
+        self.assertAlmostEqual64(next(it)['u'], 'eNpzNBA1NjHuNHQ3FDsTfCbAuNz4nUGZgeyZiDOZxlONmQwU9W3OFJ/pNQAADZIOPA==')
 
     def test_resume(self):
-        _test_recursion_cache(self, lambda: map(types.frozenarray, solver.impliciteuler('dofs', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=1)))
+        _test_recursion_cache(self, lambda: (types.frozenarray(args['u']) for args in solver.impliciteuler('u:v', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=1)))
 
     def test_resume_withscaling(self):
-        _test_recursion_cache(self, lambda: map(types.frozenarray, solver.impliciteuler('dofs', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=100)))
+        _test_recursion_cache(self, lambda: (types.frozenarray(args['u']) for args in solver.impliciteuler('u:v', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=100)))
 
 
 class theta_time(TestCase):
 
     def check(self, method, theta):
-        ns = function.Namespace()
+        ns = Namespace()
         topo, ns.x = mesh.rectilinear([1])
-        ns.u_n = '?u_n + <0>_n'
-        inertia = topo.integral('?u_n d:x' @ ns, degree=0)
-        residual = topo.integral('-<1>_n sin(?t) d:x' @ ns, degree=0)
+        ns.define_for('x', jacobians=('dV',))
+        ns.u = function.Argument('u', shape=(1,))
+        ns.t = function.Argument('t', shape=())
+        ns.e = function.ones([1])
+        inertia = topo.integral('u_n dV' @ ns, degree=0)
+        residual = topo.integral('-e_n sin(t) dV' @ ns, degree=0)
         timestep = 0.1
         udesired = numpy.array([0.])
         uactualiter = iter(method(target='u', residual=residual, inertia=inertia, timestep=timestep, lhs0=udesired, timetarget='t'))

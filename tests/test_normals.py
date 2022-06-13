@@ -14,7 +14,7 @@ class check(TestCase):
             assert self.ndims == 2
             nodes = numpy.linspace(-.25*numpy.pi, .25*numpy.pi, 3)
             self.domain, (xi, eta) = mesh.rectilinear([nodes, nodes])
-            self.geom = numpy.sqrt(2) * function.stack([function.sin(xi) * function.cos(eta), function.cos(xi) * function.sin(eta)])
+            self.geom = numpy.sqrt(2) * numpy.stack([function.sin(xi) * function.cos(eta), function.cos(xi) * function.sin(eta)])
             self.curv = 1
 
     def zero(self):

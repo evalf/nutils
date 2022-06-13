@@ -76,7 +76,7 @@ def newrectilinear(nodes: Sequence[Union[int, Sequence[float]]], periodic: Optio
     else:
         assert len(spaces) == len(nodes)
     domains, geoms = zip(*(line(nodesi, i in periodic, bnamesi, name=name, space=spacei, root=root) for i, (nodesi, bnamesi, spacei) in enumerate(zip(nodes, tuple(bnames)+(None,)*len(nodes), spaces))))
-    return util.product(domains), function.stack(geoms)
+    return util.product(domains), numpy.stack(geoms)
 
 
 if os.environ.get('NUTILS_TENSORIAL'):

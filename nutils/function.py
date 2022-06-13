@@ -183,7 +183,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
                 value = _Constant(__value)
             except:
                 if isinstance(__value, (list, tuple)):
-                    value = stack(__value, axis=0)
+                    value = numpy.stack([Array.cast(v) for v in __value], axis=0)
                 else:
                     raise ValueError('cannot convert {}.{} to Array'.format(type(__value).__module__, type(__value).__qualname__))
         if dtype is not None and _dtypes.index(value.dtype) > _dtypes.index(dtype):
@@ -249,13 +249,13 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
             else:
                 array = expand_dims(array, axis) if it is numpy.newaxis \
                     else _takeslice(array, it, axis) if isinstance(it, slice) \
-                    else take(array, it, axis)
+                    else numpy.take(array, it, axis)
                 axis += 1
         assert axis == array.ndim
         return array
 
     def __bool__(self) -> bool:
-        return True
+        raise ValueError('The truth value of a nutils Array is ambiguous')
 
     def __len__(self) -> int:
         'Length of the first axis.'
@@ -281,7 +281,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     def T(self) -> 'Array':
         'The transposed array.'
 
-        return transpose(self)
+        return numpy.transpose(self)
 
     def astype(self, dtype):
         if dtype == self.dtype:
@@ -290,16 +290,93 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
             return _Wrapper(functools.partial(evaluable.astype, dtype=dtype), self, shape=self.shape, dtype=dtype)
 
     def sum(self, axis: Optional[Union[int, Sequence[int]]] = None) -> 'Array':
-        'See :func:`sum`.'
-        return sum(self, axis)
+        '''Return the sum of array elements over the given axes.
+
+        .. warning::
+
+           This method will change in future to match Numpy's equivalent
+           method, which sums over all axes by default. During transition, use
+           of this method without an axis argument will raise a warning, and
+           later an error, if the input array is of ndim >= 2.
+
+        Parameters
+        ----------
+        arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
+        axis : :class:`int`, a sequence of :class:`int`, or ``None``
+            The axis or axes to sum. ``None``, the default, implies summation
+            over the last axis.
+
+        Returns
+        -------
+        :class:`Array`
+        '''
+        if axis is None and self.ndim != 1:
+            warnings.deprecation(
+                "The default summation axis will change from being the last axis (old behaviour)\n"
+                "to being ALL axes (numpy's behaviour). To facilitate the transition, the axis\n"
+                "argument will be made MANDATORY for arrays with dimension > 1, for the duration\n"
+                "of at least one release cycle.")
+            axis = -1
+
+        return numpy.sum(self, axis)
 
     def prod(self, __axis: int) -> 'Array':
-        'See :func:`prod`.'
-        return product(self, __axis)
+        '''Return the product of array elements over the given axes.
+
+        Parameters
+        ----------
+        axis : :class:`int`, a sequence of :class:`int`, or ``None``
+            The axis or axes along which the product is performed. ``None``, the
+            default, implies all axes.
+
+        Returns
+        -------
+        :class:`Array`
+        '''
+
+        return numpy.product(self, __axis)
 
     def dot(self, __other: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> 'Array':
-        'See :func:`dot`.'
-        return dot(self, __other, axes)
+        '''Return the inner product of the arguments over the given axes, elementwise over the remanining axes.
+
+        .. warning::
+
+           This method will change in future to match Numpy's equivalent
+           method, which does not support an axis argument and has different
+           behaviour in case of higher dimensional input. During transition,
+           use of this method for any situation other than the contraction of
+           two vectors will raise a warning, and later an error. For
+           continuity, use numpy.dot, numpy.matmul, or the @ operator instead.
+
+        Parameters
+        ----------
+        arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
+        axis : :class:`int`, a sequence of :class:`int`, or ``None``
+            The axis or axes along which the inner product is performed. If the
+            second argument has one dimension and axes is ``None``, the default, the
+            inner product of the second argument with the first axis of the first
+            argument is computed. Otherwise ``axes=None`` is not allowed.
+
+        Returns
+        -------
+        :class:`Array`
+        '''
+        other = Array.cast(__other)
+        if axes is None and self.ndim == other.ndim == 1:
+            # this is the only scenario in which the old implementation of dot
+            # was compatible with that of numpy
+            return numpy.dot(self, other)
+        warnings.warn(
+            'The implementation of Array.dot will change in the next release cycle to make\n'
+            'it equal to that of Numpy: the axis argument will be removed and contraction\n'
+            'will happen over the last axis of the first argument, rather than the first.\n'
+            'To prepare for this transition, please update your code to use numpy.dot,\n'
+            'numpy.matmul, the @ operator, or a combination of multiply and sum instead.')
+        if axes is None:
+            assert other.ndim == 1 and other.shape[0] == self.shape[0]
+            other = _append_axes(other, self.shape[1:])
+            axes = 0,
+        return numpy.sum(self * other, axes)
 
     def normalized(self, __axis: int = -1) -> 'Array':
         'See :func:`normalized`.'
@@ -314,12 +391,10 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         return curvature(self, ndims)
 
     def swapaxes(self, __axis1: int, __axis2: int) -> 'Array':
-        'See :func:`swapaxes`.'
-        return swapaxes(self, __axis1, __axis2)
+        return numpy.swapaxes(self, __axis1, __axis2)
 
     def transpose(self, __axes: Optional[Sequence[int]]) -> 'Array':
-        'See :func:`transpose`.'
-        return transpose(self, __axes)
+        return numpy.transpose(self, __axes)
 
     def add_T(self, axes: Tuple[int, int]) -> 'Array':
         'See :func:`add_T`.'
@@ -368,7 +443,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     def vector(self, ndims):
         if not self.ndim:
             raise Exception('a scalar function cannot be vectorized')
-        return ravel(diagonalize(insertaxis(self, 1, ndims), 1), 0)
+        return numpy.reshape(diagonalize(insertaxis(self, 1, ndims), 1), (self.shape[0] * ndims, ndims, *self.shape[1:]))
 
     def __repr__(self) -> str:
         return 'Array<{}>'.format(','.join(str(n) for n in self.shape))
@@ -401,20 +476,38 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         return {name: shape for name, (shape, dtype) in self.arguments.items()}
 
     def conjugate(self):
-        'See :func:`conjugate`.'
-        return conjugate(self)
+        '''Return the complex conjugate, elementwise.
+
+        Returns
+        -------
+        :class:`Array`
+            The complex conjugate.
+        '''
+        return numpy.conjugate(self)
 
     conj = conjugate
 
     @property
     def real(self):
-        'See :func:`real`.'
-        return real(self)
+        '''Return the real part of the complex argument.
+
+        Returns
+        -------
+        :class:`Array`
+            The real part of the complex argument.
+        '''
+        return numpy.real(self)
 
     @property
     def imag(self):
-        'See :func:`imag`.'
-        return imag(self)
+        '''Return the imaginary part of the complex argument.
+
+        Returns
+        -------
+        :class:`Array`
+            The imaginary part of the complex argument.
+        '''
+        return numpy.imag(self)
 
 
 class _Unlower(Array):
@@ -571,7 +664,7 @@ class Custom(Array):
             if len(points_shapes) == 0:
                 raise ValueError('Pointwise axes can only be used in combination with at least one `function.Array` argument.')
             points_shape = broadcast_shapes(*points_shapes)
-            args = tuple(broadcast_to(arg, points_shape + arg.shape[npointwise:]) if isinstance(arg, Array) else arg for arg in args)
+            args = tuple(numpy.broadcast_to(arg, points_shape + arg.shape[npointwise:]) if isinstance(arg, Array) else arg for arg in args)
         else:
             points_shape = ()
         self._args = args
@@ -935,8 +1028,8 @@ class _Gradient(Array):
         assert geom.spaces, '0d array'
         assert geom.dtype == float
         common_shape = broadcast_shapes(func.shape, geom.shape[:-1])
-        self._func = broadcast_to(func, common_shape)
-        self._geom = broadcast_to(geom, (*common_shape, geom.shape[-1]))
+        self._func = numpy.broadcast_to(func, common_shape)
+        self._geom = numpy.broadcast_to(geom, (*common_shape, geom.shape[-1]))
         arguments = _join_arguments((func.arguments, geom.arguments))
         super().__init__(self._geom.shape, complex if func.dtype == complex else float, func.spaces | geom.spaces, arguments)
 
@@ -961,8 +1054,8 @@ class _SurfaceGradient(Array):
         assert geom.spaces, '0d array'
         assert geom.dtype == float
         common_shape = broadcast_shapes(func.shape, geom.shape[:-1])
-        self._func = broadcast_to(func, common_shape)
-        self._geom = broadcast_to(geom, (*common_shape, geom.shape[-1]))
+        self._func = numpy.broadcast_to(func, common_shape)
+        self._geom = numpy.broadcast_to(geom, (*common_shape, geom.shape[-1]))
         arguments = _join_arguments((func.arguments, geom.arguments))
         super().__init__(self._geom.shape, complex if func.dtype == complex else float, func.spaces | geom.spaces, arguments)
 
@@ -1100,15 +1193,14 @@ def _join_arguments(args_list: Iterable[Mapping[str, Argument]]) -> Dict[str, Ar
 # CONSTRUCTORS
 
 
-HANDLED_FUNCTIONS = {}
-
-
-def implements(np_function):
-    'Register an ``__array_function__`` or ``__array_ufunc__`` implementation for Array objects.'
-    def decorator(func):
-        HANDLED_FUNCTIONS[np_function] = func
-        return func
-    return decorator
+def _use_instead(alternative):
+    def wrapper(f):
+        @functools.wraps(f)
+        def wrapped(*args, **kwargs):
+            warnings.deprecation(f'function.{f.__name__} is deprecated; use {alternative} instead')
+            return f(*args, **kwargs)
+        return wrapped
+    return wrapper
 
 
 def asarray(__arg: IntoArray) -> Array:
@@ -1127,17 +1219,17 @@ def asarray(__arg: IntoArray) -> Array:
     return Array.cast(__arg)
 
 
-@implements(numpy.shape)
+@_use_instead('numpy.shape')
 def shape(__arg: IntoArray) -> Tuple[int, ...]:
     return asarray(__arg).shape
 
 
-@implements(numpy.ndim)
+@_use_instead('numpy.ndim')
 def ndim(__arg: IntoArray) -> int:
     return asarray(__arg).ndim
 
 
-@implements(numpy.size)
+@_use_instead('numpy.size')
 def size(__arg: IntoArray) -> int:
     return asarray(__arg).size
 
@@ -1216,7 +1308,7 @@ def levicivita(__n: int, dtype: DType = float) -> Array:
 # ARITHMETIC
 
 
-@implements(numpy.add)
+@_use_instead('numpy.add')
 def add(__left: IntoArray, __right: IntoArray) -> Array:
     '''Return the sum of the arguments, elementwise.
 
@@ -1232,7 +1324,7 @@ def add(__left: IntoArray, __right: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.add, __left, __right)
 
 
-@implements(numpy.subtract)
+@_use_instead('numpy.subtract')
 def subtract(__left: IntoArray, __right: IntoArray) -> Array:
     '''Return the difference of the arguments, elementwise.
 
@@ -1248,7 +1340,7 @@ def subtract(__left: IntoArray, __right: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.subtract, __left, __right)
 
 
-@implements(numpy.positive)
+@_use_instead('numpy.positive')
 def positive(__arg: IntoArray) -> Array:
     '''Return the argument unchanged.
 
@@ -1264,7 +1356,7 @@ def positive(__arg: IntoArray) -> Array:
     return Array.cast(__arg)
 
 
-@implements(numpy.negative)
+@_use_instead('numpy.negative')
 def negative(__arg: IntoArray) -> Array:
     '''Return the negation of the argument, elementwise.
 
@@ -1280,7 +1372,7 @@ def negative(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.negative, __arg)
 
 
-@implements(numpy.multiply)
+@_use_instead('numpy.multiply')
 def multiply(__left: IntoArray, __right: IntoArray) -> Array:
     '''Return the product of the arguments, elementwise.
 
@@ -1299,7 +1391,7 @@ def multiply(__left: IntoArray, __right: IntoArray) -> Array:
         else _Wrapper.broadcasted_arrays(evaluable.multiply, left, right)
 
 
-@implements(numpy.true_divide)
+@_use_instead('numpy.divide')
 def divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
     '''Return the true-division of the arguments, elementwise.
 
@@ -1318,7 +1410,7 @@ def divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
         else _Wrapper.broadcasted_arrays(evaluable.divide, dividend, divisor)
 
 
-@implements(numpy.floor_divide)
+@_use_instead('numpy.floor_divide')
 def floor_divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
     '''Return the floor-division of the arguments, elementwise.
 
@@ -1334,7 +1426,7 @@ def floor_divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.FloorDivide, __dividend, __divisor)
 
 
-@implements(numpy.reciprocal)
+@_use_instead('numpy.reciprocal')
 def reciprocal(__arg: IntoArray) -> Array:
     '''Return the reciprocal of the argument, elementwise.
 
@@ -1350,7 +1442,7 @@ def reciprocal(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.reciprocal, __arg)
 
 
-@implements(numpy.power)
+@_use_instead('numpy.power')
 def power(__base: IntoArray, __exponent: IntoArray) -> Array:
     '''Return the exponentiation of the arguments, elementwise.
 
@@ -1366,7 +1458,7 @@ def power(__base: IntoArray, __exponent: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.power, __base, __exponent, min_dtype=int)
 
 
-@implements(numpy.sqrt)
+@_use_instead('numpy.sqrt')
 def sqrt(__arg: IntoArray) -> Array:
     '''Return the square root of the argument, elementwise.
 
@@ -1382,17 +1474,18 @@ def sqrt(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.sqrt, __arg, min_dtype=float)
 
 
-@implements(numpy.square)
+@_use_instead('numpy.square')
 def square(__arg: IntoArray) -> Array:
-    return power(__arg, 2)
+    warnings.deprecation('function.square is deprecated; use numpy.square instead')
+    return Array.cast(numpy.square(__arg))
 
 
-@implements(numpy.hypot)
+@_use_instead('numpy.hypot')
 def hypot(__array1: IntoArray, __array2: IntoArray) -> Array:
-    return sqrt(square(__array1) + square(__array2))
+    return numpy.sqrt(numpy.square(__array1) + numpy.square(__array2))
 
 
-@implements(numpy.absolute)
+@_use_instead('abs or numpy.abs')
 def abs(__arg: IntoArray) -> Array:
     '''Return the absolute value of the argument, elementwise.
 
@@ -1409,7 +1502,7 @@ def abs(__arg: IntoArray) -> Array:
     return _Wrapper(evaluable.abs, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
 
 
-@implements(numpy.matmul)
+@_use_instead('numpy.matmul or the @ operator')
 def matmul(__arg1: IntoArray, __arg2: IntoArray) -> Array:
     '''Return the matrix product of two arrays.
 
@@ -1440,7 +1533,7 @@ def matmul(__arg1: IntoArray, __arg2: IntoArray) -> Array:
         return (arg1[..., :, :, numpy.newaxis] * arg2[..., numpy.newaxis, :, :]).sum(-2)
 
 
-@implements(numpy.sign)
+@_use_instead('numpy.sign')
 def sign(__arg: IntoArray) -> Array:
     '''Return the sign of the argument, elementwise.
 
@@ -1459,7 +1552,7 @@ def sign(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Sign, __arg)
 
 
-@implements(numpy.mod)
+@_use_instead('numpy.mod')
 def mod(__dividend: IntoArray, __divisor: IntoArray) -> Array:
     '''Return the remainder of the floored division, elementwise.
 
@@ -1475,7 +1568,7 @@ def mod(__dividend: IntoArray, __divisor: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Mod, __dividend, __divisor)
 
 
-@implements(numpy.divmod)
+@_use_instead('numpy.divmod')
 def divmod(__dividend: IntoArray, __divisor: IntoArray) -> Tuple[Array, Array]:
     '''Return the floor-division and remainder, elementwise.
 
@@ -1493,7 +1586,7 @@ def divmod(__dividend: IntoArray, __divisor: IntoArray) -> Tuple[Array, Array]:
 # TRIGONOMETRIC
 
 
-@implements(numpy.cos)
+@_use_instead('numpy.cos')
 def cos(__arg: IntoArray) -> Array:
     '''Return the trigonometric cosine of the argument, elementwise.
 
@@ -1509,7 +1602,7 @@ def cos(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Cos, __arg, min_dtype=float)
 
 
-@implements(numpy.sin)
+@_use_instead('numpy.sin')
 def sin(__arg: IntoArray) -> Array:
     '''Return the trigonometric sine of the argument, elementwise.
 
@@ -1525,7 +1618,7 @@ def sin(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Sin, __arg, min_dtype=float)
 
 
-@implements(numpy.tan)
+@_use_instead('numpy.tab')
 def tan(__arg: IntoArray) -> Array:
     '''Return the trigonometric tangent of the argument, elementwise.
 
@@ -1541,7 +1634,7 @@ def tan(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Tan, __arg, min_dtype=float)
 
 
-@implements(numpy.arccos)
+@_use_instead('numpy.arccos')
 def arccos(__arg: IntoArray) -> Array:
     '''Return the trigonometric inverse cosine of the argument, elementwise.
 
@@ -1557,7 +1650,7 @@ def arccos(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.ArcCos, __arg, min_dtype=float)
 
 
-@implements(numpy.arcsin)
+@_use_instead('numpy.arcsin')
 def arcsin(__arg: IntoArray) -> Array:
     '''Return the trigonometric inverse sine of the argument, elementwise.
 
@@ -1573,7 +1666,7 @@ def arcsin(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.ArcSin, __arg, min_dtype=float)
 
 
-@implements(numpy.arctan)
+@_use_instead('numpy.arctan')
 def arctan(__arg: IntoArray) -> Array:
     '''Return the trigonometric inverse tangent of the argument, elementwise.
 
@@ -1589,7 +1682,7 @@ def arctan(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.ArcTan, __arg, min_dtype=float)
 
 
-@implements(numpy.arctan2)
+@_use_instead('numpy.arctan2')
 def arctan2(__dividend: IntoArray, __divisor: IntoArray) -> Array:
     '''Return the trigonometric inverse tangent of the ``dividend / divisor``, elementwise.
 
@@ -1608,7 +1701,7 @@ def arctan2(__dividend: IntoArray, __divisor: IntoArray) -> Array:
     return _Wrapper(evaluable.ArcTan2, dividend, divisor, shape=dividend.shape, dtype=float)
 
 
-@implements(numpy.cosh)
+@_use_instead('numpy.cosh')
 def cosh(__arg: IntoArray) -> Array:
     '''Return the hyperbolic cosine of the argument, elementwise.
 
@@ -1624,7 +1717,7 @@ def cosh(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.cosh, __arg, min_dtype=float)
 
 
-@implements(numpy.sinh)
+@_use_instead('numpy.sinh')
 def sinh(__arg: IntoArray) -> Array:
     '''Return the hyperbolic sine of the argument, elementwise.
 
@@ -1640,7 +1733,7 @@ def sinh(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.sinh, __arg, min_dtype=float)
 
 
-@implements(numpy.tanh)
+@_use_instead('numpy.tanh')
 def tanh(__arg: IntoArray) -> Array:
     '''Return the hyperbolic tangent of the argument, elementwise.
 
@@ -1656,7 +1749,7 @@ def tanh(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.tanh, __arg, min_dtype=float)
 
 
-@implements(numpy.arctanh)
+@_use_instead('numpy.arctanh')
 def arctanh(__arg: IntoArray) -> Array:
     '''Return the hyperbolic inverse tangent of the argument, elementwise.
 
@@ -1672,7 +1765,7 @@ def arctanh(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.arctanh, __arg, min_dtype=float)
 
 
-@implements(numpy.exp)
+@_use_instead('numpy.exp')
 def exp(__arg: IntoArray) -> Array:
     '''Return the exponential of the argument, elementwise.
 
@@ -1688,7 +1781,7 @@ def exp(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Exp, __arg, min_dtype=float)
 
 
-@implements(numpy.log)
+@_use_instead('numpy.log')
 def log(__arg: IntoArray) -> Array:
     '''Return the natural logarithm of the argument, elementwise.
 
@@ -1707,7 +1800,7 @@ def log(__arg: IntoArray) -> Array:
 ln = log
 
 
-@implements(numpy.log2)
+@_use_instead('numpy.log2')
 def log2(__arg: IntoArray) -> Array:
     '''Return the base 2 logarithm of the argument, elementwise.
 
@@ -1723,7 +1816,7 @@ def log2(__arg: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.log2, __arg, min_dtype=float)
 
 
-@implements(numpy.log10)
+@_use_instead('numpy.log10')
 def log10(__arg: IntoArray) -> Array:
     '''Return the base 10 logarithm of the argument, elementwise.
 
@@ -1741,7 +1834,7 @@ def log10(__arg: IntoArray) -> Array:
 # COMPARISON
 
 
-@implements(numpy.greater)
+@_use_instead('numpy.greater or the > operator')
 def greater(__left: IntoArray, __right: IntoArray) -> Array:
     '''Return if the first argument is greater than the second, elementwise.
 
@@ -1760,7 +1853,7 @@ def greater(__left: IntoArray, __right: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Greater, left, right, force_dtype=bool)
 
 
-@implements(numpy.equal)
+@_use_instead('numpy.equal or the == operator')
 def equal(__left: IntoArray, __right: IntoArray) -> Array:
     '''Return if the first argument equals the second, elementwise.
 
@@ -1776,7 +1869,7 @@ def equal(__left: IntoArray, __right: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Equal, __left, __right, force_dtype=bool)
 
 
-@implements(numpy.less)
+@_use_instead('numpy.less or the < operator')
 def less(__left: IntoArray, __right: IntoArray) -> Array:
     '''Return if the first argument is less than the second, elementwise.
 
@@ -1795,7 +1888,7 @@ def less(__left: IntoArray, __right: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Less, left, right, force_dtype=bool)
 
 
-@implements(numpy.min)
+@_use_instead('numpy.minimum')
 def min(__a: IntoArray, __b: IntoArray) -> Array:
     '''Return the minimum of the arguments, elementwise.
 
@@ -1814,7 +1907,7 @@ def min(__a: IntoArray, __b: IntoArray) -> Array:
     return _Wrapper.broadcasted_arrays(evaluable.Minimum, a, b)
 
 
-@implements(numpy.max)
+@_use_instead('numpy.maximum')
 def max(__a: IntoArray, __b: IntoArray) -> Array:
     '''Return the maximum of the arguments, elementwise.
 
@@ -1959,7 +2052,7 @@ def jump(__arg: IntoArray) -> Array:
 # REDUCTION
 
 
-@implements(numpy.sum)
+@_use_instead('numpy.sum')
 def sum(__arg: IntoArray, axis: Optional[Union[int, Sequence[int]]] = None) -> Array:
     '''Return the sum of array elements over the given axes.
 
@@ -1988,7 +2081,7 @@ def sum(__arg: IntoArray, axis: Optional[Union[int, Sequence[int]]] = None) -> A
     return summed
 
 
-@implements(numpy.product)
+@_use_instead('numpy.product')
 def product(__arg: IntoArray, axis: int) -> Array:
     '''Return the product of array elements over the given axes.
 
@@ -2013,7 +2106,7 @@ def product(__arg: IntoArray, axis: int) -> Array:
 # LINEAR ALGEBRA
 
 
-@implements(numpy.conjugate)
+@_use_instead('numpy.conjugate')
 def conjugate(__arg: IntoArray) -> Array:
     '''Return the complex conjugate, elementwise.
 
@@ -2034,7 +2127,7 @@ def conjugate(__arg: IntoArray) -> Array:
 conj = conjugate
 
 
-@implements(numpy.real)
+@_use_instead('numpy.real')
 def real(__arg: IntoArray) -> Array:
     '''Return the real part of the complex argument.
 
@@ -2052,7 +2145,7 @@ def real(__arg: IntoArray) -> Array:
     return _Wrapper(evaluable.real, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
 
 
-@implements(numpy.imag)
+@_use_instead('numpy.imag')
 def imag(__arg: IntoArray) -> Array:
     '''Return the imaginary part of the complex argument.
 
@@ -2070,6 +2163,7 @@ def imag(__arg: IntoArray) -> Array:
     return _Wrapper(evaluable.imag, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
 
 
+@_use_instead('numpy.dot, matmul or a combination of multiply and sum')
 def dot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> Array:
     '''Return the inner product of the arguments over the given axes, elementwise over the remanining axes.
 
@@ -2093,10 +2187,10 @@ def dot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]
         assert b.ndim == 1 and b.shape[0] == a.shape[0]
         b = _append_axes(b, a.shape[1:])
         axes = 0,
-    return sum(multiply(a, b), axes)
+    return numpy.sum(a * b, axes)
 
 
-@implements(numpy.vdot)
+@_use_instead('numpy.vdot')
 def vdot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> Array:
     '''Return the dot product of two vectors.
 
@@ -2116,10 +2210,10 @@ def vdot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]
     '''
 
     a, b = broadcast_arrays(__a, __b)
-    return sum(multiply(conjugate(a), b), range(a.ndim))
+    return numpy.sum(numpy.conjugate(a) * b, range(a.ndim))
 
 
-@implements(numpy.trace)
+@_use_instead('numpy.trace')
 def trace(__arg: IntoArray, axis1: int = -2, axis2: int = -1) -> Array:
     '''Return the trace, the sum of the diagonal, of an array over the two given axes, elementwise over the remanining axes.
 
@@ -2136,7 +2230,7 @@ def trace(__arg: IntoArray, axis1: int = -2, axis2: int = -1) -> Array:
     :class:`Array`
     '''
 
-    return sum(_takediag(__arg, axis1, axis2), -1)
+    return numpy.sum(_takediag(__arg, axis1, axis2), -1)
 
 
 def norm2(__arg: IntoArray, axis: Union[int, Sequence[int]] = -1) -> Array:
@@ -2154,7 +2248,7 @@ def norm2(__arg: IntoArray, axis: Union[int, Sequence[int]] = -1) -> Array:
     '''
 
     arg = Array.cast(__arg)
-    return sqrt(sum(multiply(arg, conjugate(arg)), axis))
+    return numpy.sqrt(numpy.sum(arg * numpy.conjugate(arg), axis))
 
 
 def normalized(__arg: IntoArray, axis: int = -1) -> Array:
@@ -2176,7 +2270,7 @@ def normalized(__arg: IntoArray, axis: int = -1) -> Array:
     '''
 
     arg = Array.cast(__arg)
-    return divide(arg, insertaxis(norm2(arg, axis), axis, 1))
+    return arg / insertaxis(norm2(arg, axis), axis, 1)
 
 
 def matmat(__arg0: IntoArray, *args: IntoArray) -> Array:
@@ -2185,7 +2279,7 @@ def matmat(__arg0: IntoArray, *args: IntoArray) -> Array:
     for arg in map(Array.cast, args):
         if retval.shape[-1] != arg.shape[0]:
             raise ValueError('incompatible shapes')
-        retval = dot(retval[(...,)+(numpy.newaxis,)*(arg.ndim-1)], arg[(numpy.newaxis,)*(retval.ndim-1)], retval.ndim-1)
+        retval = numpy.sum(_append_axes(retval, arg.shape[1:]) * arg, retval.ndim-1)
     return retval
 
 
@@ -2354,7 +2448,7 @@ def cross(__arg1: IntoArray, __arg2: IntoArray, axis: int = -1) -> Array:
     assert arg1.shape[axis] == 3
     i = Array.cast(types.frozenarray([1, 2, 0]))
     j = Array.cast(types.frozenarray([2, 0, 1]))
-    return take(arg1, i, axis) * take(arg2, j, axis) - take(arg2, i, axis) * take(arg1, j, axis)
+    return numpy.take(arg1, i, axis) * numpy.take(arg2, j, axis) - numpy.take(arg2, i, axis) * numpy.take(arg1, j, axis)
 
 
 def outer(arg1, arg2=None, axis=0):
@@ -2370,7 +2464,7 @@ def outer(arg1, arg2=None, axis=0):
 # ARRAY OPS
 
 
-@implements(numpy.transpose)
+@_use_instead('numpy.transpose')
 def transpose(__array: IntoArray, __axes: Optional[Sequence[int]] = None) -> Array:
     '''Permute the axes of an array.
 
@@ -2445,7 +2539,7 @@ def expand_dims(__array: IntoArray, axis: int) -> Array:
     return insertaxis(__array, axis, 1)
 
 
-@implements(numpy.repeat)
+@_use_instead('numpy.repeat')
 def repeat(__array: IntoArray, __n: IntoArray, axis: int) -> Array:
     '''Repeat the given axis of an array `n` times.
 
@@ -2468,7 +2562,7 @@ def repeat(__array: IntoArray, __n: IntoArray, axis: int) -> Array:
     return insertaxis(get(array, axis, 0), axis, __n)
 
 
-@implements(numpy.swapaxes)
+@_use_instead('numpy.swapaxes')
 def swapaxes(__array: IntoArray, __axis1: int, __axis2: int) -> Array:
     '''Swap two axes of an array.
 
@@ -2491,6 +2585,7 @@ def swapaxes(__array: IntoArray, __axis1: int, __axis2: int) -> Array:
     return transpose(array, trans)
 
 
+@_use_instead('numpy.ravel or numpy.reshape')
 def ravel(__array: IntoArray, axis: int) -> Array:
     '''Ravel two consecutive axes of an array.
 
@@ -2548,7 +2643,7 @@ def unravel(__array: IntoArray, axis: int, shape: Tuple[int, int]) -> Array:
     return _Transpose.from_end(unraveled, axis, axis+1)
 
 
-@implements(numpy.take)
+@_use_instead('numpy.take')
 def take(__array: IntoArray, __indices: IntoArray, axis: int) -> Array:
     '''Take elements from an array along an axis.
 
@@ -2609,10 +2704,7 @@ def get(__array: IntoArray, __axis: int, __index: IntoArray) -> Array:
     :func:`kronecker` : The complement operation.
     '''
 
-    array = Array.cast(__array)
-    axis = __axis
-    index = Array.cast(__index, dtype=int, ndim=0)
-    return take(array, index, axis)
+    return numpy.take(Array.cast(__array), Array.cast(__index, dtype=int, ndim=0), __axis)
 
 
 def _range(__length: int, __offset: int) -> Array:
@@ -2636,7 +2728,7 @@ def _takeslice(__array: IntoArray, __s: slice, __axis: int) -> Array:
         index = Array.cast(numpy.arange(*s.indices(int(n))))
     else:
         raise Exception('a non-unit slice requires a constant-length axis')
-    return take(array, index, axis)
+    return numpy.take(array, index, axis)
 
 
 def scatter(__array: IntoArray, length: int, indices: IntoArray) -> Array:
@@ -2701,7 +2793,7 @@ def kronecker(__array: IntoArray, axis: int, length: int, pos: IntoArray) -> Arr
     return _Transpose.from_end(scatter(__array, length, pos), axis)
 
 
-@implements(numpy.concatenate)
+@_use_instead('numpy.concatenate')
 def concatenate(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
     '''Join arrays along an existing axis.
 
@@ -2723,7 +2815,7 @@ def concatenate(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
     return _Concatenate(__arrays, axis)
 
 
-@implements(numpy.stack)
+@_use_instead('numpy.stack')
 def stack(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
     '''Join arrays along a new axis.
 
@@ -2778,7 +2870,7 @@ def broadcast_arrays(*arrays: IntoArray) -> Tuple[Array, ...]:
 
     arrays_ = tuple(map(Array.cast, arrays))
     shape = broadcast_shapes(*(arg.shape for arg in arrays_))
-    return tuple(broadcast_to(arg, shape) for arg in arrays_)
+    return tuple(numpy.broadcast_to(arg, shape) for arg in arrays_)
 
 
 def typecast_arrays(*arrays: IntoArray, min_dtype: DType = bool):
@@ -2826,7 +2918,7 @@ def broadcast_shapes(*shapes: Shape) -> Tuple[int, ...]:
     return tuple(broadcasted)
 
 
-@implements(numpy.broadcast_to)
+@_use_instead('numpy.broadcast_to')
 def broadcast_to(array: IntoArray, shape: Shape) -> Array:
     '''Broadcast an array to a new shape.
 
@@ -2853,7 +2945,7 @@ def broadcast_to(array: IntoArray, shape: Shape) -> Array:
         if actual == desired:
             continue
         elif actual == 1:
-            broadcasted = repeat(broadcasted, desired, axis + nnew)
+            broadcasted = numpy.repeat(broadcasted, desired, axis + nnew)
         else:
             raise ValueError('cannot broadcast array with shape {} to {} because input axis {} is neither singleton nor has the desired length'.format(orig_shape, shape, axis))
     return broadcasted
@@ -2908,18 +3000,13 @@ def grad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
     geom, geomscale = Array.cast_withscale(__geom)
     if geom.dtype != float:
         raise ValueError('The geometry must be real-valued.')
-    if geom.ndim == 0:
-        ret = grad(arg, _append_axes(geom, (1,)))[..., 0]
-    elif geom.ndim > 1:
-        sh = geom.shape[-2:]
-        ret = unravel(grad(arg, ravel(geom, geom.ndim-2)), arg.ndim+geom.ndim-2, sh)
-    elif ndims == 0 or ndims == geom.shape[0]:
-        ret = _Gradient(arg, geom)
-    elif ndims == -1 or ndims == geom.shape[0] - 1:
-        ret = _SurfaceGradient(arg, geom)
+    if ndims == 0 or ndims == geom.size:
+        op = _Gradient
+    elif ndims == -1 or ndims == geom.size - 1:
+        op = _SurfaceGradient
     else:
         raise NotImplementedError
-    return ret * (argscale / geomscale)
+    return numpy.reshape(op(arg, numpy.ravel(geom)), arg.shape + geom.shape) * (argscale / geomscale)
 
 
 def curl(__arg: IntoArray, __geom: IntoArray) -> Array:
@@ -2967,19 +3054,15 @@ def normal(__geom: IntoArray, refgeom: Optional[Array] = None) -> Array:
     geom, geomscale_ = Array.cast_withscale(__geom)
     if geom.dtype != float:
         raise ValueError('The geometry must be real-valued.')
-    if geom.ndim == 0:
-        return normal(insertaxis(geom, 0, 1), refgeom)[..., 0]
-    elif geom.ndim > 1:
-        sh = geom.shape[-2:]
-        return unravel(normal(ravel(geom, geom.ndim-2), refgeom), geom.ndim-2, sh)
-    elif refgeom is None:
-        return _Normal(geom)
-    elif refgeom.dtype != float:
-        raise ValueError('The reference geometry must be real-valued.')
-    elif refgeom.shape != (geom.shape[0]-1,):
-        raise ValueError('The reference geometry must have shape ({},) but got {}.'.format(geom.shape[0]-1, refgeom.shape))
+    if refgeom is None:
+        normal = _Normal(numpy.ravel(geom))
     else:
-        return _ExteriorNormal(grad(geom, refgeom))
+        if refgeom.dtype != float:
+            raise ValueError('The reference geometry must be real-valued.')
+        if refgeom.size != geom.size-1:
+            raise ValueError(f'The reference geometry must have size {geom.size-1}, but got {refgeom.size}.')
+        normal = _ExteriorNormal(grad(numpy.ravel(geom), numpy.ravel(refgeom)))
+    return numpy.reshape(normal, geom.shape)
 
 
 def dotnorm(__arg: IntoArray, __geom: IntoArray, axis: int = -1) -> Array:
@@ -3000,10 +3083,7 @@ def dotnorm(__arg: IntoArray, __geom: IntoArray, axis: int = -1) -> Array:
     :class:`Array`
     '''
 
-    arg = _Transpose.to_end(Array.cast(__arg), axis)
-    geom = Array.cast(__geom, ndim=1)
-    assert geom.shape[0] == arg.shape[-1]
-    return dot(arg, _prepend_axes(normal(geom), arg.shape[:-1]), -1)
+    return _Transpose.to_end(Array.cast(__arg), axis) @ normal(__geom)
 
 
 def tangent(__geom: IntoArray, __vec: IntoArray) -> Array:
@@ -3018,9 +3098,9 @@ def tangent(__geom: IntoArray, __vec: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    geom = Array.cast(__geom)
+    norm = normal(__geom)
     vec = Array.cast(__vec)
-    return subtract(vec, multiply(dot(vec, normal(geom), -1)[..., None], normal(geom)))
+    return vec - (vec @ norm)[..., None] * norm
 
 
 def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
@@ -3045,13 +3125,7 @@ def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
         scale = 1.
     else:
         raise ValueError('scaled arrays require an explicit dimension')
-    if geom.ndim == 0:
-        J = jacobian(insertaxis(geom, 0, 1), __ndims)
-    elif geom.ndim > 1:
-        J = jacobian(ravel(geom, geom.ndim-2), __ndims)
-    else:
-        J = _Jacobian(geom, __ndims)
-    return J * scale
+    return _Jacobian(numpy.ravel(geom), __ndims) * scale
 
 
 def J(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
@@ -3117,7 +3191,7 @@ def div(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
     '''
 
     geom = Array.cast(__geom, ndim=1)
-    return trace(grad(__arg, geom, ndims))
+    return numpy.trace(grad(__arg, geom, ndims), -2, -1)
 
 
 def laplace(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
@@ -3153,7 +3227,7 @@ def symgrad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
 
     arg = Array.cast(__arg)
     geom = Array.cast(__geom)
-    return multiply(.5, add_T(arg.grad(geom, ndims)))
+    return .5 * add_T(arg.grad(geom, ndims))
 
 
 def ngrad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
@@ -3242,7 +3316,7 @@ def Elemwise(__data: Sequence[numpy.ndarray], __index: IntoArray, dtype: DType) 
 def piecewise(level: IntoArray, intervals: Sequence[IntoArray], *funcs: IntoArray) -> Array:
     'piecewise'
     level = Array.cast(level)
-    return util.sum(greater(level, interval).astype(int) for interval in intervals).choose(funcs)
+    return util.sum((level > interval).astype(int) for interval in intervals).choose(funcs)
 
 
 def partition(f: IntoArray, *levels: float) -> Sequence[Array]:
@@ -3285,9 +3359,8 @@ def partition(f: IntoArray, *levels: float) -> Sequence[Array]:
     '''
 
     f = Array.cast(f)
-    signs = [sign(f - level) for level in levels]
-    steps = map(subtract, signs[:-1], signs[1:])
-    return [.5 - .5 * signs[0]] + [.5 * step for step in steps] + [.5 + .5 * signs[-1]]
+    signs = [numpy.sign(f - level) for level in levels]
+    return [.5 - .5 * signs[0]] + [.5 * (a - b) for a, b in zip(signs[:-1], signs[1:])] + [.5 + .5 * signs[-1]]
 
 
 def heaviside(f: IntoArray):
@@ -3316,7 +3389,7 @@ def heaviside(f: IntoArray):
     :func:`sign`: like :func:`heaviside` but with different levels
     '''
 
-    return sign(f) * .5 + .5
+    return Array.cast(numpy.sign(f) * .5 + .5)
 
 
 def _eval_choose(_index: evaluable.Array, *_choices: evaluable.Array) -> evaluable.Array:
@@ -3341,8 +3414,8 @@ def chain(_funcs: Sequence[IntoArray]) -> Sequence[Array]:
 
     funcs = tuple(map(Array.cast, _funcs))
     shapes = [func.shape[0] for func in funcs]
-    return [concatenate([func if i == j else zeros((sh,) + func.shape[1:])
-                         for j, sh in enumerate(shapes)], axis=0)
+    return [numpy.concatenate([func if i == j else zeros((sh,) + func.shape[1:])
+        for j, sh in enumerate(shapes)], axis=0)
             for i, func in enumerate(funcs)]
 
 
@@ -3359,7 +3432,7 @@ def vectorize(args: Sequence[IntoArray]) -> Array:
     :class:`Array`
     '''
 
-    return concatenate([kronecker(arg, axis=-1, length=len(args), pos=iarg) for iarg, arg in enumerate(args)])
+    return numpy.concatenate([kronecker(arg, axis=-1, length=len(args), pos=iarg) for iarg, arg in enumerate(args)])
 
 
 def simplified(__arg: IntoArray) -> Array:
@@ -3375,22 +3448,19 @@ def iszero(__arg: IntoArray) -> bool:
 def add_T(__arg: IntoArray, axes: Tuple[int, int] = (-2, -1)) -> Array:
     'add transposed'
     arg = Array.cast(__arg)
-    return swapaxes(arg, *axes) + arg
+    return numpy.swapaxes(arg, *axes) + arg
 
 
 def trignormal(_angle: IntoArray) -> Array:
-    angle = Array.cast(_angle)
-    return stack([cos(angle), sin(angle)], axis=-1)
+    return Array.cast(numpy.stack([numpy.cos(_angle), numpy.sin(_angle)], axis=-1))
 
 
 def trigtangent(_angle: IntoArray) -> Array:
-    angle = Array.cast(_angle)
-    return stack([-sin(angle), cos(angle)], axis=-1)
+    return Array.cast(numpy.stack([-numpy.sin(_angle), numpy.cos(_angle)], axis=-1))
 
 
 def rotmat(__arg: IntoArray) -> Array:
-    arg = Array.cast(__arg)
-    return stack([trignormal(arg), trigtangent(arg)], 0)
+    return Array.cast(numpy.stack([trignormal(__arg), trigtangent(__arg)], 0))
 
 
 def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtype: DType = float) -> Array:
@@ -3853,3 +3923,378 @@ def Namespace(*args, **kwargs):
 def _is_unit_scalar(v):
     T = type(v)
     return T in _dtypes and v == T(1)
+
+
+HANDLED_FUNCTIONS = {}
+
+class __implementations__:
+
+    def implements(np_function):
+        'Register an ``__array_function__`` or ``__array_ufunc__`` implementation for Array objects.'
+        def decorator(func):
+            HANDLED_FUNCTIONS[np_function] = func
+            return func
+        return decorator
+
+    @implements(numpy.shape)
+    def shape(arg: Array) -> Tuple[int, ...]:
+        return arg.shape
+
+    @implements(numpy.ndim)
+    def ndim(arg: Array) -> int:
+        return arg.ndim
+    
+    @implements(numpy.size)
+    def size(arg: Array) -> int:
+        return arg.size
+
+    @implements(numpy.add)
+    def add(left: IntoArray, right: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.add, left, right)
+    
+    @implements(numpy.subtract)
+    def subtract(left: IntoArray, right: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.subtract, left, right)
+
+    @implements(numpy.positive)
+    def positive(arg: Array) -> Array:
+        return arg
+
+    @implements(numpy.negative)
+    def negative(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.negative, arg)
+
+    @implements(numpy.multiply)
+    def multiply(left: IntoArray, right: IntoArray) -> Array:
+        return typecast_arrays(left, right)[1] if _is_unit_scalar(left) \
+          else typecast_arrays(left, right)[0] if _is_unit_scalar(right) \
+          else _Wrapper.broadcasted_arrays(evaluable.multiply, left, right)
+    
+    @implements(numpy.true_divide)
+    def divide(dividend: IntoArray, divisor: IntoArray) -> Array:
+        return typecast_arrays(dividend, divisor, min_dtype=float)[0] if _is_unit_scalar(divisor) \
+          else _Wrapper.broadcasted_arrays(evaluable.divide, dividend, divisor, min_dtype=float)
+
+    @implements(numpy.reciprocal)
+    def reciprocal(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.reciprocal, arg)
+
+    @implements(numpy.floor_divide)
+    def floor_divide(dividend: IntoArray, divisor: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.FloorDivide, dividend, divisor)
+
+    @implements(numpy.mod)
+    def mod(dividend: IntoArray, divisor: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.Mod, dividend, divisor)
+
+    @implements(numpy.divmod)
+    def divmod(dividend: IntoArray, divisor: IntoArray) -> Tuple[Array, Array]:
+        return numpy.floor_divide(dividend, divisor), numpy.mod(dividend, divisor)
+
+    @implements(numpy.power)
+    def power(base: IntoArray, exponent: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.power, base, exponent, min_dtype=int)
+
+    @implements(numpy.sqrt)
+    def sqrt(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.sqrt, arg, min_dtype=float)
+
+    @implements(numpy.square)
+    def square(arg: Array) -> Array:
+        return numpy.power(arg, 2)
+
+    @implements(numpy.hypot)
+    def hypot(array1: IntoArray, array2: IntoArray) -> Array:
+        return numpy.sqrt(numpy.square(array1) + numpy.square(array2))
+
+    @implements(numpy.absolute)
+    def abs(arg: IntoArray) -> Array:
+        arg = Array.cast(arg)
+        return _Wrapper(evaluable.abs, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
+
+    @implements(numpy.sign)
+    def sign(arg: IntoArray) -> Array:
+        arg = Array.cast(arg)
+        if arg.dtype == complex:
+            raise ValueError('sign is not defined for complex numbers')
+        return _Wrapper.broadcasted_arrays(evaluable.Sign, arg)
+
+    @implements(numpy.matmul)
+    def matmul(arg1: IntoArray, arg2: IntoArray) -> Array:
+        arg1 = Array.cast(arg1)
+        arg2 = Array.cast(arg2)
+        if not arg1.ndim or not arg2.ndim:
+            raise ValueError('cannot contract zero-dimensional array')
+        if arg2.ndim == 1:
+            return (arg1 * arg2).sum(-1)
+        elif arg1.ndim == 1:
+            return (arg1[:, numpy.newaxis] * arg2).sum(-2)
+        else:
+            return (arg1[..., :, :, numpy.newaxis] * arg2[..., numpy.newaxis, :, :]).sum(-2)
+
+    @implements(numpy.sin)
+    def sin(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.Sin, arg, min_dtype=float)
+
+    @implements(numpy.cos)
+    def cos(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.Cos, arg, min_dtype=float)
+
+    @implements(numpy.tan)
+    def tan(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.Tan, arg, min_dtype=float)
+
+    @implements(numpy.arcsin)
+    def arcsin(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.ArcSin, arg, min_dtype=float)
+
+    @implements(numpy.arccos)
+    def arccos(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.ArcCos, arg, min_dtype=float)
+
+    @implements(numpy.arctan)
+    def arctan(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.ArcTan, arg, min_dtype=float)
+
+    @implements(numpy.arctan2)
+    def arctan2(dividend: IntoArray, divisor: IntoArray) -> Array:
+        dividend, divisor = broadcast_arrays(*typecast_arrays(dividend, divisor, min_dtype=float))
+        if dividend.dtype == complex:
+            raise ValueError('arctan2 is not defined for complex numbers')
+        return _Wrapper(evaluable.ArcTan2, dividend, divisor, shape=dividend.shape, dtype=float)
+
+    @implements(numpy.cosh)
+    def cosh(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.cosh, arg, min_dtype=float)
+
+    @implements(numpy.sinh)
+    def sinh(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.sinh, arg, min_dtype=float)
+
+    @implements(numpy.tanh)
+    def tanh(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.tanh, arg, min_dtype=float)
+
+    @implements(numpy.arctanh)
+    def arctanh(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.arctanh, arg, min_dtype=float)
+
+    @implements(numpy.exp)
+    def exp(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.Exp, arg, min_dtype=float)
+
+    @implements(numpy.log)
+    def log(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.Log, arg, min_dtype=float)
+
+    @implements(numpy.log2)
+    def log2(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.log2, arg, min_dtype=float)
+
+    @implements(numpy.log10)
+    def log10(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.log10, arg, min_dtype=float)
+
+    @implements(numpy.greater)
+    def greater(left: IntoArray, right: IntoArray) -> Array:
+        left, right = map(Array.cast, (left, right))
+        if left.dtype == complex or right.dtype == complex:
+            raise ValueError('Complex numbers have no total order.')
+        return _Wrapper.broadcasted_arrays(evaluable.Greater, left, right, force_dtype=bool)
+
+    @implements(numpy.equal)
+    def equal(left: IntoArray, right: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.Equal, left, right, force_dtype=bool)
+
+    @implements(numpy.less)
+    def less(left: IntoArray, right: IntoArray) -> Array:
+        left, right = map(Array.cast, (left, right))
+        if left.dtype == complex or right.dtype == complex:
+            raise ValueError('Complex numbers have no total order.')
+        return _Wrapper.broadcasted_arrays(evaluable.Less, left, right, force_dtype=bool)
+
+    @implements(numpy.minimum)
+    def minimum(a: IntoArray, b: IntoArray) -> Array:
+        a, b = map(Array.cast, (a, b))
+        if a.dtype == complex or b.dtype == complex:
+            raise ValueError('Complex numbers have no total order.')
+        return _Wrapper.broadcasted_arrays(evaluable.Minimum, a, b)
+
+    @implements(numpy.maximum)
+    def maximum(a: IntoArray, b: IntoArray) -> Array:
+        a, b = map(Array.cast, (a, b))
+        if a.dtype == complex or b.dtype == complex:
+            raise ValueError('Complex numbers have no total order.')
+        return _Wrapper.broadcasted_arrays(evaluable.Maximum, a, b)
+
+    @implements(numpy.sum)
+    def sum(arg: IntoArray, axis: Optional[Union[int, Sequence[int]]] = None) -> Array:
+        arg = Array.cast(arg)
+        if arg.dtype == bool:
+            arg = arg.astype(int)
+        axes = range(arg.ndim) if axis is None else [axis] if isinstance(axis, numbers.Integral) else axis
+        summed = _Transpose.to_end(arg, *axes)
+        for i in range(len(axes)):
+            summed = _Wrapper(evaluable.Sum, summed, shape=summed.shape[:-1], dtype=summed.dtype)
+        return summed
+
+    @implements(numpy.product)
+    def product(arg: IntoArray, axis: int) -> Array:
+        arg = Array.cast(arg)
+        if arg.dtype == bool:
+            arg = arg.astype(int)
+        axes = range(arg.ndim) if axis is None else [axis] if isinstance(axis, numbers.Integral) else axis
+        multiplied = _Transpose.to_end(arg, *axes)
+        for i in range(len(axes)):
+            multiplied = _Wrapper(evaluable.Product, multiplied, shape=multiplied.shape[:-1], dtype=multiplied.dtype)
+        return multiplied
+
+    @implements(numpy.conjugate)
+    def conjugate(arg: IntoArray) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.conjugate, arg)
+
+    @implements(numpy.real)
+    def real(arg: IntoArray) -> Array:
+        arg = Array.cast(arg)
+        return _Wrapper(evaluable.real, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
+
+    @implements(numpy.imag)
+    def imag(arg: IntoArray) -> Array:
+        arg = Array.cast(arg)
+        return _Wrapper(evaluable.imag, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
+
+    @implements(numpy.vdot)
+    def vdot(a: IntoArray, b: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> Array:
+        a, b = broadcast_arrays(a, b)
+        return numpy.sum(numpy.conjugate(a) * b, range(a.ndim))
+
+    @implements(numpy.dot)
+    def dot(a: IntoArray, b: IntoArray) -> Array:
+        a = Array.cast(a)
+        b = Array.cast(b)
+        if a.ndim == 0 or b.ndim == 0:
+            return (a * b)
+        if a.shape[-1] != b.shape[-1 if b.ndim == 1 else -2]:
+            raise ValueError(f'shapes {a.shape} and {b.shape} are not aligned')
+        if b.ndim > 1:
+            b = _Transpose.to_end(b, -2)
+            a = _Transpose.to_end(_append_axes(a, b.shape[:-1]), a.ndim-1)
+            assert a.shape[-b.ndim:] == b.shape
+        return numpy.sum(a * b, -1)
+
+    @implements(numpy.reshape)
+    def reshape(arg: Array, newshape):
+        if isinstance(newshape, numbers.Integral):
+            newshape = newshape,
+        if -1 in newshape:
+            i = newshape.index(-1)
+            if -1 in newshape[i+1:]:
+                raise ValueError('can only specify one unknown dimension')
+            length, remainder = builtins.divmod(arg.size, numpy.prod(newshape, initial=-1))
+            if remainder:
+                raise ValueError(f'cannot reshape array of size {arg.size} into shape {newshape}')
+            newshape = (*newshape[:i], length, *newshape[i+1:])
+        elif numpy.prod(newshape, initial=1) != arg.size:
+            raise ValueError(f'cannot reshape array of size {arg.size} into shape {newshape}')
+        ncommon = 0
+        while arg.ndim > ncommon and len(newshape) > ncommon and arg.shape[ncommon] == newshape[ncommon]:
+            ncommon += 1
+        # The first ncommon axes are already of the right shape, so these we
+        # will not touch. The remaining axes will be ravelled and unravelled
+        # until an axis of the desired length is formed, working from end to
+        # beginning, and rolling finished axes to the front to reduce the
+        # number of transposes.
+        for i, s in enumerate(reversed(newshape[ncommon:])):
+            if arg.ndim == ncommon + i: # the first i axes are finished so we need to append a new singleton axis to continue
+                assert s == 1
+                arg = _Wrapper(evaluable.InsertAxis, arg, _WithoutPoints(Array.cast(1)), shape=(*arg.shape, 1), dtype=arg.dtype)
+            else:
+                while arg.shape[-1] % s:
+                    assert arg.ndim > ncommon + i + 1
+                    arg = _Wrapper(evaluable.Ravel, arg, shape=(*arg.shape[:-2], arg.shape[-2]*arg.shape[-1]), dtype=arg.dtype)
+                if arg.shape[-1] != s:
+                    n = arg.shape[-1] // s
+                    arg = _Wrapper(evaluable.Unravel, arg, _WithoutPoints(Array.cast(n)), _WithoutPoints(Array.cast(s)), shape=(*arg.shape[:-1], n, s), dtype=arg.dtype)
+            arg = _Transpose.from_end(arg, ncommon) # move axis to front so that we can continue to operate on the end
+        # If the original array had a surplus of singleton axes, these may
+        # still be present in the tail. We take them away one by one.
+        while arg.ndim > len(newshape):
+            assert arg.shape[-1] == 1
+            arg = _Wrapper(evaluable.Take, arg, _WithoutPoints(Array.cast(0)), shape=arg.shape[:-1], dtype=arg.dtype)
+        assert arg.shape == newshape
+        return arg
+
+    @implements(numpy.ravel)
+    def ravel(arg: Array):
+        return numpy.reshape(arg, -1)
+
+    @implements(numpy.trace)
+    def trace(arg: Array, axis1: int = 0, axis2: int = 1) -> Array:
+        return numpy.sum(_takediag(arg, axis1, axis2), -1)
+
+    @implements(numpy.transpose)
+    def transpose(array: Array, axes: Optional[Sequence[int]] = None) -> Array:
+        return _Transpose(array, tuple(reversed(range(array.ndim)) if axes is None else axes))
+
+    @implements(numpy.repeat)
+    def repeat(array: IntoArray, n: IntoArray, axis: int) -> Array:
+        array = Array.cast(array)
+        if array.shape[axis] != 1:
+            raise NotImplementedError('only axes with length 1 can be repeated')
+        return insertaxis(get(array, axis, 0), axis, n)
+
+    @implements(numpy.swapaxes)
+    def swapaxes(array: Array, axis1: int, axis2: int) -> Array:
+        trans = list(range(array.ndim))
+        trans[axis1], trans[axis2] = trans[axis2], trans[axis1]
+        return numpy.transpose(array, trans)
+
+    @implements(numpy.take)
+    def take(array: IntoArray, indices: IntoArray, axis: Optional[int] = None) -> Array:
+        array = Array.cast(array)
+        if axis is None:
+            array = numpy.ravel(array)
+            axis = 0
+        else:
+            axis = numeric.normdim(array.ndim, axis)
+        indices = _Wrapper.broadcasted_arrays(evaluable.NormDim, array.shape[axis], Array.cast(indices, dtype=int))
+        transposed = _Transpose.to_end(array, axis)
+        taken = _Wrapper(evaluable.Take, transposed, _WithoutPoints(indices), shape=(*transposed.shape[:-1], *indices.shape), dtype=array.dtype)
+        return _Transpose.from_end(taken, *range(axis, axis+indices.ndim))
+
+    @implements(numpy.compress)
+    def compress(condition: Sequence[bool], array: Array, axis: Optional[int] = None) -> Array:
+        length = array.size if axis is None else array.shape[axis]
+        if len(condition) != length:
+            # NOTE: we are a bit stricter here than numpy, which does not check
+            # the length of the condition but only whether the selected indices
+            # are within bounds.
+            raise ValueError(f'expected a condition of length {length} but received {len(condition)}')
+        indices, = numpy.nonzero(condition)
+        return numpy.take(array, indices, axis)
+
+    @implements(numpy.concatenate)
+    def concatenate(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
+        return _Concatenate(__arrays, axis)
+
+    @implements(numpy.stack)
+    def stack(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
+        aligned = broadcast_arrays(*typecast_arrays(*__arrays))
+        return util.sum(kronecker(array, axis, len(aligned), i) for i, array in enumerate(aligned))
+
+    @implements(numpy.broadcast_to)
+    def broadcast_to(array: IntoArray, shape: Shape) -> Array:
+        broadcasted = Array.cast(array)
+        orig_shape = broadcasted.shape
+        if broadcasted.ndim > len(shape):
+            raise ValueError('cannot broadcast array with shape {} to {} because the dimension decreases'.format(orig_shape, shape))
+        nnew = len(shape) - broadcasted.ndim
+        broadcasted = _prepend_axes(broadcasted, shape[:nnew])
+        for axis, (actual, desired) in enumerate(zip(broadcasted.shape[nnew:], shape[nnew:])):
+            if actual == desired:
+                continue
+            elif actual == 1:
+                broadcasted = numpy.repeat(broadcasted, desired, axis + nnew)
+            else:
+                raise ValueError('cannot broadcast array with shape {} to {} because input axis {} is neither singleton nor has the desired length'.format(orig_shape, shape, axis))
+        return broadcasted

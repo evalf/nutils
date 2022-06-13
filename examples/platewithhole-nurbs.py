@@ -89,7 +89,7 @@ def main(nrefine: int, traction: float, radius: float, poisson: float):
     export.triplot('stressxx.png', x, σxx, tri=bezier.tri, hull=bezier.hull, clim=(numpy.nanmin(σxx), numpy.nanmax(σxx)))
 
     # evaluate error
-    err = function.sqrt(domain.integral(['du_k du_k dV', '∇_j(du_i) ∇_j(du_i) dV'] @ ns, degree=9)).eval(**args)
+    err = numpy.sqrt(domain.integral(['du_k du_k dV', '∇_j(du_i) ∇_j(du_i) dV'] @ ns, degree=9)).eval(**args)
     treelog.user('errors: L2={:.2e}, H1={:.2e}'.format(*err))
 
     return err, cons['u'], args['u']

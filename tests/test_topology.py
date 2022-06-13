@@ -415,7 +415,7 @@ class NewEmpty(TestCase, CommonTests, ConformingTests):
         self.desired_space_dims = 1, 2
         self.desired_ndims = 3
         self.topo = Topology.empty(self.desired_spaces, self.desired_space_dims, self.desired_ndims)
-        self.geom = function.concatenate([function.rootcoords(space, dim) for space, dim in zip(self.desired_spaces, self.desired_space_dims)])
+        self.geom = numpy.concatenate([function.rootcoords(space, dim) for space, dim in zip(self.desired_spaces, self.desired_space_dims)])
         self.desired_nelems = 0
         self.desired_volumes = []
         self.desired_references = []
@@ -502,7 +502,7 @@ class NewMul(TestCase, CommonTests, ConformingTests):
         self.topo1, self.x = mesh.line([0, 1, 2], bnames=['a', 'b'], space='X')
         self.topo2, self.y = mesh.line([0, 1, 2, 3], bnames=['c', 'd'], space='Y')
         self.topo = self.topo1 * self.topo2
-        self.geom = function.stack([self.x, self.y])
+        self.geom = numpy.stack([self.x, self.y])
         self.desired_spaces = 'X', 'Y'
         self.desired_space_dims = 1, 1
         self.desired_ndims = 2
@@ -614,7 +614,7 @@ class NewWithGroupAliases(TestCase, CommonTests, ConformingTests):
         self.topo2, self.y = mesh.line([0, 1, 2, 3], bnames=['c', 'd'], space='Y')
         self.topo2 = self.topo2.withsubdomain(f=self.topo2[:1], g=self.topo2[2:])
         self.topo = (self.topo1 * self.topo2).withgroups(vgroups=dict(ealias='e', falias='f', galias='g', fgalias='f,g'))
-        self.geom = function.stack([self.x, self.y])
+        self.geom = numpy.stack([self.x, self.y])
         self.desired_spaces = 'X', 'Y'
         self.desired_space_dims = 1, 1
         self.desired_ndims = 2
@@ -907,7 +907,7 @@ class locate(TestCase):
         super().setUp()
         domain, geom = mesh.unitsquare(4, etype=self.etype)
         if self.mode == 'nonlinear':
-            geom = function.sin(geom * numpy.pi / 2)  # nonlinear map from [0,1] to [0,1]
+            geom = numpy.sin(geom * numpy.pi / 2)  # nonlinear map from [0,1] to [0,1]
         geom = geom * (.32 if self.mode == 'trimmed' else .2, .7) + (0, .3)  # trimmed: keep 2.5 elements in x-direction
         if self.mode == 'trimmed':
             domain = domain.trim(.2 - geom[0], maxrefine=0)

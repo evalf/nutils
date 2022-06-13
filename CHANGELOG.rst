@@ -9,6 +9,42 @@ features in inverse chronological order.
 New in v8.0 (in development)
 ----------------------------
 
+- Deprecated: function methods that have Numpy equivalents
+
+  The :mod:`nutils.function` methods that have direct equivalents in the
+  :mod:`numpy` module (``function.sum``, ``function.sqrt``, ``function.sin``,
+  etc) have been deprecated in favour of using Numpy's methods (``numpy.sum``,
+  ``numpy.sqrt``, ``numpy.sin``, etc) and will be removed in the next release.
+  Ultimately, only methods that relate to the variable nature of function
+  arrays and therefore have no Numpy equivalent, such as ``function.grad`` and
+  ``function.normal``, will remain in the function module.
+
+  Be aware that some functions were not 100% equivalent to their Numpy
+  counterpart. For instance, ``function.max`` is the equivalent to
+  ``numpy.maximum``, as the deprecation message helpfully points out. More
+  problematically, ``function.dot`` behaves very differently from both
+  ``numpy.dot`` and ``numpy.matmul``. Porting the code over to equivalent
+  instructions will therefore require some attention.
+
+- Deprecated: Array.dot for ndim != 1
+
+  The :func:`nutils.function.Array.dot` method is incompatible with Numpy's
+  equivalent method for arrays of ndim != 1, or when axes are specified (which
+  Numpy does not allow). Aiming for 100% compatibility, the next release cycle
+  will remove the axis argument and temporarily forbid arguments of ndim != 1.
+  The release cycle thereafter will re-enable arguments with ndim != 1, with
+  logic equal to Numpy's method. In the meantime, the advice is to rely on
+  ``numpy.dot``, ``numpy.matmul`` or the ``@`` operator instead.
+
+- Deprecated: Array.sum for ndim > 1 without axis argument
+
+  The :func:`nutils.function.Array.sum` method by default operates on the last
+  axis. This is different from Numpy's behavour, which by default sums all
+  axes. Aiming for 100% compatibility, the next release cycle will make the
+  axis argument mandatory for any array of ndim > 1. The release cycle
+  thereafter will reintroduce the default value to match Numpy's. To prepare
+  for this, relying on the current default now triggers a deprecation warning.
+
 - New: iteration count via info.niter
 
   The info struct returned by ``solve_withinfo`` newly contains the amount of

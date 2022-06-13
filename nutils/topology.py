@@ -396,8 +396,7 @@ class Topology(types.Singleton):
     def projection(self, fun: function.Array, onto: function.Array, geometry: function.Array, **kwargs) -> function.Array:
         'project and return as function'
 
-        weights = self.project(fun, onto, geometry, **kwargs)
-        return onto.dot(weights)
+        return self.project(fun, onto, geometry, **kwargs) @ onto
 
     @log.withcontext
     def project(self, fun: function.Array, onto: function.Array, geometry: function.Array, ischeme: str = 'gauss', degree: Optional[int] = None, droptol: float = 1e-12, exact_boundaries: bool = False, constrain=None, verify=None, ptype='lsqr', edit=None, *, arguments: Optional[_ArgDict] = None, **solverargs) -> numpy.ndarray:
@@ -684,7 +683,7 @@ class Topology(types.Singleton):
         # together with the element index (`self.f_index`) and keep all indices
         # with at least one positive result.
         sample = self.sample(*element.parse_legacy_ischeme(ischeme))
-        isactive, ielem = sample.eval([function.greater(indicator, 0), self.f_index], **kwargs)
+        isactive, ielem = sample.eval([indicator > 0, self.f_index], **kwargs)
         selected = types.frozenarray(numpy.unique(ielem[isactive]))
         return self[selected]
 
@@ -1085,7 +1084,7 @@ class _Mul(_TensorialTopology):
 
     @property
     def f_coords(self) -> function.Array:
-        return function.concatenate([self.topo1.f_coords, self.topo2.f_coords])
+        return numpy.concatenate([self.topo1.f_coords, self.topo2.f_coords])
 
     @property
     def connectivity(self) -> Sequence[Sequence[int]]:
@@ -1196,8 +1195,8 @@ class _Mul(_TensorialTopology):
 
         basis1 = self.topo1.basis(name, **kwargs1)
         basis2 = self.topo2.basis(name, **kwargs2)
-        basis = function.insertaxis(basis1, 1, basis2.shape[0]) * function.insertaxis(basis2, 0, basis1.shape[0])
-        return function.ravel(basis, axis=0)
+        assert basis1.ndim == basis2.ndim == 1
+        return numpy.ravel(basis1[:,None] * basis2[None,:])
 
     def sample(self, ischeme: str, degree: int) -> Sample:
         return self.topo1.sample(ischeme, degree) * self.topo2.sample(ischeme, degree)

@@ -147,7 +147,7 @@ def main(size: Length, epsilon: Length, mobility: Time/Density, stens: Tension,
     domain, geom = mesh.unitsquare(nelems, etype)
     if circle:
         angle = (geom-.5) * (numpy.pi/2)
-        geom = .5 + function.sin(angle) * function.cos(angle)[[1, 0]] / numpy.sqrt(2)
+        geom = .5 + numpy.sin(angle) * numpy.cos(angle)[[1, 0]] / numpy.sqrt(2)
 
     bezier = domain.sample('bezier', 5)  # sample for surface plots
     grid = domain.locate(geom, numeric.simplex_grid([1, 1], 1/40), maxdist=1/nelems, skip_missing=True, tol=1e-5)  # sample for quivers
