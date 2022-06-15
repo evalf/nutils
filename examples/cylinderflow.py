@@ -1,27 +1,78 @@
 #! /usr/bin/env python3
 #
-# In this script we solve the Navier-Stokes equations around a cylinder, using
-# the same Raviart-Thomas discretization as in
-# :ref:`examples/drivencavity-compatible.py` but in curvilinear coordinates.
-# The mesh is constructed such that all elements are shape similar, growing
-# exponentially with radius such that the artificial exterior boundary is
-# placed at large (configurable) distance.
+# In this script we solve the Navier-Stokes equations around a cylinder,
+# demonstrating different flow regimes at different Reynolds numbers.
+#
+# The general conservation laws are:
+#
+#     Dρ/Dt = 0 (mass)
+#     ρ Du_i/Dt = ∇_j(σ_ij) (momentum)
+#
+# where we used the material derivative D·/Dt := ∂·/∂t + ∇_j(· u_j). The stress
+# tensor is σ_ij := μ (∇_j(u_i) + ∇_i(u_j) - 2 ∇_k(u_k) δ_ij / δ_nn) - p δ_ij,
+# with pressure p and dynamic viscosity μ, and ρ is the density.
+#
+# Assuming incompressible flow, we take density to be constant. Further
+# introducing a reference length L and reference velocity U, we make the
+# equations dimensionless by taking spatial coordinates relative to L, velocity
+# relative to U, time relative to L / U, and pressure relative to ρ U^2. This
+# reduces the conservation laws to:
+#
+#     ∇_k(u_k) = 0 (mass)
+#     Du_i/Dt = ∇_j(σ_ij) (momentum)
+#
+# where the material derivative simplifies to D·/Dt := ∂·/∂t + ∇_j(·) u_j, and
+# the stress tensor becomes σ_ij := (∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij, with
+# Reynolds number Re = ρ U L / μ.
+#
+# The weak form is obtained by multiplication of a test function and partial
+# integration of the right hand side of the momentum balance.
+#
+#     ∀ q: ∫_Ω q ∇_k(u_k) = 0 (mass)
+#     ∀ v: ∫_Ω (v_i Du_i/Dt + ∇_j(v_i) σ_ij) = ∫_Γ v_i σ_ij n_j (momentum)
+#
+# The exterior boundary is strongly constrained to uniform inflow in the
+# upstream section, and traction-free in the downstream section, in both cases
+# eliminating the right hand boundary integral. The no-slip condition at the
+# interior boundary is constrained strongly in the normal component, and
+# weakly in the tangential component using Nitsche's method. The added boundary
+# integral is scaled to dominate the right hand side of the momentum balance.
+#
+# For the initial condition we take potential flow, meaning the velocity equals
+# the gradient of a harmonic potential field. In order to obtain coefficients
+# against the required basis the flow problem is solved as a coupled first
+# order system: ∇_k(u_k) = 0 and u_i = uinf_i - ∇_i(p), where the free flow
+# velocity uinf is introduced so that the scalar field p is zero at infinity.
+# The weak formulation takes the form of an optimization problem:
+#
+#     ∂/∂(u,p) ∫_Ω (.5 Σ_i (u_i - uinf_i)^2 - ∇_i(u_i) p) = 0
+#
+# The script uses a Raviart-Thomas discretization in curvilinear coordinates,
+# resulting in a pointwise divergence-free velocity field. The polar mesh is
+# constructed such that all elements are geometrically similar, growing
+# exponentially with radius and placing the artificial exterior boundary at
+# large (configurable) distance. The reference length is set equal to the
+# diameter of the cylinder and the referency velocity to the magnitude of the
+# inflow velocity, meaning that both quantities are simulated at unit value.
+
 
 from nutils import mesh, function, solver, util, export, cli, testing, numeric
 from nutils.expression_v2 import Namespace
+import itertools
 import numpy
 import treelog
 
 
 class PostProcessor:
 
-    def __init__(self, topo, ns, timestep, region=4., aspect=16/9, figscale=7.2, spacing=.05):
+    def __init__(self, topo, ns, region=4., aspect=16/9, figscale=7.2, spacing=.05, pstep=.1, vortlim=20):
         self.ns = ns
         self.figsize = aspect * figscale, figscale
         self.bbox = numpy.array([[-.5, aspect-.5], [-.5, .5]]) * region
         self.bezier = topo.select(numpy.minimum(*(ns.x-self.bbox[:,0])*(self.bbox[:,1]-ns.x))).sample('bezier', 5)
         self.spacing = spacing
-        self.timestep = timestep
+        self.pstep = pstep
+        self.vortlim = vortlim
         self.t = 0.
         self.initialize_xgrd()
         self.topo = topo
@@ -31,7 +82,7 @@ class PostProcessor:
         nx, ny = numeric.ceil(self.bbox[:,1] / (2*self.spacing)) * 2 + 2 - self.orig
         self.vacant = numpy.hypot(
             self.orig[0] + numpy.arange(nx)[:,numpy.newaxis],
-            self.orig[1] + numpy.arange(ny)) > self.ns.R.eval() / self.spacing
+            self.orig[1] + numpy.arange(ny)) > .5 / self.spacing
         self.xgrd = (numpy.stack(self.vacant[1::2,1::2].nonzero(), axis=1) * 2 + self.orig + 1) * self.spacing
 
     def regularize_xgrd(self):
@@ -50,108 +101,106 @@ class PostProcessor:
         self.xgrd = numpy.concatenate([newpoints * self.spacing, self.xgrd[keep]], axis=0)
 
     def __call__(self, args):
-        x, p = self.bezier.eval(['x_i', 'p'] @ self.ns, **args)
-        logr = numpy.log(numpy.hypot(*self.xgrd.T) / self.ns.R.eval())
-        φ = numpy.arctan2(self.xgrd[:,1], self.xgrd[:,0]) + numpy.pi
-        ugrd = self.topo.locate(self.ns.grid, numpy.stack([logr, φ], axis=1), eps=1, tol=1e-5).eval(self.ns.u, **args)
+        x, p, ω = self.bezier.eval(['x_i', 'p', 'ω'] @ self.ns, **args)
+        grid0 = numpy.log(numpy.hypot(*self.xgrd.T) / .5)
+        grid1 = numpy.arctan2(*self.xgrd.T) % (2 * numpy.pi)
+        ugrd = self.topo.locate(self.ns.grid, numpy.stack([grid0, grid1], axis=1), eps=1, tol=1e-5).eval(self.ns.u, **args)
         with export.mplfigure('flow.png', figsize=self.figsize) as fig:
             ax = fig.add_axes([0, 0, 1, 1], yticks=[], xticks=[], frame_on=False, xlim=self.bbox[0], ylim=self.bbox[1])
-            im = ax.tripcolor(*x.T, self.bezier.tri, p, shading='gouraud', cmap='jet')
+            ax.tripcolor(*x.T, self.bezier.tri, ω, shading='gouraud', cmap='seismic').set_clim(-self.vortlim, self.vortlim)
+            ax.tricontour(*x.T, self.bezier.tri, p, numpy.arange(numpy.min(p)//1, numpy.max(p), self.pstep), colors='k', linestyles='solid', linewidths=.5, zorder=9)
             export.plotlines_(ax, x.T, self.bezier.hull, colors='k', linewidths=.1, alpha=.5)
             ax.quiver(*self.xgrd.T, *ugrd.T, angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9, alpha=.5, pivot='tip')
-            ax.plot(0, 0, 'k', marker=(3, 2, self.t*self.ns.rotation.eval()*180/numpy.pi-90), markersize=20)
-            cax = fig.add_axes([0.9, 0.1, 0.01, 0.8])
-            cax.tick_params(labelsize='large')
-            fig.colorbar(im, cax=cax)
-        self.t += self.timestep
-        self.xgrd += ugrd * self.timestep
+            ax.plot(0, 0, 'k', marker=(3, 2, -self.t*self.ns.rotation.eval()*180/numpy.pi-90), markersize=20)
+        dt = self.ns.dt.eval()
+        self.t += dt
+        self.xgrd += ugrd * dt
         self.regularize_xgrd()
 
 
-def main(nelems: int, degree: int, reynolds: float, rotation: float, radius: float, timestep: float, maxradius: float, seed: int, endtime: float):
+def main(nelems: int, degree: int, reynolds: float, uwall: float, timestep: float, extdiam: float, endtime: float):
     '''
     Flow around a cylinder.
 
     .. arguments::
 
-       nelems [24]
+       nelems [63]
          Element size expressed in number of elements along the cylinder wall.
          All elements have similar shape with approximately unit aspect ratio,
-         with elements away from the cylinder wall growing exponentially.
+         with elements away from the cylinder wall growing exponentially. Use
+         an odd number to break symmetry and promote early bifurcation.
        degree [3]
          Polynomial degree for velocity space; the pressure space is one degree
          less.
        reynolds [1000]
-         Reynolds number, taking the cylinder radius as characteristic length.
-       radius [.5]
-         Cylinder radius.
-       rotation [0]
-         Cylinder rotation speed.
+         Reynolds number, taking the cylinder diameter as characteristic length
+         and the inflow velocity as characteristic velocity.
+       uwall [0]
+         Cylinder wall velocity, relative to inflow velocity.
        timestep [.04]
-         Time step
-       maxradius [25]
-         Target exterior radius; the actual domain size is subject to integer
-         multiples of the configured element size.
-       seed [0]
-         Random seed for small velocity noise in the intial condition.
+         Time step, relative to the ratio of cylinder diameter to inflow
+         velocity.
+       extdiam [50]
+         Target exterior diameter, relative to cylinder diameter; the actual
+         domain size is rounded to integer multiples of the configured element
+         size.
        endtime [inf]
-         Stopping time.
+         Stopping time, relative to the ratio of cylinder diameter to inflow
+         velocity.
     '''
 
     elemangle = 2 * numpy.pi / nelems
-    melems = int(numpy.log(2*maxradius) / elemangle + .5)
+    melems = round(numpy.log(extdiam) / elemangle)
     treelog.info('creating {}x{} mesh, outer radius {:.2f}'.format(melems, nelems, .5*numpy.exp(elemangle*melems)))
     domain, geom = mesh.rectilinear([melems, nelems], periodic=(1,))
-    domain = domain.withboundary(inner='left', outer='right')
+    domain = domain.withboundary(inner='left', inflow=domain.boundary['right'][nelems//2:])
 
     ns = Namespace()
     ns.δ = function.eye(domain.ndims)
     ns.Σ = function.ones([domain.ndims])
-    ns.uinf = function.Array.cast([1, 0])
+    ns.ε = function.levicivita(2)
+    ns.uinf_i = 'δ_i0' # unit horizontal flow
     ns.Re = reynolds
     ns.grid = geom * elemangle
-    ns.R = radius
-    ns.r = 'R exp(grid_0)'
-    ns.φ = 'grid_1'
-    ns.x_i = 'r (cos(φ) δ_i0 + sin(φ) δ_i1)'
+    ns.x_i = '.5 exp(grid_0) (sin(grid_1) δ_i0 + cos(grid_1) δ_i1)' # polar coordinates
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     J = ns.x.grad(geom)
     detJ = function.determinant(J)
-    ns.add_field(('u', 'v'), function.matmat(function.vectorize([
+    ns.add_field(('u', 'u0', 'v'), function.vectorize([
         domain.basis('spline', degree=(degree, degree-1), removedofs=((0,), None)),
-        domain.basis('spline', degree=(degree-1, degree))]), J.T) / detJ)
+        domain.basis('spline', degree=(degree-1, degree))]) @ J.T / detJ)
     ns.add_field(('p', 'q'), domain.basis('spline', degree=degree-1) / detJ)
-    ns.sigma_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
+    ns.dt = timestep
+    ns.DuDt_i = '(u_i - u0_i) / dt + ∇_j(u_i) u_j' # material derivative
+    ns.σ_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
+    ns.ω = 'ε_ij ∇_j(u_i)'
     ns.N = 10 * degree / elemangle  # Nitsche constant based on element size = elemangle/2
     ns.nitsche_i = '(N v_i - (∇_j(v_i) + ∇_i(v_j)) n_j) / Re'
-    ns.rotation = rotation
-    ns.uwall_i = '0.5 rotation (-sin(φ) δ_i0 + cos(φ) δ_i1)'
+    ns.rotation = uwall / .5
+    ns.uwall_i = 'rotation ε_ij x_j' # clockwise positive rotation
 
-    inflow = domain.boundary['outer'].select(-ns.uinf.dotnorm(ns.x), ischeme='gauss1')  # upstream half of the exterior boundary
-    sqr = inflow.integral('Σ_i (u_i - uinf_i)^2' @ ns, degree=degree*2)
-    cons = solver.optimize('u,', sqr, droptol=1e-15)  # constrain inflow semicircle to uinf
+    sqr = domain.boundary['inflow'].integral('Σ_i (u_i - uinf_i)^2 dS' @ ns, degree=degree*2)
+    cons = solver.optimize('u,', sqr, droptol=1e-15) # constrain inflow boundary to unit horizontal flow
 
-    numpy.random.seed(seed)
-    sqr = domain.integral('Σ_i (u_i - uinf_i)^2' @ ns, degree=degree*2)
-    args0 = solver.optimize('u,', sqr) # set initial condition to u=uinf
-    args0['u'] = args0['u'] * numpy.random.normal(1, .1, len(args0['u'])) # add small random noise
+    sqr = domain.integral('(.5 Σ_i (u_i - uinf_i)^2 - ∇_k(u_k) p) dV' @ ns, degree=degree*2)
+    args = solver.optimize('u,p', sqr, constrain=cons) # set initial condition to potential flow
 
-    res = domain.integral('(v_i ∇_j(u_i) u_j + ∇_j(v_i) sigma_ij) dV' @ ns, degree=9)
-    res += domain.boundary['inner'].integral('(nitsche_i (u_i - uwall_i) - v_i sigma_ij n_j) dS' @ ns, degree=9)
-    res += domain.integral('q ∇_k(u_k) dV' @ ns, degree=9)
-    uinertia = domain.integral('v_i u_i dV' @ ns, degree=9)
+    res = domain.integral('(v_i DuDt_i + ∇_j(v_i) σ_ij + q ∇_k(u_k)) dV' @ ns, degree=degree*3)
+    res += domain.boundary['inner'].integral('(nitsche_i (u_i - uwall_i) - v_i σ_ij n_j) dS' @ ns, degree=degree*2)
+    div = numpy.sqrt(domain.integral('∇_k(u_k)^2 dV' @ ns, degree=2)) # L2 norm of velocity divergence
 
-    postprocess = PostProcessor(domain, ns, timestep)
+    postprocess = PostProcessor(domain, ns)
 
-    with treelog.iter.plain('timestep', solver.impliciteuler('u:v,p:q', residual=res, inertia=uinertia, arguments=args0, timestep=timestep, constrain=cons, newtontol=1e-10)) as steps:
-        for istep, args in enumerate(steps):
+    steps = treelog.iter.fraction('timestep', range(round(endtime / timestep))) if endtime < float('inf') \
+       else treelog.iter.plain('timestep', itertools.count())
 
-            postprocess(args)
+    for _ in steps:
+        treelog.info(f'velocity divergence: {div.eval(**args):.0e}')
+        args['u0'] = args['u']
+        args = solver.newton('u:v,p:q', residual=res, arguments=args, constrain=cons).solve(1e-10)
+        postprocess(args)
 
-            if istep * timestep >= endtime:
-                break
-
-    return args0, args
+    return args
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line.
@@ -170,35 +219,25 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
     def test_rot0(self):
-        args0, args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=0, timestep=.1, maxradius=25, seed=0, endtime=.05)
-        with self.subTest('initial condition'):
-            self.assertAlmostEqual64(args0['u'], '''
-                eNoNzLEJwkAYQOHXuYZgJyZHLjmMCIJY2WcEwQFcwcYFbBxCEaytzSVnuM7CQkEDqdVCG//uNe/rqEcI
-                p+pSwTzQAez90cM06kZQuLWDrV5oGJf9EupEJ7CyqYXUTAyM7C2HmZyNf8p57S2lB95It8KNgmH1PcNB
-                /UTEvUVpojqGdpEV8IlfIt7znSiZ+QPSaDIR''', atol=2e-13)
+        args = main(nelems=6, degree=3, reynolds=100, uwall=0, timestep=.1, extdiam=50, endtime=.1)
         with self.subTest('velocity'):
             self.assertAlmostEqual64(args['u'], '''
-                eNoBkABv/+o0szWg04bKlsogMVI4JjcmMXXI+cfizb05/Dk4MBHGEcaPNDo8ljuTNibE4sNpznI9VD02
-                M5zCnsJazE0+Hj76NsPByMH/yl43nDNlyGnIsy+YNz44MspbyD/IWcwHOMM4AzXAxsPGGjAJOUM7GcgU
-                xePEqckvO+g8+DcOwyfD4zfjPFY+sMfJwavBhDNPPpLTRUE=''')
+                eNoBkABv//AzussRy7rL8DNVNU42sskxyLLJTjbPN7Q4SscGxkrHtDj9ObM6SMXmw0jFszofPFU8nsNk
+                wp7DVTyqPS49usKawbrCLj2APuHJi8hHyrk1dTcfNmbJJMhDyb023DeaNiPItMYoyNg3TDndNwnGv8QO
+                xvI5QTv3ORTErsIqxNY7Uj3sO8XCY8H1wgs9nT47Pc/9SG4=''')
         with self.subTest('pressure'):
             self.assertAlmostEqual64(args['p'], '''
-                eNoBSAC3/4zF18aozR866DpHNSk8JDonOdw4k8VzNaHBk8PFOyI+Gj9vPPRA/T/LQDtBIECaP0i5yLsA
-                wL9FwkabQsJJTbc2ubJHw7ZvRq/qITA=''')
+                eNoBSAC3/7w0bzXBzG81vDRXytwzezW0y3s13DOXyYfOxzVVM8c1h87LyJTJ3DezN9w3lMkBxzTIDDgz
+                Ogw4NMhAxu42Ij1DxCI97jZ+wirgIsM=''')
 
     def test_rot1(self):
-        args0, args = main(nelems=6, degree=3, reynolds=100, radius=.5, rotation=1, timestep=.1, maxradius=25, seed=0, endtime=.05)
-        with self.subTest('initial condition'):
-            self.assertAlmostEqual64(args0['u'], '''
-                eNoNzLEJwkAYQOHXuYZgJyZHLjmMCIJY2WcEwQFcwcYFbBxCEaytzSVnuM7CQkEDqdVCG//uNe/rqEcI
-                p+pSwTzQAez90cM06kZQuLWDrV5oGJf9EupEJ7CyqYXUTAyM7C2HmZyNf8p57S2lB95It8KNgmH1PcNB
-                /UTEvUVpojqGdpEV8IlfIt7znSiZ+QPSaDIR''', atol=2e-13)
+        args = main(nelems=6, degree=3, reynolds=100, uwall=.5, timestep=.1, extdiam=50, endtime=.1)
         with self.subTest('velocity'):
             self.assertAlmostEqual64(args['u'], '''
-                eNoBkABv/+M0tzVcKYfKlMr1MFE4JzdBMXbI+cfMzb05/Dk/MBHGEcaPNDo8ljuUNibE4sNjznI9VD02
-                M5zCnsJazE0+Hj76NsPByMH/ynk3WTR/yH7I5TGsNzk4HcpUyDnILMwBOMQ4BzXBxsTGpDAKOUM7GMgU
-                xePEp8kvO+g8+DcOwyfD5DfkPFY+sMfJwavBhDNPPpo5RbI=''')
+                eNoBkABv//czw8sRy7HL6TNVNU82tckxyLDJTTbPN7Q4SscGxkrHszj9ObM6SMXmw0jFszofPFU8nsNk
+                wp7DVTyqPS49usKawbrCLj2APrnJdMgEym01XDf1NXHJKshPyck24jelNiHIs8YnyNc3SznaNwnGv8QO
+                xvI5QTv4ORTErcIqxNY7Uj3sO8XCY8H1wgs9nT47PdHgSI0=''')
         with self.subTest('pressure'):
             self.assertAlmostEqual64(args['p'], '''
-                eNoBSAC3/4rF3Ma4ziE65zoUNSg8JToqOd04k8VbNaDBlMPJOyI+Gj9sPPRA/T/MQDtBH0CYP0e5yLsD
-                wL9FwkaaQsJJTbc3ubJHw7ZvRqV7IP8=''')
+                eNoBSAC3/+M0kjXDzEs1kjRXyvszijW0y2w1ujOXyV0tAzZXM4I1Dc3LyA7KDTizN6Y3MckBxybJpDgz
+                OjE3j8dAxr84Pz1DxAQ9I8p9wpetHyk=''')
