@@ -2,6 +2,7 @@ use crate::finite_f64::FiniteF64;
 use crate::simplex::Simplex;
 use num::Integer;
 use std::rc::Rc;
+use crate::UnsizedMapping;
 
 #[inline]
 const fn divmod(x: usize, y: usize) -> (usize, usize) {
@@ -25,7 +26,7 @@ fn coordinates_iter_mut(
     })
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Transpose(usize, usize);
 
 impl Transpose {
@@ -34,20 +35,38 @@ impl Transpose {
         Self(len1, len2)
     }
     #[inline]
-    pub const fn len_out(&self) -> usize {
-        self.0 * self.1
+    pub fn reverse(&mut self) {
+        std::mem::swap(&mut self.0, &mut self.1);
     }
-    #[inline]
-    pub const fn len_in(&self) -> usize {
-        self.0 * self.1
+}
+
+impl UnsizedMapping for Transpose {
+    fn dim_in(&self) -> usize {
+        0
     }
-    #[inline]
-    pub fn apply_index(&self, index: usize) -> usize {
+    fn delta_dim(&self) -> usize {
+        0
+    }
+    fn add_offset(&mut self, _offset: usize) {}
+    fn mod_in(&self) -> usize {
+        if self.0 != 1 && self.1 != 1 {
+            self.0 * self.1
+        } else {
+            1
+        }
+    }
+    fn mod_out(&self) -> usize {
+        self.mod_in()
+    }
+    fn apply_inplace(&self, index: usize, _coordinates: &mut[f64], _stride: usize) -> usize {
+        self.apply_index(index)
+    }
+    fn apply_index(&self, index: usize) -> usize {
         let (j, k) = divmod(index, self.1);
         let (i, j) = divmod(j, self.0);
         (i * self.1 + k) * self.0 + j
     }
-    pub fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
         indices
             .iter()
             .map(|k| {
@@ -57,254 +76,249 @@ impl Transpose {
             })
             .collect()
     }
-    #[inline]
-    const fn is_identity(&self) -> bool {
-        self.0 == 1 || self.1 == 1
-    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IndexOperator {
-    Transpose(Transpose),
-    Take {
-        indices: Rc<Box<[usize]>>,
-        nindices: usize,
-        len: usize,
-    },
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Take {
+    indices: Rc<Box<[usize]>>,
+    nindices: usize,
+    len: usize,
 }
 
-impl IndexOperator {
-    #[inline]
-    pub const fn len_out(&self) -> usize {
-        match self {
-            Self::Transpose(transpose) => transpose.len_out(),
-            Self::Take { len, .. } => *len,
-        }
-    }
-    #[inline]
-    pub const fn len_in(&self) -> usize {
-        match self {
-            Self::Transpose(transpose) => transpose.len_in(),
-            Self::Take { nindices, .. } => *nindices,
-        }
-    }
-    pub fn apply_index(&self, index: usize) -> usize {
-        match self {
-            Self::Transpose(transpose) => transpose.apply_index(index),
-            Self::Take {
-                indices,
-                nindices,
-                len,
-            } => indices[index % nindices] + index / nindices * len,
-        }
-    }
-    pub fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
-        match self {
-            Self::Transpose(transpose) => transpose.unapply_indices(indices),
-            Self::Take {
-                indices: take_indices,
-                nindices,
-                len,
-            } => indices
-                .iter()
-                .filter_map(|index| {
-                    let (j, iout) = divmod(*index, *len);
-                    let offset = j * nindices;
-                    take_indices
-                        .iter()
-                        .position(|i| *i == iout)
-                        .map(|iin| offset + iin)
-                })
-                .collect(),
-        }
-    }
-    #[inline]
-    const fn is_identity(&self) -> bool {
-        match self {
-            Self::Transpose(transpose) => transpose.is_identity(),
-            _ => false,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CoordinateOperator {
-    Children(Simplex),
-    Edges(Simplex),
-    UniformPoints {
-        points: Rc<Box<[FiniteF64]>>,
-        npoints: usize,
-        point_dim: usize,
-    },
-}
-
-impl CoordinateOperator {
-    #[inline]
-    pub const fn dim_out(&self) -> usize {
-        match self {
-            Self::Children(simplex) => simplex.dim(),
-            Self::Edges(simplex) => simplex.dim(),
-            Self::UniformPoints { point_dim, .. } => *point_dim,
-        }
-    }
-    #[inline]
-    pub const fn dim_in(&self) -> usize {
-        match self {
-            Self::Children(simplex) => simplex.dim(),
-            Self::Edges(simplex) => simplex.edge_dim(),
-            Self::UniformPoints { .. } => 0,
-        }
-    }
-    #[inline]
-    pub const fn delta_dim(&self) -> usize {
-        self.dim_out() - self.dim_in()
-    }
-    #[inline]
-    pub const fn len_out(&self) -> usize {
-        1
-    }
-    #[inline]
-    pub const fn len_in(&self) -> usize {
-        match self {
-            Self::Children(simplex) => simplex.nchildren(),
-            Self::Edges(simplex) => simplex.nedges(),
-            Self::UniformPoints { npoints, .. } => *npoints,
-        }
-    }
-    pub fn apply(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> usize {
-        match self {
-            Self::Children(simplex) => simplex.apply_child(index, coordinates, stride, offset),
-            Self::Edges(simplex) => simplex.apply_edge(index, coordinates, stride, offset),
-            Self::UniformPoints {
-                points,
-                npoints,
-                point_dim,
-            } => {
-                let dim = *point_dim;
-                let points: &[f64] = unsafe { std::mem::transmute(&points[..]) };
-                let point = &points[(index % npoints) * dim..][..dim];
-                for coord in coordinates_iter_mut(coordinates, stride, offset, dim, 0) {
-                    coord.copy_from_slice(point);
-                }
-                index / npoints
-            }
-        }
-    }
-    pub fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
-         indices
-        .iter()
-        .map(|i| i * self.len_in())
-        .flat_map(|i| (0..self.len_in()).map(move |j| i + j))
-        .collect()
-    }
-    #[inline]
-    const fn is_identity(&self) -> bool {
-        false
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Operator {
-    Index(IndexOperator),
-    Coordinate(CoordinateOperator, usize),
-}
-
-impl Operator {
-    pub const fn new_transpose(len1: usize, len2: usize) -> Self {
-        Self::Index(IndexOperator::Transpose(Transpose::new(len1, len2)))
-    }
-    pub fn new_take(indices: impl Into<Box<[usize]>>, len: usize) -> Self {
+impl Take {
+    pub fn new(indices: impl Into<Box<[usize]>>, len: usize) -> Self {
         let indices = Rc::new(indices.into());
         let nindices = indices.len();
-        Self::Index(IndexOperator::Take {
+        Take {
             indices,
             nindices,
             len,
-        })
+        }
     }
-    pub const fn new_children(simplex: Simplex) -> Self {
-        Self::Coordinate(CoordinateOperator::Children(simplex), 0)
+}
+
+impl UnsizedMapping for Take {
+    fn dim_in(&self) -> usize {
+        0
     }
-    pub const fn new_edges(simplex: Simplex) -> Self {
-        Self::Coordinate(CoordinateOperator::Edges(simplex), 0)
+    fn delta_dim(&self) -> usize {
+        0
     }
-    pub fn new_uniform_points(points: impl Into<Box<[f64]>>, point_dim: usize) -> Self {
+    fn add_offset(&mut self, _offset: usize) {}
+    fn mod_in(&self) -> usize {
+        self.nindices
+    }
+    fn mod_out(&self) -> usize {
+        self.len
+    }
+    fn apply_inplace(&self, index: usize, _coordinates: &mut[f64], _stride: usize) -> usize {
+        self.apply_index(index)
+    }
+    fn apply_index(&self, index: usize) -> usize {
+        self.indices[index % self.nindices] + index / self.nindices * self.len
+    }
+    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+        indices
+            .iter()
+            .filter_map(|index| {
+                let (j, iout) = divmod(*index, self.len);
+                let offset = j * self.nindices;
+                self.indices
+                    .iter()
+                    .position(|i| *i == iout)
+                    .map(|iin| offset + iin)
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Children(Simplex, usize);
+
+impl Children {
+    pub fn new(simplex: Simplex) -> Self {
+        Self(simplex, 0)
+    }
+}
+
+impl UnsizedMapping for Children {
+    fn dim_in(&self) -> usize {
+        self.0.dim() + self.1
+    }
+    fn delta_dim(&self) -> usize {
+        0
+    }
+    fn add_offset(&mut self, offset: usize) {
+        self.1 += offset;
+    }
+    fn mod_in(&self) -> usize {
+        self.0.nchildren()
+    }
+    fn mod_out(&self) -> usize {
+        1
+    }
+    fn apply_inplace(&self, index: usize, coordinates: &mut[f64], stride: usize) -> usize {
+        self.0.apply_child(index, coordinates, stride, self.1)
+    }
+    fn apply_index(&self, index: usize) -> usize {
+        self.0.apply_child_index(index)
+    }
+    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+         indices
+            .iter()
+            .map(|i| i * self.mod_in())
+            .flat_map(|i| (0..self.mod_in()).map(move |j| i + j))
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Edges(pub Simplex, pub usize);
+
+impl Edges {
+    pub fn new(simplex: Simplex) -> Self {
+        Self(simplex, 0)
+    }
+}
+
+impl UnsizedMapping for Edges {
+    fn dim_in(&self) -> usize {
+        self.0.edge_dim() + self.1
+    }
+    fn delta_dim(&self) -> usize {
+        1
+    }
+    fn add_offset(&mut self, offset: usize) {
+        self.1 += offset;
+    }
+    fn mod_in(&self) -> usize {
+        self.0.nedges()
+    }
+    fn mod_out(&self) -> usize {
+        1
+    }
+    fn apply_inplace(&self, index: usize, coordinates: &mut[f64], stride: usize) -> usize {
+        self.0.apply_edge(index, coordinates, stride, self.1)
+    }
+    fn apply_index(&self, index: usize) -> usize {
+        self.0.apply_edge_index(index)
+    }
+    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+         indices
+            .iter()
+            .map(|i| i * self.mod_in())
+            .flat_map(|i| (0..self.mod_in()).map(move |j| i + j))
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct UniformPoints {
+    points: Rc<Box<[FiniteF64]>>,
+    npoints: usize,
+    point_dim: usize,
+    offset: usize,
+}
+
+impl UniformPoints {
+    pub fn new(points: impl Into<Box<[f64]>>, point_dim: usize) -> Self {
         let points: Rc<Box<[FiniteF64]>> = Rc::new(unsafe { std::mem::transmute(points.into()) });
         assert_eq!(points.len() % point_dim, 0);
         let npoints = points.len() / point_dim;
-        Self::Coordinate(CoordinateOperator::UniformPoints {
+        UniformPoints {
             points,
             npoints,
             point_dim,
-        }, 0)
+            offset: 0,
+        }
+    }
+}
+
+impl UnsizedMapping for UniformPoints {
+    fn dim_in(&self) -> usize {
+        self.offset
+    }
+    fn delta_dim(&self) -> usize {
+        self.point_dim
+    }
+    fn add_offset(&mut self, offset: usize) {
+        self.offset += offset;
+    }
+    fn mod_in(&self) -> usize {
+        self.npoints
+    }
+    fn mod_out(&self) -> usize {
+        1
+    }
+    fn apply_inplace(&self, index: usize, coordinates: &mut[f64], stride: usize) -> usize {
+        let points: &[f64] = unsafe { std::mem::transmute(&self.points[..]) };
+        let point = &points[(index % self.npoints) * self.point_dim..][..self.point_dim];
+        for coord in coordinates_iter_mut(coordinates, stride, self.offset, self.point_dim, 0) {
+            coord.copy_from_slice(point);
+        }
+        index / self.npoints
+    }
+    fn apply_index(&self, index: usize) -> usize {
+        index / self.npoints
+    }
+    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+         indices
+            .iter()
+            .map(|i| i * self.mod_in())
+            .flat_map(|i| (0..self.mod_in()).map(move |j| i + j))
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Operator {
+    Transpose(Transpose),
+    Take(Take),
+    Children(Children),
+    Edges(Edges),
+    UniformPoints(UniformPoints),
+}
+
+impl Operator {
+    #[inline]
+    pub fn new_transpose(len1: usize, len2: usize) -> Self {
+        Self::Transpose(Transpose::new(len1, len2))
     }
     #[inline]
-    pub const fn offset(&self) -> usize {
+    pub fn new_take(indices: impl Into<Box<[usize]>>, len: usize) -> Self {
+        Self::Take(Take::new(indices, len))
+    }
+    #[inline]
+    pub fn new_children(simplex: Simplex) -> Self {
+        Self::Children(Children::new(simplex))
+    }
+    #[inline]
+    pub fn new_edges(simplex: Simplex) -> Self {
+        Self::Edges(Edges::new(simplex))
+    }
+    #[inline]
+    pub fn new_uniform_points(points: impl Into<Box<[f64]>>, point_dim: usize) -> Self {
+        Self::UniformPoints(UniformPoints::new(points, point_dim))
+    }
+    #[inline]
+    fn offset_mut(&mut self) -> Option<&mut usize> {
         match self {
-            Self::Index(_) => 0,
-            Self::Coordinate(_, offset) => *offset,
+            Self::Children(Children(_, ref mut offset)) => Some(offset),
+            Self::Edges(Edges(_, ref mut offset)) => Some(offset),
+            Self::UniformPoints(UniformPoints { ref mut offset, .. }) => Some(offset),
+            _ => None,
         }
     }
     #[inline]
-    pub fn increment_offset(&mut self, amount: usize) {
-        match self {
-            Self::Index(_) => {},
-            Self::Coordinate(_, offset) => *offset += amount,
-        }
+    fn set_offset(&mut self, new_offset: usize) {
+        self.add_offset(new_offset);
     }
     #[inline]
-    fn with_offset(self, offset: usize) -> Self {
-        match self {
-            Self::Coordinate(op, _) => Self::Coordinate(op, offset),
-            other => other,
-        }
-    }
-    #[inline]
-    pub const fn dim_out(&self) -> usize {
-        match self {
-            Self::Index(_) => 0,
-            Self::Coordinate(op, _) => op.dim_out(),
-        }
-    }
-    #[inline]
-    pub const fn dim_in(&self) -> usize {
-        match self {
-            Self::Index(_) => 0,
-            Self::Coordinate(op, _) => op.dim_in(),
-        }
-    }
-    #[inline]
-    pub const fn delta_dim(&self) -> usize {
-        self.dim_out() - self.dim_in()
-    }
-    #[inline]
-    pub const fn len_out(&self) -> usize {
-        match self {
-            Self::Index(op) => op.len_out(),
-            Self::Coordinate(op, _) => op.len_out(),
-        }
-    }
-    #[inline]
-    pub const fn len_in(&self) -> usize {
-        match self {
-            Self::Index(op) => op.len_in(),
-            Self::Coordinate(op, _) => op.len_in(),
-        }
-    }
-    pub fn apply(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize {
-        match self {
-            Self::Index(op) => op.apply_index(index),
-            Self::Coordinate(op, offset) => op.apply(index, coordinates, stride, *offset),
-        }
-    }
-    pub fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
-        match self {
-            Self::Index(op) => op.unapply_indices(indices),
-            Self::Coordinate(op, _) => op.unapply_indices(indices),
-        }
+    pub fn with_offset(mut self, new_offset: usize) -> Self {
+        self.set_offset(new_offset);
+        self
     }
     pub fn shift_left(&self, operators: &[Self]) -> Option<(Option<Transpose>, Self, Vec<Self>)> {
-        use CoordinateOperator::{Children, Edges};
         if self.is_transpose() {
             return None;
         }
@@ -315,18 +329,18 @@ impl Operator {
         let mut stride_in = 1;
         for mut op in operators.iter().rev().cloned() {
             // Swap matching edges and children at the same offset.
-            if let Self::Coordinate(Edges(esimplex), eoffset) = &op {
-                if let Self::Coordinate(Children(ref mut csimplex), coffset) = &mut target {
+            if let Self::Edges(Edges(esimplex, eoffset)) = &op {
+                if let Self::Children(Children(ref mut csimplex, coffset)) = &mut target {
                     if eoffset == coffset && esimplex.edge_dim() == csimplex.dim() {
-                        if stride_in != 1 && self.len_in() != 1 {
-                            shifted_ops.push(Self::new_transpose(stride_in, self.len_in()));
+                        if stride_in != 1 && self.mod_in() != 1 {
+                            shifted_ops.push(Self::new_transpose(stride_in, self.mod_in()));
                         }
                         shifted_ops.append(&mut queue);
-                        if stride_out != 1 && self.len_in() != 1 {
-                            shifted_ops.push(Self::new_transpose(self.len_in(), stride_out));
+                        if stride_out != 1 && self.mod_in() != 1 {
+                            shifted_ops.push(Self::new_transpose(self.mod_in(), stride_out));
                         }
                         shifted_ops.push(Self::new_take(esimplex.swap_edges_children_map(), esimplex.nedges() * esimplex.nchildren()));
-                        shifted_ops.push(Self::Coordinate(Edges(*esimplex), *eoffset));
+                        shifted_ops.push(Self::Edges(Edges(*esimplex, *eoffset)));
                         *csimplex = *esimplex;
                         stride_in = 1;
                         stride_out = 1;
@@ -335,54 +349,56 @@ impl Operator {
                 }
             }
             // Update strides.
-            if self.len_in() == 1 && self.len_out() == 1 {
-            } else if self.len_out() == 1 {
-                let n = stride_out.gcd(&op.len_in());
-                stride_out = stride_out / n * op.len_out();
-                stride_in *= op.len_in() / n;
+            if self.mod_in() == 1 && self.mod_out() == 1 {
+            } else if self.mod_out() == 1 {
+                let n = stride_out.gcd(&op.mod_in());
+                stride_out = stride_out / n * op.mod_out();
+                stride_in *= op.mod_in() / n;
             } else if let Some(Transpose(ref mut m, ref mut n)) = op.as_transpose_mut() {
                 if stride_out % (*m * *n) == 0 {
-                } else if stride_out % *n == 0 && (*m * *n) % (stride_out * self.len_out()) == 0 {
+                } else if stride_out % *n == 0 && (*m * *n) % (stride_out * self.mod_out()) == 0 {
                     stride_out /= *n;
-                    *m = *m / self.len_out() * self.len_in();
-                } else if *n % stride_out == 0 && *n % (stride_out * self.len_out()) == 0 {
+                    *m = *m / self.mod_out() * self.mod_in();
+                } else if *n % stride_out == 0 && *n % (stride_out * self.mod_out()) == 0 {
                     stride_out *= *m;
-                    *n = *n / self.len_out() * self.len_in();
+                    *n = *n / self.mod_out() * self.mod_in();
                 } else {
                     return None;
                 }
-            } else if stride_out % op.len_in() == 0 {
-                stride_out = stride_out / op.len_in() * op.len_out();
+            } else if stride_out % op.mod_in() == 0 {
+                stride_out = stride_out / op.mod_in() * op.mod_out();
             } else {
                 return None;
             }
             // Update offsets.
-            if let Self::Coordinate(ref mut target, ref mut target_offset) = &mut target {
-                if let Self::Coordinate(ref mut op, ref mut op_offset) = &mut op {
-                    if *op_offset + op.dim_in() <= *target_offset {
-                        *target_offset += op.delta_dim();
-                    } else if *target_offset + target.dim_out() <= *op_offset {
-                        *op_offset -= target.delta_dim();
-                    } else {
-                        return None;
-                    }
+            let op_delta_dim = op.delta_dim();
+            let target_delta_dim = target.delta_dim();
+            let op_dim_in = op.dim_in();
+            let target_dim_out = target.dim_out();
+            if let (Some(op_offset), Some(target_offset)) = (op.offset_mut(), target.offset_mut()) {
+                if op_dim_in <= *target_offset {
+                    *target_offset += op_delta_dim;
+                } else if target_dim_out <= *op_offset {
+                    *op_offset -= target_delta_dim;
+                } else {
+                    return None;
                 }
             }
             if !op.is_identity() {
                 queue.push(op);
             }
         }
-        if stride_in != 1 && self.len_in() != 1 {
-            shifted_ops.push(Self::new_transpose(stride_in, self.len_in()));
+        if stride_in != 1 && self.mod_in() != 1 {
+            shifted_ops.push(Self::new_transpose(stride_in, self.mod_in()));
         }
         shifted_ops.extend(queue);
-        if stride_out != 1 && self.len_in() != 1 {
-            shifted_ops.push(Self::new_transpose(self.len_in(), stride_out));
+        if stride_out != 1 && self.mod_in() != 1 {
+            shifted_ops.push(Self::new_transpose(self.mod_in(), stride_out));
         }
-        let leading_transpose = if self.len_out() == 1 || stride_out == 1 {
+        let leading_transpose = if self.mod_out() == 1 || stride_out == 1 {
             None
         } else {
-            Some(Transpose::new(stride_out, self.len_out()))
+            Some(Transpose::new(stride_out, self.mod_out()))
         };
         shifted_ops.reverse();
         Some((
@@ -392,27 +408,84 @@ impl Operator {
         ))
     }
     #[inline]
-    const fn is_identity(&self) -> bool {
-        match self {
-            Self::Index(op) => op.is_identity(),
-            Self::Coordinate(op, _) => op.is_identity(),
-        }
-    }
-    #[inline]
     const fn is_transpose(&self) -> bool {
-        matches!(self, Self::Index(IndexOperator::Transpose(_)))
+        matches!(self, Self::Transpose(_))
     }
     fn as_transpose_mut(&mut self) -> Option<&mut Transpose> {
         match self {
-            Self::Index(IndexOperator::Transpose(ref mut transpose)) => Some(transpose),
+            Self::Transpose(ref mut transpose) => Some(transpose),
             _ => None,
         }
     }
 }
 
+macro_rules! dispatch {
+    ($vis:vis fn $fn:ident(&$self:ident $(, $arg:ident: $ty:ty)*) $($ret:tt)*) => {
+        #[inline]
+        $vis fn $fn(&$self $(, $arg: $ty)*) $($ret)* {
+            match $self {
+                Operator::Transpose(var) => var.$fn($($arg),*),
+                Operator::Take(var) => var.$fn($($arg),*),
+                Operator::Children(var) => var.$fn($($arg),*),
+                Operator::Edges(var) => var.$fn($($arg),*),
+                Operator::UniformPoints(var) => var.$fn($($arg),*),
+            }
+        }
+    };
+    ($vis:vis fn $fn:ident(&mut $self:ident $(, $arg:ident: $ty:ty)*) $($ret:tt)*) => {
+        #[inline]
+        $vis fn $fn(&mut $self $(, $arg: $ty)*) $($ret)* {
+            match $self {
+                Operator::Transpose(var) => var.$fn($($arg),*),
+                Operator::Take(var) => var.$fn($($arg),*),
+                Operator::Children(var) => var.$fn($($arg),*),
+                Operator::Edges(var) => var.$fn($($arg),*),
+                Operator::UniformPoints(var) => var.$fn($($arg),*),
+            }
+        }
+    };
+}
+
+impl UnsizedMapping for Operator {
+    dispatch!{fn dim_in(&self) -> usize}
+    dispatch!{fn delta_dim(&self) -> usize}
+    dispatch!{fn add_offset(&mut self, offset: usize)}
+    dispatch!{fn mod_in(&self) -> usize}
+    dispatch!{fn mod_out(&self) -> usize}
+    dispatch!{fn apply_inplace(&self, index: usize, coordinates: &mut[f64], stride: usize) -> usize}
+    dispatch!{fn apply_index(&self, index: usize) -> usize}
+    dispatch!{fn apply_indices_inplace(&self, indices: &mut [usize])}
+    dispatch!{fn unapply_indices(&self, indices: &[usize]) -> Vec<usize>}
+    dispatch!{fn is_identity(&self) -> bool}
+}
+
 impl From<Transpose> for Operator {
     fn from(transpose: Transpose) -> Self {
-        Self::Index(IndexOperator::Transpose(transpose))
+        Self::Transpose(transpose)
+    }
+}
+
+impl From<Take> for Operator {
+    fn from(take: Take) -> Self {
+        Self::Take(take)
+    }
+}
+
+impl From<Children> for Operator {
+    fn from(children: Children) -> Self {
+        Self::Children(children)
+    }
+}
+
+impl From<Edges> for Operator {
+    fn from(edges: Edges) -> Self {
+        Self::Edges(edges)
+    }
+}
+
+impl From<UniformPoints> for Operator {
+    fn from(uniform_points: UniformPoints) -> Self {
+        Self::UniformPoints(uniform_points)
     }
 }
 
@@ -442,7 +515,7 @@ mod tests {
                     work[..incoord.len()].copy_from_slice(incoord);
                 }
             }
-            assert_eq!(op.apply($inidx, &mut work, stride), $outidx);
+            assert_eq!(op.apply_inplace($inidx, &mut work, stride), $outidx);
             for (actual, desired) in iter::zip(work.chunks(stride), outcoords.iter()) {
                 assert_abs_diff_eq!(actual[..], desired[..]);
             }
@@ -451,7 +524,7 @@ mod tests {
             use std::borrow::Borrow;
             let op = $op.borrow();
             let mut work = Vec::with_capacity(0);
-            assert_eq!(op.apply($inidx, &mut work, op.dim_out()), $outidx);
+            assert_eq!(op.apply_inplace($inidx, &mut work, op.dim_out()), $outidx);
         }};
     }
 
@@ -516,13 +589,13 @@ mod tests {
     macro_rules! assert_unapply {
         ($op:expr) => {{
             let op = $op;
-            let nin = 2 * op.len_in();
-            let nout = 2 * op.len_out();
+            let nin = 2 * op.mod_in();
+            let nout = 2 * op.mod_out();
             assert!(nout > 0);
             let mut map: Vec<Vec<usize>> = (0..nout).map(|_| Vec::new()).collect();
             let mut work = Vec::with_capacity(0);
             for i in 0..nin {
-                map[op.apply(i, &mut work, op.offset() + op.dim_out())].push(i);
+                map[op.apply_inplace(i, &mut work, op.dim_out())].push(i);
             }
             for (j, desired) in map.into_iter().enumerate() {
                 let mut actual = op.unapply_indices(&[j]);
@@ -574,12 +647,12 @@ mod tests {
             for op in a.iter().rev() {
                 let i = (1..)
                     .into_iter()
-                    .find(|i| (root_len * i) % op.len_in() == 0)
+                    .find(|i| (root_len * i) % op.mod_in() == 0)
                     .unwrap();
                 tip_len *= i;
                 root_len *= i;
-                root_len = root_len / op.len_in() * op.len_out();
-                assert!(op.offset() + op.dim_in() <= root_dim);
+                root_len = root_len / op.mod_in() * op.mod_out();
+                assert!(op.dim_in() <= root_dim);
                 root_dim += op.delta_dim();
             }
             assert!(tip_len > 0);
@@ -587,9 +660,9 @@ mod tests {
             let mut root_len_b = tip_len;
             let mut root_dim_b = tip_dim;
             for op in b.iter().rev() {
-                assert_eq!(root_len_b % op.len_in(), 0);
-                root_len_b = root_len_b / op.len_in() * op.len_out();
-                assert!(op.offset() + op.dim_in() <= root_dim_b);
+                assert_eq!(root_len_b % op.mod_in(), 0);
+                root_len_b = root_len_b / op.mod_in() * op.mod_out();
+                assert!(op.dim_in() <= root_dim_b);
                 root_dim_b += op.delta_dim();
             }
             assert_eq!(root_len_b, root_len);
@@ -611,8 +684,8 @@ mod tests {
             for itip in 0..2 * tip_len {
                 let mut crds_a = coords.clone();
                 let mut crds_b = coords.clone();
-                let iroot_a = a.iter().rev().fold(itip, |i, op| op.apply(i, &mut crds_a, root_dim));
-                let iroot_b = b.iter().rev().fold(itip, |i, op| op.apply(i, &mut crds_b, root_dim));
+                let iroot_a = a.iter().rev().fold(itip, |i, op| op.apply_inplace(i, &mut crds_a, root_dim));
+                let iroot_b = b.iter().rev().fold(itip, |i, op| op.apply_inplace(i, &mut crds_b, root_dim));
                 assert_eq!(iroot_a, iroot_b, "itip={itip}");
                 assert_abs_diff_eq!(crds_a[..], crds_b[..]);
             }

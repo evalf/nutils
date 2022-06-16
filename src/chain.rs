@@ -1,702 +1,158 @@
-//pub(crate) trait UnsizedSequence: Clone {
-//    /// Returns the difference between the dimension of the input and the output sequence.
-//    fn delta_dim(&self) -> usize;
-//    fn delta_len(&self) -> (usize, usize);
-//    /// Map the index.
-//    fn apply_index(&self, index: usize) -> usize;
-//    /// Returns all indices that map to the given indices. TODO: examples with take and children?
-//    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize>;
-//    /// Map the index and coordinate of an element in the output sequence to
-//    /// the input sequence. The index is returned, the coordinate is adjusted
-//    /// in-place. If the coordinate dimension of the input sequence is larger
-//    /// than that of the output sequence, the [Operator::delta_dim()] last
-//    /// elements of the coordinate are discarded.
-//    fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize;
-//    /// Map the index and multiple coordinates of an element in the output
-//    /// sequence to the input sequence. The index is returned, the coordinates
-//    /// are adjusted in-place.
-//    fn apply_many_inplace(&self, index: usize, coordinates: &mut [f64], dim: usize, stride: usize) -> usize {
-//        let dim = dim as usize;
-//        let mut result_index = 0;
-//        for i in 0..coordinates.len() / stride {
-//            result_index = self.apply_one_inplace(index, &mut coordinates[i * dim..(i + 1) * dim]);
-//        }
-//        result_index
-//    }
-//    /// Map the index and coordinate of an element in the output sequence to
-//    /// the input sequence.
-//    fn apply_one(&self, index: usize, coordinate: &[f64]) -> (usize, Vec<f64>) {
-//        let delta_dim = self.delta_dim() as usize;
-//        let to_dim = coordinate.len() + delta_dim;
-//        let mut result = Vec::with_capacity(to_dim);
-//        result.extend_from_slice(coordinate);
-//        result.extend(iter::repeat(0.0).take(delta_dim));
-//        (self.apply_one_inplace(index, &mut result), result)
-//    }
-//    /// Map the index and multiple coordinates of an element in the output
-//    /// sequence to the input sequence.
-//    fn apply_many(&self, index: usize, coordinates: &[f64], dim: usize) -> (usize, Vec<f64>) {
-//        assert_eq!(coordinates.len() % dim as usize, 0);
-//        let ncoords = coordinates.len() / dim as usize;
-//        let delta_dim = self.delta_dim();
-//        let to_dim = dim + delta_dim;
-//        let mut result = Vec::with_capacity(ncoords * to_dim as usize);
-//        for coord in coordinates.chunks(dim as usize) {
-//            result.extend_from_slice(coord);
-//            result.extend(iter::repeat(0.0).take(delta_dim as usize));
-//        }
-//        (self.apply_many_inplace(index, &mut result, to_dim), result)
-//    }
-//}
-//
-//macro_rules! dispatch {
-//    ($vis:vis fn $fn:ident(&$self:ident $(, $arg:ident: $ty:ty)*) $($ret:tt)*) => {
-//        #[inline]
-//        $vis fn $fn(&$self $(, $arg: $ty)*) $($ret)* {
-//            match $self {
-//                Operator::Take(var) => var.$fn($($arg),*),
-//                Operator::Children(var) => var.$fn($($arg),*),
-//                Operator::Edges(var) => var.$fn($($arg),*),
-//                Operator::UniformPoints(var) => var.$fn($($arg),*),
-//            }
-//        }
-//    };
-//    ($vis:vis fn $fn:ident(&mut $self:ident $(, $arg:ident: $ty:ty)*) $($ret:tt)*) => {
-//        #[inline]
-//        $vis fn $fn(&mut $self $(, $arg: $ty)*) $($ret)* {
-//            match $self {
-//                Operator::Take(var) => var.$fn($($arg),*),
-//                Operator::Children(var) => var.$fn($($arg),*),
-//                Operator::Edges(var) => var.$fn($($arg),*),
-//                Operator::UniformPoints(var) => var.$fn($($arg),*),
-//            }
-//        }
-//    };
-//}
-//
-//impl UnsizedSequence for Operator {
-//    dispatch! {fn delta_dim(&self) -> usize}
-//    dispatch! {fn delta_len(&self) -> (usize, usize)}
-//    dispatch! {fn apply_index(&self, index: usize) -> usize}
-//    dispatch! {fn unapply_indices(&self, indices: &[usize]) -> Vec<usize>}
-//    dispatch! {fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize}
-//    dispatch! {fn apply_many_inplace(&self, index: usize, coordinates: &mut [f64], dim: usize) -> usize}
-//    dispatch! {fn apply_one(&self, index: usize, coordinate: &[f64]) -> (usize, Vec<f64>)}
-//    dispatch! {fn apply_many(&self, index: usize, coordinates: &[f64], dim: usize) -> (usize, Vec<f64>)}
-//}
-//
-//impl WithStride for Operator {
-//    dispatch! {fn stride(&mut self) -> usize}
-//    dispatch! {fn increment_stride(&mut self, amount: usize)}
-//    dispatch! {fn decrement_stride(&mut self, amount: usize)}
-//}
-//
-//impl WithOffset for Operator {
-//    dispatch! {fn offset(&mut self) -> usize}
-//    dispatch! {fn increment_offset(&mut self, amount: usize)}
-//    dispatch! {fn decrement_offset(&mut self, amount: usize)}
-//}
-//
-//
-//trait IndexOperator {
-//    /// Returns the difference between the dimension of the input and the output sequence.
-//    fn delta_dim(&self) -> usize;
-//    fn delta_len(&self) -> (usize, usize);
-//    /// Map the index.
-//    fn apply_index(&self, index: usize) -> usize;
-//    /// Returns all indices that map to the given indices. TODO: examples with take and children?
-//    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize>;
-//    /// Map the index and coordinate of an element in the output sequence to
-//    /// the input sequence. The index is returned, the coordinate is adjusted
-//    /// in-place. If the coordinate dimension of the input sequence is larger
-//    /// than that of the output sequence, the [Operator::delta_dim()] last
-//    /// elements of the coordinate are discarded.
-//}
-//
-//impl UnsizedSequence for IndexOperator {
-//    fn delta_dim(&self) -> usize {
-//        self.delta_dim()
-//    }
-//    fn delta_len(&self) -> (usize, usize) {
-//        self.delta_len()
-//    }
-//    fn apply_index(&self, index: usize) -> usize {
-//        self.apply_index(index)
-//    }
-//    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
-//        self.unapply_indices(indices)
-//    }
-//    fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
-//        self.apply_index(index)
-//    }
-//    fn apply_many_inplace(&self, index: usize, coordinates: &mut [f64], dim: usize, stride: usize) -> usize {
-//        self.apply_index(index)
-//    }
-//}
-//
-//impl WithOffset for IndexOperator {
-//    fn offset(&self) -> usize {
-//        0
-//    }
-//    fn increment_offset(&self, _amount: usize) {}
-//    fn decrement_offset(&self, _amount: usize) {}
-//}
-//
-//
-//
-//
-//
-//impl DescribeOperator for Operator {
-//    dispatch! {fn operator_kind(&self) -> OperatorKind}
-//    dispatch! {fn as_children(&self) -> Option<&Children>}
-//    dispatch! {fn as_children_mut(&mut self) -> Option<&mut Children>}
-//    dispatch! {fn as_edges(&self) -> Option<&Edges>}
-//    dispatch! {fn as_edges_mut(&mut self) -> Option<&mut Edges>}
-//}
-//
-//impl std::fmt::Debug for Operator {
-//    dispatch! {fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result}
-//}
-//
-//#[derive(Debug, Clone, PartialEq)]
-//enum OperatorKind {
-//    Index(usize, usize),
-//    Coordinate(usize, usize, usize, usize),
-//    Other,
-//}
-//
-//trait DescribeOperator {
-//    /// Returns the kind of operation the operator applies to its parent sequence.
-//    fn operator_kind(&self) -> OperatorKind;
-//    #[inline]
-//    fn as_children(&self) -> Option<&Children> {
-//        None
-//    }
-//    #[inline]
-//    fn as_children_mut(&mut self) -> Option<&mut Children> {
-//        None
-//    }
-//    #[inline]
-//    fn as_edges(&self) -> Option<&Edges> {
-//        None
-//    }
-//    #[inline]
-//    fn as_edges_mut(&mut self) -> Option<&mut Edges> {
-//        None
-//    }
-//}
-//
-//// TODO: add StrictMonotonicIncreasingTake
-//
-//#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-//pub struct Take {
-//    indices: Box<[usize]>,
-//    len: usize,
-//    stride: usize,
-//}
-//
-//impl Take {
-//    #[inline]
-//    pub fn new(indices: impl Into<Box<[usize]>>, len: usize) -> Self {
-//        Self {
-//            indices: indices.into(),
-//            len,
-//            stride: 1,
-//        }
-//    }
-//}
-//
-//#[inline]
-//fn divmod(x: usize, y: usize) -> (usize, usize) {
-//    (x / y, x % y)
-//}
-//
-//// macro_rules! unflatten_index {
-////     ($rem:expr $(, $index:ident)*; $($len:expr,)* $len:expr) => {{
-////         let (rem, index) = divmod($rem, $len);
-////         unflatten_index!($rem, index $(, $index)*; $($len),*)
-////     }};
-//// }
-////
-//// macro_rules! flatten_indices {
-////     ($flat:expr;) => {$flat};
-////     ($flat:expr, $index:expr $(, $index:expr)*; $len:expr $(, $len:expr)*) => {
-////         flatten_indices!(($flat + $index) * $len $(, $index)*; $($len),*)
-////     }
-//// }
-//
-//trait LenInOut {
-//    fn len_in(&self) -> usize;
-//    fn len_out(&self) -> usize;
-//}
-//
-//impl LenInOut for usize {
-//    fn len_in(&self) -> {
-//        *self
-//    }
-//    fn len_out(&self) -> {
-//        *self
-//    }
-//}
-//
-//impl LenInOut for [usize; 2] {
-//    fn len_in(&self) -> {
-//        *self[0]
-//    }
-//    fn len_out(&self) -> {
-//        *self[1]
-//    }
-//}
-//
-//#[inline]
-//fn map_sandwiched_index(index: usize, len0: impl LenInOut, len1: impl LenInOut, f: impl FnOnce(usize) -> usize) -> usize {
-//    let (index, i2 = divmod(index, len1.len_in());
-//    let (i0, i1) = divmod(index, len0.len_in());
-//    (i0 * len0.len_out() + f(i1)) * len1.len_out() + i2
-//}
-//
-//#[inline]
-//fn map_strided_index(index: usize, stride: usize, f: impl FnOnce(usize) -> usize) -> usize {
-//    f(index / stride) * stride + (index % stride)
-//}
-//
-//impl UnsizedSequence for Take {
-//    #[inline]
-//    fn delta_dim(&self) -> usize {
-//        0
-//    }
-//    #[inline]
-//    fn delta_len(&self) -> (usize, usize) {
-//        (self.indices.len(), self.len)
-//    }
-//    #[inline]
-//    fn increment_offset(&mut self, _amount: usize) {}
-//    #[inline]
-//    fn decrement_offset(&mut self, _amount: usize) {}
-//    #[inline]
-//    fn increment_stride(&mut self, amount: usize) {
-//        self.stride *= amount;
-//    }
-//    #[inline]
-//    fn decrement_stride(&mut self, amount: usize) {
-//        self.stride /= amount;
-//    }
-//    #[inline]
-//    fn apply_index(&self, index: usize) -> usize {
-//        map_sandwiched_index(index, [self.indices.len(), self.len], self.stride, |i| self.indices[i])
-//    }
-//    #[inline]
-//    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
-//        indices.iter().filter_map(|index| {
-//            let (i0, i1, i2) = unflatten_index!(index; self.len, self.stride);
-//            self.indices.iter().position(|i| *i == i1).map(|j1| flatten_indices!(i0, j1, i2; self.indices.len(), self.stride))
-//        }).collect()
-//    }
-//    #[inline]
-//    fn apply_one_inplace(&self, index: usize, _coordinate: &mut [f64]) -> usize {
-//        self.apply_index(index)
-//    }
-//    #[inline]
-//    fn apply_many_inplace(&self, index: usize, _coordinate: &mut [f64], _dim: usize) -> usize {
-//        self.apply_index(index)
-//    }
-//}
-//
-//impl DescribeOperator for Take {
-//    #[inline]
-//    fn operator_kind(&self) -> OperatorKind {
-//        OperatorKind::Index(self.len, self.indices.len())
-//    }
-//}
-//
-//#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-//pub struct Children {
-//    simplex: Simplex,
-//    offset: usize,
-//    stride: usize,
-//}
-//
-//impl Children {
-//    #[inline]
-//    pub fn new(simplex: Simplex, offset: usize) -> Self {
-//        Self { simplex, offset, stride: 1 }
-//    }
-//}
-//
-//impl UnsizedSequence for Children {
-//    #[inline]
-//    fn delta_dim(&self) -> usize {
-//        0
-//    }
-//    #[inline]
-//    fn delta_len(&self) -> (usize, usize) {
-//        (self.simplex.nchildren(), 1)
-//    }
-//    #[inline]
-//    fn increment_offset(&mut self, amount: usize) {
-//        self.offset += amount;
-//    }
-//    #[inline]
-//    fn decrement_offset(&mut self, amount: usize) {
-//        self.offset -= amount;
-//    }
-//    #[inline]
-//    fn increment_stride(&mut self, amount: usize) {
-//        self.stride *= amount;
-//    }
-//    #[inline]
-//    fn decrement_stride(&mut self, amount: usize) {
-//        self.stride /= amount;
-//    }
-//    #[inline]
-//    fn apply_index(&self, index: usize) -> usize {
-//        map_strided_index(index, self.stride, |i| self.simplex.apply_child_index(i))
-//    }
-//    #[inline]
-//    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
-//        self.simplex.unapply_child_indices(indices)
-//    }
-//    #[inline]
-//    fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
-//        self.simplex
-//            .apply_child(index, &mut coordinate[self.offset as usize..])
-//    }
-//}
-//
-//impl DescribeOperator for Children {
-//    #[inline]
-//    fn operator_kind(&self) -> OperatorKind {
-//        OperatorKind::Coordinate(
-//            self.offset,
-//            self.simplex.dim(),
-//            self.simplex.dim(),
-//            self.simplex.nchildren(),
-//        )
-//    }
-//    #[inline]
-//    fn as_children(&self) -> Option<&Children> {
-//        Some(self)
-//    }
-//    #[inline]
-//    fn as_children_mut(&mut self) -> Option<&mut Children> {
-//        Some(self)
-//    }
-//}
-//
-//#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-//pub struct Edges {
-//    simplex: Simplex,
-//    offset: usize,
-//}
-//
-//impl Edges {
-//    #[inline]
-//    pub fn new(simplex: Simplex, offset: usize) -> Self {
-//        Self { simplex, offset }
-//    }
-//}
-//
-//impl UnsizedSequence for Edges {
-//    #[inline]
-//    fn delta_dim(&self) -> usize {
-//        1
-//    }
-//    #[inline]
-//    fn delta_len(&self) -> (usize, usize) {
-//        (self.simplex.nedges(), 1)
-//    }
-//    #[inline]
-//    fn increment_offset(&mut self, amount: usize) {
-//        self.offset += amount;
-//    }
-//    #[inline]
-//    fn decrement_offset(&mut self, amount: usize) {
-//        self.offset -= amount;
-//    }
-//    #[inline]
-//    fn increment_stride(&mut self, amount: usize) {
-//        self.stride *= amount;
-//    }
-//    #[inline]
-//    fn decrement_stride(&mut self, amount: usize) {
-//        self.stride /= amount;
-//    }
-//    #[inline]
-//    fn apply_index(&self, index: usize) -> usize {
-//        let i0, i1 = unflatten_index!(index; self.stride);
-//        flatten_indices!(self.simplex.apply_edge_index(i0), i1; self.stride)
-//    }
-//    #[inline]
-//    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
-//        self.simplex.unapply_edge_indices(indices)
-//    }
-//    #[inline]
-//    fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
-//        self.simplex.apply_edge(index, &mut coordinate[self.offset as usize..])
-//    }
-//}
-//
-//impl DescribeOperator for Edges {
-//    #[inline]
-//    fn operator_kind(&self) -> OperatorKind {
-//        OperatorKind::Coordinate(
-//            self.offset,
-//            self.simplex.dim(),
-//            self.simplex.edge_dim(),
-//            self.simplex.nedges(),
-//        )
-//    }
-//    #[inline]
-//    fn as_edges(&self) -> Option<&Edges> {
-//        Some(self)
-//    }
-//    #[inline]
-//    fn as_edges_mut(&mut self) -> Option<&mut Edges> {
-//        Some(self)
-//    }
-//}
-//
-//#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-//pub struct UniformPoints {
-//    points: Box<[FiniteF64]>,
-//    point_dim: usize,
-//    offset: usize,
-//}
-//
-//impl UniformPoints {
-//    pub fn new(points: Box<[f64]>, point_dim: usize, offset: usize) -> Self {
-//        // TODO: assert that the points are actually finite.
-//        let points: Box<[FiniteF64]> = unsafe { std::mem::transmute(points) };
-//        Self {
-//            points,
-//            point_dim,
-//            offset,
-//        }
-//    }
-//    #[inline]
-//    pub const fn npoints(&self) -> usize {
-//        self.points.len() / self.point_dim as usize
-//    }
-//}
-//
-//impl UnsizedSequence for UniformPoints {
-//    #[inline]
-//    fn delta_dim(&self) -> usize {
-//        self.point_dim
-//    }
-//    #[inline]
-//    fn delta_len(&self) -> (usize, usize) {
-//        (self.npoints(), 1)
-//    }
-//    #[inline]
-//    fn increment_offset(&mut self, amount: usize) {
-//        self.offset += amount;
-//    }
-//    #[inline]
-//    fn decrement_offset(&mut self, amount: usize) {
-//        self.offset -= amount;
-//    }
-//    #[inline]
-//    fn increment_stride(&mut self, amount: usize) {
-//        self.stride *= amount;
-//    }
-//    #[inline]
-//    fn decrement_stride(&mut self, amount: usize) {
-//        self.stride /= amount;
-//    }
-//    #[inline]
-//    fn apply_index(&self, index: usize) -> usize {
-//        index / self.npoints()
-//    }
-//    #[inline]
-//    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
-//        let mut point_indices = Vec::with_capacity(indices.len() * self.npoints());
-//        for index in indices.iter() {
-//            for ipoint in 0..self.npoints() {
-//                point_indices.push(index * self.npoints() + ipoint);
-//            }
-//        }
-//        point_indices
-//    }
-//    fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
-//        let point_dim = self.point_dim as usize;
-//        let coordinate = &mut coordinate[self.offset as usize..];
-//        coordinate.copy_within(..coordinate.len() - point_dim, point_dim);
-//        let ipoint = index % self.npoints();
-//        let offset = ipoint as usize * point_dim;
-//        let points: &[f64] =
-//            unsafe { std::mem::transmute(&self.points[offset..offset + point_dim]) };
-//        coordinate[..point_dim].copy_from_slice(points);
-//        index / self.npoints()
-//    }
-//}
-//
-//impl DescribeOperator for UniformPoints {
-//    #[inline]
-//    fn operator_kind(&self) -> OperatorKind {
-//        OperatorKind::Coordinate(self.offset, self.point_dim, 0, self.npoints())
-//    }
-//}
-//
-///// An operator that maps a sequence of elements to another sequence of elements.
-/////
-///// Given a sequence of elements an [`Operator`] defines a new sequence. For
-///// example [`Operator::Children`] gives the sequence of child elements and
-///// [`Operator::Take`] gives a subset of the input sequence.
-/////
-///// All variants of [`Operator`] apply some operation to either every element of
-///// the parent sequence, variants [`Operator::Children`], [`Operator::Edges`]
-///// and [`Operator::UniformPoints`], or to consecutive chunks of the input
-///// sequence, in which case the size of the chunks is included in the variant
-///// and the input sequence is assumed to be a multiple of the chunk size long.
-//#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-//pub enum Operator {
-//    Transpose(Transpose),
-//    /// A subset of a sequence: the input sequence is reshaped to `(_, len)`,
-//    /// the given `indices` are taken from the last axis and the result is
-//    /// flattened.
-//    Take(Take),
-//    /// The children of a every element of a sequence.
-//    Children(Children),
-//    /// The edges of a every element of a sequence.
-//    Edges(Edges),
-//    UniformPoints(UniformPoints),
-//}
-//
-//macro_rules! impl_from_for_operator {
-//    ($($Variant:ident),*) => {$(
-//        impl From<$Variant> for Operator {
-//            fn from(variant: $Variant) -> Self {
-//                Self::$Variant(variant)
-//            }
-//        }
-//    )*}
-//}
-//
-//impl_from_for_operator! {Transpose, Take, Children, Edges, UniformPoints}
-//
-//impl Operator {
-//    /// Construct a new operator that transposes a sequence of elements.
-//    pub fn new_transpose(len1: usize, len2: usize) -> Self {
-//        Transpose::new(len1, len2).into()
-//    }
-//    /// Construct a new operator that takes a subset of a sequence of elements.
-//    pub fn new_take(indices: impl Into<Box<[usize]>>, len: usize) -> Self {
-//        Take::new(indices, len).into()
-//    }
-//    /// Construct a new operator that maps a sequence of elements to its children.
-//    pub fn new_children(simplex: Simplex, offset: usize) -> Self {
-//        Children::new(simplex, offset).into()
-//    }
-//    /// Construct a new operator that maps a sequence of elements to its edges.
-//    pub fn new_edges(simplex: Simplex, offset: usize) -> Self {
-//        Edges::new(simplex, offset).into()
-//    }
-//    /// Construct a new operator that adds points to every element of a sequence.
-//    pub fn new_uniform_points(points: Box<[f64]>, point_dim: usize, offset: usize) -> Self {
-//        UniformPoints::new(points, point_dim, offset).into()
-//    }
-//    pub fn swap(&self, other: &Self) -> Option<Vec<Self>> {
-//        let mut other = other.clone();
-//        swap(self, &mut other).map(|tail| iter::once(other).chain(tail.into_iter()).collect())
-//    }
-//}
-//
-//macro_rules! dispatch {
-//    ($vis:vis fn $fn:ident(&$self:ident $(, $arg:ident: $ty:ty)*) $($ret:tt)*) => {
-//        #[inline]
-//        $vis fn $fn(&$self $(, $arg: $ty)*) $($ret)* {
-//            match $self {
-//                Operator::Transpose(var) => var.$fn($($arg),*),
-//                Operator::Take(var) => var.$fn($($arg),*),
-//                Operator::Children(var) => var.$fn($($arg),*),
-//                Operator::Edges(var) => var.$fn($($arg),*),
-//                Operator::UniformPoints(var) => var.$fn($($arg),*),
-//            }
-//        }
-//    };
-//    ($vis:vis fn $fn:ident(&mut $self:ident $(, $arg:ident: $ty:ty)*) $($ret:tt)*) => {
-//        #[inline]
-//        $vis fn $fn(&mut $self $(, $arg: $ty)*) $($ret)* {
-//            match $self {
-//                Operator::Transpose(var) => var.$fn($($arg),*),
-//                Operator::Take(var) => var.$fn($($arg),*),
-//                Operator::Children(var) => var.$fn($($arg),*),
-//                Operator::Edges(var) => var.$fn($($arg),*),
-//                Operator::UniformPoints(var) => var.$fn($($arg),*),
-//            }
-//        }
-//    };
-//}
-//
-//impl UnsizedSequence for Operator {
-//    dispatch! {fn delta_dim(&self) -> usize}
-//    dispatch! {fn delta_len(&self) -> (usize, usize)}
-//    dispatch! {fn increment_offset(&mut self, amount: usize)}
-//    dispatch! {fn decrement_offset(&mut self, amount: usize)}
-//    dispatch! {fn increment_stride(&mut self, amount: usize)}
-//    dispatch! {fn decrement_stride(&mut self, amount: usize)}
-//    dispatch! {fn apply_index(&self, index: usize) -> usize}
-//    dispatch! {fn unapply_indices(&self, indices: &[usize]) -> Vec<usize>}
-//    dispatch! {fn apply_one_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize}
-//    dispatch! {fn apply_many_inplace(&self, index: usize, coordinates: &mut [f64], dim: usize) -> usize}
-//    dispatch! {fn apply_one(&self, index: usize, coordinate: &[f64]) -> (usize, Vec<f64>)}
-//    dispatch! {fn apply_many(&self, index: usize, coordinates: &[f64], dim: usize) -> (usize, Vec<f64>)}
-//}
-//
-//impl DescribeOperator for Operator {
-//    dispatch! {fn operator_kind(&self) -> OperatorKind}
-//    dispatch! {fn as_children(&self) -> Option<&Children>}
-//    dispatch! {fn as_children_mut(&mut self) -> Option<&mut Children>}
-//    dispatch! {fn as_edges(&self) -> Option<&Edges>}
-//    dispatch! {fn as_edges_mut(&mut self) -> Option<&mut Edges>}
-//}
-//
-//impl std::fmt::Debug for Operator {
-//    dispatch! {fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result}
-//}
-//
-//fn swap<L, R>(l: &L, r: &mut R) -> Option<Vec<Operator>>
-//where
-//    L: DescribeOperator + UnsizedSequence + Into<Operator>,
-//    R: DescribeOperator + UnsizedSequence,
-//{
-//    if let (Some(edges), Some(children)) = (l.as_edges(), r.as_children_mut()) {
-//        if edges.offset == children.offset && edges.simplex.edge_dim() == children.simplex.dim() {
-//            let simplex = edges.simplex;
-//            let indices = simplex.swap_edges_children_map();
-//            let take = Operator::new_take(indices, simplex.nchildren() * simplex.nedges());
-//            children.simplex = simplex;
-//            return Some(vec![l.clone().into(), take]);
-//        }
-//    }
-//    use OperatorKind::*;
-//    match (l.operator_kind(), r.operator_kind()) {
-//        (Index(1, 1), Coordinate(_, _, _, _)) => Some(vec![l.clone().into()]),
-//        (Index(l_nout, l_nin), Coordinate(_, _, _, r_gen)) => Some(vec![
-//            Operator::new_transpose(r_gen, l_nout),
-//            l.clone().into(),
-//            Operator::new_transpose(l_nin, r_gen),
-//        ]),
-//        (Coordinate(l_off, _, l_nin, l_gen), Coordinate(r_off, r_nout, _, r_gen)) => {
-//            if l_off + l_nin <= r_off {
-//                r.increment_offset(l.delta_dim());
-//                Some(vec![
-//                    l.clone().into(),
-//                    Operator::new_transpose(l_gen, r_gen),
-//                ])
-//            } else if l_off >= r_off + r_nout {
-//                let mut l = l.clone();
-//                l.decrement_offset(r.delta_dim());
-//                Some(vec![l.into(), Operator::new_transpose(l_gen, r_gen)])
-//            } else {
-//                None
-//            }
-//        }
-//        _ => None,
-//    }
-//}
-//
+use crate::operator::{Operator, Transpose, Edges};
+use crate::simplex::Simplex;
+use std::collections::BTreeMap;
+use crate::UnsizedMapping;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsizedChain(Vec<Operator>);
+
+impl UnsizedChain {
+    #[inline]
+    pub fn new(operators: Vec<Operator>) -> Self {
+        Self(operators)
+    }
+    #[inline]
+    pub fn empty() -> Self {
+        UnsizedChain(Vec::new())
+    }
+    pub fn push(&mut self, operator: impl Into<Operator>) {
+        self.0.push(operator.into())
+    }
+    fn split_heads(&self) -> BTreeMap<Operator, (Option<Transpose>, Vec<Operator>)> {
+        let mut heads = BTreeMap::new();
+        for (i, op) in self.0.iter().enumerate() {
+            if let Some((transpose, head, mut tail)) = op.shift_left(&self.0[..i]) {
+                tail.extend(self.0[i + 1..].iter().cloned());
+                heads.insert(head, (transpose, tail));
+            }
+            if let Operator::Edges(Edges(Simplex::Line, offset)) = op {
+                let children = Operator::new_children(Simplex::Line).with_offset(*offset);
+                if let Some((transpose, head, mut tail)) = children.shift_left(&self.0[..i]) {
+                    tail.push(op.clone());
+                    tail.push(Operator::new_take(
+                        Simplex::Line.swap_edges_children_map(),
+                        Simplex::Line.nedges() * Simplex::Line.nchildren(),
+                    ));
+                    tail.extend(self.0[i + 1..].iter().cloned());
+                    heads.insert(head, (transpose, tail));
+                }
+            }
+        }
+        heads
+    }
+    /// Remove and return the common prefix of two chains, transforming either if necessary.
+    pub fn remove_common_prefix(&self, other: &Self) -> (Self, Self, Self) {
+        let mut common = Vec::new();
+        let mut tail1 = self.clone();
+        let mut tail2 = other.clone();
+        while !tail1.0.is_empty() && !tail2.0.is_empty() {
+            if tail1.0.last() == tail2.0.last() {
+                common.push(tail1.0.pop().unwrap());
+                tail2.0.pop();
+                continue;
+            }
+            let heads1: BTreeMap<Operator, Vec<Operator>> = tail1
+                .split_heads()
+                .into_iter()
+                .filter_map(|(head, (trans, tail))| {
+                    if trans.is_none() {
+                        Some((head, tail))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            let mut heads2: BTreeMap<Operator, Vec<Operator>> = tail2
+                .split_heads()
+                .into_iter()
+                .filter_map(|(head, (trans, tail))| {
+                    if trans.is_none() {
+                        Some((head, tail))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Some((head, new_tail1, new_tail2)) = heads1
+                .into_iter()
+                .filter_map(|(h, t1)| heads2.remove(&h).map(|t2| (h, t1, t2)))
+                .min_by_key(|(_, t1, t2)| std::cmp::max(t1.len(), t2.len()))
+            {
+                common.push(head);
+                tail1.0 = new_tail1;
+                tail2.0 = new_tail2;
+                continue;
+            }
+            break;
+        }
+        let common = if tail1.0.is_empty() && (!tail2.0.is_empty() || self.0.len() <= other.0.len()) {
+            self.clone()
+        } else if tail2.0.is_empty() {
+            other.clone()
+        } else {
+            Self::new(common)
+        };
+        (common, tail1, tail2)
+    }
+}
+
+impl UnsizedMapping for UnsizedChain {
+    fn dim_in(&self) -> usize {
+        self.0.iter().map(|op| op.dim_in()).sum()
+    }
+    fn delta_dim(&self) -> usize {
+        self.0.iter().map(|op| op.delta_dim()).sum()
+    }
+    fn add_offset(&mut self, offset: usize) {
+        for op in self.0.iter_mut() {
+            op.add_offset(offset);
+        }
+    }
+    fn mod_out(&self) -> usize {
+        self.0.iter().map(|op| op.mod_out()).product()
+    }
+    fn mod_in(&self) -> usize {
+        self.0.iter().map(|op| op.mod_in()).product()
+    }
+    fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize {
+        self.0
+            .iter()
+            .rev()
+            .fold(index, |index, op| op.apply_inplace(index, coordinates, stride))
+    }
+    fn apply_index(&self, index: usize) -> usize {
+        self.0.iter().rev().fold(index, |index, op| op.apply_index(index))
+    }
+    fn apply_indices_inplace(&self, indices: &mut [usize]) {
+        for op in self.0.iter().rev() {
+            op.apply_indices_inplace(indices);
+        }
+    }
+    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+        self.0
+            .iter()
+            .fold(indices.to_vec(), |indices, op| op.unapply_indices(&indices))
+    }
+}
+
+impl FromIterator<Operator> for UnsizedChain {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = Operator>,
+    {
+        Self::new(iter.into_iter().collect())
+    }
+}
+
+impl IntoIterator for UnsizedChain {
+    type Item = Operator;
+    type IntoIter = std::vec::IntoIter<Operator>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
 ///// A chain of [`Operator`]s.
 //#[derive(Debug, Clone, PartialEq)]
 //pub struct UnsizedChain {
@@ -1282,27 +738,26 @@
 //        }
 //    }
 //
-//    #[test]
-//    fn remove_common_prefix() {
-//        let a = UnsizedChain::new([
-//            Operator::new_children(Line, 0),
-//            Operator::new_children(Line, 0),
-//        ]);
-//        let b = UnsizedChain::new([Operator::new_edges(Line, 0)]);
-//        assert_eq!(
-//            a.remove_common_prefix(&b),
-//            (
-//                UnsizedChain::new([
-//                    Operator::new_children(Line, 0),
-//                    Operator::new_children(Line, 0)
-//                ]),
-//                UnsizedChain::new([]),
-//                UnsizedChain::new([
-//                    Operator::new_edges(Line, 0),
-//                    Operator::new_take([2, 1], 4),
-//                    Operator::new_take([2, 1], 4)
-//                ]),
-//            )
-//        );
-//    }
-//}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::simplex::Simplex::*;
+
+    #[test]
+    fn remove_common_prefix() {
+        let c1 = Operator::new_children(Line);
+        let e1 = Operator::new_edges(Line);
+        let swap_ec1 = Operator::new_take([2, 1], 4);
+        let a = UnsizedChain::new(vec![c1.clone(), c1.clone()]);
+        let b = UnsizedChain::new(vec![e1.clone()]);
+        assert_eq!(
+            a.remove_common_prefix(&b),
+            (
+                UnsizedChain::new(vec![c1.clone(), c1.clone()]),
+                UnsizedChain::empty(),
+                UnsizedChain::new(vec![e1.clone(), swap_ec1.clone(), swap_ec1.clone()]),
+            )
+        );
+    }
+}
