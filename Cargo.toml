@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 approx = "0.5"
+num = "0.4"

@@ -1,5 +1,3 @@
-use crate::types::Dim;
-
 /// Simplex.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Simplex {
@@ -10,7 +8,7 @@ pub enum Simplex {
 impl Simplex {
     /// Returns the dimension of the simplex.
     #[inline]
-    pub const fn dim(&self) -> Dim {
+    pub const fn dim(&self) -> usize {
         match self {
             Self::Line => 1,
             Self::Triangle => 2,
@@ -18,7 +16,7 @@ impl Simplex {
     }
     /// Returns the dimension of an edge of the simplex.
     #[inline]
-    pub const fn edge_dim(&self) -> Dim {
+    pub const fn edge_dim(&self) -> usize {
         self.dim() - 1
     }
     /// Returns the number of edges of the simplex.
@@ -88,30 +86,42 @@ impl Simplex {
         }
     }
 
-    /// Transform the given child `coordinate` for child `index` to this parent
+    /// Transform the given child `coordinates` for child `index` to this parent
     /// simplex in-place. The returned index is the index of the parent in an
     /// infinite, uniform sequence.
-    pub fn apply_child_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
+    pub fn apply_child(
+        &self,
+        index: usize,
+        coordinates: &mut [f64],
+        stride: usize,
+        offset: usize,
+    ) -> usize {
         match self {
             Self::Line => {
-                coordinate[0] = 0.5 * (coordinate[0] + (index % 2) as f64);
+                for coordinate in coordinates.chunks_mut(stride) {
+                    let coordinate = &mut coordinate[offset..];
+                    coordinate[0] = 0.5 * (coordinate[0] + (index % 2) as f64);
+                }
                 index / 2
             }
             Self::Triangle => {
-                coordinate[0] *= 0.5;
-                coordinate[1] *= 0.5;
-                match index % 4 {
-                    1 => {
-                        coordinate[0] += 0.5;
+                for coordinate in coordinates.chunks_mut(stride) {
+                    let coordinate = &mut coordinate[offset..];
+                    coordinate[0] *= 0.5;
+                    coordinate[1] *= 0.5;
+                    match index % 4 {
+                        1 => {
+                            coordinate[0] += 0.5;
+                        }
+                        2 => {
+                            coordinate[1] += 0.5;
+                        }
+                        3 => {
+                            coordinate[1] += coordinate[0];
+                            coordinate[0] = 0.5 - coordinate[0];
+                        }
+                        _ => {}
                     }
-                    2 => {
-                        coordinate[1] += 0.5;
-                    }
-                    3 => {
-                        coordinate[1] += coordinate[0];
-                        coordinate[0] = 0.5 - coordinate[0];
-                    }
-                    _ => {}
                 }
                 index / 4
             }
@@ -124,41 +134,55 @@ impl Simplex {
         }
     }
 
-    pub fn unapply_child_indices(&self, indices: &[usize]) -> Vec<usize> {
-        let mut child_indices = Vec::with_capacity(indices.len() * self.nchildren());
-        for index in indices.iter() {
-            for ichild in 0..self.nchildren() {
-                child_indices.push(index * self.nchildren() + ichild);
-            }
-        }
-        child_indices
+    pub fn unapply_child_indices(
+        &self,
+        indices: impl Iterator<Item = usize>,
+    ) -> impl Iterator<Item = usize> {
+        let n = self.nchildren();
+        indices.flat_map(move |i| (0..n).map(move |j| i * n + j))
     }
 
     /// Transform the given edge `coordinate` for edge `index` to this parent
     /// simplex in-place. The returned index is the index of the parent in an
     /// infinite, uniform sequence.
-    pub fn apply_edge_inplace(&self, index: usize, coordinate: &mut [f64]) -> usize {
-        coordinate.copy_within(
-            self.edge_dim() as usize..coordinate.len() - 1,
-            self.dim() as usize,
-        );
+    pub fn apply_edge(
+        &self,
+        index: usize,
+        coordinates: &mut [f64],
+        stride: usize,
+        offset: usize,
+    ) -> usize {
         match self {
             Self::Line => {
-                coordinate[0] = (1 - index % 2) as f64;
+                for coordinate in coordinates.chunks_mut(stride) {
+                    let coordinate = &mut coordinate[offset..];
+                    coordinate.copy_within(
+                        self.edge_dim() as usize..coordinate.len() - 1,
+                        self.dim() as usize,
+                    );
+                    coordinate[0] = (1 - index % 2) as f64;
+                }
                 index / 2
             }
             Self::Triangle => {
-                match index % 3 {
-                    0 => {
-                        coordinate[1] = coordinate[0];
-                        coordinate[0] = 1.0 - coordinate[0];
-                    }
-                    1 => {
-                        coordinate[1] = coordinate[0];
-                        coordinate[0] = 0.0;
-                    }
-                    _ => {
-                        coordinate[1] = 0.0;
+                for coordinate in coordinates.chunks_mut(stride) {
+                    let coordinate = &mut coordinate[offset..];
+                    coordinate.copy_within(
+                        self.edge_dim() as usize..coordinate.len() - 1,
+                        self.dim() as usize,
+                    );
+                    match index % 3 {
+                        0 => {
+                            coordinate[1] = coordinate[0];
+                            coordinate[0] = 1.0 - coordinate[0];
+                        }
+                        1 => {
+                            coordinate[1] = coordinate[0];
+                            coordinate[0] = 0.0;
+                        }
+                        _ => {
+                            coordinate[1] = 0.0;
+                        }
                     }
                 }
                 index / 3
@@ -172,14 +196,12 @@ impl Simplex {
         }
     }
 
-    pub fn unapply_edge_indices(&self, indices: &[usize]) -> Vec<usize> {
-        let mut edge_indices = Vec::with_capacity(indices.len() * self.nedges());
-        for index in indices.iter() {
-            for iedge in 0..self.nedges() {
-                edge_indices.push(index * self.nedges() + iedge);
-            }
-        }
-        edge_indices
+    pub fn unapply_edge_indices(
+        &self,
+        indices: impl Iterator<Item = usize>,
+    ) -> impl Iterator<Item = usize> {
+        let n = self.nedges();
+        indices.flat_map(move |i| (0..n).map(move |j| i * n + j))
     }
 }
 
@@ -187,22 +209,21 @@ impl Simplex {
 mod tests {
     use super::*;
     use approx::assert_abs_diff_eq;
+    use std::iter;
     use Simplex::*;
 
     macro_rules! assert_child_index_coord {
         ($simplex:ident, $inidx:expr, $incoords:expr, $outidx:expr, $outcoords:expr) => {{
             let incoords = $incoords;
             let outcoords = $outcoords;
-            for i in 0..outcoords.len() {
-                let mut work = outcoords[i].clone();
-                for j in 0..incoords[i].len() {
-                    work[j] = incoords[i][j];
-                }
-                for j in incoords[i].len()..outcoords[i].len() {
-                    work[j] = -1.0;
-                }
-                assert_eq!($simplex.apply_child_inplace($inidx, &mut work), $outidx);
-                assert_abs_diff_eq!(work[..], outcoords[i][..]);
+            let stride = outcoords[0].len();
+            let mut work: Vec<_> = iter::repeat(-1.0).take(outcoords.len() * stride).collect();
+            for (work, incoord) in iter::zip(work.chunks_mut(stride), incoords.iter()) {
+                work[..incoord.len()].copy_from_slice(incoord);
+            }
+            assert_eq!($simplex.apply_child($inidx, &mut work, stride, 0), $outidx);
+            for (actual, desired) in iter::zip(work.chunks(stride), outcoords.iter()) {
+                assert_abs_diff_eq!(actual[..], desired[..]);
             }
         }};
     }
@@ -211,16 +232,14 @@ mod tests {
         ($simplex:ident, $inidx:expr, $incoords:expr, $outidx:expr, $outcoords:expr) => {{
             let incoords = $incoords;
             let outcoords = $outcoords;
-            for i in 0..outcoords.len() {
-                let mut work = outcoords[i].clone();
-                for j in 0..incoords[i].len() {
-                    work[j] = incoords[i][j];
-                }
-                for j in incoords[i].len()..outcoords[i].len() {
-                    work[j] = -1.0;
-                }
-                assert_eq!($simplex.apply_edge_inplace($inidx, &mut work), $outidx);
-                assert_abs_diff_eq!(work[..], outcoords[i][..]);
+            let stride = outcoords[0].len();
+            let mut work: Vec<_> = iter::repeat(-1.0).take(outcoords.len() * stride).collect();
+            for (work, incoord) in iter::zip(work.chunks_mut(stride), incoords.iter()) {
+                work[..incoord.len()].copy_from_slice(incoord);
+            }
+            assert_eq!($simplex.apply_edge($inidx, &mut work, stride, 0), $outidx);
+            for (actual, desired) in iter::zip(work.chunks(stride), outcoords.iter()) {
+                assert_abs_diff_eq!(actual[..], desired[..]);
             }
         }};
     }
@@ -281,8 +300,8 @@ mod tests {
         for (i, j) in Line.swap_edges_children_map().iter().cloned().enumerate() {
             let mut x = [0.5];
             let mut y = [0.5];
-            Line.apply_edge_inplace(i, &mut x);
-            Line.apply_child_inplace(Line.apply_edge_inplace(j, &mut y), &mut y);
+            Line.apply_edge(i, &mut x, 1, 0);
+            Line.apply_child(Line.apply_edge(j, &mut y, 1, 0), &mut y, 1, 0);
             assert_abs_diff_eq!(x[..], y[..]);
         }
     }
@@ -297,8 +316,8 @@ mod tests {
         {
             let mut x = [0.5, 0.5];
             let mut y = [0.5, 0.5];
-            Triangle.apply_edge_inplace(Line.apply_child_inplace(i, &mut x), &mut x);
-            Triangle.apply_child_inplace(Triangle.apply_edge_inplace(j, &mut y), &mut y);
+            Triangle.apply_edge(Line.apply_child(i, &mut x, 2, 0), &mut x, 2, 0);
+            Triangle.apply_child(Triangle.apply_edge(j, &mut y, 2, 0), &mut y, 2, 0);
             assert_abs_diff_eq!(x[..], y[..]);
         }
     }
@@ -309,8 +328,8 @@ mod tests {
             if let Some(j) = j {
                 let mut x = [0.5];
                 let mut y = [0.5];
-                Line.apply_child_inplace(Line.apply_edge_inplace(i, &mut x), &mut x);
-                Line.apply_child_inplace(Line.apply_edge_inplace(j, &mut y), &mut y);
+                Line.apply_child(Line.apply_edge(i, &mut x, 1, 0), &mut x, 1, 0);
+                Line.apply_child(Line.apply_edge(j, &mut y, 1, 0), &mut y, 1, 0);
                 assert_abs_diff_eq!(x[..], y[..]);
             }
         }
@@ -322,8 +341,8 @@ mod tests {
             if let Some(j) = j {
                 let mut x = [0.5, 0.5];
                 let mut y = [0.5, 0.5];
-                Triangle.apply_child_inplace(Triangle.apply_edge_inplace(i, &mut x), &mut x);
-                Triangle.apply_child_inplace(Triangle.apply_edge_inplace(j, &mut y), &mut y);
+                Triangle.apply_child(Triangle.apply_edge(i, &mut x, 2, 0), &mut x, 2, 0);
+                Triangle.apply_child(Triangle.apply_edge(j, &mut y, 2, 0), &mut y, 2, 0);
                 assert_abs_diff_eq!(x[..], y[..]);
             }
         }
