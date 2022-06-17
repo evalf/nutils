@@ -1,0 +1,14 @@
+[book]
+authors = ["Gertjan van Zwieten"]
+language = "en"
+multilingual = false
+src = "src"
+title = "The Nutils Book"
+
+[output.html]
+mathjax-support = true
+git-repository-url = "https://github.com/evalf/nutils"
+
+[output.html.fold]
+enable = true
+level = 0
