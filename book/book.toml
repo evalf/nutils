@@ -5,6 +5,9 @@ multilingual = false
 src = "src"
 title = "The Nutils Book"
 
+[build]
+build-dir = "../docs"
+
 [output.html]
 mathjax-support = true
 git-repository-url = "https://github.com/evalf/nutils"
