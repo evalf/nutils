@@ -1,0 +1,369 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>New in Nutils 7 - The Nutils Book</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+        <!-- MathJax -->
+        <script async type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item affix "><a href="../about.html">About Nutils</a></li><li class="chapter-item "><a href="../intro.html"><strong aria-hidden="true">1.</strong> How to Read This Book</a></li><li class="chapter-item "><a href="../start.html"><strong aria-hidden="true">2.</strong> Getting Started</a></li><li class="chapter-item "><a href="../install/intro.html"><strong aria-hidden="true">3.</strong> Installation</a><a class="toggle"><div>❱</div></a></li><li><ol class="section"><li class="chapter-item "><a href="../install/nutils.html"><strong aria-hidden="true">3.1.</strong> Installing Nutils</a></li><li class="chapter-item "><a href="../install/matrix.html"><strong aria-hidden="true">3.2.</strong> Installing a Matrix Backend</a></li><li class="chapter-item "><a href="../install/quality.html"><strong aria-hidden="true">3.3.</strong> Quality of Life</a></li><li class="chapter-item "><a href="../install/performance.html"><strong aria-hidden="true">3.4.</strong> Improving Performance</a></li><li class="chapter-item "><a href="../install/containers.html"><strong aria-hidden="true">3.5.</strong> Using Containers</a></li><li class="chapter-item "><a href="../install/remote.html"><strong aria-hidden="true">3.6.</strong> Remote Computing</a></li></ol></li><li class="chapter-item "><a href="../tutorial/intro.html"><strong aria-hidden="true">4.</strong> Tutorial</a><a class="toggle"><div>❱</div></a></li><li><ol class="section"><li class="chapter-item "><a href="../tutorial/theory.html"><strong aria-hidden="true">4.1.</strong> A Little Bit of Theory</a></li><li class="chapter-item "><a href="../tutorial/topovgeom.html"><strong aria-hidden="true">4.2.</strong> Topology vs Geometry</a></li><li class="chapter-item "><a href="../tutorial/bases.html"><strong aria-hidden="true">4.3.</strong> Bases</a></li><li class="chapter-item "><a href="../tutorial/functions.html"><strong aria-hidden="true">4.4.</strong> Functions</a></li><li class="chapter-item "><a href="../tutorial/namespace.html"><strong aria-hidden="true">4.5.</strong> Namespace</a></li><li class="chapter-item "><a href="../tutorial/integrals.html"><strong aria-hidden="true">4.6.</strong> Integrals</a></li><li class="chapter-item "><a href="../tutorial/solvers.html"><strong aria-hidden="true">4.7.</strong> Solvers</a></li><li class="chapter-item "><a href="../tutorial/sampling.html"><strong aria-hidden="true">4.8.</strong> Sampling</a></li><li class="chapter-item "><a href="../tutorial/laplace2d.html"><strong aria-hidden="true">4.9.</strong> 2D Laplace Problem</a></li></ol></li><li class="chapter-item expanded "><a href="../whatsnew/intro.html"><strong aria-hidden="true">5.</strong> What's New</a><a class="toggle"><div>❱</div></a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../whatsnew/v7.html" class="active"><strong aria-hidden="true">5.1.</strong> New in Nutils 7</a></li><li class="chapter-item "><a href="../whatsnew/v6.html"><strong aria-hidden="true">5.2.</strong> New in Nutils 6</a></li><li class="chapter-item "><a href="../whatsnew/v5.html"><strong aria-hidden="true">5.3.</strong> New in Nutils 5</a></li><li class="chapter-item "><a href="../whatsnew/v4.html"><strong aria-hidden="true">5.4.</strong> New in Nutils 4</a></li><li class="chapter-item "><a href="../whatsnew/v3.html"><strong aria-hidden="true">5.5.</strong> New in Nutils 3</a></li><li class="chapter-item "><a href="../whatsnew/v2.html"><strong aria-hidden="true">5.6.</strong> New in Nutils 2</a></li><li class="chapter-item "><a href="../whatsnew/v1.html"><strong aria-hidden="true">5.7.</strong> New in Nutils 1</a></li><li class="chapter-item "><a href="../whatsnew/v0.html"><strong aria-hidden="true">5.8.</strong> New in Nutils 0</a></li></ol></li><li class="chapter-item "><a href="../examples.html"><strong aria-hidden="true">6.</strong> Examples</a></li><li class="chapter-item "><a href="../api.html"><strong aria-hidden="true">7.</strong> API Reference</a></li><li class="chapter-item "><a href="../support.html"><strong aria-hidden="true">8.</strong> Support</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Nutils Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/evalf/nutils" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="new-in-nutils-7-hiyamugi"><a class="header" href="#new-in-nutils-7-hiyamugi">New in Nutils 7 &quot;hiyamugi&quot;</a></h1>
+<ul>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v7.0">Nutils 7.0</a> was released on January 1st, 2022.</li>
+</ul>
+<h2 id="expression-and-namespace-version-2"><a class="header" href="#expression-and-namespace-version-2">Expression and Namespace Version 2</a></h2>
+<p>The <code>nutils.expression</code> module has been renamed to <code>nutils.expression_v1</code>, the
+<code>nutils.function.Namespace</code> class to <code>nutils.expression_v1.Namespace</code> and the
+<code>nutils.expression_v2</code> module has been added, featuring a new
+<code>nutils.expression_v2.Namespace</code>. The version 2 of the namespace v2 has an
+expression language that differs slightly from version 1, most notably in the
+way derivatives are written. The old namespace remains available for the time
+being. All examples are updated to the new namespace. You are encouraged to use
+the new namespace for newly written code.</p>
+<h2 id="changed-bifurcate-has-been-replaced-by-spaces"><a class="header" href="#changed-bifurcate-has-been-replaced-by-spaces">Changed: bifurcate has been replaced by spaces</a></h2>
+<p>In the past using functions on products of <code>nutils.topology.Topology</code> instances
+required using <code>function.bifurcate</code>. This has been replaced by the concept of
+'spaces'. Every topology is defined in a space, identified by a name (<code>str</code>).
+Functions defined on some topology are considered constant on other topologies
+(defined on other spaces).</p>
+<p>If you want to multiply two topologies, you have to make sure that the
+topologies have different spaces, e.g. via the <code>space</code> parameter of
+<code>nutils.mesh.rectilinear</code>. Example:</p>
+<pre><code class="language-python">from nutils import mesh, function
+Xtopo, x = mesh.rectilinear([4], space='X')
+Ytopo, y = mesh.rectilinear([2], space='Y')
+topo = Xtopo * Ytopo
+geom = function.concatenate([x, y])
+</code></pre>
+<h2 id="changed-functionarray-shape-must-be-constant"><a class="header" href="#changed-functionarray-shape-must-be-constant">Changed: function.Array shape must be constant</a></h2>
+<p>Resulting from to the function/evaluable split introduced in #574, variable
+length axes such as relating to integration points or sparsity can stay
+confined to the evaluable layer. In order to benefit from this situation and
+improve compatibility with Numpy's arrays, <code>nutils.function.Array</code> objects are
+henceforth limited to constant shapes. Additionally:</p>
+<ul>
+<li>The sparsity construct <code>nutils.function.inflate</code> has been removed;</li>
+<li>The <code>nutils.function.Elemwise</code> function requires all element arrays to be of
+the same shape, and its remaining use has been deprecated in favor of
+<code>nutils.function.get</code>;</li>
+<li>Aligning with Numpy's API, <code>nutils.function.concatenate</code> no longer
+automatically broadcasts its arguments, but instead demands that all
+dimensions except for the concatenation axis match exactly.</li>
+</ul>
+<h2 id="changed-locate-arguments"><a class="header" href="#changed-locate-arguments">Changed: locate arguments</a></h2>
+<p>The <code>nutils.topology.Topology.locate</code> method now allows <code>tol</code> to be left
+unspecified if <code>eps</code> is specified instead, which is repurposed as stop
+criterion for distances in element coordinates. Conversely, if only <code>tol</code> is
+specified, a corresponding minimal <code>eps</code> value is set automatically to match
+points near element edges. The <code>ischeme</code> and <code>scale</code> arguments are deprecated
+and replaced by <code>maxdist</code>, which can be left unspecified in general. The
+optional <code>weights</code> argument results in a sample that is suitable for
+integration.</p>
+<h2 id="moved-unit-from-types-to-separate-module"><a class="header" href="#moved-unit-from-types-to-separate-module">Moved: unit from types to separate module</a></h2>
+<p>The <code>unit</code> type has been moved into its own <code>nutils.unit</code> module, with the old
+location <code>types.unit</code> now holding a forward method. The forward emits a
+deprecation warning prompting to change <code>nutils.types.unit.create</code> (or its
+shorthand <code>nutils.types.unit</code>) to <code>nutils.unit.create</code>.</p>
+<h2 id="removed-loading-libraries-from-local"><a class="header" href="#removed-loading-libraries-from-local">Removed: loading libraries from .local</a></h2>
+<p>Libraries that are installed in odd locations will no longer be automatically
+located by Nutils (see b8b7a6d5 for reasons). Instead the user will need to set
+the appropriate environment variable, prior to starting Python. In Windows this
+is the <code>PATH</code> variable, in Linux and OS X <code>LD_LIBRARY_PATH</code>.</p>
+<p>Crucially, this affects the MKL libraries when they are user-installed via pip.
+By default Nutils selects the best available matrix backend that it finds
+available, which could result in it silently falling back on Scipy or Numpy. To
+confirm that the path variable is set correctly run your application with
+<code>matrix=mkl</code> to force an error if MKL cannot be loaded.</p>
+<h2 id="function-module-split-into-function-and-evaluable"><a class="header" href="#function-module-split-into-function-and-evaluable">Function module split into <code>function</code> and <code>evaluable</code></a></h2>
+<p>The function module has been split into a high-level, numpy-like <code>function</code>
+module and a lower-level <code>evaluable</code> module. The <code>evaluable</code> module is agnostic
+to the so-called points axis. Scripts that don't use custom implementations of
+<code>function.Array</code> should work without modification.</p>
+<p>Custom implementations of the old <code>function.Array</code> should now derive from
+<code>evaluable.Array</code>. Furthermore, an accompanying implementation of
+<code>function.Array</code> should be added with a <code>prepare_eval</code> method that returns the
+former.</p>
+<p>The following example implementation of an addition</p>
+<pre><code class="language-python">class Add(function.Array):
+  def __init__(self, a, b):
+    super().__init__(args=[a, b], shape=a.shape, dtype=a.dtype)
+  def evalf(self, a, b):
+    return a+b
+</code></pre>
+<p>should be converted to</p>
+<pre><code class="language-python">class Add(function.Array):
+  def __init__(self, a: function.Array, b: function.Array) -&gt; None:
+    self.a = a
+    self.b = b
+    super().__init__(shape=a.shape, dtype=a.dtype)
+  def prepare_eval(self, **kwargs) -&gt; evaluable.Array:
+    a = self.a.prepare_eval(**kwargs)
+    b = self.b.prepare_eval(**kwargs)
+    return Add_evaluable(a, b)
+
+class Add_evaluable(evaluable.Array):
+  def __init__(self, a, b):
+    super().__init__(args=[a, b], shape=a.shape, dtype=a.dtype)
+  def evalf(self, a, b):
+    return a+b
+</code></pre>
+<h2 id="solve-multiple-residuals-to-multiple-targets"><a class="header" href="#solve-multiple-residuals-to-multiple-targets">Solve multiple residuals to multiple targets</a></h2>
+<p>In problems involving multiple fields, where formerly it was required to
+<code>nutils.function.chain</code> the bases in order to construct and solve a block
+system, an alternative possibility is now to keep the residuals and targets
+separate and reference the several parts at the solving phase::</p>
+<pre><code class="language-python"># old, still valid approach
+ns.ubasis, ns.pbasis = function.chain([ubasis, pbasis])
+ns.u_i = 'ubasis_ni ?dofs_n'
+ns.p = 'pbasis_n ?dofs_n'
+
+# new, alternative approach
+ns.ubasis = ubasis
+ns.pbasis = pbasis
+ns.u_i = 'ubasis_ni ?u_n'
+ns.p = 'pbasis_n ?p_n'
+
+# common: problem definition
+ns.σ_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
+ures = topo.integral('ubasis_ni,j σ_ij d:x d:x' @ ns, degree=4)
+pres = topo.integral('pbasis_n u_,kk d:x' @ ns, degree=4)
+
+# old approach: solving a single residual to a single target
+dofs = solver.newton('dofs', ures + pres).solve(1e-10)
+
+# new approach: solving multiple residuals to multiple targets
+state = solver.newton(['u', 'p'], [ures, pres]).solve(1e-10)
+</code></pre>
+<p>In the new, multi-target approach, the return value is no longer an array but a
+dictionary that maps a target to its solution. If additional arguments were
+specified to newton (or any of the other solvers) then these are copied into
+the return dictionary so as to form a complete state, which can directly be
+used as an arguments to subsequent evaluations.</p>
+<p>If an argument is specified for a solve target then its value is used as an
+initial guess (newton, minimize) or initial condition (thetamethod). This
+replaces the <code>lhs0</code> argument which is not supported for multiple targets.</p>
+<h2 id="new-thetamethod-argument-deprecates-target0"><a class="header" href="#new-thetamethod-argument-deprecates-target0">New thetamethod argument deprecates target0</a></h2>
+<p>To explicitly refer to the history state in <code>nutils.solver.thetamethod</code> and its
+derivatives <code>impliciteuler</code> and <code>cranknicolson</code>, instead of specifiying the
+target through the <code>target0</code> parameter, the new argument <code>historysuffix</code>
+specifies only the suffix to be added to the main target. Hence, the following
+three invocations are equivalent::</p>
+<pre><code class="language-python"># deprecated
+solver.impliciteuler('target', residual, inertia, target0='target0')
+# new syntax
+solver.impliciteuler('target', residual, inertia, historysuffix='0')
+# equal, since '0' is the default suffix
+solver.impliciteuler('target', residual, inertia)
+</code></pre>
+<h2 id="in-place-modification-of-newton-minimize-pseudotime-iterates"><a class="header" href="#in-place-modification-of-newton-minimize-pseudotime-iterates">In-place modification of newton, minimize, pseudotime iterates</a></h2>
+<p>When <code>nutils.solver.newton</code>, <code>nutils.solver.minimize</code> or
+<code>nutils.solver.pseudotime</code> are used as iterators, the generated vectors are now
+modified in place. Therefore, if iterates are stored for analysis, be sure to
+use the <code>.copy</code> method.</p>
+<h2 id="deprecated-functionelemwise"><a class="header" href="#deprecated-functionelemwise">Deprecated function.elemwise</a></h2>
+<p>The function <code>function.elemwise</code> has been deprecated. Use <code>function.Elemwise</code>
+instead::</p>
+<pre><code class="language-python">function.elemwise(topo.transforms, values) # deprecated
+function.Elemwise(values, topo.f_index) # new
+</code></pre>
+<h2 id="removed-transforms-attribute-of-bases"><a class="header" href="#removed-transforms-attribute-of-bases">Removed transforms attribute of bases</a></h2>
+<p>The <code>transforms</code> attribute of bases has been removed due to internal
+restructurings. The <code>transforms</code> attribute of the topology on which the
+basis was created can be used as a replacement::</p>
+<pre><code class="language-python">reftopo = topo.refined
+refbasis = reftopo.basis(...)
+supp = refbasis.get_support(...)
+#topo = topo.refined_by(refbasis.transforms[supp]) # no longer valid
+topo = topo.refined_by(reftopo.transforms[supp]) # still valid
+</code></pre>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../whatsnew/intro.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next" href="../whatsnew/v6.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../whatsnew/intro.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next" href="../whatsnew/v6.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../searcher.js" type="text/javascript" charset="utf-8"></script>
+
+        <script src="../clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </body>
+</html>

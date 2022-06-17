@@ -1,0 +1,1921 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>The Nutils Book</title>
+        <meta name="robots" content="noindex" />
+
+
+        <!-- Custom HTML head -->
+        
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+        <!-- MathJax -->
+        <script async type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item affix "><a href="about.html">About Nutils</a></li><li class="chapter-item "><a href="intro.html"><strong aria-hidden="true">1.</strong> How to Read This Book</a></li><li class="chapter-item "><a href="start.html"><strong aria-hidden="true">2.</strong> Getting Started</a></li><li class="chapter-item "><a href="install/intro.html"><strong aria-hidden="true">3.</strong> Installation</a><a class="toggle"><div>❱</div></a></li><li><ol class="section"><li class="chapter-item "><a href="install/nutils.html"><strong aria-hidden="true">3.1.</strong> Installing Nutils</a></li><li class="chapter-item "><a href="install/matrix.html"><strong aria-hidden="true">3.2.</strong> Installing a Matrix Backend</a></li><li class="chapter-item "><a href="install/quality.html"><strong aria-hidden="true">3.3.</strong> Quality of Life</a></li><li class="chapter-item "><a href="install/performance.html"><strong aria-hidden="true">3.4.</strong> Improving Performance</a></li><li class="chapter-item "><a href="install/containers.html"><strong aria-hidden="true">3.5.</strong> Using Containers</a></li><li class="chapter-item "><a href="install/remote.html"><strong aria-hidden="true">3.6.</strong> Remote Computing</a></li></ol></li><li class="chapter-item "><a href="tutorial/intro.html"><strong aria-hidden="true">4.</strong> Tutorial</a><a class="toggle"><div>❱</div></a></li><li><ol class="section"><li class="chapter-item "><a href="tutorial/theory.html"><strong aria-hidden="true">4.1.</strong> A Little Bit of Theory</a></li><li class="chapter-item "><a href="tutorial/topovgeom.html"><strong aria-hidden="true">4.2.</strong> Topology vs Geometry</a></li><li class="chapter-item "><a href="tutorial/bases.html"><strong aria-hidden="true">4.3.</strong> Bases</a></li><li class="chapter-item "><a href="tutorial/functions.html"><strong aria-hidden="true">4.4.</strong> Functions</a></li><li class="chapter-item "><a href="tutorial/namespace.html"><strong aria-hidden="true">4.5.</strong> Namespace</a></li><li class="chapter-item "><a href="tutorial/integrals.html"><strong aria-hidden="true">4.6.</strong> Integrals</a></li><li class="chapter-item "><a href="tutorial/solvers.html"><strong aria-hidden="true">4.7.</strong> Solvers</a></li><li class="chapter-item "><a href="tutorial/sampling.html"><strong aria-hidden="true">4.8.</strong> Sampling</a></li><li class="chapter-item "><a href="tutorial/laplace2d.html"><strong aria-hidden="true">4.9.</strong> 2D Laplace Problem</a></li></ol></li><li class="chapter-item "><a href="whatsnew/intro.html"><strong aria-hidden="true">5.</strong> What's New</a><a class="toggle"><div>❱</div></a></li><li><ol class="section"><li class="chapter-item "><a href="whatsnew/v7.html"><strong aria-hidden="true">5.1.</strong> New in Nutils 7</a></li><li class="chapter-item "><a href="whatsnew/v6.html"><strong aria-hidden="true">5.2.</strong> New in Nutils 6</a></li><li class="chapter-item "><a href="whatsnew/v5.html"><strong aria-hidden="true">5.3.</strong> New in Nutils 5</a></li><li class="chapter-item "><a href="whatsnew/v4.html"><strong aria-hidden="true">5.4.</strong> New in Nutils 4</a></li><li class="chapter-item "><a href="whatsnew/v3.html"><strong aria-hidden="true">5.5.</strong> New in Nutils 3</a></li><li class="chapter-item "><a href="whatsnew/v2.html"><strong aria-hidden="true">5.6.</strong> New in Nutils 2</a></li><li class="chapter-item "><a href="whatsnew/v1.html"><strong aria-hidden="true">5.7.</strong> New in Nutils 1</a></li><li class="chapter-item "><a href="whatsnew/v0.html"><strong aria-hidden="true">5.8.</strong> New in Nutils 0</a></li></ol></li><li class="chapter-item "><a href="examples.html"><strong aria-hidden="true">6.</strong> Examples</a></li><li class="chapter-item "><a href="api.html"><strong aria-hidden="true">7.</strong> API Reference</a></li><li class="chapter-item "><a href="support.html"><strong aria-hidden="true">8.</strong> Support</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Nutils Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/evalf/nutils" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="about-nutils"><a class="header" href="#about-nutils">About Nutils</a></h1>
+<p>Nutils is a Free and <a href="https://github.com/evalf/nutils/">Open Source</a> Python
+programming library for Finite Element Method computations, developed by
+<a href="https://evalf.com/">Evalf</a> and distributed under the permissive MIT license.
+Key features are a readable, math centric syntax, an object oriented design,
+strict separation of topology and geometry, and high level function
+manipulations with support for automatic differentiation.</p>
+<p>Nutils provides the tools required to construct a typical simulation workflow
+in just a few lines of Python code, while at the same time leaving full
+flexibility to build novel workflows or interact with third party tools. With
+native support for Isogeometric Analysis (IGA), the Finite Cell method (FCM),
+multi-physics, mixed methods, and hierarchical refinement, Nutils is at the
+forefront of numerical discretization science. Efficient under-the-hood
+vectorization and built-in parallellisation provide for an effortless
+transition from academic research projects to full scale, real world
+applications.</p>
+<p>Nutils is actively used in a wide range of research, studying both novel
+physics as well as numerical techniques. If you are using Nutils in your
+research, please consider <a href="https://doi.org/10.5281/zenodo.822369%3E">citing
+Nutils</a> in your publications.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="how-to-read-this-book"><a class="header" href="#how-to-read-this-book">How to Read This Book</a></h1>
+<p>Since Nutils is a library for the development of numerical simulations, this
+book assumes that the reader is familiar with differential calculus, Galerkin
+methods, and the Finite Element Method. If this is not the case, chances are
+that Nutils is not the tool they are looking for.</p>
+<p>First time users who are eager to get their feet wet will want to begin with
+the <a href="start.html">getting started guide</a> and build a functioning Poisson solver in
+three easy steps, no questions asked. Following this, beginners are strongly
+advised to follow the hands on <a href="tutorial/intro.html">tutorial</a> to gain an an
+in-depth understanding of Nutils' concepts and get familiar with the syntax.</p>
+<p>Novices and advanced users alike may find interest in the <a href="install/intro.html">installation
+guide</a>, which ranges from basic installation instructions to
+tips and tricks for optimizing the installation, instructions for running a
+Docker style container, and suggestions for computing remotely.</p>
+<p>Anybody looking to build their own Nutils simulations are encouraged to browse
+through projects in the <a href="examples.html">examples section</a>. Most simulations will
+have components in common with existing scripts, so a mix-and-match approach is
+a good way to start building your own. In case questions do remain, the
+<a href="support.html">support page</a> lists ways of getting in touch with developers.</p>
+<p>Finally, an exhaustive overview of all Nutils objects and functions can be
+found in the <a href="api.html">API Reference</a>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="getting-started"><a class="header" href="#getting-started">Getting Started</a></h1>
+<p>The following is a quick start guide to running your first Nutils simulation in
+three simple steps. Afterward, be sure to read the <a href="install.html">installation
+guide</a> for extra installation instructions, study the
+<a href="tutorial.html">tutorial</a> to familiarize yourself with Nutils' concepts and
+syntax, and explore the <a href="examples.html">examples</a> for inspiration.</p>
+<h2 id="step-1-install-nutils-and-matplotlib"><a class="header" href="#step-1-install-nutils-and-matplotlib">Step 1: Install Nutils and Matplotlib</a></h2>
+<p>With Python version 3.7 or newer installed, Nutils and Matplotlib can be
+installed via the <a href="https://pypi.org/project/nutils/">Python Package Index</a>
+using the pip package installer. In a terminal window:</p>
+<pre><code class="language-sh">python -m pip install --user nutils matplotlib
+</code></pre>
+<p>Note that Nutils depends on Numpy, Treelog and Stringly, which means that these
+modules are pulled in automatically if they were not installed prior. Though most
+Nutils applications will require <a href="https://matplotlib.org/">Matplotlib</a> for
+visualization, it is not a dependency for Nutils itself, and is therefore
+installed explicitly.</p>
+<h2 id="step-2-create-a-simulation-script"><a class="header" href="#step-2-create-a-simulation-script">Step 2: Create a simulation script</a></h2>
+<p>Open a text editor and create a file <code>poisson.py</code> with the following contents:</p>
+<pre><code class="language-python">from nutils import mesh, function, solver, export, cli
+
+def main(nelems: int = 10, etype: str = 'square'):
+    domain, x = mesh.unitsquare(nelems, etype)
+    u = function.dotarg('udofs', domain.basis('std', degree=1))
+    g = u.grad(x)
+    J = function.J(x)
+    cons = solver.optimize('udofs',
+        domain.boundary.integral(u**2 * J, degree=2), droptol=1e-12)
+    udofs = solver.optimize('udofs',
+        domain.integral((g @ g / 2 - u) * J, degree=1), constrain=cons)
+    bezier = domain.sample('bezier', 3)
+    x, u = bezier.eval([x, u], udofs=udofs)
+    export.triplot('u.png', x, u, tri=bezier.tri, hull=bezier.hull)
+
+cli.run(main)
+</code></pre>
+<p>Note that while we could make the script even shorter by avoiding the main
+function and <code>cli.run</code>, the above structure is preferred as it automatically
+sets up a logging environment, activates a matrix backend and handles command
+line parsing.</p>
+<h2 id="step-3-run-the-simulation"><a class="header" href="#step-3-run-the-simulation">Step 3: Run the simulation</a></h2>
+<p>Back in the terminal, the simulation can now be started by running:</p>
+<pre><code class="language-sh">python poisson.py
+</code></pre>
+<p>This should produce the following output:</p>
+<pre><code>nutils v7.0
+optimize &gt; constrained 40/121 dofs
+optimize &gt; optimum value 0.00e+00
+optimize &gt; solve &gt; solving 81 dof system to machine precision using arnoldi solver
+optimize &gt; solve &gt; solver returned with residual 6e-17
+optimize &gt; optimum value -1.75e-02
+u.png
+log written to file:///home/myusername/public_html/poisson.py/log.html
+</code></pre>
+<p>If the terminal is reasonably modern (Windows users may want to install the new
+<a href="https://aka.ms/windowsterminal">Windows Terminal</a>) then the messages are
+coloured for extra clarity. The last line of the log shows the location of the
+simultaneously generated html file that holds the same log, as well as a link
+to the generated image.</p>
+<p>To run the same simulation on a mesh that is finer and made up or triangles
+instead of squares, arguments can be provided on the command line:</p>
+<pre><code class="language-sh">python poisson.py nelems=20 etype=triangle
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="installation"><a class="header" href="#installation">Installation</a></h1>
+<p>Nutils requires a working installation of Python 3.5 or higher. Many different
+installers exist and there are no known issues with any of them. When in doubt
+about which to use, a safe option is to go with the <a href="https://www.python.org/downloads/">official
+installer</a>. From there on Nutils can be
+installed following the steps below.</p>
+<p>Depending on your system the Python executable may be installed as either
+<code>python</code> or <code>python3</code>, or both, not to mention alternative implementations such
+as <code>pypy</code> or <code>pyston</code>. In the following instructions, <code>python</code> is to be
+replaced with the relevant executable name.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="installing-nutils"><a class="header" href="#installing-nutils">Installing Nutils</a></h1>
+<p>Nutils is installed via Python's <a href="https://pip.pypa.io/en/stable/">Pip</a> package
+installer, which most Python distributions install by default. In the following
+instructions we add the flag <code>--user</code> for a local installation that does not
+require system privileges, which is recommended but not required.</p>
+<p>The following command installs the stable version of Nutils from the package
+archive, along with its dependencies <a href="https://numpy.org/">Numpy</a>,
+<a href="https://github.com/evalf/treelog">Treelog</a> and
+<a href="https://github.com/evalf/stringly">Stringly</a>:</p>
+<pre><code class="language-sh">python -m pip install --user nutils
+</code></pre>
+<p>To install the most recent development version we use Github's ability to
+generate zip balls:</p>
+<pre><code class="language-sh">python -m pip install --user --force-reinstall \
+  https://github.com/evalf/nutils/archive/refs/heads/master.zip
+</code></pre>
+<p>Alternatively, if the <a href="https://git-scm.com/">Git</a> version control system is
+installed, we can use pip's ability to interact with it directly to install the
+same version as follows:</p>
+<pre><code class="language-sh">python -m pip install --user --force-reinstall \
+  git+https://github.com/evalf/nutils.git@master
+</code></pre>
+<p>This notation has the advantage that even a specific commit (rather than a
+branch) can be installed directly by specifying it after the <code>@</code>.</p>
+<p>Finally, if we do desire a checkout of Nutils' source code, for instance to
+make changes to it, then we can instruct pip to install directly from the
+location on disk::</p>
+<pre><code class="language-sh">git clone https://github.com/evalf/nutils.git
+cd nutils
+python -m pip install --user .
+</code></pre>
+<p>In this scenario it is possible to add the <code>--editable</code> flag to install Nutils
+by reference, rather than by making a copy, which is useful in situations of
+active development. Note, however, that pip requires manual intervention to
+revert back to a subsequent installation by copy.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="installing-a-matrix-backend"><a class="header" href="#installing-a-matrix-backend">Installing a matrix backend</a></h1>
+<p>Nutils currently supports three matrix backends: Numpy, Scipy and MKL. Since
+Numpy is a primary dependency this backend is always available. Unfortunately
+it is also the least performant of the three because of its inability to
+exploit sparsity. It is therefore strongly recommended to install one of the
+other two backends via the instructions below.</p>
+<p>By default, Nutils automatically activates the best available matrix backend:
+MKL, Scipy or Numpy, in that order. A consequence of this is that a faulty
+installation may easily go unnoticed as Nutils will silently fall back on a
+lesser backend. As such, to make sure that the installation was successful it
+is recommended to force the backend at least once by setting the
+<code>NUTILS_MATRIX</code> environment variable. In Linux:</p>
+<pre><code class="language-sh">NUTILS_MATRIX=MKL python myscript.py
+</code></pre>
+<h2 id="scipy"><a class="header" href="#scipy">Scipy</a></h2>
+<p>The Scipy matrix backend becomes available when <a href="https://www.scipy.org/">Scipy</a>
+is installed, either using the platform's package manager or via pip:</p>
+<pre><code class="language-sh">python -m pip install --user scipy
+</code></pre>
+<p>In addition to a sparse direct solver, the Scipy backend provides many
+iterative solvers such as CG, CGS and GMRES, as well as preconditioners. The
+direct solver can optionally be made more performant by additionally installing
+the <code>scikit-umfpack</code> module.</p>
+<h2 id="mkl"><a class="header" href="#mkl">MKL</a></h2>
+<p>Intel's oneAPI Math Kernel Library provides the Pardiso sparse direct solver,
+which is easily the most powerful direct solver that is currently supported. It
+is installed via the <a href="https://software.intel.com/oneapi/onemkl">official
+instructions</a>, or, if applicable, by
+any of the steps below.</p>
+<p>On a Debian based Linux system (such as Ubuntu) the libraries can be directly
+installed via the package manager:</p>
+<pre><code class="language-sh">sudo apt install libmkl-rt
+</code></pre>
+<p>For Fedora or Centos Linux, Intel maintains its own repository that can be
+added with the following steps:</p>
+<pre><code class="language-sh">sudo dnf config-manager --add-repo https://yum.repos.intel.com/mkl/setup/intel-mkl.repo
+sudo rpm --import https://yum.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2019.PUB
+sudo dnf install intel-mkl
+sudo tee /etc/ld.so.conf.d/mkl.conf &lt;&lt; EOF &gt; /dev/null
+/opt/intel/lib/intel64/
+/opt/intel/mkl/lib/intel64/
+EOF
+sudo ldconfig -v
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="quality-of-life"><a class="header" href="#quality-of-life">Quality of Life</a></h1>
+<p>Here we list some modules that are not direct requirements, but that can be
+used in conjunction with Nutils to make life a little bit better.</p>
+<h2 id="bottombar"><a class="header" href="#bottombar">BottomBar</a></h2>
+<p><a href="https://github.com/evalf/bottombar">BottomBar</a> is a context manager for Python
+that prints a status line at the bottom of a terminal window. When it is
+installed, <code>cli.run</code> automatically activates it to display the location of the
+html log (rather than only logging it at the beginning and end of the
+simulation) as well as runtime and memory usage information.</p>
+<pre><code class="language-sh">python -m pip install bottombar
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="improving-performance"><a class="header" href="#improving-performance">Improving performance</a></h1>
+<p>While Nutils is not (yet) the fastest tool in its class, with some effort it is
+possible to achieve sufficient performance to allow simulations of over a
+million degrees of freedom. The matrix backend is the most important thing to
+get right, but there are a few other factors that are worth considering.</p>
+<h2 id="enable-parallel-processing"><a class="header" href="#enable-parallel-processing">Enable parallel processing</a></h2>
+<p>On multi-core architectures, the most straightforward acceleration path
+available is to use parallel assembly, activated using the <code>NUTILS_NPROCS</code>
+environment variable. Both Linux and OS X both are supported. Unfortunately,
+the feature is currently disabled on Windows as it does not support the <code>fork</code>
+system call that is used by the current implementation.</p>
+<p>On Windows, the easiest way to enjoy parallel speedup is to make use of the new
+Windows Subsystem for Linux (WSL2), which is complete Linux environment running
+on top of Windows. To install it simply select one of the many Linux
+distributions from the Windows store, such as <a href="https://www.microsoft.com/store/apps/9n6svws3rx71">Ubuntu 20.04
+LTS</a> or <a href="https://www.microsoft.com/store/apps/9MSVKQC78PK6">Debian
+GNU/Linux</a>.</p>
+<h2 id="disable-threads"><a class="header" href="#disable-threads">Disable threads</a></h2>
+<p>Many Numpy installations default to using the openBLAS library to provide its
+linear algebra routines, which supports multi-threading using the openMP
+parallelization standard. While this is useful in general, it is in fact
+detrimental in case Nutils is using parallel assembly, in which case the
+numerical operations are best performed sequentially. This can be achieved by
+setting the <code>OMP_NUM_THREADS</code> environment variable.</p>
+<p>In Linux this can be done permanently by adding the following line to the
+shell's configuration file. In Linux this is typically <code>~/.bashrc</code>:</p>
+<pre><code class="language-sh">export OMP_NUM_THREADS=1
+</code></pre>
+<p>The downside to this approach is that multithreading is disabled for all
+applications that use openBLAS, not just Nutils. Alternatively in Linux the
+setting can be specified one-off in the form of a prefix::</p>
+<pre><code class="language-sh">OMP_NUM_THREADS=1 NUTILS_NPROCS=8 python myscript.py
+</code></pre>
+<h2 id="consider-a-faster-interpreter"><a class="header" href="#consider-a-faster-interpreter">Consider a faster interpreter</a></h2>
+<p>The most commonly used Python interpreter is without doubt the
+<a href="https://github.com/python/cpython">CPython</a> reference implementation, but it
+is not the only option. Before taking an application in production it may be
+worth testing if <a href="https://www.python.org/download/alternatives">other
+implementations</a> have useful
+performance benefits.</p>
+<p>One interpreter of note is <a href="https://www.pyston.org">Pyston</a>, which brings
+just-in-time compilation enhancements that in a typical application can yield a
+20% speed improvement. After Pyston is installed, Nutils and dependencies can
+be installed as before simply replacing <code>python</code> by <code>pyston3</code>. As packages will
+be installed from source some development libraries may need to be installed,
+but what is missing can usually be inferred from the error messages.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="using-containers"><a class="header" href="#using-containers">Using Containers</a></h1>
+<p>As an alternative to installing Nutils, it is possible to download a
+preinstalled system image with all the above considerations taken care of.
+Nutils provides <a href="https://opencontainers.org">OCI</a> compatible containers for all
+releases, as well as the current developement version, which can be run using
+tools such as <a href="https://www.docker.com">Docker</a> or <a href="https://podman.io">Podman</a>.
+The images are hosted in <a href="https://github.com/evalf/nutils/pkgs/container/nutils">Github's container
+repository</a>.</p>
+<p>The container images include all the :ref:<code>examples</code>. To run one, add the name
+of the example and any additional arguments to the command line. For example,
+you can run example <code>laplace</code> using the latest version of Nutils with:</p>
+<pre><code class="language-sh">docker run --rm -it ghcr.io/evalf/nutils:latest laplace
+</code></pre>
+<p>HTML log files are generated in the <code>/log</code> directory of the container. If you
+want to store the log files in <code>/path/to/log</code> on the host, add <code>-v /path/to/log:/log</code> to the command line before the name of the image. Extending
+the previous example:</p>
+<pre><code class="language-sh">docker run --rm -it -v /path/to/log:/log ghcr.io/evalf/nutils:latest laplace
+</code></pre>
+<p>To run a Python script in this container, bind mount the directory containing
+the script, including all files necessary to run the script, to <code>/app</code> in the
+container and add the relative path to the script and any arguments to the
+command line. For example, you can run <code>/path/to/myscript.py</code> with Docker
+using:</p>
+<pre><code class="language-sh">docker run --rm -it -v /path/to:/app:ro ghcr.io/evalf/nutils:latest myscript.py
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="remote-computing"><a class="header" href="#remote-computing">Remote Computing</a></h1>
+<p>Computations beyond a certain size are usually moved to a remote computing
+facility, typically accessed using tools such as <a href="https://en.wikipedia.org/wiki/Secure_Shell">Secure
+Shell</a> or <a href="https://mosh.org">Mosh</a>,
+combined with a terminal multiplexer such as <a href="https://www.gnu.org/software/screen/">GNU
+Screen</a> or
+<a href="https://github.com/tmux/tmux/wiki">Tmux</a>. In this scenario it is useful to
+install a webserver for remote viewing of the html logs.</p>
+<p>The standard <code>~/public_html</code> output directory is configured with the scenario
+in mind, as the <a href="https://httpd.apache.org/">Apache</a> webserver uses this as the
+default <a href="https://httpd.apache.org/docs/2.4/howto/public_html.html">user
+directory</a>. As this
+is disabled by default, the module needs to be enabled by editing the relevant
+configuration file or, in Debian Linux, by using the <code>a2enmod</code> utility::</p>
+<pre><code class="language-sh">sudo a2enmod userdir
+</code></pre>
+<p>Similar behaviour can be achieved with the <a href="https://www.nginx.com/">Nginx</a> by
+configuring a location pattern in the appropriate server block:</p>
+<pre><code>location ~ ^/~(.+?)(/.*)?$ {
+  alias /home/$1/public_html$2;
+}
+</code></pre>
+<p>Finally, the terminal output can be made to show the http address rather than
+the local uri by adding the following line to the <code>~/.nutilsrc</code> configuration
+file:</p>
+<pre><code>outrooturi = 'https://mydomain.tld/~myusername/'
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="tutorial"><a class="header" href="#tutorial">Tutorial</a></h1>
+<p>In this tutorial we will explore Nutils' main building blocks by solving a
+simple 1D Laplace problem. The tutorial assumes knowledge of the
+<a href="https://www.python.org/">Python</a> programming language, as well as familiarity
+with the third party modules <a href="https://numpy.org/">Numpy</a> and
+<a href="https://matplotlib.org/">Matplotlib</a>. It also assumes knowledge of advanced
+calculus, weak formulations, and the Finite Element Method, and makes heavy use
+of <a href="https://en.wikipedia.org/wiki/Einstein_notation">Einstein notation</a>.</p>
+<h2 id="whetting-your-appetite"><a class="header" href="#whetting-your-appetite">Whetting your Appetite</a></h2>
+<p>The computation that we will work towards amounts to about 20 lines of Nutils
+code, including visualization. The entire script is presented below, in
+copy-pasteable form suitable for interactive exploration using for example
+ipython. In the sections that follow we will go over these lines ones by one
+and explain the relevant concepts involved.</p>
+<pre><code class="language-python">from nutils import function, mesh, solver
+from nutils.expression_v2 import Namespace
+import numpy
+from matplotlib import pyplot as plt
+
+topo, geom = mesh.rectilinear([numpy.linspace(0, 1, 5)])
+
+ns = Namespace()
+ns.x = geom
+ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
+ns.basis = topo.basis('spline', degree=1)
+ns.u = function.dotarg('lhs', ns.basis)
+
+sqr = topo.boundary['left'].integral('u^2 dS' @ ns, degree=2)
+cons = solver.optimize('lhs', sqr, droptol=1e-15)
+# optimize &gt; constrained 1/5 dofs
+# optimize &gt; optimum value 0.00e+00
+
+res = topo.integral('∇_i(basis_n) ∇_i(u) dV' @ ns, degree=0)
+res -= topo.boundary['right'].integral('basis_n dS' @ ns, degree=0)
+lhs = solver.solve_linear('lhs', residual=res, constrain=cons)
+# solve &gt; solving 4 dof system to machine precision using arnoldi solver
+# solve &gt; solver returned with residual 9e-16±1e-15
+
+bezier = topo.sample('bezier', 32)
+nanjoin = lambda array, tri: numpy.insert(array.take(tri.flat, 0).astype(float),
+    slice(tri.shape[1], tri.size, tri.shape[1]), numpy.nan, axis=0)
+sampled_x = nanjoin(bezier.eval('x_0' @ ns), bezier.tri)
+def plot_line(func, **arguments):
+    plt.plot(sampled_x, nanjoin(bezier.eval(func, **arguments), bezier.tri))
+    plt.xlabel('x_0')
+    plt.xticks(numpy.linspace(0, 1, 5))
+
+plot_line(ns.u, lhs=lhs)
+</code></pre>
+<p><img src="tutorial/intro-44113917.svg" alt="output" /></p>
+<p>You are encouraged to execute this code at least once before reading on, as the
+code snippets that follow may assume certain products to be present in the
+namespace. In particular the <code>plot_line</code> function is used heavily in the
+ensuing sections.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="a-little-bit-of-theory"><a class="header" href="#a-little-bit-of-theory">A Little Bit of Theory</a></h1>
+<p>We will introduce fundamental Nutils concepts based on the 1D homogeneous
+Laplace problem,</p>
+<p>\[ u''(x) = 0 \]</p>
+<p>with boundary conditions \( u(0) = 0 \) and \( u'(1) = 1 \). Even though
+the solution is trivially found to be \( u(x) = x \), the example serves to
+introduce many key concepts in the Nutils paradigm, concepts that can then be
+applied to solve a wide class of physics problems.</p>
+<h2 id="weak-form"><a class="header" href="#weak-form">Weak Form</a></h2>
+<p>A key step to solving a problem using the Finite Element Method is to cast it
+into weak form.</p>
+<p>Let \( Ω \) be the unit line \( [0,1] \) with boundaries \( Γ_\text{left}
+\) and \( Γ_\text{right} \), and let \( H_0(Ω) \) be a suitable function
+space such that any \( u ∈ H_0(Ω) \) satisfies \( u = 0 \) in \(
+Γ_\text{left} \). The Laplace problem is solved uniquely by the element \( u
+∈ H_0(Ω) \) for which \( R(v, u) = 0 \) for all test functions \( v ∈
+H_0(Ω) \), with \( R \) the bilinear functional</p>
+<p>\[ R(v, u) := ∫_Ω \frac{∂v}{∂x_i} \frac{∂u}{∂x_i} \ dV - ∫_{Γ_\text{right}} v \ dS. \]</p>
+<h2 id="discrete-solution"><a class="header" href="#discrete-solution">Discrete Solution</a></h2>
+<p>The final step before turning to code is to make the problem discrete.</p>
+<p>To restrict ourselves to a finite dimensional subspace we adopt a set of Finite
+Element basis functions \( φ_n ∈ H_0(Ω) \). In this space, the Finite Element
+solution is established by solving the linear system of equations \(
+R_n(\hat{u}) = 0 \), with residual vector \( R_n(\hat{u}) := R(φ_n, \hat{u})
+\), and discrete solution</p>
+<p>\[ \hat{u}(x) = φ_n(x) \hat{u}_n. \]</p>
+<p>Note that discretization inevitably implies approximation, i.e. \( u ≠ \hat{u}
+\) in general. In this case, however, we choose \( {φ_n} \) to be the
+space of piecewise linears, which contains the exact solution. We therefore
+expect our Finite Element solution to be exact.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="topology-vs-geometry"><a class="header" href="#topology-vs-geometry">Topology vs Geometry</a></h1>
+<p>Rather than having a single concept of what is typically referred to as the
+'mesh', Nutils maintains a strict separation of <em>topology</em> and <em>geometry</em>. The
+<code>nutils.topology.Topology</code> represents a collection of elements and
+inter-element connectivity, along with recipes for creating bases. It has no
+(public) notion of position.  The geometry takes the <code>nutils.topology.Topology</code>
+and positions it in space.  This separation makes it possible to define
+multiple geometries belonging to a single <code>nutils.topology.Topology</code>, a feature
+that is useful for example in certain Lagrangian formulations.</p>
+<p>While not having mesh objects, Nutils does have a <code>nutils.mesh</code> module, which
+hosts functions that return tuples of topology and geometry. Nutils provides
+two builtin mesh generators: <code>nutils.mesh.rectilinear</code>, a generator for
+structured topologies (i.e. tensor products of one or more one-dimensional
+topologies), and :meth:<code>nutils.mesh.unitsquare</code>, a unit square mesh generator
+with square or triangular elements or a mixture of both.  The latter is mostly
+useful for testing. In addition to generators, Nutils also provides the
+<code>nutils.mesh.gmsh</code> importer for <a href="http://gmsh.info/">gmsh</a>-generated meshes.</p>
+<p>The structured mesh generator takes as its first argument a list of element
+vertices per dimension. A one-dimensional topology with four elements of equal
+size between 0 and 1 is generated by</p>
+<pre><code class="language-python">mesh.rectilinear([[0, 0.25, 0.5, 0.75, 1.0]])
+# (StructuredTopology&lt;4&gt;, Array&lt;1&gt;)
+</code></pre>
+<p>Alternatively we could have used <code>numpy.linspace</code> to generate a sequence of
+equidistant vertices, and unpack the resulting tuple:</p>
+<pre><code class="language-python">topo, geom = mesh.rectilinear([numpy.linspace(0, 1, 5)])
+</code></pre>
+<p>We will use this topology and geometry throughout the remainder of this
+tutorial.</p>
+<p>Note that the argument is a list of length one: this outer sequence lists the
+dimensions, the inner the vertices per dimension. To generate a two-dimensional
+topology, simply add a second list of vertices to the outer list.  For example,
+an equidistant topology with four by eight elements with a unit square geometry
+is generated by</p>
+<pre><code class="language-python">mesh.rectilinear([numpy.linspace(0, 1, 5), numpy.linspace(0, 1, 9)])
+# (StructuredTopology&lt;4x8&gt;, Array&lt;2&gt;)
+</code></pre>
+<p>Any topology defines a boundary via the <code>nutils.topology.Topology.boundary</code>
+attribute. Optionally, a topology can offer subtopologies via the getitem
+operator. The rectilinear mesh generator automatically defines 'left' and
+'right' boundary groups for the first dimension, making the left boundary
+accessible as:</p>
+<pre><code class="language-python">topo.boundary['left']
+# StructuredTopology&lt;&gt;
+</code></pre>
+<p>Optionally, a topology can be made periodic in one or more dimensions by
+passing a list of dimension indices to be periodic via the keyword argument
+<code>periodic</code>.  For example, to make the second dimension of the above
+two-dimensional mesh periodic, add <code>periodic=[1]</code>:</p>
+<pre><code class="language-python">mesh.rectilinear([numpy.linspace(0, 1, 5), numpy.linspace(0, 1, 9)], periodic=[1])
+# (StructuredTopology&lt;4x8p&gt;, Array&lt;2&gt;)
+</code></pre>
+<p>Note that in this case the boundary topology, though still available, is empty.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="bases"><a class="header" href="#bases">Bases</a></h1>
+<p>In Nutils, a <em>basis</em> is a vector-valued function object that evaluates, in any
+given point \( ξ \) on the topology, to the full array of basis function
+values \( φ_0(ξ), φ_1(ξ), \dots, φ_{n-1}(ξ) \). It must be pointed out that
+Nutils will in practice operate only on the basis functions that are locally
+non-zero, a key optimization in Finite Element computations. But as a concept,
+it helps to think of a basis as evaluating always to the full array.</p>
+<p>Several <code>nutils.topology.Topology</code> objects support creating bases via the
+:meth:<code>Topology.basis() &lt;nutils.topology.Topology.basis&gt;</code> method.  A
+<code>nutils.topology.StructuredTopology</code>, as generated by
+<code>nutils.mesh.rectilinear</code>, can create a spline basis with arbitrary degree and
+arbitrary continuity. The following generates a degree one spline basis on our
+previously created unit line topology <code>topo</code>:</p>
+<pre><code class="language-python">basis = topo.basis('spline', degree=1)
+</code></pre>
+<p>The five basis functions are</p>
+<pre><code class="language-python">plot_line(basis)
+</code></pre>
+<p><img src="tutorial/bases-5684138c.svg" alt="output" /></p>
+<p>We will use this basis throughout the following sections.</p>
+<p>Change the <code>degree</code> argument to <code>2</code> for a quadratic spline basis:</p>
+<pre><code class="language-python">plot_line(topo.basis('spline', degree=2))
+</code></pre>
+<p><img src="tutorial/bases-790b8f12.svg" alt="output" /></p>
+<p>By default the continuity of the spline functions at element edges is the
+degree minus one.  To change this, pass the desired continuity via keyword
+argument <code>continuity</code>.  For example, a quadratic spline basis with \( C^0 \)
+continuity is generated with</p>
+<pre><code class="language-python">plot_line(topo.basis('spline', degree=2, continuity=0))
+</code></pre>
+<p><img src="tutorial/bases-1cbd31f5.svg" alt="output" /></p>
+<p>\( C^0 \) continuous spline bases can also be generated by the <code>'std'</code> basis:</p>
+<pre><code class="language-python">plot_line(topo.basis('std', degree=2))
+</code></pre>
+<p><img src="tutorial/bases-1cbd31f5.svg" alt="output" /></p>
+<p>The <code>'std'</code> basis is supported by topologies with square and/or triangular
+elements without hanging nodes.</p>
+<p>Discontinuous basis functions are generated using the <code>'discont'</code> type, e.g.</p>
+<pre><code class="language-python">plot_line(topo.basis('discont', degree=2))
+</code></pre>
+<p><img src="tutorial/bases-7089a1cc.svg" alt="output" /></p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="functions"><a class="header" href="#functions">Functions</a></h1>
+<p>A <em>function</em> in Nutils is a mapping from a topology onto an n-dimensional
+array, and comes in the form of a functions: <code>nutils.function.Array</code> object. It
+is not to be confused with Python's own function objects, which operate on the
+space of general Python objects. Two examples of Nutils functions have already
+made the scene: the geometry <code>geom</code>, as returned by <code>nutils.mesh.rectilinear</code>,
+and the bases generated by <code>Topology.basis()</code>. Though seemingly different,
+these two constructs are members of the same class and in fact fully
+interoperable.</p>
+<p>The <code>nutils.function.Array</code> functions behave very much like <code>numpy.ndarray</code>
+objects: the functions have a <code>nutils.function.Array.shape</code>,
+<code>nutils.function.Array.ndim</code> and a <code>nutils.function.Array.dtype</code>:</p>
+<pre><code class="language-python">geom.shape
+# (1,)
+basis.shape
+# (5,)
+geom.ndim
+# 1
+geom.dtype
+# &lt;class 'float'&gt;
+</code></pre>
+<p>The functions support numpy-style indexing.  For example, to get the first
+element of the geometry <code>geom</code> you can write <code>geom[0]</code> and to select the first
+two basis functions you can write</p>
+<pre><code class="language-python">plot_line(basis[:2])
+</code></pre>
+<p><img src="tutorial/functions-600c62ea.svg" alt="output" /></p>
+<p>The usual unary and binary operators are available:</p>
+<pre><code class="language-python">plot_line(geom[0]*(1-geom[0])/2)
+</code></pre>
+<p><img src="tutorial/functions-2f22a39b.svg" alt="output" /></p>
+<p>Several trigonometric functions are defined in the <code>nutils.function</code> module.
+An example with a sine function:</p>
+<pre><code class="language-python">plot_line(function.sin(2*geom[0]*numpy.pi))
+</code></pre>
+<p><img src="tutorial/functions-6874cf60.svg" alt="output" /></p>
+<p>The dot product is available via <code>nutils.function.dot</code>. To contract the basis
+with an arbitrary coefficient vector:</p>
+<pre><code class="language-python">plot_line(function.dot(basis, [1,2,0,5,4]))
+</code></pre>
+<p><img src="tutorial/functions-c4e8c6d9.svg" alt="output" /></p>
+<p>Recalling the definition of the <a href="tutorial/theory.html#discrete-solution">discrete
+solution</a>, the above is precisely the way to
+evaluate the resulting function. What remains now is to establish the
+coefficients for which this function solves the Laplace problem.</p>
+<h2 id="arguments"><a class="header" href="#arguments">Arguments</a></h2>
+<p>A discrete model is often written in terms of an unknown, or a vector of
+unknowns.  In Nutils this translates to a function argument,
+<code>nutils.function.Argument</code>. Usually an argument is used in an inner product
+with a basis. For this purpose there exists the <code>nutils.function.dotarg</code>
+function. For example, the <a href="tutorial/theory.html#discrete-solution">discrete solution</a> can
+be written as</p>
+<pre><code class="language-python">ns.u = function.dotarg('lhs', ns.basis)
+</code></pre>
+<p>with the argument identified by <code>'lhs'</code> the vector of unknowns \( \hat{u}_n
+)).</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="namespace"><a class="header" href="#namespace">Namespace</a></h1>
+<p>Nutils functions behave entirely like Numpy arrays, and can be manipulated as
+such, using a combination of operators, object methods, and methods found in
+the <code>nutils.function</code> module. Though powerful, the resulting code is often
+lengthy, littered with colons and brackets, and hard to read. <em>Namespaces</em>
+provide an alternative, cleaner syntax for a prominent subset of array
+manipulations.</p>
+<p>A <code>nutils.expression_v2.Namespace</code> is a collection of <code>nutils.function.Array</code>
+functions.  An empty <code>nutils.expression_v2.Namespace</code> is created as follows:</p>
+<pre><code class="language-python">ns = Namespace()
+</code></pre>
+<p>New entries are added to a <code>nutils.expression_v2.Namespace</code> by assigning an
+<code>nutils.function.Array</code> to an attribute.  For example, to assign the geometry
+<code>geom</code> to <code>ns.x</code>, simply type</p>
+<pre><code class="language-python">ns.x = geom
+</code></pre>
+<p>You can now use <code>ns.x</code> where you would use <code>geom</code>. Usually you want to add the
+gradient, normal and jacobian of this geometry to the namespace as well. This
+can be done using :func:<code>~nutils.expression_v2.Namespace.define_for</code> naming the
+geometry (as present in the namespace) and names for the gradient, normal, and
+the jacobian as keyword arguments:</p>
+<pre><code class="language-python">ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
+</code></pre>
+<p>Note that any keyword argument is optional.</p>
+<p>To assign a linear basis to <code>ns.basis</code>, type</p>
+<pre><code class="language-python">ns.basis = topo.basis('spline', degree=1)
+</code></pre>
+<p>and to assign the discrete solution as the inner product of this basis with
+argument <code>'lhs'</code>, type</p>
+<pre><code class="language-python">ns.u = function.dotarg('lhs', ns.basis)
+</code></pre>
+<p>You can also assign numbers and <code>numpy.ndarray</code> objects:</p>
+<pre><code class="language-python">ns.a = 1
+ns.b = 2
+ns.c = numpy.array([1,2])
+ns.A = numpy.array([[1,2],[3,4]])
+</code></pre>
+<h2 id="expressions"><a class="header" href="#expressions">Expressions</a></h2>
+<p>In addition to inserting ready objects, a namespace's real power lies in its
+ability to be assigned string expressions. These expressions may reference any
+<code>nutils.function.Array</code> function present in the
+<code>nutils.expression_v2.Namespace</code>, and must explicitly name all array
+dimensions, with the object of both aiding readibility and facilitating high
+order tensor manipulations. A short explanation of the syntax follows; see
+<code>nutils.expression_v2</code> for the complete documentation.</p>
+<p>A <em>term</em> is written by joining variables with spaces, optionally preceeded by a
+single number, e.g. <code>2 a b</code>.  A <em>fraction</em> is written as two terms joined by
+<code>/</code>, e.g. <code>2 a / 3 b</code>, which is equivalent to <code>(2 a) / (3 b)</code>.  An <em>addition</em>
+or <em>subtraction</em> is written as two terms joined by <code>+</code> or <code>-</code>, respectively,
+e.g. <code>1 + a b - 2 b</code>.  <em>Exponentation</em> is written by two variables or numbers
+joined by <code>^</code>, e.g. <code>a^2</code>.  Several trigonometric functions are available, e.g.
+<code>0.5 sin(a)</code>.</p>
+<p>Assigning an expression to the namespace is then done as follows.</p>
+<pre><code class="language-python">ns.e = '2 a / 3 b'
+ns.e = (2*ns.a) / (3*ns.b) # equivalent w/o expression
+</code></pre>
+<p>The resulting <code>ns.e</code> is an ordinary <code>nutils.function.Array</code>.  Note that the
+variables used in the expression should exist in the namespace, not just as a
+local variable:</p>
+<pre><code class="language-python">localvar = 1
+ns.f = '2 localvar'
+# Traceback (most recent call last):
+#   ...
+# nutils.expression_v2.ExpressionSyntaxError: No such variable: `localvar`.
+# 2 localvar
+#   ^^^^^^^^
+</code></pre>
+<p>When using arrays in an expression all axes of the arrays should be labelled
+with an index, e.g.  <code>2 c_i</code> and <code>c_i A_jk</code>.  Repeated indices are summed, e.g.
+<code>A_ii</code> is the trace of <code>d</code> and <code>A_ij c_j</code> is the matrix-vector product of <code>d</code>
+and <code>c</code>.  You can also insert a number, e.g. <code>c_0</code> is the first element of <code>c</code>.
+All terms in an expression should have the same set of indices after summation,
+e.g. it is an error to write <code>c_i + 1</code>.</p>
+<p>When assigning an expression with remaining indices to the namespace, the
+indices should be listed explicitly at the left hand side:</p>
+<pre><code class="language-python">ns.f_i = '2 c_i'
+ns.f = 2*ns.c # equivalent w/o expression
+</code></pre>
+<p>The order of the indices matter: the resulting <code>nutils.function.Array</code> will
+have its axes ordered by the listed indices.  The following three statements
+are equivalent:</p>
+<pre><code class="language-python">ns.g_ijk = 'c_i A_jk'
+ns.g_kji = 'c_k A_ji'
+ns.g = ns.c[:,numpy.newaxis,numpy.newaxis]*ns.A[numpy.newaxis,:,:] # equivalent w/o expression
+</code></pre>
+<p>Function <code>∇</code>, introduced to the namespace with
+<code>~nutils.expression_v2.Namespace.define_for</code> using geometry <code>ns.x</code>, returns the
+gradient of a variable with respect <code>ns.x</code>, e.g. the gradient of the basis is
+<code>∇_i(basis_n)</code>.  This works with expressions as well, e.g. <code>∇_i(2 basis_n + basis_n^2)</code> is the gradient of <code>2 basis_n + basis_n^2</code>.</p>
+<h2 id="manual-evaluation"><a class="header" href="#manual-evaluation">Manual evaluation</a></h2>
+<p>Sometimes it is useful to evaluate an expression to an
+<code>nutils.function.Array</code> without inserting the result in the namespace.
+This can be done using the <code>&lt;expression&gt; @ &lt;namespace&gt;</code> notation.  An example
+with a scalar expression:</p>
+<pre><code class="language-python">'2 a / 3 b' @ ns
+# Array&lt;&gt;
+(2*ns.a) / (3*ns.b) # equivalent w/o `... @ ns`
+# Array&lt;&gt;
+</code></pre>
+<p>An example with a vector expression:</p>
+<pre><code class="language-python">'2 c_i' @ ns
+# Array&lt;2&gt;
+2*ns.c # equivalent w/o `... @ ns`
+# Array&lt;2&gt;
+</code></pre>
+<p>If an expression has more than one remaining index, the axes of the evaluated
+array are ordered alphabetically:</p>
+<pre><code class="language-python">'c_i A_jk' @ ns
+# Array&lt;2,2,2&gt;
+ns.c[:,numpy.newaxis,numpy.newaxis]*ns.A[numpy.newaxis,:,:] # equivalent w/o `... @ ns`
+# Array&lt;2,2,2&gt;
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="integrals"><a class="header" href="#integrals">Integrals</a></h1>
+<p>A central operation in any Finite Element application is to integrate a
+function over a physical domain. In Nutils, integration starts with the
+topology, in particular the <code>integral()</code> method.</p>
+<p>The integral method takes a <code>nutils.function.Array</code> function as first argument
+and the degree as keyword argument. The function should contain the Jacobian of
+the geometry against which the function should be integrated, using either
+<code>nutils.function.J</code> or <code>dV</code> in a namespace expression (assuming the jacobian
+has been added to the namespace using <code>ns.define_for(..., jacobians=('dV', 'dS'))</code>). For example, the following integrates <code>1</code> against geometry <code>x</code>:</p>
+<pre><code class="language-python">I = topo.integral('1 dV' @ ns, degree=0)
+I
+# Array&lt;&gt;
+</code></pre>
+<p>The resulting <code>nutils.function.Array</code> object is a representation of the
+integral, as yet unevaluated. To compute the actual numbers, call the
+<code>Array.eval()</code> method:</p>
+<pre><code class="language-python">I.eval()
+# 1.0±1e-15
+</code></pre>
+<p>Be careful with including the Jacobian in your integrands.  The following two
+integrals are different:</p>
+<pre><code class="language-python">topo.integral('(1 + 1) dV' @ ns, degree=0).eval()
+# 2.0±1e-15
+topo.integral('1 + 1 dV' @ ns, degree=0).eval()
+# 5.0±1e-15
+</code></pre>
+<p>Like any other <code>nutils.function.Array</code>, the integrals can be added or
+subtracted:</p>
+<pre><code class="language-python">J = topo.integral('x_0 dV' @ ns, degree=1)
+(I+J).eval()
+# 1.5±1e-15
+</code></pre>
+<p>Recall that a topology boundary is also a <code>nutils.topology.Topology</code> object,
+and hence it supports integration.  For example, to integrate the geometry <code>x</code>
+over the entire boundary, write</p>
+<pre><code class="language-python">topo.boundary.integral('x_0 dS' @ ns, degree=1).eval()
+# 1.0±1e-15
+</code></pre>
+<p>To limit the integral to the right boundary, write</p>
+<pre><code class="language-python">topo.boundary['right'].integral('x_0 dS' @ ns, degree=1).eval()
+# 1.0±1e-15
+</code></pre>
+<p>Note that this boundary is simply a point and the integral a point evaluation.</p>
+<p>Integrating and evaluating a 1D <code>nutils.function.Array</code> results in a 1D
+<code>numpy.ndarray</code>:</p>
+<pre><code class="language-python">&gt;&gt;&gt; topo.integral('basis_i dV' @ ns, degree=1).eval()
+array([0.125, 0.25 , 0.25 , 0.25 , 0.125])±1e-15
+</code></pre>
+<p>Since the integrals of 2D <code>nutils.function.Array</code> functions are usually sparse,
+the <code>Array.eval() &lt;nutils.function.Array.eval&gt;</code> method does not return a dense
+<code>numpy.ndarray</code>, but a Nutils sparse matrix object: a subclass of
+<code>nutils.matrix.Matrix</code>.  Nutils interfaces several linear solvers (more on this
+in Section <a href="tutorial/solvers.html">solvers</a> below) but if you want to use a custom solver
+you can export the matrix to a dense, compressed sparse row or coordinate
+representation via the <code>Matrix.export()</code> method.  An example:</p>
+<pre><code class="language-python">M = topo.integral('∇_i(basis_m) ∇_i(basis_n) dV' @ ns, degree=1).eval()
+M.export('dense')
+# array([[ 4., -4.,  0.,  0.,  0.],
+#        [-4.,  8., -4.,  0.,  0.],
+#        [ 0., -4.,  8., -4.,  0.],
+#        [ 0.,  0., -4.,  8., -4.],
+#        [ 0.,  0.,  0., -4.,  4.]])±1e-15
+M.export('csr') # (data, column indices, row pointers) # doctest: +NORMALIZE_WHITESPACE
+# (array([ 4., -4., -4.,  8., -4., -4.,  8., -4., -4.,  8., -4., -4.,  4.])±1e-15,
+#  array([0, 1, 0, 1, 2, 1, 2, 3, 2, 3, 4, 3, 4])±1e-15,
+#  array([ 0,  2,  5,  8, 11, 13])±1e-15)
+M.export('coo') # (data, (row indices, column indices)) # doctest: +NORMALIZE_WHITESPACE
+# (array([ 4., -4., -4.,  8., -4., -4.,  8., -4., -4.,  8., -4., -4.,  4.])±1e-15,
+#  (array([0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4])±1e-15,
+#   array([0, 1, 0, 1, 2, 1, 2, 3, 2, 3, 4, 3, 4])±1e-15))
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="solvers"><a class="header" href="#solvers">Solvers</a></h1>
+<p>Using topologies, bases and integrals, we now have the tools in place to start
+performing some actual functional-analytical operations. We start with what is
+perhaps the simplest of its kind, the least squares projection, demonstrating
+the different implementations now available to us and working our way up from
+there.</p>
+<p>Taking the geometry component \( x_0 \) as an example, to project it onto the
+basis \( {φ_n} \) means finding the coefficients \( \hat{u}_n \) such
+that</p>
+<p>\[ \left(\int_Ω φ_n φ_m \ dV\right) \hat u_m = \int_Ω φ_n x_0 \ dV \]</p>
+<p>for all \( φ_n \), or \( A_{nm} \hat{u}_m = f_n \). This is implemented as
+follows:</p>
+<pre><code class="language-python">A = topo.integral('basis_m basis_n dV' @ ns, degree=2).eval()
+f = topo.integral('basis_n x_0 dV' @ ns, degree=2).eval()
+A.solve(f)
+# solve &gt; solving 5 dof system to machine precision using arnoldi solver
+# solve &gt; solver returned with residual 3e-17±1e-15
+# array([0.  , 0.25, 0.5 , 0.75, 1.  ])±1e-15
+</code></pre>
+<p>Alternatively, we can write this in the slightly more general form</p>
+<p>\[ R_n := \int_Ω φ_n (u - x_0) \ dV = 0. \]</p>
+<pre><code class="language-python">res = topo.integral('basis_n (u - x_0) dV' @ ns, degree=2)
+</code></pre>
+<p>Taking the derivative of \( R_n \) to \( \hat{u}<em>m \) gives the above
+matrix \( A</em>{nm} \), and substituting for \( \hat{u} \) the zero vector
+yields \( -f_n \).  Nutils can compute those derivatives for you, using the
+method <code>Array.derivative()</code> to compute the derivative with respect to an
+<code>nutils.function.Argument</code>, returning a new <code>nutils.function.Array</code>.</p>
+<pre><code class="language-python">A = res.derivative('lhs').eval()
+f = -res.eval(lhs=numpy.zeros(5))
+A.solve(f)
+# solve &gt; solving 5 dof system to machine precision using arnoldi solver
+# solve &gt; solver returned with residual 3e-17±1e-15
+# array([0.  , 0.25, 0.5 , 0.75, 1.  ])±1e-15
+</code></pre>
+<p>The above three lines are so common that they are combined in the function
+<code>nutils.solver.solve_linear</code>:</p>
+<pre><code class="language-python">solver.solve_linear('lhs', res)
+# solve &gt; solving 5 dof system to machine precision using arnoldi solver
+# solve &gt; solver returned with residual 3e-17±1e-15
+# array([0.  , 0.25, 0.5 , 0.75, 1.  ])±1e-15
+</code></pre>
+<p>We can take this formulation one step further.  Minimizing</p>
+<p>\[ S := \int_Ω (u - x_0)^2 \ dV \]</p>
+<p>for \( \hat{u} \) is equivalent to the above two variants.  The derivative of
+\( S \) to \( \hat{u}_n \) gives \( 2 R_n \):</p>
+<pre><code class="language-python">sqr = topo.integral('(u - x_0)^2 dV' @ ns, degree=2)
+solver.solve_linear('lhs', sqr.derivative('lhs'))
+# solve &gt; solving 5 dof system to machine precision using arnoldi solver
+# solve &gt; solver returned with residual 6e-17±1e-15
+# array([0.  , 0.25, 0.5 , 0.75, 1.  ])±1e-15
+</code></pre>
+<p>The optimization problem can also be solved by the
+<code>nutils.solver.optimize</code> function, which has the added benefit that
+\( S \) may be nonlinear in \( \hat{u} \) --- a property not used here.</p>
+<pre><code class="language-python">solver.optimize('lhs', sqr)
+# optimize &gt; solve &gt; solving 5 dof system to machine precision using arnoldi solver
+# optimize &gt; solve &gt; solver returned with residual 0e+00±1e-15
+# optimize &gt; optimum value 0.00e+00±1e-15
+# array([0.  , 0.25, 0.5 , 0.75, 1.  ])±1e-15
+</code></pre>
+<p>Nutils also supports solving a partial optimization problem.  In the Laplace
+problem stated above, the Dirichlet boundary condition at \( Γ_\text{left} \)
+minimizes the following functional:</p>
+<pre><code class="language-python">sqr = topo.boundary['left'].integral('(u - 0)^2 dS' @ ns, degree=2)
+</code></pre>
+<p>By passing the <code>droptol</code> argument, <code>nutils.solver.optimize</code> returns an
+array with <code>nan</code> ('not a number') for every entry for which the optimization
+problem is invariant, or to be precise, where the variation is below
+<code>droptol</code>:</p>
+<pre><code class="language-python">cons = solver.optimize('lhs', sqr, droptol=1e-15)
+# optimize &gt; constrained 1/5 dofs
+# optimize &gt; optimum value 0.00e+00
+cons
+# array([ 0., nan, nan, nan, nan])±1e-15
+</code></pre>
+<p>Consider again the Laplace problem stated above. The
+<a href="tutorial/theory.html#weak-form">residual</a> is implemented as</p>
+<pre><code class="language-python">res = topo.integral('∇_i(basis_n) ∇_i(u) dV' @ ns, degree=0)
+res -= topo.boundary['right'].integral('basis_n dS' @ ns, degree=0)
+</code></pre>
+<p>Since this problem is linear in argument <code>lhs</code>, we can use the
+<code>nutils.solver.solve_linear</code> method to solve this problem.  The constraints
+<code>cons</code> are passed via the keyword argument <code>constrain</code>:</p>
+<pre><code class="language-python">lhs = solver.solve_linear('lhs', res, constrain=cons)
+# solve &gt; solving 4 dof system to machine precision using arnoldi solver
+# solve &gt; solver returned with residual 9e-16±1e-15
+lhs
+# array([0.  , 0.25, 0.5 , 0.75, 1.  ])±1e-15
+</code></pre>
+<p>For nonlinear residuals you can use <code>nutils.solver.newton</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="sampling"><a class="header" href="#sampling">Sampling</a></h1>
+<p>Having obtained the coefficient vector that solves the Laplace problem, we are
+now interested in visualizing the function it represents. Nutils does not
+provide its own post processing functionality, leaving that up to the
+preference of the user. It does, however, facilitate it, by allowing
+<code>nutils.function.Array</code> functions to be evaluated in samples. Bundling function
+values and a notion of connectivity, these form a bridge between Nutils' world
+of functions and the discrete realms of <a href="https://matplotlib.org/">matplotlib</a>,
+VTK, etc.</p>
+<p>The <code>Topology.sample(method, ...)</code> method generates a collection of points on
+the <code>nutils.topology.Topology</code>, according to <code>method</code>. The <code>'bezier'</code> method
+generates equidistant points per element, including the element vertices.  The
+number of points per element per dimension is controlled by the second argument
+of <code>Topology.sample()</code>.  An example:</p>
+<pre><code class="language-python">bezier = topo.sample('bezier', 2)
+</code></pre>
+<p>The resulting <code>nutils.sample.Sample</code> object can be used to evaluate
+<code>nutils.function.Array</code> functions via the :meth:<code>Sample.eval(func)</code> method. To
+evaluate the geometry <code>ns.x</code> write</p>
+<pre><code class="language-python">x = bezier.eval('x_0' @ ns)
+x
+# array([0.  , 0.25, 0.25, 0.5 , 0.5 , 0.75, 0.75, 1.  ])±1e-15
+</code></pre>
+<p>The first axis of the returned <code>numpy.ndarray</code> represents the collection of
+points.  To reorder this into a sequence of lines in 1D, a triangulation in 2D
+or in general a sequence of simplices, use the <code>Sample.tri</code> attribute:</p>
+<pre><code class="language-python">x.take(bezier.tri, 0)
+# array([[0.  , 0.25],
+#        [0.25, 0.5 ],
+#        [0.5 , 0.75],
+#        [0.75, 1.  ]])±1e-15
+</code></pre>
+<p>Now, the first axis represents the simplices and the second axis the vertices
+of the simplices.</p>
+<p>If an <code>nutils.function.Array</code> function has arguments, those arguments must be
+specified by keyword arguments to :meth:<code>Sample.eval()</code>.  For example, to
+evaluate <code>ns.u</code> with argument <code>lhs</code> replaced by solution vector <code>lhs</code>, obtained
+using <code>nutils.solver.solve_linear</code> above, write</p>
+<pre><code class="language-python">u = bezier.eval('u' @ ns, lhs=lhs)
+u
+# array([0.  , 0.25, 0.25, 0.5 , 0.5 , 0.75, 0.75, 1.  ])±1e-15
+</code></pre>
+<p>We can now plot the sampled geometry <code>x</code> and solution <code>u</code> using <code>matplotlib</code>_,
+plotting each line in <code>Sample.tri</code> with a different color:</p>
+<pre><code class="language-python">&gt;&gt;&gt; plt.plot(x.take(bezier.tri.T, 0), u.take(bezier.tri.T, 0))
+</code></pre>
+<p><img src="tutorial/sampling-d0afcabb.svg" alt="output" /></p>
+<p>Recall that we have imported <code>matplotlib.pyplot</code> as <code>plt</code> above.  The
+<code>plt.plot()</code> function takes an array of x-values and and array of y-values,
+both with the first axis representing vertices and the second representing
+separate lines, hence the transpose of <code>bezier.tri</code>.</p>
+<p>The <code>plt.plot()</code> function also supports plotting lines with discontinuities,
+which are represented by <code>nan</code> values.  We can use this to plot the solution as
+a single, but possibly discontinuous line. The function <code>numpy.insert</code> can be
+used to prepare a suitable array.  An example:</p>
+<pre><code class="language-python">nanjoin = lambda array, tri: numpy.insert(array.take(tri.flat, 0).astype(float),
+    slice(tri.shape[1], tri.size, tri.shape[1]), numpy.nan, axis=0)
+nanjoin(x, bezier.tri)
+# array([0.  , 0.25,  nan, 0.25, 0.5 ,  nan, 0.5 , 0.75,  nan, 0.75, 1.  ])±1e-15
+plt.plot(nanjoin(x, bezier.tri), nanjoin(u, bezier.tri))
+</code></pre>
+<p>Note the difference in colors between the last two plots.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="2d-laplace-problem"><a class="header" href="#2d-laplace-problem">2D Laplace Problem</a></h1>
+<p>All of the above was written for a one-dimensional example.  We now extend the
+Laplace problem to two dimensions and highlight the changes to the
+corresponding Nutils implementation.  Let \( Ω \) be a unit square with
+boundary \( Γ \), on which the following boundary conditions apply:</p>
+<p>\[ \begin{cases}
+u = 0 &amp; Γ_\text{left} \\
+\frac{∂u}{∂x_i} n_i = 0 &amp; Γ_\text{bottom} \\
+\frac{∂u}{∂x_i} n_i = \cos(1) \cosh(x_1) &amp; Γ_\text{right} \\
+u = \cosh(1) \sin(x_0) &amp; Γ_\text{top}
+\end{cases} \]</p>
+<p>The 2D homogeneous Laplace solution is the field \( u \) for which \( R(v,
+u) = 0 \) for all v, where</p>
+<p>\[ R(v, u) := \int_Ω \frac{∂v}{∂x_i} \frac{∂u}{∂x_i} \ dV - \int_{Γ_\text{right}} v \cos(1) \cosh(x_1) \ dS. \]</p>
+<p>Adopting a Finite Element basis \( {φ_n} \) we obtain the discrete solution
+\( \hat{u}(x) = φ_n(x) \hat{u}_n \) and the system of equations \( R(φ_n,
+\hat{u}) = 0 \).</p>
+<p>Following the same steps as in the 1D case, a unit square mesh with 10x10
+elements is formed using <code>nutils.mesh.rectilinear</code>:</p>
+<pre><code class="language-python">nelems = 10
+topo, geom = mesh.rectilinear([
+    numpy.linspace(0, 1, nelems+1), numpy.linspace(0, 1, nelems+1)])
+</code></pre>
+<p>Recall that <code>nutils.mesh.rectilinear</code> takes a list of element vertices per
+dimension.  Alternatively you can create a unit square mesh using
+<code>nutils.mesh.unitsquare</code>, specifying the number of elements per dimension and
+the element type:</p>
+<pre><code class="language-python">topo, geom = mesh.unitsquare(nelems, 'square')
+</code></pre>
+<p>The above two statements generate exactly the same topology and geometry.  Try
+replacing <code>'square'</code> with <code>'triangle'</code> or <code>'mixed'</code> to generate a unit square
+mesh with triangular elements or a mixture of square and triangular elements,
+respectively.</p>
+<p>We start with a clean namespace, assign the geometry to <code>ns.x</code>, create a linear
+basis and define the solution <code>ns.u</code> as the contraction of the basis with
+argument <code>lhs</code>.</p>
+<pre><code class="language-python">ns = Namespace()
+ns.x = geom
+ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
+ns.basis = topo.basis('std', degree=1)
+ns.u = function.dotarg('lhs', ns.basis)
+</code></pre>
+<p>Note that the above statements are identical to those of the one-dimensional
+example.</p>
+<p>The residual is implemented as</p>
+<pre><code class="language-python">res = topo.integral('∇_i(basis_n) ∇_i(u) dV' @ ns, degree=2)
+res -= topo.boundary['right'].integral('basis_n cos(1) cosh(x_1) dS' @ ns, degree=2)
+</code></pre>
+<p>The Dirichlet boundary conditions are rewritten as a least squares problem and
+solved for <code>lhs</code>, yielding the constraints vector <code>cons</code>:</p>
+<pre><code class="language-python">sqr = topo.boundary['left'].integral('u^2 dS' @ ns, degree=2)
+sqr += topo.boundary['top'].integral('(u - cosh(1) sin(x_0))^2 dS' @ ns, degree=2)
+cons = solver.optimize('lhs', sqr, droptol=1e-15)
+# optimize &gt; solve &gt; solving 21 dof system to machine precision using arnoldi solver
+# optimize &gt; solve &gt; solver returned with residual 3e-17±2e-15
+# optimize &gt; constrained 21/121 dofs
+# optimize &gt; optimum value 4.32e-10±1e-9
+</code></pre>
+<p>To solve the problem <code>res=0</code> for <code>lhs</code> subject to <code>lhs=cons</code> excluding
+the <code>nan</code> values, we can use <code>nutils.solver.solve_linear</code>:</p>
+<pre><code class="language-python">lhs = solver.solve_linear('lhs', res, constrain=cons)
+# solve &gt; solving 100 dof system to machine precision using arnoldi solver
+# solve &gt; solver returned with residual 2e-15±2e-15
+</code></pre>
+<p>Finally, we plot the solution.  We create a <code>nutils.sample.Sample</code> object from
+<code>topo</code> and evaluate the geometry and the solution:</p>
+<pre><code class="language-python">bezier = topo.sample('bezier', 9)
+x, u = bezier.eval(['x_i', 'u'] @ ns, lhs=lhs)
+</code></pre>
+<p>We use <code>plt.tripcolor</code> to plot the sampled <code>x</code> and <code>u</code>:</p>
+<pre><code class="language-python">plt.tripcolor(x[:,0], x[:,1], bezier.tri, u, shading='gouraud', rasterized=True)
+plt.colorbar()
+plt.gca().set_aspect('equal')
+plt.xlabel('x_0')
+plt.ylabel('x_1')
+</code></pre>
+<p><img src="tutorial/laplace2d-aec62684.svg" alt="output" /></p>
+<p>This two-dimensional example is also available as the script <code>examples/laplace.py</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="whats-new"><a class="header" href="#whats-new">What's New</a></h1>
+<p>Nutils is developed at a release cadence of roughly one year, with the actual
+time of release depending on the level of maturity of newly introduced
+features. Once a release is made it is uploaded to
+<a href="https://pypi.org/project/nutils/">pypi</a> for easy installation.</p>
+<p>Major releases introduce new features and may deprecate features that have been
+superceded. They are assigned a code name derived from a type of noodles dish.
+Minor releases contain only bugfixes and are always safe to upgrade to.</p>
+<p>Here we list the primary changes of every major release compared to its
+predecessor:</p>
+<ul>
+<li><a href="whatsnew/v7.html">Nutils 7</a> &quot;hiyamugi&quot;</li>
+<li><a href="whatsnew/v6.html">Nutils 6</a> &quot;garak-guksu&quot;</li>
+<li><a href="whatsnew/v5.html">Nutils 5</a> &quot;farfalle&quot;</li>
+<li><a href="whatsnew/v4.html">Nutils 4</a> &quot;eliche&quot;</li>
+<li><a href="whatsnew/v3.html">Nutils 3</a> &quot;dragon beard&quot;</li>
+<li><a href="whatsnew/v2.html">Nutils 2</a> &quot;chuka men&quot; </li>
+<li><a href="whatsnew/v1.html">Nutils 1</a> &quot;bakmi&quot;</li>
+<li><a href="whatsnew/v0.html">Nutils 0</a> &quot;anelli&quot;</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="new-in-nutils-7-hiyamugi"><a class="header" href="#new-in-nutils-7-hiyamugi">New in Nutils 7 &quot;hiyamugi&quot;</a></h1>
+<ul>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v7.0">Nutils 7.0</a> was released on January 1st, 2022.</li>
+</ul>
+<h2 id="expression-and-namespace-version-2"><a class="header" href="#expression-and-namespace-version-2">Expression and Namespace Version 2</a></h2>
+<p>The <code>nutils.expression</code> module has been renamed to <code>nutils.expression_v1</code>, the
+<code>nutils.function.Namespace</code> class to <code>nutils.expression_v1.Namespace</code> and the
+<code>nutils.expression_v2</code> module has been added, featuring a new
+<code>nutils.expression_v2.Namespace</code>. The version 2 of the namespace v2 has an
+expression language that differs slightly from version 1, most notably in the
+way derivatives are written. The old namespace remains available for the time
+being. All examples are updated to the new namespace. You are encouraged to use
+the new namespace for newly written code.</p>
+<h2 id="changed-bifurcate-has-been-replaced-by-spaces"><a class="header" href="#changed-bifurcate-has-been-replaced-by-spaces">Changed: bifurcate has been replaced by spaces</a></h2>
+<p>In the past using functions on products of <code>nutils.topology.Topology</code> instances
+required using <code>function.bifurcate</code>. This has been replaced by the concept of
+'spaces'. Every topology is defined in a space, identified by a name (<code>str</code>).
+Functions defined on some topology are considered constant on other topologies
+(defined on other spaces).</p>
+<p>If you want to multiply two topologies, you have to make sure that the
+topologies have different spaces, e.g. via the <code>space</code> parameter of
+<code>nutils.mesh.rectilinear</code>. Example:</p>
+<pre><code class="language-python">from nutils import mesh, function
+Xtopo, x = mesh.rectilinear([4], space='X')
+Ytopo, y = mesh.rectilinear([2], space='Y')
+topo = Xtopo * Ytopo
+geom = function.concatenate([x, y])
+</code></pre>
+<h2 id="changed-functionarray-shape-must-be-constant"><a class="header" href="#changed-functionarray-shape-must-be-constant">Changed: function.Array shape must be constant</a></h2>
+<p>Resulting from to the function/evaluable split introduced in #574, variable
+length axes such as relating to integration points or sparsity can stay
+confined to the evaluable layer. In order to benefit from this situation and
+improve compatibility with Numpy's arrays, <code>nutils.function.Array</code> objects are
+henceforth limited to constant shapes. Additionally:</p>
+<ul>
+<li>The sparsity construct <code>nutils.function.inflate</code> has been removed;</li>
+<li>The <code>nutils.function.Elemwise</code> function requires all element arrays to be of
+the same shape, and its remaining use has been deprecated in favor of
+<code>nutils.function.get</code>;</li>
+<li>Aligning with Numpy's API, <code>nutils.function.concatenate</code> no longer
+automatically broadcasts its arguments, but instead demands that all
+dimensions except for the concatenation axis match exactly.</li>
+</ul>
+<h2 id="changed-locate-arguments"><a class="header" href="#changed-locate-arguments">Changed: locate arguments</a></h2>
+<p>The <code>nutils.topology.Topology.locate</code> method now allows <code>tol</code> to be left
+unspecified if <code>eps</code> is specified instead, which is repurposed as stop
+criterion for distances in element coordinates. Conversely, if only <code>tol</code> is
+specified, a corresponding minimal <code>eps</code> value is set automatically to match
+points near element edges. The <code>ischeme</code> and <code>scale</code> arguments are deprecated
+and replaced by <code>maxdist</code>, which can be left unspecified in general. The
+optional <code>weights</code> argument results in a sample that is suitable for
+integration.</p>
+<h2 id="moved-unit-from-types-to-separate-module"><a class="header" href="#moved-unit-from-types-to-separate-module">Moved: unit from types to separate module</a></h2>
+<p>The <code>unit</code> type has been moved into its own <code>nutils.unit</code> module, with the old
+location <code>types.unit</code> now holding a forward method. The forward emits a
+deprecation warning prompting to change <code>nutils.types.unit.create</code> (or its
+shorthand <code>nutils.types.unit</code>) to <code>nutils.unit.create</code>.</p>
+<h2 id="removed-loading-libraries-from-local"><a class="header" href="#removed-loading-libraries-from-local">Removed: loading libraries from .local</a></h2>
+<p>Libraries that are installed in odd locations will no longer be automatically
+located by Nutils (see b8b7a6d5 for reasons). Instead the user will need to set
+the appropriate environment variable, prior to starting Python. In Windows this
+is the <code>PATH</code> variable, in Linux and OS X <code>LD_LIBRARY_PATH</code>.</p>
+<p>Crucially, this affects the MKL libraries when they are user-installed via pip.
+By default Nutils selects the best available matrix backend that it finds
+available, which could result in it silently falling back on Scipy or Numpy. To
+confirm that the path variable is set correctly run your application with
+<code>matrix=mkl</code> to force an error if MKL cannot be loaded.</p>
+<h2 id="function-module-split-into-function-and-evaluable"><a class="header" href="#function-module-split-into-function-and-evaluable">Function module split into <code>function</code> and <code>evaluable</code></a></h2>
+<p>The function module has been split into a high-level, numpy-like <code>function</code>
+module and a lower-level <code>evaluable</code> module. The <code>evaluable</code> module is agnostic
+to the so-called points axis. Scripts that don't use custom implementations of
+<code>function.Array</code> should work without modification.</p>
+<p>Custom implementations of the old <code>function.Array</code> should now derive from
+<code>evaluable.Array</code>. Furthermore, an accompanying implementation of
+<code>function.Array</code> should be added with a <code>prepare_eval</code> method that returns the
+former.</p>
+<p>The following example implementation of an addition</p>
+<pre><code class="language-python">class Add(function.Array):
+  def __init__(self, a, b):
+    super().__init__(args=[a, b], shape=a.shape, dtype=a.dtype)
+  def evalf(self, a, b):
+    return a+b
+</code></pre>
+<p>should be converted to</p>
+<pre><code class="language-python">class Add(function.Array):
+  def __init__(self, a: function.Array, b: function.Array) -&gt; None:
+    self.a = a
+    self.b = b
+    super().__init__(shape=a.shape, dtype=a.dtype)
+  def prepare_eval(self, **kwargs) -&gt; evaluable.Array:
+    a = self.a.prepare_eval(**kwargs)
+    b = self.b.prepare_eval(**kwargs)
+    return Add_evaluable(a, b)
+
+class Add_evaluable(evaluable.Array):
+  def __init__(self, a, b):
+    super().__init__(args=[a, b], shape=a.shape, dtype=a.dtype)
+  def evalf(self, a, b):
+    return a+b
+</code></pre>
+<h2 id="solve-multiple-residuals-to-multiple-targets"><a class="header" href="#solve-multiple-residuals-to-multiple-targets">Solve multiple residuals to multiple targets</a></h2>
+<p>In problems involving multiple fields, where formerly it was required to
+<code>nutils.function.chain</code> the bases in order to construct and solve a block
+system, an alternative possibility is now to keep the residuals and targets
+separate and reference the several parts at the solving phase::</p>
+<pre><code class="language-python"># old, still valid approach
+ns.ubasis, ns.pbasis = function.chain([ubasis, pbasis])
+ns.u_i = 'ubasis_ni ?dofs_n'
+ns.p = 'pbasis_n ?dofs_n'
+
+# new, alternative approach
+ns.ubasis = ubasis
+ns.pbasis = pbasis
+ns.u_i = 'ubasis_ni ?u_n'
+ns.p = 'pbasis_n ?p_n'
+
+# common: problem definition
+ns.σ_ij = '(u_i,j + u_j,i) / Re - p δ_ij'
+ures = topo.integral('ubasis_ni,j σ_ij d:x d:x' @ ns, degree=4)
+pres = topo.integral('pbasis_n u_,kk d:x' @ ns, degree=4)
+
+# old approach: solving a single residual to a single target
+dofs = solver.newton('dofs', ures + pres).solve(1e-10)
+
+# new approach: solving multiple residuals to multiple targets
+state = solver.newton(['u', 'p'], [ures, pres]).solve(1e-10)
+</code></pre>
+<p>In the new, multi-target approach, the return value is no longer an array but a
+dictionary that maps a target to its solution. If additional arguments were
+specified to newton (or any of the other solvers) then these are copied into
+the return dictionary so as to form a complete state, which can directly be
+used as an arguments to subsequent evaluations.</p>
+<p>If an argument is specified for a solve target then its value is used as an
+initial guess (newton, minimize) or initial condition (thetamethod). This
+replaces the <code>lhs0</code> argument which is not supported for multiple targets.</p>
+<h2 id="new-thetamethod-argument-deprecates-target0"><a class="header" href="#new-thetamethod-argument-deprecates-target0">New thetamethod argument deprecates target0</a></h2>
+<p>To explicitly refer to the history state in <code>nutils.solver.thetamethod</code> and its
+derivatives <code>impliciteuler</code> and <code>cranknicolson</code>, instead of specifiying the
+target through the <code>target0</code> parameter, the new argument <code>historysuffix</code>
+specifies only the suffix to be added to the main target. Hence, the following
+three invocations are equivalent::</p>
+<pre><code class="language-python"># deprecated
+solver.impliciteuler('target', residual, inertia, target0='target0')
+# new syntax
+solver.impliciteuler('target', residual, inertia, historysuffix='0')
+# equal, since '0' is the default suffix
+solver.impliciteuler('target', residual, inertia)
+</code></pre>
+<h2 id="in-place-modification-of-newton-minimize-pseudotime-iterates"><a class="header" href="#in-place-modification-of-newton-minimize-pseudotime-iterates">In-place modification of newton, minimize, pseudotime iterates</a></h2>
+<p>When <code>nutils.solver.newton</code>, <code>nutils.solver.minimize</code> or
+<code>nutils.solver.pseudotime</code> are used as iterators, the generated vectors are now
+modified in place. Therefore, if iterates are stored for analysis, be sure to
+use the <code>.copy</code> method.</p>
+<h2 id="deprecated-functionelemwise"><a class="header" href="#deprecated-functionelemwise">Deprecated function.elemwise</a></h2>
+<p>The function <code>function.elemwise</code> has been deprecated. Use <code>function.Elemwise</code>
+instead::</p>
+<pre><code class="language-python">function.elemwise(topo.transforms, values) # deprecated
+function.Elemwise(values, topo.f_index) # new
+</code></pre>
+<h2 id="removed-transforms-attribute-of-bases"><a class="header" href="#removed-transforms-attribute-of-bases">Removed transforms attribute of bases</a></h2>
+<p>The <code>transforms</code> attribute of bases has been removed due to internal
+restructurings. The <code>transforms</code> attribute of the topology on which the
+basis was created can be used as a replacement::</p>
+<pre><code class="language-python">reftopo = topo.refined
+refbasis = reftopo.basis(...)
+supp = refbasis.get_support(...)
+#topo = topo.refined_by(refbasis.transforms[supp]) # no longer valid
+topo = topo.refined_by(reftopo.transforms[supp]) # still valid
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="new-in-nutils-6-garak-guksu"><a class="header" href="#new-in-nutils-6-garak-guksu">New in Nutils 6 &quot;garak-guksu&quot;.</a></h1>
+<ul>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v6.3">Nutils 6.3</a> was released on November 18th, 2021</li>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v6.2">Nutils 6.2</a> was released on October 7th, 2020</li>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v6.1">Nutils 6.1</a> was released on July 17th, 2020</li>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v6.0">Nutils 6.0</a> was released on April 29th, 2020</li>
+</ul>
+<h2 id="sparse-module"><a class="header" href="#sparse-module">Sparse module</a></h2>
+<p>The new <code>nutils.sparse</code> module introduces a data type and a suite of
+manipulation methods for arbitrary dimensional sparse data. The existing
+integrate and integral methods now create data of this type under the hood, and
+then convert it to a scalar, Numpy array or <code>nutils.matrix.Matrix</code> upon return.
+To prevent this conversion and receive the sparse objects instead use the new
+<code>nutils.sample.Sample.integrate_sparse</code> or
+<code>nutils.sample.eval_integrals_sparse</code>.</p>
+<h2 id="external-dependency-for-parsing-gmsh-files"><a class="header" href="#external-dependency-for-parsing-gmsh-files">External dependency for parsing gmsh files</a></h2>
+<p>The <code>nutils.mesh.gmsh</code> method now depends on the external
+<a href="https://github.com/nschloe/meshio">meshio</a> module to parse .msh files:</p>
+<pre><code class="language-sh">python3 -m pip install --user --upgrade meshio
+</code></pre>
+<h2 id="change-dof-order-in-basisvector"><a class="header" href="#change-dof-order-in-basisvector">Change dof order in basis.vector</a></h2>
+<p>When creating a vector basis using <code>topo.basis(..).vector(nd)</code>, the order of
+the degrees of freedom changed from grouping by vector components to grouping
+by scalar basis functions:</p>
+<pre><code>[b0,  0]         [b0,  0]
+[b1,  0]         [ 0, b0]
+[.., ..] old     [b1,  0]
+[bn,  0] ------&gt; [ 0, b1]
+[ 0, b0]     new [.., ..]
+[.., ..]         [bn,  0]
+[ 0, bn]         [ 0, bn]
+</code></pre>
+<p>This should not affect applications unless the solution vector is manipulated
+directly, such as might happen in unit tests. If required for legacy purposes
+the old vector can be retrieved using <code>old = new.reshape(-1,nd).T.ravel()</code>.
+Note that the change does not extend to <code>nutils.function.vectorize</code>.</p>
+<h2 id="change-from-stickybar-to-bottombar"><a class="header" href="#change-from-stickybar-to-bottombar">Change from stickybar to bottombar</a></h2>
+<p>For <code>nutils.cli.run</code> to draw a status bar, it now requires the external
+<a href="https://github.com/evalf/bottombar">bottombar</a> module to be installed:</p>
+<pre><code class="language-sh">python3 -m pip install --user bottombar
+</code></pre>
+<p>This replaces stickybar, which is no longer used. In addition to the log uri
+and runtime the status bar will now show the current memory usage, if that
+information is available. On Windows this requires <code>psutil</code> to be installed; on
+Linux and OSX it should work by default.</p>
+<h2 id="support-for-gmsh-msh4-file-format"><a class="header" href="#support-for-gmsh-msh4-file-format">Support for gmsh 'msh4' file format</a></h2>
+<p>The <code>nutils.mesh.gmsh</code> method now supports input in the 'msh4' file format, in
+addition to the 'msh2' format which remains supported for backward
+compatibility. Internally, <code>nutils.mesh.parsegmsh</code> now takes file contents
+instead of a file name.</p>
+<h2 id="new-command-line-option-gracefulexit"><a class="header" href="#new-command-line-option-gracefulexit">New command line option: gracefulexit</a></h2>
+<p>The new boolean command line option <code>gracefulexit</code> determines what happens when
+an exception reaches <code>nutils.cli.run</code>. If true (default) then the exception is
+handled as before and a system exit is initiated with an exit code of 2. If
+false then the exception is reraised as-is. This is useful in particular when
+combined with an external debugging tool.</p>
+<h2 id="log-tracebacks-at-debug-level"><a class="header" href="#log-tracebacks-at-debug-level">Log tracebacks at debug level</a></h2>
+<p>The way exceptions are handled by <code>nutils.cli.run</code> is changed from logging the
+entire exception and traceback as a single error message, to logging the
+exceptions as errors and tracebacks as debug messages. Additionally, the order
+of exceptions and traceback is fully reversed, such that the most relevant
+message is the first thing shown and context follows.</p>
+<h2 id="solve-leniently-to-relative-tolerance-in-newton-systems"><a class="header" href="#solve-leniently-to-relative-tolerance-in-newton-systems">Solve leniently to relative tolerance in Newton systems</a></h2>
+<p>The <code>nutils.solver.newton</code> method now sets the relative tolerance of the linear
+system to <code>1e-3</code> unless otherwise specified via <code>linrtol</code>. This is mainly
+useful for iterative solvers which can save computational effort by having
+their stopping criterion follow the current Newton residual, but it may also
+help with direct solvers to warn of ill conditioning issues. Iterations
+furthermore use <code>nutils.matrix.Matrix.solve_leniently</code>, thus proceeding after
+warning that tolerances have not been met in the hope that Newton convergence
+might be attained regardless.</p>
+<h2 id="linear-solver-arguments"><a class="header" href="#linear-solver-arguments">Linear solver arguments</a></h2>
+<p>The methods <code>nutils.solver.newton</code>, <code>nutils.solver.minimize</code>,
+<code>nutils.solver.pseudotime</code>, <code>nutils.solver.solve_linear</code> and
+<code>nutils.solver.optimize</code> now receive linear solver arguments as keyword
+arguments rather than via the <code>solveargs</code> dictionary, which is deprecated. To
+avoid name clashes with the remaining arguments, argument names must be
+prefixed by <code>lin</code>:</p>
+<pre><code class="language-python">solver.solve_linear('lhs', res,
+  solveargs=dict(solver='gmres')) # deprecated syntax
+
+solver.solve_linear('lhs', res,
+  linsolver='gmres') # new syntax
+</code></pre>
+<h2 id="iterative-refinement"><a class="header" href="#iterative-refinement">Iterative refinement</a></h2>
+<p>Direct solvers enter an iterative refinement loop in case the first pass did
+not meet the configured tolerance. In machine precision mode (atol=0, rtol=0)
+this refinement continues until the residual stagnates.</p>
+<h2 id="matrix-solver-tolerances"><a class="header" href="#matrix-solver-tolerances">Matrix solver tolerances</a></h2>
+<p>The absolute and/or relative tolerance for solutions of a linear system can now
+be specified in <code>nutils.matrix.Matrix.solve</code> via the <code>atol</code> resp. <code>rtol</code>
+arguments, regardless of backend and solver. If the backend returns a solution
+that violates both tolerances then an exception is raised of type
+<code>nutils.matrix.ToleranceNotReached</code>, from which the solution can still be
+obtained via the <code>.best</code> attribute. Alternatively the new method
+<code>nutils.matrix.Matrix.solve_leniently</code> always returns a solution while logging
+a warning if tolerances are not met. In case both tolerances are left at their
+default value or zero then solvers are instructed to produce a solution to
+machine precision, with subsequent checks disabled.</p>
+<h2 id="use-stringly-for-command-line-parsing"><a class="header" href="#use-stringly-for-command-line-parsing">Use stringly for command line parsing</a></h2>
+<p>Nutils now depends on stringly (version 1.0b1) for parsing of command line
+arguments. The new implementation of <code>nutils.cli.run</code> is fully backwards
+compatible, but the preferred method of annotating function arguments is now as
+demonstrated in all of the examples.</p>
+<p>For new Nutils installations Stringly will be installed automatically as a
+dependency. For existing setups it can be installed manually as follows:</p>
+<pre><code class="language-sh">python3 -m pip install --user --upgrade stringly
+</code></pre>
+<h2 id="fixed-and-fallback-lengths-in-namespace-expressions"><a class="header" href="#fixed-and-fallback-lengths-in-namespace-expressions">Fixed and fallback lengths in (namespace) expressions</a></h2>
+<p>The <code>nutils.function.Namespace</code> has two new arguments: <code>length_&lt;indices&gt;</code> and
+<code>fallback_length</code>. The former can be used to assign fixed lengths to specific
+indices in expressions, say index <code>i</code> should have length 2, which is used for
+verification and resolving undefined lengths. The latter is used to resolve
+remaining undefined lengths:</p>
+<pre><code class="language-python">ns = nutils.function.Namespace(length_i=2, fallback_length=3)
+ns.eval_ij('δ_ij') # using length_i
+# Array&lt;2,2&gt;
+ns.eval_jk('δ_jk') # using fallback_length
+# Array&lt;3,3&gt;
+</code></pre>
+<h2 id="treelog-update"><a class="header" href="#treelog-update">Treelog update</a></h2>
+<p>Nutils now depends on treelog version 1.0b5, which brings improved iterators
+along with other enhancements. For transitional convenience the backwards
+incompatible changes have been backported in the <code>nutils.log</code> wrapper, which
+now emits a warning in case the deprecated methods are used. This wrapper is
+scheduled for deletion prior to the release of version 6.0. To update treelog
+to the most recent version use:</p>
+<pre><code class="language-sh">python -m pip install -U treelog
+</code></pre>
+<h2 id="unit-type"><a class="header" href="#unit-type">Unit type</a></h2>
+<p>The new <code>nutils.types.unit</code> allows for the creation of a unit system for easy
+specification of physical quantities. Used in conjunction with <code>nutils.cli.run</code>
+this facilitates specifying units from the command line, as well as providing a
+warning mechanism against incompatible units:</p>
+<pre><code class="language-python">U = types.unit.create(m=1, s=1, g=1e-3, N='kg*m/s2', Pa='N/m2')
+def main(length=U('2m'), F=U('5kN')):
+  topo, geom = mesh.rectilinear([numpy.linspace(0,length,10)])
+</code></pre>
+<pre><code class="language-sh">python myscript.py length=25cm # OK
+python myscript.py F=10Pa # error!
+</code></pre>
+<h2 id="sample-basis"><a class="header" href="#sample-basis">Sample basis</a></h2>
+<p>Samples now provide a <code>nutils.sample.Sample.basis</code>: an array that for any point
+in the sample evaluates to the unit vector corresponding to its index. This new
+underpinning of <code>nutils.sample.Sample.asfunction</code> opens the way for sampled
+arguments, as demonstrated in the last example below:</p>
+<pre><code class="language-python">H1 = mysample.asfunction(mydata) # mysample.eval(H1) == mydata
+H2 = mysample.basis().dot(mydata) # mysample.eval(H2) == mydata
+ns.Hbasis = mysample.basis()
+H3 = 'Hbasis_n ?d_n' @ ns # mysample.eval(H3, d=mydata) == mydata
+</code></pre>
+<h2 id="higher-order-gmsh-geometries"><a class="header" href="#higher-order-gmsh-geometries">Higher order gmsh geometries</a></h2>
+<p>Gmsh element support has been extended to include cubic and quartic meshes in
+2D and quadratic meshes in 3D, and parsing the msh file is now a cacheable
+operation. Additionally, tetrahedra now define bezier points at any order.</p>
+<h2 id="repository-location"><a class="header" href="#repository-location">Repository location</a></h2>
+<p>The Nutils repository has moved to <a href="https://github.com/evalf/nutils.git">https://github.com/evalf/nutils.git</a>. For the
+time being the old address is maintained by Github as an alias, but in the long
+term you are advised to update your remote as follows:</p>
+<pre><code class="language-sh">git remote set-url origin https://github.com/evalf/nutils.git
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="new-in-nutils-5-farfalle"><a class="header" href="#new-in-nutils-5-farfalle">New in Nutils 5 &quot;farfalle&quot;</a></h1>
+<ul>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v5.2">Nutils 5.2</a> was released on June 11th, 2019</li>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v5.1">Nutils 5.1</a> was released on September 3rd, 2019</li>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v5.0">Nutils 5.0</a> was released on April 3rd, 2020</li>
+</ul>
+<h2 id="matrix-matmul-operator-solve-with-multiple-right-hand-sides"><a class="header" href="#matrix-matmul-operator-solve-with-multiple-right-hand-sides">Matrix matmul operator, solve with multiple right hand sides</a></h2>
+<p>The <code>Matrix.matvec</code> method has been deprecated in favour of the new
+<code>__matmul__</code> (@) operator, which supports multiplication arrays of any
+dimension. The <code>nutils.matrix.Matrix.solve</code> method has been extended to support
+multiple right hand sides::</p>
+<pre><code class="language-python">matrix.matvec(lhs) # deprecated
+matrix @ lhs # new syntax
+matrix @ numpy.stack([lhs1, lhs2, lhs3], axis=1)
+matrix.solve(rhs)
+matrix.solve(numpy.stack([rhs1, rhs2, rhs3], axis=1)
+</code></pre>
+<h2 id="mkls-fgmres-method"><a class="header" href="#mkls-fgmres-method">MKL's fgmres method</a></h2>
+<p>Matrices produced by the <code>MKL</code> backend now support the
+<code>nutils.matrix.Matrix.solve</code> argument solver='fmgres' to use Intel MKL's fgmres
+method.</p>
+<h2 id="thetamethod-time-target"><a class="header" href="#thetamethod-time-target">Thetamethod time target</a></h2>
+<p>The <code>nutils.solver.thetamethod</code> class, as well as its special cases
+<code>impliciteuler</code> and <code>cranknicolson</code>, now have a <code>timetarget</code> argument to
+specify that the formulation contains a time variable::</p>
+<pre><code class="language-python">res = topo.integral('...?t... d:x' @ ns, degree=2)
+solver.impliciteuler('dofs', res, ..., timetarget='t')
+</code></pre>
+<h2 id="new-leveltopo-argument-for-trimming"><a class="header" href="#new-leveltopo-argument-for-trimming">New leveltopo argument for trimming</a></h2>
+<p>In <code>nutils.topology.Topology.trim</code>, in case the levelset cannot be evaluated on
+the to-be-trimmed topology itself, the correct topology can now be specified
+via the new <code>leveltopo</code> argument.</p>
+<h2 id="new-unittest-assertion-assertalmostequal64"><a class="header" href="#new-unittest-assertion-assertalmostequal64">New unittest assertion assertAlmostEqual64</a></h2>
+<p><code>nutils.testing.TestCase</code> now facilitates comparison against base64 encoded,
+compressed, and packed data via the new method
+<code>nutils.testing.TestCase.assertAlmostEqual64</code>. This replaces
+<code>numeric.assert_allclose64</code> which is now deprecated and scheduled for removal
+in Nutils 6.</p>
+<h2 id="fast-locate-for-structured-topology-geometry"><a class="header" href="#fast-locate-for-structured-topology-geometry">Fast locate for structured topology, geometry</a></h2>
+<p>A special case <code>nutils.topology.Topology.locate</code> method for structured
+topologies checks of the geometry is an affine transformation of the natural
+configuration, in which case the trivial inversion is used instead of expensive
+Newton iterations::</p>
+<pre><code class="language-python">topo, geom = mesh.rectilinear([2, 3])
+smp = topo.locate(geom/2-1, [[-.1,.2]])
+# locate detected linear geometry: x = [-1. -1.] + [0.5 0.5] xi ~+2.2e-16
+</code></pre>
+<h2 id="lazy-references-transforms-bases"><a class="header" href="#lazy-references-transforms-bases">Lazy references, transforms, bases</a></h2>
+<p>The introduction of sequence abstractions <code>nutils.elementseq</code> and
+<code>nutils.transformseq</code>, together with and a lazy implementation of
+<code>nutils.function.Basis</code> basis functions, help to prevent the unnecessary
+generation of data. In hierarchically refined topologies, in particular, this
+results in large speedups and a much reduced memory footprint.</p>
+<h2 id="switch-to-treelog"><a class="header" href="#switch-to-treelog">Switch to treelog</a></h2>
+<p>The <code>nutils.log</code> module is deprecated and will be replaced by the externally
+maintained <code>treelog &lt;https://github.com/evalf/treelog&gt;</code>_, which is now an
+installation dependency.</p>
+<h2 id="replace-pariter-parmap-by-fork-range"><a class="header" href="#replace-pariter-parmap-by-fork-range">Replace pariter, parmap by fork, range.</a></h2>
+<p>The <code>nutils.parallel</code> module is largely rewritten. The old methods <code>pariter</code>
+and <code>parmap</code> are replaced by the <code>nutils.parallel.fork</code> context, combined with
+the shared <code>nutils.parallel.range</code> iterator::</p>
+<pre><code class="language-python">indices = parallel.range(10)
+with parallel.fork(nprocs=2) as procid:
+  for index in indices:
+    print('procid={}, index={}'.format(procid, index))
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="new-in-nutils-4-eliche"><a class="header" href="#new-in-nutils-4-eliche">New in Nutils 4 &quot;eliche&quot;</a></h1>
+<ul>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v4.1">Nutils 4.1</a> was released on August 28th, 2018</li>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v4.0">Nutils 4.0</a> was released on June 11th, 2019</li>
+</ul>
+<h2 id="spline-basis-continuity-argument"><a class="header" href="#spline-basis-continuity-argument">Spline basis continuity argument</a></h2>
+<p>In addition to the <code>knotmultiplicities</code> argument to define the
+continuity of basis function on structured topologies, the
+<code>nutils.topology.Topology.basis</code> method now supports the
+<code>continuity</code> argument to define the global continuity of basis
+functions. With negative numbers counting backwards from the
+<code>degree</code>, the default value of <code>-1</code> corresponds to a knot
+multiplicity of 1.</p>
+<h2 id="eval-arguments"><a class="header" href="#eval-arguments">Eval arguments</a></h2>
+<p>Functions of type <code>nutils.function.Evaluable</code> can receive
+arguments in addition to element and points by depending on instances
+of <code>nutils.function.Argument</code> and having their values specified
+via <code>nutils.sample.Sample.eval</code>:</p>
+<pre><code class="language-python">f = geom.dot(function.Argument('myarg', shape=geom.shape))
+f = 'x_i ?myarg_i' @ ns # equivalent operation in namespace
+topo.sample('uniform', 1).eval(f, myarg=numpy.ones(geom.shape))
+</code></pre>
+<h2 id="the-d-operator"><a class="header" href="#the-d-operator">The d:-operator</a></h2>
+<p>Namespace expression syntax now includes the <code>d:</code> Jacobian operator,
+allowing one to write <code>'d:x' @ ns</code> instead of <code>function.J(ns.x)</code>.
+Since including the Jacobian in the integrand is preferred over
+specifying it separately, the <code>geometry</code> argument of
+<code>nutils.topology.Topology.integrate</code> is deprecated:</p>
+<pre><code class="language-python">topo.integrate(ns.f, geometry=ns.x) # deprecated
+topo.integrate(ns.f * function.J(ns.x)) # was and remains valid
+topo.integrate('f d:x' @ ns) # new namespace syntax
+</code></pre>
+<h2 id="truncated-hierarchical-bsplines"><a class="header" href="#truncated-hierarchical-bsplines">Truncated hierarchical bsplines</a></h2>
+<p>Hierarchically refined topologies now support basis truncation, which
+reduces the supports of individual basis functions while maintaining
+the spanned space. To select between truncated and non-truncated the
+basis type must be prefixed with 'th-' or 'h-', respectively. A
+non-prefixed basis type falls back on the default implementation that
+fails on all types but discont:</p>
+<pre><code class="language-python">htopo.basis('spline', degree=2) # no longer valid
+htopo.basis('h-spline', degree=2) # new syntax for original basis
+htopo.basis('th-spline', degree=2) # new syntax for truncated basis
+htopo.basis('discont', degree=2) # still valid
+</code></pre>
+<h2 id="transparent-function-cache"><a class="header" href="#transparent-function-cache">Transparent function cache</a></h2>
+<p>The <code>nutils.cache</code> module provides a memoizing function decorator
+<code>nutils.cache.function</code> which reads return values from cache in
+case a set of function arguments has been seen before. It is similar
+in function to Python's <code>functools.lru_cache</code>, except that the cache
+is maintained on disk and <code>nutils.types.nutils_hash</code> is used to
+compare arguments, which means that arguments need not be Python
+hashable. The mechanism is activated via <code>nutils.cache.enable</code>:</p>
+<pre><code class="language-python">@cache.function
+def f(x):
+  return x * 2
+
+with cache.enable():
+  f(10)
+</code></pre>
+<p>If <code>nutils.cli.run</code> is used then the cache can also be enabled
+via the new <code>--cache</code> command line argument. With many internal
+Nutils functions already decorated, including all methods in the
+<code>nutils.solver</code> module, transparent caching is available out of
+the box with no further action required.</p>
+<h2 id="new-module-types"><a class="header" href="#new-module-types">New module: types</a></h2>
+<p>The new <code>nutils.types</code> module unifies and extends components
+relating to object types. The following preexisting objects have been
+moved to the new location:</p>
+<ul>
+<li><code>util.enforcetypes</code> → <code>types.apply_annotations</code></li>
+<li><code>util.frozendict</code> → <code>types.frozendict</code></li>
+<li><code>numeric.const</code> → <code>types.frozenarray</code></li>
+</ul>
+<h2 id="mkl-matrix-pardiso-solver"><a class="header" href="#mkl-matrix-pardiso-solver">MKL matrix, Pardiso solver</a></h2>
+<p>The new <code>MKL</code> backend generates matrices that are powered by Intel's Math
+Kernel Library, which notably includes the reputable Pardiso solver. This
+requires <code>libmkl</code> to be installed, which is conveniently available through
+pip:</p>
+<pre><code class="language-sh">pip install mkl
+</code></pre>
+<p>When <code>nutils.cli.run</code> is used the new matrix type is selected
+automatically if it is available, or manually using <code>--matrix=MKL</code>.</p>
+<h2 id="nonlinear-minimization"><a class="header" href="#nonlinear-minimization">Nonlinear minimization</a></h2>
+<p>For problems that adhere to an energy structure, the new solver method
+<code>nutils.solver.minimize</code> provides an alternative mechanism that
+exploits this structure to robustly find the energy minimum:</p>
+<pre><code class="language-python">res = sqr.derivative('dofs')
+solver.newton('dofs', res, ...)
+solver.minimize('dofs', sqr, ...) # equivalent
+</code></pre>
+<h2 id="data-packing"><a class="header" href="#data-packing">Data packing</a></h2>
+<p>Two new methods, <code>nutils.numeric.pack</code> and its inverse
+<code>nutils.numeric.unpack</code>, provide lossy compression to floating
+point data. Primarily useful for regression tests, the convenience
+method <code>numeric.assert_allclose64</code> combines data packing with zlib
+compression and base64 encoding for inclusion in Python codes.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="new-in-nutils-3-dragon-beard"><a class="header" href="#new-in-nutils-3-dragon-beard">New in Nutils 3 &quot;dragon beard&quot;</a></h1>
+<ul>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v3.1">Nutils 3.1</a> was released on February 5th, 2018</li>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v3.0">Nutils 3.0</a> was released on August 22nd, 2018</li>
+</ul>
+<h2 id="new-functionnamespace"><a class="header" href="#new-functionnamespace">New: function.Namespace</a></h2>
+<p>The <code>nutils.function.Namespace</code> object represents a container of
+<code>nutils.function.Array</code> instances:</p>
+<pre><code class="language-python">ns = function.Namespace()
+ns.x = geom
+ns.basis = domain.basis('std', degree=1).vector(2)
+</code></pre>
+<p>In addition to bundling arrays, arrays can be manipulated using index notation
+via string expressions using the <code>nutils.expression</code> syntax:</p>
+<pre><code class="language-python">ns.sol_i = 'basis_ni ?dofs_n'
+f = ns.eval_i('sol_i,j n_j')
+</code></pre>
+<h2 id="new-topologyintegral"><a class="header" href="#new-topologyintegral">New: Topology.integral</a></h2>
+<p>Analogous to <code>nutils.topology.Topology.integrate</code>, which integrates a function
+and returns the result as a (sparse) array, the new method
+<code>nutils.topology.Topology.integral</code> with identical arguments results in an
+<code>nutils.sample.Integral</code> object for postponed evaluation:</p>
+<pre><code class="language-python">x = domain.integrate(f, geometry=geom, degree=2) # direct
+integ = domain.integral(f, geometry=geom, degree=2) # indirect
+x = integ.eval()
+</code></pre>
+<p>Integral objects support linear transformations, derivatives and substitutions.
+Their main use is in combination with routines from the <code>nutils.solver</code> module.</p>
+<h2 id="removed-transformchain-canonicaltransformchain"><a class="header" href="#removed-transformchain-canonicaltransformchain">Removed: TransformChain, CanonicalTransformChain</a></h2>
+<p>Transformation chains (sequences of transform items) are stored as standard
+tuples. Former class methods are replaced by module methods:</p>
+<pre><code class="language-python">elem.transform.promote(ndims) # no longer valid
+transform.promote(elem.transform, ndims) # new syntax
+</code></pre>
+<p>In addition, every <code>edge_transform</code> and <code>child_transform</code> of Reference objects
+is changed from (typically unit-length) <code>TransformChain</code> to
+<code>nutils.transform.TransformItem</code>.</p>
+<h2 id="changed-command-line-interface"><a class="header" href="#changed-command-line-interface">Changed: command line interface</a></h2>
+<p>Command line parsers <code>nutils.cli.run</code> or <code>nutils.cli.choose</code> dropped support
+for space separated arguments (--arg value), requiring argument and value to be
+joined by an equals sign instead:</p>
+<pre><code class="language-sh">python script.py --arg=value
+</code></pre>
+<p>Boolean arguments are specified by omitting the value and prepending 'no' to
+the argument name for negation:</p>
+<pre><code class="language-sh">python script.py --pdb --norichoutput
+</code></pre>
+<p>For convenience, leading dashes have been made optional:</p>
+<pre><code class="language-sh">python script.py arg=value pdb norichoutput
+</code></pre>
+<h2 id="new-topology-intersections-deprecates-common_refinement"><a class="header" href="#new-topology-intersections-deprecates-common_refinement">New: Topology intersections (deprecates common_refinement)</a></h2>
+<p>Intersections between topologies can be made using the <code>&amp;</code> operator. In case
+the operands have different refinement patterns, the resulting topology will
+consist of the common refinements of the intersection:</p>
+<pre><code class="language-python">intersection = topoA &amp; topoB
+interface = topo['fluid'].boundary &amp; ~topo['solid'].boundary
+</code></pre>
+<h2 id="changed-topologyindicator"><a class="header" href="#changed-topologyindicator">Changed: Topology.indicator</a></h2>
+<p>The <code>nutils.topology.Topology.indicator</code> method is moved from subtopology to
+parent topology, i.e. the topology you want to evaluate the indicator on, and
+now takes the subtopology is an argument:</p>
+<blockquote>
+<blockquote>
+<blockquote>
+<p>ind = domain.boundary['top'].indicator() # no longer valid
+ind = domain.boundary.indicator(domain.boundary['top']) # new syntax
+ind = domain.boundary.indicator('top') # equivalent shorthand</p>
+</blockquote>
+</blockquote>
+</blockquote>
+<h2 id="changed-evaluableeval"><a class="header" href="#changed-evaluableeval">Changed: Evaluable.eval</a></h2>
+<p>The <code>nutils.function.Evaluable.eval</code> method accepts a flexible number of
+keyword arguments, which are accessible to <code>evalf</code> by depending on the
+<code>EVALARGS</code> token. Standard keywords are <code>_transforms</code> for transformation
+chains, <code>_points</code> for integration points, and <code>_cache</code> for the cache object:</p>
+<pre><code class="language-python">f.eval(elem, 'gauss2') # no longer valid
+ip, iw = elem.getischeme('gauss2')
+tr = elem.transform, elem.opposite
+f.eval(_transforms=tr, _points=ip) # new syntax
+</code></pre>
+<h2 id="new-numericconst"><a class="header" href="#new-numericconst">New: numeric.const</a></h2>
+<p>The <code>numeric.const</code> array represents an immutable, hashable array:</p>
+<pre><code class="language-python">A = numeric.const([[1,2],[3,4]])
+d = {A: 1}
+</code></pre>
+<p>Existing arrays can be wrapped into a <code>const</code> object by adding <code>copy=False</code>.
+The <code>writeable</code> flag of the original array is set to False to prevent
+subsequent modification:</p>
+<pre><code class="language-python">A = numpy.array([1,2,3])
+Aconst = numeric.const(A, copy=False)
+A[1] = 4
+# ValueError: assignment destination is read-only
+</code></pre>
+<h2 id="new-function-annotations"><a class="header" href="#new-function-annotations">New: function annotations</a></h2>
+<p>The <code>util.enforcetypes</code> decorator applies conversion methods to annotated
+arguments:</p>
+<pre><code class="language-python">@util.enforcetypes
+def f(a:float, b:tuple)
+  print(type(a), type(b))
+f(1, [2])
+# &lt;class 'float'&gt; &lt;class 'tuple'&gt;
+</code></pre>
+<p>The decorator is by default active to constructors of cache.Immutable
+derived objects, such as function.Evaluable.</p>
+<h2 id="changed-evaluable_edit"><a class="header" href="#changed-evaluable_edit">Changed: Evaluable._edit</a></h2>
+<p>Evaluable objects have a default edit implementation that re-instantiates the
+object with the operand applied to all constructor arguments. In situations
+where the default implementation is not sufficient it can be overridden by
+implementing the <code>edit</code> method (note: without the underscore):</p>
+<pre><code class="language-python">class B(function.Evaluable):
+  def __init__(self, d):
+    assert isinstance(d, dict)
+    self.d = d
+  def edit(self, op):
+    return B({key: op(value) for key, value in self.d.items()})
+</code></pre>
+<h2 id="changed-function-derivatives"><a class="header" href="#changed-function-derivatives">Changed: function derivatives</a></h2>
+<p>The <code>nutils.function.derivative</code> <code>axes</code> argument has been removed;
+<code>derivative(func, var)</code> now takes the derivative of <code>func</code> to all the axes in
+<code>var</code>:</p>
+<pre><code class="language-python">der = function.derivative(func, var,
+        axes=numpy.arange(var.ndim)) # no longer valid
+der = function.derivative(func, var) # new syntax
+</code></pre>
+<h2 id="new-module-cli"><a class="header" href="#new-module-cli">New module: cli</a></h2>
+<p>The <code>nutils.util.run</code> function is deprecated and replaced by two new functions,
+<code>nutils.cli.choose</code> and <code>nutils.cli.run</code>. The new functions are very similar to
+the original, but have a few notable differences:</p>
+<ul>
+<li><code>cli.choose</code> requires the name of the function to be executed (typically
+'main'), followed by any optional arguments</li>
+<li><code>cli.run</code> does not require the name of the function to be executed, but only
+a single one can be specified</li>
+<li>argument conversions follow the type of the argument's default value, instead
+of the result of <code>eval</code></li>
+<li>the <code>--tbexplore</code> option for post-mortem debugging is replaced by <code>--pdb</code>,
+replacing Nutils' own traceback explorer by Python's builtin debugger</li>
+<li>on-line debugging is provided via the ctrl+c signal handler</li>
+<li>function annotations can be used to describe arguments in both help messages
+and logging output (see examples)</li>
+</ul>
+<h2 id="new-module-solver"><a class="header" href="#new-module-solver">New module: solver</a></h2>
+<p>The <code>nutils.solver</code> module provides infrastructure to facilitate formulating
+and solving complicated nonlinear problems in a structured and largely
+automated fashion.</p>
+<h2 id="new-topologywithsubdomainboundaryinterfacespoints"><a class="header" href="#new-topologywithsubdomainboundaryinterfacespoints">New: topology.with{subdomain,boundary,interfaces,points}</a></h2>
+<p>Topologies have been made fully immutable, which means that the old setitem
+operation is no longer supported. Instead, to add a subtopology to the domain,
+its boundary, its interfaces, or points, any of the methods <code>withsubdomain</code>,
+<code>withboundary</code>, <code>withinterfaces</code>, and <code>withpoints</code>, respectively, will return a
+copy of the topology with the desired groups added:</p>
+<pre><code class="language-python">topo.boundary['wall'] = topo.boundary['left,top'] # no longer valid
+newtopo = topo.withboundary(wall=topo.boundary['left,top']) # new syntax
+newtopo = topo.withboundary(wall='left,top') # equivalent shorthand
+newtopo.boundary['wall'].integrate(...)
+</code></pre>
+<h2 id="new-circular-symmetry"><a class="header" href="#new-circular-symmetry">New: circular symmetry</a></h2>
+<p>Any topology can be revolved using the new <code>nutils.topology.Topology.revolved</code>
+method, which interprets the first geometry dimension as a radius and replaces
+it by two new dimensions, shifting the remaining axes backward. In addition to
+the modified topology and geometry, simplifying function is returned as the
+third return value which replaces all occurrences of the revolution angle by
+zero. This should only be used after all gradients have been computed:</p>
+<pre><code class="language-python">rdomain, rgeom, simplify = domain.revolved(geom)
+basis = rdomain.basis('spline', degree=2)
+M = function.outer(basis.grad(rgeom)).sum(-1)
+rdomain.integrate(M, geometry=rgeom, ischeme='gauss2', edit=simplify)
+</code></pre>
+<h2 id="renamed-meshgmesh-to-meshgmsh-added-support-for-periodicity"><a class="header" href="#renamed-meshgmesh-to-meshgmsh-added-support-for-periodicity">Renamed mesh.gmesh to mesh.gmsh; added support for periodicity</a></h2>
+<p>The gmsh importer was unintentionally misnamed as gmesh; this has been fixed.
+With that the old name is deprecated and will be removed in future. In
+addition, support for the non-physical mesh format and externally supplied
+boundary labels has been removed (see the unit test tests/mesh.py for examples
+of valid .geo format). Support is added for periodicity and interface groups.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="new-in-nutils-2-chuka-men"><a class="header" href="#new-in-nutils-2-chuka-men">New in Nutils 2 &quot;chuka men&quot;</a></h1>
+<ul>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v2.0">Nutils 2.0</a> was released on February 18th, 2016.</li>
+</ul>
+<h2 id="changed-jump-sign"><a class="header" href="#changed-jump-sign">Changed: jump sign</a></h2>
+<p>The jump operator has been changed according to the following definition:
+<code>jump(f) = opposite(f) - f</code>. In words, it represents the value of the argument
+from the side that the normal is pointing toward, minus the value from the side
+that the normal is pointing away from. Compared to the old definition this
+means the sign is flipped.</p>
+<h2 id="changed-topology-objects"><a class="header" href="#changed-topology-objects">Changed: Topology objects</a></h2>
+<p>The Topology base class no longer takes a list of elements in its constructor.
+Instead, the <code>__iter__</code> method should be implemented by the derived class, as
+well as <code>__len__</code> for the number of elements, and getelem(index) to access
+individual elements. The 'elements' attribute is deprecated.</p>
+<p>The <code>nutils.topology.StructuredTopology</code> object no longer accepts an array with
+elements. Instead, an 'axes' argument is provided with information that allows
+it to generate elements in the fly. The 'structure' attribute is deprecated. A
+newly added <code>shape</code> tuple is now a documented attribute.</p>
+<h2 id="changed-properties-dumpdir-outdir-outrootdir"><a class="header" href="#changed-properties-dumpdir-outdir-outrootdir">Changed: properties dumpdir, outdir, outrootdir</a></h2>
+<p>Two global properties have been renamed as follows:</p>
+<ul>
+<li>dumpdir → outdir</li>
+<li>outdir → outrootdir</li>
+</ul>
+<p>The <code>outrootdir</code> defaults to ~/public_html and can be redefined from the
+command line or in the .nutilsrc configuration file. The outdir defaults to the
+current directory and is redefined by <code>util.run</code>, nesting the name/date/time
+subdirectory sequence under <code>outrootdir</code>.</p>
+<h2 id="changed-sum-axis-argument"><a class="header" href="#changed-sum-axis-argument">Changed: sum axis argument</a></h2>
+<p>The behaviour of <code>nutils.function.sum</code> is inconsistent with that of the Numpy
+counterparts. In case no axes argument is specified, Numpy sums over all axes,
+whereas Nutils sums over the last axis. To undo this mistake and transition to
+Numpy's behaviour, calling sum without an axes argument is deprecated and will
+be forbidden in Nutils 3.0. In Nutils 4.0 it will be reintroduced with the
+corrected meaning.</p>
+<h2 id="changed-strict-dimension-equality-in-functionouter"><a class="header" href="#changed-strict-dimension-equality-in-functionouter">Changed: strict dimension equality in function.outer</a></h2>
+<p>The <code>nutils.function.outer</code> method allows arguments of different dimension by
+left-padding the smallest prior to multiplication. There is no clear reason for
+this generality and it hinders error checking. Therefore in future in
+<code>function.outer(a, b)</code>, <code>a.ndim</code> must equal <code>b.ndim</code>. In a brief transition
+period non-equality emits a warning.</p>
+<h2 id="changed-evaluable-base-class"><a class="header" href="#changed-evaluable-base-class">Changed: Evaluable base class</a></h2>
+<p>Relevant only for custom <code>nutils.function.Evaluable</code> objects, the <code>evalf</code>
+method changes from constructor argument to instance/class method:</p>
+<pre><code class="language-python">class MyEval( function.Evaluable):
+  def __init__(self, ...):
+    function.Evaluable(args=[...], shape=...)
+  def evalf( self, ...):
+    ...
+</code></pre>
+<p>Moreover, the <code>args</code> argument may only contain Evaluable objects. Static
+information is to be passed through <code>self</code>.</p>
+<h2 id="removed-_numeric-c-extension"><a class="header" href="#removed-_numeric-c-extension">Removed: _numeric C-extension</a></h2>
+<p>At this point Nutils is pure Python. It is no longer necessary to run make to
+compile extension modules. The numeric.py module remains unchanged.</p>
+<h2 id="periodic-boundary-groups"><a class="header" href="#periodic-boundary-groups">Periodic boundary groups</a></h2>
+<p>Touching elements of periodic domains are no longer part of the <code>boundary</code>
+topology. It is still available as boundary of an appropriate non-periodic
+subtopology:</p>
+<pre><code class="language-python">domain.boundary['left'] # no longer valid
+domain[:,:1].boundary['left'] # still valid
+</code></pre>
+<h2 id="new-module-transform"><a class="header" href="#new-module-transform">New module: transform</a></h2>
+<p>The new <code>nutils.transform</code> module provides objects and operations relating to
+affine coordinate transformations.</p>
+<h2 id="traceback-explorer-disabled-by-default"><a class="header" href="#traceback-explorer-disabled-by-default">Traceback explorer disabled by default</a></h2>
+<p>The new command line switch <code>--tbexplore</code> activates the traceback explorer on
+program failure. To change the default behavior add <code>tbexplore=True</code> to your
+.nutilsrc file.</p>
+<h2 id="rich-output"><a class="header" href="#rich-output">Rich output</a></h2>
+<p>The new command line switch <code>--richoutput</code> activates color and unicode output.
+To change the default behavior add <code>richoutput=True</code> to your .nutilsrc file.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="new-in-nutils-1-bakmi"><a class="header" href="#new-in-nutils-1-bakmi">New in Nutils 1 &quot;bakmi&quot;</a></h1>
+<ul>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v1.0">Nutils 1.0</a> was released on July 3rd, 2017</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="new-in-nutils-0-anelli"><a class="header" href="#new-in-nutils-0-anelli">New in Nutils 0 &quot;anelli&quot;</a></h1>
+<ul>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v0.0">Nutils 0.0</a> was released on August 22nd, 2018</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="examples"><a class="header" href="#examples">Examples</a></h1>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="api-reference"><a class="header" href="#api-reference">API Reference</a></h1>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="support"><a class="header" href="#support">Support</a></h1>
+<p>For questions that are not answered by the API reference there is the
+nutils-users support channel at
+<a href="https://matrix.to/#/#nutils-users:matrix.org">#nutils-users:matrix.org</a>. Note
+that you will need to create an account at any Matrix server in order to join
+this channel.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+            </nav>
+
+        </div>
+
+
+
+
+        <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="searcher.js" type="text/javascript" charset="utf-8"></script>
+
+        <script src="clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+
+        <script type="text/javascript">
+        window.addEventListener('load', function() {
+            MathJax.Hub.Register.StartupHook('End', function() {
+                window.setTimeout(window.print, 100);
+            });
+        });
+        </script>
+
+    </body>
+</html>

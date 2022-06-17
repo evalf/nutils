@@ -1,0 +1,266 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>New in Nutils 5 - The Nutils Book</title>
+
+
+        <!-- Custom HTML head -->
+        
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        <link rel="icon" href="../favicon.svg">
+        <link rel="shortcut icon" href="../favicon.png">
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        <link rel="stylesheet" href="../css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="../fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+        <!-- MathJax -->
+        <script async type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item affix "><a href="../about.html">About Nutils</a></li><li class="chapter-item "><a href="../intro.html"><strong aria-hidden="true">1.</strong> How to Read This Book</a></li><li class="chapter-item "><a href="../start.html"><strong aria-hidden="true">2.</strong> Getting Started</a></li><li class="chapter-item "><a href="../install/intro.html"><strong aria-hidden="true">3.</strong> Installation</a><a class="toggle"><div>❱</div></a></li><li><ol class="section"><li class="chapter-item "><a href="../install/nutils.html"><strong aria-hidden="true">3.1.</strong> Installing Nutils</a></li><li class="chapter-item "><a href="../install/matrix.html"><strong aria-hidden="true">3.2.</strong> Installing a Matrix Backend</a></li><li class="chapter-item "><a href="../install/quality.html"><strong aria-hidden="true">3.3.</strong> Quality of Life</a></li><li class="chapter-item "><a href="../install/performance.html"><strong aria-hidden="true">3.4.</strong> Improving Performance</a></li><li class="chapter-item "><a href="../install/containers.html"><strong aria-hidden="true">3.5.</strong> Using Containers</a></li><li class="chapter-item "><a href="../install/remote.html"><strong aria-hidden="true">3.6.</strong> Remote Computing</a></li></ol></li><li class="chapter-item "><a href="../tutorial/intro.html"><strong aria-hidden="true">4.</strong> Tutorial</a><a class="toggle"><div>❱</div></a></li><li><ol class="section"><li class="chapter-item "><a href="../tutorial/theory.html"><strong aria-hidden="true">4.1.</strong> A Little Bit of Theory</a></li><li class="chapter-item "><a href="../tutorial/topovgeom.html"><strong aria-hidden="true">4.2.</strong> Topology vs Geometry</a></li><li class="chapter-item "><a href="../tutorial/bases.html"><strong aria-hidden="true">4.3.</strong> Bases</a></li><li class="chapter-item "><a href="../tutorial/functions.html"><strong aria-hidden="true">4.4.</strong> Functions</a></li><li class="chapter-item "><a href="../tutorial/namespace.html"><strong aria-hidden="true">4.5.</strong> Namespace</a></li><li class="chapter-item "><a href="../tutorial/integrals.html"><strong aria-hidden="true">4.6.</strong> Integrals</a></li><li class="chapter-item "><a href="../tutorial/solvers.html"><strong aria-hidden="true">4.7.</strong> Solvers</a></li><li class="chapter-item "><a href="../tutorial/sampling.html"><strong aria-hidden="true">4.8.</strong> Sampling</a></li><li class="chapter-item "><a href="../tutorial/laplace2d.html"><strong aria-hidden="true">4.9.</strong> 2D Laplace Problem</a></li></ol></li><li class="chapter-item expanded "><a href="../whatsnew/intro.html"><strong aria-hidden="true">5.</strong> What's New</a><a class="toggle"><div>❱</div></a></li><li><ol class="section"><li class="chapter-item "><a href="../whatsnew/v7.html"><strong aria-hidden="true">5.1.</strong> New in Nutils 7</a></li><li class="chapter-item "><a href="../whatsnew/v6.html"><strong aria-hidden="true">5.2.</strong> New in Nutils 6</a></li><li class="chapter-item expanded "><a href="../whatsnew/v5.html" class="active"><strong aria-hidden="true">5.3.</strong> New in Nutils 5</a></li><li class="chapter-item "><a href="../whatsnew/v4.html"><strong aria-hidden="true">5.4.</strong> New in Nutils 4</a></li><li class="chapter-item "><a href="../whatsnew/v3.html"><strong aria-hidden="true">5.5.</strong> New in Nutils 3</a></li><li class="chapter-item "><a href="../whatsnew/v2.html"><strong aria-hidden="true">5.6.</strong> New in Nutils 2</a></li><li class="chapter-item "><a href="../whatsnew/v1.html"><strong aria-hidden="true">5.7.</strong> New in Nutils 1</a></li><li class="chapter-item "><a href="../whatsnew/v0.html"><strong aria-hidden="true">5.8.</strong> New in Nutils 0</a></li></ol></li><li class="chapter-item "><a href="../examples.html"><strong aria-hidden="true">6.</strong> Examples</a></li><li class="chapter-item "><a href="../api.html"><strong aria-hidden="true">7.</strong> API Reference</a></li><li class="chapter-item "><a href="../support.html"><strong aria-hidden="true">8.</strong> Support</a></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">The Nutils Book</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/evalf/nutils" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <h1 id="new-in-nutils-5-farfalle"><a class="header" href="#new-in-nutils-5-farfalle">New in Nutils 5 &quot;farfalle&quot;</a></h1>
+<ul>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v5.2">Nutils 5.2</a> was released on June 11th, 2019</li>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v5.1">Nutils 5.1</a> was released on September 3rd, 2019</li>
+<li><a href="https://github.com/evalf/nutils/releases/tag/v5.0">Nutils 5.0</a> was released on April 3rd, 2020</li>
+</ul>
+<h2 id="matrix-matmul-operator-solve-with-multiple-right-hand-sides"><a class="header" href="#matrix-matmul-operator-solve-with-multiple-right-hand-sides">Matrix matmul operator, solve with multiple right hand sides</a></h2>
+<p>The <code>Matrix.matvec</code> method has been deprecated in favour of the new
+<code>__matmul__</code> (@) operator, which supports multiplication arrays of any
+dimension. The <code>nutils.matrix.Matrix.solve</code> method has been extended to support
+multiple right hand sides::</p>
+<pre><code class="language-python">matrix.matvec(lhs) # deprecated
+matrix @ lhs # new syntax
+matrix @ numpy.stack([lhs1, lhs2, lhs3], axis=1)
+matrix.solve(rhs)
+matrix.solve(numpy.stack([rhs1, rhs2, rhs3], axis=1)
+</code></pre>
+<h2 id="mkls-fgmres-method"><a class="header" href="#mkls-fgmres-method">MKL's fgmres method</a></h2>
+<p>Matrices produced by the <code>MKL</code> backend now support the
+<code>nutils.matrix.Matrix.solve</code> argument solver='fmgres' to use Intel MKL's fgmres
+method.</p>
+<h2 id="thetamethod-time-target"><a class="header" href="#thetamethod-time-target">Thetamethod time target</a></h2>
+<p>The <code>nutils.solver.thetamethod</code> class, as well as its special cases
+<code>impliciteuler</code> and <code>cranknicolson</code>, now have a <code>timetarget</code> argument to
+specify that the formulation contains a time variable::</p>
+<pre><code class="language-python">res = topo.integral('...?t... d:x' @ ns, degree=2)
+solver.impliciteuler('dofs', res, ..., timetarget='t')
+</code></pre>
+<h2 id="new-leveltopo-argument-for-trimming"><a class="header" href="#new-leveltopo-argument-for-trimming">New leveltopo argument for trimming</a></h2>
+<p>In <code>nutils.topology.Topology.trim</code>, in case the levelset cannot be evaluated on
+the to-be-trimmed topology itself, the correct topology can now be specified
+via the new <code>leveltopo</code> argument.</p>
+<h2 id="new-unittest-assertion-assertalmostequal64"><a class="header" href="#new-unittest-assertion-assertalmostequal64">New unittest assertion assertAlmostEqual64</a></h2>
+<p><code>nutils.testing.TestCase</code> now facilitates comparison against base64 encoded,
+compressed, and packed data via the new method
+<code>nutils.testing.TestCase.assertAlmostEqual64</code>. This replaces
+<code>numeric.assert_allclose64</code> which is now deprecated and scheduled for removal
+in Nutils 6.</p>
+<h2 id="fast-locate-for-structured-topology-geometry"><a class="header" href="#fast-locate-for-structured-topology-geometry">Fast locate for structured topology, geometry</a></h2>
+<p>A special case <code>nutils.topology.Topology.locate</code> method for structured
+topologies checks of the geometry is an affine transformation of the natural
+configuration, in which case the trivial inversion is used instead of expensive
+Newton iterations::</p>
+<pre><code class="language-python">topo, geom = mesh.rectilinear([2, 3])
+smp = topo.locate(geom/2-1, [[-.1,.2]])
+# locate detected linear geometry: x = [-1. -1.] + [0.5 0.5] xi ~+2.2e-16
+</code></pre>
+<h2 id="lazy-references-transforms-bases"><a class="header" href="#lazy-references-transforms-bases">Lazy references, transforms, bases</a></h2>
+<p>The introduction of sequence abstractions <code>nutils.elementseq</code> and
+<code>nutils.transformseq</code>, together with and a lazy implementation of
+<code>nutils.function.Basis</code> basis functions, help to prevent the unnecessary
+generation of data. In hierarchically refined topologies, in particular, this
+results in large speedups and a much reduced memory footprint.</p>
+<h2 id="switch-to-treelog"><a class="header" href="#switch-to-treelog">Switch to treelog</a></h2>
+<p>The <code>nutils.log</code> module is deprecated and will be replaced by the externally
+maintained <code>treelog &lt;https://github.com/evalf/treelog&gt;</code>_, which is now an
+installation dependency.</p>
+<h2 id="replace-pariter-parmap-by-fork-range"><a class="header" href="#replace-pariter-parmap-by-fork-range">Replace pariter, parmap by fork, range.</a></h2>
+<p>The <code>nutils.parallel</code> module is largely rewritten. The old methods <code>pariter</code>
+and <code>parmap</code> are replaced by the <code>nutils.parallel.fork</code> context, combined with
+the shared <code>nutils.parallel.range</code> iterator::</p>
+<pre><code class="language-python">indices = parallel.range(10)
+with parallel.fork(nprocs=2) as procid:
+  for index in indices:
+    print('procid={}, index={}'.format(procid, index))
+</code></pre>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../whatsnew/v6.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next" href="../whatsnew/v4.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../whatsnew/v6.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next" href="../whatsnew/v4.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../searcher.js" type="text/javascript" charset="utf-8"></script>
+
+        <script src="../clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </body>
+</html>
