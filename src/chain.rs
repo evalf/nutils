@@ -2,6 +2,7 @@ use crate::operator::{Operator, Transpose, Edges};
 use crate::simplex::Simplex;
 use std::collections::BTreeMap;
 use crate::UnsizedMapping;
+use num::Integer as _;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnsizedChain(Vec<Operator>);
@@ -12,8 +13,33 @@ impl UnsizedChain {
         Self(operators)
     }
     #[inline]
-    pub fn empty() -> Self {
+    pub fn identity() -> Self {
         UnsizedChain(Vec::new())
+    }
+    fn dim_out_in(&self) -> (usize, usize) {
+        let mut dim_in = 0;
+        let mut dim_out = 0;
+        for op in self.0.iter().rev() {
+            if let Some(n) = op.dim_in().checked_sub(dim_out) {
+                dim_in += n;
+                dim_out += n;
+            }
+            dim_out += op.delta_dim();
+        }
+        (dim_out, dim_in)
+    }
+    fn mod_out_in(&self) -> (usize, usize) {
+        let mut mod_out = 1;
+        let mut mod_in = 1;
+        for op in self.0.iter().rev() {
+            let n = mod_out.lcm(&op.mod_in());
+            mod_in *= n / mod_out;
+            mod_out = n / op.mod_in() * op.mod_out();
+        }
+        (mod_out, mod_in)
+    }
+    pub fn iter(&self) -> impl Iterator<Item = &Operator> + DoubleEndedIterator {
+        self.0.iter()
     }
     pub fn push(&mut self, operator: impl Into<Operator>) {
         self.0.push(operator.into())
@@ -94,11 +120,31 @@ impl UnsizedChain {
         };
         (common, tail1, tail2)
     }
+    pub fn remove_common_prefix_opt_lhs(&self, other: &Self) -> (Self, Self, Self) {
+        let (common, tail1, tail2) = self.remove_common_prefix(other);
+        // Move transposes at the front of `tail1` to `tail2`.
+        let mut tail1: Vec<_> = tail1.into();
+        let mut tail2: Vec<_> = tail2.into();
+        tail1.reverse();
+        tail2.reverse();
+        while let Some(mut op) = tail1.pop() {
+            if let Some(transpose) = op.as_transpose_mut() {
+                transpose.reverse();
+                tail2.push(op);
+            } else {
+                tail1.push(op);
+                break;
+            }
+        }
+        tail1.reverse();
+        tail2.reverse();
+        (common, tail1.into(), tail2.into())
+    }
 }
 
 impl UnsizedMapping for UnsizedChain {
     fn dim_in(&self) -> usize {
-        self.0.iter().map(|op| op.dim_in()).sum()
+        self.dim_out_in().1
     }
     fn delta_dim(&self) -> usize {
         self.0.iter().map(|op| op.delta_dim()).sum()
@@ -108,11 +154,11 @@ impl UnsizedMapping for UnsizedChain {
             op.add_offset(offset);
         }
     }
-    fn mod_out(&self) -> usize {
-        self.0.iter().map(|op| op.mod_out()).product()
-    }
     fn mod_in(&self) -> usize {
-        self.0.iter().map(|op| op.mod_in()).product()
+        self.mod_out_in().1
+    }
+    fn mod_out(&self) -> usize {
+        self.mod_out_in().0
     }
     fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize {
         self.0
@@ -150,6 +196,24 @@ impl IntoIterator for UnsizedChain {
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
+    }
+}
+
+impl<const N: usize> From<[Operator; N]> for UnsizedChain {
+    fn from(operators: [Operator; N]) -> Self {
+        operators.into_iter().collect()
+    }
+}
+
+impl From<Vec<Operator>> for UnsizedChain {
+    fn from(operators: Vec<Operator>) -> Self {
+        Self(operators)
+    }
+}
+
+impl From<UnsizedChain> for Vec<Operator> {
+    fn from(chain: UnsizedChain) -> Self {
+        chain.0
     }
 }
 
@@ -755,7 +819,7 @@ mod tests {
             a.remove_common_prefix(&b),
             (
                 UnsizedChain::new(vec![c1.clone(), c1.clone()]),
-                UnsizedChain::empty(),
+                UnsizedChain::identity(),
                 UnsizedChain::new(vec![e1.clone(), swap_ec1.clone(), swap_ec1.clone()]),
             )
         );

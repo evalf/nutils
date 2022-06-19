@@ -224,6 +224,7 @@ impl UniformPoints {
     pub fn new(points: impl Into<Box<[f64]>>, point_dim: usize) -> Self {
         let points: Rc<Box<[FiniteF64]>> = Rc::new(unsafe { std::mem::transmute(points.into()) });
         assert_eq!(points.len() % point_dim, 0);
+        assert_ne!(point_dim, 0);
         let npoints = points.len() / point_dim;
         UniformPoints {
             points,
@@ -411,7 +412,13 @@ impl Operator {
     const fn is_transpose(&self) -> bool {
         matches!(self, Self::Transpose(_))
     }
-    fn as_transpose_mut(&mut self) -> Option<&mut Transpose> {
+    pub fn as_transpose(&self) -> Option<&Transpose> {
+        match self {
+            Self::Transpose(transpose) => Some(transpose),
+            _ => None,
+        }
+    }
+    pub fn as_transpose_mut(&mut self) -> Option<&mut Transpose> {
         match self {
             Self::Transpose(ref mut transpose) => Some(transpose),
             _ => None,

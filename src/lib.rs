@@ -4,20 +4,18 @@ pub mod operator;
 pub mod simplex;
 pub mod sequence;
 
-pub trait Sequence {
-    fn len(&self) -> usize;
-    fn is_empty(&self) -> bool {
-        self.len() == 0
+pub trait Mapping {
+    fn len_out(&self) -> usize;
+    fn len_in(&self) -> usize;
+    fn dim_out(&self) -> usize {
+        self.dim_in() + self.delta_dim()
     }
-    fn root_len(&self) -> usize;
-    fn dim(&self) -> usize;
-    fn root_dim(&self) -> usize;
-    fn delta_dim(&self) -> usize {
-        self.root_dim() - self.dim()
-    }
+    fn dim_in(&self) -> usize;
+    fn delta_dim(&self) -> usize;
+    fn add_offset(&mut self, offset: usize);
     fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64]) -> usize;
     fn apply_inplace(&self, index: usize, coordinates: &mut[f64]) -> Option<usize> {
-        if index < self.len() {
+        if index < self.len_in() {
             Some(self.apply_inplace_unchecked(index, coordinates))
         } else {
             None
@@ -25,15 +23,19 @@ pub trait Sequence {
     }
     fn apply_index_unchecked(&self, index: usize) -> usize;
     fn apply_index(&self, index: usize) -> Option<usize> {
-        if index < self.len() {
+        if index < self.len_in() {
             Some(self.apply_index_unchecked(index))
         } else {
             None
         }
     }
-    fn apply_indices_inplace_unchecked(&self, indices: &mut [usize]);
+    fn apply_indices_inplace_unchecked(&self, indices: &mut [usize]) {
+        for index in indices.iter_mut() {
+            *index = self.apply_index_unchecked(*index);
+        }
+    }
     fn apply_indices(&self, indices: &[usize]) -> Option<Vec<usize>> {
-        if indices.iter().all(|index| *index < self.len()) {
+        if indices.iter().all(|index| *index < self.len_in()) {
             let mut indices = indices.to_vec();
             self.apply_indices_inplace_unchecked(&mut indices);
             Some(indices)
@@ -43,12 +45,13 @@ pub trait Sequence {
     }
     fn unapply_indices_unchecked(&self, indices: &[usize]) -> Vec<usize>;
     fn unapply_indices(&self, indices: &[usize]) -> Option<Vec<usize>> {
-        if indices.iter().all(|index| *index < self.len()) {
+        if indices.iter().all(|index| *index < self.len_out()) {
             Some(self.unapply_indices_unchecked(indices))
         } else {
             None
         }
     }
+    fn is_identity(&self) -> bool;
 }
 
 pub trait UnsizedMapping {
