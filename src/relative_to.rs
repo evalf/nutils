@@ -1,17 +1,16 @@
-use crate::finite::Mapping;
-use crate::infinite::{InfiniteMapping, Edges, Elementary, Transpose};
+use crate::finite::Map;
+use crate::finite::{WithBounds, Compose, Composition, Concatenation, ConcreteMap};
+use crate::infinite::{Edges, Elementary, InfiniteMap, Transpose};
 use crate::simplex::Simplex;
 use std::collections::BTreeMap;
-use crate::finite::{Bounded, Concatenation, Composition, Compose};
+use std::iter;
 
 trait RemoveCommonPrefix: Sized {
     fn remove_common_prefix(&self, other: &Self) -> (Self, Self, Self);
     fn remove_common_prefix_opt_lhs(&self, other: &Self) -> (Self, Self, Self);
 }
 
-fn split_heads(
-    items: &[Elementary],
-) -> BTreeMap<Elementary, (Option<Transpose>, Vec<Elementary>)> {
+fn split_heads(items: &[Elementary]) -> BTreeMap<Elementary, (Option<Transpose>, Vec<Elementary>)> {
     let mut heads = BTreeMap::new();
     for (i, item) in items.iter().enumerate() {
         if let Some((transpose, head, mut tail)) = item.shift_left(&items[..i]) {
@@ -76,10 +75,8 @@ impl RemoveCommonPrefix for Vec<Elementary> {
         (common, tail1, tail2)
     }
     fn remove_common_prefix_opt_lhs(&self, other: &Self) -> (Self, Self, Self) {
-        let (common, tail1, tail2) = self.remove_common_prefix(other);
+        let (common, mut tail1, mut tail2) = self.remove_common_prefix(other);
         // Move transposes at the front of `tail1` to `tail2`.
-        let mut tail1: Vec<_> = tail1.into();
-        let mut tail2: Vec<_> = tail2.into();
         tail1.reverse();
         tail2.reverse();
         while let Some(mut item) = tail1.pop() {
@@ -97,81 +94,110 @@ impl RemoveCommonPrefix for Vec<Elementary> {
     }
 }
 
-trait RelativeTo<Target: Mapping> {
-    type Output: Mapping;
-
-    fn relative_to(&self, target: &Target) -> Option<Self::Output>;
+trait RelativeTo<Target: Map> {
+    fn relative_to(&self, target: &Target) -> Option<ConcreteMap>;
 }
 
-type ElemComp = Bounded<Vec<Elementary>>;
-
-impl RelativeTo<Self> for ElemComp {
-    type Output = Self;
-
-    fn relative_to(&self, target: &Self) -> Option<Self> {
-        let (common, rem, rel) = target.get_unsized().remove_common_prefix_opt_lhs(&self.get_unsized());
+impl RelativeTo<Self> for WithBounds<Vec<Elementary>> {
+    fn relative_to(&self, target: &Self) -> Option<ConcreteMap> {
+        let (common, rem, rel) = target
+            .get_infinite()
+            .remove_common_prefix_opt_lhs(&self.get_infinite());
         rem.is_identity()
-            .then(|| Self::new(rel, target.dim_in(), target.len_in()).unwrap())
-        // TODO: Self::new_unchecked
+            .then(|| Self::new_unchecked(rel, target.dim_in(), target.len_in()).into())
     }
 }
 
 impl<Item, Target> RelativeTo<Target> for Concatenation<Item>
 where
-    Item: Mapping + RelativeTo<Target>,
-    Target: Mapping,
+    Item: Map + RelativeTo<Target>,
+    Target: Map,
 {
-    type Output = Concatenation<Item::Output>;
-
-    fn relative_to(&self, target: &Target) -> Option<Self::Output> {
+    fn relative_to(&self, target: &Target) -> Option<ConcreteMap> {
         self.iter()
             .map(|item| item.relative_to(target))
             .collect::<Option<_>>()
-            .map(|rel_items| Concatenation::new(rel_items))
+            .map(|rel_items| Concatenation::new(rel_items).into())
     }
 }
 
-//impl RelativeTo<Concatenation<ElemComp>> for ElemComp {
-//    type Output = Composition<ElemComp, Concatenation<ElemComp>>;
-//
-//    fn relative_to(&self, targets: &Concatenation<ElemComp>) -> Option<Self::Output> {
-//        let mut rels_indices = Vec::new();
-//        let mut offset = 0;
-//        for (itarget, target) in targets.items.iter().enumerate() {
-//            let (common, rem, rel) = target.chain.remove_common_prefix_opt_lhs(&self.chain);
-//            // if rem.is_identity() {
-//            //    return rel + offset;
-//            // }
-//            if rem.dim_out() == 0 {
-//                let mut rem_indices: Vec<usize> = (0..).take(target.len_in()).collect();
-//                rem.apply_indices_inplace(&mut rem_indices);
-//                // TODO: First collect rem_indices for all targets, then remove
-//                // the common tail from all rels and then unapply the rem
-//                // indices on the rels.
-//                rels_indices.push((rel, itarget, rem_indices, offset))
-//            }
-//            offset += target.len_in();
-//        }
-//        // TODO: Split off common tail.
-//        // TODO: unapply indices and build map
-//        //      let rel_indices = rel.unapply_indices_unchecked(&rem_indices);
-//        //      if !rel_indices.is_empty() {
-//        //          // update map
-//        //          //tails.push((rel, offset, rel_indices));
-//        //      }
-//        // TODO: return None if we didn't find everything
-//        unimplemented! {}
-//        // RelativeToConcatenateChain { ... }
-//        // Composition<ElemComp, Concatenate<ElemComp>>
-//    }
-//}
+// trait PartialMakeRelative<Target> {
+//     fn partial_make_relative(&self, target: Target) -> Option<Vec<(Vec<Elementary>, Vec<usize>)>>;
+// }
+
+impl RelativeTo<Concatenation<Self>> for WithBounds<Vec<Elementary>> {
+    fn relative_to(&self, targets: &Concatenation<Self>) -> Option<ConcreteMap> {
+        let mut rels_indices = Vec::new();
+        let mut offset = 0;
+        for target in targets.iter() {
+            let (common, rem, rel) = target.get_infinite().remove_common_prefix_opt_lhs(&self.get_infinite());
+            let slice = Elementary::new_slice(offset, target.len_in(), targets.len_in());
+            if rem.is_identity() {
+                let rel: Vec<Elementary> = iter::once(slice).chain(rel).collect();
+                let rel = WithBounds::new_unchecked(rel, targets.dim_in(), targets.len_in());
+                return Some(ConcreteMap::Elementary(rel));
+            }
+            if rem.dim_out() == 0 {
+                let mut indices: Vec<usize> = (0..target.len_in()).collect();
+                rem.apply_indices_inplace(&mut indices);
+                rels_indices.push((rel, slice, indices))
+            }
+            offset += target.len_in();
+        }
+        // TODO: Split off common tail.
+        let mut concat_indices = Vec::new();
+        let mut rels = Vec::new();
+        for (irel, (rel, slice, out_indices)) in rels_indices.into_iter().enumerate() {
+            let in_indices = rel.unapply_indices(&out_indices);
+            let offset = irel * self.len_in();
+            concat_indices.extend(in_indices.into_iter().map(|i| i + offset));
+            let rel: Vec<Elementary> = iter::once(slice).chain(rel).collect();
+            let rel = WithBounds::new_unchecked(rel, targets.dim_in(), targets.len_in());
+            let rel = ConcreteMap::Elementary(rel);
+            rels.push(rel);
+        }
+        if concat_indices.len() != self.len_in() {
+            return None;
+        }
+        let take = Elementary::new_take(concat_indices, self.len_in() * rels.len());
+        let take: ConcreteMap = WithBounds::new_unchecked(vec![take], self.dim_in(), self.len_in()).into();
+        let concat = ConcreteMap::new_concatenation(rels);
+        Some(take.compose(concat).unwrap().into())
+    }
+}
+
+impl RelativeTo<ConcreteMap> for WithBounds<Vec<Elementary>> {
+    fn relative_to(&self, target: &ConcreteMap) -> Option<ConcreteMap> {
+        match target {
+            ConcreteMap::Elementary(target) => self.relative_to(target),
+            ConcreteMap::Concatenation(target) => {
+                let c: Option<Vec<WithBounds<Vec<Elementary>>>> = target.iter().map(|item| match item {
+                    ConcreteMap::Elementary(item) => Some(item.clone()),
+                    _ => None,
+                }).collect();
+                c.and_then(|c| self.relative_to(&Concatenation::new(c)))
+            }
+            _ => None
+        }
+    }
+}
+
+impl RelativeTo<Self> for ConcreteMap {
+    fn relative_to(&self, target: &Self) -> Option<ConcreteMap> {
+        match self {
+            ConcreteMap::Elementary(source) => source.relative_to(target),
+            ConcreteMap::Concatenation(source) => source.relative_to(target),
+            _ => None
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::infinite::*;
     use crate::simplex::Simplex::*;
     use approx::assert_abs_diff_eq;
-    use crate::infinite::*;
     use std::iter;
 
     #[test]
@@ -193,10 +219,10 @@ mod tests {
 
     macro_rules! elem_comp {
         (dim=$dim_out:literal, len=$len_out:literal) => {
-            ElemComp::new(Vec::new(), $dim_out, $len_out).unwrap()
+            WithBounds::<Vec<Elementary>>::new(Vec::new(), $dim_out, $len_out).unwrap()
         };
         (dim=$dim_out:literal, len=$len_out:literal <- $($item:expr),*) => {
-            ElemComp::new(vec![$(Elementary::from($item)),*], $dim_out, $len_out).unwrap()
+            WithBounds::<Vec<Elementary>>::new(vec![$(Elementary::from($item)),*], $dim_out, $len_out).unwrap()
         };
     }
 
@@ -219,7 +245,7 @@ mod tests {
                     });
                 let simplex_dim = simplex_dim + $simplex.dim();
             )*
-            assert_eq!(simplex_dim, a.dim_in(), "given simplices don't add up to the input dimension");
+            assert_eq!(simplex_dim, a.dim_in(), "the given simplices don't add up to the input dimension");
             let pad: Vec<f64> = iter::repeat(0.0).take(a.delta_dim()).collect();
             let coords: Vec<f64> = coords.flat_map(|coord| [&coord[..], &pad].concat()).collect();
             // Test if every input maps to the same output for both `a` and `b`.
@@ -234,52 +260,15 @@ mod tests {
         }};
     }
 
-//    macro_rules! assert_partial_relative_to {
-//        ($a:expr, $b:expr $(, $simplex:ident)*) => {{
-//            let a = $a;
-//            let b = $b;
-//            let (rel, indices) = b.partial_relative_to(&a).unwrap();
-//
-//            let (rel_compressed, b_compressed) = if let Some(indices) = indices {
-//                let b_indices: Vec<_> = (0..).take(b.len_in()).filter_map(|i| indices.contains(&i).then(|| i)).collect();
-//                let mut tmp: Vec<_> = (0..rel.len_in()).collect();
-//                tmp.sort_by_key(|&i| &indices[i]);
-//                let mut rel_indices: Vec<_> = (0..rel.len_in()).collect();
-//                rel_indices.sort_by_key(|&i| &tmp[i]);
-//                let mut b = b.clone();
-//                b.push(Elementary::new_take(b_indices, b.len_in()));
-//                let mut rel = rel.clone();
-//                rel.push(Elementary::new_take(rel_indices, rel.len_in()));
-//                (rel, b)
-//            } else {
-//                (rel, b)
-//            };
-//
-//            assert_equiv_chains!(rel_compressed.compose(a).unwrap(), &b_compressed $(, $simplex)*);
-//        }};
-//    }
-//
-//    #[test]
-//    fn partial_relative_to() {
-//        assert_partial_relative_to!(
-//            elem_comp!(dim=1, len=2 <- Children::new(Line), Take::new([0,3,1], 4)),
-//            elem_comp!(dim=1, len=2 <- Children::new(Line), Children::new(Line)),
-//            Line
-//        );
-//        assert_partial_relative_to!(
-//            elem_comp!(dim=0, len=4 <- Take::new([0,3,1], 4)),
-//            elem_comp!(dim = 0, len = 4)
-//        );
-//        assert_partial_relative_to!(
-//            elem_comp!(dim=1, len=2 <- Children::new(Line)),
-//            elem_comp!(dim=1, len=2 <- Edges::new(Line))
-//        );
-//    }
-
     #[test]
     fn rel_to() {
-        let a = elem_comp!(dim=1, len=2 <- Children::new(Line));
-        let b = elem_comp!(dim=1, len=2 <- Children::new(Line), Children::new(Line));
-        assert_eq!(b.relative_to(&a), Some(elem_comp!(dim=1, len=4 <- Children::new(Line))));
+        let a1: ConcreteMap = elem_comp!(dim=1, len=2 <- Children::new(Line), Take::new([0, 2], 4)).into();
+        let a2: ConcreteMap = elem_comp!(dim=1, len=2 <- Children::new(Line), Take::new([1, 3], 4), Children::new(Line)).into();
+        let a = ConcreteMap::new_concatenation(vec![a1, a2].into());
+        let b: ConcreteMap = elem_comp!(dim=1, len=2 <- Children::new(Line), Children::new(Line)).into();
+        assert_equiv_chains!(
+            b.relative_to(&a).unwrap().compose(a.clone()).unwrap(),
+            b,
+            Line);
     }
 }

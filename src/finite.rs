@@ -1,6 +1,6 @@
-use crate::infinite::InfiniteMapping;
+use crate::infinite::{InfiniteMap, Elementary};
 
-pub trait Mapping {
+pub trait Map {
     fn len_out(&self) -> usize;
     fn len_in(&self) -> usize;
     fn dim_out(&self) -> usize {
@@ -59,25 +59,25 @@ impl std::fmt::Display for ComposeCodomainDomainMismatch {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "The codomain of the first maping doesn't match the domain of the second mapping,"
+            "The codomain of the first map doesn't match the domain of the second map,"
         )
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Composition<M1: Mapping, M2: Mapping>(M1, M2);
+pub struct Composition<M1: Map, M2: Map>(M1, M2);
 
-impl<M1: Mapping, M2: Mapping> Composition<M1, M2> {
-    pub fn new(mapping1: M1, mapping2: M2) -> Result<Self, ComposeCodomainDomainMismatch> {
-        if mapping1.len_out() == mapping2.len_in() && mapping1.dim_out() == mapping2.dim_in() {
-            Ok(Self(mapping1, mapping2))
+impl<M1: Map, M2: Map> Composition<M1, M2> {
+    pub fn new(map1: M1, map2: M2) -> Result<Self, ComposeCodomainDomainMismatch> {
+        if map1.len_out() == map2.len_in() && map1.dim_out() == map2.dim_in() {
+            Ok(Self(map1, map2))
         } else {
             Err(ComposeCodomainDomainMismatch)
         }
     }
 }
 
-impl<M1: Mapping, M2: Mapping> Mapping for Composition<M1, M2> {
+impl<M1: Map, M2: Map> Map for Composition<M1, M2> {
     fn len_in(&self) -> usize {
         self.0.len_in()
     }
@@ -115,16 +115,19 @@ impl<M1: Mapping, M2: Mapping> Mapping for Composition<M1, M2> {
     }
 }
 
-pub trait Compose: Mapping + Sized {
-    fn compose<Rhs: Mapping>(self, rhs: Rhs) -> Result<Composition<Self, Rhs>, ComposeCodomainDomainMismatch> {
+pub trait Compose: Map + Sized {
+    fn compose<Rhs: Map>(
+        self,
+        rhs: Rhs,
+    ) -> Result<Composition<Self, Rhs>, ComposeCodomainDomainMismatch> {
         Composition::new(self, rhs)
     }
 }
 
-impl<M: Mapping> Compose for M {}
+impl<M: Map> Compose for M {}
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Concatenation<Item: Mapping> {
+pub struct Concatenation<Item: Map> {
     dim_in: usize,
     delta_dim: usize,
     len_out: usize,
@@ -132,7 +135,7 @@ pub struct Concatenation<Item: Mapping> {
     items: Vec<Item>,
 }
 
-impl<Item: Mapping> Concatenation<Item> {
+impl<Item: Map> Concatenation<Item> {
     pub fn new(items: Vec<Item>) -> Self {
         // TODO: Return `Result<Self, ...>`.
         let first = items.first().unwrap();
@@ -168,7 +171,7 @@ impl<Item: Mapping> Concatenation<Item> {
     }
 }
 
-impl<Item: Mapping> Mapping for Concatenation<Item> {
+impl<Item: Map> Map for Concatenation<Item> {
     fn dim_in(&self) -> usize {
         self.dim_in
     }
@@ -204,56 +207,59 @@ impl<Item: Mapping> Mapping for Concatenation<Item> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum NewBoundedError {
+pub enum NewWithBoundsError {
     DimensionTooSmall,
     LengthNotAMultipleOfRepetition,
 }
 
-impl std::error::Error for NewBoundedError {}
+impl std::error::Error for NewWithBoundsError {}
 
-impl std::fmt::Display for NewBoundedError {
+impl std::fmt::Display for NewWithBoundsError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::DimensionTooSmall => write!(f, "The dimension of the sized mapping is smaller than the minimum dimension of the unsized mapping."),
-            Self::LengthNotAMultipleOfRepetition => write!(f, "The length of the sized mapping is not a multiple of the repetition length of the unsized mapping."),
+            Self::DimensionTooSmall => write!(f, "The dimension of the sized map is smaller than the minimum dimension of the unsized map."),
+            Self::LengthNotAMultipleOfRepetition => write!(f, "The length of the sized map is not a multiple of the repetition length of the unsized map."),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Bounded<M: InfiniteMapping> {
-    mapping: M,
+pub struct WithBounds<M: InfiniteMap> {
+    map: M,
     delta_dim: usize,
     dim_in: usize,
     len_out: usize,
     len_in: usize,
 }
 
-impl<M: InfiniteMapping> Bounded<M> {
-    pub fn new(mapping: M, dim_out: usize, len_out: usize) -> Result<Self, NewBoundedError> {
-        if dim_out < mapping.dim_out() {
-            Err(NewBoundedError::DimensionTooSmall)
-        } else if len_out % mapping.mod_out() != 0 {
-            Err(NewBoundedError::LengthNotAMultipleOfRepetition)
+impl<M: InfiniteMap> WithBounds<M> {
+    pub fn new(map: M, dim_out: usize, len_out: usize) -> Result<Self, NewWithBoundsError> {
+        if dim_out < map.dim_out() {
+            Err(NewWithBoundsError::DimensionTooSmall)
+        } else if len_out % map.mod_out() != 0 {
+            Err(NewWithBoundsError::LengthNotAMultipleOfRepetition)
         } else {
-            let delta_dim = mapping.delta_dim();
-            let dim_in = dim_out - delta_dim;
-            let len_in = len_out / mapping.mod_out() * mapping.mod_in();
-            Ok(Self {
-                mapping,
-                delta_dim,
-                dim_in,
-                len_out,
-                len_in,
-            })
+            Ok(Self::new_unchecked(map, dim_out, len_out))
         }
     }
-    pub fn get_unsized(&self) -> &M {
-        &self.mapping
+    pub(crate) fn new_unchecked(map: M, dim_out: usize, len_out: usize) -> Self {
+        let delta_dim = map.delta_dim();
+        let dim_in = dim_out - delta_dim;
+        let len_in = len_out / map.mod_out() * map.mod_in();
+        Self {
+            map,
+            delta_dim,
+            dim_in,
+            len_out,
+            len_in,
+        }
+    }
+    pub fn get_infinite(&self) -> &M {
+        &self.map
     }
 }
 
-impl<M: InfiniteMapping> Mapping for Bounded<M> {
+impl<M: InfiniteMap> Map for WithBounds<M> {
     fn len_in(&self) -> usize {
         self.len_in
     }
@@ -267,23 +273,98 @@ impl<M: InfiniteMapping> Mapping for Bounded<M> {
         self.delta_dim
     }
     fn add_offset(&mut self, offset: usize) {
-        self.mapping.add_offset(offset);
+        self.map.add_offset(offset);
         self.dim_in += offset;
     }
     fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64]) -> usize {
-        self.mapping
-            .apply_inplace(index, coordinates, self.dim_out())
+        self.map.apply_inplace(index, coordinates, self.dim_out())
     }
     fn apply_index_unchecked(&self, index: usize) -> usize {
-        self.mapping.apply_index(index)
+        self.map.apply_index(index)
     }
     fn apply_indices_inplace_unchecked(&self, indices: &mut [usize]) {
-        self.mapping.apply_indices_inplace(indices)
+        self.map.apply_indices_inplace(indices)
     }
     fn unapply_indices_unchecked(&self, indices: &[usize]) -> Vec<usize> {
-        self.mapping.unapply_indices(indices)
+        self.map.unapply_indices(indices)
     }
     fn is_identity(&self) -> bool {
-        self.mapping.is_identity()
+        self.map.is_identity()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConcreteMap {
+    Elementary(WithBounds<Vec<Elementary>>),
+    Composition(Box<Composition<ConcreteMap, ConcreteMap>>),
+    Concatenation(Concatenation<ConcreteMap>),
+}
+
+impl ConcreteMap {
+    pub fn compose(self, other: Self) -> Result<Self, ComposeCodomainDomainMismatch> {
+        Ok(Composition::new(self, other)?.into())
+    }
+    pub fn new_concatenation(items: Vec<ConcreteMap>) -> Self {
+        // TODO: unravel nested concatenations
+        Self::Concatenation(Concatenation::new(items))
+    }
+}
+
+macro_rules! dispatch {
+    ($vis:vis fn $fn:ident(&$self:ident $(, $arg:ident: $ty:ty)*) $($ret:tt)*) => {
+        #[inline]
+        $vis fn $fn(&$self $(, $arg: $ty)*) $($ret)* {
+            match $self {
+                ConcreteMap::Elementary(var) => var.$fn($($arg),*),
+                ConcreteMap::Composition(var) => var.$fn($($arg),*),
+                ConcreteMap::Concatenation(var) => var.$fn($($arg),*),
+            }
+        }
+    };
+    ($vis:vis fn $fn:ident(&mut $self:ident $(, $arg:ident: $ty:ty)*) $($ret:tt)*) => {
+        #[inline]
+        $vis fn $fn(&mut $self $(, $arg: $ty)*) $($ret)* {
+            match $self {
+                ConcreteMap::Elementary(var) => var.$fn($($arg),*),
+                ConcreteMap::Composition(var) => var.$fn($($arg),*),
+                ConcreteMap::Concatenation(var) => var.$fn($($arg),*),
+            }
+        }
+    };
+}
+
+impl Map for ConcreteMap {
+    dispatch!{fn len_out(&self) -> usize}
+    dispatch!{fn len_in(&self) -> usize}
+    dispatch!{fn dim_out(&self) -> usize}
+    dispatch!{fn dim_in(&self) -> usize}
+    dispatch!{fn delta_dim(&self) -> usize}
+    dispatch!{fn add_offset(&mut self, offset: usize)}
+    dispatch!{fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64]) -> usize}
+    dispatch!{fn apply_inplace(&self, index: usize, coordinates: &mut [f64]) -> Option<usize>}
+    dispatch!{fn apply_index_unchecked(&self, index: usize) -> usize}
+    dispatch!{fn apply_index(&self, index: usize) -> Option<usize>}
+    dispatch!{fn apply_indices_inplace_unchecked(&self, indices: &mut [usize])}
+    dispatch!{fn apply_indices(&self, indices: &[usize]) -> Option<Vec<usize>>}
+    dispatch!{fn unapply_indices_unchecked(&self, indices: &[usize]) -> Vec<usize>}
+    dispatch!{fn unapply_indices(&self, indices: &[usize]) -> Option<Vec<usize>>}
+    dispatch!{fn is_identity(&self) -> bool}
+}
+
+impl From<WithBounds<Vec<Elementary>>> for ConcreteMap {
+    fn from(map: WithBounds<Vec<Elementary>>) -> Self {
+        ConcreteMap::Elementary(map)
+    }
+}
+
+impl From<Composition<ConcreteMap, ConcreteMap>> for ConcreteMap {
+    fn from(map: Composition<ConcreteMap, ConcreteMap>) -> Self {
+        ConcreteMap::Composition(Box::new(map))
+    }
+}
+
+impl From<Concatenation<ConcreteMap>> for ConcreteMap {
+    fn from(map: Concatenation<ConcreteMap>) -> Self {
+        ConcreteMap::Concatenation(map)
     }
 }

@@ -1,13 +1,13 @@
 use crate::finite_f64::FiniteF64;
 use crate::simplex::Simplex;
 use num::Integer as _;
-use std::rc::Rc;
 use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
 
-pub trait InfiniteMapping {
+pub trait InfiniteMap {
     // Minimum dimension of the input coordinate. If the dimension of the input
-    // coordinate of [InfiniteMapping::apply()] is larger than the minimum, then
-    // the mapping of the surplus is the identity mapping.
+    // coordinate of [InfiniteMap::apply()] is larger than the minimum, then
+    // the map of the surplus is the identity map.
     fn dim_in(&self) -> usize;
     // Minimum dimension of the output coordinate.
     fn dim_out(&self) -> usize {
@@ -16,7 +16,7 @@ pub trait InfiniteMapping {
     // Difference in dimension of the output and input coordinate.
     fn delta_dim(&self) -> usize;
     fn add_offset(&mut self, offset: usize);
-    // Modulus of the input index. The mapping repeats itself at index `mod_in`
+    // Modulus of the input index. The map repeats itself at index `mod_in`
     // and the output index is incremented with `in_index / mod_in * mod_out`.
     fn mod_in(&self) -> usize;
     // Modulus if the output index.
@@ -70,7 +70,7 @@ impl Transpose {
     }
 }
 
-impl InfiniteMapping for Transpose {
+impl InfiniteMap for Transpose {
     fn dim_in(&self) -> usize {
         0
     }
@@ -127,7 +127,7 @@ impl Take {
     }
 }
 
-impl InfiniteMapping for Take {
+impl InfiniteMap for Take {
     fn dim_in(&self) -> usize {
         0
     }
@@ -163,6 +163,57 @@ impl InfiniteMapping for Take {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Slice {
+    start: usize,
+    len_in: usize,
+    len_out: usize,
+}
+
+impl Slice {
+    pub fn new(start: usize, len_in: usize, len_out: usize) -> Self {
+        assert!(len_out >= start + len_in);
+        Slice {
+            start,
+            len_in,
+            len_out,
+        }
+    }
+}
+
+impl InfiniteMap for Slice {
+    fn dim_in(&self) -> usize {
+        0
+    }
+    fn delta_dim(&self) -> usize {
+        0
+    }
+    fn add_offset(&mut self, _offset: usize) {}
+    fn mod_in(&self) -> usize {
+        self.len_in
+    }
+    fn mod_out(&self) -> usize {
+        self.len_out
+    }
+    fn apply_inplace(&self, index: usize, _coordinates: &mut [f64], _stride: usize) -> usize {
+        self.apply_index(index)
+    }
+    fn apply_index(&self, index: usize) -> usize {
+        self.start + index % self.len_in + index / self.len_in * self.len_out
+    }
+    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+        indices
+            .iter()
+            .filter_map(|index| {
+                let (j, i) = divmod(*index, self.len_out);
+                (self.start..self.start + self.len_in)
+                    .contains(&i)
+                    .then(|| i - self.start + j * self.len_in)
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Children(Simplex, usize);
 
 impl Children {
@@ -171,7 +222,7 @@ impl Children {
     }
 }
 
-impl InfiniteMapping for Children {
+impl InfiniteMap for Children {
     fn dim_in(&self) -> usize {
         self.0.dim() + self.1
     }
@@ -217,7 +268,7 @@ impl Edges {
     }
 }
 
-impl InfiniteMapping for Edges {
+impl InfiniteMap for Edges {
     fn dim_in(&self) -> usize {
         self.0.edge_dim() + self.1
     }
@@ -277,7 +328,7 @@ impl UniformPoints {
     }
 }
 
-impl InfiniteMapping for UniformPoints {
+impl InfiniteMap for UniformPoints {
     fn dim_in(&self) -> usize {
         self.offset
     }
@@ -317,6 +368,7 @@ impl InfiniteMapping for UniformPoints {
 pub enum Elementary {
     Transpose(Transpose),
     Take(Take),
+    Slice(Slice),
     Children(Children),
     Edges(Edges),
     UniformPoints(UniformPoints),
@@ -330,6 +382,10 @@ impl Elementary {
     #[inline]
     pub fn new_take(indices: impl Into<Box<[usize]>>, len: usize) -> Self {
         Self::Take(Take::new(indices, len))
+    }
+    #[inline]
+    pub fn new_slice(start: usize, len_in: usize, len_out: usize) -> Self {
+        Self::Slice(Slice::new(start, len_in, len_out))
     }
     #[inline]
     pub fn new_children(simplex: Simplex) -> Self {
@@ -476,6 +532,7 @@ macro_rules! dispatch {
             match $self {
                 Elementary::Transpose(var) => var.$fn($($arg),*),
                 Elementary::Take(var) => var.$fn($($arg),*),
+                Elementary::Slice(var) => var.$fn($($arg),*),
                 Elementary::Children(var) => var.$fn($($arg),*),
                 Elementary::Edges(var) => var.$fn($($arg),*),
                 Elementary::UniformPoints(var) => var.$fn($($arg),*),
@@ -488,6 +545,7 @@ macro_rules! dispatch {
             match $self {
                 Elementary::Transpose(var) => var.$fn($($arg),*),
                 Elementary::Take(var) => var.$fn($($arg),*),
+                Elementary::Slice(var) => var.$fn($($arg),*),
                 Elementary::Children(var) => var.$fn($($arg),*),
                 Elementary::Edges(var) => var.$fn($($arg),*),
                 Elementary::UniformPoints(var) => var.$fn($($arg),*),
@@ -496,7 +554,7 @@ macro_rules! dispatch {
     };
 }
 
-impl InfiniteMapping for Elementary {
+impl InfiniteMap for Elementary {
     dispatch! {fn dim_in(&self) -> usize}
     dispatch! {fn delta_dim(&self) -> usize}
     dispatch! {fn add_offset(&mut self, offset: usize)}
@@ -521,6 +579,12 @@ impl From<Take> for Elementary {
     }
 }
 
+impl From<Slice> for Elementary {
+    fn from(slice: Slice) -> Self {
+        Self::Slice(slice)
+    }
+}
+
 impl From<Children> for Elementary {
     fn from(children: Children) -> Self {
         Self::Children(children)
@@ -539,7 +603,7 @@ impl From<UniformPoints> for Elementary {
     }
 }
 
-fn dim_out_in<M: InfiniteMapping>(items: &[M]) -> (usize, usize) {
+fn dim_out_in<M: InfiniteMap>(items: &[M]) -> (usize, usize) {
     let mut dim_in = 0;
     let mut dim_out = 0;
     for item in items.iter().rev() {
@@ -552,7 +616,7 @@ fn dim_out_in<M: InfiniteMapping>(items: &[M]) -> (usize, usize) {
     (dim_out, dim_in)
 }
 
-fn mod_out_in<M: InfiniteMapping>(items: &[M]) -> (usize, usize) {
+fn mod_out_in<M: InfiniteMap>(items: &[M]) -> (usize, usize) {
     let mut mod_out = 1;
     let mut mod_in = 1;
     for item in items.iter().rev() {
@@ -564,9 +628,9 @@ fn mod_out_in<M: InfiniteMapping>(items: &[M]) -> (usize, usize) {
 }
 
 /// Composition.
-impl<Item, Array> InfiniteMapping for Array
+impl<Item, Array> InfiniteMap for Array
 where
-    Item: InfiniteMapping,
+    Item: InfiniteMap,
     Array: Deref<Target = [Item]> + DerefMut,
 {
     fn dim_in(&self) -> usize {
