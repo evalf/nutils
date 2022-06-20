@@ -1,8 +1,8 @@
 pub mod chain;
+pub mod elementary;
 mod finite_f64;
-pub mod operator;
-pub mod simplex;
 pub mod sequence;
+pub mod simplex;
 
 pub trait Mapping {
     fn len_out(&self) -> usize;
@@ -14,7 +14,7 @@ pub trait Mapping {
     fn delta_dim(&self) -> usize;
     fn add_offset(&mut self, offset: usize);
     fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64]) -> usize;
-    fn apply_inplace(&self, index: usize, coordinates: &mut[f64]) -> Option<usize> {
+    fn apply_inplace(&self, index: usize, coordinates: &mut [f64]) -> Option<usize> {
         if index < self.len_in() {
             Some(self.apply_inplace_unchecked(index, coordinates))
         } else {
@@ -71,7 +71,7 @@ pub trait UnsizedMapping {
     fn mod_in(&self) -> usize;
     // Modulus if the output index.
     fn mod_out(&self) -> usize;
-    fn apply_inplace(&self, index: usize, coordinates: &mut[f64], stride: usize) -> usize;
+    fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize;
     fn apply_index(&self, index: usize) -> usize;
     fn apply_indices_inplace(&self, indices: &mut [usize]) {
         for index in indices.iter_mut() {

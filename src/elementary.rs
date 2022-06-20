@@ -1,8 +1,8 @@
 use crate::finite_f64::FiniteF64;
 use crate::simplex::Simplex;
+use crate::UnsizedMapping;
 use num::Integer;
 use std::rc::Rc;
-use crate::UnsizedMapping;
 
 #[inline]
 const fn divmod(x: usize, y: usize) -> (usize, usize) {
@@ -58,7 +58,7 @@ impl UnsizedMapping for Transpose {
     fn mod_out(&self) -> usize {
         self.mod_in()
     }
-    fn apply_inplace(&self, index: usize, _coordinates: &mut[f64], _stride: usize) -> usize {
+    fn apply_inplace(&self, index: usize, _coordinates: &mut [f64], _stride: usize) -> usize {
         self.apply_index(index)
     }
     fn apply_index(&self, index: usize) -> usize {
@@ -111,7 +111,7 @@ impl UnsizedMapping for Take {
     fn mod_out(&self) -> usize {
         self.len
     }
-    fn apply_inplace(&self, index: usize, _coordinates: &mut[f64], _stride: usize) -> usize {
+    fn apply_inplace(&self, index: usize, _coordinates: &mut [f64], _stride: usize) -> usize {
         self.apply_index(index)
     }
     fn apply_index(&self, index: usize) -> usize {
@@ -157,14 +157,14 @@ impl UnsizedMapping for Children {
     fn mod_out(&self) -> usize {
         1
     }
-    fn apply_inplace(&self, index: usize, coordinates: &mut[f64], stride: usize) -> usize {
+    fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize {
         self.0.apply_child(index, coordinates, stride, self.1)
     }
     fn apply_index(&self, index: usize) -> usize {
         self.0.apply_child_index(index)
     }
     fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
-         indices
+        indices
             .iter()
             .map(|i| i * self.mod_in())
             .flat_map(|i| (0..self.mod_in()).map(move |j| i + j))
@@ -197,14 +197,14 @@ impl UnsizedMapping for Edges {
     fn mod_out(&self) -> usize {
         1
     }
-    fn apply_inplace(&self, index: usize, coordinates: &mut[f64], stride: usize) -> usize {
+    fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize {
         self.0.apply_edge(index, coordinates, stride, self.1)
     }
     fn apply_index(&self, index: usize) -> usize {
         self.0.apply_edge_index(index)
     }
     fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
-         indices
+        indices
             .iter()
             .map(|i| i * self.mod_in())
             .flat_map(|i| (0..self.mod_in()).map(move |j| i + j))
@@ -251,7 +251,7 @@ impl UnsizedMapping for UniformPoints {
     fn mod_out(&self) -> usize {
         1
     }
-    fn apply_inplace(&self, index: usize, coordinates: &mut[f64], stride: usize) -> usize {
+    fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize {
         let points: &[f64] = unsafe { std::mem::transmute(&self.points[..]) };
         let point = &points[(index % self.npoints) * self.point_dim..][..self.point_dim];
         for coord in coordinates_iter_mut(coordinates, stride, self.offset, self.point_dim, 0) {
@@ -263,7 +263,7 @@ impl UnsizedMapping for UniformPoints {
         index / self.npoints
     }
     fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
-         indices
+        indices
             .iter()
             .map(|i| i * self.mod_in())
             .flat_map(|i| (0..self.mod_in()).map(move |j| i + j))
@@ -272,7 +272,7 @@ impl UnsizedMapping for UniformPoints {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Operator {
+pub enum Elementary {
     Transpose(Transpose),
     Take(Take),
     Children(Children),
@@ -280,7 +280,7 @@ pub enum Operator {
     UniformPoints(UniformPoints),
 }
 
-impl Operator {
+impl Elementary {
     #[inline]
     pub fn new_transpose(len1: usize, len2: usize) -> Self {
         Self::Transpose(Transpose::new(len1, len2))
@@ -319,29 +319,32 @@ impl Operator {
         self.set_offset(new_offset);
         self
     }
-    pub fn shift_left(&self, operators: &[Self]) -> Option<(Option<Transpose>, Self, Vec<Self>)> {
+    pub fn shift_left(&self, items: &[Self]) -> Option<(Option<Transpose>, Self, Vec<Self>)> {
         if self.is_transpose() {
             return None;
         }
         let mut target = self.clone();
-        let mut shifted_ops: Vec<Self> = Vec::new();
+        let mut shifted_items: Vec<Self> = Vec::new();
         let mut queue: Vec<Self> = Vec::new();
         let mut stride_out = 1;
         let mut stride_in = 1;
-        for mut op in operators.iter().rev().cloned() {
+        for mut item in items.iter().rev().cloned() {
             // Swap matching edges and children at the same offset.
-            if let Self::Edges(Edges(esimplex, eoffset)) = &op {
+            if let Self::Edges(Edges(esimplex, eoffset)) = &item {
                 if let Self::Children(Children(ref mut csimplex, coffset)) = &mut target {
                     if eoffset == coffset && esimplex.edge_dim() == csimplex.dim() {
                         if stride_in != 1 && self.mod_in() != 1 {
-                            shifted_ops.push(Self::new_transpose(stride_in, self.mod_in()));
+                            shifted_items.push(Self::new_transpose(stride_in, self.mod_in()));
                         }
-                        shifted_ops.append(&mut queue);
+                        shifted_items.append(&mut queue);
                         if stride_out != 1 && self.mod_in() != 1 {
-                            shifted_ops.push(Self::new_transpose(self.mod_in(), stride_out));
+                            shifted_items.push(Self::new_transpose(self.mod_in(), stride_out));
                         }
-                        shifted_ops.push(Self::new_take(esimplex.swap_edges_children_map(), esimplex.nedges() * esimplex.nchildren()));
-                        shifted_ops.push(Self::Edges(Edges(*esimplex, *eoffset)));
+                        shifted_items.push(Self::new_take(
+                            esimplex.swap_edges_children_map(),
+                            esimplex.nedges() * esimplex.nchildren(),
+                        ));
+                        shifted_items.push(Self::Edges(Edges(*esimplex, *eoffset)));
                         *csimplex = *esimplex;
                         stride_in = 1;
                         stride_out = 1;
@@ -352,10 +355,10 @@ impl Operator {
             // Update strides.
             if self.mod_in() == 1 && self.mod_out() == 1 {
             } else if self.mod_out() == 1 {
-                let n = stride_out.gcd(&op.mod_in());
-                stride_out = stride_out / n * op.mod_out();
-                stride_in *= op.mod_in() / n;
-            } else if let Some(Transpose(ref mut m, ref mut n)) = op.as_transpose_mut() {
+                let n = stride_out.gcd(&item.mod_in());
+                stride_out = stride_out / n * item.mod_out();
+                stride_in *= item.mod_in() / n;
+            } else if let Some(Transpose(ref mut m, ref mut n)) = item.as_transpose_mut() {
                 if stride_out % (*m * *n) == 0 {
                 } else if stride_out % *n == 0 && (*m * *n) % (stride_out * self.mod_out()) == 0 {
                     stride_out /= *n;
@@ -366,47 +369,45 @@ impl Operator {
                 } else {
                     return None;
                 }
-            } else if stride_out % op.mod_in() == 0 {
-                stride_out = stride_out / op.mod_in() * op.mod_out();
+            } else if stride_out % item.mod_in() == 0 {
+                stride_out = stride_out / item.mod_in() * item.mod_out();
             } else {
                 return None;
             }
             // Update offsets.
-            let op_delta_dim = op.delta_dim();
+            let item_delta_dim = item.delta_dim();
             let target_delta_dim = target.delta_dim();
-            let op_dim_in = op.dim_in();
+            let item_dim_in = item.dim_in();
             let target_dim_out = target.dim_out();
-            if let (Some(op_offset), Some(target_offset)) = (op.offset_mut(), target.offset_mut()) {
-                if op_dim_in <= *target_offset {
-                    *target_offset += op_delta_dim;
-                } else if target_dim_out <= *op_offset {
-                    *op_offset -= target_delta_dim;
+            if let (Some(item_offset), Some(target_offset)) =
+                (item.offset_mut(), target.offset_mut())
+            {
+                if item_dim_in <= *target_offset {
+                    *target_offset += item_delta_dim;
+                } else if target_dim_out <= *item_offset {
+                    *item_offset -= target_delta_dim;
                 } else {
                     return None;
                 }
             }
-            if !op.is_identity() {
-                queue.push(op);
+            if !item.is_identity() {
+                queue.push(item);
             }
         }
         if stride_in != 1 && self.mod_in() != 1 {
-            shifted_ops.push(Self::new_transpose(stride_in, self.mod_in()));
+            shifted_items.push(Self::new_transpose(stride_in, self.mod_in()));
         }
-        shifted_ops.extend(queue);
+        shifted_items.extend(queue);
         if stride_out != 1 && self.mod_in() != 1 {
-            shifted_ops.push(Self::new_transpose(self.mod_in(), stride_out));
+            shifted_items.push(Self::new_transpose(self.mod_in(), stride_out));
         }
         let leading_transpose = if self.mod_out() == 1 || stride_out == 1 {
             None
         } else {
             Some(Transpose::new(stride_out, self.mod_out()))
         };
-        shifted_ops.reverse();
-        Some((
-            leading_transpose,
-            target,
-            shifted_ops,
-        ))
+        shifted_items.reverse();
+        Some((leading_transpose, target, shifted_items))
     }
     #[inline]
     const fn is_transpose(&self) -> bool {
@@ -431,11 +432,11 @@ macro_rules! dispatch {
         #[inline]
         $vis fn $fn(&$self $(, $arg: $ty)*) $($ret)* {
             match $self {
-                Operator::Transpose(var) => var.$fn($($arg),*),
-                Operator::Take(var) => var.$fn($($arg),*),
-                Operator::Children(var) => var.$fn($($arg),*),
-                Operator::Edges(var) => var.$fn($($arg),*),
-                Operator::UniformPoints(var) => var.$fn($($arg),*),
+                Elementary::Transpose(var) => var.$fn($($arg),*),
+                Elementary::Take(var) => var.$fn($($arg),*),
+                Elementary::Children(var) => var.$fn($($arg),*),
+                Elementary::Edges(var) => var.$fn($($arg),*),
+                Elementary::UniformPoints(var) => var.$fn($($arg),*),
             }
         }
     };
@@ -443,54 +444,54 @@ macro_rules! dispatch {
         #[inline]
         $vis fn $fn(&mut $self $(, $arg: $ty)*) $($ret)* {
             match $self {
-                Operator::Transpose(var) => var.$fn($($arg),*),
-                Operator::Take(var) => var.$fn($($arg),*),
-                Operator::Children(var) => var.$fn($($arg),*),
-                Operator::Edges(var) => var.$fn($($arg),*),
-                Operator::UniformPoints(var) => var.$fn($($arg),*),
+                Elementary::Transpose(var) => var.$fn($($arg),*),
+                Elementary::Take(var) => var.$fn($($arg),*),
+                Elementary::Children(var) => var.$fn($($arg),*),
+                Elementary::Edges(var) => var.$fn($($arg),*),
+                Elementary::UniformPoints(var) => var.$fn($($arg),*),
             }
         }
     };
 }
 
-impl UnsizedMapping for Operator {
-    dispatch!{fn dim_in(&self) -> usize}
-    dispatch!{fn delta_dim(&self) -> usize}
-    dispatch!{fn add_offset(&mut self, offset: usize)}
-    dispatch!{fn mod_in(&self) -> usize}
-    dispatch!{fn mod_out(&self) -> usize}
-    dispatch!{fn apply_inplace(&self, index: usize, coordinates: &mut[f64], stride: usize) -> usize}
-    dispatch!{fn apply_index(&self, index: usize) -> usize}
-    dispatch!{fn apply_indices_inplace(&self, indices: &mut [usize])}
-    dispatch!{fn unapply_indices(&self, indices: &[usize]) -> Vec<usize>}
-    dispatch!{fn is_identity(&self) -> bool}
+impl UnsizedMapping for Elementary {
+    dispatch! {fn dim_in(&self) -> usize}
+    dispatch! {fn delta_dim(&self) -> usize}
+    dispatch! {fn add_offset(&mut self, offset: usize)}
+    dispatch! {fn mod_in(&self) -> usize}
+    dispatch! {fn mod_out(&self) -> usize}
+    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut[f64], stride: usize) -> usize}
+    dispatch! {fn apply_index(&self, index: usize) -> usize}
+    dispatch! {fn apply_indices_inplace(&self, indices: &mut [usize])}
+    dispatch! {fn unapply_indices(&self, indices: &[usize]) -> Vec<usize>}
+    dispatch! {fn is_identity(&self) -> bool}
 }
 
-impl From<Transpose> for Operator {
+impl From<Transpose> for Elementary {
     fn from(transpose: Transpose) -> Self {
         Self::Transpose(transpose)
     }
 }
 
-impl From<Take> for Operator {
+impl From<Take> for Elementary {
     fn from(take: Take) -> Self {
         Self::Take(take)
     }
 }
 
-impl From<Children> for Operator {
+impl From<Children> for Elementary {
     fn from(children: Children) -> Self {
         Self::Children(children)
     }
 }
 
-impl From<Edges> for Operator {
+impl From<Edges> for Elementary {
     fn from(edges: Edges) -> Self {
         Self::Edges(edges)
     }
 }
 
-impl From<UniformPoints> for Operator {
+impl From<UniformPoints> for Elementary {
     fn from(uniform_points: UniformPoints) -> Self {
         Self::UniformPoints(uniform_points)
     }
@@ -504,16 +505,16 @@ mod tests {
     use Simplex::*;
 
     macro_rules! assert_eq_apply {
-        ($op:expr, $inidx:expr, $incoords:expr, $outidx:expr, $outcoords:expr) => {{
+        ($item:expr, $inidx:expr, $incoords:expr, $outidx:expr, $outcoords:expr) => {{
             use std::borrow::Borrow;
-            let op = $op.borrow();
+            let item = $item.borrow();
             let incoords = $incoords;
             let outcoords = $outcoords;
             assert_eq!(incoords.len(), outcoords.len());
             let stride;
             let mut work: Vec<_>;
             if incoords.len() == 0 {
-                stride = op.dim_out();
+                stride = item.dim_out();
                 work = Vec::with_capacity(0);
             } else {
                 stride = outcoords[0].len();
@@ -522,90 +523,99 @@ mod tests {
                     work[..incoord.len()].copy_from_slice(incoord);
                 }
             }
-            assert_eq!(op.apply_inplace($inidx, &mut work, stride), $outidx);
+            assert_eq!(item.apply_inplace($inidx, &mut work, stride), $outidx);
             for (actual, desired) in iter::zip(work.chunks(stride), outcoords.iter()) {
                 assert_abs_diff_eq!(actual[..], desired[..]);
             }
         }};
-        ($op:expr, $inidx:expr, $outidx:expr) => {{
+        ($item:expr, $inidx:expr, $outidx:expr) => {{
             use std::borrow::Borrow;
-            let op = $op.borrow();
+            let item = $item.borrow();
             let mut work = Vec::with_capacity(0);
-            assert_eq!(op.apply_inplace($inidx, &mut work, op.dim_out()), $outidx);
+            assert_eq!(
+                item.apply_inplace($inidx, &mut work, item.dim_out()),
+                $outidx
+            );
         }};
     }
 
     #[test]
     fn apply_transpose() {
-        let op = Operator::new_transpose(3, 2);
-        assert_eq_apply!(op, 0, 0);
-        assert_eq_apply!(op, 1, 3);
-        assert_eq_apply!(op, 2, 1);
-        assert_eq_apply!(op, 3, 4);
-        assert_eq_apply!(op, 4, 2);
-        assert_eq_apply!(op, 5, 5);
-        assert_eq_apply!(op, 6, 6);
-        assert_eq_apply!(op, 7, 9);
+        let item = Elementary::new_transpose(3, 2);
+        assert_eq_apply!(item, 0, 0);
+        assert_eq_apply!(item, 1, 3);
+        assert_eq_apply!(item, 2, 1);
+        assert_eq_apply!(item, 3, 4);
+        assert_eq_apply!(item, 4, 2);
+        assert_eq_apply!(item, 5, 5);
+        assert_eq_apply!(item, 6, 6);
+        assert_eq_apply!(item, 7, 9);
     }
 
     #[test]
     fn apply_take() {
-        let op = Operator::new_take([4, 1, 2], 5);
-        assert_eq_apply!(op, 0, 4);
-        assert_eq_apply!(op, 1, 1);
-        assert_eq_apply!(op, 2, 2);
-        assert_eq_apply!(op, 3, 9);
-        assert_eq_apply!(op, 4, 6);
-        assert_eq_apply!(op, 5, 7);
+        let item = Elementary::new_take([4, 1, 2], 5);
+        assert_eq_apply!(item, 0, 4);
+        assert_eq_apply!(item, 1, 1);
+        assert_eq_apply!(item, 2, 2);
+        assert_eq_apply!(item, 3, 9);
+        assert_eq_apply!(item, 4, 6);
+        assert_eq_apply!(item, 5, 7);
     }
 
     #[test]
     fn apply_children_line() {
-        let op = Operator::new_children(Line);
-        assert_eq_apply!(op, 0, [[0.0], [1.0]], 0, [[0.0], [0.5]]);
-        assert_eq_apply!(op, 1, [[0.0], [1.0]], 0, [[0.5], [1.0]]);
-        assert_eq_apply!(op, 2, [[0.0], [1.0]], 1, [[0.0], [0.5]]);
+        let item = Elementary::new_children(Line);
+        assert_eq_apply!(item, 0, [[0.0], [1.0]], 0, [[0.0], [0.5]]);
+        assert_eq_apply!(item, 1, [[0.0], [1.0]], 0, [[0.5], [1.0]]);
+        assert_eq_apply!(item, 2, [[0.0], [1.0]], 1, [[0.0], [0.5]]);
 
-        let op = op.with_offset(1);
-        assert_eq_apply!(op, 3, [[0.2, 0.0], [0.3, 1.0]], 1, [[0.2, 0.5], [0.3, 1.0]]);
+        let item = item.with_offset(1);
+        assert_eq_apply!(
+            item,
+            3,
+            [[0.2, 0.0], [0.3, 1.0]],
+            1,
+            [[0.2, 0.5], [0.3, 1.0]]
+        );
     }
 
     #[test]
     fn apply_edges_line() {
-        let op = Operator::new_edges(Line);
-        assert_eq_apply!(op, 0, [[]], 0, [[1.0]]);
-        assert_eq_apply!(op, 1, [[]], 0, [[0.0]]);
-        assert_eq_apply!(op, 2, [[]], 1, [[1.0]]);
+        let item = Elementary::new_edges(Line);
+        assert_eq_apply!(item, 0, [[]], 0, [[1.0]]);
+        assert_eq_apply!(item, 1, [[]], 0, [[0.0]]);
+        assert_eq_apply!(item, 2, [[]], 1, [[1.0]]);
 
-        let op = op.with_offset(1);
-        assert_eq_apply!(op, 0, [[0.2]], 0, [[0.2, 1.0]]);
+        let item = item.with_offset(1);
+        assert_eq_apply!(item, 0, [[0.2]], 0, [[0.2, 1.0]]);
     }
 
     #[test]
     fn apply_uniform_points() {
-        let op = Operator::new_uniform_points([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 2);
-        assert_eq_apply!(op, 0, [[]], 0, [[1.0, 2.0]]);
-        assert_eq_apply!(op, 1, [[]], 0, [[3.0, 4.0]]);
-        assert_eq_apply!(op, 2, [[]], 0, [[5.0, 6.0]]);
-        assert_eq_apply!(op, 3, [[]], 1, [[1.0, 2.0]]);
+        let item = Elementary::new_uniform_points([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 2);
+        assert_eq_apply!(item, 0, [[]], 0, [[1.0, 2.0]]);
+        assert_eq_apply!(item, 1, [[]], 0, [[3.0, 4.0]]);
+        assert_eq_apply!(item, 2, [[]], 0, [[5.0, 6.0]]);
+        assert_eq_apply!(item, 3, [[]], 1, [[1.0, 2.0]]);
 
-        let op = op.with_offset(1);
-        assert_eq_apply!(op, 0, [[7.0]], 0, [[7.0, 1.0, 2.0]]);
+        let item = item.with_offset(1);
+        assert_eq_apply!(item, 0, [[7.0]], 0, [[7.0, 1.0, 2.0]]);
     }
 
     macro_rules! assert_unapply {
-        ($op:expr) => {{
-            let op = $op;
-            let nin = 2 * op.mod_in();
-            let nout = 2 * op.mod_out();
+        ($item:expr) => {{
+            let item = $item;
+            let nin = 2 * item.mod_in();
+            let nout = 2 * item.mod_out();
             assert!(nout > 0);
             let mut map: Vec<Vec<usize>> = (0..nout).map(|_| Vec::new()).collect();
             let mut work = Vec::with_capacity(0);
             for i in 0..nin {
-                map[op.apply_inplace(i, &mut work, op.dim_out())].push(i);
+                map[item.apply_inplace(i, &mut work, item.dim_out())].push(i);
             }
             for (j, desired) in map.into_iter().enumerate() {
-                let mut actual = op.unapply_indices(&[j]);
+                let mut actual = item.unapply_indices(&[j]);
                 actual.sort();
                 assert_eq!(actual, desired);
             }
@@ -614,27 +624,27 @@ mod tests {
 
     #[test]
     fn unapply_indices_transpose() {
-        assert_unapply!(Operator::new_transpose(3, 2));
+        assert_unapply!(Elementary::new_transpose(3, 2));
     }
 
     #[test]
     fn unapply_indices_take() {
-        assert_unapply!(Operator::new_take([4, 1], 5));
+        assert_unapply!(Elementary::new_take([4, 1], 5));
     }
 
     #[test]
     fn unapply_indices_children() {
-        assert_unapply!(Operator::new_children(Triangle));
+        assert_unapply!(Elementary::new_children(Triangle));
     }
 
     #[test]
     fn unapply_indices_edges() {
-        assert_unapply!(Operator::new_edges(Triangle));
+        assert_unapply!(Elementary::new_edges(Triangle));
     }
 
     #[test]
     fn unapply_indices_uniform_points() {
-        assert_unapply!(Operator::new_uniform_points(
+        assert_unapply!(Elementary::new_uniform_points(
             [0.0, 0.0, 1.0, 0.0, 0.0, 1.0],
             2
         ));
@@ -642,8 +652,8 @@ mod tests {
 
     macro_rules! assert_equiv_chains {
         ($a:expr, $b:expr $(, $simplex:ident)*) => {{
-            let a: &[Operator] = &$a;
-            let b: &[Operator] = &$b;
+            let a: &[Elementary] = &$a;
+            let b: &[Elementary] = &$b;
             println!("a: {a:?}");
             println!("b: {b:?}");
             let tip_dim = 0 $(+ $simplex.dim())*;
@@ -651,26 +661,26 @@ mod tests {
             let mut tip_len = 1;
             let mut root_len = 1;
             let mut root_dim = tip_dim;
-            for op in a.iter().rev() {
+            for item in a.iter().rev() {
                 let i = (1..)
                     .into_iter()
-                    .find(|i| (root_len * i) % op.mod_in() == 0)
+                    .find(|i| (root_len * i) % item.mod_in() == 0)
                     .unwrap();
                 tip_len *= i;
                 root_len *= i;
-                root_len = root_len / op.mod_in() * op.mod_out();
-                assert!(op.dim_in() <= root_dim);
-                root_dim += op.delta_dim();
+                root_len = root_len / item.mod_in() * item.mod_out();
+                assert!(item.dim_in() <= root_dim);
+                root_dim += item.delta_dim();
             }
             assert!(tip_len > 0);
             // Verify the length and the root dimension for sequence `b`.
             let mut root_len_b = tip_len;
             let mut root_dim_b = tip_dim;
-            for op in b.iter().rev() {
-                assert_eq!(root_len_b % op.mod_in(), 0);
-                root_len_b = root_len_b / op.mod_in() * op.mod_out();
-                assert!(op.dim_in() <= root_dim_b);
-                root_dim_b += op.delta_dim();
+            for item in b.iter().rev() {
+                assert_eq!(root_len_b % item.mod_in(), 0);
+                root_len_b = root_len_b / item.mod_in() * item.mod_out();
+                assert!(item.dim_in() <= root_dim_b);
+                root_dim_b += item.delta_dim();
             }
             assert_eq!(root_len_b, root_len);
             assert_eq!(root_dim_b, root_dim);
@@ -691,8 +701,8 @@ mod tests {
             for itip in 0..2 * tip_len {
                 let mut crds_a = coords.clone();
                 let mut crds_b = coords.clone();
-                let iroot_a = a.iter().rev().fold(itip, |i, op| op.apply_inplace(i, &mut crds_a, root_dim));
-                let iroot_b = b.iter().rev().fold(itip, |i, op| op.apply_inplace(i, &mut crds_b, root_dim));
+                let iroot_a = a.iter().rev().fold(itip, |i, item| item.apply_inplace(i, &mut crds_a, root_dim));
+                let iroot_b = b.iter().rev().fold(itip, |i, item| item.apply_inplace(i, &mut crds_b, root_dim));
                 assert_eq!(iroot_a, iroot_b, "itip={itip}");
                 assert_abs_diff_eq!(crds_a[..], crds_b[..]);
             }
@@ -700,14 +710,14 @@ mod tests {
     }
 
     macro_rules! assert_shift_left {
-        ($($op:expr),*; $($simplex:ident),*) => {{
-            let unshifted = [$(Operator::from($op),)*];
-            let (ltrans, lop, lchain) = unshifted.last().unwrap().shift_left(&unshifted[..unshifted.len()-1]).unwrap();
-            let mut shifted: Vec<Operator> = Vec::new();
+        ($($item:expr),*; $($simplex:ident),*) => {{
+            let unshifted = [$(Elementary::from($item),)*];
+            let (ltrans, litem, lchain) = unshifted.last().unwrap().shift_left(&unshifted[..unshifted.len()-1]).unwrap();
+            let mut shifted: Vec<Elementary> = Vec::new();
             if let Some(ltrans) = ltrans {
                 shifted.push(ltrans.into());
             }
-            shifted.push(lop);
+            shifted.push(litem);
             shifted.extend(lchain.into_iter());
             assert_equiv_chains!(&shifted[..], &unshifted[..] $(, $simplex)*);
         }};
@@ -716,28 +726,28 @@ mod tests {
     #[test]
     fn shift_left() {
         assert_shift_left!(
-            Transpose::new(4, 3), Operator::new_take([0, 1], 3);
+            Transpose::new(4, 3), Elementary::new_take([0, 1], 3);
         );
         assert_shift_left!(
-            Transpose::new(3, 5), Transpose::new(5, 4*3), Operator::new_take([0, 1], 3);
+            Transpose::new(3, 5), Transpose::new(5, 4*3), Elementary::new_take([0, 1], 3);
         );
         assert_shift_left!(
-            Transpose::new(5, 4), Transpose::new(5*4, 3), Operator::new_take([0, 1], 3);
+            Transpose::new(5, 4), Transpose::new(5*4, 3), Elementary::new_take([0, 1], 3);
         );
         assert_shift_left!(
-            Operator::new_children(Line).with_offset(1), Operator::new_children(Line);
+            Elementary::new_children(Line).with_offset(1), Elementary::new_children(Line);
             Line, Line
         );
         assert_shift_left!(
-            Operator::new_edges(Line), Operator::new_children(Line);
+            Elementary::new_edges(Line), Elementary::new_children(Line);
             Line
         );
         assert_shift_left!(
-            Operator::new_edges(Line).with_offset(1), Operator::new_children(Line);
+            Elementary::new_edges(Line).with_offset(1), Elementary::new_children(Line);
             Line
         );
         assert_shift_left!(
-            Operator::new_edges(Triangle), Operator::new_children(Line);
+            Elementary::new_edges(Triangle), Elementary::new_children(Line);
             Line
         );
     }
