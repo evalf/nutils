@@ -1,6 +1,6 @@
-use crate::finite::Map;
+use crate::finite::BoundedMap;
 use crate::finite::{WithBounds, Compose, Composition, Concatenation, ConcreteMap};
-use crate::infinite::{Edges, Elementary, InfiniteMap, Transpose};
+use crate::infinite::{Edges, Elementary, UnboundedMap, Transpose};
 use crate::simplex::Simplex;
 use std::collections::BTreeMap;
 use std::iter;
@@ -94,7 +94,7 @@ impl RemoveCommonPrefix for Vec<Elementary> {
     }
 }
 
-trait RelativeTo<Target: Map> {
+trait RelativeTo<Target: BoundedMap> {
     fn relative_to(&self, target: &Target) -> Option<ConcreteMap>;
 }
 
@@ -110,8 +110,8 @@ impl RelativeTo<Self> for WithBounds<Vec<Elementary>> {
 
 impl<Item, Target> RelativeTo<Target> for Concatenation<Item>
 where
-    Item: Map + RelativeTo<Target>,
-    Target: Map,
+    Item: BoundedMap + RelativeTo<Target>,
+    Target: BoundedMap,
 {
     fn relative_to(&self, target: &Target) -> Option<ConcreteMap> {
         self.iter()

@@ -1,6 +1,6 @@
-use crate::infinite::{InfiniteMap, Elementary};
+use crate::infinite::{UnboundedMap, Elementary};
 
-pub trait Map {
+pub trait BoundedMap {
     fn len_out(&self) -> usize;
     fn len_in(&self) -> usize;
     fn dim_out(&self) -> usize {
@@ -65,9 +65,9 @@ impl std::fmt::Display for ComposeCodomainDomainMismatch {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Composition<M1: Map, M2: Map>(M1, M2);
+pub struct Composition<M1: BoundedMap, M2: BoundedMap>(M1, M2);
 
-impl<M1: Map, M2: Map> Composition<M1, M2> {
+impl<M1: BoundedMap, M2: BoundedMap> Composition<M1, M2> {
     pub fn new(map1: M1, map2: M2) -> Result<Self, ComposeCodomainDomainMismatch> {
         if map1.len_out() == map2.len_in() && map1.dim_out() == map2.dim_in() {
             Ok(Self(map1, map2))
@@ -77,7 +77,7 @@ impl<M1: Map, M2: Map> Composition<M1, M2> {
     }
 }
 
-impl<M1: Map, M2: Map> Map for Composition<M1, M2> {
+impl<M1: BoundedMap, M2: BoundedMap> BoundedMap for Composition<M1, M2> {
     fn len_in(&self) -> usize {
         self.0.len_in()
     }
@@ -115,8 +115,8 @@ impl<M1: Map, M2: Map> Map for Composition<M1, M2> {
     }
 }
 
-pub trait Compose: Map + Sized {
-    fn compose<Rhs: Map>(
+pub trait Compose: BoundedMap + Sized {
+    fn compose<Rhs: BoundedMap>(
         self,
         rhs: Rhs,
     ) -> Result<Composition<Self, Rhs>, ComposeCodomainDomainMismatch> {
@@ -124,10 +124,10 @@ pub trait Compose: Map + Sized {
     }
 }
 
-impl<M: Map> Compose for M {}
+impl<M: BoundedMap> Compose for M {}
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Concatenation<Item: Map> {
+pub struct Concatenation<Item: BoundedMap> {
     dim_in: usize,
     delta_dim: usize,
     len_out: usize,
@@ -135,7 +135,7 @@ pub struct Concatenation<Item: Map> {
     items: Vec<Item>,
 }
 
-impl<Item: Map> Concatenation<Item> {
+impl<Item: BoundedMap> Concatenation<Item> {
     pub fn new(items: Vec<Item>) -> Self {
         // TODO: Return `Result<Self, ...>`.
         let first = items.first().unwrap();
@@ -171,7 +171,7 @@ impl<Item: Map> Concatenation<Item> {
     }
 }
 
-impl<Item: Map> Map for Concatenation<Item> {
+impl<Item: BoundedMap> BoundedMap for Concatenation<Item> {
     fn dim_in(&self) -> usize {
         self.dim_in
     }
@@ -224,7 +224,7 @@ impl std::fmt::Display for NewWithBoundsError {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct WithBounds<M: InfiniteMap> {
+pub struct WithBounds<M: UnboundedMap> {
     map: M,
     delta_dim: usize,
     dim_in: usize,
@@ -232,7 +232,7 @@ pub struct WithBounds<M: InfiniteMap> {
     len_in: usize,
 }
 
-impl<M: InfiniteMap> WithBounds<M> {
+impl<M: UnboundedMap> WithBounds<M> {
     pub fn new(map: M, dim_out: usize, len_out: usize) -> Result<Self, NewWithBoundsError> {
         if dim_out < map.dim_out() {
             Err(NewWithBoundsError::DimensionTooSmall)
@@ -259,7 +259,7 @@ impl<M: InfiniteMap> WithBounds<M> {
     }
 }
 
-impl<M: InfiniteMap> Map for WithBounds<M> {
+impl<M: UnboundedMap> BoundedMap for WithBounds<M> {
     fn len_in(&self) -> usize {
         self.len_in
     }
@@ -333,7 +333,7 @@ macro_rules! dispatch {
     };
 }
 
-impl Map for ConcreteMap {
+impl BoundedMap for ConcreteMap {
     dispatch!{fn len_out(&self) -> usize}
     dispatch!{fn len_in(&self) -> usize}
     dispatch!{fn dim_out(&self) -> usize}

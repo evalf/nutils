@@ -4,9 +4,9 @@ use num::Integer as _;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
-pub trait InfiniteMap {
+pub trait UnboundedMap {
     // Minimum dimension of the input coordinate. If the dimension of the input
-    // coordinate of [InfiniteMap::apply()] is larger than the minimum, then
+    // coordinate of [UnboundedMap::apply()] is larger than the minimum, then
     // the map of the surplus is the identity map.
     fn dim_in(&self) -> usize;
     // Minimum dimension of the output coordinate.
@@ -70,7 +70,7 @@ impl Transpose {
     }
 }
 
-impl InfiniteMap for Transpose {
+impl UnboundedMap for Transpose {
     fn dim_in(&self) -> usize {
         0
     }
@@ -127,7 +127,7 @@ impl Take {
     }
 }
 
-impl InfiniteMap for Take {
+impl UnboundedMap for Take {
     fn dim_in(&self) -> usize {
         0
     }
@@ -180,7 +180,7 @@ impl Slice {
     }
 }
 
-impl InfiniteMap for Slice {
+impl UnboundedMap for Slice {
     fn dim_in(&self) -> usize {
         0
     }
@@ -222,7 +222,7 @@ impl Children {
     }
 }
 
-impl InfiniteMap for Children {
+impl UnboundedMap for Children {
     fn dim_in(&self) -> usize {
         self.0.dim() + self.1
     }
@@ -268,7 +268,7 @@ impl Edges {
     }
 }
 
-impl InfiniteMap for Edges {
+impl UnboundedMap for Edges {
     fn dim_in(&self) -> usize {
         self.0.edge_dim() + self.1
     }
@@ -328,7 +328,7 @@ impl UniformPoints {
     }
 }
 
-impl InfiniteMap for UniformPoints {
+impl UnboundedMap for UniformPoints {
     fn dim_in(&self) -> usize {
         self.offset
     }
@@ -554,7 +554,7 @@ macro_rules! dispatch {
     };
 }
 
-impl InfiniteMap for Elementary {
+impl UnboundedMap for Elementary {
     dispatch! {fn dim_in(&self) -> usize}
     dispatch! {fn delta_dim(&self) -> usize}
     dispatch! {fn add_offset(&mut self, offset: usize)}
@@ -603,7 +603,7 @@ impl From<UniformPoints> for Elementary {
     }
 }
 
-fn dim_out_in<M: InfiniteMap>(items: &[M]) -> (usize, usize) {
+fn dim_out_in<M: UnboundedMap>(items: &[M]) -> (usize, usize) {
     let mut dim_in = 0;
     let mut dim_out = 0;
     for item in items.iter().rev() {
@@ -616,7 +616,7 @@ fn dim_out_in<M: InfiniteMap>(items: &[M]) -> (usize, usize) {
     (dim_out, dim_in)
 }
 
-fn mod_out_in<M: InfiniteMap>(items: &[M]) -> (usize, usize) {
+fn mod_out_in<M: UnboundedMap>(items: &[M]) -> (usize, usize) {
     let mut mod_out = 1;
     let mut mod_in = 1;
     for item in items.iter().rev() {
@@ -628,9 +628,9 @@ fn mod_out_in<M: InfiniteMap>(items: &[M]) -> (usize, usize) {
 }
 
 /// Composition.
-impl<Item, Array> InfiniteMap for Array
+impl<Item, Array> UnboundedMap for Array
 where
-    Item: InfiniteMap,
+    Item: UnboundedMap,
     Array: Deref<Target = [Item]> + DerefMut,
 {
     fn dim_in(&self) -> usize {
