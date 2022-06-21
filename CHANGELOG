@@ -1,0 +1,100 @@
+CHANGELOG
+
+Nutils is being actively developed and the API is continuously evolving.
+The following overview lists user facing changes as well as newly added
+features in inverse chronological order.
+
+
+DEPRECATED: function methods that have Numpy equivalents
+
+The `nutils.function` methods that have direct equivalents in the `numpy`
+module (`function.sum`, `function.sqrt`, `function.sin`, etc) have been
+deprecated in favour of using Numpy's methods (`numpy.sum`, `numpy.sqrt`,
+`numpy.sin`, etc) and will be removed in the next release. Ultimately, only
+methods that relate to the variable nature of function arrays and therefore
+have no Numpy equivalent, such as `function.grad` and `function.normal`, will
+remain in the function module.
+
+Be aware that some functions were not 100% equivalent to their Numpy
+counterpart. For instance, `function.max` is the equivalent to `numpy.maximum`,
+as the deprecation message helpfully points out. More problematically,
+`function.dot` behaves very differently from both `numpy.dot` and
+`numpy.matmul`. Porting the code over to equivalent instructions will therefore
+require some attention.
+
+
+DEPRECATED: Array.dot for ndim != 1
+
+The `nutils.function.Array.dot` method is incompatible with Numpy's equivalent
+method for arrays of ndim != 1, or when axes are specified (which Numpy does
+not allow). Aiming for 100% compatibility, the next release cycle will remove
+the axis argument and temporarily forbid arguments of ndim != 1. The release
+cycle thereafter will re-enable arguments with ndim != 1, with logic equal to
+Numpy's method. In the meantime, the advice is to rely on `numpy.dot`,
+`numpy.matmul` or the `@` operator instead.
+
+
+DEPRECATED: Array.sum for ndim > 1 without axis argument
+
+The `nutils.function.Array.sum` method by default operates on the last axis.
+This is different from Numpy's behavour, which by default sums all axes. Aiming
+for 100% compatibility, the next release cycle will make the axis argument
+mandatory for any array of ndim > 1. The release cycle thereafter will
+reintroduce the default value to match Numpy's. To prepare for this, relying on
+the current default now triggers a deprecation warning.
+
+
+NEW: iteration count via info.niter
+
+The info struct returned by `solve_withinfo` newly contains the amount of
+iterations as the `niter` attribute:
+
+>>> res, info = solver.newton('u:v', res).solve_withinfo(1e-10, maxiter=10)
+>>> assert info.niter <= 10
+
+
+NEW: test fields and residual functionals
+
+The `nutils.solver` methods have been generalized to accept scalar valued
+functionals, from which residual vectors are derived through differentiation.
+To this end, a trial/test function pair can be specified as a solve target
+separated by a colon, as in the following example:
+
+>>> ns.add_field(('u', 'v'), topo.basis('std', degree=1))
+>>> res = topo.integral('∇_i(u) ∇_i(v) dV' @ ns, degree=2)
+>>> args = solver.newton('u:v', res).solve(1e-10)
+
+Multiple fields can either comma-joined or provided as a tuple. Note that the
+colon automatically triggers a new-style dictionary return value, even in
+absence of a trialing comma as in the above example.
+
+
+NEW: Namespace.add_field
+
+The namespace from the `nutils.expression_v2` module newly provides the
+`nutils.expression_v2.Namespace.add_field` method, as a convenient shorthand
+for creating fields with the same name as their arguments. That is:
+
+>>> ns.add_field(('u', 'v'), topo.basis('std', degree=1), shape=(2,))
+
+is equivalent to
+
+>>> basis = topo.basis('std', degree=1)
+>>> ns.u = function.dotarg('u', basis, shape=(2,))
+>>> ns.v = function.dotarg('v', basis, shape=(2,))
+
+
+NEW: shorthand notation for multiple solver targets
+
+Multiple solver targets can now be specified as a comma-separated string, as a
+shorthand for the string tuple that will remain a valid argument. This means
+the following two invocations are equivalent:
+
+>>> args = solver.newton(('u', 'p'), (ures, pres)).solve(1e-10)
+>>> args = solver.newton('u,p', (ures, pres)).solve(1e-10)
+
+To distinguish single-length tuples from the single argument legacy notation,
+the former requires a trailing comma. I.e., the following are NOT equivalent:
+
+>>> args = solver.newton('u,', (ures,)).solve(1e-10)
+>>> u = solver.newton('u', ures).solve(1e-10)
