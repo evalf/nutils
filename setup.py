@@ -38,7 +38,7 @@ setup(
     python_requires='>=3.7',
     install_requires=['numpy>=1.17', 'treelog>=1.0b5', 'stringly'],
     extras_require=dict(
-        docs=['Sphinx>=1.6', 'scipy>=0.13', 'matplotlib>=1.3'],
+        docs=['Sphinx>=1.8'],
         matrix_scipy=['scipy>=0.13'],
         matrix_mkl=['mkl'],
         export_mpl=['matplotlib>=1.3', 'pillow>2.6'],
