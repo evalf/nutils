@@ -1,4 +1,5 @@
 use crate::finite_f64::FiniteF64;
+use crate::UnapplyIndicesData;
 use crate::simplex::Simplex;
 use num::Integer as _;
 use std::ops::{Deref, DerefMut};
@@ -28,7 +29,7 @@ pub trait UnboundedMap {
             *index = self.apply_index(*index);
         }
     }
-    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize>;
+    fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>;
     fn is_identity(&self) -> bool {
         self.mod_in() == 1 && self.mod_out() == 1 && self.dim_out() == 0
     }
@@ -96,13 +97,13 @@ impl UnboundedMap for Transpose {
         let (i, j) = divmod(j, self.0);
         (i * self.1 + k) * self.0 + j
     }
-    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+    fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
         indices
             .iter()
-            .map(|k| {
-                let (j, k) = divmod(*k, self.0);
+            .map(|index| {
+                let (j, k) = divmod(index.last(), self.0);
                 let (i, j) = divmod(j, self.1);
-                (i * self.0 + k) * self.1 + j
+                index.push((i * self.0 + k) * self.1 + j)
             })
             .collect()
     }
@@ -147,16 +148,16 @@ impl UnboundedMap for Take {
     fn apply_index(&self, index: usize) -> usize {
         self.indices[index % self.nindices] + index / self.nindices * self.len
     }
-    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+    fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
         indices
             .iter()
             .filter_map(|index| {
-                let (j, iout) = divmod(*index, self.len);
+                let (j, iout) = divmod(index.last(), self.len);
                 let offset = j * self.nindices;
                 self.indices
                     .iter()
                     .position(|i| *i == iout)
-                    .map(|iin| offset + iin)
+                    .map(|iin| index.push(offset + iin))
             })
             .collect()
     }
@@ -200,14 +201,14 @@ impl UnboundedMap for Slice {
     fn apply_index(&self, index: usize) -> usize {
         self.start + index % self.len_in + index / self.len_in * self.len_out
     }
-    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+    fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
         indices
             .iter()
             .filter_map(|index| {
-                let (j, i) = divmod(*index, self.len_out);
+                let (j, i) = divmod(index.last(), self.len_out);
                 (self.start..self.start + self.len_in)
                     .contains(&i)
-                    .then(|| i - self.start + j * self.len_in)
+                    .then(|| index.push(i - self.start + j * self.len_in))
             })
             .collect()
     }
@@ -244,11 +245,10 @@ impl UnboundedMap for Children {
     fn apply_index(&self, index: usize) -> usize {
         self.0.apply_child_index(index)
     }
-    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+    fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
         indices
             .iter()
-            .map(|i| i * self.mod_in())
-            .flat_map(|i| (0..self.mod_in()).map(move |j| i + j))
+            .flat_map(|i| (0..self.mod_in()).map(move |j| i.push(i.last() * self.mod_in() + j)))
             .collect()
     }
 }
@@ -290,11 +290,10 @@ impl UnboundedMap for Edges {
     fn apply_index(&self, index: usize) -> usize {
         self.0.apply_edge_index(index)
     }
-    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+    fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
         indices
             .iter()
-            .map(|i| i * self.mod_in())
-            .flat_map(|i| (0..self.mod_in()).map(move |j| i + j))
+            .flat_map(|i| (0..self.mod_in()).map(move |j| i.push(i.last() * self.mod_in() + j)))
             .collect()
     }
 }
@@ -355,11 +354,10 @@ impl UnboundedMap for UniformPoints {
     fn apply_index(&self, index: usize) -> usize {
         index / self.npoints
     }
-    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+    fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
         indices
             .iter()
-            .map(|i| i * self.mod_in())
-            .flat_map(|i| (0..self.mod_in()).map(move |j| i + j))
+            .flat_map(|i| (0..self.mod_in()).map(move |j| i.push(i.last() * self.mod_in() + j)))
             .collect()
     }
 }
@@ -526,30 +524,30 @@ impl Elementary {
 }
 
 macro_rules! dispatch {
-    ($vis:vis fn $fn:ident(&$self:ident $(, $arg:ident: $ty:ty)*) $($ret:tt)*) => {
+    (
+        $vis:vis fn $fn:ident$(<$genarg:ident: $genpath:path>)?(
+            &$self:ident $(, $arg:ident: $ty:ty)*
+        ) $($ret:tt)*
+    ) => {
         #[inline]
-        $vis fn $fn(&$self $(, $arg: $ty)*) $($ret)* {
-            match $self {
-                Elementary::Transpose(var) => var.$fn($($arg),*),
-                Elementary::Take(var) => var.$fn($($arg),*),
-                Elementary::Slice(var) => var.$fn($($arg),*),
-                Elementary::Children(var) => var.$fn($($arg),*),
-                Elementary::Edges(var) => var.$fn($($arg),*),
-                Elementary::UniformPoints(var) => var.$fn($($arg),*),
-            }
+        $vis fn $fn$(<$genarg: $genpath>)?(&$self $(, $arg: $ty)*) $($ret)* {
+            dispatch!(@match $self; $fn; $($arg),*)
         }
     };
     ($vis:vis fn $fn:ident(&mut $self:ident $(, $arg:ident: $ty:ty)*) $($ret:tt)*) => {
         #[inline]
         $vis fn $fn(&mut $self $(, $arg: $ty)*) $($ret)* {
-            match $self {
-                Elementary::Transpose(var) => var.$fn($($arg),*),
-                Elementary::Take(var) => var.$fn($($arg),*),
-                Elementary::Slice(var) => var.$fn($($arg),*),
-                Elementary::Children(var) => var.$fn($($arg),*),
-                Elementary::Edges(var) => var.$fn($($arg),*),
-                Elementary::UniformPoints(var) => var.$fn($($arg),*),
-            }
+            dispatch!(@match $self; $fn; $($arg),*)
+        }
+    };
+    (@match $self:ident; $fn:ident; $($arg:ident),*) => {
+        match $self {
+            Elementary::Transpose(var) => var.$fn($($arg),*),
+            Elementary::Take(var) => var.$fn($($arg),*),
+            Elementary::Slice(var) => var.$fn($($arg),*),
+            Elementary::Children(var) => var.$fn($($arg),*),
+            Elementary::Edges(var) => var.$fn($($arg),*),
+            Elementary::UniformPoints(var) => var.$fn($($arg),*),
         }
     };
 }
@@ -563,7 +561,7 @@ impl UnboundedMap for Elementary {
     dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut[f64], stride: usize) -> usize}
     dispatch! {fn apply_index(&self, index: usize) -> usize}
     dispatch! {fn apply_indices_inplace(&self, indices: &mut [usize])}
-    dispatch! {fn unapply_indices(&self, indices: &[usize]) -> Vec<usize>}
+    dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>}
     dispatch! {fn is_identity(&self) -> bool}
 }
 
@@ -665,7 +663,7 @@ where
             item.apply_indices_inplace(indices);
         }
     }
-    fn unapply_indices(&self, indices: &[usize]) -> Vec<usize> {
+    fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
         self.iter().fold(indices.to_vec(), |indices, item| {
             item.unapply_indices(&indices)
         })

@@ -1,4 +1,5 @@
 use crate::infinite::{UnboundedMap, Elementary};
+use crate::UnapplyIndicesData;
 
 pub trait BoundedMap {
     fn len_out(&self) -> usize;
@@ -39,9 +40,9 @@ pub trait BoundedMap {
             None
         }
     }
-    fn unapply_indices_unchecked(&self, indices: &[usize]) -> Vec<usize>;
-    fn unapply_indices(&self, indices: &[usize]) -> Option<Vec<usize>> {
-        if indices.iter().all(|index| *index < self.len_out()) {
+    fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>;
+    fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Option<Vec<T>> {
+        if indices.iter().all(|index| index.last() < self.len_out()) {
             Some(self.unapply_indices_unchecked(indices))
         } else {
             None
@@ -106,7 +107,7 @@ impl<M1: BoundedMap, M2: BoundedMap> BoundedMap for Composition<M1, M2> {
         self.0.apply_indices_inplace_unchecked(indices);
         self.1.apply_indices_inplace_unchecked(indices);
     }
-    fn unapply_indices_unchecked(&self, indices: &[usize]) -> Vec<usize> {
+    fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
         let indices = self.1.unapply_indices_unchecked(indices);
         self.0.unapply_indices_unchecked(&indices)
     }
@@ -198,7 +199,7 @@ impl<Item: BoundedMap> BoundedMap for Concatenation<Item> {
         let (item, index) = self.resolve_item_unchecked(index);
         item.apply_index_unchecked(index)
     }
-    fn unapply_indices_unchecked(&self, indices: &[usize]) -> Vec<usize> {
+    fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
         unimplemented! {}
     }
     fn is_identity(&self) -> bool {
@@ -285,86 +286,10 @@ impl<M: UnboundedMap> BoundedMap for WithBounds<M> {
     fn apply_indices_inplace_unchecked(&self, indices: &mut [usize]) {
         self.map.apply_indices_inplace(indices)
     }
-    fn unapply_indices_unchecked(&self, indices: &[usize]) -> Vec<usize> {
+    fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
         self.map.unapply_indices(indices)
     }
     fn is_identity(&self) -> bool {
         self.map.is_identity()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ConcreteMap {
-    Elementary(WithBounds<Vec<Elementary>>),
-    Composition(Box<Composition<ConcreteMap, ConcreteMap>>),
-    Concatenation(Concatenation<ConcreteMap>),
-}
-
-impl ConcreteMap {
-    pub fn compose(self, other: Self) -> Result<Self, ComposeCodomainDomainMismatch> {
-        Ok(Composition::new(self, other)?.into())
-    }
-    pub fn new_concatenation(items: Vec<ConcreteMap>) -> Self {
-        // TODO: unravel nested concatenations
-        Self::Concatenation(Concatenation::new(items))
-    }
-}
-
-macro_rules! dispatch {
-    ($vis:vis fn $fn:ident(&$self:ident $(, $arg:ident: $ty:ty)*) $($ret:tt)*) => {
-        #[inline]
-        $vis fn $fn(&$self $(, $arg: $ty)*) $($ret)* {
-            match $self {
-                ConcreteMap::Elementary(var) => var.$fn($($arg),*),
-                ConcreteMap::Composition(var) => var.$fn($($arg),*),
-                ConcreteMap::Concatenation(var) => var.$fn($($arg),*),
-            }
-        }
-    };
-    ($vis:vis fn $fn:ident(&mut $self:ident $(, $arg:ident: $ty:ty)*) $($ret:tt)*) => {
-        #[inline]
-        $vis fn $fn(&mut $self $(, $arg: $ty)*) $($ret)* {
-            match $self {
-                ConcreteMap::Elementary(var) => var.$fn($($arg),*),
-                ConcreteMap::Composition(var) => var.$fn($($arg),*),
-                ConcreteMap::Concatenation(var) => var.$fn($($arg),*),
-            }
-        }
-    };
-}
-
-impl BoundedMap for ConcreteMap {
-    dispatch!{fn len_out(&self) -> usize}
-    dispatch!{fn len_in(&self) -> usize}
-    dispatch!{fn dim_out(&self) -> usize}
-    dispatch!{fn dim_in(&self) -> usize}
-    dispatch!{fn delta_dim(&self) -> usize}
-    dispatch!{fn add_offset(&mut self, offset: usize)}
-    dispatch!{fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64]) -> usize}
-    dispatch!{fn apply_inplace(&self, index: usize, coordinates: &mut [f64]) -> Option<usize>}
-    dispatch!{fn apply_index_unchecked(&self, index: usize) -> usize}
-    dispatch!{fn apply_index(&self, index: usize) -> Option<usize>}
-    dispatch!{fn apply_indices_inplace_unchecked(&self, indices: &mut [usize])}
-    dispatch!{fn apply_indices(&self, indices: &[usize]) -> Option<Vec<usize>>}
-    dispatch!{fn unapply_indices_unchecked(&self, indices: &[usize]) -> Vec<usize>}
-    dispatch!{fn unapply_indices(&self, indices: &[usize]) -> Option<Vec<usize>>}
-    dispatch!{fn is_identity(&self) -> bool}
-}
-
-impl From<WithBounds<Vec<Elementary>>> for ConcreteMap {
-    fn from(map: WithBounds<Vec<Elementary>>) -> Self {
-        ConcreteMap::Elementary(map)
-    }
-}
-
-impl From<Composition<ConcreteMap, ConcreteMap>> for ConcreteMap {
-    fn from(map: Composition<ConcreteMap, ConcreteMap>) -> Self {
-        ConcreteMap::Composition(Box::new(map))
-    }
-}
-
-impl From<Concatenation<ConcreteMap>> for ConcreteMap {
-    fn from(map: Concatenation<ConcreteMap>) -> Self {
-        ConcreteMap::Concatenation(map)
     }
 }
