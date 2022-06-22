@@ -1,39 +1,8 @@
 use crate::finite_f64::FiniteF64;
-use crate::UnapplyIndicesData;
 use crate::simplex::Simplex;
+use crate::{UnapplyIndicesData, UnboundedMap};
 use num::Integer as _;
-use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
-
-pub trait UnboundedMap {
-    // Minimum dimension of the input coordinate. If the dimension of the input
-    // coordinate of [UnboundedMap::apply()] is larger than the minimum, then
-    // the map of the surplus is the identity map.
-    fn dim_in(&self) -> usize;
-    // Minimum dimension of the output coordinate.
-    fn dim_out(&self) -> usize {
-        self.dim_in() + self.delta_dim()
-    }
-    // Difference in dimension of the output and input coordinate.
-    fn delta_dim(&self) -> usize;
-    fn add_offset(&mut self, offset: usize);
-    // Modulus of the input index. The map repeats itself at index `mod_in`
-    // and the output index is incremented with `in_index / mod_in * mod_out`.
-    fn mod_in(&self) -> usize;
-    // Modulus if the output index.
-    fn mod_out(&self) -> usize;
-    fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize;
-    fn apply_index(&self, index: usize) -> usize;
-    fn apply_indices_inplace(&self, indices: &mut [usize]) {
-        for index in indices.iter_mut() {
-            *index = self.apply_index(*index);
-        }
-    }
-    fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>;
-    fn is_identity(&self) -> bool {
-        self.mod_in() == 1 && self.mod_out() == 1 && self.dim_out() == 0
-    }
-}
 
 #[inline]
 const fn divmod(x: usize, y: usize) -> (usize, usize) {
@@ -55,6 +24,37 @@ fn coordinates_iter_mut(
         }
         &mut coord[..dim_out]
     })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Identity;
+
+impl UnboundedMap for Identity {
+    fn dim_in(&self) -> usize {
+        0
+    }
+    fn delta_dim(&self) -> usize {
+        0
+    }
+    fn add_offset(&mut self, _offset: usize) {}
+    fn mod_in(&self) -> usize {
+        1
+    }
+    fn mod_out(&self) -> usize {
+        1
+    }
+    fn apply_inplace(&self, index: usize, _coordinates: &mut [f64], _stride: usize) -> usize {
+        index
+    }
+    fn apply_index(&self, index: usize) -> usize {
+        index
+    }
+    fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
+        indices.to_vec()
+    }
+    fn is_identity(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -111,14 +111,14 @@ impl UnboundedMap for Transpose {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Take {
-    indices: Rc<Box<[usize]>>,
+    indices: Rc<[usize]>,
     nindices: usize,
     len: usize,
 }
 
 impl Take {
-    pub fn new(indices: impl Into<Box<[usize]>>, len: usize) -> Self {
-        let indices = Rc::new(indices.into());
+    pub fn new(indices: impl Into<Rc<[usize]>>, len: usize) -> Self {
+        let indices = indices.into();
         let nindices = indices.len();
         Take {
             indices,
@@ -306,15 +306,15 @@ impl From<Simplex> for Edges {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct UniformPoints {
-    points: Rc<Box<[FiniteF64]>>,
+    points: Rc<[FiniteF64]>,
     npoints: usize,
     point_dim: usize,
     offset: usize,
 }
 
 impl UniformPoints {
-    pub fn new(points: impl Into<Box<[f64]>>, point_dim: usize) -> Self {
-        let points: Rc<Box<[FiniteF64]>> = Rc::new(unsafe { std::mem::transmute(points.into()) });
+    pub fn new(points: impl Into<Rc<[f64]>>, point_dim: usize) -> Self {
+        let points: Rc<[FiniteF64]> = unsafe { std::mem::transmute(points.into()) };
         assert_eq!(points.len() % point_dim, 0);
         assert_ne!(point_dim, 0);
         let npoints = points.len() / point_dim;
@@ -378,7 +378,7 @@ impl Elementary {
         Self::Transpose(Transpose::new(len1, len2))
     }
     #[inline]
-    pub fn new_take(indices: impl Into<Box<[usize]>>, len: usize) -> Self {
+    pub fn new_take(indices: impl Into<Rc<[usize]>>, len: usize) -> Self {
         Self::Take(Take::new(indices, len))
     }
     #[inline]
@@ -394,7 +394,7 @@ impl Elementary {
         Self::Edges(Edges::new(simplex))
     }
     #[inline]
-    pub fn new_uniform_points(points: impl Into<Box<[f64]>>, point_dim: usize) -> Self {
+    pub fn new_uniform_points(points: impl Into<Rc<[f64]>>, point_dim: usize) -> Self {
         Self::UniformPoints(UniformPoints::new(points, point_dim))
     }
     #[inline]
@@ -415,6 +415,13 @@ impl Elementary {
         self.set_offset(new_offset);
         self
     }
+    //pub fn swap(&mut self, other: &Self) -> Option<Vec<Self>> {
+    //    if self.mod_out() == 1 {
+    //
+    //    } else {
+    //        None
+    //    }
+    //}
     pub fn shift_left(&self, items: &[Self]) -> Option<(Option<Transpose>, Self, Vec<Self>)> {
         if self.is_transpose() {
             return None;
@@ -601,75 +608,6 @@ impl From<UniformPoints> for Elementary {
     }
 }
 
-fn dim_out_in<M: UnboundedMap>(items: &[M]) -> (usize, usize) {
-    let mut dim_in = 0;
-    let mut dim_out = 0;
-    for item in items.iter().rev() {
-        if let Some(n) = item.dim_in().checked_sub(dim_out) {
-            dim_in += n;
-            dim_out += n;
-        }
-        dim_out += item.delta_dim();
-    }
-    (dim_out, dim_in)
-}
-
-fn mod_out_in<M: UnboundedMap>(items: &[M]) -> (usize, usize) {
-    let mut mod_out = 1;
-    let mut mod_in = 1;
-    for item in items.iter().rev() {
-        let n = mod_out.lcm(&item.mod_in());
-        mod_in *= n / mod_out;
-        mod_out = n / item.mod_in() * item.mod_out();
-    }
-    (mod_out, mod_in)
-}
-
-/// Composition.
-impl<Item, Array> UnboundedMap for Array
-where
-    Item: UnboundedMap,
-    Array: Deref<Target = [Item]> + DerefMut,
-{
-    fn dim_in(&self) -> usize {
-        dim_out_in(self.deref()).1
-    }
-    fn delta_dim(&self) -> usize {
-        self.iter().map(|item| item.delta_dim()).sum()
-    }
-    fn add_offset(&mut self, offset: usize) {
-        for item in self.iter_mut() {
-            item.add_offset(offset);
-        }
-    }
-    fn mod_in(&self) -> usize {
-        mod_out_in(self.deref()).1
-    }
-    fn mod_out(&self) -> usize {
-        mod_out_in(self.deref()).0
-    }
-    fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize {
-        self.iter().rev().fold(index, |index, item| {
-            item.apply_inplace(index, coordinates, stride)
-        })
-    }
-    fn apply_index(&self, index: usize) -> usize {
-        self.iter()
-            .rev()
-            .fold(index, |index, item| item.apply_index(index))
-    }
-    fn apply_indices_inplace(&self, indices: &mut [usize]) {
-        for item in self.iter().rev() {
-            item.apply_indices_inplace(indices);
-        }
-    }
-    fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
-        self.iter().fold(indices.to_vec(), |indices, item| {
-            item.unapply_indices(&indices)
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -727,7 +665,7 @@ mod tests {
 
     #[test]
     fn apply_take() {
-        let item = Elementary::new_take([4, 1, 2], 5);
+        let item = Elementary::new_take(vec![4, 1, 2], 5);
         assert_eq_apply!(item, 0, 4);
         assert_eq_apply!(item, 1, 1);
         assert_eq_apply!(item, 2, 2);
@@ -766,7 +704,7 @@ mod tests {
 
     #[test]
     fn apply_uniform_points() {
-        let item = Elementary::new_uniform_points([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 2);
+        let item = Elementary::new_uniform_points(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 2);
         assert_eq_apply!(item, 0, [[]], 0, [[1.0, 2.0]]);
         assert_eq_apply!(item, 1, [[]], 0, [[3.0, 4.0]]);
         assert_eq_apply!(item, 2, [[]], 0, [[5.0, 6.0]]);
@@ -802,7 +740,7 @@ mod tests {
 
     #[test]
     fn unapply_indices_take() {
-        assert_unapply!(Elementary::new_take([4, 1], 5));
+        assert_unapply!(Elementary::new_take(vec![4, 1], 5));
     }
 
     #[test]
@@ -818,12 +756,12 @@ mod tests {
     #[test]
     fn unapply_indices_uniform_points() {
         assert_unapply!(Elementary::new_uniform_points(
-            [0.0, 0.0, 1.0, 0.0, 0.0, 1.0],
+            vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0],
             2
         ));
     }
 
-    macro_rules! assert_equiv_chains {
+    macro_rules! assert_equiv_maps {
         ($a:expr, $b:expr $(, $simplex:ident)*) => {{
             let a: &[Elementary] = &$a;
             let b: &[Elementary] = &$b;
@@ -892,20 +830,20 @@ mod tests {
             }
             shifted.push(litem);
             shifted.extend(lchain.into_iter());
-            assert_equiv_chains!(&shifted[..], &unshifted[..] $(, $simplex)*);
+            assert_equiv_maps!(&shifted[..], &unshifted[..] $(, $simplex)*);
         }};
     }
 
     #[test]
     fn shift_left() {
         assert_shift_left!(
-            Transpose::new(4, 3), Elementary::new_take([0, 1], 3);
+            Transpose::new(4, 3), Elementary::new_take(vec![0, 1], 3);
         );
         assert_shift_left!(
-            Transpose::new(3, 5), Transpose::new(5, 4*3), Elementary::new_take([0, 1], 3);
+            Transpose::new(3, 5), Transpose::new(5, 4*3), Elementary::new_take(vec![0, 1], 3);
         );
         assert_shift_left!(
-            Transpose::new(5, 4), Transpose::new(5*4, 3), Elementary::new_take([0, 1], 3);
+            Transpose::new(5, 4), Transpose::new(5*4, 3), Elementary::new_take(vec![0, 1], 3);
         );
         assert_shift_left!(
             Elementary::new_children(Line).with_offset(1), Elementary::new_children(Line);
