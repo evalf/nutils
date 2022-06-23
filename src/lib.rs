@@ -3,6 +3,7 @@ pub mod finite_f64;
 pub mod ops;
 pub mod relative_to;
 pub mod simplex;
+pub mod topology;
 
 pub trait BoundedMap {
     fn len_out(&self) -> usize;
@@ -89,7 +90,7 @@ pub trait UnboundedMap {
     }
 }
 
-pub trait UnapplyIndicesData: Clone {
+pub trait UnapplyIndicesData: Clone + std::fmt::Debug {
     fn last(&self) -> usize;
     fn push(&self, index: usize) -> Self;
 }

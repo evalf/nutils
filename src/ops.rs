@@ -1,3 +1,4 @@
+use crate::elementary::{Elementary, PushElementary};
 use crate::{BoundedMap, UnapplyIndicesData, UnboundedMap};
 use num::Integer as _;
 use std::ops::{Deref, DerefMut};
@@ -28,7 +29,7 @@ pub struct WithBounds<M: UnboundedMap> {
     len_in: usize,
 }
 
-impl<M: UnboundedMap> WithBounds<M> {
+impl<M: UnboundedMap + std::fmt::Debug> WithBounds<M> {
     pub fn new(map: M, dim_out: usize, len_out: usize) -> Result<Self, WithBoundsError> {
         if dim_out < map.dim_out() {
             Err(WithBoundsError::DimensionTooSmall)
@@ -50,8 +51,11 @@ impl<M: UnboundedMap> WithBounds<M> {
             len_in,
         }
     }
-    pub fn get_infinite(&self) -> &M {
+    pub fn get_unbounded(&self) -> &M {
         &self.map
+    }
+    pub fn into_unbounded(self) -> M {
+        self.map
     }
 }
 
@@ -91,6 +95,23 @@ impl<M: UnboundedMap> BoundedMap for WithBounds<M> {
     }
     fn is_identity(&self) -> bool {
         self.map.is_identity()
+    }
+}
+
+impl<M: UnboundedMap + PushElementary> PushElementary for WithBounds<M> {
+    fn push_elementary(&mut self, item: &Elementary) {
+        // TODO: return an error if we push something that causes `dim_in` to drop below zero
+        // or with incompatible length.
+        assert!(self.dim_in >= item.delta_dim());
+        self.delta_dim += item.delta_dim();
+        self.dim_in -= item.delta_dim();
+        if item.mod_out() > 0 {
+            assert_eq!(self.len_in % item.mod_out(), 0);
+            self.len_in = self.len_in / item.mod_out() * item.mod_in();
+        } else {
+            self.len_in = 0;
+        }
+        self.map.push_elementary(item);
     }
 }
 
@@ -220,13 +241,7 @@ pub trait Compose: BoundedMap + Sized {
 impl<M: BoundedMap> Compose for M {}
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Concatenation<Item: BoundedMap> {
-    dim_in: usize,
-    delta_dim: usize,
-    len_out: usize,
-    len_in: usize,
-    items: Vec<Item>,
-}
+pub struct Concatenation<Item: BoundedMap>(Vec<Item>);
 
 impl<Item: BoundedMap> Concatenation<Item> {
     pub fn new(items: Vec<Item>) -> Self {
@@ -235,23 +250,15 @@ impl<Item: BoundedMap> Concatenation<Item> {
         let dim_in = first.dim_in();
         let delta_dim = first.delta_dim();
         let len_out = first.len_out();
-        let mut len_in = 0;
         for item in items.iter() {
             assert_eq!(item.dim_in(), dim_in);
             assert_eq!(item.delta_dim(), delta_dim);
             assert_eq!(item.len_out(), len_out);
-            len_in += item.len_in();
         }
-        Self {
-            dim_in,
-            delta_dim,
-            len_out,
-            len_in,
-            items,
-        }
+        Self(items)
     }
     fn resolve_item_unchecked(&self, mut index: usize) -> (&Item, usize) {
-        for item in self.items.iter() {
+        for item in self.0.iter() {
             if index < item.len_in() {
                 return (item, index);
             }
@@ -260,28 +267,30 @@ impl<Item: BoundedMap> Concatenation<Item> {
         panic!("index out of range");
     }
     pub fn iter(&self) -> impl Iterator<Item = &Item> {
-        self.items.iter()
+        self.0.iter()
+    }
+    pub fn into_iter(self) -> impl Iterator<Item = Item> {
+        self.0.into_iter()
     }
 }
 
 impl<Item: BoundedMap> BoundedMap for Concatenation<Item> {
     fn dim_in(&self) -> usize {
-        self.dim_in
+        self.0.first().unwrap().dim_in()
     }
     fn delta_dim(&self) -> usize {
-        self.delta_dim
+        self.0.first().unwrap().delta_dim()
     }
     fn len_out(&self) -> usize {
-        self.len_out
+        self.0.first().unwrap().len_out()
     }
     fn len_in(&self) -> usize {
-        self.len_in
+        self.iter().map(|item| item.len_in()).sum()
     }
     fn add_offset(&mut self, offset: usize) {
-        for item in self.items.iter_mut() {
+        for item in &mut self.0 {
             item.add_offset(offset);
         }
-        self.dim_in += offset;
     }
     fn apply_inplace_unchecked(
         &self,
@@ -296,18 +305,61 @@ impl<Item: BoundedMap> BoundedMap for Concatenation<Item> {
         let (item, index) = self.resolve_item_unchecked(index);
         item.apply_index_unchecked(index)
     }
-    fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, _indices: &[T]) -> Vec<T> {
-        unimplemented! {}
+    fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
+        let mut result = Vec::new();
+        let mut offset = 0;
+        for item in &self.0 {
+            result.extend(
+                item.unapply_indices_unchecked(indices)
+                    .into_iter()
+                    .map(|i| i.push(i.last() + offset)),
+            );
+            offset += item.len_in();
+        }
+        result
     }
     fn is_identity(&self) -> bool {
         false
     }
 }
 
+impl<M> PushElementary for Concatenation<M>
+where
+    M: BoundedMap + PushElementary,
+{
+    fn push_elementary(&mut self, map: &Elementary) {
+        match map {
+            Elementary::Children(_) | Elementary::Edges(_) => {
+                for item in &mut self.0 {
+                    item.push_elementary(map);
+                }
+            }
+            Elementary::Take(take) => {
+                let mut offset = 0;
+                let indices = take.get_indices();
+                let mut indices = indices.iter().cloned().peekable();
+                for item in &mut self.0 {
+                    let len = item.len_in();
+                    let mut item_indices = Vec::new();
+                    while let Some(index) = indices.next_if(|&i| i < offset + len) {
+                        if index < offset {
+                            unimplemented! {"take of concatenation with unordered indices"};
+                        }
+                        item_indices.push(index - offset);
+                    }
+                    item.push_elementary(&Elementary::new_take(item_indices, len));
+                    offset += len;
+                }
+            }
+            _ => unimplemented! {},
+        }
+    }
+}
+
 #[inline]
 fn update_dim_out_in<M: UnboundedMap>(map: &M, dim_out: usize, dim_in: usize) -> (usize, usize) {
     if let Some(n) = map.dim_in().checked_sub(dim_out) {
-        (dim_out + n, dim_in + n)
+        (map.dim_out(), dim_in + n)
     } else {
         (dim_out, dim_in)
     }
@@ -323,7 +375,7 @@ fn update_mod_out_in<M: UnboundedMap>(map: &M, mod_out: usize, mod_in: usize) ->
 impl<Item, Array> UnboundedMap for Array
 where
     Item: UnboundedMap,
-    Array: Deref<Target = [Item]> + DerefMut,
+    Array: Deref<Target = [Item]> + DerefMut + std::fmt::Debug,
 {
     fn dim_in(&self) -> usize {
         self.deref()

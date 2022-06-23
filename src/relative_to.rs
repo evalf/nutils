@@ -152,15 +152,23 @@ impl BoundedMap for Relative {
     dispatch! {fn is_identity(&self) -> bool}
 }
 
-trait RelativeTo<Target: BoundedMap> {
+pub trait RelativeTo<Target: BoundedMap> {
     fn relative_to(&self, target: &Target) -> Option<Relative>;
+    fn unapply_indices_from<T: UnapplyIndicesData>(
+        &self,
+        target: &Target,
+        indices: &[T],
+    ) -> Option<Vec<T>> {
+        self.relative_to(target)
+            .and_then(|rel| rel.unapply_indices(indices))
+    }
 }
 
 impl RelativeTo<Self> for WithBounds<Vec<Elementary>> {
     fn relative_to(&self, target: &Self) -> Option<Relative> {
         let (_, rem, rel) = target
-            .get_infinite()
-            .remove_common_prefix_opt_lhs(self.get_infinite());
+            .get_unbounded()
+            .remove_common_prefix_opt_lhs(self.get_unbounded());
         rem.is_identity()
             .then(|| Relative::Single(Self::new_unchecked(rel, target.dim_in(), target.len_in())))
     }
@@ -257,8 +265,20 @@ impl BoundedMap for RelativeMultiple {
             *index = self.index_map[*index].0;
         }
     }
-    fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, _indices: &[T]) -> Vec<T> {
-        unimplemented! {}
+    fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
+        // FIXME: VERY EXPENSIVE!!!
+        let mut in_indices: Vec<T> = Vec::new();
+        for index in indices {
+            in_indices.extend(
+                self.index_map
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(iin, (iout, _))| {
+                        (*iout == index.last()).then(|| index.push(iin))
+                    }),
+            );
+        }
+        self.common.unapply_indices(&in_indices)
     }
     fn is_identity(&self) -> bool {
         false
@@ -271,8 +291,8 @@ impl RelativeTo<Concatenation<Self>> for WithBounds<Vec<Elementary>> {
         let mut offset = 0;
         for target in targets.iter() {
             let (_, rem, rel) = target
-                .get_infinite()
-                .remove_common_prefix_opt_lhs(&self.get_infinite());
+                .get_unbounded()
+                .remove_common_prefix_opt_lhs(&self.get_unbounded());
             if rem.is_identity() {
                 let slice = Elementary::new_slice(offset, target.len_in(), targets.len_in());
                 let rel: Vec<Elementary> = iter::once(slice).chain(rel).collect();
@@ -286,16 +306,18 @@ impl RelativeTo<Concatenation<Self>> for WithBounds<Vec<Elementary>> {
             }
             offset += target.len_in();
         }
-        // Split off common tail.
-        let mut common_len_out = self.len_in();
-        let mut common = Vec::new();
-        {
-            let mut rels: Vec<_> = rels_indices.iter_mut().map(|(rel, _, _)| rel).collect();
-            while let Some(item) = pop_common(&mut rels[..]) {
-                common_len_out = common_len_out / item.mod_in() * item.mod_out();
-                common.push(item);
-            }
-        }
+        // Split off common tail. TODO: Only shape increasing items, not take, slice (and transpose?).
+        let common_len_out = self.len_in();
+        let common = Vec::new();
+        //let mut common_len_out = self.len_in();
+        //let mut common = Vec::new();
+        //{
+        //    let mut rels: Vec<_> = rels_indices.iter_mut().map(|(rel, _, _)| rel).collect();
+        //    while let Some(item) = pop_common(&mut rels[..]) {
+        //        common_len_out = common_len_out / item.mod_in() * item.mod_out();
+        //        common.push(item);
+        //    }
+        //}
         // Build index map.
         let mut index_map: Vec<Option<(usize, usize)>> =
             iter::repeat(None).take(common_len_out).collect();

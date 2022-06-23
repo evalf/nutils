@@ -86,6 +86,20 @@ impl Simplex {
         }
     }
 
+    pub fn centroid(&self) -> Vec<f64> {
+        let scale = (self.dim() + 1) as f64;
+        (0..self.dim())
+            .map(|j| {
+                self.vertices()
+                    .iter()
+                    .skip(j)
+                    .step_by(self.dim())
+                    .sum::<f64>()
+                    / scale
+            })
+            .collect()
+    }
+
     /// Transform the given child `coordinates` for child `index` to this parent
     /// simplex in-place. The returned index is the index of the parent in an
     /// infinite, uniform sequence.

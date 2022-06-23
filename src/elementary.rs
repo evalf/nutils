@@ -126,6 +126,9 @@ impl Take {
             len,
         }
     }
+    pub fn get_indices(&self) -> Rc<[usize]> {
+        self.indices.clone()
+    }
 }
 
 impl UnboundedMap for Take {
@@ -362,7 +365,7 @@ impl UnboundedMap for UniformPoints {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Elementary {
     Transpose(Transpose),
     Take(Take),
@@ -572,6 +575,10 @@ impl UnboundedMap for Elementary {
     dispatch! {fn is_identity(&self) -> bool}
 }
 
+impl std::fmt::Debug for Elementary {
+    dispatch! {fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result}
+}
+
 impl From<Transpose> for Elementary {
     fn from(transpose: Transpose) -> Self {
         Self::Transpose(transpose)
@@ -605,6 +612,16 @@ impl From<Edges> for Elementary {
 impl From<UniformPoints> for Elementary {
     fn from(uniform_points: UniformPoints) -> Self {
         Self::UniformPoints(uniform_points)
+    }
+}
+
+pub trait PushElementary {
+    fn push_elementary(&mut self, map: &Elementary);
+}
+
+impl PushElementary for Vec<Elementary> {
+    fn push_elementary(&mut self, map: &Elementary) {
+        self.push(map.clone());
     }
 }
 
