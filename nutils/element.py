@@ -376,10 +376,6 @@ class SimplexReference(Reference):
             return points.SimplexBezierPoints(self.ndims, degree)
         return super().getpoints(ischeme, degree)
 
-    @property
-    def simplices(self):
-        return (transform.Identity(self.ndims), self),
-
     def get_ndofs(self, degree):
         prod = lambda start, stop: functools.reduce(operator.mul, range(start, stop), 1)
         return prod(degree+1, degree+1+self.ndims) // prod(1, self.ndims+1)
@@ -690,10 +686,6 @@ class TensorReference(Reference):
     def inside(self, point, eps=0):
         return self.ref1.inside(point[:self.ref1.ndims], eps) and self.ref2.inside(point[self.ref1.ndims:], eps)
 
-    @property
-    def simplices(self):
-        return tuple((transform.TensorChild(trans1, trans2), TensorReference(simplex1, simplex2)) for trans1, simplex1 in self.ref1.simplices for trans2, simplex2 in self.ref2.simplices)
-
     def get_ndofs(self, degree):
         return self.ref1.get_ndofs(degree)*self.ref2.get_ndofs(degree)
 
@@ -791,12 +783,6 @@ class Cone(Reference):
             return points.CoordsPoints(self.vertices[[1, 2, 4, 3, 0]])
         return points.ConePoints(self.edgeref.getpoints(ischeme, degree), self.etrans, self.tip)
 
-    @property
-    def simplices(self):
-        if self.nverts == self.ndims+1 or self.edgeref.ndims == 2 and self.edgeref.nverts == 4:  # simplices and square-based pyramids are ok
-            return [(transform.Identity(self.ndims), self)]
-        return tuple((transform.Identity(self.ndims), ref.cone(self.etrans*trans, self.tip)) for trans, ref in self.edgeref.simplices)
-
     def inside(self, point, eps=0):
         # point = etrans.apply(epoint) * xi + tip * (1-xi) => etrans.apply(epoint) = tip + (point-tip) / xi
         xi = numpy.dot(self.etrans.ext, point-self.tip) / numpy.dot(self.etrans.ext, self.etrans.offset-self.tip)
@@ -830,10 +816,6 @@ class OwnChildReference(Reference):
 
     def getpoints(self, ischeme, degree):
         return self.baseref.getpoints(ischeme, degree)
-
-    @property
-    def simplices(self):
-        return self.baseref.simplices
 
     def get_ndofs(self, degree):
         return self.baseref.get_ndofs(degree)
@@ -928,10 +910,6 @@ class WithChildrenReference(Reference):
             dedup = False
         childpoints = [points.TransformPoints(ref.getpoints(ischeme, degree), trans) for trans, ref in self.children if ref]
         return points.ConcatPoints(childpoints, points.find_duplicates(childpoints) if dedup else ())
-
-    @property
-    def simplices(self):
-        return [(trans2*trans1, simplex) for trans2, child in self.children for trans1, simplex in (child.simplices if child else [])]
 
     @property
     def edge_transforms(self):
@@ -1068,10 +1046,6 @@ class MosaicReference(Reference):
     @property
     def subrefs(self):
         return tuple(ref.cone(trans, self._midpoint) for trans, ref in zip(self.baseref.edge_transforms, self._edge_refs) if ref)
-
-    @property
-    def simplices(self):
-        return [simplex for subvol in self.subrefs for simplex in subvol.simplices]
 
     def getpoints(self, ischeme, degree):
         if ischeme == 'vertex':
