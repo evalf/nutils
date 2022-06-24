@@ -11,12 +11,12 @@ trait RemoveCommonPrefix: Sized {
     fn remove_common_prefix_opt_lhs(&self, other: &Self) -> (Self, Self, Self);
 }
 
-fn split_heads(items: &[Elementary]) -> BTreeMap<Elementary, (Option<Transpose>, Vec<Elementary>)> {
+fn split_heads(items: &[Elementary]) -> BTreeMap<(Option<Transpose>, Elementary), Vec<Elementary>> {
     let mut heads = BTreeMap::new();
     for (i, item) in items.iter().enumerate() {
         if let Some((transpose, head, mut tail)) = item.shift_left(&items[..i]) {
             tail.extend(items[i + 1..].iter().cloned());
-            heads.insert(head, (transpose, tail));
+            heads.insert((transpose, head), tail);
         }
         if let Elementary::Edges(Edges(Simplex::Line, offset)) = item {
             let children = Elementary::new_children(Simplex::Line).with_offset(*offset);
@@ -27,7 +27,7 @@ fn split_heads(items: &[Elementary]) -> BTreeMap<Elementary, (Option<Transpose>,
                     Simplex::Line.nedges() * Simplex::Line.nchildren(),
                 ));
                 tail.extend(items[i + 1..].iter().cloned());
-                heads.insert(head, (transpose, tail));
+                heads.insert((transpose, head), tail);
             }
         }
     }
@@ -50,19 +50,16 @@ impl RemoveCommonPrefix for Vec<Elementary> {
                 tail2 = iter2.collect();
                 continue;
             }
-            let heads1: BTreeMap<Elementary, Vec<Elementary>> = split_heads(&tail1)
+            let heads1 = split_heads(&tail1);
+            let mut heads2 = split_heads(&tail2);
+            if let Some(((transpose, head), new_tail1, new_tail2)) = heads1
                 .into_iter()
-                .filter_map(|(head, (trans, tail))| trans.is_none().then(|| (head, tail)))
-                .collect();
-            let mut heads2: BTreeMap<Elementary, Vec<Elementary>> = split_heads(&tail2)
-                .into_iter()
-                .filter_map(|(head, (trans, tail))| trans.is_none().then(|| (head, tail)))
-                .collect();
-            if let Some((head, new_tail1, new_tail2)) = heads1
-                .into_iter()
-                .filter_map(|(h, t1)| heads2.remove(&h).map(|t2| (h, t1, t2)))
+                .filter_map(|(key, t1)| heads2.remove(&key).map(|t2| (key, t1, t2)))
                 .min_by_key(|(_, t1, t2)| std::cmp::max(t1.len(), t2.len()))
             {
+                if let Some(transpose) = transpose {
+                    common.push(transpose.into());
+                }
                 common.push(head);
                 tail1 = new_tail1;
                 tail2 = new_tail2;
@@ -111,16 +108,16 @@ macro_rules! dispatch {
     (
         $vis:vis fn $fn:ident$(<$genarg:ident: $genpath:path>)?(
             &$self:ident $(, $arg:ident: $ty:ty)*
-        ) $($ret:tt)*
+        ) $(-> $ret:ty)?
     ) => {
         #[inline]
-        $vis fn $fn$(<$genarg: $genpath>)?(&$self $(, $arg: $ty)*) $($ret)* {
+        $vis fn $fn$(<$genarg: $genpath>)?(&$self $(, $arg: $ty)*) $(-> $ret)? {
             dispatch!(@match $self; $fn; $($arg),*)
         }
     };
-    ($vis:vis fn $fn:ident(&mut $self:ident $(, $arg:ident: $ty:ty)*) $($ret:tt)*) => {
+    ($vis:vis fn $fn:ident(&mut $self:ident $(, $arg:ident: $ty:ty)*) $(-> $ret:ty)?) => {
         #[inline]
-        $vis fn $fn(&mut $self $(, $arg: $ty)*) $($ret)* {
+        $vis fn $fn(&mut $self $(, $arg: $ty)*) $(-> $ret)? {
             dispatch!(@match $self; $fn; $($arg),*)
         }
     };
@@ -292,7 +289,7 @@ impl RelativeTo<Concatenation<Self>> for WithBounds<Vec<Elementary>> {
         for target in targets.iter() {
             let (_, rem, rel) = target
                 .get_unbounded()
-                .remove_common_prefix_opt_lhs(&self.get_unbounded());
+                .remove_common_prefix_opt_lhs(self.get_unbounded());
             if rem.is_identity() {
                 let slice = Elementary::new_slice(offset, target.len_in(), targets.len_in());
                 let rel: Vec<Elementary> = iter::once(slice).chain(rel).collect();
@@ -336,8 +333,8 @@ impl RelativeTo<Concatenation<Self>> for WithBounds<Vec<Elementary>> {
             }
             rels.push(rel);
         }
-        if let Some(index_map) = index_map.into_iter().collect::<Option<Vec<_>>>() {
-            Some(Relative::Multiple(RelativeMultiple {
+        index_map.into_iter().collect::<Option<Vec<_>>>().map(|index_map|
+            Relative::Multiple(RelativeMultiple {
                 index_map: index_map.into(),
                 rels,
                 common,
@@ -346,9 +343,6 @@ impl RelativeTo<Concatenation<Self>> for WithBounds<Vec<Elementary>> {
                 len_out: targets.len_in(),
                 len_in: self.len_in(),
             }))
-        } else {
-            None
-        }
     }
 }
 

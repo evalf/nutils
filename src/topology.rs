@@ -1,8 +1,8 @@
-use crate::elementary::{Elementary, PushElementary};
+use crate::elementary::{Elementary, PushElementary as _};
 use crate::ops::{Concatenation, WithBounds};
-use crate::relative_to::RelativeTo;
+use crate::relative::RelativeTo as _;
 use crate::simplex::Simplex;
-use crate::BoundedMap;
+use crate::BoundedMap as _;
 use std::iter;
 use std::rc::Rc;
 
@@ -32,14 +32,14 @@ pub trait TopologyCore: std::fmt::Debug + Clone + Into<Topology> {
     fn map_itiles_to_refined(&self, itiles: &[usize]) -> Vec<usize> {
         self.refined()
             .tesselation()
-            .unapply_indices_from(self.tesselation(), &itiles)
+            .unapply_indices_from(self.tesselation(), itiles)
             .unwrap()
     }
     fn boundary(&self) -> Topology;
     fn take(&self, itiles: &[usize]) -> Topology {
         let mut itiles: Vec<usize> = itiles.to_vec();
         itiles.sort_by_key(|&index| index);
-        Take::new(self.clone().into(), itiles.into())
+        Take::new(self.clone().into(), itiles)
     }
     fn refined_by(&self, itiles: &[usize]) -> Topology {
         Hierarchical::new(self.clone().into(), vec![(0..self.ntiles()).collect()])
@@ -61,16 +61,16 @@ macro_rules! dispatch {
     (
         $vis:vis fn $fn:ident$(<$genarg:ident: $genpath:path>)?(
             &$self:ident $(, $arg:ident: $ty:ty)*
-        ) $($ret:tt)*
+        ) $(-> $ret:ty)?
     ) => {
         #[inline]
-        $vis fn $fn$(<$genarg: $genpath>)?(&$self $(, $arg: $ty)*) $($ret)* {
+        $vis fn $fn$(<$genarg: $genpath>)?(&$self $(, $arg: $ty)*) $(-> $ret)? {
             dispatch!(@match $self; $fn; $($arg),*)
         }
     };
-    ($vis:vis fn $fn:ident(&mut $self:ident $(, $arg:ident: $ty:ty)*) $($ret:tt)*) => {
+    ($vis:vis fn $fn:ident(&mut $self:ident $(, $arg:ident: $ty:ty)*) $(-> $ret:ty)?) => {
         #[inline]
-        $vis fn $fn(&mut $self $(, $arg: $ty)*) $($ret)* {
+        $vis fn $fn(&mut $self $(, $arg: $ty)*) $(-> $ret)? {
             dispatch!(@match $self; $fn; $($arg),*)
         }
     };
@@ -294,7 +294,7 @@ impl TopologyCore for Take {
             .unapply_indices_from(self.topo.tesselation(), &self.itiles)
             .unwrap();
         itiles.sort_by_key(|&index| index);
-        Take::new(refined, itiles.into())
+        Take::new(refined, itiles)
     }
     fn boundary(&self) -> Topology {
         unimplemented! {}
@@ -314,20 +314,18 @@ fn refine_iter(base: Topology) -> impl Iterator<Item = Topology> {
 
 impl Hierarchical {
     pub fn new(base: Topology, itiles: Vec<Vec<usize>>) -> Topology {
-        //println!("{itiles:?}");
         let tesselation = Concatenation::new(
             itiles
                 .iter()
                 .zip(refine_iter(base.clone()))
                 .filter(|(itiles, _)| !itiles.is_empty())
                 .flat_map(|(itiles, level)| {
-                    //println!("{level:?} {itiles:?}");
                     let mut tesselation = level.tesselation().clone();
                     tesselation.push_elementary(&Elementary::new_take(
                         itiles.clone(),
                         tesselation.len_in(),
                     ));
-                    tesselation.into_iter()
+                    tesselation.into_vec()
                 })
                 .collect(),
         );

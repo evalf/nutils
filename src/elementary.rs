@@ -537,16 +537,16 @@ macro_rules! dispatch {
     (
         $vis:vis fn $fn:ident$(<$genarg:ident: $genpath:path>)?(
             &$self:ident $(, $arg:ident: $ty:ty)*
-        ) $($ret:tt)*
+        ) $(-> $ret:ty)?
     ) => {
         #[inline]
-        $vis fn $fn$(<$genarg: $genpath>)?(&$self $(, $arg: $ty)*) $($ret)* {
+        $vis fn $fn$(<$genarg: $genpath>)?(&$self $(, $arg: $ty)*) $(-> $ret)? {
             dispatch!(@match $self; $fn; $($arg),*)
         }
     };
-    ($vis:vis fn $fn:ident(&mut $self:ident $(, $arg:ident: $ty:ty)*) $($ret:tt)*) => {
+    ($vis:vis fn $fn:ident(&mut $self:ident $(, $arg:ident: $ty:ty)*) $(-> $ret:ty)?) => {
         #[inline]
-        $vis fn $fn(&mut $self $(, $arg: $ty)*) $($ret)* {
+        $vis fn $fn(&mut $self $(, $arg: $ty)*) $(-> $ret)? {
             dispatch!(@match $self; $fn; $($arg),*)
         }
     };
@@ -617,6 +617,11 @@ impl From<UniformPoints> for Elementary {
 
 pub trait PushElementary {
     fn push_elementary(&mut self, map: &Elementary);
+    fn clone_and_push_elementary(&self, map: &Elementary) -> Self where Self: Clone {
+        let mut cloned = self.clone();
+        cloned.push_elementary(map);
+        cloned
+    }
 }
 
 impl PushElementary for Vec<Elementary> {

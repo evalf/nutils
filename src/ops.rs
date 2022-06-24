@@ -269,8 +269,8 @@ impl<Item: BoundedMap> Concatenation<Item> {
     pub fn iter(&self) -> impl Iterator<Item = &Item> {
         self.0.iter()
     }
-    pub fn into_iter(self) -> impl Iterator<Item = Item> {
-        self.0.into_iter()
+    pub fn into_vec(self) -> Vec<Item> {
+        self.0
     }
 }
 
