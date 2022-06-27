@@ -19,6 +19,13 @@ impl Simplex {
     pub const fn edge_dim(&self) -> usize {
         self.dim() - 1
     }
+    /// Returns the edge simplex, if any.
+    pub const fn edge_simplex(&self) -> Option<Self> {
+        match self {
+            Self::Line => None,
+            Self::Triangle => Some(Self::Line),
+        }
+    }
     /// Returns the number of edges of the simplex.
     #[inline]
     pub const fn nedges(&self) -> usize {

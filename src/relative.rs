@@ -1,7 +1,7 @@
 use crate::elementary::{Edges, Elementary, Identity, Transpose};
 use crate::ops::{Concatenation, WithBounds};
 use crate::simplex::Simplex;
-use crate::{BoundedMap, UnapplyIndicesData, UnboundedMap};
+use crate::{AddOffset, BoundedMap, UnapplyIndicesData, UnboundedMap};
 use std::collections::BTreeMap;
 use std::iter;
 use std::rc::Rc;
@@ -137,7 +137,6 @@ impl BoundedMap for Relative {
     dispatch! {fn dim_out(&self) -> usize}
     dispatch! {fn dim_in(&self) -> usize}
     dispatch! {fn delta_dim(&self) -> usize}
-    dispatch! {fn add_offset(&mut self, offset: usize)}
     dispatch! {fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize}
     dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize) -> Option<usize>}
     dispatch! {fn apply_index_unchecked(&self, index: usize) -> usize}
@@ -147,6 +146,10 @@ impl BoundedMap for Relative {
     dispatch! {fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>}
     dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Option<Vec<T>>}
     dispatch! {fn is_identity(&self) -> bool}
+}
+
+impl AddOffset for Relative {
+    dispatch! {fn add_offset(&mut self, offset: usize)}
 }
 
 pub trait RelativeTo<Target: BoundedMap> {
@@ -234,13 +237,6 @@ impl BoundedMap for RelativeMultiple {
     fn len_out(&self) -> usize {
         self.len_out
     }
-    fn add_offset(&mut self, offset: usize) {
-        self.common.add_offset(offset);
-        for rel in self.rels.iter_mut() {
-            rel.add_offset(offset);
-        }
-        self.dim_in += offset;
-    }
     fn apply_inplace_unchecked(
         &self,
         index: usize,
@@ -279,6 +275,16 @@ impl BoundedMap for RelativeMultiple {
     }
     fn is_identity(&self) -> bool {
         false
+    }
+}
+
+impl AddOffset for RelativeMultiple {
+    fn add_offset(&mut self, offset: usize) {
+        self.common.add_offset(offset);
+        for rel in self.rels.iter_mut() {
+            rel.add_offset(offset);
+        }
+        self.dim_in += offset;
     }
 }
 

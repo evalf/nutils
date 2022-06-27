@@ -1,6 +1,6 @@
 use crate::finite_f64::FiniteF64;
 use crate::simplex::Simplex;
-use crate::{UnapplyIndicesData, UnboundedMap};
+use crate::{AddOffset, UnapplyIndicesData, UnboundedMap};
 use num::Integer as _;
 use std::rc::Rc;
 
@@ -36,7 +36,6 @@ impl UnboundedMap for Identity {
     fn delta_dim(&self) -> usize {
         0
     }
-    fn add_offset(&mut self, _offset: usize) {}
     fn mod_in(&self) -> usize {
         1
     }
@@ -55,6 +54,10 @@ impl UnboundedMap for Identity {
     fn is_identity(&self) -> bool {
         true
     }
+}
+
+impl AddOffset for Identity {
+    fn add_offset(&mut self, _offset: usize) {}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -78,7 +81,6 @@ impl UnboundedMap for Transpose {
     fn delta_dim(&self) -> usize {
         0
     }
-    fn add_offset(&mut self, _offset: usize) {}
     fn mod_in(&self) -> usize {
         if self.0 != 1 && self.1 != 1 {
             self.0 * self.1
@@ -107,6 +109,10 @@ impl UnboundedMap for Transpose {
             })
             .collect()
     }
+}
+
+impl AddOffset for Transpose {
+    fn add_offset(&mut self, _offset: usize) {}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -138,7 +144,6 @@ impl UnboundedMap for Take {
     fn delta_dim(&self) -> usize {
         0
     }
-    fn add_offset(&mut self, _offset: usize) {}
     fn mod_in(&self) -> usize {
         self.nindices
     }
@@ -166,6 +171,10 @@ impl UnboundedMap for Take {
     }
 }
 
+impl AddOffset for Take {
+    fn add_offset(&mut self, _offset: usize) {}
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Slice {
     start: usize,
@@ -191,7 +200,6 @@ impl UnboundedMap for Slice {
     fn delta_dim(&self) -> usize {
         0
     }
-    fn add_offset(&mut self, _offset: usize) {}
     fn mod_in(&self) -> usize {
         self.len_in
     }
@@ -217,6 +225,10 @@ impl UnboundedMap for Slice {
     }
 }
 
+impl AddOffset for Slice {
+    fn add_offset(&mut self, _offset: usize) {}
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Children(Simplex, usize);
 
@@ -232,9 +244,6 @@ impl UnboundedMap for Children {
     }
     fn delta_dim(&self) -> usize {
         0
-    }
-    fn add_offset(&mut self, offset: usize) {
-        self.1 += offset;
     }
     fn mod_in(&self) -> usize {
         self.0.nchildren()
@@ -253,6 +262,12 @@ impl UnboundedMap for Children {
             .iter()
             .flat_map(|i| (0..self.mod_in()).map(move |j| i.push(i.last() * self.mod_in() + j)))
             .collect()
+    }
+}
+
+impl AddOffset for Children {
+    fn add_offset(&mut self, offset: usize) {
+        self.1 += offset;
     }
 }
 
@@ -278,9 +293,6 @@ impl UnboundedMap for Edges {
     fn delta_dim(&self) -> usize {
         1
     }
-    fn add_offset(&mut self, offset: usize) {
-        self.1 += offset;
-    }
     fn mod_in(&self) -> usize {
         self.0.nedges()
     }
@@ -298,6 +310,12 @@ impl UnboundedMap for Edges {
             .iter()
             .flat_map(|i| (0..self.mod_in()).map(move |j| i.push(i.last() * self.mod_in() + j)))
             .collect()
+    }
+}
+
+impl AddOffset for Edges {
+    fn add_offset(&mut self, offset: usize) {
+        self.1 += offset;
     }
 }
 
@@ -337,9 +355,6 @@ impl UnboundedMap for UniformPoints {
     fn delta_dim(&self) -> usize {
         self.point_dim
     }
-    fn add_offset(&mut self, offset: usize) {
-        self.offset += offset;
-    }
     fn mod_in(&self) -> usize {
         self.npoints
     }
@@ -362,6 +377,12 @@ impl UnboundedMap for UniformPoints {
             .iter()
             .flat_map(|i| (0..self.mod_in()).map(move |j| i.push(i.last() * self.mod_in() + j)))
             .collect()
+    }
+}
+
+impl AddOffset for UniformPoints {
+    fn add_offset(&mut self, offset: usize) {
+        self.offset += offset;
     }
 }
 
@@ -565,7 +586,6 @@ macro_rules! dispatch {
 impl UnboundedMap for Elementary {
     dispatch! {fn dim_in(&self) -> usize}
     dispatch! {fn delta_dim(&self) -> usize}
-    dispatch! {fn add_offset(&mut self, offset: usize)}
     dispatch! {fn mod_in(&self) -> usize}
     dispatch! {fn mod_out(&self) -> usize}
     dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut[f64], stride: usize) -> usize}
@@ -573,6 +593,10 @@ impl UnboundedMap for Elementary {
     dispatch! {fn apply_indices_inplace(&self, indices: &mut [usize])}
     dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>}
     dispatch! {fn is_identity(&self) -> bool}
+}
+
+impl AddOffset for Elementary {
+    dispatch! {fn add_offset(&mut self, offset: usize)}
 }
 
 impl std::fmt::Debug for Elementary {

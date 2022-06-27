@@ -1,5 +1,5 @@
 use crate::elementary::{Elementary, PushElementary};
-use crate::{BoundedMap, UnapplyIndicesData, UnboundedMap};
+use crate::{AddOffset, BoundedMap, UnapplyIndicesData, UnboundedMap};
 use num::Integer as _;
 use std::ops::{Deref, DerefMut};
 
@@ -72,10 +72,6 @@ impl<M: UnboundedMap> BoundedMap for WithBounds<M> {
     fn delta_dim(&self) -> usize {
         self.delta_dim
     }
-    fn add_offset(&mut self, offset: usize) {
-        self.map.add_offset(offset);
-        self.dim_in += offset;
-    }
     fn apply_inplace_unchecked(
         &self,
         index: usize,
@@ -95,6 +91,13 @@ impl<M: UnboundedMap> BoundedMap for WithBounds<M> {
     }
     fn is_identity(&self) -> bool {
         self.map.is_identity()
+    }
+}
+
+impl<M: UnboundedMap + AddOffset> AddOffset for WithBounds<M> {
+    fn add_offset(&mut self, offset: usize) {
+        self.map.add_offset(offset);
+        self.dim_in += offset;
     }
 }
 
@@ -158,10 +161,6 @@ impl<Inner: BoundedMap, Outer: BoundedMap> BoundedMap for Composition<Inner, Out
     fn delta_dim(&self) -> usize {
         self.inner.delta_dim() + self.outer.delta_dim()
     }
-    fn add_offset(&mut self, offset: usize) {
-        self.inner.add_offset(offset);
-        self.outer.add_offset(offset);
-    }
     fn apply_inplace_unchecked(
         &self,
         index: usize,
@@ -204,10 +203,6 @@ impl<Inner: UnboundedMap, Outer: UnboundedMap> UnboundedMap for Composition<Inne
     fn delta_dim(&self) -> usize {
         self.inner.delta_dim() + self.outer.delta_dim()
     }
-    fn add_offset(&mut self, offset: usize) {
-        self.inner.add_offset(offset);
-        self.outer.add_offset(offset);
-    }
     fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize {
         let index = self.inner.apply_inplace(index, coordinates, stride);
         self.outer.apply_inplace(index, coordinates, stride)
@@ -226,6 +221,13 @@ impl<Inner: UnboundedMap, Outer: UnboundedMap> UnboundedMap for Composition<Inne
     }
     fn is_identity(&self) -> bool {
         self.inner.is_identity() && self.outer.is_identity()
+    }
+}
+
+impl<Inner: AddOffset, Outer: AddOffset> AddOffset for Composition<Inner, Outer> {
+    fn add_offset(&mut self, offset: usize) {
+        self.inner.add_offset(offset);
+        self.outer.add_offset(offset);
     }
 }
 
@@ -287,11 +289,6 @@ impl<Item: BoundedMap> BoundedMap for Concatenation<Item> {
     fn len_in(&self) -> usize {
         self.iter().map(|item| item.len_in()).sum()
     }
-    fn add_offset(&mut self, offset: usize) {
-        for item in &mut self.0 {
-            item.add_offset(offset);
-        }
-    }
     fn apply_inplace_unchecked(
         &self,
         index: usize,
@@ -320,6 +317,14 @@ impl<Item: BoundedMap> BoundedMap for Concatenation<Item> {
     }
     fn is_identity(&self) -> bool {
         false
+    }
+}
+
+impl<M: BoundedMap + AddOffset> AddOffset for Concatenation<M> {
+    fn add_offset(&mut self, offset: usize) {
+        for item in &mut self.0 {
+            item.add_offset(offset);
+        }
     }
 }
 
@@ -389,11 +394,6 @@ where
     fn delta_dim(&self) -> usize {
         self.iter().map(|item| item.delta_dim()).sum()
     }
-    fn add_offset(&mut self, offset: usize) {
-        for item in self.iter_mut() {
-            item.add_offset(offset);
-        }
-    }
     fn mod_in(&self) -> usize {
         self.deref()
             .iter()
@@ -431,5 +431,17 @@ where
         self.iter().fold(indices.to_vec(), |indices, item| {
             item.unapply_indices(&indices)
         })
+    }
+}
+
+impl<Item, Array> AddOffset for Array
+where
+    Item: AddOffset,
+    Array: Deref<Target = [Item]> + DerefMut + std::fmt::Debug,
+{
+    fn add_offset(&mut self, offset: usize) {
+        for item in self.iter_mut() {
+            item.add_offset(offset);
+        }
     }
 }

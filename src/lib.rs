@@ -4,6 +4,7 @@ pub mod ops;
 pub mod relative;
 pub mod simplex;
 pub mod topology;
+pub mod tesselation;
 
 pub trait BoundedMap {
     fn len_out(&self) -> usize;
@@ -13,7 +14,6 @@ pub trait BoundedMap {
     }
     fn dim_in(&self) -> usize;
     fn delta_dim(&self) -> usize;
-    fn add_offset(&mut self, offset: usize);
     fn apply_inplace_unchecked(
         &self,
         index: usize,
@@ -71,7 +71,6 @@ pub trait UnboundedMap {
     }
     // Difference in dimension of the output and input coordinate.
     fn delta_dim(&self) -> usize;
-    fn add_offset(&mut self, offset: usize);
     // Modulus of the input index. The map repeats itself at index `mod_in`
     // and the output index is incremented with `in_index / mod_in * mod_out`.
     fn mod_in(&self) -> usize;
@@ -88,6 +87,10 @@ pub trait UnboundedMap {
     fn is_identity(&self) -> bool {
         self.mod_in() == 1 && self.mod_out() == 1 && self.dim_out() == 0
     }
+}
+
+pub trait AddOffset {
+    fn add_offset(&mut self, offset: usize);
 }
 
 pub trait UnapplyIndicesData: Clone + std::fmt::Debug {

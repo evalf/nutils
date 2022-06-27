@@ -1,10 +1,11 @@
 use crate::elementary::{Elementary, PushElementary as _};
-use crate::ops::{Concatenation, WithBounds};
+use crate::ops::{Concatenation, WithBounds, WithBoundsError};
 use crate::relative::RelativeTo as _;
 use crate::simplex::Simplex;
-use crate::BoundedMap as _;
+use crate::{AddOffset, UnboundedMap, BoundedMap, UnapplyIndicesData};
 use std::iter;
 use std::rc::Rc;
+use std::ops::{Deref, DerefMut};
 
 type Tesselation = Concatenation<WithBounds<Vec<Elementary>>>;
 
