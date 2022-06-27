@@ -42,7 +42,13 @@ impl UnboundedMap for Identity {
     fn mod_out(&self) -> usize {
         1
     }
-    fn apply_inplace(&self, index: usize, _coordinates: &mut [f64], _stride: usize) -> usize {
+    fn apply_inplace(
+        &self,
+        index: usize,
+        _coordinates: &mut [f64],
+        _stride: usize,
+        _offset: usize,
+    ) -> usize {
         index
     }
     fn apply_index(&self, index: usize) -> usize {
@@ -91,7 +97,13 @@ impl UnboundedMap for Transpose {
     fn mod_out(&self) -> usize {
         self.mod_in()
     }
-    fn apply_inplace(&self, index: usize, _coordinates: &mut [f64], _stride: usize) -> usize {
+    fn apply_inplace(
+        &self,
+        index: usize,
+        _coordinates: &mut [f64],
+        _stride: usize,
+        _offset: usize,
+    ) -> usize {
         self.apply_index(index)
     }
     fn apply_index(&self, index: usize) -> usize {
@@ -150,7 +162,13 @@ impl UnboundedMap for Take {
     fn mod_out(&self) -> usize {
         self.len
     }
-    fn apply_inplace(&self, index: usize, _coordinates: &mut [f64], _stride: usize) -> usize {
+    fn apply_inplace(
+        &self,
+        index: usize,
+        _coordinates: &mut [f64],
+        _stride: usize,
+        _offset: usize,
+    ) -> usize {
         self.apply_index(index)
     }
     fn apply_index(&self, index: usize) -> usize {
@@ -206,7 +224,13 @@ impl UnboundedMap for Slice {
     fn mod_out(&self) -> usize {
         self.len_out
     }
-    fn apply_inplace(&self, index: usize, _coordinates: &mut [f64], _stride: usize) -> usize {
+    fn apply_inplace(
+        &self,
+        index: usize,
+        _coordinates: &mut [f64],
+        _stride: usize,
+        _offset: usize,
+    ) -> usize {
         self.apply_index(index)
     }
     fn apply_index(&self, index: usize) -> usize {
@@ -251,8 +275,15 @@ impl UnboundedMap for Children {
     fn mod_out(&self) -> usize {
         1
     }
-    fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize {
-        self.0.apply_child(index, coordinates, stride, self.1)
+    fn apply_inplace(
+        &self,
+        index: usize,
+        coordinates: &mut [f64],
+        stride: usize,
+        offset: usize,
+    ) -> usize {
+        self.0
+            .apply_child(index, coordinates, stride, offset + self.1)
     }
     fn apply_index(&self, index: usize) -> usize {
         self.0.apply_child_index(index)
@@ -299,8 +330,15 @@ impl UnboundedMap for Edges {
     fn mod_out(&self) -> usize {
         1
     }
-    fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize {
-        self.0.apply_edge(index, coordinates, stride, self.1)
+    fn apply_inplace(
+        &self,
+        index: usize,
+        coordinates: &mut [f64],
+        stride: usize,
+        offset: usize,
+    ) -> usize {
+        self.0
+            .apply_edge(index, coordinates, stride, offset + self.1)
     }
     fn apply_index(&self, index: usize) -> usize {
         self.0.apply_edge_index(index)
@@ -361,10 +399,16 @@ impl UnboundedMap for UniformPoints {
     fn mod_out(&self) -> usize {
         1
     }
-    fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize {
+    fn apply_inplace(
+        &self,
+        index: usize,
+        coords: &mut [f64],
+        stride: usize,
+        offset: usize,
+    ) -> usize {
         let points: &[f64] = unsafe { std::mem::transmute(&self.points[..]) };
         let point = &points[(index % self.npoints) * self.point_dim..][..self.point_dim];
-        for coord in coordinates_iter_mut(coordinates, stride, self.offset, self.point_dim, 0) {
+        for coord in coordinates_iter_mut(coords, stride, offset + self.offset, self.point_dim, 0) {
             coord.copy_from_slice(point);
         }
         index / self.npoints
@@ -588,7 +632,7 @@ impl UnboundedMap for Elementary {
     dispatch! {fn delta_dim(&self) -> usize}
     dispatch! {fn mod_in(&self) -> usize}
     dispatch! {fn mod_out(&self) -> usize}
-    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut[f64], stride: usize) -> usize}
+    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut[f64], stride: usize, offset: usize) -> usize}
     dispatch! {fn apply_index(&self, index: usize) -> usize}
     dispatch! {fn apply_indices_inplace(&self, indices: &mut [usize])}
     dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>}
@@ -641,7 +685,10 @@ impl From<UniformPoints> for Elementary {
 
 pub trait PushElementary {
     fn push_elementary(&mut self, map: &Elementary);
-    fn clone_and_push_elementary(&self, map: &Elementary) -> Self where Self: Clone {
+    fn clone_and_push_elementary(&self, map: &Elementary) -> Self
+    where
+        Self: Clone,
+    {
         let mut cloned = self.clone();
         cloned.push_elementary(map);
         cloned
@@ -680,7 +727,7 @@ mod tests {
                     work[..incoord.len()].copy_from_slice(incoord);
                 }
             }
-            assert_eq!(item.apply_inplace($inidx, &mut work, stride), $outidx);
+            assert_eq!(item.apply_inplace($inidx, &mut work, stride, 0), $outidx);
             for (actual, desired) in iter::zip(work.chunks(stride), outcoords.iter()) {
                 assert_abs_diff_eq!(actual[..], desired[..]);
             }
@@ -690,7 +737,7 @@ mod tests {
             let item = $item.borrow();
             let mut work = Vec::with_capacity(0);
             assert_eq!(
-                item.apply_inplace($inidx, &mut work, item.dim_out()),
+                item.apply_inplace($inidx, &mut work, item.dim_out(), 0),
                 $outidx
             );
         }};
@@ -769,7 +816,7 @@ mod tests {
             let mut map: Vec<Vec<usize>> = (0..nout).map(|_| Vec::new()).collect();
             let mut work = Vec::with_capacity(0);
             for i in 0..nin {
-                map[item.apply_inplace(i, &mut work, item.dim_out())].push(i);
+                map[item.apply_inplace(i, &mut work, item.dim_out(), 0)].push(i);
             }
             for (j, desired) in map.into_iter().enumerate() {
                 let mut actual = item.unapply_indices(&[j]);
@@ -858,8 +905,8 @@ mod tests {
             for itip in 0..2 * tip_len {
                 let mut crds_a = coords.clone();
                 let mut crds_b = coords.clone();
-                let iroot_a = a.iter().rev().fold(itip, |i, item| item.apply_inplace(i, &mut crds_a, root_dim));
-                let iroot_b = b.iter().rev().fold(itip, |i, item| item.apply_inplace(i, &mut crds_b, root_dim));
+                let iroot_a = a.iter().rev().fold(itip, |i, item| item.apply_inplace(i, &mut crds_a, root_dim, 0));
+                let iroot_b = b.iter().rev().fold(itip, |i, item| item.apply_inplace(i, &mut crds_b, root_dim, 0));
                 assert_eq!(iroot_a, iroot_b, "itip={itip}");
                 assert_abs_diff_eq!(crds_a[..], crds_b[..]);
             }

@@ -1,4 +1,4 @@
-use crate::elementary::{Elementary, PushElementary};
+use crate::elementary::{Elementary, PushElementary, Transpose};
 use crate::{AddOffset, BoundedMap, UnapplyIndicesData, UnboundedMap};
 use num::Integer as _;
 use std::ops::{Deref, DerefMut};
@@ -77,8 +77,9 @@ impl<M: UnboundedMap> BoundedMap for WithBounds<M> {
         index: usize,
         coordinates: &mut [f64],
         stride: usize,
+        offset: usize,
     ) -> usize {
-        self.map.apply_inplace(index, coordinates, stride)
+        self.map.apply_inplace(index, coordinates, stride, offset)
     }
     fn apply_index_unchecked(&self, index: usize) -> usize {
         self.map.apply_index(index)
@@ -166,12 +167,13 @@ impl<Inner: BoundedMap, Outer: BoundedMap> BoundedMap for Composition<Inner, Out
         index: usize,
         coordinates: &mut [f64],
         stride: usize,
+        offset: usize,
     ) -> usize {
         let index = self
             .inner
-            .apply_inplace_unchecked(index, coordinates, stride);
+            .apply_inplace_unchecked(index, coordinates, stride, offset);
         self.outer
-            .apply_inplace_unchecked(index, coordinates, stride)
+            .apply_inplace_unchecked(index, coordinates, stride, offset)
     }
     fn apply_index_unchecked(&self, index: usize) -> usize {
         let index = self.inner.apply_index_unchecked(index);
@@ -203,9 +205,15 @@ impl<Inner: UnboundedMap, Outer: UnboundedMap> UnboundedMap for Composition<Inne
     fn delta_dim(&self) -> usize {
         self.inner.delta_dim() + self.outer.delta_dim()
     }
-    fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize {
-        let index = self.inner.apply_inplace(index, coordinates, stride);
-        self.outer.apply_inplace(index, coordinates, stride)
+    fn apply_inplace(
+        &self,
+        index: usize,
+        coordinates: &mut [f64],
+        stride: usize,
+        offset: usize,
+    ) -> usize {
+        let index = self.inner.apply_inplace(index, coordinates, stride, offset);
+        self.outer.apply_inplace(index, coordinates, stride, offset)
     }
     fn apply_index(&self, index: usize) -> usize {
         let index = self.inner.apply_index(index);
@@ -294,9 +302,10 @@ impl<Item: BoundedMap> BoundedMap for Concatenation<Item> {
         index: usize,
         coordinates: &mut [f64],
         stride: usize,
+        offset: usize,
     ) -> usize {
         let (item, index) = self.resolve_item_unchecked(index);
-        item.apply_inplace_unchecked(index, coordinates, stride)
+        item.apply_inplace_unchecked(index, coordinates, stride, offset)
     }
     fn apply_index_unchecked(&self, index: usize) -> usize {
         let (item, index) = self.resolve_item_unchecked(index);
@@ -361,6 +370,62 @@ where
     }
 }
 
+struct Product<M0, M1>(M0, M1);
+
+impl<M0: BoundedMap, M1: BoundedMap> BoundedMap for Product<M0, M1> {
+    fn dim_in(&self) -> usize {
+        self.0.dim_in() + self.1.dim_in()
+    }
+    fn delta_dim(&self) -> usize {
+        self.0.delta_dim() + self.1.delta_dim()
+    }
+    fn len_out(&self) -> usize {
+        self.0.len_out() * self.1.len_out()
+    }
+    fn len_in(&self) -> usize {
+        self.0.len_in() * self.1.len_in()
+    }
+    fn apply_inplace_unchecked(
+        &self,
+        index: usize,
+        coords: &mut [f64],
+        stride: usize,
+        offset: usize,
+    ) -> usize {
+        let index = self
+            .1
+            .apply_inplace_unchecked(index, coords, stride, offset + self.0.dim_in());
+        let index = Transpose::new(self.0.len_in(), self.1.len_in()).apply_index(index);
+        let index = self
+            .0
+            .apply_inplace_unchecked(index, coords, stride, offset);
+        Transpose::new(self.1.len_in(), self.0.len_in()).apply_index(index)
+    }
+    fn apply_index_unchecked(&self, index: usize) -> usize {
+        let index = self.1.apply_index_unchecked(index);
+        let index = Transpose::new(self.0.len_in(), self.1.len_in()).apply_index(index);
+        let index = self.0.apply_index_unchecked(index);
+        Transpose::new(self.1.len_in(), self.0.len_in()).apply_index(index)
+    }
+    fn apply_indices_inplace_unchecked(&self, indices: &mut [usize]) {
+        self.1.apply_indices_inplace_unchecked(indices);
+        Transpose::new(self.0.len_in(), self.1.len_in()).apply_indices_inplace(indices);
+        self.0.apply_indices_inplace_unchecked(indices);
+        Transpose::new(self.1.len_in(), self.0.len_in()).apply_indices_inplace(indices);
+    }
+    fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
+        let indices =
+            Transpose::new(self.1.len_in(), self.0.len_in()).unapply_indices(indices);
+        let indices = self.0.unapply_indices_unchecked(&indices);
+        let indices =
+            Transpose::new(self.0.len_in(), self.1.len_in()).unapply_indices(&indices);
+        self.1.unapply_indices_unchecked(&indices)
+    }
+    fn is_identity(&self) -> bool {
+        self.0.is_identity() && self.1.is_identity()
+    }
+}
+
 #[inline]
 fn update_dim_out_in<M: UnboundedMap>(map: &M, dim_out: usize, dim_in: usize) -> (usize, usize) {
     if let Some(n) = map.dim_in().checked_sub(dim_out) {
@@ -412,9 +477,15 @@ where
             })
             .0
     }
-    fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize {
+    fn apply_inplace(
+        &self,
+        index: usize,
+        coordinates: &mut [f64],
+        stride: usize,
+        offset: usize,
+    ) -> usize {
         self.iter().rev().fold(index, |index, item| {
-            item.apply_inplace(index, coordinates, stride)
+            item.apply_inplace(index, coordinates, stride, offset)
         })
     }
     fn apply_index(&self, index: usize) -> usize {

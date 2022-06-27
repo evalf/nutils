@@ -2,10 +2,10 @@ use crate::elementary::{Elementary, PushElementary as _};
 use crate::ops::{Concatenation, WithBounds, WithBoundsError};
 use crate::relative::RelativeTo as _;
 use crate::simplex::Simplex;
-use crate::{AddOffset, UnboundedMap, BoundedMap, UnapplyIndicesData};
+use crate::{AddOffset, BoundedMap, UnapplyIndicesData, UnboundedMap};
 use std::iter;
-use std::rc::Rc;
 use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
 
 type Tesselation = Concatenation<WithBounds<Vec<Elementary>>>;
 
@@ -384,13 +384,18 @@ impl TopologyCore for Hierarchical {
     }
     fn boundary(&self) -> Topology {
         let base_boundary = self.base.boundary();
-        let itiles = self.itiles_levels().zip(refine_iter(base_boundary.clone())).map(
-            |((itiles, level), blevel)| {
-                let mut itiles = blevel.tesselation().unapply_indices_from(level.tesselation(), itiles).unwrap();
+        let itiles = self
+            .itiles_levels()
+            .zip(refine_iter(base_boundary.clone()))
+            .map(|((itiles, level), blevel)| {
+                let mut itiles = blevel
+                    .tesselation()
+                    .unapply_indices_from(level.tesselation(), itiles)
+                    .unwrap();
                 itiles.sort_by_key(|&index| index);
                 itiles
-            },
-        ).collect();
+            })
+            .collect();
         Hierarchical::new(base_boundary, itiles)
     }
 }
@@ -422,7 +427,7 @@ mod tests {
             for (i, desired) in desired.into_iter().enumerate() {
                 println!("i = {i}");
                 let mut actual = centroid_in.clone();
-                let iroot = tesselation.apply_inplace(i, &mut actual, dim_out).unwrap();
+                let iroot = tesselation.apply_inplace(i, &mut actual, dim_out, 0).unwrap();
                 geom(iroot, &mut actual);
                 assert_abs_diff_eq!(actual[..], desired[..]);
             }

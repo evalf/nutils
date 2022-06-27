@@ -137,8 +137,8 @@ impl BoundedMap for Relative {
     dispatch! {fn dim_out(&self) -> usize}
     dispatch! {fn dim_in(&self) -> usize}
     dispatch! {fn delta_dim(&self) -> usize}
-    dispatch! {fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize}
-    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize) -> Option<usize>}
+    dispatch! {fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> usize}
+    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> Option<usize>}
     dispatch! {fn apply_index_unchecked(&self, index: usize) -> usize}
     dispatch! {fn apply_index(&self, index: usize) -> Option<usize>}
     dispatch! {fn apply_indices_inplace_unchecked(&self, indices: &mut [usize])}
@@ -242,11 +242,14 @@ impl BoundedMap for RelativeMultiple {
         index: usize,
         coordinates: &mut [f64],
         stride: usize,
+        offset: usize,
     ) -> usize {
-        let index = self.common.apply_inplace(index, coordinates, stride);
+        let index = self
+            .common
+            .apply_inplace(index, coordinates, stride, offset);
         let (iout, iin) = self.index_map[index];
         let n = self.index_map.len();
-        self.rels[iin / n].apply_inplace(iin % n, coordinates, stride);
+        self.rels[iin / n].apply_inplace(iin % n, coordinates, stride, offset);
         iout
     }
     fn apply_index_unchecked(&self, index: usize) -> usize {
@@ -339,16 +342,20 @@ impl RelativeTo<Concatenation<Self>> for WithBounds<Vec<Elementary>> {
             }
             rels.push(rel);
         }
-        index_map.into_iter().collect::<Option<Vec<_>>>().map(|index_map|
-            Relative::Multiple(RelativeMultiple {
-                index_map: index_map.into(),
-                rels,
-                common,
-                delta_dim: targets.dim_in() - self.dim_in(),
-                dim_in: self.dim_in(),
-                len_out: targets.len_in(),
-                len_in: self.len_in(),
-            }))
+        index_map
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+            .map(|index_map| {
+                Relative::Multiple(RelativeMultiple {
+                    index_map: index_map.into(),
+                    rels,
+                    common,
+                    delta_dim: targets.dim_in() - self.dim_in(),
+                    dim_in: self.dim_in(),
+                    len_out: targets.len_in(),
+                    len_in: self.len_in(),
+                })
+            })
     }
 }
 
@@ -413,8 +420,8 @@ mod tests {
             for i in 0..2 * a.len_in() {
                 let mut crds_a = coords.clone();
                 let mut crds_b = coords.clone();
-                let ja = a.apply_inplace(i, &mut crds_a, a.dim_out());
-                let jb = b.apply_inplace(i, &mut crds_b, a.dim_out());
+                let ja = a.apply_inplace(i, &mut crds_a, a.dim_out(), 0);
+                let jb = b.apply_inplace(i, &mut crds_b, a.dim_out(), 0);
                 assert_eq!(ja, jb, "i={i}");
                 assert_abs_diff_eq!(crds_a[..], crds_b[..]);
             }

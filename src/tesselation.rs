@@ -1,7 +1,7 @@
-use crate::{UnboundedMap, BoundedMap, UnapplyIndicesData, AddOffset};
-use crate::ops::{Concatenation, WithBoundsError};
 use crate::elementary::{Elementary, PushElementary};
+use crate::ops::{Concatenation, WithBoundsError};
 use crate::simplex::Simplex;
+use crate::{AddOffset, BoundedMap, UnapplyIndicesData, UnboundedMap};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WithShape<M: UnboundedMap> {
@@ -95,8 +95,9 @@ impl<M: UnboundedMap> BoundedMap for WithShape<M> {
         index: usize,
         coordinates: &mut [f64],
         stride: usize,
+        offset: usize,
     ) -> usize {
-        self.map.apply_inplace(index, coordinates, stride)
+        self.map.apply_inplace(index, coordinates, stride, offset)
     }
     fn apply_index_unchecked(&self, index: usize) -> usize {
         self.map.apply_index(index)
@@ -117,7 +118,11 @@ pub struct Tesselation(Concatenation<WithShape<Vec<Elementary>>>);
 
 impl Tesselation {
     pub fn new_identity(shapes: Vec<Simplex>, len: usize) -> Self {
-        Self(Concatenation::new(vec![WithShape::new_unchecked(vec![], shapes, len)]))
+        Self(Concatenation::new(vec![WithShape::new_unchecked(
+            vec![],
+            shapes,
+            len,
+        )]))
     }
     pub fn iter(&self) -> impl Iterator<Item = &WithShape<Vec<Elementary>>> {
         self.0.iter()
@@ -126,16 +131,16 @@ impl Tesselation {
         self.0.into_vec()
     }
     pub fn take(&self, indices: &[usize]) -> Self {
-        unimplemented!{}
+        unimplemented! {}
     }
     pub fn children(&self) -> Result<Self, String> {
-        unimplemented!{}
+        unimplemented! {}
     }
     pub fn edges(&self) -> Result<Self, String> {
-        unimplemented!{}
+        unimplemented! {}
     }
     pub fn internal_edges_of_children(&self) -> Result<Self, String> {
-        unimplemented!{}
+        unimplemented! {}
     }
 }
 
@@ -164,8 +169,8 @@ impl BoundedMap for Tesselation {
     dispatch! {fn dim_out(&self) -> usize}
     dispatch! {fn dim_in(&self) -> usize}
     dispatch! {fn delta_dim(&self) -> usize}
-    dispatch! {fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64], stride: usize) -> usize}
-    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize) -> Option<usize>}
+    dispatch! {fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> usize}
+    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> Option<usize>}
     dispatch! {fn apply_index_unchecked(&self, index: usize) -> usize}
     dispatch! {fn apply_index(&self, index: usize) -> Option<usize>}
     dispatch! {fn apply_indices_inplace_unchecked(&self, indices: &mut [usize])}
@@ -174,4 +179,3 @@ impl BoundedMap for Tesselation {
     dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Option<Vec<T>>}
     dispatch! {fn is_identity(&self) -> bool}
 }
-
