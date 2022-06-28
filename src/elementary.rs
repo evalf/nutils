@@ -1,12 +1,51 @@
 use crate::finite_f64::FiniteF64;
 use crate::simplex::Simplex;
-use crate::{AddOffset, Map, UnapplyIndicesData};
+use crate::{AddOffset, UnapplyIndicesData};
 use num::Integer as _;
+use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
-#[inline]
-const fn divmod(x: usize, y: usize) -> (usize, usize) {
-    (x / y, x % y)
+pub trait UnboundedMap {
+    // Minimum dimension of the input coordinate. If the dimension of the input
+    // coordinate of [UnboundedMap::apply_inplace()] is larger than the minimum, then
+    // the map of the surplus is the identity map.
+    fn dim_in(&self) -> usize;
+    // Minimum dimension of the output coordinate.
+    fn dim_out(&self) -> usize {
+        self.dim_in() + self.delta_dim()
+    }
+    // Difference in dimension of the output and input coordinate.
+    fn delta_dim(&self) -> usize;
+    // Modulus of the input index. The map repeats itself at index `mod_in`
+    // and the output index is incremented with `in_index / mod_in * mod_out`.
+    fn mod_in(&self) -> usize;
+    // Modulus if the output index.
+    fn mod_out(&self) -> usize;
+    fn apply_mod_out_to_in(&self, n: usize) -> Option<usize> {
+        let (i, rem) = n.div_rem(&self.mod_out());
+        (rem == 0).then(|| i * self.mod_in())
+    }
+    fn apply_mod_in_to_out(&self, n: usize) -> Option<usize> {
+        let (i, rem) = n.div_rem(&self.mod_in());
+        (rem == 0).then(|| i * self.mod_out())
+    }
+    fn apply_inplace(
+        &self,
+        index: usize,
+        coordinates: &mut [f64],
+        stride: usize,
+        offset: usize,
+    ) -> usize;
+    fn apply_index(&self, index: usize) -> usize;
+    fn apply_indices_inplace(&self, indices: &mut [usize]) {
+        for index in indices.iter_mut() {
+            *index = self.apply_index(*index);
+        }
+    }
+    fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>;
+    fn is_identity(&self) -> bool {
+        self.mod_in() == 1 && self.mod_out() == 1 && self.dim_out() == 0
+    }
 }
 
 fn coordinates_iter_mut(
@@ -26,10 +65,10 @@ fn coordinates_iter_mut(
     })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Identity;
 
-impl Map for Identity {
+impl UnboundedMap for Identity {
     fn dim_in(&self) -> usize {
         0
     }
@@ -68,6 +107,65 @@ impl AddOffset for Identity {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Offset<M: UnboundedMap>(M, usize);
+
+impl<M: UnboundedMap> UnboundedMap for Offset<M> {
+    #[inline]
+    fn dim_in(&self) -> usize {
+        if self.0.dim_out() > 0 {
+            self.0.dim_in() + self.1
+        } else {
+            0
+        }
+    }
+    #[inline]
+    fn delta_dim(&self) -> usize {
+        self.0.delta_dim()
+    }
+    #[inline]
+    fn mod_in(&self) -> usize {
+        self.0.mod_in()
+    }
+    #[inline]
+    fn mod_out(&self) -> usize {
+        self.0.mod_out()
+    }
+    #[inline]
+    fn apply_inplace(
+        &self,
+        index: usize,
+        coordinates: &mut [f64],
+        stride: usize,
+        offset: usize,
+    ) -> usize {
+        self.0
+            .apply_inplace(index, coordinates, stride, offset + self.1)
+    }
+    #[inline]
+    fn apply_index(&self, index: usize) -> usize {
+        self.0.apply_index(index)
+    }
+    #[inline]
+    fn apply_indices_inplace(&self, indices: &mut [usize]) {
+        self.0.apply_indices_inplace(indices);
+    }
+    #[inline]
+    fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
+        self.0.unapply_indices(indices)
+    }
+    #[inline]
+    fn is_identity(&self) -> bool {
+        self.0.is_identity()
+    }
+}
+
+impl<M: UnboundedMap> AddOffset for Offset<M> {
+    fn add_offset(&mut self, offset: usize) {
+        self.1 += offset;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Transpose(usize, usize);
 
 impl Transpose {
@@ -81,7 +179,7 @@ impl Transpose {
     }
 }
 
-impl Map for Transpose {
+impl UnboundedMap for Transpose {
     fn dim_in(&self) -> usize {
         0
     }
@@ -108,16 +206,16 @@ impl Map for Transpose {
         self.apply_index(index)
     }
     fn apply_index(&self, index: usize) -> usize {
-        let (j, k) = divmod(index, self.1);
-        let (i, j) = divmod(j, self.0);
+        let (j, k) = index.div_rem(&self.1);
+        let (i, j) = j.div_rem(&self.0);
         (i * self.1 + k) * self.0 + j
     }
     fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
         indices
             .iter()
             .map(|index| {
-                let (j, k) = divmod(index.get(), self.0);
-                let (i, j) = divmod(j, self.1);
+                let (j, k) = index.get().div_rem(&self.0);
+                let (i, j) = j.div_rem(&self.1);
                 index.set((i * self.0 + k) * self.1 + j)
             })
             .collect()
@@ -150,7 +248,7 @@ impl Take {
     }
 }
 
-impl Map for Take {
+impl UnboundedMap for Take {
     fn dim_in(&self) -> usize {
         0
     }
@@ -179,7 +277,7 @@ impl Map for Take {
         indices
             .iter()
             .filter_map(|index| {
-                let (j, iout) = divmod(index.get(), self.len);
+                let (j, iout) = index.get().div_rem(&self.len);
                 let offset = j * self.nindices;
                 self.indices
                     .iter()
@@ -212,7 +310,7 @@ impl Slice {
     }
 }
 
-impl Map for Slice {
+impl UnboundedMap for Slice {
     fn dim_in(&self) -> usize {
         0
     }
@@ -241,7 +339,7 @@ impl Map for Slice {
         indices
             .iter()
             .filter_map(|index| {
-                let (j, i) = divmod(index.get(), self.len_out);
+                let (j, i) = index.get().div_rem(&self.len_out);
                 (self.start..self.start + self.len_in)
                     .contains(&i)
                     .then(|| index.set(i - self.start + j * self.len_in))
@@ -255,17 +353,17 @@ impl AddOffset for Slice {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Children(Simplex, usize);
+pub struct Children(Simplex);
 
 impl Children {
     pub fn new(simplex: Simplex) -> Self {
-        Self(simplex, 0)
+        Self(simplex)
     }
 }
 
-impl Map for Children {
+impl UnboundedMap for Children {
     fn dim_in(&self) -> usize {
-        self.0.dim() + self.1
+        self.0.dim()
     }
     fn delta_dim(&self) -> usize {
         0
@@ -283,8 +381,7 @@ impl Map for Children {
         stride: usize,
         offset: usize,
     ) -> usize {
-        self.0
-            .apply_child(index, coordinates, stride, offset + self.1)
+        self.0.apply_child(index, coordinates, stride, offset)
     }
     fn apply_index(&self, index: usize) -> usize {
         self.0.apply_child_index(index)
@@ -300,12 +397,6 @@ impl Map for Children {
     }
 }
 
-impl AddOffset for Children {
-    fn add_offset(&mut self, offset: usize) {
-        self.1 += offset;
-    }
-}
-
 impl From<Simplex> for Children {
     fn from(simplex: Simplex) -> Children {
         Children::new(simplex)
@@ -313,17 +404,17 @@ impl From<Simplex> for Children {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Edges(pub Simplex, pub usize);
+pub struct Edges(pub Simplex);
 
 impl Edges {
     pub fn new(simplex: Simplex) -> Self {
-        Self(simplex, 0)
+        Self(simplex)
     }
 }
 
-impl Map for Edges {
+impl UnboundedMap for Edges {
     fn dim_in(&self) -> usize {
-        self.0.edge_dim() + self.1
+        self.0.edge_dim()
     }
     fn delta_dim(&self) -> usize {
         1
@@ -341,8 +432,7 @@ impl Map for Edges {
         stride: usize,
         offset: usize,
     ) -> usize {
-        self.0
-            .apply_edge(index, coordinates, stride, offset + self.1)
+        self.0.apply_edge(index, coordinates, stride, offset)
     }
     fn apply_index(&self, index: usize) -> usize {
         self.0.apply_edge_index(index)
@@ -358,12 +448,6 @@ impl Map for Edges {
     }
 }
 
-impl AddOffset for Edges {
-    fn add_offset(&mut self, offset: usize) {
-        self.1 += offset;
-    }
-}
-
 impl From<Simplex> for Edges {
     fn from(simplex: Simplex) -> Edges {
         Edges::new(simplex)
@@ -375,7 +459,6 @@ pub struct UniformPoints {
     points: Rc<[FiniteF64]>,
     npoints: usize,
     point_dim: usize,
-    offset: usize,
 }
 
 impl UniformPoints {
@@ -388,14 +471,13 @@ impl UniformPoints {
             points,
             npoints,
             point_dim,
-            offset: 0,
         }
     }
 }
 
-impl Map for UniformPoints {
+impl UnboundedMap for UniformPoints {
     fn dim_in(&self) -> usize {
-        self.offset
+        0
     }
     fn delta_dim(&self) -> usize {
         self.point_dim
@@ -415,7 +497,7 @@ impl Map for UniformPoints {
     ) -> usize {
         let points: &[f64] = unsafe { std::mem::transmute(&self.points[..]) };
         let point = &points[(index % self.npoints) * self.point_dim..][..self.point_dim];
-        for coord in coordinates_iter_mut(coords, stride, offset + self.offset, self.point_dim, 0) {
+        for coord in coordinates_iter_mut(coords, stride, offset, self.point_dim, 0) {
             coord.copy_from_slice(point);
         }
         index / self.npoints
@@ -434,20 +516,14 @@ impl Map for UniformPoints {
     }
 }
 
-impl AddOffset for UniformPoints {
-    fn add_offset(&mut self, offset: usize) {
-        self.offset += offset;
-    }
-}
-
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Elementary {
     Transpose(Transpose),
     Take(Take),
     Slice(Slice),
-    Children(Children),
-    Edges(Edges),
-    UniformPoints(UniformPoints),
+    Children(Offset<Children>),
+    Edges(Offset<Edges>),
+    UniformPoints(Offset<UniformPoints>),
 }
 
 impl Elementary {
@@ -465,42 +541,29 @@ impl Elementary {
     }
     #[inline]
     pub fn new_children(simplex: Simplex) -> Self {
-        Self::Children(Children::new(simplex))
+        Self::Children(Offset(Children::new(simplex), 0))
     }
     #[inline]
     pub fn new_edges(simplex: Simplex) -> Self {
-        Self::Edges(Edges::new(simplex))
+        Self::Edges(Offset(Edges::new(simplex), 0))
     }
     #[inline]
     pub fn new_uniform_points(points: impl Into<Rc<[f64]>>, point_dim: usize) -> Self {
-        Self::UniformPoints(UniformPoints::new(points, point_dim))
+        Self::UniformPoints(Offset(UniformPoints::new(points, point_dim), 0))
     }
     #[inline]
     fn offset_mut(&mut self) -> Option<&mut usize> {
         match self {
-            Self::Children(Children(_, ref mut offset)) => Some(offset),
-            Self::Edges(Edges(_, ref mut offset)) => Some(offset),
-            Self::UniformPoints(UniformPoints { ref mut offset, .. }) => Some(offset),
+            Self::Children(Offset(_, ref mut offset)) => Some(offset),
+            Self::Edges(Offset(_, ref mut offset)) => Some(offset),
+            Self::UniformPoints(Offset(_, ref mut offset)) => Some(offset),
             _ => None,
         }
     }
-    #[inline]
-    fn set_offset(&mut self, new_offset: usize) {
-        self.add_offset(new_offset);
-    }
-    #[inline]
-    pub fn with_offset(mut self, new_offset: usize) -> Self {
-        self.set_offset(new_offset);
-        self
-    }
-    //pub fn swap(&mut self, other: &Self) -> Option<Vec<Self>> {
-    //    if self.mod_out() == 1 {
-    //
-    //    } else {
-    //        None
-    //    }
-    //}
-    pub fn shift_left(&self, items: &[Self]) -> Option<(Option<Transpose>, Self, Vec<Self>)> {
+    pub fn shift_inner_to_outer(
+        &self,
+        items: &[Self],
+    ) -> Option<(Option<Transpose>, Self, Vec<Self>)> {
         if self.is_transpose() {
             return None;
         }
@@ -509,10 +572,10 @@ impl Elementary {
         let mut queue: Vec<Self> = Vec::new();
         let mut stride_out = 1;
         let mut stride_in = 1;
-        for mut item in items.iter().rev().cloned() {
+        for mut item in items.iter().cloned() {
             // Swap matching edges and children at the same offset.
-            if let Self::Edges(Edges(esimplex, eoffset)) = &item {
-                if let Self::Children(Children(ref mut csimplex, coffset)) = &mut target {
+            if let Self::Edges(Offset(Edges(esimplex), eoffset)) = &item {
+                if let Self::Children(Offset(Children(ref mut csimplex), coffset)) = &mut target {
                     if eoffset == coffset && esimplex.edge_dim() == csimplex.dim() {
                         if stride_in != 1 && self.mod_in() != 1 {
                             shifted_items.push(Self::new_transpose(stride_in, self.mod_in()));
@@ -525,7 +588,7 @@ impl Elementary {
                             esimplex.swap_edges_children_map(),
                             esimplex.nedges() * esimplex.nchildren(),
                         ));
-                        shifted_items.push(Self::Edges(Edges(*esimplex, *eoffset)));
+                        shifted_items.push(Self::Edges(Offset(Edges(*esimplex), *eoffset)));
                         *csimplex = *esimplex;
                         stride_in = 1;
                         stride_out = 1;
@@ -582,13 +645,12 @@ impl Elementary {
         if stride_out != 1 && self.mod_in() != 1 {
             shifted_items.push(Self::new_transpose(self.mod_in(), stride_out));
         }
-        let leading_transpose = if self.mod_out() == 1 || stride_out == 1 {
+        let outer_transpose = if self.mod_out() == 1 || stride_out == 1 {
             None
         } else {
             Some(Transpose::new(stride_out, self.mod_out()))
         };
-        shifted_items.reverse();
-        Some((leading_transpose, target, shifted_items))
+        Some((outer_transpose, target, shifted_items))
     }
     #[inline]
     const fn is_transpose(&self) -> bool {
@@ -637,7 +699,7 @@ macro_rules! dispatch {
     };
 }
 
-impl Map for Elementary {
+impl UnboundedMap for Elementary {
     dispatch! {fn dim_in(&self) -> usize}
     dispatch! {fn delta_dim(&self) -> usize}
     dispatch! {fn mod_in(&self) -> usize}
@@ -677,28 +739,116 @@ impl From<Slice> for Elementary {
 
 impl From<Children> for Elementary {
     fn from(children: Children) -> Self {
-        Self::Children(children)
+        Self::Children(Offset(children, 0))
     }
 }
 
 impl From<Edges> for Elementary {
     fn from(edges: Edges) -> Self {
-        Self::Edges(edges)
+        Self::Edges(Offset(edges, 0))
     }
 }
 
 impl From<UniformPoints> for Elementary {
     fn from(uniform_points: UniformPoints) -> Self {
-        Self::UniformPoints(uniform_points)
+        Self::UniformPoints(Offset(uniform_points, 0))
     }
 }
+
+#[inline]
+fn comp_dim_out_in<M: UnboundedMap>(map: &M, dim_out: usize, dim_in: usize) -> (usize, usize) {
+    let n = map.dim_in().checked_sub(dim_out).unwrap_or(0);
+    (dim_out + map.delta_dim() + n, dim_in + n)
+}
+
+#[inline]
+fn comp_mod_out_in<M: UnboundedMap>(map: &M, mod_out: usize, mod_in: usize) -> (usize, usize) {
+    let n = mod_out.lcm(&map.mod_in());
+    (n / map.mod_in() * map.mod_out(), mod_in * n / mod_out)
+}
+
+impl<M, Array> UnboundedMap for Array
+where
+    M: UnboundedMap,
+    Array: Deref<Target = [M]>,
+{
+    #[inline]
+    fn dim_in(&self) -> usize {
+        self.iter()
+            .fold((0, 0), |(o, i), map| comp_dim_out_in(map, o, i))
+            .1
+    }
+    #[inline]
+    fn delta_dim(&self) -> usize {
+        self.iter().map(|map| map.delta_dim()).sum()
+    }
+    #[inline]
+    fn mod_in(&self) -> usize {
+        self.iter()
+            .fold((1, 1), |(o, i), map| comp_mod_out_in(map, o, i))
+            .1
+    }
+    #[inline]
+    fn mod_out(&self) -> usize {
+        self.iter()
+            .fold((1, 1), |(o, i), map| comp_mod_out_in(map, o, i))
+            .0
+    }
+    #[inline]
+    fn apply_inplace(
+        &self,
+        index: usize,
+        coords: &mut [f64],
+        stride: usize,
+        offset: usize,
+    ) -> usize {
+        self.iter().fold(index, |index, map| {
+            map.apply_inplace(index, coords, stride, offset)
+        })
+    }
+    #[inline]
+    fn apply_index(&self, index: usize) -> usize {
+        self.iter().fold(index, |index, map| map.apply_index(index))
+    }
+    #[inline]
+    fn apply_indices_inplace(&self, indices: &mut [usize]) {
+        self.iter()
+            .for_each(|map| map.apply_indices_inplace(indices));
+    }
+    #[inline]
+    fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
+        let mut iter = self.iter().rev();
+        if let Some(map) = iter.next() {
+            iter.fold(map.unapply_indices(indices), |indices, map| {
+                map.unapply_indices(&indices)
+            })
+        } else {
+            Vec::new()
+        }
+    }
+    #[inline]
+    fn is_identity(&self) -> bool {
+        self.iter().all(|map| map.is_identity())
+    }
+}
+
+impl<M, Array> AddOffset for Array
+where
+    M: UnboundedMap + AddOffset,
+    Array: Deref<Target = [M]> + DerefMut,
+{
+    fn add_offset(&mut self, offset: usize) {
+        self.iter_mut().for_each(|map| map.add_offset(offset));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::assert_map_apply;
     use approx::assert_abs_diff_eq;
     use std::iter;
     use Simplex::*;
-    use crate::assert_map_apply;
 
     #[test]
     fn apply_transpose() {
@@ -726,12 +876,12 @@ mod tests {
 
     #[test]
     fn apply_children_line() {
-        let item = Elementary::new_children(Line);
+        let mut item = Elementary::new_children(Line);
         assert_map_apply!(item, 0, [[0.0], [1.0]], 0, [[0.0], [0.5]]);
         assert_map_apply!(item, 1, [[0.0], [1.0]], 0, [[0.5], [1.0]]);
         assert_map_apply!(item, 2, [[0.0], [1.0]], 1, [[0.0], [0.5]]);
 
-        let item = item.with_offset(1);
+        item.add_offset(1);
         assert_map_apply!(
             item,
             3,
@@ -743,24 +893,24 @@ mod tests {
 
     #[test]
     fn apply_edges_line() {
-        let item = Elementary::new_edges(Line);
+        let mut item = Elementary::new_edges(Line);
         assert_map_apply!(item, 0, [[]], 0, [[1.0]]);
         assert_map_apply!(item, 1, [[]], 0, [[0.0]]);
         assert_map_apply!(item, 2, [[]], 1, [[1.0]]);
 
-        let item = item.with_offset(1);
+        item.add_offset(1);
         assert_map_apply!(item, 0, [[0.2]], 0, [[0.2, 1.0]]);
     }
 
     #[test]
     fn apply_uniform_points() {
-        let item = Elementary::new_uniform_points(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 2);
+        let mut item = Elementary::new_uniform_points(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 2);
         assert_map_apply!(item, 0, [[]], 0, [[1.0, 2.0]]);
         assert_map_apply!(item, 1, [[]], 0, [[3.0, 4.0]]);
         assert_map_apply!(item, 2, [[]], 0, [[5.0, 6.0]]);
         assert_map_apply!(item, 3, [[]], 1, [[1.0, 2.0]]);
 
-        let item = item.with_offset(1);
+        item.add_offset(1);
         assert_map_apply!(item, 0, [[7.0]], 0, [[7.0, 1.0, 2.0]]);
     }
 
@@ -815,38 +965,17 @@ mod tests {
         ($a:expr, $b:expr $(, $simplex:ident)*) => {{
             let a: &[Elementary] = &$a;
             let b: &[Elementary] = &$b;
+            let dim_in = 0 $(+ $simplex.dim())*;
+            let dim_out = a.dim_out();
             println!("a: {a:?}");
             println!("b: {b:?}");
-            let tip_dim = 0 $(+ $simplex.dim())*;
-            // Determine the length of the sequence and the root dimension for sequence `a`.
-            let mut tip_len = 1;
-            let mut root_len = 1;
-            let mut root_dim = tip_dim;
-            for item in a.iter().rev() {
-                let i = (1..)
-                    .into_iter()
-                    .find(|i| (root_len * i) % item.mod_in() == 0)
-                    .unwrap();
-                tip_len *= i;
-                root_len *= i;
-                root_len = root_len / item.mod_in() * item.mod_out();
-                assert!(item.dim_in() <= root_dim);
-                root_dim += item.delta_dim();
-            }
-            assert!(tip_len > 0);
-            // Verify the length and the root dimension for sequence `b`.
-            let mut root_len_b = tip_len;
-            let mut root_dim_b = tip_dim;
-            for item in b.iter().rev() {
-                assert_eq!(root_len_b % item.mod_in(), 0);
-                root_len_b = root_len_b / item.mod_in() * item.mod_out();
-                assert!(item.dim_in() <= root_dim_b);
-                root_dim_b += item.delta_dim();
-            }
-            assert_eq!(root_len_b, root_len);
-            assert_eq!(root_dim_b, root_dim);
+            assert_eq!(a.mod_in(), b.mod_in());
+            assert_eq!(a.mod_out(), b.mod_out());
+            assert_eq!(a.dim_in(), dim_in);
+            assert_eq!(b.dim_in(), dim_in);
+            assert_eq!(a.delta_dim(), b.delta_dim());
             // Build coords: the outer product of the vertices of the given simplices, zero-padded
-            // to the dimension of the root.
+            // to the out dimension.
             let coords = iter::once([]);
             $(
                 let coords = coords.flat_map(|coord| {
@@ -856,59 +985,61 @@ mod tests {
                         .map(move |vert| [&coord, vert].concat())
                     });
             )*
-            let pad: Vec<f64> = iter::repeat(0.0).take(root_dim - tip_dim).collect();
+            let pad: Vec<f64> = iter::repeat(0.0).take(a.delta_dim()).collect();
             let coords: Vec<f64> = coords.flat_map(|coord| [&coord[..], &pad].concat()).collect();
-            // Test if every tip index and coordinate maps to the same root index and coordinate.
-            for itip in 0..2 * tip_len {
+            // Test if every tip index and coordinate maps to the same out index and coordinate.
+            for iin in 0..2 * a.mod_in() {
                 let mut crds_a = coords.clone();
                 let mut crds_b = coords.clone();
-                let iroot_a = a.iter().rev().fold(itip, |i, item| item.apply_inplace(i, &mut crds_a, root_dim, 0));
-                let iroot_b = b.iter().rev().fold(itip, |i, item| item.apply_inplace(i, &mut crds_b, root_dim, 0));
-                assert_eq!(iroot_a, iroot_b, "itip={itip}");
+                let iout_a = a.apply_inplace(iin, &mut crds_a, dim_out, 0);
+                let iout_b = b.apply_inplace(iin, &mut crds_b, dim_out, 0);
+                assert_eq!(iout_a, iout_b, "iin={iin}");
                 assert_abs_diff_eq!(crds_a[..], crds_b[..]);
             }
         }};
     }
 
-    macro_rules! assert_shift_left {
+    macro_rules! assert_shift_inner_to_outer {
         ($($item:expr),*; $($simplex:ident),*) => {{
             let unshifted = [$(Elementary::from($item),)*];
-            let (ltrans, litem, lchain) = unshifted.last().unwrap().shift_left(&unshifted[..unshifted.len()-1]).unwrap();
+            let (ltrans, litem, lchain) = unshifted.first().unwrap().shift_inner_to_outer(&unshifted[1..]).unwrap();
             let mut shifted: Vec<Elementary> = Vec::new();
+            shifted.extend(lchain.into_iter());
+            shifted.push(litem);
             if let Some(ltrans) = ltrans {
                 shifted.push(ltrans.into());
             }
-            shifted.push(litem);
-            shifted.extend(lchain.into_iter());
             assert_equiv_maps!(&shifted[..], &unshifted[..] $(, $simplex)*);
         }};
     }
 
     #[test]
-    fn shift_left() {
-        assert_shift_left!(
-            Transpose::new(4, 3), Elementary::new_take(vec![0, 1], 3);
+    fn shift_inner_to_outer() {
+        assert_shift_inner_to_outer!(
+            Elementary::new_take(vec![0, 1], 3), Transpose::new(4, 3);
         );
-        assert_shift_left!(
-            Transpose::new(3, 5), Transpose::new(5, 4*3), Elementary::new_take(vec![0, 1], 3);
+        assert_shift_inner_to_outer!(
+            Elementary::new_take(vec![0, 1], 3), Transpose::new(5, 4*3), Transpose::new(3, 5);
         );
-        assert_shift_left!(
-            Transpose::new(5, 4), Transpose::new(5*4, 3), Elementary::new_take(vec![0, 1], 3);
+        assert_shift_inner_to_outer!(
+            Elementary::new_take(vec![0, 1], 3), Transpose::new(5*4, 3), Transpose::new(5, 4);
         );
-        assert_shift_left!(
-            Elementary::new_children(Line).with_offset(1), Elementary::new_children(Line);
+        assert_shift_inner_to_outer!(
+            Elementary::new_children(Line),
+            {let mut elem = Elementary::new_children(Line); elem.add_offset(1); elem};
             Line, Line
         );
-        assert_shift_left!(
-            Elementary::new_edges(Line), Elementary::new_children(Line);
+        assert_shift_inner_to_outer!(
+            Elementary::new_children(Line), Elementary::new_edges(Line);
             Line
         );
-        assert_shift_left!(
-            Elementary::new_edges(Line).with_offset(1), Elementary::new_children(Line);
+        assert_shift_inner_to_outer!(
+            Elementary::new_children(Line),
+            {let mut elem = Elementary::new_edges(Line); elem.add_offset(1); elem};
             Line
         );
-        assert_shift_left!(
-            Elementary::new_edges(Triangle), Elementary::new_children(Line);
+        assert_shift_inner_to_outer!(
+            Elementary::new_children(Line), Elementary::new_edges(Triangle);
             Line
         );
     }
