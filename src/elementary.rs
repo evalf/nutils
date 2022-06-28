@@ -1,6 +1,6 @@
 use crate::finite_f64::FiniteF64;
 use crate::simplex::Simplex;
-use crate::{AddOffset, UnapplyIndicesData};
+use crate::{Map, Error, AddOffset, UnapplyIndicesData};
 use num::Integer as _;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
@@ -32,7 +32,7 @@ pub trait UnboundedMap {
     fn apply_inplace(
         &self,
         index: usize,
-        coordinates: &mut [f64],
+        coords: &mut [f64],
         stride: usize,
         offset: usize,
     ) -> usize;
@@ -48,7 +48,7 @@ pub trait UnboundedMap {
     }
 }
 
-fn coordinates_iter_mut(
+fn coords_iter_mut(
     flat: &mut [f64],
     stride: usize,
     offset: usize,
@@ -84,7 +84,7 @@ impl UnboundedMap for Identity {
     fn apply_inplace(
         &self,
         index: usize,
-        _coordinates: &mut [f64],
+        _coords: &mut [f64],
         _stride: usize,
         _offset: usize,
     ) -> usize {
@@ -134,12 +134,12 @@ impl<M: UnboundedMap> UnboundedMap for Offset<M> {
     fn apply_inplace(
         &self,
         index: usize,
-        coordinates: &mut [f64],
+        coords: &mut [f64],
         stride: usize,
         offset: usize,
     ) -> usize {
         self.0
-            .apply_inplace(index, coordinates, stride, offset + self.1)
+            .apply_inplace(index, coords, stride, offset + self.1)
     }
     #[inline]
     fn apply_index(&self, index: usize) -> usize {
@@ -199,7 +199,7 @@ impl UnboundedMap for Transpose {
     fn apply_inplace(
         &self,
         index: usize,
-        _coordinates: &mut [f64],
+        _coords: &mut [f64],
         _stride: usize,
         _offset: usize,
     ) -> usize {
@@ -235,7 +235,9 @@ pub struct Take {
 
 impl Take {
     pub fn new(indices: impl Into<Rc<[usize]>>, len: usize) -> Self {
+        // TODO: return err if indices.is_empty()
         let indices = indices.into();
+        assert!(!indices.is_empty());
         let nindices = indices.len();
         Take {
             indices,
@@ -264,7 +266,7 @@ impl UnboundedMap for Take {
     fn apply_inplace(
         &self,
         index: usize,
-        _coordinates: &mut [f64],
+        _coords: &mut [f64],
         _stride: usize,
         _offset: usize,
     ) -> usize {
@@ -301,6 +303,7 @@ pub struct Slice {
 
 impl Slice {
     pub fn new(start: usize, len_in: usize, len_out: usize) -> Self {
+        assert!(len_in > 0);
         assert!(len_out >= start + len_in);
         Slice {
             start,
@@ -326,7 +329,7 @@ impl UnboundedMap for Slice {
     fn apply_inplace(
         &self,
         index: usize,
-        _coordinates: &mut [f64],
+        _coords: &mut [f64],
         _stride: usize,
         _offset: usize,
     ) -> usize {
@@ -377,11 +380,11 @@ impl UnboundedMap for Children {
     fn apply_inplace(
         &self,
         index: usize,
-        coordinates: &mut [f64],
+        coords: &mut [f64],
         stride: usize,
         offset: usize,
     ) -> usize {
-        self.0.apply_child(index, coordinates, stride, offset)
+        self.0.apply_child(index, coords, stride, offset)
     }
     fn apply_index(&self, index: usize) -> usize {
         self.0.apply_child_index(index)
@@ -428,11 +431,11 @@ impl UnboundedMap for Edges {
     fn apply_inplace(
         &self,
         index: usize,
-        coordinates: &mut [f64],
+        coords: &mut [f64],
         stride: usize,
         offset: usize,
     ) -> usize {
-        self.0.apply_edge(index, coordinates, stride, offset)
+        self.0.apply_edge(index, coords, stride, offset)
     }
     fn apply_index(&self, index: usize) -> usize {
         self.0.apply_edge_index(index)
@@ -497,7 +500,7 @@ impl UnboundedMap for UniformPoints {
     ) -> usize {
         let points: &[f64] = unsafe { std::mem::transmute(&self.points[..]) };
         let point = &points[(index % self.npoints) * self.point_dim..][..self.point_dim];
-        for coord in coordinates_iter_mut(coords, stride, offset, self.point_dim, 0) {
+        for coord in coords_iter_mut(coords, stride, offset, self.point_dim, 0) {
             coord.copy_from_slice(point);
         }
         index / self.npoints
@@ -529,27 +532,27 @@ pub enum Elementary {
 impl Elementary {
     #[inline]
     pub fn new_transpose(len1: usize, len2: usize) -> Self {
-        Self::Transpose(Transpose::new(len1, len2))
+        Transpose::new(len1, len2).into()
     }
     #[inline]
     pub fn new_take(indices: impl Into<Rc<[usize]>>, len: usize) -> Self {
-        Self::Take(Take::new(indices, len))
+        Take::new(indices, len).into()
     }
     #[inline]
     pub fn new_slice(start: usize, len_in: usize, len_out: usize) -> Self {
-        Self::Slice(Slice::new(start, len_in, len_out))
+        Slice::new(start, len_in, len_out).into()
     }
     #[inline]
     pub fn new_children(simplex: Simplex) -> Self {
-        Self::Children(Offset(Children::new(simplex), 0))
+        Children::new(simplex).into()
     }
     #[inline]
     pub fn new_edges(simplex: Simplex) -> Self {
-        Self::Edges(Offset(Edges::new(simplex), 0))
+        Edges::new(simplex).into()
     }
     #[inline]
     pub fn new_uniform_points(points: impl Into<Rc<[f64]>>, point_dim: usize) -> Self {
-        Self::UniformPoints(Offset(UniformPoints::new(points, point_dim), 0))
+        UniformPoints::new(points, point_dim).into()
     }
     #[inline]
     fn offset_mut(&mut self) -> Option<&mut usize> {
@@ -704,7 +707,7 @@ impl UnboundedMap for Elementary {
     dispatch! {fn delta_dim(&self) -> usize}
     dispatch! {fn mod_in(&self) -> usize}
     dispatch! {fn mod_out(&self) -> usize}
-    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut[f64], stride: usize, offset: usize) -> usize}
+    dispatch! {fn apply_inplace(&self, index: usize, coords: &mut[f64], stride: usize, offset: usize) -> usize}
     dispatch! {fn apply_index(&self, index: usize) -> usize}
     dispatch! {fn apply_indices_inplace(&self, indices: &mut [usize])}
     dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>}
@@ -842,13 +845,118 @@ where
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WithBounds<M: UnboundedMap> {
+    map: M,
+    dim_in: usize,
+    delta_dim: usize,
+    len_in: usize,
+    len_out: usize,
+}
+
+impl<M: UnboundedMap> WithBounds<M> {
+    pub fn new(map: M, dim_in: usize, len_in: usize) -> Result<Self, Error> {
+        if dim_in < map.dim_in() {
+            Err(Error::DimensionMismatch)
+        } else if len_in % map.mod_in() != 0 {
+            Err(Error::LengthMismatch)
+        } else {
+            Ok(Self::new_unchecked(map, dim_in, len_in))
+        }
+    }
+    pub fn new_unchecked(map: M, dim_in: usize, len_in: usize) -> Self {
+        let delta_dim = map.delta_dim();
+        let len_out = len_in / map.mod_in() * map.mod_out();
+        Self { map, dim_in, delta_dim, len_in, len_out }
+    }
+}
+
+impl<M: UnboundedMap> Map for WithBounds<M> {
+    #[inline]
+    fn dim_in(&self) -> usize {
+        self.dim_in
+    }
+    #[inline]
+    fn delta_dim(&self) -> usize {
+        self.delta_dim
+    }
+    #[inline]
+    fn len_in(&self) -> usize {
+        self.len_in
+    }
+    #[inline]
+    fn len_out(&self) -> usize {
+        self.len_out
+    }
+    #[inline]
+    fn apply_inplace_unchecked(
+        &self,
+        index: usize,
+        coords: &mut [f64],
+        stride: usize,
+        offset: usize,
+    ) -> usize {
+        self.map.apply_inplace(index, coords, stride, offset)
+    }
+    #[inline]
+    fn apply_index_unchecked(&self, index: usize) -> usize {
+        self.map.apply_index(index)
+    }
+    #[inline]
+    fn apply_indices_inplace_unchecked(&self, indices: &mut [usize]) {
+        self.map.apply_indices_inplace(indices)
+    }
+    #[inline]
+    fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
+        self.map.unapply_indices(indices)
+    }
+    #[inline]
+    fn is_identity(&self) -> bool {
+        self.map.is_identity()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assert_map_apply;
     use approx::assert_abs_diff_eq;
     use std::iter;
     use Simplex::*;
+
+    macro_rules! assert_map_apply {
+        ($item:expr, $inidx:expr, $incoords:expr, $outidx:expr, $outcoords:expr) => {{
+            use std::borrow::Borrow;
+            let item = $item.borrow();
+            let incoords = $incoords;
+            let outcoords = $outcoords;
+            assert_eq!(incoords.len(), outcoords.len());
+            let stride;
+            let mut work: Vec<_>;
+            if incoords.len() == 0 {
+                stride = item.dim_out();
+                work = Vec::with_capacity(0);
+            } else {
+                stride = outcoords[0].len();
+                work = iter::repeat(-1.0).take(outcoords.len() * stride).collect();
+                for (work, incoord) in iter::zip(work.chunks_mut(stride), incoords.iter()) {
+                    work[..incoord.len()].copy_from_slice(incoord);
+                }
+            }
+            assert_eq!(item.apply_inplace($inidx, &mut work, stride, 0), $outidx);
+            for (actual, desired) in iter::zip(work.chunks(stride), outcoords.iter()) {
+                assert_abs_diff_eq!(actual[..], desired[..]);
+            }
+        }};
+        ($item:expr, $inidx:expr, $outidx:expr) => {{
+            use std::borrow::Borrow;
+            let item = $item.borrow();
+            let mut work = Vec::with_capacity(0);
+            assert_eq!(
+                item.apply_inplace($inidx, &mut work, item.dim_out(), 0),
+                $outidx
+            );
+        }};
+    }
 
     #[test]
     fn apply_transpose() {

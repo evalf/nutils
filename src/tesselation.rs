@@ -3,7 +3,43 @@ use crate::ops::{Concatenation, WithBoundsError};
 use crate::simplex::Simplex;
 use crate::{AddOffset, BoundedMap, UnapplyIndicesData, UnboundedMap};
 
+struct UniformTesselation {
+    shapes: Vec<Simplex>,
+    delta_dim: usize,
+    len_in: usize,
+    len_out: usize,
+    map: Vec<Elementary>,
+}
+
 struct Tesselation {
+    maps: Vec<UniformTesselation>,
+    reorder: Option<Vec<usize>>,
+}
+
+
+
+
+
+enum Tesselation {
+    Uniform(UniformTesselation),
+    Concatenation(Vec<Tesselation>),
+    Product(Vec<Tesselation>),
+    Reordered(Box<Tesselation>, Vec<usize>),
+}
+
+
+impl RelativeTo<Tesselation> for Tesselation {
+    fn relative_to(&self, target: &Tesselation) -> ... {
+        // convert product
+    }
+}
+
+
+
+
+
+
+struct UniformTesselation {
     shapes: Vec<Simplex>
     delta_dim: usize,
     len_out: usize,
