@@ -154,7 +154,12 @@ impl Simplex {
             Self::Triangle => index / 4,
         }
     }
-
+    pub fn apply_child_indices_inplace(&self, indices: &mut [usize]) {
+        match self {
+            Self::Line => indices.iter_mut().for_each(|i| *i /= 2),
+            Self::Triangle => indices.iter_mut().for_each(|i| *i /= 4),
+        }
+    }
     pub fn unapply_child_indices(
         &self,
         indices: impl Iterator<Item = usize>,
@@ -216,7 +221,12 @@ impl Simplex {
             Self::Triangle => index / 3,
         }
     }
-
+    pub fn apply_edge_indices_inplace(&self, indices: &mut [usize]) {
+        match self {
+            Self::Line => indices.iter_mut().for_each(|i| *i /= 2),
+            Self::Triangle => indices.iter_mut().for_each(|i| *i /= 3),
+        }
+    }
     pub fn unapply_edge_indices(
         &self,
         indices: impl Iterator<Item = usize>,

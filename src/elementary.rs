@@ -1,6 +1,6 @@
 use crate::finite_f64::FiniteF64;
 use crate::simplex::Simplex;
-use crate::{AddOffset, UnapplyIndicesData, UnboundedMap};
+use crate::{AddOffset, Map, UnapplyIndicesData};
 use num::Integer as _;
 use std::rc::Rc;
 
@@ -29,7 +29,7 @@ fn coordinates_iter_mut(
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Identity;
 
-impl UnboundedMap for Identity {
+impl Map for Identity {
     fn dim_in(&self) -> usize {
         0
     }
@@ -54,6 +54,7 @@ impl UnboundedMap for Identity {
     fn apply_index(&self, index: usize) -> usize {
         index
     }
+    fn apply_indices_inplace(&self, _indices: &mut [usize]) {}
     fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
         indices.to_vec()
     }
@@ -80,7 +81,7 @@ impl Transpose {
     }
 }
 
-impl UnboundedMap for Transpose {
+impl Map for Transpose {
     fn dim_in(&self) -> usize {
         0
     }
@@ -115,9 +116,9 @@ impl UnboundedMap for Transpose {
         indices
             .iter()
             .map(|index| {
-                let (j, k) = divmod(index.last(), self.0);
+                let (j, k) = divmod(index.get(), self.0);
                 let (i, j) = divmod(j, self.1);
-                index.push((i * self.0 + k) * self.1 + j)
+                index.set((i * self.0 + k) * self.1 + j)
             })
             .collect()
     }
@@ -149,7 +150,7 @@ impl Take {
     }
 }
 
-impl UnboundedMap for Take {
+impl Map for Take {
     fn dim_in(&self) -> usize {
         0
     }
@@ -178,12 +179,12 @@ impl UnboundedMap for Take {
         indices
             .iter()
             .filter_map(|index| {
-                let (j, iout) = divmod(index.last(), self.len);
+                let (j, iout) = divmod(index.get(), self.len);
                 let offset = j * self.nindices;
                 self.indices
                     .iter()
                     .position(|i| *i == iout)
-                    .map(|iin| index.push(offset + iin))
+                    .map(|iin| index.set(offset + iin))
             })
             .collect()
     }
@@ -211,7 +212,7 @@ impl Slice {
     }
 }
 
-impl UnboundedMap for Slice {
+impl Map for Slice {
     fn dim_in(&self) -> usize {
         0
     }
@@ -240,10 +241,10 @@ impl UnboundedMap for Slice {
         indices
             .iter()
             .filter_map(|index| {
-                let (j, i) = divmod(index.last(), self.len_out);
+                let (j, i) = divmod(index.get(), self.len_out);
                 (self.start..self.start + self.len_in)
                     .contains(&i)
-                    .then(|| index.push(i - self.start + j * self.len_in))
+                    .then(|| index.set(i - self.start + j * self.len_in))
             })
             .collect()
     }
@@ -262,7 +263,7 @@ impl Children {
     }
 }
 
-impl UnboundedMap for Children {
+impl Map for Children {
     fn dim_in(&self) -> usize {
         self.0.dim() + self.1
     }
@@ -288,10 +289,13 @@ impl UnboundedMap for Children {
     fn apply_index(&self, index: usize) -> usize {
         self.0.apply_child_index(index)
     }
+    fn apply_indices_inplace(&self, indices: &mut [usize]) {
+        self.0.apply_child_indices_inplace(indices)
+    }
     fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
         indices
             .iter()
-            .flat_map(|i| (0..self.mod_in()).map(move |j| i.push(i.last() * self.mod_in() + j)))
+            .flat_map(|i| (0..self.mod_in()).map(move |j| i.set(i.get() * self.mod_in() + j)))
             .collect()
     }
 }
@@ -317,7 +321,7 @@ impl Edges {
     }
 }
 
-impl UnboundedMap for Edges {
+impl Map for Edges {
     fn dim_in(&self) -> usize {
         self.0.edge_dim() + self.1
     }
@@ -343,10 +347,13 @@ impl UnboundedMap for Edges {
     fn apply_index(&self, index: usize) -> usize {
         self.0.apply_edge_index(index)
     }
+    fn apply_indices_inplace(&self, indices: &mut [usize]) {
+        self.0.apply_edge_indices_inplace(indices)
+    }
     fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
         indices
             .iter()
-            .flat_map(|i| (0..self.mod_in()).map(move |j| i.push(i.last() * self.mod_in() + j)))
+            .flat_map(|i| (0..self.mod_in()).map(move |j| i.set(i.get() * self.mod_in() + j)))
             .collect()
     }
 }
@@ -386,7 +393,7 @@ impl UniformPoints {
     }
 }
 
-impl UnboundedMap for UniformPoints {
+impl Map for UniformPoints {
     fn dim_in(&self) -> usize {
         self.offset
     }
@@ -416,10 +423,13 @@ impl UnboundedMap for UniformPoints {
     fn apply_index(&self, index: usize) -> usize {
         index / self.npoints
     }
+    fn apply_indices_inplace(&self, indices: &mut [usize]) {
+        indices.iter_mut().for_each(|i| *i /= self.npoints)
+    }
     fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
         indices
             .iter()
-            .flat_map(|i| (0..self.mod_in()).map(move |j| i.push(i.last() * self.mod_in() + j)))
+            .flat_map(|i| (0..self.mod_in()).map(move |j| i.set(i.get() * self.mod_in() + j)))
             .collect()
     }
 }
@@ -627,7 +637,7 @@ macro_rules! dispatch {
     };
 }
 
-impl UnboundedMap for Elementary {
+impl Map for Elementary {
     dispatch! {fn dim_in(&self) -> usize}
     dispatch! {fn delta_dim(&self) -> usize}
     dispatch! {fn mod_in(&self) -> usize}
@@ -682,100 +692,47 @@ impl From<UniformPoints> for Elementary {
         Self::UniformPoints(uniform_points)
     }
 }
-
-pub trait PushElementary {
-    fn push_elementary(&mut self, map: &Elementary);
-    fn clone_and_push_elementary(&self, map: &Elementary) -> Self
-    where
-        Self: Clone,
-    {
-        let mut cloned = self.clone();
-        cloned.push_elementary(map);
-        cloned
-    }
-}
-
-impl PushElementary for Vec<Elementary> {
-    fn push_elementary(&mut self, map: &Elementary) {
-        self.push(map.clone());
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use approx::assert_abs_diff_eq;
     use std::iter;
     use Simplex::*;
-
-    macro_rules! assert_eq_apply {
-        ($item:expr, $inidx:expr, $incoords:expr, $outidx:expr, $outcoords:expr) => {{
-            use std::borrow::Borrow;
-            let item = $item.borrow();
-            let incoords = $incoords;
-            let outcoords = $outcoords;
-            assert_eq!(incoords.len(), outcoords.len());
-            let stride;
-            let mut work: Vec<_>;
-            if incoords.len() == 0 {
-                stride = item.dim_out();
-                work = Vec::with_capacity(0);
-            } else {
-                stride = outcoords[0].len();
-                work = iter::repeat(-1.0).take(outcoords.len() * stride).collect();
-                for (work, incoord) in iter::zip(work.chunks_mut(stride), incoords.iter()) {
-                    work[..incoord.len()].copy_from_slice(incoord);
-                }
-            }
-            assert_eq!(item.apply_inplace($inidx, &mut work, stride, 0), $outidx);
-            for (actual, desired) in iter::zip(work.chunks(stride), outcoords.iter()) {
-                assert_abs_diff_eq!(actual[..], desired[..]);
-            }
-        }};
-        ($item:expr, $inidx:expr, $outidx:expr) => {{
-            use std::borrow::Borrow;
-            let item = $item.borrow();
-            let mut work = Vec::with_capacity(0);
-            assert_eq!(
-                item.apply_inplace($inidx, &mut work, item.dim_out(), 0),
-                $outidx
-            );
-        }};
-    }
+    use crate::assert_map_apply;
 
     #[test]
     fn apply_transpose() {
         let item = Elementary::new_transpose(3, 2);
-        assert_eq_apply!(item, 0, 0);
-        assert_eq_apply!(item, 1, 3);
-        assert_eq_apply!(item, 2, 1);
-        assert_eq_apply!(item, 3, 4);
-        assert_eq_apply!(item, 4, 2);
-        assert_eq_apply!(item, 5, 5);
-        assert_eq_apply!(item, 6, 6);
-        assert_eq_apply!(item, 7, 9);
+        assert_map_apply!(item, 0, 0);
+        assert_map_apply!(item, 1, 3);
+        assert_map_apply!(item, 2, 1);
+        assert_map_apply!(item, 3, 4);
+        assert_map_apply!(item, 4, 2);
+        assert_map_apply!(item, 5, 5);
+        assert_map_apply!(item, 6, 6);
+        assert_map_apply!(item, 7, 9);
     }
 
     #[test]
     fn apply_take() {
         let item = Elementary::new_take(vec![4, 1, 2], 5);
-        assert_eq_apply!(item, 0, 4);
-        assert_eq_apply!(item, 1, 1);
-        assert_eq_apply!(item, 2, 2);
-        assert_eq_apply!(item, 3, 9);
-        assert_eq_apply!(item, 4, 6);
-        assert_eq_apply!(item, 5, 7);
+        assert_map_apply!(item, 0, 4);
+        assert_map_apply!(item, 1, 1);
+        assert_map_apply!(item, 2, 2);
+        assert_map_apply!(item, 3, 9);
+        assert_map_apply!(item, 4, 6);
+        assert_map_apply!(item, 5, 7);
     }
 
     #[test]
     fn apply_children_line() {
         let item = Elementary::new_children(Line);
-        assert_eq_apply!(item, 0, [[0.0], [1.0]], 0, [[0.0], [0.5]]);
-        assert_eq_apply!(item, 1, [[0.0], [1.0]], 0, [[0.5], [1.0]]);
-        assert_eq_apply!(item, 2, [[0.0], [1.0]], 1, [[0.0], [0.5]]);
+        assert_map_apply!(item, 0, [[0.0], [1.0]], 0, [[0.0], [0.5]]);
+        assert_map_apply!(item, 1, [[0.0], [1.0]], 0, [[0.5], [1.0]]);
+        assert_map_apply!(item, 2, [[0.0], [1.0]], 1, [[0.0], [0.5]]);
 
         let item = item.with_offset(1);
-        assert_eq_apply!(
+        assert_map_apply!(
             item,
             3,
             [[0.2, 0.0], [0.3, 1.0]],
@@ -787,24 +744,24 @@ mod tests {
     #[test]
     fn apply_edges_line() {
         let item = Elementary::new_edges(Line);
-        assert_eq_apply!(item, 0, [[]], 0, [[1.0]]);
-        assert_eq_apply!(item, 1, [[]], 0, [[0.0]]);
-        assert_eq_apply!(item, 2, [[]], 1, [[1.0]]);
+        assert_map_apply!(item, 0, [[]], 0, [[1.0]]);
+        assert_map_apply!(item, 1, [[]], 0, [[0.0]]);
+        assert_map_apply!(item, 2, [[]], 1, [[1.0]]);
 
         let item = item.with_offset(1);
-        assert_eq_apply!(item, 0, [[0.2]], 0, [[0.2, 1.0]]);
+        assert_map_apply!(item, 0, [[0.2]], 0, [[0.2, 1.0]]);
     }
 
     #[test]
     fn apply_uniform_points() {
         let item = Elementary::new_uniform_points(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 2);
-        assert_eq_apply!(item, 0, [[]], 0, [[1.0, 2.0]]);
-        assert_eq_apply!(item, 1, [[]], 0, [[3.0, 4.0]]);
-        assert_eq_apply!(item, 2, [[]], 0, [[5.0, 6.0]]);
-        assert_eq_apply!(item, 3, [[]], 1, [[1.0, 2.0]]);
+        assert_map_apply!(item, 0, [[]], 0, [[1.0, 2.0]]);
+        assert_map_apply!(item, 1, [[]], 0, [[3.0, 4.0]]);
+        assert_map_apply!(item, 2, [[]], 0, [[5.0, 6.0]]);
+        assert_map_apply!(item, 3, [[]], 1, [[1.0, 2.0]]);
 
         let item = item.with_offset(1);
-        assert_eq_apply!(item, 0, [[7.0]], 0, [[7.0, 1.0, 2.0]]);
+        assert_map_apply!(item, 0, [[7.0]], 0, [[7.0, 1.0, 2.0]]);
     }
 
     macro_rules! assert_unapply {
