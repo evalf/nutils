@@ -1,6 +1,6 @@
 use crate::finite_f64::FiniteF64;
 use crate::simplex::Simplex;
-use crate::{Map, Error, AddOffset, UnapplyIndicesData};
+use crate::{AddOffset, Error, Map, UnapplyIndicesData};
 use num::Integer as _;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
@@ -138,8 +138,7 @@ impl<M: UnboundedMap> UnboundedMap for Offset<M> {
         stride: usize,
         offset: usize,
     ) -> usize {
-        self.0
-            .apply_inplace(index, coords, stride, offset + self.1)
+        self.0.apply_inplace(index, coords, stride, offset + self.1)
     }
     #[inline]
     fn apply_index(&self, index: usize) -> usize {
@@ -855,7 +854,7 @@ pub struct WithBounds<M: UnboundedMap> {
 }
 
 impl<M: UnboundedMap> WithBounds<M> {
-    pub fn new(map: M, dim_in: usize, len_in: usize) -> Result<Self, Error> {
+    pub fn from_input(map: M, dim_in: usize, len_in: usize) -> Result<Self, Error> {
         if dim_in < map.dim_in() {
             Err(Error::DimensionMismatch)
         } else if len_in % map.mod_in() != 0 {
@@ -864,10 +863,27 @@ impl<M: UnboundedMap> WithBounds<M> {
             Ok(Self::new_unchecked(map, dim_in, len_in))
         }
     }
+    pub fn from_output(map: M, dim_out: usize, len_out: usize) -> Result<Self, Error> {
+        if dim_out < map.dim_out() {
+            Err(Error::DimensionMismatch)
+        } else if len_out % map.mod_out() != 0 {
+            Err(Error::LengthMismatch)
+        } else {
+            let dim_in = dim_out - map.delta_dim();
+            let len_in = len_out / map.mod_out() * map.mod_in();
+            Ok(Self::new_unchecked(map, dim_in, len_in))
+        }
+    }
     pub fn new_unchecked(map: M, dim_in: usize, len_in: usize) -> Self {
         let delta_dim = map.delta_dim();
         let len_out = len_in / map.mod_in() * map.mod_out();
-        Self { map, dim_in, delta_dim, len_in, len_out }
+        Self {
+            map,
+            dim_in,
+            delta_dim,
+            len_in,
+            len_out,
+        }
     }
 }
 

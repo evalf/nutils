@@ -25,7 +25,6 @@ impl std::fmt::Display for Error {
     }
 }
 
-
 pub trait Map {
     fn len_out(&self) -> usize;
     fn len_in(&self) -> usize;
@@ -91,7 +90,7 @@ pub trait AddOffset {
     fn add_offset(&mut self, offset: usize);
 }
 
-pub trait UnapplyIndicesData: Clone + std::fmt::Debug {
+pub trait UnapplyIndicesData: Clone {
     fn get(&self) -> usize;
     fn set(&self, index: usize) -> Self;
 }
@@ -114,7 +113,7 @@ macro_rules! assert_map_apply {
         let item = $item.borrow();
         let incoords = $incoords;
         let outcoords = $outcoords;
-        assert_eq!(incoords.len(), outcoords.len());
+        assert_eq!(incoords.len(), outcoords.len(), "incoords outcoords");
         let stride;
         let mut work: Vec<_>;
         if incoords.len() == 0 {
@@ -127,7 +126,12 @@ macro_rules! assert_map_apply {
                 work[..incoord.len()].copy_from_slice(incoord);
             }
         }
-        assert_eq!(item.apply_inplace($inidx, &mut work, stride, 0), $outidx).unwrap();
+        assert_eq!(
+            item.apply_inplace($inidx, &mut work, stride, 0),
+            Some($outidx),
+            "apply_inplace",
+        );
+        assert_eq!(item.apply_index($inidx), Some($outidx), "apply_index");
         for (actual, desired) in iter::zip(work.chunks(stride), outcoords.iter()) {
             assert_abs_diff_eq!(actual[..], desired[..]);
         }
@@ -137,8 +141,10 @@ macro_rules! assert_map_apply {
         let item = $item.borrow();
         let mut work = Vec::with_capacity(0);
         assert_eq!(
-            item.apply_inplace($inidx, &mut work, item.dim_out(), 0).unwrap(),
+            item.apply_inplace($inidx, &mut work, item.dim_out(), 0)
+                .unwrap(),
             $outidx
         );
+        assert_eq!(item.apply_index($inidx), Some($outidx));
     }};
 }

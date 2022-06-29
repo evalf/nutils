@@ -5,16 +5,25 @@ use crate::{AddOffset, BoundedMap, UnapplyIndicesData, UnboundedMap};
 
 struct UniformTesselation {
     shapes: Vec<Simplex>,
-    delta_dim: usize,
-    len_in: usize,
-    len_out: usize,
-    map: Vec<Elementary>,
+    map: WithBounds<Vec<Elementary>>,
+}
+
+impl Deref for UniformTesselation {
+    type Target = WithBounds<Vec<Elementary>>;
+
+    fn deref(&self) -> Self::Target {
+        self.map
+    }
 }
 
 struct Tesselation {
-    maps: Vec<UniformTesselation>,
+    maps: UniformConcat<UniformTesselation>,
     reorder: Option<Vec<usize>>,
 }
+
+
+type Tesselation = OptionReorder<UniformConcat<UniformTesselation>>, Vec<usize>>;
+
 
 
 
