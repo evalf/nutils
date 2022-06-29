@@ -90,7 +90,7 @@ pub trait AddOffset {
     fn add_offset(&mut self, offset: usize);
 }
 
-pub trait UnapplyIndicesData: Clone {
+pub trait UnapplyIndicesData: Clone + std::fmt::Debug {
     fn get(&self) -> usize;
     fn set(&self, index: usize) -> Self;
 }

@@ -819,14 +819,7 @@ where
     }
     #[inline]
     fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
-        let mut iter = self.iter().rev();
-        if let Some(map) = iter.next() {
-            iter.fold(map.unapply_indices(indices), |indices, map| {
-                map.unapply_indices(&indices)
-            })
-        } else {
-            Vec::new()
-        }
+        self.iter().rev().fold(indices.to_vec(), |indices, map| map.unapply_indices(&indices))
     }
     #[inline]
     fn is_identity(&self) -> bool {

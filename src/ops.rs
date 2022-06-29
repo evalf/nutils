@@ -396,40 +396,43 @@ impl<M0: Map, M1: Map> Map for BinaryProduct<M0, M1> {
         stride: usize,
         offset: usize,
     ) -> usize {
-        let (index0, index1) = index.div_rem(&self.0.len_in());
+        let (index0, index1) = index.div_rem(&self.1.len_in());
         let index0 = self
             .0
             .apply_inplace_unchecked(index0, coords, stride, offset);
         let index1 =
             self.1
                 .apply_inplace_unchecked(index1, coords, stride, offset + self.0.dim_out());
-        index0 * self.0.len_out() + index1
+        index0 * self.1.len_out() + index1
     }
     #[inline]
     fn apply_index_unchecked(&self, index: usize) -> usize {
-        let (index0, index1) = index.div_rem(&self.0.len_in());
+        let (index0, index1) = index.div_rem(&self.1.len_in());
         let index0 = self.0.apply_index_unchecked(index0);
         let index1 = self.1.apply_index_unchecked(index1);
-        index0 * self.0.len_out() + index1
+        index0 * self.1.len_out() + index1
     }
     #[inline]
     fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
-        let indices: Vec<_> = indices
+        // TODO: collect unique indices per map, unapply and merge
+        let idx: Vec<_> = indices
             .iter()
-            .map(|k| {
-                let (i, j) = k.get().div_rem(&self.0.len_in());
-                UnapplyBinaryProduct(i, j, k.clone())
+            .enumerate()
+            .map(|(i, j)| {
+                let (j, k) = j.get().div_rem(&self.1.len_out());
+                UnapplyBinaryProduct(i, k, j)
             })
             .collect();
-        let mut indices = self.0.unapply_indices_unchecked(&indices);
-        indices
+        let mut idx = self.0.unapply_indices_unchecked(&idx);
+        idx
             .iter_mut()
-            .for_each(|UnapplyBinaryProduct(ref mut i, ref mut j, _)| std::mem::swap(i, j));
-        let indices = self.1.unapply_indices_unchecked(&indices);
-        indices
+            .for_each(|UnapplyBinaryProduct(_, ref mut j, ref mut k)| std::mem::swap(j, k));
+        let idx = self.1.unapply_indices_unchecked(&idx);
+        let idx = idx
             .into_iter()
-            .map(|UnapplyBinaryProduct(i, j, k)| k.set(j * self.0.len_out() + i))
-            .collect()
+            .map(|UnapplyBinaryProduct(i, j, k)| indices[i].set(j * self.1.len_out() + k))
+            .collect();
+        idx
     }
     #[inline]
     fn is_identity(&self) -> bool {
@@ -438,14 +441,14 @@ impl<M0: Map, M1: Map> Map for BinaryProduct<M0, M1> {
 }
 
 #[derive(Debug, Clone)]
-struct UnapplyBinaryProduct<T: UnapplyIndicesData>(usize, usize, T);
+struct UnapplyBinaryProduct(usize, usize, usize);
 
-impl<T: UnapplyIndicesData> UnapplyIndicesData for UnapplyBinaryProduct<T> {
+impl UnapplyIndicesData for UnapplyBinaryProduct {
     fn get(&self) -> usize {
-        self.0
+        self.2
     }
     fn set(&self, index: usize) -> Self {
-        Self(index, self.1, self.2.clone())
+        Self(self.0, self.1, index)
     }
 }
 
@@ -465,15 +468,6 @@ where
     }
     pub fn iter<'a>(&'a self) -> std::slice::Iter<'a, M> {
         self.0.iter()
-    }
-    fn unravel_index(&self, index: usize) -> Vec<usize> {
-        let mut indices: Vec<_> = self.iter().rev().scan(index, |index, map| {
-            let (i0, i1) = index.div_rem(&map.len_in());
-            *index = i0;
-            Some(i1)
-        }).collect();
-        indices.reverse();
-        indices
     }
 }
 
@@ -566,10 +560,11 @@ macro_rules! dispatch {
         $vis fn $fn$(<$genarg: $genpath>)?(&$self $(, $arg: $ty)*) $(-> $ret)? {
             if $self.0.deref().len() == 1 {
                 $self.0.deref()[0].$fn($($arg),*)
-            //} else if $self.0.deref().len() == 2 {
-            //    BinaryProduct(&$self.0.deref()[0], $self.0.deref()[1]).$fn($($arg),*)
             } else {
-                BinaryProduct(UniformProduct(&$self.0.deref()[..1]), UniformProduct(&$self.0.deref()[1..])).$fn($($arg),*)
+                BinaryProduct(
+                    UniformProduct(&$self.0.deref()[..1]),
+                    UniformProduct(&$self.0.deref()[1..]),
+                ).$fn($($arg),*)
             }
         }
     };
@@ -578,10 +573,11 @@ macro_rules! dispatch {
         $vis fn $fn(&mut $self $(, $arg: $ty)*) $(-> $ret)? {
             if $self.0.deref().len() == 1 {
                 $self.0.deref_mut()[0].$fn($($arg),*)
-            //} else if $self.0.deref().len() == 2 {
-            //    BinaryProduct(&$self.0.deref_mut()[0], &$self.0.deref_mut()[1]).$fn($($arg),*)
             } else {
-                BinaryProduct(UniformProduct(&$self.0.deref_mut()[..1]), UniformProduct(&$self.0.deref_mut()[1..])).$fn($($arg),*)
+                BinaryProduct(
+                    UniformProduct(&$self.0.deref_mut()[..1]),
+                    UniformProduct(&$self.0.deref_mut()[1..]),
+                ).$fn($($arg),*)
             }
         }
     };
@@ -749,16 +745,31 @@ mod tests {
     #[test]
     fn uniform_product1() {
         let map = UniformProduct::new(vec![
-            elementaries![Line*1 <- Edges],
-            elementaries![Line*1 <- Children],
+            elementaries![Line*2 <- Edges],
+            elementaries![Line*3],
         ]);
-        assert_eq!(map.len_out(), 1);
-        assert_eq!(map.len_in(), 4);
+        assert_eq!(map.len_out(), 6);
+        assert_eq!(map.len_in(), 12);
         assert_eq!(map.dim_in(), 1);
         assert_eq!(map.dim_out(), 2);
-        assert_map_apply!(map, 0, [[0.0], [1.0]], 0, [[1.0, 0.0], [1.0, 0.5]]);
-        assert_map_apply!(map, 1, [[0.0], [1.0]], 0, [[1.0, 0.5], [1.0, 1.0]]);
-        assert_map_apply!(map, 2, [[0.0], [1.0]], 0, [[0.0, 0.0], [0.0, 0.5]]);
-        assert_map_apply!(map, 3, [[0.0], [1.0]], 0, [[0.0, 0.5], [0.0, 1.0]]);
+        assert_map_apply!(map, 0, [[0.2], [0.3]], 0, [[1.0, 0.2], [1.0, 0.3]]);
+        assert_map_apply!(map, 1, [[0.2], [0.3]], 1, [[1.0, 0.2], [1.0, 0.3]]);
+        assert_map_apply!(map, 2, [[0.2], [0.3]], 2, [[1.0, 0.2], [1.0, 0.3]]);
+        assert_map_apply!(map, 3, [[0.2], [0.3]], 0, [[0.0, 0.2], [0.0, 0.3]]);
+        assert_map_apply!(map, 4, [[0.2], [0.3]], 1, [[0.0, 0.2], [0.0, 0.3]]);
+        assert_map_apply!(map, 5, [[0.2], [0.3]], 2, [[0.0, 0.2], [0.0, 0.3]]);
+        assert_map_apply!(map, 6, [[0.2], [0.3]], 3, [[1.0, 0.2], [1.0, 0.3]]);
+        assert_map_apply!(map, 7, [[0.2], [0.3]], 4, [[1.0, 0.2], [1.0, 0.3]]);
+        assert_map_apply!(map, 8, [[0.2], [0.3]], 5, [[1.0, 0.2], [1.0, 0.3]]);
+        assert_map_apply!(map, 9, [[0.2], [0.3]], 3, [[0.0, 0.2], [0.0, 0.3]]);
+        assert_map_apply!(map, 10, [[0.2], [0.3]], 4, [[0.0, 0.2], [0.0, 0.3]]);
+        assert_map_apply!(map, 11, [[0.2], [0.3]], 5, [[0.0, 0.2], [0.0, 0.3]]);
+        assert_eq!(map.apply_index(12), None);
+        assert_eq!(map.unapply_indices(&[0]), Some(vec![0, 3]));
+        assert_eq!(map.unapply_indices(&[1]), Some(vec![1, 4]));
+        assert_eq!(map.unapply_indices(&[2]), Some(vec![2, 5]));
+        assert_eq!(map.unapply_indices(&[3]), Some(vec![6, 9]));
+        assert_eq!(map.unapply_indices(&[4]), Some(vec![7, 10]));
+        assert_eq!(map.unapply_indices(&[5]), Some(vec![8, 11]));
     }
 }
