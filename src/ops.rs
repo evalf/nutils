@@ -1,6 +1,6 @@
 use crate::{Error, Map, UnapplyIndicesData};
-use std::ops::Deref;
 use num::Integer as _;
+use std::ops::Deref;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BinaryComposition<Inner: Map, Outer: Map>(Inner, Outer);
@@ -14,6 +14,12 @@ impl<Inner: Map, Outer: Map> BinaryComposition<Inner, Outer> {
         } else {
             Ok(Self(inner, outer))
         }
+    }
+    pub fn inner(&self) -> &Inner {
+        &self.0
+    }
+    pub fn outer(&self) -> &Outer {
+        &self.1
     }
 }
 
@@ -365,6 +371,12 @@ impl<M0: Map, M1: Map> BinaryProduct<M0, M1> {
     pub fn new(map0: M0, map1: M1) -> Self {
         Self(map0, map1)
     }
+    pub fn first(&self) -> &M0 {
+        &self.0
+    }
+    pub fn second(&self) -> &M1 {
+        &self.1
+    }
 }
 
 impl<M0: Map, M1: Map> Map for BinaryProduct<M0, M1> {
@@ -424,8 +436,7 @@ impl<M0: Map, M1: Map> Map for BinaryProduct<M0, M1> {
             })
             .collect();
         let mut idx = self.0.unapply_indices_unchecked(&idx);
-        idx
-            .iter_mut()
+        idx.iter_mut()
             .for_each(|UnapplyBinaryProduct(_, ref mut j, ref mut k)| std::mem::swap(j, k));
         let idx = self.1.unapply_indices_unchecked(&idx);
         let idx = idx
@@ -468,6 +479,25 @@ where
     }
     pub fn iter<'a>(&'a self) -> std::slice::Iter<'a, M> {
         self.0.iter()
+    }
+    pub fn strides_out(&self) -> Vec<usize> {
+        let mut strides = Vec::with_capacity(self.0.len());
+        let mut stride = 1;
+        for map in self.iter().rev() {
+            strides.push(stride);
+            stride *= map.len_out();
+        }
+        strides.reverse();
+        strides
+    }
+    pub fn offsets_out(&self) -> Vec<usize> {
+        let mut offsets = Vec::with_capacity(self.0.len());
+        let mut offset = 0;
+        for map in self.iter() {
+            offsets.push(offset);
+            offset += map.dim_out();
+        }
+        offsets
     }
 }
 
@@ -528,7 +558,7 @@ where
 //                UnapplyBinaryProduct(i, j, k.clone())
 //            })
 //            .collect();
-//        
+//
 //
 //        let mut iter = self.iter();
 //        let map = iter.next().unwrap();
@@ -614,6 +644,15 @@ where
     dispatch! {fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>}
     dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Option<Vec<T>>}
     dispatch! {fn is_identity(&self) -> bool}
+}
+
+impl<M: Map> FromIterator<M> for UniformProduct<M, Vec<M>> {
+    fn from_iter<T>(iter: T) -> Self
+    where
+        T: IntoIterator<Item = M>,
+    {
+        UniformProduct::new(iter.into_iter().collect())
+    }
 }
 
 // pub struct OptionReorder<M: Map, I>(map, Option<I>);
@@ -746,7 +785,7 @@ mod tests {
     fn uniform_product1() {
         let map = UniformProduct::new(vec![
             elementaries![Line*2 <- Edges],
-            elementaries![Line*3],
+            elementaries![Line * 3],
         ]);
         assert_eq!(map.len_out(), 6);
         assert_eq!(map.len_in(), 12);

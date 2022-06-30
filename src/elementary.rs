@@ -107,7 +107,7 @@ impl AddOffset for Identity {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Offset<M: UnboundedMap>(M, usize);
+pub struct Offset<M: UnboundedMap>(pub M, pub usize);
 
 impl<M: UnboundedMap> UnboundedMap for Offset<M> {
     #[inline]
@@ -562,98 +562,6 @@ impl Elementary {
             _ => None,
         }
     }
-    pub fn shift_inner_to_outer(
-        &self,
-        items: &[Self],
-    ) -> Option<(Option<Transpose>, Self, Vec<Self>)> {
-        if self.is_transpose() {
-            return None;
-        }
-        let mut target = self.clone();
-        let mut shifted_items: Vec<Self> = Vec::new();
-        let mut queue: Vec<Self> = Vec::new();
-        let mut stride_out = 1;
-        let mut stride_in = 1;
-        for mut item in items.iter().cloned() {
-            // Swap matching edges and children at the same offset.
-            if let Self::Edges(Offset(Edges(esimplex), eoffset)) = &item {
-                if let Self::Children(Offset(Children(ref mut csimplex), coffset)) = &mut target {
-                    if eoffset == coffset && esimplex.edge_dim() == csimplex.dim() {
-                        if stride_in != 1 && self.mod_in() != 1 {
-                            shifted_items.push(Self::new_transpose(stride_in, self.mod_in()));
-                        }
-                        shifted_items.append(&mut queue);
-                        if stride_out != 1 && self.mod_in() != 1 {
-                            shifted_items.push(Self::new_transpose(self.mod_in(), stride_out));
-                        }
-                        shifted_items.push(Self::new_take(
-                            esimplex.swap_edges_children_map(),
-                            esimplex.nedges() * esimplex.nchildren(),
-                        ));
-                        shifted_items.push(Self::Edges(Offset(Edges(*esimplex), *eoffset)));
-                        *csimplex = *esimplex;
-                        stride_in = 1;
-                        stride_out = 1;
-                        continue;
-                    }
-                }
-            }
-            // Update strides.
-            if self.mod_in() == 1 && self.mod_out() == 1 {
-            } else if self.mod_out() == 1 {
-                let n = stride_out.gcd(&item.mod_in());
-                stride_out = stride_out / n * item.mod_out();
-                stride_in *= item.mod_in() / n;
-            } else if let Some(Transpose(ref mut m, ref mut n)) = item.as_transpose_mut() {
-                if stride_out % (*m * *n) == 0 {
-                } else if stride_out % *n == 0 && (*m * *n) % (stride_out * self.mod_out()) == 0 {
-                    stride_out /= *n;
-                    *m = *m / self.mod_out() * self.mod_in();
-                } else if *n % stride_out == 0 && *n % (stride_out * self.mod_out()) == 0 {
-                    stride_out *= *m;
-                    *n = *n / self.mod_out() * self.mod_in();
-                } else {
-                    return None;
-                }
-            } else if stride_out % item.mod_in() == 0 {
-                stride_out = stride_out / item.mod_in() * item.mod_out();
-            } else {
-                return None;
-            }
-            // Update offsets.
-            let item_delta_dim = item.delta_dim();
-            let target_delta_dim = target.delta_dim();
-            let item_dim_in = item.dim_in();
-            let target_dim_out = target.dim_out();
-            if let (Some(item_offset), Some(target_offset)) =
-                (item.offset_mut(), target.offset_mut())
-            {
-                if item_dim_in <= *target_offset {
-                    *target_offset += item_delta_dim;
-                } else if target_dim_out <= *item_offset {
-                    *item_offset -= target_delta_dim;
-                } else {
-                    return None;
-                }
-            }
-            if !item.is_identity() {
-                queue.push(item);
-            }
-        }
-        if stride_in != 1 && self.mod_in() != 1 {
-            shifted_items.push(Self::new_transpose(stride_in, self.mod_in()));
-        }
-        shifted_items.extend(queue);
-        if stride_out != 1 && self.mod_in() != 1 {
-            shifted_items.push(Self::new_transpose(self.mod_in(), stride_out));
-        }
-        let outer_transpose = if self.mod_out() == 1 || stride_out == 1 {
-            None
-        } else {
-            Some(Transpose::new(stride_out, self.mod_out()))
-        };
-        Some((outer_transpose, target, shifted_items))
-    }
     #[inline]
     const fn is_transpose(&self) -> bool {
         matches!(self, Self::Transpose(_))
@@ -819,7 +727,9 @@ where
     }
     #[inline]
     fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
-        self.iter().rev().fold(indices.to_vec(), |indices, map| map.unapply_indices(&indices))
+        self.iter().rev().fold(indices.to_vec(), |indices, map| {
+            map.unapply_indices(&indices)
+        })
     }
     #[inline]
     fn is_identity(&self) -> bool {
@@ -878,6 +788,9 @@ impl<M: UnboundedMap> WithBounds<M> {
             len_out,
         }
     }
+    pub fn unbounded(&self) -> &M {
+        &self.map
+    }
 }
 
 impl<M: UnboundedMap> Map for WithBounds<M> {
@@ -922,6 +835,203 @@ impl<M: UnboundedMap> Map for WithBounds<M> {
     #[inline]
     fn is_identity(&self) -> bool {
         self.map.is_identity()
+    }
+}
+
+pub trait ShiftInnerToOuter {
+    type Output;
+
+    fn shift_inner_to_outer(
+        &self,
+        inner: &Elementary,
+        stride: usize,
+    ) -> Option<((Elementary, usize), Self::Output)>;
+}
+
+impl ShiftInnerToOuter for [Elementary] {
+    type Output = Vec<Elementary>;
+
+    fn shift_inner_to_outer(
+        &self,
+        inner: &Elementary,
+        stride: usize,
+    ) -> Option<((Elementary, usize), Self::Output)> {
+        if inner.is_transpose() {
+            return None;
+        }
+        let mut target = inner.clone();
+        let mut shifted_items: Vec<Elementary> = Vec::new();
+        let mut queue: Vec<Elementary> = Vec::new();
+        let mut stride_out = stride;
+        let mut stride_in = stride;
+        for mut item in self.iter().cloned() {
+            // Swap matching edges and children at the same offset.
+            if let Elementary::Edges(Offset(Edges(esimplex), eoffset)) = &item {
+                if let Elementary::Children(Offset(Children(ref mut csimplex), coffset)) =
+                    &mut target
+                {
+                    if eoffset == coffset && esimplex.edge_dim() == csimplex.dim() {
+                        if stride_in != 1 && inner.mod_in() != 1 {
+                            shifted_items
+                                .push(Elementary::new_transpose(stride_in, inner.mod_in()));
+                        }
+                        shifted_items.append(&mut queue);
+                        if stride_out != 1 && inner.mod_in() != 1 {
+                            shifted_items
+                                .push(Elementary::new_transpose(inner.mod_in(), stride_out));
+                        }
+                        shifted_items.push(Elementary::new_take(
+                            esimplex.swap_edges_children_map(),
+                            esimplex.nedges() * esimplex.nchildren(),
+                        ));
+                        shifted_items.push(Elementary::Edges(Offset(Edges(*esimplex), *eoffset)));
+                        *csimplex = *esimplex;
+                        stride_in = 1;
+                        stride_out = 1;
+                        continue;
+                    }
+                }
+            }
+            // Update strides.
+            if inner.mod_in() == 1 && inner.mod_out() == 1 {
+            } else if inner.mod_out() == 1 {
+                let n = stride_out.gcd(&item.mod_in());
+                stride_out = stride_out / n * item.mod_out();
+                stride_in *= item.mod_in() / n;
+            } else if let Some(Transpose(ref mut m, ref mut n)) = item.as_transpose_mut() {
+                if stride_out % (*m * *n) == 0 {
+                } else if stride_out % *n == 0 && (*m * *n) % (stride_out * inner.mod_out()) == 0 {
+                    stride_out /= *n;
+                    *m = *m / inner.mod_out() * inner.mod_in();
+                } else if *n % stride_out == 0 && *n % (stride_out * inner.mod_out()) == 0 {
+                    stride_out *= *m;
+                    *n = *n / inner.mod_out() * inner.mod_in();
+                } else {
+                    return None;
+                }
+            } else if stride_out % item.mod_in() == 0 {
+                stride_out = stride_out / item.mod_in() * item.mod_out();
+            } else {
+                return None;
+            }
+            // Update offsets.
+            let item_delta_dim = item.delta_dim();
+            let target_delta_dim = target.delta_dim();
+            let item_dim_in = item.dim_in();
+            let target_dim_out = target.dim_out();
+            if let (Some(item_offset), Some(target_offset)) =
+                (item.offset_mut(), target.offset_mut())
+            {
+                if item_dim_in <= *target_offset {
+                    *target_offset += item_delta_dim;
+                } else if target_dim_out <= *item_offset {
+                    *item_offset -= target_delta_dim;
+                } else {
+                    return None;
+                }
+            }
+            if !item.is_identity() {
+                queue.push(item);
+            }
+        }
+        if stride_in != 1 && target.mod_in() != 1 {
+            shifted_items.push(Elementary::new_transpose(stride_in, target.mod_in()));
+        }
+        shifted_items.extend(queue);
+        if stride_out != 1 && target.mod_in() != 1 {
+            shifted_items.push(Elementary::new_transpose(target.mod_in(), stride_out));
+        }
+        if target.mod_out() == 1 {
+            stride_out = 1;
+        }
+        Some(((target, stride_out), shifted_items))
+    }
+}
+
+impl ShiftInnerToOuter for Vec<Elementary> {
+    type Output = Self;
+
+    #[inline]
+    fn shift_inner_to_outer(
+        &self,
+        inner: &Elementary,
+        stride: usize,
+    ) -> Option<((Elementary, usize), Self::Output)> {
+        (&self[..]).shift_inner_to_outer(inner, stride)
+    }
+}
+
+impl<M: UnboundedMap + ShiftInnerToOuter> ShiftInnerToOuter for WithBounds<M>
+where
+    M: UnboundedMap + ShiftInnerToOuter,
+    M::Output: UnboundedMap,
+{
+    type Output = WithBounds<M::Output>;
+
+    fn shift_inner_to_outer(
+        &self,
+        inner: &Elementary,
+        stride: usize,
+    ) -> Option<((Elementary, usize), Self::Output)> {
+        self.unbounded()
+            .shift_inner_to_outer(inner, stride)
+            .map(|(outer, slf)| {
+                let dim_in = self.dim_in() - inner.delta_dim();
+                let len_in = self.len_in() / inner.mod_out() * inner.mod_in();
+                (outer, WithBounds::new_unchecked(slf, dim_in, len_in))
+            })
+    }
+}
+
+pub trait SplitOuterElementary: Sized {
+    type Output: IntoIterator<Item = ((Elementary, usize), Self)>;
+
+    fn split_outer_elementary(&self) -> Self::Output;
+}
+
+impl SplitOuterElementary for Vec<Elementary> {
+    type Output = Vec<((Elementary, usize), Self)>;
+
+    fn split_outer_elementary(&self) -> Self::Output {
+        let mut splits = Vec::new();
+        for (i, item) in self.iter().enumerate().rev() {
+            if let Some((outer, mut inner)) = (&self[..i]).shift_inner_to_outer(item, 1) {
+                inner.extend(self[i + 1..].iter().cloned());
+                splits.push((outer, inner));
+            }
+            if let Elementary::Edges(Offset(Edges(Simplex::Line), offset)) = item {
+                let mut children = Elementary::new_children(Simplex::Line);
+                children.add_offset(*offset);
+                if let Some((outer, mut inner)) = (&self[..i]).shift_inner_to_outer(&children, 1) {
+                    inner.push(item.clone());
+                    inner.push(Elementary::new_take(
+                        Simplex::Line.swap_edges_children_map(),
+                        Simplex::Line.nedges() * Simplex::Line.nchildren(),
+                    ));
+                    inner.extend(self[i + 1..].iter().cloned());
+                    splits.push((outer, inner));
+                }
+            }
+        }
+        splits
+    }
+}
+
+impl<M: UnboundedMap + SplitOuterElementary> SplitOuterElementary for WithBounds<M> {
+    // TODO: As soons as we can use `impl Iterator<Item = ...>`, drop the collect.
+    type Output = Vec<((Elementary, usize), Self)>;
+
+    fn split_outer_elementary(&self) -> Self::Output {
+        self.unbounded()
+            .split_outer_elementary()
+            .into_iter()
+            .map(|(outer, unbounded)| {
+                (
+                    outer,
+                    WithBounds::new_unchecked(unbounded, self.dim_in(), self.len_in()),
+                )
+            })
+            .collect()
     }
 }
 
@@ -1119,12 +1229,13 @@ mod tests {
     macro_rules! assert_shift_inner_to_outer {
         ($($item:expr),*; $($simplex:ident),*) => {{
             let unshifted = [$(Elementary::from($item),)*];
-            let (ltrans, litem, lchain) = unshifted.first().unwrap().shift_inner_to_outer(&unshifted[1..]).unwrap();
+            let ((litem, lstride), lchain) = (&unshifted[1..]).shift_inner_to_outer(&unshifted[0], 1).unwrap();
             let mut shifted: Vec<Elementary> = Vec::new();
             shifted.extend(lchain.into_iter());
+            let litem_mod_out = litem.mod_out();
             shifted.push(litem);
-            if let Some(ltrans) = ltrans {
-                shifted.push(ltrans.into());
+            if lstride != 1 {
+                shifted.push(Elementary::new_transpose(lstride, litem_mod_out));
             }
             assert_equiv_maps!(&shifted[..], &unshifted[..] $(, $simplex)*);
         }};

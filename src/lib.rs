@@ -1,8 +1,9 @@
 pub mod elementary;
 pub mod finite_f64;
 pub mod ops;
-//pub mod relative;
+pub mod relative;
 pub mod simplex;
+mod util;
 //pub mod tesselation;
 //pub mod topology;
 
