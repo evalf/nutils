@@ -685,6 +685,7 @@ where
     #[inline]
     fn dim_in(&self) -> usize {
         self.iter()
+            .rev()
             .fold((0, 0), |(o, i), map| comp_dim_out_in(map, o, i))
             .1
     }
@@ -695,12 +696,14 @@ where
     #[inline]
     fn mod_in(&self) -> usize {
         self.iter()
+            .rev()
             .fold((1, 1), |(o, i), map| comp_mod_out_in(map, o, i))
             .1
     }
     #[inline]
     fn mod_out(&self) -> usize {
         self.iter()
+            .rev()
             .fold((1, 1), |(o, i), map| comp_mod_out_in(map, o, i))
             .0
     }
@@ -712,22 +715,25 @@ where
         stride: usize,
         offset: usize,
     ) -> usize {
-        self.iter().fold(index, |index, map| {
+        self.iter().rev().fold(index, |index, map| {
             map.apply_inplace(index, coords, stride, offset)
         })
     }
     #[inline]
     fn apply_index(&self, index: usize) -> usize {
-        self.iter().fold(index, |index, map| map.apply_index(index))
+        self.iter()
+            .rev()
+            .fold(index, |index, map| map.apply_index(index))
     }
     #[inline]
     fn apply_indices_inplace(&self, indices: &mut [usize]) {
         self.iter()
+            .rev()
             .for_each(|map| map.apply_indices_inplace(indices));
     }
     #[inline]
     fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
-        self.iter().rev().fold(indices.to_vec(), |indices, map| {
+        self.iter().fold(indices.to_vec(), |indices, map| {
             map.unapply_indices(&indices)
         })
     }
@@ -838,12 +844,11 @@ impl<M: UnboundedMap> Map for WithBounds<M> {
     }
 }
 
-/// An interface for swapping a composition of an [`Elementary`] with `Self`.
+/// An interface for swapping a composition of `Self` with an [`Elementary`].
 pub trait SwapElementaryComposition {
     type Output;
 
-    /// Returns a map and an [`Elementary`] such that the composition is equivalent to
-    /// the composition of `inner` and `self`.
+    /// Returns an [`Elementary`'] and a map such that the composition those is equivalent to the composition of `self` with `inner`.
     fn swap_elementary_composition(
         &self,
         inner: &Elementary,
@@ -867,7 +872,7 @@ impl SwapElementaryComposition for [Elementary] {
         let mut queue: Vec<Elementary> = Vec::new();
         let mut stride_out = stride;
         let mut stride_in = stride;
-        for mut item in self.iter().cloned() {
+        for mut item in self.iter().rev().cloned() {
             // Swap matching edges and children at the same offset.
             if let Elementary::Edges(Offset(Edges(esimplex), eoffset)) = &item {
                 if let Elementary::Children(Offset(Children(ref mut csimplex), coffset)) =
@@ -947,6 +952,7 @@ impl SwapElementaryComposition for [Elementary] {
         if target.mod_out() == 1 {
             stride_out = 1;
         }
+        shifted_items.reverse();
         Some(((target, stride_out), shifted_items))
     }
 }
@@ -1020,24 +1026,23 @@ impl AllElementaryDecompositions for Vec<Elementary> {
         &'a self,
     ) -> Box<dyn Iterator<Item = ((Elementary, usize), Self)> + 'a> {
         let mut splits = Vec::new();
-        for (i, item) in self.iter().enumerate().rev() {
-            if let Some((outer, middle)) = (&self[i + 1..]).swap_elementary_composition(item, 1) {
-                let inner = self[..i].iter().cloned().chain(middle).collect();
+        for (i, item) in self.iter().enumerate() {
+            if let Some((outer, mut inner)) = (&self[..i]).swap_elementary_composition(item, 1) {
+                inner.extend(self[i + 1..].iter().cloned());
                 splits.push((outer, inner));
             }
             if let Elementary::Edges(Offset(Edges(Simplex::Line), offset)) = item {
                 let mut children = Elementary::new_children(Simplex::Line);
                 children.add_offset(*offset);
-                if let Some((outer, middle)) =
-                    (&self[i + 1..]).swap_elementary_composition(&children, 1)
+                if let Some((outer, mut inner)) =
+                    (&self[..i]).swap_elementary_composition(&children, 1)
                 {
-                    let mut inner = self[..i].to_vec();
+                    inner.push(item.clone());
                     inner.push(Elementary::new_take(
                         Simplex::Line.swap_edges_children_map(),
                         Simplex::Line.nedges() * Simplex::Line.nchildren(),
                     ));
-                    inner.push(item.clone());
-                    inner.extend(middle);
+                    inner.extend(self[i + 1..].iter().cloned());
                     splits.push((outer, inner));
                 }
             }
@@ -1068,16 +1073,16 @@ impl<M: UnboundedMap + AllElementaryDecompositions> AllElementaryDecompositions 
 macro_rules! elementaries {
     (Point*$len_out:literal $($tail:tt)*) => {{
         use $crate::elementary::{Elementary, WithBounds};
+        #[allow(unused_mut)]
         let mut comp: Vec<Elementary> = Vec::new();
         $crate::elementaries!{@adv comp, Point; $($tail)*}
-        comp.reverse();
         WithBounds::from_output(comp, 0, $len_out).unwrap()
     }};
     ($simplex:tt*$len_out:literal $($tail:tt)*) => {{
         use $crate::elementary::{Elementary, WithBounds};
+        #[allow(unused_mut)]
         let mut comp: Vec<Elementary> = Vec::new();
         $crate::elementaries!{@adv comp, $simplex; $($tail)*}
-        comp.reverse();
         WithBounds::from_output(comp, $simplex.dim(), $len_out).unwrap()
     }};
     (@adv $comp:ident, $simplex:ident;) => {};
@@ -1297,14 +1302,13 @@ mod tests {
     macro_rules! assert_swap_elementary_composition {
         ($($item:expr),*; $($simplex:ident),*) => {{
             let unshifted = [$(Elementary::from($item),)*];
-            let ((litem, lstride), lchain) = (&unshifted[1..]).swap_elementary_composition(&unshifted[0], 1).unwrap();
+            let ((litem, lstride), lchain) = (&unshifted[..unshifted.len() - 1]).swap_elementary_composition(&unshifted.last().unwrap(), 1).unwrap();
             let mut shifted: Vec<Elementary> = Vec::new();
-            shifted.extend(lchain.into_iter());
-            let litem_mod_out = litem.mod_out();
-            shifted.push(litem);
             if lstride != 1 {
-                shifted.push(Elementary::new_transpose(lstride, litem_mod_out));
+                shifted.push(Elementary::new_transpose(lstride, litem.mod_out()));
             }
+            shifted.push(litem);
+            shifted.extend(lchain.into_iter());
             assert_equiv_maps!(&shifted[..], &unshifted[..] $(, $simplex)*);
         }};
     }
@@ -1312,21 +1316,21 @@ mod tests {
     #[test]
     fn swap_elementary_composition() {
         assert_swap_elementary_composition!(
-            Elementary::new_take(vec![0, 1], 3), Transpose::new(4, 3);
+            Transpose::new(4, 3), Elementary::new_take(vec![0, 1], 3);
         );
         assert_swap_elementary_composition!(
-            Elementary::new_take(vec![0, 1], 3), Transpose::new(5, 4*3), Transpose::new(3, 5);
+            Transpose::new(3, 5), Transpose::new(5, 4*3), Elementary::new_take(vec![0, 1], 3);
         );
         assert_swap_elementary_composition!(
-            Elementary::new_take(vec![0, 1], 3), Transpose::new(5*4, 3), Transpose::new(5, 4);
+            Transpose::new(5, 4), Transpose::new(5*4, 3), Elementary::new_take(vec![0, 1], 3);
         );
         assert_swap_elementary_composition!(
-            Elementary::new_children(Line),
-            {let mut elem = Elementary::new_children(Line); elem.add_offset(1); elem};
+            {let mut elem = Elementary::new_children(Line); elem.add_offset(1); elem},
+            Elementary::new_children(Line);
             Line, Line
         );
         assert_swap_elementary_composition!(
-            Elementary::new_children(Line), Elementary::new_edges(Line);
+            Elementary::new_edges(Line), Elementary::new_children(Line);
             Line
         );
         assert_swap_elementary_composition!(
@@ -1335,7 +1339,7 @@ mod tests {
             Line
         );
         assert_swap_elementary_composition!(
-            Elementary::new_children(Line), Elementary::new_edges(Triangle);
+            Elementary::new_edges(Triangle), Elementary::new_children(Line);
             Line
         );
     }

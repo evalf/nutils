@@ -68,10 +68,10 @@ where
 
 // TODO: UniformComposition?
 
-impl<Inner, Outer> AllElementaryDecompositions for BinaryComposition<Inner, Outer>
+impl<Outer, Inner> AllElementaryDecompositions for BinaryComposition<Outer, Inner>
 where
-    Inner: Map + AllElementaryDecompositions + Clone,
     Outer: Map + AllElementaryDecompositions + SwapElementaryComposition<Output = Outer>,
+    Inner: Map + AllElementaryDecompositions + Clone,
 {
     fn all_elementary_decompositions<'a>(
         &'a self,
@@ -80,7 +80,7 @@ where
             .outer()
             .all_elementary_decompositions()
             .into_iter()
-            .map(|(elmtry, outer)| (elmtry, Self::new(self.inner().clone(), outer).unwrap()));
+            .map(|(elmtry, outer)| (elmtry, Self::new(outer, self.inner().clone()).unwrap()));
         let split_inner = self
             .inner()
             .all_elementary_decompositions()
@@ -88,7 +88,7 @@ where
             .filter_map(|((elmtry, stride), inner)| {
                 self.outer()
                     .swap_elementary_composition(&elmtry, stride)
-                    .map(|(elmtry, outer)| (elmtry, Self::new(inner, outer).unwrap()))
+                    .map(|(elmtry, outer)| (elmtry, Self::new(outer, inner).unwrap()))
             });
         Box::new(split_outer.chain(split_inner))
     }
@@ -96,9 +96,9 @@ where
 
 /// Decompose two maps into two remainders and a common map.
 ///
-/// The decomposition is such that the composition of the remainder with the
-/// common part gives a map that is equivalent to the original.
-pub fn decompose_common<M1, M2>(mut map1: M1, mut map2: M2) -> (M1, M2, WithBounds<Vec<Elementary>>)
+/// The decomposition is such that the composition the common part with the
+/// remainder gives a map that is equivalent to the original.
+pub fn decompose_common<M1, M2>(mut map1: M1, mut map2: M2) -> (WithBounds<Vec<Elementary>>, M1, M2)
 where
     M1: Map + AllElementaryDecompositions,
     M2: Map + AllElementaryDecompositions,
@@ -126,7 +126,7 @@ where
     }
     common.reverse();
     let common = WithBounds::from_input(common, map1.dim_out(), map1.len_out()).unwrap();
-    (map1, map2, common)
+    (common, map1, map2)
 }
 
 //#[derive(Debug, Clone, PartialEq)]
@@ -441,9 +441,9 @@ mod tests {
         assert_eq!(
             decompose_common(map1, map2),
             (
+                elementaries![Line*2 <- Children],
                 elementaries![Line*4 <- Children],
                 elementaries![Line*4 <- Take([0, 2], 4)],
-                elementaries![Line*2 <- Children],
             )
         );
     }
@@ -452,15 +452,15 @@ mod tests {
     fn decompose_common_product() {
         let map1 = elementaries![Line*2 <- Children <- Children];
         let map2 = elementaries![Line*2 <- Children <- Take([0, 2], 4)];
-        let (rel1, rel2, common) = decompose_common(map1.clone(), map2.clone());
+        let (common, rel1, rel2) = decompose_common(map1.clone(), map2.clone());
         assert!(!common.is_identity());
         assert_equiv_maps!(
-            BinaryComposition::new(rel1.clone(), common.clone()).unwrap(),
+            BinaryComposition::new(common.clone(), rel1.clone()).unwrap(),
             map1.clone(),
             Line
         );
         assert_equiv_maps!(
-            BinaryComposition::new(rel2.clone(), common.clone()).unwrap(),
+            BinaryComposition::new(common.clone(), rel2.clone()).unwrap(),
             map2.clone(),
             Line
         );

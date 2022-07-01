@@ -3,30 +3,30 @@ use num::Integer as _;
 use std::ops::Deref;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct BinaryComposition<Inner: Map, Outer: Map>(Inner, Outer);
+pub struct BinaryComposition<Outer: Map, Inner: Map>(Outer, Inner);
 
-impl<Inner: Map, Outer: Map> BinaryComposition<Inner, Outer> {
-    pub fn new(inner: Inner, outer: Outer) -> Result<Self, Error> {
+impl<Outer: Map, Inner: Map> BinaryComposition<Outer, Inner> {
+    pub fn new(outer: Outer, inner: Inner) -> Result<Self, Error> {
         if inner.dim_out() != outer.dim_in() {
             Err(Error::DimensionMismatch)
         } else if inner.len_out() != outer.len_in() {
             Err(Error::LengthMismatch)
         } else {
-            Ok(Self(inner, outer))
+            Ok(Self(outer, inner))
         }
     }
-    pub fn inner(&self) -> &Inner {
+    pub fn outer(&self) -> &Outer {
         &self.0
     }
-    pub fn outer(&self) -> &Outer {
+    pub fn inner(&self) -> &Inner {
         &self.1
     }
 }
 
-impl<Inner: Map, Outer: Map> Map for BinaryComposition<Inner, Outer> {
+impl<Outer: Map, Inner: Map> Map for BinaryComposition<Outer, Inner> {
     #[inline]
     fn dim_in(&self) -> usize {
-        self.0.dim_in()
+        self.1.dim_in()
     }
     #[inline]
     fn delta_dim(&self) -> usize {
@@ -34,11 +34,11 @@ impl<Inner: Map, Outer: Map> Map for BinaryComposition<Inner, Outer> {
     }
     #[inline]
     fn len_in(&self) -> usize {
-        self.0.len_in()
+        self.1.len_in()
     }
     #[inline]
     fn len_out(&self) -> usize {
-        self.1.len_out()
+        self.0.len_out()
     }
     #[inline]
     fn apply_inplace_unchecked(
@@ -49,25 +49,25 @@ impl<Inner: Map, Outer: Map> Map for BinaryComposition<Inner, Outer> {
         offset: usize,
     ) -> usize {
         let index = self
-            .0
+            .1
             .apply_inplace_unchecked(index, coords, stride, offset);
-        self.1
+        self.0
             .apply_inplace_unchecked(index, coords, stride, offset)
     }
     #[inline]
     fn apply_index_unchecked(&self, index: usize) -> usize {
-        self.1
-            .apply_index_unchecked(self.0.apply_index_unchecked(index))
+        self.0
+            .apply_index_unchecked(self.1.apply_index_unchecked(index))
     }
     #[inline]
     fn apply_indices_inplace_unchecked(&self, indices: &mut [usize]) {
-        self.0.apply_indices_inplace_unchecked(indices);
         self.1.apply_indices_inplace_unchecked(indices);
+        self.0.apply_indices_inplace_unchecked(indices);
     }
     #[inline]
     fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
-        self.0
-            .unapply_indices_unchecked(&self.1.unapply_indices_unchecked(indices))
+        self.1
+            .unapply_indices_unchecked(&self.0.unapply_indices_unchecked(indices))
     }
     #[inline]
     fn is_identity(&self) -> bool {
@@ -87,7 +87,7 @@ where
     Array: Deref<Target = [M]>,
 {
     pub fn new(array: Array) -> Result<Self, Error> {
-        let mut iter = array.iter();
+        let mut iter = array.iter().rev();
         if let Some(map) = iter.next() {
             let mut dim_out = map.dim_out();
             let mut len_out = map.len_out();
@@ -120,11 +120,11 @@ where
 {
     #[inline]
     fn dim_in(&self) -> usize {
-        self.0.first().unwrap().dim_in()
+        self.0.last().unwrap().dim_in()
     }
     #[inline]
     fn dim_out(&self) -> usize {
-        self.0.last().unwrap().dim_out()
+        self.0.first().unwrap().dim_out()
     }
     #[inline]
     fn delta_dim(&self) -> usize {
@@ -132,11 +132,11 @@ where
     }
     #[inline]
     fn len_in(&self) -> usize {
-        self.0.first().unwrap().len_in()
+        self.0.last().unwrap().len_in()
     }
     #[inline]
     fn len_out(&self) -> usize {
-        self.0.last().unwrap().len_out()
+        self.0.first().unwrap().len_out()
     }
     #[inline]
     fn apply_inplace_unchecked(
@@ -146,23 +146,25 @@ where
         stride: usize,
         offset: usize,
     ) -> usize {
-        self.iter().fold(index, |index, map| {
+        self.iter().rev().fold(index, |index, map| {
             map.apply_inplace_unchecked(index, coords, stride, offset)
         })
     }
     #[inline]
     fn apply_index_unchecked(&self, index: usize) -> usize {
         self.iter()
+            .rev()
             .fold(index, |index, map| map.apply_index_unchecked(index))
     }
     #[inline]
     fn apply_indices_inplace_unchecked(&self, indices: &mut [usize]) {
         self.iter()
+            .rev()
             .for_each(|map| map.apply_indices_inplace_unchecked(indices));
     }
     #[inline]
     fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
-        let mut iter = self.iter().rev();
+        let mut iter = self.iter();
         let indices = iter.next().unwrap().unapply_indices_unchecked(indices);
         iter.fold(indices, |indices, map| {
             map.unapply_indices_unchecked(&indices)
@@ -680,8 +682,8 @@ mod tests {
     #[test]
     fn uniform_composition2() {
         let map = UniformComposition::new(vec![
-            elementaries![Point*12 <- Take([1, 0], 3)],
             elementaries![Point*12 <- Transpose(4, 3)],
+            elementaries![Point*12 <- Take([1, 0], 3)],
         ])
         .unwrap();
         assert_eq!(map.len_in(), 8);
@@ -702,9 +704,9 @@ mod tests {
     #[test]
     fn uniform_composition3() {
         let map = UniformComposition::new(vec![
-            elementaries![Line*4 <- Edges],
-            elementaries![Line*2 <- Children],
             elementaries![Line*1 <- Children],
+            elementaries![Line*2 <- Children],
+            elementaries![Line*4 <- Edges],
         ])
         .unwrap();
         assert_eq!(map.len_in(), 8);
