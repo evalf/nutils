@@ -1,127 +1,132 @@
 use crate::elementary::{
-    Edges, Elementary, Identity, Offset, ShiftInnerToOuter, SplitOuterElementary, Transpose,
-    UnboundedMap, WithBounds,
+    AllElementaryDecompositions, Elementary, SwapElementaryComposition, UnboundedMap, WithBounds,
 };
-use crate::ops::{BinaryComposition, UniformProduct, BinaryProduct};
-use crate::simplex::Simplex;
+use crate::ops::{BinaryComposition, BinaryProduct, UniformProduct};
 use crate::util::ReplaceNthIter as _;
-use crate::{AddOffset, Map, UnapplyIndicesData};
+use crate::{AddOffset, Map};
 use std::collections::BTreeMap;
-use std::iter;
-use std::ops::Deref;
-use std::rc::Rc;
 
-impl<M> SplitOuterElementary for UniformProduct<M, Vec<M>>
+impl<M> AllElementaryDecompositions for UniformProduct<M, Vec<M>>
 where
-    M: Map + SplitOuterElementary + Clone,
+    M: Map + AllElementaryDecompositions + Clone,
 {
-    type Output = Vec<((Elementary, usize), Self)>;
-
-    fn split_outer_elementary(&self) -> Self::Output {
-        self.iter()
-            .enumerate()
-            .zip(self.offsets_out())
-            .zip(self.strides_out())
-            .flat_map(|(((iprod, item), prod_offset), prod_stride)| {
-                item.split_outer_elementary().into_iter().map(
-                    move |((mut elmtry, mut stride), inner)| {
-                        elmtry.add_offset(prod_offset);
-                        stride *= prod_stride;
-                        let product = self.iter().cloned().replace_nth(iprod, inner).collect();
-                        ((elmtry, stride), product)
-                    },
-                )
-            })
-            .collect()
+    fn all_elementary_decompositions<'a>(
+        &'a self,
+    ) -> Box<dyn Iterator<Item = ((Elementary, usize), Self)> + 'a> {
+        Box::new(
+            self.iter()
+                .enumerate()
+                .zip(self.offsets_out())
+                .zip(self.strides_out())
+                .flat_map(move |(((iprod, term), prod_offset), prod_stride)| {
+                    term.all_elementary_decompositions().into_iter().map(
+                        move |((mut elmtry, mut stride), inner)| {
+                            elmtry.add_offset(prod_offset);
+                            if elmtry.mod_out() == 1 {
+                                stride = 1;
+                            } else {
+                                stride *= prod_stride;
+                            }
+                            let product = self.iter().cloned().replace_nth(iprod, inner).collect();
+                            ((elmtry, stride), product)
+                        },
+                    )
+                }),
+        )
     }
 }
 
-impl<M0, M1> SplitOuterElementary for BinaryProduct<M0, M1>
+impl<M0, M1> AllElementaryDecompositions for BinaryProduct<M0, M1>
 where
-    M0: Map + SplitOuterElementary + Clone,
-    M1: Map + SplitOuterElementary + Clone,
+    M0: Map + AllElementaryDecompositions + Clone,
+    M1: Map + AllElementaryDecompositions + Clone,
 {
-    type Output = Vec<((Elementary, usize), Self)>;
-
-    fn split_outer_elementary(&self) -> Self::Output {
-        let first = self.first().split_outer_elementary().into_iter().map(
-            |((elmtry, mut stride), first)| {
+    fn all_elementary_decompositions<'a>(
+        &'a self,
+    ) -> Box<dyn Iterator<Item = ((Elementary, usize), Self)> + 'a> {
+        let first = self
+            .first()
+            .all_elementary_decompositions()
+            .into_iter()
+            .map(|((elmtry, mut stride), first)| {
                 stride *= self.second().len_out();
                 let product = BinaryProduct::new(first, self.second().clone());
                 ((elmtry, stride), product)
             });
-        let second = self.second().split_outer_elementary().into_iter().map(
-            |((mut elmtry, stride), second)| {
+        let second = self
+            .second()
+            .all_elementary_decompositions()
+            .into_iter()
+            .map(|((mut elmtry, stride), second)| {
                 elmtry.add_offset(self.first().dim_out());
                 let product = BinaryProduct::new(self.first().clone(), second);
                 ((elmtry, stride), product)
             });
-        first.chain(second).collect()
+        Box::new(first.chain(second))
     }
 }
 
-// TODO: BinaryProduct
 // TODO: UniformComposition?
 
-impl<Inner, Outer> SplitOuterElementary for BinaryComposition<Inner, Outer>
+impl<Inner, Outer> AllElementaryDecompositions for BinaryComposition<Inner, Outer>
 where
-    Inner: Map + SplitOuterElementary + Clone,
-    Outer: Map + SplitOuterElementary + ShiftInnerToOuter<Output = Outer>,
+    Inner: Map + AllElementaryDecompositions + Clone,
+    Outer: Map + AllElementaryDecompositions + SwapElementaryComposition<Output = Outer>,
 {
-    type Output = Vec<((Elementary, usize), Self)>;
-
-    fn split_outer_elementary(&self) -> Self::Output {
-        let mut split: Vec<_> = self
+    fn all_elementary_decompositions<'a>(
+        &'a self,
+    ) -> Box<dyn Iterator<Item = ((Elementary, usize), Self)> + 'a> {
+        let split_outer = self
             .outer()
-            .split_outer_elementary()
+            .all_elementary_decompositions()
             .into_iter()
-            .map(|(out, outer)| {
-                (
-                    out,
-                    BinaryComposition::new(self.inner().clone(), outer).unwrap(),
-                )
-            })
-            .collect();
-        split.extend(
-            self.inner()
-                .split_outer_elementary()
-                .into_iter()
-                .filter_map(|((elmtry, stride), inner)| {
-                    self.outer()
-                        .shift_inner_to_outer(&elmtry, stride)
-                        .map(|(out, outer)| (out, Self::new(inner, outer).unwrap()))
-                }),
-        );
-        split
+            .map(|(elmtry, outer)| (elmtry, Self::new(self.inner().clone(), outer).unwrap()));
+        let split_inner = self
+            .inner()
+            .all_elementary_decompositions()
+            .into_iter()
+            .filter_map(|((elmtry, stride), inner)| {
+                self.outer()
+                    .swap_elementary_composition(&elmtry, stride)
+                    .map(|(elmtry, outer)| (elmtry, Self::new(inner, outer).unwrap()))
+            });
+        Box::new(split_outer.chain(split_inner))
     }
 }
 
-pub fn remove_common_outer<M1, M2>(mut map1: M1, mut map2: M2) -> (Vec<Elementary>, M1, M2)
+/// Decompose two maps into two remainders and a common map.
+///
+/// The decomposition is such that the composition of the remainder with the
+/// common part gives a map that is equivalent to the original.
+pub fn decompose_common<M1, M2>(mut map1: M1, mut map2: M2) -> (M1, M2, WithBounds<Vec<Elementary>>)
 where
-    M1: Map + SplitOuterElementary,
-    M2: Map + SplitOuterElementary,
+    M1: Map + AllElementaryDecompositions,
+    M2: Map + AllElementaryDecompositions,
 {
+    // TODO: check output dimensions? and return error if dimensions don't match?
+    assert_eq!(map1.len_out(), map2.len_out());
+    assert_eq!(map1.dim_out(), map2.dim_out());
     let mut common = Vec::new();
     while !map1.is_identity() && !map2.is_identity() {
-        let mut outers2: BTreeMap<_, _> = map2.split_outer_elementary().into_iter().collect();
-        if let Some(((outer, stride), new_map1, new_map2)) = map1
-            .split_outer_elementary()
-            .into_iter()
+        let mut outers2: BTreeMap<_, _> = map2.all_elementary_decompositions().collect();
+        (map1, map2) = if let Some(((outer, stride), map1, map2)) = map1
+            .all_elementary_decompositions()
             .filter_map(|(key, t1)| outers2.remove(&key).map(|t2| (key, t1, t2)))
             .next()
         {
-            if stride != 1 {
-                common.push(Elementary::new_transpose(stride, outer.mod_out()));
-            }
+            let outer_mod_out = outer.mod_out();
             common.push(outer);
-            map1 = new_map1;
-            map2 = new_map2;
-            continue;
+            if stride != 1 {
+                common.push(Elementary::new_transpose(stride, outer_mod_out));
+            }
+            (map1, map2)
+        } else {
+            break;
         }
-        break;
     }
     common.reverse();
-    (common, map1, map2)
+    let common = WithBounds::from_input(common, map1.dim_out(), map1.len_out()).unwrap();
+    (map1, map2, common)
 }
 
 //#[derive(Debug, Clone, PartialEq)]
@@ -196,7 +201,7 @@ where
 //    fn relative_to(&self, target: &Self) -> Option<Relative> {
 //        let (_, rem, rel) = target
 //            .get_unbounded()
-//            .remove_common_prefix_opt_lhs(self.get_unbounded());
+//            .split_common_prefix_opt_lhs(self.get_unbounded());
 //        rem.is_identity()
 //            .then(|| Relative::Single(Self::new_unchecked(rel, target.dim_in(), target.len_in())))
 //    }
@@ -326,7 +331,7 @@ where
 //        for target in targets.iter() {
 //            let (_, rem, rel) = target
 //                .get_unbounded()
-//                .remove_common_prefix_opt_lhs(self.get_unbounded());
+//                .split_common_prefix_opt_lhs(self.get_unbounded());
 //            if rem.is_identity() {
 //                let slice = Elementary::new_slice(offset, target.len_in(), targets.len_in());
 //                let rel: Vec<Elementary> = iter::once(slice).chain(rel).collect();
@@ -387,86 +392,94 @@ where
 //    }
 //}
 //
-//#[cfg(test)]
-//mod tests {
-//    use super::*;
-//    use crate::elementary::*;
-//    use crate::ops::Composition;
-//    use crate::simplex::Simplex::*;
-//    use approx::assert_abs_diff_eq;
-//    use std::iter;
-//
-//    #[test]
-//    fn remove_common_prefix() {
-//        let c1 = Elementary::new_children(Line);
-//        let e1 = Elementary::new_edges(Line);
-//        let swap_ec1 = Elementary::new_take(vec![2, 1], 4);
-//        let a = vec![c1.clone(), c1.clone()];
-//        let b = vec![e1.clone()];
-//        assert_eq!(
-//            a.remove_common_prefix(&b),
-//            (
-//                vec![c1.clone(), c1.clone()],
-//                vec![],
-//                vec![e1.clone(), swap_ec1.clone(), swap_ec1.clone()],
-//            )
-//        );
-//    }
-//
-//    macro_rules! single {
-//        (dim=$dim_out:literal, len=$len_out:literal) => {
-//            WithBounds::<Vec<Elementary>>::new(Vec::new(), $dim_out, $len_out).unwrap()
-//        };
-//        (dim=$dim_out:literal, len=$len_out:literal <- $($item:expr),*) => {
-//            WithBounds::<Vec<Elementary>>::new(vec![$(Elementary::from($item)),*], $dim_out, $len_out).unwrap()
-//        };
-//    }
-//
-//    macro_rules! assert_equiv_maps {
-//        ($a:expr, $b:expr $(, $simplex:ident)*) => {{
-//            let a = $a;
-//            let b = $b;
-//            println!("a: {a:?}");
-//            println!("b: {b:?}");
-//            // Build coords: the outer product of the vertices of the given simplices, zero-padded
-//            // to the dimension of the root.
-//            let coords = iter::once([]);
-//            let simplex_dim = 0;
-//            $(
-//                let coords = coords.flat_map(|coord| {
-//                    $simplex
-//                        .vertices()
-//                        .chunks($simplex.dim())
-//                        .map(move |vert| [&coord, vert].concat())
-//                    });
-//                let simplex_dim = simplex_dim + $simplex.dim();
-//            )*
-//            assert_eq!(simplex_dim, a.dim_in(), "the given simplices don't add up to the input dimension");
-//            let pad: Vec<f64> = iter::repeat(0.0).take(a.delta_dim()).collect();
-//            let coords: Vec<f64> = coords.flat_map(|coord| [&coord[..], &pad].concat()).collect();
-//            // Test if every input maps to the same output for both `a` and `b`.
-//            for i in 0..2 * a.len_in() {
-//                let mut crds_a = coords.clone();
-//                let mut crds_b = coords.clone();
-//                let ja = a.apply_inplace(i, &mut crds_a, a.dim_out(), 0);
-//                let jb = b.apply_inplace(i, &mut crds_b, a.dim_out(), 0);
-//                assert_eq!(ja, jb, "i={i}");
-//                assert_abs_diff_eq!(crds_a[..], crds_b[..]);
-//            }
-//        }};
-//    }
-//
-//    #[test]
-//    fn rel_to() {
-//        let a1 = single!(dim=1, len=2 <- Children::new(Line), Take::new(vec![0, 2], 4));
-//        let a2 = single!(dim=1, len=2 <- Children::new(Line), Take::new(vec![1, 3], 4), Children::new(Line));
-//        let a = Concatenation::new(vec![a1, a2]);
-//        let b =
-//            single!(dim=1, len=2 <- Children::new(Line), Children::new(Line), Children::new(Line));
-//        assert_equiv_maps!(
-//            Composition::new(b.relative_to(&a).unwrap(), a.clone()).unwrap(),
-//            b,
-//            Line
-//        );
-//    }
-//}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::elementaries;
+    use crate::simplex::Simplex::*;
+    use approx::assert_abs_diff_eq;
+    use std::iter;
+
+    macro_rules! assert_equiv_maps {
+        ($a:expr, $b:expr $(, $simplex:ident)*) => {{
+            let a = $a;
+            let b = $b;
+            println!("a: {a:?}");
+            println!("b: {b:?}");
+            // Build coords: the outer product of the vertices of the given simplices, zero-padded
+            // to the dimension of the root.
+            let coords = iter::once([]);
+            let simplex_dim = 0;
+            $(
+                let coords = coords.flat_map(|coord| {
+                    $simplex
+                        .vertices()
+                        .chunks($simplex.dim())
+                        .map(move |vert| [&coord, vert].concat())
+                    });
+                let simplex_dim = simplex_dim + $simplex.dim();
+            )*
+            assert_eq!(simplex_dim, a.dim_in(), "the given simplices don't add up to the input dimension");
+            let pad: Vec<f64> = iter::repeat(0.0).take(a.delta_dim()).collect();
+            let coords: Vec<f64> = coords.flat_map(|coord| [&coord[..], &pad].concat()).collect();
+            // Test if every input maps to the same output for both `a` and `b`.
+            for i in 0..2 * a.len_in() {
+                let mut crds_a = coords.clone();
+                let mut crds_b = coords.clone();
+                let ja = a.apply_inplace(i, &mut crds_a, a.dim_out(), 0);
+                let jb = b.apply_inplace(i, &mut crds_b, a.dim_out(), 0);
+                assert_eq!(ja, jb, "i={i}");
+                assert_abs_diff_eq!(crds_a[..], crds_b[..]);
+            }
+        }};
+    }
+
+    #[test]
+    fn decompose_common_vec() {
+        let map1 = elementaries![Line*2 <- Children <- Children];
+        let map2 = elementaries![Line*2 <- Children <- Take([0, 2], 4)];
+        assert_eq!(
+            decompose_common(map1, map2),
+            (
+                elementaries![Line*4 <- Children],
+                elementaries![Line*4 <- Take([0, 2], 4)],
+                elementaries![Line*2 <- Children],
+            )
+        );
+    }
+
+    #[test]
+    fn decompose_common_product() {
+        let map1 = elementaries![Line*2 <- Children <- Children];
+        let map2 = elementaries![Line*2 <- Children <- Take([0, 2], 4)];
+        let (rel1, rel2, common) = decompose_common(map1.clone(), map2.clone());
+        assert!(!common.is_identity());
+        assert_equiv_maps!(
+            BinaryComposition::new(rel1.clone(), common.clone()).unwrap(),
+            map1.clone(),
+            Line
+        );
+        assert_equiv_maps!(
+            BinaryComposition::new(rel2.clone(), common.clone()).unwrap(),
+            map2.clone(),
+            Line
+        );
+        //assert_eq!(rel1, BinaryProduct::new(elementaries![Line*4 <- Children], elementaries![Line*4 <- Take([0, 2], 4)]));
+        //assert_eq!(rel2, BinaryProduct::new(elementaries![Line*4 <- Take([0, 2], 4)], elementaries![Line*4 <- Children]));
+        //assert_eq!(common, elementaries![Line*2]);
+        // WithBounds { map: [Offset(Children(Line), 1), Transpose(2, 1), Offset(Children(Line), 0)], dim_in: 2, delta_dim: 0, len_in: 16, len_out: 4 }
+    }
+    //
+    //    #[test]
+    //    fn rel_to() {
+    //        let a1 = elementaries![Line*2 <- Children <- Take([0, 2], 4)];
+    //        let a2 = elementaries![Line*2 <- Children <- Take([1, 3], 4) <- Children];
+    //        let a = BinaryConcat::new(a1, a2).unwrap();
+    //        let b = elementaries![Line*2 <- Children <- Children <- Children];
+    //        assert_equiv_maps!(
+    //            BinaryComposition::new(b.relative_to(&a).unwrap(), a.clone()).unwrap(),
+    //            b,
+    //            Line
+    //        );
+    //    }
+}

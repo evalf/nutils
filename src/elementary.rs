@@ -838,20 +838,23 @@ impl<M: UnboundedMap> Map for WithBounds<M> {
     }
 }
 
-pub trait ShiftInnerToOuter {
+/// An interface for swapping a composition of an [`Elementary`] with `Self`.
+pub trait SwapElementaryComposition {
     type Output;
 
-    fn shift_inner_to_outer(
+    /// Returns a map and an [`Elementary`] such that the composition is equivalent to
+    /// the composition of `inner` and `self`.
+    fn swap_elementary_composition(
         &self,
         inner: &Elementary,
         stride: usize,
     ) -> Option<((Elementary, usize), Self::Output)>;
 }
 
-impl ShiftInnerToOuter for [Elementary] {
+impl SwapElementaryComposition for [Elementary] {
     type Output = Vec<Elementary>;
 
-    fn shift_inner_to_outer(
+    fn swap_elementary_composition(
         &self,
         inner: &Elementary,
         stride: usize,
@@ -948,33 +951,33 @@ impl ShiftInnerToOuter for [Elementary] {
     }
 }
 
-impl ShiftInnerToOuter for Vec<Elementary> {
+impl SwapElementaryComposition for Vec<Elementary> {
     type Output = Self;
 
     #[inline]
-    fn shift_inner_to_outer(
+    fn swap_elementary_composition(
         &self,
         inner: &Elementary,
         stride: usize,
     ) -> Option<((Elementary, usize), Self::Output)> {
-        (&self[..]).shift_inner_to_outer(inner, stride)
+        (&self[..]).swap_elementary_composition(inner, stride)
     }
 }
 
-impl<M: UnboundedMap + ShiftInnerToOuter> ShiftInnerToOuter for WithBounds<M>
+impl<M: UnboundedMap + SwapElementaryComposition> SwapElementaryComposition for WithBounds<M>
 where
-    M: UnboundedMap + ShiftInnerToOuter,
+    M: UnboundedMap + SwapElementaryComposition,
     M::Output: UnboundedMap,
 {
     type Output = WithBounds<M::Output>;
 
-    fn shift_inner_to_outer(
+    fn swap_elementary_composition(
         &self,
         inner: &Elementary,
         stride: usize,
     ) -> Option<((Elementary, usize), Self::Output)> {
         self.unbounded()
-            .shift_inner_to_outer(inner, stride)
+            .swap_elementary_composition(inner, stride)
             .map(|(outer, slf)| {
                 let dim_in = self.dim_in() - inner.delta_dim();
                 let len_in = self.len_in() / inner.mod_out() * inner.mod_in();
@@ -983,56 +986,121 @@ where
     }
 }
 
-pub trait SplitOuterElementary: Sized {
-    type Output: IntoIterator<Item = ((Elementary, usize), Self)>;
-
-    fn split_outer_elementary(&self) -> Self::Output;
+/// An interface for iterating over all possible decompositions into `Self` and an [`Elementary`].
+pub trait AllElementaryDecompositions: Sized {
+    /// Return an iterator over all possible decompositions into `Self` and an [`Elementary`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use nutils_test::simplex::Simplex::*;
+    /// use nutils_test::elementary::{Elementary, AllElementaryDecompositions as _};
+    /// use nutils_test::elementaries;
+    /// let map = elementaries![Triangle*2 <- Edges <- Children];
+    /// let mut iter = map.all_elementary_decompositions();
+    /// assert_eq!(
+    ///     iter.next(),
+    ///     Some(((Elementary::new_edges(Triangle), 1), elementaries![Line*6 <- Children])));
+    /// assert_eq!(
+    ///     iter.next(),
+    ///     Some((
+    ///         (Elementary::new_children(Triangle), 1),
+    ///         elementaries![Triangle*8 <- Edges <- Take([3, 6, 1, 7, 2, 5], 12)],
+    ///     ))
+    /// );
+    /// assert_eq!(iter.next(), None);
+    /// ```
+    fn all_elementary_decompositions<'a>(
+        &'a self,
+    ) -> Box<dyn Iterator<Item = ((Elementary, usize), Self)> + 'a>;
 }
 
-impl SplitOuterElementary for Vec<Elementary> {
-    type Output = Vec<((Elementary, usize), Self)>;
-
-    fn split_outer_elementary(&self) -> Self::Output {
+impl AllElementaryDecompositions for Vec<Elementary> {
+    fn all_elementary_decompositions<'a>(
+        &'a self,
+    ) -> Box<dyn Iterator<Item = ((Elementary, usize), Self)> + 'a> {
         let mut splits = Vec::new();
         for (i, item) in self.iter().enumerate().rev() {
-            if let Some((outer, mut inner)) = (&self[..i]).shift_inner_to_outer(item, 1) {
-                inner.extend(self[i + 1..].iter().cloned());
+            if let Some((outer, middle)) = (&self[i + 1..]).swap_elementary_composition(item, 1) {
+                let inner = self[..i].iter().cloned().chain(middle).collect();
                 splits.push((outer, inner));
             }
             if let Elementary::Edges(Offset(Edges(Simplex::Line), offset)) = item {
                 let mut children = Elementary::new_children(Simplex::Line);
                 children.add_offset(*offset);
-                if let Some((outer, mut inner)) = (&self[..i]).shift_inner_to_outer(&children, 1) {
-                    inner.push(item.clone());
+                if let Some((outer, middle)) =
+                    (&self[i + 1..]).swap_elementary_composition(&children, 1)
+                {
+                    let mut inner = self[..i].to_vec();
                     inner.push(Elementary::new_take(
                         Simplex::Line.swap_edges_children_map(),
                         Simplex::Line.nedges() * Simplex::Line.nchildren(),
                     ));
-                    inner.extend(self[i + 1..].iter().cloned());
+                    inner.push(item.clone());
+                    inner.extend(middle);
                     splits.push((outer, inner));
                 }
             }
         }
-        splits
+        Box::new(splits.into_iter())
     }
 }
 
-impl<M: UnboundedMap + SplitOuterElementary> SplitOuterElementary for WithBounds<M> {
-    // TODO: As soons as we can use `impl Iterator<Item = ...>`, drop the collect.
-    type Output = Vec<((Elementary, usize), Self)>;
-
-    fn split_outer_elementary(&self) -> Self::Output {
-        self.unbounded()
-            .split_outer_elementary()
-            .into_iter()
-            .map(|(outer, unbounded)| {
-                (
-                    outer,
-                    WithBounds::new_unchecked(unbounded, self.dim_in(), self.len_in()),
-                )
-            })
-            .collect()
+impl<M: UnboundedMap + AllElementaryDecompositions> AllElementaryDecompositions for WithBounds<M> {
+    fn all_elementary_decompositions<'a>(
+        &'a self,
+    ) -> Box<dyn Iterator<Item = ((Elementary, usize), Self)> + 'a> {
+        Box::new(
+            self.unbounded()
+                .all_elementary_decompositions()
+                .into_iter()
+                .map(|(outer, unbounded)| {
+                    (
+                        outer,
+                        WithBounds::new_unchecked(unbounded, self.dim_in(), self.len_in()),
+                    )
+                }),
+        )
     }
+}
+
+#[macro_export]
+macro_rules! elementaries {
+    (Point*$len_out:literal $($tail:tt)*) => {{
+        use $crate::elementary::{Elementary, WithBounds};
+        let mut comp: Vec<Elementary> = Vec::new();
+        $crate::elementaries!{@adv comp, Point; $($tail)*}
+        comp.reverse();
+        WithBounds::from_output(comp, 0, $len_out).unwrap()
+    }};
+    ($simplex:tt*$len_out:literal $($tail:tt)*) => {{
+        use $crate::elementary::{Elementary, WithBounds};
+        let mut comp: Vec<Elementary> = Vec::new();
+        $crate::elementaries!{@adv comp, $simplex; $($tail)*}
+        comp.reverse();
+        WithBounds::from_output(comp, $simplex.dim(), $len_out).unwrap()
+    }};
+    (@adv $comp:ident, $simplex:ident;) => {};
+    (@adv $comp:ident, $simplex:ident; <- Children $($tail:tt)*) => {{
+        $comp.push(Elementary::new_children($crate::simplex::Simplex::$simplex));
+        $crate::elementaries!{@adv $comp, $simplex; $($tail)*}
+    }};
+    (@adv $comp:ident, Triangle; <- Edges $($tail:tt)*) => {{
+        $comp.push(Elementary::new_edges($crate::simplex::Simplex::Triangle));
+        $crate::elementaries!{@adv $comp, Line; $($tail)*}
+    }};
+    (@adv $comp:ident, Line; <- Edges $($tail:tt)*) => {{
+        $comp.push(Elementary::new_edges($crate::simplex::Simplex::Line));
+        $crate::elementaries!{@adv $comp, Point; $($tail)*}
+    }};
+    (@adv $comp:ident, $simplex:ident; <- Transpose($len1:expr, $len2:expr) $($tail:tt)*) => {{
+        $comp.push(Elementary::new_transpose($len1, $len2));
+        $crate::elementaries!{@adv $comp, $simplex; $($tail)*}
+    }};
+    (@adv $comp:ident, $simplex:ident; <- Take($indices:expr, $len:expr) $($tail:tt)*) => {{
+        $comp.push(Elementary::new_take($indices.to_vec(), $len));
+        $crate::elementaries!{@adv $comp, $simplex; $($tail)*}
+    }};
 }
 
 #[cfg(test)]
@@ -1226,10 +1294,10 @@ mod tests {
         }};
     }
 
-    macro_rules! assert_shift_inner_to_outer {
+    macro_rules! assert_swap_elementary_composition {
         ($($item:expr),*; $($simplex:ident),*) => {{
             let unshifted = [$(Elementary::from($item),)*];
-            let ((litem, lstride), lchain) = (&unshifted[1..]).shift_inner_to_outer(&unshifted[0], 1).unwrap();
+            let ((litem, lstride), lchain) = (&unshifted[1..]).swap_elementary_composition(&unshifted[0], 1).unwrap();
             let mut shifted: Vec<Elementary> = Vec::new();
             shifted.extend(lchain.into_iter());
             let litem_mod_out = litem.mod_out();
@@ -1242,31 +1310,31 @@ mod tests {
     }
 
     #[test]
-    fn shift_inner_to_outer() {
-        assert_shift_inner_to_outer!(
+    fn swap_elementary_composition() {
+        assert_swap_elementary_composition!(
             Elementary::new_take(vec![0, 1], 3), Transpose::new(4, 3);
         );
-        assert_shift_inner_to_outer!(
+        assert_swap_elementary_composition!(
             Elementary::new_take(vec![0, 1], 3), Transpose::new(5, 4*3), Transpose::new(3, 5);
         );
-        assert_shift_inner_to_outer!(
+        assert_swap_elementary_composition!(
             Elementary::new_take(vec![0, 1], 3), Transpose::new(5*4, 3), Transpose::new(5, 4);
         );
-        assert_shift_inner_to_outer!(
+        assert_swap_elementary_composition!(
             Elementary::new_children(Line),
             {let mut elem = Elementary::new_children(Line); elem.add_offset(1); elem};
             Line, Line
         );
-        assert_shift_inner_to_outer!(
+        assert_swap_elementary_composition!(
             Elementary::new_children(Line), Elementary::new_edges(Line);
             Line
         );
-        assert_shift_inner_to_outer!(
+        assert_swap_elementary_composition!(
             Elementary::new_children(Line),
             {let mut elem = Elementary::new_edges(Line); elem.add_offset(1); elem};
             Line
         );
-        assert_shift_inner_to_outer!(
+        assert_swap_elementary_composition!(
             Elementary::new_children(Line), Elementary::new_edges(Triangle);
             Line
         );

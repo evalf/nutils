@@ -661,42 +661,10 @@ impl<M: Map> FromIterator<M> for UniformProduct<M, Vec<M>> {
 mod tests {
     use super::*;
     use crate::assert_map_apply;
-    use crate::elementary::{Elementary, WithBounds};
+    use crate::elementaries;
     use crate::simplex::Simplex::*;
     use approx::assert_abs_diff_eq;
     use std::iter;
-
-    macro_rules! elementaries {
-        (Point*$len_out:literal $($tail:tt)*) => {{
-            let mut comp: Vec<Elementary> = Vec::new();
-            elementaries!{@push comp, Point; $($tail)*}
-            comp.reverse();
-            WithBounds::from_output(comp, 0, $len_out).unwrap()
-        }};
-        ($simplex:ident*$len_out:literal $($tail:tt)*) => {{
-            let mut comp = Vec::new();
-            elementaries!{@push comp, $simplex; $($tail)*}
-            comp.reverse();
-            WithBounds::from_output(comp, $simplex.dim(), $len_out).unwrap()
-        }};
-        (@push $comp:ident, $simplex:expr;) => {};
-        (@push $comp:ident, $simplex:expr; <- Children $($tail:tt)*) => {{
-            $comp.push(Elementary::new_children($simplex));
-            elementaries!{@push $comp, $simplex; $($tail)*}
-        }};
-        (@push $comp:ident, $simplex:expr; <- Edges $($tail:tt)*) => {{
-            $comp.push(Elementary::new_edges($simplex));
-            elementaries!{@push $comp, $simplex.edge_simplex(); $($tail)*}
-        }};
-        (@push $comp:ident, $simplex:expr; <- Transpose($len1:expr, $len2:expr) $($tail:tt)*) => {{
-            $comp.push(Elementary::new_transpose($len1, $len2));
-            elementaries!{@push $comp, $simplex; $($tail)*}
-        }};
-        (@push $comp:ident, $simplex:expr; <- Take($indices:expr, $len:expr) $($tail:tt)*) => {{
-            $comp.push(Elementary::new_take($indices.to_vec(), $len));
-            elementaries!{@push $comp, $simplex; $($tail)*}
-        }};
-    }
 
     #[test]
     fn uniform_composition1() {
