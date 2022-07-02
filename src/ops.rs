@@ -2,10 +2,17 @@ use crate::{Error, Map, UnapplyIndicesData};
 use num::Integer as _;
 use std::ops::Deref;
 
+/// The composition of two maps.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BinaryComposition<Outer: Map, Inner: Map>(Outer, Inner);
 
 impl<Outer: Map, Inner: Map> BinaryComposition<Outer, Inner> {
+    /// Returns the composition of two maps.
+    ///
+    /// The input dimension and length of the first map must equal the output
+    /// dimension and length of the second map.
+    ///
+    /// Returns an [`Error`] if the dimensions and lengths don't match.
     pub fn new(outer: Outer, inner: Inner) -> Result<Self, Error> {
         if inner.dim_out() != outer.dim_in() {
             Err(Error::DimensionMismatch)
@@ -15,9 +22,11 @@ impl<Outer: Map, Inner: Map> BinaryComposition<Outer, Inner> {
             Ok(Self(outer, inner))
         }
     }
+    /// Returns the outer map of the composition.
     pub fn outer(&self) -> &Outer {
         &self.0
     }
+    /// Returns the inner map of the composition.
     pub fn inner(&self) -> &Inner {
         &self.1
     }
@@ -73,10 +82,15 @@ impl<Outer: Map, Inner: Map> Map for BinaryComposition<Outer, Inner> {
     fn is_identity(&self) -> bool {
         self.0.is_identity() && self.1.is_identity()
     }
+    #[inline]
+    fn is_index_map(&self) -> bool {
+        self.0.is_index_map() && self.1.is_index_map()
+    }
 }
 
+/// The composition of an unempty sequence of maps.
 #[derive(Debug, Clone, PartialEq)]
-pub struct UniformComposition<M, Array>(Array)
+pub struct UniformComposition<M, Array = Vec<M>>(Array)
 where
     M: Map,
     Array: Deref<Target = [M]>;
@@ -86,6 +100,14 @@ where
     M: Map,
     Array: Deref<Target = [M]>,
 {
+    /// Returns the composition of an unempty sequence of maps.
+    ///
+    /// For every consecutive pair of maps in the sequence the input dimension
+    /// and length of the first map must equal the output dimension and length
+    /// of the second map.
+    ///
+    /// Returns an [`Error`] if the dimensions and lengths don't match or the
+    /// sequence is empty.
     pub fn new(array: Array) -> Result<Self, Error> {
         let mut iter = array.iter().rev();
         if let Some(map) = iter.next() {
@@ -174,12 +196,23 @@ where
     fn is_identity(&self) -> bool {
         self.iter().all(|map| map.is_identity())
     }
+    #[inline]
+    fn is_index_map(&self) -> bool {
+        self.iter().all(|map| map.is_index_map())
+    }
 }
 
+/// The concatenation of two maps.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BinaryConcat<M0: Map, M1: Map>(M0, M1);
 
 impl<M0: Map, M1: Map> BinaryConcat<M0, M1> {
+    /// Returns the concatenation of two maps.
+    ///
+    /// The two maps must have the same input and output dimensions and the
+    /// same output length. The maps must not overlap.
+    ///
+    /// Returns an [`Error`] if the dimensions and lengths don't match.
     pub fn new(map0: M0, map1: M1) -> Result<Self, Error> {
         if map0.dim_in() != map1.dim_in() || map0.dim_out() != map1.dim_out() {
             Err(Error::DimensionMismatch)
@@ -191,6 +224,14 @@ impl<M0: Map, M1: Map> BinaryConcat<M0, M1> {
     }
     pub fn new_unchecked(map0: M0, map1: M1) -> Self {
         Self(map0, map1)
+    }
+    /// Returns the first map of the concatenation.
+    pub fn first(&self) -> &M0 {
+        &self.0
+    }
+    /// Returns the second map of the concatenation.
+    pub fn second(&self) -> &M1 {
+        &self.1
     }
 }
 
@@ -254,10 +295,15 @@ impl<M0: Map, M1: Map> Map for BinaryConcat<M0, M1> {
     fn is_identity(&self) -> bool {
         false
     }
+    #[inline]
+    fn is_index_map(&self) -> bool {
+        self.0.is_index_map() && self.1.is_index_map()
+    }
 }
 
+/// The concatenation of an unempty sequence of maps.
 #[derive(Debug, Clone, PartialEq)]
-pub struct UniformConcat<M, Array>(Array)
+pub struct UniformConcat<M, Array = Vec<M>>(Array)
 where
     M: Map,
     Array: Deref<Target = [M]>;
@@ -267,6 +313,12 @@ where
     M: Map,
     Array: Deref<Target = [M]>,
 {
+    /// Returns the concatenation of an unempty sequence of maps.
+    ///
+    /// The two maps must have the same input and output dimensions and the
+    /// same output length. The maps must not overlap.
+    ///
+    /// Returns an [`Error`] if the dimensions and lengths don't match.
     pub fn new(array: Array) -> Result<Self, Error> {
         let mut iter = array.iter();
         if let Some(map) = iter.next() {
@@ -364,18 +416,26 @@ where
     fn is_identity(&self) -> bool {
         false
     }
+    #[inline]
+    fn is_index_map(&self) -> bool {
+        self.iter().all(|item| item.is_index_map())
+    }
 }
 
+/// The product of two maps.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BinaryProduct<M0: Map, M1: Map>(M0, M1);
 
 impl<M0: Map, M1: Map> BinaryProduct<M0, M1> {
+    /// Returns the product of two maps.
     pub fn new(map0: M0, map1: M1) -> Self {
         Self(map0, map1)
     }
+    /// Returns the first term of the product.
     pub fn first(&self) -> &M0 {
         &self.0
     }
+    /// Returns the second term of the product.
     pub fn second(&self) -> &M1 {
         &self.1
     }
@@ -451,6 +511,10 @@ impl<M0: Map, M1: Map> Map for BinaryProduct<M0, M1> {
     fn is_identity(&self) -> bool {
         self.0.is_identity() && self.1.is_identity()
     }
+    #[inline]
+    fn is_index_map(&self) -> bool {
+        self.0.is_index_map() && self.1.is_index_map()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -465,8 +529,9 @@ impl UnapplyIndicesData for UnapplyBinaryProduct {
     }
 }
 
+/// The product of a sequence of maps.
 #[derive(Debug, Clone, PartialEq)]
-pub struct UniformProduct<M, Array>(Array)
+pub struct UniformProduct<M, Array = Vec<M>>(Array)
 where
     M: Map,
     Array: Deref<Target = [M]>;
@@ -476,9 +541,11 @@ where
     M: Map,
     Array: Deref<Target = [M]>,
 {
+    /// Returns the product of a sequence of maps.
     pub fn new(array: Array) -> Self {
         Self(array)
     }
+    /// Returns an iterator of the terms of the product.
     pub fn iter<'a>(&'a self) -> std::slice::Iter<'a, M> {
         self.0.iter()
     }
@@ -646,6 +713,7 @@ where
     dispatch! {fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>}
     dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Option<Vec<T>>}
     dispatch! {fn is_identity(&self) -> bool}
+    dispatch! {fn is_index_map(&self) -> bool}
 }
 
 impl<M: Map> FromIterator<M> for UniformProduct<M, Vec<M>> {
@@ -664,7 +732,6 @@ mod tests {
     use super::*;
     use crate::assert_map_apply;
     use crate::elementaries;
-    use crate::simplex::Simplex::*;
     use approx::assert_abs_diff_eq;
     use std::iter;
 

@@ -5,21 +5,22 @@ use num::Integer as _;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
+/// An interface for an unbounded coordinate and index map.
 pub trait UnboundedMap {
-    // Minimum dimension of the input coordinate. If the dimension of the input
-    // coordinate of [UnboundedMap::apply_inplace()] is larger than the minimum, then
-    // the map of the surplus is the identity map.
+    /// Minimum dimension of the input coordinate. If the dimension of the input
+    /// coordinate of [`UnboundedMap::apply_inplace()`] is larger than the minimum, then
+    /// the map of the surplus is the identity map.
     fn dim_in(&self) -> usize;
-    // Minimum dimension of the output coordinate.
+    /// Minimum dimension of the output coordinate.
     fn dim_out(&self) -> usize {
         self.dim_in() + self.delta_dim()
     }
-    // Difference in dimension of the output and input coordinate.
+    /// Difference in dimension of the output and input coordinate.
     fn delta_dim(&self) -> usize;
-    // Modulus of the input index. The map repeats itself at index `mod_in`
-    // and the output index is incremented with `in_index / mod_in * mod_out`.
+    /// Modulus of the input index. The map repeats itself at index `mod_in`
+    /// and the output index is incremented with `in_index / mod_in * mod_out`.
     fn mod_in(&self) -> usize;
-    // Modulus if the output index.
+    /// Modulus if the output index.
     fn mod_out(&self) -> usize;
     fn apply_mod_out_to_in(&self, n: usize) -> Option<usize> {
         let (i, rem) = n.div_rem(&self.mod_out());
@@ -29,6 +30,7 @@ pub trait UnboundedMap {
         let (i, rem) = n.div_rem(&self.mod_in());
         (rem == 0).then(|| i * self.mod_out())
     }
+    /// Apply the given index and coordinate, the latter in-place.
     fn apply_inplace(
         &self,
         index: usize,
@@ -36,15 +38,23 @@ pub trait UnboundedMap {
         stride: usize,
         offset: usize,
     ) -> usize;
+    /// Apply the index.
     fn apply_index(&self, index: usize) -> usize;
+    /// Apply a sequence of indices in-place.
     fn apply_indices_inplace(&self, indices: &mut [usize]) {
         for index in indices.iter_mut() {
             *index = self.apply_index(*index);
         }
     }
+    /// Unapply a sequence of indices.
     fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>;
+    /// Returns true if this is the identity map.
     fn is_identity(&self) -> bool {
         self.mod_in() == 1 && self.mod_out() == 1 && self.dim_out() == 0
+    }
+    /// Returns true if this map manipulates indices only.
+    fn is_index_map(&self) -> bool {
+        self.dim_out() == 0
     }
 }
 
@@ -518,6 +528,7 @@ impl UnboundedMap for UniformPoints {
     }
 }
 
+/// An enum of elementary maps.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Elementary {
     Transpose(Transpose),
@@ -619,6 +630,7 @@ impl UnboundedMap for Elementary {
     dispatch! {fn apply_indices_inplace(&self, indices: &mut [usize])}
     dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>}
     dispatch! {fn is_identity(&self) -> bool}
+    dispatch! {fn is_index_map(&self) -> bool}
 }
 
 impl AddOffset for Elementary {
@@ -842,6 +854,20 @@ impl<M: UnboundedMap> Map for WithBounds<M> {
     fn is_identity(&self) -> bool {
         self.map.is_identity()
     }
+    #[inline]
+    fn is_index_map(&self) -> bool {
+        self.map.is_index_map()
+    }
+}
+
+impl<M> AddOffset for WithBounds<M>
+where
+    M: UnboundedMap + AddOffset,
+{
+    fn add_offset(&mut self, offset: usize) {
+        self.dim_in += offset;
+        self.map.add_offset(offset);
+    }
 }
 
 /// An interface for swapping a composition of `Self` with an [`Elementary`].
@@ -992,7 +1018,11 @@ where
     }
 }
 
-/// An interface for iterating over all possible decompositions into `Self` and an [`Elementary`].
+/// Return type of [`AllElementaryDecompositions::all_elementary_decompositions()`].
+pub type ElementaryDecompositionIter<'a, T> =
+    Box<dyn Iterator<Item = ((Elementary, usize), T)> + 'a>;
+
+/// An interface for iterating over all possible decompositions into [`Elementary`] and `Self`.
 pub trait AllElementaryDecompositions: Sized {
     /// Return an iterator over all possible decompositions into `Self` and an [`Elementary`].
     ///
@@ -1016,15 +1046,11 @@ pub trait AllElementaryDecompositions: Sized {
     /// );
     /// assert_eq!(iter.next(), None);
     /// ```
-    fn all_elementary_decompositions<'a>(
-        &'a self,
-    ) -> Box<dyn Iterator<Item = ((Elementary, usize), Self)> + 'a>;
+    fn all_elementary_decompositions<'a>(&'a self) -> ElementaryDecompositionIter<'a, Self>;
 }
 
 impl AllElementaryDecompositions for Vec<Elementary> {
-    fn all_elementary_decompositions<'a>(
-        &'a self,
-    ) -> Box<dyn Iterator<Item = ((Elementary, usize), Self)> + 'a> {
+    fn all_elementary_decompositions<'a>(&'a self) -> ElementaryDecompositionIter<'a, Self> {
         let mut splits = Vec::new();
         for (i, item) in self.iter().enumerate() {
             if let Some((outer, mut inner)) = (&self[..i]).swap_elementary_composition(item, 1) {
@@ -1051,10 +1077,11 @@ impl AllElementaryDecompositions for Vec<Elementary> {
     }
 }
 
-impl<M: UnboundedMap + AllElementaryDecompositions> AllElementaryDecompositions for WithBounds<M> {
-    fn all_elementary_decompositions<'a>(
-        &'a self,
-    ) -> Box<dyn Iterator<Item = ((Elementary, usize), Self)> + 'a> {
+impl<M> AllElementaryDecompositions for WithBounds<M>
+where
+    M: UnboundedMap + AllElementaryDecompositions,
+{
+    fn all_elementary_decompositions<'a>(&'a self) -> ElementaryDecompositionIter<'a, Self> {
         Box::new(
             self.unbounded()
                 .all_elementary_decompositions()
@@ -1069,6 +1096,22 @@ impl<M: UnboundedMap + AllElementaryDecompositions> AllElementaryDecompositions 
     }
 }
 
+/// Create a bounded composition of elementary maps.
+///
+/// # Syntax
+///
+/// The arguments of the macro are separated by `<-`, indicating the direction
+/// of the map. The first argument is a simplex (`Triangle`, `Line`) or
+/// `Point`, multiplied with the output length of the map. The remaining arguments
+/// are elementary maps: `Children`, `Edges`, `Transpose(len1, len2)` or `Take(indices, len)`.
+///
+/// # Examples
+///
+/// ```
+/// use nutils_test::elementaries;
+/// use nutils_test::simplex::Simplex::*;
+/// elementaries![Line*2 <- Children <- Edges];
+/// ```
 #[macro_export]
 macro_rules! elementaries {
     (Point*$len_out:literal $($tail:tt)*) => {{
@@ -1083,10 +1126,14 @@ macro_rules! elementaries {
         #[allow(unused_mut)]
         let mut comp: Vec<Elementary> = Vec::new();
         $crate::elementaries!{@adv comp, $simplex; $($tail)*}
-        WithBounds::from_output(comp, $simplex.dim(), $len_out).unwrap()
+        let dim_out = $crate::elementaries!(@dim $simplex);
+        WithBounds::from_output(comp, dim_out, $len_out).unwrap()
     }};
-    (@adv $comp:ident, $simplex:ident;) => {};
-    (@adv $comp:ident, $simplex:ident; <- Children $($tail:tt)*) => {{
+    (@dim Point) => {0};
+    (@dim Line) => {1};
+    (@dim Triangle) => {2};
+    (@adv $comp:ident, $simplex:tt;) => {};
+    (@adv $comp:ident, $simplex:tt; <- Children $($tail:tt)*) => {{
         $comp.push(Elementary::new_children($crate::simplex::Simplex::$simplex));
         $crate::elementaries!{@adv $comp, $simplex; $($tail)*}
     }};
@@ -1098,11 +1145,11 @@ macro_rules! elementaries {
         $comp.push(Elementary::new_edges($crate::simplex::Simplex::Line));
         $crate::elementaries!{@adv $comp, Point; $($tail)*}
     }};
-    (@adv $comp:ident, $simplex:ident; <- Transpose($len1:expr, $len2:expr) $($tail:tt)*) => {{
+    (@adv $comp:ident, $simplex:tt; <- Transpose($len1:expr, $len2:expr) $($tail:tt)*) => {{
         $comp.push(Elementary::new_transpose($len1, $len2));
         $crate::elementaries!{@adv $comp, $simplex; $($tail)*}
     }};
-    (@adv $comp:ident, $simplex:ident; <- Take($indices:expr, $len:expr) $($tail:tt)*) => {{
+    (@adv $comp:ident, $simplex:tt; <- Take($indices:expr, $len:expr) $($tail:tt)*) => {{
         $comp.push(Elementary::new_take($indices.to_vec(), $len));
         $crate::elementaries!{@adv $comp, $simplex; $($tail)*}
     }};

@@ -7,7 +7,7 @@ use std::iter;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
-type Tesselation = Concatenation<WithBounds<Vec<Elementary>>>;
+type Tesselation = UniformConcat<WithBounds<Vec<Elementary>>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Root {

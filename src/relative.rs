@@ -1,18 +1,19 @@
 use crate::elementary::{
-    AllElementaryDecompositions, Elementary, SwapElementaryComposition, UnboundedMap, WithBounds,
+    AllElementaryDecompositions, Elementary, ElementaryDecompositionIter,
+    SwapElementaryComposition, UnboundedMap, WithBounds, Identity, Slice,
 };
-use crate::ops::{BinaryComposition, BinaryProduct, UniformProduct};
+use crate::ops::{BinaryComposition, BinaryProduct, UniformProduct, UniformConcat};
 use crate::util::ReplaceNthIter as _;
-use crate::{AddOffset, Map};
+use crate::{AddOffset, Map, UnapplyIndicesData};
 use std::collections::BTreeMap;
+use std::rc::Rc;
+use std::iter;
 
 impl<M> AllElementaryDecompositions for UniformProduct<M, Vec<M>>
 where
     M: Map + AllElementaryDecompositions + Clone,
 {
-    fn all_elementary_decompositions<'a>(
-        &'a self,
-    ) -> Box<dyn Iterator<Item = ((Elementary, usize), Self)> + 'a> {
+    fn all_elementary_decompositions<'a>(&'a self) -> ElementaryDecompositionIter<'a, Self> {
         Box::new(
             self.iter()
                 .enumerate()
@@ -41,9 +42,7 @@ where
     M0: Map + AllElementaryDecompositions + Clone,
     M1: Map + AllElementaryDecompositions + Clone,
 {
-    fn all_elementary_decompositions<'a>(
-        &'a self,
-    ) -> Box<dyn Iterator<Item = ((Elementary, usize), Self)> + 'a> {
+    fn all_elementary_decompositions<'a>(&'a self) -> ElementaryDecompositionIter<'a, Self> {
         let first = self
             .first()
             .all_elementary_decompositions()
@@ -94,10 +93,32 @@ where
     }
 }
 
-/// Decompose two maps into two remainders and a common map.
+/// Decompose two maps into a common map and two remainders.
 ///
-/// The decomposition is such that the composition the common part with the
+/// The decomposition is such that the composition of the common part with the
 /// remainder gives a map that is equivalent to the original.
+///
+/// # Examples
+///
+/// ```
+/// use nutils_test::elementaries;
+/// let map1 = elementaries![Line*1 <- Children <- Children <- Edges];
+/// let map2 = elementaries![Line*1 <- Children <- Edges];
+/// let (common, rem1, rem2) = nutils_test::relative::decompose_common(map1, map2);
+/// assert_eq!(common, elementaries![Line*1 <- Children <- Children <- Edges]);
+/// assert_eq!(rem1, elementaries![Point*8]);
+/// assert_eq!(rem2, elementaries![Point*8 <- Take([2, 1], 4)]);
+/// ```
+///
+/// ```
+/// use nutils_test::elementaries;
+/// let map1 = elementaries![Triangle*1 <- Children];
+/// let map2 = elementaries![Triangle*1 <- Edges <- Children];
+/// let (common, rem1, rem2) = nutils_test::relative::decompose_common(map1, map2);
+/// assert_eq!(common, elementaries![Triangle*1 <- Children]);
+/// assert_eq!(rem1, elementaries![Triangle*4]);
+/// assert_eq!(rem2, elementaries![Triangle*4 <- Edges <- Take([3, 6, 1, 7, 2, 5], 12)]);
+/// ```
 pub fn decompose_common<M1, M2>(mut map1: M1, mut map2: M2) -> (WithBounds<Vec<Elementary>>, M1, M2)
 where
     M1: Map + AllElementaryDecompositions,
@@ -122,199 +143,230 @@ where
             (map1, map2)
         } else {
             break;
-        }
+        };
+        assert_eq!(map1.len_out(), map2.len_out());
+        assert_eq!(map1.dim_out(), map2.dim_out());
     }
-    common.reverse();
     let common = WithBounds::from_input(common, map1.dim_out(), map1.len_out()).unwrap();
     (common, map1, map2)
 }
 
-//#[derive(Debug, Clone, PartialEq)]
-//pub enum Relative {
-//    Identity(WithBounds<Identity>),
-//    Single(WithBounds<Vec<Elementary>>),
-//    Multiple(RelativeMultiple),
-//    Concatenation(Concatenation<Relative>),
-//}
-//
-//macro_rules! dispatch {
-//    (
-//        $vis:vis fn $fn:ident$(<$genarg:ident: $genpath:path>)?(
-//            &$self:ident $(, $arg:ident: $ty:ty)*
-//        ) $(-> $ret:ty)?
-//    ) => {
-//        #[inline]
-//        $vis fn $fn$(<$genarg: $genpath>)?(&$self $(, $arg: $ty)*) $(-> $ret)? {
-//            dispatch!(@match $self; $fn; $($arg),*)
-//        }
-//    };
-//    ($vis:vis fn $fn:ident(&mut $self:ident $(, $arg:ident: $ty:ty)*) $(-> $ret:ty)?) => {
-//        #[inline]
-//        $vis fn $fn(&mut $self $(, $arg: $ty)*) $(-> $ret)? {
-//            dispatch!(@match $self; $fn; $($arg),*)
-//        }
-//    };
-//    (@match $self:ident; $fn:ident; $($arg:ident),*) => {
-//        match $self {
-//            Relative::Identity(var) => var.$fn($($arg),*),
-//            Relative::Single(var) => var.$fn($($arg),*),
-//            Relative::Multiple(var) => var.$fn($($arg),*),
-//            Relative::Concatenation(var) => var.$fn($($arg),*),
-//        }
-//    }
-//}
-//
-//impl BoundedMap for Relative {
-//    dispatch! {fn len_out(&self) -> usize}
-//    dispatch! {fn len_in(&self) -> usize}
-//    dispatch! {fn dim_out(&self) -> usize}
-//    dispatch! {fn dim_in(&self) -> usize}
-//    dispatch! {fn delta_dim(&self) -> usize}
-//    dispatch! {fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> usize}
-//    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> Option<usize>}
-//    dispatch! {fn apply_index_unchecked(&self, index: usize) -> usize}
-//    dispatch! {fn apply_index(&self, index: usize) -> Option<usize>}
-//    dispatch! {fn apply_indices_inplace_unchecked(&self, indices: &mut [usize])}
-//    dispatch! {fn apply_indices(&self, indices: &[usize]) -> Option<Vec<usize>>}
-//    dispatch! {fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>}
-//    dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Option<Vec<T>>}
-//    dispatch! {fn is_identity(&self) -> bool}
-//}
-//
+fn partial_relative_to<Source, Target>(source: Source, target: Target) -> PartialRelative<Source>
+where
+    Source: Map + AllElementaryDecompositions,
+    Target: Map + AllElementaryDecompositions,
+{
+    let (_, rem, rel) = decompose_common(target, source);
+    if rem.is_identity() {
+        PartialRelative::AllSameOrder(rel)
+    } else if rem.is_index_map() {
+        // TODO: transfer transposes from `rem` to `rel` if this would make `rem` the identity
+        let mut indices: Vec<usize> = (0..rem.len_in()).collect();
+        rem.apply_indices_inplace_unchecked(&mut indices);
+        PartialRelative::Some(rel, indices)
+    } else {
+        PartialRelative::CannotEstablishRelation
+    }
+}
+
+enum PartialRelative<M> {
+    AllSameOrder(M),
+    Some(M, Vec<usize>),
+    CannotEstablishRelation,
+}
+
+/// An interface for determining the relation between two maps.
+pub trait RelativeTo<Target: Map> {
+    /// Return the relative map from `self` to the given target.
+    fn relative_to(&self, target: &Target) -> Option<Relative>;
+    /// Map indices for the target to `self`.
+    fn unapply_indices_from<T>(&self, target: &Target, indices: &[T]) -> Option<Vec<T>>
+    where
+        T: UnapplyIndicesData,
+    {
+        self.relative_to(target)
+            .and_then(|rel| rel.unapply_indices(indices))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Relative {
+    Identity(WithBounds<Identity>),
+    Slice(WithBounds<Slice>),
+    Elementaries(WithBounds<Vec<Elementary>>),
+    Concat(UniformConcat<Relative>),
+    RelativeToConcat(RelativeToConcat),
+}
+
+macro_rules! dispatch {
+    (
+        $vis:vis fn $fn:ident$(<$genarg:ident: $genpath:path>)?(
+            &$self:ident $(, $arg:ident: $ty:ty)*
+        ) $(-> $ret:ty)?
+    ) => {
+        #[inline]
+        $vis fn $fn$(<$genarg: $genpath>)?(&$self $(, $arg: $ty)*) $(-> $ret)? {
+            dispatch!(@match $self; $fn; $($arg),*)
+        }
+    };
+    ($vis:vis fn $fn:ident(&mut $self:ident $(, $arg:ident: $ty:ty)*) $(-> $ret:ty)?) => {
+        #[inline]
+        $vis fn $fn(&mut $self $(, $arg: $ty)*) $(-> $ret)? {
+            dispatch!(@match $self; $fn; $($arg),*)
+        }
+    };
+    (@match $self:ident; $fn:ident; $($arg:ident),*) => {
+        match $self {
+            Relative::Identity(var) => var.$fn($($arg),*),
+            Relative::Slice(var) => var.$fn($($arg),*),
+            Relative::Elementaries(var) => var.$fn($($arg),*),
+            Relative::Concat(var) => var.$fn($($arg),*),
+            Relative::RelativeToConcat(var) => var.$fn($($arg),*),
+        }
+    }
+}
+
+impl Map for Relative {
+    dispatch! {fn len_out(&self) -> usize}
+    dispatch! {fn len_in(&self) -> usize}
+    dispatch! {fn dim_out(&self) -> usize}
+    dispatch! {fn dim_in(&self) -> usize}
+    dispatch! {fn delta_dim(&self) -> usize}
+    dispatch! {fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> usize}
+    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> Option<usize>}
+    dispatch! {fn apply_index_unchecked(&self, index: usize) -> usize}
+    dispatch! {fn apply_index(&self, index: usize) -> Option<usize>}
+    dispatch! {fn apply_indices_inplace_unchecked(&self, indices: &mut [usize])}
+    dispatch! {fn apply_indices(&self, indices: &[usize]) -> Option<Vec<usize>>}
+    dispatch! {fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>}
+    dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Option<Vec<T>>}
+    dispatch! {fn is_identity(&self) -> bool}
+    dispatch! {fn is_index_map(&self) -> bool}
+}
+
 //impl AddOffset for Relative {
 //    dispatch! {fn add_offset(&mut self, offset: usize)}
 //}
-//
-//pub trait RelativeTo<Target: BoundedMap> {
-//    fn relative_to(&self, target: &Target) -> Option<Relative>;
-//    fn unapply_indices_from<T: UnapplyIndicesData>(
-//        &self,
-//        target: &Target,
-//        indices: &[T],
-//    ) -> Option<Vec<T>> {
-//        self.relative_to(target)
-//            .and_then(|rel| rel.unapply_indices(indices))
-//    }
-//}
-//
-//impl RelativeTo<Self> for WithBounds<Vec<Elementary>> {
-//    fn relative_to(&self, target: &Self) -> Option<Relative> {
-//        let (_, rem, rel) = target
-//            .get_unbounded()
-//            .split_common_prefix_opt_lhs(self.get_unbounded());
-//        rem.is_identity()
-//            .then(|| Relative::Single(Self::new_unchecked(rel, target.dim_in(), target.len_in())))
-//    }
-//}
-//
-//impl<Item, Target> RelativeTo<Target> for Concatenation<Item>
-//where
-//    Item: BoundedMap + RelativeTo<Target>,
-//    Target: BoundedMap,
-//{
-//    fn relative_to(&self, target: &Target) -> Option<Relative> {
-//        self.iter()
-//            .map(|item| item.relative_to(target))
-//            .collect::<Option<_>>()
-//            .map(|rel_items| Relative::Concatenation(Concatenation::new(rel_items)))
-//    }
-//}
-//
-//fn pop_common<T: std::cmp::PartialEq>(vecs: &mut [&mut Vec<T>]) -> Option<T> {
-//    let item = vecs.first().and_then(|vec| vec.last());
-//    if item.is_some() && vecs[1..].iter().all(|vec| vec.last() == item) {
-//        for vec in vecs[1..].iter_mut() {
-//            vec.pop();
-//        }
-//        vecs[0].pop()
-//    } else {
-//        None
-//    }
-//}
-//
-//#[derive(Debug, Clone)]
-//struct IndexOutIn(usize, usize);
-//
-//impl UnapplyIndicesData for IndexOutIn {
-//    #[inline]
-//    fn last(&self) -> usize {
-//        self.1
-//    }
-//    #[inline]
-//    fn push(&self, index: usize) -> Self {
-//        Self(self.0, index)
-//    }
-//}
-//
-//#[derive(Debug, Clone, PartialEq)]
-//pub struct RelativeMultiple {
-//    rels: Vec<Vec<Elementary>>,
-//    index_map: Rc<Vec<(usize, usize)>>,
-//    common: Vec<Elementary>,
-//    len_out: usize,
-//    len_in: usize,
-//    dim_in: usize,
-//    delta_dim: usize,
-//}
-//
-//impl BoundedMap for RelativeMultiple {
-//    fn dim_in(&self) -> usize {
-//        self.dim_in
-//    }
-//    fn delta_dim(&self) -> usize {
-//        self.delta_dim
-//    }
-//    fn len_in(&self) -> usize {
-//        self.len_in
-//    }
-//    fn len_out(&self) -> usize {
-//        self.len_out
-//    }
-//    fn apply_inplace_unchecked(
-//        &self,
-//        index: usize,
-//        coordinates: &mut [f64],
-//        stride: usize,
-//        offset: usize,
-//    ) -> usize {
-//        let index = self
-//            .common
-//            .apply_inplace(index, coordinates, stride, offset);
-//        let (iout, iin) = self.index_map[index];
-//        let n = self.index_map.len();
-//        self.rels[iin / n].apply_inplace(iin % n, coordinates, stride, offset);
-//        iout
-//    }
-//    fn apply_index_unchecked(&self, index: usize) -> usize {
-//        self.index_map[self.common.apply_index(index)].0
-//    }
-//    fn apply_indices_inplace_unchecked(&self, indices: &mut [usize]) {
-//        self.common.apply_indices_inplace(indices);
-//        for index in indices.iter_mut() {
-//            *index = self.index_map[*index].0;
-//        }
-//    }
-//    fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
-//        // FIXME: VERY EXPENSIVE!!!
-//        let mut in_indices: Vec<T> = Vec::new();
-//        for index in indices {
-//            in_indices.extend(
-//                self.index_map
-//                    .iter()
-//                    .enumerate()
-//                    .filter_map(|(iin, (iout, _))| {
-//                        (*iout == index.last()).then(|| index.push(iin))
-//                    }),
-//            );
-//        }
-//        self.common.unapply_indices(&in_indices)
-//    }
-//    fn is_identity(&self) -> bool {
-//        false
-//    }
-//}
-//
-//impl AddOffset for RelativeMultiple {
+
+impl RelativeTo<Self> for WithBounds<Vec<Elementary>> {
+    fn relative_to(&self, target: &Self) -> Option<Relative> {
+        let (_, rem, rel) = decompose_common(target.clone(), self.clone());
+        // TODO: transfer transposes from `rem` to `rel`
+        rem.is_identity().then(|| Relative::Elementaries(rel))
+    }
+}
+
+impl<Source, Target> RelativeTo<Target> for UniformConcat<Source>
+where
+    Source: Map + RelativeTo<Target>,
+    Target: Map,
+{
+    fn relative_to(&self, target: &Target) -> Option<Relative> {
+        self.iter()
+            .map(|item| item.relative_to(target))
+            .collect::<Option<_>>()
+            .map(|rels| Relative::Concat(UniformConcat::new_unchecked(rels)))
+    }
+}
+
+fn pop_common<T: std::cmp::PartialEq>(vecs: &mut [&mut Vec<T>]) -> Option<T> {
+    let item = vecs.first().and_then(|vec| vec.last());
+    if item.is_some() && vecs[1..].iter().all(|vec| vec.last() == item) {
+        for vec in vecs[1..].iter_mut() {
+            vec.pop();
+        }
+        vecs[0].pop()
+    } else {
+        None
+    }
+}
+
+#[derive(Debug, Clone)]
+struct IndexOutIn(usize, usize);
+
+impl UnapplyIndicesData for IndexOutIn {
+    #[inline]
+    fn get(&self) -> usize {
+        self.1
+    }
+    #[inline]
+    fn set(&self, index: usize) -> Self {
+        Self(self.0, index)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RelativeToConcat {
+    rels: Vec<Vec<Elementary>>,
+    index_map: Rc<Vec<(usize, usize)>>,
+    common: Vec<Elementary>,
+    len_out: usize,
+    len_in: usize,
+    dim_in: usize,
+    delta_dim: usize,
+}
+
+impl Map for RelativeToConcat {
+    fn dim_in(&self) -> usize {
+        self.dim_in
+    }
+    fn delta_dim(&self) -> usize {
+        self.delta_dim
+    }
+    fn len_in(&self) -> usize {
+        self.len_in
+    }
+    fn len_out(&self) -> usize {
+        self.len_out
+    }
+    fn apply_inplace_unchecked(
+        &self,
+        index: usize,
+        coordinates: &mut [f64],
+        stride: usize,
+        offset: usize,
+    ) -> usize {
+        let index = self
+            .common
+            .apply_inplace(index, coordinates, stride, offset);
+        let (iout, iin) = self.index_map[index];
+        let n = self.index_map.len();
+        self.rels[iin / n].apply_inplace(iin % n, coordinates, stride, offset);
+        iout
+    }
+    fn apply_index_unchecked(&self, index: usize) -> usize {
+        self.index_map[self.common.apply_index(index)].0
+    }
+    fn apply_indices_inplace_unchecked(&self, indices: &mut [usize]) {
+        self.common.apply_indices_inplace(indices);
+        for index in indices.iter_mut() {
+            *index = self.index_map[*index].0;
+        }
+    }
+    fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
+        // FIXME: VERY EXPENSIVE!!!
+        let mut in_indices: Vec<T> = Vec::new();
+        for index in indices {
+            in_indices.extend(
+                self.index_map
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(iin, (iout, _))| {
+                        (*iout == index.get()).then(|| index.set(iin))
+                    }),
+            );
+        }
+        self.common.unapply_indices(&in_indices)
+    }
+    fn is_identity(&self) -> bool {
+        false
+    }
+    fn is_index_map(&self) -> bool {
+        false // TODO
+    }
+}
+
+//impl AddOffset for RelativeToConcat {
 //    fn add_offset(&mut self, offset: usize) {
 //        self.common.add_offset(offset);
 //        for rel in self.rels.iter_mut() {
@@ -323,25 +375,29 @@ where
 //        self.dim_in += offset;
 //    }
 //}
-//
-//impl RelativeTo<Concatenation<Self>> for WithBounds<Vec<Elementary>> {
-//    fn relative_to(&self, targets: &Concatenation<Self>) -> Option<Relative> {
+
+//impl<Source, Target> RelativeTo<UniformConcat<Target>> for Source
+//where
+//    Source: Map + AllElementaryDecompositions + Clone,
+//    Target: Map + AllElementaryDecompositions + Clone,
+//{
+//    fn relative_to(&self, targets: &UniformConcat<Target>) -> Option<Relative> {
 //        let mut rels_indices = Vec::new();
 //        let mut offset = 0;
-//        for target in targets.iter() {
-//            let (_, rem, rel) = target
-//                .get_unbounded()
-//                .split_common_prefix_opt_lhs(self.get_unbounded());
-//            if rem.is_identity() {
-//                let slice = Elementary::new_slice(offset, target.len_in(), targets.len_in());
-//                let rel: Vec<Elementary> = iter::once(slice).chain(rel).collect();
-//                let rel = WithBounds::new_unchecked(rel, targets.dim_in(), targets.len_in());
-//                return Some(Relative::Single(rel));
-//            }
-//            if rem.dim_out() == 0 {
-//                let mut indices: Vec<usize> = (0..target.len_in()).collect();
-//                rem.apply_indices_inplace(&mut indices);
-//                rels_indices.push((rel, offset, indices))
+//        for target in targets.iter().cloned() {
+//            match partial_relative_to(self.clone(), target) {
+//                PartialRelative::AllSameOrder(rel) => {
+//                    let slice = Slice::new(offset, target.len_in(), targets.len_in());
+//                    let slice = WithBounds::from_input(slice, target.dim_in(), target.len_in()).unwrap();
+//                    let slice = Relative::Slice(slice);
+//                    return Some(Relative::Concat(UniformConcat::new_unchecked(vec![slice, rel])));
+//                }
+//                PartialRelative::Some(rel, indices) => {
+//                    rels_indices.push((rel, offset, indices))
+//                }
+//                PartialRelative::CannotEstablishRelation => {
+//                    return None;
+//                }
 //            }
 //            offset += target.len_in();
 //        }
@@ -379,7 +435,7 @@ where
 //            .into_iter()
 //            .collect::<Option<Vec<_>>>()
 //            .map(|index_map| {
-//                Relative::Multiple(RelativeMultiple {
+//                Relative::RelativeToConcat(RelativeToConcat {
 //                    index_map: index_map.into(),
 //                    rels,
 //                    common,
@@ -391,7 +447,7 @@ where
 //            })
 //    }
 //}
-//
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -469,17 +525,17 @@ mod tests {
         //assert_eq!(common, elementaries![Line*2]);
         // WithBounds { map: [Offset(Children(Line), 1), Transpose(2, 1), Offset(Children(Line), 0)], dim_in: 2, delta_dim: 0, len_in: 16, len_out: 4 }
     }
-    //
-    //    #[test]
-    //    fn rel_to() {
-    //        let a1 = elementaries![Line*2 <- Children <- Take([0, 2], 4)];
-    //        let a2 = elementaries![Line*2 <- Children <- Take([1, 3], 4) <- Children];
-    //        let a = BinaryConcat::new(a1, a2).unwrap();
-    //        let b = elementaries![Line*2 <- Children <- Children <- Children];
-    //        assert_equiv_maps!(
-    //            BinaryComposition::new(b.relative_to(&a).unwrap(), a.clone()).unwrap(),
-    //            b,
-    //            Line
-    //        );
-    //    }
+
+//  #[test]
+//  fn rel_to_single() {
+//      let a1 = elementaries![Line*2 <- Children <- Take([0, 2], 4)];
+//      let a2 = elementaries![Line*2 <- Children <- Take([1, 3], 4) <- Children];
+//      let a = BinaryConcat::new(a1, a2).unwrap();
+//      let b = elementaries![Line*2 <- Children <- Children <- Children];
+//      assert_equiv_maps!(
+//          BinaryComposition::new(b.relative_to(&a).unwrap(), a.clone()).unwrap(),
+//          b,
+//          Line
+//      );
+//  }
 }

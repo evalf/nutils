@@ -8,6 +8,43 @@ struct UniformTesselation {
     map: WithBounds<Vec<Elementary>>,
 }
 
+impl UniformTesselation {
+    fn identity(shapes: Vec<Simplex>, len: usize) -> Self {
+        let dim = shapes.iter().map(|simplex| simplex.dim()).sum();
+        let map = WithBounds::from_output(vec![], dim, len);
+        Self { shapes, map }
+    }
+    fn children(&self) -> Self {
+        let mut map = self.map.clone();
+        let mut offset = 0;
+        for shape in &self.shapes {
+            let item = Elementary::new_children(shape);
+            item.add_offset(offset);
+            map.push(item);
+            offset += shape.dim();
+        }
+        Self { shapes: self.shapes.clone(), map }
+    }
+    fn edges(&self) -> Result<Self, String> {
+        if self.shapes().is_empty() {
+            return Err("dimension zero");
+        }
+        let mut map = self.map.clone();
+        let mut shapes = Vec::with_capacity(self.shapes.len());
+        let mut offset = 0;
+        for shape in &self.shapes {
+            let item = Elementary::new_edges(shape);
+            item.add_offset(offset);
+            map.push(item);
+            offset += shape.edge_dim();
+            if let Some(edge_shape) = shape.edge_shape() {
+                shapes.push(edge_shape);
+            }
+        }
+        Ok(Self { shapes, map })
+    }
+}
+
 impl Deref for UniformTesselation {
     type Target = WithBounds<Vec<Elementary>>;
 
@@ -16,13 +53,55 @@ impl Deref for UniformTesselation {
     }
 }
 
-struct Tesselation {
-    maps: UniformConcat<UniformTesselation>,
-    reorder: Option<Vec<usize>>,
+pub struct Tesselation(UniformConcat<UniformTesselation>, Vec<usize>>);
+
+impl Tesselation {
+    pub fn identity(shapes: Vec<Simplex>, len: usize) -> Self {
+        Self(UniformConcat::new_unchecked(vec![UniformTesselation::identity(shapes, len)]))
+    }
+    pub fn len(&self) -> Self {
+        self.0.len_in()
+    }
+    pub fn dim(&self) -> Self {
+        self.0.dim_in()
+    }
+    pub fn product(&self, other: &Self) -> Self {
+        unimplemented!{}
+    }
+    pub fn concatenate(&self, other: &Self) -> Self {
+        unimplemented!{}
+    }
+    pub fn take(&self, indices: &[usize]) -> Self {
+        unimplemented!{}
+    }
+    pub fn children(&self) -> Self {
+        Self(UniformConcat::new_unchecked(self.0.iter().map(|item| item.children()).collect()))
+    }
+    pub fn edges(&self) -> Result<Self, String> {
+        let edges = self.0.iter().map(|item| item.edges()).collect::<Vec<Result<_, _>>()?;
+        Self(UniformConcat::new_unchecked(edges))
+    }
+    pub fn centroids(&self) -> Self {
+        unimplemented!{}
+    }
+    pub fn vertices(&self) -> Self {
+        unimplemented!{}
+    }
+    pub fn apply_inplace(&self, mut index: usize, coords: &mut [f64], stride: usize) -> Option<index> {
+        self.0.apply_inplace(index, coords, stride, 0)
+    }
+    pub fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
+        self.0.unapply_indices(indices)
+    }
 }
 
+impl Deref for Tesselation {
+    type Target = OptionReorder<UniformConcat<UniformTesselation>>, Vec<usize>>;
 
-type Tesselation = OptionReorder<UniformConcat<UniformTesselation>>, Vec<usize>>;
+    fn deref(&self) -> Self::Target {
+        self.0
+    }
+}
 
 
 

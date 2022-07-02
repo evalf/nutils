@@ -26,14 +26,23 @@ impl std::fmt::Display for Error {
     }
 }
 
+/// An interface for an index and coordinate map.
 pub trait Map {
+    /// Returns the exclusive upper bound of the indices in the codomain.
     fn len_out(&self) -> usize;
+    /// Returns the exclusive upper bound of the indices of the domain.
     fn len_in(&self) -> usize;
+    /// Returns the dimension of the coordinates of the codimain.
     fn dim_out(&self) -> usize {
         self.dim_in() + self.delta_dim()
     }
+    /// Returns the dimension of the coordinates of the dimain.
     fn dim_in(&self) -> usize;
+    /// Returns the dimension difference of the coordinates in the codomain and the domain.
     fn delta_dim(&self) -> usize;
+    /// Apply the given index and coordinate, the latter in-place, without
+    /// checking whether the index is inside the domain and the coordinates
+    /// have at least dimension [`Self::dim_out()`].
     fn apply_inplace_unchecked(
         &self,
         index: usize,
@@ -41,6 +50,9 @@ pub trait Map {
         stride: usize,
         offset: usize,
     ) -> usize;
+    /// Applies the given index and coordinate, the latter in-place. The
+    /// coordinates must have a dimension not smaller than
+    /// [`Self::dim_out()`]. Returns `None` if the index is outside the domain.
     fn apply_inplace(
         &self,
         index: usize,
@@ -54,7 +66,11 @@ pub trait Map {
             None
         }
     }
+    /// Applies the given index without checking that the index is inside the
+    /// domain.
     fn apply_index_unchecked(&self, index: usize) -> usize;
+    /// Apply the given index. Returns `None` if the index is outside the
+    /// domain,
     fn apply_index(&self, index: usize) -> Option<usize> {
         if index < self.len_in() {
             Some(self.apply_index_unchecked(index))
@@ -62,11 +78,15 @@ pub trait Map {
             None
         }
     }
+    /// Applies the given indices in-place without checking that the indices are
+    /// inside the domain.
     fn apply_indices_inplace_unchecked(&self, indices: &mut [usize]) {
         for index in indices.iter_mut() {
             *index = self.apply_index_unchecked(*index);
         }
     }
+    /// Applies the given indices in-place. Returns `None` if any of the
+    /// indices is outside the domain.
     fn apply_indices(&self, indices: &[usize]) -> Option<Vec<usize>> {
         if indices.iter().all(|index| *index < self.len_in()) {
             let mut indices = indices.to_vec();
@@ -84,7 +104,10 @@ pub trait Map {
             None
         }
     }
+    /// Returns true if this map is the identity map.
     fn is_identity(&self) -> bool;
+    /// Returns true if this map returns coordinates unaltered.
+    fn is_index_map(&self) -> bool;
 }
 
 pub trait AddOffset {
