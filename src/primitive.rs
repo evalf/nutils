@@ -528,9 +528,9 @@ impl UnboundedMap for UniformPoints {
     }
 }
 
-/// An enum of elementary maps.
+/// An enum of primitive maps.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Elementary {
+pub enum Primitive {
     Transpose(Transpose),
     Take(Take),
     Slice(Slice),
@@ -539,7 +539,7 @@ pub enum Elementary {
     UniformPoints(Offset<UniformPoints>),
 }
 
-impl Elementary {
+impl Primitive {
     #[inline]
     pub fn new_transpose(len1: usize, len2: usize) -> Self {
         Transpose::new(len1, len2).into()
@@ -610,17 +610,17 @@ macro_rules! dispatch {
     };
     (@match $self:ident; $fn:ident; $($arg:ident),*) => {
         match $self {
-            Elementary::Transpose(var) => var.$fn($($arg),*),
-            Elementary::Take(var) => var.$fn($($arg),*),
-            Elementary::Slice(var) => var.$fn($($arg),*),
-            Elementary::Children(var) => var.$fn($($arg),*),
-            Elementary::Edges(var) => var.$fn($($arg),*),
-            Elementary::UniformPoints(var) => var.$fn($($arg),*),
+            Self::Transpose(var) => var.$fn($($arg),*),
+            Self::Take(var) => var.$fn($($arg),*),
+            Self::Slice(var) => var.$fn($($arg),*),
+            Self::Children(var) => var.$fn($($arg),*),
+            Self::Edges(var) => var.$fn($($arg),*),
+            Self::UniformPoints(var) => var.$fn($($arg),*),
         }
     };
 }
 
-impl UnboundedMap for Elementary {
+impl UnboundedMap for Primitive {
     dispatch! {fn dim_in(&self) -> usize}
     dispatch! {fn delta_dim(&self) -> usize}
     dispatch! {fn mod_in(&self) -> usize}
@@ -633,45 +633,45 @@ impl UnboundedMap for Elementary {
     dispatch! {fn is_index_map(&self) -> bool}
 }
 
-impl AddOffset for Elementary {
+impl AddOffset for Primitive {
     dispatch! {fn add_offset(&mut self, offset: usize)}
 }
 
-impl std::fmt::Debug for Elementary {
+impl std::fmt::Debug for Primitive {
     dispatch! {fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result}
 }
 
-impl From<Transpose> for Elementary {
+impl From<Transpose> for Primitive {
     fn from(transpose: Transpose) -> Self {
         Self::Transpose(transpose)
     }
 }
 
-impl From<Take> for Elementary {
+impl From<Take> for Primitive {
     fn from(take: Take) -> Self {
         Self::Take(take)
     }
 }
 
-impl From<Slice> for Elementary {
+impl From<Slice> for Primitive {
     fn from(slice: Slice) -> Self {
         Self::Slice(slice)
     }
 }
 
-impl From<Children> for Elementary {
+impl From<Children> for Primitive {
     fn from(children: Children) -> Self {
         Self::Children(Offset(children, 0))
     }
 }
 
-impl From<Edges> for Elementary {
+impl From<Edges> for Primitive {
     fn from(edges: Edges) -> Self {
         Self::Edges(Offset(edges, 0))
     }
 }
 
-impl From<UniformPoints> for Elementary {
+impl From<UniformPoints> for Primitive {
     fn from(uniform_points: UniformPoints) -> Self {
         Self::UniformPoints(Offset(uniform_points, 0))
     }
@@ -870,55 +870,55 @@ where
     }
 }
 
-/// An interface for swapping a composition of `Self` with an [`Elementary`].
-pub trait SwapElementaryComposition {
+/// An interface for swapping a composition of `Self` with an [`Primitive`].
+pub trait SwapPrimitiveComposition {
     type Output;
 
-    /// Returns an [`Elementary`'] and a map such that the composition those is equivalent to the composition of `self` with `inner`.
-    fn swap_elementary_composition(
+    /// Returns an [`Primitive`'] and a map such that the composition those is equivalent to the composition of `self` with `inner`.
+    fn swap_primitive_composition(
         &self,
-        inner: &Elementary,
+        inner: &Primitive,
         stride: usize,
-    ) -> Option<((Elementary, usize), Self::Output)>;
+    ) -> Option<((Primitive, usize), Self::Output)>;
 }
 
-impl SwapElementaryComposition for [Elementary] {
-    type Output = Vec<Elementary>;
+impl SwapPrimitiveComposition for [Primitive] {
+    type Output = Vec<Primitive>;
 
-    fn swap_elementary_composition(
+    fn swap_primitive_composition(
         &self,
-        inner: &Elementary,
+        inner: &Primitive,
         stride: usize,
-    ) -> Option<((Elementary, usize), Self::Output)> {
+    ) -> Option<((Primitive, usize), Self::Output)> {
         if inner.is_transpose() {
             return None;
         }
         let mut target = inner.clone();
-        let mut shifted_items: Vec<Elementary> = Vec::new();
-        let mut queue: Vec<Elementary> = Vec::new();
+        let mut shifted_items: Vec<Primitive> = Vec::new();
+        let mut queue: Vec<Primitive> = Vec::new();
         let mut stride_out = stride;
         let mut stride_in = stride;
         for mut item in self.iter().rev().cloned() {
             // Swap matching edges and children at the same offset.
-            if let Elementary::Edges(Offset(Edges(esimplex), eoffset)) = &item {
-                if let Elementary::Children(Offset(Children(ref mut csimplex), coffset)) =
+            if let Primitive::Edges(Offset(Edges(esimplex), eoffset)) = &item {
+                if let Primitive::Children(Offset(Children(ref mut csimplex), coffset)) =
                     &mut target
                 {
                     if eoffset == coffset && esimplex.edge_dim() == csimplex.dim() {
                         if stride_in != 1 && inner.mod_in() != 1 {
                             shifted_items
-                                .push(Elementary::new_transpose(stride_in, inner.mod_in()));
+                                .push(Primitive::new_transpose(stride_in, inner.mod_in()));
                         }
                         shifted_items.append(&mut queue);
                         if stride_out != 1 && inner.mod_in() != 1 {
                             shifted_items
-                                .push(Elementary::new_transpose(inner.mod_in(), stride_out));
+                                .push(Primitive::new_transpose(inner.mod_in(), stride_out));
                         }
-                        shifted_items.push(Elementary::new_take(
+                        shifted_items.push(Primitive::new_take(
                             esimplex.swap_edges_children_map(),
                             esimplex.nedges() * esimplex.nchildren(),
                         ));
-                        shifted_items.push(Elementary::Edges(Offset(Edges(*esimplex), *eoffset)));
+                        shifted_items.push(Primitive::Edges(Offset(Edges(*esimplex), *eoffset)));
                         *csimplex = *esimplex;
                         stride_in = 1;
                         stride_out = 1;
@@ -969,11 +969,11 @@ impl SwapElementaryComposition for [Elementary] {
             }
         }
         if stride_in != 1 && target.mod_in() != 1 {
-            shifted_items.push(Elementary::new_transpose(stride_in, target.mod_in()));
+            shifted_items.push(Primitive::new_transpose(stride_in, target.mod_in()));
         }
         shifted_items.extend(queue);
         if stride_out != 1 && target.mod_in() != 1 {
-            shifted_items.push(Elementary::new_transpose(target.mod_in(), stride_out));
+            shifted_items.push(Primitive::new_transpose(target.mod_in(), stride_out));
         }
         if target.mod_out() == 1 {
             stride_out = 1;
@@ -983,33 +983,33 @@ impl SwapElementaryComposition for [Elementary] {
     }
 }
 
-impl SwapElementaryComposition for Vec<Elementary> {
+impl SwapPrimitiveComposition for Vec<Primitive> {
     type Output = Self;
 
     #[inline]
-    fn swap_elementary_composition(
+    fn swap_primitive_composition(
         &self,
-        inner: &Elementary,
+        inner: &Primitive,
         stride: usize,
-    ) -> Option<((Elementary, usize), Self::Output)> {
-        (&self[..]).swap_elementary_composition(inner, stride)
+    ) -> Option<((Primitive, usize), Self::Output)> {
+        (&self[..]).swap_primitive_composition(inner, stride)
     }
 }
 
-impl<M: UnboundedMap + SwapElementaryComposition> SwapElementaryComposition for WithBounds<M>
+impl<M: UnboundedMap + SwapPrimitiveComposition> SwapPrimitiveComposition for WithBounds<M>
 where
-    M: UnboundedMap + SwapElementaryComposition,
+    M: UnboundedMap + SwapPrimitiveComposition,
     M::Output: UnboundedMap,
 {
     type Output = WithBounds<M::Output>;
 
-    fn swap_elementary_composition(
+    fn swap_primitive_composition(
         &self,
-        inner: &Elementary,
+        inner: &Primitive,
         stride: usize,
-    ) -> Option<((Elementary, usize), Self::Output)> {
+    ) -> Option<((Primitive, usize), Self::Output)> {
         self.unbounded()
-            .swap_elementary_composition(inner, stride)
+            .swap_primitive_composition(inner, stride)
             .map(|(outer, slf)| {
                 let dim_in = self.dim_in() - inner.delta_dim();
                 let len_in = self.len_in() / inner.mod_out() * inner.mod_in();
@@ -1018,53 +1018,53 @@ where
     }
 }
 
-/// Return type of [`AllElementaryDecompositions::all_elementary_decompositions()`].
-pub type ElementaryDecompositionIter<'a, T> =
-    Box<dyn Iterator<Item = ((Elementary, usize), T)> + 'a>;
+/// Return type of [`AllPrimitiveDecompositions::all_primitive_decompositions()`].
+pub type PrimitiveDecompositionIter<'a, T> =
+    Box<dyn Iterator<Item = ((Primitive, usize), T)> + 'a>;
 
-/// An interface for iterating over all possible decompositions into [`Elementary`] and `Self`.
-pub trait AllElementaryDecompositions: Sized {
-    /// Return an iterator over all possible decompositions into `Self` and an [`Elementary`].
+/// An interface for iterating over all possible decompositions into [`Primitive`] and `Self`.
+pub trait AllPrimitiveDecompositions: Sized {
+    /// Return an iterator over all possible decompositions into `Self` and an [`Primitive`].
     ///
     /// # Examples
     ///
     /// ```
     /// use nutils_test::simplex::Simplex::*;
-    /// use nutils_test::elementary::{Elementary, AllElementaryDecompositions as _};
-    /// use nutils_test::elementaries;
-    /// let map = elementaries![Triangle*2 <- Edges <- Children];
-    /// let mut iter = map.all_elementary_decompositions();
+    /// use nutils_test::primitive::{Primitive, AllPrimitiveDecompositions as _};
+    /// use nutils_test::prim_comp;
+    /// let map = prim_comp![Triangle*2 <- Edges <- Children];
+    /// let mut iter = map.all_primitive_decompositions();
     /// assert_eq!(
     ///     iter.next(),
-    ///     Some(((Elementary::new_edges(Triangle), 1), elementaries![Line*6 <- Children])));
+    ///     Some(((Primitive::new_edges(Triangle), 1), prim_comp![Line*6 <- Children])));
     /// assert_eq!(
     ///     iter.next(),
     ///     Some((
-    ///         (Elementary::new_children(Triangle), 1),
-    ///         elementaries![Triangle*8 <- Edges <- Take([3, 6, 1, 7, 2, 5], 12)],
+    ///         (Primitive::new_children(Triangle), 1),
+    ///         prim_comp![Triangle*8 <- Edges <- Take([3, 6, 1, 7, 2, 5], 12)],
     ///     ))
     /// );
     /// assert_eq!(iter.next(), None);
     /// ```
-    fn all_elementary_decompositions<'a>(&'a self) -> ElementaryDecompositionIter<'a, Self>;
+    fn all_primitive_decompositions<'a>(&'a self) -> PrimitiveDecompositionIter<'a, Self>;
 }
 
-impl AllElementaryDecompositions for Vec<Elementary> {
-    fn all_elementary_decompositions<'a>(&'a self) -> ElementaryDecompositionIter<'a, Self> {
+impl AllPrimitiveDecompositions for Vec<Primitive> {
+    fn all_primitive_decompositions<'a>(&'a self) -> PrimitiveDecompositionIter<'a, Self> {
         let mut splits = Vec::new();
         for (i, item) in self.iter().enumerate() {
-            if let Some((outer, mut inner)) = (&self[..i]).swap_elementary_composition(item, 1) {
+            if let Some((outer, mut inner)) = (&self[..i]).swap_primitive_composition(item, 1) {
                 inner.extend(self[i + 1..].iter().cloned());
                 splits.push((outer, inner));
             }
-            if let Elementary::Edges(Offset(Edges(Simplex::Line), offset)) = item {
-                let mut children = Elementary::new_children(Simplex::Line);
+            if let Primitive::Edges(Offset(Edges(Simplex::Line), offset)) = item {
+                let mut children = Primitive::new_children(Simplex::Line);
                 children.add_offset(*offset);
                 if let Some((outer, mut inner)) =
-                    (&self[..i]).swap_elementary_composition(&children, 1)
+                    (&self[..i]).swap_primitive_composition(&children, 1)
                 {
                     inner.push(item.clone());
-                    inner.push(Elementary::new_take(
+                    inner.push(Primitive::new_take(
                         Simplex::Line.swap_edges_children_map(),
                         Simplex::Line.nedges() * Simplex::Line.nchildren(),
                     ));
@@ -1077,14 +1077,14 @@ impl AllElementaryDecompositions for Vec<Elementary> {
     }
 }
 
-impl<M> AllElementaryDecompositions for WithBounds<M>
+impl<M> AllPrimitiveDecompositions for WithBounds<M>
 where
-    M: UnboundedMap + AllElementaryDecompositions,
+    M: UnboundedMap + AllPrimitiveDecompositions,
 {
-    fn all_elementary_decompositions<'a>(&'a self) -> ElementaryDecompositionIter<'a, Self> {
+    fn all_primitive_decompositions<'a>(&'a self) -> PrimitiveDecompositionIter<'a, Self> {
         Box::new(
             self.unbounded()
-                .all_elementary_decompositions()
+                .all_primitive_decompositions()
                 .into_iter()
                 .map(|(outer, unbounded)| {
                     (
@@ -1096,37 +1096,37 @@ where
     }
 }
 
-/// Create a bounded composition of elementary maps.
+/// Create a bounded composition of primitive maps.
 ///
 /// # Syntax
 ///
 /// The arguments of the macro are separated by `<-`, indicating the direction
 /// of the map. The first argument is a simplex (`Triangle`, `Line`) or
 /// `Point`, multiplied with the output length of the map. The remaining arguments
-/// are elementary maps: `Children`, `Edges`, `Transpose(len1, len2)` or `Take(indices, len)`.
+/// are primitive maps: `Children`, `Edges`, `Transpose(len1, len2)` or `Take(indices, len)`.
 ///
 /// # Examples
 ///
 /// ```
-/// use nutils_test::elementaries;
+/// use nutils_test::prim_comp;
 /// use nutils_test::simplex::Simplex::*;
-/// elementaries![Line*2 <- Children <- Edges];
+/// prim_comp![Line*2 <- Children <- Edges];
 /// ```
 #[macro_export]
-macro_rules! elementaries {
+macro_rules! prim_comp {
     (Point*$len_out:literal $($tail:tt)*) => {{
-        use $crate::elementary::{Elementary, WithBounds};
+        use $crate::primitive::{Primitive, WithBounds};
         #[allow(unused_mut)]
-        let mut comp: Vec<Elementary> = Vec::new();
-        $crate::elementaries!{@adv comp, Point; $($tail)*}
+        let mut comp: Vec<Primitive> = Vec::new();
+        $crate::prim_comp!{@adv comp, Point; $($tail)*}
         WithBounds::from_output(comp, 0, $len_out).unwrap()
     }};
     ($simplex:tt*$len_out:literal $($tail:tt)*) => {{
-        use $crate::elementary::{Elementary, WithBounds};
+        use $crate::primitive::{Primitive, WithBounds};
         #[allow(unused_mut)]
-        let mut comp: Vec<Elementary> = Vec::new();
-        $crate::elementaries!{@adv comp, $simplex; $($tail)*}
-        let dim_out = $crate::elementaries!(@dim $simplex);
+        let mut comp: Vec<Primitive> = Vec::new();
+        $crate::prim_comp!{@adv comp, $simplex; $($tail)*}
+        let dim_out = $crate::prim_comp!(@dim $simplex);
         WithBounds::from_output(comp, dim_out, $len_out).unwrap()
     }};
     (@dim Point) => {0};
@@ -1134,24 +1134,24 @@ macro_rules! elementaries {
     (@dim Triangle) => {2};
     (@adv $comp:ident, $simplex:tt;) => {};
     (@adv $comp:ident, $simplex:tt; <- Children $($tail:tt)*) => {{
-        $comp.push(Elementary::new_children($crate::simplex::Simplex::$simplex));
-        $crate::elementaries!{@adv $comp, $simplex; $($tail)*}
+        $comp.push(Primitive::new_children($crate::simplex::Simplex::$simplex));
+        $crate::prim_comp!{@adv $comp, $simplex; $($tail)*}
     }};
     (@adv $comp:ident, Triangle; <- Edges $($tail:tt)*) => {{
-        $comp.push(Elementary::new_edges($crate::simplex::Simplex::Triangle));
-        $crate::elementaries!{@adv $comp, Line; $($tail)*}
+        $comp.push(Primitive::new_edges($crate::simplex::Simplex::Triangle));
+        $crate::prim_comp!{@adv $comp, Line; $($tail)*}
     }};
     (@adv $comp:ident, Line; <- Edges $($tail:tt)*) => {{
-        $comp.push(Elementary::new_edges($crate::simplex::Simplex::Line));
-        $crate::elementaries!{@adv $comp, Point; $($tail)*}
+        $comp.push(Primitive::new_edges($crate::simplex::Simplex::Line));
+        $crate::prim_comp!{@adv $comp, Point; $($tail)*}
     }};
     (@adv $comp:ident, $simplex:tt; <- Transpose($len1:expr, $len2:expr) $($tail:tt)*) => {{
-        $comp.push(Elementary::new_transpose($len1, $len2));
-        $crate::elementaries!{@adv $comp, $simplex; $($tail)*}
+        $comp.push(Primitive::new_transpose($len1, $len2));
+        $crate::prim_comp!{@adv $comp, $simplex; $($tail)*}
     }};
     (@adv $comp:ident, $simplex:tt; <- Take($indices:expr, $len:expr) $($tail:tt)*) => {{
-        $comp.push(Elementary::new_take($indices.to_vec(), $len));
-        $crate::elementaries!{@adv $comp, $simplex; $($tail)*}
+        $comp.push(Primitive::new_take($indices.to_vec(), $len));
+        $crate::prim_comp!{@adv $comp, $simplex; $($tail)*}
     }};
 }
 
@@ -1199,7 +1199,7 @@ mod tests {
 
     #[test]
     fn apply_transpose() {
-        let item = Elementary::new_transpose(3, 2);
+        let item = Primitive::new_transpose(3, 2);
         assert_map_apply!(item, 0, 0);
         assert_map_apply!(item, 1, 3);
         assert_map_apply!(item, 2, 1);
@@ -1212,7 +1212,7 @@ mod tests {
 
     #[test]
     fn apply_take() {
-        let item = Elementary::new_take(vec![4, 1, 2], 5);
+        let item = Primitive::new_take(vec![4, 1, 2], 5);
         assert_map_apply!(item, 0, 4);
         assert_map_apply!(item, 1, 1);
         assert_map_apply!(item, 2, 2);
@@ -1223,7 +1223,7 @@ mod tests {
 
     #[test]
     fn apply_children_line() {
-        let mut item = Elementary::new_children(Line);
+        let mut item = Primitive::new_children(Line);
         assert_map_apply!(item, 0, [[0.0], [1.0]], 0, [[0.0], [0.5]]);
         assert_map_apply!(item, 1, [[0.0], [1.0]], 0, [[0.5], [1.0]]);
         assert_map_apply!(item, 2, [[0.0], [1.0]], 1, [[0.0], [0.5]]);
@@ -1240,7 +1240,7 @@ mod tests {
 
     #[test]
     fn apply_edges_line() {
-        let mut item = Elementary::new_edges(Line);
+        let mut item = Primitive::new_edges(Line);
         assert_map_apply!(item, 0, [[]], 0, [[1.0]]);
         assert_map_apply!(item, 1, [[]], 0, [[0.0]]);
         assert_map_apply!(item, 2, [[]], 1, [[1.0]]);
@@ -1251,7 +1251,7 @@ mod tests {
 
     #[test]
     fn apply_uniform_points() {
-        let mut item = Elementary::new_uniform_points(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 2);
+        let mut item = Primitive::new_uniform_points(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 2);
         assert_map_apply!(item, 0, [[]], 0, [[1.0, 2.0]]);
         assert_map_apply!(item, 1, [[]], 0, [[3.0, 4.0]]);
         assert_map_apply!(item, 2, [[]], 0, [[5.0, 6.0]]);
@@ -1282,27 +1282,27 @@ mod tests {
 
     #[test]
     fn unapply_indices_transpose() {
-        assert_unapply!(Elementary::new_transpose(3, 2));
+        assert_unapply!(Primitive::new_transpose(3, 2));
     }
 
     #[test]
     fn unapply_indices_take() {
-        assert_unapply!(Elementary::new_take(vec![4, 1], 5));
+        assert_unapply!(Primitive::new_take(vec![4, 1], 5));
     }
 
     #[test]
     fn unapply_indices_children() {
-        assert_unapply!(Elementary::new_children(Triangle));
+        assert_unapply!(Primitive::new_children(Triangle));
     }
 
     #[test]
     fn unapply_indices_edges() {
-        assert_unapply!(Elementary::new_edges(Triangle));
+        assert_unapply!(Primitive::new_edges(Triangle));
     }
 
     #[test]
     fn unapply_indices_uniform_points() {
-        assert_unapply!(Elementary::new_uniform_points(
+        assert_unapply!(Primitive::new_uniform_points(
             vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0],
             2
         ));
@@ -1310,8 +1310,8 @@ mod tests {
 
     macro_rules! assert_equiv_maps {
         ($a:expr, $b:expr $(, $simplex:ident)*) => {{
-            let a: &[Elementary] = &$a;
-            let b: &[Elementary] = &$b;
+            let a: &[Primitive] = &$a;
+            let b: &[Primitive] = &$b;
             let dim_in = 0 $(+ $simplex.dim())*;
             let dim_out = a.dim_out();
             println!("a: {a:?}");
@@ -1346,13 +1346,13 @@ mod tests {
         }};
     }
 
-    macro_rules! assert_swap_elementary_composition {
+    macro_rules! assert_swap_primitive_composition {
         ($($item:expr),*; $($simplex:ident),*) => {{
-            let unshifted = [$(Elementary::from($item),)*];
-            let ((litem, lstride), lchain) = (&unshifted[..unshifted.len() - 1]).swap_elementary_composition(&unshifted.last().unwrap(), 1).unwrap();
-            let mut shifted: Vec<Elementary> = Vec::new();
+            let unshifted = [$(Primitive::from($item),)*];
+            let ((litem, lstride), lchain) = (&unshifted[..unshifted.len() - 1]).swap_primitive_composition(&unshifted.last().unwrap(), 1).unwrap();
+            let mut shifted: Vec<Primitive> = Vec::new();
             if lstride != 1 {
-                shifted.push(Elementary::new_transpose(lstride, litem.mod_out()));
+                shifted.push(Primitive::new_transpose(lstride, litem.mod_out()));
             }
             shifted.push(litem);
             shifted.extend(lchain.into_iter());
@@ -1361,32 +1361,32 @@ mod tests {
     }
 
     #[test]
-    fn swap_elementary_composition() {
-        assert_swap_elementary_composition!(
-            Transpose::new(4, 3), Elementary::new_take(vec![0, 1], 3);
+    fn swap_primitive_composition() {
+        assert_swap_primitive_composition!(
+            Transpose::new(4, 3), Primitive::new_take(vec![0, 1], 3);
         );
-        assert_swap_elementary_composition!(
-            Transpose::new(3, 5), Transpose::new(5, 4*3), Elementary::new_take(vec![0, 1], 3);
+        assert_swap_primitive_composition!(
+            Transpose::new(3, 5), Transpose::new(5, 4*3), Primitive::new_take(vec![0, 1], 3);
         );
-        assert_swap_elementary_composition!(
-            Transpose::new(5, 4), Transpose::new(5*4, 3), Elementary::new_take(vec![0, 1], 3);
+        assert_swap_primitive_composition!(
+            Transpose::new(5, 4), Transpose::new(5*4, 3), Primitive::new_take(vec![0, 1], 3);
         );
-        assert_swap_elementary_composition!(
-            {let mut elem = Elementary::new_children(Line); elem.add_offset(1); elem},
-            Elementary::new_children(Line);
+        assert_swap_primitive_composition!(
+            {let mut elem = Primitive::new_children(Line); elem.add_offset(1); elem},
+            Primitive::new_children(Line);
             Line, Line
         );
-        assert_swap_elementary_composition!(
-            Elementary::new_edges(Line), Elementary::new_children(Line);
+        assert_swap_primitive_composition!(
+            Primitive::new_edges(Line), Primitive::new_children(Line);
             Line
         );
-        assert_swap_elementary_composition!(
-            Elementary::new_children(Line),
-            {let mut elem = Elementary::new_edges(Line); elem.add_offset(1); elem};
+        assert_swap_primitive_composition!(
+            Primitive::new_children(Line),
+            {let mut elem = Primitive::new_edges(Line); elem.add_offset(1); elem};
             Line
         );
-        assert_swap_elementary_composition!(
-            Elementary::new_edges(Triangle), Elementary::new_children(Line);
+        assert_swap_primitive_composition!(
+            Primitive::new_edges(Triangle), Primitive::new_children(Line);
             Line
         );
     }

@@ -1,4 +1,4 @@
-pub mod elementary;
+pub mod primitive;
 pub mod finite_f64;
 pub mod ops;
 pub mod relative;

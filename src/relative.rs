@@ -1,6 +1,6 @@
-use crate::elementary::{
-    AllElementaryDecompositions, Elementary, ElementaryDecompositionIter,
-    SwapElementaryComposition, UnboundedMap, WithBounds, Identity, Slice,
+use crate::primitive::{
+    AllPrimitiveDecompositions, Primitive, PrimitiveDecompositionIter,
+    SwapPrimitiveComposition, UnboundedMap, WithBounds, Identity, Slice,
 };
 use crate::ops::{BinaryComposition, BinaryProduct, UniformProduct, UniformConcat};
 use crate::util::ReplaceNthIter as _;
@@ -9,27 +9,27 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::iter;
 
-impl<M> AllElementaryDecompositions for UniformProduct<M, Vec<M>>
+impl<M> AllPrimitiveDecompositions for UniformProduct<M, Vec<M>>
 where
-    M: Map + AllElementaryDecompositions + Clone,
+    M: Map + AllPrimitiveDecompositions + Clone,
 {
-    fn all_elementary_decompositions<'a>(&'a self) -> ElementaryDecompositionIter<'a, Self> {
+    fn all_primitive_decompositions<'a>(&'a self) -> PrimitiveDecompositionIter<'a, Self> {
         Box::new(
             self.iter()
                 .enumerate()
                 .zip(self.offsets_out())
                 .zip(self.strides_out())
                 .flat_map(move |(((iprod, term), prod_offset), prod_stride)| {
-                    term.all_elementary_decompositions().into_iter().map(
-                        move |((mut elmtry, mut stride), inner)| {
-                            elmtry.add_offset(prod_offset);
-                            if elmtry.mod_out() == 1 {
+                    term.all_primitive_decompositions().into_iter().map(
+                        move |((mut prim, mut stride), inner)| {
+                            prim.add_offset(prod_offset);
+                            if prim.mod_out() == 1 {
                                 stride = 1;
                             } else {
                                 stride *= prod_stride;
                             }
                             let product = self.iter().cloned().replace_nth(iprod, inner).collect();
-                            ((elmtry, stride), product)
+                            ((prim, stride), product)
                         },
                     )
                 }),
@@ -37,29 +37,29 @@ where
     }
 }
 
-impl<M0, M1> AllElementaryDecompositions for BinaryProduct<M0, M1>
+impl<M0, M1> AllPrimitiveDecompositions for BinaryProduct<M0, M1>
 where
-    M0: Map + AllElementaryDecompositions + Clone,
-    M1: Map + AllElementaryDecompositions + Clone,
+    M0: Map + AllPrimitiveDecompositions + Clone,
+    M1: Map + AllPrimitiveDecompositions + Clone,
 {
-    fn all_elementary_decompositions<'a>(&'a self) -> ElementaryDecompositionIter<'a, Self> {
+    fn all_primitive_decompositions<'a>(&'a self) -> PrimitiveDecompositionIter<'a, Self> {
         let first = self
             .first()
-            .all_elementary_decompositions()
+            .all_primitive_decompositions()
             .into_iter()
-            .map(|((elmtry, mut stride), first)| {
+            .map(|((prim, mut stride), first)| {
                 stride *= self.second().len_out();
                 let product = BinaryProduct::new(first, self.second().clone());
-                ((elmtry, stride), product)
+                ((prim, stride), product)
             });
         let second = self
             .second()
-            .all_elementary_decompositions()
+            .all_primitive_decompositions()
             .into_iter()
-            .map(|((mut elmtry, stride), second)| {
-                elmtry.add_offset(self.first().dim_out());
+            .map(|((mut prim, stride), second)| {
+                prim.add_offset(self.first().dim_out());
                 let product = BinaryProduct::new(self.first().clone(), second);
-                ((elmtry, stride), product)
+                ((prim, stride), product)
             });
         Box::new(first.chain(second))
     }
@@ -67,27 +67,27 @@ where
 
 // TODO: UniformComposition?
 
-impl<Outer, Inner> AllElementaryDecompositions for BinaryComposition<Outer, Inner>
+impl<Outer, Inner> AllPrimitiveDecompositions for BinaryComposition<Outer, Inner>
 where
-    Outer: Map + AllElementaryDecompositions + SwapElementaryComposition<Output = Outer>,
-    Inner: Map + AllElementaryDecompositions + Clone,
+    Outer: Map + AllPrimitiveDecompositions + SwapPrimitiveComposition<Output = Outer>,
+    Inner: Map + AllPrimitiveDecompositions + Clone,
 {
-    fn all_elementary_decompositions<'a>(
+    fn all_primitive_decompositions<'a>(
         &'a self,
-    ) -> Box<dyn Iterator<Item = ((Elementary, usize), Self)> + 'a> {
+    ) -> Box<dyn Iterator<Item = ((Primitive, usize), Self)> + 'a> {
         let split_outer = self
             .outer()
-            .all_elementary_decompositions()
+            .all_primitive_decompositions()
             .into_iter()
-            .map(|(elmtry, outer)| (elmtry, Self::new(outer, self.inner().clone()).unwrap()));
+            .map(|(prim, outer)| (prim, Self::new(outer, self.inner().clone()).unwrap()));
         let split_inner = self
             .inner()
-            .all_elementary_decompositions()
+            .all_primitive_decompositions()
             .into_iter()
-            .filter_map(|((elmtry, stride), inner)| {
+            .filter_map(|((prim, stride), inner)| {
                 self.outer()
-                    .swap_elementary_composition(&elmtry, stride)
-                    .map(|(elmtry, outer)| (elmtry, Self::new(outer, inner).unwrap()))
+                    .swap_primitive_composition(&prim, stride)
+                    .map(|(prim, outer)| (prim, Self::new(outer, inner).unwrap()))
             });
         Box::new(split_outer.chain(split_inner))
     }
@@ -101,44 +101,44 @@ where
 /// # Examples
 ///
 /// ```
-/// use nutils_test::elementaries;
-/// let map1 = elementaries![Line*1 <- Children <- Children <- Edges];
-/// let map2 = elementaries![Line*1 <- Children <- Edges];
+/// use nutils_test::prim_comp;
+/// let map1 = prim_comp![Line*1 <- Children <- Children <- Edges];
+/// let map2 = prim_comp![Line*1 <- Children <- Edges];
 /// let (common, rem1, rem2) = nutils_test::relative::decompose_common(map1, map2);
-/// assert_eq!(common, elementaries![Line*1 <- Children <- Children <- Edges]);
-/// assert_eq!(rem1, elementaries![Point*8]);
-/// assert_eq!(rem2, elementaries![Point*8 <- Take([2, 1], 4)]);
+/// assert_eq!(common, prim_comp![Line*1 <- Children <- Children <- Edges]);
+/// assert_eq!(rem1, prim_comp![Point*8]);
+/// assert_eq!(rem2, prim_comp![Point*8 <- Take([2, 1], 4)]);
 /// ```
 ///
 /// ```
-/// use nutils_test::elementaries;
-/// let map1 = elementaries![Triangle*1 <- Children];
-/// let map2 = elementaries![Triangle*1 <- Edges <- Children];
+/// use nutils_test::prim_comp;
+/// let map1 = prim_comp![Triangle*1 <- Children];
+/// let map2 = prim_comp![Triangle*1 <- Edges <- Children];
 /// let (common, rem1, rem2) = nutils_test::relative::decompose_common(map1, map2);
-/// assert_eq!(common, elementaries![Triangle*1 <- Children]);
-/// assert_eq!(rem1, elementaries![Triangle*4]);
-/// assert_eq!(rem2, elementaries![Triangle*4 <- Edges <- Take([3, 6, 1, 7, 2, 5], 12)]);
+/// assert_eq!(common, prim_comp![Triangle*1 <- Children]);
+/// assert_eq!(rem1, prim_comp![Triangle*4]);
+/// assert_eq!(rem2, prim_comp![Triangle*4 <- Edges <- Take([3, 6, 1, 7, 2, 5], 12)]);
 /// ```
-pub fn decompose_common<M1, M2>(mut map1: M1, mut map2: M2) -> (WithBounds<Vec<Elementary>>, M1, M2)
+pub fn decompose_common<M1, M2>(mut map1: M1, mut map2: M2) -> (WithBounds<Vec<Primitive>>, M1, M2)
 where
-    M1: Map + AllElementaryDecompositions,
-    M2: Map + AllElementaryDecompositions,
+    M1: Map + AllPrimitiveDecompositions,
+    M2: Map + AllPrimitiveDecompositions,
 {
     // TODO: check output dimensions? and return error if dimensions don't match?
     assert_eq!(map1.len_out(), map2.len_out());
     assert_eq!(map1.dim_out(), map2.dim_out());
     let mut common = Vec::new();
     while !map1.is_identity() && !map2.is_identity() {
-        let mut outers2: BTreeMap<_, _> = map2.all_elementary_decompositions().collect();
+        let mut outers2: BTreeMap<_, _> = map2.all_primitive_decompositions().collect();
         (map1, map2) = if let Some(((outer, stride), map1, map2)) = map1
-            .all_elementary_decompositions()
+            .all_primitive_decompositions()
             .filter_map(|(key, t1)| outers2.remove(&key).map(|t2| (key, t1, t2)))
             .next()
         {
             let outer_mod_out = outer.mod_out();
             common.push(outer);
             if stride != 1 {
-                common.push(Elementary::new_transpose(stride, outer_mod_out));
+                common.push(Primitive::new_transpose(stride, outer_mod_out));
             }
             (map1, map2)
         } else {
@@ -153,8 +153,8 @@ where
 
 fn partial_relative_to<Source, Target>(source: Source, target: Target) -> PartialRelative<Source>
 where
-    Source: Map + AllElementaryDecompositions,
-    Target: Map + AllElementaryDecompositions,
+    Source: Map + AllPrimitiveDecompositions,
+    Target: Map + AllPrimitiveDecompositions,
 {
     let (_, rem, rel) = decompose_common(target, source);
     if rem.is_identity() {
@@ -250,7 +250,7 @@ impl<M: Map> Map for Relative<M> {
 //    dispatch! {fn add_offset(&mut self, offset: usize)}
 //}
 
-impl RelativeTo<Self> for WithBounds<Vec<Elementary>> {
+impl RelativeTo<Self> for WithBounds<Vec<Primitive>> {
     type Output = Self;
 
     fn relative_to(&self, target: &Self) -> Option<Self> {
@@ -305,7 +305,7 @@ impl UnapplyIndicesData for IndexOutIn {
 pub struct RelativeToConcat<M: Map> {
     rels: Vec<M>,
     index_map: Rc<Vec<(usize, usize)>>,
-    //common: Vec<Elementary>,
+    //common: Vec<Primitive>,
     len_out: usize,
     len_in: usize,
     dim_in: usize,
@@ -386,8 +386,8 @@ impl<M: Map> Map for RelativeToConcat<M> {
 
 impl<Source, Target> RelativeTo<UniformConcat<Target>> for Source
 where
-    Source: Map + AllElementaryDecompositions + Clone,
-    Target: Map + AllElementaryDecompositions + Clone,
+    Source: Map + AllPrimitiveDecompositions + Clone,
+    Target: Map + AllPrimitiveDecompositions + Clone,
 {
     type Output = Relative<Self>;
 
@@ -463,7 +463,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::elementaries;
+    use crate::prim_comp;
     use crate::simplex::Simplex::*;
     use approx::assert_abs_diff_eq;
     use std::iter;
@@ -504,22 +504,22 @@ mod tests {
 
     #[test]
     fn decompose_common_vec() {
-        let map1 = elementaries![Line*2 <- Children <- Children];
-        let map2 = elementaries![Line*2 <- Children <- Take([0, 2], 4)];
+        let map1 = prim_comp![Line*2 <- Children <- Children];
+        let map2 = prim_comp![Line*2 <- Children <- Take([0, 2], 4)];
         assert_eq!(
             decompose_common(map1, map2),
             (
-                elementaries![Line*2 <- Children],
-                elementaries![Line*4 <- Children],
-                elementaries![Line*4 <- Take([0, 2], 4)],
+                prim_comp![Line*2 <- Children],
+                prim_comp![Line*4 <- Children],
+                prim_comp![Line*4 <- Take([0, 2], 4)],
             )
         );
     }
 
     #[test]
     fn decompose_common_product() {
-        let map1 = elementaries![Line*2 <- Children <- Children];
-        let map2 = elementaries![Line*2 <- Children <- Take([0, 2], 4)];
+        let map1 = prim_comp![Line*2 <- Children <- Children];
+        let map2 = prim_comp![Line*2 <- Children <- Take([0, 2], 4)];
         let (common, rel1, rel2) = decompose_common(map1.clone(), map2.clone());
         assert!(!common.is_identity());
         assert_equiv_maps!(
@@ -532,18 +532,18 @@ mod tests {
             map2.clone(),
             Line
         );
-        //assert_eq!(rel1, BinaryProduct::new(elementaries![Line*4 <- Children], elementaries![Line*4 <- Take([0, 2], 4)]));
-        //assert_eq!(rel2, BinaryProduct::new(elementaries![Line*4 <- Take([0, 2], 4)], elementaries![Line*4 <- Children]));
-        //assert_eq!(common, elementaries![Line*2]);
+        //assert_eq!(rel1, BinaryProduct::new(prim_comp![Line*4 <- Children], prim_comp![Line*4 <- Take([0, 2], 4)]));
+        //assert_eq!(rel2, BinaryProduct::new(prim_comp![Line*4 <- Take([0, 2], 4)], prim_comp![Line*4 <- Children]));
+        //assert_eq!(common, prim_comp![Line*2]);
         // WithBounds { map: [Offset(Children(Line), 1), Transpose(2, 1), Offset(Children(Line), 0)], dim_in: 2, delta_dim: 0, len_in: 16, len_out: 4 }
     }
 
 //  #[test]
 //  fn rel_to_single() {
-//      let a1 = elementaries![Line*2 <- Children <- Take([0, 2], 4)];
-//      let a2 = elementaries![Line*2 <- Children <- Take([1, 3], 4) <- Children];
+//      let a1 = prim_comp![Line*2 <- Children <- Take([0, 2], 4)];
+//      let a2 = prim_comp![Line*2 <- Children <- Take([1, 3], 4) <- Children];
 //      let a = BinaryConcat::new(a1, a2).unwrap();
-//      let b = elementaries![Line*2 <- Children <- Children <- Children];
+//      let b = prim_comp![Line*2 <- Children <- Children <- Children];
 //      assert_equiv_maps!(
 //          BinaryComposition::new(b.relative_to(&a).unwrap(), a.clone()).unwrap(),
 //          b,

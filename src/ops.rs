@@ -731,13 +731,13 @@ impl<M: Map> FromIterator<M> for UniformProduct<M, Vec<M>> {
 mod tests {
     use super::*;
     use crate::assert_map_apply;
-    use crate::elementaries;
+    use crate::prim_comp;
     use approx::assert_abs_diff_eq;
     use std::iter;
 
     #[test]
     fn uniform_composition1() {
-        let map = UniformComposition::new(vec![elementaries![Point * 1]]).unwrap();
+        let map = UniformComposition::new(vec![prim_comp![Point * 1]]).unwrap();
         assert_eq!(map.len_in(), 1);
         assert_eq!(map.len_out(), 1);
         assert_eq!(map.dim_in(), 0);
@@ -749,8 +749,8 @@ mod tests {
     #[test]
     fn uniform_composition2() {
         let map = UniformComposition::new(vec![
-            elementaries![Point*12 <- Transpose(4, 3)],
-            elementaries![Point*12 <- Take([1, 0], 3)],
+            prim_comp![Point*12 <- Transpose(4, 3)],
+            prim_comp![Point*12 <- Take([1, 0], 3)],
         ])
         .unwrap();
         assert_eq!(map.len_in(), 8);
@@ -771,9 +771,9 @@ mod tests {
     #[test]
     fn uniform_composition3() {
         let map = UniformComposition::new(vec![
-            elementaries![Line*1 <- Children],
-            elementaries![Line*2 <- Children],
-            elementaries![Line*4 <- Edges],
+            prim_comp![Line*1 <- Children],
+            prim_comp![Line*2 <- Children],
+            prim_comp![Line*4 <- Edges],
         ])
         .unwrap();
         assert_eq!(map.len_in(), 8);
@@ -798,9 +798,9 @@ mod tests {
     #[test]
     fn uniform_concat() {
         let map = UniformConcat::new(vec![
-            elementaries![Line*3 <- Take([0], 3)],
-            elementaries![Line*3 <- Take([1], 3) <- Children],
-            elementaries![Line*3 <- Take([2], 3) <- Children <- Children],
+            prim_comp![Line*3 <- Take([0], 3)],
+            prim_comp![Line*3 <- Take([1], 3) <- Children],
+            prim_comp![Line*3 <- Take([2], 3) <- Children <- Children],
         ])
         .unwrap();
         assert_eq!(map.len_out(), 3);
@@ -821,8 +821,8 @@ mod tests {
     #[test]
     fn uniform_product1() {
         let map = UniformProduct::new(vec![
-            elementaries![Line*2 <- Edges],
-            elementaries![Line * 3],
+            prim_comp![Line*2 <- Edges],
+            prim_comp![Line * 3],
         ]);
         assert_eq!(map.len_out(), 6);
         assert_eq!(map.len_in(), 12);
