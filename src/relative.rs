@@ -176,9 +176,11 @@ enum PartialRelative<M> {
 }
 
 /// An interface for determining the relation between two maps.
-pub trait RelativeTo<Target: Map> {
+pub trait RelativeTo<Target: Map>: Map + Sized {
+    type Output: Map;
+
     /// Return the relative map from `self` to the given target.
-    fn relative_to(&self, target: &Target) -> Option<Relative>;
+    fn relative_to(&self, target: &Target) -> Option<Self::Output>;
     /// Map indices for the target to `self`.
     fn unapply_indices_from<T>(&self, target: &Target, indices: &[T]) -> Option<Vec<T>>
     where
@@ -190,12 +192,12 @@ pub trait RelativeTo<Target: Map> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Relative {
+pub enum Relative<M: Map> {
     Identity(WithBounds<Identity>),
     Slice(WithBounds<Slice>),
-    Elementaries(WithBounds<Vec<Elementary>>),
-    Concat(UniformConcat<Relative>),
-    RelativeToConcat(RelativeToConcat),
+    Map(M),
+    Concat(UniformConcat<Self>),
+    RelativeToConcat(RelativeToConcat<M>),
 }
 
 macro_rules! dispatch {
@@ -217,16 +219,16 @@ macro_rules! dispatch {
     };
     (@match $self:ident; $fn:ident; $($arg:ident),*) => {
         match $self {
-            Relative::Identity(var) => var.$fn($($arg),*),
-            Relative::Slice(var) => var.$fn($($arg),*),
-            Relative::Elementaries(var) => var.$fn($($arg),*),
-            Relative::Concat(var) => var.$fn($($arg),*),
-            Relative::RelativeToConcat(var) => var.$fn($($arg),*),
+            Self::Identity(var) => var.$fn($($arg),*),
+            Self::Slice(var) => var.$fn($($arg),*),
+            Self::Map(var) => var.$fn($($arg),*),
+            Self::Concat(var) => var.$fn($($arg),*),
+            Self::RelativeToConcat(var) => var.$fn($($arg),*),
         }
     }
 }
 
-impl Map for Relative {
+impl<M: Map> Map for Relative<M> {
     dispatch! {fn len_out(&self) -> usize}
     dispatch! {fn len_in(&self) -> usize}
     dispatch! {fn dim_out(&self) -> usize}
@@ -249,10 +251,12 @@ impl Map for Relative {
 //}
 
 impl RelativeTo<Self> for WithBounds<Vec<Elementary>> {
-    fn relative_to(&self, target: &Self) -> Option<Relative> {
+    type Output = Self;
+
+    fn relative_to(&self, target: &Self) -> Option<Self> {
         let (_, rem, rel) = decompose_common(target.clone(), self.clone());
         // TODO: transfer transposes from `rem` to `rel`
-        rem.is_identity().then(|| Relative::Elementaries(rel))
+        rem.is_identity().then(|| rel)
     }
 }
 
@@ -261,11 +265,13 @@ where
     Source: Map + RelativeTo<Target>,
     Target: Map,
 {
-    fn relative_to(&self, target: &Target) -> Option<Relative> {
+    type Output = UniformConcat<Source::Output>;
+
+    fn relative_to(&self, target: &Target) -> Option<Self::Output> {
         self.iter()
             .map(|item| item.relative_to(target))
             .collect::<Option<_>>()
-            .map(|rels| Relative::Concat(UniformConcat::new_unchecked(rels)))
+            .map(|rels| UniformConcat::new_unchecked(rels))
     }
 }
 
@@ -296,17 +302,17 @@ impl UnapplyIndicesData for IndexOutIn {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct RelativeToConcat {
-    rels: Vec<Vec<Elementary>>,
+pub struct RelativeToConcat<M: Map> {
+    rels: Vec<M>,
     index_map: Rc<Vec<(usize, usize)>>,
-    common: Vec<Elementary>,
+    //common: Vec<Elementary>,
     len_out: usize,
     len_in: usize,
     dim_in: usize,
     delta_dim: usize,
 }
 
-impl Map for RelativeToConcat {
+impl<M: Map> Map for RelativeToConcat<M> {
     fn dim_in(&self) -> usize {
         self.dim_in
     }
@@ -326,19 +332,20 @@ impl Map for RelativeToConcat {
         stride: usize,
         offset: usize,
     ) -> usize {
-        let index = self
-            .common
-            .apply_inplace(index, coordinates, stride, offset);
+        //let index = self
+        //    .common
+        //    .apply_inplace(index, coordinates, stride, offset);
         let (iout, iin) = self.index_map[index];
         let n = self.index_map.len();
         self.rels[iin / n].apply_inplace(iin % n, coordinates, stride, offset);
         iout
     }
     fn apply_index_unchecked(&self, index: usize) -> usize {
-        self.index_map[self.common.apply_index(index)].0
+        //self.index_map[self.common.apply_index(index)].0
+        self.index_map[index].0
     }
     fn apply_indices_inplace_unchecked(&self, indices: &mut [usize]) {
-        self.common.apply_indices_inplace(indices);
+        //self.common.apply_indices_inplace(indices);
         for index in indices.iter_mut() {
             *index = self.index_map[*index].0;
         }
@@ -356,7 +363,8 @@ impl Map for RelativeToConcat {
                     }),
             );
         }
-        self.common.unapply_indices(&in_indices)
+        //self.common.unapply_indices(&in_indices)
+        in_indices
     }
     fn is_identity(&self) -> bool {
         false
@@ -376,77 +384,81 @@ impl Map for RelativeToConcat {
 //    }
 //}
 
-//impl<Source, Target> RelativeTo<UniformConcat<Target>> for Source
-//where
-//    Source: Map + AllElementaryDecompositions + Clone,
-//    Target: Map + AllElementaryDecompositions + Clone,
-//{
-//    fn relative_to(&self, targets: &UniformConcat<Target>) -> Option<Relative> {
-//        let mut rels_indices = Vec::new();
-//        let mut offset = 0;
-//        for target in targets.iter().cloned() {
-//            match partial_relative_to(self.clone(), target) {
-//                PartialRelative::AllSameOrder(rel) => {
-//                    let slice = Slice::new(offset, target.len_in(), targets.len_in());
-//                    let slice = WithBounds::from_input(slice, target.dim_in(), target.len_in()).unwrap();
-//                    let slice = Relative::Slice(slice);
-//                    return Some(Relative::Concat(UniformConcat::new_unchecked(vec![slice, rel])));
-//                }
-//                PartialRelative::Some(rel, indices) => {
-//                    rels_indices.push((rel, offset, indices))
-//                }
-//                PartialRelative::CannotEstablishRelation => {
-//                    return None;
-//                }
-//            }
-//            offset += target.len_in();
-//        }
-//        // Split off common tail. TODO: Only shape increasing items, not take, slice (and transpose?).
-//        let common_len_out = self.len_in();
-//        let common = Vec::new();
-//        //let mut common_len_out = self.len_in();
-//        //let mut common = Vec::new();
-//        //{
-//        //    let mut rels: Vec<_> = rels_indices.iter_mut().map(|(rel, _, _)| rel).collect();
-//        //    while let Some(item) = pop_common(&mut rels[..]) {
-//        //        common_len_out = common_len_out / item.mod_in() * item.mod_out();
-//        //        common.push(item);
-//        //    }
-//        //}
-//        // Build index map.
-//        let mut index_map: Vec<Option<(usize, usize)>> =
-//            iter::repeat(None).take(common_len_out).collect();
-//        let mut rels = Vec::new();
-//        for (irel, (rel, offset, out_indices)) in rels_indices.into_iter().enumerate() {
-//            let rel_indices: Vec<_> = (offset..offset + out_indices.len())
-//                .zip(out_indices)
-//                .map(|(i, j)| IndexOutIn(i, j))
-//                .collect();
-//            for IndexOutIn(iout, iin) in rel.unapply_indices(&rel_indices) {
-//                assert!(
-//                    index_map[iin].is_none(),
-//                    "target contains duplicate entries"
-//                );
-//                index_map[iin] = Some((iout, iin + irel * common_len_out));
-//            }
-//            rels.push(rel);
-//        }
-//        index_map
-//            .into_iter()
-//            .collect::<Option<Vec<_>>>()
-//            .map(|index_map| {
-//                Relative::RelativeToConcat(RelativeToConcat {
-//                    index_map: index_map.into(),
-//                    rels,
-//                    common,
-//                    delta_dim: targets.dim_in() - self.dim_in(),
-//                    dim_in: self.dim_in(),
-//                    len_out: targets.len_in(),
-//                    len_in: self.len_in(),
-//                })
-//            })
-//    }
-//}
+impl<Source, Target> RelativeTo<UniformConcat<Target>> for Source
+where
+    Source: Map + AllElementaryDecompositions + Clone,
+    Target: Map + AllElementaryDecompositions + Clone,
+{
+    type Output = Relative<Self>;
+
+    fn relative_to(&self, targets: &UniformConcat<Target>) -> Option<Relative<Self>> {
+        let mut rels_indices = Vec::new();
+        let mut offset = 0;
+        for target in targets.iter().cloned() {
+            let new_offset = offset + target.len_in();
+            match partial_relative_to(self.clone(), target) {
+                PartialRelative::AllSameOrder(rel) => {
+                    let slice = Slice::new(offset, rel.len_out(), targets.len_in());
+                    let slice = WithBounds::from_input(slice, rel.dim_out(), rel.len_out()).unwrap();
+                    let slice = Relative::Slice(slice);
+                    let rel = Relative::Map(rel);
+                    return Some(Relative::Concat(UniformConcat::new_unchecked(vec![slice, rel])));
+                }
+                PartialRelative::Some(rel, indices) => {
+                    rels_indices.push((rel, offset, indices));
+                }
+                PartialRelative::CannotEstablishRelation => {
+                    return None;
+                }
+            }
+            offset = new_offset;
+        }
+        // Split off common tail. TODO: Only shape increasing items, not take, slice (and transpose?).
+        let common_len_out = self.len_in();
+        //let common = Vec::new();
+        //let mut common_len_out = self.len_in();
+        //let mut common = Vec::new();
+        //{
+        //    let mut rels: Vec<_> = rels_indices.iter_mut().map(|(rel, _, _)| rel).collect();
+        //    while let Some(item) = pop_common(&mut rels[..]) {
+        //        common_len_out = common_len_out / item.mod_in() * item.mod_out();
+        //        common.push(item);
+        //    }
+        //}
+        // Build index map.
+        let mut index_map: Vec<Option<(usize, usize)>> =
+            iter::repeat(None).take(common_len_out).collect();
+        let mut rels = Vec::new();
+        for (irel, (rel, offset, out_indices)) in rels_indices.into_iter().enumerate() {
+            let rel_indices: Vec<_> = (offset..offset + out_indices.len())
+                .zip(out_indices)
+                .map(|(i, j)| IndexOutIn(i, j))
+                .collect();
+            for IndexOutIn(iout, iin) in rel.unapply_indices_unchecked(&rel_indices) {
+                assert!(
+                    index_map[iin].is_none(),
+                    "target contains duplicate entries"
+                );
+                index_map[iin] = Some((iout, iin + irel * common_len_out));
+            }
+            rels.push(rel);
+        }
+        index_map
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+            .map(|index_map| {
+                Relative::RelativeToConcat(RelativeToConcat {
+                    index_map: index_map.into(),
+                    rels,
+                    //common,
+                    delta_dim: targets.dim_in() - self.dim_in(),
+                    dim_in: self.dim_in(),
+                    len_out: targets.len_in(),
+                    len_in: self.len_in(),
+                })
+            })
+    }
+}
 
 #[cfg(test)]
 mod tests {
