@@ -246,7 +246,7 @@ class Reference(types.Singleton):
         if numpy.greater(abs(volume - self.volume), tol).any():
             print('divergence check failed: {} != {}'.format(volume, self.volume))
 
-    def vertex_cover(self, ctransforms, maxrefine):
+    def _linear_cover(self, ctransforms, maxrefine):
         if maxrefine < 0:
             raise Exception('maxrefine is too low')
         npoints = self._nlinear_by_level(maxrefine)
@@ -266,7 +266,7 @@ class Reference(types.Singleton):
         fcache = cache.WrapperCache()
         return tuple(((ctrans,) + trans, points, cindices[indices])
                      for ctrans, cref, cbin, cindices in zip(self.child_transforms, self.child_refs, cbins, self.child_divide(allindices, maxrefine))
-                     for trans, points, indices in fcache[cref.vertex_cover](frozenset(cbin), maxrefine-1))
+                     for trans, points, indices in fcache[cref._linear_cover](frozenset(cbin), maxrefine-1))
 
     def __str__(self):
         return self.__class__.__name__
