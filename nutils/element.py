@@ -169,7 +169,7 @@ class Reference(types.Singleton):
     def trim(self, levels, maxrefine, ndivisions):
         'trim element along levelset'
 
-        assert len(levels) == self.nvertices_by_level(maxrefine)
+        assert len(levels) == self._nlinear_by_level(maxrefine)
         return self if not self or numpy.greater_equal(levels, 0).all() \
             else self.empty if numpy.less_equal(levels, 0).all() \
             else self.with_children(cref.trim(clevels, maxrefine-1, ndivisions)
@@ -249,7 +249,7 @@ class Reference(types.Singleton):
     def vertex_cover(self, ctransforms, maxrefine):
         if maxrefine < 0:
             raise Exception('maxrefine is too low')
-        npoints = self.nvertices_by_level(maxrefine)
+        npoints = self._nlinear_by_level(maxrefine)
         allindices = numpy.arange(npoints)
         if len(ctransforms) == 1:
             ctrans, = ctransforms
@@ -440,7 +440,7 @@ class PointReference(SimplexReference):
     def getpoints(self, ischeme, degree):
         return points.CoordsWeightsPoints(numpy.empty([1, 0]), [1.])
 
-    def nvertices_by_level(self, n):
+    def _nlinear_by_level(self, n):
         return 1
 
     def child_divide(self, vals, n):
@@ -461,12 +461,12 @@ class LineReference(SimplexReference):
             return points.CoordsUniformPoints(numpy.arange(.5, degree)[:, _] / degree, 1)
         return super().getpoints(ischeme, degree)
 
-    def nvertices_by_level(self, n):
+    def _nlinear_by_level(self, n):
         return 2**n + 1
 
     def child_divide(self, vals, n):
         assert n > 0
-        assert len(vals) == self.nvertices_by_level(n)
+        assert len(vals) == self._nlinear_by_level(n)
         m = (len(vals)+1) // 2
         return vals[:m], vals[m-1:]
 
@@ -491,12 +491,12 @@ class TriangleReference(SimplexReference):
             return points.CoordsUniformPoints(coords.T, .5)
         return super().getpoints(ischeme, degree)
 
-    def nvertices_by_level(self, n):
+    def _nlinear_by_level(self, n):
         m = 2**n + 1
         return ((m+1)*m) // 2
 
     def child_divide(self, vals, n):
-        assert len(vals) == self.nvertices_by_level(n)
+        assert len(vals) == self._nlinear_by_level(n)
         np = 1 + 2**n  # points along parent edge
         mp = 1 + 2**(n-1)  # points along child edge
         cvals = []
@@ -543,12 +543,12 @@ class TetrahedronReference(SimplexReference):
         indis = numpy.arange(m)
         return numpy.array([[i, j, k] for k in indis for j in indis[:m-k] for i in indis[:m-j-k]])
 
-    def nvertices_by_level(self, n):
+    def _nlinear_by_level(self, n):
         m = 2**n+1
         return ((m+2)*(m+1)*m)//6
 
     def child_divide(self, vals, n):
-        assert len(vals) == self.nvertices_by_level(n)
+        assert len(vals) == self._nlinear_by_level(n)
 
         child_indices = self.getindices_vertex(1)
 
@@ -598,12 +598,12 @@ class TensorReference(Reference):
     def centroid(self):
         return types.frozenarray(numpy.concatenate([self.ref1.centroid, self.ref2.centroid]), copy=False)
 
-    def nvertices_by_level(self, n):
-        return self.ref1.nvertices_by_level(n) * self.ref2.nvertices_by_level(n)
+    def _nlinear_by_level(self, n):
+        return self.ref1._nlinear_by_level(n) * self.ref2._nlinear_by_level(n)
 
     def child_divide(self, vals, n):
-        np1 = self.ref1.nvertices_by_level(n)
-        np2 = self.ref2.nvertices_by_level(n)
+        np1 = self.ref1._nlinear_by_level(n)
+        np2 = self.ref2._nlinear_by_level(n)
         return [v2.swapaxes(0, 1).reshape((-1,)+vals.shape[1:])
                 for v1 in self.ref1.child_divide(vals.reshape((np1, np2)+vals.shape[1:]), n)
                 for v2 in self.ref2.child_divide(v1.swapaxes(0, 1), n)]
@@ -870,8 +870,8 @@ class WithChildrenReference(Reference):
     def vertices(self):
         return self.baseref.vertices
 
-    def nvertices_by_level(self, n):
-        return self.baseref.nvertices_by_level(n)
+    def _nlinear_by_level(self, n):
+        return self.baseref._nlinear_by_level(n)
 
     def child_divide(self, vals, n):
         return self.baseref.child_divide(vals, n)
@@ -1062,8 +1062,8 @@ class MosaicReference(Reference):
             return MosaicReference(other, inv_edge_refs, self._midpoint)
         return NotImplemented
 
-    def nvertices_by_level(self, n):
-        return self.baseref.nvertices_by_level(n)
+    def _nlinear_by_level(self, n):
+        return self.baseref._nlinear_by_level(n)
 
     @property
     def subrefs(self):
