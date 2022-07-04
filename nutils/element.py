@@ -226,8 +226,7 @@ class Reference(types.Singleton):
         if not any(refs):
             return self.empty
 
-        mosaic = MosaicReference(self, refs, midpoint)
-        return self.empty if mosaic.volume == 0 else mosaic if mosaic.volume < self.volume else self
+        return MosaicReference(self, refs, midpoint)
 
     def cone(self, trans, tip):
         return Cone(self, trans, tip)
