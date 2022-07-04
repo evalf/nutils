@@ -44,10 +44,6 @@ class elem(TestCase):
                 swapped_down = etrans_.swapdown(ctrans_)
                 self.assertEqual(swapped_down, (etrans, ctrans))
 
-    @parametrize.enable_if(lambda ref, **kwargs: ref.ndims >= 2)
-    def test_ribbons(self):
-        self.ref.ribbons
-
     @parametrize.enable_if(lambda ref, **kwargs: not isinstance(ref, element.MosaicReference) and ref.ndims >= 1)
     def test_connectivity(self):
         for ichild, edges in enumerate(self.ref.connectivity):

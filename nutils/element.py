@@ -24,7 +24,7 @@ class Reference(types.Singleton):
     'reference element'
 
     __slots__ = 'ndims',
-    __cache__ = 'connectivity', 'edgechildren', 'ribbons', 'volume', 'centroid', '_linear_bernstein', 'getpoints'
+    __cache__ = 'connectivity', 'edgechildren', 'volume', 'centroid', '_linear_bernstein', 'getpoints'
 
     @types.apply_annotations
     def __init__(self, ndims: int):
@@ -83,14 +83,7 @@ class Reference(types.Singleton):
         `vol.vertices`).
         '''
 
-        # naive implementation; will be removed in a later commit
-        edge_vertices = []
-        for etrans, eref in self.edges:
-            dist = numpy.linalg.norm(self.vertices[:,_,:] - etrans.apply(eref.vertices), axis=2)
-            emap = numpy.argmin(dist, 0)
-            assert (dist[emap, numpy.arange(eref.nverts)] < 1e-15).all(), dist
-            edge_vertices.append(types.frozenarray(emap, copy=False))
-        return tuple(edge_vertices)
+        raise NotImplementedError
 
     __and__ = lambda self, other: self if self == other else NotImplemented
     __or__ = lambda self, other: self if self == other else NotImplemented
@@ -169,27 +162,6 @@ class Reference(types.Singleton):
                 children.append((ichild_, iedge_))
             edgechildren.append(types.frozenarray(children))
         return tuple(edgechildren)
-
-    @property
-    def ribbons(self):
-        # tuples of (iedge1,jedge1), (iedge2,jedge2) pairs
-        assert self.ndims >= 2
-        transforms = {}
-        ribbons = []
-        for iedge1, (etrans1, edge1) in enumerate(self.edges):
-            if edge1:
-                for iedge2, (etrans2, edge2) in enumerate(edge1.edges):
-                    if edge2:
-                        key = tuple(sorted(tuple(p) for p in (etrans1 * etrans2).apply(edge2.vertices)))
-                        try:
-                            jedge1, jedge2 = transforms.pop(key)
-                        except KeyError:
-                            transforms[key] = iedge1, iedge2
-                        else:
-                            assert self.edge_refs[jedge1].edge_refs[jedge2] == edge2
-                            ribbons.append(((iedge1, iedge2), (jedge1, jedge2)))
-        assert not transforms
-        return tuple(ribbons)
 
     def getischeme(self, ischeme):
         ischeme, degree = parse_legacy_ischeme(ischeme)
@@ -289,9 +261,6 @@ class Reference(types.Singleton):
                 midpoint = self.vertices[count==1][0]
 
         return MosaicReference(self, refs, midpoint)
-
-    def cone(self, trans, tip):
-        return Cone(self, trans, tip)
 
     def check_edges(self, tol=1e-15, print=print):
         volume = 0
@@ -403,7 +372,7 @@ class SimplexReference(Reference):
     'simplex reference'
 
     __slots__ = ()
-    __cache__ = 'edge_refs', 'edge_transforms', 'edge_vertices', 'ribbons', '_get_poly_coeffs_bernstein', '_get_poly_coeffs_lagrange', '_integer_barycentric_coordinates'
+    __cache__ = 'edge_refs', 'edge_transforms', 'edge_vertices', '_get_poly_coeffs_bernstein', '_get_poly_coeffs_lagrange', '_integer_barycentric_coordinates'
 
     @property
     def vertices(self):
@@ -440,10 +409,6 @@ class SimplexReference(Reference):
     @property
     def child_transforms(self):
         return tuple(transform.SimplexChild(self.ndims, ichild) for ichild in range(2**self.ndims))
-
-    @property
-    def ribbons(self):
-        return tuple(((iedge1, iedge2), (iedge2+1, iedge1)) for iedge1 in range(self.ndims+1) for iedge2 in range(iedge1, self.ndims))
 
     def getpoints(self, ischeme, degree):
         if ischeme == 'gauss':
@@ -649,7 +614,7 @@ class TensorReference(Reference):
     'tensor reference'
 
     __slots__ = 'ref1', 'ref2'
-    __cache__ = 'vertices', 'edge_transforms', 'edge_vertices', 'ribbons', 'child_transforms', 'getpoints', 'get_poly_coeffs', 'centroid', 'simplices'
+    __cache__ = 'vertices', 'edge_transforms', 'edge_vertices', 'child_transforms', 'getpoints', 'get_poly_coeffs', 'centroid', 'simplices'
 
     def __init__(self, ref1, ref2):
         assert not isinstance(ref1, TensorReference)
@@ -757,29 +722,6 @@ class TensorReference(Reference):
         return tuple(edge_refs)
 
     @property
-    def ribbons(self):
-        if self.ref1.ndims == 0:
-            return self.ref2.ribbons
-        if self.ref2.ndims == 0:
-            return self.ref1.ribbons
-        ribbons = []
-        for iedge1 in range(self.ref1.nedges):
-            #iedge = self.ref1.edge_refs[iedge] * self.ref2
-            for iedge2 in range(self.ref2.nedges):
-                #jedge = self.ref1 * self.ref2.edge_refs[jedge]
-                jedge1 = self.ref1.nedges + iedge2
-                jedge2 = iedge1
-                if self.ref1.ndims > 1:
-                    iedge2 += self.ref1.edge_refs[iedge1].nedges
-                ribbons.append(((iedge1, iedge2), (jedge1, jedge2)))
-        if self.ref1.ndims >= 2:
-            ribbons.extend(self.ref1.ribbons)
-        if self.ref2.ndims >= 2:
-            ribbons.extend(((iedge1+self.ref1.nedges, iedge2+self.ref1.nedges),
-                            (jedge1+self.ref1.nedges, jedge2+self.ref1.nedges)) for (iedge1, iedge2), (jedge1, jedge2) in self.ref2.ribbons)
-        return tuple(ribbons)
-
-    @property
     def child_transforms(self):
         return tuple(transform.TensorChild(trans1, trans2) for trans1 in self.ref1.child_transforms for trans2 in self.ref2.child_transforms)
 
@@ -815,88 +757,6 @@ class TensorReference(Reference):
                 yield from ref._flat_refs
             else:
                 yield ref
-
-
-class Cone(Reference):
-    'cone'
-
-    __slots__ = 'edgeref', 'etrans', 'tip', 'extnorm', 'height'
-    __cache__ = 'vertices', 'edge_transforms', 'edge_refs'
-
-    @types.apply_annotations
-    def __init__(self, edgeref, etrans, tip: types.arraydata):
-        assert etrans.fromdims == edgeref.ndims
-        assert etrans.todims == tip.shape[0]
-        super().__init__(etrans.todims)
-        self.edgeref = edgeref
-        self.etrans = etrans
-        self.tip = numpy.asarray(tip)
-        ext = etrans.ext
-        self.extnorm = numpy.linalg.norm(ext)
-        self.height = numpy.dot(etrans.offset - self.tip, ext) / self.extnorm
-        assert self.height >= 0, 'tip is positioned at the negative side of edge'
-
-    @property
-    def vertices(self):
-        return types.frozenarray(numpy.vstack([[self.tip], self.etrans.apply(self.edgeref.vertices)]), copy=False)
-
-    @property
-    def simplices(self):
-        return types.frozenarray([[0, *emap[simplex]] for emap, eref in zip(self.edge_vertices, self.edge_refs) for simplex in eref.simplices])
-
-    @property
-    def edge_transforms(self):
-        edge_transforms = [self.etrans]
-        if self.edgeref.ndims > 0:
-            for trans, edge in self.edgeref.edges:
-                if edge:
-                    b = self.etrans.apply(trans.offset)
-                    A = numpy.hstack([numpy.dot(self.etrans.linear, trans.linear), (self.tip-b)[:, _]])
-                    newtrans = transform.Updim(A, b, isflipped=self.etrans.isflipped ^ trans.isflipped ^ (self.ndims % 2 == 1))  # isflipped logic tested up to 3D
-                    edge_transforms.append(newtrans)
-        else:
-            edge_transforms.append(transform.Updim(numpy.zeros((1, 0)), self.tip, isflipped=not self.etrans.isflipped))
-        return tuple(edge_transforms)
-
-    @property
-    def edge_refs(self):
-        edge_refs = [self.edgeref]
-        if self.edgeref.ndims > 0:
-            extrudetrans = transform.Updim(numpy.eye(self.ndims-1)[:, :-1], numpy.zeros(self.ndims-1), isflipped=self.ndims % 2 == 0)
-            tip = numpy.array([0]*(self.ndims-2)+[1], dtype=float)
-            edge_refs.extend(edge.cone(extrudetrans, tip) for edge in self.edgeref.edge_refs if edge)
-        else:
-            edge_refs.append(getsimplex(0))
-        return tuple(edge_refs)
-
-    def getpoints(self, ischeme, degree):
-        if ischeme == 'gauss':
-            if self.nverts == self.ndims+1:  # use optimal gauss schemes for simplex-like cones
-                pnts = getsimplex(self.ndims).getpoints(ischeme, degree)
-                linearT = self.etrans.apply(self.edgeref.vertices) - self.tip
-                coords = pnts.coords @ linearT + self.tip
-                weights = pnts.weights * abs(numpy.linalg.det(linearT))
-                return points.CoordsWeightsPoints(coords, weights)
-            epoints = self.edgeref.getpoints('gauss', degree)
-            tx, tw = points.gauss((degree + self.ndims - 1)//2)
-            wx = tx**(self.ndims-1) * tw * self.extnorm * self.height
-            return points.CoordsWeightsPoints((tx[:, _, _] * (self.etrans.apply(epoints.coords)-self.tip)[_, :, :] + self.tip).reshape(-1, self.ndims), (epoints.weights[_, :] * wx[:, _]).ravel())
-        if ischeme in ('_centroid', 'uniform'):
-            layers = [(i+1, (i+.5)/degree) for i in range(degree)] if ischeme == 'uniform' \
-                else [(None, self.ndims/(self.ndims+1))]  # centroid
-            coords = numpy.concatenate([self.etrans.apply(self.edgeref.getpoints(ischeme, p).coords) * w + self.tip * (1-w) for p, w in layers])
-            volume = self.edgeref.volume * self.extnorm * self.height / self.ndims
-            return points.CoordsUniformPoints(coords, volume)
-        if ischeme == 'vtk' and self.nverts == 5 and self.ndims == 3:  # pyramid
-            return points.CoordsPoints(self.vertices[[1, 2, 4, 3, 0]])
-        return points.ConePoints(self.edgeref.getpoints(ischeme, degree), self.etrans, self.tip)
-
-    def inside(self, point, eps=0):
-        # point = etrans.apply(epoint) * xi + tip * (1-xi) => etrans.apply(epoint) = tip + (point-tip) / xi
-        xi = numpy.dot(self.etrans.ext, point-self.tip) / numpy.dot(self.etrans.ext, self.etrans.offset-self.tip)
-        return -eps <= xi <= 1+eps and self.edgeref.inside(numpy.linalg.solve(
-            numpy.dot(self.etrans.linear.T, self.etrans.linear),
-            numpy.dot(self.etrans.linear.T, self.tip + (point-self.tip)/xi - self.etrans.offset)), eps=eps)
 
 
 class OwnChildReference(Reference):

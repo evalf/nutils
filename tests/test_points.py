@@ -103,44 +103,6 @@ class bezier(TestCase):
                 self.assertIn(sorted(h), fullhull)
 
 
-@parametrize
-class cone(TestCase):
-
-    def setUp(self):
-        super().setUp()
-        if self.shape == 'square':
-            self.edgeref = element.getsimplex(1)**2
-        elif self.shape == 'triangle':
-            self.edgeref = element.getsimplex(2)
-        else:
-            raise Exception('invalid shape: {!r}'.format(self.shape))
-        self.etrans = transform.Updim(linear=[[-1., 0], [0, -3], [0, 0]], offset=[1., 3, 1], isflipped=False)
-        self.cone = element.Cone(edgeref=self.edgeref, etrans=self.etrans, tip=[1., 3, 0])
-
-    def test_volume(self):
-        numpy.testing.assert_almost_equal(actual=self.cone.volume, desired=self.edgeref.volume)
-
-    def _test_points(self, *args):
-        points = self.cone.getpoints(*args)
-        if hasattr(points, 'weights'):
-            numpy.testing.assert_almost_equal(actual=self.cone.volume, desired=points.weights.sum())
-        # check that all points lie within pyramid/prism
-        x, y, z = points.coords.T
-        self.assertTrue(numpy.all(numpy.greater_equal(x, 1-z) & numpy.less_equal(x, 1) & numpy.greater_equal(y, 1-z) & numpy.less_equal(y, 3)))
-        if self.shape == 'triangle':
-            self.assertTrue(numpy.less_equal(2-x-y/3, z).all())
-
-    def test_gauss(self):
-        self._test_points('gauss', 3)
-
-    def test_uniform(self):
-        self._test_points('uniform', 3)
-
-
-cone(shape='square')
-cone(shape='triangle')
-
-
 class trimmed(TestCase):
 
     def setUp(self):
