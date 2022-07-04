@@ -191,6 +191,13 @@ class Reference(types.Singleton):
             return self
         if numpy.less_equal(levels, 0).all():
             return self.empty
+        assert self.ndims >= 1
+
+        refs = [edgeref.slice(lambda vertices: levelfunc(edgetrans.apply(vertices)), ndivisions) for edgetrans, edgeref in self.edges]
+        if sum(ref != baseref for ref, baseref in zip(refs, self.edge_refs)) < self.ndims:
+            return self
+        if sum(bool(ref) for ref in refs) < self.ndims:
+            return self.empty
 
         nbins = 2**ndivisions
 
@@ -202,29 +209,15 @@ class Reference(types.Singleton):
                 return self.empty if xi == 0 and l1 < 0 or xi == nbins and l0 < 0 else self
             v0, v1 = self.vertices
             midpoint = v0 + (xi/nbins) * (v1-v0)
-            refs = [edgeref if levelfunc(edgetrans.apply(numpy.zeros((1, 0)))) > 0 else edgeref.empty for edgetrans, edgeref in self.edges]
 
         else:
 
-            refs = [edgeref.slice(lambda vertices: levelfunc(edgetrans.apply(vertices)), ndivisions) for edgetrans, edgeref in self.edges]
-            if sum(ref != baseref for ref, baseref in zip(refs, self.edge_refs)) < self.ndims:
-                return self
-            if sum(bool(ref) for ref in refs) < self.ndims:
-                return self.empty
-
             clevel = levelfunc(self.centroid[_])[0]
-
             select = clevel*levels <= 0 if clevel != 0 else levels != 0
             levels = levels[select]
             vertices = self.vertices[select]
-
             xi = numpy.round(levels/(levels-clevel) * nbins)
             midpoint = numpy.mean(vertices + (self.centroid-vertices)*(xi/nbins)[:, _], axis=0)
-
-        if tuple(refs) == tuple(self.edge_refs):
-            return self
-        if not any(refs):
-            return self.empty
 
         return MosaicReference(self, refs, midpoint)
 
