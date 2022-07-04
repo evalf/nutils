@@ -260,7 +260,15 @@ cutdomain('circle', ndims=2, nelems=2, maxrefine=5, errtol=2.1e-4)
 
 class multitrim(TestCase):
 
-    def test(self):
+    def test_1d(self):
+        domain, geom = mesh.rectilinear([3])
+        trimmed = domain.trim(geom-1.2, maxrefine=0).trim(1.8-geom, maxrefine=0)
+        self.assertEqual(len(trimmed), 1) # trimmed consists of a single line mosaic with two new edges
+        trimmed.check_boundary(geom, elemwise=True, print=self.fail)
+        L = trimmed.integrate(function.J(geom), ischeme='gauss1')
+        numpy.testing.assert_almost_equal(L, .6, decimal=3)
+
+    def test_2d(self):
         domain, geom = mesh.rectilinear([[-1, 1], [-1, 1]])
         geom_rel = (function.rotmat(numpy.pi/6) * geom).sum(-1)
         for itrim in range(4):

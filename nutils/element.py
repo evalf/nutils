@@ -227,11 +227,12 @@ class Reference(types.Singleton):
 
         if self.ndims == 1:
 
-            l0, l1 = levels
+            iedge = [i for (i,), edge in zip(self.edge_vertices, self.edge_refs) if edge]
+            l0, l1 = levels[iedge]
             xi = numpy.round(l0/(l0-l1) * nbins)
             if xi in (0, nbins):
                 return self.empty if xi == 0 and l1 < 0 or xi == nbins and l0 < 0 else self
-            v0, v1 = self.vertices
+            v0, v1 = self.vertices[iedge]
             midpoint = v0 + (xi/nbins) * (v1-v0)
 
         else:
