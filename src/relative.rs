@@ -1,13 +1,13 @@
+use crate::ops::{BinaryComposition, BinaryProduct, UniformComposition, UniformConcat, UniformProduct};
 use crate::primitive::{
-    AllPrimitiveDecompositions, Primitive, PrimitiveDecompositionIter,
-    SwapPrimitiveComposition, UnboundedMap, WithBounds, Identity, Slice,
+    AllPrimitiveDecompositions, Identity, Primitive, PrimitiveDecompositionIter, Slice,
+    SwapPrimitiveComposition, UnboundedMap, WithBounds,
 };
-use crate::ops::{BinaryComposition, BinaryProduct, UniformProduct, UniformConcat};
 use crate::util::ReplaceNthIter as _;
 use crate::{AddOffset, Map, UnapplyIndicesData};
 use std::collections::BTreeMap;
-use std::rc::Rc;
 use std::iter;
+use std::rc::Rc;
 
 impl<M> AllPrimitiveDecompositions for UniformProduct<M, Vec<M>>
 where
@@ -43,15 +43,13 @@ where
     M1: Map + AllPrimitiveDecompositions + Clone,
 {
     fn all_primitive_decompositions<'a>(&'a self) -> PrimitiveDecompositionIter<'a, Self> {
-        let first = self
-            .first()
-            .all_primitive_decompositions()
-            .into_iter()
-            .map(|((prim, mut stride), first)| {
+        let first = self.first().all_primitive_decompositions().into_iter().map(
+            |((prim, mut stride), first)| {
                 stride *= self.second().len_out();
                 let product = BinaryProduct::new(first, self.second().clone());
                 ((prim, stride), product)
-            });
+            },
+        );
         let second = self
             .second()
             .all_primitive_decompositions()
@@ -196,7 +194,7 @@ pub enum Relative<M: Map> {
     Identity(WithBounds<Identity>),
     Slice(WithBounds<Slice>),
     Map(M),
-    Concat(UniformConcat<Self>),
+    Composition(UniformComposition<Self>),
     RelativeToConcat(RelativeToConcat<M>),
 }
 
@@ -222,7 +220,7 @@ macro_rules! dispatch {
             Self::Identity(var) => var.$fn($($arg),*),
             Self::Slice(var) => var.$fn($($arg),*),
             Self::Map(var) => var.$fn($($arg),*),
-            Self::Concat(var) => var.$fn($($arg),*),
+            Self::Composition(var) => var.$fn($($arg),*),
             Self::RelativeToConcat(var) => var.$fn($($arg),*),
         }
     }
@@ -358,9 +356,7 @@ impl<M: Map> Map for RelativeToConcat<M> {
                 self.index_map
                     .iter()
                     .enumerate()
-                    .filter_map(|(iin, (iout, _))| {
-                        (*iout == index.get()).then(|| index.set(iin))
-                    }),
+                    .filter_map(|(iin, (iout, _))| (*iout == index.get()).then(|| index.set(iin))),
             );
         }
         //self.common.unapply_indices(&in_indices)
@@ -399,10 +395,13 @@ where
             match partial_relative_to(self.clone(), target) {
                 PartialRelative::AllSameOrder(rel) => {
                     let slice = Slice::new(offset, rel.len_out(), targets.len_in());
-                    let slice = WithBounds::from_input(slice, rel.dim_out(), rel.len_out()).unwrap();
+                    let slice =
+                        WithBounds::from_input(slice, rel.dim_out(), rel.len_out()).unwrap();
                     let slice = Relative::Slice(slice);
                     let rel = Relative::Map(rel);
-                    return Some(Relative::Concat(UniformConcat::new_unchecked(vec![slice, rel])));
+                    return Some(Relative::Composition(UniformComposition::new_unchecked(vec![
+                        slice, rel,
+                    ])));
                 }
                 PartialRelative::Some(rel, indices) => {
                     rels_indices.push((rel, offset, indices));
@@ -538,16 +537,16 @@ mod tests {
         // WithBounds { map: [Offset(Children(Line), 1), Transpose(2, 1), Offset(Children(Line), 0)], dim_in: 2, delta_dim: 0, len_in: 16, len_out: 4 }
     }
 
-//  #[test]
-//  fn rel_to_single() {
-//      let a1 = prim_comp![Line*2 <- Children <- Take([0, 2], 4)];
-//      let a2 = prim_comp![Line*2 <- Children <- Take([1, 3], 4) <- Children];
-//      let a = BinaryConcat::new(a1, a2).unwrap();
-//      let b = prim_comp![Line*2 <- Children <- Children <- Children];
-//      assert_equiv_maps!(
-//          BinaryComposition::new(b.relative_to(&a).unwrap(), a.clone()).unwrap(),
-//          b,
-//          Line
-//      );
-//  }
+    //  #[test]
+    //  fn rel_to_single() {
+    //      let a1 = prim_comp![Line*2 <- Children <- Take([0, 2], 4)];
+    //      let a2 = prim_comp![Line*2 <- Children <- Take([1, 3], 4) <- Children];
+    //      let a = BinaryConcat::new(a1, a2).unwrap();
+    //      let b = prim_comp![Line*2 <- Children <- Children <- Children];
+    //      assert_equiv_maps!(
+    //          BinaryComposition::new(b.relative_to(&a).unwrap(), a.clone()).unwrap(),
+    //          b,
+    //          Line
+    //      );
+    //  }
 }

@@ -1,371 +1,404 @@
-use crate::elementary::{Elementary, PushElementary};
-use crate::ops::{Concatenation, WithBoundsError};
+use crate::ops::UniformConcat;
+use crate::primitive::{
+    AllPrimitiveDecompositions, Primitive, PrimitiveDecompositionIter, WithBounds,
+};
+use crate::relative::RelativeTo;
 use crate::simplex::Simplex;
-use crate::{AddOffset, BoundedMap, UnapplyIndicesData, UnboundedMap};
+use crate::util::{ReplaceNthIter, SkipNthIter};
+use crate::{AddOffset, Error, Map, UnapplyIndicesData};
+use std::iter;
+use std::ops::Mul;
 
-struct UniformTesselation {
+#[derive(Debug, Clone, PartialEq)]
+pub struct UniformTesselation {
     shapes: Vec<Simplex>,
-    map: WithBounds<Vec<Elementary>>,
+    map: WithBounds<Vec<Primitive>>,
 }
 
 impl UniformTesselation {
-    fn identity(shapes: Vec<Simplex>, len: usize) -> Self {
+    pub fn identity(shapes: Vec<Simplex>, len: usize) -> Self {
         let dim = shapes.iter().map(|simplex| simplex.dim()).sum();
-        let map = WithBounds::from_output(vec![], dim, len);
+        let map = WithBounds::new_unchecked(vec![], dim, len);
         Self { shapes, map }
     }
-    fn children(&self) -> Self {
-        let mut map = self.map.clone();
-        let mut offset = 0;
-        for shape in &self.shapes {
-            let item = Elementary::new_children(shape);
-            item.add_offset(offset);
-            map.push(item);
-            offset += shape.dim();
-        }
-        Self { shapes: self.shapes.clone(), map }
+    fn extend<Primitives>(&self, primitives: Primitives, shapes: Vec<Simplex>, len: usize) -> Self
+    where
+        Primitives: IntoIterator<Item = Primitive>,
+    {
+        let map = self
+            .map
+            .unbounded()
+            .iter()
+            .cloned()
+            .chain(primitives)
+            .collect();
+        let dim = shapes.iter().map(|shape| shape.dim()).sum();
+        let map = WithBounds::new_unchecked(map, dim, len);
+        Self { shapes, map }
     }
-    fn edges(&self) -> Result<Self, String> {
-        if self.shapes().is_empty() {
-            return Err("dimension zero");
+    fn offsets(&self) -> impl Iterator<Item = usize> + '_ {
+        self.shapes.iter().scan(0, |offset, shape| {
+            let item = *offset;
+            *offset += shape.dim();
+            Some(item)
+        })
+    }
+    pub fn take(&self, indices: &[usize]) -> Self {
+        assert!(indices.windows(2).all(|pair| pair[0] < pair[1]));
+        if let Some(last) = indices.last() {
+            assert!(*last < self.len_in());
         }
-        let mut map = self.map.clone();
-        let mut shapes = Vec::with_capacity(self.shapes.len());
-        let mut offset = 0;
-        for shape in &self.shapes {
-            let item = Elementary::new_edges(shape);
-            item.add_offset(offset);
-            map.push(item);
-            offset += shape.edge_dim();
-            if let Some(edge_shape) = shape.edge_shape() {
-                shapes.push(edge_shape);
+        if indices.is_empty() {
+            // TODO: Disallow! Skip this map in the concatenation instead.
+            Self {
+                shapes: self.shapes.clone(),
+                map: WithBounds::new_unchecked(Vec::new(), self.dim_in(), 0),
             }
+        } else {
+            let primitive = Primitive::new_take(indices, self.len_in());
+            let result = self.extend([primitive], self.shapes.clone(), indices.len());
+            result
         }
-        Ok(Self { shapes, map })
+    }
+    pub fn children(&self) -> Self {
+        let primitives = self
+            .shapes
+            .iter()
+            .zip(self.offsets())
+            .map(|(shape, offset)| Primitive::new_children(*shape).with_offset(offset));
+        let nchildren: usize = self.shapes.iter().map(|shape| shape.nchildren()).product();
+        self.extend(primitives, self.shapes.clone(), self.len_in() * nchildren)
+    }
+    pub fn edges(&self, ishape: usize) -> Option<Self> {
+        self.shapes.get(ishape).map(|shape| {
+            let offset = self
+                .shapes
+                .iter()
+                .take(ishape)
+                .map(|shape| shape.dim())
+                .sum();
+            let primitive = Primitive::new_edges(*shape).with_offset(offset);
+            let shapes: Vec<_> = if let Some(edge_shape) = shape.edge_simplex() {
+                self.shapes
+                    .iter()
+                    .cloned()
+                    .replace_nth(ishape, edge_shape)
+                    .collect()
+            } else {
+                self.shapes.iter().cloned().skip_nth(ishape).collect()
+            };
+            self.extend([primitive], shapes, self.len_in() * shape.nedges())
+        })
+    }
+    pub fn edges_iter(&self) -> Option<impl Iterator<Item = Self> + '_> {
+        if self.shapes.is_empty() {
+            None
+        } else {
+            Some((0..self.shapes.len()).map(|ishape| self.edges(ishape).unwrap()))
+        }
+    }
+    pub fn centroids(&self) -> Self {
+        let primitives = self
+            .shapes
+            .iter()
+            .map(|shape| Primitive::new_uniform_points(shape.centroid(), shape.dim()));
+        self.extend(primitives, Vec::new(), self.len_in())
     }
 }
 
-impl Deref for UniformTesselation {
-    type Target = WithBounds<Vec<Elementary>>;
+//impl Deref for UniformTesselation {
+//    type Target = WithBounds<Vec<Elementary>>;
+//
+//    fn deref(&self) -> Self::Target {
+//        self.map
+//    }
+//}
 
-    fn deref(&self) -> Self::Target {
-        self.map
+macro_rules! dispatch {
+    (
+        $vis:vis fn $fn:ident$(<$genarg:ident: $genpath:path>)?(
+            &$self:ident $(, $arg:ident: $ty:ty)*
+        ) $(-> $ret:ty)?
+    ) => {
+        #[inline]
+        $vis fn $fn$(<$genarg: $genpath>)?(&$self $(, $arg: $ty)*) $(-> $ret)? {
+            $self.map.$fn($($arg),*)
+        }
+    };
+    ($vis:vis fn $fn:ident(&mut $self:ident $(, $arg:ident: $ty:ty)*) $(-> $ret:ty)?) => {
+        #[inline]
+        $vis fn $fn(&mut $self $(, $arg: $ty)*) $(-> $ret)? {
+            $self.map.$fn($($arg),*)
+        }
+    };
+}
+
+impl Map for UniformTesselation {
+    dispatch! {fn len_out(&self) -> usize}
+    dispatch! {fn len_in(&self) -> usize}
+    dispatch! {fn dim_out(&self) -> usize}
+    dispatch! {fn dim_in(&self) -> usize}
+    dispatch! {fn delta_dim(&self) -> usize}
+    dispatch! {fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> usize}
+    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> Option<usize>}
+    dispatch! {fn apply_index_unchecked(&self, index: usize) -> usize}
+    dispatch! {fn apply_index(&self, index: usize) -> Option<usize>}
+    dispatch! {fn apply_indices_inplace_unchecked(&self, indices: &mut [usize])}
+    dispatch! {fn apply_indices(&self, indices: &[usize]) -> Option<Vec<usize>>}
+    dispatch! {fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>}
+    dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Option<Vec<T>>}
+    dispatch! {fn is_identity(&self) -> bool}
+    dispatch! {fn is_index_map(&self) -> bool}
+}
+
+impl AllPrimitiveDecompositions for UniformTesselation {
+    fn all_primitive_decompositions<'a>(&'a self) -> PrimitiveDecompositionIter<'a, Self> {
+        Box::new(self.map.all_primitive_decompositions().map(|(prim, map)| {
+            (
+                prim,
+                Self {
+                    shapes: self.shapes.clone(),
+                    map: map,
+                },
+            )
+        }))
     }
 }
 
-pub struct Tesselation(UniformConcat<UniformTesselation>, Vec<usize>>);
+impl RelativeTo<Self> for UniformTesselation {
+    type Output = WithBounds<Vec<Primitive>>;
+
+    fn relative_to(&self, target: &Self) -> Option<Self::Output> {
+        self.map.relative_to(&target.map)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Tesselation(UniformConcat<UniformTesselation>);
 
 impl Tesselation {
-    pub fn identity(shapes: Vec<Simplex>, len: usize) -> Self {
-        Self(UniformConcat::new_unchecked(vec![UniformTesselation::identity(shapes, len)]))
+    pub fn new(items: Vec<UniformTesselation>) -> Result<Self, Error> {
+        let items = items.into_iter().filter(|map| map.len_in() > 0).collect();
+        Ok(Self(UniformConcat::new(items)?))
     }
-    pub fn len(&self) -> Self {
+    pub fn concat_iter(items: impl Iterator<Item = Tesselation>) -> Result<Self, Error> {
+        let mut maps = Vec::new();
+        for item in items {
+            if item.len() > 0 {
+                maps.extend(item.0.iter().cloned());
+            }
+        }
+        Self::new(maps)
+    }
+    pub fn identity(shapes: Vec<Simplex>, len: usize) -> Self {
+        Self(UniformConcat::new_unchecked(vec![
+            UniformTesselation::identity(shapes, len),
+        ]))
+    }
+    pub fn len(&self) -> usize {
         self.0.len_in()
     }
-    pub fn dim(&self) -> Self {
+    pub fn dim(&self) -> usize {
         self.0.dim_in()
     }
     pub fn product(&self, other: &Self) -> Self {
-        unimplemented!{}
+        self * other
     }
-    pub fn concatenate(&self, other: &Self) -> Self {
-        unimplemented!{}
+    pub fn concat(&self, other: &Self) -> Result<Self, Error> {
+        let maps = self.0.iter().chain(other.0.iter()).cloned().collect();
+        Ok(Self(UniformConcat::new(maps)?))
     }
     pub fn take(&self, indices: &[usize]) -> Self {
-        unimplemented!{}
+        assert!(indices.windows(2).all(|pair| pair[0] < pair[1]));
+        if let Some(last) = indices.last() {
+            assert!(*last < self.len());
+        }
+        // TODO: Make sure that `UniformConcat` accepts an empty vector.
+        let maps = self.0.iter().scan((0, 0), |(start, offset), map| {
+            let stop = *start + indices[*start..].partition_point(|i| *i < *offset + map.len_in());
+            let map_indices: Vec<_> = indices[*start..stop].iter().map(|i| *i - *offset).collect();
+            *start = stop;
+            *offset += map.len_in();
+            Some(map.take(&map_indices))
+        });
+        let result = Self(UniformConcat::new_unchecked(maps.collect()));
+        assert_eq!(result.len(), indices.len());
+        result
     }
     pub fn children(&self) -> Self {
-        Self(UniformConcat::new_unchecked(self.0.iter().map(|item| item.children()).collect()))
+        let maps = self.0.iter().map(|item| item.children()).collect();
+        Self(UniformConcat::new_unchecked(maps))
     }
-    pub fn edges(&self) -> Result<Self, String> {
-        let edges = self.0.iter().map(|item| item.edges()).collect::<Vec<Result<_, _>>()?;
-        Self(UniformConcat::new_unchecked(edges))
+    pub fn edges(&self) -> Result<Self, Error> {
+        if self.dim_in() == 0 {
+            return Err(Error::DimensionZeroHasNoEdges);
+        }
+        let items: Vec<_> = self
+            .0
+            .iter()
+            .flat_map(|item| item.edges_iter().unwrap())
+            .collect();
+        Ok(Self(UniformConcat::new(items)?))
     }
     pub fn centroids(&self) -> Self {
-        unimplemented!{}
+        Self(UniformConcat::new_unchecked(
+            self.0.iter().map(|item| item.centroids()).collect(),
+        ))
     }
     pub fn vertices(&self) -> Self {
-        unimplemented!{}
+        unimplemented! {}
     }
-    pub fn apply_inplace(&self, mut index: usize, coords: &mut [f64], stride: usize) -> Option<index> {
+    pub fn apply_inplace(&self, index: usize, coords: &mut [f64], stride: usize) -> Option<usize> {
         self.0.apply_inplace(index, coords, stride, 0)
     }
-    pub fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
+    pub fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Option<Vec<T>> {
         self.0.unapply_indices(indices)
     }
 }
 
-impl Deref for Tesselation {
-    type Target = OptionReorder<UniformConcat<UniformTesselation>>, Vec<usize>>;
+//impl Deref for Tesselation {
+//    type Target = OptionReorder<UniformConcat<UniformTesselation>>, Vec<usize>>;
+//
+//    fn deref(&self) -> Self::Target {
+//        self.0
+//    }
+//}
 
-    fn deref(&self) -> Self::Target {
-        self.0
-    }
-}
-
-
-
-
-
-
-enum Tesselation {
-    Uniform(UniformTesselation),
-    Concatenation(Vec<Tesselation>),
-    Product(Vec<Tesselation>),
-    Reordered(Box<Tesselation>, Vec<usize>),
-}
-
-
-impl RelativeTo<Tesselation> for Tesselation {
-    fn relative_to(&self, target: &Tesselation) -> ... {
-        // convert product
-    }
-}
-
-
-
-
-
-
-struct UniformTesselation {
-    shapes: Vec<Simplex>
-    delta_dim: usize,
-    len_out: usize,
-    maps: Vec<(usize, Vec<Elementary>)>,
-    reorder: Option<Vec<usize>>,
-}
-
-impl Tesselation {
-    pub fn new_identity(shapes: Vec<Simplex>, len: usize) -> Self {
-        Self {
-            shapes,
-            delta_dim: 0,
-            len_out: len,
-            maps: vec![(len, Vec::new()],
-            reorder: None,
+macro_rules! dispatch {
+    (
+        $vis:vis fn $fn:ident$(<$genarg:ident: $genpath:path>)?(
+            &$self:ident $(, $arg:ident: $ty:ty)*
+        ) $(-> $ret:ty)?
+    ) => {
+        #[inline]
+        $vis fn $fn$(<$genarg: $genpath>)?(&$self $(, $arg: $ty)*) $(-> $ret)? {
+            $self.0.$fn($($arg),*)
         }
-    }
-    pub fn product(&self, other: &Self) -> Self {
-        unimplemented!{}
-    }
-    pub fn concatenate(&self, other: &Self) -> Self {
-        unimplemented!{}
-    }
-    pub fn take(&self, indices: &[usize]) -> Self {
-        unimplemented!{}
-    }
-    pub fn children(&self) -> Self {
-        unimplemented!{}
-    }
-    pub fn edges(&self) -> Self {
-        unimplemented!{}
-    }
-    pub fn centroids(&self) -> Self {
-        unimplemented!{}
-    }
-    pub fn vertices(&self) -> Self {
-        unimplemented!{}
-    }
-    pub fn len(&self) -> usize {
-        self.maps.iter().map(|(n, _)| n).sum()
-    }
-    pub fn dim(&self) -> usize {
-        self.shapes.iter().map(|shape| shape.dim()).sum()
-    }
-    pub fn apply_inplace(&self, mut index: usize, coords: &mut [f64], stride: usize) -> Option<index> {
-        for (len, map) in &self.maps {
-            if index < len {
-                return map.apply_inplace(index, coords, stride, 0);
-            }
-            index -= len;
+    };
+    ($vis:vis fn $fn:ident(&mut $self:ident $(, $arg:ident: $ty:ty)*) $(-> $ret:ty)?) => {
+        #[inline]
+        $vis fn $fn(&mut $self $(, $arg: $ty)*) $(-> $ret)? {
+            $self.0.$fn($($arg),*)
         }
-        None
-    }
-    pub fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
-        unimplemented!{}
+    };
+}
+
+impl Map for Tesselation {
+    dispatch! {fn len_out(&self) -> usize}
+    dispatch! {fn len_in(&self) -> usize}
+    dispatch! {fn dim_out(&self) -> usize}
+    dispatch! {fn dim_in(&self) -> usize}
+    dispatch! {fn delta_dim(&self) -> usize}
+    dispatch! {fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> usize}
+    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> Option<usize>}
+    dispatch! {fn apply_index_unchecked(&self, index: usize) -> usize}
+    dispatch! {fn apply_index(&self, index: usize) -> Option<usize>}
+    dispatch! {fn apply_indices_inplace_unchecked(&self, indices: &mut [usize])}
+    dispatch! {fn apply_indices(&self, indices: &[usize]) -> Option<Vec<usize>>}
+    dispatch! {fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>}
+    dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Option<Vec<T>>}
+    dispatch! {fn is_identity(&self) -> bool}
+    dispatch! {fn is_index_map(&self) -> bool}
+}
+
+impl RelativeTo<Self> for Tesselation {
+    type Output = <UniformConcat<UniformTesselation> as RelativeTo<
+        UniformConcat<UniformTesselation>,
+    >>::Output;
+
+    fn relative_to(&self, target: &Self) -> Option<Self::Output> {
+        self.0.relative_to(&target.0)
     }
 }
 
-// struct ProductTesselation(Vec<Tesselation>);
+impl Mul for &UniformTesselation {
+    type Output = UniformTesselation;
 
-// struct Relative
+    fn mul(self, rhs: Self) -> UniformTesselation {
+        let offset = self.map.dim_in();
+        let map = iter::once(Primitive::new_transpose(
+            rhs.map.len_out(),
+            self.map.len_out(),
+        ))
+        .chain(self.map.unbounded().iter().cloned())
+        .chain(iter::once(Primitive::new_transpose(
+            self.map.len_in(),
+            rhs.map.len_out(),
+        )))
+        .chain(rhs.map.unbounded().iter().map(|item| {
+            let mut item = item.clone();
+            item.add_offset(offset);
+            item
+        }))
+        .collect();
+        let map = WithBounds::new_unchecked(
+            map,
+            self.map.dim_in() + rhs.map.dim_in(),
+            self.map.len_in() * rhs.map.len_in(),
+        );
+        let shapes = self
+            .shapes
+            .iter()
+            .chain(rhs.shapes.iter())
+            .cloned()
+            .collect();
+        UniformTesselation { shapes, map }
+    }
+}
 
+impl Mul for &Tesselation {
+    type Output = Tesselation;
 
+    fn mul(self, rhs: Self) -> Tesselation {
+        let products = self
+            .0
+            .iter()
+            .flat_map(|lhs| rhs.0.iter().map(move |rhs| lhs * rhs))
+            .collect();
+        Tesselation(UniformConcat::new_unchecked(products))
+    }
+}
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::simplex::Simplex::*;
+    use approx::assert_abs_diff_eq;
 
-//#[derive(Debug, Clone, PartialEq)]
-//pub struct WithShape<M: UnboundedMap> {
-//    map: M,
-//    shapes: Vec<Simplex>,
-//    dim_in: usize,
-//    delta_dim: usize,
-//    len_out: usize,
-//    len_in: usize,
-//}
-//
-//impl<M: UnboundedMap + PushElementary + Clone> WithShape<M> {
-//    pub fn new(map: M, shapes: Vec<Simplex>, len_in: usize) -> Result<Self, WithBoundsError> {
-//        let dim_in: usize = shapes.iter().map(|simplex| simplex.dim()).sum();
-//        if dim_in < map.dim_in() {
-//            Err(WithBoundsError::DimensionTooSmall)
-//        } else if len_in != 0 && len_in.checked_rem(map.mod_in()) != Some(0) {
-//            Err(WithBoundsError::LengthNotAMultipleOfRepetition)
-//        } else {
-//            Ok(Self::new_unchecked(map, shapes, len_in))
-//        }
-//    }
-//    pub(crate) fn new_unchecked(map: M, shapes: Vec<Simplex>, len_in: usize) -> Self {
-//        let dim_in: usize = shapes.iter().map(|simplex| simplex.dim()).sum();
-//        let delta_dim = map.delta_dim();
-//        let len_out = if len_in == 0 {
-//            0
-//        } else {
-//            len_in / map.mod_in() * map.mod_out()
-//        };
-//        Self {
-//            map,
-//            shapes,
-//            dim_in,
-//            delta_dim,
-//            len_out,
-//            len_in,
-//        }
-//    }
-//    pub fn get_unbounded(&self) -> &M {
-//        &self.map
-//    }
-//    pub fn into_unbounded(self) -> M {
-//        self.map
-//    }
-//    pub fn children(&self) -> Self {
-//        let mut map = self.map.clone();
-//        let mut offset = 0;
-//        let mut len_in = self.len_in;
-//        for simplex in &self.shapes {
-//            let mut children = Elementary::new_children(*simplex);
-//            children.add_offset(offset);
-//            map.push_elementary(&children);
-//            len_in *= simplex.nchildren();
-//        }
-//        Self::new_unchecked(map, self.shapes.clone(), len_in)
-//    }
-//    pub fn edges(&self) -> Self {
-//        let mut map = self.map.clone();
-//        let mut offset = 0;
-//        let mut len_in = self.len_in;
-//        let mut shapes = Vec::new();
-//        for simplex in &self.shapes {
-//            let mut edges = Elementary::new_edges(*simplex);
-//            edges.add_offset(offset);
-//            map.push_elementary(&edges);
-//            len_in *= simplex.nedges();
-//            if let Some(edge_simplex) = simplex.edge_simplex() {
-//                shapes.push(edge_simplex);
-//            }
-//        }
-//        Self::new_unchecked(map, shapes, len_in)
-//    }
-//}
-//
-//impl<M: UnboundedMap> BoundedMap for WithShape<M> {
-//    fn len_in(&self) -> usize {
-//        self.len_in
-//    }
-//    fn len_out(&self) -> usize {
-//        self.len_out
-//    }
-//    fn dim_in(&self) -> usize {
-//        self.dim_in
-//    }
-//    fn delta_dim(&self) -> usize {
-//        self.delta_dim
-//    }
-//    fn apply_inplace_unchecked(
-//        &self,
-//        index: usize,
-//        coordinates: &mut [f64],
-//        stride: usize,
-//        offset: usize,
-//    ) -> usize {
-//        self.map.apply_inplace(index, coordinates, stride, offset)
-//    }
-//    fn apply_index_unchecked(&self, index: usize) -> usize {
-//        self.map.apply_index(index)
-//    }
-//    fn apply_indices_inplace_unchecked(&self, indices: &mut [usize]) {
-//        self.map.apply_indices_inplace(indices)
-//    }
-//    fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
-//        self.map.unapply_indices(indices)
-//    }
-//    fn is_identity(&self) -> bool {
-//        self.map.is_identity()
-//    }
-//}
-//
-//#[derive(Debug, Clone, PartialEq)]
-//pub struct Tesselation(Concatenation<WithShape<Vec<Elementary>>>);
-//
-//impl Tesselation {
-//    pub fn new_identity(shapes: Vec<Simplex>, len: usize) -> Self {
-//        Self(Concatenation::new(vec![WithShape::new_unchecked(
-//            vec![],
-//            shapes,
-//            len,
-//        )]))
-//    }
-//    pub fn iter(&self) -> impl Iterator<Item = &WithShape<Vec<Elementary>>> {
-//        self.0.iter()
-//    }
-//    pub fn into_vec(self) -> Vec<WithShape<Vec<Elementary>>> {
-//        self.0.into_vec()
-//    }
-//    pub fn take(&self, indices: &[usize]) -> Self {
-//        unimplemented! {}
-//    }
-//    pub fn children(&self) -> Result<Self, String> {
-//        unimplemented! {}
-//    }
-//    pub fn edges(&self) -> Result<Self, String> {
-//        unimplemented! {}
-//    }
-//    pub fn internal_edges_of_children(&self) -> Result<Self, String> {
-//        unimplemented! {}
-//    }
-//}
-//
-//macro_rules! dispatch {
-//    (
-//        $vis:vis fn $fn:ident$(<$genarg:ident: $genpath:path>)?(
-//            &$self:ident $(, $arg:ident: $ty:ty)*
-//        ) $(-> $ret:ty)?
-//    ) => {
-//        #[inline]
-//        $vis fn $fn$(<$genarg: $genpath>)?(&$self $(, $arg: $ty)*) $(-> $ret)? {
-//            $self.0.$fn($($arg),*)
-//        }
-//    };
-//    ($vis:vis fn $fn:ident(&mut $self:ident $(, $arg:ident: $ty:ty)*) $(-> $ret:ty)?) => {
-//        #[inline]
-//        $vis fn $fn(&mut $self $(, $arg: $ty)*) $(-> $ret)? {
-//            $self.0.$fn($($arg),*)
-//        }
-//    };
-//}
-//
-//impl BoundedMap for Tesselation {
-//    dispatch! {fn len_out(&self) -> usize}
-//    dispatch! {fn len_in(&self) -> usize}
-//    dispatch! {fn dim_out(&self) -> usize}
-//    dispatch! {fn dim_in(&self) -> usize}
-//    dispatch! {fn delta_dim(&self) -> usize}
-//    dispatch! {fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> usize}
-//    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> Option<usize>}
-//    dispatch! {fn apply_index_unchecked(&self, index: usize) -> usize}
-//    dispatch! {fn apply_index(&self, index: usize) -> Option<usize>}
-//    dispatch! {fn apply_indices_inplace_unchecked(&self, indices: &mut [usize])}
-//    dispatch! {fn apply_indices(&self, indices: &[usize]) -> Option<Vec<usize>>}
-//    dispatch! {fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>}
-//    dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Option<Vec<T>>}
-//    dispatch! {fn is_identity(&self) -> bool}
-//}
+    #[test]
+    fn children() {
+        let tess = Tesselation::identity(vec![Line], 1).children();
+        assert_eq!(tess.len(), 2);
+        let tess = tess.children();
+        assert_eq!(tess.len(), 4);
+    }
+
+    #[test]
+    fn product() {
+        let lhs = Tesselation::identity(vec![Line], 1).children();
+        let rhs = Tesselation::identity(vec![Line], 1).edges().unwrap();
+        let tess = &lhs * &rhs;
+        let centroids = tess.centroids();
+        let stride = 2;
+        let mut work: Vec<_> = iter::repeat(-1.0).take(stride).collect();
+        println!("tess: {tess:?}");
+        assert_eq!(centroids.apply_inplace(0, &mut work, stride), Some(0));
+        assert_abs_diff_eq!(work[..], [0.25, 1.0]);
+        assert_eq!(centroids.apply_inplace(1, &mut work, stride), Some(0));
+        assert_abs_diff_eq!(work[..], [0.25, 0.0]);
+        assert_eq!(centroids.apply_inplace(2, &mut work, stride), Some(0));
+        assert_abs_diff_eq!(work[..], [0.75, 1.0]);
+        assert_eq!(centroids.apply_inplace(3, &mut work, stride), Some(0));
+        assert_abs_diff_eq!(work[..], [0.75, 0.0]);
+    }
+
+    #[test]
+    fn take() {
+        let lhs = Tesselation::identity(vec![Line], 1).children();
+        let rhs = Tesselation::identity(vec![Line], 1).edges().unwrap();
+        let levels: Vec<_> = iter::successors(Some(&lhs * &rhs), |level| Some(level.children()))
+            .take(3)
+            .collect();
+        let hierarch = levels[1].take(&[0, 1, 2]);
+    }
+}

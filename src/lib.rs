@@ -1,17 +1,18 @@
-pub mod primitive;
 pub mod finite_f64;
 pub mod ops;
+pub mod primitive;
 pub mod relative;
 pub mod simplex;
+pub mod tesselation;
+pub mod topology;
 mod util;
-//pub mod tesselation;
-//pub mod topology;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     Empty,
     DimensionMismatch,
     LengthMismatch,
+    DimensionZeroHasNoEdges,
 }
 
 impl std::error::Error for Error {}
@@ -22,6 +23,7 @@ impl std::fmt::Display for Error {
             Self::Empty => write!(f, "The input array is empty."),
             Self::DimensionMismatch => write!(f, "The dimensions of the maps differ."),
             Self::LengthMismatch => write!(f, "The lengths of the maps differ."),
+            Self::DimensionZeroHasNoEdges => write!(f, "Dimension zero has no edges."),
         }
     }
 }

@@ -820,10 +820,7 @@ mod tests {
 
     #[test]
     fn uniform_product1() {
-        let map = UniformProduct::new(vec![
-            prim_comp![Line*2 <- Edges],
-            prim_comp![Line * 3],
-        ]);
+        let map = UniformProduct::new(vec![prim_comp![Line*2 <- Edges], prim_comp![Line * 3]]);
         assert_eq!(map.len_out(), 6);
         assert_eq!(map.len_in(), 12);
         assert_eq!(map.dim_in(), 1);

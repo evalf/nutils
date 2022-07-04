@@ -1,13 +1,11 @@
-use crate::elementary::{Elementary, PushElementary as _};
-use crate::ops::{Concatenation, WithBounds, WithBoundsError};
 use crate::relative::RelativeTo as _;
 use crate::simplex::Simplex;
-use crate::{AddOffset, BoundedMap, UnapplyIndicesData, UnboundedMap};
+use crate::tesselation::Tesselation;
+use crate::{AddOffset, Map, UnapplyIndicesData};
 use std::iter;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
-
-type Tesselation = UniformConcat<WithBounds<Vec<Elementary>>>;
+use std::ops::Mul;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Root {
@@ -24,10 +22,10 @@ impl Root {
 pub trait TopologyCore: std::fmt::Debug + Clone + Into<Topology> {
     fn tesselation(&self) -> &Tesselation;
     fn dim(&self) -> usize {
-        self.tesselation().dim_in()
+        self.tesselation().dim()
     }
     fn ntiles(&self) -> usize {
-        self.tesselation().len_in()
+        self.tesselation().len()
     }
     fn refined(&self) -> Topology;
     fn map_itiles_to_refined(&self, itiles: &[usize]) -> Vec<usize> {
@@ -40,11 +38,15 @@ pub trait TopologyCore: std::fmt::Debug + Clone + Into<Topology> {
     fn take(&self, itiles: &[usize]) -> Topology {
         let mut itiles: Vec<usize> = itiles.to_vec();
         itiles.sort_by_key(|&index| index);
-        Take::new(self.clone().into(), itiles)
+        Take::new(self.clone().into(), itiles).into()
     }
     fn refined_by(&self, itiles: &[usize]) -> Topology {
         Hierarchical::new(self.clone().into(), vec![(0..self.ntiles()).collect()])
             .refined_by(itiles)
+            .into()
+    }
+    fn centroids(&self) -> Topology {
+        Point::new(self.tesselation().centroids()).into()
     }
 }
 
@@ -56,6 +58,15 @@ pub enum Topology {
     DisjointUnion(Rc<DisjointUnion>),
     Take(Rc<Take>),
     Hierarchical(Rc<Hierarchical>),
+}
+
+impl Topology {
+    fn new_line(len: usize) -> Self {
+        Line::from_len(len).into()
+    }
+    fn disjoin_union(self, other: Self) -> Self {
+        DisjointUnion::new(self, other).into()
+    }
 }
 
 macro_rules! dispatch {
@@ -116,9 +127,22 @@ macro_rules! impl_from_topo {
 
 impl_from_topo! {Point, Line, Product, DisjointUnion, Take, Hierarchical}
 
+impl Mul for Topology {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self {
+        Product::new(self, rhs).into()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
-pub struct Point {
-    tesselation: Tesselation,
+pub struct Point(Tesselation);
+
+impl Point {
+    pub fn new(tesselation: Tesselation) -> Self {
+        assert_eq!(tesselation.dim(), 0);
+        Self(tesselation)
+    }
 }
 
 impl TopologyCore for Point {
@@ -126,7 +150,7 @@ impl TopologyCore for Point {
         0
     }
     fn tesselation(&self) -> &Tesselation {
-        &self.tesselation
+        &self.0
     }
     fn refined(&self) -> Topology {
         self.clone().into()
@@ -137,19 +161,15 @@ impl TopologyCore for Point {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Line {
-    tesselation: Tesselation,
-}
+pub struct Line(Tesselation);
 
 impl Line {
-    pub fn new(tesselation: Tesselation) -> Topology {
-        assert_eq!(tesselation.dim_in(), 1);
-        Self { tesselation }.into()
+    pub fn new(tesselation: Tesselation) -> Self {
+        assert_eq!(tesselation.dim(), 1);
+        Self(tesselation)
     }
-    pub fn from_len(len: usize) -> Topology {
-        Self::new(Concatenation::new(vec![
-            WithBounds::new(vec![], 1, len).unwrap()
-        ]))
+    pub fn from_len(len: usize) -> Self {
+        Self(Tesselation::identity(vec![Simplex::Line], len))
     }
 }
 
@@ -158,19 +178,13 @@ impl TopologyCore for Line {
         1
     }
     fn tesselation(&self) -> &Tesselation {
-        &self.tesselation
+        &self.0
     }
     fn refined(&self) -> Topology {
-        let mut tesselation = self.tesselation.clone();
-        tesselation.push_elementary(&Elementary::new_children(Simplex::Line));
-        Self { tesselation }.into()
+        Self(self.tesselation().children()).into()
     }
     fn boundary(&self) -> Topology {
-        let mut tesselation = self.tesselation.clone();
-        tesselation.push_elementary(&Elementary::new_edges(Simplex::Line));
-        let n = tesselation.len_in();
-        tesselation.push_elementary(&Elementary::new_take(vec![1, n - 2], n));
-        Point { tesselation }.into()
+        Point(self.tesselation().edges().unwrap().take(&[1, 2 * self.ntiles() - 2])).into()
     }
 }
 
@@ -181,20 +195,13 @@ pub struct DisjointUnion {
 }
 
 impl DisjointUnion {
-    pub fn new(topo0: Topology, topo1: Topology) -> Topology {
-        let tesselation = Concatenation::new(
-            topo0
-                .tesselation()
-                .iter()
-                .chain(topo1.tesselation().iter())
-                .cloned()
-                .collect(),
-        );
+    pub fn new(topo0: Topology, topo1: Topology) -> Self {
+        // TODO: assert common roots
+        let tesselation = topo0.tesselation().concat(topo1.tesselation()).unwrap();
         Self {
             topos: [topo0, topo1],
             tesselation,
         }
-        .into()
     }
 }
 
@@ -203,10 +210,10 @@ impl TopologyCore for DisjointUnion {
         &self.tesselation
     }
     fn refined(&self) -> Topology {
-        Self::new(self.topos[0].refined(), self.topos[1].refined())
+        Self::new(self.topos[0].refined(), self.topos[1].refined()).into()
     }
     fn boundary(&self) -> Topology {
-        Self::new(self.topos[0].boundary(), self.topos[1].boundary())
+        Self::new(self.topos[0].boundary(), self.topos[1].boundary()).into()
     }
 }
 
@@ -217,34 +224,13 @@ pub struct Product {
 }
 
 impl Product {
-    pub fn new(topo0: Topology, topo1: Topology) -> Topology {
-        let map0 = topo0.tesselation();
-        let map1 = topo1.tesselation();
-        let dim_out = map0.dim_out() + map1.dim_out();
-        let len_out = map0.len_out() * map1.len_out();
-        let mut parts = Vec::new();
-        for part0 in topo0.tesselation().iter() {
-            for part1 in topo1.tesselation().iter() {
-                let part0 = part0.clone();
-                let mut part1 = part1.clone();
-                let trans1 = Elementary::new_transpose(part1.len_out(), part0.len_out());
-                let trans2 = Elementary::new_transpose(part0.len_in(), part1.len_out());
-                part1.add_offset(part0.dim_in());
-                let part: Vec<Elementary> = iter::once(trans1)
-                    .chain(part0.into_unbounded())
-                    .chain(iter::once(trans2))
-                    .chain(part1.into_unbounded())
-                    .collect();
-                parts.push(WithBounds::new(part, dim_out, len_out).unwrap());
-            }
-        }
-        let tesselation = Concatenation::new(parts);
+    pub fn new(topo0: Topology, topo1: Topology) -> Self {
+        let tesselation = topo0.tesselation() * topo1.tesselation();
         // TODO: assert no common roots
         Self {
             topos: [topo0, topo1],
             tesselation,
         }
-        .into()
     }
 }
 
@@ -253,13 +239,13 @@ impl TopologyCore for Product {
         &self.tesselation
     }
     fn refined(&self) -> Topology {
-        Self::new(self.topos[0].refined(), self.topos[1].refined())
+        Self::new(self.topos[0].refined(), self.topos[1].refined()).into()
     }
     fn boundary(&self) -> Topology {
         DisjointUnion::new(
-            Product::new(self.topos[0].clone(), self.topos[1].boundary()),
-            Product::new(self.topos[0].boundary(), self.topos[1].clone()),
-        )
+            Product::new(self.topos[0].clone(), self.topos[1].boundary()).into(),
+            Product::new(self.topos[0].boundary(), self.topos[1].clone()).into(),
+        ).into()
     }
 }
 
@@ -271,16 +257,14 @@ pub struct Take {
 }
 
 impl Take {
-    pub fn new(topo: Topology, itiles: Vec<usize>) -> Topology {
+    pub fn new(topo: Topology, itiles: Vec<usize>) -> Self {
         // TODO: requires sorted itiles?
-        let mut tesselation = topo.tesselation().clone();
-        tesselation.push_elementary(&Elementary::new_take(itiles.clone(), tesselation.len_in()));
+        let tesselation = topo.tesselation().take(&itiles);
         Self {
             topo,
             itiles,
             tesselation,
         }
-        .into()
     }
 }
 
@@ -295,7 +279,7 @@ impl TopologyCore for Take {
             .unapply_indices_from(self.topo.tesselation(), &self.itiles)
             .unwrap();
         itiles.sort_by_key(|&index| index);
-        Take::new(refined, itiles)
+        Take::new(refined, itiles).into()
     }
     fn boundary(&self) -> Topology {
         unimplemented! {}
@@ -314,28 +298,19 @@ fn refine_iter(base: Topology) -> impl Iterator<Item = Topology> {
 }
 
 impl Hierarchical {
-    pub fn new(base: Topology, itiles: Vec<Vec<usize>>) -> Topology {
-        let tesselation = Concatenation::new(
+    pub fn new(base: Topology, itiles: Vec<Vec<usize>>) -> Self {
+        let tesselation = Tesselation::concat_iter(
             itiles
                 .iter()
                 .zip(refine_iter(base.clone()))
-                .filter(|(itiles, _)| !itiles.is_empty())
-                .flat_map(|(itiles, level)| {
-                    let mut tesselation = level.tesselation().clone();
-                    tesselation.push_elementary(&Elementary::new_take(
-                        itiles.clone(),
-                        tesselation.len_in(),
-                    ));
-                    tesselation.into_vec()
-                })
-                .collect(),
-        );
+                .map(|(itiles, level)| level.tesselation().take(itiles))
+        ).unwrap();
+        assert_eq!(itiles.iter().map(|item| item.len()).sum::<usize>(), tesselation.len());
         Self {
             base,
             itiles,
             tesselation,
         }
-        .into()
     }
     fn levels(&self) -> impl Iterator<Item = Topology> {
         refine_iter(self.base.clone())
@@ -354,7 +329,7 @@ impl TopologyCore for Hierarchical {
             .itiles_levels()
             .map(|(itiles, level)| level.map_itiles_to_refined(itiles))
             .collect();
-        Hierarchical::new(self.base.refined(), itiles)
+        Hierarchical::new(self.base.refined(), itiles).into()
     }
     fn refined_by(&self, itiles: &[usize]) -> Topology {
         let mut global_itiles = itiles.to_vec();
@@ -380,7 +355,7 @@ impl TopologyCore for Hierarchical {
         if !queue.is_empty() {
             refined_itiles.push(queue);
         }
-        Hierarchical::new(self.base.clone(), refined_itiles)
+        Hierarchical::new(self.base.clone(), refined_itiles).into()
     }
     fn boundary(&self) -> Topology {
         let base_boundary = self.base.boundary();
@@ -396,7 +371,7 @@ impl TopologyCore for Hierarchical {
                 itiles
             })
             .collect();
-        Hierarchical::new(base_boundary, itiles)
+        Hierarchical::new(base_boundary, itiles).into()
     }
 }
 
@@ -427,7 +402,7 @@ mod tests {
             for (i, desired) in desired.into_iter().enumerate() {
                 println!("i = {i}");
                 let mut actual = centroid_in.clone();
-                let iroot = tesselation.apply_inplace(i, &mut actual, dim_out, 0).unwrap();
+                let iroot = tesselation.apply_inplace(i, &mut actual, dim_out).unwrap();
                 geom(iroot, &mut actual);
                 assert_abs_diff_eq!(actual[..], desired[..]);
             }
@@ -451,13 +426,13 @@ mod tests {
 
     #[test]
     fn test2() {
-        let x = Line::from_len(2);
-        let y = Line::from_len(2);
+        let x = Topology::new_line(2);
+        let y = Topology::new_line(2);
         let geom = |i: usize, c: &mut [f64]| {
             c[0] += (i / 2) as f64;
             c[1] += (i % 2) as f64;
         };
-        let xy = Product::new(x.clone(), y.clone());
+        let xy: Topology = x.clone() * y.clone();
         assert_centroids!(
             &xy,
             geom,
@@ -484,13 +459,13 @@ mod tests {
 
     #[test]
     fn hierarchical() {
-        let x = Line::from_len(2);
-        let y = Line::from_len(2);
+        let x = Topology::new_line(2);
+        let y = Topology::new_line(2);
         let geom = |i: usize, c: &mut [f64]| {
             c[0] += (i / 2) as f64;
             c[1] += (i % 2) as f64;
         };
-        let xy0 = Product::new(x, y);
+        let xy0 = x * y;
         assert_centroids!(
             &xy0,
             geom,

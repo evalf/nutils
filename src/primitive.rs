@@ -573,6 +573,12 @@ impl Primitive {
             _ => None,
         }
     }
+    pub fn with_offset(mut self, offset: usize) -> Self {
+        if let Some(self_offset) = self.offset_mut() {
+            *self_offset = offset
+        }
+        self
+    }
     #[inline]
     const fn is_transpose(&self) -> bool {
         matches!(self, Self::Transpose(_))
@@ -906,8 +912,7 @@ impl SwapPrimitiveComposition for [Primitive] {
                 {
                     if eoffset == coffset && esimplex.edge_dim() == csimplex.dim() {
                         if stride_in != 1 && inner.mod_in() != 1 {
-                            shifted_items
-                                .push(Primitive::new_transpose(stride_in, inner.mod_in()));
+                            shifted_items.push(Primitive::new_transpose(stride_in, inner.mod_in()));
                         }
                         shifted_items.append(&mut queue);
                         if stride_out != 1 && inner.mod_in() != 1 {
@@ -1019,8 +1024,7 @@ where
 }
 
 /// Return type of [`AllPrimitiveDecompositions::all_primitive_decompositions()`].
-pub type PrimitiveDecompositionIter<'a, T> =
-    Box<dyn Iterator<Item = ((Primitive, usize), T)> + 'a>;
+pub type PrimitiveDecompositionIter<'a, T> = Box<dyn Iterator<Item = ((Primitive, usize), T)> + 'a>;
 
 /// An interface for iterating over all possible decompositions into [`Primitive`] and `Self`.
 pub trait AllPrimitiveDecompositions: Sized {

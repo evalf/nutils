@@ -25,6 +25,37 @@ impl<Iter: Iterator> Iterator for ReplaceNth<Iter> {
     }
 }
 
+pub trait SkipNthIter: Iterator + Sized {
+    /// Skips the nth item of the iterator.
+    fn skip_nth(self, index: usize) -> SkipNth<Self>;
+}
+
+impl<Iter: Iterator> SkipNthIter for Iter {
+    fn skip_nth(self, index: usize) -> SkipNth<Self> {
+        SkipNth(self, 0, index)
+    }
+}
+
+pub struct SkipNth<Iter: Iterator>(Iter, usize, usize);
+
+impl<Iter: Iterator> Iterator for SkipNth<Iter> {
+    type Item = Iter::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(value) = self.0.next() {
+            let next = if self.1 == self.2 {
+                self.0.next()
+            } else {
+                Some(value)
+            };
+            self.1 += 1;
+            next
+        } else {
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

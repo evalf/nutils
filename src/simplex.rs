@@ -182,10 +182,7 @@ impl Simplex {
             Self::Line => {
                 for coordinate in coordinates.chunks_mut(stride) {
                     let coordinate = &mut coordinate[offset..];
-                    coordinate.copy_within(
-                        self.edge_dim() as usize..coordinate.len() - 1,
-                        self.dim() as usize,
-                    );
+                    coordinate.copy_within(self.edge_dim()..coordinate.len() - 1, self.dim());
                     coordinate[0] = (1 - index % 2) as f64;
                 }
                 index / 2
@@ -193,10 +190,7 @@ impl Simplex {
             Self::Triangle => {
                 for coordinate in coordinates.chunks_mut(stride) {
                     let coordinate = &mut coordinate[offset..];
-                    coordinate.copy_within(
-                        self.edge_dim() as usize..coordinate.len() - 1,
-                        self.dim() as usize,
-                    );
+                    coordinate.copy_within(self.edge_dim()..coordinate.len() - 1, self.dim());
                     match index % 3 {
                         0 => {
                             coordinate[1] = coordinate[0];
