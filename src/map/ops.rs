@@ -1,4 +1,4 @@
-use crate::{Error, Map, UnapplyIndicesData};
+use super::{Error, Map, UnapplyIndicesData};
 use num::Integer as _;
 use std::ops::Deref;
 
@@ -705,7 +705,7 @@ where
         coords: &mut [f64],
         stride: usize,
         offset: usize,
-    ) -> Option<usize>}
+    ) -> Result<usize, Error>}
     dispatch! {fn apply_index_unchecked(&self, index: usize) -> usize}
     dispatch! {fn apply_index(&self, index: usize) -> Option<usize>}
     dispatch! {fn apply_indices_inplace_unchecked(&self, indices: &mut [usize])}

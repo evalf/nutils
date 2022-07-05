@@ -1,13 +1,15 @@
-use crate::ops::{BinaryComposition, BinaryProduct, UniformComposition, UniformConcat, UniformProduct};
-use crate::primitive::{
+use super::ops::{
+    BinaryComposition, BinaryProduct, UniformComposition, UniformConcat, UniformProduct,
+};
+use super::primitive::{
     AllPrimitiveDecompositions, Identity, Primitive, PrimitiveDecompositionIter, Slice,
     SwapPrimitiveComposition, UnboundedMap, WithBounds,
 };
+use super::{AddOffset, Error, Map, UnapplyIndicesData};
 use crate::util::ReplaceNthIter as _;
-use crate::{AddOffset, Map, UnapplyIndicesData};
 use std::collections::BTreeMap;
 use std::iter;
-use std::rc::Rc;
+use std::sync::Arc;
 
 impl<M> AllPrimitiveDecompositions for UniformProduct<M, Vec<M>>
 where
@@ -233,7 +235,7 @@ impl<M: Map> Map for Relative<M> {
     dispatch! {fn dim_in(&self) -> usize}
     dispatch! {fn delta_dim(&self) -> usize}
     dispatch! {fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> usize}
-    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> Option<usize>}
+    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> Result<usize, Error>}
     dispatch! {fn apply_index_unchecked(&self, index: usize) -> usize}
     dispatch! {fn apply_index(&self, index: usize) -> Option<usize>}
     dispatch! {fn apply_indices_inplace_unchecked(&self, indices: &mut [usize])}
@@ -302,7 +304,7 @@ impl UnapplyIndicesData for IndexOutIn {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RelativeToConcat<M: Map> {
     rels: Vec<M>,
-    index_map: Rc<Vec<(usize, usize)>>,
+    index_map: Arc<Vec<(usize, usize)>>,
     //common: Vec<Primitive>,
     len_out: usize,
     len_in: usize,
@@ -335,7 +337,7 @@ impl<M: Map> Map for RelativeToConcat<M> {
         //    .apply_inplace(index, coordinates, stride, offset);
         let (iout, iin) = self.index_map[index];
         let n = self.index_map.len();
-        self.rels[iin / n].apply_inplace(iin % n, coordinates, stride, offset);
+        self.rels[iin / n].apply_inplace_unchecked(iin % n, coordinates, stride, offset);
         iout
     }
     fn apply_index_unchecked(&self, index: usize) -> usize {
@@ -399,9 +401,9 @@ where
                         WithBounds::from_input(slice, rel.dim_out(), rel.len_out()).unwrap();
                     let slice = Relative::Slice(slice);
                     let rel = Relative::Map(rel);
-                    return Some(Relative::Composition(UniformComposition::new_unchecked(vec![
-                        slice, rel,
-                    ])));
+                    return Some(Relative::Composition(UniformComposition::new_unchecked(
+                        vec![slice, rel],
+                    )));
                 }
                 PartialRelative::Some(rel, indices) => {
                     rels_indices.push((rel, offset, indices));

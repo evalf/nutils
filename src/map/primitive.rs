@@ -1,9 +1,9 @@
+use super::{AddOffset, Error, Map, UnapplyIndicesData};
 use crate::finite_f64::FiniteF64;
 use crate::simplex::Simplex;
-use crate::{AddOffset, Error, Map, UnapplyIndicesData};
 use num::Integer as _;
 use std::ops::{Deref, DerefMut};
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// An interface for an unbounded coordinate and index map.
 pub trait UnboundedMap {
@@ -237,13 +237,13 @@ impl AddOffset for Transpose {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Take {
-    indices: Rc<[usize]>,
+    indices: Arc<[usize]>,
     nindices: usize,
     len: usize,
 }
 
 impl Take {
-    pub fn new(indices: impl Into<Rc<[usize]>>, len: usize) -> Self {
+    pub fn new(indices: impl Into<Arc<[usize]>>, len: usize) -> Self {
         // TODO: return err if indices.is_empty()
         let indices = indices.into();
         assert!(!indices.is_empty());
@@ -254,7 +254,7 @@ impl Take {
             len,
         }
     }
-    pub fn get_indices(&self) -> Rc<[usize]> {
+    pub fn get_indices(&self) -> Arc<[usize]> {
         self.indices.clone()
     }
 }
@@ -468,14 +468,14 @@ impl From<Simplex> for Edges {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct UniformPoints {
-    points: Rc<[FiniteF64]>,
+    points: Arc<[FiniteF64]>,
     npoints: usize,
     point_dim: usize,
 }
 
 impl UniformPoints {
-    pub fn new(points: impl Into<Rc<[f64]>>, point_dim: usize) -> Self {
-        let points: Rc<[FiniteF64]> = unsafe { std::mem::transmute(points.into()) };
+    pub fn new(points: impl Into<Arc<[f64]>>, point_dim: usize) -> Self {
+        let points: Arc<[FiniteF64]> = unsafe { std::mem::transmute(points.into()) };
         assert_eq!(points.len() % point_dim, 0);
         assert_ne!(point_dim, 0);
         let npoints = points.len() / point_dim;
@@ -545,7 +545,7 @@ impl Primitive {
         Transpose::new(len1, len2).into()
     }
     #[inline]
-    pub fn new_take(indices: impl Into<Rc<[usize]>>, len: usize) -> Self {
+    pub fn new_take(indices: impl Into<Arc<[usize]>>, len: usize) -> Self {
         Take::new(indices, len).into()
     }
     #[inline]
@@ -561,7 +561,7 @@ impl Primitive {
         Edges::new(simplex).into()
     }
     #[inline]
-    pub fn new_uniform_points(points: impl Into<Rc<[f64]>>, point_dim: usize) -> Self {
+    pub fn new_uniform_points(points: impl Into<Arc<[f64]>>, point_dim: usize) -> Self {
         UniformPoints::new(points, point_dim).into()
     }
     #[inline]
@@ -1119,14 +1119,14 @@ where
 #[macro_export]
 macro_rules! prim_comp {
     (Point*$len_out:literal $($tail:tt)*) => {{
-        use $crate::primitive::{Primitive, WithBounds};
+        use $crate::map::primitive::{Primitive, WithBounds};
         #[allow(unused_mut)]
         let mut comp: Vec<Primitive> = Vec::new();
         $crate::prim_comp!{@adv comp, Point; $($tail)*}
         WithBounds::from_output(comp, 0, $len_out).unwrap()
     }};
     ($simplex:tt*$len_out:literal $($tail:tt)*) => {{
-        use $crate::primitive::{Primitive, WithBounds};
+        use $crate::map::primitive::{Primitive, WithBounds};
         #[allow(unused_mut)]
         let mut comp: Vec<Primitive> = Vec::new();
         $crate::prim_comp!{@adv comp, $simplex; $($tail)*}

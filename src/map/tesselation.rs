@@ -1,11 +1,11 @@
-use crate::ops::UniformConcat;
-use crate::primitive::{
+use super::ops::UniformConcat;
+use super::primitive::{
     AllPrimitiveDecompositions, Primitive, PrimitiveDecompositionIter, WithBounds,
 };
-use crate::relative::RelativeTo;
+use super::relative::RelativeTo;
+use super::{AddOffset, Error, Map, UnapplyIndicesData};
 use crate::simplex::Simplex;
 use crate::util::{ReplaceNthIter, SkipNthIter};
-use crate::{AddOffset, Error, Map, UnapplyIndicesData};
 use std::iter;
 use std::ops::Mul;
 
@@ -104,6 +104,13 @@ impl UniformTesselation {
             .map(|shape| Primitive::new_uniform_points(shape.centroid(), shape.dim()));
         self.extend(primitives, Vec::new(), self.len_in())
     }
+    pub fn vertices(&self) -> Self {
+        let primitives = self
+            .shapes
+            .iter()
+            .map(|shape| Primitive::new_uniform_points(shape.vertices(), shape.dim()));
+        self.extend(primitives, Vec::new(), self.len_in())
+    }
 }
 
 //impl Deref for UniformTesselation {
@@ -140,7 +147,7 @@ impl Map for UniformTesselation {
     dispatch! {fn dim_in(&self) -> usize}
     dispatch! {fn delta_dim(&self) -> usize}
     dispatch! {fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> usize}
-    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> Option<usize>}
+    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> Result<usize, Error>}
     dispatch! {fn apply_index_unchecked(&self, index: usize) -> usize}
     dispatch! {fn apply_index(&self, index: usize) -> Option<usize>}
     dispatch! {fn apply_indices_inplace_unchecked(&self, indices: &mut [usize])}
@@ -246,10 +253,20 @@ impl Tesselation {
         ))
     }
     pub fn vertices(&self) -> Self {
-        unimplemented! {}
+        Self(UniformConcat::new_unchecked(
+            self.0.iter().map(|item| item.vertices()).collect(),
+        ))
     }
-    pub fn apply_inplace(&self, index: usize, coords: &mut [f64], stride: usize) -> Option<usize> {
+    pub fn apply_inplace(
+        &self,
+        index: usize,
+        coords: &mut [f64],
+        stride: usize,
+    ) -> Result<usize, Error> {
         self.0.apply_inplace(index, coords, stride, 0)
+    }
+    pub fn apply_index(&self, index: usize) -> Option<usize> {
+        self.0.apply_index(index)
     }
     pub fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Option<Vec<T>> {
         self.0.unapply_indices(indices)
@@ -290,7 +307,7 @@ impl Map for Tesselation {
     dispatch! {fn dim_in(&self) -> usize}
     dispatch! {fn delta_dim(&self) -> usize}
     dispatch! {fn apply_inplace_unchecked(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> usize}
-    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> Option<usize>}
+    dispatch! {fn apply_inplace(&self, index: usize, coordinates: &mut [f64], stride: usize, offset: usize) -> Result<usize, Error>}
     dispatch! {fn apply_index_unchecked(&self, index: usize) -> usize}
     dispatch! {fn apply_index(&self, index: usize) -> Option<usize>}
     dispatch! {fn apply_indices_inplace_unchecked(&self, indices: &mut [usize])}

@@ -6,3 +6,4 @@ __pycache__/
 /.eggs/
 /target
 Cargo.lock
+/nutils/_rust.so

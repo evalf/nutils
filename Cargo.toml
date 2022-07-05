@@ -1,10 +1,18 @@
 [package]
-name = "nutils-test"
+name = "nutils"
 version = "0.1.0"
+authors = ["Evalf <info@evalf.com>"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "nutils"
+crate-type = ["cdylib"]
+
+[package.metadata.maturin]
+name = "nutils._rust"
 
 [dependencies]
 approx = "0.5"
 num = "0.4"
+pyo3 = { version = "0.16", features = ["extension-module", "abi3-py37"] }
+numpy = "0.16"
