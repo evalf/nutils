@@ -18,7 +18,6 @@ set.
 from . import types, points, util, function, evaluable, parallel, numeric, matrix, sparse, warnings
 from .pointsseq import PointsSequence
 from .transformseq import Transforms
-from .transform import EvaluableTransformChain
 from typing import Iterable, Mapping, Optional, Sequence, Tuple, Union
 import numpy
 import numbers
