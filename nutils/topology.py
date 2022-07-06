@@ -1420,8 +1420,7 @@ class TransformChainsTopology(Topology):
         if leveltopo is None:
             ielem_arg = evaluable.Argument('_trim_index', (), dtype=int)
             coordinates = self.references.getpoints('vertex', maxrefine).get_evaluable_coords(ielem_arg)
-            transform_chains = self.transforms.get_evaluable(ielem_arg), self.opposites.get_evaluable(ielem_arg)
-            levelset = levelset.lower(function.LowerArgs.for_space(self.space, transform_chains, coordinates)).optimized_for_numpy
+            levelset = levelset.lower(function.LowerArgs.for_space(self.space, (self.transforms, self.opposites), ielem_arg, coordinates)).optimized_for_numpy
             with log.iter.percentage('trimming', range(len(self)), self.references) as items:
                 for ielem, ref in items:
                     levels = levelset.eval(_trim_index=ielem, **arguments)
@@ -1429,8 +1428,8 @@ class TransformChainsTopology(Topology):
         else:
             log.info('collecting leveltopo elements')
             coordinates = evaluable.Points(evaluable.NPoints(), self.ndims)
-            transform_chain = transform.EvaluableTransformChain.from_argument('trans', self.transforms.todims, self.transforms.fromdims)
-            levelset = levelset.lower(function.LowerArgs.for_space(self.space, (transform_chain, transform_chain), coordinates)).optimized_for_numpy
+            ielem = evaluable.Argument('_leveltopo_ielem', (), int)
+            levelset = levelset.lower(function.LowerArgs.for_space(self.space, (leveltopo.transforms, leveltopo.opposites), ielem, coordinates)).optimized_for_numpy
             bins = [set() for ielem in range(len(self))]
             for trans in leveltopo.transforms:
                 ielem, tail = self.transforms.index_with_tail(trans)
@@ -1445,7 +1444,8 @@ class TransformChainsTopology(Topology):
                     while mask.any():
                         imax = numpy.argmax([mask[indices].sum() for tail, points, indices in cover])
                         tail, points, indices = cover.pop(imax)
-                        levels[indices] = levelset.eval(trans=trans + tail, _points=points, **arguments)
+                        ielem = leveltopo.transforms.index(trans + tail)
+                        levels[indices] = levelset.eval(_leveltopo_ielem=ielem, _points=points, **arguments)
                         mask[indices] = False
                     refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
             log.debug('cache', fcache.stats)
@@ -1498,8 +1498,7 @@ class TransformChainsTopology(Topology):
         points = parallel.shempty((len(coords), len(geom)), dtype=float)
         _ielem = evaluable.Argument('_locate_ielem', shape=(), dtype=int)
         _point = evaluable.Argument('_locate_point', shape=(self.ndims,))
-        transform_chains = self.transforms.get_evaluable(_ielem), self.opposites.get_evaluable(_ielem)
-        egeom = geom.lower(function.LowerArgs.for_space(self.space, transform_chains, _point))
+        egeom = geom.lower(function.LowerArgs.for_space(self.space, (self.transforms, self.opposites), _ielem, _point))
         xJ = evaluable.Tuple((egeom, evaluable.derivative(egeom, _point))).simplified
         if skip_missing:
             if weights is not None:
