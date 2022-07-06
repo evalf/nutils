@@ -855,6 +855,26 @@ class derivative(TestCase):
         func = evaluable.IntToFloat(evaluable.BoolToInt(evaluable.Greater(arg, evaluable.zeros(()))))
         self.assertTrue(evaluable.iszero(evaluable.derivative(func, arg)))
 
+    def test_with_derivative(self):
+        arg = evaluable.Argument('arg', (evaluable.constant(3),), float)
+        deriv = numpy.arange(6, dtype=float).reshape(2, 3)
+        func = evaluable.zeros((evaluable.constant(2),), float)
+        func = evaluable.WithDerivative(func, arg, evaluable.asarray(deriv))
+        self.assertAllAlmostEqual(evaluable.derivative(func, arg).eval(), deriv)
+
+    def test_default_derivative(self):
+        # Tests whether `evaluable.Array._derivative` correctly raises an
+        # exception when taking a derivative to one of the arguments present in
+        # its `.arguments`.
+        class DefaultDeriv(evaluable.Array): pass
+        has_arg = evaluable.Argument('has_arg', (), float)
+        has_not_arg = evaluable.Argument('has_not_arg', (), float)
+        func = evaluable.WithDerivative(evaluable.Zeros((), float), has_arg, evaluable.Zeros((), float))
+        func = DefaultDeriv((func,), (), float)
+        with self.assertRaises(NotImplementedError):
+            evaluable.derivative(func, has_arg)
+        self.assertTrue(evaluable.iszero(evaluable.derivative(func, has_not_arg)))
+
 
 class asciitree(TestCase):
 
