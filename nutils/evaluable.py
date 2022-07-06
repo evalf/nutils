@@ -3878,6 +3878,134 @@ class NormDim(Array):
             return 0, upper_length - 1
 
 
+class TransformsRootCoords(Array):
+
+    def __init__(self, transforms, index: Array, coords: Array):
+        if index.dtype != int or index.ndim != 0:
+            raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
+        if coords.dtype != float:
+            raise ValueError('argument `coords` must be a real-valued array with at least one axis')
+        self._transforms = transforms
+        self._index = index
+        self._coords = coords
+        super().__init__(args=[index, coords], shape=(*coords.shape[:-1], transforms.todims), dtype=float)
+
+    def evalf(self, index, coords):
+        chain = self._transforms[index.__index__()]
+        return functools.reduce(lambda c, t: t.apply(c), reversed(chain), coords)
+
+    def _derivative(self, var, seen):
+        linear = TransformsRootLinear(self._transforms, self._index)
+        dcoords = derivative(self._coords, var, seen)
+        return einsum('ij,AjB->AiB', linear, dcoords, A=self._coords.ndim - 1, B=var.ndim)
+
+
+class TransformsRelativeCoords(Array):
+
+    def __init__(self, target, transforms, index: Array, coords: Array):
+        if index.dtype != int or index.ndim != 0:
+            raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
+        if coords.dtype != float:
+            raise ValueError('argument `coords` must be a real-valued array with at least one axis')
+        self._target = target
+        self._transforms = transforms
+        self._index = index
+        self._coords = coords
+        super().__init__(args=[index, coords], shape=(*coords.shape[:-1], target.fromdims), dtype=float)
+
+    def evalf(self, index, coords):
+        _, chain = self._target.index_with_tail(self._transforms[index.__index__()])
+        return functools.reduce(lambda c, t: t.apply(c), reversed(chain), coords)
+
+    def _derivative(self, var, seen):
+        linear = TransformsRelativeLinear(self._target, self._transforms, self._index)
+        dcoords = derivative(self._coords, var, seen)
+        return einsum('ij,AjB->AiB', linear, dcoords, A=self._coords.ndim - 1, B=var.ndim)
+
+    def _simplified(self):
+        if self._target == self._transforms:
+            return self._coords
+
+
+class TransformsRelativeIndex(Array):
+
+    def __init__(self, target, transforms, index: Array):
+        if index.dtype != int or index.ndim != 0:
+            raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
+        self._target = target
+        self._transforms = transforms
+        self._index = index
+        super().__init__(args=[index], shape=(), dtype=int)
+
+    def evalf(self, index):
+        index, _ = self._target.index_with_tail(self._transforms[index.__index__()])
+        return numpy.array(index)
+
+    def _intbounds_impl(self):
+        return 0, len(self._target) - 1
+
+    def _simplified(self):
+        if self._target == self._transforms:
+            return self._index
+
+
+class TransformsRootLinear(Array):
+
+    def __init__(self, transforms, index: Array):
+        if index.dtype != int or index.ndim != 0:
+            raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
+        self._transforms = transforms
+        super().__init__(args=[index], shape=(transforms.todims, transforms.fromdims), dtype=float)
+
+    def evalf(self, index):
+        chain = self._transforms[index.__index__()]
+        if chain:
+            return functools.reduce(lambda r, i: i @ r, (item.linear for item in reversed(chain)))
+        else:
+            return numpy.eye(self._transforms.fromdims)
+
+
+class TransformsRelativeLinear(Array):
+
+    def __init__(self, target, transforms, index: Array):
+        if index.dtype != int or index.ndim != 0:
+            raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
+        self._target = target
+        self._transforms = transforms
+        super().__init__(args=[index], shape=(target.fromdims, transforms.fromdims), dtype=float)
+
+    def evalf(self, index):
+        _, chain = self._target.index_with_tail(self._transforms[index.__index__()])
+        if chain:
+            return functools.reduce(lambda r, i: i @ r, (item.linear for item in reversed(chain)))
+        else:
+            return numpy.eye(self._transforms.fromdims)
+
+    def _simplified(self):
+        if self._target == self._transforms:
+            return diagonalize(ones((self._transforms.fromdims,)))
+
+
+class TransformsRootBasis(Array):
+
+    def __init__(self, transforms, index: Array):
+        if index.dtype != int or index.ndim != 0:
+            raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
+        self._transforms = transforms
+        super().__init__(args=[index], shape=(transforms.todims, transforms.todims), dtype=float)
+
+    def evalf(self, index):
+        chain = self._transforms[index.__index__()]
+        linear = numpy.eye(self._transforms.fromdims)
+        for item in reversed(chain):
+            linear = item.linear @ linear
+            assert item.fromdims <= item.todims <= item.fromdims + 1
+            if item.todims == item.fromdims + 1:
+                linear = numpy.concatenate([linear, item.ext[:, numpy.newaxis]], axis=1)
+        assert linear.shape == (self._transforms.todims, self._transforms.todims)
+        return linear
+
+
 class _LoopIndex(Argument):
 
     __slots__ = 'length'

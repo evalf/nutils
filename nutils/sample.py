@@ -28,7 +28,7 @@ import treelog as log
 import abc
 
 _PointsShape = Tuple[evaluable.Array, ...]
-_TransformChainsMap = Mapping[str, Tuple[EvaluableTransformChain, EvaluableTransformChain]]
+_TransformChainsMap = Mapping[str, Tuple[Tuple[Transforms, ...], int]]
 _CoordinatesMap = Mapping[str, evaluable.Array]
 
 
@@ -397,7 +397,7 @@ class _TransformChainsSample(Sample):
         return self.points.get_evaluable_weights(__ielem)
 
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
-        return function.LowerArgs.for_space(self.space, tuple(t.get_evaluable(__ielem) for t in (self.transforms*2)[:2]), self.points.get_evaluable_coords(__ielem))
+        return function.LowerArgs.for_space(self.space, self.transforms, __ielem, self.points.get_evaluable_coords(__ielem))
 
     def basis(self) -> function.Array:
         return _Basis(self)
@@ -925,9 +925,9 @@ class _Basis(function.Array):
             space_coords = evaluable.Transpose(space_coords, numpy.argsort(where))
             where = tuple(sorted(where))
 
-        chain = args.transform_chains[self._sample.space][0]
-        index, tail = chain.index_with_tail_in(self._sample.transforms[0])
-        coords = tail.apply(space_coords)
+        (chain, *_), tip_index = args.transform_chains[self._sample.space]
+        index = evaluable.TransformsRelativeIndex(self._sample.transforms[0], chain, tip_index)
+        coords = evaluable.TransformsRelativeCoords(self._sample.transforms[0], chain, tip_index, space_coords)
         expect = self._sample.points.get_evaluable_coords(index)
         sampled = evaluable.Sampled(coords, expect)
         indices = self._sample.get_evaluable_indices(index)
