@@ -173,7 +173,7 @@ impl AllPrimitiveDecompositions for UniformTesselation {
 }
 
 impl RelativeTo<Self> for UniformTesselation {
-    type Output = WithBounds<Vec<Primitive>>;
+    type Output = <WithBounds<Vec<Primitive>> as RelativeTo<WithBounds<Vec<Primitive>>>>::Output;
 
     fn relative_to(&self, target: &Self) -> Option<Self::Output> {
         self.map.relative_to(&target.map)
@@ -399,13 +399,13 @@ mod tests {
         let stride = 2;
         let mut work: Vec<_> = iter::repeat(-1.0).take(stride).collect();
         println!("tess: {tess:?}");
-        assert_eq!(centroids.apply_inplace(0, &mut work, stride), Some(0));
+        assert_eq!(centroids.apply_inplace(0, &mut work, stride), Ok(0));
         assert_abs_diff_eq!(work[..], [0.25, 1.0]);
-        assert_eq!(centroids.apply_inplace(1, &mut work, stride), Some(0));
+        assert_eq!(centroids.apply_inplace(1, &mut work, stride), Ok(0));
         assert_abs_diff_eq!(work[..], [0.25, 0.0]);
-        assert_eq!(centroids.apply_inplace(2, &mut work, stride), Some(0));
+        assert_eq!(centroids.apply_inplace(2, &mut work, stride), Ok(0));
         assert_abs_diff_eq!(work[..], [0.75, 1.0]);
-        assert_eq!(centroids.apply_inplace(3, &mut work, stride), Some(0));
+        assert_eq!(centroids.apply_inplace(3, &mut work, stride), Ok(0));
         assert_abs_diff_eq!(work[..], [0.75, 0.0]);
     }
 

@@ -896,7 +896,9 @@ impl SwapPrimitiveComposition for [Primitive] {
         inner: &Primitive,
         stride: usize,
     ) -> Option<((Primitive, usize), Self::Output)> {
-        if inner.is_transpose() {
+        if self.is_empty() {
+            return Some(((inner.clone(), stride), Vec::new()));
+        } else if inner.is_transpose() {
             return None;
         }
         let mut target = inner.clone();
@@ -1051,6 +1053,43 @@ pub trait AllPrimitiveDecompositions: Sized {
     /// assert_eq!(iter.next(), None);
     /// ```
     fn all_primitive_decompositions<'a>(&'a self) -> PrimitiveDecompositionIter<'a, Self>;
+    fn as_transposes(&self) -> Option<Vec<Transpose>>
+    where
+        Self: Map,
+    {
+        let mut transposes = Vec::new();
+        if self.is_identity() {
+            return Some(Vec::new());
+        }
+        let mut next = |m: &Self| if let Some(((Primitive::Transpose(transpose), stride), rhs)) = m.all_primitive_decompositions().next() {
+            let len = transpose.mod_out();
+            if stride != 1 {
+                unimplemented!{}
+                transposes.push(Transpose::new(stride, len));
+            }
+            transposes.push(transpose);
+            if stride != 1 {
+                unimplemented!{}
+                transposes.push(Transpose::new(len, stride));
+            }
+            Some(rhs)
+        } else {
+            None
+        };
+        let mut rhs = if let Some(rhs) = next(self) {
+            rhs
+        } else {
+            return None;
+        };
+        while !rhs.is_identity() {
+            rhs = if let Some(rhs) = next(&rhs) {
+                rhs
+            } else {
+                return None;
+            };
+        }
+        Some(transposes)
+    }
 }
 
 impl AllPrimitiveDecompositions for Vec<Primitive> {

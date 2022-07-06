@@ -3,7 +3,7 @@ use super::ops::{
 };
 use super::primitive::{
     AllPrimitiveDecompositions, Identity, Primitive, PrimitiveDecompositionIter, Slice,
-    SwapPrimitiveComposition, UnboundedMap, WithBounds,
+    SwapPrimitiveComposition, UnboundedMap, WithBounds, Transpose,
 };
 use super::{AddOffset, Error, Map, UnapplyIndicesData};
 use crate::util::ReplaceNthIter as _;
@@ -11,59 +11,59 @@ use std::collections::BTreeMap;
 use std::iter;
 use std::sync::Arc;
 
-impl<M> AllPrimitiveDecompositions for UniformProduct<M, Vec<M>>
-where
-    M: Map + AllPrimitiveDecompositions + Clone,
-{
-    fn all_primitive_decompositions<'a>(&'a self) -> PrimitiveDecompositionIter<'a, Self> {
-        Box::new(
-            self.iter()
-                .enumerate()
-                .zip(self.offsets_out())
-                .zip(self.strides_out())
-                .flat_map(move |(((iprod, term), prod_offset), prod_stride)| {
-                    term.all_primitive_decompositions().into_iter().map(
-                        move |((mut prim, mut stride), inner)| {
-                            prim.add_offset(prod_offset);
-                            if prim.mod_out() == 1 {
-                                stride = 1;
-                            } else {
-                                stride *= prod_stride;
-                            }
-                            let product = self.iter().cloned().replace_nth(iprod, inner).collect();
-                            ((prim, stride), product)
-                        },
-                    )
-                }),
-        )
-    }
-}
+//impl<M> AllPrimitiveDecompositions for UniformProduct<M, Vec<M>>
+//where
+//    M: Map + AllPrimitiveDecompositions + Clone,
+//{
+//    fn all_primitive_decompositions<'a>(&'a self) -> PrimitiveDecompositionIter<'a, Self> {
+//        Box::new(
+//            self.iter()
+//                .enumerate()
+//                .zip(self.offsets_out())
+//                .zip(self.strides_out())
+//                .flat_map(move |(((iprod, term), prod_offset), prod_stride)| {
+//                    term.all_primitive_decompositions().into_iter().map(
+//                        move |((mut prim, mut stride), inner)| {
+//                            prim.add_offset(prod_offset);
+//                            if prim.mod_out() == 1 {
+//                                stride = 1;
+//                            } else {
+//                                stride *= prod_stride;
+//                            }
+//                            let product = self.iter().cloned().replace_nth(iprod, inner).collect();
+//                            ((prim, stride), product)
+//                        },
+//                    )
+//                }),
+//        )
+//    }
+//}
 
-impl<M0, M1> AllPrimitiveDecompositions for BinaryProduct<M0, M1>
-where
-    M0: Map + AllPrimitiveDecompositions + Clone,
-    M1: Map + AllPrimitiveDecompositions + Clone,
-{
-    fn all_primitive_decompositions<'a>(&'a self) -> PrimitiveDecompositionIter<'a, Self> {
-        let first = self.first().all_primitive_decompositions().into_iter().map(
-            |((prim, mut stride), first)| {
-                stride *= self.second().len_out();
-                let product = BinaryProduct::new(first, self.second().clone());
-                ((prim, stride), product)
-            },
-        );
-        let second = self
-            .second()
-            .all_primitive_decompositions()
-            .into_iter()
-            .map(|((mut prim, stride), second)| {
-                prim.add_offset(self.first().dim_out());
-                let product = BinaryProduct::new(self.first().clone(), second);
-                ((prim, stride), product)
-            });
-        Box::new(first.chain(second))
-    }
-}
+//impl<M0, M1> AllPrimitiveDecompositions for BinaryProduct<M0, M1>
+//where
+//    M0: Map + AllPrimitiveDecompositions + Clone,
+//    M1: Map + AllPrimitiveDecompositions + Clone,
+//{
+//    fn all_primitive_decompositions<'a>(&'a self) -> PrimitiveDecompositionIter<'a, Self> {
+//        let first = self.first().all_primitive_decompositions().into_iter().map(
+//            |((prim, mut stride), first)| {
+//                stride *= self.second().len_out();
+//                let product = BinaryProduct::new(first, self.second().clone());
+//                ((prim, stride), product)
+//            },
+//        );
+//        let second = self
+//            .second()
+//            .all_primitive_decompositions()
+//            .into_iter()
+//            .map(|((mut prim, stride), second)| {
+//                prim.add_offset(self.first().dim_out());
+//                let product = BinaryProduct::new(self.first().clone(), second);
+//                ((prim, stride), product)
+//            });
+//        Box::new(first.chain(second))
+//    }
+//}
 
 // TODO: UniformComposition?
 
@@ -135,11 +135,10 @@ where
             .filter_map(|(key, t1)| outers2.remove(&key).map(|t2| (key, t1, t2)))
             .next()
         {
-            let outer_mod_out = outer.mod_out();
-            common.push(outer);
-            if stride != 1 {
+            if stride != 1 && outer.mod_out() != 1 {
                 common.push(Primitive::new_transpose(stride, outer_mod_out));
             }
+            common.push(outer);
             (map1, map2)
         } else {
             break;
@@ -158,9 +157,13 @@ where
 {
     let (_, rem, rel) = decompose_common(target, source);
     if rem.is_identity() {
-        PartialRelative::AllSameOrder(rel)
+        PartialRelative::All(rel, None)
+    } else if let Some(mut transposes) = rem.as_transposes() {
+        transposes.reverse();
+        transposes.iter_mut().for_each(|transpose| transpose.reverse());
+        let transposes = WithBounds::new_unchecked(transposes, rem.dim_in(), rem.len_in());
+        PartialRelative::All(rel, Some(transposes))
     } else if rem.is_index_map() {
-        // TODO: transfer transposes from `rem` to `rel` if this would make `rem` the identity
         let mut indices: Vec<usize> = (0..rem.len_in()).collect();
         rem.apply_indices_inplace_unchecked(&mut indices);
         PartialRelative::Some(rel, indices)
@@ -170,7 +173,7 @@ where
 }
 
 enum PartialRelative<M> {
-    AllSameOrder(M),
+    All(M, Option<WithBounds<Vec<Transpose>>>),
     Some(M, Vec<usize>),
     CannotEstablishRelation,
 }
@@ -196,6 +199,7 @@ pub enum Relative<M: Map> {
     Identity(WithBounds<Identity>),
     Slice(WithBounds<Slice>),
     Map(M),
+    TransposedMap(BinaryComposition<WithBounds<Vec<Transpose>>, M>),
     Composition(UniformComposition<Self>),
     RelativeToConcat(RelativeToConcat<M>),
 }
@@ -222,6 +226,7 @@ macro_rules! dispatch {
             Self::Identity(var) => var.$fn($($arg),*),
             Self::Slice(var) => var.$fn($($arg),*),
             Self::Map(var) => var.$fn($($arg),*),
+            Self::TransposedMap(var) => var.$fn($($arg),*),
             Self::Composition(var) => var.$fn($($arg),*),
             Self::RelativeToConcat(var) => var.$fn($($arg),*),
         }
@@ -251,12 +256,20 @@ impl<M: Map> Map for Relative<M> {
 //}
 
 impl RelativeTo<Self> for WithBounds<Vec<Primitive>> {
-    type Output = Self;
+    type Output = Relative<Self>;
 
-    fn relative_to(&self, target: &Self) -> Option<Self> {
+    fn relative_to(&self, target: &Self) -> Option<Self::Output> {
         let (_, rem, rel) = decompose_common(target.clone(), self.clone());
-        // TODO: transfer transposes from `rem` to `rel`
-        rem.is_identity().then(|| rel)
+        if rem.is_identity() {
+            Some(Relative::Map(rel))
+        } else if let Some(mut transposes) = rem.as_transposes() {
+            transposes.reverse();
+            transposes.iter_mut().for_each(|transpose| transpose.reverse());
+            let transposes = WithBounds::new_unchecked(transposes, rem.dim_in(), rem.len_in());
+            Some(Relative::TransposedMap(BinaryComposition::new_unchecked(transposes, rel)))
+        } else {
+            None
+        }
     }
 }
 
@@ -395,12 +408,16 @@ where
         for target in targets.iter().cloned() {
             let new_offset = offset + target.len_in();
             match partial_relative_to(self.clone(), target) {
-                PartialRelative::AllSameOrder(rel) => {
+                PartialRelative::All(rel, transposes) => {
                     let slice = Slice::new(offset, rel.len_out(), targets.len_in());
                     let slice =
                         WithBounds::from_input(slice, rel.dim_out(), rel.len_out()).unwrap();
                     let slice = Relative::Slice(slice);
-                    let rel = Relative::Map(rel);
+                    let rel = if let Some(transposes) = transposes {
+                        Relative::TransposedMap(BinaryComposition::new_unchecked(transposes, rel))
+                    } else {
+                        Relative::Map(rel)
+                    };
                     return Some(Relative::Composition(UniformComposition::new_unchecked(
                         vec![slice, rel],
                     )));

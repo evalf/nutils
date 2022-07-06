@@ -5,6 +5,7 @@ mod util;
 
 use map::tesselation::Tesselation;
 use map::Map;
+use map::relative::RelativeTo;
 use numpy::{IntoPyArray, IxDyn, PyArray, PyArrayDyn, PyReadonlyArrayDyn};
 use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
@@ -78,6 +79,41 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
 
     m.add_class::<PySimplex>()?;
 
+    fn apply_map_from_numpy<'py>(py: Python<'py>, map: &impl Map, index: usize, coords: PyReadonlyArrayDyn<f64>) -> PyResult<(usize, &'py PyArrayDyn<f64>)> {
+        if coords.ndim() == 0 {
+            return Err(PyValueError::new_err(
+                "the `coords` argument must have at least one dimension",
+            ));
+        }
+        if coords.shape()[coords.ndim() - 1] != map.dim_in() {
+            return Err(PyValueError::new_err(format!(
+                "the last axis of the `coords` argument should have dimension {}",
+                map.dim_in()
+            )));
+        }
+        let mut result: Vec<f64> = coords
+            .as_array()
+            .rows()
+            .into_iter()
+            .flat_map(|row| {
+                row.into_iter()
+                    .cloned()
+                    .chain(iter::repeat(0.0).take(map.delta_dim()))
+            })
+            .collect();
+        let index = map.apply_inplace(index, &mut result, map.dim_out(), 0)?;
+        let result = PyArray::from_vec(py, result);
+        let shape: Vec<usize> = coords
+            .shape()
+            .iter()
+            .take(coords.ndim() - 1)
+            .cloned()
+            .chain(iter::once(map.dim_out()))
+            .collect();
+        let result = result.reshape(&shape[..])?;
+        Ok((index, result))
+    }
+
     #[pyclass(name = "Tesselation", module = "nutils._rust")]
     #[derive(Debug, Clone)]
     struct PyTesselation(Tesselation);
@@ -88,6 +124,9 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
         pub fn identity(shapes: Vec<PySimplex>, len: usize) -> Self {
             let shapes = shapes.iter().map(|shape| shape.into()).collect();
             Tesselation::identity(shapes, len).into()
+        }
+        pub fn __repr__(&self) -> String {
+            format!("{:?}", self.0)
         }
         pub fn __len__(&self) -> usize {
             self.0.len()
@@ -132,38 +171,16 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
             index: usize,
             coords: PyReadonlyArrayDyn<f64>,
         ) -> PyResult<(usize, &'py PyArrayDyn<f64>)> {
-            if coords.ndim() == 0 {
-                return Err(PyValueError::new_err(
-                    "the `coords` argument must have at least one dimension",
-                ));
-            }
-            if coords.shape()[coords.ndim() - 1] != self.0.dim() {
-                return Err(PyValueError::new_err(format!(
-                    "the last axis of the `coords` argument should have dimension {}",
-                    self.0.dim()
-                )));
-            }
-            let mut result: Vec<f64> = coords
-                .as_array()
-                .rows()
-                .into_iter()
-                .flat_map(|row| {
-                    row.into_iter()
-                        .cloned()
-                        .chain(iter::repeat(0.0).take(self.0.delta_dim()))
-                })
-                .collect();
-            let index = self.0.apply_inplace(index, &mut result, self.0.dim_out())?;
-            let result = PyArray::from_vec(py, result);
-            let shape: Vec<usize> = coords
-                .shape()
-                .iter()
-                .take(coords.ndim() - 1)
-                .cloned()
-                .chain(iter::once(self.0.dim_out()))
-                .collect();
-            let result = result.reshape(&shape[..])?;
-            Ok((index, result))
+            apply_map_from_numpy(py, &self.0, index, coords)
+        }
+        //pub fn unapply_indices(&self, indices: Vec<usize>) -> PyResult<Vec<usize>> {
+        //    self.0
+        //        .unapply_indices(&indices)
+        //        .map(|mut indices| { indices.sort(); indices })
+        //        .ok_or(PyValueError::new_err("index out of range"))
+        //}
+        pub fn relative_to(&self, target: &Self) -> PyResult<PyMap> {
+            self.0.relative_to(&target.0).map(|rel| PyMap(rel)).ok_or(PyValueError::new_err("cannot make relative"))
         }
     }
 
@@ -174,6 +191,53 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
     }
 
     m.add_class::<PyTesselation>()?;
+
+    #[pyclass(name = "Map", module = "nutils._rust")]
+    #[derive(Debug, Clone)]
+    struct PyMap(<Tesselation as RelativeTo<Tesselation>>::Output);
+
+    #[pymethods]
+    impl PyMap {
+        pub fn __repr__(&self) -> String {
+            format!("{:?}", self.0)
+        }
+        pub fn len_out(&self) -> usize {
+            self.0.len_out()
+        }
+        pub fn len_in(&self) -> usize {
+            self.0.len_in()
+        }
+        pub fn dim_out(&self) -> usize {
+            self.0.dim_out()
+        }
+        pub fn dim_in(&self) -> usize {
+            self.0.dim_in()
+        }
+        pub fn delta_dim(&self) -> usize {
+            self.0.delta_dim()
+        }
+        pub fn apply_index(&self, index: usize) -> PyResult<usize> {
+            self.0
+                .apply_index(index)
+                .ok_or(PyIndexError::new_err("index out of range"))
+        }
+        pub fn apply<'py>(
+            &self,
+            py: Python<'py>,
+            index: usize,
+            coords: PyReadonlyArrayDyn<f64>,
+        ) -> PyResult<(usize, &'py PyArrayDyn<f64>)> {
+            apply_map_from_numpy(py, &self.0, index, coords)
+        }
+        pub fn unapply_indices(&self, indices: Vec<usize>) -> PyResult<Vec<usize>> {
+            self.0
+                .unapply_indices(&indices)
+                .map(|mut indices| { indices.sort(); indices })
+                .ok_or(PyValueError::new_err("index out of range"))
+        }
+    }
+
+    m.add_class::<PyMap>()?;
 
     Ok(())
 }

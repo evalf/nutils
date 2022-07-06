@@ -22,6 +22,9 @@ impl<Outer: Map, Inner: Map> BinaryComposition<Outer, Inner> {
             Ok(Self(outer, inner))
         }
     }
+    pub fn new_unchecked(outer: Outer, inner: Inner) -> Self {
+        Self::new(outer, inner).unwrap()
+    }
     /// Returns the outer map of the composition.
     pub fn outer(&self) -> &Outer {
         &self.0

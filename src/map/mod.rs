@@ -159,7 +159,7 @@ macro_rules! assert_map_apply {
         }
         assert_eq!(
             item.apply_inplace($inidx, &mut work, stride, 0),
-            Some($outidx),
+            Ok($outidx),
             "apply_inplace",
         );
         assert_eq!(item.apply_index($inidx), Some($outidx), "apply_index");
