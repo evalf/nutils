@@ -35,6 +35,30 @@ class Reference(types.Singleton):
     def nverts(self):
         return len(self.vertices)
 
+    @property
+    def vertices(self):
+        raise NotImplementedError(self)
+
+    @property
+    def edge_vertices(self):
+        '''Relation between edge and volume vertices.
+
+        Given a volume reference `vol`, `vol.edge_vertices` is a sequence of
+        integer arrays that specifies per edge (outer sequence, corresponding
+        to `vol.edges`) for each vertex (inner sequence, corresponding to
+        `vol.edges[iedge].vertices`) its index in `vol` (corresponding to
+        `vol.vertices`).
+        '''
+
+        # naive implementation; will be removed in a later commit
+        edge_vertices = []
+        for etrans, eref in self.edges:
+            dist = numpy.linalg.norm(self.vertices[:,_,:] - etrans.apply(eref.vertices), axis=2)
+            emap = numpy.argmin(dist, 0)
+            assert (dist[emap, numpy.arange(eref.nverts)] < 1e-15).all(), dist
+            edge_vertices.append(types.frozenarray(emap, copy=False))
+        return tuple(edge_vertices)
+
     __and__ = lambda self, other: self if self == other else NotImplemented
     __or__ = lambda self, other: self if self == other else NotImplemented
     __rand__ = lambda self, other: self.__and__(other)
@@ -299,6 +323,10 @@ class EmptyLike(Reference):
         return self.baseref.vertices
 
     @property
+    def edge_vertices(self):
+        return self.baseref.edge_vertices
+
+    @property
     def edge_transforms(self):
         return self.baseref.edge_transforms
 
@@ -329,11 +357,15 @@ class SimplexReference(Reference):
     'simplex reference'
 
     __slots__ = ()
-    __cache__ = 'edge_refs', 'edge_transforms', 'ribbons', '_get_poly_coeffs_bernstein', '_get_poly_coeffs_lagrange', '_integer_barycentric_coordinates'
+    __cache__ = 'edge_refs', 'edge_transforms', 'edge_vertices', 'ribbons', '_get_poly_coeffs_bernstein', '_get_poly_coeffs_lagrange', '_integer_barycentric_coordinates'
 
     @property
     def vertices(self):
-        return types.frozenarray(numpy.concatenate([numpy.zeros(self.ndims)[_, :], numpy.eye(self.ndims)], axis=0), copy=False)
+        return types.frozenarray(numpy.eye(self.ndims+1)[1:].T, copy=False) # first vertex in origin
+
+    @property
+    def edge_vertices(self):
+        return tuple(types.frozenarray(numpy.arange(self.ndims+1).repeat(self.ndims).reshape(self.ndims,self.ndims+1).T[::-1], copy=False))
 
     @property
     def edge_refs(self):
@@ -564,7 +596,7 @@ class TensorReference(Reference):
     'tensor reference'
 
     __slots__ = 'ref1', 'ref2'
-    __cache__ = 'vertices', 'edge_transforms', 'ribbons', 'child_transforms', 'getpoints', 'get_poly_coeffs', 'centroid'
+    __cache__ = 'vertices', 'edge_transforms', 'edge_vertices', 'ribbons', 'child_transforms', 'getpoints', 'get_poly_coeffs', 'centroid'
 
     def __init__(self, ref1, ref2):
         assert not isinstance(ref1, TensorReference)
@@ -581,6 +613,14 @@ class TensorReference(Reference):
         vertices[:, :, :self.ref1.ndims] = self.ref1.vertices[:, _]
         vertices[:, :, self.ref1.ndims:] = self.ref2.vertices[_, :]
         return types.frozenarray(vertices.reshape(self.ref1.nverts*self.ref2.nverts, self.ndims), copy=False)
+
+    @property
+    def edge_vertices(self):
+        n1 = self.ref1.nverts
+        n2 = self.ref2.nverts
+        edge_vertices = [everts[:,_] * n2 + numpy.arange(n2) for everts in self.ref1.edge_vertices] \
+                      + [numpy.arange(n1)[:,_] * n2 + everts for everts in self.ref2.edge_vertices]
+        return tuple(types.frozenarray(e.ravel(), copy=False) for e in edge_vertices)
 
     @property
     def centroid(self):

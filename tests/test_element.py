@@ -72,6 +72,11 @@ class elem(TestCase):
         if self.ref.ndims:
             self.assertFalse(self.ref.inside(-numpy.ones(self.ref.ndims)))
 
+    @parametrize.enable_if(lambda ref, **kwargs: not isinstance(ref, element.WithChildrenReference) and ref.ndims >= 1)
+    def test_edge_vertices(self):
+        for etrans, eref, everts in zip(self.ref.edge_transforms, self.ref.edge_refs, self.ref.edge_vertices):
+            self.assertAllEqual(self.ref.vertices[everts], etrans.apply(eref.vertices))
+
 
 elem('point', ref=element.PointReference(), exactcentroid=numpy.zeros((0,)))
 elem('point2', ref=element.PointReference()**2, exactcentroid=numpy.zeros((0,)))
