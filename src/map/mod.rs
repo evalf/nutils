@@ -120,6 +120,8 @@ pub trait Map {
     fn is_identity(&self) -> bool;
     /// Returns true if this map returns coordinates unaltered.
     fn is_index_map(&self) -> bool;
+    // TODO: return Result<Self, Error>, add index, dimension checks
+    fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize;
 }
 
 pub trait AddOffset {

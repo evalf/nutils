@@ -251,6 +251,7 @@ impl<M: Map> Map for Relative<M> {
     dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Option<Vec<T>>}
     dispatch! {fn is_identity(&self) -> bool}
     dispatch! {fn is_index_map(&self) -> bool}
+    dispatch! {fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize}
 }
 
 //impl AddOffset for Relative {
@@ -395,6 +396,12 @@ impl<M: Map> Map for RelativeToConcat<M> {
     }
     fn is_index_map(&self) -> bool {
         false // TODO
+    }
+    fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
+        let (iout, iin) = self.index_map[index];
+        let n = self.index_map.len();
+        self.rels[iin / n].update_basis(iin % n, basis, dim_out, dim_in, offset);
+        iout
     }
 }
 

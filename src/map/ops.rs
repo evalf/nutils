@@ -89,6 +89,11 @@ impl<Outer: Map, Inner: Map> Map for BinaryComposition<Outer, Inner> {
     fn is_index_map(&self) -> bool {
         self.0.is_index_map() && self.1.is_index_map()
     }
+    #[inline]
+    fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
+        let index = self.1.update_basis(index, basis, dim_out, dim_in, offset);
+        self.0.update_basis(index, basis, dim_out, dim_in, offset)
+    }
 }
 
 /// The composition of an unempty sequence of maps.
@@ -203,6 +208,10 @@ where
     fn is_index_map(&self) -> bool {
         self.iter().all(|map| map.is_index_map())
     }
+    #[inline]
+    fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
+        self.iter().rev().fold(index, |index, map| map.update_basis(index, basis, dim_out, dim_in, offset))
+    }
 }
 
 /// The concatenation of two maps.
@@ -301,6 +310,14 @@ impl<M0: Map, M1: Map> Map for BinaryConcat<M0, M1> {
     #[inline]
     fn is_index_map(&self) -> bool {
         self.0.is_index_map() && self.1.is_index_map()
+    }
+    #[inline]
+    fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
+        if index < self.0.len_in() {
+            self.0.update_basis(index, basis, dim_out, dim_in, offset)
+        } else {
+            self.1.update_basis(index - self.0.len_in(), basis, dim_out, dim_in, offset)
+        }
     }
 }
 
@@ -433,6 +450,16 @@ where
     fn is_index_map(&self) -> bool {
         self.iter().all(|item| item.is_index_map())
     }
+    #[inline]
+    fn update_basis(&self, mut index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
+        for map in self.iter() {
+            if index < map.len_in() {
+                return map.update_basis(index, basis, dim_out, dim_in, offset)
+            }
+            index -= map.len_in();
+        }
+        unreachable! {}
+    }
 }
 
 /// The product of two maps.
@@ -527,6 +554,9 @@ impl<M0: Map, M1: Map> Map for BinaryProduct<M0, M1> {
     #[inline]
     fn is_index_map(&self) -> bool {
         self.0.is_index_map() && self.1.is_index_map()
+    }
+    fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
+        unimplemented!{}
     }
 }
 
@@ -727,6 +757,7 @@ where
     dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Option<Vec<T>>}
     dispatch! {fn is_identity(&self) -> bool}
     dispatch! {fn is_index_map(&self) -> bool}
+    dispatch! {fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize}
 }
 
 impl<M: Map> FromIterator<M> for UniformProduct<M, Vec<M>> {

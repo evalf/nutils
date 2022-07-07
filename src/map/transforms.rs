@@ -100,6 +100,7 @@ impl Map for UniformTransforms {
     dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Option<Vec<T>>}
     dispatch! {fn is_identity(&self) -> bool}
     dispatch! {fn is_index_map(&self) -> bool}
+    dispatch! {fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize}
 }
 
 impl AllPrimitiveDecompositions for UniformTransforms {
@@ -196,7 +197,7 @@ impl Transforms {
             maps.collect(),
             self.dim_in() - primitive.delta_dim(),
             self.delta_dim() + primitive.delta_dim(),
-            self.len_out() / primitive.mod_out() * primitive.mod_in(),
+            self.len_out(),
         )))
     }
     pub fn children(&self, simplex: Simplex, offset: usize) -> Result<Self, Error> {
@@ -272,6 +273,7 @@ impl Map for Transforms {
     dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Option<Vec<T>>}
     dispatch! {fn is_identity(&self) -> bool}
     dispatch! {fn is_index_map(&self) -> bool}
+    dispatch! {fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize}
 }
 
 impl RelativeTo<Self> for Transforms {
@@ -312,49 +314,5 @@ impl Mul for Transforms {
 
     fn mul(self, rhs: Self) -> Transforms {
         Transforms::mul(&self, &rhs)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::simplex::Simplex::*;
-    use approx::assert_abs_diff_eq;
-
-    #[test]
-    fn children() {
-        let tess = Transforms::identity(vec![Line], 1).children();
-        assert_eq!(tess.len(), 2);
-        let tess = tess.children();
-        assert_eq!(tess.len(), 4);
-    }
-
-    #[test]
-    fn product() {
-        let lhs = Transforms::identity(vec![Line], 1).children();
-        let rhs = Transforms::identity(vec![Line], 1).edges().unwrap();
-        let tess = &lhs * &rhs;
-        let centroids = tess.centroids();
-        let stride = 2;
-        let mut work: Vec<_> = iter::repeat(-1.0).take(stride).collect();
-        println!("tess: {tess:?}");
-        assert_eq!(centroids.apply_inplace(0, &mut work, stride), Ok(0));
-        assert_abs_diff_eq!(work[..], [0.25, 1.0]);
-        assert_eq!(centroids.apply_inplace(1, &mut work, stride), Ok(0));
-        assert_abs_diff_eq!(work[..], [0.25, 0.0]);
-        assert_eq!(centroids.apply_inplace(2, &mut work, stride), Ok(0));
-        assert_abs_diff_eq!(work[..], [0.75, 1.0]);
-        assert_eq!(centroids.apply_inplace(3, &mut work, stride), Ok(0));
-        assert_abs_diff_eq!(work[..], [0.75, 0.0]);
-    }
-
-    #[test]
-    fn take() {
-        let lhs = Transforms::identity(vec![Line], 1).children();
-        let rhs = Transforms::identity(vec![Line], 1).edges().unwrap();
-        let levels: Vec<_> = iter::successors(Some(&lhs * &rhs), |level| Some(level.children()))
-            .take(3)
-            .collect();
-        let hierarch = levels[1].take(&[0, 1, 2]);
     }
 }

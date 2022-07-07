@@ -228,6 +228,57 @@ impl Simplex {
         let n = self.nedges();
         indices.flat_map(move |i| (0..n).map(move |j| i * n + j))
     }
+    pub fn update_child_basis(
+        &self,
+        index: usize,
+        basis: &mut [f64],
+        dim_out: usize,
+        dim_in: &mut usize,
+        offset: usize,
+    ) -> usize {
+        assert!(offset + self.dim() <= *dim_in);
+        match self {
+            Self::Line => {
+                for i in 0..*dim_in {
+                    basis[i * dim_out + offset] *= 0.5;
+                }
+                index / 2
+            }
+            Self::Triangle => unimplemented! {},
+        }
+    }
+    pub fn update_edge_basis(
+        &self,
+        index: usize,
+        basis: &mut [f64],
+        dim_out: usize,
+        dim_in: &mut usize,
+        offset: usize,
+    ) -> usize {
+        assert!(offset + self.edge_dim() <= *dim_in);
+        // Shift rows `offset..dim_in` one row down.
+        for i in (offset..*dim_in).into_iter().rev() {
+            for j in 0..*dim_in {
+                basis[(i + 1) * dim_out + j] = basis[i * dim_out + j];
+            }
+        }
+        for j in 0..*dim_in {
+            basis[offset * dim_out + j] = 0.0;
+        }
+        // Zero the normal.
+        for i in 0..*dim_in + 1 {
+            basis[i * dim_out + *dim_in] = 0.0;
+        }
+        let index = match self {
+            Self::Line => {
+                basis[offset * dim_out + *dim_in] = if index % 2 == 0 { 1.0 } else { -1.0 };
+                index / 2
+            }
+            Self::Triangle => unimplemented! {},
+        };
+        *dim_in += 1;
+        index
+    }
 }
 
 #[cfg(test)]
@@ -371,5 +422,23 @@ mod tests {
                 assert_abs_diff_eq!(x[..], y[..]);
             }
         }
+    }
+
+    #[test]
+    fn child_basis() {
+        let mut basis = vec![1.0, 0.0, 0.0, 1.0];
+        let mut dim_in = 2;
+        assert_eq!(Line.update_child_basis(0, &mut basis, 2, &mut dim_in, 0), 0);
+        assert_eq!(dim_in, 2);
+        assert_abs_diff_eq!(basis[..], [0.5, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn edge_basis() {
+        let mut basis = vec![1.0, 0.0, 0.0, 0.0];
+        let mut dim_in = 1;
+        assert_eq!(Line.update_edge_basis(1, &mut basis, 2, &mut dim_in, 1), 0);
+        assert_eq!(dim_in, 2);
+        assert_abs_diff_eq!(basis[..], [1.0, 0.0, 0.0, -1.0]);
     }
 }

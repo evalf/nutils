@@ -7,7 +7,7 @@ use map::relative::RelativeTo;
 use map::tesselation::Tesselation;
 use map::transforms::Transforms;
 use map::Map;
-use numpy::{IntoPyArray, IxDyn, PyArray, PyArrayDyn, PyReadonlyArrayDyn, PyReadonlyArray2};
+use numpy::{IntoPyArray, IxDyn, PyArray, PyArrayDyn, PyReadonlyArrayDyn, PyReadonlyArray2, PyArray2};
 use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
 use simplex::Simplex;
@@ -127,7 +127,7 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
     #[pymethods]
     impl PyTesselation {
         #[staticmethod]
-        pub fn identity(shapes: Vec<PySimplex>, len: usize) -> Self {
+        pub fn new_identity(shapes: Vec<PySimplex>, len: usize) -> Self {
             let shapes = shapes.iter().map(|shape| shape.into()).collect();
             Tesselation::identity(shapes, len).into()
         }
@@ -258,7 +258,7 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
     #[pymethods]
     impl PyTransforms {
         #[staticmethod]
-        pub fn identity(dim: usize, len: usize) -> Self {
+        pub fn new_identity(dim: usize, len: usize) -> Self {
             Transforms::identity(dim, len).into()
         }
         pub fn __repr__(&self) -> String {
@@ -332,6 +332,18 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
                 .map(|rel| PyRelativeTransforms(rel))
                 .ok_or(PyValueError::new_err("cannot make relative"))
         }
+        pub fn basis<'py>(&self, py: Python<'py>, index: usize) -> PyResult<&'py PyArray2<f64>> {
+            if index >= self.0.len_in() {
+                return Err(PyIndexError::new_err("index out of range"));
+            }
+            let mut basis: Vec<f64> = iter::repeat(0.0).take(self.0.dim_out() * self.0.dim_out()).collect();
+            for i in 0..self.0.dim_in() {
+                basis[i * self.0.dim_out() + i] = 1.0;
+            }
+            let mut dim_in = self.0.dim_in();
+            self.0.update_basis(index, &mut basis[..], self.0.dim_out(), &mut dim_in, 0);
+            PyArray::from_vec(py, basis).reshape([self.0.dim_out(), self.0.dim_out()])
+        }
     }
 
     impl From<Transforms> for PyTransforms {
@@ -339,6 +351,8 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
             PyTransforms(transforms)
         }
     }
+
+    m.add_class::<PyTransforms>()?;
 
     #[pyclass(name = "RelativeTransforms", module = "nutils._rust")]
     #[derive(Debug, Clone)]
@@ -385,6 +399,18 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
                     indices
                 })
                 .ok_or(PyValueError::new_err("index out of range"))
+        }
+        pub fn basis<'py>(&self, py: Python<'py>, index: usize) -> PyResult<&'py PyArray2<f64>> {
+            if index >= self.0.len_in() {
+                return Err(PyIndexError::new_err("index out of range"));
+            }
+            let mut basis: Vec<f64> = iter::repeat(0.0).take(self.0.dim_out() * self.0.dim_out()).collect();
+            for i in 0..self.0.dim_in() {
+                basis[i * self.0.dim_out() + i] = 1.0;
+            }
+            let mut dim_in = self.0.dim_in();
+            self.0.update_basis(index, &mut basis[..], self.0.dim_out(), &mut dim_in, 0);
+            PyArray::from_vec(py, basis).reshape([self.0.dim_out(), self.0.dim_out()])
         }
     }
 

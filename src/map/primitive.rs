@@ -56,6 +56,7 @@ pub trait UnboundedMap {
     fn is_index_map(&self) -> bool {
         self.dim_out() == 0
     }
+    fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize;
 }
 
 fn coords_iter_mut(
@@ -79,18 +80,23 @@ fn coords_iter_mut(
 pub struct Identity;
 
 impl UnboundedMap for Identity {
+    #[inline]
     fn dim_in(&self) -> usize {
         0
     }
+    #[inline]
     fn delta_dim(&self) -> usize {
         0
     }
+    #[inline]
     fn mod_in(&self) -> usize {
         1
     }
+    #[inline]
     fn mod_out(&self) -> usize {
         1
     }
+    #[inline]
     fn apply_inplace(
         &self,
         index: usize,
@@ -100,15 +106,23 @@ impl UnboundedMap for Identity {
     ) -> usize {
         index
     }
+    #[inline]
     fn apply_index(&self, index: usize) -> usize {
         index
     }
+    #[inline]
     fn apply_indices_inplace(&self, _indices: &mut [usize]) {}
+    #[inline]
     fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
         indices.to_vec()
     }
+    #[inline]
     fn is_identity(&self) -> bool {
         true
+    }
+    #[inline]
+    fn update_basis(&self, index: usize, _basis: &mut [f64], _dim_out: usize, _dim_in: &mut usize, _offset: usize) -> usize {
+        index
     }
 }
 
@@ -165,6 +179,10 @@ impl<M: UnboundedMap> UnboundedMap for Offset<M> {
     #[inline]
     fn is_identity(&self) -> bool {
         self.0.is_identity()
+    }
+    #[inline]
+    fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
+        self.0.update_basis(index, basis, dim_out, dim_in, offset + self.1)
     }
 }
 
@@ -228,6 +246,10 @@ impl UnboundedMap for Transpose {
                 index.set((i * self.0 + k) * self.1 + j)
             })
             .collect()
+    }
+    #[inline]
+    fn update_basis(&self, index: usize, _basis: &mut [f64], _dim_out: usize, _dim_in: &mut usize, _offset: usize) -> usize {
+        self.apply_index(index)
     }
 }
 
@@ -297,6 +319,10 @@ impl UnboundedMap for Take {
             })
             .collect()
     }
+    #[inline]
+    fn update_basis(&self, index: usize, _basis: &mut [f64], _dim_out: usize, _dim_in: &mut usize, _offset: usize) -> usize {
+        self.apply_index(index)
+    }
 }
 
 impl AddOffset for Take {
@@ -358,6 +384,10 @@ impl UnboundedMap for Slice {
             })
             .collect()
     }
+    #[inline]
+    fn update_basis(&self, index: usize, _basis: &mut [f64], _dim_out: usize, _dim_in: &mut usize, _offset: usize) -> usize {
+        self.apply_index(index)
+    }
 }
 
 impl AddOffset for Slice {
@@ -406,6 +436,9 @@ impl UnboundedMap for Children {
             .iter()
             .flat_map(|i| (0..self.mod_in()).map(move |j| i.set(i.get() * self.mod_in() + j)))
             .collect()
+    }
+    fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
+        self.0.update_child_basis(index, basis, dim_out, dim_in, offset)
     }
 }
 
@@ -457,6 +490,9 @@ impl UnboundedMap for Edges {
             .iter()
             .flat_map(|i| (0..self.mod_in()).map(move |j| i.set(i.get() * self.mod_in() + j)))
             .collect()
+    }
+    fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
+        self.0.update_edge_basis(index, basis, dim_out, dim_in, offset)
     }
 }
 
@@ -525,6 +561,32 @@ impl UnboundedMap for UniformPoints {
             .iter()
             .flat_map(|i| (0..self.mod_in()).map(move |j| i.set(i.get() * self.mod_in() + j)))
             .collect()
+    }
+    fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
+        assert!(offset <= *dim_in);
+        assert!(*dim_in + self.point_dim < dim_out);
+        // Shift rows `offset..dim_in` `self.point_dim` rows down.
+        for i in (offset..*dim_in).into_iter().rev() {
+            for j in 0..*dim_in {
+                basis[(i + self.point_dim) * dim_out + j] = basis[i * dim_out + j];
+            }
+        }
+        for i in (offset..offset + self.point_dim) {
+            for j in 0..*dim_in {
+                basis[i * self.point_dim + j] = 0.0;
+            }
+        }
+        // Append identity columns.
+        for i in 0..*dim_in + self.point_dim {
+            for j in 0..self.point_dim {
+                basis[i * dim_out + j] = 0.0;
+            }
+        }
+        for i in 0..self.point_dim {
+            basis[(i + offset) * dim_out + *dim_in + i] = 1.0;
+        }
+        *dim_in += self.point_dim;
+        index / self.npoints
     }
 }
 
@@ -637,6 +699,7 @@ impl UnboundedMap for Primitive {
     dispatch! {fn unapply_indices<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T>}
     dispatch! {fn is_identity(&self) -> bool}
     dispatch! {fn is_index_map(&self) -> bool}
+    dispatch! {fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize}
 }
 
 impl AddOffset for Primitive {
@@ -759,6 +822,10 @@ where
     fn is_identity(&self) -> bool {
         self.iter().all(|map| map.is_identity())
     }
+    #[inline]
+    fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
+        self.iter().rev().fold(index, |index, map| map.update_basis(index, basis, dim_out, dim_in, offset))
+    }
 }
 
 impl<M, Array> AddOffset for Array
@@ -863,6 +930,10 @@ impl<M: UnboundedMap> Map for WithBounds<M> {
     #[inline]
     fn is_index_map(&self) -> bool {
         self.map.is_index_map()
+    }
+    #[inline]
+    fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
+        self.map.update_basis(index, basis, dim_out, dim_in, offset)
     }
 }
 
