@@ -306,10 +306,17 @@ impl<M0: Map, M1: Map> Map for BinaryConcat<M0, M1> {
 
 /// The concatenation of an unempty sequence of maps.
 #[derive(Debug, Clone, PartialEq)]
-pub struct UniformConcat<M, Array = Vec<M>>(Array)
+pub struct UniformConcat<M, Array = Vec<M>>
 where
     M: Map,
-    Array: Deref<Target = [M]>;
+    Array: Deref<Target = [M]>,
+{
+    maps: Array,
+    dim_in: usize,
+    delta_dim: usize,
+    len_out: usize,
+    len_in: usize,
+}
 
 impl<M, Array> UniformConcat<M, Array>
 where
@@ -318,33 +325,37 @@ where
 {
     /// Returns the concatenation of an unempty sequence of maps.
     ///
-    /// The two maps must have the same input and output dimensions and the
-    /// same output length. The maps must not overlap.
+    /// The maps must not overlap.
     ///
     /// Returns an [`Error`] if the dimensions and lengths don't match.
-    pub fn new(array: Array) -> Result<Self, Error> {
-        let mut iter = array.iter();
-        if let Some(map) = iter.next() {
-            let dim_out = map.dim_out();
-            let dim_in = map.dim_in();
-            let len_out = map.len_out();
-            for map in iter {
-                if map.dim_in() != dim_in || map.dim_out() != dim_out {
-                    return Err(Error::DimensionMismatch);
-                } else if map.len_out() != len_out {
-                    return Err(Error::LengthMismatch);
-                }
+    pub fn new(
+        maps: Array,
+        dim_in: usize,
+        delta_dim: usize,
+        len_out: usize,
+    ) -> Result<Self, Error> {
+        let mut len_in = 0;
+        for map in maps.iter() {
+            len_in += map.len_in();
+            if map.dim_in() != dim_in || map.delta_dim() != delta_dim {
+                return Err(Error::DimensionMismatch);
+            } else if map.len_out() != len_out {
+                return Err(Error::LengthMismatch);
             }
-            Ok(Self(array))
-        } else {
-            Err(Error::Empty)
         }
+        Ok(Self {
+            maps,
+            dim_in,
+            delta_dim,
+            len_out,
+            len_in,
+        })
     }
-    pub fn new_unchecked(array: Array) -> Self {
-        Self(array)
+    pub fn new_unchecked(maps: Array, dim_out: usize, dim_in: usize, len_out: usize) -> Self {
+        Self::new(maps, dim_out, dim_in, len_out).unwrap()
     }
     pub fn iter<'a>(&'a self) -> std::slice::Iter<'a, M> {
-        self.0.iter()
+        self.maps.iter()
     }
 }
 
@@ -355,23 +366,19 @@ where
 {
     #[inline]
     fn dim_in(&self) -> usize {
-        self.0.first().unwrap().dim_in()
-    }
-    #[inline]
-    fn dim_out(&self) -> usize {
-        self.0.first().unwrap().dim_out()
+        self.dim_in
     }
     #[inline]
     fn delta_dim(&self) -> usize {
-        self.0.first().unwrap().delta_dim()
+        self.delta_dim
     }
     #[inline]
     fn len_in(&self) -> usize {
-        self.iter().map(|map| map.len_in()).sum()
+        self.len_in
     }
     #[inline]
     fn len_out(&self) -> usize {
-        self.0.first().unwrap().len_out()
+        self.len_out
     }
     #[inline]
     fn apply_inplace_unchecked(
@@ -402,18 +409,21 @@ where
     #[inline]
     fn unapply_indices_unchecked<T: UnapplyIndicesData>(&self, indices: &[T]) -> Vec<T> {
         let mut iter = self.iter();
-        let map = iter.next().unwrap();
-        let mut result = map.unapply_indices_unchecked(indices);
-        let mut offset = map.len_in();
-        for map in iter {
-            result.extend(
-                map.unapply_indices_unchecked(indices)
-                    .into_iter()
-                    .map(|i| i.set(i.get() + offset)),
-            );
-            offset += map.len_in();
+        if let Some(map) = iter.next() {
+            let mut result = map.unapply_indices_unchecked(indices);
+            let mut offset = map.len_in();
+            for map in iter {
+                result.extend(
+                    map.unapply_indices_unchecked(indices)
+                        .into_iter()
+                        .map(|i| i.set(i.get() + offset)),
+                );
+                offset += map.len_in();
+            }
+            result
+        } else {
+            Vec::new()
         }
-        result
     }
     #[inline]
     fn is_identity(&self) -> bool {
@@ -800,11 +810,16 @@ mod tests {
 
     #[test]
     fn uniform_concat() {
-        let map = UniformConcat::new(vec![
-            prim_comp![Line*3 <- Take([0], 3)],
-            prim_comp![Line*3 <- Take([1], 3) <- Children],
-            prim_comp![Line*3 <- Take([2], 3) <- Children <- Children],
-        ])
+        let map = UniformConcat::new(
+            vec![
+                prim_comp![Line*3 <- Take([0], 3)],
+                prim_comp![Line*3 <- Take([1], 3) <- Children],
+                prim_comp![Line*3 <- Take([2], 3) <- Children <- Children],
+            ],
+            1,
+            0,
+            3,
+        )
         .unwrap();
         assert_eq!(map.len_out(), 3);
         assert_eq!(map.len_in(), 7);

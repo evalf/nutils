@@ -1061,20 +1061,24 @@ pub trait AllPrimitiveDecompositions: Sized {
         if self.is_identity() {
             return Some(Vec::new());
         }
-        let mut next = |m: &Self| if let Some(((Primitive::Transpose(transpose), stride), rhs)) = m.all_primitive_decompositions().next() {
-            let len = transpose.mod_out();
-            if stride != 1 {
-                unimplemented!{}
-                transposes.push(Transpose::new(stride, len));
+        let mut next = |m: &Self| {
+            if let Some(((Primitive::Transpose(transpose), stride), rhs)) =
+                m.all_primitive_decompositions().next()
+            {
+                let len = transpose.mod_out();
+                if stride != 1 {
+                    unimplemented! {}
+                    transposes.push(Transpose::new(stride, len));
+                }
+                transposes.push(transpose);
+                if stride != 1 {
+                    unimplemented! {}
+                    transposes.push(Transpose::new(len, stride));
+                }
+                Some(rhs)
+            } else {
+                None
             }
-            transposes.push(transpose);
-            if stride != 1 {
-                unimplemented!{}
-                transposes.push(Transpose::new(len, stride));
-            }
-            Some(rhs)
-        } else {
-            None
         };
         let mut rhs = if let Some(rhs) = next(self) {
             rhs

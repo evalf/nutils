@@ -3,7 +3,7 @@ use super::ops::{
 };
 use super::primitive::{
     AllPrimitiveDecompositions, Identity, Primitive, PrimitiveDecompositionIter, Slice,
-    SwapPrimitiveComposition, UnboundedMap, WithBounds, Transpose,
+    SwapPrimitiveComposition, Transpose, UnboundedMap, WithBounds,
 };
 use super::{AddOffset, Error, Map, UnapplyIndicesData};
 use crate::util::ReplaceNthIter as _;
@@ -136,7 +136,7 @@ where
             .next()
         {
             if stride != 1 && outer.mod_out() != 1 {
-                common.push(Primitive::new_transpose(stride, outer_mod_out));
+                common.push(Primitive::new_transpose(stride, outer.mod_out()));
             }
             common.push(outer);
             (map1, map2)
@@ -160,7 +160,9 @@ where
         PartialRelative::All(rel, None)
     } else if let Some(mut transposes) = rem.as_transposes() {
         transposes.reverse();
-        transposes.iter_mut().for_each(|transpose| transpose.reverse());
+        transposes
+            .iter_mut()
+            .for_each(|transpose| transpose.reverse());
         let transposes = WithBounds::new_unchecked(transposes, rem.dim_in(), rem.len_in());
         PartialRelative::All(rel, Some(transposes))
     } else if rem.is_index_map() {
@@ -264,9 +266,13 @@ impl RelativeTo<Self> for WithBounds<Vec<Primitive>> {
             Some(Relative::Map(rel))
         } else if let Some(mut transposes) = rem.as_transposes() {
             transposes.reverse();
-            transposes.iter_mut().for_each(|transpose| transpose.reverse());
+            transposes
+                .iter_mut()
+                .for_each(|transpose| transpose.reverse());
             let transposes = WithBounds::new_unchecked(transposes, rem.dim_in(), rem.len_in());
-            Some(Relative::TransposedMap(BinaryComposition::new_unchecked(transposes, rel)))
+            Some(Relative::TransposedMap(BinaryComposition::new_unchecked(
+                transposes, rel,
+            )))
         } else {
             None
         }
@@ -284,7 +290,14 @@ where
         self.iter()
             .map(|item| item.relative_to(target))
             .collect::<Option<_>>()
-            .map(|rels| UniformConcat::new_unchecked(rels))
+            .map(|rels| {
+                UniformConcat::new_unchecked(
+                    rels,
+                    self.dim_in(),
+                    target.dim_in() - self.dim_in(),
+                    target.len_in(),
+                )
+            })
     }
 }
 

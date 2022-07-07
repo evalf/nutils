@@ -2,6 +2,7 @@ pub mod ops;
 pub mod primitive;
 pub mod relative;
 pub mod tesselation;
+pub mod transforms;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
@@ -11,6 +12,7 @@ pub enum Error {
     DimensionZeroHasNoEdges,
     StrideSmallerThanOutputDimension,
     IndexOutOfRange,
+    IndicesNotStrictIncreasing,
 }
 
 impl std::error::Error for Error {}
@@ -27,6 +29,9 @@ impl std::fmt::Display for Error {
                 "The stride of the `coords` argument is smaller than the output dimension."
             ),
             Self::IndexOutOfRange => write!(f, "The index is out of range."),
+            Self::IndicesNotStrictIncreasing => {
+                write!(f, "The indices are not strict monotonic increasing.")
+            }
         }
     }
 }

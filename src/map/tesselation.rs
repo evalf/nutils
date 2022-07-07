@@ -184,23 +184,17 @@ impl RelativeTo<Self> for UniformTesselation {
 pub struct Tesselation(UniformConcat<UniformTesselation>);
 
 impl Tesselation {
-    pub fn new(items: Vec<UniformTesselation>) -> Result<Self, Error> {
-        let items = items.into_iter().filter(|map| map.len_in() > 0).collect();
-        Ok(Self(UniformConcat::new(items)?))
-    }
-    pub fn concat_iter(items: impl Iterator<Item = Tesselation>) -> Result<Self, Error> {
-        let mut maps = Vec::new();
-        for item in items {
-            if item.len() > 0 {
-                maps.extend(item.0.iter().cloned());
-            }
-        }
-        Self::new(maps)
-    }
     pub fn identity(shapes: Vec<Simplex>, len: usize) -> Self {
-        Self(UniformConcat::new_unchecked(vec![
-            UniformTesselation::identity(shapes, len),
-        ]))
+        let identity = UniformTesselation::identity(shapes, len);
+        let dim_in = identity.dim_in();
+        let delta_dim = identity.delta_dim();
+        let len_out = identity.len_out();
+        Self(UniformConcat::new_unchecked(
+            vec![identity],
+            dim_in,
+            delta_dim,
+            len_out,
+        ))
     }
     pub fn len(&self) -> usize {
         self.0.len_in()
@@ -213,28 +207,51 @@ impl Tesselation {
     }
     pub fn concat(&self, other: &Self) -> Result<Self, Error> {
         let maps = self.0.iter().chain(other.0.iter()).cloned().collect();
-        Ok(Self(UniformConcat::new(maps)?))
+        Ok(Self(UniformConcat::new(
+            maps,
+            self.dim_in(),
+            self.delta_dim(),
+            self.len_out(),
+        )?))
     }
-    pub fn take(&self, indices: &[usize]) -> Self {
-        assert!(indices.windows(2).all(|pair| pair[0] < pair[1]));
-        if let Some(last) = indices.last() {
-            assert!(*last < self.len());
+    pub fn take(&self, indices: &[usize]) -> Result<Self, Error> {
+        if !indices.windows(2).all(|pair| pair[0] < pair[1]) {
+            return Err(Error::IndicesNotStrictIncreasing);
         }
-        // TODO: Make sure that `UniformConcat` accepts an empty vector.
-        let maps = self.0.iter().scan((0, 0), |(start, offset), map| {
-            let stop = *start + indices[*start..].partition_point(|i| *i < *offset + map.len_in());
-            let map_indices: Vec<_> = indices[*start..stop].iter().map(|i| *i - *offset).collect();
-            *start = stop;
-            *offset += map.len_in();
-            Some(map.take(&map_indices))
-        });
-        let result = Self(UniformConcat::new_unchecked(maps.collect()));
-        assert_eq!(result.len(), indices.len());
-        result
+        if let Some(last) = indices.last() {
+            if *last >= self.len() {
+                return Err(Error::IndexOutOfRange);
+            }
+        }
+        let mut maps = Vec::new();
+        let mut offset = 0;
+        let mut start = 0;
+        for map in self.0.iter() {
+            let stop = start + indices[start..].partition_point(|i| *i < offset + map.len_in());
+            if stop > start {
+                let map_indices: Vec<_> =
+                    indices[start..stop].iter().map(|i| *i - offset).collect();
+                start = stop;
+                maps.push(map.take(&map_indices));
+            }
+            offset += map.len_in();
+        }
+        assert_eq!(start, indices.len());
+        Ok(Self(UniformConcat::new_unchecked(
+            maps,
+            self.dim_in(),
+            self.delta_dim(),
+            self.len_out(),
+        )))
     }
     pub fn children(&self) -> Self {
         let maps = self.0.iter().map(|item| item.children()).collect();
-        Self(UniformConcat::new_unchecked(maps))
+        Self(UniformConcat::new_unchecked(
+            maps,
+            self.dim_in(),
+            self.delta_dim(),
+            self.len_out(),
+        ))
     }
     pub fn edges(&self) -> Result<Self, Error> {
         if self.dim_in() == 0 {
@@ -245,16 +262,27 @@ impl Tesselation {
             .iter()
             .flat_map(|item| item.edges_iter().unwrap())
             .collect();
-        Ok(Self(UniformConcat::new(items)?))
+        Ok(Self(UniformConcat::new(
+            items,
+            self.dim_in() - 1,
+            self.delta_dim() + 1,
+            self.len_out(),
+        )?))
     }
     pub fn centroids(&self) -> Self {
         Self(UniformConcat::new_unchecked(
             self.0.iter().map(|item| item.centroids()).collect(),
+            0,
+            self.delta_dim() + self.dim_in(),
+            self.len_out(),
         ))
     }
     pub fn vertices(&self) -> Self {
         Self(UniformConcat::new_unchecked(
             self.0.iter().map(|item| item.vertices()).collect(),
+            0,
+            self.delta_dim() + self.dim_in(),
+            self.len_out(),
         ))
     }
     pub fn apply_inplace(
@@ -372,7 +400,12 @@ impl Mul for &Tesselation {
             .iter()
             .flat_map(|lhs| rhs.0.iter().map(move |rhs| lhs * rhs))
             .collect();
-        Tesselation(UniformConcat::new_unchecked(products))
+        Tesselation(UniformConcat::new_unchecked(
+            products,
+            self.dim_in() + rhs.dim_in(),
+            self.delta_dim() + rhs.delta_dim(),
+            self.len_out() * rhs.len_out(),
+        ))
     }
 }
 
