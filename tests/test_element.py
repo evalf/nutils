@@ -1,6 +1,6 @@
 from nutils import element, _util as util
 from nutils.testing import TestCase, parametrize
-import numpy
+import numpy, math
 
 
 @parametrize
@@ -77,6 +77,18 @@ class elem(TestCase):
         for etrans, eref, everts in zip(self.ref.edge_transforms, self.ref.edge_refs, self.ref.edge_vertices):
             self.assertAllEqual(self.ref.vertices[everts], etrans.apply(eref.vertices))
 
+    @parametrize.enable_if(lambda ref, **kwargs: not isinstance(ref, element.WithChildrenReference) and ref.ndims >= 1)
+    def test_simplices(self):
+        volume = 0
+        centroid = 0
+        for simplex in self.ref.vertices[self.ref.simplices]:
+            simplex_volume = numpy.linalg.det(simplex[1:] - simplex[0]) / math.factorial(self.ref.ndims)
+            self.assertGreater(simplex_volume, 0)
+            volume += simplex_volume
+            centroid += simplex.mean(axis=0) * simplex_volume
+        centroid /= volume
+        self.assertAlmostEqual(volume, self.ref.volume)
+        self.assertAllAlmostEqual(centroid, self.exactcentroid)
 
 elem('point', ref=element.PointReference(), exactcentroid=numpy.zeros((0,)))
 elem('point2', ref=element.PointReference()**2, exactcentroid=numpy.zeros((0,)))

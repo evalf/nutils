@@ -37,6 +37,18 @@ class Reference(types.Singleton):
 
     @property
     def vertices(self):
+        '''Vertex coordinates.'''
+
+        raise NotImplementedError(self)
+
+    @property
+    def simplices(self):
+        '''Partition of the element consisting of simplices.
+
+        The `simplices` attribute is a sequence of integer arrays that specify
+        per simplex the indices of the vertices in :attr:`vertices`.
+        '''
+
         raise NotImplementedError(self)
 
     @property
@@ -328,6 +340,10 @@ class EmptyLike(Reference):
         return self.baseref.edge_vertices
 
     @property
+    def simplices(self):
+        return types.frozenarray(numpy.empty([0, self.ndims+1], dtype=int), copy=False)
+
+    @property
     def edge_transforms(self):
         return self.baseref.edge_transforms
 
@@ -367,6 +383,10 @@ class SimplexReference(Reference):
     @property
     def edge_vertices(self):
         return tuple(types.frozenarray(numpy.arange(self.ndims+1).repeat(self.ndims).reshape(self.ndims,self.ndims+1).T[::-1], copy=False))
+
+    @property
+    def simplices(self):
+        return types.frozenarray(numpy.arange(self.ndims+1)[numpy.newaxis], copy=False)
 
     @property
     def edge_refs(self):
@@ -597,7 +617,7 @@ class TensorReference(Reference):
     'tensor reference'
 
     __slots__ = 'ref1', 'ref2'
-    __cache__ = 'vertices', 'edge_transforms', 'edge_vertices', 'ribbons', 'child_transforms', 'getpoints', 'get_poly_coeffs', 'centroid'
+    __cache__ = 'vertices', 'edge_transforms', 'edge_vertices', 'ribbons', 'child_transforms', 'getpoints', 'get_poly_coeffs', 'centroid', 'simplices'
 
     def __init__(self, ref1, ref2):
         assert not isinstance(ref1, TensorReference)
@@ -622,6 +642,25 @@ class TensorReference(Reference):
         edge_vertices = [everts[:,_] * n2 + numpy.arange(n2) for everts in self.ref1.edge_vertices] \
                       + [numpy.arange(n1)[:,_] * n2 + everts for everts in self.ref2.edge_vertices]
         return tuple(types.frozenarray(e.ravel(), copy=False) for e in edge_vertices)
+
+    @property
+    def simplices(self):
+        if self.ref1.ndims != 1 and self.ref2.ndims != 1:
+            raise NotImplementedError((self.ref1, self.ref2))
+        # For an n-dimensional simplex with vertices a0,a1,..,an, the extruded
+        # element has vertices a0,a1,..,an,b0,b1,..,bn. These can be divided in
+        # simplices by selecting a0,a1,..,an,b0; a1,..,an,b0,n1; and so on until
+        # an,b0,b1,..,bn; resulting in n+1 n+1-dimensional simplices.
+        indices = self.ref1.simplices[:,numpy.newaxis,:,numpy.newaxis] * self.ref2.nverts \
+                + self.ref2.simplices[numpy.newaxis,:,numpy.newaxis,:]
+        if self.ref1.ndims != 1:
+            indices = indices.swapaxes(2,3) # simplex strips require penultimate axis to be of length 2
+        assert indices.shape[2] == 2
+        indices = numeric.overlapping(indices.reshape(-1, 2*self.ndims), n=self.ndims+1).copy() # nsimplex x nstrip x ndims+1
+        # to see determinants: X = self.vertices[indices]; numpy.linalg.det(X[...,1:,:] - X[...,:1,:])
+        if self.ndims % 2 == 0: # simplex strips of even dimension (e.g. triangles) have alternating orientation
+            indices[:,::2,:2] = indices[:,::2,1::-1].copy() # flip every other simplex
+        return types.frozenarray(indices.reshape(-1, self.ndims+1), copy=False)
 
     @property
     def centroid(self):
@@ -768,6 +807,10 @@ class Cone(Reference):
     @property
     def vertices(self):
         return types.frozenarray(numpy.vstack([[self.tip], self.etrans.apply(self.edgeref.vertices)]), copy=False)
+
+    @property
+    def simplices(self):
+        return types.frozenarray([[0, *emap[simplex]] for emap, eref in zip(self.edge_vertices, self.edge_refs) for simplex in eref.simplices])
 
     @property
     def edge_transforms(self):
@@ -985,8 +1028,8 @@ class WithChildrenReference(Reference):
 class MosaicReference(Reference):
     'triangulation'
 
-    __slots__ = 'baseref', '_edge_refs', '_midpoint', 'edge_refs', 'edge_transforms', 'vertices'
-    __cache__ = 'subrefs'
+    __slots__ = 'baseref', '_edge_refs', '_midpoint', 'edge_refs', 'edge_transforms', 'vertices', '_imidpoint'
+    __cache__ = 'subrefs', 'simplices'
 
     @types.apply_annotations
     def __init__(self, baseref, edge_refs: tuple, midpoint: types.arraydata):
@@ -997,6 +1040,7 @@ class MosaicReference(Reference):
         vertices = list(baseref.vertices)
         assert not any((baseref.vertices == midpoint).all(1))
         vertices.append(numpy.asarray(midpoint))
+        imidpoint = baseref.nverts
 
         self._midpoint = numpy.asarray(midpoint)
         self.edge_refs = list(edge_refs)
@@ -1041,6 +1085,7 @@ class MosaicReference(Reference):
         self.baseref = baseref
         self._edge_refs = edge_refs
         self.vertices = types.frozenarray(vertices, copy=False)
+        self._imidpoint = imidpoint
 
         super().__init__(baseref.ndims)
 
@@ -1082,6 +1127,15 @@ class MosaicReference(Reference):
 
     def _nlinear_by_level(self, n):
         return self.baseref._nlinear_by_level(n)
+
+    @property
+    def simplices(self):
+        indices = []
+        for vmap, etrans, eref in zip(self.edge_vertices, self.baseref.edge_transforms, self._edge_refs):
+            for index in vmap[eref.simplices]:
+                assert self._imidpoint not in index
+                indices.append([self._imidpoint, *index] if not etrans.isflipped else [index[0], self._imidpoint, *index[1:]])
+        return types.frozenarray(indices, dtype=int)
 
     @property
     def subrefs(self):
