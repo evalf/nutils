@@ -6,7 +6,7 @@ else:
 
 from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, List, FrozenSet, NamedTuple
 from . import evaluable, numeric, util, types, warnings, debug_flags, sparse
-from .transformseq import Transforms
+from ._rust import Transforms
 import builtins
 import numpy
 import functools
@@ -26,7 +26,7 @@ class LowerArgs(NamedTuple):
     points_shape : :class:`tuple` of scalar, integer :class:`nutils.evaluable.Array`
         The shape of the leading points axes that are to be added to the
         lowered :class:`nutils.evaluable.Array`.
-    transform_chains : mapping of :class:`str` to tuples of :class:`nutils.transformseq.Transforms` and :class:`nutils.evaluable.Array`
+    transform_chains : mapping of :class:`str` to tuples of :class:`nutils._rust.Transforms` and :class:`nutils.evaluable.Array`
         A mapping of spaces to transforms sequences and evaluable indices.
     coordinates : mapping of :class:`str` to :class:`nutils.evaluable.Array` objects
         The coordinates at which the function will be evaluated.
@@ -963,7 +963,7 @@ class _RootCoords(Array):
         tip_coords = args.coordinates[self._space]
         tip_coords = evaluable.WithDerivative(tip_coords, _tip_derivative_target(self._space, tip_coords.shape[-1]), evaluable.Diagonalize(evaluable.ones(tip_coords.shape)))
         transforms, index = args.transform_chains[self._space]
-        coords = evaluable.TransformsRootCoords(transforms[0], index, tip_coords)
+        coords = evaluable.TransformsApplyCoords(transforms[0], index, tip_coords)
         return evaluable.WithDerivative(coords, _root_derivative_target(self._space, self.shape[0]), inv_linear)
 
 
@@ -976,7 +976,8 @@ class _TransformsIndex(Array):
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         transforms, index = args.transform_chains[self._space]
-        return evaluable.prependaxes(evaluable.TransformsRelativeIndex(self._transforms, transforms[0], index), args.points_shape)
+        relative = transforms[0].relative_to(self._transforms)
+        return evaluable.prependaxes(evaluable.TransformsApplyIndex(relative, index), args.points_shape)
 
 
 class _TransformsCoords(Array):
@@ -988,8 +989,9 @@ class _TransformsCoords(Array):
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         transforms, tip_index = args.transform_chains[self._space]
-        index = evaluable.TransformsRelativeIndex(self._transforms, transforms[0], tip_index)
-        L = evaluable.TransformsRootLinear(self._transforms, index)
+        relative = transforms[0].relative_to(self._transforms)
+        index = evaluable.TransformsApplyIndex(relative, tip_index)
+        L = evaluable.TransformsBasis(self._transforms, index)[:,:self._transforms.fromdims]
         if self._transforms.todims > self._transforms.fromdims:
             LTL = evaluable.einsum('ki,kj->ij', L, L)
             Linv = evaluable.einsum('ik,jk->ij', evaluable.inverse(LTL), L)
@@ -998,7 +1000,7 @@ class _TransformsCoords(Array):
         Linv = evaluable.prependaxes(Linv, args.points_shape)
         tip_coords = args.coordinates[self._space]
         tip_coords = evaluable.WithDerivative(tip_coords, _tip_derivative_target(self._space, tip_coords.shape[-1]), evaluable.Diagonalize(evaluable.ones(tip_coords.shape)))
-        coords = evaluable.TransformsRelativeCoords(self._transforms, transforms[0], tip_index, tip_coords)
+        coords = evaluable.TransformsApplyCoords(relative, tip_index, tip_coords)
         return evaluable.WithDerivative(coords, _root_derivative_target(self._space, self._transforms.todims), Linv)
 
 
@@ -1134,7 +1136,7 @@ class _Normal(Array):
                 tangents.append(rgrad)
             else:
                 assert normal is None and chain.todims == chain.fromdims + 1
-                basis = evaluable.einsum('Aij,jk->Aik', rgrad, evaluable.TransformsRootBasis(chain, index))
+                basis = evaluable.einsum('Aij,jk->Aik', rgrad, evaluable.TransformsBasis(chain, index))
                 tangents.append(basis[..., :chain.fromdims])
                 normal = basis[..., chain.fromdims:]
         assert normal is not None

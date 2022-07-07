@@ -344,6 +344,14 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
             self.0.update_basis(index, &mut basis[..], self.0.dim_out(), &mut dim_in, 0);
             PyArray::from_vec(py, basis).reshape([self.0.dim_out(), self.0.dim_out()])
         }
+        #[getter]
+        pub fn is_identity(&self) -> bool {
+            self.0.is_identity()
+        }
+        #[getter]
+        pub fn is_index_map(&self) -> bool {
+            self.0.is_index_map()
+        }
     }
 
     impl From<Transforms> for PyTransforms {
@@ -363,20 +371,24 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
         pub fn __repr__(&self) -> String {
             format!("{:?}", self.0)
         }
-        pub fn len_out(&self) -> usize {
-            self.0.len_out()
-        }
-        pub fn len_in(&self) -> usize {
+        pub fn __len__(&self) -> usize {
             self.0.len_in()
         }
-        pub fn dim_out(&self) -> usize {
-            self.0.dim_out()
+        #[getter]
+        pub fn fromlen(&self) -> usize {
+            self.0.len_out()
         }
-        pub fn dim_in(&self) -> usize {
+        #[getter]
+        pub fn tolen(&self) -> usize {
+            self.0.len_out()
+        }
+        #[getter]
+        pub fn fromdims(&self) -> usize {
             self.0.dim_in()
         }
-        pub fn delta_dim(&self) -> usize {
-            self.0.delta_dim()
+        #[getter]
+        pub fn todims(&self) -> usize {
+            self.0.dim_out()
         }
         pub fn apply_index(&self, index: usize) -> PyResult<usize> {
             self.0
@@ -411,6 +423,14 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
             let mut dim_in = self.0.dim_in();
             self.0.update_basis(index, &mut basis[..], self.0.dim_out(), &mut dim_in, 0);
             PyArray::from_vec(py, basis).reshape([self.0.dim_out(), self.0.dim_out()])
+        }
+        #[getter]
+        pub fn is_identity(&self) -> bool {
+            self.0.is_identity()
+        }
+        #[getter]
+        pub fn is_index_map(&self) -> bool {
+            self.0.is_index_map()
         }
     }
 

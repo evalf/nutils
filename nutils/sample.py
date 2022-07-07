@@ -925,8 +925,9 @@ class _Basis(function.Array):
             where = tuple(sorted(where))
 
         (chain, *_), tip_index = args.transform_chains[self._sample.space]
-        index = evaluable.TransformsRelativeIndex(self._sample.transforms[0], chain, tip_index)
-        coords = evaluable.TransformsRelativeCoords(self._sample.transforms[0], chain, tip_index, space_coords)
+        relative = chain.relative_to(self._sample.transforms[0])
+        index = evaluable.TransformsApplyIndex(relative, tip_index)
+        coords = evaluable.TransformsApplyCoords(relative, tip_index, space_coords)
         expect = self._sample.points.get_evaluable_coords(index)
         sampled = evaluable.Sampled(coords, expect)
         indices = self._sample.get_evaluable_indices(index)
