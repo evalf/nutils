@@ -944,16 +944,19 @@ class WithChildrenReference(Reference):
 class MosaicReference(Reference):
     'triangulation'
 
-    __slots__ = 'baseref', '_edge_refs', '_midpoint', 'edge_refs', 'edge_transforms'
-    __cache__ = 'vertices', 'subrefs'
+    __slots__ = 'baseref', '_edge_refs', '_midpoint', 'edge_refs', 'edge_transforms', 'vertices'
+    __cache__ = 'subrefs'
 
     @types.apply_annotations
     def __init__(self, baseref, edge_refs: tuple, midpoint: types.arraydata):
         assert len(edge_refs) == baseref.nedges
         assert edge_refs != tuple(baseref.edge_refs)
+        assert midpoint.shape == (baseref.ndims,)
 
-        self.baseref = baseref
-        self._edge_refs = edge_refs
+        vertices = list(baseref.vertices)
+        assert not any((baseref.vertices == midpoint).all(1))
+        vertices.append(numpy.asarray(midpoint))
+
         self._midpoint = numpy.asarray(midpoint)
         self.edge_refs = list(edge_refs)
         self.edge_transforms = list(baseref.edge_transforms)
@@ -966,6 +969,11 @@ class MosaicReference(Reference):
             self.edge_transforms.append(transform.Updim(linear=numpy.zeros((1, 0)), offset=self._midpoint, isflipped=not baseref.edge_transforms[iedge].isflipped))
 
         else:
+
+            for trans, edge, newedge in zip(baseref.edge_transforms, baseref.edge_refs, edge_refs):
+                for v in trans.apply(newedge.vertices[edge.nverts:]):
+                    if not any((v == v_).all() for v_ in vertices[baseref.nverts:]):
+                        vertices.append(v)
 
             newedges = [(etrans1, etrans2, edge) for (etrans1, orig), new in zip(baseref.edges, edge_refs) for etrans2, edge in new.edges[orig.nedges:]]
             for (iedge1, iedge2), (jedge1, jedge2) in baseref.ribbons:
@@ -989,12 +997,11 @@ class MosaicReference(Reference):
                 self.edge_transforms.append(newtrans)
                 self.edge_refs.append(edge.cone(extrudetrans, tip))
 
-        super().__init__(baseref.ndims)
+        self.baseref = baseref
+        self._edge_refs = edge_refs
+        self.vertices = types.frozenarray(vertices, copy=False)
 
-    @property
-    def vertices(self):
-        vertices, indices = util.unique([vertex for etrans, eref in self.edges if eref for vertex in etrans.apply(eref.vertices)], key=types.arraydata)
-        return types.frozenarray(vertices)
+        super().__init__(baseref.ndims)
 
     def __and__(self, other):
         if other in (self, self.baseref):
