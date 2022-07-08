@@ -1189,40 +1189,38 @@ class MosaicReference(Reference):
 
         super().__init__(baseref.ndims)
 
+    def _with_edges(self, edge_refs):
+        edge_refs = tuple(edge_refs)
+        return self.baseref if edge_refs == self.baseref.edge_refs \
+          else self.empty if not any(edge_refs) \
+          else MosaicReference(self.baseref, edge_refs, self._midpoint)
+
     def __and__(self, other):
         if other in (self, self.baseref):
             return self
         if isinstance(other, MosaicReference) and other.baseref == self:
             return other
-        if isinstance(other, MosaicReference) and self.baseref == other.baseref and numpy.equal(other._midpoint, self._midpoint).all():
-            isect_edge_refs = [selfedge & otheredge for selfedge, otheredge in zip(self._edge_refs, other._edge_refs)]
-            if not any(isect_edge_refs):
-                return self.empty
-            return MosaicReference(self.baseref, isect_edge_refs, self._midpoint)
+        if isinstance(other, MosaicReference) and self.baseref == other.baseref and other._midpoint == self._midpoint:
+            return self._with_edges(selfedge & otheredge for selfedge, otheredge in zip(self._edge_refs, other._edge_refs))
         return NotImplemented
 
     def __or__(self, other):
         if other in (self, self.baseref):
             return other
-        if isinstance(other, MosaicReference) and self.baseref == other.baseref and numpy.equal(other._midpoint, self._midpoint).all():
-            union_edge_refs = [selfedge | otheredge for selfedge, otheredge in zip(self._edge_refs, other._edge_refs)]
-            if tuple(union_edge_refs) == tuple(self.baseref.edge_refs):
-                return self.baseref
-            return MosaicReference(self.baseref, union_edge_refs, self._midpoint)
+        if isinstance(other, MosaicReference) and self.baseref == other.baseref and other._midpoint == self._midpoint:
+            return self._with_edges(selfedge | otheredge for selfedge, otheredge in zip(self._edge_refs, other._edge_refs))
         return NotImplemented
 
     def __sub__(self, other):
         if other in (self, self.baseref):
             return self.empty
         if isinstance(other, MosaicReference) and other.baseref == self:
-            inv_edge_refs = [baseedge - edge for baseedge, edge in zip(self.edge_refs, other._edge_refs)]
-            return MosaicReference(self, inv_edge_refs, other._midpoint)
+            return other._with_edges(baseedge - edge for baseedge, edge in zip(self.edge_refs, other._edge_refs))
         return NotImplemented
 
     def __rsub__(self, other):
         if other == self.baseref:
-            inv_edge_refs = [baseedge - edge for baseedge, edge in zip(other.edge_refs, self._edge_refs)]
-            return MosaicReference(other, inv_edge_refs, self._midpoint)
+            return self._with_edges(baseedge - edge for baseedge, edge in zip(other.edge_refs, self._edge_refs))
         return NotImplemented
 
     def _nlinear_by_level(self, n):
