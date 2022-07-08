@@ -1057,13 +1057,16 @@ class MosaicReference(Reference):
         assert len(edge_refs) == baseref.nedges
         assert edge_refs != tuple(baseref.edge_refs)
         assert midpoint.shape == (baseref.ndims,)
-        assert not any((baseref.vertices == midpoint).all(1))
         assert all(numpy.all(edge.vertices == newedge.vertices[:edge.nverts])
             for edge, newedge in zip(baseref.edge_refs, edge_refs))
 
         vertices = list(baseref.vertices)
-        vertices.append(numpy.asarray(midpoint))
-        imidpoint = baseref.nverts
+        match, = (baseref.vertices == midpoint).all(1).nonzero()
+        if match.size:
+            imidpoint, = match
+        else:
+            imidpoint = len(vertices)
+            vertices.append(numpy.asarray(midpoint))
 
         # The remainder of this constructor is concerned with establishing the
         # edges of the mosaic, and setting up the corresponding edge-vertex
@@ -1075,6 +1078,7 @@ class MosaicReference(Reference):
             # the only new vertex (already added to vertices) as well as the
             # only new edge, with a trivial edge-vertex relationship.
 
+            assert not match.size, '1D mosaic must introduce a new vertex'
             edge_vertices = (*baseref.edge_vertices, types.frozenarray([imidpoint]))
             orientation = [not trans.isflipped for trans, edge in zip(baseref.edge_transforms, edge_refs) if edge]
             assert len(orientation) == 1, 'invalid 1D mosaic: exactly one edge should be non-empty'
@@ -1171,9 +1175,9 @@ class MosaicReference(Reference):
 
                 for newemap2, etrans2, newedge2 in trimmed:
                     for simplex in newemap1[newemap2[newedge2.simplices]]:
-                        assert imidpoint not in simplex
-                        edge_vertices.append(types.frozenarray([imidpoint, *simplex]))
-                        orientation.append(not etrans1.isflipped^etrans2.isflipped)
+                        if imidpoint not in simplex:
+                            edge_vertices.append(types.frozenarray([imidpoint, *simplex]))
+                            orientation.append(not etrans1.isflipped^etrans2.isflipped)
 
             assert not seen, f'leftover unmatched edges ({seen}) indicate the edges of baseref ({baseref}) are not watertight!'
 
@@ -1231,8 +1235,8 @@ class MosaicReference(Reference):
         indices = []
         for vmap, etrans, eref in zip(self.edge_vertices, self.baseref.edge_transforms, self._edge_refs):
             for index in vmap[eref.simplices]:
-                assert self._imidpoint not in index
-                indices.append([self._imidpoint, *index] if not etrans.isflipped else [index[0], self._imidpoint, *index[1:]])
+                if self._imidpoint not in index:
+                    indices.append([self._imidpoint, *index] if not etrans.isflipped else [index[0], self._imidpoint, *index[1:]])
         return types.frozenarray(indices, dtype=int)
 
     def getpoints(self, ischeme, degree):
