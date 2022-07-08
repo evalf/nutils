@@ -165,17 +165,16 @@ class trimmed(TestCase):
             self.assertLess(abs(pnt.weights.sum()-exact), 1e-15)
 
     def test_points(self):
-        self.assertEqual(self.bezier.npoints, 27)
+        self.assertEqual(self.bezier.npoints, 26)
         for x in [0., .25, .5, .75, 1.]:
             for y in [0., .25, .5, .75, 1.]:
                 if x or y:
                     self.assertIn([x, y], self.bezier.coords.tolist())
         self.assertIn([0., .125], self.bezier.coords.tolist())
-        self.assertIn([.0625, .0625], self.bezier.coords.tolist())
         self.assertIn([.125, 0.], self.bezier.coords.tolist())
 
     def test_tri(self):
-        self.assertEqual(len(self.bezier.tri), 34)
+        self.assertEqual(len(self.bezier.tri), 33)
 
     def test_hull(self):
-        self.assertEqual(len(self.bezier.hull), 18)
+        self.assertEqual(len(self.bezier.hull), 17)

@@ -231,37 +231,38 @@ class Reference(types.Singleton):
             else self.empty if numpy.less_equal(levels, 0).all() \
             else self.with_children(cref.trim(clevels, maxrefine-1, ndivisions)
                                     for cref, clevels in zip(self.child_refs, self.child_divide(levels, maxrefine))) if maxrefine > 0 \
-            else self.slice(lambda vertices: numeric.dot(numeric.poly_eval(self._linear_bernstein, vertices), levels), ndivisions)
+            else self.slice(numeric.poly_eval(self._linear_bernstein, self.vertices) @ levels, ndivisions)
 
     @property
     def _linear_bernstein(self):
         return self.get_poly_coeffs('bernstein', degree=1)
 
-    def slice(self, levelfunc, ndivisions):
+    def slice(self, levels, ndivisions):
         # slice along levelset by recursing over dimensions
 
-        levels = levelfunc(self.vertices)
-
-        assert numeric.isint(ndivisions)
-        assert len(levels) == self.nverts
+        assert len(levels) == len(self.vertices)
         if numpy.greater_equal(levels, 0).all():
             return self
         if numpy.less_equal(levels, 0).all():
             return self.empty
         assert self.ndims >= 1
 
-        refs = [edgeref.slice(lambda vertices: levelfunc(edgetrans.apply(vertices)), ndivisions) for edgetrans, edgeref in self.edges]
+        refs = [edgeref.slice(levels[edgeverts], ndivisions) for edgeverts, edgeref in zip(self.edge_vertices, self.edge_refs)]
         if sum(ref != baseref for ref, baseref in zip(refs, self.edge_refs)) < self.ndims:
             return self
         if sum(bool(ref) for ref in refs) < self.ndims:
             return self.empty
 
-        nbins = 2**ndivisions
-
         if self.ndims == 1:
+
+            # For 1D elements a midpoint is introduced through linear
+            # interpolation of the vertex levels, followed by a binning step to
+            # remove near-vertex cuts and improve robustness for topology-wide
+            # connectivity.
 
             iedge = [i for (i,), edge in zip(self.edge_vertices, self.edge_refs) if edge]
             l0, l1 = levels[iedge]
+            nbins = 2**ndivisions
             xi = numpy.round(l0/(l0-l1) * nbins)
             if xi in (0, nbins):
                 return self.empty if xi == 0 and l1 < 0 or xi == nbins and l0 < 0 else self
@@ -270,12 +271,22 @@ class Reference(types.Singleton):
 
         else:
 
-            clevel = levelfunc(self.centroid[_])[0]
-            select = clevel*levels <= 0 if clevel != 0 else levels != 0
-            levels = levels[select]
-            vertices = self.vertices[select]
-            xi = numpy.round(levels/(levels-clevel) * nbins)
-            midpoint = numpy.mean(vertices + (self.centroid-vertices)*(xi/nbins)[:, _], axis=0)
+            # For higher-dimensional elements, the first vertex that is newly
+            # introduced by an edge slice is selected to serve as 'midpoint'.
+            # In case no new vertices are introduced (all edges are either
+            # fully retained or fully removed) then the first vertex is
+            # selected that occurs in only one of the edges. Either situation
+            # guarantees that the selected vertex lies on the exterior hull.
+
+            for trans, edge, emap, newedge in zip(self.edge_transforms, self.edge_refs, self.edge_vertices, refs):
+                if newedge.nverts > edge.nverts:
+                    midpoint = trans.apply(newedge.vertices[edge.nverts])
+                    break
+            else:
+                count = numpy.zeros(self.nverts, dtype=int)
+                for emap, eref in zip(self.edge_vertices, refs):
+                    count[emap[eref.simplices]] += 1
+                midpoint = self.vertices[count==1][0]
 
         return MosaicReference(self, refs, midpoint)
 

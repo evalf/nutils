@@ -388,10 +388,10 @@ class partialtrim(TestCase):
         self.assertEqual(len(self.topoB), 2)
 
     def test_boundaries(self):
-        self.assertEqual(len(self.topoA.boundary), 11)
-        self.assertEqual(len(self.topoB.boundary), 8)
-        self.assertEqual(len(self.topoA.boundary['trimmed']), 5)
-        self.assertEqual(len(self.topoB.boundary['trimmed']), 5)
+        self.assertEqual(len(self.topoA.boundary), 9)
+        self.assertEqual(len(self.topoB.boundary), 6)
+        self.assertEqual(len(self.topoA.boundary['trimmed']), 3)
+        self.assertEqual(len(self.topoB.boundary['trimmed']), 3)
 
     def test_interfaces(self):
         self.assertEqual(len(self.topoA.interfaces), 4)
