@@ -64,6 +64,14 @@ class Reference(types.Singleton):
 
         return tuple(transform.Square((vertices[1:] - vertices[0]).T, vertices[0]) for vertices in self.vertices[self.simplices])
 
+    def inside(self, point, eps=0):
+        for strans in self.simplex_transforms:
+            spoint = strans.invapply(point) # point in simplex coordinates
+            tol = -eps / strans.det # account for simplex scale
+            if all(bary >= tol for bary in (*spoint, 1-spoint.sum())):
+                return True
+        return False
+
     @property
     def edge_vertices(self):
         '''Relation between edge and volume vertices.
@@ -379,9 +387,6 @@ class EmptyLike(Reference):
     def trim(self, levels, maxrefine, ndivisions):
         return self
 
-    def inside(self, point, eps=0):
-        return False
-
 
 class SimplexReference(Reference):
     'simplex reference'
@@ -483,9 +488,6 @@ class SimplexReference(Reference):
 
     def get_edge_dofs(self, degree, iedge):
         return types.frozenarray(tuple(i for i, j in enumerate(self._integer_barycentric_coordinates(degree)) if j[iedge] == 0), dtype=int)
-
-    def inside(self, point, eps=0):
-        return numpy.greater_equal(point, -eps).all(axis=0) and numpy.less_equal(numpy.sum(point, axis=0), 1+eps)
 
 
 class PointReference(SimplexReference):
@@ -1172,9 +1174,6 @@ class MosaicReference(Reference):
         # the centroid is contained in the element. We leave this optimization for
         # later, to be combined with a reduction of gauss schemes of any degree.
         return points.ConcatPoints(subpoints, dups)
-
-    def inside(self, point, eps=0):
-        return any(subref.inside(point, eps=eps) for subref in self.subrefs)
 
     def get_ndofs(self, degree):
         return self.baseref.get_ndofs(degree)
