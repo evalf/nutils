@@ -52,6 +52,19 @@ class Reference(types.Singleton):
         raise NotImplementedError(self)
 
     @property
+    def simplex_transforms(self):
+        '''Sequence of transforms from simplex to parent element.
+
+        The `simplex_transforms` attribute is a sequence of objects of type
+        :class:`nutils.transform.TransformItem` that provide per simplex the
+        coordinate mapping from the simplex to the parent element. The origin
+        of the simplex-local coordinate system maps to its first vertex, the
+        first unit vector to the second, the second to the third, and so on.
+        '''
+
+        return tuple(transform.Square((vertices[1:] - vertices[0]).T, vertices[0]) for vertices in self.vertices[self.simplices])
+
+    @property
     def edge_vertices(self):
         '''Relation between edge and volume vertices.
 
@@ -387,6 +400,12 @@ class SimplexReference(Reference):
     @property
     def simplices(self):
         return types.frozenarray(numpy.arange(self.ndims+1)[numpy.newaxis], copy=False)
+
+    @property
+    def simplex_transforms(self):
+        # The definition of self.vertices is such that the conventions of
+        # Reference.simplex_transforms result in the identity map.
+        return transform.Identity(self.ndims),
 
     @property
     def edge_refs(self):

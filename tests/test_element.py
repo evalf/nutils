@@ -90,6 +90,12 @@ class elem(TestCase):
         self.assertAlmostEqual(volume, self.ref.volume)
         self.assertAllAlmostEqual(centroid, self.exactcentroid)
 
+    @parametrize.enable_if(lambda ref, **kwargs: not isinstance(ref, element.WithChildrenReference) and ref.ndims >= 1)
+    def test_simplex_transforms(self):
+        for simplex, strans in zip(self.ref.vertices[self.ref.simplices], self.ref.simplex_transforms):
+            self.assertAllEqual(strans.linear, (simplex[1:] - simplex[0]).T)
+            self.assertAllEqual(strans.offset, simplex[0])
+
 elem('point', ref=element.PointReference(), exactcentroid=numpy.zeros((0,)))
 elem('point2', ref=element.PointReference()**2, exactcentroid=numpy.zeros((0,)))
 elem('line', ref=element.LineReference(), exactcentroid=numpy.array([.5]))
