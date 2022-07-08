@@ -1050,7 +1050,7 @@ class MosaicReference(Reference):
     'triangulation'
 
     __slots__ = 'baseref', '_edge_refs', '_midpoint', 'edge_refs', 'edge_transforms', 'vertices', '_imidpoint'
-    __cache__ = 'subrefs', 'simplices'
+    __cache__ = 'simplices'
 
     @types.apply_annotations
     def __init__(self, baseref, edge_refs: tuple, midpoint: types.arraydata):
@@ -1158,22 +1158,16 @@ class MosaicReference(Reference):
                 indices.append([self._imidpoint, *index] if not etrans.isflipped else [index[0], self._imidpoint, *index[1:]])
         return types.frozenarray(indices, dtype=int)
 
-    @property
-    def subrefs(self):
-        return tuple(ref.cone(trans, self._midpoint) for trans, ref in zip(self.baseref.edge_transforms, self._edge_refs) if ref)
-
     def getpoints(self, ischeme, degree):
         if ischeme == 'vertex':
             return self.baseref.getpoints(ischeme, degree)
-        if ischeme == '_centroid':
+        elif ischeme in ('gauss', 'uniform', 'bezier'):
+            simplexpoints = getsimplex(self.ndims).getpoints(ischeme, degree)
+            subpoints = [points.TransformPoints(simplexpoints, strans) for strans in self.simplex_transforms]
+            dups = points.find_duplicates(subpoints) if ischeme == 'bezier' else ()
+            return points.ConcatPoints(subpoints, dups)
+        else:
             return super().getpoints(ischeme, degree)
-        subpoints = [subvol.getpoints(ischeme, degree) for subvol in self.subrefs]
-        dups = points.find_duplicates(subpoints) if ischeme == 'bezier' else ()
-        # NOTE We could consider postprocessing gauss1 to a single point scheme,
-        # rather than a concatenation, but for that we would have to verify that
-        # the centroid is contained in the element. We leave this optimization for
-        # later, to be combined with a reduction of gauss schemes of any degree.
-        return points.ConcatPoints(subpoints, dups)
 
     def get_ndofs(self, degree):
         return self.baseref.get_ndofs(degree)
