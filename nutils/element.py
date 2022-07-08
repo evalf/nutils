@@ -1049,7 +1049,7 @@ class WithChildrenReference(Reference):
 class MosaicReference(Reference):
     'triangulation'
 
-    __slots__ = 'baseref', '_edge_refs', '_midpoint', 'edge_refs', 'edge_transforms', 'vertices', '_imidpoint'
+    __slots__ = 'baseref', '_edge_refs', '_midpoint', 'edge_refs', 'edge_transforms', 'vertices', '_imidpoint', 'edge_vertices'
     __cache__ = 'simplices'
 
     @types.apply_annotations
@@ -1057,56 +1057,135 @@ class MosaicReference(Reference):
         assert len(edge_refs) == baseref.nedges
         assert edge_refs != tuple(baseref.edge_refs)
         assert midpoint.shape == (baseref.ndims,)
+        assert not any((baseref.vertices == midpoint).all(1))
+        assert all(numpy.all(edge.vertices == newedge.vertices[:edge.nverts])
+            for edge, newedge in zip(baseref.edge_refs, edge_refs))
 
         vertices = list(baseref.vertices)
-        assert not any((baseref.vertices == midpoint).all(1))
         vertices.append(numpy.asarray(midpoint))
         imidpoint = baseref.nverts
 
-        self._midpoint = numpy.asarray(midpoint)
-        self.edge_refs = list(edge_refs)
-        self.edge_transforms = list(baseref.edge_transforms)
+        # The remainder of this constructor is concerned with establishing the
+        # edges of the mosaic, and setting up the corresponding edge-vertex
+        # relations.
 
         if baseref.ndims == 1:
 
-            assert any(edge_refs) and not all(edge_refs), 'invalid 1D mosaic: exactly one edge should be non-empty'
-            iedge, = [i for i, edge in enumerate(edge_refs) if edge]
-            self.edge_refs.append(getsimplex(0))
-            self.edge_transforms.append(transform.Updim(linear=numpy.zeros((1, 0)), offset=self._midpoint, isflipped=not baseref.edge_transforms[iedge].isflipped))
+            # For 1D elements the situation is simple: the midpoint represents
+            # the only new vertex (already added to vertices) as well as the
+            # only new edge, with a trivial edge-vertex relationship.
+
+            edge_vertices = (*baseref.edge_vertices, types.frozenarray([imidpoint]))
+            orientation = [not trans.isflipped for trans, edge in zip(baseref.edge_transforms, edge_refs) if edge]
+            assert len(orientation) == 1, 'invalid 1D mosaic: exactly one edge should be non-empty'
 
         else:
 
-            for trans, edge, newedge in zip(baseref.edge_transforms, baseref.edge_refs, edge_refs):
+            # For higher-dimensional elements the situation is more complex.
+            # Firstly, the new edge_refs may introduce new vertices. Luckily
+            # here the previously asserted convention applies that the vertices
+            # of the original edge are repeated in the modified edge, so we can
+            # focus our attention on the new ones, having only to deduplicate
+            # between them.
+
+            edge_vertices = []
+            for trans, edge, emap, newedge in zip(baseref.edge_transforms, baseref.edge_refs, baseref.edge_vertices, edge_refs):
                 for v in trans.apply(newedge.vertices[edge.nverts:]):
-                    if not any((v == v_).all() for v_ in vertices[baseref.nverts:]):
+                    for i, v_ in enumerate(vertices[baseref.nverts:], start=baseref.nverts):
+                        if (v == v_).all():
+                            break # the new vertex was already added by a previous edge
+                    else:
+                        i = len(vertices)
                         vertices.append(v)
+                    emap = types.frozenarray([*emap, i])
+                edge_vertices.append(emap)
 
-            newedges = [(etrans1, etrans2, edge) for (etrans1, orig), new in zip(baseref.edges, edge_refs) for etrans2, edge in new.edges[orig.nedges:]]
-            for (iedge1, iedge2), (jedge1, jedge2) in baseref.ribbons:
-                Ei = edge_refs[iedge1]
-                ei = Ei.edge_refs[iedge2]
-                Ej = edge_refs[jedge1]
-                ej = Ej.edge_refs[jedge2]
-                ejsubi = ej - ei
-                if ejsubi:
-                    newedges.append((self.edge_transforms[jedge1], Ej.edge_transforms[jedge2], ejsubi))
-                eisubj = ei - ej
-                if eisubj:
-                    newedges.append((self.edge_transforms[iedge1], Ei.edge_transforms[iedge2], eisubj))
+            # Secondly, new edges (which will be pulled to the midpoint) can
+            # originate either from new edge-edges, or from existing ones that
+            # find themselves without a counterpart. The former situation is
+            # trivial, following the convention that existing edge transforms
+            # are copied over in the modified edge.
 
-            extrudetrans = transform.Updim(numpy.eye(baseref.ndims-1)[:, :-1], numpy.zeros(baseref.ndims-1), isflipped=baseref.ndims % 2 == 0)
-            tip = numpy.array([0]*(baseref.ndims-2)+[1], dtype=float)
-            for etrans, trans, edge in newedges:
-                b = etrans.apply(trans.offset)
-                A = numpy.hstack([numpy.dot(etrans.linear, trans.linear), (self._midpoint-b)[:, _]])
-                newtrans = transform.Updim(A, b, isflipped=etrans.isflipped ^ trans.isflipped ^ (baseref.ndims % 2 == 1))  # isflipped logic tested up to 3D
-                self.edge_transforms.append(newtrans)
-                self.edge_refs.append(edge.cone(extrudetrans, tip))
+            assert all(edge.edge_transforms == newedge.edge_transforms[:edge.nverts]
+                for edge, newedge in zip(baseref.edge_refs, edge_refs))
+
+            # The latter, however, is more tricky. This is the situation that
+            # occurs, for instance, when two out of four edges of a square are
+            # cleanly removed, making two existing edge-edges the new exterior.
+            # Identifying these situations requires an examination of all the
+            # modified edges, that is, edge-edges in locations that pre-existed
+            # in baseref. Knowing that the edges of baseref form a watertight
+            # hull, we employ the strategy of first identifying all edge-edge
+            # counterparts, and then comparing the new references in the
+            # identified locations to see if one of the two disappeared: in
+            # this case the other reference is added to the exterior set.
+
+            # NOTE: establishing edge-edge relations could potentially be
+            # cached for reuse at the level of baseref. However, since this is
+            # the only place that the information is used and all edge pairs
+            # need to anyhow be examined for gaps, it is not clear that the
+            # gains merit the additional complexity.
+
+            orientation = []
+            seen = {}
+            for edge1, newemap1, etrans1, newedge1 in zip(baseref.edge_refs, edge_vertices, baseref.edge_transforms, edge_refs):
+                newedge1_edge = zip(newedge1.edge_vertices, newedge1.edge_transforms, newedge1.edge_refs)
+                trimmed = [] # trimmed will be populated with a subset of newedge1_edge
+                for edge2, (newemap2, etrans2, newedge2) in zip(edge1.edge_refs, newedge1_edge):
+                    if edge2: # existing non-empty edge
+
+                        # To identify matching edge-edges we map their vertices
+                        # to the numbering of the baseref for comparison. Since
+                        # matching edge-edges have must have equal references,
+                        # and by construction have matching orientation, the
+                        # vertex ordering will be consistent between them.
+
+                        key = tuple(newemap1[newemap2])
+
+                        # NOTE: there have been anecdotal reports that suggest
+                        # the assumption of matching edges may be violated, but
+                        # it is not clear in what scenario this can occur. If
+                        # the 'not seen' assertion below fails, please provide
+                        # the developers with a reproducable issue for study.
+
+                        try:
+                            newedge2_ = seen.pop(key)
+                        except KeyError:
+                            seen[key] = newedge2
+                        else: # a counterpart is found, placing newedge2 against newedge2_
+                            if not newedge2:
+                                trimmed.append((newemap2, etrans2.flipped, newedge2_))
+                            elif not newedge2_:
+                                trimmed.append((newemap2, etrans2, newedge2))
+                            elif newedge2 != newedge2_:
+                                raise NotImplementedError
+
+                # Since newedge1_edge was zipped against the shorter list of
+                # original edge1.edge_refs, what remains are the new edge-edges
+                # that can be added without further examination.
+
+                trimmed.extend(newedge1_edge)
+
+                # What remains is only to extend the edge-vertex relations and
+                # to track if the new edges are left- or right-handed.
+
+                for newemap2, etrans2, newedge2 in trimmed:
+                    for simplex in newemap1[newemap2[newedge2.simplices]]:
+                        assert imidpoint not in simplex
+                        edge_vertices.append(types.frozenarray([imidpoint, *simplex]))
+                        orientation.append(not etrans1.isflipped^etrans2.isflipped)
+
+            assert not seen, f'leftover unmatched edges ({seen}) indicate the edges of baseref ({baseref}) are not watertight!'
 
         self.baseref = baseref
         self._edge_refs = edge_refs
         self.vertices = types.frozenarray(vertices, copy=False)
         self._imidpoint = imidpoint
+        self._midpoint = midpoint
+        self.edge_vertices = tuple(edge_vertices)
+        self.edge_refs = edge_refs + (getsimplex(baseref.ndims-1),) * len(orientation)
+        self.edge_transforms = baseref.edge_transforms + tuple(transform.Updim((vertices[1:] - vertices[0]).T, vertices[0], isflipped)
+          for vertices, isflipped in zip(self.vertices[numpy.array(edge_vertices[baseref.nedges:])], orientation))
 
         super().__init__(baseref.ndims)
 
