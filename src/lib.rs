@@ -4,8 +4,7 @@ pub mod simplex;
 mod util;
 
 use map::relative::RelativeTo;
-use map::tesselation::Tesselation;
-use map::transforms::Transforms;
+use map::coord_system::CoordSystem;
 use map::Map;
 use numpy::{IntoPyArray, IxDyn, PyArray, PyArrayDyn, PyReadonlyArrayDyn, PyReadonlyArray2, PyArray2};
 use pyo3::exceptions::{PyIndexError, PyValueError};
@@ -120,16 +119,15 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
         Ok((index, result))
     }
 
-    #[pyclass(name = "Tesselation", module = "nutils._rust")]
+    #[pyclass(name = "CoordSystem", module = "nutils._rust")]
     #[derive(Debug, Clone)]
-    struct PyTesselation(Tesselation);
+    struct PyCoordSystem(CoordSystem);
 
     #[pymethods]
-    impl PyTesselation {
-        #[staticmethod]
-        pub fn new_identity(shapes: Vec<PySimplex>, len: usize) -> Self {
-            let shapes = shapes.iter().map(|shape| shape.into()).collect();
-            Tesselation::identity(shapes, len).into()
+    impl PyCoordSystem {
+        #[new]
+        pub fn new(dim: usize, len: usize) -> Self {
+            CoordSystem::new(dim, len).into()
         }
         pub fn __repr__(&self) -> String {
             format!("{:?}", self.0)
@@ -139,154 +137,12 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
         }
         #[getter]
         pub fn dim(&self) -> usize {
-            self.0.len()
+            self.0.dim()
         }
-        pub fn __mul__(&self, rhs: &PyTesselation) -> Self {
+        pub fn __mul__(&self, rhs: &PyCoordSystem) -> Self {
             Self(&self.0 * &rhs.0)
         }
-        pub fn concat(&self, other: &PyTesselation) -> PyResult<Self> {
-            Ok(Self(self.0.concat(&other.0)?))
-        }
-        pub fn take(&self, indices: Vec<usize>) -> PyResult<Self> {
-            Ok(Self(self.0.take(&indices)?))
-        }
-        #[getter]
-        pub fn children(&self) -> Self {
-            Self(self.0.children())
-        }
-        #[getter]
-        pub fn edges(&self) -> PyResult<Self> {
-            Ok(Self(self.0.edges()?))
-        }
-        #[getter]
-        pub fn centroids(&self) -> Self {
-            Self(self.0.centroids())
-        }
-        #[getter]
-        pub fn vertices(&self) -> Self {
-            Self(self.0.vertices())
-        }
-        pub fn apply_index(&self, index: usize) -> PyResult<usize> {
-            self.0
-                .apply_index(index)
-                .ok_or(PyIndexError::new_err("index out of range"))
-        }
-        pub fn apply<'py>(
-            &self,
-            py: Python<'py>,
-            index: usize,
-            coords: PyReadonlyArrayDyn<f64>,
-        ) -> PyResult<(usize, &'py PyArrayDyn<f64>)> {
-            apply_map_from_numpy(py, &self.0, index, coords)
-        }
-        //pub fn unapply_indices(&self, indices: Vec<usize>) -> PyResult<Vec<usize>> {
-        //    self.0
-        //        .unapply_indices(&indices)
-        //        .map(|mut indices| { indices.sort(); indices })
-        //        .ok_or(PyValueError::new_err("index out of range"))
-        //}
-        pub fn relative_to(&self, target: &Self) -> PyResult<PyMap> {
-            self.0
-                .relative_to(&target.0)
-                .map(|rel| PyMap(rel))
-                .ok_or(PyValueError::new_err("cannot make relative"))
-        }
-    }
-
-    impl From<Tesselation> for PyTesselation {
-        fn from(tesselation: Tesselation) -> PyTesselation {
-            PyTesselation(tesselation)
-        }
-    }
-
-    m.add_class::<PyTesselation>()?;
-
-    #[pyclass(name = "Map", module = "nutils._rust")]
-    #[derive(Debug, Clone)]
-    struct PyMap(<Tesselation as RelativeTo<Tesselation>>::Output);
-
-    #[pymethods]
-    impl PyMap {
-        pub fn __repr__(&self) -> String {
-            format!("{:?}", self.0)
-        }
-        pub fn len_out(&self) -> usize {
-            self.0.len_out()
-        }
-        pub fn len_in(&self) -> usize {
-            self.0.len_in()
-        }
-        pub fn dim_out(&self) -> usize {
-            self.0.dim_out()
-        }
-        pub fn dim_in(&self) -> usize {
-            self.0.dim_in()
-        }
-        pub fn delta_dim(&self) -> usize {
-            self.0.delta_dim()
-        }
-        pub fn apply_index(&self, index: usize) -> PyResult<usize> {
-            self.0
-                .apply_index(index)
-                .ok_or(PyIndexError::new_err("index out of range"))
-        }
-        pub fn apply<'py>(
-            &self,
-            py: Python<'py>,
-            index: usize,
-            coords: PyReadonlyArrayDyn<f64>,
-        ) -> PyResult<(usize, &'py PyArrayDyn<f64>)> {
-            apply_map_from_numpy(py, &self.0, index, coords)
-        }
-        pub fn unapply_indices(&self, indices: Vec<usize>) -> PyResult<Vec<usize>> {
-            self.0
-                .unapply_indices(&indices)
-                .map(|mut indices| {
-                    indices.sort();
-                    indices
-                })
-                .ok_or(PyValueError::new_err("index out of range"))
-        }
-    }
-
-    m.add_class::<PyMap>()?;
-
-    #[pyclass(name = "Transforms", module = "nutils._rust")]
-    #[derive(Debug, Clone)]
-    struct PyTransforms(Transforms);
-
-    #[pymethods]
-    impl PyTransforms {
-        #[staticmethod]
-        pub fn new_identity(dim: usize, len: usize) -> Self {
-            Transforms::identity(dim, len).into()
-        }
-        pub fn __repr__(&self) -> String {
-            format!("{:?}", self.0)
-        }
-        pub fn __len__(&self) -> usize {
-            self.0.len_in()
-        }
-        #[getter]
-        pub fn fromlen(&self) -> usize {
-            self.0.len_out()
-        }
-        #[getter]
-        pub fn tolen(&self) -> usize {
-            self.0.len_out()
-        }
-        #[getter]
-        pub fn fromdims(&self) -> usize {
-            self.0.dim_in()
-        }
-        #[getter]
-        pub fn todims(&self) -> usize {
-            self.0.dim_out()
-        }
-        pub fn __mul__(&self, rhs: &PyTransforms) -> Self {
-            Self(&self.0 * &rhs.0)
-        }
-        pub fn concat(&self, other: &PyTransforms) -> PyResult<Self> {
+        pub fn concat(&self, other: &PyCoordSystem) -> PyResult<Self> {
             Ok(Self(self.0.concat(&other.0)?))
         }
         pub fn take(&self, indices: Vec<usize>) -> PyResult<Self> {
@@ -307,67 +163,28 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
             let points: Vec<f64> = points.as_array().iter().cloned().collect();
             Ok(Self(self.0.uniform_points(points, point_dim, offset)?))
         }
-        pub fn apply_index(&self, index: usize) -> PyResult<usize> {
-            self.0
-                .apply_index(index)
-                .ok_or(PyIndexError::new_err("index out of range"))
-        }
-        pub fn apply<'py>(
-            &self,
-            py: Python<'py>,
-            index: usize,
-            coords: PyReadonlyArrayDyn<f64>,
-        ) -> PyResult<(usize, &'py PyArrayDyn<f64>)> {
-            apply_map_from_numpy(py, &self.0, index, coords)
-        }
-        //pub fn unapply_indices(&self, indices: Vec<usize>) -> PyResult<Vec<usize>> {
-        //    self.0
-        //        .unapply_indices(&indices)
-        //        .map(|mut indices| { indices.sort(); indices })
-        //        .ok_or(PyValueError::new_err("index out of range"))
-        //}
-        pub fn relative_to(&self, target: &Self) -> PyResult<PyRelativeTransforms> {
+        pub fn trans_to(&self, target: &Self) -> PyResult<PyCoordTrans> {
             self.0
                 .relative_to(&target.0)
-                .map(|rel| PyRelativeTransforms(rel))
+                .map(|rel| PyCoordTrans(rel))
                 .ok_or(PyValueError::new_err("cannot make relative"))
         }
-        pub fn basis<'py>(&self, py: Python<'py>, index: usize) -> PyResult<&'py PyArray2<f64>> {
-            if index >= self.0.len_in() {
-                return Err(PyIndexError::new_err("index out of range"));
-            }
-            let mut basis: Vec<f64> = iter::repeat(0.0).take(self.0.dim_out() * self.0.dim_out()).collect();
-            for i in 0..self.0.dim_in() {
-                basis[i * self.0.dim_out() + i] = 1.0;
-            }
-            let mut dim_in = self.0.dim_in();
-            self.0.update_basis(index, &mut basis[..], self.0.dim_out(), &mut dim_in, 0);
-            PyArray::from_vec(py, basis).reshape([self.0.dim_out(), self.0.dim_out()])
-        }
-        #[getter]
-        pub fn is_identity(&self) -> bool {
-            self.0.is_identity()
-        }
-        #[getter]
-        pub fn is_index_map(&self) -> bool {
-            self.0.is_index_map()
+    }
+
+    impl From<CoordSystem> for PyCoordSystem {
+        fn from(transforms: CoordSystem) -> PyCoordSystem {
+            PyCoordSystem(transforms)
         }
     }
 
-    impl From<Transforms> for PyTransforms {
-        fn from(transforms: Transforms) -> PyTransforms {
-            PyTransforms(transforms)
-        }
-    }
+    m.add_class::<PyCoordSystem>()?;
 
-    m.add_class::<PyTransforms>()?;
-
-    #[pyclass(name = "RelativeTransforms", module = "nutils._rust")]
+    #[pyclass(name = "CoordTrans", module = "nutils._rust")]
     #[derive(Debug, Clone)]
-    struct PyRelativeTransforms(<Transforms as RelativeTo<Transforms>>::Output);
+    struct PyCoordTrans(<CoordSystem as RelativeTo<CoordSystem>>::Output);
 
     #[pymethods]
-    impl PyRelativeTransforms {
+    impl PyCoordTrans {
         pub fn __repr__(&self) -> String {
             format!("{:?}", self.0)
         }
@@ -375,19 +192,19 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
             self.0.len_in()
         }
         #[getter]
-        pub fn fromlen(&self) -> usize {
+        pub fn from_len(&self) -> usize {
             self.0.len_out()
         }
         #[getter]
-        pub fn tolen(&self) -> usize {
+        pub fn to_len(&self) -> usize {
             self.0.len_out()
         }
         #[getter]
-        pub fn fromdims(&self) -> usize {
+        pub fn from_dim(&self) -> usize {
             self.0.dim_in()
         }
         #[getter]
-        pub fn todims(&self) -> usize {
+        pub fn to_dim(&self) -> usize {
             self.0.dim_out()
         }
         pub fn apply_index(&self, index: usize) -> PyResult<usize> {
@@ -434,7 +251,7 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
         }
     }
 
-    m.add_class::<PyRelativeTransforms>()?;
+    m.add_class::<PyCoordTrans>()?;
 
     Ok(())
 }

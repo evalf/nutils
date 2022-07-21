@@ -947,11 +947,11 @@ where
     }
 }
 
-/// An interface for swapping a composition of `Self` with an [`Primitive`].
+/// An interface for swapping a composition of `Self` with a [`Primitive`].
 pub trait SwapPrimitiveComposition {
     type Output;
 
-    /// Returns an [`Primitive`'] and a map such that the composition those is equivalent to the composition of `self` with `inner`.
+    /// Returns a [`Primitive`'] and a map such that the composition of those is equivalent to the composition of `self` with `inner`.
     fn swap_primitive_composition(
         &self,
         inner: &Primitive,

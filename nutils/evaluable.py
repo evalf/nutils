@@ -3878,61 +3878,61 @@ class NormDim(Array):
             return 0, upper_length - 1
 
 
-class TransformsApplyCoords(Array):
+class TransformCoords(Array):
 
-    def __init__(self, transforms, index: Array, coords: Array):
+    def __init__(self, trans, index: Array, coords: Array):
         if index.dtype != int or index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
         if coords.dtype != float:
             raise ValueError('argument `coords` must be a real-valued array with at least one axis')
-        self._transforms = transforms
+        self._trans = trans
         self._index = index
         self._coords = coords
-        super().__init__(args=[index, coords], shape=(*coords.shape[:-1], transforms.todims), dtype=float)
+        super().__init__(args=[index, coords], shape=(*coords.shape[:-1], trans.to_dim), dtype=float)
 
     def evalf(self, index, coords):
-        return self._transforms.apply(index.__index__(), coords)[1]
+        return self._trans.apply(index.__index__(), coords)[1]
 
     def _derivative(self, var, seen):
-        linear = TransformsBasis(self._transforms, self._index)[:,:self._transforms.fromdims]
+        linear = TransformBasis(self._trans, self._index)[:,:self._trans.from_dim]
         dcoords = derivative(self._coords, var, seen)
         return einsum('ij,AjB->AiB', linear, dcoords, A=self._coords.ndim - 1, B=var.ndim)
 
     def _simplified(self):
-        if self._transforms.is_index_map:
+        if self._trans.is_index_map:
             return self._coords
 
 
-class TransformsApplyIndex(Array):
+class TransformIndex(Array):
 
-    def __init__(self, transforms, index: Array):
+    def __init__(self, trans, index: Array):
         if index.dtype != int or index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
-        self._transforms = transforms
+        self._trans = trans
         self._index = index
         super().__init__(args=[index], shape=(), dtype=int)
 
     def evalf(self, index):
-        return numpy.array(self._transforms.apply_index(index.__index__()))
+        return numpy.array(self._trans.apply_index(index.__index__()))
 
     def _intbounds_impl(self):
-        return 0, len(self._transforms) - 1
+        return 0, len(self._trans) - 1
 
     def _simplified(self):
-        if self._transforms.is_identity:
+        if self._trans.is_identity:
             return self._index
 
 
-class TransformsBasis(Array):
+class TransformBasis(Array):
 
-    def __init__(self, transforms, index: Array):
+    def __init__(self, trans, index: Array):
         if index.dtype != int or index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
-        self._transforms = transforms
-        super().__init__(args=[index], shape=(transforms.todims, transforms.todims), dtype=float)
+        self._trans = trans
+        super().__init__(args=[index], shape=(trans.to_dim, trans.to_dim), dtype=float)
 
     def evalf(self, index):
-        return self._transforms.basis(index.__index__())
+        return self._trans.basis(index.__index__())
 
 
 class _LoopIndex(Argument):
