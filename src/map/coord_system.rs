@@ -10,7 +10,7 @@ use std::iter;
 use std::ops::Mul;
 use std::sync::Arc;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct UniformCoordSystem(WithBounds<Vec<Primitive>>);
 
 impl UniformCoordSystem {
@@ -101,6 +101,7 @@ impl Map for UniformCoordSystem {
     dispatch! {fn is_identity(&self) -> bool}
     dispatch! {fn is_index_map(&self) -> bool}
     dispatch! {fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize}
+    dispatch! {fn basis_is_constant(&self) -> bool}
 }
 
 impl AllPrimitiveDecompositions for UniformCoordSystem {
@@ -121,7 +122,7 @@ impl RelativeTo<Self> for UniformCoordSystem {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct CoordSystem(UniformConcat<UniformCoordSystem>);
 
 impl CoordSystem {
@@ -266,6 +267,7 @@ impl Map for CoordSystem {
     dispatch! {fn is_identity(&self) -> bool}
     dispatch! {fn is_index_map(&self) -> bool}
     dispatch! {fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize}
+    dispatch! {fn basis_is_constant(&self) -> bool}
 }
 
 impl RelativeTo<Self> for CoordSystem {

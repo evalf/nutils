@@ -196,7 +196,7 @@ pub trait RelativeTo<Target: Map>: Map + Sized {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub enum Relative<M: Map> {
     Identity(WithBounds<Identity>),
     Slice(WithBounds<Slice>),
@@ -252,6 +252,7 @@ impl<M: Map> Map for Relative<M> {
     dispatch! {fn is_identity(&self) -> bool}
     dispatch! {fn is_index_map(&self) -> bool}
     dispatch! {fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize}
+    dispatch! {fn basis_is_constant(&self) -> bool}
 }
 
 //impl AddOffset for Relative {
@@ -328,7 +329,7 @@ impl UnapplyIndicesData for IndexOutIn {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct RelativeToConcat<M: Map> {
     rels: Vec<M>,
     index_map: Arc<Vec<(usize, usize)>>,
@@ -402,6 +403,13 @@ impl<M: Map> Map for RelativeToConcat<M> {
         let n = self.index_map.len();
         self.rels[iin / n].update_basis(iin % n, basis, dim_out, dim_in, offset);
         iout
+    }
+    fn basis_is_constant(&self) -> bool {
+        if self.len_in == 1 {
+            true
+        } else {
+            self.rels.iter().all(|map| map.basis_is_constant())
+        }
     }
 }
 

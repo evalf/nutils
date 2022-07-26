@@ -3,7 +3,7 @@ use num::Integer as _;
 use std::ops::Deref;
 
 /// The composition of two maps.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct BinaryComposition<Outer: Map, Inner: Map>(Outer, Inner);
 
 impl<Outer: Map, Inner: Map> BinaryComposition<Outer, Inner> {
@@ -94,10 +94,14 @@ impl<Outer: Map, Inner: Map> Map for BinaryComposition<Outer, Inner> {
         let index = self.1.update_basis(index, basis, dim_out, dim_in, offset);
         self.0.update_basis(index, basis, dim_out, dim_in, offset)
     }
+    #[inline]
+    fn basis_is_constant(&self) -> bool {
+        self.0.basis_is_constant() && self.1.basis_is_constant()
+    }
 }
 
 /// The composition of an unempty sequence of maps.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct UniformComposition<M, Array = Vec<M>>(Array)
 where
     M: Map,
@@ -212,10 +216,14 @@ where
     fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
         self.iter().rev().fold(index, |index, map| map.update_basis(index, basis, dim_out, dim_in, offset))
     }
+    #[inline]
+    fn basis_is_constant(&self) -> bool {
+        self.iter().all(|map| map.basis_is_constant())
+    }
 }
 
 /// The concatenation of two maps.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct BinaryConcat<M0: Map, M1: Map>(M0, M1);
 
 impl<M0: Map, M1: Map> BinaryConcat<M0, M1> {
@@ -319,10 +327,14 @@ impl<M0: Map, M1: Map> Map for BinaryConcat<M0, M1> {
             self.1.update_basis(index - self.0.len_in(), basis, dim_out, dim_in, offset)
         }
     }
+    #[inline]
+    fn basis_is_constant(&self) -> bool {
+        self.0.basis_is_constant() && self.1.basis_is_constant()
+    }
 }
 
 /// The concatenation of an unempty sequence of maps.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct UniformConcat<M, Array = Vec<M>>
 where
     M: Map,
@@ -460,10 +472,14 @@ where
         }
         unreachable! {}
     }
+    #[inline]
+    fn basis_is_constant(&self) -> bool {
+        self.iter().all(|map| map.basis_is_constant())
+    }
 }
 
 /// The product of two maps.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct BinaryProduct<M0: Map, M1: Map>(M0, M1);
 
 impl<M0: Map, M1: Map> BinaryProduct<M0, M1> {
@@ -558,6 +574,10 @@ impl<M0: Map, M1: Map> Map for BinaryProduct<M0, M1> {
     fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
         unimplemented!{}
     }
+    #[inline]
+    fn basis_is_constant(&self) -> bool {
+        self.0.basis_is_constant() && self.1.basis_is_constant()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -573,7 +593,7 @@ impl UnapplyIndicesData for UnapplyBinaryProduct {
 }
 
 /// The product of a sequence of maps.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct UniformProduct<M, Array = Vec<M>>(Array)
 where
     M: Map,
@@ -758,6 +778,7 @@ where
     dispatch! {fn is_identity(&self) -> bool}
     dispatch! {fn is_index_map(&self) -> bool}
     dispatch! {fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize}
+    dispatch! {fn basis_is_constant(&self) -> bool}
 }
 
 impl<M: Map> FromIterator<M> for UniformProduct<M, Vec<M>> {

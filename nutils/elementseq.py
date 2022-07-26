@@ -122,10 +122,7 @@ class References(types.Singleton):
         if numeric.isint(index):
             return self.get(index)
         elif isinstance(index, slice):
-            index = range(len(self))[index]
-            if index == range(len(self)):
-                return self
-            return self.take(numpy.arange(index.start, index.stop, index.step))
+            return self.slice(index)
         elif numeric.isintarray(index):
             return self.take(index)
         elif numeric.isboolarray(index):
@@ -174,6 +171,25 @@ class References(types.Singleton):
         '''
 
         raise NotImplementedError
+
+    def slice(self, __s: slice) -> 'References':
+        '''Return a slice of this sequence.
+
+        Parameters
+        ----------
+        s : :class:`slice`
+            The slice.
+
+        Returns
+        -------
+        :class:`References`
+            The slice.
+        '''
+
+        start, stop, step = __s.indices(len(self))
+        if start == 0 and stop == len(self) and step == 1:
+            return self
+        return self.take(numpy.arange(start, stop, step))
 
     def take(self, indices: numpy.ndarray) -> 'References':
         '''Return a selection of this sequence.

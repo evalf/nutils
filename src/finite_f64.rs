@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(transparent)]
@@ -19,5 +20,11 @@ impl Ord for FiniteF64 {
         } else {
             panic!("not finite");
         }
+    }
+}
+
+impl Hash for FiniteF64 {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.to_bits().hash(state);
     }
 }

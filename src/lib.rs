@@ -8,9 +8,13 @@ use map::coord_system::CoordSystem;
 use map::Map;
 use numpy::{IntoPyArray, IxDyn, PyArray, PyArrayDyn, PyReadonlyArrayDyn, PyReadonlyArray2, PyArray2};
 use pyo3::exceptions::{PyIndexError, PyValueError};
+use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
+use pyo3::types::{PySlice, PySliceIndices};
 use simplex::Simplex;
 use std::iter;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 impl From<map::Error> for PyErr {
     fn from(err: map::Error) -> PyErr {
@@ -56,6 +60,35 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
         #[getter]
         pub fn nedges(&self) -> usize {
             self.0.nedges()
+        }
+        pub fn __richcmp__<'py>(
+            &self,
+            py: Python<'py>,
+            other: &'py PyAny,
+            op: CompareOp,
+        ) -> PyObject {
+            if let Ok(other) = PySimplex::extract(other) {
+                match op {
+                    CompareOp::Eq => (self.0 == other.0).into_py(py),
+                    CompareOp::Ne => (self.0 != other.0).into_py(py),
+                    CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge => {
+                        py.NotImplemented()
+                    }
+                }
+            } else {
+                match op {
+                    CompareOp::Eq => false.into_py(py),
+                    CompareOp::Ne => true.into_py(py),
+                    CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge => {
+                        py.NotImplemented()
+                    }
+                }
+            }
+        }
+        pub fn __hash__(&self) -> u64 {
+            let mut hasher = DefaultHasher::new();
+            self.0.hash(&mut hasher);
+            hasher.finish()
         }
     }
 
@@ -132,6 +165,35 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
         pub fn __repr__(&self) -> String {
             format!("{:?}", self.0)
         }
+        pub fn __richcmp__<'py>(
+            &self,
+            py: Python<'py>,
+            other: &'py PyAny,
+            op: CompareOp,
+        ) -> PyObject {
+            if let Ok(other) = PyCoordSystem::extract(other) {
+                match op {
+                    CompareOp::Eq => (self.0 == other.0).into_py(py),
+                    CompareOp::Ne => (self.0 != other.0).into_py(py),
+                    CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge => {
+                        py.NotImplemented()
+                    }
+                }
+            } else {
+                match op {
+                    CompareOp::Eq => false.into_py(py),
+                    CompareOp::Ne => true.into_py(py),
+                    CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge => {
+                        py.NotImplemented()
+                    }
+                }
+            }
+        }
+        pub fn __hash__(&self) -> u64 {
+            let mut hasher = DefaultHasher::new();
+            self.0.hash(&mut hasher);
+            hasher.finish()
+        }
         pub fn __len__(&self) -> usize {
             self.0.len()
         }
@@ -144,6 +206,16 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
         }
         pub fn concat(&self, other: &PyCoordSystem) -> PyResult<Self> {
             Ok(Self(self.0.concat(&other.0)?))
+        }
+        pub fn slice(&self, s: &PySlice) -> PyResult<Self> {
+            let len: isize = self.0.len().try_into()?;
+            let PySliceIndices { start, stop, step, slicelength } = s.indices(len.try_into()?)?;
+            if start == 0 && stop == len && step == 1 {
+                Ok(self.clone())
+            } else {
+                let indices: Vec<usize> = (0..slicelength).map(|i| (start + i * step) as usize).collect();
+                Ok(Self(self.0.take(&indices)?))
+            }
         }
         pub fn take(&self, indices: Vec<usize>) -> PyResult<Self> {
             Ok(Self(self.0.take(&indices)?))
@@ -187,6 +259,35 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
     impl PyCoordTrans {
         pub fn __repr__(&self) -> String {
             format!("{:?}", self.0)
+        }
+        pub fn __richcmp__<'py>(
+            &self,
+            py: Python<'py>,
+            other: &'py PyAny,
+            op: CompareOp,
+        ) -> PyObject {
+            if let Ok(other) = PyCoordTrans::extract(other) {
+                match op {
+                    CompareOp::Eq => (self.0 == other.0).into_py(py),
+                    CompareOp::Ne => (self.0 != other.0).into_py(py),
+                    CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge => {
+                        py.NotImplemented()
+                    }
+                }
+            } else {
+                match op {
+                    CompareOp::Eq => false.into_py(py),
+                    CompareOp::Ne => true.into_py(py),
+                    CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge => {
+                        py.NotImplemented()
+                    }
+                }
+            }
+        }
+        pub fn __hash__(&self) -> u64 {
+            let mut hasher = DefaultHasher::new();
+            self.0.hash(&mut hasher);
+            hasher.finish()
         }
         pub fn __len__(&self) -> usize {
             self.0.len_in()
@@ -248,6 +349,10 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
         #[getter]
         pub fn is_index_map(&self) -> bool {
             self.0.is_index_map()
+        }
+        #[getter]
+        pub fn basis_is_constant(&self) -> bool {
+            self.0.basis_is_constant()
         }
     }
 

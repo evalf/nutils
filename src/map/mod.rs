@@ -121,6 +121,7 @@ pub trait Map {
     fn is_index_map(&self) -> bool;
     // TODO: return Result<Self, Error>, add index, dimension checks
     fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize;
+    fn basis_is_constant(&self) -> bool;
 }
 
 pub trait AddOffset {

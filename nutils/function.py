@@ -177,7 +177,7 @@ class LowerArgs(NamedTuple):
 
         bound_index = bounds[0].index
         for bound in bounds[1:]:
-            bound_index = bound_index * len(bound.coord_system) + bound.index
+            bound_index = bound_index * len(bound.coord_systems[0]) + bound.index
         index = evaluable.TransformIndex(trans, bound_index)
         if stride_after != 1:
             index = evaluable.FloorDivide(index, stride_after)

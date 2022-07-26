@@ -2300,6 +2300,15 @@ class FloorDivide(Pointwise):
     __slots__ = ()
     evalf = numpy.floor_divide
 
+    def _intbounds_impl(self):
+        dl, du = self.args[1]._intbounds
+        if dl != du or not isinstance(dl, int) or dl <= 0:
+            return super()._intbounds_impl()
+        nl, nu = self.args[0]._intbounds
+        l = nl // dl if isinstance(nl, int) else nl
+        u = nu // dl if isinstance(nu, int) else nu
+        return l, u
+
 
 class Absolute(Pointwise):
     __slots__ = ()
@@ -3883,6 +3892,9 @@ class TransformCoords(Array):
     def __init__(self, trans, index: Array, coords: Array):
         if index.dtype != int or index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
+        imin, imax = index._intbounds
+        if imin < 0 or imax >= trans.from_len:
+            raise ValueError('argument `index` is out of bounds')
         if coords.dtype != float:
             raise ValueError('argument `coords` must be a real-valued array with at least one axis')
         self._trans = trans
@@ -3908,6 +3920,9 @@ class TransformIndex(Array):
     def __init__(self, trans, index: Array):
         if index.dtype != int or index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
+        imin, imax = index._intbounds
+        if imin < 0 or imax >= trans.from_len:
+            raise ValueError('argument `index` is out of bounds')
         self._trans = trans
         self._index = index
         super().__init__(args=[index], shape=(), dtype=int)
@@ -3916,11 +3931,15 @@ class TransformIndex(Array):
         return numpy.array(self._trans.apply_index(index.__index__()))
 
     def _intbounds_impl(self):
-        return 0, len(self._trans) - 1
+        return 0, self._trans.to_len - 1
 
     def _simplified(self):
         if self._trans.is_identity:
             return self._index
+
+    @property
+    def _node_details(self):
+        return super()._node_details + f'\n{hash(self)}'
 
 
 class TransformBasis(Array):
@@ -3933,6 +3952,10 @@ class TransformBasis(Array):
 
     def evalf(self, index):
         return self._trans.basis(index.__index__())
+
+    def _simplified(self):
+        if self._trans.basis_is_constant:
+            return asarray(self._trans.basis(0))
 
 
 class _LoopIndex(Argument):

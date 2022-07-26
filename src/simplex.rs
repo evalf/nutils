@@ -1,5 +1,5 @@
 /// Simplex.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Simplex {
     Line,
     Triangle,

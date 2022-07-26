@@ -57,6 +57,7 @@ pub trait UnboundedMap {
         self.dim_out() == 0
     }
     fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize;
+    fn basis_is_constant(&self) -> bool;
 }
 
 fn coords_iter_mut(
@@ -76,7 +77,7 @@ fn coords_iter_mut(
     })
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Identity;
 
 impl UnboundedMap for Identity {
@@ -124,13 +125,17 @@ impl UnboundedMap for Identity {
     fn update_basis(&self, index: usize, _basis: &mut [f64], _dim_out: usize, _dim_in: &mut usize, _offset: usize) -> usize {
         index
     }
+    #[inline]
+    fn basis_is_constant(&self) -> bool {
+        true
+    }
 }
 
 impl AddOffset for Identity {
     fn add_offset(&mut self, _offset: usize) {}
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Offset<M: UnboundedMap>(pub M, pub usize);
 
 impl<M: UnboundedMap> UnboundedMap for Offset<M> {
@@ -184,6 +189,10 @@ impl<M: UnboundedMap> UnboundedMap for Offset<M> {
     fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
         self.0.update_basis(index, basis, dim_out, dim_in, offset + self.1)
     }
+    #[inline]
+    fn basis_is_constant(&self) -> bool {
+        self.0.basis_is_constant()
+    }
 }
 
 impl<M: UnboundedMap> AddOffset for Offset<M> {
@@ -192,7 +201,7 @@ impl<M: UnboundedMap> AddOffset for Offset<M> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Transpose(usize, usize);
 
 impl Transpose {
@@ -251,13 +260,17 @@ impl UnboundedMap for Transpose {
     fn update_basis(&self, index: usize, _basis: &mut [f64], _dim_out: usize, _dim_in: &mut usize, _offset: usize) -> usize {
         self.apply_index(index)
     }
+    #[inline]
+    fn basis_is_constant(&self) -> bool {
+        true
+    }
 }
 
 impl AddOffset for Transpose {
     fn add_offset(&mut self, _offset: usize) {}
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Take {
     indices: Arc<[usize]>,
     nindices: usize,
@@ -323,13 +336,17 @@ impl UnboundedMap for Take {
     fn update_basis(&self, index: usize, _basis: &mut [f64], _dim_out: usize, _dim_in: &mut usize, _offset: usize) -> usize {
         self.apply_index(index)
     }
+    #[inline]
+    fn basis_is_constant(&self) -> bool {
+        true
+    }
 }
 
 impl AddOffset for Take {
     fn add_offset(&mut self, _offset: usize) {}
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Slice {
     start: usize,
     len_in: usize,
@@ -345,6 +362,10 @@ impl Slice {
             len_in,
             len_out,
         }
+    }
+    #[inline]
+    fn is_identity(&self) -> bool {
+        self.start == 0 && self.len_in == self.len_out
     }
 }
 
@@ -388,13 +409,17 @@ impl UnboundedMap for Slice {
     fn update_basis(&self, index: usize, _basis: &mut [f64], _dim_out: usize, _dim_in: &mut usize, _offset: usize) -> usize {
         self.apply_index(index)
     }
+    #[inline]
+    fn basis_is_constant(&self) -> bool {
+        true
+    }
 }
 
 impl AddOffset for Slice {
     fn add_offset(&mut self, _offset: usize) {}
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Children(Simplex);
 
 impl Children {
@@ -440,6 +465,13 @@ impl UnboundedMap for Children {
     fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
         self.0.update_child_basis(index, basis, dim_out, dim_in, offset)
     }
+    #[inline]
+    fn basis_is_constant(&self) -> bool {
+        match self.0 {
+            Simplex::Line => true,
+            _ => false,
+        }
+    }
 }
 
 impl From<Simplex> for Children {
@@ -448,7 +480,7 @@ impl From<Simplex> for Children {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Edges(pub Simplex);
 
 impl Edges {
@@ -494,6 +526,10 @@ impl UnboundedMap for Edges {
     fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
         self.0.update_edge_basis(index, basis, dim_out, dim_in, offset)
     }
+    #[inline]
+    fn basis_is_constant(&self) -> bool {
+        false
+    }
 }
 
 impl From<Simplex> for Edges {
@@ -502,7 +538,7 @@ impl From<Simplex> for Edges {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UniformPoints {
     points: Arc<[FiniteF64]>,
     npoints: usize,
@@ -571,7 +607,7 @@ impl UnboundedMap for UniformPoints {
                 basis[(i + self.point_dim) * dim_out + j] = basis[i * dim_out + j];
             }
         }
-        for i in (offset..offset + self.point_dim) {
+        for i in offset..offset + self.point_dim {
             for j in 0..*dim_in {
                 basis[i * self.point_dim + j] = 0.0;
             }
@@ -588,10 +624,14 @@ impl UnboundedMap for UniformPoints {
         *dim_in += self.point_dim;
         index / self.npoints
     }
+    #[inline]
+    fn basis_is_constant(&self) -> bool {
+        true
+    }
 }
 
 /// An enum of primitive maps.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Primitive {
     Transpose(Transpose),
     Take(Take),
@@ -700,6 +740,7 @@ impl UnboundedMap for Primitive {
     dispatch! {fn is_identity(&self) -> bool}
     dispatch! {fn is_index_map(&self) -> bool}
     dispatch! {fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize}
+    dispatch! {fn basis_is_constant(&self) -> bool}
 }
 
 impl AddOffset for Primitive {
@@ -826,6 +867,14 @@ where
     fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
         self.iter().rev().fold(index, |index, map| map.update_basis(index, basis, dim_out, dim_in, offset))
     }
+    #[inline]
+    fn basis_is_constant(&self) -> bool {
+        if self.mod_in() == 1 {
+            true
+        } else {
+            self.iter().all(|map| map.basis_is_constant())
+        }
+    }
 }
 
 impl<M, Array> AddOffset for Array
@@ -838,7 +887,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct WithBounds<M: UnboundedMap> {
     map: M,
     dim_in: usize,
@@ -934,6 +983,10 @@ impl<M: UnboundedMap> Map for WithBounds<M> {
     #[inline]
     fn update_basis(&self, index: usize, basis: &mut [f64], dim_out: usize, dim_in: &mut usize, offset: usize) -> usize {
         self.map.update_basis(index, basis, dim_out, dim_in, offset)
+    }
+    #[inline]
+    fn basis_is_constant(&self) -> bool {
+        self.map.basis_is_constant()
     }
 }
 
