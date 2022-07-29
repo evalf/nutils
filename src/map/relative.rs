@@ -446,15 +446,19 @@ where
                     } else {
                         Relative::Map(rel)
                     };
-                    return Some(Relative::Composition(UniformComposition::new_unchecked(
-                        vec![slice, rel],
-                    )));
+                    return Some(if slice.is_identity() {
+                        rel
+                    } else {
+                        Relative::Composition(UniformComposition::new_unchecked(
+                            vec![slice, rel],
+                        ))
+                    });
                 }
                 PartialRelative::Some(rel, indices) => {
                     rels_indices.push((rel, offset, indices));
                 }
                 PartialRelative::CannotEstablishRelation => {
-                    return None;
+                    //return None;
                 }
             }
             offset = new_offset;
@@ -475,19 +479,23 @@ where
         let mut index_map: Vec<Option<(usize, usize)>> =
             iter::repeat(None).take(common_len_out).collect();
         let mut rels = Vec::new();
-        for (irel, (rel, offset, out_indices)) in rels_indices.into_iter().enumerate() {
+        for (rel, offset, out_indices) in rels_indices.into_iter() {
             let rel_indices: Vec<_> = (offset..offset + out_indices.len())
                 .zip(out_indices)
                 .map(|(i, j)| IndexOutIn(i, j))
                 .collect();
-            for IndexOutIn(iout, iin) in rel.unapply_indices_unchecked(&rel_indices) {
-                assert!(
-                    index_map[iin].is_none(),
-                    "target contains duplicate entries"
-                );
-                index_map[iin] = Some((iout, iin + irel * common_len_out));
+            let unapplied = rel.unapply_indices_unchecked(&rel_indices);
+            if !unapplied.is_empty() {
+                let rel_offset = rels.len() * common_len_out;
+                for IndexOutIn(iout, iin) in unapplied {
+                    assert!(
+                        index_map[iin].is_none(),
+                        "target contains duplicate entries"
+                    );
+                    index_map[iin] = Some((iout, iin + rel_offset));
+                }
+                rels.push(rel);
             }
-            rels.push(rel);
         }
         index_map
             .into_iter()

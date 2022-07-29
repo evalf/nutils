@@ -150,7 +150,7 @@ where
 impl<M, Array> Map for UniformComposition<M, Array>
 where
     M: Map,
-    Array: Deref<Target = [M]>,
+    Array: Deref<Target = [M]> + std::fmt::Debug,
 {
     #[inline]
     fn dim_in(&self) -> usize {
@@ -329,7 +329,7 @@ impl<M0: Map, M1: Map> Map for BinaryConcat<M0, M1> {
     }
     #[inline]
     fn basis_is_constant(&self) -> bool {
-        self.0.basis_is_constant() && self.1.basis_is_constant()
+        false
     }
 }
 
@@ -391,7 +391,7 @@ where
 impl<M, Array> Map for UniformConcat<M, Array>
 where
     M: Map,
-    Array: Deref<Target = [M]>,
+    Array: Deref<Target = [M]> + std::fmt::Debug,
 {
     #[inline]
     fn dim_in(&self) -> usize {
@@ -456,7 +456,7 @@ where
     }
     #[inline]
     fn is_identity(&self) -> bool {
-        false
+        self.maps.len() == 1 && self.maps[0].is_identity()
     }
     #[inline]
     fn is_index_map(&self) -> bool {
@@ -474,7 +474,7 @@ where
     }
     #[inline]
     fn basis_is_constant(&self) -> bool {
-        self.iter().all(|map| map.basis_is_constant())
+        self.maps.len() == 1
     }
 }
 
@@ -748,7 +748,7 @@ macro_rules! dispatch {
 impl<M, Array> Map for UniformProduct<M, Array>
 where
     M: Map,
-    Array: Deref<Target = [M]>,
+    Array: Deref<Target = [M]> + std::fmt::Debug,
 {
     dispatch! {fn len_out(&self) -> usize}
     dispatch! {fn len_in(&self) -> usize}

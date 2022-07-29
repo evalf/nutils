@@ -592,19 +592,22 @@ class _Mul(_TensorialSample):
         return (index1[:, None] * self._sample2.npoints + index2[None, :]).ravel()
 
     def get_evaluable_indices(self, __ielem: evaluable.Array) -> evaluable.Array:
-        ielem1, ielem2 = evaluable.divmod(__ielem, self._sample2.nelems)
+        ielem1 = evaluable.FloorDivide(__ielem, self._sample2.nelems)
+        ielem2 = evaluable.mod(__ielem, self._sample2.nelems)
         index1 = self._sample1.get_evaluable_indices(ielem1)
         index2 = self._sample2.get_evaluable_indices(ielem2)
         return evaluable.appendaxes(index1 * self._sample2.npoints, index2.shape) + evaluable.prependaxes(index2, index1.shape)
 
     def get_evaluable_weights(self, __ielem: evaluable.Array) -> evaluable.Array:
-        ielem1, ielem2 = evaluable.divmod(__ielem, self._sample2.nelems)
+        ielem1 = evaluable.FloorDivide(__ielem, self._sample2.nelems)
+        ielem2 = evaluable.mod(__ielem, self._sample2.nelems)
         weights1 = self._sample1.get_evaluable_weights(ielem1)
         weights2 = self._sample2.get_evaluable_weights(ielem2)
         return evaluable.einsum('A,B->AB', weights1, weights2)
 
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
-        ielem1, ielem2 = evaluable.divmod(__ielem, self._sample2.nelems)
+        ielem1 = evaluable.FloorDivide(__ielem, self._sample2.nelems)
+        ielem2 = evaluable.mod(__ielem, self._sample2.nelems)
         return self._sample1.get_lower_args(ielem1) | self._sample2.get_lower_args(ielem2)
 
     def get_element_tri(self, ielem: int) -> numpy.ndarray:

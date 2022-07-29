@@ -173,6 +173,9 @@ class LowerArgs(NamedTuple):
         assert orig_dim + dim_before + dim_after == coord_system.dim
 
         bound_coord_system = util.product(bound.coord_systems[0] for bound in bounds)
+        #if coord_system == bound_coord_system:
+        #    trans = None
+        #else:
         trans = bound_coord_system.trans_to(coord_system)
 
         bound_index = bounds[0].index
@@ -4002,8 +4005,8 @@ class StructuredBasis(Basis):
     def f_dofs_coeffs(self, index: evaluable.Array) -> Tuple[evaluable.Array, evaluable.Array]:
         indices = []
         for n in reversed(self._transforms_shape[1:]):
-            index, ielem = evaluable.divmod(index, n)
-            indices.append(ielem)
+            indices.append(evaluable.mod(index, n))
+            index = evaluable.FloorDivide(index, n)
         indices.append(index)
         indices.reverse()
         ranges = [evaluable.Range(evaluable.get(lengths_i, 0, index_i)) + evaluable.get(offsets_i, 0, index_i)
@@ -4049,6 +4052,53 @@ class PrunedBasis(Basis):
         p_dofs, p_coeffs = self._parent.f_dofs_coeffs(evaluable.get(self._transmap, 0, index))
         dofs = evaluable.take(self._renumber, p_dofs, axis=0)
         return dofs, p_coeffs
+
+
+class ProductBasis(Basis):
+    '''The product of two bases.
+
+    Parameters
+    ----------
+    basis1 : :class:`Basis`
+    basis2 : :class:`Basis`
+    '''
+
+    def __init__(self, basis1: Basis, basis2: Basis):
+        self._basis1 = basis1
+        self._basis2 = basis2
+        super().__init__(
+            basis1.ndofs * basis2.ndofs,
+            basis1.nelems * basis2.nelems,
+            basis1.index * basis2.ndofs + basis2.index,
+            numpy.concatenate([basis1.coords, basis2.coords], axis=0))
+
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        basis1 = self._basis1.lower(args)
+        basis2 = self._basis2.lower(args)
+        return evaluable.ravel(evaluable.insertaxis(basis1, -1, basis2.shape[-1]) * evaluable.insertaxis(basis2, -2, basis1.shape[-1]), -1)
+
+    #@_int_or_vec_ielem
+    #def get_dofs(self, ielem: Union[int, numpy.ndarray]) -> numpy.ndarray:
+    #    ielem1, ielem2 = builtins.divmod(ielem, self._basis2.nelems)
+    #    dofs1 = self._basis1.get_dofs(ielem1)
+    #    dofs2 = self._basis2.get_dofs(ielem2)
+    #    return numpy.ravel(dofs1[:,None] * self._basis2.ndofs + dofs2[None,:])
+
+    @_int_or_vec_dof
+    def get_support(self, dof: Union[int, numpy.ndarray]) -> numpy.ndarray:
+        dof1, dof2 = builtins.divmod(dof, self._basis2.ndofs)
+        ielems1 = self._basis1.get_support(dof1)
+        ielems2 = self._basis2.get_support(dof2)
+        return numpy.ravel(ielems1[:,None] * self._basis2.nelems + ielems2[None,:])
+
+    def f_dofs_coeffs(self, index: evaluable.Array) -> Tuple[evaluable.Array, evaluable.Array]:
+        index1 = evaluable.FloorDivide(index, self._basis2.nelems)
+        index2 = evaluable.mod(index, self._basis2.nelems)
+        dofs1, coeffs1 = self._basis1.f_dofs_coeffs(index1)
+        dofs2, coeffs2 = self._basis2.f_dofs_coeffs(index2)
+        dofs = evaluable.ravel(evaluable.insertaxis(dofs1, 1, dofs2.shape[0]) * self._basis2.ndofs + evaluable.insertaxis(dofs2, 0, dofs1.shape[0]), 0)
+        coeffs = evaluable.PolyOuterProduct(coeffs1, coeffs2)
+        return dofs, coeffs
 
 
 def Namespace(*args, **kwargs):

@@ -39,12 +39,13 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
 
     x, y = geom - .5
     exact = (x**2 + y**2)**(1/3) * numpy.cos(numpy.arctan2(y+x, y-x) * (2/3))
-    domain = domain.trim(exact-1e-15, maxrefine=0)
+    #domain = domain.select(exact, ischeme='gauss0')
     linreg = util.linear_regressor()
 
     for irefine in treelog.iter.fraction('level', range(nrefine+1)):
 
         if irefine:
+            basis = domain.basis(btype, degree=degree)
             refdom = domain.refined
             refbasis = refdom.basis(btype, degree=degree)
             ns.add_field('vref', refbasis)
@@ -52,7 +53,11 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
             res -= refdom.boundary.integral('vref ∇_k(u) n_k dS' @ ns, degree=degree*2)
             indicator = res.derivative('vref').eval(**args)
             supp = refbasis.get_support(indicator**2 > numpy.mean(indicator**2))
-            domain = domain.refined_by(refdom.transforms[supp])
+            if hasattr(domain, 'coord_system'):
+                domain = domain.refined_by(refdom.coord_system.trans_to(domain.coord_system).apply_indices(supp))
+            else:
+                domain = domain.refined_by(refdom.transforms[supp])
+
 
         ns = Namespace()
         ns.x = geom
@@ -61,7 +66,9 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
         ns.uexact = exact
         ns.du = 'u - uexact'
 
-        sqr = domain.boundary['trimmed'].integral('u^2 dS' @ ns, degree=degree*2)
+        #sqr = domain.boundary['trimmed'].integral('u^2 dS' @ ns, degree=degree*2)
+        sqr = domain.boundary['right,bottom'].integral('u^2 dS' @ ns, degree=degree*2)
+        #sqr = domain.boundary.select(x - y, 'gauss0').integral('u^2 dS' @ ns, degree=degree*2)
         cons = solver.optimize('u,', sqr, droptol=1e-15)
 
         sqr = domain.boundary.integral('du^2 dS' @ ns, degree=7)

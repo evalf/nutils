@@ -8,7 +8,8 @@ affine transformation. They also have a well defined reference coordinate
 system, and provide pointsets for purposes of integration and sampling.
 """
 
-from . import util, numeric, cache, transform, warnings, types, points
+from . import util, numeric, cache, transform, warnings, types, points, _rust
+from ._rust import CoordSystem
 import numpy
 import re
 import math
@@ -353,6 +354,15 @@ class SimplexReference(Reference):
         assert self.ndims > 0
         return tuple(transform.SimplexEdge(self.ndims, i) for i in range(self.ndims+1))
 
+    def uniform_edges_coord_system(self, coord_system: CoordSystem, offset: int) -> CoordSystem:
+        if self.ndims == 1:
+            s = _rust.Simplex.line
+        elif self.ndims == 2:
+            s = _rust.Simplex.triangle
+        else:
+            raise NotImplementedError
+        return coord_system.edges(s, offset)
+
     @property
     def child_refs(self):
         return tuple([self] * (2**self.ndims))
@@ -360,6 +370,15 @@ class SimplexReference(Reference):
     @property
     def child_transforms(self):
         return tuple(transform.SimplexChild(self.ndims, ichild) for ichild in range(2**self.ndims))
+
+    def uniform_children_coord_system(self, coord_system: CoordSystem, offset: int) -> CoordSystem:
+        if self.ndims == 1:
+            s = _rust.Simplex.line
+        elif self.ndims == 2:
+            s = nutils._rust.Simplex.triangle
+        else:
+            raise NotImplementedError
+        return coord_system.children(s, offset)
 
     @property
     def ribbons(self):

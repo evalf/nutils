@@ -36,7 +36,7 @@ impl std::fmt::Display for Error {
 }
 
 /// An interface for an index and coordinate map.
-pub trait Map {
+pub trait Map: std::fmt::Debug {
     /// Returns the exclusive upper bound of the indices in the codomain.
     fn len_out(&self) -> usize;
     /// Returns the exclusive upper bound of the indices of the domain.

@@ -279,6 +279,14 @@ impl Simplex {
         *dim_in += 1;
         index
     }
+    //fn child_poly_coeffs_inplace(&self, index: usize, coeffs: &mut [f64], strides: &[usize], offset: usize) -> usize {
+    //    match self {
+    //        Self::Line => {
+    //            
+    //        }
+    //        _ => unimplemented!{}
+    //    }
+    //}
 }
 
 #[cfg(test)]

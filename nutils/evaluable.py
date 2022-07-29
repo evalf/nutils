@@ -1832,13 +1832,13 @@ class Add(Array):
                 continue
             parts2 = func2_inflations[axis]
             dofmaps = set(parts1) | set(parts2)
-            if (len(parts1) < len(dofmaps) and len(parts2) < len(dofmaps)  # neither set is a subset of the other; total may be dense
-                    and self.shape[axis].isconstant and all(dofmap.isconstant for dofmap in dofmaps)):
-                mask = numpy.zeros(int(self.shape[axis]), dtype=bool)
-                for dofmap in dofmaps:
-                    mask[dofmap.eval()] = True
-                if mask.all():  # axis adds up to dense
-                    continue
+            #if (len(parts1) < len(dofmaps) and len(parts2) < len(dofmaps)  # neither set is a subset of the other; total may be dense
+            #        and self.shape[axis].isconstant and all(dofmap.isconstant for dofmap in dofmaps)):
+            #    mask = numpy.zeros(int(self.shape[axis]), dtype=bool)
+            #    for dofmap in dofmaps:
+            #        mask[dofmap.eval()] = True
+            #    if mask.all():  # axis adds up to dense
+            #        continue
             inflations.append((axis, types.frozendict((dofmap, util.sum(parts[dofmap] for parts in (parts1, parts2) if dofmap in parts)) for dofmap in dofmaps)))
         return tuple(inflations)
 
@@ -3937,10 +3937,6 @@ class TransformIndex(Array):
         if self._trans.is_identity:
             return self._index
 
-    @property
-    def _node_details(self):
-        return super()._node_details + f'\n{hash(self)}'
-
 
 class TransformBasis(Array):
 
@@ -4440,6 +4436,7 @@ def ln(x):
 
 
 def divmod(x, y):
+    raise ValueError
     div = FloorDivide(*_numpy_align(x, y))
     mod = x - div * y
     return div, mod

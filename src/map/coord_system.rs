@@ -158,6 +158,37 @@ impl CoordSystem {
             self.len_out(),
         )?))
     }
+    pub fn slice(&self, mut start: usize, mut len: usize) -> Result<Self, Error> {
+        if start + len > self.0.len_in() {
+            return Err(Error::IndexOutOfRange);
+        }
+        let mut maps = Vec::new();
+        for map in self.0.iter() {
+            if len == 0 {
+                break;
+            } else if start >= map.len_in() {
+                start -= map.len_in();
+                continue;
+            } else if start == 0 && len >= map.len_in() {
+                maps.push(map.clone());
+                len -= map.len_in();
+            } else {
+                let primitive = Primitive::new_slice(start, len, map.len_in());
+                maps.push(map.clone_and_push(primitive).unwrap());
+                if start + len <= map.len_in() {
+                    break;
+                }
+                len -= map.len_in() - start;
+                start = 0;
+            }
+        }
+        Ok(Self(UniformConcat::new_unchecked(
+            maps,
+            self.dim_in(),
+            self.delta_dim(),
+            self.len_out(),
+        )))
+    }
     pub fn take(&self, indices: &[usize]) -> Result<Self, Error> {
         if !indices.windows(2).all(|pair| pair[0] < pair[1]) {
             return Err(Error::IndicesNotStrictIncreasing);

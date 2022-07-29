@@ -212,6 +212,8 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
             let PySliceIndices { start, stop, step, slicelength } = s.indices(len.try_into()?)?;
             if start == 0 && stop == len && step == 1 {
                 Ok(self.clone())
+            } else if step == 1 {
+                Ok(Self(self.0.slice(start.try_into()?, slicelength.try_into()?)?))
             } else {
                 let indices: Vec<usize> = (0..slicelength).map(|i| (start + i * step) as usize).collect();
                 Ok(Self(self.0.take(&indices)?))
@@ -289,12 +291,9 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
             self.0.hash(&mut hasher);
             hasher.finish()
         }
-        pub fn __len__(&self) -> usize {
-            self.0.len_in()
-        }
         #[getter]
         pub fn from_len(&self) -> usize {
-            self.0.len_out()
+            self.0.len_in()
         }
         #[getter]
         pub fn to_len(&self) -> usize {
@@ -311,6 +310,11 @@ fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
         pub fn apply_index(&self, index: usize) -> PyResult<usize> {
             self.0
                 .apply_index(index)
+                .ok_or(PyIndexError::new_err("index out of range"))
+        }
+        pub fn apply_indices(&self, indices: Vec<usize>) -> PyResult<Vec<usize>> {
+            self.0
+                .apply_indices(&indices)
                 .ok_or(PyIndexError::new_err("index out of range"))
         }
         pub fn apply<'py>(

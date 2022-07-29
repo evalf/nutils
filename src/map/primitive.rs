@@ -6,7 +6,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 /// An interface for an unbounded coordinate and index map.
-pub trait UnboundedMap {
+pub trait UnboundedMap: std::fmt::Debug {
     /// Minimum dimension of the input coordinate. If the dimension of the input
     /// coordinate of [`UnboundedMap::apply_inplace()`] is larger than the minimum, then
     /// the map of the surplus is the identity map.
@@ -363,10 +363,6 @@ impl Slice {
             len_out,
         }
     }
-    #[inline]
-    fn is_identity(&self) -> bool {
-        self.start == 0 && self.len_in == self.len_out
-    }
 }
 
 impl UnboundedMap for Slice {
@@ -404,6 +400,10 @@ impl UnboundedMap for Slice {
                     .then(|| index.set(i - self.start + j * self.len_in))
             })
             .collect()
+    }
+    #[inline]
+    fn is_identity(&self) -> bool {
+        self.start == 0 && self.len_in == self.len_out
     }
     #[inline]
     fn update_basis(&self, index: usize, _basis: &mut [f64], _dim_out: usize, _dim_in: &mut usize, _offset: usize) -> usize {
@@ -802,7 +802,7 @@ fn comp_mod_out_in<M: UnboundedMap>(map: &M, mod_out: usize, mod_in: usize) -> (
 impl<M, Array> UnboundedMap for Array
 where
     M: UnboundedMap,
-    Array: Deref<Target = [M]>,
+    Array: Deref<Target = [M]> + std::fmt::Debug,
 {
     #[inline]
     fn dim_in(&self) -> usize {

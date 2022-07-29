@@ -619,6 +619,7 @@ def unitsquare(nelems, etype):
             square = element.getsimplex(1)**2
             connectivity = list(topo.connectivity)
             isquares = [i * nelems + j for i in range(nelems) for j in range(nelems) if i % 2 == j % 3]
+            nsquares = len(isquares)
             dofs = list(simplices)
             for n in sorted(isquares, reverse=True):
                 i, j = divmod(n, nelems)
@@ -626,14 +627,26 @@ def unitsquare(nelems, etype):
                 connectivity[n*2:(n+1)*2] = numpy.concatenate(connectivity[n*2:(n+1)*2])[[3, 2, 4, 1] if i % 2 == j % 2 else [3, 2, 0, 5]],
                 connectivity = [c-numpy.greater(c, n*2) for c in connectivity]
                 dofs[n*2:(n+1)*2] = numpy.unique([*dofs[n*2], *dofs[n*2+1]]),
-            connectivity = tuple(map(types.frozenarray, connectivity))
+            reorder = numpy.argsort([len(c) == 4 for c in connectivity])
+            renumber = numpy.concatenate([numpy.argsort(reorder), [-1]])
+            connectivity = tuple(types.frozenarray(numpy.take(renumber, connectivity[i]), copy=False) for i in reorder)
+            ntriangles = len(connectivity) - nsquares
+            assert all(len(c) == 3 for c in connectivity[:ntriangles])
+            assert all(len(c) == 4 for c in connectivity[ntriangles:])
             coords = coords[numpy.argsort(numpy.unique(numpy.concatenate(dofs), return_index=True)[1])]
-            raise NotImplementedError
-            # TODO: sort references and use a concatenate
-            references = References.from_iter(references, 2)
             coord_system = CoordSystem(2, len(connectivity))
             ref_coord_system = OrderedDict(X=coord_system)
-            topo = topology._ConformingTopology(ref_coord_system, references, coord_system, coord_system, connectivity)
+            triangles = Topology(
+                ref_coord_system,
+                References.uniform(element.getsimplex(2), ntriangles),
+                coord_system.slice(slice(0, ntriangles)),
+                coord_system.slice(slice(0, ntriangles)))
+            squares = Topology(
+                ref_coord_system,
+                References.uniform(element.getsimplex(1)**2, nsquares),
+                coord_system.slice(slice(ntriangles, None)),
+                coord_system.slice(slice(ntriangles, None)))
+            topo = topology._WithConnectivity(Topology.disjoint_union(triangles, squares), connectivity)
 
         geom = (topo.basis('std', degree=1) * coords.T).sum(-1)
         x, y = topo.boundary.sample('_centroid', None).eval(geom).T
