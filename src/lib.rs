@@ -1,0 +1,366 @@
+pub mod finite_f64;
+pub mod map;
+pub mod simplex;
+mod util;
+
+use map::relative::RelativeTo;
+use map::coord_system::CoordSystem;
+use map::Map;
+use numpy::{IntoPyArray, IxDyn, PyArray, PyArrayDyn, PyReadonlyArrayDyn, PyReadonlyArray2, PyArray2};
+use pyo3::exceptions::{PyIndexError, PyValueError};
+use pyo3::class::basic::CompareOp;
+use pyo3::prelude::*;
+use pyo3::types::{PySlice, PySliceIndices};
+use simplex::Simplex;
+use std::iter;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+
+impl From<map::Error> for PyErr {
+    fn from(err: map::Error) -> PyErr {
+        PyValueError::new_err(err.to_string())
+    }
+}
+
+#[pymodule]
+#[allow(non_snake_case)]
+fn _rust(py: Python, m: &PyModule) -> PyResult<()> {
+    let sys_modules = py.import("sys")?.getattr("modules")?;
+
+    #[pyclass(name = "Simplex", module = "nutils._rust")]
+    #[derive(Debug, Clone)]
+    struct PySimplex(Simplex);
+
+    #[pymethods]
+    impl PySimplex {
+        #[classattr]
+        pub fn line() -> Self {
+            Simplex::Line.into()
+        }
+        #[classattr]
+        pub fn triangle() -> Self {
+            Simplex::Triangle.into()
+        }
+        #[getter]
+        pub fn dim(&self) -> usize {
+            self.0.dim()
+        }
+        #[getter]
+        pub fn edge_dim(&self) -> usize {
+            self.0.edge_dim()
+        }
+        #[getter]
+        pub fn edge_simplex(&self) -> Option<Self> {
+            self.0.edge_simplex().map(|simplex| simplex.into())
+        }
+        #[getter]
+        pub fn nchildren(&self) -> usize {
+            self.0.nchildren()
+        }
+        #[getter]
+        pub fn nedges(&self) -> usize {
+            self.0.nedges()
+        }
+        pub fn __richcmp__<'py>(
+            &self,
+            py: Python<'py>,
+            other: &'py PyAny,
+            op: CompareOp,
+        ) -> PyObject {
+            if let Ok(other) = PySimplex::extract(other) {
+                match op {
+                    CompareOp::Eq => (self.0 == other.0).into_py(py),
+                    CompareOp::Ne => (self.0 != other.0).into_py(py),
+                    CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge => {
+                        py.NotImplemented()
+                    }
+                }
+            } else {
+                match op {
+                    CompareOp::Eq => false.into_py(py),
+                    CompareOp::Ne => true.into_py(py),
+                    CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge => {
+                        py.NotImplemented()
+                    }
+                }
+            }
+        }
+        pub fn __hash__(&self) -> u64 {
+            let mut hasher = DefaultHasher::new();
+            self.0.hash(&mut hasher);
+            hasher.finish()
+        }
+    }
+
+    impl From<Simplex> for PySimplex {
+        fn from(simplex: Simplex) -> PySimplex {
+            PySimplex(simplex)
+        }
+    }
+
+    impl From<PySimplex> for Simplex {
+        fn from(pysimplex: PySimplex) -> Simplex {
+            pysimplex.0
+        }
+    }
+
+    impl From<&PySimplex> for Simplex {
+        fn from(pysimplex: &PySimplex) -> Simplex {
+            pysimplex.0
+        }
+    }
+
+    m.add_class::<PySimplex>()?;
+
+    fn apply_map_from_numpy<'py>(
+        py: Python<'py>,
+        map: &impl Map,
+        index: usize,
+        coords: PyReadonlyArrayDyn<f64>,
+    ) -> PyResult<(usize, &'py PyArrayDyn<f64>)> {
+        if coords.ndim() == 0 {
+            return Err(PyValueError::new_err(
+                "the `coords` argument must have at least one dimension",
+            ));
+        }
+        if coords.shape()[coords.ndim() - 1] != map.dim_in() {
+            return Err(PyValueError::new_err(format!(
+                "the last axis of the `coords` argument should have dimension {}",
+                map.dim_in()
+            )));
+        }
+        let mut result: Vec<f64> = coords
+            .as_array()
+            .rows()
+            .into_iter()
+            .flat_map(|row| {
+                row.into_iter()
+                    .cloned()
+                    .chain(iter::repeat(0.0).take(map.delta_dim()))
+            })
+            .collect();
+        let index = map.apply_inplace(index, &mut result, map.dim_out(), 0)?;
+        let result = PyArray::from_vec(py, result);
+        let shape: Vec<usize> = coords
+            .shape()
+            .iter()
+            .take(coords.ndim() - 1)
+            .cloned()
+            .chain(iter::once(map.dim_out()))
+            .collect();
+        let result = result.reshape(&shape[..])?;
+        Ok((index, result))
+    }
+
+    #[pyclass(name = "CoordSystem", module = "nutils._rust")]
+    #[derive(Debug, Clone)]
+    struct PyCoordSystem(CoordSystem);
+
+    #[pymethods]
+    impl PyCoordSystem {
+        #[new]
+        pub fn new(dim: usize, len: usize) -> Self {
+            CoordSystem::new(dim, len).into()
+        }
+        pub fn __repr__(&self) -> String {
+            format!("{:?}", self.0)
+        }
+        pub fn __richcmp__<'py>(
+            &self,
+            py: Python<'py>,
+            other: &'py PyAny,
+            op: CompareOp,
+        ) -> PyObject {
+            if let Ok(other) = PyCoordSystem::extract(other) {
+                match op {
+                    CompareOp::Eq => (self.0 == other.0).into_py(py),
+                    CompareOp::Ne => (self.0 != other.0).into_py(py),
+                    CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge => {
+                        py.NotImplemented()
+                    }
+                }
+            } else {
+                match op {
+                    CompareOp::Eq => false.into_py(py),
+                    CompareOp::Ne => true.into_py(py),
+                    CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge => {
+                        py.NotImplemented()
+                    }
+                }
+            }
+        }
+        pub fn __hash__(&self) -> u64 {
+            let mut hasher = DefaultHasher::new();
+            self.0.hash(&mut hasher);
+            hasher.finish()
+        }
+        pub fn __len__(&self) -> usize {
+            self.0.len()
+        }
+        #[getter]
+        pub fn dim(&self) -> usize {
+            self.0.dim()
+        }
+        pub fn __mul__(&self, rhs: &PyCoordSystem) -> Self {
+            Self(&self.0 * &rhs.0)
+        }
+        pub fn concat(&self, other: &PyCoordSystem) -> PyResult<Self> {
+            Ok(Self(self.0.concat(&other.0)?))
+        }
+        pub fn slice(&self, s: &PySlice) -> PyResult<Self> {
+            let len: isize = self.0.len().try_into()?;
+            let PySliceIndices { start, stop, step, slicelength } = s.indices(len.try_into()?)?;
+            if start == 0 && stop == len && step == 1 {
+                Ok(self.clone())
+            } else if step == 1 {
+                Ok(Self(self.0.slice(start.try_into()?, slicelength.try_into()?)?))
+            } else {
+                let indices: Vec<usize> = (0..slicelength).map(|i| (start + i * step) as usize).collect();
+                Ok(Self(self.0.take(&indices)?))
+            }
+        }
+        pub fn take(&self, indices: Vec<usize>) -> PyResult<Self> {
+            Ok(Self(self.0.take(&indices)?))
+        }
+        pub fn children(&self, simplex: &PySimplex, offset: usize) -> PyResult<Self> {
+            Ok(Self(self.0.children(simplex.into(), offset)?))
+        }
+        pub fn edges(&self, simplex: &PySimplex, offset: usize) -> PyResult<Self> {
+            Ok(Self(self.0.edges(simplex.into(), offset)?))
+        }
+        pub fn uniform_points(
+            &self,
+            points: PyReadonlyArray2<f64>,
+            offset: usize,
+        ) -> PyResult<Self> {
+            let point_dim = points.shape()[1];
+            let points: Vec<f64> = points.as_array().iter().cloned().collect();
+            Ok(Self(self.0.uniform_points(points, point_dim, offset)?))
+        }
+        pub fn trans_to(&self, target: &Self) -> PyResult<PyCoordTrans> {
+            self.0
+                .relative_to(&target.0)
+                .map(|rel| PyCoordTrans(rel))
+                .ok_or(PyValueError::new_err("cannot make relative"))
+        }
+    }
+
+    impl From<CoordSystem> for PyCoordSystem {
+        fn from(transforms: CoordSystem) -> PyCoordSystem {
+            PyCoordSystem(transforms)
+        }
+    }
+
+    m.add_class::<PyCoordSystem>()?;
+
+    #[pyclass(name = "CoordTrans", module = "nutils._rust")]
+    #[derive(Debug, Clone)]
+    struct PyCoordTrans(<CoordSystem as RelativeTo<CoordSystem>>::Output);
+
+    #[pymethods]
+    impl PyCoordTrans {
+        pub fn __repr__(&self) -> String {
+            format!("{:?}", self.0)
+        }
+        pub fn __richcmp__<'py>(
+            &self,
+            py: Python<'py>,
+            other: &'py PyAny,
+            op: CompareOp,
+        ) -> PyObject {
+            if let Ok(other) = PyCoordTrans::extract(other) {
+                match op {
+                    CompareOp::Eq => (self.0 == other.0).into_py(py),
+                    CompareOp::Ne => (self.0 != other.0).into_py(py),
+                    CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge => {
+                        py.NotImplemented()
+                    }
+                }
+            } else {
+                match op {
+                    CompareOp::Eq => false.into_py(py),
+                    CompareOp::Ne => true.into_py(py),
+                    CompareOp::Lt | CompareOp::Le | CompareOp::Gt | CompareOp::Ge => {
+                        py.NotImplemented()
+                    }
+                }
+            }
+        }
+        pub fn __hash__(&self) -> u64 {
+            let mut hasher = DefaultHasher::new();
+            self.0.hash(&mut hasher);
+            hasher.finish()
+        }
+        #[getter]
+        pub fn from_len(&self) -> usize {
+            self.0.len_in()
+        }
+        #[getter]
+        pub fn to_len(&self) -> usize {
+            self.0.len_out()
+        }
+        #[getter]
+        pub fn from_dim(&self) -> usize {
+            self.0.dim_in()
+        }
+        #[getter]
+        pub fn to_dim(&self) -> usize {
+            self.0.dim_out()
+        }
+        pub fn apply_index(&self, index: usize) -> PyResult<usize> {
+            self.0
+                .apply_index(index)
+                .ok_or(PyIndexError::new_err("index out of range"))
+        }
+        pub fn apply_indices(&self, indices: Vec<usize>) -> PyResult<Vec<usize>> {
+            self.0
+                .apply_indices(&indices)
+                .ok_or(PyIndexError::new_err("index out of range"))
+        }
+        pub fn apply<'py>(
+            &self,
+            py: Python<'py>,
+            index: usize,
+            coords: PyReadonlyArrayDyn<f64>,
+        ) -> PyResult<(usize, &'py PyArrayDyn<f64>)> {
+            apply_map_from_numpy(py, &self.0, index, coords)
+        }
+        pub fn unapply_indices(&self, indices: Vec<usize>) -> PyResult<Vec<usize>> {
+            self.0
+                .unapply_indices(&indices)
+                .map(|mut indices| {
+                    indices.sort();
+                    indices
+                })
+                .ok_or(PyValueError::new_err("index out of range"))
+        }
+        pub fn basis<'py>(&self, py: Python<'py>, index: usize) -> PyResult<&'py PyArray2<f64>> {
+            if index >= self.0.len_in() {
+                return Err(PyIndexError::new_err("index out of range"));
+            }
+            let mut basis: Vec<f64> = iter::repeat(0.0).take(self.0.dim_out() * self.0.dim_out()).collect();
+            for i in 0..self.0.dim_in() {
+                basis[i * self.0.dim_out() + i] = 1.0;
+            }
+            let mut dim_in = self.0.dim_in();
+            self.0.update_basis(index, &mut basis[..], self.0.dim_out(), &mut dim_in, 0);
+            PyArray::from_vec(py, basis).reshape([self.0.dim_out(), self.0.dim_out()])
+        }
+        #[getter]
+        pub fn is_identity(&self) -> bool {
+            self.0.is_identity()
+        }
+        #[getter]
+        pub fn is_index_map(&self) -> bool {
+            self.0.is_index_map()
+        }
+        #[getter]
+        pub fn basis_is_constant(&self) -> bool {
+            self.0.basis_is_constant()
+        }
+    }
+
+    m.add_class::<PyCoordTrans>()?;
+
+    Ok(())
+}

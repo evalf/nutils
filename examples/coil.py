@@ -65,7 +65,7 @@ def main(nelems: int = 50, degree: int = 3, freq: float = 0., nturns: int = 1, r
     # domain is mapped from [0,1] to [0,inf) using an arctanh transform. Finally,
     # a Neumann boundary condition is used at z=0 to obtain symmetry in z=0.
 
-    RZ, ns.rz0 = mesh.rectilinear([numpy.linspace(0, 1, nelems)]*2, space='RZ')
+    RZ, ns.rz0 = mesh.rectilinear([numpy.linspace(0, 1, nelems)]*2, spaces=('R', 'Z'))
     REV, ns.θ = mesh.line([-numpy.pi, numpy.pi], bnames=['start', 'end'], space='Θ')
     REV0 = REV.refined[:1].boundary['end'].sample('bezier', 2)
     ns.rz = numpy.arctanh(ns.rz0) * 2 * rcoil

@@ -1,0 +1,7 @@
+[project]
+name = "nutils"
+dependencies = ["numpy>=1.17", "treelog>=1.0b5", "stringly"]
+
+[build-system]
+requires = ["maturin>=0.12,<0.13"]
+build-backend = "maturin"

@@ -10,6 +10,7 @@ from . import topology, function, util, element, numeric, transform, transformse
 from .elementseq import References
 from .transform import TransformItem
 from .topology import Topology
+from ._rust import CoordSystem
 from typing import Optional, Sequence, Tuple, Union
 import numpy
 import os
@@ -19,70 +20,32 @@ import math
 import treelog as log
 import io
 import contextlib
+from collections import OrderedDict
 _ = numpy.newaxis
 
 # MESH GENERATORS
 
 
-@log.withcontext
-def rectilinear(richshape: Sequence[Union[int, Sequence[float]]], periodic: Sequence[int] = (), name: Optional[str] = None, space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
-    'rectilinear mesh'
-
-    verts = [numpy.arange(v + 1) if numeric.isint(v) else v for v in richshape]
-    shape = [len(v) - 1 for v in verts]
-    ndims = len(shape)
-
-    if name is not None:
-        warnings.deprecation('Argument `name` is deprecated; use `root` with a `TransformItem` instead.')
-        if root is not None:
-            raise ValueError('Arguments `name` and `root` cannot be used simultaneously.')
-        root = transform.Index(hash(name))
-    elif root is None:
-        root = transform.Index(ndims, 0)
-
-    axes = [transformseq.DimAxis(i=0, j=n, mod=n if idim in periodic else 0, isperiodic=idim in periodic) for idim, n in enumerate(shape)]
-    topo = topology.StructuredTopology(space, root, axes)
-
-    funcsp = topo.basis('spline', degree=1, periodic=())
-    coords = numeric.meshgrid(*verts).reshape(ndims, -1)
-    geom = (funcsp * coords).sum(-1)
-
-    return topo, geom
-
-
-_oldrectilinear = rectilinear  # reference for internal unittests
-
-
-def line(nodes: Union[int, Sequence[float]], periodic: bool = False, bnames: Optional[Sequence[Tuple[str, str]]] = None, *, name: Optional[str] = None, space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
-    if name is not None:
-        warnings.deprecation('Argument `name` is deprecated; use `root` with a `transform.transformitem` instead.')
-        if root is not None:
-            raise ValueError('Arguments `name` and `root` cannot be used simultaneously.')
-        root = transform.Index(hash(name))
-    elif root is None:
-        root = transform.Index(1, 0)
+def line(nodes: Union[int, Sequence[float]], periodic: bool = False, bnames: Optional[Tuple[str, str]] = None, *, space: str = 'X') -> Tuple[Topology, function.Array]:
     if isinstance(nodes, int):
         nodes = numpy.arange(nodes + 1)
-    domain = topology.StructuredLine(space, root, 0, len(nodes) - 1, periodic=periodic, bnames=bnames)
-    geom = domain.basis('std', degree=1, periodic=[]).dot(nodes)
+    domain = Topology.line(space, len(nodes) - 1, periodic=periodic, bnames=bnames)
+    geom = domain.basis('std', degree=1, periodic=()) @ nodes
     return domain, geom
 
 
-def newrectilinear(nodes: Sequence[Union[int, Sequence[float]]], periodic: Optional[Sequence[int]] = None, name: Optional[str] = None, bnames=[['left', 'right'], ['bottom', 'top'], ['front', 'back']], spaces: Optional[Sequence[str]] = None, root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
+def rectilinear(nodes: Sequence[Union[int, Sequence[float]]], periodic: Optional[Sequence[int]] = None, bnames=[['left', 'right'], ['bottom', 'top'], ['front', 'back']], spaces: Optional[Sequence[str]] = None) -> Tuple[Topology, function.Array]:
     if periodic is None:
         periodic = []
     if not spaces:
         spaces = 'XYZ' if len(nodes) <= 3 else map('R{}'.format, range(len(nodes)))
     else:
         assert len(spaces) == len(nodes)
-    domains, geoms = zip(*(line(nodesi, i in periodic, bnamesi, name=name, space=spacei, root=root) for i, (nodesi, bnamesi, spacei) in enumerate(zip(nodes, tuple(bnames)+(None,)*len(nodes), spaces))))
+    domains, geoms = zip(*(line(nodesi, i in periodic, bnamesi, space=spacei) for i, (nodesi, bnamesi, spacei) in enumerate(zip(nodes, tuple(bnames)+(None,)*len(nodes), spaces))))
     return util.product(domains), numpy.stack(geoms)
 
 
-if os.environ.get('NUTILS_TENSORIAL'):
-    def rectilinear(richshape: Sequence[Union[int, Sequence[float]]], periodic: Sequence[int] = (), name: Optional[str] = None, space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
-        spaces = tuple(space+str(i) for i in range(len(richshape)))
-        return newrectilinear(richshape, periodic, name=name, spaces=spaces, root=root)
+newrectilinear = rectilinear
 
 
 @log.withcontext
@@ -637,10 +600,8 @@ def unitsquare(nelems, etype):
         The geometry function.
     '''
 
-    space = 'X'
-
     if etype == 'square':
-        topo, geom = rectilinear([nelems, nelems], space=space)
+        topo, geom = rectilinear([nelems, nelems])
         return topo, geom / nelems
 
     elif etype in ('triangle', 'mixed'):
@@ -651,13 +612,14 @@ def unitsquare(nelems, etype):
         v = numpy.arange(nelems+1, dtype=float)
         coords = numeric.meshgrid(v, v).reshape(2, -1).T
         transforms = transformseq.IndexTransforms(2, len(simplices))
-        topo = topology.SimplexTopology(space, simplices, transforms, transforms)
+        topo = Topology.simplex('X', simplices)
 
         if etype == 'mixed':
             references = list(topo.references)
             square = element.getsimplex(1)**2
             connectivity = list(topo.connectivity)
             isquares = [i * nelems + j for i in range(nelems) for j in range(nelems) if i % 2 == j % 3]
+            nsquares = len(isquares)
             dofs = list(simplices)
             for n in sorted(isquares, reverse=True):
                 i, j = divmod(n, nelems)
@@ -665,9 +627,26 @@ def unitsquare(nelems, etype):
                 connectivity[n*2:(n+1)*2] = numpy.concatenate(connectivity[n*2:(n+1)*2])[[3, 2, 4, 1] if i % 2 == j % 2 else [3, 2, 0, 5]],
                 connectivity = [c-numpy.greater(c, n*2) for c in connectivity]
                 dofs[n*2:(n+1)*2] = numpy.unique([*dofs[n*2], *dofs[n*2+1]]),
+            reorder = numpy.argsort([len(c) == 4 for c in connectivity])
+            renumber = numpy.concatenate([numpy.argsort(reorder), [-1]])
+            connectivity = tuple(types.frozenarray(numpy.take(renumber, connectivity[i]), copy=False) for i in reorder)
+            ntriangles = len(connectivity) - nsquares
+            assert all(len(c) == 3 for c in connectivity[:ntriangles])
+            assert all(len(c) == 4 for c in connectivity[ntriangles:])
             coords = coords[numpy.argsort(numpy.unique(numpy.concatenate(dofs), return_index=True)[1])]
-            transforms = transformseq.IndexTransforms(2, len(connectivity))
-            topo = topology.ConnectedTopology(space, References.from_iter(references, 2), transforms, transforms, connectivity)
+            coord_system = CoordSystem(2, len(connectivity))
+            ref_coord_system = OrderedDict(X=coord_system)
+            triangles = Topology(
+                ref_coord_system,
+                References.uniform(element.getsimplex(2), ntriangles),
+                coord_system.slice(slice(0, ntriangles)),
+                coord_system.slice(slice(0, ntriangles)))
+            squares = Topology(
+                ref_coord_system,
+                References.uniform(element.getsimplex(1)**2, nsquares),
+                coord_system.slice(slice(ntriangles, None)),
+                coord_system.slice(slice(ntriangles, None)))
+            topo = topology._WithConnectivity(Topology.disjoint_union(triangles, squares), connectivity)
 
         geom = (topo.basis('std', degree=1) * coords.T).sum(-1)
         x, y = topo.boundary.sample('_centroid', None).eval(geom).T

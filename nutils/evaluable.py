@@ -990,7 +990,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     _inflations = ()
 
     def _derivative(self, var, seen):
-        if self.dtype in (bool, int) or var not in self.dependencies:
+        if self.dtype in (bool, int) or var not in self.arguments:
             return Zeros(self.shape + var.shape, dtype=self.dtype)
         raise NotImplementedError('derivative not defined for {}'.format(self.__class__.__name__))
 
@@ -1832,13 +1832,13 @@ class Add(Array):
                 continue
             parts2 = func2_inflations[axis]
             dofmaps = set(parts1) | set(parts2)
-            if (len(parts1) < len(dofmaps) and len(parts2) < len(dofmaps)  # neither set is a subset of the other; total may be dense
-                    and self.shape[axis].isconstant and all(dofmap.isconstant for dofmap in dofmaps)):
-                mask = numpy.zeros(int(self.shape[axis]), dtype=bool)
-                for dofmap in dofmaps:
-                    mask[dofmap.eval()] = True
-                if mask.all():  # axis adds up to dense
-                    continue
+            #if (len(parts1) < len(dofmaps) and len(parts2) < len(dofmaps)  # neither set is a subset of the other; total may be dense
+            #        and self.shape[axis].isconstant and all(dofmap.isconstant for dofmap in dofmaps)):
+            #    mask = numpy.zeros(int(self.shape[axis]), dtype=bool)
+            #    for dofmap in dofmaps:
+            #        mask[dofmap.eval()] = True
+            #    if mask.all():  # axis adds up to dense
+            #        continue
             inflations.append((axis, types.frozendict((dofmap, util.sum(parts[dofmap] for parts in (parts1, parts2) if dofmap in parts)) for dofmap in dofmaps)))
         return tuple(inflations)
 
@@ -2299,6 +2299,15 @@ class Negative(Pointwise):
 class FloorDivide(Pointwise):
     __slots__ = ()
     evalf = numpy.floor_divide
+
+    def _intbounds_impl(self):
+        dl, du = self.args[1]._intbounds
+        if dl != du or not isinstance(dl, int) or dl <= 0:
+            return super()._intbounds_impl()
+        nl, nu = self.args[0]._intbounds
+        l = nl // dl if isinstance(nl, int) else nl
+        u = nu // dl if isinstance(nu, int) else nu
+        return l, u
 
 
 class Absolute(Pointwise):
@@ -3878,6 +3887,73 @@ class NormDim(Array):
             return 0, upper_length - 1
 
 
+class TransformCoords(Array):
+
+    def __init__(self, trans, index: Array, coords: Array):
+        if index.dtype != int or index.ndim != 0:
+            raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
+        imin, imax = index._intbounds
+        if imin < 0 or imax >= trans.from_len:
+            raise ValueError('argument `index` is out of bounds')
+        if coords.dtype != float:
+            raise ValueError('argument `coords` must be a real-valued array with at least one axis')
+        self._trans = trans
+        self._index = index
+        self._coords = coords
+        super().__init__(args=[index, coords], shape=(*coords.shape[:-1], trans.to_dim), dtype=float)
+
+    def evalf(self, index, coords):
+        return self._trans.apply(index.__index__(), coords)[1]
+
+    def _derivative(self, var, seen):
+        linear = TransformBasis(self._trans, self._index)[:,:self._trans.from_dim]
+        dcoords = derivative(self._coords, var, seen)
+        return einsum('ij,AjB->AiB', linear, dcoords, A=self._coords.ndim - 1, B=var.ndim)
+
+    def _simplified(self):
+        if self._trans.is_index_map:
+            return self._coords
+
+
+class TransformIndex(Array):
+
+    def __init__(self, trans, index: Array):
+        if index.dtype != int or index.ndim != 0:
+            raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
+        imin, imax = index._intbounds
+        if imin < 0 or imax >= trans.from_len:
+            raise ValueError('argument `index` is out of bounds')
+        self._trans = trans
+        self._index = index
+        super().__init__(args=[index], shape=(), dtype=int)
+
+    def evalf(self, index):
+        return numpy.array(self._trans.apply_index(index.__index__()))
+
+    def _intbounds_impl(self):
+        return 0, self._trans.to_len - 1
+
+    def _simplified(self):
+        if self._trans.is_identity:
+            return self._index
+
+
+class TransformBasis(Array):
+
+    def __init__(self, trans, index: Array):
+        if index.dtype != int or index.ndim != 0:
+            raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
+        self._trans = trans
+        super().__init__(args=[index], shape=(trans.to_dim, trans.to_dim), dtype=float)
+
+    def evalf(self, index):
+        return self._trans.basis(index.__index__())
+
+    def _simplified(self):
+        if self._trans.basis_is_constant:
+            return asarray(self._trans.basis(0))
+
+
 class _LoopIndex(Argument):
 
     __slots__ = 'length'
@@ -4360,6 +4436,7 @@ def ln(x):
 
 
 def divmod(x, y):
+    raise ValueError
     div = FloorDivide(*_numpy_align(x, y))
     mod = x - div * y
     return div, mod

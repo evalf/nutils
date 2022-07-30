@@ -397,14 +397,11 @@ class Custom(TestCase):
     def assertEvalAlmostEqual(self, factual, fdesired, **args):
         with self.subTest('0d-points'):
             self.assertAllAlmostEqual(factual.as_evaluable_array.eval(**args), fdesired.as_evaluable_array.eval(**args))
-        transform_chains = dict(test=(transform.EvaluableTransformChain.from_argument('test', 2, 2),)*2)
         with self.subTest('1d-points'):
-            coords = evaluable.Zeros((5, 2), float)
-            lower_args = function.LowerArgs(coords.shape[:-1], transform_chains, dict(test=coords))
+            lower_args = function.LowerArgs((evaluable.asarray(5),), {}, {})
             self.assertAllAlmostEqual(factual.lower(lower_args).eval(**args), fdesired.lower(lower_args).eval(**args))
         with self.subTest('2d-points'):
-            coords = evaluable.Zeros((5, 6, 2), float)
-            lower_args = function.LowerArgs(coords.shape[:-1], transform_chains, dict(test=coords))
+            lower_args = function.LowerArgs((evaluable.asarray(5), evaluable.asarray(6)), {}, {})
             self.assertAllAlmostEqual(factual.lower(lower_args).eval(**args), fdesired.lower(lower_args).eval(**args))
 
     def assertMultipy(self, leftval, rightval):
@@ -640,6 +637,7 @@ class sampled(TestCase):
         numpy.random.seed(0)
         self.f = basis.dot(numpy.random.uniform(size=len(basis)))
         sample = self.domain.sample('gauss', 2)
+        print(sample.eval(self.f))
         self.f_sampled = sample.asfunction(sample.eval(self.f))
 
     def test_isarray(self):
@@ -1154,7 +1152,8 @@ class CommonBasis:
         ref = element.PointReference() if self.basis.coords.shape[0] == 0 else element.LineReference()**self.basis.coords.shape[0]
         points = ref.getpoints('bezier', 4)
         coordinates = evaluable.Constant(points.coords)
-        lowered = self.basis.lower(function.LowerArgs(coordinates.shape[:-1], dict(X=(self.checktransforms.get_evaluable(evaluable.Argument('ielem', (), int)),)*2), dict(X=coordinates)))
+        lowerargs = function.LowerArgs.for_space('X', (self.checktransforms,), evaluable.Argument('ielem', (), int), coordinates)
+        lowered = self.basis.lower(lowerargs)
         with _builtin_warnings.catch_warnings():
             _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
             for ielem in range(self.checknelems):

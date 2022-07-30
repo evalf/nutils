@@ -3,6 +3,7 @@
 from . import types, numeric, util
 from .element import Reference
 from .pointsseq import PointsSequence
+from ._rust import CoordSystem
 from typing import Tuple, Sequence, Iterable, Iterator, Optional, Union, overload
 import abc
 import itertools
@@ -122,10 +123,7 @@ class References(types.Singleton):
         if numeric.isint(index):
             return self.get(index)
         elif isinstance(index, slice):
-            index = range(len(self))[index]
-            if index == range(len(self)):
-                return self
-            return self.take(numpy.arange(index.start, index.stop, index.step))
+            return self.slice(index)
         elif numeric.isintarray(index):
             return self.take(index)
         elif numeric.isboolarray(index):
@@ -174,6 +172,25 @@ class References(types.Singleton):
         '''
 
         raise NotImplementedError
+
+    def slice(self, __s: slice) -> 'References':
+        '''Return a slice of this sequence.
+
+        Parameters
+        ----------
+        s : :class:`slice`
+            The slice.
+
+        Returns
+        -------
+        :class:`References`
+            The slice.
+        '''
+
+        start, stop, step = __s.indices(len(self))
+        if start == 0 and stop == len(self) and step == 1:
+            return self
+        return self.take(numpy.arange(start, stop, step))
 
     def take(self, indices: numpy.ndarray) -> 'References':
         '''Return a selection of this sequence.
@@ -295,6 +312,9 @@ class References(types.Singleton):
 
         return _Derived(self, 'child_refs', self.ndims)
 
+    def children_coord_system(self, coord_system: CoordSystem) -> CoordSystem:
+        raise NotImplementedError
+
     @property
     def edges(self) -> 'References':
         '''Return the sequence of edge references.
@@ -308,6 +328,9 @@ class References(types.Singleton):
         '''
 
         return _Derived(self, 'edge_refs', self.ndims-1)
+
+    def edges_coord_system(self, coord_system: CoordSystem) -> CoordSystem:
+        raise NotImplementedError
 
     @property
     def isuniform(self) -> 'bool':
@@ -411,9 +434,15 @@ class _Uniform(References):
     def children(self) -> References:
         return References.from_iter(self.item.child_refs, self.ndims).repeat(len(self))
 
+    def children_coord_system(self, coord_system: CoordSystem) -> CoordSystem:
+        return self.item.uniform_children_coord_system(coord_system, 0)
+
     @property
     def edges(self) -> References:
         return References.from_iter(self.item.edge_refs, self.ndims-1).repeat(len(self))
+
+    def edges_coord_system(self, coord_system: CoordSystem) -> CoordSystem:
+        return self.item.uniform_edges_coord_system(coord_system, 0)
 
     @property
     def isuniform(self) -> bool:
@@ -562,9 +591,19 @@ class _Chain(References):
     def children(self) -> References:
         return self.sequence1.children.chain(self.sequence2.children)
 
+    def children_coord_system(self, coord_system: CoordSystem) -> CoordSystem:
+        coord_system1 = self.sequence1.children_coord_system(coord_system.slice(slice(0, len(self.sequence1))))
+        coord_system2 = self.sequence2.children_coord_system(coord_system.slice(slice(len(self.sequence1), None)))
+        return coord_system1.concat(coord_system2)
+
     @property
     def edges(self) -> References:
         return self.sequence1.edges.chain(self.sequence2.edges)
+
+    def edges_coord_system(self, coord_system: CoordSystem) -> CoordSystem:
+        coord_system1 = self.sequence1.edges_coord_system(coord_system.slice(slice(0, len(self.sequence1))))
+        coord_system2 = self.sequence2.edges_coord_system(coord_system.slice(slice(len(self.sequence1), None)))
+        return coord_system1.concat(coord_system2)
 
     def getpoints(self, ischeme: str, degree: int) -> PointsSequence:
         return self.sequence1.getpoints(ischeme, degree).chain(self.sequence2.getpoints(ischeme, degree))

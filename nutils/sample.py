@@ -17,19 +17,15 @@ set.
 
 from . import types, points, util, function, evaluable, parallel, numeric, matrix, sparse, warnings
 from .pointsseq import PointsSequence
-from .transformseq import Transforms
-from .transform import EvaluableTransformChain
-from typing import Iterable, Mapping, Optional, Sequence, Tuple, Union
+from .types import frozendict
+from ._rust import CoordSystem
+from typing import Dict, Iterable, Mapping, Optional, Sequence, Tuple, Union
 import numpy
 import numbers
 import collections.abc
 import os
 import treelog as log
 import abc
-
-_PointsShape = Tuple[evaluable.Array, ...]
-_TransformChainsMap = Mapping[str, Tuple[EvaluableTransformChain, EvaluableTransformChain]]
-_CoordinatesMap = Mapping[str, evaluable.Array]
 
 
 def argdict(arguments) -> Mapping[str, numpy.ndarray]:
@@ -59,14 +55,15 @@ class Sample(types.Singleton):
     __slots__ = 'spaces', 'ndims', 'nelems', 'npoints'
 
     @staticmethod
-    def new(space: str, transforms: Iterable[Transforms], points: PointsSequence, index: Optional[Union[numpy.ndarray, Sequence[numpy.ndarray]]] = None) -> 'Sample':
+    def new(reference: Dict[str, CoordSystem], coord_systems: Iterable[CoordSystem], points: PointsSequence, index: Optional[Union[numpy.ndarray, Sequence[numpy.ndarray]]] = None) -> 'Sample':
         '''Create a new :class:`Sample`.
 
         Parameters
         ----------
-        transforms : :class:`tuple` or transformation chains
-            List of transformation chains leading to local coordinate systems that
-            contain points.
+        reference : :class:`dict` of :class:`str` to :class:`~nutils._rust.CoordSystem`
+            Reference coordinate systems.
+        coord_systems : :class:`tuple` of :class:`~nutils._rust.CoordSystem`
+            List of coordinate systems.
         points : :class:`~nutils.pointsseq.PointsSequence`
             Points sequence.
         index : integer array or :class:`tuple` of integer arrays, optional
@@ -74,7 +71,7 @@ class Sample(types.Singleton):
             If absent the indices will be strictly increasing.
         '''
 
-        sample = _DefaultIndex(space, tuple(transforms), points)
+        sample = _DefaultIndex(frozendict(reference), tuple(coord_systems), points)
         if index is not None:
             if isinstance(index, (tuple, list)):
                 assert all(ind.shape == (pnt.npoints,) for ind, pnt in zip(index, points))
@@ -83,8 +80,8 @@ class Sample(types.Singleton):
         return sample
 
     @staticmethod
-    def empty(spaces: Tuple[str, ...], ndims: int) -> 'Sample':
-        return _Empty(spaces, ndims)
+    def empty(reference: Dict[str, CoordSystem], ndims: int) -> 'Sample':
+        return _Empty(reference, ndims)
 
     def __init__(self, spaces: Tuple[str, ...], ndims: int, nelems: int, npoints: int) -> None:
         '''
@@ -371,41 +368,29 @@ class Sample(types.Singleton):
 
 class _TransformChainsSample(Sample):
 
-    __slots__ = 'space', 'transforms', 'points'
+    __slots__ = 'reference', 'coord_systems', 'points'
 
-    def __init__(self, space: str, transforms: Tuple[Transforms, ...], points: PointsSequence) -> None:
-        '''
-        parameters
-        ----------
-        space : ::class:`str`
-            The name of the space on which this sample is defined.
-        transforms : :class:`tuple` or transformation chains
-            List of transformation chains leading to local coordinate systems that
-            contain points.
-        points : :class:`~nutils.pointsseq.PointsSequence`
-            Points sequence.
-        '''
-
-        assert len(transforms) >= 1
-        assert all(len(t) == len(points) for t in transforms)
-        self.space = space
-        self.transforms = transforms
+    def __init__(self, reference, coord_systems: Tuple[CoordSystem, ...], points: PointsSequence) -> None:
+        assert len(coord_systems) >= 1
+        assert all(len(t) == len(points) for t in coord_systems)
+        self.reference = reference
+        self.coord_systems = coord_systems
         self.points = points
-        super().__init__((space,), transforms[0].fromdims, len(points), points.npoints)
+        super().__init__(tuple(reference), coord_systems[0].dim, len(points), points.npoints)
 
     def get_evaluable_weights(self, __ielem: evaluable.Array) -> evaluable.Array:
         return self.points.get_evaluable_weights(__ielem)
 
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
-        return function.LowerArgs.for_space(self.space, tuple(t.get_evaluable(__ielem) for t in (self.transforms*2)[:2]), self.points.get_evaluable_coords(__ielem))
+        return function.Bound(dict(self.reference), self.coord_systems, __ielem, self.points.get_evaluable_coords(__ielem)).into_lower_args()
 
     def basis(self) -> function.Array:
         return _Basis(self)
 
     def subset(self, mask: numpy.ndarray) -> Sample:
         selection = types.frozenarray([ielem for ielem in range(self.nelems) if mask[self.getindex(ielem)].any()])
-        transforms = tuple(transform[selection] for transform in self.transforms)
-        return Sample.new(self.space, transforms, self.points.take(selection))
+        coord_systems = tuple(transform[selection] for transform in self.coord_systems)
+        return Sample.new(self.reference, coord_systems, self.points.take(selection))
 
     def get_element_tri(self, ielem: int) -> numpy.ndarray:
         if not 0 <= ielem < self.nelems:
@@ -457,7 +442,7 @@ class _CustomIndex(_TransformChainsSample):
         assert index.shape == (parent.npoints,)
         self._parent = parent
         self._index = index
-        super().__init__(parent.space, parent.transforms, parent.points)
+        super().__init__(parent.reference, parent.coord_systems, parent.points)
 
     def getindex(self, ielem: int) -> numpy.ndarray:
         return numpy.take(self._index, self._parent.getindex(ielem))
@@ -493,11 +478,11 @@ if os.environ.get('NUTILS_TENSORIAL', None) == 'test':  # pragma: nocover
             raise SkipTest('`{}` does not implement `Sample.get_lower_args`'.format(type(self).__qualname__))
 
         @property
-        def transforms(self) -> Tuple[Transforms, ...]:
-            raise SkipTest('`{}` does not implement `Sample.transforms`'.format(type(self).__qualname__))
+        def coord_systems(self) -> Tuple[CoordSystem, ...]:
+            raise SkipTest('`{}` does not implement `Sample.coord_systems`'.format(type(self).__qualname__))
 
         @property
-        def points(self) -> Tuple[Transforms, ...]:
+        def points(self) -> Tuple[CoordSystem, ...]:
             raise SkipTest('`{}` does not implement `Sample.points`'.format(type(self).__qualname__))
 
         def basis(self) -> function.Array:
@@ -522,7 +507,7 @@ class _Empty(_TensorialSample):
         return evaluable.Zeros((0,) * len(self.spaces), dtype=float)
 
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
-        return function.LowerArgs((), {}, {})
+        return function.LowerArgs((), ())
 
     def get_element_tri(self, ielem: int) -> numpy.ndarray:
         raise IndexError('index out of range')
@@ -607,19 +592,22 @@ class _Mul(_TensorialSample):
         return (index1[:, None] * self._sample2.npoints + index2[None, :]).ravel()
 
     def get_evaluable_indices(self, __ielem: evaluable.Array) -> evaluable.Array:
-        ielem1, ielem2 = evaluable.divmod(__ielem, self._sample2.nelems)
+        ielem1 = evaluable.FloorDivide(__ielem, self._sample2.nelems)
+        ielem2 = evaluable.mod(__ielem, self._sample2.nelems)
         index1 = self._sample1.get_evaluable_indices(ielem1)
         index2 = self._sample2.get_evaluable_indices(ielem2)
         return evaluable.appendaxes(index1 * self._sample2.npoints, index2.shape) + evaluable.prependaxes(index2, index1.shape)
 
     def get_evaluable_weights(self, __ielem: evaluable.Array) -> evaluable.Array:
-        ielem1, ielem2 = evaluable.divmod(__ielem, self._sample2.nelems)
+        ielem1 = evaluable.FloorDivide(__ielem, self._sample2.nelems)
+        ielem2 = evaluable.mod(__ielem, self._sample2.nelems)
         weights1 = self._sample1.get_evaluable_weights(ielem1)
         weights2 = self._sample2.get_evaluable_weights(ielem2)
         return evaluable.einsum('A,B->AB', weights1, weights2)
 
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
-        ielem1, ielem2 = evaluable.divmod(__ielem, self._sample2.nelems)
+        ielem1 = evaluable.FloorDivide(__ielem, self._sample2.nelems)
+        ielem2 = evaluable.mod(__ielem, self._sample2.nelems)
         return self._sample1.get_lower_args(ielem1) | self._sample2.get_lower_args(ielem2)
 
     def get_element_tri(self, ielem: int) -> numpy.ndarray:
@@ -719,14 +707,14 @@ class _Zip(Sample):
 
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
         points_shape = evaluable.Take(self._sizes, __ielem),
-        coordinates = {}
-        transform_chains = {}
+        bounds = []
         for samplei, ielemsi, ilocalsi in zip(self._samples, self._ielems, self._ilocals):
             argsi = samplei.get_lower_args(evaluable.Take(ielemsi, __ielem))
             slicei = self._getslice(ilocalsi, __ielem)
-            transform_chains.update(argsi.transform_chains)
-            coordinates.update({space: evaluable._take(coords, slicei, axis=0) for space, coords in argsi.coordinates.items()})
-        return function.LowerArgs(points_shape, transform_chains, coordinates)
+            for bound in argsi.bounds:
+                coords = evaluable._take(bound.coords, slicei, axis=0)
+                bounds.append(function.Bound(bound.spaces, bound.coord_systems, bound.index, coords))
+        return function.LowerArgs(points_shape, bounds)
 
     def get_evaluable_indices(self, ielem):
         return self._getslice(self._indices, ielem)
@@ -913,7 +901,7 @@ class _Basis(function.Array):
         super().__init__(shape=(sample.npoints,), dtype=float, spaces=frozenset({sample.space}), arguments={})
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
-        aligned_space_coords = args.coordinates[self._sample.space]
+        aligned_space_coords = args.get_coords(self._sample.space)
         assert aligned_space_coords.ndim == len(args.points_shape) + 1
         space_coords, where = evaluable.unalign(aligned_space_coords)
         # Reinsert the coordinate axis, the last axis of `aligned_space_coords`, or
@@ -925,9 +913,8 @@ class _Basis(function.Array):
             space_coords = evaluable.Transpose(space_coords, numpy.argsort(where))
             where = tuple(sorted(where))
 
-        chain = args.transform_chains[self._sample.space][0]
-        index, tail = chain.index_with_tail_in(self._sample.transforms[0])
-        coords = tail.apply(space_coords)
+        # FIXME
+        index, coords = args.relative_index_coords(self._sample.spaces, self._sample.coord_systems[0])
         expect = self._sample.points.get_evaluable_coords(index)
         sampled = evaluable.Sampled(coords, expect)
         indices = self._sample.get_evaluable_indices(index)
