@@ -276,6 +276,8 @@ class Topology(types.Singleton):
             return topo
         elif numeric.isintarray(item) and item.ndim == 1 or isinstance(item, Sequence) and all(isinstance(i, int) for i in item):
             return self.take(item)
+        elif numeric.isboolarray(item) and item.ndim == 1 and len(item) == len(self):
+            return self.compress(item)
         else:
             raise NotImplementedError
         if not topo:
