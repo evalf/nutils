@@ -104,6 +104,7 @@ class CommonTests(CommonAssertions):
         self.assertFalse(self.topo.take([]))
         for ielem in range(self.desired_nelems):
             self.assertTake(self.topo.take([ielem]), [ielem])
+            self.assertTake(self.topo[[ielem]], [ielem])
 
     def test_take_invalid_indices(self):
         with self.assertRaisesRegex(ValueError, '^expected a one-dimensional array$'):
@@ -115,6 +116,7 @@ class CommonTests(CommonAssertions):
         self.assertFalse(self.topo.compress([False]*self.desired_nelems))
         for ielem in range(self.desired_nelems):
             self.assertTake(self.topo.compress([i == ielem for i in range(self.desired_nelems)]), [ielem])
+            self.assertTake(self.topo[numpy.arange(self.desired_nelems) == ielem], [ielem])
 
     def test_slice_invalid_dim(self):
         with self.assertRaisesRegex(IndexError, '^dimension index out of range$'):
