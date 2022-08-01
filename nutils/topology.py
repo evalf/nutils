@@ -2331,6 +2331,20 @@ class SimplexTopology(TransformChainsTopology):
         references = References.uniform(element.getsimplex(transforms.fromdims), len(transforms))
         super().__init__(space, references, transforms, opposites)
 
+    def take_unchecked(self, indices):
+        space, = self.spaces
+        return SimplexTopology(space, self.simplices[indices], self.transforms[indices], self.opposites[indices])
+
+    @property
+    def boundary(self):
+        space, = self.spaces
+        ielem, iedge = (self.connectivity == -1).nonzero()
+        nd = self.ndims
+        edges = numpy.arange(nd+1).repeat(nd).reshape(nd,nd+1).T[::-1]
+        simplices = self.simplices[ielem, edges[iedge].T].T
+        transforms = self.transforms.edges(self.references)[ielem * (nd+1) + iedge]
+        return SimplexTopology(space, simplices, transforms, transforms)
+
     @property
     def connectivity(self):
         nverts = self.ndims + 1
