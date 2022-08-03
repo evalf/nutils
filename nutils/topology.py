@@ -276,6 +276,8 @@ class Topology(types.Singleton):
             return topo
         elif numeric.isintarray(item) and item.ndim == 1 or isinstance(item, Sequence) and all(isinstance(i, int) for i in item):
             return self.take(item)
+        elif numeric.isboolarray(item) and item.ndim == 1 and len(item) == len(self):
+            return self.compress(item)
         else:
             raise NotImplementedError
         if not topo:
@@ -2328,6 +2330,20 @@ class SimplexTopology(TransformChainsTopology):
         assert not numpy.equal(self.simplices[:, 1:], self.simplices[:, :-1]).all(), 'duplicate nodes'
         references = References.uniform(element.getsimplex(transforms.fromdims), len(transforms))
         super().__init__(space, references, transforms, opposites)
+
+    def take_unchecked(self, indices):
+        space, = self.spaces
+        return SimplexTopology(space, self.simplices[indices], self.transforms[indices], self.opposites[indices])
+
+    @property
+    def boundary(self):
+        space, = self.spaces
+        ielem, iedge = (self.connectivity == -1).nonzero()
+        nd = self.ndims
+        edges = numpy.arange(nd+1).repeat(nd).reshape(nd,nd+1).T[::-1]
+        simplices = self.simplices[ielem, edges[iedge].T].T
+        transforms = self.transforms.edges(self.references)[ielem * (nd+1) + iedge]
+        return SimplexTopology(space, simplices, transforms, transforms)
 
     @property
     def connectivity(self):

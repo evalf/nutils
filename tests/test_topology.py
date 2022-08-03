@@ -104,6 +104,7 @@ class CommonTests(CommonAssertions):
         self.assertFalse(self.topo.take([]))
         for ielem in range(self.desired_nelems):
             self.assertTake(self.topo.take([ielem]), [ielem])
+            self.assertTake(self.topo[[ielem]], [ielem])
 
     def test_take_invalid_indices(self):
         with self.assertRaisesRegex(ValueError, '^expected a one-dimensional array$'):
@@ -115,6 +116,7 @@ class CommonTests(CommonAssertions):
         self.assertFalse(self.topo.compress([False]*self.desired_nelems))
         for ielem in range(self.desired_nelems):
             self.assertTake(self.topo.compress([i == ielem for i in range(self.desired_nelems)]), [ielem])
+            self.assertTake(self.topo[numpy.arange(self.desired_nelems) == ielem], [ielem])
 
     def test_slice_invalid_dim(self):
         with self.assertRaisesRegex(IndexError, '^dimension index out of range$'):
@@ -1301,6 +1303,31 @@ class DisjointUnionTopology(TestCase, CommonTests, TransformChainsTests):
 
     def test_get_groups_parent(self):
         self.assertEqual(len(self.topo.get_groups('a')), 2)
+
+
+class SimplexTopology(TestCase, CommonTests, TransformChainsTests, ConformingTests):
+
+    def setUp(self):
+        super().setUp()
+        coords = numpy.array([[0,0],[0,1],[1,0],[1,1],[.5,.5]])
+        simplices = numpy.array([[0,1,4],[0,2,4],[1,3,4],[2,3,4]])
+        transforms = transformseq.IndexTransforms(2, len(simplices))
+        self.topo = topology.SimplexTopology('X', simplices, transforms, transforms)
+        self.geom = self.topo.basis('std', degree=1) @ coords
+        self.desired_nelems = 4
+        self.desired_spaces = 'X',
+        self.desired_space_dims = 2,
+        self.desired_ndims = 2
+        self.desired_volumes = [.25]*4
+        self.desired_references = [element.TriangleReference()]*4
+        self.desired_vertices = coords[simplices].tolist()
+
+    def test_boundary(self):
+        self.assertIsInstance(self.topo.boundary, topology.SimplexTopology)
+
+    def test_getitem(self):
+        self.assertIsInstance(self.topo[numpy.arange(4) < 2], topology.SimplexTopology)
+        self.assertIsInstance(self.topo[numpy.arange(2)], topology.SimplexTopology)
 
 
 class project(TestCase):

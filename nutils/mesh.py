@@ -641,7 +641,6 @@ def unitsquare(nelems, etype):
 
     if etype == 'square':
         topo, geom = rectilinear([nelems, nelems], space=space)
-        return topo, geom / nelems
 
     elif etype in ('triangle', 'mixed'):
         simplices = numpy.concatenate([
@@ -669,15 +668,15 @@ def unitsquare(nelems, etype):
             transforms = transformseq.IndexTransforms(2, len(connectivity))
             topo = topology.ConnectedTopology(space, References.from_iter(references, 2), transforms, transforms, connectivity)
 
-        geom = (topo.basis('std', degree=1) * coords.T).sum(-1)
+        geom = topo.basis('std', degree=1) @ coords
         x, y = topo.boundary.sample('_centroid', None).eval(geom).T
-        bgroups = dict(left=x < .1, right=x > nelems-.1, bottom=y < .1, top=y > nelems-.1)
-        topo = topo.withboundary(**{name: topo.boundary[numpy.where(mask)[0]] for name, mask in bgroups.items()})
-        return topo, geom / nelems
+        btopo = topo.boundary
+        topo = topo.withboundary(left=btopo[x<.1], right=btopo[x>nelems-.1], bottom=btopo[y<.1], top=btopo[y>nelems-.1])
 
     else:
         raise Exception('invalid element type {!r}'.format(etype))
 
+    return topo, geom / nelems
 
 try:
     from math import comb as _comb  # new in Python 3.8
