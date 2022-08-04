@@ -2,3 +2,4 @@ __pycache__/
 /.coverage
 /target
 Cargo.lock
+/nutils/_rust.so
