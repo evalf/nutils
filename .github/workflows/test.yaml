@@ -11,32 +11,48 @@ defaults:
 env:
   official_container_repository: ghcr.io/evalf/nutils
 jobs:
-  build-python-package:
-    name: Build Python package
-    runs-on: ubuntu-20.04
+  build-wheel:
+    name: 'Build wheel on ${{ matrix.os }}'
+    runs-on: ${{ matrix.os }}
     outputs:
-      wheel: ${{ steps.build.outputs.wheel }}
+      ubuntu-latest: ${{ steps.locate-wheel.outputs.ubuntu-latest }}
+      macos-latest: ${{ steps.locate-wheel.outputs.macos-latest }}
+      windows-latest: ${{ steps.locate-wheel.outputs.windows-latest }}
+    strategy:
+      matrix:
+        include:
+          - {os: ubuntu-latest}
+          - {os: macos-latest, build-args: --no-sdist}
+          - {os: windows-latest, build-args: --no-sdist}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-      - name: Install build dependencies
-        run: python3 -m pip install setuptools wheel
-      - name: Build package
+      - uses: actions/setup-python@v2
+        if: matrix.os == 'windows-latest'
+        with:
+          python-version: '3.10'
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          default: true
+      - name: Build wheels
         id: build
-        run: |
-          # To make the wheels reproducible, set the timestamp of the (files in
-          # the) generated wheels to the date of the commit.
-          export SOURCE_DATE_EPOCH=`git show -s --format=%ct`
-          python3 setup.py sdist bdist_wheel
-          printf "::set-output name=wheel::%s" dist/*.whl
+        uses: messense/maturin-action@v1
+        with:
+          args: --release ${{ matrix.build-args }}
+      - name: Locate wheel
+        id: locate-wheel
+        run: printf "::set-output name="${{ matrix.os }}"::%s" target/wheels/*.whl
       - name: Upload package artifacts
         uses: actions/upload-artifact@v2
         with:
           name: python-package
-          path: dist/
+          path: target/wheels
           if-no-files-found: error
   test:
-    needs: build-python-package
+    needs: build-wheel
     name: 'Test ${{ matrix.name }}'
     runs-on: ${{ matrix.os }}
     strategy:
@@ -58,7 +74,7 @@ jobs:
           - {name: "tensorial", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1, tensorial: test}
       fail-fast: false
     env:
-      _wheel: ${{ needs.build-python-package.outputs.wheel }}
+      _wheel: ${{ needs.build-wheel.outputs[matrix.os] }}
       NUTILS_MATRIX: ${{ matrix.matrix-backend }}
       NUTILS_NPROCS: ${{ matrix.nprocs }}
       NUTILS_DEBUG: all
@@ -74,14 +90,14 @@ jobs:
       - name: Move nutils directory
         run: mv nutils _nutils
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v2
         with:
           python-version: ${{ matrix.python-version }}
       - name: Download Python package artifact
         uses: actions/download-artifact@v2
         with:
           name: python-package
-          path: dist/
+          path: target/wheels/
       - name: Install Graphviz
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: sudo apt install -y graphviz
@@ -92,7 +108,6 @@ jobs:
         run: |
           python -um pip install --upgrade --upgrade-strategy eager wheel
           python -um pip install --upgrade --upgrade-strategy eager coverage numpy$_numpy_version
-          # Install Nutils from `dist` dir created in job `build-python-package`.
           python -um pip install "$_wheel[import_gmsh]"
       - name: Install Scipy
         if: ${{ matrix.matrix-backend == 'scipy' }}
@@ -109,15 +124,15 @@ jobs:
       - name: Upload coverage
         uses: codecov/codecov-action@v1
   test-examples:
-    needs: build-python-package
+    needs: build-wheel
     name: 'Test examples ${{ matrix.os }}'
-    runs-on: ${{ matrix.os }}-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu, macos, windows]
+        os: [ubuntu-latest, macos-latest, windows-latest]
       fail-fast: false
     env:
-      _wheel: ${{ needs.build-python-package.outputs.wheel }}
+      _wheel: ${{ needs.build-wheel.outputs[matrix.os] }}
       NUTILS_MATRIX: scipy
       NUTILS_NPROCS: 1
       NUTILS_DEBUG: all
@@ -135,36 +150,53 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: python-package
-          path: dist/
+          path: target/wheels/
       - name: Install Nutils and dependencies
         id: install
         run: |
           python -um pip install --upgrade --upgrade-strategy eager wheel
           python -um pip install --upgrade --upgrade-strategy eager git+https://github.com/evalf/nutils-SI.git
-          # Install Nutils from `dist` dir created in job `build-python-package`.
           python -um pip install "$_wheel[matrix_scipy,export_mpl]"
       - name: Test
         run: python -um unittest discover -b -q -t . -s examples
   test-sphinx:
     name: Test building docs
-    runs-on: ubuntu-20.04
+    needs: build-wheel
+    runs-on: ubuntu-latest
+    env:
+      _wheel: ${{ needs.build-wheel.outputs.ubuntu-latest }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
-      - name: Install dependencies
+      - name: Move nutils directory
+        run: mv nutils _nutils
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.10'
+      - name: Download Python package artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: python-package
+          path: target/wheels/
+      - name: Install Nutils and dependencies
+        id: install
+        env:
+          _numpy_version: ${{ matrix.numpy-version }}
         run: |
-          python3 -um pip install setuptools wheel
-          python3 -um pip install --upgrade --upgrade-strategy eager .[docs]
+          python -um pip install --upgrade --upgrade-strategy eager wheel
+          python -um pip install --upgrade --upgrade-strategy eager Sphinx treelog stringly meshio numpy scipy matplotlib
+          python -um pip install "$_wheel"
       - name: Build docs
-        run: python3 setup.py build_sphinx --nitpicky --warning-is-error --keep-going
+        run: python3 -m sphinx -n -W --keep-going docs build/sphinx
   build-and-test-container-image:
     name: Build container image
-    needs: build-python-package
-    runs-on: ubuntu-20.04
+    needs: build-wheel
+    runs-on: ubuntu-latest
     env:
       # Fixes https://github.com/actions/virtual-environments/issues/3080
       STORAGE_OPTS: overlay.mount_program=/usr/bin/fuse-overlayfs
-      _wheel: ${{ needs.build-python-package.outputs.wheel }}
+      _wheel: ${{ needs.build-wheel.outputs.ubuntu-latest }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -172,7 +204,7 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: python-package
-          path: dist/
+          path: target/wheels/
       - name: Get base and image tags
         id: tags
         run: python3 -um devtools.gha.get_base_and_image_tags

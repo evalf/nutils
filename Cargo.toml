@@ -1,0 +1,15 @@
+[package]
+name = "nutils"
+version = "0.0.0-pyext"
+authors = ["Evalf <info@evalf.com>"]
+edition = "2021"
+
+[lib]
+name = "nutils"
+crate-type = ["cdylib"]
+
+[package.metadata.maturin]
+name = "nutils._rust"
+
+[dependencies]
+pyo3 = { version = "0.17", features = ["extension-module", "abi3-py37"] }

@@ -25,9 +25,9 @@ applications.
 Installation
 ------------
 
-Nutils is platform independent and is known to work on Linux, Windows and macOS.
+Nutils is supported on Linux, Windows and macOS.
 
-A working installation of Python 3.5 or higher is required. Many different
+A working installation of Python 3.7 or higher is required. Many different
 installers exist and there are no known issues with any of them. When in doubt
 about which to use, a safe option is to go with the [official installer][2].
 
@@ -37,15 +37,23 @@ of Nutils is through [pip][4] (included in the standard installer):
     python3 -m pip install --user nutils
 
 By default and without explicitly specifying the source of the given packages,
-pip installs packages from the [Python Package Index][5]. To install the latest
-development version of Nutils, pass a zip of branch master of the [official
-repository][3] to pip:
+pip installs packages from the [Python Package Index][5].
+
+
+Instalation from source
+-----------------------
+
+To install Nutils from source recent versions of [Rust][13] and Cargo are
+required ([installation instructions][14]). To install the development version
+of Nutils, pass a zip of branch master of the [official repository][3] to pip:
 
     python3 -m pip install --user https://github.com/evalf/nutils/archive/master.zip
 
 To view which version of Nutils is currently installed, run:
 
     python3 -m pip show nutils
+
+Instead of pip you can also use [Maturin][15] to install Nutils from source.
 
 
 First steps
@@ -122,3 +130,6 @@ Nutils][9].
 [10]: https://www.docker.com/
 [11]: https://github.com/orgs/evalf/packages/container/package/nutils
 [12]: https://raw.githubusercontent.com/evalf/nutils/master/examples/laplace.py
+[13]: https://www.rust-lang.org/
+[14]: https://www.rust-lang.org/tools/install
+[15]: https://maturin.rs/

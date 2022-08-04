@@ -1,6 +1,4 @@
 __pycache__/
 /.coverage
-/build/
-/dist/
-/nutils.egg-info/
-/.eggs/
+/target
+Cargo.lock
