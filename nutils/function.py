@@ -3584,7 +3584,7 @@ class Basis(Array):
         _index = evaluable.Argument('_index', shape=(), dtype=int)
         self._arg_dofs, self._arg_coeffs = [f.optimized_for_numpy for f in self.f_dofs_coeffs(_index)]
         assert self._arg_dofs.ndim == 1
-        assert self._arg_coeffs.ndim == 1 + coords.shape[0]
+        assert self._arg_coeffs.ndim == 2
         assert evaluable._equals_simplified(self._arg_dofs.shape[0], self._arg_coeffs.shape[0])
         self._arg_ndofs = evaluable.asarray(self._arg_dofs.shape[0])
 
@@ -3712,7 +3712,7 @@ class PlainBasis(Basis):
         self._coeffs = tuple(types.arraydata(numpy.asarray(c, dtype=float)) for c in coefficients)
         self._dofs = tuple(map(types.arraydata, dofs))
         assert len(self._coeffs) == len(self._dofs)
-        assert all(c.ndim == 1+coords.shape[0] for c in self._coeffs)
+        assert all(c.ndim == 2 for c in self._coeffs)
         assert all(c.shape[0] == d.shape[0] for c, d in zip(self._coeffs, self._dofs))
         super().__init__(ndofs, len(coefficients), index, coords)
 
@@ -3738,7 +3738,7 @@ class DiscontBasis(Basis):
 
     def __init__(self, coefficients: Sequence[numpy.ndarray], index: Array, coords: Array) -> None:
         self._coeffs = tuple(types.arraydata(c) for c in coefficients)
-        assert all(c.ndim == 1+coords.shape[0] for c in self._coeffs)
+        assert all(c.ndim == 2 for c in self._coeffs)
         self._offsets = numpy.cumsum([0] + [c.shape[0] for c in self._coeffs])
         super().__init__(self._offsets[-1], len(coefficients), index, coords)
 
@@ -3785,7 +3785,7 @@ class LegendreBasis(Basis):
         coeffs = numpy.zeros((self._degree+1,)*2, dtype=int)
         for n in range(self._degree+1):
             for k in range(n+1):
-                coeffs[n, k] = (-1 if (n+k) % 2 else 1) * numeric.binom(n, k) * numeric.binom(n+k, k)
+                coeffs[n, self._degree - k] = (-1 if (n+k) % 2 else 1) * numeric.binom(n, k) * numeric.binom(n+k, k)
         return dofs, evaluable.astype(evaluable.asarray(coeffs), float)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
@@ -3900,8 +3900,12 @@ class StructuredBasis(Basis):
         for range_i, ndofs_i in zip(ranges[1:], self._dofs_shape[1:]):
             dofs = evaluable.Ravel(evaluable.RavelIndex(dofs, range_i % ndofs_i, evaluable.constant(ndofs), evaluable.constant(ndofs_i)))
             ndofs = ndofs * ndofs_i
-        coeffs = functools.reduce(evaluable.PolyOuterProduct,
-                                  [evaluable.Elemwise(coeffs_i, index_i, float) for coeffs_i, index_i in zip(self._coeffs, indices)])
+        coeffs_per_dim = iter(evaluable.Elemwise(coeffs_i, index_i, float) for coeffs_i, index_i in zip(self._coeffs, indices))
+        coeffs = next(coeffs_per_dim)
+        for i, c in enumerate(coeffs_per_dim, 1):
+            coeffs, c = evaluable.insertaxis(coeffs, 1, c.shape[0]), evaluable.insertaxis(c, 0, coeffs.shape[0])
+            coeffs = evaluable.PolyOuterProduct(coeffs, c, i, 1)
+            coeffs = evaluable.ravel(coeffs, 0)
         return dofs, coeffs
 
 

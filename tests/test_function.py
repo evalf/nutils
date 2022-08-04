@@ -1,5 +1,6 @@
 from nutils import evaluable, function, mesh, numeric, types, points, transformseq, transform, element, warnings
 from nutils.testing import TestCase, parametrize
+import nutils_poly as poly
 import numpy
 import itertools
 import warnings as _builtin_warnings
@@ -1167,7 +1168,8 @@ class CommonBasis:
 
     def checkeval(self, ielem, points):
         result = numpy.zeros((points.npoints, self.checkndofs,), dtype=float)
-        numpy.add.at(result, (slice(None), numpy.array(self.checkdofs[ielem], dtype=int)), numeric.poly_eval(numpy.array(self.checkcoeffs[ielem], dtype=float), points.coords))
+        if self.checkcoeffs[ielem]:
+            numpy.add.at(result, (slice(None), numpy.array(self.checkdofs[ielem], dtype=int)), poly.eval_outer(numpy.array(self.checkcoeffs[ielem], dtype=float), points.coords))
         return result
 
     def test_lower(self):
@@ -1190,7 +1192,7 @@ class PlainBasis(CommonBasis, TestCase):
     def setUp(self):
         self.checktransforms = transformseq.IndexTransforms(0, 4)
         index, coords = self.mk_index_coords(0, self.checktransforms)
-        self.checkcoeffs = [[1.], [2., 3.], [4., 5.], [6.]]
+        self.checkcoeffs = [[[1.]], [[2.], [3.]], [[4.], [5.]], [[6.]]]
         self.checkdofs = [[0], [2, 3], [1, 3], [2]]
         self.basis = function.PlainBasis(self.checkcoeffs, self.checkdofs, 4, index, coords)
         self.checkndofs = 4
@@ -1202,7 +1204,7 @@ class DiscontBasis(CommonBasis, TestCase):
     def setUp(self):
         self.checktransforms = transformseq.IndexTransforms(0, 4)
         index, coords = self.mk_index_coords(0, self.checktransforms)
-        self.checkcoeffs = [[1.], [2., 3.], [4., 5.], [6.]]
+        self.checkcoeffs = [[[1.]], [[2.], [3.]], [[4.], [5.]], [[6.]]]
         self.basis = function.DiscontBasis(self.checkcoeffs, index, coords)
         self.checkdofs = [[0], [1, 2], [3, 4], [5]]
         self.checkndofs = 6
@@ -1214,7 +1216,7 @@ class LegendreBasis(CommonBasis, TestCase):
     def setUp(self):
         self.checktransforms = transformseq.IndexTransforms(1, 3)
         index, coords = self.mk_index_coords(0, self.checktransforms)
-        self.checkcoeffs = [[[1, 0, 0, 0], [-1, 2, 0, 0], [1, -6, 6, 0], [-1, 12, -30, 20]]]*3
+        self.checkcoeffs = [[[0, 0, 0, 1], [0, 0, 2, -1], [0, 6, -6, 1], [20, -30, 12, -1]]]*3
         self.basis = function.LegendreBasis(3, 3, index, coords)
         self.checkdofs = [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11]]
         self.checkndofs = 12
@@ -1227,9 +1229,9 @@ class MaskedBasis(CommonBasis, TestCase):
     def setUp(self):
         self.checktransforms = transformseq.IndexTransforms(0, 4)
         index, coords = self.mk_index_coords(0, self.checktransforms)
-        parent = function.PlainBasis([[1.], [2., 3.], [4., 5.], [6.]], [[0], [2, 3], [1, 3], [2]], 4, index, coords)
+        parent = function.PlainBasis([[[1.]], [[2.], [3.]], [[4.], [5.]], [[6.]]], [[0], [2, 3], [1, 3], [2]], 4, index, coords)
         self.basis = function.MaskedBasis(parent, [0, 2])
-        self.checkcoeffs = [[1.], [2.], [], [6.]]
+        self.checkcoeffs = [[[1.]], [[2.]], [], [[6.]]]
         self.checkdofs = [[0], [1], [], [1]]
         self.checkndofs = 2
         super().setUp()
@@ -1243,9 +1245,9 @@ class PrunedBasis(CommonBasis, TestCase):
         indices = types.frozenarray([0, 2])
         self.checktransforms = parent_transforms[indices]
         index, coords = self.mk_index_coords(0, self.checktransforms)
-        parent = function.PlainBasis([[1.], [2., 3.], [4., 5.], [6.]], [[0], [2, 3], [1, 3], [2]], 4, parent_index, parent_coords)
+        parent = function.PlainBasis([[[1.]], [[2.], [3.]], [[4.], [5.]], [[6.]]], [[0], [2, 3], [1, 3], [2]], 4, parent_index, parent_coords)
         self.basis = function.PrunedBasis(parent, indices, index, coords)
-        self.checkcoeffs = [[1.], [4., 5.]]
+        self.checkcoeffs = [[[1.]], [[4.], [5.]]]
         self.checkdofs = [[0], [1, 2]]
         self.checkndofs = 3
         super().setUp()
@@ -1281,7 +1283,7 @@ class StructuredBasis2D(CommonBasis, TestCase):
         self.checktransforms = transformseq.IndexTransforms(2, 4)
         index, coords = self.mk_index_coords(2, self.checktransforms)
         self.basis = function.StructuredBasis([[[[1.], [2.]], [[3.], [4.]]], [[[5.], [6.]], [[7.], [8.]]]], [[0, 1], [0, 1]], [[2, 3], [2, 3]], [3, 3], [2, 2], index, coords)
-        self.checkcoeffs = [[[[5.]], [[6.]], [[10.]], [[12.]]], [[[7.]], [[8.]], [[14.]], [[16.]]], [[[15.]], [[18.]], [[20.]], [[24.]]], [[[21.]], [[24.]], [[28.]], [[32.]]]]
+        self.checkcoeffs = [[[5.], [6.], [10.], [12.]], [[7.], [8.], [14.], [16.]], [[15.], [18.], [20.], [24.]], [[21.], [24.], [28.], [32.]]]
         self.checkdofs = [[0, 1, 3, 4], [1, 2, 4, 5], [3, 4, 6, 7], [4, 5, 7, 8]]
         self.checkndofs = 9
         super().setUp()

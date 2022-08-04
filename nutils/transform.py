@@ -5,6 +5,7 @@ The transform module.
 from typing import Tuple, Dict
 from numbers import Integral
 from . import cache, numeric, _util as util, types
+import nutils_poly as poly
 import numpy
 import collections
 import itertools
@@ -183,28 +184,12 @@ class Square(Matrix):
 
     @types.lru_cache
     def transform_poly(self, coeffs):
-        assert coeffs.ndim == self.fromdims + 1
-        degree = coeffs.shape[1] - 1
-        assert all(n == degree+1 for n in coeffs.shape[2:])
+        degree = poly.degree(self.fromdims, coeffs.shape[-1])
         try:
             M = self._transform_matrix[degree]
         except KeyError:
-            eye = numpy.eye(self.fromdims, dtype=int)
-            # construct polynomials for affine transforms of individual dimensions
-            polys = numpy.zeros((self.fromdims,)+(2,)*self.fromdims)
-            polys[(slice(None),)+(0,)*self.fromdims] = self.offset
-            for idim, e in enumerate(eye):
-                polys[(slice(None),)+tuple(e)] = self.linear[:, idim]
-            # reduces polynomials to smallest nonzero power
-            polys = [poly[tuple(slice(None if p else 1) for p in poly[tuple(eye)])] for poly in polys]
-            # construct transform poly by transforming all monomials separately and summing
-            M = numpy.zeros((degree+1,)*(2*self.fromdims), dtype=float)
-            for powers in numpy.ndindex(*[degree+1]*self.fromdims):
-                if sum(powers) <= degree:
-                    M_power = functools.reduce(numeric.poly_mul, [numeric.poly_pow(poly, power) for poly, power in zip(polys, powers)])
-                    M[tuple(slice(n) for n in M_power.shape)+powers] += M_power
-            self._transform_matrix[degree] = M
-        return types.frozenarray(numpy.einsum('jk,ik', M.reshape([(degree+1)**self.fromdims]*2), coeffs.reshape(coeffs.shape[0], -1)).reshape(coeffs.shape), copy=False)
+            self._transform_matrix[degree] = M = poly.composition_with_inner_matrix(numpy.concatenate([self.offset[:,None], self.linear], axis=1)[:,::-1], self.fromdims, self.fromdims, degree)
+        return types.frozenarray(numpy.einsum('ij,...j->...i', M, coeffs), copy=False)
 
 
 class Identity(Square):

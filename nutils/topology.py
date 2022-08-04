@@ -18,6 +18,7 @@ from . import element, function, evaluable, _util as util, parallel, numeric, ca
 from .sample import Sample
 from .elementseq import References
 from .pointsseq import PointsSequence
+import nutils_poly as poly
 from typing import Any, FrozenSet, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
 import numpy
 import functools
@@ -344,7 +345,7 @@ class Topology(types.Singleton):
         Create a basis.
         '''
         if self.ndims == 0:
-            return function.PlainBasis([[1]], [[0]], 1, self.f_index, self.f_coords)
+            return function.PlainBasis([[[1]]], [[0]], 1, self.f_index, self.f_coords)
         split = name.split('-', 1)
         if len(split) == 2 and split[0] in ('h', 'th'):
             name = split[1]  # default to non-hierarchical bases
@@ -2061,10 +2062,10 @@ class StructuredTopology(TransformChainsTopology):
         # deduplicate stdelems and compute tensorial products `unique` with indices `index`
         # such that unique[index[i,j]] == poly_outer_product(stdelems[0][i], stdelems[1][j])
         index = numpy.array(0)
-        for stdelems_i in stdelems:
+        for dim, stdelems_i in enumerate(stdelems):
             unique_i, index_i = util.unique(stdelems_i, key=types.arraydata)
             unique = unique_i if not index.ndim \
-                else [numeric.poly_outer_product(a, b) for a in unique for b in unique_i]
+                else [poly.mul_different_vars(a[:,None], b[None], dim, 1).reshape(a.shape[0] * b.shape[0], -1) for a in unique for b in unique_i]
             index = index[..., _] * len(unique_i) + index_i
 
         coeffs = [unique[i] for i in index.flat]
@@ -2223,7 +2224,7 @@ class StructuredTopology(TransformChainsTopology):
 
         assert all(Ni.order == p for Ni in N)
 
-        return types.frozenarray([Ni.coeffs[::-1] for Ni in N])
+        return types.frozenarray([Ni.coeffs for Ni in N])
 
     def basis_std(self, *args, **kwargs):
         return __class__.basis_spline(self, *args, continuity=0, **kwargs)
@@ -2369,11 +2370,10 @@ class SimplexTopology(TransformChainsTopology):
         'bubble from vertices'
 
         bernstein = element.getsimplex(self.ndims).get_poly_coeffs('bernstein', degree=1)
-        bubble = functools.reduce(numeric.poly_mul, bernstein)
-        coeffs = numpy.zeros((len(bernstein)+1,) + bubble.shape)
-        coeffs[(slice(-1),)+(slice(2),)*self.ndims] = bernstein
+        bubble = functools.reduce(lambda l, r: poly.mul_same_vars(l, r, self.ndims), bernstein)
+        coeffs = numpy.zeros((len(bernstein)+1, poly.ncoeffs(self.ndims, 1 + self.ndims)))
+        coeffs[:-1] = poly.change_degree(bernstein, self.ndims, 1 + self.ndims) - bubble[None] / (self.ndims+1)
         coeffs[-1] = bubble
-        coeffs[:-1] -= bubble / (self.ndims+1)
         coeffs = types.frozenarray(coeffs, copy=False)
         nverts = self.simplices.max() + 1
         ndofs = nverts + len(self)
@@ -2928,7 +2928,7 @@ class HierarchicalTopology(TransformChainsTopology):
                         mypoly = ubases[h].get_coefficients(ilocal)
 
                         truncpoly = mypoly if h == len(tail) \
-                            else numpy.tensordot(numpy.tensordot(tail[h].transform_poly(mypoly), project[..., mypassive], self.ndims), truncpoly[mypassive], 1)
+                            else tail[h].transform_poly(mypoly) @ project[..., mypassive] @ truncpoly[mypassive]
 
                         imyactive = numeric.sorted_index(ubasis_active[h], mydofs, missing=-1)
                         myactive = numpy.greater_equal(imyactive, 0) & numpy.greater(abs(truncpoly), truncation_tolerance).any(axis=tuple(range(1, truncpoly.ndim)))
@@ -2950,7 +2950,8 @@ class HierarchicalTopology(TransformChainsTopology):
 
                 # add the dofs and coefficients to the hierarchical basis
                 hbasis_dofs.append(numpy.concatenate(trans_dofs))
-                hbasis_coeffs.append(numeric.poly_concatenate(*trans_coeffs))
+                degree = poly.degree(self.ndims, max(c.shape[-1] for c in trans_coeffs))
+                hbasis_coeffs.append(numpy.concatenate([poly.change_degree(c, self.ndims, degree) for c in trans_coeffs], axis=0))
 
         return function.PlainBasis(hbasis_coeffs, hbasis_dofs, ndofs, self.f_index, self.f_coords)
 
@@ -3178,7 +3179,7 @@ class MultipatchTopology(TransformChainsTopology):
         transforms = transformseq.PlainTransforms(tuple((patch.topo.root,) for patch in self.patches), self.ndims, self.ndims)
         index = function.transforms_index(self.space, transforms)
         coords = function.transforms_coords(self.space, transforms)
-        return function.DiscontBasis([types.frozenarray(1, dtype=float).reshape(1, *(1,)*self.ndims)]*len(self.patches), index, coords)
+        return function.DiscontBasis([types.frozenarray([[1]], dtype=float)]*len(self.patches), index, coords)
 
     @property
     def boundary(self):

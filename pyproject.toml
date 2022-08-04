@@ -9,6 +9,7 @@ dependencies = [
     "appdirs~=1.0",
     "bottombar~=2.0.2",
     "numpy>=1.17,<1.24",
+    "nutils-poly~=1.0",
     "psutil~=5.0",
     "stringly",
     "treelog>=1.0b5",
