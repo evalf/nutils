@@ -5,6 +5,17 @@ The following overview lists user facing changes as well as newly added
 features in inverse chronological order.
 
 
+IMPROVED: more efficient trimming
+
+The trim routine (which is used for the Finite Cell Method) is rewritten for
+speed and to produce more efficient quadrature schemes. The changes relate to
+the subdivision at the deepest refinement level. While this step used to
+introduce auxiliary vertices at every dimension (lines, faces, volumes), the
+new implementation limits the introduction of vertices to the line segments
+only, resulting in a subdivision that consists of fewer simplices and
+consequently fewer quadrature points.
+
+
 REMOVED: Nutils configuration file
 
 Support for the Nutils configuration file (which used to be located in either
