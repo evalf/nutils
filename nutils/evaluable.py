@@ -982,6 +982,10 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     _real = lambda self: None
     _imag = lambda self: None
     _conjugate = lambda self: None
+    # Simplification for PolyPartialDerivative. The `axis` argument specifies the
+    # position of the coefficients axis of both the input and the output.
+    _polypartialderiv = lambda self, axis, coord_dim, ideriv: None
+    _polyval = lambda self, axis, coord: None
 
     @property
     def _unaligned(self):
@@ -1313,6 +1317,15 @@ class InsertAxis(Array):
     def _loopsum(self, index):
         return InsertAxis(loop_sum(self.func, index), self.length)
 
+    def _polypartialderiv(self, axis, coord_dim, ideriv):
+        trypolypartialderiv = self._func._polypartialderiv(axis, coord_dim, ideriv)
+        if trypolypartialderiv is not None:
+            return InsertAxis(trypolypartialderiv, self.length)
+
+    def _polyval(self, axis, coord):
+        if axis < self.ndim - 1:
+            return InsertAxis(Polyval(Transpose.to_end(self.func, axis), coord), self.length)
+
     @property
     def _assparse(self):
         return tuple((*(InsertAxis(idx, self.length) for idx in indices), prependaxes(Range(self.length), values.shape), InsertAxis(values, self.length)) for *indices, values in self.func._assparse)
@@ -1503,6 +1516,18 @@ class Transpose(Array):
 
     def _loopsum(self, index):
         return Transpose(loop_sum(self.func, index), self.axes)
+
+    def _polypartialderiv(self, axis, coord_dim, ideriv):
+        trypolypartialderiv = self.func._polypartialderiv(self.axes[axis], coord_dim, ideriv)
+        if trypolypartialderiv is not None:
+            return Transpose(trypolypartialderiv, self.axes)
+
+    def _polyval(self, axis, coord):
+        taxis = self.axes[axis]
+        trypolyval = self.func._polyval(taxis, coord)
+        if trypolyval is not None:
+            axes = *range(coord.ndim - 1), *(coord.ndim - 1 + ax-(ax > taxis) for ax in self.axes if ax != taxis)
+            return Transpose(trypolyval, axes)
 
     @property
     def _assparse(self):
@@ -1916,6 +1941,10 @@ class Add(Array):
             # irreversibly process the new terms before reaching this point.
             return (func1 * other) + (func2 * other)
 
+    def _polyval(self, axis, coord):
+        func1, func2 = self.funcs
+        return Add([Polyval(Transpose.to_end(func1, axis), coord), Polyval(Transpose.to_end(func2, axis), coord)])
+
     @property
     def _assparse(self):
         func1, func2 = self.funcs
@@ -2142,6 +2171,14 @@ class Take(Array):
     def _sum(self, axis):
         if axis < self.func.ndim - 1:
             return Take(sum(self.func, axis), self.indices)
+
+    def _polypartialderiv(self, axis, coord_dim, ideriv):
+        if axis < self.func.ndim - 1 and not self.func.arguments and self.indices.arguments:
+            return Take(poly_partial_deriv(self.func, axis, coord_dim, ideriv), self.indices)
+
+    def _polyval(self, axis, coord):
+        if axis < self.func.ndim - 1 and not self.func.arguments and self.indices.arguments and not coord.arguments:
+            return Take(Polyval(Transpose.to_end(self.func, axis), coord), self.indices)
 
     def _intbounds_impl(self):
         return self.func._intbounds
@@ -3021,6 +3058,10 @@ class Inflate(Array):
         if self.dofmap.isconstant and _isunique(self.dofmap.eval()):
             return Inflate(Sign(self.func), self.dofmap, self.length)
 
+    def _polyval(self, axis, coord):
+        if axis != self.ndim - 1:
+            return Inflate(Polyval(Transpose.to_end(self.func, axis), coord), self.dofmap, self.length)
+
     @property
     def _assparse(self):
         chunks = []
@@ -3469,6 +3510,14 @@ class Ravel(Array):
     def _loopsum(self, index):
         return Ravel(loop_sum(self.func, index))
 
+    def _polypartialderiv(self, axis, coord_dim, ideriv):
+        if axis != self.ndim - 1:
+            return Ravel(poly_partial_deriv(self.func, axis, coord_dim, ideriv))
+
+    def _polyval(self, axis, coord):
+        if axis != self.ndim - 1:
+            return Ravel(Polyval(Transpose.to_end(self.func, axis), coord))
+
     @property
     def _unaligned(self):
         unaligned, where = unalign(self.func)
@@ -3684,15 +3733,16 @@ class Polyval(Array):
     def _derivative(self, var, seen):
         if self.dtype == complex:
             raise NotImplementedError('The complex derivative is not implemented.')
-        dpoints = einsum('ABi,AiD->ABD', Polyval(self.coeffs, self.points, self.ngrad+1), derivative(self.points, var, seen), A=self.points.ndim-1)
-        dcoeffs = Transpose.from_end(Polyval(Transpose.to_end(derivative(self.coeffs, var, seen), *range(self.coeffs.ndim)), self.points, self.ngrad), *range(self.points.ndim-1, self.ndim))
+        grad_coeffs = stack([poly_partial_deriv(self.coeffs, self.coeffs.ndim - 1, self.points_ndim, ideriv) for ideriv in range(self.points_ndim)], axis=self.coeffs.ndim - 1)
+        dpoints = einsum('ABi,AiD->ABD', Polyval(grad_coeffs, self.points), derivative(self.points, var, seen), A=self.points.ndim-1)
+        dcoeffs = Transpose.from_end(Polyval(Transpose.to_end(derivative(self.coeffs, var, seen), *range(self.coeffs.ndim)), self.points), *range(self.points.ndim-1, self.ndim))
         return dpoints + dcoeffs
 
     def _take(self, index, axis):
         if axis < self.points.ndim - 1:
-            return Polyval(self.coeffs, _take(self.points, index, axis), self.ngrad)
-        elif axis < self.points.ndim - 1 + self.coeffs.ndim - self.points_ndim:
-            return Polyval(_take(self.coeffs, index, axis - self.points.ndim + 1), self.points, self.ngrad)
+            return Polyval(self.coeffs, _take(self.points, index, axis))
+        elif axis < self.points.ndim - 1 + self.coeffs.ndim - 1 and not (not self.coeffs.arguments and index.arguments and not self.points.arguments):
+            return Polyval(_take(self.coeffs, index, axis - self.points.ndim + 1), self.points)
 
     def _simplified(self):
         ncoeffs_lower, ncoeffs_upper = self.coeffs.shape[-1]._intbounds
@@ -3709,7 +3759,8 @@ class Polyval(Array):
                 points = Transpose(points, numpy.argsort(where))
                 where = tuple(sorted(where))
             where = where[:-1] + tuple(range(self.points.ndim - 1, self.ndim))
-            return align(Polyval(self.coeffs, points, self.ngrad), where, self.shape)
+            return align(Polyval(self.coeffs, points), where, self.shape)
+        return self.coeffs._polyval(self.coeffs.ndim - 1, self.points)
 
 
 class PolyNCoeffsToDegree(Array):
@@ -3802,6 +3853,66 @@ class PolyOuterProduct(Array):
     def _unravel(self, axis, shape):
         if axis < self.ndim - 1:
             return PolyOuterProduct(unravel(self.coeffs1, axis, shape), unravel(self.coeffs2, axis, shape), self.dim1, self.dim2)
+
+    def _polypartialderiv(self, axis, coord_dim, ideriv):
+        if axis == self.ndim - 1 and coord_dim == self.dim1 + self.dim2:
+            if ideriv < self.dim1:
+                return PolyOuterProduct(poly_partial_deriv(self.coeffs1, axis, self.dim1, ideriv), self.coeffs2, self.dim1, self.dim2)
+            else:
+                return PolyOuterProduct(self.coeffs1, poly_partial_deriv(self.coeffs2, axis, self.dim2, ideriv - self.dim1), self.dim1, self.dim2)
+
+    def _polyval(self, axis, coord):
+        if axis == self.ndim - 1 and equalindex(coord.shape[-1], self.dim1 + self.dim2):
+            return Polyval(self.coeffs1, coord[...,:self.dim1]) * Polyval(self.coeffs2, coord[...,self.dim1:])
+
+
+class PolyPartialDeriv(Array):
+
+    def __init__(self, coeffs: Array, coord_dim: int, ideriv: int) -> None:
+        if coeffs.ndim < 1:
+            raise ValueError('argument `coeffs` should have at least one axis')
+        if coeffs.dtype != float:
+            raise ValueError('the dtype of argument `coeffs` should be `float`')
+        if ideriv >= coord_dim:
+            raise IndexError('derivative index out of range')
+        self.coeffs = coeffs
+        self.coord_dim = coord_dim
+        self.ideriv = ideriv
+        self.degree = PolyNCoeffsToDegree(coeffs.shape[-1], coord_dim)
+        output_degree = Maximum(0, self.degree - 1)
+        output_ncoeffs = PolyDegreeToNCoeffs(output_degree, coord_dim)
+
+        try:
+            degree = self.degree.__index__()
+        except TypeError:
+            self.evalf = functools.partial(poly.partial_deriv, nvars=self.coord_dim, var=ideriv)
+        else:
+            self.evalf = poly.PartialDerivPlan(self.coord_dim, degree, ideriv)
+
+        super().__init__(args=[coeffs], shape=(*coeffs.shape[:-1], output_ncoeffs), dtype=float)
+
+    def _simplified(self):
+        if iszero(self.degree):
+            return zeros_like(self)
+        coeffs, where = unalign(self.coeffs)
+        if self.coeffs.ndim - 1 in where and (len(where) < self.coeffs.ndim or where[-1] == self.coeffs.ndim - 1 and where != tuple(range(self.coeffs.ndim))):
+            if where[-1] != self.coeffs.ndim - 1:
+                coeffs = Transpose(coeffs, numpy.argsort(where))
+                where = tuple(sorted(where))
+            return align(PolyPartialDeriv(coeffs, self.coord_dim, self.ideriv), where, self.shape)
+        return self.coeffs._polypartialderiv(self.coeffs.ndim - 1, self.coord_dim, self.ideriv)
+
+    def _takediag(self, axis1, axis2):
+        if axis1 < self.coeffs.ndim - 1 and axis2 < self.coeffs.ndim - 1:
+            return PolyPartialDeriv(_takediag(self.coeffs, axis1, axis2), self.coord_dim, self.ideriv)
+
+    def _take(self, index, axis):
+        if axis < self.coeffs.ndim - 1 and not (not self.coeffs.arguments and index.arguments):
+            return PolyPartialDeriv(_take(self.coeffs, index, axis), self.coord_dim, self.ideriv)
+
+    def _unravel(self, axis, shape):
+        if axis < self.coeffs.ndim - 1:
+            return PolyPartialDeriv(unravel(self.coeffs, axis, shape), self.ideriv)
 
 
 class Legendre(Array):
@@ -4693,6 +4804,30 @@ def appendaxes(func, shape):
     for n in shape:
         func = InsertAxis(func, n)
     return func
+
+
+def poly_partial_deriv(coeffs, axis: int, coord_dim: int, ideriv: int):
+    '''Return the coefficients for the derivative of a polynomial with the given coeffients to the given dimension.
+
+    Parameters
+    ----------
+    coeffs : :class:`Array`
+        The coefficients of the input polynomial.
+    axis : :class:`int`
+        The position of the coefficients axis of the input and the output.
+    coord_dim : :class:`int`
+        The dimension of the coordinate of the polynomial.
+    ideriv: :class:`int`
+        The component of the coordinate to take the derivative to.
+
+    Returns
+    -------
+    : :class:`Array`
+        The coefficients for the gradient. The last axis corresponds to the gradient.
+    '''
+
+    coeffs = asarray(coeffs)
+    return Transpose.from_end(PolyPartialDeriv(Transpose.to_end(coeffs, axis), coord_dim, ideriv), axis)
 
 
 def loop_index(name, length):
