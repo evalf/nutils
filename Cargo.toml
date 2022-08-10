@@ -11,5 +11,12 @@ crate-type = ["cdylib"]
 [package.metadata.maturin]
 name = "nutils._rust"
 
+[features]
+bench = []
+
 [dependencies]
+approx = "0.5"
+ndarray = "0.15"
+numpy = "0.17"
+nutils-poly = { git = "https://github.com/evalf/nutils-poly.git", features = ["ndarray"] }
 pyo3 = { version = "0.17", features = ["extension-module", "abi3-py37"] }

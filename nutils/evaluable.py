@@ -30,6 +30,7 @@ else:
 
 from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, sparse
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph
+from ._rust import poly
 import numpy
 import sys
 import itertools
@@ -3654,19 +3655,22 @@ class Polyval(Array):
             raise ValueError('argument `points` should have at least one axis')
         if not points.shape[-1].isconstant:
             raise ValueError('the last axis of argument `points` should be a constant integer')
+        if points.dtype != float:
+            raise ValueError('the dtype of argument `coeffs` should be `float`')
+        if coeffs.ndim < 1:
+            raise ValueError('argument `coeffs` should have at least one axis')
+        if coeffs.dtype != float:
+            raise ValueError('the dtype of argument `coeffs` should be `float`')
         self.points_ndim = int(points.shape[-1])
-        ndim = coeffs.ndim - self.points_ndim
-        if ndim < 0:
-            raise ValueError('argument `coeffs` should have at least one axis per spatial dimension')
         self.coeffs = coeffs
         self.points = points
         self.ngrad = ngrad
-        super().__init__(args=[points, coeffs], shape=points.shape[:-1]+coeffs.shape[:ndim]+(self.points_ndim,)*ngrad, dtype=float)
+        super().__init__(args=[points, coeffs], shape=points.shape[:-1]+coeffs.shape[:-1]+(self.points_ndim,)*ngrad, dtype=float)
 
     def evalf(self, points, coeffs):
         for igrad in range(self.ngrad):
-            coeffs = numeric.poly_grad(coeffs, self.points_ndim)
-        return numeric.poly_eval(coeffs, points)
+            coeffs = poly.grad(coeffs, self.points_ndim)
+        return poly.eval(coeffs, points)
 
     def _derivative(self, var, seen):
         if self.dtype == complex:
@@ -3681,22 +3685,12 @@ class Polyval(Array):
         elif axis < self.points.ndim - 1 + self.coeffs.ndim - self.points_ndim:
             return Polyval(_take(self.coeffs, index, axis - self.points.ndim + 1), self.points, self.ngrad)
 
-    def _const_helper(self, *j):
-        if len(j) == self.ngrad:
-            coeffs = self.coeffs
-            for i in reversed(range(self.points_ndim)):
-                p = builtins.sum(k == i for k in j)
-                coeffs = math.factorial(p)*get(coeffs, i+self.coeffs.ndim-self.points_ndim, p)
-            return coeffs
-        else:
-            return stack([self._const_helper(*j, k) for k in range(self.points_ndim)], axis=self.coeffs.ndim-self.points_ndim+self.ngrad-len(j)-1)
-
     def _simplified(self):
-        degree = 0 if self.points_ndim == 0 else self.coeffs.shape[-1]-1 if isinstance(self.coeffs.shape[-1], int) else float('inf')
-        if iszero(self.coeffs) or self.ngrad > degree:
+        ncoeffs_lower, ncoeffs_upper = self.coeffs.shape[-1]._intbounds
+        if iszero(self.coeffs) or poly.ncoeffs(self.points_ndim, self.ngrad) > ncoeffs_upper:
             return zeros_like(self)
-        elif self.ngrad == degree:
-            return prependaxes(self._const_helper(), self.points.shape[:-1])
+        elif equalindex(self.coeffs.shape[-1], 1):
+            return prependaxes(get(self.coeffs, -1, 0), self.points.shape[:-1])
         points, where = unalign(self.points)
         if points.ndim < self.points.ndim and set(where) != set(range(self.points.ndim-1)):
             if self.points.ndim - 1 not in where:
@@ -3709,18 +3703,91 @@ class Polyval(Array):
             return align(Polyval(self.coeffs, points, self.ngrad), where, self.shape)
 
 
+class PolyNCoeffsToDegree(Array):
+
+    def __init__(self, ncoeffs: Array, dim: int) -> None:
+        assert ncoeffs.ndim == 0 and ncoeffs.dtype == int
+        self.ncoeffs = ncoeffs
+        self.coord_dim = dim
+        super().__init__(args=[ncoeffs], shape=(), dtype=int)
+
+    def evalf(self, ncoeffs):
+        return numpy.array(poly.degree(ncoeffs.__index__(), self.coord_dim))
+
+    def _intbounds_impl(self):
+        lower, upper = self.ncoeffs._intbounds
+        if isinstance(lower, int) and lower >= 0:
+            lower = poly.degree(lower, self.coord_dim)
+        else:
+            lower = 0
+        if isinstance(upper, int) and upper >= 0:
+            upper = poly.degree(upper, self.coord_dim)
+        else:
+            upper = float('inf')
+        return lower, upper
+
+
+class PolyDegreeToNCoeffs(Array):
+
+    def __init__(self, degree: Array, dim: int) -> None:
+        assert degree.ndim == 0 and degree.dtype == int
+        self.degree = degree
+        self.coord_dim = dim
+        super().__init__(args=[degree], shape=(), dtype=int)
+
+    def evalf(self, degree):
+        return numpy.array(poly.ncoeffs(self.coord_dim, degree.__index__()))
+
+    def _intbounds_impl(self):
+        lower, upper = self.degree._intbounds
+        if isinstance(lower, int) and lower >= 0:
+            lower = poly.ncoeffs(self.coord_dim, lower)
+        else:
+            lower = 0
+        if isinstance(upper, int) and upper >= 0:
+            upper = poly.ncoeffs(self.coord_dim, upper)
+        else:
+            upper = float('inf')
+        return lower, upper
+
+
 class PolyOuterProduct(Array):
 
-    def __init__(self, left, right):
-        nleft = left.shape[1]
-        assert all(n == nleft for n in left.shape[2:])
-        nright = right.shape[1]
-        assert all(n == nright for n in right.shape[2:])
-        shape = (left.shape[0] * right.shape[0],) + (nleft + nright - 1,) * (left.ndim + right.ndim - 2)
-        super().__init__(args=[left, right], shape=shape, dtype=float)
+    def __init__(self, coeffs1: Array, coeffs2: Array, dim1: int, dim2: int):
+        if coeffs1.ndim < 1:
+            raise ValueError('argument `coeffs1` should have at least one axis')
+        if coeffs1.dtype != float:
+            raise ValueError('the dtype of argument `coeffs1` should be `float`')
+        if coeffs2.ndim < 1:
+            raise ValueError('argument `coeffs2` should have at least one axis')
+        if coeffs2.dtype != float:
+            raise ValueError('the dtype of argument `coeffs2` should be `float`')
+        if not equalshape(coeffs1.shape[:-1], coeffs2.shape[:-1]):
+            raise ValueError('the shapes of arguments `coeffs1` and `coeffs2` should match up the last axis')
+        self.coeffs1 = coeffs1
+        self.coeffs2 = coeffs2
+        self.dim1 = dim1
+        self.dim2 = dim2
+        degree1 = PolyNCoeffsToDegree(coeffs1.shape[-1], dim1)
+        degree2 = PolyNCoeffsToDegree(coeffs2.shape[-1], dim2)
+        ncoeffs = PolyDegreeToNCoeffs(degree1 + degree2, dim1 + dim2)
+        shape = *coeffs1.shape[:-1], ncoeffs
+        super().__init__(args=[coeffs1, coeffs2], shape=shape, dtype=float)
 
-    def evalf(self, left, right):
-        return numeric.poly_outer_product(left, right)
+    def evalf(self, coeffs1, coeffs2):
+        return poly.outer_mul(coeffs1, coeffs2, self.dim1, self.dim2)
+
+    def _takediag(self, axis1, axis2):
+        if axis1 < self.ndim - 1 and axis2 < self.ndim - 1:
+            return PolyOuterProduct(_takediag(self.coeffs1, axis1, axis2), _takediag(self.coeffs2, axis1, axis2), self.dim1, self.dim2)
+
+    def _take(self, index, axis):
+        if axis < self.ndim - 1:
+            return PolyOuterProduct(_take(self.coeffs1, index, axis), _take(self.coeffs2, index, axis), self.dim1, self.dim2)
+
+    def _unravel(self, axis, shape):
+        if axis < self.ndim - 1:
+            return PolyOuterProduct(unravel(self.coeffs1, axis, shape), unravel(self.coeffs2, axis, shape), self.dim1, self.dim2)
 
 
 class Legendre(Array):

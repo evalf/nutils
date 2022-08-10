@@ -1,5 +1,6 @@
 from nutils import evaluable, sparse, numeric, _util as util
 from nutils.testing import TestCase, parametrize
+from nutils._rust import poly
 import numpy
 import itertools
 import weakref
@@ -565,15 +566,13 @@ _check('loopconcatenate2', lambda: evaluable.loop_concatenate(evaluable.Elemwise
 _check('loopconcatenatecombined', lambda a: evaluable.loop_concatenate_combined([a+evaluable.prependaxes(evaluable.loop_index('index', 3), a.shape)], evaluable.loop_index('index', 3))[0], lambda a: a+numpy.arange(3)[None], ANY(3, 1), hasgrad=False)
 _check('legendre', lambda a: evaluable.Legendre(evaluable.asarray(a), 5), lambda a: numpy.moveaxis(numpy.polynomial.legendre.legval(a, numpy.eye(6)), 0, -1), ANY(3, 4, 3))
 
-_polyval_mask = lambda shape, ndim: 1 if ndim == 0 else numpy.array([sum(i[-ndim:]) < int(shape[-1]) for i in numpy.ndindex(shape)], dtype=int).reshape(shape)
-_polyval_desired = lambda c, x: sum(c[(..., *i)]*(x[(slice(None), *[None]*(c.ndim-x.shape[1]))]**i).prod(-1) for i in itertools.product(*[range(c.shape[-1])]*x.shape[1]) if sum(i) < c.shape[-1])
-_check('polyval_1d_p0', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, x.shape[1]), x), _polyval_desired, POS(1), ANY(4, 1), ndim=1)
-_check('polyval_1d_p1', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, x.shape[1]), x), _polyval_desired, NZ(2), ANY(4, 1), ndim=1)
-_check('polyval_1d_p2', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, x.shape[1]), x), _polyval_desired, ANY(3), ANY(4, 1), ndim=1)
-_check('polyval_2d_p0', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, x.shape[1]), x), _polyval_desired, POS(1, 1), ANY(4, 2), ndim=2)
-_check('polyval_2d_p1', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, x.shape[1]), x), _polyval_desired, ANY(2, 2), ANY(4, 2), ndim=2)
-_check('polyval_2d_p2', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, x.shape[1]), x), _polyval_desired, ANY(3, 3), ANY(4, 2), ndim=2)
-_check('polyval_2d_p1_23', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, x.shape[1]), x), _polyval_desired, ANY(2, 3, 2, 2), ANY(4, 2), ndim=2)
+_check('polyval_1d_p0', lambda c, x: evaluable.Polyval(c, x), poly.eval, POS(1), ANY(4, 1), ndim=1)
+_check('polyval_1d_p1', lambda c, x: evaluable.Polyval(c, x), poly.eval, NZ(2), ANY(4, 1), ndim=1)
+_check('polyval_1d_p2', lambda c, x: evaluable.Polyval(c, x), poly.eval, ANY(3), ANY(4, 1), ndim=1)
+_check('polyval_2d_p0', lambda c, x: evaluable.Polyval(c, x), poly.eval, POS(1), ANY(4, 2), ndim=2)
+_check('polyval_2d_p1', lambda c, x: evaluable.Polyval(c, x), poly.eval, ANY(3), ANY(4, 2), ndim=2)
+_check('polyval_2d_p2', lambda c, x: evaluable.Polyval(c, x), poly.eval, ANY(6), ANY(4, 2), ndim=2)
+_check('polyval_2d_p1_23', lambda c, x: evaluable.Polyval(c, x), poly.eval, ANY(2, 3, 3), ANY(4, 2), ndim=2)
 
 
 class intbounds(TestCase):

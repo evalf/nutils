@@ -9,6 +9,7 @@ system, and provide pointsets for purposes of integration and sampling.
 """
 
 from . import _util as util, numeric, cache, transform, warnings, types, points
+from ._rust import poly
 import numpy
 import re
 import math
@@ -203,7 +204,7 @@ class Reference(types.Singleton):
             else self.empty if numpy.less_equal(levels, 0).all() \
             else self.with_children(cref.trim(clevels, maxrefine-1, ndivisions)
                                     for cref, clevels in zip(self.child_refs, self.child_divide(levels, maxrefine))) if maxrefine > 0 \
-            else self.slice(numeric.poly_eval(self._linear_bernstein, self.vertices) @ levels, ndivisions)
+            else self.slice(poly.eval(self._linear_bernstein, self.vertices) @ levels, ndivisions)
 
     @property
     def _linear_bernstein(self):
@@ -447,7 +448,8 @@ class SimplexReference(Reference):
                 if sum(p+q) <= degree:
                     coeffs[(i,)+tuple(map(operator.add, p, q))] = (-1)**sum(q)*math.factorial(degree)//util.product(map(math.factorial, (degree-sum(p+q), *p, *q)))
         assert i == ndofs - 1
-        return types.frozenarray(coeffs, copy=False)
+        coeffs = poly.convert_old(coeffs, self.ndims)
+        return types.frozenarray(coeffs, copy=True)
 
     def _get_poly_coeffs_lagrange(self, degree):
         if self.ndims == 0:
@@ -460,7 +462,8 @@ class SimplexReference(Reference):
             coeffs = numpy.zeros((len(P), *[degree+1]*self.ndims), dtype=float)
             for i, p in enumerate(P):
                 coeffs[(slice(None), *p)] = coeffs_[i]
-        return types.frozenarray(coeffs, copy=False)
+        coeffs = poly.convert_old(coeffs, self.ndims)
+        return types.frozenarray(coeffs, copy=True)
 
     def get_edge_dofs(self, degree, iedge):
         return types.frozenarray(tuple(i for i, j in enumerate(self._integer_barycentric_coordinates(degree)) if j[iedge] == 0), dtype=int)
@@ -736,7 +739,11 @@ class TensorReference(Reference):
         return self.ref1.get_ndofs(degree)*self.ref2.get_ndofs(degree)
 
     def get_poly_coeffs(self, basis, **kwargs):
-        return numeric.poly_outer_product(self.ref1.get_poly_coeffs(basis, **kwargs), self.ref2.get_poly_coeffs(basis, **kwargs))
+        coeffs1 = self.ref1.get_poly_coeffs(basis, **kwargs)
+        coeffs2 = self.ref2.get_poly_coeffs(basis, **kwargs)
+        coeffs = poly.outer_mul(coeffs1[:,None], coeffs2[None], self.ref1.ndims, self.ref2.ndims)
+        coeffs = coeffs.reshape(-1, coeffs.shape[-1])
+        return types.frozenarray(coeffs, dtype=float, copy=True)
 
     def get_edge_dofs(self, degree, iedge):
         if not numeric.isint(iedge) or iedge < 0 or iedge >= self.nedges:

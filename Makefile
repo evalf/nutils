@@ -10,6 +10,9 @@ build:
 build-release:
 	cargo build --release
 
+bench:
+	cargo +nightly bench --features bench
+
 test-rust:
 	cargo test
 
