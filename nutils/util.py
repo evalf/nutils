@@ -797,4 +797,76 @@ def add_htmllog(outrootdir: str = '~/public_html', outrooturi: str = '', scriptn
             treelog.info(f'log written to: {loguri}')
 
 
+def cli(f, *, argv=None):
+    '''Call a function using command line arguments.'''
+
+    import textwrap
+
+    progname, *args = argv or sys.argv
+    doc = stringly.util.DocString(f)
+    serializers = {}
+    booleans = set()
+    mandatory = set()
+
+    for param in inspect.signature(f).parameters.values():
+        T = param.annotation
+        if T == param.empty and param.default != param.empty:
+            T = type(param.default)
+        if T == param.empty:
+            sys.exit(f'error: cannot determine type for argument {param.name!r}')
+        try:
+            s = stringly.serializer.get(T)
+        except ValueError:
+            sys.exit(f'error: cannot deserialize argument {param.name!r} of type {T}')
+        if param.kind not in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY):
+            sys.exit(f'error: argument {param.name!r} is positional-only')
+        if param.default == param.empty and param.name not in doc.defaults:
+            mandatory.add(param.name)
+        if T == bool:
+            booleans.add(param.name)
+        serializers[param.name] = s
+
+    usage = [f'USAGE: {progname}']
+    if doc.presets:
+        usage.append(f'["|".join(doc.presets)]')
+    usage.extend(('{}' if arg in mandatory else '[{}]').format(f'{arg}={arg[0].upper()}') for arg in serializers)
+    usage = '\n'.join(textwrap.wrap(' '.join(usage), subsequent_indent='  '))
+
+    if '-h' in args or '--help' in args:
+        help = [usage]
+        if doc.text:
+            help.append('')
+            help.extend(textwrap.wrap(doc.text))
+        if doc.argdocs:
+            help.append('')
+            for k, d in doc.argdocs.items():
+                if k in serializers:
+                    help.append(f'{k} (default: {doc.defaults[k]})' if k in doc.defaults else k)
+                    help.extend(textwrap.wrap(doc.argdocs[k], initial_indent='    ', subsequent_indent='    '))
+        sys.exit('\n'.join(help))
+
+    kwargs = doc.defaults
+    if args and args[0] in doc.presets:
+        kwargs.update(doc.presets[args.pop(0)])
+    for arg in args:
+        name, sep, value = arg.partition('=')
+        kwargs[name] = value if sep else 'yes' if name in booleans else None
+
+    for name, s in kwargs.items():
+        if name not in serializers:
+            sys.exit(f'{usage}\n\nError: invalid argument {name!r}')
+        if s is None:
+            sys.exit(f'{usage}\n\nError: argument {name!r} requires a value')
+        try:
+            value = serializers[name].loads(s)
+        except Exception as e:
+            sys.exit(f'{usage}\n\nError: invalid value for {name}: {e}')
+        kwargs[name] = value
+
+    for name in mandatory.difference(kwargs):
+        sys.exit(f'{usage}\n\nError: missing argument {name}')
+
+    return f(**kwargs)
+
+
 # vim:sw=4:sts=4:et

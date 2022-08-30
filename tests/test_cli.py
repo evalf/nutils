@@ -1,134 +1,65 @@
-import sys
-import os
 import tempfile
-import io
-import contextlib
-import time
-import unittest
-import treelog as log
-import importlib
-from nutils import cli, testing, matrix, parallel, cache
+from nutils import cli, testing
 
 
 def main(
-        iarg: 'integer' = 1,
-        farg: 'float' = 1.,
-        sarg: 'string' = 'foo'):
+        iarg: int = 1,
+        farg: float = 1.,
+        sarg: str = 'foo'):
+    '''Dummy function to test argument parsing.'''
+
     assert isinstance(iarg, int), 'n should be int, got {}'.format(type(iarg))
     assert isinstance(farg, float), 'f should be float, got {}'.format(type(farg))
     assert isinstance(sarg, str), 'f should be str, got {}'.format(type(sarg))
-    print('all OK')
+    return f'received iarg={iarg} <{type(iarg).__name__}>, farg={farg} <{type(farg).__name__}>, sarg={sarg} <{type(sarg).__name__}>'
 
 
-@testing.parametrize
-class run(testing.TestCase):
-
-    scriptname = 'test.py'
+class method(testing.TestCase):
 
     def setUp(self):
         super().setUp()
         self.outrootdir = self.enter_context(tempfile.TemporaryDirectory())
+        self.method = getattr(cli, self.__class__.__name__)
+
+    def assertEndsWith(self, s, suffix):
+        self.assertEqual(s[-len(suffix):], suffix)
 
     def _cli(self, *args, funcname='main'):
-        _savestreams = sys.stdout, sys.stderr
-        _saveargs = tuple(sys.argv)
+        argv = ['test.py', *args, 'pdb=no', 'outrootdir='+self.outrootdir]
+        if self.method is cli.choose:
+            argv.insert(1, funcname)
         try:
-            sys.stdout = sys.stderr = stringio = io.StringIO()
-            sys.argv[:] = self.scriptname,
-            if self.method == 'choose' and funcname:
-                sys.argv.append(funcname)
-            sys.argv.extend(args)
-            getattr(cli, self.method)(main, loaduserconfig=False)
+            return self.method(main, argv=argv)
         except SystemExit as e:
-            status = e
-        else:
-            status = None
-        finally:
-            sys.stdout, sys.stderr = _savestreams
-            sys.argv[:] = _saveargs
-        return status, stringio.getvalue()
+            return e.code
 
     def test_good(self):
-        args = ['--outrootdir='+self.outrootdir, '--nopdb', '--iarg=1', '--farg=1', '--sarg=1']
-        status, output = self._cli(*args)
-        with self.subTest('outdir'):
-            self.assertTrue(os.path.isdir(os.path.join(self.outrootdir, self.scriptname)), 'output directory not found')
-        with self.subTest('argparse'):
-            log.info(output)
-            self.assertIn('all OK', output)
-        with self.subTest('exitstatus'):
-            self.assertIsNotNone(status)
-            self.assertEqual(status.code, 0)
+        retval = self._cli('iarg=1', 'farg=1', 'sarg=1')
+        self.assertEqual(retval, 'received iarg=1 <int>, farg=1.0 <float>, sarg=1 <str>')
 
     def test_badarg(self):
-        status, output = self._cli('--bla') if self.method == 'run' else self._cli(funcname='bla')
-        with self.subTest('argparse'):
-            log.info(output)
-            self.assertNotIn('all OK', output)
-        with self.subTest('exitstatus'):
-            self.assertIsNotNone(status)
-            self.assertEqual(status.code, 2)
+        retval = self._cli('bla')
+        self.assertEndsWith(retval, "Error: invalid argument 'bla'")
 
     def test_badvalue(self):
-        status, output = self._cli('--outrootdir='+self.outrootdir, '--nopdb', '--iarg=1', '--farg=x', '--sarg=1')
-        with self.subTest('outdir'):
-            self.assertFalse(os.path.isdir(os.path.join(self.outrootdir, self.scriptname)), 'outdir directory found')
-        with self.subTest('argparse'):
-            log.info(output)
-            self.assertNotIn('all OK', output)
-        with self.subTest('exitstatus'):
-            self.assertIsNotNone(status)
-            self.assertEqual(status.code, 2)
+        retval = self._cli('iarg=1', 'farg=x', 'sarg=1')
+        self.assertEndsWith(retval, "Error: invalid value for farg: could not convert string to float: 'x'")
 
     def test_help(self):
         for arg in '-h', '--help':
-            for funcname in ('main', False):
-                status, output = self._cli(arg, funcname=funcname)
-                with self.subTest(arg=arg, funcname=funcname, test='argparse'):
-                    self.assertEqual(output[:6], 'USAGE:')
-                with self.subTest(arg=arg, funcname=funcname, test='exitstatus'):
-                    self.assertIsNotNone(status)
-                    self.assertEqual(status.code, 1)
+            retval = self._cli(arg)
+            self.assertEndsWith(retval, 'Dummy function to test argument parsing.')
 
 
-run(method='run')
-run(method='choose')
+class run(method):
+    pass
 
 
-class setup(testing.TestCase):
+class choose(method):
 
-    @contextlib.contextmanager
-    def _setup(self, **kwargs):
-        with self.assertRaises(SystemExit) as cm, \
-                tempfile.TemporaryDirectory() as outdir, \
-                cli.setup(scriptname='unittest', kwargs=[], outdir=outdir, **kwargs):
-            yield
-        self.assertEqual(cm.exception.code, 0)
+    def test_badchoice(self):
+        retval = self._cli(funcname='bla')
+        self.assertEqual(retval, 'USAGE: test.py main [...]')
 
-    def _test_matrix(self, backend):
-        try:
-            mod = importlib.import_module('nutils.matrix._'+backend)
-        except matrix.BackendNotAvailable:
-            raise self.skipTest('{!r} backend is not available'.format(backend))
-        with self._setup(matrix=backend):
-            self.assertEqual(matrix.backend.current, mod)
 
-    def test_matrix_mkl(self):
-        self._test_matrix('mkl')
-
-    def test_matrix_scipy(self):
-        self._test_matrix('scipy')
-
-    def test_matrix_numpy(self):
-        self._test_matrix('numpy')
-
-    def test_nprocs(self):
-        for n in 1, 2, 3:
-            with self.subTest(nprocs=n), self._setup(nprocs=n):
-                self.assertEqual(parallel.maxprocs.current, n)
-
-    def test_cache(self):
-        with self.subTest('cache'), self._setup(cache=True):
-            self.assertTrue(cache.caching.current)
-        with self.subTest('nocache'), self._setup(cache=False):
-            self.assertFalse(cache.caching.current)
+del method # hide base class from unittest discovery
