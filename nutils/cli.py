@@ -366,7 +366,7 @@ def setup(scriptname: str,
             _status(outuri+'/'+htmllog.filename, richoutput), \
             _traceback(richoutput=richoutput, postmortem=pdb, exit=gracefulexit), \
             warnings.via(treelog.warning), \
-            _cache.enable(os.path.join(outdir, cachedir)) if cache else _cache.disable(), \
+            _cache.caching(cache, os.path.join(outdir, cachedir)), \
             _parallel.maxprocs(nprocs), \
             _matrix.backend(matrix), \
             _signal_handler(signal.SIGINT, functools.partial(_breakpoint, richoutput)):

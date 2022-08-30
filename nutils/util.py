@@ -437,36 +437,40 @@ def binaryfile(path):
     raise TypeError('binaryfile requires a path-like or file-like argument')
 
 
-class settable:
-    '''Context-switchable data container.
+def set_current(f):
+    '''Decorator for setting global state.
 
-    A mutable container for a general Python object, which can be changed by
-    entering the ``sets`` context. The current value can be accessed via the
-    ``value`` attribute.
+    The decorator turns a function into a context that holds the return value
+    in its ``.current`` attribute. All function arguments are required to have
+    a default value, and the corresponding return value is the initial value of
+    the ``.current`` attribute.
 
-    >>> myprop = settable(2)
-    >>> myprop.value
-    2
-    >>> with myprop.sets(3):
-    ...   myprop.value
-    3
-    >>> myprop.value
-    2
+    Example:
+
+    >>> @set_current
+    ... def state(x=1, y=2):
+    ...     return f'x={x}, y={y}'
+    >>> state.current
+    'x=1, y=2'
+    >>> with state(10):
+    ...     state.current
+    'x=10, y=2'
+    >>> state.current
+    'x=1, y=2'
     '''
 
-    __slots__ = 'value'
-
-    def __init__(self, value=None):
-        self.value = value
-
+    @functools.wraps(f)
     @contextlib.contextmanager
-    def sets(self, value):
-        oldvalue = self.value
-        self.value = value
+    def set_current(*args, **kwargs):
+        previous = set_current.current
+        set_current.current = f(*args, **kwargs)
         try:
             yield
         finally:
-            self.value = oldvalue
+            set_current.current = previous
+
+    set_current.current = f()
+    return set_current
 
 
 def index(sequence, item):

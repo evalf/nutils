@@ -111,7 +111,7 @@ class setup(testing.TestCase):
         except matrix.BackendNotAvailable:
             raise self.skipTest('{!r} backend is not available'.format(backend))
         with self._setup(matrix=backend):
-            self.assertEqual(matrix._assemble.value, mod.assemble)
+            self.assertEqual(matrix.backend.current, mod)
 
     def test_matrix_mkl(self):
         self._test_matrix('mkl')
@@ -125,13 +125,13 @@ class setup(testing.TestCase):
     def test_nprocs(self):
         for n in 1, 2, 3:
             with self.subTest(nprocs=n), self._setup(nprocs=n):
-                self.assertEqual(parallel._maxprocs.value, n)
+                self.assertEqual(parallel.maxprocs.current, n)
 
     def test_cache(self):
         with self.subTest('cache'), self._setup(cache=True):
-            self.assertTrue(cache._cache.value)
+            self.assertTrue(cache.caching.current)
         with self.subTest('nocache'), self._setup(cache=False):
-            self.assertFalse(cache._cache.value)
+            self.assertFalse(cache.caching.current)
 
 
 class bottombar(testing.TestCase):

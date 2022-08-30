@@ -16,17 +16,10 @@ for cls in Matrix, MatrixError, BackendNotAvailable, ToleranceNotReached:
     cls.__module__ = __name__  # make it appear as if cls was defined here
 del cls  # clean up for sphinx
 
-_assemble = util.settable(importlib.import_module('._'+(os.environ.get('NUTILS_MATRIX') or 'auto').lower(), __name__).assemble)
 
-
-def backend(s):
-    if callable(s):
-        return _assemble.sets(s)
-    elif isinstance(s, str):
-        backend = importlib.import_module('._'+s.lower(), __name__)
-        return _assemble.sets(backend.assemble)
-    else:
-        raise MatrixError('backend should be either a string or a callable')
+@util.set_current
+def backend(matrix: str = os.environ.get('NUTILS_MATRIX') or 'auto'):
+    return importlib.import_module('._'+matrix.lower(), __name__)
 
 
 def assemble(data, index, shape):
@@ -35,21 +28,21 @@ def assemble(data, index, shape):
     n, = (index[0][1:] <= index[0][:-1]).nonzero()  # index[0][n+1] <= index[0][n]
     if (index[0][n+1] < index[0][n]).any() or (index[1][n+1] <= index[1][n]).any():
         raise MatrixError('assemble input must be sorted')
-    return _assemble.value(data, index, shape)
+    return backend.current.assemble(data, index, shape)
 
 
 def fromsparse(data, inplace=False):
     indices, values, shape = sparse.extract(sparse.prune(sparse.dedup(data, inplace=inplace), inplace=True))
-    return _assemble.value(values, indices, shape)
+    return backend.current.assemble(values, indices, shape)
 
 
 def empty(shape):
-    return _assemble.value(data=numpy.empty([0], dtype=float), index=numpy.empty([len(shape), 0], dtype=int), shape=shape)
+    return backend.current.assemble(data=numpy.empty([0], dtype=float), index=numpy.empty([len(shape), 0], dtype=int), shape=shape)
 
 
 def diag(d):
     assert d.ndim == 1
-    return _assemble.value(d, index=numpy.arange(len(d))[numpy.newaxis].repeat(2, axis=0), shape=d.shape*2)
+    return backend.current.assemble(d, index=numpy.arange(len(d))[numpy.newaxis].repeat(2, axis=0), shape=d.shape*2)
 
 
 def eye(n):

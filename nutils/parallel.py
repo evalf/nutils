@@ -15,16 +15,12 @@ import builtins
 import numpy
 import treelog
 
-_maxprocs = util.settable(int(os.environ.get('NUTILS_NPROCS') or 1))
 
-
-@util.positional_only
-def maxprocs(new: int):
-    '''limit number of processes for fork.'''
-
-    if not isinstance(new, int) or new < 1:
+@util.set_current
+def maxprocs(nprocs: int = 1):
+    if not isinstance(nprocs, int) or nprocs < 1:
         raise ValueError('nprocs requires a positive integer argument')
-    return _maxprocs.sets(new)
+    return nprocs
 
 
 @contextlib.contextmanager
@@ -37,8 +33,8 @@ def fork(nprocs=None):
     limiting nprocs to 1; all secondary forks will be silently ignored.
     '''
 
-    if nprocs is None or nprocs > _maxprocs.value:
-        nprocs = _maxprocs.value
+    if nprocs is None or nprocs > maxprocs.current:
+        nprocs = maxprocs.current
     if nprocs <= 1:
         yield 0
         return
@@ -94,7 +90,7 @@ def shempty(shape, dtype=float):
         assert all(numeric.isint(sh) for sh in shape)
     dtype = numpy.dtype(dtype)
     size = util.product(map(int, shape), int(dtype.itemsize))
-    if size == 0 or _maxprocs.value == 1:
+    if size == 0 or maxprocs.current == 1:
         return numpy.empty(shape, dtype)
     # `mmap(-1,...)` will allocate *anonymous* memory.  Although linux' man page
     # mmap(2) states that anonymous memory is initialized to zero, we can't rely

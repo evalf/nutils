@@ -246,3 +246,17 @@ class gather(TestCase):
     def test(self):
         items = ('z',1), ('a', 2), ('a', 3), ('z', 4), ('b', 5)
         self.assertEqual(list(util.gather(items)), [('z', [1,4]), ('a', [2,3]), ('b', [5])])
+
+
+class set_current(TestCase):
+
+    def test(self):
+
+        @util.set_current
+        def f(x=1):
+            return x
+
+        self.assertEqual(f.current, 1)
+        with f(2):
+            self.assertEqual(f.current, 2)
+        self.assertEqual(f.current, 1)
