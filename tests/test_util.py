@@ -260,3 +260,34 @@ class set_current(TestCase):
         with f(2):
             self.assertEqual(f.current, 2)
         self.assertEqual(f.current, 1)
+
+
+class defaults_from_env(TestCase):
+
+    def setUp(self):
+        self.old = os.environ.pop('NUTILS_TEST_ARG', None)
+
+    def tearDown(self):
+        if self.old:
+            os.environ['NUTILS_TEST_ARG'] = self.old
+        else:
+            os.environ.pop('NUTILS_TEST_ARG', None)
+
+    def check_retvals(self, expect):
+        @util.defaults_from_env
+        def f(test_arg: int = 1):
+            return test_arg
+        self.assertEqual(f(-1), -1)
+        self.assertEqual(f(), expect)
+
+    def test_no_env(self):
+        self.check_retvals(1)
+
+    def test_valid_env(self):
+        os.environ['NUTILS_TEST_ARG'] = '2'
+        self.check_retvals(2)
+
+    def test_invalid_env(self):
+        os.environ['NUTILS_TEST_ARG'] = 'x'
+        with self.assertWarns(warnings.NutilsWarning):
+            self.check_retvals(1)

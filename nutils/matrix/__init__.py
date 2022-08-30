@@ -18,7 +18,8 @@ del cls  # clean up for sphinx
 
 
 @util.set_current
-def backend(matrix: str = os.environ.get('NUTILS_MATRIX') or 'auto'):
+@util.defaults_from_env
+def backend(matrix: str = 'auto'):
     return importlib.import_module('._'+matrix.lower(), __name__)
 
 

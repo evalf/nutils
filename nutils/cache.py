@@ -74,6 +74,7 @@ class WrapperCache:
 
 
 @util.set_current
+@util.defaults_from_env
 def caching(cache: bool = False, cachedir: str = appdirs.user_cache_dir('nutils', 'evalf')):
     return pathlib.Path(cachedir).expanduser() if cache else None
 

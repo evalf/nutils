@@ -2,7 +2,8 @@
 The util module provides a collection of general purpose methods.
 """
 
-from . import numeric
+from . import numeric, warnings
+import stringly
 import sys
 import os
 import numpy
@@ -522,4 +523,41 @@ except AttributeError:  # python < 3.8
             return val
         return property(wrapped)
 
-# vim:sw=2:sts=2:et
+
+def defaults_from_env(f):
+    '''Decorator for changing function defaults based on environment.
+
+    This decorator searches the environment for variables matching the pattern
+    ``NUTILS_MYPARAM``, where ``myparam`` is a parameter of the decorated
+    function. Only parameters with type annotation and a default value are
+    considered, and the string value is deserialized using `Stringly
+    <https://pypi.org/project/stringly/>`_. In case deserialization fails, a
+    warning is emitted and the original default is maintained.'''
+
+    sig = inspect.signature(f)
+    params = []
+    changed = False
+    for param in sig.parameters.values():
+        envname = f'NUTILS_{param.name.upper()}'
+        if envname in os.environ and param.annotation != param.empty and param.default != param.empty:
+            try:
+                v = stringly.loads(param.annotation, os.environ[envname])
+            except Exception as e:
+                warnings.warn(f'ignoring environment variable {envname}: {e}')
+            else:
+                param = param.replace(default=v)
+                changed = True
+        params.append(param)
+    if not changed:
+        return f
+    sig = sig.replace(parameters=params)
+    @functools.wraps(f)
+    def defaults_from_env(*args, **kwargs):
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+        return f(*bound.args, **bound.kwargs)
+    defaults_from_env.__signature__ = sig
+    return defaults_from_env
+
+
+# vim:sw=4:sts=4:et

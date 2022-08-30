@@ -17,6 +17,7 @@ import treelog
 
 
 @util.set_current
+@util.defaults_from_env
 def maxprocs(nprocs: int = 1):
     if not isinstance(nprocs, int) or nprocs < 1:
         raise ValueError('nprocs requires a positive integer argument')
