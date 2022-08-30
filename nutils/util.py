@@ -16,6 +16,8 @@ import pathlib
 import ctypes
 import io
 import contextlib
+import treelog
+import datetime
 
 supports_outdirfd = os.open in os.supports_dir_fd and os.listdir in os.supports_fd
 
@@ -558,6 +560,36 @@ def defaults_from_env(f):
         return f(*bound.args, **bound.kwargs)
     defaults_from_env.__signature__ = sig
     return defaults_from_env
+
+
+def format_timedelta(d):
+    m, s = divmod(int(d.total_seconds()), 60)
+    if m >= 60:
+        m = '{}:{:02d}'.format(*divmod(m, 60))
+    return f'{m}:{s:02d}'
+
+
+@contextlib.contextmanager
+def timeit():
+    '''Context that logs begin time, end time, and duration.'''
+
+    t0 = datetime.datetime.now()
+    treelog.info(f'start {t0:%Y-%m-%d %H:%M:%S}')
+    try:
+        yield
+    finally:
+        te = datetime.datetime.now()
+        treelog.info(f'finish {te:%Y-%m-%d %H:%M:%S}, elapsed {format_timedelta(te-t0)}')
+
+
+class timer:
+    '''Timer that returns elapsed seconds as string representation.'''
+
+    def __init__(self):
+        self.t0 = datetime.datetime.now()
+
+    def __str__(self):
+        return format_timedelta(datetime.datetime.now() - self.t0)
 
 
 # vim:sw=4:sts=4:et

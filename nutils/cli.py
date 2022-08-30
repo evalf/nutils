@@ -4,7 +4,7 @@ can be used set up properties, initiate an output environment, and execute a
 python function based arguments specified on the command line.
 """
 
-from . import long_version, warnings
+from . import long_version, warnings, util
 import sys
 import inspect
 import os
@@ -372,9 +372,8 @@ def setup(scriptname: str,
             _signal_handler(signal.SIGINT, functools.partial(_breakpoint, richoutput)):
 
         treelog.info('nutils v{}'.format(_version()))
-        treelog.info('start', time.ctime())
-        yield
-        treelog.info('finish', time.ctime())
+        with util.timeit():
+            yield
 
 
 SVGLOGO = '''\

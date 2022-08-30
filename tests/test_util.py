@@ -6,6 +6,8 @@ import os
 import io
 import contextlib
 import inspect
+import treelog
+import datetime
 
 
 @parametrize
@@ -291,3 +293,28 @@ class defaults_from_env(TestCase):
         os.environ['NUTILS_TEST_ARG'] = 'x'
         with self.assertWarns(warnings.NutilsWarning):
             self.check_retvals(1)
+
+
+class time(TestCase):
+
+    def assertFormatEqual(self, seconds, formatted):
+        self.assertEqual(util.format_timedelta(datetime.timedelta(seconds=seconds)), formatted)
+
+    def test_timedelta(self):
+        self.assertFormatEqual(0, '0:00')
+        self.assertFormatEqual(1, '0:01')
+        self.assertFormatEqual(59, '0:59')
+        self.assertFormatEqual(60, '1:00')
+        self.assertFormatEqual(3599, '59:59')
+        self.assertFormatEqual(3600, '1:00:00')
+
+    def test_timeit(self):
+        with self.assertLogs('nutils') as cm, util.timeit():
+            treelog.error('test')
+        self.assertEqual(len(cm.output), 3)
+        self.assertEqual(cm.output[0][:17], 'INFO:nutils:start')
+        self.assertEqual(cm.output[1], 'ERROR:nutils:test')
+        self.assertEqual(cm.output[2][:18], 'INFO:nutils:finish')
+
+    def test_timer(self):
+        self.assertEqual(str(util.timer()), '0:00')
