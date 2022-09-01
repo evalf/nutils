@@ -701,7 +701,7 @@ class Namespace:
                 raise ValueError('The curl can only be defined for a geometry with shape (3,) but got {}.'.format(numpy.shape(geom)))
             # Definition: `curl_ki(u_...)` := `ε_kji ∇_j(u_...)`. Should be used as
             # `curl_ki(u_i)`, which is equivalent to `ε_kji ∇_j(u_i)`.
-            setattr(self, curl, lambda arg: (function.levicivita(3) * function.grad(arg, geom)[..., numpy.newaxis, :, numpy.newaxis]).sum(-2))
+            setattr(self, curl, lambda arg: numpy.sum(function.levicivita(3) * function.grad(arg, geom)[..., numpy.newaxis, :, numpy.newaxis], axis=-2))
         if normal:
             setattr(self, normal, function.normal(geom))
         for i, jacobian in enumerate(jacobians):

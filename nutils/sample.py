@@ -446,7 +446,8 @@ class _DefaultIndex(_TransformChainsSample):
         return evaluable.Range(npoints) + offset
 
     def __call__(self, __func: function.IntoArray) -> function.Array:
-        return _ConcatenatePoints(function.Array.cast(__func), self)
+        func, funcscale = function.Array.cast_withscale(__func)
+        return _ConcatenatePoints(func, self) * funcscale
 
 
 class _CustomIndex(_TransformChainsSample):
@@ -538,8 +539,8 @@ class _Empty(_TensorialSample):
         return function.zeros(func.shape, func.dtype)
 
     def __call__(self, __func: function.IntoArray) -> function.Array:
-        func = function.Array.cast(__func)
-        return function.zeros((0, *func.shape), func.dtype)
+        func, funcscale = function.Array.cast_withscale(__func)
+        return function.zeros((0, *func.shape), func.dtype) * funcscale
 
     def basis(self) -> function.Array:
         return function.zeros((0,), float)
