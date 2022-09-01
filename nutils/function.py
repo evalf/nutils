@@ -1976,10 +1976,10 @@ def opposite(__arg: IntoArray) -> Array:
     :func:`jump` : the jump at an interface
     '''
 
-    arg = Array.cast(__arg)
+    arg, scale = Array.cast_withscale(__arg)
     for space in sorted(arg.spaces):
         arg = _Opposite(arg, space)
-    return arg
+    return arg * scale
 
 
 def mean(__arg: IntoArray) -> Array:
@@ -2009,8 +2009,7 @@ def mean(__arg: IntoArray) -> Array:
     array([ 1.5])
     '''
 
-    arg = Array.cast(__arg)
-    return .5 * (arg + opposite(arg))
+    return .5 * (__arg + opposite(__arg))
 
 
 def jump(__arg: IntoArray) -> Array:
@@ -2046,8 +2045,7 @@ def jump(__arg: IntoArray) -> Array:
     array([ 1.])
     '''
 
-    arg = Array.cast(__arg)
-    return opposite(arg) - arg
+    return opposite(__arg) - __arg
 
 # REDUCTION
 
