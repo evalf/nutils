@@ -14,17 +14,21 @@ jobs:
   build-python-package:
     name: Build Python package
     runs-on: ubuntu-20.04
+    outputs:
+      wheel: ${{ steps.build.outputs.wheel }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
       - name: Install build dependencies
         run: python3 -m pip install setuptools wheel
       - name: Build package
+        id: build
         run: |
           # To make the wheels reproducible, set the timestamp of the (files in
           # the) generated wheels to the date of the commit.
           export SOURCE_DATE_EPOCH=`git show -s --format=%ct`
           python3 setup.py sdist bdist_wheel
+          printf "::set-output name=wheel::%s" dist/*.whl
       - name: Upload package artifacts
         uses: actions/upload-artifact@v2
         with:
@@ -41,7 +45,6 @@ jobs:
           - {name: "baseline", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1}
           - {name: "windows", os: windows-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1}
           - {name: "macos", os: macos-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1}
-          - {name: "python 3.5", os: ubuntu-latest, python-version: "3.5", matrix-backend: numpy, nprocs: 1}
           - {name: "python 3.6", os: ubuntu-latest, python-version: "3.6", matrix-backend: numpy, nprocs: 1}
           - {name: "python 3.7", os: ubuntu-latest, python-version: "3.7", matrix-backend: numpy, nprocs: 1}
           - {name: "python 3.8", os: ubuntu-latest, python-version: "3.8", matrix-backend: numpy, nprocs: 1}
@@ -54,6 +57,7 @@ jobs:
           - {name: "tensorial", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1, tensorial: test}
       fail-fast: false
     env:
+      _wheel: ${{ needs.build-python-package.outputs.wheel }}
       NUTILS_MATRIX: ${{ matrix.matrix-backend }}
       NUTILS_NPROCS: ${{ matrix.nprocs }}
       NUTILS_DEBUG: all
@@ -86,9 +90,9 @@ jobs:
           _numpy_version: ${{ matrix.numpy-version }}
         run: |
           python -um pip install --upgrade --upgrade-strategy eager wheel
-          python -um pip install --upgrade --upgrade-strategy eager coverage treelog stringly meshio numpy$_numpy_version
+          python -um pip install --upgrade --upgrade-strategy eager coverage numpy$_numpy_version
           # Install Nutils from `dist` dir created in job `build-python-package`.
-          python -um pip install --no-index --find-links ./dist nutils
+          python -um pip install "$_wheel[import_gmsh]"
       - name: Install Scipy
         if: ${{ matrix.matrix-backend == 'scipy' }}
         run: python -um pip install --upgrade --upgrade-strategy eager scipy
@@ -112,6 +116,7 @@ jobs:
         os: [ubuntu, macos, windows]
       fail-fast: false
     env:
+      _wheel: ${{ needs.build-python-package.outputs.wheel }}
       NUTILS_MATRIX: scipy
       NUTILS_NPROCS: 1
       NUTILS_DEBUG: all
@@ -134,9 +139,9 @@ jobs:
         id: install
         run: |
           python -um pip install --upgrade --upgrade-strategy eager wheel
-          python -um pip install --upgrade --upgrade-strategy eager treelog stringly matplotlib scipy pillow numpy git+https://github.com/evalf/nutils-SI.git
+          python -um pip install --upgrade --upgrade-strategy eager git+https://github.com/evalf/nutils-SI.git
           # Install Nutils from `dist` dir created in job `build-python-package`.
-          python -um pip install --no-index --find-links ./dist nutils
+          python -um pip install "$_wheel[matrix_scipy,export_mpl]"
       - name: Test
         run: python -um unittest discover -b -q -t . -s examples
   test-sphinx:
