@@ -4,7 +4,7 @@ from .._git import Git
 from . import OFFICIAL_CONTAINER_REPO, Container, get_container_tag_from_ref
 
 parser = argparse.ArgumentParser(description='build an OCI compatible container base image')
-parser.add_argument('--name', metavar='NAME', help='the name to attach to the image; defaults to a {OFFICIAL_CONTAINER_REPO}:TAG where TAG is based on the current HEAD')
+parser.add_argument('--name', metavar='NAME', help=f'the name to attach to the image; defaults to a {OFFICIAL_CONTAINER_REPO}:TAG where TAG is based on the current HEAD')
 args = parser.parse_args()
 
 if args.name and ':' in args.name:
