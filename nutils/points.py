@@ -6,7 +6,7 @@ and :class:`SimplexGaussPoints` that reflect the variety of elements in the
 :mod:`nutils.element` module.
 '''
 
-from . import types, transform, numeric, util
+from . import types, transform, numeric, _util as util
 import numpy
 import functools
 import itertools

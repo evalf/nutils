@@ -1,4 +1,4 @@
-from nutils import element, mesh, topology, function, transformseq, evaluable, transform, util
+from nutils import element, mesh, topology, function, transformseq, evaluable, transform, _util as util
 from nutils.testing import TestCase, parametrize
 from nutils.elementseq import References
 import numpy

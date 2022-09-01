@@ -1,7 +1,7 @@
 """The transformseq module."""
 
 from typing import Tuple
-from . import types, numeric, util, transform, element, evaluable
+from . import types, numeric, _util as util, transform, element, evaluable
 from .elementseq import References
 from .transform import TransformChain, EvaluableTransformChain
 import abc

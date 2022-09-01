@@ -3,7 +3,7 @@ The transform module.
 """
 
 from typing import Tuple, Dict
-from . import cache, numeric, util, types, evaluable
+from . import cache, numeric, _util as util, types, evaluable
 from .evaluable import Evaluable, Array
 import numpy
 import collections

@@ -1,4 +1,4 @@
-from nutils import element, mesh, function, util, evaluable, warnings, sparse
+from nutils import element, mesh, function, _util as util, evaluable, warnings, sparse
 from nutils.testing import TestCase, parametrize
 from nutils.sample import Sample, eval_integrals, eval_integrals_sparse
 from nutils.pointsseq import PointsSequence

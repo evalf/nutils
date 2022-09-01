@@ -8,7 +8,7 @@ affine transformation. They also have a well defined reference coordinate
 system, and provide pointsets for purposes of integration and sampling.
 """
 
-from . import util, numeric, cache, transform, warnings, types, points
+from . import _util as util, numeric, cache, transform, warnings, types, points
 import numpy
 import re
 import math

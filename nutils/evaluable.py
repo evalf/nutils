@@ -28,7 +28,7 @@ if typing.TYPE_CHECKING:
 else:
     Protocol = object
 
-from . import debug_flags, util, types, numeric, cache, warnings, parallel, sparse
+from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, sparse
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph
 import numpy
 import sys

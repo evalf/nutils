@@ -1,4 +1,4 @@
-from nutils import element, util
+from nutils import element, _util as util
 from nutils.testing import TestCase, parametrize
 import numpy
 

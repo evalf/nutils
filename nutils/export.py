@@ -1,4 +1,4 @@
-from . import util, warnings
+from . import _util as util, warnings
 import contextlib
 import numpy
 import os

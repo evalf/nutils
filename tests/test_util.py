@@ -1,4 +1,4 @@
-from nutils import util, warnings
+from nutils import _util as util, warnings
 from nutils.testing import TestCase, parametrize, requires
 import tempfile
 import pathlib

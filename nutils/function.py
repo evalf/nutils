@@ -5,7 +5,7 @@ else:
     Protocol = object
 
 from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, List, FrozenSet, NamedTuple
-from . import evaluable, numeric, util, types, warnings, debug_flags, sparse
+from . import evaluable, numeric, _util as util, types, warnings, debug_flags, sparse
 from .transform import EvaluableTransformChain
 from .transformseq import Transforms
 import builtins

@@ -1,4 +1,4 @@
-from nutils import evaluable, sparse, numeric, util
+from nutils import evaluable, sparse, numeric, _util as util
 from nutils.testing import TestCase, parametrize
 import numpy
 import itertools

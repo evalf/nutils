@@ -1,5 +1,5 @@
 from ._base import Matrix, MatrixError, BackendNotAvailable
-from .. import numeric, util, warnings
+from .. import numeric, _util as util, warnings
 from contextlib import contextmanager
 from ctypes import c_int, byref
 import treelog as log
