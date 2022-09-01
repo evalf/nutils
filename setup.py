@@ -36,7 +36,7 @@ setup(
     long_description=long_description,
     license='MIT',
     python_requires='>=3.5',
-    install_requires=['numpy>=1.17', 'treelog>=1.0b5', 'stringly'],
+    install_requires=['numpy>=1.17', 'treelog>=1.0b5<2', 'stringly>=1.0b2<2', 'bottombar==1.0'],
     extras_require=dict(
         docs=['Sphinx>=1.6', 'scipy>=0.13', 'matplotlib>=1.3'],
         matrix_scipy=['scipy>=0.13'],
