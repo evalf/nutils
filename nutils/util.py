@@ -701,4 +701,41 @@ def log_traceback(gracefulexit: bool = True):
         raise SystemExit(1)
 
 
+@contextlib.contextmanager
+def signal_handler(sig, handler):
+    '''Context to temporarily replace a signal handler.
+
+    The original handler is restored upon exit. A handler value of None
+    disables the signal handler.'''
+
+    import signal
+
+    sig = signal.Signals[sig]
+    oldhandler = signal.signal(sig, handler or signal.SIG_IGN)
+    try:
+        yield
+    finally:
+        signal.signal(sig, oldhandler)
+
+
+def trap_sigint(): # pragma: no cover
+    '''Context to handle the SIGINT signal with a quit/continue/debug menu.'''
+
+    @signal_handler('SIGINT', None)
+    def handler(sig, frame):
+        while True:
+            answer = input('interrupted. quit, continue or start debugger? [q/c/d]')
+            if answer == 'q':
+                raise KeyboardInterrupt
+            if answer == 'c' or answer == 'd':
+                break
+        if answer == 'd':  # after break, to minimize code after set_trace
+            from pdb import Pdb
+            pdb = Pdb()
+            pdb.message('tracing activated; type "c" to continue normal execution.')
+            pdb.set_trace(frame)
+
+    return signal_handler('SIGINT', handler)
+
+
 # vim:sw=4:sts=4:et

@@ -41,43 +41,6 @@ def _version():
         return '{} (git:{})'.format(long_version, githash)
 
 
-def _mkbox(*lines, richoutput=False):
-    width = max(len(line) for line in lines)
-    ul, ur, ll, lr, hh, vv = '┌┐└┘─│' if richoutput else '++++-|'
-    return '\n'.join([ul + hh * (width+2) + ur]
-                     + [vv + (' '+line).ljust(width+2) + vv for line in lines]
-                     + [ll + hh * (width+2) + lr])
-
-
-@contextlib.contextmanager
-def _signal_handler(s, handler):
-    oldhandler = signal.signal(s, handler)
-    try:
-        yield
-    finally:
-        signal.signal(s, oldhandler)
-
-
-def _breakpoint(richoutput, mysignal, frame):
-    with _signal_handler(mysignal, signal.SIG_IGN):  # temporarily disable handler
-        while True:
-            answer = input('interrupted. quit, continue or start debugger? [q/c/d]')
-            if answer == 'q':
-                raise KeyboardInterrupt
-            if answer == 'c' or answer == 'd':
-                break
-        if answer == 'd':  # after break, to minimize code after set_trace
-            print(_mkbox(
-                'TRACING ACTIVATED. Use the Python debugger',
-                'to step through the code at source line',
-                'level, list source code, set breakpoints,',
-                'and evaluate arbitrary Python code in the',
-                'context of any stack frame. Type "h" for',
-                'an overview of commands to get going, or',
-                '"c" to continue uninterrupted execution.', richoutput=richoutput))
-            pdb.set_trace()
-
-
 def _load_rcfile(path):
     settings = {}
     try:
@@ -282,7 +245,7 @@ def setup(scriptname: str,
             _cache.caching(cache, os.path.join(outdir, cachedir)), \
             _parallel.maxprocs(nprocs), \
             _matrix.backend(matrix), \
-            _signal_handler(signal.SIGINT, functools.partial(_breakpoint, richoutput)):
+            util.trap_sigint():
 
         treelog.info('nutils v{}'.format(_version()))
         with util.timeit():

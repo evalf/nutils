@@ -364,3 +364,23 @@ class log_traceback(TestCase):
             1/0
 
         self.assertEqual(cm.output, ['ERROR:nutils:ZeroDivisionError: division by zero'])
+
+
+class signal_handler(TestCase):
+
+    def test(self):
+
+        try:
+            from signal import SIGABRT, raise_signal
+        except ImportError:
+            raise self.skipTest('test is not possible on this platform')
+
+        caught = False
+        def f(sig, frame):
+            nonlocal caught
+            caught = True
+
+        with util.signal_handler('SIGABRT', f):
+            raise_signal(SIGABRT)
+
+        self.assertTrue(caught)
