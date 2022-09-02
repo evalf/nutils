@@ -635,4 +635,29 @@ def in_context(context):
     return in_context_wrapper
 
 
+def log_arguments(f):
+    '''Decorator to log a function's arguments.
+
+    The arguments are logged in the 'arguments' context. ``Stringly.loads``
+    will be used whenever an argument supports it, transparently falling back
+    on ``str`` otherwise.'''
+
+    sig = inspect.signature(f)
+
+    @functools.wraps(f)
+    def log_arguments(*args, **kwargs):
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+        with treelog.context('arguments'):
+            for k, v in bound.arguments.items():
+                try:
+                    s = stringly.dumps(sig.parameters[k].annotation, v)
+                except:
+                    s = str(v)
+                treelog.info(f'{k}={s}')
+        return f(*args, **kwargs)
+
+    return log_arguments
+
+
 # vim:sw=4:sts=4:et

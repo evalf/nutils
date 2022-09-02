@@ -340,3 +340,17 @@ class in_context(TestCase):
 
         self.assertEqual(retval, 'test')
         self.assertEqual(x_value, 10)
+
+
+class log_arguments(TestCase):
+
+    def test(self):
+
+        @util.log_arguments
+        def f(foo, bar):
+            pass
+
+        with self.assertLogs('nutils') as cm:
+            f('x', 10)
+
+        self.assertEqual(cm.output, ['INFO:nutils:arguments > foo=x', 'INFO:nutils:arguments > bar=10'])
