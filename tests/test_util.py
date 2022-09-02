@@ -384,3 +384,13 @@ class signal_handler(TestCase):
             raise_signal(SIGABRT)
 
         self.assertTrue(caught)
+
+
+class add_htmllog(TestCase):
+
+    def test(self):
+
+        with tempfile.TemporaryDirectory() as outdir:
+            with util.add_htmllog(outdir=outdir):
+                treelog.info('hi there')
+            self.assertTrue(os.path.isfile(os.path.join(outdir, 'log.html')))

@@ -24,12 +24,6 @@ import treelog
 import collections
 import bottombar
 
-try:
-    Level = treelog.proto.Level
-except AttributeError:  # treelog version < 1.0b6
-    Level = collections.namedtuple('Level', ['debug', 'info', 'user', 'warning', 'error'])(0, 1, 2, 3, 4)
-
-
 def _version():
     try:
         githash = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], universal_newlines=True, stderr=subprocess.DEVNULL, cwd=os.path.dirname(__file__)).strip()
@@ -49,24 +43,6 @@ def _load_rcfile(path):
     except Exception as e:
         raise Exception('error loading config from {}'.format(path)) from e
     return settings
-
-
-def _htmllog(outdir, scriptname, kwargs):
-    htmllog = treelog.HtmlLog(outdir, title=scriptname, htmltitle='<a href="http://www.nutils.org">{}</a> {}'.format(SVGLOGO, html.escape(scriptname)), favicon=FAVICON)
-    if kwargs:
-        try:
-            htmllog_inject = htmllog.inject
-        except AttributeError:  # fallback for treelog < 2.0
-            htmllog_inject = functools.partial(htmllog.write, level=Level.info, escape=False)
-        parts = ['<ul style="list-style-position: inside; padding-left: 0px; margin-top: 0px;">']
-        for name, value, doc in kwargs:
-            item = '{}={}'.format(name, value)
-            if doc:
-                item += ' <span style="color: gray;">{}</span>'.format(doc.replace('\n', ' '))
-            parts.append('<li>{}</li>'.format(item))
-        parts.append('</ul>')
-        htmllog_inject(''.join(parts))  # NOTE once we drop the fallback we can switch to injecting individual parts
-    return htmllog
 
 
 def run(func, *, args=None, loaduserconfig=True):
@@ -217,32 +193,19 @@ def setup(scriptname: str,
     for name in unused:
         warnings.warn('ignoring unused configuration variable {!r}'.format(name))
 
-    if outdir is None:
-        outdir = os.path.join(os.path.expanduser(outrootdir), scriptname)
-        if outrooturi is None:
-            outrooturi = pathlib.Path(outrootdir).expanduser().resolve().as_uri()
-        outuri = outrooturi.rstrip('/') + '/' + scriptname
-    elif outuri is None:
-        outuri = pathlib.Path(outdir).resolve().as_uri()
-
     if richoutput is None:
         richoutput = sys.stdout.isatty()
-
-    consolellog = treelog.RichOutputLog() if richoutput else treelog.StdoutLog()
-    if verbose is not None:
-        consolellog = treelog.FilterLog(consolellog, minlevel=tuple(Level)[5-verbose])
 
     if nprocs == 1:
         os.environ['MKL_THREADING_LAYER'] = 'SEQUENTIAL'
 
-    with treelog.set(consolellog), \
-            _htmllog(outdir, scriptname, kwargs) as htmllog, treelog.add(htmllog), \
-            bottombar.add(outuri+'/'+htmllog.filename), \
+    with util.set_stdoutlog(richoutput, verbose), \
+            util.add_htmllog(outrootdir, outrooturi, scriptname, outdir, outuri), \
             bottombar.add(util.timer(), label='runtime', right=True, refresh=1), \
             bottombar.add(util.memory(), label='memory', right=True, refresh=1), \
             util.log_traceback(gracefulexit), util.post_mortem(pdb), \
             warnings.via(treelog.warning), \
-            _cache.caching(cache, os.path.join(outdir, cachedir)), \
+            _cache.caching(cache, os.path.join(outdir or os.path.join(outrootdir, scriptname), cachedir)), \
             _parallel.maxprocs(nprocs), \
             _matrix.backend(matrix), \
             util.trap_sigint():
@@ -252,24 +215,5 @@ def setup(scriptname: str,
             yield
 
     raise SystemExit(0)
-
-
-SVGLOGO = '''\
-<svg style="vertical-align: middle;" width="32" height="32" xmlns="http://www.w3.org/2000/svg">
-  <path d="M7.5 19 v-6 a6 6 0 0 1 12 0 v6 M25.5 13 v6 a6 6 0 0 1 -12 0 v-6" fill="none" stroke-width="3" stroke-linecap="round"/>
-</svg>'''
-
-FAVICON = 'data:image/png;base64,' \
-    'iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAQAAAD9CzEMAAACAElEQVRYw+2YS04bQRCGP2wJ' \
-    'gbAimS07WABXGMLzAgiBcgICFwDEEiGiDCScggWPHVseC1AIZ8AIJBA2hg1kF5DiycLYqppp' \
-    'M91j2KCp3rSq//7/VldPdfVAajHW0nAkywDjeHSTBx645IRdfvPvLWTbWeSewNDuWKC9Wfov' \
-    '3BjJa+2aqWa2bInKq/QBARV8MknoM2zHktfaVhKJ79b0AQEr7nsfpthjml466KCPr+xHNmrS' \
-    '7eTo0J4xFMEMUwiFu81eYFFNPSJvROU5Vrh5W/qsOvdnDegBOjkXyDJZO4Fhta7RV7FDCvvZ' \
-    'TmBdhTbODgT6R9zJr9qA8G2LfiurlCji0yq8O6LvKT4zHlQEeoXfr3t94e1TUSAWDzyJKTnh' \
-    'L9W9t8KbE+i/iieCr6XroEEKb9qfee8LJxVIBVKBjyRQqnuKavxZpTiZ1Ez4Typ9KoGN+sCG' \
-    'Evgj+l2ib8ZLxCOhi8KnaLgoTkVino7Fzwr0L7st/Cmm7MeiDwV6zU5gUF3wYw6Fg2dbztyJ' \
-    'SQWHcsb6fC6odR3T2YBeF2RzLiXltZpaYCSCGVWrD7hyKSlhKvJiOGCGfnLk6GdGhbZaFE+4' \
-    'fo7fnMr65STf+5Y1/Way9PPOT6uqTYbCHW5X7nsftjbmKRvJy8yZT05Lgnh4jOPR8/JAv+CE' \
-    'XU6ppH81Etp/wL7MKaEwo4sAAAAASUVORK5CYII='
 
 # vim:sw=2:sts=2:et

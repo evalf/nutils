@@ -738,4 +738,63 @@ def trap_sigint(): # pragma: no cover
     return signal_handler('SIGINT', handler)
 
 
+@defaults_from_env
+def set_stdoutlog(richoutput: bool = sys.stdout.isatty(), verbose: int = 4): # pragma: no cover
+    '''Context to replace the active logger with a StdoutLog or RichOutputLog.'''
+
+    try:
+        Level = treelog.proto.Level
+    except AttributeError:  # treelog version < 1.0b6
+        levels = 4, 3, 2, 1
+    else:
+        levels = Level.error, Level.warning, Level.user, Level.info
+
+    stdoutlog = treelog.RichOutputLog() if richoutput else treelog.StdoutLog()
+    if 0 <= verbose-1 < len(levels):
+        stdoutlog = treelog.FilterLog(stdoutlog, minlevel=levels[verbose-1])
+
+    return treelog.set(stdoutlog)
+
+
+@contextlib.contextmanager
+@defaults_from_env
+def add_htmllog(outrootdir: str = '~/public_html', outrooturi: str = '', scriptname: str = os.path.basename(sys.argv[0]), outdir: str = '', outuri: str = ''):
+    '''Context to add a HtmlLog to the active logger.'''
+
+    import html, base64, bottombar
+
+    # the outdir argument exists for backwards compatibility; outrootdir
+    # and scriptname are ignored if outdir is defined
+    if outdir:
+        outdir = pathlib.Path(outdir).expanduser()
+    else:
+        outdir = pathlib.Path(outrootdir).expanduser()
+        if scriptname:
+            outdir /= scriptname
+
+    # the outuri argument exists for backwards compatibility; outrooturi is
+    # ignored if outuri is defined
+    if not outuri:
+        outuri = outrooturi.rstrip('/') + '/' + scriptname if outrooturi else outdir.as_uri()
+
+    nutils_logo = (
+      '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" style="vertical-align: middle;" width="24" height="24" viewBox="-12 -12 24 24">'
+        '<path d="M -9 3 v -6 a 6 6 0 0 1 12 0 v 6 M 9 -3 v 6 a 6 6 0 0 1 -12 0 v -6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>'
+      '</svg>')
+    favicon = 'data:image/svg+xml;base64,' + base64.b64encode(b'<?xml version="1.0" encoding="UTF-8" standalone="no"?>' + nutils_logo.encode()).decode()
+    htmltitle = '<a href="http://www.nutils.org">{}</a> {}'.format(nutils_logo, html.escape(scriptname))
+
+    with treelog.HtmlLog(outdir, title=scriptname, htmltitle=htmltitle, favicon=favicon) as htmllog:
+        loguri = outuri + '/' + htmllog.filename
+        try:
+            with treelog.add(htmllog), bottombar.add(loguri, label='writing log to'):
+                yield
+        except Exception as e:
+            with treelog.set(htmllog):
+                treelog.error(f'{e.__class__.__name__}: {e}')
+            raise
+        finally:
+            treelog.info(f'log written to: {loguri}')
+
+
 # vim:sw=4:sts=4:et
