@@ -669,7 +669,7 @@ class thetamethod(cache.Recursion, length=1, version=1):
     residual : :class:`nutils.evaluable.AsEvaluableArray`
     inertia : :class:`nutils.evaluable.AsEvaluableArray`
     timestep : :class:`float`
-        Initial time step, will scale up as residual decreases
+        The time step.
     lhs0 : :class:`numpy.ndarray`
         Coefficient vector, starting point of the iterative procedure.
     theta : :class:`float`
@@ -987,7 +987,7 @@ def _determine_dtype(targets, residuals, lhs0, constrain):
         or any(vec.dtype.kind == 'c' for vec in constrain.values())
     ) else float
     if not all(argobjs[target].dtype == dtype for target in targets):
-        raise ValueError('All targets must have dtype {}.'.format(dtype.__name___))
+        raise ValueError('All targets must have dtype {}.'.format(dtype.__name__))
     return dtype
 
 # vim:sw=2:sts=2:et

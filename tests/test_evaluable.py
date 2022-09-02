@@ -408,6 +408,8 @@ def generate(*shape, real, imag, zero, negative):
         raise Exception('shape is too small to test at least one of all selected number categories')
     if real or imag:
         a = numpy.tanh(2 * a / a[-1])  # map to (-1,1)
+        if negative:
+            a[:iz] -= a[iz-1] / 2 # introduce asymmetry to reduce risk of singular matrices
         if real and imag:
             assert negative
             a = a * numpy.exp(1j * numpy.arange(size)**2)
@@ -862,6 +864,11 @@ class derivative(TestCase):
     def test_int(self):
         arg = evaluable.Argument('arg', (2,), int)
         self.assertEqual(evaluable.derivative(evaluable.insertaxis(arg, 0, 1), arg), evaluable.Zeros((1, 2, 2), int))
+
+    def test_int_to_float(self):
+        arg = evaluable.Argument('arg', (), float)
+        func = evaluable.IntToFloat(evaluable.BoolToInt(evaluable.Greater(arg, 0.)))
+        self.assertTrue(evaluable.iszero(evaluable.derivative(func, arg)))
 
 
 class asciitree(TestCase):

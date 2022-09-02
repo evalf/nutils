@@ -1050,7 +1050,7 @@ class CommonBasis:
             indices, = numpy.where(mask)
             for value in mask, indices:
                 with self.subTest(tuple(value)):
-                    self.assertEqual(self.basis.get_dofs(value).tolist(), list(sorted(set(itertools.chain.from_iterable(self.checkdofs[i] for i in indices)))))
+                    self.assertEqual(sorted(self.basis.get_dofs(value)), sorted(set(itertools.chain.from_iterable(self.checkdofs[i] for i in indices))))
 
     def test_dofs_intarray_outofbounds(self):
         for i in [-1, self.checknelems]:

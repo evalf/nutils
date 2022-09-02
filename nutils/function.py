@@ -1220,7 +1220,7 @@ def subtract(__left: IntoArray, __right: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    return add(__left, negative(__right))
+    return _Wrapper.broadcasted_arrays(evaluable.subtract, __left, __right)
 
 
 @implements(numpy.positive)
@@ -1252,7 +1252,7 @@ def negative(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    return multiply(__arg, -1)
+    return _Wrapper.broadcasted_arrays(evaluable.negative, __arg)
 
 
 @implements(numpy.multiply)
@@ -1322,7 +1322,7 @@ def reciprocal(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    return power(__arg, -1.)
+    return _Wrapper.broadcasted_arrays(evaluable.reciprocal, __arg)
 
 
 @implements(numpy.power)
@@ -1354,7 +1354,7 @@ def sqrt(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    return power(__arg, .5)
+    return _Wrapper.broadcasted_arrays(evaluable.sqrt, __arg, min_dtype=float)
 
 
 @implements(numpy.square)
@@ -1596,8 +1596,7 @@ def cosh(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    arg = Array.cast(__arg)
-    return .5 * (exp(arg) + exp(-arg))
+    return _Wrapper.broadcasted_arrays(evaluable.cosh, __arg, min_dtype=float)
 
 
 @implements(numpy.sinh)
@@ -1613,8 +1612,7 @@ def sinh(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    arg = Array.cast(__arg)
-    return .5 * (exp(arg) - exp(-arg))
+    return _Wrapper.broadcasted_arrays(evaluable.sinh, __arg, min_dtype=float)
 
 
 @implements(numpy.tanh)
@@ -1630,8 +1628,7 @@ def tanh(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    arg = Array.cast(__arg)
-    return 1 - 2. / (exp(2*arg) + 1)
+    return _Wrapper.broadcasted_arrays(evaluable.tanh, __arg, min_dtype=float)
 
 
 @implements(numpy.arctanh)
@@ -1647,8 +1644,7 @@ def arctanh(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    arg = Array.cast(__arg)
-    return .5 * (ln(1+arg) - ln(1-arg))
+    return _Wrapper.broadcasted_arrays(evaluable.arctanh, __arg, min_dtype=float)
 
 
 @implements(numpy.exp)
@@ -1699,7 +1695,7 @@ def log2(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    return log(__arg) / log(2)
+    return _Wrapper.broadcasted_arrays(evaluable.log2, __arg, min_dtype=float)
 
 
 @implements(numpy.log10)
@@ -1715,7 +1711,7 @@ def log10(__arg: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    return log(__arg) / log(10)
+    return _Wrapper.broadcasted_arrays(evaluable.log10, __arg, min_dtype=float)
 
 # COMPARISON
 
@@ -1862,10 +1858,10 @@ def opposite(__arg: IntoArray) -> Array:
     :func:`jump` : the jump at an interface
     '''
 
-    arg = Array.cast(__arg)
+    arg, scale = Array.cast_withscale(__arg)
     for space in sorted(arg.spaces):
         arg = _Opposite(arg, space)
-    return arg
+    return arg * scale
 
 
 def mean(__arg: IntoArray) -> Array:
@@ -1895,8 +1891,7 @@ def mean(__arg: IntoArray) -> Array:
     array([ 1.5])
     '''
 
-    arg = Array.cast(__arg)
-    return .5 * (arg + opposite(arg))
+    return .5 * (__arg + opposite(__arg))
 
 
 def jump(__arg: IntoArray) -> Array:
@@ -1932,8 +1927,7 @@ def jump(__arg: IntoArray) -> Array:
     array([ 1.])
     '''
 
-    arg = Array.cast(__arg)
-    return opposite(arg) - arg
+    return opposite(__arg) - __arg
 
 # REDUCTION
 
@@ -3405,9 +3399,9 @@ def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtyp
 # BASES
 
 
-def _int_or_vec(f, self, arg, argname, nargs, nvals):
+def _int_or_vec(f, arg, argname, nargs, nvals):
     if isinstance(arg, numbers.Integral):
-        return f(self, int(numeric.normdim(nargs, arg)))
+        return f(int(numeric.normdim(nargs, arg)))
     if numeric.isboolarray(arg):
         if arg.shape != (nargs,):
             raise IndexError('{} has invalid shape'.format(argname))
@@ -3420,24 +3414,21 @@ def _int_or_vec(f, self, arg, argname, nargs, nvals):
         arg = numpy.unique(arg)
         if arg[0] < 0 or arg[-1] >= nargs:
             raise IndexError('{} out of bounds'.format(argname))
-        mask = numpy.zeros(nvals, dtype=bool)
-        for d in arg:
-            mask[numpy.asarray(f(self, d))] = True
-        return mask.nonzero()[0]
+        return functools.reduce(numpy.union1d, map(f, arg))
     raise IndexError('invalid {}'.format(argname))
 
 
 def _int_or_vec_dof(f):
     @functools.wraps(f)
     def wrapped(self, dof: Union[numbers.Integral, numpy.ndarray]) -> numpy.ndarray:
-        return _int_or_vec(f, self, arg=dof, argname='dof', nargs=self.ndofs, nvals=self.nelems)
+        return _int_or_vec(f.__get__(self), arg=dof, argname='dof', nargs=self.ndofs, nvals=self.nelems)
     return wrapped
 
 
 def _int_or_vec_ielem(f):
     @functools.wraps(f)
     def wrapped(self, ielem: Union[numbers.Integral, numpy.ndarray]) -> numpy.ndarray:
-        return _int_or_vec(f, self, arg=ielem, argname='ielem', nargs=self.nelems, nvals=self.ndofs)
+        return _int_or_vec(f.__get__(self), arg=ielem, argname='ielem', nargs=self.nelems, nvals=self.ndofs)
     return wrapped
 
 
