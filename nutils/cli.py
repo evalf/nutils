@@ -22,6 +22,7 @@ import textwrap
 import typing
 import treelog
 import collections
+import bottombar
 
 try:
     Level = treelog.proto.Level
@@ -113,58 +114,6 @@ def _traceback(richoutput, postmortem, exit):
     else:
         if exit:
             raise SystemExit(0)
-
-
-try:
-    from bottombar import BottomBar
-except ImportError:
-    BottomBar = None
-
-try:
-    from resource import getrusage, RUSAGE_SELF
-except ImportError:
-    try:
-        from psutil import Process
-    except ImportError:
-        _rss_memory = None
-    else:
-        _rss_memory = lambda: Process().memory_info().rss
-else:
-    _rss_memory = lambda: getrusage(RUSAGE_SELF).ru_maxrss << 10
-
-
-def _format(uri, t0, width):
-    if len(uri) + 8 <= width:  # space for full uri, maybe stats
-        minutes, seconds = divmod(int(time.perf_counter() - t0), 60)
-        hours, minutes = divmod(minutes, 60)
-        runtime = ' runtime: {}:{:02d}:{:02d}'.format(hours, minutes, seconds)
-        memory = ' memory: {:,}M |'.format(_rss_memory() >> 20) if _rss_memory else ''
-        prefix = 'writing log to '
-        if len(prefix) + len(uri) + len(memory) + len(runtime) > width:
-            memory = memory[8:]
-            runtime = runtime[9:]
-        if len(prefix) + len(uri) + len(memory) + len(runtime) <= width:
-            uri = prefix + uri
-        elif len(uri) + len(memory) + len(runtime) > width:
-            memory = ''
-        if len(uri) + len(memory) + len(runtime) <= width:
-            uri += (memory + runtime).rjust(width - len(uri))
-    elif len(uri) > width:  # no space for uri
-        uri = '...' + uri[3-width:]
-    return '\033[2m' + uri
-
-
-@contextlib.contextmanager
-def _status(uri, richoutput):
-    try:
-        if richoutput and BottomBar:
-            with BottomBar(uri, time.perf_counter(), format=_format, interval=1):
-                yield
-        else:
-            print('opened log at', uri)
-            yield
-    finally:
-        print('log written to', uri)
 
 
 def _load_rcfile(path):
@@ -363,7 +312,9 @@ def setup(scriptname: str,
 
     with treelog.set(consolellog), \
             _htmllog(outdir, scriptname, kwargs) as htmllog, treelog.add(htmllog), \
-            _status(outuri+'/'+htmllog.filename, richoutput), \
+            bottombar.add(outuri+'/'+htmllog.filename), \
+            bottombar.add(util.timer(), label='runtime', right=True, refresh=1), \
+            bottombar.add(util.memory(), label='memory', right=True, refresh=1), \
             _traceback(richoutput=richoutput, postmortem=pdb, exit=gracefulexit), \
             warnings.via(treelog.warning), \
             _cache.caching(cache, os.path.join(outdir, cachedir)), \

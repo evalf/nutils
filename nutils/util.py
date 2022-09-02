@@ -592,4 +592,17 @@ class timer:
         return format_timedelta(datetime.datetime.now() - self.t0)
 
 
+class memory: # pragma: no cover
+    '''Memory usage of the current process as string representation.'''
+
+    def __init__(self):
+        import psutil
+        self.total = psutil.virtual_memory().total
+        self.process = psutil.Process()
+
+    def __str__(self):
+        rss = self.process.memory_info().rss
+        return f'{rss>>20:,}M ({100*rss/self.total:.0f}%)'
+
+
 # vim:sw=4:sts=4:et
