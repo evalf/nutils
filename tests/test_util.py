@@ -354,3 +354,13 @@ class log_arguments(TestCase):
             f('x', 10)
 
         self.assertEqual(cm.output, ['INFO:nutils:arguments > foo=x', 'INFO:nutils:arguments > bar=10'])
+
+
+class log_traceback(TestCase):
+
+    def test(self):
+
+        with self.assertRaises(SystemExit), self.assertLogs('nutils') as cm, util.log_traceback(gracefulexit=True):
+            1/0
+
+        self.assertEqual(cm.output, ['ERROR:nutils:ZeroDivisionError: division by zero'])

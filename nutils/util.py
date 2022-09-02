@@ -660,4 +660,45 @@ def log_arguments(f):
     return log_arguments
 
 
+@contextlib.contextmanager
+@defaults_from_env
+def post_mortem(pdb: bool = False): # pragma: no cover
+    '''Context to activate post mortem debugging upon error.'''
+
+    try:
+        yield
+    except Exception as e:
+        if pdb:
+            print(f'{type(e).__name__}: {e}')
+            from pdb import post_mortem
+            post_mortem()
+        raise
+
+
+@contextlib.contextmanager
+@defaults_from_env
+def log_traceback(gracefulexit: bool = True):
+    '''Context to log traceback information to the active logger.
+
+    Afterwards ``SystemExit`` is raised to avoid reprinting of the traceback by
+    Python's default error handler.'''
+
+    import traceback
+
+    if not gracefulexit:
+        yield
+        return
+
+    try:
+        yield
+    except SystemExit:
+        raise
+    except:
+        exc = traceback.TracebackException(*sys.exc_info())
+        treelog.error(''.join(exc.format_exception_only()).rstrip())
+        for s in exc.stack.format():
+            treelog.debug(s.rstrip())
+        raise SystemExit(1)
+
+
 # vim:sw=4:sts=4:et

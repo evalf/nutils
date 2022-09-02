@@ -78,44 +78,6 @@ def _breakpoint(richoutput, mysignal, frame):
             pdb.set_trace()
 
 
-@contextlib.contextmanager
-def _traceback(richoutput, postmortem, exit):
-    try:
-        yield
-    except (KeyboardInterrupt, SystemExit, pdb.bdb.BdbQuit):
-        treelog.error('killed by user')
-        if exit:
-            raise SystemExit(1) from None
-        raise
-    except:
-        exc = traceback.TracebackException(*sys.exc_info())
-        prefix = ''
-        while True:
-            treelog.error(prefix + ''.join(exc.format_exception_only()).rstrip())
-            treelog.debug('Traceback (most recent call first):\n' + ''.join(reversed(exc.stack.format())).rstrip())
-            if exc.__cause__ is not None:
-                exc = exc.__cause__
-                prefix = '.. caused by '
-            elif exc.__context__ is not None and not exc.__suppress_context__:
-                exc = exc.__context__
-                prefix = '.. while handling '
-            else:
-                break
-        if postmortem:
-            print(_mkbox(
-                'YOUR PROGRAM HAS DIED. The Python debugger',
-                'allows you to examine its post-mortem state',
-                'to figure out why this happened. Type "h"',
-                'for an overview of commands to get going.', richoutput=richoutput))
-            pdb.post_mortem()
-        if exit:
-            raise SystemExit(2) from None
-        raise
-    else:
-        if exit:
-            raise SystemExit(0)
-
-
 def _load_rcfile(path):
     settings = {}
     try:
@@ -315,7 +277,7 @@ def setup(scriptname: str,
             bottombar.add(outuri+'/'+htmllog.filename), \
             bottombar.add(util.timer(), label='runtime', right=True, refresh=1), \
             bottombar.add(util.memory(), label='memory', right=True, refresh=1), \
-            _traceback(richoutput=richoutput, postmortem=pdb, exit=gracefulexit), \
+            util.log_traceback(gracefulexit), util.post_mortem(pdb), \
             warnings.via(treelog.warning), \
             _cache.caching(cache, os.path.join(outdir, cachedir)), \
             _parallel.maxprocs(nprocs), \
@@ -325,6 +287,8 @@ def setup(scriptname: str,
         treelog.info('nutils v{}'.format(_version()))
         with util.timeit():
             yield
+
+    raise SystemExit(0)
 
 
 SVGLOGO = '''\
