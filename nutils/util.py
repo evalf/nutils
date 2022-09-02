@@ -605,4 +605,34 @@ class memory: # pragma: no cover
         return f'{rss>>20:,}M ({100*rss/self.total:.0f}%)'
 
 
+def in_context(context):
+    '''Decorator to run a function in a context.
+
+    Context arguments are added as position-only arguments to the signature of
+    the decorated function. Any overlap between parameters of the function and
+    context results in a ``ValueError``.'''
+
+    params = []
+    for param in inspect.signature(context).parameters.values():
+        if param.kind == param.POSITIONAL_OR_KEYWORD:
+            param = param.replace(kind=param.KEYWORD_ONLY)
+            # kind serves to make sure that we can always append parameters to the existing signature
+        elif param.kind != param.KEYWORD_ONLY:
+            raise Exception(f'context parameter {param.name!r} cannot be specified as keyword argument')
+        params.append(param)
+
+    def in_context_wrapper(f):
+
+        @functools.wraps(f)
+        def in_context(*args, **kwargs):
+            with context(**{param.name: kwargs.pop(param.name) for param in params if param.name in kwargs}):
+                return f(*args, **kwargs)
+
+        sig = inspect.signature(f)
+        in_context.__signature__ = sig.replace(parameters=(*sig.parameters.values(), *params))
+        return in_context
+
+    return in_context_wrapper
+
+
 # vim:sw=4:sts=4:et

@@ -318,3 +318,25 @@ class time(TestCase):
 
     def test_timer(self):
         self.assertEqual(str(util.timer()), '0:00')
+
+
+class in_context(TestCase):
+
+    def test(self):
+
+        x_value = None
+
+        @contextlib.contextmanager
+        def c(x: int):
+            nonlocal x_value
+            x_value = x
+            yield
+
+        @util.in_context(c)
+        def f(s: str):
+            return s
+
+        retval = f('test', x=10)
+
+        self.assertEqual(retval, 'test')
+        self.assertEqual(x_value, 10)
