@@ -19,7 +19,7 @@ with Container.new_from('debian:bullseye', network='host') as container:
     container.run('apt', 'update')
     # Package `libtbb2` is required when using Intel MKL with environment
     # variable `MKL_THREADING_LAYER` set to `TBB`, which is nowadays the default.
-    container.run('apt', 'install', '-y', '--no-install-recommends', 'python3', 'python3-pip', 'python3-wheel', 'python3-ipython', 'python3-numpy', 'python3-scipy', 'python3-matplotlib', 'python3-pil', 'python3-meshio', 'libmkl-rt', 'libomp-dev', 'libtbb2', env=dict(DEBIAN_FRONTEND='noninteractive'))
+    container.run('apt', 'install', '-y', '--no-install-recommends', 'python3', 'python3-pip', 'python3-wheel', 'python3-ipython', 'python3-numpy', 'python3-scipy', 'python3-matplotlib', 'python3-pil', 'python3-meshio', 'libmkl-rt', 'libomp-dev', 'libtbb2', 'python3-gmsh', env=dict(DEBIAN_FRONTEND='noninteractive'))
     container.run('pip', 'install', '--no-cache-dir', 'bottombar', 'treelog', 'stringly')
     container.add_label('org.opencontainers.image.url', 'https://github.com/evalf/nutils')
     container.add_label('org.opencontainers.image.source', 'https://github.com/evalf/nutils')
