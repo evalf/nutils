@@ -162,6 +162,7 @@ jobs:
     env:
       # Fixes https://github.com/actions/virtual-environments/issues/3080
       STORAGE_OPTS: overlay.mount_program=/usr/bin/fuse-overlayfs
+      _wheel: ${{ needs.build-python-package.outputs.wheel }}
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -182,7 +183,7 @@ jobs:
         env:
           _base: ${{ env.official_container_repository }}:${{ steps.tags.outputs.base }}
           _name: ${{ env.official_container_repository }}:${{ steps.tags.outputs.image }}
-        run: python3 -um devtools.container.build --build-from-worktree --name "$_name" --base "$_base"
+        run: python3 -um devtools.container.build --revision "$GITHUB_SHA" --wheel "$_wheel" --examples examples --name "$_name" --base "$_base"
       - name: Test examples/laplace.py
         env:
           _image: ${{ steps.build.outputs.id }}
