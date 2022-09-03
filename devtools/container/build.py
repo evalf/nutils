@@ -14,18 +14,18 @@ parser = argparse.ArgumentParser(description='build an OCI compatible container 
 parser.add_argument('--base', required=True, help='the base image to build upon; example: `docker.io/evalf/nutils` or `docker.io/evalf/nutils:_base_latest`')
 parser.add_argument('--name', metavar='NAME', help='the name to attach to the image; defaults to `{OFFICIAL_CONTAINER_REPO}:TAG` where TAG is based on REV')
 parser.add_argument('--revision', '--rev', metavar='REV', help='set image label `org.opencontainers.image.revision` to the commit hash refered to by REV')
-parser.add_argument('--build-from-worktree', action='store_const', const=True, default=False, help='build from the worktree')
+parser.add_argument('--wheel',  help='use the given Nutils wheel; if absent, a wheel will be build for the given revision')
+parser.add_argument('--examples',  help='include the given examples directory; if absent, the examples from the given revision will be included')
 args = parser.parse_args()
 
-if not args.build_from_worktree and not args.revision:
-    raise SystemExit('either `--revision` or `--build-from-worktree` must be specified')
+if not args.wheel and not args.revision:
+    raise SystemExit('either `--revision` or `--wheel` must be specified')
+if not args.examples and not args.revision:
+    raise SystemExit('either `--examples` or `--wheel` must be specified')
 
 rev = args.revision or 'HEAD'
 git = Git()
 commit = git.get_commit_from_rev(rev)
-
-if args.build_from_worktree and args.revision and (head_commit := git.get_commit_from_rev('HEAD')) != commit:
-    raise SystemExit(f'`HEAD` points to `{head_commit}` but `--revision={args.revision}` points to `{commit}`')
 
 if args.name and ':' in args.name:
     image_name = args.name
@@ -40,30 +40,33 @@ if ':' not in base.split('/')[-1]:
 
 with ExitStack() as stack:
 
-    if args.build_from_worktree:
-        dist = Path()/'dist'
-        examples = Path()/'examples'
-        log.info(f'installing Nutils from {dist}')
+    if not args.wheel or not args.examples:
+        src = stack.enter_context(git.worktree(typing.cast(str, commit)))
+
+    if args.wheel:
+        wheel = Path(args.wheel)
+        if not wheel.exists():
+            log.error(f'wheel does not exist: {wheel}')
+            raise SystemExit(1)
+        log.info(f'installing Nutils from {wheel}')
+    else:
+        log.info(f'building wheel for commit {commit}')
+        run(sys.executable, 'setup.py', 'bdist_wheel', cwd=str(src.path), env=dict(SOURCE_DATE_EPOCH=str(src.get_commit_timestamp('HEAD'))))
+        wheel, = (src.path / 'dist').glob('nutils-*.whl')
+
+    if args.examples:
+        examples = Path(args.examples)
+        if not examples.exists():
+            log.error(f'examples directory does not exist: {examples}')
+            raise SystemExit(1)
         log.info(f'using examples from {examples}')
     else:
-        # Check out Nutils in a clean working tree, build a wheel and use the working tree as `src`.
+        examples = src.path / 'examples'
         log.info(f'using examples from commit {commit}')
-        src = stack.enter_context(git.worktree(typing.cast(str, commit)))
-        log.info(f'building wheel from commit {commit}')
-        run(sys.executable, 'setup.py', 'bdist_wheel', cwd=str(src.path), env=dict(SOURCE_DATE_EPOCH=str(src.get_commit_timestamp('HEAD'))))
-        dist = src.path/'dist'
-        examples = src.path/'examples'
 
-    dist = Path(dist)
-    if not dist.exists():
-        raise SystemExit(f'cannot find dist dir: {dist}')
-    examples = Path(examples)
-    if not examples.exists():
-        raise SystemExit(f'cannot find example dir: {examples}')
+    container = stack.enter_context(Container.new_from(base, mounts=[Mount(src=wheel, dst=f'/{wheel.name}')]))
 
-    container = stack.enter_context(Container.new_from(base, mounts=[Mount(src=dist, dst='/mnt')]))
-
-    container.run('pip', 'install', '--no-cache-dir', '--no-index', '--find-links', 'file:///mnt/', 'nutils', env=dict(PYTHONHASHSEED='0'))
+    container.run('pip', 'install', '--no-cache-dir', f'/{wheel.name}[export_mpl,import_gmsh,matrix_scipy]', env=dict(PYTHONHASHSEED='0'))
     container.run('pip', 'install', '--no-cache-dir', 'https://github.com/evalf/nutils-SI/archive/main.tar.gz', env=dict(PYTHONHASHSEED='0'))
     container.add_label('org.opencontainers.image.url', 'https://github.com/evalf/nutils')
     container.add_label('org.opencontainers.image.source', 'https://github.com/evalf/nutils')
