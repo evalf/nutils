@@ -4,13 +4,16 @@
 # bottom-right quadrant removed (a.k.a. an L-shaped domain) with Dirichlet
 # boundary conditions matching the harmonic function
 #
-# .. math:: \sqrt[3]{x^2 + y^2} \cos\left(\tfrac23 \arctan\frac{y+x}{y-x}\right),
+#     u = (x^2+y^2)^(1/3) cos(arctan2(y+x,y-x)*2/3)
 #
 # shifted by 0.5 such that the origin coincides with the middle of the unit
-# square. This variation of a well known benchmark problem is known to converge
-# suboptimally under uniform refinement due to a singular gradient in the
-# reentrant corner. This script demonstrates that optimal convergence can be
-# restored by using adaptive refinement.
+# square. Note that the function evaluates to zero over the two boundaries
+# bordering the removed quadrant.
+#
+# This benchmark problem is known to converge suboptimally under uniform
+# refinement due to a singular gradient in the reentrant corner. This script
+# demonstrates that optimal convergence can be restored by using adaptive
+# refinement.
 
 from nutils import mesh, function, solver, util, export, cli, testing
 from nutils.expression_v2 import Namespace
@@ -36,10 +39,12 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
     '''
 
     domain, geom = mesh.unitsquare(2, etype)
+    geom -= .5 # shift domain center to origin
 
-    x, y = geom - .5
+    x, y = geom
     exact = (x**2 + y**2)**(1/3) * numpy.cos(numpy.arctan2(y+x, y-x) * (2/3))
-    domain = domain.trim(exact-1e-15, maxrefine=0)
+    selection = domain.select(exact, ischeme='gauss1')
+    domain = domain.subset(selection, newboundary='corner')
     linreg = util.linear_regressor()
 
     for irefine in treelog.iter.fraction('level', range(nrefine+1)):
@@ -61,7 +66,7 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
         ns.uexact = exact
         ns.du = 'u - uexact'
 
-        sqr = domain.boundary['trimmed'].integral('u^2 dS' @ ns, degree=degree*2)
+        sqr = domain.boundary['corner'].integral('u^2 dS' @ ns, degree=degree*2)
         cons = solver.optimize('u,', sqr, droptol=1e-15)
 
         sqr = domain.boundary.integral('du^2 dS' @ ns, degree=7)
