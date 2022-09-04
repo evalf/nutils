@@ -56,7 +56,7 @@
 # inflow velocity, meaning that both quantities are simulated at unit value.
 
 
-from nutils import mesh, function, solver, util, export, cli, testing, numeric
+from nutils import mesh, function, solver, export, cli, testing, numeric
 from nutils.expression_v2 import Namespace
 import itertools
 import numpy
