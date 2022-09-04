@@ -12,10 +12,10 @@
 #
 # This benchmark problem is known to converge suboptimally under uniform
 # refinement due to a singular gradient in the reentrant corner. This script
-# demonstrates that optimal convergence can be restored by using adaptive
-# refinement.
+# demonstrates that optimal convergence rates of -(p+1)/2 for the L2 norm and
+# -p/2 for the H1 norm can be restored by using adaptive refinement.
 
-from nutils import mesh, function, solver, util, export, cli, testing
+from nutils import mesh, function, solver, export, cli, testing
 from nutils.expression_v2 import Namespace
 import numpy
 import treelog
@@ -45,7 +45,7 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
     exact = (x**2 + y**2)**(1/3) * numpy.cos(numpy.arctan2(y+x, y-x) * (2/3))
     selection = domain.select(exact, ischeme='gauss1')
     domain = domain.subset(selection, newboundary='corner')
-    linreg = util.linear_regressor()
+    linreg = LinearRegressor(bias=1)
 
     for irefine in treelog.iter.fraction('level', range(nrefine+1)):
 
@@ -77,8 +77,10 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
 
         ndofs = len(args['u'])
         error = numpy.sqrt(domain.integral(['du^2 dV', '(du^2 + ∇_k(du) ∇_k(du)) dV'] @ ns, degree=7)).eval(**args)
-        rate, offset = linreg.add(numpy.log(ndofs), numpy.log(error))
-        treelog.user(f'ndofs: {ndofs}, L2 error: {error[0]:.2e} ({rate[0]:.2f}), H1 error: {error[1]:.2e} ({rate[1]:.2f})')
+        treelog.user(f'errors at {ndofs} dofs: L2 {error[0]:.2e}, H1 {error[1]:.2e}')
+        linreg[numpy.log(ndofs)] = numpy.log(error)
+        if irefine:
+            treelog.user(f'error convergence rates: L2 {linreg.rate[0]:.2f} (optimal {-(degree+1)/2}), H1 {linreg.rate[1]:.2f} (optimal {-degree/2})')
 
         bezier = domain.sample('bezier', 9)
         xsmp, usmp, dusmp = bezier.eval(['x_i', 'u', 'du'] @ ns, **args)
@@ -86,6 +88,49 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
         export.triplot('err.png', xsmp, dusmp, tri=bezier.tri, hull=bezier.hull)
 
     return error, args['u']
+
+
+class LinearRegressor:
+    '''
+    Linear regression facilitator.
+
+    For a growing collection of (x, y) data points, this class continuously
+    computes the linear trend of the form y = offset + rate * x that has the
+    least square error. Data points are added using setitem:
+
+    >>> linreg = LinearRegressor()
+    >>> linreg[1] = 10
+    >>> linreg[2] = 5
+    >>> linreg.offset
+    15
+    >>> linreg.rate
+    -5
+
+    Rather than storing the sequence, this class continuously updates the sums
+    and inner products required to compute the offset and rate. The optional
+    ``bias`` argument can be used to weight every newly added point `2**bias`
+    times that of the previous, so as to emphasize focus on the tail of the
+    sequence.'''
+
+    def __init__(self, bias=0):
+        self.n = self.x = self.y = self.xx = self.xy = 0.
+        self.w = .5**bias
+
+    def __setitem__(self, x, y):
+        self.n = self.n * self.w + 1
+        self.x = self.x * self.w + x
+        self.y = self.y * self.w + y
+        self.xx = self.xx * self.w + x * x
+        self.xy = self.xy * self.w + x * y
+
+    @property
+    def rate(self):
+        return (self.n * self.xy - self.x * self.y) / (self.n * self.xx - self.x**2)
+
+    @property
+    def offset(self):
+        return (self.xx * self.y - self.x * self.xy) / (self.n * self.xx - self.x**2)
+
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line. For
