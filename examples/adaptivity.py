@@ -76,7 +76,7 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
         args = solver.solve_linear('u:v', res, constrain=cons)
 
         ndofs = len(args['u'])
-        error = numpy.sqrt(domain.integral(['du du dV', '∇_k(du) ∇_k(du) dV'] @ ns, degree=7)).eval(**args)
+        error = numpy.sqrt(domain.integral(['du^2 dV', '(du^2 + ∇_k(du) ∇_k(du)) dV'] @ ns, degree=7)).eval(**args)
         rate, offset = linreg.add(numpy.log(ndofs), numpy.log(error))
         treelog.user(f'ndofs: {ndofs}, L2 error: {error[0]:.2e} ({rate[0]:.2f}), H1 error: {error[1]:.2e} ({rate[1]:.2f})')
 
@@ -113,7 +113,7 @@ class test(testing.TestCase):
         with self.subTest('L2-error'):
             self.assertAlmostEqual(error[0], 0.00065, places=5)
         with self.subTest('H1-error'):
-            self.assertAlmostEqual(error[1], 0.03461, places=5)
+            self.assertAlmostEqual(error[1], 0.03462, places=5)
         with self.subTest('left-hand side'):
             self.assertAlmostEqual64(u, '''
                 eNo1j6FrQmEUxT8RBi4KllVfMsl3z/nK4zEmLC6bhsKCw2gSw5IPFsymGbZiWnr+By8Ii7Yhsk3BMtC4
@@ -129,7 +129,7 @@ class test(testing.TestCase):
         with self.subTest('L2-error'):
             self.assertAlmostEqual(error[0], 0.00138, places=5)
         with self.subTest('H1-error'):
-            self.assertAlmostEqual(error[1], 0.05324, places=5)
+            self.assertAlmostEqual(error[1], 0.05326, places=5)
         with self.subTest('left-hand side'):
             self.assertAlmostEqual64(u, '''
                 eNprMV1oesqU2VTO1Nbko6myWbhpq+kckwST90avjRgYzptYm+YYMwBBk3GQWavZb1NXs2+mm83um1WY
@@ -143,7 +143,7 @@ class test(testing.TestCase):
         with self.subTest('L2-error'):
             self.assertAlmostEqual(error[0], 0.00450, places=5)
         with self.subTest('H1-error'):
-            self.assertAlmostEqual(error[1], 0.11683, places=5)
+            self.assertAlmostEqual(error[1], 0.11692, places=5)
         with self.subTest('left-hand side'):
             self.assertAlmostEqual64(u, '''
                 eNprMT1u6mQyxUTRzMCUAQhazL6b3jNrMYPxp5iA5FtMD+lcMgDxHa4aXzS+6HDV+fKO85cMnC8zMBzS
