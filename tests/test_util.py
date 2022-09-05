@@ -1,5 +1,5 @@
-from nutils import *
-from nutils.testing import *
+from nutils import util, warnings
+from nutils.testing import TestCase, parametrize, requires
 import tempfile
 import pathlib
 import os
@@ -8,6 +8,8 @@ import contextlib
 import inspect
 import treelog
 import datetime
+import numpy
+import sys
 
 
 @parametrize

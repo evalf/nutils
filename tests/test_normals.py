@@ -1,5 +1,6 @@
-from nutils import *
-from nutils.testing import *
+from nutils import function, mesh
+from nutils.testing import TestCase, parametrize
+import numpy
 
 
 @parametrize

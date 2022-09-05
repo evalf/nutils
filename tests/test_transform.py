@@ -1,5 +1,6 @@
-from nutils import *
-from nutils.testing import *
+from nutils import transform, evaluable, numeric
+from nutils.testing import TestCase
+import numpy
 
 
 class specialcases(TestCase):

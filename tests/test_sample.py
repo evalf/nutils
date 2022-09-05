@@ -1,12 +1,11 @@
-from nutils import *
-import random
-import itertools
-import functools
-import warnings as _builtin_warnings
-from nutils.testing import *
-from nutils.sample import Sample
+from nutils import element, mesh, function, util, evaluable, warnings, sparse
+from nutils.testing import TestCase, parametrize
+from nutils.sample import Sample, eval_integrals, eval_integrals_sparse
 from nutils.pointsseq import PointsSequence
 from nutils.transformseq import IndexTransforms
+import functools
+import warnings as _builtin_warnings
+import numpy
 
 
 class Common:
@@ -469,12 +468,12 @@ class integral(TestCase):
             places=15)
 
     def test_eval_integrals(self):
-        v, = sample.eval_integrals(self.topo.integral('basis_n d:x' @ self.ns, degree=2))
+        v, = eval_integrals(self.topo.integral('basis_n d:x' @ self.ns, degree=2))
         self.assertAllAlmostEqual(self.topo.integrate('basis_n d:x' @ self.ns, degree=2), v, places=15)
 
     def test_eval_integrals_sparse(self):
         with self.assertWarns(warnings.NutilsDeprecationWarning):
-            data, = sample.eval_integrals_sparse(self.topo.integral('basis_n d:x' @ self.ns, degree=2))
+            data, = eval_integrals_sparse(self.topo.integral('basis_n d:x' @ self.ns, degree=2))
         self.assertAllAlmostEqual(self.topo.integrate('basis_n d:x' @ self.ns, degree=2), sparse.toarray(data), places=15)
 
     def test_args(self):

@@ -1,7 +1,6 @@
-from nutils import *
-from nutils.testing import *
+from nutils import element, mesh, topology, function, transformseq, evaluable, transform, util
+from nutils.testing import TestCase, parametrize
 from nutils.elementseq import References
-from nutils.topology import Topology
 import numpy
 import copy
 import sys
@@ -139,19 +138,19 @@ class CommonTests(CommonAssertions):
 
     def test_invalid_intersections(self):
         with self.assertRaises(ValueError):
-            self.topo & Topology.empty(tuple('other' + space for space in self.desired_spaces), self.desired_space_dims, self.desired_ndims)
+            self.topo & topology.Topology.empty(tuple('other' + space for space in self.desired_spaces), self.desired_space_dims, self.desired_ndims)
         with self.assertRaises(ValueError):
-            self.topo & Topology.empty(self.desired_spaces, tuple(dim + 1 for dim in self.desired_space_dims), self.desired_ndims)
+            self.topo & topology.Topology.empty(self.desired_spaces, tuple(dim + 1 for dim in self.desired_space_dims), self.desired_ndims)
         with self.assertRaises(ValueError):
-            self.topo & Topology.empty(self.desired_spaces, self.desired_space_dims, self.desired_ndims + 1)
+            self.topo & topology.Topology.empty(self.desired_spaces, self.desired_space_dims, self.desired_ndims + 1)
 
     def test_invalid_unions(self):
         with self.assertRaises(ValueError):
-            self.topo | Topology.empty(tuple('other' + space for space in self.desired_spaces), self.desired_space_dims, self.desired_ndims)
+            self.topo | topology.Topology.empty(tuple('other' + space for space in self.desired_spaces), self.desired_space_dims, self.desired_ndims)
         with self.assertRaises(ValueError):
-            self.topo | Topology.empty(self.desired_spaces, tuple(dim + 1 for dim in self.desired_space_dims), self.desired_ndims)
+            self.topo | topology.Topology.empty(self.desired_spaces, tuple(dim + 1 for dim in self.desired_space_dims), self.desired_ndims)
         with self.assertRaises(ValueError):
-            self.topo | Topology.empty(self.desired_spaces, self.desired_space_dims, self.desired_ndims + 1)
+            self.topo | topology.Topology.empty(self.desired_spaces, self.desired_space_dims, self.desired_ndims + 1)
 
     def test_select(self):
         if self.desired_ndims == 0:
@@ -235,7 +234,7 @@ class NewTopologyRefine(TestCase, CommonAssertions):
     def setUp(self):
         super().setUp()
 
-        class TestTopo(Topology):
+        class TestTopo(topology.Topology):
             def __init__(self, real):
                 self.real = real
                 super().__init__(real.spaces, real.space_dims, real.references)
@@ -291,7 +290,7 @@ class NewTopologyTake(TestCase, CommonAssertions):
     def setUp(self):
         super().setUp()
 
-        class TestTopo(Topology):
+        class TestTopo(topology.Topology):
             def __init__(self, real):
                 self.real = real
                 super().__init__(real.spaces, real.space_dims, real.references)
@@ -416,7 +415,7 @@ class NewEmpty(TestCase, CommonTests, ConformingTests):
         self.desired_spaces = 'a', 'b'
         self.desired_space_dims = 1, 2
         self.desired_ndims = 3
-        self.topo = Topology.empty(self.desired_spaces, self.desired_space_dims, self.desired_ndims)
+        self.topo = topology.Topology.empty(self.desired_spaces, self.desired_space_dims, self.desired_ndims)
         self.geom = numpy.concatenate([function.rootcoords(space, dim) for space, dim in zip(self.desired_spaces, self.desired_space_dims)])
         self.desired_nelems = 0
         self.desired_volumes = []
@@ -452,7 +451,7 @@ class NewDisjointUnion(TestCase, CommonTests, ConformingTests):
     def setUp(self):
         super().setUp()
         topo, self.geom = mesh.newrectilinear([8, 3], spaces='XY')
-        self.topo = Topology.disjoint_union(topo.slice(slice(0, 3), 0), topo.slice(slice(4, 8), 0).slice(slice(0, 2), 1))
+        self.topo = topology.Topology.disjoint_union(topo.slice(slice(0, 3), 0), topo.slice(slice(4, 8), 0).slice(slice(0, 2), 1))
         self.desired_spaces = 'X', 'Y'
         self.desired_space_dims = 1, 1
         self.desired_ndims = 2
@@ -491,7 +490,7 @@ class NewDisjointUnion(TestCase, CommonTests, ConformingTests):
 
     def test_trim(self):
         topo, x = mesh.line([0, 1, 2, 3], space='X')
-        topo = Topology.disjoint_union(topo.slice(slice(0, 1), 0), topo.slice(slice(2, 3), 0))
+        topo = topology.Topology.disjoint_union(topo.slice(slice(0, 1), 0), topo.slice(slice(2, 3), 0))
         self.assertEqual(as_rounded_list(topo.trim(x-0.5, maxrefine=0).volume(x[None])), 1.5)
         self.assertEqual(as_rounded_list(topo.trim(x-2.5, maxrefine=0).volume(x[None])), 0.5)
         self.assertEqual(as_rounded_list(topo.trim(0.5-x, maxrefine=0).volume(x[None])), 0.5)
@@ -577,7 +576,7 @@ class NewMul(TestCase, CommonTests, ConformingTests):
 
     def test_common_spaces(self):
         with self.assertRaisesRegex(ValueError, '^Cannot multiply'):
-            Topology.empty(['X'], [1], 1) * Topology.empty(['X', 'Y'], [1, 2], 3)
+            topology.Topology.empty(['X'], [1], 1) * topology.Topology.empty(['X', 'Y'], [1, 2], 3)
 
     def test_basis(self):
         self.assertEqual(len(self.topo.basis('spline', degree=1)), 3*4)
@@ -732,7 +731,7 @@ structure(ndims=3, refine=1)
 class picklability(TestCase):
 
     def assert_pickle_dump_load(self, data):
-        script = b'from nutils import *\nimport pickle, base64\npickle.loads(base64.decodebytes(b"""' \
+        script = b'import pickle, base64\npickle.loads(base64.decodebytes(b"""' \
             + base64.encodebytes(pickle.dumps(data)) \
             + b'"""))'
         p = subprocess.Popen([sys.executable], stdin=subprocess.PIPE)

@@ -1,6 +1,6 @@
-from nutils import *
-from nutils.testing import *
-import itertools
+from nutils import element, util
+from nutils.testing import TestCase, parametrize
+import numpy
 
 
 @parametrize

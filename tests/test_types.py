@@ -1,16 +1,16 @@
-from nutils.testing import *
+from nutils.testing import TestCase, parametrize
 import nutils.types
 import inspect
 import pickle
 import itertools
 import ctypes
-import stringly
 import tempfile
-import io
 import os
 import numpy
 import weakref
 import contextlib
+import unittest
+import sys
 
 
 class apply_annotations(TestCase):
