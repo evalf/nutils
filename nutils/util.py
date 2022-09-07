@@ -756,6 +756,25 @@ def set_stdoutlog(richoutput: bool = sys.stdout.isatty(), verbose: int = 4): # p
     return treelog.set(stdoutlog)
 
 
+def name_of_main():
+    '''Best-effort routine to establish the name of the running program.
+
+    The name is constructed from the __main__ module. Since this module is
+    loaded late, name_of_main cannot be used during module initialization.'''
+
+    import __main__
+    name = getattr(__main__, '__package__', None)
+    if not name:
+        path = getattr(__main__, '__file__', None)
+        if not path:
+            name = 'interactive'
+        else:
+            name = os.path.basename(__main__.__file__)
+            if name.endswith('.py'):
+                name = name[:-3]
+    return name
+
+
 @contextlib.contextmanager
 @defaults_from_env
 def add_htmllog(outrootdir: str = '~/public_html', outrooturi: str = '', scriptname: str = os.path.basename(sys.argv[0]), outdir: str = '', outuri: str = ''):
