@@ -2,7 +2,8 @@
 The util module provides a collection of general purpose methods.
 """
 
-from . import numeric
+from . import numeric, warnings
+import stringly
 import sys
 import os
 import numpy
@@ -15,6 +16,8 @@ import pathlib
 import ctypes
 import io
 import contextlib
+import treelog
+import datetime
 
 supports_outdirfd = os.open in os.supports_dir_fd and os.listdir in os.supports_fd
 
@@ -437,36 +440,40 @@ def binaryfile(path):
     raise TypeError('binaryfile requires a path-like or file-like argument')
 
 
-class settable:
-    '''Context-switchable data container.
+def set_current(f):
+    '''Decorator for setting global state.
 
-    A mutable container for a general Python object, which can be changed by
-    entering the ``sets`` context. The current value can be accessed via the
-    ``value`` attribute.
+    The decorator turns a function into a context that holds the return value
+    in its ``.current`` attribute. All function arguments are required to have
+    a default value, and the corresponding return value is the initial value of
+    the ``.current`` attribute.
 
-    >>> myprop = settable(2)
-    >>> myprop.value
-    2
-    >>> with myprop.sets(3):
-    ...   myprop.value
-    3
-    >>> myprop.value
-    2
+    Example:
+
+    >>> @set_current
+    ... def state(x=1, y=2):
+    ...     return f'x={x}, y={y}'
+    >>> state.current
+    'x=1, y=2'
+    >>> with state(10):
+    ...     state.current
+    'x=10, y=2'
+    >>> state.current
+    'x=1, y=2'
     '''
 
-    __slots__ = 'value'
-
-    def __init__(self, value=None):
-        self.value = value
-
+    @functools.wraps(f)
     @contextlib.contextmanager
-    def sets(self, value):
-        oldvalue = self.value
-        self.value = value
+    def set_current(*args, **kwargs):
+        previous = set_current.current
+        set_current.current = f(*args, **kwargs)
         try:
             yield
         finally:
-            self.value = oldvalue
+            set_current.current = previous
+
+    set_current.current = f()
+    return set_current
 
 
 def index(sequence, item):
@@ -518,4 +525,348 @@ except AttributeError:  # python < 3.8
             return val
         return property(wrapped)
 
-# vim:sw=2:sts=2:et
+
+def defaults_from_env(f):
+    '''Decorator for changing function defaults based on environment.
+
+    This decorator searches the environment for variables matching the pattern
+    ``NUTILS_MYPARAM``, where ``myparam`` is a parameter of the decorated
+    function. Only parameters with type annotation and a default value are
+    considered, and the string value is deserialized using `Stringly
+    <https://pypi.org/project/stringly/>`_. In case deserialization fails, a
+    warning is emitted and the original default is maintained.'''
+
+    sig = inspect.signature(f)
+    params = []
+    changed = False
+    for param in sig.parameters.values():
+        envname = f'NUTILS_{param.name.upper()}'
+        if envname in os.environ and param.annotation != param.empty and param.default != param.empty:
+            try:
+                v = stringly.loads(param.annotation, os.environ[envname])
+            except Exception as e:
+                warnings.warn(f'ignoring environment variable {envname}: {e}')
+            else:
+                param = param.replace(default=v)
+                changed = True
+        params.append(param)
+    if not changed:
+        return f
+    sig = sig.replace(parameters=params)
+    @functools.wraps(f)
+    def defaults_from_env(*args, **kwargs):
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+        return f(*bound.args, **bound.kwargs)
+    defaults_from_env.__signature__ = sig
+    return defaults_from_env
+
+
+def format_timedelta(d):
+    m, s = divmod(int(d.total_seconds()), 60)
+    if m >= 60:
+        m = '{}:{:02d}'.format(*divmod(m, 60))
+    return f'{m}:{s:02d}'
+
+
+@contextlib.contextmanager
+def timeit():
+    '''Context that logs begin time, end time, and duration.'''
+
+    t0 = datetime.datetime.now()
+    treelog.info(f'start {t0:%Y-%m-%d %H:%M:%S}')
+    try:
+        yield
+    finally:
+        te = datetime.datetime.now()
+        treelog.info(f'finish {te:%Y-%m-%d %H:%M:%S}, elapsed {format_timedelta(te-t0)}')
+
+
+class timer:
+    '''Timer that returns elapsed seconds as string representation.'''
+
+    def __init__(self):
+        self.t0 = datetime.datetime.now()
+
+    def __str__(self):
+        return format_timedelta(datetime.datetime.now() - self.t0)
+
+
+class memory: # pragma: no cover
+    '''Memory usage of the current process as string representation.'''
+
+    def __init__(self):
+        import psutil
+        self.total = psutil.virtual_memory().total
+        self.process = psutil.Process()
+
+    def __str__(self):
+        rss = self.process.memory_info().rss
+        return f'{rss>>20:,}M ({100*rss/self.total:.0f}%)'
+
+
+def in_context(context):
+    '''Decorator to run a function in a context.
+
+    Context arguments are added as position-only arguments to the signature of
+    the decorated function. Any overlap between parameters of the function and
+    context results in a ``ValueError``.'''
+
+    params = []
+    for param in inspect.signature(context).parameters.values():
+        if param.kind == param.POSITIONAL_OR_KEYWORD:
+            param = param.replace(kind=param.KEYWORD_ONLY)
+            # kind serves to make sure that we can always append parameters to the existing signature
+        elif param.kind != param.KEYWORD_ONLY:
+            raise Exception(f'context parameter {param.name!r} cannot be specified as keyword argument')
+        params.append(param)
+
+    def in_context_wrapper(f):
+
+        @functools.wraps(f)
+        def in_context(*args, **kwargs):
+            with context(**{param.name: kwargs.pop(param.name) for param in params if param.name in kwargs}):
+                return f(*args, **kwargs)
+
+        sig = inspect.signature(f)
+        in_context.__signature__ = sig.replace(parameters=(*sig.parameters.values(), *params))
+        return in_context
+
+    return in_context_wrapper
+
+
+def log_arguments(f):
+    '''Decorator to log a function's arguments.
+
+    The arguments are logged in the 'arguments' context. ``Stringly.loads``
+    will be used whenever an argument supports it, transparently falling back
+    on ``str`` otherwise.'''
+
+    sig = inspect.signature(f)
+
+    @functools.wraps(f)
+    def log_arguments(*args, **kwargs):
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+        with treelog.context('arguments'):
+            for k, v in bound.arguments.items():
+                try:
+                    s = stringly.dumps(sig.parameters[k].annotation, v)
+                except:
+                    s = str(v)
+                treelog.info(f'{k}={s}')
+        return f(*args, **kwargs)
+
+    return log_arguments
+
+
+@contextlib.contextmanager
+@defaults_from_env
+def post_mortem(pdb: bool = False): # pragma: no cover
+    '''Context to activate post mortem debugging upon error.'''
+
+    try:
+        yield
+    except Exception as e:
+        if pdb:
+            print(f'{type(e).__name__}: {e}')
+            from pdb import post_mortem
+            post_mortem()
+        raise
+
+
+@contextlib.contextmanager
+@defaults_from_env
+def log_traceback(gracefulexit: bool = True):
+    '''Context to log traceback information to the active logger.
+
+    Afterwards ``SystemExit`` is raised to avoid reprinting of the traceback by
+    Python's default error handler.'''
+
+    import traceback
+
+    if not gracefulexit:
+        yield
+        return
+
+    try:
+        yield
+    except SystemExit:
+        raise
+    except:
+        exc = traceback.TracebackException(*sys.exc_info())
+        treelog.error(''.join(exc.format_exception_only()).rstrip())
+        for s in exc.stack.format():
+            treelog.debug(s.rstrip())
+        raise SystemExit(1)
+
+
+@contextlib.contextmanager
+def signal_handler(sig, handler):
+    '''Context to temporarily replace a signal handler.
+
+    The original handler is restored upon exit. A handler value of None
+    disables the signal handler.'''
+
+    import signal
+
+    sig = signal.Signals[sig]
+    oldhandler = signal.signal(sig, handler or signal.SIG_IGN)
+    try:
+        yield
+    finally:
+        signal.signal(sig, oldhandler)
+
+
+def trap_sigint(): # pragma: no cover
+    '''Context to handle the SIGINT signal with a quit/continue/debug menu.'''
+
+    @signal_handler('SIGINT', None)
+    def handler(sig, frame):
+        while True:
+            answer = input('interrupted. quit, continue or start debugger? [q/c/d]')
+            if answer == 'q':
+                raise KeyboardInterrupt
+            if answer == 'c' or answer == 'd':
+                break
+        if answer == 'd':  # after break, to minimize code after set_trace
+            from pdb import Pdb
+            pdb = Pdb()
+            pdb.message('tracing activated; type "c" to continue normal execution.')
+            pdb.set_trace(frame)
+
+    return signal_handler('SIGINT', handler)
+
+
+@defaults_from_env
+def set_stdoutlog(richoutput: bool = sys.stdout.isatty(), verbose: int = 4): # pragma: no cover
+    '''Context to replace the active logger with a StdoutLog or RichOutputLog.'''
+
+    try:
+        Level = treelog.proto.Level
+    except AttributeError:  # treelog version < 1.0b6
+        levels = 4, 3, 2, 1
+    else:
+        levels = Level.error, Level.warning, Level.user, Level.info
+
+    stdoutlog = treelog.RichOutputLog() if richoutput else treelog.StdoutLog()
+    if 0 <= verbose-1 < len(levels):
+        stdoutlog = treelog.FilterLog(stdoutlog, minlevel=levels[verbose-1])
+
+    return treelog.set(stdoutlog)
+
+
+@contextlib.contextmanager
+@defaults_from_env
+def add_htmllog(outrootdir: str = '~/public_html', outrooturi: str = '', scriptname: str = os.path.basename(sys.argv[0]), outdir: str = '', outuri: str = ''):
+    '''Context to add a HtmlLog to the active logger.'''
+
+    import html, base64, bottombar
+
+    # the outdir argument exists for backwards compatibility; outrootdir
+    # and scriptname are ignored if outdir is defined
+    if outdir:
+        outdir = pathlib.Path(outdir).expanduser()
+    else:
+        outdir = pathlib.Path(outrootdir).expanduser()
+        if scriptname:
+            outdir /= scriptname
+
+    # the outuri argument exists for backwards compatibility; outrooturi is
+    # ignored if outuri is defined
+    if not outuri:
+        outuri = outrooturi.rstrip('/') + '/' + scriptname if outrooturi else outdir.as_uri()
+
+    nutils_logo = (
+      '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" style="vertical-align: middle;" width="24" height="24" viewBox="-12 -12 24 24">'
+        '<path d="M -9 3 v -6 a 6 6 0 0 1 12 0 v 6 M 9 -3 v 6 a 6 6 0 0 1 -12 0 v -6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>'
+      '</svg>')
+    favicon = 'data:image/svg+xml;base64,' + base64.b64encode(b'<?xml version="1.0" encoding="UTF-8" standalone="no"?>' + nutils_logo.encode()).decode()
+    htmltitle = '<a href="http://www.nutils.org">{}</a> {}'.format(nutils_logo, html.escape(scriptname))
+
+    with treelog.HtmlLog(outdir, title=scriptname, htmltitle=htmltitle, favicon=favicon) as htmllog:
+        loguri = outuri + '/' + htmllog.filename
+        try:
+            with treelog.add(htmllog), bottombar.add(loguri, label='writing log to'):
+                yield
+        except Exception as e:
+            with treelog.set(htmllog):
+                treelog.error(f'{e.__class__.__name__}: {e}')
+            raise
+        finally:
+            treelog.info(f'log written to: {loguri}')
+
+
+def cli(f, *, argv=None):
+    '''Call a function using command line arguments.'''
+
+    import textwrap
+
+    progname, *args = argv or sys.argv
+    doc = stringly.util.DocString(f)
+    serializers = {}
+    booleans = set()
+    mandatory = set()
+
+    for param in inspect.signature(f).parameters.values():
+        T = param.annotation
+        if T == param.empty and param.default != param.empty:
+            T = type(param.default)
+        if T == param.empty:
+            sys.exit(f'error: cannot determine type for argument {param.name!r}')
+        try:
+            s = stringly.serializer.get(T)
+        except ValueError:
+            sys.exit(f'error: cannot deserialize argument {param.name!r} of type {T}')
+        if param.kind not in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY):
+            sys.exit(f'error: argument {param.name!r} is positional-only')
+        if param.default == param.empty and param.name not in doc.defaults:
+            mandatory.add(param.name)
+        if T == bool:
+            booleans.add(param.name)
+        serializers[param.name] = s
+
+    usage = [f'USAGE: {progname}']
+    if doc.presets:
+        usage.append(f'["|".join(doc.presets)]')
+    usage.extend(('{}' if arg in mandatory else '[{}]').format(f'{arg}={arg[0].upper()}') for arg in serializers)
+    usage = '\n'.join(textwrap.wrap(' '.join(usage), subsequent_indent='  '))
+
+    if '-h' in args or '--help' in args:
+        help = [usage]
+        if doc.text:
+            help.append('')
+            help.extend(textwrap.wrap(doc.text))
+        if doc.argdocs:
+            help.append('')
+            for k, d in doc.argdocs.items():
+                if k in serializers:
+                    help.append(f'{k} (default: {doc.defaults[k]})' if k in doc.defaults else k)
+                    help.extend(textwrap.wrap(doc.argdocs[k], initial_indent='    ', subsequent_indent='    '))
+        sys.exit('\n'.join(help))
+
+    kwargs = doc.defaults
+    if args and args[0] in doc.presets:
+        kwargs.update(doc.presets[args.pop(0)])
+    for arg in args:
+        name, sep, value = arg.partition('=')
+        kwargs[name] = value if sep else 'yes' if name in booleans else None
+
+    for name, s in kwargs.items():
+        if name not in serializers:
+            sys.exit(f'{usage}\n\nError: invalid argument {name!r}')
+        if s is None:
+            sys.exit(f'{usage}\n\nError: argument {name!r} requires a value')
+        try:
+            value = serializers[name].loads(s)
+        except Exception as e:
+            sys.exit(f'{usage}\n\nError: invalid value for {name}: {e}')
+        kwargs[name] = value
+
+    for name in mandatory.difference(kwargs):
+        sys.exit(f'{usage}\n\nError: missing argument {name}')
+
+    return f(**kwargs)
+
+
+# vim:sw=4:sts=4:et

@@ -6,6 +6,8 @@ import os
 import io
 import contextlib
 import inspect
+import treelog
+import datetime
 
 
 @parametrize
@@ -246,3 +248,149 @@ class gather(TestCase):
     def test(self):
         items = ('z',1), ('a', 2), ('a', 3), ('z', 4), ('b', 5)
         self.assertEqual(list(util.gather(items)), [('z', [1,4]), ('a', [2,3]), ('b', [5])])
+
+
+class set_current(TestCase):
+
+    def test(self):
+
+        @util.set_current
+        def f(x=1):
+            return x
+
+        self.assertEqual(f.current, 1)
+        with f(2):
+            self.assertEqual(f.current, 2)
+        self.assertEqual(f.current, 1)
+
+
+class defaults_from_env(TestCase):
+
+    def setUp(self):
+        self.old = os.environ.pop('NUTILS_TEST_ARG', None)
+
+    def tearDown(self):
+        if self.old:
+            os.environ['NUTILS_TEST_ARG'] = self.old
+        else:
+            os.environ.pop('NUTILS_TEST_ARG', None)
+
+    def check_retvals(self, expect):
+        @util.defaults_from_env
+        def f(test_arg: int = 1):
+            return test_arg
+        self.assertEqual(f(-1), -1)
+        self.assertEqual(f(), expect)
+
+    def test_no_env(self):
+        self.check_retvals(1)
+
+    def test_valid_env(self):
+        os.environ['NUTILS_TEST_ARG'] = '2'
+        self.check_retvals(2)
+
+    def test_invalid_env(self):
+        os.environ['NUTILS_TEST_ARG'] = 'x'
+        with self.assertWarns(warnings.NutilsWarning):
+            self.check_retvals(1)
+
+
+class time(TestCase):
+
+    def assertFormatEqual(self, seconds, formatted):
+        self.assertEqual(util.format_timedelta(datetime.timedelta(seconds=seconds)), formatted)
+
+    def test_timedelta(self):
+        self.assertFormatEqual(0, '0:00')
+        self.assertFormatEqual(1, '0:01')
+        self.assertFormatEqual(59, '0:59')
+        self.assertFormatEqual(60, '1:00')
+        self.assertFormatEqual(3599, '59:59')
+        self.assertFormatEqual(3600, '1:00:00')
+
+    def test_timeit(self):
+        with self.assertLogs('nutils') as cm, util.timeit():
+            treelog.error('test')
+        self.assertEqual(len(cm.output), 3)
+        self.assertEqual(cm.output[0][:17], 'INFO:nutils:start')
+        self.assertEqual(cm.output[1], 'ERROR:nutils:test')
+        self.assertEqual(cm.output[2][:18], 'INFO:nutils:finish')
+
+    def test_timer(self):
+        self.assertEqual(str(util.timer()), '0:00')
+
+
+class in_context(TestCase):
+
+    def test(self):
+
+        x_value = None
+
+        @contextlib.contextmanager
+        def c(x: int):
+            nonlocal x_value
+            x_value = x
+            yield
+
+        @util.in_context(c)
+        def f(s: str):
+            return s
+
+        retval = f('test', x=10)
+
+        self.assertEqual(retval, 'test')
+        self.assertEqual(x_value, 10)
+
+
+class log_arguments(TestCase):
+
+    def test(self):
+
+        @util.log_arguments
+        def f(foo, bar):
+            pass
+
+        with self.assertLogs('nutils') as cm:
+            f('x', 10)
+
+        self.assertEqual(cm.output, ['INFO:nutils:arguments > foo=x', 'INFO:nutils:arguments > bar=10'])
+
+
+class log_traceback(TestCase):
+
+    def test(self):
+
+        with self.assertRaises(SystemExit), self.assertLogs('nutils') as cm, util.log_traceback(gracefulexit=True):
+            1/0
+
+        self.assertEqual(cm.output, ['ERROR:nutils:ZeroDivisionError: division by zero'])
+
+
+class signal_handler(TestCase):
+
+    def test(self):
+
+        try:
+            from signal import SIGABRT, raise_signal
+        except ImportError:
+            raise self.skipTest('test is not possible on this platform')
+
+        caught = False
+        def f(sig, frame):
+            nonlocal caught
+            caught = True
+
+        with util.signal_handler('SIGABRT', f):
+            raise_signal(SIGABRT)
+
+        self.assertTrue(caught)
+
+
+class add_htmllog(TestCase):
+
+    def test(self):
+
+        with tempfile.TemporaryDirectory() as outdir:
+            with util.add_htmllog(outdir=outdir):
+                treelog.info('hi there')
+            self.assertTrue(os.path.isfile(os.path.join(outdir, 'log.html')))

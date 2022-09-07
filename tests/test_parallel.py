@@ -19,8 +19,8 @@ class Test(testing.TestCase):
 
     def test_maxprocs(self):
         with parallel.maxprocs(4):
-            self.assertEqual(parallel._maxprocs.value, 4)
-        self.assertEqual(parallel._maxprocs.value, 3)
+            self.assertEqual(parallel.maxprocs.current, 4)
+        self.assertEqual(parallel.maxprocs.current, 3)
 
     def test_fork(self):
         mask = multiprocessing.RawValue('i', 0)

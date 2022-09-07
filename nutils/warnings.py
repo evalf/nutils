@@ -1,4 +1,4 @@
-import warnings
+import warnings, contextlib
 
 
 class NutilsWarning(Warning):
@@ -21,20 +21,14 @@ def deprecation(message):
     warnings.warn(message, NutilsDeprecationWarning, stacklevel=2)
 
 
-class via:
+@contextlib.contextmanager
+def via(print):
     '''context manager to set/reset warnings.showwarning'''
 
-    def __init__(self, print):
-        self.print = print
+    oldshowwarning = warnings.showwarning
+    warnings.showwarning = lambda message, category, filename, lineno, *args: print(f'{category.__name__}: {message}\n  In {filename}:{lineno}')
+    yield
+    warnings.showwarning = oldshowwarning
 
-    def __enter__(self):
-        self.oldshowwarning = warnings.showwarning
-        warnings.showwarning = self.showwarning
-
-    def __exit__(self, *args):
-        warnings.showwarning = self.oldshowwarning
-
-    def showwarning(self, message, category, filename, lineno, *args):
-        self.print('{}: {}\n  In {}:{}'.format(category.__name__, message, filename, lineno))
 
 # vim:sw=2:sts=2:et
