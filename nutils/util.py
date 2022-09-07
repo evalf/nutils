@@ -777,19 +777,20 @@ def name_of_main():
 
 @contextlib.contextmanager
 @defaults_from_env
-def add_htmllog(outrootdir: str = '~/public_html', outrooturi: str = '', scriptname: str = os.path.basename(sys.argv[0]), outdir: str = '', outuri: str = ''):
+def add_htmllog(outrootdir: str = '~/public_html', outrooturi: str = '', scriptname: str = '', outdir: str = '', outuri: str = ''):
     '''Context to add a HtmlLog to the active logger.'''
 
     import html, base64, bottombar
+
+    if not scriptname and (not outdir or outrooturi and not outuri):
+        scriptname = name_of_main()
 
     # the outdir argument exists for backwards compatibility; outrootdir
     # and scriptname are ignored if outdir is defined
     if outdir:
         outdir = pathlib.Path(outdir).expanduser()
     else:
-        outdir = pathlib.Path(outrootdir).expanduser()
-        if scriptname:
-            outdir /= scriptname
+        outdir = pathlib.Path(outrootdir).expanduser() / scriptname
 
     # the outuri argument exists for backwards compatibility; outrooturi is
     # ignored if outuri is defined
