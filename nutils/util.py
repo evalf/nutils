@@ -828,7 +828,7 @@ def cli(f, *, argv=None):
 
     usage = [f'USAGE: {progname}']
     if doc.presets:
-        usage.append(f'["|".join(doc.presets)]')
+        usage.append(f'[{"|".join(doc.presets)}]')
     usage.extend(('{}' if arg in mandatory else '[{}]').format(f'{arg}={arg[0].upper()}') for arg in serializers)
     usage = '\n'.join(textwrap.wrap(' '.join(usage), subsequent_indent='  '))
 
