@@ -813,13 +813,13 @@ def cli(f, *, argv=None):
         if T == param.empty and param.default != param.empty:
             T = type(param.default)
         if T == param.empty:
-            sys.exit(f'error: cannot determine type for argument {param.name!r}')
+            raise Exception(f'cannot determine type for argument {param.name!r}')
         try:
             s = stringly.serializer.get(T)
-        except ValueError:
-            sys.exit(f'error: cannot deserialize argument {param.name!r} of type {T}')
+        except Exception as e:
+            raise Exception(f'stringly cannot deserialize argument {param.name!r} of type {T}') from e
         if param.kind not in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY):
-            sys.exit(f'error: argument {param.name!r} is positional-only')
+            raise Exception(f'argument {param.name!r} is positional-only')
         if param.default == param.empty and param.name not in doc.defaults:
             mandatory.add(param.name)
         if T == bool:
