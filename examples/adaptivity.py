@@ -4,15 +4,18 @@
 # bottom-right quadrant removed (a.k.a. an L-shaped domain) with Dirichlet
 # boundary conditions matching the harmonic function
 #
-# .. math:: \sqrt[3]{x^2 + y^2} \cos\left(\tfrac23 \arctan\frac{y+x}{y-x}\right),
+#     u = (x^2+y^2)^(1/3) cos(arctan2(y+x,y-x)*2/3)
 #
 # shifted by 0.5 such that the origin coincides with the middle of the unit
-# square. This variation of a well known benchmark problem is known to converge
-# suboptimally under uniform refinement due to a singular gradient in the
-# reentrant corner. This script demonstrates that optimal convergence can be
-# restored by using adaptive refinement.
+# square. Note that the function evaluates to zero over the two boundaries
+# bordering the removed quadrant.
+#
+# This benchmark problem is known to converge suboptimally under uniform
+# refinement due to a singular gradient in the reentrant corner. This script
+# demonstrates that optimal convergence rates of -(p+1)/2 for the L2 norm and
+# -p/2 for the H1 norm can be restored by using adaptive refinement.
 
-from nutils import mesh, function, solver, util, export, cli, testing
+from nutils import mesh, function, solver, export, cli, testing
 from nutils.expression_v2 import Namespace
 import numpy
 import treelog
@@ -36,11 +39,13 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
     '''
 
     domain, geom = mesh.unitsquare(2, etype)
+    geom -= .5 # shift domain center to origin
 
-    x, y = geom - .5
+    x, y = geom
     exact = (x**2 + y**2)**(1/3) * numpy.cos(numpy.arctan2(y+x, y-x) * (2/3))
-    domain = domain.trim(exact-1e-15, maxrefine=0)
-    linreg = util.linear_regressor()
+    selection = domain.select(exact, ischeme='gauss1')
+    domain = domain.subset(selection, newboundary='corner')
+    linreg = LinearRegressor(bias=1)
 
     for irefine in treelog.iter.fraction('level', range(nrefine+1)):
 
@@ -61,7 +66,7 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
         ns.uexact = exact
         ns.du = 'u - uexact'
 
-        sqr = domain.boundary['trimmed'].integral('u^2 dS' @ ns, degree=degree*2)
+        sqr = domain.boundary['corner'].integral('u^2 dS' @ ns, degree=degree*2)
         cons = solver.optimize('u,', sqr, droptol=1e-15)
 
         sqr = domain.boundary.integral('du^2 dS' @ ns, degree=7)
@@ -71,9 +76,11 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
         args = solver.solve_linear('u:v', res, constrain=cons)
 
         ndofs = len(args['u'])
-        error = numpy.sqrt(domain.integral(['du du dV', '∇_k(du) ∇_k(du) dV'] @ ns, degree=7)).eval(**args)
-        rate, offset = linreg.add(numpy.log(ndofs), numpy.log(error))
-        treelog.user(f'ndofs: {ndofs}, L2 error: {error[0]:.2e} ({rate[0]:.2f}), H1 error: {error[1]:.2e} ({rate[1]:.2f})')
+        error = numpy.sqrt(domain.integral(['du^2 dV', '(du^2 + ∇_k(du) ∇_k(du)) dV'] @ ns, degree=7)).eval(**args)
+        treelog.user(f'errors at {ndofs} dofs: L2 {error[0]:.2e}, H1 {error[1]:.2e}')
+        linreg[numpy.log(ndofs)] = numpy.log(error)
+        if irefine:
+            treelog.user(f'error convergence rates: L2 {linreg.rate[0]:.2f} (optimal {-(degree+1)/2}), H1 {linreg.rate[1]:.2f} (optimal {-degree/2})')
 
         bezier = domain.sample('bezier', 9)
         xsmp, usmp, dusmp = bezier.eval(['x_i', 'u', 'du'] @ ns, **args)
@@ -81,6 +88,49 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
         export.triplot('err.png', xsmp, dusmp, tri=bezier.tri, hull=bezier.hull)
 
     return error, args['u']
+
+
+class LinearRegressor:
+    '''
+    Linear regression facilitator.
+
+    For a growing collection of (x, y) data points, this class continuously
+    computes the linear trend of the form y = offset + rate * x that has the
+    least square error. Data points are added using setitem:
+
+    >>> linreg = LinearRegressor()
+    >>> linreg[1] = 10
+    >>> linreg[2] = 5
+    >>> linreg.offset
+    15
+    >>> linreg.rate
+    -5
+
+    Rather than storing the sequence, this class continuously updates the sums
+    and inner products required to compute the offset and rate. The optional
+    ``bias`` argument can be used to weight every newly added point `2**bias`
+    times that of the previous, so as to emphasize focus on the tail of the
+    sequence.'''
+
+    def __init__(self, bias=0):
+        self.n = self.x = self.y = self.xx = self.xy = 0.
+        self.w = .5**bias
+
+    def __setitem__(self, x, y):
+        self.n = self.n * self.w + 1
+        self.x = self.x * self.w + x
+        self.y = self.y * self.w + y
+        self.xx = self.xx * self.w + x * x
+        self.xy = self.xy * self.w + x * y
+
+    @property
+    def rate(self):
+        return (self.n * self.xy - self.x * self.y) / (self.n * self.xx - self.x**2)
+
+    @property
+    def offset(self):
+        return (self.xx * self.y - self.x * self.xy) / (self.n * self.xx - self.x**2)
+
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line. For
@@ -108,7 +158,7 @@ class test(testing.TestCase):
         with self.subTest('L2-error'):
             self.assertAlmostEqual(error[0], 0.00065, places=5)
         with self.subTest('H1-error'):
-            self.assertAlmostEqual(error[1], 0.03461, places=5)
+            self.assertAlmostEqual(error[1], 0.03462, places=5)
         with self.subTest('left-hand side'):
             self.assertAlmostEqual64(u, '''
                 eNo1j6FrQmEUxT8RBi4KllVfMsl3z/nK4zEmLC6bhsKCw2gSw5IPFsymGbZiWnr+By8Ii7Yhsk3BMtC4
@@ -124,7 +174,7 @@ class test(testing.TestCase):
         with self.subTest('L2-error'):
             self.assertAlmostEqual(error[0], 0.00138, places=5)
         with self.subTest('H1-error'):
-            self.assertAlmostEqual(error[1], 0.05324, places=5)
+            self.assertAlmostEqual(error[1], 0.05326, places=5)
         with self.subTest('left-hand side'):
             self.assertAlmostEqual64(u, '''
                 eNprMV1oesqU2VTO1Nbko6myWbhpq+kckwST90avjRgYzptYm+YYMwBBk3GQWavZb1NXs2+mm83um1WY
@@ -138,7 +188,7 @@ class test(testing.TestCase):
         with self.subTest('L2-error'):
             self.assertAlmostEqual(error[0], 0.00450, places=5)
         with self.subTest('H1-error'):
-            self.assertAlmostEqual(error[1], 0.11683, places=5)
+            self.assertAlmostEqual(error[1], 0.11692, places=5)
         with self.subTest('left-hand side'):
             self.assertAlmostEqual64(u, '''
                 eNprMT1u6mQyxUTRzMCUAQhazL6b3jNrMYPxp5iA5FtMD+lcMgDxHa4aXzS+6HDV+fKO85cMnC8zMBzS

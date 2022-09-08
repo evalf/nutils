@@ -1,11 +1,9 @@
+from nutils import evaluable, function, mesh, numeric, types, points, transformseq, transform, element, warnings
+from nutils.testing import TestCase, parametrize
 import numpy
 import itertools
-import pickle
 import warnings as _builtin_warnings
-import operator
-from nutils import evaluable, function, mesh, numeric, types, points, transformseq, transform, element
-from nutils.testing import *
-_ = numpy.newaxis
+import functools
 
 
 class Array(TestCase):
@@ -915,14 +913,14 @@ class derivative(TestCase):
         x = 2*x-0.5
         x = function.unravel(x, 0, [2, 1])
         for bnd, n in ('right', [1, 0]), ('left', [-1, 0]), ('top', [0, 1]), ('bottom', [0, -1]):
-            self.assertEvalAlmostEqual(domain.boundary[bnd], self.normal(x), numpy.array(n)[:, _])
+            self.assertEvalAlmostEqual(domain.boundary[bnd], self.normal(x), numpy.array(n)[:, numpy.newaxis])
 
     def test_normal_3d(self):
         domain, x = mesh.rectilinear([1]*2)
         x = 2*x-0.5
         x = function.unravel(function.unravel(x, 0, [2, 1]), 0, [1, 2])
         for bnd, n in ('right', [1, 0]), ('left', [-1, 0]), ('top', [0, 1]), ('bottom', [0, -1]):
-            self.assertEvalAlmostEqual(domain.boundary[bnd], self.normal(x), numpy.array(n)[_, :, _])
+            self.assertEvalAlmostEqual(domain.boundary[bnd], self.normal(x), numpy.array(n)[numpy.newaxis, :, numpy.newaxis])
 
     def test_dotnorm(self):
         domain, x = mesh.rectilinear([1]*2)

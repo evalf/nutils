@@ -1,8 +1,8 @@
-from nutils import function, mesh, sparse, transform, transformseq, topology, element
+from nutils import function, mesh, sparse, transformseq, topology, element, numeric
+from nutils.testing import TestCase, parametrize
 import random
 import itertools
-import functools
-from nutils.testing import *
+import numpy
 
 
 class basisTest(TestCase):

@@ -2,7 +2,7 @@
 The cache module.
 """
 
-from . import types, util
+from . import types, _util as util
 import os
 import numpy
 import functools

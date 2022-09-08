@@ -1,6 +1,5 @@
-from nutils import *
-from nutils.testing import *
-import sys
+from nutils import cache
+from nutils.testing import TestCase, unittest
 import contextlib
 import tempfile
 import pathlib

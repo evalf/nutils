@@ -1,8 +1,7 @@
-from nutils import *
-import tempfile
+from nutils import mesh, function, element, transform, topology
+from nutils.testing import TestCase, parametrize, requires
 import pathlib
-import os
-from nutils.testing import *
+import numpy
 
 
 @parametrize

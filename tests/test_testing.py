@@ -1,4 +1,4 @@
-from nutils.testing import *
+from nutils.testing import TestCase
 from nutils import numeric
 import numpy
 

@@ -15,7 +15,7 @@ selected sample points, and is typically used in combination with the "bezier"
 set.
 '''
 
-from . import types, points, util, function, evaluable, parallel, numeric, matrix, sparse, warnings
+from . import types, points, _util as util, function, evaluable, parallel, numeric, matrix, sparse, warnings
 from .pointsseq import PointsSequence
 from .transformseq import Transforms
 from .transform import EvaluableTransformChain

@@ -1,10 +1,9 @@
-from nutils import solver, mesh, function, cache, types, numeric, warnings, evaluable, sparse
+from nutils import solver, mesh, function, cache, types, numeric, evaluable, sparse
 from nutils.expression_v2 import Namespace
-from nutils.testing import *
+from nutils.testing import TestCase, parametrize
 import numpy
 import contextlib
 import tempfile
-import itertools
 import logging
 
 

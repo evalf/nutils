@@ -1,5 +1,6 @@
-from nutils import *
-from nutils.testing import *
+from nutils import element, points, transform, numeric
+from nutils.testing import TestCase, parametrize
+import numpy
 
 
 class gauss(TestCase):

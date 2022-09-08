@@ -1,15 +1,15 @@
+from nutils import evaluable, sparse, numeric, _util as util
+from nutils.testing import TestCase, parametrize
 import numpy
 import itertools
-import pickle
 import weakref
 import gc
 import warnings as _builtin_warnings
 import collections
 import sys
 import unittest
-from nutils import *
-from nutils.testing import *
-_ = numpy.newaxis
+import functools
+import operator
 
 
 @parametrize
@@ -532,14 +532,14 @@ _check('equal', evaluable.Equal, numpy.equal, ANY(4, 4), ANY(4, 4), zerograd=Tru
 _check('greater', evaluable.Greater, numpy.greater, ANY(4, 4), ANY(4, 4), zerograd=True)
 _check('less', evaluable.Less, numpy.less, ANY(4, 4), ANY(4, 4), zerograd=True)
 _check('arctan2', evaluable.arctan2, numpy.arctan2, ANY(4, 4), ANY(4, 4))
-_check('stack', lambda a, b: evaluable.stack([a, b], 0), lambda a, b: numpy.concatenate([a[_, :], b[_, :]], axis=0), ANY(4), ANY(4))
+_check('stack', lambda a, b: evaluable.stack([a, b], 0), lambda a, b: numpy.concatenate([a[numpy.newaxis, :], b[numpy.newaxis, :]], axis=0), ANY(4), ANY(4))
 _check('eig', lambda a: evaluable.eig(a+a.swapaxes(0, 1), symmetric=True)[1], lambda a: numpy.linalg.eigh(a+a.swapaxes(0, 1))[1], ANY(4, 4), hasgrad=False)
 _check('eig-complex', lambda a: evaluable.eig(a+a.swapaxes(0, 1))[1], lambda a: numpy.linalg.eig(a+a.swapaxes(0, 1))[1], ANC(4, 4), hasgrad=False)
 _check('mod', lambda a, b: evaluable.mod(a, b), lambda a, b: numpy.mod(a, b), ANY(4), NZ(4), hasgrad=False)
 _check('mask', lambda f: evaluable.mask(f, numpy.array([True, False, True, False, True, False, True]), axis=1), lambda a: a[:, ::2], ANY(4, 7, 4))
 _check('ravel', lambda f: evaluable.ravel(f, axis=1), lambda a: a.reshape(4, 4, 4, 4), ANY(4, 2, 2, 4, 4))
 _check('unravel', lambda f: evaluable.unravel(f, axis=1, shape=[2, 2]), lambda a: a.reshape(4, 2, 2, 4, 4), ANY(4, 4, 4, 4))
-_check('ravelindex', lambda a, b: evaluable.RavelIndex(a, b, 12, 20), lambda a, b: a[..., _, _] * 20 + b, INT(3, 4), INT(4, 5))
+_check('ravelindex', lambda a, b: evaluable.RavelIndex(a, b, 12, 20), lambda a, b: a[..., numpy.newaxis, numpy.newaxis] * 20 + b, INT(3, 4), INT(4, 5))
 _check('inflate', lambda f: evaluable._inflate(f, dofmap=evaluable.Guard([0, 3]), length=4, axis=1), lambda a: numpy.concatenate([a[:, :1], numpy.zeros_like(a), a[:, 1:]], axis=1), ANY(4, 2, 4))
 _check('inflate-constant', lambda f: evaluable._inflate(f, dofmap=[0, 3], length=4, axis=1), lambda a: numpy.concatenate([a[:, :1], numpy.zeros_like(a), a[:, 1:]], axis=1), ANY(4, 2, 4))
 _check('inflate-duplicate', lambda f: evaluable.Inflate(f, dofmap=[0, 1, 0, 3], length=4), lambda a: numpy.stack([a[:, 0]+a[:, 2], a[:, 1], numpy.zeros_like(a[:, 0]), a[:, 3]], axis=1), ANY(2, 4))

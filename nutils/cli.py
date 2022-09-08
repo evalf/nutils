@@ -9,7 +9,7 @@ def run(f, *, argv=None):
     '''Command line interface for a single function.'''
 
     import treelog, bottombar
-    from . import util, matrix, parallel, cache, warnings
+    from . import _util as util, matrix, parallel, cache, warnings
 
     decorators = (
         util.trap_sigint(),

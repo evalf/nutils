@@ -5,7 +5,7 @@ platforms, notably excluding Windows. On unsupported platforms parallel features
 will disable and a warning is printed.
 """
 
-from . import numeric, warnings, util
+from . import numeric, warnings, _util as util
 import os
 import multiprocessing
 import mmap

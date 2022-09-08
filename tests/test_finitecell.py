@@ -1,6 +1,7 @@
-from nutils import *
-from nutils.testing import *
+from nutils import topology, mesh, function, evaluable
+from nutils.testing import TestCase, parametrize
 import treelog as log
+import numpy
 
 
 class hierarchical(TestCase):

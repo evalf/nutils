@@ -1,6 +1,6 @@
-from nutils import numeric, util, types
+from nutils import numeric, _util as util, types
+from nutils.testing import TestCase, parametrize
 import numpy
-from nutils.testing import *
 import itertools
 
 

@@ -1,6 +1,7 @@
+from nutils import evaluable, expression_v1, function, mesh, warnings
+from nutils.testing import TestCase
 import pickle
-from nutils import evaluable, expression_v1, function, mesh
-from nutils.testing import *
+import numpy
 
 _ = lambda arg: (None, arg)
 

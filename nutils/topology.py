@@ -14,7 +14,7 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, evaluable, util, parallel, numeric, cache, transform, transformseq, warnings, matrix, types, points, sparse
+from . import element, function, evaluable, _util as util, parallel, numeric, cache, transform, transformseq, warnings, matrix, types, points, sparse
 from .sample import Sample
 from .elementseq import References
 from .pointsseq import PointsSequence

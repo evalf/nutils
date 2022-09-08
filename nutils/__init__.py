@@ -34,7 +34,6 @@ __all__ = [
     'transformseq',
     'types',
     'unit',
-    'util',
     'warnings',
 ]
 

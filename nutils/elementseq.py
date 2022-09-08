@@ -1,6 +1,6 @@
 """The elementseq module."""
 
-from . import types, numeric, util
+from . import types, numeric, _util as util
 from .element import Reference
 from .pointsseq import PointsSequence
 from typing import Tuple, Sequence, Iterable, Iterator, Optional, Union, overload

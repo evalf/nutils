@@ -1,7 +1,7 @@
-from nutils import *
-from nutils.testing import *
+from nutils import element
+from nutils.testing import TestCase, parametrize
 import math
-import re
+import numpy
 
 
 @parametrize
