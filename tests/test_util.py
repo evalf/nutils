@@ -386,6 +386,34 @@ class signal_handler(TestCase):
         self.assertTrue(caught)
 
 
+class name_of_main(TestCase):
+
+    def setUp(self):
+        self.__main__ = sys.modules['__main__']
+
+    def tearDown(self):
+        sys.modules['__main__'] = self.__main__
+
+    def test_package(self):
+        class test_main:
+            __package__ = 'foo.bar'
+            __file__ = '/path/to/foo/bar.py'
+        sys.modules['__main__'] = test_main
+        self.assertEqual(util.name_of_main(), 'foo.bar')
+
+    def test_file(self):
+        class test_main:
+            __file__ = '/path/to/foo/bar.py'
+        sys.modules['__main__'] = test_main
+        self.assertEqual(util.name_of_main(), 'bar')
+
+    def test_interactive(self):
+        class test_main:
+            pass
+        sys.modules['__main__'] = test_main
+        self.assertEqual(util.name_of_main(), 'interactive')
+
+
 class add_htmllog(TestCase):
 
     def test(self):

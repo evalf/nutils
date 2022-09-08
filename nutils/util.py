@@ -756,21 +756,41 @@ def set_stdoutlog(richoutput: bool = sys.stdout.isatty(), verbose: int = 4): # p
     return treelog.set(stdoutlog)
 
 
+def name_of_main():
+    '''Best-effort routine to establish the name of the running program.
+
+    The name is constructed from the __main__ module. Since this module is
+    loaded late, name_of_main cannot be used during module initialization.'''
+
+    import __main__
+    name = getattr(__main__, '__package__', None)
+    if not name:
+        path = getattr(__main__, '__file__', None)
+        if not path:
+            name = 'interactive'
+        else:
+            name = os.path.basename(__main__.__file__)
+            if name.endswith('.py'):
+                name = name[:-3]
+    return name
+
+
 @contextlib.contextmanager
 @defaults_from_env
-def add_htmllog(outrootdir: str = '~/public_html', outrooturi: str = '', scriptname: str = os.path.basename(sys.argv[0]), outdir: str = '', outuri: str = ''):
+def add_htmllog(outrootdir: str = '~/public_html', outrooturi: str = '', scriptname: str = '', outdir: str = '', outuri: str = ''):
     '''Context to add a HtmlLog to the active logger.'''
 
     import html, base64, bottombar
+
+    if not scriptname and (not outdir or outrooturi and not outuri):
+        scriptname = name_of_main()
 
     # the outdir argument exists for backwards compatibility; outrootdir
     # and scriptname are ignored if outdir is defined
     if outdir:
         outdir = pathlib.Path(outdir).expanduser()
     else:
-        outdir = pathlib.Path(outrootdir).expanduser()
-        if scriptname:
-            outdir /= scriptname
+        outdir = pathlib.Path(outrootdir).expanduser() / scriptname
 
     # the outuri argument exists for backwards compatibility; outrooturi is
     # ignored if outuri is defined
@@ -813,13 +833,13 @@ def cli(f, *, argv=None):
         if T == param.empty and param.default != param.empty:
             T = type(param.default)
         if T == param.empty:
-            sys.exit(f'error: cannot determine type for argument {param.name!r}')
+            raise Exception(f'cannot determine type for argument {param.name!r}')
         try:
             s = stringly.serializer.get(T)
-        except ValueError:
-            sys.exit(f'error: cannot deserialize argument {param.name!r} of type {T}')
+        except Exception as e:
+            raise Exception(f'stringly cannot deserialize argument {param.name!r} of type {T}') from e
         if param.kind not in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY):
-            sys.exit(f'error: argument {param.name!r} is positional-only')
+            raise Exception(f'argument {param.name!r} is positional-only')
         if param.default == param.empty and param.name not in doc.defaults:
             mandatory.add(param.name)
         if T == bool:
@@ -828,7 +848,7 @@ def cli(f, *, argv=None):
 
     usage = [f'USAGE: {progname}']
     if doc.presets:
-        usage.append(f'["|".join(doc.presets)]')
+        usage.append(f'[{"|".join(doc.presets)}]')
     usage.extend(('{}' if arg in mandatory else '[{}]').format(f'{arg}={arg[0].upper()}') for arg in serializers)
     usage = '\n'.join(textwrap.wrap(' '.join(usage), subsequent_indent='  '))
 

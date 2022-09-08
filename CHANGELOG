@@ -5,6 +5,28 @@ The following overview lists user facing changes as well as newly added
 features in inverse chronological order.
 
 
+REMOVED: Nutils configuration file
+
+Support for the Nutils configuration file (which used to be located in either
+~/.nutilsrc or ~/.config/nutils/config) has been removed. Instead, the
+following environment variables can be set to override the default Nutils
+settings:
+
+  - NUTILS_PDB  = yes|no
+  - NUTILS_GRACEFULEXIT = yes|no
+  - NUTILS_OUTROOTDIR = path/to/html/logs
+  - NUTILS_OUTROOTURI = uri/to/html/logs
+  - NUTILS_SCRIPTNAME = myapp
+  - NUTILS_OUTDIR = path/to/this/html/log
+  - NUTILS_OUTURI = uti/to/this/html/log
+  - NUTILS_RICHOUTPUT = yes|no
+  - NUTILS_VERBOSE = 1|2|3|4
+  - NUTILS_MATRIX = numpy|scipy|mkl|auto
+  - NUTILS_NPROCS = 1|2|...
+  - NUTILS_CACHE = yes|no
+  - NUTILS_CACHEDIR = path/to/cache
+
+
 DEPRECATED: function methods that have Numpy equivalents
 
 The `nutils.function` methods that have direct equivalents in the `numpy`
