@@ -2223,14 +2223,15 @@ class Pointwise(Array):
 
     deriv = None
     complex_deriv = None
+    return_type = None
 
     @types.apply_annotations
     def __init__(self, *args: asarrays):
-        retval = self.evalf(*[numpy.ones((), dtype=arg.dtype) for arg in args])
+        dtype = self.__class__.return_type(*[arg.dtype for arg in args])
         shape0 = args[0].shape
         assert all(equalshape(arg.shape, shape0) for arg in args[1:]), 'pointwise arguments have inconsistent shapes'
         self.args = args
-        super().__init__(args=args, shape=shape0, dtype=retval.dtype)
+        super().__init__(args=args, shape=shape0, dtype=dtype)
 
     @classmethod
     def outer(cls, *args):
@@ -2285,11 +2286,16 @@ class Pointwise(Array):
 class Reciprocal(Pointwise):
     __slots__ = ()
     evalf = numpy.reciprocal
+    return_type = lambda T: complex if T == complex else float
 
 
 class Negative(Pointwise):
     __slots__ = ()
     evalf = numpy.negative
+    def return_type(T):
+        if T == bool:
+            raise ValueError('boolean values cannot be negated')
+        return T
 
     def _intbounds_impl(self):
         lower, upper = self.args[0]._intbounds
@@ -2299,11 +2305,13 @@ class Negative(Pointwise):
 class FloorDivide(Pointwise):
     __slots__ = ()
     evalf = numpy.floor_divide
+    return_type = lambda T1, T2: complex if complex in (T1, T2) else float if float in (T1, T2) else int
 
 
 class Absolute(Pointwise):
     __slots__ = ()
     evalf = numpy.absolute
+    return_type = lambda T: float if T in (float, complex) else int
 
     def _intbounds_impl(self):
         lower, upper = self.args[0]._intbounds
@@ -2319,6 +2327,7 @@ class Cos(Pointwise):
     __slots__ = ()
     evalf = numpy.cos
     complex_deriv = lambda x: -Sin(x),
+    return_type = lambda T: complex if T == complex else float
 
 
 class Sin(Pointwise):
@@ -2326,6 +2335,7 @@ class Sin(Pointwise):
     __slots__ = ()
     evalf = numpy.sin
     complex_deriv = Cos,
+    return_type = lambda T: complex if T == complex else float
 
 
 class Tan(Pointwise):
@@ -2333,6 +2343,7 @@ class Tan(Pointwise):
     __slots__ = ()
     evalf = numpy.tan
     complex_deriv = lambda x: Cos(x)**-2,
+    return_type = lambda T: complex if T == complex else float
 
 
 class ArcSin(Pointwise):
@@ -2340,6 +2351,7 @@ class ArcSin(Pointwise):
     __slots__ = ()
     evalf = numpy.arcsin
     complex_deriv = lambda x: reciprocal(sqrt(1-x**2)),
+    return_type = lambda T: complex if T == complex else float
 
 
 class ArcCos(Pointwise):
@@ -2347,6 +2359,7 @@ class ArcCos(Pointwise):
     __slots__ = ()
     evalf = numpy.arccos
     complex_deriv = lambda x: -reciprocal(sqrt(1-x**2)),
+    return_type = lambda T: complex if T == complex else float
 
 
 class ArcTan(Pointwise):
@@ -2354,6 +2367,7 @@ class ArcTan(Pointwise):
     __slots__ = ()
     evalf = numpy.arctan
     complex_deriv = lambda x: reciprocal(1+x**2),
+    return_type = lambda T: complex if T == complex else float
 
 
 class CosH(Pointwise):
@@ -2361,6 +2375,7 @@ class CosH(Pointwise):
     __slots__ = ()
     evalf = numpy.cosh
     complex_deriv = lambda x: SinH(x),
+    return_type = lambda T: complex if T == complex else float
 
 
 class SinH(Pointwise):
@@ -2368,6 +2383,7 @@ class SinH(Pointwise):
     __slots__ = ()
     evalf = numpy.sinh
     complex_deriv = CosH,
+    return_type = lambda T: complex if T == complex else float
 
 
 class TanH(Pointwise):
@@ -2375,30 +2391,38 @@ class TanH(Pointwise):
     __slots__ = ()
     evalf = numpy.tanh
     complex_deriv = lambda x: 1 - TanH(x)**2,
+    return_type = lambda T: complex if T == complex else float
 
 
 class ArcTanH(Pointwise):
-    'Inverse tangent, element-wise.'
+    'Inverse hyperbolic tangent, element-wise.'
     __slots__ = ()
     evalf = numpy.arctanh
     complex_deriv = lambda x: reciprocal(1-x**2),
+    return_type = lambda T: complex if T == complex else float
 
 
 class Exp(Pointwise):
     __slots__ = ()
     evalf = numpy.exp
     complex_deriv = lambda x: Exp(x),
+    return_type = lambda T: complex if T == complex else float
 
 
 class Log(Pointwise):
     __slots__ = ()
     evalf = numpy.log
     complex_deriv = lambda x: reciprocal(x),
+    return_type = lambda T: complex if T == complex else float
 
 
 class Mod(Pointwise):
     __slots__ = ()
     evalf = numpy.mod
+    def return_type(T1, T2):
+        if T1 == complex or T2 == complex:
+            raise ValueError('mod is not defined for complex numbers')
+        return float if float in (T1, T2) else int
 
     def _intbounds_impl(self):
         dividend, divisor = self.args
@@ -2425,51 +2449,44 @@ class ArcTan2(Pointwise):
     __slots__ = ()
     evalf = numpy.arctan2
     deriv = lambda x, y: y / (x**2 + y**2), lambda x, y: -x / (x**2 + y**2)
-
-    @types.apply_annotations
-    def __init__(self,  left: asarray, right: asarray):
-        if left.dtype == complex or right.dtype == complex:
+    def return_type(T1, T2):
+        if T1 == complex or T2 == complex:
             raise ValueError('arctan2 is not defined for complex numbers')
-        super().__init__(left, right)
+        return float
 
 
 class Greater(Pointwise):
     __slots__ = ()
     evalf = numpy.greater
-
-    @types.apply_annotations
-    def __init__(self,  left: asarray, right: asarray):
-        if left.dtype == complex or right.dtype == complex:
+    def return_type(T1, T2):
+        if T1 == complex or T2 == complex:
             raise ValueError('Complex numbers have no total order.')
-        super().__init__(left, right)
+        return bool
 
 
 class Equal(Pointwise):
     __slots__ = ()
     evalf = numpy.equal
+    return_type = lambda T1, T2: bool
 
 
 class Less(Pointwise):
     __slots__ = ()
     evalf = numpy.less
-
-    @types.apply_annotations
-    def __init__(self,  left: asarray, right: asarray):
-        if left.dtype == complex or right.dtype == complex:
+    def return_type(T1, T2):
+        if T1 == complex or T2 == complex:
             raise ValueError('Complex numbers have no total order.')
-        super().__init__(left, right)
+        return bool
 
 
 class Minimum(Pointwise):
     __slots__ = ()
     evalf = numpy.minimum
     deriv = lambda x, y: .5 - .5 * Sign(x - y), lambda x, y: .5 + .5 * Sign(x - y)
-
-    @types.apply_annotations
-    def __init__(self,  left: asarray, right: asarray):
-        if left.dtype == complex or right.dtype == complex:
+    def return_type(T1, T2):
+        if T1 == complex or T2 == complex:
             raise ValueError('Complex numbers have no total order.')
-        super().__init__(left, right)
+        return float if float in (T1, T2) else int if int in (T1, T2) else bool
 
     def _simplified(self):
         if self.dtype == int:
@@ -2491,12 +2508,10 @@ class Maximum(Pointwise):
     __slots__ = ()
     evalf = numpy.maximum
     deriv = lambda x, y: .5 + .5 * Sign(x - y), lambda x, y: .5 - .5 * Sign(x - y)
-
-    @types.apply_annotations
-    def __init__(self,  left: asarray, right: asarray):
-        if left.dtype == complex or right.dtype == complex:
+    def return_type(T1, T2):
+        if T1 == complex or T2 == complex:
             raise ValueError('Complex numbers have no total order.')
-        super().__init__(left, right)
+        return float if float in (T1, T2) else int if int in (T1, T2) else bool
 
     def _simplified(self):
         if self.dtype == int:
@@ -2516,14 +2531,8 @@ class Maximum(Pointwise):
 
 class Conjugate(Pointwise):
     __slots__ = ()
-
-    @types.apply_annotations
-    def __init__(self, arg: asarray):
-        assert arg.dtype == complex
-        super().__init__(arg)
-
-    def evalf(self, arg):
-        return numpy.conjugate(arg)
+    evalf = numpy.conjugate
+    return_type = lambda T: int if T == bool else T
 
     def _simplified(self):
         retval = self.args[0]._conjugate()
@@ -2534,11 +2543,7 @@ class Conjugate(Pointwise):
 
 class Real(Pointwise):
     __slots__ = ()
-
-    @types.apply_annotations
-    def __init__(self, arg: asarray):
-        assert arg.dtype == complex
-        super().__init__(arg)
+    return_type = lambda T: float if T == complex else T
 
     def evalf(self, arg):
         return numpy.real(arg)
@@ -2552,11 +2557,7 @@ class Real(Pointwise):
 
 class Imag(Pointwise):
     __slots__ = ()
-
-    @types.apply_annotations
-    def __init__(self, arg: asarray):
-        assert arg.dtype == complex
-        super().__init__(arg)
+    return_type = lambda T: float if T == complex else T
 
     def evalf(self, arg):
         return numpy.imag(arg)
@@ -2570,14 +2571,8 @@ class Imag(Pointwise):
 
 class Cast(Pointwise):
 
-    @types.apply_annotations
-    def __init__(self, arg: asarray):
-        if arg.dtype != self.from_type:
-            raise TypeError('Expected an array with dtype {} but got {}.'.format(self.from_type.__name__, arg.dtype.__name__))
-        super().__init__(arg)
-
     def evalf(self, arg):
-        return numpy.array(arg, dtype=self.to_type)
+        return numpy.array(arg, dtype=self.dtype)
 
     def _simplified(self):
         arg, = self.args
@@ -2597,17 +2592,21 @@ class Cast(Pointwise):
     def _const_uniform(self):
         value = self.args[0]._const_uniform
         if value is not None:
-            return self.to_type(value)
+            return self.dtype(value)
 
 
 class BoolToInt(Cast):
-    from_type = bool
-    to_type = int
+    def return_type(T):
+        if T != bool:
+            raise TypeError(f'Expected an array with dtype bool but got {T.__name__}.')
+        return int
 
 
 class IntToFloat(Cast):
-    from_type = int
-    to_type = float
+    def return_type(T):
+        if T != int:
+            raise TypeError(f'Expected an array with dtype int but got {T.__name__}.')
+        return float
 
     def _add(self, other):
         if isinstance(other, __class__):
@@ -2632,8 +2631,10 @@ class IntToFloat(Cast):
 
 
 class FloatToComplex(Cast):
-    from_type = float
-    to_type = complex
+    def return_type(T):
+        if T != float:
+            raise TypeError(f'Expected an array with dtype float but got {T.__name__}.')
+        return complex
 
     def _add(self, other):
         if isinstance(other, __class__):
