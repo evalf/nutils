@@ -209,27 +209,21 @@ def function(func=None, *, version=0):
             _lock_file(f)
             log.debug('[cache.function {}] lock acquired'.format(hkey))
             try:
-                data = pickle.load(f)
-                if len(data) == 3:  # For old caches.
-                    log_, fail, value = data
-                    if fail:
-                        raise pickle.UnpicklingError
-                else:
-                    value, log_ = data
+                value, event_stream = pickle.load(f)
             except (EOFError, pickle.UnpicklingError, IndexError):
                 log.debug('[cache.function {}] failed to load, cache will be rewritten'.format(hkey))
                 pass
             else:
                 log.debug('[cache.function {}] load'.format(hkey))
-                log_.replay()
+                log.emit_from_stream(event_stream)
                 return value
             # Seek back to the beginning, because pickle might have read garbage.
             f.seek(0)
             # Disable the cache temporarily to prevent caching subresults *in* `func`.
             log_ = log.RecordLog()
-            with disable(), log.add(log_):
+            with disable(), log.add(~log_):
                 value = func(*args, **kwargs)
-            pickle.dump((value, log_), f)
+            pickle.dump((value, log_.event_stream()), f)
             log.debug('[cache.function {}] store'.format(hkey))
             return value
 
@@ -361,7 +355,7 @@ class Recursion(types.Immutable, metaclass=_RecursionMeta):
                     log.debug('[cache.Recursion {}.{:04d}] lock acquired'.format(hkey, i))
                     if not exhausted:
                         try:
-                            log_, stop, value = pickle.load(f)
+                            event_stream, stop, value = pickle.load(f)
                         except (pickle.UnpicklingError, IndexError):
                             log.debug('[cache.Recursion {}.{:04d}] failed to load, cache will be rewritten from this point'.format(hkey, i))
                             exhausted = True
@@ -370,7 +364,7 @@ class Recursion(types.Immutable, metaclass=_RecursionMeta):
                             exhausted = True
                         else:
                             log.debug('[cache.Recursion {}.{:04d}] load'.format(hkey, i))
-                            log_.replay()
+                            log.emit_from_stream(event_stream)
                             history.append(value)
                             if len(history) > length:
                                 history = history[1:]
@@ -388,7 +382,7 @@ class Recursion(types.Immutable, metaclass=_RecursionMeta):
                                 stop = True
                                 value = None
                         log.debug('[cache.Recursion {}.{}] store'.format(hkey, i))
-                        pickle.dump((log_, stop, value), f)
+                        pickle.dump((log_.event_stream, stop, value), f)
                 if stop:
                     return
                 yield value

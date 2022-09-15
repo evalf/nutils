@@ -623,7 +623,7 @@ def set_stdoutlog(richoutput: bool = sys.stdout.isatty(), verbose: int = 4): # p
 
     try:
         Level = treelog.proto.Level
-    except AttributeError:  # treelog version < 1.0b6
+    except: # treelog version < 1.0b6
         levels = 4, 3, 2, 1
     else:
         levels = Level.error, Level.warning, Level.user, Level.info
@@ -656,41 +656,50 @@ def name_of_main():
 
 @contextlib.contextmanager
 @defaults_from_env
-def add_htmllog(outrootdir: str = '~/public_html', outrooturi: str = '', scriptname: str = '', outdir: str = '', outuri: str = ''):
+def add_htmllog(outrootdir: str = '~/public_html', outrooturi: str = '', scriptname: str = '', outdir: str = '', outuri: str = '', wirelog: str = ''):
     '''Context to add a HtmlLog to the active logger.'''
 
     import html, base64, bottombar
 
-    if not scriptname and (not outdir or outrooturi and not outuri):
-        scriptname = name_of_main()
+    if wirelog:
 
-    # the outdir argument exists for backwards compatibility; outrootdir
-    # and scriptname are ignored if outdir is defined
-    if outdir:
-        outdir = pathlib.Path(outdir).expanduser()
+        host, port = wirelog.split(':')
+        logger = treelog.WireLog(host, int(port))
+        loguri = logger.uri
+
     else:
-        outdir = pathlib.Path(outrootdir).expanduser() / scriptname
 
-    # the outuri argument exists for backwards compatibility; outrooturi is
-    # ignored if outuri is defined
-    if not outuri:
-        outuri = outrooturi.rstrip('/') + '/' + scriptname if outrooturi else outdir.as_uri()
+        if not scriptname and (not outdir or outrooturi and not outuri):
+            scriptname = name_of_main()
 
-    nutils_logo = (
-      '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" style="vertical-align: middle;" width="24" height="24" viewBox="-12 -12 24 24">'
-        '<path d="M -9 3 v -6 a 6 6 0 0 1 12 0 v 6 M 9 -3 v 6 a 6 6 0 0 1 -12 0 v -6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>'
-      '</svg>')
-    favicon = 'data:image/svg+xml;base64,' + base64.b64encode(b'<?xml version="1.0" encoding="UTF-8" standalone="no"?>' + nutils_logo.encode()).decode()
-    htmltitle = '<a href="http://www.nutils.org">{}</a> {}'.format(nutils_logo, html.escape(scriptname))
+        # the outdir argument exists for backwards compatibility; outrootdir
+        # and scriptname are ignored if outdir is defined
+        if outdir:
+            outdir = pathlib.Path(outdir).expanduser()
+        else:
+            outdir = pathlib.Path(outrootdir).expanduser() / scriptname
 
-    with treelog.HtmlLog(outdir, title=scriptname, htmltitle=htmltitle, favicon=favicon) as htmllog:
-        loguri = outuri + '/' + htmllog.filename
+        # the outuri argument exists for backwards compatibility; outrooturi is
+        # ignored if outuri is defined
+        if not outuri:
+            outuri = outrooturi.rstrip('/') + '/' + scriptname if outrooturi else outdir.as_uri()
+
+        nutils_logo = (
+          '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" style="vertical-align: middle;" width="24" height="24" viewBox="-12 -12 24 24">'
+            '<path d="M -9 3 v -6 a 6 6 0 0 1 12 0 v 6 M 9 -3 v 6 a 6 6 0 0 1 -12 0 v -6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>'
+          '</svg>')
+        favicon = 'data:image/svg+xml;base64,' + base64.b64encode(b'<?xml version="1.0" encoding="UTF-8" standalone="no"?>' + nutils_logo.encode()).decode()
+        htmltitle = '<a href="http://www.nutils.org">{}</a> {}'.format(nutils_logo, html.escape(scriptname))
+
+        logger = treelog.HtmlLog(outdir, title=scriptname, htmltitle=htmltitle, favicon=favicon)
+        loguri = outuri + '/' + logger.filename
+
+    with logger:
         try:
-            with treelog.add(htmllog), bottombar.add(loguri, label='writing log to'):
+            with treelog.add(~logger), bottombar.add(loguri, label='writing log to'):
                 yield
         except Exception as e:
-            with treelog.set(htmllog):
-                treelog.error(f'{e.__class__.__name__}: {e}')
+            logger.error(f'{e.__class__.__name__}: {e}')
             raise
         finally:
             treelog.info(f'log written to: {loguri}')
