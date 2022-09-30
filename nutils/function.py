@@ -195,13 +195,10 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     @classmethod
     def cast_withscale(cls, __value: IntoArray, dtype: Optional[DType] = None, ndim: Optional[int] = None):
         try:
-            scale = type(__value).reference_quantity
+            dim, __value = __value.__unwrap_quantity__()
         except AttributeError:
-            value = cls.cast(__value, dtype=dtype, ndim=ndim)
-            scale = value.dtype(1)
-        else:
-            value = cls.cast(__value / scale, dtype=dtype, ndim=ndim)
-        return value, scale
+            dim = __value.dtype
+        return cls.cast(__value, dtype=dtype, ndim=ndim), dim(1)
 
     def __init__(self, shape: Shape, dtype: DType, spaces: FrozenSet[str], arguments: Mapping[str, Tuple[Shape, DType]]) -> None:
         self.shape = tuple(sh.__index__() for sh in shape)
