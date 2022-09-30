@@ -214,9 +214,14 @@ class NormBased(LineSearch):
 
     @classmethod
     def legacy(cls, kwargs):
-        minscale, acceptscale = kwargs.pop('searchrange', (.01, 2/3))
-        maxscale = kwargs.pop('rebound', 2.)
-        return cls(minscale=minscale, acceptscale=acceptscale, maxscale=maxscale)
+        args = {}
+        if 'searchrange' in kwargs:
+            args['minscale'], args['acceptscale'] = kwargs.pop('searchrange')
+        if 'rebound' in kwargs:
+            args['maxscale'] = kwargs.pop('rebound')
+        if args:
+            warnings.deprecation('the searchrange and rebound arguments are deprecated; use linesearch=solver.NormBased(minscale=searchrange[0], acceptscale=searchrange[1], maxscale=rebound) instead')
+        return cls(**args)
 
     def __call__(self, res0, dres0, res1, dres1):
         if not numpy.isfinite(res1).all():
