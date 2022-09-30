@@ -323,7 +323,7 @@ _check('dot-complex', lambda a, b: function.dot(a, b, axes=2), lambda a, b: (a*b
 _check('Array_dot', lambda a, b: function.Array.cast(a).dot(b, axes=2), lambda a, b: (a*b).sum(2), ANY(4, 2, 4), ANY(4, 2, 4).T)
 _check('vdot', lambda a, b: function.vdot(a, b), numpy.vdot, ANY(4, 2, 4), ANY(4, 2, 4).T)
 _check('vdot-complex', lambda a, b: function.vdot(a, b), numpy.vdot, ANC(4, 2, 4) / 10, ANC(4, 2, 4).T / 10)
-_check('trace', function.trace, numpy.trace, ANY(3, 3))
+_check('trace', lambda a: function.trace(function.Array.cast(a), 0, 2), lambda a: numpy.trace(a, 0, 0, 2), ANY(3, 2, 3))
 _check('norm2', function.norm2, lambda a: numpy.linalg.norm(a, axis=1), ANY(2, 3))
 _check('norm2-complex', function.norm2, lambda a: numpy.linalg.norm(a, axis=1), ANC(2, 3))
 _check('normalized', function.normalized, lambda a: a / numpy.linalg.norm(a, axis=1)[:, None], ANY(2, 3))

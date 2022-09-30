@@ -2093,6 +2093,12 @@ def vdot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]
 
 
 @implements(numpy.trace)
+def _trace(__arg: IntoArray, offset: int = 0, axis1: int = -2, axis2: int = -1) -> Array:
+    if offset != 0:
+        raise NotImplementedError('traces over offset diagonal are not yet supported')
+    return trace(__arg, axis1, axis2)
+
+
 def trace(__arg: IntoArray, axis1: int = -2, axis2: int = -1) -> Array:
     '''Return the trace, the sum of the diagonal, of an array over the two given axes, elementwise over the remanining axes.
 
