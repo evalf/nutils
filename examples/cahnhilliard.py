@@ -77,7 +77,7 @@
 
 from nutils import mesh, function, solver, numeric, export, cli, testing
 from nutils.expression_v2 import Namespace
-from nutils.SI import Length, Time, Density, Tension, Energy, Pressure, Velocity, parse
+from nutils.SI import Length, Time, Density, Tension, Energy, Pressure, Velocity, Angle, parse
 import numpy
 import itertools
 import enum
@@ -142,11 +142,11 @@ def main(size: Length, epsilon: Length, mobility: Time/Density, stens: Tension,
     elif nelems < nmin:
         log.warning('mesh is too coarse, consider increasing nelems to {:.0f}'.format(nmin))
 
-    log.info('contact angle: {:.0f}°'.format(numpy.arccos((wtensn - wtensp) / stens) * 180 / numpy.pi))
+    log.info('contact angle: {:.1deg}'.format(numpy.arccos((wtensn - wtensp) / stens) * Angle('rad')))
 
     domain, geom = mesh.unitsquare(nelems, etype)
     if circle:
-        angle = (geom-.5) * (numpy.pi/2)
+        angle = (geom-.5) * Angle('45deg')
         geom = .5 + numpy.sin(angle) * numpy.cos(angle)[[1, 0]] / numpy.sqrt(2)
 
     bezier = domain.sample('bezier', 5)  # sample for surface plots
