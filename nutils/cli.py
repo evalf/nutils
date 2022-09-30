@@ -44,7 +44,7 @@ def choose(*functions, argv=None):
         choice = args.pop(0)
         f = fmap[choice]
     except:
-        sys.exit(f'USAGE: {argv[0]} {"|".join(fmap)} [...]')
+        sys.exit(f'USAGE: {progname} {"|".join(fmap)} [...]')
     else:
         return run(f, argv=(f'{progname} {choice}', *args))
 
