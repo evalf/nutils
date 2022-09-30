@@ -43,7 +43,7 @@ class method(testing.TestCase):
 
     def test_badvalue(self):
         retval = self._cli('iarg=1', 'farg=x', 'sarg=1')
-        self.assertEndsWith(retval, "Error: invalid value for farg: could not convert string to float: 'x'")
+        self.assertEndsWith(retval, "Error: invalid value 'x' for farg: could not convert string to float: 'x'")
 
     def test_help(self):
         for arg in '-h', '--help':
