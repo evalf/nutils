@@ -1478,7 +1478,7 @@ def _eval_ast(ast, functions):
         return function.get(array, dim, index)
     elif op == 'trace':
         array, n1, n2 = args
-        return numpy.trace(array, n1, n2)
+        return numpy.trace(array, axis1=n1, axis2=n2)
     elif op == 'sum':
         array, axis = args
         return numpy.sum(array, axis)

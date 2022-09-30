@@ -1206,7 +1206,7 @@ class eval_ast(TestCase):
     def test_eye(self): self.assertEqualLowered('δ_ij a2_i', numpy.matmul(function.eye(2), self.ns.a2))
     def test_normal(self): self.assertEqualLowered('n_i', self.ns.x.normal(), topo=self.domain.boundary)
     def test_getitem(self): self.assertEqualLowered('a2_0', self.ns.a2[0])
-    def test_trace(self): self.assertEqualLowered('a22_ii', numpy.trace(self.ns.a22, 0, 1))
+    def test_trace(self): self.assertEqualLowered('a22_ii', numpy.trace(self.ns.a22, axis1=0, axis2=1))
     def test_sum(self): self.assertEqualLowered('a2_i a2_i', numpy.sum(self.ns.a2 * self.ns.a2, axis=0))
     def test_concatenate(self): self.assertEqualLowered('<a, a>_i', numpy.concatenate([self.ns.a[None], self.ns.a[None]], axis=0))
     def test_grad(self): self.assertEqualLowered('basis_n,0', self.ns.basis.grad(self.ns.x)[:, 0])
