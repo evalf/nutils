@@ -5,16 +5,16 @@ develop-release: build-release
 	cp --reflink=auto target/release/libnutils.so nutils/_rust.so
 
 build:
-	cargo build
+	cargo +beta build
 
 build-release:
-	cargo build --release
+	cargo +beta build --release
 
 bench:
 	cargo +nightly bench --features bench
 
 test-rust:
-	cargo test
+	cargo +beta test
 
 docs-python: develop-release
 	python3 -m sphinx -n -W --keep-going -E -D html_theme=sphinx_rtd_theme docs target/doc/nutils-python

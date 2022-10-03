@@ -18,5 +18,6 @@ bench = []
 approx = "0.5"
 ndarray = "0.15"
 numpy = "0.17"
-nutils-poly = { git = "https://github.com/evalf/nutils-poly.git", features = ["ndarray"] }
+sqnc = { git = "https://github.com/evalf/sqnc.git", branch = "introduce-sqnc", features = ["ndarray"] }
+nutils-poly = { git = "https://github.com/evalf/nutils-poly.git" }
 pyo3 = { version = "0.17", features = ["extension-module", "abi3-py37"] }

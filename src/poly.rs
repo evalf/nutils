@@ -1,6 +1,7 @@
 use ndarray::{ArrayD, Dimension};
 use numpy::{PyArray, PyArrayDyn, PyReadonlyArrayDyn, ToPyArray};
-use nutils_poly::{Poly, PolySequence, Power, Powers, Variables};
+use nutils_poly::{Poly, Power, Powers, Variable, Variables};
+use nutils_poly::traits::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::cmp::Ordering;
@@ -104,7 +105,7 @@ pub fn eval<'py>(
     {
         for coord in coords.rows() {
             for coeffs in coeffs.rows() {
-                result.push(PolySequence::new(coeffs, 0..dim, degree).unwrap().eval(&coord))
+                result.push(Poly::new(coeffs, 0..dim, degree).unwrap().eval(&coord))
             }
         }
     }
@@ -136,12 +137,11 @@ pub fn grad<'py>(
     } else {
         let mut result = Vec::with_capacity(shape.iter().copied().product::<usize>() * dim);
         for coeffs in coeffs.rows() {
-            let src = PolySequence::new(coeffs, 0..dim, degree).unwrap();
-            for ideriv in 0..dim {
+            let src = Poly::new(coeffs, 0..dim, degree).unwrap();
+            for ideriv in Variable::iter_all().take(dim) {
                 result.extend(
-                    src.by_ref()
-                        .partial_deriv(ideriv.try_into().unwrap())
-                        .coeffs_iter(),
+                    src.partial_deriv(ideriv)
+                        .into_coeffs_iter(),
                 )
             }
         }
@@ -180,8 +180,8 @@ pub fn deriv<'py>(
     } else {
         let mut result = Vec::with_capacity(shape.iter().copied().product());
         for coeffs in coeffs.rows() {
-            let src = PolySequence::new(coeffs, 0..dim, degree).unwrap();
-            result.extend(src.partial_deriv(ideriv.try_into().unwrap()).coeffs_iter());
+            let src = Poly::new(coeffs, 0..dim, degree).unwrap();
+            result.extend(src.partial_deriv(Variable::new(ideriv).unwrap()).into_coeffs_iter());
         }
         PyArray::from_vec(py, result).reshape(shape)
     }
@@ -225,17 +225,17 @@ pub fn mul<'py>(
     //let mut result = Vec::with_capacity(result_shape.iter().copied().product());
     //if coeffs1.strides().last() == Some(&1) && coeffs2.strides().last() == Some(&1) {
     //    for (coeffs1, coeffs2) in iter::zip(coeffs1.rows(), coeffs2.rows()) {
-    //        let poly1 = PolySequence::new(coeffs1.as_slice().unwrap(), 0..dim, degree1).unwrap();
-    //        let poly2 = PolySequence::new(coeffs2.as_slice().unwrap(), 0..dim, degree2).unwrap();
+    //        let poly1 = Poly::new(coeffs1.as_slice().unwrap(), 0..dim, degree1).unwrap();
+    //        let poly2 = Poly::new(coeffs2.as_slice().unwrap(), 0..dim, degree2).unwrap();
     //        result.extend(poly1.mul(&poly2).collect::<Vec<_>>().coeffs_iter());
     //    }
     //} else {
     {
         for (coeffsr, (coeffs1, coeffs2)) in iter::zip(coeffsr.rows_mut(), iter::zip(coeffs1.rows(), coeffs2.rows())) {
-            let poly1 = PolySequence::new(coeffs1, 0..dim, degree1).unwrap();
-            let poly2 = PolySequence::new(coeffs2, 0..dim, degree2).unwrap();
-            let mut polyr = PolySequence::new(coeffsr, 0..dim, degree1 + degree2).unwrap();
-            poly1.mul(&poly2).add_to(&mut polyr).unwrap();
+            let poly1 = Poly::new(coeffs1, 0..dim, degree1).unwrap();
+            let poly2 = Poly::new(coeffs2, 0..dim, degree2).unwrap();
+            let mut polyr = Poly::new(coeffsr, 0..dim, degree1 + degree2).unwrap();
+            (&poly1 * &poly2).add_to(&mut polyr).unwrap();
         }
     }
     Ok(coeffsr.to_pyarray(py))
@@ -278,9 +278,9 @@ pub fn outer_mul<'py>(
     let mut coeffsr = ArrayD::zeros(result_shape);
     //if coeffs1.strides().last() == Some(&1) && coeffs2.strides().last() == Some(&1) {
     //    for (coeffs1, coeffs2) in iter::zip(coeffs1.rows(), coeffs2.rows()) {
-    //        let poly1 = PolySequence::new(coeffs1.as_slice().unwrap(), 0..dim1, degree1).unwrap();
+    //        let poly1 = Poly::new(coeffs1.as_slice().unwrap(), 0..dim1, degree1).unwrap();
     //        let poly2 =
-    //            PolySequence::new(coeffs2.as_slice().unwrap(), dim1..dim1 + dim2, degree2).unwrap();
+    //            Poly::new(coeffs2.as_slice().unwrap(), dim1..dim1 + dim2, degree2).unwrap();
     //        poly1
     //            .mul(&poly2)
     //            .add_to(&mut result_polys.next().unwrap())
@@ -289,10 +289,10 @@ pub fn outer_mul<'py>(
     //} else {
     {
         for (coeffsr, (coeffs1, coeffs2)) in iter::zip(coeffsr.rows_mut(), iter::zip(coeffs1.rows(), coeffs2.rows())) {
-            let poly1 = PolySequence::new(coeffs1, 0..dim1, degree1).unwrap();
-            let poly2 = PolySequence::new(coeffs2, dim1..dim1 + dim2, degree2).unwrap();
-            let mut polyr = PolySequence::new(coeffsr, 0..dim1 + dim2, degree1 + degree2).unwrap();
-            poly1.mul(&poly2).add_to(&mut polyr).unwrap();
+            let poly1 = Poly::new(coeffs1, 0..dim1, degree1).unwrap();
+            let poly2 = Poly::new(coeffs2, dim1..dim1 + dim2, degree2).unwrap();
+            let mut polyr = Poly::new(coeffsr, 0..dim1 + dim2, degree1 + degree2).unwrap();
+            (&poly1 * &poly2).add_to(&mut polyr).unwrap();
         }
     }
     Ok(coeffsr.to_pyarray(py))
@@ -424,10 +424,10 @@ pub fn change_degree<'py>(
             let new_shape = shape![&coeffs.shape()[..n], [new_ncoeffs]];
             let mut new_coeffs: ArrayD<f64> = ArrayD::zeros(&new_shape[..]);
             for (new_coeffs, coeffs) in iter::zip(new_coeffs.rows_mut(), coeffs.rows()) {
-                let src = PolySequence::new(coeffs, 0..dim, degree).unwrap();
+                let src = Poly::new(coeffs, 0..dim, degree).unwrap();
                 let mut dst =
-                    PolySequence::new(new_coeffs, 0..dim, new_degree).unwrap();
-                src.add_to(&mut dst).unwrap();
+                    Poly::new(new_coeffs, 0..dim, new_degree).unwrap();
+                src.add_ref_to(&mut dst).unwrap();
             }
             Ok(PyArray::from_owned_array(py, new_coeffs))
         }
