@@ -743,7 +743,7 @@ class Namespace:
 
         ns = Namespace()
         for attr, value in vars(self).items():
-            if replacements and isinstance(value, function.Array):
+            if replacements and hasattr(value, '__array_ufunc__') and hasattr(value, '__array_function__'):
                 value = function.replace_arguments(value, replacements)
             object.__setattr__(ns, attr, value)
         return ns
