@@ -586,6 +586,20 @@ class Custom(TestCase):
         with self.assertRaisesRegex(ValueError, '`partial_derivative` to argument 0 returned an array with shape'):
             Test((arg,), (5,), float).derivative(arg).as_evaluable_array
 
+    def test_grad(self):
+
+        class Test(function.Custom):
+            def eval(arg):
+                return arg
+            @staticmethod
+            def partial_derivative(iarg, arg):
+                return function.ones(arg.shape)
+
+        topo, geom = mesh.line(3)
+        smpl = topo.sample('bezier', 2)
+        test = Test((geom**2,), geom.shape, float)
+        self.assertAllAlmostEqual(*smpl.eval([2 * geom, function.grad(test, geom)]))
+
 
 class broadcasting(TestCase):
 

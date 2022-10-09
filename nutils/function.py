@@ -666,7 +666,7 @@ class _CustomEvaluable(evaluable.Array):
         result = evaluable.Zeros(self.shape + var.shape, dtype=self.dtype)
         unlowered_args = tuple(_Unlower(arg, self.spaces, self.function_arguments, *self.lower_args) if isinstance(arg, evaluable.Array) else arg.value for arg in self.args)
         for iarg, arg in enumerate(self.args):
-            if not isinstance(arg, evaluable.Array) or arg.dtype in (bool, int) or var not in arg.dependencies and var != arg:
+            if not isinstance(arg, evaluable.Array) or arg.dtype in (bool, int) or var not in arg.arguments and var != arg:
                 continue
             fpd = Array.cast(self.custom_partial_derivative(iarg, *unlowered_args))
             fpd_expected_shape = tuple(n.__index__() for n in self.shape[self.points_dim:] + arg.shape[self.points_dim:])
