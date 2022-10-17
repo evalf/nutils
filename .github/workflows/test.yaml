@@ -50,8 +50,10 @@ jobs:
           - {name: "python 3.8", os: ubuntu-latest, python-version: "3.8", matrix-backend: numpy, nprocs: 1}
           - {name: "python 3.9", os: ubuntu-latest, python-version: "3.9", matrix-backend: numpy, nprocs: 1}
           - {name: "scipy matrix", os: ubuntu-latest, python-version: "3.10", matrix-backend: scipy, nprocs: 1}
-          - {name: "mkl matrix", os: ubuntu-latest, python-version: "3.10", matrix-backend: mkl, nprocs: 1}
-          - {name: "mkl matrix parallel", os: ubuntu-latest, python-version: "3.10", matrix-backend: mkl, nprocs: 2}
+          - {name: "mkl linux", os: ubuntu-latest, python-version: "3.10", matrix-backend: mkl, nprocs: 1}
+          - {name: "mkl linux parallel", os: ubuntu-latest, python-version: "3.10", matrix-backend: mkl, nprocs: 2}
+          - {name: "mkl windows", os: windows-latest, python-version: "3.10", matrix-backend: mkl, nprocs: 1}
+          - {name: "mkl macos", os: macos-latest, python-version: "3.10", matrix-backend: mkl, nprocs: 1}
           - {name: "parallel", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 2}
           - {name: "numpy 1.17", os: ubuntu-latest, python-version: "3.6", matrix-backend: numpy, nprocs: 1, numpy-version: ==1.17}
           - {name: "tensorial", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1, tensorial: test}
