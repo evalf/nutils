@@ -277,4 +277,4 @@ class MKLMatrix(Matrix):
             mtype = dict(f=-2, c=6)
         return Pardiso(mtype=mtype[self.dtype.kind], a=self.data[upper], ia=rowptr, ja=self.colidx[upper], **args)
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et

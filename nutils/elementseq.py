@@ -654,4 +654,4 @@ def _check_compress(length: int, mask: numpy.ndarray) -> None:
     if len(mask) != length:
         raise IndexError('expected an array with length {} but got {}'.format(length, len(mask)))
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et

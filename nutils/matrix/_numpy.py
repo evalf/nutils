@@ -73,4 +73,4 @@ class NumpyMatrix(Matrix):
     def _submatrix(self, rows, cols):
         return NumpyMatrix(self.core[numpy.ix_(rows, cols)])
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et

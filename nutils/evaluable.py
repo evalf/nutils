@@ -4809,4 +4809,4 @@ if __name__ == '__main__':
         if missing:
             print('[ ] {} could define {}'.format(cls.__name__, ', '.join(missing)))
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et

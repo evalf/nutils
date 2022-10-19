@@ -166,4 +166,4 @@ def _wait(pid):
     treelog.error('process {} {}'.format(pid, msg))
     return False
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et

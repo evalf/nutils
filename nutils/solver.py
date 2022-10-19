@@ -1005,4 +1005,4 @@ def _determine_dtype(targets, residuals, lhs0, constrain):
         raise ValueError('All targets must have dtype {}.'.format(dtype.__name__))
     return dtype
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et

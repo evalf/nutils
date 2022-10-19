@@ -192,4 +192,4 @@ def vtk(name, cells, points, kwargs=...):
                 vtk.write(vtkndim[array.ndim].format(dname, vtkdtype[array.dtype]).encode('ascii'))
                 array.tofile(vtk)
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et

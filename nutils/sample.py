@@ -944,4 +944,4 @@ def _offsets(pointsseq: PointsSequence) -> evaluable.Array:
     npoints, ndims = pointsseq.get_evaluable_coords(ielem).shape
     return evaluable._SizesToOffsets(evaluable.loop_concatenate(evaluable.InsertAxis(npoints, 1), ielem))
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et

@@ -349,4 +349,4 @@ def _vdot(a, b=None):
         ab = numpy.multiply(a.conj(), b, order='F')
     return ab.sum(0)
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et
