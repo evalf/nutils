@@ -2093,6 +2093,12 @@ def vdot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]
 
 
 @implements(numpy.trace)
+def _trace(__arg: IntoArray, offset: int = 0, axis1: int = -2, axis2: int = -1) -> Array:
+    if offset != 0:
+        raise NotImplementedError('traces over offset diagonal are not yet supported')
+    return trace(__arg, axis1, axis2)
+
+
 def trace(__arg: IntoArray, axis1: int = -2, axis2: int = -1) -> Array:
     '''Return the trace, the sum of the diagonal, of an array over the two given axes, elementwise over the remanining axes.
 
@@ -2733,7 +2739,8 @@ def replace_arguments(__array: IntoArray, __arguments: Mapping[str, IntoArray]) 
     :class:`Array`
     '''
 
-    return _Replace(Array.cast(__array), {k: Array.cast(v) for k, v in __arguments.items()})
+    array, scale = Array.cast_withscale(__array)
+    return _Replace(array, {k: Array.cast(v) for k, v in __arguments.items()}) * scale
 
 
 def broadcast_arrays(*arrays: IntoArray) -> Tuple[Array, ...]:

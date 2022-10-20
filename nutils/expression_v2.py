@@ -725,7 +725,7 @@ class Namespace:
 
         ns = Namespace()
         for attr, value in vars(self).items():
-            if replacements and isinstance(value, function.Array):
+            if replacements and hasattr(value, '__array_ufunc__') and hasattr(value, '__array_function__'):
                 value = function.replace_arguments(value, replacements)
             object.__setattr__(ns, attr, value)
         return ns
@@ -779,7 +779,7 @@ class _FunctionArrayOps:
         return numpy.transpose(array, axes)
 
     def trace(self, array: function.Array, axis1: int, axis2: int) -> function.Array:
-        return numpy.trace(array, axis1, axis2)
+        return numpy.trace(array, axis1=axis1, axis2=axis2)
 
     def scope(self, array: function.Array) -> function.Array:
         return array
