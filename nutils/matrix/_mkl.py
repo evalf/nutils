@@ -264,10 +264,17 @@ class MKLMatrix(Matrix):
         upper = numpy.zeros(len(self.data), dtype=bool)
         rowptr = numpy.empty_like(self.rowptr)
         rowptr[0] = 1
-        for irow, (n, m) in enumerate(numeric.overlapping(self.rowptr-1)):
-            n += self.colidx[n:m].searchsorted(irow+1)
-            upper[n:m] = True
-            rowptr[irow+1] = rowptr[irow] + (m-n)
-        return Pardiso(mtype=dict(f=-2, c=6)[self.dtype.kind], a=self.data[upper], ia=rowptr, ja=self.colidx[upper], **args)
+        diagdom = True
+        for irow, (n, m) in enumerate(numeric.overlapping(self.rowptr-1), start=1):
+            d = n + self.colidx[n:m].searchsorted(irow)
+            upper[d:m] = True
+            rowptr[irow] = rowptr[irow-1] + (m-d)
+            diagdom = diagdom and d < m and self.colidx[d] == irow and abs(self.data[n:m]).sum() < 2 * abs(self.data[d])
+        if diagdom:
+            log.debug('matrix is diagonally dominant, solving as SPD')
+            mtype = dict(f=2, c=4)
+        else:
+            mtype = dict(f=-2, c=6)
+        return Pardiso(mtype=mtype[self.dtype.kind], a=self.data[upper], ia=rowptr, ja=self.colidx[upper], **args)
 
 # vim:sw=2:sts=2:et
