@@ -744,7 +744,7 @@ def cli(f, *, argv=None):
         try:
             value = serializers[name].loads(s)
         except Exception as e:
-            sys.exit(f'{usage}\n\nError: invalid value for {name}: {e}')
+            sys.exit(f'{usage}\n\nError: invalid value {s!r} for {name}: {e}')
         kwargs[name] = value
 
     for name in mandatory.difference(kwargs):

@@ -670,4 +670,4 @@ def levicivita(n: int, dtype=float):
     result[tuple(I)] = 1 - 2*(nperms % 2)
     return result
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et

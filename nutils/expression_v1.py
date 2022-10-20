@@ -1478,7 +1478,7 @@ def _eval_ast(ast, functions):
         return function.get(array, dim, index)
     elif op == 'trace':
         array, n1, n2 = args
-        return numpy.trace(array, n1, n2)
+        return numpy.trace(array, axis1=n1, axis2=n2)
     elif op == 'sum':
         array, axis = args
         return numpy.sum(array, axis)
@@ -1817,4 +1817,4 @@ class Namespace:
             raise ValueError('`expression @ Namespace` cannot be used because the expression has more than one dimension.  Use `Namespace.eval_...(expression)` instead')
         return _eval_ast(ast, self._functions)
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et

@@ -588,3 +588,33 @@ class Namespace(TestCase):
         ns1.a = 1
         ns2 = ns1.copy_()
         self.assertAlmostEqual(ns2.a.eval(), 1)
+
+    def test_copy_replace_array(self):
+        ns1 = expression_v2.Namespace()
+        ns1.a = function.Argument('x', ())
+        ns2 = ns1.copy_(x=1.)
+        self.assertAlmostEqual(ns2.a.eval(), 1)
+
+    def test_copy_replace_arraylike(self):
+        class ArrayLike(numpy.lib.mixins.NDArrayOperatorsMixin):
+            '''minimal wrapper class that mimics nutils.SI.Quantity'''
+            def __init__(self, value):
+                self.wrapped = value
+            def __array_ufunc__(self, ufunc, method, *inputs, out=None, **kwargs):
+                if method == '__call__' and ufunc == numpy.divide:
+                    assert all(isinstance(a, ArrayLike) for a in inputs)
+                    return inputs[0].wrapped / inputs[1].wrapped
+                elif method == '__call__' and ufunc == numpy.multiply:
+                    assert isinstance(inputs[1], ArrayLike)
+                    return ArrayLike(inputs[0] * inputs[1].wrapped)
+                else:
+                    return NotImplemented
+            def __array_function__(self, *args):
+                return NotImplemented
+        ArrayLike.reference_quantity = ArrayLike(1.)
+
+        ns1 = expression_v2.Namespace()
+        ns1.a = ArrayLike(function.Argument('x', ()))
+        ns2 = ns1.copy_(x=1.)
+        self.assertIsInstance(ns2.a, ArrayLike)
+        self.assertAlmostEqual(ns2.a.wrapped.eval(), 1)

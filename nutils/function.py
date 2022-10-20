@@ -2850,7 +2850,8 @@ def replace_arguments(__array: IntoArray, __arguments: Mapping[str, IntoArray]) 
     :class:`Array`
     '''
 
-    return _Replace(Array.cast(__array), {k: Array.cast(v) for k, v in __arguments.items()})
+    array, scale = Array.cast_withscale(__array)
+    return _Replace(array, {k: Array.cast(v) for k, v in __arguments.items()}) * scale
 
 
 def broadcast_arrays(*arrays: IntoArray) -> Tuple[Array, ...]:
@@ -3189,7 +3190,7 @@ def div(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
     '''
 
     geom = Array.cast(__geom, ndim=1)
-    return numpy.trace(grad(__arg, geom, ndims), -2, -1)
+    return numpy.trace(grad(__arg, geom, ndims), axis1=-2, axis2=-1)
 
 
 def laplace(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
@@ -4227,7 +4228,9 @@ class __implementations__:
         return numpy.reshape(arg, -1)
 
     @implements(numpy.trace)
-    def trace(arg: Array, axis1: int = 0, axis2: int = 1) -> Array:
+    def trace(arg: Array, offset: int = 0, axis1: int = 0, axis2: int = 1) -> Array:
+        if offset != 0:
+            raise NotImplementedError('traces over offset diagonal are not yet supported')
         return numpy.sum(_takediag(arg, axis1, axis2), -1)
 
     @implements(numpy.transpose)

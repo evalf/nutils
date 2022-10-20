@@ -105,4 +105,4 @@ class ScipyMatrix(Matrix):
     def diagonal(self):
         return self.core.diagonal()
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et

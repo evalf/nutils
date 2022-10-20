@@ -69,14 +69,13 @@ def single_or_multiple(f):
     @functools.wraps(f)
     def wrapper(target, *args, **kwargs):
         is_single = isinstance(target, str) and ',' not in target and ':' not in target
-        if isinstance(target, str):
-            target = target.rstrip(',').split(',')
-        is_functional = ':' in target[0]
-        if any((':' in t) != is_functional for t in target[1:]):
+        targets = target.rstrip(',').split(',') if isinstance(target, str) else list(target)
+        is_functional = ':' in targets[0]
+        if any((':' in t) != is_functional for t in targets[1:]):
             raise ValueError('inconsistent arguments')
         if is_functional:
-            target, test = zip(*[t.split(':', 1) for t in target])
-        ba = sig.bind(tuple(target), *args, **kwargs)
+            targets, test = zip(*[t.split(':', 1) for t in targets])
+        ba = sig.bind(tuple(targets), *args, **kwargs)
         tuple_args = [name for name in ba.arguments if sig.parameters[name].annotation in (integraltuple, optionalintegraltuple)]
         if is_functional:
             arguments = function._join_arguments(ba.arguments[name].arguments for name in tuple_args)
@@ -89,7 +88,7 @@ def single_or_multiple(f):
                 v = v,
             ba.arguments[name] = tuple(v)
         retval = f(*ba.args, **ba.kwargs)
-        return retval[target[0]] if is_single else retval
+        return retval[targets[0]] if is_single else retval
 
     del wrapper.__wrapped__ # required for sphinx until issue #10414 is fixed (https://github.com/sphinx-doc/sphinx/issues/10414)
 
@@ -1006,4 +1005,4 @@ def _determine_dtype(targets, residuals, lhs0, constrain):
         raise ValueError('All targets must have dtype {}.'.format(dtype.__name__))
     return dtype
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et

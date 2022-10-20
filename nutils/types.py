@@ -1419,4 +1419,4 @@ def hashable_function(identifier):
 
     return functools.partial(_hashable_function_wrapper, identifier=identifier)
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et

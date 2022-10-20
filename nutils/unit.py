@@ -190,4 +190,4 @@ def _f2s(v):
         else s[:pos] + '.' + s[pos:]
 
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et

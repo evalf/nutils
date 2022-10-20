@@ -497,4 +497,4 @@ def find_duplicates(allpoints):
             coords.setdefault(tuple(points.coords[j]), []).append((i, j))
     return [tuple(pairs) for pairs in coords.values() if len(pairs) > 1]
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et

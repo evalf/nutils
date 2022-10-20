@@ -316,4 +316,4 @@ class FloatNeighborhoodOutputChecker(doctest.OutputChecker):
         else:
             return float(token)
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et

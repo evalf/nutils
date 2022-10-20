@@ -3269,4 +3269,4 @@ class MultipatchTopology(TransformChainsTopology):
 
         return MultipatchTopology(Patch(patch.topo.refined, patch.verts, patch.boundaries) for patch in self.patches)
 
-# vim:sw=2:sts=2:et
+# vim:sw=4:sts=4:et
