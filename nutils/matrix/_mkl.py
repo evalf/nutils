@@ -264,10 +264,10 @@ class MKLMatrix(Matrix):
         upper = numpy.zeros(len(self.data), dtype=bool)
         rowptr = numpy.empty_like(self.rowptr)
         rowptr[0] = 1
-        for irow, (n, m) in enumerate(numeric.overlapping(self.rowptr-1)):
-            n += self.colidx[n:m].searchsorted(irow+1)
+        for irow, (n, m) in enumerate(numeric.overlapping(self.rowptr-1), start=1):
+            n += self.colidx[n:m].searchsorted(irow)
             upper[n:m] = True
-            rowptr[irow+1] = rowptr[irow] + (m-n)
+            rowptr[irow] = rowptr[irow-1] + (m-n)
         return Pardiso(mtype=dict(f=-2, c=6)[self.dtype.kind], a=self.data[upper], ia=rowptr, ja=self.colidx[upper], **args)
 
 # vim:sw=2:sts=2:et
