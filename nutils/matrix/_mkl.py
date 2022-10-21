@@ -1,17 +1,21 @@
 from ._base import Matrix, MatrixError, BackendNotAvailable
 from .. import numeric, _util as util, warnings
 from contextlib import contextmanager
-from ctypes import c_int, byref
+from ctypes import c_int, byref, CDLL
 import treelog as log
 import os
 import numpy
 
-for v in '.2', '.1', '':
-    libmkl = util.loadlib(linux=f'libmkl_rt.so{v}', darwin=f'libmkl_rt{v}.dylib', win32=f'mkl_rt{v}.dll')
-    if libmkl:
-        break
+libmkl_path = os.environ.get('NUTILS_MATRIX_MKL_LIB', None)
+if libmkl_path:
+    libmkl = CDLL(libmkl_path)
 else:
-    raise BackendNotAvailable('the Intel MKL matrix backend requires libmkl to be installed (try: pip install mkl)')
+    for v in '.2', '.1', '':
+        libmkl = util.loadlib(linux=f'libmkl_rt.so{v}', darwin=f'libmkl_rt{v}.dylib', win32=f'mkl_rt{v}.dll')
+        if libmkl:
+            break
+    else:
+        raise BackendNotAvailable('the Intel MKL matrix backend requires libmkl to be installed (try: pip install mkl)')
 
 
 def assemble(data, index, shape):
