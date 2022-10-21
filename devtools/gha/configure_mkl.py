@@ -1,25 +1,38 @@
 from .. import log
+import re
 import sys
 import site
 import os
+from pathlib import Path
 
-libsubdir = 'lib'
-prefixes = list(site.PREFIXES)
-if hasattr(site, 'getuserbase'):
-    prefixes.append(site.getuserbase())
-
-candidates = [os.path.join(prefix, libsubdir, 'libmkl_rt.so' + ext) for prefix in prefixes for ext in ('.1', '.2')]
-for path in candidates:
-    if os.path.exists(path):
-        break
+if sys.platform == 'linux':
+    libsubdir = 'lib',
+    re_libmkl = re.compile('libmkl_rt[.]so[.][0-9]+')
+elif sys.platform == 'darwin':
+    libsubdir = 'lib',
+    re_libmkl = re.compile('libmkl_rt[.][0-9]+[.]dylib')
+elif sys.platform == 'win32':
+    libsubdir = 'Library', 'bin'
+    re_libmkl = re.compile('mkl_rt[.][0-9]+[.]dll')
 else:
-    log.error('cannot find any of {}'.format(' '.join(candidates)))
+    log.error(f'unsupported platform: {sys.platform}')
     raise SystemExit(1)
 
-lib = os.path.splitext(path)[0]
-if not os.path.exists(lib):
-    os.symlink(path, lib)
+prefixes = list(map(Path, site.PREFIXES))
+if hasattr(site, 'getuserbase'):
+    prefixes.append(Path(site.getuserbase()))
 
-ld_library_path = os.pathsep.join(filter(None, (os.environ.get('LD_LIBRARY_PATH', ''), os.path.dirname(path))))
+libdirs = {libdir := prefix.joinpath(*libsubdir).resolve() for prefix in prefixes}
+libs = {file for libdir in libdirs if libdir.is_dir() for file in libdir.iterdir() if re_libmkl.match(file.name)}
+if len(libs) == 0:
+    log.error('cannot find MKL in any of {}'.format(', '.join(map(str, libdirs))))
+    raise SystemExit(1)
+elif len(libs) != 1:
+    log.error('found MKL at more than one location: {}'.format(', '.join(map(str, libs))))
+    raise SystemExit(1)
+else:
+    lib, = libs
+    log.info(f'using MKL at {lib}')
+
 with open(os.environ['GITHUB_ENV'], 'a') as f:
-    print('LD_LIBRARY_PATH={}'.format(ld_library_path), file=f)
+    print(f'NUTILS_MATRIX_MKL_LIB={lib}', file=f)
