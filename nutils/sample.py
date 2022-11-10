@@ -399,8 +399,8 @@ class _TransformChainsSample(Sample):
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
         return function.LowerArgs.for_space(self.space, tuple(t.get_evaluable(__ielem) for t in (self.transforms*2)[:2]), self.points.get_evaluable_coords(__ielem))
 
-    def basis(self) -> function.Array:
-        return _Basis(self)
+    def basis(self, on_error='fail') -> function.Array:
+        return _Basis(self, on_error)
 
     def subset(self, mask: numpy.ndarray) -> Sample:
         selection = types.frozenarray([ielem for ielem in range(self.nelems) if mask[self.getindex(ielem)].any()])
@@ -542,7 +542,7 @@ class _Empty(_TensorialSample):
         func, funcscale = function.Array.cast_withscale(__func)
         return function.zeros((0, *func.shape), func.dtype) * funcscale
 
-    def basis(self) -> function.Array:
+    def basis(self, on_error='fail') -> function.Array:
         return function.zeros((0,), float)
 
 
@@ -673,9 +673,9 @@ class _Mul(_TensorialSample):
     def __call__(self, func: function.IntoArray) -> function.Array:
         return numpy.reshape(self._sample1(self._sample2(func)), (-1, *func.shape))
 
-    def basis(self) -> Sample:
-        basis1 = self._sample1.basis()
-        basis2 = self._sample2.basis()
+    def basis(self, on_error='fail') -> Sample:
+        basis1 = self._sample1.basis(on_error)
+        basis2 = self._sample2.basis(on_error)
         assert basis1.ndim == basis2.ndim == 1
         return numpy.ravel(basis1[:, None] * basis2[None, :])
 
@@ -909,8 +909,9 @@ class _ReorderPoints(function.Array):
 
 class _Basis(function.Array):
 
-    def __init__(self, sample: _TransformChainsSample) -> None:
+    def __init__(self, sample: _TransformChainsSample, on_error: str) -> None:
         self._sample = sample
+        self._on_error = on_error
         super().__init__(shape=(sample.npoints,), dtype=float, spaces=frozenset({sample.space}), arguments={})
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
@@ -930,7 +931,7 @@ class _Basis(function.Array):
         index, tail = chain.index_with_tail_in(self._sample.transforms[0])
         coords = tail.apply(space_coords)
         expect = self._sample.points.get_evaluable_coords(index)
-        sampled = evaluable.Sampled(coords, expect)
+        sampled = evaluable.Sampled(coords, expect, self._on_error)
         indices = self._sample.get_evaluable_indices(index)
         basis = evaluable.Inflate(sampled, dofmap=indices, length=self._sample.npoints)
 

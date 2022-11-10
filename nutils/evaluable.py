@@ -2721,23 +2721,29 @@ class Sampled(Array):
 
     Args
     ----
-    points : 1d :class:`Array`
+    points : 2d :class:`Array`
         Present point coordinates.
     expect : 2d :class:`Array`
         Elementwise constant that evaluates to the predefined point coordinates;
         used for error checking and to inherit the shape.
     '''
 
-    __slots__ = ()
+    __slots__ = '_on_error'
 
     @types.apply_annotations
-    def __init__(self, points: asarray, expect: asarray):
-        assert points.ndim == 2
+    def __init__(self, points: asarray, expect: asarray, on_error='fail'):
+        assert points.ndim == 2 and on_error in ('fail', 'nearest')
+        self._on_error = on_error
         super().__init__(args=[points, expect], shape=(points.shape[0], expect.shape[0]), dtype=float)
 
     def evalf(self, points, expect):
-        assert numpy.equal(points, expect).all(), 'illegal point set'
-        return numpy.eye(len(points))
+        if points.shape == expect.shape and numpy.equal(points, expect).all():
+            nearest = slice(None)
+        elif self._on_error == 'nearest':
+            nearest = numpy.linalg.norm(points[:,numpy.newaxis,:] - expect[numpy.newaxis,:,:], axis=2).argmin(axis=1)
+        else: # _on_error == 'fail'
+            raise RuntimeError('illegal point set')
+        return numpy.eye(len(expect))[nearest]
 
 
 @types.apply_annotations
