@@ -439,11 +439,9 @@ def timeit():
 
     t0 = datetime.datetime.now()
     treelog.info(f'start {t0:%Y-%m-%d %H:%M:%S}')
-    try:
-        yield
-    finally:
-        te = datetime.datetime.now()
-        treelog.info(f'finish {te:%Y-%m-%d %H:%M:%S}, elapsed {format_timedelta(te-t0)}')
+    yield
+    te = datetime.datetime.now()
+    treelog.info(f'finish {te:%Y-%m-%d %H:%M:%S}, elapsed {format_timedelta(te-t0)}')
 
 
 class timer:
