@@ -361,6 +361,26 @@ class DefaultIndex(TestCase, Common):
             _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
             self.assertAllAlmostEqual(self.sample(self.sample.basis()).as_evaluable_array.eval(), numpy.eye(11))
 
+    def test_basis_nearest(self):
+        unisample = Sample.new('a', (self.transforms, self.transforms),
+            PointsSequence.uniform((element.getsimplex(1)**2).getpoints('uniform', 2), 3))
+        self.assertEqual(unisample.npoints, 12)
+        coords = function.rootcoords('a', 2)
+        bezierpoints = self.sample.eval(coords)
+        uniformpoints = unisample.eval(coords)
+        # Unisample consists of 3 times 4 points occupying the centers of the
+        # four quadrants of a square. The four bezier points of the first and
+        # last square element of self.sample map to the corresponding uniform
+        # points of unisample. The three bezier points of the middle triangular
+        # element map to uniform points 0, 2, and 1 of unisample.
+        nearest = numpy.concatenate([
+            u1 + numpy.linalg.norm(bezierpoints[b1:b2,numpy.newaxis] - uniformpoints[numpy.newaxis,u1:u2], axis=-1).argmin(1)
+                for (b1, u1), (b2, u2) in util.pairwise([(0, 0), (4, 4), (7, 8), (11, 12)])])
+        self.assertAllEqual(nearest, [0, 1, 2, 3, 4, 6, 5, 8, 9, 10, 11])
+        with _builtin_warnings.catch_warnings():
+            _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
+            self.assertAllAlmostEqual(self.sample(unisample.basis(interpolation='nearest')).as_evaluable_array.eval(), numpy.eye(12)[nearest])
+
 
 class CustomIndex(TestCase, Common):
 

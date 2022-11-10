@@ -1,4 +1,4 @@
-from nutils import evaluable, sparse, numeric, _util as util, types
+from nutils import evaluable, sparse, numeric, _util as util, types, sample
 from nutils.testing import TestCase, parametrize
 import nutils_poly as poly
 import numpy
@@ -811,11 +811,11 @@ class commutativity(TestCase):
 class sampled(TestCase):
 
     def test_match(self):
-        f = evaluable.Sampled(evaluable.constant([[1, 2], [3, 4]]), evaluable.constant([[1, 2], [3, 4]]))
+        f = evaluable.Sampled(evaluable.constant([[1, 2], [3, 4]]), evaluable.constant([[1, 2], [3, 4]]), 'none')
         self.assertAllEqual(f.eval(), numpy.eye(2))
 
     def test_no_match(self):
-        f = evaluable.Sampled(evaluable.constant([[1, 2], [3, 4]]), evaluable.constant([[3, 4], [1, 2]]))
+        f = evaluable.Sampled(evaluable.constant([[1, 2], [3, 4]]), evaluable.constant([[3, 4], [1, 2]]), 'none')
         with self.assertRaises(Exception):
             f.eval()
 
