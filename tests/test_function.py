@@ -372,6 +372,7 @@ _check('stack', lambda a, b: numpy.stack([a, function.Array.cast(b)], 1), lambda
 
 _check('Array_getitem_scalar', lambda a: function.Array.cast(a)[0], lambda a: a[0], INT(5, 3, 2))
 _check('Array_getitem_scalar_scalar', lambda a: function.Array.cast(a)[0, 1], lambda a: a[0, 1], INT(5, 3, 2))
+_check('Array_getitem_matrix', lambda a: function.Array.cast(a)[numpy.array([[4,3],[2,1]])], lambda a: a[numpy.array([[4,3],[2,1]])], INT(5, 3, 2))
 _check('Array_getitem_slice_step', lambda a: function.Array.cast(a)[:, ::2], lambda a: a[:, ::2], INT(5, 3, 2))
 _check('Array_getitem_ellipsis_scalar', lambda a: function.Array.cast(a)[..., 1], lambda a: a[..., 1], INT(5, 3, 2))
 _check('Array_getitem_ellipsis_scalar_newaxis', lambda a: function.Array.cast(a)[..., 1, None], lambda a: a[..., 1, None], INT(5, 3, 2))

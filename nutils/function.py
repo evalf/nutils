@@ -263,13 +263,15 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         array = self
         axis = 0
         for it in item + (slice(None),)*nx if iell is None else item[:iell] + (slice(None),)*(nx+1) + item[iell+1:]:
-            if isinstance(it, numbers.Integral):
-                array = get(array, axis, it)
-            else:
-                array = expand_dims(array, axis) if it is numpy.newaxis \
-                    else _takeslice(array, it, axis) if isinstance(it, slice) \
-                    else numpy.take(array, it, axis)
+            if it is numpy.newaxis:
+                array = expand_dims(array, axis)
                 axis += 1
+            elif isinstance(it, slice):
+                array = _takeslice(array, it, axis)
+                axis += 1
+            else:
+                array = numpy.take(array, it, axis)
+                axis += numpy.ndim(it)
         assert axis == array.ndim
         return array
 
