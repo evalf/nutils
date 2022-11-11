@@ -153,13 +153,10 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     __array_priority__ = 1.  # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
     def __array_ufunc__(self, ufunc, method, *inputs, out=None, **kwargs):
-        if method != '__call__' or ufunc not in HANDLED_FUNCTIONS:
-            return NotImplemented
-        try:
-            arrays = [v if isinstance(v, (Array, bool, int, float, complex, numpy.ndarray)) else Array.cast(v) for v in inputs]
-        except ValueError:
-            return NotImplemented
-        return HANDLED_FUNCTIONS[ufunc](*arrays, **kwargs)
+        T = Array, bool, int, float, complex, numpy.ndarray
+        if method == '__call__' and ufunc in HANDLED_FUNCTIONS and all(isinstance(v, T) for v in inputs):
+            return HANDLED_FUNCTIONS[ufunc](*inputs, **kwargs)
+        return NotImplemented
 
     def __array_function__(self, func, types, args, kwargs):
         if func not in HANDLED_FUNCTIONS:
