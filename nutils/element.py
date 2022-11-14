@@ -207,9 +207,9 @@ class Reference(types.Singleton):
         else:
 
             refs = [edgeref.slice(lambda vertices: levelfunc(edgetrans.apply(vertices)), ndivisions) for edgetrans, edgeref in self.edges]
-            if sum(ref != baseref for ref, baseref in zip(refs, self.edge_refs)) <= 1:
+            if sum(ref != baseref for ref, baseref in zip(refs, self.edge_refs)) < self.ndims:
                 return self
-            if sum(bool(ref) for ref in refs) <= 1:
+            if sum(bool(ref) for ref in refs) < self.ndims:
                 return self.empty
 
             clevel = levelfunc(self.centroid[_])[0]
