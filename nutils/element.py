@@ -24,7 +24,7 @@ class Reference(types.Singleton):
     'reference element'
 
     __slots__ = 'ndims',
-    __cache__ = 'connectivity', 'edgechildren', 'ribbons', 'volume', 'centroid', '_linear_bernstein', 'getpoints'
+    __cache__ = 'connectivity', 'edgechildren', 'volume', 'centroid', '_linear_bernstein', 'getpoints'
 
     @types.apply_annotations
     def __init__(self, ndims: int):
@@ -34,6 +34,56 @@ class Reference(types.Singleton):
     @property
     def nverts(self):
         return len(self.vertices)
+
+    @property
+    def vertices(self):
+        '''Vertex coordinates.'''
+
+        raise NotImplementedError(self)
+
+    @property
+    def simplices(self):
+        '''Partition of the element consisting of simplices.
+
+        The `simplices` attribute is a sequence of integer arrays that specify
+        per simplex the indices of the vertices in :attr:`vertices`.
+        '''
+
+        raise NotImplementedError(self)
+
+    @property
+    def simplex_transforms(self):
+        '''Sequence of transforms from simplex to parent element.
+
+        The `simplex_transforms` attribute is a sequence of objects of type
+        :class:`nutils.transform.TransformItem` that provide per simplex the
+        coordinate mapping from the simplex to the parent element. The origin
+        of the simplex-local coordinate system maps to its first vertex, the
+        first unit vector to the second, the second to the third, and so on.
+        '''
+
+        return tuple(transform.Square((vertices[1:] - vertices[0]).T, vertices[0]) for vertices in self.vertices[self.simplices])
+
+    def inside(self, point, eps=0):
+        for strans in self.simplex_transforms:
+            spoint = strans.invapply(point) # point in simplex coordinates
+            tol = -eps / strans.det # account for simplex scale
+            if all(bary >= tol for bary in (*spoint, 1-spoint.sum())):
+                return True
+        return False
+
+    @property
+    def edge_vertices(self):
+        '''Relation between edge and volume vertices.
+
+        Given a volume reference `vol`, `vol.edge_vertices` is a sequence of
+        integer arrays that specifies per edge (outer sequence, corresponding
+        to `vol.edges`) for each vertex (inner sequence, corresponding to
+        `vol.edges[iedge].vertices`) its index in `vol` (corresponding to
+        `vol.vertices`).
+        '''
+
+        raise NotImplementedError
 
     __and__ = lambda self, other: self if self == other else NotImplemented
     __or__ = lambda self, other: self if self == other else NotImplemented
@@ -113,27 +163,6 @@ class Reference(types.Singleton):
             edgechildren.append(types.frozenarray(children))
         return tuple(edgechildren)
 
-    @property
-    def ribbons(self):
-        # tuples of (iedge1,jedge1), (iedge2,jedge2) pairs
-        assert self.ndims >= 2
-        transforms = {}
-        ribbons = []
-        for iedge1, (etrans1, edge1) in enumerate(self.edges):
-            if edge1:
-                for iedge2, (etrans2, edge2) in enumerate(edge1.edges):
-                    if edge2:
-                        key = tuple(sorted(tuple(p) for p in (etrans1 * etrans2).apply(edge2.vertices)))
-                        try:
-                            jedge1, jedge2 = transforms.pop(key)
-                        except KeyError:
-                            transforms[key] = iedge1, iedge2
-                        else:
-                            assert self.edge_refs[jedge1].edge_refs[jedge2] == edge2
-                            ribbons.append(((iedge1, iedge2), (jedge1, jedge2)))
-        assert not transforms
-        return tuple(ribbons)
-
     def getischeme(self, ischeme):
         ischeme, degree = parse_legacy_ischeme(ischeme)
         points = self.getpoints(ischeme, degree)
@@ -169,68 +198,69 @@ class Reference(types.Singleton):
     def trim(self, levels, maxrefine, ndivisions):
         'trim element along levelset'
 
-        assert len(levels) == self.nvertices_by_level(maxrefine)
+        assert len(levels) == self._nlinear_by_level(maxrefine)
         return self if not self or numpy.greater_equal(levels, 0).all() \
             else self.empty if numpy.less_equal(levels, 0).all() \
             else self.with_children(cref.trim(clevels, maxrefine-1, ndivisions)
                                     for cref, clevels in zip(self.child_refs, self.child_divide(levels, maxrefine))) if maxrefine > 0 \
-            else self.slice(lambda vertices: numeric.dot(numeric.poly_eval(self._linear_bernstein, vertices), levels), ndivisions)
+            else self.slice(numeric.poly_eval(self._linear_bernstein, self.vertices) @ levels, ndivisions)
 
     @property
     def _linear_bernstein(self):
         return self.get_poly_coeffs('bernstein', degree=1)
 
-    def slice(self, levelfunc, ndivisions):
+    def slice(self, levels, ndivisions):
         # slice along levelset by recursing over dimensions
 
-        levels = levelfunc(self.vertices)
-
-        assert numeric.isint(ndivisions)
-        assert len(levels) == self.nverts
+        assert len(levels) == len(self.vertices)
         if numpy.greater_equal(levels, 0).all():
             return self
         if numpy.less_equal(levels, 0).all():
             return self.empty
+        assert self.ndims >= 1
 
-        nbins = 2**ndivisions
+        refs = [edgeref.slice(levels[edgeverts], ndivisions) for edgeverts, edgeref in zip(self.edge_vertices, self.edge_refs)]
+        if sum(ref != baseref for ref, baseref in zip(refs, self.edge_refs)) < self.ndims:
+            return self
+        if sum(bool(ref) for ref in refs) < self.ndims:
+            return self.empty
 
         if self.ndims == 1:
 
-            l0, l1 = levels
+            # For 1D elements a midpoint is introduced through linear
+            # interpolation of the vertex levels, followed by a binning step to
+            # remove near-vertex cuts and improve robustness for topology-wide
+            # connectivity.
+
+            iedge = [i for (i,), edge in zip(self.edge_vertices, self.edge_refs) if edge]
+            l0, l1 = levels[iedge]
+            nbins = 2**ndivisions
             xi = numpy.round(l0/(l0-l1) * nbins)
             if xi in (0, nbins):
                 return self.empty if xi == 0 and l1 < 0 or xi == nbins and l0 < 0 else self
-            v0, v1 = self.vertices
+            v0, v1 = self.vertices[iedge]
             midpoint = v0 + (xi/nbins) * (v1-v0)
-            refs = [edgeref if levelfunc(edgetrans.apply(numpy.zeros((1, 0)))) > 0 else edgeref.empty for edgetrans, edgeref in self.edges]
 
         else:
 
-            refs = [edgeref.slice(lambda vertices: levelfunc(edgetrans.apply(vertices)), ndivisions) for edgetrans, edgeref in self.edges]
-            if sum(ref != baseref for ref, baseref in zip(refs, self.edge_refs)) <= 1:
-                return self
-            if sum(bool(ref) for ref in refs) <= 1:
-                return self.empty
+            # For higher-dimensional elements, the first vertex that is newly
+            # introduced by an edge slice is selected to serve as 'midpoint'.
+            # In case no new vertices are introduced (all edges are either
+            # fully retained or fully removed) then the first vertex is
+            # selected that occurs in only one of the edges. Either situation
+            # guarantees that the selected vertex lies on the exterior hull.
 
-            clevel = levelfunc(self.centroid[_])[0]
+            for trans, edge, emap, newedge in zip(self.edge_transforms, self.edge_refs, self.edge_vertices, refs):
+                if newedge.nverts > edge.nverts:
+                    midpoint = trans.apply(newedge.vertices[edge.nverts])
+                    break
+            else:
+                count = numpy.zeros(self.nverts, dtype=int)
+                for emap, eref in zip(self.edge_vertices, refs):
+                    count[emap[eref.simplices]] += 1
+                midpoint = self.vertices[count==1][0]
 
-            select = clevel*levels <= 0 if clevel != 0 else levels != 0
-            levels = levels[select]
-            vertices = self.vertices[select]
-
-            xi = numpy.round(levels/(levels-clevel) * nbins)
-            midpoint = numpy.mean(vertices + (self.centroid-vertices)*(xi/nbins)[:, _], axis=0)
-
-        if tuple(refs) == tuple(self.edge_refs):
-            return self
-        if not any(refs):
-            return self.empty
-
-        mosaic = MosaicReference(self, refs, midpoint)
-        return self.empty if mosaic.volume == 0 else mosaic if mosaic.volume < self.volume else self
-
-    def cone(self, trans, tip):
-        return Cone(self, trans, tip)
+        return MosaicReference(self, refs, midpoint)
 
     def check_edges(self, tol=1e-15, print=print):
         volume = 0
@@ -246,10 +276,10 @@ class Reference(types.Singleton):
         if numpy.greater(abs(volume - self.volume), tol).any():
             print('divergence check failed: {} != {}'.format(volume, self.volume))
 
-    def vertex_cover(self, ctransforms, maxrefine):
+    def _linear_cover(self, ctransforms, maxrefine):
         if maxrefine < 0:
             raise Exception('maxrefine is too low')
-        npoints = self.nvertices_by_level(maxrefine)
+        npoints = self._nlinear_by_level(maxrefine)
         allindices = numpy.arange(npoints)
         if len(ctransforms) == 1:
             ctrans, = ctransforms
@@ -266,7 +296,7 @@ class Reference(types.Singleton):
         fcache = cache.WrapperCache()
         return tuple(((ctrans,) + trans, points, cindices[indices])
                      for ctrans, cref, cbin, cindices in zip(self.child_transforms, self.child_refs, cbins, self.child_divide(allindices, maxrefine))
-                     for trans, points, indices in fcache[cref.vertex_cover](frozenset(cbin), maxrefine-1))
+                     for trans, points, indices in fcache[cref._linear_cover](frozenset(cbin), maxrefine-1))
 
     def __str__(self):
         return self.__class__.__name__
@@ -307,6 +337,14 @@ class EmptyLike(Reference):
         return self.baseref.vertices
 
     @property
+    def edge_vertices(self):
+        return self.baseref.edge_vertices
+
+    @property
+    def simplices(self):
+        return types.frozenarray(numpy.empty([0, self.ndims+1], dtype=int), copy=False)
+
+    @property
     def edge_transforms(self):
         return self.baseref.edge_transforms
 
@@ -329,19 +367,30 @@ class EmptyLike(Reference):
     def trim(self, levels, maxrefine, ndivisions):
         return self
 
-    def inside(self, point, eps=0):
-        return False
-
 
 class SimplexReference(Reference):
     'simplex reference'
 
     __slots__ = ()
-    __cache__ = 'edge_refs', 'edge_transforms', 'ribbons', '_get_poly_coeffs_bernstein', '_get_poly_coeffs_lagrange', '_integer_barycentric_coordinates'
+    __cache__ = 'edge_refs', 'edge_transforms', 'edge_vertices', '_get_poly_coeffs_bernstein', '_get_poly_coeffs_lagrange', '_integer_barycentric_coordinates'
 
     @property
     def vertices(self):
-        return types.frozenarray(numpy.concatenate([numpy.zeros(self.ndims)[_, :], numpy.eye(self.ndims)], axis=0), copy=False)
+        return types.frozenarray(numpy.eye(self.ndims+1)[1:].T, copy=False) # first vertex in origin
+
+    @property
+    def edge_vertices(self):
+        return tuple(types.frozenarray(numpy.arange(self.ndims+1).repeat(self.ndims).reshape(self.ndims,self.ndims+1).T[::-1], copy=False))
+
+    @property
+    def simplices(self):
+        return types.frozenarray(numpy.arange(self.ndims+1)[numpy.newaxis], copy=False)
+
+    @property
+    def simplex_transforms(self):
+        # The definition of self.vertices is such that the conventions of
+        # Reference.simplex_transforms result in the identity map.
+        return transform.Identity(self.ndims),
 
     @property
     def edge_refs(self):
@@ -361,10 +410,6 @@ class SimplexReference(Reference):
     def child_transforms(self):
         return tuple(transform.SimplexChild(self.ndims, ichild) for ichild in range(2**self.ndims))
 
-    @property
-    def ribbons(self):
-        return tuple(((iedge1, iedge2), (iedge2+1, iedge1)) for iedge1 in range(self.ndims+1) for iedge2 in range(iedge1, self.ndims))
-
     def getpoints(self, ischeme, degree):
         if ischeme == 'gauss':
             return points.SimplexGaussPoints(self.ndims, degree if numeric.isint(degree) else sum(degree))
@@ -375,10 +420,6 @@ class SimplexReference(Reference):
         if ischeme == 'bezier':
             return points.SimplexBezierPoints(self.ndims, degree)
         return super().getpoints(ischeme, degree)
-
-    @property
-    def simplices(self):
-        return (transform.Identity(self.ndims), self),
 
     def get_ndofs(self, degree):
         prod = lambda start, stop: functools.reduce(operator.mul, range(start, stop), 1)
@@ -424,9 +465,6 @@ class SimplexReference(Reference):
     def get_edge_dofs(self, degree, iedge):
         return types.frozenarray(tuple(i for i, j in enumerate(self._integer_barycentric_coordinates(degree)) if j[iedge] == 0), dtype=int)
 
-    def inside(self, point, eps=0):
-        return numpy.greater_equal(point, -eps).all(axis=0) and numpy.less_equal(numpy.sum(point, axis=0), 1+eps)
-
 
 class PointReference(SimplexReference):
     '0D simplex'
@@ -440,7 +478,7 @@ class PointReference(SimplexReference):
     def getpoints(self, ischeme, degree):
         return points.CoordsWeightsPoints(numpy.empty([1, 0]), [1.])
 
-    def nvertices_by_level(self, n):
+    def _nlinear_by_level(self, n):
         return 1
 
     def child_divide(self, vals, n):
@@ -461,12 +499,12 @@ class LineReference(SimplexReference):
             return points.CoordsUniformPoints(numpy.arange(.5, degree)[:, _] / degree, 1)
         return super().getpoints(ischeme, degree)
 
-    def nvertices_by_level(self, n):
+    def _nlinear_by_level(self, n):
         return 2**n + 1
 
     def child_divide(self, vals, n):
         assert n > 0
-        assert len(vals) == self.nvertices_by_level(n)
+        assert len(vals) == self._nlinear_by_level(n)
         m = (len(vals)+1) // 2
         return vals[:m], vals[m-1:]
 
@@ -491,12 +529,12 @@ class TriangleReference(SimplexReference):
             return points.CoordsUniformPoints(coords.T, .5)
         return super().getpoints(ischeme, degree)
 
-    def nvertices_by_level(self, n):
+    def _nlinear_by_level(self, n):
         m = 2**n + 1
         return ((m+1)*m) // 2
 
     def child_divide(self, vals, n):
-        assert len(vals) == self.nvertices_by_level(n)
+        assert len(vals) == self._nlinear_by_level(n)
         np = 1 + 2**n  # points along parent edge
         mp = 1 + 2**(n-1)  # points along child edge
         cvals = []
@@ -543,12 +581,12 @@ class TetrahedronReference(SimplexReference):
         indis = numpy.arange(m)
         return numpy.array([[i, j, k] for k in indis for j in indis[:m-k] for i in indis[:m-j-k]])
 
-    def nvertices_by_level(self, n):
+    def _nlinear_by_level(self, n):
         m = 2**n+1
         return ((m+2)*(m+1)*m)//6
 
     def child_divide(self, vals, n):
-        assert len(vals) == self.nvertices_by_level(n)
+        assert len(vals) == self._nlinear_by_level(n)
 
         child_indices = self.getindices_vertex(1)
 
@@ -576,7 +614,7 @@ class TensorReference(Reference):
     'tensor reference'
 
     __slots__ = 'ref1', 'ref2'
-    __cache__ = 'vertices', 'edge_transforms', 'ribbons', 'child_transforms', 'getpoints', 'get_poly_coeffs', 'centroid'
+    __cache__ = 'vertices', 'edge_transforms', 'edge_vertices', 'child_transforms', 'getpoints', 'get_poly_coeffs', 'centroid', 'simplices'
 
     def __init__(self, ref1, ref2):
         assert not isinstance(ref1, TensorReference)
@@ -595,15 +633,42 @@ class TensorReference(Reference):
         return types.frozenarray(vertices.reshape(self.ref1.nverts*self.ref2.nverts, self.ndims), copy=False)
 
     @property
+    def edge_vertices(self):
+        n1 = self.ref1.nverts
+        n2 = self.ref2.nverts
+        edge_vertices = [everts[:,_] * n2 + numpy.arange(n2) for everts in self.ref1.edge_vertices] \
+                      + [numpy.arange(n1)[:,_] * n2 + everts for everts in self.ref2.edge_vertices]
+        return tuple(types.frozenarray(e.ravel(), copy=False) for e in edge_vertices)
+
+    @property
+    def simplices(self):
+        if self.ref1.ndims != 1 and self.ref2.ndims != 1:
+            raise NotImplementedError((self.ref1, self.ref2))
+        # For an n-dimensional simplex with vertices a0,a1,..,an, the extruded
+        # element has vertices a0,a1,..,an,b0,b1,..,bn. These can be divided in
+        # simplices by selecting a0,a1,..,an,b0; a1,..,an,b0,n1; and so on until
+        # an,b0,b1,..,bn; resulting in n+1 n+1-dimensional simplices.
+        indices = self.ref1.simplices[:,numpy.newaxis,:,numpy.newaxis] * self.ref2.nverts \
+                + self.ref2.simplices[numpy.newaxis,:,numpy.newaxis,:]
+        if self.ref1.ndims != 1:
+            indices = indices.swapaxes(2,3) # simplex strips require penultimate axis to be of length 2
+        assert indices.shape[2] == 2
+        indices = numeric.overlapping(indices.reshape(-1, 2*self.ndims), n=self.ndims+1).copy() # nsimplex x nstrip x ndims+1
+        # to see determinants: X = self.vertices[indices]; numpy.linalg.det(X[...,1:,:] - X[...,:1,:])
+        if self.ndims % 2 == 0: # simplex strips of even dimension (e.g. triangles) have alternating orientation
+            indices[:,::2,:2] = indices[:,::2,1::-1].copy() # flip every other simplex
+        return types.frozenarray(indices.reshape(-1, self.ndims+1), copy=False)
+
+    @property
     def centroid(self):
         return types.frozenarray(numpy.concatenate([self.ref1.centroid, self.ref2.centroid]), copy=False)
 
-    def nvertices_by_level(self, n):
-        return self.ref1.nvertices_by_level(n) * self.ref2.nvertices_by_level(n)
+    def _nlinear_by_level(self, n):
+        return self.ref1._nlinear_by_level(n) * self.ref2._nlinear_by_level(n)
 
     def child_divide(self, vals, n):
-        np1 = self.ref1.nvertices_by_level(n)
-        np2 = self.ref2.nvertices_by_level(n)
+        np1 = self.ref1._nlinear_by_level(n)
+        np2 = self.ref2._nlinear_by_level(n)
         return [v2.swapaxes(0, 1).reshape((-1,)+vals.shape[1:])
                 for v1 in self.ref1.child_divide(vals.reshape((np1, np2)+vals.shape[1:]), n)
                 for v2 in self.ref2.child_divide(v1.swapaxes(0, 1), n)]
@@ -657,29 +722,6 @@ class TensorReference(Reference):
         return tuple(edge_refs)
 
     @property
-    def ribbons(self):
-        if self.ref1.ndims == 0:
-            return self.ref2.ribbons
-        if self.ref2.ndims == 0:
-            return self.ref1.ribbons
-        ribbons = []
-        for iedge1 in range(self.ref1.nedges):
-            #iedge = self.ref1.edge_refs[iedge] * self.ref2
-            for iedge2 in range(self.ref2.nedges):
-                #jedge = self.ref1 * self.ref2.edge_refs[jedge]
-                jedge1 = self.ref1.nedges + iedge2
-                jedge2 = iedge1
-                if self.ref1.ndims > 1:
-                    iedge2 += self.ref1.edge_refs[iedge1].nedges
-                ribbons.append(((iedge1, iedge2), (jedge1, jedge2)))
-        if self.ref1.ndims >= 2:
-            ribbons.extend(self.ref1.ribbons)
-        if self.ref2.ndims >= 2:
-            ribbons.extend(((iedge1+self.ref1.nedges, iedge2+self.ref1.nedges),
-                            (jedge1+self.ref1.nedges, jedge2+self.ref1.nedges)) for (iedge1, iedge2), (jedge1, jedge2) in self.ref2.ribbons)
-        return tuple(ribbons)
-
-    @property
     def child_transforms(self):
         return tuple(transform.TensorChild(trans1, trans2) for trans1 in self.ref1.child_transforms for trans2 in self.ref2.child_transforms)
 
@@ -689,10 +731,6 @@ class TensorReference(Reference):
 
     def inside(self, point, eps=0):
         return self.ref1.inside(point[:self.ref1.ndims], eps) and self.ref2.inside(point[self.ref1.ndims:], eps)
-
-    @property
-    def simplices(self):
-        return tuple((transform.TensorChild(trans1, trans2), TensorReference(simplex1, simplex2)) for trans1, simplex1 in self.ref1.simplices for trans2, simplex2 in self.ref2.simplices)
 
     def get_ndofs(self, degree):
         return self.ref1.get_ndofs(degree)*self.ref2.get_ndofs(degree)
@@ -721,90 +759,6 @@ class TensorReference(Reference):
                 yield ref
 
 
-class Cone(Reference):
-    'cone'
-
-    __slots__ = 'edgeref', 'etrans', 'tip', 'extnorm', 'height'
-    __cache__ = 'vertices', 'edge_transforms', 'edge_refs'
-
-    @types.apply_annotations
-    def __init__(self, edgeref, etrans, tip: types.arraydata):
-        assert etrans.fromdims == edgeref.ndims
-        assert etrans.todims == tip.shape[0]
-        super().__init__(etrans.todims)
-        self.edgeref = edgeref
-        self.etrans = etrans
-        self.tip = numpy.asarray(tip)
-        ext = etrans.ext
-        self.extnorm = numpy.linalg.norm(ext)
-        self.height = numpy.dot(etrans.offset - self.tip, ext) / self.extnorm
-        assert self.height >= 0, 'tip is positioned at the negative side of edge'
-
-    @property
-    def vertices(self):
-        return types.frozenarray(numpy.vstack([[self.tip], self.etrans.apply(self.edgeref.vertices)]), copy=False)
-
-    @property
-    def edge_transforms(self):
-        edge_transforms = [self.etrans]
-        if self.edgeref.ndims > 0:
-            for trans, edge in self.edgeref.edges:
-                if edge:
-                    b = self.etrans.apply(trans.offset)
-                    A = numpy.hstack([numpy.dot(self.etrans.linear, trans.linear), (self.tip-b)[:, _]])
-                    newtrans = transform.Updim(A, b, isflipped=self.etrans.isflipped ^ trans.isflipped ^ (self.ndims % 2 == 1))  # isflipped logic tested up to 3D
-                    edge_transforms.append(newtrans)
-        else:
-            edge_transforms.append(transform.Updim(numpy.zeros((1, 0)), self.tip, isflipped=not self.etrans.isflipped))
-        return tuple(edge_transforms)
-
-    @property
-    def edge_refs(self):
-        edge_refs = [self.edgeref]
-        if self.edgeref.ndims > 0:
-            extrudetrans = transform.Updim(numpy.eye(self.ndims-1)[:, :-1], numpy.zeros(self.ndims-1), isflipped=self.ndims % 2 == 0)
-            tip = numpy.array([0]*(self.ndims-2)+[1], dtype=float)
-            edge_refs.extend(edge.cone(extrudetrans, tip) for edge in self.edgeref.edge_refs if edge)
-        else:
-            edge_refs.append(getsimplex(0))
-        return tuple(edge_refs)
-
-    def getpoints(self, ischeme, degree):
-        if ischeme == 'gauss':
-            if self.nverts == self.ndims+1:  # use optimal gauss schemes for simplex-like cones
-                pnts = getsimplex(self.ndims).getpoints(ischeme, degree)
-                linearT = self.etrans.apply(self.edgeref.vertices) - self.tip
-                coords = pnts.coords @ linearT + self.tip
-                weights = pnts.weights * abs(numpy.linalg.det(linearT))
-                return points.CoordsWeightsPoints(coords, weights)
-            epoints = self.edgeref.getpoints('gauss', degree)
-            tx, tw = points.gauss((degree + self.ndims - 1)//2)
-            wx = tx**(self.ndims-1) * tw * self.extnorm * self.height
-            return points.CoordsWeightsPoints((tx[:, _, _] * (self.etrans.apply(epoints.coords)-self.tip)[_, :, :] + self.tip).reshape(-1, self.ndims), (epoints.weights[_, :] * wx[:, _]).ravel())
-        if ischeme in ('_centroid', 'uniform'):
-            layers = [(i+1, (i+.5)/degree) for i in range(degree)] if ischeme == 'uniform' \
-                else [(None, self.ndims/(self.ndims+1))]  # centroid
-            coords = numpy.concatenate([self.etrans.apply(self.edgeref.getpoints(ischeme, p).coords) * w + self.tip * (1-w) for p, w in layers])
-            volume = self.edgeref.volume * self.extnorm * self.height / self.ndims
-            return points.CoordsUniformPoints(coords, volume)
-        if ischeme == 'vtk' and self.nverts == 5 and self.ndims == 3:  # pyramid
-            return points.CoordsPoints(self.vertices[[1, 2, 4, 3, 0]])
-        return points.ConePoints(self.edgeref.getpoints(ischeme, degree), self.etrans, self.tip)
-
-    @property
-    def simplices(self):
-        if self.nverts == self.ndims+1 or self.edgeref.ndims == 2 and self.edgeref.nverts == 4:  # simplices and square-based pyramids are ok
-            return [(transform.Identity(self.ndims), self)]
-        return tuple((transform.Identity(self.ndims), ref.cone(self.etrans*trans, self.tip)) for trans, ref in self.edgeref.simplices)
-
-    def inside(self, point, eps=0):
-        # point = etrans.apply(epoint) * xi + tip * (1-xi) => etrans.apply(epoint) = tip + (point-tip) / xi
-        xi = numpy.dot(self.etrans.ext, point-self.tip) / numpy.dot(self.etrans.ext, self.etrans.offset-self.tip)
-        return -eps <= xi <= 1+eps and self.edgeref.inside(numpy.linalg.solve(
-            numpy.dot(self.etrans.linear.T, self.etrans.linear),
-            numpy.dot(self.etrans.linear.T, self.tip + (point-self.tip)/xi - self.etrans.offset)), eps=eps)
-
-
 class OwnChildReference(Reference):
     'forward self as child'
 
@@ -830,10 +784,6 @@ class OwnChildReference(Reference):
 
     def getpoints(self, ischeme, degree):
         return self.baseref.getpoints(ischeme, degree)
-
-    @property
-    def simplices(self):
-        return self.baseref.simplices
 
     def get_ndofs(self, degree):
         return self.baseref.get_ndofs(degree)
@@ -870,8 +820,8 @@ class WithChildrenReference(Reference):
     def vertices(self):
         return self.baseref.vertices
 
-    def nvertices_by_level(self, n):
-        return self.baseref.nvertices_by_level(n)
+    def _nlinear_by_level(self, n):
+        return self.baseref._nlinear_by_level(n)
 
     def child_divide(self, vals, n):
         return self.baseref.child_divide(vals, n)
@@ -930,10 +880,6 @@ class WithChildrenReference(Reference):
         return points.ConcatPoints(childpoints, points.find_duplicates(childpoints) if dedup else ())
 
     @property
-    def simplices(self):
-        return [(trans2*trans1, simplex) for trans2, child in self.children for trans1, simplex in (child.simplices if child else [])]
-
-    @property
     def edge_transforms(self):
         return tuple(self.baseref.edge_transforms) \
             + tuple(transform.ScaledUpdim(self.child_transforms[ichild], self.child_refs[ichild].edge_transforms[iedge]) for ichild, iedge, ref in self.__extra_edges)
@@ -974,120 +920,206 @@ class WithChildrenReference(Reference):
 class MosaicReference(Reference):
     'triangulation'
 
-    __slots__ = 'baseref', '_edge_refs', '_midpoint', 'edge_refs', 'edge_transforms'
-    __cache__ = 'vertices', 'subrefs'
+    __slots__ = 'baseref', '_edge_refs', '_midpoint', 'edge_refs', 'edge_transforms', 'vertices', '_imidpoint', 'edge_vertices'
+    __cache__ = 'simplices'
 
     @types.apply_annotations
     def __init__(self, baseref, edge_refs: tuple, midpoint: types.arraydata):
         assert len(edge_refs) == baseref.nedges
         assert edge_refs != tuple(baseref.edge_refs)
+        assert midpoint.shape == (baseref.ndims,)
+        assert all(numpy.all(edge.vertices == newedge.vertices[:edge.nverts])
+            for edge, newedge in zip(baseref.edge_refs, edge_refs))
 
-        self.baseref = baseref
-        self._edge_refs = edge_refs
-        self._midpoint = numpy.asarray(midpoint)
-        self.edge_refs = list(edge_refs)
-        self.edge_transforms = list(baseref.edge_transforms)
+        vertices = list(baseref.vertices)
+        match, = (baseref.vertices == midpoint).all(1).nonzero()
+        if match.size:
+            imidpoint, = match
+        else:
+            imidpoint = len(vertices)
+            vertices.append(numpy.asarray(midpoint))
+
+        # The remainder of this constructor is concerned with establishing the
+        # edges of the mosaic, and setting up the corresponding edge-vertex
+        # relations.
 
         if baseref.ndims == 1:
 
-            assert any(edge_refs) and not all(edge_refs), 'invalid 1D mosaic: exactly one edge should be non-empty'
-            iedge, = [i for i, edge in enumerate(edge_refs) if edge]
-            self.edge_refs.append(getsimplex(0))
-            self.edge_transforms.append(transform.Updim(linear=numpy.zeros((1, 0)), offset=self._midpoint, isflipped=not baseref.edge_transforms[iedge].isflipped))
+            # For 1D elements the situation is simple: the midpoint represents
+            # the only new vertex (already added to vertices) as well as the
+            # only new edge, with a trivial edge-vertex relationship.
+
+            assert not match.size, '1D mosaic must introduce a new vertex'
+            edge_vertices = (*baseref.edge_vertices, types.frozenarray([imidpoint]))
+            orientation = [not trans.isflipped for trans, edge in zip(baseref.edge_transforms, edge_refs) if edge]
+            assert len(orientation) == 1, 'invalid 1D mosaic: exactly one edge should be non-empty'
 
         else:
 
-            newedges = [(etrans1, etrans2, edge) for (etrans1, orig), new in zip(baseref.edges, edge_refs) for etrans2, edge in new.edges[orig.nedges:]]
-            for (iedge1, iedge2), (jedge1, jedge2) in baseref.ribbons:
-                Ei = edge_refs[iedge1]
-                ei = Ei.edge_refs[iedge2]
-                Ej = edge_refs[jedge1]
-                ej = Ej.edge_refs[jedge2]
-                ejsubi = ej - ei
-                if ejsubi:
-                    newedges.append((self.edge_transforms[jedge1], Ej.edge_transforms[jedge2], ejsubi))
-                eisubj = ei - ej
-                if eisubj:
-                    newedges.append((self.edge_transforms[iedge1], Ei.edge_transforms[iedge2], eisubj))
+            # For higher-dimensional elements the situation is more complex.
+            # Firstly, the new edge_refs may introduce new vertices. Luckily
+            # here the previously asserted convention applies that the vertices
+            # of the original edge are repeated in the modified edge, so we can
+            # focus our attention on the new ones, having only to deduplicate
+            # between them.
 
-            extrudetrans = transform.Updim(numpy.eye(baseref.ndims-1)[:, :-1], numpy.zeros(baseref.ndims-1), isflipped=baseref.ndims % 2 == 0)
-            tip = numpy.array([0]*(baseref.ndims-2)+[1], dtype=float)
-            for etrans, trans, edge in newedges:
-                b = etrans.apply(trans.offset)
-                A = numpy.hstack([numpy.dot(etrans.linear, trans.linear), (self._midpoint-b)[:, _]])
-                newtrans = transform.Updim(A, b, isflipped=etrans.isflipped ^ trans.isflipped ^ (baseref.ndims % 2 == 1))  # isflipped logic tested up to 3D
-                self.edge_transforms.append(newtrans)
-                self.edge_refs.append(edge.cone(extrudetrans, tip))
+            edge_vertices = []
+            for trans, edge, emap, newedge in zip(baseref.edge_transforms, baseref.edge_refs, baseref.edge_vertices, edge_refs):
+                for v in trans.apply(newedge.vertices[edge.nverts:]):
+                    for i, v_ in enumerate(vertices[baseref.nverts:], start=baseref.nverts):
+                        if (v == v_).all():
+                            break # the new vertex was already added by a previous edge
+                    else:
+                        i = len(vertices)
+                        vertices.append(v)
+                    emap = types.frozenarray([*emap, i])
+                edge_vertices.append(emap)
+
+            # Secondly, new edges (which will be pulled to the midpoint) can
+            # originate either from new edge-edges, or from existing ones that
+            # find themselves without a counterpart. The former situation is
+            # trivial, following the convention that existing edge transforms
+            # are copied over in the modified edge.
+
+            assert all(edge.edge_transforms == newedge.edge_transforms[:edge.nverts]
+                for edge, newedge in zip(baseref.edge_refs, edge_refs))
+
+            # The latter, however, is more tricky. This is the situation that
+            # occurs, for instance, when two out of four edges of a square are
+            # cleanly removed, making two existing edge-edges the new exterior.
+            # Identifying these situations requires an examination of all the
+            # modified edges, that is, edge-edges in locations that pre-existed
+            # in baseref. Knowing that the edges of baseref form a watertight
+            # hull, we employ the strategy of first identifying all edge-edge
+            # counterparts, and then comparing the new references in the
+            # identified locations to see if one of the two disappeared: in
+            # this case the other reference is added to the exterior set.
+
+            # NOTE: establishing edge-edge relations could potentially be
+            # cached for reuse at the level of baseref. However, since this is
+            # the only place that the information is used and all edge pairs
+            # need to anyhow be examined for gaps, it is not clear that the
+            # gains merit the additional complexity.
+
+            orientation = []
+            seen = {}
+            for edge1, newemap1, etrans1, newedge1 in zip(baseref.edge_refs, edge_vertices, baseref.edge_transforms, edge_refs):
+                newedge1_edge = zip(newedge1.edge_vertices, newedge1.edge_transforms, newedge1.edge_refs)
+                trimmed = [] # trimmed will be populated with a subset of newedge1_edge
+                for edge2, (newemap2, etrans2, newedge2) in zip(edge1.edge_refs, newedge1_edge):
+                    if edge2: # existing non-empty edge
+
+                        # To identify matching edge-edges we map their vertices
+                        # to the numbering of the baseref for comparison. Since
+                        # matching edge-edges have must have equal references,
+                        # and by construction have matching orientation, the
+                        # vertex ordering will be consistent between them.
+
+                        key = tuple(newemap1[newemap2])
+
+                        # NOTE: there have been anecdotal reports that suggest
+                        # the assumption of matching edges may be violated, but
+                        # it is not clear in what scenario this can occur. If
+                        # the 'not seen' assertion below fails, please provide
+                        # the developers with a reproducable issue for study.
+
+                        try:
+                            newedge2_ = seen.pop(key)
+                        except KeyError:
+                            seen[key] = newedge2
+                        else: # a counterpart is found, placing newedge2 against newedge2_
+                            if not newedge2:
+                                trimmed.append((newemap2, etrans2.flipped, newedge2_))
+                            elif not newedge2_:
+                                trimmed.append((newemap2, etrans2, newedge2))
+                            elif newedge2 != newedge2_:
+                                raise NotImplementedError
+
+                # Since newedge1_edge was zipped against the shorter list of
+                # original edge1.edge_refs, what remains are the new edge-edges
+                # that can be added without further examination.
+
+                trimmed.extend(newedge1_edge)
+
+                # What remains is only to extend the edge-vertex relations and
+                # to track if the new edges are left- or right-handed.
+
+                for newemap2, etrans2, newedge2 in trimmed:
+                    for simplex in newemap1[newemap2[newedge2.simplices]]:
+                        if imidpoint not in simplex:
+                            edge_vertices.append(types.frozenarray([imidpoint, *simplex]))
+                            orientation.append(not etrans1.isflipped^etrans2.isflipped)
+
+            assert not seen, f'leftover unmatched edges ({seen}) indicate the edges of baseref ({baseref}) are not watertight!'
+
+        self.baseref = baseref
+        self._edge_refs = edge_refs
+        self.vertices = types.frozenarray(vertices, copy=False)
+        self._imidpoint = imidpoint
+        self._midpoint = midpoint
+        self.edge_vertices = tuple(edge_vertices)
+        self.edge_refs = edge_refs + (getsimplex(baseref.ndims-1),) * len(orientation)
+        self.edge_transforms = baseref.edge_transforms + tuple(transform.Updim((vertices[1:] - vertices[0]).T, vertices[0], isflipped)
+          for vertices, isflipped in zip(self.vertices[numpy.array(edge_vertices[baseref.nedges:])], orientation))
 
         super().__init__(baseref.ndims)
 
-    @property
-    def vertices(self):
-        vertices, indices = util.unique([vertex for etrans, eref in self.edges if eref for vertex in etrans.apply(eref.vertices)], key=types.arraydata)
-        return types.frozenarray(vertices)
+    def _with_edges(self, edge_refs):
+        edge_refs = tuple(edge_refs)
+        return self.baseref if edge_refs == self.baseref.edge_refs \
+          else self.empty if not any(edge_refs) \
+          else MosaicReference(self.baseref, edge_refs, self._midpoint)
 
     def __and__(self, other):
         if other in (self, self.baseref):
             return self
         if isinstance(other, MosaicReference) and other.baseref == self:
             return other
-        if isinstance(other, MosaicReference) and self.baseref == other.baseref and numpy.equal(other._midpoint, self._midpoint).all():
-            isect_edge_refs = [selfedge & otheredge for selfedge, otheredge in zip(self._edge_refs, other._edge_refs)]
-            if not any(isect_edge_refs):
-                return self.empty
-            return MosaicReference(self.baseref, isect_edge_refs, self._midpoint)
+        if isinstance(other, MosaicReference) and self.baseref == other.baseref and other._midpoint == self._midpoint:
+            return self._with_edges(selfedge & otheredge for selfedge, otheredge in zip(self._edge_refs, other._edge_refs))
         return NotImplemented
 
     def __or__(self, other):
         if other in (self, self.baseref):
             return other
-        if isinstance(other, MosaicReference) and self.baseref == other.baseref and numpy.equal(other._midpoint, self._midpoint).all():
-            union_edge_refs = [selfedge | otheredge for selfedge, otheredge in zip(self._edge_refs, other._edge_refs)]
-            if tuple(union_edge_refs) == tuple(self.baseref.edge_refs):
-                return self.baseref
-            return MosaicReference(self.baseref, union_edge_refs, self._midpoint)
+        if isinstance(other, MosaicReference) and self.baseref == other.baseref and other._midpoint == self._midpoint:
+            return self._with_edges(selfedge | otheredge for selfedge, otheredge in zip(self._edge_refs, other._edge_refs))
         return NotImplemented
 
     def __sub__(self, other):
         if other in (self, self.baseref):
             return self.empty
         if isinstance(other, MosaicReference) and other.baseref == self:
-            inv_edge_refs = [baseedge - edge for baseedge, edge in zip(self.edge_refs, other._edge_refs)]
-            return MosaicReference(self, inv_edge_refs, other._midpoint)
+            return other._with_edges(baseedge - edge for baseedge, edge in zip(self.edge_refs, other._edge_refs))
         return NotImplemented
 
     def __rsub__(self, other):
         if other == self.baseref:
-            inv_edge_refs = [baseedge - edge for baseedge, edge in zip(other.edge_refs, self._edge_refs)]
-            return MosaicReference(other, inv_edge_refs, self._midpoint)
+            return self._with_edges(baseedge - edge for baseedge, edge in zip(other.edge_refs, self._edge_refs))
         return NotImplemented
 
-    def nvertices_by_level(self, n):
-        return self.baseref.nvertices_by_level(n)
-
-    @property
-    def subrefs(self):
-        return tuple(ref.cone(trans, self._midpoint) for trans, ref in zip(self.baseref.edge_transforms, self._edge_refs) if ref)
+    def _nlinear_by_level(self, n):
+        return self.baseref._nlinear_by_level(n)
 
     @property
     def simplices(self):
-        return [simplex for subvol in self.subrefs for simplex in subvol.simplices]
+        indices = []
+        for vmap, etrans, eref in zip(self.edge_vertices, self.baseref.edge_transforms, self._edge_refs):
+            for index in vmap[eref.simplices]:
+                if self._imidpoint not in index:
+                    indices.append([self._imidpoint, *index] if not etrans.isflipped else [index[0], self._imidpoint, *index[1:]])
+        return types.frozenarray(indices, dtype=int)
 
     def getpoints(self, ischeme, degree):
         if ischeme == 'vertex':
             return self.baseref.getpoints(ischeme, degree)
-        if ischeme == '_centroid':
+        elif ischeme in ('gauss', 'uniform', 'bezier'):
+            simplexpoints = getsimplex(self.ndims).getpoints(ischeme, degree)
+            subpoints = [points.TransformPoints(simplexpoints, strans) for strans in self.simplex_transforms]
+            dups = points.find_duplicates(subpoints) if ischeme == 'bezier' else ()
+            return points.ConcatPoints(subpoints, dups)
+        else:
             return super().getpoints(ischeme, degree)
-        subpoints = [subvol.getpoints(ischeme, degree) for subvol in self.subrefs]
-        dups = points.find_duplicates(subpoints) if ischeme == 'bezier' else ()
-        # NOTE We could consider postprocessing gauss1 to a single point scheme,
-        # rather than a concatenation, but for that we would have to verify that
-        # the centroid is contained in the element. We leave this optimization for
-        # later, to be combined with a reduction of gauss schemes of any degree.
-        return points.ConcatPoints(subpoints, dups)
-
-    def inside(self, point, eps=0):
-        return any(subref.inside(point, eps=eps) for subref in self.subrefs)
 
     def get_ndofs(self, degree):
         return self.baseref.get_ndofs(degree)

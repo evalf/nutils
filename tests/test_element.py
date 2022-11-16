@@ -1,6 +1,6 @@
 from nutils import element, _util as util
 from nutils.testing import TestCase, parametrize
-import numpy
+import numpy, math
 
 
 @parametrize
@@ -44,10 +44,6 @@ class elem(TestCase):
                 swapped_down = etrans_.swapdown(ctrans_)
                 self.assertEqual(swapped_down, (etrans, ctrans))
 
-    @parametrize.enable_if(lambda ref, **kwargs: ref.ndims >= 2)
-    def test_ribbons(self):
-        self.ref.ribbons
-
     @parametrize.enable_if(lambda ref, **kwargs: not isinstance(ref, element.MosaicReference) and ref.ndims >= 1)
     def test_connectivity(self):
         for ichild, edges in enumerate(self.ref.connectivity):
@@ -72,6 +68,29 @@ class elem(TestCase):
         if self.ref.ndims:
             self.assertFalse(self.ref.inside(-numpy.ones(self.ref.ndims)))
 
+    @parametrize.enable_if(lambda ref, **kwargs: not isinstance(ref, element.WithChildrenReference) and ref.ndims >= 1)
+    def test_edge_vertices(self):
+        for etrans, eref, everts in zip(self.ref.edge_transforms, self.ref.edge_refs, self.ref.edge_vertices):
+            self.assertAllEqual(self.ref.vertices[everts], etrans.apply(eref.vertices))
+
+    @parametrize.enable_if(lambda ref, **kwargs: not isinstance(ref, element.WithChildrenReference) and ref.ndims >= 1)
+    def test_simplices(self):
+        volume = 0
+        centroid = 0
+        for simplex in self.ref.vertices[self.ref.simplices]:
+            simplex_volume = numpy.linalg.det(simplex[1:] - simplex[0]) / math.factorial(self.ref.ndims)
+            self.assertGreater(simplex_volume, 0)
+            volume += simplex_volume
+            centroid += simplex.mean(axis=0) * simplex_volume
+        centroid /= volume
+        self.assertAlmostEqual(volume, self.ref.volume)
+        self.assertAllAlmostEqual(centroid, self.exactcentroid)
+
+    @parametrize.enable_if(lambda ref, **kwargs: not isinstance(ref, element.WithChildrenReference) and ref.ndims >= 1)
+    def test_simplex_transforms(self):
+        for simplex, strans in zip(self.ref.vertices[self.ref.simplices], self.ref.simplex_transforms):
+            self.assertAllEqual(strans.linear, (simplex[1:] - simplex[0]).T)
+            self.assertAllEqual(strans.offset, simplex[0])
 
 elem('point', ref=element.PointReference(), exactcentroid=numpy.zeros((0,)))
 elem('point2', ref=element.PointReference()**2, exactcentroid=numpy.zeros((0,)))

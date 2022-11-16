@@ -1438,8 +1438,8 @@ class TransformChainsTopology(Topology):
             fcache = cache.WrapperCache()
             with log.iter.percentage('trimming', self.references, self.transforms, bins) as items:
                 for ref, trans, ctransforms in items:
-                    levels = numpy.empty(ref.nvertices_by_level(maxrefine))
-                    cover = list(fcache[ref.vertex_cover](frozenset(ctransforms), maxrefine))
+                    levels = numpy.empty(ref._nlinear_by_level(maxrefine))
+                    cover = list(fcache[ref._linear_cover](frozenset(ctransforms), maxrefine))
                     # confirm cover and greedily optimize order
                     mask = numpy.ones(len(levels), dtype=bool)
                     while mask.any():
