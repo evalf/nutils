@@ -380,6 +380,9 @@ _check('Array_getitem_ellipsis_scalar_newaxis', lambda a: function.Array.cast(a)
 _check('add_T', lambda a: function.add_T(a, (1, 2)), lambda a: a + a.transpose((0, 2, 1)), INT(5, 2, 2))
 _check('Array_add_T', lambda a: function.Array.cast(a).add_T((1, 2)), lambda a: a + a.transpose((0, 2, 1)), INT(5, 2, 2))
 
+_check('searchsorted', lambda a: numpy.searchsorted(numpy.linspace(0, 1, 9), function.Array.cast(a)), lambda a: numpy.searchsorted(numpy.linspace(0, 1, 9), a), POS(4, 2))
+_check('searchsorted_sorter', lambda a: numpy.searchsorted([.2,.8,.4,0,.6,1], function.Array.cast(a), sorter=[3,0,2,4,1,5]), lambda a: numpy.searchsorted([.2,.8,.4,0,.6,1], a, sorter=[3,0,2,4,1,5]), POS(4, 2))
+
 
 class Unlower(TestCase):
 

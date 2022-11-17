@@ -4220,6 +4220,45 @@ class LoopConcatenateCombined(Evaluable):
         cache[self, 'tuple'] = concats = tuple(concats)
         return concats
 
+
+class SearchSorted(Array):
+    '''Find index of evaluable array into sorted numpy array.'''
+
+    # NOTE: SearchSorted is essentially pointwise in its only evaluable
+    # argument, but the Pointwise class currently does not allow for
+    # additional, static arguments. The following constructor makes the static
+    # arguments keyword-only in anticipation of potential future support.
+
+    def __init__(self, arg, *, array, side, sorter):
+        assert isinstance(arg, Array)
+        assert isinstance(array, types.arraydata) and array.ndim == 1
+        assert side in ('left', 'right')
+        assert sorter is None or isinstance(sorter, types.arraydata) and sorter.dtype == int and sorter.shape == array.shape
+        self._arg = arg
+        self._array = array
+        self._side = side
+        self._sorter = sorter
+        super().__init__(args=[arg], shape=arg.shape, dtype=int)
+
+    def evalf(self, values):
+        index = numpy.searchsorted(self._array, values, side=self._side, sorter=self._sorter)
+        # on some platforms (windows) searchsorted does not return indices as
+        # numpy.dtype(int), so we type cast it for consistency
+        return index.astype(int, copy=False)
+
+    def _intbounds_impl(self):
+        return 0, self._array.shape[0]
+
+    def _takediag(self, axis1, axis2):
+        return SearchSorted(_takediag(self._arg, axis1, axis2), array=self._array, side=self._side, sorter=self._sorter)
+
+    def _take(self, index, axis):
+        return SearchSorted(_take(self._arg, index, axis), array=self._array, side=self._side, sorter=self._sorter)
+
+    def _unravel(self, axis, shape):
+        return SearchSorted(unravel(self._arg, axis, shape), array=self._array, side=self._side, sorter=self._sorter)
+
+
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
 

@@ -4323,3 +4323,16 @@ class __implementations__:
             else:
                 raise ValueError('cannot broadcast array with shape {} to {} because input axis {} is neither singleton nor has the desired length'.format(orig_shape, shape, axis))
         return broadcasted
+
+    @implements(numpy.searchsorted)
+    def searchsorted(a, v: IntoArray, side='left', sorter=None):
+        values = Array.cast(v)
+        array = types.arraydata(a)
+        if side not in ('left', 'right'):
+            raise ValueError(f'expected "left" or "right", got {side}')
+        if sorter is not None:
+            sorter = types.arraydata(sorter)
+            if sorter.shape != array.shape or sorter.dtype != int:
+                raise ValueError('invalid sorter array')
+        lower = functools.partial(evaluable.SearchSorted, array=array, side=side, sorter=sorter)
+        return _Wrapper(lower, values, shape=values.shape, dtype=int)

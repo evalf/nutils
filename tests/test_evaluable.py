@@ -1,4 +1,4 @@
-from nutils import evaluable, sparse, numeric, _util as util
+from nutils import evaluable, sparse, numeric, _util as util, types
 from nutils.testing import TestCase, parametrize
 import numpy
 import itertools
@@ -574,6 +574,9 @@ _check('polyval_2d_p0', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, 
 _check('polyval_2d_p1', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, x.shape[1]), x), _polyval_desired, ANY(2, 2), ANY(4, 2), ndim=2)
 _check('polyval_2d_p2', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, x.shape[1]), x), _polyval_desired, ANY(3, 3), ANY(4, 2), ndim=2)
 _check('polyval_2d_p1_23', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, x.shape[1]), x), _polyval_desired, ANY(2, 3, 2, 2), ANY(4, 2), ndim=2)
+
+_check('searchsorted', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=types.arraydata(numpy.linspace(0, 1, 9)), side='left', sorter=None), lambda a: numpy.searchsorted(numpy.linspace(0, 1, 9), a).astype(int), POS(4, 2))
+_check('searchsorted_sorter', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=types.arraydata([.2,.8,.4,0,.6,1]), side='left', sorter=types.arraydata([3,0,2,4,1,5])), lambda a: numpy.searchsorted([.2,.8,.4,0,.6,1], a, sorter=[3,0,2,4,1,5]).astype(int), POS(4, 2))
 
 
 class intbounds(TestCase):
