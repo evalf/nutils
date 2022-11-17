@@ -4205,6 +4205,22 @@ class LoopConcatenateCombined(Evaluable):
         cache[self, 'tuple'] = concats = tuple(concats)
         return concats
 
+
+class SearchSorted(Array):
+
+    def __init__(self, sorted_array, values, side, sorter):
+        self._sorted_array = numpy.asarray(sorted_array)
+        self._side = side
+        self._sorter = sorter and numpy.asarray(sorter)
+        super().__init__(args=[values], shape=values.shape, dtype=int)
+
+    def evalf(self, values):
+        return numpy.searchsorted(self._sorted_array, values, side=self._side, sorter=self._sorter)
+
+    def _intbounds_impl(self):
+        return 0, len(self._sorted_array)
+
+
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
 

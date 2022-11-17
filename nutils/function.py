@@ -3953,6 +3953,28 @@ class PrunedBasis(Basis):
         return dofs, p_coeffs
 
 
+class SearchSorted(Array):
+
+    def __init__(self, sorted_array, values, side, sorter):
+        if sorted_array.ndim != 1 or not numpy.all(sorted_array[1:] > sorted_array[:-1]):
+            raise ValueError('input array is not sorted')
+        if side not in ('left', 'right'):
+            raise ValueError(f'expected "left" or "right", got {side}')
+        self._values = values
+        self._side = side
+        self._sorted_array = types.arraydata(sorted_array)
+        if sorter is None:
+            self._sorter = None
+        else:
+            if sorter.shape != sorted_array.shape or sorter.dtype != int:
+                raise ValueError('invalid sorter array')
+            self._sorter = types.arraydata(sorter)
+        super().__init__(shape=values.shape, dtype=int, spaces=values.spaces, arguments=values.arguments)
+
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        return evaluable.SearchSorted(self._sorted_array, self._values.lower(args), self._side, self._sorter)
+
+
 def Namespace(*args, **kwargs):
     from .expression_v1 import Namespace
     return Namespace(*args, **kwargs)
@@ -4338,3 +4360,7 @@ class __implementations__:
             else:
                 raise ValueError('cannot broadcast array with shape {} to {} because input axis {} is neither singleton nor has the desired length'.format(orig_shape, shape, axis))
         return broadcasted
+
+    @implements(numpy.searchsorted)
+    def searchsorted(a, v, side='left', sorter=None):
+        return SearchSorted(a, v, side, sorter)
