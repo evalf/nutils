@@ -4336,3 +4336,15 @@ class __implementations__:
                 raise ValueError('invalid sorter array')
         lower = functools.partial(evaluable.SearchSorted, array=array, side=side, sorter=sorter)
         return _Wrapper(lower, values, shape=values.shape, dtype=int)
+
+    @implements(numpy.interp)
+    def interp(x, xp, fp, left=None, right=None):
+        index = numpy.searchsorted(xp, x)
+        _xp = numpy.concatenate([[xp[0]], xp])
+        _fp = numpy.concatenate([[fp[0]], fp])
+        _gp = numpy.concatenate([[0.], numpy.diff(fp) / numpy.diff(xp), [0.]])
+        if left is not None:
+            _fp[0] = left
+        if right is not None:
+            _fp[-1] = right
+        return _Constant(_fp)[index] + _Constant(_gp)[index] * (x - _Constant(_xp)[index])
