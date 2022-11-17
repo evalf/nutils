@@ -4364,3 +4364,13 @@ class __implementations__:
     @implements(numpy.searchsorted)
     def searchsorted(a, v, side='left', sorter=None):
         return SearchSorted(a, v, side, sorter)
+
+    @implements(numpy.interp)
+    def interp(x, xp, fp, left=None, right=None, period=None):
+        if left is not None or right is not None or period is not None:
+            raise NotImplementedError
+        index = numpy.searchsorted(xp[1:-1], x)
+        xp = _Constant(xp)
+        fp = _Constant(fp)
+        frac = (x - xp[index]) / (xp[index+1] - xp[index])
+        return fp[index] * (1-frac) + fp[index+1] * frac
