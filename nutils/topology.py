@@ -18,7 +18,7 @@ from . import element, function, evaluable, _util as util, parallel, numeric, ca
 from .sample import Sample
 from .elementseq import References
 from .pointsseq import PointsSequence
-from ._rust import poly
+import nutils_poly as poly
 from typing import Any, FrozenSet, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
 import numpy
 import functools

@@ -11,70 +11,55 @@ defaults:
 env:
   official_container_repository: ghcr.io/evalf/nutils
 jobs:
-  build-wheel:
-    name: 'Build wheel on ${{ matrix.os }}'
-    runs-on: ${{ matrix.os }}
+  build:
+    name: 'Build'
+    runs-on: ubuntu-latest
     outputs:
-      ubuntu-latest: ${{ steps.locate-wheel.outputs.ubuntu-latest }}
-      macos-latest: ${{ steps.locate-wheel.outputs.macos-latest }}
-      windows-latest: ${{ steps.locate-wheel.outputs.windows-latest }}
-    strategy:
-      matrix:
-        include:
-          - {os: ubuntu-latest}
-          - {os: macos-latest, build-args: --no-sdist}
-          - {os: windows-latest, build-args: --no-sdist}
+      wheel: ${{ steps.locate.outputs.wheel }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
-      - uses: actions/setup-python@v2
-        if: matrix.os == 'windows-latest'
+        uses: actions/checkout@v3
+      - name: Set-up Python
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          default: true
-      - name: Build wheels
+          python-version: '3.11'
+      - name: Build
         id: build
-        uses: messense/maturin-action@v1
+        run: pip wheel --wheel-dir target/wheels --no-deps .
+      - name: Locate
+        id: locate
+        run: echo wheel=`echo target/wheels/*.whl` >> $GITHUB_OUTPUT
+      - name: Upload
+        uses: actions/upload-artifact@v3
         with:
-          args: --release ${{ matrix.build-args }}
-      - name: Locate wheel
-        id: locate-wheel
-        run: printf "::set-output name="${{ matrix.os }}"::%s" target/wheels/*.whl
-      - name: Upload package artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: python-package
+          name: wheels
           path: target/wheels
           if-no-files-found: error
   test:
-    needs: build-wheel
+    needs: build
     name: 'Test ${{ matrix.name }}'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
-          - {name: "baseline", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1}
-          - {name: "windows", os: windows-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1}
-          - {name: "macos", os: macos-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1}
+          - {name: "baseline", os: ubuntu-latest, python-version: "3.11", matrix-backend: numpy, nprocs: 1}
+          - {name: "windows", os: windows-latest, python-version: "3.11", matrix-backend: numpy, nprocs: 1}
+          - {name: "macos", os: macos-latest, python-version: "3.11", matrix-backend: numpy, nprocs: 1}
           - {name: "python 3.7", os: ubuntu-latest, python-version: "3.7", matrix-backend: numpy, nprocs: 1}
           - {name: "python 3.8", os: ubuntu-latest, python-version: "3.8", matrix-backend: numpy, nprocs: 1}
           - {name: "python 3.9", os: ubuntu-latest, python-version: "3.9", matrix-backend: numpy, nprocs: 1}
-          - {name: "scipy matrix", os: ubuntu-latest, python-version: "3.10", matrix-backend: scipy, nprocs: 1}
-          - {name: "mkl linux", os: ubuntu-latest, python-version: "3.10", matrix-backend: mkl, nprocs: 1}
-          - {name: "mkl linux parallel", os: ubuntu-latest, python-version: "3.10", matrix-backend: mkl, nprocs: 2}
-          - {name: "mkl windows", os: windows-latest, python-version: "3.10", matrix-backend: mkl, nprocs: 1}
-          - {name: "mkl macos", os: macos-latest, python-version: "3.10", matrix-backend: mkl, nprocs: 1}
-          - {name: "parallel", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 2}
+          - {name: "python 3.10", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1}
+          - {name: "scipy matrix", os: ubuntu-latest, python-version: "3.11", matrix-backend: scipy, nprocs: 1}
+          - {name: "mkl linux", os: ubuntu-latest, python-version: "3.11", matrix-backend: mkl, nprocs: 1}
+          - {name: "mkl linux parallel", os: ubuntu-latest, python-version: "3.11", matrix-backend: mkl, nprocs: 2}
+          - {name: "mkl windows", os: windows-latest, python-version: "3.11", matrix-backend: mkl, nprocs: 1}
+          - {name: "mkl macos", os: macos-latest, python-version: "3.11", matrix-backend: mkl, nprocs: 1}
+          - {name: "parallel", os: ubuntu-latest, python-version: "3.11", matrix-backend: numpy, nprocs: 2}
           - {name: "numpy 1.17", os: ubuntu-latest, python-version: "3.7", matrix-backend: numpy, nprocs: 1, numpy-version: ==1.17}
-          - {name: "tensorial", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1, tensorial: test}
+          - {name: "tensorial", os: ubuntu-latest, python-version: "3.11", matrix-backend: numpy, nprocs: 1, tensorial: test}
       fail-fast: false
     env:
-      _wheel: ${{ needs.build-wheel.outputs[matrix.os] }}
+      wheel: ${{ needs.build.outputs.wheel }}
       NUTILS_MATRIX: ${{ matrix.matrix-backend }}
       NUTILS_NPROCS: ${{ matrix.nprocs }}
       NUTILS_DEBUG: all
@@ -86,17 +71,17 @@ jobs:
       NUTILS_TENSORIAL: ${{ matrix.tensorial }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Move nutils directory
         run: mv nutils _nutils
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Download Python package artifact
-        uses: actions/download-artifact@v2
+      - name: Download wheels
+        uses: actions/download-artifact@v3
         with:
-          name: python-package
+          name: wheels
           path: target/wheels/
       - name: Install Graphviz
         if: ${{ matrix.os == 'ubuntu-latest' }}
@@ -108,7 +93,7 @@ jobs:
         run: |
           python -um pip install --upgrade --upgrade-strategy eager wheel
           python -um pip install --upgrade --upgrade-strategy eager coverage numpy$_numpy_version
-          python -um pip install "$_wheel[import_gmsh]"
+          python -um pip install "$wheel[import_gmsh]"
       - name: Install Scipy
         if: ${{ matrix.matrix-backend == 'scipy' }}
         run: python -um pip install --upgrade --upgrade-strategy eager scipy
@@ -122,9 +107,9 @@ jobs:
       - name: Post-process coverage
         run: python -um devtools.gha.coverage_report_xml
       - name: Upload coverage
-        uses: codecov/codecov-action@v1
+        uses: codecov/codecov-action@v3
   test-examples:
-    needs: build-wheel
+    needs: build
     name: 'Test examples ${{ matrix.os }}'
     runs-on: ${{ matrix.os }}
     strategy:
@@ -132,7 +117,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
       fail-fast: false
     env:
-      _wheel: ${{ needs.build-wheel.outputs[matrix.os] }}
+      wheel: ${{ needs.build.outputs.wheel }}
       NUTILS_MATRIX: scipy
       NUTILS_NPROCS: 1
       NUTILS_DEBUG: all
@@ -141,43 +126,45 @@ jobs:
       PYTHONHASHSEED: 0
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Move nutils directory
         run: mv nutils _nutils
       - name: Set up Python
-        uses: actions/setup-python@v1
-      - name: Download Python package artifact
-        uses: actions/download-artifact@v2
+        uses: actions/setup-python@v4
         with:
-          name: python-package
+          python-version: '3.11'
+      - name: Download wheels
+        uses: actions/download-artifact@v3
+        with:
+          name: wheels
           path: target/wheels/
       - name: Install Nutils and dependencies
         id: install
         run: |
           python -um pip install --upgrade --upgrade-strategy eager wheel
           python -um pip install --upgrade --upgrade-strategy eager git+https://github.com/evalf/nutils-SI.git
-          python -um pip install "$_wheel[matrix_scipy,export_mpl]"
+          python -um pip install "$wheel[matrix_scipy,export_mpl]"
       - name: Test
         run: python -um unittest discover -b -q -t . -s examples
   test-sphinx:
     name: Test building docs
-    needs: build-wheel
+    needs: build
     runs-on: ubuntu-latest
     env:
-      _wheel: ${{ needs.build-wheel.outputs.ubuntu-latest }}
+      wheel: ${{ needs.build.outputs.wheel }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Move nutils directory
         run: mv nutils _nutils
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
-      - name: Download Python package artifact
-        uses: actions/download-artifact@v2
+          python-version: '3.11'
+      - name: Download wheels
+        uses: actions/download-artifact@v3
         with:
-          name: python-package
+          name: wheels
           path: target/wheels/
       - name: Install Nutils and dependencies
         id: install
@@ -186,24 +173,24 @@ jobs:
         run: |
           python -um pip install --upgrade --upgrade-strategy eager wheel
           python -um pip install --upgrade --upgrade-strategy eager Sphinx treelog stringly meshio numpy scipy matplotlib
-          python -um pip install "$_wheel"
+          python -um pip install "$wheel"
       - name: Build docs
-        run: python3 -m sphinx -n -W --keep-going docs build/sphinx
+        run: python3 -m sphinx -n -W --keep-going docs target/doc
   build-and-test-container-image:
     name: Build container image
-    needs: build-wheel
+    needs: build
     runs-on: ubuntu-latest
     env:
       # Fixes https://github.com/actions/virtual-environments/issues/3080
       STORAGE_OPTS: overlay.mount_program=/usr/bin/fuse-overlayfs
-      _wheel: ${{ needs.build-wheel.outputs.ubuntu-latest }}
+      wheel: ${{ needs.build.outputs.wheel }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
-      - name: Download Python package artifact
-        uses: actions/download-artifact@v2
+        uses: actions/checkout@v3
+      - name: Download wheels
+        uses: actions/download-artifact@v3
         with:
-          name: python-package
+          name: wheels
           path: target/wheels/
       - name: Get base and image tags
         id: tags
@@ -217,7 +204,7 @@ jobs:
         env:
           _base: ${{ env.official_container_repository }}:${{ steps.tags.outputs.base }}
           _name: ${{ env.official_container_repository }}:${{ steps.tags.outputs.image }}
-        run: python3 -um devtools.container.build --revision "$GITHUB_SHA" --wheel "$_wheel" --examples examples --name "$_name" --base "$_base"
+        run: python3 -um devtools.container.build --revision "$GITHUB_SHA" --wheel "$wheel" --examples examples --name "$_name" --base "$_base"
       - name: Test examples/laplace.py
         env:
           _image: ${{ steps.build.outputs.id }}

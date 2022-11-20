@@ -5,14 +5,6 @@ The following overview lists user facing changes as well as newly added
 features in inverse chronological order.
 
 
-NEW: Rust extension module
-
-Until now Nutils was a library written in Python only. To speed up certain
-operations we will use Rust as a second language. Binary packages for Linux,
-Windows and macOS will be published on PyPI. See `README.md` for instructions
-on how to install Nutils from source.
-
-
 IMPROVED: more efficient trimming
 
 The trim routine (which is used for the Finite Cell Method) is rewritten for

@@ -1,6 +1,6 @@
 from nutils import evaluable, function, mesh, numeric, types, points, transformseq, transform, element, warnings
 from nutils.testing import TestCase, parametrize
-from nutils._rust import poly
+import nutils_poly as poly
 import numpy
 import itertools
 import warnings as _builtin_warnings

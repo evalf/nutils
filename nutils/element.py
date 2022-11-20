@@ -9,7 +9,7 @@ system, and provide pointsets for purposes of integration and sampling.
 """
 
 from . import _util as util, numeric, cache, transform, warnings, types, points
-from ._rust import poly
+import nutils_poly as poly
 import numpy
 import re
 import math

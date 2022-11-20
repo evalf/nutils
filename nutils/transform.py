@@ -5,7 +5,7 @@ The transform module.
 from typing import Tuple, Dict
 from . import cache, numeric, _util as util, types, evaluable
 from .evaluable import Evaluable, Array
-from ._rust import poly
+import nutils_poly as poly
 import numpy
 import collections
 import itertools

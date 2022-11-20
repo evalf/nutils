@@ -1,6 +1,6 @@
 from nutils import evaluable, sparse, numeric, _util as util
 from nutils.testing import TestCase, parametrize
-from nutils._rust import poly
+import nutils_poly as poly
 import numpy
 import itertools
 import weakref

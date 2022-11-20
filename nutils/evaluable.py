@@ -30,7 +30,7 @@ else:
 
 from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, sparse
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph
-from ._rust import poly
+import nutils_poly as poly
 import numpy
 import sys
 import itertools
@@ -3646,7 +3646,7 @@ class Polyval(Array):
        incorrect results.
     '''
 
-    __slots__ = 'points_ndim', 'coeffs', 'points', 'ngrad'
+    __slots__ = 'points_ndim', 'coeffs', 'points', 'ngrad', '_grads'
 
     @types.apply_annotations
     def __init__(self, coeffs: asarray, points: asarray, ngrad: types.strictint = 0):
@@ -3665,11 +3665,20 @@ class Polyval(Array):
         self.coeffs = coeffs
         self.points = points
         self.ngrad = ngrad
+
+        degree = PolyNCoeffsToDegree(coeffs.shape[-1], self.points_ndim)
+        try:
+            degree = degree.__index__()
+        except TypeError as e:
+            self._grads = [functools.partial(poly.grad, nvars = self.points_ndim) for i in range(ngrad)]
+        else:
+            self._grads = [poly.GradPlan(self.points_ndim, max(0, degree - i)) for i in range(ngrad)]
+
         super().__init__(args=[points, coeffs], shape=points.shape[:-1]+coeffs.shape[:-1]+(self.points_ndim,)*ngrad, dtype=float)
 
     def evalf(self, points, coeffs):
-        for igrad in range(self.ngrad):
-            coeffs = poly.grad(coeffs, self.points_ndim)
+        for grad in self._grads:
+            coeffs = grad(coeffs)
         return poly.eval(coeffs, points)
 
     def _derivative(self, var, seen):
@@ -3772,10 +3781,15 @@ class PolyOuterProduct(Array):
         degree2 = PolyNCoeffsToDegree(coeffs2.shape[-1], dim2)
         ncoeffs = PolyDegreeToNCoeffs(degree1 + degree2, dim1 + dim2)
         shape = *coeffs1.shape[:-1], ncoeffs
-        super().__init__(args=[coeffs1, coeffs2], shape=shape, dtype=float)
 
-    def evalf(self, coeffs1, coeffs2):
-        return poly.outer_mul(coeffs1, coeffs2, self.dim1, self.dim2)
+        try:
+            degree1 = degree1.__index__()
+            degree2 = degree2.__index__()
+        except TypeError as e:
+            raise ValueError('the outer product of polynomials with variable degree is not supported') from e
+        self.evalf = poly.MulPlan(degree1, degree2, [poly.MulVar.Left] * dim1 + [poly.MulVar.Right] * dim2)
+
+        super().__init__(args=[coeffs1, coeffs2], shape=shape, dtype=float)
 
     def _takediag(self, axis1, axis2):
         if axis1 < self.ndim - 1 and axis2 < self.ndim - 1:
