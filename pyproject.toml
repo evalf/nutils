@@ -14,6 +14,11 @@ dependencies = [
     "treelog>=1.0b5",
 ]
 dynamic = ["description", "version"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Physics",
+]
 
 [project.optional-dependencies]
 docs = ["Sphinx>=1.8"]
