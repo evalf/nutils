@@ -1,3 +1,5 @@
+'Numerical Utilities for Finite Element Analysis'
+
 import sys
 import numpy
 from distutils.version import LooseVersion
