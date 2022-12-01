@@ -286,7 +286,7 @@ def replace(func=None, depthfirst=False, recursive=False, lru=4):
 class Evaluable(types.Singleton):
     'Base class'
 
-    __slots__ = '__args'
+    __slots__ = '__args', '__dict__'
     __cache__ = 'dependencies', 'arguments', 'ordereddeps', 'dependencytree', 'optimized_for_numpy', '_loop_concatenate_deps'
 
     @types.apply_annotations
@@ -341,6 +341,21 @@ class Evaluable(types.Singleton):
     def serialized(self):
         return zip(self.ordereddeps[1:]+(self,), self.dependencytree[1:])
 
+    # This property is a derivation of `ordereddeps[1:]` where the `Evaluable`
+    # instances are mapped to the `evalf` methods of the instances. Asserting
+    # that functions are immutable is difficult and currently
+    # `types._isimmutable` marks all functions as mutable. Since the
+    # `types.CacheMeta` machinery asserts immutability of the property, we have
+    # to resort to a regular `functools.cached_property`. Nevertheless, this
+    # property should be treated as if it is immutable.
+    @util.cached_property
+    def _serialized_evalf_head(self):
+        return tuple(op.evalf for op in self.ordereddeps[1:])
+
+    @property
+    def _serialized_evalf(self):
+        return zip(itertools.chain(self._serialized_evalf_head, (self.evalf,)), self.dependencytree[1:])
+
     def _node(self, cache, subgraph, times):
         if self in cache:
             return cache[self]
@@ -366,7 +381,7 @@ class Evaluable(types.Singleton):
 
         values = [evalargs]
         try:
-            values.extend(op.evalf(*[values[i] for i in indices]) for op, indices in self.serialized)
+            values.extend(op_evalf(*[values[i] for i in indices]) for op_evalf, indices in self._serialized_evalf)
         except KeyboardInterrupt:
             raise
         except Exception as e:
@@ -3945,13 +3960,24 @@ class LoopSum(Array):
         indices = {d: i for i, d in enumerate(itertools.chain([self.index], self._invariants, self._dependencies))}
         return tuple((dep, tuple(map(indices.__getitem__, dep._Evaluable__args))) for dep in self._dependencies)
 
+    # This property is a derivation of `_serialized` where the `Evaluable`
+    # instances are mapped to the `evalf` methods of the instances. Asserting
+    # that functions are immutable is difficult and currently
+    # `types._isimmutable` marks all functions as mutable. Since the
+    # `types.CacheMeta` machinery asserts immutability of the property, we have
+    # to resort to a regular `functools.cached_property`. Nevertheless, this
+    # property should be treated as if it is immutable.
+    @util.cached_property
+    def _serialized_loop_evalf(self):
+        return tuple((dep.evalf, indices) for dep, indices in self._serialized_loop)
+
     def evalf(self, shape, length, *args):
-        serialized = self._serialized_loop
+        serialized_evalf = self._serialized_loop_evalf
         result = numpy.zeros(shape, self.dtype)
         for index in range(length):
             values = [numpy.array(index)]
             values.extend(args)
-            values.extend(op.evalf(*[values[i] for i in indices]) for op, indices in serialized)
+            values.extend(op_evalf(*[values[i] for i in indices]) for op_evalf, indices in serialized_evalf)
             result += values[-1]
         return result
 
@@ -4164,14 +4190,25 @@ class LoopConcatenateCombined(Evaluable):
         indices = {d: i for i, d in enumerate(itertools.chain([self._index], self._invariants, self._dependencies))}
         return tuple((dep, tuple(map(indices.__getitem__, dep._Evaluable__args))) for dep in self._dependencies)
 
+    # This property is a derivation of `_serialized` where the `Evaluable`
+    # instances are mapped to the `evalf` methods of the instances. Asserting
+    # that functions are immutable is difficult and currently
+    # `types._isimmutable` marks all functions as mutable. Since the
+    # `types.CacheMeta` machinery asserts immutability of the property, we have
+    # to resort to a regular `functools.cached_property`. Nevertheless, this
+    # property should be treated as if it is immutable.
+    @util.cached_property
+    def _serialized_loop_evalf(self):
+        return tuple((dep.evalf, indices) for dep, indices in self._serialized_loop)
+
     def evalf(self, shapes, length, *args):
-        serialized = self._serialized_loop
+        serialized_evalf = self._serialized_loop_evalf
         results = [parallel.shempty(tuple(map(int, shape)), dtype=func.dtype) for func, shape in zip(self._funcs, shapes)]
         with parallel.ctxrange('loop {}'.format(self._index_name), int(length)) as indices:
             for index in indices:
                 values = [numpy.array(index)]
                 values.extend(args)
-                values.extend(op.evalf(*[values[i] for i in indices]) for op, indices in serialized)
+                values.extend(op_evalf(*[values[i] for i in indices]) for op_evalf, indices in serialized_evalf)
                 for result, (start, stop, block) in zip(results, values[-1]):
                     result[..., start:stop] = block
         return tuple(results)
