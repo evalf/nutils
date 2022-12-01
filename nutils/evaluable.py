@@ -3918,7 +3918,7 @@ class _LoopIndex(Argument):
 
 class LoopSum(Array):
 
-    __cache__ = '_serialized'
+    __cache__ = '_serialized_loop'
 
     def prepare_funcdata(arg):
         # separate shape from array to make it simplifiable (annotations are
@@ -3941,12 +3941,12 @@ class LoopSum(Array):
         super().__init__(args=(shape, length, *self._invariants), shape=self.func.shape, dtype=self.func.dtype)
 
     @property
-    def _serialized(self):
+    def _serialized_loop(self):
         indices = {d: i for i, d in enumerate(itertools.chain([self.index], self._invariants, self._dependencies))}
         return tuple((dep, tuple(map(indices.__getitem__, dep._Evaluable__args))) for dep in self._dependencies)
 
     def evalf(self, shape, length, *args):
-        serialized = self._serialized
+        serialized = self._serialized_loop
         result = numpy.zeros(shape, self.dtype)
         for index in range(length):
             values = [numpy.array(index)]
@@ -3956,7 +3956,7 @@ class LoopSum(Array):
         return result
 
     def evalf_withtimes(self, times, shape, length, *args):
-        serialized = self._serialized
+        serialized = self._serialized_loop
         subtimes = times.setdefault(self, collections.defaultdict(_Stats))
         result = numpy.zeros(shape, self.dtype)
         for index in range(length):
@@ -4142,7 +4142,7 @@ class LoopConcatenate(Array):
 
 class LoopConcatenateCombined(Evaluable):
 
-    __cache__ = '_serialized'
+    __cache__ = '_serialized_loop'
 
     @types.apply_annotations
     def __init__(self, funcdatas: types.tuple[asarrays], index_name: types.strictstr, length: asindex):
@@ -4160,12 +4160,12 @@ class LoopConcatenateCombined(Evaluable):
         super().__init__(args=(Tuple(shapes), length, *self._invariants))
 
     @property
-    def _serialized(self):
+    def _serialized_loop(self):
         indices = {d: i for i, d in enumerate(itertools.chain([self._index], self._invariants, self._dependencies))}
         return tuple((dep, tuple(map(indices.__getitem__, dep._Evaluable__args))) for dep in self._dependencies)
 
     def evalf(self, shapes, length, *args):
-        serialized = self._serialized
+        serialized = self._serialized_loop
         results = [parallel.shempty(tuple(map(int, shape)), dtype=func.dtype) for func, shape in zip(self._funcs, shapes)]
         with parallel.ctxrange('loop {}'.format(self._index_name), int(length)) as indices:
             for index in indices:
@@ -4177,7 +4177,7 @@ class LoopConcatenateCombined(Evaluable):
         return tuple(results)
 
     def evalf_withtimes(self, times, shapes, length, *args):
-        serialized = self._serialized
+        serialized = self._serialized_loop
         subtimes = times.setdefault(self, collections.defaultdict(_Stats))
         results = [parallel.shempty(tuple(map(int, shape)), dtype=func.dtype) for func, shape in zip(self._funcs, shapes)]
         for index in range(length):
