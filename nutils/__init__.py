@@ -1,3 +1,5 @@
+'Numerical Utilities for Finite Element Analysis'
+
 import sys
 import numpy
 from distutils.version import LooseVersion
@@ -5,7 +7,7 @@ from distutils.version import LooseVersion
 assert sys.version_info >= (3, 5)
 assert LooseVersion(numpy.version.version) >= LooseVersion('1.16'), 'nutils requires numpy 1.16 or higher, got {}'.format(numpy.version.version)
 
-version = '8.0a0'
+__version__ = version = '8.0a0'
 version_name = None
 long_version = ('{} "{}"' if version_name else '{}').format(version, version_name)
 

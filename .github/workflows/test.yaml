@@ -20,14 +20,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
       - name: Install build dependencies
-        run: python3 -m pip install setuptools wheel
+        run: python3 -m pip install flit
       - name: Build package
         id: build
         run: |
           # To make the wheels reproducible, set the timestamp of the (files in
           # the) generated wheels to the date of the commit.
           export SOURCE_DATE_EPOCH=`git show -s --format=%ct`
-          python3 setup.py sdist bdist_wheel
+          python3 -m flit build
           printf "::set-output name=wheel::%s" dist/*.whl
       - name: Upload package artifacts
         uses: actions/upload-artifact@v2
@@ -156,7 +156,7 @@ jobs:
           python3 -um pip install setuptools wheel
           python3 -um pip install --upgrade --upgrade-strategy eager .[docs]
       - name: Build docs
-        run: python3 setup.py build_sphinx --nitpicky --warning-is-error --keep-going
+        run: python3 -m sphinx -n -W --keep-going docs build/sphinx/html
   build-and-test-container-image:
     name: Build container image
     needs: build-python-package
