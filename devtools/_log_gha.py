@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 from typing import Any
 
 debug = print
@@ -21,5 +23,5 @@ def error(*args: Any) -> None:
 
 
 def set_output(key: str, value: str) -> None:
-    print('::set-output name={}::{}'.format(key, value))
+    Path(os.environ['GITHUB_OUTPUT']).open('a').write(f'{key}={value}\n')
     print('\033[1;35mOUTPUT: {}={}\033[0m'.format(key, value))

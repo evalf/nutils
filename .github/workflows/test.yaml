@@ -28,7 +28,7 @@ jobs:
           # the) generated wheels to the date of the commit.
           export SOURCE_DATE_EPOCH=`git show -s --format=%ct`
           python3 -m flit build
-          printf "::set-output name=wheel::%s" dist/*.whl
+          echo wheel=`echo dist/*.whl` >> $GITHUB_OUTPUT
       - name: Upload package artifacts
         uses: actions/upload-artifact@v2
         with:
