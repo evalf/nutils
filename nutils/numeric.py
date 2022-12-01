@@ -222,7 +222,7 @@ def inv(A):
     '''Matrix inverse.
 
     Fully equivalent to :func:`numpy.linalg.inv`, with the exception that upon
-    singular systems :func:`inv` does not raise a ``LinAlgError``, but rather
+    singular systems :func:`~nutils.numeric.inv` does not raise a ``LinAlgError``, but rather
     issues a ``RuntimeWarning`` and returns NaN (not a number) values. For
     arguments of dimension >2 the return array contains NaN values only for those
     entries that correspond to singular matrices.
