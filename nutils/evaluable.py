@@ -286,7 +286,7 @@ def replace(func=None, depthfirst=False, recursive=False, lru=4):
 class Evaluable(types.Singleton):
     'Base class'
 
-    __slots__ = '__args'
+    __slots__ = '__args', '__dict__'
     __cache__ = 'dependencies', 'arguments', 'ordereddeps', 'dependencytree', 'optimized_for_numpy', '_loop_concatenate_deps'
 
     @types.apply_annotations
@@ -294,7 +294,8 @@ class Evaluable(types.Singleton):
         super().__init__()
         self.__args = args
 
-    def evalf(self, *args):
+    @staticmethod
+    def evalf(*args):
         raise NotImplementedError('Evaluable derivatives should implement the evalf method')
 
     def evalf_withtimes(self, times, *args):
@@ -340,6 +341,21 @@ class Evaluable(types.Singleton):
     def serialized(self):
         return zip(self.ordereddeps[1:]+(self,), self.dependencytree[1:])
 
+    # This property is a derivation of `ordereddeps[1:]` where the `Evaluable`
+    # instances are mapped to the `evalf` methods of the instances. Asserting
+    # that functions are immutable is difficult and currently
+    # `types._isimmutable` marks all functions as mutable. Since the
+    # `types.CacheMeta` machinery asserts immutability of the property, we have
+    # to resort to a regular `functools.cached_property`. Nevertheless, this
+    # property should be treated as if it is immutable.
+    @util.cached_property
+    def _serialized_evalf_head(self):
+        return tuple(op.evalf for op in self.ordereddeps[1:])
+
+    @property
+    def _serialized_evalf(self):
+        return zip(itertools.chain(self._serialized_evalf_head, (self.evalf,)), self.dependencytree[1:])
+
     def _node(self, cache, subgraph, times):
         if self in cache:
             return cache[self]
@@ -365,7 +381,7 @@ class Evaluable(types.Singleton):
 
         values = [evalargs]
         try:
-            values.extend(op.evalf(*[values[i] for i in indices]) for op, indices in self.serialized)
+            values.extend(op_evalf(*[values[i] for i in indices]) for op_evalf, indices in self._serialized_evalf)
         except KeyboardInterrupt:
             raise
         except Exception as e:
@@ -553,7 +569,8 @@ class Tuple(Evaluable):
         self.items = items
         super().__init__(items)
 
-    def evalf(self, *items):
+    @staticmethod
+    def evalf(*items):
         return items
 
     def __iter__(self):
@@ -1031,7 +1048,8 @@ class NPoints(Array):
     def __init__(self):
         super().__init__(args=[EVALARGS], shape=(), dtype=int)
 
-    def evalf(self, evalargs):
+    @staticmethod
+    def evalf(evalargs):
         points = evalargs['_points'].coords
         return types.frozenarray(points.shape[0])
 
@@ -1046,7 +1064,8 @@ class Points(Array):
     def __init__(self, npoints, ndim):
         super().__init__(args=[EVALARGS], shape=(npoints, ndim), dtype=float)
 
-    def evalf(self, evalargs):
+    @staticmethod
+    def evalf(evalargs):
         return evalargs['_points'].coords
 
 
@@ -1057,7 +1076,8 @@ class Weights(Array):
     def __init__(self, npoints):
         super().__init__(args=[EVALARGS], shape=(npoints,), dtype=float)
 
-    def evalf(self, evalargs):
+    @staticmethod
+    def evalf(evalargs):
         weights = evalargs['_points'].weights
         assert numeric.isarray(weights) and weights.ndim == 1
         return weights
@@ -1089,7 +1109,8 @@ class Normal(Array):
                 where = tuple(sorted(where))
             return align(Normal(unaligned), where[:-1], self.shape)
 
-    def evalf(self, lgrad):
+    @staticmethod
+    def evalf(lgrad):
         n = lgrad[..., -1]
         # orthonormalize n to G
         G = lgrad[..., :-1]
@@ -1237,7 +1258,8 @@ class InsertAxis(Array):
     def _simplified(self):
         return self.func._insertaxis(self.ndim-1, self.length)
 
-    def evalf(self, func, length):
+    @staticmethod
+    def evalf(func, length):
         if length == 1:
             return func[..., numpy.newaxis]
         try:
@@ -1530,8 +1552,8 @@ class Product(Array):
             return get(self.func, self.ndim, 0)
         return self.func._product()
 
-    def evalf(self, arr):
-        assert arr.ndim == self.ndim+1
+    @staticmethod
+    def evalf(arr):
         return numpy.product(arr, axis=-1)
 
     def _derivative(self, var, seen):
@@ -1567,8 +1589,7 @@ class Inverse(Array):
         if equalindex(self.func.shape[-1], 1):
             return reciprocal(self.func)
 
-    def evalf(self, arr):
-        return numeric.inv(arr)
+    evalf = staticmethod(numeric.inv)
 
     def _derivative(self, var, seen):
         return -einsum('Aij,AjkB,Akl->AilB', self, derivative(self.func, var, seen), self)
@@ -1636,9 +1657,7 @@ class Determinant(Array):
         if equalindex(self.func.shape[-1], 1):
             return Take(Take(self.func, zeros((), int)), zeros((), int))
 
-    def evalf(self, arr):
-        assert arr.ndim == self.ndim+2
-        return numpy.linalg.det(arr)
+    evalf = staticmethod(numpy.linalg.det)
 
     def _derivative(self, var, seen):
         return einsum('A,Aji,AijB->AB', self, inverse(self.func), derivative(self.func, var, seen))
@@ -1694,8 +1713,7 @@ class Multiply(Array):
         unaligned2, where2 = unalign(func2)
         return Einsum((unaligned1, unaligned2), (where1, where2), tuple(range(self.ndim)))
 
-    def evalf(self, arr1, arr2):
-        return arr1 * arr2
+    evalf = staticmethod(numpy.multiply)
 
     def _sum(self, axis):
         func1, func2 = self.funcs
@@ -1872,8 +1890,7 @@ class Add(Array):
         # We instead rely on Inflate._add to handle this situation.
         return func1._add(func2) or func2._add(func1)
 
-    def evalf(self, arr1, arr2=None):
-        return arr1 + arr2
+    evalf = staticmethod(numpy.add)
 
     def _sum(self, axis):
         return Add([sum(func, axis) for func in self.funcs])
@@ -2004,8 +2021,8 @@ class Sum(Array):
             return Take(self.func, 0)
         return self.func._sum(self.ndim)
 
-    def evalf(self, arr):
-        assert arr.ndim == self.ndim+1
+    @staticmethod
+    def evalf(arr):
         return numpy.sum(arr, -1)
 
     def _sum(self, axis):
@@ -2061,8 +2078,8 @@ class TakeDiag(Array):
             return Take(self.func, 0)
         return self.func._takediag(self.ndim-1, self.ndim)
 
-    def evalf(self, arr):
-        assert arr.ndim == self.ndim+1
+    @staticmethod
+    def evalf(arr):
         return numpy.einsum('...kk->...k', arr, optimize=False)
 
     def _derivative(self, var, seen):
@@ -2125,7 +2142,8 @@ class Take(Array):
             if axis == self.func.ndim - 1:
                 return util.sum(Inflate(func, dofmap, self.func.shape[-1])._take(self.indices, self.func.ndim - 1) for dofmap, func in parts.items())
 
-    def evalf(self, arr, indices):
+    @staticmethod
+    def evalf(arr, indices):
         return arr[..., indices]
 
     def _derivative(self, var, seen):
@@ -2179,8 +2197,7 @@ class Power(Array):
         else:
             return self._simplified()
 
-    def evalf(self, base, exp):
-        return numpy.power(base, exp)
+    evalf = staticmethod(numpy.power)
 
     def _derivative(self, var, seen):
         if self.power.isconstant:
@@ -2285,13 +2302,13 @@ class Pointwise(Array):
 
 class Reciprocal(Pointwise):
     __slots__ = ()
-    evalf = numpy.reciprocal
+    evalf = staticmethod(numpy.reciprocal)
     return_type = lambda T: complex if T == complex else float
 
 
 class Negative(Pointwise):
     __slots__ = ()
-    evalf = numpy.negative
+    evalf = staticmethod(numpy.negative)
     def return_type(T):
         if T == bool:
             raise ValueError('boolean values cannot be negated')
@@ -2304,13 +2321,13 @@ class Negative(Pointwise):
 
 class FloorDivide(Pointwise):
     __slots__ = ()
-    evalf = numpy.floor_divide
+    evalf = staticmethod(numpy.floor_divide)
     return_type = lambda T1, T2: complex if complex in (T1, T2) else float if float in (T1, T2) else int
 
 
 class Absolute(Pointwise):
     __slots__ = ()
-    evalf = numpy.absolute
+    evalf = staticmethod(numpy.absolute)
     return_type = lambda T: float if T in (float, complex) else int
 
     def _intbounds_impl(self):
@@ -2325,7 +2342,7 @@ class Absolute(Pointwise):
 class Cos(Pointwise):
     'Cosine, element-wise.'
     __slots__ = ()
-    evalf = numpy.cos
+    evalf = staticmethod(numpy.cos)
     complex_deriv = lambda x: -Sin(x),
     return_type = lambda T: complex if T == complex else float
 
@@ -2333,7 +2350,7 @@ class Cos(Pointwise):
 class Sin(Pointwise):
     'Sine, element-wise.'
     __slots__ = ()
-    evalf = numpy.sin
+    evalf = staticmethod(numpy.sin)
     complex_deriv = Cos,
     return_type = lambda T: complex if T == complex else float
 
@@ -2349,7 +2366,7 @@ class Tan(Pointwise):
 class ArcSin(Pointwise):
     'Inverse sine, element-wise.'
     __slots__ = ()
-    evalf = numpy.arcsin
+    evalf = staticmethod(numpy.arcsin)
     complex_deriv = lambda x: reciprocal(sqrt(1-x**2)),
     return_type = lambda T: complex if T == complex else float
 
@@ -2357,7 +2374,7 @@ class ArcSin(Pointwise):
 class ArcCos(Pointwise):
     'Inverse cosine, element-wise.'
     __slots__ = ()
-    evalf = numpy.arccos
+    evalf = staticmethod(numpy.arccos)
     complex_deriv = lambda x: -reciprocal(sqrt(1-x**2)),
     return_type = lambda T: complex if T == complex else float
 
@@ -2365,7 +2382,7 @@ class ArcCos(Pointwise):
 class ArcTan(Pointwise):
     'Inverse tangent, element-wise.'
     __slots__ = ()
-    evalf = numpy.arctan
+    evalf = staticmethod(numpy.arctan)
     complex_deriv = lambda x: reciprocal(1+x**2),
     return_type = lambda T: complex if T == complex else float
 
@@ -2381,7 +2398,7 @@ class CosH(Pointwise):
 class SinH(Pointwise):
     'Hyperbolic sine, element-wise.'
     __slots__ = ()
-    evalf = numpy.sinh
+    evalf = staticmethod(numpy.sinh)
     complex_deriv = CosH,
     return_type = lambda T: complex if T == complex else float
 
@@ -2389,7 +2406,7 @@ class SinH(Pointwise):
 class TanH(Pointwise):
     'Hyperbolic tangent, element-wise.'
     __slots__ = ()
-    evalf = numpy.tanh
+    evalf = staticmethod(numpy.tanh)
     complex_deriv = lambda x: 1 - TanH(x)**2,
     return_type = lambda T: complex if T == complex else float
 
@@ -2397,28 +2414,28 @@ class TanH(Pointwise):
 class ArcTanH(Pointwise):
     'Inverse hyperbolic tangent, element-wise.'
     __slots__ = ()
-    evalf = numpy.arctanh
+    evalf = staticmethod(numpy.arctanh)
     complex_deriv = lambda x: reciprocal(1-x**2),
     return_type = lambda T: complex if T == complex else float
 
 
 class Exp(Pointwise):
     __slots__ = ()
-    evalf = numpy.exp
+    evalf = staticmethod(numpy.exp)
     complex_deriv = lambda x: Exp(x),
     return_type = lambda T: complex if T == complex else float
 
 
 class Log(Pointwise):
     __slots__ = ()
-    evalf = numpy.log
+    evalf = staticmethod(numpy.log)
     complex_deriv = lambda x: reciprocal(x),
     return_type = lambda T: complex if T == complex else float
 
 
 class Mod(Pointwise):
     __slots__ = ()
-    evalf = numpy.mod
+    evalf = staticmethod(numpy.mod)
     def return_type(T1, T2):
         if T1 == complex or T2 == complex:
             raise ValueError('mod is not defined for complex numbers')
@@ -2447,7 +2464,7 @@ class Mod(Pointwise):
 
 class ArcTan2(Pointwise):
     __slots__ = ()
-    evalf = numpy.arctan2
+    evalf = staticmethod(numpy.arctan2)
     deriv = lambda x, y: y / (x**2 + y**2), lambda x, y: -x / (x**2 + y**2)
     def return_type(T1, T2):
         if T1 == complex or T2 == complex:
@@ -2457,7 +2474,7 @@ class ArcTan2(Pointwise):
 
 class Greater(Pointwise):
     __slots__ = ()
-    evalf = numpy.greater
+    evalf = staticmethod(numpy.greater)
     def return_type(T1, T2):
         if T1 == complex or T2 == complex:
             raise ValueError('Complex numbers have no total order.')
@@ -2466,13 +2483,13 @@ class Greater(Pointwise):
 
 class Equal(Pointwise):
     __slots__ = ()
-    evalf = numpy.equal
+    evalf = staticmethod(numpy.equal)
     return_type = lambda T1, T2: bool
 
 
 class Less(Pointwise):
     __slots__ = ()
-    evalf = numpy.less
+    evalf = staticmethod(numpy.less)
     def return_type(T1, T2):
         if T1 == complex or T2 == complex:
             raise ValueError('Complex numbers have no total order.')
@@ -2481,7 +2498,7 @@ class Less(Pointwise):
 
 class Minimum(Pointwise):
     __slots__ = ()
-    evalf = numpy.minimum
+    evalf = staticmethod(numpy.minimum)
     deriv = lambda x, y: .5 - .5 * Sign(x - y), lambda x, y: .5 + .5 * Sign(x - y)
     def return_type(T1, T2):
         if T1 == complex or T2 == complex:
@@ -2506,7 +2523,7 @@ class Minimum(Pointwise):
 
 class Maximum(Pointwise):
     __slots__ = ()
-    evalf = numpy.maximum
+    evalf = staticmethod(numpy.maximum)
     deriv = lambda x, y: .5 + .5 * Sign(x - y), lambda x, y: .5 - .5 * Sign(x - y)
     def return_type(T1, T2):
         if T1 == complex or T2 == complex:
@@ -2531,7 +2548,7 @@ class Maximum(Pointwise):
 
 class Conjugate(Pointwise):
     __slots__ = ()
-    evalf = numpy.conjugate
+    evalf = staticmethod(numpy.conjugate)
     return_type = lambda T: int if T == bool else T
 
     def _simplified(self):
@@ -2543,10 +2560,8 @@ class Conjugate(Pointwise):
 
 class Real(Pointwise):
     __slots__ = ()
+    evalf = staticmethod(numpy.real)
     return_type = lambda T: float if T == complex else T
-
-    def evalf(self, arg):
-        return numpy.real(arg)
 
     def _simplified(self):
         retval = self.args[0]._real()
@@ -2557,10 +2572,8 @@ class Real(Pointwise):
 
 class Imag(Pointwise):
     __slots__ = ()
+    evalf = staticmethod(numpy.imag)
     return_type = lambda T: float if T == complex else T
-
-    def evalf(self, arg):
-        return numpy.imag(arg)
 
     def _simplified(self):
         retval = self.args[0]._imag()
@@ -2690,8 +2703,7 @@ class Sign(Array):
     def _simplified(self):
         return self.func._sign()
 
-    def evalf(self, arr):
-        return numpy.sign(arr)
+    evalf = staticmethod(numpy.sign)
 
     def _takediag(self, axis1, axis2):
         return Sign(_takediag(self.func, axis1, axis2))
@@ -2735,7 +2747,8 @@ class Sampled(Array):
         assert points.ndim == 2
         super().__init__(args=[points, expect], shape=(points.shape[0], expect.shape[0]), dtype=float)
 
-    def evalf(self, points, expect):
+    @staticmethod
+    def evalf(points, expect):
         assert numpy.equal(points, expect).all(), 'illegal point set'
         return numpy.eye(len(points))
 
@@ -3050,7 +3063,8 @@ class SwapInflateTake(Evaluable):
         shape = ArrayFromTuple(self, index=2, shape=(), dtype=int, _lower=0),
         return (ArrayFromTuple(self, index=index, shape=shape, dtype=int, _lower=0) for index in range(2))
 
-    def evalf(self, inflateidx, takeidx):
+    @staticmethod
+    def evalf(inflateidx, takeidx):
         uniqueinflate = _isunique(inflateidx)
         uniquetake = _isunique(takeidx)
         unique = uniqueinflate and uniquetake
@@ -3112,7 +3126,8 @@ class Diagonalize(Array):
             return InsertAxis(self.func, 1)
         return self.func._diagonalize(self.ndim-2)
 
-    def evalf(self, arr):
+    @staticmethod
+    def evalf(arr):
         result = numpy.zeros(arr.shape+(arr.shape[-1],), dtype=arr.dtype, order='F')
         diag = numpy.core.multiarray.c_einsum('...ii->...i', result)
         diag[:] = arr
@@ -3207,7 +3222,8 @@ class Find(Array):
         self.where = where
         super().__init__(args=[where], shape=[Sum(BoolToInt(where))], dtype=int)
 
-    def evalf(self, where):
+    @staticmethod
+    def evalf(where):
         return where.nonzero()[0]
 
     def _simplified(self):
@@ -3258,7 +3274,8 @@ class WithDerivative(Array):
     def arguments(self):
         return self._func.arguments | {self._var}
 
-    def evalf(self, func: numpy.ndarray) -> numpy.ndarray:
+    @staticmethod
+    def evalf(func: numpy.ndarray) -> numpy.ndarray:
         return func
 
     def _derivative(self, var: DerivativeTargetBase, seen) -> Array:
@@ -3400,7 +3417,8 @@ class Ravel(Array):
             return get(self.func, -1, 0)
         return self.func._ravel(self.ndim-1)
 
-    def evalf(self, f):
+    @staticmethod
+    def evalf(f):
         return f.reshape(f.shape[:-2] + (f.shape[-2]*f.shape[-1],))
 
     def _multiply(self, other):
@@ -3511,7 +3529,8 @@ class Unravel(Array):
     def _derivative(self, var, seen):
         return unravel(derivative(self.func, var, seen), axis=self.ndim-2, shape=self.shape[-2:])
 
-    def evalf(self, f, sh1, sh2):
+    @staticmethod
+    def evalf(f, sh1, sh2):
         return f.reshape(f.shape[:-1] + (sh1, sh2))
 
     def _takediag(self, axis1, axis2):
@@ -3542,7 +3561,8 @@ class RavelIndex(Array):
         self._length = na * nb
         super().__init__(args=[ia, ib, nb], shape=ia.shape + ib.shape, dtype=int)
 
-    def evalf(self, ia, ib, nb):
+    @staticmethod
+    def evalf(ia, ib, nb):
         return ia[(...,)+(numpy.newaxis,)*ib.ndim] * nb + ib
 
     def _take(self, index, axis):
@@ -3592,8 +3612,7 @@ class Range(Array):
         if length == self.length:
             return func
 
-    def evalf(self, length):
-        return numpy.arange(length)
+    evalf = staticmethod(numpy.arange)
 
     def _intbounds_impl(self):
         lower, upper = self.length._intbounds
@@ -3611,7 +3630,8 @@ class InRange(Array):
         self.length = length
         super().__init__(args=[index, length], shape=index.shape, dtype=int)
 
-    def evalf(self, index, length):
+    @staticmethod
+    def evalf(index, length):
         assert index.size == 0 or 0 <= index.min() and index.max() < length
         return index
 
@@ -3719,8 +3739,7 @@ class PolyOuterProduct(Array):
         shape = (left.shape[0] * right.shape[0],) + (nleft + nright - 1,) * (left.ndim + right.ndim - 2)
         super().__init__(args=[left, right], shape=shape, dtype=float)
 
-    def evalf(self, left, right):
-        return numeric.poly_outer_product(left, right)
+    evalf = staticmethod(numeric.poly_outer_product)
 
 
 class Legendre(Array):
@@ -3793,7 +3812,8 @@ class Choose(Array):
         self.choices = choices
         super().__init__(args=(index,)+choices, shape=shape, dtype=dtype)
 
-    def evalf(self, index, *choices):
+    @staticmethod
+    def evalf(index, *choices):
         return numpy.choose(index, choices)
 
     def _derivative(self, var, seen):
@@ -3849,7 +3869,8 @@ class NormDim(Array):
         self.index = index
         super().__init__(args=[length, index], shape=index.shape, dtype=index.dtype)
 
-    def evalf(self, length, index):
+    @staticmethod
+    def evalf(length, index):
         assert length.shape == index.shape
         assert length.dtype.kind == 'i'
         assert index.dtype.kind == 'i'
@@ -3912,7 +3933,7 @@ class _LoopIndex(Argument):
 
 class LoopSum(Array):
 
-    __cache__ = '_serialized'
+    __cache__ = '_serialized_loop'
 
     def prepare_funcdata(arg):
         # separate shape from array to make it simplifiable (annotations are
@@ -3935,22 +3956,33 @@ class LoopSum(Array):
         super().__init__(args=(shape, length, *self._invariants), shape=self.func.shape, dtype=self.func.dtype)
 
     @property
-    def _serialized(self):
+    def _serialized_loop(self):
         indices = {d: i for i, d in enumerate(itertools.chain([self.index], self._invariants, self._dependencies))}
         return tuple((dep, tuple(map(indices.__getitem__, dep._Evaluable__args))) for dep in self._dependencies)
 
+    # This property is a derivation of `_serialized` where the `Evaluable`
+    # instances are mapped to the `evalf` methods of the instances. Asserting
+    # that functions are immutable is difficult and currently
+    # `types._isimmutable` marks all functions as mutable. Since the
+    # `types.CacheMeta` machinery asserts immutability of the property, we have
+    # to resort to a regular `functools.cached_property`. Nevertheless, this
+    # property should be treated as if it is immutable.
+    @util.cached_property
+    def _serialized_loop_evalf(self):
+        return tuple((dep.evalf, indices) for dep, indices in self._serialized_loop)
+
     def evalf(self, shape, length, *args):
-        serialized = self._serialized
+        serialized_evalf = self._serialized_loop_evalf
         result = numpy.zeros(shape, self.dtype)
         for index in range(length):
             values = [numpy.array(index)]
             values.extend(args)
-            values.extend(op.evalf(*[values[i] for i in indices]) for op, indices in serialized)
+            values.extend(op_evalf(*[values[i] for i in indices]) for op_evalf, indices in serialized_evalf)
             result += values[-1]
         return result
 
     def evalf_withtimes(self, times, shape, length, *args):
-        serialized = self._serialized
+        serialized = self._serialized_loop
         subtimes = times.setdefault(self, collections.defaultdict(_Stats))
         result = numpy.zeros(shape, self.dtype)
         for index in range(length):
@@ -4034,7 +4066,8 @@ class _SizesToOffsets(Array):
         self._sizes = sizes
         super().__init__(args=[sizes], shape=(sizes.shape[0]+1,), dtype=int)
 
-    def evalf(self, sizes):
+    @staticmethod
+    def evalf(sizes):
         return numpy.cumsum([0, *sizes])
 
     def _simplified(self):
@@ -4062,7 +4095,8 @@ class LoopConcatenate(Array):
         self._lcc = LoopConcatenateCombined((self.funcdata,), index_name, length)
         super().__init__(args=[self._lcc], shape=shape, dtype=self.func.dtype)
 
-    def evalf(self, arg):
+    @staticmethod
+    def evalf(arg):
         return arg[0]
 
     def evalf_withtimes(self, times, arg):
@@ -4134,7 +4168,7 @@ class LoopConcatenate(Array):
 
 class LoopConcatenateCombined(Evaluable):
 
-    __cache__ = '_serialized'
+    __cache__ = '_serialized_loop'
 
     @types.apply_annotations
     def __init__(self, funcdatas: types.tuple[asarrays], index_name: types.strictstr, length: asindex):
@@ -4152,24 +4186,35 @@ class LoopConcatenateCombined(Evaluable):
         super().__init__(args=(Tuple(shapes), length, *self._invariants))
 
     @property
-    def _serialized(self):
+    def _serialized_loop(self):
         indices = {d: i for i, d in enumerate(itertools.chain([self._index], self._invariants, self._dependencies))}
         return tuple((dep, tuple(map(indices.__getitem__, dep._Evaluable__args))) for dep in self._dependencies)
 
+    # This property is a derivation of `_serialized` where the `Evaluable`
+    # instances are mapped to the `evalf` methods of the instances. Asserting
+    # that functions are immutable is difficult and currently
+    # `types._isimmutable` marks all functions as mutable. Since the
+    # `types.CacheMeta` machinery asserts immutability of the property, we have
+    # to resort to a regular `functools.cached_property`. Nevertheless, this
+    # property should be treated as if it is immutable.
+    @util.cached_property
+    def _serialized_loop_evalf(self):
+        return tuple((dep.evalf, indices) for dep, indices in self._serialized_loop)
+
     def evalf(self, shapes, length, *args):
-        serialized = self._serialized
+        serialized_evalf = self._serialized_loop_evalf
         results = [parallel.shempty(tuple(map(int, shape)), dtype=func.dtype) for func, shape in zip(self._funcs, shapes)]
         with parallel.ctxrange('loop {}'.format(self._index_name), int(length)) as indices:
             for index in indices:
                 values = [numpy.array(index)]
                 values.extend(args)
-                values.extend(op.evalf(*[values[i] for i in indices]) for op, indices in serialized)
+                values.extend(op_evalf(*[values[i] for i in indices]) for op_evalf, indices in serialized_evalf)
                 for result, (start, stop, block) in zip(results, values[-1]):
                     result[..., start:stop] = block
         return tuple(results)
 
     def evalf_withtimes(self, times, shapes, length, *args):
-        serialized = self._serialized
+        serialized = self._serialized_loop
         subtimes = times.setdefault(self, collections.defaultdict(_Stats))
         results = [parallel.shempty(tuple(map(int, shape)), dtype=func.dtype) for func, shape in zip(self._funcs, shapes)]
         for index in range(length):
