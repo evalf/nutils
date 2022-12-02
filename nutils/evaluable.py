@@ -1616,30 +1616,6 @@ class Inverse(Array):
             return Inverse(unravel(self.func, axis, shape))
 
 
-class Interpolate(Array):
-    'interpolate uniformly spaced data; stepwise for now'
-
-    __slots__ = 'xp', 'fp', 'left', 'right'
-
-    @types.apply_annotations
-    def __init__(self, x: asarray, xp: types.arraydata, fp: types.arraydata, left: types.strictfloat = None, right: types.strictfloat = None):
-        xp = numpy.asarray(xp)
-        fp = numpy.asarray(fp)
-        assert xp.ndim == fp.ndim == 1
-        if not numpy.greater(numpy.diff(xp), 0).all():
-            warnings.warn('supplied x-values are non-increasing')
-        assert x.ndim == 0
-        assert x.dtype != complex and xp.dtype.kind != 'c'
-        self.xp = xp
-        self.fp = fp
-        self.left = left
-        self.right = right
-        super().__init__(args=[x], shape=(), dtype=complex if fp.dtype.kind == 'c' else float)
-
-    def evalf(self, x):
-        return numpy.interp(x, self.xp, self.fp, self.left, self.right)
-
-
 class Determinant(Array):
 
     __slots__ = 'func',
