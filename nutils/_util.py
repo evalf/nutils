@@ -563,9 +563,18 @@ def log_traceback(gracefulexit: bool = True):
         raise
     except:
         exc = traceback.TracebackException(*sys.exc_info())
-        treelog.error(''.join(exc.format_exception_only()).rstrip())
-        for s in exc.stack.format():
-            treelog.debug(s.rstrip())
+        prefix = ''
+        while True:
+            treelog.error(prefix + ''.join(exc.format_exception_only()).rstrip())
+            treelog.debug('Traceback (most recent call first):\n' + ''.join(reversed(exc.stack.format())).rstrip())
+            if exc.__cause__ is not None:
+                exc = exc.__cause__
+                prefix = '.. caused by '
+            elif exc.__context__ is not None and not exc.__suppress_context__:
+                exc = exc.__context__
+                prefix = '.. while handling '
+            else:
+                break
         raise SystemExit(1)
 
 
