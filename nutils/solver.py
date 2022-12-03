@@ -214,9 +214,14 @@ class NormBased(LineSearch):
 
     @classmethod
     def legacy(cls, kwargs):
-        minscale, acceptscale = kwargs.pop('searchrange', (.01, 2/3))
-        maxscale = kwargs.pop('rebound', 2.)
-        return cls(minscale=minscale, acceptscale=acceptscale, maxscale=maxscale)
+        args = {}
+        if 'searchrange' in kwargs:
+            args['minscale'], args['acceptscale'] = kwargs.pop('searchrange')
+        if 'rebound' in kwargs:
+            args['maxscale'] = kwargs.pop('rebound')
+        if args:
+            warnings.deprecation('the searchrange and rebound arguments are deprecated; use linesearch=solver.NormBased(minscale=searchrange[0], acceptscale=searchrange[1], maxscale=rebound) instead')
+        return cls(**args)
 
     def __call__(self, res0, dres0, res1, dres1):
         if not numpy.isfinite(res1).all():
@@ -403,7 +408,7 @@ class newton(cache.Recursion, length=1):
     '''
 
     @types.apply_annotations
-    def __init__(self, target, residual: integraltuple, jacobian: integraltuple = None, lhs0: types.arraydata = None, relax0: float = 1., constrain: arrayordict = None, linesearch=None, failrelax: types.strictfloat = 1e-6, arguments: argdict = {}, **kwargs):
+    def __init__(self, target, residual: integraltuple, jacobian: integraltuple = None, lhs0: types.arraydata = None, relax0: float = 1., constrain: arrayordict = None, linesearch='__legacy__', failrelax: types.strictfloat = 1e-6, arguments: argdict = {}, **kwargs):
         super().__init__()
         self.target = target
         self.residual = residual
@@ -411,7 +416,7 @@ class newton(cache.Recursion, length=1):
         self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argobjs(residual), arguments)
         self.dtype = _determine_dtype(target, residual, self.lhs0, self.constrain)
         self.relax0 = relax0
-        self.linesearch = linesearch or NormBased.legacy(kwargs)
+        self.linesearch = NormBased.legacy(kwargs) if linesearch == '__legacy__' else linesearch
         self.failrelax = failrelax
         self.solveargs = _strip(kwargs, 'lin')
         if kwargs:
@@ -440,18 +445,19 @@ class newton(cache.Recursion, length=1):
             dres = jac@dlhs  # == -res if dlhs was solved to infinite precision
             vlhs[vmask] += relax * dlhs
             res, jac = self._eval(lhs, mask)
-            scale, accept = self.linesearch(res0, relax*dres, res, relax*(jac@dlhs))
-            while not accept:  # line search
-                assert scale < 1
-                oldrelax = relax
-                relax *= scale
-                if relax <= self.failrelax:
-                    raise SolverError('stuck in local minimum')
-                vlhs[vmask] += (relax - oldrelax) * dlhs
-                res, jac = self._eval(lhs, mask)
+            if self.linesearch:
                 scale, accept = self.linesearch(res0, relax*dres, res, relax*(jac@dlhs))
-            log.info('update accepted at relaxation', round(relax, 5))
-            relax = min(relax * scale, 1)
+                while not accept:  # line search
+                    assert scale < 1
+                    oldrelax = relax
+                    relax *= scale
+                    if relax <= self.failrelax:
+                        raise SolverError('stuck in local minimum')
+                    vlhs[vmask] += (relax - oldrelax) * dlhs
+                    res, jac = self._eval(lhs, mask)
+                    scale, accept = self.linesearch(res0, relax*dres, res, relax*(jac@dlhs))
+                log.info('update accepted at relaxation', round(relax, 5))
+                relax = min(relax * scale, 1)
             yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
 
     def __getitem__(self, item):

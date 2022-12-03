@@ -5,6 +5,15 @@ The following overview lists user facing changes as well as newly added
 features in inverse chronological order.
 
 
+NEW: option to disable Newton's line search
+
+The `linesearch` argument of `solver.newton` can now receive the `None` value
+to indicate that line search is to be disabled. Additionally, the legacy
+arguments `searchrange` and `rebound` have been deprecated, and should be
+replaced by `linesearch=solver.NormBased(minscale=searchrange[0],
+acceptscale=searchrange[1], maxscale=rebound)`.
+
+
 IMPROVED: more efficient trimming
 
 The trim routine (which is used for the Finite Cell Method) is rewritten for

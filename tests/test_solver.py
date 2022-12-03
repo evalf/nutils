@@ -123,6 +123,9 @@ class navierstokes(TestCase):
     def test_newton(self):
         self.assert_resnorm(solver.newton(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons).solve(tol=self.tol, maxiter=2))
 
+    def test_newton_vanilla(self):
+        self.assert_resnorm(solver.newton(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, linesearch=None).solve(tol=self.tol, maxiter=2))
+
     def test_newton_medianbased(self):
         self.assert_resnorm(solver.newton(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, linesearch=solver.MedianBased()).solve(tol=self.tol, maxiter=2))
 
@@ -179,6 +182,9 @@ class finitestrain(TestCase):
 
     def test_newton(self):
         self.assert_resnorm(solver.newton('dofs', residual=self.residual, constrain=self.cons).solve(tol=self.tol, maxiter=7))
+
+    def test_newton_vanilla(self):
+        self.assert_resnorm(solver.newton('dofs', residual=self.residual, constrain=self.cons, linesearch=None).solve(tol=self.tol, maxiter=7))
 
     def test_newton_boolcons(self):
         self.assert_resnorm(solver.newton('dofs', residual=self.residual, constrain=self.boolcons).solve(tol=self.tol, maxiter=7))
