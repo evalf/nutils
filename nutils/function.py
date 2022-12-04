@@ -3920,8 +3920,11 @@ def Namespace(*args, **kwargs):
 
 
 def _is_unit_scalar(v):
-    T = type(v)
-    return T in _dtypes and v == T(1)
+    'Test if Array.cast(v) == _Constant(True / 1 / 1. / 1+0j)'
+
+    return isinstance(v, (bool, int, float, complex)) and v == 1 \
+        or isinstance(v, numpy.ndarray) and v.ndim == 0 and v == 1 \
+        or isinstance(v, _Constant) and v.ndim == 0 and numpy.asarray(v._value) == 1
 
 
 HANDLED_FUNCTIONS = {}
