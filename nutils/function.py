@@ -176,16 +176,35 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
             The value to cast.
         '''
 
-        if isinstance(__value, Array):
-            value = __value
-        else:
-            try:
-                value = _Constant(__value)
-            except:
-                if isinstance(__value, (list, tuple)):
-                    value = numpy.stack([Array.cast(v) for v in __value], axis=0)
-                else:
-                    raise ValueError('cannot convert {}.{} to Array'.format(type(__value).__module__, type(__value).__qualname__))
+        # We use deep_reduce to stack nested structures depth-first.
+        # Objects that are already Array are ignored. Lists or tuples
+        # containing at least one Array will cause all other items to be
+        # cast as well, before being stacked into a new Array, setting off
+        # a cascade down to the outermost list. Those that do not contain
+        # Array objects will bypass Nutils' array dispatches entirely.
+
+        # NOTE: it may seem that the same can be achieved without deep_reduce
+        # by simply stacking __value if it is a list or tuple: if any of its
+        # items are Array then it will be nutils-stacked; if all are numeric
+        # then it will be numpy-stacked. However, if no items are Array, but
+        # some are lists that contains Arrays, then Numpy's dispatch mechanism
+        # will not pick up on this and an object array will be formed instead.
+        # Hence the need for depth-first.
+        try:
+            value = util.deep_reduce(numpy.stack, __value)
+        except Exception as e: # something went wrong, e.g. incompatible shapes
+            raise ValueError(f'cannot convert {__value!r} to Array: {e}')
+
+        # If __value does not contain any Array then the result will not be
+        # Array either, in which case we wrap it in a _Constant. Since stack
+        # did most of the work already, we have only a handful of object types
+        # left that we know can be wrapped. We test for those here rather than
+        # have _Constant figure things out at potentially higher cost.
+        if isinstance(value, (numpy.ndarray, bool, int, float, complex)):
+            value = _Constant(value)
+        elif not isinstance(value, Array):
+            raise ValueError(f'cannot convert {__value!r} to Array: unsupported data type')
+
         if dtype is not None and _dtypes.index(value.dtype) > _dtypes.index(dtype):
             raise ValueError('expected an array with dtype `{}` but got `{}`'.format(dtype.__name__, value.dtype.__name__))
         if ndim is not None and value.ndim != ndim:

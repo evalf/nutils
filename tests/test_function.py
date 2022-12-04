@@ -17,8 +17,12 @@ class Array(TestCase):
             function.Array.cast([1.2, 2.3], dtype=int)
 
     def test_cast_invalid_argument(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "cannot convert '132' to Array: unsupported data type"):
             function.Array.cast('132')
+
+    def test_cast_different_shapes(self):
+        with self.assertRaisesRegex(ValueError, 'cannot convert \[\[1, 2, 3\], \[4, 5\]\] to Array: all input arrays must have the same shape'):
+            function.Array.cast([[1,2,3],[4,5]])
 
     def test_ndim(self):
         self.assertEqual(function.Argument('a', (2, 3)).ndim, 2)
