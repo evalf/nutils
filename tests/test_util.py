@@ -358,3 +358,12 @@ class add_htmllog(TestCase):
             with util.add_htmllog(outdir=outdir):
                 treelog.info('hi there')
             self.assertTrue(os.path.isfile(os.path.join(outdir, 'log.html')))
+
+
+class deep_reduce(TestCase):
+
+    def test(self):
+        L = 1, 2, [3, (4, 5), 6], 7
+        self.assertEqual(util.deep_reduce(min, L), 1)
+        self.assertEqual(util.deep_reduce(max, L), 7)
+        self.assertEqual(util.deep_reduce(sum, L), 28)
