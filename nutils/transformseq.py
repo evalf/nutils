@@ -1,9 +1,9 @@
 """The transformseq module."""
 
 from typing import Tuple
-from . import types, numeric, _util as util, transform, element, evaluable
+from . import types, numeric, _util as util, transform, element
 from .elementseq import References
-from .transform import TransformChain, EvaluableTransformChain
+from .transform import TransformChain
 import abc
 import itertools
 import operator
@@ -305,22 +305,6 @@ class Transforms(types.Singleton):
 
         yield self
 
-    def get_evaluable(self, index: evaluable.Array) -> EvaluableTransformChain:
-        '''Return the evaluable transform chain at the given index.
-
-        Parameters
-        ----------
-        index : a scalar, integer :class:`nutils.evaluable.Array`
-            The index of the transform chain to return.
-
-        Returns
-        -------
-        :class:`nutils.transform.EvaluableTransformChain`
-            The evaluable transform chain at the given ``index``.
-        '''
-
-        return _EvaluableTransformChainFromSequence(self, index)
-
 
 stricttransforms = types.strict[Transforms]
 
@@ -432,9 +416,6 @@ class IndexTransforms(Transforms):
         if not numeric.isint(index):
             return super().__getitem__(index)
         return transform.Index(self.fromdims, self._offset + numeric.normdim(self._length, index.__index__())),
-
-    def get_evaluable(self, index: evaluable.Array) -> EvaluableTransformChain:
-        return _EvaluableIndexChain(self.fromdims, self._offset + evaluable.InRange(index, self._length))
 
     def __len__(self):
         return self._length
@@ -623,9 +604,6 @@ class StructuredTransforms(Transforms):
         tail = tail[len(self._etransforms):]
 
         return flatindex, tail
-
-    def get_evaluable(self, index: evaluable.Array) -> EvaluableTransformChain:
-        return _EvaluableTransformChainFromStructured(self, index)
 
 
 class MaskedTransforms(Transforms):
@@ -945,110 +923,5 @@ def chain(items, todims, fromdims):
     else:
         return ChainedTransforms(unchained)
 
-
-class _EvaluableTransformChainFromSequence(EvaluableTransformChain):
-
-    __slots__ = '_sequence', '_index'
-
-    def __init__(self, sequence: Transforms, index: evaluable.Array) -> None:
-        self._sequence = sequence
-        self._index = index
-        super().__init__((index,), sequence.todims, sequence.fromdims)
-
-    def evalf(self, index: numpy.ndarray) -> TransformChain:
-        return self._sequence[index.__index__()]
-
-    def index_with_tail_in(self, __sequence) -> Tuple[evaluable.Array, EvaluableTransformChain]:
-        if __sequence == self._sequence:
-            tails = EvaluableTransformChain.empty(self._sequence.todims)
-            return self._index, tails
-        else:
-            return super().index_with_tail_in(__sequence)
-
-
-class _EvaluableIndexChain(EvaluableTransformChain):
-
-    __slots__ = '_ndim'
-
-    def __init__(self, ndim: int, index: evaluable.Array) -> None:
-        self._ndim = ndim
-        super().__init__((index,), ndim, ndim)
-
-    def evalf(self, index: numpy.ndarray) -> TransformChain:
-        return transform.Index(self._ndim, index.__index__()),
-
-    def apply(self, points: evaluable.Array) -> evaluable.Array:
-        return points
-
-    @property
-    def linear(self) -> evaluable.Array:
-        return evaluable.diagonalize(evaluable.ones((self.todims,)))
-
-
-class _EvaluableTransformChainFromStructured(EvaluableTransformChain):
-
-    __slots__ = '_sequence', '_index'
-
-    def __init__(self, sequence: StructuredTransforms, index: evaluable.Array) -> None:
-        self._sequence = sequence
-        self._index = index
-        super().__init__((index,), sequence.todims, sequence.fromdims)
-
-    def evalf(self, index: numpy.ndarray) -> TransformChain:
-        return self._sequence[index.__index__()]
-
-    def apply(self, points: evaluable.Array) -> evaluable.Array:
-        if len(self._sequence._axes) != 1:
-            return super().apply(points)
-        desired = super().apply(points)
-        axis = self._sequence._axes[0]
-        # axis.map
-        index = self._index + axis.i
-        if axis.mod:
-            index %= axis.mod
-        # edge
-        if axis.isdim:
-            assert evaluable.equalindex(points.shape[-1], 1)
-        else:
-            assert evaluable.equalindex(points.shape[-1], 0)
-            points = evaluable.appendaxes(float(axis.side), (*points.shape[:-1], 1))
-        # children
-        for i in range(self._sequence._nrefine):
-            index, ichild = evaluable.divmod(index, 2)
-            points = .5 * (points + evaluable.appendaxes(ichild, points.shape))
-        # shift
-        return points + evaluable.appendaxes(index, points.shape)
-
-    @property
-    def linear(self) -> evaluable.Array:
-        if not len(self._sequence):
-            return super().linear
-        chain = self._sequence[0]
-        linear = numpy.eye(self.fromdims)
-        for item in reversed(chain):
-            linear = item.linear @ linear
-        assert linear.shape == (self.todims, self.fromdims)
-        return evaluable.asarray(linear)
-
-    @property
-    def basis(self) -> evaluable.Array:
-        if not len(self._sequence) or self.fromdims == self.todims:
-            return super().basis
-        chain = self._sequence[0]
-        basis = numpy.eye(self.fromdims)
-        for item in reversed(chain):
-            basis = item.linear @ basis
-            assert item.fromdims <= item.todims <= item.fromdims + 1
-            if item.todims == item.fromdims + 1:
-                basis = numpy.concatenate([basis, item.ext[:, None]], axis=1)
-        assert basis.shape == (self.todims, self.todims)
-        return evaluable.asarray(basis)
-
-    def index_with_tail_in(self, __sequence) -> Tuple[evaluable.Array, EvaluableTransformChain]:
-        if __sequence == self._sequence:
-            tails = EvaluableTransformChain.empty(self._sequence.todims)
-            return self._index, tails
-        else:
-            return super().index_with_tail_in(__sequence)
 
 # vim:sw=4:sts=4:et

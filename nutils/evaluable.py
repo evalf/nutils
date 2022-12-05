@@ -3876,6 +3876,174 @@ class NormDim(Array):
             return 0, upper_length - 1
 
 
+class TransformCoords(Array):
+    '''Transform coordinates from one coordinate system to another (spatial part)
+
+    Args
+    ----
+    target : :class:`nutils.transformseq.Transforms`, optional
+        The target coordinate system. If `None` the target is root coordinate
+        system.
+    source : :class:`nutils.transformseq.Transforms`
+        The source coordinate system.
+    index : scalar, integer :class:`Array`
+        The index part of the source coordinates.
+    coords : :class:`Array`
+        The spatial part of the source coordinates.
+    '''
+
+    def __init__(self, target, source, index: Array, coords: Array):
+        if index.dtype != int or index.ndim != 0:
+            raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
+        if coords.dtype != float:
+            raise ValueError('argument `coords` must be a real-valued array with at least one axis')
+        self._target = target
+        self._source = source
+        self._index = index
+        self._coords = coords
+        target_dim = source.todims if target is None else target.fromdims
+        super().__init__(args=[index, coords], shape=(*coords.shape[:-1], target_dim), dtype=float)
+
+    def evalf(self, index, coords):
+        chain = self._source[index.__index__()]
+        if self._target is not None:
+            _, chain = self._target.index_with_tail(chain)
+        return functools.reduce(lambda c, t: t.apply(c), reversed(chain), coords)
+
+    def _derivative(self, var, seen):
+        linear = TransformLinear(self._target, self._source, self._index)
+        dcoords = derivative(self._coords, var, seen)
+        return einsum('ij,AjB->AiB', linear, dcoords, A=self._coords.ndim - 1, B=var.ndim)
+
+    def _simplified(self):
+        if self._target == self._source:
+            return self._coords
+
+
+class TransformIndex(Array):
+    '''Transform coordinates from one coordinate system to another (index part)
+
+    Args
+    ----
+    target : :class:`nutils.transformseq.Transforms`, optional
+        The target coordinate system. If `None` the target is the root
+        coordinate system.
+    source : :class:`nutils.transformseq.Transforms`
+        The source coordinate system.
+    index : scalar, integer :class:`Array`
+        The index part of the source coordinates.
+    '''
+
+    def __init__(self, target, source, index: Array):
+        if index.dtype != int or index.ndim != 0:
+            raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
+        self._target = target
+        self._source = source
+        self._index = index
+        super().__init__(args=[index], shape=(), dtype=int)
+
+    def evalf(self, index):
+        if self._target is not None:
+            index, _ = self._target.index_with_tail(self._source[index.__index__()])
+        else:
+            index = 0
+        return numpy.array(index)
+
+    def _intbounds_impl(self):
+        len_target = 1 if self._target is None else len(self._target)
+        return 0, len_target - 1
+
+    def _simplified(self):
+        if self._target is None:
+            return ones((1,), dtype=int)
+        elif self._target == self._source:
+            return self._index
+
+
+class TransformLinear(Array):
+    '''Linear part of a coordinate transformation
+
+    Args
+    ----
+    target : :class:`nutils.transformseq.Transforms`, optional
+        The target coordinate system. If `None` the target is the root
+        coordinate system.
+    source : :class:`nutils.transformseq.Transforms`
+        The source coordinate system.
+    index : scalar, integer :class:`Array`
+        The index part of the source coordinates.
+    '''
+
+    def __init__(self, target, source, index: Array):
+        if index.dtype != int or index.ndim != 0:
+            raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
+        self._target = target
+        self._source = source
+        target_dim = source.todims if target is None else target.fromdims
+        super().__init__(args=[index], shape=(target_dim, source.fromdims), dtype=float)
+
+    def evalf(self, index):
+        chain = self._source[index.__index__()]
+        if self._target is not None:
+            _, chain = self._target.index_with_tail(chain)
+        if chain:
+            return functools.reduce(lambda r, i: i @ r, (item.linear for item in reversed(chain)))
+        else:
+            return numpy.eye(self._source.fromdims)
+
+    def _simplified(self):
+        if self._target == self._source:
+            return diagonalize(ones((self._source.fromdims,), dtype=float))
+
+
+class TransformBasis(Array):
+    '''Vector basis for the root and a source coordinate system
+
+    The columns of this matrix form a vector basis for the space of root
+    coordinates. The first `n` vectors also span the space of source
+    coordinates mapped to the root, where `n` is the dimension of the source
+    coordinate system. The remainder is *not* a span of the complement space in
+    general.
+
+    No additional properties are guaranteed beyond the above. In particular, if
+    the source coordinate system has the same dimension as the root, the
+    basis is *not necessarily* the same as ``TransformLinear(None, source,
+    index)``.
+
+    Args
+    ----
+    source : :class:`nutils.transformseq.Transforms`
+        The source coordinate system.
+    index : scalar, integer :class:`Array`
+        The index part of the source coordinates.
+    '''
+
+    def __init__(self, source, index: Array):
+        if index.dtype != int or index.ndim != 0:
+            raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
+        self._source = source
+        super().__init__(args=[index], shape=(source.todims, source.todims), dtype=float)
+
+    def evalf(self, index):
+        chain = self._source[index.__index__()]
+        linear = numpy.eye(self._source.fromdims)
+        for item in reversed(chain):
+            linear = item.linear @ linear
+            assert item.fromdims <= item.todims <= item.fromdims + 1
+            if item.todims == item.fromdims + 1:
+                linear = numpy.concatenate([linear, item.ext[:, numpy.newaxis]], axis=1)
+        assert linear.shape == (self._source.todims, self._source.todims)
+        return linear
+
+    def _simplified(self):
+        if self._source.todims == self._source.fromdims:
+            # Since we only guarantee that the basis spans the space of source
+            # coordinates mapped to the root and the map is a bijection (every
+            # `Transform` is assumed to be injective), we can return the unit
+            # vectors here.
+            return diagonalize(ones((self._source.fromdims,), dtype=float))
+
+
 class _LoopIndex(Argument):
 
     __slots__ = 'length'

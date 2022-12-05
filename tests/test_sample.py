@@ -63,7 +63,8 @@ class Common:
             self.assertEqual(actual_shape, desired_shape)
             offset = 0
             for space, desired_chain, desired_point in zip(self.desired_spaces, desired_chains, desired_points):
-                self.assertEqual(args.transform_chains[space][0].eval(ielem=ielem), desired_chain)
+                (chain, *_), index = args.transform_chains[space]
+                self.assertEqual(chain[index.eval(ielem=ielem).__index__()], desired_chain)
                 desired_coords = desired_point.coords
                 desired_coords = numpy.lib.stride_tricks.as_strided(desired_coords, shape=(*desired_shape, desired_point.ndims,), strides=(0,)*offset+desired_coords.strides[:-1]+(0,)*(len(args.points_shape)-offset-desired_coords.ndim+1)+desired_coords.strides[-1:])
                 actual_coords = args.coordinates[space].eval(ielem=ielem)
@@ -127,7 +128,8 @@ class Common:
             self.assertEqual(take.ndims, self.desired_ndims)
             args = take.get_lower_args(evaluable.Argument('ielem', (), int))
             for space, desired_chain in zip(self.desired_spaces, self.desired_transform_chains[ielem]):
-                self.assertEqual(args.transform_chains[space][0].eval(ielem=0), desired_chain)
+                (chain, *_), index = args.transform_chains[space]
+                self.assertEqual(chain[index.eval(ielem=0).__index__()], desired_chain)
 
     def test_take_elements_empty(self):
         take = self.sample.take_elements(numpy.array([], int))
