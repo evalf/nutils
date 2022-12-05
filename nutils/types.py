@@ -753,7 +753,7 @@ class arraydata(Singleton):
             return arg
         array = numpy.asarray(arg)
         dtype = dict(b=bool, u=int, i=int, f=float, c=complex)[array.dtype.kind]
-        return super().__new__(cls, dtype, array.shape, array.astype(dtype).tobytes())
+        return super().__new__(cls, dtype, array.shape, array.astype(dtype, copy=False).tobytes())
 
     def __init__(self, dtype, shape, bytes):
         self.dtype = dtype
