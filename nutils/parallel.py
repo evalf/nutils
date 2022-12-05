@@ -166,4 +166,34 @@ def _wait(pid):
     treelog.error('process {} {}'.format(pid, msg))
     return False
 
+
+def Manager():
+    '''Return a manager for sharing data between processes.
+
+    The returned manager only supports the methods
+    :meth:`multiprocessing.managers.SyncManager.dict` and
+    :meth:`multiprocessing.managers.SyncManager.list`.
+    '''
+
+    if maxprocs.current > 1:
+        return multiprocessing.Manager()
+    else:
+        return _NoManager()
+
+
+class _NoManager:
+
+  def __enter__(self):
+      return self
+
+  def __exit__(self, *exc_info):
+      pass
+
+  def dict(self, value=()):
+      return dict(value)
+
+  def list(self, value=()):
+      return list(value)
+
+
 # vim:sw=4:sts=4:et
