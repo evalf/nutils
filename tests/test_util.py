@@ -295,11 +295,31 @@ class log_arguments(TestCase):
 class log_traceback(TestCase):
 
     def test(self):
-
         with self.assertRaises(SystemExit), self.assertLogs('nutils') as cm, util.log_traceback(gracefulexit=True):
             1/0
-
         self.assertEqual(cm.output, ['ERROR:nutils:ZeroDivisionError: division by zero'])
+
+    def test_cause(self):
+        with self.assertRaises(SystemExit), self.assertLogs('nutils') as cm, util.log_traceback(gracefulexit=True):
+            try:
+                1/0
+            except Exception as e:
+                raise RuntimeError('something went wrong') from e
+        self.assertEqual(cm.output, ['ERROR:nutils:RuntimeError: something went wrong',
+            'ERROR:nutils:.. caused by ZeroDivisionError: division by zero'])
+
+    def test_context(self):
+        with self.assertRaises(SystemExit), self.assertLogs('nutils') as cm, util.log_traceback(gracefulexit=True):
+            try:
+                1/0
+            except Exception:
+                raise RuntimeError('something went wrong')
+        self.assertEqual(cm.output, ['ERROR:nutils:RuntimeError: something went wrong',
+            'ERROR:nutils:.. while handling ZeroDivisionError: division by zero'])
+
+    def test_nograce(self):
+        with self.assertRaises(ZeroDivisionError), util.log_traceback(gracefulexit=False):
+            1/0
 
 
 class signal_handler(TestCase):
