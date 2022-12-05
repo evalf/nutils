@@ -32,6 +32,12 @@ def cumsum(seq):
         offset += i
 
 
+def deep_reduce(f, a):
+    '''Recursively apply function to lists or tuples, depth first.'''
+
+    return f([deep_reduce(f, v) for v in a]) if isinstance(a, (list, tuple)) else a
+
+
 def gather(items):
     gathered = collections.defaultdict(list)
     # NOTE: defaultdict is subclass of dict, so it maintains the insertion order
