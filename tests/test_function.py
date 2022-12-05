@@ -372,12 +372,18 @@ _check('stack', lambda a, b: numpy.stack([a, function.Array.cast(b)], 1), lambda
 
 _check('Array_getitem_scalar', lambda a: function.Array.cast(a)[0], lambda a: a[0], INT(5, 3, 2))
 _check('Array_getitem_scalar_scalar', lambda a: function.Array.cast(a)[0, 1], lambda a: a[0, 1], INT(5, 3, 2))
+_check('Array_getitem_matrix', lambda a: function.Array.cast(a)[numpy.array([[4,3],[2,1]])], lambda a: a[numpy.array([[4,3],[2,1]])], INT(5, 3, 2))
 _check('Array_getitem_slice_step', lambda a: function.Array.cast(a)[:, ::2], lambda a: a[:, ::2], INT(5, 3, 2))
 _check('Array_getitem_ellipsis_scalar', lambda a: function.Array.cast(a)[..., 1], lambda a: a[..., 1], INT(5, 3, 2))
 _check('Array_getitem_ellipsis_scalar_newaxis', lambda a: function.Array.cast(a)[..., 1, None], lambda a: a[..., 1, None], INT(5, 3, 2))
 
 _check('add_T', lambda a: function.add_T(a, (1, 2)), lambda a: a + a.transpose((0, 2, 1)), INT(5, 2, 2))
 _check('Array_add_T', lambda a: function.Array.cast(a).add_T((1, 2)), lambda a: a + a.transpose((0, 2, 1)), INT(5, 2, 2))
+
+_check('searchsorted', lambda a: numpy.searchsorted(numpy.linspace(0, 1, 9), function.Array.cast(a)), lambda a: numpy.searchsorted(numpy.linspace(0, 1, 9), a), POS(4, 2))
+_check('searchsorted_sorter', lambda a: numpy.searchsorted([.2,.8,.4,0,.6,1], function.Array.cast(a), sorter=[3,0,2,4,1,5]), lambda a: numpy.searchsorted([.2,.8,.4,0,.6,1], a, sorter=[3,0,2,4,1,5]), POS(4, 2))
+_check('interp', lambda a: numpy.interp(function.Array.cast(a), [-.5,0,.5], [0,1,0]), lambda a: numpy.interp(a, [-.5,0,.5], [0,1,0]), ANY(4, 2))
+_check('interp_lr', lambda a: numpy.interp(function.Array.cast(a), [-.5,0,.5], [0,1,0], left=-10, right=+10), lambda a: numpy.interp(a, [-.5,0,.5], [0,1,0], left=-10, right=+10), ANY(4, 2))
 
 
 class Unlower(TestCase):

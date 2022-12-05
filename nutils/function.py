@@ -263,13 +263,15 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         array = self
         axis = 0
         for it in item + (slice(None),)*nx if iell is None else item[:iell] + (slice(None),)*(nx+1) + item[iell+1:]:
-            if isinstance(it, numbers.Integral):
-                array = get(array, axis, it)
-            else:
-                array = expand_dims(array, axis) if it is numpy.newaxis \
-                    else _takeslice(array, it, axis) if isinstance(it, slice) \
-                    else numpy.take(array, it, axis)
+            if it is numpy.newaxis:
+                array = expand_dims(array, axis)
                 axis += 1
+            elif isinstance(it, slice):
+                array = _takeslice(array, it, axis)
+                axis += 1
+            else:
+                array = numpy.take(array, it, axis)
+                axis += numpy.ndim(it)
         assert axis == array.ndim
         return array
 
@@ -4321,3 +4323,28 @@ class __implementations__:
             else:
                 raise ValueError('cannot broadcast array with shape {} to {} because input axis {} is neither singleton nor has the desired length'.format(orig_shape, shape, axis))
         return broadcasted
+
+    @implements(numpy.searchsorted)
+    def searchsorted(a, v: IntoArray, side='left', sorter=None):
+        values = Array.cast(v)
+        array = types.arraydata(a)
+        if side not in ('left', 'right'):
+            raise ValueError(f'expected "left" or "right", got {side}')
+        if sorter is not None:
+            sorter = types.arraydata(sorter)
+            if sorter.shape != array.shape or sorter.dtype != int:
+                raise ValueError('invalid sorter array')
+        lower = functools.partial(evaluable.SearchSorted, array=array, side=side, sorter=sorter)
+        return _Wrapper(lower, values, shape=values.shape, dtype=int)
+
+    @implements(numpy.interp)
+    def interp(x, xp, fp, left=None, right=None):
+        index = numpy.searchsorted(xp, x)
+        _xp = numpy.concatenate([[xp[0]], xp])
+        _fp = numpy.concatenate([[fp[0]], fp])
+        _gp = numpy.concatenate([[0.], numpy.diff(fp) / numpy.diff(xp), [0.]])
+        if left is not None:
+            _fp[0] = left
+        if right is not None:
+            _fp[-1] = right
+        return _Constant(_fp)[index] + _Constant(_gp)[index] * (x - _Constant(_xp)[index])

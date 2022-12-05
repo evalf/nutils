@@ -5,6 +5,14 @@ The following overview lists user facing changes as well as newly added
 features in inverse chronological order.
 
 
+NEW: support for searchsorted and interp
+
+Numpy's ufunc support has been extended to include numpy.searchsorted and
+numpy.interp. Both support only a single evaluable argument: searchsorted's
+argument `v` (values to be inserted) and interp's argument `xp` (data point
+coordinates to interpate to). The remaining arguments must be static arrays.
+
+
 NEW: option to disable Newton's line search
 
 The `linesearch` argument of `solver.newton` can now receive the `None` value
