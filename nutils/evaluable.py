@@ -744,32 +744,43 @@ def align(arg, where, shape):
     return arg
 
 
-def unalign(*args):
+def unalign(*args, naxes: int = None):
     '''Remove (joint) inserted axes.
 
-    Given one or more array arguments with the same number of axes, return the
-    shortest common axis vector along with function arguments such that the
-    original arrays can be recovered by :func:`align`.
+    Given one or more array arguments, return the shortest common axis vector
+    along with function arguments such that the original arrays can be
+    recovered by :func:`align`. Axes beyond the first ``naxes`` are not
+    considered for removal, keep their position (as seen from the right), and
+    are not part of the common axis vector. Those axes should be added to the
+    axis vector before calling :func:`align`.
+
+    If ``naxes`` is ``None`` (the default), all arguments must have the same
+    number of axes and ``naxes`` is set to this number.
     '''
 
     assert args
-    if len(args) == 1:
+    if len(args) == 1 and naxes is None:
         return args[0]._unaligned
-    if any(arg.ndim != args[0].ndim for arg in args[1:]):
-        raise ValueError('varying dimensions in unalign')
-    nonins = functools.reduce(operator.or_, [set(arg._unaligned[1]) for arg in args])
-    if len(nonins) == args[0].ndim:
-        return (*args, tuple(range(args[0].ndim)))
+    if naxes is None:
+        if any(arg.ndim != args[0].ndim for arg in args[1:]):
+            raise ValueError('varying dimensions in unalign')
+        naxes = args[0].ndim
+    elif any(arg.ndim < naxes for arg in args):
+        raise ValueError('one or more arguments have fewer axes than expected')
+    nonins = functools.reduce(operator.or_, [set(arg._unaligned[1]) for arg in args]) & set(range(naxes))
+    if len(nonins) == naxes:
+        return (*args, tuple(range(naxes)))
     ret = []
     for arg in args:
         unaligned, where = arg._unaligned
-        for i in sorted(nonins - set(where)):
+        keep = tuple(range(naxes, arg.ndim))
+        for i in sorted((nonins | set(keep)) - set(where)):
             unaligned = InsertAxis(unaligned, arg.shape[i])
             where += i,
         if not ret:  # first argument
-            commonwhere = where
-        elif where != commonwhere:
-            unaligned = Transpose(unaligned, map(where.index, commonwhere))
+            commonwhere = tuple(i for i in where if i < naxes)
+        if where != commonwhere + keep:
+            unaligned = Transpose(unaligned, map(where.index, commonwhere + keep))
         ret.append(unaligned)
     return (*ret, commonwhere)
 
