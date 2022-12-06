@@ -1109,16 +1109,9 @@ class Normal(Array):
     def _simplified(self):
         if equalindex(self.shape[-1], 1):
             return Sign(Take(self.lgrad, 0))
-        unaligned, where = unalign(self.lgrad)
-        for axis in self.ndim - 1, self.ndim:
-            if axis not in where:
-                unaligned = InsertAxis(unaligned, self.lgrad.shape[axis])
-                where += axis,
-        if len(where) < self.ndim + 1:
-            if where[-2:] != (self.ndim - 1, self.ndim):
-                unaligned = Transpose(unaligned, numpy.argsort(where))
-                where = tuple(sorted(where))
-            return align(Normal(unaligned), where[:-1], self.shape)
+        unaligned, where = unalign(self.lgrad, naxes=self.ndim - 1)
+        if len(where) < self.ndim - 1:
+            return align(Normal(unaligned), (*where, self.ndim - 1), self.shape)
 
     @staticmethod
     def evalf(lgrad):
@@ -3475,15 +3468,8 @@ class Ravel(Array):
 
     @property
     def _unaligned(self):
-        unaligned, where = unalign(self.func)
-        for i in self.ndim - 1, self.ndim:
-            if i not in where:
-                unaligned = InsertAxis(unaligned, self.func.shape[i])
-                where += i,
-        if where[-2:] != (self.ndim - 1, self.ndim):
-            unaligned = Transpose(unaligned, numpy.argsort(where))
-            where = tuple(sorted(where))
-        return Ravel(unaligned), where[:-1]
+        unaligned, where = unalign(self.func, naxes=self.ndim - 1)
+        return Ravel(unaligned), (*where, self.ndim - 1)
 
     @property
     def _assparse(self):
@@ -3704,15 +3690,9 @@ class Polyval(Array):
             return zeros_like(self)
         elif self.ngrad == degree:
             return prependaxes(self._const_helper(), self.points.shape[:-1])
-        points, where = unalign(self.points)
-        if points.ndim < self.points.ndim and set(where) != set(range(self.points.ndim-1)):
-            if self.points.ndim - 1 not in where:
-                points = InsertAxis(points, self.points.shape[-1])
-                where += self.points.ndim - 1,
-            elif where[-1] != self.points.ndim - 1:
-                points = Transpose(points, numpy.argsort(where))
-                where = tuple(sorted(where))
-            where = where[:-1] + tuple(range(self.points.ndim - 1, self.ndim))
+        points, where = unalign(self.points, naxes=self.points.ndim - 1)
+        if len(where) < self.points.ndim - 1:
+            where = where + tuple(range(self.points.ndim - 1, self.ndim))
             return align(Polyval(self.coeffs, points, self.ngrad), where, self.shape)
 
 
