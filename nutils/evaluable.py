@@ -3640,56 +3640,44 @@ class Polyval(Array):
     points : :class:`Array`
         Array of values where the last axis is treated as the variables axis.
         All remaining axes are treated pointwise.
-    ngrad : :class:`int`
-        Compute the ``ngrad``-th gradient.
     '''
 
-    __slots__ = 'points_ndim', 'coeffs', 'points', 'ngrad', '_grads'
+    __slots__ = 'points_ndim', 'coeffs', 'points'
 
-    def __init__(self, coeffs: Array, points: Array, ngrad: int = 0):
+    def __init__(self, coeffs: Array, points: Array):
         assert isinstance(coeffs, Array) and coeffs.dtype == float and coeffs.ndim >= 1, f'coeffs={coeffs!r}'
         assert isinstance(points, Array) and points.dtype == float and points.ndim >= 1 and points.shape[-1].isconstant, f'points={points!r}'
-        assert isinstance(ngrad, int), f'ngrad={ngrad!r}'
         self.points_ndim = int(points.shape[-1])
         self.coeffs = coeffs
         self.points = points
-        self.ngrad = ngrad
-        degree = PolyDegree(coeffs.shape[-1], self.points_ndim)
-        try:
-            degree = degree.__index__()
-        except TypeError as e:
-            self._grads = [functools.partial(poly.grad, nvars = self.points_ndim) for i in range(ngrad)]
-        else:
-            self._grads = [poly.GradPlan(self.points_ndim, max(0, degree - i)) for i in range(ngrad)]
-        super().__init__(args=(points, coeffs), shape=points.shape[:-1]+coeffs.shape[:-1]+(constant(self.points_ndim),)*ngrad, dtype=float)
+        super().__init__(args=(coeffs, points), shape=points.shape[:-1]+coeffs.shape[:-1], dtype=float)
 
-    def evalf(self, points, coeffs):
-        for grad in self._grads:
-            coeffs = grad(coeffs)
-        return poly.eval_outer(coeffs, points)
+    evalf = staticmethod(poly.eval_outer)
 
     def _derivative(self, var, seen):
         if self.dtype == complex:
             raise NotImplementedError('The complex derivative is not implemented.')
-        dpoints = einsum('ABi,AiD->ABD', Polyval(self.coeffs, self.points, self.ngrad+1), derivative(self.points, var, seen), A=self.points.ndim-1)
-        dcoeffs = Transpose.from_end(Polyval(Transpose.to_end(derivative(self.coeffs, var, seen), *range(self.coeffs.ndim)), self.points, self.ngrad), *range(self.points.ndim-1, self.ndim))
+        dpoints = einsum('ABi,AiD->ABD', Polyval(PolyGrad(self.coeffs, self.points_ndim), self.points), derivative(self.points, var, seen), A=self.points.ndim-1)
+        dcoeffs = Transpose.from_end(Polyval(Transpose.to_end(derivative(self.coeffs, var, seen), *range(self.coeffs.ndim)), self.points), *range(self.points.ndim-1, self.ndim))
         return dpoints + dcoeffs
 
     def _take(self, index, axis):
         if axis < self.points.ndim - 1:
-            return Polyval(self.coeffs, _take(self.points, index, axis), self.ngrad)
-        elif axis < self.ndim - self.ngrad:
-            return Polyval(_take(self.coeffs, index, axis - self.points.ndim + 1), self.points, self.ngrad)
+            return Polyval(self.coeffs, _take(self.points, index, axis))
+        elif axis < self.ndim:
+            return Polyval(_take(self.coeffs, index, axis - self.points.ndim + 1), self.points)
 
     def _simplified(self):
         ncoeffs_lower, ncoeffs_upper = self.coeffs.shape[-1]._intbounds
-        if iszero(self.coeffs) or poly.ncoeffs(self.points_ndim, self.ngrad) > ncoeffs_upper:
+        if iszero(self.coeffs):
             return zeros_like(self)
+        elif _equals_scalar_constant(self.coeffs.shape[-1], 1):
+            return prependaxes(get(self.coeffs, -1, constant(0)), self.points.shape[:-1])
         points, where_points = unalign(self.points, naxes=self.points.ndim - 1)
         coeffs, where_coeffs = unalign(self.coeffs, naxes=self.coeffs.ndim - 1)
-        if len(where_points) + len(where_coeffs) < self.ndim - self.ngrad:
-            where = *where_points, *(axis + self.points.ndim - 1 for axis in where_coeffs), *range(self.ndim - self.ngrad, self.ndim)
-            return align(Polyval(coeffs, points, self.ngrad), where, self.shape)
+        if len(where_points) + len(where_coeffs) < self.ndim:
+            where = *where_points, *(axis + self.points.ndim - 1 for axis in where_coeffs)
+            return align(Polyval(coeffs, points), where, self.shape)
 
 
 class PolyDegree(Array):
@@ -3835,6 +3823,65 @@ class PolyMul(Array):
     def _unravel(self, axis, shape):
         if axis < self.ndim - 1:
             return PolyMul(unravel(self.coeffs_left, axis, shape), unravel(self.coeffs_right, axis, shape), self.vars)
+
+
+class PolyGrad(Array):
+    '''Compute the coefficients for the gradient of a polynomial
+
+    The last two axes of this array are the axis of variables and the axis of
+    coefficients.
+
+    Args
+    ----
+    coeffs : :class:`Array`
+        The coefficients of the polynomial to compute the gradient for. The
+        last axis is treated as the coefficients axis.
+    nvars : :class:`int`
+        The number of variables of the polynomial.
+
+    Notes
+    -----
+
+    See :class:`Polyval` for a definition of the polynomial.
+    '''
+
+    def __init__(self, coeffs: Array, nvars: int):
+        assert isinstance(coeffs, Array) and coeffs.dtype == float and coeffs.ndim >= 1, f'coeffs={coeffs!r}'
+        assert isinstance(nvars, int) and nvars >= 0, f'nvars={nvars!r}'
+        self.coeffs = coeffs
+        self.nvars = nvars
+        self.degree = PolyDegree(coeffs.shape[-1], nvars)
+        ncoeffs = PolyNCoeffs(nvars, Maximum(constant(0), self.degree - constant(1)))
+        shape = *coeffs.shape[:-1], constant(nvars), ncoeffs
+        super().__init__(args=(coeffs,), shape=shape, dtype=float)
+
+    @util.cached_property
+    def evalf(self):
+        try:
+            degree = self.degree.__index__()
+        except TypeError as e:
+            return functools.partial(poly.grad, nvars=self.nvars)
+        else:
+            return poly.GradPlan(self.nvars, degree)
+
+    def _simplified(self):
+        if iszero(self.coeffs) or _equals_scalar_constant(self.degree, 0):
+            return zeros_like(self)
+        elif _equals_scalar_constant(self.degree, 1):
+            return InsertAxis(Take(self.coeffs, constant(self.nvars - 1) - Range(constant(self.nvars))), constant(1))
+
+    def _takediag(self, axis1, axis2):
+        if axis1 < self.ndim - 2 and axis2 < self.ndim - 2:
+            coeffs = Transpose.to_end(_takediag(self.coeffs, axis1, axis2), -2)
+            return Transpose.from_end(PolyGrad(coeffs, self.nvars), -3, -2)
+
+    def _take(self, index, axis):
+        if axis < self.ndim - 2:
+            return PolyGrad(_take(self.coeffs, index, axis), self.nvars)
+
+    def _unravel(self, axis, shape):
+        if axis < self.ndim - 2:
+            return PolyGrad(unravel(self.coeffs, axis, shape), self.nvars)
 
 
 class Legendre(Array):
