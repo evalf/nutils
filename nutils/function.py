@@ -7,6 +7,7 @@ else:
 from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, List, FrozenSet, NamedTuple
 from . import evaluable, numeric, _util as util, types, warnings, debug_flags, sparse
 from .transformseq import Transforms
+import nutils_poly as poly
 import builtins
 import numpy
 import functools
@@ -3904,7 +3905,7 @@ class StructuredBasis(Basis):
         coeffs = next(coeffs_per_dim)
         for i, c in enumerate(coeffs_per_dim, 1):
             coeffs, c = evaluable.insertaxis(coeffs, 1, c.shape[0]), evaluable.insertaxis(c, 0, coeffs.shape[0])
-            coeffs = evaluable.PolyOuterProduct(coeffs, c, i, 1)
+            coeffs = evaluable.PolyMul(coeffs, c, (poly.MulVar.Left,) * i + (poly.MulVar.Right,))
             coeffs = evaluable.ravel(coeffs, 0)
         return dofs, coeffs
 

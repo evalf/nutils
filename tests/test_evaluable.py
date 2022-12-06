@@ -574,6 +574,8 @@ _check('polyval_2d_p0', lambda c, x: evaluable.Polyval(c, x), poly.eval_outer, P
 _check('polyval_2d_p1', lambda c, x: evaluable.Polyval(c, x), poly.eval_outer, ANY(3), ANY(4, 2), ndim=2)
 _check('polyval_2d_p2', lambda c, x: evaluable.Polyval(c, x), poly.eval_outer, ANY(6), ANY(4, 2), ndim=2)
 _check('polyval_2d_p1_23', lambda c, x: evaluable.Polyval(c, x), poly.eval_outer, ANY(2, 3, 3), ANY(4, 2), ndim=2)
+_check('polymul_x3yz1', lambda l, r: evaluable.PolyMul(l, r, (poly.MulVar.Left, poly.MulVar.Right, poly.MulVar.Right)), lambda l, r: poly.mul(l, r, (poly.MulVar.Left, poly.MulVar.Right, poly.MulVar.Right)), ANY(4, 4, 4), ANY(4, 4, 3), hasgrad=False)
+_check('polymul_x2y0', lambda l, r: evaluable.PolyMul(l, r, (poly.MulVar.Left, poly.MulVar.Right)), lambda l, r: poly.mul(l, r, (poly.MulVar.Left, poly.MulVar.Right)), ANY(4, 4, 3), ANY(4, 4, 1), hasgrad=False)
 
 _check('searchsorted', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=types.arraydata(numpy.linspace(0, 1, 9)), side='left', sorter=None), lambda a: numpy.searchsorted(numpy.linspace(0, 1, 9), a).astype(int), POS(4, 2))
 _check('searchsorted_sorter', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=types.arraydata([.2,.8,.4,0,.6,1]), side='left', sorter=types.arraydata([3,0,2,4,1,5])), lambda a: numpy.searchsorted([.2,.8,.4,0,.6,1], a, sorter=[3,0,2,4,1,5]).astype(int), POS(4, 2))
@@ -1273,3 +1275,18 @@ class log_error(TestCase):
   %3 = nutils.evaluable.Sum<f:> arr=%2 --> float64
   %4 = nutils.evaluable.Add<f:> %1 %3 --> float64
   %5 = tests.test_evaluable.Fail<i:> arg1=%4 arg2=%1 --> operation failed intentially.''')
+
+
+class Poly(TestCase):
+
+    def test_mul_variable_ncoeffs(self):
+        vars = poly.MulVar.Left, poly.MulVar.Right
+        const_coeffs_left = numpy.arange(6, dtype=float)
+        const_coeffs_right = numpy.array([1, 2], dtype=float)
+        eval_ncoeffs_left = evaluable.InRange(evaluable.Argument('ncoeffs_left', (), int), evaluable.constant(10))
+        eval_coeffs_left = evaluable.IntToFloat(evaluable.Range(eval_ncoeffs_left))
+        eval_coeffs_right = evaluable.asarray(const_coeffs_right)
+        numpy.testing.assert_allclose(
+            evaluable.PolyMul(eval_coeffs_left, eval_coeffs_right, vars).eval(ncoeffs_left=numpy.array(6)),
+            poly.mul(const_coeffs_left, const_coeffs_right, vars),
+        )

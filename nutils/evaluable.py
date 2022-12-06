@@ -3770,44 +3770,71 @@ class PolyNCoeffs(Array):
         return lower, upper
 
 
-class PolyOuterProduct(Array):
+class PolyMul(Array):
+    '''Compute the coefficients for the product of two polynomials
 
-    def __init__(self, coeffs1: Array, coeffs2: Array, dim1: int, dim2: int):
-        assert isinstance(coeffs1, Array) and coeffs1.ndim >= 1 and coeffs1.dtype == float, f'coeffs1={coeffs1!r}'
-        assert isinstance(coeffs2, Array) and coeffs2.ndim >= 1 and coeffs2.dtype == float, f'coeffs2={coeffs2!r}'
-        assert equalshape(coeffs1.shape[:-1], coeffs2.shape[:-1]), 'PolyOuterProduct({}, {})'.format(coeffs1, coeffs2)
-        self.coeffs1 = coeffs1
-        self.coeffs2 = coeffs2
-        self.dim1 = dim1
-        self.dim2 = dim2
-        self.vars = (poly.MulVar.Left,) * dim1 + (poly.MulVar.Right,) * dim2
-        self.degree1 = PolyDegree(coeffs1.shape[-1], dim1)
-        self.degree2 = PolyDegree(coeffs2.shape[-1], dim2)
-        ncoeffs = PolyNCoeffs(dim1 + dim2, self.degree1 + self.degree2)
-        shape = *coeffs1.shape[:-1], ncoeffs
-        super().__init__(args=(coeffs1, coeffs2), shape=shape, dtype=float)
+    Return the coefficients such that calling :class:`Polyval` on this result
+    is equal to the product of :class:`Polyval` called on the individual arrays
+    of coefficients (with the appropriate selection of the variables as
+    described by parameter ``vars``).
+
+    Args
+    ----
+    coeffs_left : :class:`Array`
+        The coefficients for the left operand. The last axis is treated as the
+        coefficients axis.
+    coeffs_right : :class:`Array`
+        The coefficients for the right operand. The last axis is treated as the
+        coefficients axis.
+    vars : :class:`tuple` of ``nutils_poly.MulVar``
+        For each variable of this product, ``var`` defines if the variable
+        exists in the left polynomial, the right or both.
+
+    Notes
+    -----
+
+    See :class:`Polyval` for a definition of the polynomial.
+    '''
+
+    def __init__(self, coeffs_left: Array, coeffs_right: Array, vars: typing.Tuple[poly.MulVar, ...]):
+        assert isinstance(coeffs_left, Array) and coeffs_left.ndim >= 1 and coeffs_left.dtype == float, f'coeffs_left={coeffs_left!r}'
+        assert isinstance(coeffs_right, Array) and coeffs_right.ndim >= 1 and coeffs_right.dtype == float, f'coeffs_right={coeffs_right!r}'
+        assert equalshape(coeffs_left.shape[:-1], coeffs_right.shape[:-1]), 'PolyMul({}, {})'.format(coeffs_left, coeffs_right)
+        self.coeffs_left = coeffs_left
+        self.coeffs_right = coeffs_right
+        self.vars = vars
+        self.degree_left = PolyDegree(coeffs_left.shape[-1], builtins.sum(var != poly.MulVar.Right for var in vars))
+        self.degree_right = PolyDegree(coeffs_right.shape[-1], builtins.sum(var != poly.MulVar.Left for var in vars))
+        ncoeffs = PolyNCoeffs(len(vars), self.degree_left + self.degree_right)
+        super().__init__(args=(coeffs_left, coeffs_right), shape=(*coeffs_left.shape[:-1], ncoeffs), dtype=float)
 
     @util.cached_property
     def evalf(self):
         try:
-            degree1 = self.degree1.__index__()
-            degree2 = self.degree2.__index__()
+            degree_left = self.degree_left.__index__()
+            degree_right = self.degree_right.__index__()
         except TypeError as e:
             return functools.partial(poly.mul, vars=self.vars)
         else:
-            return poly.MulPlan(self.vars, degree1, degree2)
+            return poly.MulPlan(self.vars, degree_left, degree_right)
+
+    def _simplified(self):
+        if iszero(self.coeffs_left) or iszero(self.coeffs_right):
+            return zeros_like(self)
 
     def _takediag(self, axis1, axis2):
         if axis1 < self.ndim - 1 and axis2 < self.ndim - 1:
-            return PolyOuterProduct(_takediag(self.coeffs1, axis1, axis2), _takediag(self.coeffs2, axis1, axis2), self.dim1, self.dim2)
+            coeffs_left = Transpose.to_end(_takediag(self.coeffs_left, axis1, axis2), -2)
+            coeffs_right = Transpose.to_end(_takediag(self.coeffs_right, axis1, axis2), -2)
+            return Transpose.to_end(PolyMul(coeffs_left, coeffs_right, self.vars), -2)
 
     def _take(self, index, axis):
         if axis < self.ndim - 1:
-            return PolyOuterProduct(_take(self.coeffs1, index, axis), _take(self.coeffs2, index, axis), self.dim1, self.dim2)
+            return PolyMul(_take(self.coeffs_left, index, axis), _take(self.coeffs_right, index, axis), self.vars)
 
     def _unravel(self, axis, shape):
         if axis < self.ndim - 1:
-            return PolyOuterProduct(unravel(self.coeffs1, axis, shape), unravel(self.coeffs2, axis, shape), self.dim1, self.dim2)
+            return PolyMul(unravel(self.coeffs_left, axis, shape), unravel(self.coeffs_right, axis, shape), self.vars)
 
 
 class Legendre(Array):
