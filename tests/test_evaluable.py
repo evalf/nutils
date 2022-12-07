@@ -1170,3 +1170,83 @@ class AsType(TestCase):
 AsType(dtype=int)
 AsType(dtype=float)
 AsType(dtype=complex)
+
+
+class unalign(TestCase):
+
+    def test_single_noop(self):
+        ox = evaluable.asarray(numpy.arange(6).reshape(2,3))
+        ux, where = evaluable.unalign(ox)
+        self.assertEqual(where, (0, 1))
+        self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
+
+    def test_single_trans(self):
+        ox = evaluable.Transpose(evaluable.asarray(numpy.arange(6).reshape(2,3)), (1, 0))
+        ux, where = evaluable.unalign(ox)
+        self.assertEqual(where, (1, 0)) # transposed, because this is a single argument
+        self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
+
+    def test_single_ins(self):
+        ox = evaluable.InsertAxis(evaluable.asarray(numpy.arange(2)), 3)
+        ux, where = evaluable.unalign(ox)
+        self.assertEqual(where, (0,))
+        self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
+
+    def test_single_ins_trans(self):
+        ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(3)), 2), (1, 0))
+        ux, where = evaluable.unalign(ox)
+        self.assertEqual(where, (1,))
+        self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
+
+    def test_single_naxes_reins(self):
+        # tests reinsertion of an uninserted axis >= naxes
+        ox = evaluable.InsertAxis(evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(3)), 2), (1, 0)), 4)
+        ux, where = evaluable.unalign(ox, naxes=2)
+        self.assertEqual(where, (1,))
+        self.assertEqual(evaluable.align(ux, where+(2,), ox.shape).eval().tolist(), ox.eval().tolist())
+
+    def test_single_naxes_trans(self):
+        # tests the transpose of an axis >= naxes
+        ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(12).reshape(4, 3)), 2), (2, 1, 0))
+        ux, where = evaluable.unalign(ox, naxes=1)
+        self.assertEqual(where, ())
+        self.assertEqual(evaluable.align(ux, where+(1, 2), ox.shape).eval().tolist(), ox.eval().tolist())
+
+    def test_single_naxes_reins_trans(self):
+        # tests the transpose of an uninserted axis >= naxes
+        ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.InsertAxis(evaluable.asarray(numpy.arange(4)), 2), 3), (1, 2, 0))
+        ux, where = evaluable.unalign(ox, naxes=1)
+        self.assertEqual(where, ())
+        self.assertEqual(evaluable.align(ux, where+(1, 2), ox.shape).eval().tolist(), ox.eval().tolist())
+
+    def test_double_noins(self):
+        ox = evaluable.asarray(numpy.arange(6).reshape(2,3))
+        oy = evaluable.asarray(numpy.arange(6, 12).reshape(2,3))
+        ux, uy, where = evaluable.unalign(ox, oy)
+        self.assertEqual(where, (0, 1))
+        self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
+        self.assertEqual(evaluable.align(uy, where, oy.shape).eval().tolist(), oy.eval().tolist())
+
+    def test_double_disjointins(self):
+        ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(3)), 2), (1, 0))
+        oy = evaluable.InsertAxis(evaluable.asarray(numpy.arange(2, 4)), 3)
+        ux, uy, where = evaluable.unalign(ox, oy)
+        self.assertEqual(where, (0, 1)) # not transposed, despite the transpose of the first argument
+        self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
+        self.assertEqual(evaluable.align(uy, where, oy.shape).eval().tolist(), oy.eval().tolist())
+
+    def test_double_commonins(self):
+        ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(3)), 2), (1, 0))
+        oy = evaluable.zeros((2, 3), dtype=int)
+        ux, uy, where = evaluable.unalign(ox, oy)
+        self.assertEqual(where, (1,))
+        self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
+        self.assertEqual(evaluable.align(uy, where, oy.shape).eval().tolist(), oy.eval().tolist())
+
+    def test_too_few_axes(self):
+        with self.assertRaises(ValueError):
+            evaluable.unalign(evaluable.zeros((2, 3)), naxes=3)
+
+    def test_unequal_naxes(self):
+        with self.assertRaises(ValueError):
+            evaluable.unalign(evaluable.zeros((2, 3)), evaluable.zeros((2, 3, 4)))
