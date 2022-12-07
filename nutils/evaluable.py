@@ -744,32 +744,43 @@ def align(arg, where, shape):
     return arg
 
 
-def unalign(*args):
+def unalign(*args, naxes: int = None):
     '''Remove (joint) inserted axes.
 
-    Given one or more equally shaped array arguments, return the shortest common
-    axis vector along with function arguments such that the original arrays can
-    be recovered by :func:`align`.
+    Given one or more array arguments, return the shortest common axis vector
+    along with function arguments such that the original arrays can be
+    recovered by :func:`align`. Axes beyond the first ``naxes`` are not
+    considered for removal, keep their position (as seen from the right), and
+    are not part of the common axis vector. Those axes should be added to the
+    axis vector before calling :func:`align`.
+
+    If ``naxes`` is ``None`` (the default), all arguments must have the same
+    number of axes and ``naxes`` is set to this number.
     '''
 
     assert args
-    if len(args) == 1:
+    if len(args) == 1 and naxes is None:
         return args[0]._unaligned
-    if any(arg.ndim != args[0].ndim for arg in args[1:]):
-        raise ValueError('varying dimensions in unalign')
-    nonins = functools.reduce(operator.or_, [set(arg._unaligned[1]) for arg in args])
-    if len(nonins) == args[0].ndim:
-        return (*args, tuple(range(args[0].ndim)))
+    if naxes is None:
+        if any(arg.ndim != args[0].ndim for arg in args[1:]):
+            raise ValueError('varying dimensions in unalign')
+        naxes = args[0].ndim
+    elif any(arg.ndim < naxes for arg in args):
+        raise ValueError('one or more arguments have fewer axes than expected')
+    nonins = functools.reduce(operator.or_, [set(arg._unaligned[1]) for arg in args]) & set(range(naxes))
+    if len(nonins) == naxes:
+        return (*args, tuple(range(naxes)))
     ret = []
     for arg in args:
         unaligned, where = arg._unaligned
-        for i in sorted(nonins - set(where)):
-            unaligned = InsertAxis(unaligned, args[0].shape[i])
+        keep = tuple(range(naxes, arg.ndim))
+        for i in sorted((nonins | set(keep)) - set(where)):
+            unaligned = InsertAxis(unaligned, arg.shape[i])
             where += i,
         if not ret:  # first argument
-            commonwhere = where
-        elif where != commonwhere:
-            unaligned = Transpose(unaligned, map(where.index, commonwhere))
+            commonwhere = tuple(i for i in where if i < naxes)
+        if where != commonwhere + keep:
+            unaligned = Transpose(unaligned, map(where.index, commonwhere + keep))
         ret.append(unaligned)
     return (*ret, commonwhere)
 
@@ -1098,16 +1109,9 @@ class Normal(Array):
     def _simplified(self):
         if equalindex(self.shape[-1], 1):
             return Sign(Take(self.lgrad, 0))
-        unaligned, where = unalign(self.lgrad)
-        for axis in self.ndim - 1, self.ndim:
-            if axis not in where:
-                unaligned = InsertAxis(unaligned, self.lgrad.shape[axis])
-                where += axis,
-        if len(where) < self.ndim + 1:
-            if where[-2:] != (self.ndim - 1, self.ndim):
-                unaligned = Transpose(unaligned, numpy.argsort(where))
-                where = tuple(sorted(where))
-            return align(Normal(unaligned), where[:-1], self.shape)
+        unaligned, where = unalign(self.lgrad, naxes=self.ndim - 1)
+        if len(where) < self.ndim - 1:
+            return align(Normal(unaligned), (*where, self.ndim - 1), self.shape)
 
     @staticmethod
     def evalf(lgrad):
@@ -3464,15 +3468,8 @@ class Ravel(Array):
 
     @property
     def _unaligned(self):
-        unaligned, where = unalign(self.func)
-        for i in self.ndim - 1, self.ndim:
-            if i not in where:
-                unaligned = InsertAxis(unaligned, self.func.shape[i])
-                where += i,
-        if where[-2:] != (self.ndim - 1, self.ndim):
-            unaligned = Transpose(unaligned, numpy.argsort(where))
-            where = tuple(sorted(where))
-        return Ravel(unaligned), where[:-1]
+        unaligned, where = unalign(self.func, naxes=self.ndim - 1)
+        return Ravel(unaligned), (*where, self.ndim - 1)
 
     @property
     def _assparse(self):
@@ -3693,15 +3690,9 @@ class Polyval(Array):
             return zeros_like(self)
         elif self.ngrad == degree:
             return prependaxes(self._const_helper(), self.points.shape[:-1])
-        points, where = unalign(self.points)
-        if points.ndim < self.points.ndim and set(where) != set(range(self.points.ndim-1)):
-            if self.points.ndim - 1 not in where:
-                points = InsertAxis(points, self.points.shape[-1])
-                where += self.points.ndim - 1,
-            elif where[-1] != self.points.ndim - 1:
-                points = Transpose(points, numpy.argsort(where))
-                where = tuple(sorted(where))
-            where = where[:-1] + tuple(range(self.points.ndim - 1, self.ndim))
+        points, where = unalign(self.points, naxes=self.points.ndim - 1)
+        if len(where) < self.points.ndim - 1:
+            where = where + tuple(range(self.points.ndim - 1, self.ndim))
             return align(Polyval(self.coeffs, points, self.ngrad), where, self.shape)
 
 
