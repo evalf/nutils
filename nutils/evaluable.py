@@ -822,10 +822,10 @@ if debug_flags.sparse:
 if debug_flags.evalf:
     class _evalf_checker:
         def __init__(self, orig):
-            self.evalf_obj = getattr(orig, '__get__', lambda *args: orig)
+            self.orig = orig
 
         def __get__(self, instance, owner):
-            evalf = self.evalf_obj(instance, owner)
+            evalf = self.orig.__get__(instance, owner)
 
             @functools.wraps(evalf)
             def evalf_with_check(*args, **kwargs):
