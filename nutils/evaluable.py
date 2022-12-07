@@ -747,9 +747,9 @@ def align(arg, where, shape):
 def unalign(*args):
     '''Remove (joint) inserted axes.
 
-    Given one or more equally shaped array arguments, return the shortest common
-    axis vector along with function arguments such that the original arrays can
-    be recovered by :func:`align`.
+    Given one or more array arguments with the same number of axes, return the
+    shortest common axis vector along with function arguments such that the
+    original arrays can be recovered by :func:`align`.
     '''
 
     assert args
@@ -764,7 +764,7 @@ def unalign(*args):
     for arg in args:
         unaligned, where = arg._unaligned
         for i in sorted(nonins - set(where)):
-            unaligned = InsertAxis(unaligned, args[0].shape[i])
+            unaligned = InsertAxis(unaligned, arg.shape[i])
             where += i,
         if not ret:  # first argument
             commonwhere = where
