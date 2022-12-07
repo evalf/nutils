@@ -824,6 +824,10 @@ if debug_flags.evalf:
         def __init__(self, orig):
             self.orig = orig
 
+        def __set_name__(self, owner, name):
+            if hasattr(self.orig, '__set_name__'):
+                self.orig.__set_name__(owner, name)
+
         def __get__(self, instance, owner):
             evalf = self.orig.__get__(instance, owner)
 
