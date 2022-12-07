@@ -2338,7 +2338,7 @@ class Sin(Pointwise):
 class Tan(Pointwise):
     'Tangent, element-wise.'
     __slots__ = ()
-    evalf = numpy.tan
+    evalf = staticmethod(numpy.tan)
     complex_deriv = lambda x: Cos(x)**-2,
     return_type = lambda T: complex if T == complex else float
 
@@ -2370,7 +2370,7 @@ class ArcTan(Pointwise):
 class CosH(Pointwise):
     'Hyperbolic cosine, element-wise.'
     __slots__ = ()
-    evalf = numpy.cosh
+    evalf = staticmethod(numpy.cosh)
     complex_deriv = lambda x: SinH(x),
     return_type = lambda T: complex if T == complex else float
 
