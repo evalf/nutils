@@ -3682,10 +3682,11 @@ class Polyval(Array):
             return zeros_like(self)
         elif self.ngrad == degree:
             return prependaxes(self._const_helper(), self.points.shape[:-1])
-        points, where = unalign(self.points, naxes=self.points.ndim - 1)
-        if len(where) < self.points.ndim - 1:
-            where = where + tuple(range(self.points.ndim - 1, self.ndim))
-            return align(Polyval(self.coeffs, points, self.ngrad), where, self.shape)
+        points, where_points = unalign(self.points, naxes=self.points.ndim - 1)
+        coeffs, where_coeffs = unalign(self.coeffs, naxes=self.coeffs.ndim - self.points_ndim)
+        if len(where_points) + len(where_coeffs) < self.ndim - self.ngrad:
+            where = *where_points, *(axis + self.points.ndim - 1 for axis in where_coeffs), *range(self.ndim - self.ngrad, self.ndim)
+            return align(Polyval(coeffs, points, self.ngrad), where, self.shape)
 
 
 class PolyOuterProduct(Array):
