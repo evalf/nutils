@@ -822,10 +822,14 @@ if debug_flags.sparse:
 if debug_flags.evalf:
     class _evalf_checker:
         def __init__(self, orig):
-            self.evalf_obj = getattr(orig, '__get__', lambda *args: orig)
+            self.orig = orig
+
+        def __set_name__(self, owner, name):
+            if hasattr(self.orig, '__set_name__'):
+                self.orig.__set_name__(owner, name)
 
         def __get__(self, instance, owner):
-            evalf = self.evalf_obj(instance, owner)
+            evalf = self.orig.__get__(instance, owner)
 
             @functools.wraps(evalf)
             def evalf_with_check(*args, **kwargs):
@@ -2338,7 +2342,7 @@ class Sin(Pointwise):
 class Tan(Pointwise):
     'Tangent, element-wise.'
     __slots__ = ()
-    evalf = numpy.tan
+    evalf = staticmethod(numpy.tan)
     complex_deriv = lambda x: Cos(x)**-2,
     return_type = lambda T: complex if T == complex else float
 
@@ -2370,7 +2374,7 @@ class ArcTan(Pointwise):
 class CosH(Pointwise):
     'Hyperbolic cosine, element-wise.'
     __slots__ = ()
-    evalf = numpy.cosh
+    evalf = staticmethod(numpy.cosh)
     complex_deriv = lambda x: SinH(x),
     return_type = lambda T: complex if T == complex else float
 
