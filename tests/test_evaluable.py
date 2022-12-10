@@ -10,6 +10,7 @@ import sys
 import unittest
 import functools
 import operator
+import logging
 
 
 @parametrize
@@ -1250,3 +1251,26 @@ class unalign(TestCase):
     def test_unequal_naxes(self):
         with self.assertRaises(ValueError):
             evaluable.unalign(evaluable.zeros((2, 3)), evaluable.zeros((2, 3, 4)))
+
+
+class log_error(TestCase):
+
+    class Fail(evaluable.Array):
+        def __init__(self, arg1, arg2):
+            super().__init__(args=(arg1, arg2), shape=(), dtype=int)
+        @staticmethod
+        def evalf(arg1, arg2):
+            raise RuntimeError('operation failed intentially.')
+
+    def test(self):
+        a1 = evaluable.asarray(1.)
+        a2 = evaluable.asarray([2.,3.])
+        with self.assertLogs('nutils', logging.ERROR) as cm, self.assertRaises(RuntimeError):
+            self.Fail(a1+evaluable.Sum(a2), a1).eval()
+        self.assertEqual(cm.output[0], '''ERROR:nutils:evaluation failed in step 5/5
+  %0 = EVALARGS --> dict
+  %1 = nutils.evaluable.Constant<f:> --> ndarray<f:>
+  %2 = nutils.evaluable.Constant<f:2> --> ndarray<f:2>
+  %3 = nutils.evaluable.Sum<f:> arr=%2 --> float64
+  %4 = nutils.evaluable.Add<f:> %1 %3 --> float64
+  %5 = tests.test_evaluable.Fail<i:> arg1=%4 arg2=%1 --> operation failed intentially.''')
