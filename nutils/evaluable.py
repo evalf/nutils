@@ -55,18 +55,14 @@ graphviz = os.environ.get('NUTILS_GRAPHVIZ')
 isevaluable = lambda arg: isinstance(arg, Evaluable)
 
 
-def strictevaluable(value):
-    if not isinstance(value, Evaluable):
-        raise ValueError('expected an object of type {!r} but got {!r} with type {!r}'.format(Evaluable.__qualname__, value, type(value).__qualname__))
-    return value
-
-
-def simplified(value):
-    return strictevaluable(value).simplified
+def simplified(value: 'Evaluable'):
+    assert isinstance(value, Evaluable), f'value={value!r}'
+    return value.simplified
 
 
 _type_order = bool, int, float, complex
 asdtype = lambda arg: arg if any(arg is dtype for dtype in _type_order) else {'f': float, 'i': int, 'b': bool, 'c': complex}[numpy.dtype(arg).kind]
+Dtype = typing.Union[_type_order]
 
 
 def asarray(arg):
@@ -75,47 +71,39 @@ def asarray(arg):
     if _containsarray(arg):
         return stack(arg, axis=0)
     else:
-        return Constant(arg)
+        return constant(arg)
 
 
 asarrays = types.tuple[asarray]
 
 
-def asindex(arg):
-    arg = asarray(arg)
-    if arg.ndim or arg.dtype != int:
-        raise ValueError('argument is not an index: {}'.format(arg))
-    if arg._intbounds[0] < 0:
-        raise ValueError('index must be non-negative')
-    return arg
+def _isindex(arg):
+    return isinstance(arg, Array) and arg.ndim == 0 and arg.dtype == int and arg._intbounds[0] >= 0
 
 
-@types.apply_annotations
-def equalindex(n: asindex, m: asindex):
-    '''Compare two array indices.
+def _equals_scalar_constant(arg: 'Array', value: Dtype):
+    assert isinstance(arg, Array) and arg.ndim == 0, f'arg={arg!r}'
+    assert arg.dtype == type(value), f'arg.dtype={arg.dtype}, type(value)={type(value)}'
+    return arg.isconstant and arg.eval() == value
 
-    Returns `True` if the two indices are certainly equal, `False` if they are
-    certainly not equal, or `None` if equality cannot be determined at compile
-    time.
-    '''
 
-    if n is m:
+def _equals_simplified(arg1: 'Array', arg2: 'Array'):
+    assert isinstance(arg1, Array), f'arg1={arg1!r}'
+    assert isinstance(arg2, Array), f'arg2={arg2!r}'
+    if arg1 is arg2:
         return True
-    n = n.simplified
-    m = m.simplified
-    if n is m:
+    assert arg1.shape == arg2.shape and arg1.dtype == arg2.dtype, f'arg1={arg1!r}, arg2={arg2!r}'
+    arg1 = arg1.simplified
+    arg2 = arg2.simplified
+    if arg1 is arg2:
         return True
-    if n.arguments != m.arguments:
+    if arg1.arguments != arg2.arguments:
         return False
-    if n.isconstant:  # implies m.isconstant
-        return int(n) == int(m)
+    if arg1.isconstant: # implies arg2.isconstant
+        return numpy.all(arg1.eval() == arg2.eval())
 
 
-asshape = types.tuple[asindex]
-
-
-@types.apply_annotations
-def equalshape(N: asshape, M: asshape):
+def equalshape(N: typing.Tuple['Array', ...], M: typing.Tuple['Array', ...]):
     '''Compare two array shapes.
 
     Returns `True` if all indices are certainly equal, `False` if any indices are
@@ -123,12 +111,14 @@ def equalshape(N: asshape, M: asshape):
     time.
     '''
 
+    assert isinstance(N, tuple) and all(_isindex(n) for n in N), f'N={N!r}'
+    assert isinstance(M, tuple) and all(_isindex(n) for n in M), f'M={M!r}'
     if N == M:
         return True
     if len(N) != len(M):
         return False
     retval = True
-    for eq in map(equalindex, N, M):
+    for eq in map(_equals_simplified, N, M):
         if eq == False:
             return False
         if eq == None:
@@ -249,7 +239,7 @@ def replace(func=None, depthfirst=False, recursive=False, lru=4):
                     pass
                 else:  # object is in cache
                     if r is pending:
-                        pending_objs = [k for k, v in cache.items() if v is pending]
+                        pending_objs = tuple(k for k, v in cache.items() if v is pending)
                         index = pending_objs.index(obj)
                         raise Exception('{}@replace caught in a circular dependence\n'.format(func.__name__) + Tuple(pending_objs[index:]).asciitree().split('\n', 1)[1])
                     rstack.append(r if r is not identity else obj)
@@ -289,8 +279,8 @@ class Evaluable(types.Singleton):
     __slots__ = '__args', '__dict__'
     __cache__ = 'dependencies', 'arguments', 'ordereddeps', 'dependencytree', 'optimized_for_numpy', '_loop_concatenate_deps'
 
-    @types.apply_annotations
-    def __init__(self, args: types.tuple[strictevaluable]):
+    def __init__(self, args: typing.Tuple['Evaluable', ...]):
+        assert isinstance(args, tuple) and all(isinstance(arg, Evaluable) for arg in args), f'args={args!r}'
         super().__init__()
         self.__args = args
 
@@ -462,12 +452,11 @@ class Evaluable(types.Singleton):
 
     @property
     def optimized_for_numpy(self):
-        retval = self._optimized_for_numpy1() or self
+        retval = self.simplified._optimized_for_numpy1() or self
         return retval._combine_loop_concatenates(frozenset())
 
-    @types.apply_annotations
     @replace(depthfirst=True, recursive=True)
-    def _optimized_for_numpy1(obj: simplified.fget):
+    def _optimized_for_numpy1(obj):
         if isinstance(obj, Evaluable):
             retval = obj._simplified() or obj._optimized_for_numpy()
             if retval is not None and isinstance(obj, Array):
@@ -509,13 +498,13 @@ class Evaluable(types.Singleton):
                 # start, stop and the concatenation length) are formed by
                 # `loop_concatenate`-ing `func.shape[-1]`. If the shape is constant,
                 # this can be simplified to a `Range`.
-                data = Tuple((Tuple(lc.funcdata) for lc in lcs))
+                data = Tuple(tuple(Tuple(lc.funcdata) for lc in lcs))
                 # Combine `LoopConcatenate` instances in `data` excluding
                 # `outer_exclude` and those that will be processed in a subsequent loop
                 # (the remainder of `exclude`). The latter consists of loops that are
                 # invariant w.r.t. the current loop `index`.
                 data = data._combine_loop_concatenates(exclude)
-                combined = LoopConcatenateCombined(data, index._name, index.length)
+                combined = LoopConcatenateCombined(tuple(map(tuple, data)), index._name, index.length)
                 for i, lc in enumerate(lcs):
                     intbounds = dict(zip(('_lower', '_upper'), lc._intbounds)) if lc.dtype == int else {}
                     replacements[lc] = ArrayFromTuple(combined, i, lc.shape, lc.dtype, **intbounds)
@@ -568,8 +557,7 @@ class Tuple(Evaluable):
 
     __slots__ = 'items'
 
-    @types.apply_annotations
-    def __init__(self, items: types.tuple[strictevaluable]):
+    def __init__(self, items):
         self.items = items
         super().__init__(items)
 
@@ -606,11 +594,13 @@ class Tuple(Evaluable):
 class SparseArray(Evaluable):
     'sparse array'
 
-    @types.apply_annotations
-    def __init__(self, chunks: types.tuple[asarrays], shape: asarrays, dtype: asdtype):
+    def __init__(self, chunks: typing.Tuple[typing.Tuple['Array', ...], ...], shape: typing.Tuple['Array', ...], dtype: Dtype):
+        assert isinstance(chunks, tuple) and all(isinstance(chunk, tuple) and all(isinstance(v, Array) for v in chunk) for chunk in chunks), f'chunks={chunks!r}'
+        assert isinstance(shape, tuple) and all(_isindex(n) for n in shape), f'shape={shape!r}'
+        assert isinstance(dtype, type) and dtype in _type_order, f'dtype={dtype!r}'
         self._shape = shape
         self._dtype = dtype
-        super().__init__(args=[Tuple(shape), *map(Tuple, chunks)])
+        super().__init__(args=(Tuple(shape), *map(Tuple, chunks)))
 
     def evalf(self, shape, *chunks):
         length = builtins.sum(values.size for *indices, values in chunks)
@@ -632,12 +622,12 @@ class SparseArray(Evaluable):
 
 def add(a, b):
     a, b = _numpy_align(a, b)
-    return Add([a, b])
+    return Add(types.frozenmultiset((a, b)))
 
 
 def multiply(a, b):
     a, b = _numpy_align(a, b)
-    return Multiply([a, b])
+    return Multiply(types.frozenmultiset((a, b)))
 
 
 def sum(arg, axis=None):
@@ -699,9 +689,9 @@ def imag(arg):
 def transpose(arg, trans=None):
     arg = asarray(arg)
     if trans is None:
-        normtrans = range(arg.ndim-1, -1, -1)
+        normtrans = tuple(range(arg.ndim-1, -1, -1))
     else:
-        normtrans = _normdims(arg.ndim, trans)
+        normtrans = tuple(numeric.normdim(arg.ndim, sh).__index__() for sh in trans)
         assert sorted(normtrans) == list(range(arg.ndim))
     return Transpose(arg, normtrans)
 
@@ -743,8 +733,8 @@ def align(arg, where, shape):
             arg = InsertAxis(arg, length)
             where.append(i)
     if where != list(range(len(shape))):
-        arg = Transpose(arg, numpy.argsort(where))
-    assert equalshape(arg.shape, shape)
+        arg = Transpose.inv(arg, where)
+    assert equalshape(arg.shape, shape), f'arg.shape={arg.shape!r}, shape={shape!r}'
     return arg
 
 
@@ -784,7 +774,7 @@ def unalign(*args, naxes: int = None):
         if not ret:  # first argument
             commonwhere = tuple(i for i in where if i < naxes)
         if where != commonwhere + keep:
-            unaligned = Transpose(unaligned, map(where.index, commonwhere + keep))
+            unaligned = Transpose(unaligned, tuple(where.index(n) for n in commonwhere + keep))
         ret.append(unaligned)
     return (*ret, commonwhere)
 
@@ -879,8 +869,9 @@ class Array(Evaluable, metaclass=_ArrayMeta):
 
     __array_priority__ = 1.  # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
-    @types.apply_annotations
-    def __init__(self, args: types.tuple[strictevaluable], shape: asshape, dtype: asdtype):
+    def __init__(self, args, shape: typing.Tuple['Array', ...], dtype: Dtype):
+        assert isinstance(shape, tuple) and all(_isindex(n) for n in shape), f'shape={shape!r}'
+        assert isinstance(dtype, type) and dtype in _type_order, f'dtype={dtype!r}'
         self.shape = shape
         self.dtype = dtype
         super().__init__(args=args)
@@ -902,7 +893,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
             raise IndexError('too many indices for array')
         array = self
         for axis, it in reversed(tuple(enumerate(item))):
-            array = get(array, axis, item=it) if numeric.isint(it) \
+            array = get(array, axis, item=constant(it)) if numeric.isint(it) \
                 else _takeslice(array, it, axis) if isinstance(it, slice) \
                 else take(array, it, axis)
         return array
@@ -1065,7 +1056,7 @@ class NPoints(Array):
     __slots__ = ()
 
     def __init__(self):
-        super().__init__(args=[EVALARGS], shape=(), dtype=int)
+        super().__init__(args=(EVALARGS,), shape=(), dtype=int)
 
     @staticmethod
     def evalf(evalargs):
@@ -1081,7 +1072,7 @@ class Points(Array):
     __slots__ = ()
 
     def __init__(self, npoints, ndim):
-        super().__init__(args=[EVALARGS], shape=(npoints, ndim), dtype=float)
+        super().__init__(args=(EVALARGS,), shape=(npoints, ndim), dtype=float)
 
     @staticmethod
     def evalf(evalargs):
@@ -1093,7 +1084,7 @@ class Weights(Array):
     __slots__ = ()
 
     def __init__(self, npoints):
-        super().__init__(args=[EVALARGS], shape=(npoints,), dtype=float)
+        super().__init__(args=(EVALARGS,), shape=(npoints,), dtype=float)
 
     @staticmethod
     def evalf(evalargs):
@@ -1107,16 +1098,14 @@ class Normal(Array):
 
     __slots__ = 'lgrad',
 
-    @types.apply_annotations
-    def __init__(self, lgrad: asarray):
-        assert lgrad.ndim >= 2 and equalindex(lgrad.shape[-2], lgrad.shape[-1])
-        assert lgrad.dtype != complex
+    def __init__(self, lgrad: Array):
+        assert isinstance(lgrad, Array) and lgrad.ndim >= 2 and _equals_simplified(lgrad.shape[-2], lgrad.shape[-1]) and lgrad.dtype != complex, f'lgrad={lgrad!r}'
         self.lgrad = lgrad
-        super().__init__(args=[lgrad], shape=lgrad.shape[:-1], dtype=float)
+        super().__init__(args=(lgrad,), shape=lgrad.shape[:-1], dtype=float)
 
     def _simplified(self):
-        if equalindex(self.shape[-1], 1):
-            return Sign(Take(self.lgrad, 0))
+        if _equals_scalar_constant(self.shape[-1], 1):
+            return Sign(Take(self.lgrad, constant(0)))
         unaligned, where = unalign(self.lgrad, naxes=self.ndim - 1)
         if len(where) < self.ndim - 1:
             return align(Normal(unaligned), (*where, self.ndim - 1), self.shape)
@@ -1133,7 +1122,7 @@ class Normal(Array):
         return numeric.normalize(n - v3)
 
     def _derivative(self, var, seen):
-        if equalindex(self.shape[-1], 1):
+        if _equals_scalar_constant(self.shape[-1], 1):
             return zeros(self.shape + var.shape)
         G = self.lgrad[..., :-1]
         invGG = inverse(einsum('Aki,Akj->Aij', G, G))
@@ -1145,10 +1134,10 @@ class Constant(Array):
     __slots__ = 'value',
     __cache__ = '_isunit'
 
-    @types.apply_annotations
     def __init__(self, value: types.arraydata):
+        assert isinstance(value, types.arraydata), f'value={value!r}'
         self.value = numpy.asarray(value)
-        super().__init__(args=[], shape=value.shape, dtype=value.dtype)
+        super().__init__(args=(), shape=tuple(constant(n) for n in value.shape), dtype=value.dtype)
 
     def _simplified(self):
         if not self.value.any():
@@ -1159,7 +1148,7 @@ class Constant(Array):
             # axes have at least length one, hence the following statement should work.
             first, *others = numpy.rollaxis(self.value, i)
             if all(numpy.equal(first, other).all() for other in others):
-                return insertaxis(Constant(first), i, sh)
+                return insertaxis(constant(first), i, sh)
 
     def evalf(self):
         return self.value
@@ -1181,56 +1170,56 @@ class Constant(Array):
         return numpy.equal(self.value, 1).all()
 
     def _transpose(self, axes):
-        return Constant(self.value.transpose(axes))
+        return constant(self.value.transpose(axes))
 
     def _sum(self, axis):
-        return Constant(numpy.sum(self.value, axis))
+        return constant(numpy.sum(self.value, axis))
 
     def _add(self, other):
         if isinstance(other, Constant):
-            return Constant(numpy.add(self.value, other.value))
+            return constant(numpy.add(self.value, other.value))
 
     def _inverse(self, axis1, axis2):
         value = numpy.transpose(self.value, tuple(i for i in range(self.ndim) if i != axis1 and i != axis2) + (axis1, axis2))
-        return Constant(numpy.linalg.inv(value))
+        return constant(numpy.linalg.inv(value))
 
     def _product(self):
-        return Constant(self.value.prod(-1))
+        return constant(self.value.prod(-1))
 
     def _multiply(self, other):
         if self._isunit:
             return other
         if isinstance(other, Constant):
-            return Constant(numpy.multiply(self.value, other.value))
+            return constant(numpy.multiply(self.value, other.value))
 
     def _takediag(self, axis1, axis2):
         assert axis1 < axis2
-        return Constant(numpy.einsum('...kk->...k', numpy.transpose(self.value,
+        return constant(numpy.einsum('...kk->...k', numpy.transpose(self.value,
                                                                     list(range(axis1)) + list(range(axis1+1, axis2)) + list(range(axis2+1, self.ndim)) + [axis1, axis2])))
 
     def _take(self, index, axis):
         if index.isconstant:
             index_ = index.eval()
-            return Constant(self.value.take(index_, axis))
+            return constant(self.value.take(index_, axis))
 
     def _power(self, n):
         if isinstance(n, Constant):
-            return Constant(numpy.power(self.value, n.value))
+            return constant(numpy.power(self.value, n.value))
 
     def _eig(self, symmetric):
         eigval, eigvec = (numpy.linalg.eigh if symmetric else numpy.linalg.eig)(self.value)
-        return Tuple((Constant(eigval), Constant(eigvec)))
+        return Tuple((constant(eigval), constant(eigvec)))
 
     def _sign(self):
-        return Constant(numpy.sign(self.value))
+        return constant(numpy.sign(self.value))
 
     def _unravel(self, axis, shape):
         shape = self.value.shape[:axis] + shape + self.value.shape[axis+1:]
-        return Constant(self.value.reshape(shape))
+        return constant(self.value.reshape(shape))
 
     def _determinant(self, axis1, axis2):
         value = numpy.transpose(self.value, tuple(i for i in range(self.ndim) if i != axis1 and i != axis2) + (axis1, axis2))
-        return Constant(numpy.linalg.det(value))
+        return constant(numpy.linalg.det(value))
 
     def _intbounds_impl(self):
         if self.dtype == int and self.value.size:
@@ -1249,11 +1238,12 @@ class InsertAxis(Array):
     __slots__ = 'func', 'length'
     __cache__ = '_unaligned', '_inflations'
 
-    @types.apply_annotations
-    def __init__(self, func: asarray, length: asindex):
+    def __init__(self, func: Array, length: Array):
+        assert isinstance(func, Array), f'func={func!r}'
+        assert _isindex(length), f'length={length!r}'
         self.func = func
         self.length = length
-        super().__init__(args=[func, length], shape=(*func.shape, length), dtype=func.dtype)
+        super().__init__(args=(func, length), shape=(*func.shape, length), dtype=func.dtype)
 
     @property
     def _diagonals(self):
@@ -1364,31 +1354,37 @@ class Transpose(Array):
     __cache__ = '_invaxes', '_unaligned', '_diagonals', '_inflations'
 
     @classmethod
-    @types.apply_annotations
-    def _end(cls, array: asarray, axes, invert=False):
-        axes = [numeric.normdim(array.ndim, axis) for axis in axes]
-        if all(a == b for a, b in enumerate(axes, start=array.ndim-len(axes))):
-            return array
-        trans = [i for i in range(array.ndim) if i not in axes]
+    def _mk_axes(cls, ndim, axes, invert=False):
+        axes = [numeric.normdim(ndim, axis) for axis in axes]
+        if all(a == b for a, b in enumerate(axes, start=ndim-len(axes))):
+            return
+        trans = [i for i in range(ndim) if i not in axes]
         trans.extend(axes)
-        if len(trans) != array.ndim:
+        if len(trans) != ndim:
             raise Exception('duplicate axes')
-        return cls(array, numpy.argsort(trans) if invert else trans)
+        return tuple(trans)
 
     @classmethod
     def from_end(cls, array, *axes):
-        return cls._end(array, axes, invert=True)
+        trans = cls._mk_axes(array.ndim, axes)
+        return cls.inv(array, trans) if trans else array
 
     @classmethod
     def to_end(cls, array, *axes):
-        return cls._end(array, axes, invert=False)
+        trans = cls._mk_axes(array.ndim, axes)
+        return cls(array, trans) if trans else array
 
-    @types.apply_annotations
-    def __init__(self, func: asarray, axes: types.tuple[types.strictint]):
+    @classmethod
+    def inv(cls, func, axes):
+        return cls(func, tuple(n.__index__() for n in numpy.argsort(axes)))
+
+    def __init__(self, func: Array, axes: typing.Tuple[int, ...]):
+        assert isinstance(func, Array), f'func={func!r}'
+        assert isinstance(axes, tuple) and all(isinstance(axis, int) for axis in axes), f'axes={axes!r}'
         assert sorted(axes) == list(range(func.ndim))
         self.func = func
         self.axes = axes
-        super().__init__(args=[func], shape=[func.shape[n] for n in axes], dtype=func.dtype)
+        super().__init__(args=(func,), shape=tuple(func.shape[n] for n in axes), dtype=func.dtype)
 
     @property
     def _diagonals(self):
@@ -1405,7 +1401,7 @@ class Transpose(Array):
 
     @property
     def _invaxes(self):
-        return tuple(numpy.argsort(self.axes))
+        return tuple(n.__index__() for n in numpy.argsort(self.axes))
 
     def _simplified(self):
         if self.axes == tuple(range(self.ndim)):
@@ -1426,7 +1422,7 @@ class Transpose(Array):
             # _multiply can rely on _transpose for the right hand side without having
             # to separately account for the trivial case.
             return self.func
-        newaxes = [self.axes[i] for i in axes]
+        newaxes = tuple(self.axes[i] for i in axes)
         return Transpose(self.func, newaxes)
 
     def _takediag(self, axis1, axis2):
@@ -1436,13 +1432,14 @@ class Transpose(Array):
             return Transpose(TakeDiag(self.func), (*self.axes[:axis1], *self.axes[axis1+1:axis2], *self.axes[axis2+1:], self.ndim-2))
         trytakediag = self.func._takediag(orig1, orig2)
         if trytakediag is not None:
-            return Transpose(trytakediag, [ax-(ax > orig1)-(ax > orig2) for ax in self.axes[:axis1] + self.axes[axis1+1:axis2] + self.axes[axis2+1:]] + [self.ndim-2])
+            exclude_orig = [ax-(ax > orig1)-(ax > orig2) for ax in self.axes[:axis1] + self.axes[axis1+1:axis2] + self.axes[axis2+1:]]
+            return Transpose(trytakediag, (*exclude_orig, self.ndim-2))
 
     def _sum(self, i):
         axis = self.axes[i]
         trysum = self.func._sum(axis)
         if trysum is not None:
-            axes = [ax-(ax > axis) for ax in self.axes if ax != axis]
+            axes = tuple(ax-(ax > axis) for ax in self.axes if ax != axis)
             return Transpose(trysum, axes)
         if axis == self.ndim - 1:
             return Transpose(Sum(self.func), self._axes_for(0, i))
@@ -1455,7 +1452,7 @@ class Transpose(Array):
         if other_trans is not None and not isinstance(other_trans, Transpose):
             # The second clause is to avoid infinite recursions; see
             # tests.test_evaluable.simplify.test_multiply_transpose.
-            return Transpose(Multiply([self.func, other_trans]), self.axes)
+            return Transpose(multiply(self.func, other_trans), self.axes)
         trymultiply = self.func._multiply(Transpose(other, self._invaxes))
         if trymultiply is not None:
             return Transpose(trymultiply, self.axes)
@@ -1480,7 +1477,7 @@ class Transpose(Array):
         funcaxis = self.axes[axis]
         axes = [ax+(ax > funcaxis)*(ndim-1) for ax in self.axes if ax != funcaxis]
         axes[axis:axis] = range(funcaxis, funcaxis + ndim)
-        return axes
+        return tuple(axes)
 
     def _power(self, n):
         n_trans = Transpose(n, self._invaxes)
@@ -1495,7 +1492,7 @@ class Transpose(Array):
         if tryunravel is not None:
             axes = [ax + (ax > orig_axis) for ax in self.axes]
             axes.insert(axis+1, orig_axis+1)
-            return Transpose(tryunravel, axes)
+            return Transpose(tryunravel, tuple(axes))
 
     def _product(self):
         if self.axes[-1] == self.ndim-1:
@@ -1505,7 +1502,7 @@ class Transpose(Array):
         orig1, orig2 = self.axes[axis1], self.axes[axis2]
         trydet = self.func._determinant(orig1, orig2)
         if trydet:
-            axes = [ax-(ax > orig1)-(ax > orig2) for ax in self.axes if ax != orig1 and ax != orig2]
+            axes = tuple(ax-(ax > orig1)-(ax > orig2) for ax in self.axes if ax != orig1 and ax != orig2)
             return Transpose(trydet, axes)
 
     def _inverse(self, axis1, axis2):
@@ -1524,7 +1521,7 @@ class Transpose(Array):
             if tryinflate is not None:
                 axes = [ax-(ax > i)*(dofmap.ndim-1) for ax in self.axes]
                 axes[axis:axis+dofmap.ndim] = i,
-                return Transpose(tryinflate, axes)
+                return Transpose(tryinflate, tuple(axes))
 
     def _diagonalize(self, axis):
         trydiagonalize = self.func._diagonalize(self.axes[axis])
@@ -1553,15 +1550,14 @@ class Product(Array):
 
     __slots__ = 'func',
 
-    @types.apply_annotations
-    def __init__(self, func: asarray):
-        assert func.dtype != bool, 'Product({})'.format(func)
+    def __init__(self, func: Array):
+        assert isinstance(func, Array) and func.dtype != bool, f'func={func!r}'
         self.func = func
-        super().__init__(args=[func], shape=func.shape[:-1], dtype=func.dtype)
+        super().__init__(args=(func,), shape=func.shape[:-1], dtype=func.dtype)
 
     def _simplified(self):
-        if equalindex(self.func.shape[-1], 1):
-            return get(self.func, self.ndim, 0)
+        if _equals_scalar_constant(self.func.shape[-1], 1):
+            return get(self.func, self.ndim, constant(0))
         return self.func._product()
 
     @staticmethod
@@ -1588,17 +1584,16 @@ class Inverse(Array):
 
     __slots__ = 'func',
 
-    @types.apply_annotations
-    def __init__(self, func: asarray):
-        assert func.ndim >= 2 and equalindex(func.shape[-1], func.shape[-2])
+    def __init__(self, func: Array):
+        assert isinstance(func, Array) and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2]), f'func={func!r}'
         self.func = func
-        super().__init__(args=[func], shape=func.shape, dtype=complex if func.dtype == complex else float)
+        super().__init__(args=(func,), shape=func.shape, dtype=complex if func.dtype == complex else float)
 
     def _simplified(self):
         result = self.func._inverse(self.ndim-2, self.ndim-1)
         if result is not None:
             return result
-        if equalindex(self.func.shape[-1], 1):
+        if _equals_scalar_constant(self.func.shape[-1], 1):
             return reciprocal(self.func)
 
     evalf = staticmethod(numeric.inv)
@@ -1632,17 +1627,16 @@ class Determinant(Array):
 
     __slots__ = 'func',
 
-    @types.apply_annotations
-    def __init__(self, func: asarray):
-        assert isarray(func) and func.ndim >= 2 and equalindex(func.shape[-1], func.shape[-2])
+    def __init__(self, func: Array):
+        assert isarray(func) and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2])
         self.func = func
-        super().__init__(args=[func], shape=func.shape[:-2], dtype=complex if func.dtype == complex else float)
+        super().__init__(args=(func,), shape=func.shape[:-2], dtype=complex if func.dtype == complex else float)
 
     def _simplified(self):
         result = self.func._determinant(self.ndim, self.ndim+1)
         if result is not None:
             return result
-        if equalindex(self.func.shape[-1], 1):
+        if _equals_scalar_constant(self.func.shape[-1], 1):
             return Take(Take(self.func, zeros((), int)), zeros((), int))
 
     evalf = staticmethod(numpy.linalg.det)
@@ -1661,12 +1655,12 @@ class Multiply(Array):
 
     __slots__ = 'funcs',
 
-    @types.apply_annotations
-    def __init__(self, funcs: types.frozenmultiset[asarray]):
+    def __init__(self, funcs: types.frozenmultiset):
+        assert isinstance(funcs, types.frozenmultiset), f'funcs={funcs!r}'
         self.funcs = funcs
         func1, func2 = funcs
         assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype != bool, 'Multiply({}, {})'.format(func1, func2)
-        super().__init__(args=self.funcs, shape=func1.shape, dtype=func1.dtype)
+        super().__init__(args=tuple(self.funcs), shape=func1.shape, dtype=func1.dtype)
 
     def _simplified(self):
         func1, func2 = self.funcs
@@ -1678,7 +1672,7 @@ class Multiply(Array):
         if len(where) != self.ndim:
             return align(unaligned1 * unaligned2, where, self.shape)
         for axis1, axis2, *other in map(sorted, func1._diagonals or func2._diagonals):
-            return diagonalize(Multiply(takediag(func, axis1, axis2) for func in self.funcs), axis1, axis2)
+            return diagonalize(multiply(takediag(func1, axis1, axis2), takediag(func2, axis1, axis2)), axis1, axis2)
         for i, parts in func1._inflations:
             return util.sum(_inflate(f * _take(func2, dofmap, i), dofmap, self.shape[i], i) for dofmap, f in parts.items())
         for i, parts in func2._inflations:
@@ -1721,8 +1715,8 @@ class Multiply(Array):
     def _determinant(self, axis1, axis2):
         func1, func2 = self.funcs
         axis1, axis2 = sorted([axis1, axis2])
-        if equalindex(self.shape[axis1], 1) and equalindex(self.shape[axis2], 1):
-            return Multiply([determinant(func1, (axis1, axis2)), determinant(func2, (axis1, axis2))])
+        if _equals_scalar_constant(self.shape[axis1], 1) and _equals_scalar_constant(self.shape[axis2], 1):
+            return multiply(determinant(func1, (axis1, axis2)), determinant(func2, (axis1, axis2)))
         unaligned1, where1 = unalign(func1)
         if {axis1, axis2}.isdisjoint(where1):
             d2 = determinant(func2, (axis1, axis2))
@@ -1736,16 +1730,16 @@ class Multiply(Array):
 
     def _product(self):
         func1, func2 = self.funcs
-        return Multiply([Product(func1), Product(func2)])
+        return multiply(Product(func1), Product(func2))
 
     def _multiply(self, other):
         func1, func2 = self.funcs
         func1_other = func1._multiply(other)
         if func1_other is not None:
-            return Multiply([func1_other, func2])
+            return multiply(func1_other, func2)
         func2_other = func2._multiply(other)
         if func2_other is not None:
-            return Multiply([func1, func2_other])
+            return multiply(func1, func2_other)
         # Reorder the multiplications such that the amount of flops is minimized.
         # The flops are counted based on the lower int bounds of the shape and loop
         # lengths, excluding common inserted axes and invariant loops of the inner
@@ -1771,17 +1765,19 @@ class Multiply(Array):
 
     def _takediag(self, axis1, axis2):
         func1, func2 = self.funcs
-        return Multiply([_takediag(func1, axis1, axis2), _takediag(func2, axis1, axis2)])
+        return multiply(_takediag(func1, axis1, axis2), _takediag(func2, axis1, axis2))
 
     def _take(self, index, axis):
         func1, func2 = self.funcs
-        return Multiply([_take(func1, index, axis), _take(func2, index, axis)])
+        return multiply(_take(func1, index, axis), _take(func2, index, axis))
 
     def _sign(self):
-        return Multiply([Sign(func) for func in self.funcs])
+        func1, func2 = self.funcs
+        return multiply(Sign(func1), Sign(func2))
 
     def _unravel(self, axis, shape):
-        return Multiply([unravel(func, axis, shape) for func in self.funcs])
+        func1, func2 = self.funcs
+        return multiply(unravel(func1, axis, shape), unravel(func2, axis, shape))
 
     def _inverse(self, axis1, axis2):
         func1, func2 = self.funcs
@@ -1821,12 +1817,12 @@ class Add(Array):
     __slots__ = 'funcs',
     __cache__ = '_inflations'
 
-    @types.apply_annotations
-    def __init__(self, funcs: types.frozenmultiset[asarray]):
+    def __init__(self, funcs: types.frozenmultiset):
+        assert isinstance(funcs, types.frozenmultiset) and len(funcs) == 2, f'funcs={funcs!r}'
         self.funcs = funcs
         func1, func2 = funcs
         assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype != bool, 'Add({}, {})'.format(func1, func2)
-        super().__init__(args=self.funcs, shape=func1.shape, dtype=func1.dtype)
+        super().__init__(args=tuple(self.funcs), shape=func1.shape, dtype=func1.dtype)
 
     @property
     def _inflations(self):
@@ -1881,7 +1877,8 @@ class Add(Array):
     evalf = staticmethod(numpy.add)
 
     def _sum(self, axis):
-        return Add([sum(func, axis) for func in self.funcs])
+        func1, func2 = self.funcs
+        return add(sum(func1, axis), sum(func2, axis))
 
     def _derivative(self, var, seen):
         func1, func2 = self.funcs
@@ -1889,27 +1886,29 @@ class Add(Array):
 
     def _takediag(self, axis1, axis2):
         func1, func2 = self.funcs
-        return Add([_takediag(func1, axis1, axis2), _takediag(func2, axis1, axis2)])
+        return add(_takediag(func1, axis1, axis2), _takediag(func2, axis1, axis2))
 
     def _take(self, index, axis):
         func1, func2 = self.funcs
-        return Add([_take(func1, index, axis), _take(func2, index, axis)])
+        return add(_take(func1, index, axis), _take(func2, index, axis))
 
     def _add(self, other):
         func1, func2 = self.funcs
         func1_other = func1._add(other)
         if func1_other is not None:
-            return Add([func1_other, func2])
+            return add(func1_other, func2)
         func2_other = func2._add(other)
         if func2_other is not None:
-            return Add([func1, func2_other])
+            return add(func1, func2_other)
 
     def _unravel(self, axis, shape):
-        return Add([unravel(func, axis, shape) for func in self.funcs])
+        func1, func2 = self.funcs
+        return add(unravel(func1, axis, shape), unravel(func2, axis, shape))
 
     def _loopsum(self, index):
         if any(index not in func.arguments for func in self.funcs):
-            return Add([loop_sum(func, index) for func in self.funcs])
+            func1, func2 = self.funcs
+            return add(loop_sum(func1, index), loop_sum(func2, index))
 
     def _multiply(self, other):
         func1, func2 = self.funcs
@@ -1936,27 +1935,23 @@ class Einsum(Array):
 
     __slots__ = 'args', 'out_idx', 'args_idx', '_einsumfmt', '_has_summed_axes'
 
-    @types.apply_annotations
-    def __init__(self, args: asarrays, args_idx: types.tuple[types.tuple[types.strictint]], out_idx: types.tuple[types.strictint]):
-        if len(args_idx) != len(args):
-            raise ValueError('Expected one list of indices for every argument, but got {} and {}, respectively.'.format(len(args_idx), len(args)))
-        for iarg, (idx, arg) in enumerate(zip(args_idx, args), 1):
-            if len(idx) != arg.ndim:
-                raise ValueError('Expected one index for every axis of argument {}, but got {} and {}, respectively.'.format(iarg, len(idx), arg.ndim))
+    def __init__(self, args: typing.Tuple[Array, ...], args_idx: typing.Tuple[typing.Tuple[int, ...], ...], out_idx: typing.Tuple[int, ...]):
+        assert isinstance(args, tuple) and all(isinstance(arg, Array) for arg in args), f'arg={arg!r}'
+        assert isinstance(args_idx, tuple) and all(isinstance(arg_idx, tuple) and all(isinstance(n, int) for n in arg_idx) for arg_idx in args_idx), f'args_idx={args_idx!r}'
+        assert isinstance(out_idx, tuple) and all(isinstance(n, int) for n in out_idx) and len(out_idx) == len(set(out_idx)), f'out_idx={out_idx!r}'
+        assert len(args_idx) == len(args) and all(len(idx) == arg.ndim for idx, arg in zip(args_idx, args)), f'len(args_idx)={len(args_idx)}, len(args)={len(args)}'
         dtype = args[0].dtype
         if dtype == bool or any(arg.dtype != dtype for arg in args[1:]):
             raise ValueError('Inconsistent or invalid dtypes.')
-        if len(out_idx) != len(set(out_idx)):
-            raise ValueError('Repeated output indices.')
         lengths = {}
         for idx, arg in zip(args_idx, args):
             for i, length in zip(idx, arg.shape):
                 if i not in lengths:
                     lengths[i] = length
-                elif not equalindex(lengths[i], length):
+                elif not _equals_simplified(lengths[i], length):
                     raise ValueError('Axes with index {} have different lengths.'.format(i))
         try:
-            shape = [lengths[i] for i in out_idx]
+            shape = tuple(lengths[i] for i in out_idx)
         except KeyError:
             raise ValueError('Output axis {} is not listed in any of the arguments.'.format(', '.join(i for i in out_idx if i not in lengths)))
         self.args = args
@@ -1998,15 +1993,15 @@ class Sum(Array):
 
     __slots__ = 'func'
 
-    @types.apply_annotations
-    def __init__(self, func: asarray):
+    def __init__(self, func: Array):
+        assert isinstance(func, Array), f'func={func!r}'
         assert func.dtype != bool, 'Sum({})'.format(func)
         self.func = func
-        super().__init__(args=[func], shape=func.shape[:-1], dtype=func.dtype)
+        super().__init__(args=(func,), shape=func.shape[:-1], dtype=func.dtype)
 
     def _simplified(self):
-        if equalindex(self.func.shape[-1], 1):
-            return Take(self.func, 0)
+        if _equals_scalar_constant(self.func.shape[-1], 1):
+            return Take(self.func, constant(0))
         return self.func._sum(self.ndim)
 
     @staticmethod
@@ -2052,18 +2047,14 @@ class TakeDiag(Array):
     __slots__ = 'func'
     __cache__ = '_assparse'
 
-    @types.apply_annotations
-    def __init__(self, func: asarray):
-        if func.ndim < 2:
-            raise Exception('takediag requires an argument of dimension >= 2')
-        if not equalindex(func.shape[-1], func.shape[-2]):
-            raise Exception('takediag axes do not match')
+    def __init__(self, func: Array):
+        assert isinstance(func, Array) and func.ndim >= 2 and _equals_simplified(*func.shape[-2:]), f'func={func!r}'
         self.func = func
-        super().__init__(args=[func], shape=func.shape[:-1], dtype=func.dtype)
+        super().__init__(args=(func,), shape=func.shape[:-1], dtype=func.dtype)
 
     def _simplified(self):
-        if equalindex(self.shape[-1], 1):
-            return Take(self.func, 0)
+        if _equals_scalar_constant(self.shape[-1], 1):
+            return Take(self.func, constant(0))
         return self.func._takediag(self.ndim-1, self.ndim)
 
     @staticmethod
@@ -2105,15 +2096,12 @@ class Take(Array):
 
     __slots__ = 'func', 'indices'
 
-    @types.apply_annotations
-    def __init__(self, func: asarray, indices: asarray):
-        if func.ndim == 0:
-            raise Exception('cannot take a scalar function')
-        if indices.dtype != int:
-            raise Exception('invalid indices argument for take')
+    def __init__(self, func: Array, indices: Array):
+        assert isinstance(func, Array) and func.ndim > 0, f'func={func!r}'
+        assert isinstance(indices, Array) and indices.dtype == int, f'indices={indices!r}'
         self.func = func
         self.indices = indices
-        super().__init__(args=[func, indices], shape=func.shape[:-1]+indices.shape, dtype=func.dtype)
+        super().__init__(args=(func, indices), shape=func.shape[:-1]+indices.shape, dtype=func.dtype)
 
     def _simplified(self):
         if self.indices.size == 0:
@@ -2156,14 +2144,13 @@ class Power(Array):
 
     __slots__ = 'func', 'power'
 
-    @types.apply_annotations
-    def __init__(self, func: asarray, power: asarray):
-        assert equalshape(func.shape, power.shape) and func.dtype == power.dtype != bool, 'Power({}, {})'.format(func, power)
-        if power.dtype == int:
-            assert power._intbounds[0] >= 0
+    def __init__(self, func: Array, power: Array):
+        assert isinstance(func, Array), f'func={func!r}'
+        assert isinstance(power, Array) and (power.dtype in (float, complex) or power.dtype == int and power._intbounds[0] >= 0), f'power={power!r}'
+        assert equalshape(func.shape, power.shape) and func.dtype == power.dtype, 'Power({}, {})'.format(func, power)
         self.func = func
         self.power = power
-        super().__init__(args=[func, power], shape=func.shape, dtype=func.dtype)
+        super().__init__(args=(func, power), shape=func.shape, dtype=func.dtype)
 
     def _simplified(self):
         if iszero(self.power):
@@ -2190,7 +2177,7 @@ class Power(Array):
     def _derivative(self, var, seen):
         if self.power.isconstant:
             p = self.power.eval()
-            return einsum('A,A,AB->AB', p, power(self.func, p - (p != 0)), derivative(self.func, var, seen))
+            return einsum('A,A,AB->AB', constant(p), power(self.func, p - (p != 0)), derivative(self.func, var, seen))
         if self.dtype == complex:
             raise NotImplementedError('The complex derivative is not implemented.')
         # self = func**power
@@ -2204,7 +2191,7 @@ class Power(Array):
         if self.dtype == complex or n.dtype == complex:
             return
         func = self.func
-        newpower = Multiply([self.power, n])
+        newpower = multiply(self.power, n)
         if iszero(self.power % 2) and not iszero(newpower % 2):
             func = abs(func)
         return Power(func, newpower)
@@ -2230,8 +2217,8 @@ class Pointwise(Array):
     complex_deriv = None
     return_type = None
 
-    @types.apply_annotations
-    def __init__(self, *args: asarrays):
+    def __init__(self, *args: Array):
+        assert all(isinstance(arg, Array) for arg in args), f'args={args!r}'
         dtype = self.__class__.return_type(*[arg.dtype for arg in args])
         shape0 = args[0].shape
         assert all(equalshape(arg.shape, shape0) for arg in args[1:]), 'pointwise arguments have inconsistent shapes'
@@ -2266,7 +2253,7 @@ class Pointwise(Array):
     def _optimized_for_numpy(self):
         if self.isconstant:
             retval = self.eval()
-            return Constant(retval)
+            return constant(retval)
 
     def _derivative(self, var, seen):
         if self.complex_deriv is not None:
@@ -2682,11 +2669,10 @@ class Sign(Array):
 
     __slots__ = 'func',
 
-    @types.apply_annotations
-    def __init__(self, func: asarray):
-        assert func.dtype != complex
+    def __init__(self, func: Array):
+        assert isinstance(func, Array) and func.dtype != complex, f'func={func!r}'
         self.func = func
-        super().__init__(args=[func], shape=func.shape, dtype=func.dtype)
+        super().__init__(args=(func,), shape=func.shape, dtype=func.dtype)
 
     def _simplified(self):
         return self.func._sign()
@@ -2730,10 +2716,10 @@ class Sampled(Array):
 
     __slots__ = ()
 
-    @types.apply_annotations
-    def __init__(self, points: asarray, expect: asarray):
-        assert points.ndim == 2
-        super().__init__(args=[points, expect], shape=(points.shape[0], expect.shape[0]), dtype=float)
+    def __init__(self, points: Array, expect: Array):
+        assert isinstance(points, Array) and points.ndim == 2, f'points={points!r}'
+        assert isinstance(expect, Array) and expect.ndim == 2, f'expect={expect!r}'
+        super().__init__(args=(points, expect), shape=(points.shape[0], expect.shape[0]), dtype=float)
 
     @staticmethod
     def evalf(points, expect):
@@ -2742,17 +2728,18 @@ class Sampled(Array):
         return numpy.eye(len(points))
 
 
-@types.apply_annotations
-def Elemwise(data: types.tuple[types.arraydata], index: asarray, dtype: asdtype):
+def Elemwise(data: typing.Tuple[types.arraydata, ...], index: Array, dtype: Dtype):
+    assert isinstance(data, tuple) and all(isinstance(d, types.arraydata) and d.dtype == dtype for d in data), f'data={data!r}'
+    assert isinstance(index, Array) and index.ndim == 0 and index.dtype == int, f'index={index!r}'
     unique, indices = util.unique(data)
     if len(unique) == 1:
         return Constant(unique[0])
     # Create shape from data and index, rather than unique and the modified
     # index, in order to avoid potential shape inconsistencies later on.
     shapes = numpy.array([d.shape for d in data])
-    shape = [Take(s, index) for s in shapes.T]
+    shape = [Take(constant(s), index) for s in shapes.T]
     if len(unique) < len(data):
-        index = Take(indices, index)
+        index = Take(constant(indices), index)
     # Move all axes with constant shape to the left and ravel the remainder.
     is_constant = numpy.all(shapes[1:] == shapes[0], axis=0)
     nconstant = is_constant.sum()
@@ -2760,7 +2747,7 @@ def Elemwise(data: types.tuple[types.arraydata], index: asarray, dtype: asdtype)
     raveled = [numpy.transpose(d, reorder).reshape(*shapes[0, reorder[:nconstant]], -1) for d in unique]
     # Concatenate the raveled axis, take slices, unravel and reorder the axes to
     # the original position.
-    concat = numpy.concatenate(raveled, axis=-1)
+    concat = constant(numpy.concatenate(raveled, axis=-1))
     if is_constant.all():
         return Take(concat, index)
     var_shape = tuple(shape[i] for i in reorder[nconstant:])
@@ -2771,21 +2758,21 @@ def Elemwise(data: types.tuple[types.arraydata], index: asarray, dtype: asdtype)
     elemwise = Take(concat, Range(cumprod[0]) + Take(offsets, index))
     for i in range(len(var_shape)-1):
         elemwise = Unravel(elemwise, var_shape[i], cumprod[i+1])
-    return Transpose(elemwise, tuple(numpy.argsort(reorder)))
+    return Transpose.inv(elemwise, reorder)
 
 
 class Eig(Evaluable):
 
     __slots__ = 'symmetric', 'func', '_w_dtype', '_vt_dtype'
 
-    @types.apply_annotations
-    def __init__(self, func: asarray, symmetric: bool = False):
-        assert func.ndim >= 2 and equalindex(func.shape[-1], func.shape[-2])
+    def __init__(self, func: Array, symmetric: bool = False):
+        assert isinstance(func, Array) and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2]), f'func={func!r}'
+        assert isinstance(symmetric, bool), f'symmetric={symmetric!r}'
         self.symmetric = symmetric
         self.func = func
         self._w_dtype = float if symmetric else complex
         self._vt_dtype = float if symmetric and func.dtype != complex else complex
-        super().__init__(args=[func])
+        super().__init__(args=(func,))
 
     def __len__(self):
         return 2
@@ -2808,13 +2795,14 @@ class ArrayFromTuple(Array):
 
     __slots__ = 'arrays', 'index', '_lower', '_upper'
 
-    @types.apply_annotations
-    def __init__(self, arrays: strictevaluable, index: types.strictint, shape: asshape, dtype: asdtype, *, _lower=float('-inf'), _upper=float('inf')):
+    def __init__(self, arrays: Evaluable, index: int, shape: typing.Tuple[Array, ...], dtype: Dtype, *, _lower=float('-inf'), _upper=float('inf')):
+        assert isinstance(arrays, Evaluable), f'arrays={arrays!r}'
+        assert isinstance(index, int), f'index=f{index}'
         self.arrays = arrays
         self.index = index
         self._lower = _lower
         self._upper = _upper
-        super().__init__(args=[arrays], shape=shape, dtype=dtype)
+        super().__init__(args=(arrays,), shape=shape, dtype=dtype)
 
     def evalf(self, arrays):
         assert isinstance(arrays, tuple)
@@ -2839,8 +2827,7 @@ class Zeros(Array):
     __slots__ = ()
     __cache__ = '_assparse', '_unaligned'
 
-    @types.apply_annotations
-    def __init__(self, shape: asshape, dtype: asdtype):
+    def __init__(self, shape, dtype):
         super().__init__(args=shape, shape=shape, dtype=dtype)
 
     @property
@@ -2872,7 +2859,7 @@ class Zeros(Array):
         return Zeros(self.shape[:axis] + self.shape[axis+1:], dtype=int if self.dtype == bool else self.dtype)
 
     def _transpose(self, axes):
-        shape = [self.shape[n] for n in axes]
+        shape = tuple(self.shape[n] for n in axes)
         return Zeros(shape, dtype=self.dtype)
 
     def _insertaxis(self, axis, length):
@@ -2895,9 +2882,11 @@ class Zeros(Array):
         return Zeros(self.shape[:axis] + (self.shape[axis]*self.shape[axis+1],) + self.shape[axis+2:], self.dtype)
 
     def _determinant(self, axis1, axis2):
-        shape = list(self.shape)
         assert axis1 != axis2
-        length, = set(map(shape.pop, sorted((axis1, axis2), reverse=True)))
+        length = self.shape[axis1]
+        assert length == self.shape[axis2]
+        i, j = sorted([axis1, axis2])
+        shape = (*self.shape[:i], *self.shape[i+1:j], *self.shape[j+1:])
         if iszero(length):
             return ones(shape, self.dtype)
         else:
@@ -2916,15 +2905,16 @@ class Inflate(Array):
     __slots__ = 'func', 'dofmap', 'length', 'warn'
     __cache__ = '_assparse', '_diagonals', '_inflations'
 
-    @types.apply_annotations
-    def __init__(self, func: asarray, dofmap: asarray, length: asindex):
-        if not equalshape(func.shape[func.ndim-dofmap.ndim:], dofmap.shape):
-            raise Exception('invalid dofmap')
+    def __init__(self, func: Array, dofmap: Array, length: Array):
+        assert isinstance(func, Array), f'func={func!r}'
+        assert isinstance(dofmap, Array), f'dofmap={dofmap!r}'
+        assert _isindex(length), f'length={length!r}'
+        assert equalshape(func.shape[func.ndim-dofmap.ndim:], dofmap.shape), f'func.shape={func.shape!r}, dofmap.shape={dofmap.shape!r}'
         self.func = func
         self.dofmap = dofmap
         self.length = length
         self.warn = not dofmap.isconstant
-        super().__init__(args=[func, dofmap, length], shape=(*func.shape[:func.ndim-dofmap.ndim], length), dtype=func.dtype)
+        super().__init__(args=(func, dofmap, length), shape=(*func.shape[:func.ndim-dofmap.ndim], length), dtype=func.dtype)
 
     @property
     def _diagonals(self):
@@ -2939,14 +2929,14 @@ class Inflate(Array):
 
     def _simplified(self):
         for axis in range(self.dofmap.ndim):
-            if equalindex(self.dofmap.shape[axis], 1):
-                return Inflate(_take(self.func, 0, self.func.ndim-self.dofmap.ndim+axis), _take(self.dofmap, 0, axis), self.length)
+            if _equals_scalar_constant(self.dofmap.shape[axis], 1):
+                return Inflate(_take(self.func, constant(0), self.func.ndim-self.dofmap.ndim+axis), _take(self.dofmap, constant(0), axis), self.length)
         for axis, parts in self.func._inflations:
             i = axis - (self.ndim-1)
             if i >= 0:
                 return util.sum(Inflate(f, _take(self.dofmap, ind, i), self.length) for ind, f in parts.items())
-        if self.dofmap.ndim == 0 and equalindex(self.dofmap, 0) and equalindex(self.length, 1):
-            return InsertAxis(self.func, 1)
+        if self.dofmap.ndim == 0 and _equals_scalar_constant(self.dofmap, 0) and _equals_scalar_constant(self.length, 1):
+            return InsertAxis(self.func, constant(1))
         return self.func._inflate(self.dofmap, self.length, self.ndim-1) \
             or self.dofmap._rinflate(self.func, self.length, self.ndim-1)
 
@@ -2967,11 +2957,11 @@ class Inflate(Array):
         return _inflate(derivative(self.func, var, seen), self.dofmap, self.length, self.ndim-1)
 
     def _multiply(self, other):
-        return Inflate(Multiply([self.func, Take(other, self.dofmap)]), self.dofmap, self.length)
+        return Inflate(multiply(self.func, Take(other, self.dofmap)), self.dofmap, self.length)
 
     def _add(self, other):
         if isinstance(other, Inflate) and self.dofmap == other.dofmap:
-            return Inflate(Add([self.func, other.func]), self.dofmap, self.length)
+            return Inflate(add(self.func, other.func), self.dofmap, self.length)
 
     def _takediag(self, axis1, axis2):
         assert axis1 < axis2
@@ -3046,7 +3036,7 @@ class SwapInflateTake(Evaluable):
     def __init__(self, inflateidx, takeidx):
         self.inflateidx = inflateidx
         self.takeidx = takeidx
-        super().__init__(args=[inflateidx, takeidx])
+        super().__init__(args=(inflateidx, takeidx))
 
     def __iter__(self):
         shape = ArrayFromTuple(self, index=2, shape=(), dtype=int, _lower=0),
@@ -3087,12 +3077,10 @@ class Diagonalize(Array):
     __slots__ = 'func'
     __cache__ = '_diagonals'
 
-    @types.apply_annotations
-    def __init__(self, func: asarray):
-        if func.ndim == 0:
-            raise Exception('cannot diagonalize scalar function')
+    def __init__(self, func: Array):
+        assert isinstance(func, Array) and func.ndim > 0, f'func={func!r}'
         self.func = func
-        super().__init__(args=[func], shape=(*func.shape, func.shape[-1]), dtype=func.dtype)
+        super().__init__(args=(func,), shape=(*func.shape, func.shape[-1]), dtype=func.dtype)
 
     @property
     def _diagonals(self):
@@ -3183,10 +3171,10 @@ class Guard(Array):
 
     __slots__ = 'fun',
 
-    @types.apply_annotations
-    def __init__(self, fun: asarray):
+    def __init__(self, fun: Array):
+        assert isinstance(fun, Array), f'fun={fun!r}'
         self.fun = fun
-        super().__init__(args=[fun], shape=fun.shape, dtype=fun.dtype)
+        super().__init__(args=(fun,), shape=fun.shape, dtype=fun.dtype)
 
     @property
     def isconstant(self):
@@ -3205,11 +3193,10 @@ class Find(Array):
 
     __slots__ = 'where',
 
-    @types.apply_annotations
-    def __init__(self, where: asarray):
+    def __init__(self, where: Array):
         assert isarray(where) and where.ndim == 1 and where.dtype == bool
         self.where = where
-        super().__init__(args=[where], shape=[Sum(BoolToInt(where))], dtype=int)
+        super().__init__(args=(where,), shape=(Sum(BoolToInt(where)),), dtype=int)
 
     @staticmethod
     def evalf(where):
@@ -3217,7 +3204,7 @@ class Find(Array):
 
     def _simplified(self):
         if self.isconstant:
-            return Constant(self.eval())
+            return constant(self.eval())
 
 
 class DerivativeTargetBase(Array):
@@ -3288,8 +3275,8 @@ class Argument(DerivativeTargetBase):
     :class:`Argument`:
 
     >>> from nutils import evaluable
-    >>> a = evaluable.Argument('x', [])
-    >>> b = evaluable.Argument('y', [])
+    >>> a = evaluable.Argument('x', ())
+    >>> b = evaluable.Argument('y', ())
     >>> f = a**3 + b**2
     >>> evaluable.derivative(f, a).simplified == (3.*a**2).simplified
     True
@@ -3304,21 +3291,21 @@ class Argument(DerivativeTargetBase):
 
     __slots__ = '_name'
 
-    @types.apply_annotations
-    def __init__(self, name: types.strictstr, shape: asshape, dtype=float):
+    def __init__(self, name: str, shape: typing.Tuple[Array, ...], dtype: Dtype = float):
+        assert isinstance(name, str), f'name={name!r}'
+        assert isinstance(shape, tuple) and all(_isindex(n) for n in shape), f'shape={shape!r}'
         self._name = name
-        super().__init__(args=[EVALARGS], shape=shape, dtype=dtype)
+        super().__init__(args=(EVALARGS, *shape), shape=shape, dtype=dtype)
 
-    def evalf(self, evalargs):
+    def evalf(self, evalargs, *shape):
         try:
             value = evalargs[self._name]
         except KeyError:
-            raise ValueError('argument {!r} missing'.format(self._name))
-        else:
-            value = numpy.asarray(value)
-            assert equalshape(value.shape, self.shape)
-            value = value.astype(self.dtype, casting='safe', copy=False)
-            return value
+            raise ValueError(f'argument {self._name!r} missing')
+        value = numpy.asarray(value)
+        if value.shape != shape:
+            raise ValueError(f'argument {self._name!r} has the wrong shape: expected {shape}, got {value.shape}')
+        return value.astype(self.dtype, casting='safe', copy=False)
 
     def _derivative(self, var, seen):
         if isinstance(var, Argument) and var._name == self._name and self.dtype in (float, complex):
@@ -3362,10 +3349,9 @@ class IdentifierDerivativeTarget(DerivativeTargetBase):
 
     __slots__ = 'identifier'
 
-    @types.apply_annotations
-    def __init__(self, identifier, shape: asshape):
+    def __init__(self, identifier, shape):
         self.identifier = identifier
-        super().__init__(args=[], shape=shape, dtype=float)
+        super().__init__(args=(), shape=shape, dtype=float)
 
     def evalf(self):
         raise Exception('{} cannot be evaluabled'.format(type(self).__name__))
@@ -3376,12 +3362,10 @@ class Ravel(Array):
     __slots__ = 'func'
     __cache__ = '_inflations'
 
-    @types.apply_annotations
-    def __init__(self, func: asarray):
-        if func.ndim < 2:
-            raise Exception('cannot ravel function of dimension < 2')
+    def __init__(self, func: Array):
+        assert isinstance(func, Array) and func.ndim >= 2, f'func={func!r}'
         self.func = func
-        super().__init__(args=[func], shape=(*func.shape[:-2], func.shape[-2] * func.shape[-1]), dtype=func.dtype)
+        super().__init__(args=(func,), shape=(*func.shape[:-2], func.shape[-2] * func.shape[-1]), dtype=func.dtype)
 
     @property
     def _inflations(self):
@@ -3400,10 +3384,10 @@ class Ravel(Array):
         return tuple(inflations)
 
     def _simplified(self):
-        if equalindex(self.func.shape[-2], 1):
-            return get(self.func, -2, 0)
-        if equalindex(self.func.shape[-1], 1):
-            return get(self.func, -1, 0)
+        if _equals_scalar_constant(self.func.shape[-2], 1):
+            return get(self.func, -2, constant(0))
+        if _equals_scalar_constant(self.func.shape[-1], 1):
+            return get(self.func, -1, constant(0))
         return self.func._ravel(self.ndim-1)
 
     @staticmethod
@@ -3412,8 +3396,8 @@ class Ravel(Array):
 
     def _multiply(self, other):
         if isinstance(other, Ravel) and equalshape(other.func.shape[-2:], self.func.shape[-2:]):
-            return Ravel(Multiply([self.func, other.func]))
-        return Ravel(Multiply([self.func, Unravel(other, *self.func.shape[-2:])]))
+            return Ravel(multiply(self.func, other.func))
+        return Ravel(multiply(self.func, Unravel(other, *self.func.shape[-2:])))
 
     def _add(self, other):
         return Ravel(self.func + Unravel(other, *self.func.shape[-2:]))
@@ -3492,20 +3476,19 @@ class Unravel(Array):
 
     __slots__ = 'func'
 
-    @types.apply_annotations
-    def __init__(self, func: asarray, sh1: asindex, sh2: asindex):
-        if func.ndim == 0:
-            raise Exception('cannot unravel scalar function')
-        if not equalindex(func.shape[-1], sh1 * sh2):
-            raise Exception('new shape does not match axis length')
+    def __init__(self, func: Array, sh1: Array, sh2: Array):
+        assert isinstance(func, Array) and func.ndim > 0, f'func={func!r}'
+        assert _isindex(sh1), f'sh1={sh1!r}'
+        assert _isindex(sh2), f'sh2={sh2!r}'
+        assert _equals_simplified(func.shape[-1], sh1 * sh2)
         self.func = func
-        super().__init__(args=[func, sh1, sh2], shape=(*func.shape[:-1], sh1, sh2), dtype=func.dtype)
+        super().__init__(args=(func, sh1, sh2), shape=(*func.shape[:-1], sh1, sh2), dtype=func.dtype)
 
     def _simplified(self):
-        if equalindex(self.shape[-2], 1):
-            return insertaxis(self.func, self.ndim-2, 1)
-        if equalindex(self.shape[-1], 1):
-            return insertaxis(self.func, self.ndim-1, 1)
+        if _equals_scalar_constant(self.shape[-2], 1):
+            return insertaxis(self.func, self.ndim-2, constant(1))
+        if _equals_scalar_constant(self.shape[-1], 1):
+            return insertaxis(self.func, self.ndim-1, constant(1))
         return self.func._unravel(self.ndim-2, self.shape[-2:])
 
     def _derivative(self, var, seen):
@@ -3534,14 +3517,17 @@ class Unravel(Array):
 
 class RavelIndex(Array):
 
-    @types.apply_annotations
-    def __init__(self, ia: asarray, ib: asarray, na: asindex, nb: asindex):
+    def __init__(self, ia: Array, ib: Array, na: Array, nb: Array):
+        assert isinstance(ia, Array), f'ia={ia!r}'
+        assert isinstance(ib, Array), f'ib={ib!r}'
+        assert _isindex(na), f'na={na!r}'
+        assert _isindex(nb), f'nb={nb!r}'
         self._ia = ia
         self._ib = ib
         self._na = na
         self._nb = nb
         self._length = na * nb
-        super().__init__(args=[ia, ib, nb], shape=ia.shape + ib.shape, dtype=int)
+        super().__init__(args=(ia, ib, nb), shape=ia.shape + ib.shape, dtype=int)
 
     @staticmethod
     def evalf(ia, ib, nb):
@@ -3554,11 +3540,11 @@ class RavelIndex(Array):
             return RavelIndex(self._ia, _take(self._ib, index, axis - self._ia.ndim), self._na, self._nb)
 
     def _rtake(self, func, axis):
-        if equalindex(func.shape[axis], self._length):
+        if _equals_simplified(func.shape[axis], self._length):
             return _take(_take(unravel(func, axis, (self._na, self._nb)), self._ib, axis+1), self._ia, axis)
 
     def _rinflate(self, func, length, axis):
-        if equalindex(length, self._length):
+        if _equals_simplified(length, self._length):
             return Ravel(Inflate(_inflate(func, self._ia, self._na, func.ndim - self.ndim), self._ib, self._nb))
 
     def _unravel(self, axis, shape):
@@ -3578,16 +3564,16 @@ class Range(Array):
 
     __slots__ = 'length'
 
-    @types.apply_annotations
-    def __init__(self, length: asindex):
+    def __init__(self, length: Array):
+        assert _isindex(length), f'length={length!r}'
         self.length = length
-        super().__init__(args=[length], shape=[length], dtype=int)
+        super().__init__(args=(length,), shape=(length,), dtype=int)
 
     def _take(self, index, axis):
         return InRange(index, self.length)
 
     def _rtake(self, func, axis):
-        if equalindex(self.length, func.shape[axis]):
+        if _equals_simplified(self.length, func.shape[axis]):
             return func
 
     def _rinflate(self, func, length, axis):
@@ -3606,11 +3592,12 @@ class InRange(Array):
 
     __slots__ = 'index', 'length'
 
-    @types.apply_annotations
-    def __init__(self, index: asarray, length: asarray):
+    def __init__(self, index: Array, length: Array):
+        assert isinstance(index, Array) and index.dtype == int, f'index={index!r}'
+        assert isinstance(length, Array) and length.dtype == int and length.ndim == 0, f'length={length!r}'
         self.index = index
         self.length = length
-        super().__init__(args=[index, length], shape=index.shape, dtype=int)
+        super().__init__(args=(index, length), shape=index.shape, dtype=int)
 
     @staticmethod
     def evalf(index, length):
@@ -3649,21 +3636,17 @@ class Polyval(Array):
 
     __slots__ = 'points_ndim', 'coeffs', 'points', 'ngrad'
 
-    @types.apply_annotations
-    def __init__(self, coeffs: asarray, points: asarray, ngrad: types.strictint = 0):
-        assert coeffs.dtype != complex and points.dtype != complex
-        if points.ndim < 1:
-            raise ValueError('argument `points` should have at least one axis')
-        if not points.shape[-1].isconstant:
-            raise ValueError('the last axis of argument `points` should be a constant integer')
+    def __init__(self, coeffs: Array, points: Array, ngrad: int = 0):
+        assert isinstance(coeffs, Array) and coeffs.dtype != complex, f'coeffs={coeffs!r}'
+        assert isinstance(points, Array) and points.dtype != complex and points.ndim >= 1 and points.shape[-1].isconstant, f'points={points!r}'
+        assert isinstance(ngrad, int), f'ngrad={ngrad!r}'
         self.points_ndim = int(points.shape[-1])
         ndim = coeffs.ndim - self.points_ndim
-        if ndim < 0:
-            raise ValueError('argument `coeffs` should have at least one axis per spatial dimension')
+        assert ndim >= 0, 'argument `coeffs` should have at least one axis per spatial dimension'
         self.coeffs = coeffs
         self.points = points
         self.ngrad = ngrad
-        super().__init__(args=[points, coeffs], shape=points.shape[:-1]+coeffs.shape[:ndim]+(self.points_ndim,)*ngrad, dtype=float)
+        super().__init__(args=(points, coeffs), shape=points.shape[:-1]+coeffs.shape[:ndim]+(constant(self.points_ndim),)*ngrad, dtype=float)
 
     def evalf(self, points, coeffs):
         for igrad in range(self.ngrad):
@@ -3713,7 +3696,7 @@ class PolyOuterProduct(Array):
         nright = right.shape[1]
         assert all(n == nright for n in right.shape[2:])
         shape = (left.shape[0] * right.shape[0],) + (nleft + nright - 1,) * (left.ndim + right.ndim - 2)
-        super().__init__(args=[left, right], shape=shape, dtype=float)
+        super().__init__(args=(left, right), shape=shape, dtype=float)
 
     evalf = staticmethod(numeric.poly_outer_product)
 
@@ -3730,10 +3713,11 @@ class Legendre(Array):
     '''
 
     def __init__(self, x: Array, degree: int) -> None:
-        assert x.dtype == float
+        assert isinstance(x, Array) and x.dtype == float, f'x={x!r}'
+        assert isinstance(degree, int) and degree >= 0, f'degree={degree!r}'
         self._x = x
         self._degree = degree
-        super().__init__(args=(x,), shape=(*x.shape, degree+1), dtype=float)
+        super().__init__(args=(x,), shape=(*x.shape, constant(degree+1)), dtype=float)
 
     def evalf(self, x: numpy.ndarray) -> numpy.ndarray:
         P = numpy.empty((*x.shape, self._degree+1), dtype=float)
@@ -3750,7 +3734,7 @@ class Legendre(Array):
         d = numpy.zeros((self._degree+1,)*2, dtype=int)
         for i in range(self._degree+1):
             d[i, i+1::2] = 2*i+1
-        dself = einsum('Ai,ij->Aj', self, d)
+        dself = einsum('Ai,ij->Aj', self, constant(d))
         return einsum('Ai,AB->AiB', dself, derivative(self._x, var, seen))
 
     def _simplified(self):
@@ -3774,16 +3758,13 @@ class Legendre(Array):
 class Choose(Array):
     '''Function equivalent of :func:`numpy.choose`.'''
 
-    @types.apply_annotations
-    def __init__(self, index: asarray, choices: asarrays):
-        if index.dtype != int:
-            raise Exception('index must be integer valued')
+    def __init__(self, index: Array, choices: typing.Tuple[Array, ...]):
+        assert isinstance(index, Array) and index.dtype == int, f'index={index!r}'
+        assert isinstance(choices, tuple) and all(isinstance(choice, Array) for choice in choices), f'choices={choices!r}'
         dtype = choices[0].dtype
-        if any(choice.dtype != dtype for choice in choices[1:]):
-            raise Exception('dtypes vary')
+        assert all(choice.dtype == dtype for choice in choices[1:])
         shape = index.shape
-        if not all(equalshape(choice.shape, shape) for choice in choices):
-            raise Exception('shapes vary')
+        assert all(equalshape(choice.shape, shape) for choice in choices)
         self.index = index
         self.choices = choices
         super().__init__(args=(index,)+choices, shape=shape, dtype=dtype)
@@ -3793,7 +3774,7 @@ class Choose(Array):
         return numpy.choose(index, choices)
 
     def _derivative(self, var, seen):
-        return Choose(appendaxes(self.index, var.shape), [derivative(choice, var, seen) for choice in self.choices])
+        return Choose(appendaxes(self.index, var.shape), tuple(derivative(choice, var, seen) for choice in self.choices))
 
     def _simplified(self):
         if all(choice == self.choices[0] for choice in self.choices[1:]):
@@ -3804,36 +3785,35 @@ class Choose(Array):
 
     def _multiply(self, other):
         if isinstance(other, Choose) and self.index == other.index:
-            return Choose(self.index, map(multiply, self.choices, other.choices))
+            return Choose(self.index, tuple(map(multiply, self.choices, other.choices)))
 
     def _get(self, i, item):
-        return Choose(get(self.index, i, item), [get(choice, i, item) for choice in self.choices])
+        return Choose(get(self.index, i, item), tuple(get(choice, i, item) for choice in self.choices))
 
     def _sum(self, axis):
         unaligned, where = unalign(self.index)
         if axis not in where:
             index = align(unaligned, [i-(i > axis) for i in where], self.shape[:axis]+self.shape[axis+1:])
-            return Choose(index, [sum(choice, axis) for choice in self.choices])
+            return Choose(index, tuple(sum(choice, axis) for choice in self.choices))
 
     def _take(self, index, axis):
-        return Choose(_take(self.index, index, axis), [_take(choice, index, axis) for choice in self.choices])
+        return Choose(_take(self.index, index, axis), tuple(_take(choice, index, axis) for choice in self.choices))
 
     def _takediag(self, axis, rmaxis):
-        return Choose(takediag(self.index, axis, rmaxis), [takediag(choice, axis, rmaxis) for choice in self.choices])
+        return Choose(takediag(self.index, axis, rmaxis), tuple(takediag(choice, axis, rmaxis) for choice in self.choices))
 
     def _product(self):
         unaligned, where = unalign(self.index)
         if self.ndim-1 not in where:
             index = align(unaligned, where, self.shape[:-1])
-            return Choose(index, [Product(choice) for choice in self.choices])
+            return Choose(index, tuple(Product(choice) for choice in self.choices))
 
 
 class NormDim(Array):
 
-    @types.apply_annotations
-    def __init__(self, length: asarray, index: asarray):
-        assert length.dtype == int
-        assert index.dtype == int
+    def __init__(self, length: Array, index: Array):
+        assert isinstance(length, Array) and length.dtype == int, f'length={length!r}'
+        assert isinstance(index, Array) and index.dtype == int, f'index={index!r}'
         assert equalshape(length.shape, index.shape)
         # The following corner cases makes the assertion fail, hence we can only
         # assert the bounds if the arrays are guaranteed to be unempty:
@@ -3843,7 +3823,7 @@ class NormDim(Array):
             assert -length._intbounds[1] <= index._intbounds[0] and index._intbounds[1] <= length._intbounds[1] - 1
         self.length = length
         self.index = index
-        super().__init__(args=[length, index], shape=index.shape, dtype=index.dtype)
+        super().__init__(args=(length, index), shape=index.shape, dtype=index.dtype)
 
     @staticmethod
     def evalf(length, index):
@@ -3863,7 +3843,7 @@ class NormDim(Array):
         if isinstance(lower_length, int) and lower_length == upper_length and -lower_length <= lower_index and upper_index < 0:
             return self.index + lower_length
         if self.length.isconstant and self.index.isconstant:
-            return Constant(self.eval())
+            return constant(self.eval())
 
     def _intbounds_impl(self):
         lower_length, upper_length = self.length._intbounds
@@ -3902,7 +3882,7 @@ class TransformCoords(Array):
         self._index = index
         self._coords = coords
         target_dim = source.todims if target is None else target.fromdims
-        super().__init__(args=[index, coords], shape=(*coords.shape[:-1], target_dim), dtype=float)
+        super().__init__(args=(index, coords), shape=(*coords.shape[:-1], constant(target_dim)), dtype=float)
 
     def evalf(self, index, coords):
         chain = self._source[index.__index__()]
@@ -3940,7 +3920,7 @@ class TransformIndex(Array):
         self._target = target
         self._source = source
         self._index = index
-        super().__init__(args=[index], shape=(), dtype=int)
+        super().__init__(args=(index,), shape=(), dtype=int)
 
     def evalf(self, index):
         if self._target is not None:
@@ -3980,7 +3960,7 @@ class TransformLinear(Array):
         self._target = target
         self._source = source
         target_dim = source.todims if target is None else target.fromdims
-        super().__init__(args=[index], shape=(target_dim, source.fromdims), dtype=float)
+        super().__init__(args=(index,), shape=(constant(target_dim), constant(source.fromdims)), dtype=float)
 
     def evalf(self, index):
         chain = self._source[index.__index__()]
@@ -3993,7 +3973,7 @@ class TransformLinear(Array):
 
     def _simplified(self):
         if self._target == self._source:
-            return diagonalize(ones((self._source.fromdims,), dtype=float))
+            return diagonalize(ones((constant(self._source.fromdims),), dtype=float))
 
 
 class TransformBasis(Array):
@@ -4022,7 +4002,7 @@ class TransformBasis(Array):
         if index.dtype != int or index.ndim != 0:
             raise ValueError('argument `index` must be a scalar, integer `nutils.evaluable.Array`')
         self._source = source
-        super().__init__(args=[index], shape=(source.todims, source.todims), dtype=float)
+        super().__init__(args=(index,), shape=(constant(source.todims), constant(source.todims)), dtype=float)
 
     def evalf(self, index):
         chain = self._source[index.__index__()]
@@ -4048,8 +4028,9 @@ class _LoopIndex(Argument):
 
     __slots__ = 'length'
 
-    @types.apply_annotations
-    def __init__(self, name: types.strictstr, length: asindex):
+    def __init__(self, name: str, length: Array):
+        assert isinstance(name, str), f'name={name!r}'
+        assert _isindex(length), f'length={length!r}'
         self.length = length
         super().__init__(name, (), int)
 
@@ -4071,7 +4052,7 @@ class _LoopIndex(Argument):
         return 0, max(0, upper_length - 1)
 
     def _simplified(self):
-        if equalindex(self.length, 1):
+        if _equals_scalar_constant(self.length, 1):
             return Zeros((), int)
 
 
@@ -4079,25 +4060,18 @@ class LoopSum(Array):
 
     __cache__ = '_serialized_loop'
 
-    def prepare_funcdata(arg):
-        # separate shape from array to make it simplifiable (annotations are
-        # treated as preprocessor, which means the processed value is returned by
-        # self.__reduce__)
-        if isinstance(arg, tuple):
-            return arg
-        arg = asarray(arg)
-        return (arg, *arg.shape)
-
-    @types.apply_annotations
-    def __init__(self, funcdata: prepare_funcdata, index_name: types.strictstr, length: asindex):
-        shape = Tuple(funcdata[1:])
+    def __init__(self, func: Array, shape: typing.Tuple[Array, ...], index_name: str, length: Array):
+        assert isinstance(func, Array) and func.dtype != bool, f'func={func!r}'
+        assert isinstance(shape, tuple) and all(_isindex(n) for n in shape), f'shape={shape!r}'
+        assert isinstance(index_name, str), f'index_name={index_name!r}'
+        assert _isindex(length), f'length={length!r}'
+        assert func.ndim == len(shape)
         self.index = loop_index(index_name, length)
-        if self.index in shape.arguments:
+        if any(self.index in n.arguments for n in shape):
             raise ValueError('the shape of the function must not depend on the index')
-        self.func = funcdata[0]
-        assert self.func.dtype != bool
-        self._invariants, self._dependencies = _dependencies_sans_invariants(self.func, self.index)
-        super().__init__(args=(shape, length, *self._invariants), shape=self.func.shape, dtype=self.func.dtype)
+        self.func = func
+        self._invariants, self._dependencies = _dependencies_sans_invariants(func, self.index)
+        super().__init__(args=(Tuple(shape), length, *self._invariants), shape=shape, dtype=func.dtype)
 
     @property
     def _serialized_loop(self):
@@ -4183,13 +4157,13 @@ class LoopSum(Array):
         chunks = []
         for *elem_indices, elem_values in self.func._assparse:
             if self.ndim == 0:
-                values = loop_concatenate(InsertAxis(elem_values, 1), self.index)
+                values = loop_concatenate(InsertAxis(elem_values, constant(1)), self.index)
                 while values.ndim:
                     values = Sum(values)
                 chunks.append((values,))
             else:
                 if elem_values.ndim == 0:
-                    *elem_indices, elem_values = (InsertAxis(arr, 1) for arr in (*elem_indices, elem_values))
+                    *elem_indices, elem_values = (InsertAxis(arr, constant(1)) for arr in (*elem_indices, elem_values))
                 else:
                     # minimize ravels by transposing all variable length axes to the end
                     variable = tuple(i for i, n in enumerate(elem_values.shape) if self.index in n.arguments)
@@ -4208,7 +4182,7 @@ class _SizesToOffsets(Array):
         assert sizes.dtype == int
         assert sizes._intbounds[0] >= 0
         self._sizes = sizes
-        super().__init__(args=[sizes], shape=(sizes.shape[0]+1,), dtype=int)
+        super().__init__(args=(sizes,), shape=(sizes.shape[0]+1,), dtype=int)
 
     @staticmethod
     def evalf(sizes):
@@ -4227,8 +4201,10 @@ class _SizesToOffsets(Array):
 
 class LoopConcatenate(Array):
 
-    @types.apply_annotations
-    def __init__(self, funcdata: asarrays, index_name: types.strictstr, length: asindex):
+    def __init__(self, funcdata: typing.Tuple[Array, ...], index_name: str, length: Array):
+        assert isinstance(funcdata, tuple) and all(isinstance(d, Array) for d in funcdata), f'funcdata={funcdata!r}'
+        assert isinstance(index_name, str), f'index_name={index_name!r}'
+        assert _isindex(length), f'length={length!r}'
         self.funcdata = funcdata
         self.func, self.start, stop, *shape = funcdata
         self.index = loop_index(index_name, length)
@@ -4237,7 +4213,7 @@ class LoopConcatenate(Array):
         if any(self.index in n.arguments for n in shape):
             raise ValueError('the shape of the function must not depend on the index')
         self._lcc = LoopConcatenateCombined((self.funcdata,), index_name, length)
-        super().__init__(args=[self._lcc], shape=shape, dtype=self.func.dtype)
+        super().__init__(args=(self._lcc,), shape=tuple(shape), dtype=self.func.dtype)
 
     @staticmethod
     def evalf(arg):
@@ -4266,14 +4242,14 @@ class LoopConcatenate(Array):
         if self.ndim-1 not in where:
             # reinsert concatenation axis, at unit length if possible so we can
             # insert the remainder outside of the loop
-            unaligned = InsertAxis(unaligned, self.func.shape[-1] if self.index in self.func.shape[-1].arguments else 1)
+            unaligned = InsertAxis(unaligned, self.func.shape[-1] if self.index in self.func.shape[-1].arguments else constant(1))
             where += self.ndim-1,
         elif where[-1] != self.ndim-1:
             # bring concatenation axis to the end
-            unaligned = Transpose(unaligned, numpy.argsort(where))
+            unaligned = Transpose.inv(unaligned, where)
             where = tuple(sorted(where))
         f = loop_concatenate(unaligned, self.index)
-        if not equalindex(self.shape[-1], f.shape[-1]):
+        if not _equals_simplified(self.shape[-1], f.shape[-1]):
             # last axis was reinserted at unit length AND it was not unit length
             # originally - if it was unit length originally then we proceed only if
             # there are other insertions to promote, otherwise we'd get a recursion.
@@ -4314,19 +4290,21 @@ class LoopConcatenateCombined(Evaluable):
 
     __cache__ = '_serialized_loop'
 
-    @types.apply_annotations
-    def __init__(self, funcdatas: types.tuple[asarrays], index_name: types.strictstr, length: asindex):
+    def __init__(self, funcdatas: typing.Tuple[typing.Tuple[Array, ...], ...], index_name: str, length: Array):
+        assert isinstance(funcdatas, tuple) and all(isinstance(funcdata, tuple) and all(isinstance(d, Array) for d in funcdata) for funcdata in funcdatas), f'funcdatas={funcdatas!r}'
+        assert isinstance(index_name, str), f'index_name={index_name}'
+        assert _isindex(length), f'length={length!r}'
         self._funcdatas = funcdatas
         self._funcs = tuple(func for func, start, stop, *shape in funcdatas)
         self._index_name = index_name
         self._index = loop_index(index_name, length)
         if any(not func.ndim for func in self._funcs):
             raise ValueError('expected an array with at least one axis')
-        shapes = [Tuple(shape) for func, start, stop, *shape in funcdatas]
+        shapes = tuple(Tuple(tuple(shape)) for func, start, stop, *shape in funcdatas)
         if any(self._index in shape.arguments for shape in shapes):
             raise ValueError('the shape of the function must not depend on the index')
         self._invariants, self._dependencies = _dependencies_sans_invariants(
-            Tuple([Tuple([start, stop, func]) for func, start, stop, *shape in funcdatas]), self._index)
+            Tuple(tuple(Tuple((start, stop, func)) for func, start, stop, *shape in funcdatas)), self._index)
         super().__init__(args=(Tuple(shapes), length, *self._invariants))
 
     @property
@@ -4397,16 +4375,16 @@ class SearchSorted(Array):
     # additional, static arguments. The following constructor makes the static
     # arguments keyword-only in anticipation of potential future support.
 
-    def __init__(self, arg, *, array, side, sorter):
-        assert isinstance(arg, Array)
-        assert isinstance(array, types.arraydata) and array.ndim == 1
-        assert side in ('left', 'right')
-        assert sorter is None or isinstance(sorter, types.arraydata) and sorter.dtype == int and sorter.shape == array.shape
+    def __init__(self, arg: Array, *, array: types.arraydata, side: str, sorter: typing.Optional[types.arraydata]):
+        assert isinstance(arg, Array), f'arg={arg!r}'
+        assert isinstance(array, types.arraydata) and array.ndim == 1, f'array={array!r}'
+        assert side in ('left', 'right'), f'side={side!r}'
+        assert sorter is None or isinstance(sorter, types.arraydata) and sorter.dtype == int and sorter.shape == array.shape, f'sorter={sorter!r}'
         self._arg = arg
         self._array = array
         self._side = side
         self._sorter = sorter
-        super().__init__(args=[arg], shape=arg.shape, dtype=int)
+        super().__init__(args=(arg,), shape=arg.shape, dtype=int)
 
     def evalf(self, values):
         index = numpy.searchsorted(self._array, values, side=self._side, sorter=self._sorter)
@@ -4431,7 +4409,6 @@ class SearchSorted(Array):
 
 
 _ascending = lambda arg: numpy.greater(numpy.diff(arg), 0).all()
-_normdims = lambda ndim, shapes: tuple(numeric.normdim(ndim, sh) for sh in shapes)
 
 
 def _gatherblocks(blocks):
@@ -4528,6 +4505,10 @@ def _containsarray(arg):
     return any(map(_containsarray, arg)) if isinstance(arg, (list, tuple)) else isarray(arg)
 
 
+def constant(v):
+    return Constant(types.arraydata(v))
+
+
 def iszero(arg):
     return isinstance(arg.simplified, Zeros)
 
@@ -4599,15 +4580,15 @@ def mod(arg1, arg2):
 
 
 def log2(arg):
-    return ln(arg) / ln(2)
+    return ln(arg) / constant(numpy.log(2))
 
 
 def log10(arg):
-    return ln(arg) / ln(10)
+    return ln(arg) / constant(numpy.log(10))
 
 
 def sqrt(arg):
-    return power(arg, .5)
+    return power(arg, constant(.5))
 
 
 def arctan2(arg1, arg2):
@@ -4656,13 +4637,13 @@ def concatenate(args, axis=0):
 
 
 def stack(args, axis=0):
-    return Transpose.from_end(util.sum(Inflate(arg, i, len(args)) for i, arg in enumerate(args)), axis)
+    return Transpose.from_end(util.sum(Inflate(arg, constant(i), constant(len(args))) for i, arg in enumerate(args)), axis)
 
 
 def repeat(arg, length, axis):
     arg = asarray(arg)
-    assert equalindex(arg.shape[axis], 1)
-    return insertaxis(get(arg, axis, 0), axis, length)
+    assert _equals_scalar_constant(arg.shape[axis], 1)
+    return insertaxis(get(arg, axis, constant(0)), axis, length)
 
 
 def get(arg, iax, item):
@@ -4686,7 +4667,7 @@ def grammium(arg, axes=(-2, -1)):
 
 def sqrt_abs_det_gram(arg, axes=(-2, -1)):
     arg = Transpose.to_end(arg, *axes)
-    if equalindex(arg.shape[-1], arg.shape[-2]):
+    if _equals_simplified(arg.shape[-1], arg.shape[-2]):
         return abs(Determinant(arg))
     else:
         return sqrt(abs(Determinant(grammium(arg))))
@@ -4742,31 +4723,34 @@ def sign(arg):
 
 def eig(arg, axes=(-2, -1), symmetric=False):
     eigval, eigvec = Eig(Transpose.to_end(arg, *axes), symmetric)
-    return Tuple(Transpose.from_end(v, *axes) for v in [diagonalize(eigval), eigvec])
+    return Tuple(tuple(Transpose.from_end(v, *axes) for v in [diagonalize(eigval), eigvec]))
 
 
-@types.apply_annotations
-def _takeslice(arg: asarray, s: types.strict[slice], axis: types.strictint):
+def _takeslice(arg: Array, s: slice, axis: int):
+    assert isinstance(arg, Array), f'arg={arg!r}'
+    assert isinstance(s, slice), f's={s!r}'
+    assert isinstance(axis, int), f'axis={axis!r}'
     n = arg.shape[axis]
     if s.step == None or s.step == 1:
         start = 0 if s.start is None else s.start if s.start >= 0 else s.start + n
         stop = n if s.stop is None else s.stop if s.stop >= 0 else s.stop + n
         if start == 0 and stop == n:
             return arg
-        index = Range(stop-start) + start
+        index = Range(asarray(stop-start)) + start
     elif n.isconstant:
-        index = Constant(numpy.arange(*s.indices(arg.shape[axis])))
+        index = constant(numpy.arange(*s.indices(arg.shape[axis])))
     else:
         raise Exception('a non-unit slice requires a constant-length axis')
     return take(arg, index, axis)
 
 
-@types.apply_annotations
-def take(arg: asarray, index: asarray, axis: types.strictint):
-    assert index.ndim == 1
+def take(arg: Array, index: Array, axis: int):
+    assert isinstance(arg, Array), f'arg={arg!r}'
+    assert isinstance(index, Array) and index.dtype in (bool, int) and index.ndim == 1, f'index={index!r}'
+    assert isinstance(axis, int), f'axis={axis!r}'
     length = arg.shape[axis]
     if index.dtype == bool:
-        assert equalindex(index.shape[0], length)
+        assert _equals_simplified(index.shape[0], length)
         index = Find(index)
     elif index.isconstant:
         index_ = index.eval()
@@ -4777,7 +4761,7 @@ def take(arg: asarray, index: asarray, axis: types.strictint):
         elif ineg.any():
             if numpy.less(index_, -int(length)).any():
                 raise IndexError('indices out of bounds: {} < {}'.format(index_, -int(length)))
-            return _take(arg, Constant(index_ + ineg * int(length)), axis)
+            return _take(arg, constant(index_ + ineg * int(length)), axis)
         elif numpy.greater_equal(index_, int(length)).any():
             raise IndexError('indices out of bounds: {} >= {}'.format(index_, int(length)))
         elif numpy.greater(numpy.diff(index_), 0).all():
@@ -4785,21 +4769,29 @@ def take(arg: asarray, index: asarray, axis: types.strictint):
     return _take(arg, index, axis)
 
 
-@types.apply_annotations
-def _take(arg: asarray, index: asarray, axis: types.strictint):
+def _take(arg: Array, index: Array, axis: int):
+    assert isinstance(arg, Array), f'arg={arg!r}'
+    assert isinstance(index, Array) and index.dtype == int, f'index={index!r}'
+    assert isinstance(axis, int), f'axis={axis!r}'
     axis = numeric.normdim(arg.ndim, axis)
     return Transpose.from_end(Take(Transpose.to_end(arg, axis), index), *range(axis, axis+index.ndim))
 
 
-@types.apply_annotations
-def _inflate(arg: asarray, dofmap: asarray, length: asindex, axis: types.strictint):
+def _inflate(arg: Array, dofmap: Array, length: Array, axis: int):
+    assert isinstance(arg, Array), f'arg={arg!r}'
+    assert isinstance(dofmap, Array) and dofmap.dtype == int, f'dofmap={dofmap!r}'
+    assert _isindex(length), f'length={length!r}'
+    assert isinstance(axis, int), f'axis={axis!r}'
     axis = numeric.normdim(arg.ndim+1-dofmap.ndim, axis)
     assert equalshape(dofmap.shape, arg.shape[axis:axis+dofmap.ndim])
     return Transpose.from_end(Inflate(Transpose.to_end(arg, *range(axis, axis+dofmap.ndim)), dofmap, length), axis)
 
 
-def mask(arg, mask, axis=0):
-    return take(arg, mask, axis)
+def mask(arg, mask: Array, axis: int = 0):
+    assert isinstance(arg, Array), f'arg={arg!r}'
+    assert isinstance(mask, numpy.ndarray) and mask.dtype == bool and mask.ndim == 1 and _equals_scalar_constant(arg.shape[axis], len(mask)), f'mask={mask!r}'
+    index, = mask.nonzero()
+    return _take(arg, constant(index), axis)
 
 
 def unravel(func, axis, shape):
@@ -4818,7 +4810,7 @@ def ravel(func, axis):
 def _flat(func):
     func = asarray(func)
     if func.ndim == 0:
-        return InsertAxis(func, 1)
+        return InsertAxis(func, constant(1))
     while func.ndim > 1:
         func = Ravel(func)
     return func
@@ -4843,13 +4835,13 @@ def appendaxes(func, shape):
 
 
 def loop_index(name, length):
-    return _LoopIndex(name, length)
+    return _LoopIndex(name, asarray(length))
 
 
 def loop_sum(func, index):
     func = asarray(func)
     index = types.strict[_LoopIndex](index)
-    return LoopSum(func, index._name, index.length)
+    return LoopSum(func, func.shape, index._name, index.length)
 
 
 def _loop_concatenate_data(func, index):
@@ -4859,7 +4851,7 @@ def _loop_concatenate_data(func, index):
     if chunk_size.isconstant:
         chunk_sizes = InsertAxis(chunk_size, index.length)
     else:
-        chunk_sizes = loop_concatenate(InsertAxis(func.shape[-1], 1), index)
+        chunk_sizes = loop_concatenate(InsertAxis(func.shape[-1], constant(1)), index)
     offsets = _SizesToOffsets(chunk_sizes)
     start = Take(offsets, index)
     stop = Take(offsets, index+1)
@@ -4876,7 +4868,7 @@ def loop_concatenate_combined(funcs, index):
     unique_funcs.extend(func for func in funcs if func not in unique_funcs)
     unique_func_data = tuple(_loop_concatenate_data(func, index) for func in unique_funcs)
     loop = LoopConcatenateCombined(unique_func_data, index._name, index.length)
-    return tuple(ArrayFromTuple(loop, unique_funcs.index(func), shape, func.dtype) for func, start, stop, *shape in unique_func_data)
+    return tuple(ArrayFromTuple(loop, unique_funcs.index(func), tuple(shape), func.dtype) for func, start, stop, *shape in unique_func_data)
 
 
 @replace
@@ -4913,30 +4905,42 @@ def einsum(fmt, *args, **dims):
     by ``->`` and the axis labels of the return value. For example, the following
     swaps the axes of a matrix:
 
-    >>> einsum('ij->ji', ones([2,3]))
-    nutils.evaluable.Transpose<f:3,2>
+    >>> a45 = ones(tuple(map(constant, [4,5]))) # 4x5 matrix
+    >>> einsum('ij->ji', a45)
+    nutils.evaluable.Transpose<f:5,4>
 
     Axis labels that do not occur in the return value are summed. For example,
-    the following performs a dot product of three matrices:
+    the following performs a matrix-vector product:
 
-    >>> einsum('ij,jk,kl->il', ones([2,3]), ones([3,4]), ones([4,5]))
-    nutils.evaluable.Sum<f:2,5>
+    >>> a5 = ones(tuple(map(constant, [5]))) # vector with length 5
+    >>> einsum('ij,j->i', a45, a5)
+    nutils.evaluable.Sum<f:4>
+
+    The following contracts a third order tensor, a matrix, and a vector, and
+    transposes the result:
+
+    >>> a234 = ones(tuple(map(constant, [2,3,4]))) # 2x3x4 tensor
+    >>> einsum('ijk,kl,l->ji', a234, a45, a5)
+    nutils.evaluable.Sum<f:3,2>
 
     In case the dimension of the input and output arrays may vary, a variable
     length axes group can be denoted by a capital. Its length is automatically
     established based on the dimension of the input arrays. The following example
     performs a tensor product of an array and a vector:
 
-    >>> einsum('A,i->Ai', ones([2,3,4]), ones([5]))
+    >>> einsum('A,i->Ai', a234, a5)
     nutils.evaluable.Multiply<f:2,3,4,5>
 
     The format string may contain multiple variable length axes groups, but their
     lengths must be resolvable from left to right. In case this is not possible,
     lengths may be specified as keyword arguments.
 
-    >>> einsum('AjB,i->AijB', ones([2,3,4]), ones([5]), B=1)
+    >>> einsum('AjB,i->AijB', a234, a5, B=1)
     nutils.evaluable.Multiply<f:2,5,3,4>
     '''
+
+    if not all(isinstance(arg, Array) for arg in args):
+        raise ValueError('arguments must be Array valued')
 
     sin, sout = fmt.split('->')
     sin = sin.split(',')
@@ -4971,7 +4975,7 @@ def einsum(fmt, *args, **dims):
     for s, arg in zip(sin, args):
         assert len(s) == arg.ndim
         for c, sh in zip(s, arg.shape):
-            if not equalindex(shapes.setdefault(c, sh), sh):
+            if not _equals_simplified(shapes.setdefault(c, sh), sh):
                 raise ValueError('shapes do not match for axis {0[0]}{0[1]}'.format(c))
 
     ret = None
@@ -4981,7 +4985,7 @@ def einsum(fmt, *args, **dims):
             if c not in index:
                 index[c] = arg.ndim
                 arg = InsertAxis(arg, shapes[c])
-        v = Transpose(arg, [index[c] for c in sall])
+        v = Transpose(arg, tuple(index[c] for c in sall))
         ret = v if ret is None else ret * v
     for i in range(len(sout), len(sall)):
         ret = Sum(ret)

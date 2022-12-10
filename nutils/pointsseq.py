@@ -429,12 +429,12 @@ class _Uniform(PointsSequence):
     def get_evaluable_coords(self, index: evaluable.Array) -> evaluable.Array:
         if index.ndim != 0 or index.dtype != int:
             raise ValueError('expected an index array with dimension zero and dtype int but got {}'.format(index))
-        return evaluable.Constant(self.item.coords)
+        return evaluable.constant(self.item.coords)
 
     def get_evaluable_weights(self, index: evaluable.Array) -> evaluable.Array:
         if index.ndim != 0 or index.dtype != int:
             raise ValueError('expected an index array with dimension zero and dtype int but got {}'.format(index))
-        return evaluable.Constant(self.item.weights)
+        return evaluable.constant(self.item.weights)
 
 
 class _Take(PointsSequence):
@@ -660,7 +660,7 @@ class _EvaluablePointsFromSequence(evaluable.Evaluable):
 
     def __init__(self, seq: PointsSequence, index: evaluable.Array) -> None:
         self._seq = seq
-        super().__init__(args=[index])
+        super().__init__(args=(index,))
 
     def evalf(self, index: numpy.ndarray) -> Tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
         pnts = self._seq.get(index.__index__())
@@ -668,7 +668,7 @@ class _EvaluablePointsFromSequence(evaluable.Evaluable):
 
     @property
     def coords(self) -> evaluable.Array:
-        return evaluable.ArrayFromTuple(self, index=0, shape=(self.npoints, self._seq.ndims), dtype=float)
+        return evaluable.ArrayFromTuple(self, index=0, shape=(self.npoints, evaluable.constant(self._seq.ndims)), dtype=float)
 
     @property
     def weights(self) -> evaluable.Array:

@@ -1427,7 +1427,7 @@ class TransformChainsTopology(Topology):
                     refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
         else:
             log.info('collecting leveltopo elements')
-            coordinates = evaluable.Points(evaluable.NPoints(), self.ndims)
+            coordinates = evaluable.Points(evaluable.NPoints(), evaluable.constant(self.ndims))
             ielem = evaluable.Argument('_leveltopo_ielem', (), int)
             levelset = levelset.lower(function.LowerArgs.for_space(self.space, (leveltopo.transforms, leveltopo.opposites), ielem, coordinates)).optimized_for_numpy
             bins = [set() for ielem in range(len(self))]
@@ -1497,7 +1497,7 @@ class TransformChainsTopology(Topology):
         ielems = parallel.shempty(len(coords), dtype=int)
         points = parallel.shempty((len(coords), len(geom)), dtype=float)
         _ielem = evaluable.Argument('_locate_ielem', shape=(), dtype=int)
-        _point = evaluable.Argument('_locate_point', shape=(self.ndims,))
+        _point = evaluable.Argument('_locate_point', shape=(evaluable.constant(self.ndims),))
         egeom = geom.lower(function.LowerArgs.for_space(self.space, (self.transforms, self.opposites), _ielem, _point))
         xJ = evaluable.Tuple((egeom, evaluable.derivative(egeom, _point))).simplified
         if skip_missing:

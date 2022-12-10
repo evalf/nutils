@@ -740,7 +740,7 @@ class thetamethod(cache.Recursion, length=1, version=1):
         else:
             raise Exception('target0 is not supported in combination with multiple targets; use historysuffix instead')
         self.old_new.append((timetarget+historysuffix, timetarget))
-        subs0 = {new: evaluable.Argument(old, self.lhs0[new].shape) for old, new in self.old_new}
+        subs0 = {new: evaluable.Argument(old, tuple(map(evaluable.constant, self.lhs0[new].shape))) for old, new in self.old_new}
         dt = evaluable.Argument(timetarget, ()) - subs0[timetarget]
         self.residuals = tuple(res * theta + evaluable.replace_arguments(res, subs0) * (1-theta) + ((inert - evaluable.replace_arguments(inert, subs0)) / dt if inert else 0) for res, inert in zip(residual, inertia))
         self.jacobians = _derivative(self.residuals, target)

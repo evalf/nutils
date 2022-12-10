@@ -20,7 +20,7 @@ class check(TestCase):
         super().setUp()
         numpy.random.seed(0)
         self.arg_names = tuple(map('arg{}'.format, range(len(self.arg_values))))
-        self.args = tuple(evaluable.Argument(name, value.shape, value.dtype) for name, value in zip(self.arg_names, self.arg_values))
+        self.args = tuple(evaluable.Argument(name, tuple(evaluable.constant(n) for n in value.shape), evaluable.asdtype(value.dtype)) for name, value in zip(self.arg_names, self.arg_values))
         self.actual = self.op(*self.args)
         self.desired = self.n_op(*self.arg_values)
         assert numpy.isfinite(self.desired).all(), 'something is wrong with the design of this unit test'
@@ -73,13 +73,13 @@ class check(TestCase):
             self.assertArrayAlmostEqual(dense, desired, decimal)
 
     def test_str(self):
-        a = evaluable.Array((), shape=(2, 3), dtype=float)
+        a = evaluable.Array((), shape=(evaluable.constant(2), evaluable.constant(3)), dtype=float)
         self.assertEqual(str(a), 'nutils.evaluable.Array<f:2,3>')
 
     def test_evalconst(self):
         self.assertFunctionAlmostEqual(decimal=14,
                                        desired=self.n_op(*self.arg_values),
-                                       actual=self.op(*self.arg_values))
+                                       actual=self.op(*map(evaluable.constant, self.arg_values)))
 
     def test_evalzero(self):
         for iarg, arg_value in enumerate(self.arg_values):
@@ -87,7 +87,7 @@ class check(TestCase):
                 args = (*self.arg_values[:iarg], numpy.zeros_like(arg_value), *self.arg_values[iarg+1:])
                 self.assertFunctionAlmostEqual(decimal=14,
                                                desired=self.n_op(*args),
-                                               actual=self.op(*args))
+                                               actual=self.op(*[evaluable.zeros_like(arg) if i == iarg else arg for i, arg in enumerate(map(evaluable.constant, args))]))
 
     def test_eval(self):
         self.assertFunctionAlmostEqual(decimal=14,
@@ -122,7 +122,7 @@ class check(TestCase):
             with self.subTest(axis=axis):
                 self.assertFunctionAlmostEqual(decimal=14,
                                                desired=numpy.repeat(numpy.expand_dims(self.desired, axis), 2, axis),
-                                               actual=evaluable.insertaxis(self.actual, axis, 2))
+                                               actual=evaluable.insertaxis(self.actual, axis, evaluable.constant(2)))
 
     def test_takediag(self):
         for ax1, ax2 in self.pairs:
@@ -158,7 +158,7 @@ class check(TestCase):
             if sh >= 2:
                 self.assertFunctionAlmostEqual(decimal=14,
                                                desired=numpy.take(self.desired, indices, axis=iax),
-                                               actual=evaluable.take(self.actual, indices, axis=iax))
+                                               actual=evaluable.take(self.actual, evaluable.constant(indices), axis=iax))
 
     def test_take_block(self):
         for iax, sh in enumerate(self.desired.shape):
@@ -166,7 +166,7 @@ class check(TestCase):
                 indices = [[0, sh-1], [sh-1, 0]]
                 self.assertFunctionAlmostEqual(decimal=14,
                                                desired=numpy.take(self.desired, indices, axis=iax),
-                                               actual=evaluable._take(self.actual, indices, axis=iax))
+                                               actual=evaluable._take(self.actual, evaluable.constant(indices), axis=iax))
 
     def test_take_nomask(self):
         for iax, sh in enumerate(self.desired.shape):
@@ -182,7 +182,7 @@ class check(TestCase):
             if sh >= 2:
                 self.assertFunctionAlmostEqual(decimal=14,
                                                desired=numpy.take(self.desired, indices, axis=iax),
-                                               actual=evaluable.take(self.actual, indices, axis=iax))
+                                               actual=evaluable.take(self.actual, evaluable.constant(indices), axis=iax))
 
     def test_take_duplicate_indices(self):
         for iax, sh in enumerate(self.desired.shape):
@@ -194,12 +194,12 @@ class check(TestCase):
 
     def test_inflate(self):
         for iax, sh in enumerate(self.desired.shape):
-            dofmap = evaluable.Constant(numpy.arange(int(sh)) * 2)
+            dofmap = evaluable.constant(numpy.arange(int(sh)) * 2)
             desired = numpy.zeros(self.desired.shape[:iax] + (int(sh)*2-1,) + self.desired.shape[iax+1:], dtype=self.desired.dtype)
             desired[(slice(None),)*iax+(slice(None, None, 2),)] = self.desired
             self.assertFunctionAlmostEqual(decimal=14,
                                            desired=desired,
-                                           actual=evaluable._inflate(self.actual, dofmap=dofmap, length=sh*2-1, axis=iax))
+                                           actual=evaluable._inflate(self.actual, dofmap=dofmap, length=evaluable.constant(sh*2-1), axis=iax))
 
     def test_inflate_duplicate_indices(self):
         for iax, sh in enumerate(self.desired.shape):
@@ -208,7 +208,7 @@ class check(TestCase):
             numpy.add.at(desired, (slice(None),)*iax+(dofmap,), self.desired)
             self.assertFunctionAlmostEqual(decimal=14,
                                            desired=desired,
-                                           actual=evaluable._inflate(self.actual, dofmap=dofmap, length=2, axis=iax))
+                                           actual=evaluable._inflate(self.actual, dofmap=evaluable.constant(dofmap), length=evaluable.constant(2), axis=iax))
 
     def test_diagonalize(self):
         for axis in range(self.actual.ndim):
@@ -319,7 +319,7 @@ class check(TestCase):
             unravelshape = (length//3, 3) if (length % 3 == 0) else (length//2, 2) if (length % 2 == 0) else (length, 1)
             self.assertFunctionAlmostEqual(decimal=14,
                                            desired=self.desired.reshape(self.desired.shape[:idim]+unravelshape+self.desired.shape[idim+1:]),
-                                           actual=evaluable.unravel(self.actual, axis=idim, shape=unravelshape))
+                                           actual=evaluable.unravel(self.actual, axis=idim, shape=tuple(map(evaluable.constant, unravelshape))))
 
     def test_loopsum(self):
         if self.desired.dtype == bool:
@@ -444,9 +444,9 @@ _check('imag-complex', lambda f: evaluable.imag(f), lambda a: a.imag, ANC(2, 4, 
 _check('conjugate', lambda f: evaluable.conjugate(f), lambda a: a.conjugate(), ANY(2, 4, 2))
 _check('conjugate-complex', lambda f: evaluable.conjugate(f), lambda a: a.conjugate(), ANC(2, 4, 2), hasgrad=False)
 _check('const', lambda f: evaluable.asarray(numpy.arange(16, dtype=float).reshape(2, 4, 2)), lambda a: numpy.arange(16, dtype=float).reshape(2, 4, 2), ANY(2, 4, 2))
-_check('zeros', lambda f: evaluable.zeros([1, 4, 3, 4]), lambda a: numpy.zeros([1, 4, 3, 4]), ANY(4, 3, 4))
-_check('ones', lambda f: evaluable.ones([1, 4, 3, 4]), lambda a: numpy.ones([1, 4, 3, 4]), ANY(4, 3, 4))
-_check('range', lambda f: evaluable.Range(4) + 2, lambda a: numpy.arange(2, 6), ANY(4))
+_check('zeros', lambda f: evaluable.zeros(tuple(map(evaluable.constant, [1, 4, 3, 4]))), lambda a: numpy.zeros([1, 4, 3, 4]), ANY(4, 3, 4))
+_check('ones', lambda f: evaluable.ones(tuple(map(evaluable.constant, [1, 4, 3, 4]))), lambda a: numpy.ones([1, 4, 3, 4]), ANY(4, 3, 4))
+_check('range', lambda f: evaluable.Range(evaluable.constant(4)) + 2, lambda a: numpy.arange(2, 6), ANY(4))
 _check('sin', evaluable.sin, numpy.sin, ANY(4, 4))
 _check('sin-complex', evaluable.sin, numpy.sin, ANC(4, 4))
 _check('cos', evaluable.cos, numpy.cos, ANY(4, 4))
@@ -495,8 +495,8 @@ _check('sum', lambda a: evaluable.sum(a, 2), lambda a: a.sum(2), ANY(4, 3, 4))
 _check('sum-complex', lambda a: evaluable.sum(a, 2), lambda a: a.sum(2), ANC(4, 3, 4))
 _check('transpose1', lambda a: evaluable.transpose(a, [0, 1, 3, 2]), lambda a: a.transpose([0, 1, 3, 2]), ANY(2, 3, 4, 5))
 _check('transpose2', lambda a: evaluable.transpose(a, [0, 2, 3, 1]), lambda a: a.transpose([0, 2, 3, 1]), ANY(2, 3, 4, 5))
-_check('insertaxis', lambda a: evaluable.insertaxis(a, 1, 3), lambda a: numpy.repeat(a[:, None], 3, 1), ANY(2, 4))
-_check('get', lambda a: evaluable.get(a, 2, 1), lambda a: a[:, :, 1], ANY(4, 3, 4))
+_check('insertaxis', lambda a: evaluable.insertaxis(a, 1, evaluable.constant(3)), lambda a: numpy.repeat(a[:, None], 3, 1), ANY(2, 4))
+_check('get', lambda a: evaluable.get(a, 2, evaluable.constant(1)), lambda a: a[:, :, 1], ANY(4, 3, 4))
 _check('takediag141', lambda a: evaluable.takediag(a, 0, 2), lambda a: numeric.takediag(a, 0, 2), ANY(1, 4, 1))
 _check('takediag434', lambda a: evaluable.takediag(a, 0, 2), lambda a: numeric.takediag(a, 0, 2), ANY(4, 3, 4))
 _check('takediag343', lambda a: evaluable.takediag(a, 0, 2), lambda a: numeric.takediag(a, 0, 2), ANY(3, 4, 3))
@@ -514,7 +514,7 @@ _check('inverse434', lambda a: evaluable.inverse(a, (0, 2)), lambda a: numpy.lin
 _check('inverse434-complex', lambda a: evaluable.inverse(a, (0, 2)), lambda a: numpy.linalg.inv(a.swapaxes(0, 1)).swapaxes(0, 1), ANC(4, 3, 4)+numpy.eye(4, 4)[:, numpy.newaxis, :])
 _check('inverse4422', lambda a: evaluable.inverse(a), lambda a: numpy.linalg.inv(a), POS(4, 4, 2, 2)+numpy.eye(2))
 _check('inverse4422-complex', lambda a: evaluable.inverse(a), lambda a: numpy.linalg.inv(a), ANC(4, 4, 2, 2)+numpy.eye(2))
-_check('repeat', lambda a: evaluable.repeat(a, 3, 1), lambda a: numpy.repeat(a, 3, 1), ANY(4, 1, 4))
+_check('repeat', lambda a: evaluable.repeat(a, evaluable.constant(3), 1), lambda a: numpy.repeat(a, 3, 1), ANY(4, 1, 4))
 _check('diagonalize', lambda a: evaluable.diagonalize(a, 1, 3), lambda a: numeric.diagonalize(a, 1, 3), ANY(4, 4, 4, 4))
 _check('multiply', evaluable.multiply, numpy.multiply, ANY(4, 4), ANY(4, 4))
 _check('multiply-complex', evaluable.multiply, numpy.multiply, ANC(4, 4), 1-1j+ANC(4, 4))
@@ -539,19 +539,19 @@ _check('eig-complex', lambda a: evaluable.eig(a+a.swapaxes(0, 1))[1], lambda a: 
 _check('mod', lambda a, b: evaluable.mod(a, b), lambda a, b: numpy.mod(a, b), ANY(4), NZ(4), hasgrad=False)
 _check('mask', lambda f: evaluable.mask(f, numpy.array([True, False, True, False, True, False, True]), axis=1), lambda a: a[:, ::2], ANY(4, 7, 4))
 _check('ravel', lambda f: evaluable.ravel(f, axis=1), lambda a: a.reshape(4, 4, 4, 4), ANY(4, 2, 2, 4, 4))
-_check('unravel', lambda f: evaluable.unravel(f, axis=1, shape=[2, 2]), lambda a: a.reshape(4, 2, 2, 4, 4), ANY(4, 4, 4, 4))
-_check('ravelindex', lambda a, b: evaluable.RavelIndex(a, b, 12, 20), lambda a, b: a[..., numpy.newaxis, numpy.newaxis] * 20 + b, INT(3, 4), INT(4, 5))
-_check('inflate', lambda f: evaluable._inflate(f, dofmap=evaluable.Guard([0, 3]), length=4, axis=1), lambda a: numpy.concatenate([a[:, :1], numpy.zeros_like(a), a[:, 1:]], axis=1), ANY(4, 2, 4))
-_check('inflate-constant', lambda f: evaluable._inflate(f, dofmap=[0, 3], length=4, axis=1), lambda a: numpy.concatenate([a[:, :1], numpy.zeros_like(a), a[:, 1:]], axis=1), ANY(4, 2, 4))
-_check('inflate-duplicate', lambda f: evaluable.Inflate(f, dofmap=[0, 1, 0, 3], length=4), lambda a: numpy.stack([a[:, 0]+a[:, 2], a[:, 1], numpy.zeros_like(a[:, 0]), a[:, 3]], axis=1), ANY(2, 4))
-_check('inflate-block', lambda f: evaluable.Inflate(f, dofmap=[[5, 4, 3], [2, 1, 0]], length=6), lambda a: a.ravel()[::-1], ANY(2, 3))
-_check('inflate-scalar', lambda f: evaluable.Inflate(f, dofmap=1, length=3), lambda a: numpy.array([0, a, 0]), numpy.array(.5))
-_check('inflate-diagonal', lambda f: evaluable.Inflate(evaluable.Inflate(f, 1, 3), 1, 3), lambda a: numpy.diag(numpy.array([0, a, 0])), numpy.array(.5))
-_check('inflate-one', lambda f: evaluable.Inflate(f, 0, 1), lambda a: numpy.array([a]), numpy.array(.5))
-_check('inflate-range', lambda f: evaluable.Inflate(f, evaluable.Range(3), 3), lambda a: a, ANY(3))
-_check('take', lambda f: evaluable.Take(f, [0, 3, 2]), lambda a: a[:, [0, 3, 2]], ANY(2, 4))
-_check('take-duplicate', lambda f: evaluable.Take(f, [0, 3, 0]), lambda a: a[:, [0, 3, 0]], ANY(2, 4))
-_check('choose', lambda a, b, c: evaluable.Choose(a % 2, [b, c]), lambda a, b, c: numpy.choose(a % 2, [b, c]), INT(3, 3), ANY(3, 3), ANY(3, 3))
+_check('unravel', lambda f: evaluable.unravel(f, axis=1, shape=[evaluable.constant(2), evaluable.constant(2)]), lambda a: a.reshape(4, 2, 2, 4, 4), ANY(4, 4, 4, 4))
+_check('ravelindex', lambda a, b: evaluable.RavelIndex(a, b, evaluable.constant(12), evaluable.constant(20)), lambda a, b: a[..., numpy.newaxis, numpy.newaxis] * 20 + b, INT(3, 4), INT(4, 5))
+_check('inflate', lambda f: evaluable._inflate(f, dofmap=evaluable.Guard(evaluable.constant([0, 3])), length=evaluable.constant(4), axis=1), lambda a: numpy.concatenate([a[:, :1], numpy.zeros_like(a), a[:, 1:]], axis=1), ANY(4, 2, 4))
+_check('inflate-constant', lambda f: evaluable._inflate(f, dofmap=evaluable.constant([0, 3]), length=evaluable.constant(4), axis=1), lambda a: numpy.concatenate([a[:, :1], numpy.zeros_like(a), a[:, 1:]], axis=1), ANY(4, 2, 4))
+_check('inflate-duplicate', lambda f: evaluable.Inflate(f, dofmap=evaluable.constant([0, 1, 0, 3]), length=evaluable.constant(4)), lambda a: numpy.stack([a[:, 0]+a[:, 2], a[:, 1], numpy.zeros_like(a[:, 0]), a[:, 3]], axis=1), ANY(2, 4))
+_check('inflate-block', lambda f: evaluable.Inflate(f, dofmap=evaluable.constant([[5, 4, 3], [2, 1, 0]]), length=evaluable.constant(6)), lambda a: a.ravel()[::-1], ANY(2, 3))
+_check('inflate-scalar', lambda f: evaluable.Inflate(f, dofmap=evaluable.constant(1), length=evaluable.constant(3)), lambda a: numpy.array([0, a, 0]), numpy.array(.5))
+_check('inflate-diagonal', lambda f: evaluable.Inflate(evaluable.Inflate(f, evaluable.constant(1), evaluable.constant(3)), evaluable.constant(1), evaluable.constant(3)), lambda a: numpy.diag(numpy.array([0, a, 0])), numpy.array(.5))
+_check('inflate-one', lambda f: evaluable.Inflate(f, evaluable.constant(0), evaluable.constant(1)), lambda a: numpy.array([a]), numpy.array(.5))
+_check('inflate-range', lambda f: evaluable.Inflate(f, evaluable.Range(evaluable.constant(3)), evaluable.constant(3)), lambda a: a, ANY(3))
+_check('take', lambda f: evaluable.Take(f, evaluable.constant([0, 3, 2])), lambda a: a[:, [0, 3, 2]], ANY(2, 4))
+_check('take-duplicate', lambda f: evaluable.Take(f, evaluable.constant([0, 3, 0])), lambda a: a[:, [0, 3, 0]], ANY(2, 4))
+_check('choose', lambda a, b, c: evaluable.Choose(a % 2, (b, c)), lambda a, b, c: numpy.choose(a % 2, [b, c]), INT(3, 3), ANY(3, 3), ANY(3, 3))
 _check('slice', lambda a: evaluable.asarray(a)[::2], lambda a: a[::2], ANY(5, 3))
 _check('normal1d', lambda a: evaluable.Normal(a), lambda a: numpy.sign(a[..., 0]), NZ(3, 1, 1))
 _check('normal2d', lambda a: evaluable.Normal(a), lambda a: numpy.stack([Q[:, -1]*numpy.sign(R[-1, -1]) for ai in a for Q, R in [numpy.linalg.qr(ai, mode='complete')]], axis=0), POS(1, 2, 2)+numpy.eye(2))
@@ -559,10 +559,10 @@ _check('normal3d', lambda a: evaluable.Normal(a), lambda a: numpy.stack([Q[:, -1
 _check('loopsum1', lambda: evaluable.loop_sum(evaluable.loop_index('index', 3), evaluable.loop_index('index', 3)), lambda: numpy.array(3))
 _check('loopsum2', lambda a: evaluable.loop_sum(a, evaluable.loop_index('index', 2)), lambda a: 2*a, ANY(3, 4, 2, 4))
 _check('loopsum3', lambda a: evaluable.loop_sum(evaluable.get(a, 0, evaluable.loop_index('index', 3)), evaluable.loop_index('index', 3)), lambda a: numpy.sum(a, 0), ANY(3, 4, 2, 4))
-_check('loopsum4', lambda: evaluable.loop_sum(evaluable.Inflate(evaluable.loop_index('index', 3), 0, 2), evaluable.loop_index('index', 3)), lambda: numpy.array([3, 0]))
+_check('loopsum4', lambda: evaluable.loop_sum(evaluable.Inflate(evaluable.loop_index('index', 3), evaluable.constant(0), evaluable.constant(2)), evaluable.loop_index('index', 3)), lambda: numpy.array([3, 0]))
 _check('loopsum5', lambda: evaluable.loop_sum(evaluable.loop_index('index', 1), evaluable.loop_index('index', 1)), lambda: numpy.array(0))
 _check('loopconcatenate1', lambda a: evaluable.loop_concatenate(a+evaluable.prependaxes(evaluable.loop_index('index', 3), a.shape), evaluable.loop_index('index', 3)), lambda a: a+numpy.arange(3)[None], ANY(3, 1))
-_check('loopconcatenate2', lambda: evaluable.loop_concatenate(evaluable.Elemwise([numpy.arange(48).reshape(4, 4, 3)[:, :, a:b] for a, b in util.pairwise([0, 2, 3])], evaluable.loop_index('index', 2), int), evaluable.loop_index('index', 2)), lambda: numpy.arange(48).reshape(4, 4, 3))
+_check('loopconcatenate2', lambda: evaluable.loop_concatenate(evaluable.Elemwise(tuple(types.arraydata(numpy.arange(48).reshape(4, 4, 3)[:, :, a:b]) for a, b in util.pairwise([0, 2, 3])), evaluable.loop_index('index', 2), int), evaluable.loop_index('index', 2)), lambda: numpy.arange(48).reshape(4, 4, 3))
 _check('loopconcatenatecombined', lambda a: evaluable.loop_concatenate_combined([a+evaluable.prependaxes(evaluable.loop_index('index', 3), a.shape)], evaluable.loop_index('index', 3))[0], lambda a: a+numpy.arange(3)[None], ANY(3, 1), hasgrad=False)
 _check('legendre', lambda a: evaluable.Legendre(evaluable.asarray(a), 5), lambda a: numpy.moveaxis(numpy.polynomial.legendre.legval(a, numpy.eye(6)), 0, -1), ANY(3, 4, 3))
 
@@ -590,7 +590,7 @@ class intbounds(TestCase):
             shape = shape,
         else:
             size = util.product(shape)
-        return evaluable.Constant(numpy.arange(start, start+size).reshape(*shape))
+        return evaluable.constant(numpy.arange(start, start+size).reshape(*shape))
 
     class S(evaluable.Array):
         # An evaluable scalar argument with given bounds.
@@ -632,7 +632,7 @@ class intbounds(TestCase):
 
     def test_insertaxis(self):
         arg = self.R(-4, [2, 3, 4])
-        self.assertEqual(evaluable.InsertAxis(arg, 2)._intbounds, arg._intbounds)
+        self.assertEqual(evaluable.InsertAxis(arg, evaluable.constant(2))._intbounds, arg._intbounds)
 
     def test_transpose(self):
         arg = self.R(-4, [2, 3, 4])
@@ -642,10 +642,10 @@ class intbounds(TestCase):
         args = tuple(self.R(low, [high+1-low]) for low, high in ((-13, -5), (-2, 7), (3, 11)))
         for arg1 in args:
             for arg2 in args:
-                self.assertBounds(evaluable.Multiply((evaluable.insertaxis(arg1, 1, arg2.shape[0]), evaluable.insertaxis(arg2, 0, arg1.shape[0]))))
+                self.assertBounds(evaluable.multiply(evaluable.insertaxis(arg1, 1, arg2.shape[0]), evaluable.insertaxis(arg2, 0, arg1.shape[0])))
 
     def test_add(self):
-        self.assertBounds(evaluable.Add((evaluable.insertaxis(self.R(-5, [8]), 1, 5), evaluable.insertaxis(self.R(2, [5]), 0, 8))))
+        self.assertBounds(evaluable.add(evaluable.insertaxis(self.R(-5, [8]), 1, evaluable.constant(5)), evaluable.insertaxis(self.R(2, [5]), 0, evaluable.constant(8))))
 
     def test_sum_zero_axis(self):
         self.assertEqual(evaluable.Sum(self.R(0, [0]))._intbounds, (0, 0))
@@ -690,16 +690,16 @@ class intbounds(TestCase):
         self.assertBounds(evaluable.Absolute(self.R(-3, [7])))
 
     def test_mod_nowrap(self):
-        self.assertBounds(evaluable.Mod(evaluable.insertaxis(self.R(1, [4]), 1, 3), evaluable.insertaxis(self.R(5, [3]), 0, 4)))
+        self.assertBounds(evaluable.Mod(evaluable.insertaxis(self.R(1, [4]), 1, evaluable.constant(3)), evaluable.insertaxis(self.R(5, [3]), 0, evaluable.constant(4))))
 
     def test_mod_wrap_negative(self):
-        self.assertBounds(evaluable.Mod(evaluable.insertaxis(self.R(-3, [7]), 1, 3), evaluable.insertaxis(self.R(5, [3]), 0, 7)))
+        self.assertBounds(evaluable.Mod(evaluable.insertaxis(self.R(-3, [7]), 1, evaluable.constant(3)), evaluable.insertaxis(self.R(5, [3]), 0, evaluable.constant(7))))
 
     def test_mod_wrap_positive(self):
-        self.assertBounds(evaluable.Mod(evaluable.insertaxis(self.R(3, [7]), 1, 3), evaluable.insertaxis(self.R(5, [3]), 0, 7)))
+        self.assertBounds(evaluable.Mod(evaluable.insertaxis(self.R(3, [7]), 1, evaluable.constant(3)), evaluable.insertaxis(self.R(5, [3]), 0, evaluable.constant(7))))
 
     def test_mod_negative_divisor(self):
-        self.assertEqual(evaluable.Mod(evaluable.Argument('d', (2,), int), self.R(-3, [2]))._intbounds, (float('-inf'), float('inf')))
+        self.assertEqual(evaluable.Mod(evaluable.Argument('d', (evaluable.constant(2),), int), self.R(-3, [2]))._intbounds, (float('-inf'), float('inf')))
 
     def test_sign(self):
         for i in range(-2, 3):
@@ -707,32 +707,32 @@ class intbounds(TestCase):
                 self.assertBounds(evaluable.Sign(self.R(i, [j-i+1])))
 
     def test_zeros(self):
-        self.assertEqual(evaluable.Zeros((2, 3), int)._intbounds, (0, 0))
+        self.assertEqual(evaluable.Zeros((evaluable.constant(2), evaluable.constant(3)), int)._intbounds, (0, 0))
 
     def test_range(self):
         self.assertEqual(evaluable.Range(self.S('n', 0, 0))._intbounds, (0, 0))
         self.assertBounds(evaluable.Range(self.S('n', 1, 3)), n=3)
 
     def test_inrange_loose(self):
-        self.assertEqual(evaluable.InRange(self.S('n', 3, 5), evaluable.Constant(6))._intbounds, (3, 5))
+        self.assertEqual(evaluable.InRange(self.S('n', 3, 5), evaluable.constant(6))._intbounds, (3, 5))
 
     def test_inrange_strict(self):
         self.assertEqual(evaluable.InRange(self.S('n', float('-inf'), float('inf')), self.S('m', 2, 4))._intbounds, (0, 3))
 
     def test_inrange_empty(self):
-        self.assertEqual(evaluable.InRange(self.S('n', float('-inf'), float('inf')), evaluable.Constant(0))._intbounds, (0, 0))
+        self.assertEqual(evaluable.InRange(self.S('n', float('-inf'), float('inf')), evaluable.constant(0))._intbounds, (0, 0))
 
     def test_npoints(self):
         self.assertEqual(evaluable.NPoints()._intbounds, (0, float('inf')))
 
     def test_bool_to_int(self):
-        self.assertEqual(evaluable.BoolToInt(evaluable.Constant(numpy.array([False, True], dtype=bool)))._intbounds, (0, 1))
+        self.assertEqual(evaluable.BoolToInt(evaluable.constant(numpy.array([False, True], dtype=bool)))._intbounds, (0, 1))
 
     def test_array_from_tuple(self):
-        self.assertEqual(evaluable.ArrayFromTuple(evaluable.Tuple((evaluable.Argument('n', (3,), int),)), 0, (3,), int, _lower=-2, _upper=3)._intbounds, (-2, 3))
+        self.assertEqual(evaluable.ArrayFromTuple(evaluable.Tuple((evaluable.Argument('n', (evaluable.constant(3),), int),)), 0, (evaluable.constant(3),), int, _lower=-2, _upper=3)._intbounds, (-2, 3))
 
     def test_inflate(self):
-        self.assertEqual(evaluable.Inflate(self.R(4, (2, 3)), evaluable.Constant(numpy.arange(6).reshape(2, 3)), 7)._intbounds, (0, 9))
+        self.assertEqual(evaluable.Inflate(self.R(4, (2, 3)), evaluable.constant(numpy.arange(6).reshape(2, 3)), evaluable.constant(7))._intbounds, (0, 9))
 
     def test_normdim_positive(self):
         self.assertEqual(evaluable.NormDim(self.S('l', 2, 4), self.S('i', 1, 3))._intbounds, (1, 3))
@@ -799,18 +799,18 @@ class commutativity(TestCase):
         self.assertEqual(evaluable.dot(self.A, self.B, axes=[0]), evaluable.dot(self.B, self.A, axes=[0]))
 
     def test_combined(self):
-        self.assertEqual(evaluable.add(self.A, self.B) * evaluable.insertaxis(evaluable.dot(self.A, self.B, axes=[0]), 0, 2),
-                         evaluable.insertaxis(evaluable.dot(self.B, self.A, axes=[0]), 0, 2) * evaluable.add(self.B, self.A))
+        self.assertEqual(evaluable.add(self.A, self.B) * evaluable.insertaxis(evaluable.dot(self.A, self.B, axes=[0]), 0, evaluable.constant(2)),
+                         evaluable.insertaxis(evaluable.dot(self.B, self.A, axes=[0]), 0, evaluable.constant(2)) * evaluable.add(self.B, self.A))
 
 
 class sampled(TestCase):
 
     def test_match(self):
-        f = evaluable.Sampled(numpy.array([[1, 2], [3, 4]]), numpy.array([[1, 2], [3, 4]]))
+        f = evaluable.Sampled(evaluable.constant([[1, 2], [3, 4]]), evaluable.constant([[1, 2], [3, 4]]))
         self.assertAllEqual(f.eval(), numpy.eye(2))
 
     def test_no_match(self):
-        f = evaluable.Sampled(numpy.array([[1, 2], [3, 4]]), numpy.array([[3, 4], [1, 2]]))
+        f = evaluable.Sampled(evaluable.constant([[1, 2], [3, 4]]), evaluable.constant([[3, 4], [1, 2]]))
         with self.assertRaises(Exception):
             f.eval()
 
@@ -818,11 +818,11 @@ class sampled(TestCase):
 class elemwise(TestCase):
 
     def assertElemwise(self, items):
-        items = tuple(map(numpy.array, items))
+        items = tuple(map(types.arraydata, items))
         index = evaluable.Argument('index', (), int)
         elemwise = evaluable.Elemwise(items, index, int)
         for i, item in enumerate(items):
-            self.assertEqual(elemwise.eval(index=i).tolist(), item.tolist())
+            self.assertEqual(elemwise.eval(index=i).tolist(), numpy.asarray(item).tolist())
 
     def test_const_values(self):
         self.assertElemwise((numpy.arange(2*3*4).reshape(2, 3, 4),)*3)
@@ -840,12 +840,12 @@ class elemwise(TestCase):
 class derivative(TestCase):
 
     def test_int(self):
-        arg = evaluable.Argument('arg', (2,), int)
-        self.assertEqual(evaluable.derivative(evaluable.insertaxis(arg, 0, 1), arg), evaluable.Zeros((1, 2, 2), int))
+        arg = evaluable.Argument('arg', (evaluable.constant(2),), int)
+        self.assertEqual(evaluable.derivative(evaluable.insertaxis(arg, 0, evaluable.constant(1)), arg), evaluable.Zeros(tuple(map(evaluable.constant, (1, 2, 2))), int))
 
     def test_int_to_float(self):
         arg = evaluable.Argument('arg', (), float)
-        func = evaluable.IntToFloat(evaluable.BoolToInt(evaluable.Greater(arg, 0.)))
+        func = evaluable.IntToFloat(evaluable.BoolToInt(evaluable.Greater(arg, evaluable.zeros(()))))
         self.assertTrue(evaluable.iszero(evaluable.derivative(func, arg)))
 
 
@@ -853,7 +853,7 @@ class asciitree(TestCase):
 
     @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
     def test_asciitree(self):
-        f = evaluable.Sin((evaluable.Zeros((), int))**evaluable.Diagonalize(evaluable.Argument('arg', (2,))))
+        f = evaluable.Sin((evaluable.Zeros((), int))**evaluable.Diagonalize(evaluable.Argument('arg', (evaluable.constant(2),))))
         self.assertEqual(f.asciitree(richoutput=True),
                          '%0 = Sin; f:2,2\n'
                          '└ %1 = Power; f:2,2\n'
@@ -882,7 +882,7 @@ class asciitree(TestCase):
     @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
     def test_loop_concatenate(self):
         i = evaluable.loop_index('i', 2)
-        f = evaluable.loop_concatenate(evaluable.InsertAxis(i, 1), i)
+        f = evaluable.loop_concatenate(evaluable.InsertAxis(i, evaluable.constant(1)), i)
         self.assertEqual(f.asciitree(richoutput=True),
                          'SUBGRAPHS\n'
                          'A\n'
@@ -911,7 +911,7 @@ class asciitree(TestCase):
     @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
     def test_loop_concatenatecombined(self):
         i = evaluable.loop_index('i', 2)
-        f, = evaluable.loop_concatenate_combined([evaluable.InsertAxis(i, 1)], i)
+        f, = evaluable.loop_concatenate_combined([evaluable.InsertAxis(i, evaluable.constant(1))], i)
         self.assertEqual(f.asciitree(richoutput=True),
                          'SUBGRAPHS\n'
                          'A\n'
@@ -941,7 +941,7 @@ class asciitree(TestCase):
 class simplify(TestCase):
 
     def test_multiply_transpose(self):
-        dummy = evaluable.Argument('dummy', shape=[2, 2, 2], dtype=float)
+        dummy = evaluable.Argument('dummy', shape=tuple(map(evaluable.constant, [2, 2, 2])), dtype=float)
         f = evaluable.multiply(dummy,
                                evaluable.Transpose(evaluable.multiply(dummy,
                                                                       evaluable.Transpose(dummy, (2, 0, 1))), (2, 0, 1)))
@@ -953,12 +953,12 @@ class simplify(TestCase):
 
     def test_add_sparse(self):
         a = evaluable.Inflate(
-            func=evaluable.Argument('a', shape=[2, 3, 2], dtype=float),
-            dofmap=evaluable.Argument('dofmap', shape=[2], dtype=int),
-            length=3)
+            func=evaluable.Argument('a', shape=tuple(map(evaluable.constant, [2, 3, 2])), dtype=float),
+            dofmap=evaluable.Argument('dofmap', shape=(evaluable.constant(2),), dtype=int),
+            length=evaluable.constant(3))
         b = evaluable.Diagonalize(
-            func=evaluable.Argument('b', shape=[2, 3], dtype=float))
-        c = evaluable.Argument('c', shape=[2, 3, 3], dtype=float)
+            func=evaluable.Argument('b', shape=tuple(map(evaluable.constant, [2, 3])), dtype=float))
+        c = evaluable.Argument('c', shape=tuple(map(evaluable.constant, [2, 3, 3])), dtype=float)
         # Since a and b are both sparse, we expect (a+b)*c to be simplified to a*c+b*c.
         self.assertIsInstance(((a + b) * c).simplified, evaluable.Add)
         # If the sparsity of the terms is equal then sparsity propagates through the addition.
@@ -979,14 +979,14 @@ class memory(TestCase):
     def test_general(self):
         # NOTE: The list of numbers must be unique in the entire test suite. If
         # not, a test leaking this specific array will cause this test to fail.
-        A = evaluable.Constant([1, 2, 3, 98, 513])
+        A = evaluable.constant([1, 2, 3, 98, 513])
         A = weakref.ref(A)
         self.assertCollected(A)
 
     def test_simplified(self):
         # NOTE: The list of numbers must be unique in the entire test suite. If
         # not, a test leaking this specific array will cause this test to fail.
-        A = evaluable.Constant([1, 2, 3, 99, 514])
+        A = evaluable.constant([1, 2, 3, 99, 514])
         A.simplified  # constant simplified to itself, which should be handled as a special case to avoid circular references
         A = weakref.ref(A)
         self.assertCollected(A)
@@ -997,11 +997,11 @@ class memory(TestCase):
 
         class A(evaluable.Array):
             def __init__(self):
-                super().__init__(args=[], shape=(), dtype=float)
+                super().__init__(args=(), shape=(), dtype=float)
 
             def _simplified(self):
                 raise MyException
-        t = evaluable.Tuple([A()])
+        t = evaluable.Tuple((A(),))
         with self.assertRaises(MyException):
             t.simplified
         with self.assertRaises(MyException):  # make sure no placeholders remain in the replacement cache
@@ -1012,47 +1012,47 @@ class combine_loop_concatenates(TestCase):
 
     def test_same_index(self):
         i = evaluable.loop_index('i', 3)
-        A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 3,), i._name, i.length)
-        B = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 2), i*2, i*2+2, 6,), i._name, i.length)
+        A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, evaluable.constant(1)), i, i+1, evaluable.constant(3)), i._name, i.length)
+        B = evaluable.LoopConcatenate((evaluable.InsertAxis(i, evaluable.constant(2)), i*2, i*2+2, evaluable.constant(6)), i._name, i.length)
         actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-        L = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3), (evaluable.InsertAxis(i, 2), i*2, i*2+2, 6)), i._name, i.length)
-        desired = evaluable.Tuple((evaluable.ArrayFromTuple(L, 0, (3,), int, **dict(zip(('_lower', '_upper'), A._intbounds))), evaluable.ArrayFromTuple(L, 1, (6,), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
+        L = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, evaluable.constant(1)), i, i+1, evaluable.constant(3)), (evaluable.InsertAxis(i, evaluable.constant(2)), i*2, i*2+2, evaluable.constant(6))), i._name, i.length)
+        desired = evaluable.Tuple((evaluable.ArrayFromTuple(L, 0, (evaluable.constant(3),), int, **dict(zip(('_lower', '_upper'), A._intbounds))), evaluable.ArrayFromTuple(L, 1, (evaluable.constant(6),), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
         self.assertEqual(actual, desired)
 
     def test_different_index(self):
         i = evaluable.loop_index('i', 3)
         j = evaluable.loop_index('j', 3)
-        A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 3,), i._name, i.length)
-        B = evaluable.LoopConcatenate((evaluable.InsertAxis(j, 1), j, j+1, 3,), j._name, j.length)
+        A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, evaluable.constant(1)), i, i+1, evaluable.constant(3)), i._name, i.length)
+        B = evaluable.LoopConcatenate((evaluable.InsertAxis(j, evaluable.constant(1)), j, j+1, evaluable.constant(3)), j._name, j.length)
         actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-        L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i._name, i.length)
-        L2 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(j, 1), j, j+1, 3),), j._name, j.length)
-        desired = evaluable.Tuple((evaluable.ArrayFromTuple(L1, 0, (3,), int, **dict(zip(('_lower', '_upper'), A._intbounds))), evaluable.ArrayFromTuple(L2, 0, (3,), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
+        L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, evaluable.constant(1)), i, i+evaluable.constant(1), evaluable.constant(3)),), i._name, i.length)
+        L2 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(j, evaluable.constant(1)), j, j+evaluable.constant(1), evaluable.constant(3)),), j._name, j.length)
+        desired = evaluable.Tuple((evaluable.ArrayFromTuple(L1, 0, (evaluable.constant(3),), int, **dict(zip(('_lower', '_upper'), A._intbounds))), evaluable.ArrayFromTuple(L2, 0, (evaluable.constant(3),), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
         self.assertEqual(actual, desired)
 
     def test_nested_invariant(self):
         i = evaluable.loop_index('i', 3)
-        A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, 1), i, i+1, 3,), i._name, i.length)
-        B = evaluable.LoopConcatenate((A, i*3, i*3+3, 9,), i._name, i.length)
+        A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, evaluable.constant(1)), i, i+1, evaluable.constant(3)), i._name, i.length)
+        B = evaluable.LoopConcatenate((A, i*3, i*3+3, evaluable.constant(9)), i._name, i.length)
         actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-        L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, 1), i, i+1, 3),), i._name, i.length)
-        A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int, **dict(zip(('_lower', '_upper'), A._intbounds)))
-        L2 = evaluable.LoopConcatenateCombined(((A_, i*3, i*3+3, 9),), i._name, i.length)
+        L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, evaluable.constant(1)), i, i+1, evaluable.constant(3)),), i._name, i.length)
+        A_ = evaluable.ArrayFromTuple(L1, 0, (evaluable.constant(3),), int, **dict(zip(('_lower', '_upper'), A._intbounds)))
+        L2 = evaluable.LoopConcatenateCombined(((A_, i*3, i*3+3, evaluable.constant(9)),), i._name, i.length)
         self.assertIn(A_, L2._Evaluable__args)
-        desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
+        desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (evaluable.constant(9),), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
         self.assertEqual(actual, desired)
 
     def test_nested_variant(self):
         i = evaluable.loop_index('i', 3)
         j = evaluable.loop_index('j', 3)
-        A = evaluable.LoopConcatenate((evaluable.InsertAxis(i+j, 1), i, i+1, 3,), i._name, i.length)
-        B = evaluable.LoopConcatenate((A, j*3, j*3+3, 9,), j._name, j.length)
+        A = evaluable.LoopConcatenate((evaluable.InsertAxis(i+j, evaluable.constant(1)), i, i+1, evaluable.constant(3)), i._name, i.length)
+        B = evaluable.LoopConcatenate((A, j*3, j*3+3, evaluable.constant(9)), j._name, j.length)
         actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-        L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i+j, 1), i, i+1, 3),), i._name, i.length)
-        A_ = evaluable.ArrayFromTuple(L1, 0, (3,), int, **dict(zip(('_lower', '_upper'), A._intbounds)))
-        L2 = evaluable.LoopConcatenateCombined(((A_, j*3, j*3+3, 9),), j._name, j.length)
+        L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i+j, evaluable.constant(1)), i, i+1, evaluable.constant(3)),), i._name, i.length)
+        A_ = evaluable.ArrayFromTuple(L1, 0, (evaluable.constant(3),), int, **dict(zip(('_lower', '_upper'), A._intbounds)))
+        L2 = evaluable.LoopConcatenateCombined(((A_, j*3, j*3+3, evaluable.constant(9)),), j._name, j.length)
         self.assertNotIn(A_, L2._Evaluable__args)
-        desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (9,), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
+        desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (evaluable.constant(9),), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
         self.assertEqual(actual, desired)
 
 
@@ -1081,67 +1081,67 @@ class Einsum(TestCase):
 
     def test_swapaxes(self):
         arg = numpy.arange(6).reshape(2, 3)
-        ret = evaluable.einsum('ij->ji', evaluable.asarray(arg))
+        ret = evaluable.einsum('ij->ji', evaluable.constant(arg))
         self.assertAllEqual(ret.eval(), arg.T)
 
     def test_rollaxes(self):
         arg = numpy.arange(6).reshape(1, 2, 3)
-        ret = evaluable.einsum('Ai->iA', evaluable.asarray(arg))
+        ret = evaluable.einsum('Ai->iA', evaluable.constant(arg))
         self.assertAllEqual(ret.eval(), arg.transpose([2, 0, 1]))
 
     def test_swapgroups(self):
         arg = numpy.arange(24).reshape(1, 2, 3, 4)
-        ret = evaluable.einsum('AB->BA', evaluable.asarray(arg), B=2)
+        ret = evaluable.einsum('AB->BA', evaluable.constant(arg), B=2)
         self.assertAllEqual(ret.eval(), arg.transpose([2, 3, 0, 1]))
 
     def test_matvec(self):
         arg1 = numpy.arange(6).reshape(2, 3)
         arg2 = numpy.arange(6).reshape(3, 2)
-        ret = evaluable.einsum('ij,jk->ik', evaluable.asarray(arg1), evaluable.asarray(arg2))
+        ret = evaluable.einsum('ij,jk->ik', evaluable.constant(arg1), evaluable.constant(arg2))
         self.assertAllEqual(ret.eval(), arg1 @ arg2)
 
     def test_multidot(self):
         arg1 = numpy.arange(6).reshape(2, 3)
         arg2 = numpy.arange(9).reshape(3, 3)
         arg3 = numpy.arange(6).reshape(3, 2)
-        ret = evaluable.einsum('ij,jk,kl->il', evaluable.asarray(arg1), evaluable.asarray(arg2), evaluable.asarray(arg3))
+        ret = evaluable.einsum('ij,jk,kl->il', evaluable.constant(arg1), evaluable.constant(arg2), evaluable.constant(arg3))
         self.assertAllEqual(ret.eval(), arg1 @ arg2 @ arg3)
 
     def test_wrong_args(self):
         arg = numpy.arange(6).reshape(2, 3)
         with self.assertRaisesRegex(ValueError, 'number of arguments does not match format string'):
-            evaluable.einsum('ij,jk->ik', arg)
+            evaluable.einsum('ij,jk->ik', evaluable.constant(arg))
 
     def test_wrong_ellipse(self):
         arg = numpy.arange(6)
         with self.assertRaisesRegex(ValueError, 'argument dimensions are inconsistent with format string'):
-            evaluable.einsum('iAj->jAi', arg)
+            evaluable.einsum('iAj->jAi', evaluable.constant(arg))
 
     def test_wrong_dimension(self):
         arg = numpy.arange(9).reshape(3, 3)
         with self.assertRaisesRegex(ValueError, 'argument dimensions are inconsistent with format string'):
-            evaluable.einsum('ijk->kji', arg)
+            evaluable.einsum('ijk->kji', evaluable.constant(arg))
 
     def test_wrong_multi_ellipse(self):
         arg = numpy.arange(6)
         with self.assertRaisesRegex(ValueError, 'cannot establish length of variable groups A, B'):
-            evaluable.einsum('AB->BA', arg)
+            evaluable.einsum('AB->BA', evaluable.constant(arg))
 
     def test_wrong_indices(self):
         arg = numpy.arange(9).reshape(3, 3)
         with self.assertRaisesRegex(ValueError, 'internal repetitions are not supported'):
-            evaluable.einsum('kk->', arg)
+            evaluable.einsum('kk->', evaluable.constant(arg))
 
     def test_wrong_shapes(self):
         arg1 = numpy.arange(6).reshape(2, 3)
         arg2 = numpy.arange(6).reshape(3, 2)
         with self.assertRaisesRegex(ValueError, 'shapes do not match for axis i0'):
-            ret = evaluable.einsum('ij,ik->jk', evaluable.asarray(arg1), evaluable.asarray(arg2))
+            ret = evaluable.einsum('ij,ik->jk', evaluable.constant(arg1), evaluable.constant(arg2))
 
     def test_wrong_group_dimension(self):
         arg = numpy.arange(6)
         with self.assertRaisesRegex(ValueError, 'axis group dimensions cannot be negative'):
-            evaluable.einsum('Aij->ijA', arg, A=-1)
+            evaluable.einsum('Aij->ijA', evaluable.constant(arg), A=-1)
 
 
 @parametrize
@@ -1188,34 +1188,34 @@ class unalign(TestCase):
         self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
 
     def test_single_ins(self):
-        ox = evaluable.InsertAxis(evaluable.asarray(numpy.arange(2)), 3)
+        ox = evaluable.InsertAxis(evaluable.asarray(numpy.arange(2)), evaluable.constant(3))
         ux, where = evaluable.unalign(ox)
         self.assertEqual(where, (0,))
         self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
 
     def test_single_ins_trans(self):
-        ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(3)), 2), (1, 0))
+        ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(3)), evaluable.constant(2)), (1, 0))
         ux, where = evaluable.unalign(ox)
         self.assertEqual(where, (1,))
         self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
 
     def test_single_naxes_reins(self):
         # tests reinsertion of an uninserted axis >= naxes
-        ox = evaluable.InsertAxis(evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(3)), 2), (1, 0)), 4)
+        ox = evaluable.InsertAxis(evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(3)), evaluable.constant(2)), (1, 0)), evaluable.constant(4))
         ux, where = evaluable.unalign(ox, naxes=2)
         self.assertEqual(where, (1,))
         self.assertEqual(evaluable.align(ux, where+(2,), ox.shape).eval().tolist(), ox.eval().tolist())
 
     def test_single_naxes_trans(self):
         # tests the transpose of an axis >= naxes
-        ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(12).reshape(4, 3)), 2), (2, 1, 0))
+        ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(12).reshape(4, 3)), evaluable.constant(2)), (2, 1, 0))
         ux, where = evaluable.unalign(ox, naxes=1)
         self.assertEqual(where, ())
         self.assertEqual(evaluable.align(ux, where+(1, 2), ox.shape).eval().tolist(), ox.eval().tolist())
 
     def test_single_naxes_reins_trans(self):
         # tests the transpose of an uninserted axis >= naxes
-        ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.InsertAxis(evaluable.asarray(numpy.arange(4)), 2), 3), (1, 2, 0))
+        ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.InsertAxis(evaluable.asarray(numpy.arange(4)), evaluable.constant(2)), evaluable.constant(3)), (1, 2, 0))
         ux, where = evaluable.unalign(ox, naxes=1)
         self.assertEqual(where, ())
         self.assertEqual(evaluable.align(ux, where+(1, 2), ox.shape).eval().tolist(), ox.eval().tolist())
@@ -1229,16 +1229,16 @@ class unalign(TestCase):
         self.assertEqual(evaluable.align(uy, where, oy.shape).eval().tolist(), oy.eval().tolist())
 
     def test_double_disjointins(self):
-        ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(3)), 2), (1, 0))
-        oy = evaluable.InsertAxis(evaluable.asarray(numpy.arange(2, 4)), 3)
+        ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(3)), evaluable.constant(2)), (1, 0))
+        oy = evaluable.InsertAxis(evaluable.asarray(numpy.arange(2, 4)), evaluable.constant(3))
         ux, uy, where = evaluable.unalign(ox, oy)
         self.assertEqual(where, (0, 1)) # not transposed, despite the transpose of the first argument
         self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
         self.assertEqual(evaluable.align(uy, where, oy.shape).eval().tolist(), oy.eval().tolist())
 
     def test_double_commonins(self):
-        ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(3)), 2), (1, 0))
-        oy = evaluable.zeros((2, 3), dtype=int)
+        ox = evaluable.Transpose(evaluable.InsertAxis(evaluable.asarray(numpy.arange(3)), evaluable.constant(2)), (1, 0))
+        oy = evaluable.zeros((evaluable.constant(2), evaluable.constant(3)), dtype=int)
         ux, uy, where = evaluable.unalign(ox, oy)
         self.assertEqual(where, (1,))
         self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
@@ -1246,11 +1246,11 @@ class unalign(TestCase):
 
     def test_too_few_axes(self):
         with self.assertRaises(ValueError):
-            evaluable.unalign(evaluable.zeros((2, 3)), naxes=3)
+            evaluable.unalign(evaluable.zeros((evaluable.constant(2), evaluable.constant(3))), naxes=3)
 
     def test_unequal_naxes(self):
         with self.assertRaises(ValueError):
-            evaluable.unalign(evaluable.zeros((2, 3)), evaluable.zeros((2, 3, 4)))
+            evaluable.unalign(evaluable.zeros(tuple(map(evaluable.constant, (2, 3)))), evaluable.zeros(tuple(map(evaluable.constant, (2, 3, 4)))))
 
 
 class log_error(TestCase):
