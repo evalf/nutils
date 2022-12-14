@@ -422,12 +422,9 @@ class Evaluable(types.Singleton):
             log.info('total time: {:.0f}ms\n'.format(tottime/1e6) + '\n'.join('{:4.0f} {} ({} calls, avg {:.3f} per call)'.format(t / 1e6, k, n, t / (1e6*n))
                                                                               for k, t, n in sorted(aggstats, reverse=True, key=lambda item: item[1]) if n))
 
-    def _stack(self, values):
-        lines = ['  %0 = EVALARGS']
-        for (op, indices), v in zip(self.serialized, values):
-            lines[-1] += ' --> ' + type(v).__name__
-            if numeric.isarray(v):
-                lines[-1] += '({})'.format(','.join(map(str, v.shape)))
+    def _iter_stack(self):
+        yield '%0 = EVALARGS'
+        for i, (op, indices) in enumerate(self.serialized, start=1):
             try:
                 code = op.evalf.__code__
                 offset = 1 if getattr(op.evalf, '__self__', None) is not None else 0
@@ -436,8 +433,18 @@ class Evaluable(types.Singleton):
                 args = map(' {}=%{}'.format, names, indices)
             except:
                 args = map(' %{}'.format, indices)
-            lines.append('  %{} = {}:{}'.format(len(lines), op, ','.join(args)))
-        return lines
+            yield f'%{i} = {op}:{",".join(args)}'
+
+    def _format_stack(self, values, e):
+        lines = [f'evaluation failed in step {len(values)}/{len(self.dependencies)+1}']
+        stack = self._iter_stack()
+        for v, op in zip(values, stack): # NOTE values must come first to avoid popping next item from stack
+            s = f'{type(v).__name__}'
+            if numeric.isarray(v):
+                s += f'<{v.dtype.kind}:{",".join(str(n) for n in v.shape)}>'
+            lines.append(f'{op} --> {s}')
+        lines.append(f'{next(stack)} --> {e}')
+        return '\n  '.join(lines)
 
     @property
     @replace(depthfirst=True, recursive=True)
@@ -518,7 +525,7 @@ class Evaluable(types.Singleton):
 
 class EvaluationError(Exception):
     def __init__(self, f, values):
-        super().__init__('evaluation failed in step {}/{}\n'.format(len(values), len(f.dependencies)) + '\n'.join(f._stack(values)))
+        super().__init__(f._format_stack(values, 'ERROR'))
 
 
 class EVALARGS(Evaluable):
