@@ -446,7 +446,7 @@ class rectilinear(TestCase):
         func = self.geom[0]**2 - self.geom[1]**2
         values = self.gauss2.eval(func)
         sampled = self.gauss2.asfunction(values)
-        with self.assertRaises(evaluable.EvaluationError):
+        with self.assertRaises(ValueError):
             self.bezier2.eval(sampled)
         self.assertAllEqual(self.gauss2.eval(sampled), values)
         arg = function.Argument('dofs', [2, 3])

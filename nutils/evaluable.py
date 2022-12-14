@@ -385,7 +385,8 @@ class Evaluable(types.Singleton):
         except KeyboardInterrupt:
             raise
         except Exception as e:
-            raise EvaluationError(self, values) from e
+            log.error(self._format_stack(values, e))
+            raise
         else:
             return values[-1]
 
@@ -398,7 +399,8 @@ class Evaluable(types.Singleton):
         except KeyboardInterrupt:
             raise
         except Exception as e:
-            raise EvaluationError(self, values) from e
+            log.error(self._format_stack(values, e))
+            raise
         else:
             return values[-1]
 
@@ -521,11 +523,6 @@ class Evaluable(types.Singleton):
                 self = replace(lambda key: replacements.get(key) if isinstance(key, LoopConcatenate) else None, recursive=False, depthfirst=False)(self)
             else:
                 return self
-
-
-class EvaluationError(Exception):
-    def __init__(self, f, values):
-        super().__init__(f._format_stack(values, 'ERROR'))
 
 
 class EVALARGS(Evaluable):
@@ -4059,7 +4056,7 @@ class _LoopIndex(Argument):
     def __str__(self):
         try:
             length = self.length.__index__()
-        except EvaluationError:
+        except:
             length = '?'
         return 'LoopIndex({}, length={})'.format(self._name, length)
 

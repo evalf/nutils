@@ -568,7 +568,7 @@ class Custom(TestCase):
             def evalf():
                 return numpy.array([1, 2, 3])
 
-        with self.assertRaises(evaluable.EvaluationError):
+        with self.assertRaises(ValueError):
             Test((), (), int).eval()
 
     def test_pointwise_singleton_expansion(self):
@@ -670,7 +670,7 @@ class sampled(TestCase):
         self.assertAllAlmostEqual(diff, 0)
 
     def test_pointset(self):
-        with self.assertRaises(evaluable.EvaluationError):
+        with self.assertRaises(ValueError):
             self.domain.integrate(self.f_sampled, ischeme='uniform2')
 
 
