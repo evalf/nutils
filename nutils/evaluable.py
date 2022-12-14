@@ -2733,7 +2733,8 @@ class Sampled(Array):
 
     @staticmethod
     def evalf(points, expect):
-        assert numpy.equal(points, expect).all(), 'illegal point set'
+        if points.shape != expect.shape or not numpy.equal(points, expect).all():
+            raise ValueError('points do not correspond to original sample')
         return numpy.eye(len(points))
 
 
