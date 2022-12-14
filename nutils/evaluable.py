@@ -425,15 +425,15 @@ class Evaluable(types.Singleton):
     def _iter_stack(self):
         yield '%0 = EVALARGS'
         for i, (op, indices) in enumerate(self.serialized, start=1):
-            try:
-                code = op.evalf.__code__
-                offset = 1 if getattr(op.evalf, '__self__', None) is not None else 0
-                names = code.co_varnames[offset:code.co_argcount]
-                names += tuple('{}[{}]'.format(code.co_varnames[code.co_argcount], n) for n in range(len(indices) - len(names)))
-                args = map(' {}=%{}'.format, names, indices)
-            except:
-                args = map(' %{}'.format, indices)
-            yield f'%{i} = {op}:{",".join(args)}'
+            s = [f'%{i} = {op}']
+            if indices:
+                try:
+                    sig = inspect.signature(op.evalf)
+                except ValueError:
+                    s.extend(f'%{i}' for i in indices)
+                else:
+                    s.extend(f'{param}=%{i}' for param, i in zip(sig.parameters, indices))
+            yield ' '.join(s)
 
     def _format_stack(self, values, e):
         lines = [f'evaluation failed in step {len(values)}/{len(self.dependencies)+1}']
