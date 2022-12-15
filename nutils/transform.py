@@ -471,4 +471,15 @@ class Point(Matrix):
         super().__init__(numpy.zeros((offset.shape[0], 0)), offset)
 
 
+def simplex(vertices, isflipped = None):
+    '''Create transform item from simplex vertices.'''
+
+    linear = (vertices[1:] - vertices[0]).T
+    offset = vertices[0]
+    if isflipped is None:
+        return Square(linear, offset)
+    else:
+        return Updim(linear, offset, isflipped)
+
+
 # vim:sw=4:sts=4:et
