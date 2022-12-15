@@ -74,11 +74,11 @@ class trimmedboundary(TestCase):
         gauss1 = trimmed.sample('gauss', 1)
         leftbasis = self.domain0[:1].basis('std', degree=1)
         self.assertTrue(numpy.any(gauss1.eval(leftbasis)))
-        with self.assertRaises(evaluable.EvaluationError):
+        with self.assertRaises(ValueError):
             gauss1.eval(function.opposite(leftbasis))
         rightbasis = self.domain0[1:].basis('std', degree=1)
         self.assertTrue(numpy.any(gauss1.eval(function.opposite(rightbasis))))
-        with self.assertRaises(evaluable.EvaluationError):
+        with self.assertRaises(ValueError):
             gauss1.eval(rightbasis)
 
 

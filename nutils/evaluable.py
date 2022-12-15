@@ -385,7 +385,8 @@ class Evaluable(types.Singleton):
         except KeyboardInterrupt:
             raise
         except Exception as e:
-            raise EvaluationError(self, values) from e
+            log.error(self._format_stack(values, e))
+            raise
         else:
             return values[-1]
 
@@ -398,7 +399,8 @@ class Evaluable(types.Singleton):
         except KeyboardInterrupt:
             raise
         except Exception as e:
-            raise EvaluationError(self, values) from e
+            log.error(self._format_stack(values, e))
+            raise
         else:
             return values[-1]
 
@@ -422,22 +424,29 @@ class Evaluable(types.Singleton):
             log.info('total time: {:.0f}ms\n'.format(tottime/1e6) + '\n'.join('{:4.0f} {} ({} calls, avg {:.3f} per call)'.format(t / 1e6, k, n, t / (1e6*n))
                                                                               for k, t, n in sorted(aggstats, reverse=True, key=lambda item: item[1]) if n))
 
-    def _stack(self, values):
-        lines = ['  %0 = EVALARGS']
-        for (op, indices), v in zip(self.serialized, values):
-            lines[-1] += ' --> ' + type(v).__name__
+    def _iter_stack(self):
+        yield '%0 = EVALARGS'
+        for i, (op, indices) in enumerate(self.serialized, start=1):
+            s = [f'%{i} = {op}']
+            if indices:
+                try:
+                    sig = inspect.signature(op.evalf)
+                except ValueError:
+                    s.extend(f'%{i}' for i in indices)
+                else:
+                    s.extend(f'{param}=%{i}' for param, i in zip(sig.parameters, indices))
+            yield ' '.join(s)
+
+    def _format_stack(self, values, e):
+        lines = [f'evaluation failed in step {len(values)}/{len(self.dependencies)+1}']
+        stack = self._iter_stack()
+        for v, op in zip(values, stack): # NOTE values must come first to avoid popping next item from stack
+            s = f'{type(v).__name__}'
             if numeric.isarray(v):
-                lines[-1] += '({})'.format(','.join(map(str, v.shape)))
-            try:
-                code = op.evalf.__code__
-                offset = 1 if getattr(op.evalf, '__self__', None) is not None else 0
-                names = code.co_varnames[offset:code.co_argcount]
-                names += tuple('{}[{}]'.format(code.co_varnames[code.co_argcount], n) for n in range(len(indices) - len(names)))
-                args = map(' {}=%{}'.format, names, indices)
-            except:
-                args = map(' %{}'.format, indices)
-            lines.append('  %{} = {}:{}'.format(len(lines), op, ','.join(args)))
-        return lines
+                s += f'<{v.dtype.kind}:{",".join(str(n) for n in v.shape)}>'
+            lines.append(f'{op} --> {s}')
+        lines.append(f'{next(stack)} --> {e}')
+        return '\n  '.join(lines)
 
     @property
     @replace(depthfirst=True, recursive=True)
@@ -514,11 +523,6 @@ class Evaluable(types.Singleton):
                 self = replace(lambda key: replacements.get(key) if isinstance(key, LoopConcatenate) else None, recursive=False, depthfirst=False)(self)
             else:
                 return self
-
-
-class EvaluationError(Exception):
-    def __init__(self, f, values):
-        super().__init__('evaluation failed in step {}/{}\n'.format(len(values), len(f.dependencies)) + '\n'.join(f._stack(values)))
 
 
 class EVALARGS(Evaluable):
@@ -2733,7 +2737,8 @@ class Sampled(Array):
 
     @staticmethod
     def evalf(points, expect):
-        assert numpy.equal(points, expect).all(), 'illegal point set'
+        if points.shape != expect.shape or not numpy.equal(points, expect).all():
+            raise ValueError('points do not correspond to original sample')
         return numpy.eye(len(points))
 
 
@@ -4051,7 +4056,7 @@ class _LoopIndex(Argument):
     def __str__(self):
         try:
             length = self.length.__index__()
-        except EvaluationError:
+        except:
             length = '?'
         return 'LoopIndex({}, length={})'.format(self._name, length)
 
