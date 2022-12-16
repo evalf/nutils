@@ -389,7 +389,7 @@ _check('interp_lr', lambda a: numpy.interp(function.Array.cast(a), [-.5,0,.5], [
 class Unlower(TestCase):
 
     def test(self):
-        e = evaluable.Argument('arg', (2, 3, 4, 5), int)
+        e = evaluable.Argument('arg', tuple(map(evaluable.constant, (2, 3, 4, 5))), int)
         arguments = {'arg': ((2, 3), int)}
         f = function._Unlower(e, frozenset(), arguments, function.LowerArgs((2, 3), {}, {}))
         self.assertEqual(f.shape, (4, 5))
@@ -708,7 +708,7 @@ class elemwise(TestCase):
 
     def setUp(self):
         super().setUp()
-        self.index = function._Wrapper(lambda: evaluable.InRange(evaluable.Argument('index', (), int), 5), shape=(), dtype=int)
+        self.index = function._Wrapper(lambda: evaluable.InRange(evaluable.Argument('index', (), int), evaluable.constant(5)), shape=(), dtype=int)
         self.data = tuple(map(types.frozenarray, (
             numpy.arange(1, 7, dtype=float).reshape(2, 3),
             numpy.arange(2, 8, dtype=float).reshape(2, 3),
@@ -1173,7 +1173,7 @@ class CommonBasis:
     def test_lower(self):
         ref = element.PointReference() if self.basis.coords.shape[0] == 0 else element.LineReference()**self.basis.coords.shape[0]
         points = ref.getpoints('bezier', 4)
-        coordinates = evaluable.Constant(points.coords)
+        coordinates = evaluable.constant(points.coords)
         lowerargs = function.LowerArgs.for_space('X', (self.checktransforms,), evaluable.Argument('ielem', (), int), coordinates)
         lowered = self.basis.lower(lowerargs)
         with _builtin_warnings.catch_warnings():
@@ -1256,7 +1256,7 @@ class StructuredBasis1D(CommonBasis, TestCase):
     def setUp(self):
         self.checktransforms = transformseq.IndexTransforms(1, 4)
         index, coords = self.mk_index_coords(1, self.checktransforms)
-        self.basis = function.StructuredBasis([[[[1], [2]], [[3], [4]], [[5], [6]], [[7], [8]]]], [[0, 1, 2, 3]], [[2, 3, 4, 5]], [5], [4], index, coords)
+        self.basis = function.StructuredBasis([[[[1.], [2.]], [[3.], [4.]], [[5.], [6.]], [[7.], [8.]]]], [[0, 1, 2, 3]], [[2, 3, 4, 5]], [5], [4], index, coords)
         self.checkcoeffs = [[[1.], [2.]], [[3.], [4.]], [[5.], [6.]], [[7.], [8.]]]
         self.checkdofs = [[0, 1], [1, 2], [2, 3], [3, 4]]
         self.checkndofs = 5
@@ -1268,7 +1268,7 @@ class StructuredBasis1DPeriodic(CommonBasis, TestCase):
     def setUp(self):
         self.checktransforms = transformseq.IndexTransforms(1, 4)
         index, coords = self.mk_index_coords(1, self.checktransforms)
-        self.basis = function.StructuredBasis([[[[1], [2]], [[3], [4]], [[5], [6]], [[7], [8]]]], [[0, 1, 2, 3]], [[2, 3, 4, 5]], [4], [4], index, coords)
+        self.basis = function.StructuredBasis([[[[1.], [2.]], [[3.], [4.]], [[5.], [6.]], [[7.], [8.]]]], [[0, 1, 2, 3]], [[2, 3, 4, 5]], [4], [4], index, coords)
         self.checkcoeffs = [[[1.], [2.]], [[3.], [4.]], [[5.], [6.]], [[7.], [8.]]]
         self.checkdofs = [[0, 1], [1, 2], [2, 3], [3, 0]]
         self.checkndofs = 4
@@ -1280,7 +1280,7 @@ class StructuredBasis2D(CommonBasis, TestCase):
     def setUp(self):
         self.checktransforms = transformseq.IndexTransforms(2, 4)
         index, coords = self.mk_index_coords(2, self.checktransforms)
-        self.basis = function.StructuredBasis([[[[1], [2]], [[3], [4]]], [[[5], [6]], [[7], [8]]]], [[0, 1], [0, 1]], [[2, 3], [2, 3]], [3, 3], [2, 2], index, coords)
+        self.basis = function.StructuredBasis([[[[1.], [2.]], [[3.], [4.]]], [[[5.], [6.]], [[7.], [8.]]]], [[0, 1], [0, 1]], [[2, 3], [2, 3]], [3, 3], [2, 2], index, coords)
         self.checkcoeffs = [[[[5.]], [[6.]], [[10.]], [[12.]]], [[[7.]], [[8.]], [[14.]], [[16.]]], [[[15.]], [[18.]], [[20.]], [[24.]]], [[[21.]], [[24.]], [[28.]], [[32.]]]]
         self.checkdofs = [[0, 1, 3, 4], [1, 2, 4, 5], [3, 4, 6, 7], [4, 5, 7, 8]]
         self.checkndofs = 9

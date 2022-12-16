@@ -643,7 +643,7 @@ class TopologyAssertions:
         interfaces = domain.interfaces
         bmask = numpy.zeros(len(boundary), dtype=int)
         imask = numpy.zeros(len(interfaces), dtype=int)
-        coordinates = evaluable.Points(evaluable.NPoints(), boundary.ndims)
+        coordinates = evaluable.Points(evaluable.NPoints(), evaluable.constant(boundary.ndims))
         edges = domain.transforms.edges(domain.references)
         iedge = evaluable.Argument('_iedge', (), int)
         lowered_geom = geom.lower(function.LowerArgs.for_space(domain.space, (edges,), iedge, coordinates)).simplified

@@ -778,7 +778,7 @@ class _CustomEvaluable(evaluable.Array):
         self.lower_args = lower_args
         self.spaces = spaces
         self.function_arguments = arguments
-        super().__init__((evaluable.Tuple(lower_args.points_shape), *args), shape=lower_args.points_shape+shape, dtype=dtype)
+        super().__init__((evaluable.Tuple(lower_args.points_shape), *args), shape=(*lower_args.points_shape, *map(evaluable.constant, shape)), dtype=dtype)
 
     @property
     def _node_details(self) -> str:
@@ -853,13 +853,13 @@ class _Wrapper(Array):
 class _Zeros(Array):
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
-        return evaluable.Zeros((*args.points_shape, *self.shape), self.dtype)
+        return evaluable.Zeros((*args.points_shape, *map(evaluable.constant, self.shape)), self.dtype)
 
 
 class _Ones(Array):
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
-        return evaluable.ones((*args.points_shape, *self.shape), self.dtype)
+        return evaluable.ones(args.points_shape + tuple(evaluable.constant(n) for n in self.shape), self.dtype)
 
 
 class _Constant(Array):
@@ -895,7 +895,7 @@ class Argument(Array):
         super().__init__(shape, dtype, frozenset(()), {name: (tuple(shape), dtype)})
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
-        return evaluable.prependaxes(evaluable.Argument(self.name, self.shape, self.dtype), args.points_shape)
+        return evaluable.prependaxes(evaluable.Argument(self.name, tuple(evaluable.constant(n) for n in self.shape), self.dtype), args.points_shape)
 
 
 class _Replace(Array):
@@ -948,7 +948,7 @@ class _Transpose(Array):
 
     def __init__(self, arg: Array, axes: Tuple[int, ...]) -> None:
         self._arg = arg
-        self._axes = axes
+        self._axes = tuple(n.__index__() for n in axes)
         super().__init__(tuple(arg.shape[axis] for axis in axes), arg.dtype, arg.spaces, arg.arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
@@ -979,13 +979,13 @@ class _RootCoords(Array):
         super().__init__((ndims,), float, frozenset({space}), {})
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
-        inv_linear = evaluable.diagonalize(evaluable.ones(self.shape))
+        inv_linear = evaluable.diagonalize(evaluable.ones(tuple(evaluable.constant(n) for n in self.shape)))
         inv_linear = evaluable.prependaxes(inv_linear, args.points_shape)
         tip_coords = args.coordinates[self._space]
         tip_coords = evaluable.WithDerivative(tip_coords, _tip_derivative_target(self._space, tip_coords.shape[-1]), evaluable.Diagonalize(evaluable.ones(tip_coords.shape)))
         transforms, index = args.transform_chains[self._space]
         coords = evaluable.TransformCoords(None, transforms[0], index, tip_coords)
-        return evaluable.WithDerivative(coords, _root_derivative_target(self._space, self.shape[0]), inv_linear)
+        return evaluable.WithDerivative(coords, _root_derivative_target(self._space, evaluable.constant(self.shape[0])), inv_linear)
 
 
 class _TransformsIndex(Array):
@@ -1020,7 +1020,7 @@ class _TransformsCoords(Array):
         tip_coords = args.coordinates[self._space]
         tip_coords = evaluable.WithDerivative(tip_coords, _tip_derivative_target(self._space, tip_coords.shape[-1]), evaluable.Diagonalize(evaluable.ones(tip_coords.shape)))
         coords = evaluable.TransformCoords(self._transforms, transforms[0], tip_index, tip_coords)
-        return evaluable.WithDerivative(coords, _root_derivative_target(self._space, self._transforms.todims), Linv)
+        return evaluable.WithDerivative(coords, _root_derivative_target(self._space, evaluable.constant(self._transforms.todims)), Linv)
 
 
 class _Derivative(Array):
@@ -1029,7 +1029,7 @@ class _Derivative(Array):
         assert isinstance(var, Argument)
         self._arg = arg
         self._var = var
-        self._eval_var = evaluable.Argument(var.name, var.shape, var.dtype)
+        self._eval_var = evaluable.Argument(var.name, tuple(evaluable.constant(n) for n in var.shape), var.dtype)
         arguments = _join_arguments((arg.arguments, var.arguments))
         super().__init__(arg.shape+var.shape, complex if var.dtype == complex else arg.dtype, arg.spaces | var.spaces, arguments)
 
@@ -1038,7 +1038,7 @@ class _Derivative(Array):
         return evaluable.derivative(arg, self._eval_var)
 
 
-def _tip_derivative_target(space: str, dim: int) -> evaluable.DerivativeTargetBase:
+def _tip_derivative_target(space: str, dim) -> evaluable.DerivativeTargetBase:
     return evaluable.IdentifierDerivativeTarget((space, 'tip'), (dim,))
 
 
@@ -1064,7 +1064,7 @@ class _Gradient(Array):
         ref_dim = builtins.sum(args.transform_chains[space][0][0].todims for space in self._geom.spaces)
         if self._geom.shape[-1] != ref_dim:
             raise Exception('cannot invert {}x{} jacobian'.format(self._geom.shape[-1], ref_dim))
-        refs = tuple(_root_derivative_target(space, chain.todims) for space, ((chain, *_), index) in args.transform_chains.items() if space in self._geom.spaces)
+        refs = tuple(_root_derivative_target(space, evaluable.constant(chain.todims)) for space, ((chain, *_), index) in args.transform_chains.items() if space in self._geom.spaces)
         dfunc_dref = evaluable.concatenate([evaluable.derivative(func, ref) for ref in refs], axis=-1)
         dgeom_dref = evaluable.concatenate([evaluable.derivative(geom, ref) for ref in refs], axis=-1)
         dref_dgeom = evaluable.inverse(dgeom_dref)
@@ -1090,7 +1090,7 @@ class _SurfaceGradient(Array):
         ref_dim = builtins.sum(args.transform_chains[space][0][0].fromdims for space in self._geom.spaces)
         if self._geom.shape[-1] != ref_dim + 1:
             raise ValueError('expected a {}d geometry but got a {}d geometry'.format(ref_dim + 1, self._geom.shape[-1]))
-        refs = tuple((_root_derivative_target if chain.todims == chain.fromdims else _tip_derivative_target)(space, chain.fromdims) for space, ((chain, *_), index) in args.transform_chains.items() if space in self._geom.spaces)
+        refs = tuple((_root_derivative_target if chain.todims == chain.fromdims else _tip_derivative_target)(space, evaluable.constant(chain.fromdims)) for space, ((chain, *_), index) in args.transform_chains.items() if space in self._geom.spaces)
         dfunc_dref = evaluable.concatenate([evaluable.derivative(func, ref) for ref in refs], axis=-1)
         dgeom_dref = evaluable.concatenate([evaluable.derivative(geom, ref) for ref in refs], axis=-1)
         dref_dgeom = evaluable.einsum('Ajk,Aik->Aij', dgeom_dref, evaluable.inverse(evaluable.grammium(dgeom_dref)))
@@ -1122,7 +1122,7 @@ class _Jacobian(Array):
             raise ValueError('the dimension of the geometry cannot be lower than the dimension of the tip coords')
         if not self._geom.spaces:
             return evaluable.ones(geom.shape[:-1])
-        tips = [_tip_derivative_target(space, chain.fromdims) for space, ((chain, *_), index) in args.transform_chains.items() if space in self._geom.spaces]
+        tips = [_tip_derivative_target(space, evaluable.constant(chain.fromdims)) for space, ((chain, *_), index) in args.transform_chains.items() if space in self._geom.spaces]
         J = evaluable.concatenate([evaluable.derivative(geom, tip) for tip in tips], axis=-1)
         return evaluable.sqrt_abs_det_gram(J)
 
@@ -1149,7 +1149,7 @@ class _Normal(Array):
         for space, ((chain, *_), index) in args.transform_chains.items():
             if space not in self._geom.spaces:
                 continue
-            rgrad = evaluable.derivative(geom, _root_derivative_target(space, chain.todims))
+            rgrad = evaluable.derivative(geom, _root_derivative_target(space, evaluable.constant(chain.todims)))
             if chain.todims == chain.fromdims:
                 # `chain.basis` is `eye(chain.todims)`
                 tangents.append(rgrad)
@@ -1197,7 +1197,7 @@ class _Concatenate(Array):
             arguments=_join_arguments(array.arguments for array in self.arrays))
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
-        return util.sum(evaluable._inflate(array.lower(args), evaluable.Range(array.shape[self.axis]) + offset, self.shape[self.axis], self.axis-self.ndim)
+        return util.sum(evaluable._inflate(array.lower(args), evaluable.Range(evaluable.constant(array.shape[self.axis])) + offset, evaluable.constant(self.shape[self.axis]), self.axis-self.ndim)
                         for array, offset in zip(self.arrays, util.cumsum(array.shape[self.axis] for array in self.arrays)))
 
 
@@ -3585,14 +3585,14 @@ class Basis(Array):
         self._arg_dofs, self._arg_coeffs = [f.optimized_for_numpy for f in self.f_dofs_coeffs(_index)]
         assert self._arg_dofs.ndim == 1
         assert self._arg_coeffs.ndim == 1 + coords.shape[0]
-        assert evaluable.equalindex(self._arg_dofs.shape[0], self._arg_coeffs.shape[0])
+        assert evaluable._equals_simplified(self._arg_dofs.shape[0], self._arg_coeffs.shape[0])
         self._arg_ndofs = evaluable.asarray(self._arg_dofs.shape[0])
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         index = _WithoutPoints(self.index).lower(args)
         dofs, coeffs = self.f_dofs_coeffs(index)
         coords = self.coords.lower(args)
-        return evaluable.Inflate(evaluable.Polyval(coeffs, coords), dofs, self.ndofs)
+        return evaluable.Inflate(evaluable.Polyval(coeffs, coords), dofs, evaluable.constant(self.ndofs))
 
     @util.cached_property
     def _computed_support(self) -> Tuple[numpy.ndarray, ...]:
@@ -3749,7 +3749,7 @@ class DiscontBasis(Basis):
 
     def f_dofs_coeffs(self, index: evaluable.Array) -> Tuple[evaluable.Array, evaluable.Array]:
         coeffs = evaluable.Elemwise(self._coeffs, index, dtype=float)
-        dofs = evaluable.Range(coeffs.shape[0]) + evaluable.get(self._offsets, 0, index)
+        dofs = evaluable.Range(coeffs.shape[0]) + evaluable.get(evaluable.constant(self._offsets), 0, index)
         return dofs, coeffs
 
 
@@ -3781,7 +3781,7 @@ class LegendreBasis(Basis):
         return numpy.unique(dof // (self._degree+1))
 
     def f_dofs_coeffs(self, index: evaluable.Array) -> Tuple[evaluable.Array, evaluable.Array]:
-        dofs = evaluable.Range(self._degree+1) + index * (self._degree+1)
+        dofs = evaluable.Range(evaluable.constant(self._degree+1)) + index * (self._degree+1)
         coeffs = numpy.zeros((self._degree+1,)*2, dtype=int)
         for n in range(self._degree+1):
             for k in range(n+1):
@@ -3791,10 +3791,9 @@ class LegendreBasis(Basis):
     def lower(self, args: LowerArgs) -> evaluable.Array:
         index = _WithoutPoints(self.index).lower(args)
         coords = self.coords.lower(args)
-        assert evaluable.equalindex(coords.shape[-1], 1)
-        leg = evaluable.Legendre(evaluable.get(coords, coords.ndim-1, 0) * 2 - 1, self._degree)
-        dofs = evaluable.Range(self._degree+1) + index * (self._degree+1)
-        return evaluable.Inflate(leg, dofs, self.ndofs)
+        leg = evaluable.Legendre(evaluable.get(coords, coords.ndim-1, evaluable.constant(0)) * 2 - 1, self._degree)
+        dofs = evaluable.Range(evaluable.constant(self._degree+1)) + index * (self._degree+1)
+        return evaluable.Inflate(leg, dofs, evaluable.constant(self.ndofs))
 
 
 class MaskedBasis(Basis):
@@ -3819,7 +3818,7 @@ class MaskedBasis(Basis):
             raise ValueError('`indices` out of range \x5b0,{}\x29'.format(len(parent)))
         self._parent = parent
         self._indices = indices
-        self._renumber = types.frozenarray(numeric.invmap(indices, length=parent.ndofs, missing=len(indices)), copy=False)
+        self._renumber = evaluable.constant(numeric.invmap(indices, length=parent.ndofs, missing=len(indices)))
         super().__init__(len(indices), parent.nelems, parent.index, parent.coords)
 
     def get_support(self, dof: Union[int, numpy.ndarray]) -> numpy.ndarray:
@@ -3830,7 +3829,7 @@ class MaskedBasis(Basis):
     def f_dofs_coeffs(self, index: evaluable.Array) -> Tuple[evaluable.Array, evaluable.Array]:
         p_dofs, p_coeffs = self._parent.f_dofs_coeffs(index)
         renumber = evaluable.Take(self._renumber, p_dofs)
-        selection = evaluable.Find(evaluable.Less(renumber, evaluable.InsertAxis(self.ndofs, p_dofs.shape[0])))
+        selection = evaluable.Find(evaluable.Less(renumber, evaluable.InsertAxis(evaluable.constant(self.ndofs), p_dofs.shape[0])))
         dofs = evaluable.take(renumber, selection, axis=0)
         coeffs = evaluable.take(p_coeffs, selection, axis=0)
         return dofs, coeffs
@@ -3894,12 +3893,12 @@ class StructuredBasis(Basis):
             indices.append(ielem)
         indices.append(index)
         indices.reverse()
-        ranges = [evaluable.Range(evaluable.get(lengths_i, 0, index_i)) + evaluable.get(offsets_i, 0, index_i)
+        ranges = [evaluable.Range(evaluable.get(evaluable.constant(lengths_i), 0, index_i)) + evaluable.get(evaluable.constant(offsets_i), 0, index_i)
                   for lengths_i, offsets_i, index_i in zip(self._ndofs, self._start_dofs, indices)]
         ndofs = self._dofs_shape[0]
         dofs = ranges[0] % ndofs
         for range_i, ndofs_i in zip(ranges[1:], self._dofs_shape[1:]):
-            dofs = evaluable.Ravel(evaluable.RavelIndex(dofs, range_i % ndofs_i, ndofs, ndofs_i))
+            dofs = evaluable.Ravel(evaluable.RavelIndex(dofs, range_i % ndofs_i, evaluable.constant(ndofs), evaluable.constant(ndofs_i)))
             ndofs = ndofs * ndofs_i
         coeffs = functools.reduce(evaluable.PolyOuterProduct,
                                   [evaluable.Elemwise(coeffs_i, index_i, float) for coeffs_i, index_i in zip(self._coeffs, indices)])
@@ -3934,8 +3933,8 @@ class PrunedBasis(Basis):
         return numeric.sorted_index(self._transmap, self._parent.get_support(self._dofmap[dof]), missing='mask')
 
     def f_dofs_coeffs(self, index: evaluable.Array) -> Tuple[evaluable.Array, evaluable.Array]:
-        p_dofs, p_coeffs = self._parent.f_dofs_coeffs(evaluable.get(self._transmap, 0, index))
-        dofs = evaluable.take(self._renumber, p_dofs, axis=0)
+        p_dofs, p_coeffs = self._parent.f_dofs_coeffs(evaluable.get(evaluable.constant(self._transmap), 0, index))
+        dofs = evaluable.take(evaluable.constant(self._renumber), p_dofs, axis=0)
         return dofs, p_coeffs
 
 

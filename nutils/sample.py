@@ -453,7 +453,8 @@ class _CustomIndex(_TransformChainsSample):
 
     __slots__ = '_parent', '_index'
 
-    def __init__(self, parent: Sample, index: numpy.ndarray) -> None:
+    def __init__(self, parent: Sample, index: types.arraydata) -> None:
+        assert isinstance(index, types.arraydata)
         assert index.shape == (parent.npoints,)
         self._parent = parent
         self._index = index
@@ -463,7 +464,7 @@ class _CustomIndex(_TransformChainsSample):
         return numpy.take(self._index, self._parent.getindex(ielem))
 
     def get_evaluable_indices(self, ielem: evaluable.Array) -> evaluable.Array:
-        return evaluable.Take(self._index, self._parent.get_evaluable_indices(ielem))
+        return evaluable.Take(evaluable.Constant(self._index), self._parent.get_evaluable_indices(ielem))
 
     @property
     def tri(self) -> numpy.ndarray:
@@ -516,10 +517,10 @@ class _Empty(_TensorialSample):
         raise IndexError('index out of range')
 
     def get_evaluable_indices(self, __ielem: evaluable.Array) -> evaluable.Array:
-        return evaluable.Zeros((0,) * len(self.spaces), dtype=int)
+        return evaluable.Zeros((evaluable.constant(0),) * len(self.spaces), dtype=int)
 
     def get_evaluable_weights(self, __ielem: evaluable.Array) -> evaluable.Array:
-        return evaluable.Zeros((0,) * len(self.spaces), dtype=float)
+        return evaluable.Zeros((evaluable.constant(0),) * len(self.spaces), dtype=float)
 
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
         return function.LowerArgs((), {}, {})
@@ -702,38 +703,37 @@ class _Zip(Sample):
         nelems = tuple(sample.nelems for sample in samples)
         flat_ielems = numpy.ravel_multi_index(ielems, nelems)
         flat_ielems, inverse, sizes = numpy.unique(flat_ielems, return_inverse=True, return_counts=True)
-        self._offsets = types.frozenarray(numpy.cumsum([0, *sizes]), copy=False)
-        self._sizes = types.frozenarray(sizes, copy=False)
-        self._indices = types.frozenarray(numpy.argsort(inverse), copy=False)
-        self._ielems = tuple(types.frozenarray(array, copy=False) for array in numpy.unravel_index(flat_ielems, nelems))
-        self._ilocals = types.frozenarray(numpy.take(ilocals, self._indices, axis=1), copy=False)
+        self._offsets = types.arraydata(numpy.cumsum([0, *sizes]))
+        self._sizes = types.arraydata(sizes)
+        self._indices = types.arraydata(numpy.argsort(inverse))
+        self._ielems = tuple(types.arraydata(array) for array in numpy.unravel_index(flat_ielems, nelems))
+        self._ilocals = tuple(types.arraydata(numpy.take(ilocal, self._indices, axis=0)) for ilocal in ilocals)
 
-        super().__init__(spaces=spaces, ndims=samples[0].ndims, nelems=len(self._sizes), npoints=npoints)
+        super().__init__(spaces=spaces, ndims=samples[0].ndims, nelems=self._sizes.shape[0], npoints=npoints)
 
     def getindex(self, ielem):
-        return self._indices[self._offsets[ielem]:self._offsets[ielem+1]]
+        return numpy.asarray(self._indices)[slice(*numpy.asarray(self._offsets)[ielem:ielem+2])]
 
-    def _getslice(self, array, ielem):
-        s = evaluable.Take(self._offsets, ielem) + evaluable.Range(evaluable.Take(self._sizes, ielem))
-        return evaluable.Take(array, s)
+    def _getslice(self, ielem):
+        return evaluable.Take(evaluable.Constant(self._offsets), ielem) + evaluable.Range(evaluable.Take(evaluable.Constant(self._sizes), ielem))
 
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
-        points_shape = evaluable.Take(self._sizes, __ielem),
+        points_shape = evaluable.Take(evaluable.Constant(self._sizes), __ielem),
         coordinates = {}
         transform_chains = {}
         for samplei, ielemsi, ilocalsi in zip(self._samples, self._ielems, self._ilocals):
-            argsi = samplei.get_lower_args(evaluable.Take(ielemsi, __ielem))
-            slicei = self._getslice(ilocalsi, __ielem)
+            argsi = samplei.get_lower_args(evaluable.Take(evaluable.Constant(ielemsi), __ielem))
+            slicei = evaluable.Take(evaluable.Constant(ilocalsi), self._getslice(__ielem))
             transform_chains.update(argsi.transform_chains)
             coordinates.update({space: evaluable._take(coords, slicei, axis=0) for space, coords in argsi.coordinates.items()})
         return function.LowerArgs(points_shape, transform_chains, coordinates)
 
     def get_evaluable_indices(self, ielem):
-        return self._getslice(self._indices, ielem)
+        return evaluable.Take(evaluable.Constant(self._indices), self._getslice(ielem))
 
     def get_evaluable_weights(self, ielem):
-        weights = self._samples[0].get_evaluable_weights(evaluable.Take(self._ielems[0], ielem))
-        return self._getslice(weights, ielem)
+        weights = self._samples[0].get_evaluable_weights(evaluable.Take(evaluable.Constant(self._ielems[0]), ielem))
+        return evaluable.Take(weights, self._getslice(ielem))
 
 
 class _TakeElements(_TensorialSample):
@@ -741,14 +741,14 @@ class _TakeElements(_TensorialSample):
     __cache__ = '_offsets'
 
     def __init__(self, parent: Sample, indices: types.arraydata) -> None:
-        assert indices.ndim == 1 and indices.shape[0]
+        assert isinstance(indices, types.arraydata) and indices.ndim == 1 and indices.shape[0] > 0, f'indices={indices!r}'
         self._parent = parent
-        self._indices = numpy.asarray(indices)
-        super().__init__(parent.spaces, parent.ndims, len(self._indices), self._offsets[-1])
+        self._indices = indices
+        super().__init__(parent.spaces, parent.ndims, self._indices.shape[0], self._offsets[-1])
 
     @property
     def _offsets(self) -> numpy.ndarray:
-        return types.frozenarray(numpy.cumsum([0]+[len(self._parent.getindex(i)) for i in self._indices]))
+        return types.frozenarray(numpy.cumsum([0]+[len(self._parent.getindex(i)) for i in numpy.asarray(self._indices)]))
 
     def getindex(self, ielem: int) -> numpy.ndarray:
         if not 0 <= ielem < self.nelems:
@@ -757,11 +757,11 @@ class _TakeElements(_TensorialSample):
 
     def get_evaluable_indices(self, __ielem: evaluable.Array) -> evaluable.Array:
         i = evaluable.loop_index('_i', self.nelems)
-        iparent = evaluable.Take(self._indices, i)
-        sizes = evaluable.loop_concatenate(evaluable.InsertAxis(self._parent.get_evaluable_indices(iparent).size, 1), i)
+        iparent = evaluable.Take(evaluable.Constant(self._indices), i)
+        sizes = evaluable.loop_concatenate(evaluable.InsertAxis(self._parent.get_evaluable_indices(iparent).size, evaluable.constant(1)), i)
         offsets = evaluable._SizesToOffsets(sizes)
 
-        iparent = evaluable.Take(self._indices, __ielem)
+        iparent = evaluable.Take(evaluable.Constant(self._indices), __ielem)
         shape = self._parent.get_evaluable_indices(iparent).shape
         pshape = [shape[-1]]
         for n in reversed(shape[:-1]):
@@ -772,10 +772,10 @@ class _TakeElements(_TensorialSample):
         return indices
 
     def get_evaluable_weights(self, __ielem: evaluable.Array) -> evaluable.Array:
-        return self._parent.get_evaluable_weights(evaluable.Take(self._indices, __ielem))
+        return self._parent.get_evaluable_weights(evaluable.Take(evaluable.Constant(self._indices), __ielem))
 
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
-        return self._parent.get_lower_args(evaluable.Take(self._indices, __ielem))
+        return self._parent.get_lower_args(evaluable.Take(evaluable.Constant(self._indices), __ielem))
 
     def get_element_tri(self, __ielem: int) -> numpy.ndarray:
         if not 0 <= __ielem < self.nelems:
@@ -931,16 +931,16 @@ class _Basis(function.Array):
         expect = self._sample.points.get_evaluable_coords(index)
         sampled = evaluable.Sampled(coords, expect)
         indices = self._sample.get_evaluable_indices(index)
-        basis = evaluable.Inflate(sampled, dofmap=indices, length=self._sample.npoints)
+        basis = evaluable.Inflate(sampled, dofmap=indices, length=evaluable.constant(self._sample.npoints))
 
         # Realign the points axes. The coordinate axis of `aligned_space_coords` is
         # replaced by a dofs axis in the aligned basis, hence we can reuse `where`.
-        return evaluable.align(basis, where, (*args.points_shape, self._sample.npoints))
+        return evaluable.align(basis, where, (*args.points_shape, evaluable.constant(self._sample.npoints)))
 
 
 def _offsets(pointsseq: PointsSequence) -> evaluable.Array:
     ielem = evaluable.loop_index('_ielem', len(pointsseq))
     npoints, ndims = pointsseq.get_evaluable_coords(ielem).shape
-    return evaluable._SizesToOffsets(evaluable.loop_concatenate(evaluable.InsertAxis(npoints, 1), ielem))
+    return evaluable._SizesToOffsets(evaluable.loop_concatenate(evaluable.InsertAxis(npoints, evaluable.constant(1)), ielem))
 
 # vim:sw=4:sts=4:et

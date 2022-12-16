@@ -150,7 +150,7 @@ class Common:
 
     def test_get_evaluable_coords_invalid_ndims(self):
         with self.assertRaises(ValueError):
-            self.seq.get_evaluable_coords(nutils.evaluable.Argument('index', (1,), int))
+            self.seq.get_evaluable_coords(nutils.evaluable.Argument('index', (nutils.evaluable.constant(1),), int))
 
     def test_get_evaluable_coords_invalid_dtype(self):
         with self.assertRaises(ValueError):
@@ -163,7 +163,7 @@ class Common:
 
     def test_get_evaluable_weights_invalid_ndims(self):
         with self.assertRaises(ValueError):
-            self.seq.get_evaluable_weights(nutils.evaluable.Argument('index', (1,), int))
+            self.seq.get_evaluable_weights(nutils.evaluable.Argument('index', (nutils.evaluable.constant(1),), int))
 
     def test_get_evaluable_weights_invalid_dtype(self):
         with self.assertRaises(ValueError):
