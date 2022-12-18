@@ -276,6 +276,7 @@ class Updim(Matrix):
 
     @property
     def flipped(self):
+        assert type(self) == Updim
         return Updim(self.linear, self.offset, not self.isflipped)
 
     def swapdown(self, other):
@@ -305,6 +306,7 @@ class SimplexEdge(Updim):
 
     @property
     def flipped(self):
+        assert type(self) == SimplexEdge
         return SimplexEdge(self.todims, self.iedge, not self.inverted)
 
     def swapup(self, other):
@@ -371,6 +373,7 @@ class ScaledUpdim(Updim):
 
     @property
     def flipped(self):
+        assert type(self) == ScaledUpdim
         return ScaledUpdim(self.trans1, self.trans2.flipped)
 
 
@@ -407,6 +410,7 @@ class TensorEdge1(Updim):
 
     @property
     def flipped(self):
+        assert type(self) == TensorEdge1
         return TensorEdge1(self.trans.flipped, self.fromdims-self.trans.fromdims)
 
 
@@ -443,6 +447,7 @@ class TensorEdge2(Updim):
 
     @property
     def flipped(self):
+        assert type(self) == TensorEdge2
         return TensorEdge2(self.fromdims-self.trans.fromdims, self.trans.flipped)
 
 
