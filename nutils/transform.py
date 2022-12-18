@@ -176,7 +176,7 @@ class Square(Matrix):
 
     @property
     def isflipped(self):
-        return self.fromdims > 0 and self.det < 0
+        return bool(self.det < 0)
 
     @types.lru_cache
     def transform_poly(self, coeffs):
