@@ -1,4 +1,4 @@
-from nutils import transform, evaluable, numeric
+from nutils import transform, evaluable, numeric, types
 from nutils.testing import TestCase
 import numpy
 
@@ -59,13 +59,13 @@ class TestUpdim(TestTransform):
 class Matrix(TestTransform):
 
     def setUp(self):
-        super().setUp(trans=transform.Matrix([[1.], [2]], [3., 4]), linear=[[1], [2]], offset=[3, 4])
+        super().setUp(trans=transform.Matrix(types.arraydata([[1.], [2]]), types.arraydata([3., 4])), linear=[[1], [2]], offset=[3, 4])
 
 
 class Qquare(TestInvertible):
 
     def setUp(self):
-        super().setUp(trans=transform.Square([[1., 2], [1, 3]], [5., 6]), linear=[[1, 2], [1, 3]], offset=[5, 6])
+        super().setUp(trans=transform.Square(types.arraydata([[1., 2], [1, 3]]), types.arraydata([5., 6])), linear=[[1, 2], [1, 3]], offset=[5, 6])
 
 
 class Identity(TestInvertible):
@@ -95,7 +95,7 @@ class SimplexChild(TestInvertible):
 class Point(TestTransform):
 
     def setUp(self):
-        super().setUp(trans=transform.Point(numpy.array([1., 2., 3.])), linear=numpy.zeros((3, 0)), offset=[1., 2., 3.])
+        super().setUp(trans=transform.Point(types.arraydata([1., 2., 3.])), linear=numpy.zeros((3, 0)), offset=[1., 2., 3.])
 
 
 del TestTransform, TestInvertible, TestUpdim

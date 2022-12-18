@@ -3,6 +3,7 @@ The transform module.
 """
 
 from typing import Tuple, Dict
+from numbers import Integral
 from . import cache, numeric, _util as util, types
 import numpy
 import collections
@@ -85,8 +86,9 @@ class TransformItem(types.Singleton):
 
     __slots__ = 'todims', 'fromdims'
 
-    @types.apply_annotations
-    def __init__(self, todims, fromdims: int):
+    def __init__(self, todims: Integral, fromdims: Integral):
+        assert isinstance(todims, Integral), f'todims={todims!r}'
+        assert isinstance(fromdims, Integral), f'fromdims={fromdims!r}'
         super().__init__()
         self.todims = todims
         self.fromdims = fromdims
@@ -118,14 +120,16 @@ class Matrix(TransformItem):
 
     __slots__ = 'linear', 'offset'
 
-    @types.apply_annotations
-    def __init__(self, linear: types.arraydata, offset: types.arraydata):
-        assert linear.ndim == 2 and linear.dtype == float
-        assert offset.ndim == 1 and offset.dtype == float
-        assert offset.shape[0] == linear.shape[0]
+    def __init__(self, linear, offset):
+        # we don't worry about mutability here as the meta class prevents
+        # direct instantiation from mutable arguments, and derived classes are
+        # trusted to not mutate arguments after construction.
         self.linear = numpy.asarray(linear)
         self.offset = numpy.asarray(offset)
-        super().__init__(linear.shape[0], linear.shape[1])
+        assert self.linear.ndim == 2 and self.linear.dtype == float
+        assert self.offset.ndim == 1 and self.offset.dtype == float
+        assert self.offset.shape[0] == self.linear.shape[0]
+        super().__init__(*self.linear.shape)
 
     @types.lru_cache
     def apply(self, points):
@@ -134,8 +138,8 @@ class Matrix(TransformItem):
 
     def __mul__(self, other):
         assert isinstance(other, Matrix) and self.fromdims == other.todims
-        linear = numpy.dot(self.linear, other.linear)
-        offset = self.apply(other.offset)
+        linear = types.arraydata(self.linear @ other.linear)
+        offset = types.arraydata(self.apply(other.offset))
         return Square(linear, offset) if self.todims == other.fromdims \
             else Updim(linear, offset, self.isflipped ^ other.isflipped) if self.todims == other.fromdims+1 \
             else Matrix(linear, offset)
@@ -160,11 +164,10 @@ class Square(Matrix):
     __slots__ = '_transform_matrix',
     __cache__ = 'det',
 
-    @types.apply_annotations
-    def __init__(self, linear: types.arraydata, offset: types.arraydata):
-        assert linear.shape[0] == linear.shape[1]
+    def __init__(self, linear, offset):
         self._transform_matrix = {}
         super().__init__(linear, offset)
+        assert self.fromdims == self.todims
 
     @types.lru_cache
     def invapply(self, points):
@@ -217,7 +220,8 @@ class Identity(Square):
 
     det = 1.
 
-    def __init__(self, ndims):
+    def __init__(self, ndims: Integral):
+        assert isinstance(ndims, Integral) and ndims >= 0, f'ndims={ndims!r}'
         super().__init__(numpy.eye(ndims), numpy.zeros(ndims))
 
     def apply(self, points):
@@ -240,8 +244,9 @@ class Index(Identity):
 
     __slots__ = 'index'
 
-    @types.apply_annotations
-    def __init__(self, ndims: int, index: int):
+    def __init__(self, ndims: Integral, index: Integral):
+        assert isinstance(ndims, Integral) and ndims >= 0, f'ndims={ndims!r}'
+        assert isinstance(index, Integral), f'index={index!r}'
         self.index = index
         super().__init__(ndims)
 
@@ -260,14 +265,15 @@ class Updim(Matrix):
         The offset :math:`b`.
     '''
 
-    __slots__ = 'isflipped',
+    __slots__ = 'isflipped', '_affine'
     __cache__ = 'ext',
 
-    @types.apply_annotations
-    def __init__(self, linear: types.arraydata, offset: types.arraydata, isflipped: bool):
-        assert linear.shape[0] == linear.shape[1] + 1
+    def __init__(self, linear, offset, isflipped: bool):
+        assert isinstance(isflipped, bool), f'isflipped={isflipped!r}'
+        self._affine = linear, offset
         self.isflipped = isflipped
         super().__init__(linear, offset)
+        assert self.todims == self.fromdims + 1
 
     @property
     def ext(self):
@@ -277,7 +283,7 @@ class Updim(Matrix):
     @property
     def flipped(self):
         assert type(self) == Updim
-        return Updim(self.linear, self.offset, not self.isflipped)
+        return Updim(*self._affine, not self.isflipped)
 
     def swapdown(self, other):
         if isinstance(other, TensorChild):
@@ -295,14 +301,16 @@ class SimplexEdge(Updim):
         ((0, 3), (1, 3), (2, 3), (4, 3)),
     )
 
-    @types.apply_annotations
-    def __init__(self, ndims: types.strictint, iedge: types.strictint, inverted: bool = False):
+    def __init__(self, ndims: Integral, iedge: Integral, inverted: bool = False):
+        assert isinstance(ndims, Integral) and ndims >= 0, f'ndims={ndims!r}'
+        assert isinstance(iedge, Integral) and iedge >= 0, f'iedge={iedge!r}'
+        assert isinstance(inverted, bool), f'inverted={inverted!r}'
         assert ndims >= iedge >= 0
         self.iedge = iedge
         self.inverted = inverted
         vertices = numpy.concatenate([numpy.zeros(ndims)[_, :], numpy.eye(ndims)], axis=0)
         coords = vertices[list(range(iedge))+list(range(iedge+1, ndims+1))]
-        super().__init__((coords[1:]-coords[0]).T, coords[0], inverted ^ (iedge % 2))
+        super().__init__((coords[1:]-coords[0]).T, coords[0], inverted ^ bool(iedge % 2))
 
     @property
     def flipped(self):
@@ -332,7 +340,9 @@ class SimplexChild(Square):
 
     __slots__ = 'ichild',
 
-    def __init__(self, ndims, ichild):
+    def __init__(self, ndims: Integral, ichild: Integral):
+        assert isinstance(ndims, Integral) and ndims >= 0, f'ndims={ndims!r}'
+        assert isinstance(ichild, Integral) and ichild >= 0, f'ichild={ichild!r}'
         self.ichild = ichild
         if ichild <= ndims:
             linear = numpy.eye(ndims) * .5
@@ -361,8 +371,10 @@ class ScaledUpdim(Updim):
 
     __slots__ = 'trans1', 'trans2'
 
-    def __init__(self, trans1, trans2):
-        assert trans1.todims == trans1.fromdims == trans2.todims == trans2.fromdims + 1
+    def __init__(self, trans1: Square, trans2: Updim):
+        assert isinstance(trans1, Square), f'trans1={trans1!r}'
+        assert isinstance(trans2, Updim), f'trans2={trans2!r}'
+        assert trans1.fromdims == trans2.todims
         self.trans1 = trans1
         self.trans2 = trans2
         super().__init__(numpy.dot(trans1.linear, trans2.linear), trans1.apply(trans2.offset), trans1.isflipped ^ trans2.isflipped)
@@ -381,7 +393,9 @@ class TensorEdge1(Updim):
 
     __slots__ = 'trans',
 
-    def __init__(self, trans1, ndims2):
+    def __init__(self, trans1: Updim, ndims2: Integral):
+        assert isinstance(trans1, Updim), f'trans1={trans1!r}'
+        assert isinstance(ndims2, Integral), f'trans2={trans2!r}'
         self.trans = trans1
         super().__init__(linear=numeric.blockdiag([trans1.linear, numpy.eye(ndims2)]), offset=numpy.concatenate([trans1.offset, numpy.zeros(ndims2)]), isflipped=trans1.isflipped)
 
@@ -418,9 +432,11 @@ class TensorEdge2(Updim):
 
     __slots__ = 'trans'
 
-    def __init__(self, ndims1, trans2):
+    def __init__(self, ndims1: Integral, trans2: Updim):
+        assert isinstance(ndims1, Integral) and ndims1 >= 0, f'ndims1={ndims1!r}'
+        assert isinstance(trans2, Updim), f'trans2={trans2!r}'
         self.trans = trans2
-        super().__init__(linear=numeric.blockdiag([numpy.eye(ndims1), trans2.linear]), offset=numpy.concatenate([numpy.zeros(ndims1), trans2.offset]), isflipped=trans2.isflipped ^ (ndims1 % 2))
+        super().__init__(linear=numeric.blockdiag([numpy.eye(ndims1), trans2.linear]), offset=numpy.concatenate([numpy.zeros(ndims1), trans2.offset]), isflipped=trans2.isflipped ^ bool(ndims1 % 2))
 
     def swapup(self, other):
         # prioritize ascending transformations, i.e. change updim << scale to scale << updim
@@ -456,8 +472,9 @@ class TensorChild(Square):
     __slots__ = 'trans1', 'trans2'
     __cache__ = 'det',
 
-    def __init__(self, trans1, trans2):
-        assert trans1.fromdims and trans2.fromdims
+    def __init__(self, trans1: Square, trans2: Square):
+        assert isinstance(trans1, Square), f'trans1={trans1!r}'
+        assert isinstance(trans2, Square), f'trans2={trans2!r}'
         self.trans1 = trans1
         self.trans2 = trans2
         linear = numeric.blockdiag([trans1.linear, trans2.linear])
@@ -471,16 +488,16 @@ class TensorChild(Square):
 
 class Point(Matrix):
 
-    @types.apply_annotations
-    def __init__(self, offset: types.arraydata):
+    def __init__(self, offset):
+        offset = numpy.asarray(offset)
         super().__init__(numpy.zeros((offset.shape[0], 0)), offset)
 
 
 def simplex(vertices, isflipped = None):
     '''Create transform item from simplex vertices.'''
 
-    linear = (vertices[1:] - vertices[0]).T
-    offset = vertices[0]
+    linear = types.arraydata((vertices[1:] - vertices[0]).T)
+    offset = types.arraydata(vertices[0])
     if isflipped is None:
         return Square(linear, offset)
     else:

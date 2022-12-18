@@ -546,7 +546,7 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex', *, space=
 
     pgroups = {}
     if ptags:
-        ptrans = [transform.Point(offset) for offset in numpy.eye(ndims+1)[:, 1:]]
+        ptrans = [transform.Point(types.arraydata(offset)) for offset in numpy.eye(ndims+1)[:, 1:]]
         pmap = {inode: numpy.array(numpy.equal(nodes, inode).nonzero()).T for inode in set.union(*map(set, ptags.values()))}
         for pname, inodes in ptags.items():
             ptransforms = transformseq.PlainTransforms([topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode]], ndims, 0)
