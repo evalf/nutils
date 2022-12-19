@@ -96,7 +96,7 @@ jobs:
           python -um pip install "$_wheel[import_gmsh]"
       - name: Install Scipy
         if: ${{ matrix.matrix-backend == 'scipy' }}
-        run: python -um pip install --upgrade --upgrade-strategy eager scipy
+        run: python -um pip install --upgrade scipy
       - name: Configure MKL
         if: ${{ matrix.matrix-backend == 'mkl' }}
         run: |
