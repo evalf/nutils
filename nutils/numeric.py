@@ -243,7 +243,7 @@ def inv(A):
 
 isarray = lambda a: isinstance(a, numpy.ndarray)
 isboolarray = lambda a: isarray(a) and a.dtype == bool
-isbool = lambda a: isboolarray(a) and a.ndim == 0 or type(a) == bool
+isbool = lambda a: isboolarray(a) and a.ndim == 0 or isinstance(a, (bool, numpy.bool_))
 isint = lambda a: isinstance(a, numbers.Integral)
 isnumber = lambda a: isinstance(a, numbers.Number)
 isintarray = lambda a: isarray(a) and numpy.issubdtype(a.dtype, numpy.integer)
