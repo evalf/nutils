@@ -98,4 +98,32 @@ class Point(TestTransform):
         super().setUp(trans=transform.Point(types.arraydata([1., 2., 3.])), linear=numpy.zeros((3, 0)), offset=[1., 2., 3.])
 
 
+class swaps(TestCase):
+
+    def setUp(self):
+        self.chain = transform.SimplexChild(3, 2), transform.SimplexEdge(3, 0), transform.SimplexChild(2, 1), transform.SimplexChild(2, 1), transform.SimplexEdge(2, 0)
+
+    def assertMidpoint(self, chain):
+        midpoint = transform.apply(self.chain, numpy.array([.5]))
+        self.assertEqual(midpoint.tolist(), [0, 0.9375, 0.0625])
+
+    def test_canonical(self):
+        canonical = transform.SimplexEdge(3, 0), transform.SimplexEdge(2, 0), transform.SimplexChild(1, 0), transform.SimplexChild(1, 0), transform.SimplexChild(1, 0)
+        self.assertEqual(transform.canonical(self.chain), canonical)
+        self.assertMidpoint(canonical)
+        self.assertTrue(transform.iscanonical(canonical))
+
+    def test_promote(self):
+        promote = transform.SimplexEdge(3, 0), transform.SimplexChild(2, 1), transform.SimplexChild(2, 1), transform.SimplexChild(2, 1), transform.SimplexEdge(2, 0)
+        self.assertEqual(transform.promote(self.chain, 2), promote)
+        self.assertMidpoint(promote)
+        self.assertFalse(transform.iscanonical(promote))
+
+    def test_uppermost(self):
+        uppermost = transform.SimplexChild(3, 2), transform.SimplexChild(3, 2), transform.SimplexChild(3, 2), transform.SimplexEdge(3, 0), transform.SimplexEdge(2, 0)
+        self.assertEqual(transform.uppermost(self.chain), uppermost)
+        self.assertMidpoint(uppermost)
+        self.assertFalse(transform.iscanonical(uppermost))
+
+
 del TestTransform, TestInvertible, TestUpdim
