@@ -14,25 +14,24 @@ out in element loops. For lower level operations topologies can be used as
 :mod:`nutils.element` iterators.
 """
 
-from . import element, function, evaluable, _util as util, parallel, numeric, cache, transform, transformseq, warnings, matrix, types, points, sparse
-from .sample import Sample
+from . import element, function, evaluable, _util as util, parallel, numeric, cache, transform, transformseq, warnings, types, points, sparse
+from ._util import single_or_multiple
 from .elementseq import References
 from .pointsseq import PointsSequence
-import nutils_poly as poly
-from typing import Any, FrozenSet, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
-import numpy
-import functools
-import collections.abc
-import itertools
-import functools
-import operator
-import numbers
-import pathlib
-import abc
-import treelog as log
-import os
-_ = numpy.newaxis
+from .sample import Sample
 
+from functools import reduce
+from os import environ
+from typing import Any, FrozenSet, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
+
+import itertools
+import numpy
+import nutils_poly as poly
+import operator
+import treelog as log
+
+
+_ = numpy.newaxis
 _identity = lambda x: x
 _strictspace = types.strictstr
 _ArgDict = Mapping[str, numpy.ndarray]
@@ -127,7 +126,7 @@ class Topology(types.Singleton):
             raise ValueError('The topologies must have the same spaces and dimensions.')
         unempty = tuple(filter(None, topos))
         if unempty:
-            return functools.reduce(_DisjointUnion, unempty)
+            return reduce(_DisjointUnion, unempty)
         else:
             return empty
 
@@ -359,7 +358,7 @@ class Topology(types.Singleton):
 
         raise NotImplementedError
 
-    @util.single_or_multiple
+    @single_or_multiple
     def integrate_elementwise(self, funcs: Iterable[function.Array], *, degree: int, asfunction: bool = False, ischeme: str = 'gauss', arguments: Optional[_ArgDict] = None) -> Union[List[numpy.ndarray], List[function.Array]]:
         'element-wise integration'
 
@@ -370,7 +369,7 @@ class Topology(types.Singleton):
         else:
             return retvals
 
-    @util.single_or_multiple
+    @single_or_multiple
     def elem_mean(self, funcs: Iterable[function.Array], geometry: Optional[function.Array] = None, ischeme: str = 'gauss', degree: Optional[int] = None, **kwargs) -> List[numpy.ndarray]:
         ischeme, degree = element.parse_legacy_ischeme(ischeme if degree is None else ischeme + str(degree))
         funcs = (1,)+funcs
@@ -379,7 +378,7 @@ class Topology(types.Singleton):
         area, *integrals = self.integrate_elementwise(funcs, ischeme=ischeme, degree=degree, **kwargs)
         return [integral / area[(slice(None),)+(_,)*(integral.ndim-1)] for integral in integrals]
 
-    @util.single_or_multiple
+    @single_or_multiple
     def integrate(self, funcs: Iterable[function.IntoArray], ischeme: str = 'gauss', degree: Optional[int] = None, edit=None, *, arguments: Optional[_ArgDict] = None) -> Tuple[numpy.ndarray, ...]:
         'integrate functions'
 
@@ -876,7 +875,7 @@ class Topology(types.Singleton):
         return function.DiscontBasis(coeffs, self.f_index, self.f_coords)
 
 
-if os.environ.get('NUTILS_TENSORIAL', None) == 'test':  # pragma: nocover
+if environ.get('NUTILS_TENSORIAL', None) == 'test':  # pragma: nocover
 
     from unittest import SkipTest
 
@@ -1048,7 +1047,7 @@ class _DisjointUnion(_TensorialTopology):
     def interfaces_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
         return Topology.disjoint_union(self.topo1.interfaces_spaces(spaces), self.topo2.interfaces_spaces(spaces))
 
-    @util.single_or_multiple
+    @single_or_multiple
     def integrate_elementwise(self, funcs: Iterable[function.Array], *, degree: int, asfunction: bool = False, ischeme: str = 'gauss', arguments: Optional[_ArgDict] = None) -> Union[List[numpy.ndarray], List[function.Array]]:
         return list(map(numpy.concatenate, zip(*(topo.integrate_elementwise(funcs, degree=degree, ischeme=ischeme, arguments=arguments) for topo in (self.topo1, self.topo2)))))
 
@@ -1726,7 +1725,7 @@ class WithGroupsTopology(TransformChainsTopology):
                 basegroups.append(group)
         if basegroups:
             topos.append(self.basetopo.get_groups(*basegroups))
-        return functools.reduce(operator.or_, topos, self.empty_like())
+        return reduce(operator.or_, topos, self.empty_like())
 
     def take_unchecked(self, __indices: numpy.ndarray) -> TransformChainsTopology:
         return self.basetopo.take_unchecked(__indices)
@@ -2370,7 +2369,7 @@ class SimplexTopology(TransformChainsTopology):
         'bubble from vertices'
 
         bernstein = element.getsimplex(self.ndims).get_poly_coeffs('bernstein', degree=1)
-        bubble = functools.reduce(lambda l, r: poly.mul_same_vars(l, r, self.ndims), bernstein)
+        bubble = reduce(lambda l, r: poly.mul_same_vars(l, r, self.ndims), bernstein)
         coeffs = numpy.zeros((len(bernstein)+1, poly.ncoeffs(self.ndims, 1 + self.ndims)))
         coeffs[:-1] = poly.change_degree(bernstein, self.ndims, 1 + self.ndims) - bubble[None] / (self.ndims+1)
         coeffs[-1] = bubble
@@ -2432,7 +2431,7 @@ class UnionTopology(TransformChainsTopology):
 
     def get_groups(self, *groups: str) -> TransformChainsTopology:
         topos = (topo if name in groups else topo.get_groups(*groups) for topo, name in itertools.zip_longest(self._topos, self._names))
-        return functools.reduce(operator.or_, filter(None, topos), self.empty_like())
+        return reduce(operator.or_, filter(None, topos), self.empty_like())
 
     def __or__(self, other):
         if not isinstance(other, TransformChainsTopology):
