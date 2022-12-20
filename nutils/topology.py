@@ -20,6 +20,7 @@ from .elementseq import References
 from .pointsseq import PointsSequence
 from .sample import Sample
 
+from dataclasses import dataclass
 from functools import reduce
 from os import environ
 from typing import Any, FrozenSet, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
@@ -2922,29 +2923,25 @@ class HierarchicalTopology(TransformChainsTopology):
         return function.PlainBasis(hbasis_coeffs, hbasis_dofs, ndofs, self.f_index, self.f_coords)
 
 
-class PatchBoundary(types.Singleton):
+@dataclass(eq=True, frozen=True)
+class PatchBoundary:
 
-    @types.apply_annotations
-    def __init__(self, id: types.tuple[types.strictint], dim, side, reverse: types.tuple[bool], transpose: types.tuple[types.strictint]):
-        super().__init__()
-        self.id = id
-        self.dim = dim
-        self.side = side
-        self.reverse = reverse
-        self.transpose = transpose
+    id: Tuple[int, ...]
+    dim: int
+    side: int
+    reverse: Tuple[bool, ...]
+    transpose: Tuple[int, ...]
 
     def apply_transform(self, array):
         return array[tuple(slice(None, None, -1) if i else slice(None) for i in self.reverse)].transpose(self.transpose)
 
 
-class Patch(types.Singleton):
+@dataclass(eq=True, frozen=True)
+class Patch:
 
-    @types.apply_annotations
-    def __init__(self, topo: stricttopology, verts: types.arraydata, boundaries: types.tuple[types.strict[PatchBoundary]]):
-        super().__init__()
-        self.topo = topo
-        self.verts = numpy.asarray(verts)
-        self.boundaries = boundaries
+    topo: Topology
+    verts: types.arraydata
+    boundaries: Tuple[PatchBoundary, ...]
 
 
 class MultipatchTopology(TransformChainsTopology):
