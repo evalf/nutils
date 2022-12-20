@@ -15,7 +15,7 @@ out in element loops. For lower level operations topologies can be used as
 """
 
 from . import element, function, evaluable, _util as util, parallel, numeric, cache, transform, transformseq, warnings, types, points, sparse
-from ._util import single_or_multiple
+from ._util import single_or_multiple, cached_property
 from .elementseq import References
 from .pointsseq import PointsSequence
 from .sample import Sample
@@ -37,7 +37,7 @@ _strictspace = types.strictstr
 _ArgDict = Mapping[str, numpy.ndarray]
 
 
-class Topology(types.Singleton):
+class Topology:
     '''topology base class
 
     Parameters
@@ -60,8 +60,6 @@ class Topology(types.Singleton):
     ndims : :class:`int`
         The dimension of this topology.
     '''
-
-    __slots__ = 'spaces', 'space_dims', 'references', 'ndims'
 
     @staticmethod
     def empty(spaces: Iterable[str], space_dims: Iterable[int], ndims: int) -> 'Topology':
@@ -486,7 +484,7 @@ class Topology(types.Singleton):
 
         raise NotImplementedError
 
-    @property
+    @cached_property
     def refined(self) -> 'Topology':
         return self.refine_spaces(self.spaces)
 
@@ -749,7 +747,7 @@ class Topology(types.Singleton):
 
         raise NotImplementedError
 
-    @property
+    @cached_property
     def boundary(self) -> 'Topology':
         '''
         :class:`Topology`:
@@ -809,7 +807,7 @@ class Topology(types.Singleton):
 
         raise NotImplementedError
 
-    @property
+    @cached_property
     def interfaces(self) -> 'Topology':
         return self.interfaces_spaces(self.spaces)
 
@@ -1023,7 +1021,7 @@ class _DisjointUnion(_TensorialTopology):
 
     __rand__ = __and__
 
-    @property
+    @cached_property
     def connectivity(self) -> Sequence[Sequence[int]]:
         o = len(self.topo1)
         return tuple(self.topo1.connectivity) + tuple(tuple(-1 if n < 0 else n + o for n in N) for N in self.topo2.connectivity)
@@ -1088,7 +1086,7 @@ class _Mul(_TensorialTopology):
     def f_coords(self) -> function.Array:
         return numpy.concatenate([self.topo1.f_coords, self.topo2.f_coords])
 
-    @property
+    @cached_property
     def connectivity(self) -> Sequence[Sequence[int]]:
         connectivity1 = self.topo1.connectivity
         connectivity2 = self.topo2.connectivity
@@ -1285,9 +1283,6 @@ class _WithGroupAliases(_TensorialTopology):
 class TransformChainsTopology(Topology):
     'base class for topologies with transform chains'
 
-    __slots__ = 'space', 'transforms', 'opposites'
-    __cache__ = 'border_transforms', 'boundary', 'interfaces'
-
     @types.apply_annotations
     def __init__(self, space: _strictspace, references: types.strict[References], transforms: transformseq.stricttransforms, opposites: transformseq.stricttransforms):
         assert transforms.todims == opposites.todims
@@ -1353,7 +1348,7 @@ class TransformChainsTopology(Topology):
         assert isinstance(other, TransformChainsTopology) and other.space == self.space and other.ndims == self.ndims
         return other - other.subset(self, newboundary=getattr(self, 'boundary', None))
 
-    @property
+    @cached_property
     def border_transforms(self):
         indices = set()
         for btrans in self.boundary.transforms:
@@ -1392,7 +1387,7 @@ class TransformChainsTopology(Topology):
     def refined_by(self, refine):
         return HierarchicalTopology(self, [numpy.arange(len(self))]).refined_by(refine)
 
-    @property
+    @cached_property
     def refined(self):
         return RefinedTopology(self)
 
@@ -1565,7 +1560,7 @@ class TransformChainsTopology(Topology):
     def boundary_spaces_unchecked(self, spaces: FrozenSet[str]) -> 'TransformChainsTopology':
         return self.boundary
 
-    @property
+    @cached_property
     @log.withcontext
     def boundary(self):
         references = []
@@ -1596,7 +1591,7 @@ class TransformChainsTopology(Topology):
     def interfaces_spaces_unchecked(self, spaces: FrozenSet[str]) -> 'TransformChainsTopology':
         return self.interfaces
 
-    @property
+    @cached_property
     @log.withcontext
     def interfaces(self):
         references = []
@@ -1693,9 +1688,6 @@ class LocateError(Exception):
 class WithGroupsTopology(TransformChainsTopology):
     'item topology'
 
-    __slots__ = 'basetopo', 'vgroups', 'bgroups', 'igroups', 'pgroups'
-    __cache__ = 'refined',
-
     @types.apply_annotations
     def __init__(self, basetopo: stricttopology, vgroups: types.frozendict = {}, bgroups: types.frozendict = {}, igroups: types.frozendict = {}, pgroups: types.frozendict = {}):
         assert vgroups or bgroups or igroups or pgroups
@@ -1782,7 +1774,7 @@ class WithGroupsTopology(TransformChainsTopology):
     def basis(self, name, *args, **kwargs):
         return self.basetopo.basis(name, *args, **kwargs)
 
-    @property
+    @cached_property
     def refined(self):
         groups = [{name: topo.refined if isinstance(topo, TransformChainsTopology) else topo for name, topo in groups.items()} for groups in (self.vgroups, self.bgroups, self.igroups, self.pgroups)]
         return self.basetopo.refined.withgroups(*groups)
@@ -1793,8 +1785,6 @@ class WithGroupsTopology(TransformChainsTopology):
 
 class OppositeTopology(TransformChainsTopology):
     'opposite topology'
-
-    __slots__ = 'basetopo',
 
     def __init__(self, basetopo):
         self.basetopo = basetopo
@@ -1819,8 +1809,6 @@ class OppositeTopology(TransformChainsTopology):
 class EmptyTopology(TransformChainsTopology):
     'empty topology'
 
-    __slots__ = ()
-
     @types.apply_annotations
     def __init__(self, space: _strictspace, todims: types.strictint, fromdims: types.strictint):
         super().__init__(space, References.empty(fromdims), transformseq.EmptyTransforms(todims, fromdims), transformseq.EmptyTransforms(todims, fromdims))
@@ -1842,9 +1830,6 @@ def StructuredLine(space, root: transform.stricttransformitem, i: types.strictin
 
 class StructuredTopology(TransformChainsTopology):
     'structured topology'
-
-    __slots__ = 'root', 'axes', 'nrefine', 'shape', '_bnames', '_asaffine_geom', '_asaffine_retval'
-    __cache__ = 'connectivity', 'boundary', 'interfaces'
 
     @types.apply_annotations
     def __init__(self, space, root: transform.stricttransformitem, axes: types.tuple[types.strict[transformseq.Axis]], nrefine: types.strictint = 0, bnames: types.tuple[types.tuple[types.strictstr]] = (('left', 'right'), ('bottom', 'top'), ('front', 'back'))):
@@ -1892,7 +1877,7 @@ class StructuredTopology(TransformChainsTopology):
         dimaxes = (axis for axis in self.axes if axis.isdim)
         return tuple(idim for idim, axis in enumerate(dimaxes) if axis.isdim and axis.isperiodic)
 
-    @property
+    @cached_property
     def connectivity(self):
         connectivity = numpy.empty(self.shape+(self.ndims, 2), dtype=int)
         connectivity[...] = -1
@@ -1908,7 +1893,7 @@ class StructuredTopology(TransformChainsTopology):
                 connectivity[s+(0, ..., idim, 1)] = ielems[s+(-1,)]
         return types.frozenarray(connectivity.reshape(len(self), self.ndims*2), copy=False)
 
-    @property
+    @cached_property
     def boundary(self):
         'boundary'
 
@@ -1921,7 +1906,7 @@ class StructuredTopology(TransformChainsTopology):
         bnames = [bname for bnames, axis in zip(self._bnames, self.axes) if axis.isdim and not axis.isperiodic for bname in bnames]
         return DisjointUnionTopology(btopos, bnames)
 
-    @property
+    @cached_property
     def interfaces(self):
         'interfaces'
 
@@ -2233,7 +2218,7 @@ class StructuredTopology(TransformChainsTopology):
             raise NotImplementedError('legendre is only implemented for 1D topologies')
         return function.LegendreBasis(degree, len(self), self.f_index, self.f_coords)
 
-    @property
+    @cached_property
     def refined(self):
         'refine non-uniformly'
 
@@ -2300,8 +2285,6 @@ class StructuredTopology(TransformChainsTopology):
 class ConnectedTopology(TransformChainsTopology):
     'unstructured topology with connectivity'
 
-    __slots__ = 'connectivity',
-
     @types.apply_annotations
     def __init__(self, space, references: types.strict[References], transforms: transformseq.stricttransforms, opposites: transformseq.stricttransforms, connectivity: types.tuple[types.arraydata]):
         assert len(connectivity) == len(references) and all(c.shape[0] == e.nedges for c, e in zip(connectivity, references))
@@ -2311,9 +2294,6 @@ class ConnectedTopology(TransformChainsTopology):
 
 class SimplexTopology(TransformChainsTopology):
     'simpex topology'
-
-    __slots__ = 'simplices', 'references', 'transforms', 'opposites'
-    __cache__ = 'connectivity'
 
     def _renumber(simplices):
         simplices = numpy.asarray(simplices)
@@ -2334,7 +2314,7 @@ class SimplexTopology(TransformChainsTopology):
         space, = self.spaces
         return SimplexTopology(space, self.simplices[indices], self.transforms[indices], self.opposites[indices])
 
-    @property
+    @cached_property
     def boundary(self):
         space, = self.spaces
         ielem, iedge = (self.connectivity == -1).nonzero()
@@ -2344,7 +2324,7 @@ class SimplexTopology(TransformChainsTopology):
         transforms = self.transforms.edges(self.references)[ielem * (nd+1) + iedge]
         return SimplexTopology(space, simplices, transforms, transforms)
 
-    @property
+    @cached_property
     def connectivity(self):
         nverts = self.ndims + 1
         edge_vertices = numpy.arange(nverts).repeat(self.ndims).reshape(self.ndims, nverts)[:, ::-1].T  # nverts x ndims
@@ -2382,8 +2362,6 @@ class SimplexTopology(TransformChainsTopology):
 
 class UnionTopology(TransformChainsTopology):
     'grouped topology'
-
-    __slots__ = '_topos', '_names', 'references', 'transforms', 'opposites'
 
     @types.apply_annotations
     def __init__(self, topos: types.tuple[stricttopology], names: types.tuple[types.strictstr] = ()):
@@ -2440,15 +2418,13 @@ class UnionTopology(TransformChainsTopology):
             return UnionTopology(self._topos + (other,), self._names)
         return UnionTopology(self._topos[:len(self._names)] + other._topos + self._topos[len(self._names):], self._names + other._names)
 
-    @property
+    @cached_property
     def refined(self):
         return UnionTopology([topo.refined for topo in self._topos], self._names)
 
 
 class DisjointUnionTopology(TransformChainsTopology):
     'grouped topology'
-
-    __slots__ = '_topos', '_names'
 
     @types.apply_annotations
     def __init__(self, topos: types.tuple[stricttopology], names: types.tuple[types.strictstr] = ()):
@@ -2475,16 +2451,13 @@ class DisjointUnionTopology(TransformChainsTopology):
         else:
             return DisjointUnionTopology(topos)
 
-    @property
+    @cached_property
     def refined(self):
         return DisjointUnionTopology([topo.refined for topo in self._topos], self._names)
 
 
 class SubsetTopology(TransformChainsTopology):
     'trimmed'
-
-    __slots__ = 'refs', 'basetopo', 'newboundary', '_indices'
-    __cache__ = 'connectivity', 'boundary', 'interfaces', 'refined'
 
     @types.apply_annotations
     def __init__(self, basetopo: stricttopology, refs: types.tuple[element.strictreference], newboundary=None):
@@ -2518,13 +2491,13 @@ class SubsetTopology(TransformChainsTopology):
             return self.basetopo
         return SubsetTopology(self.basetopo, refs)  # TODO boundary
 
-    @property
+    @cached_property
     def connectivity(self):
         renumber = numeric.invmap([i for i, ref in enumerate(self.refs) if ref], length=len(self.refs)+1, missing=-1)  # length=..+1 serves to map -1 to -1
         return tuple(types.frozenarray(numpy.concatenate([renumber.take(ioppelems), numpy.repeat(-1, ref.nedges-len(ioppelems))]), copy=False)
                      for ref, ioppelems in zip(self.refs, self.basetopo.connectivity) if ref)
 
-    @property
+    @cached_property
     def refined(self):
         child_refs = self.references.children
         indices = types.frozenarray(numpy.array([i for i, ref in enumerate(child_refs) if ref], dtype=int), copy=False)
@@ -2532,7 +2505,7 @@ class SubsetTopology(TransformChainsTopology):
         self_refined = TransformChainsTopology(self.space, child_refs[indices], refined_transforms, refined_transforms)
         return self.basetopo.refined.subset(self_refined, self.newboundary.refined if isinstance(self.newboundary, TransformChainsTopology) else self.newboundary, strict=True)
 
-    @property
+    @cached_property
     def boundary(self):
         baseboundary = self.basetopo.boundary
         baseconnectivity = self.basetopo.connectivity
@@ -2582,7 +2555,7 @@ class SubsetTopology(TransformChainsTopology):
             trimboundary = TransformChainsTopology(self.space, References.from_iter(trimmedreferences, self.ndims-1), transformseq.PlainTransforms(trimmedtransforms, self.transforms.todims, self.ndims-1), transformseq.PlainTransforms(trimmedopposites, self.transforms.todims, self.ndims-1))
         return DisjointUnionTopology([trimboundary, origboundary], names=[self.newboundary] if isinstance(self.newboundary, str) else [])
 
-    @property
+    @cached_property
     def interfaces(self):
         baseinterfaces = self.basetopo.interfaces
         superinterfaces = super().interfaces
@@ -2617,9 +2590,6 @@ class SubsetTopology(TransformChainsTopology):
 class RefinedTopology(TransformChainsTopology):
     'refinement'
 
-    __slots__ = 'basetopo',
-    __cache__ = 'boundary', 'connectivity'
-
     @types.apply_annotations
     def __init__(self, basetopo: stricttopology):
         self.basetopo = basetopo
@@ -2632,11 +2602,11 @@ class RefinedTopology(TransformChainsTopology):
     def get_groups(self, *groups: str) -> TransformChainsTopology:
         return self.basetopo.get_groups(*groups).refined
 
-    @property
+    @cached_property
     def boundary(self):
         return self.basetopo.boundary.refined
 
-    @property
+    @cached_property
     def connectivity(self):
         offsets = numpy.cumsum([0] + [ref.nchildren for ref in self.basetopo.references])
         connectivity = [offset + edges for offset, ref in zip(offsets, self.basetopo.references) for edges in ref.connectivity]
@@ -2655,9 +2625,6 @@ class RefinedTopology(TransformChainsTopology):
 
 class HierarchicalTopology(TransformChainsTopology):
     'collection of nested topology elments'
-
-    __slots__ = 'basetopo', 'levels', '_indices_per_level', '_offsets'
-    __cache__ = 'refined', 'boundary', 'interfaces'
 
     @types.apply_annotations
     def __init__(self, basetopo: stricttopology, indices_per_level: types.tuple[types.arraydata]):
@@ -2738,7 +2705,7 @@ class HierarchicalTopology(TransformChainsTopology):
             indices_per_level.pop(-1)
         return HierarchicalTopology(self.basetopo, ([numpy.unique(numpy.array(i, dtype=int)) for i in indices_per_level]))
 
-    @property
+    @cached_property
     def refined(self):
         refined_indices_per_level = [numpy.array([], dtype=int)]
         fine = self.basetopo
@@ -2750,7 +2717,7 @@ class HierarchicalTopology(TransformChainsTopology):
             refined_indices_per_level.append(numpy.unique(numpy.fromiter(map(fine.transforms.index, fine_transforms), dtype=int)))
         return HierarchicalTopology(self.basetopo, refined_indices_per_level)
 
-    @property
+    @cached_property
     @log.withcontext
     def boundary(self):
         'boundary elements'
@@ -2775,7 +2742,7 @@ class HierarchicalTopology(TransformChainsTopology):
             bindices_per_level.append(bindices)
         return HierarchicalTopology(basebtopo, bindices_per_level)
 
-    @property
+    @cached_property
     @log.withcontext
     def interfaces(self):
         'interfaces'
@@ -2957,8 +2924,6 @@ class HierarchicalTopology(TransformChainsTopology):
 
 class PatchBoundary(types.Singleton):
 
-    __slots__ = 'id', 'dim', 'side', 'reverse', 'transpose'
-
     @types.apply_annotations
     def __init__(self, id: types.tuple[types.strictint], dim, side, reverse: types.tuple[bool], transpose: types.tuple[types.strictint]):
         super().__init__()
@@ -2974,8 +2939,6 @@ class PatchBoundary(types.Singleton):
 
 class Patch(types.Singleton):
 
-    __slots__ = 'topo', 'verts', 'boundaries'
-
     @types.apply_annotations
     def __init__(self, topo: stricttopology, verts: types.arraydata, boundaries: types.tuple[types.strict[PatchBoundary]]):
         super().__init__()
@@ -2986,9 +2949,6 @@ class Patch(types.Singleton):
 
 class MultipatchTopology(TransformChainsTopology):
     'multipatch topology'
-
-    __slots__ = 'patches',
-    __cache__ = '_patchinterfaces', 'boundary', 'interfaces', 'refined', 'connectivity'
 
     @staticmethod
     def build_boundarydata(connectivity):
@@ -3046,7 +3006,7 @@ class MultipatchTopology(TransformChainsTopology):
             transformseq.chain([patch.topo.transforms for patch in self.patches], self.patches[0].topo.transforms.todims, self.patches[0].topo.ndims),
             transformseq.chain([patch.topo.opposites for patch in self.patches], self.patches[0].topo.transforms.todims, self.patches[0].topo.ndims))
 
-    @property
+    @cached_property
     def _patchinterfaces(self):
         patchinterfaces = {}
         for patch in self.patches:
@@ -3180,7 +3140,7 @@ class MultipatchTopology(TransformChainsTopology):
         coords = function.transforms_coords(self.space, transforms)
         return function.DiscontBasis([types.frozenarray([[1]], dtype=float)]*len(self.patches), index, coords)
 
-    @property
+    @cached_property
     def boundary(self):
         'boundary'
 
@@ -3198,7 +3158,7 @@ class MultipatchTopology(TransformChainsTopology):
         else:
             return DisjointUnionTopology(subtopos, subnames)
 
-    @property
+    @cached_property
     def interfaces(self):
         '''interfaces
 
@@ -3240,7 +3200,7 @@ class MultipatchTopology(TransformChainsTopology):
 
         return DisjointUnionTopology((intrapatchtopo, interpatchtopo), ('intrapatch', 'interpatch'))
 
-    @property
+    @cached_property
     def connectivity(self):
         connectivity = []
         patchinterfaces = {}
@@ -3262,7 +3222,7 @@ class MultipatchTopology(TransformChainsTopology):
                 connectivity[jelem, jedge] = ielem
         return types.frozenarray(connectivity, copy=False)
 
-    @property
+    @cached_property
     def refined(self):
         'refine'
 

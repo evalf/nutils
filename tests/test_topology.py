@@ -61,6 +61,12 @@ class CommonAssertions:
             actual_coords.append(actual_elem_coords.tolist())
         self.assertEqual(sorted(actual_coords), sorted(desired_coords))
 
+    def assertEquivalent(self, topo1, topo2):
+        self.assertEqual(type(topo1), type(topo2))
+        self.assertEqual(topo1.spaces, topo2.spaces)
+        self.assertEqual(topo1.space_dims, topo2.space_dims)
+        self.assertEqual(topo1.references, topo2.references)
+
 
 class CommonTests(CommonAssertions):
 
@@ -134,7 +140,7 @@ class CommonTests(CommonAssertions):
         self.assertEqual(as_rounded_list(self.topo.integrate_elementwise(function.J(self.geom), degree=0)), self.desired_volumes)
 
     def test_refine_spaces_none(self):
-        self.assertEqual(self.topo.refine_spaces([]), self.topo)
+        self.assertEquivalent(self.topo.refine_spaces([]), self.topo)
 
     def test_invalid_intersections(self):
         with self.assertRaises(ValueError):
@@ -429,8 +435,8 @@ class NewEmpty(TestCase, CommonTests, ConformingTests):
         atrans = transformseq.IndexTransforms(1, 1, 0)
         btrans = transformseq.IndexTransforms(2, 1, 1)
         other = topology.SimplexTopology('a', numpy.array([[0, 1]]), atrans, atrans) * topology.SimplexTopology('b', numpy.array([[0, 1, 2]]), btrans, btrans)
-        self.assertEqual(self.topo & other, self.topo)
-        self.assertEqual(other & self.topo, self.topo)
+        self.assertEquivalent(self.topo & other, self.topo)
+        self.assertEquivalent(other & self.topo, self.topo)
 
     def test_union(self):
         atrans = transformseq.IndexTransforms(1, 1, 0)
@@ -754,7 +760,7 @@ class picklability(TestCase):
 
 
 @parametrize
-class common_refine(TestCase):
+class common_refine(TestCase, CommonAssertions):
 
     def _shield(self, topo):
         return topo if self.special \
@@ -802,7 +808,7 @@ class common_refine(TestCase):
             self.assertIs(iface, dom1.refined.boundary['right'])
         with self.subTest('refined-right'):
             iface = self._shield(dom1.boundary) & ~dom2.refined.boundary['left']
-            self.assertIs(iface, ~dom2.refined.boundary['left'])
+            self.assertEquivalent(iface, ~dom2.refined.boundary['left'])
         with self.subTest('partial-refined-both'):
             iface = dom1.refined_by([0]).boundary & self._shield(~dom2.refined_by([2]).boundary)
             self.assertEqual(len(iface), 5)
@@ -1208,7 +1214,7 @@ class TransformChainsTests:
         check = self.topo
         for i in range(4):
             level = next(level_iter)
-            self.assertEqual(level, check)
+            self.assertIs(level, check)
             check = check.refined
 
 
