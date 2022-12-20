@@ -1852,7 +1852,7 @@ class StructuredTopology(TransformChainsTopology):
         if nbounds == 0:
             opposites = transforms
         else:
-            axes = [axis.opposite(nbounds-1) for axis in self.axes]
+            axes = tuple(axis.opposite(nbounds-1) for axis in self.axes)
             opposites = transformseq.StructuredTransforms(self.root, axes, self.nrefine)
 
         super().__init__(space, references, transforms, opposites)
@@ -2548,14 +2548,14 @@ class SubsetTopology(TransformChainsTopology):
                     edgeref -= oppref.edge_refs[ioppedge]
                     if edgeref:
                         trimmedreferences.append(edgeref)
-                        trimmedtransforms.append(elemtrans+(edgetrans,))
-                        trimmedopposites.append(self.basetopo.transforms[ioppelem]+(oppref.edge_transforms[ioppedge],))
+                        trimmedtransforms.append(transform.canonical((*elemtrans, edgetrans)))
+                        trimmedopposites.append(transform.canonical((*self.basetopo.transforms[ioppelem], oppref.edge_transforms[ioppedge])))
             # The last edges of newref (beyond the number of edges of the original)
             # cannot have opposites and are added to the trimmed group directly.
             for edgetrans, edgeref in newref.edges[len(ioppelems):]:
                 trimmedreferences.append(edgeref)
-                trimmedtransforms.append(elemtrans+(edgetrans,))
-                trimmedopposites.append(elemtrans+(edgetrans.flipped,))
+                trimmedtransforms.append(transform.canonical((*elemtrans, edgetrans)))
+                trimmedopposites.append(transform.canonical((*elemtrans, edgetrans.flipped)))
         origboundary = SubsetTopology(baseboundary, brefs)
         if isinstance(self.newboundary, TransformChainsTopology):
             trimmedbrefs = [ref.empty for ref in self.newboundary.references]
@@ -2563,7 +2563,7 @@ class SubsetTopology(TransformChainsTopology):
                 trimmedbrefs[self.newboundary.transforms.index(trans)] = ref
             trimboundary = SubsetTopology(self.newboundary, trimmedbrefs)
         else:
-            trimboundary = TransformChainsTopology(self.space, References.from_iter(trimmedreferences, self.ndims-1), transformseq.PlainTransforms(trimmedtransforms, self.transforms.todims, self.ndims-1), transformseq.PlainTransforms(trimmedopposites, self.transforms.todims, self.ndims-1))
+            trimboundary = TransformChainsTopology(self.space, References.from_iter(trimmedreferences, self.ndims-1), transformseq.PlainTransforms(tuple(trimmedtransforms), self.transforms.todims, self.ndims-1), transformseq.PlainTransforms(tuple(trimmedopposites), self.transforms.todims, self.ndims-1))
         return DisjointUnionTopology([trimboundary, origboundary], names=[self.newboundary] if isinstance(self.newboundary, str) else [])
 
     @cached_property

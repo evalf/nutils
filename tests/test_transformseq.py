@@ -1,3 +1,4 @@
+from nutils import types, transform
 from nutils.testing import TestCase, parametrize
 import nutils.transformseq
 import nutils.element
@@ -7,7 +8,6 @@ import unittest
 import numpy
 import itertools
 import functools
-import types
 
 
 class Common:
@@ -195,7 +195,7 @@ class EmptyTransforms(TestCase, Common, Edges):
 class PlainTransforms1D(TestCase, Common, Edges):
     def setUp(self):
         super().setUp()
-        self.seq = nutils.transformseq.PlainTransforms([(x1, i10), (x1, i11), (x1, i12), (x1, i13)], 1, 1)
+        self.seq = nutils.transformseq.PlainTransforms(((x1, i10), (x1, i11), (x1, i12), (x1, i13)), 1, 1)
         self.check = (x1, i10), (x1, i11), (x1, i12), (x1, i13)
         self.checkmissing = (l1, i10), (x1, i14), (r1, i10)
         self.checkrefs = References.uniform(line, 4)
@@ -206,7 +206,7 @@ class PlainTransforms1D(TestCase, Common, Edges):
 class PlainTransforms2D(TestCase, Common, Edges):
     def setUp(self):
         super().setUp()
-        self.seq = nutils.transformseq.PlainTransforms([(x2, i20, i20), (x2, i20, i21), (x2, i21, i20), (x2, i21, i21)], 2, 2)
+        self.seq = nutils.transformseq.PlainTransforms(((x2, i20, i20), (x2, i20, i21), (x2, i21, i20), (x2, i21, i21)), 2, 2)
         self.check = (x2, i20, i20), (x2, i20, i21), (x2, i21, i20), (x2, i21, i21)
         self.checkmissing = (l2, i20, i20), (x2, i20, i22), (x2, i21, i22), (r2, i20, i20)
         self.checkrefs = References.from_iter((square, square, triangle, triangle), 2)
@@ -217,7 +217,7 @@ class PlainTransforms2D(TestCase, Common, Edges):
 class MaskedTransforms(TestCase, Common, Edges):
     def setUp(self):
         super().setUp()
-        self.seq = nutils.transformseq.MaskedTransforms(nutils.transformseq.PlainTransforms([(x2, i20, i20), (x2, i20, i21), (x2, i21, i20), (x2, i21, i21)], 2, 2), [0, 2])
+        self.seq = nutils.transformseq.MaskedTransforms(nutils.transformseq.PlainTransforms(((x2, i20, i20), (x2, i20, i21), (x2, i21, i20), (x2, i21, i21)), 2, 2), types.arraydata([0, 2]))
         self.check = (x2, i20, i20), (x2, i21, i20)
         self.checkmissing = (l2, i20, i20), (x2, i20, i21), (x2, i21, i21), (x2, i20, i22), (x2, i21, i22), (r2, i20, i20)
         self.checkrefs = References.from_iter((square, triangle), 2)
@@ -228,7 +228,7 @@ class MaskedTransforms(TestCase, Common, Edges):
 class ReorderedTransforms(TestCase, Common, Edges):
     def setUp(self):
         super().setUp()
-        self.seq = nutils.transformseq.ReorderedTransforms(nutils.transformseq.PlainTransforms([(x2, i20, i20), (x2, i20, i21), (x2, i21, i20), (x2, i21, i21)], 2, 2), [0, 2, 3, 1])
+        self.seq = nutils.transformseq.ReorderedTransforms(nutils.transformseq.PlainTransforms(((x2, i20, i20), (x2, i20, i21), (x2, i21, i20), (x2, i21, i21)), 2, 2), types.arraydata([0, 2, 3, 1]))
         self.check = (x2, i20, i20), (x2, i21, i20), (x2, i21, i21), (x2, i20, i21)
         self.checkmissing = (l2, i20, i20), (x2, i20, i22), (x2, i21, i22), (r2, i20, i20)
         self.checkrefs = References.uniform(square, 4)
@@ -239,7 +239,7 @@ class ReorderedTransforms(TestCase, Common, Edges):
 class DerivedTransforms(TestCase, Common, Edges):
     def setUp(self):
         super().setUp()
-        self.seq = nutils.transformseq.DerivedTransforms(nutils.transformseq.PlainTransforms([(x1, i10), (x1, i11)], 1, 1), References.uniform(line, 2), 'child_transforms', 1)
+        self.seq = nutils.transformseq.DerivedTransforms(nutils.transformseq.PlainTransforms(((x1, i10), (x1, i11)), 1, 1), References.uniform(line, 2), 'child_transforms', 1)
         self.check = (x1, i10, c0), (x1, i10, c1), (x1, i11, c0), (x1, i11, c1)
         self.checkmissing = (l1, i10), (x1, i10), (x1, i11), (r1, i10)
         self.checkrefs = References.uniform(line, 4)
@@ -250,7 +250,7 @@ class DerivedTransforms(TestCase, Common, Edges):
 class UniformDerivedTransforms(TestCase, Common, Edges):
     def setUp(self):
         super().setUp()
-        self.seq = nutils.transformseq.UniformDerivedTransforms(nutils.transformseq.PlainTransforms([(x1, i10), (x1, i11)], 1, 1), line, 'child_transforms', 1)
+        self.seq = nutils.transformseq.UniformDerivedTransforms(nutils.transformseq.PlainTransforms(((x1, i10), (x1, i11)), 1, 1), line, 'child_transforms', 1)
         self.check = (x1, i10, c0), (x1, i10, c1), (x1, i11, c0), (x1, i11, c1)
         self.checkmissing = (l1, i10), (x1, i10), (x1, i11), (r1, i10)
         self.checkrefs = References.uniform(line, 4)
@@ -261,7 +261,7 @@ class UniformDerivedTransforms(TestCase, Common, Edges):
 class ChainedTransforms(TestCase, Common, Edges):
     def setUp(self):
         super().setUp()
-        self.seq = nutils.transformseq.ChainedTransforms([nutils.transformseq.PlainTransforms([(x1, i10), (x1, i11)], 1, 1), nutils.transformseq.PlainTransforms([(x1, i12), (x1, i13)], 1, 1)])
+        self.seq = nutils.transformseq.ChainedTransforms((nutils.transformseq.PlainTransforms(((x1, i10), (x1, i11)), 1, 1), nutils.transformseq.PlainTransforms(((x1, i12), (x1, i13)), 1, 1)))
         self.check = (x1, i10), (x1, i11), (x1, i12), (x1, i13)
         self.checkmissing = (l1, i10), (x1, i14), (r1, i10)
         self.checkrefs = References.uniform(line, 4)
@@ -272,7 +272,7 @@ class ChainedTransforms(TestCase, Common, Edges):
 class StructuredTransforms1D(TestCase, Common, Edges):
     def setUp(self):
         super().setUp()
-        self.seq = nutils.transformseq.StructuredTransforms(x1, [nutils.transformseq.DimAxis(0, 4, 0, False)], 0)
+        self.seq = nutils.transformseq.StructuredTransforms(x1, (nutils.transformseq.DimAxis(0, 4, 0, False),), 0)
         self.check = (x1, i10), (x1, i11), (x1, i12), (x1, i13)
         self.checkmissing = (l1, i10), (x1,), (x1, i14), (r1, i10), (x1, c1)
         self.checkrefs = References.uniform(line, 4)
@@ -283,7 +283,7 @@ class StructuredTransforms1D(TestCase, Common, Edges):
 class StructuredTransforms1DRefined(TestCase, Common, Edges):
     def setUp(self):
         super().setUp()
-        self.seq = nutils.transformseq.StructuredTransforms(x1, [nutils.transformseq.DimAxis(0, 4, 0, False)], 1)
+        self.seq = nutils.transformseq.StructuredTransforms(x1, (nutils.transformseq.DimAxis(0, 4, 0, False),), 1)
         self.check = (x1, i10, c0), (x1, i10, c1), (x1, i11, c0), (x1, i11, c1)
         self.checkmissing = (l1, i10), (x1,), (x1, i10), (x1, i11), (x1, i10, i11), (r1, i10)
         self.checkrefs = References.uniform(line, 4)
@@ -294,7 +294,7 @@ class StructuredTransforms1DRefined(TestCase, Common, Edges):
 class StructuredTransforms1DLeft(TestCase, Common):
     def setUp(self):
         super().setUp()
-        self.seq = nutils.transformseq.StructuredTransforms(x1, [nutils.transformseq.IntAxis(3, 4, 9, 0, False)], 0)
+        self.seq = nutils.transformseq.StructuredTransforms(x1, (nutils.transformseq.IntAxis(3, 4, 9, 0, False),), 0)
         self.check = (x1, i13, e1),
         self.checkmissing = (x1, i10, e0), (x1, i12, e0), (x1, i14, e0)
         self.checkrefs = References.uniform(point, 1)
@@ -305,7 +305,7 @@ class StructuredTransforms1DLeft(TestCase, Common):
 class StructuredTransforms1DRight(TestCase, Common):
     def setUp(self):
         super().setUp()
-        self.seq = nutils.transformseq.StructuredTransforms(x1, [nutils.transformseq.IntAxis(2, 3, 9, 0, True)], 0)
+        self.seq = nutils.transformseq.StructuredTransforms(x1, (nutils.transformseq.IntAxis(2, 3, 9, 0, True),), 0)
         self.check = (x1, i12, e0),
         self.checkmissing = (x1, i10, e0), (x1, i13, e1), (x1, i14, e0)
         self.checkrefs = References.uniform(point, 1)
@@ -316,7 +316,7 @@ class StructuredTransforms1DRight(TestCase, Common):
 class StructuredTransforms1DInterfacesLeft(TestCase, Common):
     def setUp(self):
         super().setUp()
-        self.seq = nutils.transformseq.StructuredTransforms(x1, [nutils.transformseq.IntAxis(1, 4, 9, 0, False)], 0)
+        self.seq = nutils.transformseq.StructuredTransforms(x1, (nutils.transformseq.IntAxis(1, 4, 9, 0, False),), 0)
         self.check = (x1, i11, e1), (x1, i12, e1), (x1, i13, e1)
         self.checkmissing = (x1, i10, e1), (x1, i10, e0), (x1, i11, e0), (x1, i12, e0), (x1, i13, e0)
         self.checkrefs = References.uniform(point, 3)
@@ -327,7 +327,7 @@ class StructuredTransforms1DInterfacesLeft(TestCase, Common):
 class StructuredTransforms1DInterfacesRight(TestCase, Common):
     def setUp(self):
         super().setUp()
-        self.seq = nutils.transformseq.StructuredTransforms(x1, [nutils.transformseq.IntAxis(0, 3, 9, 0, True)], 0)
+        self.seq = nutils.transformseq.StructuredTransforms(x1, (nutils.transformseq.IntAxis(0, 3, 9, 0, True),), 0)
         self.check = (x1, i10, e0), (x1, i11, e0), (x1, i12, e0)
         self.checkmissing = (x1, i13, e0), (x1, i10, e1), (x1, i11, e1), (x1, i12, e1), (x1, i13, e1)
         self.checkrefs = References.uniform(point, 3)
@@ -338,7 +338,7 @@ class StructuredTransforms1DInterfacesRight(TestCase, Common):
 class StructuredTransforms1DPeriodicInterfacesLeft(TestCase, Common):
     def setUp(self):
         super().setUp()
-        self.seq = nutils.transformseq.StructuredTransforms(x1, [nutils.transformseq.IntAxis(1, 5, 4, 0, False)], 0)
+        self.seq = nutils.transformseq.StructuredTransforms(x1, (nutils.transformseq.IntAxis(1, 5, 4, 0, False),), 0)
         self.check = (x1, i11, e1), (x1, i12, e1), (x1, i13, e1), (x1, i10, e1)
         self.checkmissing = (x1, i10, e0), (x1, i11, e0), (x1, i12, e0), (x1, i13, e0), (x1, i14, e0)
         self.checkrefs = References.uniform(point, 4)
@@ -349,7 +349,7 @@ class StructuredTransforms1DPeriodicInterfacesLeft(TestCase, Common):
 class StructuredTransforms1DPeriodicInterfacesRight(TestCase, Common):
     def setUp(self):
         super().setUp()
-        self.seq = nutils.transformseq.StructuredTransforms(x1, [nutils.transformseq.IntAxis(0, 4, 4, 0, True)], 0)
+        self.seq = nutils.transformseq.StructuredTransforms(x1, (nutils.transformseq.IntAxis(0, 4, 4, 0, True),), 0)
         self.check = (x1, i10, e0), (x1, i11, e0), (x1, i12, e0), (x1, i13, e0)
         self.checkmissing = (x1, i10, e1), (x1, i11, e1), (x1, i12, e1), (x1, i13, e1), (x1, i14, e1)
         self.checkrefs = References.uniform(point, 4)
@@ -360,7 +360,7 @@ class StructuredTransforms1DPeriodicInterfacesRight(TestCase, Common):
 class StructuredTransforms2D(TestCase, Common, Edges):
     def setUp(self):
         super().setUp()
-        self.seq = nutils.transformseq.StructuredTransforms(x2, [nutils.transformseq.DimAxis(0, 2, 0, False), nutils.transformseq.DimAxis(2, 4, 0, False)], 0)
+        self.seq = nutils.transformseq.StructuredTransforms(x2, (nutils.transformseq.DimAxis(0, 2, 0, False), nutils.transformseq.DimAxis(2, 4, 0, False)), 0)
         self.check = (x2, i20, i22), (x2, i20, i23), (x2, i21, i22), (x2, i21, i23)
         self.checkmissing = (x2,), (x2, i20), (x2, i20, i20), (x2, i20, i21), (x2, i21, i20), (x2, i21, i21)
         self.checkrefs = References.uniform(square, 4)
@@ -371,7 +371,7 @@ class StructuredTransforms2D(TestCase, Common, Edges):
 class StructuredTransforms2DRefined(TestCase, Common, Edges):
     def setUp(self):
         super().setUp()
-        self.seq = nutils.transformseq.StructuredTransforms(x2, [nutils.transformseq.DimAxis(0, 2, 0, False), nutils.transformseq.DimAxis(2, 4, 0, False)], 1)
+        self.seq = nutils.transformseq.StructuredTransforms(x2, (nutils.transformseq.DimAxis(0, 2, 0, False), nutils.transformseq.DimAxis(2, 4, 0, False)), 1)
         self.check = (x2, i20, i21, c00), (x2, i20, i21, c01), (x2, i20, i21, c10), (x2, i20, i21, c11)
         self.checkmissing = (x2, i20, i20, c00),
         self.checkrefs = References.uniform(square, 4)
@@ -400,47 +400,48 @@ class exceptions(TestCase):
 
     def test_PlainTransforms_invalid_todims(self):
         with self.assertRaisesRegex(ValueError, 'expected transforms with todims=2, but got .*'):
-            nutils.transformseq.PlainTransforms([(x1, c0), (x1, c1)], 2, 1)
+            nutils.transformseq.PlainTransforms(((x1, c0), (x1, c1)), 2, 1)
 
     def test_PlainTransforms_invalid_fromdims(self):
         with self.assertRaisesRegex(ValueError, 'expected transforms with fromdims=2, but got .*'):
-            nutils.transformseq.PlainTransforms([(x2, e00), (x2, e11)], 2, 2)
+            nutils.transformseq.PlainTransforms(((x2, e00), (x2, e11)), 2, 2)
 
     def test_PlainTransforms_multiple_fromdims(self):
         with self.assertRaisesRegex(ValueError, 'expected transforms with fromdims=2, but got .*'):
-            nutils.transformseq.PlainTransforms([(x2, c00, e00), (x2, c01, i20, i20)], 2, 2)
+            nutils.transformseq.PlainTransforms(tuple(transform.canonical((x2, *tail)) for tail in ((c00, e00), (c01, i20, i20))), 2, 2)
+            nutils.transformseq.PlainTransforms(tuple(transform.canonical((x2, *tail)) for tail in ((c00, e00), (c01, i20, i20))), 2, 2)
 
     def test_DerivedTransforms_length_mismatch(self):
-        transforms = nutils.transformseq.PlainTransforms([(x1, i10), (x1, i11)], 1, 1)
+        transforms = nutils.transformseq.PlainTransforms(((x1, i10), (x1, i11)), 1, 1)
         references = References.uniform(line, 3)
         with self.assertRaisesRegex(ValueError, '`parent` and `parent_references` should have the same length'):
             nutils.transformseq.DerivedTransforms(transforms, references, 'child_transforms', 1)
 
     def test_DerivedTransforms_ndims_mismatch(self):
-        transforms = nutils.transformseq.PlainTransforms([(x1, i10), (x1, i11)], 1, 1)
+        transforms = nutils.transformseq.PlainTransforms(((x1, i10), (x1, i11)), 1, 1)
         references = References.uniform(square, 2)
         with self.assertRaisesRegex(ValueError, '`parent` and `parent_references` have different dimensions'):
             nutils.transformseq.DerivedTransforms(transforms, references, 'child_transforms', 1)
 
     def test_UniformDerivedTransforms_ndims_mismatch(self):
-        transforms = nutils.transformseq.PlainTransforms([(x1, i10), (x1, i11)], 1, 1)
+        transforms = nutils.transformseq.PlainTransforms(((x1, i10), (x1, i11)), 1, 1)
         with self.assertRaisesRegex(ValueError, '`parent` and `parent_reference` have different dimensions'):
             nutils.transformseq.UniformDerivedTransforms(transforms, square, 'child_transforms', 1)
 
     def test_ChainedTransforms_no_items(self):
         with self.assertRaisesRegex(ValueError, 'Empty chain.'):
-            nutils.transformseq.ChainedTransforms([])
+            nutils.transformseq.ChainedTransforms(())
 
     def test_ChainedTransforms_multiple_todims(self):
-        a = nutils.transformseq.PlainTransforms([(x2, c00, e00), (x2, c00, e01)], 2, 1)
-        b = nutils.transformseq.PlainTransforms([(x1, c0), (x1, c1)], 1, 1)
+        a = nutils.transformseq.PlainTransforms(tuple(transform.canonical((x2, c00, e)) for e in (e00, e01)), 2, 1)
+        b = nutils.transformseq.PlainTransforms(((x1, c0), (x1, c1)), 1, 1)
         with self.assertRaisesRegex(ValueError, 'Cannot chain Transforms with different todims.'):
-            nutils.transformseq.ChainedTransforms([a, b])
+            nutils.transformseq.ChainedTransforms((a, b))
 
     def test_ChainedTransforms_multiple_fromdims(self):
-        a = nutils.transformseq.PlainTransforms([(x2, c00, e00), (x2, c00, e01)], 2, 1)
-        b = nutils.transformseq.PlainTransforms([(x2, c10), (x2, c11)], 2, 2)
+        a = nutils.transformseq.PlainTransforms(tuple(transform.canonical((x2, c00, e)) for e in (e00, e01)), 2, 1)
+        b = nutils.transformseq.PlainTransforms(((x2, c10), (x2, c11)), 2, 2)
         with self.assertRaisesRegex(ValueError, 'Cannot chain Transforms with different fromdims.'):
-            nutils.transformseq.ChainedTransforms([a, b])
+            nutils.transformseq.ChainedTransforms((a, b))
 
 # vim:sw=2:sts=2:et
