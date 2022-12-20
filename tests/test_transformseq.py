@@ -119,7 +119,7 @@ class Common:
             if self.checkfromdims > 0:
                 for etrans in ref.edge_transforms:
                     for shuffle in lambda t: t, nutils.transform.canonical:
-                        self.assertTrue(self.seq.contains_with_tail(trans+(etrans,)))
+                        self.assertTrue(self.seq.contains_with_tail(shuffle(trans+(etrans,))))
 
     def test_contains_with_tail_missing(self):
         for trans in self.checkmissing:
