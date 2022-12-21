@@ -3898,6 +3898,10 @@ class TransformCoords(Array):
     def _simplified(self):
         if self._target == self._source:
             return self._coords
+        cax = self.ndim - 1
+        coords, where = unalign(self._coords, naxes=cax)
+        if len(where) < cax:
+            return align(TransformCoords(self._target, self._source, self._index, coords), (*where, cax), self.shape)
 
 
 class TransformIndex(Array):
