@@ -59,7 +59,7 @@ class Node(Generic[Metadata], metaclass=abc.ABCMeta):
         self._collect_graphviz_nodes_edges({}, id_gen, nodes, edges, None, fill_color)
         return ''.join(itertools.chain(['digraph {graph [dpi=72];'], _generate_graphviz_subgraphs(subgraph_children, nodes, None, id_gen), edges, ['}']))
 
-    def export_graphviz(self, *, fill_color: Optional[GraphvizColorCallback] = None, dot_path: str = 'dot', image_type: str = 'png') -> None:
+    def export_graphviz(self, *, fill_color: Optional[GraphvizColorCallback] = None, dot_path: str = 'dot', image_type: str = 'svg') -> None:
         src = self.generate_graphviz_source(fill_color=fill_color)
         with treelog.infofile('dot.'+image_type, 'wb') as img:
             src = src.replace(';', ';\n')
