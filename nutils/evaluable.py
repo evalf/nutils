@@ -1694,6 +1694,13 @@ class Multiply(Array):
 
     def _add(self, other):
         func1, func2 = self.funcs
+        if func1 == other and iszero(func2 + 1) or func2 == other and iszero(func1 + 1):
+            # Since the subtraction x - y is stored as x + -1 * y, this handles
+            # the simplification of x - x to 0. While we could alternatively
+            # simplify all x + a * x to (a + 1) * x, capturing a == -1 as a
+            # special case via Constant._add, it is not obvious that this is in
+            # all situations an improvement.
+            return zeros_like(self)
         if isinstance(other, Multiply):
             for common in self.funcs & other.funcs:
                 return common * Add(self.funcs + other.funcs - [common, common])

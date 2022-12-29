@@ -1001,6 +1001,10 @@ class simplify(TestCase):
         inserted = evaluable.InsertAxis(a, length=evaluable.constant(0))
         self.assertTrue(evaluable.iszero(inserted))
 
+    def test_subtract_equals(self):
+        a = evaluable.Argument('test', shape=(evaluable.constant(2,),))
+        self.assertTrue(evaluable.iszero(a - a))
+
 
 class memory(TestCase):
 
