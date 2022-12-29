@@ -896,7 +896,18 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     __mod__ = lambda self, other: mod(self, other)
     __int__ = __index__
     __str__ = __repr__ = lambda self: '{}.{}<{}>'.format(type(self).__module__, type(self).__name__, self._shape_str(form=str))
-    _shape_str = lambda self, form: '{}:{}'.format(self.dtype.__name__[0] if hasattr(self, 'dtype') else '?', ','.join(str(int(length)) if length.isconstant else '?' for length in self.shape) if hasattr(self, 'shape') else '?')
+
+    def _shape_str(self, form):
+        dtype = self.dtype.__name__[0] if hasattr(self, 'dtype') else '?'
+        shape = [str(n.__index__()) if n.isconstant else '?' for n in self.shape]
+        for i in set(range(self.ndim)) - set(self._unaligned[1]):
+            shape[i] = f'({shape[i]})'
+        for i, _ in self._inflations:
+            shape[i] = f'~{shape[i]}'
+        for axes in self._diagonals:
+            for i in axes:
+                shape[i] = f'{shape[i]}/'
+        return f'{dtype}:{",".join(shape)}'
 
     sum = sum
     prod = product
@@ -4990,7 +5001,7 @@ def einsum(fmt, *args, **dims):
 
     >>> a45 = ones(tuple(map(constant, [4,5]))) # 4x5 matrix
     >>> einsum('ij->ji', a45)
-    nutils.evaluable.Transpose<f:5,4>
+    nutils.evaluable.Transpose<f:(5),(4)>
 
     Axis labels that do not occur in the return value are summed. For example,
     the following performs a matrix-vector product:
