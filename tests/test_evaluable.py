@@ -996,6 +996,11 @@ class simplify(TestCase):
         self.assertIsInstance(((a + c) * c).simplified, evaluable.Multiply)
         self.assertIsInstance(((c + b) * c).simplified, evaluable.Multiply)
 
+    def test_insert_zero(self):
+        a = evaluable.Argument('test', shape=(evaluable.constant(2,),))
+        inserted = evaluable.InsertAxis(a, length=evaluable.constant(0))
+        self.assertTrue(evaluable.iszero(inserted))
+
 
 class memory(TestCase):
 

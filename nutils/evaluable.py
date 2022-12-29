@@ -1253,6 +1253,8 @@ class InsertAxis(Array):
         return self.func._unaligned
 
     def _simplified(self):
+        if _equals_scalar_constant(self.length, 0):
+            return zeros_like(self)
         return self.func._insertaxis(self.ndim-1, self.length)
 
     @staticmethod
