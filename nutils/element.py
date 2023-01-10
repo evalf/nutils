@@ -62,7 +62,7 @@ class Reference(types.Singleton):
         first unit vector to the second, the second to the third, and so on.
         '''
 
-        return tuple(transform.Square((vertices[1:] - vertices[0]).T, vertices[0]) for vertices in self.vertices[self.simplices])
+        return tuple(transform.simplex(vertices) for vertices in self.vertices[self.simplices])
 
     def inside(self, point, eps=0):
         for strans in self.simplex_transforms:
@@ -1059,7 +1059,7 @@ class MosaicReference(Reference):
         self._midpoint = midpoint
         self.edge_vertices = tuple(edge_vertices)
         self.edge_refs = edge_refs + (getsimplex(baseref.ndims-1),) * len(orientation)
-        self.edge_transforms = baseref.edge_transforms + tuple(transform.Updim((vertices[1:] - vertices[0]).T, vertices[0], isflipped)
+        self.edge_transforms = baseref.edge_transforms + tuple(transform.simplex(vertices, isflipped)
           for vertices, isflipped in zip(self.vertices[numpy.array(edge_vertices[baseref.nedges:])], orientation))
 
         super().__init__(baseref.ndims)
