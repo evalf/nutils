@@ -53,7 +53,7 @@ def rectilinear(richshape: Sequence[Union[int, Sequence[float]]], periodic: Sequ
 _oldrectilinear = rectilinear  # reference for internal unittests
 
 
-def line(nodes: Union[int, Sequence[float]], periodic: bool = False, bnames: Optional[Sequence[Tuple[str, str]]] = None, *, name: Optional[str] = None, space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
+def line(nodes: Union[int, Sequence[float]], periodic: bool = False, bnames: Optional[Tuple[str, str]] = None, *, name: Optional[str] = None, space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
     if name is not None:
         warnings.deprecation('Argument `name` is deprecated; use `root` with a `transform.transformitem` instead.')
         if root is not None:
@@ -68,7 +68,7 @@ def line(nodes: Union[int, Sequence[float]], periodic: bool = False, bnames: Opt
     return domain, geom
 
 
-def newrectilinear(nodes: Sequence[Union[int, Sequence[float]]], periodic: Optional[Sequence[int]] = None, name: Optional[str] = None, bnames=[['left', 'right'], ['bottom', 'top'], ['front', 'back']], spaces: Optional[Sequence[str]] = None, root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
+def newrectilinear(nodes: Sequence[Union[int, Sequence[float]]], periodic: Optional[Sequence[int]] = None, name: Optional[str] = None, bnames: Sequence[Optional[Tuple[str, str]]] = [('left', 'right'), ('bottom', 'top'), ('front', 'back')], spaces: Optional[Sequence[str]] = None, root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
     if periodic is None:
         periodic = []
     if not spaces:
@@ -542,7 +542,7 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex', *, space=
             if simplices:
                 transforms = transformseq.PlainTransforms(transforms, ndims, ndims-1)
                 opposites = transforms if opposites is None else transformseq.PlainTransforms(opposites, ndims, ndims-1)
-                groups[name] = topology.SimplexTopology(space, simplices, transforms, opposites)
+                groups[name] = topology.SimplexTopology(space, numpy.asarray(simplices), transforms, opposites)
 
     pgroups = {}
     if ptags:
@@ -590,7 +590,7 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex', *, space=
                 if simplices:
                     transforms = transformseq.PlainTransforms(transforms, ndims, ndims-1)
                     opposites = transformseq.PlainTransforms(opposites, ndims, ndims-1) if len(opposites) == len(transforms) else transforms
-                    groups[bname] = topology.SimplexTopology(space, simplices, transforms, opposites)
+                    groups[bname] = topology.SimplexTopology(space, numpy.asarray(simplices), transforms, opposites)
         vpgroups = {}
         for pname, inodes in ptags.items():
             ptransforms = transformseq.PlainTransforms([topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode] if keep[ielem]], ndims, 0)

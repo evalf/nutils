@@ -506,8 +506,8 @@ class NewMul(TestCase, CommonTests, ConformingTests):
 
     def setUp(self):
         super().setUp()
-        self.topo1, self.x = mesh.line([0, 1, 2], bnames=['a', 'b'], space='X')
-        self.topo2, self.y = mesh.line([0, 1, 2, 3], bnames=['c', 'd'], space='Y')
+        self.topo1, self.x = mesh.line([0, 1, 2], bnames=('a', 'b'), space='X')
+        self.topo2, self.y = mesh.line([0, 1, 2, 3], bnames=('c', 'd'), space='Y')
         self.topo = self.topo1 * self.topo2
         self.geom = numpy.stack([self.x, self.y])
         self.desired_spaces = 'X', 'Y'
@@ -616,9 +616,9 @@ class NewWithGroupAliases(TestCase, CommonTests, ConformingTests):
 
     def setUp(self):
         super().setUp()
-        self.topo1, self.x = mesh.line([0, 1, 2], bnames=['a', 'b'], space='X')
+        self.topo1, self.x = mesh.line([0, 1, 2], bnames=('a', 'b'), space='X')
         self.topo1 = self.topo1.withsubdomain(e=self.topo1[:1])
-        self.topo2, self.y = mesh.line([0, 1, 2, 3], bnames=['c', 'd'], space='Y')
+        self.topo2, self.y = mesh.line([0, 1, 2, 3], bnames=('c', 'd'), space='Y')
         self.topo2 = self.topo2.withsubdomain(f=self.topo2[:1], g=self.topo2[2:])
         self.topo = (self.topo1 * self.topo2).withgroups(vgroups=dict(ealias='e', falias='f', galias='g', fgalias='f,g'))
         self.geom = numpy.stack([self.x, self.y])
@@ -833,7 +833,7 @@ class refined(TestCase):
     def test_boundary_gradient(self):
         ref = _refined_refs[self.etype]
         space = 'test'
-        domain = topology.ConnectedTopology(space, References.uniform(ref, 1), transformseq.IndexTransforms(ref.ndims, 1), transformseq.IndexTransforms(ref.ndims, 1), ((-1,)*ref.nedges,)).refine(self.ref0)
+        domain = topology.ConnectedTopology(space, References.uniform(ref, 1), transformseq.IndexTransforms(ref.ndims, 1), transformseq.IndexTransforms(ref.ndims, 1), [numpy.repeat(-1, ref.nedges)]).refine(self.ref0)
         geom = function.rootcoords(space, ref.ndims)
         basis = domain.basis('std', degree=1)
         u = domain.projection(geom.sum(), onto=basis, geometry=geom, degree=2)

@@ -23,7 +23,7 @@ from .sample import Sample
 from dataclasses import dataclass
 from functools import reduce
 from os import environ
-from typing import Any, FrozenSet, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, FrozenSet, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple, Union, Sequence
 
 import itertools
 import numpy
@@ -34,7 +34,6 @@ import treelog as log
 
 _ = numpy.newaxis
 _identity = lambda x: x
-_strictspace = types.strictstr
 _ArgDict = Mapping[str, numpy.ndarray]
 
 
@@ -129,9 +128,12 @@ class Topology:
         else:
             return empty
 
-    def __init__(self, spaces: Tuple[str, ...], space_dims: Tuple[int, ...], references: References) -> None:
-        self.spaces = spaces
-        self.space_dims = space_dims
+    def __init__(self, spaces: Sequence[str], space_dims: Sequence[int], references: References) -> None:
+        assert isinstance(spaces, Sequence) and all(isinstance(space, str) for space in spaces), f'spaces={spaces!r}'
+        assert isinstance(space_dims, Sequence) and all(isinstance(space_dim, int) for space_dim in space_dims), f'space_dims={space_dims!r}'
+        assert isinstance(references, References), f'references={references!r}'
+        self.spaces = tuple(spaces)
+        self.space_dims = tuple(space_dims)
         self.references = references
         self.ndims = references.ndims
         super().__init__()
@@ -193,7 +195,7 @@ class Topology:
         return self.take_unchecked(indices)
 
     def take_unchecked(self, __indices: numpy.ndarray) -> 'Topology':
-        return _Take(self, types.arraydata(__indices))
+        return _Take(self, __indices)
 
     def compress(self, __mask: Union[numpy.ndarray, Sequence[bool]]) -> 'Topology':
         '''Return the selected elements as a disconnected topology.
@@ -961,7 +963,7 @@ class _EmptyUnlowerable(function.Array):
 
 class _Empty(_TensorialTopology):
 
-    def __init__(self, spaces: Tuple[str, ...], space_dims: Tuple[int, ...], ndims: int) -> None:
+    def __init__(self, spaces: Sequence[str], space_dims: Sequence[int], ndims: int) -> None:
         super().__init__(spaces, space_dims, References.empty(ndims))
 
     def __invert__(self) -> Topology:
@@ -1205,9 +1207,11 @@ class _Mul(_TensorialTopology):
 
 class _Take(_TensorialTopology):
 
-    def __init__(self, parent: Topology, indices: types.arraydata) -> None:
+    def __init__(self, parent: Topology, indices: numpy.ndarray) -> None:
+        assert isinstance(parent, Topology), f'parent={parent!r}'
+        assert isinstance(indices, numpy.ndarray), f'indices={indices!r}'
         self.parent = parent
-        self.indices = indices = numpy.asarray(indices)
+        self.indices = indices = types.frozenarray(indices)
         assert indices.ndim == 1 and indices.size
         assert numpy.greater(indices[1:], indices[:-1]).all()
         assert 0 <= indices[0] and indices[-1] < len(self.parent)
@@ -1284,8 +1288,11 @@ class _WithGroupAliases(_TensorialTopology):
 class TransformChainsTopology(Topology):
     'base class for topologies with transform chains'
 
-    @types.apply_annotations
-    def __init__(self, space: _strictspace, references: types.strict[References], transforms: transformseq.stricttransforms, opposites: transformseq.stricttransforms):
+    def __init__(self, space: str, references: References, transforms: transformseq.Transforms, opposites: transformseq.Transforms):
+        assert isinstance(space, str), f'space={space!r}'
+        assert isinstance(references, References), f'references={references!r}'
+        assert isinstance(transforms, transformseq.Transforms), f'transforms={transforms!r}'
+        assert isinstance(opposites, transformseq.Transforms), f'opposites={opposites!r}'
         assert transforms.todims == opposites.todims
         assert references.ndims == opposites.fromdims == transforms.fromdims
         assert len(references) == len(transforms) == len(opposites)
@@ -1679,9 +1686,6 @@ class TransformChainsTopology(Topology):
     basis_std = basis_bernstein
 
 
-stricttopology = types.strict[Topology]
-
-
 class LocateError(Exception):
     pass
 
@@ -1689,14 +1693,18 @@ class LocateError(Exception):
 class WithGroupsTopology(TransformChainsTopology):
     'item topology'
 
-    @types.apply_annotations
-    def __init__(self, basetopo: stricttopology, vgroups: types.frozendict = {}, bgroups: types.frozendict = {}, igroups: types.frozendict = {}, pgroups: types.frozendict = {}):
+    def __init__(self, basetopo: Topology, vgroups: Mapping[str, Union[str, Topology]] = {}, bgroups: Mapping[str, Union[str, Topology]] = {}, igroups: Mapping[str, Union[str, Topology]] = {}, pgroups: Mapping[str, Union[str, Topology]] = {}):
+        assert isinstance(basetopo, Topology), f'basetopo={basetopo!r}'
+        assert isinstance(vgroups, Mapping) and all(isinstance(key, str) and (isinstance(value, str) or isinstance(value, Topology) and value.ndims == basetopo.ndims) for key, value in vgroups.items()), f'vgroups={vgroups!r}'
+        assert isinstance(bgroups, Mapping) and all(isinstance(key, str) and (isinstance(value, str) or isinstance(value, Topology) and value.ndims == basetopo.ndims-1) for key, value in bgroups.items()), f'bgroups={bgroups!r}'
+        assert isinstance(igroups, Mapping) and all(isinstance(key, str) and (isinstance(value, str) or isinstance(value, Topology) and value.ndims == basetopo.ndims-1) for key, value in igroups.items()), f'igroups={igroups!r}'
+        assert isinstance(pgroups, Mapping) and all(isinstance(key, str) and (isinstance(value, str) or isinstance(value, Topology) and value.ndims == 0) for key, value in pgroups.items()), f'pgroups={pgroups!r}'
         assert vgroups or bgroups or igroups or pgroups
         self.basetopo = basetopo
-        self.vgroups = vgroups
-        self.bgroups = bgroups
-        self.igroups = igroups
-        self.pgroups = pgroups
+        self.vgroups = types.frozendict(vgroups)
+        self.bgroups = types.frozendict(bgroups)
+        self.igroups = types.frozendict(igroups)
+        self.pgroups = types.frozendict(pgroups)
         super().__init__(basetopo.space, basetopo.references, basetopo.transforms, basetopo.opposites)
         assert all(topo is Ellipsis or isinstance(topo, str) or isinstance(topo, TransformChainsTopology) and topo.ndims == basetopo.ndims for topo in self.vgroups.values())
 
@@ -1810,8 +1818,10 @@ class OppositeTopology(TransformChainsTopology):
 class EmptyTopology(TransformChainsTopology):
     'empty topology'
 
-    @types.apply_annotations
-    def __init__(self, space: _strictspace, todims: types.strictint, fromdims: types.strictint):
+    def __init__(self, space: str, todims: int, fromdims: int):
+        assert isinstance(space, str), f'space={space!r}'
+        assert isinstance(todims, int), f'todims={todims!r}'
+        assert isinstance(fromdims, int), f'fromdims={fromdims!r}'
         super().__init__(space, References.empty(fromdims), transformseq.EmptyTransforms(todims, fromdims), transformseq.EmptyTransforms(todims, fromdims))
 
     def __or__(self, other):
@@ -1823,26 +1833,31 @@ class EmptyTopology(TransformChainsTopology):
         return other
 
 
-def StructuredLine(space, root: transform.stricttransformitem, i: types.strictint, j: types.strictint, periodic: bool = False, bnames: types.tuple[types.strictstr] = None):
+def StructuredLine(space, root: transform.stricttransformitem, i: int, j: int, periodic: bool = False, bnames: Optional[Tuple[str, str]] = None):
+    assert isinstance(i, int), f'i={i!r}'
+    assert isinstance(j, int), f'j={j!r}'
+    assert isinstance(periodic, bool), f'periodic={periodic!r}'
+    assert bnames is None or isinstance(bnames, Sequence) and len(bnames) == 2 and all(isinstance(bname, str) for bname in bnames), f'bnames={bnames!r}'
     if bnames is None:
         bnames = '_structured_line_dummy_boundary_left', '_structured_line_dummy_boundary_right'
-    return StructuredTopology(space, root, axes=(transformseq.DimAxis(i, j, j if periodic else 0, periodic),), nrefine=0, bnames=(bnames,))
+    return StructuredTopology(space, root, axes=(transformseq.DimAxis(i, j, j if periodic else 0, periodic),), nrefine=0, bnames=(tuple(bnames),))
 
 
 class StructuredTopology(TransformChainsTopology):
     'structured topology'
 
-    @types.apply_annotations
-    def __init__(self, space, root: transform.stricttransformitem, axes: types.tuple[types.strict[transformseq.Axis]], nrefine: types.strictint = 0, bnames: types.tuple[types.tuple[types.strictstr]] = (('left', 'right'), ('bottom', 'top'), ('front', 'back'))):
-        'constructor'
-
-        assert all(len(bname) == 2 for bname in bnames)
+    def __init__(self, space: str, root: transform.TransformItem, axes: Sequence[transformseq.Axis], nrefine: int = 0, bnames: Sequence[Tuple[str, str]] = (('left', 'right'), ('bottom', 'top'), ('front', 'back'))):
+        assert isinstance(space, str), f'space={space!r}'
+        assert isinstance(root, transform.TransformItem), f'root={root!r}'
+        assert isinstance(axes, Sequence) and all(isinstance(axis, transformseq.Axis) for axis in axes), f'axes={axes!r}'
+        assert isinstance(nrefine, int), f'nrefine={nrefine!r}'
+        assert isinstance(bnames, Sequence) and all(isinstance(pair, tuple) and len(pair) == 2 and all(isinstance(name, str) for name in pair) for pair in bnames), f'bnames={bnames!r}'
 
         self.root = root
-        self.axes = axes
-        self.nrefine = nrefine
+        self.axes = tuple(axes)
+        self.nrefine = nrefine.__index__()
         self.shape = tuple(axis.j - axis.i for axis in self.axes if axis.isdim)
-        self._bnames = bnames
+        self._bnames = tuple(bnames)
 
         references = References.uniform(util.product(element.getsimplex(1 if axis.isdim else 0) for axis in self.axes), len(self))
         transforms = transformseq.StructuredTransforms(self.root, self.axes, self.nrefine)
@@ -2286,10 +2301,15 @@ class StructuredTopology(TransformChainsTopology):
 class ConnectedTopology(TransformChainsTopology):
     'unstructured topology with connectivity'
 
-    @types.apply_annotations
-    def __init__(self, space, references: types.strict[References], transforms: transformseq.stricttransforms, opposites: transformseq.stricttransforms, connectivity: types.tuple[types.arraydata]):
+    def __init__(self, space: str, references: References, transforms: transformseq.Transforms, opposites: transformseq.Transforms, connectivity: Sequence[numpy.ndarray]):
+        assert isinstance(space, str), f'space={space!r}'
+        assert isinstance(references, References), f'references={references!r}'
+        assert isinstance(transforms, transformseq.Transforms), f'transforms={transforms!r}'
+        assert isinstance(opposites, transformseq.Transforms), f'opposites={opposites!r}'
+        assert isinstance(connectivity, numpy.ndarray) and connectivity.ndim == 2 and connectivity.dtype.kind == 'i' or isinstance(connectivity, Sequence) and all(isinstance(item, numpy.ndarray) and item.ndim == 1 and item.dtype.kind == 'i' for item in connectivity), f'connectivity={connectivity!r}'
         assert len(connectivity) == len(references) and all(c.shape[0] == e.nedges for c, e in zip(connectivity, references))
-        self.connectivity = tuple(map(numpy.asarray, connectivity))
+
+        self.connectivity = types.frozenarray(connectivity) if isinstance(connectivity, numpy.ndarray) else tuple(map(types.frozenarray, connectivity))
         super().__init__(space, references, transforms, opposites)
 
 
@@ -2302,8 +2322,9 @@ class SimplexTopology(TransformChainsTopology):
         keep[simplices.flat] = True
         return types.arraydata(simplices if keep.all() else (numpy.cumsum(keep)-1)[simplices])
 
-    @types.apply_annotations
-    def __init__(self, space, simplices: _renumber, transforms: transformseq.stricttransforms, opposites: transformseq.stricttransforms):
+    def __init__(self, space: str, simplices: numpy.ndarray, transforms: transformseq.Transforms, opposites: transformseq.Transforms):
+        assert isinstance(space, str), f'space={space!r}'
+        assert isinstance(simplices, numpy.ndarray), f'simplices={simplices!r}'
         assert simplices.shape == (len(transforms), transforms.fromdims+1)
         self.simplices = numpy.asarray(simplices)
         assert numpy.greater(self.simplices[:, 1:], self.simplices[:, :-1]).all(), 'nodes should be sorted'
@@ -2364,10 +2385,11 @@ class SimplexTopology(TransformChainsTopology):
 class UnionTopology(TransformChainsTopology):
     'grouped topology'
 
-    @types.apply_annotations
-    def __init__(self, topos: types.tuple[stricttopology], names: types.tuple[types.strictstr] = ()):
-        self._topos = topos
-        self._names = tuple(names)[:len(self._topos)]
+    def __init__(self, topos: Sequence[Topology], names: Sequence[str] = ()):
+        assert isinstance(topos, Sequence) and all(isinstance(topo, Topology) for topo in topos), f'topos={topos!r}'
+        assert isinstance(names, Sequence) and all(isinstance(name, str) for name in names), f'names={names!r}'
+        self._topos = tuple(topos)
+        self._names = tuple(names[:len(topos)])
         assert len(set(self._names)) == len(self._names), 'duplicate name'
         ndims = self._topos[0].ndims
         assert all(topo.ndims == ndims for topo in self._topos)
@@ -2427,10 +2449,11 @@ class UnionTopology(TransformChainsTopology):
 class DisjointUnionTopology(TransformChainsTopology):
     'grouped topology'
 
-    @types.apply_annotations
-    def __init__(self, topos: types.tuple[stricttopology], names: types.tuple[types.strictstr] = ()):
-        self._topos = topos
-        self._names = tuple(names)[:len(self._topos)]
+    def __init__(self, topos: Sequence[Topology], names: Sequence[str] = ()):
+        assert isinstance(topos, Sequence) and all(isinstance(topo, Topology) for topo in topos), f'topos={topos!r}'
+        assert isinstance(names, Sequence) and all(isinstance(name, str) for name in names), f'names={names!r}'
+        self._topos = tuple(topos)
+        self._names = tuple(names[:len(topos)])
         assert len(set(self._names)) == len(self._names), 'duplicate name'
         ndims = self._topos[0].ndims
         assert all(topo.ndims == ndims for topo in self._topos)
@@ -2460,12 +2483,12 @@ class DisjointUnionTopology(TransformChainsTopology):
 class SubsetTopology(TransformChainsTopology):
     'trimmed'
 
-    @types.apply_annotations
-    def __init__(self, basetopo: stricttopology, refs: types.tuple[element.strictreference], newboundary=None):
-        if newboundary is not None:
-            assert isinstance(newboundary, str) or isinstance(newboundary, TransformChainsTopology) and newboundary.ndims == basetopo.ndims-1
+    def __init__(self, basetopo: Topology, refs: Sequence[element.Reference], newboundary: Optional[Union[str,TransformChainsTopology]] = None):
+        assert isinstance(basetopo, Topology), f'basetopo={basetopo!r}'
+        assert isinstance(refs, Sequence) and all(isinstance(ref, element.Reference) for ref in refs), f'refs={refs!r}'
+        assert newboundary is None or isinstance(newboundary, str) or isinstance(newboundary, TransformChainsTopology) and newboundary.ndims == basetopo.ndims-1, f'newboundary={newboundary!r}'
         assert len(refs) == len(basetopo)
-        self.refs = refs
+        self.refs = tuple(refs)
         self.basetopo = basetopo
         self.newboundary = newboundary
 
@@ -2591,8 +2614,8 @@ class SubsetTopology(TransformChainsTopology):
 class RefinedTopology(TransformChainsTopology):
     'refinement'
 
-    @types.apply_annotations
-    def __init__(self, basetopo: stricttopology):
+    def __init__(self, basetopo: Topology):
+        assert isinstance(basetopo, Topology), f'basetopo={basetopo!r}'
         self.basetopo = basetopo
         super().__init__(
             self.basetopo.space,
@@ -2627,14 +2650,11 @@ class RefinedTopology(TransformChainsTopology):
 class HierarchicalTopology(TransformChainsTopology):
     'collection of nested topology elments'
 
-    @types.apply_annotations
-    def __init__(self, basetopo: stricttopology, indices_per_level: types.tuple[types.arraydata]):
-        'constructor'
-
-        assert all(ind.dtype == int for ind in indices_per_level)
-        assert not isinstance(basetopo, HierarchicalTopology)
+    def __init__(self, basetopo: Topology, indices_per_level: Sequence[numpy.ndarray]):
+        assert isinstance(basetopo, Topology) and not isinstance(basetopo, HierarchicalTopology), f'basetopo={basetopo!r}'
+        assert isinstance(indices_per_level, Sequence) and all(isinstance(indices, numpy.ndarray) and indices.ndim == 1 and indices.dtype.kind == 'i' for indices in indices_per_level), f'indices_per_level={indices_per_level!r}'
         self.basetopo = basetopo
-        self._indices_per_level = tuple(map(numpy.asarray, indices_per_level))
+        self._indices_per_level = tuple(map(types.frozenarray, indices_per_level))
         self._offsets = numpy.cumsum([0, *map(len, self._indices_per_level)], dtype=int)
 
         level = None
@@ -2976,11 +2996,9 @@ class MultipatchTopology(TransformChainsTopology):
 
         return boundarydata
 
-    @types.apply_annotations
-    def __init__(self, patches: types.tuple[types.strict[Patch]]):
-        'constructor'
-
-        self.patches = patches
+    def __init__(self, patches: Sequence[Patch]):
+        assert isinstance(patches, Sequence) and all(isinstance(patch, Patch) for patch in patches), f'patches={patches!r}'
+        self.patches = tuple(patches)
 
         space = patches[0].topo.space
         assert all(patch.topo.space == space for patch in patches)
@@ -3165,7 +3183,7 @@ class MultipatchTopology(TransformChainsTopology):
         '''
 
         intrapatchtopo = EmptyTopology(self.space, self.transforms.todims, self.ndims-1) if not self.patches else \
-            DisjointUnionTopology(patch.topo.interfaces for patch in self.patches)
+            DisjointUnionTopology([patch.topo.interfaces for patch in self.patches])
 
         btopos = []
         bconnectivity = []
