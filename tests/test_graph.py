@@ -15,7 +15,7 @@ class DummyNode(_graph.Node):
     def __bool__(self):
         return bool(self.label)
 
-    def _generate_asciitree_nodes(self, cache, graph_ids, id_gen, select, bridge):
+    def _generate_asciitree_nodes(self, cache, graph_ids, select, bridge):
         yield '{}{}\n'.format(select, self.label)
 
     def _collect_graphviz_nodes_edges(self, cache, id_gen, nodes, edges, parent_graph, fill_color=None):
@@ -39,17 +39,16 @@ class RegularNode(TestCase):
         kwargs = dict(spam=DummyNode('d'), eggs=DummyNode('e'))
         node = _graph.RegularNode('test', args, kwargs, 'meta')
         cache = {}
-        graph_ids = {None: 'X'}
-        cnt = map(str, itertools.count())
+        graph_ids = {None: (f'%X{i}' for i in itertools.count())}
         with self.subTest('first'):
-            self.assertEqual(list(node._generate_asciitree_nodes(cache, graph_ids, cnt, 'S', 'B')), [
+            self.assertEqual(list(node._generate_asciitree_nodes(cache, graph_ids, 'S', 'B')), [
                              'S%X0 = test\n',
                              'B├ a\n',
                              'B├ b\n',
                              'B├ spam = d\n',
                              'B└ eggs = e\n'])
         with self.subTest('second'):
-            self.assertEqual(list(node._generate_asciitree_nodes(cache, graph_ids, cnt, 'S', 'B')), [
+            self.assertEqual(list(node._generate_asciitree_nodes(cache, graph_ids, 'S', 'B')), [
                              'S%X0\n'])
 
     def test_collect_graphviz_nodes_edges_args(self):
@@ -122,13 +121,12 @@ class DuplicatedLeafNode(TestCase):
 
     def test_generate_asciitree_nodes(self):
         cache = {}
-        graph_ids = {None: 'X', self.subgraph: 'Y'}
-        cnt = map(str, itertools.count())
+        graph_ids = {None: (f'%X{i}' for i in itertools.count()), self.subgraph: (f'%Y{i}' for i in itertools.count())}
         with self.subTest('first'):
-            self.assertEqual(list(self.node._generate_asciitree_nodes(cache, graph_ids, cnt, 'S', 'B')), [
+            self.assertEqual(list(self.node._generate_asciitree_nodes(cache, graph_ids, 'S', 'B')), [
                              'Stest\n'])
         with self.subTest('second'):
-            self.assertEqual(list(self.node._generate_asciitree_nodes(cache, graph_ids, cnt, 'S', 'B')), [
+            self.assertEqual(list(self.node._generate_asciitree_nodes(cache, graph_ids, 'S', 'B')), [
                              'Stest\n'])
 
     def test_collect_graphviz_nodes_edges(self):
@@ -176,7 +174,7 @@ class InvisibleNode(TestCase):
 
     def test_generate_asciitree_nodes(self):
         cache = {}
-        self.assertEqual(list(self.node._generate_asciitree_nodes({}, {None: 'X'}, map(str, itertools.count()), 'S', 'B')), ['S\n'])
+        self.assertEqual(list(self.node._generate_asciitree_nodes({}, {None: (f'%X{i}' for i in itertools.count())}, 'S', 'B')), ['S\n'])
 
     def test_collect_graphviz_nodes_edges(self):
         cache = {}
@@ -272,15 +270,15 @@ class generate(TestCase):
                          '  └ E = D\n'
                          'NODES\n'
                          '%A0 = j\n'
-                         '└ %D1 = i\n'
-                         '  ├ %D2 = e\n'
-                         '  │ └ %A3 = a\n'
-                         '  ├ %C4 = f\n'
-                         '  │ ├ %A5 = b\n'
-                         '  │ │ └ %A3\n'
-                         '  │ └ %D2\n'
-                         '  └ %E6 = g\n'
-                         '    └ %A3\n')
+                         '└ %D0 = i\n'
+                         '  ├ %D1 = e\n'
+                         '  │ └ %A1 = a\n'
+                         '  ├ %C0 = f\n'
+                         '  │ ├ %A2 = b\n'
+                         '  │ │ └ %A1\n'
+                         '  │ └ %D1\n'
+                         '  └ %E0 = g\n'
+                         '    └ %A1\n')
 
     def test_multiple_graphviz_source(self):
         self.assertEqual(self.multiple.generate_graphviz_source(),
