@@ -1,5 +1,6 @@
 from nutils import evaluable, sparse, numeric, _util as util, types
 from nutils.testing import TestCase, parametrize
+import nutils_poly as poly
 import numpy
 import itertools
 import weakref
@@ -566,15 +567,18 @@ _check('loopconcatenate2', lambda: evaluable.loop_concatenate(evaluable.Elemwise
 _check('loopconcatenatecombined', lambda a: evaluable.loop_concatenate_combined([a+evaluable.prependaxes(evaluable.loop_index('index', 3), a.shape)], evaluable.loop_index('index', 3))[0], lambda a: a+numpy.arange(3)[None], ANY(3, 1), hasgrad=False)
 _check('legendre', lambda a: evaluable.Legendre(evaluable.asarray(a), 5), lambda a: numpy.moveaxis(numpy.polynomial.legendre.legval(a, numpy.eye(6)), 0, -1), ANY(3, 4, 3))
 
-_polyval_mask = lambda shape, ndim: 1 if ndim == 0 else numpy.array([sum(i[-ndim:]) < int(shape[-1]) for i in numpy.ndindex(shape)], dtype=int).reshape(shape)
-_polyval_desired = lambda c, x: sum(c[(..., *i)]*(x[(slice(None), *[None]*(c.ndim-x.shape[1]))]**i).prod(-1) for i in itertools.product(*[range(c.shape[-1])]*x.shape[1]) if sum(i) < c.shape[-1])
-_check('polyval_1d_p0', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, x.shape[1]), x), _polyval_desired, POS(1), ANY(4, 1), ndim=1)
-_check('polyval_1d_p1', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, x.shape[1]), x), _polyval_desired, NZ(2), ANY(4, 1), ndim=1)
-_check('polyval_1d_p2', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, x.shape[1]), x), _polyval_desired, ANY(3), ANY(4, 1), ndim=1)
-_check('polyval_2d_p0', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, x.shape[1]), x), _polyval_desired, POS(1, 1), ANY(4, 2), ndim=2)
-_check('polyval_2d_p1', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, x.shape[1]), x), _polyval_desired, ANY(2, 2), ANY(4, 2), ndim=2)
-_check('polyval_2d_p2', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, x.shape[1]), x), _polyval_desired, ANY(3, 3), ANY(4, 2), ndim=2)
-_check('polyval_2d_p1_23', lambda c, x: evaluable.Polyval(c*_polyval_mask(c.shape, x.shape[1]), x), _polyval_desired, ANY(2, 3, 2, 2), ANY(4, 2), ndim=2)
+_check('polyval_1d_p0', lambda c, x: evaluable.Polyval(c, x), poly.eval_outer, POS(1), ANY(4, 1), ndim=1)
+_check('polyval_1d_p1', lambda c, x: evaluable.Polyval(c, x), poly.eval_outer, NZ(2), ANY(4, 1), ndim=1)
+_check('polyval_1d_p2', lambda c, x: evaluable.Polyval(c, x), poly.eval_outer, ANY(3), ANY(4, 1), ndim=1)
+_check('polyval_2d_p0', lambda c, x: evaluable.Polyval(c, x), poly.eval_outer, POS(1), ANY(4, 2), ndim=2)
+_check('polyval_2d_p1', lambda c, x: evaluable.Polyval(c, x), poly.eval_outer, ANY(3), ANY(4, 2), ndim=2)
+_check('polyval_2d_p2', lambda c, x: evaluable.Polyval(c, x), poly.eval_outer, ANY(6), ANY(4, 2), ndim=2)
+_check('polyval_2d_p1_23', lambda c, x: evaluable.Polyval(c, x), poly.eval_outer, ANY(2, 3, 3), ANY(4, 2), ndim=2)
+_check('polymul_x3yz1', lambda l, r: evaluable.PolyMul(l, r, (poly.MulVar.Left, poly.MulVar.Right, poly.MulVar.Right)), lambda l, r: poly.mul(l, r, (poly.MulVar.Left, poly.MulVar.Right, poly.MulVar.Right)), ANY(4, 4, 4), ANY(4, 4, 3), hasgrad=False)
+_check('polymul_x2y0', lambda l, r: evaluable.PolyMul(l, r, (poly.MulVar.Left, poly.MulVar.Right)), lambda l, r: poly.mul(l, r, (poly.MulVar.Left, poly.MulVar.Right)), ANY(4, 4, 3), ANY(4, 4, 1), hasgrad=False)
+_check('polygrad_xy0', lambda c: evaluable.PolyGrad(c, 2), lambda c: poly.grad(c, 2), ANY(4, 1), hasgrad=False)
+_check('polygrad_xy1', lambda c: evaluable.PolyGrad(c, 2), lambda c: poly.grad(c, 2), ANY(2, 2, 3), hasgrad=False)
+_check('polygrad_xy2', lambda c: evaluable.PolyGrad(c, 2), lambda c: poly.grad(c, 2), ANY(4, 4, 6), hasgrad=False)
 
 _check('searchsorted', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=types.arraydata(numpy.linspace(0, 1, 9)), side='left', sorter=None), lambda a: numpy.searchsorted(numpy.linspace(0, 1, 9), a).astype(int), POS(4, 2))
 _check('searchsorted_sorter', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=types.arraydata([.2,.8,.4,0,.6,1]), side='left', sorter=types.arraydata([3,0,2,4,1,5])), lambda a: numpy.searchsorted([.2,.8,.4,0,.6,1], a, sorter=[3,0,2,4,1,5]).astype(int), POS(4, 2))
@@ -1274,3 +1278,27 @@ class log_error(TestCase):
   %3 = nutils.evaluable.Sum<f:> arr=%2 --> float64
   %4 = nutils.evaluable.Add<f:> %1 %3 --> float64
   %5 = tests.test_evaluable.Fail<i:> arg1=%4 arg2=%1 --> operation failed intentially.''')
+
+
+class Poly(TestCase):
+
+    def test_mul_variable_ncoeffs(self):
+        vars = poly.MulVar.Left, poly.MulVar.Right
+        const_coeffs_left = numpy.arange(6, dtype=float)
+        const_coeffs_right = numpy.array([1, 2], dtype=float)
+        eval_ncoeffs_left = evaluable.InRange(evaluable.Argument('ncoeffs_left', (), int), evaluable.constant(10))
+        eval_coeffs_left = evaluable.IntToFloat(evaluable.Range(eval_ncoeffs_left))
+        eval_coeffs_right = evaluable.asarray(const_coeffs_right)
+        numpy.testing.assert_allclose(
+            evaluable.PolyMul(eval_coeffs_left, eval_coeffs_right, vars).eval(ncoeffs_left=numpy.array(6)),
+            poly.mul(const_coeffs_left, const_coeffs_right, vars),
+        )
+
+    def test_grad_variable_ncoeffs(self):
+        const_coeffs = numpy.arange(6, dtype=float)
+        eval_ncoeffs = evaluable.InRange(evaluable.Argument('ncoeffs', (), int), evaluable.constant(10))
+        eval_coeffs = evaluable.IntToFloat(evaluable.Range(eval_ncoeffs))
+        numpy.testing.assert_allclose(
+            evaluable.PolyGrad(eval_coeffs, 2).eval(ncoeffs=numpy.array(6)),
+            poly.grad(const_coeffs, 2),
+        )

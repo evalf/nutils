@@ -1331,7 +1331,6 @@ def _array_bases(obj):
     while isinstance(obj, numpy.ndarray):
         yield obj
         obj = obj.base
-    assert obj is None or isinstance(obj, arraydata)
 
 
 def _isimmutable(obj):
