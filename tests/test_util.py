@@ -239,3 +239,26 @@ class cached_property(TestCase):
         self.assertEqual(a.x, 'x')
         self.assertEqual(a.x, 'x')
         self.assertEqual(a.counter, 1)
+
+
+class merge_index_map(TestCase):
+
+    def test_empty_merge_sets(self):
+        index_map, count = util.merge_index_map(4, [])
+        self.assertEqual(index_map.tolist(), [0, 1, 2, 3])
+        self.assertEqual(count, 4)
+
+    def test_merge_set_one(self):
+        index_map, count = util.merge_index_map(4, [[1]])
+        self.assertEqual(index_map.tolist(), [0, 1, 2, 3])
+        self.assertEqual(count, 4)
+
+    def test_multihop1(self):
+        index_map, count = util.merge_index_map(4, [[0, 2], [1, 3], [0, 3]])
+        self.assertEqual(index_map.tolist(), [0, 0, 0, 0])
+        self.assertEqual(count, 1)
+
+    def test_multihop2(self):
+        index_map, count = util.merge_index_map(4, [[2, 3], [1, 2], [0, 3]])
+        self.assertEqual(index_map.tolist(), [0, 0, 0, 0])
+        self.assertEqual(count, 1)
