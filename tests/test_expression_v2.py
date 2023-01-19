@@ -521,7 +521,7 @@ class Namespace(TestCase):
 
     def test_define_for_0d(self):
         ns = expression_v2.Namespace()
-        topo, ns.t = mesh.line(numpy.linspace(0, 1, 3), bnames=['past', 'future'])
+        topo, ns.t = mesh.line(numpy.linspace(0, 1, 3), bnames=('past', 'future'))
         ns.define_for('t', gradient='∂t', normal='nt', jacobians=['dt', 'dtb'])
         ns.basis = topo.basis('spline', degree=1)
         self.assertAlmostEqual(topo.integral('dt' @ ns, degree=2).eval(), 1)
