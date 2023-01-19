@@ -9,6 +9,7 @@ import os
 import numpy
 import collections.abc
 import inspect
+import itertools
 import functools
 import operator
 import numbers
@@ -18,6 +19,7 @@ import io
 import contextlib
 import treelog
 import datetime
+from typing import Iterable, Sequence, Tuple
 
 supports_outdirfd = os.open in os.supports_dir_fd and os.listdir in os.supports_fd
 
@@ -764,6 +766,54 @@ def cli(f, *, argv=None):
         sys.exit(f'{usage}\n\nError: missing argument {name}')
 
     return f(**kwargs)
+
+
+def merge_index_map(nin: int, merge_sets: Iterable[Sequence[int]]) -> Tuple[numpy.ndarray, int]:
+    '''Returns an index map relating ``nin`` unmerged elements to ``nout`` merged elements.
+
+    The index map, an array of length ``nin``, satisfies the following conditions:
+
+    *   For every merge set in ``merge_sets``: for every pair of indices ``i``
+        and ``j`` in a merge set, ``index_map[i] == index_map[j]`` is true.
+
+        In code, the following is true:
+
+            all(index_map[i] == index_map[j] for i, *js in merge_sets for j in js)
+
+    *   Selecting the first occurences of indices in ``index_map`` gives the
+        sequence ``range(nout)``.
+
+    Args
+    ----
+    nin : :class:`int`
+        The number of elements before merging.
+    merge_sets : iterable of sequences of at least one :class:`int`
+        An iterable of merge sets, where each merge set lists the indices of
+        input elements that should be merged. Every merge set should have at
+        least one index.
+
+    Returns
+    -------
+    index_map : :class:`numpy.ndarray`
+        Index map with satisfying the above conditions.
+    nout : :class:`int`
+        The number of output indices.
+    '''
+
+    index_map = numpy.arange(nin)
+    def resolve(index):
+        parent = index_map[index]
+        while index != parent:
+            index = parent
+            parent = index_map[index]
+        return index
+    for merge_set in merge_sets:
+        resolved = list(map(resolve, merge_set))
+        index_map[resolved] = min(resolved)
+    new_indices = itertools.count()
+    for iin, ptr in enumerate(index_map):
+        index_map[iin] = next(new_indices) if iin == ptr else index_map[ptr]
+    return index_map, next(new_indices)
 
 
 # vim:sw=4:sts=4:et
