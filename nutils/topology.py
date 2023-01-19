@@ -3134,15 +3134,9 @@ class MultipatchTopology(TransformChainsTopology):
         if patchcontinuous:
             # build merge mapping: merge common boundary dofs (from low to high)
             pairs = itertools.chain(*(zip(*dofs) for dofs in commonboundarydofs.values() if len(dofs) > 1))
-            merge = numpy.arange(dofcount)
-            for dofs in sorted(pairs):
-                merge[list(dofs)] = merge[list(dofs)].min()
-            assert all(numpy.all(merge[a] == merge[b]) for a, *B in commonboundarydofs.values() for b in B), 'something went wrong is merging interface dofs; this should not have happened'
-            # build renumber mapping: renumber remaining dofs consecutively, starting at 0
-            remainder, renumber = numpy.unique(merge, return_inverse=True)
+            renumber, dofcount = util.merge_index_map(dofcount, pairs)
             # apply mappings
             dofmap = tuple(types.frozenarray(renumber[v], copy=False) for v in dofmap)
-            dofcount = len(remainder)
 
         return function.PlainBasis(coeffs, dofmap, dofcount, self.f_index, self.f_coords)
 
