@@ -1644,29 +1644,16 @@ class TransformChainsTopology(Topology):
 
         coeffs = [ref.get_poly_coeffs(name, degree=degree) for ref in self.references]
         offsets = numpy.cumsum([0] + [len(c) for c in coeffs])
-        dofmap = numpy.repeat(-1, offsets[-1])
-        for ielem, ioppelems in enumerate(self.connectivity):
-            for iedge, jelem in enumerate(ioppelems):  # loop over element neighbors and merge dofs
-                if jelem < ielem:
-                    continue  # either there is no neighbor along iedge or situation will be inspected from the other side
-                jedge = util.index(self.connectivity[jelem], ielem)
-                idofs = offsets[ielem] + self.references[ielem].get_edge_dofs(degree, iedge)
-                jdofs = offsets[jelem] + self.references[jelem].get_edge_dofs(degree, jedge)
-                for idof, jdof in zip(idofs, jdofs):
-                    while dofmap[idof] != -1:
-                        idof = dofmap[idof]
-                    while dofmap[jdof] != -1:
-                        jdof = dofmap[jdof]
-                    if idof != jdof:
-                        dofmap[max(idof, jdof)] = min(idof, jdof)  # create left-looking pointer
-        # assign dof numbers left-to-right
-        ndofs = 0
-        for i, n in enumerate(dofmap):
-            if n == -1:
-                dofmap[i] = ndofs
-                ndofs += 1
-            else:
-                dofmap[i] = dofmap[n]
+        # To merge matching dofs we loop over the connectivity table to find
+        # neighbouring elements (limited to jelem > ielem to consider every
+        # neighbour pair exactly once as well as ignore exterior boundaries)
+        # and mark the degrees of freedom on both sides to be equal.
+        dofmap, ndofs = util.merge_index_map(offsets[-1], (merge_set
+            for ielem, ioppelems in enumerate(self.connectivity)
+                for iedge, jelem in enumerate(ioppelems) if jelem >= ielem
+                    for merge_set in zip(
+                        offsets[ielem] + self.references[ielem].get_edge_dofs(degree, iedge),
+                        offsets[jelem] + self.references[jelem].get_edge_dofs(degree, util.index(self.connectivity[jelem], ielem)))))
 
         elem_slices = map(slice, offsets[:-1], offsets[1:])
         dofs = tuple(types.frozenarray(dofmap[s]) for s in elem_slices)
