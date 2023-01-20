@@ -1094,28 +1094,28 @@ class Weights(Array):
         return weights
 
 
-class Normal(Array):
-    'normal'
+class Orthonormal(Array):
+    'make a vector orthonormal to a subspace'
 
-    __slots__ = 'lgrad',
+    __slots__ = '_basis', '_vector'
 
-    def __init__(self, lgrad: Array):
-        assert isinstance(lgrad, Array) and lgrad.ndim >= 2 and _equals_simplified(lgrad.shape[-2], lgrad.shape[-1]) and lgrad.dtype != complex, f'lgrad={lgrad!r}'
-        self.lgrad = lgrad
-        super().__init__(args=(lgrad,), shape=lgrad.shape[:-1], dtype=float)
+    def __init__(self, basis: Array, vector: Array):
+        assert isinstance(basis, Array) and basis.ndim >= 2 and basis.dtype != complex and _equals_simplified(basis.shape[-1], basis.shape[-2] - 1), f'basis={basis!r}'
+        assert isinstance(vector, Array) and vector.ndim >= 1 and vector.dtype != complex, f'vector={vector!r}'
+        assert equalshape(basis.shape[:-1], vector.shape)
+        self._basis = basis
+        self._vector = vector
+        super().__init__(args=(basis, vector), shape=vector.shape, dtype=float)
 
     def _simplified(self):
         if _equals_scalar_constant(self.shape[-1], 1):
-            return Sign(Take(self.lgrad, constant(0)))
-        unaligned, where = unalign(self.lgrad, naxes=self.ndim - 1)
+            return Sign(self._vector)
+        basis, vector, where = unalign(self._basis, self._vector, naxes=self.ndim - 1)
         if len(where) < self.ndim - 1:
-            return align(Normal(unaligned), (*where, self.ndim - 1), self.shape)
+            return align(Orthonormal(basis, vector), (*where, self.ndim - 1), self.shape)
 
     @staticmethod
-    def evalf(lgrad):
-        n = lgrad[..., -1]
-        # orthonormalize n to G
-        G = lgrad[..., :-1]
+    def evalf(G, n):
         GG = numpy.einsum('...ki,...kj->...ij', G, G)
         v1 = numpy.einsum('...ij,...i->...j', G, n)
         v2 = numpy.linalg.solve(GG, v1)
@@ -1125,7 +1125,7 @@ class Normal(Array):
     def _derivative(self, var, seen):
         if _equals_scalar_constant(self.shape[-1], 1):
             return zeros(self.shape + var.shape)
-        G = self.lgrad[..., :-1]
+        G = self._basis
         invGG = inverse(einsum('Aki,Akj->Aij', G, G))
         return -einsum('Ail,Alj,Ak,AkjB->AiB', G, invGG, self, derivative(G, var, seen))
 

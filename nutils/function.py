@@ -1158,9 +1158,9 @@ class _Normal(Array):
                 assert normal is None and chain.todims == chain.fromdims + 1
                 basis = evaluable.einsum('Aij,jk->Aik', rgrad, evaluable.TransformBasis(chain, index))
                 tangents.append(basis[..., :chain.fromdims])
-                normal = basis[..., chain.fromdims:]
+                normal = basis[..., chain.fromdims]
         assert normal is not None
-        return evaluable.Normal(evaluable.concatenate((*tangents, normal), axis=-1))
+        return evaluable.Orthonormal(evaluable.concatenate(tangents, axis=-1), normal)
 
 
 class _ExteriorNormal(Array):
