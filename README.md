@@ -47,6 +47,10 @@ To view which version of Nutils is currently installed, run:
 
     python3 -m pip show nutils
 
+Nutils can be installed in a Windows machine using WSL environment.
+If you want to assemble matrices in parallel using nutils on a Windows machine, 
+then WSL is the way to go. Instructions to setup WSL are available [here][13]. 
+After setting up WSL, nutils can be installed using the above instructions. 
 
 First steps
 -----------
@@ -122,3 +126,4 @@ Nutils][9].
 [10]: https://www.docker.com/
 [11]: https://github.com/orgs/evalf/packages/container/package/nutils
 [12]: https://raw.githubusercontent.com/evalf/nutils/master/examples/laplace.py
+[13]: https://ubuntu.com/tutorials/install-ubuntu-on-wsl2-on-windows-11-with-gui-support#1-overview
