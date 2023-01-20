@@ -1139,8 +1139,8 @@ class _Normal(Array):
         geom = self._geom.lower(args)
         spaces_dim = builtins.sum(args.transform_chains[space][0][0].todims for space in self._geom.spaces)
         normal_dim = spaces_dim - builtins.sum(args.transform_chains[space][0][0].fromdims for space in self._geom.spaces)
-        if self._geom.shape[-1] != spaces_dim:
-            raise ValueError('The dimension of geometry must equal the sum of the dimensions of the given spaces.')
+        if self._geom.shape[-1] < spaces_dim:
+            raise ValueError('The dimension of geometry must equal or larger than the sum of the dimensions of the given spaces.')
         if normal_dim == 0:
             raise ValueError('Cannot compute the normal because the dimension of the normal space is zero.')
         elif normal_dim > 1:

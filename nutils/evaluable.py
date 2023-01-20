@@ -1100,7 +1100,7 @@ class Orthonormal(Array):
     __slots__ = '_basis', '_vector'
 
     def __init__(self, basis: Array, vector: Array):
-        assert isinstance(basis, Array) and basis.ndim >= 2 and basis.dtype != complex and _equals_simplified(basis.shape[-1], basis.shape[-2] - 1), f'basis={basis!r}'
+        assert isinstance(basis, Array) and basis.ndim >= 2 and basis.dtype != complex, f'basis={basis!r}'
         assert isinstance(vector, Array) and vector.ndim >= 1 and vector.dtype != complex, f'vector={vector!r}'
         assert equalshape(basis.shape[:-1], vector.shape)
         self._basis = basis
@@ -1125,9 +1125,47 @@ class Orthonormal(Array):
     def _derivative(self, var, seen):
         if _equals_scalar_constant(self.shape[-1], 1):
             return zeros(self.shape + var.shape)
+
+        # definitions:
+        #
+        # P := I - G (G^T G)^-1 G^T (orthogonal projector)
+        # n := P v (orthogonal projection of v)
+        # N := n / |n| (self: orthonormal projection of v)
+        #
+        # identities:
+        #
+        #   P^T = P          N^T N = 1
+        #   P P = P          P N = N
+        #   P G = P Q = 0    G^T N = Q^T N = 0
+        #
+        # derivatives:
+        #
+        # P' = Q P + P Q^T where Q := -G (G^T G)^-1 G'^T
+        # n' = P' v + P v'
+        #    = Q n + P (Q^T v + v')
+        # N' = (I - N N^T) n' / |n|
+        #    = (I - N N^T) (Q n / |n| + P (Q^T v + v') / |n|)
+        #    = Q N + (P - N N^T) (Q^T v + v') / |n|
+
         G = self._basis
         invGG = inverse(einsum('Aki,Akj->Aij', G, G))
-        return -einsum('Ail,Alj,Ak,AkjB->AiB', G, invGG, self, derivative(G, var, seen))
+
+        Q = -einsum('Aim,Amn,AjnB->AijB', G, invGG, derivative(G, var, seen))
+        QN = einsum('Ai,AjiB->AjB', self, Q)
+
+        if _equals_simplified(G.shape[-1], G.shape[-2] - 1): # dim(kern(G)) = 1
+            # In this situation, since N is a basis for the kernel of G, we
+            # have the identity P == N N^T which cancels the entire second term
+            # of N' along with any reference to v', reducing it to N' = Q N.
+            return QN
+
+        v = self._vector
+        P = Diagonalize(ones(self.shape)) - einsum('Aim,Amn,Ajn->Aij', G, invGG, G)
+        Z = P - einsum('Ai,Aj->Aij', self, self) # P - N N^T
+
+        return QN + einsum('A,AiB->AiB',
+            power(einsum('Ai,Aij,Aj->A', v, P, v), -.5),
+            einsum('Aij,AjB->AiB', Z, einsum('Ai,AijB->AjB', v, Q) + derivative(v, var, seen)))
 
 
 class Constant(Array):

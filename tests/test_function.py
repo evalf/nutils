@@ -945,6 +945,18 @@ class derivative(TestCase):
         for bnd, n in ('right', [1, 0]), ('left', [-1, 0]), ('top', [0, 1]), ('bottom', [0, -1]):
             self.assertEvalAlmostEqual(domain.boundary[bnd], self.normal(x), numpy.array(n)[numpy.newaxis, :, numpy.newaxis])
 
+    def test_normal_manifold(self):
+        domain, geom = mesh.rectilinear([1]*2)
+        x = numpy.stack([geom[0], geom[1], geom[0]**2 - geom[1]**2])
+        n = self.normal(x) # boundary normal
+        N = self.normal(x, geom) # exterior normal
+        k = -.5 * self.div(N, x, -1) # mean curvature
+        dA = function.jacobian(x, 2)
+        dL = function.jacobian(x, 1)
+        v1 = domain.integrate(2 * k * N * dA, degree=16)
+        v2 = domain.boundary.integrate(n * dL, degree=16)
+        self.assertAllAlmostEqual(v1, v2) # divergence theorem in curved space
+
     def test_dotnorm(self):
         domain, x = mesh.rectilinear([1]*2)
         x = 2*x-0.5
@@ -994,11 +1006,11 @@ derivative('function',
            ngrad=function.ngrad,
            nsymgrad=function.nsymgrad)
 derivative('method',
-           normal=lambda geom: function.Array.cast(geom).normal(),
+           normal=lambda geom, refgeom=None: function.Array.cast(geom).normal(refgeom),
            tangent=lambda geom, vec: function.Array.cast(geom).tangent(vec),
            dotnorm=lambda vec, geom: function.Array.cast(vec).dotnorm(geom),
            grad=lambda arg, geom: function.Array.cast(arg).grad(geom),
-           div=lambda arg, geom: function.Array.cast(arg).div(geom),
+           div=lambda arg, geom, ndims=0: function.Array.cast(arg).div(geom, ndims),
            curl=lambda arg, geom: function.Array.cast(arg).curl(geom),
            laplace=lambda arg, geom: function.Array.cast(arg).laplace(geom),
            symgrad=lambda arg, geom: function.Array.cast(arg).symgrad(geom),
