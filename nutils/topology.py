@@ -1647,29 +1647,16 @@ class TransformChainsTopology(Topology):
 
         coeffs = [ref.get_poly_coeffs(name, degree=degree) for ref in self.references]
         offsets = numpy.cumsum([0] + [len(c) for c in coeffs])
-        dofmap = numpy.repeat(-1, offsets[-1])
-        for ielem, ioppelems in enumerate(self.connectivity):
-            for iedge, jelem in enumerate(ioppelems):  # loop over element neighbors and merge dofs
-                if jelem < ielem:
-                    continue  # either there is no neighbor along iedge or situation will be inspected from the other side
-                jedge = util.index(self.connectivity[jelem], ielem)
-                idofs = offsets[ielem] + self.references[ielem].get_edge_dofs(degree, iedge)
-                jdofs = offsets[jelem] + self.references[jelem].get_edge_dofs(degree, jedge)
-                for idof, jdof in zip(idofs, jdofs):
-                    while dofmap[idof] != -1:
-                        idof = dofmap[idof]
-                    while dofmap[jdof] != -1:
-                        jdof = dofmap[jdof]
-                    if idof != jdof:
-                        dofmap[max(idof, jdof)] = min(idof, jdof)  # create left-looking pointer
-        # assign dof numbers left-to-right
-        ndofs = 0
-        for i, n in enumerate(dofmap):
-            if n == -1:
-                dofmap[i] = ndofs
-                ndofs += 1
-            else:
-                dofmap[i] = dofmap[n]
+        # To merge matching dofs we loop over the connectivity table to find
+        # neighbouring elements (limited to jelem > ielem to consider every
+        # neighbour pair exactly once as well as ignore exterior boundaries)
+        # and mark the degrees of freedom on both sides to be equal.
+        dofmap, ndofs = util.merge_index_map(offsets[-1], (merge_set
+            for ielem, ioppelems in enumerate(self.connectivity)
+                for iedge, jelem in enumerate(ioppelems) if jelem >= ielem
+                    for merge_set in zip(
+                        offsets[ielem] + self.references[ielem].get_edge_dofs(degree, iedge),
+                        offsets[jelem] + self.references[jelem].get_edge_dofs(degree, util.index(self.connectivity[jelem], ielem)))))
 
         elem_slices = map(slice, offsets[:-1], offsets[1:])
         dofs = tuple(types.frozenarray(dofmap[s]) for s in elem_slices)
@@ -3135,15 +3122,9 @@ class MultipatchTopology(TransformChainsTopology):
         if patchcontinuous:
             # build merge mapping: merge common boundary dofs (from low to high)
             pairs = itertools.chain(*(zip(*dofs) for dofs in commonboundarydofs.values() if len(dofs) > 1))
-            merge = numpy.arange(dofcount)
-            for dofs in sorted(pairs):
-                merge[list(dofs)] = merge[list(dofs)].min()
-            assert all(numpy.all(merge[a] == merge[b]) for a, *B in commonboundarydofs.values() for b in B), 'something went wrong is merging interface dofs; this should not have happened'
-            # build renumber mapping: renumber remaining dofs consecutively, starting at 0
-            remainder, renumber = numpy.unique(merge, return_inverse=True)
+            renumber, dofcount = util.merge_index_map(dofcount, pairs)
             # apply mappings
             dofmap = tuple(types.frozenarray(renumber[v], copy=False) for v in dofmap)
-            dofcount = len(remainder)
 
         return function.PlainBasis(coeffs, dofmap, dofcount, self.f_index, self.f_coords)
 
