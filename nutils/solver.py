@@ -31,6 +31,7 @@ time dependent problems.
 """
 
 from . import function, evaluable, cache, numeric, types, _util as util, matrix, warnings, sparse
+from dataclasses import dataclass
 import abc
 import numpy
 import itertools
@@ -172,23 +173,8 @@ class SolverError(Exception):
 
 # LINE SEARCH
 
-class LineSearch(types.Immutable):
-    '''
-    Line search abstraction for gradient based optimization.
-
-    A line search object is a callable that takes four arguments: the current
-    residual and directional derivative, and the candidate residual and
-    directional derivative, with derivatives normalized to unit length; and
-    returns the optimal scaling and a boolean flag that marks whether the
-    candidate should be accepted.
-    '''
-
-    @abc.abstractmethod
-    def __call__(self, res0, dres0, res1, dres1):
-        raise NotImplementedError
-
-
-class NormBased(LineSearch):
+@dataclass(eq=True, frozen=True)
+class NormBased:
     '''
     Line search abstraction for Newton-like iterations, computing relaxation
     values that correspond to greatest reduction of the residual norm.
@@ -207,12 +193,15 @@ class NormBased(LineSearch):
         relaxation values rebound to one if not bounded by optimality.
     '''
 
-    @types.apply_annotations
-    def __init__(self, minscale: float = .01, acceptscale: float = 2/3, maxscale: float = 2.):
-        assert 0 < minscale < acceptscale < 1 < maxscale
-        self.minscale = minscale
-        self.acceptscale = acceptscale
-        self.maxscale = maxscale
+    minscale: float = .01
+    acceptscale: float = 2/3
+    maxscale: float = 2.
+
+    def __post_init__(self):
+        assert isinstance(self.minscale, float), f'minscale={self.minscale!r}'
+        assert isinstance(self.acceptscale, float), f'acceptscale={self.acceptscale!r}'
+        assert isinstance(self.maxscale, float), f'maxscale={self.maxscale!r}'
+        assert 0 < self.minscale < self.acceptscale < 1 < self.maxscale
 
     @classmethod
     def legacy(cls, kwargs):
@@ -256,7 +245,8 @@ class NormBased(LineSearch):
         return min(max(scale, self.minscale), self.maxscale), scale >= self.acceptscale and p1 < p0
 
 
-class MedianBased(LineSearch, version=1):
+@dataclass(eq=True, frozen=True)
+class MedianBased:
     '''
     Line search abstraction for Newton-like iterations, computing relaxation
     values such that half (or any other configurable quantile) of the residual
@@ -282,14 +272,18 @@ class MedianBased(LineSearch, version=1):
         resulting in strong relaxation.
     '''
 
-    @types.apply_annotations
-    def __init__(self, minscale: float = .01, acceptscale: float = 2/3, maxscale: float = 2., quantile: float = .5):
-        assert 0 < minscale < acceptscale < 1 < maxscale
-        assert 0 < quantile < 1
-        self.minscale = minscale
-        self.acceptscale = acceptscale
-        self.maxscale = maxscale
-        self.quantile = quantile
+    minscale: float = .01
+    acceptscale: float = 2/3
+    maxscale: float = 2.
+    quantile: float = .5
+
+    def __post_init__(self):
+        assert isinstance(self.minscale, float), f'minscale={self.minscale!r}'
+        assert isinstance(self.acceptscale, float), f'acceptscale={self.acceptscale!r}'
+        assert isinstance(self.maxscale, float), f'maxscale={self.maxscale!r}'
+        assert isinstance(self.quantile, float), f'quantile={self.quantile!r}'
+        assert 0 < self.minscale < self.acceptscale < 1 < self.maxscale
+        assert 0 < self.quantile < 1
 
     def __call__(self, res0, dres0, res1, dres1):
         if not numpy.isfinite(res1).all():
@@ -394,8 +388,12 @@ class newton(cache.Recursion, length=1):
         (boolean) or NaN (float). In the remaining positions the values of
         ``lhs0`` are returned unchanged (boolean) or overruled by the values in
         `constrain` (float).
-    linesearch : :class:`nutils.solver.LineSearch`
-        Callable that defines relaxation logic.
+    linesearch : Callable[[float, float, float, float], Tuple[float, bool]]
+        Callable that defines relaxation logic. The callable takes four
+        arguments: the current residual and directional derivative, and the
+        candidate residual and directional derivative, with derivatives
+        normalized to unit length; and returns the optimal scaling and a
+        boolean flag that marks whether the candidate should be accepted.
     failrelax : :class:`float`
         Fail with exception if relaxation reaches this lower limit.
     arguments : :class:`collections.abc.Mapping`
@@ -794,8 +792,12 @@ def optimize(target, functional: evaluable.asarray, *, tol: types.strictfloat = 
         Coefficient vector, starting point of the iterative procedure.
     relax0 : :class:`float`
         Initial relaxation value.
-    linesearch : :class:`nutils.solver.LineSearch`
-        Callable that defines relaxation logic.
+    linesearch : Callable[[float, float, float, float], Tuple[float, bool]]
+        Callable that defines relaxation logic. The callable takes four
+        arguments: the current residual and directional derivative, and the
+        candidate residual and directional derivative, with derivatives
+        normalized to unit length; and returns the optimal scaling and a
+        boolean flag that marks whether the candidate should be accepted.
     failrelax : :class:`float`
         Fail with exception if relaxation reaches this lower limit.
 
