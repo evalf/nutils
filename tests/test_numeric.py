@@ -160,7 +160,7 @@ class istype(TestCase):
 
     def test_isbool(self):
         self.assertTrue(numeric.isbool(True))
-        self.assertTrue(numeric.isbool(numpy.bool(True)))
+        self.assertTrue(numeric.isbool(numpy.bool_(True)))
         self.assertTrue(numeric.isbool(numpy.array(True)))
         self.assertFalse(numeric.isbool(numpy.array([True])))
 
