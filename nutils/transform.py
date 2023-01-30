@@ -44,6 +44,10 @@ def canonical(chain):
     return tuple(items)
 
 
+def iscanonical(chain):
+    return all(b.swapdown(a) == None for a, b in util.pairwise(chain))
+
+
 def uppermost(chain):
     # bring to highest ndims possible
     n = len(chain)

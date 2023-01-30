@@ -540,8 +540,8 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex', *, space=
                 opposites.append(topo.transforms[ioppelem] + (transform.SimplexEdge(ndims, tuple(connectivity[ioppelem]).index(ielem)),))
         for groups, (simplices, transforms, opposites) in (bgroups, bitems), (igroups, iitems):
             if simplices:
-                transforms = transformseq.PlainTransforms(transforms, ndims, ndims-1)
-                opposites = transforms if opposites is None else transformseq.PlainTransforms(opposites, ndims, ndims-1)
+                transforms = transformseq.PlainTransforms(tuple(transforms), ndims, ndims-1)
+                opposites = transforms if opposites is None else transformseq.PlainTransforms(tuple(opposites), ndims, ndims-1)
                 groups[name] = topology.SimplexTopology(space, numpy.asarray(simplices), transforms, opposites)
 
     pgroups = {}
@@ -549,7 +549,7 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex', *, space=
         ptrans = [transform.Point(types.arraydata(offset)) for offset in numpy.eye(ndims+1)[:, 1:]]
         pmap = {inode: numpy.array(numpy.equal(nodes, inode).nonzero()).T for inode in set.union(*map(set, ptags.values()))}
         for pname, inodes in ptags.items():
-            ptransforms = transformseq.PlainTransforms([topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode]], ndims, 0)
+            ptransforms = transformseq.PlainTransforms(tuple((*topo.transforms[ielem], ptrans[ivertex]) for inode in inodes for ielem, ivertex in pmap[inode]), ndims, 0)
             preferences = References.uniform(element.getsimplex(0), len(ptransforms))
             pgroups[pname] = topology.TransformChainsTopology(space, preferences, ptransforms, ptransforms)
 
@@ -588,12 +588,12 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex', *, space=
                     opposites.append(topo.transforms[ioppelem] + (transform.SimplexEdge(ndims, ioppedge),))
             for groups, (simplices, transforms, opposites) in (vbgroups, bitems), (vigroups, iitems):
                 if simplices:
-                    transforms = transformseq.PlainTransforms(transforms, ndims, ndims-1)
-                    opposites = transformseq.PlainTransforms(opposites, ndims, ndims-1) if len(opposites) == len(transforms) else transforms
+                    transforms = transformseq.PlainTransforms(tuple(transforms), ndims, ndims-1)
+                    opposites = transformseq.PlainTransforms(tuple(opposites), ndims, ndims-1) if len(opposites) == len(transforms) else transforms
                     groups[bname] = topology.SimplexTopology(space, numpy.asarray(simplices), transforms, opposites)
         vpgroups = {}
         for pname, inodes in ptags.items():
-            ptransforms = transformseq.PlainTransforms([topo.transforms[ielem] + (ptrans[ivertex],) for inode in inodes for ielem, ivertex in pmap[inode] if keep[ielem]], ndims, 0)
+            ptransforms = transformseq.PlainTransforms(tuple((*topo.transforms[ielem], ptrans[ivertex]) for inode in inodes for ielem, ivertex in pmap[inode] if keep[ielem]), ndims, 0)
             preferences = References.uniform(element.getsimplex(0), len(ptransforms))
             vpgroups[pname] = topology.TransformChainsTopology(space, preferences, ptransforms, ptransforms)
         vgroups[name] = vtopo.withgroups(bgroups=vbgroups, igroups=vigroups, pgroups=vpgroups)

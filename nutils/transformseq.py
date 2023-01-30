@@ -1,6 +1,7 @@
 """The transformseq module."""
 
 from typing import Tuple
+from numbers import Integral
 from . import types, numeric, _util as util, transform, element
 from .elementseq import References
 from .transform import TransformChain
@@ -44,8 +45,9 @@ class Transforms(types.Singleton):
 
     __slots__ = 'todims', 'fromdims'
 
-    @types.apply_annotations
-    def __init__(self, todims: types.strictint, fromdims: types.strictint):
+    def __init__(self, todims: Integral, fromdims: Integral):
+        assert isinstance(todims, Integral), f'todims={todims!r}'
+        assert isinstance(fromdims, Integral), f'fromdims={fromdims!r}'
         if not 0 <= fromdims <= todims:
             raise ValueError('invalid dimensions')
         self.todims = todims
@@ -69,7 +71,7 @@ class Transforms(types.Singleton):
                 return self
             if index.step < 0:
                 raise NotImplementedError('reordering the sequence is not yet implemented')
-            return MaskedTransforms(self, numpy.arange(index.start, index.stop, index.step))
+            return MaskedTransforms(self, types.arraydata(numpy.arange(index.start, index.stop, index.step)))
         elif numeric.isintarray(index):
             if index.ndim != 1:
                 raise IndexError('invalid index')
@@ -82,12 +84,12 @@ class Transforms(types.Singleton):
                 raise ValueError('repeating an element is not allowed')
             if not numpy.all(numpy.greater(dindex, 0)):
                 s = numpy.argsort(index)
-                return ReorderedTransforms(self[index[s]], numpy.argsort(s))
+                return ReorderedTransforms(self[index[s]], types.arraydata(numpy.argsort(s)))
             if len(index) == 0:
                 return EmptyTransforms(self.todims, self.fromdims)
             if len(index) == len(self):
                 return self
-            return MaskedTransforms(self, index)
+            return MaskedTransforms(self, types.arraydata(index))
         elif numeric.isboolarray(index):
             if index.shape != (len(self),):
                 raise IndexError('mask has invalid shape')
@@ -96,7 +98,7 @@ class Transforms(types.Singleton):
             if numpy.all(index):
                 return self
             index, = numpy.where(index)
-            return MaskedTransforms(self, index)
+            return MaskedTransforms(self, types.arraydata(index))
         else:
             raise IndexError('invalid index')
 
@@ -133,7 +135,7 @@ class Transforms(types.Singleton):
         Consider the following plain sequence of two index transforms:
 
         >>> from nutils.transform import Index, SimplexChild
-        >>> transforms = PlainTransforms([(Index(1, 0),), (Index(1, 1),)], 1, 1)
+        >>> transforms = PlainTransforms(((Index(1, 0),), (Index(1, 1),)), 1, 1)
 
         Calling :meth:`index_with_tail` with the first transform gives index ``0``
         and no tail:
@@ -178,7 +180,7 @@ class Transforms(types.Singleton):
         Consider the following plain sequence of two index transforms:
 
         >>> from nutils.transform import Index, SimplexChild
-        >>> transforms = PlainTransforms([(Index(1, 0),), (Index(1, 1),)], 1, 1)
+        >>> transforms = PlainTransforms(((Index(1, 0),), (Index(1, 1),)), 1, 1)
 
         Calling :meth:`index` with the first transform gives index ``0``:
 
@@ -344,15 +346,17 @@ class PlainTransforms(Transforms):
     Parameters
     ----------
     transforms : :class:`tuple` of :class:`~nutils.transform.TransformItem` objects
-        The sequence of transforms.
+        The sequence of transforms in canonical order.
     fromdims : :class:`int`
         The number of dimensions all ``transforms`` map from.
     '''
 
     __slots__ = '_transforms', '_sorted', '_indices'
 
-    @types.apply_annotations
-    def __init__(self, transforms: types.tuple[transform.canonical], todims: types.strictint, fromdims: types.strictint):
+    def __init__(self, transforms: Tuple[Tuple[transform.TransformItem, ...], ...], todims: Integral, fromdims: Integral):
+        assert isinstance(transforms, tuple) and all(isinstance(items, tuple) and all(isinstance(item, transform.TransformItem) for item in items) and transform.iscanonical(items) for items in transforms), f'transforms={transforms!r}'
+        assert isinstance(todims, Integral), f'todims={todims!r}'
+        assert isinstance(fromdims, Integral), f'fromdims={fromdims!r}'
         transforms_todims = set(trans[0].todims for trans in transforms)
         transforms_fromdims = set(trans[-1].fromdims for trans in transforms)
         if not (transforms_todims <= {todims}):
@@ -406,8 +410,10 @@ class IndexTransforms(Transforms):
 
     __slots__ = '_length', '_offset'
 
-    @types.apply_annotations
-    def __init__(self, ndims: types.strictint, length: int, offset: int = 0):
+    def __init__(self, ndims: Integral, length: Integral, offset: Integral = 0):
+        assert isinstance(ndims, Integral), f'ndims={ndims!r}'
+        assert isinstance(length, Integral), f'length={length!r}'
+        assert isinstance(offset, Integral), f'offset={offset!r}'
         self._length = length
         self._offset = offset
         super().__init__(ndims, ndims)
@@ -432,7 +438,10 @@ class Axis(types.Singleton):
 
     __slots__ = 'i', 'j', 'mod'
 
-    def __init__(self, i: types.strictint, j: types.strictint, mod: types.strictint):
+    def __init__(self, i: Integral, j: Integral, mod: Integral):
+        assert isinstance(i, Integral), f'i={i!r}'
+        assert isinstance(j, Integral), f'j={j!r}'
+        assert isinstance(mod, Integral), f'mod={mod!r}'
         assert i <= j
         self.i = i
         self.j = j
@@ -462,8 +471,8 @@ class DimAxis(Axis):
     __slots__ = 'isperiodic'
     isdim = True
 
-    @types.apply_annotations
-    def __init__(self, i: types.strictint, j: types.strictint, mod: types.strictint, isperiodic: bool):
+    def __init__(self, i: Integral, j: Integral, mod: Integral, isperiodic: bool):
+        assert isinstance(isperiodic, bool), f'isperiodic={isperiodic!r}'
         super().__init__(i, j, mod)
         self.isperiodic = isperiodic
 
@@ -498,8 +507,9 @@ class IntAxis(Axis):
     __slots__ = 'ibound', 'side'
     isdim = False
 
-    @types.apply_annotations
-    def __init__(self, i: types.strictint, j: types.strictint, mod: types.strictint, ibound: types.strictint, side: bool):
+    def __init__(self, i: Integral, j: Integral, mod: Integral, ibound: Integral, side: bool):
+        assert isinstance(ibound, Integral), f'ibound={ibound!r}'
+        assert isinstance(side, Integral), f'side={side!r}'
         super().__init__(i, j, mod)
         self.ibound = ibound
         self.side = side
@@ -530,8 +540,11 @@ class StructuredTransforms(Transforms):
 
     __slots__ = '_root', '_axes', '_nrefine', '_etransforms', '_ctransforms', '_cindices'
 
-    @types.apply_annotations
-    def __init__(self, root: transform.stricttransformitem, axes: types.tuple[types.strict[Axis]], nrefine: types.strictint):
+    def __init__(self, root: transform.TransformItem, axes: Tuple[Axis, ...], nrefine: Integral):
+        assert isinstance(root, transform.TransformItem), f'root={root!r}'
+        assert isinstance(axes, tuple) and all(isinstance(axis, Axis) for axis in axes), f'axes={axes!r}'
+        assert isinstance(nrefine, Integral), f'nrefine={nrefine!r}'
+
         self._root = root
         self._axes = axes
         self._nrefine = nrefine
@@ -619,9 +632,9 @@ class MaskedTransforms(Transforms):
 
     __slots__ = '_parent', '_mask', '_indices'
 
-    @types.apply_annotations
-    def __init__(self, parent: stricttransforms, indices: types.arraydata):
-        assert indices.dtype == int
+    def __init__(self, parent: Transforms, indices: types.arraydata):
+        assert isinstance(parent, Transforms), f'parent={parent!r}'
+        assert isinstance(indices, types.arraydata) and indices.dtype == int, f'indices={indices!r}'
         self._parent = parent
         self._indices = numpy.asarray(indices)
         super().__init__(parent.todims, parent.fromdims)
@@ -661,9 +674,9 @@ class ReorderedTransforms(Transforms):
     __slots__ = '_parent', '_mask', '_indices'
     __cache__ = '_rindices'
 
-    @types.apply_annotations
-    def __init__(self, parent: stricttransforms, indices: types.arraydata):
-        assert indices.dtype == int
+    def __init__(self, parent: Transforms, indices: types.arraydata):
+        assert isinstance(parent, Transforms), f'parent={parent!r}'
+        assert isinstance(indices, types.arraydata) and indices.dtype == int, f'indices={indices!r}'
         self._parent = parent
         self._indices = numpy.asarray(indices)
         super().__init__(parent.todims, parent.fromdims)
@@ -713,8 +726,11 @@ class DerivedTransforms(Transforms):
     __slots__ = '_parent', '_parent_references', '_derived_transforms'
     __cache__ = '_offsets'
 
-    @types.apply_annotations
-    def __init__(self, parent: stricttransforms, parent_references: types.strict[References], derived_attribute: types.strictstr, fromdims: types.strictint):
+    def __init__(self, parent: Transforms, parent_references: References, derived_attribute: str, fromdims: Integral):
+        assert isinstance(parent, Transforms), f'parent={parent!r}'
+        assert isinstance(parent_references, References), f'parent_references={parent_references!r}'
+        assert isinstance(derived_attribute, str), f'derived_attribute={derived_attribute!r}'
+        assert isinstance(fromdims, Integral), f'fromdims={fromdims!r}'
         if len(parent) != len(parent_references):
             raise ValueError('`parent` and `parent_references` should have the same length')
         if parent.fromdims != parent_references.ndims:
@@ -780,8 +796,11 @@ class UniformDerivedTransforms(Transforms):
 
     __slots__ = '_parent', '_derived_transforms'
 
-    @types.apply_annotations
-    def __init__(self, parent: stricttransforms, parent_reference: element.strictreference, derived_attribute: types.strictstr, fromdims: types.strictint):
+    def __init__(self, parent: Transforms, parent_reference: element.Reference, derived_attribute: str, fromdims: Integral):
+        assert isinstance(parent, Transforms), f'parent={parent!r}'
+        assert isinstance(parent_reference, element.Reference), f'parent_reference={parent_reference!r}'
+        assert isinstance(derived_attribute, str), f'derived_attribute={derived_attribute!r}'
+        assert isinstance(fromdims, Integral), f'fromdims={fromdims!r}'
         if parent.fromdims != parent_reference.ndims:
             raise ValueError('`parent` and `parent_reference` have different dimensions')
         self._parent = parent
@@ -826,8 +845,8 @@ class ChainedTransforms(Transforms):
     __slots__ = '_items'
     __cache__ = '_offsets'
 
-    @types.apply_annotations
-    def __init__(self, items: types.tuple[stricttransforms]):
+    def __init__(self, items: Tuple[Transforms, ...]):
+        assert isinstance(items, tuple) and all(isinstance(item, Transforms) for item in items), f'items={items!r}'
         if len(items) == 0:
             raise ValueError('Empty chain.')
         if len(set(item.todims for item in items)) != 1:
