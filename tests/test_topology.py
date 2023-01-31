@@ -1127,6 +1127,18 @@ class multipatch_L(TestCase):
             self.assertEqual(opp1, interfaces2.opposites[i2])
 
 
+class multipatch_misc(TestCase):
+
+    def test_basis_merge_dofs(self):
+        patches = (0, 4, 2, 5), (9, 1, 5, 3), (2, 5, 6, 7), (5, 3, 7, 8)
+        domain, geom = mesh.multipatch(patches=patches, nelems=1)
+        basis = domain.basis('spline', 1)
+        actual = domain.sample('bezier', 2).eval(basis)
+        desired = numpy.zeros((16, 10))
+        desired[numpy.arange(16), [0, 1, 2, 3, 4, 5, 3, 6, 2, 3, 7, 8, 3, 6, 8, 9]] = 1
+        numpy.testing.assert_allclose(actual, desired)
+
+
 class multipatch_errors(TestCase):
 
     def test_reverse(self):
