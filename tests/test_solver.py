@@ -290,15 +290,15 @@ class burgers(TestCase):
         self.lhs0 = numpy.sin(numpy.arange(len(basis)))  # "random" initial vector
 
     def test_iters(self):
-        it = iter(solver.impliciteuler('u:v', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=100))  # involves 2-level timestep scaling
+        it = iter(solver.impliciteuler('u:v', residual=self.residual, inertia=self.inertia, arguments=dict(u=self.lhs0), timestep=100))  # involves 2-level timestep scaling
         assert numpy.equal(next(it)['u'], self.lhs0).all()
         self.assertAlmostEqual64(next(it)['u'], 'eNpzNBA1NjHuNHQ3FDsTfCbAuNz4nUGZgeyZiDOZxlONmQwU9W3OFJ/pNQAADZIOPA==')
 
     def test_resume(self):
-        _test_recursion_cache(self, lambda: solver.impliciteuler('u:v', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=1))
+        _test_recursion_cache(self, lambda: solver.impliciteuler('u:v', residual=self.residual, inertia=self.inertia, arguments=dict(u=self.lhs0), timestep=1))
 
     def test_resume_withscaling(self):
-        _test_recursion_cache(self, lambda: solver.impliciteuler('u:v', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=100))
+        _test_recursion_cache(self, lambda: solver.impliciteuler('u:v', residual=self.residual, inertia=self.inertia, arguments=dict(u=self.lhs0), timestep=100))
 
 
 class theta_time(TestCase):

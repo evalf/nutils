@@ -36,75 +36,13 @@ import abc
 import numpy
 import itertools
 import functools
-import numbers
 import collections
 import math
-import inspect
 import treelog as log
-
-
-# TYPE COERCION
-
-argdict = types.frozendict[types.strictstr, types.arraydata]
-
-
-def integraltuple(arg):
-    return tuple(a.as_evaluable_array for a in arg)
-
-
-def optionalintegraltuple(arg):
-    return tuple(None if a is None else a.as_evaluable_array for a in arg)
-
-
-def arrayordict(arg):
-    return types.arraydata(arg) if numeric.isarray(arg) else argdict(arg)
-
-
-# DECORATORS
-
-def single_or_multiple(f):
-    '''add support for legacy string target + array return value'''
-
-    sig = inspect.signature(f)
-
-    @functools.wraps(f)
-    def wrapper(target, *args, **kwargs):
-        is_single = isinstance(target, str) and ',' not in target and ':' not in target
-        targets = target.rstrip(',').split(',') if isinstance(target, str) else list(target)
-        is_functional = ':' in targets[0]
-        if any((':' in t) != is_functional for t in targets[1:]):
-            raise ValueError('inconsistent arguments')
-        if is_functional:
-            targets, test = zip(*[t.split(':', 1) for t in targets])
-        ba = sig.bind(tuple(targets), *args, **kwargs)
-        tuple_args = [name for name in ba.arguments if sig.parameters[name].annotation in (integraltuple, optionalintegraltuple)]
-        if is_functional:
-            arguments = function._join_arguments(ba.arguments[name].arguments for name in tuple_args)
-            test = [function.Argument(t, *arguments[t]) for t in test]
-        for name in tuple_args:
-            v = ba.arguments[name]
-            if is_functional:
-                v = map(v.derivative, test)
-            elif is_single:
-                v = v,
-            ba.arguments[name] = tuple(v)
-        retval = f(*ba.args, **ba.kwargs)
-        return retval[targets[0]] if is_single else retval
-
-    del wrapper.__wrapped__ # required for sphinx until issue #10414 is fixed (https://github.com/sphinx-doc/sphinx/issues/10414)
-
-    return wrapper
 
 
 class withsolve(types.Immutable):
     '''add a .solve method to iterables'''
-
-    @classmethod
-    def wrap(cls, f):
-        @functools.wraps(f)
-        def wrapper(*args, **kwargs):
-            return cls(f(*args, **kwargs))
-        return wrapper
 
     def __init__(self, wrapped, item = None):
         self._wrapped = wrapped
@@ -142,7 +80,6 @@ class withsolve(types.Immutable):
         lhs, info = self.solve_withinfo(tol=tol, maxiter=maxiter, miniter=miniter)
         return lhs
 
-    @types.apply_annotations
     @cache.function
     def solve_withinfo(self, tol, maxiter=float('inf'), miniter=0):
         '''execute nonlinear solver, return lhs and info
@@ -154,7 +91,7 @@ class withsolve(types.Immutable):
 
         if miniter > maxiter:
             raise ValueError('The minimum number of iterations cannot be larger than the maximum.')
-        with log.iter.wrap(_progress(self._wrapped.__class__.__name__, tol), self) as items:
+        with log.iter.wrap(_progress(self._wrapped.__class__.__name__.strip('_'), tol), self) as items:
             for i, (lhs, info) in enumerate(items):
                 if info.resnorm <= tol and i >= miniter:
                     break
@@ -317,11 +254,7 @@ class MedianBased:
 
 # SOLVERS
 
-
-@single_or_multiple
-@types.apply_annotations
-@cache.function
-def solve_linear(target, residual: integraltuple, *, constrain: arrayordict = None, lhs0: types.arraydata = None, arguments: argdict = {}, **kwargs):
+def solve_linear(target, residual, *, constrain = None, lhs0: types.arraydata = None, arguments = {}, **kwargs):
     '''solve linear problem
 
     Parameters
@@ -342,24 +275,36 @@ def solve_linear(target, residual: integraltuple, *, constrain: arrayordict = No
     :class:`numpy.ndarray`
         Array of ``target`` values for which ``residual == 0``'''
 
+    if isinstance(target, str) and ',' not in target and ':' not in target:
+        return solve_linear([target], [residual], constrain={} if constrain is None else {target: constrain},
+            lhs0=lhs0, arguments=arguments if lhs0 is None else {**arguments, target: lhs0}, **kwargs)[target]
+    if lhs0 is not None:
+        raise ValueError('lhs0 argument is invalid for a non-string target; define the initial guess via arguments instead')
+    target, residual = _target_helper(target, residual)
     solveargs = _strip(kwargs, 'lin')
     if kwargs:
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
-    lhs0, constrain = _parse_lhs_cons(lhs0, constrain, target, _argobjs(residual), arguments)
-    jacobian = _derivative(residual, target)
-    if not set(target).isdisjoint(_argobjs(jacobian)):
+    return _solve_linear(target, residual,
+        types.frozendict((k, types.arraydata(v)) for k, v in (constrain or {}).items()),
+        types.frozendict((k, types.arraydata(v)) for k, v in (arguments or {}).items()),
+        types.frozendict(solveargs))
+
+
+@cache.function
+def _solve_linear(target, residual: tuple, constraints: dict, arguments: dict, solveargs: dict):
+    arguments, constraints = _parse_lhs_cons(constraints, target, _argobjs(residual), arguments)
+    jacobians = _derivative(residual, target)
+    if not set(target).isdisjoint(_argobjs(jacobians)):
         raise SolverError('problem is not linear')
-    dtype = _determine_dtype(target, residual, lhs0, constrain)
-    lhs, vlhs = _redict(lhs0, target, dtype)
-    mask, vmask = _invert(constrain, target)
-    res, jac = _integrate_blocks(residual, jacobian, arguments=lhs, mask=mask)
+    dtype = _determine_dtype(target, residual, arguments, constraints)
+    lhs, vlhs = _redict(arguments, target, dtype)
+    mask, vmask = _invert(constraints, target)
+    res, jac = _integrate_blocks(residual, jacobians, arguments=lhs, mask=mask)
     vlhs[vmask] -= jac.solve(res, **solveargs)
     return lhs
 
 
-@single_or_multiple
-@withsolve.wrap
-class newton(cache.Recursion, length=1):
+def newton(target, residual, *, jacobian = None, lhs0 = None, relax0: float = 1., constrain = None, linesearch='__legacy__', failrelax: float = 1e-6, arguments = {}, **kwargs):
     '''iteratively solve nonlinear problem by gradient descent
 
     Generates targets such that residual approaches 0 using Newton procedure with
@@ -379,15 +324,12 @@ class newton(cache.Recursion, length=1):
     target : :class:`str`
         Name of the target: a :class:`nutils.function.Argument` in ``residual``.
     residual : :class:`nutils.evaluable.AsEvaluableArray`
-    lhs0 : :class:`numpy.ndarray`
-        Coefficient vector, starting point of the iterative procedure.
     relax0 : :class:`float`
         Initial relaxation value.
     constrain : :class:`numpy.ndarray` with dtype :class:`bool` or :class:`float`
-        Equal length to ``lhs0``, masks the free vector entries as ``False``
-        (boolean) or NaN (float). In the remaining positions the values of
-        ``lhs0`` are returned unchanged (boolean) or overruled by the values in
-        `constrain` (float).
+        Masks the free vector entries as ``False`` (boolean) or NaN (float). In
+        the remaining positions the values of ``lhs0`` are returned unchanged
+        (boolean) or overruled by the values in `constrain` (float).
     linesearch : Callable[[float, float, float, float], Tuple[float, bool]]
         Callable that defines relaxation logic. The callable takes four
         arguments: the current residual and directional derivative, and the
@@ -398,8 +340,8 @@ class newton(cache.Recursion, length=1):
         Fail with exception if relaxation reaches this lower limit.
     arguments : :class:`collections.abc.Mapping`
         Defines the values for :class:`nutils.function.Argument` objects in
-        `residual`.  The ``target`` should not be present in ``arguments``.
-        Optional.
+        `residual`. If ``target`` is present in ``arguments`` then it is used
+        as the initial guess for the iterative procedure.
 
     Yields
     ------
@@ -407,21 +349,38 @@ class newton(cache.Recursion, length=1):
         Coefficient vector that approximates residual==0 with increasing accuracy
     '''
 
-    @types.apply_annotations
-    def __init__(self, target, residual: integraltuple, jacobian: integraltuple = None, lhs0: types.arraydata = None, relax0: float = 1., constrain: arrayordict = None, linesearch='__legacy__', failrelax: types.strictfloat = 1e-6, arguments: argdict = {}, **kwargs):
+    if isinstance(target, str) and ',' not in target and ':' not in target:
+        return newton([target], [residual], jacobian=None if jacobian is None else [jacobian],
+            relax0=relax0, constrain={} if constrain is None else {target: constrain}, linesearch=linesearch,
+            failrelax=failrelax, arguments=arguments if lhs0 is None else {**arguments, target: lhs0}, **kwargs)[target]
+    if lhs0 is not None:
+        raise ValueError('lhs0 argument is invalid for a non-string target; define the initial guess via arguments instead')
+    target, residual = _target_helper(target, residual)
+    if linesearch == '__legacy__':
+        linesearch = NormBased.legacy(kwargs)
+    solveargs = _strip(kwargs, 'lin')
+    solveargs.setdefault('rtol', 1e-3)
+    if kwargs:
+        raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
+    return withsolve(_newton(target, residual, None if jacobian is None else tuple(jacobian),
+        types.frozendict((k, types.arraydata(v)) for k, v in (constrain or {}).items()),
+        types.frozendict((k, types.arraydata(v)) for k, v in (arguments or {}).items()),
+        linesearch, relax0, failrelax, types.frozendict(solveargs)))
+
+
+class _newton(cache.Recursion, length=1):
+
+    def __init__(self, target, residual, jacobian, constrain, arguments, linesearch, relax0: float, failrelax: float, solveargs):
         super().__init__()
         self.target = target
         self.residual = residual
         self.jacobian = _derivative(residual, target, jacobian)
-        self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argobjs(residual), arguments)
+        self.lhs0, self.constrain = _parse_lhs_cons(constrain, target, _argobjs(residual), arguments)
         self.dtype = _determine_dtype(target, residual, self.lhs0, self.constrain)
         self.relax0 = relax0
-        self.linesearch = NormBased.legacy(kwargs) if linesearch == '__legacy__' else linesearch
+        self.linesearch = linesearch
         self.failrelax = failrelax
-        self.solveargs = _strip(kwargs, 'lin')
-        if kwargs:
-            raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
-        self.solveargs.setdefault('rtol', 1e-3)
+        self.solveargs = solveargs
 
     def _eval(self, lhs, mask):
         return _integrate_blocks(self.residual, self.jacobian, arguments=lhs, mask=mask)
@@ -460,9 +419,8 @@ class newton(cache.Recursion, length=1):
                 relax = min(relax * scale, 1)
             yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
 
-@single_or_multiple
-@withsolve.wrap
-class minimize(cache.Recursion, length=1, version=3):
+
+def minimize(target, energy: evaluable.asarray, *, lhs0: types.arraydata = None, constrain = None, rampup: float = .5, rampdown: float = -1., failrelax: float = -10., arguments = {}, **kwargs):
     '''iteratively minimize nonlinear functional by gradient descent
 
     Generates targets such that residual approaches 0 using Newton procedure with
@@ -481,13 +439,10 @@ class minimize(cache.Recursion, length=1, version=3):
     target : :class:`str`
         Name of the target: a :class:`nutils.function.Argument` in ``residual``.
     residual : :class:`nutils.evaluable.AsEvaluableArray`
-    lhs0 : :class:`numpy.ndarray`
-        Coefficient vector, starting point of the iterative procedure.
     constrain : :class:`numpy.ndarray` with dtype :class:`bool` or :class:`float`
-        Equal length to ``lhs0``, masks the free vector entries as ``False``
-        (boolean) or NaN (float). In the remaining positions the values of
-        ``lhs0`` are returned unchanged (boolean) or overruled by the values in
-        `constrain` (float).
+        Masks the free vector entries as ``False`` (boolean) or NaN (float). In
+        the remaining positions the values of ``lhs0`` are returned unchanged
+        (boolean) or overruled by the values in `constrain` (float).
     rampup : :class:`float`
         Value to increase the relaxation power by in case energy is decreasing.
     rampdown : :class:`float`
@@ -496,8 +451,8 @@ class minimize(cache.Recursion, length=1, version=3):
         Fail with exception if relaxation reaches this lower limit.
     arguments : :class:`collections.abc.Mapping`
         Defines the values for :class:`nutils.function.Argument` objects in
-        `residual`.  The ``target`` should not be present in ``arguments``.
-        Optional.
+        `residual`. If ``target`` is present in ``arguments`` then it is used
+        as the initial guess for the iterative procedure.
 
     Yields
     ------
@@ -505,8 +460,26 @@ class minimize(cache.Recursion, length=1, version=3):
         Coefficient vector that approximates residual==0 with increasing accuracy
     '''
 
-    @types.apply_annotations
-    def __init__(self, target, energy: evaluable.asarray, lhs0: types.arraydata = None, constrain: arrayordict = None, rampup: types.strictfloat = .5, rampdown: types.strictfloat = -1., failrelax: types.strictfloat = -10., arguments: argdict = {}, **kwargs):
+    if isinstance(target, str) and ',' not in target:
+        return minimize([target], energy, constrain={} if constrain is None else {target: constrain}, rampup=rampup, rampdown=rampdown,
+            failrelax=failrelax, arguments=arguments if lhs0 is None else {**arguments, target: lhs0}, **kwargs)[target]
+    if lhs0 is not None:
+        raise ValueError('lhs0 argument is invalid for a non-string target; define the initial guess via arguments instead')
+    if isinstance(target, str):
+        target = target.rstrip(',').split(',')
+    solveargs = _strip(kwargs, 'lin')
+    solveargs['symmetric'] = True
+    if kwargs:
+        raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
+    return withsolve(_minimize(tuple(target), energy.as_evaluable_array,
+        types.frozendict((k, types.arraydata(v)) for k, v in (constrain or {}).items()),
+        types.frozendict((k, types.arraydata(v)) for k, v in (arguments or {}).items()),
+        rampup, rampdown, failrelax, types.frozendict(solveargs)))
+
+
+class _minimize(cache.Recursion, length=1, version=3):
+
+    def __init__(self, target, energy: evaluable.asarray, constrain, arguments, rampup: float, rampdown: float, failrelax: float, solveargs):
         super().__init__()
         if energy.shape != ():
             raise ValueError('`energy` should be scalar')
@@ -514,15 +487,12 @@ class minimize(cache.Recursion, length=1, version=3):
         self.energy = energy
         self.residual = _derivative((energy,), target)
         self.jacobian = _derivative(self.residual, target)
-        self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argobjs((energy,)), arguments)
+        self.lhs0, self.constrain = _parse_lhs_cons(constrain, target, _argobjs((energy,)), arguments)
         self.dtype = _determine_dtype(target, (energy,), self.lhs0, self.constrain)
         self.rampup = rampup
         self.rampdown = rampdown
         self.failrelax = failrelax
-        self.solveargs = _strip(kwargs, 'lin')
-        self.solveargs['symmetric'] = True
-        if kwargs:
-            raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
+        self.solveargs = solveargs
 
     def _eval(self, lhs, mask):
         return _integrate_blocks(self.energy, self.residual, self.jacobian, arguments=lhs, mask=mask)
@@ -581,9 +551,8 @@ class minimize(cache.Recursion, length=1, version=3):
 
             yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
 
-@single_or_multiple
-@withsolve.wrap
-class pseudotime(cache.Recursion, length=1):
+
+def pseudotime(target, residual, inertia, timestep: float, *, lhs0: types.arraydata = None, constrain = None, arguments = {}, **kwargs):
     '''iteratively solve nonlinear problem by pseudo time stepping
 
     Generates targets such that residual approaches 0 using hybrid of Newton and
@@ -598,17 +567,14 @@ class pseudotime(cache.Recursion, length=1):
     inertia : :class:`nutils.evaluable.AsEvaluableArray`
     timestep : :class:`float`
         Initial time step, will scale up as residual decreases
-    lhs0 : :class:`numpy.ndarray`
-        Coefficient vector, starting point of the iterative procedure.
     constrain : :class:`numpy.ndarray` with dtype :class:`bool` or :class:`float`
-        Equal length to ``lhs0``, masks the free vector entries as ``False``
-        (boolean) or NaN (float). In the remaining positions the values of
-        ``lhs0`` are returned unchanged (boolean) or overruled by the values in
-        `constrain` (float).
+        Masks the free vector entries as ``False`` (boolean) or NaN (float). In
+        the remaining positions the values of ``lhs0`` are returned unchanged
+        (boolean) or overruled by the values in `constrain` (float).
     arguments : :class:`collections.abc.Mapping`
         Defines the values for :class:`nutils.function.Argument` objects in
-        `residual`.  The ``target`` should not be present in ``arguments``.
-        Optional.
+        `residual`. If ``target`` is present in ``arguments`` then it is used
+        as the initial guess for the iterative procedure.
 
     Yields
     ------
@@ -616,8 +582,25 @@ class pseudotime(cache.Recursion, length=1):
         Tuple of coefficient vector and residual norm
     '''
 
-    @types.apply_annotations
-    def __init__(self, target, residual: integraltuple, inertia: optionalintegraltuple, timestep: types.strictfloat, lhs0: types.arraydata = None, constrain: arrayordict = None, arguments: argdict = {}, **kwargs):
+    if isinstance(target, str) and ',' not in target and ':' not in target:
+        return pseudotime([target], [residual], [inertia], timestep, constrain={} if constrain is None else {target: constrain},
+            arguments=arguments if lhs0 is None else {**arguments, target: lhs0}, **kwargs)[target]
+    if lhs0 is not None:
+        raise ValueError('lhs0 argument is invalid for a non-string target; define the initial guess via arguments instead')
+    target, residual, inertia = _target_helper(target, residual, inertia)
+    solveargs = _strip(kwargs, 'lin')
+    solveargs.setdefault('rtol', 1e-3)
+    if kwargs:
+        raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
+    return withsolve(_pseudotime(target, residual, inertia, timestep,
+        types.frozendict((k, types.arraydata(v)) for k, v in (constrain or {}).items()),
+        types.frozendict((k, types.arraydata(v)) for k, v in (arguments or {}).items()),
+        types.frozendict(solveargs)))
+
+
+class _pseudotime(cache.Recursion, length=1):
+
+    def __init__(self, target, residual, inertia, timestep: float, constrain, arguments, solveargs: dict):
         super().__init__()
         if target in arguments:
             raise ValueError('`target` should not be defined in `arguments`')
@@ -631,13 +614,10 @@ class pseudotime(cache.Recursion, length=1):
         dt = evaluable.Argument(self.timesteptarget, ())
         self.residuals = residual
         self.jacobians = _derivative(tuple(res + (inert/dt if inert else 0) for res, inert in zip(residual, inertia)), target)
-        self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argobjs(residual+inertia), arguments)
+        self.lhs0, self.constrain = _parse_lhs_cons(constrain, target, _argobjs(residual+inertia), arguments)
         self.dtype = _determine_dtype(target, residual+inertia, self.lhs0, self.constrain)
         self.timestep = timestep
-        self.solveargs = _strip(kwargs, 'lin')
-        if kwargs:
-            raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
-        self.solveargs.setdefault('rtol', 1e-3)
+        self.solveargs = solveargs
 
     def _eval(self, lhs, mask, timestep):
         return _integrate_blocks(self.residuals, self.jacobians, arguments=dict({self.timesteptarget: timestep}, **lhs), mask=mask)
@@ -667,8 +647,8 @@ class pseudotime(cache.Recursion, length=1):
             resnorm = numpy.linalg.norm(res)
             yield lhs, types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
 
-@single_or_multiple
-class thetamethod(cache.Recursion, length=1, version=1):
+
+def thetamethod(target, residual, inertia, timestep: float, theta: float, *, lhs0: types.arraydata = None, target0: str = None, constrain = None, newtontol: float = 1e-10, arguments = {}, newtonargs: types.frozendict = {}, timetarget: str = '_thetamethod_time', time0: float = 0., historysuffix: str = '0'):
     '''solve time dependent problem using the theta method
 
     Parameters
@@ -679,23 +659,20 @@ class thetamethod(cache.Recursion, length=1, version=1):
     inertia : :class:`nutils.evaluable.AsEvaluableArray`
     timestep : :class:`float`
         The time step.
-    lhs0 : :class:`numpy.ndarray`
-        Coefficient vector, starting point of the iterative procedure.
     theta : :class:`float`
         Theta value (theta=1 for implicit Euler, theta=0.5 for Crank-Nicolson)
     residual0 : :class:`nutils.evaluable.AsEvaluableArray`
         Optional additional residual component evaluated in previous timestep
     constrain : :class:`numpy.ndarray` with dtype :class:`bool` or :class:`float`
-        Equal length to ``lhs0``, masks the free vector entries as ``False``
-        (boolean) or NaN (float). In the remaining positions the values of
-        ``lhs0`` are returned unchanged (boolean) or overruled by the values in
-        `constrain` (float).
+        Masks the free vector entries as ``False`` (boolean) or NaN (float). In
+        the remaining positions the values of ``lhs0`` are returned unchanged
+        (boolean) or overruled by the values in `constrain` (float).
     newtontol : :class:`float`
         Residual tolerance of individual timesteps
     arguments : :class:`collections.abc.Mapping`
         Defines the values for :class:`nutils.function.Argument` objects in
-        `residual`.  The ``target`` should not be present in ``arguments``.
-        Optional.
+        `residual`. If ``target`` is present in ``arguments`` then it is used
+        as the initial condition.
     timetarget : :class:`str`
         Name of the :class:`nutils.function.Argument` that represents time.
         Optional.
@@ -707,21 +684,35 @@ class thetamethod(cache.Recursion, length=1, version=1):
     :class:`numpy.ndarray`
         Coefficient vector for all timesteps after the initial condition.
     '''
+    if isinstance(target, str) and ',' not in target and ':' not in target:
+        return (res[target] for res in thetamethod([target], [residual], [inertia], timestep, theta, target0=target0,
+            constrain={} if constrain is None else {target: constrain}, newtontol=newtontol,
+            arguments=arguments if lhs0 is None else {**arguments, target: lhs0}, newtonargs=newtonargs,
+            timetarget=timetarget, time0=time0, historysuffix=historysuffix))
+    if lhs0 is not None:
+        raise ValueError('lhs0 argument is invalid for a non-string target; define the initial condition via arguments instead')
+    target, residual, inertia = _target_helper(target, residual, inertia)
+    return _thetamethod(target, residual, inertia, timestep,
+        types.frozendict((k, types.arraydata(v)) for k, v in (constrain or {}).items()),
+        types.frozendict((k, types.arraydata(v)) for k, v in (arguments or {}).items()),
+        theta, target0, newtontol, types.frozendict(newtonargs), timetarget, time0, historysuffix)
 
-    @types.apply_annotations
-    def __init__(self, target, residual: integraltuple, inertia: optionalintegraltuple, timestep: types.strictfloat, theta: types.strictfloat, lhs0: types.arraydata = None, target0: types.strictstr = None, constrain: arrayordict = None, newtontol: types.strictfloat = 1e-10, arguments: argdict = {}, newtonargs: types.frozendict = {}, timetarget: types.strictstr = '_thetamethod_time', time0: types.strictfloat = 0., historysuffix: types.strictstr = '0'):
+
+class _thetamethod(cache.Recursion, length=1, version=1):
+
+    def __init__(self, target, residual, inertia, timestep: float, constrain, arguments, theta: float, target0: str, newtontol: float, newtonargs: types.frozendict, timetarget: str, time0: float, historysuffix: str):
         super().__init__()
         if len(residual) != len(inertia):
             raise Exception('length of residual and inertia do no match')
         for inert, res in zip(inertia, residual):
-            if inert and not evaluable.equalshape(inert.shape, res.shape):
+            if not evaluable.equalshape(inert.shape, res.shape):
                 raise ValueError('expected `inertia` with shape {} but got {}'.format(res.shape, inert.shape))
         self.target = target
         self.newtonargs = newtonargs
         self.newtontol = newtontol
         self.timestep = timestep
         self.timetarget = timetarget
-        self.lhs0, self.constrain = _parse_lhs_cons(lhs0, constrain, target, _argobjs(residual+inertia), arguments)
+        self.lhs0, self.constrain = _parse_lhs_cons(constrain, target, _argobjs(residual+inertia), arguments)
         self.lhs0[timetarget] = numpy.array(time0)
         if target0 is None:
             self.old_new = [(t+historysuffix, t) for t in target]
@@ -733,7 +724,7 @@ class thetamethod(cache.Recursion, length=1, version=1):
         self.old_new.append((timetarget+historysuffix, timetarget))
         subs0 = {new: evaluable.Argument(old, tuple(map(evaluable.constant, self.lhs0[new].shape))) for old, new in self.old_new}
         dt = evaluable.Argument(timetarget, ()) - subs0[timetarget]
-        self.residuals = tuple(res * theta + evaluable.replace_arguments(res, subs0) * (1-theta) + ((inert - evaluable.replace_arguments(inert, subs0)) / dt if inert else 0) for res, inert in zip(residual, inertia))
+        self.residuals = tuple(res * theta + evaluable.replace_arguments(res, subs0) * (1-theta) + (inert - evaluable.replace_arguments(inert, subs0)) / dt for res, inert in zip(residual, inertia))
         self.jacobians = _derivative(self.residuals, target)
 
     def _step(self, lhs0, dt):
@@ -756,19 +747,12 @@ class thetamethod(cache.Recursion, length=1, version=1):
             lhs = self._step(lhs, self.timestep)
             yield lhs
 
-    def __getitem__(self, item):
-        return (res[item] for res in self)
-
 
 impliciteuler = functools.partial(thetamethod, theta=1)
 cranknicolson = functools.partial(thetamethod, theta=0.5)
 
 
-@log.withcontext
-@single_or_multiple
-@types.apply_annotations
-@cache.function(version=1)
-def optimize(target, functional: evaluable.asarray, *, tol: types.strictfloat = 0., arguments: argdict = {}, droptol: float = None, constrain: arrayordict = None, lhs0: types.arraydata = None, relax0: float = 1., linesearch=None, failrelax: types.strictfloat = 1e-6, **kwargs):
+def optimize(target, functional: evaluable.asarray, *, tol: float = 0., arguments = {}, droptol: float = None, constrain = None, lhs0: types.arraydata = None, relax0: float = 1., linesearch=None, failrelax: float = 1e-6, **kwargs):
     '''find the minimizer of a given functional
 
     Parameters
@@ -781,15 +765,13 @@ def optimize(target, functional: evaluable.asarray, *, tol: types.strictfloat = 
         Target residual norm.
     arguments : :class:`collections.abc.Mapping`
         Defines the values for :class:`nutils.function.Argument` objects in
-        `residual`.  The ``target`` should not be present in ``arguments``.
-        Optional.
+        `residual`. If ``target`` is present in ``arguments`` then it is used
+        as the initial guess.
     droptol : :class:`float`
         Threshold for leaving entries in the return value at NaN if they do not
         contribute to the value of the functional.
     constrain : :class:`numpy.ndarray` with dtype :class:`float`
         Defines the fixed entries of the coefficient vector
-    lhs0 : :class:`numpy.ndarray`
-        Coefficient vector, starting point of the iterative procedure.
     relax0 : :class:`float`
         Initial relaxation value.
     linesearch : Callable[[float, float, float, float], Tuple[float, bool]]
@@ -807,12 +789,28 @@ def optimize(target, functional: evaluable.asarray, *, tol: types.strictfloat = 
         Coefficient vector corresponding to the functional optimum
     '''
 
+    if isinstance(target, str) and ',' not in target:
+        return optimize([target], functional, tol=tol, arguments=arguments if lhs0 is None else {**arguments, target: lhs0}, droptol=droptol,
+            constrain={} if constrain is None else {target: constrain}, relax0=relax0, linesearch=linesearch, failrelax=failrelax, **kwargs)[target]
+    if lhs0 is not None:
+        raise ValueError('lhs0 argument is invalid for a non-string target; define the initial guess via arguments instead')
+    if isinstance(target, str):
+        target = target.rstrip(',').split(',')
     if linesearch is None:
         linesearch = NormBased.legacy(kwargs)
     solveargs = _strip(kwargs, 'lin')
     solveargs['symmetric'] = True
     if kwargs:
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
+    with log.context('optimize'):
+        return _optimize(tuple(target), functional.as_evaluable_array,
+            types.frozendict((k, types.arraydata(v)) for k, v in (constrain or {}).items()),
+            types.frozendict((k, types.arraydata(v)) for k, v in (arguments or {}).items()),
+            tol, droptol, relax0, linesearch, failrelax, types.frozendict(solveargs))
+
+
+@cache.function(version=1)
+def _optimize(target, functional: evaluable.asarray, constrain, arguments, tol: float, droptol: float, relax0: float, linesearch, failrelax: float, solveargs):
     argobjs = _argobjs((functional,))
     if any(t not in argobjs for t in target):
         if not droptol:
@@ -822,7 +820,7 @@ def optimize(target, functional: evaluable.asarray, *, tol: types.strictfloat = 
             return {}
     residual = _derivative((functional,), target)
     jacobian = _derivative(residual, target)
-    lhs0, constrain = _parse_lhs_cons(lhs0, constrain, target, argobjs, arguments)
+    lhs0, constrain = _parse_lhs_cons(constrain, target, argobjs, arguments)
     dtype = _determine_dtype(target, (functional,), lhs0, constrain)
     mask, vmask = _invert(constrain, target)
     lhs, vlhs = _redict(lhs0, target, dtype)
@@ -836,6 +834,7 @@ def optimize(target, functional: evaluable.asarray, *, tol: types.strictfloat = 
         vmask[vmask] = supp  # dof is computed if it is supported and not constrained
         assert vmask.sum() == len(res)
     resnorm = numpy.linalg.norm(res)
+    solveargs = dict(solveargs)
     if not set(target).isdisjoint(_argobjs(jacobian)):
         if tol <= 0:
             raise ValueError('nonlinear optimization problem requires a nonzero "tol" argument')
@@ -878,21 +877,9 @@ def _strip(kwargs, prefix):
     return {key[len(prefix):]: kwargs.pop(key) for key in list(kwargs) if key.startswith(prefix)}
 
 
-def _parse_lhs_cons(lhs0, constrain, targets, argobjs, arguments):
+def _parse_lhs_cons(constrain, targets, argobjs, arguments):
     arguments = {t: numpy.asarray(a) for t, a in arguments.items()}
-    if lhs0 is not None:
-        assert lhs0.dtype == float
-        if len(targets) != 1:
-            raise SolverError('lhs0 argument cannot be used in combination with multiple targets')
-        arguments[targets[0]] = numpy.asarray(lhs0)
-    if isinstance(constrain, types.arraydata):
-        if len(targets) != 1:
-            raise SolverError('constrain argument must be a dictionary in combination with multiple targets')
-        constrain = {targets[0]: numpy.asarray(constrain)}
-    elif constrain:
-        constrain = {t: numpy.asarray(c) for t, c in constrain.items()}
-    else:
-        constrain = {}
+    constrain = {t: numpy.asarray(c) for t, c in constrain.items()}
     for target in targets:
         if target not in argobjs:
             raise SolverError('target does not occur in functional: {!r}'.format(target))
@@ -1005,5 +992,24 @@ def _determine_dtype(targets, residuals, lhs0, constrain):
     if not all(argobjs[target].dtype == dtype for target in targets):
         raise ValueError('All targets must have dtype {}.'.format(dtype.__name__))
     return dtype
+
+
+def _target_helper(target, *args):
+    targets = target.rstrip(',').split(',') if isinstance(target, str) else list(target)
+    is_functional = [':' in target for target in targets]
+    if all(is_functional):
+        targets, tests = zip(*[t.split(':', 1) for t in targets])
+        arguments = function._join_arguments(arg.arguments for arg in args)
+        testargs = [function.Argument(t, *arguments[t]) for t in tests]
+        args = [map(arg.derivative, testargs) for arg in args]
+    elif any(is_functional):
+        raise ValueError('inconsistent targets')
+    elif len(args) > 1:
+        shapes = [{f.shape for f in ziparg if f is not None} for ziparg in zip(*args)]
+        if any(len(arg) != len(shapes) for arg in args) or any(len(shape) != 1 for shape in shapes):
+            raise ValueError('inconsistent residuals')
+        args = [[function.zeros(shape) if f is None else f for f, (shape,) in zip(arg, shapes)] for arg in args]
+    return (tuple(targets), *[tuple(f.as_evaluable_array for f in arg) for arg in args])
+
 
 # vim:sw=4:sts=4:et
