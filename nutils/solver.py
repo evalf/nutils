@@ -105,14 +105,16 @@ class withsolve(types.Immutable):
             return cls(f(*args, **kwargs))
         return wrapper
 
-    def __init__(self, wrapped):
+    def __init__(self, wrapped, item = None):
         self._wrapped = wrapped
+        self._item = item
 
     def __iter__(self):
-        return iter(self._wrapped)
+        return iter(self._wrapped) if self._item is None else ((res[self._item], info) for (res, info) in self._wrapped)
 
     def __getitem__(self, item):
-        return withsolve(self._wrapped[item])
+        assert self._item is None
+        return withsolve(self._wrapped, item)
 
     def solve(self, tol=0., maxiter=float('inf'), miniter=0):
         '''execute nonlinear solver, return lhs
@@ -460,9 +462,6 @@ class newton(cache.Recursion, length=1):
                 relax = min(relax * scale, 1)
             yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
 
-    def __getitem__(self, item):
-        return ((res[item], info) for (res, info) in self)
-
 @single_or_multiple
 @withsolve.wrap
 class minimize(cache.Recursion, length=1, version=3):
@@ -584,9 +583,6 @@ class minimize(cache.Recursion, length=1, version=3):
 
             yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
 
-    def __getitem__(self, item):
-        return ((res[item], info) for (res, info) in self)
-
 @single_or_multiple
 @withsolve.wrap
 class pseudotime(cache.Recursion, length=1):
@@ -672,9 +668,6 @@ class pseudotime(cache.Recursion, length=1):
             res, jac = self._eval(lhs, mask, timestep)
             resnorm = numpy.linalg.norm(res)
             yield lhs, types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
-
-    def __getitem__(self, item):
-        return ((res[item], info) for (res, info) in self)
 
 @single_or_multiple
 class thetamethod(cache.Recursion, length=1, version=1):

@@ -1,4 +1,4 @@
-from nutils import solver, mesh, function, cache, types, numeric, evaluable, sparse
+from nutils import solver, mesh, function, cache, types, evaluable, sparse
 from nutils.expression_v2 import Namespace
 from nutils.testing import TestCase, parametrize
 import numpy
@@ -14,15 +14,42 @@ def tmpcache():
             yield
 
 
+def _edit(v):
+    return (v.tolist() if isinstance(v, numpy.ndarray)
+        else tuple(map(_edit, v)) if isinstance(v, tuple)
+        else {k: _edit(v) for (k, v) in v.items()} if isinstance(v, dict)
+        else v) # convert arrays to lists so we can use assertEqual
+
+
 def _test_recursion_cache(testcase, solver_iter):
-    edit = lambda v: v.tolist() if numeric.isarray(v) else tuple(map(edit, v)) if isinstance(v, tuple) else v  # convert arrays to lists
-    read = lambda n: tuple(edit(item) for i, item in zip(range(n), solver_iter()))
+    read = lambda n: tuple(_edit(item) for i, item in zip(range(n), solver_iter()))
     reference = read(5)
     for lengths in [1, 2, 3], [1, 3, 2], [0, 3, 5]:
         with tmpcache():
             for i, length in enumerate(lengths):
                 with testcase.subTest(lengths=lengths, step=i):
-                    testcase.assertEqual(read(length), reference[:length])
+                    if length == 0: # treated as special case because assertLogs would fail
+                        read(0)
+                        continue
+                    with testcase.assertLogs('nutils', 'DEBUG') as cm:
+                        v = read(length)
+                    testcase.assertEqual(v, reference[:length])
+                    testcase.assertRegex('\n'.join(cm.output), '\[cache\.Recursion [0-9a-f]{40}\] start iterating')
+                    testcase.assertRegex('\n'.join(cm.output), '\[cache\.Recursion [0-9a-f]{40}\.0000\] load' if i and max(lengths[:i]) > 0
+                                                          else '\[cache\.Recursion [0-9a-f]{40}\.0000\] cache exhausted')
+
+
+def _test_solve_cache(testcase, solver_gen):
+    _test_recursion_cache(testcase, solver_gen)
+    with testcase.subTest('solve'), tmpcache():
+        v1 = _edit(solver_gen().solve(1e-5))
+        with testcase.assertLogs('nutils', 'DEBUG') as cm:
+            v2, info = _edit(solver_gen().solve_withinfo(1e-5))
+        testcase.assertEqual(v1, v2)
+        testcase.assertRegex('\n'.join(cm.output), '\[cache\.function [0-9a-f]{40}\] load')
+        with testcase.assertLogs('nutils', 'DEBUG') as cm:
+            solver_gen().solve(1e-6)
+        testcase.assertRegex('\n'.join(cm.output), '\[cache\.function [0-9a-f]{40}\] failed to load')
 
 
 class laplace(TestCase):
@@ -107,7 +134,6 @@ class navierstokes(TestCase):
         self.inertia = inertia if self.single else [inertia, None]
         self.tol = 1e-10
         self.dofs = dofs
-        self.frozen = types.frozenarray if self.single else solver.argdict
 
     def assert_resnorm(self, lhs):
         res = self.residual.eval(arguments=dict(dofs=lhs))[numpy.isnan(self.cons)] if self.single \
@@ -138,14 +164,14 @@ class navierstokes(TestCase):
         for msg in cm.output:
             self.assertIn('solver failed to reach tolerance', msg)
 
-    def test_newton_iter(self):
-        _test_recursion_cache(self, lambda: ((self.frozen(lhs), info.resnorm) for lhs, info in solver.newton(self.dofs, residual=self.residual, constrain=self.cons)))
+    def test_newton_cache(self):
+        _test_solve_cache(self, lambda: solver.newton(self.dofs, residual=self.residual, constrain=self.cons))
 
     def test_pseudotime(self):
         self.assert_resnorm(solver.pseudotime(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, inertia=self.inertia, timestep=1).solve(tol=self.tol, maxiter=12))
 
-    def test_pseudotime_iter(self):
-        _test_recursion_cache(self, lambda: ((self.frozen(lhs), info.resnorm) for lhs, info in solver.pseudotime(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, inertia=self.inertia, timestep=1)))
+    def test_pseudotime_cache(self):
+        _test_solve_cache(self, lambda: solver.pseudotime(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, inertia=self.inertia, timestep=1))
 
 
 navierstokes(single=False)
@@ -189,8 +215,8 @@ class finitestrain(TestCase):
     def test_newton_boolcons(self):
         self.assert_resnorm(solver.newton('dofs', residual=self.residual, constrain=self.boolcons).solve(tol=self.tol, maxiter=7))
 
-    def test_newton_iter(self):
-        _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.newton('dofs', residual=self.residual, constrain=self.cons)))
+    def test_newton_cache(self):
+        _test_solve_cache(self, lambda: solver.newton('dofs', residual=self.residual, constrain=self.cons))
 
     def test_minimize(self):
         self.assert_resnorm(solver.minimize('dofs', energy=self.energy, constrain=self.cons).solve(tol=self.tol, maxiter=12))
@@ -198,8 +224,8 @@ class finitestrain(TestCase):
     def test_minimize_boolcons(self):
         self.assert_resnorm(solver.minimize('dofs', energy=self.energy, constrain=self.boolcons).solve(tol=self.tol, maxiter=12))
 
-    def test_minimize_iter(self):
-        _test_recursion_cache(self, lambda: ((types.frozenarray(lhs), info.resnorm) for lhs, info in solver.minimize('dofs', energy=self.energy, constrain=self.cons)))
+    def test_minimize_cache(self):
+        _test_solve_cache(self, lambda: solver.minimize('dofs', energy=self.energy, constrain=self.cons))
 
 
 finitestrain(vector=False)
@@ -269,10 +295,10 @@ class burgers(TestCase):
         self.assertAlmostEqual64(next(it)['u'], 'eNpzNBA1NjHuNHQ3FDsTfCbAuNz4nUGZgeyZiDOZxlONmQwU9W3OFJ/pNQAADZIOPA==')
 
     def test_resume(self):
-        _test_recursion_cache(self, lambda: (types.frozenarray(args['u']) for args in solver.impliciteuler('u:v', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=1)))
+        _test_recursion_cache(self, lambda: solver.impliciteuler('u:v', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=1))
 
     def test_resume_withscaling(self):
-        _test_recursion_cache(self, lambda: (types.frozenarray(args['u']) for args in solver.impliciteuler('u:v', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=100)))
+        _test_recursion_cache(self, lambda: solver.impliciteuler('u:v', residual=self.residual, inertia=self.inertia, lhs0=self.lhs0, timestep=100))
 
 
 class theta_time(TestCase):
