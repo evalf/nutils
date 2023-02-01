@@ -41,67 +41,6 @@ import math
 import treelog as log
 
 
-class withsolve(types.Immutable):
-    '''add a .solve method to iterables'''
-
-    def __init__(self, wrapped, item = None):
-        self._wrapped = wrapped
-        self._item = item
-
-    def __iter__(self):
-        return iter(self._wrapped) if self._item is None else ((res[self._item], info) for (res, info) in self._wrapped)
-
-    def __getitem__(self, item):
-        assert self._item is None
-        return withsolve(self._wrapped, item)
-
-    def solve(self, tol=0., maxiter=float('inf'), miniter=0):
-        '''execute nonlinear solver, return lhs
-
-        Iterates over nonlinear solver until tolerance is reached. Example::
-
-            lhs = newton(target, residual).solve(tol=1e-5)
-
-        Parameters
-        ----------
-        tol : :class:`float`
-            Target residual norm
-        maxiter : :class:`int`
-            Maximum number of iterations
-        miniter : :class:`int`
-            Minimum number of iterations
-
-        Returns
-        -------
-        :class:`numpy.ndarray`
-            Coefficient vector that corresponds to a smaller than ``tol`` residual.
-        '''
-
-        lhs, info = self.solve_withinfo(tol=tol, maxiter=maxiter, miniter=miniter)
-        return lhs
-
-    @cache.function
-    def solve_withinfo(self, tol, maxiter=float('inf'), miniter=0):
-        '''execute nonlinear solver, return lhs and info
-
-        Like :func:`solve`, but return a 2-tuple of the solution and the
-        corresponding info object which holds information about the final residual
-        norm and other generator-dependent information.
-        '''
-
-        if miniter > maxiter:
-            raise ValueError('The minimum number of iterations cannot be larger than the maximum.')
-        with log.iter.wrap(_progress(self._wrapped.__class__.__name__.strip('_'), tol), self) as items:
-            for i, (lhs, info) in enumerate(items):
-                if info.resnorm <= tol and i >= miniter:
-                    break
-                if i > maxiter:
-                    raise SolverError('failed to reach target tolerance')
-            log.info(f'converged in {i} steps to residual {info.resnorm:.1e}')
-        info.niter = i
-        return lhs, info
-
-
 # EXCEPTIONS
 
 class SolverError(Exception):
@@ -362,7 +301,7 @@ def newton(target, residual, *, jacobian = None, lhs0 = None, relax0: float = 1.
     solveargs.setdefault('rtol', 1e-3)
     if kwargs:
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
-    return withsolve(_newton(target, residual, None if jacobian is None else tuple(jacobian),
+    return _with_solve(_newton(target, residual, None if jacobian is None else tuple(jacobian),
         types.frozendict((k, types.arraydata(v)) for k, v in (constrain or {}).items()),
         types.frozendict((k, types.arraydata(v)) for k, v in (arguments or {}).items()),
         linesearch, relax0, failrelax, types.frozendict(solveargs)))
@@ -471,7 +410,7 @@ def minimize(target, energy: evaluable.asarray, *, lhs0: types.arraydata = None,
     solveargs['symmetric'] = True
     if kwargs:
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
-    return withsolve(_minimize(tuple(target), energy.as_evaluable_array,
+    return _with_solve(_minimize(tuple(target), energy.as_evaluable_array,
         types.frozendict((k, types.arraydata(v)) for k, v in (constrain or {}).items()),
         types.frozendict((k, types.arraydata(v)) for k, v in (arguments or {}).items()),
         rampup, rampdown, failrelax, types.frozendict(solveargs)))
@@ -592,7 +531,7 @@ def pseudotime(target, residual, inertia, timestep: float, *, lhs0: types.arrayd
     solveargs.setdefault('rtol', 1e-3)
     if kwargs:
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
-    return withsolve(_pseudotime(target, residual, inertia, timestep,
+    return _with_solve(_pseudotime(target, residual, inertia, timestep,
         types.frozendict((k, types.arraydata(v)) for k, v in (constrain or {}).items()),
         types.frozendict((k, types.arraydata(v)) for k, v in (arguments or {}).items()),
         types.frozendict(solveargs)))
@@ -1010,6 +949,67 @@ def _target_helper(target, *args):
             raise ValueError('inconsistent residuals')
         args = [[function.zeros(shape) if f is None else f for f, (shape,) in zip(arg, shapes)] for arg in args]
     return (tuple(targets), *[tuple(f.as_evaluable_array for f in arg) for arg in args])
+
+
+class _with_solve(types.Immutable):
+    '''add a .solve method to iterables'''
+
+    def __init__(self, wrapped, item = None):
+        self._wrapped = wrapped
+        self._item = item
+
+    def __iter__(self):
+        return iter(self._wrapped) if self._item is None else ((res[self._item], info) for (res, info) in self._wrapped)
+
+    def __getitem__(self, item):
+        assert self._item is None
+        return _with_solve(self._wrapped, item)
+
+    def solve(self, tol=0., maxiter=float('inf'), miniter=0):
+        '''execute nonlinear solver, return lhs
+
+        Iterates over nonlinear solver until tolerance is reached. Example::
+
+            lhs = newton(target, residual).solve(tol=1e-5)
+
+        Parameters
+        ----------
+        tol : :class:`float`
+            Target residual norm
+        maxiter : :class:`int`
+            Maximum number of iterations
+        miniter : :class:`int`
+            Minimum number of iterations
+
+        Returns
+        -------
+        :class:`numpy.ndarray`
+            Coefficient vector that corresponds to a smaller than ``tol`` residual.
+        '''
+
+        lhs, info = self.solve_withinfo(tol=tol, maxiter=maxiter, miniter=miniter)
+        return lhs
+
+    @cache.function
+    def solve_withinfo(self, tol, maxiter=float('inf'), miniter=0):
+        '''execute nonlinear solver, return lhs and info
+
+        Like :func:`solve`, but return a 2-tuple of the solution and the
+        corresponding info object which holds information about the final residual
+        norm and other generator-dependent information.
+        '''
+
+        if miniter > maxiter:
+            raise ValueError('The minimum number of iterations cannot be larger than the maximum.')
+        with log.iter.wrap(_progress(self._wrapped.__class__.__name__.strip('_'), tol), self) as items:
+            for i, (lhs, info) in enumerate(items):
+                if info.resnorm <= tol and i >= miniter:
+                    break
+                if i > maxiter:
+                    raise SolverError('failed to reach target tolerance')
+            log.info(f'converged in {i} steps to residual {info.resnorm:.1e}')
+        info.niter = i
+        return lhs, info
 
 
 # vim:sw=4:sts=4:et
