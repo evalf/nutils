@@ -849,15 +849,6 @@ def _derivative(residual, target, jacobian=None):
     return jacobian
 
 
-def _progress(name, tol):
-    '''helper function for iter.wrap'''
-
-    lhs, info = yield name
-    resnorm0 = info.resnorm
-    while True:
-        lhs, info = yield (name + ' {:.0f}%').format(100 * numpy.log(resnorm0/max(info.resnorm, tol)) / numpy.log(resnorm0/tol) if tol else 0 if info.resnorm else 100)
-
-
 def _redict(lhs, targets, dtype=float):
     '''copy argument dictionary referencing a newly allocated contiguous array'''
 
@@ -965,7 +956,7 @@ class _with_solve(types.Immutable):
         assert self._item is None
         return _with_solve(self._wrapped, item)
 
-    def solve(self, tol=0., maxiter=float('inf'), miniter=0):
+    def solve(self, tol, maxiter=float('inf'), miniter=0):
         '''execute nonlinear solver, return lhs
 
         Iterates over nonlinear solver until tolerance is reached. Example::
@@ -1001,14 +992,18 @@ class _with_solve(types.Immutable):
 
         if miniter > maxiter:
             raise ValueError('The minimum number of iterations cannot be larger than the maximum.')
-        with log.iter.wrap(_progress(self._wrapped.__class__.__name__.strip('_'), tol), self) as items:
-            for i, (lhs, info) in enumerate(items):
-                if info.resnorm <= tol and i >= miniter:
-                    break
-                if i >= maxiter:
-                    raise SolverError('failed to reach target tolerance')
-            log.info(f'converged in {i} steps to residual {info.resnorm:.1e}')
-        info.niter = i
+        with log.context(self._wrapped.__class__.__name__.strip('_')):
+            with log.context('iter {}', 0) as recontext:
+                it = enumerate(self)
+                iiter, (lhs, info) = next(it)
+                resnorm0 = info.resnorm
+                while info.resnorm > tol or iiter < miniter:
+                    if iiter >= maxiter:
+                        raise SolverError(f'failed to reach target tolerance in {maxiter} iterations')
+                    recontext(f'{iiter+1} ({100 * numpy.log(resnorm0 / max(info.resnorm, tol)) / numpy.log(resnorm0 / tol):.0f}%)')
+                    iiter, (lhs, info) = next(it)
+            log.info(f'converged in {iiter} iterations to residual {info.resnorm:.1e}')
+        info.niter = iiter
         return lhs, info
 
 
