@@ -1005,7 +1005,7 @@ class _with_solve(types.Immutable):
             for i, (lhs, info) in enumerate(items):
                 if info.resnorm <= tol and i >= miniter:
                     break
-                if i > maxiter:
+                if i >= maxiter:
                     raise SolverError('failed to reach target tolerance')
             log.info(f'converged in {i} steps to residual {info.resnorm:.1e}')
         info.niter = i

@@ -70,7 +70,7 @@ class laplace(TestCase):
                 if name == 'direct':
                     lhs = solver.solve_linear('dofs', residual=self.residual, constrain=self.cons)
                 else:
-                    lhs = solver.newton('dofs', residual=self.residual, constrain=self.cons).solve(tol=1e-10, maxiter=0)
+                    lhs = solver.newton('dofs', residual=self.residual, constrain=self.cons).solve(tol=1e-10, maxiter=1)
                 res = self.residual.eval(arguments=dict(dofs=lhs))
                 resnorm = numpy.linalg.norm(res[~self.cons.where])
                 self.assertLess(resnorm, 1e-13)
@@ -147,20 +147,20 @@ class navierstokes(TestCase):
             solver.solve_linear(self.dofs, residual=self.residual, constrain=self.cons)
 
     def test_newton(self):
-        self.assert_resnorm(solver.newton(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons).solve(tol=self.tol, maxiter=2))
+        self.assert_resnorm(solver.newton(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons).solve(tol=self.tol, maxiter=3))
 
     def test_newton_vanilla(self):
-        self.assert_resnorm(solver.newton(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, linesearch=None).solve(tol=self.tol, maxiter=2))
+        self.assert_resnorm(solver.newton(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, linesearch=None).solve(tol=self.tol, maxiter=3))
 
     def test_newton_medianbased(self):
-        self.assert_resnorm(solver.newton(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, linesearch=solver.MedianBased()).solve(tol=self.tol, maxiter=2))
+        self.assert_resnorm(solver.newton(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, linesearch=solver.MedianBased()).solve(tol=self.tol, maxiter=3))
 
     def test_newton_relax0(self):
-        self.assert_resnorm(solver.newton(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, relax0=.1).solve(tol=self.tol, maxiter=5))
+        self.assert_resnorm(solver.newton(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, relax0=.1).solve(tol=self.tol, maxiter=6))
 
     def test_newton_tolnotreached(self):
         with self.assertLogs('nutils', logging.WARNING) as cm:
-            self.assert_resnorm(solver.newton(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, linrtol=1e-99).solve(tol=self.tol, maxiter=2))
+            self.assert_resnorm(solver.newton(self.dofs, residual=self.residual, arguments=self.arguments, constrain=self.cons, linrtol=1e-99).solve(tol=self.tol, maxiter=3))
         for msg in cm.output:
             self.assertIn('solver failed to reach tolerance', msg)
 
@@ -219,10 +219,10 @@ class finitestrain(TestCase):
         _test_solve_cache(self, lambda: solver.newton('dofs', residual=self.residual, constrain=self.cons))
 
     def test_minimize(self):
-        self.assert_resnorm(solver.minimize('dofs', energy=self.energy, constrain=self.cons).solve(tol=self.tol, maxiter=12))
+        self.assert_resnorm(solver.minimize('dofs', energy=self.energy, constrain=self.cons).solve(tol=self.tol, maxiter=13))
 
     def test_minimize_boolcons(self):
-        self.assert_resnorm(solver.minimize('dofs', energy=self.energy, constrain=self.boolcons).solve(tol=self.tol, maxiter=12))
+        self.assert_resnorm(solver.minimize('dofs', energy=self.energy, constrain=self.boolcons).solve(tol=self.tol, maxiter=13))
 
     def test_minimize_cache(self):
         _test_solve_cache(self, lambda: solver.minimize('dofs', energy=self.energy, constrain=self.cons))
