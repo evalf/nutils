@@ -1094,28 +1094,28 @@ class Weights(Array):
         return weights
 
 
-class Normal(Array):
-    'normal'
+class Orthonormal(Array):
+    'make a vector orthonormal to a subspace'
 
-    __slots__ = 'lgrad',
+    __slots__ = '_basis', '_vector'
 
-    def __init__(self, lgrad: Array):
-        assert isinstance(lgrad, Array) and lgrad.ndim >= 2 and _equals_simplified(lgrad.shape[-2], lgrad.shape[-1]) and lgrad.dtype != complex, f'lgrad={lgrad!r}'
-        self.lgrad = lgrad
-        super().__init__(args=(lgrad,), shape=lgrad.shape[:-1], dtype=float)
+    def __init__(self, basis: Array, vector: Array):
+        assert isinstance(basis, Array) and basis.ndim >= 2 and basis.dtype != complex, f'basis={basis!r}'
+        assert isinstance(vector, Array) and vector.ndim >= 1 and vector.dtype != complex, f'vector={vector!r}'
+        assert equalshape(basis.shape[:-1], vector.shape)
+        self._basis = basis
+        self._vector = vector
+        super().__init__(args=(basis, vector), shape=vector.shape, dtype=float)
 
     def _simplified(self):
         if _equals_scalar_constant(self.shape[-1], 1):
-            return Sign(Take(self.lgrad, constant(0)))
-        unaligned, where = unalign(self.lgrad, naxes=self.ndim - 1)
+            return Sign(self._vector)
+        basis, vector, where = unalign(self._basis, self._vector, naxes=self.ndim - 1)
         if len(where) < self.ndim - 1:
-            return align(Normal(unaligned), (*where, self.ndim - 1), self.shape)
+            return align(Orthonormal(basis, vector), (*where, self.ndim - 1), self.shape)
 
     @staticmethod
-    def evalf(lgrad):
-        n = lgrad[..., -1]
-        # orthonormalize n to G
-        G = lgrad[..., :-1]
+    def evalf(G, n):
         GG = numpy.einsum('...ki,...kj->...ij', G, G)
         v1 = numpy.einsum('...ij,...i->...j', G, n)
         v2 = numpy.linalg.solve(GG, v1)
@@ -1125,9 +1125,47 @@ class Normal(Array):
     def _derivative(self, var, seen):
         if _equals_scalar_constant(self.shape[-1], 1):
             return zeros(self.shape + var.shape)
-        G = self.lgrad[..., :-1]
+
+        # definitions:
+        #
+        # P := I - G (G^T G)^-1 G^T (orthogonal projector)
+        # n := P v (orthogonal projection of v)
+        # N := n / |n| (self: orthonormal projection of v)
+        #
+        # identities:
+        #
+        #   P^T = P          N^T N = 1
+        #   P P = P          P N = N
+        #   P G = P Q = 0    G^T N = Q^T N = 0
+        #
+        # derivatives:
+        #
+        # P' = Q P + P Q^T where Q := -G (G^T G)^-1 G'^T
+        # n' = P' v + P v'
+        #    = Q n + P (Q^T v + v')
+        # N' = (I - N N^T) n' / |n|
+        #    = (I - N N^T) (Q n / |n| + P (Q^T v + v') / |n|)
+        #    = Q N + (P - N N^T) (Q^T v + v') / |n|
+
+        G = self._basis
         invGG = inverse(einsum('Aki,Akj->Aij', G, G))
-        return -einsum('Ail,Alj,Ak,AkjB->AiB', G, invGG, self, derivative(G, var, seen))
+
+        Q = -einsum('Aim,Amn,AjnB->AijB', G, invGG, derivative(G, var, seen))
+        QN = einsum('Ai,AjiB->AjB', self, Q)
+
+        if _equals_simplified(G.shape[-1], G.shape[-2] - 1): # dim(kern(G)) = 1
+            # In this situation, since N is a basis for the kernel of G, we
+            # have the identity P == N N^T which cancels the entire second term
+            # of N' along with any reference to v', reducing it to N' = Q N.
+            return QN
+
+        v = self._vector
+        P = Diagonalize(ones(self.shape)) - einsum('Aim,Amn,Ajn->Aij', G, invGG, G)
+        Z = P - einsum('Ai,Aj->Aij', self, self) # P - N N^T
+
+        return QN + einsum('A,AiB->AiB',
+            power(einsum('Ai,Aij,Aj->A', v, P, v), -.5),
+            einsum('Aij,AjB->AiB', Z, einsum('Ai,AijB->AjB', v, Q) + derivative(v, var, seen)))
 
 
 class Constant(Array):
