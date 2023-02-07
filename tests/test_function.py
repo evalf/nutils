@@ -1403,3 +1403,15 @@ class simplifications(TestCase):
         f = function.Argument('test', shape=(2, 3), dtype=int)
         self.assertIsNot(f / 1, f)
         self.assertIsNot(f / 1., f)
+
+
+class linearize(TestCase):
+
+    def test(self):
+        f = function.linearize(function.Argument('u', shape=(3, 4), dtype=float)**3
+                             + function.Argument('p', shape=(), dtype=float), 'u:v,p:q')
+        # test linearization of u**3 + p -> 3 u**2 v + q through evaluation
+        _u = numpy.arange(3, dtype=float)[:,numpy.newaxis].repeat(4, 1)
+        _v = numpy.arange(4, dtype=float)[numpy.newaxis,:].repeat(3, 0)
+        _q = 5.
+        self.assertAllEqual(f.eval(u=_u, v=_v, q=_q).export('dense'), 3 * _u**2 * _v + _q)

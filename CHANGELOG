@@ -5,6 +5,15 @@ The following overview lists user facing changes as well as newly added
 features in inverse chronological order.
 
 
+NEW: function.linearize
+
+Similar to `derivative`, the new function `linearize` takes the derivative of
+an array to one or more arguments, but with the derivative directions
+represented by arguments rather than array axes. This is particularly useful in
+situations where weak forms are made up of symmetric, energy like components,
+combined with terms that require dedicated test fields.
+
+
 NEW: support for searchsorted and interp
 
 Numpy's ufunc support has been extended to include numpy.searchsorted and
