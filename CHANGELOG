@@ -5,6 +5,17 @@ The following overview lists user facing changes as well as newly added
 features in inverse chronological order.
 
 
+CHANGED: solve, solve_withinfo arguments
+
+Solver methods newton, minimize and pseudotime have their function signature
+slightly changed: 1. The tol argument (used to define the stop criterion) has
+been made mandatory. As the default value used to be 0 - an unreacheable value
+in practice - the argument was effectively mandatory already, which this change
+formalizes. 2. The maxiter argument was off by 1, leading maxiter=n to accept
+n+1 iterations. This mistake is now fixed, which may break applications that
+relied on the former erroneous behaviour.
+
+
 NEW: function.linearize
 
 Similar to `derivative`, the new function `linearize` takes the derivative of
