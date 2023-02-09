@@ -2591,16 +2591,37 @@ class SubsetTopology(TransformChainsTopology):
         basis = self.basetopo.basis(name, *args, **kwargs)
         return function.PrunedBasis(basis, self._indices, self.f_index, self.f_coords)
 
-    def locate(self, geom, coords, *, eps=0, **kwargs):
-        sample = self.basetopo.locate(geom, coords, eps=eps, **kwargs)
-        for isampleelem, (transforms, points) in enumerate(zip(sample.transforms[0], sample.points)):
+    def locate(self, geom, coords, *, eps=0, skip_missing=False, **kwargs):
+        sample = self.basetopo.locate(geom, coords, eps=eps, skip_missing=skip_missing, **kwargs)
+        missing = []
+        for isampleelem, (transforms, points_) in enumerate(zip(sample.transforms[0], sample.points)):
             ielem = self.basetopo.transforms.index(transforms)
             ref = self.refs[ielem]
             if ref != self.basetopo.references[ielem]:
-                for i, coord in enumerate(points.coords):
+                for i, coord in enumerate(points_.coords):
                     if not ref.inside(coord, eps):
-                        raise LocateError('failed to locate point: {}'.format(coords[sample.getindex(isampleelem)[i]]))
-        return sample
+                        if not skip_missing:
+                            raise LocateError('failed to locate point: {}'.format(coords[sample.getindex(isampleelem)[i]]))
+                        missing.append((isampleelem, i))
+        if not missing:
+            return sample
+        selection = numpy.ones(len(sample.points), dtype=bool)
+        newpoints = []
+        for isampleelem, points_ in enumerate(sample.points):
+            mymissing = [] # collect missing points for current element
+            for isampleelem_, i in missing[:points_.npoints]:
+                if isampleelem_ != isampleelem:
+                    break
+                mymissing.append(i)
+            if not mymissing: # no points are missing -> keep existing points object
+                newpoints.append(points_)
+            elif len(mymissing) < points_.npoints: # some points are missing -> create new CoordsPoints object
+                newpoints.append(points.CoordsPoints(points_.coords[~numeric.asboolean(mymissing, points_.npoints)]))
+            else: # all points are missing -> remove element from return sample
+                selection[isampleelem] = False
+            del missing[:len(mymissing)]
+        assert not missing
+        return Sample.new(sample.space, [trans[selection] for trans in sample.transforms], PointsSequence.from_iter(newpoints, sample.ndims))
 
 
 class RefinedTopology(TransformChainsTopology):
