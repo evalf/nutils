@@ -1491,6 +1491,8 @@ class TransformChainsTopology(Topology):
             coords = coords[..., _]
         if not geom.shape == coords.shape[1:] == (self.ndims,):
             raise ValueError('invalid geometry or point shape for {}D topology'.format(self.ndims))
+        if skip_missing and weights is not None:
+            raise ValueError('weights and skip_missing are mutually exclusive')
         centroids = self.sample('_centroid', None).eval(geom)
         assert len(centroids) == len(self)
         ielems = parallel.shempty(len(coords), dtype=int)
@@ -1500,10 +1502,6 @@ class TransformChainsTopology(Topology):
         egeom = geom.lower((), {self.space: (self.transforms.get_evaluable(_ielem), self.opposites.get_evaluable(_ielem))}, {self.space: _point})
         xJ = evaluable.Tuple((egeom, evaluable.derivative(egeom, _point))).simplified
         arguments = dict(arguments or ())
-        if skip_missing:
-            if weights is not None:
-                raise ValueError('weights and skip_missing are mutually exclusive')
-            missing = parallel.shzeros(len(coords), dtype=bool)
         with parallel.ctxrange('locating', len(coords)) as ipoints:
             for ipoint in ipoints:
                 xt = coords[ipoint]  # target
@@ -1537,14 +1535,21 @@ class TransformChainsTopology(Topology):
                             points[ipoint] = p
                             break
                 else:
-                    if skip_missing:
-                        missing[ipoint] = True
-                    else:
-                        raise LocateError('failed to locate point: {}'.format(xt))
-        if skip_missing:
-            ielems = ielems[~missing]
-            points = points[~missing]
-        return self._sample(ielems, points, weights)
+                    ielems[ipoint] = -1 # mark point as missing
+                    if not skip_missing:
+                        # rather than raising LocateError here, which
+                        # parallel.fork will reraise as a general Exception if
+                        # ipoint was assigned to a child process, we fast
+                        # forward through the remaining points to abandon the
+                        # loop and subsequently raise from the main process.
+                        for ipoint in ipoints:
+                            pass
+        if -1 not in ielems: # all points are found
+            return self._sample(ielems, points, weights)
+        elif skip_missing: # not all points are found and that's ok, we just leave those out
+            return self._sample(ielems[ielems != -1], points[ielems != -1])
+        else: # not all points are found and that's an error
+            raise LocateError(f'failed to locate point: {coords[ielems==-1][0]}')
 
     def _sample(self, ielems, coords, weights=None):
         index = numpy.argsort(ielems, kind='stable')
