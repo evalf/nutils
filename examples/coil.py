@@ -1,44 +1,42 @@
-#! /usr/bin/env python3
+# Current-induced magnetic field
 #
 # In this script we compute the magnetic field induced by a DC or AC current in
 # one or several toroidal conductors. This problem is modeled with the
-# quasi-static `magnetic vector potential`_ with Lorenz gauge:
+# quasi-static [magnetic vector potential][1] with Lorenz gauge:
 #
-# .. math:: ∇_j(∇_j(A_i)) = -μ_0 J_i,
+#     ∇_j(∇_j(A_i)) = -μ0 J_i
 #
-# where :math:`A` is the magnetic vector potential, :math:`J` the current
-# density and :math:`μ_0` the magnetic permeability. The magnetic field
-# :math:`B` is then given by the curl of the magnetic vector potential. The
-# current density is the sum of an external current :math:`J_\text{ext}` and
-# the current induced by the magnetic field, :math:`J_\text{ind}`. The external
-# current is given by
+# where `A` is the magnetic vector potential, `J` the current density and `μ0`
+# the magnetic permeability. The magnetic field `B` is then given by the curl
+# of the magnetic vector potential. The current density is the sum of an
+# external current `Jext` and the current induced by the magnetic field,
+# `Jind`. The external current is given by
 #
-# .. math:: J_{\text{ext};i} = \frac{I}{π r_\text{wire}^2} \cos(ω t) e_{θi},
+#     Jext_i = (I / π rwire²) cos(ω t) eθ_i
 #
-# inside the conductor and zero everywhere else, where :math:`ω = 2 π f`. The
-# induced current follows from `Faraday's law of induction`_ and `Ohm's law`_:
+# inside the conductor and zero everywhere else, where `ω = 2 π f`. The induced
+# current follows from [Faraday's law of induction][2] and [Ohm's law][3]:
 #
-# .. math:: J_{\text{ind};i} = -σ ∂_t(A_i),
+#     Jind_i = -σ ∂_t(A_i)
 #
-# where :math:`σ` is the conductivity, which is non-zero only inside the
-# conductor.
+# where `σ` is the conductivity, which is non-zero only inside the conductor.
 #
-# We can solve the temporal component of :math:`A` by letting :math:`A_i =
-# \Re(\hat{A}_i \exp{j ω t})`. This problem in terms of :math:`\hat{A}` is:
+# We can solve the temporal component of `A` by letting `A_i = Re(Â_i exp(j ω
+# t))`. This problem in terms of `Â` is:
 #
-# .. math:: ∇_j(∇_j(\hat{A}_i) = -μ_0 \hat{J}_i,
+#     ∇_j(∇_j(Â_i) = -μ0 Ĵ_i
 #
 # with
 #
-# .. math:: \hat{J}_{\text{ext};i} = \frac{I}{π r_\text{wire}^2} e_{θi},
+#     Ĵext_i = (I / π rwire²) eθ_i
 #
 # and
 #
-# .. math:: \hat{J}_{\text{ind};i} = -j ω σ \hat{A}_i.
+#     Ĵind_i = -j ω σ Â_i
 #
-# .. _magnetic vector potential: https://en.wikipedia.org/wiki/Magnetic_vector_potential
-# .. _Faraday's law of induction: https://en.wikipedia.org/wiki/Faraday%27s_law_of_induction
-# .. _Ohm's law: https://en.wikipedia.org/wiki/Ohm%27s_law
+# [1]: https://en.wikipedia.org/wiki/Magnetic_vector_potential
+# [2]: https://en.wikipedia.org/wiki/Faraday%27s_law_of_induction
+# [3]: https://en.wikipedia.org/wiki/Ohm%27s_law
 
 from nutils import cli, export, function, mesh, solver, testing
 from nutils.expression_v2 import Namespace
@@ -216,3 +214,5 @@ class test(testing.TestCase):
 
 if __name__ == '__main__':
     cli.run(main)
+
+# example:tags=electro-magnetism:thumbnail=0
