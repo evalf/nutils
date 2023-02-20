@@ -937,9 +937,13 @@ class locate(TestCase):
             self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12)
 
     def test_invalidpoint(self):
-        target = numpy.array([(.3, 1)])  # outside domain, but inside basetopo for mode==trimmed
-        with self.assertRaises(topology.LocateError):
+        target = numpy.array([(.3, 1), (.2, .3), (.1, .9), (0, 1), (.1, .3)])
+        # the first point is outside the domain, but inside basetopo for mode==trimmed
+        with self.subTest('skip_missing=False'), self.assertRaises(topology.LocateError):
             self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12)
+        with self.subTest('skip_missing=True'):
+            sample = self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12, skip_missing=True)
+            self.assertEqual(sample.npoints, 4)
 
     def test_boundary(self):
         target = numpy.array([(.2,), (.1,), (0,)])

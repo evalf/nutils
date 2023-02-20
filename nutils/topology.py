@@ -1491,6 +1491,8 @@ class TransformChainsTopology(Topology):
             coords = coords[..., _]
         if not geom.shape == coords.shape[1:] == (self.ndims,):
             raise ValueError('invalid geometry or point shape for {}D topology'.format(self.ndims))
+        if skip_missing and weights is not None:
+            raise ValueError('weights and skip_missing are mutually exclusive')
         centroids = self.sample('_centroid', None).eval(geom)
         assert len(centroids) == len(self)
         ielems = parallel.shempty(len(coords), dtype=int)
@@ -1500,10 +1502,6 @@ class TransformChainsTopology(Topology):
         egeom = geom.lower((), {self.space: (self.transforms.get_evaluable(_ielem), self.opposites.get_evaluable(_ielem))}, {self.space: _point})
         xJ = evaluable.Tuple((egeom, evaluable.derivative(egeom, _point))).simplified
         arguments = dict(arguments or ())
-        if skip_missing:
-            if weights is not None:
-                raise ValueError('weights and skip_missing are mutually exclusive')
-            missing = parallel.shzeros(len(coords), dtype=bool)
         with parallel.ctxrange('locating', len(coords)) as ipoints:
             for ipoint in ipoints:
                 xt = coords[ipoint]  # target
@@ -1537,14 +1535,21 @@ class TransformChainsTopology(Topology):
                             points[ipoint] = p
                             break
                 else:
-                    if skip_missing:
-                        missing[ipoint] = True
-                    else:
-                        raise LocateError('failed to locate point: {}'.format(xt))
-        if skip_missing:
-            ielems = ielems[~missing]
-            points = points[~missing]
-        return self._sample(ielems, points, weights)
+                    ielems[ipoint] = -1 # mark point as missing
+                    if not skip_missing:
+                        # rather than raising LocateError here, which
+                        # parallel.fork will reraise as a general Exception if
+                        # ipoint was assigned to a child process, we fast
+                        # forward through the remaining points to abandon the
+                        # loop and subsequently raise from the main process.
+                        for ipoint in ipoints:
+                            pass
+        if -1 not in ielems: # all points are found
+            return self._sample(ielems, points, weights)
+        elif skip_missing: # not all points are found and that's ok, we just leave those out
+            return self._sample(ielems[ielems != -1], points[ielems != -1])
+        else: # not all points are found and that's an error
+            raise LocateError(f'failed to locate point: {coords[ielems==-1][0]}')
 
     def _sample(self, ielems, coords, weights=None):
         index = numpy.argsort(ielems, kind='stable')
@@ -2564,16 +2569,37 @@ class SubsetTopology(TransformChainsTopology):
         basis = self.basetopo.basis(name, *args, **kwargs)
         return function.PrunedBasis(basis, self._indices, self.f_index, self.f_coords)
 
-    def locate(self, geom, coords, *, eps=0, **kwargs):
-        sample = self.basetopo.locate(geom, coords, eps=eps, **kwargs)
-        for isampleelem, (transforms, points) in enumerate(zip(sample.transforms[0], sample.points)):
+    def locate(self, geom, coords, *, eps=0, skip_missing=False, **kwargs):
+        sample = self.basetopo.locate(geom, coords, eps=eps, skip_missing=skip_missing, **kwargs)
+        missing = []
+        for isampleelem, (transforms, points_) in enumerate(zip(sample.transforms[0], sample.points)):
             ielem = self.basetopo.transforms.index(transforms)
             ref = self.refs[ielem]
             if ref != self.basetopo.references[ielem]:
-                for i, coord in enumerate(points.coords):
+                for i, coord in enumerate(points_.coords):
                     if not ref.inside(coord, eps):
-                        raise LocateError('failed to locate point: {}'.format(coords[sample.getindex(isampleelem)[i]]))
-        return sample
+                        if not skip_missing:
+                            raise LocateError('failed to locate point: {}'.format(coords[sample.getindex(isampleelem)[i]]))
+                        missing.append((isampleelem, i))
+        if not missing:
+            return sample
+        selection = numpy.ones(len(sample.points), dtype=bool)
+        newpoints = []
+        for isampleelem, points_ in enumerate(sample.points):
+            mymissing = [] # collect missing points for current element
+            for isampleelem_, i in missing[:points_.npoints]:
+                if isampleelem_ != isampleelem:
+                    break
+                mymissing.append(i)
+            if not mymissing: # no points are missing -> keep existing points object
+                newpoints.append(points_)
+            elif len(mymissing) < points_.npoints: # some points are missing -> create new CoordsPoints object
+                newpoints.append(points.CoordsPoints(points_.coords[~numeric.asboolean(mymissing, points_.npoints)]))
+            else: # all points are missing -> remove element from return sample
+                selection[isampleelem] = False
+            del missing[:len(mymissing)]
+        assert not missing
+        return Sample.new(sample.space, [trans[selection] for trans in sample.transforms], PointsSequence.from_iter(newpoints, sample.ndims))
 
 
 class RefinedTopology(TransformChainsTopology):
