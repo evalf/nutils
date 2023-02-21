@@ -2741,30 +2741,43 @@ class Sign(Array):
 class Sampled(Array):
     '''Basis-like identity operator.
 
-    Basis-like function that for every point in a predefined set evaluates to the
-    unit vector corresponding to its index.
+    Basis-like function that for every point evaluates to a partition of unity
+    of a predefined set based on the selected interpolation scheme.
 
     Args
     ----
-    points : 1d :class:`Array`
+    points : 2d :class:`Array`
         Present point coordinates.
-    expect : 2d :class:`Array`
-        Elementwise constant that evaluates to the predefined point coordinates;
-        used for error checking and to inherit the shape.
+    target : 2d :class:`Array`
+        Elementwise constant that evaluates to the target point coordinates.
+    interpolation : :class:`str`
+        Interpolation scheme to map points to target: "none" or "nearest".
     '''
 
-    __slots__ = ()
+    __slots__ = 'evalf'
 
-    def __init__(self, points: Array, expect: Array):
+    def __init__(self, points: Array, target: Array, interpolation: str):
         assert isinstance(points, Array) and points.ndim == 2, f'points={points!r}'
-        assert isinstance(expect, Array) and expect.ndim == 2, f'expect={expect!r}'
-        super().__init__(args=(points, expect), shape=(points.shape[0], expect.shape[0]), dtype=float)
+        assert isinstance(target, Array) and target.ndim == 2, f'target={target!r}'
+        assert points.shape[1] == target.shape[1]
+        if interpolation == 'none':
+            self.evalf = self.evalf_none
+        elif interpolation == 'nearest':
+            self.evalf = self.evalf_nearest
+        else:
+            raise ValueError(f'invalid interpolation {interpolation!r}; valid values are "none" and "nearest"')
+        super().__init__(args=(points, target), shape=(points.shape[0], target.shape[0]), dtype=float)
 
     @staticmethod
-    def evalf(points, expect):
-        if points.shape != expect.shape or not numpy.equal(points, expect).all():
-            raise ValueError('points do not correspond to original sample')
+    def evalf_none(points, target):
+        if points.shape != target.shape or not numpy.equal(points, target).all():
+            raise ValueError('points do not correspond to the target sample; consider using "nearest" interpolation if this is desired')
         return numpy.eye(len(points))
+
+    @staticmethod
+    def evalf_nearest(points, target):
+        nearest = numpy.linalg.norm(points[:,numpy.newaxis,:] - target[numpy.newaxis,:,:], axis=2).argmin(axis=1)
+        return numpy.eye(len(target))[nearest]
 
 
 def Elemwise(data: typing.Tuple[types.arraydata, ...], index: Array, dtype: Dtype):

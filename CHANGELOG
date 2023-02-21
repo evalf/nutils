@@ -5,6 +5,14 @@ The following overview lists user facing changes as well as newly added
 features in inverse chronological order.
 
 
+NEW: nearest-neighbour interpolation in sample.asfunction, sample.basis
+
+The sample methods `asfunction` and `basis` have a new interpolation argument
+that take the string values "none" (default) or "nearest". The latter activates
+a new mode that allows evaluation of sampled data on other samples than the
+original by selecting the point that is closest to the target.
+
+
 FIXED: locate points on trimmed topologies with the skip_missing flag set
 
 The `locate` method has a `skip_missing` argument that instructs the method to

@@ -245,13 +245,19 @@ class Sample(types.Singleton):
         indices = evaluable.loop_concatenate(evaluable._flat(self.get_evaluable_indices(ielem)), ielem)
         return _ReorderPoints(_ConcatenatePoints(func, self), indices) * funcscale
 
-    def basis(self) -> function.Array:
+    def basis(self, interpolation: str = 'none') -> function.Array:
         '''Basis-like function that for every point in the sample evaluates to the
-        unit vector corresponding to its index.'''
+        unit vector corresponding to its index.
+
+        Args
+        ----
+        interpolation : :class:`str`
+            Same as in :meth:`asfunction`.
+        '''
 
         raise NotImplementedError
 
-    def asfunction(self, array: numpy.ndarray) -> function.Array:
+    def asfunction(self, array: numpy.ndarray, interpolation: str = 'none') -> function.Array:
         '''Convert sampled data to evaluable array.
 
         Using the result of :func:`Sample.eval`, create a sampled array that upon
@@ -270,9 +276,13 @@ class Sample(types.Singleton):
         ----
         array :
             The sampled data.
+        interpolation : :class:`str`
+            Interpolation scheme used to map sample values to the evaluating
+            sample. Valid values are "none", demanding that the evaluating
+            sample mathes self, or "nearest" for nearest-neighbour mapping.
         '''
 
-        return function.matmat(self.basis(), array)
+        return function.matmat(self.basis(interpolation=interpolation), array)
 
     @property
     def tri(self) -> numpy.ndarray:
@@ -398,8 +408,8 @@ class _TransformChainsSample(Sample):
     def get_lower_args(self, __ielem: evaluable.Array) -> function.LowerArgs:
         return function.LowerArgs.for_space(self.space, self.transforms, __ielem, self.points.get_evaluable_coords(__ielem))
 
-    def basis(self) -> function.Array:
-        return _Basis(self)
+    def basis(self, interpolation: str = 'none') -> function.Array:
+        return _Basis(self, interpolation)
 
     def subset(self, mask: numpy.ndarray) -> Sample:
         selection = types.frozenarray([ielem for ielem in range(self.nelems) if mask[self.getindex(ielem)].any()])
@@ -501,7 +511,7 @@ if os.environ.get('NUTILS_TENSORIAL', None) == 'test':  # pragma: nocover
         def points(self) -> Tuple[Transforms, ...]:
             raise SkipTest('`{}` does not implement `Sample.points`'.format(type(self).__qualname__))
 
-        def basis(self) -> function.Array:
+        def basis(self, interpolation: str = 'none') -> function.Array:
             raise SkipTest('`{}` does not implement `Sample.basis`'.format(type(self).__qualname__))
 
 else:
@@ -542,7 +552,7 @@ class _Empty(_TensorialSample):
         func, funcscale = function.Array.cast_withscale(__func)
         return function.zeros((0, *func.shape), func.dtype) * funcscale
 
-    def basis(self) -> function.Array:
+    def basis(self, interpolation: str = 'none') -> function.Array:
         return function.zeros((0,), float)
 
 
@@ -673,9 +683,9 @@ class _Mul(_TensorialSample):
     def __call__(self, func: function.IntoArray) -> function.Array:
         return numpy.reshape(self._sample1(self._sample2(func)), (-1, *func.shape))
 
-    def basis(self) -> Sample:
-        basis1 = self._sample1.basis()
-        basis2 = self._sample2.basis()
+    def basis(self, interpolation: str = 'none') -> Sample:
+        basis1 = self._sample1.basis(interpolation)
+        basis2 = self._sample2.basis(interpolation)
         assert basis1.ndim == basis2.ndim == 1
         return numpy.ravel(basis1[:, None] * basis2[None, :])
 
@@ -908,8 +918,11 @@ class _ReorderPoints(function.Array):
 
 class _Basis(function.Array):
 
-    def __init__(self, sample: _TransformChainsSample) -> None:
+    def __init__(self, sample: _TransformChainsSample, interpolation: str) -> None:
         self._sample = sample
+        if interpolation not in ('none', 'nearest'):
+            raise ValueError(f'invalid interpolation {interpolation!r}; valid values are "none" and "nearest"')
+        self._interpolation = interpolation
         super().__init__(shape=(sample.npoints,), dtype=float, spaces=frozenset({sample.space}), arguments={})
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
@@ -929,7 +942,7 @@ class _Basis(function.Array):
         index = evaluable.TransformIndex(self._sample.transforms[0], chain, tip_index)
         coords = evaluable.TransformCoords(self._sample.transforms[0], chain, tip_index, space_coords)
         expect = self._sample.points.get_evaluable_coords(index)
-        sampled = evaluable.Sampled(coords, expect)
+        sampled = evaluable.Sampled(coords, expect, self._interpolation)
         indices = self._sample.get_evaluable_indices(index)
         basis = evaluable.Inflate(sampled, dofmap=indices, length=evaluable.constant(self._sample.npoints))
 
