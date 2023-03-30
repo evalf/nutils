@@ -243,7 +243,10 @@ class Matrix:
             newresnorm = numpy.linalg.norm(res, axis=0).max()
             if not numpy.isfinite(newresnorm) or newresnorm >= resnorm:
                 break
-            treelog.debug('residual decreased by {:.1f} orders using {} krylov vectors'.format(numpy.log10(resnorm/newresnorm), len(krylov)))
+            if newresnorm == 0.0:
+                treelog.debug('solution is exact')
+            else:
+                treelog.debug('residual decreased by {:.1f} orders using {} krylov vectors'.format(numpy.log10(resnorm/newresnorm), len(krylov)))
             lhs = newlhs
             resnorm = newresnorm
             krylov.append((k, v, v2))
