@@ -536,244 +536,21 @@ class arraydata(Singleton):
         self.__array_interface__ = numpy.frombuffer(bytes, dtype).reshape(shape).__array_interface__
 
 
-def strictint(value):
-    '''
-    Converts any type that is a subclass of :class:`numbers.Integral` (e.g.
-    :class:`int` and ``numpy.int64``) to :class:`int`, and fails otherwise.
-    Notable differences with the behavior of :class:`int`:
-
-    *   :func:`strictint` does not convert a :class:`str` to an :class:`int`.
-    *   :func:`strictint` does not truncate :class:`float` to an :class:`int`.
-
-    Examples
-    --------
-
-    >>> strictint(1), type(strictint(1))
-    (1, <class 'int'>)
-    >>> strictint(numpy.int64(1)), type(strictint(numpy.int64(1)))
-    (1, <class 'int'>)
-    >>> strictint(1.0)
-    Traceback (most recent call last):
-        ...
-    ValueError: not an integer: 1.0
-    >>> strictint('1')
-    Traceback (most recent call last):
-        ...
-    ValueError: not an integer: '1'
-    '''
-
-    if not isinstance(value, numbers.Integral):
-        raise ValueError('not an integer: {!r}'.format(value))
-    return builtins.int(value)
-
-
-def strictfloat(value):
-    '''
-    Converts any type that is a subclass of :class:`numbers.Real` (e.g.
-    :class:`float` and ``numpy.float64``) to :class:`float`, and fails
-    otherwise.  Notable difference with the behavior of :class:`float`:
-
-    *   :func:`strictfloat` does not convert a :class:`str` to an :class:`float`.
-
-    Examples
-    --------
-
-    >>> strictfloat(1), type(strictfloat(1))
-    (1.0, <class 'float'>)
-    >>> strictfloat(numpy.float64(1.2)), type(strictfloat(numpy.float64(1.2)))
-    (1.2, <class 'float'>)
-    >>> strictfloat(1.2+3.4j)
-    Traceback (most recent call last):
-        ...
-    ValueError: not a real number: (1.2+3.4j)
-    >>> strictfloat('1.2')
-    Traceback (most recent call last):
-        ...
-    ValueError: not a real number: '1.2'
-    '''
-
-    if not isinstance(value, numbers.Real):
-        raise ValueError('not a real number: {!r}'.format(value))
-    return builtins.float(value)
-
-
-def strictstr(value):
-    '''
-    Returns ``value`` unmodified if it is a :class:`str`, and fails otherwise.
-    Notable difference with the behavior of :class:`str`:
-
-    *   :func:`strictstr` does not call ``__str__`` methods of objects to
-        automatically convert objects to :class:`str`\\s.
-
-    Examples
-    --------
-
-    Passing a :class:`str` to :func:`strictstr` works:
-
-    >>> strictstr('spam')
-    'spam'
-
-    Passing an :class:`int` will fail:
-
-    >>> strictstr(1)
-    Traceback (most recent call last):
-        ...
-    ValueError: not a 'str': 1
-    '''
-
-    if not isinstance(value, str):
-        raise ValueError("not a 'str': {!r}".format(value))
-    return value
-
-
-def _getname(value):
-    name = []
-    if hasattr(value, '__module__'):
-        name.append(value.__module__)
-    if hasattr(value, '__qualname__'):
-        name.append(value.__qualname__)
-    elif hasattr(value, '__name__'):
-        name.append(value.__name__)
-    else:
-        return str(value)
-    return '.'.join(name)
-
-
-def _copyname(dst=None, *, src, suffix=''):
-    if dst is None:
-        return functools.partial(_copyname, src=src, suffix=suffix)
-    if hasattr(src, '__name__'):
-        dst.__name__ = src.__name__+suffix
-    if hasattr(src, '__qualname__'):
-        dst.__qualname__ = src.__qualname__+suffix
-    if hasattr(src, '__module__'):
-        dst.__module__ = src.__module__
-    return dst
-
-
-class _strictmeta(type):
-    def __getitem__(self, cls):
-        def constructor(value):
-            if not isinstance(value, cls):
-                raise ValueError('expected an object of type {!r} but got {!r} with type {!r}'.format(cls.__qualname__, value, type(value).__qualname__))
-            return value
-        constructor.__qualname__ = constructor.__name__ = 'strict[{}]'.format(_getname(cls))
-        return constructor
-
-    def __call__(*args, **kwargs):
-        raise TypeError("cannot create an instance of class 'strict'")
-
-
-class strict(metaclass=_strictmeta):
-    '''
-    Type checker.  The function ``strict[cls](value)`` returns ``value``
-    unmodified if ``value`` is an instance of ``cls``, otherwise a
-    :class:`ValueError` is raised.
-
-    Examples
-    --------
-
-    The ``strict[int]`` function passes integers unmodified:
-
-    >>> strict[int](1)
-    1
-
-    Other types fail:
-
-    >>> strict[int]('1')
-    Traceback (most recent call last):
-        ...
-    ValueError: expected an object of type 'int' but got '1' with type 'str'
-    '''
-
-
-class _tuplemeta(type):
-    def __getitem__(self, itemtype):
-        @_copyname(src=self, suffix='[{}]'.format(_getname(itemtype)))
-        def constructor(value):
-            return builtins.tuple(map(itemtype, value))
-        return constructor
-
-    @staticmethod
-    def __call__(*args, **kwargs):
-        return builtins.tuple(*args, **kwargs)
-
-
-class tuple(builtins.tuple, metaclass=_tuplemeta):
-    '''
-    Wrapper of :class:`tuple` that supports a user-defined item constructor via
-    the notation ``tuple[I]``, with ``I`` the item constructor.  This is
-    shorthand for ``lambda items: tuple(map(I, items))``.  The item constructor
-    should be any callable that takes one argument.
-
-    Examples
-    --------
-
-    A tuple with items processed with :func:`strictint`:
-
-    >>> tuple[strictint]((False, 1, 2, numpy.int64(3)))
-    (0, 1, 2, 3)
-
-    If the item constructor raises an exception, the construction of the
-    :class:`tuple` failes accordingly:
-
-    >>> tuple[strictint]((1, 2, 3.4))
-    Traceback (most recent call last):
-        ...
-    ValueError: not an integer: 3.4
-    '''
-
-    __slots__ = ()
-
-
-class _frozendictmeta(CacheMeta):
-    def __getitem__(self, keyvaluetype):
-        if not isinstance(keyvaluetype, builtins.tuple) or len(keyvaluetype) != 2:
-            raise RuntimeError("expected a 'tuple' of length 2 but got {!r}".format(keyvaluetype))
-        keytype, valuetype = keyvaluetype
-
-        @_copyname(src=self, suffix='[{},{}]'.format(_getname(keytype), _getname(valuetype)))
-        def constructor(arg):
-            if isinstance(arg, collections.abc.Mapping):
-                items = arg.items()
-            elif isinstance(arg, (collections.abc.MappingView, collections.abc.Iterable)):
-                items = arg
-            else:
-                raise ValueError('expected a mapping or iterable but got {!r}'.format(arg))
-            return self((keytype(key), valuetype(value)) for key, value in items)
-        return constructor
-
-
-class frozendict(collections.abc.Mapping, metaclass=_frozendictmeta):
+class frozendict(collections.abc.Mapping):
     '''
     An immutable version of :class:`dict`.  The :class:`frozendict` is hashable
     and both the keys and values should be hashable as well.
 
-    Custom key and value constructors can be supplied via the ``frozendict[K,V]``
-    notation, with ``K`` the key constructor and ``V`` the value constructor,
-    which is roughly equivalent to ``lambda *args, **kwargs: {K(k): V(v) for k, v
-    in dict(*args, **kwargs).items()}``.
-
     Examples
     --------
 
-    A :class:`frozendict` with :func:`strictstr` as key constructor and
-    :func:`strictfloat` as value constructor:
-
-    >>> frozendict[strictstr,strictfloat]({'spam': False})
-    frozendict({'spam': 0.0})
-
-    Similar but with non-strict constructors:
-
-    >>> frozendict[str,float]({None: '1.2'})
-    frozendict({'None': 1.2})
-
-    Applying the strict constructors to invalid data raises an exception:
-
-    >>> frozendict[strictstr,strictfloat]({None: '1.2'})
+    >>> d = frozendict({'spam': 0.0})
+    >>> d['spam']
+    0.0
+    >>> d['spam'] = 1.0
     Traceback (most recent call last):
         ...
-    ValueError: not a 'str': None
+    TypeError: 'frozendict' object does not support item assignment
     '''
 
     __slots__ = '__base', '__hash'
@@ -821,15 +598,7 @@ class frozendict(collections.abc.Mapping, metaclass=_frozendictmeta):
     __repr__ = __str__ = lambda self: '{}({})'.format(type(self).__name__, self.__base)
 
 
-class _frozenmultisetmeta(CacheMeta):
-    def __getitem__(self, itemtype):
-        @_copyname(src=self, suffix='[{}]'.format(_getname(itemtype)))
-        def constructor(value):
-            return self(map(itemtype, value))
-        return constructor
-
-
-class frozenmultiset(collections.abc.Container, metaclass=_frozenmultisetmeta):
+class frozenmultiset(collections.abc.Container):
     '''
     An immutable multiset_.  A multiset is a generalization of a set: items may
     occur more than once.  Two mutlisets are equal if they have the same set of

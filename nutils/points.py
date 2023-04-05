@@ -112,9 +112,6 @@ class Points(types.Singleton):
         return types.frozenarray(onhull, copy=False)
 
 
-strictpoints = types.strict[Points]
-
-
 class CoordsPoints(Points):
     '''Manually supplied points.'''
 
@@ -266,7 +263,7 @@ class TransformPoints(Points):
 
     __cache__ = 'coords', 'weights'
 
-    def __init__(self, points: strictpoints, trans: transform.stricttransformitem):
+    def __init__(self, points: Points, trans: transform.TransformItem):
         assert isinstance(points, Points), f'points={points!r}'
         assert isinstance(trans, transform.TransformItem), f'trans={trans!r}'
         self.points = points

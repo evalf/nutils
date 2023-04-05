@@ -316,9 +316,6 @@ class Reference(types.Singleton):
         raise NotImplementedError
 
 
-strictreference = types.strict[Reference]
-
-
 class EmptyLike(Reference):
     'inverse reference element'
 

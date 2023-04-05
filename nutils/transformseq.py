@@ -308,9 +308,6 @@ class Transforms(types.Singleton):
         yield self
 
 
-stricttransforms = types.strict[Transforms]
-
-
 class EmptyTransforms(Transforms):
     '''An empty sequence.'''
 

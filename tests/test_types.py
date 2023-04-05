@@ -332,116 +332,6 @@ class CacheMeta(TestCase):
                 self.assertEqual(ncalls, 1)
 
 
-class strictint(TestCase):
-
-    def test_int(self):
-        value = nutils.types.strictint(1)
-        self.assertEqual(value, 1)
-        self.assertEqual(type(value), int)
-
-    def test_numpy_int(self):
-        value = nutils.types.strictint(numpy.int64(1))
-        self.assertEqual(value, 1)
-        self.assertEqual(type(value), int)
-
-    def test_float(self):
-        with self.assertRaises(ValueError):
-            nutils.types.strictint(1.)
-
-    def test_numpy_float(self):
-        with self.assertRaises(ValueError):
-            nutils.types.strictint(numpy.float64(1.))
-
-    def test_complex(self):
-        with self.assertRaises(ValueError):
-            nutils.types.strictint(1+0j)
-
-    def test_str(self):
-        with self.assertRaises(ValueError):
-            nutils.types.strictint('1')
-
-
-class strictfloat(TestCase):
-
-    def test_int(self):
-        value = nutils.types.strictfloat(1)
-        self.assertEqual(value, 1.)
-        self.assertEqual(type(value), float)
-
-    def test_numpy_int(self):
-        value = nutils.types.strictfloat(numpy.int64(1))
-        self.assertEqual(value, 1.)
-        self.assertEqual(type(value), float)
-
-    def test_float(self):
-        value = nutils.types.strictfloat(1.)
-        self.assertEqual(value, 1.)
-        self.assertEqual(type(value), float)
-
-    def test_numpy_float(self):
-        value = nutils.types.strictfloat(numpy.float64(1.))
-        self.assertEqual(value, 1.)
-        self.assertEqual(type(value), float)
-
-    def test_complex(self):
-        with self.assertRaises(ValueError):
-            nutils.types.strictint(1+0j)
-
-    def test_str(self):
-        with self.assertRaises(ValueError):
-            nutils.types.strictfloat('1.')
-
-
-class strictstr(TestCase):
-
-    def test_str(self):
-        value = nutils.types.strictstr('spam')
-        self.assertEqual(value, 'spam')
-        self.assertEqual(type(value), str)
-
-    def test_int(self):
-        with self.assertRaises(ValueError):
-            nutils.types.strictstr(1)
-
-
-class strict(TestCase):
-
-    def test_valid(self):
-        self.assertEqual(nutils.types.strict[int](1), 1)
-
-    def test_invalid(self):
-        with self.assertRaises(ValueError):
-            nutils.types.strict[int]('1')
-
-    def test_call(self):
-        with self.assertRaises(TypeError):
-            nutils.types.strict()
-
-
-class tupletype(TestCase):
-
-    def test_valid1(self):
-        value = nutils.types.tuple[nutils.types.strictint]([])
-        self.assertEqual(value, ())
-        self.assertEqual(type(value), tuple)
-
-    def test_valid2(self):
-        value = nutils.types.tuple[nutils.types.strictint]([1, 2, 3])
-        self.assertEqual(value, (1, 2, 3))
-        self.assertEqual(type(value), tuple)
-
-    def test_invalid(self):
-        with self.assertRaises(ValueError):
-            nutils.types.tuple[nutils.types.strictint]([1, 'spam', 'eggs'])
-
-    def test_without_item_constructor(self):
-        src = 1, 2, 3
-        self.assertEqual(nutils.types.tuple(src), tuple(src))
-
-    def test_name(self):
-        self.assertEqual(nutils.types.tuple[nutils.types.strictint].__name__, 'tuple[nutils.types.strictint]')
-
-
 class frozendict(TestCase):
 
     def test_constructor(self):
@@ -455,24 +345,6 @@ class frozendict(TestCase):
     def test_constructor_invalid(self):
         with self.assertRaises(ValueError):
             nutils.types.frozendict(['spam', 'eggs', 1])
-
-    def test_clsgetitem(self):
-        T = nutils.types.frozendict[str, float]
-        src = {1: 2, 'spam': '2.3'}
-        for name, value in [('mapping', src), ('mapping_view', src.items()), ('iterable', (item for item in src.items()))]:
-            with self.subTest(name):
-                frozen = T(value)
-                self.assertIsInstance(frozen, nutils.types.frozendict)
-                self.assertEqual(dict(frozen), {'1': 2., 'spam': 2.3})
-
-    def test_clsgetitem_invalid_types(self):
-        with self.assertRaises(RuntimeError):
-            nutils.types.frozendict[str, float, bool]
-
-    def test_clsgetitem_invalid_value(self):
-        T = nutils.types.frozendict[str, float]
-        with self.assertRaises(ValueError):
-            T(1)
 
     def test_setitem(self):
         frozen = nutils.types.frozendict({'spam': 1, 'eggs': 2.3})
@@ -564,11 +436,6 @@ class frozenmultiset(TestCase):
                 frozen = nutils.types.frozenmultiset(value)
                 for item in 'spam', 'bacon', 'sausage':
                     self.assertEqual({k: tuple(frozen).count(k) for k in set(src)}, {'spam': 2, 'bacon': 1, 'sausage': 1})
-
-    def test_clsgetitem(self):
-        src = False, 1, numpy.int64(2)
-        frozen = nutils.types.frozenmultiset[nutils.types.strictint](src)
-        self.assertEqual(set(frozen), {0, 1, 2})
 
     def test_preserve_order(self):
         for src in [('spam', 'bacon', 'sausage', 'spam'), ('spam', 'egg', 'spam', 'spam', 'bacon', 'spam')]:

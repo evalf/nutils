@@ -1825,7 +1825,7 @@ class EmptyTopology(TransformChainsTopology):
         return other
 
 
-def StructuredLine(space, root: transform.stricttransformitem, i: int, j: int, periodic: bool = False, bnames: Optional[Tuple[str, str]] = None):
+def StructuredLine(space, root: transform.TransformItem, i: int, j: int, periodic: bool = False, bnames: Optional[Tuple[str, str]] = None):
     assert isinstance(i, int), f'i={i!r}'
     assert isinstance(j, int), f'j={j!r}'
     assert isinstance(periodic, bool), f'periodic={periodic!r}'
