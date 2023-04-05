@@ -16,12 +16,9 @@ import re
 import io
 import types
 import numpy
+import dataclasses
 from ctypes import byref, c_int, c_ssize_t, c_void_p, c_char_p, py_object, pythonapi, Structure, POINTER
 c_ssize_p = POINTER(c_ssize_t)
-try:
-    import dataclasses
-except ImportError:
-    dataclasses = None
 
 
 def aspreprocessor(apply):
@@ -316,7 +313,7 @@ def nutils_hash(data):
     elif t is numpy.ndarray and not data.flags.writeable:
         h.update('{}{}\0'.format(','.join(map(str, data.shape)), data.dtype.str).encode())
         h.update(data.tobytes())
-    elif dataclasses and dataclasses.is_dataclass(t):
+    elif dataclasses.is_dataclass(t):
         # Note: we cannot use dataclasses.asdict here as its built-in recursion
         # makes nested dataclass instances indistinguishable from dictionaries.
         for item in sorted(nutils_hash((field.name, getattr(data, field.name))) for field in dataclasses.fields(t)):
