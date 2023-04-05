@@ -21,45 +21,6 @@ from ctypes import byref, c_int, c_ssize_t, c_void_p, c_char_p, py_object, pytho
 c_ssize_p = POINTER(c_ssize_t)
 
 
-def aspreprocessor(apply):
-    '''
-    Convert ``apply`` into a preprocessor decorator.  When applied to a function,
-    ``wrapped``, the returned decorator preprocesses the arguments with ``apply``
-    before calling ``wrapped``.  The ``apply`` function should return a tuple of
-    ``args`` (:class:`tuple` or :class:`list`) and ``kwargs`` (:class:`dict`).
-    The decorated function ``wrapped`` will be called with ``wrapped(*args,
-    **kwargs)``.  The ``apply`` function is allowed to change the signature of
-    the decorated function.
-
-    Examples
-    --------
-
-    The following preprocessor swaps two arguments.
-
-    >>> @aspreprocessor
-    ... def swapargs(a, b):
-    ...   return (b, a), {}
-
-    Decorating a function with ``swapargs`` will cause the arguments to be
-    swapped before the wrapped function is called.
-
-    >>> @swapargs
-    ... def func(a, b):
-    ...   return a, b
-    >>> func(1, 2)
-    (2, 1)
-    '''
-    def preprocessor(wrapped):
-        @functools.wraps(wrapped)
-        def wrapper(*args, **kwargs):
-            args, kwargs = apply(*args, **kwargs)
-            return wrapped(*args, **kwargs)
-        wrapper.__preprocess__ = apply
-        wrapper.__signature__ = inspect.signature(apply)
-        return wrapper
-    return preprocessor
-
-
 def _build_apply_annotations(signature):
     try:
         # Find a prefix for internal variables that is guaranteed to be
@@ -152,62 +113,6 @@ def _build_apply_annotations(signature):
     apply.__signature__ = signature
     apply.returns_canonical_arguments = True
     return apply
-
-
-def apply_annotations(wrapped):
-    '''
-    Decorator that applies annotations to arguments.  All annotations should be
-    :any:`callable`\\s taking one argument and returning a transformed argument.
-    All annotations are strongly recommended to be idempotent_.
-
-    .. _idempotent: https://en.wikipedia.org/wiki/Idempotence
-
-    If a parameter of the decorated function has a default value ``None`` and the
-    value of this parameter is ``None`` as well, the annotation is omitted.
-
-    Examples
-    --------
-
-    Consider the following function.
-
-    >>> @apply_annotations
-    ... def f(a:tuple, b:int):
-    ...   return a + (b,)
-
-    When calling ``f`` with a :class:`list` and :class:`str` as arguments, the
-    :func:`apply_annotations` decorator first applies :class:`tuple` and
-    :class:`int` to the arguments before passing them to the decorated function.
-
-    >>> f([1, 2], '3')
-    (1, 2, 3)
-
-    The following example illustrates the behavior of parameters with default
-    value ``None``.
-
-    >>> addone = lambda x: x+1
-    >>> @apply_annotations
-    ... def g(a:addone=None):
-    ...   return a
-
-    When calling ``g`` without arguments or with argument ``None``, the
-    annotation ``addone`` is not applied.  Note that ``None + 1`` would raise an
-    exception.
-
-    >>> g() is None
-    True
-    >>> g(None) is None
-    True
-
-    When passing a different value, the annotation is applied:
-
-    >>> g(1)
-    2
-    '''
-    signature = inspect.signature(wrapped)
-    if all(param.annotation is param.empty for param in signature.parameters.values()):
-        return wrapped
-    else:
-        return aspreprocessor(_build_apply_annotations(signature))(wrapped)
 
 
 def argument_canonicalizer(signature):
@@ -368,7 +273,7 @@ def _CacheMeta_method(func, cache_attr):
 
     orig_func = func
     signature = inspect.signature(func)
-    if not hasattr(func, '__preprocess__') and len(signature.parameters) == 1 and next(iter(signature.parameters.values())).kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.POSITIONAL_ONLY):
+    if len(signature.parameters) == 1 and next(iter(signature.parameters.values())).kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.POSITIONAL_ONLY):
 
         def wrapper(self):
             try:
@@ -382,20 +287,12 @@ def _CacheMeta_method(func, cache_attr):
 
     else:
 
-        # Peel off the preprocessors (see `aspreprocessor`).
-        preprocessors = []
-        while hasattr(func, '__preprocess__'):
-            preprocessors.append(func.__preprocess__)
-            func = func.__wrapped__
-        if not preprocessors or not getattr(preprocessors[-1], 'returns_canonical_arguments', False):
-            preprocessors.append(argument_canonicalizer(inspect.signature(func)))
+        canonicalize = argument_canonicalizer(inspect.signature(func))
 
         def wrapper(*args, **kwargs):
             self = args[0]
 
-            # Apply preprocessors.
-            for preprocess in preprocessors:
-                args, kwargs = preprocess(*args, **kwargs)
+            args, kwargs = canonicalize(*args, **kwargs)
             key = args[1:], tuple(sorted(kwargs.items()))
 
             assert hash(key), 'cannot cache function because arguments are not hashable'
@@ -553,17 +450,7 @@ class ImmutableMeta(CacheMeta):
         # `cls.__signature__` and if absent the signature of `__call__`, we
         # explicitly copy the signature of `<cls instance>.__init__` to `cls`.
         cls.__signature__ = inspect.signature(cls.__init__.__get__(object(), object))
-        # Peel off the preprocessors (see `aspreprocessor`) and store the
-        # preprocessors and the uncovered init separately.
-        pre_init = []
-        init = cls.__init__
-        while hasattr(init, '__preprocess__'):
-            pre_init.append(init.__preprocess__)
-            init = init.__wrapped__
-        if not pre_init or not getattr(pre_init[-1], 'returns_canonical_arguments', False):
-            pre_init.append(argument_canonicalizer(inspect.signature(init)))
-        cls._pre_init = tuple(pre_init)
-        cls._init = init
+        cls._canonicalize = argument_canonicalizer(inspect.signature(cls.__init__))
         cls._version = version
         return cls
 
@@ -577,7 +464,7 @@ class ImmutableMeta(CacheMeta):
         self = object.__new__(cls)
         self._args = args
         self._hash = hash(args)
-        self._init(*args[:-1], **dict(args[-1]))
+        self.__init__(*args[:-1], **dict(args[-1]))
         return self
 
 
@@ -590,10 +477,7 @@ class Immutable(metaclass=ImmutableMeta):
     should be hashable by :func:`nutils_hash`.
 
     Positional and keyword initialization arguments are canonicalized
-    automatically (by :func:`argument_canonicalizer`).  If the ``__init__``
-    method of a subclass is decorated with preprocessors (see
-    :func:`aspreprocessor`), the preprocessors are applied to the initialization
-    arguments and ``args`` becomes the preprocessed positional part.
+    automatically (by :func:`argument_canonicalizer`).
 
     Examples
     --------
@@ -616,21 +500,6 @@ class Immutable(metaclass=ImmutableMeta):
     Traceback (most recent call last):
         ...
     TypeError: unhashable type: 'list'
-
-    This can be solved by adding and applying annotations to ``__init__``.  The
-    following class converts its initialization arguments to :class:`tuple`
-    automaticaly:
-
-    >>> class Annotated(Immutable):
-    ...   @apply_annotations
-    ...   def __init__(self, a:tuple, b:tuple):
-    ...     pass
-
-    Calling ``Annotated`` with either :class:`list`\\s of ``1, 2`` and ``3, 4``
-    or :class:`tuple`\\s gives equal instances:
-
-    >>> Annotated([1, 2], [3, 4]) == Annotated((1, 2), (3, 4))
-    True
     '''
 
     __slots__ = '__weakref__', '_args', '_hash'
@@ -638,8 +507,7 @@ class Immutable(metaclass=ImmutableMeta):
 
     def __new__(*args, **kwargs):
         cls = args[0]
-        for preprocess in cls._pre_init:
-            args, kwargs = preprocess(*args, **kwargs)  # NOTE: preprocessors ignore args[0]
+        args, kwargs = cls._canonicalize(*args, **kwargs)
         return cls._new(*args[1:], tuple(sorted(kwargs.items())))
 
     def __reduce__(self):
@@ -702,19 +570,6 @@ class Singleton(Immutable, metaclass=SingletonMeta):
     one instance:
 
     >>> Plain(1, 2) is Plain(a=1, b=2)
-    True
-
-    Consider the folling class with annotations.
-
-    >>> class Annotated(Singleton):
-    ...   @apply_annotations
-    ...   def __init__(self, a:tuple, b:tuple):
-    ...     pass
-
-    Calling ``Annotated`` with either :class:`list`\\s of ``1, 2`` and ``3, 4``
-    or :class:`tuple`\\s gives a single instance:
-
-    >>> Annotated([1, 2], [3, 4]) is Annotated((1, 2), (3, 4))
     True
     '''
 
