@@ -340,33 +340,6 @@ class ConcatPoints(Points):
         return types.frozenarray(numpy.concatenate([renum.take(points.tri) for renum, points in zip(renumber, self.allpoints)]), copy=False)
 
 
-class ConePoints(Points):
-    '''Affinely transformed lower-dimensional points plus tip.
-
-    The point count is incremented by one regardless of the nature of the point
-    set; no effort is made to introduce extra points between base plane and tip.
-    Likewise, the simplex count stays equal, with all simplices obtaining an
-    extra vertex in tip.
-    '''
-
-    __cache__ = 'coords', 'tri'
-
-    @types.apply_annotations
-    def __init__(self, edgepoints: strictpoints, edgeref: transform.stricttransformitem, tip: types.arraydata):
-        self.edgepoints = edgepoints
-        self.edgeref = edgeref
-        self.tip = numpy.asarray(tip)
-        super().__init__(edgepoints.npoints+1, edgepoints.ndims+1)
-
-    @property
-    def coords(self):
-        return types.frozenarray(numpy.concatenate([self.edgeref.apply(self.edgepoints.coords), self.tip[_, :]]), copy=False)
-
-    @property
-    def tri(self):
-        tri = numpy.concatenate([self.edgepoints.tri, [[self.edgepoints.npoints]]*len(self.edgepoints.tri)], axis=1)
-        return types.frozenarray(tri, copy=False)
-
 # UTILITY FUNCTIONS
 
 
