@@ -822,39 +822,6 @@ class frozenarray(TestCase):
         self.assertFalse(a.flags.writeable)
 
 
-class c_array(TestCase):
-
-    def test_idempotence(self):
-        a = numpy.array([1, 2, 3], dtype=numpy.int64)
-        P = nutils.types.c_array[numpy.int64]
-        a_ct = P(a)
-        self.assertEqual(P(a_ct), a_ct)
-
-    def test_list(self):
-        a = [1, 2, 3]
-        a_ct = nutils.types.c_array[numpy.int64](a)
-        self.assertEqual(a_ct.data_as(ctypes.POINTER(ctypes.c_int64)).contents.value, 1)
-
-    def test_array(self):
-        a = numpy.array([1, 2, 3], dtype=numpy.int64)
-        a_ct = nutils.types.c_array[numpy.int64](a)
-        self.assertEqual(a_ct.data_as(ctypes.POINTER(ctypes.c_int64)).contents.value, 1)
-
-    def test_array_invalid_dtype(self):
-        a = numpy.array([1, 2, 3], dtype=numpy.int32)
-        with self.assertRaisesRegex(ValueError, '^Expected dtype .* but array has dtype .*\\.$'):
-            a_ct = nutils.types.c_array[numpy.int64](a)
-
-    def test_array_noncontinguous(self):
-        a = numpy.array([[1, 2], [3, 4]], dtype=numpy.int32).T
-        with self.assertRaisesRegex(ValueError, '^Array is not contiguous\\.$'):
-            a_ct = nutils.types.c_array[numpy.int64](a)
-
-    def test_wo_getitem(self):
-        with self.assertRaises(TypeError):
-            nutils.types.c_array()
-
-
 class T_Immutable(nutils.types.Immutable):
     def __init__(self, x, y, *, z):
         pass
