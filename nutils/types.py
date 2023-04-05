@@ -21,100 +21,6 @@ from ctypes import byref, c_int, c_ssize_t, c_void_p, c_char_p, py_object, pytho
 c_ssize_p = POINTER(c_ssize_t)
 
 
-def _build_apply_annotations(signature):
-    try:
-        # Find a prefix for internal variables that is guaranteed to be
-        # collision-free with the parameter names of `signature`.
-        for i in itertools.count():
-            internal_prefix = '__apply_annotations_internal{}_'.format(i)
-            if not any(name.startswith(internal_prefix) for name in signature.parameters):
-                break
-        # The `l` dictionary is used as locals when compiling the `apply` function.
-        l = {}
-        # Function to add `obj` to the locals `l`.  Returns the name of the
-        # variable (in `l`) that refers to `obj`.
-
-        def add_local(obj):
-            name = '{}{}'.format(internal_prefix, len(l))
-            assert name not in l
-            l[name] = obj
-            return name
-        # If there are positional-only parameters and there is no var-keyword
-        # parameter, we can create an equivalent signature with positional-only
-        # parameters converted to positional-or-keyword with unused names.
-        if any(param.kind == param.POSITIONAL_ONLY for param in signature.parameters.values()) and not any(param.kind == param.VAR_KEYWORD for param in signature.parameters.values()):
-            n_positional_args = 0
-            new_params = []
-            for param in signature.parameters.values():
-                if param.kind == param.POSITIONAL_ONLY:
-                    param = param.replace(kind=param.POSITIONAL_OR_KEYWORD, name='{}pos{}'.format(internal_prefix, n_positional_args))
-                new_params.append(param)
-            equiv_signature = signature.replace(parameters=new_params)
-        else:
-            equiv_signature = signature
-        # We build the following function
-        #
-        #   def apply(<params>):
-        #     <body>
-        #     return (<args>), {<kwargs>}
-        #
-        # `params`, `body`, `args` and `kwargs` are lists of valid python code (as `str`).
-        params = []
-        body = []
-        args = []
-        kwargs = []
-        allow_positional = True
-        for name, param in equiv_signature.parameters.items():
-            if param.kind == param.KEYWORD_ONLY and allow_positional:
-                allow_positional = False
-                params.append('*')
-            if param.kind in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY):
-                p = name
-                if param.default is not param.empty:
-                    p = '{}={}'.format(p, add_local(param.default))
-                params.append(p)
-                if allow_positional:
-                    args.append(name)
-                else:
-                    kwargs.append('{0!r}:{0}'.format(name))
-            elif param.kind == param.VAR_POSITIONAL:
-                allow_positional = False
-                p = '*{}'.format(name)
-                params.append(p)
-                args.append(p)
-            elif param.kind == param.VAR_KEYWORD:
-                allow_positional = False
-                p = '**{}'.format(name)
-                params.append(p)
-                kwargs.append(p)
-            else:
-                raise ValueError('Cannot create function definition with parameter {}.'.format(param))
-            if param.annotation is param.empty:
-                pass
-            elif param.default is None:
-                # Omit the annotation if the argument is the default is None.
-                body.append('  {arg} = None if {arg} is None else {ann}({arg})\n'.format(arg=name, ann=add_local(param.annotation)))
-            else:
-                body.append('  {arg} = {ann}({arg})\n'.format(arg=name, ann=add_local(param.annotation)))
-        f = 'def apply({params}):\n{body}  return ({args}), {{{kwargs}}}\n'.format(params=','.join(params), body=''.join(body), args=''.join(arg+',' for arg in args), kwargs=','.join(kwargs))
-        exec(f, l)
-        apply = l['apply']
-    except ValueError:
-        def apply(*args, **kwargs):
-            bound = signature.bind(*args, **kwargs)
-            bound.apply_defaults()
-            for name, param in signature.parameters.items():
-                if param.annotation is param.empty:
-                    continue
-                if param.default is None and bound.arguments[name] is None:
-                    continue
-                bound.arguments[name] = param.annotation(bound.arguments[name])
-            return bound.args, bound.kwargs
-    apply.__signature__ = signature
-    apply.returns_canonical_arguments = True
-    return apply
-
-
 def argument_canonicalizer(signature):
     '''
     Returns a function that converts arguments matching ``signature`` to
@@ -156,7 +62,13 @@ def argument_canonicalizer(signature):
     >>> canon(1, c=3)
     ((1, 4), {'c': 3})
     '''
-    return _build_apply_annotations(inspect.Signature(parameters=[param.replace(annotation=param.empty) for param in signature.parameters.values()]))
+
+    def canonicalize(*args, **kwargs):
+        bound = signature.bind(*args, **kwargs)
+        bound.apply_defaults()
+        return bound.args, bound.kwargs
+
+    return canonicalize
 
 
 def nutils_hash(data):
