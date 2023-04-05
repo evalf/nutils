@@ -175,7 +175,7 @@ class Reference(types.Singleton):
             if gauss.npoints == 1:
                 return gauss
             volume = gauss.weights.sum()
-            return points.CoordsUniformPoints(gauss.coords.T[_] @ gauss.weights / volume, volume)
+            return points.CoordsUniformPoints(types.arraydata(gauss.coords.T[_] @ gauss.weights / volume), volume)
         raise Exception('unsupported ischeme for {}: {!r}'.format(self.__class__.__name__, ischeme))
 
     def with_children(self, child_refs):
@@ -473,7 +473,7 @@ class PointReference(SimplexReference):
         super().__init__(ndims=0)
 
     def getpoints(self, ischeme, degree):
-        return points.CoordsWeightsPoints(numpy.empty([1, 0]), [1.])
+        return points.CoordsWeightsPoints(types.arraydata(numpy.empty([1, 0])), types.arraydata([1.]))
 
     def _nlinear_by_level(self, n):
         return 1
@@ -493,7 +493,7 @@ class LineReference(SimplexReference):
 
     def getpoints(self, ischeme, degree):
         if ischeme == 'uniform':
-            return points.CoordsUniformPoints(numpy.arange(.5, degree)[:, _] / degree, 1)
+            return points.CoordsUniformPoints(types.arraydata(numpy.arange(.5, degree)[:, _] / degree), 1.)
         return super().getpoints(ischeme, degree)
 
     def _nlinear_by_level(self, n):
@@ -523,7 +523,7 @@ class TriangleReference(SimplexReference):
             coords = C.reshape(2, -1)
             flip = numpy.greater(coords.sum(0), 1)
             coords[:, flip] = 1 - coords[::-1, flip]
-            return points.CoordsUniformPoints(coords.T, .5)
+            return points.CoordsUniformPoints(types.arraydata(coords.T), .5)
         return super().getpoints(ischeme, degree)
 
     def _nlinear_by_level(self, n):
@@ -877,8 +877,8 @@ class WithChildrenReference(Reference):
             dedup = True
         else:
             dedup = False
-        childpoints = [points.TransformPoints(ref.getpoints(ischeme, degree), trans) for trans, ref in self.children if ref]
-        return points.ConcatPoints(childpoints, points.find_duplicates(childpoints) if dedup else ())
+        childpoints = tuple(points.TransformPoints(ref.getpoints(ischeme, degree), trans) for trans, ref in self.children if ref)
+        return points.ConcatPoints(childpoints, points.find_duplicates(childpoints) if dedup else frozenset())
 
     @property
     def edge_transforms(self):
@@ -1116,8 +1116,8 @@ class MosaicReference(Reference):
             return self.baseref.getpoints(ischeme, degree)
         elif ischeme in ('gauss', 'uniform', 'bezier'):
             simplexpoints = getsimplex(self.ndims).getpoints(ischeme, degree)
-            subpoints = [points.TransformPoints(simplexpoints, strans) for strans in self.simplex_transforms]
-            dups = points.find_duplicates(subpoints) if ischeme == 'bezier' else ()
+            subpoints = tuple(points.TransformPoints(simplexpoints, strans) for strans in self.simplex_transforms)
+            dups = points.find_duplicates(subpoints) if ischeme == 'bezier' else frozenset()
             return points.ConcatPoints(subpoints, dups)
         else:
             return super().getpoints(ischeme, degree)

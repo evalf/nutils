@@ -752,6 +752,11 @@ class arraydata(Singleton):
         dtype = dict(b=bool, u=int, i=int, f=float, c=complex)[array.dtype.kind]
         return super().__new__(cls, dtype, array.shape, array.astype(dtype, copy=False).tobytes())
 
+    def reshape(self, *shape):
+        if numpy.prod(shape) != numpy.prod(self.shape):
+            raise ValueError(f'cannot reshape arraydata of shape {self.shape} into shape {shape}')
+        return super().__new__(self.__class__, self.dtype, shape, self.bytes)
+
     def __init__(self, dtype, shape, bytes):
         self.dtype = dtype
         self.shape = shape

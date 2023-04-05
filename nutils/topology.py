@@ -1565,8 +1565,8 @@ class TransformChainsTopology(Topology):
             transforms += self.opposites[unique_ielems],
 
         slices = [index[n:m] for n, m in zip(offsets[:-1], offsets[1:])]
-        points_ = PointsSequence.from_iter([points.CoordsPoints(coords[s]) for s in slices] if weights is None
-                                           else [points.CoordsWeightsPoints(coords[s], weights[s]) for s in slices], self.ndims)
+        points_ = PointsSequence.from_iter([points.CoordsPoints(types.arraydata(coords[s])) for s in slices] if weights is None
+            else [points.CoordsWeightsPoints(types.arraydata(coords[s]), types.arraydata(weights[s])) for s in slices], self.ndims)
 
         return Sample.new(self.space, transforms, points_, index)
 
