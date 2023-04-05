@@ -29,6 +29,7 @@ else:
     Protocol = object
 
 from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, sparse
+from ._backports import cached_property
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph
 import nutils_poly as poly
 import numpy
@@ -336,7 +337,7 @@ class Evaluable(types.Singleton):
     # `types.CacheMeta` machinery asserts immutability of the property, we have
     # to resort to a regular `functools.cached_property`. Nevertheless, this
     # property should be treated as if it is immutable.
-    @util.cached_property
+    @cached_property
     def _serialized_evalf_head(self):
         return tuple(op.evalf for op in self.ordereddeps[1:])
 
@@ -3844,7 +3845,7 @@ class PolyMul(Array):
         ncoeffs = PolyNCoeffs(len(vars), self.degree_left + self.degree_right)
         super().__init__(args=(coeffs_left, coeffs_right), shape=(*coeffs_left.shape[:-1], ncoeffs), dtype=float)
 
-    @util.cached_property
+    @cached_property
     def evalf(self):
         try:
             degree_left = self.degree_left.__index__()
@@ -3903,7 +3904,7 @@ class PolyGrad(Array):
         shape = *coeffs.shape[:-1], constant(nvars), ncoeffs
         super().__init__(args=(coeffs,), shape=shape, dtype=float)
 
-    @util.cached_property
+    @cached_property
     def evalf(self):
         try:
             degree = self.degree.__index__()
@@ -4320,7 +4321,7 @@ class LoopSum(Array):
     # `types.CacheMeta` machinery asserts immutability of the property, we have
     # to resort to a regular `functools.cached_property`. Nevertheless, this
     # property should be treated as if it is immutable.
-    @util.cached_property
+    @cached_property
     def _serialized_loop_evalf(self):
         return tuple((dep.evalf, indices) for dep, indices in self._serialized_loop)
 
@@ -4554,7 +4555,7 @@ class LoopConcatenateCombined(Evaluable):
     # `types.CacheMeta` machinery asserts immutability of the property, we have
     # to resort to a regular `functools.cached_property`. Nevertheless, this
     # property should be treated as if it is immutable.
-    @util.cached_property
+    @cached_property
     def _serialized_loop_evalf(self):
         return tuple((dep.evalf, indices) for dep, indices in self._serialized_loop)
 

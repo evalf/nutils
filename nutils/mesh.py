@@ -10,6 +10,7 @@ from . import topology, function, _util as util, element, numeric, transform, tr
 from .elementseq import References
 from .transform import TransformItem
 from .topology import Topology
+from ._backports import comb
 from typing import Optional, Sequence, Tuple, Union
 import numpy
 import os
@@ -515,7 +516,7 @@ def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex', *, space=
 
     assert len(nodes) == nelems, 'number of simplex vertices and coordinates do not match'
     assert numpy.greater(nodes[:, 1:], nodes[:, :-1]).all(), 'nodes must be sorted'
-    assert ncnodes == _comb(ndims + degree, degree), 'number of coordinate nodes does not correspond to uniformly refined simplex'
+    assert ncnodes == comb(ndims + degree, degree), 'number of coordinate nodes does not correspond to uniformly refined simplex'
 
     transforms = transformseq.IndexTransforms(ndims=ndims, length=nelems)
     topo = topology.SimplexTopology(space, nodes, transforms, transforms)
@@ -677,9 +678,5 @@ def unitsquare(nelems, etype):
 
     return topo, geom / nelems
 
-try:
-    from math import comb as _comb  # new in Python 3.8
-except ImportError:
-    _comb = lambda n, k: numpy.arange(1+max(k, n-k), 1+n).prod() // math.factorial(min(k, n-k))
 
 # vim:sw=4:sts=4:et

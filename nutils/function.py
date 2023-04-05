@@ -6,6 +6,7 @@ else:
 
 from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, List, FrozenSet, NamedTuple
 from . import evaluable, numeric, _util as util, types, warnings, debug_flags, sparse
+from ._backports import cached_property
 from .transformseq import Transforms
 import nutils_poly as poly
 import builtins
@@ -234,7 +235,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     def lower(self, args: LowerArgs) -> evaluable.Array:
         raise NotImplementedError
 
-    @util.cached_property
+    @cached_property
     def as_evaluable_array(self) -> evaluable.Array:
         return self.lower(LowerArgs((), {}, {}))
 
@@ -3636,7 +3637,7 @@ class Basis(Array):
         coords = self.coords.lower(args)
         return evaluable.Inflate(evaluable.Polyval(coeffs, coords), dofs, evaluable.constant(self.ndofs))
 
-    @util.cached_property
+    @cached_property
     def _computed_support(self) -> Tuple[numpy.ndarray, ...]:
         support = [[] for i in range(self.ndofs)]  # type: List[List[int]]
         for ielem in range(self.nelems):
