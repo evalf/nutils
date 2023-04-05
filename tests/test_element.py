@@ -1,4 +1,4 @@
-from nutils import element, _util as util
+from nutils import element, _util as util, types
 from nutils.testing import TestCase, parametrize
 import numpy, math
 
@@ -103,6 +103,6 @@ elem('prism1', ref=element.TriangleReference()*element.LineReference(), exactcen
 elem('prism2', ref=element.LineReference()*element.TriangleReference(), exactcentroid=numpy.array([1/2, 1/3, 1/3]))
 line = element.LineReference()
 quad = line**2
-elem('withchildren1', ref=element.WithChildrenReference(quad, [quad, quad.empty, quad.empty, quad.empty]), exactcentroid=numpy.array([1/4, 1/4]))
-elem('withchildren2', ref=element.WithChildrenReference(quad, [quad, quad, quad.empty, quad.empty]), exactcentroid=numpy.array([1/4, 1/2]))
-elem('mosaic', ref=element.MosaicReference(quad, [line, line.empty, line, line.empty], [.25, .75]), exactcentroid=numpy.array([2/3, 2/3]))
+elem('withchildren1', ref=element.WithChildrenReference(quad, (quad, quad.empty, quad.empty, quad.empty)), exactcentroid=numpy.array([1/4, 1/4]))
+elem('withchildren2', ref=element.WithChildrenReference(quad, (quad, quad, quad.empty, quad.empty)), exactcentroid=numpy.array([1/4, 1/2]))
+elem('mosaic', ref=element.MosaicReference(quad, (line, line.empty, line, line.empty), types.arraydata([.25, .75])), exactcentroid=numpy.array([2/3, 2/3]))
