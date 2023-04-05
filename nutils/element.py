@@ -9,6 +9,7 @@ system, and provide pointsets for purposes of integration and sampling.
 """
 
 from . import _util as util, numeric, cache, transform, warnings, types, points
+from ._backports import cached_property
 from typing import Tuple
 from numbers import Integral
 import nutils_poly as poly
@@ -24,10 +25,19 @@ _ = numpy.newaxis
 # REFERENCE ELEMENTS
 
 class Reference(types.Singleton):
-    'reference element'
+    '''Reference element.
 
-    __slots__ = 'ndims',
-    __cache__ = 'connectivity', 'edgechildren', 'volume', 'centroid', '_linear_bernstein', 'getpoints'
+    .. py:attribute:: vertices
+
+       Array of shape ``nverts x ndims`` that defines the coordinates of the
+       element's vertices.
+
+    .. py:attribute:: edge_vertices
+
+       Sequence of integer arrays that specifies per edge (outer sequence,
+       corresponding to ``edges``) for each vertex (inner sequence,
+       corresponding to ``edges[iedge].vertices``) its index in ``vertices``.
+    '''
 
     def __init__(self, ndims: Integral):
         assert isinstance(ndims, Integral), f'ndims={ndims!r}'
@@ -37,12 +47,6 @@ class Reference(types.Singleton):
     @property
     def nverts(self):
         return len(self.vertices)
-
-    @property
-    def vertices(self):
-        '''Vertex coordinates.'''
-
-        raise NotImplementedError(self)
 
     @property
     def simplices(self):
@@ -74,19 +78,6 @@ class Reference(types.Singleton):
             if all(bary >= tol for bary in (*spoint, 1-spoint.sum())):
                 return True
         return False
-
-    @property
-    def edge_vertices(self):
-        '''Relation between edge and volume vertices.
-
-        Given a volume reference `vol`, `vol.edge_vertices` is a sequence of
-        integer arrays that specifies per edge (outer sequence, corresponding
-        to `vol.edges`) for each vertex (inner sequence, corresponding to
-        `vol.edges[iedge].vertices`) its index in `vol` (corresponding to
-        `vol.vertices`).
-        '''
-
-        raise NotImplementedError
 
     __and__ = lambda self, other: self if self == other else NotImplemented
     __or__ = lambda self, other: self if self == other else NotImplemented
@@ -131,7 +122,7 @@ class Reference(types.Singleton):
     def children(self):
         return list(zip(self.child_transforms, self.child_refs))
 
-    @property
+    @cached_property
     def connectivity(self):
         # Nested tuple with connectivity information about edges of children:
         # connectivity[ichild][iedge] = ioppchild (interface) or -1 (boundary).
@@ -153,7 +144,7 @@ class Reference(types.Singleton):
         assert not any(self.child_refs[ichild].edge_refs[iedge] for ichild, iedge in vmap.values()), 'not all boundary elements recovered'
         return tuple(types.frozenarray(c, copy=False) for c in connectivity)
 
-    @property
+    @cached_property
     def edgechildren(self):
         edgechildren = []
         for iedge, (etrans, eref) in enumerate(self.edges):
@@ -173,12 +164,16 @@ class Reference(types.Singleton):
 
     def getpoints(self, ischeme, degree):
         if ischeme == '_centroid':
-            gauss = self.getpoints('gauss', 1)
-            if gauss.npoints == 1:
-                return gauss
-            volume = gauss.weights.sum()
-            return points.CoordsUniformPoints(types.arraydata(gauss.coords.T[_] @ gauss.weights / volume), volume)
+            return self._getpoints_centroid
         raise Exception('unsupported ischeme for {}: {!r}'.format(self.__class__.__name__, ischeme))
+
+    @cached_property
+    def _getpoints_centroid(self):
+        gauss = self.getpoints('gauss', 1)
+        if gauss.npoints == 1:
+            return gauss
+        volume = gauss.weights.sum()
+        return points.CoordsUniformPoints(types.arraydata(gauss.coords.T[_] @ gauss.weights / volume), volume)
 
     def with_children(self, child_refs):
         child_refs = tuple(child_refs)
@@ -188,12 +183,12 @@ class Reference(types.Singleton):
             return self
         return WithChildrenReference(self, child_refs)
 
-    @property
+    @cached_property
     def volume(self):
         volume, = self.getpoints('_centroid', None).weights
         return volume
 
-    @property
+    @cached_property
     def centroid(self):
         centroid, = self.getpoints('_centroid', None).coords
         return centroid
@@ -208,7 +203,7 @@ class Reference(types.Singleton):
                                     for cref, clevels in zip(self.child_refs, self.child_divide(levels, maxrefine))) if maxrefine > 0 \
             else self.slice(poly.eval_outer(self._linear_bernstein, self.vertices) @ levels, ndivisions)
 
-    @property
+    @cached_property
     def _linear_bernstein(self):
         return self.get_poly_coeffs('bernstein', degree=1)
 
@@ -319,8 +314,6 @@ class Reference(types.Singleton):
 class EmptyLike(Reference):
     'inverse reference element'
 
-    __slots__ = 'baseref',
-
     volume = 0
 
     @property
@@ -371,14 +364,11 @@ class EmptyLike(Reference):
 class SimplexReference(Reference):
     'simplex reference'
 
-    __slots__ = ()
-    __cache__ = 'edge_refs', 'edge_transforms', 'edge_vertices', '_get_poly_coeffs_bernstein', '_get_poly_coeffs_lagrange', '_integer_barycentric_coordinates'
-
     @property
     def vertices(self):
         return types.frozenarray(numpy.eye(self.ndims+1)[1:].T, copy=False) # first vertex in origin
 
-    @property
+    @cached_property
     def edge_vertices(self):
         return tuple(types.frozenarray(numpy.arange(self.ndims+1).repeat(self.ndims).reshape(self.ndims,self.ndims+1).T[::-1], copy=False))
 
@@ -392,12 +382,12 @@ class SimplexReference(Reference):
         # Reference.simplex_transforms result in the identity map.
         return transform.Identity(self.ndims),
 
-    @property
+    @cached_property
     def edge_refs(self):
         assert self.ndims > 0
         return (getsimplex(self.ndims-1),) * (self.ndims+1)
 
-    @property
+    @cached_property
     def edge_transforms(self):
         assert self.ndims > 0
         return tuple(transform.SimplexEdge(self.ndims, i) for i in range(self.ndims+1))
@@ -425,53 +415,27 @@ class SimplexReference(Reference):
         prod = lambda start, stop: functools.reduce(operator.mul, range(start, stop), 1)
         return prod(degree+1, degree+1+self.ndims) // prod(1, self.ndims+1)
 
-    def get_poly_coeffs(self, basis, **kwargs):
-        f = getattr(self, '_get_poly_coeffs_{}'.format(basis), None)
-        if f:
-            return f(**kwargs)
+    def get_poly_coeffs(self, basis, degree):
+        if basis in _poly_coeffs:
+            return _poly_coeffs[basis](self.ndims, degree)
         else:
             raise ValueError('basis {!r} undefined on {}'.format(basis, type(self).__qualname__))
 
-    def _integer_barycentric_coordinates(self, degree):
-        return tuple(
-            (degree-sum(i), *i[::-1])
-            for i in itertools.product(*[range(degree+1)]*self.ndims)
-            if sum(i) <= degree)
-
-    def _get_poly_coeffs_bernstein(self, degree):
-        ndofs = self.get_ndofs(degree)
-        coeffs = numpy.zeros((ndofs, poly.ncoeffs(self.ndims, degree)), dtype=float)
-        powers = self._integer_barycentric_coordinates(degree)
-        for i, p in enumerate(powers):
-            for j, q in enumerate(powers[::-1]):
-                q_sub_p = tuple(map(operator.sub, q, p))
-                if all(power >= 0 for power in q_sub_p[1:]):
-                    coeffs[i, j] = (-1)**q_sub_p[0]*math.factorial(degree)//util.product(map(math.factorial, (q[0], *p[1:], *q_sub_p[1:])))
-        assert i == ndofs - 1
-        return types.frozenarray(coeffs, copy=False)
-
-    def _get_poly_coeffs_lagrange(self, degree):
-        if self.ndims == 0 or degree == 0:
-            return types.frozenarray(numpy.ones((1, 1), dtype=float), copy=True)
-        else:
-            P = numpy.array(tuple(self._integer_barycentric_coordinates(degree)), dtype=int)[:, 1:]
-            coeffs = numpy.linalg.inv(((P[_, :, :]/degree)**P[::-1, _, :]).prod(-1))
-            return types.frozenarray(coeffs, copy=False)
-
     def get_edge_dofs(self, degree, iedge):
-        return types.frozenarray(tuple(i for i, j in enumerate(self._integer_barycentric_coordinates(degree)) if j[iedge] == 0), dtype=int)
+        return types.frozenarray(tuple(i for i, j in enumerate(_integer_barycentric_coordinates(self.ndims, degree)) if j[iedge] == 0), dtype=int)
 
 
 class PointReference(SimplexReference):
     '0D simplex'
 
-    __slots__ = ()
-    __cache__ = 'getpoints',
-
     def __init__(self):
         super().__init__(ndims=0)
 
     def getpoints(self, ischeme, degree):
+        return self._getpoints_any
+
+    @cached_property
+    def _getpoints_any(self):
         return points.CoordsWeightsPoints(types.arraydata(numpy.empty([1, 0])), types.arraydata([1.]))
 
     def _nlinear_by_level(self, n):
@@ -483,8 +447,6 @@ class PointReference(SimplexReference):
 
 class LineReference(SimplexReference):
     '1D simplex'
-
-    __slots__ = '_bernsteincache',
 
     def __init__(self):
         self._bernsteincache = []  # TEMPORARY
@@ -507,8 +469,6 @@ class LineReference(SimplexReference):
 
 class TriangleReference(SimplexReference):
     '2D simplex'
-
-    __slots__ = ()
 
     def __init__(self):
         super().__init__(ndims=2)
@@ -565,8 +525,6 @@ class TetrahedronReference(SimplexReference):
     # d\g e\h f\i i\j e\g g\h g\i h\i
     # a-b b-c d-e g-h b-d b-e d-e e-g
 
-    __slots__ = ()
-
     _children_vertices = [0, 1, 3, 6], [1, 2, 4, 7], [3, 4, 5, 8], [6, 7, 8, 9], [1, 3, 4, 6], [1, 4, 6, 7], [3, 4, 6, 8], [4, 6, 7, 8]
 
     def __init__(self):
@@ -609,9 +567,6 @@ class TetrahedronReference(SimplexReference):
 class TensorReference(Reference):
     'tensor reference'
 
-    __slots__ = 'ref1', 'ref2'
-    __cache__ = 'vertices', 'edge_transforms', 'edge_vertices', 'child_transforms', 'getpoints', 'get_poly_coeffs', 'centroid', 'simplices'
-
     def __init__(self, ref1, ref2):
         assert not isinstance(ref1, TensorReference)
         self.ref1 = ref1
@@ -621,14 +576,14 @@ class TensorReference(Reference):
     def product(self, other):
         return self.ref1.product(self.ref2.product(other))
 
-    @property
+    @cached_property
     def vertices(self):
         vertices = numpy.empty((self.ref1.nverts, self.ref2.nverts, self.ndims), dtype=float)
         vertices[:, :, :self.ref1.ndims] = self.ref1.vertices[:, _]
         vertices[:, :, self.ref1.ndims:] = self.ref2.vertices[_, :]
         return types.frozenarray(vertices.reshape(self.ref1.nverts*self.ref2.nverts, self.ndims), copy=False)
 
-    @property
+    @cached_property
     def edge_vertices(self):
         n1 = self.ref1.nverts
         n2 = self.ref2.nverts
@@ -636,7 +591,7 @@ class TensorReference(Reference):
                       + [numpy.arange(n1)[:,_] * n2 + everts for everts in self.ref2.edge_vertices]
         return tuple(types.frozenarray(e.ravel(), copy=False) for e in edge_vertices)
 
-    @property
+    @cached_property
     def simplices(self):
         if self.ref1.ndims != 1 and self.ref2.ndims != 1:
             raise NotImplementedError((self.ref1, self.ref2))
@@ -655,7 +610,7 @@ class TensorReference(Reference):
             indices[:,::2,:2] = indices[:,::2,1::-1].copy() # flip every other simplex
         return types.frozenarray(indices.reshape(-1, self.ndims+1), copy=False)
 
-    @property
+    @cached_property
     def centroid(self):
         return types.frozenarray(numpy.concatenate([self.ref1.centroid, self.ref2.centroid]), copy=False)
 
@@ -677,11 +632,15 @@ class TensorReference(Reference):
             return self.ref2.getpoints(ischeme, degree)
         if self.ref2.ndims == 0:
             return self.ref1.getpoints(ischeme, degree)
-        if ischeme != 'vtk':
-            ischeme1, ischeme2 = ischeme.split('*', 1) if '*' in ischeme else (ischeme, ischeme)
-            degree1 = degree if not isinstance(degree, tuple) else degree[0]
-            degree2 = degree if not isinstance(degree, tuple) else degree[1] if len(degree) == 2 else degree[1:]
-            return self.ref1.getpoints(ischeme1, degree1) * self.ref2.getpoints(ischeme2, degree2)
+        if ischeme == 'vtk':
+            return self._getpoints_vtk
+        ischeme1, ischeme2 = ischeme.split('*', 1) if '*' in ischeme else (ischeme, ischeme)
+        degree1 = degree if not isinstance(degree, tuple) else degree[0]
+        degree2 = degree if not isinstance(degree, tuple) else degree[1] if len(degree) == 2 else degree[1:]
+        return self.ref1.getpoints(ischeme1, degree1) * self.ref2.getpoints(ischeme2, degree2)
+
+    @cached_property
+    def _getpoints_vtk(self):
         if self.ref1.ndims == self.ref2.ndims == 1:
             coords = numpy.empty([2, 2, 2])
             coords[..., :1] = self.ref1.vertices[:, _]
@@ -699,7 +658,7 @@ class TensorReference(Reference):
             raise NotImplementedError
         return points.CoordsPoints(coords.reshape(self.nverts, self.ndims))
 
-    @property
+    @cached_property
     def edge_transforms(self):
         edge_transforms = []
         if self.ref1.ndims:
@@ -717,7 +676,7 @@ class TensorReference(Reference):
             edge_refs.extend(self.ref1 * edge2 for edge2 in self.ref2.edge_refs)
         return tuple(edge_refs)
 
-    @property
+    @cached_property
     def child_transforms(self):
         return tuple(transform.TensorChild(trans1, trans2) for trans1 in self.ref1.child_transforms for trans2 in self.ref2.child_transforms)
 
@@ -762,8 +721,6 @@ class TensorReference(Reference):
 class OwnChildReference(Reference):
     'forward self as child'
 
-    __slots__ = 'baseref', 'child_refs', 'child_transforms'
-
     def __init__(self, baseref):
         self.baseref = baseref
         self.child_refs = baseref,
@@ -798,9 +755,6 @@ class OwnChildReference(Reference):
 class WithChildrenReference(Reference):
     'base reference with explicit children'
 
-    __slots__ = 'baseref', 'child_transforms', 'child_refs'
-    __cache__ = '__extra_edges', 'edge_transforms', 'edge_refs', 'connectivity'
-
     def __init__(self, baseref: Reference, child_refs: Tuple[Reference,...]):
         assert isinstance(baseref, Reference), f'baseref={baseref!r}'
         assert isinstance(child_refs, tuple) and len(child_refs) == baseref.nchildren and all(isinstance(ref, Reference) and ref.ndims == baseref.ndims for ref in child_refs), f'child_refs={child_refs!r}'
@@ -830,7 +784,7 @@ class WithChildrenReference(Reference):
     __and__ = lambda self, other: self if other == self.baseref else other if isinstance(other, WithChildrenReference) and self == other.baseref else self.baseref.with_children(self_child & other_child for self_child, other_child in zip(self.child_refs, other.child_refs)) if isinstance(other, WithChildrenReference) and other.baseref == self.baseref else NotImplemented
     __or__ = lambda self, other: other if other == self.baseref else self.baseref.with_children(self_child | other_child for self_child, other_child in zip(self.child_refs, other.child_refs)) if isinstance(other, WithChildrenReference) and other.baseref == self.baseref else NotImplemented
 
-    @property
+    @cached_property
     def __extra_edges(self):
         extra_edges = [(ichild, iedge, cref.edge_refs[iedge])
                        for ichild, cref in enumerate(self.child_refs) if cref
@@ -878,12 +832,12 @@ class WithChildrenReference(Reference):
         childpoints = tuple(points.TransformPoints(ref.getpoints(ischeme, degree), trans) for trans, ref in self.children if ref)
         return points.ConcatPoints(childpoints, points.find_duplicates(childpoints) if dedup else frozenset())
 
-    @property
+    @cached_property
     def edge_transforms(self):
         return tuple(self.baseref.edge_transforms) \
             + tuple(transform.ScaledUpdim(self.child_transforms[ichild], self.child_refs[ichild].edge_transforms[iedge]) for ichild, iedge, ref in self.__extra_edges)
 
-    @property
+    @cached_property
     def edge_refs(self):
         refs = []
         for etrans, eref in self.baseref.edges:
@@ -899,7 +853,7 @@ class WithChildrenReference(Reference):
             refs.append(OwnChildReference(ref))
         return tuple(refs)
 
-    @property
+    @cached_property
     def connectivity(self):
         return tuple(types.frozenarray(edges.tolist() + [-1] * (self.child_refs[ichild].nedges - len(edges))) for ichild, edges in enumerate(self.baseref.connectivity))
 
@@ -918,9 +872,6 @@ class WithChildrenReference(Reference):
 
 class MosaicReference(Reference):
     'triangulation'
-
-    __slots__ = 'baseref', '_edge_refs', '_midpoint', 'edge_refs', 'edge_transforms', 'vertices', '_imidpoint', 'edge_vertices'
-    __cache__ = 'simplices'
 
     def __init__(self, baseref: Reference, edge_refs: Tuple[Reference,...], midpoint: types.arraydata):
         assert isinstance(baseref, Reference), f'baseref={baseref!r}'
@@ -1100,7 +1051,7 @@ class MosaicReference(Reference):
     def _nlinear_by_level(self, n):
         return self.baseref._nlinear_by_level(n)
 
-    @property
+    @cached_property
     def simplices(self):
         indices = []
         for vmap, etrans, eref in zip(self.edge_vertices, self.baseref.edge_transforms, self._edge_refs):
@@ -1156,6 +1107,45 @@ def index_or_append(items, item):
 
 def arglexsort(triangulation):
     return numpy.argsort(numeric.asobjvector(tuple(tri) for tri in triangulation))
+
+
+# globally cached utilities
+
+
+@functools.lru_cache(maxsize=16)
+def _integer_barycentric_coordinates(ndims: int, degree: int):
+    return tuple(
+        (degree-sum(i), *i[::-1])
+        for i in itertools.product(*[range(degree+1)]*ndims)
+        if sum(i) <= degree)
+
+
+@functools.lru_cache(maxsize=16)
+def _get_poly_coeffs_bernstein(ndims: int, degree: int):
+    powers = _integer_barycentric_coordinates(ndims, degree)
+    ndofs = len(powers)
+    coeffs = numpy.zeros((ndofs, poly.ncoeffs(ndims, degree)), dtype=float)
+    for i, p in enumerate(powers):
+        for j, q in enumerate(powers[::-1]):
+            q_sub_p = tuple(map(operator.sub, q, p))
+            if all(power >= 0 for power in q_sub_p[1:]):
+                coeffs[i, j] = (-1)**q_sub_p[0]*math.factorial(degree)//util.product(map(math.factorial, (q[0], *p[1:], *q_sub_p[1:])))
+    return types.frozenarray(coeffs, copy=False)
+
+
+@functools.lru_cache(maxsize=16)
+def _get_poly_coeffs_lagrange(ndims: int, degree: int):
+    if ndims == 0 or degree == 0:
+        return types.frozenarray(numpy.ones((1, 1), dtype=float), copy=True)
+    else:
+        P = numpy.array(tuple(_integer_barycentric_coordinates(ndims, degree)), dtype=int)[:, 1:]
+        coeffs = numpy.linalg.inv(((P[_, :, :]/degree)**P[::-1, _, :]).prod(-1))
+        return types.frozenarray(coeffs, copy=False)
+
+
+_poly_coeffs = dict(
+    bernstein = _get_poly_coeffs_bernstein,
+    lagrange = _get_poly_coeffs_lagrange)
 
 
 # vim:sw=4:sts=4:et

@@ -7,6 +7,7 @@ and :class:`SimplexGaussPoints` that reflect the variety of elements in the
 '''
 
 from . import types, transform, numeric, _util as util
+from ._backports import cached_property
 from typing import Tuple, FrozenSet
 from numbers import Integral
 import numpy
@@ -42,8 +43,6 @@ class Points(types.Singleton):
       Number of spatial dimensions.
     '''
 
-    __cache__ = 'tri', 'hull', 'onhull'
-
     def __init__(self, npoints: Integral, ndims: Integral):
         assert isinstance(npoints, Integral), f'npoints={npoints!r}'
         assert isinstance(ndims, Integral), f'ndims={ndims!r}'
@@ -72,7 +71,7 @@ class Points(types.Singleton):
 
         return TensorPoints(self, other)
 
-    @property
+    @cached_property
     def tri(self):
         '''Triangulation of interior.
 
@@ -84,7 +83,7 @@ class Points(types.Singleton):
             return types.frozenarray([[0]])
         raise Exception('tri not defined for {}'.format(self))
 
-    @property
+    @cached_property
     def hull(self):
         '''Triangulation of the exterior hull.
 
@@ -99,7 +98,7 @@ class Points(types.Singleton):
         notequal = numpy.not_equal(sorted_edge_simplices[1:], sorted_edge_simplices[:-1]).any(axis=1)
         return types.frozenarray(sorted_edge_simplices[numpy.hstack([True, notequal]) & numpy.hstack([notequal, True])], copy=False)
 
-    @property
+    @cached_property
     def onhull(self):
         '''Boolean mask marking boundary points.
 
@@ -144,8 +143,6 @@ class CoordsUniformPoints(CoordsPoints):
 class TensorPoints(Points):
     '''Tensor product of two Points instances.'''
 
-    __cache__ = 'coords', 'weights', 'tri', 'hull'
-
     def __init__(self, points1: Points, points2: Points):
         assert isinstance(points1, Points), f'points1={points1!r}'
         assert isinstance(points2, Points), f'points2={points2!r}'
@@ -153,18 +150,18 @@ class TensorPoints(Points):
         self.points2 = points2
         super().__init__(points1.npoints * points2.npoints, points1.ndims + points2.ndims)
 
-    @property
+    @cached_property
     def coords(self):
         coords = numpy.empty((self.points1.npoints, self.points2.npoints, self.ndims))
         coords[:, :, :self.points1.ndims] = self.points1.coords[:, _, :]
         coords[:, :, self.points1.ndims:] = self.points2.coords[_, :, :]
         return types.frozenarray(coords.reshape(self.npoints, self.ndims), copy=False)
 
-    @property
+    @cached_property
     def weights(self):
         return types.frozenarray((self.points1.weights[:, _] * self.points2.weights[_, :]).ravel(), copy=False)
 
-    @property
+    @cached_property
     def tri(self):
         if self.points1.npoints == 1:
             return self.points2.tri
@@ -182,9 +179,9 @@ class TensorPoints(Points):
             tri12 = self.points1.tri[:, _, :, _] * self.points2.npoints + self.points2.tri[_, :, _, :]  # ntri1 x ntri2 x 2 x ndims
             return types.frozenarray(numeric.overlapping(tri12.reshape(-1, 2*self.ndims), n=self.ndims+1).reshape(-1, self.ndims+1), copy=False)
         else:
-            return super().tri
+            return super().tri.func()
 
-    @property
+    @cached_property
     def hull(self):
         if self.points1.npoints == 1:
             return self.points2.hull
@@ -198,7 +195,7 @@ class TensorPoints(Points):
             hull = numpy.concatenate([hull1.reshape(-1, self.ndims), numeric.overlapping(hull2.reshape(-1, 2*(self.ndims-1)), n=self.ndims).reshape(-1, self.ndims)])
             return types.frozenarray(hull, copy=False)
         else:
-            return super().hull
+            return super().hull.func()
 
     def product(self, other):
         return self.points1.product(self.points2.product(other))
@@ -216,8 +213,6 @@ class SimplexGaussPoints(CoordsWeightsPoints):
 class SimplexBezierPoints(CoordsUniformPoints):
     '''Bezier points on a simplex.'''
 
-    __cache__ = 'tri'
-
     def __init__(self, ndims: Integral, n: Integral):
         assert isinstance(ndims, Integral), f'ndims={ndims!r}'
         assert isinstance(n, Integral), f'n={n!r}'
@@ -231,7 +226,7 @@ class SimplexBezierPoints(CoordsUniformPoints):
         grid[tuple(self._indices.T)] = numpy.arange(self.npoints)
         return grid
 
-    @property
+    @cached_property
     def tri(self):
         if self.n == 2:
             tri = numpy.arange(self.npoints)[_]
@@ -254,14 +249,12 @@ class SimplexBezierPoints(CoordsUniformPoints):
             ws, wx, wy, wz = (tri < self.npoints).all(axis=1).nonzero()
             tri = tri[ws, :, wx, wy, wz]  # remove all x+y+z>1 simplices
         else:
-            return super().tri
+            return super().tri.func()
         return types.frozenarray(tri, copy=False)
 
 
 class TransformPoints(Points):
     '''Affinely transformed Points.'''
-
-    __cache__ = 'coords', 'weights'
 
     def __init__(self, points: Points, trans: transform.TransformItem):
         assert isinstance(points, Points), f'points={points!r}'
@@ -270,11 +263,11 @@ class TransformPoints(Points):
         self.trans = trans
         super().__init__(points.npoints, points.ndims)
 
-    @property
+    @cached_property
     def coords(self):
         return self.trans.apply(self.points.coords)
 
-    @property
+    @cached_property
     def weights(self):
         return types.frozenarray(self.points.weights * abs(float(self.trans.det)), copy=False)
 
@@ -294,8 +287,6 @@ class ConcatPoints(Points):
     triggering deduplication and resulting in a smaller total point count.
     '''
 
-    __cache__ = 'coords', 'weights', 'tri', 'masks'
-
     def __init__(self, allpoints: Tuple[Points,...], duplicates: FrozenSet[Tuple[Tuple[Integral,Integral],...]]):
         assert isinstance(allpoints, tuple) and all(isinstance(p, Points) for p in allpoints), 'allpoints={allpoints!r}'
         assert isinstance(duplicates, frozenset) and all(isinstance(d, tuple) and all(isinstance(n, tuple) and len(n) == 2 and all(isinstance(ni, Integral) for ni in n) for n in d) for d in duplicates), f'duplicates={duplicates!r}'
@@ -303,7 +294,7 @@ class ConcatPoints(Points):
         self.duplicates = duplicates
         super().__init__(sum(points.npoints for points in allpoints) - sum(len(d)-1 for d in duplicates), allpoints[0].ndims)
 
-    @property
+    @cached_property
     def masks(self):
         masks = [numpy.ones(points.npoints, dtype=bool) for points in self.allpoints]
         for pairs in self.duplicates:
@@ -311,11 +302,11 @@ class ConcatPoints(Points):
                 masks[i][j] = False
         return tuple(types.frozenarray(m, copy=False) for m in masks)
 
-    @property
+    @cached_property
     def coords(self):
         return types.frozenarray(numpy.concatenate([points.coords[mask] for mask, points in zip(self.masks, self.allpoints)] if self.duplicates else [points.coords for points in self.allpoints]), copy=False)
 
-    @property
+    @cached_property
     def weights(self):
         if not self.duplicates:
             return types.frozenarray(numpy.concatenate([points.weights for points in self.allpoints]), copy=False)
@@ -325,7 +316,7 @@ class ConcatPoints(Points):
             weights[I][self.masks[I][:J].sum()] += sum(self.allpoints[i].weights[j] for i, j in pairs[1:])
         return types.frozenarray(numpy.concatenate(weights), copy=False)
 
-    @property
+    @cached_property
     def tri(self):
         if not self.duplicates:
             offsets = util.cumsum(points.npoints for points in self.allpoints)

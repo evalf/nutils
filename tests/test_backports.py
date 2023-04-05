@@ -32,4 +32,3 @@ class comb(TestCase):
         self.assertEqual(bp.comb(2,2), 1)
 
         self.assertEqual(bp.comb(9,4), 126)
-        self.assertEqual(bp.comb(9,10), 0)

@@ -275,9 +275,6 @@ def replace(func=None, depthfirst=False, recursive=False, lru=4):
 class Evaluable(types.Singleton):
     'Base class'
 
-    __slots__ = '__args', '__dict__'
-    __cache__ = 'dependencies', 'arguments', 'ordereddeps', 'dependencytree', 'optimized_for_numpy', '_loop_concatenate_deps'
-
     def __init__(self, args: typing.Tuple['Evaluable', ...]):
         assert isinstance(args, tuple) and all(isinstance(arg, Evaluable) for arg in args), f'args={args!r}'
         super().__init__()
@@ -291,7 +288,7 @@ class Evaluable(types.Singleton):
         with times[self]:
             return self.evalf(*args)
 
-    @property
+    @cached_property
     def dependencies(self):
         '''collection of all function arguments'''
         deps = {}
@@ -301,7 +298,7 @@ class Evaluable(types.Singleton):
             deps[func] = len(funcdeps)
         return types.frozendict(deps)
 
-    @property
+    @cached_property
     def arguments(self):
         'a frozenset of all arguments of this evaluable'
         return frozenset().union(*(child.arguments for child in self.__args))
@@ -310,7 +307,7 @@ class Evaluable(types.Singleton):
     def isconstant(self):
         return EVALARGS not in self.dependencies
 
-    @property
+    @cached_property
     def ordereddeps(self):
         '''collection of all function arguments such that the arguments to
         dependencies[i] can be found in dependencies[:i]'''
@@ -318,7 +315,7 @@ class Evaluable(types.Singleton):
         deps.pop(EVALARGS, None)
         return tuple([EVALARGS] + sorted(deps, key=deps.__getitem__))
 
-    @property
+    @cached_property
     def dependencytree(self):
         '''lookup table of function arguments into ordereddeps, such that
         ordereddeps[i].__args[j] == ordereddeps[dependencytree[i][j]], and
@@ -449,7 +446,7 @@ class Evaluable(types.Singleton):
     def _simplified(self):
         return
 
-    @property
+    @cached_property
     def optimized_for_numpy(self):
         retval = self.simplified._optimized_for_numpy1() or self
         return retval._combine_loop_concatenates(frozenset())
@@ -465,7 +462,7 @@ class Evaluable(types.Singleton):
     def _optimized_for_numpy(self):
         return
 
-    @property
+    @cached_property
     def _loop_concatenate_deps(self):
         deps = []
         for arg in self.__args:
@@ -533,8 +530,6 @@ class EvaluableConstant(Evaluable):
         The return value of ``eval``.
     '''
 
-    __slots__ = 'value'
-
     def __init__(self, value):
         self.value = value
         super().__init__(())
@@ -553,8 +548,6 @@ class EvaluableConstant(Evaluable):
 
 
 class Tuple(Evaluable):
-
-    __slots__ = 'items'
 
     def __init__(self, items):
         self.items = items
@@ -784,11 +777,11 @@ _ArrayMeta = type(Evaluable)
 
 if debug_flags.sparse:
     def _chunked_assparse_checker(orig):
-        assert isinstance(orig, property)
+        assert isinstance(orig, cached_property)
 
-        @property
+        @cached_property
         def _assparse(self):
-            chunks = orig.fget(self)
+            chunks = orig.func(self)
             assert isinstance(chunks, tuple)
             assert all(isinstance(chunk, tuple) for chunk in chunks)
             assert all(all(isinstance(item, Array) for item in chunk) for chunk in chunks)
@@ -862,9 +855,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     dtype : :class:`int`, :class:`float`
         The dtype of the array elements.
     '''
-
-    __slots__ = 'shape', 'dtype', '__index'
-    __cache__ = 'assparse', '_assparse', '_intbounds'
 
     __array_priority__ = 1.  # http://stackoverflow.com/questions/7042496/numpy-coercion-problem-for-left-sided-binary-operator/7057530#7057530
 
@@ -948,13 +938,13 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     def imag(self):
         return imag(self)
 
-    @property
+    @cached_property
     def assparse(self):
         'Convert to a :class:`SparseArray`.'
 
         return SparseArray(self.simplified._assparse, self.shape, self.dtype)
 
-    @property
+    @cached_property
     def _assparse(self):
         # Convert to a sequence of sparse COO arrays. The returned data is a tuple
         # of `(*indices, values)` tuples, where `values` is an `Array` with the
@@ -1026,7 +1016,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
 
         return self
 
-    @property
+    @cached_property
     def _intbounds(self):
         # inclusive lower and upper bounds
         if self.ndim == 0 and self.dtype == int and self.isconstant:
@@ -1052,8 +1042,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
 class NPoints(Array):
     'The length of the points axis.'
 
-    __slots__ = ()
-
     def __init__(self):
         super().__init__(args=(EVALARGS,), shape=(), dtype=int)
 
@@ -1068,8 +1056,6 @@ class NPoints(Array):
 
 class Points(Array):
 
-    __slots__ = ()
-
     def __init__(self, npoints, ndim):
         super().__init__(args=(EVALARGS,), shape=(npoints, ndim), dtype=float)
 
@@ -1079,8 +1065,6 @@ class Points(Array):
 
 
 class Weights(Array):
-
-    __slots__ = ()
 
     def __init__(self, npoints):
         super().__init__(args=(EVALARGS,), shape=(npoints,), dtype=float)
@@ -1094,8 +1078,6 @@ class Weights(Array):
 
 class Orthonormal(Array):
     'make a vector orthonormal to a subspace'
-
-    __slots__ = '_basis', '_vector'
 
     def __init__(self, basis: Array, vector: Array):
         assert isinstance(basis, Array) and basis.ndim >= 2 and basis.dtype != complex, f'basis={basis!r}'
@@ -1168,9 +1150,6 @@ class Orthonormal(Array):
 
 class Constant(Array):
 
-    __slots__ = 'value',
-    __cache__ = '_isunit'
-
     def __init__(self, value: types.arraydata):
         assert isinstance(value, types.arraydata), f'value={value!r}'
         self.value = numpy.asarray(value)
@@ -1202,7 +1181,7 @@ class Constant(Array):
             cache[self] = node = DuplicatedLeafNode(label, (type(self).__name__, times[self]))
             return node
 
-    @property
+    @cached_property
     def _isunit(self):
         return numpy.equal(self.value, 1).all()
 
@@ -1272,9 +1251,6 @@ class Constant(Array):
 
 class InsertAxis(Array):
 
-    __slots__ = 'func', 'length'
-    __cache__ = '_unaligned', '_inflations'
-
     def __init__(self, func: Array, length: Array):
         assert isinstance(func, Array), f'func={func!r}'
         assert _isindex(length), f'length={length!r}'
@@ -1286,11 +1262,11 @@ class InsertAxis(Array):
     def _diagonals(self):
         return self.func._diagonals
 
-    @property
+    @cached_property
     def _inflations(self):
         return tuple((axis, types.frozendict((dofmap, InsertAxis(func, self.length)) for dofmap, func in parts.items())) for axis, parts in self.func._inflations)
 
-    @property
+    @cached_property
     def _unaligned(self):
         return self.func._unaligned
 
@@ -1373,7 +1349,7 @@ class InsertAxis(Array):
     def _loopsum(self, index):
         return InsertAxis(loop_sum(self.func, index), self.length)
 
-    @property
+    @cached_property
     def _assparse(self):
         return tuple((*(InsertAxis(idx, self.length) for idx in indices), prependaxes(Range(self.length), values.shape), InsertAxis(values, self.length)) for *indices, values in self.func._assparse)
 
@@ -1386,9 +1362,6 @@ class InsertAxis(Array):
 
 
 class Transpose(Array):
-
-    __slots__ = 'func', 'axes'
-    __cache__ = '_invaxes', '_unaligned', '_diagonals', '_inflations'
 
     @classmethod
     def _mk_axes(cls, ndim, axes, invert=False):
@@ -1423,20 +1396,20 @@ class Transpose(Array):
         self.axes = axes
         super().__init__(args=(func,), shape=tuple(func.shape[n] for n in axes), dtype=func.dtype)
 
-    @property
+    @cached_property
     def _diagonals(self):
         return tuple(frozenset(self._invaxes[i] for i in axes) for axes in self.func._diagonals)
 
-    @property
+    @cached_property
     def _inflations(self):
         return tuple((self._invaxes[axis], types.frozendict((dofmap, Transpose(func, self._axes_for(dofmap.ndim, self._invaxes[axis]))) for dofmap, func in parts.items())) for axis, parts in self.func._inflations)
 
-    @property
+    @cached_property
     def _unaligned(self):
         unaligned, where = unalign(self.func)
         return unaligned, tuple(self._invaxes[i] for i in where)
 
-    @property
+    @cached_property
     def _invaxes(self):
         return tuple(n.__index__() for n in numpy.argsort(self.axes))
 
@@ -1571,7 +1544,7 @@ class Transpose(Array):
     def _loopsum(self, index):
         return Transpose(loop_sum(self.func, index), self.axes)
 
-    @property
+    @cached_property
     def _assparse(self):
         return tuple((*(indices[i] for i in self.axes), values) for *indices, values in self.func._assparse)
 
@@ -1584,8 +1557,6 @@ class Transpose(Array):
 
 
 class Product(Array):
-
-    __slots__ = 'func',
 
     def __init__(self, func: Array):
         assert isinstance(func, Array) and func.dtype != bool, f'func={func!r}'
@@ -1618,8 +1589,6 @@ class Inverse(Array):
     Matrix inverse of ``func`` over the last two axes.  All other axes are
     treated element-wise.
     '''
-
-    __slots__ = 'func',
 
     def __init__(self, func: Array):
         assert isinstance(func, Array) and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2]), f'func={func!r}'
@@ -1662,8 +1631,6 @@ class Inverse(Array):
 
 class Determinant(Array):
 
-    __slots__ = 'func',
-
     def __init__(self, func: Array):
         assert isarray(func) and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2])
         self.func = func
@@ -1689,8 +1656,6 @@ class Determinant(Array):
 
 
 class Multiply(Array):
-
-    __slots__ = 'funcs',
 
     def __init__(self, funcs: types.frozenmultiset):
         assert isinstance(funcs, types.frozenmultiset), f'funcs={funcs!r}'
@@ -1823,7 +1788,7 @@ class Multiply(Array):
         if set(unalign(func2)[1]).isdisjoint((axis1, axis2)):
             return divide(inverse(func1, (axis1, axis2)), func2)
 
-    @property
+    @cached_property
     def _assparse(self):
         func1, func2 = self.funcs
         uninserted1, where1 = unalign(func1)
@@ -1851,9 +1816,6 @@ class Multiply(Array):
 
 class Add(Array):
 
-    __slots__ = 'funcs',
-    __cache__ = '_inflations'
-
     def __init__(self, funcs: types.frozenmultiset):
         assert isinstance(funcs, types.frozenmultiset) and len(funcs) == 2, f'funcs={funcs!r}'
         self.funcs = funcs
@@ -1861,7 +1823,7 @@ class Add(Array):
         assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype != bool, 'Add({}, {})'.format(func1, func2)
         super().__init__(args=tuple(self.funcs), shape=func1.shape, dtype=func1.dtype)
 
-    @property
+    @cached_property
     def _inflations(self):
         func1, func2 = self.funcs
         func2_inflations = dict(func2._inflations)
@@ -1956,7 +1918,7 @@ class Add(Array):
             # irreversibly process the new terms before reaching this point.
             return (func1 * other) + (func2 * other)
 
-    @property
+    @cached_property
     def _assparse(self):
         func1, func2 = self.funcs
         return _gathersparsechunks(itertools.chain(func1._assparse, func2._assparse))
@@ -1969,8 +1931,6 @@ class Add(Array):
 
 
 class Einsum(Array):
-
-    __slots__ = 'args', 'out_idx', 'args_idx', '_einsumfmt', '_has_summed_axes'
 
     def __init__(self, args: typing.Tuple[Array, ...], args_idx: typing.Tuple[typing.Tuple[int, ...], ...], out_idx: typing.Tuple[int, ...]):
         assert isinstance(args, tuple) and all(isinstance(arg, Array) for arg in args), f'arg={arg!r}'
@@ -2028,8 +1988,6 @@ class Einsum(Array):
 
 class Sum(Array):
 
-    __slots__ = 'func'
-
     def __init__(self, func: Array):
         assert isinstance(func, Array), f'func={func!r}'
         assert func.dtype != bool, 'Sum({})'.format(func)
@@ -2053,7 +2011,7 @@ class Sum(Array):
     def _derivative(self, var, seen):
         return sum(derivative(self.func, var, seen), self.ndim)
 
-    @property
+    @cached_property
     def _assparse(self):
         chunks = []
         for *indices, _rmidx, values in self.func._assparse:
@@ -2080,9 +2038,6 @@ class Sum(Array):
 
 
 class TakeDiag(Array):
-
-    __slots__ = 'func'
-    __cache__ = '_assparse'
 
     def __init__(self, func: Array):
         assert isinstance(func, Array) and func.ndim >= 2 and _equals_simplified(*func.shape[-2:]), f'func={func!r}'
@@ -2113,7 +2068,7 @@ class TakeDiag(Array):
         if axis != self.ndim - 1:
             return TakeDiag(sum(self.func, axis))
 
-    @property
+    @cached_property
     def _assparse(self):
         chunks = []
         for *indices, values in self.func._assparse:
@@ -2130,8 +2085,6 @@ class TakeDiag(Array):
 
 
 class Take(Array):
-
-    __slots__ = 'func', 'indices'
 
     def __init__(self, func: Array, indices: Array):
         assert isinstance(func, Array) and func.ndim > 0, f'func={func!r}'
@@ -2178,8 +2131,6 @@ class Take(Array):
 
 
 class Power(Array):
-
-    __slots__ = 'func', 'power'
 
     def __init__(self, func: Array, power: Array):
         assert isinstance(func, Array), f'func={func!r}'
@@ -2248,8 +2199,6 @@ class Pointwise(Array):
     Abstract base class for pointwise array functions.
     '''
 
-    __slots__ = 'args',
-
     deriv = None
     complex_deriv = None
     return_type = None
@@ -2313,13 +2262,11 @@ class Pointwise(Array):
 
 
 class Reciprocal(Pointwise):
-    __slots__ = ()
     evalf = staticmethod(numpy.reciprocal)
     return_type = lambda T: complex if T == complex else float
 
 
 class Negative(Pointwise):
-    __slots__ = ()
     evalf = staticmethod(numpy.negative)
     def return_type(T):
         if T == bool:
@@ -2332,13 +2279,11 @@ class Negative(Pointwise):
 
 
 class FloorDivide(Pointwise):
-    __slots__ = ()
     evalf = staticmethod(numpy.floor_divide)
     return_type = lambda T1, T2: complex if complex in (T1, T2) else float if float in (T1, T2) else int
 
 
 class Absolute(Pointwise):
-    __slots__ = ()
     evalf = staticmethod(numpy.absolute)
     return_type = lambda T: float if T in (float, complex) else int
 
@@ -2353,7 +2298,6 @@ class Absolute(Pointwise):
 
 class Cos(Pointwise):
     'Cosine, element-wise.'
-    __slots__ = ()
     evalf = staticmethod(numpy.cos)
     complex_deriv = lambda x: -Sin(x),
     return_type = lambda T: complex if T == complex else float
@@ -2361,7 +2305,6 @@ class Cos(Pointwise):
 
 class Sin(Pointwise):
     'Sine, element-wise.'
-    __slots__ = ()
     evalf = staticmethod(numpy.sin)
     complex_deriv = Cos,
     return_type = lambda T: complex if T == complex else float
@@ -2369,7 +2312,6 @@ class Sin(Pointwise):
 
 class Tan(Pointwise):
     'Tangent, element-wise.'
-    __slots__ = ()
     evalf = staticmethod(numpy.tan)
     complex_deriv = lambda x: Cos(x)**-2,
     return_type = lambda T: complex if T == complex else float
@@ -2377,7 +2319,6 @@ class Tan(Pointwise):
 
 class ArcSin(Pointwise):
     'Inverse sine, element-wise.'
-    __slots__ = ()
     evalf = staticmethod(numpy.arcsin)
     complex_deriv = lambda x: reciprocal(sqrt(1-x**2)),
     return_type = lambda T: complex if T == complex else float
@@ -2385,7 +2326,6 @@ class ArcSin(Pointwise):
 
 class ArcCos(Pointwise):
     'Inverse cosine, element-wise.'
-    __slots__ = ()
     evalf = staticmethod(numpy.arccos)
     complex_deriv = lambda x: -reciprocal(sqrt(1-x**2)),
     return_type = lambda T: complex if T == complex else float
@@ -2393,7 +2333,6 @@ class ArcCos(Pointwise):
 
 class ArcTan(Pointwise):
     'Inverse tangent, element-wise.'
-    __slots__ = ()
     evalf = staticmethod(numpy.arctan)
     complex_deriv = lambda x: reciprocal(1+x**2),
     return_type = lambda T: complex if T == complex else float
@@ -2401,7 +2340,6 @@ class ArcTan(Pointwise):
 
 class CosH(Pointwise):
     'Hyperbolic cosine, element-wise.'
-    __slots__ = ()
     evalf = staticmethod(numpy.cosh)
     complex_deriv = lambda x: SinH(x),
     return_type = lambda T: complex if T == complex else float
@@ -2409,7 +2347,6 @@ class CosH(Pointwise):
 
 class SinH(Pointwise):
     'Hyperbolic sine, element-wise.'
-    __slots__ = ()
     evalf = staticmethod(numpy.sinh)
     complex_deriv = CosH,
     return_type = lambda T: complex if T == complex else float
@@ -2417,7 +2354,6 @@ class SinH(Pointwise):
 
 class TanH(Pointwise):
     'Hyperbolic tangent, element-wise.'
-    __slots__ = ()
     evalf = staticmethod(numpy.tanh)
     complex_deriv = lambda x: 1 - TanH(x)**2,
     return_type = lambda T: complex if T == complex else float
@@ -2425,28 +2361,24 @@ class TanH(Pointwise):
 
 class ArcTanH(Pointwise):
     'Inverse hyperbolic tangent, element-wise.'
-    __slots__ = ()
     evalf = staticmethod(numpy.arctanh)
     complex_deriv = lambda x: reciprocal(1-x**2),
     return_type = lambda T: complex if T == complex else float
 
 
 class Exp(Pointwise):
-    __slots__ = ()
     evalf = staticmethod(numpy.exp)
     complex_deriv = lambda x: Exp(x),
     return_type = lambda T: complex if T == complex else float
 
 
 class Log(Pointwise):
-    __slots__ = ()
     evalf = staticmethod(numpy.log)
     complex_deriv = lambda x: reciprocal(x),
     return_type = lambda T: complex if T == complex else float
 
 
 class Mod(Pointwise):
-    __slots__ = ()
     evalf = staticmethod(numpy.mod)
     def return_type(T1, T2):
         if T1 == complex or T2 == complex:
@@ -2475,7 +2407,6 @@ class Mod(Pointwise):
 
 
 class ArcTan2(Pointwise):
-    __slots__ = ()
     evalf = staticmethod(numpy.arctan2)
     deriv = lambda x, y: y / (x**2 + y**2), lambda x, y: -x / (x**2 + y**2)
     def return_type(T1, T2):
@@ -2485,7 +2416,6 @@ class ArcTan2(Pointwise):
 
 
 class Greater(Pointwise):
-    __slots__ = ()
     evalf = staticmethod(numpy.greater)
     def return_type(T1, T2):
         if T1 == complex or T2 == complex:
@@ -2494,13 +2424,11 @@ class Greater(Pointwise):
 
 
 class Equal(Pointwise):
-    __slots__ = ()
     evalf = staticmethod(numpy.equal)
     return_type = lambda T1, T2: bool
 
 
 class Less(Pointwise):
-    __slots__ = ()
     evalf = staticmethod(numpy.less)
     def return_type(T1, T2):
         if T1 == complex or T2 == complex:
@@ -2509,7 +2437,6 @@ class Less(Pointwise):
 
 
 class Minimum(Pointwise):
-    __slots__ = ()
     evalf = staticmethod(numpy.minimum)
     deriv = lambda x, y: .5 - .5 * Sign(x - y), lambda x, y: .5 + .5 * Sign(x - y)
     def return_type(T1, T2):
@@ -2534,7 +2461,6 @@ class Minimum(Pointwise):
 
 
 class Maximum(Pointwise):
-    __slots__ = ()
     evalf = staticmethod(numpy.maximum)
     deriv = lambda x, y: .5 + .5 * Sign(x - y), lambda x, y: .5 - .5 * Sign(x - y)
     def return_type(T1, T2):
@@ -2559,7 +2485,6 @@ class Maximum(Pointwise):
 
 
 class Conjugate(Pointwise):
-    __slots__ = ()
     evalf = staticmethod(numpy.conjugate)
     return_type = lambda T: int if T == bool else T
 
@@ -2571,7 +2496,6 @@ class Conjugate(Pointwise):
 
 
 class Real(Pointwise):
-    __slots__ = ()
     evalf = staticmethod(numpy.real)
     return_type = lambda T: float if T == complex else T
 
@@ -2583,7 +2507,6 @@ class Real(Pointwise):
 
 
 class Imag(Pointwise):
-    __slots__ = ()
     evalf = staticmethod(numpy.imag)
     return_type = lambda T: float if T == complex else T
 
@@ -2704,8 +2627,6 @@ def astype(arg, dtype):
 
 class Sign(Array):
 
-    __slots__ = 'func',
-
     def __init__(self, func: Array):
         assert isinstance(func, Array) and func.dtype != complex, f'func={func!r}'
         self.func = func
@@ -2751,8 +2672,6 @@ class Sampled(Array):
     interpolation : :class:`str`
         Interpolation scheme to map points to target: "none" or "nearest".
     '''
-
-    __slots__ = 'evalf'
 
     def __init__(self, points: Array, target: Array, interpolation: str):
         assert isinstance(points, Array) and points.ndim == 2, f'points={points!r}'
@@ -2813,8 +2732,6 @@ def Elemwise(data: typing.Tuple[types.arraydata, ...], index: Array, dtype: Dtyp
 
 class Eig(Evaluable):
 
-    __slots__ = 'symmetric', 'func', '_w_dtype', '_vt_dtype'
-
     def __init__(self, func: Array, symmetric: bool = False):
         assert isinstance(func, Array) and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2]), f'func={func!r}'
         assert isinstance(symmetric, bool), f'symmetric={symmetric!r}'
@@ -2842,8 +2759,6 @@ class Eig(Evaluable):
 
 
 class ArrayFromTuple(Array):
-
-    __slots__ = 'arrays', 'index', '_lower', '_upper'
 
     def __init__(self, arrays: Evaluable, index: int, shape: typing.Tuple[Array, ...], dtype: Dtype, *, _lower=float('-inf'), _upper=float('inf')):
         assert isinstance(arrays, Evaluable), f'arrays={arrays!r}'
@@ -2874,13 +2789,10 @@ class ArrayFromTuple(Array):
 class Zeros(Array):
     'zero'
 
-    __slots__ = ()
-    __cache__ = '_assparse', '_unaligned'
-
     def __init__(self, shape, dtype):
         super().__init__(args=shape, shape=shape, dtype=dtype)
 
-    @property
+    @cached_property
     def _unaligned(self):
         return Zeros((), self.dtype), ()
 
@@ -2942,7 +2854,7 @@ class Zeros(Array):
         else:
             return Zeros(shape, self.dtype)
 
-    @property
+    @cached_property
     def _assparse(self):
         return ()
 
@@ -2951,9 +2863,6 @@ class Zeros(Array):
 
 
 class Inflate(Array):
-
-    __slots__ = 'func', 'dofmap', 'length', 'warn'
-    __cache__ = '_assparse', '_diagonals', '_inflations'
 
     def __init__(self, func: Array, dofmap: Array, length: Array):
         assert isinstance(func, Array), f'func={func!r}'
@@ -2966,11 +2875,11 @@ class Inflate(Array):
         self.warn = not dofmap.isconstant
         super().__init__(args=(func, dofmap, length), shape=(*func.shape[:func.ndim-dofmap.ndim], length), dtype=func.dtype)
 
-    @property
+    @cached_property
     def _diagonals(self):
         return tuple(axes for axes in self.func._diagonals if all(axis < self.ndim-1 for axis in axes))
 
-    @property
+    @cached_property
     def _inflations(self):
         inflations = [(self.ndim-1, types.frozendict({self.dofmap: self.func}))]
         for axis, parts in self.func._inflations:
@@ -3062,7 +2971,7 @@ class Inflate(Array):
         if self.dofmap.isconstant and _isunique(self.dofmap.eval()):
             return Inflate(Sign(self.func), self.dofmap, self.length)
 
-    @property
+    @cached_property
     def _assparse(self):
         chunks = []
         flat_dofmap = _flat(self.dofmap)
@@ -3124,15 +3033,12 @@ class SwapInflateTake(Evaluable):
 
 class Diagonalize(Array):
 
-    __slots__ = 'func'
-    __cache__ = '_diagonals'
-
     def __init__(self, func: Array):
         assert isinstance(func, Array) and func.ndim > 0, f'func={func!r}'
         self.func = func
         super().__init__(args=(func,), shape=(*func.shape, func.shape[-1]), dtype=func.dtype)
 
-    @property
+    @cached_property
     def _diagonals(self):
         diagonals = [frozenset([self.ndim-2, self.ndim-1])]
         for axes in self.func._diagonals:
@@ -3211,15 +3117,13 @@ class Diagonalize(Array):
     def _loopsum(self, index):
         return Diagonalize(loop_sum(self.func, index))
 
-    @property
+    @cached_property
     def _assparse(self):
         return tuple((*indices, indices[-1], values) for *indices, values in self.func._assparse)
 
 
 class Guard(Array):
     'bar all simplifications'
-
-    __slots__ = 'fun',
 
     def __init__(self, fun: Array):
         assert isinstance(fun, Array), f'fun={fun!r}'
@@ -3241,8 +3145,6 @@ class Guard(Array):
 class Find(Array):
     'indices of boolean index vector'
 
-    __slots__ = 'where',
-
     def __init__(self, where: Array):
         assert isarray(where) and where.ndim == 1 and where.dtype == bool
         self.where = where
@@ -3259,8 +3161,6 @@ class Find(Array):
 
 class DerivativeTargetBase(Array):
     'base class for derivative targets'
-
-    __slots__ = ()
 
     @property
     def isconstant(self):
@@ -3287,8 +3187,6 @@ class WithDerivative(Array):
     --------
     :class:`IdentifierDerivativeTarget` : a virtual derivative target
     '''
-
-    __slots__ = '_func', '_var', '_deriv'
 
     def __init__(self, func: Array, var: DerivativeTargetBase, derivative: Array) -> None:
         self._func = func
@@ -3338,8 +3236,6 @@ class Argument(DerivativeTargetBase):
     shape : :class:`tuple` of :class:`int`\\s
         The shape of this argument.
     '''
-
-    __slots__ = '_name'
 
     def __init__(self, name: str, shape: typing.Tuple[Array, ...], dtype: Dtype = float):
         assert isinstance(name, str), f'name={name!r}'
@@ -3397,8 +3293,6 @@ class IdentifierDerivativeTarget(DerivativeTargetBase):
     :class:`WithDerivative` : :class:`Array` wrapper with additional derivative
     '''
 
-    __slots__ = 'identifier'
-
     def __init__(self, identifier, shape):
         self.identifier = identifier
         super().__init__(args=(), shape=shape, dtype=float)
@@ -3409,15 +3303,12 @@ class IdentifierDerivativeTarget(DerivativeTargetBase):
 
 class Ravel(Array):
 
-    __slots__ = 'func'
-    __cache__ = '_inflations'
-
     def __init__(self, func: Array):
         assert isinstance(func, Array) and func.ndim >= 2, f'func={func!r}'
         self.func = func
         super().__init__(args=(func,), shape=(*func.shape[:-2], func.shape[-2] * func.shape[-1]), dtype=func.dtype)
 
-    @property
+    @cached_property
     def _inflations(self):
         inflations = []
         stride = self.func.shape[-1]
@@ -3514,7 +3405,7 @@ class Ravel(Array):
         unaligned, where = unalign(self.func, naxes=self.ndim - 1)
         return Ravel(unaligned), (*where, self.ndim - 1)
 
-    @property
+    @cached_property
     def _assparse(self):
         return tuple((*indices[:-2], indices[-2]*self.func.shape[-1]+indices[-1], values) for *indices, values in self.func._assparse)
 
@@ -3523,8 +3414,6 @@ class Ravel(Array):
 
 
 class Unravel(Array):
-
-    __slots__ = 'func'
 
     def __init__(self, func: Array, sh1: Array, sh2: Array):
         assert isinstance(func, Array) and func.ndim > 0, f'func={func!r}'
@@ -3560,7 +3449,7 @@ class Unravel(Array):
         if axis < self.ndim - 2:
             return Unravel(sum(self.func, axis), *self.shape[-2:])
 
-    @property
+    @cached_property
     def _assparse(self):
         return tuple((*indices[:-1], *divmod(indices[-1], appendaxes(self.shape[-1], values.shape)), values) for *indices, values in self.func._assparse)
 
@@ -3612,8 +3501,6 @@ class RavelIndex(Array):
 
 class Range(Array):
 
-    __slots__ = 'length'
-
     def __init__(self, length: Array):
         assert _isindex(length), f'length={length!r}'
         self.length = length
@@ -3639,8 +3526,6 @@ class Range(Array):
 
 
 class InRange(Array):
-
-    __slots__ = 'index', 'length'
 
     def __init__(self, index: Array, length: Array):
         assert isinstance(index, Array) and index.dtype == int, f'index={index!r}'
@@ -3690,8 +3575,6 @@ class Polyval(Array):
         Array of values where the last axis is treated as the variables axis.
         All remaining axes are treated pointwise.
     '''
-
-    __slots__ = 'points_ndim', 'coeffs', 'points'
 
     def __init__(self, coeffs: Array, points: Array):
         assert isinstance(coeffs, Array) and coeffs.dtype == float and coeffs.ndim >= 1, f'coeffs={coeffs!r}'
@@ -4262,8 +4145,6 @@ class TransformBasis(Array):
 
 class _LoopIndex(Argument):
 
-    __slots__ = 'length'
-
     def __init__(self, name: str, length: Array):
         assert isinstance(name, str), f'name={name!r}'
         assert _isindex(length), f'length={length!r}'
@@ -4294,8 +4175,6 @@ class _LoopIndex(Argument):
 
 class LoopSum(Array):
 
-    __cache__ = '_serialized_loop'
-
     def __init__(self, func: Array, shape: typing.Tuple[Array, ...], index_name: str, length: Array):
         assert isinstance(func, Array) and func.dtype != bool, f'func={func!r}'
         assert isinstance(shape, tuple) and all(_isindex(n) for n in shape), f'shape={shape!r}'
@@ -4309,7 +4188,7 @@ class LoopSum(Array):
         self._invariants, self._dependencies = _dependencies_sans_invariants(func, self.index)
         super().__init__(args=(Tuple(shape), length, *self._invariants), shape=shape, dtype=func.dtype)
 
-    @property
+    @cached_property
     def _serialized_loop(self):
         indices = {d: i for i, d in enumerate(itertools.chain([self.index], self._invariants, self._dependencies))}
         return tuple((dep, tuple(map(indices.__getitem__, dep._Evaluable__args))) for dep in self._dependencies)
@@ -4388,7 +4267,7 @@ class LoopSum(Array):
     def _multiply(self, other):
         return loop_sum(self.func * other, self.index)
 
-    @property
+    @cached_property
     def _assparse(self):
         chunks = []
         for *elem_indices, elem_values in self.func._assparse:
@@ -4506,7 +4385,7 @@ class LoopConcatenate(Array):
         if axis < self.ndim-1:
             return loop_concatenate(unravel(self.func, axis, shape), self.index)
 
-    @property
+    @cached_property
     def _assparse(self):
         chunks = []
         for *indices, last_index, values in self.func._assparse:
@@ -4523,8 +4402,6 @@ class LoopConcatenate(Array):
 
 
 class LoopConcatenateCombined(Evaluable):
-
-    __cache__ = '_serialized_loop'
 
     def __init__(self, funcdatas: typing.Tuple[typing.Tuple[Array, ...], ...], index_name: str, length: Array):
         assert isinstance(funcdatas, tuple) and all(isinstance(funcdata, tuple) and all(isinstance(d, Array) for d in funcdata) for funcdata in funcdatas), f'funcdatas={funcdatas!r}'
@@ -4543,7 +4420,7 @@ class LoopConcatenateCombined(Evaluable):
             Tuple(tuple(Tuple((start, stop, func)) for func, start, stop, *shape in funcdatas)), self._index)
         super().__init__(args=(Tuple(shapes), length, *self._invariants))
 
-    @property
+    @cached_property
     def _serialized_loop(self):
         indices = {d: i for i, d in enumerate(itertools.chain([self._index], self._invariants, self._dependencies))}
         return tuple((dep, tuple(map(indices.__getitem__, dep._Evaluable__args))) for dep in self._dependencies)
@@ -4707,8 +4584,6 @@ def _populate_dependencies_sans_invariants(func, arg, invariants, dependencies, 
 
 
 class _Stats:
-
-    __slots__ = 'ncalls', 'time', '_start'
 
     def __init__(self, ncalls: int = 0, time: int = 0) -> None:
         self.ncalls = ncalls

@@ -3,6 +3,7 @@
 from typing import Tuple
 from numbers import Integral
 from . import types, numeric, _util as util, transform, element
+from ._backports import cached_property
 from .elementseq import References
 from .transform import TransformChain
 import abc
@@ -42,8 +43,6 @@ class Transforms(types.Singleton):
     Subclasses must implement :meth:`__getitem__`, :meth:`__len__` and
     :meth:`index_with_tail`.
     '''
-
-    __slots__ = 'todims', 'fromdims'
 
     def __init__(self, todims: Integral, fromdims: Integral):
         assert isinstance(todims, Integral), f'todims={todims!r}'
@@ -348,8 +347,6 @@ class PlainTransforms(Transforms):
         The number of dimensions all ``transforms`` map from.
     '''
 
-    __slots__ = '_transforms', '_sorted', '_indices'
-
     def __init__(self, transforms: Tuple[Tuple[transform.TransformItem, ...], ...], todims: Integral, fromdims: Integral):
         assert isinstance(transforms, tuple) and all(isinstance(items, tuple) and all(isinstance(item, transform.TransformItem) for item in items) and transform.iscanonical(items) for items in transforms), f'transforms={transforms!r}'
         assert isinstance(todims, Integral), f'todims={todims!r}'
@@ -405,8 +402,6 @@ class IndexTransforms(Transforms):
         The index of the first :class:`nutils.transform.Index` in this sequence.
     '''
 
-    __slots__ = '_length', '_offset'
-
     def __init__(self, ndims: Integral, length: Integral, offset: Integral = 0):
         assert isinstance(ndims, Integral), f'ndims={ndims!r}'
         assert isinstance(length, Integral), f'length={length!r}'
@@ -432,8 +427,6 @@ class IndexTransforms(Transforms):
 
 class Axis(types.Singleton):
     '''Base class for axes of :class:`~nutils.topology.StructuredTopology`.'''
-
-    __slots__ = 'i', 'j', 'mod'
 
     def __init__(self, i: Integral, j: Integral, mod: Integral):
         assert isinstance(i, Integral), f'i={i!r}'
@@ -465,7 +458,6 @@ class Axis(types.Singleton):
 
 class DimAxis(Axis):
 
-    __slots__ = 'isperiodic'
     isdim = True
 
     def __init__(self, i: Integral, j: Integral, mod: Integral, isperiodic: bool):
@@ -501,7 +493,6 @@ class DimAxis(Axis):
 
 class IntAxis(Axis):
 
-    __slots__ = 'ibound', 'side'
     isdim = False
 
     def __init__(self, i: Integral, j: Integral, mod: Integral, ibound: Integral, side: bool):
@@ -534,8 +525,6 @@ class StructuredTransforms(Transforms):
     nrefine : :class:`int`
         Number of structured refinements.
     '''
-
-    __slots__ = '_root', '_axes', '_nrefine', '_etransforms', '_ctransforms', '_cindices'
 
     def __init__(self, root: transform.TransformItem, axes: Tuple[Axis, ...], nrefine: Integral):
         assert isinstance(root, transform.TransformItem), f'root={root!r}'
@@ -627,8 +616,6 @@ class MaskedTransforms(Transforms):
         The strict monotonic increasing indices of ``parent`` transforms to keep.
     '''
 
-    __slots__ = '_parent', '_mask', '_indices'
-
     def __init__(self, parent: Transforms, indices: types.arraydata):
         assert isinstance(parent, Transforms), f'parent={parent!r}'
         assert isinstance(indices, types.arraydata) and indices.dtype == int, f'indices={indices!r}'
@@ -668,9 +655,6 @@ class ReorderedTransforms(Transforms):
         The new order of the transforms.
     '''
 
-    __slots__ = '_parent', '_mask', '_indices'
-    __cache__ = '_rindices'
-
     def __init__(self, parent: Transforms, indices: types.arraydata):
         assert isinstance(parent, Transforms), f'parent={parent!r}'
         assert isinstance(indices, types.arraydata) and indices.dtype == int, f'indices={indices!r}'
@@ -678,7 +662,7 @@ class ReorderedTransforms(Transforms):
         self._indices = numpy.asarray(indices)
         super().__init__(parent.todims, parent.fromdims)
 
-    @property
+    @cached_property
     def _rindices(self):
         return types.frozenarray(numpy.argsort(self._indices), copy=False)
 
@@ -720,9 +704,6 @@ class DerivedTransforms(Transforms):
         The number of dimensions all transforms in this sequence map from.
     '''
 
-    __slots__ = '_parent', '_parent_references', '_derived_transforms'
-    __cache__ = '_offsets'
-
     def __init__(self, parent: Transforms, parent_references: References, derived_attribute: str, fromdims: Integral):
         assert isinstance(parent, Transforms), f'parent={parent!r}'
         assert isinstance(parent_references, References), f'parent_references={parent_references!r}'
@@ -737,7 +718,7 @@ class DerivedTransforms(Transforms):
         self._derived_transforms = operator.attrgetter(derived_attribute)
         super().__init__(parent.todims, fromdims)
 
-    @property
+    @cached_property
     def _offsets(self):
         return types.frozenarray(numpy.cumsum([0, *(len(self._derived_transforms(ref)) for ref in self._parent_references)]), copy=False)
 
@@ -791,8 +772,6 @@ class UniformDerivedTransforms(Transforms):
         The number of dimensions all transforms in this sequence map from.
     '''
 
-    __slots__ = '_parent', '_derived_transforms'
-
     def __init__(self, parent: Transforms, parent_reference: element.Reference, derived_attribute: str, fromdims: Integral):
         assert isinstance(parent, Transforms), f'parent={parent!r}'
         assert isinstance(parent_reference, element.Reference), f'parent_reference={parent_reference!r}'
@@ -839,9 +818,6 @@ class ChainedTransforms(Transforms):
         The :class:`Transforms` objects to chain.
     '''
 
-    __slots__ = '_items'
-    __cache__ = '_offsets'
-
     def __init__(self, items: Tuple[Transforms, ...]):
         assert isinstance(items, tuple) and all(isinstance(item, Transforms) for item in items), f'items={items!r}'
         if len(items) == 0:
@@ -853,7 +829,7 @@ class ChainedTransforms(Transforms):
         self._items = items
         super().__init__(self._items[0].todims, self._items[0].fromdims)
 
-    @property
+    @cached_property
     def _offsets(self):
         return types.frozenarray(numpy.cumsum([0, *map(len, self._items)]), copy=False)
 

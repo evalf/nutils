@@ -17,6 +17,7 @@ import io
 import types
 import numpy
 import dataclasses
+from ._backports import cached_property
 from ctypes import byref, c_int, c_ssize_t, c_void_p, c_char_p, py_object, pythonapi, Structure, POINTER
 c_ssize_p = POINTER(c_ssize_t)
 
@@ -414,9 +415,6 @@ class Immutable(metaclass=ImmutableMeta):
     TypeError: unhashable type: 'list'
     '''
 
-    __slots__ = '__weakref__', '_args', '_hash'
-    __cache__ = '__nutils_hash__',
-
     def __new__(*args, **kwargs):
         cls = args[0]
         args, kwargs = cls._canonicalize(*args, **kwargs)
@@ -431,7 +429,7 @@ class Immutable(metaclass=ImmutableMeta):
     def __eq__(self, other):
         return self is other or type(self) is type(other) and self._args == other._args
 
-    @property
+    @cached_property
     def __nutils_hash__(self):
         h = hashlib.sha1('{}.{}:{}\0'.format(type(self).__module__, type(self).__qualname__, type(self)._version).encode())
         for arg in self._args:
@@ -485,8 +483,6 @@ class Singleton(Immutable, metaclass=SingletonMeta):
     True
     '''
 
-    __slots__ = ()
-
     __hash__ = Immutable.__hash__
     __eq__ = object.__eq__
 
@@ -509,8 +505,6 @@ class arraydata(Singleton):
     >>> numpy.asarray(w)
     array([1, 2, 3])
     '''
-
-    __slots__ = 'dtype', 'shape', 'bytes', 'ndim', '__array_interface__'
 
     def __new__(cls, arg):
         if isinstance(arg, cls):
@@ -553,9 +547,6 @@ class frozendict(collections.abc.Mapping):
     TypeError: 'frozendict' object does not support item assignment
     '''
 
-    __slots__ = '__base', '__hash'
-    __cache__ = '__nutils_hash__',
-
     def __new__(cls, base):
         if isinstance(base, frozendict):
             return base
@@ -564,7 +555,7 @@ class frozendict(collections.abc.Mapping):
         self.__hash = hash(frozenset(self.__base.items()))  # check immutability and precompute hash
         return self
 
-    @property
+    @cached_property
     def __nutils_hash__(self):
         h = hashlib.sha1('{}.{}\0'.format(type(self).__module__, type(self).__qualname__).encode())
         for item in sorted(nutils_hash(k)+nutils_hash(v) for k, v in self.items()):
@@ -637,9 +628,6 @@ class frozenmultiset(collections.abc.Container):
     False
     '''
 
-    __slots__ = '__items', '__key'
-    __cache__ = '__nutils_hash__',
-
     def __new__(cls, items):
         if isinstance(items, frozenmultiset):
             return items
@@ -648,7 +636,7 @@ class frozenmultiset(collections.abc.Container):
         self.__key = frozenset((item, self.__items.count(item)) for item in self.__items)
         return self
 
-    @property
+    @cached_property
     def __nutils_hash__(self):
         h = hashlib.sha1('{}.{}\0'.format(type(self).__module__, type(self).__qualname__).encode())
         for item in sorted('{:04d}'.format(count).encode()+nutils_hash(item) for item, count in self.__key):

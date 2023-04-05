@@ -18,6 +18,7 @@ set.
 from . import types, points, _util as util, function, evaluable, parallel, numeric, matrix, sparse, warnings
 from .pointsseq import PointsSequence
 from .transformseq import Transforms
+from ._backports import cached_property
 from typing import Iterable, Mapping, Optional, Sequence, Tuple, Union
 import numpy
 import numbers
@@ -54,8 +55,6 @@ class Sample(types.Singleton):
     respectively. Availability of these properties depends on the selected sample
     points, and is typically used in combination with the "bezier" set.
     '''
-
-    __slots__ = 'spaces', 'ndims', 'nelems', 'npoints'
 
     @staticmethod
     def new(space: str, transforms: Iterable[Transforms], points: PointsSequence, index: Optional[Union[numpy.ndarray, Sequence[numpy.ndarray]]] = None) -> 'Sample':
@@ -380,8 +379,6 @@ class Sample(types.Singleton):
 
 class _TransformChainsSample(Sample):
 
-    __slots__ = 'space', 'transforms', 'points'
-
     def __init__(self, space: str, transforms: Tuple[Transforms, ...], points: PointsSequence) -> None:
         '''
         parameters
@@ -429,10 +426,7 @@ class _TransformChainsSample(Sample):
 
 class _DefaultIndex(_TransformChainsSample):
 
-    __slots__ = ()
-    __cache__ = 'offsets'
-
-    @property
+    @cached_property
     def offsets(self) -> numpy.ndarray:
         return types.frozenarray(numpy.cumsum([0]+[p.npoints for p in self.points]), copy=False)
 
@@ -460,8 +454,6 @@ class _DefaultIndex(_TransformChainsSample):
 
 
 class _CustomIndex(_TransformChainsSample):
-
-    __slots__ = '_parent', '_index'
 
     def __init__(self, parent: Sample, index: types.arraydata) -> None:
         assert isinstance(index, types.arraydata)
@@ -748,15 +740,13 @@ class _Zip(Sample):
 
 class _TakeElements(_TensorialSample):
 
-    __cache__ = '_offsets'
-
     def __init__(self, parent: Sample, indices: types.arraydata) -> None:
         assert isinstance(indices, types.arraydata) and indices.ndim == 1 and indices.shape[0] > 0, f'indices={indices!r}'
         self._parent = parent
         self._indices = indices
         super().__init__(parent.spaces, parent.ndims, self._indices.shape[0], self._offsets[-1])
 
-    @property
+    @cached_property
     def _offsets(self) -> numpy.ndarray:
         return types.frozenarray(numpy.cumsum([0]+[len(self._parent.getindex(i)) for i in numpy.asarray(self._indices)]))
 

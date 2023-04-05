@@ -3,6 +3,7 @@
 from . import types, numeric, _util as util
 from .element import Reference
 from .pointsseq import PointsSequence
+from ._backports import cached_property
 from typing import Tuple, Sequence, Iterable, Iterator, Optional, Union, overload
 import abc
 import itertools
@@ -22,8 +23,6 @@ class References(types.Singleton):
     -----
     Subclasses must implement :meth:`__len__` and :meth:`get`.
     '''
-
-    __slots__ = 'ndims'
 
     @staticmethod
     def from_iter(value: Iterable[Reference], ndims: int) -> 'References':
@@ -323,8 +322,6 @@ class References(types.Singleton):
 
 class _Empty(References):
 
-    __slots__ = ()
-
     def __len__(self) -> int:
         return 0
 
@@ -345,8 +342,6 @@ class _Empty(References):
 
 class _Plain(References):
 
-    __slots__ = 'items'
-
     def __init__(self, items: Tuple[Reference, ...], ndims: int) -> None:
         assert len(items), 'inefficient; this should have been `_Empty`'
         assert not all(item == items[0] for item in items), 'inefficient; this should have been `_Uniform`'
@@ -365,9 +360,6 @@ class _Plain(References):
 
 
 class _Uniform(References):
-
-    __slots__ = 'item', 'length'
-    __cache__ = 'children', 'edges'
 
     def __init__(self, item: Reference, length: int) -> None:
         assert length >= 0, 'length should be nonnegative'
@@ -407,11 +399,11 @@ class _Uniform(References):
         else:
             return super().product(other)
 
-    @property
+    @cached_property
     def children(self) -> References:
         return References.from_iter(self.item.child_refs, self.ndims).repeat(len(self))
 
-    @property
+    @cached_property
     def edges(self) -> References:
         return References.from_iter(self.item.edge_refs, self.ndims-1).repeat(len(self))
 
@@ -424,8 +416,6 @@ class _Uniform(References):
 
 
 class _Take(References):
-
-    __slots__ = 'parent', 'indices'
 
     def __init__(self, parent: References, indices: types.arraydata) -> None:
         assert indices.shape[0] > 1, 'inefficient; this should have been `_Empty` or `_Uniform`'
@@ -454,8 +444,6 @@ class _Take(References):
 
 
 class _Repeat(References):
-
-    __slots__ = 'parent', 'count'
 
     def __init__(self, parent: References, count: int) -> None:
         assert count >= 0, 'count should be nonnegative'
@@ -496,8 +484,6 @@ class _Repeat(References):
 
 class _Product(References):
 
-    __slots__ = 'sequence1', 'sequence2'
-
     def __init__(self, sequence1: References, sequence2: References) -> None:
         assert not (isinstance(sequence1, _Uniform) and isinstance(sequence2, _Uniform)), 'inefficient; this should have been `_Uniform`'
         self.sequence1 = sequence1
@@ -522,8 +508,6 @@ class _Product(References):
 
 
 class _Chain(References):
-
-    __slots__ = 'sequence1', 'sequence2'
 
     def __init__(self, sequence1: References, sequence2: References) -> None:
         assert sequence1.ndims == sequence2.ndims, 'cannot chain sequences with different ndims'
@@ -572,15 +556,12 @@ class _Chain(References):
 
 class _Derived(References):
 
-    __slots__ = 'parent', 'derived_refs'
-    __cache__ = 'offsets'
-
     def __init__(self, parent: References, derived_attribute: str, ndims: int) -> None:
         self.parent = parent
         self.derived_refs = operator.attrgetter(derived_attribute)
         super().__init__(ndims)
 
-    @property
+    @cached_property
     def offsets(self) -> numpy.ndarray:
         return types.frozenarray(numpy.cumsum([0, *(len(self.derived_refs(ref)) for ref in self.parent)]), copy=False)
 

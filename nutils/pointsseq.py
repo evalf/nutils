@@ -2,6 +2,7 @@
 
 from . import types, numeric, evaluable
 from .points import Points
+from ._backports import cached_property
 from typing import Tuple, Sequence, Iterable, Iterator, Optional, Union, overload
 import abc
 import itertools
@@ -25,9 +26,6 @@ class PointsSequence(types.Singleton):
     -----
     Subclasses must implement :meth:`__len__` and :meth:`get`.
     '''
-
-    __slots__ = 'ndims'
-    __cache__ = 'npoints', 'tri', 'hull'
 
     @staticmethod
     def from_iter(value: Iterable[Points], ndims: int) -> 'PointsSequence':
@@ -96,7 +94,7 @@ class PointsSequence(types.Singleton):
         self.ndims = ndims
         super().__init__()
 
-    @property
+    @cached_property
     def npoints(self) -> int:
         '''The total number of points in this sequence.'''
 
@@ -291,7 +289,7 @@ class PointsSequence(types.Singleton):
             else:
                 return _balanced_chain(selfitems + otheritems)
 
-    @property
+    @cached_property
     def tri(self) -> numpy.ndarray:
         '''Triangulation of interior.
 
@@ -306,7 +304,7 @@ class PointsSequence(types.Singleton):
             offset += points.npoints
         return types.frozenarray(numpy.concatenate(tri) if tri else numpy.zeros((0, self.ndims+1), int), copy=False)
 
-    @property
+    @cached_property
     def hull(self) -> numpy.ndarray:
         '''Triangulation of the exterior hull.
 
@@ -336,8 +334,6 @@ class PointsSequence(types.Singleton):
 
 class _Empty(PointsSequence):
 
-    __slots__ = ()
-
     def __len__(self) -> int:
         return 0
 
@@ -346,8 +342,6 @@ class _Empty(PointsSequence):
 
 
 class _Plain(PointsSequence):
-
-    __slots__ = 'items'
 
     def __init__(self, items: Tuple[Points, ...], ndims: int) -> None:
         assert len(items), 'inefficient; this should have been `_Empty`'
@@ -367,9 +361,6 @@ class _Plain(PointsSequence):
 
 
 class _Uniform(PointsSequence):
-
-    __slots__ = 'item', 'length'
-    __cache__ = 'tri', 'hull'
 
     def __init__(self, item, length):
         assert length >= 0, 'length should be nonnegative'
@@ -418,11 +409,11 @@ class _Uniform(PointsSequence):
         ind = item[None] + numpy.arange(0, len(self)*npoints, npoints)[:, None, None]
         return types.frozenarray(ind.reshape(len(self)*item.shape[0], item.shape[1]), copy=False)
 
-    @property
+    @cached_property
     def tri(self) -> numpy.ndarray:
         return self._mk_indices(self.item.tri)
 
-    @property
+    @cached_property
     def hull(self) -> numpy.ndarray:
         return self._mk_indices(self.item.hull)
 
@@ -438,8 +429,6 @@ class _Uniform(PointsSequence):
 
 
 class _Take(PointsSequence):
-
-    __slots__ = 'parent', 'indices'
 
     def __init__(self, parent, indices):
         assert indices.shape[0] > 1, 'inefficient; this should have been `_Empty` or `_Uniform`'
@@ -468,9 +457,6 @@ class _Take(PointsSequence):
 
 
 class _Repeat(PointsSequence):
-
-    __slots__ = 'parent', 'count'
-    __cache__ = 'tri', 'hull'
 
     def __init__(self, parent, count):
         assert count >= 0, 'count should be nonnegative'
@@ -506,18 +492,16 @@ class _Repeat(PointsSequence):
         ind = parent[None] + numpy.arange(0, self.count*npoints, npoints)[:, None, None]
         return types.frozenarray(ind.reshape(self.count*parent.shape[0], parent.shape[1]), copy=False)
 
-    @property
+    @cached_property
     def tri(self) -> numpy.ndarray:
         return self._mk_indices(self.parent.tri)
 
-    @property
+    @cached_property
     def hull(self) -> numpy.ndarray:
         return self._mk_indices(self.parent.hull)
 
 
 class _Product(PointsSequence):
-
-    __slots__ = 'sequence1', 'sequence2'
 
     def __init__(self, sequence1: PointsSequence, sequence2: PointsSequence):
         assert isinstance(sequence1, PointsSequence), f'sequence1={sequence1!r}'
@@ -546,9 +530,6 @@ class _Product(PointsSequence):
 
 
 class _Chain(PointsSequence):
-
-    __slots__ = 'sequence1', 'sequence2'
-    __cache__ = 'tri', 'hull'
 
     def __init__(self, sequence1, sequence2):
         assert sequence1.ndims == sequence2.ndims, 'cannot chain sequences with different ndims'
@@ -587,13 +568,13 @@ class _Chain(PointsSequence):
         n = len(self.sequence1)
         return self.sequence1.compress(mask[:n]).chain(self.sequence2.compress(mask[n:]))
 
-    @property
+    @cached_property
     def tri(self) -> numpy.ndarray:
         tri1 = self.sequence1.tri
         tri2 = self.sequence2.tri
         return types.frozenarray(numpy.concatenate([tri1, tri2 + self.sequence1.npoints]), copy=False)
 
-    @property
+    @cached_property
     def hull(self) -> numpy.ndarray:
         hull1 = self.sequence1.hull
         hull2 = self.sequence2.hull
