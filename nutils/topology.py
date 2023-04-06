@@ -1565,8 +1565,8 @@ class TransformChainsTopology(Topology):
             transforms += self.opposites[unique_ielems],
 
         slices = [index[n:m] for n, m in zip(offsets[:-1], offsets[1:])]
-        points_ = PointsSequence.from_iter([points.CoordsPoints(coords[s]) for s in slices] if weights is None
-                                           else [points.CoordsWeightsPoints(coords[s], weights[s]) for s in slices], self.ndims)
+        points_ = PointsSequence.from_iter([points.CoordsPoints(types.arraydata(coords[s])) for s in slices] if weights is None
+            else [points.CoordsWeightsPoints(types.arraydata(coords[s]), types.arraydata(weights[s])) for s in slices], self.ndims)
 
         return Sample.new(self.space, transforms, points_, index)
 
@@ -1825,7 +1825,7 @@ class EmptyTopology(TransformChainsTopology):
         return other
 
 
-def StructuredLine(space, root: transform.stricttransformitem, i: int, j: int, periodic: bool = False, bnames: Optional[Tuple[str, str]] = None):
+def StructuredLine(space, root: transform.TransformItem, i: int, j: int, periodic: bool = False, bnames: Optional[Tuple[str, str]] = None):
     assert isinstance(i, int), f'i={i!r}'
     assert isinstance(j, int), f'j={j!r}'
     assert isinstance(periodic, bool), f'periodic={periodic!r}'

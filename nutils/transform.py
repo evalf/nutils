@@ -108,10 +108,6 @@ class TransformItem(types.Singleton):
         return None
 
 
-stricttransformitem = types.strict[TransformItem]
-stricttransform = types.tuple[stricttransformitem]
-
-
 class Matrix(TransformItem):
     '''Affine transformation :math:`x ↦ A x + b`, with :math:`A` an :math:`n×m` matrix, :math:`n≥m`
 

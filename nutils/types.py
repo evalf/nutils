@@ -16,201 +16,9 @@ import re
 import io
 import types
 import numpy
+import dataclasses
 from ctypes import byref, c_int, c_ssize_t, c_void_p, c_char_p, py_object, pythonapi, Structure, POINTER
 c_ssize_p = POINTER(c_ssize_t)
-try:
-    import dataclasses
-except ImportError:
-    dataclasses = None
-
-
-def aspreprocessor(apply):
-    '''
-    Convert ``apply`` into a preprocessor decorator.  When applied to a function,
-    ``wrapped``, the returned decorator preprocesses the arguments with ``apply``
-    before calling ``wrapped``.  The ``apply`` function should return a tuple of
-    ``args`` (:class:`tuple` or :class:`list`) and ``kwargs`` (:class:`dict`).
-    The decorated function ``wrapped`` will be called with ``wrapped(*args,
-    **kwargs)``.  The ``apply`` function is allowed to change the signature of
-    the decorated function.
-
-    Examples
-    --------
-
-    The following preprocessor swaps two arguments.
-
-    >>> @aspreprocessor
-    ... def swapargs(a, b):
-    ...   return (b, a), {}
-
-    Decorating a function with ``swapargs`` will cause the arguments to be
-    swapped before the wrapped function is called.
-
-    >>> @swapargs
-    ... def func(a, b):
-    ...   return a, b
-    >>> func(1, 2)
-    (2, 1)
-    '''
-    def preprocessor(wrapped):
-        @functools.wraps(wrapped)
-        def wrapper(*args, **kwargs):
-            args, kwargs = apply(*args, **kwargs)
-            return wrapped(*args, **kwargs)
-        wrapper.__preprocess__ = apply
-        wrapper.__signature__ = inspect.signature(apply)
-        return wrapper
-    return preprocessor
-
-
-def _build_apply_annotations(signature):
-    try:
-        # Find a prefix for internal variables that is guaranteed to be
-        # collision-free with the parameter names of `signature`.
-        for i in itertools.count():
-            internal_prefix = '__apply_annotations_internal{}_'.format(i)
-            if not any(name.startswith(internal_prefix) for name in signature.parameters):
-                break
-        # The `l` dictionary is used as locals when compiling the `apply` function.
-        l = {}
-        # Function to add `obj` to the locals `l`.  Returns the name of the
-        # variable (in `l`) that refers to `obj`.
-
-        def add_local(obj):
-            name = '{}{}'.format(internal_prefix, len(l))
-            assert name not in l
-            l[name] = obj
-            return name
-        # If there are positional-only parameters and there is no var-keyword
-        # parameter, we can create an equivalent signature with positional-only
-        # parameters converted to positional-or-keyword with unused names.
-        if any(param.kind == param.POSITIONAL_ONLY for param in signature.parameters.values()) and not any(param.kind == param.VAR_KEYWORD for param in signature.parameters.values()):
-            n_positional_args = 0
-            new_params = []
-            for param in signature.parameters.values():
-                if param.kind == param.POSITIONAL_ONLY:
-                    param = param.replace(kind=param.POSITIONAL_OR_KEYWORD, name='{}pos{}'.format(internal_prefix, n_positional_args))
-                new_params.append(param)
-            equiv_signature = signature.replace(parameters=new_params)
-        else:
-            equiv_signature = signature
-        # We build the following function
-        #
-        #   def apply(<params>):
-        #     <body>
-        #     return (<args>), {<kwargs>}
-        #
-        # `params`, `body`, `args` and `kwargs` are lists of valid python code (as `str`).
-        params = []
-        body = []
-        args = []
-        kwargs = []
-        allow_positional = True
-        for name, param in equiv_signature.parameters.items():
-            if param.kind == param.KEYWORD_ONLY and allow_positional:
-                allow_positional = False
-                params.append('*')
-            if param.kind in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY):
-                p = name
-                if param.default is not param.empty:
-                    p = '{}={}'.format(p, add_local(param.default))
-                params.append(p)
-                if allow_positional:
-                    args.append(name)
-                else:
-                    kwargs.append('{0!r}:{0}'.format(name))
-            elif param.kind == param.VAR_POSITIONAL:
-                allow_positional = False
-                p = '*{}'.format(name)
-                params.append(p)
-                args.append(p)
-            elif param.kind == param.VAR_KEYWORD:
-                allow_positional = False
-                p = '**{}'.format(name)
-                params.append(p)
-                kwargs.append(p)
-            else:
-                raise ValueError('Cannot create function definition with parameter {}.'.format(param))
-            if param.annotation is param.empty:
-                pass
-            elif param.default is None:
-                # Omit the annotation if the argument is the default is None.
-                body.append('  {arg} = None if {arg} is None else {ann}({arg})\n'.format(arg=name, ann=add_local(param.annotation)))
-            else:
-                body.append('  {arg} = {ann}({arg})\n'.format(arg=name, ann=add_local(param.annotation)))
-        f = 'def apply({params}):\n{body}  return ({args}), {{{kwargs}}}\n'.format(params=','.join(params), body=''.join(body), args=''.join(arg+',' for arg in args), kwargs=','.join(kwargs))
-        exec(f, l)
-        apply = l['apply']
-    except ValueError:
-        def apply(*args, **kwargs):
-            bound = signature.bind(*args, **kwargs)
-            bound.apply_defaults()
-            for name, param in signature.parameters.items():
-                if param.annotation is param.empty:
-                    continue
-                if param.default is None and bound.arguments[name] is None:
-                    continue
-                bound.arguments[name] = param.annotation(bound.arguments[name])
-            return bound.args, bound.kwargs
-    apply.__signature__ = signature
-    apply.returns_canonical_arguments = True
-    return apply
-
-
-def apply_annotations(wrapped):
-    '''
-    Decorator that applies annotations to arguments.  All annotations should be
-    :any:`callable`\\s taking one argument and returning a transformed argument.
-    All annotations are strongly recommended to be idempotent_.
-
-    .. _idempotent: https://en.wikipedia.org/wiki/Idempotence
-
-    If a parameter of the decorated function has a default value ``None`` and the
-    value of this parameter is ``None`` as well, the annotation is omitted.
-
-    Examples
-    --------
-
-    Consider the following function.
-
-    >>> @apply_annotations
-    ... def f(a:tuple, b:int):
-    ...   return a + (b,)
-
-    When calling ``f`` with a :class:`list` and :class:`str` as arguments, the
-    :func:`apply_annotations` decorator first applies :class:`tuple` and
-    :class:`int` to the arguments before passing them to the decorated function.
-
-    >>> f([1, 2], '3')
-    (1, 2, 3)
-
-    The following example illustrates the behavior of parameters with default
-    value ``None``.
-
-    >>> addone = lambda x: x+1
-    >>> @apply_annotations
-    ... def g(a:addone=None):
-    ...   return a
-
-    When calling ``g`` without arguments or with argument ``None``, the
-    annotation ``addone`` is not applied.  Note that ``None + 1`` would raise an
-    exception.
-
-    >>> g() is None
-    True
-    >>> g(None) is None
-    True
-
-    When passing a different value, the annotation is applied:
-
-    >>> g(1)
-    2
-    '''
-    signature = inspect.signature(wrapped)
-    if all(param.annotation is param.empty for param in signature.parameters.values()):
-        return wrapped
-    else:
-        return aspreprocessor(_build_apply_annotations(signature))(wrapped)
 
 
 def argument_canonicalizer(signature):
@@ -254,7 +62,13 @@ def argument_canonicalizer(signature):
     >>> canon(1, c=3)
     ((1, 4), {'c': 3})
     '''
-    return _build_apply_annotations(inspect.Signature(parameters=[param.replace(annotation=param.empty) for param in signature.parameters.values()]))
+
+    def canonicalize(*args, **kwargs):
+        bound = signature.bind(*args, **kwargs)
+        bound.apply_defaults()
+        return bound.args, bound.kwargs
+
+    return canonicalize
 
 
 def nutils_hash(data):
@@ -316,7 +130,7 @@ def nutils_hash(data):
     elif t is numpy.ndarray and not data.flags.writeable:
         h.update('{}{}\0'.format(','.join(map(str, data.shape)), data.dtype.str).encode())
         h.update(data.tobytes())
-    elif dataclasses and dataclasses.is_dataclass(t):
+    elif dataclasses.is_dataclass(t):
         # Note: we cannot use dataclasses.asdict here as its built-in recursion
         # makes nested dataclass instances indistinguishable from dictionaries.
         for item in sorted(nutils_hash((field.name, getattr(data, field.name))) for field in dataclasses.fields(t)):
@@ -371,7 +185,7 @@ def _CacheMeta_method(func, cache_attr):
 
     orig_func = func
     signature = inspect.signature(func)
-    if not hasattr(func, '__preprocess__') and len(signature.parameters) == 1 and next(iter(signature.parameters.values())).kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.POSITIONAL_ONLY):
+    if len(signature.parameters) == 1 and next(iter(signature.parameters.values())).kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.POSITIONAL_ONLY):
 
         def wrapper(self):
             try:
@@ -385,20 +199,12 @@ def _CacheMeta_method(func, cache_attr):
 
     else:
 
-        # Peel off the preprocessors (see `aspreprocessor`).
-        preprocessors = []
-        while hasattr(func, '__preprocess__'):
-            preprocessors.append(func.__preprocess__)
-            func = func.__wrapped__
-        if not preprocessors or not getattr(preprocessors[-1], 'returns_canonical_arguments', False):
-            preprocessors.append(argument_canonicalizer(inspect.signature(func)))
+        canonicalize = argument_canonicalizer(inspect.signature(func))
 
         def wrapper(*args, **kwargs):
             self = args[0]
 
-            # Apply preprocessors.
-            for preprocess in preprocessors:
-                args, kwargs = preprocess(*args, **kwargs)
+            args, kwargs = canonicalize(*args, **kwargs)
             key = args[1:], tuple(sorted(kwargs.items()))
 
             assert hash(key), 'cannot cache function because arguments are not hashable'
@@ -556,17 +362,7 @@ class ImmutableMeta(CacheMeta):
         # `cls.__signature__` and if absent the signature of `__call__`, we
         # explicitly copy the signature of `<cls instance>.__init__` to `cls`.
         cls.__signature__ = inspect.signature(cls.__init__.__get__(object(), object))
-        # Peel off the preprocessors (see `aspreprocessor`) and store the
-        # preprocessors and the uncovered init separately.
-        pre_init = []
-        init = cls.__init__
-        while hasattr(init, '__preprocess__'):
-            pre_init.append(init.__preprocess__)
-            init = init.__wrapped__
-        if not pre_init or not getattr(pre_init[-1], 'returns_canonical_arguments', False):
-            pre_init.append(argument_canonicalizer(inspect.signature(init)))
-        cls._pre_init = tuple(pre_init)
-        cls._init = init
+        cls._canonicalize = argument_canonicalizer(inspect.signature(cls.__init__))
         cls._version = version
         return cls
 
@@ -580,7 +376,7 @@ class ImmutableMeta(CacheMeta):
         self = object.__new__(cls)
         self._args = args
         self._hash = hash(args)
-        self._init(*args[:-1], **dict(args[-1]))
+        self.__init__(*args[:-1], **dict(args[-1]))
         return self
 
 
@@ -593,10 +389,7 @@ class Immutable(metaclass=ImmutableMeta):
     should be hashable by :func:`nutils_hash`.
 
     Positional and keyword initialization arguments are canonicalized
-    automatically (by :func:`argument_canonicalizer`).  If the ``__init__``
-    method of a subclass is decorated with preprocessors (see
-    :func:`aspreprocessor`), the preprocessors are applied to the initialization
-    arguments and ``args`` becomes the preprocessed positional part.
+    automatically (by :func:`argument_canonicalizer`).
 
     Examples
     --------
@@ -619,21 +412,6 @@ class Immutable(metaclass=ImmutableMeta):
     Traceback (most recent call last):
         ...
     TypeError: unhashable type: 'list'
-
-    This can be solved by adding and applying annotations to ``__init__``.  The
-    following class converts its initialization arguments to :class:`tuple`
-    automaticaly:
-
-    >>> class Annotated(Immutable):
-    ...   @apply_annotations
-    ...   def __init__(self, a:tuple, b:tuple):
-    ...     pass
-
-    Calling ``Annotated`` with either :class:`list`\\s of ``1, 2`` and ``3, 4``
-    or :class:`tuple`\\s gives equal instances:
-
-    >>> Annotated([1, 2], [3, 4]) == Annotated((1, 2), (3, 4))
-    True
     '''
 
     __slots__ = '__weakref__', '_args', '_hash'
@@ -641,8 +419,7 @@ class Immutable(metaclass=ImmutableMeta):
 
     def __new__(*args, **kwargs):
         cls = args[0]
-        for preprocess in cls._pre_init:
-            args, kwargs = preprocess(*args, **kwargs)  # NOTE: preprocessors ignore args[0]
+        args, kwargs = cls._canonicalize(*args, **kwargs)
         return cls._new(*args[1:], tuple(sorted(kwargs.items())))
 
     def __reduce__(self):
@@ -706,19 +483,6 @@ class Singleton(Immutable, metaclass=SingletonMeta):
 
     >>> Plain(1, 2) is Plain(a=1, b=2)
     True
-
-    Consider the folling class with annotations.
-
-    >>> class Annotated(Singleton):
-    ...   @apply_annotations
-    ...   def __init__(self, a:tuple, b:tuple):
-    ...     pass
-
-    Calling ``Annotated`` with either :class:`list`\\s of ``1, 2`` and ``3, 4``
-    or :class:`tuple`\\s gives a single instance:
-
-    >>> Annotated([1, 2], [3, 4]) is Annotated((1, 2), (3, 4))
-    True
     '''
 
     __slots__ = ()
@@ -755,6 +519,11 @@ class arraydata(Singleton):
         dtype = dict(b=bool, u=int, i=int, f=float, c=complex)[array.dtype.kind]
         return super().__new__(cls, dtype, array.shape, array.astype(dtype, copy=False).tobytes())
 
+    def reshape(self, *shape):
+        if numpy.prod(shape) != numpy.prod(self.shape):
+            raise ValueError(f'cannot reshape arraydata of shape {self.shape} into shape {shape}')
+        return super().__new__(self.__class__, self.dtype, shape, self.bytes)
+
     def __init__(self, dtype, shape, bytes):
         self.dtype = dtype
         self.shape = shape
@@ -767,244 +536,21 @@ class arraydata(Singleton):
         self.__array_interface__ = numpy.frombuffer(bytes, dtype).reshape(shape).__array_interface__
 
 
-def strictint(value):
-    '''
-    Converts any type that is a subclass of :class:`numbers.Integral` (e.g.
-    :class:`int` and ``numpy.int64``) to :class:`int`, and fails otherwise.
-    Notable differences with the behavior of :class:`int`:
-
-    *   :func:`strictint` does not convert a :class:`str` to an :class:`int`.
-    *   :func:`strictint` does not truncate :class:`float` to an :class:`int`.
-
-    Examples
-    --------
-
-    >>> strictint(1), type(strictint(1))
-    (1, <class 'int'>)
-    >>> strictint(numpy.int64(1)), type(strictint(numpy.int64(1)))
-    (1, <class 'int'>)
-    >>> strictint(1.0)
-    Traceback (most recent call last):
-        ...
-    ValueError: not an integer: 1.0
-    >>> strictint('1')
-    Traceback (most recent call last):
-        ...
-    ValueError: not an integer: '1'
-    '''
-
-    if not isinstance(value, numbers.Integral):
-        raise ValueError('not an integer: {!r}'.format(value))
-    return builtins.int(value)
-
-
-def strictfloat(value):
-    '''
-    Converts any type that is a subclass of :class:`numbers.Real` (e.g.
-    :class:`float` and ``numpy.float64``) to :class:`float`, and fails
-    otherwise.  Notable difference with the behavior of :class:`float`:
-
-    *   :func:`strictfloat` does not convert a :class:`str` to an :class:`float`.
-
-    Examples
-    --------
-
-    >>> strictfloat(1), type(strictfloat(1))
-    (1.0, <class 'float'>)
-    >>> strictfloat(numpy.float64(1.2)), type(strictfloat(numpy.float64(1.2)))
-    (1.2, <class 'float'>)
-    >>> strictfloat(1.2+3.4j)
-    Traceback (most recent call last):
-        ...
-    ValueError: not a real number: (1.2+3.4j)
-    >>> strictfloat('1.2')
-    Traceback (most recent call last):
-        ...
-    ValueError: not a real number: '1.2'
-    '''
-
-    if not isinstance(value, numbers.Real):
-        raise ValueError('not a real number: {!r}'.format(value))
-    return builtins.float(value)
-
-
-def strictstr(value):
-    '''
-    Returns ``value`` unmodified if it is a :class:`str`, and fails otherwise.
-    Notable difference with the behavior of :class:`str`:
-
-    *   :func:`strictstr` does not call ``__str__`` methods of objects to
-        automatically convert objects to :class:`str`\\s.
-
-    Examples
-    --------
-
-    Passing a :class:`str` to :func:`strictstr` works:
-
-    >>> strictstr('spam')
-    'spam'
-
-    Passing an :class:`int` will fail:
-
-    >>> strictstr(1)
-    Traceback (most recent call last):
-        ...
-    ValueError: not a 'str': 1
-    '''
-
-    if not isinstance(value, str):
-        raise ValueError("not a 'str': {!r}".format(value))
-    return value
-
-
-def _getname(value):
-    name = []
-    if hasattr(value, '__module__'):
-        name.append(value.__module__)
-    if hasattr(value, '__qualname__'):
-        name.append(value.__qualname__)
-    elif hasattr(value, '__name__'):
-        name.append(value.__name__)
-    else:
-        return str(value)
-    return '.'.join(name)
-
-
-def _copyname(dst=None, *, src, suffix=''):
-    if dst is None:
-        return functools.partial(_copyname, src=src, suffix=suffix)
-    if hasattr(src, '__name__'):
-        dst.__name__ = src.__name__+suffix
-    if hasattr(src, '__qualname__'):
-        dst.__qualname__ = src.__qualname__+suffix
-    if hasattr(src, '__module__'):
-        dst.__module__ = src.__module__
-    return dst
-
-
-class _strictmeta(type):
-    def __getitem__(self, cls):
-        def constructor(value):
-            if not isinstance(value, cls):
-                raise ValueError('expected an object of type {!r} but got {!r} with type {!r}'.format(cls.__qualname__, value, type(value).__qualname__))
-            return value
-        constructor.__qualname__ = constructor.__name__ = 'strict[{}]'.format(_getname(cls))
-        return constructor
-
-    def __call__(*args, **kwargs):
-        raise TypeError("cannot create an instance of class 'strict'")
-
-
-class strict(metaclass=_strictmeta):
-    '''
-    Type checker.  The function ``strict[cls](value)`` returns ``value``
-    unmodified if ``value`` is an instance of ``cls``, otherwise a
-    :class:`ValueError` is raised.
-
-    Examples
-    --------
-
-    The ``strict[int]`` function passes integers unmodified:
-
-    >>> strict[int](1)
-    1
-
-    Other types fail:
-
-    >>> strict[int]('1')
-    Traceback (most recent call last):
-        ...
-    ValueError: expected an object of type 'int' but got '1' with type 'str'
-    '''
-
-
-class _tuplemeta(type):
-    def __getitem__(self, itemtype):
-        @_copyname(src=self, suffix='[{}]'.format(_getname(itemtype)))
-        def constructor(value):
-            return builtins.tuple(map(itemtype, value))
-        return constructor
-
-    @staticmethod
-    def __call__(*args, **kwargs):
-        return builtins.tuple(*args, **kwargs)
-
-
-class tuple(builtins.tuple, metaclass=_tuplemeta):
-    '''
-    Wrapper of :class:`tuple` that supports a user-defined item constructor via
-    the notation ``tuple[I]``, with ``I`` the item constructor.  This is
-    shorthand for ``lambda items: tuple(map(I, items))``.  The item constructor
-    should be any callable that takes one argument.
-
-    Examples
-    --------
-
-    A tuple with items processed with :func:`strictint`:
-
-    >>> tuple[strictint]((False, 1, 2, numpy.int64(3)))
-    (0, 1, 2, 3)
-
-    If the item constructor raises an exception, the construction of the
-    :class:`tuple` failes accordingly:
-
-    >>> tuple[strictint]((1, 2, 3.4))
-    Traceback (most recent call last):
-        ...
-    ValueError: not an integer: 3.4
-    '''
-
-    __slots__ = ()
-
-
-class _frozendictmeta(CacheMeta):
-    def __getitem__(self, keyvaluetype):
-        if not isinstance(keyvaluetype, builtins.tuple) or len(keyvaluetype) != 2:
-            raise RuntimeError("expected a 'tuple' of length 2 but got {!r}".format(keyvaluetype))
-        keytype, valuetype = keyvaluetype
-
-        @_copyname(src=self, suffix='[{},{}]'.format(_getname(keytype), _getname(valuetype)))
-        def constructor(arg):
-            if isinstance(arg, collections.abc.Mapping):
-                items = arg.items()
-            elif isinstance(arg, (collections.abc.MappingView, collections.abc.Iterable)):
-                items = arg
-            else:
-                raise ValueError('expected a mapping or iterable but got {!r}'.format(arg))
-            return self((keytype(key), valuetype(value)) for key, value in items)
-        return constructor
-
-
-class frozendict(collections.abc.Mapping, metaclass=_frozendictmeta):
+class frozendict(collections.abc.Mapping):
     '''
     An immutable version of :class:`dict`.  The :class:`frozendict` is hashable
     and both the keys and values should be hashable as well.
 
-    Custom key and value constructors can be supplied via the ``frozendict[K,V]``
-    notation, with ``K`` the key constructor and ``V`` the value constructor,
-    which is roughly equivalent to ``lambda *args, **kwargs: {K(k): V(v) for k, v
-    in dict(*args, **kwargs).items()}``.
-
     Examples
     --------
 
-    A :class:`frozendict` with :func:`strictstr` as key constructor and
-    :func:`strictfloat` as value constructor:
-
-    >>> frozendict[strictstr,strictfloat]({'spam': False})
-    frozendict({'spam': 0.0})
-
-    Similar but with non-strict constructors:
-
-    >>> frozendict[str,float]({None: '1.2'})
-    frozendict({'None': 1.2})
-
-    Applying the strict constructors to invalid data raises an exception:
-
-    >>> frozendict[strictstr,strictfloat]({None: '1.2'})
+    >>> d = frozendict({'spam': 0.0})
+    >>> d['spam']
+    0.0
+    >>> d['spam'] = 1.0
     Traceback (most recent call last):
         ...
-    ValueError: not a 'str': None
+    TypeError: 'frozendict' object does not support item assignment
     '''
 
     __slots__ = '__base', '__hash'
@@ -1052,15 +598,7 @@ class frozendict(collections.abc.Mapping, metaclass=_frozendictmeta):
     __repr__ = __str__ = lambda self: '{}({})'.format(type(self).__name__, self.__base)
 
 
-class _frozenmultisetmeta(CacheMeta):
-    def __getitem__(self, itemtype):
-        @_copyname(src=self, suffix='[{}]'.format(_getname(itemtype)))
-        def constructor(value):
-            return self(map(itemtype, value))
-        return constructor
-
-
-class frozenmultiset(collections.abc.Container, metaclass=_frozenmultisetmeta):
+class frozenmultiset(collections.abc.Container):
     '''
     An immutable multiset_.  A multiset is a generalization of a set: items may
     occur more than once.  Two mutlisets are equal if they have the same set of
@@ -1207,40 +745,6 @@ def frozenarray(arg, *, copy=True, dtype=None):
         return array[()]  # convert to generic
     array.flags.writeable = False
     return array
-
-
-class _c_arraymeta(type):
-    def __getitem__(self, dtype):
-        def constructor(value):
-            if isinstance(value, numpy.core._internal._ctypes):
-                return value
-            if not isinstance(value, numpy.ndarray):
-                value = numpy.array(value, dtype=dtype)
-            if not value.flags.c_contiguous:
-                raise ValueError('Array is not contiguous.')
-            if value.dtype != dtype:
-                raise ValueError('Expected dtype {} but array has dtype {}.'.format(dtype, value.dtype))
-            return value.ctypes
-        constructor.__qualname__ = constructor.__name__ = 'c_array[{}]'.format(_getname(dtype))
-        return constructor
-
-    def __call__(*args, **kwargs):
-        raise TypeError("cannot create an instance of class 'c_array'")
-
-
-class c_array(metaclass=_c_arraymeta):
-    '''
-    Converts an array-like object to a ctypes array with a specific dtype.  The
-    function ``c_array[dtype](array)`` returns ``array`` unmodified if ``array``
-    is already a ctypes array.  If ``array`` is a :class:`numpy.ndarray`, the
-    array is converted if the ``dtype`` is correct and the array is contiguous;
-    otherwise :class:`ValueError` is raised.  Otherwise, ``array`` is first
-    converted to a contiguous :class:`numpy.ndarray` and then converted to ctypes
-    array.  In the first two cases changes made to the ctypes array are reflected
-    by the ``array`` argument: both are essentially views of the same data.  In
-    the third case, changes to either ``array`` or the returned ctypes array are
-    not reflected by the other.
-    '''
 
 
 def lru_cache(func):

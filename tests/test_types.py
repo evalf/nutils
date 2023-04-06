@@ -13,94 +13,6 @@ import unittest
 import sys
 
 
-class apply_annotations(TestCase):
-
-    def test_without_annotations(self):
-        @nutils.types.apply_annotations
-        def f(a, b):
-            return a, b
-        a, b = f(1, 2)
-        self.assertEqual(a, 1)
-        self.assertEqual(b, 2)
-
-    def test_pos_or_kw(self):
-        @nutils.types.apply_annotations
-        def f(a: int, b, c: str):
-            return a, b, c
-        a, b, c = f(1, 2, 3)
-        self.assertEqual(a, 1)
-        self.assertEqual(b, 2)
-        self.assertEqual(c, '3')
-
-    def test_with_signature(self):
-        def f(a):
-            return a
-        f.__signature__ = inspect.Signature([inspect.Parameter('a', inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=str)])
-        f = nutils.types.apply_annotations(f)
-        self.assertEqual(f(1), '1')
-
-    def test_posonly(self):
-        def f(a):
-            return a
-        f.__signature__ = inspect.Signature([inspect.Parameter('a', inspect.Parameter.POSITIONAL_ONLY, annotation=str)])
-        f = nutils.types.apply_annotations(f)
-        self.assertEqual(f(1), '1')
-
-    def test_kwonly(self):
-        @nutils.types.apply_annotations
-        def f(a: str, *, b: int, c: bool):
-            return a, b, c
-        self.assertEqual(f(1, b='2', c=3), ('1', 2, True))
-
-    def test_varpos(self):
-        @nutils.types.apply_annotations
-        def f(a: str, *args):
-            return a, args
-        self.assertEqual(f(1, 2, 3), ('1', (2, 3)))
-
-    def test_varpos_annotated(self):
-        map_str = lambda args: map(str, args)
-
-        @nutils.types.apply_annotations
-        def f(a: str, *args: map_str):
-            return a, args
-        self.assertEqual(f(1, 2, 3), ('1', ('2', '3')))
-
-    def test_varkw(self):
-        @nutils.types.apply_annotations
-        def f(a: str, **kwargs):
-            return a, kwargs
-        self.assertEqual(f(1, b=2, c=3), ('1', dict(b=2, c=3)))
-
-    def test_varkw_annotated(self):
-        map_str = lambda kwargs: {k: str(v) for k, v in kwargs.items()}
-
-        @nutils.types.apply_annotations
-        def f(a: str, **kwargs: map_str):
-            return a, kwargs
-        self.assertEqual(f(1, b=2, c=3), ('1', dict(b='2', c='3')))
-
-    def test_posonly_varkw(self):
-        def f(a, b, **c):
-            return a, b, c
-        f.__signature__ = inspect.Signature([inspect.Parameter('a', inspect.Parameter.POSITIONAL_ONLY, annotation=str),
-                                             inspect.Parameter('b', inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=str, default=None),
-                                             inspect.Parameter('c', inspect.Parameter.VAR_KEYWORD)])
-        f = nutils.types.apply_annotations(f)
-        self.assertEqual(f(1, c=2, d=3), ('1', None, dict(c=2, d=3)))
-        self.assertEqual(f(1, None, c=2, d=3), ('1', None, dict(c=2, d=3)))
-        self.assertEqual(f(1, b=None, c=2, d=3), ('1', None, dict(c=2, d=3)))
-        self.assertEqual(f(1, b=4, c=2, d=3), ('1', '4', dict(c=2, d=3)))
-
-    def test_default_none(self):
-        @nutils.types.apply_annotations
-        def f(a: str = None):
-            return a
-        self.assertEqual(f(), None)
-        self.assertEqual(f(None), None)
-        self.assertEqual(f(1), '1')
-
-
 class nutils_hash(TestCase):
 
     class custom:
@@ -323,36 +235,6 @@ class CacheMeta(TestCase):
                 self.assertEqual(t.x(1, 2), 3)
                 self.assertEqual(ncalls, 3)
 
-    def test_method_with_args_and_preprocessors(self):
-
-        for withslots in False, True:
-            with self.subTest(withslots=withslots):
-
-                class T(metaclass=nutils.types.CacheMeta):
-                    if withslots:
-                        __slots__ = ()
-                    __cache__ = 'x',
-
-                    @nutils.types.apply_annotations
-                    def x(self, a: int, b: int):
-                        nonlocal ncalls
-                        ncalls += 1
-                        return a + b
-
-                ncalls = 0
-                t = T()
-                self.assertEqual(ncalls, 0)
-                self.assertEqual(t.x(1, 2), 3)
-                self.assertEqual(ncalls, 1)
-                self.assertEqual(t.x(a='1', b='2'), 3)
-                self.assertEqual(ncalls, 1)
-                self.assertEqual(t.x('2', '2'), 4)
-                self.assertEqual(ncalls, 2)
-                self.assertEqual(t.x(a=2, b=2), 4)
-                self.assertEqual(ncalls, 2)
-                self.assertEqual(t.x('1', 2), 3)
-                self.assertEqual(ncalls, 3)
-
     def test_method_with_kwargs(self):
 
         for withslots in False, True:
@@ -450,116 +332,6 @@ class CacheMeta(TestCase):
                 self.assertEqual(ncalls, 1)
 
 
-class strictint(TestCase):
-
-    def test_int(self):
-        value = nutils.types.strictint(1)
-        self.assertEqual(value, 1)
-        self.assertEqual(type(value), int)
-
-    def test_numpy_int(self):
-        value = nutils.types.strictint(numpy.int64(1))
-        self.assertEqual(value, 1)
-        self.assertEqual(type(value), int)
-
-    def test_float(self):
-        with self.assertRaises(ValueError):
-            nutils.types.strictint(1.)
-
-    def test_numpy_float(self):
-        with self.assertRaises(ValueError):
-            nutils.types.strictint(numpy.float64(1.))
-
-    def test_complex(self):
-        with self.assertRaises(ValueError):
-            nutils.types.strictint(1+0j)
-
-    def test_str(self):
-        with self.assertRaises(ValueError):
-            nutils.types.strictint('1')
-
-
-class strictfloat(TestCase):
-
-    def test_int(self):
-        value = nutils.types.strictfloat(1)
-        self.assertEqual(value, 1.)
-        self.assertEqual(type(value), float)
-
-    def test_numpy_int(self):
-        value = nutils.types.strictfloat(numpy.int64(1))
-        self.assertEqual(value, 1.)
-        self.assertEqual(type(value), float)
-
-    def test_float(self):
-        value = nutils.types.strictfloat(1.)
-        self.assertEqual(value, 1.)
-        self.assertEqual(type(value), float)
-
-    def test_numpy_float(self):
-        value = nutils.types.strictfloat(numpy.float64(1.))
-        self.assertEqual(value, 1.)
-        self.assertEqual(type(value), float)
-
-    def test_complex(self):
-        with self.assertRaises(ValueError):
-            nutils.types.strictint(1+0j)
-
-    def test_str(self):
-        with self.assertRaises(ValueError):
-            nutils.types.strictfloat('1.')
-
-
-class strictstr(TestCase):
-
-    def test_str(self):
-        value = nutils.types.strictstr('spam')
-        self.assertEqual(value, 'spam')
-        self.assertEqual(type(value), str)
-
-    def test_int(self):
-        with self.assertRaises(ValueError):
-            nutils.types.strictstr(1)
-
-
-class strict(TestCase):
-
-    def test_valid(self):
-        self.assertEqual(nutils.types.strict[int](1), 1)
-
-    def test_invalid(self):
-        with self.assertRaises(ValueError):
-            nutils.types.strict[int]('1')
-
-    def test_call(self):
-        with self.assertRaises(TypeError):
-            nutils.types.strict()
-
-
-class tupletype(TestCase):
-
-    def test_valid1(self):
-        value = nutils.types.tuple[nutils.types.strictint]([])
-        self.assertEqual(value, ())
-        self.assertEqual(type(value), tuple)
-
-    def test_valid2(self):
-        value = nutils.types.tuple[nutils.types.strictint]([1, 2, 3])
-        self.assertEqual(value, (1, 2, 3))
-        self.assertEqual(type(value), tuple)
-
-    def test_invalid(self):
-        with self.assertRaises(ValueError):
-            nutils.types.tuple[nutils.types.strictint]([1, 'spam', 'eggs'])
-
-    def test_without_item_constructor(self):
-        src = 1, 2, 3
-        self.assertEqual(nutils.types.tuple(src), tuple(src))
-
-    def test_name(self):
-        self.assertEqual(nutils.types.tuple[nutils.types.strictint].__name__, 'tuple[nutils.types.strictint]')
-
-
 class frozendict(TestCase):
 
     def test_constructor(self):
@@ -573,24 +345,6 @@ class frozendict(TestCase):
     def test_constructor_invalid(self):
         with self.assertRaises(ValueError):
             nutils.types.frozendict(['spam', 'eggs', 1])
-
-    def test_clsgetitem(self):
-        T = nutils.types.frozendict[str, float]
-        src = {1: 2, 'spam': '2.3'}
-        for name, value in [('mapping', src), ('mapping_view', src.items()), ('iterable', (item for item in src.items()))]:
-            with self.subTest(name):
-                frozen = T(value)
-                self.assertIsInstance(frozen, nutils.types.frozendict)
-                self.assertEqual(dict(frozen), {'1': 2., 'spam': 2.3})
-
-    def test_clsgetitem_invalid_types(self):
-        with self.assertRaises(RuntimeError):
-            nutils.types.frozendict[str, float, bool]
-
-    def test_clsgetitem_invalid_value(self):
-        T = nutils.types.frozendict[str, float]
-        with self.assertRaises(ValueError):
-            T(1)
 
     def test_setitem(self):
         frozen = nutils.types.frozendict({'spam': 1, 'eggs': 2.3})
@@ -682,11 +436,6 @@ class frozenmultiset(TestCase):
                 frozen = nutils.types.frozenmultiset(value)
                 for item in 'spam', 'bacon', 'sausage':
                     self.assertEqual({k: tuple(frozen).count(k) for k in set(src)}, {'spam': 2, 'bacon': 1, 'sausage': 1})
-
-    def test_clsgetitem(self):
-        src = False, 1, numpy.int64(2)
-        frozen = nutils.types.frozenmultiset[nutils.types.strictint](src)
-        self.assertEqual(set(frozen), {0, 1, 2})
 
     def test_preserve_order(self):
         for src in [('spam', 'bacon', 'sausage', 'spam'), ('spam', 'egg', 'spam', 'spam', 'bacon', 'spam')]:
@@ -822,39 +571,6 @@ class frozenarray(TestCase):
         self.assertFalse(a.flags.writeable)
 
 
-class c_array(TestCase):
-
-    def test_idempotence(self):
-        a = numpy.array([1, 2, 3], dtype=numpy.int64)
-        P = nutils.types.c_array[numpy.int64]
-        a_ct = P(a)
-        self.assertEqual(P(a_ct), a_ct)
-
-    def test_list(self):
-        a = [1, 2, 3]
-        a_ct = nutils.types.c_array[numpy.int64](a)
-        self.assertEqual(a_ct.data_as(ctypes.POINTER(ctypes.c_int64)).contents.value, 1)
-
-    def test_array(self):
-        a = numpy.array([1, 2, 3], dtype=numpy.int64)
-        a_ct = nutils.types.c_array[numpy.int64](a)
-        self.assertEqual(a_ct.data_as(ctypes.POINTER(ctypes.c_int64)).contents.value, 1)
-
-    def test_array_invalid_dtype(self):
-        a = numpy.array([1, 2, 3], dtype=numpy.int32)
-        with self.assertRaisesRegex(ValueError, '^Expected dtype .* but array has dtype .*\\.$'):
-            a_ct = nutils.types.c_array[numpy.int64](a)
-
-    def test_array_noncontinguous(self):
-        a = numpy.array([[1, 2], [3, 4]], dtype=numpy.int32).T
-        with self.assertRaisesRegex(ValueError, '^Array is not contiguous\\.$'):
-            a_ct = nutils.types.c_array[numpy.int64](a)
-
-    def test_wo_getitem(self):
-        with self.assertRaises(TypeError):
-            nutils.types.c_array()
-
-
 class T_Immutable(nutils.types.Immutable):
     def __init__(self, x, y, *, z):
         pass
@@ -902,15 +618,6 @@ class ImmutableFamily(TestCase):
         a = T(x=1, y=2, z=3)
         b = T(1, 2, z=3)
         self.assertEqual(a, b)
-
-    def test_preprocessors(self):
-        class T(self.cls):
-            @nutils.types.apply_annotations
-            def __init__(self, x: int):
-                pass
-
-        self.assertEqual(T(1), T('1'))
-        self.assertEqual(T(1), T(x='1'))
 
     def test_nutils_hash(self):
         class T(self.cls):

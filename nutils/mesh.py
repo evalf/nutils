@@ -446,8 +446,7 @@ def parsegmsh(mshdata):
 
 
 @log.withcontext
-@types.apply_annotations
-def gmsh(fname: util.binaryfile, name='gmsh', *, space='X'):
+def gmsh(fname, name='gmsh', *, space='X'):
     """Gmsh parser
 
     Parser for Gmsh files in `.msh` format. Only files with physical groups are
@@ -469,7 +468,7 @@ def gmsh(fname: util.binaryfile, name='gmsh', *, space='X'):
         Isoparametric map.
     """
 
-    with fname as f:
+    with util.binaryfile(fname) as f:
         return simplex(name=name, **parsegmsh(f), space=space)
 
 

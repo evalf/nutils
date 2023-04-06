@@ -519,8 +519,9 @@ class _Product(PointsSequence):
 
     __slots__ = 'sequence1', 'sequence2'
 
-    @types.apply_annotations
-    def __init__(self, sequence1, sequence2):
+    def __init__(self, sequence1: PointsSequence, sequence2: PointsSequence):
+        assert isinstance(sequence1, PointsSequence), f'sequence1={sequence1!r}'
+        assert isinstance(sequence2, PointsSequence), f'sequence2={sequence2!r}'
         assert not (isinstance(sequence1, _Uniform) and isinstance(sequence2, _Uniform)), 'inefficient; this should have been `_Uniform`'
         self.sequence1 = sequence1
         self.sequence2 = sequence2

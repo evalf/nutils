@@ -9,6 +9,8 @@ system, and provide pointsets for purposes of integration and sampling.
 """
 
 from . import _util as util, numeric, cache, transform, warnings, types, points
+from typing import Tuple
+from numbers import Integral
 import nutils_poly as poly
 import numpy
 import re
@@ -27,8 +29,8 @@ class Reference(types.Singleton):
     __slots__ = 'ndims',
     __cache__ = 'connectivity', 'edgechildren', 'volume', 'centroid', '_linear_bernstein', 'getpoints'
 
-    @types.apply_annotations
-    def __init__(self, ndims: int):
+    def __init__(self, ndims: Integral):
+        assert isinstance(ndims, Integral), f'ndims={ndims!r}'
         super().__init__()
         self.ndims = ndims
 
@@ -175,7 +177,7 @@ class Reference(types.Singleton):
             if gauss.npoints == 1:
                 return gauss
             volume = gauss.weights.sum()
-            return points.CoordsUniformPoints(gauss.coords.T[_] @ gauss.weights / volume, volume)
+            return points.CoordsUniformPoints(types.arraydata(gauss.coords.T[_] @ gauss.weights / volume), volume)
         raise Exception('unsupported ischeme for {}: {!r}'.format(self.__class__.__name__, ischeme))
 
     def with_children(self, child_refs):
@@ -220,7 +222,7 @@ class Reference(types.Singleton):
             return self.empty
         assert self.ndims >= 1
 
-        refs = [edgeref.slice(levels[edgeverts], ndivisions) for edgeverts, edgeref in zip(self.edge_vertices, self.edge_refs)]
+        refs = tuple(edgeref.slice(levels[edgeverts], ndivisions) for edgeverts, edgeref in zip(self.edge_vertices, self.edge_refs))
         if sum(ref != baseref for ref, baseref in zip(refs, self.edge_refs)) < self.ndims:
             return self
         if sum(bool(ref) for ref in refs) < self.ndims:
@@ -261,7 +263,7 @@ class Reference(types.Singleton):
                     count[emap[eref.simplices]] += 1
                 midpoint = self.vertices[count==1][0]
 
-        return MosaicReference(self, refs, midpoint)
+        return MosaicReference(self, refs, types.arraydata(midpoint))
 
     def check_edges(self, tol=1e-15, print=print):
         volume = 0
@@ -314,9 +316,6 @@ class Reference(types.Singleton):
         raise NotImplementedError
 
 
-strictreference = types.strict[Reference]
-
-
 class EmptyLike(Reference):
     'inverse reference element'
 
@@ -328,8 +327,8 @@ class EmptyLike(Reference):
     def empty(self):
         return self
 
-    @types.apply_annotations
-    def __init__(self, baseref: strictreference):
+    def __init__(self, baseref: Reference):
+        assert isinstance(baseref, Reference), f'baseref={baseref!r}'
         self.baseref = baseref
         super().__init__(baseref.ndims)
 
@@ -473,7 +472,7 @@ class PointReference(SimplexReference):
         super().__init__(ndims=0)
 
     def getpoints(self, ischeme, degree):
-        return points.CoordsWeightsPoints(numpy.empty([1, 0]), [1.])
+        return points.CoordsWeightsPoints(types.arraydata(numpy.empty([1, 0])), types.arraydata([1.]))
 
     def _nlinear_by_level(self, n):
         return 1
@@ -493,7 +492,7 @@ class LineReference(SimplexReference):
 
     def getpoints(self, ischeme, degree):
         if ischeme == 'uniform':
-            return points.CoordsUniformPoints(numpy.arange(.5, degree)[:, _] / degree, 1)
+            return points.CoordsUniformPoints(types.arraydata(numpy.arange(.5, degree)[:, _] / degree), 1.)
         return super().getpoints(ischeme, degree)
 
     def _nlinear_by_level(self, n):
@@ -523,7 +522,7 @@ class TriangleReference(SimplexReference):
             coords = C.reshape(2, -1)
             flip = numpy.greater(coords.sum(0), 1)
             coords[:, flip] = 1 - coords[::-1, flip]
-            return points.CoordsUniformPoints(coords.T, .5)
+            return points.CoordsUniformPoints(types.arraydata(coords.T), .5)
         return super().getpoints(ischeme, degree)
 
     def _nlinear_by_level(self, n):
@@ -802,11 +801,10 @@ class WithChildrenReference(Reference):
     __slots__ = 'baseref', 'child_transforms', 'child_refs'
     __cache__ = '__extra_edges', 'edge_transforms', 'edge_refs', 'connectivity'
 
-    @types.apply_annotations
-    def __init__(self, baseref, child_refs: tuple):
-        assert len(child_refs) == baseref.nchildren and any(child_refs) and child_refs != baseref.child_refs
-        assert all(isinstance(child_ref, Reference) for child_ref in child_refs)
-        assert all(child_ref.ndims == baseref.ndims for child_ref in child_refs)
+    def __init__(self, baseref: Reference, child_refs: Tuple[Reference,...]):
+        assert isinstance(baseref, Reference), f'baseref={baseref!r}'
+        assert isinstance(child_refs, tuple) and len(child_refs) == baseref.nchildren and all(isinstance(ref, Reference) and ref.ndims == baseref.ndims for ref in child_refs), f'child_refs={child_refs!r}'
+        assert any(child_refs) and child_refs != baseref.child_refs
         self.baseref = baseref
         self.child_transforms = baseref.child_transforms
         self.child_refs = child_refs
@@ -877,8 +875,8 @@ class WithChildrenReference(Reference):
             dedup = True
         else:
             dedup = False
-        childpoints = [points.TransformPoints(ref.getpoints(ischeme, degree), trans) for trans, ref in self.children if ref]
-        return points.ConcatPoints(childpoints, points.find_duplicates(childpoints) if dedup else ())
+        childpoints = tuple(points.TransformPoints(ref.getpoints(ischeme, degree), trans) for trans, ref in self.children if ref)
+        return points.ConcatPoints(childpoints, points.find_duplicates(childpoints) if dedup else frozenset())
 
     @property
     def edge_transforms(self):
@@ -924,9 +922,9 @@ class MosaicReference(Reference):
     __slots__ = 'baseref', '_edge_refs', '_midpoint', 'edge_refs', 'edge_transforms', 'vertices', '_imidpoint', 'edge_vertices'
     __cache__ = 'simplices'
 
-    @types.apply_annotations
-    def __init__(self, baseref, edge_refs: tuple, midpoint: types.arraydata):
-        assert len(edge_refs) == baseref.nedges
+    def __init__(self, baseref: Reference, edge_refs: Tuple[Reference,...], midpoint: types.arraydata):
+        assert isinstance(baseref, Reference), f'baseref={baseref!r}'
+        assert isinstance(edge_refs, tuple) and len(edge_refs) == baseref.nedges and all(isinstance(ref, Reference) and ref.ndims == baseref.ndims-1 for ref in edge_refs), f'baseref={baseref!r}'
         assert edge_refs != tuple(baseref.edge_refs)
         assert midpoint.shape == (baseref.ndims,)
         assert all(numpy.all(edge.vertices == newedge.vertices[:edge.nverts])
@@ -1116,8 +1114,8 @@ class MosaicReference(Reference):
             return self.baseref.getpoints(ischeme, degree)
         elif ischeme in ('gauss', 'uniform', 'bezier'):
             simplexpoints = getsimplex(self.ndims).getpoints(ischeme, degree)
-            subpoints = [points.TransformPoints(simplexpoints, strans) for strans in self.simplex_transforms]
-            dups = points.find_duplicates(subpoints) if ischeme == 'bezier' else ()
+            subpoints = tuple(points.TransformPoints(simplexpoints, strans) for strans in self.simplex_transforms)
+            dups = points.find_duplicates(subpoints) if ischeme == 'bezier' else frozenset()
             return points.ConcatPoints(subpoints, dups)
         else:
             return super().getpoints(ischeme, degree)

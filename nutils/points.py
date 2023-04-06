@@ -7,6 +7,8 @@ and :class:`SimplexGaussPoints` that reflect the variety of elements in the
 '''
 
 from . import types, transform, numeric, _util as util
+from typing import Tuple, FrozenSet
+from numbers import Integral
 import numpy
 import functools
 import itertools
@@ -42,8 +44,9 @@ class Points(types.Singleton):
 
     __cache__ = 'tri', 'hull', 'onhull'
 
-    @types.apply_annotations
-    def __init__(self, npoints: types.strictint, ndims: types.strictint):
+    def __init__(self, npoints: Integral, ndims: Integral):
+        assert isinstance(npoints, Integral), f'npoints={npoints!r}'
+        assert isinstance(ndims, Integral), f'ndims={ndims!r}'
         self.npoints = npoints
         self.ndims = ndims
 
@@ -109,15 +112,11 @@ class Points(types.Singleton):
         return types.frozenarray(onhull, copy=False)
 
 
-strictpoints = types.strict[Points]
-
-
 class CoordsPoints(Points):
     '''Manually supplied points.'''
 
-    @types.apply_annotations
     def __init__(self, coords: types.arraydata):
-        assert coords.dtype == float
+        assert isinstance(coords, types.arraydata) and coords.ndim == 2 and coords.dtype == float, f'coords={coords!r}'
         self.coords = numpy.asarray(coords)
         super().__init__(*coords.shape)
 
@@ -125,10 +124,9 @@ class CoordsPoints(Points):
 class CoordsWeightsPoints(CoordsPoints):
     '''Manually supplied points and weights.'''
 
-    @types.apply_annotations
     def __init__(self, coords: types.arraydata, weights: types.arraydata):
-        assert coords.dtype == float
-        assert weights.dtype == float
+        assert isinstance(coords, types.arraydata) and coords.ndim == 2 and coords.dtype == float, f'coords={coords!r}'
+        assert isinstance(weights, types.arraydata) and weights.ndim == 1 and weights.dtype == float, f'weights={weights!r}'
         self.weights = numpy.asarray(weights)
         super().__init__(coords)
 
@@ -136,8 +134,9 @@ class CoordsWeightsPoints(CoordsPoints):
 class CoordsUniformPoints(CoordsPoints):
     '''Manually supplied points with uniform weights.'''
 
-    @types.apply_annotations
     def __init__(self, coords: types.arraydata, volume: float):
+        assert isinstance(coords, types.arraydata) and coords.ndim == 2 and coords.dtype == float, f'coords={coords!r}'
+        assert isinstance(volume, float), f'volume={volume!r}'
         self.weights = numeric.full(coords.shape[:1], fill_value=volume/coords.shape[0], dtype=float)
         super().__init__(coords)
 
@@ -147,8 +146,9 @@ class TensorPoints(Points):
 
     __cache__ = 'coords', 'weights', 'tri', 'hull'
 
-    @types.apply_annotations
-    def __init__(self, points1: strictpoints, points2: strictpoints):
+    def __init__(self, points1: Points, points2: Points):
+        assert isinstance(points1, Points), f'points1={points1!r}'
+        assert isinstance(points2, Points), f'points2={points2!r}'
         self.points1 = points1
         self.points2 = points2
         super().__init__(points1.npoints * points2.npoints, points1.ndims + points2.ndims)
@@ -207,8 +207,9 @@ class TensorPoints(Points):
 class SimplexGaussPoints(CoordsWeightsPoints):
     '''Gauss quadrature points on a simplex.'''
 
-    @types.apply_annotations
-    def __init__(self, ndims: types.strictint, degree: types.strictint):
+    def __init__(self, ndims: Integral, degree: Integral):
+        assert isinstance(ndims, Integral), f'ndims={ndims!r}'
+        assert isinstance(degree, Integral), f'degree={degree!r}'
         super().__init__(*gaussn[ndims](degree))
 
 
@@ -217,11 +218,12 @@ class SimplexBezierPoints(CoordsUniformPoints):
 
     __cache__ = 'tri'
 
-    @types.apply_annotations
-    def __init__(self, ndims: types.strictint, n: types.strictint):
+    def __init__(self, ndims: Integral, n: Integral):
+        assert isinstance(ndims, Integral), f'ndims={ndims!r}'
+        assert isinstance(n, Integral), f'n={n!r}'
         self.n = n
         self._indices = numpy.array([index[::-1] for index in numpy.ndindex(*[n] * ndims) if sum(index) < n])
-        super().__init__(self._indices/(n-1), 1/math.factorial(ndims))
+        super().__init__(types.arraydata(self._indices/(n-1)), 1/math.factorial(ndims))
 
     @property
     def _indexgrid(self):
@@ -261,8 +263,9 @@ class TransformPoints(Points):
 
     __cache__ = 'coords', 'weights'
 
-    @types.apply_annotations
-    def __init__(self, points: strictpoints, trans: transform.stricttransformitem):
+    def __init__(self, points: Points, trans: transform.TransformItem):
+        assert isinstance(points, Points), f'points={points!r}'
+        assert isinstance(trans, transform.TransformItem), f'trans={trans!r}'
         self.points = points
         self.trans = trans
         super().__init__(points.npoints, points.ndims)
@@ -293,8 +296,9 @@ class ConcatPoints(Points):
 
     __cache__ = 'coords', 'weights', 'tri', 'masks'
 
-    @types.apply_annotations
-    def __init__(self, allpoints: types.tuple[strictpoints], duplicates: frozenset = frozenset()):
+    def __init__(self, allpoints: Tuple[Points,...], duplicates: FrozenSet[Tuple[Tuple[Integral,Integral],...]]):
+        assert isinstance(allpoints, tuple) and all(isinstance(p, Points) for p in allpoints), 'allpoints={allpoints!r}'
+        assert isinstance(duplicates, frozenset) and all(isinstance(d, tuple) and all(isinstance(n, tuple) and len(n) == 2 and all(isinstance(ni, Integral) for ni in n) for n in d) for d in duplicates), f'duplicates={duplicates!r}'
         self.allpoints = allpoints
         self.duplicates = duplicates
         super().__init__(sum(points.npoints for points in allpoints) - sum(len(d)-1 for d in duplicates), allpoints[0].ndims)
@@ -340,33 +344,6 @@ class ConcatPoints(Points):
         return types.frozenarray(numpy.concatenate([renum.take(points.tri) for renum, points in zip(renumber, self.allpoints)]), copy=False)
 
 
-class ConePoints(Points):
-    '''Affinely transformed lower-dimensional points plus tip.
-
-    The point count is incremented by one regardless of the nature of the point
-    set; no effort is made to introduce extra points between base plane and tip.
-    Likewise, the simplex count stays equal, with all simplices obtaining an
-    extra vertex in tip.
-    '''
-
-    __cache__ = 'coords', 'tri'
-
-    @types.apply_annotations
-    def __init__(self, edgepoints: strictpoints, edgeref: transform.stricttransformitem, tip: types.arraydata):
-        self.edgepoints = edgepoints
-        self.edgeref = edgeref
-        self.tip = numpy.asarray(tip)
-        super().__init__(edgepoints.npoints+1, edgepoints.ndims+1)
-
-    @property
-    def coords(self):
-        return types.frozenarray(numpy.concatenate([self.edgeref.apply(self.edgepoints.coords), self.tip[_, :]]), copy=False)
-
-    @property
-    def tri(self):
-        tri = numpy.concatenate([self.edgepoints.tri, [[self.edgepoints.npoints]]*len(self.edgepoints.tri)], axis=1)
-        return types.frozenarray(tri, copy=False)
-
 # UTILITY FUNCTIONS
 
 
@@ -375,14 +352,14 @@ def gauss(n):
     k = numpy.arange(n) + 1
     d = k / numpy.sqrt(4*k**2-1)
     x, w = numpy.linalg.eigh(numpy.diagflat(d, -1))  # eigh operates (by default) on lower triangle
-    return types.frozenarray((x+1) * .5, copy=False), types.frozenarray(w[0]**2, copy=False)
+    return types.arraydata((x+1) * .5), types.arraydata(w[0]**2)
 
 
 def gauss1(degree):
     '''Gauss quadrature for line.'''
 
     x, w = gauss(degree//2)
-    return x[:, _], w
+    return x.reshape(*x.shape, 1), w
 
 
 @functools.lru_cache(8)
@@ -425,8 +402,8 @@ def gauss2(degree):
     if degree > 6:
         warnings.warn('inexact integration for polynomial of degree {}'.format(degree))
 
-    return types.frozenarray(numpy.concatenate([numpy.take(c, i) for i, c, w in icw]), copy=False), \
-        types.frozenarray(numpy.concatenate([[w/2] * len(i) for i, c, w in icw]), copy=False)
+    return types.arraydata(numpy.concatenate([numpy.take(c, i) for i, c, w in icw])), \
+        types.arraydata(numpy.concatenate([[w/2] * len(i) for i, c, w in icw]))
 
 
 @functools.lru_cache(8)
@@ -483,8 +460,8 @@ def gauss3(degree):
     if degree > 7:
         warnings.warn('inexact integration for polynomial of degree {}'.format(degree))
 
-    return types.frozenarray(numpy.concatenate([numpy.take(c, i) for i, c, w in icw]), copy=False), \
-        types.frozenarray(numpy.concatenate([[w/6] * len(i) for i, c, w in icw]), copy=False)
+    return types.arraydata(numpy.concatenate([numpy.take(c, i) for i, c, w in icw])), \
+        types.arraydata(numpy.concatenate([[w/6] * len(i) for i, c, w in icw]))
 
 
 gaussn = None, gauss1, gauss2, gauss3
@@ -495,6 +472,6 @@ def find_duplicates(allpoints):
     for i, points in enumerate(allpoints):
         for j in points.onhull.nonzero()[0]:
             coords.setdefault(tuple(points.coords[j]), []).append((i, j))
-    return [tuple(pairs) for pairs in coords.values() if len(pairs) > 1]
+    return frozenset(tuple(pairs) for pairs in coords.values() if len(pairs) > 1)
 
 # vim:sw=4:sts=4:et

@@ -75,9 +75,6 @@ def asarray(arg):
         return constant(arg)
 
 
-asarrays = types.tuple[asarray]
-
-
 def _isindex(arg):
     return isinstance(arg, Array) and arg.ndim == 0 and arg.dtype == int and arg._intbounds[0] >= 0
 
@@ -5078,13 +5075,15 @@ def loop_index(name, length):
 
 def loop_sum(func, index):
     func = asarray(func)
-    index = types.strict[_LoopIndex](index)
+    if not isinstance(index, _LoopIndex):
+        raise TypeError(f'expected _LoopIndex, got {index!r}')
     return LoopSum(func, func.shape, index._name, index.length)
 
 
 def _loop_concatenate_data(func, index):
     func = asarray(func)
-    index = types.strict[_LoopIndex](index)
+    if not isinstance(index, _LoopIndex):
+        raise TypeError(f'expected _LoopIndex, got {index!r}')
     chunk_size = func.shape[-1]
     if chunk_size.isconstant:
         chunk_sizes = InsertAxis(chunk_size, index.length)
