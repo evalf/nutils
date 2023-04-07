@@ -162,23 +162,6 @@ class unique(TestCase):
         self.assertEqual(indices, [0, 1, 0])
 
 
-class cached_property(TestCase):
-
-    def test(self):
-        class A:
-            def __init__(self):
-                self.counter = 0
-
-            @util.cached_property
-            def x(self):
-                self.counter += 1
-                return 'x'
-        a = A()
-        self.assertEqual(a.x, 'x')
-        self.assertEqual(a.x, 'x')
-        self.assertEqual(a.counter, 1)
-
-
 class gather(TestCase):
 
     def test(self):

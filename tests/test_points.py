@@ -98,7 +98,7 @@ class bezier(TestCase):
             self.assertEqual(bezier.npoints, n*(n*(n+1))//2)
             self.assertEqual(len(bezier.tri), 3*(n-1)**3)
             self.assertEqual(len(bezier.hull), 8*(n-1)**2)
-            fullhull = super(points.TensorPoints, bezier).hull.tolist()  # contains additional internal faces for n >= 3
+            fullhull = points.Points.hull.func(bezier).tolist() # contains additional internal faces for n >= 3
             for h in bezier.hull:  # assert that hull is a subset of fullfull
                 self.assertIn(sorted(h), fullhull)
 

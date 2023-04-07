@@ -5,6 +5,7 @@ The transform module.
 from typing import Tuple, Dict
 from numbers import Integral
 from . import cache, numeric, _util as util, types
+from ._backports import cached_property
 import nutils_poly as poly
 import numpy
 import collections
@@ -89,8 +90,6 @@ class TransformItem(types.Singleton):
         Dimension of the affine transformation range.
     '''
 
-    __slots__ = 'todims', 'fromdims'
-
     def __init__(self, todims: Integral, fromdims: Integral):
         assert isinstance(todims, Integral), f'todims={todims!r}'
         assert isinstance(fromdims, Integral), f'fromdims={fromdims!r}'
@@ -118,8 +117,6 @@ class Matrix(TransformItem):
     offset : :class:`numpy.ndarray`
         The offset :math:`b`.
     '''
-
-    __slots__ = 'linear', 'offset'
 
     def __init__(self, linear, offset):
         # we don't worry about mutability here as the meta class prevents
@@ -162,9 +159,6 @@ class Square(Matrix):
         The offset :math:`b`.
     '''
 
-    __slots__ = '_transform_matrix',
-    __cache__ = 'det',
-
     def __init__(self, linear, offset):
         self._transform_matrix = {}
         super().__init__(linear, offset)
@@ -174,7 +168,7 @@ class Square(Matrix):
     def invapply(self, points):
         return types.frozenarray(numpy.linalg.solve(self.linear, (points - self.offset).T).T, copy=False)
 
-    @property
+    @cached_property
     def det(self):
         return numpy.linalg.det(self.linear)
 
@@ -201,8 +195,6 @@ class Identity(Square):
         Dimension of :math:`x`.
     '''
 
-    __slots__ = ()
-
     det = 1.
 
     def __init__(self, ndims: Integral):
@@ -227,8 +219,6 @@ class Index(Identity):
     like an identity.
     '''
 
-    __slots__ = 'index'
-
     def __init__(self, ndims: Integral, index: Integral):
         assert isinstance(ndims, Integral) and ndims >= 0, f'ndims={ndims!r}'
         assert isinstance(index, Integral), f'index={index!r}'
@@ -250,9 +240,6 @@ class Updim(Matrix):
         The offset :math:`b`.
     '''
 
-    __slots__ = 'isflipped', '_affine'
-    __cache__ = 'ext',
-
     def __init__(self, linear, offset, isflipped: bool):
         assert isinstance(isflipped, bool), f'isflipped={isflipped!r}'
         self._affine = linear, offset
@@ -260,7 +247,7 @@ class Updim(Matrix):
         super().__init__(linear, offset)
         assert self.todims == self.fromdims + 1
 
-    @property
+    @cached_property
     def ext(self):
         ext = numeric.ext(self.linear)
         return types.frozenarray(-ext if self.isflipped else ext, copy=False)
@@ -276,8 +263,6 @@ class Updim(Matrix):
 
 
 class SimplexEdge(Updim):
-
-    __slots__ = 'iedge', 'inverted'
 
     swap = (
         ((1, 0), (2, 0), (3, 0), (7, 1)),
@@ -323,8 +308,6 @@ class SimplexEdge(Updim):
 
 class SimplexChild(Square):
 
-    __slots__ = 'ichild',
-
     def __init__(self, ndims: Integral, ichild: Integral):
         assert isinstance(ndims, Integral) and ndims >= 0, f'ndims={ndims!r}'
         assert isinstance(ichild, Integral) and ichild >= 0, f'ichild={ichild!r}'
@@ -354,8 +337,6 @@ class SimplexChild(Square):
 
 class ScaledUpdim(Updim):
 
-    __slots__ = 'trans1', 'trans2'
-
     def __init__(self, trans1: Square, trans2: Updim):
         assert isinstance(trans1, Square), f'trans1={trans1!r}'
         assert isinstance(trans2, Updim), f'trans2={trans2!r}'
@@ -375,8 +356,6 @@ class ScaledUpdim(Updim):
 
 
 class TensorEdge1(Updim):
-
-    __slots__ = 'trans',
 
     def __init__(self, trans1: Updim, ndims2: Integral):
         assert isinstance(trans1, Updim), f'trans1={trans1!r}'
@@ -415,8 +394,6 @@ class TensorEdge1(Updim):
 
 class TensorEdge2(Updim):
 
-    __slots__ = 'trans'
-
     def __init__(self, ndims1: Integral, trans2: Updim):
         assert isinstance(ndims1, Integral) and ndims1 >= 0, f'ndims1={ndims1!r}'
         assert isinstance(trans2, Updim), f'trans2={trans2!r}'
@@ -454,9 +431,6 @@ class TensorEdge2(Updim):
 
 class TensorChild(Square):
 
-    __slots__ = 'trans1', 'trans2'
-    __cache__ = 'det',
-
     def __init__(self, trans1: Square, trans2: Square):
         assert isinstance(trans1, Square), f'trans1={trans1!r}'
         assert isinstance(trans2, Square), f'trans2={trans2!r}'
@@ -466,7 +440,7 @@ class TensorChild(Square):
         offset = numpy.concatenate([trans1.offset, trans2.offset])
         super().__init__(linear, offset)
 
-    @property
+    @cached_property
     def det(self):
         return self.trans1.det * self.trans2.det
 

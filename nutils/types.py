@@ -17,6 +17,7 @@ import io
 import types
 import numpy
 import dataclasses
+from ._backports import cached_property
 from ctypes import byref, c_int, c_ssize_t, c_void_p, c_char_p, py_object, pythonapi, Structure, POINTER
 c_ssize_p = POINTER(c_ssize_t)
 
@@ -143,216 +144,13 @@ def nutils_hash(data):
     return h.digest()
 
 
-class _CacheMeta_property:
-    '''
-    Memoizing property used by :class:`CacheMeta`.
-    '''
-
-    _self = object()
-
-    def __init__(self, prop, cache_attr):
-        assert isinstance(prop, property)
-        self.fget = prop.fget
-        self.cache_attr = cache_attr
-        self.__doc__ = prop.__doc__
-
-    def __get__(self, instance, owner):
-        if instance is None:
-            return self
-        try:
-            cached_value = getattr(instance, self.cache_attr)
-        except AttributeError:
-            value = self.fget(instance)
-            assert _isimmutable(value)
-            setattr(instance, self.cache_attr, value if value is not instance else self._self)
-            return value
-        else:
-            return cached_value if cached_value is not self._self else instance
-
-    def __set__(self, instance, value):
-        raise AttributeError("can't set attribute")
-
-    def __delete__(self, instance):
-        raise AttributeError("can't delete attribute")
+# While we do not use `abc.ABCMeta` in `ImmutableMeta` itself, we will use it
+# in many classes having `ImmutableMeta` as a meta(super)class.  To avoid
+# having to write `class MCls(ImmutableMeta, abc.ABCMeta): pass` everywhere, we
+# simply derive from `abc.ABCMeta` here.
 
 
-def _CacheMeta_method(func, cache_attr):
-    '''
-    Memoizing method decorator used by :class:`CacheMeta`.
-    '''
-
-    _self = object()
-
-    orig_func = func
-    signature = inspect.signature(func)
-    if len(signature.parameters) == 1 and next(iter(signature.parameters.values())).kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.POSITIONAL_ONLY):
-
-        def wrapper(self):
-            try:
-                cached_value = getattr(self, cache_attr)
-                value = self if cached_value is _self else cached_value
-            except AttributeError:
-                value = func(self)
-                assert _isimmutable(value)
-                setattr(self, cache_attr, _self if value is self else value)
-            return value
-
-    else:
-
-        canonicalize = argument_canonicalizer(inspect.signature(func))
-
-        def wrapper(*args, **kwargs):
-            self = args[0]
-
-            args, kwargs = canonicalize(*args, **kwargs)
-            key = args[1:], tuple(sorted(kwargs.items()))
-
-            assert hash(key), 'cannot cache function because arguments are not hashable'
-
-            # Fetch cached value, if any, and return cached value if args match.
-            try:
-                cached_key, cached_value = getattr(self, cache_attr)
-            except AttributeError:
-                pass
-            else:
-                if cached_key == key:
-                    return self if cached_value is _self else cached_value
-
-            value = func(*args, **kwargs)
-            assert _isimmutable(value)
-            setattr(self, cache_attr, (key, _self if value is self else value))
-
-            return value
-
-    wrapper.__name__ = orig_func.__name__
-    wrapper.__doc__ = orig_func.__doc__
-    wrapper.__signature__ = signature
-    return wrapper
-
-# While we do not use `abc.ABCMeta` in `CacheMeta` itself, we will use it in
-# many classes having `CacheMeta` as a meta(super)class.  To avoid having to
-# write `class MCls(CacheMeta, abc.ABCMeta): pass` everywhere, we simply derive
-# from `abc.ABCMeta` here.
-
-
-class CacheMeta(abc.ABCMeta):
-    '''
-    Metaclass that adds caching functionality to properties and methods listed in
-    the special attribute ``__cache__``.  If an attribute is of type
-    :class:`property`, the value of the property will be computed at the first
-    attribute access and served from cache subsequently.  If an attribute is a
-    method, the arguments and return value are cached and the cached value will
-    be used if a subsequent call is made with the same arguments; if not, the
-    cache will be overwritten.  The cache lives in private attributes in the
-    instance.  The metaclass supports the use of ``__slots__``.  If a subclass
-    redefines a cached property or method (in the sense of this metaclass) of a
-    base class, the property or method of the subclass is *not* automatically
-    cached; ``__cache__`` should be used in the subclass explicitly.
-
-    Examples
-    --------
-
-    An example of a class with a cached property:
-
-    >>> class T(metaclass=CacheMeta):
-    ...   __cache__ = 'x',
-    ...   @property
-    ...   def x(self):
-    ...     print('uncached')
-    ...     return 1
-
-    The print statement is added to illustrate when method ``x`` (as defined
-    above) is called:
-
-    >>> t = T()
-    >>> t.x
-    uncached
-    1
-    >>> t.x
-    1
-
-    An example of a class with a cached method:
-
-    >>> class U(metaclass=CacheMeta):
-    ...   __cache__ = 'y',
-    ...   def y(self, a):
-    ...     print('uncached')
-    ...     return a
-
-    Again, the print statement is added to illustrate when the method ``y`` (as defined above) is
-    called:
-
-    >>> u = U()
-    >>> u.y(1)
-    uncached
-    1
-    >>> u.y(1)
-    1
-    >>> u.y(2)
-    uncached
-    2
-    >>> u.y(2)
-    2
-    '''
-
-    def __new__(mcls, name, bases, namespace, **kwargs):
-        # Wrap all properties that should be cached and reserve slots.
-        if '__cache__' in namespace:
-            cache = namespace['__cache__']
-            cache = (cache,) if isinstance(cache, str) else tuple(cache)
-            cache_attrs = []
-            for attr in cache:
-                # Apply name mangling (see https://docs.python.org/3/tutorial/classes.html#private-variables).
-                if attr.startswith('__') and not attr.endswith('__'):
-                    attr = '_{}{}'.format(name, attr)
-                # Reserve an attribute for caching property values that is reasonably
-                # unique, by combining the class and attribute names.  The following
-                # artificial situation will fail though, because both the base class
-                # and the subclass have the same name, hence the cached properties
-                # point to the same attribute for caching:
-                #
-                #     Class A(metaclass=CacheMeta):
-                #       __cache__ = 'x',
-                #       @property
-                #       def x(self):
-                #         return 1
-                #
-                #     class A(A):
-                #       __cache__ = 'x',
-                #       @property
-                #       def x(self):
-                #         return super().x + 1
-                #       @property
-                #       def y(self):
-                #         return super().x
-                #
-                # With `a = A()`, `a.x` first caches `1`, then `2` and `a.y` will
-                # return `2`.  On the other hand, `a.y` calls property `x` of the base
-                # class and caches `1` and subsequently `a.x` will return `1` from
-                # cache.
-                cache_attr = '_CacheMeta__cached_property_{}_{}'.format(name, attr)
-                cache_attrs.append(cache_attr)
-                if attr not in namespace:
-                    raise TypeError('Attribute listed in __cache__ is undefined: {}'.format(attr))
-                value = namespace[attr]
-                if isinstance(value, property):
-                    namespace[attr] = _CacheMeta_property(value, cache_attr)
-                elif inspect.isfunction(value) and not inspect.isgeneratorfunction(value):
-                    namespace[attr] = _CacheMeta_method(value, cache_attr)
-                else:
-                    raise TypeError("Don't know how to cache attribute {}: {!r}".format(attr, value))
-            if '__slots__' in namespace and cache_attrs:
-                # Add `cache_attrs` to the slots.
-                slots = namespace['__slots__']
-                slots = [slots] if isinstance(slots, str) else list(slots)
-                for cache_attr in cache_attrs:
-                    assert cache_attr not in slots, 'Private attribute for caching is listed in __slots__: {}'.format(cache_attr)
-                    slots.append(cache_attr)
-                namespace['__slots__'] = tuple(slots)
-        return super().__new__(mcls, name, bases, namespace, **kwargs)
-
-
-class ImmutableMeta(CacheMeta):
+class ImmutableMeta(abc.ABCMeta):
 
     def __new__(mcls, name, bases, namespace, *, version=0, **kwargs):
         if not isinstance(version, int):
@@ -414,9 +212,6 @@ class Immutable(metaclass=ImmutableMeta):
     TypeError: unhashable type: 'list'
     '''
 
-    __slots__ = '__weakref__', '_args', '_hash'
-    __cache__ = '__nutils_hash__',
-
     def __new__(*args, **kwargs):
         cls = args[0]
         args, kwargs = cls._canonicalize(*args, **kwargs)
@@ -431,7 +226,7 @@ class Immutable(metaclass=ImmutableMeta):
     def __eq__(self, other):
         return self is other or type(self) is type(other) and self._args == other._args
 
-    @property
+    @cached_property
     def __nutils_hash__(self):
         h = hashlib.sha1('{}.{}:{}\0'.format(type(self).__module__, type(self).__qualname__, type(self)._version).encode())
         for arg in self._args:
@@ -485,8 +280,6 @@ class Singleton(Immutable, metaclass=SingletonMeta):
     True
     '''
 
-    __slots__ = ()
-
     __hash__ = Immutable.__hash__
     __eq__ = object.__eq__
 
@@ -509,8 +302,6 @@ class arraydata(Singleton):
     >>> numpy.asarray(w)
     array([1, 2, 3])
     '''
-
-    __slots__ = 'dtype', 'shape', 'bytes', 'ndim', '__array_interface__'
 
     def __new__(cls, arg):
         if isinstance(arg, cls):
@@ -553,9 +344,6 @@ class frozendict(collections.abc.Mapping):
     TypeError: 'frozendict' object does not support item assignment
     '''
 
-    __slots__ = '__base', '__hash'
-    __cache__ = '__nutils_hash__',
-
     def __new__(cls, base):
         if isinstance(base, frozendict):
             return base
@@ -564,7 +352,7 @@ class frozendict(collections.abc.Mapping):
         self.__hash = hash(frozenset(self.__base.items()))  # check immutability and precompute hash
         return self
 
-    @property
+    @cached_property
     def __nutils_hash__(self):
         h = hashlib.sha1('{}.{}\0'.format(type(self).__module__, type(self).__qualname__).encode())
         for item in sorted(nutils_hash(k)+nutils_hash(v) for k, v in self.items()):
@@ -637,9 +425,6 @@ class frozenmultiset(collections.abc.Container):
     False
     '''
 
-    __slots__ = '__items', '__key'
-    __cache__ = '__nutils_hash__',
-
     def __new__(cls, items):
         if isinstance(items, frozenmultiset):
             return items
@@ -648,7 +433,7 @@ class frozenmultiset(collections.abc.Container):
         self.__key = frozenset((item, self.__items.count(item)) for item in self.__items)
         return self
 
-    @property
+    @cached_property
     def __nutils_hash__(self):
         h = hashlib.sha1('{}.{}\0'.format(type(self).__module__, type(self).__qualname__).encode())
         for item in sorted('{:04d}'.format(count).encode()+nutils_hash(item) for item, count in self.__key):
