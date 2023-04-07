@@ -2193,8 +2193,9 @@ def dot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]
 
     Parameters
     ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    axis : :class:`int`, a sequence of :class:`int`, or ``None``
+    a : :class:`Array` or something that can be :meth:`~Array.cast` into one
+    b : :class:`Array` or something that can be :meth:`~Array.cast` into one
+    axes : :class:`int`, a sequence of :class:`int`, or ``None``
         The axis or axes along which the inner product is performed. If the
         second argument has one dimension and axes is ``None``, the default, the
         inner product of the second argument with the first axis of the first
