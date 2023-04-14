@@ -1,12 +1,12 @@
-#! /usr/bin/env python3
+# Adaptive refinement of reentrant corner
 #
 # In this script we solve the Laplace problem on a unit square that has the
 # bottom-right quadrant removed (a.k.a. an L-shaped domain) with Dirichlet
 # boundary conditions matching the harmonic function
 #
-# .. math:: \sqrt[3]{x^2 + y^2} \cos\left(\tfrac23 \arctan\frac{y+x}{y-x}\right),
+#     ³√(x² + y²) cos(⅔ arctan2(y+x, y-x))
 #
-# shifted by 0.5 such that the origin coincides with the middle of the unit
+# shifted by ½ such that the origin coincides with the middle of the unit
 # square. This variation of a well known benchmark problem is known to converge
 # suboptimally under uniform refinement due to a singular gradient in the
 # reentrant corner. This script demonstrates that optimal convergence can be
@@ -142,3 +142,5 @@ class test(testing.TestCase):
             self.assertAlmostEqual64(lhs, '''
                 eNprMT1u6mQyxUTRzMCUAQhazL6b3jNrMYPxp5iA5FtMD+lcMgDxHa4aXzS+6HDV+fKO85cMnC8zMBzS
                 AQDBThbY''')
+
+# example:tags=hierarchical refinements,Laplace:thumbnail=0

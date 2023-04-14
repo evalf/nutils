@@ -1,4 +1,4 @@
-#! /usr/bin/env python3
+# Large deformation of hyperelastic material
 #
 # In this script we solve the nonlinear Saint Venant-Kichhoff problem on a unit
 # square domain (optionally with a circular cutout), clamped at both the left
@@ -17,7 +17,7 @@ def main(nelems: int, etype: str, btype: str, degree: int, poisson: float, angle
 
     .. arguments::
 
-       nelems [10]
+       nelems [20]
          Number of elements along edge.
        etype [square]
          Type of elements (square/triangle/mixed).
@@ -31,7 +31,7 @@ def main(nelems: int, etype: str, btype: str, degree: int, poisson: float, angle
          Rotation angle for right clamp (degrees).
        restol [1e-8]
          Newton tolerance.
-       trim [no]
+       trim [yes]
          Create circular-shaped hole.
     '''
 
@@ -59,7 +59,7 @@ def main(nelems: int, etype: str, btype: str, degree: int, poisson: float, angle
     energy = domain.integral('energy dV' @ ns, degree=degree*2)
     lhs0 = solver.optimize('lhs', energy, constrain=cons)
     X, energy = bezier.eval(['X_i', 'energy'] @ ns, lhs=lhs0)
-    export.triplot('linear.png', X, energy, tri=bezier.tri, hull=bezier.hull)
+    export.triplot('linear.png', X, energy, tri=bezier.tri, hull=bezier.hull, cmap='jet')
 
     ns.strain_ij = '.5 (∇_j(u_i) + ∇_i(u_j) + ∇_i(u_k) ∇_j(u_k))'
     ns.energy = 'lmbda strain_ii strain_jj + 2 mu strain_ij strain_ij'
@@ -67,7 +67,7 @@ def main(nelems: int, etype: str, btype: str, degree: int, poisson: float, angle
     energy = domain.integral('energy dV' @ ns, degree=degree*2)
     lhs1 = solver.minimize('lhs', energy, arguments=dict(lhs=lhs0), constrain=cons).solve(restol)
     X, energy = bezier.eval(['X_i', 'energy'] @ ns, lhs=lhs1)
-    export.triplot('nonlinear.png', X, energy, tri=bezier.tri, hull=bezier.hull)
+    export.triplot('nonlinear.png', X, energy, tri=bezier.tri, hull=bezier.hull, cmap='jet')
 
     return lhs0, lhs1
 
@@ -124,3 +124,5 @@ class test(testing.TestCase):
                 eNpjYMAOnLUP6ejq9ukI67vflTVQvdRt0H8h3fDBOT7trReK9adeyDFcez7YaN+5X0Z7z7oYB5/9rKx9
                 ztdA6Fyq0dqzScbGZ78bLzmja5J8RvzSrjN9BgvOfDFKP/PTWOfMSpO3p8+YbDx9+4LkGT8DljMCxndO
                 a5lsP33XZOppZdOW0wApLzra''')
+
+# example:tags=finite strain,energy minimization
