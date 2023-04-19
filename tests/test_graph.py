@@ -235,7 +235,7 @@ class generate(TestCase):
     def test_single_graphviz_source(self):
         self.assertEqual(self.single.generate_graphviz_source(),
                          'digraph {'
-                         'graph [dpi=72];'
+                         'bgcolor="darkgray";'
                          '0 [shape=box,label="d"];'
                          '1 [shape=box,label="c"];'
                          '2 [shape=box,label="a"];'
@@ -250,7 +250,7 @@ class generate(TestCase):
     def test_single_graphviz_source_fill_color(self):
         self.assertEqual(self.single.generate_graphviz_source(fill_color=lambda node: node.metadata),
                          'digraph {'
-                         'graph [dpi=72];'
+                         'bgcolor="darkgray";'
                          '0 [shape=box,label="d"];'
                          '1 [shape=box,label="c",style=filled,fillcolor="red"];'
                          '2 [shape=box,label="a"];'
@@ -285,16 +285,24 @@ class generate(TestCase):
     def test_multiple_graphviz_source(self):
         self.assertEqual(self.multiple.generate_graphviz_source(),
                          'digraph {'
-                         'graph [dpi=72];'
+                         'bgcolor="darkgray";'
                          'subgraph cluster7 {'
+                         'bgcolor="lightgray";'
+                         'color="none";'
                          'subgraph cluster8 {'
+                         'bgcolor="lightgray";'
+                         'color="none";'
                          'subgraph cluster9 {'
+                         'bgcolor="lightgray";'
+                         'color="none";'
                          '1 [shape=box,label="i"];'
                          '2 [shape=box,label="e"];'
                          '}'
                          '4 [shape=box,label="f"];'
                          '}'
                          'subgraph cluster10 {'
+                         'bgcolor="lightgray";'
+                         'color="none";'
                          '6 [shape=box,label="g"];'
                          '}'
                          '}'

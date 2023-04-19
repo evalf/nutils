@@ -57,7 +57,7 @@ class Node(Generic[Metadata], metaclass=abc.ABCMeta):
         subgraph_children = _collect_subgraphs(self)
         id_gen = map(str, itertools.count())
         self._collect_graphviz_nodes_edges({}, id_gen, nodes, edges, None, fill_color)
-        return ''.join(itertools.chain(['digraph {graph [dpi=72];'], _generate_graphviz_subgraphs(subgraph_children, nodes, None, id_gen), edges, ['}']))
+        return ''.join(itertools.chain(['digraph {bgcolor="darkgray";'], _generate_graphviz_subgraphs(subgraph_children, nodes, None, id_gen), edges, ['}']))
 
     def export_graphviz(self, *, fill_color: Optional[GraphvizColorCallback] = None, dot_path: str = 'dot', image_type: str = 'svg') -> None:
         src = self.generate_graphviz_source(fill_color=fill_color)
@@ -210,7 +210,7 @@ def _generate_asciitree_subgraphs(children: Mapping[Optional[Subgraph], Sequence
 
 def _generate_graphviz_subgraphs(children: Mapping[Optional[Subgraph], Sequence[Subgraph]], nodes: Mapping[Optional[Subgraph], Sequence[str]], subgraph: Optional[Subgraph], id_gen: Iterator[str]) -> Iterator[str]:
     for child in children[subgraph]:
-        yield 'subgraph cluster{} {{'.format(next(id_gen))
+        yield 'subgraph cluster{} {{bgcolor="lightgray";color="none";'.format(next(id_gen))
         yield from _generate_graphviz_subgraphs(children, nodes, child, id_gen)
         yield '}'
     yield from nodes.get(subgraph, ())
