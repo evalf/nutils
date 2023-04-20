@@ -1909,13 +1909,13 @@ class Add(Array):
             return add(*indep) * index.length + loop_sum(add(*dep), index)
 
     def _multiply(self, other):
-        terms = tuple(self._terms)
-        if all(f._inflations or f._diagonals for f in terms):
+        f_other = [f._multiply(other) or other._multiply(f) or (f._inflations or f._diagonals) and f * other for f in self._terms]
+        if all(f_other):
             # NOTE: As this operation is the precise opposite of Multiply._add, there
             # appears to be a great risk of recursion. However, since both factors
             # are sparse, we can be certain that subsequent simpifications will
             # irreversibly process the new terms before reaching this point.
-            return add(*[f * other for f in terms])
+            return add(*f_other)
 
     @cached_property
     def _assparse(self):
