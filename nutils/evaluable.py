@@ -583,30 +583,6 @@ class Tuple(Evaluable):
         return Tuple(tuple(other) + self.items)
 
 
-class SparseArray(Evaluable):
-    'sparse array'
-
-    def __init__(self, chunks: typing.Tuple[typing.Tuple['Array', ...], ...], shape: typing.Tuple['Array', ...], dtype: Dtype):
-        assert isinstance(chunks, tuple) and all(isinstance(chunk, tuple) and all(isinstance(v, Array) for v in chunk) for chunk in chunks), f'chunks={chunks!r}'
-        assert isinstance(shape, tuple) and all(_isindex(n) for n in shape), f'shape={shape!r}'
-        assert isinstance(dtype, type) and dtype in _type_order, f'dtype={dtype!r}'
-        self._shape = shape
-        self._dtype = dtype
-        super().__init__(args=(Tuple(shape), *map(Tuple, chunks)))
-
-    def evalf(self, shape, *chunks):
-        length = builtins.sum(values.size for *indices, values in chunks)
-        data = numpy.empty((length,), dtype=sparse.dtype(tuple(map(int, shape)), self._dtype))
-        start = 0
-        for *indices, values in chunks:
-            stop = start + values.size
-            d = data[start:stop].reshape(values.shape)
-            d['value'] = values
-            for idim, ii in enumerate(indices):
-                d['index']['i'+str(idim)] = ii
-            start = stop
-        return data
-
 # ARRAYFUNC
 #
 # The main evaluable. Closely mimics a numpy array.
@@ -937,12 +913,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     @property
     def imag(self):
         return imag(self)
-
-    @cached_property
-    def assparse(self):
-        'Convert to a :class:`SparseArray`.'
-
-        return SparseArray(self.simplified._assparse, self.shape, self.dtype)
 
     @cached_property
     def _assparse(self):
@@ -5121,9 +5091,23 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
     results : :class:`tuple` of sparse data arrays
     '''
 
-    funcs = tuple(func.as_evaluable_array.assparse for func in funcs)
-    with Tuple(funcs).optimized_for_numpy.session(graphviz=graphviz) as eval:
-        return eval(**arguments)
+    funcs = [func.as_evaluable_array for func in funcs]
+    shape_chunks = Tuple(tuple(Tuple(builtins.sum(func.simplified._assparse, func.shape)) for func in funcs))
+    with shape_chunks.optimized_for_numpy.session(graphviz=graphviz) as eval:
+        for func, args in zip(funcs, eval(**arguments)):
+            shape = tuple(map(int, args[:func.ndim]))
+            chunks = [args[i:i+func.ndim+1] for i in range(func.ndim, len(args), func.ndim+1)]
+            length = builtins.sum(values.size for *indices, values in chunks)
+            data = numpy.empty((length,), dtype=sparse.dtype(shape, func.dtype))
+            start = 0
+            for *indices, values in chunks:
+                stop = start + values.size
+                d = data[start:stop].reshape(values.shape)
+                d['value'] = values
+                for idim, ii in enumerate(indices):
+                    d['index']['i'+str(idim)] = ii
+                start = stop
+            yield data
 
 
 if __name__ == '__main__':
@@ -5139,7 +5123,7 @@ if __name__ == '__main__':
     # Diagonalize as late as possible. In shuffling the order of operations the
     # two classes might annihilate each other, for example when a Sum passes
     # through a Diagonalize. Any shape increasing operations that remain should
-    # end up at the surface, exposing sparsity by means of the assparse method.
+    # end up at the surface, exposing sparsity by means of the _assparse method.
     attrs = ['_'+cls.__name__.lower() for cls in simplify_priority]
     # The simplify operations responsible for swapping (a.o.) are methods named
     # '_add', '_multiply', etc. In order to avoid recursions the operations

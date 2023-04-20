@@ -64,7 +64,7 @@ class check(TestCase):
         with self.subTest('optimized'):
             self.assertArrayAlmostEqual(actual.optimized_for_numpy.eval(**evalargs), desired, decimal)
         with self.subTest('sparse'):
-            indices, values, shape = sparse.extract(actual.assparse.eval(**evalargs))
+            indices, values, shape = sparse.extract(evaluable.eval_sparse(actual, **evalargs))
             self.assertEqual(tuple(map(int, shape)), desired.shape)
             if not indices:
                 dense = values.sum()
