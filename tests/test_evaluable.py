@@ -447,6 +447,7 @@ _check('conjugate-complex', lambda f: evaluable.conjugate(f), lambda a: a.conjug
 _check('const', lambda: evaluable.constant(ANY(2, 4, 2)), lambda: ANY(2, 4, 2))
 _check('zeros', lambda: evaluable.zeros(tuple(map(evaluable.constant, [1, 4, 3, 4]))), lambda: numpy.zeros([1, 4, 3, 4]))
 _check('ones', lambda: evaluable.ones(tuple(map(evaluable.constant, [1, 4, 3, 4]))), lambda: numpy.ones([1, 4, 3, 4]))
+_check('ones-bool', lambda: evaluable.ones(tuple(map(evaluable.constant, [1, 4, 3, 4])), dtype=bool), lambda: numpy.ones([1, 4, 3, 4], dtype=bool))
 _check('range', lambda: evaluable.Range(evaluable.constant(4)) + 2, lambda: numpy.arange(2, 6))
 _check('sin', evaluable.sin, numpy.sin, ANY(4, 4))
 _check('sin-complex', evaluable.sin, numpy.sin, ANC(4, 4))

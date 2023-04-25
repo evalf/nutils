@@ -4637,7 +4637,7 @@ def zeros_like(arr):
 
 
 def ones(shape, dtype=float):
-    return _inflate_scalar(astype(numpy.ones((), dtype=int), dtype), shape)
+    return _inflate_scalar(constant(dtype(1)), shape)
 
 
 def ones_like(arr):
