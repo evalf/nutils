@@ -2435,6 +2435,18 @@ class Equal(Pointwise):
     evalf = staticmethod(numpy.equal)
     return_type = lambda T1, T2: bool
 
+    def _simplified(self):
+        a1, a2 = self.args
+        if a1 == a2:
+            return ones(self.shape, bool)
+        if self.ndim == 2:
+            u1, w1 = unalign(a1)
+            u2, w2 = unalign(a2)
+            if u1 == u2 and isinstance(u1, Range):
+                # NOTE: Once we introduce isunique we can relax the Range bound
+                return Diagonalize(ones(u1.shape, bool))
+        return super()._simplified()
+
 
 class Less(Pointwise):
     evalf = staticmethod(numpy.less)

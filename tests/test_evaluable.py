@@ -1005,6 +1005,15 @@ class simplify(TestCase):
         a = evaluable.Argument('test', shape=(evaluable.constant(2,),))
         self.assertTrue(evaluable.iszero(a - a))
 
+    def test_equal(self):
+        r = evaluable.Range(evaluable.constant(3))
+        self.assertEqual(
+            evaluable.Equal(r, r).simplified,
+            evaluable.ones(r.shape, bool))
+        self.assertEqual(
+            evaluable.Equal(evaluable.prependaxes(r, r.shape), evaluable.appendaxes(r, r.shape)).simplified,
+            evaluable.Diagonalize(evaluable.ones(r.shape, bool)))
+
 
 class memory(TestCase):
 
