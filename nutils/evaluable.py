@@ -2051,18 +2051,6 @@ class TakeDiag(Array):
         if axis != self.ndim - 1:
             return TakeDiag(sum(self.func, axis))
 
-    @cached_property
-    def _assparse(self):
-        chunks = []
-        for *indices, values in self.func._assparse:
-            if indices[-2] == indices[-1]:
-                chunks.append((*indices[:-1], values))
-            else:
-                *indices, values = map(_flat, (*indices, values))
-                mask = Equal(indices[-2], indices[-1])
-                chunks.append(tuple(take(arr, mask, 0) for arr in (*indices[:-1], values)))
-        return _gathersparsechunks(chunks)
-
     def _intbounds_impl(self):
         return self.func._intbounds
 
