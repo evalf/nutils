@@ -299,6 +299,21 @@ Zip(etype='square')
 Zip(etype='triangle')
 Zip(etype='mixed')
 
+class ZipCornerCases(TestCase):
+
+    def test_reordered_reference_indices(self):
+        # The first sample in a zip typically maintains the order of the
+        # points. Here we test a situation where this is not true: the third
+        # point of `smpl` is located in the second element of `Y`, the other
+        # three in the first element of `Y`.
+        X, x = mesh.line([1, 5], space='X')
+        Y, y = mesh.line([0, 3, 4], space='Y')
+        smpl = X.sample('gauss', 6)
+        zipped = smpl.zip(Y.locate(y, smpl.eval(x) % 4, tol=1e-10))
+        self.assertAllAlmostEqual(zipped.eval(Y.f_index), [0, 0, 1, 0])
+        # Assert we get the correct weights (issue #791).
+        self.assertAllAlmostEqual(zipped.integrate(x * function.J(x)), 12)
+
 
 class TakeElements(TestCase, Common):
 

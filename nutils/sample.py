@@ -746,8 +746,10 @@ class _Zip(Sample):
         return self._getslice(self._indices, ielem)
 
     def get_evaluable_weights(self, ielem):
-        weights = self._samples[0].get_evaluable_weights(evaluable.Take(self._ielems[0], ielem))
-        return self._getslice(weights, ielem)
+        ielem0 = evaluable.Take(self._ielems[0], ielem)
+        slice0 = self._getslice(self._ilocals[0], ielem)
+        weights = self._samples[0].get_evaluable_weights(ielem0)
+        return evaluable._take(weights, slice0, axis=0)
 
 
 class _TakeElements(_TensorialSample):
