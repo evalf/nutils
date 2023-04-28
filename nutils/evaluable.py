@@ -1177,8 +1177,10 @@ class Constant(Array):
             return constant(numpy.add(self.value, other.value))
 
     def _inverse(self, axis1, axis2):
-        value = numpy.transpose(self.value, tuple(i for i in range(self.ndim) if i != axis1 and i != axis2) + (axis1, axis2))
-        return constant(numpy.linalg.inv(value))
+        assert 0 <= axis1 < axis2 < self.ndim
+        axes = (*range(axis1), *range(axis1+1, axis2), *range(axis2+1, self.ndim), axis1, axis2)
+        value = numpy.transpose(self.value, axes)
+        return constant(numpy.transpose(numpy.linalg.inv(value), numpy.argsort(axes)))
 
     def _product(self):
         return constant(self.value.prod(-1))
