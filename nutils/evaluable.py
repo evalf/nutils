@@ -3530,6 +3530,10 @@ class Range(Array):
     def _take(self, index, axis):
         return InRange(index, self.length)
 
+    def _unravel(self, axis, shape):
+        if len(shape) == 2:
+            return RavelIndex(Range(shape[0]), Range(shape[1]), shape[0], shape[1])
+
     def _rtake(self, func, axis):
         if _equals_simplified(self.length, func.shape[axis]):
             return func
