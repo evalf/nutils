@@ -91,7 +91,7 @@ def _equals_simplified(arg1: 'Array', arg2: 'Array'):
     assert isinstance(arg2, Array), f'arg2={arg2!r}'
     if arg1 is arg2:
         return True
-    assert arg1.shape == arg2.shape and arg1.dtype == arg2.dtype, f'arg1={arg1!r}, arg2={arg2!r}'
+    assert equalshape(arg1.shape, arg2.shape) and arg1.dtype == arg2.dtype, f'arg1={arg1!r}, arg2={arg2!r}'
     arg1 = arg1.simplified
     arg2 = arg2.simplified
     if arg1 is arg2:
@@ -593,9 +593,11 @@ def add(a, b):
     return Add(types.frozenmultiset((a, b)))
 
 
-def multiply(a, b):
-    a, b = _numpy_align(a, b)
-    return Multiply(types.frozenmultiset((a, b)))
+def multiply(*args):
+    args = _numpy_align(*args)
+    if len(args) == 1:
+        return args[0]
+    return Multiply(types.frozenmultiset(args))
 
 
 def sum(arg, axis=None):
@@ -1479,7 +1481,7 @@ class Transpose(Array):
             return Transpose(Product(self.func), self.axes[:-1])
 
     def _determinant(self, axis1, axis2):
-        orig1, orig2 = self.axes[axis1], self.axes[axis2]
+        orig1, orig2 = sorted(self.axes[i] for i in (axis1, axis2))
         trydet = self.func._determinant(orig1, orig2)
         if trydet:
             axes = tuple(ax-(ax > orig1)-(ax > orig2) for ax in self.axes if ax != orig1 and ax != orig2)
@@ -1629,159 +1631,144 @@ class Multiply(Array):
 
     def __init__(self, funcs: types.frozenmultiset):
         assert isinstance(funcs, types.frozenmultiset), f'funcs={funcs!r}'
-        self.funcs = funcs
-        func1, func2 = funcs
-        assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype != bool, 'Multiply({}, {})'.format(func1, func2)
-        super().__init__(args=tuple(self.funcs), shape=func1.shape, dtype=func1.dtype)
+        func, *others = funcs
+        assert all(equalshape(f.shape, func.shape) and f.dtype == func.dtype for f in others)
+        self.funcs = tuple(funcs)
+        super().__init__(args=tuple(funcs), shape=func.shape, dtype=func.dtype)
 
     def _simplified(self):
-        func1, func2 = self.funcs
-        if func1._const_uniform == 1:
-            return func2
-        if func2._const_uniform == 1:
-            return func1
-        unaligned1, unaligned2, where = unalign(func1, func2)
-        if len(where) != self.ndim:
-            return align(unaligned1 * unaligned2, where, self.shape)
-        for axis1, axis2, *other in map(sorted, func1._diagonals or func2._diagonals):
-            return diagonalize(multiply(takediag(func1, axis1, axis2), takediag(func2, axis1, axis2)), axis1, axis2)
-        for i, parts in func1._inflations:
-            return util.sum(_inflate(f * _take(func2, dofmap, i), dofmap, self.shape[i], i) for dofmap, f in parts.items())
-        for i, parts in func2._inflations:
-            return util.sum(_inflate(_take(func1, dofmap, i) * f, dofmap, self.shape[i], i) for dofmap, f in parts.items())
-        return func1._multiply(func2) or func2._multiply(func1)
+        for j, fj in enumerate(self.funcs):
+            if isinstance(fj, Multiply):
+                return multiply(*self.funcs[:j], *fj.funcs, *self.funcs[j+1:])
+            if fj._const_uniform == 1:
+                return multiply(*self.funcs[:j], *self.funcs[j+1:])
+            for i, parts in fj._inflations:
+                return util.sum(_inflate(multiply(f, *(_take(fi, dofmap, i) for fi in self.funcs[:j] + self.funcs[j+1:])), dofmap, self.shape[i], i) for dofmap, f in parts.items())
+            for axis1, axis2, *other in map(sorted, fj._diagonals):
+                return diagonalize(multiply(*(takediag(f, axis1, axis2) for f in self.funcs)), axis1, axis2)
+            for i, fi in enumerate(self.funcs[:j]):
+                unaligned1, unaligned2, where = unalign(fi, fj)
+                fij = align(unaligned1 * unaligned2, where, self.shape) if len(where) != self.ndim \
+                    else fi._multiply(fj) or fj._multiply(fi)
+                if fij:
+                    return multiply(*self.funcs[:i], *self.funcs[i+1:j], *self.funcs[j+1:], fij)
 
     def _optimized_for_numpy(self):
-        func1, func2 = self.funcs
-        if func1._const_uniform == -1 and func2.dtype != bool:
-            return Negative(func2)
-        if func2._const_uniform == -1 and func1.dtype != bool:
-            return Negative(func1)
-        if self.dtype != complex and func1 == sign(func2):
-            return Absolute(func2)
-        if self.dtype != complex and func2 == sign(func1):
-            return Absolute(func1)
-        if not self.ndim:
-            return
-        unaligned1, where1 = unalign(func1)
-        unaligned2, where2 = unalign(func2)
-        return Einsum((unaligned1, unaligned2), (where1, where2), tuple(range(self.ndim)))
+        for j, fj in enumerate(self.funcs):
+            if fj._const_uniform == -1:
+                return Negative(multiply(*self.funcs[:j], *self.funcs[j+1:]))
+            if isinstance(fj, Sign) and fj.func in self.funcs:
+                fi = fj.func
+                i = self.funcs.index(fi)
+                a, b = sorted([i,j])
+                return multiply(*self.funcs[:a], *self.funcs[a+1:b], *self.funcs[b+1:], Absolute(fi))
+        if self.ndim:
+            unaligneds, wheres = zip(*map(unalign, self.funcs))
+            return Einsum(tuple(unaligneds), tuple(wheres), tuple(range(self.ndim)))
 
-    evalf = staticmethod(numpy.multiply)
+    @staticmethod
+    def evalf(arg1, arg2, *args):
+        retval = arg1 * arg2
+        for arg in args:
+            retval *= arg
+        return retval
 
     def _sum(self, axis):
-        func1, func2 = self.funcs
-        unaligned, where = unalign(func1)
-        if axis not in where:
-            return align(unaligned, [i-(i > axis) for i in where], self.shape[:axis]+self.shape[axis+1:]) * sum(func2, axis)
-        unaligned, where = unalign(func2)
-        if axis not in where:
-            return sum(func1, axis) * align(unaligned, [i-(i > axis) for i in where], self.shape[:axis]+self.shape[axis+1:])
+        for j, fj in enumerate(self.funcs):
+            unaligned, where = unalign(fj)
+            if axis not in where:
+                return align(unaligned, [i-(i > axis) for i in where], self.shape[:axis]+self.shape[axis+1:]) * sum(multiply(*self.funcs[:j], *self.funcs[j+1:]), axis)
 
     def _add(self, other):
-        func1, func2 = self.funcs
-        if isinstance(other, Multiply):
-            for common in self.funcs & other.funcs:
-                return common * Add(self.funcs + other.funcs - [common, common])
+        for j, fj in enumerate(self.funcs):
+            if fj == other or isinstance(other, Multiply) and fj in other.funcs:
+                if fj == other:
+                    c = ones_like(self)
+                else:
+                    i = other.funcs.index(fj)
+                    c = multiply(*other.funcs[:i], *other.funcs[i+1:])
+                return fj * (multiply(*self.funcs[:j], *self.funcs[j+1:]) + c)
 
     def _determinant(self, axis1, axis2):
-        func1, func2 = self.funcs
-        axis1, axis2 = sorted([axis1, axis2])
-        if _equals_scalar_constant(self.shape[axis1], 1) and _equals_scalar_constant(self.shape[axis2], 1):
-            return multiply(determinant(func1, (axis1, axis2)), determinant(func2, (axis1, axis2)))
-        unaligned1, where1 = unalign(func1)
-        if {axis1, axis2}.isdisjoint(where1):
-            d2 = determinant(func2, (axis1, axis2))
-            d1 = align(unaligned1**self.shape[axis1], [i-(i > axis1)-(i > axis2) for i in where1 if i not in (axis1, axis2)], d2.shape)
-            return d1 * d2
-        unaligned2, where2 = unalign(func2)
-        if {axis1, axis2}.isdisjoint(where2):
-            d1 = determinant(func1, (axis1, axis2))
-            d2 = align(unaligned2**self.shape[axis1], [i-(i > axis1)-(i > axis2) for i in where2 if i not in (axis1, axis2)], d1.shape)
-            return d1 * d2
+        assert 0 <= axis1 < axis2 < self.ndim
+        for j, fj in enumerate(self.funcs):
+            unaligned, where = unalign(fj)
+            if {axis1, axis2}.isdisjoint(where):
+                d2 = determinant(multiply(*self.funcs[:j], *self.funcs[j+1:]), (axis1, axis2))
+                d1 = align(unaligned**self.shape[axis1], [i-(i > axis1)-(i > axis2) for i in where if i not in (axis1, axis2)], d2.shape)
+                return d1 * d2
 
     def _product(self):
-        func1, func2 = self.funcs
-        return multiply(Product(func1), Product(func2))
-
-    def _multiply(self, other):
-        func1, func2 = self.funcs
-        func1_other = func1._multiply(other)
-        if func1_other is not None:
-            return multiply(func1_other, func2)
-        func2_other = func2._multiply(other)
-        if func2_other is not None:
-            return multiply(func1, func2_other)
-        # Reorder the multiplications such that the amount of flops is minimized.
-        # The flops are counted based on the lower int bounds of the shape and loop
-        # lengths, excluding common inserted axes and invariant loops of the inner
-        # product.
-        sizes = []
-        unaligned = tuple(map(unalign, (func1, func2, other)))
-        for (f1, w1), (f2, w2) in itertools.combinations(unaligned, 2):
-            lengths = [self.shape[i] for i in set(w1) | set(w2)]
-            lengths += [arg.length for arg in f1.arguments | f2.arguments if isinstance(arg, _LoopIndex)]
-            sizes.append(util.product((max(1, length._intbounds[0]) for length in lengths), 1))
-        min_size = min(sizes)
-        if sizes[0] == min_size:
-            return  # status quo
-        elif sizes[1] == min_size:
-            return (func1 * other) * func2
-        elif sizes[2] == min_size:
-            return (func2 * other) * func1
+        return multiply(*(Product(f) for f in self.funcs))
 
     def _derivative(self, var, seen):
-        func1, func2 = self.funcs
-        return einsum('A,AB->AB', func1, derivative(func2, var, seen)) \
-            + einsum('A,AB->AB', func2, derivative(func1, var, seen))
+        return util.sum(multiply(derivative(fj, var, seen), *(appendaxes(fi, var.shape) for fi in self.funcs[:j] + self.funcs[j+1:])) for j, fj in enumerate(self.funcs))
 
     def _takediag(self, axis1, axis2):
-        func1, func2 = self.funcs
-        return multiply(_takediag(func1, axis1, axis2), _takediag(func2, axis1, axis2))
+        return multiply(*(_takediag(f, axis1, axis2) for f in self.funcs))
 
     def _take(self, index, axis):
-        func1, func2 = self.funcs
-        return multiply(_take(func1, index, axis), _take(func2, index, axis))
+        return multiply(*(_take(f, index, axis) for f in self.funcs))
 
     def _sign(self):
-        func1, func2 = self.funcs
-        return multiply(Sign(func1), Sign(func2))
+        return multiply(*(Sign(f) for f in self.funcs))
 
     def _unravel(self, axis, shape):
-        func1, func2 = self.funcs
-        return multiply(unravel(func1, axis, shape), unravel(func2, axis, shape))
+        return multiply(*(unravel(f, axis, shape) for f in self.funcs))
 
     def _inverse(self, axis1, axis2):
-        func1, func2 = self.funcs
-        if set(unalign(func1)[1]).isdisjoint((axis1, axis2)):
-            return divide(inverse(func2, (axis1, axis2)), func1)
-        if set(unalign(func2)[1]).isdisjoint((axis1, axis2)):
-            return divide(inverse(func1, (axis1, axis2)), func2)
+        for j, fj in enumerate(self.funcs):
+            unaligned, where = unalign(fj)
+            if set(where).isdisjoint((axis1, axis2)):
+                return divide(inverse(multiply(*self.funcs[:j], *self.funcs[j+1:]), (axis1, axis2)), fj)
+
+    @property
+    def _outer_factors(self):
+        islands = []
+        for i, func in enumerate(self.funcs):
+            uninserted, where = unalign(func)
+            itouching = [i for i, (u, w) in enumerate(islands) if numpy.intersect1d(w, where).size]
+            for i in reversed(itouching):
+                u, w = islands.pop(i)
+                union = numpy.union1d(where, w)
+                shape = tuple(self.shape[i] for i in union)
+                uninserted = align(uninserted, numpy.searchsorted(union, where), shape) * align(u, numpy.searchsorted(union, w), shape)
+                where = union
+            islands.append((uninserted, where))
+        iscalar = [i for i, (u, w) in enumerate(islands) if u.ndim == 0]
+        if iscalar:
+            scalar = multiply(*(islands.pop(i)[0] for i in reversed(iscalar)))
+            islands.append((scalar, ()))
+        return tuple(islands)
 
     @cached_property
     def _assparse(self):
-        func1, func2 = self.funcs
-        uninserted1, where1 = unalign(func1)
-        uninserted2, where2 = unalign(func2)
-        if not set(where1) & set(where2):
-            sparse = []
-            for *indices1, values1 in uninserted1._assparse:
-                for *indices2, values2 in uninserted2._assparse:
-                    indices = [None] * self.ndim
-                    for i, j in enumerate(where1):
-                        indices[j] = appendaxes(indices1[i], values2.shape)
-                    for i, j in enumerate(where2):
-                        indices[j] = prependaxes(indices2[i], values1.shape)
-                    assert all(indices)
-                    values = appendaxes(values1, values2.shape) * prependaxes(values2, values1.shape)
-                    sparse.append((*indices, values))
-            return tuple(sparse)
-        return super()._assparse
+        funcs, partitions = zip(*self._outer_factors)
+        if len(funcs) == 1:
+            return super()._assparse
+        sparse = []
+        for sparse_components in itertools.product(*(func._assparse for func in funcs)):
+            shape = tuple(n for *indices, values in sparse_components for n in values.shape)
+            all_indices = [None] * self.ndim
+            factors = []
+            beg = 0
+            for where, (*indices, values) in zip(partitions, sparse_components):
+                end = beg + values.ndim
+                for i, index in zip(where, indices):
+                    assert all_indices[i] is None
+                    all_indices[i] = align(index, numpy.arange(beg, end), shape)
+                factors.append(align(values, numpy.arange(beg, end), shape))
+                beg = end
+            assert all(all_indices)
+            sparse.append((*all_indices, multiply(*factors)))
+        return tuple(sparse)
 
     def _intbounds_impl(self):
-        func1, func2 = self.funcs
-        extrema = [b1 and b2 and b1 * b2 for b1 in func1._intbounds for b2 in func2._intbounds]
-        return min(extrema), max(extrema)
+        bounds = self.funcs[0]._intbounds
+        for func in self.funcs[1:]:
+            extrema = [b1 * b2 for b1 in func._intbounds for b2 in bounds]
+            bounds = min(extrema), max(extrema)
+        return bounds
 
 
 class Add(Array):
