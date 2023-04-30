@@ -694,7 +694,10 @@ class piecewise(TestCase):
 
     def test_evalf(self):
         f_ = self.domain.sample('uniform', 4).eval(self.f)  # x=.125, .375, .625, .875
-        assert numpy.equal(f_, [1, numpy.sin(.375), numpy.sin(.625), .875**2]).all()
+        # small inaccuracies are possible due to sign-based implementation of
+        # partition, leading to order dependent rounding errors due to
+        # cancellation of terms
+        self.assertAllAlmostEqual(f_, [1, numpy.sin(.375), numpy.sin(.625), .875**2], places=15)
 
     def test_deriv(self):
         g_ = self.domain.sample('uniform', 4).eval(function.grad(self.f, self.geom))  # x=.125, .375, .625, .875

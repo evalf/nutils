@@ -588,9 +588,11 @@ class Tuple(Evaluable):
 # The main evaluable. Closely mimics a numpy array.
 
 
-def add(a, b):
-    a, b = _numpy_align(a, b)
-    return Add(types.frozenmultiset((a, b)))
+def add(*args):
+    args = _numpy_align(*args)
+    if len(args) == 1:
+        return args[0]
+    return Add(types.frozenmultiset(args))
 
 
 def multiply(*args):
@@ -1774,41 +1776,34 @@ class Multiply(Array):
 class Add(Array):
 
     def __init__(self, funcs: types.frozenmultiset):
-        assert isinstance(funcs, types.frozenmultiset) and len(funcs) == 2, f'funcs={funcs!r}'
-        self.funcs = funcs
-        func1, func2 = funcs
-        assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype != bool, 'Add({}, {})'.format(func1, func2)
-        super().__init__(args=tuple(self.funcs), shape=func1.shape, dtype=func1.dtype)
+        assert isinstance(funcs, types.frozenmultiset), f'funcs={funcs!r}'
+        func, *others = funcs
+        assert all(equalshape(f.shape, func.shape) and f.dtype == func.dtype for f in others)
+        self.funcs = tuple(funcs)
+        super().__init__(args=tuple(funcs), shape=func.shape, dtype=func.dtype)
 
     @cached_property
     def _inflations(self):
-        func1, func2 = self.funcs
-        func2_inflations = dict(func2._inflations)
-        inflations = []
-        for axis, parts1 in func1._inflations:
-            if axis not in func2_inflations:
-                continue
-            parts2 = func2_inflations[axis]
-            dofmaps = set(parts1) | set(parts2)
-            if (len(parts1) < len(dofmaps) and len(parts2) < len(dofmaps)  # neither set is a subset of the other; total may be dense
-                    and self.shape[axis].isconstant and all(dofmap.isconstant for dofmap in dofmaps)):
-                mask = numpy.zeros(int(self.shape[axis]), dtype=bool)
-                for dofmap in dofmaps:
-                    mask[dofmap.eval()] = True
-                if mask.all():  # axis adds up to dense
-                    continue
-            inflations.append((axis, types.frozendict((dofmap, util.sum(parts[dofmap] for parts in (parts1, parts2) if dofmap in parts)) for dofmap in dofmaps)))
-        return tuple(inflations)
+        inflations_per_axis = [[] for i in range(self.ndim)]
+        for func in self.funcs:
+            for axis, parts in func._inflations:
+                inflations_per_axis[axis].append(parts)
+        return tuple((axis,
+            types.frozendict((dofmap, add(*(parts[dofmap] for parts in parts_per_func if dofmap in parts))) for dofmap in functools.reduce(set.union, map(set, parts_per_func))))
+                for axis, parts_per_func in enumerate(inflations_per_axis) if len(parts_per_func) == len(self.funcs))
 
     def _simplified(self):
-        func1, func2 = self.funcs
-        if func1 == func2:
-            return multiply(func1, 2)
-        for axes1 in func1._diagonals:
-            for axes2 in func2._diagonals:
-                if len(axes1 & axes2) >= 2:
-                    axes = sorted(axes1 & axes2)[:2]
-                    return diagonalize(takediag(func1, *axes) + takediag(func2, *axes), *axes)
+        for j, fj in enumerate(self.funcs):
+            if isinstance(fj, Add):
+                return add(*self.funcs[:j], *fj.funcs, *self.funcs[j+1:])
+            for i, fi in enumerate(self.funcs[:j]):
+                diags = [sorted(axesi & axesj)[:2] for axesi in fi._diagonals for axesj in fj._diagonals if len(axesi & axesj) >= 2]
+                unaligned1, unaligned2, where = unalign(fi, fj)
+                fij = diagonalize(takediag(fi, *diags[0]) + takediag(fj, *diags[0]), *diags[0]) if diags \
+                    else align(unaligned1 + unaligned2, where, self.shape) if len(where) != self.ndim \
+                    else fi._add(fj) or fj._add(fi)
+                if fij:
+                    return add(*self.funcs[:i], *self.funcs[i+1:j], *self.funcs[j+1:], fij)
         # NOTE: While it is tempting to use the _inflations attribute to push
         # additions through common inflations, doing so may result in infinite
         # recursion in case two or more axes are inflated. This mechanism is
@@ -1828,63 +1823,52 @@ class Add(Array):
         #              \_______+_______/
         #
         # We instead rely on Inflate._add to handle this situation.
-        return func1._add(func2) or func2._add(func1)
 
-    evalf = staticmethod(numpy.add)
+    @staticmethod
+    def evalf(arg1, arg2, *args):
+        retval = arg1 + arg2
+        for arg in args:
+            retval += arg
+        return retval
 
     def _sum(self, axis):
-        func1, func2 = self.funcs
-        return add(sum(func1, axis), sum(func2, axis))
+        return add(*(sum(func, axis) for func in self.funcs))
 
     def _derivative(self, var, seen):
-        func1, func2 = self.funcs
-        return derivative(func1, var, seen) + derivative(func2, var, seen)
+        return add(*(derivative(func, var, seen) for func in self.funcs))
 
     def _takediag(self, axis1, axis2):
-        func1, func2 = self.funcs
-        return add(_takediag(func1, axis1, axis2), _takediag(func2, axis1, axis2))
+        return add(*(_takediag(func, axis1, axis2) for func in self.funcs))
 
     def _take(self, index, axis):
-        func1, func2 = self.funcs
-        return add(_take(func1, index, axis), _take(func2, index, axis))
-
-    def _add(self, other):
-        func1, func2 = self.funcs
-        func1_other = func1._add(other)
-        if func1_other is not None:
-            return add(func1_other, func2)
-        func2_other = func2._add(other)
-        if func2_other is not None:
-            return add(func1, func2_other)
+        return add(*(_take(func, index, axis) for func in self.funcs))
 
     def _unravel(self, axis, shape):
-        func1, func2 = self.funcs
-        return add(unravel(func1, axis, shape), unravel(func2, axis, shape))
+        return add(*(unravel(func, axis, shape) for func in self.funcs))
 
     def _loopsum(self, index):
-        if any(index not in func.arguments for func in self.funcs):
-            func1, func2 = self.funcs
-            return add(loop_sum(func1, index), loop_sum(func2, index))
+        for j, fj in enumerate(self.funcs):
+            if index not in fj.arguments:
+                return loop_sum(add(*self.funcs[:j], *self.funcs[j+1:]), index) + fj * index.length
 
     def _multiply(self, other):
-        func1, func2 = self.funcs
-        if (func1._inflations or func1._diagonals) and (func2._inflations or func2._diagonals):
+        func_other = [func._multiply(other) or other._multiply(func) for func in self.funcs]
+        if all(func_other):
+            return add(*func_other)
+        if all(func._inflations or func._diagonals for func in self.funcs):
             # NOTE: As this operation is the precise opposite of Multiply._add, there
             # appears to be a great risk of recursion. However, since both factors
             # are sparse, we can be certain that subsequent simpifications will
             # irreversibly process the new terms before reaching this point.
-            return (func1 * other) + (func2 * other)
+            return add(*(func * other for func in self.funcs))
 
     @cached_property
     def _assparse(self):
-        func1, func2 = self.funcs
-        return _gathersparsechunks(itertools.chain(func1._assparse, func2._assparse))
+        return _gathersparsechunks(items for func in self.funcs for items in func._assparse)
 
     def _intbounds_impl(self):
-        func1, func2 = self.funcs
-        lower1, upper1 = func1._intbounds
-        lower2, upper2 = func2._intbounds
-        return lower1 + lower2, upper1 + upper2
+        lowers, uppers = zip(*(func._intbounds for func in self.funcs))
+        return builtins.sum(lowers), builtins.sum(uppers)
 
 
 class Einsum(Array):

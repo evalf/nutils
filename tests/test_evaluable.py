@@ -1277,7 +1277,7 @@ class log_error(TestCase):
   %1 = nutils.evaluable.Constant<f:> --> ndarray<f:>
   %2 = nutils.evaluable.Constant<f:2> --> ndarray<f:2>
   %3 = nutils.evaluable.Sum<f:> arr=%2 --> float64
-  %4 = nutils.evaluable.Add<f:> %1 %3 --> float64
+  %4 = nutils.evaluable.Add<f:> arg1=%1 arg2=%3 --> float64
   %5 = tests.test_evaluable.Fail<i:> arg1=%4 arg2=%1 --> operation failed intentially.''')
 
 
