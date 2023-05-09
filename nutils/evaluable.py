@@ -4502,23 +4502,16 @@ def _gathersparsechunks(chunks):
     return tuple((*ind, util.sum(funcs)) for ind, funcs in util.gather((tuple(ind), func) for *ind, func in chunks))
 
 
-def _numpy_align(a, b):
+def _numpy_align(*args):
     '''check shape consistency and inflate scalars'''
 
-    a = asarray(a)
-    b = asarray(b)
-    if a.dtype != b.dtype:
-        if _type_order.index(a.dtype) < _type_order.index(b.dtype):
-            a = astype(a, b.dtype)
-        else:
-            b = astype(b, a.dtype)
-    if not a.ndim:
-        return _inflate_scalar(a, b.shape), b
-    if not b.ndim:
-        return a, _inflate_scalar(b, a.shape)
-    if equalshape(a.shape, b.shape):
-        return a, b
-    raise ValueError('incompatible shapes: {} != {}'.format(*[tuple(int(n) if n.isconstant else n for n in arg.shape) for arg in (a, b)]))
+    args = [asarray(arg) for arg in args]
+    shape, *other_shapes = [arg.shape for arg in args if arg.ndim] or [()]
+    if not all(equalshape(shape, other_shape) for other_shape in other_shapes):
+        raise ValueError(f'cannot align arrays: {args}')
+    dtype = _type_order[max(_type_order.index(arg.dtype) for arg in args)]
+    args = [astype(arg, dtype) for arg in args]
+    return [arg if arg.ndim else _inflate_scalar(arg, shape) for arg in args]
 
 
 def _inflate_scalar(arg, shape):
