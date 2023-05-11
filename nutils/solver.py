@@ -763,8 +763,8 @@ def _optimize(target, functional: evaluable.asarray, constrain, arguments, tol: 
     dtype = _determine_dtype(target, (functional,), lhs0, constrain)
     mask, vmask = _invert(constrain, target)
     lhs, vlhs = _redict(lhs0, target, dtype)
-    if functional.shape != ():
-        raise ValueError('The objective function must be a scalar function of a single variable')
+    if functional.ndim != 0:
+        raise ValueError('the objective function must be scalar valued')
     val, res, jac = _integrate_blocks(functional, residual, jacobian, arguments=lhs, mask=mask)
     if droptol is not None:
         supp = jac.rowsupp(droptol)
