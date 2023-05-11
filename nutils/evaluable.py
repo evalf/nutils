@@ -5161,6 +5161,28 @@ def einsum(fmt, *args, **dims):
 
 
 @util.single_or_multiple
+def eval(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.ndarray]) -> typing.Tuple[numpy.ndarray, ...]:
+    '''Evaluate one or several Array objects.
+
+    Args
+    ----
+    funcs : :class:`tuple` of Array objects
+        Arrays to be evaluated.
+    arguments : :class:`dict` (default: None)
+        Optional arguments for function evaluation.
+
+    Returns
+    -------
+    results : :class:`tuple` of arrays
+    '''
+
+    funcs = Tuple(tuple(funcs)).simplified.optimized_for_numpy
+
+    with funcs.session(graphviz=graphviz) as eval:
+        return eval(**arguments)
+
+
+@util.single_or_multiple
 def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.ndarray]) -> typing.Tuple[numpy.ndarray, ...]:
     '''Evaluate one or several Array objects as sparse data.
 
@@ -5176,23 +5198,35 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
     results : :class:`tuple` of sparse data arrays
     '''
 
-    funcs = [func.as_evaluable_array for func in funcs]
-    shape_chunks = Tuple(tuple(Tuple(builtins.sum(func.simplified._assparse, func.shape)) for func in funcs))
-    with shape_chunks.optimized_for_numpy.session(graphviz=graphviz) as eval:
-        for func, args in zip(funcs, eval(**arguments)):
-            shape = tuple(map(int, args[:func.ndim]))
-            chunks = [args[i:i+func.ndim+1] for i in range(func.ndim, len(args), func.ndim+1)]
-            length = builtins.sum(values.size for *indices, values in chunks)
-            data = numpy.empty((length,), dtype=sparse.dtype(shape, func.dtype))
-            start = 0
-            for *indices, values in chunks:
-                stop = start + values.size
-                d = data[start:stop].reshape(values.shape)
-                d['value'] = values
-                for idim, ii in enumerate(indices):
-                    d['index']['i'+str(idim)] = ii
-                start = stop
-            yield data
+    dense_funcs = []
+    dtype_slices = []
+
+    for func in funcs:
+        func = func.as_evaluable_array
+        ds = [func.dtype]
+        for v in [func.shape, *func.simplified._assparse]:
+            i = len(dense_funcs)
+            dense_funcs.extend(v)
+            j = len(dense_funcs)
+            ds.append(slice(i,j))
+        dtype_slices.append(ds)
+
+    dense_values = eval(dense_funcs, **arguments)
+
+    for dtype, *slices in dtype_slices:
+        shape, *chunks = [dense_values[s] for s in slices]
+        length = builtins.sum(values.size for *indices, values in chunks)
+        data = numpy.empty(length, dtype=sparse.dtype(shape, dtype))
+        start = 0
+        for *indices, values in chunks:
+            stop = start + values.size
+            d = data[start:stop].reshape(values.shape)
+            d['value'] = values
+            for idim, ii in enumerate(indices):
+                d['index'][f'i{idim}'] = ii
+            start = stop
+        assert start == length
+        yield data
 
 
 if __name__ == '__main__':

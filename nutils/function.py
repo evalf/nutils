@@ -2421,7 +2421,7 @@ class Basis(Array):
         super().__init__((ndofs,), float, spaces=index.spaces | coords.spaces, arguments=arguments)
 
         _index = evaluable.Argument('_index', shape=(), dtype=int)
-        self._arg_dofs, self._arg_coeffs = [f.optimized_for_numpy for f in self.f_dofs_coeffs(_index)]
+        self._arg_dofs, self._arg_coeffs = self.f_dofs_coeffs(_index)
         assert self._arg_dofs.ndim == 1
         assert self._arg_coeffs.ndim == 2
         assert evaluable._equals_simplified(self._arg_dofs.shape[0], self._arg_coeffs.shape[0])
@@ -2483,7 +2483,7 @@ class Basis(Array):
             A 1D Array of indices.
         '''
 
-        return self._arg_dofs.eval(_index=ielem)
+        return evaluable.eval(self._arg_dofs, _index=ielem)
 
     def get_ndofs(self, ielem: int) -> int:
         '''Return the number of basis functions with support on element ``ielem``.'''
@@ -2506,7 +2506,7 @@ class Basis(Array):
             :meth:`get_dofs`.
         '''
 
-        return self._arg_coeffs.eval(_index=numeric.normdim(self.nelems, ielem))
+        return evaluable.eval(self._arg_coeffs, _index=numeric.normdim(self.nelems, ielem))
 
     def f_dofs_coeffs(self, index: evaluable.Array) -> Tuple[evaluable.Array, evaluable.Array]:
         raise NotImplementedError('{} must implement f_dofs_coeffs'.format(self.__class__.__name__))
