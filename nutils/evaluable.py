@@ -1803,15 +1803,15 @@ class Add(Array):
             inflations.append((axis, types.frozendict((dofmap, util.sum(parts[dofmap] for parts in (parts1, parts2) if dofmap in parts)) for dofmap in dofmaps)))
         return tuple(inflations)
 
+    @property
+    def _terms(self):
+        for func in self.funcs:
+            if isinstance(func, Add):
+                yield from func._terms
+            else:
+                yield func
+
     def _simplified(self):
-        func1, func2 = self.funcs
-        if func1 == func2:
-            return multiply(func1, 2)
-        for axes1 in func1._diagonals:
-            for axes2 in func2._diagonals:
-                if len(axes1 & axes2) >= 2:
-                    axes = sorted(axes1 & axes2)[:2]
-                    return diagonalize(takediag(func1, *axes) + takediag(func2, *axes), *axes)
         # NOTE: While it is tempting to use the _inflations attribute to push
         # additions through common inflations, doing so may result in infinite
         # recursion in case two or more axes are inflated. This mechanism is
@@ -1831,7 +1831,19 @@ class Add(Array):
         #              \_______+_______/
         #
         # We instead rely on Inflate._add to handle this situation.
-        return func1._add(func2) or func2._add(func1)
+        terms = tuple(self._terms)
+        for j, fj in enumerate(terms):
+            for i, fi in enumerate(terms[:j]):
+                _add_remaining = lambda fij: builtins.sum(terms[:i] + terms[i+1:j] + terms[j+1:], fij)
+                if fi == fj:
+                    return _add_remaining(fi * 2)
+                for axes1, axes2 in itertools.product(fi._diagonals, fj._diagonals):
+                    if len(axes1 & axes2) >= 2:
+                        axes = sorted(axes1 & axes2)[:2]
+                        return _add_remaining(diagonalize(takediag(fi, *axes) + takediag(fj, *axes), *axes))
+                fij = fi._add(fj) or fj._add(fi)
+                if fij:
+                    return _add_remaining(fij)
 
     evalf = staticmethod(numpy.add)
 
@@ -1850,15 +1862,6 @@ class Add(Array):
     def _take(self, index, axis):
         func1, func2 = self.funcs
         return add(_take(func1, index, axis), _take(func2, index, axis))
-
-    def _add(self, other):
-        func1, func2 = self.funcs
-        func1_other = func1._add(other)
-        if func1_other is not None:
-            return add(func1_other, func2)
-        func2_other = func2._add(other)
-        if func2_other is not None:
-            return add(func1, func2_other)
 
     def _unravel(self, axis, shape):
         func1, func2 = self.funcs
