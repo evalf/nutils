@@ -1440,8 +1440,6 @@ class Transpose(Array):
         trytake = self.func._take(indices, self.axes[axis])
         if trytake is not None:
             return Transpose(trytake, self._axes_for(indices.ndim, axis))
-        if self.axes[axis] == self.ndim - 1:
-            return Transpose(Take(self.func, indices), self._axes_for(indices.ndim, axis))
 
     def _axes_for(self, ndim, axis):
         funcaxis = self.axes[axis]
@@ -1954,6 +1952,11 @@ class Sum(Array):
         trysum = self.func._sum(axis)
         if trysum is not None:
             return Sum(trysum)
+
+    def _take(self, index, axis):
+        trytake = self.func._take(index, axis)
+        if trytake:
+            return Sum(trytake)
 
     def _derivative(self, var, seen):
         return sum(derivative(self.func, var, seen), self.ndim)
