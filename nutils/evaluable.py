@@ -1624,22 +1624,32 @@ class Multiply(Array):
         assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype != bool, 'Multiply({}, {})'.format(func1, func2)
         super().__init__(args=tuple(self.funcs), shape=func1.shape, dtype=func1.dtype)
 
+    @property
+    def _factors(self):
+        for func in self.funcs:
+            if isinstance(func, Multiply):
+                yield from func._factors
+            else:
+                yield func
+
     def _simplified(self):
-        func1, func2 = self.funcs
-        if func1._const_uniform == 1:
-            return func2
-        if func2._const_uniform == 1:
-            return func1
-        unaligned1, unaligned2, where = unalign(func1, func2)
-        if len(where) != self.ndim:
-            return align(unaligned1 * unaligned2, where, self.shape)
-        for axis1, axis2, *other in map(sorted, func1._diagonals or func2._diagonals):
-            return diagonalize(multiply(takediag(func1, axis1, axis2), takediag(func2, axis1, axis2)), axis1, axis2)
-        for i, parts in func1._inflations:
-            return util.sum(_inflate(f * _take(func2, dofmap, i), dofmap, self.shape[i], i) for dofmap, f in parts.items())
-        for i, parts in func2._inflations:
-            return util.sum(_inflate(_take(func1, dofmap, i) * f, dofmap, self.shape[i], i) for dofmap, f in parts.items())
-        return func1._multiply(func2) or func2._multiply(func1)
+        factors = tuple(self._factors)
+        for j, fj in enumerate(factors):
+            if fj._const_uniform == 1:
+                return util.product(factors[:j] + factors[j+1:])
+            for i, parts in fj._inflations:
+                return util.sum(_inflate(util.product([f] + [_take(fi, dofmap, i) for fi in factors[:j] + factors[j+1:]]), dofmap, self.shape[i], i) for dofmap, f in parts.items())
+            for axis1, axis2, *other in map(sorted, fj._diagonals):
+                return diagonalize(util.product([takediag(f, axis1, axis2) for f in factors]), axis1, axis2)
+            for i, fi in enumerate(factors[:j]):
+                _mul_remaining = lambda fij: util.product((fij, *factors[:i], *factors[i+1:j], *factors[j+1:]))
+                unaligned1, unaligned2, where = unalign(fi, fj)
+                if len(where) != self.ndim:
+                    fij = align(unaligned1 * unaligned2, where, self.shape)
+                    return _mul_remaining(fij)
+                fij = fi._multiply(fj) or fj._multiply(fi)
+                if fij:
+                    return _mul_remaining(fij)
 
     def _optimized_for_numpy(self):
         func1, func2 = self.funcs
@@ -1693,32 +1703,6 @@ class Multiply(Array):
     def _product(self):
         func1, func2 = self.funcs
         return multiply(Product(func1), Product(func2))
-
-    def _multiply(self, other):
-        func1, func2 = self.funcs
-        func1_other = func1._multiply(other)
-        if func1_other is not None:
-            return multiply(func1_other, func2)
-        func2_other = func2._multiply(other)
-        if func2_other is not None:
-            return multiply(func1, func2_other)
-        # Reorder the multiplications such that the amount of flops is minimized.
-        # The flops are counted based on the lower int bounds of the shape and loop
-        # lengths, excluding common inserted axes and invariant loops of the inner
-        # product.
-        sizes = []
-        unaligned = tuple(map(unalign, (func1, func2, other)))
-        for (f1, w1), (f2, w2) in itertools.combinations(unaligned, 2):
-            lengths = [self.shape[i] for i in set(w1) | set(w2)]
-            lengths += [arg.length for arg in f1.arguments | f2.arguments if isinstance(arg, _LoopIndex)]
-            sizes.append(util.product((max(1, length._intbounds[0]) for length in lengths), 1))
-        min_size = min(sizes)
-        if sizes[0] == min_size:
-            return  # status quo
-        elif sizes[1] == min_size:
-            return (func1 * other) * func2
-        elif sizes[2] == min_size:
-            return (func2 * other) * func1
 
     def _derivative(self, var, seen):
         func1, func2 = self.funcs
@@ -3189,7 +3173,7 @@ class Argument(DerivativeTargetBase):
     >>> a = evaluable.Argument('x', ())
     >>> b = evaluable.Argument('y', ())
     >>> f = a**3 + b**2
-    >>> evaluable.derivative(f, a).simplified == (3.*a**2).simplified
+    >>> evaluable.derivative(f, b).simplified == 2.*b
     True
 
     Args
