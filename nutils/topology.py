@@ -1424,16 +1424,16 @@ class TransformChainsTopology(Topology):
         if leveltopo is None:
             ielem_arg = evaluable.Argument('_trim_index', (), dtype=int)
             coordinates = self.references.getpoints('vertex', maxrefine).get_evaluable_coords(ielem_arg)
-            levelset = levelset.lower(function.LowerArgs.for_space(self.space, (self.transforms, self.opposites), ielem_arg, coordinates)).optimized_for_numpy
+            levelset = levelset.lower(function.LowerArgs.for_space(self.space, (self.transforms, self.opposites), ielem_arg, coordinates))
             with log.iter.percentage('trimming', range(len(self)), self.references) as items:
                 for ielem, ref in items:
-                    levels = levelset.eval(_trim_index=ielem, **arguments)
+                    levels = evaluable.eval(levelset, _trim_index=ielem, **arguments)
                     refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
         else:
             log.info('collecting leveltopo elements')
             coordinates = evaluable.Points(evaluable.NPoints(), evaluable.constant(self.ndims))
             ielem = evaluable.Argument('_leveltopo_ielem', (), int)
-            levelset = levelset.lower(function.LowerArgs.for_space(self.space, (leveltopo.transforms, leveltopo.opposites), ielem, coordinates)).optimized_for_numpy
+            levelset = levelset.lower(function.LowerArgs.for_space(self.space, (leveltopo.transforms, leveltopo.opposites), ielem, coordinates))
             bins = [set() for ielem in range(len(self))]
             for trans in leveltopo.transforms:
                 ielem, tail = self.transforms.index_with_tail(trans)
@@ -1449,7 +1449,7 @@ class TransformChainsTopology(Topology):
                         imax = numpy.argmax([mask[indices].sum() for tail, points, indices in cover])
                         tail, points, indices = cover.pop(imax)
                         ielem = leveltopo.transforms.index(trans + tail)
-                        levels[indices] = levelset.eval(_leveltopo_ielem=ielem, _points=points, **arguments)
+                        levels[indices] = evaluable.eval(levelset, _leveltopo_ielem=ielem, _points=points, **arguments)
                         mask[indices] = False
                     refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
             log.debug('cache', fcache.stats)
