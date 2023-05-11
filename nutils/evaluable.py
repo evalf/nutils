@@ -1958,6 +1958,11 @@ class Sum(Array):
         if trytake:
             return Sum(trytake)
 
+    def _takediag(self, axis1, axis2):
+        trytakediag = self.func._takediag(axis1, axis2)
+        if trytakediag:
+            return sum(trytakediag, -2)
+
     def _derivative(self, var, seen):
         return sum(derivative(self.func, var, seen), self.ndim)
 
