@@ -5090,15 +5090,17 @@ def eval(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.ndarray
     retvals = funcs.eval_withtimes(times, **arguments)
     node = funcs._node({}, None, times)
 
-    maxtime = builtins.max(n.metadata[1].time for n in node.walk(set()))
-    fill_color = (lambda node: f'0,{node.metadata[1].time/maxtime:.2f},1') if maxtime else None
-    node.export_graphviz(fill_color=fill_color, dot_path=graphviz)
+    with log.context('profile'):
+        tottime = builtins.sum(n.metadata[1].time for n in node.walk(set()))
+        aggstats = [(builtins.sum(v.time for v in values), builtins.sum(v.ncalls for v in values), key) for key, values in util.gather(n.metadata for n in node.walk(set()))]
+        aggstats.sort(reverse=True)
+        log.debug(f'total time: {tottime/1e6:.0f}ms\n'
+            + '\n'.join(f'{t/1e6:4.0f}ms {k} ({n} calls, avg {t/(1e3*n):.0f}ns per call)' for t, n, k in aggstats if n))
 
-    tottime = builtins.sum(n.metadata[1].time for n in node.walk(set()))
-    aggstats = [(builtins.sum(v.time for v in values), builtins.sum(v.ncalls for v in values), key) for key, values in util.gather(n.metadata for n in node.walk(set()))]
-    aggstats.sort(reverse=True)
-    log.info(f'total time: {tottime/1e6:.0f}ms\n'
-        + '\n'.join(f'{t/1e6:4.0f} {k} ({n} calls, avg {t/(1e6*n):.3f} per call)' for t, n, k in aggstats if n))
+        maxtime = builtins.max(n.metadata[1].time for n in node.walk(set()))
+        fill_color = (lambda node: f'0,{node.metadata[1].time/maxtime:.2f},1') if maxtime else None
+        with log.debugfile('graph.svg', 'wb') as img:
+            node.export_graphviz(img, fill_color=fill_color, dot_path=graphviz)
 
     return retvals
 
