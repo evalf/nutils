@@ -1827,6 +1827,9 @@ class Add(Array):
                 if fij:
                     return _add_remaining(fij)
 
+    def _optimized_for_numpy(self):
+        return MultiAdd(tuple((func, tuple(range(self.ndim))) for func in self.funcs))
+
     evalf = staticmethod(numpy.add)
 
     def _sum(self, axis):
@@ -1873,6 +1876,50 @@ class Add(Array):
         lower1, upper1 = func1._intbounds
         lower2, upper2 = func2._intbounds
         return lower1 + lower2, upper1 + upper2
+
+
+class MultiAdd(Array):
+
+    def __init__(self, args: typing.Tuple[typing.Tuple[Array, typing.Tuple[int, ...]], ...]):
+        #assert isinstance(args, tuple) and all(isinstance(arg, Array) for arg in args), f'arg={arg!r}'
+        dtype = args[0][0].dtype
+        assert all(func.dtype == dtype for func, axes in args[1:])
+        shapes = {axis: (iarg, idim) for iarg, (func, axes) in enumerate(args) for idim, axis in enumerate(axes)}
+        ndim = len(shapes)
+        self.shapemap = tuple(shapes[i] for i in range(ndim))
+        shape = tuple(args[iarg][0].shape[idim] for iarg, idim in self.shapemap)
+        assert all(_equals_simplified(length, shape[axis]) for func, axes in args for axis, length in zip(axes, func.shape))
+        self.args = args
+        args, self.axes = zip(*args)
+        super().__init__(args=tuple(args), shape=shape, dtype=dtype)
+
+    def evalf(self, *args):
+        retval = numpy.zeros([args[iarg].shape[idim]  for iarg, idim in self.shapemap], self.dtype)
+        for arg, axes in zip(args, self.axes):
+            r = retval.transpose(tuple(i for i in range(self.ndim) if i not in axes) + axes)
+            r += arg
+        return retval
+
+    def _transpose(self, trans):
+        return MultiAdd(tuple((func, tuple(trans[axis] for axis in axes)) for func, axes in self.args))
+
+#    def _simplified(self):
+#        for i, arg in enumerate(self.args):
+#            if isinstance(arg, Transpose):  # absorb `Transpose`
+#                idx = tuple(map(self.args_idx[i].__getitem__, numpy.argsort(arg.axes)))
+#                return Einsum(self.args[:i]+(arg.func,)+self.args[i+1:], self.args_idx[:i]+(idx,)+self.args_idx[i+1:], self.out_idx)
+#
+#    def _sum(self, axis):
+#        if not (0 <= axis < self.ndim):
+#            raise IndexError('Axis out of range.')
+#        return Einsum(self.args, self.args_idx, self.out_idx[:axis] + self.out_idx[axis+1:])
+#
+#    def _takediag(self, axis1, axis2):
+#        if not (0 <= axis1 < axis2 < self.ndim):
+#            raise IndexError('Axis out of range.')
+#        ikeep, irm = self.out_idx[axis1], self.out_idx[axis2]
+#        args_idx = tuple(tuple(ikeep if i == irm else i for i in idx) for idx in self.args_idx)
+#        return Einsum(self.args, args_idx, self.out_idx[:axis1] + self.out_idx[axis1+1:axis2] + self.out_idx[axis2+1:] + (ikeep,))
 
 
 class Einsum(Array):
