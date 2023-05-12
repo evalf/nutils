@@ -4411,14 +4411,15 @@ class LoopConcatenateCombined(Evaluable):
     def evalf_withtimes(self, times, shapes, length, *args):
         serialized = self._serialized_loop
         subtimes = times.setdefault(self, collections.defaultdict(_Stats))
-        results = [parallel.shempty(tuple(map(int, shape)), dtype=func.dtype) for func, shape in zip(self._funcs, shapes)]
-        for index in range(length):
-            values = [numpy.array(index)]
-            values.extend(args)
-            values.extend(op.evalf_withtimes(subtimes, *[values[i] for i in indices]) for op, indices in serialized)
-            for func, result, (start, stop, block) in zip(self._funcs, results, values[-1]):
-                with subtimes['concat', func]:
-                    result[..., start:stop] = block
+        results = [numpy.empty(tuple(map(int, shape)), dtype=func.dtype) for func, shape in zip(self._funcs, shapes)]
+        with log.iter.percentage('loop {}'.format(self._index_name), range(length)) as indices:
+            for index in indices:
+                values = [numpy.array(index)]
+                values.extend(args)
+                values.extend(op.evalf_withtimes(subtimes, *[values[i] for i in indices]) for op, indices in serialized)
+                for func, result, (start, stop, block) in zip(self._funcs, results, values[-1]):
+                    with subtimes['concat', func]:
+                        result[..., start:stop] = block
         return tuple(results)
 
     def _node_tuple(self, cache, subgraph, times):
