@@ -28,7 +28,7 @@ class Node(Generic[Metadata], metaclass=abc.ABCMeta):
         raise NotImplementedError  # pragma: no cover
 
     @abc.abstractmethod
-    def _generate_asciitree_nodes(self, cache: MutableMapping['Node[Metadata]', str], subgraph_ids: Mapping[Optional[Subgraph], str], id_gen: Iterator[str], select: str, bridge: str) -> Generator[str, None, None]:
+    def _generate_asciitree_nodes(self, cache: MutableMapping['Node[Metadata]', str], id_gen_map: Mapping[Optional[Subgraph], Iterator[str]], select: str, bridge: str) -> Generator[str, None, None]:
         raise NotImplementedError  # pragma: no cover
 
     @abc.abstractmethod
@@ -41,12 +41,12 @@ class Node(Generic[Metadata], metaclass=abc.ABCMeta):
     def generate_asciitree(self, richoutput: bool = False) -> str:
         subgraph_children = _collect_subgraphs(self)
         if len(subgraph_children) > 1:
-            subgraph_ids = {}  # type: Dict[Optional[Subgraph], str]
-            parts = ['SUBGRAPHS\n'], _generate_asciitree_subgraphs(subgraph_children, subgraph_ids, None, '', ''), ['NODES\n']  # type: Sequence[Iterable[str]]
+            id_gen_map = {}  # type: Dict[Optional[Subgraph], Iterator[str]]
+            parts = ['SUBGRAPHS\n'], _generate_asciitree_subgraphs(subgraph_children, id_gen_map, None, '', ''), ['NODES\n']  # type: Sequence[Iterable[str]]
         else:
-            subgraph_ids = {None: ''}
+            id_gen_map = {None: (f'%{i}' for i in itertools.count())}
             parts = []
-        asciitree = ''.join(itertools.chain(*parts, self._generate_asciitree_nodes({}, subgraph_ids, map(str, itertools.count()), '', '')))
+        asciitree = ''.join(itertools.chain(*parts, self._generate_asciitree_nodes({}, id_gen_map, '', '')))
         if not richoutput:
             asciitree = asciitree.replace('├', ':').replace('└', ':').replace('│', '|')
         return asciitree
@@ -57,9 +57,9 @@ class Node(Generic[Metadata], metaclass=abc.ABCMeta):
         subgraph_children = _collect_subgraphs(self)
         id_gen = map(str, itertools.count())
         self._collect_graphviz_nodes_edges({}, id_gen, nodes, edges, None, fill_color)
-        return ''.join(itertools.chain(['digraph {graph [dpi=72];'], _generate_graphviz_subgraphs(subgraph_children, nodes, None, id_gen), edges, ['}']))
+        return ''.join(itertools.chain(['digraph {bgcolor="darkgray";'], _generate_graphviz_subgraphs(subgraph_children, nodes, None, id_gen), edges, ['}']))
 
-    def export_graphviz(self, *, fill_color: Optional[GraphvizColorCallback] = None, dot_path: str = 'dot', image_type: str = 'png') -> None:
+    def export_graphviz(self, *, fill_color: Optional[GraphvizColorCallback] = None, dot_path: str = 'dot', image_type: str = 'svg') -> None:
         src = self.generate_graphviz_source(fill_color=fill_color)
         with treelog.infofile('dot.'+image_type, 'wb') as img:
             src = src.replace(';', ';\n')
@@ -82,16 +82,15 @@ class RegularNode(Node[Metadata]):
     def __bool__(self) -> bool:
         return True
 
-    def _generate_asciitree_nodes(self, cache: MutableMapping[Node[Metadata], str], subgraph_ids: Mapping[Optional[Subgraph], str], id_gen: Iterator[str], select: str, bridge: str) -> Generator[str, None, None]:
+    def _generate_asciitree_nodes(self, cache: MutableMapping[Node[Metadata], str], id_gen_map: Mapping[Optional[Subgraph], str], select: str, bridge: str) -> Generator[str, None, None]:
         if self in cache:
             yield '{}{}\n'.format(select, cache[self])
         else:
-            subgraph_id = subgraph_ids[self.subgraph]
-            cache[self] = id = '%{}{}'.format(subgraph_id, next(id_gen))
+            cache[self] = id = next(id_gen_map[self.subgraph])
             yield '{}{} = {}\n'.format(select, id, self._label.replace('\n', '; '))
             args = tuple(('', arg) for arg in self._args if arg) + tuple(('{} = '.format(name), arg) for name, arg in self._kwargs.items())
             for i, (prefix, arg) in enumerate(args, 1-len(args)):
-                yield from arg._generate_asciitree_nodes(cache, subgraph_ids, id_gen, bridge+('├ ' if i else '└ ')+prefix, bridge+('│ ' if i else '  '))
+                yield from arg._generate_asciitree_nodes(cache, id_gen_map, bridge+('├ ' if i else '└ ')+prefix, bridge+('│ ' if i else '  '))
 
     def _collect_graphviz_nodes_edges(self, cache: MutableMapping[Node[Metadata], str], id_gen: Iterator[str], nodes: MutableMapping[Optional[Subgraph], List[str]], edges: List[str], parent_subgraph: Optional[Subgraph], fill_color: Optional[GraphvizColorCallback] = None) -> Optional[str]:
         if self in cache:
@@ -137,7 +136,7 @@ class DuplicatedLeafNode(Node[Metadata]):
     def __bool__(self) -> bool:
         return True
 
-    def _generate_asciitree_nodes(self, cache: MutableMapping[Node[Metadata], str], subgraph_ids: Mapping[Optional[Subgraph], str], id_gen: Iterator[str], select: str, bridge: str) -> Generator[str, None, None]:
+    def _generate_asciitree_nodes(self, cache: MutableMapping[Node[Metadata], str], id_gen_map: Mapping[Optional[Subgraph], str], select: str, bridge: str) -> Generator[str, None, None]:
         yield '{}{}\n'.format(select, self._label.replace('\n', '; '))
 
     def _collect_graphviz_nodes_edges(self, cache: MutableMapping[Node[Metadata], str], id_gen: Iterator[str], nodes: MutableMapping[Optional[Subgraph], List[str]], edges: List[str], parent_subgraph: Optional[Subgraph], fill_color: Optional[GraphvizColorCallback] = None) -> Optional[str]:
@@ -161,7 +160,7 @@ class InvisibleNode(Node[Metadata]):
     def __bool__(self) -> bool:
         return False
 
-    def _generate_asciitree_nodes(self, cache: MutableMapping[Node[Metadata], str], subgraph_ids: Mapping[Optional[Subgraph], str], id_gen: Iterator[str], select: str, bridge: str) -> Generator[str, None, None]:
+    def _generate_asciitree_nodes(self, cache: MutableMapping[Node[Metadata], str], id_gen_map: Mapping[Optional[Subgraph], str], select: str, bridge: str) -> Generator[str, None, None]:
         yield '{}\n'.format(select)
 
     def _collect_graphviz_nodes_edges(self, cache: MutableMapping[Node[Metadata], str], id_gen: Iterator[str], nodes: MutableMapping[Optional[Subgraph], List[str]], edges: List[str], parent_subgraph: Optional[Subgraph], fill_color: Optional[GraphvizColorCallback] = None) -> Optional[str]:
@@ -197,20 +196,21 @@ def _collect_subgraphs(node: Node[Metadata]) -> Dict[Optional[Subgraph], List[Su
     return children
 
 
-def _generate_asciitree_subgraphs(children: Mapping[Optional[Subgraph], Sequence[Subgraph]], subgraph_ids: MutableMapping[Optional[Subgraph], str], subgraph: Optional[Subgraph], select: str, bridge: str) -> Iterator[str]:
-    assert subgraph not in subgraph_ids
-    subgraph_ids[subgraph] = id = chr(ord('A') + len(subgraph_ids))
+def _generate_asciitree_subgraphs(children: Mapping[Optional[Subgraph], Sequence[Subgraph]], id_gen_map: MutableMapping[Optional[Subgraph], Iterator[str]], subgraph: Optional[Subgraph], select: str, bridge: str) -> Iterator[str]:
+    assert subgraph not in id_gen_map
+    id = chr(ord('A') + len(id_gen_map))
+    id_gen_map[subgraph] = (f'%{id}{i}' for i in itertools.count())
     if subgraph:
         yield '{}{} = {}\n'.format(select, id, subgraph.label.replace('\n', '; '))
     else:
         yield '{}{}\n'.format(select, id)
     for i, child in enumerate(children[subgraph], 1-len(children[subgraph])):
-        yield from _generate_asciitree_subgraphs(children, subgraph_ids, child, bridge+('├ ' if i else '└ '), bridge+('│ ' if i else '  '))
+        yield from _generate_asciitree_subgraphs(children, id_gen_map, child, bridge+('├ ' if i else '└ '), bridge+('│ ' if i else '  '))
 
 
 def _generate_graphviz_subgraphs(children: Mapping[Optional[Subgraph], Sequence[Subgraph]], nodes: Mapping[Optional[Subgraph], Sequence[str]], subgraph: Optional[Subgraph], id_gen: Iterator[str]) -> Iterator[str]:
     for child in children[subgraph]:
-        yield 'subgraph cluster{} {{'.format(next(id_gen))
+        yield 'subgraph cluster{} {{bgcolor="lightgray";color="none";'.format(next(id_gen))
         yield from _generate_graphviz_subgraphs(children, nodes, child, id_gen)
         yield '}'
     yield from nodes.get(subgraph, ())
