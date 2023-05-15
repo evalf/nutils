@@ -3249,6 +3249,6 @@ class MultipatchTopology(TransformChainsTopology):
     def refined(self):
         'refine'
 
-        return MultipatchTopology(Patch(patch.topo.refined, patch.verts, patch.boundaries) for patch in self.patches)
+        return MultipatchTopology(tuple(Patch(patch.topo.refined, patch.verts, patch.boundaries) for patch in self.patches))
 
 # vim:sw=4:sts=4:et
