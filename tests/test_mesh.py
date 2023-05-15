@@ -176,3 +176,27 @@ unitsquare(etype='square')
 unitsquare(etype='triangle')
 unitsquare(etype='mixed')
 unitsquare(etype='multipatch')
+
+
+@parametrize
+class unitcircle(TestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.domain, self.geom = mesh.unitcircle(nelems=8, variant=self.variant)
+
+    def test_volume(self):
+        self.assertAllAlmostEqual(self.domain.volume(self.geom, degree=6), numpy.pi)
+
+    def test_boundaries(self):
+        self.assertAllAlmostEqual(self.domain.boundary.volume(self.geom, degree=6), 2 * numpy.pi)
+        self.domain.check_boundary(geometry=self.geom, degree=8)
+
+    def test_interface(self):
+        geomerr = self.domain.interfaces.sample('uniform', 2).eval(self.geom - function.opposite(self.geom))
+        numpy.testing.assert_almost_equal(geomerr, 0, decimal=15)
+        normalerr = self.domain.interfaces.sample('uniform', 2).eval(self.geom.normal() + function.opposite(self.geom.normal()))
+        numpy.testing.assert_almost_equal(normalerr, 0, decimal=15)
+
+unitcircle(variant='rectilinear')
+unitcircle(variant='multipatch')

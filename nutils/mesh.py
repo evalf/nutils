@@ -711,4 +711,47 @@ def unitsquare(nelems, etype):
         raise Exception('invalid element type {!r}'.format(etype))
 
 
+def _square_to_circle(geom):
+    angle = (geom - 0.5) * (numpy.pi / 2)
+    return numpy.sqrt(2) * numpy.sin(angle) * numpy.cos(angle)[[1, 0]]
+
+
+def unitcircle(nelems: int, variant: str) -> Tuple[Topology, function.Array]:
+    '''Unit circle mesh.
+
+    The circle is centered at coordinate ``(0, 0)`` and has unit radius.
+
+    Args
+    ----
+    nelems : :class:`int`
+        Number of elements along boundary
+    variant : :class:`str`
+        Mesh variant. Supported are:
+
+        *   ``"rectilinear"``: structured mesh of squares, blown-up to a circle.
+
+        *   ``"multipatch"``: multipatch mesh consisting of five patches with
+            the same topological structure as :func:`unitsquare` with
+            ``etype='multipatch'``.
+
+    Returns
+    -------
+    :class:`nutils.topology.TransformChainsTopology`:
+        The structured/unstructured topology.
+    :class:`nutils.function.Array`:
+        The geometry function.
+    '''
+
+    if variant == 'rectilinear':
+        topo, geom = unitsquare(nelems, 'square')
+        return topo, _square_to_circle(geom)
+
+    elif variant == 'multipatch':
+        topo, geom = unitsquare(nelems, 'multipatch')
+        return topo, _square_to_circle(geom)
+
+    else:
+        raise Exception('invalid variant {!r}'.format(variant))
+
+
 # vim:sw=4:sts=4:et
