@@ -1057,6 +1057,8 @@ class multipatch_hyperrect(TestCase, TopologyAssertions):
             patchverts=tuple(itertools.product(*map(range, npatches+1))),
             nelems=4,
         )
+        if getattr(self, 'refined', False):
+            self.domain = self.domain.refined
 
     def test_spline_basis(self):
         basis = self.domain.basis('spline', degree=2)
@@ -1080,6 +1082,7 @@ class multipatch_hyperrect(TestCase, TopologyAssertions):
 
 multipatch_hyperrect('3', npatches=(3,))
 multipatch_hyperrect('2x2', npatches=(2, 2))
+multipatch_hyperrect('2x2-refined', npatches=(2, 2), refined=True)
 multipatch_hyperrect('3x3', npatches=(3, 3))
 multipatch_hyperrect('2x2x3', npatches=(2, 2, 3))
 

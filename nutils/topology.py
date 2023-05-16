@@ -3210,7 +3210,7 @@ class MultipatchTopology(TransformChainsTopology):
                 transforms = numeric.asobjvector(btopo.transforms).reshape(btopo.shape)
                 transforms = transforms[tuple(_ if i == boundary.dim else slice(None) for i in range(self.ndims))]
                 transforms = boundary.apply_transform(transforms)[..., 0]
-                pairs.append(tuple(transforms.flat))
+                pairs.append(tuple(map(transform.canonical, transforms.flat)))
             # create structured topology of joined element pairs
             references = References.from_iter(references, self.ndims-1)
             transforms, opposites = pairs
@@ -3249,6 +3249,6 @@ class MultipatchTopology(TransformChainsTopology):
     def refined(self):
         'refine'
 
-        return MultipatchTopology(Patch(patch.topo.refined, patch.verts, patch.boundaries) for patch in self.patches)
+        return MultipatchTopology(tuple(Patch(patch.topo.refined, patch.verts, patch.boundaries) for patch in self.patches))
 
 # vim:sw=4:sts=4:et
