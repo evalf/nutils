@@ -77,23 +77,25 @@ class vtk(testing.TestCase):
             yield bytes([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 128, 0, 0, 0, 0, 0, 0, 63, 128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 128, 0, 0])
         else:
             raise Exception('not supported: xtype={!r}, ndims={}'.format(self.xtype, self.ndims))
+        yield b'\n'
         if self.ndims == 1:
             yield b'CELLS 3 9\n'
             yield bytes([0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 3])
-            yield b'CELL_TYPES 3\n'
+            yield b'\nCELL_TYPES 3\n'
             yield bytes([0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 3])
         elif self.ndims == 2:
             yield b'CELLS 2 8\n'
             yield bytes([0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3])
-            yield b'CELL_TYPES 2\n'
+            yield b'\nCELL_TYPES 2\n'
             yield bytes([0, 0, 0, 5, 0, 0, 0, 5])
         elif self.ndims == 3:
             yield b'CELLS 1 5\n'
             yield bytes([0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3])
-            yield b'CELL_TYPES 1'
+            yield b'\nCELL_TYPES 1'
             yield bytes([10, 0, 0, 0, 10])
         else:
             raise Exception('invalid ndims {}'.format(self.ndims))
+        yield b'\n'
         if self.p is not None:
             yield b'POINT_DATA 4\n'
             if self.ptype == 'f4' and self.pshape == ():
@@ -128,6 +130,7 @@ class vtk(testing.TestCase):
                 yield bytes([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35])
             else:
                 raise Exception('not supported: ptype={}, udims={}'.format(self.ptype, self.udims))
+            yield b'\n'
         if self.c is not None:
             yield b'CELL_DATA 1\n'
             if self.ndims == 3 and self.ctype == 'i1' and self.cshape == ():
@@ -135,6 +138,7 @@ class vtk(testing.TestCase):
                 yield bytes([0])
             else:
                 raise Exception('not supported: ndims={}, ctype={}, cdims={}'.format(self.ndims, self.ctype, self.cdims))
+            yield b'\n'
 
     def test_data(self):
         with tempfile.TemporaryDirectory() as outdir, treelog.set(treelog.DataLog(outdir)):
