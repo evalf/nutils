@@ -182,14 +182,18 @@ def vtk(name, cells, points, kwargs=...):
         vtk.write(b'# vtk DataFile Version 3.0\nvtk output\nBINARY\nDATASET UNSTRUCTURED_GRID\n')
         vtk.write('POINTS {} {}\n'.format(npoints, vtkdtype[points.dtype]).encode('ascii'))
         points.tofile(vtk)
+        vtk.write(b"\n")
         vtk.write('CELLS {} {}\n'.format(ncells, t_cells.size).encode('ascii'))
         t_cells.tofile(vtk)
+        vtk.write(b"\n")
         vtk.write('CELL_TYPES {}\n'.format(ncells).encode('ascii'))
         vtkcelltype[nverts].repeat(ncells).tofile(vtk)
+        vtk.write(b"\n")
         for n, items in gathered:
             vtk.write('{}_DATA {}\n'.format('POINT' if n == npoints else 'CELL', n).encode('ascii'))
             for dname, array in items:
                 vtk.write(vtkndim[array.ndim].format(dname, vtkdtype[array.dtype]).encode('ascii'))
                 array.tofile(vtk)
+                vtk.write(b"\n")
 
 # vim:sw=4:sts=4:et
