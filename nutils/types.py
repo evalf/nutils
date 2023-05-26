@@ -113,10 +113,13 @@ def nutils_hash(data):
         h.update(hashlib.sha1(data.encode()).digest())
     elif t is bytes:
         h.update(hashlib.sha1(data).digest())
-    elif t is tuple:
+    elif t in (list, tuple):
         for item in data:
             h.update(nutils_hash(item))
-    elif t is frozenset:
+    elif t is dict:
+        for item in sorted(nutils_hash(k) + nutils_hash(v) for k, v in data.items()):
+            h.update(item)
+    elif t in (set, frozenset):
         for item in sorted(map(nutils_hash, data)):
             h.update(item)
     elif issubclass(t, io.BufferedIOBase) and data.seekable():

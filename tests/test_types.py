@@ -69,9 +69,24 @@ class nutils_hash(TestCase):
         self.assertEqual(nutils.types.nutils_hash((1,)).hex(), '328b16ebbc1815cf579ae038a35c4d68ebb022af')
         self.assertNotEqual(nutils.types.nutils_hash((1, 'spam')).hex(), nutils.types.nutils_hash(('spam', 1)).hex())
 
+    def test_list(self):
+        self.assertEqual(nutils.types.nutils_hash([]).hex(), '97cf24e05bb79e46a091f869c37f33bca00fb3de')
+        self.assertEqual(nutils.types.nutils_hash([1]).hex(), '6dbffad355664123aea1859cf3266d3c00f97c04')
+        self.assertNotEqual(nutils.types.nutils_hash([1, 'spam']).hex(), nutils.types.nutils_hash(['spam', 1]).hex())
+
     def test_frozenset(self):
         self.assertEqual(nutils.types.nutils_hash(frozenset([1, 2])).hex(), '3862dc7e5321bc8a576c385ed2c12c71b96a375a')
         self.assertEqual(nutils.types.nutils_hash(frozenset(['spam', 'eggs'])).hex(), '2c75fd3db57f5e505e1425ae9ff6dcbbc77fd123')
+
+    def test_set(self):
+        self.assertEqual(nutils.types.nutils_hash({1, 2}).hex(), '7c9837cc4583aa872d5d4184759b61db237d54f4')
+        self.assertEqual(nutils.types.nutils_hash({'spam', 'eggs'}).hex(), 'd7520a52096168b0909c14d87cc428d58bc0a0a2')
+
+    def test_frozendict(self):
+        self.assertEqual(nutils.types.nutils_hash(nutils.types.frozendict({1: 2, 'foo': 'bar'})).hex(), '2faf141728d232cc795f43adbb58f8f86eb9b71d')
+
+    def test_dict(self):
+        self.assertEqual(nutils.types.nutils_hash({1: 2, 'foo': 'bar'}).hex(), '6c17894a11374016735f846ed3ae8ef2b921b4b5')
 
     def test_ndarray(self):
         a = numpy.array([1, 2, 3])
@@ -128,8 +143,10 @@ class nutils_hash(TestCase):
         self.assertEqual(nutils.types.nutils_hash(self.custom()).hex(), b'01234567890123456789'.hex())
 
     def test_unhashable(self):
+        class MyUnhashableClass:
+            pass
         with self.assertRaises(TypeError):
-            nutils.types.nutils_hash([])
+            nutils.types.nutils_hash(MyUnhashableClass())
 
 
 class frozendict(TestCase):
