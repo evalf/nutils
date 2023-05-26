@@ -5,7 +5,6 @@ Module with general purpose types.
 import inspect
 import functools
 import hashlib
-import builtins
 import numbers
 import collections.abc
 import itertools
@@ -102,7 +101,7 @@ def nutils_hash(data):
         pass
     elif data is None:
         pass
-    elif any(data is dtype for dtype in (bool, int, float, complex, str, bytes, builtins.tuple, frozenset, type(Ellipsis), type(None))):
+    elif any(data is dtype for dtype in (bool, int, float, complex, str, bytes, tuple, frozenset, type(Ellipsis), type(None))):
         h.update(hashlib.sha1(data.__name__.encode()).digest())
     elif any(t is dtype for dtype in (bool, int, float, complex)):
         h.update(hashlib.sha1(repr(data).encode()).digest())
@@ -110,7 +109,7 @@ def nutils_hash(data):
         h.update(hashlib.sha1(data.encode()).digest())
     elif t is bytes:
         h.update(hashlib.sha1(data).digest())
-    elif t is builtins.tuple:
+    elif t is tuple:
         for item in data:
             h.update(nutils_hash(item))
     elif t is frozenset:
@@ -628,7 +627,7 @@ def _array_bases(obj):
 def _isimmutable(obj):
     return obj is None \
         or isinstance(obj, (Immutable, bool, int, float, complex, str, bytes, frozenset, numpy.generic)) \
-        or isinstance(obj, builtins.tuple) and all(_isimmutable(item) for item in obj) \
+        or isinstance(obj, tuple) and all(_isimmutable(item) for item in obj) \
         or isinstance(obj, frozendict) and all(_isimmutable(value) for value in obj.values()) \
         or isinstance(obj, numpy.ndarray) and not any(base.flags.writeable for base in _array_bases(obj))
 
