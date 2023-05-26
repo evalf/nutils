@@ -97,13 +97,11 @@ def nutils_hash(data):
 
     t = type(data)
     h = hashlib.sha1(t.__name__.encode()+b'\0')
-    if data is Ellipsis:
+    if data is Ellipsis or data is None:
         pass
-    elif data is None:
-        pass
-    elif any(data is dtype for dtype in (bool, int, float, complex, str, bytes, tuple, frozenset, type(Ellipsis), type(None))):
+    elif t is type:
         h.update(hashlib.sha1(data.__name__.encode()).digest())
-    elif any(t is dtype for dtype in (bool, int, float, complex)):
+    elif t in (bool, int, float, complex):
         h.update(hashlib.sha1(repr(data).encode()).digest())
     elif t is str:
         h.update(hashlib.sha1(data.encode()).digest())
