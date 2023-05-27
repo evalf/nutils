@@ -119,7 +119,7 @@ def nutils_hash(data):
     elif t is frozenset:
         for item in sorted(map(nutils_hash, data)):
             h.update(item)
-    elif issubclass(t, io.BufferedIOBase) and data.seekable() and not data.writable():
+    elif issubclass(t, io.BufferedIOBase) and data.seekable():
         pos = data.tell()
         h.update(str(pos).encode())
         data.seek(0)
@@ -131,7 +131,7 @@ def nutils_hash(data):
     elif t is types.MethodType:
         h.update(nutils_hash(data.__self__))
         h.update(nutils_hash(data.__name__))
-    elif t is numpy.ndarray and not data.flags.writeable:
+    elif t is numpy.ndarray:
         h.update('{}{}\0'.format(','.join(map(str, data.shape)), data.dtype.str).encode())
         h.update(data.tobytes())
     elif dataclasses.is_dataclass(t):

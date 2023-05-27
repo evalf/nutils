@@ -75,9 +75,6 @@ class nutils_hash(TestCase):
 
     def test_ndarray(self):
         a = numpy.array([1, 2, 3])
-        with self.assertRaises(TypeError):
-            nutils.types.nutils_hash(a)
-        a.flags.writeable = False
         self.assertEqual(nutils.types.nutils_hash(a).hex(),
                          '299c2c796b4a71b7a2b310ddb29bba0440d77e26' if numpy.int_ == numpy.int64
                          else '9fee185ee111495718c129b4d3a8ae79975f3459')
@@ -121,8 +118,6 @@ class nutils_hash(TestCase):
                 f.seek(2)
                 self.assertEqual(nutils.types.nutils_hash(f).hex(), '490e9467ce36ddf487999a7b43d554737385e42f')
                 self.assertEqual(f.tell(), 2)
-            with open(path, 'rb+') as f, self.assertRaises(TypeError):
-                nutils.types.nutils_hash(f).hex()
         finally:
             os.unlink(path)
 
