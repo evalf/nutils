@@ -95,6 +95,12 @@ def nutils_hash(data):
     except AttributeError:
         pass
 
+    if isinstance(data, numpy.generic):
+        # normalize Numpy's scalar types so that their nutils_hash are equal to
+        # that of Python's counterparts, similar to Python's builtin hash
+        t = dict(b=bool, i=int, f=float, c=complex)[data.dtype.kind]
+        data = t(data)
+
     t = type(data)
     h = hashlib.sha1(t.__name__.encode()+b'\0')
     if data is Ellipsis or data is None:

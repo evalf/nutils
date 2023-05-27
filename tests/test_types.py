@@ -37,6 +37,12 @@ class nutils_hash(TestCase):
         self.assertEqual(nutils.types.nutils_hash(1).hex(), '00ec7dea895ebd921e56bbc554688d8b3a1e4dfc')
         self.assertEqual(nutils.types.nutils_hash(2).hex(), '8ae88fa39407cf75e46f9e0aba8c971de2256b14')
 
+    def test_numpy(self):
+        for t in bool, int, float, complex:
+            with self.subTest(t.__name__):
+                for d in numpy.arange(2, dtype=t):
+                    self.assertEqual(nutils.types.nutils_hash(d).hex(), nutils.types.nutils_hash(t(d)).hex())
+
     def test_float(self):
         self.assertEqual(nutils.types.nutils_hash(1.).hex(), 'def4bae4f2a3e29f6ddac537d3fa7c72195e5d8b')
         self.assertEqual(nutils.types.nutils_hash(2.5).hex(), '5216c2bf3c16d8b8ff4d9b79f482e5cea0a4cb95')
