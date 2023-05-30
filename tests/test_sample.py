@@ -441,51 +441,90 @@ class Special(TestCase):
             Dummy(('a', 'b'), 1, 1, 1) * Dummy(('b', 'c'), 1, 1, 1)
 
 
+@parametrize
 class rectilinear(TestCase):
+
+    _nsimplex = 1, 1, 2, 6, 24 # number of simplices required to cover n-cube
 
     def setUp(self):
         super().setUp()
-        self.domain, self.geom = mesh.rectilinear([2, 1])
-        self.bezier2 = self.domain.sample('bezier', 2)
-        self.bezier3 = self.domain.sample('bezier', 3)
-        self.gauss2 = self.domain.sample('gauss', 2)
+        self.ndims = len(self.shape)
+        self.nelems = numpy.prod(self.shape, dtype=int)
+        self.nbelems = 2 * sum(self.nelems // n for n in self.shape)
+        self.topo, self.geom = mesh.rectilinear(self.shape)
 
     def test_integrate(self):
-        area = self.gauss2.integrate(1)
-        self.assertLess(abs(area-2), 1e-15)
+        area = self.topo.integrate(1, degree=1)
+        self.assertAlmostEqual(area, self.nelems, places=15)
 
     def test_integral(self):
-        area = self.gauss2.integral(function.asarray(1)).eval()
-        self.assertLess(abs(area-2), 1e-15)
+        area = self.topo.integral(function.asarray(1), degree=1).eval()
+        self.assertAlmostEqual(area, self.nelems, places=15)
 
     def test_eval(self):
-        x = self.bezier3.eval(self.geom)
-        self.assertEqual(x.shape, (self.bezier3.npoints,)+self.geom.shape)
+        for n in 1, 2:
+            bezier = self.topo.sample('bezier', n+1)
+            x = bezier.eval(self.geom)
+            self.assertEqual(x.shape, (bezier.npoints, *self.geom.shape))
+
+    def test_bezier(self):
+        for n in 1, 2:
+            bezier = self.topo.sample('bezier', n+1)
+            self.assertEqual(bezier.npoints, self.nelems * (n+1)**self.ndims)
 
     def test_tri(self):
-        self.assertEqual(len(self.bezier2.tri), 4)
-        self.assertEqual(len(self.bezier3.tri), 16)
+        for n in 1, 2:
+            bezier = self.topo.sample('bezier', n+1)
+            tri = bezier.tri
+            self.assertEqual(len(tri), self.nelems * self._nsimplex[self.ndims] * n**self.ndims)
+            self.assertAllEqual(numpy.unique(tri), numpy.arange(bezier.npoints))
+
+    def test_bnd_tri(self):
+        for n in 1, 2:
+            bezier = self.topo.boundary.sample('bezier', n+1)
+            tri = bezier.tri
+            self.assertEqual(len(tri), self.nbelems * self._nsimplex[self.ndims-1] * n**(self.ndims-1))
+            self.assertAllEqual(numpy.unique(tri), numpy.arange(bezier.npoints))
 
     def test_hull(self):
-        self.assertEqual(len(self.bezier2.hull), 8)
-        self.assertEqual(len(self.bezier3.hull), 16)
+        for n in 1, 2:
+            bezier = self.topo.sample('bezier', n+1)
+            hull = bezier.hull
+            self.assertEqual(len(hull), self.nelems * self._nsimplex[self.ndims-1] * 2 * self.ndims * n**(self.ndims-1))
+            if n == 1:
+                self.assertAllEqual(numpy.unique(hull), numpy.arange(bezier.npoints))
+
+    @parametrize.enable_if(lambda shape: len(shape) >= 3)
+    def test_bnd_hull(self):
+        for n in 1, 2:
+            bezier = self.topo.boundary.sample('bezier', n+1)
+            hull = bezier.hull
+            self.assertEqual(len(bezier.hull), self.nbelems * self._nsimplex[self.ndims-2] * n**(self.ndims-2) * 2 * (self.ndims-1))
+            if n == 1:
+                self.assertAllEqual(numpy.unique(hull), numpy.arange(bezier.npoints))
 
     def test_subset(self):
-        subset1 = self.bezier2.subset(numpy.eye(8)[0])
-        subset2 = self.bezier2.subset(numpy.eye(8)[1])
-        self.assertEqual(subset1.npoints, 4)
-        self.assertEqual(subset2.npoints, 4)
-        self.assertEqual(subset1, subset2)
+        bezier = self.topo.sample('bezier', 2)
+        subset1, subset2 = [bezier.subset(mask) for mask in numpy.eye(bezier.npoints, dtype=bool)[:2]]
+        self.assertEqual(subset1.npoints, 2**self.ndims)
+        self.assertEqual(subset2, subset1)
 
     def test_asfunction(self):
-        func = self.geom[0]**2 - self.geom[1]**2
-        values = self.gauss2.eval(func)
-        sampled = self.gauss2.asfunction(values)
+        func = sum(self.geom**2)
+        gauss = self.topo.sample('gauss', 2)
+        values = gauss.eval(func)
+        sampled = gauss.asfunction(values)
+        bezier = self.topo.sample('bezier', 2)
         with self.assertRaises(ValueError):
-            self.bezier2.eval(sampled)
-        self.assertAllEqual(self.gauss2.eval(sampled), values)
+            bezier.eval(sampled)
+        self.assertAllEqual(gauss.eval(sampled), values)
         arg = function.Argument('dofs', [2, 3])
-        self.assertTrue(evaluable.iszero(evaluable.asarray(self.gauss2(function.derivative(sampled, arg)))))
+        self.assertTrue(evaluable.iszero(evaluable.asarray(gauss(function.derivative(sampled, arg)))))
+
+rectilinear(shape=(4,))
+rectilinear(shape=(4,3))
+rectilinear(shape=(4,3,2))
+rectilinear(shape=(4,3,2,1))
 
 
 class integral(TestCase):
