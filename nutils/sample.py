@@ -15,7 +15,7 @@ selected sample points, and is typically used in combination with the "bezier"
 set.
 '''
 
-from . import types, points, util, function, evaluable, parallel, numeric, matrix, sparse, warnings
+from . import types, points, util, function, evaluable, parallel, matrix, sparse, warnings
 from .pointsseq import PointsSequence
 from .transformseq import Transforms
 from .transform import EvaluableTransformChain
@@ -606,6 +606,90 @@ class _Add(_TensorialSample):
         return function.concatenate([self._sample1(func), self._sample2(func)])
 
 
+def _simplex_strip(strip):
+    # Helper function that creates simplices for an extruded simplex, with
+    # vertices arranged in a [2,n] shape (prepended with an arbitrary number of
+    # axes). The Strategy is to create the first simplex from the first vertex
+    # in layer 1 and all vertices from layer 2, the second from all but the
+    # first of layer 2 and the first two of layer 1, and so on until the last
+    # simplex consists of all vertices of layer 1 and the last of layer 2.
+
+    assert strip.dtype == int
+    *shape, m, n = strip.shape
+    assert m == 2
+    flat = strip.reshape((*shape, 2*n)) # ravel last two axes, reallocates if necessary
+    flat = numpy.ascontiguousarray(flat) # required for use as buffer
+    *strides, s = flat.strides
+    return numpy.ndarray(buffer=flat, dtype=int, shape=(*shape, n, n+1), strides=(*strides, s, s))
+
+
+def _mul_tri(tri1, tri2):
+    # Helper function that computes the tri1 x tri2 product. The indices should
+    # be pre-multiplied with the appropriate strides.
+
+    if tri2 is None: # multiplication with 'empty' right hand side
+        return tri1
+
+    if tri1.shape[1] > tri2.shape[1]: # swap to reduce cases below
+        tri1, tri2 = tri2, tri1
+
+    ndims1 = tri1.shape[1] - 1
+    ndims2 = tri2.shape[1] - 1
+
+    tri_outer = tri1[:,None,:,None] + tri2[None,:,None,:]
+
+    if ndims1 == 0: # Left multiplication by a 0D sample
+        # Multiply the left 0D tri by the right tri and maintain the latter's
+        # triangulation.
+        tri = tri_outer.reshape(-1, ndims2+1)
+    elif ndims1 == 1: # Left multiplication by a 1D sample
+        # Multiply the left 1D tri by the right tri and triangulate using a
+        # simplex strip.
+        tri = _simplex_strip(tri_outer).reshape(-1, ndims2+2)
+    else:
+        raise NotImplementedError(f'tri not supported for {ndims1}D x {ndims2}D multiplication')
+
+    assert tri.shape[1] == ndims1 + ndims2 + 1
+    return tri
+
+
+def _mul_hull(tri1, tri2, hull1, hull2):
+    # Helper function that computes the hull1 x hull2 product. The indices
+    # should be pre-multiplied with the appropriate strides. If either tri1 or
+    # tri2 represents a 0D triangulation (i.e. a point) then the corresponding
+    # hull value will be ignored.
+
+    if tri2 is None: # multiplication with 'empty' right hand side
+        return hull1
+
+    if tri1.shape[1] > tri2.shape[1]: # swap to reduce cases below
+        tri1, tri2 = tri2, tri1
+        hull1, hull2 = hull2, hull1
+
+    ndims1 = tri1.shape[1] - 1
+    ndims2 = tri2.shape[1] - 1
+
+    if ndims1 == 0: # Left multiplication by a 0D sample
+        # Multiply the left 0D tri by the right hull and maintain the latter's
+        # triangulation.
+        hull_outer = tri1[:,None,:,None] + hull2[None,:,None,:] # ...,1,ndims2
+        hull = hull_outer.reshape(-1, ndims2)
+    elif ndims1 == 1: # Left multiplication by a 1D sample
+        # 1. Multiply the left 1D tri by the right hull and triangulate using a
+        # simplex strip.
+        hull_outer = tri1[:,None,:,None] + hull2[None,:,None,:] # ...,2,ndims2
+        hull = _simplex_strip(hull_outer).reshape(-1, ndims2+1)
+        # 2. Multiply the left 0D hull by the right tri and maintain the
+        # latter's triangulation.
+        hull_outer = hull1[:,None,:,None] + tri2[None,:,None,:] # ...,1,ndims2+1
+        hull = numpy.concatenate([hull_outer.reshape(-1, ndims2+1), hull])
+    else:
+        raise NotImplementedError(f'hull not supported for {ndims1}D x {ndims2}D multiplication')
+
+    assert hull.shape[1] == ndims1 + ndims2
+    return hull
+
+
 class _Mul(_TensorialSample):
 
     def __init__(self, sample1: Sample, sample2: Sample) -> None:
@@ -637,49 +721,84 @@ class _Mul(_TensorialSample):
         points_shape, transform_chains, coordinates = self._sample1.update_lower_args(ielem1, points_shape, transform_chains, coordinates)
         return self._sample2.update_lower_args(ielem2, points_shape, transform_chains, coordinates)
 
+    @property
+    def _reversed_factors(self):
+        # Helper method that generates the factors of arbitrarily nested
+        # multiplications in reverse order.
+
+        for s in self._sample2, self._sample1:
+            if isinstance(s, _Mul):
+                yield from s._reversed_factors
+            else:
+                yield s
+
+    def _get_element_tri_hull(self, ielem: int, with_hull: bool) -> numpy.ndarray:
+        # Helper method that returns the element_tri and element_hull for a
+        # given element index, used by get_element_tri and get_element_hull.
+        #
+        # To save work in case only the element_tri is required, a None value
+        # is returned for the latter if the with_hull flag is set to False. The
+        # converse (returning only the hull) is not possible as construction of
+        # the hull implies construction of the tri.
+
+        if not 0 <= ielem < self.nelems:
+            raise IndexError('element number is out of bounds')
+
+        # We loop from the final factor back to the first because of the order
+        # in which both the element index and the element vertices are raveled.
+
+        tri = hull = None
+        stride = 1
+        for sample in self._reversed_factors:
+            ielem, i = divmod(ielem, sample.nelems) # i is the unraveled element index in sample
+            nverts = len(sample.getindex(i))
+            sample_tri = sample.get_element_tri(i) * stride
+            if with_hull:
+                sample_hull = sample.ndims and sample.get_element_hull(i) * stride
+                hull = _mul_hull(sample_tri, tri, sample_hull, hull)
+            tri = _mul_tri(sample_tri, tri)
+            stride *= nverts # update stride to include the element's vertex count
+        assert ielem == 0
+        return tri, hull
+
     def get_element_tri(self, ielem: int) -> numpy.ndarray:
-        if self._sample1.ndims == 1:
-            ielem1, ielem2 = divmod(ielem, self._sample2.nelems)
-            npoints2 = len(self._sample2.getindex(ielem2))
-            tri12 = self._sample1.get_element_tri(ielem1)[:, None, :, None] * npoints2 + self._sample2.get_element_tri(ielem2)[None, :, None, :]  # ntri1 x ntri2 x 2 x ndims
-            return numeric.overlapping(tri12.reshape(-1, 2*self.ndims), n=self.ndims+1).reshape(-1, self.ndims+1)
-        elif self._sample1.npoints == 1:
-            return self._sample2.get_element_tri(ielem)
-        elif self._sample2.npoints == 1:
-            return self._sample1.get_element_tri(ielem)
-        else:
-            return super().get_element_tri(ielem)
+        return self._get_element_tri_hull(ielem, with_hull=False)[0]
 
     def get_element_hull(self, ielem: int) -> numpy.ndarray:
-        if self._sample1.ndims == 1:
-            ielem1, ielem2 = divmod(ielem, self._sample2.nelems)
-            npoints2 = len(self._sample2.getindex(ielem2))
-            hull1 = self._sample1.get_element_hull(ielem1)[:, None, :, None] * npoints2 + self._sample2.get_element_tri(ielem2)[None, :, None, :]  # 2 x ntri2 x 1 x ndims
-            hull2 = self._sample1.get_element_tri(ielem1)[:, None, :, None] * npoints2 + self._sample2.get_element_hull(ielem2)[None, :, None, :]  # ntri1 x nhull2 x 2 x ndims-1
-            return numpy.concatenate([hull1.reshape(-1, self.ndims), numeric.overlapping(hull2.reshape(-1, 2*(self.ndims-1)), n=self.ndims).reshape(-1, self.ndims)])
-        elif self._sample1.npoints == 1:
-            return self._sample2.get_element_hull(ielem)
-        elif self._sample2.npoints == 1:
-            return self._sample1.get_element_hull(ielem)
-        else:
-            return super().get_element_hull(ielem)
+        return self._get_element_tri_hull(ielem, with_hull=True)[1]
+
+    def _tri_hull(self, with_hull) -> numpy.ndarray:
+        # Helper method that returns the tri and hull of the sample, used by
+        # the tri and hull. These properties replace the default implementation
+        # via get_element_tri and get_element_hull by a faster algorithm that
+        # applies the product structure directly on the level of the sample.
+        #
+        # To save work in case only tri is required, a None value is returned
+        # for hull if the with_hull flag is set to False. The converse
+        # (returning only hull) is not possible as construction of hull implies
+        # construction of tri.
+        #
+        # We loop from the final factor back to the first because of the order
+        # in which the sample points are raveled.
+
+        tri = hull = None
+        stride = 1
+        for sample in self._reversed_factors:
+            sample_tri = sample.tri * stride
+            if with_hull:
+                sample_hull = sample.ndims and sample.hull * stride
+                hull = _mul_hull(sample_tri, tri, sample_hull, hull)
+            tri = _mul_tri(sample_tri, tri)
+            stride *= sample.npoints # update stride to include the sample's point count
+        return tri, hull
 
     @property
     def tri(self) -> numpy.ndarray:
-        if self._sample1.ndims == 1:
-            tri12 = self._sample1.tri[:, None, :, None] * self._sample2.npoints + self._sample2.tri[None, :, None, :]  # ntri1 x ntri2 x 2 x ndims
-            return numeric.overlapping(tri12.reshape(-1, 2*self.ndims), n=self.ndims+1).reshape(-1, self.ndims+1)
-        else:
-            return super().tri
+        return self._tri_hull(with_hull=False)[0]
 
     @property
     def hull(self) -> numpy.ndarray:
-        if self._sample1.ndims == 1:
-            hull1 = self._sample1.hull[:, None, :, None] * self._sample2.npoints + self._sample2.tri[None, :, None, :]  # 2 x ntri2 x 1 x ndims
-            hull2 = self._sample1.tri[:, None, :, None] * self._sample2.npoints + self._sample2.hull[None, :, None, :]  # ntri1 x nhull2 x 2 x ndims-1
-            return numpy.concatenate([hull1.reshape(-1, self.ndims), numeric.overlapping(hull2.reshape(-1, 2*(self.ndims-1)), n=self.ndims).reshape(-1, self.ndims)])
-        else:
-            return super().hull
+        return self._tri_hull(with_hull=True)[1]
 
     def integral(self, func: function.IntoArray) -> function.Array:
         return self._sample1.integral(self._sample2.integral(func))
