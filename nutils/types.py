@@ -5,7 +5,6 @@ Module with general purpose types.
 import inspect
 import functools
 import hashlib
-import builtins
 import numbers
 import collections.abc
 import itertools
@@ -96,27 +95,34 @@ def nutils_hash(data):
     except AttributeError:
         pass
 
+    if isinstance(data, numpy.generic):
+        # normalize Numpy's scalar types so that their nutils_hash are equal to
+        # that of Python's counterparts, similar to Python's builtin hash
+        t = dict(b=bool, i=int, f=float, c=complex)[data.dtype.kind]
+        data = t(data)
+
     t = type(data)
     h = hashlib.sha1(t.__name__.encode()+b'\0')
-    if data is Ellipsis:
+    if data is Ellipsis or data is None:
         pass
-    elif data is None:
-        pass
-    elif any(data is dtype for dtype in (bool, int, float, complex, str, bytes, builtins.tuple, frozenset, type(Ellipsis), type(None))):
+    elif t is type:
         h.update(hashlib.sha1(data.__name__.encode()).digest())
-    elif any(t is dtype for dtype in (bool, int, float, complex)):
+    elif t in (bool, int, float, complex):
         h.update(hashlib.sha1(repr(data).encode()).digest())
     elif t is str:
         h.update(hashlib.sha1(data.encode()).digest())
     elif t is bytes:
         h.update(hashlib.sha1(data).digest())
-    elif t is builtins.tuple:
+    elif t in (list, tuple):
         for item in data:
             h.update(nutils_hash(item))
-    elif t is frozenset:
+    elif t is dict:
+        for item in sorted(nutils_hash(k) + nutils_hash(v) for k, v in data.items()):
+            h.update(item)
+    elif t in (set, frozenset):
         for item in sorted(map(nutils_hash, data)):
             h.update(item)
-    elif issubclass(t, io.BufferedIOBase) and data.seekable() and not data.writable():
+    elif issubclass(t, io.BufferedIOBase) and data.seekable():
         pos = data.tell()
         h.update(str(pos).encode())
         data.seek(0)
@@ -128,7 +134,7 @@ def nutils_hash(data):
     elif t is types.MethodType:
         h.update(nutils_hash(data.__self__))
         h.update(nutils_hash(data.__name__))
-    elif t is numpy.ndarray and not data.flags.writeable:
+    elif t is numpy.ndarray:
         h.update('{}{}\0'.format(','.join(map(str, data.shape)), data.dtype.str).encode())
         h.update(data.tobytes())
     elif dataclasses.is_dataclass(t):
@@ -628,7 +634,7 @@ def _array_bases(obj):
 def _isimmutable(obj):
     return obj is None \
         or isinstance(obj, (Immutable, bool, int, float, complex, str, bytes, frozenset, numpy.generic)) \
-        or isinstance(obj, builtins.tuple) and all(_isimmutable(item) for item in obj) \
+        or isinstance(obj, tuple) and all(_isimmutable(item) for item in obj) \
         or isinstance(obj, frozendict) and all(_isimmutable(value) for value in obj.values()) \
         or isinstance(obj, numpy.ndarray) and not any(base.flags.writeable for base in _array_bases(obj))
 
