@@ -144,10 +144,11 @@ def main(size: Length, epsilon: Length, mobility: Time/Density, stens: Tension,
 
     log.info('contact angle: {:.0f}°'.format(numpy.arccos((wtensn - wtensp) / stens) * 180 / numpy.pi))
 
-    domain, geom = mesh.unitsquare(nelems, etype)
     if circle:
-        angle = (geom-.5) * (numpy.pi/2)
-        geom = .5 + numpy.sin(angle) * numpy.cos(angle)[[1, 0]] / numpy.sqrt(2)
+        domain, geom = mesh.unitcircle(nelems, etype)
+        geom = (geom + 1) / 2
+    else:
+        domain, geom = mesh.unitsquare(nelems, etype)
 
     bezier = domain.sample('bezier', 5)  # sample for surface plots
     grid = domain.locate(geom, numeric.simplex_grid([1, 1], 1/40), maxdist=1/nelems, skip_missing=True, tol=1e-5)  # sample for quivers
@@ -242,16 +243,26 @@ class test(testing.TestCase):
                 eNoBYgCd/3TIkccBNkQ6IDqIN3/MF8cSx9Y02TmdOVHLMcecxxLIEjQUOAHOa8a1xWw3izb2M9UzPMc0
                 xmnGpzibODY34tETyJHHp8hbyWU2xzZTydfIOsrNyo3Gi8jCyyXIm8hkzD3K1IAxtQ==''')
 
-    def test_mixedcircle(self):
+    def test_multipatchcircle(self):
         args = main(size=parse('10cm'), epsilon=parse('5cm'), mobility=parse('1μL*s/kg'),
                      stens=parse('50mN/m'), wtensn=parse('30mN/m'), wtensp=parse('20mN/m'), nelems=3,
-                     etype='mixed', degree=2, timestep=parse('1h'), tol=parse('1nJ/m'),
+                     etype='multipatch', degree=2, timestep=parse('1h'), tol=parse('1nJ/m'),
                      endtime=parse('2h'), seed=0, circle=True, stab=stab.linear, showflux=True)
         with self.subTest('concentration'):
             self.assertAlmostEqual64(args['φ'], '''
-                eNoBYgCd/w01AjX+NAw1IjXTNMw0iTRPNDI1vDQcNTk0uzJ9NFM0HS4P0SbMcssOy0wzZjNw0b0zljHK
-                z6U0ps8zM/LPjspVypDKUsuLzk3MgM3OzYnN7s/61KfP2zH4MADNhst3z7DMoBcvyQ==''')
+                eNoNz01IVGEUxnFBSgxbVIqCCEJQi4E7933PcVGL/FrISNDGFsUo5ORCBovQIctxQBQRZFpFIvZJ4aYQ
+                YQQlkgTL1XPOe0dkKEOhhSJkOz8KRL38F8/2+Tl2/JW/hL3icj7PSjOc4CdczMO0ZEv5j22nKZMy6VVD
+                Z+mh3TBp0+hnzQOvJZJwA65E/0mbVK89zovbdftu2G3qjlx1Ma2XX3gjZ2RWcvJMshhFH1rkoqwjKVek
+                E234gAy2sIIY2hFHB15qnb6XEfPUDPqeOPheyg2hC5BDfKQc9dFB2DpdpoJZpCr6++On/DcNwRzP8SQf
+                0R6tUZprOEdN9I7q7LTt9itoO9xFc9sk/Q47bV544/mkXwgS7oYe5xuCGhfX73JXItLqTjSj5R4XeoIK
+                HZFKV6QXZB4xUfSaInM9eo6O7JgtW13WXdMcfS47iLt+OQw/faZH1GlfR2/p22hz8Fu/SZVGpEw+IRu6
+                amUBC6H/Hm7iDlK4hgn04H5onsElOQVf7chD''')
         with self.subTest('chemical-potential'):
             self.assertAlmostEqual64(args['η'], '''
-                eNoBYgCd/+s1Bcp4ztI3gjYFyZk4YzVjyfA2AzdAMj032zfLNTE4fMm7yLnGisbqxZPJ2MsfyD81csiv
-                x+E5xDhjOJA3msZ1xZTFa8ddx/fG88eCx73H1MieM/c0WDihMUrLvMYZNpvIrWQ0sw==''')
+                eNoN0MtLlGEUB2AjoiIIKzChXS5cVOR837znHMNAGaaLQWAxi7YudOFl4WiWRchsXIhQXsAYKlIIjGiS
+                TDeRs6nfOe/7jUUWuWnjostGwwoXbZLnP3iykhUnW7xPqmSOlilLdbJLfvMkz7g49ZfreS/fTT/3jfbK
+                zbmN1Kr74m5Gv/wP/ehf6k+UsIg8Lsfr0eMEvuIT3+4f6qofthIuYVyXcdjX+gP+qnZqi6qVbE23bI8d
+                1Hk06GtktFp7cQ+9KOBIshEWrY+e0gma0X/od0vJGIYwYCm9Ly+kKCs7ylKQJV6QjFTRhD3h26ebuYcf
+                cDG5UplNf+b90kUnuUnaeZ7H6aI/7t+GGtfmvsb5KOcuvF8P3WTpY+GOz9Ah6khfS27ZiE5qMYyEWT8d
+                jUb5yrZ907PhupE+QkHfoSZei3hlgT5Rgd4Eb6eoHJf1O46GCW2VTmkTkn7+4z5Yl0tiZ9uaS6ptWnfr
+                JqYwiBs4gyw6kMM59KF1Z60WDWjGM5zX/wCZyEY=''')

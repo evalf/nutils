@@ -144,3 +144,59 @@ class rectilinear(TestCase):
                     basis = self.domain.basis(basistype, degree=degree)
                     values = self.domain.interfaces.sample('uniform', 2).eval(basis*function.J(self.geom))
                     numpy.testing.assert_almost_equal(values.sum(1), 1)
+
+
+@parametrize
+class unitsquare(TestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.domain, self.geom = mesh.unitsquare(nelems=4, etype=self.etype)
+
+    def test_volume(self):
+        self.assertAllAlmostEqual(self.domain.volume(self.geom), 1)
+
+    def test_boundaries(self):
+        self.assertAllAlmostEqual(self.domain.boundary.volume(self.geom), 4)
+        self.domain.check_boundary(geometry=self.geom)
+
+    def test_boundary_groups(self):
+        numpy.testing.assert_almost_equal(self.domain.boundary['left'].sample('gauss', 0).eval(self.geom[0]), 0)
+        numpy.testing.assert_almost_equal(self.domain.boundary['bottom'].sample('gauss', 0).eval(self.geom[1]), 0)
+        numpy.testing.assert_almost_equal(self.domain.boundary['right'].sample('gauss', 0).eval(self.geom[0]), 1)
+        numpy.testing.assert_almost_equal(self.domain.boundary['top'].sample('gauss', 0).eval(self.geom[1]), 1)
+
+    def test_interface(self):
+        geomerr = self.domain.interfaces.sample('uniform', 2).eval(self.geom - function.opposite(self.geom))
+        numpy.testing.assert_almost_equal(geomerr, 0, decimal=15)
+        normalerr = self.domain.interfaces.sample('uniform', 2).eval(self.geom.normal() + function.opposite(self.geom.normal()))
+        numpy.testing.assert_almost_equal(normalerr, 0, decimal=15)
+
+unitsquare(etype='square')
+unitsquare(etype='triangle')
+unitsquare(etype='mixed')
+unitsquare(etype='multipatch')
+
+
+@parametrize
+class unitcircle(TestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.domain, self.geom = mesh.unitcircle(nelems=8, variant=self.variant)
+
+    def test_volume(self):
+        self.assertAllAlmostEqual(self.domain.volume(self.geom, degree=6), numpy.pi)
+
+    def test_boundaries(self):
+        self.assertAllAlmostEqual(self.domain.boundary.volume(self.geom, degree=6), 2 * numpy.pi)
+        self.domain.check_boundary(geometry=self.geom, degree=8)
+
+    def test_interface(self):
+        geomerr = self.domain.interfaces.sample('uniform', 2).eval(self.geom - function.opposite(self.geom))
+        numpy.testing.assert_almost_equal(geomerr, 0, decimal=15)
+        normalerr = self.domain.interfaces.sample('uniform', 2).eval(self.geom.normal() + function.opposite(self.geom.normal()))
+        numpy.testing.assert_almost_equal(normalerr, 0, decimal=15)
+
+unitcircle(variant='rectilinear')
+unitcircle(variant='multipatch')

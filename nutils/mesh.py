@@ -629,6 +629,19 @@ def unitsquare(nelems, etype):
 
         * ``"mixed"``: unstructured mesh of triangles and squares.
 
+        * ``"multipatch"``: multipatch mesh consisting of five patches with the
+            following structure:
+
+            .. code-block:: none
+
+               *─────*
+               │╲   ╱│
+               │ *─* │
+               │ │ │ │
+               │ *─* │
+               │╱   ╲│
+               *─────*
+
     Returns
     -------
     :class:`nutils.topology.TransformChainsTopology`:
@@ -641,6 +654,7 @@ def unitsquare(nelems, etype):
 
     if etype == 'square':
         topo, geom = rectilinear([nelems, nelems], space=space)
+        return topo, geom / nelems
 
     elif etype in ('triangle', 'mixed'):
         simplices = numpy.concatenate([
@@ -672,11 +686,72 @@ def unitsquare(nelems, etype):
         x, y = topo.boundary.sample('_centroid', None).eval(geom).T
         btopo = topo.boundary
         topo = topo.withboundary(left=btopo[x<.1], right=btopo[x>nelems-.1], bottom=btopo[y<.1], top=btopo[y>nelems-.1])
+        return topo, geom / nelems
+
+    elif etype == 'multipatch':
+        # 2─────3
+        # │╲   ╱│
+        # │ 6─7 │
+        # │ │ │ │
+        # │ 4─5 │
+        # │╱   ╲│
+        # 0─────1
+        topo, geom = multipatch(
+            patches=[[0, 4, 1, 5], [2, 6, 3, 7], [0, 4, 2, 6], [1, 5, 3, 7], [4, 6, 5, 7]],
+            patchverts=[[0, 0], [3, 0], [0, 3], [3, 3], [1, 1], [2, 1], [1, 2], [2, 2]],
+            nelems=nelems)
+        topo = topo.withboundary(
+            bottom=topo['patch0'].boundary['bottom'],
+            top=topo['patch1'].boundary['bottom'],
+            left=topo['patch2'].boundary['bottom'],
+            right=topo['patch3'].boundary['bottom'])
+        return topo, geom / 3
 
     else:
         raise Exception('invalid element type {!r}'.format(etype))
 
-    return topo, geom / nelems
+
+def _square_to_circle(geom):
+    angle = (geom - 0.5) * (numpy.pi / 2)
+    return numpy.sqrt(2) * numpy.sin(angle) * numpy.cos(angle)[[1, 0]]
+
+
+def unitcircle(nelems: int, variant: str) -> Tuple[Topology, function.Array]:
+    '''Unit circle mesh.
+
+    The circle is centered at coordinate ``(0, 0)`` and has unit radius.
+
+    Args
+    ----
+    nelems : :class:`int`
+        Number of elements along boundary
+    variant : :class:`str`
+        Mesh variant. Supported are:
+
+        *   ``"rectilinear"``: structured mesh of squares, blown-up to a circle.
+
+        *   ``"multipatch"``: multipatch mesh consisting of five patches with
+            the same topological structure as :func:`unitsquare` with
+            ``etype='multipatch'``.
+
+    Returns
+    -------
+    :class:`nutils.topology.TransformChainsTopology`:
+        The structured/unstructured topology.
+    :class:`nutils.function.Array`:
+        The geometry function.
+    '''
+
+    if variant == 'rectilinear':
+        topo, geom = unitsquare(nelems, 'square')
+        return topo, _square_to_circle(geom)
+
+    elif variant == 'multipatch':
+        topo, geom = unitsquare(nelems, 'multipatch')
+        return topo, _square_to_circle(geom)
+
+    else:
+        raise Exception('invalid variant {!r}'.format(variant))
 
 
 # vim:sw=4:sts=4:et
