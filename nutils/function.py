@@ -4336,7 +4336,16 @@ class __implementations__:
             axis = 0
         else:
             axis = numeric.normdim(array.ndim, axis)
-        indices = _Wrapper.broadcasted_arrays(evaluable.NormDim, array.shape[axis], Array.cast(indices, dtype=int))
+        length = array.shape[axis]
+        indices = util.deep_reduce(numpy.stack, indices)
+        if isinstance(indices, Array):
+            indices = _Wrapper.broadcasted_arrays(evaluable.NormDim, length, indices)
+        else:
+            indices = numpy.array(indices)
+            indices[indices < 0] += length
+            if (indices < 0).any() or (indices >= length).any():
+                raise ValueError('indices out of bounds')
+            indices = _Constant(indices)
         transposed = _Transpose.to_end(array, axis)
         taken = _Wrapper(evaluable.Take, transposed, _WithoutPoints(indices), shape=(*transposed.shape[:-1], *indices.shape), dtype=array.dtype)
         return _Transpose.from_end(taken, *range(axis, axis+indices.ndim))
