@@ -41,8 +41,13 @@ def mplfigure(name, kwargs=...):
 
 
 def plotlines_(ax, xy, lines, **kwargs):
-    from matplotlib import collections
-    lc = collections.LineCollection(numpy.asarray(xy).T[lines], **kwargs)
+    if len(xy) == 2:
+        from matplotlib.collections import LineCollection
+    elif len(xy) == 3:
+        from mpl_toolkits.mplot3d.art3d import Line3DCollection as LineCollection
+    else:
+        raise NotImplementedError(f'dimension not supported: {len(xy)}')
+    lc = LineCollection(numpy.asarray(xy).T[lines], **kwargs)
     ax.add_collection(lc)
     return lc
 
@@ -81,6 +86,27 @@ def _triplot_2d(ax, points, values, tri, hull, cmap, clim, linewidth, linecolor,
     return im
 
 
+def _triplot_3d(ax, points, values, tri, hull, cmap, clim, linewidth, linecolor, plabel, vlabel):
+    if tri is not None:
+        im = ax.plot_trisurf(*points.T, triangles=tri, rasterized=True, antialiased=True, cmap=cmap)
+        if values is not None:
+            im.set_array(numpy.nanmean(values[tri], axis=1))
+            if clim is not None:
+                im.set_clim(clim)
+    else:
+        im = None
+    if hull is not None:
+        plotlines_(ax, points.T, hull, colors=linecolor, linewidths=linewidth, alpha=1 if tri is None else .5)
+    pmin = points.min(axis=0)
+    pmax = points.max(axis=0)
+    for d, *lim in zip('xyz', pmin, pmax):
+        getattr(ax, f'set_{d}lim3d')(lim)
+        if plabel:
+            getattr(ax, f'set_{d}label')(plabel)
+    ax.set_box_aspect(pmax - pmin) # together with set_*lim3d above this results in 1:1:1 aspect ratio
+    return im
+
+
 def triplot(name, points, values=None, *, tri=None, hull=None, cmap=None, clim=None, linewidth=.1, linecolor='k', plabel=None, vlabel=None):
 
     if points.ndim != 2:
@@ -91,6 +117,8 @@ def triplot(name, points, values=None, *, tri=None, hull=None, cmap=None, clim=N
         _triplot = _triplot_1d
     elif nd == 2:
         _triplot = _triplot_2d
+    elif nd == 3:
+        _triplot = _triplot_3d
     else:
         raise Exception(f'invalid spatial dimension: {nd}')
 
@@ -102,9 +130,15 @@ def triplot(name, points, values=None, *, tri=None, hull=None, cmap=None, clim=N
         return _triplot(name, *args)
 
     with mplfigure(name) as fig:
-        im = _triplot(fig.add_subplot(111), *args)
+        if nd < 3:
+            ax = fig.add_subplot(111)
+            cbarargs = {}
+        else:
+            ax = fig.add_subplot(111, projection='3d')
+            cbarargs = dict(shrink=.5, pad=.1)
+        im = _triplot(ax, *args)
         if im:
-            fig.colorbar(im, label=vlabel)
+            fig.colorbar(im, label=vlabel, **cbarargs)
 
 
 @util.positional_only
