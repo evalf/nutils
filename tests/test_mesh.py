@@ -200,3 +200,4 @@ class unitcircle(TestCase):
 
 unitcircle(variant='rectilinear')
 unitcircle(variant='multipatch')
+unitcircle(variant='triangle')
