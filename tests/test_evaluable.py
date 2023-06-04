@@ -454,6 +454,8 @@ _check('cos', evaluable.cos, numpy.cos, ANY(4, 4))
 _check('cos-complex', evaluable.cos, numpy.cos, ANC(4, 4))
 _check('tan', evaluable.tan, numpy.tan, ANY(4, 4))
 _check('tan-complex', evaluable.tan, numpy.tan, ANC(4, 4))
+_check('sinc', evaluable.sinc, lambda a: numpy.sinc(a/numpy.pi), ANY(4, 4))
+_check('sinc-complex', evaluable.sinc, lambda a: numpy.sinc(a/numpy.pi), ANC(4, 4))
 _check('sqrt', evaluable.sqrt, lambda a: numpy.power(a, .5), NN(4, 4)) # NOTE: not comparing against numpy.sqrt because of AVX-512 related accuracy issues, see #770
 _check('sqrt-complex', evaluable.sqrt, numpy.sqrt, ANC(4, 4))
 _check('log', evaluable.ln, numpy.log, POS(2, 2))

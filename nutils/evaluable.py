@@ -2330,6 +2330,12 @@ class ArcTan(Pointwise):
     return_type = lambda T: complex if T == complex else float
 
 
+class Sinc(Pointwise):
+    evalf = staticmethod(numeric.sinc)
+    complex_deriv = lambda x, n: Sinc(x, n=n+1),
+    return_type = lambda T, n: complex if T == complex else float
+
+
 class CosH(Pointwise):
     'Hyperbolic cosine, element-wise.'
     evalf = staticmethod(numpy.cosh)
@@ -4662,6 +4668,10 @@ def arccos(x):
 
 def arctan(x):
     return ArcTan(x)
+
+
+def sinc(x):
+    return Sinc(x, n=0)
 
 
 def exp(x):

@@ -4136,6 +4136,10 @@ class __implementations__:
             raise ValueError('arctan2 is not defined for complex numbers')
         return _Wrapper(evaluable.ArcTan2, dividend, divisor, shape=dividend.shape, dtype=float)
 
+    @implements(numpy.sinc)
+    def sinc(arg: Array) -> Array:
+        return _Wrapper.broadcasted_arrays(evaluable.sinc, arg * numpy.pi, min_dtype=float)
+
     @implements(numpy.cosh)
     def cosh(arg: IntoArray) -> Array:
         return _Wrapper.broadcasted_arrays(evaluable.cosh, arg, min_dtype=float)
