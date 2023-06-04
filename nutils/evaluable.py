@@ -2192,6 +2192,13 @@ class Pointwise(Array):
         self.args = args
         super().__init__(args=args, shape=shape0, dtype=dtype)
 
+    def _newargs(self, *args):
+        '''
+        Reinstantiate self with different arguments.
+        '''
+
+        return self.__class__(*args)
+
     @classmethod
     def outer(cls, *args):
         '''Alternative constructor that outer-aligns the arguments.
@@ -2212,10 +2219,10 @@ class Pointwise(Array):
     def _simplified(self):
         if len(self.args) == 1 and isinstance(self.args[0], Transpose):
             arg, = self.args
-            return Transpose(self.__class__(arg.func), arg.axes)
+            return Transpose(self._newargs(arg.func), arg.axes)
         *uninserted, where = unalign(*self.args)
         if len(where) != self.ndim:
-            return align(self.__class__(*uninserted), where, self.shape)
+            return align(self._newargs(*uninserted), where, self.shape)
 
     def _optimized_for_numpy(self):
         if self.isconstant:
@@ -2233,13 +2240,13 @@ class Pointwise(Array):
             return super()._derivative(var, seen)
 
     def _takediag(self, axis1, axis2):
-        return self.__class__(*[_takediag(arg, axis1, axis2) for arg in self.args])
+        return self._newargs(*[_takediag(arg, axis1, axis2) for arg in self.args])
 
     def _take(self, index, axis):
-        return self.__class__(*[_take(arg, index, axis) for arg in self.args])
+        return self._newargs(*[_take(arg, index, axis) for arg in self.args])
 
     def _unravel(self, axis, shape):
-        return self.__class__(*[unravel(arg, axis, shape) for arg in self.args])
+        return self._newargs(*[unravel(arg, axis, shape) for arg in self.args])
 
 
 class Reciprocal(Pointwise):
@@ -2508,7 +2515,7 @@ class Cast(Pointwise):
         if iszero(arg):
             return zeros_like(self)
         for axis, parts in arg._inflations:
-            return util.sum(_inflate(self.__class__(func), dofmap, self.shape[axis], axis) for dofmap, func in parts.items())
+            return util.sum(_inflate(self._newargs(func), dofmap, self.shape[axis], axis) for dofmap, func in parts.items())
         return super()._simplified()
 
     def _intbounds_impl(self):
@@ -2539,21 +2546,21 @@ class IntToFloat(Cast):
 
     def _add(self, other):
         if isinstance(other, __class__):
-            return __class__(self.args[0] + other.args[0])
+            return self._newargs(self.args[0] + other.args[0])
 
     def _multiply(self, other):
         if isinstance(other, __class__):
-            return __class__(self.args[0] * other.args[0])
+            return self._newargs(self.args[0] * other.args[0])
 
     def _sum(self, axis):
-        return __class__(sum(self.args[0], axis))
+        return self._newargs(sum(self.args[0], axis))
 
     def _product(self):
-        return __class__(product(self.args[0], -1))
+        return self._newargs(product(self.args[0], -1))
 
     def _sign(self):
         assert self.dtype != complex
-        return __class__(sign(self.args[0]))
+        return self._newargs(sign(self.args[0]))
 
     def _derivative(self, var, seen):
         return Zeros(self.shape + var.shape, dtype=self.dtype)
@@ -2567,17 +2574,17 @@ class FloatToComplex(Cast):
 
     def _add(self, other):
         if isinstance(other, __class__):
-            return __class__(self.args[0] + other.args[0])
+            return self._newargs(self.args[0] + other.args[0])
 
     def _multiply(self, other):
         if isinstance(other, __class__):
-            return __class__(self.args[0] * other.args[0])
+            return self._newargs(self.args[0] * other.args[0])
 
     def _sum(self, axis):
-        return __class__(sum(self.args[0], axis))
+        return self._newargs(sum(self.args[0], axis))
 
     def _product(self):
-        return __class__(product(self.args[0], -1))
+        return self._newargs(product(self.args[0], -1))
 
     def _real(self):
         return self.args[0]
