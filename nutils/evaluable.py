@@ -2184,20 +2184,24 @@ class Pointwise(Array):
     complex_deriv = None
     return_type = None
 
-    def __init__(self, *args: Array):
+    def __init__(self, *args: Array, **params):
         assert all(isinstance(arg, Array) for arg in args), f'args={args!r}'
-        dtype = self.__class__.return_type(*[arg.dtype for arg in args])
+        dtype = self.__class__.return_type(*[arg.dtype for arg in args], **params)
         shape0 = args[0].shape
         assert all(equalshape(arg.shape, shape0) for arg in args[1:]), 'pointwise arguments have inconsistent shapes'
         self.args = args
+        self.params = params
+        if params:
+            self.evalf = functools.partial(self.evalf, **params)
         super().__init__(args=args, shape=shape0, dtype=dtype)
 
     def _newargs(self, *args):
         '''
-        Reinstantiate self with different arguments.
+        Reinstantiate self with different arguments. Parameters are preserved,
+        as these are considered part of the type.
         '''
 
-        return self.__class__(*args)
+        return self.__class__(*args, **self.params)
 
     @classmethod
     def outer(cls, *args):
@@ -2231,11 +2235,11 @@ class Pointwise(Array):
 
     def _derivative(self, var, seen):
         if self.complex_deriv is not None:
-            return util.sum(einsum('A,AB->AB', deriv(*self.args), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.complex_deriv))
+            return util.sum(einsum('A,AB->AB', deriv(*self.args, **self.params), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.complex_deriv))
         elif self.dtype == complex or var.dtype == complex:
             raise NotImplementedError('The complex derivative is not implemented.')
         elif self.deriv is not None:
-            return util.sum(einsum('A,AB->AB', deriv(*self.args), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.deriv))
+            return util.sum(einsum('A,AB->AB', deriv(*self.args, **self.params), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.deriv))
         else:
             return super()._derivative(var, seen)
 
