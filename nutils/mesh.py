@@ -716,6 +716,17 @@ def _square_to_circle(geom):
     return numpy.sqrt(2) * numpy.sin(angle) * numpy.cos(angle)[[1, 0]]
 
 
+def _hexagon_to_circle(geom):
+    sin60 = math.sqrt(3) / 2
+    a0 = numpy.arctan2(geom[1], geom[0])
+    a0_mod60 = a0 % (numpy.pi / 3)
+    r0 = numpy.sqrt(geom[0]**2 + geom[1]**2)
+    b = numpy.sin(math.pi * 2 / 3 - a0_mod60)
+    r = r0 * b / sin60
+    a = numpy.sin(a0_mod60) / b * (numpy.pi / 3) + (a0 - a0_mod60)
+    return r * function.trignormal(a)
+
+
 def unitcircle(nelems: int, variant: str) -> Tuple[Topology, function.Array]:
     '''Unit circle mesh.
 
@@ -749,6 +760,36 @@ def unitcircle(nelems: int, variant: str) -> Tuple[Topology, function.Array]:
     elif variant == 'multipatch':
         topo, geom = unitsquare(nelems, 'multipatch')
         return topo, _square_to_circle(geom)
+
+    elif variant == 'hexagon':
+        nsimplices = 6 * nelems**2
+        nverts = 3 * nelems * (nelems + 1) + 1
+        simplices =  []
+        verts = [(2 * i - nelems, -nelems) for i in range(nelems + 1)]
+        k = 0
+        # bottom half
+        for j in range(nelems):
+            simplices.extend((k + i, k + i + 1, k + i + nelems + j + 2) for i in range(nelems + j))
+            simplices.extend((k + i, k + i + nelems + j + 1, k + i + nelems + j + 2) for i in range(nelems + j + 1))
+            verts.extend((2 * i - nelems - j - 1, j - nelems + 1) for i in range(nelems + j + 2))
+            assert max(i for c in simplices for i in c) + 1 == len(verts)
+            k += nelems + j + 1
+        # top half
+        for j in range(nelems):
+            simplices.extend((k + i, k + i + 1, k + i + 2 * nelems + 1 - j) for i in range(2 * nelems - j))
+            simplices.extend((k + i + 1, k + i + 2 * nelems + 1 - j, k + i + 2 * nelems + 1 - j + 1) for i in range(2 * nelems - 1 - j))
+            verts.extend((2 * i - 2 * nelems + j + 1, j + 1) for i in range(2 * nelems - j))
+            assert max(i for c in simplices for i in c) + 1 == len(verts)
+            k += 2 * nelems + 1 - j
+        assert len(simplices) == nsimplices
+        assert len(verts) == nverts
+        simplices = numpy.array(simplices)
+        sin60 = numpy.sqrt(3) / 2
+        verts = numpy.array(verts) * numpy.array([0.5, sin60]) / nelems
+        transforms = transformseq.IndexTransforms(ndims=2, length=nsimplices)
+        topo = topology.SimplexTopology('X', simplices, transforms, transforms)
+        geom = _hexagon_to_circle(topo.basis('std', degree=1) @ verts)
+        return topo, geom
 
     else:
         raise Exception('invalid variant {!r}'.format(variant))
