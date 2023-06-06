@@ -748,7 +748,37 @@ def unitcircle(nelems: int, variant: str) -> Tuple[Topology, function.Array]:
 
     elif variant == 'multipatch':
         topo, geom = unitsquare(nelems, 'multipatch')
-        return topo, _square_to_circle(geom)
+
+        B, T, L, R, C = topo.basis('patch')
+        x, y = geom * 2 - 1
+
+        xlin = x / numpy.maximum(abs(y), 1/3) # -1 / 1
+        ylin = y / numpy.maximum(abs(x), 1/3) # -1 / 1
+        xcup = numpy.maximum(1.5 * abs(x) - .5, 0) # 1 \ 0 / 1
+        ycup = numpy.maximum(1.5 * abs(y) - .5, 0) # 1 \ 0 / 1
+
+        b = numpy.sqrt(1/3) # scales inner square
+        xx = (b + (1-b) * xcup)**2
+        yy = (b + (1-b) * ycup)**2
+
+        c = .5 * (numpy.sqrt(2) - 1) # scales outer radius
+        X = (R-L) * (xx + c * xcup**2 * (1 - ylin**2)) + (T+C+B) * xlin * yy
+        Y = (T-B) * (yy + c * ycup**2 * (1 - xlin**2)) + (L+C+R) * ylin * xx
+        W = 1 + c * (L+R) * xcup**2 * (1 + ylin**2) + c * (T+B) * ycup**2 * (1 + xlin**2)
+
+        # Rather than returning [X, Y] / W, we project the numerator and
+        # denominator onto a second order basis for efficient evaluation and
+        # correct boundary gradients at the patch interfaces.
+
+        basis = topo.basis('spline', 2)
+        # Minimize e = (f - B c)^2 = f^2 - 2 f B c + cT BT B c -> BT B c = BT f
+        BB, BX, BY, BW, XX, YY, WW = topo.integrate([basis[:,None] * basis[None,:],
+            basis * X, basis * Y, basis * W, X**2, Y**2, W**2], degree=4)
+        cx, cy, cw = [BB.solve(BF) for BF in (BX, BY, BW)]
+        ex, ey, ew = [FF + (BB @ cf - 2 * BF) @ cf for (cf, BF, FF) in ((cx, BX, XX), (cy, BY, YY), (cw, BW, WW))]
+        log.debug(f'NURBS projection errors: x={ex:.0e}, y={ey:.0e}, w={ew:.0e}')
+
+        return topo, (basis @ numpy.stack([cx, cy], 1)) / (basis @ cw)
 
     else:
         raise Exception('invalid variant {!r}'.format(variant))
