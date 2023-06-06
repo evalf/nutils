@@ -286,6 +286,8 @@ _check('arcsin-complex', lambda a: numpy.arcsin(function.Array.cast(a)), numpy.a
 _check('arctan', lambda a: numpy.arctan(function.Array.cast(a)), numpy.arctan, ANY(4))
 _check('arctan-complex', lambda a: numpy.arctan(function.Array.cast(a)), numpy.arctan, ANC(4))
 _check('arctan2', lambda a, b: numpy.arctan2(a, function.Array.cast(b)), numpy.arctan2, ANY(4, 1), ANY(1, 4))
+_check('sinc', lambda a: numpy.sin(function.Array.cast(a)), numpy.sin, ANY(4))
+_check('sinc-complex', lambda a: numpy.sin(function.Array.cast(a)), numpy.sin, ANC(4))
 _check('cosh', lambda a: numpy.cosh(function.Array.cast(a)), numpy.cosh, ANY(4))
 _check('cosh-complex', lambda a: numpy.cosh(function.Array.cast(a)), numpy.cosh, ANC(4))
 _check('sinh', lambda a: numpy.sinh(function.Array.cast(a)), numpy.sinh, ANY(4))

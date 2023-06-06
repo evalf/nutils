@@ -591,4 +591,47 @@ def levicivita(n: int, dtype=float):
     result[tuple(I)] = 1 - 2*(nperms % 2)
     return result
 
+
+def sinc(x, n=0):
+    '''
+    Evaluates the n-th derivative of the unnormalized sinc function:
+
+        sinc(x) = sin(x) / x
+    '''
+
+    x = numpy.asarray(x)
+    f = numpy.asarray(numpy.sinc(x / numpy.pi)) # Numpy's implementation is normalized to π
+    if n == 0:
+        return f
+    # Derivatives are evaluated using either a recurrence relation or a Taylor
+    # series expansion, depending on proximity to the origin.
+    m = abs(x) >= 1
+    if m.any(): # points outside unit ball
+        # sinc'i(x) = (sin'i(x) - i sinc'i-1(x)) / x
+        fm = f[m]
+        xm = x[m]
+        for i in range(1, n+1): # traverse derivatives
+            fm *= -i
+            fm += [numpy.sin, numpy.cos][i%2](xm) * [1, 1, -1, -1][i % 4]
+            fm /= xm
+        f[m] = fm
+    if not m.all(): # points inside unit ball
+        # sinc'n(x) = Σ_i cos(½π(i+n)) x^i / i! / (i+n+1)
+        xm = x[~m]
+        xm2 = xm**2
+        fm = numpy.zeros(xm.shape, dtype=f.dtype)
+        imax = 32 # 1/32! = 4e-36
+        for i in reversed(range(n % 2, imax, 4)):
+            fm *= xm2 / ((i + 4) * (i + 3))
+            fm -= 1 / (i + n + 3)
+            fm *= xm2 / ((i + 2) * (i + 1))
+            fm += 1 / (i + n + 1)
+        if n % 2:
+            fm *= xm
+        if 1 <= n % 4 <= 2:
+            fm = -fm
+        f[~m] = fm
+    return f
+
+
 # vim:sw=4:sts=4:et

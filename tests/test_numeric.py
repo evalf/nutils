@@ -290,3 +290,41 @@ class full(TestCase):
         self.assertEqual(f.dtype, int)
         self.assertEqual(f.strides, (0, 0))
         self.assertAllEqual(f, numpy.ones((2, 3)))
+
+
+class sinc(TestCase):
+
+    def check(self, n, psin, pcos, f0):
+        x = numpy.arange(-4, 5) / 4
+        nz = x != 0
+        (z,), = (~nz).nonzero()
+        f = numpy.polyval(psin, x) * numpy.sin(x) + numpy.polyval(pcos, x) * numpy.cos(x)
+        f[nz] /= x[nz]**(n+1)
+        f[z] = f0
+        self.assertAllAlmostEqual(numeric.sinc(x, n), f)
+
+    def test_f0(self):
+        self.check(0, [1], [], 1)
+
+    def test_f1(self):
+        self.check(1, [-1], [1,0], 0)
+
+    def test_f2(self):
+        self.check(2, [-1,0,2], [-2,0], -1/3)
+
+    def test_f3(self):
+        self.check(3, [3,0,-6], [-1,0,6,0], 0)
+
+    def test_f4(self):
+        self.check(4, [1,0,-12,0,24], [4,0,-24,0], 1/5)
+
+    def test_scalar(self):
+        self.assertEqual(numeric.sinc(0), 1)
+        self.assertEqual(numeric.sinc(numpy.pi/2), 2/numpy.pi)
+        self.assertEqual(numeric.sinc(0, 1), 0)
+        self.assertAlmostEqual(numeric.sinc(numpy.pi/2, 1), -4/numpy.pi**2, delta=1e-16)
+
+    def test_errors(self):
+        for n in range(5):
+            f = numeric.sinc(numpy.linspace(-1e-12, 1e-12, 10), n)
+            self.assertTrue(all(abs(numpy.diff(f)) < 1e-13))

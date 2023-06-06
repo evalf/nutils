@@ -2184,13 +2184,24 @@ class Pointwise(Array):
     complex_deriv = None
     return_type = None
 
-    def __init__(self, *args: Array):
+    def __init__(self, *args: Array, **params):
         assert all(isinstance(arg, Array) for arg in args), f'args={args!r}'
-        dtype = self.__class__.return_type(*[arg.dtype for arg in args])
+        dtype = self.__class__.return_type(*[arg.dtype for arg in args], **params)
         shape0 = args[0].shape
         assert all(equalshape(arg.shape, shape0) for arg in args[1:]), 'pointwise arguments have inconsistent shapes'
         self.args = args
+        self.params = params
+        if params:
+            self.evalf = functools.partial(self.evalf, **params)
         super().__init__(args=args, shape=shape0, dtype=dtype)
+
+    def _newargs(self, *args):
+        '''
+        Reinstantiate self with different arguments. Parameters are preserved,
+        as these are considered part of the type.
+        '''
+
+        return self.__class__(*args, **self.params)
 
     @classmethod
     def outer(cls, *args):
@@ -2212,10 +2223,10 @@ class Pointwise(Array):
     def _simplified(self):
         if len(self.args) == 1 and isinstance(self.args[0], Transpose):
             arg, = self.args
-            return Transpose(self.__class__(arg.func), arg.axes)
+            return Transpose(self._newargs(arg.func), arg.axes)
         *uninserted, where = unalign(*self.args)
         if len(where) != self.ndim:
-            return align(self.__class__(*uninserted), where, self.shape)
+            return align(self._newargs(*uninserted), where, self.shape)
 
     def _optimized_for_numpy(self):
         if self.isconstant:
@@ -2224,22 +2235,22 @@ class Pointwise(Array):
 
     def _derivative(self, var, seen):
         if self.complex_deriv is not None:
-            return util.sum(einsum('A,AB->AB', deriv(*self.args), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.complex_deriv))
+            return util.sum(einsum('A,AB->AB', deriv(*self.args, **self.params), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.complex_deriv))
         elif self.dtype == complex or var.dtype == complex:
             raise NotImplementedError('The complex derivative is not implemented.')
         elif self.deriv is not None:
-            return util.sum(einsum('A,AB->AB', deriv(*self.args), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.deriv))
+            return util.sum(einsum('A,AB->AB', deriv(*self.args, **self.params), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.deriv))
         else:
             return super()._derivative(var, seen)
 
     def _takediag(self, axis1, axis2):
-        return self.__class__(*[_takediag(arg, axis1, axis2) for arg in self.args])
+        return self._newargs(*[_takediag(arg, axis1, axis2) for arg in self.args])
 
     def _take(self, index, axis):
-        return self.__class__(*[_take(arg, index, axis) for arg in self.args])
+        return self._newargs(*[_take(arg, index, axis) for arg in self.args])
 
     def _unravel(self, axis, shape):
-        return self.__class__(*[unravel(arg, axis, shape) for arg in self.args])
+        return self._newargs(*[unravel(arg, axis, shape) for arg in self.args])
 
 
 class Reciprocal(Pointwise):
@@ -2317,6 +2328,12 @@ class ArcTan(Pointwise):
     evalf = staticmethod(numpy.arctan)
     complex_deriv = lambda x: reciprocal(1+x**2),
     return_type = lambda T: complex if T == complex else float
+
+
+class Sinc(Pointwise):
+    evalf = staticmethod(numeric.sinc)
+    complex_deriv = lambda x, n: Sinc(x, n=n+1),
+    return_type = lambda T, n: complex if T == complex else float
 
 
 class CosH(Pointwise):
@@ -2508,7 +2525,7 @@ class Cast(Pointwise):
         if iszero(arg):
             return zeros_like(self)
         for axis, parts in arg._inflations:
-            return util.sum(_inflate(self.__class__(func), dofmap, self.shape[axis], axis) for dofmap, func in parts.items())
+            return util.sum(_inflate(self._newargs(func), dofmap, self.shape[axis], axis) for dofmap, func in parts.items())
         return super()._simplified()
 
     def _intbounds_impl(self):
@@ -2539,21 +2556,21 @@ class IntToFloat(Cast):
 
     def _add(self, other):
         if isinstance(other, __class__):
-            return __class__(self.args[0] + other.args[0])
+            return self._newargs(self.args[0] + other.args[0])
 
     def _multiply(self, other):
         if isinstance(other, __class__):
-            return __class__(self.args[0] * other.args[0])
+            return self._newargs(self.args[0] * other.args[0])
 
     def _sum(self, axis):
-        return __class__(sum(self.args[0], axis))
+        return self._newargs(sum(self.args[0], axis))
 
     def _product(self):
-        return __class__(product(self.args[0], -1))
+        return self._newargs(product(self.args[0], -1))
 
     def _sign(self):
         assert self.dtype != complex
-        return __class__(sign(self.args[0]))
+        return self._newargs(sign(self.args[0]))
 
     def _derivative(self, var, seen):
         return Zeros(self.shape + var.shape, dtype=self.dtype)
@@ -2567,17 +2584,17 @@ class FloatToComplex(Cast):
 
     def _add(self, other):
         if isinstance(other, __class__):
-            return __class__(self.args[0] + other.args[0])
+            return self._newargs(self.args[0] + other.args[0])
 
     def _multiply(self, other):
         if isinstance(other, __class__):
-            return __class__(self.args[0] * other.args[0])
+            return self._newargs(self.args[0] * other.args[0])
 
     def _sum(self, axis):
-        return __class__(sum(self.args[0], axis))
+        return self._newargs(sum(self.args[0], axis))
 
     def _product(self):
-        return __class__(product(self.args[0], -1))
+        return self._newargs(product(self.args[0], -1))
 
     def _real(self):
         return self.args[0]
@@ -4651,6 +4668,10 @@ def arccos(x):
 
 def arctan(x):
     return ArcTan(x)
+
+
+def sinc(x):
+    return Sinc(x, n=0)
 
 
 def exp(x):
