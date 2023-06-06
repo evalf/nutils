@@ -83,9 +83,13 @@ def _triplot_2d(ax, points, values=None, *, tri=None, hull=None, cmap=None, clim
 
 def triplot(name, points, values=None, **kwargs):
 
-    if points.shape[1] == 1:
+    if points.ndim != 2:
+        raise ValueError(f'points must be a 2-dimensional array, received shape={points.shape}')
+
+    nd = points.shape[1]
+    if nd == 1:
         _triplot = _triplot_1d
-    elif points.shape[1] == 2:
+    elif nd == 2:
         _triplot = _triplot_2d
     else:
         raise Exception(f'invalid spatial dimension: {nd}')
