@@ -47,7 +47,7 @@ def plotlines_(ax, xy, lines, **kwargs):
     return lc
 
 
-def _triplot_1d(ax, points, values=None, *, tri=None, hull=None, cmap=None, clim=None, linewidth=.1, linecolor='k', plabel=None, vlabel=None):
+def _triplot_1d(ax, points, values, tri, hull, cmap, clim, linewidth, linecolor, plabel, vlabel):
     if plabel:
         ax.set_xlabel(plabel)
     if vlabel:
@@ -64,7 +64,7 @@ def _triplot_1d(ax, points, values=None, *, tri=None, hull=None, cmap=None, clim
         ax.set_ylim(clim)
 
 
-def _triplot_2d(ax, points, values=None, *, tri=None, hull=None, cmap=None, clim=None, linewidth=.1, linecolor='k', plabel=None, vlabel=None):
+def _triplot_2d(ax, points, values, tri, hull, cmap, clim, linewidth, linecolor, plabel, vlabel):
     ax.set_aspect('equal')
     if plabel:
         ax.set_xlabel(plabel)
@@ -81,7 +81,7 @@ def _triplot_2d(ax, points, values=None, *, tri=None, hull=None, cmap=None, clim
     return im
 
 
-def triplot(name, points, values=None, **kwargs):
+def triplot(name, points, values=None, *, tri=None, hull=None, cmap=None, clim=None, linewidth=.1, linecolor='k', plabel=None, vlabel=None):
 
     if points.ndim != 2:
         raise ValueError(f'points must be a 2-dimensional array, received shape={points.shape}')
@@ -94,16 +94,17 @@ def triplot(name, points, values=None, **kwargs):
     else:
         raise Exception(f'invalid spatial dimension: {nd}')
 
-    if (kwargs.get('tri') is None) != (values is None):
+    if (tri is None) != (values is None):
         raise Exception('tri and values can only be specified jointly')
 
+    args = points, values, tri, hull, cmap, clim, linewidth, linecolor, plabel, vlabel
     if not isinstance(name, str):
-        return _triplot(name, points, values, **kwargs)
+        return _triplot(name, *args)
 
     with mplfigure(name) as fig:
-        im = _triplot(fig.add_subplot(111), points, values, **kwargs)
+        im = _triplot(fig.add_subplot(111), *args)
         if im:
-            fig.colorbar(im, label=kwargs.get('vlabel'))
+            fig.colorbar(im, label=vlabel)
 
 
 @util.positional_only
