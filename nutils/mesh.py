@@ -711,11 +711,6 @@ def unitsquare(nelems, etype):
         raise Exception('invalid element type {!r}'.format(etype))
 
 
-def _square_to_circle(geom):
-    angle = (geom - 0.5) * (numpy.pi / 2)
-    return numpy.sqrt(2) * numpy.sin(angle) * numpy.cos(angle)[[1, 0]]
-
-
 def unitcircle(nelems: int, variant: str) -> Tuple[Topology, function.Array]:
     '''Unit circle mesh.
 
@@ -744,7 +739,8 @@ def unitcircle(nelems: int, variant: str) -> Tuple[Topology, function.Array]:
 
     if variant == 'rectilinear':
         topo, geom = unitsquare(nelems, 'square')
-        return topo, _square_to_circle(geom)
+        angle = (geom - 0.5) * (numpy.pi / 2)
+        return topo, numpy.sqrt(2) * numpy.sin(angle) * numpy.cos(angle)[[1, 0]]
 
     elif variant == 'multipatch':
         topo, geom = unitsquare(nelems, 'multipatch')
