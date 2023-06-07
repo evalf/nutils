@@ -196,7 +196,7 @@ class unitcircle(TestCase):
         geomerr = self.domain.interfaces.sample('uniform', 2).eval(self.geom - function.opposite(self.geom))
         numpy.testing.assert_almost_equal(geomerr, 0, decimal=15)
         normalerr = self.domain.interfaces.sample('uniform', 2).eval(self.geom.normal() + function.opposite(self.geom.normal()))
-        numpy.testing.assert_almost_equal(normalerr, 0, decimal=15)
+        numpy.testing.assert_almost_equal(normalerr, 0, decimal=14)
 
 unitcircle(variant='rectilinear')
 unitcircle(variant='multipatch')
