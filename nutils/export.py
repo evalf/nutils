@@ -108,6 +108,62 @@ def _triplot_3d(ax, points, values, tri, hull, cmap, clim, linewidth, linecolor,
 
 
 def triplot(name, points, values=None, *, tri=None, hull=None, cmap=None, clim=None, linewidth=.1, linecolor='k', plabel=None, vlabel=None):
+    '''
+    Uniform plotting interface to preview 1D/2D/3D results.
+
+    This function serves to quickly visualise field data and/or finite element
+    meshes, with a consistent interface that works across dimensions. If the
+    provided data is one-dimensional the resulting plot is a graph; if it is
+    two-dimensional the result is a surface plot; and three-dimensional data is
+    plotted in a fixed ortholinear projection.
+
+    The function can be used in two modes, depending on the first argument:
+
+    *   Standalone: By providing a filename as the first argument, data is
+        plotted, a colorbar is added if values are provided, and the image is
+        saved to the specified file.
+
+    *   Matplotlib component: By providing a Matplotlib axes object as the
+        first argument, data is plotted to the axes and a handle to the scalar
+        mappable (if any) is returned.
+
+    Notes on 3D: Due to limitations of the underlying libraries, 3D data can
+    only be visualised on 2D meshes, i.e. the boundary of the topology.
+    Plotting of the 3D hull is supported but without occlusion, meaning that a
+    full wireframe is layed over the (properly occluded) field data. For use as
+    a Matplotlib component the provided axes must have projection="3d" set.
+
+    Args
+    ----
+    name : :class:`str` or axes object
+      File name of the destination image (with extension) or Matplotlib axes object.
+    points : :class:`float` array
+      Vertex coordinates: a 2D float array shaped as <number of vertices> x
+      <spatial dimension>.
+    values : :class:`float` array
+      Scalar field quantities in the vertices specified by ``points``: a 1D float
+      array shaped as <number of vertices>.
+    tri : :class:`int` array
+      Triangulation of the vertices: a 2D integer array shaped as <number of
+      simplices> x <mesh dimension + 1>, where the mesh dimension may not
+      exceed the spatial dimension.
+    hull : :class:`int` array
+      Triangulation of the element hulls for the visualisation of mesh lines: a
+      2D integer array shaped as <number of hull simplices> x <mesh dimension>.
+    cmap : :class:`str`
+      Color map used for the visualisation of ``values``. Ignored if the
+      spatial dimension is one.
+    clim : :class:`tuple` of floats
+      Data truncation range.
+    linewidth : :class:`float`
+      Mesh line thickness. Ignored if ``hull`` is not specified.
+    linecolor : :class:`str`
+      Mesh line color. Ignored if ``hull`` is not specified.
+    plabel : :class:`str`
+      Axis label for the coordinates.
+    vlabel : :class:`str`
+      Axis label for the values.
+    '''
 
     if points.ndim != 2:
         raise ValueError(f'points must be a 2-dimensional array, received shape={points.shape}')
