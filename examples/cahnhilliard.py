@@ -115,7 +115,7 @@ def main(size: Length, epsilon: Length, mobility: Time/Density, stens: Tension,
        nelems [0]
          Number of elements along domain edge. When set to zero a value is set
          automatically based on the configured domain size and epsilon.
-       etype [square]
+       etype [rectilinear]
          Type of elements (square/triangle/mixed).
        degree [2]
          Polynomial degree.

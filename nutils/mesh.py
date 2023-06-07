@@ -623,7 +623,7 @@ def unitsquare(nelems, etype):
     etype : :class:`str`
         Type of element used for meshing. Supported are:
 
-        * ``"square"``: structured mesh of squares.
+        * ``"square"`` or ``"rectilinear"``: structured mesh of squares.
 
         * ``"triangle"``: unstructured mesh of triangles.
 
@@ -652,7 +652,7 @@ def unitsquare(nelems, etype):
 
     space = 'X'
 
-    if etype == 'square':
+    if etype in ('square', 'rectilinear'):
         topo, geom = rectilinear([nelems, nelems], space=space)
         return topo, geom / nelems
 
