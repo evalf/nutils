@@ -28,6 +28,43 @@ class mplfigure(testing.TestCase):
 
 
 @testing.parametrize
+class triplot(testing.TestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.outdir = pathlib.Path(self.enter_context(tempfile.TemporaryDirectory()))
+        self.enter_context(treelog.set(treelog.DataLog(str(self.outdir))))
+        self.coords = numpy.zeros([self.ndims + 1, self.ndims])
+        self.coords[1:] = numpy.eye(self.ndims)
+        self.tri = numpy.arange(self.ndims + 1)[numpy.newaxis]
+        self.hull = numpy.array([self.tri[0,~m] for m in numpy.eye(self.ndims+1, dtype=bool)])
+        if self.ndims == 3:
+            self.tri = self.hull
+            self.hull = numpy.array([[i,j] for i in range(4) for j in range(i)])
+        self.values = numpy.arange(self.ndims+1, dtype=float) * self.ndims
+
+    @testing.requires('matplotlib', 'PIL')
+    def test_filename(self):
+        export.triplot('test.jpg', self.coords, self.values, tri=self.tri, hull=self.hull)
+
+    @testing.requires('matplotlib', 'PIL')
+    def test_axesobj(self):
+        with export.mplfigure('test.jpg') as fig:
+            ax = fig.add_subplot(111, projection='3d' if self.ndims == 3 else None)
+            im = export.triplot(ax, self.coords, self.values, tri=self.tri, hull=self.hull)
+            if self.ndims == 1:
+                self.assertEqual(im, None)
+            elif self.ndims == 2:
+                self.assertAllEqual(im.get_array(), self.values)
+            elif self.ndims == 3:
+                self.assertAllEqual(im.get_array(), self.values[self.tri].mean(1))
+
+triplot(ndims=1)
+triplot(ndims=2)
+triplot(ndims=3)
+
+
+@testing.parametrize
 class vtk(testing.TestCase):
 
     def setUp(self):

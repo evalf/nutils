@@ -93,7 +93,7 @@ jobs:
           python -um pip install --upgrade --upgrade-strategy eager wheel
           python -um pip install --upgrade --upgrade-strategy eager coverage numpy$_numpy_version
           # Install Nutils from `dist` dir created in job `build-python-package`.
-          python -um pip install "$_wheel[import_gmsh]"
+          python -um pip install "$_wheel[import_gmsh,export_mpl]"
       - name: Install Scipy
         if: ${{ matrix.matrix-backend == 'scipy' }}
         run: python -um pip install --upgrade scipy
