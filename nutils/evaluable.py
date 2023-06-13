@@ -305,7 +305,7 @@ class Evaluable(types.Singleton):
 
     @property
     def isconstant(self):
-        return EVALARGS not in self.dependencies
+        return EVALARGS not in self.dependencies and not self.arguments
 
     @cached_property
     def ordereddeps(self):
@@ -987,7 +987,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     _inflations = ()
 
     def _derivative(self, var, seen):
-        if self.dtype in (bool, int) or var not in self.dependencies:
+        if self.dtype in (bool, int) or var not in self.arguments:
             return Zeros(self.shape + var.shape, dtype=self.dtype)
         raise NotImplementedError('derivative not defined for {}'.format(self.__class__.__name__))
 
