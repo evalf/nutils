@@ -483,9 +483,43 @@ class Topology:
 
         return constrain
 
-    def refined_by(self, refine: Iterable[int]) -> 'Topology':
-        'create refined space by refining dofs in existing one'
+    def refined_by(self, refine: Union[Iterable[int], Iterable[Tuple[transform.TransformItem,...]]]) -> 'Topology':
+        '''Create hierarchically refined topology by selectively refining
+        elements.
 
+        Parameters
+        ----------
+        refine : iterable of :class:`int` or transformation chains
+            The elements to refine, specified by their indices or locations in
+            the topology.
+
+        Returns
+        -------
+        :class:`Topology`
+            The refined topology.
+        '''
+
+        if not isinstance(refine, numpy.ndarray):
+            # We convert refine to a tuple below both as a test for iterability
+            # and to account for the possibility that it is a generator
+            try:
+                refine = tuple(refine)
+            except:
+                raise ValueError('refined_by expects an iterable argument') from None
+        if len(refine) == 0:
+            return self
+        if isinstance(refine[0], tuple): # use first element for detection
+            try:
+                transforms = self.transforms
+            except:
+                raise TypeError('topology supports only refinement by element indices') from None
+            refine = [transforms.index_with_tail(item)[0] for item in refine]
+        refine = numpy.asarray(refine)
+        if refine.dtype != int:
+            raise ValueError(f'expected an array of dtype int, got {refine.dtype}')
+        return self._refined_by(numpy.unique(refine))
+
+    def _refined_by(self, refine: Iterable[int]) -> 'Topology':
         raise NotImplementedError
 
     @cached_property
@@ -1393,8 +1427,13 @@ class TransformChainsTopology(Topology):
             transforms += self.opposites,
         return Sample.new(self.space, transforms, points)
 
-    def refined_by(self, refine):
-        return HierarchicalTopology(self, [numpy.arange(len(self))]).refined_by(refine)
+    def _refined_by(self, refine):
+        fine = self.refined.transforms
+        indices0 = numpy.setdiff1d(numpy.arange(len(self)), refine, assume_unique=True)
+        indices1 = numpy.array([fine.index((*self.transforms[i], ctrans))
+            for i in refine for ctrans, cref in self.references[i].children if cref])
+        indices1.sort()
+        return HierarchicalTopology(self, (indices0, indices1))
 
     @cached_property
     def refined(self):
@@ -2721,11 +2760,7 @@ class HierarchicalTopology(TransformChainsTopology):
     def get_groups(self, *groups: str) -> 'HierarchicalTopology':
         return self._rebase(self.basetopo.get_groups(*groups))
 
-    def refined_by(self, refine):
-        refine = tuple(refine)
-        if not all(map(numeric.isint, refine)):
-            refine = tuple(self.transforms.index_with_tail(item)[0] for item in refine)
-        refine = numpy.unique(numpy.array(refine, dtype=int))
+    def _refined_by(self, refine):
         splits = numpy.searchsorted(refine, self._offsets, side='left')
         indices_per_level = list(map(list, self._indices_per_level))+[[]]
         fine = self.basetopo
