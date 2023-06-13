@@ -305,7 +305,7 @@ class Evaluable(types.Singleton):
 
     @property
     def isconstant(self):
-        return EVALARGS not in self.dependencies
+        return EVALARGS not in self.dependencies and not self.arguments
 
     @cached_property
     def ordereddeps(self):
