@@ -483,15 +483,15 @@ class Topology:
 
         return constrain
 
-    def refined_by(self, refine: Union[Iterable[int], Iterable[Tuple[transform.TransformItem,...]]]) -> 'Topology':
+    def refined_by(self, refine: Union['Topology', Iterable[int], Iterable[Tuple[transform.TransformItem,...]]]) -> 'Topology':
         '''Create hierarchically refined topology by selectively refining
         elements.
 
         Parameters
         ----------
-        refine : iterable of :class:`int` or transformation chains
-            The elements to refine, specified by their indices or locations in
-            the topology.
+        refine : :class:`Topology` or iterable of :class:`int` or transformation chains
+            The elements to refine, specified either as a subtopology or by
+            their indices or locations in the topology.
 
         Returns
         -------
@@ -499,7 +499,9 @@ class Topology:
             The refined topology.
         '''
 
-        if not isinstance(refine, numpy.ndarray):
+        if isinstance(refine, Topology):
+            refine = refine.transforms
+        elif not isinstance(refine, numpy.ndarray):
             # We convert refine to a tuple below both as a test for iterability
             # and to account for the possibility that it is a generator
             try:
