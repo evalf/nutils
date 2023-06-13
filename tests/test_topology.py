@@ -973,7 +973,8 @@ class hierarchical(TestCase, TopologyAssertions):
         # Refine `self.domain` near `self.pos`.
         distance = ((self.geom-self.pos)**2).sum(0)**0.5
         for threshold in 0.3, 0.15:
-            self.domain = self.domain.refined_by(numpy.where(self.domain.elem_mean([distance], ischeme='gauss1', geometry=self.geom)[0] <= threshold)[0])
+            selection = self.domain.select(distance < threshold, ischeme='gauss1')
+            self.domain = self.domain.refined_by(selection)
 
     @parametrize.enable_if(lambda periodic, **params: not periodic)
     def test_boundaries(self):
