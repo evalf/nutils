@@ -2708,7 +2708,10 @@ class HierarchicalTopology(TransformChainsTopology):
         return self._rebase(self.basetopo.get_groups(*groups))
 
     def refined_by(self, refine):
-        refine = tuple(refine)
+        if isinstance(refine, Topology):
+            refine = refine.transforms
+        else:
+            refine = tuple(refine)
         if not all(map(numeric.isint, refine)):
             refine = tuple(self.transforms.index_with_tail(item)[0] for item in refine)
         refine = numpy.unique(numpy.array(refine, dtype=int))
