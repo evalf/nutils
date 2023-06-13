@@ -89,6 +89,7 @@ class Points(types.Singleton):
         defines a simplex by mapping vertices into the list of points.
         '''
 
+        assert self.ndims > 0, 'hull is not defined for a zero-dimensional point set'
         edge_vertices = numpy.arange(self.ndims+1).repeat(self.ndims).reshape(self.ndims, self.ndims+1).T  # ndims+1 x ndims
         edge_simplices = numpy.sort(self.tri, axis=1)[:, edge_vertices]  # nelems x ndims+1 x ndims
         elems, edges = divmod(numpy.lexsort(edge_simplices.reshape(-1, self.ndims).T), self.ndims+1)
