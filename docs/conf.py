@@ -66,8 +66,7 @@ copyright = u'2014, Evalf'
 # |version| and |release|, also used in various other places throughout the
 # built documents.
 #
-with open(os.path.join('..', 'nutils', '__init__.py'), encoding='utf-8') as f:
-    nutils_version = next(filter(None, map(re.compile("^version = '([a-zA-Z0-9.]+)'$").match, f))).group(1)
+from nutils import version as nutils_version
 # The short X.Y version.
 version = re.search('^[0-9]+\\.[0-9]+', nutils_version).group(0)
 # The full version, including alpha/beta/rc tags.
