@@ -7,7 +7,7 @@ from distutils.version import LooseVersion
 assert sys.version_info >= (3, 5)
 assert LooseVersion(numpy.version.version) >= LooseVersion('1.16'), 'nutils requires numpy 1.16 or higher, got {}'.format(numpy.version.version)
 
-__version__ = version = '7.2'
+__version__ = version = '7.3'
 version_name = 'hiyamugi'
 long_version = ('{} "{}"' if version_name else '{}').format(version, version_name)
 
