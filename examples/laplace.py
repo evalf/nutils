@@ -1,24 +1,16 @@
-#! /usr/bin/env python3
+# Laplace problem on a unit square
 #
-# In this script we solve the Laplace equation :math:`u_{,kk} = 0` on a unit
-# square domain :math:`Ω` with boundary :math:`Γ`, subject to boundary
-# conditions:
+# In this script we solve Laplace's equation `Δu = 0` on a unit square domain
+# `Ω` with boundary `Γ`, subject to boundary conditions:
 #
-# .. math:: u &= 0                     && Γ_{\rm left}
+#         u = 0                 Γ_left
+#     ∂_n u = 0                 Γ_bottom
+#     ∂_n u = cos(1) cosh(y)    Γ_right
+#         u = cosh(1) sin(x)    Γ_top
 #
-#       ∂_n u &= 0                     && Γ_{\rm bottom}
-#
-#       ∂_n u &= \cos(1) \cosh(x_1)    && Γ_{\rm right}
-#
-#           u &= \cosh(1) \sin(x_0)    && Γ_{\rm top}
-#
-# This case is constructed to contain all combinations of homogenous and
+# This problem is constructed to contain all combinations of homogenous and
 # heterogeneous, Dirichlet and Neumann type boundary conditions, as well as to
-# have a known exact solution:
-#
-# .. math:: u_{\rm exact} = \sin(x_0) \cosh(x_1).
-#
-# We start by importing the necessary modules.
+# have a known exact solution in `uexact = sin(x) cosh(y)`.
 
 from nutils import mesh, function, solver, export, cli, testing
 from nutils.expression_v2 import Namespace
@@ -162,3 +154,5 @@ class test(testing.TestCase):
                 ZiLmH82UzS3Ns80vmj004za/ZPYHCD+Y8ZlLmVuYq5kHm9eahwDxavPF5lfNAWFyPdk=''')
         with self.subTest('L2-error'):
             self.assertAlmostEqual(err, 1.25e-4, places=6)
+
+# example:tags=Laplace

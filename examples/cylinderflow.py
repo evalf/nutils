@@ -124,7 +124,7 @@ def main(nelems: int, degree: int, reynolds: float, uwall: float, timestep: floa
 
     .. arguments::
 
-       nelems [63]
+       nelems [99]
          Element size expressed in number of elements along the cylinder wall.
          All elements have similar shape with approximately unit aspect ratio,
          with elements away from the cylinder wall growing exponentially. Use
@@ -140,11 +140,11 @@ def main(nelems: int, degree: int, reynolds: float, uwall: float, timestep: floa
        timestep [.04]
          Time step, relative to the ratio of cylinder diameter to inflow
          velocity.
-       extdiam [50]
+       extdiam [12]
          Target exterior diameter, relative to cylinder diameter; the actual
          domain size is rounded to integer multiples of the configured element
          size.
-       endtime [inf]
+       endtime [30]
          Stopping time, relative to the ratio of cylinder diameter to inflow
          velocity.
     '''
@@ -200,7 +200,7 @@ def main(nelems: int, degree: int, reynolds: float, uwall: float, timestep: floa
         args = solver.newton('u:v,p:q', residual=res, arguments=args, constrain=cons).solve(1e-10)
         postprocess(args)
 
-    return args
+    return args, numpy.sqrt(domain.integral('∇_k(u_k)^2 dV' @ ns, degree=2))
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line.
@@ -219,7 +219,9 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
     def test_rot0(self):
-        args = main(nelems=6, degree=3, reynolds=100, uwall=0, timestep=.1, extdiam=50, endtime=.1)
+        args, div = main(nelems=6, degree=3, reynolds=100, uwall=0, timestep=.1, extdiam=50, endtime=.1)
+        with self.subTest('divergence'):
+            self.assertLess(div.eval(**args), 1e-13)
         with self.subTest('velocity'):
             self.assertAlmostEqual64(args['u'], '''
                 eNoBkABv//AzussRy7rL8DNVNU42sskxyLLJTjbPN7Q4SscGxkrHtDj9ObM6SMXmw0jFszofPFU8nsNk
@@ -231,7 +233,9 @@ class test(testing.TestCase):
                 Ogw4NMhAxu42Ij1DxCI97jZ+wirgIsM=''')
 
     def test_rot1(self):
-        args = main(nelems=6, degree=3, reynolds=100, uwall=.5, timestep=.1, extdiam=50, endtime=.1)
+        args, div = main(nelems=6, degree=3, reynolds=100, uwall=.5, timestep=.1, extdiam=50, endtime=.1)
+        with self.subTest('divergence'):
+            self.assertLess(div.eval(**args), 1e-13)
         with self.subTest('velocity'):
             self.assertAlmostEqual64(args['u'], '''
                 eNoBkABv//czw8sRy7HL6TNVNU82tckxyLDJTTbPN7Q4SscGxkrHszj9ObM6SMXmw0jFszofPFU8nsNk
@@ -241,3 +245,5 @@ class test(testing.TestCase):
             self.assertAlmostEqual64(args['p'], '''
                 eNoBSAC3/+M0kjXDzEs1kjRXyvszijW0y2w1ujOXyV0tAzZXM4I1Dc3LyA7KDTizN6Y3MckBxybJpDgz
                 OjE3j8dAxr84Pz1DxAQ9I8p9wpetHyk=''')
+
+# example:tags=Navier-Stokes,Raviard-Thomas,compatible spaces

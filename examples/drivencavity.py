@@ -1,4 +1,4 @@
-#! /usr/bin/env python3
+# Lid-driven cavity flow
 #
 # In this script we solve the lid driven cavity problem for stationary Stokes
 # and Navier-Stokes flow. This benchmark problem consists of a square domain
@@ -272,3 +272,5 @@ class test(testing.TestCase):
         with self.subTest('navier-stokes-pressure'):
             self.assertAlmostEqual64(args1['p'], '''
                 eNoBHgDh//ot489SzMEsntHezWTPAC+jL+XN/8wF02UxTc1JNhf0ELc=''')
+
+# example:tags=Stokes,Navier-Stokes,Taylor-Hood,Raviard-Thomas:thumbnail=0

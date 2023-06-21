@@ -1,9 +1,9 @@
-#! /usr/bin/env python3
+# Poisson's equation on a unit square
 #
-# In this script we solve Poisson's equation Δu = 1 subject to boundary
+# In this script we solve Poisson's equation `Δu = 1` subject to boundary
 # constraints, using the fact that the solution to the strong form minimizes
-# the functional ∫ .5 ‖∇u‖² - u. The domain is a unit square, and the solution
-# is constrained to zero along the entire boundary.
+# the functional `∫ .5 ‖∇u‖² - u`. The domain is a unit square, and the
+# solution is constrained to zero along the entire boundary.
 
 from nutils import mesh, function, solver, export, cli, testing
 
@@ -14,23 +14,27 @@ def main(nelems: int):
 
     .. arguments::
 
-       nelems [10]
+       nelems [32]
          Number of elements along edge.
     '''
 
-    domain, x = mesh.unitsquare(nelems, etype='square')
-    u = function.dotarg('udofs', domain.basis('std', degree=1))
+    topo, x = mesh.unitsquare(nelems, etype='square')
+    u = function.dotarg('u', topo.basis('std', degree=1))
     g = u.grad(x)
     J = function.J(x)
-    cons = solver.optimize('udofs,',
-                           domain.boundary.integral(u**2 * J, degree=2), droptol=1e-12)
-    args = solver.optimize('udofs,',
-                            domain.integral((g @ g / 2 - u) * J, degree=1), constrain=cons)
-    bezier = domain.sample('bezier', 3)
-    x, u = bezier.eval([x, u], **args)
-    export.triplot('u.png', x, u, tri=bezier.tri, hull=bezier.hull)
 
-    return args['udofs']
+    sqr = topo.boundary.integral(u**2 * J, degree=2)
+    cons = solver.optimize(('u',), sqr, droptol=1e-12)
+
+    energy = topo.integral((g @ g / 2 - u) * J, degree=1)
+    args = solver.optimize(('u',), energy, constrain=cons)
+
+    bezier = topo.sample('bezier', 3)
+    x, u = bezier.eval([x, u], **args)
+    export.triplot('u.png', x, u, tri=bezier.tri, cmap='jet')
+
+    return args
+
 
 # If the script is executed (as opposed to imported), :func:`nutils.cli.run`
 # calls the main function with arguments provided from the command line. To
@@ -50,7 +54,9 @@ if __name__ == '__main__':
 class test(testing.TestCase):
 
     def test_default(self):
-        udofs = main(nelems=10)
-        self.assertAlmostEqual64(udofs, '''
+        args = main(nelems=10)
+        self.assertAlmostEqual64(args['u'], '''
             eNp9zrENwCAMBEBGYQJ444o2ozAAYgFmYhLEFqxAmye1FUtf+PSy7Jw9J6yoKGiMYsUTrq44kaVKZ7JM
             +lWlDdlymEFXXC2o3H1C8mmzXz5t6OwhPfTDO+2na9+1f7D/teYFdsk5vQ==''')
+
+# example:tags=Poisson's equation
