@@ -1,19 +1,4 @@
-# Deformation of an infinite plate with a circular hole
-#
-# In this script we solve the linear plane strain elasticity problem for an
-# infinite plate with a circular hole under tension. We do this by placing the
-# circle in the origin of a unit square, imposing symmetry conditions on the
-# left and bottom (named `sym`), and Dirichlet conditions constraining the
-# displacements to the analytical solution to the right and top (named `far`).
-#
-# The script can be run in two modes: by specifying `mode=FCM`, the circular
-# hole is cut out of a regular finite element mesh by means of the Finite Cell
-# Method; by specifying `mode=NURBS` a Non-Uniform Rational BSpline geometry is
-# created to map a regular domain onto the desired shape. Either mode supports
-# sub-parameters which can be specified from the command-line by attaching them
-# in curly braces (e.g. `FCM{nelems=20,degree=1}`).
-
-from nutils import mesh, function, solver, export, cli, testing
+from nutils import mesh, function, solver, export, testing
 from nutils.expression_v2 import Namespace
 from dataclasses import dataclass
 from typing import Union
@@ -23,11 +8,32 @@ import numpy
 
 @dataclass
 class FCM:
+    '''Finite cell method
+
+    Generate a topology and geometry by meshing the unit square, followed by
+    removing the circular cut-out using the Finite Cell Method. Then restrict a
+    basis from the base topology to the trimmed topology for analysis.
+
+    Parameters
+    ----------
+    nelems
+        Number of elements along one dimension in the base mesh.
+    etype
+        Element type to use in the base mesh (square/triangle/mixed/multipatch).
+    btype
+        Basis type, options depending on the select element type.
+    degree
+        Polynomial degree of the basis functions.
+    maxrefine
+        Quad-tree refinement depth of the finite cell procedure.
+    '''
+
     nelems: int = 9
     etype: str = 'square'
     btype: str = 'std'
     degree: int = 2
     maxrefine: int = 2
+
     def generate(self, radius):
         topo0, geom = mesh.unitsquare(self.nelems, self.etype)
         topo = topo0.trim(function.norm2(geom) - radius, maxrefine=self.maxrefine, name='hole')
@@ -37,7 +43,20 @@ class FCM:
 
 @dataclass
 class NURBS:
+    '''Non-Uniform Radional B-Splines
+
+    Generate a 1x2 structured topology, map it using quadratic NURBS to a
+    square domain with circular cut-out, and refine several times before
+    constructing a NURBS basis for analysis.
+
+    Parameters
+    ----------
+    nrefine
+        Number of refinement levels for analysis.
+    '''
+
     nrefine: int = 2
+
     def generate(self, radius):
         topo, geom0 = mesh.rectilinear([1, 2])
         bsplinebasis = topo.basis('spline', degree=2)
@@ -61,20 +80,36 @@ class NURBS:
         return topo.withboundary(hole='left', sym='top,bottom', far='right'), geom, nurbsbasis, 5
 
 
-def main(mode: Union[FCM, NURBS], radius: float, traction: float, poisson: float):
-    '''
-    Horizontally loaded linear elastic plate with circular hole.
+def main(mode: Union[FCM, NURBS] = NURBS,
+         radius: float = .5,
+         traction: float = .1,
+         poisson: float = .3):
 
-    .. arguments::
+    '''Deformation of an infinite plate with a circular hole
 
-       mode [NURBS]
-         Discretization strategy: FCM (Finite Cell Method) or NURBS.
-       radius [.5]
-         Cut-out radius.
-       traction [.1]
-         Far field traction (relative to Young's modulus).
-       poisson [.3]
-         Poisson's ratio, nonnegative and strictly smaller than 1/2.
+    Solves the linear plane strain elasticity problem for an infinite plate
+    with a circular hole under tension. We do this by placing the circle in the
+    origin of a unit square, imposing symmetry conditions on the left and
+    bottom ("sym"), and Dirichlet conditions constraining the displacements to
+    the analytical solution to the right and top ("far").
+
+    The script can be run in two modes: by specifying `mode=FCM`, the circular
+    hole is cut out of a regular finite element mesh by means of the Finite Cell
+    Method; by specifying `mode=NURBS` a Non-Uniform Rational BSpline geometry is
+    created to map a regular domain onto the desired shape. Either mode supports
+    sub-parameters which can be specified from the command-line by attaching them
+    in curly braces (e.g. `FCM{nelems=20,degree=1}`).
+
+    Parameters
+    ----------
+    mode
+        Discretization strategy: FCM (Finite Cell Method) or NURBS.
+    radius
+        Cut-out radius.
+    traction
+        Far field traction (relative to Young's modulus).
+    poisson
+        Poisson's ratio, nonnegative and strictly smaller than 1/2.
     '''
 
     topo, geom, basis, degree = mode.generate(radius)
@@ -118,27 +153,11 @@ def main(mode: Union[FCM, NURBS], radius: float, traction: float, poisson: float
 
     return err, cons, args
 
-# If the script is executed (as opposed to imported), :func:`nutils.cli.run`
-# calls the main function with arguments provided from the command line. For
-# example, to keep with the default arguments simply run :sh:`python3
-# platewithhole.py`. To select mixed elements and quadratic basis functions add
-# :sh:`python3 platewithhole.py etype=mixed degree=2`.
-
-
-if __name__ == '__main__':
-    cli.run(main)
-
-# Once a simulation is developed and tested, it is good practice to save a few
-# strategic return values for regression testing. The :mod:`nutils.testing`
-# module, which builds on the standard :mod:`unittest` framework, facilitates
-# this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
-# embedding of desired results as compressed base64 data.
-
 
 class test(testing.TestCase):
 
     def test_spline(self):
-        err, cons, args = main(mode=FCM(nelems=4, etype='square', btype='spline', degree=2, maxrefine=2), traction=.1, radius=.5, poisson=.3)
+        err, cons, args = main(mode=FCM(nelems=4, btype='spline'))
         with self.subTest('l2-error'):
             self.assertAlmostEqual(err[0], .00033, places=5)
         with self.subTest('h1-error'):
@@ -154,7 +173,7 @@ class test(testing.TestCase):
                 KFD8iPHbq3ON115KM757wcz49HlV45zzAL8gQC8=''')
 
     def test_mixed(self):
-        err, cons, args = main(mode=FCM(nelems=4, etype='mixed', btype='std', degree=2, maxrefine=2), traction=.1, radius=.5, poisson=.3)
+        err, cons, args = main(mode=FCM(nelems=4, etype='mixed'))
         with self.subTest('l2-error'):
             self.assertAlmostEqual(err[0], .00024, places=5)
         with self.subTest('h1-error'):
@@ -173,7 +192,7 @@ class test(testing.TestCase):
                 fyhZkYI=''')
 
     def test_nurbs0(self):
-        err, cons, args = main(mode=NURBS(nrefine=0), traction=.1, radius=.5, poisson=.3)
+        err, cons, args = main(mode=NURBS(nrefine=0))
         with self.subTest('l2-error'):
             self.assertAlmostEqual(err[0], .00200, places=5)
         with self.subTest('h1-error'):
@@ -186,7 +205,7 @@ class test(testing.TestCase):
                 eNpjYJh07qLhhnOTjb0vTDdmAAKVcy/1u85lGYforQDzFc6pGSedlzd+eP4ykA8AvkQRaA==''')
 
     def test_nurbs2(self):
-        err, cons, args = main(mode=NURBS(nrefine=2), traction=.1, radius=.5, poisson=.3)
+        err, cons, args = main(mode=NURBS(nrefine=2))
         with self.subTest('l2-error'):
             self.assertAlmostEqual(err[0], .00009, places=5)
         with self.subTest('h1-error'):
@@ -201,5 +220,11 @@ class test(testing.TestCase):
                 pWB1VucC9B3OORmuOCdhZHR+ktGu87eNbC6oGstfLDA+eWm1seG19WB1Buf+6ruce2p469wco9Dzb4wm
                 n2c23nZe3djqQqpx88XNxrOv7gOr0zwXZeBxztro/bmnRp7nVY1zgTjvvIXxSaBfnl3YYbzmygmgOgDU
                 Imlr''')
+
+
+if __name__ == '__main__':
+    from nutils import cli
+    cli.run(main)
+
 
 # example:tags=elasticity,FCM,NURBS

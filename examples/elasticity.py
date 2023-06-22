@@ -1,33 +1,37 @@
-# Plane strain plate under gravitational pull
-#
-# In this script we solve the linear elasticity problem on a unit square
-# domain, clamped at the top boundary, and stretched under the influence of a
-# vertical distributed load.
-
-from nutils import mesh, function, solver, export, cli, testing
+from nutils import mesh, function, solver, export, testing
 from nutils.expression_v2 import Namespace
 import treelog as log
 import numpy
 
-def main(nelems: int, etype: str, btype: str, degree: int, poisson: float, direct: bool):
-    '''
-    Horizontally loaded linear elastic plate.
 
-    .. arguments::
+def main(nelems: int = 24,
+         etype: str = 'triangle',
+         btype: str = 'std',
+         degree: int = 2,
+         poisson: float = .3,
+         direct: bool = False):
 
-       nelems [24]
-         Number of elements along edge.
-       etype [triangle]
-         Type of elements (square/triangle/mixed).
-       btype [std]
-         Type of basis function (std/spline), with availability depending on the
-         configured element type.
-       degree [2]
-         Polynomial degree.
-       poisson [.3]
-         Poisson's ratio, nonnegative and strictly smaller than 1/2.
-       direct [no]
-         Use direct traction evaluation.
+    '''Plane strain plate under gravitational pull
+    
+    Solves the linear elasticity problem on a unit square domain, clamped at
+    the top boundary, and stretched under the influence of a vertical
+    distributed load.
+
+    Parameters
+    ----------
+    nelems
+        Number of elements along edge.
+    etype
+        Type of elements (square/triangle/mixed).
+    btype
+        Type of basis function (std/spline), with availability depending on the
+        configured element type.
+    degree
+        Polynomial degree.
+    poisson
+        Poisson's ratio, nonnegative and strictly smaller than 1/2.
+    direct
+        Use direct traction evaluation.
     '''
 
     domain, geom = mesh.unitsquare(nelems, etype)
@@ -76,26 +80,11 @@ def main(nelems: int, etype: str, btype: str, degree: int, poisson: float, direc
 
     return cons, args
 
-# If the script is executed (as opposed to imported), :func:`nutils.cli.run`
-# calls the main function with arguments provided from the command line. For
-# example, to keep with the default arguments simply run :sh:`python3
-# elasticity.py`. To select mixed elements and quadratic basis functions add
-# :sh:`python3 elasticity.py etype=mixed degree=2`.
-
-if __name__ == '__main__':
-    cli.run(main)
-
-# Once a simulation is developed and tested, it is good practice to save a few
-# strategic return values for regression testing. The :mod:`nutils.testing`
-# module, which builds on the standard :mod:`unittest` framework, facilitates
-# this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
-# embedding of desired results as compressed base64 data.
 
 class test(testing.TestCase):
 
-    @testing.requires('matplotlib')
-    def test_default(self):
-        cons, args = main(nelems=4, etype='square', btype='std', degree=1, poisson=.25, direct=False)
+    def test_simple(self):
+        cons, args = main(nelems=4, etype='square', degree=1, poisson=.25)
         with self.subTest('constraints'):
             self.assertAlmostEqual64(cons['u'], '''
                 eNpjaGBAhSBAZTEAEKAUAQ==''')
@@ -107,9 +96,8 @@ class test(testing.TestCase):
             self.assertAlmostEqual64(args['t'], '''
                 eNpjYEAF7Kd2mqMJMXAZiGKIMTCEYIh9O4+p7qfpTnMA/hUHAg==''')
 
-    @testing.requires('matplotlib')
     def test_mixed(self):
-        cons, args = main(nelems=4, etype='mixed', btype='std', degree=1, poisson=.25, direct=False)
+        cons, args = main(nelems=4, etype='mixed', degree=1, poisson=.25)
         with self.subTest('constraints'):
             self.assertAlmostEqual64(cons['u'], '''
                 eNpjaGDAD2EAmziRYgAgoBQB''')
@@ -121,9 +109,8 @@ class test(testing.TestCase):
             self.assertAlmostEqual64(args['t'], '''
                 eNpjYMAPXE7tNZ98ls8cXTzFOAVDbMfpz2boYqfMLpkDAGMuCY8=''')
 
-    @testing.requires('matplotlib')
     def test_quadratic(self):
-        cons, args = main(nelems=4, etype='square', btype='std', degree=2, poisson=.25, direct=False)
+        cons, args = main(nelems=4, etype='square', degree=2, poisson=.25)
         with self.subTest('constraints'):
             self.assertAlmostEqual64(cons['u'], '''
                 eNpjaGDAD0FgVA1eNQAj9kgB''')
@@ -138,9 +125,8 @@ class test(testing.TestCase):
             self.assertAlmostEqual64(args['t'], '''
                 eNpjYMAPOk+qWxBQwvDW5L8pITUSZ9LMCamZaCBGUA0DQwBBNfnnCZvzwpiwe4RPE/ZXuZm6BQAVHQ1+''')
 
-    @testing.requires('matplotlib')
     def test_poisson(self):
-        cons, args = main(nelems=4, etype='square', btype='std', degree=1, poisson=.4, direct=False)
+        cons, args = main(nelems=4, etype='square', degree=1, poisson=.4)
         with self.subTest('constraints'):
             self.assertAlmostEqual64(cons['u'], '''
                 eNpjaGBAhSBAZTEAEKAUAQ==''')
@@ -151,5 +137,11 @@ class test(testing.TestCase):
         with self.subTest('traction'):
             self.assertAlmostEqual64(args['t'], '''
                 eNpjYEAF/Sc+maMJMdw0emzGgAFiMdSpn8VUV2j+yRwAoCAJFw==''')
+
+
+if __name__ == '__main__':
+    from nutils import cli
+    cli.run(main)
+
 
 # example:tags=elasticity

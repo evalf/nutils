@@ -1,50 +1,72 @@
-# Current-induced magnetic field
-#
-# In this script we compute the magnetic field induced by a DC or AC current in
-# one or several toroidal conductors. This problem is modeled with the
-# quasi-static [magnetic vector potential][1] with Lorenz gauge:
-#
-#     ∇_j(∇_j(A_i)) = -μ0 J_i
-#
-# where `A` is the magnetic vector potential, `J` the current density and `μ0`
-# the magnetic permeability. The magnetic field `B` is then given by the curl
-# of the magnetic vector potential. The current density is the sum of an
-# external current `Jext` and the current induced by the magnetic field,
-# `Jind`. The external current is given by
-#
-#     Jext_i = (I / π rwire²) cos(ω t) eθ_i
-#
-# inside the conductor and zero everywhere else, where `ω = 2 π f`. The induced
-# current follows from [Faraday's law of induction][2] and [Ohm's law][3]:
-#
-#     Jind_i = -σ ∂_t(A_i)
-#
-# where `σ` is the conductivity, which is non-zero only inside the conductor.
-#
-# We can solve the temporal component of `A` by letting `A_i = Re(Â_i exp(j ω
-# t))`. This problem in terms of `Â` is:
-#
-#     ∇_j(∇_j(Â_i) = -μ0 Ĵ_i
-#
-# with
-#
-#     Ĵext_i = (I / π rwire²) eθ_i
-#
-# and
-#
-#     Ĵind_i = -j ω σ Â_i
-#
-# [1]: https://en.wikipedia.org/wiki/Magnetic_vector_potential
-# [2]: https://en.wikipedia.org/wiki/Faraday%27s_law_of_induction
-# [3]: https://en.wikipedia.org/wiki/Ohm%27s_law
-
-from nutils import cli, export, function, mesh, solver, testing
+from nutils import export, function, mesh, solver, testing
 from nutils.expression_v2 import Namespace
 import functools
 import numpy
 
 
-def main(nelems: int = 50, degree: int = 3, freq: float = 0., nturns: int = 1, rwire: float = .0025, rcoil: float = 0.025):
+def main(nelems: int = 50,
+         degree: int = 3,
+         freq: float = 0.,
+         rwire: float = .0025,
+         rcoil: float = 0.025,
+         nturns: int = 1):
+
+    '''Current-induced magnetic field
+
+    Computes the magnetic field induced by a DC or AC current in one or several
+    toroidal conductors. This problem is modeled with the quasi-static
+    [magnetic vector potential][1] with Lorenz gauge:
+
+        ∇_j(∇_j(A_i)) = -μ0 J_i
+
+    where `A` is the magnetic vector potential, `J` the current density and `μ0`
+    the magnetic permeability. The magnetic field `B` is then given by the curl
+    of the magnetic vector potential. The current density is the sum of an
+    external current `Jext` and the current induced by the magnetic field,
+    `Jind`. The external current is given by
+
+        Jext_i = (I / π rwire²) cos(ω t) eθ_i
+
+    inside the conductor and zero everywhere else, where `ω = 2 π f`. The induced
+    current follows from [Faraday's law of induction][2] and [Ohm's law][3]:
+
+        Jind_i = -σ ∂_t(A_i)
+
+    where `σ` is the conductivity, which is non-zero only inside the conductor.
+
+    We can solve the temporal component of `A` by letting `A_i = Re(Â_i exp(j ω
+    t))`. This problem in terms of `Â` is:
+
+        ∇_j(∇_j(Â_i) = -μ0 Ĵ_i
+
+    with
+
+        Ĵext_i = (I / π rwire²) eθ_i
+
+    and
+
+        Ĵind_i = -j ω σ Â_i
+
+    [1]: https://en.wikipedia.org/wiki/Magnetic_vector_potential
+    [2]: https://en.wikipedia.org/wiki/Faraday%27s_law_of_induction
+    [3]: https://en.wikipedia.org/wiki/Ohm%27s_law
+
+    Parameters
+    ----------
+    nelems
+        Number of elements per spatial dimension.
+    degree
+        Polynomial degree of discretized magnetic vector potential.
+    freq
+        Alternating current frequency; a value of 0 corresponds to direct
+        current.
+    rwire
+        Radius of the wire.
+    rcoil
+        Radius of the coil, must be larger than `rwire`.
+    nturns
+        Number of windings in the coil, spaced by a distance of `4 rwire`.
+    '''
 
     ns = Namespace()
     ns.j = 1j
@@ -193,7 +215,7 @@ class test(testing.TestCase):
                 HI1Ta9ihya2zLdRCh+kg7adGqqMtlKZVFKNpN+JyboFL2f8Z6oV2''')
 
     def test_ac_5(self):
-        args = main(nelems=16, degree=2, freq=1000, nturns=5)
+        args = main(nelems=16, degree=2, freq=1000., nturns=5)
         with self.subTest('A.imag'):
             self.assertAlmostEqual64(args['A'].imag, '''
                 eNoNkEtIlGEYhRcWBqVWNgsxujBImxJmIIwEc2FJCYVaQxEErRIvkyFOhqTB4CLSpE3TxQiLCjXQEdJN
@@ -207,6 +229,8 @@ class test(testing.TestCase):
 
 
 if __name__ == '__main__':
+    from nutils import cli
     cli.run(main)
+
 
 # example:tags=electro-magnetism:thumbnail=0
