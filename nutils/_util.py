@@ -705,7 +705,7 @@ def cli(f, *, argv=None):
             raise Exception(f'stringly cannot deserialize argument {param.name!r} of type {T}') from e
         if param.kind not in (param.POSITIONAL_OR_KEYWORD, param.KEYWORD_ONLY):
             raise Exception(f'argument {param.name!r} is positional-only')
-        if param.default == param.empty and param.name not in doc.defaults:
+        if param.default is param.empty and param.name not in doc.defaults:
             mandatory.add(param.name)
         if T == bool:
             booleans.add(param.name)

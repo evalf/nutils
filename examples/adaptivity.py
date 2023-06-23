@@ -1,41 +1,42 @@
-#! /usr/bin/env python3
-#
-# In this script we solve the Laplace problem on a unit square that has the
-# bottom-right quadrant removed (a.k.a. an L-shaped domain) with Dirichlet
-# boundary conditions matching the harmonic function
-#
-#     u = (x^2+y^2)^(1/3) cos(arctan2(y+x,y-x)*2/3)
-#
-# shifted by 0.5 such that the origin coincides with the middle of the unit
-# square. Note that the function evaluates to zero over the two boundaries
-# bordering the removed quadrant.
-#
-# This benchmark problem is known to converge suboptimally under uniform
-# refinement due to a singular gradient in the reentrant corner. This script
-# demonstrates that optimal convergence rates of -(p+1)/2 for the L2 norm and
-# -p/2 for the H1 norm can be restored by using adaptive refinement.
-
-from nutils import mesh, function, solver, export, cli, testing
+from nutils import mesh, function, solver, export, testing
 from nutils.expression_v2 import Namespace
 import numpy
 import treelog
 
 
-def main(etype: str, btype: str, degree: int, nrefine: int):
-    '''
-    Adaptively refined Laplace problem on an L-shaped domain.
+def main(etype: str = 'square',
+         btype: str = 'h-std',
+         degree: int = 2,
+         nrefine: int = 5):
 
-    .. arguments::
+    '''Adaptively refined Laplace problem on an L-shaped domain
+    
+    Solves the Laplace problem on a unit square that has the bottom-right
+    quadrant removed (a.k.a. an L-shaped domain) with Dirichlet boundary
+    conditions matching the harmonic function
+    
+        ³√(x² + y²) cos(⅔ arctan2(y+x, y-x))
+    
+    shifted by ½ such that the origin coincides with the center of the unit
+    square. Note that the function evaluates to zero where the domain borders
+    the removed quadrant.
+    
+    This benchmark problem is known to converge suboptimally under uniform
+    refinement due to a singular gradient in the reentrant corner. This script
+    demonstrates that optimal convergence rates of -(p+1)/2 for the L2 norm and
+    -p/2 for the H1 norm can be restored by using adaptive refinement.
 
-       etype [square]
-         Type of elements (square/triangle/mixed).
-       btype [h-std]
-         Type of basis function (h/th-std/spline), with availability depending on
-         the configured element type.
-       degree [2]
-         Polynomial degree
-       nrefine [5]
-         Number of refinement steps to perform.
+    Parameters
+    ----------
+    etype
+        Type of elements (square/triangle/mixed).
+    btype
+        Type of basis function (h/th-std/spline), with availability depending
+        on the configured element type.
+    degree
+        Polynomial degree.
+    nrefine
+        Number of refinement steps to perform.
     '''
 
     domain, geom = mesh.unitsquare(2, etype)
@@ -91,8 +92,7 @@ def main(etype: str, btype: str, degree: int, nrefine: int):
 
 
 class LinearRegressor:
-    '''
-    Linear regression facilitator.
+    '''Linear regression facilitator.
 
     For a growing collection of (x, y) data points, this class continuously
     computes the linear trend of the form y = offset + rate * x that has the
@@ -108,9 +108,10 @@ class LinearRegressor:
 
     Rather than storing the sequence, this class continuously updates the sums
     and inner products required to compute the offset and rate. The optional
-    ``bias`` argument can be used to weight every newly added point `2**bias`
+    `bias` argument can be used to weight every newly added point `2**bias`
     times that of the previous, so as to emphasize focus on the tail of the
-    sequence.'''
+    sequence.
+    '''
 
     def __init__(self, bias=0):
         self.n = self.x = self.y = self.xx = self.xy = 0.
@@ -132,27 +133,10 @@ class LinearRegressor:
         return (self.xx * self.y - self.x * self.xy) / (self.n * self.xx - self.x**2)
 
 
-# If the script is executed (as opposed to imported), :func:`nutils.cli.run`
-# calls the main function with arguments provided from the command line. For
-# example, to perform four refinement steps with quadratic basis functions
-# starting from a triangle mesh run :sh:`python3 adaptivity.py etype=triangle
-# degree=2 nrefine=4`.
-
-
-if __name__ == '__main__':
-    cli.run(main)
-
-# Once a simulation is developed and tested, it is good practice to save a few
-# strategic return values for regression testing. The :mod:`nutils.testing`
-# module, which builds on the standard :mod:`unittest` framework, facilitates
-# this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
-# embedding of desired results as compressed base64 data.
-
-
 class test(testing.TestCase):
 
     def test_square_quadratic(self):
-        error, u = main(nrefine=2, btype='h-std', etype='square', degree=2)
+        error, u = main(nrefine=2)
         with self.subTest('degrees of freedom'):
             self.assertEqual(len(u), 149)
         with self.subTest('L2-error'):
@@ -168,7 +152,7 @@ class test(testing.TestCase):
                 bya+ZCPbWKRPpvgFaedebw==''')
 
     def test_triangle_quadratic(self):
-        error, u = main(nrefine=2, btype='h-std', etype='triangle', degree=2)
+        error, u = main(nrefine=2, etype='triangle')
         with self.subTest('degrees of freedom'):
             self.assertEqual(len(u), 98)
         with self.subTest('L2-error'):
@@ -182,7 +166,7 @@ class test(testing.TestCase):
                 YQAQg/TVGfaA7RI0BsErRjeNeowDgDQPmF9gkmciaJxtArGjzrAKCGWNpYAQAL0kOBE=''')
 
     def test_mixed_linear(self):
-        error, u = main(nrefine=2, btype='h-std', etype='mixed', degree=1)
+        error, u = main(nrefine=2, etype='mixed', degree=1)
         with self.subTest('degrees of freedom'):
             self.assertEqual(len(u), 34)
         with self.subTest('L2-error'):
@@ -193,3 +177,11 @@ class test(testing.TestCase):
             self.assertAlmostEqual64(u, '''
                 eNprMT1u6mQyxUTRzMCUAQhazL6b3jNrMYPxp5iA5FtMD+lcMgDxHa4aXzS+6HDV+fKO85cMnC8zMBzS
                 AQDBThbY''')
+
+
+if __name__ == '__main__':
+    from nutils import cli
+    cli.run(main)
+
+
+# example:tags=hierarchical refinements,Laplace:thumbnail=0

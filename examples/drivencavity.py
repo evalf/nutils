@@ -1,85 +1,88 @@
-#! /usr/bin/env python3
-#
-# In this script we solve the lid driven cavity problem for stationary Stokes
-# and Navier-Stokes flow. This benchmark problem consists of a square domain
-# with fixed left, bottom and right boundaries and a top boundary that is
-# moving at unit velocity in positive x-direction. Reference results can be
-# found for instance at https://www.acenumerics.com/the-benchmarks.html.
-#
-# The general conservation laws are:
-#
-#     Dρ/Dt = 0 (mass)
-#     ρ Du_i/Dt = ∇_j(σ_ij) (momentum)
-#
-# where we used the material derivative D·/Dt := ∂·/∂t + ∇_j(· u_j). The stress
-# tensor is σ_ij := μ (∇_j(u_i) + ∇_i(u_j) - 2 ∇_k(u_k) δ_ij / δ_nn) - p δ_ij,
-# with pressure p and dynamic viscosity μ, and ρ is the density.
-#
-# Assuming steady, incompressible flow, we take density to be constant. Further
-# introducing a reference length L and reference velocity U, we make the
-# equations dimensionless by taking spatial coordinates relative to L, velocity
-# relative to U, and pressure relative to ρ U^2. This reduces the conservation
-# laws to:
-#
-#     ∇_k(u_k) = 0 (mass)
-#     Du_i/Dt = ∇_j(σ_ij) (momentum)
-#
-# where the material derivative simplifies to D·/Dt := ∇_j(·) u_j, and the
-# stress tensor becomes σ_ij := (∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij, with
-# Reynolds number Re = ρ U L / μ.
-#
-# The weak form is obtained by multiplication of a test function and partial
-# integration of the right hand side of the momentum balance.
-#
-#     ∀ q: ∫_Ω q ∇_k(u_k) = 0 (mass)
-#     ∀ v: ∫_Ω (v_i Du_i/Dt + ∇_j(v_i) σ_ij) = ∫_Γ v_i σ_ij n_j (momentum)
-#
-# A remaining issue with this system is that its solution is not unique due to
-# its strictly kinematic boundary conditions: since ∫_Ω ∇_k(u_k) = 0 for any u
-# that satisfies the non-penetrating boundary conditions, any pressure space
-# that contains unity results in linear dependence. Furthermore, the strong
-# form shows that constant pressure shifts do not affect the momentum balance.
-# Both issues are solved by arbitrarily removing one of the basis functions.
-#
-# The normal velocity components at the wall are strongly constrained. The
-# tangential components are either strongly or weakly constrained depending on
-# the `strongbc` parameter. Since the tangential components at the top are
-# incompatible with the normal components at the left and right boundary, the
-# constraints are constructed in two steps to avoid Gibbs type oscillations,
-# and to make sure that the non-penetrating condition takes precedence.
-#
-# Depending on the `compatible` parameter, the script uses either a Taylor-Hood
-# (False) or a Raviart-Thomas (True) discretization. In case of TH, the system
-# is consistently modified by adding ∫_Ω .5 u_i v_i ∇_j(u_j) to yield the skew-
-# symmetric advective term ∫_Ω .5 (v_i ∇_j(u_i) - u_i ∇_j(v_i)) u_j. In case of
-# RT, the discretization guarantees a pointwise divergence-free velocity field,
-# and skew symmetry is implied.
-
-from nutils import mesh, function, solver, export, cli, testing
+from nutils import mesh, function, solver, export, testing
 from nutils.expression_v2 import Namespace
 import treelog as log
 import numpy
 
 
-def main(nelems: int, etype: str, degree: int, reynolds: float, compatible: bool, strongbc: bool):
-    '''
-    Driven cavity benchmark problem.
+def main(nelems: int = 32,
+         etype: str = 'square',
+         degree: int = 3,
+         reynolds: float = 1000.,
+         compatible: bool = False,
+         strongbc: bool = False):
 
-    .. arguments::
+    '''Lid-driven cavity flow
 
-       nelems [32]
-         Number of elements along edge.
-       etype [square]
-         Element type (square/triangle/mixed).
-       degree [2]
-         Polynomial degree for velocity; the pressure space is one degree less.
-       reynolds [1000]
-         Reynolds number, taking the domain size as characteristic length.
-       strongbc [no]
-         Use strong boundary constraints
-       compatible [no]
-         Use compatible spaces and weakly imposed boundary conditions; requires
-         etype=square and strongbc=no
+    Solves the lid driven cavity problem for stationary Stokes and
+    Navier-Stokes flow. This benchmark problem consists of a square domain with
+    fixed left, bottom and right boundaries and a top boundary that is moving
+    at unit velocity in positive x-direction. Reference results can be found
+    for instance at https://www.acenumerics.com/the-benchmarks.html.
+
+    The general conservation laws are:
+
+        Dρ/Dt = 0 (mass)
+        ρ Du_i/Dt = ∇_j(σ_ij) (momentum)
+
+    where we used the material derivative D·/Dt := ∂·/∂t + ∇_j(· u_j). The stress
+    tensor is σ_ij := μ (∇_j(u_i) + ∇_i(u_j) - 2 ∇_k(u_k) δ_ij / δ_nn) - p δ_ij,
+    with pressure p and dynamic viscosity μ, and ρ is the density.
+
+    Assuming steady, incompressible flow, we take density to be constant. Further
+    introducing a reference length L and reference velocity U, we make the
+    equations dimensionless by taking spatial coordinates relative to L, velocity
+    relative to U, and pressure relative to ρ U^2. This reduces the conservation
+    laws to:
+
+        ∇_k(u_k) = 0 (mass)
+        Du_i/Dt = ∇_j(σ_ij) (momentum)
+
+    where the material derivative simplifies to D·/Dt := ∇_j(·) u_j, and the
+    stress tensor becomes σ_ij := (∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij, with
+    Reynolds number Re = ρ U L / μ.
+
+    The weak form is obtained by multiplication of a test function and partial
+    integration of the right hand side of the momentum balance.
+
+        ∀ q: ∫_Ω q ∇_k(u_k) = 0 (mass)
+        ∀ v: ∫_Ω (v_i Du_i/Dt + ∇_j(v_i) σ_ij) = ∫_Γ v_i σ_ij n_j (momentum)
+
+    A remaining issue with this system is that its solution is not unique due to
+    its strictly kinematic boundary conditions: since ∫_Ω ∇_k(u_k) = 0 for any u
+    that satisfies the non-penetrating boundary conditions, any pressure space
+    that contains unity results in linear dependence. Furthermore, the strong
+    form shows that constant pressure shifts do not affect the momentum balance.
+    Both issues are solved by arbitrarily removing one of the basis functions.
+
+    The normal velocity components at the wall are strongly constrained. The
+    tangential components are either strongly or weakly constrained depending on
+    the `strongbc` parameter. Since the tangential components at the top are
+    incompatible with the normal components at the left and right boundary, the
+    constraints are constructed in two steps to avoid Gibbs type oscillations,
+    and to make sure that the non-penetrating condition takes precedence.
+
+    Depending on the `compatible` parameter, the script uses either a Taylor-Hood
+    (False) or a Raviart-Thomas (True) discretization. In case of TH, the system
+    is consistently modified by adding ∫_Ω .5 u_i v_i ∇_j(u_j) to yield the skew-
+    symmetric advective term ∫_Ω .5 (v_i ∇_j(u_i) - u_i ∇_j(v_i)) u_j. In case of
+    RT, the discretization guarantees a pointwise divergence-free velocity field,
+    and skew symmetry is implied.
+
+    Parameters
+    ----------
+    nelems
+        Number of elements along edge.
+    etype
+        Element type (square/triangle/mixed).
+    degree
+        Polynomial degree for velocity; the pressure space is one degree less.
+    reynolds
+        Reynolds number, taking the domain size as characteristic length.
+    strongbc
+        Use strong boundary constraints
+    compatible
+        Use compatible spaces and weakly imposed boundary conditions; requires
+        etype='square' and strongbc=False
     '''
 
     if compatible and (strongbc or etype != 'square'):
@@ -143,6 +146,7 @@ def main(nelems: int, etype: str, degree: int, reynolds: float, compatible: bool
 
     return args0, args1
 
+
 # Postprocessing in this script is separated so that it can be reused for the
 # results of Stokes and Navier-Stokes, and because of the extra steps required
 # for establishing streamlines.
@@ -180,23 +184,11 @@ def postprocess(domain, ns, **arguments):
         ax.plot(u, y)
         ax.annotate(f'y={y[imin]:.3f}\nu={u[imin]:.3f}', xy=(u[imin], y[imin]), xytext=(0, y[imin]), arrowprops=dict(arrowstyle="->"), ha='left', va='center')
 
-# If the script is executed (as opposed to imported), :func:`nutils.cli.run`
-# calls the main function with arguments provided from the command line. To
-# keep with the default arguments simply run :sh:`python3 drivencavity.py`.
-
-if __name__ == '__main__':
-    cli.run(main)
-
-# Once a simulation is developed and tested, it is good practice to save a few
-# strategic return values for regression testing. The :mod:`nutils.testing`
-# module, which builds on the standard :mod:`unittest` framework, facilitates
-# this by providing :func:`nutils.testing.TestCase.assertAlmostEqual64` for the
-# embedding of desired results as compressed base64 data.
 
 class test(testing.TestCase):
 
     def test_baseline(self):
-        args0, args1 = main(nelems=3, etype='square', degree=2, reynolds=100, compatible=False, strongbc=False)
+        args0, args1 = main(nelems=3, degree=2, reynolds=100.)
         with self.subTest('stokes-velocity'):
             self.assertAlmostEqual64(args0['u'], '''
                 eNo9jSsLwlAcxQ82gwOjoFZ1ONA9NK6vC2Ky2cU2QeziFxDBJIKfZLv/O92DYRqo6waDGBR3GXjKgfPg
@@ -217,7 +209,7 @@ class test(testing.TestCase):
                 eNpz01W9oHVmuU7SJYtzgherdcr0n59dfiZT11yP97yCGQDN0Azu''')
 
     def test_mixed(self):
-        args0, args1 = main(nelems=3, etype='mixed', degree=2, reynolds=100, compatible=False, strongbc=False)
+        args0, args1 = main(nelems=3, etype='mixed', degree=2, reynolds=100.)
         with self.subTest('stokes-velocity'):
             self.assertAlmostEqual64(args0['u'], '''
                 eNpjYAABHx0Ghrbz+lcYGJZpR2hrnDtm/EObgWHvWSGD1WeuGTIwmJ9jYLAwnH32p8nKMzFmFqfVTJTP
@@ -238,7 +230,7 @@ class test(testing.TestCase):
                 eNrbqjVZs1/ry/n48z1nSrW9L83RkTmneNZMO/TCOUNbMwDktQ3z''')
 
     def test_compatible(self):
-        args0, args1 = main(nelems=3, etype='square', degree=2, reynolds=100, compatible=True, strongbc=False)
+        args0, args1 = main(nelems=3, degree=2, reynolds=100., compatible=True)
         with self.subTest('stokes-velocity'):
             self.assertAlmostEqual64(args0['u'], '''
                 eNpjYIAAvwvdBr9O2Zk90E8+rXQ6yxzGZ4CDTfr3z0H45hc2mjSagFgn9f1P15+G6Fc0PHSSgQEAx7kX
@@ -255,7 +247,7 @@ class test(testing.TestCase):
                 eNoz1VYx3HT6t16w/uKz73Uv6R7RNzx35swh7XdXrQ0TzADbMQ6l''')
 
     def test_strong(self):
-        args0, args1 = main(nelems=3, etype='square', degree=2, reynolds=100, compatible=False, strongbc=True)
+        args0, args1 = main(nelems=3, degree=2, reynolds=100., strongbc=True)
         with self.subTest('stokes-velocity'):
             self.assertAlmostEqual64(args0['u'], '''
                 eNpjYMAPDl2wNEg9p2D8QeOQcafBJ9OTJ6abB5lD5E6eVb348oyVkfSZf8YFZ6RNZp6+ZwiTO3KGgUEP
@@ -272,3 +264,11 @@ class test(testing.TestCase):
         with self.subTest('navier-stokes-pressure'):
             self.assertAlmostEqual64(args1['p'], '''
                 eNoBHgDh//ot489SzMEsntHezWTPAC+jL+XN/8wF02UxTc1JNhf0ELc=''')
+
+
+if __name__ == '__main__':
+    from nutils import cli
+    cli.run(main)
+
+
+# example:tags=Stokes,Navier-Stokes,Taylor-Hood,Raviard-Thomas:thumbnail=0
