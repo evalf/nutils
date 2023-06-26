@@ -535,6 +535,14 @@ class _Parser(Generic[T]):
         return array, shape, indices, frozenset(summed_indices)
 
 
+def _grad(geom: function.Array, func: function.Array) -> function.Array:
+    return function.grad(func, geom)
+
+
+def _curl(geom: function.Array, func: function.Array) -> function.Array:
+    return numpy.sum(function.levicivita(3) * function.grad(func, geom)[..., numpy.newaxis, :, numpy.newaxis], axis=-2)
+
+
 class Namespace:
     '''Namespace for :class:`~nutils.function.Array` objects supporting assignments with tensor expressions.
 
@@ -695,13 +703,13 @@ class Namespace:
 
         geom = getattr(self, __name)
         if gradient:
-            setattr(self, gradient, lambda arg: function.grad(arg, geom))
+            setattr(self, gradient, functools.partial(_grad, geom))
         if curl:
             if numpy.shape(geom) != (3,):
                 raise ValueError('The curl can only be defined for a geometry with shape (3,) but got {}.'.format(numpy.shape(geom)))
             # Definition: `curl_ki(u_...)` := `ε_kji ∇_j(u_...)`. Should be used as
             # `curl_ki(u_i)`, which is equivalent to `ε_kji ∇_j(u_i)`.
-            setattr(self, curl, lambda arg: numpy.sum(function.levicivita(3) * function.grad(arg, geom)[..., numpy.newaxis, :, numpy.newaxis], axis=-2))
+            setattr(self, curl, functools.partial(_curl, geom))
         if normal:
             setattr(self, normal, function.normal(geom))
         for i, jacobian in enumerate(jacobians):
