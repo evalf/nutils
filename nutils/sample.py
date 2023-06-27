@@ -876,14 +876,16 @@ class _TakeElements(_TensorialSample):
             raise IndexError('index out of range')
         return numpy.arange(self._offsets[ielem], self._offsets[ielem+1])
 
+    def _getshape(self, index):
+        iparent = evaluable.Take(evaluable.Constant(self._indices), index)
+        return self._parent.get_evaluable_indices(iparent).shape
+
     def get_evaluable_indices(self, __ielem: evaluable.Array) -> evaluable.Array:
         i = evaluable.loop_index('_i', self.nelems)
-        iparent = evaluable.Take(evaluable.Constant(self._indices), i)
-        sizes = evaluable.loop_concatenate(evaluable.InsertAxis(self._parent.get_evaluable_indices(iparent).size, evaluable.constant(1)), i)
+        sizes = evaluable.loop_concatenate(evaluable.InsertAxis(util.product(self._getshape(i)), evaluable.constant(1)), i)
         offsets = evaluable._SizesToOffsets(sizes)
 
-        iparent = evaluable.Take(evaluable.Constant(self._indices), __ielem)
-        shape = self._parent.get_evaluable_indices(iparent).shape
+        shape = self._getshape(__ielem)
         pshape = [shape[-1]]
         for n in reversed(shape[:-1]):
             pshape.insert(0, pshape[0] * n)

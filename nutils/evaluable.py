@@ -880,7 +880,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
             index = self.__index = int(self.simplified.eval())
         return index
 
-    size = property(lambda self: util.product(self.shape) if self.ndim else 1)
     T = property(lambda self: transpose(self))
 
     __add__ = __radd__ = add
@@ -2065,7 +2064,7 @@ class Take(Array):
         super().__init__(args=(func, indices), shape=func.shape[:-1]+indices.shape, dtype=func.dtype)
 
     def _simplified(self):
-        if self.indices.size == 0:
+        if any(iszero(n) for n in self.indices.shape):
             return zeros_like(self)
         unaligned, where = unalign(self.indices)
         if len(where) < self.indices.ndim:
@@ -2933,7 +2932,7 @@ class Inflate(Array):
         else:  # kronecker; newindex is all zeros (but of varying length)
             intersection = InsertAxis(self.func, newindex.shape[0])
         if index.ndim:
-            swapped = Inflate(intersection, newdofmap, index.size)
+            swapped = Inflate(intersection, newdofmap, util.product(index.shape))
             for i in range(index.ndim-1):
                 swapped = Unravel(swapped, index.shape[i], util.product(index.shape[i+1:]))
         else:  # get; newdofmap is all zeros (but of varying length)
@@ -4302,7 +4301,7 @@ class _SizesToOffsets(Array):
             return Range(self.shape[0]) * appendaxes(unaligned, self.shape[:1])
 
     def _intbounds_impl(self):
-        n = self._sizes.size._intbounds[1]
+        n = self._sizes.shape[0]._intbounds[1]
         m = self._sizes._intbounds[1]
         return 0, (0 if n == 0 or m == 0 else n * m)
 
