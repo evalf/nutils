@@ -4263,7 +4263,11 @@ class LoopSum(Array):
             return loop_sum(self.func + other.func, self.index)
 
     def _multiply(self, other):
-        return loop_sum(self.func * other, self.index)
+        # If `other` depends on `self.index`, e.g. because `self` is the inner
+        # loop of two nested `LoopSum`s over the same index, then we should not
+        # move `other` inside this loop.
+        if self.index not in other.arguments:
+            return loop_sum(self.func * other, self.index)
 
     @cached_property
     def _assparse(self):
