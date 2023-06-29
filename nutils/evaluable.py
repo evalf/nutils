@@ -3029,6 +3029,10 @@ class SwapInflateTake(Evaluable):
         self.takeidx = takeidx
         super().__init__(args=(inflateidx, takeidx))
 
+    def _simplified(self):
+        if self.isconstant:
+            return Tuple(tuple(map(constant, self.eval())))
+
     def __iter__(self):
         shape = ArrayFromTuple(self, index=2, shape=(), dtype=int, _lower=0),
         return (ArrayFromTuple(self, index=index, shape=shape, dtype=int, _lower=0) for index in range(2))

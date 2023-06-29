@@ -1020,6 +1020,13 @@ class simplify(TestCase):
             evaluable.constant(numpy.arange(3)).simplified,
             evaluable.Range(evaluable.constant(3)))
 
+    def test_swap_take_inflate(self):
+        # test whether inflation to [0, 2] followed by take of [1] simplifies to zero
+        a = evaluable.Argument('test', shape=(evaluable.constant(2),))
+        inflated = evaluable.Inflate(a, dofmap=evaluable.constant([2,0]), length=evaluable.constant(3))
+        taken = evaluable.Take(inflated, indices=evaluable.constant([1]))
+        self.assertTrue(evaluable.iszero(taken))
+
 
 class memory(TestCase):
 
