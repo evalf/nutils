@@ -2849,10 +2849,11 @@ class Zeros(Array):
         assert length == self.shape[axis2]
         i, j = sorted([axis1, axis2])
         shape = (*self.shape[:i], *self.shape[i+1:j], *self.shape[j+1:])
+        dtype = complex if self.dtype == complex else float
         if iszero(length):
-            return ones(shape, self.dtype)
+            return ones(shape, dtype)
         else:
-            return Zeros(shape, self.dtype)
+            return Zeros(shape, dtype)
 
     @cached_property
     def _assparse(self):
