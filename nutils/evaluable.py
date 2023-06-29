@@ -1206,6 +1206,9 @@ class Constant(Array):
 
     def _eig(self, symmetric):
         eigval, eigvec = (numpy.linalg.eigh if symmetric else numpy.linalg.eig)(self.value)
+        if not symmetric:
+            eigval = eigval.astype(complex, copy=False)
+            eigvec = eigvec.astype(complex, copy=False)
         return Tuple((constant(eigval), constant(eigvec)))
 
     def _sign(self):
@@ -2788,6 +2791,12 @@ class ArrayFromTuple(Array):
         self._lower = _lower
         self._upper = _upper
         super().__init__(args=(arrays,), shape=shape, dtype=dtype)
+
+    def _simplified(self):
+        if isinstance(self.arrays, Tuple):
+            # This allows the self.arrays evaluable to simplify itself into a
+            # Tuple and its components be exposed to the function tree.
+            return self.arrays[self.index]
 
     def evalf(self, arrays):
         assert isinstance(arrays, tuple)

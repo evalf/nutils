@@ -134,7 +134,8 @@ class check(TestCase):
     def test_eig(self):
         if self.actual.dtype == float:
             for ax1, ax2 in self.pairs:
-                A, L, V = evaluable.Tuple((self.actual, *evaluable.eig(self.actual, axes=(ax1, ax2)))).eval(**dict(zip(self.arg_names, self.arg_values)))
+                items = self.actual, *evaluable.eig(self.actual, axes=(ax1, ax2))
+                A, L, V = evaluable.Tuple(items).simplified.eval(**dict(zip(self.arg_names, self.arg_values)))
                 self.assertArrayAlmostEqual(decimal=11,
                                             actual=(numpy.expand_dims(V, ax2) * numpy.expand_dims(L, ax2+1).swapaxes(ax1, ax2+1)).sum(ax2+1),
                                             desired=(numpy.expand_dims(A, ax2) * numpy.expand_dims(V, ax2+1).swapaxes(ax1, ax2+1)).sum(ax2+1))
