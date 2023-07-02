@@ -91,7 +91,7 @@ def _equals_simplified(arg1: 'Array', arg2: 'Array'):
     assert isinstance(arg2, Array), f'arg2={arg2!r}'
     if arg1 is arg2:
         return True
-    assert arg1.shape == arg2.shape and arg1.dtype == arg2.dtype, f'arg1={arg1!r}, arg2={arg2!r}'
+    assert equalshape(arg1.shape, arg2.shape) and arg1.dtype == arg2.dtype, f'arg1={arg1!r}, arg2={arg2!r}'
     arg1 = arg1.simplified
     arg2 = arg2.simplified
     if arg1 is arg2:
