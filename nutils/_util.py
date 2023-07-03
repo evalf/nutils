@@ -721,7 +721,7 @@ def cli(f, *, argv=None):
         help = [usage]
         if doc.text:
             help.append('')
-            help.extend(textwrap.wrap(doc.text))
+            help.append(inspect.cleandoc(doc.text))
         if doc.argdocs:
             help.append('')
             for k, d in doc.argdocs.items():
