@@ -1138,6 +1138,8 @@ class Constant(Array):
     def _simplified(self):
         if not self.value.any():
             return zeros_like(self)
+        if self.ndim == 1 and self.dtype == int and numpy.all(self.value == numpy.arange(self.value.shape[0])):
+            return Range(self.shape[0])
         for i, sh in enumerate(self.shape):
             # Find and replace invariant axes with InsertAxis. Since `self.value.any()`
             # is False for arrays with a zero-length axis, we can arrive here only if all

@@ -1015,6 +1015,11 @@ class simplify(TestCase):
             evaluable.Equal(evaluable.prependaxes(r, r.shape), evaluable.appendaxes(r, r.shape)).simplified,
             evaluable.Diagonalize(evaluable.ones(r.shape, bool)))
 
+    def test_constant_range(self):
+        self.assertEqual(
+            evaluable.constant(numpy.arange(3)).simplified,
+            evaluable.Range(evaluable.constant(3)))
+
 
 class memory(TestCase):
 
