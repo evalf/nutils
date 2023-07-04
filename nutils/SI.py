@@ -124,6 +124,7 @@ specific unit. The new Angle dimension makes this unit explicit:
 import fractions
 import operator
 import typing
+import functools
 
 
 class Dimension(type):
@@ -295,7 +296,8 @@ class Quantity(metaclass=Dimension):
     @register('neg', 'negative', 'pos', 'positive', 'abs', 'absolute', 'sum',
               'trace', 'ptp', 'amax', 'amin', 'max', 'min', 'mean', 'take',
               'broadcast_to', 'transpose', 'getitem', 'opposite', 'jump',
-              'replace_arguments', 'linearize', 'derivative', 'integral')
+              'replace_arguments', 'linearize', 'derivative', 'integral',
+              'sample', 'scatter', 'kronecker')
     def __unary(op, *args, **kwargs):
         (dim0, arg0), = Quantity.__unpack(args[0])
         return dim0.__wrap__(op(arg0, *args[1:], **kwargs))
@@ -312,10 +314,16 @@ class Quantity(metaclass=Dimension):
         (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
         return (dim0 * dim1).__wrap__(op(arg0, arg1, *args[2:], **kwargs))
 
-    @register('truediv', 'true_divide', 'divide', 'grad')
+    @register('truediv', 'true_divide', 'divide', 'grad', 'surfgrad', 'div',
+              'curl')
     def __div_like(op, *args, **kwargs):
         (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
         return (dim0 / dim1).__wrap__(op(arg0, arg1, *args[2:], **kwargs))
+
+    @register('laplace')
+    def __laplace(op, *args, **kwargs):
+        (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
+        return (dim0 / dim1**2).__wrap__(op(arg0, arg1, *args[2:], **kwargs))
 
     @register('sqrt')
     def __sqrt(op, *args, **kwargs):
@@ -334,7 +342,7 @@ class Quantity(metaclass=Dimension):
         (dim0, arg0), = Quantity.__unpack(args[0])
         return (dim0**args[1]).__wrap__(op(arg0, *args[1:], **kwargs))
 
-    @register('isfinite', 'isnan', 'shape', 'ndim', 'size', 'normal')
+    @register('isfinite', 'isnan', 'shape', 'ndim', 'size', 'normal', 'normalized')
     def __unary_drop(op, *args, **kwargs):
         (_dim0, arg0), = Quantity.__unpack(args[0])
         return op(arg0, *args[1:], **kwargs)
@@ -354,10 +362,20 @@ class Quantity(metaclass=Dimension):
             raise TypeError(f'incompatible arguments for {op.__name__}: ' + ', '.join(dim.__name__ for dim in dims))
         return dims[0].__wrap__(op(arg0, *args[1:], **kwargs))
 
+    @register('curvature')
+    def __evaluate(op, *args, **kwargs):
+        (dim0, arg0), = Quantity.__unpack(args[0])
+        return (dim0**-1).__wrap__(op(*args, **kwargs))
+
     @register('evaluate')
     def __evaluate(op, *args, **kwargs):
         dims, args = zip(*Quantity.__unpack(*args))
         return tuple(dim.__wrap__(ret) for (dim, ret) in zip(dims, op(*args, **kwargs)))
+
+    @register('dotarg')
+    def __dotarg(op, *args, **kwargs):
+        dims, args = zip(*Quantity.__unpack(*args)) # we abuse the fact that unpack str returns dimensionless
+        return functools.reduce(operator.mul, dims).__wrap__(op(*args, **kwargs))
 
     del register
 

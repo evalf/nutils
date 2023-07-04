@@ -5,7 +5,8 @@ else:
     Protocol = object
 
 from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, List, FrozenSet, NamedTuple
-from . import evaluable, numeric, _util as util, types, warnings, debug_flags, sparse
+from . import evaluable, numeric, _util as util, types, warnings, debug_flags, sparse, matrix
+from ._util import nutils_dispatch
 from ._backports import cached_property
 from .transformseq import Transforms
 import nutils_poly as poly
@@ -14,6 +15,7 @@ import numpy
 import functools
 import operator
 import numbers
+import inspect
 
 IntoArray = Union['Array', numpy.ndarray, bool, int, float, complex]
 Shape = Sequence[int]
@@ -214,17 +216,6 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         if ndim is not None and value.ndim != ndim:
             raise ValueError('expected an array with dimension `{}` but got `{}`'.format(ndim, value.ndim))
         return value
-
-    @classmethod
-    def cast_withscale(cls, __value: IntoArray, dtype: Optional[DType] = None, ndim: Optional[int] = None):
-        try:
-            scale = type(__value).reference_quantity
-        except AttributeError:
-            value = cls.cast(__value, dtype=dtype, ndim=ndim)
-            scale = value.dtype(1)
-        else:
-            value = cls.cast(__value / scale, dtype=dtype, ndim=ndim)
-        return value, scale
 
     def __init__(self, shape: Shape, dtype: DType, spaces: FrozenSet[str], arguments: Mapping[str, Tuple[Shape, DType]]) -> None:
         self.shape = tuple(sh.__index__() for sh in shape)
@@ -478,11 +469,11 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         warnings.deprecation('`nutils.function.Array.simplified` is deprecated. This property returns the array unmodified and can safely be omitted.')
         return self
 
-    def eval(self, **arguments: Any) -> numpy.ndarray:
+    @util.positional_only
+    def eval(self, arguments=...) -> numpy.ndarray:
         'Evaluate this function.'
 
-        from .sample import eval_integrals
-        return eval_integrals(self, **arguments)[0]
+        return evaluate(self, _post=_convert, arguments=arguments)[0]
 
     def derivative(self, __var: Union[str, 'Argument']) -> 'Array':
         'See :func:`derivative`.'
@@ -1952,9 +1943,11 @@ def max(__a: IntoArray, __b: IntoArray) -> Array:
         raise ValueError('Complex numbers have no total order.')
     return _Wrapper.broadcasted_arrays(evaluable.Maximum, a, b)
 
+
 # OPPOSITE
 
 
+@nutils_dispatch
 def opposite(__arg: IntoArray) -> Array:
     '''Evaluate this function at the opposite side.
 
@@ -2003,12 +1996,13 @@ def opposite(__arg: IntoArray) -> Array:
     :func:`jump` : the jump at an interface
     '''
 
-    arg, scale = Array.cast_withscale(__arg)
+    arg = Array.cast(__arg)
     for space in sorted(arg.spaces):
         arg = _Opposite(arg, space)
-    return arg * scale
+    return arg
 
 
+@nutils_dispatch
 def mean(__arg: IntoArray) -> Array:
     '''Return the mean of the argument at an interface.
 
@@ -2039,6 +2033,7 @@ def mean(__arg: IntoArray) -> Array:
     return .5 * (__arg + opposite(__arg))
 
 
+@nutils_dispatch
 def jump(__arg: IntoArray) -> Array:
     '''Return the jump of the argument at an interface.
 
@@ -2278,6 +2273,7 @@ def norm2(__arg: IntoArray, axis: Union[int, Sequence[int]] = -1) -> Array:
     return numpy.sqrt(numpy.sum(arg * numpy.conjugate(arg), axis))
 
 
+@nutils_dispatch
 def normalized(__arg: IntoArray, axis: int = -1) -> Array:
     '''Return the argument normalized over the given axis, elementwise over the remanining axes.
 
@@ -2759,6 +2755,7 @@ def _takeslice(__array: IntoArray, __s: slice, __axis: int) -> Array:
     return numpy.take(array, index, axis)
 
 
+@nutils_dispatch
 def scatter(__array: IntoArray, length: int, indices: IntoArray) -> Array:
     '''Distribute the last dimensions of an array over a new axis.
 
@@ -2795,6 +2792,7 @@ def scatter(__array: IntoArray, length: int, indices: IntoArray) -> Array:
                     dtype=array.dtype)
 
 
+@nutils_dispatch
 def kronecker(__array: IntoArray, axis: int, length: int, pos: IntoArray) -> Array:
     '''Position an element in an axis of given length.
 
@@ -2866,6 +2864,7 @@ def stack(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
     return util.sum(kronecker(array, axis, len(aligned), i) for i, array in enumerate(aligned))
 
 
+@nutils_dispatch
 def replace_arguments(__array: IntoArray, __arguments: Mapping[str, IntoArray]) -> Array:
     '''Replace arguments with :class:`Array` objects.
 
@@ -2880,10 +2879,10 @@ def replace_arguments(__array: IntoArray, __arguments: Mapping[str, IntoArray]) 
     :class:`Array`
     '''
 
-    array, scale = Array.cast_withscale(__array)
-    return _Replace(array, {k: Array.cast(v) for k, v in __arguments.items()}) * scale
+    return _Replace(Array.cast(__array), {k: Array.cast(v) for k, v in __arguments.items()})
 
 
+@nutils_dispatch
 def linearize(__array: IntoArray, __arguments: Union[str, Dict[str, str], Iterable[str], Iterable[Tuple[str, str]]]):
     '''Linearize functional.
 
@@ -2912,7 +2911,7 @@ def linearize(__array: IntoArray, __arguments: Union[str, Dict[str, str], Iterab
     >>> # lin1 = lin2 == lin3 == lin4 == 2 * u * v + q
     '''
 
-    array, scale = Array.cast_withscale(__array)
+    array = Array.cast(__array)
     args = __arguments.split(',') if isinstance(__arguments, str) \
       else __arguments.items() if isinstance(__arguments, dict) \
       else __arguments
@@ -2921,7 +2920,7 @@ def linearize(__array: IntoArray, __arguments: Union[str, Dict[str, str], Iterab
         k, v = kv.split(':', 1) if isinstance(kv, str) else kv
         f = derivative(array, k)
         parts.append(numpy.sum(f * Argument(v, f.shape[array.ndim:]), tuple(range(array.ndim, f.ndim))))
-    return util.sum(parts) * scale
+    return util.sum(parts)
 
 
 def broadcast_arrays(*arrays: IntoArray) -> Tuple[Array, ...]:
@@ -3022,6 +3021,7 @@ def broadcast_to(array: IntoArray, shape: Shape) -> Array:
 # DERIVATIVES
 
 
+@nutils_dispatch
 def derivative(__arg: IntoArray, __var: Union[str, 'Argument']) -> Array:
     '''Differentiate `arg` to `var`.
 
@@ -3034,7 +3034,7 @@ def derivative(__arg: IntoArray, __var: Union[str, 'Argument']) -> Array:
     :class:`Array`
     '''
 
-    arg, argscale = Array.cast_withscale(__arg)
+    arg = Array.cast(__arg)
     if isinstance(__var, str):
         if __var not in arg.arguments:
             raise ValueError('no such argument: {}'.format(__var))
@@ -3048,9 +3048,10 @@ def derivative(__arg: IntoArray, __var: Union[str, 'Argument']) -> Array:
             raise ValueError('Argument {!r} has shape {} in the function, but the derivative to {!r} with shape {} was requested.'.format(__var.name, shape, __var.name, __var.shape))
         if __var.dtype != dtype:
             raise ValueError('Argument {!r} has dtype {} in the function, but the derivative to {!r} with dtype {} was requested.'.format(__var.name, dtype.__name__ if dtype in _dtypes else dtype, __var.name, __var.dtype.__name__ if __var.dtype in _dtypes else __var.dtype))
-    return _Derivative(arg, __var) * argscale
+    return _Derivative(arg, __var)
 
 
+@nutils_dispatch
 def grad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
     '''Return the gradient of the argument to the given geometry.
 
@@ -3065,8 +3066,8 @@ def grad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
     :class:`Array`
     '''
 
-    arg, argscale = Array.cast_withscale(__arg)
-    geom, geomscale = Array.cast_withscale(__geom)
+    arg = Array.cast(__arg)
+    geom = Array.cast(__geom)
     if geom.dtype != float:
         raise ValueError('The geometry must be real-valued.')
     if ndims == 0 or ndims == geom.size:
@@ -3075,9 +3076,10 @@ def grad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
         op = _SurfaceGradient
     else:
         raise NotImplementedError
-    return numpy.reshape(op(arg, numpy.ravel(geom)), arg.shape + geom.shape) * (argscale / geomscale)
+    return numpy.reshape(op(arg, numpy.ravel(geom)), arg.shape + geom.shape)
 
 
+@nutils_dispatch
 def curl(__arg: IntoArray, __geom: IntoArray) -> Array:
     '''Return the curl of the argument w.r.t. the given geometry.
 
@@ -3103,6 +3105,7 @@ def curl(__arg: IntoArray, __geom: IntoArray) -> Array:
     return (levicivita(3).T * _append_axes(grad(arg, geom), (3,))).sum((-3, -2))
 
 
+@nutils_dispatch
 def normal(__geom: IntoArray, refgeom: Optional[Array] = None) -> Array:
     '''Return the normal of the geometry.
 
@@ -3120,7 +3123,7 @@ def normal(__geom: IntoArray, refgeom: Optional[Array] = None) -> Array:
     :class:`Array`
     '''
 
-    geom, geomscale_ = Array.cast_withscale(__geom)
+    geom = Array.cast(__geom)
     if geom.dtype != float:
         raise ValueError('The geometry must be real-valued.')
     if refgeom is None:
@@ -3172,6 +3175,7 @@ def tangent(__geom: IntoArray, __vec: IntoArray) -> Array:
     return vec - (vec @ norm)[..., None] * norm
 
 
+@nutils_dispatch
 def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
     '''Return the absolute value of the determinant of the Jacobian matrix of the given geometry.
 
@@ -3185,16 +3189,10 @@ def jacobian(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
     :class:`Array`
     '''
 
-    geom, geomscale = Array.cast_withscale(__geom)
+    geom = Array.cast(__geom)
     if geom.dtype != float:
         raise ValueError('The geometry must be real-valued.')
-    if __ndims is not None:
-        scale = geomscale**__ndims
-    elif _is_unit_scalar(geomscale):
-        scale = 1.
-    else:
-        raise ValueError('scaled arrays require an explicit dimension')
-    return _Jacobian(numpy.ravel(geom), __ndims) * scale
+    return _Jacobian(numpy.ravel(geom), __ndims)
 
 
 def J(__geom: IntoArray, __ndims: Optional[int] = None) -> Array:
@@ -3214,6 +3212,7 @@ def d(__arg: IntoArray, *vars: IntoArray) -> Array:
     return functools.reduce(_d1, vars, Array.cast(__arg))
 
 
+@nutils_dispatch
 def surfgrad(__arg: IntoArray, geom: IntoArray) -> Array:
     '''Return the surface gradient of the argument to the given geometry.
 
@@ -3229,6 +3228,7 @@ def surfgrad(__arg: IntoArray, geom: IntoArray) -> Array:
     return grad(__arg, geom, -1)
 
 
+@nutils_dispatch
 def curvature(__geom: IntoArray, ndims: int = -1) -> Array:
     '''Return the curvature of the given geometry.
 
@@ -3246,6 +3246,7 @@ def curvature(__geom: IntoArray, ndims: int = -1) -> Array:
     return geom.normal().div(geom, ndims=ndims)
 
 
+@nutils_dispatch
 def div(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
     '''Return the divergence of ``arg`` w.r.t. the given geometry.
 
@@ -3263,6 +3264,7 @@ def div(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
     return numpy.trace(grad(__arg, geom, ndims), axis1=-2, axis2=-1)
 
 
+@nutils_dispatch
 def laplace(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
     '''Return the Laplacian of ``arg`` w.r.t. the given geometry.
 
@@ -3337,8 +3339,24 @@ def nsymgrad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
 # MISC
 
 
+def _convert(data: numpy.ndarray, inplace: bool = True) -> Union[numpy.ndarray, matrix.Matrix]:
+    '''Convert a two-dimensional sparse object to an appropriate object.
+
+    The return type is determined based on dimension: a zero-dimensional object
+    becomes a scalar, a one-dimensional object a (dense) Numpy vector, a
+    two-dimensional object a Nutils matrix, and any higher dimensional object a
+    deduplicated and pruned sparse object.
+    '''
+
+    ndim = sparse.ndim(data)
+    return sparse.toarray(data) if ndim < 2 \
+        else matrix.fromsparse(data, inplace=inplace) if ndim == 2 \
+        else sparse.prune(sparse.dedup(data, inplace=inplace), inplace=True)
+
+
 @util.single_or_multiple
-def eval(funcs: evaluable.AsEvaluableArray, **arguments: Mapping[str, numpy.ndarray]) -> Tuple[numpy.ndarray, ...]:
+@util.positional_only
+def eval(funcs: evaluable.AsEvaluableArray, arguments: Mapping[str, numpy.ndarray] = ...) -> Tuple[numpy.ndarray, ...]:
     '''Evaluate one or several Array objects.
 
     Args
@@ -3353,8 +3371,45 @@ def eval(funcs: evaluable.AsEvaluableArray, **arguments: Mapping[str, numpy.ndar
     results : :class:`tuple` of arrays
     '''
 
-    funcs, funcscales = zip(*map(Array.cast_withscale, funcs))
-    return tuple(sparse.toarray(data) * scale for data, scale in zip(evaluable.eval_sparse(funcs, **arguments), funcscales))
+    return evaluate(*funcs, arguments=arguments)
+
+
+@nutils_dispatch
+def evaluate(*arrays, _post=sparse.toarray, arguments={}):
+    if len(arguments) == 1 and 'arguments' in arguments and isinstance(arguments['arguments'], dict):
+        arguments = arguments['arguments']
+    sparse_arrays = evaluable.eval_sparse(map(Array.cast, arrays), **arguments)
+    return tuple(map(_post, sparse_arrays))
+
+
+@nutils_dispatch
+def integral(func: IntoArray, sample) -> Array:
+    '''Integrate a function over a sample.
+
+    Args
+    ----
+    func : :class:`nutils.function.Array`
+        Integrand.
+    sample
+        The integration sample.
+    '''
+
+    return sample._integral(Array.cast(func))
+
+
+@nutils_dispatch
+def sample(func: IntoArray, sample) -> Array:
+    '''Evaluate a function in all sample points.
+
+    Args
+    ----
+    func : :class:`nutils.function.Array`
+        Integrand.
+    sample
+        The integration sample.
+    '''
+
+    return sample._sample(Array.cast(func))
 
 
 def isarray(__arg: Any) -> bool:
@@ -3529,6 +3584,7 @@ def rotmat(__arg: IntoArray) -> Array:
     return Array.cast(numpy.stack([trignormal(__arg), trigtangent(__arg)], 0))
 
 
+@nutils_dispatch
 def dotarg(__argname: str, *arrays: IntoArray, shape: Tuple[int, ...] = (), dtype: DType = float) -> Array:
     '''Return the inner product of the first axes of the given arrays with an argument with the given name.
 
