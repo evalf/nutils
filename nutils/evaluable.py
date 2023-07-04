@@ -91,7 +91,7 @@ def _equals_simplified(arg1: 'Array', arg2: 'Array'):
     assert isinstance(arg2, Array), f'arg2={arg2!r}'
     if arg1 is arg2:
         return True
-    assert arg1.shape == arg2.shape and arg1.dtype == arg2.dtype, f'arg1={arg1!r}, arg2={arg2!r}'
+    assert equalshape(arg1.shape, arg2.shape) and arg1.dtype == arg2.dtype, f'arg1={arg1!r}, arg2={arg2!r}'
     arg1 = arg1.simplified
     arg2 = arg2.simplified
     if arg1 is arg2:
@@ -588,14 +588,16 @@ class Tuple(Evaluable):
 # The main evaluable. Closely mimics a numpy array.
 
 
-def add(a, b):
-    a, b = _numpy_align(a, b)
-    return Add(types.frozenmultiset((a, b)))
+def add(arg0, *args):
+    for arg1 in args:
+        arg0 = Add(types.frozenmultiset(_numpy_align(arg0, arg1)))
+    return arg0
 
 
-def multiply(a, b):
-    a, b = _numpy_align(a, b)
-    return Multiply(types.frozenmultiset((a, b)))
+def multiply(arg0, *args):
+    for arg1 in args:
+        arg0 = Multiply(types.frozenmultiset(_numpy_align(arg0, arg1)))
+    return arg0
 
 
 def sum(arg, axis=None):
@@ -880,7 +882,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
             index = self.__index = int(self.simplified.eval())
         return index
 
-    size = property(lambda self: util.product(self.shape) if self.ndim else 1)
     T = property(lambda self: transpose(self))
 
     __add__ = __radd__ = add
@@ -1139,6 +1140,8 @@ class Constant(Array):
     def _simplified(self):
         if not self.value.any():
             return zeros_like(self)
+        if self.ndim == 1 and self.dtype == int and numpy.all(self.value == numpy.arange(self.value.shape[0])):
+            return Range(self.shape[0])
         for i, sh in enumerate(self.shape):
             # Find and replace invariant axes with InsertAxis. Since `self.value.any()`
             # is False for arrays with a zero-length axis, we can arrive here only if all
@@ -1177,8 +1180,10 @@ class Constant(Array):
             return constant(numpy.add(self.value, other.value))
 
     def _inverse(self, axis1, axis2):
-        value = numpy.transpose(self.value, tuple(i for i in range(self.ndim) if i != axis1 and i != axis2) + (axis1, axis2))
-        return constant(numpy.linalg.inv(value))
+        assert 0 <= axis1 < axis2 < self.ndim
+        axes = (*range(axis1), *range(axis1+1, axis2), *range(axis2+1, self.ndim), axis1, axis2)
+        value = numpy.transpose(self.value, axes)
+        return constant(numpy.transpose(numpy.linalg.inv(value), numpy.argsort(axes)))
 
     def _product(self):
         return constant(self.value.prod(-1))
@@ -1205,6 +1210,9 @@ class Constant(Array):
 
     def _eig(self, symmetric):
         eigval, eigvec = (numpy.linalg.eigh if symmetric else numpy.linalg.eig)(self.value)
+        if not symmetric:
+            eigval = eigval.astype(complex, copy=False)
+            eigvec = eigvec.astype(complex, copy=False)
         return Tuple((constant(eigval), constant(eigvec)))
 
     def _sign(self):
@@ -1252,6 +1260,8 @@ class InsertAxis(Array):
         return self.func._unaligned
 
     def _simplified(self):
+        if _equals_scalar_constant(self.length, 0):
+            return zeros_like(self)
         return self.func._insertaxis(self.ndim-1, self.length)
 
     @staticmethod
@@ -1283,6 +1293,11 @@ class InsertAxis(Array):
         unaligned1, unaligned2, where = unalign(self, other)
         if len(where) != self.ndim:
             return align(unaligned1 + unaligned2, where, self.shape)
+
+    def _multiply(self, other):
+        unaligned1, unaligned2, where = unalign(self, other)
+        if len(where) != self.ndim:
+            return align(unaligned1 * unaligned2, where, self.shape)
 
     def _diagonalize(self, axis):
         if axis < self.ndim - 1:
@@ -1645,101 +1660,91 @@ class Multiply(Array):
         assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype != bool, 'Multiply({}, {})'.format(func1, func2)
         super().__init__(args=tuple(self.funcs), shape=func1.shape, dtype=func1.dtype)
 
+    @property
+    def _factors(self):
+        for func in self.funcs:
+            if isinstance(func, Multiply):
+                yield from func._factors
+            else:
+                yield func
+
     def _simplified(self):
-        func1, func2 = self.funcs
-        if func1._const_uniform == 1:
-            return func2
-        if func2._const_uniform == 1:
-            return func1
-        unaligned1, unaligned2, where = unalign(func1, func2)
-        if len(where) != self.ndim:
-            return align(unaligned1 * unaligned2, where, self.shape)
-        for axis1, axis2, *other in map(sorted, func1._diagonals or func2._diagonals):
-            return diagonalize(multiply(takediag(func1, axis1, axis2), takediag(func2, axis1, axis2)), axis1, axis2)
-        for i, parts in func1._inflations:
-            return util.sum(_inflate(f * _take(func2, dofmap, i), dofmap, self.shape[i], i) for dofmap, f in parts.items())
-        for i, parts in func2._inflations:
-            return util.sum(_inflate(_take(func1, dofmap, i) * f, dofmap, self.shape[i], i) for dofmap, f in parts.items())
-        return func1._multiply(func2) or func2._multiply(func1)
+        factors = tuple(self._factors)
+        for j, fj in enumerate(factors):
+            if fj._const_uniform == 1:
+                return multiply(*factors[:j], *factors[j+1:])
+            for i, parts in fj._inflations:
+                return util.sum(_inflate(multiply(f, *(_take(fi, dofmap, i) for fi in factors[:j] + factors[j+1:])), dofmap, self.shape[i], i) for dofmap, f in parts.items())
+            for axis1, axis2, *other in map(sorted, fj._diagonals):
+                return diagonalize(multiply(*(takediag(f, axis1, axis2) for f in factors)), axis1, axis2)
+            for i, fi in enumerate(factors[:j]):
+                unaligned1, unaligned2, where = unalign(fi, fj)
+                fij = align(unaligned1 * unaligned2, where, self.shape) if len(where) != self.ndim \
+                    else fi._multiply(fj) or fj._multiply(fi)
+                if fij:
+                    return multiply(*factors[:i], *factors[i+1:j], *factors[j+1:], fij)
 
     def _optimized_for_numpy(self):
-        func1, func2 = self.funcs
-        if func1._const_uniform == -1 and func2.dtype != bool:
-            return Negative(func2)
-        if func2._const_uniform == -1 and func1.dtype != bool:
-            return Negative(func1)
-        if self.dtype != complex and func1 == sign(func2):
-            return Absolute(func2)
-        if self.dtype != complex and func2 == sign(func1):
-            return Absolute(func1)
-        if not self.ndim:
-            return
-        unaligned1, where1 = unalign(func1)
-        unaligned2, where2 = unalign(func2)
-        return Einsum((unaligned1, unaligned2), (where1, where2), tuple(range(self.ndim)))
+        factors = tuple(self._factors)
+        for i, fi in enumerate(factors):
+            if fi.dtype != bool and fi._const_uniform == -1:
+                return Negative(multiply(*factors[:i], *factors[i+1:]))
+            if fi.dtype != complex and Sign(fi) in factors:
+                i, j = sorted([i, factors.index(Sign(fi))])
+                return multiply(*factors[:i], *factors[i+1:j], *factors[j+1:], Absolute(fi))
+        if self.ndim:
+            args, args_idx = zip(*map(unalign, factors))
+            return Einsum(args, args_idx, tuple(range(self.ndim)))
 
     evalf = staticmethod(numpy.multiply)
 
     def _sum(self, axis):
-        func1, func2 = self.funcs
-        unaligned, where = unalign(func1)
-        if axis not in where:
-            return align(unaligned, [i-(i > axis) for i in where], self.shape[:axis]+self.shape[axis+1:]) * sum(func2, axis)
-        unaligned, where = unalign(func2)
-        if axis not in where:
-            return sum(func1, axis) * align(unaligned, [i-(i > axis) for i in where], self.shape[:axis]+self.shape[axis+1:])
+        factors = tuple(self._factors)
+        for i, fi in enumerate(factors):
+            unaligned, where = unalign(fi)
+            if axis not in where:
+                summed = sum(multiply(*factors[:i], *factors[i+1:]), axis)
+                return summed * align(unaligned, [i-(i > axis) for i in where], summed.shape)
 
     def _add(self, other):
-        func1, func2 = self.funcs
-        if isinstance(other, Multiply):
-            for common in self.funcs & other.funcs:
-                return common * Add(self.funcs + other.funcs - [common, common])
+        factors = list(self._factors)
+        other_factors = []
+        common = []
+        for f in other._factors if isinstance(other, Multiply) else [other]:
+            if f in factors:
+                factors.remove(f)
+                common.append(f)
+            else:
+                other_factors.append(f)
+        if not common:
+            return
+        if factors and other_factors:
+            return multiply(*common) * add(multiply(*factors), multiply(*other_factors))
+        nz = factors or other_factors
+        if not nz: # self equals other (up to factor ordering)
+            return self * 2
+        if len(nz) == 1 and tuple(nz)[0]._const_uniform == -1:
+            # Since the subtraction x - y is stored as x + -1 * y, this handles
+            # the simplification of x - x to 0. While we could alternatively
+            # simplify all x + a * x to (a + 1) * x, capturing a == -1 as a
+            # special case via Constant._add, it is not obvious that this is in
+            # all situations an improvement.
+            return zeros_like(self)
 
     def _determinant(self, axis1, axis2):
-        func1, func2 = self.funcs
         axis1, axis2 = sorted([axis1, axis2])
-        if _equals_scalar_constant(self.shape[axis1], 1) and _equals_scalar_constant(self.shape[axis2], 1):
-            return multiply(determinant(func1, (axis1, axis2)), determinant(func2, (axis1, axis2)))
-        unaligned1, where1 = unalign(func1)
-        if {axis1, axis2}.isdisjoint(where1):
-            d2 = determinant(func2, (axis1, axis2))
-            d1 = align(unaligned1**self.shape[axis1], [i-(i > axis1)-(i > axis2) for i in where1 if i not in (axis1, axis2)], d2.shape)
-            return d1 * d2
-        unaligned2, where2 = unalign(func2)
-        if {axis1, axis2}.isdisjoint(where2):
-            d1 = determinant(func1, (axis1, axis2))
-            d2 = align(unaligned2**self.shape[axis1], [i-(i > axis1)-(i > axis2) for i in where2 if i not in (axis1, axis2)], d1.shape)
-            return d1 * d2
+        factors = tuple(self._factors)
+        if all(_equals_scalar_constant(self.shape[axis], 1) for axis in (axis1, axis2)):
+            return multiply(*[determinant(f, (axis1, axis2)) for f in factors])
+        for i, fi in enumerate(factors):
+            unaligned, where = unalign(fi)
+            if axis1 not in where and axis2 not in where:
+                det = determinant(multiply(*factors[:i], *factors[i+1:]), (axis1, axis2))
+                scale = align(unaligned**self.shape[axis1], [i-(i > axis1)-(i > axis2) for i in where if i not in (axis1, axis2)], det.shape)
+                return det * scale
 
     def _product(self):
-        func1, func2 = self.funcs
-        return multiply(Product(func1), Product(func2))
-
-    def _multiply(self, other):
-        func1, func2 = self.funcs
-        func1_other = func1._multiply(other)
-        if func1_other is not None:
-            return multiply(func1_other, func2)
-        func2_other = func2._multiply(other)
-        if func2_other is not None:
-            return multiply(func1, func2_other)
-        # Reorder the multiplications such that the amount of flops is minimized.
-        # The flops are counted based on the lower int bounds of the shape and loop
-        # lengths, excluding common inserted axes and invariant loops of the inner
-        # product.
-        sizes = []
-        unaligned = tuple(map(unalign, (func1, func2, other)))
-        for (f1, w1), (f2, w2) in itertools.combinations(unaligned, 2):
-            lengths = [self.shape[i] for i in set(w1) | set(w2)]
-            lengths += [arg.length for arg in f1.arguments | f2.arguments if isinstance(arg, _LoopIndex)]
-            sizes.append(util.product((max(1, length._intbounds[0]) for length in lengths), 1))
-        min_size = min(sizes)
-        if sizes[0] == min_size:
-            return  # status quo
-        elif sizes[1] == min_size:
-            return (func1 * other) * func2
-        elif sizes[2] == min_size:
-            return (func2 * other) * func1
+        return multiply(*[Product(f) for f in self._factors])
 
     def _derivative(self, var, seen):
         func1, func2 = self.funcs
@@ -1747,47 +1752,62 @@ class Multiply(Array):
             + einsum('A,AB->AB', func2, derivative(func1, var, seen))
 
     def _takediag(self, axis1, axis2):
-        func1, func2 = self.funcs
-        return multiply(_takediag(func1, axis1, axis2), _takediag(func2, axis1, axis2))
+        return multiply(*[_takediag(f, axis1, axis2) for f in self._factors])
 
     def _take(self, index, axis):
-        func1, func2 = self.funcs
-        return multiply(_take(func1, index, axis), _take(func2, index, axis))
+        return multiply(*[_take(f, index, axis) for f in self._factors])
 
     def _sign(self):
-        func1, func2 = self.funcs
-        return multiply(Sign(func1), Sign(func2))
+        return multiply(*[Sign(f) for f in self._factors])
 
     def _unravel(self, axis, shape):
-        func1, func2 = self.funcs
-        return multiply(unravel(func1, axis, shape), unravel(func2, axis, shape))
+        return multiply(*[unravel(f, axis, shape) for f in self._factors])
 
     def _inverse(self, axis1, axis2):
-        func1, func2 = self.funcs
-        if set(unalign(func1)[1]).isdisjoint((axis1, axis2)):
-            return divide(inverse(func2, (axis1, axis2)), func1)
-        if set(unalign(func2)[1]).isdisjoint((axis1, axis2)):
-            return divide(inverse(func1, (axis1, axis2)), func2)
+        factors = tuple(self._factors)
+        for i, fi in enumerate(factors):
+            if set(unalign(fi)[1]).isdisjoint((axis1, axis2)):
+                inv = inverse(multiply(*factors[:i], *factors[i+1:]), (axis1, axis2))
+                return divide(inv, fi)
 
     @cached_property
     def _assparse(self):
-        func1, func2 = self.funcs
-        uninserted1, where1 = unalign(func1)
-        uninserted2, where2 = unalign(func2)
-        if not set(where1) & set(where2):
-            sparse = []
-            for *indices1, values1 in uninserted1._assparse:
-                for *indices2, values2 in uninserted2._assparse:
-                    indices = [None] * self.ndim
-                    for i, j in enumerate(where1):
-                        indices[j] = appendaxes(indices1[i], values2.shape)
-                    for i, j in enumerate(where2):
-                        indices[j] = prependaxes(indices2[i], values1.shape)
-                    assert all(indices)
-                    values = appendaxes(values1, values2.shape) * prependaxes(values2, values1.shape)
-                    sparse.append((*indices, values))
-            return tuple(sparse)
-        return super()._assparse
+        # First we collect the clusters of factors that have no real (i.e. not
+        # inserted) axes in common with the other clusters, and store them in
+        # uninserted form.
+        clusters = []
+        for f in self._factors:
+            uninserted, where = unalign(f)
+            for i in reversed(range(len(clusters))):
+                if set(where) & set(clusters[i][1]):
+                    w = where
+                    unins_, w_ = clusters.pop(i)
+                    where = numpy.union1d(w, w_)
+                    shape = tuple(self.shape[i] for i in where)
+                    uninserted = align(uninserted, numpy.searchsorted(where, w), shape) * align(unins_, numpy.searchsorted(where, w_), shape)
+            clusters.append((uninserted, where))
+        # If there is only one cluster we fall back on the default
+        # implementation.
+        if len(clusters) == 1:
+            return super()._assparse
+        # If there are two or more clusters we write the product of additions
+        # as an addition of products.
+        uninserteds, wheres = zip(*clusters)
+        sparse = []
+        for items in itertools.product(*[u._assparse for u in uninserteds]):
+            shape = util.sum(f.shape for *ind, f in items)
+            indices = [None] * self.ndim
+            factors = []
+            a = 0
+            for where, (*ind, f) in zip(wheres, items):
+                b = a + f.ndim
+                r = numpy.arange(a, b)
+                for i, indi in zip(where, ind):
+                    indices[i] = align(indi, r, shape)
+                factors.append(align(f, r, shape))
+                a = b
+            sparse.append((*indices, multiply(*factors)))
+        return tuple(sparse)
 
     def _intbounds_impl(self):
         func1, func2 = self.funcs
@@ -1824,15 +1844,25 @@ class Add(Array):
             inflations.append((axis, types.frozendict((dofmap, util.sum(parts[dofmap] for parts in (parts1, parts2) if dofmap in parts)) for dofmap in dofmaps)))
         return tuple(inflations)
 
+    @property
+    def _terms(self):
+        for func in self.funcs:
+            if isinstance(func, Add):
+                yield from func._terms
+            else:
+                yield func
+
     def _simplified(self):
-        func1, func2 = self.funcs
-        if func1 == func2:
-            return multiply(func1, 2)
-        for axes1 in func1._diagonals:
-            for axes2 in func2._diagonals:
-                if len(axes1 & axes2) >= 2:
-                    axes = sorted(axes1 & axes2)[:2]
-                    return diagonalize(takediag(func1, *axes) + takediag(func2, *axes), *axes)
+        terms = tuple(self._terms)
+        for j, fj in enumerate(terms):
+            for i, fi in enumerate(terms[:j]):
+                diags = [sorted(axesi & axesj)[:2] for axesi in fi._diagonals for axesj in fj._diagonals if len(axesi & axesj) >= 2]
+                unaligned1, unaligned2, where = unalign(fi, fj)
+                fij = diagonalize(takediag(fi, *diags[0]) + takediag(fj, *diags[0]), *diags[0]) if diags \
+                    else align(unaligned1 + unaligned2, where, self.shape) if len(where) != self.ndim \
+                    else fi._add(fj) or fj._add(fi)
+                if fij:
+                    return add(*terms[:i], *terms[i+1:j], *terms[j+1:], fij)
         # NOTE: While it is tempting to use the _inflations attribute to push
         # additions through common inflations, doing so may result in infinite
         # recursion in case two or more axes are inflated. This mechanism is
@@ -1852,63 +1882,48 @@ class Add(Array):
         #              \_______+_______/
         #
         # We instead rely on Inflate._add to handle this situation.
-        return func1._add(func2) or func2._add(func1)
 
     evalf = staticmethod(numpy.add)
 
     def _sum(self, axis):
-        func1, func2 = self.funcs
-        return add(sum(func1, axis), sum(func2, axis))
+        return add(*[sum(f, axis) for f in self._terms])
 
     def _derivative(self, var, seen):
-        func1, func2 = self.funcs
-        return derivative(func1, var, seen) + derivative(func2, var, seen)
+        return add(*[derivative(f, var, seen) for f in self._terms])
 
     def _takediag(self, axis1, axis2):
-        func1, func2 = self.funcs
-        return add(_takediag(func1, axis1, axis2), _takediag(func2, axis1, axis2))
+        return add(*[_takediag(f, axis1, axis2) for f in self._terms])
 
     def _take(self, index, axis):
-        func1, func2 = self.funcs
-        return add(_take(func1, index, axis), _take(func2, index, axis))
-
-    def _add(self, other):
-        func1, func2 = self.funcs
-        func1_other = func1._add(other)
-        if func1_other is not None:
-            return add(func1_other, func2)
-        func2_other = func2._add(other)
-        if func2_other is not None:
-            return add(func1, func2_other)
+        return add(*[_take(f, index, axis) for f in self._terms])
 
     def _unravel(self, axis, shape):
-        func1, func2 = self.funcs
-        return add(unravel(func1, axis, shape), unravel(func2, axis, shape))
+        return add(*[unravel(f, axis, shape) for f in self._terms])
 
     def _loopsum(self, index):
-        if any(index not in func.arguments for func in self.funcs):
-            func1, func2 = self.funcs
-            return add(loop_sum(func1, index), loop_sum(func2, index))
+        dep = []
+        indep = []
+        for f in self._terms:
+            (dep if index in f.arguments else indep).append(f)
+        if indep:
+            return add(*indep) * index.length + loop_sum(add(*dep), index)
 
     def _multiply(self, other):
-        func1, func2 = self.funcs
-        if (func1._inflations or func1._diagonals) and (func2._inflations or func2._diagonals):
+        f_other = [f._multiply(other) or other._multiply(f) or (f._inflations or f._diagonals) and f * other for f in self._terms]
+        if all(f_other):
             # NOTE: As this operation is the precise opposite of Multiply._add, there
             # appears to be a great risk of recursion. However, since both factors
             # are sparse, we can be certain that subsequent simpifications will
             # irreversibly process the new terms before reaching this point.
-            return (func1 * other) + (func2 * other)
+            return add(*f_other)
 
     @cached_property
     def _assparse(self):
-        func1, func2 = self.funcs
-        return _gathersparsechunks(itertools.chain(func1._assparse, func2._assparse))
+        return _gathersparsechunks(itertools.chain(*[f._assparse for f in self._terms]))
 
     def _intbounds_impl(self):
-        func1, func2 = self.funcs
-        lower1, upper1 = func1._intbounds
-        lower2, upper2 = func2._intbounds
-        return lower1 + lower2, upper1 + upper2
+        lowers, uppers = zip(*[f._intbounds for f in self._terms])
+        return builtins.sum(lowers), builtins.sum(uppers)
 
 
 class Einsum(Array):
@@ -2049,18 +2064,6 @@ class TakeDiag(Array):
         if axis != self.ndim - 1:
             return TakeDiag(sum(self.func, axis))
 
-    @cached_property
-    def _assparse(self):
-        chunks = []
-        for *indices, values in self.func._assparse:
-            if indices[-2] == indices[-1]:
-                chunks.append((*indices[:-1], values))
-            else:
-                *indices, values = map(_flat, (*indices, values))
-                mask = Equal(indices[-2], indices[-1])
-                chunks.append(tuple(take(arr, mask, 0) for arr in (*indices[:-1], values)))
-        return _gathersparsechunks(chunks)
-
     def _intbounds_impl(self):
         return self.func._intbounds
 
@@ -2075,7 +2078,7 @@ class Take(Array):
         super().__init__(args=(func, indices), shape=func.shape[:-1]+indices.shape, dtype=func.dtype)
 
     def _simplified(self):
-        if self.indices.size == 0:
+        if any(iszero(n) for n in self.indices.shape):
             return zeros_like(self)
         unaligned, where = unalign(self.indices)
         if len(where) < self.indices.ndim:
@@ -2294,12 +2297,24 @@ class Cos(Pointwise):
     complex_deriv = lambda x: -Sin(x),
     return_type = lambda T: complex if T == complex else float
 
+    def _simplified(self):
+        arg, = self.args
+        if iszero(arg):
+            return ones(self.shape, dtype=self.dtype)
+        return super()._simplified()
+
 
 class Sin(Pointwise):
     'Sine, element-wise.'
     evalf = staticmethod(numpy.sin)
     complex_deriv = Cos,
     return_type = lambda T: complex if T == complex else float
+
+    def _simplified(self):
+        arg, = self.args
+        if iszero(arg):
+            return zeros(self.shape, dtype=self.dtype)
+        return super()._simplified()
 
 
 class Tan(Pointwise):
@@ -2424,6 +2439,18 @@ class Greater(Pointwise):
 class Equal(Pointwise):
     evalf = staticmethod(numpy.equal)
     return_type = lambda T1, T2: bool
+
+    def _simplified(self):
+        a1, a2 = self.args
+        if a1 == a2:
+            return ones(self.shape, bool)
+        if self.ndim == 2:
+            u1, w1 = unalign(a1)
+            u2, w2 = unalign(a2)
+            if u1 == u2 and isinstance(u1, Range):
+                # NOTE: Once we introduce isunique we can relax the Range bound
+                return Diagonalize(ones(u1.shape, bool))
+        return super()._simplified()
 
 
 class Less(Pointwise):
@@ -2767,6 +2794,12 @@ class ArrayFromTuple(Array):
         self._upper = _upper
         super().__init__(args=(arrays,), shape=shape, dtype=dtype)
 
+    def _simplified(self):
+        if isinstance(self.arrays, Tuple):
+            # This allows the self.arrays evaluable to simplify itself into a
+            # Tuple and its components be exposed to the function tree.
+            return self.arrays[self.index]
+
     def evalf(self, arrays):
         assert isinstance(arrays, tuple)
         return arrays[self.index]
@@ -2847,10 +2880,11 @@ class Zeros(Array):
         assert length == self.shape[axis2]
         i, j = sorted([axis1, axis2])
         shape = (*self.shape[:i], *self.shape[i+1:j], *self.shape[j+1:])
+        dtype = complex if self.dtype == complex else float
         if iszero(length):
-            return ones(shape, self.dtype)
+            return ones(shape, dtype)
         else:
-            return Zeros(shape, self.dtype)
+            return Zeros(shape, dtype)
 
     @cached_property
     def _assparse(self):
@@ -2942,7 +2976,7 @@ class Inflate(Array):
         else:  # kronecker; newindex is all zeros (but of varying length)
             intersection = InsertAxis(self.func, newindex.shape[0])
         if index.ndim:
-            swapped = Inflate(intersection, newdofmap, index.size)
+            swapped = Inflate(intersection, newdofmap, util.product(index.shape))
             for i in range(index.ndim-1):
                 swapped = Unravel(swapped, index.shape[i], util.product(index.shape[i+1:]))
         else:  # get; newdofmap is all zeros (but of varying length)
@@ -2994,6 +3028,10 @@ class SwapInflateTake(Evaluable):
         self.inflateidx = inflateidx
         self.takeidx = takeidx
         super().__init__(args=(inflateidx, takeidx))
+
+    def _simplified(self):
+        if self.isconstant:
+            return Tuple(tuple(map(constant, self.eval())))
 
     def __iter__(self):
         shape = ArrayFromTuple(self, index=2, shape=(), dtype=int, _lower=0),
@@ -3224,7 +3262,7 @@ class Argument(DerivativeTargetBase):
     >>> a = evaluable.Argument('x', ())
     >>> b = evaluable.Argument('y', ())
     >>> f = a**3 + b**2
-    >>> evaluable.derivative(f, a).simplified == (3.*a**2).simplified
+    >>> evaluable.derivative(f, b).simplified == 2.*b
     True
 
     Args
@@ -3506,6 +3544,10 @@ class Range(Array):
 
     def _take(self, index, axis):
         return InRange(index, self.length)
+
+    def _unravel(self, axis, shape):
+        if len(shape) == 2:
+            return RavelIndex(Range(shape[0]), Range(shape[1]), shape[0], shape[1])
 
     def _rtake(self, func, axis):
         if _equals_simplified(self.length, func.shape[axis]):
@@ -4311,7 +4353,7 @@ class _SizesToOffsets(Array):
             return Range(self.shape[0]) * appendaxes(unaligned, self.shape[:1])
 
     def _intbounds_impl(self):
-        n = self._sizes.size._intbounds[1]
+        n = self._sizes.shape[0]._intbounds[1]
         m = self._sizes._intbounds[1]
         return 0, (0 if n == 0 or m == 0 else n * m)
 
@@ -4635,7 +4677,7 @@ def zeros_like(arr):
 
 
 def ones(shape, dtype=float):
-    return _inflate_scalar(astype(numpy.ones((), dtype=int), dtype), shape)
+    return _inflate_scalar(constant(dtype(1)), shape)
 
 
 def ones_like(arr):

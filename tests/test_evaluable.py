@@ -134,7 +134,8 @@ class check(TestCase):
     def test_eig(self):
         if self.actual.dtype == float:
             for ax1, ax2 in self.pairs:
-                A, L, V = evaluable.Tuple((self.actual, *evaluable.eig(self.actual, axes=(ax1, ax2)))).eval(**dict(zip(self.arg_names, self.arg_values)))
+                items = self.actual, *evaluable.eig(self.actual, axes=(ax1, ax2))
+                A, L, V = evaluable.Tuple(items).simplified.eval(**dict(zip(self.arg_names, self.arg_values)))
                 self.assertArrayAlmostEqual(decimal=11,
                                             actual=(numpy.expand_dims(V, ax2) * numpy.expand_dims(L, ax2+1).swapaxes(ax1, ax2+1)).sum(ax2+1),
                                             desired=(numpy.expand_dims(A, ax2) * numpy.expand_dims(V, ax2+1).swapaxes(ax1, ax2+1)).sum(ax2+1))
@@ -444,10 +445,12 @@ _check('imag', lambda f: evaluable.imag(f), lambda a: a.imag, ANY(2, 4, 2))
 _check('imag-complex', lambda f: evaluable.imag(f), lambda a: a.imag, ANC(2, 4, 2), hasgrad=False)
 _check('conjugate', lambda f: evaluable.conjugate(f), lambda a: a.conjugate(), ANY(2, 4, 2))
 _check('conjugate-complex', lambda f: evaluable.conjugate(f), lambda a: a.conjugate(), ANC(2, 4, 2), hasgrad=False)
-_check('const', lambda f: evaluable.asarray(numpy.arange(16, dtype=float).reshape(2, 4, 2)), lambda a: numpy.arange(16, dtype=float).reshape(2, 4, 2), ANY(2, 4, 2))
-_check('zeros', lambda f: evaluable.zeros(tuple(map(evaluable.constant, [1, 4, 3, 4]))), lambda a: numpy.zeros([1, 4, 3, 4]), ANY(4, 3, 4))
-_check('ones', lambda f: evaluable.ones(tuple(map(evaluable.constant, [1, 4, 3, 4]))), lambda a: numpy.ones([1, 4, 3, 4]), ANY(4, 3, 4))
-_check('range', lambda f: evaluable.Range(evaluable.constant(4)) + 2, lambda a: numpy.arange(2, 6), ANY(4))
+_check('const', lambda: evaluable.constant(ANY(2, 4, 2)), lambda: ANY(2, 4, 2))
+_check('zeros', lambda: evaluable.zeros(tuple(map(evaluable.constant, [1, 4, 3, 4]))), lambda: numpy.zeros([1, 4, 3, 4]))
+_check('zeros-bool', lambda: evaluable.zeros(tuple(map(evaluable.constant, [1, 4, 3, 4])), dtype=bool), lambda: numpy.zeros([1, 4, 3, 4], dtype=bool))
+_check('ones', lambda: evaluable.ones(tuple(map(evaluable.constant, [1, 4, 3, 4]))), lambda: numpy.ones([1, 4, 3, 4]))
+_check('ones-bool', lambda: evaluable.ones(tuple(map(evaluable.constant, [1, 4, 3, 4])), dtype=bool), lambda: numpy.ones([1, 4, 3, 4], dtype=bool))
+_check('range', lambda: evaluable.Range(evaluable.constant(4)) + 2, lambda: numpy.arange(2, 6))
 _check('sin', evaluable.sin, numpy.sin, ANY(4, 4))
 _check('sin-complex', evaluable.sin, numpy.sin, ANC(4, 4))
 _check('cos', evaluable.cos, numpy.cos, ANY(4, 4))
@@ -758,37 +761,6 @@ class intbounds(TestCase):
         self.assertEqual(evaluable.Maximum(self.S('a', 0, 4), self.S('b', 1, 3))._intbounds, (1, 4))
 
 
-class simplifications(TestCase):
-
-    def test_minimum_maximum_bounds(self):
-
-        class R(evaluable.Array):
-            # An evaluable scalar argument with given bounds.
-            def __init__(self, lower, upper):
-                self._lower = lower
-                self._upper = upper
-                super().__init__(args=(evaluable.EVALARGS,), shape=(), dtype=int)
-
-            def evalf(self, evalargs):
-                raise NotImplementedError
-
-            @property
-            def _intbounds(self):
-                return self._lower, self._upper
-
-        a = R(0, 2)
-        b = R(2, 4)
-
-        with self.subTest('min-left'):
-            self.assertEqual(evaluable.Minimum(a, b).simplified, a)
-        with self.subTest('min-right'):
-            self.assertEqual(evaluable.Minimum(b, a).simplified, a)
-        with self.subTest('max-left'):
-            self.assertEqual(evaluable.Maximum(b, a).simplified, b)
-        with self.subTest('max-right'):
-            self.assertEqual(evaluable.Maximum(a, b).simplified, b)
-
-
 class commutativity(TestCase):
 
     def setUp(self):
@@ -969,6 +941,34 @@ class asciitree(TestCase):
 
 class simplify(TestCase):
 
+    def test_minimum_maximum_bounds(self):
+
+        class R(evaluable.Array):
+            # An evaluable scalar argument with given bounds.
+            def __init__(self, lower, upper):
+                self._lower = lower
+                self._upper = upper
+                super().__init__(args=(evaluable.EVALARGS,), shape=(), dtype=int)
+
+            def evalf(self, evalargs):
+                raise NotImplementedError
+
+            @property
+            def _intbounds(self):
+                return self._lower, self._upper
+
+        a = R(0, 2)
+        b = R(2, 4)
+
+        with self.subTest('min-left'):
+            self.assertEqual(evaluable.Minimum(a, b).simplified, a)
+        with self.subTest('min-right'):
+            self.assertEqual(evaluable.Minimum(b, a).simplified, a)
+        with self.subTest('max-left'):
+            self.assertEqual(evaluable.Maximum(b, a).simplified, b)
+        with self.subTest('max-right'):
+            self.assertEqual(evaluable.Maximum(a, b).simplified, b)
+
     def test_multiply_transpose(self):
         dummy = evaluable.Argument('dummy', shape=tuple(map(evaluable.constant, [2, 2, 2])), dtype=float)
         f = evaluable.multiply(dummy,
@@ -996,6 +996,36 @@ class simplify(TestCase):
         # If either term in the addition is dense, the original structure remains.
         self.assertIsInstance(((a + c) * c).simplified, evaluable.Multiply)
         self.assertIsInstance(((c + b) * c).simplified, evaluable.Multiply)
+
+    def test_insert_zero(self):
+        a = evaluable.Argument('test', shape=(evaluable.constant(2,),))
+        inserted = evaluable.InsertAxis(a, length=evaluable.constant(0))
+        self.assertTrue(evaluable.iszero(inserted))
+
+    def test_subtract_equals(self):
+        a = evaluable.Argument('test', shape=(evaluable.constant(2,),))
+        self.assertTrue(evaluable.iszero(a - a))
+
+    def test_equal(self):
+        r = evaluable.Range(evaluable.constant(3))
+        self.assertEqual(
+            evaluable.Equal(r, r).simplified,
+            evaluable.ones(r.shape, bool))
+        self.assertEqual(
+            evaluable.Equal(evaluable.prependaxes(r, r.shape), evaluable.appendaxes(r, r.shape)).simplified,
+            evaluable.Diagonalize(evaluable.ones(r.shape, bool)))
+
+    def test_constant_range(self):
+        self.assertEqual(
+            evaluable.constant(numpy.arange(3)).simplified,
+            evaluable.Range(evaluable.constant(3)))
+
+    def test_swap_take_inflate(self):
+        # test whether inflation to [0, 2] followed by take of [1] simplifies to zero
+        a = evaluable.Argument('test', shape=(evaluable.constant(2),))
+        inflated = evaluable.Inflate(a, dofmap=evaluable.constant([2,0]), length=evaluable.constant(3))
+        taken = evaluable.Take(inflated, indices=evaluable.constant([1]))
+        self.assertTrue(evaluable.iszero(taken))
 
 
 class memory(TestCase):
