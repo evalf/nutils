@@ -463,7 +463,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
 
     def choose(self, __choices: Sequence[IntoArray]) -> 'Array':
         'See :func:`choose`.'
-        return choose(self, __choices)
+        return numpy.choose(self, __choices)
 
     def vector(self, ndims):
         if not self.ndim:
@@ -3459,10 +3459,7 @@ def heaviside(f: IntoArray):
     return Array.cast(numpy.sign(f) * .5 + .5)
 
 
-def _eval_choose(_index: evaluable.Array, *_choices: evaluable.Array) -> evaluable.Array:
-    return evaluable.Choose(_index, _choices)
-
-
+@_use_instead('numpy.choose')
 def choose(__index: IntoArray, __choices: Sequence[IntoArray]) -> Array:
     'Function equivalent of :func:`numpy.choose`.'
     index = Array.cast(__index)
@@ -3473,7 +3470,7 @@ def choose(__index: IntoArray, __choices: Sequence[IntoArray]) -> Array:
     dtype = choices[0].dtype
     index = _append_axes(index, shape)
     spaces = functools.reduce(operator.or_, (arg.spaces for arg in choices), index.spaces)
-    return _Wrapper(_eval_choose, index, *choices, shape=shape, dtype=dtype)
+    return _Wrapper(evaluable.Choose, index, *choices, shape=shape, dtype=dtype)
 
 
 def chain(_funcs: Sequence[IntoArray]) -> Sequence[Array]:
@@ -4411,3 +4408,8 @@ class __implementations__:
         if right is not None:
             _fp[-1] = right
         return _Constant(_fp)[index] + _Constant(_gp)[index] * (x - _Constant(_xp)[index])
+
+    @implements(numpy.choose)
+    def choose(a, choices):
+        a, *choices = broadcast_arrays(a, *typecast_arrays(*choices))
+        return _Wrapper(evaluable.Choose, a, *choices, shape=a.shape, dtype=choices[0].dtype)

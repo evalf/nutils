@@ -557,7 +557,7 @@ _check('inflate-one', lambda f: evaluable.Inflate(f, evaluable.constant(0), eval
 _check('inflate-range', lambda f: evaluable.Inflate(f, evaluable.Range(evaluable.constant(3)), evaluable.constant(3)), lambda a: a, ANY(3))
 _check('take', lambda f: evaluable.Take(f, evaluable.constant([0, 3, 2])), lambda a: a[:, [0, 3, 2]], ANY(2, 4))
 _check('take-duplicate', lambda f: evaluable.Take(f, evaluable.constant([0, 3, 0])), lambda a: a[:, [0, 3, 0]], ANY(2, 4))
-_check('choose', lambda a, b, c: evaluable.Choose(a % 2, (b, c)), lambda a, b, c: numpy.choose(a % 2, [b, c]), INT(3, 3), ANY(3, 3), ANY(3, 3))
+_check('choose', lambda a, b, c: evaluable.Choose(a % 2, b, c), lambda a, b, c: numpy.choose(a % 2, [b, c]), INT(3, 3), ANY(3, 3), ANY(3, 3))
 _check('slice', lambda a: evaluable.asarray(a)[::2], lambda a: a[::2], ANY(5, 3))
 _check('normal1d', evaluable.Orthonormal, lambda G, a: numpy.sign(a), numpy.zeros([3,1,0]), NZ(3, 1))
 _check('normal2d', evaluable.Orthonormal, lambda G, a: numeric.normalize(a - numeric.normalize(G[...,0]) * ((a * numeric.normalize(G[...,0])).sum(-1))[...,numpy.newaxis]), POS(3, 2, 1), ANY(3, 2))

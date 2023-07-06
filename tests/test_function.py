@@ -372,6 +372,7 @@ _check('scatter', lambda a: function.scatter(a, 3, [2, 0]), lambda a: numpy.stac
 _check('kronecker', lambda a: function.kronecker(a, 1, 3, 1), lambda a: numpy.stack([numpy.zeros_like(a), a, numpy.zeros_like(a)], axis=1), INT(4, 4))
 _check('concatenate', lambda a, b: numpy.concatenate([a, function.Array.cast(b)], axis=1), lambda a, b: numpy.concatenate([a, b], axis=1), INT(4, 2, 1), INT(4, 3, 1))
 _check('stack', lambda a, b: numpy.stack([a, function.Array.cast(b)], 1), lambda a, b: numpy.stack([a, b], 1), INT(4, 2), INT(4, 2))
+_check('choose', lambda a, b: numpy.choose([0,1], [a, function.Array.cast(b)]), lambda a, b: numpy.choose([0,1], [a, b]), INT(4, 1), INT(1, 2))
 
 _check('Array_getitem_scalar', lambda a: function.Array.cast(a)[0], lambda a: a[0], INT(5, 3, 2))
 _check('Array_getitem_scalar_scalar', lambda a: function.Array.cast(a)[0, 1], lambda a: a[0, 1], INT(5, 3, 2))
