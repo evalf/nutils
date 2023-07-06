@@ -10,13 +10,9 @@ class Dimension(unittest.TestCase):
 
     def test_multiply(self):
         self.assertEqual(SI.Velocity * SI.Time, SI.Length)
-        self.assertEqual(SI.Length * int, SI.Length)
-        self.assertEqual(float * SI.Time, SI.Time)
 
     def test_divide(self):
         self.assertEqual(SI.Length / SI.Time, SI.Velocity)
-        self.assertEqual(SI.Length / int, SI.Length)
-        self.assertEqual(float / SI.Time, SI.Frequency)
 
     def test_power(self):
         self.assertEqual(SI.Length**2, SI.Area)

@@ -184,21 +184,13 @@ class Dimension(type):
 
     def __mul__(cls, other):
         if not isinstance(other, Dimension):
-            return cls
+            return NotImplemented
         return cls._binop(operator.add, cls.__powers, other.__powers)
-
-    def __rmul__(cls, other):
-        assert not isinstance(other, Dimension)
-        return cls
 
     def __truediv__(cls, other):
         if not isinstance(other, Dimension):
-            return cls
+            return NotImplemented
         return cls._binop(operator.sub, cls.__powers, other.__powers)
-
-    def __rtruediv__(cls, other):
-        assert not isinstance(other, Dimension)
-        return cls**-1
 
     def __pow__(cls, other):
         try:
