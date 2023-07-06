@@ -1144,7 +1144,7 @@ class namespace(TestCase):
         ns.a = numpy.array([1, 2, 3])
         ns.A = numpy.array([[6, 7, 8], [9, 10, 11]])
         l = lambda f: f.as_evaluable_array.simplified
-        self.assertEqual(l(ns.eval_('norm2(a)')), l(function.norm2(ns.a)))
+        self.assertEqual(l(ns.eval_('norm2(a)')), l(numpy.linalg.norm(ns.a)))
         self.assertEqual(l(ns.eval_i('sum:j(A_ij)')), l(numpy.sum(ns.A, 1)))
 
     def test_builtin_jacobian_vector(self):

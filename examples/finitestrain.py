@@ -41,7 +41,7 @@ def main(nelems: int = 20,
 
     domain, geom = mesh.unitsquare(nelems, etype)
     if trim:
-        domain = domain.trim(function.norm2(geom-.5)-.2, maxrefine=2)
+        domain = domain.trim(numpy.linalg.norm(geom-.5)-.2, maxrefine=2)
     bezier = domain.sample('bezier', 5)
 
     ns = Namespace()

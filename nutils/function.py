@@ -2259,6 +2259,7 @@ def trace(__arg: IntoArray, axis1: int = -2, axis2: int = -1) -> Array:
     return numpy.sum(_takediag(__arg, axis1, axis2), -1)
 
 
+@_use_instead('numpy.linalg.norm')
 def norm2(__arg: IntoArray, axis: Union[int, Sequence[int]] = -1) -> Array:
     '''Return the 2-norm of the argument over the given axis, elementwise over the remanining axes.
 
@@ -2289,14 +2290,10 @@ def normalized(__arg: IntoArray, axis: int = -1) -> Array:
     Returns
     -------
     :class:`Array`
-
-    See Also
-    --------
-    :func:`norm2` : The 2-norm.
     '''
 
     arg = Array.cast(__arg)
-    return arg / insertaxis(norm2(arg, axis), axis, 1)
+    return arg / insertaxis(numpy.linalg.norm(arg, axis=axis), axis, 1)
 
 
 def matmat(__arg0: IntoArray, *args: IntoArray) -> Array:
@@ -4413,3 +4410,11 @@ class __implementations__:
     def choose(a, choices):
         a, *choices = broadcast_arrays(a, *typecast_arrays(*choices))
         return _Wrapper(evaluable.Choose, a, *choices, shape=a.shape, dtype=choices[0].dtype)
+
+    @implements(numpy.linalg.norm)
+    def norm(x, ord=None, axis=None):
+        if ord is not None:
+            raise NotImplementedError('only "ord" values of None are supported for now')
+        if axis is None:
+            axis = range(x.ndim)
+        return numpy.sqrt(numpy.sum(x * numpy.conjugate(x), axis))
