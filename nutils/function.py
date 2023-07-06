@@ -463,7 +463,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
 
     def choose(self, __choices: Sequence[IntoArray]) -> 'Array':
         'See :func:`choose`.'
-        return choose(self, __choices)
+        return numpy.choose(self, __choices)
 
     def vector(self, ndims):
         if not self.ndim:
@@ -2259,6 +2259,7 @@ def trace(__arg: IntoArray, axis1: int = -2, axis2: int = -1) -> Array:
     return numpy.sum(_takediag(__arg, axis1, axis2), -1)
 
 
+@_use_instead('numpy.linalg.norm')
 def norm2(__arg: IntoArray, axis: Union[int, Sequence[int]] = -1) -> Array:
     '''Return the 2-norm of the argument over the given axis, elementwise over the remanining axes.
 
@@ -2289,14 +2290,10 @@ def normalized(__arg: IntoArray, axis: int = -1) -> Array:
     Returns
     -------
     :class:`Array`
-
-    See Also
-    --------
-    :func:`norm2` : The 2-norm.
     '''
 
     arg = Array.cast(__arg)
-    return arg / insertaxis(norm2(arg, axis), axis, 1)
+    return arg / insertaxis(numpy.linalg.norm(arg, axis=axis), axis, 1)
 
 
 def matmat(__arg0: IntoArray, *args: IntoArray) -> Array:
@@ -2361,6 +2358,7 @@ def _eval_eigvec(arg: evaluable.Array, symmetric: bool) -> evaluable.Array:
     return vec
 
 
+@_use_instead('numpy.linalg.eig or numpy.linalg.eigh')
 def eig(__arg: IntoArray, __axes: Tuple[int, int] = (-2, -1), symmetric: bool = False) -> Tuple[Array, Array]:
     '''Return the eigenvalues and right eigenvectors of the argument along the given axes, elementwise over the remaining axes.
 
@@ -3459,10 +3457,7 @@ def heaviside(f: IntoArray):
     return Array.cast(numpy.sign(f) * .5 + .5)
 
 
-def _eval_choose(_index: evaluable.Array, *_choices: evaluable.Array) -> evaluable.Array:
-    return evaluable.Choose(_index, _choices)
-
-
+@_use_instead('numpy.choose')
 def choose(__index: IntoArray, __choices: Sequence[IntoArray]) -> Array:
     'Function equivalent of :func:`numpy.choose`.'
     index = Array.cast(__index)
@@ -3473,7 +3468,7 @@ def choose(__index: IntoArray, __choices: Sequence[IntoArray]) -> Array:
     dtype = choices[0].dtype
     index = _append_axes(index, shape)
     spaces = functools.reduce(operator.or_, (arg.spaces for arg in choices), index.spaces)
-    return _Wrapper(_eval_choose, index, *choices, shape=shape, dtype=dtype)
+    return _Wrapper(evaluable.Choose, index, *choices, shape=shape, dtype=dtype)
 
 
 def chain(_funcs: Sequence[IntoArray]) -> Sequence[Array]:
@@ -4411,3 +4406,29 @@ class __implementations__:
         if right is not None:
             _fp[-1] = right
         return _Constant(_fp)[index] + _Constant(_gp)[index] * (x - _Constant(_xp)[index])
+
+    @implements(numpy.choose)
+    def choose(a, choices):
+        a, *choices = broadcast_arrays(a, *typecast_arrays(*choices))
+        return _Wrapper(evaluable.Choose, a, *choices, shape=a.shape, dtype=choices[0].dtype)
+
+    @implements(numpy.linalg.norm)
+    def norm(x, ord=None, axis=None):
+        if ord is not None:
+            raise NotImplementedError('only "ord" values of None are supported for now')
+        if axis is None:
+            axis = range(x.ndim)
+        return numpy.sqrt(numpy.sum(x * numpy.conjugate(x), axis))
+
+    def _eig(symmetric, index, a):
+        return evaluable.Eig(a, symmetric)[index]
+
+    @implements(numpy.linalg.eig)
+    def eig(a):
+        return _Wrapper(functools.partial(__implementations__._eig, False, 0), a, shape=a.shape[:-1], dtype=complex), \
+               _Wrapper(functools.partial(__implementations__._eig, False, 1), a, shape=a.shape, dtype=complex)
+
+    @implements(numpy.linalg.eigh)
+    def eigh(a):
+        return _Wrapper(functools.partial(__implementations__._eig, True, 0), a, shape=a.shape[:-1], dtype=float), \
+               _Wrapper(functools.partial(__implementations__._eig, True, 1), a, shape=a.shape, dtype=float if a.dtype != complex else complex)

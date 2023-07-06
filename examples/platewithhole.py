@@ -36,7 +36,7 @@ class FCM:
 
     def generate(self, radius):
         topo0, geom = mesh.unitsquare(self.nelems, self.etype)
-        topo = topo0.trim(function.norm2(geom) - radius, maxrefine=self.maxrefine, name='hole')
+        topo = topo0.trim(numpy.linalg.norm(geom) - radius, maxrefine=self.maxrefine, name='hole')
         basis = topo.basis(self.btype, degree=self.degree)
         return topo.withboundary(sym='left,bottom', far='top,right'), geom, basis, self.degree
 

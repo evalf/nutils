@@ -1524,7 +1524,7 @@ def _sum_expr(arg: function.Array, *, consumes: int = 0) -> function.Array:
 def _norm2_expr(arg: function.Array, *, consumes: int = 0) -> function.Array:
     if consumes == 0:
         raise ValueError('sum must consume at least one axis but got zero')
-    return function.norm2(arg, range(arg.ndim-consumes, arg.ndim))
+    return numpy.sqrt(numpy.sum(arg * numpy.conjugate(arg), range(arg.ndim-consumes, arg.ndim)))
 
 
 def _J_expr(geom: function.Array, *, consumes: int = 0) -> function.Array:
