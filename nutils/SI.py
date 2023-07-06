@@ -294,7 +294,8 @@ class Quantity(metaclass=Dimension):
 
     @register('neg', 'negative', 'pos', 'positive', 'abs', 'absolute', 'sum',
               'trace', 'ptp', 'amax', 'amin', 'max', 'min', 'mean', 'take',
-              'broadcast_to', 'transpose', 'getitem')
+              'broadcast_to', 'transpose', 'getitem', 'opposite', 'jump',
+              'replace_arguments', 'linearize', 'derivative', 'integral')
     def __unary(op, *args, **kwargs):
         (dim0, arg0), = Quantity.__unpack(args[0])
         return dim0.__wrap__(op(arg0, *args[1:], **kwargs))
@@ -311,7 +312,7 @@ class Quantity(metaclass=Dimension):
         (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
         return (dim0 * dim1).__wrap__(op(arg0, arg1, *args[2:], **kwargs))
 
-    @register('truediv', 'true_divide', 'divide')
+    @register('truediv', 'true_divide', 'divide', 'grad')
     def __div_like(op, *args, **kwargs):
         (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
         return (dim0 / dim1).__wrap__(op(arg0, arg1, *args[2:], **kwargs))
@@ -328,12 +329,12 @@ class Quantity(metaclass=Dimension):
             raise TypeError(f'cannot assign {dim2.__name__} to {dim0.__name__}')
         return dim0.__wrap__(op(arg0, args[1], arg2, *args[3:], **kwargs))
 
-    @register('pow', 'power')
+    @register('pow', 'power', 'jacobian')
     def __pow_like(op, *args, **kwargs):
         (dim0, arg0), = Quantity.__unpack(args[0])
         return (dim0**args[1]).__wrap__(op(arg0, *args[1:], **kwargs))
 
-    @register('isfinite', 'isnan', 'shape', 'ndim', 'size')
+    @register('isfinite', 'isnan', 'shape', 'ndim', 'size', 'normal')
     def __unary_drop(op, *args, **kwargs):
         (_dim0, arg0), = Quantity.__unpack(args[0])
         return op(arg0, *args[1:], **kwargs)
@@ -352,6 +353,11 @@ class Quantity(metaclass=Dimension):
         if any(dim != dims[0] for dim in dims[1:]):
             raise TypeError(f'incompatible arguments for {op.__name__}: ' + ', '.join(dim.__name__ for dim in dims))
         return dims[0].__wrap__(op(arg0, *args[1:], **kwargs))
+
+    @register('evaluate')
+    def __evaluate(op, *args, **kwargs):
+        dims, args = zip(*Quantity.__unpack(*args))
+        return tuple(dim.__wrap__(ret) for (dim, ret) in zip(dims, op(*args, **kwargs)))
 
     del register
 
@@ -413,6 +419,12 @@ class Quantity(metaclass=Dimension):
         if func.__name__ not in self.__DISPATCH_TABLE:
             return NotImplemented
         return self.__DISPATCH_TABLE[func.__name__](func, *args, **kwargs)
+
+    @classmethod
+    def __nutils_dispatch__(cls, func, args, kwargs):
+        if func.__name__ not in cls.__DISPATCH_TABLE:
+            return NotImplemented
+        return cls.__DISPATCH_TABLE[func.__name__](func, *args, **kwargs)
 
 
 class Units(dict):
