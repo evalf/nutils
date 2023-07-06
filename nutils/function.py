@@ -2358,6 +2358,7 @@ def _eval_eigvec(arg: evaluable.Array, symmetric: bool) -> evaluable.Array:
     return vec
 
 
+@_use_instead('numpy.linalg.eig or numpy.linalg.eigh')
 def eig(__arg: IntoArray, __axes: Tuple[int, int] = (-2, -1), symmetric: bool = False) -> Tuple[Array, Array]:
     '''Return the eigenvalues and right eigenvectors of the argument along the given axes, elementwise over the remaining axes.
 
@@ -4418,3 +4419,16 @@ class __implementations__:
         if axis is None:
             axis = range(x.ndim)
         return numpy.sqrt(numpy.sum(x * numpy.conjugate(x), axis))
+
+    def _eig(symmetric, index, a):
+        return evaluable.Eig(a, symmetric)[index]
+
+    @implements(numpy.linalg.eig)
+    def eig(a):
+        return _Wrapper(functools.partial(__implementations__._eig, False, 0), a, shape=a.shape[:-1], dtype=complex), \
+               _Wrapper(functools.partial(__implementations__._eig, False, 1), a, shape=a.shape, dtype=complex)
+
+    @implements(numpy.linalg.eigh)
+    def eigh(a):
+        return _Wrapper(functools.partial(__implementations__._eig, True, 0), a, shape=a.shape[:-1], dtype=float), \
+               _Wrapper(functools.partial(__implementations__._eig, True, 1), a, shape=a.shape, dtype=float if a.dtype != complex else complex)

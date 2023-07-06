@@ -2769,9 +2769,16 @@ class Eig(Evaluable):
     def __len__(self):
         return 2
 
-    def __iter__(self):
-        yield ArrayFromTuple(self, index=0, shape=self.func.shape[:-1], dtype=self._w_dtype)
-        yield ArrayFromTuple(self, index=1, shape=self.func.shape, dtype=self._vt_dtype)
+    def __getitem__(self, index):
+        if index == 0:
+            shape = self.func.shape[:-1]
+            dtype = self._w_dtype
+        elif index == 1:
+            shape=self.func.shape
+            dtype=self._vt_dtype
+        else:
+            raise IndexError
+        return ArrayFromTuple(self, index=index, shape=shape, dtype=dtype)
 
     def _simplified(self):
         return self.func._eig(self.symmetric)
