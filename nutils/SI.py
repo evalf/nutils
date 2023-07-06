@@ -284,7 +284,6 @@ class Quantity(metaclass=Dimension):
     @staticmethod
     def _dispatch(op, *args, **kwargs):
         name = op.__name__
-        args = [parse(arg) if isinstance(arg, str) else arg for arg in args]
         if name in ('add', 'sub', 'subtract', 'hypot'):
             Dim = type(args[0])
             if type(args[1]) != Dim:
@@ -359,9 +358,14 @@ class Quantity(metaclass=Dimension):
     __sub__, __rsub__ = _binary_r('sub')
     __mul__, __rmul__ = _binary_r('mul')
     __matmul__, __rmatmul__ = _binary_r('matmul')
-    __truediv__, __rtruediv__ = _binary_r('truediv')
+    __truediv, __rtruediv__ = _binary_r('truediv')
     __mod__, __rmod__ = _binary_r('mod')
     __pow__, __rpow__ = _binary_r('pow')
+
+    def __truediv__(self, other):
+        if type(other) is str:
+            return self.__value / self.__class__(other).__value
+        return self.__truediv(other)
 
     def _attr(name):
         return property(lambda self: getattr(self.__value, name))
