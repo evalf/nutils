@@ -2396,6 +2396,7 @@ def _takediag(__arg: IntoArray, _axis1: int = -2, _axis2: int = -1) -> Array:
     return _Wrapper(evaluable.TakeDiag, transposed, shape=transposed.shape[:-1], dtype=transposed.dtype)
 
 
+@_use_instead('numpy.diagonal')
 def takediag(__arg: IntoArray, __axis: int = -2, __rmaxis: int = -1) -> Array:
     '''Return the diagonal of the argument along the given axes.
 
@@ -4458,3 +4459,14 @@ class __implementations__:
     @implements(numpy.shape)
     def shape(a):
         return a.shape
+
+    @implements(numpy.diagonal)
+    def diagonal(a, offset=0, axis1=0, axis2=1):
+        if a.shape[axis1] != a.shape[axis2]:
+            raise ValueError('axis lengths do not match')
+        arg = _Transpose.to_end(a, axis1, axis2)
+        if offset > 0:
+            arg = arg[...,:-offset,offset:]
+        elif offset < 0:
+            arg = arg[...,-offset:,:offset]
+        return _Wrapper(evaluable.TakeDiag, arg, shape=arg.shape[:-1], dtype=a.dtype)
