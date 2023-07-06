@@ -2306,6 +2306,7 @@ def matmat(__arg0: IntoArray, *args: IntoArray) -> Array:
     return retval
 
 
+@_use_instead('numpy.linalg.inv')
 def inverse(__arg: IntoArray, __axes: Tuple[int, int] = (-2, -1)) -> Array:
     '''Return the inverse of the argument along the given axes, elementwise over the remaining axes.
 
@@ -4439,3 +4440,9 @@ class __implementations__:
         if a.ndim < 2 or a.shape[-2] != a.shape[-1]:
             raise ValueError('Last 2 dimensions of the array must be square')
         return _Wrapper(evaluable.Determinant, a, shape=a.shape[:-2], dtype=complex if a.dtype == complex else float)
+
+    @implements(numpy.linalg.inv)
+    def inv(a):
+        if a.ndim < 2 or a.shape[-2] != a.shape[-1]:
+            raise ValueError('Last 2 dimensions of the array must be square')
+        return _Wrapper(evaluable.Inverse, a, shape=a.shape, dtype=complex if a.dtype == complex else float)
