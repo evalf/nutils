@@ -193,7 +193,7 @@ class finitestrain(TestCase):
         self.cons = solver.optimize('dofs', domain.boundary['left,right'].integral((u**2).sum(0), degree=4), droptol=1e-15)
         self.boolcons = ~numpy.isnan(self.cons)
         strain = .5 * (function.outer(Geom.grad(geom), axis=1).sum(0) - function.eye(2))
-        self.energy = domain.integral(((strain**2).sum([0, 1]) + 20*(function.determinant(Geom.grad(geom))-1)**2)*function.J(geom), degree=6)
+        self.energy = domain.integral(((strain**2).sum([0, 1]) + 20*(numpy.linalg.det(Geom.grad(geom))-1)**2)*function.J(geom), degree=6)
         self.residual = self.energy.derivative('dofs')
         self.tol = 1e-10
 

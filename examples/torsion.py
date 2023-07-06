@@ -80,7 +80,7 @@ def main(length: float = 2*np.pi,
         removedofs=((0,-1),None,None)), shape=(3,)) # deformation, clamped
     ns.x_i = 'Xφ_i + u_i' # deformed geometry
     ns.F_ij = '∇_j(x_i)'
-    ns.J = function.determinant(ns.F)
+    ns.J = np.linalg.det(ns.F)
     ns.D = poisson / (.5 - poisson)
     ns.W = 'F_ij F_ij - 3 - 2 log(J) + D (J - 1)^2' # Neo-Hookean energy density
 

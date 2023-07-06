@@ -341,7 +341,7 @@ _check('normalized-complex', function.normalized, lambda a: a / numpy.linalg.nor
 _check('Array_normalized', lambda a: function.Array.cast(a).normalized(), lambda a: a / numpy.linalg.norm(a, axis=1)[:, None], ANY(2, 3))
 _check('inverse', lambda a: function.inverse(a+3*numpy.eye(3)), lambda a: numpy.linalg.inv(a+3*numpy.eye(3)), ANY(2, 3, 3))
 _check('inverse-complex', lambda a: function.inverse(a+3*numpy.eye(3)), lambda a: numpy.linalg.inv(a+3*numpy.eye(3)), ANC(2, 3, 3))
-_check('determinant', lambda a: function.determinant(a+3*numpy.eye(3)), lambda a: numpy.linalg.det(a+3*numpy.eye(3)), ANY(2, 3, 3))
+_check('det', lambda a: numpy.linalg.det(a+3*function.eye(3)), lambda a: numpy.linalg.det(a+3*numpy.eye(3)), ANY(2, 3, 3))
 _check('eigval', lambda a: numpy.linalg.eig(function.Array.cast(a))[0], lambda a: numpy.linalg.eig(a)[0], ANY(3, 3))
 _check('eigvec', lambda a: numpy.linalg.eig(function.Array.cast(a))[1], lambda a: numpy.linalg.eig(a)[1], ANY(3, 3))
 _check('eigval_symmetric', lambda a: numpy.linalg.eigh(function.Array.cast(a+a.T))[0], lambda a: numpy.linalg.eigh(a+a.T)[0], ANY(3, 3))

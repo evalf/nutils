@@ -2329,6 +2329,7 @@ def inverse(__arg: IntoArray, __axes: Tuple[int, int] = (-2, -1)) -> Array:
     return _Transpose.from_end(inverted, *__axes)
 
 
+@_use_instead('numpy.linalg.det')
 def determinant(__arg: IntoArray, __axes: Tuple[int, int] = (-2, -1)) -> Array:
     '''Return the determinant of the argument along the given axes, elementwise over the remaining axes.
 
@@ -4432,3 +4433,9 @@ class __implementations__:
     def eigh(a):
         return _Wrapper(functools.partial(__implementations__._eig, True, 0), a, shape=a.shape[:-1], dtype=float), \
                _Wrapper(functools.partial(__implementations__._eig, True, 1), a, shape=a.shape, dtype=float if a.dtype != complex else complex)
+
+    @implements(numpy.linalg.det)
+    def det(a):
+        if a.ndim < 2 or a.shape[-2] != a.shape[-1]:
+            raise ValueError('Last 2 dimensions of the array must be square')
+        return _Wrapper(evaluable.Determinant, a, shape=a.shape[:-2], dtype=complex if a.dtype == complex else float)
