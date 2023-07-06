@@ -94,7 +94,7 @@ At this point, the dimension is not very useful yet as it lacks units. To
 rectify this we define the radian by its abbreviation 'rad' in terms of the
 provided reference quantity, and assign it to the global table of units:
 
-    >>> SI.units.rad = Angle.reference_quantity
+    >>> SI.units.rad = Angle.__wrap__(1.)
 
 Additional units can be defined by relating them to pre-existing ones:
 
@@ -228,10 +228,6 @@ class Dimension(type):
         if not cls.__powers:
             return value
         return super().__call__(value)
-
-    @property
-    def reference_quantity(cls):
-        return cls.__wrap__(1.)
 
 
 def parse(s):
@@ -527,13 +523,13 @@ CatalyticActivity = AmountOfSubstance / Time
 
 units = Units()
 
-units.m = Length.reference_quantity
-units.s = Time.reference_quantity
-units.g = Mass.reference_quantity * 1e-3
-units.A = ElectricCurrent.reference_quantity
-units.K = Temperature.reference_quantity
-units.mol = AmountOfSubstance.reference_quantity
-units.cd = LuminousIntensity.reference_quantity
+units.m = Length.__wrap__(1.)
+units.s = Time.__wrap__(1.)
+units.g = Mass.__wrap__(1e-3)
+units.A = ElectricCurrent.__wrap__(1.)
+units.K = Temperature.__wrap__(1.)
+units.mol = AmountOfSubstance.__wrap__(1.)
+units.cd = LuminousIntensity.__wrap__(1.)
 
 units.N = 'kg*m/s2' # newton
 units.Pa = 'N/m2' # pascal
