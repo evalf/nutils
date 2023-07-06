@@ -2452,6 +2452,7 @@ def diagonalize(__arg: IntoArray, __axis: int = -1, __newaxis: int = -1) -> Arra
     return _Transpose.from_end(diagonalized, axis, newaxis)
 
 
+@_use_instead('numpy.cross')
 def cross(__arg1: IntoArray, __arg2: IntoArray, axis: int = -1) -> Array:
     '''Return the cross product of the arguments over the given axis, elementwise over the remaining axes.
 
@@ -4488,3 +4489,16 @@ class __implementations__:
             insert = tuple(slice(None) if c in s else numpy.newaxis for c in axes)
             factors.append(numpy.transpose(operand, transpose)[insert])
         return numpy.sum(util.product(factors), range(len(axes)-len(out)))
+
+    @implements(numpy.cross)
+    def cross(a, b, axisa=-1, axisb=-1, axisc=-1, axis=None):
+        if axis is not None:
+            axisa = axisb = axisc = axis
+        a = _Transpose.to_end(a, axisa)
+        b = _Transpose.to_end(b, axisb)
+        if a.shape[-1] == b.shape[-1] == 2:
+            return numpy.einsum('ij,...i,...j', levicivita(2), a, b)
+        elif a.shape[-1] == b.shape[-1] == 3:
+            return _Transpose.from_end(numpy.einsum('ijk,...j,...k', levicivita(3), a, b), axisc)
+        else:
+            raise ValueError('dimension must be 2 or 3')
