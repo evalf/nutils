@@ -4470,3 +4470,21 @@ class __implementations__:
         elif offset < 0:
             arg = arg[...,-offset:,:offset]
         return _Wrapper(evaluable.TakeDiag, arg, shape=arg.shape[:-1], dtype=a.dtype)
+
+    @implements(numpy.einsum)
+    def einsum(subscripts, *operands):
+        *in_, out = numeric.sanitize_einsum_subscripts(subscripts, *map(numpy.shape, operands))
+        axes = list(out)
+        factors = []
+        for s, operand in zip(in_, operands):
+            for i, c in reversed(list(enumerate(s))):
+                if c in s[i+1:]: # duplicate label -> diagonal
+                    j = i + 1 + s[i+1:].index(c)
+                    operand = numpy.diagonal(operand, 0, i, j)
+                    s = s[:i] + s[i+1:j] + s[j+1:] + c
+                elif c not in axes:
+                    axes.insert(0, c) # prepended output axes will be summed
+            transpose = sorted(range(numpy.ndim(operand)), key=lambda i: axes.index(s[i]))
+            insert = tuple(slice(None) if c in s else numpy.newaxis for c in axes)
+            factors.append(numpy.transpose(operand, transpose)[insert])
+        return numpy.sum(util.product(factors), range(len(axes)-len(out)))

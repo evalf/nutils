@@ -375,6 +375,10 @@ _check('kronecker', lambda a: function.kronecker(a, 1, 3, 1), lambda a: numpy.st
 _check('concatenate', lambda a, b: numpy.concatenate([a, function.Array.cast(b)], axis=1), lambda a, b: numpy.concatenate([a, b], axis=1), INT(4, 2, 1), INT(4, 3, 1))
 _check('stack', lambda a, b: numpy.stack([a, function.Array.cast(b)], 1), lambda a, b: numpy.stack([a, b], 1), INT(4, 2), INT(4, 2))
 _check('choose', lambda a, b: numpy.choose([0,1], [a, function.Array.cast(b)]), lambda a, b: numpy.choose([0,1], [a, b]), INT(4, 1), INT(1, 2))
+_check('einsum', lambda a, b: numpy.einsum('ik,jkl->ijl', a, function.Array.cast(b)), lambda a, b: numpy.einsum('ik,jkl->ijl', a, b), ANY(2, 4), ANY(3, 4, 2))
+_check('einsum-diag', lambda a: numpy.einsum('ijii->ji', function.Array.cast(a)), lambda a: numpy.einsum('ijii->ji', a), ANY(3, 2, 3, 3))
+_check('einsum-sum', lambda a: numpy.einsum('ijk->i', function.Array.cast(a)), lambda a: numpy.einsum('ijk->i', a), ANY(2, 3, 4))
+_check('einsum-implicit', lambda a: numpy.einsum('i...i', function.Array.cast(a)), lambda a: numpy.einsum('i...i', a), ANY(3, 2, 3))
 
 _check('Array_getitem_scalar', lambda a: function.Array.cast(a)[0], lambda a: a[0], INT(5, 3, 2))
 _check('Array_getitem_scalar_scalar', lambda a: function.Array.cast(a)[0, 1], lambda a: a[0, 1], INT(5, 3, 2))
