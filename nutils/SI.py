@@ -282,97 +282,145 @@ class Quantity(metaclass=Dimension):
         return str(self.__value) + type(self).__name__
 
     @staticmethod
-    def _dispatch(op, *args, **kwargs):
-        name = op.__name__
-        if name in ('add', 'sub', 'subtract', 'hypot'):
-            Dim = type(args[0])
-            if type(args[1]) != Dim:
-                raise TypeError(f'incompatible arguments for {name}: ' + ', '.join(type(arg).__name__ for arg in args))
-        elif name in ('mul', 'multiply', 'matmul'):
-            Dim = type(args[0]) * type(args[1])
-        elif name in ('truediv', 'true_divide', 'divide'):
-            Dim = type(args[0]) / type(args[1])
-        elif name in ('neg', 'negative', 'pos', 'positive', 'abs', 'absolute', 'sum', 'mean', 'broadcast_to', 'transpose', 'trace', 'take', 'ptp', 'getitem', 'amax', 'amin', 'max', 'min'):
-            Dim = type(args[0])
-        elif name == 'sqrt':
-            Dim = type(args[0])**fractions.Fraction(1,2)
-        elif name == 'setitem':
-            Dim = type(args[0])
-            if type(args[2]) != Dim:
-                raise TypeError(f'cannot assign {type(args[2]).__name__} to {Dim.__name__}')
-        elif name in ('pow', 'power'):
-            Dim = type(args[0])**args[1]
-        elif name in ('lt', 'le', 'eq', 'ne', 'gt', 'ge', 'equal', 'not_equal', 'less', 'less_equal', 'greater', 'greater_equal', 'isfinite', 'isnan'):
-            if any(type(q) != type(args[0]) for q in args[1:]):
-                raise TypeError(f'incompatible arguments for {name}: ' + ', '.join(type(arg).__name__ for arg in args))
-            Dim = Dimension.from_powers({})
-        elif name in ('stack', 'concatenate'):
-            stack_args, = args
-            Dim = type(stack_args[0])
-            if any(type(q) != Dim for q in stack_args[1:]):
-                raise TypeError(f'incompatible arguments for {name}: ' + ', '.join(type(arg).__name__ for arg in stack_args))
-            args = [q.__value for q in stack_args],
-        elif name in ('shape', 'ndim', 'size'):
-            Dim = Dimension.from_powers({})
-        else:
-            return NotImplemented
-        assert isinstance(Dim, Dimension)
-        return Dim.__wrap__(op(*(arg.__value if isinstance(arg, Quantity) else arg for arg in args), **kwargs))
+    def __unpack(*args):
+        unpacked_any = False
+        for arg in args:
+            if isinstance(arg, Quantity):
+                yield type(arg), arg.__value
+                unpacked_any = True
+            else:
+                yield Dimension.from_powers({}), arg
+        assert unpacked_any, 'no dimensional quantities found'
 
-    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
-        if method != '__call__':
-            return NotImplemented
-        return self._dispatch(ufunc, *inputs, **kwargs)
+    __DISPATCH_TABLE = {}
 
-    def __array_function__(self, func, types, args, kwargs):
-        return self._dispatch(func, *args, **kwargs)
+    ## POPULATE DISPATCH TABLE
 
-    __getitem__ = lambda self, item: self._dispatch(operator.getitem, self, item)
-    __setitem__ = lambda self, item, value: self._dispatch(operator.setitem, self, item, value)
+    def register(*names, __table=__DISPATCH_TABLE):
+        assert not any(name in __table for name in names)
+        return lambda f: __table.update(dict.fromkeys(names, f))
 
-    def _unary(name):
+    @register('neg', 'negative', 'pos', 'positive', 'abs', 'absolute', 'sum',
+              'trace', 'ptp', 'amax', 'amin', 'max', 'min', 'mean', 'take',
+              'broadcast_to', 'transpose', 'getitem')
+    def __unary(op, *args, **kwargs):
+        (dim0, arg0), = Quantity.__unpack(args[0])
+        return dim0.__wrap__(op(arg0, *args[1:], **kwargs))
+
+    @register('add', 'sub', 'subtract', 'hypot', 'mod', 'maximum', 'minimum')
+    def __add_like(op, *args, **kwargs):
+        (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
+        if dim0 != dim1:
+            raise TypeError(f'incompatible arguments for {op.__name__}: {dim0.__name__}, {dim1.__name__}')
+        return dim0.__wrap__(op(arg0, arg1, *args[2:], **kwargs))
+
+    @register('mul', 'multiply', 'matmul')
+    def __mul_like(op, *args, **kwargs):
+        (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
+        return (dim0 * dim1).__wrap__(op(arg0, arg1, *args[2:], **kwargs))
+
+    @register('truediv', 'true_divide', 'divide')
+    def __div_like(op, *args, **kwargs):
+        (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
+        return (dim0 / dim1).__wrap__(op(arg0, arg1, *args[2:], **kwargs))
+
+    @register('sqrt')
+    def __sqrt(op, *args, **kwargs):
+        (dim0, arg0), = Quantity.__unpack(args[0])
+        return (dim0**fractions.Fraction(1,2)).__wrap__(op(arg0, *args[1:], **kwargs))
+
+    @register('setitem')
+    def __setitem(op, *args, **kwargs):
+        (dim0, arg0), (dim2, arg2) = Quantity.__unpack(args[0], args[2])
+        if dim0 != dim2:
+            raise TypeError(f'cannot assign {dim2.__name__} to {dim0.__name__}')
+        return dim0.__wrap__(op(arg0, args[1], arg2, *args[3:], **kwargs))
+
+    @register('pow', 'power')
+    def __pow_like(op, *args, **kwargs):
+        (dim0, arg0), = Quantity.__unpack(args[0])
+        return (dim0**args[1]).__wrap__(op(arg0, *args[1:], **kwargs))
+
+    @register('isfinite', 'isnan', 'shape', 'ndim', 'size')
+    def __unary_drop(op, *args, **kwargs):
+        (_dim0, arg0), = Quantity.__unpack(args[0])
+        return op(arg0, *args[1:], **kwargs)
+
+    @register('lt', 'le', 'eq', 'ne', 'gt', 'ge', 'equal', 'not_equal', 'less',
+              'less_equal', 'greater', 'greater_equal')
+    def __binary_drop(op, *args, **kwargs):
+        (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
+        if dim0 != dim1:
+            raise TypeError(f'incompatible arguments for {op.__name__}: {dim0.__name__}, {dim1.__name__}')
+        return op(arg0, arg1, *args[2:], **kwargs)
+
+    @register('stack', 'concatenate')
+    def __stack_like(op, *args, **kwargs):
+        dims, arg0 = zip(*Quantity.__unpack(*args[0]))
+        if any(dim != dims[0] for dim in dims[1:]):
+            raise TypeError(f'incompatible arguments for {op.__name__}: ' + ', '.join(dim.__name__ for dim in dims))
+        return dims[0].__wrap__(op(arg0, *args[1:], **kwargs))
+
+    del register
+
+    ## DEFINE OPERATORS
+
+    def op(name, with_reverse=False, *, __table=__DISPATCH_TABLE):
+        dispatch = __table[name]
         op = getattr(operator, name)
-        return lambda self: self._dispatch(op, self)
+        ret = lambda *args: dispatch(op, *args)
+        if with_reverse:
+            ret = ret, lambda self, other: dispatch(op, other, self)
+        return ret
 
-    __neg__ = _unary('neg')
-    __pos__ = _unary('pos')
-    __abs__ = _unary('abs')
-
-    def _binary(name):
-        op = getattr(operator, name)
-        return lambda self, other: self._dispatch(op, self, other)
-
-    __lt__ = _binary('lt')
-    __le__ = _binary('le')
-    __eq__ = _binary('eq')
-    __ne__ = _binary('ne')
-    __gt__ = _binary('gt')
-    __ge__ = _binary('ge')
-
-    def _binary_r(name):
-        op = getattr(operator, name)
-        return lambda self, other: self._dispatch(op, self, other), \
-               lambda self, other: self._dispatch(op, other, self)
-
-    __add__, __radd__ = _binary_r('add')
-    __sub__, __rsub__ = _binary_r('sub')
-    __mul__, __rmul__ = _binary_r('mul')
-    __matmul__, __rmatmul__ = _binary_r('matmul')
-    __truediv, __rtruediv__ = _binary_r('truediv')
-    __mod__, __rmod__ = _binary_r('mod')
-    __pow__, __rpow__ = _binary_r('pow')
+    __getitem__ = op('getitem')
+    __setitem__ = op('setitem')
+    __neg__ = op('neg')
+    __pos__ = op('pos')
+    __abs__ = op('abs')
+    __lt__ = op('lt')
+    __le__ = op('le')
+    __eq__ = op('eq')
+    __ne__ = op('ne')
+    __gt__ = op('gt')
+    __ge__ = op('ge')
+    __add__, __radd__ = op('add', True)
+    __sub__, __rsub__ = op('sub', True)
+    __mul__, __rmul__ = op('mul', True)
+    __matmul__, __rmatmul__ = op('matmul', True)
+    __truediv, __rtruediv__ = op('truediv', True)
+    __mod__, __rmod__ = op('mod', True)
+    __pow__, __rpow__ = op('pow', True)
 
     def __truediv__(self, other):
         if type(other) is str:
             return self.__value / self.__class__(other).__value
         return self.__truediv(other)
 
-    def _attr(name):
+    del op
+
+    ## DEFINE ATTRIBUTES
+
+    def attr(name):
         return property(lambda self: getattr(self.__value, name))
 
-    shape = _attr('shape')
-    size = _attr('size')
-    ndim = _attr('ndim')
+    shape = attr('shape')
+    size = attr('size')
+    ndim = attr('ndim')
+
+    del attr
+
+    ## DISPATCH THIRD PARTY CALLS
+
+    def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
+        if method != '__call__' or ufunc.__name__ not in self.__DISPATCH_TABLE:
+            return NotImplemented
+        return self.__DISPATCH_TABLE[ufunc.__name__](ufunc, *inputs, **kwargs)
+
+    def __array_function__(self, func, types, args, kwargs):
+        if func.__name__ not in self.__DISPATCH_TABLE:
+            return NotImplemented
+        return self.__DISPATCH_TABLE[func.__name__](func, *args, **kwargs)
 
 
 class Units(dict):
