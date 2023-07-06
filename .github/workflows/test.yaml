@@ -140,7 +140,6 @@ jobs:
         id: install
         run: |
           python -um pip install --upgrade --upgrade-strategy eager wheel
-          python -um pip install --upgrade --upgrade-strategy eager git+https://github.com/evalf/nutils-SI.git
           # Install Nutils from `dist` dir created in job `build-python-package`.
           python -um pip install "$_wheel[matrix_scipy,export_mpl]"
       - name: Test
