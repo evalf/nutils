@@ -1418,3 +1418,12 @@ class linearize(TestCase):
         _v = numpy.arange(4, dtype=float)[numpy.newaxis,:].repeat(3, 0)
         _q = 5.
         self.assertAllEqual(f.eval(u=_u, v=_v, q=_q).export('dense'), 3 * _u**2 * _v + _q)
+
+
+class attributes(TestCase):
+
+    def test(self):
+        A = function.Argument('test', (2,3))
+        self.assertEqual(numpy.shape(A), (2,3))
+        self.assertEqual(numpy.size(A), 6)
+        self.assertEqual(numpy.ndim(A), 2)

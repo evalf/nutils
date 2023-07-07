@@ -4446,3 +4446,15 @@ class __implementations__:
         if a.ndim < 2 or a.shape[-2] != a.shape[-1]:
             raise ValueError('Last 2 dimensions of the array must be square')
         return _Wrapper(evaluable.Inverse, a, shape=a.shape, dtype=complex if a.dtype == complex else float)
+
+    @implements(numpy.ndim)
+    def ndim(a):
+        return a.ndim
+
+    @implements(numpy.size)
+    def size(a):
+        return a.size
+
+    @implements(numpy.shape)
+    def shape(a):
+        return a.shape
