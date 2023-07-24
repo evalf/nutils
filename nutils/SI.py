@@ -592,3 +592,4 @@ units.L = 'dm3' # liter
 units.t = '1000kg' # ton
 units.Da = '1.66053904020yg' # dalton
 units.eV = '.1602176634aJ' # electronvolt
+units['in'] = 25.4 * units.mm # inch (no prefixes)
