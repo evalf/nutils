@@ -240,8 +240,9 @@ class Quantity(unittest.TestCase):
         self.assertEqual(pickle.loads(s), v)
 
     def test_string_representation(self):
-        F = SI.Force('2N')
-        self.assertEqual(str(F), '2.0[M*L/T2]')
+        F = numpy.array([1.,2.]) * SI.units.N
+        self.assertEqual(str(F), '[1. 2.][M*L/T2]')
+        self.assertEqual(repr(F), 'array([1., 2.])[M*L/T2]')
 
     def test_wrap_unwrap(self):
         T = SI.Length / SI.Time
