@@ -47,6 +47,8 @@ class Quantity(unittest.TestCase):
         v = SI.parse('-864km/24h')
         self.assertEqual(type(v), SI.Velocity)
         self.assertEqual(v / 'm/s', -10)
+        v = SI.parse('2m/5cm')
+        self.assertEqual(v, 40)
 
     def test_fromvalue(self):
         F = SI.Force('10N')

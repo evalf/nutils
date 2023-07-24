@@ -250,7 +250,8 @@ def parse(s):
         except (ValueError, AttributeError):
             raise ValueError(f'invalid (sub)expression {expr!r}') from None
         q = q * v if isnumer else q / v
-    q._parsed_from = s
+    if isinstance(q, Quantity):
+        q._parsed_from = s
     return q
 
 
