@@ -802,4 +802,26 @@ def merge_index_map(nin: int, merge_sets: Iterable[Sequence[int]]) -> Tuple[nump
     return index_map, next(new_indices)
 
 
+def nutils_dispatch(f):
+    '''Decorator for nutils-dispatching based on argument types.'''
+
+    sig = inspect.signature(f)
+
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        seen = set()
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+        for arg in bound.args:
+            T = type(arg)
+            if hasattr(T, '__nutils_dispatch__') and T not in seen:
+                retval = T.__nutils_dispatch__(wrapper, bound.args, bound.kwargs)
+                if retval is not NotImplemented:
+                    return retval
+                seen.add(T)
+        return f(*args, **kwargs)
+
+    return wrapper
+
+
 # vim:sw=4:sts=4:et
