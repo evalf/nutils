@@ -297,6 +297,9 @@ class Quantity(metaclass=Dimension):
     def __str__(self):
         return str(self.__value) + type(self).__name__
 
+    def __hash__(self):
+        return hash((type(self), self.__value))
+
     @staticmethod
     def __unpack(*args):
         unpacked_any = False

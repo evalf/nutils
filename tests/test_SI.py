@@ -249,3 +249,7 @@ class Quantity(unittest.TestCase):
         v = T.wrap(5.)
         self.assertIsInstance(v, T)
         self.assertEqual(v.unwrap(), 5)
+
+    def test_hash(self):
+        v = SI.Velocity('2m/s')
+        h = hash(v)
