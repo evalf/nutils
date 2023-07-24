@@ -302,7 +302,7 @@ class Quantity(metaclass=Dimension):
                 yield type(arg), arg.__value
                 unpacked_any = True
             else:
-                yield Dimension.from_powers({}), arg
+                yield Dimensionless, arg
         assert unpacked_any, 'no dimensional quantities found'
 
     __DISPATCH_TABLE = {}
@@ -503,6 +503,8 @@ def _split_factors(s):
 
 
 ## SI DIMENSIONS
+
+Dimensionless = Dimension.from_powers({})
 
 Time = Dimension.create('T')
 Length = Dimension.create('L')
