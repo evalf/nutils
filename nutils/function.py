@@ -2306,6 +2306,7 @@ def matmat(__arg0: IntoArray, *args: IntoArray) -> Array:
     return retval
 
 
+@_use_instead('numpy.linalg.inv')
 def inverse(__arg: IntoArray, __axes: Tuple[int, int] = (-2, -1)) -> Array:
     '''Return the inverse of the argument along the given axes, elementwise over the remaining axes.
 
@@ -2329,6 +2330,7 @@ def inverse(__arg: IntoArray, __axes: Tuple[int, int] = (-2, -1)) -> Array:
     return _Transpose.from_end(inverted, *__axes)
 
 
+@_use_instead('numpy.linalg.det')
 def determinant(__arg: IntoArray, __axes: Tuple[int, int] = (-2, -1)) -> Array:
     '''Return the determinant of the argument along the given axes, elementwise over the remaining axes.
 
@@ -2394,6 +2396,7 @@ def _takediag(__arg: IntoArray, _axis1: int = -2, _axis2: int = -1) -> Array:
     return _Wrapper(evaluable.TakeDiag, transposed, shape=transposed.shape[:-1], dtype=transposed.dtype)
 
 
+@_use_instead('numpy.diagonal')
 def takediag(__arg: IntoArray, __axis: int = -2, __rmaxis: int = -1) -> Array:
     '''Return the diagonal of the argument along the given axes.
 
@@ -2449,6 +2452,7 @@ def diagonalize(__arg: IntoArray, __axis: int = -1, __newaxis: int = -1) -> Arra
     return _Transpose.from_end(diagonalized, axis, newaxis)
 
 
+@_use_instead('numpy.cross')
 def cross(__arg1: IntoArray, __arg2: IntoArray, axis: int = -1) -> Array:
     '''Return the cross product of the arguments over the given axis, elementwise over the remaining axes.
 
@@ -4432,3 +4436,69 @@ class __implementations__:
     def eigh(a):
         return _Wrapper(functools.partial(__implementations__._eig, True, 0), a, shape=a.shape[:-1], dtype=float), \
                _Wrapper(functools.partial(__implementations__._eig, True, 1), a, shape=a.shape, dtype=float if a.dtype != complex else complex)
+
+    @implements(numpy.linalg.det)
+    def det(a):
+        if a.ndim < 2 or a.shape[-2] != a.shape[-1]:
+            raise ValueError('Last 2 dimensions of the array must be square')
+        return _Wrapper(evaluable.Determinant, a, shape=a.shape[:-2], dtype=complex if a.dtype == complex else float)
+
+    @implements(numpy.linalg.inv)
+    def inv(a):
+        if a.ndim < 2 or a.shape[-2] != a.shape[-1]:
+            raise ValueError('Last 2 dimensions of the array must be square')
+        return _Wrapper(evaluable.Inverse, a, shape=a.shape, dtype=complex if a.dtype == complex else float)
+
+    @implements(numpy.ndim)
+    def ndim(a):
+        return a.ndim
+
+    @implements(numpy.size)
+    def size(a):
+        return a.size
+
+    @implements(numpy.shape)
+    def shape(a):
+        return a.shape
+
+    @implements(numpy.diagonal)
+    def diagonal(a, offset=0, axis1=0, axis2=1):
+        if a.shape[axis1] != a.shape[axis2]:
+            raise ValueError('axis lengths do not match')
+        arg = _Transpose.to_end(a, axis1, axis2)
+        if offset > 0:
+            arg = arg[...,:-offset,offset:]
+        elif offset < 0:
+            arg = arg[...,-offset:,:offset]
+        return _Wrapper(evaluable.TakeDiag, arg, shape=arg.shape[:-1], dtype=a.dtype)
+
+    @implements(numpy.einsum)
+    def einsum(subscripts, *operands):
+        *in_, out = numeric.sanitize_einsum_subscripts(subscripts, *map(numpy.shape, operands))
+        axes = list(out)
+        factors = []
+        for s, operand in zip(in_, operands):
+            for i, c in reversed(list(enumerate(s))):
+                if c in s[i+1:]: # duplicate label -> diagonal
+                    j = i + 1 + s[i+1:].index(c)
+                    operand = numpy.diagonal(operand, 0, i, j)
+                    s = s[:i] + s[i+1:j] + s[j+1:] + c
+                elif c not in axes:
+                    axes.insert(0, c) # prepended output axes will be summed
+            transpose = sorted(range(numpy.ndim(operand)), key=lambda i: axes.index(s[i]))
+            insert = tuple(slice(None) if c in s else numpy.newaxis for c in axes)
+            factors.append(numpy.transpose(operand, transpose)[insert])
+        return numpy.sum(util.product(factors), range(len(axes)-len(out)))
+
+    @implements(numpy.cross)
+    def cross(a, b, axisa=-1, axisb=-1, axisc=-1, axis=None):
+        if axis is not None:
+            axisa = axisb = axisc = axis
+        a = _Transpose.to_end(a, axisa)
+        b = _Transpose.to_end(b, axisb)
+        if a.shape[-1] == b.shape[-1] == 2:
+            return numpy.einsum('ij,...i,...j', levicivita(2), a, b)
+        elif a.shape[-1] == b.shape[-1] == 3:
+            return _Transpose.from_end(numpy.einsum('ijk,...j,...k', levicivita(3), a, b), axisc)
+        else:
+            raise ValueError('dimension must be 2 or 3')

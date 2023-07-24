@@ -634,4 +634,48 @@ def sinc(x, n=0):
     return f
 
 
+def sanitize_einsum_subscripts(subscripts, *shapes):
+    '''Sanitize einsum's subscript labels.
+
+    This helper function checks that a subscripts string is consistent with
+    argument shapes to be used by Numpy's einsum function, and expands implicit
+    output and/or ellipses. The expanded subscript labels are returned as a
+    tuple of strings, the last of which contains the output labels.'''
+
+    einsum_symbols_set = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ') # from Numpy's source code
+    if not isinstance(subscripts, str):
+        raise ValueError('first einsum argument must be a string of subscript labels')
+    in_, explicit, out = subscripts.partition('->')
+    if not explicit:
+        out = ''.join(sorted(c for c in einsum_symbols_set.intersection(subscripts) if subscripts.count(c) == 1))
+    in_ = in_.split(',')
+    if len(in_) != len(shapes):
+        raise ValueError('number of arguments does not match subscript labels')
+    if '...' in subscripts: # expand ellipses
+        unused_symbol = iter(sorted(einsum_symbols_set.difference(subscripts)))
+        ell = ''
+        for i, shape in enumerate(shapes):
+            if '...' in in_[i]:
+                n = builtins.max(len(shape) - (len(in_[i])-3), 0)
+                while len(ell) < n:
+                    ell += next(unused_symbol)
+                in_[i] = in_[i].replace('...', ell[:n][::-1], 1)
+        if not explicit:
+            out = ell[::-1] + out
+        elif '...' in out:
+            out = out.replace('...', ell[::-1], 1)
+        elif ell:
+            raise ValueError('non-empty ellipses in input require ellipsis in output')
+    if not all(einsum_symbols_set.issuperset(s) for s in (*in_, out)):
+        raise ValueError('invalid subscripts argument')
+    if any(len(s) != len(shape) for s, shape in zip(in_, shapes)):
+        raise ValueError('argument dimensions are inconsistent with subscript labels')
+    axis_shapes = {}
+    if any(axis_shapes.setdefault(c, n) != n for s, shape in zip(in_, shapes) for c, n in zip(s, shape) if n != 1):
+        raise ValueError('argument shapes are inconsistent with subscript labels')
+    for index in set(out) - set(''.join(in_)):
+        raise ValueError(f'einstein sum subscripts string included output subscript {index!r} which never appeared in an input')
+    return (*in_, out)
+
+
 # vim:sw=4:sts=4:et

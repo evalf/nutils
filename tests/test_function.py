@@ -339,17 +339,21 @@ _check('norm-complex', lambda a: numpy.linalg.norm(function.Array.cast(a), axis=
 _check('normalized', function.normalized, lambda a: a / numpy.linalg.norm(a, axis=1)[:, None], ANY(2, 3))
 _check('normalized-complex', function.normalized, lambda a: a / numpy.linalg.norm(a, axis=1)[:, None], ANC(2, 3))
 _check('Array_normalized', lambda a: function.Array.cast(a).normalized(), lambda a: a / numpy.linalg.norm(a, axis=1)[:, None], ANY(2, 3))
-_check('inverse', lambda a: function.inverse(a+3*numpy.eye(3)), lambda a: numpy.linalg.inv(a+3*numpy.eye(3)), ANY(2, 3, 3))
-_check('inverse-complex', lambda a: function.inverse(a+3*numpy.eye(3)), lambda a: numpy.linalg.inv(a+3*numpy.eye(3)), ANC(2, 3, 3))
-_check('determinant', lambda a: function.determinant(a+3*numpy.eye(3)), lambda a: numpy.linalg.det(a+3*numpy.eye(3)), ANY(2, 3, 3))
+_check('inv', lambda a: numpy.linalg.inv(a+3*function.eye(3)), lambda a: numpy.linalg.inv(a+3*numpy.eye(3)), ANY(2, 3, 3))
+_check('inv-complex', lambda a: numpy.linalg.inv(a+3*function.eye(3)), lambda a: numpy.linalg.inv(a+3*numpy.eye(3)), ANC(2, 3, 3))
+_check('det', lambda a: numpy.linalg.det(a+3*function.eye(3)), lambda a: numpy.linalg.det(a+3*numpy.eye(3)), ANY(2, 3, 3))
 _check('eigval', lambda a: numpy.linalg.eig(function.Array.cast(a))[0], lambda a: numpy.linalg.eig(a)[0], ANY(3, 3))
 _check('eigvec', lambda a: numpy.linalg.eig(function.Array.cast(a))[1], lambda a: numpy.linalg.eig(a)[1], ANY(3, 3))
 _check('eigval_symmetric', lambda a: numpy.linalg.eigh(function.Array.cast(a+a.T))[0], lambda a: numpy.linalg.eigh(a+a.T)[0], ANY(3, 3))
 _check('eigvec_symmetric', lambda a: numpy.linalg.eigh(function.Array.cast(a+a.T))[1], lambda a: numpy.linalg.eigh(a+a.T)[1], ANY(3, 3))
-_check('takediag', function.takediag, numpy.diag, ANY(3, 3))
+_check('diagonal', lambda a: numpy.diagonal(function.Array.cast(a), axis1=0, axis2=2), lambda a: numpy.diagonal(a, axis1=0, axis2=2), ANY(3, 2, 3))
+_check('diagonal-posoffset', lambda a: numpy.diagonal(function.Array.cast(a), +1, axis1=0, axis2=2), lambda a: numpy.diagonal(a, +1, axis1=0, axis2=2), ANY(3, 2, 3))
+_check('diagonal-negoffset', lambda a: numpy.diagonal(function.Array.cast(a), -2, axis1=0, axis2=2), lambda a: numpy.diagonal(a, -2, axis1=0, axis2=2), ANY(3, 2, 3))
 _check('diagonalize', function.diagonalize, numpy.diag, ANY(3))
-_check('cross', function.cross, numpy.cross, ANY(3), ANY(3))
-_check('cross-complex', function.cross, numpy.cross, ANC(3), 1-1j+ANC(3))
+_check('cross2', lambda a, b: numpy.cross(a, function.Array.cast(b)), numpy.cross, ANY(3,2), 1+ANY(3,2))
+_check('cross3', lambda a, b: numpy.cross(a, function.Array.cast(b)), numpy.cross, ANY(2,3), 1+ANY(2,3))
+_check('cross3-complex', lambda a, b: numpy.cross(function.Array.cast(a), b), numpy.cross, ANC(2,3), 1-1j+ANC(2,3))
+_check('cross3-axes', lambda a, b: numpy.cross(a, function.Array.cast(b), axisa=2, axisb=0, axisc=1), lambda a, b: numpy.cross(a, b, axisa=2, axisb=0, axisc=1), ANY(2,1,3), ANY(3,1,4))
 _check('outer', function.outer, lambda a, b: a[:, None]*b[None, :], ANY(2, 3), ANY(4, 3))
 _check('outer_self', function.outer, lambda a: a[:, None]*a[None, :], ANY(2, 3))
 _check('square', lambda a: numpy.square(function.Array.cast(a)), numpy.square, ANY(4))
@@ -373,6 +377,10 @@ _check('kronecker', lambda a: function.kronecker(a, 1, 3, 1), lambda a: numpy.st
 _check('concatenate', lambda a, b: numpy.concatenate([a, function.Array.cast(b)], axis=1), lambda a, b: numpy.concatenate([a, b], axis=1), INT(4, 2, 1), INT(4, 3, 1))
 _check('stack', lambda a, b: numpy.stack([a, function.Array.cast(b)], 1), lambda a, b: numpy.stack([a, b], 1), INT(4, 2), INT(4, 2))
 _check('choose', lambda a, b: numpy.choose([0,1], [a, function.Array.cast(b)]), lambda a, b: numpy.choose([0,1], [a, b]), INT(4, 1), INT(1, 2))
+_check('einsum', lambda a, b: numpy.einsum('ik,jkl->ijl', a, function.Array.cast(b)), lambda a, b: numpy.einsum('ik,jkl->ijl', a, b), ANY(2, 4), ANY(3, 4, 2))
+_check('einsum-diag', lambda a: numpy.einsum('ijii->ji', function.Array.cast(a)), lambda a: numpy.einsum('ijii->ji', a), ANY(3, 2, 3, 3))
+_check('einsum-sum', lambda a: numpy.einsum('ijk->i', function.Array.cast(a)), lambda a: numpy.einsum('ijk->i', a), ANY(2, 3, 4))
+_check('einsum-implicit', lambda a: numpy.einsum('i...i', function.Array.cast(a)), lambda a: numpy.einsum('i...i', a), ANY(3, 2, 3))
 
 _check('Array_getitem_scalar', lambda a: function.Array.cast(a)[0], lambda a: a[0], INT(5, 3, 2))
 _check('Array_getitem_scalar_scalar', lambda a: function.Array.cast(a)[0, 1], lambda a: a[0, 1], INT(5, 3, 2))
@@ -1418,3 +1426,12 @@ class linearize(TestCase):
         _v = numpy.arange(4, dtype=float)[numpy.newaxis,:].repeat(3, 0)
         _q = 5.
         self.assertAllEqual(f.eval(u=_u, v=_v, q=_q).export('dense'), 3 * _u**2 * _v + _q)
+
+
+class attributes(TestCase):
+
+    def test(self):
+        A = function.Argument('test', (2,3))
+        self.assertEqual(numpy.shape(A), (2,3))
+        self.assertEqual(numpy.size(A), 6)
+        self.assertEqual(numpy.ndim(A), 2)

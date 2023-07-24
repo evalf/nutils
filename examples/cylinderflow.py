@@ -113,7 +113,7 @@ def main(nelems: int = 99,
     ns.x_i = '.5 exp(grid_0) (sin(grid_1) δ_i0 + cos(grid_1) δ_i1)' # polar coordinates
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
     J = ns.x.grad(geom)
-    detJ = function.determinant(J)
+    detJ = numpy.linalg.det(J)
     ns.add_field(('u', 'u0', 'v'), function.vectorize([
         domain.basis('spline', degree=(degree, degree-1), removedofs=((0,), None)),
         domain.basis('spline', degree=(degree-1, degree))]) @ J.T / detJ)

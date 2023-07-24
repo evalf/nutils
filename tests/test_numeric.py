@@ -328,3 +328,67 @@ class sinc(TestCase):
         for n in range(5):
             f = numeric.sinc(numpy.linspace(-1e-12, 1e-12, 10), n)
             self.assertTrue(all(abs(numpy.diff(f)) < 1e-13))
+
+
+class sanitize_einsum_subscripts(TestCase):
+
+    def sanitize_einsum_subscripts(self, subscripts, *shapes):
+        args = [numpy.arange(numpy.prod(shape, dtype=int)).reshape(shape) for shape in shapes]
+        try:
+            ret_orig = numpy.einsum(subscripts, *args)
+        except:
+            ret_orig = None
+        try:
+            sanitized = numeric.sanitize_einsum_subscripts(subscripts, *shapes)
+        except Exception as e:
+            if ret_orig is not None:
+                self.fail(f'subscript is valid, but sanitize_einsum_subscripts failed with error "{e}"')
+            raise
+        else:
+            if ret_orig is None:
+                self.fail(f'subscript is invalid, but sanitize_einsum_subscripts found no problem')
+            ret_parsed = numpy.einsum(','.join(sanitized[:-1]) + '->' + sanitized[-1], *args)
+            self.assertAllEqual(ret_orig, ret_parsed)
+            return sanitized
+
+    def test_valid(self):
+        with self.subTest('matmat-explicit'):
+            self.assertEqual(self.sanitize_einsum_subscripts('ij,jk->ik', (2,3), (3,4)), ('ij', 'jk', 'ik'))
+        with self.subTest('matmat-implicit'):
+            self.assertEqual(self.sanitize_einsum_subscripts('ij,jk', (2,3), (3,4)), ('ij', 'jk', 'ik'))
+        with self.subTest('matmat-ellipses'):
+            self.assertEqual(self.sanitize_einsum_subscripts('...ij,...jk->...ik', (5,2,3), (5,3,4)), ('Aij', 'Ajk', 'Aik'))
+        with self.subTest('transpose'):
+            self.assertEqual(self.sanitize_einsum_subscripts('...ji', (5,2,3)), ('Aji', 'Aij'))
+        with self.subTest('trace'):
+            self.assertEqual(self.sanitize_einsum_subscripts('i...i', (3,2,4,3)), ('iBAi', 'BA'))
+        with self.subTest('diag'):
+            self.assertEqual(self.sanitize_einsum_subscripts('i...i->...i', (3,2,4,3)), ('iBAi', 'BAi'))
+        with self.subTest('diag3'):
+            self.assertEqual(self.sanitize_einsum_subscripts('i...ii->i...', (3,2,3,3)), ('iAii', 'iA'))
+        with self.subTest('sum'):
+            self.assertEqual(self.sanitize_einsum_subscripts('ij->...', (1,2)), ('ij', ''))
+        with self.subTest('combined'):
+            self.assertEqual(self.sanitize_einsum_subscripts('...ij,j,...i->...i', (5,2,3), (3,), (5,2)), ('Aij', 'j', 'Ai', 'Ai'))
+        with self.subTest('broadcast'):
+            self.assertEqual(self.sanitize_einsum_subscripts('...ij,k...->...', (2,2,3), (4,5,1)), ('Aij', 'kBA', 'BA'))
+
+    def test_invalid(self):
+        with self.assertRaisesRegex(ValueError, 'first einsum argument must be a string of subscript labels'):
+            self.sanitize_einsum_subscripts(123)
+        with self.assertRaisesRegex(ValueError, 'non-empty ellipses in input require ellipsis in output'):
+            self.sanitize_einsum_subscripts('...ij->ij', (1,2,3))
+        with self.assertRaisesRegex(ValueError, 'number of arguments does not match subscript labels'):
+            self.sanitize_einsum_subscripts('ij, jk', (1,2))
+        with self.assertRaisesRegex(ValueError, 'argument shapes are inconsistent with subscript labels'):
+            self.sanitize_einsum_subscripts('...i,...i->...', (2,3), (4,5,3))
+        with self.assertRaisesRegex(ValueError, 'invalid subscripts argument'):
+            self.sanitize_einsum_subscripts('i$->i', (2,3))
+        with self.assertRaisesRegex(ValueError, 'argument dimensions are inconsistent with subscript labels'):
+            self.sanitize_einsum_subscripts('ji->ij', (2,3,4))
+        with self.assertRaisesRegex(ValueError, 'argument shapes are inconsistent with subscript labels'):
+            self.sanitize_einsum_subscripts('...i,...i->...', (2,3), (4,5))
+        with self.assertRaisesRegex(ValueError, 'argument dimensions are inconsistent with subscript labels'):
+            self.sanitize_einsum_subscripts('i...j->...', (2,))
+        with self.assertRaisesRegex(ValueError, "einstein sum subscripts string included output subscript 'j' which never appeared in an input"):
+            self.sanitize_einsum_subscripts('i->j', (2,))
