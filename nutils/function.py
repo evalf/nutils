@@ -1403,10 +1403,7 @@ def multiply(__left: IntoArray, __right: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    left, right = typecast_arrays(__left, __right)
-    return right if _is_unit_scalar(__left) \
-        else left if _is_unit_scalar(__right) \
-        else _Wrapper.broadcasted_arrays(evaluable.multiply, left, right)
+    return _Wrapper.broadcasted_arrays(evaluable.multiply, __left, __right)
 
 
 @_use_instead('numpy.divide')
@@ -1422,10 +1419,7 @@ def divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
     :class:`Array`
     '''
 
-    dividend, divisor = typecast_arrays(__dividend, __divisor, min_dtype=float)
-    return dividend if _is_unit_scalar(__divisor) \
-        else reciprocal(divisor) if _is_unit_scalar(__dividend) \
-        else _Wrapper.broadcasted_arrays(evaluable.divide, dividend, divisor)
+    return _Wrapper.broadcasted_arrays(evaluable.divide, __dividend, __divisor, min_dtype=float)
 
 
 @_use_instead('numpy.floor_divide')
@@ -4045,14 +4039,6 @@ def Namespace(*args, **kwargs):
     return Namespace(*args, **kwargs)
 
 
-def _is_unit_scalar(v):
-    'Test if Array.cast(v) == _Constant(True / 1 / 1. / 1+0j)'
-
-    return isinstance(v, (bool, int, float, complex)) and v == 1 \
-        or isinstance(v, numpy.ndarray) and v.ndim == 0 and v == 1 \
-        or isinstance(v, _Constant) and v.ndim == 0 and numpy.asarray(v._value) == 1
-
-
 HANDLED_FUNCTIONS = {}
 
 class __implementations__:
@@ -4094,14 +4080,11 @@ class __implementations__:
 
     @implements(numpy.multiply)
     def multiply(left: IntoArray, right: IntoArray) -> Array:
-        return typecast_arrays(left, right)[1] if _is_unit_scalar(left) \
-          else typecast_arrays(left, right)[0] if _is_unit_scalar(right) \
-          else _Wrapper.broadcasted_arrays(evaluable.multiply, left, right)
+        return _Wrapper.broadcasted_arrays(evaluable.multiply, left, right)
     
     @implements(numpy.true_divide)
     def divide(dividend: IntoArray, divisor: IntoArray) -> Array:
-        return typecast_arrays(dividend, divisor, min_dtype=float)[0] if _is_unit_scalar(divisor) \
-          else _Wrapper.broadcasted_arrays(evaluable.divide, dividend, divisor, min_dtype=float)
+        return _Wrapper.broadcasted_arrays(evaluable.divide, dividend, divisor, min_dtype=float)
 
     @implements(numpy.reciprocal)
     def reciprocal(arg: Array) -> Array:
