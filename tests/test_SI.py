@@ -53,12 +53,6 @@ class Quantity(unittest.TestCase):
         self.assertEqual(type(F), SI.Force)
         self.assertEqual(F / SI.Force('2N'), 5)
 
-    def test_array(self):
-        F = SI.units.N * numpy.arange(6).reshape(2, 3)
-        self.assertEqual(F.shape, (2, 3))
-        self.assertEqual(F.ndim, 2)
-        self.assertEqual(F.size, 6)
-
     def test_getitem(self):
         F = SI.units.N * numpy.arange(6).reshape(2, 3)
         self.assertEqual(F[0, 0], SI.Force('0N'))
@@ -148,7 +142,7 @@ class Quantity(unittest.TestCase):
         v = numpy.array([1, 2, 3])
         A = SI.units.kg * v
         B = numpy.broadcast_to(A, (2, 3))
-        self.assertEqual(B.shape, (2, 3))
+        self.assertEqual(B.unwrap().shape, (2, 3))
         self.assertEqual(B[1, 1], SI.Mass('2kg'))
 
     def test_trace(self):
@@ -188,21 +182,21 @@ class Quantity(unittest.TestCase):
         self.assertEqual(numpy.shape(A), ())
         A = SI.units.kg * numpy.arange(3)
         self.assertEqual(numpy.shape(A), (3,))
-        self.assertEqual(A.shape, (3,))
+        self.assertEqual(A.unwrap().shape, (3,))
 
     def test_ndim(self):
         A = SI.Mass('2kg')
         self.assertEqual(numpy.ndim(A), 0)
         A = SI.units.kg * numpy.arange(3)
         self.assertEqual(numpy.ndim(A), 1)
-        self.assertEqual(A.ndim, 1)
+        self.assertEqual(A.unwrap().ndim, 1)
 
     def test_size(self):
         A = SI.Mass('2kg')
         self.assertEqual(numpy.size(A), 1)
         A = SI.units.kg * numpy.arange(3)
         self.assertEqual(numpy.size(A), 3)
-        self.assertEqual(A.size, 3)
+        self.assertEqual(A.unwrap().size, 3)
 
     def test_isnan(self):
         self.assertTrue(numpy.isnan(SI.units.kg * float('nan')))

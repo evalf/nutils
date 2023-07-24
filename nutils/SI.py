@@ -69,10 +69,8 @@ of the internal reference system.
     >>> import numpy
     >>> F = numpy.array([1,2,3]) * SI.parse('N')
 
-For convenience, Quantity objects define the shape, ndim and size attributes.
-Beyond this, however, no Numpy specific methods or attributes are defined.
-Array manipulations must be performed via Numpy's API, which is supported via
-the array protocol ([NEP
+No Numpy specific methods or attributes are defined. Array manipulations must
+be performed via Numpy's API, which is supported via the array protocol ([NEP
 18](https://numpy.org/neps/nep-0018-array-function-protocol.html)).
 
     >>> f'total force: {numpy.sum(F):.1N}'
@@ -440,17 +438,6 @@ class Quantity(metaclass=Dimension):
         return self.__truediv(other)
 
     del op
-
-    ## DEFINE ATTRIBUTES
-
-    def attr(name):
-        return property(lambda self: getattr(self.__value, name))
-
-    shape = attr('shape')
-    size = attr('size')
-    ndim = attr('ndim')
-
-    del attr
 
     ## DISPATCH THIRD PARTY CALLS
 
