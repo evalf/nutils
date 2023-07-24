@@ -94,7 +94,7 @@ At this point, the dimension is not very useful yet as it lacks units. To
 rectify this we define the radian by its abbreviation 'rad' in terms of the
 provided reference quantity, and assign it to the global table of units:
 
-    >>> SI.units.rad = Angle.__wrap__(1.)
+    >>> SI.units.rad = Angle.wrap(1.)
 
 Additional units can be defined by relating them to pre-existing ones:
 
@@ -224,7 +224,17 @@ class Dimension(type):
             raise TypeError(f'expected {expect.__name__}, got {type(q).__name__}')
         return q
 
-    def __wrap__(cls, value):
+    def wrap(cls, value):
+        '''Wrap a numerical value in a Quantity container.
+
+        The value must represent a multiple of the relevant reference quantity.
+        See :func:`Quantity.unwrap` for the reverse operation.
+
+        .. warning::
+            Wrap and unwrap are advanced methods that allow you to bypass unit
+            checks. Use with caution!
+        '''
+
         if not cls.__powers:
             return value
         return super().__call__(value)
@@ -251,6 +261,20 @@ class Quantity(metaclass=Dimension):
     def __init__(self, value):
         self.__value = value
 
+    def unwrap(self):
+        '''Unwrap a numerical value inside a Quantity container.
+
+        The value represents a multiply of the relevant reference quantity.
+        See :func:`Dimension.wrap` for the reverse operation. For any quantity
+        ``q`` it holds that ``q == type(q).wrap(q.unwrap())``.
+
+        .. warning::
+            Wrap and unwrap are advanced methods that allow you to bypass unit
+            checks. Use with caution!
+        '''
+
+        return self.__value
+
     def __bool__(self):
         return bool(self.__value)
 
@@ -258,7 +282,7 @@ class Quantity(metaclass=Dimension):
         return len(self.__value)
 
     def __iter__(self):
-        return map(type(self).__wrap__, self.__value)
+        return map(type(self).wrap, self.__value)
 
     def __format__(self, format_spec):
         if not format_spec:
@@ -296,47 +320,47 @@ class Quantity(metaclass=Dimension):
               'sample', 'scatter', 'kronecker')
     def __unary(op, *args, **kwargs):
         (dim0, arg0), = Quantity.__unpack(args[0])
-        return dim0.__wrap__(op(arg0, *args[1:], **kwargs))
+        return dim0.wrap(op(arg0, *args[1:], **kwargs))
 
     @register('add', 'sub', 'subtract', 'hypot', 'mod', 'maximum', 'minimum')
     def __add_like(op, *args, **kwargs):
         (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
         if dim0 != dim1:
             raise TypeError(f'incompatible arguments for {op.__name__}: {dim0.__name__}, {dim1.__name__}')
-        return dim0.__wrap__(op(arg0, arg1, *args[2:], **kwargs))
+        return dim0.wrap(op(arg0, arg1, *args[2:], **kwargs))
 
     @register('mul', 'multiply', 'matmul')
     def __mul_like(op, *args, **kwargs):
         (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
-        return (dim0 * dim1).__wrap__(op(arg0, arg1, *args[2:], **kwargs))
+        return (dim0 * dim1).wrap(op(arg0, arg1, *args[2:], **kwargs))
 
     @register('truediv', 'true_divide', 'divide', 'grad', 'surfgrad', 'div',
               'curl')
     def __div_like(op, *args, **kwargs):
         (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
-        return (dim0 / dim1).__wrap__(op(arg0, arg1, *args[2:], **kwargs))
+        return (dim0 / dim1).wrap(op(arg0, arg1, *args[2:], **kwargs))
 
     @register('laplace')
     def __laplace(op, *args, **kwargs):
         (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
-        return (dim0 / dim1**2).__wrap__(op(arg0, arg1, *args[2:], **kwargs))
+        return (dim0 / dim1**2).wrap(op(arg0, arg1, *args[2:], **kwargs))
 
     @register('sqrt')
     def __sqrt(op, *args, **kwargs):
         (dim0, arg0), = Quantity.__unpack(args[0])
-        return (dim0**fractions.Fraction(1,2)).__wrap__(op(arg0, *args[1:], **kwargs))
+        return (dim0**fractions.Fraction(1,2)).wrap(op(arg0, *args[1:], **kwargs))
 
     @register('setitem')
     def __setitem(op, *args, **kwargs):
         (dim0, arg0), (dim2, arg2) = Quantity.__unpack(args[0], args[2])
         if dim0 != dim2:
             raise TypeError(f'cannot assign {dim2.__name__} to {dim0.__name__}')
-        return dim0.__wrap__(op(arg0, args[1], arg2, *args[3:], **kwargs))
+        return dim0.wrap(op(arg0, args[1], arg2, *args[3:], **kwargs))
 
     @register('pow', 'power', 'jacobian')
     def __pow_like(op, *args, **kwargs):
         (dim0, arg0), = Quantity.__unpack(args[0])
-        return (dim0**args[1]).__wrap__(op(arg0, *args[1:], **kwargs))
+        return (dim0**args[1]).wrap(op(arg0, *args[1:], **kwargs))
 
     @register('isfinite', 'isnan', 'shape', 'ndim', 'size', 'normal', 'normalized')
     def __unary_drop(op, *args, **kwargs):
@@ -356,22 +380,22 @@ class Quantity(metaclass=Dimension):
         dims, arg0 = zip(*Quantity.__unpack(*args[0]))
         if any(dim != dims[0] for dim in dims[1:]):
             raise TypeError(f'incompatible arguments for {op.__name__}: ' + ', '.join(dim.__name__ for dim in dims))
-        return dims[0].__wrap__(op(arg0, *args[1:], **kwargs))
+        return dims[0].wrap(op(arg0, *args[1:], **kwargs))
 
     @register('curvature')
     def __evaluate(op, *args, **kwargs):
         (dim0, arg0), = Quantity.__unpack(args[0])
-        return (dim0**-1).__wrap__(op(*args, **kwargs))
+        return (dim0**-1).wrap(op(*args, **kwargs))
 
     @register('evaluate')
     def __evaluate(op, *args, **kwargs):
         dims, args = zip(*Quantity.__unpack(*args))
-        return tuple(dim.__wrap__(ret) for (dim, ret) in zip(dims, op(*args, **kwargs)))
+        return tuple(dim.wrap(ret) for (dim, ret) in zip(dims, op(*args, **kwargs)))
 
     @register('dotarg')
     def __dotarg(op, *args, **kwargs):
         dims, args = zip(*Quantity.__unpack(*args)) # we abuse the fact that unpack str returns dimensionless
-        return functools.reduce(operator.mul, dims).__wrap__(op(*args, **kwargs))
+        return functools.reduce(operator.mul, dims).wrap(op(*args, **kwargs))
 
     del register
 
@@ -523,13 +547,13 @@ CatalyticActivity = AmountOfSubstance / Time
 
 units = Units()
 
-units.m = Length.__wrap__(1.)
-units.s = Time.__wrap__(1.)
-units.g = Mass.__wrap__(1e-3)
-units.A = ElectricCurrent.__wrap__(1.)
-units.K = Temperature.__wrap__(1.)
-units.mol = AmountOfSubstance.__wrap__(1.)
-units.cd = LuminousIntensity.__wrap__(1.)
+units.m = Length.wrap(1.)
+units.s = Time.wrap(1.)
+units.g = Mass.wrap(1e-3)
+units.A = ElectricCurrent.wrap(1.)
+units.K = Temperature.wrap(1.)
+units.mol = AmountOfSubstance.wrap(1.)
+units.cd = LuminousIntensity.wrap(1.)
 
 units.N = 'kg*m/s2' # newton
 units.Pa = 'N/m2' # pascal

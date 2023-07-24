@@ -242,3 +242,9 @@ class Quantity(unittest.TestCase):
     def test_string_representation(self):
         F = SI.Force('2N')
         self.assertEqual(str(F), '2.0[M*L/T2]')
+
+    def test_wrap_unwrap(self):
+        T = SI.Length / SI.Time
+        v = T.wrap(5.)
+        self.assertIsInstance(v, T)
+        self.assertEqual(v.unwrap(), 5)
