@@ -393,3 +393,39 @@ class merge_index_map(TestCase):
         index_map, count = util.merge_index_map(4, [[2, 3], [1, 2], [0, 3]])
         self.assertEqual(index_map.tolist(), [0, 0, 0, 0])
         self.assertEqual(count, 1)
+
+
+class nutils_dispatch(TestCase):
+
+    class Ten:
+        @classmethod
+        def __nutils_dispatch__(cls, func, args, kwargs):
+            return func(*[10 if isinstance(v, cls) else v for v in args], **kwargs)
+
+    class Twenty:
+        @classmethod
+        def __nutils_dispatch__(cls, func, args, kwargs):
+            return func(*[20 if isinstance(v, cls) else v for v in args], **kwargs)
+
+    class NotImp:
+        @classmethod
+        def __nutils_dispatch__(cls, func, args, kwargs):
+            return NotImplemented
+
+    @staticmethod
+    @util.nutils_dispatch
+    def f(a, b=1, *, c=2):
+        return a, b, c
+
+    def test_single(self):
+        ten = self.Ten()
+        self.assertEqual(self.f(ten), (10, 1, 2))
+        self.assertEqual(self.f(1, ten), (1, 10, 2))
+        self.assertEqual(self.f(2, c=ten), (2, 1, ten))
+
+    def test_double(self):
+        self.assertEqual(self.f(self.Ten(), self.Twenty()), (10, 20, 2))
+
+    def test_notimp(self):
+        notimp = self.NotImp()
+        self.assertEqual(self.f(notimp, self.Ten()), (notimp, 10, 2))

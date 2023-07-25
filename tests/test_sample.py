@@ -544,7 +544,8 @@ class integral(TestCase):
             places=15)
 
     def test_eval_integrals(self):
-        v, = eval_integrals(self.topo.integral('basis_n d:x' @ self.ns, degree=2))
+        with self.assertWarns(warnings.NutilsDeprecationWarning):
+            v, = eval_integrals(self.topo.integral('basis_n d:x' @ self.ns, degree=2))
         self.assertAllAlmostEqual(self.topo.integrate('basis_n d:x' @ self.ns, degree=2), v, places=15)
 
     def test_eval_integrals_sparse(self):

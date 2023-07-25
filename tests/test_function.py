@@ -5,6 +5,7 @@ import numpy
 import itertools
 import warnings as _builtin_warnings
 import functools
+import fractions
 
 
 class Array(TestCase):
@@ -83,6 +84,10 @@ class Array(TestCase):
         topo, geom = mesh.unitsquare(4, 'square')
         with self.assertRaisesRegex(ValueError, 'The truth value of a nutils Array is ambiguous'):
             min(geom, 1)
+
+    def test_fraction(self):
+        v = function.Array.cast(fractions.Fraction(1, 2))
+        self.assertEqual(v.eval(), .5)
 
 
 class integral_compatibility(TestCase):
@@ -752,7 +757,7 @@ class replace_arguments(TestCase):
     def test_argument(self):
         a = function.Argument('a', (2,))
         b = function.Argument('b', (2,))
-        self.assertEqual(function.replace_arguments(a, dict(a=b)).as_evaluable_array, b.as_evaluable_array)
+        self.assertEqual(function.replace_arguments(a, dict(a='b')).as_evaluable_array, b.as_evaluable_array)
 
     def test_argument_array(self):
         a = function.Argument('a', (2,))
@@ -794,6 +799,11 @@ class replace_arguments(TestCase):
     def test_different_dtype(self):
         with self.assertRaisesRegex(ValueError, "Argument 'foo' has dtype int but the replacement has dtype float."):
             function.replace_arguments(function.Argument('foo', (), dtype=int), dict(foo=function.zeros((), dtype=float)))
+
+    def test_nonempty_spaces(self):
+        topo, geom = mesh.unitsquare(1, 'square')
+        with self.assertRaisesRegex(ValueError, "replacement functions cannot contain spaces, but replacement for Argument 'foo' contains space X."):
+            function.replace_arguments(function.Argument('foo', (2,), dtype=float), dict(foo=geom))
 
 
 class dotarg(TestCase):
@@ -1395,25 +1405,6 @@ class Eval(TestCase):
         g = function.dotarg('v', numpy.array([3, 2, 1]))
         retvals = function.eval([f, g], v=numpy.array([4, 5, 6]))
         self.assertEqual(retvals, (4+10+18, 12+10+6))
-
-
-class simplifications(TestCase):
-
-    def test_multiply(self):
-        f = function.Argument('test', shape=(2, 3), dtype=float)
-        self.assertIs(f * 1, f)
-        self.assertIs(f * 1., f)
-        f = function.Argument('test', shape=(2, 3), dtype=int)
-        self.assertIs(f * 1, f)
-        self.assertIsNot(f * 1., f)
-
-    def test_divide(self):
-        f = function.Argument('test', shape=(2, 3), dtype=float)
-        self.assertIs(f / 1, f)
-        self.assertIs(f / 1., f)
-        f = function.Argument('test', shape=(2, 3), dtype=int)
-        self.assertIsNot(f / 1, f)
-        self.assertIsNot(f / 1., f)
 
 
 class linearize(TestCase):
