@@ -16,6 +16,7 @@ import functools
 import operator
 import numbers
 import inspect
+import fractions
 
 IntoArray = Union['Array', numpy.ndarray, bool, int, float, complex]
 Shape = Sequence[int]
@@ -206,6 +207,8 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         # did most of the work already, we have only a handful of object types
         # left that we know can be wrapped. We test for those here rather than
         # have _Constant figure things out at potentially higher cost.
+        if isinstance(value, fractions.Fraction):
+            value = float(value)
         if isinstance(value, (numpy.ndarray, bool, int, float, complex)):
             value = _Constant(value)
         elif not isinstance(value, Array):

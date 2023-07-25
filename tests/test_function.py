@@ -5,6 +5,7 @@ import numpy
 import itertools
 import warnings as _builtin_warnings
 import functools
+import fractions
 
 
 class Array(TestCase):
@@ -83,6 +84,10 @@ class Array(TestCase):
         topo, geom = mesh.unitsquare(4, 'square')
         with self.assertRaisesRegex(ValueError, 'The truth value of a nutils Array is ambiguous'):
             min(geom, 1)
+
+    def test_fraction(self):
+        v = function.Array.cast(fractions.Fraction(1, 2))
+        self.assertEqual(v.eval(), .5)
 
 
 class integral_compatibility(TestCase):
