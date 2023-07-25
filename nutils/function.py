@@ -898,22 +898,27 @@ class _Replace(Array):
 
     def __init__(self, arg: Array, replacements: Dict[str, Array]) -> None:
         self._arg = arg
-        # TODO: verify that the replacements have empty spaces
-        self._replacements = replacements
+        self._replacements = {}
         # Build arguments map with replacements.
         unreplaced = {}
-        arguments = [unreplaced]
         for name, (shape, dtype) in arg.arguments.items():
-            replacement = replacements.get(name, None)
-            if replacement is None:
-                unreplaced[name] = shape, dtype
-            elif replacement.shape != shape:
-                raise ValueError('Argument {!r} has shape {} but the replacement has shape {}.'.format(name, shape, replacement.shape))
-            elif replacement.dtype != dtype:
-                raise ValueError('Argument {!r} has dtype {} but the replacement has dtype {}.'.format(name, dtype.__name__ if dtype in _dtypes else dtype, replacement.dtype.__name__ if replacement.dtype in _dtypes else replacement.dtype))
+            if name in replacements:
+                replacement = replacements[name]
+                if isinstance(replacement, str):
+                    replacement = Argument(replacement, shape, dtype)
+                else:
+                    replacement = Array.cast(replacement)
+                    if replacement.shape != shape:
+                        raise ValueError(f'Argument {name!r} has shape {shape} but the replacement has shape {replacement.shape}.')
+                    if replacement.dtype != dtype:
+                        raise ValueError(f'Argument {name!r} has dtype {dtype.__name__} but the replacement has dtype {replacement.dtype.__name__}.')
+                    if replacement.spaces:
+                        raise ValueError(f'replacement functions cannot contain spaces, but replacement for Argument {name!r} contains space {", ".join(replacement.spaces)}.')
+                self._replacements[name] = replacement
             else:
-                arguments.append(replacement.arguments)
-        super().__init__(arg.shape, arg.dtype, arg.spaces, _join_arguments(arguments))
+                unreplaced[name] = shape, dtype
+        arguments = _join_arguments([unreplaced] + [replacement.arguments for replacement in self._replacements.values()])
+        super().__init__(arg.shape, arg.dtype, arg.spaces, arguments)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         arg = self._arg.lower(args)
@@ -2862,7 +2867,7 @@ def stack(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
 
 
 @nutils_dispatch
-def replace_arguments(__array: IntoArray, __arguments: Mapping[str, IntoArray]) -> Array:
+def replace_arguments(__array: IntoArray, __arguments: Mapping[str, Union[IntoArray, str]]) -> Array:
     '''Replace arguments with :class:`Array` objects.
 
     Parameters
@@ -2876,7 +2881,7 @@ def replace_arguments(__array: IntoArray, __arguments: Mapping[str, IntoArray]) 
     :class:`Array`
     '''
 
-    return _Replace(Array.cast(__array), {k: Array.cast(v) for k, v in __arguments.items()})
+    return _Replace(Array.cast(__array), __arguments)
 
 
 @nutils_dispatch

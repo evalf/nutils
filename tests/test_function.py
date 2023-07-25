@@ -757,7 +757,7 @@ class replace_arguments(TestCase):
     def test_argument(self):
         a = function.Argument('a', (2,))
         b = function.Argument('b', (2,))
-        self.assertEqual(function.replace_arguments(a, dict(a=b)).as_evaluable_array, b.as_evaluable_array)
+        self.assertEqual(function.replace_arguments(a, dict(a='b')).as_evaluable_array, b.as_evaluable_array)
 
     def test_argument_array(self):
         a = function.Argument('a', (2,))
@@ -799,6 +799,11 @@ class replace_arguments(TestCase):
     def test_different_dtype(self):
         with self.assertRaisesRegex(ValueError, "Argument 'foo' has dtype int but the replacement has dtype float."):
             function.replace_arguments(function.Argument('foo', (), dtype=int), dict(foo=function.zeros((), dtype=float)))
+
+    def test_nonempty_spaces(self):
+        topo, geom = mesh.unitsquare(1, 'square')
+        with self.assertRaisesRegex(ValueError, "replacement functions cannot contain spaces, but replacement for Argument 'foo' contains space X."):
+            function.replace_arguments(function.Argument('foo', (2,), dtype=float), dict(foo=geom))
 
 
 class dotarg(TestCase):
