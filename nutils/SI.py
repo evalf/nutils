@@ -260,6 +260,9 @@ class Quantity(metaclass=Dimension):
     def __init__(self, value):
         self.__value = value
 
+    def __getnewargs__(self):
+        return self.__value,
+
     def unwrap(self):
         '''Unwrap a numerical value inside a Quantity container.
 
