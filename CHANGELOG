@@ -5,6 +5,15 @@ The following overview lists user facing changes as well as newly added
 features in inverse chronological order.
 
 
+NEW: SI module for physical units
+
+The SI module provides a framework for checking the dimensional consistency of
+a formulation at runtime, as well as tools to convert between different units
+for post processing. Extensive documentation can be found in the docstring of
+the SI module. The framework can be seen in action in the cahnhilliard example,
+with more examples to be converted in future.
+
+
 NEW: nearest-neighbour interpolation in sample.asfunction, sample.basis
 
 The sample methods `asfunction` and `basis` have a new interpolation argument
