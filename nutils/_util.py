@@ -630,6 +630,51 @@ def add_htmllog(outrootdir: str = '~/public_html', outrooturi: str = '', scriptn
             treelog.info(f'log written to: {loguri}')
 
 
+def with_calling(f):
+    try:
+        from calling import Caller, PassThrough, Cached, Parallel, TreeLog, DiskStore
+    except ImportError:
+        return f
+
+    sig = inspect.signature(f)
+    parameters = dict(sig.parameters)
+    names = [name for name, param in parameters.items() if param.annotation is Caller]
+    if not names:
+        return f
+
+    if len(names) > 1:
+        raise Exception('multiple calling arguments')
+    name, = names
+    parameters[name] = parameters[name].replace(annotation=str)
+    sig = sig.replace(parameters=parameters.values())
+
+    import dbm, appdirs
+    path = pathlib.Path(appdirs.user_cache_dir('nutils', 'evalf'))
+
+    @functools.wraps(f)
+    def wrapped(*args, **kwargs):
+        bound = sig.bind(*args, **kwargs)
+        if name not in bound.arguments:
+            return f(*args, **kwargs)
+
+        path.mkdir(parents=True, exist_ok=True)
+        store = DiskStore(path)
+        with dbm.open(str(path / 'db'), 'c') as db:
+            s = bound.arguments[name]
+            if s.lower().startswith('parallel'):
+                calling = Parallel(serializer=store, db=db, nprocs=int(s[8:]) if len(s) > 8 else None)
+            elif s.lower() == 'cached':
+                calling = Cached(serializer=store, db=db)
+            else:
+                raise ValueError(f'invalid caller {s!r}')
+            with TreeLog(calling) as caller:
+                bound.arguments[name] = caller
+                return f(*bound.args, **bound.kwargs)
+
+    wrapped.__signature__ = sig
+    return wrapped
+
+
 def cli(f, *, argv=None):
     '''Call a function using command line arguments.'''
 

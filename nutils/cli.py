@@ -26,6 +26,7 @@ def run(f, *, argv=None):
         util.log_version,
         util.log_arguments,
         util.timeit(),
+        util.with_calling,
     )
 
     for decorator in reversed(decorators):

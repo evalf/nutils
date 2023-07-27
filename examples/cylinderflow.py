@@ -1,5 +1,6 @@
 from nutils import mesh, function, solver, export, testing, numeric
 from nutils.expression_v2 import Namespace
+from calling import Caller, PassThrough
 import itertools
 import numpy
 import treelog
@@ -11,7 +12,8 @@ def main(nelems: int = 99,
          uwall: float = 0.,
          timestep: float = .04,
          extdiam: float = 12.,
-         endtime: float = 30.):
+         endtime: float = 30.,
+         run: Caller = PassThrough()):
 
     '''Flow around a cylinder
 
@@ -97,15 +99,35 @@ def main(nelems: int = 99,
         velocity.
     '''
 
+    topo, ns = run[construct_domain_namespace](nelems, extdiam, reynolds, degree, timestep, uwall)
+    cons = run[project_constraints](topo, ns, degree)
+    res = run[define_problem](topo, ns, degree)
+
+    bbox = 4 * numpy.array([[-1/2, 16/9 - 1/2], [-1/2, 1/2]])
+    bbtopo = run[prepare_plotting_topology](topo, ns, bbox)
+
+    args = run[construct_initial_condition](topo, ns, degree, cons)
+    xgrd = None
+
+    for time in treelog.iter.fraction('timestep', numpy.arange(0, endtime, timestep)) if endtime < float('inf') \
+           else treelog.iter.plain('timestep', itertools.count(step=timestep)):
+
+        args = run[progress_timestep](res, cons, args)
+        xgrd = run[plot_solution](bbtopo, ns, args, time, bbox, xgrd)
+
+    return args, run[eval_error](topo, ns)
+
+
+def construct_domain_namespace(nelems, extdiam, reynolds, degree, timestep, uwall) -> tuple['Topology', 'Namespace']:
     elemangle = 2 * numpy.pi / nelems
     melems = round(numpy.log(extdiam) / elemangle)
     treelog.info('creating {}x{} mesh, outer radius {:.2f}'.format(melems, nelems, .5*numpy.exp(elemangle*melems)))
-    domain, geom = mesh.rectilinear([melems, nelems], periodic=(1,))
-    domain = domain.withboundary(inner='left', inflow=domain.boundary['right'][nelems//2:])
+    topo, geom = mesh.rectilinear([melems, nelems], periodic=(1,))
+    topo = topo.withboundary(inner='left', inflow=topo.boundary['right'][nelems//2:])
 
     ns = Namespace()
-    ns.δ = function.eye(domain.ndims)
-    ns.Σ = function.ones([domain.ndims])
+    ns.δ = function.eye(topo.ndims)
+    ns.Σ = function.ones([topo.ndims])
     ns.ε = function.levicivita(2)
     ns.uinf_i = 'δ_i0' # unit horizontal flow
     ns.Re = reynolds
@@ -115,9 +137,9 @@ def main(nelems: int = 99,
     J = ns.x.grad(geom)
     detJ = numpy.linalg.det(J)
     ns.add_field(('u', 'u0', 'v'), function.vectorize([
-        domain.basis('spline', degree=(degree, degree-1), removedofs=((0,), None)),
-        domain.basis('spline', degree=(degree-1, degree))]) @ J.T / detJ)
-    ns.add_field(('p', 'q'), domain.basis('spline', degree=degree-1) / detJ)
+        topo.basis('spline', degree=(degree, degree-1), removedofs=((0,), None)),
+        topo.basis('spline', degree=(degree-1, degree))]) @ J.T / detJ)
+    ns.add_field(('p', 'q'), topo.basis('spline', degree=degree-1) / detJ)
     ns.dt = timestep
     ns.DuDt_i = '(u_i - u0_i) / dt + ∇_j(u_i) u_j' # material derivative
     ns.σ_ij = '(∇_j(u_i) + ∇_i(u_j)) / Re - p δ_ij'
@@ -127,83 +149,77 @@ def main(nelems: int = 99,
     ns.rotation = uwall / .5
     ns.uwall_i = 'rotation ε_ij x_j' # clockwise positive rotation
 
-    sqr = domain.boundary['inflow'].integral('Σ_i (u_i - uinf_i)^2 dS' @ ns, degree=degree*2)
-    cons = solver.optimize('u,', sqr, droptol=1e-15) # constrain inflow boundary to unit horizontal flow
-
-    sqr = domain.integral('(.5 Σ_i (u_i - uinf_i)^2 - ∇_k(u_k) p) dV' @ ns, degree=degree*2)
-    args = solver.optimize('u,p', sqr, constrain=cons) # set initial condition to potential flow
-
-    res = domain.integral('(v_i DuDt_i + ∇_j(v_i) σ_ij + q ∇_k(u_k)) dV' @ ns, degree=degree*3)
-    res += domain.boundary['inner'].integral('(nitsche_i (u_i - uwall_i) - v_i σ_ij n_j) dS' @ ns, degree=degree*2)
-    div = numpy.sqrt(domain.integral('∇_k(u_k)^2 dV' @ ns, degree=2)) # L2 norm of velocity divergence
-
-    postprocess = PostProcessor(domain, ns)
-
-    steps = treelog.iter.fraction('timestep', range(round(endtime / timestep))) if endtime < float('inf') \
-       else treelog.iter.plain('timestep', itertools.count())
-
-    for _ in steps:
-        treelog.info(f'velocity divergence: {div.eval(**args):.0e}')
-        args['u0'] = args['u']
-        args = solver.newton('u:v,p:q', residual=res, arguments=args, constrain=cons).solve(1e-10)
-        postprocess(args)
-
-    return args, numpy.sqrt(domain.integral('∇_k(u_k)^2 dV' @ ns, degree=2))
+    return topo, ns
 
 
-class PostProcessor:
+def project_constraints(topo, ns, degree):
+    sqr = topo.boundary['inflow'].integral('Σ_i (u_i - uinf_i)^2 dS' @ ns, degree=degree*2)
+    return solver.optimize('u,', sqr, droptol=1e-15) # constrain inflow boundary to unit horizontal flow
 
-    def __init__(self, topo, ns, region=4., aspect=16/9, figscale=7.2, spacing=.05, pstep=.1, vortlim=20):
-        self.ns = ns
-        self.figsize = aspect * figscale, figscale
-        self.bbox = numpy.array([[-.5, aspect-.5], [-.5, .5]]) * region
-        self.bezier = topo.select(numpy.minimum(*(ns.x-self.bbox[:,0])*(self.bbox[:,1]-ns.x))).sample('bezier', 5)
-        self.spacing = spacing
-        self.pstep = pstep
-        self.vortlim = vortlim
-        self.t = 0.
-        self.initialize_xgrd()
-        self.topo = topo
 
-    def initialize_xgrd(self):
-        self.orig = numeric.floor(self.bbox[:,0] / (2*self.spacing)) * 2 - 1
-        nx, ny = numeric.ceil(self.bbox[:,1] / (2*self.spacing)) * 2 + 2 - self.orig
-        self.vacant = numpy.hypot(
-            self.orig[0] + numpy.arange(nx)[:,numpy.newaxis],
-            self.orig[1] + numpy.arange(ny)) > .5 / self.spacing
-        self.xgrd = (numpy.stack(self.vacant[1::2,1::2].nonzero(), axis=1) * 2 + self.orig + 1) * self.spacing
+def construct_initial_condition(topo, ns, degree, cons):
+    sqr = topo.integral('(.5 Σ_i (u_i - uinf_i)^2 - ∇_k(u_k) p) dV' @ ns, degree=degree*2)
+    return solver.optimize('u,p', sqr, constrain=cons) # set initial condition to potential flow
 
-    def regularize_xgrd(self):
-        # use grid rounding to detect and remove oldest points that have close
-        # neighbours and introduce new points into vacant spots
-        keep = numpy.zeros(len(self.xgrd), dtype=bool)
-        vacant = self.vacant.copy()
-        for i, ind in enumerate(numeric.round(self.xgrd / self.spacing) - self.orig): # points are ordered young to old
-            if all(ind >= 0) and all(ind < vacant.shape) and vacant[tuple(ind)]:
-                vacant[tuple(ind)] = False
-                keep[i] = True
-        roll = numpy.arange(vacant.ndim)-1
-        for _ in roll: # coarsen all dimensions using 3-point window
-            vacant = numeric.overlapping(vacant.transpose(roll), axis=0, n=3)[::2].all(1)
-        newpoints = numpy.stack(vacant.nonzero(), axis=1) * 2 + self.orig + 1
-        self.xgrd = numpy.concatenate([newpoints * self.spacing, self.xgrd[keep]], axis=0)
 
-    def __call__(self, args):
-        x, p, ω = self.bezier.eval(['x_i', 'p', 'ω'] @ self.ns, **args)
-        grid0 = numpy.log(numpy.hypot(*self.xgrd.T) / .5)
-        grid1 = numpy.arctan2(*self.xgrd.T) % (2 * numpy.pi)
-        ugrd = self.topo.locate(self.ns.grid, numpy.stack([grid0, grid1], axis=1), eps=1, tol=1e-5).eval(self.ns.u, **args)
-        with export.mplfigure('flow.png', figsize=self.figsize) as fig:
-            ax = fig.add_axes([0, 0, 1, 1], yticks=[], xticks=[], frame_on=False, xlim=self.bbox[0], ylim=self.bbox[1])
-            ax.tripcolor(*x.T, self.bezier.tri, ω, shading='gouraud', cmap='seismic').set_clim(-self.vortlim, self.vortlim)
-            ax.tricontour(*x.T, self.bezier.tri, p, numpy.arange(numpy.min(p)//1, numpy.max(p), self.pstep), colors='k', linestyles='solid', linewidths=.5, zorder=9)
-            export.plotlines_(ax, x.T, self.bezier.hull, colors='k', linewidths=.1, alpha=.5)
-            ax.quiver(*self.xgrd.T, *ugrd.T, angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9, alpha=.5, pivot='tip')
-            ax.plot(0, 0, 'k', marker=(3, 2, -self.t*self.ns.rotation.eval()*180/numpy.pi-90), markersize=20)
-        dt = self.ns.dt.eval()
-        self.t += dt
-        self.xgrd += ugrd * dt
-        self.regularize_xgrd()
+def define_problem(topo, ns, degree):
+    res = topo.integral('(v_i DuDt_i + ∇_j(v_i) σ_ij + q ∇_k(u_k)) dV' @ ns, degree=degree*3)
+    res += topo.boundary['inner'].integral('(nitsche_i (u_i - uwall_i) - v_i σ_ij n_j) dS' @ ns, degree=degree*2)
+    return res
+
+
+def progress_timestep(res, cons, args):
+    args = args.copy()
+    args['u0'] = args['u']
+    return solver.newton('u:v,p:q', residual=res, arguments=args, constrain=cons).solve(1e-10)
+
+
+def prepare_plotting_topology(topo, ns, bbox):
+    return topo.select(numpy.minimum(*(ns.x-bbox[:,0])*(bbox[:,1]-ns.x)))
+
+
+def _find_holes(vacant):
+    shape = vacant.shape[0]//2, vacant.shape[1]//2, 3, 3
+    strides = vacant.strides[0]*2, vacant.strides[1]*2, *vacant.strides
+    overlapping = numpy.lib.stride_tricks.as_strided(vacant, shape=shape, strides=strides)
+    return 1 + 2 * numpy.stack(overlapping.all((2,3)).nonzero(), axis=1)
+
+
+def plot_solution(bbtopo, ns, args, t, bbox, xgrd, figscale=7.2, vortlim=20., pstep=.1, spacing=.05):
+    orig = numeric.floor(bbox[:,0] / (2*spacing)) * 2 - 1
+    nx, ny = numeric.ceil(bbox[:,1] / (2*spacing)) * 2 + 2 - orig
+    vacant = numpy.hypot(
+        orig[0] + numpy.arange(nx)[:,numpy.newaxis],
+        orig[1] + numpy.arange(ny)) > .5 / spacing
+    if xgrd is None:
+        xgrd = (orig + _find_holes(vacant)) * spacing
+    grid0 = numpy.log(numpy.hypot(*xgrd.T) / .5)
+    grid1 = numpy.arctan2(*xgrd.T) % (2 * numpy.pi)
+    ugrd = bbtopo.locate(ns.grid, numpy.stack([grid0, grid1], axis=1), eps=1, tol=1e-5).eval(ns.u, **args)
+
+    aspect = numpy.divide(*numpy.subtract(*bbox.T))
+    figsize = aspect * figscale, figscale
+    bezier = bbtopo.sample('bezier', 5)
+    x, p, ω = bezier.eval(['x_i', 'p', 'ω'] @ ns, **args)
+    with export.mplfigure('flow.png', figsize=figsize) as fig:
+        ax = fig.add_axes([0, 0, 1, 1], yticks=[], xticks=[], frame_on=False, xlim=bbox[0], ylim=bbox[1])
+        ax.tripcolor(*x.T, bezier.tri, ω, shading='gouraud', cmap='seismic').set_clim(-vortlim, vortlim)
+        ax.tricontour(*x.T, bezier.tri, p, numpy.arange(numpy.min(p)//1, numpy.max(p), pstep), colors='k', linestyles='solid', linewidths=.5, zorder=9)
+        export.plotlines_(ax, x.T, bezier.hull, colors='k', linewidths=.1, alpha=.5)
+        ax.quiver(*xgrd.T, *ugrd.T, angles='xy', width=1e-3, headwidth=3e3, headlength=5e3, headaxislength=2e3, zorder=9, alpha=.5, pivot='tip')
+        ax.plot(0, 0, 'k', marker=(3, 2, -t*ns.rotation.eval()*180/numpy.pi-90), markersize=20)
+
+    xgrd = xgrd + ugrd * ns.dt.eval()
+    keep = numpy.zeros(len(xgrd), dtype=bool)
+    for i, ind in enumerate(numeric.round(xgrd / spacing) - orig): # points are ordered young to old
+        if all(ind >= 0) and all(ind < vacant.shape) and vacant[tuple(ind)]:
+            vacant[tuple(ind)] = False
+            keep[i] = True
+    return numpy.concatenate([(orig + _find_holes(vacant)) * spacing, xgrd[keep]], axis=0)
+
+
+def eval_error(topo, ns):
+    return numpy.sqrt(topo.integral('∇_k(u_k)^2 dV' @ ns, degree=2))
 
 
 class test(testing.TestCase):
