@@ -6,8 +6,7 @@ import treelog as log
 
 
 @contextlib.contextmanager
-@util.positional_only
-def mplfigure(name, kwargs=...):
+def mplfigure(name, /, **kwargs):
     '''Matplotlib figure context, convenience function.
 
     Returns a :class:`matplotlib.figure.Figure` object suitable for
@@ -197,8 +196,7 @@ def triplot(name, points, values=None, *, tri=None, hull=None, cmap=None, clim=N
             fig.colorbar(im, label=vlabel, **cbarargs)
 
 
-@util.positional_only
-def vtk(name, cells, points, kwargs=...):
+def vtk(name, cells, points, /, **kwargs):
     '''Export data to a VTK file.
 
     This method provides a simple interface to the `VTK file format`_ with a

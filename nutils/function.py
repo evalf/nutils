@@ -466,8 +466,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     def __repr__(self) -> str:
         return 'Array<{}>'.format(','.join(str(n) for n in self.shape))
 
-    @util.positional_only
-    def eval(self, arguments=...) -> numpy.ndarray:
+    def eval(self, /, **arguments) -> numpy.ndarray:
         'Evaluate this function.'
 
         return evaluate(self, _post=_convert, arguments=arguments)[0]
@@ -2130,8 +2129,7 @@ def _convert(data: numpy.ndarray, inplace: bool = True) -> Union[numpy.ndarray, 
 
 
 @util.single_or_multiple
-@util.positional_only
-def eval(funcs: evaluable.AsEvaluableArray, arguments: Mapping[str, numpy.ndarray] = ...) -> Tuple[numpy.ndarray, ...]:
+def eval(funcs: evaluable.AsEvaluableArray, /, **arguments: numpy.ndarray) -> Tuple[numpy.ndarray, ...]:
     '''Evaluate one or several Array objects.
 
     Args

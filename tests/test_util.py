@@ -99,41 +99,6 @@ class single_or_multiple(TestCase):
         self.assertEqual(t.square([2, 3]), (4, 9))
 
 
-class positional_only(TestCase):
-
-    def test_simple(self):
-        @util.positional_only
-        def f(x):
-            return x
-        self.assertEqual(f(1), 1)
-        self.assertEqual(str(inspect.signature(f)), '(x, /)')
-
-    def test_mixed(self):
-        @util.positional_only
-        def f(x, *, y):
-            return x, y
-        self.assertEqual(f(1, y=2), (1, 2))
-        self.assertEqual(str(inspect.signature(f)), '(x, /, *, y)')
-
-    def test_varkw(self):
-        @util.positional_only
-        def f(x, y=...):
-            return x, y
-        self.assertEqual(f(1, x=2, y=3), (1, {'x': 2, 'y': 3}))
-        self.assertEqual(str(inspect.signature(f)), '(x, /, **y)')
-
-    def test_simple_method(self):
-        class T:
-            @util.positional_only
-            def f(self_, x):
-                self.assertIsInstance(self_, T)
-                return x
-        t = T()
-        self.assertEqual(t.f(1), 1)
-        self.assertEqual(str(inspect.signature(T.f)), '(self_, x, /)')
-        self.assertEqual(str(inspect.signature(t.f)), '(x, /)')
-
-
 class index(TestCase):
 
     def _check(self, items):

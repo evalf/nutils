@@ -155,8 +155,7 @@ class Sample(types.Singleton):
         raise NotImplementedError
 
     @util.single_or_multiple
-    @util.positional_only
-    def integrate(self, funcs, arguments=...):
+    def integrate(self, funcs, /, **arguments):
         '''Integrate functions.
 
         Args
@@ -171,8 +170,7 @@ class Sample(types.Singleton):
         return function.evaluate(*map(self.integral, funcs), _post=function._convert, arguments=arguments)
 
     @util.single_or_multiple
-    @util.positional_only
-    def integrate_sparse(self, funcs, arguments=...):
+    def integrate_sparse(self, funcs, /, **arguments):
         '''Integrate functions into sparse data.
 
         Args
@@ -197,8 +195,7 @@ class Sample(types.Singleton):
         return function.integral(__func, self)
 
     @util.single_or_multiple
-    @util.positional_only
-    def eval(self, funcs, arguments=...):
+    def eval(self, funcs, /, **arguments):
         '''Evaluate function.
 
         Args
@@ -212,8 +209,7 @@ class Sample(types.Singleton):
         return function.evaluate(*map(self, funcs), arguments=arguments)
 
     @util.single_or_multiple
-    @util.positional_only
-    def eval_sparse(self, funcs, arguments=...):
+    def eval_sparse(self, funcs, /, **arguments):
         '''Evaluate function.
 
         Args
