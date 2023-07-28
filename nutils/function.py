@@ -4353,9 +4353,7 @@ class __implementations__:
 
     @implements(numpy.trace)
     def trace(arg: Array, offset: int = 0, axis1: int = 0, axis2: int = 1) -> Array:
-        if offset != 0:
-            raise NotImplementedError('traces over offset diagonal are not yet supported')
-        return numpy.sum(_takediag(arg, axis1, axis2), -1)
+        return numpy.sum(numpy.diagonal(arg, offset, axis1, axis2), -1)
 
     @implements(numpy.transpose)
     def transpose(array: Array, axes: Optional[Sequence[int]] = None) -> Array:
