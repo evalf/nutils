@@ -26,19 +26,14 @@ _ = numpy.newaxis
 
 
 @log.withcontext
-def rectilinear(richshape: Sequence[Union[int, Sequence[float]]], periodic: Sequence[int] = (), name: Optional[str] = None, space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
+def rectilinear(richshape: Sequence[Union[int, Sequence[float]]], periodic: Sequence[int] = (), space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
     'rectilinear mesh'
 
     verts = [numpy.arange(v + 1) if numeric.isint(v) else v for v in richshape]
     shape = [len(v) - 1 for v in verts]
     ndims = len(shape)
 
-    if name is not None:
-        warnings.deprecation('Argument `name` is deprecated; use `root` with a `TransformItem` instead.')
-        if root is not None:
-            raise ValueError('Arguments `name` and `root` cannot be used simultaneously.')
-        root = transform.Index(hash(name))
-    elif root is None:
+    if root is None:
         root = transform.Index(ndims, 0)
 
     axes = [transformseq.DimAxis(i=0, j=n, mod=n if idim in periodic else 0, isperiodic=idim in periodic) for idim, n in enumerate(shape)]
@@ -54,13 +49,8 @@ def rectilinear(richshape: Sequence[Union[int, Sequence[float]]], periodic: Sequ
 _oldrectilinear = rectilinear  # reference for internal unittests
 
 
-def line(nodes: Union[int, Sequence[float]], periodic: bool = False, bnames: Optional[Tuple[str, str]] = None, *, name: Optional[str] = None, space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
-    if name is not None:
-        warnings.deprecation('Argument `name` is deprecated; use `root` with a `transform.transformitem` instead.')
-        if root is not None:
-            raise ValueError('Arguments `name` and `root` cannot be used simultaneously.')
-        root = transform.Index(hash(name))
-    elif root is None:
+def line(nodes: Union[int, Sequence[float]], periodic: bool = False, bnames: Optional[Tuple[str, str]] = None, *, space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
+    if root is None:
         root = transform.Index(1, 0)
     if isinstance(nodes, int):
         nodes = numpy.arange(nodes + 1)
@@ -69,25 +59,25 @@ def line(nodes: Union[int, Sequence[float]], periodic: bool = False, bnames: Opt
     return domain, geom
 
 
-def newrectilinear(nodes: Sequence[Union[int, Sequence[float]]], periodic: Optional[Sequence[int]] = None, name: Optional[str] = None, bnames: Sequence[Optional[Tuple[str, str]]] = [('left', 'right'), ('bottom', 'top'), ('front', 'back')], spaces: Optional[Sequence[str]] = None, root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
+def newrectilinear(nodes: Sequence[Union[int, Sequence[float]]], periodic: Optional[Sequence[int]] = None, bnames: Sequence[Optional[Tuple[str, str]]] = [('left', 'right'), ('bottom', 'top'), ('front', 'back')], spaces: Optional[Sequence[str]] = None, root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
     if periodic is None:
         periodic = []
     if not spaces:
         spaces = 'XYZ' if len(nodes) <= 3 else map('R{}'.format, range(len(nodes)))
     else:
         assert len(spaces) == len(nodes)
-    domains, geoms = zip(*(line(nodesi, i in periodic, bnamesi, name=name, space=spacei, root=root) for i, (nodesi, bnamesi, spacei) in enumerate(zip(nodes, tuple(bnames)+(None,)*len(nodes), spaces))))
+    domains, geoms = zip(*(line(nodesi, i in periodic, bnamesi, space=spacei, root=root) for i, (nodesi, bnamesi, spacei) in enumerate(zip(nodes, tuple(bnames)+(None,)*len(nodes), spaces))))
     return util.product(domains), numpy.stack(geoms)
 
 
 if os.environ.get('NUTILS_TENSORIAL'):
-    def rectilinear(richshape: Sequence[Union[int, Sequence[float]]], periodic: Sequence[int] = (), name: Optional[str] = None, space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
+    def rectilinear(richshape: Sequence[Union[int, Sequence[float]]], periodic: Sequence[int] = (), space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
         spaces = tuple(space+str(i) for i in range(len(richshape)))
-        return newrectilinear(richshape, periodic, name=name, spaces=spaces, root=root)
+        return newrectilinear(richshape, periodic, spaces=spaces, root=root)
 
 
 @log.withcontext
-def multipatch(patches, nelems, patchverts=None, name: Optional[str] = None):
+def multipatch(patches, nelems, patchverts=None):
     '''multipatch rectilinear mesh generator
 
     Generator for a :class:`~nutils.topology.MultipatchTopology` and geometry.
@@ -204,9 +194,6 @@ def multipatch(patches, nelems, patchverts=None, name: Optional[str] = None):
         The geometry defined by the ``patchverts`` or a unit hypercube per patch
         if ``patchverts`` is not specified.
     '''
-
-    if name is not None:
-        warnings.deprecation('Argument `name` is deprecated and can safely be omitted.')
 
     patches = numpy.array(patches)
     if patches.dtype != int:

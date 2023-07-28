@@ -1311,7 +1311,7 @@ def _replace_lengths(ast, lengths):
         return ast
 
 
-def parse(expression, variables, indices, arg_shapes={}, default_geometry_name='x', fixed_lengths=None, fallback_length=None, functions=None):
+def parse(expression, variables, indices, arg_shapes={}, default_geometry_name='x', fixed_lengths=None, fallback_length=None):
     '''Parse ``expression`` and return AST.
 
     This function parses a tensor expression according to the syntax described in
@@ -1385,8 +1385,6 @@ def parse(expression, variables, indices, arg_shapes={}, default_geometry_name='
         ``expression``.
     '''
 
-    if functions is not None:
-        warnings.deprecation('argument `functions` is deprecated; the existence and number of arguments is not checked during parsing')
     parser = _ExpressionParser(expression, variables, arg_shapes, default_geometry_name, fixed_lengths or {})
     parser.tokenize()
     if indices is None:

@@ -315,8 +315,8 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
 
            This method will change in future to match Numpy's equivalent
            method, which sums over all axes by default. During transition, use
-           of this method without an axis argument will raise a warning, and
-           later an error, if the input array is of ndim >= 2.
+           of this method without an axis argument will raise an error if the
+           input array is of ndim >= 2.
 
         Parameters
         ----------
@@ -330,12 +330,11 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         :class:`Array`
         '''
         if axis is None and self.ndim != 1:
-            warnings.deprecation(
+            raise ValueError(
                 "The default summation axis will change from being the last axis (old behaviour)\n"
                 "to being ALL axes (numpy's behaviour). To facilitate the transition, the axis\n"
-                "argument will be made MANDATORY for arrays with dimension > 1, for the duration\n"
+                "argument has been made MANDATORY for arrays with dimension > 1, for the duration\n"
                 "of at least one release cycle.")
-            axis = -1
 
         return numpy.sum(self, axis)
 
@@ -466,11 +465,6 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
 
     def __repr__(self) -> str:
         return 'Array<{}>'.format(','.join(str(n) for n in self.shape))
-
-    @property
-    def simplified(self):
-        warnings.deprecation('`nutils.function.Array.simplified` is deprecated. This property returns the array unmodified and can safely be omitted.')
-        return self
 
     @util.positional_only
     def eval(self, arguments=...) -> numpy.ndarray:
@@ -2211,13 +2205,6 @@ def transforms_coords(space: str, transforms: Transforms) -> Array:
     return _TransformsCoords(space, transforms)
 
 
-def Elemwise(__data: Sequence[numpy.ndarray], __index: IntoArray, dtype: DType) -> Array:
-    'elemwise'
-
-    warnings.deprecation('function.Elemwise is deprecated; use function.get instead')
-    return get(numpy.asarray(__data), 0, __index)
-
-
 def piecewise(level: IntoArray, intervals: Sequence[IntoArray], *funcs: IntoArray) -> Array:
     'piecewise'
     level = Array.cast(level)
@@ -2320,16 +2307,6 @@ def vectorize(args: Sequence[IntoArray]) -> Array:
     '''
 
     return numpy.concatenate([kronecker(arg, axis=-1, length=len(args), pos=iarg) for iarg, arg in enumerate(args)])
-
-
-def simplified(__arg: IntoArray) -> Array:
-    warnings.deprecation('`nutils.function.simplified` is deprecated. This function returns the argument unmodified and can safely be omitted.')
-    return Array.cast(__arg)
-
-
-def iszero(__arg: IntoArray) -> bool:
-    warnings.deprecation('`nutils.function.iszero` is deprecated. Use `evaluable.iszero` on the lowered function instead.')
-    return False
 
 
 def add_T(__arg: IntoArray, axes: Tuple[int, int] = (-2, -1)) -> Array:

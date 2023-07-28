@@ -912,64 +912,6 @@ class _TakeElements(_TensorialSample):
         return self._parent.take_elements(numpy.take(self._indices, __indices))
 
 
-@util.positional_only
-def eval_integrals(*integrals: evaluable.AsEvaluableArray, arguments: Mapping[str, numpy.ndarray] = ...) -> Tuple[Union[numpy.ndarray, 'matrix.Matrix'], ...]:
-    '''
-    .. deprecated:: 7.0
-        sample.eval_integrals is deprecated, use function.eval instead
-
-    Evaluate integrals.
-
-    Evaluate one or several postponed integrals. By evaluating them
-    simultaneously, rather than using :meth:`nutils.function.Array.eval` on each
-    integral individually, integrations will be grouped per Sample and jointly
-    executed, potentially increasing efficiency.
-
-    Args
-    ----
-    integrals : :class:`tuple` of integrals
-        Integrals to be evaluated.
-    arguments : :class:`dict` (default: None)
-        Optional arguments for function evaluation.
-
-    Returns
-    -------
-    results : :class:`tuple` of arrays and/or :class:`nutils.matrix.Matrix` objects.
-    '''
-
-    warnings.deprecation('sample.eval_integrals_sparse is deprecated, use function.eval instead')
-    return function.evaluate(*integrals, _post=function._convert, arguments=arguments)
-
-
-@util.positional_only
-def eval_integrals_sparse(*integrals: evaluable.AsEvaluableArray, arguments: Mapping[str, numpy.ndarray] = ...) -> Tuple[numpy.ndarray, ...]:
-    '''
-    .. deprecated:: 7.0
-        sample.eval_integrals_sparse is deprecated, use function.eval_sparse instead
-
-    Evaluate integrals into sparse data.
-
-    Evaluate one or several postponed integrals. By evaluating them
-    simultaneously, rather than using :meth:`nutils.function.Array.eval` on each
-    integral individually, integrations will be grouped per Sample and jointly
-    executed, potentially increasing efficiency.
-
-    Args
-    ----
-    integrals : :class:`tuple` of integrals
-        Integrals to be evaluated.
-    arguments : :class:`dict` (default: None)
-        Optional arguments for function evaluation.
-
-    Returns
-    -------
-    results : :class:`tuple` of arrays and/or :class:`nutils.matrix.Matrix` objects.
-    '''
-
-    warnings.deprecation('sample.eval_integrals_sparse is deprecated, use function.eval instead')
-    return function.evaluate(*integrals, _post=lambda x: x, arguments=arguments)
-
-
 class _Integral(function.Array):
 
     def __init__(self, integrand: function.Array, sample: Sample) -> None:

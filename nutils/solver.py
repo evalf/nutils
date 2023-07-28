@@ -79,17 +79,6 @@ class NormBased:
         assert isinstance(self.maxscale, float), f'maxscale={self.maxscale!r}'
         assert 0 < self.minscale < self.acceptscale < 1 < self.maxscale
 
-    @classmethod
-    def legacy(cls, kwargs):
-        args = {}
-        if 'searchrange' in kwargs:
-            args['minscale'], args['acceptscale'] = kwargs.pop('searchrange')
-        if 'rebound' in kwargs:
-            args['maxscale'] = kwargs.pop('rebound')
-        if args:
-            warnings.deprecation('the searchrange and rebound arguments are deprecated; use linesearch=solver.NormBased(minscale=searchrange[0], acceptscale=searchrange[1], maxscale=rebound) instead')
-        return cls(**args)
-
     def __call__(self, res0, dres0, res1, dres1):
         if not numpy.isfinite(res1).all():
             log.info('non-finite residual')
@@ -243,7 +232,7 @@ def _solve_linear(target, residual: tuple, constraints: dict, arguments: dict, s
     return lhs
 
 
-def newton(target, residual, *, jacobian = None, lhs0 = None, relax0: float = 1., constrain = None, linesearch='__legacy__', failrelax: float = 1e-6, arguments = {}, **kwargs):
+def newton(target, residual, *, jacobian = None, lhs0 = None, relax0: float = 1., constrain = None, linesearch=NormBased(), failrelax: float = 1e-6, arguments = {}, **kwargs):
     '''iteratively solve nonlinear problem by gradient descent
 
     Generates targets such that residual approaches 0 using Newton procedure with
@@ -295,8 +284,6 @@ def newton(target, residual, *, jacobian = None, lhs0 = None, relax0: float = 1.
     if lhs0 is not None:
         raise ValueError('lhs0 argument is invalid for a non-string target; define the initial guess via arguments instead')
     target, residual = _target_helper(target, residual)
-    if linesearch == '__legacy__':
-        linesearch = NormBased.legacy(kwargs)
     solveargs = _strip(kwargs, 'lin')
     solveargs.setdefault('rtol', 1e-3)
     if kwargs:
@@ -587,7 +574,7 @@ class _pseudotime(cache.Recursion, length=1):
             yield lhs, types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
 
 
-def thetamethod(target, residual, inertia, timestep: float, theta: float, *, lhs0: types.arraydata = None, target0: str = None, constrain = None, newtontol: float = 1e-10, arguments = {}, newtonargs: types.frozendict = {}, timetarget: str = '_thetamethod_time', time0: float = 0., historysuffix: str = '0'):
+def thetamethod(target, residual, inertia, timestep: float, theta: float, *, lhs0: types.arraydata = None, constrain = None, newtontol: float = 1e-10, arguments = {}, newtonargs: types.frozendict = {}, timetarget: str = '_thetamethod_time', time0: float = 0., historysuffix: str = '0'):
     '''solve time dependent problem using the theta method
 
     Parameters
@@ -624,7 +611,7 @@ def thetamethod(target, residual, inertia, timestep: float, theta: float, *, lhs
         Coefficient vector for all timesteps after the initial condition.
     '''
     if isinstance(target, str) and ',' not in target and ':' not in target:
-        return (res[target] for res in thetamethod([target], [residual], [inertia], timestep, theta, target0=target0,
+        return (res[target] for res in thetamethod([target], [residual], [inertia], timestep, theta,
             constrain={} if constrain is None else {target: constrain}, newtontol=newtontol,
             arguments=arguments if lhs0 is None else {**arguments, target: lhs0}, newtonargs=newtonargs,
             timetarget=timetarget, time0=time0, historysuffix=historysuffix))
@@ -634,12 +621,12 @@ def thetamethod(target, residual, inertia, timestep: float, theta: float, *, lhs
     return _thetamethod(target, residual, inertia, timestep,
         types.frozendict((k, types.arraydata(v)) for k, v in (constrain or {}).items()),
         types.frozendict((k, types.arraydata(v)) for k, v in (arguments or {}).items()),
-        theta, target0, newtontol, types.frozendict(newtonargs), timetarget, time0, historysuffix)
+        theta, newtontol, types.frozendict(newtonargs), timetarget, time0, historysuffix)
 
 
 class _thetamethod(cache.Recursion, length=1, version=1):
 
-    def __init__(self, target, residual, inertia, timestep: float, constrain, arguments, theta: float, target0: str, newtontol: float, newtonargs: types.frozendict, timetarget: str, time0: float, historysuffix: str):
+    def __init__(self, target, residual, inertia, timestep: float, constrain, arguments, theta: float, newtontol: float, newtonargs: types.frozendict, timetarget: str, time0: float, historysuffix: str):
         super().__init__()
         if len(residual) != len(inertia):
             raise Exception('length of residual and inertia do no match')
@@ -653,13 +640,7 @@ class _thetamethod(cache.Recursion, length=1, version=1):
         self.timetarget = timetarget
         self.lhs0, self.constrain = _parse_lhs_cons(constrain, target, _argobjs(residual+inertia), arguments)
         self.lhs0[timetarget] = numpy.array(time0)
-        if target0 is None:
-            self.old_new = [(t+historysuffix, t) for t in target]
-        elif len(target) == 1:
-            warnings.deprecation('target0 is deprecated; use historysuffix instead (target0=target+historysuffix)')
-            self.old_new = [(target0, target[0])]
-        else:
-            raise Exception('target0 is not supported in combination with multiple targets; use historysuffix instead')
+        self.old_new = [(t+historysuffix, t) for t in target]
         self.old_new.append((timetarget+historysuffix, timetarget))
         subs0 = {new: evaluable.Argument(old, tuple(map(evaluable.constant, self.lhs0[new].shape))) for old, new in self.old_new}
         dt = evaluable.Argument(timetarget, ()) - subs0[timetarget]
@@ -691,7 +672,7 @@ impliciteuler = functools.partial(thetamethod, theta=1)
 cranknicolson = functools.partial(thetamethod, theta=0.5)
 
 
-def optimize(target, functional: evaluable.asarray, *, tol: float = 0., arguments = {}, droptol: float = None, constrain = None, lhs0: types.arraydata = None, relax0: float = 1., linesearch=None, failrelax: float = 1e-6, **kwargs):
+def optimize(target, functional: evaluable.asarray, *, tol: float = 0., arguments = {}, droptol: float = None, constrain = None, lhs0: types.arraydata = None, relax0: float = 1., linesearch=NormBased(), failrelax: float = 1e-6, **kwargs):
     '''find the minimizer of a given functional
 
     Parameters
@@ -735,8 +716,6 @@ def optimize(target, functional: evaluable.asarray, *, tol: float = 0., argument
         raise ValueError('lhs0 argument is invalid for a non-string target; define the initial guess via arguments instead')
     if isinstance(target, str):
         target = target.rstrip(',').split(',')
-    if linesearch is None:
-        linesearch = NormBased.legacy(kwargs)
     solveargs = _strip(kwargs, 'lin')
     solveargs['symmetric'] = True
     if kwargs:

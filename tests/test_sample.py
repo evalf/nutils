@@ -1,6 +1,6 @@
 from nutils import element, mesh, function, _util as util, evaluable, warnings, sparse
 from nutils.testing import TestCase, parametrize
-from nutils.sample import Sample, eval_integrals, eval_integrals_sparse
+from nutils.sample import Sample
 from nutils.pointsseq import PointsSequence
 from nutils.transformseq import IndexTransforms
 import functools
@@ -542,16 +542,6 @@ class integral(TestCase):
             self.topo.integrate('basis_n d:x' @ self.ns, degree=2),
             self.topo.integral('basis_n d:x' @ self.ns, degree=2).eval(),
             places=15)
-
-    def test_eval_integrals(self):
-        with self.assertWarns(warnings.NutilsDeprecationWarning):
-            v, = eval_integrals(self.topo.integral('basis_n d:x' @ self.ns, degree=2))
-        self.assertAllAlmostEqual(self.topo.integrate('basis_n d:x' @ self.ns, degree=2), v, places=15)
-
-    def test_eval_integrals_sparse(self):
-        with self.assertWarns(warnings.NutilsDeprecationWarning):
-            data, = eval_integrals_sparse(self.topo.integral('basis_n d:x' @ self.ns, degree=2))
-        self.assertAllAlmostEqual(self.topo.integrate('basis_n d:x' @ self.ns, degree=2), sparse.toarray(data), places=15)
 
     def test_args(self):
         self.assertAlmostEqual(

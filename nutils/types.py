@@ -612,18 +612,6 @@ class attributes:
         return 'attributes({})'.format(', '.join(map('{0[0]}={0[1]!r}'.format, sorted(self.__dict__.items()))))
 
 
-class _deprecation_wrapper:
-    def create(self, *args, **kwargs):
-        from . import warnings, unit
-        warnings.deprecation('nutils.types.unit is deprecated; use nutils.unit.create instead')
-        return unit.create(*args, **kwargs)
-    __call__ = create
-
-
-unit = _deprecation_wrapper()
-del _deprecation_wrapper
-
-
 def _array_bases(obj):
     'all ndarray bases starting from and including `obj`'
     while isinstance(obj, numpy.ndarray):
