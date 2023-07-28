@@ -16,7 +16,7 @@ import io
 import types
 import numpy
 import dataclasses
-from ._backports import cached_property
+from functools import cached_property
 from ctypes import byref, c_int, c_ssize_t, c_void_p, c_char_p, py_object, pythonapi, Structure, POINTER
 c_ssize_p = POINTER(c_ssize_t)
 

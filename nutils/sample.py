@@ -18,7 +18,7 @@ set.
 from . import types, _util as util, function, evaluable, warnings
 from .pointsseq import PointsSequence
 from .transformseq import Transforms
-from ._backports import cached_property
+from functools import cached_property
 from typing import Iterable, Mapping, Optional, Sequence, Tuple, Union
 import numpy
 import numbers

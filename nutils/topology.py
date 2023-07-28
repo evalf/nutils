@@ -16,7 +16,7 @@ out in element loops. For lower level operations topologies can be used as
 
 from . import element, function, evaluable, _util as util, parallel, numeric, cache, transform, transformseq, warnings, types, points, sparse
 from ._util import single_or_multiple
-from ._backports import cached_property
+from functools import cached_property
 from .elementseq import References
 from .pointsseq import PointsSequence
 from .sample import Sample

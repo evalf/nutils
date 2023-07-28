@@ -7,7 +7,7 @@ and :class:`SimplexGaussPoints` that reflect the variety of elements in the
 '''
 
 from . import types, transform, numeric, _util as util
-from ._backports import cached_property
+from functools import cached_property
 from typing import Tuple, FrozenSet
 from numbers import Integral
 import numpy

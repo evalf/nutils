@@ -7,7 +7,7 @@ else:
 from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, List, FrozenSet, NamedTuple
 from . import evaluable, numeric, _util as util, types, warnings, debug_flags, sparse, matrix
 from ._util import nutils_dispatch
-from ._backports import cached_property
+from functools import cached_property
 from .transformseq import Transforms
 import nutils_poly as poly
 import builtins

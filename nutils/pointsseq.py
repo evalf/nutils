@@ -2,7 +2,7 @@
 
 from . import types, numeric, evaluable
 from .points import Points
-from ._backports import cached_property
+from functools import cached_property
 from typing import Tuple, Sequence, Iterable, Iterator, Optional, Union, overload
 import abc
 import itertools

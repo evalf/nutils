@@ -3,7 +3,7 @@
 from . import types, numeric, _util as util
 from .element import Reference
 from .pointsseq import PointsSequence
-from ._backports import cached_property
+from functools import cached_property
 from typing import Tuple, Sequence, Iterable, Iterator, Optional, Union, overload
 import abc
 import itertools

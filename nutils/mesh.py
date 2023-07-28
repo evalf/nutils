@@ -10,7 +10,7 @@ from . import topology, function, _util as util, element, numeric, transform, tr
 from .elementseq import References
 from .transform import TransformItem
 from .topology import Topology
-from ._backports import comb
+from math import comb
 from typing import Optional, Sequence, Tuple, Union
 import numpy
 import os
