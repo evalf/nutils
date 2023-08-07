@@ -12,6 +12,7 @@ System of Units (SI) are predefined, as well as the full set of metric
 prefixes. Dimensional values are generated primarily by instantiating the
 Quantity type with a string value.
 
+    >>> from nutils import SI
     >>> v = SI.parse('7μN*5h/6g')
 
 The Quantity constructor recognizes the multiplication (\*) and division (/)
