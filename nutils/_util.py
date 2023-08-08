@@ -427,6 +427,18 @@ def in_context(context):
     return in_context_wrapper
 
 
+def log_version(f):
+
+    from . import version, version_name
+
+    @functools.wraps(f)
+    def log_version(*args, **kwargs):
+        treelog.info(f'NUTILS {version} "{version_name.title()}"')
+        return f(*args, **kwargs)
+
+    return log_version
+
+
 def log_arguments(f):
     '''Decorator to log a function's arguments.
 

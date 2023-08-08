@@ -23,6 +23,7 @@ def run(f, *, argv=None):
         util.in_context(util.log_traceback),
         util.in_context(util.post_mortem),
         warnings.via(treelog.warning),
+        util.log_version,
         util.log_arguments,
         util.timeit(),
     )
