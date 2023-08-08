@@ -9,7 +9,7 @@ system, and provide pointsets for purposes of integration and sampling.
 """
 
 from . import _util as util, numeric, cache, transform, warnings, types, points
-from ._backports import cached_property
+from functools import cached_property
 from typing import Tuple
 from numbers import Integral
 import nutils_poly as poly

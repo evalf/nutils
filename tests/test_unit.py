@@ -61,16 +61,4 @@ class Unit(testing.TestCase):
             stringly.dumps(U, 'foo')
 
 
-class DeprecatedUnit(testing.TestCase):
-
-    def test_types_unit(self):
-        with self.assertWarns(warnings.NutilsDeprecationWarning):
-            U = types.unit(m=1, s=1, g=1e-3)
-        self.assertIsInstance(U, unit._Unbound)
-
-    def test_types_unit_create(self):
-        with self.assertWarns(warnings.NutilsDeprecationWarning):
-            U = types.unit.create(m=1, s=1, g=1e-3)
-        self.assertIsInstance(U, unit._Unbound)
-
 # vim:sw=2:sts=2:et

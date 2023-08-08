@@ -5,7 +5,7 @@ The transform module.
 from typing import Tuple, Dict
 from numbers import Integral
 from . import cache, numeric, _util as util, types
-from ._backports import cached_property
+from functools import cached_property
 import nutils_poly as poly
 import numpy
 import collections

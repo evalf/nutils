@@ -16,7 +16,7 @@ out in element loops. For lower level operations topologies can be used as
 
 from . import element, function, evaluable, _util as util, parallel, numeric, cache, transform, transformseq, warnings, types, points, sparse
 from ._util import single_or_multiple
-from ._backports import cached_property
+from functools import cached_property
 from .elementseq import References
 from .pointsseq import PointsSequence
 from .sample import Sample
@@ -1523,11 +1523,7 @@ class TransformChainsTopology(Topology):
         return function.get(values, 0, self.f_index)
 
     @log.withcontext
-    def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None, skip_missing=False):
-        if ischeme is not None:
-            warnings.deprecation('the ischeme argument is deprecated and will be removed in future')
-        if scale is not None:
-            warnings.deprecation('the scale argument is deprecated and will be removed in future')
+    def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, skip_missing=False):
         if max(tol, eps) <= 0:
             raise ValueError('locate requires either tol or eps to be strictly positive')
         coords = numpy.asarray(coords, dtype=float)

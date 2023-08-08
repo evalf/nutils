@@ -16,7 +16,7 @@ import io
 import types
 import numpy
 import dataclasses
-from ._backports import cached_property
+from functools import cached_property
 from ctypes import byref, c_int, c_ssize_t, c_void_p, c_char_p, py_object, pythonapi, Structure, POINTER
 c_ssize_p = POINTER(c_ssize_t)
 
@@ -610,18 +610,6 @@ class attributes:
 
     def __repr__(self):
         return 'attributes({})'.format(', '.join(map('{0[0]}={0[1]!r}'.format, sorted(self.__dict__.items()))))
-
-
-class _deprecation_wrapper:
-    def create(self, *args, **kwargs):
-        from . import warnings, unit
-        warnings.deprecation('nutils.types.unit is deprecated; use nutils.unit.create instead')
-        return unit.create(*args, **kwargs)
-    __call__ = create
-
-
-unit = _deprecation_wrapper()
-del _deprecation_wrapper
 
 
 def _array_bases(obj):

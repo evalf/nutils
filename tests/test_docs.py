@@ -1,4 +1,5 @@
 import doctest as _doctest
+from nutils._backports import DocTestFinder
 import unittest
 import importlib
 import os
@@ -59,11 +60,11 @@ if os.environ.get('NUTILS_TENSORIAL', None):
 
 doctest = unittest.TestSuite()
 parser = _doctest.DocTestParser()
-finder = _doctest.DocTestFinder(parser=parser)
+finder = DocTestFinder(parser=parser)
 checker = nutils.testing.FloatNeighborhoodOutputChecker()
 root = pathlib.Path(__file__).parent.parent
-for name in nutils.__all__:
-    module = importlib.import_module('.'+name, 'nutils')
+for path in sorted((root/'nutils').glob('*.py')):
+    module = importlib.import_module('.'+path.stem, 'nutils')
     for test in sorted(finder.find(module)):
         if len(test.examples) == 0:
             continue

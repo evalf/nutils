@@ -59,10 +59,6 @@ class Array(TestCase):
         with self.assertRaisesRegex(TypeError, '^operand type\(s\) all returned NotImplemented from __array_ufunc__'):
             '1' + function.Argument('a', ())
 
-    def test_deprecated_simplified(self):
-        with self.assertWarns(warnings.NutilsDeprecationWarning):
-            function.Array.cast([1, 2]).simplified
-
     def test_different_argument_shapes(self):
         with self.assertRaisesRegex(ValueError, "Argument 'a' has two different shapes"):
             function.Argument('a', (2,)).sum() + function.Argument('a', (3, 4)).sum(-1)
@@ -721,32 +717,6 @@ piecewise(partition=False)
 piecewise(partition=True)
 
 
-class elemwise(TestCase):
-
-    def setUp(self):
-        super().setUp()
-        self.index = function._Wrapper(lambda: evaluable.InRange(evaluable.Argument('index', (), int), evaluable.constant(5)), shape=(), dtype=int)
-        self.data = tuple(map(types.frozenarray, (
-            numpy.arange(1, 7, dtype=float).reshape(2, 3),
-            numpy.arange(2, 8, dtype=float).reshape(2, 3),
-            numpy.arange(3, 9, dtype=float).reshape(2, 3),
-            numpy.arange(4, 10, dtype=float).reshape(2, 3),
-            numpy.arange(6, 12, dtype=float).reshape(2, 3),
-        )))
-        with self.assertWarns(warnings.NutilsDeprecationWarning):
-            self.func = function.Elemwise(self.data, self.index, float)
-
-    def test_evalf(self):
-        for i in range(5):
-            with self.subTest(i=i):
-                numpy.testing.assert_array_almost_equal(self.func.as_evaluable_array.eval(index=i), self.data[i])
-
-    def test_shape(self):
-        for i in range(5):
-            with self.subTest(i=i):
-                self.assertEqual(self.func.size, self.data[i].size)
-
-
 class replace_arguments(TestCase):
 
     def test_array(self):
@@ -1037,17 +1007,6 @@ derivative('method',
            symgrad=lambda arg, geom: function.Array.cast(arg).symgrad(geom),
            ngrad=lambda arg, geom: function.Array.cast(arg).ngrad(geom),
            nsymgrad=lambda arg, geom: function.Array.cast(arg).nsymgrad(geom))
-
-
-class deprecations(TestCase):
-
-    def test_simplified(self):
-        with self.assertWarns(warnings.NutilsDeprecationWarning):
-            function.simplified(function.Argument('a', ()))
-
-    def test_iszero(self):
-        with self.assertWarns(warnings.NutilsDeprecationWarning):
-            function.iszero(function.Argument('a', ()))
 
 
 class CommonBasis:

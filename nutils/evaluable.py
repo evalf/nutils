@@ -29,7 +29,7 @@ else:
     Protocol = object
 
 from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, sparse
-from ._backports import cached_property
+from functools import cached_property
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph
 import nutils_poly as poly
 import numpy

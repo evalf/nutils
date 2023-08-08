@@ -7,7 +7,7 @@ else:
 from typing import Tuple, Union, Type, Callable, Sequence, Any, Optional, Iterator, Iterable, Dict, Mapping, List, FrozenSet, NamedTuple
 from . import evaluable, numeric, _util as util, types, warnings, debug_flags, sparse, matrix
 from ._util import nutils_dispatch
-from ._backports import cached_property
+from functools import cached_property
 from .transformseq import Transforms
 import nutils_poly as poly
 import builtins
@@ -315,8 +315,8 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
 
            This method will change in future to match Numpy's equivalent
            method, which sums over all axes by default. During transition, use
-           of this method without an axis argument will raise a warning, and
-           later an error, if the input array is of ndim >= 2.
+           of this method without an axis argument will raise an error if the
+           input array is of ndim >= 2.
 
         Parameters
         ----------
@@ -330,12 +330,11 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         :class:`Array`
         '''
         if axis is None and self.ndim != 1:
-            warnings.deprecation(
+            raise ValueError(
                 "The default summation axis will change from being the last axis (old behaviour)\n"
                 "to being ALL axes (numpy's behaviour). To facilitate the transition, the axis\n"
-                "argument will be made MANDATORY for arrays with dimension > 1, for the duration\n"
+                "argument has been made MANDATORY for arrays with dimension > 1, for the duration\n"
                 "of at least one release cycle.")
-            axis = -1
 
         return numpy.sum(self, axis)
 
@@ -467,13 +466,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     def __repr__(self) -> str:
         return 'Array<{}>'.format(','.join(str(n) for n in self.shape))
 
-    @property
-    def simplified(self):
-        warnings.deprecation('`nutils.function.Array.simplified` is deprecated. This property returns the array unmodified and can safely be omitted.')
-        return self
-
-    @util.positional_only
-    def eval(self, arguments=...) -> numpy.ndarray:
+    def eval(self, /, **arguments) -> numpy.ndarray:
         'Evaluate this function.'
 
         return evaluate(self, _post=_convert, arguments=arguments)[0]
@@ -591,8 +584,8 @@ class Custom(Array):
     Example
     -------
 
-    The following class implements :func:`multiply` using :class:`Custom`
-    without broadcasting and for :class:`float` arrays only.
+    The following class implements multiplication using :class:`Custom` without
+    broadcasting and for :class:`float` arrays only.
 
     >>> class Multiply(Custom):
     ...
@@ -1216,18 +1209,6 @@ def _join_arguments(args_list: Iterable[Mapping[str, Argument]]) -> Dict[str, Ar
                     raise ValueError('Argument {!r} has two different dtypes: {}, {}.'.format(name, dtype1.__name__ if dtype1 in _dtypes else dtype1, dtype2.__name__ if dtype2 in _dtypes else dtype2))
     return joined
 
-# CONSTRUCTORS
-
-
-def _use_instead(alternative):
-    def wrapper(f):
-        @functools.wraps(f)
-        def wrapped(*args, **kwargs):
-            warnings.deprecation(f'function.{f.__name__} is deprecated; use {alternative} instead')
-            return f(*args, **kwargs)
-        return wrapped
-    return wrapper
-
 
 def asarray(__arg: IntoArray) -> Array:
     '''Cast a value to an :class:`Array`.
@@ -1243,21 +1224,6 @@ def asarray(__arg: IntoArray) -> Array:
     '''
 
     return Array.cast(__arg)
-
-
-@_use_instead('numpy.shape')
-def shape(__arg: IntoArray) -> Tuple[int, ...]:
-    return asarray(__arg).shape
-
-
-@_use_instead('numpy.ndim')
-def ndim(__arg: IntoArray) -> int:
-    return asarray(__arg).ndim
-
-
-@_use_instead('numpy.size')
-def size(__arg: IntoArray) -> int:
-    return asarray(__arg).size
 
 
 def zeros(shape: Shape, dtype: DType = float) -> Array:
@@ -1330,623 +1296,6 @@ def levicivita(__n: int, dtype: DType = float) -> Array:
     '''
 
     return _Constant(numeric.levicivita(__n))
-
-# ARITHMETIC
-
-
-@_use_instead('numpy.add')
-def add(__left: IntoArray, __right: IntoArray) -> Array:
-    '''Return the sum of the arguments, elementwise.
-
-    Parameters
-    ----------
-    left, right : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.add, __left, __right)
-
-
-@_use_instead('numpy.subtract')
-def subtract(__left: IntoArray, __right: IntoArray) -> Array:
-    '''Return the difference of the arguments, elementwise.
-
-    Parameters
-    ----------
-    left, right : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.subtract, __left, __right)
-
-
-@_use_instead('numpy.positive')
-def positive(__arg: IntoArray) -> Array:
-    '''Return the argument unchanged.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return Array.cast(__arg)
-
-
-@_use_instead('numpy.negative')
-def negative(__arg: IntoArray) -> Array:
-    '''Return the negation of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.negative, __arg)
-
-
-@_use_instead('numpy.multiply')
-def multiply(__left: IntoArray, __right: IntoArray) -> Array:
-    '''Return the product of the arguments, elementwise.
-
-    Parameters
-    ----------
-    left, right : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.multiply, __left, __right)
-
-
-@_use_instead('numpy.divide')
-def divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
-    '''Return the true-division of the arguments, elementwise.
-
-    Parameters
-    ----------
-    dividend, divisor : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.divide, __dividend, __divisor, min_dtype=float)
-
-
-@_use_instead('numpy.floor_divide')
-def floor_divide(__dividend: IntoArray, __divisor: IntoArray) -> Array:
-    '''Return the floor-division of the arguments, elementwise.
-
-    Parameters
-    ----------
-    dividend, divisor : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.FloorDivide, __dividend, __divisor)
-
-
-@_use_instead('numpy.reciprocal')
-def reciprocal(__arg: IntoArray) -> Array:
-    '''Return the reciprocal of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.reciprocal, __arg)
-
-
-@_use_instead('numpy.power')
-def power(__base: IntoArray, __exponent: IntoArray) -> Array:
-    '''Return the exponentiation of the arguments, elementwise.
-
-    Parameters
-    ----------
-    base, exponent : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.power, __base, __exponent, min_dtype=int)
-
-
-@_use_instead('numpy.sqrt')
-def sqrt(__arg: IntoArray) -> Array:
-    '''Return the square root of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.sqrt, __arg, min_dtype=float)
-
-
-@_use_instead('numpy.square')
-def square(__arg: IntoArray) -> Array:
-    warnings.deprecation('function.square is deprecated; use numpy.square instead')
-    return Array.cast(numpy.square(__arg))
-
-
-@_use_instead('numpy.hypot')
-def hypot(__array1: IntoArray, __array2: IntoArray) -> Array:
-    return numpy.sqrt(numpy.square(__array1) + numpy.square(__array2))
-
-
-@_use_instead('abs or numpy.abs')
-def abs(__arg: IntoArray) -> Array:
-    '''Return the absolute value of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    arg = Array.cast(__arg)
-    return _Wrapper(evaluable.abs, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
-
-
-@_use_instead('numpy.matmul or the @ operator')
-def matmul(__arg1: IntoArray, __arg2: IntoArray) -> Array:
-    '''Return the matrix product of two arrays.
-
-    Parameters
-    ----------
-    arg1, arg2 : :class:`Array` or something that can be :meth:`~Array.cast` into one
-        Input arrays.
-
-    Returns
-    -------
-    :class:`Array`
-
-    See Also
-    --------
-
-    :any:`numpy.matmul` : the equivalent Numpy function.
-    '''
-
-    arg1 = Array.cast(__arg1)
-    arg2 = Array.cast(__arg2)
-    if not arg1.ndim or not arg2.ndim:
-        raise ValueError('cannot contract zero-dimensional array')
-    if arg2.ndim == 1:
-        return (arg1 * arg2).sum(-1)
-    elif arg1.ndim == 1:
-        return (arg1[:, numpy.newaxis] * arg2).sum(-2)
-    else:
-        return (arg1[..., :, :, numpy.newaxis] * arg2[..., numpy.newaxis, :, :]).sum(-2)
-
-
-@_use_instead('numpy.sign')
-def sign(__arg: IntoArray) -> Array:
-    '''Return the sign of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    arg = Array.cast(__arg)
-    if arg.dtype == complex:
-        raise ValueError('sign is not defined for complex numbers')
-    return _Wrapper.broadcasted_arrays(evaluable.Sign, __arg)
-
-
-@_use_instead('numpy.mod')
-def mod(__dividend: IntoArray, __divisor: IntoArray) -> Array:
-    '''Return the remainder of the floored division, elementwise.
-
-    Parameters
-    ----------
-    dividend, divisor : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.Mod, __dividend, __divisor)
-
-
-@_use_instead('numpy.divmod')
-def divmod(__dividend: IntoArray, __divisor: IntoArray) -> Tuple[Array, Array]:
-    '''Return the floor-division and remainder, elementwise.
-
-    Parameters
-    ----------
-    dividend, divisor : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`tuple` of :class:`Array` and :class:`Array`
-    '''
-
-    return floor_divide(__dividend, __divisor), mod(__dividend, __divisor)
-
-# TRIGONOMETRIC
-
-
-@_use_instead('numpy.cos')
-def cos(__arg: IntoArray) -> Array:
-    '''Return the trigonometric cosine of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.Cos, __arg, min_dtype=float)
-
-
-@_use_instead('numpy.sin')
-def sin(__arg: IntoArray) -> Array:
-    '''Return the trigonometric sine of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.Sin, __arg, min_dtype=float)
-
-
-@_use_instead('numpy.tab')
-def tan(__arg: IntoArray) -> Array:
-    '''Return the trigonometric tangent of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.Tan, __arg, min_dtype=float)
-
-
-@_use_instead('numpy.arccos')
-def arccos(__arg: IntoArray) -> Array:
-    '''Return the trigonometric inverse cosine of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.ArcCos, __arg, min_dtype=float)
-
-
-@_use_instead('numpy.arcsin')
-def arcsin(__arg: IntoArray) -> Array:
-    '''Return the trigonometric inverse sine of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.ArcSin, __arg, min_dtype=float)
-
-
-@_use_instead('numpy.arctan')
-def arctan(__arg: IntoArray) -> Array:
-    '''Return the trigonometric inverse tangent of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.ArcTan, __arg, min_dtype=float)
-
-
-@_use_instead('numpy.arctan2')
-def arctan2(__dividend: IntoArray, __divisor: IntoArray) -> Array:
-    '''Return the trigonometric inverse tangent of the ``dividend / divisor``, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    dividend, divisor = broadcast_arrays(*typecast_arrays(__dividend, __divisor, min_dtype=float))
-    if dividend.dtype == complex:
-        raise ValueError('arctan2 is not defined for complex numbers')
-    return _Wrapper(evaluable.ArcTan2, dividend, divisor, shape=dividend.shape, dtype=float)
-
-
-@_use_instead('numpy.cosh')
-def cosh(__arg: IntoArray) -> Array:
-    '''Return the hyperbolic cosine of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.cosh, __arg, min_dtype=float)
-
-
-@_use_instead('numpy.sinh')
-def sinh(__arg: IntoArray) -> Array:
-    '''Return the hyperbolic sine of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.sinh, __arg, min_dtype=float)
-
-
-@_use_instead('numpy.tanh')
-def tanh(__arg: IntoArray) -> Array:
-    '''Return the hyperbolic tangent of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.tanh, __arg, min_dtype=float)
-
-
-@_use_instead('numpy.arctanh')
-def arctanh(__arg: IntoArray) -> Array:
-    '''Return the hyperbolic inverse tangent of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.arctanh, __arg, min_dtype=float)
-
-
-@_use_instead('numpy.exp')
-def exp(__arg: IntoArray) -> Array:
-    '''Return the exponential of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.Exp, __arg, min_dtype=float)
-
-
-@_use_instead('numpy.log')
-def log(__arg: IntoArray) -> Array:
-    '''Return the natural logarithm of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.Log, __arg, min_dtype=float)
-
-
-ln = log
-
-
-@_use_instead('numpy.log2')
-def log2(__arg: IntoArray) -> Array:
-    '''Return the base 2 logarithm of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.log2, __arg, min_dtype=float)
-
-
-@_use_instead('numpy.log10')
-def log10(__arg: IntoArray) -> Array:
-    '''Return the base 10 logarithm of the argument, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.log10, __arg, min_dtype=float)
-
-# COMPARISON
-
-
-@_use_instead('numpy.greater or the > operator')
-def greater(__left: IntoArray, __right: IntoArray) -> Array:
-    '''Return if the first argument is greater than the second, elementwise.
-
-    Parameters
-    ----------
-    left, right : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    left, right = map(Array.cast, (__left, __right))
-    if left.dtype == complex or right.dtype == complex:
-        raise ValueError('Complex numbers have no total order.')
-    return _Wrapper.broadcasted_arrays(evaluable.Greater, left, right, force_dtype=bool)
-
-
-@_use_instead('numpy.equal or the == operator')
-def equal(__left: IntoArray, __right: IntoArray) -> Array:
-    '''Return if the first argument equals the second, elementwise.
-
-    Parameters
-    ----------
-    left, right : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return _Wrapper.broadcasted_arrays(evaluable.Equal, __left, __right, force_dtype=bool)
-
-
-@_use_instead('numpy.less or the < operator')
-def less(__left: IntoArray, __right: IntoArray) -> Array:
-    '''Return if the first argument is less than the second, elementwise.
-
-    Parameters
-    ----------
-    left, right : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    left, right = map(Array.cast, (__left, __right))
-    if left.dtype == complex or right.dtype == complex:
-        raise ValueError('Complex numbers have no total order.')
-    return _Wrapper.broadcasted_arrays(evaluable.Less, left, right, force_dtype=bool)
-
-
-@_use_instead('numpy.minimum')
-def min(__a: IntoArray, __b: IntoArray) -> Array:
-    '''Return the minimum of the arguments, elementwise.
-
-    Parameters
-    ----------
-    a, b : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    a, b = map(Array.cast, (__a, __b))
-    if a.dtype == complex or b.dtype == complex:
-        raise ValueError('Complex numbers have no total order.')
-    return _Wrapper.broadcasted_arrays(evaluable.Minimum, a, b)
-
-
-@_use_instead('numpy.maximum')
-def max(__a: IntoArray, __b: IntoArray) -> Array:
-    '''Return the maximum of the arguments, elementwise.
-
-    Parameters
-    ----------
-    a, b : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    a, b = map(Array.cast, (__a, __b))
-    if a.dtype == complex or b.dtype == complex:
-        raise ValueError('Complex numbers have no total order.')
-    return _Wrapper.broadcasted_arrays(evaluable.Maximum, a, b)
-
-
-# OPPOSITE
 
 
 @nutils_dispatch
@@ -2071,209 +1420,6 @@ def jump(__arg: IntoArray) -> Array:
 
     return opposite(__arg) - __arg
 
-# REDUCTION
-
-
-@_use_instead('numpy.sum')
-def sum(__arg: IntoArray, axis: Optional[Union[int, Sequence[int]]] = None) -> Array:
-    '''Return the sum of array elements over the given axes.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    axis : :class:`int`, a sequence of :class:`int`, or ``None``
-        The axis or axes to sum. ``None``, the default, implies all axes.
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    arg = Array.cast(__arg)
-    if arg.dtype == bool:
-        arg = arg.astype(int)
-    if axis is None:
-        if arg.ndim == 0:
-            raise ValueError('Cannot sum last axis of 0-D array.')
-        return _Wrapper(evaluable.Sum, arg, shape=arg.shape[:-1], dtype=arg.dtype)
-    axes = typing.cast(Sequence[int], (axis,) if isinstance(axis, numbers.Integral) else axis)
-    summed = _Transpose.to_end(arg, *axes)
-    for i in range(len(axes)):
-        summed = _Wrapper(evaluable.Sum, summed, shape=summed.shape[:-1], dtype=summed.dtype)
-    return summed
-
-
-@_use_instead('numpy.product')
-def product(__arg: IntoArray, axis: int) -> Array:
-    '''Return the product of array elements over the given axes.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    axis : :class:`int`, a sequence of :class:`int`, or ``None``
-        The axis or axes along which the product is performed. ``None``, the
-        default, implies all axes.
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    arg = Array.cast(__arg)
-    if arg.dtype == bool:
-        arg = arg.astype(int)
-    transposed = _Transpose.to_end(arg, axis)
-    return _Wrapper(evaluable.Product, transposed, shape=transposed.shape[:-1], dtype=arg.dtype)
-
-# LINEAR ALGEBRA
-
-
-@_use_instead('numpy.conjugate')
-def conjugate(__arg: IntoArray) -> Array:
-    '''Return the complex conjugate, elementwise.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-        The complex conjugate.
-    '''
-
-    arg = Array.cast(__arg)
-    return _Wrapper(evaluable.conjugate, arg, shape=arg.shape, dtype=arg.dtype)
-
-
-conj = conjugate
-
-
-@_use_instead('numpy.real')
-def real(__arg: IntoArray) -> Array:
-    '''Return the real part of the complex argument.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-        The real part of the complex argument.
-    '''
-
-    arg = Array.cast(__arg)
-    return _Wrapper(evaluable.real, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
-
-
-@_use_instead('numpy.imag')
-def imag(__arg: IntoArray) -> Array:
-    '''Return the imaginary part of the complex argument.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-        The imaginary part of the complex argument.
-    '''
-
-    arg = Array.cast(__arg)
-    return _Wrapper(evaluable.imag, arg, shape=arg.shape, dtype=float if arg.dtype == complex else arg.dtype)
-
-
-@_use_instead('numpy.dot, matmul or a combination of multiply and sum')
-def dot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> Array:
-    '''Return the inner product of the arguments over the given axes, elementwise over the remanining axes.
-
-    Parameters
-    ----------
-    a : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    b : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    axes : :class:`int`, a sequence of :class:`int`, or ``None``
-        The axis or axes along which the inner product is performed. If the
-        second argument has one dimension and axes is ``None``, the default, the
-        inner product of the second argument with the first axis of the first
-        argument is computed. Otherwise ``axes=None`` is not allowed.
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    a = Array.cast(__a)
-    b = Array.cast(__b)
-    if axes is None:
-        assert b.ndim == 1 and b.shape[0] == a.shape[0]
-        b = _append_axes(b, a.shape[1:])
-        axes = 0,
-    return numpy.sum(a * b, axes)
-
-
-@_use_instead('numpy.vdot')
-def vdot(__a: IntoArray, __b: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> Array:
-    '''Return the dot product of two vectors.
-
-    If the arguments are not 1D, the arguments are flattened. The dot product is
-    then defined as
-
-        sum(conjugate(a) * b)
-
-    Parameters
-    ----------
-    a : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    b : :class:`Array` or something that can be :meth:`~Array.cast` into one
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    a, b = broadcast_arrays(__a, __b)
-    return numpy.sum(numpy.conjugate(a) * b, range(a.ndim))
-
-
-@_use_instead('numpy.trace')
-def trace(__arg: IntoArray, axis1: int = -2, axis2: int = -1) -> Array:
-    '''Return the trace, the sum of the diagonal, of an array over the two given axes, elementwise over the remanining axes.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    axis1 : :class:`int`
-        The first axis. Defaults to the next to last axis.
-    axis2 : :class:`int`
-        The second axis. Defaults to the last axis.
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    return numpy.sum(_takediag(__arg, axis1, axis2), -1)
-
-
-@_use_instead('numpy.linalg.norm')
-def norm2(__arg: IntoArray, axis: Union[int, Sequence[int]] = -1) -> Array:
-    '''Return the 2-norm of the argument over the given axis, elementwise over the remanining axes.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    axis : :class:`int`
-        The axis along which the norm is computed. Defaults to the last axis.
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    arg = Array.cast(__arg)
-    return numpy.sqrt(numpy.sum(arg * numpy.conjugate(arg), axis))
-
 
 @nutils_dispatch
 def normalized(__arg: IntoArray, axis: int = -1) -> Array:
@@ -2304,123 +1450,6 @@ def matmat(__arg0: IntoArray, *args: IntoArray) -> Array:
     return retval
 
 
-@_use_instead('numpy.linalg.inv')
-def inverse(__arg: IntoArray, __axes: Tuple[int, int] = (-2, -1)) -> Array:
-    '''Return the inverse of the argument along the given axes, elementwise over the remaining axes.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    axes : :class:`tuple` of two :class:`int`
-        The two axes along which the inverse is computed. Defaults to the last
-        two axes.
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    arg, = typecast_arrays(__arg, min_dtype=float)
-    transposed = _Transpose.to_end(arg, *__axes)
-    if transposed.shape[-2] != transposed.shape[-1]:
-        raise ValueError('cannot compute the inverse along two axes with different lengths')
-    inverted = _Wrapper(evaluable.Inverse, transposed, shape=transposed.shape, dtype=arg.dtype)
-    return _Transpose.from_end(inverted, *__axes)
-
-
-@_use_instead('numpy.linalg.det')
-def determinant(__arg: IntoArray, __axes: Tuple[int, int] = (-2, -1)) -> Array:
-    '''Return the determinant of the argument along the given axes, elementwise over the remaining axes.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    axes : :class:`tuple` of two :class:`int`
-        The two axes along which the determinant is computed. Defaults to the last
-        two axes.
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    transposed = _Transpose.to_end(Array.cast(__arg), *__axes)
-    return _Wrapper(evaluable.Determinant, transposed, shape=transposed.shape[:-2], dtype=float)
-
-
-def _eval_eigval(arg: evaluable.Array, symmetric: bool) -> evaluable.Array:
-    val, vec = evaluable.Eig(arg, symmetric)
-    return val
-
-
-def _eval_eigvec(arg: evaluable.Array, symmetric: bool) -> evaluable.Array:
-    val, vec = evaluable.Eig(arg, symmetric)
-    return vec
-
-
-@_use_instead('numpy.linalg.eig or numpy.linalg.eigh')
-def eig(__arg: IntoArray, __axes: Tuple[int, int] = (-2, -1), symmetric: bool = False) -> Tuple[Array, Array]:
-    '''Return the eigenvalues and right eigenvectors of the argument along the given axes, elementwise over the remaining axes.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    axes : :class:`tuple` of two :class:`int`
-        The two axes along which the determinant is computed. Defaults to the last
-        two axes.
-    symmetric : :class:`bool`
-        Indicates if the argument is Hermitian.
-
-    Returns
-    -------
-    eigval : :class:`Array`
-        The diagonalized eigenvalues.
-    eigvec : :class:`Array`
-        The right eigenvectors.
-    '''
-
-    arg = Array.cast(__arg)
-    transposed = _Transpose.to_end(arg, *__axes)
-    eigval = _Wrapper(functools.partial(_eval_eigval, symmetric=symmetric), arg, shape=arg.shape[:-1], dtype=float if symmetric else complex)
-    eigvec = _Wrapper(functools.partial(_eval_eigvec, symmetric=symmetric), arg, shape=arg.shape, dtype=float if symmetric and arg.dtype != complex else complex)
-    return diagonalize(eigval), eigvec
-
-
-def _takediag(__arg: IntoArray, _axis1: int = -2, _axis2: int = -1) -> Array:
-    arg = Array.cast(__arg)
-    transposed = _Transpose.to_end(arg, _axis1, _axis2)
-    if transposed.shape[-2] != transposed.shape[-1]:
-        raise ValueError('cannot take the diagonal along two axes with different lengths')
-    return _Wrapper(evaluable.TakeDiag, transposed, shape=transposed.shape[:-1], dtype=transposed.dtype)
-
-
-@_use_instead('numpy.diagonal')
-def takediag(__arg: IntoArray, __axis: int = -2, __rmaxis: int = -1) -> Array:
-    '''Return the diagonal of the argument along the given axes.
-
-    Parameters
-    ----------
-    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    axis : :class:`int`
-        The axis to keep. Defaults to the next to last axis.
-    rmaxis : :class:`int`
-        The axis to remove. Defaults to the last axis.
-
-    Returns
-    -------
-    :class:`Array`
-
-    See Also
-    --------
-    :func:`diagonalize` : The complement operation.
-    '''
-    arg = Array.cast(__arg)
-    axis = numeric.normdim(arg.ndim, __axis)
-    rmaxis = numeric.normdim(arg.ndim, __rmaxis)
-    assert axis < rmaxis
-    return _Transpose.from_end(_takediag(arg, axis, rmaxis), axis)
-
-
 def diagonalize(__arg: IntoArray, __axis: int = -1, __newaxis: int = -1) -> Array:
     '''Return argument with ``newaxis`` such that ``axis`` and `newaxis`` is diagonal.
 
@@ -2435,10 +1464,6 @@ def diagonalize(__arg: IntoArray, __axis: int = -1, __newaxis: int = -1) -> Arra
     Returns
     -------
     :class:`Array`
-
-    See Also
-    --------
-    :func:`takediag` : The complement operation.
     '''
 
     arg = Array.cast(__arg)
@@ -2450,33 +1475,6 @@ def diagonalize(__arg: IntoArray, __axis: int = -1, __newaxis: int = -1) -> Arra
     return _Transpose.from_end(diagonalized, axis, newaxis)
 
 
-@_use_instead('numpy.cross')
-def cross(__arg1: IntoArray, __arg2: IntoArray, axis: int = -1) -> Array:
-    '''Return the cross product of the arguments over the given axis, elementwise over the remaining axes.
-
-    Parameters
-    ----------
-    arg1, arg2 : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    axis : :class:`int`
-        The axis along which the cross product is computed. Defaults to the last axis.
-
-    Returns
-    -------
-    :class:`Array`
-
-    See Also
-    --------
-    :func:`takediag` : The inverse operation.
-    '''
-
-    arg1, arg2 = broadcast_arrays(*typecast_arrays(__arg1, __arg2, min_dtype=int))
-    axis = numeric.normdim(arg1.ndim, axis)
-    assert arg1.shape[axis] == 3
-    i = Array.cast(types.frozenarray([1, 2, 0]))
-    j = Array.cast(types.frozenarray([2, 0, 1]))
-    return numpy.take(arg1, i, axis) * numpy.take(arg2, j, axis) - numpy.take(arg2, i, axis) * numpy.take(arg1, j, axis)
-
-
 def outer(arg1, arg2=None, axis=0):
     'outer product'
 
@@ -2486,31 +1484,6 @@ def outer(arg1, arg2=None, axis=0):
         raise ValueError('arg1 and arg2 have different dimensions')
     axis = numeric.normdim(arg1.ndim, axis)
     return expand_dims(arg1, axis+1) * expand_dims(arg2, axis)
-
-# ARRAY OPS
-
-
-@_use_instead('numpy.transpose')
-def transpose(__array: IntoArray, __axes: Optional[Sequence[int]] = None) -> Array:
-    '''Permute the axes of an array.
-
-    Parameters
-    ----------
-    array : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    axes : sequence of :class:`int`
-        Permutation of ``range(array.ndim)``. Defaults to reversing the order of
-        the axes, ``reversed(range(array.ndim))``.
-
-    Returns
-    -------
-    :class:`Array`
-        The transposed array. Axis ``i`` of the resulting array corresponds to
-        axis ``axes[i]`` of the argument.
-    '''
-
-    array = Array.cast(__array)
-    axes = tuple(reversed(range(array.ndim)) if __axes is None else __axes)
-    return _Transpose(array, axes)
 
 
 def _append_axes(__array: IntoArray, __shape: Shape) -> Array:
@@ -2565,78 +1538,6 @@ def expand_dims(__array: IntoArray, axis: int) -> Array:
     return insertaxis(__array, axis, 1)
 
 
-@_use_instead('numpy.repeat')
-def repeat(__array: IntoArray, __n: IntoArray, axis: int) -> Array:
-    '''Repeat the given axis of an array `n` times.
-
-    Parameters
-    ----------
-    array : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    n : :class:`int` or :class:`Array`
-        The number of repetitions.
-    axis : class:`int`
-        The position of the axis to be repeated.
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    array = Array.cast(__array)
-    if array.shape[axis] != 1:
-        raise NotImplementedError('only axes with length 1 can be repeated')
-    return insertaxis(get(array, axis, 0), axis, __n)
-
-
-@_use_instead('numpy.swapaxes')
-def swapaxes(__array: IntoArray, __axis1: int, __axis2: int) -> Array:
-    '''Swap two axes of an array.
-
-    Parameters
-    ----------
-    array : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    axis1, axis2 : :class:`int`
-        The axes to be swapped.
-
-    Returns
-    -------
-    :class:`Array`
-    '''
-
-    array = Array.cast(__array)
-    axis1 = __axis1
-    axis2 = __axis2
-    trans = list(range(array.ndim))
-    trans[axis1], trans[axis2] = trans[axis2], trans[axis1]
-    return transpose(array, trans)
-
-
-@_use_instead('numpy.ravel or numpy.reshape')
-def ravel(__array: IntoArray, axis: int) -> Array:
-    '''Ravel two consecutive axes of an array.
-
-    Parameters
-    ----------
-    array : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    axis : :class:`int`
-        The first of the two consecutive axes to ravel.
-
-    Returns
-    -------
-    :class:`Array`
-
-    See Also
-    --------
-    :func:`unravel` : The reverse operation.
-    '''
-
-    array = Array.cast(__array)
-    axis = numeric.normdim(array.ndim-1, axis)
-    transposed = _Transpose.to_end(array, axis, axis+1)
-    raveled = _Wrapper(evaluable.Ravel, transposed, shape=(*transposed.shape[:-2], transposed.shape[-2]*transposed.shape[-1]), dtype=transposed.dtype)
-    return _Transpose.from_end(raveled, axis)
-
-
 def unravel(__array: IntoArray, axis: int, shape: Tuple[int, int]) -> Array:
     '''Unravel an axis to the given shape.
 
@@ -2652,10 +1553,6 @@ def unravel(__array: IntoArray, axis: int, shape: Tuple[int, int]) -> Array:
     -------
     :class:`Array`
         The resulting array with unraveled axes ``axis`` and ``axis+1``.
-
-    See Also
-    --------
-    :func:`ravel` : The reverse operation.
     '''
 
     assert len(shape) == 2 and all(isinstance(sh, int) for sh in shape), 'function.unravel: invalid shape: expected two integers, received {}'.format(shape)
@@ -2667,46 +1564,6 @@ def unravel(__array: IntoArray, axis: int, shape: Tuple[int, int]) -> Array:
                          shape=(*transposed.shape[:-1], *shape),
                          dtype=transposed.dtype)
     return _Transpose.from_end(unraveled, axis, axis+1)
-
-
-@_use_instead('numpy.take')
-def take(__array: IntoArray, __indices: IntoArray, axis: int) -> Array:
-    '''Take elements from an array along an axis.
-
-    Parameters
-    ----------
-    array : :class:`Array` or something that can be :meth:`~Array.cast` into one
-    indices : :class:`Array` with dtype :class:`int` or :class:`bool` or something that can be :meth:`~Array.cast` into one
-        The indices of elements to take. The array of indices may have any dimension, including zero.
-        However, if the array is boolean, the array must 1-D.
-    axis : :class:`int`
-        The axis to take elements from or, if ``indices`` has more than one
-        dimension, the first axis of a range of ``indices.ndim`` axes to take
-        elements from.
-
-    Returns
-    -------
-    :class:`Array`
-        The array with the taken elements. The original ``axis`` is replaced by
-        ``indices.ndim`` axes.
-
-    See Also
-    --------
-    :func:`get` : Special case of :func:`take` with scalar index.
-    '''
-
-    array = Array.cast(__array)
-    axis = numeric.normdim(array.ndim, axis)
-    if isinstance(__indices, numpy.ndarray) and __indices.ndim == 1 and __indices.dtype == bool \
-            or isinstance(__indices, (list, tuple)) and all(isinstance(index, bool) for index in __indices):
-        if len(__indices) != array.shape[axis]:
-            raise ValueError('The length of the mask differs from the length of the given axis.')
-        indices = Array.cast(numpy.nonzero(__indices)[0])
-    else:
-        indices = _Wrapper.broadcasted_arrays(evaluable.NormDim, array.shape[axis], Array.cast(__indices, dtype=int))
-    transposed = _Transpose.to_end(array, axis)
-    taken = _Wrapper(evaluable.Take, transposed, _WithoutPoints(indices), shape=(*transposed.shape[:-1], *indices.shape), dtype=array.dtype)
-    return _Transpose.from_end(taken, *range(axis, axis+indices.ndim))
 
 
 def get(__array: IntoArray, __axis: int, __index: IntoArray) -> Array:
@@ -2726,7 +1583,6 @@ def get(__array: IntoArray, __axis: int, __index: IntoArray) -> Array:
 
     See Also
     --------
-    :func:`take` : Take elements from an array along an axis.
     :func:`kronecker` : The complement operation.
     '''
 
@@ -2778,10 +1634,6 @@ def scatter(__array: IntoArray, length: int, indices: IntoArray) -> Array:
     Scatter strictly reorganizes array entries, it cannot assign multiple
     entries to the same position. In other words, the provided indices must be
     unique.
-
-    See Also
-    --------
-    :func:`take` : The complement operation.
     '''
 
     array = Array.cast(__array)
@@ -2819,51 +1671,6 @@ def kronecker(__array: IntoArray, axis: int, length: int, pos: IntoArray) -> Arr
     '''
 
     return _Transpose.from_end(scatter(__array, length, pos), axis)
-
-
-@_use_instead('numpy.concatenate')
-def concatenate(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
-    '''Join arrays along an existing axis.
-
-    Parameters
-    ----------
-    arrays : sequence of :class:`Array` or something that can be :meth:`~Array.cast` into one
-    axis : :class:`int`
-        The existing axis along which the arrays are joined.
-
-    Returns
-    -------
-    :class:`Array`
-
-    See Also
-    --------
-    :func:`stack` : Join arrays along an new axis.
-    '''
-
-    return _Concatenate(__arrays, axis)
-
-
-@_use_instead('numpy.stack')
-def stack(__arrays: Sequence[IntoArray], axis: int = 0) -> Array:
-    '''Join arrays along a new axis.
-
-    Parameters
-    ----------
-    arrays : sequence of :class:`Array` or something that can be :meth:`~Array.cast` into one
-    axis : :class:`int`
-        The axis in the resulting array along which the arrays are joined.
-
-    Returns
-    -------
-    :class:`Array`
-
-    See Also
-    --------
-    :func:`stack` : Join arrays along an new axis.
-    '''
-
-    aligned = broadcast_arrays(*typecast_arrays(*__arrays))
-    return util.sum(kronecker(array, axis, len(aligned), i) for i, array in enumerate(aligned))
 
 
 @nutils_dispatch
@@ -2986,41 +1793,6 @@ def broadcast_shapes(*shapes: Shape) -> Tuple[int, ...]:
             raise ValueError('cannot broadcast shapes {} because at least one or more axes have multiple lengths (excluding singletons)'.format(', '.join(map(str, shapes))))
         broadcasted.append(next(iter(lengths)))
     return tuple(broadcasted)
-
-
-@_use_instead('numpy.broadcast_to')
-def broadcast_to(array: IntoArray, shape: Shape) -> Array:
-    '''Broadcast an array to a new shape.
-
-    Parameters
-    ----------
-    array : :class:`Array` or similar
-        The array to broadcast.
-    shape : :class:`tuple` of :class:`int`
-        The desired shape.
-
-    Returns
-    -------
-    :class:`Array`
-        The broadcasted array.
-    '''
-
-    broadcasted = Array.cast(array)
-    orig_shape = broadcasted.shape
-    if broadcasted.ndim > len(shape):
-        raise ValueError('cannot broadcast array with shape {} to {} because the dimension decreases'.format(orig_shape, shape))
-    nnew = len(shape) - broadcasted.ndim
-    broadcasted = _prepend_axes(broadcasted, shape[:nnew])
-    for axis, (actual, desired) in enumerate(zip(broadcasted.shape[nnew:], shape[nnew:])):
-        if actual == desired:
-            continue
-        elif actual == 1:
-            broadcasted = numpy.repeat(broadcasted, desired, axis + nnew)
-        else:
-            raise ValueError('cannot broadcast array with shape {} to {} because input axis {} is neither singleton nor has the desired length'.format(orig_shape, shape, axis))
-    return broadcasted
-
-# DERIVATIVES
 
 
 @nutils_dispatch
@@ -3357,8 +2129,7 @@ def _convert(data: numpy.ndarray, inplace: bool = True) -> Union[numpy.ndarray, 
 
 
 @util.single_or_multiple
-@util.positional_only
-def eval(funcs: evaluable.AsEvaluableArray, arguments: Mapping[str, numpy.ndarray] = ...) -> Tuple[numpy.ndarray, ...]:
+def eval(funcs: evaluable.AsEvaluableArray, /, **arguments: numpy.ndarray) -> Tuple[numpy.ndarray, ...]:
     '''Evaluate one or several Array objects.
 
     Args
@@ -3430,13 +2201,6 @@ def transforms_index(space: str, transforms: Transforms) -> Array:
 
 def transforms_coords(space: str, transforms: Transforms) -> Array:
     return _TransformsCoords(space, transforms)
-
-
-def Elemwise(__data: Sequence[numpy.ndarray], __index: IntoArray, dtype: DType) -> Array:
-    'elemwise'
-
-    warnings.deprecation('function.Elemwise is deprecated; use function.get instead')
-    return get(numpy.asarray(__data), 0, __index)
 
 
 def piecewise(level: IntoArray, intervals: Sequence[IntoArray], *funcs: IntoArray) -> Array:
@@ -3512,24 +2276,9 @@ def heaviside(f: IntoArray):
     --------
 
     :func:`partition`: generalized version of :func:`heaviside`
-    :func:`sign`: like :func:`heaviside` but with different levels
     '''
 
     return Array.cast(numpy.sign(f) * .5 + .5)
-
-
-@_use_instead('numpy.choose')
-def choose(__index: IntoArray, __choices: Sequence[IntoArray]) -> Array:
-    'Function equivalent of :func:`numpy.choose`.'
-    index = Array.cast(__index)
-    if index.ndim != 0:
-        raise ValueError
-    choices = broadcast_arrays(*typecast_arrays(*__choices))
-    shape = choices[0].shape
-    dtype = choices[0].dtype
-    index = _append_axes(index, shape)
-    spaces = functools.reduce(operator.or_, (arg.spaces for arg in choices), index.spaces)
-    return _Wrapper(evaluable.Choose, index, *choices, shape=shape, dtype=dtype)
 
 
 def chain(_funcs: Sequence[IntoArray]) -> Sequence[Array]:
@@ -3556,16 +2305,6 @@ def vectorize(args: Sequence[IntoArray]) -> Array:
     '''
 
     return numpy.concatenate([kronecker(arg, axis=-1, length=len(args), pos=iarg) for iarg, arg in enumerate(args)])
-
-
-def simplified(__arg: IntoArray) -> Array:
-    warnings.deprecation('`nutils.function.simplified` is deprecated. This function returns the argument unmodified and can safely be omitted.')
-    return Array.cast(__arg)
-
-
-def iszero(__arg: IntoArray) -> bool:
-    warnings.deprecation('`nutils.function.iszero` is deprecated. Use `evaluable.iszero` on the lowered function instead.')
-    return False
 
 
 def add_T(__arg: IntoArray, axes: Tuple[int, int] = (-2, -1)) -> Array:
@@ -4353,9 +3092,7 @@ class __implementations__:
 
     @implements(numpy.trace)
     def trace(arg: Array, offset: int = 0, axis1: int = 0, axis2: int = 1) -> Array:
-        if offset != 0:
-            raise NotImplementedError('traces over offset diagonal are not yet supported')
-        return numpy.sum(_takediag(arg, axis1, axis2), -1)
+        return numpy.sum(numpy.diagonal(arg, offset, axis1, axis2), -1)
 
     @implements(numpy.transpose)
     def transpose(array: Array, axes: Optional[Sequence[int]] = None) -> Array:

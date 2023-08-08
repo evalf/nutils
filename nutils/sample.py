@@ -18,7 +18,7 @@ set.
 from . import types, _util as util, function, evaluable, warnings
 from .pointsseq import PointsSequence
 from .transformseq import Transforms
-from ._backports import cached_property
+from functools import cached_property
 from typing import Iterable, Mapping, Optional, Sequence, Tuple, Union
 import numpy
 import numbers
@@ -155,8 +155,7 @@ class Sample(types.Singleton):
         raise NotImplementedError
 
     @util.single_or_multiple
-    @util.positional_only
-    def integrate(self, funcs, arguments=...):
+    def integrate(self, funcs, /, **arguments):
         '''Integrate functions.
 
         Args
@@ -171,8 +170,7 @@ class Sample(types.Singleton):
         return function.evaluate(*map(self.integral, funcs), _post=function._convert, arguments=arguments)
 
     @util.single_or_multiple
-    @util.positional_only
-    def integrate_sparse(self, funcs, arguments=...):
+    def integrate_sparse(self, funcs, /, **arguments):
         '''Integrate functions into sparse data.
 
         Args
@@ -197,8 +195,7 @@ class Sample(types.Singleton):
         return function.integral(__func, self)
 
     @util.single_or_multiple
-    @util.positional_only
-    def eval(self, funcs, arguments=...):
+    def eval(self, funcs, /, **arguments):
         '''Evaluate function.
 
         Args
@@ -212,8 +209,7 @@ class Sample(types.Singleton):
         return function.evaluate(*map(self, funcs), arguments=arguments)
 
     @util.single_or_multiple
-    @util.positional_only
-    def eval_sparse(self, funcs, arguments=...):
+    def eval_sparse(self, funcs, /, **arguments):
         '''Evaluate function.
 
         Args
@@ -910,64 +906,6 @@ class _TakeElements(_TensorialSample):
 
     def take_elements(self, __indices: numpy.ndarray) -> Sample:
         return self._parent.take_elements(numpy.take(self._indices, __indices))
-
-
-@util.positional_only
-def eval_integrals(*integrals: evaluable.AsEvaluableArray, arguments: Mapping[str, numpy.ndarray] = ...) -> Tuple[Union[numpy.ndarray, 'matrix.Matrix'], ...]:
-    '''
-    .. deprecated:: 7.0
-        sample.eval_integrals is deprecated, use function.eval instead
-
-    Evaluate integrals.
-
-    Evaluate one or several postponed integrals. By evaluating them
-    simultaneously, rather than using :meth:`nutils.function.Array.eval` on each
-    integral individually, integrations will be grouped per Sample and jointly
-    executed, potentially increasing efficiency.
-
-    Args
-    ----
-    integrals : :class:`tuple` of integrals
-        Integrals to be evaluated.
-    arguments : :class:`dict` (default: None)
-        Optional arguments for function evaluation.
-
-    Returns
-    -------
-    results : :class:`tuple` of arrays and/or :class:`nutils.matrix.Matrix` objects.
-    '''
-
-    warnings.deprecation('sample.eval_integrals_sparse is deprecated, use function.eval instead')
-    return function.evaluate(*integrals, _post=function._convert, arguments=arguments)
-
-
-@util.positional_only
-def eval_integrals_sparse(*integrals: evaluable.AsEvaluableArray, arguments: Mapping[str, numpy.ndarray] = ...) -> Tuple[numpy.ndarray, ...]:
-    '''
-    .. deprecated:: 7.0
-        sample.eval_integrals_sparse is deprecated, use function.eval_sparse instead
-
-    Evaluate integrals into sparse data.
-
-    Evaluate one or several postponed integrals. By evaluating them
-    simultaneously, rather than using :meth:`nutils.function.Array.eval` on each
-    integral individually, integrations will be grouped per Sample and jointly
-    executed, potentially increasing efficiency.
-
-    Args
-    ----
-    integrals : :class:`tuple` of integrals
-        Integrals to be evaluated.
-    arguments : :class:`dict` (default: None)
-        Optional arguments for function evaluation.
-
-    Returns
-    -------
-    results : :class:`tuple` of arrays and/or :class:`nutils.matrix.Matrix` objects.
-    '''
-
-    warnings.deprecation('sample.eval_integrals_sparse is deprecated, use function.eval instead')
-    return function.evaluate(*integrals, _post=lambda x: x, arguments=arguments)
 
 
 class _Integral(function.Array):
