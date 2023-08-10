@@ -80,7 +80,7 @@ class NURBS:
         return topo.withboundary(hole='left', sym='top,bottom', far='right'), geom, nurbsbasis, 5
 
 
-def main(mode: Union[FCM, NURBS] = NURBS,
+def main(mode: Union[FCM, NURBS] = NURBS(),
          radius: float = .5,
          traction: float = .1,
          poisson: float = .3):
