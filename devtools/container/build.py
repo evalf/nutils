@@ -66,7 +66,7 @@ with ExitStack() as stack:
 
     container = stack.enter_context(Container.new_from(base, mounts=[Mount(src=wheel, dst=f'/{wheel.name}')]))
 
-    container.run('pip', 'install', '--no-cache-dir', f'/{wheel.name}[export_mpl,import_gmsh,matrix_scipy]', env=dict(PYTHONHASHSEED='0'))
+    container.run('pip', 'install', '--break-system-packages', '--no-cache-dir', f'/{wheel.name}[export_mpl,import_gmsh,matrix_scipy]', env=dict(PYTHONHASHSEED='0'))
     container.add_label('org.opencontainers.image.url', 'https://github.com/evalf/nutils')
     container.add_label('org.opencontainers.image.source', 'https://github.com/evalf/nutils')
     container.add_label('org.opencontainers.image.authors', 'Evalf')
