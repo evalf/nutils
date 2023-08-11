@@ -51,8 +51,10 @@ with ExitStack() as stack:
         log.info(f'installing Nutils from {wheel}')
     else:
         log.info(f'building wheel for commit {commit}')
-        run(sys.executable, 'setup.py', 'bdist_wheel', cwd=str(src.path), env=dict(SOURCE_DATE_EPOCH=str(src.get_commit_timestamp('HEAD'))))
-        wheel, = (src.path / 'dist').glob('nutils-*.whl')
+        dist_dir = src.path / 'dist'
+        dist_dir.mkdir()
+        run(sys.executable, '-m', 'pip', 'wheel', '--no-deps', str(src.path), cwd=str(src.path / 'dist'), env=dict(SOURCE_DATE_EPOCH=str(src.get_commit_timestamp('HEAD'))))
+        wheel, = dist_dir.glob('nutils-*.whl')
 
     if args.examples:
         examples = Path(args.examples)
