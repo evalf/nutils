@@ -288,7 +288,7 @@ class ConcatPoints(Points):
     triggering deduplication and resulting in a smaller total point count.
     '''
 
-    def __init__(self, allpoints: Tuple[Points,...], duplicates: FrozenSet[Tuple[Tuple[Integral,Integral],...]]):
+    def __init__(self, allpoints: Tuple[Points,...], duplicates: FrozenSet[Tuple[Tuple[Integral,Integral],...]] = frozenset()):
         assert isinstance(allpoints, tuple) and all(isinstance(p, Points) for p in allpoints), 'allpoints={allpoints!r}'
         assert isinstance(duplicates, frozenset) and all(isinstance(d, tuple) and all(isinstance(n, tuple) and len(n) == 2 and all(isinstance(ni, Integral) for ni in n) for n in d) for d in duplicates), f'duplicates={duplicates!r}'
         self.allpoints = allpoints
