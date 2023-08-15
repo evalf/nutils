@@ -14,12 +14,13 @@ else:
 
 log.info(f'building container base image with name `{image_name}`')
 
-with Container.new_from('debian:bullseye', network='host') as container:
-    container.run('sed', '-i', 's/ main$/ main contrib non-free/', '/etc/apt/sources.list')
+with Container.new_from('debian:bookworm', network='host') as container:
+    container.run('sed', '-i', 's/^Components: .*$/Components: main contrib non-free/', '/etc/apt/sources.list.d/debian.sources')
     container.run('apt', 'update')
-    # Package `libtbb2` is required when using Intel MKL with environment
+    # Package `libtbb12` is required when using Intel MKL with environment
     # variable `MKL_THREADING_LAYER` set to `TBB`, which is nowadays the default.
-    container.run('apt', 'install', '-y', '--no-install-recommends', 'python3', 'python3-pip', 'python3-wheel', 'python3-ipython', 'python3-numpy', 'python3-scipy', 'python3-matplotlib', 'python3-pil', 'libmkl-rt', 'libomp-dev', 'libtbb2', 'python3-gmsh', env=dict(DEBIAN_FRONTEND='noninteractive'))
+    container.run('apt', 'install', '-y', '--no-install-recommends', 'python3', 'python3-pip', 'python3-wheel', 'python3-ipython', 'python3-numpy', 'python3-scipy', 'python3-matplotlib', 'python3-pil', 'libmkl-rt', 'libomp-dev', 'libtbb12', 'python3-gmsh', env=dict(DEBIAN_FRONTEND='noninteractive'))
+    container.run('apt', 'clean')
     container.add_label('org.opencontainers.image.url', 'https://github.com/evalf/nutils')
     container.add_label('org.opencontainers.image.source', 'https://github.com/evalf/nutils')
     container.add_label('org.opencontainers.image.authors', 'Evalf')
