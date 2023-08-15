@@ -943,8 +943,12 @@ class locate(TestCase):
             self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12, arguments=dict(scale=.123))
 
     def test_invalidpoint(self):
-        target = numpy.array([(.3, 1), (.2, .3), (.1, .9), (0, 1), (.1, .3)])
-        # the first point is outside the domain, but inside basetopo for mode==trimmed
+        target = numpy.array([(.3, .3), (.21, 1), (.2, 1), (.1, .9), (0, 1), (.1, .3), (.3, .3)])
+        # The first two points are outside the domain, but inside basetopo for
+        # mode==trimmed, triggering a post-processing by SubsetTopology.locate.
+        # Moreover, the second point is in the same basetopo element as the
+        # third, which requires the formation of a new CoordsPoints, whereas
+        # the element of the first point can be dropped altogether.
         with self.subTest('skip_missing=False'), self.assertRaises(topology.LocateError):
             self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12, arguments=dict(scale=.123))
         with self.subTest('skip_missing=True'):

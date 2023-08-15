@@ -2654,7 +2654,7 @@ class SubsetTopology(TransformChainsTopology):
             if not mymissing: # no points are missing -> keep existing points object
                 newpoints.append(points_)
             elif len(mymissing) < points_.npoints: # some points are missing -> create new CoordsPoints object
-                newpoints.append(points.CoordsPoints(points_.coords[~numeric.asboolean(mymissing, points_.npoints)]))
+                newpoints.append(points.CoordsPoints(types.arraydata(points_.coords[~numeric.asboolean(mymissing, points_.npoints)])))
             else: # all points are missing -> remove element from return sample
                 selection[isampleelem] = False
             del missing[:len(mymissing)]
