@@ -168,6 +168,7 @@ class specialcases_3d(TestCase):
         assert any(isinstance(edge, element.MosaicReference) and edge.volume == 0 for edge in pos.edge_refs)
         neg = baseref - pos
         for ref in pos, neg:
+            ref._ribs # check consistency of the new mosaic
             ref.check_edges(print=self.fail)
 
 

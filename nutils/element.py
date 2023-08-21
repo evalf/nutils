@@ -320,6 +320,35 @@ class Reference(types.Singleton):
     def get_edge_dofs(self, degree, iedge):
         raise NotImplementedError
 
+    @cached_property
+    def _ribs(self):
+        # Index pairs of the form (i1,j1), (i2,j2), such that edge j1 of edge
+        # i1 coincides for edge j2 of edge i1. To identify matching edge-edges
+        # we map their vertices to the numbering of the baseref for comparison.
+        # Since by construction all coinciding edge-edges have equal references
+        # and orientation, we can do the identification on the basis of
+        # edge_vertices alone. We include the reference objects for good
+        # measure, to ensure that the conventions are upheld.
+        #
+        # NOTE: This attribute is used only by MosaicReference.__init__, but it
+        # is defined here so that it can be cached with the element.
+
+        pairs = []
+        seen = {}
+        for i, (erefi, emapi) in enumerate(zip(self.edge_refs, self.edge_vertices)):
+            if not isinstance(erefi, EmptyLike):
+                for j, (erefj, emapj) in enumerate(zip(erefi.edge_refs, erefi.edge_vertices)):
+                    if not isinstance(erefj, EmptyLike):
+                        key = erefj, tuple(emapi[emapj])
+                        try:
+                            i2, j2 = seen.pop(key)
+                        except KeyError:
+                            seen[key] = i, j
+                        else: # a counterpart is found, placing newedge2 against newedge2_
+                            pairs.append(((i, j), (i2, j2)))
+        assert not seen, f'leftover unmatched edges ({seen}) indicate the edges of {self} are not watertight!'
+        return tuple(pairs)
+
 
 class EmptyLike(Reference):
     'inverse reference element'
@@ -941,8 +970,11 @@ class MosaicReference(Reference):
             # trivial, following the convention that existing edge transforms
             # are copied over in the modified edge.
 
-            assert all(edge.edge_transforms == newedge.edge_transforms[:edge.nedges]
-                for edge, newedge in zip(baseref.edge_refs, edge_refs))
+            trimmed = []
+            for i, (edge, newedge) in enumerate(zip(baseref.edge_refs, edge_refs)):
+                n = edge.nedges
+                assert edge.edge_transforms == newedge.edge_transforms[:n]
+                trimmed.extend((i, j) for j in range(n, newedge.nedges))
 
             # The latter, however, is more tricky. This is the situation that
             # occurs, for instance, when two out of four edges of a square are
@@ -951,66 +983,33 @@ class MosaicReference(Reference):
             # modified edges, that is, edge-edges in locations that pre-existed
             # in baseref. Knowing that the edges of baseref form a watertight
             # hull, we employ the strategy of first identifying all edge-edge
-            # counterparts, and then comparing the new references in the
+            # counterparts (cached in the _ribs attribute of the base
+            # reference) and then comparing the new references in the
             # identified locations to see if one of the two disappeared: in
             # this case the other reference is added to the exterior set.
 
-            # NOTE: establishing edge-edge relations could potentially be
-            # cached for reuse at the level of baseref. However, since this is
-            # the only place that the information is used and all edge pairs
-            # need to anyhow be examined for gaps, it is not clear that the
-            # gains merit the additional complexity.
+            for (i1, j1), (i2, j2) in baseref._ribs:
+                e1 = edge_refs[i1].edge_refs[j1]
+                e2 = edge_refs[i2].edge_refs[j2]
+                if e1 and not e2:
+                    trimmed.append((i1, j1))
+                elif e2 and not e1:
+                    trimmed.append((i2, j2))
+                elif e1 != e2:
+                    raise NotImplementedError
+
+            # What remains is only to extend the edge-vertex relations and
+            # to track if the new edges are left- or right-handed.
 
             orientation = []
-            seen = {}
-            for edge1, newemap1, etrans1, newedge1 in zip(baseref.edge_refs, edge_vertices, baseref.edge_transforms, edge_refs):
-                newedge1_edge = zip(newedge1.edge_vertices, newedge1.edge_transforms, newedge1.edge_refs)
-                trimmed = [] # trimmed will be populated with a subset of newedge1_edge
-                for edge2, (newemap2, etrans2, newedge2) in zip(edge1.edge_refs, newedge1_edge):
-                    if edge2: # existing non-empty edge
-
-                        # To identify matching edge-edges we map their vertices
-                        # to the numbering of the baseref for comparison. Since
-                        # matching edge-edges have must have equal references,
-                        # and by construction have matching orientation, the
-                        # vertex ordering will be consistent between them.
-
-                        key = tuple(newemap1[newemap2])
-
-                        # NOTE: there have been anecdotal reports that suggest
-                        # the assumption of matching edges may be violated, but
-                        # it is not clear in what scenario this can occur. If
-                        # the 'not seen' assertion below fails, please provide
-                        # the developers with a reproducable issue for study.
-
-                        try:
-                            newedge2_ = seen.pop(key)
-                        except KeyError:
-                            seen[key] = newedge2
-                        else: # a counterpart is found, placing newedge2 against newedge2_
-                            if not newedge2:
-                                trimmed.append((newemap2, etrans2.flipped, newedge2_))
-                            elif not newedge2_:
-                                trimmed.append((newemap2, etrans2, newedge2))
-                            elif newedge2 != newedge2_:
-                                raise NotImplementedError
-
-                # Since newedge1_edge was zipped against the shorter list of
-                # original edge1.edge_refs, what remains are the new edge-edges
-                # that can be added without further examination.
-
-                trimmed.extend(newedge1_edge)
-
-                # What remains is only to extend the edge-vertex relations and
-                # to track if the new edges are left- or right-handed.
-
-                for newemap2, etrans2, newedge2 in trimmed:
-                    for simplex in newemap1[newemap2[newedge2.simplices]]:
-                        if imidpoint not in simplex:
-                            edge_vertices.append(types.frozenarray([imidpoint, *simplex]))
-                            orientation.append(not etrans1.isflipped^etrans2.isflipped)
-
-            assert not seen, f'leftover unmatched edges ({seen}) indicate the edges of baseref ({baseref}) are not watertight!'
+            for i, j in trimmed:
+                newedge = edge_refs[i]
+                if not isinstance(newedge.edge_refs[j], SimplexReference):
+                    raise NotImplementedError
+                emap = edge_vertices[i][newedge.edge_vertices[j]]
+                if imidpoint not in emap:
+                    edge_vertices.append(types.frozenarray([imidpoint, *emap]))
+                    orientation.append(not baseref.edge_transforms[i].isflipped ^ newedge.edge_transforms[j].isflipped)
 
         self.baseref = baseref
         self._edge_refs = edge_refs
