@@ -931,7 +931,7 @@ class MosaicReference(Reference):
             # trivial, following the convention that existing edge transforms
             # are copied over in the modified edge.
 
-            assert all(edge.edge_transforms == newedge.edge_transforms[:edge.nverts]
+            assert all(edge.edge_transforms == newedge.edge_transforms[:edge.nedges]
                 for edge, newedge in zip(baseref.edge_refs, edge_refs))
 
             # The latter, however, is more tricky. This is the situation that
