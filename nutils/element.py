@@ -1062,6 +1062,8 @@ class MosaicReference(Reference):
     def getpoints(self, ischeme, degree):
         if ischeme == 'vertex':
             return self.baseref.getpoints(ischeme, degree)
+        elif len(self.simplices) == 0:
+            return points.CoordsWeightsPoints(types.arraydata(numpy.empty((0,self.ndims))), types.arraydata(numpy.empty((0,))))
         elif ischeme in ('gauss', 'uniform', 'bezier'):
             simplexpoints = getsimplex(self.ndims).getpoints(ischeme, degree)
             subpoints = tuple(points.TransformPoints(simplexpoints, strans) for strans in self.simplex_transforms)
