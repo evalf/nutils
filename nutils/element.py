@@ -238,27 +238,35 @@ class Reference(types.Singleton):
 
         else:
 
-            if sum(ref != baseref for ref, baseref in zip(refs, self.edge_refs)) < self.ndims:
-                return self
-            if sum(bool(ref) for ref in refs) < self.ndims:
-                return self.empty
-
             # For higher-dimensional elements, the first vertex that is newly
             # introduced by an edge slice is selected to serve as 'midpoint'.
             # In case no new vertices are introduced (all edges are either
-            # fully retained or fully removed) then the first vertex is
-            # selected that occurs in only one of the edges. Either situation
-            # guarantees that the selected vertex lies on the exterior hull.
+            # fully retained or fully removed) then we first consider if the
+            # hull amounts to the full or empty element; if not then the first
+            # vertex is selected that occurs in only one of the edges. Either
+            # situation guarantees that the selected vertex lies on the
+            # exterior hull.
 
-            for trans, edge, emap, newedge in zip(self.edge_transforms, self.edge_refs, self.edge_vertices, refs):
-                if newedge.nverts > edge.nverts:
-                    midpoint = trans.apply(newedge.vertices[edge.nverts])
+            for trans, edge, newedge in zip(self.edge_transforms, self.edge_refs, refs):
+                if newedge != edge and isinstance(newedge, MosaicReference):
+                    midpoint = trans.apply(numpy.asarray(newedge._midpoint))
                     break
-            else:
+            else: # no new edge intersections
+                if sum(ref != baseref for ref, baseref in zip(refs, self.edge_refs)) < self.ndims:
+                    return self
+                if sum(bool(ref) for ref in refs) < self.ndims:
+                    return self.empty
                 count = numpy.zeros(self.nverts, dtype=int)
                 for emap, eref in zip(self.edge_vertices, refs):
                     count[emap[eref.simplices]] += 1
                 midpoint = self.vertices[count==1][0]
+
+            # The reason that the two returns above are restricted to the
+            # situation that the levelset values did not cause any slicing
+            # between vertices is that these intersections might continue on an
+            # adjoining edge, so that local interventions lead to _ribs
+            # conflicts. The consequence of this is that the resulting mosaic
+            # may have a volume that is equal to zero or self.
 
         return MosaicReference(self, refs, types.arraydata(midpoint))
 
