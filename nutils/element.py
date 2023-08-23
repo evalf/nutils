@@ -210,17 +210,14 @@ class Reference(types.Singleton):
         # slice along levelset by recursing over dimensions
 
         assert len(levels) == len(self.vertices)
-        if numpy.greater_equal(levels, 0).all():
+        L = levels[self.simplices]
+        if numpy.greater_equal(L, 0).all():
             return self
-        if numpy.less_equal(levels, 0).all():
+        if numpy.less_equal(L, 0).all():
             return self.empty
         assert self.ndims >= 1
 
         refs = tuple(edgeref.slice(levels[edgeverts], ndivisions) for edgeverts, edgeref in zip(self.edge_vertices, self.edge_refs))
-        if sum(ref != baseref for ref, baseref in zip(refs, self.edge_refs)) < self.ndims:
-            return self
-        if sum(bool(ref) for ref in refs) < self.ndims:
-            return self.empty
 
         if self.ndims == 1:
 
@@ -231,6 +228,7 @@ class Reference(types.Singleton):
 
             iedge = [i for (i,), edge in zip(self.edge_vertices, self.edge_refs) if edge]
             l0, l1 = levels[iedge]
+            assert l0 * l1 < 0
             nbins = 2**ndivisions
             xi = numpy.round(l0/(l0-l1) * nbins)
             if xi in (0, nbins):
@@ -239,6 +237,11 @@ class Reference(types.Singleton):
             midpoint = v0 + (xi/nbins) * (v1-v0)
 
         else:
+
+            if sum(ref != baseref for ref, baseref in zip(refs, self.edge_refs)) < self.ndims:
+                return self
+            if sum(bool(ref) for ref in refs) < self.ndims:
+                return self.empty
 
             # For higher-dimensional elements, the first vertex that is newly
             # introduced by an edge slice is selected to serve as 'midpoint'.
