@@ -932,6 +932,9 @@ class MosaicReference(Reference):
         # edges of the mosaic, and setting up the corresponding edge-vertex
         # relations.
 
+        edge_vertices = []
+        orientation = []
+
         if baseref.ndims == 1:
 
             # For 1D elements the situation is simple: the midpoint represents
@@ -939,9 +942,10 @@ class MosaicReference(Reference):
             # only new edge, with a trivial edge-vertex relationship.
 
             assert not match.size, '1D mosaic must introduce a new vertex'
-            edge_vertices = (*baseref.edge_vertices, types.frozenarray([imidpoint]))
-            orientation = [not trans.isflipped for trans, edge in zip(baseref.edge_transforms, edge_refs) if edge]
-            assert len(orientation) == 1, 'invalid 1D mosaic: exactly one edge should be non-empty'
+            edge_vertices.extend(baseref.edge_vertices)
+            edge_vertices.append(types.frozenarray([imidpoint]))
+            isflipped, = [not trans.isflipped for trans, edge in zip(baseref.edge_transforms, edge_refs) if edge]
+            orientation.append(isflipped)
 
         else:
 
@@ -952,7 +956,6 @@ class MosaicReference(Reference):
             # focus our attention on the new ones, having only to deduplicate
             # between them.
 
-            edge_vertices = []
             for trans, edge, emap, newedge in zip(baseref.edge_transforms, baseref.edge_refs, baseref.edge_vertices, edge_refs):
                 for v in trans.apply(newedge.vertices[edge.nverts:]):
                     for i, v_ in enumerate(vertices[baseref.nverts:], start=baseref.nverts):
@@ -1001,7 +1004,6 @@ class MosaicReference(Reference):
             # What remains is only to extend the edge-vertex relations and
             # to track if the new edges are left- or right-handed.
 
-            orientation = []
             for i, j in trimmed:
                 newedge = edge_refs[i]
                 if not isinstance(newedge.edge_refs[j], SimplexReference):
