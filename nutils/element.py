@@ -185,8 +185,7 @@ class Reference(types.Singleton):
 
     @cached_property
     def volume(self):
-        volume, = self.getpoints('_centroid', None).weights
-        return volume
+        return self.getpoints('gauss', 1).weights.sum()
 
     @cached_property
     def centroid(self):
