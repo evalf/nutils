@@ -1,11 +1,44 @@
-from nutils import mesh, function, export, testing
+from nutils import mesh, function, export, testing, cs
 from nutils.solver import System
 from nutils.expression_v2 import Namespace
+from dataclasses import dataclass
+from typing import Union
 import numpy
 import treelog
 
 
-def main(etype: str = 'square',
+@dataclass
+class structured:
+
+    def generate(self):
+        topo, geom = mesh.rectilinear([2,2])
+        quadrant = topo[1:,:1].withboundary(corner='left,top')
+        return topo - quadrant, (geom - 1) / 2
+
+
+@dataclass
+class unstructured:
+
+    elemsize: float = .15
+
+    def generate(self):
+        square = cs.Rectangle(cs.Interval(-.5, .5), cs.Interval(-.5, .5))
+        quadrant = cs.Rectangle(cs.Interval(0, .5), cs.Interval(-.5, 0))
+        shapes = dict(dom=square-quadrant, corner=quadrant.boundary)
+        return mesh.csgmsh(shapes, elemsize=self.elemsize)
+
+
+@dataclass
+class multipatch:
+
+    def generate(self):
+        vertices = [0,-.5], [-.5,-.5], [0,0], [-.5,.5], [.5,0], [.5,.5]
+        patches = [0,1,2,3], [2,3,4,5]
+        topo, geom = mesh.multipatch(patchverts=vertices, patches=patches, nelems=1)
+        return topo.withboundary(corner='patch0-bottom,patch1-bottom'), geom
+
+
+def main(basemesh: Union[structured, unstructured, multipatch] = structured(),
          btype: str = 'h-std',
          degree: int = 2,
          nrefine: int = 5):
@@ -29,8 +62,8 @@ def main(etype: str = 'square',
 
     Parameters
     ----------
-    etype
-        Type of elements (square/triangle/mixed).
+    basemesh
+        Initial mesh: structured, unstructured, or multipatch.
     btype
         Type of basis function (h/th-std/spline), with availability depending
         on the configured element type.
@@ -38,15 +71,13 @@ def main(etype: str = 'square',
         Polynomial degree.
     nrefine
         Number of refinement steps to perform.
+    unstructured
+        Generate triangulated domain if True, or structured domain if False.
     '''
 
-    domain, geom = mesh.unitsquare(2, etype)
-    geom -= .5 # shift domain center to origin
-
+    domain, geom = basemesh.generate()
     x, y = geom
     exact = (x**2 + y**2)**(1/3) * numpy.cos(numpy.arctan2(y+x, y-x) * (2/3))
-    selection = domain.select(exact, ischeme='gauss1')
-    domain = domain.subset(selection, newboundary='corner')
     linreg = LinearRegressor(bias=1)
 
     for irefine in treelog.iter.fraction('level', range(nrefine+1)):
@@ -136,8 +167,8 @@ class LinearRegressor:
 
 class test(testing.TestCase):
 
-    def test_square_quadratic(self):
-        error, u = main(nrefine=2)
+    def test_structured(self):
+        error, u = main(nrefine=2, basemesh=structured())
         with self.subTest('degrees of freedom'):
             self.assertEqual(len(u), 149)
         with self.subTest('L2-error'):
@@ -152,32 +183,27 @@ class test(testing.TestCase):
                 7AYLvMPpsqGkCTPumzWf+qV92kKevjK36ozDP/FSnh1iteWiqWuf+oMaKuyKaC1i52rKPokiF2WLA/20
                 bya+ZCPbWKRPpvgFaedebw==''')
 
-    def test_triangle_quadratic(self):
-        error, u = main(nrefine=2, etype='triangle')
+    def test_unstructured(self):
+        error, u = main(nrefine=2, basemesh=unstructured(elemsize=.5))
         with self.subTest('degrees of freedom'):
-            self.assertEqual(len(u), 98)
+            self.assertEqual(len(u), 97)
         with self.subTest('L2-error'):
-            self.assertAlmostEqual(error[0], 0.00138, places=5)
+            self.assertAlmostEqual(error[0], 0.00095, places=5)
         with self.subTest('H1-error'):
-            self.assertAlmostEqual(error[1], 0.05326, places=5)
-        with self.subTest('left-hand side'):
-            self.assertAlmostEqual64(u, '''
-                eNprMV1oesqU2VTO1Nbko6myWbhpq+kckwST90avjRgYzptYm+YYMwBBk3GQWavZb1NXs2+mm83um1WY
-                bQbyXYEiQWbKZjNM7wJVzjBlYICoPW8CMiXH+LXRR9NwoPkg82xN5IB2MZu2mGabSBnnAbGscYEJj3GV
-                YQAQg/TVGfaA7RI0BsErRjeNeowDgDQPmF9gkmciaJxtArGjzrAKCGWNpYAQAL0kOBE=''')
+            self.assertAlmostEqual(error[1], 0.04006, places=5)
 
-    def test_mixed_linear(self):
-        error, u = main(nrefine=2, etype='mixed', degree=1)
+    def test_multipatch(self):
+        error, u = main(nrefine=2, basemesh=multipatch())
         with self.subTest('degrees of freedom'):
-            self.assertEqual(len(u), 34)
+            self.assertEqual(len(u), 93)
         with self.subTest('L2-error'):
-            self.assertAlmostEqual(error[0], 0.00450, places=5)
+            self.assertAlmostEqual(error[0], 0.00128, places=5)
         with self.subTest('H1-error'):
-            self.assertAlmostEqual(error[1], 0.11692, places=5)
+            self.assertAlmostEqual(error[1], 0.05662, places=5)
         with self.subTest('left-hand side'):
             self.assertAlmostEqual64(u, '''
-                eNprMT1u6mQyxUTRzMCUAQhazL6b3jNrMYPxp5iA5FtMD+lcMgDxHa4aXzS+6HDV+fKO85cMnC8zMBzS
-                AQDBThbY''')
+                eNpjYHhnZGfCZNpqysAgYJxuYmK6C8gqM35ksspU2QyZhZBF6DhnUGuUZPzJON5ktclbEyWgiInRVuOJ
+                QNlE06WmD02FgPpajaabuJpuMuUy8zZrMdsMFCk24TKda/rN1MWsDsi/j1UNpjnodgEAAk420A==''')
 
 
 if __name__ == '__main__':
