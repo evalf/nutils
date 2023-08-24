@@ -6,7 +6,7 @@ accompanying geometry function. Meshes can either be generated on the fly, e.g.
 provided at this point.
 """
 
-from . import topology, function, _util as util, element, numeric, transform, transformseq, warnings, types, cache
+from . import topology, function, _util as util, element, numeric, transform, transformseq, warnings, types, cache, cs
 from .elementseq import References
 from .transform import TransformItem
 from .topology import Topology
@@ -462,6 +462,19 @@ def gmsh(fname, name='gmsh', *, space='X'):
 
     with util.binaryfile(fname) as f:
         return simplex(name=name, **parsegmsh(f), space=space)
+
+
+def csgmsh(shapes: cs.Shapes, elemsize: cs.AsField, order: int = 1, name='csgmsh', space='X'):
+    from tempfile import mkstemp
+    fid, fname = mkstemp(suffix='.msh')
+    try:
+        os.close(fid) # release file for writing by gmsh (windows)
+        cs.write(fname, shapes, elemsize, order)
+        with open(fname, 'rb') as f:
+            kwargs = parsegmsh(f)
+    finally:
+        os.unlink(fname)
+    return simplex(name=name, space=space, **kwargs)
 
 
 def simplex(nodes, cnodes, coords, tags, btags, ptags, name='simplex', *, space='X'):
