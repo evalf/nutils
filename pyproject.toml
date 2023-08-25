@@ -27,6 +27,7 @@ export_mpl = ["matplotlib >=3.3,<4"]
 matrix_mkl = ["mkl"]
 matrix_scipy = ["scipy >=0.13,<2"]
 import_gmsh = ["meshio >=4,<6"]
+cs = ["gmsh>=4", "meshio>=5"]
 
 [build-system]
 requires = ["flit_core >=3.2,<4"]
