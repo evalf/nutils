@@ -380,12 +380,7 @@ def parsegmsh(mshdata):
         nodes = {nd: n[:, :nd+1] for nd, n in nodes.items()}  # remove high order info
 
     if len(identities):
-        slaves, masters = identities.T
-        keep = numpy.ones(len(coords), dtype=bool)
-        keep[slaves] = False
-        assert keep[masters].all()
-        renumber = keep.cumsum()-1
-        renumber[slaves] = renumber[masters]
+        renumber, _count = util.merge_index_map(len(coords), identities, condense=False)
         nodes = {nd: renumber[n] for nd, n in nodes.items()}
 
     vnodes = nodes[ndims]
