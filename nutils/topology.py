@@ -2370,6 +2370,8 @@ class SimplexTopology(TransformChainsTopology):
     def boundary(self):
         space, = self.spaces
         ielem, iedge = (self.connectivity == -1).nonzero()
+        if not len(ielem):
+            return EmptyTopology(self.space, self.transforms.todims, self.ndims-1)
         nd = self.ndims
         edges = numpy.arange(nd+1).repeat(nd).reshape(nd,nd+1).T[::-1]
         simplices = self.simplices[ielem, edges[iedge].T].T
