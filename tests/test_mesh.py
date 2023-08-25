@@ -123,7 +123,7 @@ class rectilinear(TestCase):
         numpy.testing.assert_almost_equal(volume, 20, decimal=15)
 
     def divergence(self):
-        self.domain.check_boundary(geometry=self.geom)
+        self.domain.check_boundary(geometry=self.geom, print=self.fail)
 
     def test_length(self):
         for group, exact_length in ('right', 5), ('left', 5), ('top', 4), ('bottom', 4), ((), 18):
@@ -158,7 +158,7 @@ class unitsquare(TestCase):
 
     def test_boundaries(self):
         self.assertAllAlmostEqual(self.domain.boundary.volume(self.geom), 4)
-        self.domain.check_boundary(geometry=self.geom)
+        self.domain.check_boundary(geometry=self.geom, print=self.fail)
 
     def test_boundary_groups(self):
         numpy.testing.assert_almost_equal(self.domain.boundary['left'].sample('gauss', 0).eval(self.geom[0]), 0)
@@ -190,7 +190,7 @@ class unitcircle(TestCase):
 
     def test_boundaries(self):
         self.assertAllAlmostEqual(self.domain.boundary.volume(self.geom, degree=6), 2 * numpy.pi)
-        self.domain.check_boundary(geometry=self.geom, degree=8)
+        self.domain.check_boundary(geometry=self.geom, degree=8, print=self.fail, tol=1e-14)
 
     def test_interface(self):
         geomerr = self.domain.interfaces.sample('uniform', 2).eval(self.geom - function.opposite(self.geom))
