@@ -2921,7 +2921,7 @@ def linearize(__array: IntoArray, __arguments: Union[str, Dict[str, str], Iterab
     for kv in args:
         k, v = kv.split(':', 1) if isinstance(kv, str) else kv
         f = derivative(array, k)
-        parts.append(numpy.sum(f * Argument(v, f.shape[array.ndim:]), tuple(range(array.ndim, f.ndim))))
+        parts.append(numpy.sum(f * Argument(v, *array.arguments[k]), tuple(range(array.ndim, f.ndim))))
     return util.sum(parts)
 
 
