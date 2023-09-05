@@ -326,7 +326,7 @@ class Quantity(metaclass=Dimension):
               'trace', 'ptp', 'amax', 'amin', 'max', 'min', 'mean', 'take',
               'broadcast_to', 'transpose', 'getitem', 'opposite', 'jump',
               'replace_arguments', 'linearize', 'derivative', 'integral',
-              'sample', 'scatter', 'kronecker')
+              'sample', 'scatter', 'kronecker', 'real', 'imag', 'conjugate')
     def __unary(op, *args, **kwargs):
         (dim0, arg0), = Quantity.__unpack(args[0])
         return dim0.wrap(op(arg0, *args[1:], **kwargs))
