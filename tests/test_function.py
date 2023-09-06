@@ -1377,6 +1377,15 @@ class linearize(TestCase):
         _q = 5.
         self.assertAllEqual(f.eval(u=_u, v=_v, q=_q).export('dense'), 3 * _u**2 * _v + _q)
 
+    def test_complex(self):
+        f = function.linearize(function.Argument('u', shape=(3, 4), dtype=complex)**3
+                             + function.Argument('p', shape=(), dtype=complex), 'u:v,p:q')
+        # test linearization of u**3 + p -> 3 u**2 v + q through evaluation
+        _u = numpy.array([1+2j, 3+4j, 5+6j])[:,numpy.newaxis].repeat(4, 1)
+        _v = numpy.array([5+1j, 6+2j, 7+3j, 8+4j])[numpy.newaxis,:].repeat(3, 0)
+        _q = 5.
+        self.assertAllEqual(f.eval(u=_u, v=_v, q=_q).export('dense'), 3 * _u**2 * _v + _q)
+
 
 class attributes(TestCase):
 
