@@ -129,6 +129,15 @@ class Quantity(unittest.TestCase):
     def test_abs(self):
         self.assertEqual(numpy.abs(SI.Mass('-2kg')), SI.Mass('2kg'))
 
+    def test_real(self):
+        self.assertEqual(numpy.real(SI.ElectricPotential('1V') + 1j * SI.ElectricPotential('2V')), SI.ElectricPotential('1V'))
+
+    def test_imag(self):
+        self.assertEqual(numpy.imag(SI.ElectricPotential('1V') + 1j * SI.ElectricPotential('2V')), SI.ElectricPotential('2V'))
+
+    def test_conjugate(self):
+        self.assertEqual(numpy.conjugate(SI.ElectricPotential('1V') + 1j * SI.ElectricPotential('2V')), SI.ElectricPotential('1V') - 1j * SI.ElectricPotential('2V'))
+
     def test_sqrt(self):
         self.assertEqual(numpy.sqrt(SI.Area('4m2')), SI.Length('2m'))
 
