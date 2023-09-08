@@ -9,7 +9,6 @@ import os
 import numpy
 import collections.abc
 import inspect
-import itertools
 import functools
 import operator
 import numbers
@@ -19,7 +18,7 @@ import io
 import contextlib
 import treelog
 import datetime
-from typing import Iterable, Sequence, Tuple
+from typing import Iterable, Sequence, Tuple, Literal, overload
 
 supports_outdirfd = os.open in os.supports_dir_fd and os.listdir in os.supports_fd
 
@@ -702,20 +701,25 @@ def cli(f, *, argv=None):
     return f(**kwargs)
 
 
-def merge_index_map(nin: int, merge_sets: Iterable[Sequence[int]]) -> Tuple[numpy.ndarray, int]:
+@overload
+def merge_index_map(nin: int, merge_sets: Iterable[Sequence[int]], preserve: Literal[False]) -> Tuple[numpy.ndarray, int]:
+    ...
+@overload
+def merge_index_map(nin: int, merge_sets: Iterable[Sequence[int]], preserve: Literal[True]) -> numpy.ndarray:
+    ...
+def merge_index_map(nin, merge_sets, preserve=False):
     '''Returns an index map relating ``nin`` unmerged elements to ``nout`` merged elements.
 
-    The index map, an array of length ``nin``, satisfies the following conditions:
-
-    *   For every merge set in ``merge_sets``: for every pair of indices ``i``
-        and ``j`` in a merge set, ``index_map[i] == index_map[j]`` is true.
-
-        In code, the following is true:
+    The index map is an array of length ``nin`` satisfying the condition that
+    for every pair of indices ``i`` and ``j`` in a merge set, ``index_map[i] ==
+    index_map[j]``. In code, the following is true:
 
             all(index_map[i] == index_map[j] for i, *js in merge_sets for j in js)
 
-    *   Selecting the first occurences of indices in ``index_map`` gives the
-        sequence ``range(nout)``.
+    If ``preserve`` is false (the default) then the indices are remapped onto
+    the smallest range [0,nout), and ``nout`` is returned along the the index
+    map. In this case, selecting the first occurences of indices in
+    ``index_map`` gives the sequence ``range(nout)``.
 
     Args
     ----
@@ -725,6 +729,10 @@ def merge_index_map(nin: int, merge_sets: Iterable[Sequence[int]]) -> Tuple[nump
         An iterable of merge sets, where each merge set lists the indices of
         input elements that should be merged. Every merge set should have at
         least one index.
+    preserve : :class:`bool`
+        If true, then any index that is not part of a merge set is mapped onto
+        itself in the returned ``index_map``. Moreover, precicely one index in
+        every merged set maps onto itself.
 
     Returns
     -------
@@ -740,14 +748,19 @@ def merge_index_map(nin: int, merge_sets: Iterable[Sequence[int]]) -> Tuple[nump
         while index != parent:
             index = parent
             parent = index_map[index]
-        return index
+        return int(index)
     for merge_set in merge_sets:
         resolved = list(map(resolve, merge_set))
         index_map[resolved] = min(resolved)
-    new_indices = itertools.count()
     for iin, ptr in enumerate(index_map):
-        index_map[iin] = next(new_indices) if iin == ptr else index_map[ptr]
-    return index_map, next(new_indices)
+        if iin != ptr:
+            index_map[iin] = index_map[ptr]
+    if preserve:
+        return index_map
+    used = numpy.zeros(nin+1, dtype=int)
+    used[1:][index_map] = 1
+    renumber = numpy.cumsum(used, out=used)
+    return renumber[index_map], renumber[-1]
 
 
 def nutils_dispatch(f):

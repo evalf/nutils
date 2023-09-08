@@ -359,6 +359,11 @@ class merge_index_map(TestCase):
         self.assertEqual(index_map.tolist(), [0, 0, 0, 0])
         self.assertEqual(count, 1)
 
+    def test_preserve(self):
+        # combination of multihop1, multihop2, and implicit singletons
+        index_map = util.merge_index_map(11, [[1, 3], [2, 4], [1, 4], [8, 9], [7, 8], [6, 9]], preserve=True)
+        self.assertEqual(index_map.tolist(), [0, 1, 1, 1, 1, 5, 6, 6, 6, 6, 10])
+
 
 class nutils_dispatch(TestCase):
 
