@@ -6,6 +6,7 @@ import itertools
 import warnings as _builtin_warnings
 import functools
 import fractions
+import pickle
 
 
 class Array(TestCase):
@@ -170,6 +171,12 @@ class check(TestCase):
         actual = self.op(*self.args).as_evaluable_array.eval()
         desired = self.n_op(*self.args)
         self.assertArrayAlmostEqual(actual, desired, decimal=15)
+
+    def test_pickle(self):
+        f = self.op(*self.args)
+        s = pickle.dumps(f)
+        f_ = pickle.loads(s)
+        self.assertEqual(f.as_evaluable_array, f_.as_evaluable_array)
 
 
 def generate(*shape, real, imag, zero, negative):
