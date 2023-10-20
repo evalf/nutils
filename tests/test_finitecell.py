@@ -1,4 +1,4 @@
-from nutils import topology, mesh, function, evaluable
+from nutils import topology, mesh, function, evaluable, element
 from nutils.testing import TestCase, parametrize
 import treelog as log
 import numpy
@@ -158,6 +158,18 @@ class specialcases_3d(TestCase):
             for maxrefine in 0, 1, 2:
                 with self.subTest(how=how, maxrefine=maxrefine):
                     self.domain.trim(z-.75+self.eps*perturb, maxrefine=maxrefine).check_boundary(self.geom, elemwise=True, print=self.fail)
+
+    def test_rib_mosaic(self):
+        baseref = element.getsimplex(3)
+        pos = baseref.trim([-7.68105356e-02, -4.28304119e-02, 9.65282734e-05, 1.57188628e-02], maxrefine=0, ndivisions=8)
+        # These weights cause one of the edges to vanish entirely, while a
+        # neighbouring edge is trimmed at the joint rib. The incompatibility is
+        # resolved by retaining the mosaic as a degenerate element.
+        assert any(isinstance(edge, element.MosaicReference) and edge.volume == 0 for edge in pos.edge_refs)
+        neg = baseref - pos
+        for ref in pos, neg:
+            ref._ribs # check consistency of the new mosaic
+            ref.check_edges(print=self.fail)
 
 
 class setoperations(TestCase):
