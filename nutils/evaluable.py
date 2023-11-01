@@ -48,7 +48,6 @@ import math
 import treelog as log
 import weakref
 import time
-import contextlib
 import subprocess
 import os
 
@@ -389,26 +388,6 @@ class Evaluable(types.Singleton):
             raise
         else:
             return values[-1]
-
-    @contextlib.contextmanager
-    def session(self, graphviz):
-        if graphviz is None:
-            yield self.eval
-            return
-        stats = collections.defaultdict(_Stats)
-
-        def eval(**args):
-            return self.eval_withtimes(stats, **args)
-        with log.context('eval'):
-            yield eval
-            node = self._node({}, None, stats)
-            maxtime = builtins.max(n.metadata[1].time for n in node.walk(set()))
-            tottime = builtins.sum(n.metadata[1].time for n in node.walk(set()))
-            aggstats = tuple((key, builtins.sum(v.time for v in values), builtins.sum(v.ncalls for v in values)) for key, values in util.gather(n.metadata for n in node.walk(set())))
-            fill_color = (lambda node: '0,{:.2f},1'.format(node.metadata[1].time/maxtime)) if maxtime else None
-            node.export_graphviz(fill_color=fill_color, dot_path=graphviz)
-            log.info('total time: {:.0f}ms\n'.format(tottime/1e6) + '\n'.join('{:4.0f} {} ({} calls, avg {:.3f} per call)'.format(t / 1e6, k, n, t / (1e6*n))
-                                                                              for k, t, n in sorted(aggstats, reverse=True, key=lambda item: item[1]) if n))
 
     def _iter_stack(self):
         yield '%0 = EVALARGS'
@@ -4502,14 +4481,15 @@ class LoopConcatenateCombined(Evaluable):
     def evalf_withtimes(self, times, shapes, length, *args):
         serialized = self._serialized_loop
         subtimes = times.setdefault(self, collections.defaultdict(_Stats))
-        results = [parallel.shempty(tuple(map(int, shape)), dtype=func.dtype) for func, shape in zip(self._funcs, shapes)]
-        for index in range(length):
-            values = [numpy.array(index)]
-            values.extend(args)
-            values.extend(op.evalf_withtimes(subtimes, *[values[i] for i in indices]) for op, indices in serialized)
-            for func, result, (start, stop, block) in zip(self._funcs, results, values[-1]):
-                with subtimes['concat', func]:
-                    result[..., start:stop] = block
+        results = [numpy.empty(tuple(map(int, shape)), dtype=func.dtype) for func, shape in zip(self._funcs, shapes)]
+        with log.iter.percentage('loop {}'.format(self._index_name), range(length)) as indices:
+            for index in indices:
+                values = [numpy.array(index)]
+                values.extend(args)
+                values.extend(op.evalf_withtimes(subtimes, *[values[i] for i in indices]) for op, indices in serialized)
+                for func, result, (start, stop, block) in zip(self._funcs, results, values[-1]):
+                    with subtimes['concat', func]:
+                        result[..., start:stop] = block
         return tuple(results)
 
     def _node_tuple(self, cache, subgraph, times):
@@ -5161,6 +5141,46 @@ def einsum(fmt, *args, **dims):
 
 
 @util.single_or_multiple
+def eval(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.ndarray]) -> typing.Tuple[numpy.ndarray, ...]:
+    '''Evaluate one or several Array objects.
+
+    Args
+    ----
+    funcs : :class:`tuple` of Array objects
+        Arrays to be evaluated.
+    arguments : :class:`dict` (default: None)
+        Optional arguments for function evaluation.
+
+    Returns
+    -------
+    results : :class:`tuple` of arrays
+    '''
+
+    funcs = Tuple(tuple(funcs)).simplified.optimized_for_numpy
+
+    if not graphviz:
+        return funcs.eval(**arguments)
+
+    times = collections.defaultdict(_Stats)
+    retvals = funcs.eval_withtimes(times, **arguments)
+    node = funcs._node({}, None, times)
+
+    with log.context('profile'):
+        tottime = builtins.sum(n.metadata[1].time for n in node.walk(set()))
+        aggstats = [(builtins.sum(v.time for v in values), builtins.sum(v.ncalls for v in values), key) for key, values in util.gather(n.metadata for n in node.walk(set()))]
+        aggstats.sort(reverse=True)
+        log.debug(f'total time: {tottime/1e6:.0f}ms\n'
+            + '\n'.join(f'{t/1e6:4.0f}ms {k} ({n} calls, avg {t/(1e3*n):.0f}ns per call)' for t, n, k in aggstats if n))
+
+        maxtime = builtins.max(n.metadata[1].time for n in node.walk(set()))
+        fill_color = (lambda node: f'0,{node.metadata[1].time/maxtime:.2f},1') if maxtime else None
+        with log.debugfile('graph.svg', 'wb') as img:
+            node.export_graphviz(img, fill_color=fill_color, dot_path=graphviz)
+
+    return retvals
+
+
+@util.single_or_multiple
 def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.ndarray]) -> typing.Tuple[numpy.ndarray, ...]:
     '''Evaluate one or several Array objects as sparse data.
 
@@ -5177,22 +5197,21 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
     '''
 
     funcs = [func.as_evaluable_array for func in funcs]
-    shape_chunks = Tuple(tuple(Tuple(builtins.sum(func.simplified._assparse, func.shape)) for func in funcs))
-    with shape_chunks.optimized_for_numpy.session(graphviz=graphviz) as eval:
-        for func, args in zip(funcs, eval(**arguments)):
-            shape = tuple(map(int, args[:func.ndim]))
-            chunks = [args[i:i+func.ndim+1] for i in range(func.ndim, len(args), func.ndim+1)]
-            length = builtins.sum(values.size for *indices, values in chunks)
-            data = numpy.empty((length,), dtype=sparse.dtype(shape, func.dtype))
-            start = 0
-            for *indices, values in chunks:
-                stop = start + values.size
-                d = data[start:stop].reshape(values.shape)
-                d['value'] = values
-                for idim, ii in enumerate(indices):
-                    d['index']['i'+str(idim)] = ii
-                start = stop
-            yield data
+    shape_chunks = [Tuple(builtins.sum(func.simplified._assparse, func.shape)) for func in funcs]
+    for func, args in zip(funcs, eval(shape_chunks, **arguments)):
+        shape = tuple(map(int, args[:func.ndim]))
+        chunks = [args[i:i+func.ndim+1] for i in range(func.ndim, len(args), func.ndim+1)]
+        length = builtins.sum(values.size for *indices, values in chunks)
+        data = numpy.empty((length,), dtype=sparse.dtype(shape, func.dtype))
+        start = 0
+        for *indices, values in chunks:
+            stop = start + values.size
+            d = data[start:stop].reshape(values.shape)
+            d['value'] = values
+            for idim, ii in enumerate(indices):
+                d['index']['i'+str(idim)] = ii
+            start = stop
+        yield data
 
 
 if __name__ == '__main__':

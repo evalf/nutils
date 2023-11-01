@@ -3,6 +3,7 @@ from nutils import _graph
 import itertools
 import unittest
 import sys
+import tempfile
 
 
 class DummyNode(_graph.Node):
@@ -320,6 +321,7 @@ class generate(TestCase):
 
     def test_export_graphviz(self):
         try:
-            self.multiple.export_graphviz()
+            with tempfile.TemporaryFile('w') as f:
+                self.multiple.export_graphviz(f)
         except FileNotFoundError:
             self.skipTest('graphviz not available')

@@ -59,16 +59,9 @@ class Node(Generic[Metadata], metaclass=abc.ABCMeta):
         self._collect_graphviz_nodes_edges({}, id_gen, nodes, edges, None, fill_color)
         return ''.join(itertools.chain(['digraph {bgcolor="darkgray";'], _generate_graphviz_subgraphs(subgraph_children, nodes, None, id_gen), edges, ['}']))
 
-    def export_graphviz(self, *, fill_color: Optional[GraphvizColorCallback] = None, dot_path: str = 'dot', image_type: str = 'svg') -> None:
+    def export_graphviz(self, out, *, fill_color: Optional[GraphvizColorCallback] = None, dot_path: str = 'dot', image_type: str = 'svg') -> None:
         src = self.generate_graphviz_source(fill_color=fill_color)
-        with treelog.infofile('dot.'+image_type, 'wb') as img:
-            src = src.replace(';', ';\n')
-            status = subprocess.run([dot_path, '-Gstart=1', '-T'+image_type], input=src.encode(), stdout=subprocess.PIPE)
-            if status.returncode:
-                for i, line in enumerate(src.split('\n'), 1):
-                    print('{:04d}  {}'.format(i, line))
-                treelog.warning('graphviz failed for error code', status.returncode)
-            img.write(status.stdout)
+        subprocess.run([dot_path, '-Gstart=1', '-T'+image_type], input=src, stdout=out, check=True, text=True)
 
 
 class RegularNode(Node[Metadata]):
