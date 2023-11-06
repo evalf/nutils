@@ -326,3 +326,40 @@ class theta_time(TestCase):
 
     def test_cranknicolson(self):
         self.check(solver.cranknicolson, theta=0.5)
+
+
+class constraints(TestCase):
+
+    def test_merge_dofs(self):
+        # Test merging two boundary dofs with natural boundary conditions of
+        # two adjacent Laplace equations. The result must be the same as for a
+        # single Laplace equation subject to the remaining boundaries
+        # conditions.
+        A, a, α, B, b = (function.Argument(k, (5,)) for k in 'AaαBb')
+        Aleft = 0
+        Bright = 10
+        res = (
+            # A, left boundary, Dirichlet
+            a[0] * (Aleft - 2 * A[0] + A[1])
+            # A, body
+            + a[1:-1] @ (A[:-2] - 2 * A[1:-1] + A[2:])
+            # A, right boundary, Neumann
+            + a[-1] * (A[-2] - A[-1])
+            # B, left boundary, Neumann
+            + b[0] * (-B[0] + B[1])
+            # B, body
+            + b[1:-1] @ (B[:-2] - 2 * B[1:-1] + B[2:])
+            # B, right boundary, Dirichlet
+            + b[-1] * (B[-2] - 2 * B[-1] + Bright)
+            # constraint, A right = B left
+            + α[-1] * (A[-1] - B[0])
+        )
+        args = solver.solve_linear('A:a:α,B:b', res)
+        self.assertAllAlmostEqual(args['A'], numpy.arange(1, 6))
+        self.assertAllAlmostEqual(args['B'], numpy.arange(5, 10))
+
+    def test_asymmetric(self):
+        A, a, α, B, b = (function.Argument(k, ()) for k in 'AaαBb')
+        args = solver.solve_linear('A:a:α*,B:b', a * (A - 1) + b * (B - 2) + α * (A - B) + α * a)
+        self.assertAlmostEqual(args['A'], 2.0)
+        self.assertAlmostEqual(args['B'], 2.0)

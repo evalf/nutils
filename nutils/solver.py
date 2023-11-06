@@ -38,6 +38,8 @@ import itertools
 import functools
 import collections
 import math
+import scipy.cluster.hierarchy
+import scipy.sparse.linalg
 import treelog as log
 
 
@@ -208,28 +210,148 @@ def solve_linear(target, residual, *, constrain = None, lhs0: types.arraydata = 
             lhs0=lhs0, arguments=arguments if lhs0 is None else {**arguments, target: lhs0}, **kwargs)[target]
     if lhs0 is not None:
         raise ValueError('lhs0 argument is invalid for a non-string target; define the initial guess via arguments instead')
-    target, residual = _target_helper(target, residual)
+    targets, residuals, constraints, lconstraints = _parse_targets_residual(target, residual, constrain)
     solveargs = _strip(kwargs, 'lin')
     if kwargs:
         raise TypeError('unexpected keyword arguments: {}'.format(', '.join(kwargs)))
-    return _solve_linear(target, residual,
-        types.frozendict((k, types.arraydata(v)) for k, v in (constrain or {}).items()),
+    arguments = dict(arguments)
+    arguments.update(_solve_linear(targets, residuals, constraints, lconstraints,
         types.frozendict((k, types.arraydata(v)) for k, v in (arguments or {}).items()),
-        types.frozendict(solveargs))
+        types.frozendict(solveargs)))
+    return arguments
+
+
+def _sparse_to_csr(sparsemat):
+    indices, values, shape = sparse.extract(sparsemat)
+    return scipy.sparse.csr_matrix((values, indices), shape)
 
 
 @cache.function
-def _solve_linear(target, residual: tuple, constraints: dict, arguments: dict, solveargs: dict):
-    arguments, constraints = _parse_lhs_cons(constraints, target, _argobjs(residual), arguments)
-    jacobians = _derivative(residual, target)
-    if not set(target).isdisjoint(_argobjs(jacobians)):
+def _solve_linear(targets, resvec: tuple, consvec: tuple, lconsvec: tuple, arguments: dict, solveargs: dict):
+    argobjs = _argobjs(resvec)
+    dtype = _determine_dtype(targets, resvec + consvec + lconsvec, arguments, {})
+
+    resmat = [evaluable.derivative(res, argobjs[target]).simplified for res in resvec for target in targets]
+    consmat = [evaluable.derivative(cons, argobjs[target]).simplified for cons in consvec for target in targets]
+    lconsmat = [evaluable.derivative(cons, argobjs[target]).simplified for cons in lconsvec for target in targets]
+
+    if not set(targets).isdisjoint(_argobjs(resmat + consmat + lconsmat)):
         raise SolverError('problem is not linear')
-    dtype = _determine_dtype(target, residual, arguments, constraints)
-    lhs, vlhs = _redict(arguments, target, dtype)
-    mask, vmask = _invert(constraints, target)
-    res, jac = _integrate_blocks(residual, jacobians, arguments=lhs, mask=mask)
-    vlhs[vmask] -= jac.solve(res, **solveargs)
-    return lhs
+
+    zargs = {t: evaluable.zeros_like(argobjs[t]) for t in targets}
+    resvec = [evaluable.replace_arguments(res, zargs).simplified for res in resvec]
+    consvec = [evaluable.replace_arguments(cons, zargs).simplified for cons in consvec]
+
+    masks = [numpy.ones(argobjs[t].shape, dtype=bool) for t in targets]
+    data = iter(evaluable.eval_sparse(resvec + resmat + consvec + consmat + lconsmat, **arguments))
+    resvec = sparse.toarray(sparse.block([sparse.take(next(data), [m]) for m in masks]))
+    resmat = sparse.prune(sparse.dedup(sparse.block([[sparse.take(next(data), [mi, mj]) for mj in masks] for mi in masks])))
+    consvec = sparse.toarray(sparse.block([sparse.take(next(data), [m]) for m in masks]))
+    consmat = sparse.prune(sparse.dedup(sparse.block([[sparse.take(next(data), [mi, mj]) for mj in masks] for mi in masks])))
+    lconsmat = sparse.prune(sparse.dedup(sparse.block([[sparse.take(next(data), [mi, mj]) for mj in masks] for mi in masks])))
+
+    # FIXME: make droptol configurable
+    consmat = consmat[abs(consmat['value']) > 1e-10]
+    lconsmat = lconsmat[abs(lconsmat['value']) > 1e-10]
+
+    constrained_dofs = numpy.unique(consmat['index']['i0'])
+
+    # linear problem: A x + b = 0
+    A = _sparse_to_csr(resmat)
+    b = resvec
+
+    # linear constraints: C x + d = 0
+    C = _sparse_to_csr(consmat)
+    d = consvec
+
+    # left constraints: L x = 0
+    L = _sparse_to_csr(lconsmat)
+
+    # Split `x` in keep dofs `y` and remove dofs `z`:
+    #
+    #     x = K y + Σ_i R_i z_i
+    #
+    # Properties:
+    #
+    #     K.T C = 0
+    #     R_i C R_j = 0 if i != j
+
+    blocks = scipy.cluster.hierarchy.DisjointSet(constrained_dofs)
+    for row in constrained_dofs:
+        idx = iter(numpy.intersect1d(C.indices[C.indptr[row]:C.indptr[row+1]], constrained_dofs))
+        first = next(idx)
+        for other in idx:
+            blocks.merge(first, other)
+    R = tuple(numpy.sort(numpy.fromiter(block, int)) for block in blocks.subsets())
+
+    blocks = scipy.cluster.hierarchy.DisjointSet(constrained_dofs)
+    for row in constrained_dofs:
+        idx = iter(numpy.intersect1d(C.indices[C.indptr[row]:C.indptr[row+1]], constrained_dofs))
+        first = next(idx)
+        for other in idx:
+            blocks.merge(first, other)
+    T = tuple(numpy.sort(numpy.fromiter(block, int)) for block in blocks.subsets())
+
+    log.info('{} constraints in {} lhs and {} rhs blocks'.format(len(constrained_dofs), len(R), len(T)))
+
+    invC = tuple(scipy.sparse.linalg.splu(C[Ri][:,Ri].tocsc()) for Ri in R)
+    invL = tuple(scipy.sparse.linalg.splu(L[Ti][:,Ti].tocsc()) for Ti in T)
+
+    # Constraints in terms of `y` and `z_i`:
+    #
+    #     C K y + Σ_i C R_i z_i + d = 0
+    #
+    # Solve for z_i by left multiplying with `R_j.T` and recalling that `R_j C
+    # R_i = 0` if `i != j`:
+    #
+    #     R_j.T C K y + R_j.T C R_j z_j + d = 0
+    #
+    #     z_j = -inv(R_j.T C R_j) (R_j.T C K y + d)
+    #
+    #     x = (K - Σ_i R_i inv(R_i.T C R_i) R_i.T C K) y - Σ_i R_i inv(R_i.T C R_i) d
+
+    n = A.shape[0]
+    m = len(constrained_dofs)
+    K = numpy.setdiff1d(numpy.arange(n), constrained_dofs, assume_unique=True)
+
+    x = numpy.zeros((n,), dtype)
+    E = A[:,K]
+    for Ri, invCi in zip(R, invC):
+        x[Ri] = -invCi.solve(d[Ri])
+        if C[Ri][:,K].nnz:
+            invCi = scipy.sparse.linalg.inv(C[Ri][:,Ri].tocsc())
+            if invCi.shape == (1,):
+                invCi = scipy.sparse.csr_matrix(invCi[:,None])
+            E -= A[:,Ri] @ (invCi @ C[Ri][:,K])
+    f = -b - A @ x
+
+    G = E[K,:]
+    h = f[K]
+    for Ti, invLi in zip(T, invL):
+        h += L[Ti][:,K].T @ invLi.solve(f[Ti], trans='H')
+        if L[Ti][:,K].nnz:
+            invLi = scipy.sparse.linalg.inv(L[Ti][:,Ti].tocsc())
+            if invLi.shape == (1,):
+                invLi = scipy.sparse.csr_matrix(invLi[:,None])
+            G -= (L[Ti][:,K].T @ invLi.T) @ E[Ti]
+
+    G = G.tocsr().sorted_indices().tocoo(copy=False)
+    log.info(f'nnz unconstrained: {A.nnz}, constrained: {G.nnz}')
+    y = matrix.assemble(G.data, (G.row, G.col), (n - m, n - m)).solve(h)
+    x[K] = y
+    for Ri, invCi in zip(R, invC):
+        x[Ri] -= invCi.solve(C[Ri][:,K] @ y)
+
+    args = {}
+    offset = 0
+    for target in targets:
+        shape = tuple(map(int, argobjs[target].shape))
+        n = numpy.prod(shape, dtype=int)
+        args[target] = x[offset:offset+n].reshape(shape)
+        offset += n
+    assert offset == len(x)
+
+    return args
 
 
 def newton(target, residual, *, jacobian = None, lhs0 = None, relax0: float = 1., constrain = None, linesearch=NormBased(), failrelax: float = 1e-6, arguments = {}, **kwargs):
@@ -920,6 +1042,108 @@ def _target_helper(target, *args):
         args = [[function.zeros(shape) if f is None else f for f, (shape,) in zip(arg, shapes)] for arg in args]
     return (tuple(targets), *[tuple(f.as_evaluable_array for f in arg) for arg in args])
 
+def _apply_raveled(op, arg):
+    if arg.ndim == 1:
+        return op(arg)
+    elif arg.ndim > 1:
+        return evaluable.Unravel(_apply_raveled(op, evaluable.Ravel(arg)), arg.shape[-2], arg.shape[-1])
+    else:
+        return get(op(evaluable.appendaxes(arg, (evaluable.asarray(1),))), -1, 0)
+
+def _parse_targets_residual(pluriform_targets, pluriform_residual, old_constraints):
+    pluriform_targets = pluriform_targets.rstrip(',').split(',') if isinstance(pluriform_targets, str) else list(pluriform_targets)
+    is_functional = [':' in target for target in pluriform_targets]
+    if all(is_functional):
+        # Parse a list of targets of the form 'trial:test' or 'trial:test:cons'
+        # and return the list of trials, the residuals per `trial` (derivative
+        # of the monolithic residual to the `test`s) and the constraints per
+        # `trial` (derivative of the monolithic residual to the `cons`s or
+        # zeros if `cons` is absent).
+        monolithic_residual = evaluable.asarray(pluriform_residual)
+        if monolithic_residual.ndim != 0:
+            raise ValueError('the residual must be scalar')
+        arguments = _argobjs([monolithic_residual])
+        targets = []
+        tests = []
+        residuals = []
+        intermediate_constraints = []
+        for joined_names in pluriform_targets:
+            names = joined_names.split(':')
+            if len(names) < 2:
+                raise ValueError(f'expected two or three argument names separated by colons, but got 1: {joined_names}')
+            target, test = names[:2]
+            residual = evaluable.derivative(monolithic_residual, arguments[test])
+            target_arg = arguments[target]
+            test_arg = arguments[test]
+            if test_arg.shape != target_arg.shape or test_arg.dtype != target_arg.dtype:
+                raise ValueError(f'corresponding trial, test (and constraint) arguments must have the same shapes and dtype, but those of {target} and {test}')
+            zeros = evaluable.zeros_like(target_arg)
+            if len(names) == 2:
+                constraint = evaluable.zeros(arguments[test].shape)
+                asymmetric = False
+            elif len(names) == 3:
+                if old_constraints:
+                    raise ValueError('cannot mix new-style constraints (included in the residual) and old-style constraints (constrain argument)')
+                cons = names[2]
+                asymmetric = cons.endswith('*')
+                if asymmetric:
+                    cons = cons[:-1]
+                cons_arg = arguments[cons]
+                if cons_arg.shape != target_arg.shape or cons_arg.dtype != target_arg.dtype:
+                    raise ValueError(f'corresponding trial, test (and constraint) arguments must have the same shapes and dtype, but those of {target} and {cons}')
+                constraint = evaluable.derivative(monolithic_residual, cons_arg)
+                residual = evaluable.replace_arguments(residual, {cons: zeros})
+            else:
+                raise ValueError(f'expected two or three argument names separated by colons, but got {len(names)}: {joined_names}')
+            targets.append(target)
+            tests.append(test)
+            residuals.append(residual)
+            intermediate_constraints.append((constraint, asymmetric))
+        constraints = []
+        lconstraints = []
+        for constraint, asymmetric in intermediate_constraints:
+            if asymmetric:
+                repl_args = {target: evaluable.zeros_like(arguments[target]) for target in targets}
+                repl_args.update({test: arguments[target] for test, target in zip(tests, targets)})
+                lconstraint = evaluable.replace_arguments(constraint, repl_args)
+                constraint = evaluable.replace_arguments(constraint, {test: evaluable.zeros_like(arguments[test]) for test in tests})
+            else:
+                lconstraint = constraint
+            constraints.append(constraint)
+            lconstraints.append(lconstraint)
+    elif any(is_functional):
+        raise ValueError('inconsistent targets')
+    else:
+        targets = tuple(pluriform_targets)
+        residuals = tuple(map(evaluable.asarray, pluriform_residual))
+        constraints = ()
+        lconstraints = ()
+    if old_constraints:
+        # Rewrite the old-style constraints to new-style constraints. For 1d
+        # targets this is as simple as `inflate(target[m] - constraint[m], m)`,
+        # where `m` is the mask where `constraint` is not nan. For other
+        # dimensions we need to ravel before inflate and unravel after inflate.
+        arguments = _argobjs(residuals)
+        constraints = []
+        for target in targets:
+            target_arg = arguments[target]
+            constraint = old_constraints.get(target, None)
+            if constraint is not None:
+                if numpy.shape(constraint) != tuple(map(int, target_arg.shape)):
+                    raise ValueError(f'constraint for {target} has different shape than argument')
+                n = evaluable.asarray(numpy.size(constraint))
+                constraint = numpy.ravel(constraint)
+                indices, = numpy.where(~numpy.isnan(constraint))
+                constraint = numpy.take(constraint, indices)
+                indices = evaluable.asarray(indices)
+                constraints.append(_apply_raveled(
+                    lambda raveled_target: evaluable.Inflate(evaluable.Take(raveled_target, indices) - constraint, indices, n),
+                    target_arg,
+                ))
+            else:
+                constraints.append(evaluable.zeros_like(target_arg))
+        lconstraints = constraints
+    return tuple(targets), tuple(residuals), tuple(constraints), tuple(lconstraints)
 
 class _with_solve(types.Immutable):
     '''add a .solve method to iterables'''

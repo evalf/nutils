@@ -63,18 +63,15 @@ def main(etype: str = 'square',
         ns = Namespace()
         ns.x = geom
         ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
-        ns.add_field(('u', 'v'), domain.basis(btype, degree=degree))
+        ns.add_field(('u', 'v', 'w'), domain.basis(btype, degree=degree))
         ns.uexact = exact
         ns.du = 'u - uexact'
 
-        sqr = domain.boundary['corner'].integral('u^2 dS' @ ns, degree=degree*2)
-        cons = solver.optimize('u,', sqr, droptol=1e-15)
+        res = domain.boundary['corner'].integral('w u dS' @ ns, degree=degree*2)
+        res += (domain.boundary - domain.boundary['corner']).integral('w du dS' @ ns, degree=7)
 
-        sqr = domain.boundary.integral('du^2 dS' @ ns, degree=7)
-        cons = solver.optimize('u,', sqr, droptol=1e-15, constrain=cons)
-
-        res = domain.integral('∇_k(v) ∇_k(u) dV' @ ns, degree=degree*2)
-        args = solver.solve_linear('u:v', res, constrain=cons)
+        res += domain.integral('∇_k(v) ∇_k(u) dV' @ ns, degree=degree*2)
+        args = solver.solve_linear('u:v:w', res)
 
         ndofs = len(args['u'])
         error = numpy.sqrt(domain.integral(['du^2 dV', '(du^2 + ∇_k(du) ∇_k(du)) dV'] @ ns, degree=7)).eval(**args)

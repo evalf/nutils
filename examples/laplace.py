@@ -54,7 +54,7 @@ def main(nelems: int = 10,
     ns = Namespace()
     ns.x = geom
     ns.define_for('x', gradient='∇', normal='n', jacobians=('dV', 'dS'))
-    ns.add_field(('u', 'v'), domain.basis(btype, degree=degree))
+    ns.add_field(('u', 'v', 'w'), domain.basis(btype, degree=degree))
 
     # We are now ready to implement the Laplace equation. In weak form, the
     # solution is a scalar field `u` for which ∫_Ω ∇v·∇u - ∫_Γn v f = 0 ∀ v.
@@ -69,15 +69,14 @@ def main(nelems: int = 10,
     # remaining entries are set to `NaN`, signifying that these degrees of
     # freedom are unconstrained.
 
-    sqr = domain.boundary['left'].integral('u^2 dS' @ ns, degree=degree*2)
-    sqr += domain.boundary['top'].integral('(u - cosh(1) sin(x_0))^2 dS' @ ns, degree=degree*2)
-    cons = solver.optimize('u,', sqr, droptol=1e-15)
+    res += domain.boundary['left'].integral('w u dS' @ ns, degree=degree*2)
+    res += domain.boundary['top'].integral('w (u - cosh(1) sin(x_0)) dS' @ ns, degree=degree*2)
 
     # The unconstrained entries of `u` are to be such that the residual
     # evaluates to zero for all possible values of `v`. The resulting array `u`
     # matches `cons` in the constrained entries.
 
-    args = solver.solve_linear('u:v', res, constrain=cons)
+    args = solver.solve_linear('u:v:w', res)
 
     # Once all arguments are establised, the corresponding solution can be
     # vizualised by sampling values of `ns.u` along with physical coordinates
@@ -95,7 +94,7 @@ def main(nelems: int = 10,
     err = domain.integral('(u - sin(x_0) cosh(x_1))^2 dV' @ ns, degree=degree*2).eval(**args)**.5
     treelog.user('L2 error: {:.2e}'.format(err))
 
-    return cons['u'], args['u'], err
+    return args['u'], err
 
 
 # Once a simulation is developed and tested, it is good practice to save a few
@@ -107,10 +106,7 @@ def main(nelems: int = 10,
 class test(testing.TestCase):
 
     def test_simple(self):
-        cons, u, err = main(nelems=4)
-        with self.subTest('constraints'):
-            self.assertAlmostEqual64(cons, '''
-                eNrbKPv1QZ3ip9sL1BgaILDYFMbaZwZj5ZnDWNfNAeWPESU=''')
+        u, err = main(nelems=4)
         with self.subTest('left-hand side'):
             self.assertAlmostEqual64(u, '''
                 eNoBMgDN/7Ed9eB+IfLboCaXNKc01DQaNXM14jXyNR82ZTa+NpI2oTbPNhU3bjf7Ngo3ODd+N9c3SNEU
@@ -119,10 +115,7 @@ class test(testing.TestCase):
             self.assertAlmostEqual(err, 1.63e-3, places=5)
 
     def test_spline(self):
-        cons, u, err = main(nelems=4, btype='spline', degree=2)
-        with self.subTest('constraints'):
-            self.assertAlmostEqual64(cons, '''
-                eNqrkmN+sEfhzF0xleRbDA0wKGeCYFuaIdjK5gj2aiT2VXMAJB0VAQ==''')
+        u, err = main(nelems=4, btype='spline', degree=2)
         with self.subTest('left-hand side'):
             self.assertAlmostEqual64(u, '''
                 eNqrkmN+sEfhzF0xleRbrsauxsnGc43fGMuZJJgmmNaZ7jBlN7M08wLCDLNFZh/NlM0vmV0y+2CmZV5p
@@ -131,11 +124,7 @@ class test(testing.TestCase):
             self.assertAlmostEqual(err, 8.04e-5, places=7)
 
     def test_mixed(self):
-        cons, u, err = main(nelems=4, etype='mixed', degree=2)
-        with self.subTest('constraints'):
-            self.assertAlmostEqual64(cons, '''
-                eNorfLZF2ucJQwMC3pR7+QDG9lCquAtj71Rlu8XQIGfC0FBoiqweE1qaMTTsNsOvRtmcoSHbHL+a1UD5
-                q+YAxhcu1g==''')
+        u, err = main(nelems=4, etype='mixed', degree=2)
         with self.subTest('left-hand side'):
             self.assertAlmostEqual64(u, '''
                 eNorfLZF2ueJq7GrcYjxDJPpJstNbsq9fOBr3Gh8xWS7iYdSxd19xseMP5hImu5UZbv1xljOxM600DTW
