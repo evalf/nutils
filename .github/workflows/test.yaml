@@ -94,7 +94,7 @@ jobs:
           # Install Nutils from `dist` dir created in job `build-python-package`.
           python -um pip install "$_wheel[import_gmsh,export_mpl]"
       - name: Install Scipy
-        if: ${{ matrix.matrix-backend == 'scipy' }}
+        # FIXME: temporarily install scipy unconditionally
         run: python -um pip install --upgrade scipy
       - name: Configure MKL
         if: ${{ matrix.matrix-backend == 'mkl' }}
