@@ -30,8 +30,8 @@ def assemble(data, index, shape):
 class Pardiso:
     '''Wrapper for libmkl.pardiso.
 
-    https://www.intel.com/content/www/us/en/develop/documentation/onemkl-developer-reference-c/top/
-      sparse-solver-routines/onemkl-pardiso-parallel-direct-sparse-solver-iface.html
+    https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-c/2023-2/
+      onemkl-pardiso-parallel-direct-sparse-solver-iface.html
     '''
 
     _errorcodes = {
