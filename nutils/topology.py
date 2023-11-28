@@ -1866,6 +1866,10 @@ class EmptyTopology(TransformChainsTopology):
     def __rsub__(self, other):
         return other
 
+    @property
+    def connectivity(self):
+        return ()
+
 
 def StructuredLine(space, root: transform.TransformItem, i: int, j: int, periodic: bool = False, bnames: Optional[Tuple[str, str]] = None):
     assert isinstance(i, int), f'i={i!r}'
