@@ -2350,12 +2350,6 @@ class ConnectedTopology(TransformChainsTopology):
 class SimplexTopology(TransformChainsTopology):
     'simpex topology'
 
-    def _renumber(simplices):
-        simplices = numpy.asarray(simplices)
-        keep = numpy.zeros(simplices.max()+1, dtype=bool)
-        keep[simplices.flat] = True
-        return types.arraydata(simplices if keep.all() else (numpy.cumsum(keep)-1)[simplices])
-
     def __init__(self, space: str, simplices: numpy.ndarray, transforms: transformseq.Transforms, opposites: transformseq.Transforms):
         assert isinstance(space, str), f'space={space!r}'
         assert isinstance(simplices, numpy.ndarray), f'simplices={simplices!r}'
@@ -2365,6 +2359,17 @@ class SimplexTopology(TransformChainsTopology):
         assert not numpy.equal(self.simplices[:, 1:], self.simplices[:, :-1]).all(), 'duplicate nodes'
         references = References.uniform(element.getsimplex(transforms.fromdims), len(transforms))
         super().__init__(space, references, transforms, opposites)
+
+    @cached_property
+    def contiguous_simplices(self):
+        simplices = numpy.asarray(self.simplices)
+        keep = numpy.zeros(simplices.max()+1, dtype=bool)
+        keep[simplices.flat] = True
+        return simplices if keep.all() else (numpy.cumsum(keep)-1)[simplices]
+
+    @cached_property
+    def nverts(self):
+        return self.contiguous_simplices.max() + 1
 
     def take_unchecked(self, indices):
         space, = self.spaces
@@ -2398,7 +2403,7 @@ class SimplexTopology(TransformChainsTopology):
     def basis_std(self, degree):
         if degree == 1:
             coeffs = element.getsimplex(self.ndims).get_poly_coeffs('bernstein', degree=1)
-            return function.PlainBasis([coeffs] * len(self), self.simplices, self.simplices.max()+1, self.f_index, self.f_coords)
+            return function.PlainBasis([coeffs] * len(self), self.contiguous_simplices, self.nverts, self.f_index, self.f_coords)
         return super().basis_std(degree)
 
     def basis_bubble(self):
@@ -2410,9 +2415,8 @@ class SimplexTopology(TransformChainsTopology):
         coeffs[:-1] = poly.change_degree(bernstein, self.ndims, 1 + self.ndims) - bubble[None] / (self.ndims+1)
         coeffs[-1] = bubble
         coeffs = types.frozenarray(coeffs, copy=False)
-        nverts = self.simplices.max() + 1
-        ndofs = nverts + len(self)
-        nmap = [types.frozenarray(numpy.hstack([idofs, nverts+ielem]), copy=False) for ielem, idofs in enumerate(self.simplices)]
+        ndofs = self.nverts + len(self)
+        nmap = [types.frozenarray(numpy.hstack([idofs, self.nverts+ielem]), copy=False) for ielem, idofs in enumerate(self.contiguous_simplices)]
         return function.PlainBasis([coeffs] * len(self), nmap, ndofs, self.f_index, self.f_coords)
 
 
