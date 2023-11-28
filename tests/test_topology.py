@@ -1363,6 +1363,19 @@ class SimplexTopology(TestCase, CommonTests, TransformChainsTests, ConformingTes
     def test_boundary(self):
         self.assertIsInstance(self.topo.boundary, topology.SimplexTopology)
 
+    def test_empty_boundary(self):
+        simplices = numpy.array([[0, 1, 2, 3]])
+        transforms = transformseq.IndexTransforms(3, len(simplices))
+        topo = topology.SimplexTopology('X', simplices, transforms, transforms)
+        self.assertEqual(len(topo.boundary), 4)
+        self.assertEqual(len(topo.boundary.boundary), 0)
+
+    def test_empty_interfaces(self):
+        simplices = numpy.array([[0, 1, 2, 3]])
+        transforms = transformseq.IndexTransforms(3, len(simplices))
+        topo = topology.SimplexTopology('X', simplices, transforms, transforms)
+        self.assertEqual(len(topo.interfaces), 0)
+
     def test_getitem(self):
         self.assertIsInstance(self.topo[numpy.arange(4) < 2], topology.SimplexTopology)
         self.assertIsInstance(self.topo[numpy.arange(2)], topology.SimplexTopology)

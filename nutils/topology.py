@@ -2362,6 +2362,7 @@ class SimplexTopology(TransformChainsTopology):
     def __init__(self, space: str, simplices: numpy.ndarray, transforms: transformseq.Transforms, opposites: transformseq.Transforms):
         assert isinstance(space, str), f'space={space!r}'
         assert isinstance(simplices, numpy.ndarray), f'simplices={simplices!r}'
+        assert len(simplices), f'simplices is empty'
         assert simplices.shape == (len(transforms), transforms.fromdims+1)
         self.simplices = numpy.asarray(simplices)
         assert numpy.greater(self.simplices[:, 1:], self.simplices[:, :-1]).all(), 'nodes should be sorted'
@@ -2388,6 +2389,8 @@ class SimplexTopology(TransformChainsTopology):
     def boundary(self):
         space, = self.spaces
         ielem, iedge = (self.connectivity == -1).nonzero()
+        if len(ielem) == 0:
+            return self.empty_like().boundary
         nd = self.ndims
         edges = numpy.arange(nd+1).repeat(nd).reshape(nd,nd+1).T[::-1]
         simplices = self.simplices[ielem, edges[iedge].T].T
