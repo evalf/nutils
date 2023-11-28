@@ -1870,6 +1870,15 @@ class EmptyTopology(TransformChainsTopology):
     def connectivity(self):
         return ()
 
+    @property
+    def boundary(self):
+        if self.ndims:
+            return EmptyTopology(self.space, self.transforms.todims, self.ndims - 1)
+        else:
+            raise ValueError('A 0D topology has no boundary.')
+
+    interfaces = boundary
+
 
 def StructuredLine(space, root: transform.TransformItem, i: int, j: int, periodic: bool = False, bnames: Optional[Tuple[str, str]] = None):
     assert isinstance(i, int), f'i={i!r}'
