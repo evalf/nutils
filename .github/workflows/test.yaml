@@ -99,7 +99,7 @@ jobs:
       - name: Configure MKL
         if: ${{ matrix.matrix-backend == 'mkl' }}
         run: |
-          python -um pip install --upgrade --upgrade-strategy eager mkl
+          python -um pip install --upgrade --upgrade-strategy eager 'mkl<2024'
           python -um devtools.gha.configure_mkl
       - name: Test
         run: python -um coverage run -m unittest discover -b -q -t . -s tests
