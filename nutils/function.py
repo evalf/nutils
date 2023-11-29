@@ -17,6 +17,7 @@ import operator
 import numbers
 import inspect
 import fractions
+import treelog
 
 IntoArray = Union['Array', numpy.ndarray, bool, int, float, complex]
 Shape = Sequence[int]
@@ -2520,6 +2521,30 @@ class Basis(Array):
         else:
             return super().__getitem__(index)
 
+    @treelog.withcontext
+    def discontinuous_at_partition_interfaces(self, part_indices: Sequence[int]):
+        '''Returns a basis that is discontinuous at element partition interfaces.
+
+        Given a partition of elements, this basis is made discontinuous at the
+        partition interfaces. All elements that have the same part index belong
+        to the same part.
+
+        The returned basis is formed by clipping each function of the basis to
+        each part individually and stacking all nonzero clipped functions. As a
+        consequence, if a basis function has support on three topologically
+        adjacent elements of which the first and the last element belong to one
+        part and the middle to another, this function will not be clipped to
+        each of the three elements individually, but to the first and the last
+        element and to the middle element.
+
+        Parameters
+        ----------
+        part_indices : sequence or :class:`numpy.ndarray` of :class:`int`
+            For each element the index of the part the element belongs to.
+        '''
+
+        return _DiscontinuousPartitionBasis(self, part_indices)
+
 
 class PlainBasis(Basis):
     '''A general purpose implementation of a :class:`Basis`.
@@ -2774,6 +2799,42 @@ class PrunedBasis(Basis):
         p_dofs, p_coeffs = self._parent.f_dofs_coeffs(evaluable.get(evaluable.constant(self._transmap), 0, index))
         dofs = evaluable.take(evaluable.constant(self._renumber), p_dofs, axis=0)
         return dofs, p_coeffs
+
+
+class _DiscontinuousPartitionBasis(Basis):
+
+    def __init__(self, parent: Basis, part_indices: Sequence[int]):
+        self._parent = parent
+
+        part_indices = numpy.array(part_indices).astype(int, casting='safe', copy=False)
+        if part_indices.shape != (parent.nelems,):
+            raise ValueError(f'expected a sequence of {self.nelems} integers but got an array with shape {part_indices.shape}')
+
+        # For each element we pair the parent dofs with the part indices and
+        # use that as partitioned dof. Then we renumber the partitioned dofs
+        # starting at 0, ordered by part index, then by parent dof.
+
+        ielem = evaluable.loop_index('ielem', parent.nelems)
+        parent_dofs, _ = parent.f_dofs_coeffs(ielem)
+        # Concatenate all parent dofs and stack all ndofs per element.
+        cc_parent_dofs = evaluable.loop_concatenate(parent_dofs, ielem)
+        cc_ndofs = evaluable.loop_concatenate(evaluable.insertaxis(parent_dofs.shape[0], 0, evaluable.asarray(1)), ielem)
+        cc_parent_dofs, cc_ndofs = evaluable.Tuple((cc_parent_dofs, cc_ndofs)).optimized_for_numpy.eval()
+        # Stack the part index for each element for each dof.
+        cc_part_indices = numpy.repeat(part_indices, cc_ndofs)
+        # Renumber and count all unique dofs.
+        unique_dofs, dofs = numpy.unique(numpy.stack([cc_part_indices, cc_parent_dofs], axis=1), axis=0, return_inverse=True)
+
+        self._dofs = evaluable.asarray(dofs)
+        self._ndofs = evaluable.asarray(cc_ndofs)
+        self._offsets = evaluable._SizesToOffsets(self._ndofs)
+
+        super().__init__(len(unique_dofs), parent.nelems, parent.index, parent.coords)
+
+    def f_dofs_coeffs(self, index):
+        dofs = evaluable.Take(self._dofs, evaluable.Range(evaluable.Take(self._ndofs, index)) + evaluable.Take(self._offsets, index))
+        _, coeffs = self._parent.f_dofs_coeffs(index)
+        return dofs, coeffs
 
 
 def Namespace(*args, **kwargs):

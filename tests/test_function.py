@@ -1288,6 +1288,21 @@ class StructuredBasis2D(CommonBasis, TestCase):
         super().setUp()
 
 
+class DiscontinuousPartitionBasis(CommonBasis, TestCase):
+
+    def setUp(self):
+        self.checktransforms = transformseq.IndexTransforms(0, 4)
+        index, coords = self.mk_index_coords(0, self.checktransforms)
+        self.checkcoeffs = [[[1.], [2.], [3.], [4.]]] * 4
+        parent_dofs = [[0, 1, 3, 4], [1, 2, 4, 5], [3, 4, 6, 7], [4, 5, 7, 8]]
+        part_indices = [-1, 2, -1, 3]
+        self.basis = function.PlainBasis(self.checkcoeffs, parent_dofs, 9, index, coords).discontinuous_at_partition_interfaces(part_indices)
+        self.checkdofs = [[0, 1, 2, 3], [6, 7, 8, 9], [2, 3, 4, 5], [10, 11, 12, 13]]
+        self.checkndofs = 14
+        self.checkmasks = [[i in [0, 1, 7, 11] for i in range(self.checkndofs)]]
+        super().setUp()
+
+
 @parametrize
 class SurfaceGradient(TestCase):
 
