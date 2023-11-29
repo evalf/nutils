@@ -1589,12 +1589,6 @@ def get(__array: IntoArray, __axis: int, __index: IntoArray) -> Array:
     return numpy.take(Array.cast(__array), Array.cast(__index, dtype=int, ndim=0), __axis)
 
 
-def _range(__length: int, __offset: int) -> Array:
-    length = Array.cast(__length, dtype=int, ndim=0)
-    offset = Array.cast(__offset, dtype=int, ndim=0)
-    return _Wrapper(lambda l, o: evaluable.Range(l) + o, _WithoutPoints(length), _WithoutPoints(offset), shape=(__length,), dtype=int)
-
-
 def _takeslice(__array: IntoArray, __s: slice, __axis: int) -> Array:
     array = Array.cast(__array)
     s = __s
@@ -1605,7 +1599,8 @@ def _takeslice(__array: IntoArray, __s: slice, __axis: int) -> Array:
         stop = n if s.stop is None else s.stop if s.stop >= 0 else s.stop + n
         if start == 0 and stop == n:
             return array
-        index = _range(stop-start, start)
+        length = stop - start
+        index = _Wrapper(evaluable.Range, _WithoutPoints(_Constant(length)), shape=(length,), dtype=int) + start
     elif isinstance(n, numbers.Integral):
         index = Array.cast(numpy.arange(*s.indices(int(n))))
     else:
