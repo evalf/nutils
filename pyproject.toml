@@ -24,7 +24,7 @@ classifiers = [
 [project.optional-dependencies]
 docs = ["Sphinx>=1.8"]
 export_mpl = ["matplotlib>=1.3", "pillow>2.6"]
-matrix_mkl = ["mkl"]
+matrix_mkl = ["mkl<2024"]
 matrix_scipy = ["scipy>=0.13"]
 import_gmsh = ["meshio"]
 

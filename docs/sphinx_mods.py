@@ -78,7 +78,7 @@ def generate_api(app):
     dst_root.mkdir(parents=True, exist_ok=True)
 
     srcs = tuple(f for f in sorted(nutils.glob('**/*.py')) if f != nutils/'__init__.py' and (f.name == '__init__.py' or not f.name.startswith('_')))
-    for src in sphinx.util.status_iterator(srcs, 'generating api... ', 'purple', len(srcs), app.verbosity):
+    for src in sphinx.util.display.status_iterator(srcs, 'generating api... ', 'purple', len(srcs), app.verbosity):
         module = '.'.join((src.parent if src.name == '__init__.py' else src.with_suffix('')).relative_to(nutils).parts)
         dst = dst_root/(module+'.rst')
         with dst.open('w', encoding='utf-8') as f:

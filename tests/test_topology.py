@@ -1352,8 +1352,29 @@ class SimplexTopology(TestCase, CommonTests, TransformChainsTests, ConformingTes
         self.desired_references = [element.TriangleReference()]*4
         self.desired_vertices = coords[simplices].tolist()
 
+    def test_contiguous_simplices(self):
+        # Same structure as the simplices in `setUp`, but renumbered.
+        simplices = numpy.array([[10,13,25],[10,18,25],[13,21,25],[18,21,25]])
+        transforms = transformseq.IndexTransforms(2, len(simplices))
+        topo = topology.SimplexTopology('X', simplices, transforms, transforms)
+        self.assertEqual(self.topo.contiguous_simplices.tolist(), self.topo.simplices.tolist())
+        self.assertEqual(self.topo.nverts, 5)
+
     def test_boundary(self):
         self.assertIsInstance(self.topo.boundary, topology.SimplexTopology)
+
+    def test_empty_boundary(self):
+        simplices = numpy.array([[0, 1, 2, 3]])
+        transforms = transformseq.IndexTransforms(3, len(simplices))
+        topo = topology.SimplexTopology('X', simplices, transforms, transforms)
+        self.assertEqual(len(topo.boundary), 4)
+        self.assertEqual(len(topo.boundary.boundary), 0)
+
+    def test_empty_interfaces(self):
+        simplices = numpy.array([[0, 1, 2, 3]])
+        transforms = transformseq.IndexTransforms(3, len(simplices))
+        topo = topology.SimplexTopology('X', simplices, transforms, transforms)
+        self.assertEqual(len(topo.interfaces), 0)
 
     def test_getitem(self):
         self.assertIsInstance(self.topo[numpy.arange(4) < 2], topology.SimplexTopology)
