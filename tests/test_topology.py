@@ -627,6 +627,11 @@ class NewMul(TestCase, CommonTests, ConformingTests):
         stack = self.topo.elementwise_stack(numpy.stack([self.topo1.f_index, self.topo2.f_index]), axis=1)
         self.assertEqual(function.eval(stack).tolist(), desired.tolist())
 
+    def test_partition_interfaces(self):
+        centers = self.topo.partition_interfaces([0, 0, 1, 2, 1, 1]).sample('gauss', 0).eval(self.geom).tolist()
+        centers.sort()
+        self.assertAllAlmostEqual(centers, [[0.5, 2.0], [1.0, 0.5], [1.0, 1.5], [1.5, 1.0]])
+
 
 class NewWithGroupAliases(TestCase, CommonTests, ConformingTests):
 
@@ -1364,6 +1369,11 @@ class StructuredTopology2D(TestCase, CommonTests, ConformingTests, TransformChai
         self.desired_volumes = [1]*4
         self.desired_references = [element.LineReference()**2]*4
         self.desired_vertices = [[[x, y] for x in X for y in Y] for X in pairwise(range(3)) for Y in pairwise(range(3))]
+
+    def test_partition_interfaces(self):
+        centers = self.topo.partition_interfaces([0, 0, 1, 2]).sample('gauss', 0).eval(self.geom).tolist()
+        centers.sort()
+        self.assertAllAlmostEqual(centers, [[1.0, 0.5], [1.0, 1.5], [1.5, 1.0]])
 
 
 class UnionTopology(TestCase, CommonTests, TransformChainsTests):

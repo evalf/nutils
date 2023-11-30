@@ -1120,6 +1120,35 @@ class Topology:
 
         raise NotImplementedError
 
+    def partition_interfaces(self, part_indices: Sequence[int]) -> 'Topology':
+        '''Return the interfaces between all parts of an element partition.
+
+        Given a partition of elements, this function returns the subset of
+        interfaces that face two different parts. The orientation of the
+        interfaces is arbitrary.
+
+        Parameters
+        ----------
+        part_indices : sequence or :class:`numpy.ndarray` of :class:`int`
+            For each element the index of the part the element belongs to.
+
+        Returns
+        -------
+        :class:`Topology`
+            The interfaces between all parts of the element partition, a subset
+            of :attr:`Topology.interfaces`.
+        '''
+
+        part_indices = function.Array.cast(part_indices)
+        if part_indices.dtype not in (bool, int):
+            raise ValueError(f'expected a sequence of integer part indices but got a sequence of type {part_indices.dtype}')
+        if part_indices.shape != (len(self),):
+            raise ValueError(f'expected a sequence of {len(self)} integer part indices but got an array with shape {part_indices.shape}')
+        interfaces = self.interfaces
+        part_indices = numpy.take(part_indices, self.f_index)
+        isnt_partition_interface = interfaces.elementwise_stack(part_indices == function.opposite(part_indices))
+        return interfaces.compress(~function.eval(isnt_partition_interface))
+
     def basis_discont(self, degree: int) -> function.Basis:
         'discontinuous shape functions'
 
