@@ -992,6 +992,10 @@ class Topology:
 
     @cached_property
     def interfaces(self) -> 'Topology':
+        '''
+        :class:`Topology`:
+          The interfaces of this topology.
+        '''
         return self.interfaces_spaces(self.spaces)
 
     def interfaces_spaces(self, __spaces: Iterable[str]) -> 'Topology':
