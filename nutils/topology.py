@@ -414,6 +414,77 @@ class Topology:
 
         raise NotImplementedError
 
+    def elementwise_stack(self, func: function.Array, *, axis: int = 0) -> function.Array:
+        '''Return the stack of the function bound to every element of this topology.
+
+        The order of the stack matches the order of the elements of this
+        topology. Therefor, for any :class:`Topology` ``topo``
+
+            topo.elementwise_stack(topo.f_index)
+
+        is guaranteed to be the same (after evaluation) as
+
+            numpy.arange(len(topo))
+
+        Parameters
+        ----------
+        func : :class:`nutils.function.Array`
+            The function to bind to elements and stack.
+        axis : :class:`int`
+            The axis in the result array along which the elements are stacked.
+
+        Returns
+        -------
+        :class:`nutils.function.Array`
+            The stack of function at the first element, the second, etc. until
+            the last.
+
+        Examples
+        --------
+
+        Given a ``base`` :class:`Topology` and a ``refinement``, with
+        :meth:`Topology.elementwise_stack` we can obtain the element index of
+        the ``base`` for each element in the ``refinement``:
+
+        >>> from nutils import function, mesh
+        >>> base, geom = mesh.line(4)
+        >>> refinement = base.refined_by([1, 3]).refined_by([5])
+        >>> function.eval(refinement.elementwise_stack(base.f_index))
+        array([0, 2, 1, 1, 3, 3, 3])
+
+        Note that refined elements are positioned at the end of the refined
+        topology.
+
+        Notes
+        -----
+
+        This method delegates the work to
+        :meth:`Topology.elementwise_stack_last_axis`. Implementations of
+        :class:`Topology` should implement the latter.
+        '''
+
+        stack = self.elementwise_stack_last_axis(func)
+        axis = numeric.normdim(stack.ndim, axis)
+        if axis != stack.ndim - 1:
+            stack = numpy.transpose(stack, (*range(axis), *range(axis + 1, stack.ndim), axis))
+        return stack
+
+    def elementwise_stack_last_axis(self, func: function.Array) -> function.Array:
+        '''Return the stack along the last axis of the function bound to every element of this topology.
+
+        Parameters
+        ----------
+        func : :class:`nutils.function.Array`
+            The function to bind to elements and stack.
+
+        Returns
+        -------
+        :class:`nutils.function.Array`
+            The stack of function at element 0, element 1, etc along the last axis.
+        '''
+
+        raise NotImplementedError
+
     @single_or_multiple
     def integrate_elementwise(self, funcs: Iterable[function.Array], *, degree: int, asfunction: bool = False, ischeme: str = 'gauss', arguments: Optional[_ArgDict] = None) -> Union[List[numpy.ndarray], List[function.Array]]:
         'element-wise integration'
@@ -1188,6 +1259,10 @@ class _Empty(_TensorialTopology):
     def sample(self, ischeme: str, degree: int) -> Sample:
         return Sample.empty(self.spaces, self.ndims)
 
+    def elementwise_stack_last_axis(self, func: function.Array) -> function.Array:
+        func = function.Array.cast(func)
+        return function.zeros((*func.shape, 0), dtype=func.dtype)
+
 
 class _DisjointUnion(_TensorialTopology):
 
@@ -1241,6 +1316,9 @@ class _DisjointUnion(_TensorialTopology):
 
     def sample(self, ischeme: str, degree: int) -> Sample:
         return self.topo1.sample(ischeme, degree) + self.topo2.sample(ischeme, degree)
+
+    def elementwise_stack_last_axis(self, func: function.Array) -> function.Array:
+        return numpy.concatenate([self.topo1.elementwise_stack_last_axis(func), self.topo2.elementwise_stack_last_axis(func)], axis=-1)
 
     def trim(self, levelset: function.Array, maxrefine: int, ndivisions: int = 8, name: str = 'trimmed', leveltopo: Optional[Topology] = None, *, arguments: Optional[_ArgDict] = None) -> Topology:
         if leveltopo is not None:
@@ -1405,6 +1483,10 @@ class _Mul(_TensorialTopology):
         # tri and hull the mistake is without consequences.
         return Sample.zip(sample1, sample2)
 
+    def elementwise_stack_last_axis(self, func: function.Array) -> function.Array:
+        func = function.Array.cast(func)
+        return numpy.reshape(self.topo2.elementwise_stack_last_axis(self.topo1.elementwise_stack_last_axis(func)), (*func.shape, len(self)))
+
 
 class _Take(_TensorialTopology):
 
@@ -1420,6 +1502,9 @@ class _Take(_TensorialTopology):
 
     def sample(self, ischeme: str, degree: int) -> Sample:
         return self.parent.sample(ischeme, degree).take_elements(self.indices)
+
+    def elementwise_stack_last_axis(self, func: function.Array) -> function.Array:
+        return numpy.take(self.parent.elementwise_stack_last_axis(func), self.indices, axis=-1)
 
 
 class _WithGroupAliases(_TensorialTopology):
@@ -1467,6 +1552,9 @@ class _WithGroupAliases(_TensorialTopology):
     def sample(self, ischeme: str, degree: int) -> Sample:
         return self.parent.sample(ischeme, degree)
 
+    def elementwise_stack_last_axis(self, func: function.Array) -> function.Array:
+        return self.parent.elementwise_stack_last_axis(func)
+
     def refine_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
         return _WithGroupAliases(self.parent.refine_spaces(spaces), self.vgroups, self.bgroups, self.igroups)
 
@@ -1484,6 +1572,22 @@ class _WithGroupAliases(_TensorialTopology):
 
     def interfaces_spaces_unchecked(self, spaces: FrozenSet[str]) -> Topology:
         return _WithGroupAliases(self.parent.interfaces_spaces_unchecked(spaces), self.igroups, types.frozendict({}), types.frozendict({}))
+
+
+class _ElementwiseStack(function.Array):
+
+    def __init__(self, func: function.Array, space: str, transforms: transformseq.Transforms, opposites: transformseq.Transforms):
+        self.func = func
+        self.space = space
+        self.transforms = transforms
+        self.opposites = opposites
+        self.nelems = len(self.transforms)
+        super().__init__((*func.shape, self.nelems), func.dtype, func.spaces - frozenset({space}), func.arguments)
+
+    def lower(self, args: function.LowerArgs) -> evaluable.Array:
+        index = evaluable.loop_index(f'_loop_{self.space}', evaluable.asarray(self.nelems))
+        func = self.func.lower(args * function.LowerArgs.for_space(self.space, (self.transforms, self.opposites), index))
+        return evaluable.loop_concatenate(evaluable.appendaxes(func, (evaluable.asarray(1),)), index)
 
 
 class TransformChainsTopology(Topology):
@@ -1592,6 +1696,9 @@ class TransformChainsTopology(Topology):
         if len(self.transforms) == 0 or self.opposites != self.transforms:
             transforms += self.opposites,
         return Sample.new(self.space, transforms, points)
+
+    def elementwise_stack_last_axis(self, func: function.Array) -> function.Array:
+        return _ElementwiseStack(function.Array.cast(func), self.space, self.transforms, self.opposites)
 
     def _refined_by(self, refine):
         fine = self.refined.transforms

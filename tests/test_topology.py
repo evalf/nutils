@@ -174,6 +174,9 @@ class CommonTests(CommonAssertions):
             self.assertVertices(self.topo.select(((self.geom - center) * direction).sum()), desired_vertices)
             direction = numpy.roll(direction, shift=1)
 
+    def test_elementwise_stack(self):
+        self.assertEqual(function.eval(self.topo.elementwise_stack(self.topo.f_index)).tolist(), list(range(len(self.topo))))
+
 
 class ConformingTests:
 
@@ -456,8 +459,8 @@ class NewDisjointUnion(TestCase, CommonTests, ConformingTests):
 
     def setUp(self):
         super().setUp()
-        topo, self.geom = mesh.newrectilinear([8, 3], spaces='XY')
-        self.topo = topology.Topology.disjoint_union(topo.slice(slice(0, 3), 0), topo.slice(slice(4, 8), 0).slice(slice(0, 2), 1))
+        self.basetopo, self.geom = mesh.newrectilinear([8, 3], spaces='XY')
+        self.topo = topology.Topology.disjoint_union(self.basetopo.slice(slice(0, 3), 0), self.basetopo.slice(slice(4, 8), 0).slice(slice(0, 2), 1))
         self.desired_spaces = 'X', 'Y'
         self.desired_space_dims = 1, 1
         self.desired_ndims = 2
@@ -500,6 +503,12 @@ class NewDisjointUnion(TestCase, CommonTests, ConformingTests):
         self.assertEqual(as_rounded_list(topo.trim(x-0.5, maxrefine=0).volume(x[None])), 1.5)
         self.assertEqual(as_rounded_list(topo.trim(x-2.5, maxrefine=0).volume(x[None])), 0.5)
         self.assertEqual(as_rounded_list(topo.trim(0.5-x, maxrefine=0).volume(x[None])), 0.5)
+
+    def test_elementwise_stack(self):
+        self.assertEqual(
+            function.eval(self.topo.elementwise_stack(self.basetopo.f_index)).tolist(),
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 15, 16, 18, 19, 21, 22],
+        )
 
 
 class NewMul(TestCase, CommonTests, ConformingTests):
@@ -610,6 +619,13 @@ class NewMul(TestCase, CommonTests, ConformingTests):
             self.topo.basis('spline', degree=1, knotmultiplicities=[[1, 1, 1], [1, 1, 1, 1], [1, 1]])
         with self.assertRaises(ValueError):
             self.topo.basis('spline', degree=1, knotmultiplicities=['a', 'b'])
+
+    def test_elementwise_stack_mul(self):
+        desired = numpy.mgrid[:len(self.topo1), :len(self.topo2)].reshape(2, len(self.topo))
+        stack = self.topo.elementwise_stack(numpy.stack([self.topo1.f_index, self.topo2.f_index]))
+        self.assertEqual(function.eval(stack).tolist(), desired.T.tolist())
+        stack = self.topo.elementwise_stack(numpy.stack([self.topo1.f_index, self.topo2.f_index]), axis=1)
+        self.assertEqual(function.eval(stack).tolist(), desired.tolist())
 
 
 class NewWithGroupAliases(TestCase, CommonTests, ConformingTests):
