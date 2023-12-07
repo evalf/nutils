@@ -1294,8 +1294,6 @@ class Transpose(Array):
     def _takediag(self, axis1, axis2):
         assert axis1 < axis2
         orig1, orig2 = sorted(self.axes[axis] for axis in [axis1, axis2])
-        if orig1 == self.ndim-2:
-            return Transpose(TakeDiag(self.func), (*self.axes[:axis1], *self.axes[axis1+1:axis2], *self.axes[axis2+1:], self.ndim-2))
         trytakediag = self.func._takediag(orig1, orig2)
         if trytakediag is not None:
             exclude_orig = [ax-(ax > orig1)-(ax > orig2) for ax in self.axes[:axis1] + self.axes[axis1+1:axis2] + self.axes[axis2+1:]]
@@ -1307,8 +1305,6 @@ class Transpose(Array):
         if trysum is not None:
             axes = tuple(ax-(ax > axis) for ax in self.axes if ax != axis)
             return Transpose(trysum, axes)
-        if axis == self.ndim - 1:
-            return Transpose(Sum(self.func), self._axes_for(0, i))
 
     def _derivative(self, var, seen):
         return transpose(derivative(self.func, var, seen), self.axes+tuple(range(self.ndim, self.ndim+var.ndim)))
@@ -1336,8 +1332,6 @@ class Transpose(Array):
         trytake = self.func._take(indices, self.axes[axis])
         if trytake is not None:
             return Transpose(trytake, self._axes_for(indices.ndim, axis))
-        if self.axes[axis] == self.ndim - 1:
-            return Transpose(Take(self.func, indices), self._axes_for(indices.ndim, axis))
 
     def _axes_for(self, ndim, axis):
         funcaxis = self.axes[axis]
@@ -1903,6 +1897,12 @@ class Sum(Array):
         else:
             return min(lower_func * lower_length, lower_func * upper_length), max(upper_func * lower_length, upper_func * upper_length)
 
+    def _take(self, index, axis):
+        return Sum(_take(self.func, index, axis))
+
+    def _takediag(self, axis1, axis2):
+        return sum(_takediag(self.func, axis1, axis2), -2)
+
 
 class TakeDiag(Array):
 
@@ -1924,16 +1924,16 @@ class TakeDiag(Array):
         return takediag(derivative(self.func, var, seen), self.ndim-1, self.ndim)
 
     def _take(self, index, axis):
-        if axis < self.ndim - 1:
-            return TakeDiag(_take(self.func, index, axis))
-        func = _take(Take(self.func, index), index, self.ndim-1)
-        for i in reversed(range(self.ndim-1, self.ndim-1+index.ndim)):
-            func = takediag(func, i, i+index.ndim)
-        return func
+        if axis < self.ndim - 1 and (simple := self.func._take(index, axis)):
+            return TakeDiag(simple)
+
+    def _takediag(self, axis1, axis2):
+        if axis1 < self.ndim-1 and axis2 < self.ndim-1 and (simple := self.func._takediag(axis1, axis2)):
+            return takediag(simple, -3, -2)
 
     def _sum(self, axis):
-        if axis != self.ndim - 1:
-            return TakeDiag(sum(self.func, axis))
+        if axis != self.ndim - 1 and (simple := self.func._sum(axis)):
+            return TakeDiag(simple)
 
     def _intbounds_impl(self):
         return self.func._intbounds
@@ -1977,9 +1977,13 @@ class Take(Array):
         if trytake is not None:
             return Take(trytake, self.indices)
 
+    def _takediag(self, axis1, axis2):
+        if axis1 < self.func.ndim-1 and axis2 < self.func.ndim-1:
+            return _take(_takediag(self.func, axis1, axis2), self.indices, self.func.ndim-3)
+
     def _sum(self, axis):
-        if axis < self.func.ndim - 1:
-            return Take(sum(self.func, axis), self.indices)
+        if axis < self.func.ndim - 1 and (simple := self.func._sum(axis)):
+            return Take(simple, self.indices)
 
     def _intbounds_impl(self):
         return self.func._intbounds
@@ -5164,7 +5168,7 @@ if __name__ == '__main__':
         Transpose, Ravel,  # reinterpretation
         InsertAxis, Inflate, Diagonalize,  # size increasing
         Multiply, Add, LoopSum, Sign, Power, Inverse, Unravel,  # size preserving
-        Product, Determinant, TakeDiag, Take, Sum)  # size decreasing
+        Product, Determinant, Sum, Take, TakeDiag)  # size decreasing
     # The simplify priority defines the preferred order in which operations are
     # performed: shape decreasing operations such as Sum and Take should be done
     # as soon as possible, and shape increasing operations such as Inflate and
