@@ -1827,6 +1827,18 @@ def derivative(__arg: IntoArray, __var: Union[str, 'Argument']) -> Array:
     return _Derivative(arg, __var)
 
 
+class WithGradient(Array):
+    def __init__(self, x, y, dydx):
+        assert x.spaces == y.spaces
+        assert x.arguments == y.arguments
+        self.x = x
+        self.y = y
+        self.dydx = dydx
+        super().__init__(shape=x.shape, dtype=x.dtype, spaces=x.spaces, arguments=x.arguments)
+    def lower(self, args: LowerArgs) -> evaluable.Array:
+        return self.x.lower(args)
+
+
 @nutils_dispatch
 def grad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
     '''Return the gradient of the argument to the given geometry.
@@ -1846,6 +1858,10 @@ def grad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
     geom = Array.cast(__geom)
     if geom.dtype != float:
         raise ValueError('The geometry must be real-valued.')
+
+    if isinstance(geom, WithGradient):
+        return grad(arg, geom.y) @ geom.dydx
+
     if ndims == 0 or ndims == geom.size:
         op = _Gradient
     elif ndims == -1 or ndims == geom.size - 1:
