@@ -637,9 +637,6 @@ def conjugate(arg):
         return arg
 
 
-conjugate
-
-
 def real(arg):
     arg = asarray(arg)
     if arg.dtype == complex:
