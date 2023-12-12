@@ -4626,11 +4626,6 @@ def _numpy_align(a, b):
 
     a = asarray(a)
     b = asarray(b)
-    if a.dtype != b.dtype:
-        if _type_order.index(a.dtype) < _type_order.index(b.dtype):
-            a = astype(a, b.dtype)
-        else:
-            b = astype(b, a.dtype)
     if not a.ndim:
         return _inflate_scalar(a, b.shape), b
     if not b.ndim:
