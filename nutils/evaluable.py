@@ -1628,7 +1628,7 @@ class Inverse(Array):
 class Determinant(Array):
 
     def __init__(self, func: Array):
-        assert isarray(func) and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2])
+        assert isarray(func) and func.dtype != bool and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2])
         self.func = func
         super().__init__(args=(func,), shape=func.shape[:-2], dtype=complex if func.dtype == complex else float)
 
@@ -4834,6 +4834,9 @@ def get(arg, iax, item):
 
 
 def determinant(arg, axes=(-2, -1)):
+    arg = asarray(arg)
+    if arg.dtype == bool:
+        raise ValueError('The boolean determinant is not supported.')
     return Determinant(Transpose.to_end(arg, *axes))
 
 

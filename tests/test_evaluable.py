@@ -158,6 +158,8 @@ class check(TestCase):
                                            actual=evaluable.inverse(self.actual, axes=(ax1, ax2)))
 
     def test_determinant(self):
+        if self.actual.dtype == bool:
+            return
         for ax1, ax2 in self.pairs:
             self.assertFunctionAlmostEqual(decimal=11,
                                            desired=numpy.linalg.det(self.desired.transpose([i for i in range(self.desired.ndim) if i not in (ax1, ax2)] + [ax1, ax2])),
