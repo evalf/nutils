@@ -626,6 +626,9 @@ def dot(a, b, axes):
     Contract ``a`` and ``b`` along ``axes``.
     '''
 
+    a, b = _numpy_align(a, b)
+    if a.dtype == bool or b.dtype == bool:
+        raise ValueError('The boolean dot product is not supported.')
     return multiply(a, b).sum(axes)
 
 
