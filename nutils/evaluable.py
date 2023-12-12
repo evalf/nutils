@@ -1275,11 +1275,11 @@ class InsertAxis(Array):
 
     def _sum(self, i):
         if i == self.ndim - 1:
-            return self.func * self.length
+            return self.func * astype(self.length, self.func.dtype)
         return InsertAxis(sum(self.func, i), self.length)
 
     def _product(self):
-        return self.func**self.length
+        return self.func**astype(self.length, self.func.dtype)
 
     def _power(self, n):
         unaligned1, unaligned2, where = unalign(self, n)
@@ -1567,7 +1567,7 @@ class Product(Array):
 
     def _derivative(self, var, seen):
         grad = derivative(self.func, var, seen)
-        funcs = Product(insertaxis(self.func, -2, self.func.shape[-1]) + Diagonalize(1 - self.func))  # replace diagonal entries by 1
+        funcs = Product(insertaxis(self.func, -2, self.func.shape[-1]) + Diagonalize(astype(1, self.func.dtype) - self.func))  # replace diagonal entries by 1
         return einsum('Ai,AiB->AB', funcs, grad)
 
     def _take(self, indices, axis):
@@ -1719,7 +1719,7 @@ class Multiply(Array):
             return multiply(*common) * add(multiply(*factors), multiply(*other_factors))
         nz = factors or other_factors
         if not nz: # self equals other (up to factor ordering)
-            return self * 2
+            return self * astype(2, self.dtype)
         if len(nz) == 1 and tuple(nz)[0]._const_uniform == -1:
             # Since the subtraction x - y is stored as x + -1 * y, this handles
             # the simplification of x - x to 0. While we could alternatively
@@ -1737,7 +1737,7 @@ class Multiply(Array):
             unaligned, where = unalign(fi)
             if axis1 not in where and axis2 not in where:
                 det = determinant(multiply(*factors[:i], *factors[i+1:]), (axis1, axis2))
-                scale = align(unaligned**self.shape[axis1], [i-(i > axis1)-(i > axis2) for i in where if i not in (axis1, axis2)], det.shape)
+                scale = align(unaligned**astype(self.shape[axis1], unaligned.dtype), [i-(i > axis1)-(i > axis2) for i in where if i not in (axis1, axis2)], det.shape)
                 return det * scale
 
     def _product(self):
@@ -1903,7 +1903,7 @@ class Add(Array):
         for f in self._terms:
             (dep if index in f.arguments else indep).append(f)
         if indep:
-            return add(*indep) * index.length + loop_sum(add(*dep), index)
+            return add(*indep) * astype(index.length, self.dtype) + loop_sum(add(*dep), index)
 
     def _multiply(self, other):
         f_other = [f._multiply(other) or other._multiply(f) or (f._inflations or f._diagonals) and f * other for f in self._terms]
@@ -2153,7 +2153,7 @@ class Power(Array):
         # ln self = power * ln func
         # self` / self = power` * ln func + power * func` / func
         # self` = power` * ln func * self + power * func` * func**(power-1)
-        return einsum('A,A,AB->AB', self.power, power(self.func, self.power - 1), derivative(self.func, var, seen)) \
+        return einsum('A,A,AB->AB', self.power, power(self.func, self.power - astype(1, self.power.dtype)), derivative(self.func, var, seen)) \
             + einsum('A,A,AB->AB', ln(self.func), self, derivative(self.power, var, seen))
 
     def _power(self, n):
@@ -2161,7 +2161,7 @@ class Power(Array):
             return
         func = self.func
         newpower = multiply(self.power, n)
-        if iszero(self.power % 2) and not iszero(newpower % 2):
+        if iszero(self.power % astype(2, self.power.dtype)) and not iszero(newpower % astype(2, newpower.dtype)):
             func = abs(func)
         return Power(func, newpower)
 
@@ -2317,28 +2317,28 @@ class Sin(Pointwise):
 class Tan(Pointwise):
     'Tangent, element-wise.'
     evalf = staticmethod(numpy.tan)
-    complex_deriv = lambda x: Cos(x)**-2,
+    complex_deriv = lambda x: Cos(x)**astype(-2, x.dtype),
     return_type = lambda T: complex if T == complex else float
 
 
 class ArcSin(Pointwise):
     'Inverse sine, element-wise.'
     evalf = staticmethod(numpy.arcsin)
-    complex_deriv = lambda x: reciprocal(sqrt(1-x**2)),
+    complex_deriv = lambda x: reciprocal(sqrt(astype(1, x.dtype)-x**astype(2, x.dtype))),
     return_type = lambda T: complex if T == complex else float
 
 
 class ArcCos(Pointwise):
     'Inverse cosine, element-wise.'
     evalf = staticmethod(numpy.arccos)
-    complex_deriv = lambda x: -reciprocal(sqrt(1-x**2)),
+    complex_deriv = lambda x: -reciprocal(sqrt(astype(1, x.dtype)-x**astype(2, x.dtype))),
     return_type = lambda T: complex if T == complex else float
 
 
 class ArcTan(Pointwise):
     'Inverse tangent, element-wise.'
     evalf = staticmethod(numpy.arctan)
-    complex_deriv = lambda x: reciprocal(1+x**2),
+    complex_deriv = lambda x: reciprocal(astype(1, x.dtype)+x**astype(2, x.dtype)),
     return_type = lambda T: complex if T == complex else float
 
 
@@ -2365,14 +2365,14 @@ class SinH(Pointwise):
 class TanH(Pointwise):
     'Hyperbolic tangent, element-wise.'
     evalf = staticmethod(numpy.tanh)
-    complex_deriv = lambda x: 1 - TanH(x)**2,
+    complex_deriv = lambda x: astype(1, x.dtype) - TanH(x)**astype(2, x.dtype),
     return_type = lambda T: complex if T == complex else float
 
 
 class ArcTanH(Pointwise):
     'Inverse hyperbolic tangent, element-wise.'
     evalf = staticmethod(numpy.arctanh)
-    complex_deriv = lambda x: reciprocal(1-x**2),
+    complex_deriv = lambda x: reciprocal(astype(1, x.dtype)-x**astype(2, x.dtype)),
     return_type = lambda T: complex if T == complex else float
 
 
@@ -2418,7 +2418,7 @@ class Mod(Pointwise):
 
 class ArcTan2(Pointwise):
     evalf = staticmethod(numpy.arctan2)
-    deriv = lambda x, y: y / (x**2 + y**2), lambda x, y: -x / (x**2 + y**2)
+    deriv = lambda x, y: y / (x**astype(2, x.dtype) + y**astype(2, x.dtype)), lambda x, y: -x / (x**astype(2, x.dtype) + y**astype(2, x.dtype))
     def return_type(T1, T2):
         if T1 == complex or T2 == complex:
             raise ValueError('arctan2 is not defined for complex numbers')
@@ -3265,7 +3265,7 @@ class Argument(DerivativeTargetBase):
     >>> from nutils import evaluable
     >>> a = evaluable.Argument('x', ())
     >>> b = evaluable.Argument('y', ())
-    >>> f = a**3 + b**2
+    >>> f = a**3. + b**2.
     >>> evaluable.derivative(f, b).simplified == 2.*b
     True
 
@@ -3893,7 +3893,7 @@ class Legendre(Array):
         d = numpy.zeros((self._degree+1,)*2, dtype=int)
         for i in range(self._degree+1):
             d[i, i+1::2] = 2*i+1
-        dself = einsum('Ai,ij->Aj', self, constant(d))
+        dself = einsum('Ai,ij->Aj', self, astype(d, self.dtype))
         return einsum('Ai,AB->AiB', dself, derivative(self._x, var, seen))
 
     def _simplified(self):
@@ -4289,7 +4289,7 @@ class LoopSum(Array):
         if iszero(self.func):
             return zeros_like(self)
         elif self.index not in self.func.arguments:
-            return self.func * self.index.length
+            return self.func * astype(self.index.length, self.func.dtype)
         return self.func._loopsum(self.index)
 
     def _takediag(self, axis1, axis2):
@@ -4689,11 +4689,18 @@ def ones_like(arr):
 
 
 def reciprocal(arg):
-    return power(arg, astype(-1, float))
+    arg = asarray(arg)
+    if arg.dtype in (bool, int):
+        raise ValueError('The boolean or integer reciprocal is not supported.')
+    return power(arg, astype(-1, arg.dtype))
 
 
 def negative(arg):
-    return multiply(arg, -1)
+    arg = asarray(arg)
+    if arg.dtype == bool:
+        raise ValueError('The boolean negative is not supported.')
+    else:
+        return multiply(arg, astype(-1, arg.dtype))
 
 
 def sin(x):
@@ -4743,15 +4750,20 @@ def mod(arg1, arg2):
 
 
 def log2(arg):
-    return ln(arg) / constant(numpy.log(2))
+    arg = asarray(arg)
+    return ln(arg) / astype(numpy.log(2), arg.dtype)
 
 
 def log10(arg):
-    return ln(arg) / constant(numpy.log(10))
+    arg = asarray(arg)
+    return ln(arg) / astype(numpy.log(10), arg.dtype)
 
 
 def sqrt(arg):
-    return power(arg, constant(.5))
+    arg = asarray(arg)
+    if arg.dtype in (bool, int):
+        raise ValueError('The boolean or integer square root is not supported.')
+    return power(arg, astype(.5, arg.dtype))
 
 
 def arctan2(arg1, arg2):
@@ -4760,7 +4772,7 @@ def arctan2(arg1, arg2):
 
 def abs(arg):
     if arg.dtype == complex:
-        return sqrt(arg.real**2 + arg.imag**2)
+        return sqrt(arg.real**2. + arg.imag**2.)
     else:
         return arg * sign(arg)
 

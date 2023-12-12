@@ -917,8 +917,8 @@ class _Integral(function.Array):
 
     def lower(self, args: function.LowerArgs) -> evaluable.Array:
         ielem = evaluable.loop_index('_sample_' + '_'.join(self._sample.spaces), self._sample.nelems)
-        weights = self._sample.get_evaluable_weights(ielem)
-        integrand = self._integrand.lower(args | self._sample.get_lower_args(ielem))
+        weights = evaluable.astype(self._sample.get_evaluable_weights(ielem), self.dtype)
+        integrand = evaluable.astype(self._integrand.lower(args | self._sample.get_lower_args(ielem)), self.dtype)
         elem_integral = evaluable.einsum('B,ABC->AC', weights, integrand, B=weights.ndim, C=self.ndim)
         return evaluable.loop_sum(elem_integral, ielem)
 

@@ -25,7 +25,14 @@ class check(TestCase):
         self.actual = self.op(*self.args)
         self.desired = self.n_op(*self.arg_values)
         assert numpy.isfinite(self.desired).all(), 'something is wrong with the design of this unit test'
-        self.other = numpy.random.normal(size=self.desired.shape)
+        if self.actual.dtype == bool:
+            self.other = numpy.random.normal(size=self.desired.shape) < 0
+        elif self.actual.dtype == int:
+            self.other = numpy.random.randint(0, 100, size=self.desired.shape)
+        elif self.actual.dtype == float:
+            self.other = numpy.random.normal(size=self.desired.shape)
+        elif self.actual.dtype == complex:
+            self.other = numpy.random.normal(size=self.desired.shape) + 1j * numpy.random.normal(size=self.desired.shape)
         self.pairs = [(i, j) for i in range(self.actual.ndim-1) for j in range(i+1, self.actual.ndim) if self.actual.shape[i] == self.actual.shape[j]]
         _builtin_warnings.simplefilter('ignore', evaluable.ExpensiveEvaluationWarning)
 
@@ -141,6 +148,8 @@ class check(TestCase):
                                             desired=(numpy.expand_dims(A, ax2) * numpy.expand_dims(V, ax2+1).swapaxes(ax1, ax2+1)).sum(ax2+1))
 
     def test_inv(self):
+        if self.actual.dtype == bool:
+            return
         for ax1, ax2 in self.pairs:
             trans = [i for i in range(self.desired.ndim) if i not in (ax1, ax2)] + [ax1, ax2]
             invtrans = list(map(trans.index, range(len(trans))))
@@ -245,33 +254,46 @@ class check(TestCase):
                                            actual=self.actual.sum(idim))
 
     def test_add(self):
+        if self.actual.dtype == bool:
+            return
         self.assertFunctionAlmostEqual(decimal=14,
                                        desired=self.desired + self.other,
                                        actual=(self.actual + self.other))
 
     def test_multiply(self):
+        if self.actual.dtype == bool:
+            return
         self.assertFunctionAlmostEqual(decimal=14,
                                        desired=self.desired * self.other,
                                        actual=(self.actual * self.other))
 
     def test_dot(self):
+        if self.actual.dtype == bool:
+            return
         for iax in range(self.actual.ndim):
             self.assertFunctionAlmostEqual(decimal=13,
                                            desired=numeric.contract(self.desired, self.other, axis=iax),
                                            actual=evaluable.dot(self.actual, self.other, axes=iax))
 
     def test_pointwise(self):
+        if self.actual.dtype == bool:
+            return
+        dtype = complex if self.actual.dtype == complex else float
         self.assertFunctionAlmostEqual(decimal=14,
-                                       desired=numpy.sin(self.desired).astype(complex if self.desired.dtype.kind == 'c' else float),  # "astype" necessary for boolean operations (float16->float64)
-                                       actual=evaluable.sin(self.actual))
+                                       desired=numpy.sin(self.desired).astype(dtype),  # "astype" necessary for boolean operations (float16->float64)
+                                       actual=evaluable.sin(evaluable.astype(self.actual, dtype)))
 
     def test_power(self):
+        if self.actual.dtype == bool:
+            return
         self.assertFunctionAlmostEqual(decimal=13,
                                        desired=self.desired**3,
-                                       actual=(self.actual**3))
+                                       actual=(self.actual**self.actual.dtype(3)))
 
     def test_power0(self):
-        power = (numpy.arange(self.desired.size) % 2).reshape(self.desired.shape)
+        if self.actual.dtype == bool:
+            return
+        power = (numpy.arange(self.desired.size) % 2).reshape(self.desired.shape).astype(self.actual.dtype)
         self.assertFunctionAlmostEqual(decimal=13,
                                        desired=self.desired**power,
                                        actual=self.actual**power)
@@ -482,7 +504,6 @@ _check('abs-complex', evaluable.abs, numpy.abs, .2-.2j+ANC(4, 4), hasgrad=False)
 _check('sign', evaluable.sign, numpy.sign, ANY(4, 4), zerograd=True)
 _check('power', evaluable.power, numpy.power, POS(4, 4), ANY(4, 4))
 _check('power-complex', evaluable.power, numpy.power, NZC(4, 4), (2-2j)*ANC(4, 4), hasgrad=False)
-_check('power-complex-int', lambda a: evaluable.power(a, 2), lambda a: numpy.power(a, 2), ANC(4, 4))
 _check('negative', evaluable.negative, numpy.negative, ANY(4, 4))
 _check('negative-complex', evaluable.negative, numpy.negative, ANC(4, 4))
 _check('reciprocal', evaluable.reciprocal, numpy.reciprocal, NZ(4, 4))
@@ -526,7 +547,7 @@ _check('multiply', evaluable.multiply, numpy.multiply, ANY(4, 4), ANY(4, 4))
 _check('multiply-complex', evaluable.multiply, numpy.multiply, ANC(4, 4), 1-1j+ANC(4, 4))
 _check('dot', lambda a, b: evaluable.dot(a, b, axes=1), lambda a, b: (a*b).sum(1), ANY(4, 2, 4), ANY(4, 2, 4))
 _check('divide', evaluable.divide, lambda a, b: a * b**-1, ANY(4, 4), NZ(4, 4))
-_check('divide2', lambda a: evaluable.asarray(a)/2, lambda a: a/2, ANY(4, 1))
+_check('divide2', lambda a: evaluable.asarray(a)/2., lambda a: a/2., ANY(4, 1))
 _check('divide-complex', evaluable.divide, lambda a, b: a * b**-1, ANC(4, 4), NZC(4, 4).T)
 _check('add', evaluable.add, numpy.add, ANY(4, 4), ANY(4, 4))
 _check('add-complex', evaluable.add, numpy.add, ANC(4, 4), numpy.exp(.2j)*ANC(4, 4))
@@ -569,9 +590,9 @@ _check('loopsum3', lambda a: evaluable.loop_sum(evaluable.get(a, 0, evaluable.lo
 _check('loopsum4', lambda: evaluable.loop_sum(evaluable.Inflate(evaluable.loop_index('index', 3), evaluable.constant(0), evaluable.constant(2)), evaluable.loop_index('index', 3)), lambda: numpy.array([3, 0]))
 _check('loopsum5', lambda: evaluable.loop_sum(evaluable.loop_index('index', 1), evaluable.loop_index('index', 1)), lambda: numpy.array(0))
 _check('loopsum6', lambda: evaluable.loop_sum(evaluable.Guard(evaluable.constant(1) + evaluable.loop_index('index', 4)), evaluable.loop_index('index', 4)) * evaluable.loop_sum(evaluable.loop_index('index', 4), evaluable.loop_index('index', 4)), lambda: numpy.array(60))
-_check('loopconcatenate1', lambda a: evaluable.loop_concatenate(a+evaluable.prependaxes(evaluable.loop_index('index', 3), a.shape), evaluable.loop_index('index', 3)), lambda a: a+numpy.arange(3)[None], ANY(3, 1))
+_check('loopconcatenate1', lambda a: evaluable.loop_concatenate(a+evaluable.prependaxes(evaluable.astype(evaluable.loop_index('index', 3), float), a.shape), evaluable.loop_index('index', 3)), lambda a: a+numpy.arange(3)[None], ANY(3, 1))
 _check('loopconcatenate2', lambda: evaluable.loop_concatenate(evaluable.Elemwise(tuple(types.arraydata(numpy.arange(48).reshape(4, 4, 3)[:, :, a:b]) for a, b in util.pairwise([0, 2, 3])), evaluable.loop_index('index', 2), int), evaluable.loop_index('index', 2)), lambda: numpy.arange(48).reshape(4, 4, 3))
-_check('loopconcatenatecombined', lambda a: evaluable.loop_concatenate_combined([a+evaluable.prependaxes(evaluable.loop_index('index', 3), a.shape)], evaluable.loop_index('index', 3))[0], lambda a: a+numpy.arange(3)[None], ANY(3, 1), hasgrad=False)
+_check('loopconcatenatecombined', lambda a: evaluable.loop_concatenate_combined([a+evaluable.prependaxes(evaluable.astype(evaluable.loop_index('index', 3), float), a.shape)], evaluable.loop_index('index', 3))[0], lambda a: a+numpy.arange(3)[None], ANY(3, 1), hasgrad=False)
 _check('legendre', lambda a: evaluable.Legendre(evaluable.asarray(a), 5), lambda a: numpy.moveaxis(numpy.polynomial.legendre.legval(a, numpy.eye(6)), 0, -1), ANY(3, 4, 3))
 
 _check('polyval_1d_p0', lambda c, x: evaluable.Polyval(c, x), poly.eval_outer, POS(1), ANY(4, 1), ndim=1)
