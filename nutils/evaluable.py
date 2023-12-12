@@ -1587,7 +1587,7 @@ class Inverse(Array):
     '''
 
     def __init__(self, func: Array):
-        assert isinstance(func, Array) and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2]), f'func={func!r}'
+        assert isinstance(func, Array) and func.dtype != bool and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2]), f'func={func!r}'
         self.func = func
         super().__init__(args=(func,), shape=func.shape, dtype=complex if func.dtype == complex else float)
 
@@ -4852,6 +4852,9 @@ def sqrt_abs_det_gram(arg, axes=(-2, -1)):
 
 
 def inverse(arg, axes=(-2, -1)):
+    arg = asarray(arg)
+    if arg.dtype == bool:
+        raise ValueError('The boolean inverse is not supported.')
     return Transpose.from_end(Inverse(Transpose.to_end(arg, *axes)), *axes)
 
 
