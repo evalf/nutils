@@ -2117,7 +2117,7 @@ class Take(Array):
 class Power(Array):
 
     def __init__(self, func: Array, power: Array):
-        assert isinstance(func, Array), f'func={func!r}'
+        assert isinstance(func, Array) and func.dtype != bool, f'func={func!r}'
         assert isinstance(power, Array) and (power.dtype in (float, complex) or power.dtype == int and power._intbounds[0] >= 0), f'power={power!r}'
         assert equalshape(func.shape, power.shape) and func.dtype == power.dtype, 'Power({}, {})'.format(func, power)
         self.func = func
