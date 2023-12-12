@@ -254,15 +254,11 @@ class check(TestCase):
                                            actual=self.actual.sum(idim))
 
     def test_add(self):
-        if self.actual.dtype == bool:
-            return
         self.assertFunctionAlmostEqual(decimal=14,
                                        desired=self.desired + self.other,
                                        actual=(self.actual + self.other))
 
     def test_multiply(self):
-        if self.actual.dtype == bool:
-            return
         self.assertFunctionAlmostEqual(decimal=14,
                                        desired=self.desired * self.other,
                                        actual=(self.actual * self.other))
@@ -559,6 +555,8 @@ _check('max', lambda a, b: evaluable.Maximum(a, b), numpy.maximum, ANY(4, 4), AN
 _check('equal', evaluable.Equal, numpy.equal, ANY(4, 4), ANY(4, 4), zerograd=True)
 _check('greater', evaluable.Greater, numpy.greater, ANY(4, 4), ANY(4, 4), zerograd=True)
 _check('less', evaluable.Less, numpy.less, ANY(4, 4), ANY(4, 4), zerograd=True)
+_check('logical_and', evaluable.multiply, numpy.logical_and, numpy.array([[False, False], [True, True]], dtype=bool), numpy.array([[False, True], [False, True]], dtype=bool))
+_check('logical_or', evaluable.add, numpy.logical_or, numpy.array([[False, False], [True, True], [False, True]], dtype=bool), numpy.array([[False, True], [False, True], [True, False]], dtype=bool))
 _check('logical_not', evaluable.LogicalNot, numpy.logical_not, numpy.array([[False, False], [True, True], [False, True]], dtype=bool))
 _check('logical_any', evaluable.Sum, lambda a: numpy.any(a, axis=-1), numpy.array([[False, False], [True, True], [False, True]], dtype=bool))
 _check('logical_all', evaluable.Product, lambda a: numpy.all(a, axis=-1), numpy.array([[False, False], [True, True], [False, True]], dtype=bool))
@@ -1054,6 +1052,14 @@ class simplify(TestCase):
     def test_double_logical_not(self):
         a = evaluable.Argument('test', shape=(), dtype=bool)
         self.assertEqual(evaluable.LogicalNot(evaluable.LogicalNot(a)).simplified, a)
+
+    def test_logical_or_same_args(self):
+        a = evaluable.Argument('test', shape=(), dtype=bool)
+        self.assertEqual((a | a).simplified, a)
+
+    def test_logical_and_same_args(self):
+        a = evaluable.Argument('test', shape=(), dtype=bool)
+        self.assertEqual((a & a).simplified, a)
 
 
 class memory(TestCase):

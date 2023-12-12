@@ -895,6 +895,8 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     __pow__ = power
     __abs__ = lambda self: abs(self)
     __mod__ = lambda self, other: mod(self, other)
+    __and__ = __rand__ = multiply
+    __or__ = __ror__ = add
     __int__ = __index__
     __str__ = __repr__ = lambda self: '{}.{}<{}>'.format(type(self).__module__, type(self).__name__, self._shape_str(form=str))
     __inv__ = lambda self: LogicalNot(self) if self.dtype == bool else NotImplemented
@@ -1655,7 +1657,7 @@ class Multiply(Array):
         assert isinstance(funcs, types.frozenmultiset), f'funcs={funcs!r}'
         self.funcs = funcs
         func1, func2 = funcs
-        assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype != bool, 'Multiply({}, {})'.format(func1, func2)
+        assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype, 'Multiply({}, {})'.format(func1, func2)
         super().__init__(args=tuple(self.funcs), shape=func1.shape, dtype=func1.dtype)
 
     @property
@@ -1676,6 +1678,8 @@ class Multiply(Array):
             for axis1, axis2, *other in map(sorted, fj._diagonals):
                 return diagonalize(multiply(*(takediag(f, axis1, axis2) for f in factors)), axis1, axis2)
             for i, fi in enumerate(factors[:j]):
+                if self.dtype == bool and fi == fj:
+                    return multiply(*factors[:j], *factors[j+1:])
                 unaligned1, unaligned2, where = unalign(fi, fj)
                 fij = align(unaligned1 * unaligned2, where, self.shape) if len(where) != self.ndim \
                     else fi._multiply(fj) or fj._multiply(fi)
@@ -1683,9 +1687,11 @@ class Multiply(Array):
                     return multiply(*factors[:i], *factors[i+1:j], *factors[j+1:], fij)
 
     def _optimized_for_numpy(self):
+        if self.dtype == bool:
+            return None
         factors = tuple(self._factors)
         for i, fi in enumerate(factors):
-            if fi.dtype != bool and fi._const_uniform == -1:
+            if fi._const_uniform == -1:
                 return Negative(multiply(*factors[:i], *factors[i+1:]))
             if fi.dtype != complex and Sign(fi) in factors:
                 i, j = sorted([i, factors.index(Sign(fi))])
@@ -1720,8 +1726,8 @@ class Multiply(Array):
             return multiply(*common) * add(multiply(*factors), multiply(*other_factors))
         nz = factors or other_factors
         if not nz: # self equals other (up to factor ordering)
-            return self * astype(2, self.dtype)
-        if len(nz) == 1 and tuple(nz)[0]._const_uniform == -1:
+            return self if self.dtype == bool else self * astype(2, self.dtype)
+        if self.dtype != bool and len(nz) == 1 and tuple(nz)[0]._const_uniform == -1:
             # Since the subtraction x - y is stored as x + -1 * y, this handles
             # the simplification of x - x to 0. While we could alternatively
             # simplify all x + a * x to (a + 1) * x, capturing a == -1 as a
@@ -1770,6 +1776,8 @@ class Multiply(Array):
 
     @cached_property
     def _assparse(self):
+        if self.dtype == bool:
+            return super()._assparse
         # First we collect the clusters of factors that have no real (i.e. not
         # inserted) axes in common with the other clusters, and store them in
         # uninserted form.
@@ -1819,11 +1827,13 @@ class Add(Array):
         assert isinstance(funcs, types.frozenmultiset) and len(funcs) == 2, f'funcs={funcs!r}'
         self.funcs = funcs
         func1, func2 = funcs
-        assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype != bool, 'Add({}, {})'.format(func1, func2)
+        assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype, 'Add({}, {})'.format(func1, func2)
         super().__init__(args=tuple(self.funcs), shape=func1.shape, dtype=func1.dtype)
 
     @cached_property
     def _inflations(self):
+        if self.dtype == bool:
+            return ()
         func1, func2 = self.funcs
         func2_inflations = dict(func2._inflations)
         inflations = []
@@ -1854,6 +1864,8 @@ class Add(Array):
         terms = tuple(self._terms)
         for j, fj in enumerate(terms):
             for i, fi in enumerate(terms[:j]):
+                if self.dtype == bool and fi == fj:
+                    return add(*terms[:j], *terms[j+1:])
                 diags = [sorted(axesi & axesj)[:2] for axesi in fi._diagonals for axesj in fj._diagonals if len(axesi & axesj) >= 2]
                 unaligned1, unaligned2, where = unalign(fi, fj)
                 fij = diagonalize(takediag(fi, *diags[0]) + takediag(fj, *diags[0]), *diags[0]) if diags \
@@ -1917,7 +1929,10 @@ class Add(Array):
 
     @cached_property
     def _assparse(self):
-        return _gathersparsechunks(itertools.chain(*[f._assparse for f in self._terms]))
+        if self.dtype == bool:
+            return super()._assparse
+        else:
+            return _gathersparsechunks(itertools.chain(*[f._assparse for f in self._terms]))
 
     def _intbounds_impl(self):
         lowers, uppers = zip(*[f._intbounds for f in self._terms])
