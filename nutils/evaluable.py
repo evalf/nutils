@@ -1062,8 +1062,8 @@ class Orthonormal(Array):
     'make a vector orthonormal to a subspace'
 
     def __init__(self, basis: Array, vector: Array):
-        assert isinstance(basis, Array) and basis.ndim >= 2 and basis.dtype != complex, f'basis={basis!r}'
-        assert isinstance(vector, Array) and vector.ndim >= 1 and vector.dtype != complex, f'vector={vector!r}'
+        assert isinstance(basis, Array) and basis.ndim >= 2 and basis.dtype not in (bool, complex), f'basis={basis!r}'
+        assert isinstance(vector, Array) and vector.ndim >= 1 and vector.dtype not in (bool, complex), f'vector={vector!r}'
         assert equalshape(basis.shape[:-1], vector.shape)
         self._basis = basis
         self._vector = vector
