@@ -2260,7 +2260,12 @@ class Holomorphic(Pointwise):
 
     @staticmethod
     def return_type(*dtypes, **params):
-        return complex if complex in dtypes else float
+        return_type = dtypes[-1]
+        if not all(dtype == return_type for dtype in dtypes[:-1]):
+            raise ValueError('All arguments must have the same dtype but got {} and {}.'.format(', '.join(map(str, dtypes[:-1])), return_type))
+        if return_type not in (float, complex):
+            raise ValueError(f'{self.__class__.__name__} is not defined for arguments of dtype {return_type}')
+        return return_type
 
     def _derivative(self, var, seen):
         if self.deriv is not None:
@@ -2287,12 +2292,21 @@ class Negative(Pointwise):
 
 class FloorDivide(Pointwise):
     evalf = staticmethod(numpy.floor_divide)
-    return_type = lambda T1, T2: complex if complex in (T1, T2) else float if float in (T1, T2) else int
+    def return_type(dividend, divisor):
+        if dividend != divisor:
+            raise ValueError(f'All arguments must have the same dtype but got {dividend} and {divisor}.')
+        if dividend == bool:
+            raise ValueError(f'The boolean floor division is not supported.')
+        return dividend
 
 
 class Absolute(Pointwise):
     evalf = staticmethod(numpy.absolute)
-    return_type = lambda T: float if T in (float, complex) else int
+
+    def return_type(T):
+        if T == bool:
+            raise ValueError('The boolean absolute value is not implemented.')
+        return float if T == complex else T
 
     def _intbounds_impl(self):
         lower, upper = self.args[0]._intbounds
@@ -2392,10 +2406,15 @@ class Log(Holomorphic):
 
 class Mod(Pointwise):
     evalf = staticmethod(numpy.mod)
-    def return_type(T1, T2):
-        if T1 == complex or T2 == complex:
-            raise ValueError('mod is not defined for complex numbers')
-        return float if float in (T1, T2) else int
+
+    def return_type(dividend, divisor):
+        if dividend != divisor:
+            raise ValueError(f'All arguments must have the same dtype but got {dividend} and {divisor}.')
+        if dividend == bool:
+            raise ValueError(f'The boolean floor division is not supported.')
+        if dividend == complex:
+            raise ValueError(f'The complex floor division is not supported.')
+        return dividend
 
     def _intbounds_impl(self):
         dividend, divisor = self.args
@@ -2430,14 +2449,21 @@ class ArcTan2(Pointwise):
 class Greater(Pointwise):
     evalf = staticmethod(numpy.greater)
     def return_type(T1, T2):
-        if T1 == complex or T2 == complex:
+        if T1 != T2:
+            raise ValueError('Cannot compare different dtypes.')
+        elif T1 == complex:
             raise ValueError('Complex numbers have no total order.')
+        elif T1 == bool:
+            raise ValueError('Use logical operators to compare booleans.')
         return bool
 
 
 class Equal(Pointwise):
     evalf = staticmethod(numpy.equal)
-    return_type = lambda T1, T2: bool
+    def return_type(T1, T2):
+        if T1 != T2:
+            raise ValueError('Cannot compare different dtypes.')
+        return bool
 
     def _simplified(self):
         a1, a2 = self.args
@@ -2455,8 +2481,12 @@ class Equal(Pointwise):
 class Less(Pointwise):
     evalf = staticmethod(numpy.less)
     def return_type(T1, T2):
-        if T1 == complex or T2 == complex:
+        if T1 != T2:
+            raise ValueError('Cannot compare different dtypes.')
+        elif T1 == complex:
             raise ValueError('Complex numbers have no total order.')
+        elif T1 == bool:
+            raise ValueError('Use logical operators to compare booleans.')
         return bool
 
 
@@ -2510,7 +2540,10 @@ class Maximum(Pointwise):
 
 class Conjugate(Pointwise):
     evalf = staticmethod(numpy.conjugate)
-    return_type = lambda T: int if T == bool else T
+    def return_type(T):
+        if T != complex:
+            raise ValueError(f'Conjugate is not defined for arguments of type {T}')
+        return complex
 
     def _simplified(self):
         retval = self.args[0]._conjugate()
@@ -2521,7 +2554,10 @@ class Conjugate(Pointwise):
 
 class Real(Pointwise):
     evalf = staticmethod(numpy.real)
-    return_type = lambda T: float if T == complex else T
+    def return_type(T):
+        if T != complex:
+            raise ValueError(f'Real is not defined for arguments of type {T}')
+        return float
 
     def _simplified(self):
         retval = self.args[0]._real()
@@ -2532,7 +2568,10 @@ class Real(Pointwise):
 
 class Imag(Pointwise):
     evalf = staticmethod(numpy.imag)
-    return_type = lambda T: float if T == complex else T
+    def return_type(T):
+        if T != complex:
+            raise ValueError(f'Real is not defined for arguments of type {T}')
+        return float
 
     def _simplified(self):
         retval = self.args[0]._imag()
