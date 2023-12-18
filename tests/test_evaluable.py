@@ -561,6 +561,7 @@ _check('max', lambda a, b: evaluable.Maximum(a, b), numpy.maximum, ANY(4, 4), AN
 _check('equal', evaluable.Equal, numpy.equal, ANY(4, 4), ANY(4, 4), zerograd=True)
 _check('greater', evaluable.Greater, numpy.greater, ANY(4, 4), ANY(4, 4), zerograd=True)
 _check('less', evaluable.Less, numpy.less, ANY(4, 4), ANY(4, 4), zerograd=True)
+_check('logical_not', evaluable.LogicalNot, numpy.logical_not, numpy.array([[False, False], [True, True], [False, True]], dtype=bool))
 _check('arctan2', evaluable.arctan2, numpy.arctan2, ANY(4, 4), ANY(4, 4))
 _check('stack', lambda a, b: evaluable.stack([a, b], 0), lambda a, b: numpy.concatenate([a[numpy.newaxis, :], b[numpy.newaxis, :]], axis=0), ANY(4), ANY(4))
 _check('eig', lambda a: evaluable.eig(a+a.swapaxes(0, 1), symmetric=True)[1], lambda a: numpy.linalg.eigh(a+a.swapaxes(0, 1))[1], ANY(4, 4), hasgrad=False)
@@ -1049,6 +1050,10 @@ class simplify(TestCase):
         inflated = evaluable.Inflate(a, dofmap=evaluable.constant([2,0]), length=evaluable.constant(3))
         taken = evaluable.Take(inflated, indices=evaluable.constant([1]))
         self.assertTrue(evaluable.iszero(taken))
+
+    def test_double_logical_not(self):
+        a = evaluable.Argument('test', shape=(), dtype=bool)
+        self.assertEqual(evaluable.LogicalNot(evaluable.LogicalNot(a)).simplified, a)
 
 
 class memory(TestCase):

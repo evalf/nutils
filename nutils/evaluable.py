@@ -897,6 +897,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     __mod__ = lambda self, other: mod(self, other)
     __int__ = __index__
     __str__ = __repr__ = lambda self: '{}.{}<{}>'.format(type(self).__module__, type(self).__name__, self._shape_str(form=str))
+    __inv__ = lambda self: LogicalNot(self) if self.dtype == bool else NotImplemented
 
     def _shape_str(self, form):
         dtype = self.dtype.__name__[0] if hasattr(self, 'dtype') else '?'
@@ -2488,6 +2489,20 @@ class Less(Pointwise):
         elif T1 == bool:
             raise ValueError('Use logical operators to compare booleans.')
         return bool
+
+
+class LogicalNot(Pointwise):
+    evalf = staticmethod(numpy.logical_not)
+    def return_type(T):
+        if T != bool:
+            raise ValueError(f'Expected a boolean but got {T}.')
+        return bool
+
+    def _simplified(self):
+        arg, = self.args
+        if isinstance(arg, LogicalNot):
+            return arg.args[0]
+        return super()._simplified()
 
 
 class Minimum(Pointwise):
