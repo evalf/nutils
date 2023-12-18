@@ -2679,12 +2679,14 @@ class FloatToComplex(Cast):
 
 def astype(arg, dtype):
     arg = asarray(arg)
-    i = _type_order.index(arg.dtype)
-    j = _type_order.index(dtype)
-    if i > j:
+    if arg.dtype == bool and dtype != bool:
+        arg = BoolToInt(arg)
+    if arg.dtype == int and dtype != int:
+        arg = IntToFloat(arg)
+    if arg.dtype == float and dtype != float:
+        arg = FloatToComplex(arg)
+    if arg.dtype != dtype:
         raise TypeError('Downcasting is forbidden.')
-    for cast in (BoolToInt, IntToFloat, FloatToComplex)[i:j]:
-        arg = cast(arg)
     return arg
 
 
