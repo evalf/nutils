@@ -644,7 +644,7 @@ class _thetamethod(cache.Recursion, length=1, version=1):
         self.old_new.append((timetarget+historysuffix, timetarget))
         subs0 = {new: evaluable.Argument(old, tuple(map(evaluable.constant, self.lhs0[new].shape))) for old, new in self.old_new}
         dt = evaluable.Argument(timetarget, ()) - subs0[timetarget]
-        self.residuals = tuple(res * theta + evaluable.replace_arguments(res, subs0) * (1-theta) + (inert - evaluable.replace_arguments(inert, subs0)) / dt for res, inert in zip(residual, inertia))
+        self.residuals = tuple(res * evaluable.astype(theta, res.dtype) + evaluable.replace_arguments(res, subs0) * evaluable.astype(1-theta, res.dtype) + (inert - evaluable.replace_arguments(inert, subs0)) / evaluable.astype(dt, res.dtype) for res, inert in zip(residual, inertia))
         self.jacobians = _derivative(self.residuals, target)
 
     def _step(self, lhs0, dt):

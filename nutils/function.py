@@ -803,7 +803,7 @@ class _CustomEvaluable(evaluable.Array):
             fpd_expected_shape = tuple(n.__index__() for n in self.shape[self.points_dim:] + arg.shape[self.points_dim:])
             if fpd.shape != fpd_expected_shape:
                 raise ValueError('`partial_derivative` to argument {} returned an array with shape {} but {} was expected.'.format(iarg, fpd.shape, fpd_expected_shape))
-            epd = evaluable.appendaxes(fpd.lower(self.lower_args), var.shape)
+            epd = evaluable.astype(evaluable.appendaxes(fpd.lower(self.lower_args), var.shape), self.dtype)
             eda = evaluable.derivative(arg, var, seen)
             eda = evaluable.Transpose.from_end(evaluable.appendaxes(eda, self.shape[self.points_dim:]), *range(self.points_dim, self.ndim))
             result += (epd * eda).sum(range(self.ndim, self.ndim + arg.ndim - self.points_dim))
@@ -1063,7 +1063,7 @@ class _Gradient(Array):
         dfunc_dref = evaluable.concatenate([evaluable.derivative(func, ref) for ref in refs], axis=-1)
         dgeom_dref = evaluable.concatenate([evaluable.derivative(geom, ref) for ref in refs], axis=-1)
         dref_dgeom = evaluable.inverse(dgeom_dref)
-        return evaluable.einsum('Ai,Aij->Aj', dfunc_dref, dref_dgeom)
+        return evaluable.einsum('Ai,Aij->Aj', dfunc_dref, evaluable.astype(dref_dgeom, dfunc_dref.dtype))
 
 
 class _SurfaceGradient(Array):
@@ -1089,7 +1089,7 @@ class _SurfaceGradient(Array):
         dfunc_dref = evaluable.concatenate([evaluable.derivative(func, ref) for ref in refs], axis=-1)
         dgeom_dref = evaluable.concatenate([evaluable.derivative(geom, ref) for ref in refs], axis=-1)
         dref_dgeom = evaluable.einsum('Ajk,Aik->Aij', dgeom_dref, evaluable.inverse(evaluable.grammium(dgeom_dref)))
-        return evaluable.einsum('Ai,Aij->Aj', dfunc_dref, dref_dgeom)
+        return evaluable.einsum('Ai,Aij->Aj', dfunc_dref, evaluable.astype(dref_dgeom, dfunc_dref.dtype))
 
 
 class _Jacobian(Array):
@@ -1174,7 +1174,7 @@ class _ExteriorNormal(Array):
             normal = evaluable.Take(rgrad[..., 0], i) * evaluable.Take(rgrad[..., 1], j) - evaluable.Take(rgrad[..., 1], i) * evaluable.Take(rgrad[..., 0], j)
         else:
             raise NotImplementedError
-        return normal / evaluable.InsertAxis(evaluable.sqrt(evaluable.Sum(normal**2)), normal.shape[-1])
+        return normal / evaluable.InsertAxis(evaluable.sqrt(evaluable.Sum(normal**2.)), normal.shape[-1])
 
 
 class _Concatenate(Array):
@@ -2650,7 +2650,7 @@ class LegendreBasis(Basis):
     def lower(self, args: LowerArgs) -> evaluable.Array:
         index = _WithoutPoints(self.index).lower(args)
         coords = self.coords.lower(args)
-        leg = evaluable.Legendre(evaluable.get(coords, coords.ndim-1, evaluable.constant(0)) * 2 - 1, self._degree)
+        leg = evaluable.Legendre(evaluable.get(coords, coords.ndim-1, evaluable.constant(0)) * 2. - 1., self._degree)
         dofs = evaluable.Range(evaluable.constant(self._degree+1)) + index * (self._degree+1)
         return evaluable.Inflate(leg, dofs, evaluable.constant(self.ndofs))
 
