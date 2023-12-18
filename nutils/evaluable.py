@@ -2184,7 +2184,6 @@ class Pointwise(Array):
     '''
 
     deriv = None
-    complex_deriv = None
     return_type = None
 
     def __init__(self, *args: Array, **params):
@@ -2237,9 +2236,7 @@ class Pointwise(Array):
             return constant(retval)
 
     def _derivative(self, var, seen):
-        if self.complex_deriv is not None:
-            return util.sum(einsum('A,AB->AB', deriv(*self.args, **self.params), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.complex_deriv))
-        elif self.dtype == complex or var.dtype == complex:
+        if self.dtype == complex or var.dtype == complex:
             raise NotImplementedError('The complex derivative is not implemented.')
         elif self.deriv is not None:
             return util.sum(einsum('A,AB->AB', deriv(*self.args, **self.params), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.deriv))
@@ -2256,9 +2253,24 @@ class Pointwise(Array):
         return self._newargs(*[unravel(arg, axis, shape) for arg in self.args])
 
 
-class Reciprocal(Pointwise):
+class Holomorphic(Pointwise):
+    '''
+    Abstract base class for holomorphic array functions.
+    '''
+
+    @staticmethod
+    def return_type(*dtypes, **params):
+        return complex if complex in dtypes else float
+
+    def _derivative(self, var, seen):
+        if self.deriv is not None:
+            return util.sum(einsum('A,AB->AB', deriv(*self.args, **self.params), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.deriv))
+        else:
+            return super()._derivative(var, seen)
+
+
+class Reciprocal(Holomorphic):
     evalf = staticmethod(numpy.reciprocal)
-    return_type = lambda T: complex if T == complex else float
 
 
 class Negative(Pointwise):
@@ -2291,11 +2303,10 @@ class Absolute(Pointwise):
             return min(extrema), max(extrema)
 
 
-class Cos(Pointwise):
+class Cos(Holomorphic):
     'Cosine, element-wise.'
     evalf = staticmethod(numpy.cos)
-    complex_deriv = lambda x: -Sin(x),
-    return_type = lambda T: complex if T == complex else float
+    deriv = lambda x: -Sin(x),
 
     def _simplified(self):
         arg, = self.args
@@ -2304,11 +2315,10 @@ class Cos(Pointwise):
         return super()._simplified()
 
 
-class Sin(Pointwise):
+class Sin(Holomorphic):
     'Sine, element-wise.'
     evalf = staticmethod(numpy.sin)
-    complex_deriv = Cos,
-    return_type = lambda T: complex if T == complex else float
+    deriv = Cos,
 
     def _simplified(self):
         arg, = self.args
@@ -2317,78 +2327,67 @@ class Sin(Pointwise):
         return super()._simplified()
 
 
-class Tan(Pointwise):
+class Tan(Holomorphic):
     'Tangent, element-wise.'
     evalf = staticmethod(numpy.tan)
-    complex_deriv = lambda x: Cos(x)**astype(-2, x.dtype),
-    return_type = lambda T: complex if T == complex else float
+    deriv = lambda x: Cos(x)**astype(-2, x.dtype),
 
 
-class ArcSin(Pointwise):
+class ArcSin(Holomorphic):
     'Inverse sine, element-wise.'
     evalf = staticmethod(numpy.arcsin)
-    complex_deriv = lambda x: reciprocal(sqrt(astype(1, x.dtype)-x**astype(2, x.dtype))),
-    return_type = lambda T: complex if T == complex else float
+    deriv = lambda x: reciprocal(sqrt(astype(1, x.dtype)-x**astype(2, x.dtype))),
 
 
-class ArcCos(Pointwise):
+class ArcCos(Holomorphic):
     'Inverse cosine, element-wise.'
     evalf = staticmethod(numpy.arccos)
-    complex_deriv = lambda x: -reciprocal(sqrt(astype(1, x.dtype)-x**astype(2, x.dtype))),
-    return_type = lambda T: complex if T == complex else float
+    deriv = lambda x: -reciprocal(sqrt(astype(1, x.dtype)-x**astype(2, x.dtype))),
 
 
-class ArcTan(Pointwise):
+class ArcTan(Holomorphic):
     'Inverse tangent, element-wise.'
     evalf = staticmethod(numpy.arctan)
-    complex_deriv = lambda x: reciprocal(astype(1, x.dtype)+x**astype(2, x.dtype)),
-    return_type = lambda T: complex if T == complex else float
+    deriv = lambda x: reciprocal(astype(1, x.dtype)+x**astype(2, x.dtype)),
 
 
-class Sinc(Pointwise):
+class Sinc(Holomorphic):
     evalf = staticmethod(numeric.sinc)
-    complex_deriv = lambda x, n: Sinc(x, n=n+1),
-    return_type = lambda T, n: complex if T == complex else float
+    deriv = lambda x, n: Sinc(x, n=n+1),
 
 
-class CosH(Pointwise):
+class CosH(Holomorphic):
     'Hyperbolic cosine, element-wise.'
     evalf = staticmethod(numpy.cosh)
-    complex_deriv = lambda x: SinH(x),
-    return_type = lambda T: complex if T == complex else float
+    deriv = lambda x: SinH(x),
 
 
-class SinH(Pointwise):
+class SinH(Holomorphic):
     'Hyperbolic sine, element-wise.'
     evalf = staticmethod(numpy.sinh)
-    complex_deriv = CosH,
-    return_type = lambda T: complex if T == complex else float
+    deriv = CosH,
 
 
-class TanH(Pointwise):
+class TanH(Holomorphic):
     'Hyperbolic tangent, element-wise.'
     evalf = staticmethod(numpy.tanh)
-    complex_deriv = lambda x: astype(1, x.dtype) - TanH(x)**astype(2, x.dtype),
-    return_type = lambda T: complex if T == complex else float
+    deriv = lambda x: astype(1, x.dtype) - TanH(x)**astype(2, x.dtype),
 
 
-class ArcTanH(Pointwise):
+class ArcTanH(Holomorphic):
     'Inverse hyperbolic tangent, element-wise.'
     evalf = staticmethod(numpy.arctanh)
-    complex_deriv = lambda x: reciprocal(astype(1, x.dtype)-x**astype(2, x.dtype)),
-    return_type = lambda T: complex if T == complex else float
+    deriv = lambda x: reciprocal(astype(1, x.dtype)-x**astype(2, x.dtype)),
 
 
-class Exp(Pointwise):
+class Exp(Holomorphic):
     evalf = staticmethod(numpy.exp)
-    complex_deriv = lambda x: Exp(x),
-    return_type = lambda T: complex if T == complex else float
+    deriv = lambda x: Exp(x),
 
 
-class Log(Pointwise):
+class Log(Holomorphic):
     evalf = staticmethod(numpy.log)
-    complex_deriv = lambda x: reciprocal(x),
-    return_type = lambda T: complex if T == complex else float
+    deriv = lambda x: reciprocal(x),
 
 
 class Mod(Pointwise):
