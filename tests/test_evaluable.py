@@ -235,7 +235,7 @@ class check(TestCase):
             return
         for iax in range(self.actual.ndim):
             self.assertFunctionAlmostEqual(decimal=14,
-                                           desired=numpy.product(self.desired, axis=iax),
+                                           desired=(numpy.all if self.actual.dtype == bool else numpy.prod)(self.desired, axis=iax),
                                            actual=evaluable.product(self.actual, axis=iax))
 
     def test_getslice(self):
@@ -561,6 +561,7 @@ _check('greater', evaluable.Greater, numpy.greater, ANY(4, 4), ANY(4, 4), zerogr
 _check('less', evaluable.Less, numpy.less, ANY(4, 4), ANY(4, 4), zerograd=True)
 _check('logical_not', evaluable.LogicalNot, numpy.logical_not, numpy.array([[False, False], [True, True], [False, True]], dtype=bool))
 _check('logical_any', evaluable.Sum, lambda a: numpy.any(a, axis=-1), numpy.array([[False, False], [True, True], [False, True]], dtype=bool))
+_check('logical_all', evaluable.Product, lambda a: numpy.all(a, axis=-1), numpy.array([[False, False], [True, True], [False, True]], dtype=bool))
 _check('arctan2', evaluable.arctan2, numpy.arctan2, ANY(4, 4), ANY(4, 4))
 _check('stack', lambda a, b: evaluable.stack([a, b], 0), lambda a, b: numpy.concatenate([a[numpy.newaxis, :], b[numpy.newaxis, :]], axis=0), ANY(4), ANY(4))
 _check('eig', lambda a: evaluable.eig(a+a.swapaxes(0, 1), symmetric=True)[1], lambda a: numpy.linalg.eigh(a+a.swapaxes(0, 1))[1], ANY(4, 4), hasgrad=False)

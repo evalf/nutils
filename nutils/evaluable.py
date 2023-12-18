@@ -1187,7 +1187,7 @@ class Constant(Array):
         return constant(numpy.transpose(numpy.linalg.inv(value), numpy.argsort(axes)))
 
     def _product(self):
-        return constant(self.value.prod(-1))
+        return constant((numpy.all if self.dtype == bool else numpy.prod)(self.value, -1))
 
     def _multiply(self, other):
         if self._isunit:
@@ -1283,7 +1283,7 @@ class InsertAxis(Array):
         return InsertAxis(sum(self.func, i), self.length)
 
     def _product(self):
-        return self.func**astype(self.length, self.func.dtype)
+        return self.func if self.dtype == bool else self.func**astype(self.length, self.func.dtype)
 
     def _power(self, n):
         unaligned1, unaligned2, where = unalign(self, n)
@@ -1556,18 +1556,15 @@ class Transpose(Array):
 class Product(Array):
 
     def __init__(self, func: Array):
-        assert isinstance(func, Array) and func.dtype != bool, f'func={func!r}'
+        assert isinstance(func, Array), f'func={func!r}'
         self.func = func
+        self.evalf = functools.partial(numpy.all if func.dtype == bool else numpy.prod, axis=-1)
         super().__init__(args=(func,), shape=func.shape[:-1], dtype=func.dtype)
 
     def _simplified(self):
         if _equals_scalar_constant(self.func.shape[-1], 1):
             return get(self.func, self.ndim, constant(0))
         return self.func._product()
-
-    @staticmethod
-    def evalf(arr):
-        return numpy.product(arr, axis=-1)
 
     def _derivative(self, var, seen):
         grad = derivative(self.func, var, seen)
