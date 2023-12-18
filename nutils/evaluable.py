@@ -62,9 +62,9 @@ def simplified(value: 'Evaluable'):
     return value.simplified
 
 
-_type_order = bool, int, float, complex
-asdtype = lambda arg: arg if any(arg is dtype for dtype in _type_order) else {'f': float, 'i': int, 'b': bool, 'c': complex}[numpy.dtype(arg).kind]
-Dtype = typing.Union[_type_order]
+_array_dtypes = bool, int, float, complex
+asdtype = lambda arg: arg if any(arg is dtype for dtype in _array_dtypes) else {'f': float, 'i': int, 'b': bool, 'c': complex}[numpy.dtype(arg).kind]
+Dtype = typing.Union[_array_dtypes]
 
 
 def asarray(arg):
@@ -838,7 +838,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
 
     def __init__(self, args, shape: typing.Tuple['Array', ...], dtype: Dtype):
         assert isinstance(shape, tuple) and all(_isindex(n) for n in shape), f'shape={shape!r}'
-        assert isinstance(dtype, type) and dtype in _type_order, f'dtype={dtype!r}'
+        assert isinstance(dtype, type) and dtype in _array_dtypes, f'dtype={dtype!r}'
         self.shape = shape
         self.dtype = dtype
         super().__init__(args=args)
