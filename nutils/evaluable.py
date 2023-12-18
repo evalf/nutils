@@ -1174,7 +1174,7 @@ class Constant(Array):
         return constant(self.value.transpose(axes))
 
     def _sum(self, axis):
-        return constant(numpy.sum(self.value, axis))
+        return constant((numpy.any if self.dtype == bool else numpy.sum)(self.value, axis))
 
     def _add(self, other):
         if isinstance(other, Constant):
@@ -1279,7 +1279,7 @@ class InsertAxis(Array):
 
     def _sum(self, i):
         if i == self.ndim - 1:
-            return self.func * astype(self.length, self.func.dtype)
+            return self.func if self.dtype == bool else self.func * astype(self.length, self.func.dtype)
         return InsertAxis(sum(self.func, i), self.length)
 
     def _product(self):
@@ -1987,18 +1987,14 @@ class Sum(Array):
 
     def __init__(self, func: Array):
         assert isinstance(func, Array), f'func={func!r}'
-        assert func.dtype != bool, 'Sum({})'.format(func)
         self.func = func
+        self.evalf = functools.partial(numpy.any if func.dtype == bool else numpy.sum, axis=-1)
         super().__init__(args=(func,), shape=func.shape[:-1], dtype=func.dtype)
 
     def _simplified(self):
         if _equals_scalar_constant(self.func.shape[-1], 1):
             return Take(self.func, constant(0))
         return self.func._sum(self.ndim)
-
-    @staticmethod
-    def evalf(arr):
-        return numpy.sum(arr, -1)
 
     def _sum(self, axis):
         trysum = self.func._sum(axis)
@@ -2010,6 +2006,8 @@ class Sum(Array):
 
     @cached_property
     def _assparse(self):
+        if self.dtype == bool:
+            return super()._assparse
         chunks = []
         for *indices, _rmidx, values in self.func._assparse:
             if self.ndim == 0:
@@ -2911,7 +2909,7 @@ class Zeros(Array):
         return Zeros(self.shape+(self.shape[axis],), dtype=self.dtype)
 
     def _sum(self, axis):
-        return Zeros(self.shape[:axis] + self.shape[axis+1:], dtype=int if self.dtype == bool else self.dtype)
+        return Zeros(self.shape[:axis] + self.shape[axis+1:], dtype=self.dtype)
 
     def _transpose(self, axes):
         shape = tuple(self.shape[n] for n in axes)

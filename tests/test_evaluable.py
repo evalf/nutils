@@ -248,11 +248,9 @@ class check(TestCase):
                                            actual=self.actual[s])
 
     def test_sumaxis(self):
-        if self.desired.dtype == bool:
-            return
         for idim in range(self.actual.ndim):
             self.assertFunctionAlmostEqual(decimal=14,
-                                           desired=self.desired.sum(idim),
+                                           desired=(numpy.any if self.actual.dtype == bool else numpy.sum)(self.desired, axis=idim),
                                            actual=self.actual.sum(idim))
 
     def test_add(self):
@@ -562,6 +560,7 @@ _check('equal', evaluable.Equal, numpy.equal, ANY(4, 4), ANY(4, 4), zerograd=Tru
 _check('greater', evaluable.Greater, numpy.greater, ANY(4, 4), ANY(4, 4), zerograd=True)
 _check('less', evaluable.Less, numpy.less, ANY(4, 4), ANY(4, 4), zerograd=True)
 _check('logical_not', evaluable.LogicalNot, numpy.logical_not, numpy.array([[False, False], [True, True], [False, True]], dtype=bool))
+_check('logical_any', evaluable.Sum, lambda a: numpy.any(a, axis=-1), numpy.array([[False, False], [True, True], [False, True]], dtype=bool))
 _check('arctan2', evaluable.arctan2, numpy.arctan2, ANY(4, 4), ANY(4, 4))
 _check('stack', lambda a, b: evaluable.stack([a, b], 0), lambda a, b: numpy.concatenate([a[numpy.newaxis, :], b[numpy.newaxis, :]], axis=0), ANY(4), ANY(4))
 _check('eig', lambda a: evaluable.eig(a+a.swapaxes(0, 1), symmetric=True)[1], lambda a: numpy.linalg.eigh(a+a.swapaxes(0, 1))[1], ANY(4, 4), hasgrad=False)
@@ -1358,7 +1357,7 @@ class log_error(TestCase):
   %0 = EVALARGS --> dict
   %1 = nutils.evaluable.Constant<f:> --> ndarray<f:>
   %2 = nutils.evaluable.Constant<f:2> --> ndarray<f:2>
-  %3 = nutils.evaluable.Sum<f:> arr=%2 --> float64
+  %3 = nutils.evaluable.Sum<f:> a=%2 --> float64
   %4 = nutils.evaluable.Add<f:> %1 %3 --> float64
   %5 = tests.test_evaluable.Fail<i:> arg1=%4 arg2=%1 --> operation failed intentially.''')
 
