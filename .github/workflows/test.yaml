@@ -13,7 +13,7 @@ env:
 jobs:
   build-python-package:
     name: Build Python package
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     outputs:
       wheel: ${{ steps.build.outputs.wheel }}
     steps:
@@ -146,7 +146,7 @@ jobs:
         run: python -um unittest discover -b -q -t . -s examples
   test-sphinx:
     name: Test building docs
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -159,7 +159,7 @@ jobs:
   build-and-test-container-image:
     name: Build container image
     needs: build-python-package
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     env:
       # Fixes https://github.com/actions/virtual-environments/issues/3080
       STORAGE_OPTS: overlay.mount_program=/usr/bin/fuse-overlayfs
