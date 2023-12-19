@@ -106,7 +106,7 @@ jobs:
       - name: Post-process coverage
         run: python -um devtools.gha.coverage_report_xml
       - name: Upload coverage
-        uses: codecov/codecov-action@v1
+        uses: codecov/codecov-action@v3
   test-examples:
     needs: build-python-package
     name: 'Test examples ${{ matrix.os }}'
