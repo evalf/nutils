@@ -323,6 +323,17 @@ _check('min', lambda a, b: numpy.minimum(a, function.Array.cast(b)), numpy.minim
 _check('max', lambda a, b: numpy.maximum(a, function.Array.cast(b)), numpy.maximum, ANY(4, 1), ANY(1, 4))
 _check('heaviside', function.heaviside, lambda u: numpy.heaviside(u, .5), ANY(4, 4))
 
+_check('logical_and', lambda a, b: numpy.logical_and(a, function.Array.cast(b)), numpy.logical_and, numpy.array([False, True, True])[:,None], numpy.array([True, False])[None,:])
+_check('bitwise_and-bool', lambda a, b: numpy.bitwise_and(a, function.Array.cast(b)), numpy.bitwise_and, numpy.array([False, True, True])[:,None], numpy.array([True, False])[None,:])
+_check('logical_or', lambda a, b: numpy.logical_or(a, function.Array.cast(b)), numpy.logical_or, numpy.array([False, True, True])[:,None], numpy.array([True, False])[None,:])
+_check('bitwise_or-bool', lambda a, b: numpy.bitwise_or(a, function.Array.cast(b)), numpy.bitwise_or, numpy.array([False, True, True])[:,None], numpy.array([True, False])[None,:])
+_check('logical_not', lambda a: numpy.logical_not(function.Array.cast(a)), numpy.logical_not, numpy.array([[False, True], [True, False], [True, True]]))
+_check('invert-bool', lambda a: numpy.invert(function.Array.cast(a)), numpy.invert, numpy.array([[False, True], [True, False], [True, True]]))
+_check('all-bool-all-axes', lambda a: numpy.all(function.Array.cast(a)), numpy.all, numpy.array([[False, True], [True, True]]))
+_check('all-bool-single-axis', lambda a: numpy.all(function.Array.cast(a), axis=0), lambda a: numpy.all(a, axis=0), numpy.array([[False, True], [True, True]]))
+_check('any-bool-all-axes', lambda a: numpy.any(function.Array.cast(a)), numpy.any, numpy.array([[False, True], [True, True]]))
+_check('any-bool-single-axis', lambda a: numpy.any(function.Array.cast(a), axis=0), lambda a: numpy.any(a, axis=0), numpy.array([[False, True], [False, False]]))
+
 ## TODO: opposite
 ## TODO: mean
 ## TODO: jump

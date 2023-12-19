@@ -3045,6 +3045,56 @@ class __implementations__:
             raise ValueError('Complex numbers have no total order.')
         return _Wrapper.broadcasted_arrays(evaluable.Maximum, a, b)
 
+    @implements(numpy.logical_and)
+    @implements(numpy.bitwise_and)
+    def logical_and(a: IntoArray, b: IntoArray) -> Array:
+        a, b = map(Array.cast, (a, b))
+        if a.dtype != bool or b.dtype != bool:
+            return NotImplemented
+        return _Wrapper.broadcasted_arrays(evaluable.multiply, a, b)
+
+    @implements(numpy.logical_or)
+    @implements(numpy.bitwise_or)
+    def logical_or(a: IntoArray, b: IntoArray) -> Array:
+        a, b = map(Array.cast, (a, b))
+        if a.dtype != bool or b.dtype != bool:
+            return NotImplemented
+        return _Wrapper.broadcasted_arrays(evaluable.add, a, b)
+
+    @implements(numpy.logical_not)
+    @implements(numpy.invert)
+    def logical_not(a: IntoArray) -> Array:
+        a = Array.cast(a)
+        if a.dtype != bool:
+            return NotImplemented
+        return _Wrapper.broadcasted_arrays(evaluable.LogicalNot, a, force_dtype=bool)
+
+    @implements(numpy.all)
+    def all(a: IntoArray, axis = None) -> Array:
+        a = Array.cast(a)
+        if a.dtype != bool:
+            return NotImplemented
+        if axis is None:
+            a = numpy.ravel(a)
+        elif isinstance(axis, int):
+            a = _Transpose.to_end(a, axis)
+        else:
+            return NotImplemented
+        return _Wrapper(evaluable.Product, a, shape=a.shape[:-1], dtype=bool)
+
+    @implements(numpy.any)
+    def any(a: IntoArray, axis = None) -> Array:
+        a = Array.cast(a)
+        if a.dtype != bool:
+            return NotImplemented
+        if axis is None:
+            a = numpy.ravel(a)
+        elif isinstance(axis, int):
+            a = _Transpose.to_end(a, axis)
+        else:
+            return NotImplemented
+        return _Wrapper(evaluable.Sum, a, shape=a.shape[:-1], dtype=bool)
+
     @implements(numpy.sum)
     def sum(arg: IntoArray, axis: Optional[Union[int, Sequence[int]]] = None) -> Array:
         arg = Array.cast(arg)
