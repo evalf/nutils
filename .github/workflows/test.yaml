@@ -30,7 +30,7 @@ jobs:
           python3 -m flit build
           echo wheel=`echo dist/*.whl` >> $GITHUB_OUTPUT
       - name: Upload package artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: python-package
           path: dist/
@@ -78,7 +78,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Download Python package artifact
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: python-package
           path: dist/
@@ -132,7 +132,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v1
       - name: Download Python package artifact
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: python-package
           path: dist/
@@ -168,7 +168,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Download Python package artifact
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: python-package
           path: dist/
