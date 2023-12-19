@@ -18,7 +18,7 @@ jobs:
       wheel: ${{ steps.build.outputs.wheel }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Install build dependencies
         run: python3 -m pip install flit
       - name: Build package
@@ -69,7 +69,7 @@ jobs:
       NUTILS_TENSORIAL: ${{ matrix.tensorial }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Move nutils directory
         run: mv nutils _nutils
       - name: Set up Python ${{ matrix.python-version }}
@@ -125,7 +125,7 @@ jobs:
       PYTHONHASHSEED: 0
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Move nutils directory
         run: mv nutils _nutils
       - name: Set up Python
@@ -148,7 +148,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Install dependencies
         run: |
           python3 -um pip install setuptools wheel
@@ -165,7 +165,7 @@ jobs:
       _wheel: ${{ needs.build-python-package.outputs.wheel }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Download Python package artifact
         uses: actions/download-artifact@v2
         with:
