@@ -24,7 +24,7 @@ class Array(TestCase):
             function.Array.cast('132')
 
     def test_cast_different_shapes(self):
-        with self.assertRaisesRegex(ValueError, 'cannot convert \[\[1, 2, 3\], \[4, 5\]\] to Array: all input arrays must have the same shape'):
+        with self.assertRaisesRegex(ValueError, 'cannot convert \\[\\[1, 2, 3\\], \\[4, 5\\]\\] to Array: all input arrays must have the same shape'):
             function.Array.cast([[1,2,3],[4,5]])
 
     def test_ndim(self):
@@ -53,11 +53,11 @@ class Array(TestCase):
         self.assertEqual(b.as_evaluable_array.eval(), 2)
 
     def test_binop_notimplemented(self):
-        with self.assertRaisesRegex(TypeError, '^operand type\(s\) all returned NotImplemented from __array_ufunc__'):
+        with self.assertRaisesRegex(TypeError, '^operand type\\(s\\) all returned NotImplemented from __array_ufunc__'):
             function.Argument('a', ()) + '1'
 
     def test_rbinop_notimplemented(self):
-        with self.assertRaisesRegex(TypeError, '^operand type\(s\) all returned NotImplemented from __array_ufunc__'):
+        with self.assertRaisesRegex(TypeError, '^operand type\\(s\\) all returned NotImplemented from __array_ufunc__'):
             '1' + function.Argument('a', ())
 
     def test_different_argument_shapes(self):
@@ -72,7 +72,7 @@ class Array(TestCase):
         self.assertEqual(function.Array.cast(2).__index__(), 2)
         with self.assertRaisesRegex(ValueError, "cannot convert non-constant array to index: arguments=foo"):
             function.Argument('foo', shape=(), dtype=int).__index__()
-        with self.assertRaisesRegex(ValueError, "cannot convert non-scalar array to index: shape=\(2,\)"):
+        with self.assertRaisesRegex(ValueError, "cannot convert non-scalar array to index: shape=\\(2,\\)"):
             function.Array.cast([2, 3]).__index__()
         with self.assertRaisesRegex(ValueError, "cannot convert non-integer array to index: dtype=float"):
             function.Array.cast(2.5).__index__()

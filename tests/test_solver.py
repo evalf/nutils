@@ -34,9 +34,9 @@ def _test_recursion_cache(testcase, solver_iter):
                     with testcase.assertLogs('nutils', 'DEBUG') as cm:
                         v = read(length)
                     testcase.assertEqual(v, reference[:length])
-                    testcase.assertRegex('\n'.join(cm.output), '\[cache\.Recursion [0-9a-f]{40}\] start iterating')
-                    testcase.assertRegex('\n'.join(cm.output), '\[cache\.Recursion [0-9a-f]{40}\.0000\] load' if i and max(lengths[:i]) > 0
-                                                          else '\[cache\.Recursion [0-9a-f]{40}\.0000\] cache exhausted')
+                    testcase.assertRegex('\n'.join(cm.output), '\\[cache\\.Recursion [0-9a-f]{40}\\] start iterating')
+                    testcase.assertRegex('\n'.join(cm.output), '\\[cache\\.Recursion [0-9a-f]{40}\\.0000\\] load' if i and max(lengths[:i]) > 0
+                                                          else '\\[cache\\.Recursion [0-9a-f]{40}\\.0000\\] cache exhausted')
 
 
 def _test_solve_cache(testcase, solver_gen):
@@ -46,10 +46,10 @@ def _test_solve_cache(testcase, solver_gen):
         with testcase.assertLogs('nutils', 'DEBUG') as cm:
             v2, info = _edit(solver_gen().solve_withinfo(1e-5))
         testcase.assertEqual(v1, v2)
-        testcase.assertRegex('\n'.join(cm.output), '\[cache\.function [0-9a-f]{40}\] load')
+        testcase.assertRegex('\n'.join(cm.output), '\\[cache\\.function [0-9a-f]{40}\\] load')
         with testcase.assertLogs('nutils', 'DEBUG') as cm:
             solver_gen().solve(1e-6)
-        testcase.assertRegex('\n'.join(cm.output), '\[cache\.function [0-9a-f]{40}\] failed to load')
+        testcase.assertRegex('\n'.join(cm.output), '\\[cache\\.function [0-9a-f]{40}\\] failed to load')
 
 
 class laplace(TestCase):
