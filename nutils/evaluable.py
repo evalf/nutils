@@ -895,8 +895,11 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     __pow__ = power
     __abs__ = lambda self: abs(self)
     __mod__ = lambda self, other: mod(self, other)
+    __and__ = __rand__ = multiply
+    __or__ = __ror__ = add
     __int__ = __index__
     __str__ = __repr__ = lambda self: '{}.{}<{}>'.format(type(self).__module__, type(self).__name__, self._shape_str(form=str))
+    __inv__ = lambda self: LogicalNot(self) if self.dtype == bool else NotImplemented
 
     def _shape_str(self, form):
         dtype = self.dtype.__name__[0] if hasattr(self, 'dtype') else '?'
@@ -1173,7 +1176,7 @@ class Constant(Array):
         return constant(self.value.transpose(axes))
 
     def _sum(self, axis):
-        return constant(numpy.sum(self.value, axis))
+        return constant((numpy.any if self.dtype == bool else numpy.sum)(self.value, axis))
 
     def _add(self, other):
         if isinstance(other, Constant):
@@ -1186,7 +1189,7 @@ class Constant(Array):
         return constant(numpy.transpose(numpy.linalg.inv(value), numpy.argsort(axes)))
 
     def _product(self):
-        return constant(self.value.prod(-1))
+        return constant((numpy.all if self.dtype == bool else numpy.prod)(self.value, -1))
 
     def _multiply(self, other):
         if self._isunit:
@@ -1278,11 +1281,11 @@ class InsertAxis(Array):
 
     def _sum(self, i):
         if i == self.ndim - 1:
-            return self.func * astype(self.length, self.func.dtype)
+            return self.func if self.dtype == bool else self.func * astype(self.length, self.func.dtype)
         return InsertAxis(sum(self.func, i), self.length)
 
     def _product(self):
-        return self.func**astype(self.length, self.func.dtype)
+        return self.func if self.dtype == bool else self.func**astype(self.length, self.func.dtype)
 
     def _power(self, n):
         unaligned1, unaligned2, where = unalign(self, n)
@@ -1555,18 +1558,15 @@ class Transpose(Array):
 class Product(Array):
 
     def __init__(self, func: Array):
-        assert isinstance(func, Array) and func.dtype != bool, f'func={func!r}'
+        assert isinstance(func, Array), f'func={func!r}'
         self.func = func
+        self.evalf = functools.partial(numpy.all if func.dtype == bool else numpy.prod, axis=-1)
         super().__init__(args=(func,), shape=func.shape[:-1], dtype=func.dtype)
 
     def _simplified(self):
         if _equals_scalar_constant(self.func.shape[-1], 1):
             return get(self.func, self.ndim, constant(0))
         return self.func._product()
-
-    @staticmethod
-    def evalf(arr):
-        return numpy.product(arr, axis=-1)
 
     def _derivative(self, var, seen):
         grad = derivative(self.func, var, seen)
@@ -1657,7 +1657,7 @@ class Multiply(Array):
         assert isinstance(funcs, types.frozenmultiset), f'funcs={funcs!r}'
         self.funcs = funcs
         func1, func2 = funcs
-        assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype != bool, 'Multiply({}, {})'.format(func1, func2)
+        assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype, 'Multiply({}, {})'.format(func1, func2)
         super().__init__(args=tuple(self.funcs), shape=func1.shape, dtype=func1.dtype)
 
     @property
@@ -1678,6 +1678,8 @@ class Multiply(Array):
             for axis1, axis2, *other in map(sorted, fj._diagonals):
                 return diagonalize(multiply(*(takediag(f, axis1, axis2) for f in factors)), axis1, axis2)
             for i, fi in enumerate(factors[:j]):
+                if self.dtype == bool and fi == fj:
+                    return multiply(*factors[:j], *factors[j+1:])
                 unaligned1, unaligned2, where = unalign(fi, fj)
                 fij = align(unaligned1 * unaligned2, where, self.shape) if len(where) != self.ndim \
                     else fi._multiply(fj) or fj._multiply(fi)
@@ -1685,9 +1687,11 @@ class Multiply(Array):
                     return multiply(*factors[:i], *factors[i+1:j], *factors[j+1:], fij)
 
     def _optimized_for_numpy(self):
+        if self.dtype == bool:
+            return None
         factors = tuple(self._factors)
         for i, fi in enumerate(factors):
-            if fi.dtype != bool and fi._const_uniform == -1:
+            if fi._const_uniform == -1:
                 return Negative(multiply(*factors[:i], *factors[i+1:]))
             if fi.dtype != complex and Sign(fi) in factors:
                 i, j = sorted([i, factors.index(Sign(fi))])
@@ -1722,8 +1726,8 @@ class Multiply(Array):
             return multiply(*common) * add(multiply(*factors), multiply(*other_factors))
         nz = factors or other_factors
         if not nz: # self equals other (up to factor ordering)
-            return self * astype(2, self.dtype)
-        if len(nz) == 1 and tuple(nz)[0]._const_uniform == -1:
+            return self if self.dtype == bool else self * astype(2, self.dtype)
+        if self.dtype != bool and len(nz) == 1 and tuple(nz)[0]._const_uniform == -1:
             # Since the subtraction x - y is stored as x + -1 * y, this handles
             # the simplification of x - x to 0. While we could alternatively
             # simplify all x + a * x to (a + 1) * x, capturing a == -1 as a
@@ -1772,6 +1776,8 @@ class Multiply(Array):
 
     @cached_property
     def _assparse(self):
+        if self.dtype == bool:
+            return super()._assparse
         # First we collect the clusters of factors that have no real (i.e. not
         # inserted) axes in common with the other clusters, and store them in
         # uninserted form.
@@ -1821,11 +1827,13 @@ class Add(Array):
         assert isinstance(funcs, types.frozenmultiset) and len(funcs) == 2, f'funcs={funcs!r}'
         self.funcs = funcs
         func1, func2 = funcs
-        assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype != bool, 'Add({}, {})'.format(func1, func2)
+        assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype, 'Add({}, {})'.format(func1, func2)
         super().__init__(args=tuple(self.funcs), shape=func1.shape, dtype=func1.dtype)
 
     @cached_property
     def _inflations(self):
+        if self.dtype == bool:
+            return ()
         func1, func2 = self.funcs
         func2_inflations = dict(func2._inflations)
         inflations = []
@@ -1856,6 +1864,8 @@ class Add(Array):
         terms = tuple(self._terms)
         for j, fj in enumerate(terms):
             for i, fi in enumerate(terms[:j]):
+                if self.dtype == bool and fi == fj:
+                    return add(*terms[:j], *terms[j+1:])
                 diags = [sorted(axesi & axesj)[:2] for axesi in fi._diagonals for axesj in fj._diagonals if len(axesi & axesj) >= 2]
                 unaligned1, unaligned2, where = unalign(fi, fj)
                 fij = diagonalize(takediag(fi, *diags[0]) + takediag(fj, *diags[0]), *diags[0]) if diags \
@@ -1919,7 +1929,10 @@ class Add(Array):
 
     @cached_property
     def _assparse(self):
-        return _gathersparsechunks(itertools.chain(*[f._assparse for f in self._terms]))
+        if self.dtype == bool:
+            return super()._assparse
+        else:
+            return _gathersparsechunks(itertools.chain(*[f._assparse for f in self._terms]))
 
     def _intbounds_impl(self):
         lowers, uppers = zip(*[f._intbounds for f in self._terms])
@@ -1986,18 +1999,14 @@ class Sum(Array):
 
     def __init__(self, func: Array):
         assert isinstance(func, Array), f'func={func!r}'
-        assert func.dtype != bool, 'Sum({})'.format(func)
         self.func = func
+        self.evalf = functools.partial(numpy.any if func.dtype == bool else numpy.sum, axis=-1)
         super().__init__(args=(func,), shape=func.shape[:-1], dtype=func.dtype)
 
     def _simplified(self):
         if _equals_scalar_constant(self.func.shape[-1], 1):
             return Take(self.func, constant(0))
         return self.func._sum(self.ndim)
-
-    @staticmethod
-    def evalf(arr):
-        return numpy.sum(arr, -1)
 
     def _sum(self, axis):
         trysum = self.func._sum(axis)
@@ -2009,6 +2018,8 @@ class Sum(Array):
 
     @cached_property
     def _assparse(self):
+        if self.dtype == bool:
+            return super()._assparse
         chunks = []
         for *indices, _rmidx, values in self.func._assparse:
             if self.ndim == 0:
@@ -2490,6 +2501,20 @@ class Less(Pointwise):
         return bool
 
 
+class LogicalNot(Pointwise):
+    evalf = staticmethod(numpy.logical_not)
+    def return_type(T):
+        if T != bool:
+            raise ValueError(f'Expected a boolean but got {T}.')
+        return bool
+
+    def _simplified(self):
+        arg, = self.args
+        if isinstance(arg, LogicalNot):
+            return arg.args[0]
+        return super()._simplified()
+
+
 class Minimum(Pointwise):
     evalf = staticmethod(numpy.minimum)
     deriv = lambda x, y: .5 - .5 * Sign(x - y), lambda x, y: .5 + .5 * Sign(x - y)
@@ -2896,7 +2921,7 @@ class Zeros(Array):
         return Zeros(self.shape+(self.shape[axis],), dtype=self.dtype)
 
     def _sum(self, axis):
-        return Zeros(self.shape[:axis] + self.shape[axis+1:], dtype=int if self.dtype == bool else self.dtype)
+        return Zeros(self.shape[:axis] + self.shape[axis+1:], dtype=self.dtype)
 
     def _transpose(self, axes):
         shape = tuple(self.shape[n] for n in axes)
