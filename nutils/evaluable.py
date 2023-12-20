@@ -1024,43 +1024,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
             return lower if lower == upper else None
 
 
-class NPoints(Array):
-    'The length of the points axis.'
-
-    def __init__(self):
-        super().__init__(args=(EVALARGS,), shape=(), dtype=int)
-
-    @staticmethod
-    def evalf(evalargs):
-        points = evalargs['_points'].coords
-        return types.frozenarray(points.shape[0])
-
-    def _intbounds_impl(self):
-        return 0, float('inf')
-
-
-class Points(Array):
-
-    def __init__(self, npoints, ndim):
-        super().__init__(args=(EVALARGS,), shape=(npoints, ndim), dtype=float)
-
-    @staticmethod
-    def evalf(evalargs):
-        return evalargs['_points'].coords
-
-
-class Weights(Array):
-
-    def __init__(self, npoints):
-        super().__init__(args=(EVALARGS,), shape=(npoints,), dtype=float)
-
-    @staticmethod
-    def evalf(evalargs):
-        weights = evalargs['_points'].weights
-        assert numeric.isarray(weights) and weights.ndim == 1
-        return weights
-
-
 class Orthonormal(Array):
     'make a vector orthonormal to a subspace'
 
