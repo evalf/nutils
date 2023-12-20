@@ -755,9 +755,6 @@ class intbounds(TestCase):
     def test_inrange_empty(self):
         self.assertEqual(evaluable.InRange(self.S('n', float('-inf'), float('inf')), evaluable.constant(0))._intbounds, (0, 0))
 
-    def test_npoints(self):
-        self.assertEqual(evaluable.NPoints()._intbounds, (0, float('inf')))
-
     def test_bool_to_int(self):
         self.assertEqual(evaluable.BoolToInt(evaluable.constant(numpy.array([False, True], dtype=bool)))._intbounds, (0, 1))
 

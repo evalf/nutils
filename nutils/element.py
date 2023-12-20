@@ -282,7 +282,7 @@ class Reference(types.Singleton):
         if len(ctransforms) == 1:
             ctrans, = ctransforms
             assert not ctrans
-            return ((), self.getpoints('vertex', maxrefine), allindices),
+            return ((), maxrefine, allindices),
         if maxrefine == 0:
             raise Exception('maxrefine is too low')
         cbins = [set() for ichild in range(self.nchildren)]
@@ -292,9 +292,9 @@ class Reference(types.Singleton):
         if not all(cbins):
             raise Exception('transformations to not form an element cover')
         fcache = cache.WrapperCache()
-        return tuple(((ctrans,) + trans, points, cindices[indices])
+        return tuple(((ctrans,) + trans, degree, cindices[indices])
                      for ctrans, cref, cbin, cindices in zip(self.child_transforms, self.child_refs, cbins, self.child_divide(allindices, maxrefine))
-                     for trans, points, indices in fcache[cref._linear_cover](frozenset(cbin), maxrefine-1))
+                     for trans, degree, indices in fcache[cref._linear_cover](frozenset(cbin), maxrefine-1))
 
     def __str__(self):
         return self.__class__.__name__
