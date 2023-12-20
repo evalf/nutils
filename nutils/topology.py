@@ -1471,10 +1471,18 @@ class TransformChainsTopology(Topology):
                     levels = levelset.eval(_trim_index=ielem, **arguments)
                     refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
         else:
+            # `levelset` is evaluable on `leveltopo`, which must be a uniform
+            # or hierarchical refinement of `self`. Each element of `self` is
+            # trimmed given a sample of `levelset` at the pointset `vertex`
+            # with degree `maxrefine`. This sample is obtained by evaluating
+            # `levelset` for each child element in `leveltopo` at the relevant
+            # subset of the parent sample. Per child element this subset is the
+            # pointset `vertex` with degree `maxrefine` minus the ancestral
+            # level. The mapping from child points to parent points and the
+            # degree of the pointset is provided by `Element._linear_cover`.
             log.info('collecting leveltopo elements')
-            coordinates = evaluable.Points(evaluable.NPoints(), evaluable.constant(self.ndims))
-            ielem = evaluable.Argument('_leveltopo_ielem', (), int)
-            levelset = levelset.lower(function.LowerArgs.for_space(self.space, (leveltopo.transforms, leveltopo.opposites), ielem, coordinates)).optimized_for_numpy
+            lowered_levelset = {}
+            ielem_arg = evaluable.InRange(evaluable.Argument('_ielem', (), int), evaluable.constant(len(leveltopo)))
             bins = [set() for ielem in range(len(self))]
             for trans in leveltopo.transforms:
                 ielem, tail = self.transforms.index_with_tail(trans)
@@ -1487,10 +1495,14 @@ class TransformChainsTopology(Topology):
                     # confirm cover and greedily optimize order
                     mask = numpy.ones(len(levels), dtype=bool)
                     while mask.any():
-                        imax = numpy.argmax([mask[indices].sum() for tail, points, indices in cover])
-                        tail, points, indices = cover.pop(imax)
+                        imax = numpy.argmax([mask[indices].sum() for tail, degree, indices in cover])
+                        tail, degree, indices = cover.pop(imax)
                         ielem = leveltopo.transforms.index(trans + tail)
-                        levels[indices] = levelset.eval(_leveltopo_ielem=ielem, _points=points, **arguments)
+                        if degree not in lowered_levelset:
+                            coordinates = leveltopo.references.getpoints('vertex', degree).get_evaluable_coords(ielem_arg)
+                            lower_args = function.LowerArgs.for_space(self.space, (leveltopo.transforms, leveltopo.opposites), ielem_arg, coordinates)
+                            lowered_levelset[degree] = levelset.lower(lower_args).optimized_for_numpy
+                        levels[indices] = lowered_levelset[degree].eval(_ielem=ielem, **arguments)
                         mask[indices] = False
                     refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
             log.debug('cache', fcache.stats)
