@@ -62,7 +62,7 @@ def main(size: Length = parse('10cm'),
     energy:
 
         E(φ) := ∫_Ω ψ(φ) σ / ε + ∫_Ω .5 σ ε ‖∇φ‖² + ∫_Γ (σm + φ σd)
-                \                \                  \ 
+                ╲                ╲                  ╲
                  mixing energy    interface energy   wall energy
 
     Proof: the time derivative of `E` followed by substitution of the strong form

@@ -13,12 +13,12 @@ env:
 jobs:
   build-python-package:
     name: Build Python package
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     outputs:
       wheel: ${{ steps.build.outputs.wheel }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Install build dependencies
         run: python3 -m pip install flit
       - name: Build package
@@ -30,7 +30,7 @@ jobs:
           python3 -m flit build
           echo wheel=`echo dist/*.whl` >> $GITHUB_OUTPUT
       - name: Upload package artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: python-package
           path: dist/
@@ -42,20 +42,22 @@ jobs:
     strategy:
       matrix:
         include:
-          - {name: "baseline", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1}
-          - {name: "windows", os: windows-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1}
-          - {name: "macos", os: macos-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1}
+          - {name: "baseline", os: ubuntu-latest, python-version: "3.12", matrix-backend: numpy, nprocs: 1}
+          - {name: "windows", os: windows-latest, python-version: "3.12", matrix-backend: numpy, nprocs: 1}
+          - {name: "macos", os: macos-latest, python-version: "3.12", matrix-backend: numpy, nprocs: 1}
           - {name: "python 3.7", os: ubuntu-latest, python-version: "3.7", matrix-backend: numpy, nprocs: 1}
           - {name: "python 3.8", os: ubuntu-latest, python-version: "3.8", matrix-backend: numpy, nprocs: 1}
           - {name: "python 3.9", os: ubuntu-latest, python-version: "3.9", matrix-backend: numpy, nprocs: 1}
-          - {name: "scipy matrix", os: ubuntu-latest, python-version: "3.10", matrix-backend: scipy, nprocs: 1}
-          - {name: "mkl linux", os: ubuntu-latest, python-version: "3.10", matrix-backend: mkl, nprocs: 1}
-          - {name: "mkl linux parallel", os: ubuntu-latest, python-version: "3.10", matrix-backend: mkl, nprocs: 2}
-          - {name: "mkl windows", os: windows-latest, python-version: "3.10", matrix-backend: mkl, nprocs: 1}
-          - {name: "mkl macos", os: macos-latest, python-version: "3.10", matrix-backend: mkl, nprocs: 1}
-          - {name: "parallel", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 2}
+          - {name: "python 3.10", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1}
+          - {name: "python 3.11", os: ubuntu-latest, python-version: "3.11", matrix-backend: numpy, nprocs: 1}
+          - {name: "scipy matrix", os: ubuntu-latest, python-version: "3.12", matrix-backend: scipy, nprocs: 1}
+          - {name: "mkl linux", os: ubuntu-latest, python-version: "3.12", matrix-backend: mkl, nprocs: 1}
+          - {name: "mkl linux parallel", os: ubuntu-latest, python-version: "3.12", matrix-backend: mkl, nprocs: 2}
+          - {name: "mkl windows", os: windows-latest, python-version: "3.12", matrix-backend: mkl, nprocs: 1}
+          - {name: "mkl macos", os: macos-latest, python-version: "3.12", matrix-backend: mkl, nprocs: 1}
+          - {name: "parallel", os: ubuntu-latest, python-version: "3.12", matrix-backend: numpy, nprocs: 2}
           - {name: "numpy 1.17", os: ubuntu-latest, python-version: "3.7", matrix-backend: numpy, nprocs: 1, numpy-version: ==1.17}
-          - {name: "tensorial", os: ubuntu-latest, python-version: "3.10", matrix-backend: numpy, nprocs: 1, tensorial: test}
+          - {name: "tensorial", os: ubuntu-latest, python-version: "3.12", matrix-backend: numpy, nprocs: 1, tensorial: test}
       fail-fast: false
     env:
       _wheel: ${{ needs.build-python-package.outputs.wheel }}
@@ -70,15 +72,15 @@ jobs:
       NUTILS_TENSORIAL: ${{ matrix.tensorial }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Move nutils directory
         run: mv nutils _nutils
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Download Python package artifact
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: python-package
           path: dist/
@@ -107,7 +109,7 @@ jobs:
       - name: Post-process coverage
         run: python -um devtools.gha.coverage_report_xml
       - name: Upload coverage
-        uses: codecov/codecov-action@v1
+        uses: codecov/codecov-action@v3
   test-examples:
     needs: build-python-package
     name: 'Test examples ${{ matrix.os }}'
@@ -126,13 +128,15 @@ jobs:
       PYTHONHASHSEED: 0
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Move nutils directory
         run: mv nutils _nutils
       - name: Set up Python
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Download Python package artifact
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: python-package
           path: dist/
@@ -146,10 +150,10 @@ jobs:
         run: python -um unittest discover -b -q -t . -s examples
   test-sphinx:
     name: Test building docs
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Install dependencies
         run: |
           python3 -um pip install setuptools wheel
@@ -159,16 +163,16 @@ jobs:
   build-and-test-container-image:
     name: Build container image
     needs: build-python-package
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     env:
       # Fixes https://github.com/actions/virtual-environments/issues/3080
       STORAGE_OPTS: overlay.mount_program=/usr/bin/fuse-overlayfs
       _wheel: ${{ needs.build-python-package.outputs.wheel }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Download Python package artifact
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: python-package
           path: dist/

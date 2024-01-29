@@ -4,15 +4,15 @@ readme = "README.md"
 authors = [
     { name = "Evalf", email = "info@evalf.com" },
 ]
-requires-python = '~=3.7'
+requires-python = '>=3.7'
 dependencies = [
-    "appdirs~=1.0",
-    "bottombar~=2.0.2",
-    "numpy>=1.17",
-    "nutils-poly~=1.0",
-    "psutil~=5.0",
+    "appdirs >=1,<2",
+    "bottombar >=2,<3",
+    "numpy >=1.17,<2",
+    "nutils-poly >=1,<2",
+    "psutil >=5,<6",
     "stringly",
-    "treelog>=1.0b5",
+    "treelog >=1,<2",
 ]
 dynamic = ["description", "version"]
 classifiers = [
@@ -22,11 +22,11 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-docs = ["Sphinx>=1.8"]
-export_mpl = ["matplotlib>=1.3", "pillow>2.6"]
-matrix_mkl = ["mkl<2024"]
-matrix_scipy = ["scipy>=0.13"]
-import_gmsh = ["meshio"]
+docs = ["Sphinx >=1.8,<8"]
+export_mpl = ["matplotlib >=3.3,<4"]
+matrix_mkl = ["mkl <2024"]
+matrix_scipy = ["scipy >=0.13,<2"]
+import_gmsh = ["meshio >=4,<6"]
 
 [build-system]
 requires = ["flit_core >=3.2,<4"]
