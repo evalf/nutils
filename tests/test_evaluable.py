@@ -111,6 +111,12 @@ class check(TestCase):
         self.assertArrayAlmostEqual(with_times, without_times, 15)
         self.assertIn(self.actual, stats)
 
+    def test_representations(self):
+        for op in [evaluable.insertaxis]:
+            with self.subTest(op=op.__name__):
+                for f, *args in self.actual._as(op):
+                    self.assertFunctionAlmostEqual(decimal=14, actual=op(f, *args), desired=self.desired)
+
     def test_getitem(self):
         for idim in range(self.actual.ndim):
             for item in range(self.desired.shape[idim]):
@@ -1253,7 +1259,7 @@ class unalign(TestCase):
     def test_single_trans(self):
         ox = evaluable.Transpose(evaluable.asarray(numpy.arange(6).reshape(2,3)), (1, 0))
         ux, where = evaluable.unalign(ox)
-        self.assertEqual(where, (1, 0)) # transposed, because this is a single argument
+        self.assertEqual(where, (0, 1))
         self.assertEqual(evaluable.align(ux, where, ox.shape).eval().tolist(), ox.eval().tolist())
 
     def test_single_ins(self):

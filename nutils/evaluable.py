@@ -699,28 +699,31 @@ def unalign(*args, naxes: int = None):
     '''
 
     assert args
-    if len(args) == 1 and naxes is None:
-        return args[0]._unaligned
     if naxes is None:
         if any(arg.ndim != args[0].ndim for arg in args[1:]):
             raise ValueError('varying dimensions in unalign')
         naxes = args[0].ndim
     elif any(arg.ndim < naxes for arg in args):
         raise ValueError('one or more arguments have fewer axes than expected')
-    nonins = functools.reduce(operator.or_, [set(arg._unaligned[1]) for arg in args]) & set(range(naxes))
-    if len(nonins) == naxes:
+    uninserted = []
+    for arg in args:
+        where = list(range(naxes))
+        while unins := next(filter(lambda item: item[1] < len(where), arg._as(insertaxis)), None):
+            arg, axis, length = unins
+            del where[axis]
+        uninserted.append((arg, tuple(where)))
+    if len(args) == 1:
+        return uninserted[0]
+    commonwhere = tuple(sorted(functools.reduce(operator.or_, [set(axes) for func, axes in uninserted])))
+    if len(commonwhere) == naxes:
         return (*args, tuple(range(naxes)))
     ret = []
-    for arg in args:
-        unaligned, where = arg._unaligned
-        keep = tuple(range(naxes, arg.ndim))
-        for i in sorted((nonins | set(keep)) - set(where)):
-            unaligned = InsertAxis(unaligned, arg.shape[i])
-            where += i,
-        if not ret:  # first argument
-            commonwhere = tuple(i for i in where if i < naxes)
-        if where != commonwhere + keep:
-            unaligned = Transpose(unaligned, tuple(where.index(n) for n in commonwhere + keep))
+    for arg, (unaligned, where) in zip(args, uninserted):
+        # both where and commonwhere are sorted
+        if where != commonwhere:
+            missing = [i for i, n in enumerate(commonwhere) if n not in where]
+            shape = [arg.shape[commonwhere[i]] for i in missing]
+            unaligned = Transpose.from_end(appendaxes(unaligned, shape), *missing)
         ret.append(unaligned)
     return (*ret, commonwhere)
 
@@ -880,8 +883,8 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     def _shape_str(self, form):
         dtype = self.dtype.__name__[0] if hasattr(self, 'dtype') else '?'
         shape = [str(n.__index__()) if n.isconstant else '?' for n in self.shape]
-        for i in set(range(self.ndim)) - set(self._unaligned[1]):
-            shape[i] = f'({shape[i]})'
+        for f, axis, length in self._as(insertaxis):
+            shape[axis] = f'({shape[axis]})'
         for i, _ in self._inflations:
             shape[i] = f'~{shape[i]}'
         for axes in self._diagonals:
@@ -959,9 +962,8 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     _imag = lambda self: None
     _conjugate = lambda self: None
 
-    @property
-    def _unaligned(self):
-        return self, tuple(range(self.ndim))
+    def _as(self, op):
+        return ()
 
     _diagonals = ()
     _inflations = ()
@@ -1197,9 +1199,11 @@ class InsertAxis(Array):
     def _inflations(self):
         return tuple((axis, types.frozendict((dofmap, InsertAxis(func, self.length)) for dofmap, func in parts.items())) for axis, parts in self.func._inflations)
 
-    @cached_property
-    def _unaligned(self):
-        return self.func._unaligned
+    def _as(self, op):
+        if op is insertaxis:
+            yield self.func, self.ndim-1, self.length
+            for f, axis, length in self.func._as(op):
+                yield InsertAxis(f, self.length), axis, length
 
     def _simplified(self):
         if _equals_scalar_constant(self.length, 0):
@@ -1342,10 +1346,10 @@ class Transpose(Array):
     def _inflations(self):
         return tuple((self._invaxes[axis], types.frozendict((dofmap, Transpose(func, self._axes_for(dofmap.ndim, self._invaxes[axis]))) for dofmap, func in parts.items())) for axis, parts in self.func._inflations)
 
-    @cached_property
-    def _unaligned(self):
-        unaligned, where = unalign(self.func)
-        return unaligned, tuple(self._invaxes[i] for i in where)
+    def _as(self, op):
+        if op is insertaxis:
+            for f, axis, length in self.func._as(op):
+                yield Transpose(f, tuple(i-(i>axis) for i in self.axes if i != axis)), self._invaxes[axis], length
 
     @cached_property
     def _invaxes(self):
@@ -1805,10 +1809,13 @@ class Add(Array):
             for i, fi in enumerate(terms[:j]):
                 if self.dtype == bool and fi == fj:
                     return add(*terms[:j], *terms[j+1:])
+                for funci, axis, length in fi._as(insertaxis):
+                    for funcj, axis_, length_ in fj._as(insertaxis):
+                        if axis == axis_:
+                            fij = insertaxis(funci + funcj, axis, length)
+                            return add(*terms[:i], *terms[i+1:j], *terms[j+1:], fij)
                 diags = [sorted(axesi & axesj)[:2] for axesi in fi._diagonals for axesj in fj._diagonals if len(axesi & axesj) >= 2]
-                unaligned1, unaligned2, where = unalign(fi, fj)
                 fij = diagonalize(takediag(fi, *diags[0]) + takediag(fj, *diags[0]), *diags[0]) if diags \
-                    else align(unaligned1 + unaligned2, where, self.shape) if len(where) != self.ndim \
                     else fi._add(fj) or fj._add(fi)
                 if fij:
                     return add(*terms[:i], *terms[i+1:j], *terms[j+1:], fij)
@@ -2834,9 +2841,10 @@ class Zeros(Array):
     def __init__(self, shape, dtype):
         super().__init__(args=shape, shape=shape, dtype=dtype)
 
-    @cached_property
-    def _unaligned(self):
-        return Zeros((), self.dtype), ()
+    def _as(self, op):
+        if op is insertaxis:
+            for axis in range(self.ndim):
+                yield Zeros(self.shape[:axis] + self.shape[axis+1:], self.dtype), axis, self.shape[axis]
 
     def evalf(self, *shape):
         return numpy.zeros(shape, dtype=self.dtype)
@@ -2928,6 +2936,12 @@ class Inflate(Array):
         for axis, parts in self.func._inflations:
             inflations.append((axis, types.frozendict((dofmap, Inflate(func, self.dofmap, self.length)) for dofmap, func in parts.items())))
         return tuple(inflations)
+
+    def _as(self, op):
+        if op is insertaxis:
+            for f, axis, length in self.func._as(op):
+                if axis < self.ndim-1:
+                    yield Inflate(f, self.dofmap, self.length), axis, length
 
     def _simplified(self):
         for axis in range(self.dofmap.ndim):
@@ -3100,6 +3114,12 @@ class Diagonalize(Array):
         return tuple((axis, types.frozendict((dofmap, Diagonalize(func)) for dofmap, func in parts.items()))
                      for axis, parts in self.func._inflations
                      if axis < self.ndim-2)
+
+    def _as(self, op):
+        if op is insertaxis:
+            for f, axis, length in self.func._as(op):
+                if axis < self.ndim-2:
+                    yield Diagonalize(f), axis, length
 
     def _simplified(self):
         if self.shape[-1] == 1:
@@ -3447,10 +3467,11 @@ class Ravel(Array):
     def _loopsum(self, index):
         return Ravel(loop_sum(self.func, index))
 
-    @property
-    def _unaligned(self):
-        unaligned, where = unalign(self.func, naxes=self.ndim - 1)
-        return Ravel(unaligned), (*where, self.ndim - 1)
+    def _as(self, op):
+        if op is insertaxis:
+            for f, axis, length in self.func._as(op):
+                if axis < self.ndim-1:
+                    yield Ravel(f), axis, length
 
     @cached_property
     def _assparse(self):
