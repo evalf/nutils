@@ -98,6 +98,8 @@ def _equals_simplified(arg1: 'Array', arg2: 'Array'):
         return True
     if arg1.arguments != arg2.arguments:
         return False
+    if iszero(arg1 - arg2):
+        return True
     if arg1.isconstant: # implies arg2.isconstant
         return numpy.all(arg1.eval() == arg2.eval())
 
