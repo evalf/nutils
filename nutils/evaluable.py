@@ -2419,10 +2419,10 @@ class Equal(Pointwise):
         a1, a2 = self.args
         if a1 == a2:
             return ones(self.shape, bool)
-        if self.ndim == 2:
+        if self.ndim == 2 and _equals_simplified(self.shape[0], self.shape[1]):
             u1, w1 = unalign(a1)
             u2, w2 = unalign(a2)
-            if u1 == u2 and isinstance(u1, Range):
+            if u1.ndim == u2.ndim == 1 and w1 != w2 and _equals_simplified(u1, u2) and _equals_simplified(u1, Range(u1.shape[0])):
                 # NOTE: Once we introduce isunique we can relax the Range bound
                 return Diagonalize(ones(u1.shape, bool))
         return super()._simplified()
