@@ -2351,7 +2351,7 @@ class Equal(Pointwise):
         if self.ndim == 2:
             u1, w1 = unalign(a1)
             u2, w2 = unalign(a2)
-            if u1 == u2 and isinstance(u1, Range):
+            if u1.ndim == u2.ndim == 1 and u1 == u2 and w1 != w2 and isinstance(u1, Range):
                 # NOTE: Once we introduce isunique we can relax the Range bound
                 return Diagonalize(ones(u1.shape, bool))
         return super()._simplified()
