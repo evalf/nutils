@@ -887,9 +887,9 @@ class Array(Evaluable, metaclass=_ArrayMeta):
             shape[axis] = f'({shape[axis]})'
         for i, _ in self._inflations:
             shape[i] = f'~{shape[i]}'
-        for axes in self._diagonals:
-            for i in axes:
-                shape[i] = f'{shape[i]}/'
+        for f, axis, newaxis in self._as(diagonalize):
+            shape[axis] = f'{shape[axis]}/'
+            shape[newaxis] = f'{shape[newaxis]}/'
         return f'{dtype}:{",".join(shape)}'
 
     sum = sum
@@ -965,7 +965,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     def _as(self, op):
         return ()
 
-    _diagonals = ()
     _inflations = ()
 
     def _derivative(self, var, seen):
@@ -1191,10 +1190,6 @@ class InsertAxis(Array):
         self.length = length
         super().__init__(args=(func, length), shape=(*func.shape, length), dtype=func.dtype)
 
-    @property
-    def _diagonals(self):
-        return self.func._diagonals
-
     @cached_property
     def _inflations(self):
         return tuple((axis, types.frozendict((dofmap, InsertAxis(func, self.length)) for dofmap, func in parts.items())) for axis, parts in self.func._inflations)
@@ -1204,6 +1199,9 @@ class InsertAxis(Array):
             yield self.func, self.ndim-1, self.length
             for f, axis, length in self.func._as(op):
                 yield InsertAxis(f, self.length), axis, length
+        elif op is diagonalize:
+            for f, axis, newaxis in self.func._as(op):
+                yield InsertAxis(f, self.length), axis, newaxis
 
     def _simplified(self):
         if _equals_scalar_constant(self.length, 0):
@@ -1339,10 +1337,6 @@ class Transpose(Array):
         super().__init__(args=(func,), shape=tuple(func.shape[n] for n in axes), dtype=func.dtype)
 
     @cached_property
-    def _diagonals(self):
-        return tuple(frozenset(self._invaxes[i] for i in axes) for axes in self.func._diagonals)
-
-    @cached_property
     def _inflations(self):
         return tuple((self._invaxes[axis], types.frozendict((dofmap, Transpose(func, self._axes_for(dofmap.ndim, self._invaxes[axis]))) for dofmap, func in parts.items())) for axis, parts in self.func._inflations)
 
@@ -1350,6 +1344,10 @@ class Transpose(Array):
         if op is insertaxis:
             for f, axis, length in self.func._as(op):
                 yield Transpose(f, tuple(i-(i>axis) for i in self.axes if i != axis)), self._invaxes[axis], length
+        elif op is diagonalize:
+            for f, axis, newaxis in self.func._as(op):
+                axes = tuple(i-(i>newaxis) for i in self.axes if i != newaxis)
+                yield Transpose(f, axes), axes.index(axis), self.axes.index(newaxis)
 
     @cached_property
     def _invaxes(self):
@@ -1618,8 +1616,9 @@ class Multiply(Array):
                 return multiply(*factors[:j], *factors[j+1:])
             for i, parts in fj._inflations:
                 return util.sum(_inflate(multiply(f, *(_take(fi, dofmap, i) for fi in factors[:j] + factors[j+1:])), dofmap, self.shape[i], i) for dofmap, f in parts.items())
-            for axis1, axis2, *other in map(sorted, fj._diagonals):
-                return diagonalize(multiply(*(takediag(f, axis1, axis2) for f in factors)), axis1, axis2)
+            for func, axis, newaxis in fj._as(diagonalize):
+                axes = axis+(axis>=newaxis), newaxis
+                return diagonalize(multiply(func, *(takediag(f, *axes) for f in factors[:j] + factors[j+1:])), axis, newaxis)
             for i, fi in enumerate(factors[:j]):
                 if self.dtype == bool and fi == fj:
                     return multiply(*factors[:j], *factors[j+1:])
@@ -1814,9 +1813,12 @@ class Add(Array):
                         if axis == axis_:
                             fij = insertaxis(funci + funcj, axis, length)
                             return add(*terms[:i], *terms[i+1:j], *terms[j+1:], fij)
-                diags = [sorted(axesi & axesj)[:2] for axesi in fi._diagonals for axesj in fj._diagonals if len(axesi & axesj) >= 2]
-                fij = diagonalize(takediag(fi, *diags[0]) + takediag(fj, *diags[0]), *diags[0]) if diags \
-                    else fi._add(fj) or fj._add(fi)
+                for funci, *axes in fi._as(diagonalize):
+                    for funcj, *axes_ in fj._as(diagonalize):
+                        if axes == axes_:
+                            fij = diagonalize(funci + funcj, *axes)
+                            return add(*terms[:i], *terms[i+1:j], *terms[j+1:], fij)
+                fij = fi._add(fj) or fj._add(fi)
                 if fij:
                     return add(*terms[:i], *terms[i+1:j], *terms[j+1:], fij)
         # NOTE: While it is tempting to use the _inflations attribute to push
@@ -1865,7 +1867,7 @@ class Add(Array):
             return add(*indep) * astype(index.length, self.dtype) + loop_sum(add(*dep), index)
 
     def _multiply(self, other):
-        f_other = [f._multiply(other) or other._multiply(f) or (f._inflations or f._diagonals) and f * other for f in self._terms]
+        f_other = [f._multiply(other) or other._multiply(f) or (f._inflations or any(f._as(diagonalize))) and f * other for f in self._terms]
         if all(f_other):
             # NOTE: As this operation is the precise opposite of Multiply._add, there
             # appears to be a great risk of recursion. However, since both factors
@@ -2927,10 +2929,6 @@ class Inflate(Array):
         super().__init__(args=(func, dofmap, length), shape=(*func.shape[:func.ndim-dofmap.ndim], length), dtype=func.dtype)
 
     @cached_property
-    def _diagonals(self):
-        return tuple(axes for axes in self.func._diagonals if all(axis < self.ndim-1 for axis in axes))
-
-    @cached_property
     def _inflations(self):
         inflations = [(self.ndim-1, types.frozendict({self.dofmap: self.func}))]
         for axis, parts in self.func._inflations:
@@ -2942,6 +2940,10 @@ class Inflate(Array):
             for f, axis, length in self.func._as(op):
                 if axis < self.ndim-1:
                     yield Inflate(f, self.dofmap, self.length), axis, length
+        elif op is diagonalize:
+            for f, axis, newaxis in self.func._as(op):
+                if axis < self.ndim-1 and newaxis < self.ndim-1:
+                    yield Inflate(f, self.dofmap, self.length), axis, newaxis
 
     def _simplified(self):
         for axis in range(self.dofmap.ndim):
@@ -3099,16 +3101,6 @@ class Diagonalize(Array):
         self.func = func
         super().__init__(args=(func,), shape=(*func.shape, func.shape[-1]), dtype=func.dtype)
 
-    @cached_property
-    def _diagonals(self):
-        diagonals = [frozenset([self.ndim-2, self.ndim-1])]
-        for axes in self.func._diagonals:
-            if axes & diagonals[0]:
-                diagonals[0] |= axes
-            else:
-                diagonals.append(axes)
-        return tuple(diagonals)
-
     @property
     def _inflations(self):
         return tuple((axis, types.frozendict((dofmap, Diagonalize(func)) for dofmap, func in parts.items()))
@@ -3120,6 +3112,15 @@ class Diagonalize(Array):
             for f, axis, length in self.func._as(op):
                 if axis < self.ndim-2:
                     yield Diagonalize(f), axis, length
+        elif op is diagonalize:
+            yield self.func, self.ndim-2, self.ndim-1
+            for f, axis, newaxis in self.func._as(diagonalize):
+                assert f.ndim == self.ndim-2
+                if newaxis == self.ndim-2:
+                    yield self.func, axis, self.ndim-1
+                    yield self.func, axis, self.ndim-2
+                else:
+                    yield Diagonalize(f), axis, newaxis
 
     def _simplified(self):
         if self.shape[-1] == 1:
@@ -4885,8 +4886,8 @@ def takediag(arg, axis=-2, rmaxis=-1):
     arg = asarray(arg)
     axis = numeric.normdim(arg.ndim, axis)
     rmaxis = numeric.normdim(arg.ndim, rmaxis)
-    assert axis < rmaxis
-    return Transpose.from_end(_takediag(arg, axis, rmaxis), axis)
+    assert axis != rmaxis
+    return Transpose.from_end(_takediag(arg, axis, rmaxis), axis-(axis>=rmaxis))
 
 
 def _takediag(arg, axis1=-2, axis2=-1):
@@ -4914,8 +4915,7 @@ def diagonalize(arg, axis=-1, newaxis=-1):
     arg = asarray(arg)
     axis = numeric.normdim(arg.ndim, axis)
     newaxis = numeric.normdim(arg.ndim+1, newaxis)
-    assert axis < newaxis
-    return Transpose.from_end(Diagonalize(Transpose.to_end(arg, axis)), axis, newaxis)
+    return Transpose.from_end(Diagonalize(Transpose.to_end(arg, axis)), axis + (axis>=newaxis), newaxis)
 
 
 def sign(arg):

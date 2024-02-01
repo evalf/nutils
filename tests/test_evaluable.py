@@ -112,7 +112,7 @@ class check(TestCase):
         self.assertIn(self.actual, stats)
 
     def test_representations(self):
-        for op in [evaluable.insertaxis]:
+        for op in evaluable.insertaxis, evaluable.diagonalize:
             with self.subTest(op=op.__name__):
                 for f, *args in self.actual._as(op):
                     self.assertFunctionAlmostEqual(decimal=14, actual=op(f, *args), desired=self.desired)
