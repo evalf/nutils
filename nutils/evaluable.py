@@ -1609,22 +1609,35 @@ class Multiply(Array):
             else:
                 yield func
 
+    def _as(self, op):
+        func1, func2 = self.funcs
+        if op is insertaxis:
+            for f1, axis, length in func1._as(op):
+                for f2, axis_, length_ in func2._as(op):
+                    if axis == axis_:
+                        yield f1 * f2, axis, length
+        elif op is diagonalize:
+            for a, b in (func1, func2), (func2, func1):
+                for f, axis, newaxis in a._as(op):
+                    yield f * takediag(b, axis+(axis>=newaxis), newaxis), axis, newaxis
+
     def _simplified(self):
+        for op in insertaxis, diagonalize:
+            for args in self._as(op):
+                return op(*args)
+        func1, func2 = self.funcs
+        if func1._const_uniform == 1:
+            return func2
+        if func2._const_uniform == 1:
+            return func1
         factors = tuple(self._factors)
         for j, fj in enumerate(factors):
-            if fj._const_uniform == 1:
-                return multiply(*factors[:j], *factors[j+1:])
             for i, parts in fj._inflations:
                 return util.sum(_inflate(multiply(f, *(_take(fi, dofmap, i) for fi in factors[:j] + factors[j+1:])), dofmap, self.shape[i], i) for dofmap, f in parts.items())
-            for func, axis, newaxis in fj._as(diagonalize):
-                axes = axis+(axis>=newaxis), newaxis
-                return diagonalize(multiply(func, *(takediag(f, *axes) for f in factors[:j] + factors[j+1:])), axis, newaxis)
             for i, fi in enumerate(factors[:j]):
                 if self.dtype == bool and fi == fj:
                     return multiply(*factors[:j], *factors[j+1:])
-                unaligned1, unaligned2, where = unalign(fi, fj)
-                fij = align(unaligned1 * unaligned2, where, self.shape) if len(where) != self.ndim \
-                    else fi._multiply(fj) or fj._multiply(fi)
+                fij = fi._multiply(fj) or fj._multiply(fi)
                 if fij:
                     return multiply(*factors[:i], *factors[i+1:j], *factors[j+1:], fij)
 
@@ -5135,14 +5148,14 @@ def einsum(fmt, *args, **dims):
     performs a tensor product of an array and a vector:
 
     >>> einsum('A,i->Ai', a234, a5)
-    nutils.evaluable.Multiply<f:2,3,4,5>
+    nutils.evaluable.Multiply<f:(2),(3),(4),(5)>
 
     The format string may contain multiple variable length axes groups, but their
     lengths must be resolvable from left to right. In case this is not possible,
     lengths may be specified as keyword arguments.
 
     >>> einsum('AjB,i->AijB', a234, a5, B=1)
-    nutils.evaluable.Multiply<f:2,5,3,4>
+    nutils.evaluable.Multiply<f:(2),(5),(3),(4)>
     '''
 
     if not all(isinstance(arg, Array) for arg in args):
