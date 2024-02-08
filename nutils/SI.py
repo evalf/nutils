@@ -391,6 +391,13 @@ class Quantity(metaclass=Dimension):
             raise TypeError(f'incompatible arguments for {op.__name__}: ' + ', '.join(dim.__name__ for dim in dims))
         return dims[0].wrap(op(arg0, *args[1:], **kwargs))
 
+    @register('prod', 'product')
+    def __prod(op, a, axis=None, *args, **kwargs):
+        (dim, arg), = Quantity.__unpack(a)
+        axes = range(arg.ndim) if axis is None else axis if isinstance(axis, tuple) else (axis,)
+        n = functools.reduce(operator.mul, [arg.shape[axis] for axis in axes], 1)
+        return (dim**n).wrap(op(arg, axis, *args, **kwargs))
+
     @register('curvature')
     def __evaluate(op, *args, **kwargs):
         (dim0, arg0), = Quantity.__unpack(args[0])

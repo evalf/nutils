@@ -145,6 +145,11 @@ class Quantity(unittest.TestCase):
         self.assertTrue(numpy.all(numpy.sum(SI.units.kg * numpy.arange(6).reshape(2, 3), 0) == SI.units.kg * numpy.array([3, 5, 7])))
         self.assertTrue(numpy.all(numpy.sum(SI.units.kg * numpy.arange(6).reshape(2, 3), 1) == SI.units.kg * numpy.array([3, 12])))
 
+    def test_prod(self):
+        self.assertTrue(numpy.all(numpy.prod(SI.units.m * numpy.arange(1,7).reshape(2, 3), axis=0) == numpy.array([4, 10, 18]) * SI.units.m**2))
+        self.assertTrue(numpy.all(numpy.prod(SI.units.m * numpy.arange(1,7).reshape(2, 3), axis=1) == numpy.array([6, 120]) * SI.units.m**3))
+        self.assertTrue(numpy.all(numpy.prod(SI.units.m * numpy.arange(1,7).reshape(2, 3)) == 720 * SI.units.m**6))
+
     def test_mean(self):
         self.assertTrue(numpy.all(numpy.mean(SI.units.kg * numpy.arange(6).reshape(2, 3), 0) == SI.units.kg * numpy.array([1.5, 2.5, 3.5])))
         self.assertTrue(numpy.all(numpy.mean(SI.units.kg * numpy.arange(6).reshape(2, 3), 1) == SI.units.kg * numpy.array([1, 4])))
