@@ -353,7 +353,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
         :class:`Array`
         '''
 
-        return numpy.product(self, __axis)
+        return numpy.prod(self, __axis)
 
     def dot(self, __other: IntoArray, axes: Optional[Union[int, Sequence[int]]] = None) -> 'Array':
         '''Return the inner product of the arguments over the given axes, elementwise over the remanining axes.
@@ -2103,7 +2103,7 @@ def sum(__arg: IntoArray, axis: Optional[Union[int, Sequence[int]]] = None) -> A
     return summed
 
 
-@_use_instead('numpy.product')
+@_use_instead('numpy.prod')
 def product(__arg: IntoArray, axis: int) -> Array:
     '''Return the product of array elements over the given axes.
 
@@ -4256,6 +4256,7 @@ class __implementations__:
             summed = _Wrapper(evaluable.Sum, summed, shape=summed.shape[:-1], dtype=summed.dtype)
         return summed
 
+    @implements(numpy.prod)
     @implements(numpy.product)
     def product(arg: IntoArray, axis: int) -> Array:
         arg = Array.cast(arg)
