@@ -26,8 +26,9 @@ def mplfigure(name, /, **kwargs):
         :class:`matplotlib.figure.Figure` object.
     '''
 
-    import matplotlib.figure
-    import matplotlib.backends.backend_agg
+    with warnings.ignore(DeprecationWarning):
+        import matplotlib.figure
+        import matplotlib.backends.backend_agg
     fig = matplotlib.figure.Figure(**kwargs)
     with log.userfile(name, 'wb') as f:
         yield fig
