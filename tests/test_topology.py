@@ -966,6 +966,13 @@ class locate(TestCase):
         located = sample.eval(self.geom[1], scale=.123)
         self.assertAllAlmostEqual(located, target)
 
+    def test_integrate(self):
+        target = numpy.array([(.2, .3), (.1, .9), (0, 1), (.1, .3)])
+        weights = numpy.array([.1, .2, .3, .4])
+        sample = self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12, arguments=dict(scale=.123), weights=weights)
+        integrated = sample.integrate(self.geom, scale=.123)
+        self.assertAllAlmostEqual(integrated, weights @ target)
+
     def test_missing_argument(self):
         target = numpy.array([(.2, .3)])
         with self.assertRaises(Exception):
@@ -973,6 +980,8 @@ class locate(TestCase):
 
     @parametrize.enable_if(lambda etype, mode, **kwargs: etype == 'square' and mode != 'nonlinear')
     def test_detect_linear(self):
+        if os.environ.get('NUTILS_TENSORIAL'):
+            self.skipTest('linear detection not supported yet in tensorial mode')
         target = numpy.array([(.2, .3)])
         with self.assertLogs('nutils', level='DEBUG') as cm:
             self.domain.locate(self.geom, target, eps=1e-15, tol=1e-12, arguments=dict(scale=.123))
