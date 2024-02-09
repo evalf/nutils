@@ -785,6 +785,82 @@ class Topology:
         located : :class:`nutils.sample.Sample`
         '''
 
+        if ischeme is not None:
+            warnings.deprecation('the ischeme argument is deprecated and will be removed in future')
+        if scale is not None:
+            warnings.deprecation('the scale argument is deprecated and will be removed in future')
+        if max(tol, eps) <= 0:
+            raise ValueError('locate requires either tol or eps to be strictly positive')
+        coords = numpy.asarray(coords, dtype=float)
+        if geom.ndim == 0:
+            geom = geom[_]
+            coords = coords[..., _]
+        if not geom.shape == coords.shape[1:] == (self.ndims,):
+            raise ValueError('invalid geometry or point shape for {}D topology'.format(self.ndims))
+        if skip_missing and weights is not None:
+            raise ValueError('weights and skip_missing are mutually exclusive')
+        arguments = dict(arguments or ())
+        centroids = self.sample('_centroid', None).eval(geom, **arguments)
+        assert len(centroids) == len(self)
+        ielems = parallel.shempty(len(coords), dtype=int)
+        points = parallel.shempty((len(coords), len(geom)), dtype=float)
+        _ielem = evaluable.Argument('_locate_ielem', shape=(), dtype=int)
+        _point = evaluable.Argument('_locate_point', shape=(evaluable.constant(self.ndims),))
+        egeom = geom.lower(self._lower_args(_ielem, _point))
+        xJ = evaluable.Tuple((egeom, evaluable.derivative(egeom, _point))).simplified
+        with parallel.ctxrange('locating', len(coords)) as ipoints:
+            for ipoint in ipoints:
+                xt = coords[ipoint]  # target
+                dist = numpy.linalg.norm(centroids - xt, axis=1)
+                for ielem in numpy.argsort(dist) if maxdist is None \
+                        else sorted((dist < maxdist).nonzero()[0], key=dist.__getitem__):
+                    ref = self.references[ielem]
+                    arguments['_locate_ielem'] = ielem
+                    arguments['_locate_point'] = p = numpy.array(ref.centroid)
+                    ex = ep = numpy.inf
+                    iiter = 0
+                    while ex > tol and ep > eps:  # newton loop
+                        if iiter > maxiter > 0:
+                            break  # maximum number of iterations reached
+                        iiter += 1
+                        xp, Jp = xJ.eval(**arguments)
+                        dx = xt - xp
+                        ex0 = ex
+                        ex = numpy.linalg.norm(dx)
+                        if ex >= ex0:
+                            break  # newton is diverging
+                        try:
+                            dp = numpy.linalg.solve(Jp, dx)
+                        except numpy.linalg.LinAlgError:
+                            break  # jacobian is singular
+                        ep = numpy.linalg.norm(dp)
+                        p += dp  # NOTE: modifies arguments['_locate_point'] in place
+                    else:
+                        if ref.inside(p, max(eps, ep)):
+                            ielems[ipoint] = ielem
+                            points[ipoint] = p
+                            break
+                else:
+                    ielems[ipoint] = -1 # mark point as missing
+                    if not skip_missing:
+                        # rather than raising LocateError here, which
+                        # parallel.fork will reraise as a general Exception if
+                        # ipoint was assigned to a child process, we fast
+                        # forward through the remaining points to abandon the
+                        # loop and subsequently raise from the main process.
+                        for ipoint in ipoints:
+                            pass
+        if -1 not in ielems: # all points are found
+            return self._sample(ielems, points, weights)
+        elif skip_missing: # not all points are found and that's ok, we just leave those out
+            return self._sample(ielems[ielems != -1], points[ielems != -1])
+        else: # not all points are found and that's an error
+            raise LocateError(f'failed to locate point: {coords[ielems==-1][0]}')
+
+    def _lower_args(self, ielem, point):
+        raise NotImplementedError
+
+    def _sample(self, ielems, coords, weights=None):
         raise NotImplementedError
 
     @cached_property
@@ -985,8 +1061,11 @@ if environ.get('NUTILS_TENSORIAL', None) == 'test':  # pragma: nocover
         def indicator(self, subtopo: Union[str, Topology]) -> Topology:
             raise SkipTest('`{}` does not implement `Topology.indicator`'.format(type(self).__qualname__))
 
-        def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None, skip_missing=False) -> Sample:
-            raise SkipTest('`{}` does not implement `Topology.locate`'.format(type(self).__qualname__))
+        def _lower_args(self, ielem, point):
+            raise SkipTest('`{}` does not implement `Topology._lower_args`'.format(type(self).__qualname__))
+
+        def _sample(self, ielems, coords, weights=None):
+            raise SkipTest('`{}` does not implement `Topology._sample`'.format(type(self).__qualname__))
 
 else:
     _TensorialTopology = Topology
@@ -1240,6 +1319,23 @@ class _Mul(_TensorialTopology):
 
     def sample(self, ischeme: str, degree: int) -> Sample:
         return self.topo1.sample(ischeme, degree) * self.topo2.sample(ischeme, degree)
+
+    def _lower_args(self, ielem, point):
+        ielem1, ielem2 = evaluable.divmod(ielem, len(self.topo2))
+        largs1 = self.topo1._lower_args(ielem1, point[:self.topo1.ndims])
+        largs2 = self.topo2._lower_args(ielem2, point[self.topo1.ndims:])
+        return largs1 | largs2
+
+    def _sample(self, ielems, coords, weights=None):
+        ielems1, ielems2 = divmod(ielems, len(self.topo2))
+        sample1 = self.topo1._sample(ielems1, coords[...,:self.topo1.ndims], weights)
+        sample2 = self.topo2._sample(ielems2, coords[...,self.topo1.ndims:])
+        # NOTE: zip creates a sample with ndims set equal to that of the first
+        # argument, assuming (without verifying) that all samples are of the
+        # same dimension. Here this assumption is incorrect, as ndims should be
+        # the sum of the two samples, but since zipped samples do not support
+        # tri and hull the mistake is without consequences.
+        return Sample.zip(sample1, sample2)
 
 
 class _Take(_TensorialTopology):
@@ -1522,80 +1618,6 @@ class TransformChainsTopology(Topology):
         values[numpy.fromiter(map(self.transforms.index, subtopo.transforms), dtype=int)] = 1
         return function.get(values, 0, self.f_index)
 
-    @log.withcontext
-    def locate(self, geom, coords, *, tol=0, eps=0, maxiter=0, arguments=None, weights=None, maxdist=None, ischeme=None, scale=None, skip_missing=False):
-        if ischeme is not None:
-            warnings.deprecation('the ischeme argument is deprecated and will be removed in future')
-        if scale is not None:
-            warnings.deprecation('the scale argument is deprecated and will be removed in future')
-        if max(tol, eps) <= 0:
-            raise ValueError('locate requires either tol or eps to be strictly positive')
-        coords = numpy.asarray(coords, dtype=float)
-        if geom.ndim == 0:
-            geom = geom[_]
-            coords = coords[..., _]
-        if not geom.shape == coords.shape[1:] == (self.ndims,):
-            raise ValueError('invalid geometry or point shape for {}D topology'.format(self.ndims))
-        if skip_missing and weights is not None:
-            raise ValueError('weights and skip_missing are mutually exclusive')
-        arguments = dict(arguments or ())
-        centroids = self.sample('_centroid', None).eval(geom, **arguments)
-        assert len(centroids) == len(self)
-        ielems = parallel.shempty(len(coords), dtype=int)
-        points = parallel.shempty((len(coords), len(geom)), dtype=float)
-        _ielem = evaluable.Argument('_locate_ielem', shape=(), dtype=int)
-        _point = evaluable.Argument('_locate_point', shape=(evaluable.constant(self.ndims),))
-        egeom = geom.lower(function.LowerArgs.for_space(self.space, (self.transforms, self.opposites), _ielem, _point))
-        xJ = evaluable.Tuple((egeom, evaluable.derivative(egeom, _point))).simplified
-        with parallel.ctxrange('locating', len(coords)) as ipoints:
-            for ipoint in ipoints:
-                xt = coords[ipoint]  # target
-                dist = numpy.linalg.norm(centroids - xt, axis=1)
-                for ielem in numpy.argsort(dist) if maxdist is None \
-                        else sorted((dist < maxdist).nonzero()[0], key=dist.__getitem__):
-                    ref = self.references[ielem]
-                    arguments['_locate_ielem'] = ielem
-                    arguments['_locate_point'] = p = numpy.array(ref.centroid)
-                    ex = ep = numpy.inf
-                    iiter = 0
-                    while ex > tol and ep > eps:  # newton loop
-                        if iiter > maxiter > 0:
-                            break  # maximum number of iterations reached
-                        iiter += 1
-                        xp, Jp = xJ.eval(**arguments)
-                        dx = xt - xp
-                        ex0 = ex
-                        ex = numpy.linalg.norm(dx)
-                        if ex >= ex0:
-                            break  # newton is diverging
-                        try:
-                            dp = numpy.linalg.solve(Jp, dx)
-                        except numpy.linalg.LinAlgError:
-                            break  # jacobian is singular
-                        ep = numpy.linalg.norm(dp)
-                        p += dp  # NOTE: modifies arguments['_locate_point'] in place
-                    else:
-                        if ref.inside(p, max(eps, ep)):
-                            ielems[ipoint] = ielem
-                            points[ipoint] = p
-                            break
-                else:
-                    ielems[ipoint] = -1 # mark point as missing
-                    if not skip_missing:
-                        # rather than raising LocateError here, which
-                        # parallel.fork will reraise as a general Exception if
-                        # ipoint was assigned to a child process, we fast
-                        # forward through the remaining points to abandon the
-                        # loop and subsequently raise from the main process.
-                        for ipoint in ipoints:
-                            pass
-        if -1 not in ielems: # all points are found
-            return self._sample(ielems, points, weights)
-        elif skip_missing: # not all points are found and that's ok, we just leave those out
-            return self._sample(ielems[ielems != -1], points[ielems != -1])
-        else: # not all points are found and that's an error
-            raise LocateError(f'failed to locate point: {coords[ielems==-1][0]}')
-
     def _sample(self, ielems, coords, weights=None):
         index = numpy.argsort(ielems, kind='stable')
         sorted_ielems = ielems[index]
@@ -1718,6 +1740,9 @@ class TransformChainsTopology(Topology):
         return self._basis_c0_structured('bernstein', degree)
 
     basis_std = basis_bernstein
+
+    def _lower_args(self, ielem, point):
+        return function.LowerArgs.for_space(self.space, (self.transforms, self.opposites), ielem, point)
 
 
 class LocateError(Exception):

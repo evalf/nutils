@@ -280,7 +280,7 @@ class Zip(TestCase):
         self.assertAlmostEqual(self.stitched.integrate(function.J(self.geomX)), 5/9)  # NOTE: != norm(slope)
 
     def test_nested(self):
-        with self.assertRaisesRegex(ValueError, 'Nested integrals or samples in the same space: X, Y.'):
+        with self.assertRaisesRegex(ValueError, 'Nested integrals or samples in the same space: X.*, Y.'):
             self.stitched.integral(self.stitched.integral(1)).eval()
         topoZ, geomZ = mesh.line(2, space='Z')
         inner = self.stitched.integral((geomZ - self.geomX) * function.J(self.geomY))
