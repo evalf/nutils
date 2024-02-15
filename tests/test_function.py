@@ -728,7 +728,7 @@ class piecewise(TestCase):
 
     def test_deriv(self):
         g_ = self.domain.sample('uniform', 4).eval(function.grad(self.f, self.geom))  # x=.125, .375, .625, .875
-        assert numpy.equal(g_, [[0], [numpy.cos(.375)], [numpy.cos(.625)], [2*.875]]).all()
+        self.assertAllAlmostEqual(g_, [[0], [numpy.cos(.375)], [numpy.cos(.625)], [2*.875]], places=15)
 
 
 piecewise(partition=False)
