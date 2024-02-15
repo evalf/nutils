@@ -1641,12 +1641,19 @@ class Multiply(Array):
                 for a1, a2 in a._as(op):
                     yield a1 * b, a2 * b
 
-    def _simplified(self):
+    def _helper(self):
         if simple := self._as_any(insertaxis, diagonalize, _inflate):
             return simple
         for a, b in self._as(add):
-            if (simplea := a._as_any(insertaxis, diagonalize, _inflate)) and (simpleb := b._as_any(insertaxis, diagonalize, _inflate)):
+            # By promoting add we transform (x + y) * z to x * z + y * z. If
+            # both terms can be made sparse (or additions of sparse) we keep
+            # this transformation.
+            if (simplea := a._helper()) and (simpleb := b._helper()):
                 return simplea + simpleb
+
+    def _simplified(self):
+        if simple := self._helper():
+            return simple
         func1, func2 = self.funcs
         if func1._const_uniform == 1:
             return func2
