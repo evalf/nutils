@@ -5,6 +5,7 @@ import treelog
 import subprocess
 import abc
 import html
+import re
 
 Metadata = TypeVar('Metadata')
 GraphvizColorCallback = Callable[['Node'], Optional[str]]
@@ -68,7 +69,32 @@ class Node(Generic[Metadata], metaclass=abc.ABCMeta):
                 for i, line in enumerate(src.split('\n'), 1):
                     print('{:04d}  {}'.format(i, line))
                 treelog.warning('graphviz failed for error code', status.returncode)
-            img.write(status.stdout)
+            graph = status.stdout
+            if image_type == 'svg':
+                graph = re.sub(b'<svg (.*?)>', insert_clickHandler, graph, count=1, flags=re.DOTALL)
+            img.write(graph)
+
+insert_clickHandler = rb'''<svg \1 onload="document.addEventListener('click', clickHandler)">
+<style>
+.highlight path { stroke: orange; stroke-width: 2; }
+.highlight polygon { stroke: orange; fill: orange; }
+.highlight text { fill: white; }
+</style>
+<script>
+<![CDATA[
+function clickHandler(event) {
+    const g = event.target.closest("g");
+    if (g.classList.contains("edge")) {
+        g.classList.toggle("highlight"); }
+    else if (g.classList.contains("node")) {
+        const title = g.firstElementChild.textContent;
+        const pattern = new RegExp('^' + title + '->|->' + title + '$|' + title + '--|--' + title + '$')
+        const isnew = g.classList.toggle("highlight");
+        for (const edge of document.getElementsByClassName('edge')) {
+            if (pattern.test(edge.firstElementChild.textContent)) {
+                edge.classList.toggle("highlight", isnew); } } } }
+]]>
+</script>'''
 
 
 class RegularNode(Node[Metadata]):
