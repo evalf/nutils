@@ -68,7 +68,33 @@ class Node(Generic[Metadata], metaclass=abc.ABCMeta):
                 for i, line in enumerate(src.split('\n'), 1):
                     print('{:04d}  {}'.format(i, line))
                 treelog.warning('graphviz failed for error code', status.returncode)
-            img.write(status.stdout)
+            graph = status.stdout
+            if image_type == 'svg':
+                i = graph.rindex(b'</svg>')
+                graph = graph[:i] + clickHandler + graph[i:]
+            img.write(graph)
+
+clickHandler = b'''
+<style>
+g.edge, g.node { cursor: pointer; }
+.highlight path { stroke: orange; stroke-width: 2; }
+.highlight polygon:first-of-type { fill: orange; }
+.highlight polygon { stroke: orange; }
+.highlight text { fill: white; }
+</style>
+<script>
+document.addEventListener("click", function (event) {
+    const g = event.target.closest("g");
+    if (g.classList.contains("edge")) {
+        g.classList.toggle("highlight"); }
+    else if (g.classList.contains("node")) {
+        const index = g.firstElementChild.textContent;
+        const pattern = new RegExp("(^|[^0-9])" + index + "($|[^0-9])");
+        const isnew = g.classList.toggle("highlight");
+        for (const edge of document.getElementsByClassName("edge")) {
+            if (pattern.test(edge.firstElementChild.textContent)) {
+                edge.classList.toggle("highlight", isnew); } } } });
+</script>'''
 
 
 class RegularNode(Node[Metadata]):
