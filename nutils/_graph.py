@@ -72,6 +72,7 @@ class Node(Generic[Metadata], metaclass=abc.ABCMeta):
             graph = status.stdout
             if image_type == 'svg':
                 graph = re.sub(b'<svg (.*?)>', insert_clickHandler, graph, count=1, flags=re.DOTALL)
+                graph = re.sub(b'(width|height)="(\d+)pt"', lambda match: b'%s="%dpt"' % (match.group(1), (int(match.group(2))*2)//3), graph, count=2)
             img.write(graph)
 
 insert_clickHandler = rb'''<svg \1 onload="document.addEventListener('click', clickHandler)">
