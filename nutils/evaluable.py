@@ -564,6 +564,27 @@ class Tuple(Evaluable):
 # The main evaluable. Closely mimics a numpy array.
 
 
+def insertaxis(arg, n, length):
+    return Transpose.from_end(InsertAxis(arg, length), n)
+
+
+def diagonalize(arg, axis=-1, newaxis=-1):
+    arg = asarray(arg)
+    axis = numeric.normdim(arg.ndim, axis)
+    newaxis = numeric.normdim(arg.ndim+1, newaxis)
+    return Transpose.from_end(Diagonalize(Transpose.to_end(arg, axis)), axis + (axis>=newaxis), newaxis)
+
+
+def _inflate(arg: 'Array', dofmap: 'Array', length: 'Array', axis: int):
+    assert isinstance(arg, Array), f'arg={arg!r}'
+    assert isinstance(dofmap, Array) and dofmap.dtype == int, f'dofmap={dofmap!r}'
+    assert _isindex(length), f'length={length!r}'
+    assert isinstance(axis, int), f'axis={axis!r}'
+    axis = numeric.normdim(arg.ndim+1-dofmap.ndim, axis)
+    assert equalshape(dofmap.shape, arg.shape[axis:axis+dofmap.ndim])
+    return Transpose.from_end(Inflate(Transpose.to_end(arg, *range(axis, axis+dofmap.ndim)), dofmap, length), axis)
+
+
 def add(arg0, *args):
     for arg1 in args:
         arg0 = Add(types.frozenmultiset(_numpy_align(arg0, arg1)))
@@ -858,7 +879,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
         except AttributeError:
             if self.ndim or self.dtype not in (int, bool) or not self.isconstant:
                 raise TypeError('cannot convert {!r} to int'.format(self))
-            index = self.__index = int(self.simplified.eval())
+            index = self.__index = int(self.eval())
         return index
 
     T = property(lambda self: transpose(self))
@@ -1184,6 +1205,49 @@ class Constant(Array):
             return self.dtype(self.value[()])
 
 
+class as_dispatch:
+    def __init__(self, f):
+        self.handlers = {}
+    def __call__(self, *ops):
+        def register(f):
+            for op in ops:
+                self.handlers[op] = f
+            return self
+        return register
+    def __set_name__(self, owner, name):
+        self.attrname = name
+    def __get__(self, instance, owner):
+        attrs = instance.__dict__
+        del instance # make sure we do not create a cyclic reference
+        try:
+            val = attrs[self.attrname]
+        except KeyError:
+            fake_instance = object.__new__(owner)
+            fake_instance.__dict__.update(attrs)
+            cache = {op: CachedGenerator(gen(fake_instance, op)) for op, gen in self.handlers.items()}
+            val = attrs[self.attrname] = Getter(cache, ())
+        return val
+
+
+class Getter:
+    def __init__(self, mapping, default):
+        self.mapping = mapping
+        self.default = default
+    def __call__(self, key):
+        return self.mapping.get(key, self.default)
+
+
+class CachedGenerator:
+    def __init__(self, gen):
+        self.gen = gen
+        self.items = []
+    def __iter__(self):
+        yield from self.items
+        for item in self.gen:
+            self.items.append(item)
+            yield item
+
+
 class InsertAxis(Array):
 
     def __init__(self, func: Array, length: Array):
@@ -1193,20 +1257,26 @@ class InsertAxis(Array):
         self.length = length
         super().__init__(args=(func, length), shape=(*func.shape, length), dtype=func.dtype)
 
+    @as_dispatch
     def _as(self, op):
-        if op is insertaxis:
-            yield self.func, self.ndim-1, self.length
-            for f, axis, length in self.func._as(op):
-                yield InsertAxis(f, self.length), axis, length
-        elif op is diagonalize:
-            for f, axis, newaxis in self.func._as(op):
-                yield InsertAxis(f, self.length), axis, newaxis
-        elif op is _inflate:
-            for f, dofmap, length, axis in self.func._as(op):
-                yield InsertAxis(f, self.length), dofmap, length, axis
-        elif op is add:
-            for a, b in self.func._as(op):
-                yield InsertAxis(a, self.length), InsertAxis(b, self.length)
+        ...
+    @_as(insertaxis)
+    def _as(self, op):
+        yield self.func, self.ndim-1, self.length
+        for f, axis, length in self.func._as(op):
+            yield InsertAxis(f, self.length), axis, length
+    @_as(diagonalize)
+    def _as(self, op):
+        for f, axis, newaxis in self.func._as(op):
+            yield InsertAxis(f, self.length), axis, newaxis
+    @_as(_inflate)
+    def _as(self, op):
+        for f, dofmap, length, axis in self.func._as(op):
+            yield InsertAxis(f, self.length), dofmap, length, axis
+    @_as(add)
+    def _as(self, op):
+        for a, b in self.func._as(op):
+            yield InsertAxis(a, self.length), InsertAxis(b, self.length)
 
     def _simplified(self):
         if _equals_scalar_constant(self.length, 0):
@@ -1341,24 +1411,29 @@ class Transpose(Array):
         self.axes = axes
         super().__init__(args=(func,), shape=tuple(func.shape[n] for n in axes), dtype=func.dtype)
 
+    @as_dispatch
     def _as(self, op):
-        if op is insertaxis:
-            for f, axis, length in self.func._as(op):
-                yield Transpose(f, tuple(i-(i>axis) for i in self.axes if i != axis)), self._invaxes[axis], length
-        elif op is diagonalize:
-            for f, axis, newaxis in self.func._as(op):
-                axes = tuple(i-(i>newaxis) for i in self.axes if i != newaxis)
-                yield Transpose(f, axes), axes.index(axis), self.axes.index(newaxis)
-        elif op is _inflate:
-            for f, dofmap, length, axis in self.func._as(op):
-                axes = [i if i <= axis else i + (dofmap.ndim-1) for i in self.axes]
-                newaxis = self._invaxes[axis]
-                assert axes[newaxis] == axis
-                axes[newaxis:newaxis+1] = range(axis, axis+dofmap.ndim)
-                yield Transpose(f, tuple(axes)), dofmap, length, newaxis
-        elif op is add:
-            for a, b in self.func._as(op):
-                yield Transpose(a, self.axes), Transpose(b, self.axes)
+        ...
+    @_as(insertaxis)
+    def _as(self, op):
+        for f, axis, length in self.func._as(op):
+            yield Transpose(f, tuple(i-(i>axis) for i in self.axes if i != axis)), self.axes.index(axis), length
+    @_as(diagonalize)
+    def _as(self, op):
+        for f, axis, newaxis in self.func._as(op):
+            axes = tuple(i-(i>newaxis) for i in self.axes if i != newaxis)
+            yield Transpose(f, axes), axes.index(axis), self.axes.index(newaxis)
+    @_as(_inflate)
+    def _as(self, op):
+        for f, dofmap, length, axis in self.func._as(op):
+            axes = [i if i <= axis else i + (dofmap.ndim-1) for i in self.axes]
+            newaxis = self.axes.index(axis)
+            axes[newaxis:newaxis+1] = range(axis, axis+dofmap.ndim)
+            yield Transpose(f, tuple(axes)), dofmap, length, newaxis
+    @_as(add)
+    def _as(self, op):
+        for a, b in self.func._as(op):
+            yield Transpose(a, self.axes), Transpose(b, self.axes)
 
     @cached_property
     def _invaxes(self):
@@ -1620,40 +1695,49 @@ class Multiply(Array):
             else:
                 yield func
 
+    @as_dispatch
+    def _as(self, op):
+        ...
+    @_as(insertaxis)
     def _as(self, op):
         func1, func2 = self.funcs
-        if op is insertaxis:
-            for f1, axis, length in func1._as(op):
-                for f2, axis_, length_ in func2._as(op):
-                    if axis == axis_:
-                        assert _equals_simplified(length, length_)
-                        yield f1 * f2, axis, length
-        elif op is diagonalize:
-            for a, b in (func1, func2), (func2, func1):
-                for f, axis, newaxis in a._as(op):
-                    yield f * takediag(b, axis+(axis>=newaxis), newaxis), axis, newaxis
-        elif op is _inflate:
-            for a, b in (func1, func2), (func2, func1):
-                for f, dofmap, length, axis in a._as(op):
-                    yield f * _take(b, dofmap, axis), dofmap, length, axis
-        elif op is add:
-            for a, b in (func1, func2), (func2, func1):
-                for a1, a2 in a._as(op):
-                    yield a1 * b, a2 * b
-
-    def _helper(self):
-        if simple := self._as_any(insertaxis, diagonalize, _inflate):
-            return simple
-        for a, b in self._as(add):
-            # By promoting add we transform (x + y) * z to x * z + y * z. If
-            # both terms can be made sparse (or additions of sparse) we keep
-            # this transformation.
-            if (simplea := a._helper()) and (simpleb := b._helper()):
-                return simplea + simpleb
+        for f1, axis, length in func1._as(op):
+            for f2, axis_, length_ in func2._as(op):
+                if axis == axis_:
+                    assert _equals_simplified(length, length_)
+                    yield f1 * f2, axis, length
+    @_as(diagonalize)
+    def _as(self, op):
+        func1, func2 = self.funcs
+        for a, b in (func1, func2), (func2, func1):
+            for f, axis, newaxis in a._as(op):
+                yield f * takediag(b, axis+(axis>=newaxis), newaxis), axis, newaxis
+    @_as(_inflate)
+    def _as(self, op):
+        func1, func2 = self.funcs
+        for a, b in (func1, func2), (func2, func1):
+            for f, dofmap, length, axis in a._as(op):
+                yield f * _take(b, dofmap, axis), dofmap, length, axis
+    @_as(add)
+    def _as(self, op):
+        func1, func2 = self.funcs
+        for a, b in (func1, func2), (func2, func1):
+            for a1, a2 in a._as(op):
+                yield a1 * b, a2 * b
 
     def _simplified(self):
-        if simple := self._helper():
-            return simple
+        pool = [self]
+        terms = []
+        while pool:
+            term = pool.pop()
+            if simple := term._as_any(diagonalize, _inflate, insertaxis):
+                terms.append(simple)
+            elif ab := next(iter(term._as(add)), None): # greedy
+                pool.extend(ab)
+            else:
+                break # not all terms are sparse
+        else:
+            return add(*terms)
         func1, func2 = self.funcs
         if func1._const_uniform == 1:
             return func2
@@ -1819,29 +1903,43 @@ class Add(Array):
             else:
                 yield func
 
+    @as_dispatch
+    def _as(self, op):
+        ...
+    @_as(insertaxis)
     def _as(self, op):
         func1, func2 = self.funcs
-        if op is insertaxis:
-            for f1, axis, length in func1._as(op):
-                for f2, axis_, length_ in func2._as(op):
-                    if axis == axis_:
-                        yield f1 + f2, axis, length
-        elif op is diagonalize:
-            for f1, axis, newaxis in func1._as(op):
-                for f2, axis_, newaxis_ in func2._as(op):
-                    if axis == axis_ and newaxis == newaxis_:
-                        yield f1 + f2, axis, newaxis
-        elif op is _inflate:
-            for f1, dofmap, length, axis in func1._as(op):
-                for f2, dofmap_, length_, axis_ in func2._as(op):
-                    if axis == axis_ and dofmap == dofmap_:
-                        yield f1 + f2, dofmap, length, axis
-        elif op is add:
-            yield func1, func2
-            for a, b in (func1, func2), (func2, func1):
-                for a1, a2 in a._as(op):
-                    yield a1, a2 + b
-                    yield a2, a1 + b
+        for f1, axis, length in func1._as(op):
+            for f2, axis_, length_ in func2._as(op):
+                if axis == axis_:
+                    yield f1 + f2, axis, length
+    @_as(diagonalize)
+    def _as(self, op):
+        func1, func2 = self.funcs
+        for f1, axis, newaxis in func1._as(op):
+            for f2, axis_, newaxis_ in func2._as(op):
+                if axis == axis_ and newaxis == newaxis_:
+                    yield f1 + f2, axis, newaxis
+    @_as(_inflate)
+    def _as(self, op):
+        func1, func2 = self.funcs
+        for f1, dofmap, length, axis in func1._as(op):
+            for f2, dofmap_, length_, axis_ in func2._as(op):
+                if axis == axis_ and dofmap == dofmap_:
+                    yield f1 + f2, dofmap, length, axis
+    @_as(add)
+    def _as(self, op):
+        func1, func2 = self.funcs
+        yield func1, func2
+        seen = set()
+        for a, b in (func1, func2), (func2, func1):
+            for a1, a2 in a._as(op):
+                assert a1 not in seen
+                seen.add(a1)
+                yield a1, a2 + b
+                assert a2 not in seen
+                seen.add(a2)
+                yield a2, a1 + b
 
     def _simplified(self):
         if simple := self._as_any(insertaxis, diagonalize):
@@ -2059,22 +2157,28 @@ class Take(Array):
         self.indices = indices
         super().__init__(args=(func, indices), shape=func.shape[:-1]+indices.shape, dtype=func.dtype)
 
+    @as_dispatch
     def _as(self, op):
-        if op is insertaxis:
-            for f, axis, length in self.func._as(op):
-                if axis < f.ndim: # TODO expand
-                    yield Take(f, self.indices), axis, length
-        elif op is diagonalize:
-            for f, axis, newaxis in self.func._as(op):
-                if axis < f.ndim-2 and newaxis < f.ndim-1:
-                    yield Take(f, self.indices), axis, newaxis
-        elif op is _inflate:
-            for f, dofmap, length, axis in self.func._as(op):
-                if axis + dofmap.ndim < f.ndim:
-                    yield Take(f, self.indices), dofmap, length, axis
-        elif op is add:
-            for a, b in self.func._as(op):
-                yield Take(a, self.indices), Take(b, self.indices)
+        ...
+    @_as(insertaxis)
+    def _as(self, op):
+        for f, axis, length in self.func._as(op):
+            if axis < f.ndim: # TODO expand
+                yield Take(f, self.indices), axis, length
+    @_as(diagonalize)
+    def _as(self, op):
+        for f, axis, newaxis in self.func._as(op):
+            if axis < f.ndim-2 and newaxis < f.ndim-1:
+                yield Take(f, self.indices), axis, newaxis
+    @_as(_inflate)
+    def _as(self, op):
+        for f, dofmap, length, axis in self.func._as(op):
+            if axis + dofmap.ndim < f.ndim:
+                yield Take(f, self.indices), dofmap, length, axis
+    @_as(add)
+    def _as(self, op):
+        for a, b in self.func._as(op):
+            yield Take(a, self.indices), Take(b, self.indices)
 
     def _simplified(self):
         if simple := self._as_any(insertaxis, diagonalize, _inflate, add):
@@ -2590,14 +2694,19 @@ class Cast(Pointwise):
     def evalf(self, arg):
         return numpy.array(arg, dtype=self.dtype)
 
+    @as_dispatch
+    def _as(self, op):
+        ...
+    @_as(insertaxis, diagonalize, _inflate)
     def _as(self, op):
         arg, = self.args
-        if op in (insertaxis, diagonalize, _inflate):
-            for f, *args in arg._as(op):
-                yield self._newargs(f), *args
-        elif op is add:
-            for a, b in arg._as(op):
-                yield self._newargs(a), self._newargs(b)
+        for f, *args in arg._as(op):
+            yield self._newargs(f), *args
+    @_as(add)
+    def _as(self, op):
+        arg, = self.args
+        for a, b in arg._as(op):
+            yield self._newargs(a), self._newargs(b)
 
     def _simplified(self):
         arg, = self.args
@@ -2882,10 +2991,13 @@ class Zeros(Array):
     def __init__(self, shape, dtype):
         super().__init__(args=shape, shape=shape, dtype=dtype)
 
+    @as_dispatch
     def _as(self, op):
-        if op is insertaxis:
-            for axis in range(self.ndim):
-                yield Zeros(self.shape[:axis] + self.shape[axis+1:], self.dtype), axis, self.shape[axis]
+        ...
+    @_as(insertaxis)
+    def _as(self, op):
+        for axis in range(self.ndim):
+            yield Zeros(self.shape[:axis] + self.shape[axis+1:], self.dtype), axis, self.shape[axis]
 
     def evalf(self, *shape):
         return numpy.zeros(shape, dtype=self.dtype)
@@ -2967,23 +3079,29 @@ class Inflate(Array):
         self.warn = not dofmap.isconstant
         super().__init__(args=(func, dofmap, length), shape=(*func.shape[:func.ndim-dofmap.ndim], length), dtype=func.dtype)
 
+    @as_dispatch
     def _as(self, op):
-        if op is insertaxis:
-            for f, axis, length in self.func._as(op):
-                if axis < self.ndim-1:
-                    yield Inflate(f, self.dofmap, self.length), axis, length
-        elif op is diagonalize:
-            for f, axis, newaxis in self.func._as(op):
-                if axis < self.ndim-1 and newaxis < self.ndim-1:
-                    yield Inflate(f, self.dofmap, self.length), axis, newaxis
-        elif op is _inflate:
-            yield self.func, self.dofmap, self.length, self.ndim-1
-            for f, dofmap, length, axis in self.func._as(op):
-                if axis + dofmap.ndim < f.ndim:
-                    yield Inflate(f, self.dofmap, self.length), dofmap, length, axis
-        elif op is add:
-            for a, b in self.func._as(op):
-                yield Inflate(a, self.dofmap, self.length), Inflate(b, self.dofmap, self.length)
+        ...
+    @_as(insertaxis)
+    def _as(self, op):
+        for f, axis, length in self.func._as(op):
+            if axis < self.ndim-1:
+                yield Inflate(f, self.dofmap, self.length), axis, length
+    @_as(diagonalize)
+    def _as(self, op):
+        for f, axis, newaxis in self.func._as(op):
+            if axis < self.ndim-1 and newaxis < self.ndim-1:
+                yield Inflate(f, self.dofmap, self.length), axis, newaxis
+    @_as(_inflate)
+    def _as(self, op):
+        yield self.func, self.dofmap, self.length, self.ndim-1
+        for f, dofmap, length, axis in self.func._as(op):
+            if axis + dofmap.ndim < f.ndim:
+                yield Inflate(f, self.dofmap, self.length), dofmap, length, axis
+    @_as(add)
+    def _as(self, op):
+        for a, b in self.func._as(op):
+            yield Inflate(a, self.dofmap, self.length), Inflate(b, self.dofmap, self.length)
 
     def _simplified(self):
         for axis in range(self.dofmap.ndim):
@@ -3141,27 +3259,33 @@ class Diagonalize(Array):
         self.func = func
         super().__init__(args=(func,), shape=(*func.shape, func.shape[-1]), dtype=func.dtype)
 
+    @as_dispatch
     def _as(self, op):
-        if op is insertaxis:
-            for f, axis, length in self.func._as(op):
-                if axis < self.ndim-2:
-                    yield Diagonalize(f), axis, length
-        elif op is diagonalize:
-            yield self.func, self.ndim-2, self.ndim-1
-            for f, axis, newaxis in self.func._as(diagonalize):
-                assert f.ndim == self.ndim-2
-                if newaxis == self.ndim-2:
-                    yield self.func, axis, self.ndim-1
-                    yield self.func, axis, self.ndim-2
-                else:
-                    yield Diagonalize(f), axis, newaxis
-        elif op is _inflate:
-            for f, dofmap, length, axis in self.func._as(op):
-                if axis + dofmap.ndim < f.ndim:
-                    yield Diagonalize(f), dofmap, length, axis
-        elif op is add:
-            for a, b in self.func._as(op):
-                yield Diagonalize(a), Diagonalize(b)
+        ...
+    @_as(insertaxis)
+    def _as(self, op):
+        for f, axis, length in self.func._as(op):
+            if axis < self.ndim-2:
+                yield Diagonalize(f), axis, length
+    @_as(diagonalize)
+    def _as(self, op):
+        yield self.func, self.ndim-2, self.ndim-1
+        for f, axis, newaxis in self.func._as(diagonalize):
+            assert f.ndim == self.ndim-2
+            if newaxis == self.ndim-2:
+                yield self.func, axis, self.ndim-1
+                yield self.func, axis, self.ndim-2
+            else:
+                yield Diagonalize(f), axis, newaxis
+    @_as(_inflate)
+    def _as(self, op):
+        for f, dofmap, length, axis in self.func._as(op):
+            if axis + dofmap.ndim < f.ndim:
+                yield Diagonalize(f), dofmap, length, axis
+    @_as(add)
+    def _as(self, op):
+        for a, b in self.func._as(op):
+            yield Diagonalize(a), Diagonalize(b)
 
     def _simplified(self):
         if self.shape[-1] == 1:
@@ -3417,32 +3541,38 @@ class Ravel(Array):
         self.func = func
         super().__init__(args=(func,), shape=(*func.shape[:-2], func.shape[-2] * func.shape[-1]), dtype=func.dtype)
 
+    @as_dispatch
     def _as(self, op):
-        if op is insertaxis:
-            for f, axis, length in self.func._as(op):
-                if axis < f.ndim-1:
-                    yield Ravel(f), axis, length
+        ...
+    @_as(insertaxis)
+    def _as(self, op):
+        for f, axis, length in self.func._as(op):
+            if axis < f.ndim-1:
+                yield Ravel(f), axis, length
+            else:
+                for f2, axis2, length2 in f._as(op):
+                    if axis2 == f2.ndim:
+                        yield(f2, axis2, self.shape[-1])
+    @_as(diagonalize)
+    def _as(self, op):
+        for f, axis, newaxis in self.func._as(op):
+            if axis < self.ndim-1 and newaxis < self.ndim-1:
+                yield Ravel(f), axis, newaxis
+    @_as(_inflate)
+    def _as(self, op):
+        for f, dofmap, length, axis in self.func._as(op):
+            if axis + dofmap.ndim < f.ndim-1:
+                yield Ravel(f), dofmap, length, axis
+            else:
+                if axis + dofmap.ndim == f.ndim-1:
+                    indices = dofmap, Range(f.shape[-1])
                 else:
-                    for f2, axis2, length2 in f._as(op):
-                        if axis2 == f2.ndim:
-                            yield(f2, axis2, self.shape[-1])
-        elif op is diagonalize:
-            for f, axis, newaxis in self.func._as(op):
-                if axis < self.ndim-1 and newaxis < self.ndim-1:
-                    yield Ravel(f), axis, newaxis
-        elif op is _inflate:
-            for f, dofmap, length, axis in self.func._as(op):
-                if axis + dofmap.ndim < f.ndim-1:
-                    yield Ravel(f), dofmap, length, axis
-                else:
-                    if axis + dofmap.ndim == f.ndim-1:
-                        indices = dofmap, Range(f.shape[-1])
-                    else:
-                        indices = Range(f.shape[axis-1]), dofmap
-                    yield f, RavelIndex(*indices, *self.func.shape[-2:]), self.shape[-1], f.ndim - (dofmap.ndim+1)
-        elif op is add:
-            for a, b in self.func._as(op):
-                yield Ravel(a), Ravel(b)
+                    indices = Range(f.shape[axis-1]), dofmap
+                yield f, RavelIndex(*indices, *self.func.shape[-2:]), self.shape[-1], f.ndim - (dofmap.ndim+1)
+    @_as(add)
+    def _as(self, op):
+        for a, b in self.func._as(op):
+            yield Ravel(a), Ravel(b)
 
     def _simplified(self):
         if _equals_scalar_constant(self.func.shape[-2], 1):
@@ -4871,10 +5001,6 @@ def subtract(arg1, arg2):
     return add(arg1, negative(arg2))
 
 
-def insertaxis(arg, n, length):
-    return Transpose.from_end(InsertAxis(arg, length), n)
-
-
 def concatenate(args, axis=0):
     lengths = [arg.shape[axis] for arg in args]
     *offsets, totlength = util.cumsum(lengths + [0])
@@ -4957,13 +5083,6 @@ def derivative(func, var, seen=None):
     return result
 
 
-def diagonalize(arg, axis=-1, newaxis=-1):
-    arg = asarray(arg)
-    axis = numeric.normdim(arg.ndim, axis)
-    newaxis = numeric.normdim(arg.ndim+1, newaxis)
-    return Transpose.from_end(Diagonalize(Transpose.to_end(arg, axis)), axis + (axis>=newaxis), newaxis)
-
-
 def sign(arg):
     arg = asarray(arg)
     if arg.dtype == complex:
@@ -5025,16 +5144,6 @@ def _take(arg: Array, index: Array, axis: int):
     assert isinstance(axis, int), f'axis={axis!r}'
     axis = numeric.normdim(arg.ndim, axis)
     return Transpose.from_end(Take(Transpose.to_end(arg, axis), index), *range(axis, axis+index.ndim))
-
-
-def _inflate(arg: Array, dofmap: Array, length: Array, axis: int):
-    assert isinstance(arg, Array), f'arg={arg!r}'
-    assert isinstance(dofmap, Array) and dofmap.dtype == int, f'dofmap={dofmap!r}'
-    assert _isindex(length), f'length={length!r}'
-    assert isinstance(axis, int), f'axis={axis!r}'
-    axis = numeric.normdim(arg.ndim+1-dofmap.ndim, axis)
-    assert equalshape(dofmap.shape, arg.shape[axis:axis+dofmap.ndim])
-    return Transpose.from_end(Inflate(Transpose.to_end(arg, *range(axis, axis+dofmap.ndim)), dofmap, length), axis)
 
 
 def mask(arg, mask: Array, axis: int = 0):
