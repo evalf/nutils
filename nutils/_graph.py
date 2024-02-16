@@ -5,6 +5,7 @@ import treelog
 import subprocess
 import abc
 import html
+import re
 
 Metadata = TypeVar('Metadata')
 GraphvizColorCallback = Callable[['Node'], Optional[str]]
@@ -70,6 +71,8 @@ class Node(Generic[Metadata], metaclass=abc.ABCMeta):
                 treelog.warning('graphviz failed for error code', status.returncode)
             graph = status.stdout
             if image_type == 'svg':
+                graph = re.sub(b'<svg width="(\d+)pt" height="(\d+)pt"', lambda match:
+                    b'<svg width="%dpt" height="%dpt"' % tuple((int(l)*2)//3 for l in match.groups()), graph, count=1)
                 i = graph.rindex(b'</svg>')
                 graph = graph[:i] + clickHandler + graph[i:]
             img.write(graph)
