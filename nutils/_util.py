@@ -1082,4 +1082,35 @@ def shallow_replace(func, *funcargs, **funckwargs):
     return rstack[0]
 
 
+class reentrant_iter:
+
+    def __init__(self, iterable):
+        self.iterator = iter(iterable)
+        self.items = []
+
+    def __iter__(self):
+        return self.Iter(self.iterator, self.items)
+
+    class Iter:
+        def __init__(self, iterator, items):
+            self.iterator = iterator
+            self.items = items
+            self.index = 0
+        def __iter__(self):
+            return self
+        def __next__(self):
+            if self.index == len(self.items):
+                v = next(self.iterator)
+                assert self.index == len(self.items)
+                self.items.append(v)
+            else:
+                v = self.items[self.index]
+            self.index += 1
+            return v
+
+    @classmethod
+    def property(cls, f):
+        return functools.cached_property(lambda self: cls(f(self)))
+
+
 # vim:sw=4:sts=4:et
