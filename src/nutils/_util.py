@@ -1315,4 +1315,80 @@ def function(script, globals={}):
     return func
 
 
+class CachedIterable:
+    '''Iterator returned by cached_iterable.'''
+
+    def __init__(self, iterator, items):
+        self.iterator = iterator
+        self.items = items
+        self.index = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.index == len(self.items):
+            v = next(self.iterator) # may raise StopIteration
+            assert self.index == len(self.items)
+            self.items.append(v)
+        else:
+            v = self.items[self.index]
+        self.index += 1
+        return v
+
+
+class cached_iterable:
+    '''Caching wrapper for iterators.
+
+    The `cached_iterable` function wraps an iterator and makes it reentrant by
+    caching the generated values.
+
+    >>> def square_range(n):
+    ...    for i in range(n):
+    ...      print("computing", i, "squared")
+    ...      yield i**2
+    >>> it = cached_iterable(square_range(3))
+    >>> next(iter(it))
+    computing 0 squared
+    0
+    >>> tuple(it)
+    computing 1 squared
+    computing 2 squared
+    (0, 1, 4)
+
+    Equivalently you can use the `.wrap` function to decorate a generator so
+    that it returns a `cached_iterable`, and the `.property` function can be
+    used to created a cached class property:
+
+    >>> class A:
+    ...   @cached_iterable.property
+    ...   def my123(self):
+    ...     for i in 1, 2, 3:
+    ...       yield i
+    >>> a = A()
+    >>> next(iter(a.my123))
+    1
+    >>> tuple(a.my123)
+    (1, 2, 3)
+    '''
+
+    @classmethod
+    def wrap(cls, f):
+        @functools.wraps(f)
+        def wrapper(*args, **kwargs):
+            return cls(f(*args, **kwargs))
+        return wrapper
+
+    @classmethod
+    def property(cls, f):
+        return functools.cached_property(cls.wrap(f))
+
+    def __init__(self, iterable):
+        self.iterator = iter(iterable)
+        self.items = []
+
+    def __iter__(self):
+        return CachedIterable(self.iterator, self.items)
+
+
 # vim:sw=4:sts=4:et

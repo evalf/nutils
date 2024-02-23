@@ -693,3 +693,168 @@ class nested_map(TestCase):
     def test_nested(self):
         v = util.nested_map(int, ('1', ['2', '3'], '4'))
         self.assertEqual(v, (1, [2, 3], 4))
+
+
+class cached_iterable(TestCase):
+
+    def setUp(self):
+        self.yield_count = 0
+
+    def gen123(self):
+        for i in 1, 2, 3:
+            self.yield_count += 1
+            yield i
+
+    def test_simple(self):
+        it = util.cached_iterable(self.gen123())
+        self.assertEqual(self.yield_count, 0)
+        self.assertEqual(tuple(it), (1, 2, 3))
+        self.assertEqual(self.yield_count, 3)
+
+    def test_aaabbb(self):
+        it = util.cached_iterable(self.gen123())
+        a = iter(it)
+        b = iter(it)
+        self.assertEqual(tuple(a), (1, 2, 3))
+        self.assertEqual(tuple(b), (1, 2, 3))
+        self.assertEqual(self.yield_count, 3)
+
+    def test_aababb(self):
+        it = util.cached_iterable(self.gen123())
+        a = iter(it)
+        b = iter(it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(self.yield_count, 1)
+        self.assertEqual(next(a), 2)
+        self.assertEqual(next(b), 1)
+        self.assertEqual(self.yield_count, 2)
+        self.assertEqual(tuple(a), (3,))
+        self.assertEqual(tuple(b), (2, 3))
+        self.assertEqual(self.yield_count, 3)
+
+    def test_aabbab(self):
+        it = util.cached_iterable(self.gen123())
+        a = iter(it)
+        b = iter(it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(self.yield_count, 1)
+        self.assertEqual(next(a), 2)
+        self.assertEqual(next(b), 1)
+        self.assertEqual(next(b), 2)
+        self.assertEqual(self.yield_count, 2)
+        self.assertEqual(tuple(a), (3,))
+        self.assertEqual(tuple(b), (3,))
+        self.assertEqual(self.yield_count, 3)
+
+    def test_aabbba(self):
+        it = util.cached_iterable(self.gen123())
+        a = iter(it)
+        b = iter(it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(self.yield_count, 1)
+        self.assertEqual(next(a), 2)
+        self.assertEqual(self.yield_count, 2)
+        self.assertEqual(tuple(b), (1, 2, 3))
+        self.assertEqual(tuple(a), (3,))
+        self.assertEqual(self.yield_count, 3)
+
+    def test_abaabb(self):
+        it = util.cached_iterable(self.gen123())
+        a = iter(it)
+        b = iter(it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(self.yield_count, 1)
+        self.assertEqual(next(b), 1)
+        self.assertEqual(self.yield_count, 1)
+        self.assertEqual(tuple(a), (2, 3))
+        self.assertEqual(self.yield_count, 3)
+        self.assertEqual(tuple(b), (2, 3))
+        self.assertEqual(self.yield_count, 3)
+
+    def test_ababab(self):
+        it = util.cached_iterable(self.gen123())
+        a = iter(it)
+        b = iter(it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(next(b), 1)
+        self.assertEqual(self.yield_count, 1)
+        self.assertEqual(next(a), 2)
+        self.assertEqual(next(b), 2)
+        self.assertEqual(self.yield_count, 2)
+        self.assertEqual(tuple(a), (3,))
+        self.assertEqual(tuple(b), (3,))
+        self.assertEqual(self.yield_count, 3)
+
+    def test_ababba(self):
+        it = util.cached_iterable(self.gen123())
+        a = iter(it)
+        b = iter(it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(next(b), 1)
+        self.assertEqual(self.yield_count, 1)
+        self.assertEqual(next(a), 2)
+        self.assertEqual(self.yield_count, 2)
+        self.assertEqual(tuple(b), (2, 3))
+        self.assertEqual(tuple(a), (3,))
+        self.assertEqual(self.yield_count, 3)
+
+    def test_abbaab(self):
+        it = util.cached_iterable(self.gen123())
+        a = iter(it)
+        b = iter(it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(next(b), 1)
+        self.assertEqual(next(b), 2)
+        self.assertEqual(tuple(a), (2, 3))
+        self.assertEqual(tuple(b), (3,))
+
+    def test_abbaba(self):
+        it = util.cached_iterable(self.gen123())
+        a = iter(it)
+        b = iter(it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(next(b), 1)
+        self.assertEqual(self.yield_count, 1)
+        self.assertEqual(next(b), 2)
+        self.assertEqual(next(a), 2)
+        self.assertEqual(self.yield_count, 2)
+        self.assertEqual(tuple(b), (3,))
+        self.assertEqual(tuple(a), (3,))
+        self.assertEqual(self.yield_count, 3)
+
+    def test_abbbaa(self):
+        it = util.cached_iterable(self.gen123())
+        a = iter(it)
+        b = iter(it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(self.yield_count, 1)
+        self.assertEqual(tuple(b), (1, 2, 3))
+        self.assertEqual(tuple(a), (2, 3))
+        self.assertEqual(self.yield_count, 3)
+
+    def test_wrap(self):
+        @util.cached_iterable.wrap
+        def mygen123():
+            yield from self.gen123()
+        gen = mygen123()
+        it = iter(gen)
+        self.assertEqual(next(it), 1)
+        self.assertEqual(self.yield_count, 1)
+        self.assertEqual(next(it), 2)
+        self.assertEqual(self.yield_count, 2)
+        self.assertEqual(tuple(gen), (1, 2, 3))
+        self.assertEqual(self.yield_count, 3)
+            
+    def test_property(self):
+        class A:
+            @util.cached_iterable.property
+            def x(slf):
+                yield from self.gen123()
+        a = A()
+        it = iter(a.x)
+        self.assertEqual(next(it), 1)
+        self.assertEqual(self.yield_count, 1)
+        self.assertEqual(next(it), 2)
+        self.assertEqual(self.yield_count, 2)
+        self.assertEqual(tuple(a.x), (1, 2, 3))
+        self.assertEqual(self.yield_count, 3)
