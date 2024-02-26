@@ -2197,11 +2197,6 @@ class Pointwise(Array):
         if len(where) != self.ndim:
             return align(self._newargs(*uninserted), where, self.shape)
 
-    def _optimized_for_numpy(self):
-        if self.isconstant:
-            retval = self.eval()
-            return constant(retval)
-
     def _derivative(self, var, seen):
         if self.dtype == complex or var.dtype == complex:
             raise NotImplementedError('The complex derivative is not implemented.')
