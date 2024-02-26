@@ -39,9 +39,18 @@ def rectilinear(richshape: Sequence[Union[int, Sequence[float]]], periodic: Sequ
     axes = [transformseq.DimAxis(i=0, j=n, mod=n if idim in periodic else 0, isperiodic=idim in periodic) for idim, n in enumerate(shape)]
     topo = topology.StructuredTopology(space, root, axes)
 
-    funcsp = topo.basis('spline', degree=1, periodic=())
-    coords = numeric.meshgrid(*verts).reshape(ndims, -1)
-    geom = (funcsp * coords).sum(-1)
+    if all(map(numeric.isint, richshape)):
+        flat_index = topo.f_index
+        rev_unraveled_index = []
+        for n in shape[:0:-1]:
+            rev_unraveled_index.append(flat_index % n)
+            flat_index //= n
+        rev_unraveled_index.append(flat_index)
+        geom = topo.f_coords + numpy.stack(rev_unraveled_index[::-1])
+    else:
+        funcsp = topo.basis('spline', degree=1, periodic=())
+        coords = numeric.meshgrid(*verts).reshape(ndims, -1)
+        geom = (funcsp * coords).sum(-1)
 
     return topo, geom
 
@@ -52,10 +61,12 @@ _oldrectilinear = rectilinear  # reference for internal unittests
 def line(nodes: Union[int, Sequence[float]], periodic: bool = False, bnames: Optional[Tuple[str, str]] = None, *, space: str = 'X', root: Optional[TransformItem] = None) -> Tuple[Topology, function.Array]:
     if root is None:
         root = transform.Index(1, 0)
+    nelems = nodes if isinstance(nodes, int) else len(nodes) - 1
+    domain = topology.StructuredLine(space, root, 0, nelems, periodic=periodic, bnames=bnames)
     if isinstance(nodes, int):
-        nodes = numpy.arange(nodes + 1)
-    domain = topology.StructuredLine(space, root, 0, len(nodes) - 1, periodic=periodic, bnames=bnames)
-    geom = domain.basis('std', degree=1, periodic=[]).dot(nodes)
+        geom = domain.f_coords[0] + domain.f_index
+    else:
+        geom = domain.basis('std', degree=1, periodic=[]).dot(nodes)
     return domain, geom
 
 
