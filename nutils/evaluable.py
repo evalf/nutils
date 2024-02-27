@@ -2261,6 +2261,25 @@ class FloorDivide(Pointwise):
             raise ValueError(f'The boolean floor division is not supported.')
         return dividend
 
+    def _intbounds_impl(self):
+        lower, upper = self.args[0]._intbounds
+        divisor_lower, divisor_upper = self.args[1]._intbounds
+        if divisor_upper < 0:
+            divisor_lower, divisor_upper = -divisor_upper, -divisor_lower
+            lower, upper = -upper, -lower
+        elif divisor_lower <= 0:
+            # The divisor range includes zero.
+            return float('-inf'), float('inf')
+        # `divisor_lower` is always finite and positive. `divisor_upper` may be
+        # `float('inf')` in which case the floordiv of a finite `lower` or
+        # `upper` with `divisor_upper` gives a float `0.0` or `-1.0`. To
+        # prevent the float, we bound `divisor_upper` by the dividend.
+        if isinstance(lower, int):
+            lower //= divisor_lower if lower <= 0 else min(lower + 1, divisor_upper)
+        if isinstance(upper, int):
+            upper //= divisor_lower if upper >= 0 else min(1 - upper, divisor_upper)
+        return lower, upper
+
 
 class Absolute(Pointwise):
     evalf = staticmethod(numpy.absolute)
