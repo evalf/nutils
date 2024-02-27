@@ -449,6 +449,7 @@ class Evaluable(types.Singleton):
     @cached_property
     def optimized_for_numpy(self):
         retval = self.simplified._optimized_for_numpy1() or self
+        retval = retval._deep_flatten_constants() or retval
         return retval._combine_loop_concatenates(frozenset())
 
     @replace(depthfirst=True, recursive=True)
@@ -461,6 +462,11 @@ class Evaluable(types.Singleton):
 
     def _optimized_for_numpy(self):
         return
+
+    @replace(depthfirst=False, recursive=False)
+    def _deep_flatten_constants(self):
+        if isinstance(self, Array):
+            return self._flatten_constant()
 
     @cached_property
     def _loop_concatenate_deps(self):
@@ -997,6 +1003,10 @@ class Array(Evaluable, metaclass=_ArrayMeta):
             lower, upper = self._intbounds
             return lower if lower == upper else None
 
+    def _flatten_constant(self):
+        if self.isconstant:
+            return constant(self.eval())
+
 
 class Orthonormal(Array):
     'make a vector orthonormal to a subspace'
@@ -1177,6 +1187,9 @@ class Constant(Array):
         if self.ndim == 0:
             return self.dtype(self.value[()])
 
+    def _flatten_constant(self):
+        pass
+
 
 class InsertAxis(Array):
 
@@ -1295,6 +1308,9 @@ class InsertAxis(Array):
     @property
     def _const_uniform(self):
         return self.func._const_uniform
+
+    def _flatten_constant(self):
+        pass
 
 
 class Transpose(Array):
@@ -1490,6 +1506,9 @@ class Transpose(Array):
     @property
     def _const_uniform(self):
         return self.func._const_uniform
+
+    def _flatten_constant(self):
+        pass
 
 
 class Product(Array):
@@ -2177,11 +2196,6 @@ class Pointwise(Array):
         *uninserted, where = unalign(*self.args)
         if len(where) != self.ndim:
             return align(self._newargs(*uninserted), where, self.shape)
-
-    def _optimized_for_numpy(self):
-        if self.isconstant:
-            retval = self.eval()
-            return constant(retval)
 
     def _derivative(self, var, seen):
         if self.dtype == complex or var.dtype == complex:
