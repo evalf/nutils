@@ -4773,9 +4773,8 @@ def ln(x):
 
 
 def divmod(x, y):
-    div = FloorDivide(*_numpy_align(x, y))
-    mod = x - div * y
-    return div, mod
+    x, y = _numpy_align(x, y)
+    return FloorDivide(x, y), Mod(x, y)
 
 
 def mod(arg1, arg2):
