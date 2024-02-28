@@ -989,8 +989,8 @@ class Array(Evaluable, metaclass=_ArrayMeta):
             return value, value
         else:
             lower, upper = self._intbounds_impl()
-            assert isinstance(lower, int) or lower == float('-inf') or lower == float('inf')
-            assert isinstance(upper, int) or upper == float('-inf') or upper == float('inf')
+            assert isinstance(lower, int) or lower == float('-inf')
+            assert isinstance(upper, int) or upper == float('inf')
             assert lower <= upper
             return lower, upper
 
