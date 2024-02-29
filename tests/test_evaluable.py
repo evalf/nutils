@@ -734,6 +734,13 @@ class intbounds(TestCase):
     def test_mod_negative_divisor(self):
         self.assertEqual(evaluable.Mod(evaluable.Argument('d', (evaluable.constant(2),), int), self.R(-3, [2]))._intbounds, (float('-inf'), float('inf')))
 
+    def test_floordiv(self):
+        self.assertBounds(evaluable.FloorDivide(evaluable.insertaxis(self.R(2, [9]), 1, evaluable.constant(2)), evaluable.insertaxis(self.R(3, [2]), 0, evaluable.constant(9))))
+        self.assertBounds(evaluable.FloorDivide(evaluable.insertaxis(self.R(-12, [9]), 1, evaluable.constant(2)), evaluable.insertaxis(self.R(3, [2]), 0, evaluable.constant(9))))
+        self.assertBounds(evaluable.FloorDivide(evaluable.insertaxis(self.R(-15, [9]), 1, evaluable.constant(2)), evaluable.insertaxis(self.R(-3, [2]), 0, evaluable.constant(9))))
+        self.assertBounds(evaluable.FloorDivide(evaluable.insertaxis(self.R(-4, [9]), 1, evaluable.constant(2)), evaluable.insertaxis(self.R(8, [2]), 0, evaluable.constant(9))))
+        self.assertEqual(evaluable.FloorDivide(self.S('dividend', 2, 4), self.S('divisor', float('-inf'), float('inf')))._intbounds, (float('-inf'), float('inf')))
+
     def test_sign(self):
         for i in range(-2, 3):
             for j in range(i, 3):
