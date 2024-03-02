@@ -3360,14 +3360,11 @@ class Guard(Array):
     def __init__(self, fun: Array):
         assert isinstance(fun, Array), f'fun={fun!r}'
         self.fun = fun
-        super().__init__(args=(fun,), shape=fun.shape, dtype=fun.dtype)
-
-    @property
-    def isconstant(self):
-        return False  # avoid simplifications based on fun being constant
+        # Depend on `EVALARGS` to prevent simplifications based on constness.
+        super().__init__(args=(fun, EVALARGS), shape=fun.shape, dtype=fun.dtype)
 
     @staticmethod
-    def evalf(dat):
+    def evalf(dat, evalargs):
         return dat
 
     def _derivative(self, var, seen):
