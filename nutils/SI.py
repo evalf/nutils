@@ -371,13 +371,13 @@ class Quantity(metaclass=Dimension):
         return (dim0**args[1]).wrap(op(arg0, *args[1:], **kwargs))
 
     @register('isfinite', 'isnan', 'shape', 'ndim', 'size', 'normal', 'normalized')
-    def __unary_drop(op, *args, **kwargs):
+    def __unary_op(op, *args, **kwargs):
         (_dim0, arg0), = Quantity.__unpack(args[0])
         return op(arg0, *args[1:], **kwargs)
 
     @register('lt', 'le', 'eq', 'ne', 'gt', 'ge', 'equal', 'not_equal', 'less',
               'less_equal', 'greater', 'greater_equal')
-    def __binary_drop(op, *args, **kwargs):
+    def __binary_op(op, *args, **kwargs):
         (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
         if dim0 != dim1:
             raise TypeError(f'incompatible arguments for {op.__name__}: {dim0.__name__}, {dim1.__name__}')
