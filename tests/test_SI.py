@@ -68,7 +68,7 @@ class Quantity(unittest.TestCase):
         F = SI.units.N * numpy.zeros(3)
         F[0] = SI.Force('1N')
         F[1] = SI.Force('2N')
-        with self.assertRaisesRegex(TypeError, r'cannot assign \[L2\] to \[M\*L/T2\]'):
+        with self.assertRaisesRegex(SI.DimensionError, r'cannot assign \[L2\] to \[M\*L/T2\]'):
             F[2] = SI.Area('10m2')
         F[2] = SI.Force('3N')
         self.assertTrue(numpy.all(F == SI.units.N * numpy.array([1, 2, 3])))
@@ -104,18 +104,18 @@ class Quantity(unittest.TestCase):
     def test_add(self):
         self.assertEqual(SI.Mass('2kg') + SI.Mass('3kg'), SI.Mass('5kg'))
         self.assertEqual(numpy.add(SI.Mass('2kg'), SI.Mass('3kg')), SI.Mass('5kg'))
-        with self.assertRaisesRegex(TypeError, r'incompatible arguments for add: \[M\], \[L\]'):
+        with self.assertRaisesRegex(SI.DimensionError, r'incompatible arguments for add: \[M\], \[L\]'):
             SI.Mass('2kg') + SI.Length('3m')
 
     def test_sub(self):
         self.assertEqual(SI.Mass('2kg') - SI.Mass('3kg'), SI.Mass('-1kg'))
         self.assertEqual(numpy.subtract(SI.Mass('2kg'), SI.Mass('3kg')), SI.Mass('-1kg'))
-        with self.assertRaisesRegex(TypeError, r'incompatible arguments for sub: \[M\], \[L\]'):
+        with self.assertRaisesRegex(SI.DimensionError, r'incompatible arguments for sub: \[M\], \[L\]'):
             SI.Mass('2kg') - SI.Length('3m')
 
     def test_hypot(self):
         self.assertEqual(numpy.hypot(SI.Mass('3kg'), SI.Mass('4kg')), SI.Mass('5kg'))
-        with self.assertRaisesRegex(TypeError, r'incompatible arguments for hypot: \[M\], \[L\]'):
+        with self.assertRaisesRegex(SI.DimensionError, r'incompatible arguments for hypot: \[M\], \[L\]'):
             numpy.hypot(SI.Mass('3kg'), SI.Length('4m'))
 
     def test_neg(self):
@@ -224,7 +224,7 @@ class Quantity(unittest.TestCase):
         C = SI.Mass('4kg')
         D = SI.Time('5s')
         self.assertTrue(numpy.all(numpy.stack([A, B, C]) == SI.units.kg * numpy.array([2, 3, 4])))
-        with self.assertRaisesRegex(TypeError, r'incompatible arguments for stack: \[M\], \[M\], \[M\], \[T\]'):
+        with self.assertRaisesRegex(SI.DimensionError, r'incompatible arguments for stack: \[M\], \[M\], \[M\], \[T\]'):
             numpy.stack([A, B, C, D])
 
     def test_concatenate(self):
@@ -232,7 +232,7 @@ class Quantity(unittest.TestCase):
         B = SI.units.kg * numpy.array([3, 4])
         C = SI.units.s * numpy.array([5, 6])
         self.assertTrue(numpy.all(numpy.concatenate([A, B]) == SI.units.kg * numpy.array([1, 2, 3, 4])))
-        with self.assertRaisesRegex(TypeError, r'incompatible arguments for concatenate: \[M\], \[M\], \[T\]'):
+        with self.assertRaisesRegex(SI.DimensionError, r'incompatible arguments for concatenate: \[M\], \[M\], \[T\]'):
             numpy.concatenate([A, B, C])
 
     def test_format(self):

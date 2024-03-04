@@ -35,7 +35,7 @@ that the specified quantity is indeed of the desired dimension.
     >>> w = SI.Velocity('8km')
     Traceback (most recent call last):
          ...
-    TypeError: expected [L/T], got [L]
+    nutils.SI.DimensionError: expected [L/T], got [L]
 
 Explicit subtypes can also be used in function annotations:
 
@@ -124,6 +124,10 @@ import fractions
 import operator
 import typing
 import functools
+
+
+class DimensionError(TypeError):
+    pass
 
 
 class Dimension(type):
@@ -220,7 +224,7 @@ class Dimension(type):
         q = parse(value)
         expect = float if not cls.__powers else cls
         if type(q) != expect:
-            raise TypeError(f'expected {expect.__name__}, got {type(q).__name__}')
+            raise DimensionError(f'expected {expect.__name__}, got {type(q).__name__}')
         return q
 
     def wrap(cls, value):
@@ -335,7 +339,7 @@ class Quantity(metaclass=Dimension):
     def __add_like(op, *args, **kwargs):
         (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
         if dim0 != dim1:
-            raise TypeError(f'incompatible arguments for {op.__name__}: {dim0.__name__}, {dim1.__name__}')
+            raise DimensionError(f'incompatible arguments for {op.__name__}: {dim0.__name__}, {dim1.__name__}')
         return dim0.wrap(op(arg0, arg1, *args[2:], **kwargs))
 
     @register('mul', 'multiply', 'matmul')
@@ -363,7 +367,7 @@ class Quantity(metaclass=Dimension):
     def __setitem(op, *args, **kwargs):
         (dim0, arg0), (dim2, arg2) = Quantity.__unpack(args[0], args[2])
         if dim0 != dim2:
-            raise TypeError(f'cannot assign {dim2.__name__} to {dim0.__name__}')
+            raise DimensionError(f'cannot assign {dim2.__name__} to {dim0.__name__}')
         return dim0.wrap(op(arg0, args[1], arg2, *args[3:], **kwargs))
 
     @register('pow', 'power', 'jacobian')
@@ -381,14 +385,14 @@ class Quantity(metaclass=Dimension):
     def __binary_op(op, *args, **kwargs):
         (dim0, arg0), (dim1, arg1) = Quantity.__unpack(args[0], args[1])
         if dim0 != dim1:
-            raise TypeError(f'incompatible arguments for {op.__name__}: {dim0.__name__}, {dim1.__name__}')
+            raise DimensionError(f'incompatible arguments for {op.__name__}: {dim0.__name__}, {dim1.__name__}')
         return op(arg0, arg1, *args[2:], **kwargs)
 
     @register('stack', 'concatenate')
     def __stack_like(op, *args, **kwargs):
         dims, arg0 = zip(*Quantity.__unpack(*args[0]))
         if any(dim != dims[0] for dim in dims[1:]):
-            raise TypeError(f'incompatible arguments for {op.__name__}: ' + ', '.join(dim.__name__ for dim in dims))
+            raise DimensionError(f'incompatible arguments for {op.__name__}: ' + ', '.join(dim.__name__ for dim in dims))
         return dims[0].wrap(op(arg0, *args[1:], **kwargs))
 
     @register('curvature')
