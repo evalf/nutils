@@ -300,7 +300,7 @@ class Evaluable(types.Singleton):
         for func in self.__args:
             funcdeps = func.dependencies
             deps.update(funcdeps)
-            deps[func] = len(funcdeps)
+            deps[func] = not func.isconstant, len(funcdeps)
         return types.frozendict(deps)
 
     @cached_property
