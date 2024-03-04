@@ -5440,6 +5440,83 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
             yield data
 
 
+def compile(funcs, *, simplify: bool = True, _plot_stats: typing.Optional[bool] = None):
+    if isinstance(funcs, Evaluable):
+        compiled = compile((funcs,), simplify=simplify, _plot_stats=_plot_stats)
+        def wrapper(**args):
+            return compiled(**args)[0]
+        return wrapper
+    elif isinstance(funcs, (tuple, list)):
+        for i, func in enumerate(funcs):
+            if isinstance(func, (tuple, list)):
+                func = tuple(func)
+                n = len(func)
+                compiled = compile((*funcs[:i], *func, *funcs[i+1:]), simplify=simplify, _plot_stats=_plot_stats)
+                def wrapper(**args):
+                    values = compiled(**args)
+                    return *values[:i], values[i:i+n], *values[i+n:]
+                return wrapper
+            elif not isinstance(func, Evaluable):
+                break
+        with log.context('compile'):
+            return _compile_tuple(tuple(funcs), simplify=simplify, _plot_stats=_plot_stats)
+    raise ValueError('expected an `Evaluable` or a possibly nested `tuple` or `list` of `Evaluable`s')
+
+
+def _compile_tuple(funcs, *, simplify: bool = True, _plot_stats: typing.Optional[bool] = None):
+    funcs = Tuple(tuple(funcs))
+    if simplify:
+        funcs = funcs.simplified
+    funcs = funcs.optimized_for_numpy
+    deps = funcs.dependencies.copy()
+    deps.pop(EVALARGS, None)
+    ordereddeps = EVALARGS, *sorted(deps, key=deps.__getitem__), funcs
+    deptree = tuple(tuple(map(ordereddeps.index, func._Evaluable__args)) for func in ordereddeps)
+
+    if _plot_stats is None:
+        _plot_stats = bool(graphviz)
+
+    if not _plot_stats:
+        serialized = tuple(zip((op.evalf for op in ordereddeps[1:]), deptree[1:]))
+    else:
+        serialized = tuple(zip((op.evalf_withtimes for op in ordereddeps[1:]), deptree[1:]))
+
+    @log.withcontext
+    def eval(**evalargs):
+        values = [evalargs]
+
+        if _plot_stats:
+            stats = collections.defaultdict(_Stats)
+
+        try:
+            if not _plot_stats:
+                values.extend(evalf(*[values[i] for i in indices]) for evalf, indices in serialized)
+            else:
+                values.extend(evalf(stats, *[values[i] for i in indices]) for evalf, indices in serialized)
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:
+            log.error(funcs._format_stack(values, e))
+            if _plot_stats:
+                node = funcs._node({}, None, collections.defaultdict(_Stats))
+                node.export_graphviz(dot_path=graphviz)
+            raise
+
+        if _plot_stats:
+            node = funcs._node({}, None, stats)
+            maxtime = builtins.max(n.metadata[1].time for n in node.walk(set()))
+            tottime = builtins.sum(n.metadata[1].time for n in node.walk(set()))
+            aggstats = tuple((key, builtins.sum(v.time for v in values), builtins.sum(v.ncalls for v in values)) for key, values in util.gather(n.metadata[:2] for n in node.walk(set())))
+            fill_color = (lambda node: '0,{:.2f},1'.format(node.metadata[1].time/maxtime)) if maxtime else None
+            node.export_graphviz(fill_color=fill_color, dot_path=graphviz)
+            log.info(f'total time: {tottime/1e6:.0f}ms\n' + '\n'.join(f'{t/1e6:4.0f} {k} ({n} calls, avg {t/(1e6*n):.3f} per call)'
+                                                                      for k, t, n in sorted(aggstats, reverse=True, key=lambda item: item[1]) if n))
+
+        return values[-1]
+
+    return eval
+
+
 if __name__ == '__main__':
     # Diagnostics for the development for simplify operations.
     simplify_priority = (
