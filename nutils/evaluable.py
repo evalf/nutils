@@ -850,8 +850,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
         cache[self] = node = RegularNode(label, args, {}, (type(self).__name__, times[self]), subgraph)
         return node
 
-    # simplifications
-
     representations = ()
 
     def _as(self, op, condition=None):
@@ -874,9 +872,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
                     queue.append((b, (a, *rem), ops))
                     break
                 ops.add(op)
-
-    _diagonals = ()
-    _inflations = ()
 
     def _derivative(self, var, seen):
         if self.dtype in (bool, int) or var not in self.arguments:
@@ -1027,10 +1022,6 @@ class Constant(Array):
             cache[self] = node = DuplicatedLeafNode(label, (type(self).__name__, times[self]))
             return node
 
-    @cached_property
-    def _isunit(self):
-        return numpy.equal(self.value, 1).all()
-
     def _intbounds_impl(self):
         if self.dtype == int and self.value.size:
             return int(self.value.min()), int(self.value.max())
@@ -1074,14 +1065,6 @@ class InsertAxis(Array):
             elif op is ravel:
                 f, axis = args
                 yield op, (InsertAxis(f, self.length), axis)
-
-    @property
-    def _diagonals(self):
-        return self.func._diagonals
-
-    @cached_property
-    def _inflations(self):
-        return tuple((axis, types.frozendict((dofmap, InsertAxis(func, self.length)) for dofmap, func in parts.items())) for axis, parts in self.func._inflations)
 
     def _simplified(self):
         if isinstance(self.func, Zeros):
@@ -1239,14 +1222,6 @@ class Transpose(Array):
                 yield op, (transpose(ia, axesa), transpose(ib, axesb), na, nb, where[list(self.axes)])
             elif op is Choose:
                 yield op, tuple(Transpose(arg, self.axes) for arg in args)
-
-    @cached_property
-    def _diagonals(self):
-        return tuple(frozenset(self._invaxes[i] for i in axes) for axes in self.func._diagonals)
-
-    @cached_property
-    def _inflations(self):
-        return tuple((self._invaxes[axis], types.frozendict((dofmap, transpose(func, self._axes_for(dofmap.ndim, self._invaxes[axis]))) for dofmap, func in parts.items())) for axis, parts in self.func._inflations)
 
     @cached_property
     def _invaxes(self):
@@ -1607,28 +1582,6 @@ class Add(Array):
         func1, func2 = funcs
         assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype, 'Add({}, {})'.format(func1, func2)
         super().__init__(args=tuple(self.funcs), shape=func1.shape, dtype=func1.dtype)
-
-    @cached_property
-    def _inflations(self):
-        if self.dtype == bool:
-            return ()
-        func1, func2 = self.funcs
-        func2_inflations = dict(func2._inflations)
-        inflations = []
-        for axis, parts1 in func1._inflations:
-            if axis not in func2_inflations:
-                continue
-            parts2 = func2_inflations[axis]
-            dofmaps = set(parts1) | set(parts2)
-            if (len(parts1) < len(dofmaps) and len(parts2) < len(dofmaps)  # neither set is a subset of the other; total may be dense
-                    and self.shape[axis].isconstant and all(dofmap.isconstant for dofmap in dofmaps)):
-                mask = numpy.zeros(int(self.shape[axis]), dtype=bool)
-                for dofmap in dofmaps:
-                    mask[dofmap.eval()] = True
-                if mask.all():  # axis adds up to dense
-                    continue
-            inflations.append((axis, types.frozendict((dofmap, util.sum(parts[dofmap] for parts in (parts1, parts2) if dofmap in parts)) for dofmap in dofmaps)))
-        return tuple(inflations)
 
     @util.reentrant_iter.property
     def representations(self):
@@ -2245,14 +2198,6 @@ class Pointwise(Array):
                     if i in self.linear:
                         f, dofmap, length, axis = args
                         yield op, (self.__class__(*[f if i == j else _take(arg, axis) for j, arg in enumerate(self.args)]), dofmap, length, axis)
-
-    def _newargs(self, *args):
-        '''
-        Reinstantiate self with different arguments. Parameters are preserved,
-        as these are considered part of the type.
-        '''
-
-        return self.__class__(*args, **self.params)
 
     @classmethod
     def outer(cls, *args):
@@ -2974,17 +2919,6 @@ class Inflate(Array):
                 if axis < self.ndim-1:
                     yield op, (Inflate(f, self.dofmap, self.length), axis)
 
-    @cached_property
-    def _diagonals(self):
-        return tuple(axes for axes in self.func._diagonals if all(axis < self.ndim-1 for axis in axes))
-
-    @cached_property
-    def _inflations(self):
-        inflations = [(self.ndim-1, types.frozendict({self.dofmap: self.func}))]
-        for axis, parts in self.func._inflations:
-            inflations.append((axis, types.frozendict((dofmap, Inflate(func, self.dofmap, self.length)) for dofmap, func in parts.items())))
-        return tuple(inflations)
-
     def _simplified(self):
         if isinstance(self.func, Zeros):
             return zeros_like(self)
@@ -3128,22 +3062,6 @@ class Diagonalize(Array):
                 #    unraveled = Diagonalize(diagonalize(f, -2, -2))
                 #    yield op, (ravel(unraveled, axis), axis+1)
                 #    yield op, (ravel(unraveled, axis+2), axis)
-
-    @cached_property
-    def _diagonals(self):
-        diagonals = [frozenset([self.ndim-2, self.ndim-1])]
-        for axes in self.func._diagonals:
-            if axes & diagonals[0]:
-                diagonals[0] |= axes
-            else:
-                diagonals.append(axes)
-        return tuple(diagonals)
-
-    @property
-    def _inflations(self):
-        return tuple((axis, types.frozendict((dofmap, Diagonalize(func)) for dofmap, func in parts.items()))
-                     for axis, parts in self.func._inflations
-                     if axis < self.ndim-2)
 
     def _simplified(self):
         if isinstance(self.func, Zeros):
@@ -3386,22 +3304,6 @@ class Ravel(Array):
                     yield op, (f, RavelIndex(*indices, *self.func.shape[-2:]), self.shape[-1], f.ndim - (dofmap.ndim+1))
             elif op in (add, multiply, power, Choose):
                 yield op, tuple(Ravel(arg) for arg in args)
-
-    @cached_property
-    def _inflations(self):
-        inflations = []
-        stride = self.func.shape[-1]
-        n = None
-        for axis, old_parts in self.func._inflations:
-            if axis == self.ndim - 1 and n is None:
-                n = self.func.shape[-1]
-                inflations.append((self.ndim - 1, types.frozendict((RavelIndex(dofmap, Range(n), *self.func.shape[-2:]), func) for dofmap, func in old_parts.items())))
-            elif axis == self.ndim and n is None:
-                n = self.func.shape[-2]
-                inflations.append((self.ndim - 1, types.frozendict((RavelIndex(Range(n), dofmap, *self.func.shape[-2:]), func) for dofmap, func in old_parts.items())))
-            elif axis < self.ndim - 1:
-                inflations.append((axis, types.frozendict((dofmap, Ravel(func)) for dofmap, func in old_parts.items())))
-        return tuple(inflations)
 
     def _simplified(self):
         if isinstance(self.func, Zeros):
@@ -3966,9 +3868,6 @@ class Choose(Array):
         index, *choices, where = unalign(self.index, *self.choices)
         if len(where) < self.ndim:
             return align(Choose(index, *choices), where, self.shape)
-
-    def _get(self, i, item):
-        return Choose(get(self.index, i, item), *(get(choice, i, item) for choice in self.choices))
 
 
 class NormDim(Array):
