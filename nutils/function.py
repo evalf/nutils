@@ -2423,11 +2423,23 @@ class Basis(Array):
         super().__init__((ndofs,), float, spaces=index.spaces | coords.spaces, arguments=arguments)
 
         _index = evaluable.Argument('_index', shape=(), dtype=int)
-        self._arg_dofs, self._arg_coeffs = [f.optimized_for_numpy for f in self.f_dofs_coeffs(_index)]
-        assert self._arg_dofs.ndim == 1
-        assert self._arg_coeffs.ndim == 2
-        assert evaluable._equals_simplified(self._arg_dofs.shape[0], self._arg_coeffs.shape[0])
-        self._arg_ndofs = evaluable.asarray(self._arg_dofs.shape[0])
+        self._arg_dofs_evaluable, self._arg_coeffs_evaluable = self.f_dofs_coeffs(_index)
+        self._arg_ndofs_evaluable = evaluable.asarray(self._arg_dofs_evaluable.shape[0])
+        assert self._arg_dofs_evaluable.ndim == 1
+        assert self._arg_coeffs_evaluable.ndim == 2
+        assert evaluable._equals_simplified(self._arg_dofs_evaluable.shape[0], self._arg_coeffs_evaluable.shape[0])
+
+    @cached_property
+    def _arg_dofs(self):
+        return evaluable.compile(self._arg_dofs_evaluable)
+
+    @cached_property
+    def _arg_coeffs(self):
+        return evaluable.compile(self._arg_coeffs_evaluable)
+
+    @cached_property
+    def _arg_ndofs(self):
+        return evaluable.compile(self._arg_ndofs_evaluable)
 
     def lower(self, args: LowerArgs) -> evaluable.Array:
         index = _WithoutPoints(self.index).lower(args)
@@ -2485,12 +2497,12 @@ class Basis(Array):
             A 1D Array of indices.
         '''
 
-        return self._arg_dofs.eval(_index=ielem)
+        return self._arg_dofs(_index=ielem)
 
     def get_ndofs(self, ielem: int) -> int:
         '''Return the number of basis functions with support on element ``ielem``.'''
 
-        return int(self._arg_ndofs.eval(_index=numeric.normdim(self.nelems, ielem)))
+        return int(self._arg_ndofs(_index=numeric.normdim(self.nelems, ielem)))
 
     def get_coefficients(self, ielem: int) -> numpy.ndarray:
         '''Return an array of coefficients for all basis functions with support on element ``ielem``.
@@ -2508,7 +2520,7 @@ class Basis(Array):
             :meth:`get_dofs`.
         '''
 
-        return self._arg_coeffs.eval(_index=numeric.normdim(self.nelems, ielem))
+        return self._arg_coeffs(_index=numeric.normdim(self.nelems, ielem))
 
     def f_dofs_coeffs(self, index: evaluable.Array) -> Tuple[evaluable.Array, evaluable.Array]:
         raise NotImplementedError('{} must implement f_dofs_coeffs'.format(self.__class__.__name__))
@@ -2825,7 +2837,7 @@ class _DiscontinuousPartitionBasis(Basis):
         # Concatenate all parent dofs and stack all ndofs per element.
         cc_parent_dofs = evaluable.loop_concatenate(parent_dofs, ielem)
         cc_ndofs = evaluable.loop_concatenate(evaluable.insertaxis(parent_dofs.shape[0], 0, evaluable.asarray(1)), ielem)
-        cc_parent_dofs, cc_ndofs = evaluable.Tuple((cc_parent_dofs, cc_ndofs)).optimized_for_numpy.eval()
+        cc_parent_dofs, cc_ndofs = evaluable.compile((cc_parent_dofs, cc_ndofs))()
         # Stack the part index for each element for each dof.
         cc_part_indices = numpy.repeat(part_indices, cc_ndofs)
         # Renumber and count all unique dofs.
