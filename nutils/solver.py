@@ -227,7 +227,8 @@ def _solve_linear(target, residual: tuple, constraints: dict, arguments: dict, s
     dtype = _determine_dtype(target, residual, arguments, constraints)
     lhs, vlhs = _redict(arguments, target, dtype)
     mask, vmask = _invert(constraints, target)
-    res, jac = _integrate_blocks(residual, jacobians, arguments=lhs, mask=mask)
+    integrate = _compile_blocks(residual, jacobians).mask(mask).eval
+    res, jac = integrate(**lhs)
     vlhs[vmask] -= jac.solve(res, **solveargs)
     return lhs
 
@@ -313,14 +314,15 @@ class _newton(cache.Recursion, length=1):
 
     def resume(self, history):
         mask, vmask = _invert(self.constrain, self.target)
+        integrate = _compile_blocks(self.residual, self.jacobian).mask(mask).eval
         if history:
             lhs, info = history[-1]
             lhs, vlhs = _redict(lhs, self.target, self.dtype)
-            res, jac = self._eval(lhs, mask)
+            res, jac = integrate(**lhs)
             relax = info.relax
         else:
             lhs, vlhs = _redict(self.lhs0, self.target, self.dtype)
-            res, jac = self._eval(lhs, mask)
+            res, jac = integrate(**lhs)
             relax = self.relax0
             yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), relax=relax)
         while True:
@@ -328,7 +330,7 @@ class _newton(cache.Recursion, length=1):
             res0 = res
             dres = jac@dlhs  # == -res if dlhs was solved to infinite precision
             vlhs[vmask] += relax * dlhs
-            res, jac = self._eval(lhs, mask)
+            res, jac = integrate(**lhs)
             if self.linesearch:
                 scale, accept = self.linesearch(res0, relax*dres, res, relax*(jac@dlhs))
                 while not accept:  # line search
@@ -338,7 +340,7 @@ class _newton(cache.Recursion, length=1):
                     if relax <= self.failrelax:
                         raise SolverError('stuck in local minimum')
                     vlhs[vmask] += (relax - oldrelax) * dlhs
-                    res, jac = self._eval(lhs, mask)
+                    res, jac = integrate(**lhs)
                     scale, accept = self.linesearch(res0, relax*dres, res, relax*(jac@dlhs))
                 log.info('update accepted at relaxation', round(relax, 5))
                 relax = min(relax * scale, 1)
@@ -419,19 +421,17 @@ class _minimize(cache.Recursion, length=1, version=3):
         self.failrelax = failrelax
         self.solveargs = solveargs
 
-    def _eval(self, lhs, mask):
-        return _integrate_blocks(self.energy, self.residual, self.jacobian, arguments=lhs, mask=mask)
-
     def resume(self, history):
         mask, vmask = _invert(self.constrain, self.target)
+        integrate = _compile_blocks(self.energy, self.residual, self.jacobian).mask(mask).eval
         if history:
             lhs, info = history[-1]
             lhs, vlhs = _redict(lhs, self.target, self.dtype)
-            nrg, res, jac = self._eval(lhs, mask)
+            nrg, res, jac = integrate(**lhs)
             relax = info.relax
         else:
             lhs, vlhs = _redict(self.lhs0, self.target, self.dtype)
-            nrg, res, jac = self._eval(lhs, mask)
+            nrg, res, jac = integrate(**lhs)
             relax = 0
             yield lhs, types.attributes(resnorm=numpy.linalg.norm(res), energy=nrg, relax=relax)
 
@@ -462,7 +462,7 @@ class _minimize(cache.Recursion, length=1, version=3):
                 eL0 = eL
                 eL = numpy.exp(-r*L)
                 vlhs[vmask] -= V.dot(eL - eL0)
-                nrg, res, jac = self._eval(lhs, mask)
+                nrg, res, jac = integrate(**lhs)
                 slope = res.dot(V.dot(eL*L))
                 log.info('energy {:+.2e} / e{:+.1f} and {}creasing'.format(nrg - nrg0, relax, 'in' if slope > 0 else 'de'))
                 if numpy.isfinite(nrg) and numpy.isfinite(res).all() and nrg <= nrg0 and slope <= 0:
@@ -542,22 +542,20 @@ class _pseudotime(cache.Recursion, length=1):
         self.timestep = timestep
         self.solveargs = solveargs
 
-    def _eval(self, lhs, mask, timestep):
-        return _integrate_blocks(self.residuals, self.jacobians, arguments=dict({self.timesteptarget: timestep}, **lhs), mask=mask)
-
     def resume(self, history):
         mask, vmask = _invert(self.constrain, self.target)
+        integrate = _compile_blocks(self.residuals, self.jacobians).mask(mask).eval
         if history:
             lhs, info = history[-1]
             lhs, vlhs = _redict(lhs, self.target, self.dtype)
             resnorm0 = info.resnorm0
             timestep = info.timestep
-            res, jac = self._eval(lhs, mask, timestep)
+            res, jac = integrate(**{self.timesteptarget: timestep}, **lhs)
             resnorm = numpy.linalg.norm(res)
         else:
             lhs, vlhs = _redict(self.lhs0, self.target, self.dtype)
             timestep = self.timestep
-            res, jac = self._eval(lhs, mask, timestep)
+            res, jac = integrate(**{self.timesteptarget: timestep}, **lhs)
             resnorm = resnorm0 = numpy.linalg.norm(res)
             yield lhs, types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
 
@@ -565,7 +563,7 @@ class _pseudotime(cache.Recursion, length=1):
             vlhs[vmask] -= jac.solve_leniently(res, **self.solveargs)
             timestep = self.timestep * (resnorm0/resnorm)
             log.info('timestep: {:.0e}'.format(timestep))
-            res, jac = self._eval(lhs, mask, timestep)
+            res, jac = integrate(**{self.timesteptarget: timestep}, **lhs)
             resnorm = numpy.linalg.norm(res)
             yield lhs, types.attributes(resnorm=resnorm, timestep=timestep, resnorm0=resnorm0)
 
@@ -738,7 +736,8 @@ def _optimize(target, functional: evaluable.asarray, constrain, arguments, tol: 
     dtype = _determine_dtype(target, (functional,), lhs0, constrain)
     mask, vmask = _invert(constrain, target)
     lhs, vlhs = _redict(lhs0, target, dtype)
-    val, res, jac = _integrate_blocks(functional, residual, jacobian, arguments=lhs, mask=mask)
+    integrate = _compile_blocks(functional, residual, jacobian)
+    val, res, jac = integrate.mask(mask).eval(**lhs)
     if droptol is not None:
         supp = jac.rowsupp(droptol)
         res = res[supp]
@@ -747,6 +746,7 @@ def _optimize(target, functional: evaluable.asarray, constrain, arguments, tol: 
         nan[vmask] = ~supp  # return value is set to nan if dof is not supported and not constrained
         vmask[vmask] = supp  # dof is computed if it is supported and not constrained
         assert vmask.sum() == len(res)
+    integrate = integrate.mask(mask).eval
     resnorm = numpy.linalg.norm(res)
     solveargs = dict(solveargs)
     if not set(target).isdisjoint(_argobjs(jacobian)):
@@ -766,7 +766,7 @@ def _optimize(target, functional: evaluable.asarray, constrain, arguments, tol: 
                     relax0 = 0
                 vlhs[vmask] += (relax - relax0) * dlhs
                 relax0 = relax  # currently applied relaxation
-                val, res, jac = _integrate_blocks(functional, residual, jacobian, arguments=lhs, mask=mask)
+                val, res, jac = integrate(**lhs)
                 resnorm = numpy.linalg.norm(res)
                 scale, accept = linesearch(res0, relax*dres, res, relax*(jac@dlhs))
                 relax = min(relax * scale, 1)
@@ -857,18 +857,58 @@ def _invert(cons, targets):
     return tuple(mask), vmask
 
 
-def _integrate_blocks(*blocks, arguments, mask):
-    '''helper function for blockwise integration'''
+def _reshape_array(array, *shapes):
+    assert tuple(n.__index__() for n in array.shape) == tuple(itertools.chain.from_iterable(shapes))
+    for axis, shape in enumerate(shapes):
+        if not shape:
+            array = evaluable.insertaxis(array, evaluable.constant(1), axis)
+        else:
+            for i in reversed(range(axis, axis + len(shape) - 1)):
+                array = evaluable.ravel(array, i)
+    return array
 
+
+class _Compiled:
+
+    def __init__(self, eval, ndofs):
+        self._eval = eval
+        self.ndofs = ndofs
+
+    def mask(self, mask):
+        mask = numpy.concatenate([m.ravel() for m in mask], axis=0, dtype=bool)
+        assert len(mask) == self.ndofs
+        ndofs = numpy.count_nonzero(mask)
+        if ndofs == self.ndofs:
+            return self
+        new_idx = numpy.cumsum(mask) - 1
+
+        def masked(**arguments):
+            (*nrg, res, jac_vals, jac_rows, jac_cols) = self._eval(**arguments)
+            coo_mask = mask[jac_rows] & mask[jac_cols]
+            return *nrg, res[mask], jac_vals[coo_mask], new_idx[jac_rows[coo_mask]], new_idx[jac_cols[coo_mask]]
+
+        return _Compiled(masked, ndofs)
+
+    def eval(self, /, **arguments):
+        *nrg, res, jac_vals, jac_rows, jac_cols = self._eval(**arguments)
+        return *nrg, res, matrix.assemble(jac_vals, (jac_rows, jac_cols), (self.ndofs, self.ndofs))
+
+
+def _compile_blocks(*blocks):
     *scalars, residuals, jacobians = blocks
-    assert len(residuals) == len(mask)
-    assert len(jacobians) == len(mask)**2
-    data = iter(evaluable.eval_sparse((*scalars, *residuals, *jacobians), **arguments))
-    nrg = [sparse.toarray(next(data)) for _ in range(len(scalars))]
-    res = [sparse.take(next(data), [m]) for m in mask]
-    jac = [[sparse.take(next(data), [mi, mj]) for mj in mask] for mi in mask]
-    assert not list(data)
-    return nrg + [sparse.toarray(sparse.block(res)), matrix.fromsparse(sparse.block(jac), inplace=True)]
+    assert len(jacobians) == len(residuals)**2
+
+    shapes = [tuple(n.__index__() for n in r.shape) for r in residuals]
+    ndofs = util.sum(util.product(shape, 1) for shape in shapes)
+
+    residuals = evaluable.concatenate(tuple(map(_reshape_array, residuals, shapes)))
+
+    jac = iter(jacobians)
+    jacobians = evaluable.concatenate([evaluable.concatenate([_reshape_array(next(jac), si, sj) for sj in shapes], axis=1) for si in shapes], axis=0)
+    jacobian_vals, (jacobian_rows, jacobian_cols) = jacobians.as_coo()
+
+    eval = evaluable.compile((*scalars, residuals, jacobian_vals, jacobian_rows, jacobian_cols))
+    return _Compiled(eval, ndofs)
 
 
 def _argobjs(funcs):
