@@ -308,7 +308,7 @@ class Evaluable(types.Singleton):
         'a frozenset of all arguments of this evaluable'
         return frozenset().union(*(child.arguments for child in self.__args))
 
-    @property
+    @cached_property
     def isconstant(self):
         return EVALARGS not in self.dependencies and not self.arguments
 
