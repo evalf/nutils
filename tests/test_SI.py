@@ -104,13 +104,13 @@ class Quantity(unittest.TestCase):
     def test_add(self):
         self.assertEqual(SI.Mass('2kg') + SI.Mass('3kg'), SI.Mass('5kg'))
         self.assertEqual(numpy.add(SI.Mass('2kg'), SI.Mass('3kg')), SI.Mass('5kg'))
-        with self.assertRaisesRegex(SI.DimensionError, r'incompatible arguments for add: \[M\], \[L\]'):
+        with self.assertRaisesRegex(TypeError, r"unsupported operand type\(s\) for \+: '\[M\]' and '\[L\]'"):
             SI.Mass('2kg') + SI.Length('3m')
 
     def test_sub(self):
         self.assertEqual(SI.Mass('2kg') - SI.Mass('3kg'), SI.Mass('-1kg'))
         self.assertEqual(numpy.subtract(SI.Mass('2kg'), SI.Mass('3kg')), SI.Mass('-1kg'))
-        with self.assertRaisesRegex(SI.DimensionError, r'incompatible arguments for sub: \[M\], \[L\]'):
+        with self.assertRaisesRegex(TypeError, r"unsupported operand type\(s\) for \-: '\[M\]' and '\[L\]'"):
             SI.Mass('2kg') - SI.Length('3m')
 
     def test_hypot(self):
