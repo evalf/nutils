@@ -5456,22 +5456,21 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
     '''
 
     funcs = [func.as_evaluable_array for func in funcs]
-    shape_chunks = Tuple(tuple(Tuple(builtins.sum(func.simplified._assparse, func.shape)) for func in funcs))
-    with shape_chunks.optimized_for_numpy.session(graphviz=graphviz) as eval:
-        for func, args in zip(funcs, eval(**arguments)):
-            shape = tuple(map(int, args[:func.ndim]))
-            chunks = [args[i:i+func.ndim+1] for i in range(func.ndim, len(args), func.ndim+1)]
-            length = builtins.sum(values.size for *indices, values in chunks)
-            data = numpy.empty((length,), dtype=sparse.dtype(shape, func.dtype))
-            start = 0
-            for *indices, values in chunks:
-                stop = start + values.size
-                d = data[start:stop].reshape(values.shape)
-                d['value'] = values
-                for idim, ii in enumerate(indices):
-                    d['index']['i'+str(idim)] = ii
-                start = stop
-            yield data
+    shape_chunks = compile(tuple(builtins.sum(func.simplified._assparse, func.shape) for func in funcs))
+    for func, args in zip(funcs, shape_chunks(**arguments)):
+        shape = tuple(map(int, args[:func.ndim]))
+        chunks = [args[i:i+func.ndim+1] for i in range(func.ndim, len(args), func.ndim+1)]
+        length = builtins.sum(values.size for *indices, values in chunks)
+        data = numpy.empty((length,), dtype=sparse.dtype(shape, func.dtype))
+        start = 0
+        for *indices, values in chunks:
+            stop = start + values.size
+            d = data[start:stop].reshape(values.shape)
+            d['value'] = values
+            for idim, ii in enumerate(indices):
+                d['index']['i'+str(idim)] = ii
+            start = stop
+        yield data
 
 
 def compile(func, *, simplify: bool = True, stats: typing.Optional[bool] = None, cache_const_intermediates: bool = True):
