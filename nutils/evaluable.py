@@ -5425,19 +5425,13 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
     results : :class:`tuple` of sparse data arrays
     '''
 
-    funcs = [func.as_evaluable_array for func in funcs]
-    shape_chunks = []
-    for func in funcs:
-        values, indices, shape = func.as_evaluable_array.as_coo_with_shape()
-        shape_chunks.append(Tuple((values, Tuple(indices), Tuple(shape))))
-    shape_chunks = Tuple(tuple(shape_chunks)).simplified.optimized_for_numpy
-    with shape_chunks.session(graphviz=graphviz) as eval:
-        for values, indices, shape in eval(**arguments):
-            data = numpy.empty((len(values),), dtype=sparse.dtype(shape, values.dtype))
-            data['value'] = values
-            for idim, ii in enumerate(indices):
-                data['index']['i'+str(idim)] = ii
-            yield data
+    shape_chunks = compile(tuple(func.as_evaluable_array.as_coo_with_shape() for func in funcs))
+    for values, indices, shape in shape_chunks(**arguments):
+        data = numpy.empty((len(values),), dtype=sparse.dtype(shape, values.dtype))
+        data['value'] = values
+        for idim, ii in enumerate(indices):
+            data['index']['i'+str(idim)] = ii
+        yield data
 
 
 def compile(funcs, *, simplify: bool = True, _plot_stats: typing.Optional[bool] = None):
