@@ -1037,7 +1037,7 @@ class Constant(Array):
         assert 0 <= axis1 < axis2 < self.ndim
         axes = (*range(axis1), *range(axis1+1, axis2), *range(axis2+1, self.ndim), axis1, axis2)
         value = numpy.transpose(self.value, axes)
-        return constant(numpy.transpose(numpy.linalg.inv(value), numpy.argsort(axes)))
+        return constant(numpy.transpose(Inverse.evalf(value), numpy.argsort(axes)))
 
     def _product(self):
         return constant((numpy.all if self.dtype == bool else numpy.prod)(self.value, -1))
