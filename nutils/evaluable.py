@@ -4475,7 +4475,7 @@ class Loop(Evaluable):
 
     def evalf_withtimes(self, times, length, init_arg, *invariants):
         serialized = self._serialized_loop
-        subtimes = times.setdefault(self, collections.defaultdict(_Stats))
+        subtimes = times[self].sub
         output = self.evalf_loop_init(init_arg)
         for index in range(length):
             values = [numpy.array(index)]
@@ -4496,7 +4496,7 @@ class Loop(Evaluable):
         loopcache = cache.copy()
         loopcache.pop(self.index, None)
         loopgraph = Subgraph('Loop', subgraph)
-        looptimes = times.get(self, collections.defaultdict(_Stats))
+        looptimes = times[self].sub
         cache[self] = node = self._node_loop_body(loopcache, loopgraph, looptimes)
         return node
 
@@ -4879,10 +4879,16 @@ def _populate_dependencies_sans_invariants(func, arg, invariants, dependencies, 
 
 class _Stats:
 
+    skipped = False
+
     def __init__(self, ncalls: int = 0, time: int = 0) -> None:
         self.ncalls = ncalls
         self.time = time
         self._start = None
+
+    @cached_property
+    def sub(self):
+        return collections.defaultdict(_Stats)
 
     def __repr__(self):
         return '_Stats(ncalls={}, time={})'.format(self.ncalls, self.time)
@@ -4898,6 +4904,26 @@ class _Stats:
     def __exit__(self, *exc_info) -> None:
         self.time += time.perf_counter_ns() - self._start
         self.ncalls += 1
+
+
+class _SkippedStats:
+
+    skipped = True
+    ncalls = 0
+    time = 0
+
+    @cached_property
+    def sub(self):
+        return collections.defaultdict(_SkippedStats)
+
+    def __add__(self, other):
+        if isinstance(other, (_Stats, _SkippedStats)):
+            return other
+        else:
+            return NotImplemented
+
+    __radd__ = __add__
+
 
 # FUNCTIONS
 
@@ -5463,6 +5489,12 @@ def _compile_tuple(funcs, *, simplify: bool = True, _plot_stats: typing.Optional
     deps.pop(EVALARGS, None)
     ordereddeps = EVALARGS, *sorted(deps, key=deps.__getitem__), funcs
     deptree = tuple(tuple(map(ordereddeps.index, func._Evaluable__args)) for func in ordereddeps)
+    nconsts = builtins.sum(itertools.takewhile(lambda v: v, map(operator.attrgetter('isconstant'), ordereddeps[1:])))
+    cache = None
+    if nconsts == len(deptree) - 1:
+        cache_indices = len(deptree) - 1,
+    else:
+        cache_indices = tuple(sorted({i for I in deptree[nconsts + 1:] for i in I if 0 < i <= nconsts}))
 
     if _plot_stats is None:
         _plot_stats = bool(graphviz)
@@ -5474,7 +5506,13 @@ def _compile_tuple(funcs, *, simplify: bool = True, _plot_stats: typing.Optional
 
     @log.withcontext
     def eval(**evalargs):
+        nonlocal serialized, cache
+
         values = [evalargs]
+        if nconsts and cache:
+            assert len(cache) == nconsts
+            values.extend(cache)
+            log.debug(f'using {nconsts} cached values')
 
         if _plot_stats:
             stats = collections.defaultdict(_Stats)
@@ -5494,16 +5532,26 @@ def _compile_tuple(funcs, *, simplify: bool = True, _plot_stats: typing.Optional
             raise
 
         if _plot_stats:
+            if nconsts and cache:
+                for func in ordereddeps[1:nconsts + 1]:
+                    stats[func] = _SkippedStats()
             node = funcs._node({}, None, stats)
             maxtime = builtins.max(n.metadata[1].time for n in node.walk(set()))
             tottime = builtins.sum(n.metadata[1].time for n in node.walk(set()))
             aggstats = tuple((key, builtins.sum(v.time for v in values), builtins.sum(v.ncalls for v in values)) for key, values in util.gather(n.metadata[:2] for n in node.walk(set())))
-            fill_color = (lambda node: '0,{:.2f},1'.format(node.metadata[1].time/maxtime)) if maxtime else None
+            fill_color = (lambda node: '0.333,1,1' if node.metadata[1].skipped else '0,{:.2f},1'.format(node.metadata[1].time/maxtime)) if maxtime else None
             node.export_graphviz(fill_color=fill_color, dot_path=graphviz)
             log.info(f'total time: {tottime/1e6:.0f}ms\n' + '\n'.join(f'{t/1e6:4.0f} {k} ({n} calls, avg {t/(1e6*n):.3f} per call)'
                                                                       for k, t, n in sorted(aggstats, reverse=True, key=lambda item: item[1]) if n))
 
-        return values[-1]
+        if nconsts and not cache:
+            log.debug(f'caching {nconsts} values')
+            cache = [None] * nconsts
+            for i in cache_indices:
+                cache[i - 1] = values[i]
+            serialized = serialized[nconsts:]
+
+        return tuple(numpy.array(v, copy=True) for v in values[-1])
 
     return eval
 
