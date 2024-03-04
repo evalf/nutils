@@ -311,7 +311,6 @@ class Evaluable(types.Singleton):
     def optimized_for_numpy(self):
         return self.simplified \
                    ._optimized_for_numpy1 \
-                   ._deep_flatten_constants() \
                    ._combine_loops()
 
     @util.deep_replace_property
@@ -325,11 +324,6 @@ class Evaluable(types.Singleton):
 
     def _optimized_for_numpy(self):
         return
-
-    @util.shallow_replace
-    def _deep_flatten_constants(self):
-        if isinstance(self, Array):
-            return self._flatten_constant()
 
     @cached_property
     def _loop_deps(self):
@@ -905,10 +899,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
             lower, upper = self._intbounds
             return lower if lower == upper else None
 
-    def _flatten_constant(self):
-        if self.isconstant:
-            return constant(self.eval())
-
 
 class Orthonormal(Array):
     'make a vector orthonormal to a subspace'
@@ -1089,9 +1079,6 @@ class Constant(Array):
         if self.ndim == 0:
             return self.dtype(self.value[()])
 
-    def _flatten_constant(self):
-        pass
-
 
 class InsertAxis(Array):
 
@@ -1213,9 +1200,6 @@ class InsertAxis(Array):
     @property
     def _const_uniform(self):
         return self.func._const_uniform
-
-    def _flatten_constant(self):
-        pass
 
 
 class Transpose(Array):
@@ -1404,9 +1388,6 @@ class Transpose(Array):
     @property
     def _const_uniform(self):
         return self.func._const_uniform
-
-    def _flatten_constant(self):
-        pass
 
 
 class Product(Array):
