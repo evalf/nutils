@@ -453,13 +453,14 @@ class Evaluable(types.Singleton):
 
     @cached_property
     def optimized_for_numpy(self):
-        retval = self.simplified._optimized_for_numpy1() or self
+        retval = self.simplified
+        retval = retval._optimized_for_numpy1() or retval
         return retval._combine_loops(loop for loop in retval._loop_deps if loop is not self)
 
-    @replace(depthfirst=True, recursive=True)
+    @replace(depthfirst=True, recursive=False)
     def _optimized_for_numpy1(obj):
         if isinstance(obj, Evaluable):
-            retval = obj._simplified() or obj._optimized_for_numpy()
+            retval = obj._optimized_for_numpy()
             if retval is not None and isinstance(obj, Array):
                 assert isinstance(retval, Array) and equalshape(retval.shape, obj.shape), '{0}._optimized_for_numpy or {0}._simplified resulted in shape change'.format(type(obj).__name__)
             return retval
@@ -1956,24 +1957,6 @@ class Einsum(Array):
     def _node_details(self):
         return self._einsumfmt
 
-    def _simplified(self):
-        for i, arg in enumerate(self.args):
-            if isinstance(arg, Transpose):  # absorb `Transpose`
-                idx = tuple(map(self.args_idx[i].__getitem__, numpy.argsort(arg.axes)))
-                return Einsum(self.args[:i]+(arg.func,)+self.args[i+1:], self.args_idx[:i]+(idx,)+self.args_idx[i+1:], self.out_idx)
-
-    def _sum(self, axis):
-        if not (0 <= axis < self.ndim):
-            raise IndexError('Axis out of range.')
-        return Einsum(self.args, self.args_idx, self.out_idx[:axis] + self.out_idx[axis+1:])
-
-    def _takediag(self, axis1, axis2):
-        if not (0 <= axis1 < axis2 < self.ndim):
-            raise IndexError('Axis out of range.')
-        ikeep, irm = self.out_idx[axis1], self.out_idx[axis2]
-        args_idx = tuple(tuple(ikeep if i == irm else i for i in idx) for idx in self.args_idx)
-        return Einsum(self.args, args_idx, self.out_idx[:axis1] + self.out_idx[axis1+1:axis2] + self.out_idx[axis2+1:] + (ikeep,))
-
 
 class Sum(Array):
 
@@ -1987,6 +1970,20 @@ class Sum(Array):
         if _equals_scalar_constant(self.func.shape[-1], 1):
             return Take(self.func, constant(0))
         return self.func._sum(self.ndim)
+
+    def _optimized_for_numpy(self):
+        func = self.func
+        axes = tuple(range(func.ndim))
+        while isinstance(func, Transpose):
+            axes = tuple(func.axes[i] for i in axes)
+            func = func.func
+        if isinstance(func, Einsum):
+            axis = axes[-1]
+            func = Einsum(func.args, func.args_idx, func.out_idx[:axis] + func.out_idx[axis+1:])
+            axes = tuple(ax-(ax > axis) for ax in axes if ax != axis)
+            if axes != tuple(range(func.ndim)):
+                func = Transpose(func, axes)
+            return func
 
     def _sum(self, axis):
         trysum = self.func._sum(axis)
@@ -2035,6 +2032,22 @@ class TakeDiag(Array):
         if _equals_scalar_constant(self.shape[-1], 1):
             return Take(self.func, constant(0))
         return self.func._takediag(self.ndim-1, self.ndim)
+
+    def _optimized_for_numpy(self):
+        func = self.func
+        axes = tuple(range(func.ndim))
+        while isinstance(func, Transpose):
+            axes = tuple(func.axes[i] for i in axes)
+            func = func.func
+        if isinstance(func, Einsum):
+            axis1, axis2 = sorted(axes[-2:])
+            ikeep, irm = func.out_idx[axis1], func.out_idx[axis2]
+            args_idx = tuple(tuple(ikeep if i == irm else i for i in idx) for idx in func.args_idx)
+            func = Einsum(func.args, args_idx, func.out_idx[:axis1] + func.out_idx[axis1+1:axis2] + func.out_idx[axis2+1:] + (ikeep,))
+            axes = *(ax-(ax > axis1)-(ax > axis2) for ax in axes[:-2]), func.ndim - 1
+            if axes != tuple(range(func.ndim)):
+                func = Transpose(func, axes)
+            return func
 
     @staticmethod
     def evalf(arr):
