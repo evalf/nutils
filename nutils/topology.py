@@ -803,7 +803,7 @@ class Topology:
         _ielem = evaluable.Argument('_locate_ielem', shape=(), dtype=int)
         _point = evaluable.Argument('_locate_point', shape=(evaluable.constant(self.ndims),))
         egeom = geom.lower(self._lower_args(_ielem, _point))
-        xJ = evaluable.Tuple((egeom, evaluable.derivative(egeom, _point))).simplified
+        xJ = evaluable.compile((egeom, evaluable.derivative(egeom, _point)), stats=False)
         with parallel.ctxrange('locating', len(coords)) as ipoints:
             for ipoint in ipoints:
                 xt = coords[ipoint]  # target
@@ -819,7 +819,7 @@ class Topology:
                         if iiter > maxiter > 0:
                             break  # maximum number of iterations reached
                         iiter += 1
-                        xp, Jp = xJ.eval(**arguments)
+                        xp, Jp = xJ(**arguments)
                         dx = xt - xp
                         ex0 = ex
                         ex = numpy.linalg.norm(dx)
