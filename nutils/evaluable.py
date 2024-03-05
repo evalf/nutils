@@ -779,16 +779,23 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     __inv__ = lambda self: LogicalNot(self) if self.dtype == bool else NotImplemented
 
     def _shape_str(self, form):
-        dtype = self.dtype.__name__[0] if hasattr(self, 'dtype') else '?'
-        shape = [str(n.__index__()) if n.isconstant else '?' for n in self.shape]
-        for i in set(range(self.ndim)) - set(self._unaligned[1]):
-            shape[i] = f'({shape[i]})'
-        for i, _ in self._inflations:
-            shape[i] = f'~{shape[i]}'
-        for axes in self._diagonals:
-            for i in axes:
-                shape[i] = f'{shape[i]}/'
-        return f'{dtype}:{",".join(shape)}'
+        prefix = shape = suffix = ''
+        try:
+            prefix = self.dtype.__name__[0] + ':'
+            shape = ['?'] * self.ndim
+            for i, n in enumerate(self.shape):
+                if n.isconstant:
+                    shape[i] = str(n.__index__())
+            for i in set(range(self.ndim)) - set(self._unaligned[1]):
+                shape[i] = f'({shape[i]})'
+            for i, _ in self._inflations:
+                shape[i] = f'~{shape[i]}'
+            for axes in self._diagonals:
+                for i in axes:
+                    shape[i] = f'{shape[i]}/'
+        except:
+            suffix = '(e)'
+        return prefix + ','.join(shape) + suffix
 
     sum = sum
     prod = product
