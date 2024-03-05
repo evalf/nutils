@@ -548,13 +548,17 @@ class Array(Evaluable):
             for i, n in enumerate(self.shape):
                 if n.isconstant:
                     shape[i] = str(n.__index__())
-            for i in set(range(self.ndim)) - set(self._unaligned[1]):
-                shape[i] = f'({shape[i]})'
-            for i, _ in self._inflations:
-                shape[i] = f'~{shape[i]}'
-            for axes in self._diagonals:
-                for i in axes:
-                    shape[i] = f'{shape[i]}/'
+            for op, args in self.representations:
+                if op is insertaxis:
+                    f, axis, length = args
+                    shape[axis] = '(' + shape[axis] + ')'
+                elif op is _inflate:
+                    f, dofmap, length, axis = args
+                    shape[axis] = '~' + shape[axis]
+                elif op is diagonalize:
+                    f, axis, newaxis = args
+                    shape[axis+(newaxis<=axis)] += '/'
+                    shape[newaxis] += '/'
         except:
             suffix = '(e)'
         return prefix + ','.join(shape) + suffix
