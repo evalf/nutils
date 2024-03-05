@@ -1289,7 +1289,7 @@ class unalign(TestCase):
     def test_single_trans(self):
         ox = evaluable.Transpose(evaluable.asarray(numpy.arange(6).reshape(2,3)), (1, 0))
         ux, where = evaluable.unalign(ox)
-        self.assertEqual(where, (1, 0)) # transposed, because this is a single argument
+        self.assertEqual(where, (0, 1))
         self.assertEqual(evaluable.eval_once(evaluable.align(ux, where, ox.shape)).tolist(), evaluable.eval_once(ox).tolist())
 
     def test_single_ins(self):

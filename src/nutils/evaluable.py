@@ -399,28 +399,36 @@ def unalign(*args, naxes: int = None):
     '''
 
     assert args
-    if len(args) == 1 and naxes is None:
-        return args[0]._unaligned
     if naxes is None:
         if any(arg.ndim != args[0].ndim for arg in args[1:]):
             raise ValueError('varying dimensions in unalign')
         naxes = args[0].ndim
     elif any(arg.ndim < naxes for arg in args):
         raise ValueError('one or more arguments have fewer axes than expected')
-    nonins = functools.reduce(operator.or_, [set(arg._unaligned[1]) for arg in args]) & set(range(naxes))
-    if len(nonins) == naxes:
-        return (*args, tuple(range(naxes)))
-    ret = []
+    uninserted = []
     for arg in args:
-        unaligned, where = arg._unaligned
-        keep = tuple(range(naxes, arg.ndim))
-        for i in sorted((nonins | set(keep)) - set(where)):
-            unaligned = InsertAxis(unaligned, arg.shape[i])
-            where += i,
-        if not ret:  # first argument
-            commonwhere = tuple(i for i in where if i < naxes)
-        if where != commonwhere + keep:
-            unaligned = transpose(unaligned, tuple(where.index(n) for n in commonwhere + keep))
+        where = list(range(naxes))
+        while True:
+            for arg_, axis, length in arg._as(insertaxis):
+                if axis < len(where):
+                    del where[axis]
+                    arg = arg_
+                    break
+            else:
+                break
+        uninserted.append((arg, tuple(where)))
+    if len(args) == 1:
+        return uninserted[0]
+    commonwhere = tuple(numpy.unique([axis for func, axes in uninserted for axis in axes]))
+    if len(commonwhere) == naxes:
+        return (*args, commonwhere)
+    ret = []
+    for arg, (unaligned, where) in zip(args, uninserted):
+        # both where and commonwhere are sorted
+        if len(where) < len(commonwhere):
+            missing = [i for i, n in enumerate(commonwhere) if n not in where]
+            shape = [arg.shape[commonwhere[i]] for i in missing]
+            unaligned = Transpose.from_end(appendaxes(unaligned, shape), *missing)
         ret.append(unaligned)
     return (*ret, commonwhere)
 
@@ -668,10 +676,6 @@ class Array(Evaluable):
 
     def _as(self, op):
         return (args for op_, args in self.representations if op_ is op)
-
-    @property
-    def _unaligned(self):
-        return self, tuple(range(self.ndim))
 
     _diagonals = ()
     _inflations = ()
@@ -1063,10 +1067,6 @@ class InsertAxis(Array):
     def _inflations(self):
         return tuple((axis, types.frozendict((dofmap, InsertAxis(func, self.length)) for dofmap, func in parts.items())) for axis, parts in self.func._inflations)
 
-    @cached_property
-    def _unaligned(self):
-        return self.func._unaligned
-
     def _simplified(self):
         if iszero(self.length):
             return zeros_like(self)
@@ -1305,11 +1305,6 @@ class Transpose(Array):
     @cached_property
     def _inflations(self):
         return tuple((self._invaxes[axis], types.frozendict((dofmap, transpose(func, self._axes_for(dofmap.ndim, self._invaxes[axis]))) for dofmap, func in parts.items())) for axis, parts in self.func._inflations)
-
-    @cached_property
-    def _unaligned(self):
-        unaligned, where = unalign(self.func)
-        return unaligned, tuple(self._invaxes[i] for i in where)
 
     @cached_property
     def _invaxes(self):
@@ -3771,10 +3766,6 @@ class Zeros(Array):
         for axis in range(self.ndim):
             yield insertaxis, (Zeros(self.shape[:axis] + self.shape[axis+1:], self.dtype), axis, self.shape[axis])
 
-    @cached_property
-    def _unaligned(self):
-        return Zeros((), self.dtype), ()
-
     def _compile_expression(self, *shape):
         return _pyast.Variable('numpy').get_attr('zeros').call(_pyast.Tuple(shape), dtype=self.ast_dtype)
 
@@ -4696,11 +4687,6 @@ class Ravel(Array):
 
     def _loopsum(self, index):
         return Ravel(loop_sum(self.func, index))
-
-    @property
-    def _unaligned(self):
-        unaligned, where = unalign(self.func, naxes=self.ndim - 1)
-        return Ravel(unaligned), (*where, self.ndim - 1)
 
     @cached_property
     @verify_sparse_chunks
