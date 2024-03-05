@@ -4819,8 +4819,8 @@ def takediag(arg, axis=-2, rmaxis=-1):
     arg = asarray(arg)
     axis = numeric.normdim(arg.ndim, axis)
     rmaxis = numeric.normdim(arg.ndim, rmaxis)
-    assert axis < rmaxis
-    return Transpose.from_end(_takediag(arg, axis, rmaxis), axis)
+    assert axis != rmaxis
+    return Transpose.from_end(_takediag(arg, axis, rmaxis), axis-(axis>=rmaxis))
 
 
 def _takediag(arg, axis1=-2, axis2=-1):
@@ -4848,8 +4848,7 @@ def diagonalize(arg, axis=-1, newaxis=-1):
     arg = asarray(arg)
     axis = numeric.normdim(arg.ndim, axis)
     newaxis = numeric.normdim(arg.ndim+1, newaxis)
-    assert axis < newaxis
-    return Transpose.from_end(Diagonalize(Transpose.to_end(arg, axis)), axis, newaxis)
+    return Transpose.from_end(Diagonalize(Transpose.to_end(arg, axis)), axis + (axis>=newaxis), newaxis)
 
 
 def sign(arg):
