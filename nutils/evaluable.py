@@ -1447,9 +1447,9 @@ class Inverse(Array):
     '''
 
     def __init__(self, func: Array):
-        assert isinstance(func, Array) and func.dtype != bool and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2]), f'func={func!r}'
+        assert isinstance(func, Array) and func.dtype in (float, complex) and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2]), f'func={func!r}'
         self.func = func
-        super().__init__(args=(func,), shape=func.shape, dtype=complex if func.dtype == complex else float)
+        super().__init__(args=(func,), shape=func.shape, dtype=func.dtype)
 
     def _simplified(self):
         result = self.func._inverse(self.ndim-2, self.ndim-1)
@@ -1488,9 +1488,9 @@ class Inverse(Array):
 class Determinant(Array):
 
     def __init__(self, func: Array):
-        assert isarray(func) and func.dtype != bool and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2])
+        assert isarray(func) and func.dtype in (float, complex) and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2])
         self.func = func
-        super().__init__(args=(func,), shape=func.shape[:-2], dtype=complex if func.dtype == complex else float)
+        super().__init__(args=(func,), shape=func.shape[:-2], dtype=func.dtype)
 
     def _simplified(self):
         result = self.func._determinant(self.ndim, self.ndim+1)
@@ -4791,6 +4791,8 @@ def determinant(arg, axes=(-2, -1)):
     arg = asarray(arg)
     if arg.dtype == bool:
         raise ValueError('The boolean determinant is not supported.')
+    if arg.dtype == int:
+        arg = IntToFloat(arg)
     return Determinant(Transpose.to_end(arg, *axes))
 
 
@@ -4803,15 +4805,17 @@ def grammium(arg, axes=(-2, -1)):
 def sqrt_abs_det_gram(arg, axes=(-2, -1)):
     arg = Transpose.to_end(arg, *axes)
     if _equals_simplified(arg.shape[-1], arg.shape[-2]):
-        return abs(Determinant(arg))
+        return abs(determinant(arg))
     else:
-        return sqrt(abs(Determinant(grammium(arg))))
+        return sqrt(abs(determinant(grammium(arg))))
 
 
 def inverse(arg, axes=(-2, -1)):
     arg = asarray(arg)
     if arg.dtype == bool:
         raise ValueError('The boolean inverse is not supported.')
+    if arg.dtype == int:
+        arg = IntToFloat(arg)
     return Transpose.from_end(Inverse(Transpose.to_end(arg, *axes)), *axes)
 
 
