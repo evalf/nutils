@@ -275,7 +275,7 @@ class unstructured_topology(TestCase):
         elif self.variant == 'tensor':
             structured, geom = mesh.rectilinear([numpy.linspace(0, 1, 5-i) for i in range(self.ndims)])
             domain = topology.ConnectedTopology(structured.space, structured.references, structured.transforms, structured.opposites, structured.connectivity)
-            nverts = numpy.product([5-i for i in range(self.ndims)])
+            nverts = numpy.prod([5-i for i in range(self.ndims)])
         elif self.variant == 'simplex':
             numpy.random.seed(0)
             nverts = 20
@@ -299,7 +299,7 @@ class unstructured_topology(TestCase):
         elif self.btype == 'discont':
             ndofs_by_ref = {
                 element.getsimplex(1)**self.ndims: (self.degree+1)**self.ndims,
-                element.getsimplex(self.ndims): numpy.product(self.degree+numpy.arange(self.ndims)+1) // numpy.product(numpy.arange(self.ndims)+1)}
+                element.getsimplex(self.ndims): numpy.prod(self.degree+numpy.arange(self.ndims)+1) // numpy.prod(numpy.arange(self.ndims)+1)}
             ndofs = sum(ndofs_by_ref[reference] for reference in self.domain.references)
         elif self.degree == 1:
             ndofs = self.nverts

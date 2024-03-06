@@ -184,6 +184,7 @@ class TestCase(unittest.TestCase):
         self.enter_context(treelog.set(treelog.LoggingLog('nutils')))
         self.enter_context(_builtin_warnings.catch_warnings())
         _builtin_warnings.simplefilter('error', warnings.NutilsWarning)
+        _builtin_warnings.simplefilter('error', DeprecationWarning)
 
     def assertAllEqual(self, actual, desired):
         actual = numpy.asarray(actual)

@@ -31,4 +31,11 @@ def via(print):
     warnings.showwarning = oldshowwarning
 
 
+@contextlib.contextmanager
+def ignore(category=Warning):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category)
+        yield
+
+
 # vim:sw=4:sts=4:et
