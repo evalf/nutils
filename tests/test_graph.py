@@ -109,6 +109,22 @@ class RegularNode(TestCase):
         self.assertEqual(list(node.walk(seen)), [])
 
 
+class TupleNode(TestCase):
+
+    def test_len(self):
+        a = _graph.RegularNode('a', (), {}, 'meta')
+        b = _graph.RegularNode('b', (), {}, 'meta')
+        ab = _graph.TupleNode((a, b), 'meta')
+        self.assertEqual(len(ab), 2)
+
+    def test_getitem(self):
+        a = _graph.RegularNode('a', (), {}, 'meta')
+        b = _graph.RegularNode('b', (), {}, 'meta')
+        ab = _graph.TupleNode((a, b), 'meta')
+        self.assertEqual(ab[0], a)
+        self.assertEqual(ab[1], b)
+
+
 class DuplicatedLeafNode(TestCase):
 
     def setUp(self):
