@@ -30,7 +30,7 @@ else:
 
 from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, sparse
 from functools import cached_property
-from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph
+from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph, TupleNode
 import nutils_poly as poly
 import numpy
 import sys
@@ -419,6 +419,12 @@ class Tuple(Evaluable):
         'add'
 
         return Tuple(tuple(other) + self.items)
+
+    def _node(self, cache, subgraph, times):
+        if (cached := cache.get(self)) is not None:
+            return cached
+        cache[self] = node = TupleNode(tuple(item._node(cache, subgraph, times) for item in self.items), (type(self).__name__, times[self]), subgraph=subgraph)
+        return node
 
 
 # ARRAYFUNC
@@ -2708,11 +2714,11 @@ class ArrayFromTuple(Array):
     def _node(self, cache, subgraph, times):
         if self in cache:
             return cache[self]
-        elif hasattr(self.arrays, '_node_tuple'):
-            cache[self] = node = self.arrays._node_tuple(cache, subgraph, times)[self.index]
-            return node
-        else:
-            return super()._node(cache, subgraph, times)
+        node = self.arrays._node(cache, subgraph, times)
+        if isinstance(node, TupleNode):
+            node = node[self.index]
+        cache[self] = node
+        return node
 
     def _intbounds_impl(self):
         return self._lower, self._upper
@@ -4290,7 +4296,7 @@ class LoopConcatenate(Array):
         if self in cache:
             return cache[self]
         else:
-            cache[self] = node = self._lcc._node_tuple(cache, subgraph, times)[0]
+            cache[self] = node = self._lcc._node(cache, subgraph, times)[0]
             return node
 
     def _simplified(self):
@@ -4406,7 +4412,7 @@ class LoopConcatenateCombined(Evaluable):
                     result[..., start:stop] = block
         return tuple(results)
 
-    def _node_tuple(self, cache, subgraph, times):
+    def _node(self, cache, subgraph, times):
         if (self, 'tuple') in cache:
             return cache[self, 'tuple']
         subcache = {}
@@ -4421,8 +4427,8 @@ class LoopConcatenateCombined(Evaluable):
             concat_kwargs['stop'] = stop._node(subcache, loopgraph, subtimes)
             concat_kwargs['func'] = func._node(subcache, loopgraph, subtimes)
             concats.append(RegularNode('LoopConcatenate', (), concat_kwargs, (type(self).__name__, subtimes['concat', func]), loopgraph))
-        cache[self, 'tuple'] = concats = tuple(concats)
-        return concats
+        cache[self, 'tuple'] = node = TupleNode(tuple(concats), (type(self).__name__, times[self]), subgraph)
+        return node
 
 
 class SearchSorted(Array):
