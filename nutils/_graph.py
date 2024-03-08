@@ -156,6 +156,19 @@ class RegularNode(Node[Metadata]):
             yield from arg.walk(seen)
 
 
+class TupleNode(RegularNode[Metadata]):
+
+    def __init__(self, items: Tuple[Node, ...], metadata: Metadata, subgraph: Optional[Subgraph] = None) -> None:
+        self.items = items
+        super().__init__(label='Tuple', args=items, kwargs={}, metadata=metadata, subgraph=subgraph)
+
+    def __len__(self) -> int:
+        return len(self.items)
+
+    def __getitem__(self, index: int) -> Node:
+        return self.items[index]
+
+
 class DuplicatedLeafNode(Node[Metadata]):
 
     def __init__(self, label: str, metadata: Metadata) -> None:
