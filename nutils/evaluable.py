@@ -4556,6 +4556,12 @@ class LoopConcatenate(Loop, Array):
             return
         return align(f, where, self.shape)
 
+    def _sum(self, axis):
+        if axis == self.ndim-1:
+            return loop_sum(Sum(self.func), self.index)
+        else:
+            return loop_concatenate(sum(self.func, axis), self.index)
+
     def _takediag(self, axis1, axis2):
         if axis1 < self.ndim-1 and axis2 < self.ndim-1:
             return Transpose.from_end(loop_concatenate(Transpose.to_end(_takediag(self.func, axis1, axis2), -2), self.index), -2)
