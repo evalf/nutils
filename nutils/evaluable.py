@@ -3025,6 +3025,9 @@ class Inflate(Array):
         numpy.add.at(inflated, self._indices_head + (indices,), array)
         return inflated
 
+    def evalf_iadd(self, output, array, indices, length):
+        numpy.add.at(output, self._indices_head + (indices,), array)
+
     def _inflate(self, dofmap, length, axis):
         if dofmap.ndim == 0 and dofmap == self.dofmap and length == self.length:
             return diagonalize(self, -1, axis)
