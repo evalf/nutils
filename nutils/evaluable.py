@@ -2943,6 +2943,7 @@ class Inflate(Array):
         self.dofmap = dofmap
         self.length = length
         self.warn = not dofmap.isconstant
+        self._indices_head = (slice(None),) * (func.ndim - dofmap.ndim)
         super().__init__(args=(func, dofmap, length), shape=(*func.shape[:func.ndim-dofmap.ndim], length), dtype=func.dtype)
 
     @cached_property
@@ -2970,12 +2971,10 @@ class Inflate(Array):
             or self.dofmap._rinflate(self.func, self.length, self.ndim-1)
 
     def evalf(self, array, indices, length):
-        assert indices.ndim == self.dofmap.ndim
-        assert length.ndim == 0
         if self.warn and int(length) > indices.size:
             warnings.warn('using explicit inflation; this is usually a bug.', ExpensiveEvaluationWarning)
         inflated = numpy.zeros(array.shape[:array.ndim-indices.ndim] + (length,), dtype=self.dtype)
-        numpy.add.at(inflated, (slice(None),)*(self.ndim-1)+(indices,), array)
+        numpy.add.at(inflated, self._indices_head + (indices,), array)
         return inflated
 
     def _inflate(self, dofmap, length, axis):
