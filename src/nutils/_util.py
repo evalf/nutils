@@ -25,6 +25,7 @@ import re
 import linecache
 import hashlib
 import traceback
+import itertools
 from typing import Iterable, Sequence, Tuple
 
 supports_outdirfd = os.open in os.supports_dir_fd and os.listdir in os.supports_fd
@@ -1389,6 +1390,50 @@ class cached_iterable:
 
     def __iter__(self):
         return CachedIterable(self.iterator, self.items)
+
+
+def eager_product(*iterables):
+    '''Cartesian product of the input iterables.
+
+    The `eager_product` function is mostly* equivalent to `itertools.product`
+    except that items are generated in a different order: rather than mimicking
+    a nested loop, the iterables are traversed simultaneously and products are
+    yielded as soon as they are available:
+
+    >>> tuple(itertools.product((1, 3, 5), (2, 4, 6)))
+    ((1, 2), (1, 4), (1, 6), (3, 2), (3, 4), (3, 6), (5, 2), (5, 4), (5, 6))
+
+    >>> tuple(eager_product((1, 3, 5), (2, 4, 6)))
+    ((1, 2), (3, 2), (1, 4), (3, 4), (5, 2), (5, 4), (1, 6), (3, 6), (5, 6))
+
+    Note that the first four iterates involve only items 1 and 2 of the input
+    arguments. This behaviour is potentially useful in situations where the
+    iterates are expensive to generate till exhaustion and where relevant items
+    are most likely to be located towards the beginning.
+
+    *The one difference with `itertools.product` other than order is in the
+    treatment of an empty argument list, where `eager_product` yields no items
+    rather than a single empty tuple.
+    '''
+
+    if len(iterables) < 2:
+        # fast path
+        yield from zip(*iterables)
+        return
+
+    cached_items = tuple([] for it in iterables)
+    iterators = tuple(map(iter, iterables))
+    cycle = list(range(len(iterables)))
+    for i in cycle:
+        try:
+            item = next(iterators[i])
+        except StopIteration:
+            continue
+        product_args = list(cached_items)
+        product_args[i] = item,
+        yield from itertools.product(*product_args)
+        cached_items[i].append(item)
+        cycle.append(i)
 
 
 # vim:sw=4:sts=4:et

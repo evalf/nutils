@@ -9,6 +9,7 @@ import treelog
 import datetime
 import sys
 import traceback
+import itertools
 
 
 class pairwise(TestCase):
@@ -858,3 +859,33 @@ class cached_iterable(TestCase):
         self.assertEqual(self.yield_count, 2)
         self.assertEqual(tuple(a.x), (1, 2, 3))
         self.assertEqual(self.yield_count, 3)
+
+
+class eager_product(TestCase):
+
+    def test_a_eq_b(self):
+        it = util.eager_product([1,2,3], ['a','b','c'])
+        self.assertEqual(list(it), [(1, 'a'), (2, 'a'), (1, 'b'), (2, 'b'), (3, 'a'), (3, 'b'), (1, 'c'), (2, 'c'), (3, 'c')])
+
+    def test_a_gt_b(self):
+        it = util.eager_product([1,2,3,4], ['a','b'])
+        self.assertEqual(list(it), [(1, 'a'), (2, 'a'), (1, 'b'), (2, 'b'), (3, 'a'), (3, 'b'), (4, 'a'), (4, 'b')])
+
+    def test_a_lt_b(self):
+        it = util.eager_product([1,2], ['a','b','c','d'])
+        self.assertEqual(list(it), [(1, 'a'), (2, 'a'), (1, 'b'), (2, 'b'), (1, 'c'), (2, 'c'), (1, 'd'), (2, 'd')])
+
+    def test_a_empty(self):
+        it = util.eager_product([], ['a','b','c'])
+        self.assertEqual(list(it), [])
+
+    def test_b_empty(self):
+        it = util.eager_product([1,2,3], [])
+        self.assertEqual(list(it), [])
+
+    def test_nargs(self):
+        iterables = [1, 2, 3], [True, False], ['a', 'b', 'c', 'd'], ['x', 'y', 'z']
+        for n in range(1, len(iterables)+1):
+            s1 = set(itertools.product(*iterables[:n]))
+            s2 = set(util.eager_product(*iterables[:n]))
+            self.assertEqual(s1, s2)
