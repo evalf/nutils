@@ -865,6 +865,8 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     _imag = lambda self: None
     _conjugate = lambda self: None
 
+    representations = ()
+
     @property
     def _unaligned(self):
         return self, tuple(range(self.ndim))
@@ -989,6 +991,10 @@ class Constant(Array):
         self.value = numpy.asarray(value)
         super().__init__(args=(), shape=tuple(constant(n) for n in value.shape), dtype=value.dtype)
 
+    @property
+    def representations(self):
+        return (constant, (self.value,)),
+
     def _simplified(self):
         if not self.value.any():
             return zeros_like(self)
@@ -1101,6 +1107,26 @@ class InsertAxis(Array):
         self.func = func
         self.length = length
         super().__init__(args=(func, length), shape=(*func.shape, length), dtype=func.dtype)
+
+    @util.reentrant_iter.property
+    def representations(self):
+        yield insertaxis, (self.func, self.ndim-1, self.length)
+        for op, args in self.func.representations:
+            if op is insertaxis:
+                f, axis, length = args
+                yield op, (InsertAxis(f, self.length), axis, length)
+            elif op is diagonalize:
+                f, axis, newaxis = args
+                yield op, (InsertAxis(f, self.length), axis, newaxis)
+            elif op is _inflate:
+                f, dofmap, length, axis = args
+                yield op, (InsertAxis(f, self.length), dofmap, length, axis)
+            elif op in (add, multiply):
+                a, b = args
+                yield op, (InsertAxis(a, self.length), InsertAxis(b, self.length))
+            elif op is ravel:
+                f, axis = args
+                yield op, (InsertAxis(f, self.length), axis)
 
     @property
     def _diagonals(self):
@@ -1253,6 +1279,92 @@ class Transpose(Array):
         self.func = func
         self.axes = axes
         super().__init__(args=(func,), shape=tuple(func.shape[n] for n in axes), dtype=func.dtype)
+
+    @util.reentrant_iter.property
+    def representations(self):
+        yield transpose, (self.func, self.axes)
+        for op, args in self.func.representations:
+            if op is transpose:
+                f, axes = args
+                yield op, (f, tuple(axes[i] for i in self.axes))
+            elif op in (insertaxis, legendre):
+                f, axis, arg = args
+                yield op, (transpose(f, tuple(i-(i>axis) for i in self.axes if i != axis)), self.axes.index(axis), arg)
+            elif op is diagonalize:
+                f, axis, newaxis = args
+                axes = tuple(i-(i>newaxis) for i in self.axes if i != newaxis)
+                yield op, (transpose(f, axes), axes.index(axis), self.axes.index(newaxis))
+            elif op is _inflate:
+                f, dofmap, length, axis = args
+                axes = [i if i <= axis else i + (dofmap.ndim-1) for i in self.axes]
+                newaxis = self.axes.index(axis)
+                axes[newaxis:newaxis+1] = range(axis, axis+dofmap.ndim)
+                yield op, (transpose(f, tuple(axes)), dofmap, length, newaxis)
+            elif op is _take:
+                f, indices, axis = args
+                if indices.ndim == 0:
+                    yield op, (transpose(f, (*self.axes, f.ndim-1)), indices, f.ndim-1)
+                elif numpy.ptp(takeaxes := self.axes[axis:axis+indices.ndim]) == indices.ndim-1:
+                    axes = [i if i <= axis else i - (indices.ndim-1) for i in self.axes if not axis < i < axis + indices.ndim]
+                    iaxes = [i - min(takeaxes) for i in takeaxes]
+                    yield op, (transpose(f, axes), transpose(indices, iaxes), axes.index(axis))
+            elif op is polyval:
+                f, coeffs, axis = args
+                if coeffs.ndim == 1:
+                    yield op, (transpose(f, (*self.axes, f.ndim-1)), coeffs, f.ndim-1)
+                elif numpy.ptp(takeaxes := self.axes[axis:axis+coeffs.ndim-1]) == coeffs.ndim-2:
+                    axes = [i if i <= axis else i - (coeffs.ndim-2) for i in self.axes if not axis < i < axis + coeffs.ndim - 1]
+                    caxes = [i - min(takeaxes) for i in takeaxes] + [coeffs.ndim-1]
+                    yield op, (transpose(f, axes), transpose(coeffs, caxes), axes.index(axis))
+            elif op is polymul:
+                c1, c2, v, axis = args
+                yield op, (Transpose(c1, self.axes), Transpose(c2, self.axes), v, self.axes.index(axis))
+            elif op is polygrad:
+                c, nvars, caxis, deraxis = args
+                axes = tuple(i-(i>deraxis) for i in self.axes if i != deraxis)
+                yield op, (transpose(c, axes), nvars, axes.index(caxis), self.axes.index(deraxis))
+            elif op is takediag:
+                f, axis, rmaxis = args
+                yield op, (Transpose(f, (*self.axes, self.ndim)), self.axes.index(axis), self.ndim)
+            elif op in (add, multiply, power, Choose, sign, *_POINTWISE):
+                yield op, tuple(Transpose(arg, self.axes) for arg in args)
+            elif op is ravel:
+                f, axis = args
+                axes = [i + (i>axis) for i in self.axes]
+                newaxis = self.axes.index(axis)
+                axes.insert(newaxis+1, axis+1)
+                yield op, (transpose(f, tuple(axes)), newaxis)
+            elif op is unravel:
+                f, axis, shape = args
+                if self.axes[axis+1] == self.axes[axis]+1:
+                    axes = [i if i <= axis else i - 1 for i in self.axes if i != axis + 1]
+                    yield op, (transpose(f, tuple(axes)), axes.index(axis), shape)
+            elif op is constant:
+                v, = args
+                yield op, (v.transpose(self.axes),)
+            elif op in (loop_sum, SearchSorted):
+                f, *_args = args
+                yield op, (Transpose(f, self.axes), *_args)
+            elif op is loop_concatenate:
+                f, index, axis = args
+                yield op, (Transpose(f, self.axes), index, self.axes.index(axis))
+            elif op is inverse:
+                f, invaxes = args
+                yield op, (Transpose(f, self.axes), tuple(map(self.axes.index, invaxes)))
+            elif op is determinant:
+                f, axes = args
+                yield op, (Transpose(f, (*self.axes, self.ndim, self.ndim+1)), (self.ndim, self.ndim+1))
+            elif op in (sum, product):
+                f, axis = args
+                yield op, (Transpose(f, (*self.axes, self.ndim)), self.ndim)
+            elif op is ravelindex:
+                ia, ib, na, nb, where = args
+                align = numpy.argsort(self.axes)
+                axesa = numpy.argsort(align[~where])
+                axesb = numpy.argsort(align[where])
+                yield op, (transpose(ia, axesa), transpose(ib, axesb), na, nb, where[list(self.axes)])
+            elif op is Choose:
+                yield op, tuple(Transpose(arg, self.axes) for arg in args)
 
     @cached_property
     def _diagonals(self):
@@ -1417,6 +1529,24 @@ class Product(Array):
         self.evalf = functools.partial(numpy.all if func.dtype == bool else numpy.prod, axis=-1)
         super().__init__(args=(func,), shape=func.shape[:-1], dtype=func.dtype)
 
+    @util.reentrant_iter.property
+    def representations(self):
+        yield product, (self.func, self.ndim)
+        for op, args in self.func.representations:
+            if op is constant:
+                v, = args
+                yield op, (self.evalf(v),)
+            elif op is insertaxis:
+                f, axis, length = args
+                if axis < f.ndim:
+                    yield op, (Product(f), axis, length)
+            elif op is multiply:
+                a, b = args
+                yield op, (Product(a), Product(b))
+            elif op in (IntToFloat, FloatToComplex):
+                f, = args
+                yield op, (Product(f),)
+
     def _simplified(self):
         if _equals_scalar_constant(self.func.shape[-1], 1):
             return get(self.func, self.ndim, constant(0))
@@ -1444,6 +1574,30 @@ class Inverse(Array):
         assert isinstance(func, Array) and func.dtype in (float, complex) and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2]), f'func={func!r}'
         self.func = func
         super().__init__(args=(func,), shape=func.shape, dtype=func.dtype)
+
+    @util.reentrant_iter.property
+    def representations(self):
+        yield inverse, (self.func, (self.ndim-2, self.ndim-1))
+        for op, args in self.func.representations:
+            if op is insertaxis:
+                f, axis, length = args
+                if axis < f.ndim-2:
+                    yield op, (Inverse(f), axis, length)
+            elif op is diagonalize:
+                f, axis, newaxis = args
+                if axis < f.ndim-2 and newaxis <= f.ndim-2:
+                    yield op, (Inverse(f), axis, newaxis)
+            elif op is _inflate:
+                f, dofmap, length, axis = args
+                if axis + dofmap.ndim < f.ndim-2:
+                    yield op, (Inverse(f), dofmap, length, axis)
+            elif op is ravel:
+                f, axis = args
+                if axis+1 < f.ndim-2:
+                    yield op, (Inverse(f), axis)
+            elif op is constant:
+                v, = args
+                yield op, (numpy.linalg.inv(v),)
 
     def _simplified(self):
         if _equals_scalar_constant(self.func.shape[-1], 1):
@@ -1488,6 +1642,30 @@ class Determinant(Array):
         self.func = func
         super().__init__(args=(func,), shape=func.shape[:-2], dtype=func.dtype)
 
+    @util.reentrant_iter.property
+    def representations(self):
+        yield determinant, (self.func, (self.func.ndim-2, self.func.ndim-1))
+        for op, args in self.func.representations:
+            if op is insertaxis:
+                f, axis, length = args
+                if axis < f.ndim-2:
+                    yield op, (Determinant(f), axis, length)
+            elif op is diagonalize:
+                f, axis, newaxis = args
+                if axis < f.ndim-2 and newaxis <= f.ndim-2:
+                    yield op, (Determinant(f), axis, newaxis)
+            elif op is _inflate:
+                f, dofmap, length, axis = args
+                if axis + dofmap.ndim < f.ndim-2:
+                    yield op, (Determinant(f), dofmap, length, axis)
+            elif op is ravel:
+                f, axis = args
+                if axis+1 < f.ndim-2:
+                    yield op, (Determinant(f), axis)
+            elif op is constant:
+                v, = args
+                yield op, (numpy.linalg.det(v),)
+
     def _simplified(self):
         result = self.func._determinant(self.ndim, self.ndim+1)
         if result is not None:
@@ -1523,6 +1701,15 @@ class Multiply(Array):
                 yield from func._factors
             else:
                 yield func
+
+    @util.reentrant_iter.property
+    def representations(self):
+        yield multiply, tuple(self.funcs)
+        func1, func2 = self.funcs
+        for (op1, args1), (op2, args2) in util.iter_product(func1.representations, func2.representations):
+            if op1 is op2 and op1 in (transpose, insertaxis, diagonalize, ravel, constant, BoolToInt, IntToFloat, FloatToComplex, transpose, product) and args1[1:] == args2[1:]:
+                # excluding _inflate because of potential repeated indices
+                yield op1, (args1[0] * args2[0], *args1[1:])
 
     def _simplified(self):
         factors = tuple(self._factors)
@@ -1716,6 +1903,14 @@ class Add(Array):
             else:
                 yield func
 
+    @util.reentrant_iter.property
+    def representations(self):
+        yield add, tuple(self.funcs)
+        func1, func2 = self.funcs
+        for (op1, args1), (op2, args2) in util.iter_product(func1.representations, func2.representations):
+            if op1 is op2 and op1 in (insertaxis, _inflate, diagonalize, ravel, constant, loop_sum, IntToFloat, FloatToComplex) and args1[1:] == args2[1:]:
+                yield op1, (args1[0] + args2[0], *args1[1:])
+
     def _simplified(self):
         terms = tuple(self._terms)
         for j, fj in enumerate(terms):
@@ -1859,6 +2054,45 @@ class Sum(Array):
         self.evalf = functools.partial(numpy.any if func.dtype == bool else numpy.sum, axis=-1)
         super().__init__(args=(func,), shape=func.shape[:-1], dtype=func.dtype)
 
+    @util.reentrant_iter.property
+    def representations(self):
+        yield sum, (self.func, self.ndim)
+        for op, args in self.func.representations:
+            if op is sum:
+                f, axis = args
+                if axis < f.ndim-1:
+                    yield op, (Sum(f), axis)
+                else:
+                    yield op, (sum(f, -2), self.ndim)
+            elif op is insertaxis:
+                f, axis, length = args
+                if axis < f.ndim:
+                    yield op, (Sum(f), axis, length)
+            elif op is diagonalize:
+                f, axis, newaxis = args
+                if axis < f.ndim-1 and newaxis < f.ndim:
+                    yield op, (Sum(f), axis, newaxis)
+            elif op is _inflate:
+                f, dofmap, length, axis = args
+                if axis + dofmap.ndim < f.ndim:
+                    yield op, (Sum(f), dofmap, length, axis)
+            elif op is add:
+                a, b = args
+                yield op, (Sum(a), Sum(b))
+            elif op is ravel:
+                f, axis = args
+                if axis+1 < f.ndim-1:
+                    yield op, (Sum(f), axis)
+            elif op is constant:
+                v, = args
+                yield op, (v.sum(-1) if self.dtype != bool else v.any(-1),)
+            elif op in (IntToFloat, FloatToComplex):
+                f, = args
+                yield op, (Sum(f),)
+            elif op is loop_sum:
+                f, index = args
+                yield op, (Sum(f), index)
+
     def _simplified(self):
         if _equals_scalar_constant(self.func.shape[-1], 1):
             return Take(self.func, constant(0))
@@ -1913,6 +2147,102 @@ class TakeDiag(Array):
         self.func = func
         super().__init__(args=(func,), shape=func.shape[:-1], dtype=func.dtype)
 
+    @util.reentrant_iter.property
+    def representations(self):
+        yield takediag, (self.func, self.func.ndim-2, self.func.ndim-1)
+        for op, args in self.func.representations:
+            if op is takediag:
+                f, axis, rmaxis = args
+                if axis < f.ndim-2 and rmaxis < f.ndim-2:
+                    yield op, (TakeDiag(f), axis, rmaxis)
+                # TODO expand
+            elif op is _take:
+                f, indices, axis = args
+                if axis < f.ndim-2:
+                    yield op, (TakeDiag(f), indices, axis)
+                elif indices.ndim == 0:
+                    yield op, (takediag(f, -3, -2 if axis == f.ndim-1 else -1), indices, f.ndim-2)
+            elif op is insertaxis:
+                f, axis, length = args
+                if axis < f.ndim-1:
+                    yield op, (TakeDiag(f), axis, length)
+            elif op is diagonalize:
+                f, axis, newaxis = args
+                if axis < f.ndim-3 and newaxis < f.ndim-2:
+                    yield op, (TakeDiag(f), axis, newaxis)
+            elif op is _inflate:
+                f, dofmap, length, axis = args
+                if axis < self.func.ndim-2:
+                    yield op, (TakeDiag(f), dofmap, length, axis)
+                else:
+                    taken = _take(f, dofmap, -1 if axis == self.func.ndim-2 else self.func.ndim-2)
+                    for i in range(dofmap.ndim):
+                        taken = takediag(taken, self.func.ndim-2+i, self.func.ndim-2+dofmap.ndim)
+                    yield op, (taken, dofmap, length, self.func.ndim-2)
+            elif op in (add, multiply, power, Choose, sign, *_POINTWISE):
+                yield op, tuple(TakeDiag(arg) for arg in args)
+            elif op is ravel:
+                f, axis = args
+                if axis+1 < f.ndim-2:
+                    yield op, (TakeDiag(f), axis)
+                else:
+                    unraveled = unravel(f, -1 if axis == self.func.ndim-2 else -3, f.shape[axis:axis+2])
+                    yield op, (TakeDiag(takediag(unraveled, -4, -2)), self.ndim-1)
+            elif op is unravel:
+                f, axis, shape = args
+                if axis < f.ndim-2:
+                    yield op, (TakeDiag(f), axis, shape)
+            elif op in (sum, product):
+                f, axis = args
+                if axis >= f.ndim-2:
+                    yield op, (takediag(f, -3, -2 if axis == f.ndim-1 else -1), f.ndim-2)
+                else:
+                    yield op, (TakeDiag(f), axis)
+            elif op is loop_concatenate:
+                f, index, axis = args
+                if axis < f.ndim-2:
+                    yield op, (TakeDiag(f), index, axis)
+            elif op is constant:
+                v, = args
+                yield op, (numpy.einsum('...kk->...k', v),)
+            elif op in (inverse, determinant):
+                f, (axis1, axis2) = args
+                if axis1 < f.ndim-2 and axis2 < f.ndim-2:
+                    yield op, (TakeDiag(f), (axis1, axis2))
+            elif op is constant:
+                v, = args
+                yield op, (TakeDiag.evalf(v),)
+            elif op in (loop_sum, SearchSorted):
+                f, *args = args
+                yield op, (TakeDiag(f), *args)
+            elif op is polyval:
+                points, coeffs, axis = args
+                if axis < points.ndim-2:
+                    yield op, (TakeDiag(points), coeffs, axis)
+                elif coeffs.ndim == 1:
+                    untested
+                    yield op, (takediag(points, -3, -1 if axis == points.ndim-2 else -2), coeffs, points.ndim-2)
+            elif op is polymul:
+                c1, c2, v, axis = args
+                if axis < self.func.ndim-2:
+                    yield op, (TakeDiag(c1), TakeDiag(c2), v, axis)
+            elif op is polygrad:
+                c, nvars, caxis, deraxis = args
+                if caxis < self.func.ndim-2 and deraxis < self.func.ndim-2:
+                    yield op, (TakeDiag(c), nvars, caxis, deraxis)
+            elif op is legendre:
+                f, axis, degree = args
+                if axis < self.func.ndim-2:
+                    yield op, (TakeDiag(f), axis, degree)
+            elif op is ravelindex:
+                ia, ib, na, nb, where = args
+                if where[-2] == where[-1]:
+                    if where[-1]:
+                        ib = TakeDiag(ib, self.indices)
+                    else:
+                        ia = TakeDiag(ia, self.indices)
+                    yield op, (ia, ib, na, nb, numpy.concatenate([where[:-2], numpy.full(self.indices.ndim, where[-1])]))
+
     def _simplified(self):
         if _equals_scalar_constant(self.shape[-1], 1):
             return Take(self.func, constant(0))
@@ -1949,6 +2279,95 @@ class Take(Array):
         self.func = func
         self.indices = indices
         super().__init__(args=(func, indices), shape=func.shape[:-1]+indices.shape, dtype=func.dtype)
+
+    @util.reentrant_iter.property
+    def representations(self):
+        yield _take, (self.func, self.indices, self.func.ndim-1)
+        for op, args in self.func.representations:
+            if op is _take:
+                f, indices, axis = args
+                if axis < self.func.ndim-1:
+                    yield op, (Take(f, self.indices), indices, axis)
+            elif op is insertaxis:
+                f, axis, length = args
+                if axis < f.ndim:
+                    yield op, (Take(f, self.indices), axis, length)
+                else: # axis == f.ndim
+                    for i in range(self.indices.ndim):
+                        args = appendaxes(f, self.indices.shape[:i] + self.indices.shape[i+1:]), f.ndim+i, length
+                        yield op, (appendaxes(f, self.indices.shape[:i] + self.indices.shape[i+1:]), f.ndim+i, self.indices.shape[i])
+            elif op is diagonalize:
+                f, axis, newaxis = args
+                if axis < f.ndim-1 and newaxis < f.ndim:
+                    yield op, (Take(f, self.indices), axis, newaxis)
+            elif op is _inflate:
+                f, dofmap, length, axis = args
+                if axis + dofmap.ndim < f.ndim:
+                    yield op, (Take(f, self.indices), dofmap, length, axis)
+            elif op in (add, multiply, power, Choose, sign, *_POINTWISE):
+                yield op, tuple(Take(arg, self.indices) for arg in args)
+            elif op is ravel:
+                f, axis = args
+                if axis+1 < f.ndim-1:
+                    yield op, (Take(f, self.indices), axis)
+            elif op is unravel:
+                f, axis, shape = args
+                if axis < f.ndim-1:
+                    yield op, (Take(f, self.indices), axis, shape)
+            elif op is constant:
+                v, = args
+                if self.indices.isconstant:
+                    yield op, (v.take(self.indices.eval(), -1),)
+            elif op in (inverse, determinant):
+                f, (axis1, axis2) = args
+                if axis1 < f.ndim-1 and axis2 < f.ndim-1:
+                    yield op, (Take(f, self.indices), (axis1, axis2))
+            elif op in (loop_sum, SearchSorted):
+                f, *args = args
+                yield op, (Take(f, self.indices), *args)
+            elif op in (sum, product):
+                f, axis = args
+                if axis < f.ndim-1:
+                    yield op, (Take(f, self.indices), axis)
+                else:
+                    yield op, (_take(f, self.indices, -2), self.ndim)
+            elif op is loop_concatenate:
+                f, index, axis = args
+                if axis < f.ndim-1:
+                    yield op, (Take(f, self.indices), index, axis)
+            elif op is takediag:
+                f, axis, rmaxis = args
+                if axis < f.ndim-1 and rmaxis < f.ndim-1:
+                    yield op, (Take(f, self.indices), axis, rmaxis)
+                elif axis < f.ndim-2 and rmaxis == f.ndim-1:
+                    yield op, (_take(f, self.indices, -2), axis, self.ndim)
+            elif op is ravelindex:
+                ia, ib, na, nb, where = args
+                if where[-1]:
+                    ib = Take(ib, self.indices)
+                else:
+                    ia = Take(ia, self.indices)
+                yield op, (ia, ib, na, nb, numpy.concatenate([where[:-1], numpy.full(self.indices.ndim, where[-1])]))
+            elif op is polyval:
+                points, coeffs, axis = args
+                if axis < points.ndim-1:
+                    yield op, (Take(points, self.indices), coeffs, axis+self.indices.ndim-1)
+                elif coeffs.ndim == 1:
+                    yield op, (_take(points, self.indices, -2), coeffs, points.ndim+self.indices.ndim-2)
+                else:
+                    yield op, (points, _take(coeffs, self.indices, -2), axis)
+            elif op is polymul:
+                c1, c2, v, axis = args
+                if axis < c1.ndim-1:
+                    yield op, (Take(c1, self.indices), Take(c2, self.indices), v, axis)
+            elif op is polygrad:
+                c, nvars, caxis, deraxis = args
+                if caxis < c.ndim-1 and deraxis < c.ndim:
+                    yield op, (Take(c, self.indices), nvars, caxis, deraxis)
+            elif op is legendre:
+                f, axis, degree = args
+                if axis < f.ndim:
+                    yield op, (Take(f, self.indices), axis, degree)
 
     def _simplified(self):
         if any(iszero(n) for n in self.indices.shape):
@@ -2000,6 +2419,27 @@ class Power(Array):
         self.func = func
         self.power = power
         super().__init__(args=(func, power), shape=func.shape, dtype=func.dtype)
+
+    @util.reentrant_iter.property
+    def representations(self):
+        yield power, (self.func, self.power)
+        for (op, args1), (op_, args2) in util.iter_product(self.func.representations, self.power.representations):
+            if op is op_:
+                if op is constant:
+                    v1, = args1
+                    v2, = args2
+                    yield op, (numpy.power(v1, v2),)
+                elif op is insertaxis:
+                    f1, axis1, length1 = args1
+                    f2, axis2, length2 = args2
+                    if axis1 == axis2:
+                        assert _equals_simplified(length1, length2)
+                        yield op, (Power(f1, f2), axis1, length1)
+                elif op is ravel:
+                    f1, axis1 = args1
+                    f2, axis2 = args2
+                    if axis1 == axis2:
+                        yield op, (Power(f1, f2), axis1)
 
     def _simplified(self):
         if iszero(self.power):
@@ -2075,6 +2515,31 @@ class Pointwise(Array):
         if params:
             self.evalf = functools.partial(self.evalf, **params)
         super().__init__(args=args, shape=shape0, dtype=dtype)
+
+    @util.reentrant_iter.property
+    def representations(self):
+        if self.params:
+            return
+        yield self.__class__, self.args
+        for opargs in util.iter_many(arg.representations for arg in self.args):
+            for i, (op, args) in enumerate(opargs):
+                if op is ravel:
+                    f, axis = args
+                    yield op, (self.__class__(*[f if i == j else unravel(arg, axis, f.shape[axis:axis+2]) for j, arg in enumerate(self.args)]), axis)
+                elif op in (transpose, insertaxis):
+                    if i == 0 and all(op_ is op and args_[1:] == args[1:] for op_, args_ in opargs[1:]):
+                        yield op, (self.__class__(*[f_ for op_, (f_, *_) in opargs]), *args[1:])
+                elif op is constant:
+                    if i == 0 and all(op_ is op for op_, args_ in opargs[1:]):
+                        yield op, (self.evalf(*[v_ for op_, (v_,) in opargs]),)
+                elif op is diagonalize:
+                    if i in self.linear or i in self.zero_preserving:
+                        f, axis, newaxis = args
+                        yield op, (self.__class__(*[f if i == j else takediag(arg, axis, newaxis) for j, arg in enumerate(self.args)]), axis, newaxis)
+                elif op is _inflate:
+                    if i in self.linear:
+                        f, dofmap, length, axis = args
+                        yield op, (self.__class__(*[f if i == j else _take(arg, axis) for j, arg in enumerate(self.args)]), dofmap, length, axis)
 
     def _newargs(self, *args):
         '''
@@ -2609,6 +3074,19 @@ class Sign(Array):
         self.func = func
         super().__init__(args=(func,), shape=func.shape, dtype=func.dtype)
 
+    @util.reentrant_iter.property
+    def representations(self):
+        yield sign, (self.func,)
+        for op, args in self.func.representations:
+            if op is constant:
+                v, = args
+                yield op, (numpy.sign(v),)
+            elif op in (insertaxis, diagonalize, ravel):
+                f, *args = args
+                yield op, (Sign(f), *args)
+            elif op in (multiply, IntToFloat):
+                yield op, tuple(Sign(arg) for arg in args)
+
     def _simplified(self):
         return self.func._sign()
 
@@ -2791,6 +3269,11 @@ class Zeros(Array):
     def __init__(self, shape, dtype):
         super().__init__(args=shape, shape=shape, dtype=dtype)
 
+    @util.reentrant_iter.property
+    def representations(self):
+        for axis in range(self.ndim):
+            yield insertaxis, (Zeros(self.shape[:axis] + self.shape[axis+1:], self.dtype), axis, self.shape[axis])
+
     @cached_property
     def _unaligned(self):
         return Zeros((), self.dtype), ()
@@ -2877,6 +3360,30 @@ class Inflate(Array):
         self.length = length
         self.warn = not dofmap.isconstant
         super().__init__(args=(func, dofmap, length), shape=(*func.shape[:func.ndim-dofmap.ndim], length), dtype=func.dtype)
+
+    @util.reentrant_iter.property
+    def representations(self):
+        yield _inflate, (self.func, self.dofmap, self.length, self.ndim-1)
+        for op, args in self.func.representations:
+            if op is _inflate:
+                f, dofmap, length, axis = args
+                if axis + dofmap.ndim <= f.ndim - self.dofmap.ndim:
+                    yield op, (Inflate(f, self.dofmap, self.length), dofmap, length, axis)
+            elif op is insertaxis:
+                f, axis, length = args
+                if axis < self.ndim-1:
+                    yield op, (Inflate(f, self.dofmap, self.length), axis, length)
+            elif op is diagonalize:
+                f, axis, newaxis = args
+                if axis < self.ndim-2 and newaxis <= self.ndim-2:
+                    yield op, (Inflate(f, self.dofmap, self.length), axis, newaxis)
+            elif op is add:
+                a, b = args
+                yield op, (Inflate(a, self.dofmap, self.length), Inflate(b, self.dofmap, self.length))
+            elif op is ravel:
+                f, axis = args
+                if axis < self.ndim-1:
+                    yield op, (Inflate(f, self.dofmap, self.length), axis)
 
     @cached_property
     def _diagonals(self):
@@ -3048,6 +3555,39 @@ class Diagonalize(Array):
         assert isinstance(func, Array) and func.ndim > 0, f'func={func!r}'
         self.func = func
         super().__init__(args=(func,), shape=(*func.shape, func.shape[-1]), dtype=func.dtype)
+
+    @util.reentrant_iter.property
+    def representations(self):
+        yield diagonalize, (self.func, self.ndim-2, self.ndim-1)
+        for op, args in self.func.representations:
+            if op is diagonalize:
+                f, axis, newaxis = args
+                assert f.ndim == self.ndim-2
+                if newaxis == self.ndim-2:
+                    yield op, (self.func, axis, self.ndim-1)
+                    yield op, (self.func, axis, self.ndim-2)
+                else:
+                    yield op, (Diagonalize(f), axis, newaxis)
+            elif op is insertaxis:
+                f, axis, length = args
+                if axis < self.ndim-2:
+                    yield op, (Diagonalize(f), axis, length)
+            elif op is _inflate:
+                f, dofmap, length, axis = args
+                if axis + dofmap.ndim < f.ndim:
+                    yield op, (Diagonalize(f), dofmap, length, axis)
+            elif op in (add, multiply):
+                a, b = args
+                yield op, (Diagonalize(a), Diagonalize(b))
+            elif op is ravel:
+                f, axis = args
+                if axis < self.func.ndim-1:
+                    yield op, (Diagonalize(f), axis)
+                #else:
+                #    assert axis == self.func.ndim-1
+                #    unraveled = Diagonalize(diagonalize(f, -2, -2))
+                #    yield op, (ravel(unraveled, axis), axis+1)
+                #    yield op, (ravel(unraveled, axis+2), axis)
 
     @cached_property
     def _diagonals(self):
@@ -3319,6 +3859,39 @@ class Ravel(Array):
         self.func = func
         super().__init__(args=(func,), shape=(*func.shape[:-2], func.shape[-2] * func.shape[-1]), dtype=func.dtype)
 
+    @util.reentrant_iter.property
+    def representations(self):
+        yield ravel, (self.func, self.ndim-1)
+        for op, args in self.func.representations:
+            if op is ravel:
+                f, axis = args
+                if axis+1 < f.ndim-2:
+                    yield op, (Ravel(f), axis)
+            elif op is insertaxis:
+                f, axis, length = args
+                if axis < f.ndim-1:
+                    yield op, (Ravel(f), axis, length)
+                #else:
+                #    for f2, axis2, length2 in f._as(op):
+                #        if axis2 == f2.ndim:
+                #            yield op, (f2, axis2, self.shape[-1])
+            elif op is diagonalize:
+                f, axis, newaxis = args
+                if axis < f.ndim-2 and newaxis <= f.ndim-2:
+                    yield op, (Ravel(f), axis, newaxis)
+            elif op is _inflate:
+                f, dofmap, length, axis = args
+                if axis + dofmap.ndim < f.ndim-1:
+                    yield op, (Ravel(f), dofmap, length, axis)
+                else:
+                    if axis + dofmap.ndim == f.ndim-1:
+                        indices = dofmap, Range(f.shape[-1])
+                    else:
+                        indices = Range(f.shape[axis-1]), dofmap
+                    yield op, (f, RavelIndex(*indices, *self.func.shape[-2:]), self.shape[-1], f.ndim - (dofmap.ndim+1))
+            elif op in (add, multiply, power, Choose):
+                yield op, tuple(Ravel(arg) for arg in args)
+
     @cached_property
     def _inflations(self):
         inflations = []
@@ -3434,6 +4007,72 @@ class Unravel(Array):
         self.func = func
         super().__init__(args=(func, sh1, sh2), shape=(*func.shape[:-1], sh1, sh2), dtype=func.dtype)
 
+    @util.reentrant_iter.property
+    def representations(self):
+        yield unravel, (self.func, self.ndim-2, self.shape[-2:])
+        for op, args in self.func.representations:
+            if op is constant:
+                if self.shape[-2].isconstant and self.shape[-1].isconstant:
+                    v, = args
+                    return op, (v.reshape(*v.shape[:-1], self.shape[-2].eval(), self.shape[-1].eval()),)
+            elif op is insertaxis:
+                f, axis, length = args
+                if axis != f.ndim:
+                    yield op, (Unravel(f, *self.shape[-2:]), axis, length)
+                else:
+                    yield op, (InsertAxis(f, self.shape[-2]), self.ndim-1, self.shape[-1])
+                    yield op, (InsertAxis(f, self.shape[-1]), self.ndim-2, self.shape[-2])
+            elif op is inverse:
+                f, invaxes = args
+                if max(invaxes) < self.func.ndim-1:
+                    yield op, (Unravel(f, *self.shape[-2:]), invaxes)
+            elif op in (multiply, add, power, Choose, sign, *_POINTWISE):
+                yield op, tuple(Unravel(arg, *self.shape[-2:]) for arg in args)
+            elif op is _inflate:
+                f, dofmap, length, axis = args
+                if axis+dofmap.ndim < self.func.ndim-1:
+                    yield op, (Unravel(f, *self.shape[-2:]), dofmap, length, axis)
+            elif op is diagonalize:
+                f, axis, newaxis = args
+                if axis < f.ndim-1 and newaxis < f.ndim:
+                    yield op, (Unravel(f, *self.shape[-2:]), axis, newaxis)
+            elif op is ravel:
+                f, axis = args
+                if axis+1 < f.ndim-1:
+                    yield op, (Unravel(f, *self.shape[-2:]), axis)
+            elif op is ravelindex:
+                ia, ib, na, nb, where = args
+                if where[-1]:
+                    ib = Unravel(ib, *self.shape[-2:])
+                else:
+                    ia = Unravel(ia, *self.shape[-2:])
+                yield op, (ia, ib, na, nb, numpy.concatenate([where, where[-1:]]))
+            elif op is polyval:
+                f, coeffs, axis = args
+                if axis < f.ndim-1:
+                    yield op, (Unravel(f, *self.shape[-2:]), coeffs, axis)
+                elif coeffs.ndim == 0:
+                    yield op, (unravel(f, -2, self.shape[-2:]), coeffs, axis+1)
+            elif op is polymul:
+                c1, c2, v, axis = args
+                if axis < c1.ndim-1:
+                    yield op, (Unravel(c1, *self.shape[-2:]), Unravel(c2, *self.shape[-2:]), v, axis)
+            elif op is polygrad:
+                c, nvars, caxis, deraxis = args
+                if deraxis != c.ndim and caxis != c.ndim-1:
+                    yield op, (Unravel(c, *self.shape[-2:]), nvars, caxis, deraxis)
+            elif op is legendre:
+                f, axis, degree = args
+                if axis != f.ndim:
+                    yield op, (Unravel(f, *self.shape[-2:]), axis, degree)
+            elif op is loop_concatenate:
+                f, index, axis = args
+                if axis < f.ndim-1:
+                    yield op, (Unravel(f, *self.shape[-2:]), index, axis)
+            elif op in (loop_sum, SearchSorted):
+                f, *args = args
+                yield op, (Unravel(f, *self.shape[-2:]), *args)
+
     def _simplified(self):
         if _equals_scalar_constant(self.shape[-2], 1):
             return insertaxis(self.func, self.ndim-2, constant(1))
@@ -3479,6 +4118,18 @@ class RavelIndex(Array):
         self._length = na * nb
         super().__init__(args=(ia, ib, nb), shape=ia.shape + ib.shape, dtype=int)
 
+    @util.reentrant_iter.property
+    def representations(self):
+        yield ravelindex, (self._ia, self._ib, self._na, self._nb, numpy.concatenate([numpy.zeros(self._ia.ndim, bool), numpy.ones(self._ib.ndim, bool)]))
+        for op, args in self._ia.representations:
+            if op is insertaxis:
+                f, axis, length = args
+                yield op, (RavelIndex(f, self._ib, self._na, self._nb), axis, length)
+        for op, args in self._ib.representations:
+            if op is insertaxis:
+                f, axis, length = args
+                yield op, (RavelIndex(self._ia, f, self._na, self._nb), self._ia.ndim+axis, length)
+
     @staticmethod
     def evalf(ia, ib, nb):
         return ia[(...,)+(numpy.newaxis,)*ib.ndim] * nb + ib
@@ -3516,6 +4167,10 @@ class Range(Array):
         assert _isindex(length), f'length={length!r}'
         self.length = length
         super().__init__(args=(length,), shape=(length,), dtype=int)
+
+    @property
+    def representations(self):
+        return (Range, (self.length,)),
 
     def _take(self, index, axis):
         return InRange(index, self.length)
@@ -3598,6 +4253,15 @@ class Polyval(Array):
         self.coeffs = coeffs
         self.points = points
         super().__init__(args=(coeffs, points), shape=points.shape[:-1]+coeffs.shape[:-1], dtype=float)
+
+    @util.reentrant_iter.property
+    def representations(self):
+        yield polyval, (self.points, self.coeffs, self.points.ndim-1)
+        for op, args in self.points.representations:
+            if op is insertaxis:
+                f, axis, length = args
+                if axis != f.ndim:
+                    yield op, (Polyval(self.coeffs, f), axis, length)
 
     evalf = staticmethod(poly.eval_outer)
 
@@ -3743,6 +4407,16 @@ class PolyMul(Array):
         ncoeffs = PolyNCoeffs(len(vars), self.degree_left + self.degree_right)
         super().__init__(args=(coeffs_left, coeffs_right), shape=(*coeffs_left.shape[:-1], ncoeffs), dtype=float)
 
+    @util.reentrant_iter.property
+    def representations(self):
+        yield polymul, (self.coeffs_left, self.coeffs_right, self.vars, self.ndim-1)
+        for (op1, args1), (op2, args2) in util.iter_product(self.coeffs_left.representations, self.coeffs_right.representations):
+            if op1 is op2 and op1 is insertaxis and args1[1:] == args2[1:]:
+                f1, axis, length = args1
+                f2, _axis, _length = args2
+                if axis < f1.ndim:
+                    yield insertaxis, (PolyMul(f1, f2, self.vars), axis, length)
+
     @cached_property
     def evalf(self):
         try:
@@ -3802,6 +4476,15 @@ class PolyGrad(Array):
         shape = *coeffs.shape[:-1], constant(nvars), ncoeffs
         super().__init__(args=(coeffs,), shape=shape, dtype=float)
 
+    @util.reentrant_iter.property
+    def representations(self):
+        yield polygrad, (self.coeffs, self.nvars, self.ndim-2, self.ndim-1)
+        for op, args in self.coeffs.representations:
+            if op is insertaxis:
+                f, axis, length = args
+                if axis < f.ndim-1:
+                    yield op, (PolyGrad(f, self.nvars), axis, length)
+
     @cached_property
     def evalf(self):
         try:
@@ -3848,6 +4531,14 @@ class Legendre(Array):
         self._x = x
         self._degree = degree
         super().__init__(args=(x,), shape=(*x.shape, constant(degree+1)), dtype=float)
+
+    @util.reentrant_iter.property
+    def representations(self):
+        yield legendre, (self._x, self.ndim-1, self._degree)
+        for op, args in self._x.representations:
+            if op is insertaxis:
+                f, axis, length = args
+                yield op, (Legendre(f, self._degree), axis, length)
 
     def evalf(self, x: numpy.ndarray) -> numpy.ndarray:
         P = numpy.empty((*x.shape, self._degree+1), dtype=float)
@@ -3898,6 +4589,10 @@ class Choose(Array):
         self.index = index
         self.choices = choices
         super().__init__(args=(index,)+choices, shape=shape, dtype=dtype)
+
+    @util.reentrant_iter.property
+    def representations(self):
+        yield Choose, (self.index, *self.choices)
 
     @staticmethod
     def evalf(index, *choices):
@@ -4334,6 +5029,14 @@ class LoopSum(Loop, Array):
         self.func = func
         super().__init__(init_arg=Tuple(shape), body_arg=func, index_name=index_name, length=length, shape=shape, dtype=func.dtype)
 
+    @util.reentrant_iter.property
+    def representations(self):
+        yield loop_sum, (self.func, self.index)
+        for op, args in self.func.representations:
+            if op in (insertaxis, diagonalize, ravel) \
+            or op is _inflate and self.index not in args[1].arguments:
+                yield op, (loop_sum(args[0], self.index), *args[1:])
+
     def evalf_loop_init(self, shape):
         return parallel.shzeros(tuple(n.__index__() for n in shape), dtype=self.dtype)
 
@@ -4444,6 +5147,10 @@ class LoopConcatenate(Loop, Array):
         shape = *func.shape[:-1], concat_length
         super().__init__(init_arg=Tuple(shape), body_arg=Tuple((func, start, stop)), index_name=index_name, length=length, shape=shape, dtype=func.dtype)
 
+    @util.reentrant_iter.property
+    def representations(self):
+        yield loop_concatenate, (self.func, self.index, self.ndim-1)
+
     def evalf_loop_init(self, shape):
         return parallel.shempty(tuple(n.__index__() for n in shape), dtype=self.dtype)
 
@@ -4522,7 +5229,7 @@ class SearchSorted(Array):
     # additional, static arguments. The following constructor makes the static
     # arguments keyword-only in anticipation of potential future support.
 
-    def __init__(self, arg: Array, *, array: types.arraydata, side: str, sorter: typing.Optional[types.arraydata]):
+    def __init__(self, arg: Array, array: types.arraydata, side: str, sorter: typing.Optional[types.arraydata]):
         assert isinstance(arg, Array), f'arg={arg!r}'
         assert isinstance(array, types.arraydata) and array.ndim == 1, f'array={array!r}'
         assert side in ('left', 'right'), f'side={side!r}'
@@ -4532,6 +5239,10 @@ class SearchSorted(Array):
         self._side = side
         self._sorter = sorter
         super().__init__(args=(arg,), shape=arg.shape, dtype=int)
+
+    @util.reentrant_iter.property
+    def representations(self):
+        yield SearchSorted, (self._arg, self._array, self._side, self._sorter)
 
     def evalf(self, values):
         index = numpy.searchsorted(self._array, values, side=self._side, sorter=self._sorter)
@@ -4977,6 +5688,36 @@ def ravel(func, axis):
     return Transpose.from_end(Ravel(Transpose.to_end(func, axis, axis+1)), axis)
 
 
+def ravelindex(ia, ib, na, nb, where):
+    assert where.dtype == bool and len(where) == ia.ndim + ib.ndim
+    wb, = where.nonzero()
+    assert len(wb) == ib.ndim
+    return Transpose.from_end(RavelIndex(ia, ib, na, nb), *wb)
+
+
+def polymul(c1, c2, v, axis):
+    assert c1.ndim == c2.ndim
+    axis = numeric.normdim(c1.ndim, axis)
+    assert equalshape(c1.shape[:axis] + c1.shape[axis+1:], c2.shape[:axis] + c2.shape[axis+1:]), f'incompatible shapes: {c1}, {c2}'
+    return Transpose.from_end(PolyMul(Transpose.to_end(c1, axis), Transpose.to_end(c2, axis), v), axis)
+
+
+def polyval(points, coeffs, axis):
+    axis = numeric.normdim(points.ndim, axis)
+    return Transpose.from_end(Polyval(coeffs, Transpose.to_end(points, axis)), *numpy.arange(axis, axis+coeffs.ndim-1))
+
+
+def polygrad(coeffs, nvars, caxis, deraxis):
+    caxis = numeric.normdim(coeffs.ndim, caxis)
+    deraxis = numeric.normdim(coeffs.ndim+1, deraxis)
+    return Transpose.from_end(PolyGrad(Transpose.to_end(coeffs, caxis), nvars), caxis + (caxis>=deraxis), deraxis)
+
+
+def legendre(x, axis, degree):
+    axis = numeric.normdim(x.ndim+1, axis)
+    return Transpose.from_end(Legendre(x, degree), axis)
+
+
 def _flat(func):
     func = asarray(func)
     if func.ndim == 0:
@@ -5015,8 +5756,9 @@ def loop_sum(func, index):
     return LoopSum(func, func.shape, index.name, index.length)
 
 
-def loop_concatenate(func, index):
-    func = asarray(func)
+def loop_concatenate(func, index, axis=-1):
+    axis = numeric.normdim(func.ndim, axis)
+    func = Transpose.to_end(func, axis)
     if not isinstance(index, _LoopIndex):
         raise TypeError(f'expected _LoopIndex, got {index!r}')
     chunk_size = func.shape[-1]
@@ -5028,7 +5770,7 @@ def loop_concatenate(func, index):
     start = Take(offsets, index)
     stop = Take(offsets, index+1)
     concat_length = Take(offsets, index.length)
-    return LoopConcatenate(func, start, stop, concat_length, index.name, index.length)
+    return Transpose.from_end(LoopConcatenate(func, start, stop, concat_length, index.name, index.length), axis)
 
 
 @util.shallow_replace
@@ -5185,6 +5927,11 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
                     d['index']['i'+str(idim)] = ii
                 start = stop
             yield data
+
+
+_POINTWISE = [Pointwise]
+for _c in _POINTWISE:
+    _POINTWISE.extend(_c.__subclasses__())
 
 
 if __name__ == '__main__':

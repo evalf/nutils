@@ -79,6 +79,9 @@ class check(TestCase):
                 dense = numpy.zeros(desired.shape, values.dtype)
                 numpy.add.at(dense, indices, values)
             self.assertArrayAlmostEqual(dense, desired, decimal)
+        for op, args in actual.representations:
+            with self.subTest(f'as:{op.__name__}'):
+                self.assertArrayAlmostEqual(op(*args).eval(**evalargs), desired, decimal)
 
     def test_str(self):
         a = evaluable.Array((), shape=(evaluable.constant(2), evaluable.constant(3)), dtype=float)
@@ -578,6 +581,7 @@ _check('inflate-diagonal', lambda f: evaluable.Inflate(evaluable.Inflate(f, eval
 _check('inflate-one', lambda f: evaluable.Inflate(f, evaluable.constant(0), evaluable.constant(1)), lambda a: numpy.array([a]), numpy.array(.5))
 _check('inflate-range', lambda f: evaluable.Inflate(f, evaluable.Range(evaluable.constant(3)), evaluable.constant(3)), lambda a: a, ANY(3))
 _check('take', lambda f: evaluable.Take(f, evaluable.constant([0, 3, 2])), lambda a: a[:, [0, 3, 2]], ANY(2, 4))
+_check('take0', lambda f: evaluable._take(f, evaluable.constant(1), 2), lambda a: a[:,:,1], ANY(3, 3, 2, 3))
 _check('take-duplicate', lambda f: evaluable.Take(f, evaluable.constant([0, 3, 0])), lambda a: a[:, [0, 3, 0]], ANY(2, 4))
 _check('choose', lambda a, b, c: evaluable.Choose(a % 2, b, c), lambda a, b, c: numpy.choose(a % 2, [b, c]), INT(3, 3), ANY(3, 3), ANY(3, 3))
 _check('slice', lambda a: evaluable.asarray(a)[::2], lambda a: a[::2], ANY(5, 3))
