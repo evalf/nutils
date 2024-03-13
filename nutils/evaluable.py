@@ -289,6 +289,10 @@ class Evaluable(types.Singleton):
         with times[self]:
             return self.evalf(*args)
 
+    def evalf_iadd_withtimes(self, times, *args):
+        with times[self]:
+            return self.evalf_iadd(*args)
+
     @cached_property
     def dependencies(self):
         '''collection of all function arguments'''
@@ -1844,6 +1848,10 @@ class Add(Array):
         #
         # We instead rely on Inflate._add to handle this situation.
 
+    def _optimized_for_numpy(self):
+        if all(hasattr(func, 'evalf_iadd') for func in self.funcs):
+            return _OfnAddInplace(*self.funcs)
+
     evalf = staticmethod(numpy.add)
 
     def _sum(self, axis):
@@ -1888,6 +1896,46 @@ class Add(Array):
     def _intbounds_impl(self):
         lowers, uppers = zip(*[f._intbounds for f in self._terms])
         return builtins.sum(lowers), builtins.sum(uppers)
+
+
+class _OfnAddInplace(Array):
+
+    def __init__(self, func1: Array, func2: Array):
+        assert isinstance(func1, Array), f'func1={func1!r}'
+        assert isinstance(func2, Array), f'func2={func2!r}'
+        assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype, f'_OfnAddInplace({func1}, {func2})'
+        self.func1 = func1
+        self.func2 = func2
+        super().__init__(args=(Tuple(func1._Evaluable__args), Tuple(func2._Evaluable__args)), shape=func1.shape, dtype=func1.dtype)
+
+    def evalf(self, args1, args2):
+        output = self.func1.evalf(*args1)
+        self.func2.evalf_iadd(output, *args2)
+        return output
+
+    def evalf_iadd(self, output, args1, args2):
+        self.func1.evalf_iadd(output, *args1)
+        self.func2.evalf_iadd(output, *args2)
+
+    def evalf_withtimes(self, times, args1, args2):
+        output = self.func1.evalf_withtimes(times, *args1)
+        self.func2.evalf_iadd_withtimes(times, output, *args2)
+        return output
+
+    def evalf_iadd_withtimes(self, times, output, args1, args2):
+        self.func1.evalf_iadd_withtimes(times, output, *args1)
+        self.func2.evalf_iadd_withtimes(times, output, *args2)
+
+    def _intbounds_impl(self):
+        return map(operator.add, self.func1._intbounds, self.func2._intbounds)
+
+    def _node(self, cache, subgraph, times):
+        if self in cache:
+            return cache[self]
+        args = tuple(func._node(cache, subgraph, times) for func in (self.func1, self.func2))
+        label = '\n'.join(filter(None, (type(self).__name__, self._node_details)))
+        cache[self] = node = RegularNode(label, args, {}, (type(self).__name__, times[self]), subgraph)
+        return node
 
 
 class Einsum(Array):
