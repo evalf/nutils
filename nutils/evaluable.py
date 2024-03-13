@@ -4466,6 +4466,10 @@ class LoopSum(Loop, Array):
         cache[self] = node = RegularNode('LoopSum', (), kwargs, (type(self).__name__, times[self]), subgraph)
         return node
 
+    def _optimized_for_numpy(self):
+        if hasattr(self.func, 'evalf_iadd'):
+            return _OfnLoopSumInplace(self.func, self.shape, self.index_name, self.length)
+
     def _simplified(self):
         if iszero(self.func):
             return zeros_like(self)
@@ -4517,6 +4521,32 @@ class LoopSum(Loop, Array):
                     assert all(self.index not in n.arguments for n in elem_values.shape[:-1])
                 chunks.append(tuple(loop_concatenate(arr, self.index) for arr in (*elem_indices, elem_values)))
         return tuple(chunks)
+
+
+class _OfnLoopSumInplace(Loop, Array):
+
+    def __init__(self, func: Array, shape: typing.Tuple[Array, ...], index_name: str, length: Array):
+        assert isinstance(func, Array) and func.dtype != bool, f'func={func!r}'
+        assert func.ndim == len(shape)
+        self.func = func
+        super().__init__(init_arg=Tuple(shape), body_arg=Tuple(func._Evaluable__args), index_name=index_name, length=length, shape=shape, dtype=func.dtype)
+
+    def evalf_loop_init(self, shape):
+        return parallel.shzeros(tuple(n.__index__() for n in shape), dtype=self.dtype)
+
+    def evalf_loop_body(self, output, args):
+        self.func.evalf_iadd(output, *args)
+
+    def evalf_loop_body_withtimes(self, times, output, args):
+        self.func.evalf_iadd_withtimes(times, output, *args)
+
+    def _node_loop_body(self, cache, subgraph, times):
+        if (cached := cache.get(self)) is not None:
+            return cached
+        kwargs = {'shape[{}]'.format(i): n._node(cache, subgraph, times) for i, n in enumerate(self.shape)}
+        kwargs['func'] = self.func._node(cache, subgraph, times)
+        cache[self] = node = RegularNode('_OfnLoopSumInplace', (), kwargs, (type(self).__name__, times[self]), subgraph)
+        return node
 
 
 class _SizesToOffsets(Array):
