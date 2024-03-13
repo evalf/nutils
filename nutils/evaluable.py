@@ -2416,6 +2416,7 @@ class Mod(Pointwise):
             lower_dividend, upper_dividend = dividend._intbounds
             if 0 <= lower_dividend and upper_dividend < lower_divisor:
                 return dividend
+        return super()._simplified()
 
 
 class ArcTan2(Pointwise):
