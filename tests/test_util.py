@@ -714,3 +714,26 @@ class reentrant_iter(TestCase):
         self.assertEqual(n, 3)
         self.assertEqual(tuple(a.x), (0, 1, 2))
         self.assertEqual(n, 3)
+
+
+class iter_product(TestCase):
+
+    def test_a_eq_b(self):
+        it = util.iter_product([1,2,3], ['a','b','c'])
+        self.assertEqual(list(it), [(1,'a'), (2,'a'), (1,'b'), (3,'a'), (2,'b'), (1,'c'), (3,'b'), (2,'c'), (3,'c')])
+
+    def test_a_gt_b(self):
+        it = util.iter_product([1,2,3,4], ['a','b'])
+        self.assertEqual(list(it), [(1,'a'), (2,'a'), (1,'b'), (3,'a'), (2,'b'), (4,'a'), (3,'b'), (4,'b')])
+
+    def test_a_lt_b(self):
+        it = util.iter_product([1,2], ['a','b','c','d'])
+        self.assertEqual(list(it), [(1,'a'), (2,'a'), (1,'b'), (2,'b'), (1,'c'), (2,'c'), (1,'d'), (2,'d')])
+
+    def test_a_empty(self):
+        it = util.iter_product([], ['a','b','c'])
+        self.assertEqual(list(it), [])
+
+    def test_b_empty(self):
+        it = util.iter_product([1,2,3], [])
+        self.assertEqual(list(it), [])

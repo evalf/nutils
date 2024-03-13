@@ -1113,4 +1113,36 @@ class reentrant_iter:
         return functools.cached_property(lambda self: cls(f(self)))
 
 
+def iter_product(iter1, iter2):
+    iter1 = iter(iter1)
+    iter2 = iter(iter2)
+    try:
+        item1 = next(iter1)
+        item2 = next(iter2)
+    except StopIteration:
+        return
+    yield item1, item2
+    items1 = [item1]
+    items2 = [item2]
+    try:
+        for item1 in iter1:
+            items1.append(item1)
+            items2.append(next(iter2))
+            yield from zip(reversed(items1), items2)
+    except StopIteration:
+        del items1[0]
+        yield from zip(reversed(items1), items2)
+        for item1 in iter1:
+            del items1[0]
+            items1.append(item1)
+            yield from zip(reversed(items1), items2)
+    else:
+        for item2 in iter2:
+            del items2[0]
+            items2.append(item2)
+            yield from zip(reversed(items1), items2)
+    for i in range(1, len(items2)):
+        yield from zip(reversed(items1), items2[i:])
+
+
 # vim:sw=4:sts=4:et
