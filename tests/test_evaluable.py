@@ -85,6 +85,9 @@ class check(TestCase):
             else:
                 self.assertEqual(len(values), 1)
             self.assertArrayAlmostEqual(numeric.accumulate(values, indices, shape), desired, decimal)
+        for op, args in actual.representations:
+            with self.subTest(f'as:{op.__name__}'):
+                self.assertArrayAlmostEqual(evaluable.eval_once(op(*args), arguments=evalargs), desired, decimal)
         if actual.ndim == 2:
             with self.subTest('csr'):
                 values, rowptr, colidx, ncols = evaluable.eval_once(evaluable.as_csr(actual), arguments=evalargs)
@@ -567,6 +570,7 @@ _check('inflate-one', lambda f: evaluable.Inflate(f, evaluable.constant(0), eval
 _check('inflate-range', lambda f: evaluable.Inflate(f, evaluable.Range(evaluable.constant(3)), evaluable.constant(3)), lambda a: a, ANY(3))
 _check('inflate-twice', lambda f: evaluable._inflate(evaluable.Inflate(f, evaluable.constant([[0,1],[2,0]]), evaluable.constant(3)), evaluable.constant([0, 1, 0]), evaluable.constant(2), axis=0), lambda a: numpy.einsum('ij,jklm,lmn->ikn', [[1,0,1],[0,1,0]], a, [[[1,0,0],[0,1,0]],[[0,0,1],[1,0,0]]]), ANY(3,5,2,2))
 _check('take', lambda f: evaluable.Take(f, evaluable.constant([0, 3, 2])), lambda a: a[:, [0, 3, 2]], ANY(2, 4))
+_check('take0', lambda f: evaluable._take(f, evaluable.constant(1), 2), lambda a: a[:,:,1], ANY(3, 3, 2, 3))
 _check('take-duplicate', lambda f: evaluable.Take(f, evaluable.constant([0, 3, 0])), lambda a: a[:, [0, 3, 0]], ANY(2, 4))
 _check('choose', lambda a, b, c: evaluable.Choose(a % 2, (b, c)), lambda a, b, c: numpy.choose(a % 2, [b, c]), INT(3, 3), ANY(3, 3), ANY(3, 3))
 _check('slice', lambda a: evaluable.asarray(a)[::2], lambda a: a[::2], ANY(5, 3))
