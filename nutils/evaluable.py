@@ -4556,24 +4556,26 @@ def _isunique(array):
     return numpy.unique(array).size == array.size
 
 
+_AddDependency = collections.namedtuple('_AddDependency', ['dependency'])
+
 def _dependencies_sans_invariants(func, arg):
     invariants = []
     dependencies = []
-    _populate_dependencies_sans_invariants(func, arg, invariants, dependencies, {arg})
+    cache = {arg}
+    stack = [func]
+    while stack:
+        func_ = stack.pop()
+        if isinstance(func_, _AddDependency):
+            dependencies.append(func_.dependency)
+        elif func_ not in cache:
+            cache.add(func_)
+            if arg in func_.arguments:
+                stack.append(_AddDependency(func_))
+                stack.extend(func_._Evaluable__args)
+            else:
+                invariants.append(func_)
     assert (dependencies or invariants or [arg])[-1] == func
     return tuple(invariants), tuple(dependencies)
-
-
-def _populate_dependencies_sans_invariants(func, arg, invariants, dependencies, cache):
-    if func in cache:
-        return
-    cache.add(func)
-    if arg in func.arguments:
-        for child in func._Evaluable__args:
-            _populate_dependencies_sans_invariants(child, arg, invariants, dependencies, cache)
-        dependencies.append(func)
-    else:
-        invariants.append(func)
 
 
 class _Stats:
