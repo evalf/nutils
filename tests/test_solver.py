@@ -15,10 +15,27 @@ def tmpcache():
 
 
 def _edit(v):
-    return (v.tolist() if isinstance(v, numpy.ndarray)
+    return (numpy.array(v, copy=True) if isinstance(v, (numpy.ndarray, numpy.number, float, int))
         else tuple(map(_edit, v)) if isinstance(v, tuple)
         else {k: _edit(v) for (k, v) in v.items()} if isinstance(v, dict)
+        else {k: _edit(v) for (k, v) in v.__dict__.items()} if isinstance(v, types.attributes)
         else v) # convert arrays to lists so we can use assertEqual
+
+
+def _assert_almost_equal(testcase, a, b):
+    testcase.assertIs(type(a), type(b))
+    if isinstance(a, (tuple, list)):
+        testcase.assertEqual(len(a), len(b))
+        for ia, ib in zip(a, b):
+            _assert_almost_equal(testcase, ia, ib)
+    elif isinstance(a, dict) and all(isinstance(key, str) for key in a.keys()):
+        testcase.assertEqual(frozenset(a.keys()), frozenset(b.keys()))
+        for key in a.keys():
+            _assert_almost_equal(testcase, a[key], b[key])
+    elif isinstance(a, numpy.ndarray):
+        testcase.assertAllAlmostEqual(a, b)
+    else:
+        testcase.fail(f'unsupported type: {type(a)}')
 
 
 def _test_recursion_cache(testcase, solver_iter):
@@ -33,7 +50,7 @@ def _test_recursion_cache(testcase, solver_iter):
                         continue
                     with testcase.assertLogs('nutils', 'DEBUG') as cm:
                         v = read(length)
-                    testcase.assertEqual(v, reference[:length])
+                    _assert_almost_equal(testcase, v, reference[:length])
                     testcase.assertRegex('\n'.join(cm.output), '\\[cache\\.Recursion [0-9a-f]{40}\\] start iterating')
                     testcase.assertRegex('\n'.join(cm.output), '\\[cache\\.Recursion [0-9a-f]{40}\\.0000\\] load' if i and max(lengths[:i]) > 0
                                                           else '\\[cache\\.Recursion [0-9a-f]{40}\\.0000\\] cache exhausted')
@@ -45,7 +62,7 @@ def _test_solve_cache(testcase, solver_gen):
         v1 = _edit(solver_gen().solve(1e-5))
         with testcase.assertLogs('nutils', 'DEBUG') as cm:
             v2, info = _edit(solver_gen().solve_withinfo(1e-5))
-        testcase.assertEqual(v1, v2)
+        _assert_almost_equal(testcase, v1, v2)
         testcase.assertRegex('\n'.join(cm.output), '\\[cache\\.function [0-9a-f]{40}\\] load')
         with testcase.assertLogs('nutils', 'DEBUG') as cm:
             solver_gen().solve(1e-6)

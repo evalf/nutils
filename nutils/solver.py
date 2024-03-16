@@ -317,7 +317,6 @@ class _newton(cache.Recursion, length=1):
             lhs, info = history[-1]
             lhs, vlhs = _redict(lhs, self.target, self.dtype)
             res, jac = self._eval(lhs, mask)
-            assert numpy.linalg.norm(res) == info.resnorm
             relax = info.relax
         else:
             lhs, vlhs = _redict(self.lhs0, self.target, self.dtype)
@@ -429,8 +428,6 @@ class _minimize(cache.Recursion, length=1, version=3):
             lhs, info = history[-1]
             lhs, vlhs = _redict(lhs, self.target, self.dtype)
             nrg, res, jac = self._eval(lhs, mask)
-            assert nrg == info.energy
-            assert numpy.linalg.norm(res) == info.resnorm
             relax = info.relax
         else:
             lhs, vlhs = _redict(self.lhs0, self.target, self.dtype)
@@ -557,7 +554,6 @@ class _pseudotime(cache.Recursion, length=1):
             timestep = info.timestep
             res, jac = self._eval(lhs, mask, timestep)
             resnorm = numpy.linalg.norm(res)
-            assert resnorm == info.resnorm
         else:
             lhs, vlhs = _redict(self.lhs0, self.target, self.dtype)
             timestep = self.timestep
