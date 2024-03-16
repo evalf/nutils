@@ -4356,6 +4356,9 @@ class _LoopIndex(Argument):
         if _equals_scalar_constant(self.length, 1):
             return Zeros((), int)
 
+    @staticmethod
+    def evalf(self, *args):
+        raise ValueError('`_LoopIndex` cannot be evaluated')
 
 class Loop(Evaluable):
     '''Base class for evaluable loops.
