@@ -3190,6 +3190,11 @@ class Diagonalize(Array):
         diag[:] = arr
         return result
 
+    @staticmethod
+    def evalf_iadd(output, arr):
+        output = numpy.lib.stride_tricks.as_strided(output, shape=output.shape[:-1], strides=(*output.strides[:-2], output.strides[-2] + output.strides[-1]), writeable=True)
+        output[:] += arr
+
     def _derivative(self, var, seen):
         return diagonalize(derivative(self.func, var, seen), self.ndim-2, self.ndim-1)
 
