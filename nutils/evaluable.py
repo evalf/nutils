@@ -3018,6 +3018,18 @@ class Inflate(Array):
         return self.func._inflate(self.dofmap, self.length, self.ndim-1) \
             or self.dofmap._rinflate(self.func, self.length, self.ndim-1)
 
+    def _optimized_for_numpy(self):
+        for axis, parts in self.func._inflations:
+            if axis == self.ndim - 2:
+                return add(*(
+                    _OfnMultiInflate(
+                        func,
+                        (appendaxes(dofmap, self.dofmap.shape), prependaxes(self.dofmap, dofmap.shape)),
+                        (self.shape[axis], self.length),
+                    )
+                    for dofmap, func in parts.items()
+                ))
+
     def evalf(self, array, indices, length):
         if self.warn and int(length) > indices.size:
             warnings.warn('using explicit inflation; this is usually a bug.', ExpensiveEvaluationWarning)
@@ -3108,6 +3120,44 @@ class Inflate(Array):
     def _intbounds_impl(self):
         lower, upper = self.func._intbounds
         return min(lower, 0), max(upper, 0)
+
+
+class _OfnMultiInflate(Array):
+
+    def __init__(self, func: Array, dofmaps: typing.Tuple[Array, ...], lengths: typing.Tuple[Array, ...]):
+        assert isinstance(func, Array), f'func={func!r}'
+        assert isinstance(dofmaps, tuple) and all(isinstance(dofmap, Array) and dofmap.dtype == int for dofmap in dofmaps), f'dofmaps={dofmaps!r}'
+        assert isinstance(lengths, tuple) and all(map(_isindex, lengths)), f'lengths={lengths!r}'
+        assert len(dofmaps) == len(lengths)
+        self._ndofmaps = len(dofmaps)
+        self._npointwise = func.ndim - dofmaps[0].ndim
+        assert self._npointwise >= 0
+        assert all(dofmap.ndim == dofmaps[0].ndim and equalshape(dofmap.shape, func.shape[self._npointwise:]) for dofmap in dofmaps)
+        self.func = func
+        self.dofmaps = dofmaps
+        self.lengths = lengths
+        self._indices_head = (slice(None),) * self._npointwise
+        super().__init__(args=(func, *dofmaps, *lengths), shape=func.shape[:self._npointwise] + lengths, dtype=func.dtype)
+
+    def _optimized_for_numpy(self):
+        for axis, parts in self.func._inflations:
+            if axis == self.ndim - 2:
+                return add(*(
+                    _OfnMultiInflate(
+                        func,
+                        (appendaxes(dofmap, self.dofmaps[0].shape), *(prependaxes(d, dofmap.shape) for d in self.dofmaps)),
+                        (self.shape[axis], *self.lengths),
+                    )
+                    for dofmap, func in parts.items()
+                ))
+
+    def evalf(self, array, *args):
+        inflated = numpy.zeros(array.shape[:self._npointwise] + tuple(args[self._ndofmaps:]), dtype=self.dtype)
+        numpy.add.at(inflated, self._indices_head + tuple(args[:self._ndofmaps]), array)
+        return inflated
+
+    def evalf_iadd(self, inflated, array, *args):
+        numpy.add.at(inflated, self._indices_head + tuple(args[:self._ndofmaps]), array)
 
 
 class SwapInflateTake(Evaluable):
