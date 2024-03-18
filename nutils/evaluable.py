@@ -735,19 +735,15 @@ if debug_flags.sparse:
         def _assparse(self):
             chunks = orig.func(self)
             assert isinstance(chunks, tuple)
-            assert all(isinstance(chunk, tuple) for chunk in chunks)
-            assert all(all(isinstance(item, Array) for item in chunk) for chunk in chunks)
-            if self.ndim:
-                for *indices, values in chunks:
-                    assert len(indices) == self.ndim
-                    assert all(idx.dtype == int for idx in indices)
-                    assert all(equalshape(idx.shape, values.shape) for idx in indices)
-            elif chunks:
-                assert len(chunks) == 1
-                chunk, = chunks
-                assert len(chunk) == 1
-                values, = chunk
-                assert values.shape == ()
+            assert all(isinstance(chunk, tuple) and len(chunk) == 3 for chunk in chunks)
+            for loop_indices, _, _ in chunks:
+                assert isinstance(loop_indices, tuple) and all(isinstance(loop_index, _LoopIndex) for loop_index in loop_indices)
+            for _, indices, values in chunks:
+                assert isinstance(values, Array)
+                assert isinstance(indices, tuple) and all(isinstance(index, Array) for index in indices)
+                assert len(indices) == self.ndim
+                assert all(idx.dtype == int for idx in indices)
+                assert all(equalshape(idx.shape, values.shape) for idx in indices)
             return chunks
         return _assparse
 
@@ -920,8 +916,60 @@ class Array(Evaluable, metaclass=_ArrayMeta):
         #       for i0,...,ik,v in zip(I0.eval().ravel(),...,Ik.eval().ravel(),V.eval().ravel()):
         #         dense[i0,...,ik] = v
 
-        indices = [prependaxes(appendaxes(Range(length), self.shape[i+1:]), self.shape[:i]) for i, length in enumerate(self.shape)]
-        return (*indices, self),
+        indices = tuple(prependaxes(appendaxes(Range(length), self.shape[i+1:]), self.shape[:i]) for i, length in enumerate(self.shape))
+        return ((), indices, self),
+
+    def as_coo(self, *, simplify: bool = True):
+        if self.dtype == bool:
+            raise ValueError('A boolean array cannot be represented as a sparse coo array.')
+        if simplify:
+            self = self.simplified
+        if not self.ndim:
+            return InsertAxis(self, constant(1)), ()
+        sparse = self._assparse
+        if not sparse:
+            assert iszero(self)
+            return zeros((constant(0),), dtype=self.dtype), (zeros((constant(0),), dtype=int),) * self.ndim
+        # Concatenate all indices.
+        raveled_indices = []
+        index_strides = tuple(itertools.accumulate(reversed(self.shape[1:]), operator.mul, initial=ones((), dtype=int)))[::-1]
+        offsets = []
+        chunk_offset = constant(0)
+        for chunk_loop_indices, chunk_indices, _ in sparse:
+            chunk_indices = add(*(_flat(i) * n for i, n in zip(chunk_indices, index_strides)))
+            offset = chunk_offset
+            for loop_index in reversed(chunk_loop_indices):
+                chunk_indices = loop_concatenate(chunk_indices, loop_index)
+                offset += chunk_indices.start
+            offsets.append(offset)
+            chunk_offset += chunk_indices.shape[0]
+            raveled_indices.append(chunk_indices)
+        raveled_indices = concatenate(raveled_indices)
+        # Make the `indices` unique.
+        raveled_indices, inverse = _UniqueWithInverse(raveled_indices)
+        nnz = raveled_indices.shape[0]
+        # Unravel the `indices`.
+        indices = []
+        for n in reversed(self.shape[1:]):
+            n = InsertAxis(n, raveled_indices.shape[0])
+            indices.append(raveled_indices % n)
+            raveled_indices = FloorDivide(raveled_indices, n)
+        indices = raveled_indices, *reversed(indices)
+        # Combine `inverse` with `values` per chunk.
+        values = []
+        for offset, (chunk_loop_indices, _, chunk_values) in zip(offsets, sparse):
+            assert chunk_values.dtype == self.dtype
+            chunk_values = _flat(chunk_values)
+            chunk_inverse = Take(inverse, Range(chunk_values.shape[0]) + offset)
+            values.append(functools.reduce(loop_sum, reversed(chunk_loop_indices), Inflate(chunk_values, chunk_inverse, nnz)))
+        values = add(*values)
+        return values, indices
+
+    def as_coo_with_shape(self, *, simplify: bool = True):
+        if simplify:
+            self = self.simplified
+        values, indices = self.as_coo(simplify=False)
+        return values, indices, self.shape
 
     def _node(self, cache, subgraph, times):
         if self in cache:
@@ -1287,7 +1335,7 @@ class InsertAxis(Array):
 
     @cached_property
     def _assparse(self):
-        return tuple((*(InsertAxis(idx, self.length) for idx in indices), prependaxes(Range(self.length), values.shape), InsertAxis(values, self.length)) for *indices, values in self.func._assparse)
+        return tuple((loop_indices, (*(InsertAxis(idx, self.length) for idx in indices), prependaxes(Range(self.length), values.shape)), InsertAxis(values, self.length)) for loop_indices, indices, values in self.func._assparse)
 
     def _intbounds_impl(self):
         return self.func._intbounds
@@ -1482,7 +1530,7 @@ class Transpose(Array):
 
     @cached_property
     def _assparse(self):
-        return tuple((*(indices[i] for i in self.axes), values) for *indices, values in self.func._assparse)
+        return tuple((loop_indices, tuple(indices[i] for i in self.axes), values) for loop_indices, indices, values in self.func._assparse)
 
     def _intbounds_impl(self):
         return self.func._intbounds
@@ -1738,18 +1786,21 @@ class Multiply(Array):
         uninserteds, wheres = zip(*clusters)
         sparse = []
         for items in itertools.product(*[u._assparse for u in uninserteds]):
-            shape = util.sum(f.shape for *ind, f in items)
+            if builtins.sum(len(loop_indices) > 0 for loop_indices, _, _ in items) > 1:
+                return super()._assparse
+            loop_indices = builtins.max((loop_indices for loop_indices, _, _ in items), key=len)
+            shape = util.sum(f.shape for _, _, f in items)
             indices = [None] * self.ndim
             factors = []
             a = 0
-            for where, (*ind, f) in zip(wheres, items):
+            for where, (_, ind, f) in zip(wheres, items):
                 b = a + f.ndim
                 r = numpy.arange(a, b)
                 for i, indi in zip(where, ind):
                     indices[i] = align(indi, r, shape)
                 factors.append(align(f, r, shape))
                 a = b
-            sparse.append((*indices, multiply(*factors)))
+            sparse.append((loop_indices, tuple(indices), multiply(*factors)))
         return tuple(sparse)
 
     def _intbounds_impl(self):
@@ -2001,6 +2052,8 @@ class Sum(Array):
 
     @cached_property
     def _assparse(self):
+        # TODO
+        return super()._assparse
         if self.dtype == bool:
             return super()._assparse
         chunks = []
@@ -3109,12 +3162,12 @@ class Inflate(Array):
         flat_dofmap = _flat(self.dofmap)
         keep_dim = self.func.ndim - self.dofmap.ndim
         strides = (1, *itertools.accumulate(self.dofmap.shape[:0:-1], operator.mul))[::-1]
-        for *indices, values in self.func._assparse:
+        for loop_indices, indices, values in self.func._assparse:
             if self.dofmap.ndim:
                 inflate_indices = Take(flat_dofmap, functools.reduce(operator.add, map(operator.mul, indices[keep_dim:], strides)))
             else:
                 inflate_indices = appendaxes(self.dofmap, values.shape)
-            chunks.append((*indices[:keep_dim], inflate_indices, values))
+            chunks.append((loop_indices, (*indices[:keep_dim], inflate_indices), values))
         return tuple(chunks)
 
     def _intbounds_impl(self):
@@ -3298,7 +3351,7 @@ class Diagonalize(Array):
 
     @cached_property
     def _assparse(self):
-        return tuple((*indices, indices[-1], values) for *indices, values in self.func._assparse)
+        return tuple((loop_indices, (*indices, indices[-1]), values) for loop_indices, indices, values in self.func._assparse)
 
 
 class Guard(Array):
@@ -3586,7 +3639,7 @@ class Ravel(Array):
 
     @cached_property
     def _assparse(self):
-        return tuple((*indices[:-2], indices[-2]*self.func.shape[-1]+indices[-1], values) for *indices, values in self.func._assparse)
+        return tuple((loop_indices, (*indices[:-2], indices[-2]*self.func.shape[-1]+indices[-1]), values) for loop_indices, indices, values in self.func._assparse)
 
     def _intbounds_impl(self):
         return self.func._intbounds_impl()
@@ -3630,7 +3683,7 @@ class Unravel(Array):
 
     @cached_property
     def _assparse(self):
-        return tuple((*indices[:-1], *divmod(indices[-1], appendaxes(self.shape[-1], values.shape)), values) for *indices, values in self.func._assparse)
+        return tuple((loop_indices, (*indices[:-1], *divmod(indices[-1], appendaxes(self.shape[-1], values.shape))), values) for loop_indices, indices, values in self.func._assparse)
 
 
 class RavelIndex(Array):
@@ -4563,25 +4616,7 @@ class LoopSum(Loop, Array):
 
     @cached_property
     def _assparse(self):
-        chunks = []
-        for *elem_indices, elem_values in self.func._assparse:
-            if self.ndim == 0:
-                values = loop_concatenate(InsertAxis(elem_values, constant(1)), self.index)
-                while values.ndim:
-                    values = Sum(values)
-                chunks.append((values,))
-            else:
-                if elem_values.ndim == 0:
-                    *elem_indices, elem_values = (InsertAxis(arr, constant(1)) for arr in (*elem_indices, elem_values))
-                else:
-                    # minimize ravels by transposing all variable length axes to the end
-                    variable = tuple(i for i, n in enumerate(elem_values.shape) if self.index in n.arguments)
-                    *elem_indices, elem_values = (Transpose.to_end(arr, *variable) for arr in (*elem_indices, elem_values))
-                    for i in variable[:-1]:
-                        *elem_indices, elem_values = map(Ravel, (*elem_indices, elem_values))
-                    assert all(self.index not in n.arguments for n in elem_values.shape[:-1])
-                chunks.append(tuple(loop_concatenate(arr, self.index) for arr in (*elem_indices, elem_values)))
-        return tuple(chunks)
+        return tuple(((self.index, *loop_indices), indices, values) for loop_indices, indices, values in self.func._assparse)
 
 
 class _OfnLoopSumInplace(Loop, Array):
@@ -4715,9 +4750,9 @@ class LoopConcatenate(Loop, Array):
     @cached_property
     def _assparse(self):
         chunks = []
-        for *indices, last_index, values in self.func._assparse:
+        for loop_indices, (*indices, last_index), values in self.func._assparse:
             last_index = last_index + prependaxes(self.start, last_index.shape)
-            chunks.append(tuple(loop_concatenate(_flat(arr), self.index) for arr in (*indices, last_index, values)))
+            chunks.append(((self.index, *loop_indices), (*indices, last_index), values))
         return tuple(chunks)
 
     def _intbounds_impl(self):
@@ -4762,6 +4797,29 @@ class SearchSorted(Array):
         return SearchSorted(unravel(self._arg, axis, shape), array=self._array, side=self._side, sorter=self._sorter)
 
 
+class _UniqueWithInverse(Evaluable):
+
+    def __init__(self, func: Array):
+        assert isinstance(func, Array) and func.dtype == int and func.ndim == 1, f'func={func!r}'
+        self.func = func
+        super().__init__(args=(func,))
+
+    def evalf(self, func):
+        result, inverse = numpy.unique(func, return_inverse=True)
+        return result, inverse, numpy.array(result.shape[-1])
+
+    def __len__(self):
+        return 2
+
+    def __iter__(self):
+        len_unique_upper = self.func.shape[-1]._intbounds[1]
+        len_unique = ArrayFromTuple(self, index=2, shape=(), dtype=int, _lower=0, _upper=len_unique_upper)
+        func_lower, func_upper = self.func._intbounds
+        unique = ArrayFromTuple(self, index=0, shape=(len_unique,), dtype=int, _lower=func_lower, _upper=func_upper)
+        inverse = ArrayFromTuple(self, index=1, shape=self.func.shape, dtype=int, _lower=0, _upper=len_unique_upper)
+        return iter((unique, inverse))
+
+
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
 
@@ -4773,7 +4831,7 @@ def _gatherblocks(blocks):
 
 
 def _gathersparsechunks(chunks):
-    return tuple((*ind, util.sum(funcs)) for ind, funcs in util.gather((tuple(ind), func) for *ind, func in chunks))
+    return tuple((loop_indices, ind, util.sum(funcs)) for (loop_indices, ind), funcs in util.gather(((loop_indices, ind), func) for loop_indices, ind, func in chunks))
 
 
 def _numpy_align(a, b):
@@ -5368,21 +5426,17 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
     '''
 
     funcs = [func.as_evaluable_array for func in funcs]
-    shape_chunks = Tuple(tuple(Tuple(builtins.sum(func.simplified._assparse, func.shape)) for func in funcs))
-    with shape_chunks.optimized_for_numpy.session(graphviz=graphviz) as eval:
-        for func, args in zip(funcs, eval(**arguments)):
-            shape = tuple(map(int, args[:func.ndim]))
-            chunks = [args[i:i+func.ndim+1] for i in range(func.ndim, len(args), func.ndim+1)]
-            length = builtins.sum(values.size for *indices, values in chunks)
-            data = numpy.empty((length,), dtype=sparse.dtype(shape, func.dtype))
-            start = 0
-            for *indices, values in chunks:
-                stop = start + values.size
-                d = data[start:stop].reshape(values.shape)
-                d['value'] = values
-                for idim, ii in enumerate(indices):
-                    d['index']['i'+str(idim)] = ii
-                start = stop
+    shape_chunks = []
+    for func in funcs:
+        values, indices, shape = func.as_evaluable_array.as_coo_with_shape()
+        shape_chunks.append(Tuple((values, Tuple(indices), Tuple(shape))))
+    shape_chunks = Tuple(tuple(shape_chunks)).simplified.optimized_for_numpy
+    with shape_chunks.session(graphviz=graphviz) as eval:
+        for values, indices, shape in eval(**arguments):
+            data = numpy.empty((len(values),), dtype=sparse.dtype(shape, values.dtype))
+            data['value'] = values
+            for idim, ii in enumerate(indices):
+                data['index']['i'+str(idim)] = ii
             yield data
 
 
