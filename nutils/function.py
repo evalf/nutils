@@ -470,7 +470,7 @@ class Array(numpy.lib.mixins.NDArrayOperatorsMixin, metaclass=_ArrayMeta):
     def eval(self, /, **arguments) -> numpy.ndarray:
         'Evaluate this function.'
 
-        return evaluate(self, _post=_convert, arguments=arguments)[0]
+        return evaluate(self, _convert=_convert_dense_vec_sparse_matrix, arguments=arguments)[0]
 
     def derivative(self, __var: Union[str, 'Argument']) -> 'Array':
         'See :func:`derivative`.'
@@ -2115,7 +2115,33 @@ def nsymgrad(__arg: IntoArray, __geom: IntoArray, ndims: int = 0) -> Array:
 # MISC
 
 
-def _convert(data: numpy.ndarray, inplace: bool = True) -> Union[numpy.ndarray, matrix.Matrix]:
+def _post_identity(x):
+    return x
+
+
+def _post_scalar(x):
+    return x[()] if isinstance(x, numpy.ndarray) else x
+
+
+def _post_coo_to_matrix(coo):
+    values, indices, shape = coo
+    return matrix.assemble(values, indices, shape)
+
+
+def _post_coo_to_sparse(coo):
+    values, indices, shape = coo
+    data = numpy.empty((len(values),), dtype=sparse.dtype(shape, values.dtype))
+    data['value'] = values
+    for idim, ii in enumerate(indices):
+        data['index']['i'+str(idim)] = ii
+    return data
+
+
+def _convert_dense(data: evaluable.Array):
+    return data, _post_scalar if data.ndim == 0 else _post_identity
+
+
+def _convert_dense_vec_sparse_matrix(data: evaluable.Array):
     '''Convert a two-dimensional sparse object to an appropriate object.
 
     The return type is determined based on dimension: a zero-dimensional object
@@ -2124,10 +2150,19 @@ def _convert(data: numpy.ndarray, inplace: bool = True) -> Union[numpy.ndarray, 
     deduplicated and pruned sparse object.
     '''
 
-    ndim = sparse.ndim(data)
-    return sparse.toarray(data) if ndim < 2 \
-        else matrix.fromsparse(data, inplace=inplace) if ndim == 2 \
-        else sparse.prune(sparse.dedup(data, inplace=inplace), inplace=True)
+    ndim = data.ndim
+    if ndim == 0:
+        return data, _post_scalar
+    elif ndim == 1:
+        return data, _post_identity
+    values, indices, shape = data.as_coo_with_shape()
+    post = _post_coo_to_matrix if ndim == 2 else _post_coo_to_sparse
+    return (values, indices, shape), post
+
+
+def _convert_sparse(data: evaluable.Array):
+    values, indices, shape = data.as_coo_with_shape()
+    return (values, indices, shape), _post_coo_to_sparse
 
 
 @util.single_or_multiple
@@ -2150,11 +2185,11 @@ def eval(funcs: evaluable.AsEvaluableArray, /, **arguments: numpy.ndarray) -> Tu
 
 
 @nutils_dispatch
-def evaluate(*arrays, _post=sparse.toarray, arguments={}):
+def evaluate(*arrays, _convert=_convert_dense, arguments={}):
     if len(arguments) == 1 and 'arguments' in arguments and isinstance(arguments['arguments'], dict):
         arguments = arguments['arguments']
-    sparse_arrays = evaluable.eval_sparse(map(Array.cast, arrays), **arguments)
-    return tuple(map(_post, sparse_arrays))
+    arrays, posts = zip(*(_convert(Array.cast(array).as_evaluable_array) for array in arrays))
+    return tuple(post(array) for post, array in zip(posts, evaluable.compile(arrays)(**arguments)))
 
 
 @nutils_dispatch

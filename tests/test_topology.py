@@ -703,7 +703,7 @@ class TopologyAssertions:
             elemindicator = domain.basis('discont', degree=0)
         elemindicator = elemindicator.vector(domain.ndims)
         lhs = domain.integrate((elemindicator*f.grad(geom)[None]).sum(axis=1)*function.J(geom), ischeme='gauss2')
-        rhs = interfaces.integrate((-function.jump(elemindicator)*f*function.normal(geom)[None]).sum(axis=1)*function.J(geom), ischeme='gauss2')
+        rhs = interfaces.integrate((-function.jump(elemindicator)*f*function.normal(geom)[None]).sum(axis=1)*function.J(geom), ischeme='gauss2').copy()
         if len(domain.boundary):
             rhs += domain.boundary.integrate((elemindicator*f*function.normal(geom)[None]).sum(axis=1)*function.J(geom), ischeme='gauss2')
         numpy.testing.assert_array_almost_equal(lhs, rhs)
