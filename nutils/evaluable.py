@@ -88,7 +88,8 @@ def _isindex(arg):
 def _equals_scalar_constant(arg: 'Array', value: Dtype):
     assert isinstance(arg, Array) and arg.ndim == 0, f'arg={arg!r}'
     assert arg.dtype == type(value), f'arg.dtype={arg.dtype}, type(value)={type(value)}'
-    return arg.isconstant and arg.eval() == value
+    if arg.isconstant and not arg._loops:
+        return arg.eval() == value
 
 
 def _equals_simplified(arg1: 'Array', arg2: 'Array'):
@@ -581,7 +582,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
             prefix = self.dtype.__name__[0] + ':'
             shape = ['?'] * self.ndim
             for i, n in enumerate(self.shape):
-                if n.isconstant:
+                if n.isconstant and not n._loops:
                     shape[i] = str(n.__index__())
             for i in set(range(self.ndim)) - set(self._unaligned[1]):
                 shape[i] = f'({shape[i]})'
@@ -685,7 +686,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     @cached_property
     def _intbounds(self):
         # inclusive lower and upper bounds
-        if self.ndim == 0 and self.dtype == int and self.isconstant:
+        if self.ndim == 0 and self.dtype == int and self.isconstant and not self._loops:
             value = self.__index__()
             return value, value
         else:
@@ -1516,7 +1517,7 @@ class Add(Array):
             parts2 = func2_inflations[axis]
             dofmaps = set(parts1) | set(parts2)
             if (len(parts1) < len(dofmaps) and len(parts2) < len(dofmaps)  # neither set is a subset of the other; total may be dense
-                    and self.shape[axis].isconstant and all(dofmap.isconstant for dofmap in dofmaps)):
+                    and self.shape[axis].isconstant and all(dofmap.isconstant and not dofmap._loops for dofmap in dofmaps)):
                 mask = numpy.zeros(int(self.shape[axis]), dtype=bool)
                 for dofmap in dofmaps:
                     mask[dofmap.eval()] = True
@@ -4643,7 +4644,7 @@ def stack(args, axis=0):
 
 def repeat(arg, length, axis):
     arg = asarray(arg)
-    assert _equals_scalar_constant(arg.shape[axis], 1)
+    assert arg.shape[axis].__index__() == 1
     return insertaxis(get(arg, axis, constant(0)), axis, length)
 
 
@@ -4797,7 +4798,7 @@ def _inflate(arg: Array, dofmap: Array, length: Array, axis: int):
 
 def mask(arg, mask: Array, axis: int = 0):
     assert isinstance(arg, Array), f'arg={arg!r}'
-    assert isinstance(mask, numpy.ndarray) and mask.dtype == bool and mask.ndim == 1 and _equals_scalar_constant(arg.shape[axis], len(mask)), f'mask={mask!r}'
+    assert isinstance(mask, numpy.ndarray) and mask.dtype == bool and mask.ndim == 1 and arg.shape[axis].__index__() == len(mask), f'mask={mask!r}'
     index, = mask.nonzero()
     return _take(arg, constant(index), axis)
 
