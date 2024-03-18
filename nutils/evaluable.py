@@ -84,7 +84,7 @@ def _isindex(arg):
 def _equals_scalar_constant(arg: 'Array', value: Dtype):
     assert isinstance(arg, Array) and arg.ndim == 0, f'arg={arg!r}'
     assert arg.dtype == type(value), f'arg.dtype={arg.dtype}, type(value)={type(value)}'
-    return arg.isconstant and arg.eval() == value
+    return arg.isconstant and not arg._loop_deps and arg.eval() == value
 
 
 def _equals_simplified(arg1: 'Array', arg2: 'Array'):
@@ -877,7 +877,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
 
     def _shape_str(self, form):
         dtype = self.dtype.__name__[0] if hasattr(self, 'dtype') else '?'
-        shape = [str(n.__index__()) if n.isconstant else '?' for n in self.shape]
+        shape = [str(n.__index__()) if n.isconstant and not n._loop_deps else '?' for n in self.shape]
         for i in set(range(self.ndim)) - set(self._unaligned[1]):
             shape[i] = f'({shape[i]})'
         for i, _ in self._inflations:
@@ -978,7 +978,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     @cached_property
     def _intbounds(self):
         # inclusive lower and upper bounds
-        if self.ndim == 0 and self.dtype == int and self.isconstant:
+        if self.ndim == 0 and self.dtype == int and self.isconstant and not self._loop_deps:
             value = self.__index__()
             return value, value
         else:
@@ -1780,7 +1780,7 @@ class Add(Array):
             parts2 = func2_inflations[axis]
             dofmaps = set(parts1) | set(parts2)
             if (len(parts1) < len(dofmaps) and len(parts2) < len(dofmaps)  # neither set is a subset of the other; total may be dense
-                    and self.shape[axis].isconstant and all(dofmap.isconstant for dofmap in dofmaps)):
+                    and self.shape[axis].isconstant and all(dofmap.isconstant and not dofmap._loop_deps for dofmap in dofmaps)):
                 mask = numpy.zeros(int(self.shape[axis]), dtype=bool)
                 for dofmap in dofmaps:
                     mask[dofmap.eval()] = True
