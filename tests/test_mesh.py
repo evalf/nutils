@@ -1,7 +1,8 @@
-from nutils import mesh, function, element, transform, topology
+from nutils import mesh, function, element, transform, topology, evaluable
 from nutils.testing import TestCase, parametrize, requires
 import pathlib
 import numpy
+import warnings
 
 
 @parametrize
@@ -142,7 +143,9 @@ class rectilinear(TestCase):
             for degree in 1, 2, 3:
                 with self.subTest(basistype+str(degree)):
                     basis = self.domain.basis(basistype, degree=degree)
-                    values = self.domain.interfaces.sample('uniform', 2).eval(basis*function.J(self.geom))
+                    with warnings.catch_warnings():
+                        warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
+                        values = self.domain.interfaces.sample('uniform', 2).eval(basis*function.J(self.geom))
                     numpy.testing.assert_almost_equal(values.sum(1), 1)
 
 

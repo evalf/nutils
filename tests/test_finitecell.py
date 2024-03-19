@@ -2,6 +2,7 @@ from nutils import topology, mesh, function, evaluable
 from nutils.testing import TestCase, parametrize
 import treelog as log
 import numpy
+import warnings
 
 
 class hierarchical(TestCase):
@@ -21,7 +22,9 @@ class hierarchical(TestCase):
     def test_untrimmed(self, makeplots=False):
         basis = self.ref2.basis('h-std', degree=1)
         self.assertEqual(basis.shape, (5,))
-        x, y = self.ref2.sample('bezier', 2).eval([self.geom[0], basis])
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
+            x, y = self.ref2.sample('bezier', 2).eval([self.geom[0], basis])
         self.assertTrue((abs(y - .25 * numpy.array(
             [[4, 0, 0, 0, 0],
              [0, 4, 0, 0, 0],
@@ -36,7 +39,9 @@ class hierarchical(TestCase):
         levelset = 1.125 - self.geom[0]
         trimmed = self.ref0.trim(levelset, maxrefine=3).refined_by([1]).refined_by([1])
         trimbasis = trimmed.basis('h-std', degree=1)
-        x, y = trimmed.sample('bezier', 2).eval([self.geom[0], trimbasis])
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
+            x, y = trimmed.sample('bezier', 2).eval([self.geom[0], trimbasis])
         self.assertTrue((abs(y - .125 * numpy.array(
             [[8, 0, 0],
              [0, 8, 0],
@@ -73,11 +78,15 @@ class trimmedboundary(TestCase):
         trimmed = self.domain2.boundary['trimmed']
         gauss1 = trimmed.sample('gauss', 1)
         leftbasis = self.domain0[:1].basis('std', degree=1)
-        self.assertTrue(numpy.any(gauss1.eval(leftbasis)))
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
+            self.assertTrue(numpy.any(gauss1.eval(leftbasis)))
         with self.assertRaises(ValueError):
             gauss1.eval(function.opposite(leftbasis))
         rightbasis = self.domain0[1:].basis('std', degree=1)
-        self.assertTrue(numpy.any(gauss1.eval(function.opposite(rightbasis))))
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
+            self.assertTrue(numpy.any(gauss1.eval(function.opposite(rightbasis))))
         with self.assertRaises(ValueError):
             gauss1.eval(rightbasis)
 

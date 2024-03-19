@@ -1,8 +1,9 @@
-from nutils import function, mesh, sparse, transformseq, topology, element, numeric
+from nutils import function, mesh, sparse, transformseq, topology, element, numeric, evaluable
 from nutils.testing import TestCase, parametrize
 import random
 import itertools
 import numpy
+import warnings
 
 
 class basisTest(TestCase):
@@ -10,7 +11,9 @@ class basisTest(TestCase):
     def assertContinuous(self, topo, geom, basis, continuity):
         for regularity in range(continuity+1):
             smpl = topo.sample('gauss', 2)
-            elem_jumps = smpl.eval(function.jump(basis))
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
+                elem_jumps = smpl.eval(function.jump(basis))
             self.assertAllAlmostEqual(elem_jumps, numpy.zeros((smpl.npoints, *basis.shape)), places=10)
             basis = function.grad(basis, geom)[..., 0]
 
@@ -259,8 +262,10 @@ class structured_rect1d_periodic_knotmultiplicities(basisTest):
         rdomain, rgeom = mesh.rectilinear([3])
         pbasis = pdomain.basis('spline', degree=2, knotmultiplicities=[[3, 1, 2, 3]])
         rbasis = rdomain.basis('spline', degree=2, knotmultiplicities=[[1, 1, 2, 1]])
-        psampled = pdomain.sample('gauss', 2).eval(pbasis)
-        rsampled = rdomain.sample('gauss', 2).eval(rbasis)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
+            psampled = pdomain.sample('gauss', 2).eval(pbasis)
+            rsampled = rdomain.sample('gauss', 2).eval(rbasis)
         self.assertAllAlmostEqual(psampled, rsampled)
 
 
@@ -315,7 +320,9 @@ class unstructured_topology(TestCase):
 
     @parametrize.enable_if(lambda btype, **params: btype != 'lagrange')
     def test_pum_range(self):
-        values = self.domain.sample('gauss', 2*self.degree).eval(self.basis)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
+            values = self.domain.sample('gauss', 2*self.degree).eval(self.basis)
         self.assertTrue((values > 0-1e-10).all())
         self.assertTrue((values < 1+1e-10).all())
 

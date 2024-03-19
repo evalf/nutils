@@ -10,6 +10,7 @@ import base64
 import itertools
 import os
 import unittest
+import warnings
 
 
 def as_rounded_list(data):
@@ -216,7 +217,9 @@ class ConformingTests:
 
     def test_basis_std_degree1(self):
         basis = self.topo.basis('std', degree=1)
-        values, verts = self.topo.sample('bezier', 2).eval([basis, self.geom])
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
+            values, verts = self.topo.sample('bezier', 2).eval([basis, self.geom])
         dofs_to_verts = {}
         verts_to_dofs = {}
         for val, vert in zip(map(as_rounded_list, values), (tuple(as_rounded_list(v)) for v in verts)):
@@ -1124,7 +1127,9 @@ class multipatch_L(TestCase):
                 numpy.testing.assert_array_almost_equal(coeffs, numpy.ones(coeffs.shape))
             with self.subTest('interpatch continuity', continuity=continuity):
                 sample = self.domain.interfaces['interpatch'].sample('bezier', 5)
-                jump = sample.eval(function.jump(basis))
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
+                    jump = sample.eval(function.jump(basis))
                 numpy.testing.assert_array_almost_equal(jump, numpy.zeros_like(jump))
 
     def test_nonuniform_spline_basis(self):
@@ -1171,7 +1176,9 @@ class multipatch_misc(TestCase):
         patches = (0, 4, 2, 5), (9, 1, 5, 3), (2, 5, 6, 7), (5, 3, 7, 8)
         domain, geom = mesh.multipatch(patches=patches, nelems=1)
         basis = domain.basis('spline', 1)
-        actual = domain.sample('bezier', 2).eval(basis)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
+            actual = domain.sample('bezier', 2).eval(basis)
         desired = numpy.zeros((16, 10))
         desired[numpy.arange(16), [0, 1, 2, 3, 4, 5, 3, 6, 2, 3, 7, 8, 3, 6, 8, 9]] = 1
         numpy.testing.assert_allclose(actual, desired)
