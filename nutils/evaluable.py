@@ -1006,6 +1006,14 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     _conjugate = lambda self: None
 
     @property
+    def _allterms(self):
+        yield self
+
+    @property
+    def _allfactors(self):
+        yield self
+
+    @property
     def _unaligned(self):
         return self, tuple(range(self.ndim))
 
@@ -1236,6 +1244,16 @@ class InsertAxis(Array):
         super().__init__(args=(func, length), shape=(*func.shape, length), dtype=func.dtype)
 
     @property
+    def _allterms(self):
+        for term in self.func._allterms:
+            yield InsertAxis(term, self.length)
+
+    @property
+    def _allfactors(self):
+        for factor in self.func._allfactors:
+            yield InsertAxis(factor, self.length)
+
+    @property
     def _diagonals(self):
         return self.func._diagonals
 
@@ -1379,6 +1397,16 @@ class Transpose(Array):
         self.func = func
         self.axes = axes
         super().__init__(args=(func,), shape=tuple(func.shape[n] for n in axes), dtype=func.dtype)
+
+    @property
+    def _allterms(self):
+        for term in self.func._allterms:
+            yield Transpose(term, self.axes)
+
+    @property
+    def _allfactors(self):
+        for factor in self.func._allfactors:
+            yield Transpose(factor, self.axes)
 
     @cached_property
     def _diagonals(self):
@@ -1653,6 +1681,11 @@ class Multiply(Array):
             else:
                 yield func
 
+    @property
+    def _allfactors(self):
+        for func in self.funcs:
+            yield from func._allfactors
+
     def _simplified(self):
         factors = tuple(self._factors)
         for j, fj in enumerate(factors):
@@ -1847,6 +1880,11 @@ class Add(Array):
                 yield from func._terms
             else:
                 yield func
+
+    @property
+    def _allterms(self):
+        for func in self.funcs:
+            yield from func._allterms
 
     def _simplified(self):
         terms = tuple(self._terms)
@@ -4706,6 +4744,26 @@ class LoopConcatenate(Loop, Array):
             return zeros_like(self)
         elif self.index not in self.func.arguments:
             return Ravel(Transpose.from_end(InsertAxis(self.func, self.index.length), -2))
+        if any(self.index not in term.arguments for term in self.func._allterms):
+            dep = []
+            indep = []
+            for term in self.func._allterms:
+                (dep if self.index in term.arguments else indep).append(term)
+            result = Ravel(insertaxis(add(*indep), self.ndim - 1, self.length))
+            if dep:
+                result += LoopConcatenate(add(*dep), self.start, self.stop, self.shape, self.index_name, self.length)
+            return result
+        if any(self.index not in factor.arguments for factor in self.func._allfactors):
+            dep = []
+            indep = []
+            for term in self.func._allfactors:
+                (dep if self.index in term.arguments else indep).append(term)
+            result = Ravel(insertaxis(multiply(*indep), self.ndim - 1, self.length))
+            if dep:
+                result *= LoopConcatenate(multiply(*dep), self.start, self.stop, self.shape, self.index_name, self.length)
+            return result
+        if self.func == InsertAxis(self.index, constant(1)):
+            return Range(self.length)
         unaligned, where = unalign(self.func)
         if self.ndim-1 not in where:
             # reinsert concatenation axis, at unit length if possible so we can
