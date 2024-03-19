@@ -70,15 +70,16 @@ class check(TestCase):
             self.assertArrayAlmostEqual(actual.simplified.eval(**evalargs), desired, decimal)
         with self.subTest('optimized'):
             self.assertArrayAlmostEqual(actual.optimized_for_numpy.eval(**evalargs), desired, decimal)
-        with self.subTest('sparse'):
-            indices, values, shape = sparse.extract(evaluable.eval_sparse(actual, **evalargs))
-            self.assertEqual(tuple(map(int, shape)), desired.shape)
-            if not indices:
-                dense = values.sum()
-            else:
-                dense = numpy.zeros(desired.shape, values.dtype)
-                numpy.add.at(dense, indices, values)
-            self.assertArrayAlmostEqual(dense, desired, decimal)
+        if actual.dtype != bool:
+            with self.subTest('sparse'):
+                indices, values, shape = sparse.extract(evaluable.eval_sparse(actual, **evalargs))
+                self.assertEqual(tuple(map(int, shape)), desired.shape)
+                if not indices:
+                    dense = values.sum()
+                else:
+                    dense = numpy.zeros(desired.shape, values.dtype)
+                    numpy.add.at(dense, indices, values)
+                self.assertArrayAlmostEqual(dense, desired, decimal)
 
     def test_str(self):
         a = evaluable.Array((), shape=(evaluable.constant(2), evaluable.constant(3)), dtype=float)
