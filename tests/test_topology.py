@@ -1127,9 +1127,7 @@ class multipatch_L(TestCase):
                 numpy.testing.assert_array_almost_equal(coeffs, numpy.ones(coeffs.shape))
             with self.subTest('interpatch continuity', continuity=continuity):
                 sample = self.domain.interfaces['interpatch'].sample('bezier', 5)
-                with warnings.catch_warnings():
-                    warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
-                    jump = sample.eval(function.jump(basis))
+                jump, _ = evaluable.compile(sample(function.jump(basis)).as_evaluable_array.as_coo())()
                 numpy.testing.assert_array_almost_equal(jump, numpy.zeros_like(jump))
 
     def test_nonuniform_spline_basis(self):
