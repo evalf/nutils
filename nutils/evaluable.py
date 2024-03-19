@@ -1957,6 +1957,12 @@ class Einsum(Array):
     def _node_details(self):
         return self._einsumfmt
 
+    def _intbounds_impl(self):
+        lower = builtins.min(arg._intbounds[0] for arg in self.args)
+        if lower < 0:
+            lower = float('-inf')
+        return lower, float('inf')
+
 
 class Sum(Array):
 
