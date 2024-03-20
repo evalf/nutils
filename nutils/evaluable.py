@@ -1753,6 +1753,14 @@ class Multiply(Array):
             # all situations an improvement.
             return zeros_like(self)
 
+    def _loopsum(self, index):
+        dep = []
+        indep = []
+        for f in self._factors:
+            (dep if index in f.arguments else indep).append(f)
+        if indep:
+            return multiply(*indep) * loop_sum(multiply(*dep), index)
+
     def _determinant(self, axis1, axis2):
         axis1, axis2 = sorted([axis1, axis2])
         factors = tuple(self._factors)
@@ -4641,13 +4649,6 @@ class LoopSum(Loop, Array):
     def _add(self, other):
         if isinstance(other, LoopSum) and other.index == self.index:
             return loop_sum(self.func + other.func, self.index)
-
-    def _multiply(self, other):
-        # If `other` depends on `self.index`, e.g. because `self` is the inner
-        # loop of two nested `LoopSum`s over the same index, then we should not
-        # move `other` inside this loop.
-        if self.index not in other.arguments:
-            return loop_sum(self.func * other, self.index)
 
     @cached_property
     def _assparse(self):
