@@ -4922,8 +4922,6 @@ def take(arg: Array, index: Array, axis: int):
             return _take(arg, constant(index_ + ineg * int(length)), axis)
         elif numpy.greater_equal(index_, int(length)).any():
             raise IndexError('indices out of bounds: {} >= {}'.format(index_, int(length)))
-        elif numpy.greater(numpy.diff(index_), 0).all():
-            return mask(arg, numeric.asboolean(index_, int(length)), axis)
     return _take(arg, index, axis)
 
 
