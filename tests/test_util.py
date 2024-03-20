@@ -449,3 +449,55 @@ class IDDict(TestCase):
 
     def test_repr(self):
         self.assertEqual(repr(self.d), "{'a': 1, 'b': 2}")
+
+
+class replace(TestCase):
+
+    class Base:
+        def __init__(self, *args):
+            self.args = args
+            self.called = False
+        def __reduce__(self):
+            return type(self), self.args
+        @util.deep_replace_property
+        def simple(self):
+            assert not self.called, 'caching failure: simple called twice on the same object'
+            self.called = True
+            if isinstance(self, replace.Ten):
+                return replace.Intermediate() # to test recursion
+            if isinstance(self, replace.Intermediate):
+                return 10
+
+    class Ten(Base): pass
+    class Intermediate(Base): pass
+
+    @staticmethod
+    @util.shallow_replace
+    def subs10(obj, value):
+        if isinstance(obj, replace.Ten):
+            return value
+
+    def test_deep_simple(self):
+        ten = self.Ten()
+        self.assertEqual(ten.simple, 10)
+        self.assertIn('simple', ten.__dict__)
+        self.assertEqual(ten.simple, 10)
+
+    def test_deep_nested(self):
+        ten = self.Ten()
+        obj = self.Base(5, {7, ten})
+        self.assertEqual(type(obj.simple), type(obj))
+        self.assertEqual(obj.simple.args, (5, {7, 10}))
+        self.assertIn('simple', obj.__dict__)
+        self.assertIn('simple', ten.__dict__)
+
+    def test_shallow_simple(self):
+        ten = self.Ten()
+        self.assertEqual(self.subs10(ten, 20), 20)
+
+    def test_shallow_nested(self):
+        ten = self.Ten()
+        obj = self.Base(5, {7, ten})
+        newobj = self.subs10(obj, 20)
+        self.assertEqual(type(newobj), type(obj))
+        self.assertEqual(newobj.args, (5, {7, 20}))
