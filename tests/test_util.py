@@ -394,3 +394,58 @@ class nutils_dispatch(TestCase):
     def test_notimp(self):
         notimp = self.NotImp()
         self.assertEqual(self.f(notimp, self.Ten()), (notimp, 10, 2))
+
+
+class IDDict(TestCase):
+
+    def setUp(self):
+        self.d = util.IDDict()
+        self.a, self.b = 'ab'
+        self.d[self.a] = 1
+        self.d[self.b] = 2
+
+    def test_getitem(self):
+        self.assertEqual(self.d[self.a], 1)
+        self.assertEqual(self.d[self.b], 2)
+
+    def test_setitem(self):
+        c = 'c'
+        self.d[c] = 3
+        self.assertEqual(self.d[c], 3)
+
+    def test_delitem(self):
+        del self.d[self.a]
+        self.assertNotIn(self.a, self.d)
+        self.assertIn(self.b, self.d)
+
+    def test_contains(self):
+        self.assertIn(self.a, self.d)
+        self.assertIn(self.b, self.d)
+        c = 'c'
+        self.assertNotIn('c', self.d)
+
+    def test_len(self):
+        self.assertEqual(len(self.d), 2)
+
+    def test_get(self):
+        self.assertEqual(self.d.get(self.a, 10), 1)
+        self.assertEqual(self.d.get(self.b, 10), 2)
+        self.assertEqual(self.d.get('c', 10), 10)
+
+    def test_keys(self):
+        self.assertEqual(list(self.d.keys()), ['a', 'b'])
+
+    def test_iter(self):
+        self.assertEqual(list(self.d), ['a', 'b'])
+
+    def test_values(self):
+        self.assertEqual(list(self.d.values()), [1, 2])
+
+    def test_items(self):
+        self.assertEqual(list(self.d.items()), [('a', 1), ('b', 2)])
+
+    def test_str(self):
+        self.assertEqual(str(self.d), "{'a': 1, 'b': 2}")
+
+    def test_repr(self):
+        self.assertEqual(repr(self.d), "{'a': 1, 'b': 2}")

@@ -778,4 +778,54 @@ def nutils_dispatch(f):
     return wrapper
 
 
+class IDDict:
+    '''Mapping from instance (is, not ==) to value. Keys need not be hashable.'''
+
+    def __init__(self):
+        self.__dict = {}
+
+    def __setitem__(self, key, value):
+        self.__dict[id(key)] = key, value
+
+    def __getitem__(self, key):
+        key_, value = self.__dict[id(key)]
+        assert key_ is key
+        return value
+
+    def get(self, key, default=None):
+        kv = self.__dict.get(id(key))
+        if kv is None:
+            return default
+        key_, value = kv
+        assert key_ is key
+        return value
+
+    def __delitem__(self, key):
+        del self.__dict[id(key)]
+
+    def __len__(self):
+        return len(self.__dict)
+
+    def keys(self):
+        return (key for key, value in self.__dict.values())
+
+    def values(self):
+        return (value for key, value in self.__dict.values())
+
+    def items(self):
+        return self.__dict.values()
+
+    def __iter__(self):
+        return self.keys()
+
+    def __contains__(self, key):
+        return self.__dict.__contains__(id(key))
+
+    def __str__(self):
+        return '{' + ', '.join(f'{k!r}: {v!r}' for k, v in self.items()) + '}'
+
+    def __repr__(self):
+        return self.__str__()
+
+
 # vim:sw=4:sts=4:et
