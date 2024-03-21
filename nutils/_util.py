@@ -778,4 +778,222 @@ def nutils_dispatch(f):
     return wrapper
 
 
+class IDDict:
+    '''Mapping from instance (is, not ==) to value. Keys need not be hashable.'''
+
+    def __init__(self):
+        self.__dict = {}
+
+    def __setitem__(self, key, value):
+        self.__dict[id(key)] = key, value
+
+    def __getitem__(self, key):
+        key_, value = self.__dict[id(key)]
+        assert key_ is key
+        return value
+
+    def get(self, key, default=None):
+        kv = self.__dict.get(id(key))
+        if kv is None:
+            return default
+        key_, value = kv
+        assert key_ is key
+        return value
+
+    def __delitem__(self, key):
+        del self.__dict[id(key)]
+
+    def __len__(self):
+        return len(self.__dict)
+
+    def keys(self):
+        return (key for key, value in self.__dict.values())
+
+    def values(self):
+        return (value for key, value in self.__dict.values())
+
+    def items(self):
+        return self.__dict.values()
+
+    def __iter__(self):
+        return self.keys()
+
+    def __contains__(self, key):
+        return self.__dict.__contains__(id(key))
+
+    def __str__(self):
+        return '{' + ', '.join(f'{k!r}: {v!r}' for k, v in self.items()) + '}'
+
+    def __repr__(self):
+        return self.__str__()
+
+
+def _tuple(*args):
+    return args
+
+
+def _reduce(obj):
+    'helper function for deep_replace_property and shallow_replace'
+
+    T = type(obj)
+    if T in (tuple, list, dict, set, frozenset):
+        if not obj: # empty containers need not be entered
+            return
+        elif T is tuple:
+            return _tuple, obj
+        elif T is dict:
+            return T, (tuple(obj.items()),)
+        else:
+            return T, (tuple(obj),)
+    try:
+        f, args = obj.__reduce__()
+    except:
+        return
+    else:
+        return f, args
+
+
+class deep_replace_property:
+    '''decorator for deep object replacement
+
+    Generates a cached property for deep replacement of reduceable objects,
+    based on a callable that is applied depth first and recursively on
+    individual constructor arguments. Intermediate values are stored in the
+    attribute by the same name of any object that is a descendent of the class
+    that owns the property.
+
+    Args
+    ----
+    func
+        Callable which maps an object onto a new object, or ``None`` if no
+        replacement is made. It must have precisely one positional argument for
+        the object.
+    '''
+
+    identity = object()
+    recreate = collections.namedtuple('recreate', ['f', 'nargs'])
+
+    def __init__(self, func):
+        self.func = func
+
+    def __set_name__(self, owner, name):
+        self.owner = owner
+        self.name = name
+
+    def __set__(self, obj, value):
+        raise AttributeError("can't set attribute")
+
+    def __delete__(self, obj):
+        raise AttributeError("can't delete attribute")
+
+    def __get__(self, obj, objtype=None):
+        fstack = [obj] # stack of unprocessed objects and command tokens
+        rstack = [] # stack of processed objects
+        ostack = [] # stack of original objects to cache new value into
+
+        while fstack:
+            obj = fstack.pop()
+
+            if isinstance(obj, self.recreate): # recreate object from rstack
+                f, nargs = obj
+                r = f(*[rstack.pop() for _ in range(nargs)])
+                if isinstance(r, self.owner) and (newr := self.func(r)) is not None:
+                    fstack.append(newr) # recursion
+                else:
+                    rstack.append(r)
+
+            elif obj is ostack: # store new representation
+                orig = ostack.pop()
+                r = rstack[-1]
+                if r is orig: # this may happen if obj is memoizing
+                    r = self.identity # prevent cyclic reference
+                orig.__dict__[self.name] = r
+
+            elif isinstance(obj, self.owner):
+                if (r := obj.__dict__.get(self.name)) is not None: # in cache
+                    rstack.append(r if r is not self.identity else obj)
+                elif obj in ostack:
+                    index = ostack.index(obj)
+                    raise Exception(f'{type(obj).__name__}.{self.name} is caught in a loop of size {len(ostack)-index}')
+                else:
+                    ostack.append(obj)
+                    fstack.append(ostack)
+                    f, args = obj.__reduce__()
+                    fstack.append(self.recreate(f, len(args)))
+                    fstack.extend(args)
+
+            elif reduced := _reduce(obj):
+                f, args = reduced
+                fstack.append(self.recreate(f, len(args)))
+                fstack.extend(args)
+
+            else:
+                rstack.append(obj)
+
+        assert not ostack
+        assert len(rstack) == 1
+        return rstack[0]
+
+
+def shallow_replace(func):
+    '''decorator for deep object replacement
+
+    Generates a deep replacement method for reduceable objects based on a
+    callable that is applied on individual constructor arguments. The
+    replacement takes a shallow first approach and stops as soon as the
+    callable returns a value that is not ``None``. Intermediate values are
+    flushed upon return.
+
+    Args
+    ----
+    func
+        Callable which maps an object onto a new object, or ``None`` if no
+        replacement is made. It must have one positional argument for the object,
+        and may have any number of additional positional and/or keyword
+        arguments.
+
+    Returns
+    -------
+    :any:`callable`
+        The method that searches the object to perform the replacements.
+    '''
+
+    recreate = collections.namedtuple('recreate', ['f', 'nargs', 'orig'])
+
+    @functools.wraps(func)
+    def wrapped(target, *funcargs, **funckwargs):
+        fstack = [target] # stack of unprocessed objects and command tokens
+        rstack = [] # stack of processed objects
+        cache = IDDict() # cache of seen objects
+
+        while fstack:
+            obj = fstack.pop()
+
+            if isinstance(obj, recreate):
+                f, nargs, orig = obj
+                r = f(*[rstack.pop() for _ in range(nargs)])
+                cache[orig] = r
+                rstack.append(r)
+
+            elif (r := cache.get(obj)) is not None:
+                rstack.append(r)
+
+            elif (r := func(obj, *funcargs, **funckwargs)) is not None:
+                cache[obj] = r
+                rstack.append(r)
+
+            elif reduced := _reduce(obj):
+                f, args = reduced
+                fstack.append(recreate(f, len(args), obj))
+                fstack.extend(args)
+
+            else: # obj cannot be reduced
+                rstack.append(obj)
+
+        assert len(rstack) == 1
+        return rstack[0]
+
+    return wrapped
+
+
 # vim:sw=4:sts=4:et
