@@ -24,25 +24,30 @@ def maxprocs(nprocs: int = 1):
     return nprocs
 
 
-@contextlib.contextmanager
 def fork(nprocs=None):
-    '''continue as ``nprocs`` parallel processes by forking ``nprocs-1`` times
+    '''Returns a context manager that forks ``nprocs-1`` times when entered.
 
     If ``nprocs`` exceeds the configured ``maxprocs`` than it will silently be
     capped. It is up to the user to prepare shared memory and/or locks for
     inter-process communication. As a safety measure nested forks are blocked by
     limiting nprocs to 1; all secondary forks will be silently ignored.
+
+    If one of ``nprocs`` or ``maxprocs`` is one, then the returned context
+    manager is a no-op and the context manager tests false.
     '''
 
     if nprocs is None or nprocs > maxprocs.current:
         nprocs = maxprocs.current
     if nprocs <= 1:
-        yield 0
-        return
+        return _DontFork()
     if not hasattr(os, 'fork'):
         warnings.warn('fork is unavailable on this platform')
-        yield 0
-        return
+        return _DontFork()
+    return _fork(nprocs)
+
+
+@contextlib.contextmanager
+def _fork(nprocs):
     amchild = False
     try:
         child_pids = []
@@ -80,6 +85,18 @@ def fork(nprocs=None):
     finally:
         if amchild:  # pragma: no cover
             os._exit(1)  # failsafe
+
+
+class _DontFork:
+
+    def __enter__(self):
+        return 0
+
+    def __exit__(self, *exc_info):
+        pass
+
+    def __bool__(self):
+        return False
 
 
 def shempty(shape, dtype=float):
