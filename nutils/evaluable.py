@@ -303,10 +303,10 @@ class Evaluable(types.Singleton):
 
     @cached_property
     def optimized_for_numpy(self):
-        retval = self.simplified \
-                     ._optimized_for_numpy1 \
-                     ._deep_flatten_constants()
-        return retval._combine_loops(loop for loop in retval._loop_deps if loop is not retval)
+        return self.simplified \
+                   ._optimized_for_numpy1 \
+                   ._deep_flatten_constants() \
+                   ._combine_loops()
 
     @util.deep_replace_property
     def _optimized_for_numpy1(obj):
@@ -325,38 +325,13 @@ class Evaluable(types.Singleton):
 
     @cached_property
     def _loop_deps(self) -> typing.Tuple['Loop', ...]:
-        deps = []
-        deps.extend(loop for arg in self.__args for loop in arg._loop_deps if loop not in deps)
-        return tuple(deps)
+        deps = util.IDSet()
+        for arg in self.__args:
+            deps |= arg._loop_deps
+        return deps.frozen_copy()
 
-    def _combine_loops(self, candidates):
-        candidates = list(candidates)
-        while True:
-            exclude = set()
-            combine = {}
-            # Collect all top-level loops in `combine` and all their dependent
-            # loops instances in `exclude`.
-            for loop in candidates:
-                loops = combine.setdefault(loop.index, [])
-                if loop not in loops:
-                    loops.append(loop)
-                    exclude.update(set(loop._loop_deps) - {loop})
-            # Combine top-level loop instances excluding those in `exclude`.
-            replacements = {}
-            for index, loops in combine.items():
-                loops = tuple(loop for loop in loops if loop not in exclude)
-                candidates = [loop for loop in candidates if loop not in loops]
-                if len(loops) <= 1:
-                    continue
-                combined = LoopTuple(loops, index.name, index.length)
-                combined = combined._combine_loops(combined._nested_loops)
-                for i, loop in enumerate(loops):
-                    intbounds = dict(zip(('_lower', '_upper'), loop._intbounds)) if loop.dtype == int else {}
-                    replacements[loop] = ArrayFromTuple(combined, i, loop.shape, loop.dtype, **intbounds)
-            if replacements:
-                self = util.shallow_replace(lambda key: replacements.get(key) if isinstance(key, Loop) else None)(self)
-            else:
-                return self
+    def _combine_loops(self):
+        return util.shallow_replace(_combine_loops(self._loop_deps), self)
 
 
 class EVALARGS(Evaluable):
@@ -4198,17 +4173,12 @@ class Loop(Evaluable):
 
     @property
     def _loop_deps(self) -> typing.Tuple['Loop', ...]:
-        deps = [self]
-        args = itertools.chain(self._invariants, (self.init_arg,))
-        deps.extend(loop for arg in args for loop in arg._loop_deps if loop not in deps)
-        return tuple(deps)
-
-    @cached_property
-    def _nested_loops(self) -> typing.Tuple['Loop', ...]:
-        nested = []
-        nested.extend(loop for arg in self._dependencies for loop in arg._loop_deps if loop not in nested)
-        deps = self._loop_deps
-        return tuple(loop for loop in nested if loop not in deps)
+        deps = util.IDSet()
+        deps.add(self)
+        deps |= self.init_arg._loop_deps
+        for arg in self._invariants:
+            deps |= arg._loop_deps
+        return deps.frozen_copy()
 
 
 class LoopTuple(Loop):
@@ -4239,12 +4209,6 @@ class LoopTuple(Loop):
             return cached
         cache[self] = node = TupleNode(tuple(item._node_loop_body(cache, subgraph, times) for item in self.loops), metadata=(type(self).__name__, times[self]), subgraph=subgraph)
         return node
-
-    @property
-    def _loop_deps(self) -> typing.Tuple['Loop', ...]:
-        deps = []
-        deps.extend(dep for loop in self.loops for dep in loop._loop_deps)
-        return tuple(deps)
 
 
 class LoopSum(Loop, Array):
@@ -4518,6 +4482,35 @@ def _dependencies_sans_invariants(func, arg):
     _populate_dependencies_sans_invariants(func, arg, invariants, dependencies, {arg})
     assert (dependencies or invariants or [arg])[-1] == func
     return tuple(invariants), tuple(dependencies)
+
+
+def _combine_loops(candidates):
+    assert isinstance(candidates, util.IDSet)
+    assert all(isinstance(candidate, Loop) for candidate in candidates)
+    candidates = candidates.copy()
+    replacements = {}
+    while candidates:
+        index = next(iter(candidates)).index
+        loops = []
+        deps = util.IDSet()
+        for loop in candidates: # gather matches in loops
+            if loop.index == index and not deps & (d := loop._loop_deps):
+                loops.append(loop)
+                deps |= d
+        candidates.difference_update(loops)
+        if len(loops) >= 2:
+            nested_deps = util.IDSet()
+            for loop in loops:
+                for arg in loop._dependencies:
+                    nested_deps |= arg._loop_deps
+            combined = util.shallow_replace(_combine_loops(nested_deps),
+                LoopTuple(tuple(loops), index.name, index.length))
+            for i, loop in enumerate(loops):
+                kwargs = {}
+                if loop.dtype == int:
+                    kwargs['_lower'], kwargs['_upper'] = loop._intbounds
+                replacements[loop] = ArrayFromTuple(combined, i, loop.shape, loop.dtype, **kwargs)
+    return replacements
 
 
 def _populate_dependencies_sans_invariants(func, arg, invariants, dependencies, cache):
