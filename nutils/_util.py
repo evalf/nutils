@@ -821,11 +821,8 @@ class IDDict:
     def __contains__(self, key):
         return self.__dict.__contains__(id(key))
 
-    def __str__(self):
-        return '{' + ', '.join(f'{k!r}: {v!r}' for k, v in self.items()) + '}'
-
     def __repr__(self):
-        return self.__str__()
+        return '{' + ', '.join(f'{k!r}: {v!r}' for k, v in self.items()) + '}'
 
 
 def _tuple(*args):
