@@ -975,7 +975,7 @@ class deep_replace_property:
     def __get__(self, obj, objtype=None):
         fstack = [obj] # stack of unprocessed objects and command tokens
         rstack = [] # stack of processed objects
-        ostack = [] # stack of original objects to cache new value into
+        ostack = IDSet() # stack of original objects to cache new value into
 
         while fstack:
             obj = fstack.pop()
@@ -999,10 +999,9 @@ class deep_replace_property:
                 if (r := obj.__dict__.get(self.name)) is not None: # in cache
                     rstack.append(r if r is not self.identity else obj)
                 elif obj in ostack:
-                    index = ostack.index(obj)
-                    raise Exception(f'{type(obj).__name__}.{self.name} is caught in a loop of size {len(ostack)-index}')
+                    raise Exception(f'{type(obj).__name__}.{self.name} is caught in a loop')
                 else:
-                    ostack.append(obj)
+                    ostack.add(obj)
                     fstack.append(ostack)
                     f, args = obj.__reduce__()
                     fstack.append(self.recreate(f, len(args)))
