@@ -951,7 +951,7 @@ class deep_replace_property:
     Args
     ----
     func
-        Callable which maps an object onto a new object, or ``None`` if no
+        Callable which maps an object onto a new object, or onto itself if no
         replacement is made. It must have precisely one positional argument for
         the object.
     '''
@@ -983,7 +983,7 @@ class deep_replace_property:
             if isinstance(obj, self.recreate): # recreate object from rstack
                 f, nargs = obj
                 r = f(*[rstack.pop() for _ in range(nargs)])
-                if isinstance(r, self.owner) and (newr := self.func(r)) is not None:
+                if isinstance(r, self.owner) and (newr := self.func(r)) is not r:
                     fstack.append(newr) # recursion
                 else:
                     rstack.append(r)

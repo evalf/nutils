@@ -293,7 +293,9 @@ class Evaluable(types.Singleton):
     @util.deep_replace_property
     def simplified(obj):
         retval = obj._simplified()
-        if retval is not None and isinstance(obj, Array):
+        if retval is None:
+            return obj
+        if isinstance(obj, Array):
             assert isinstance(retval, Array) and equalshape(retval.shape, obj.shape) and retval.dtype == obj.dtype, '{} --simplify--> {}'.format(obj, retval)
         return retval
 
@@ -310,7 +312,9 @@ class Evaluable(types.Singleton):
     @util.deep_replace_property
     def _optimized_for_numpy1(obj):
         retval = obj._simplified() or obj._optimized_for_numpy()
-        if retval is not None and isinstance(obj, Array):
+        if retval is None:
+            return obj
+        if isinstance(obj, Array):
             assert isinstance(retval, Array) and equalshape(retval.shape, obj.shape), '{0}._optimized_for_numpy or {0}._simplified resulted in shape change'.format(type(obj).__name__)
         return retval
 

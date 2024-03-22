@@ -540,8 +540,10 @@ class replace(TestCase):
             self.called = True
             if isinstance(self, replace.Ten):
                 return replace.Intermediate() # to test recursion
-            if isinstance(self, replace.Intermediate):
+            elif isinstance(self, replace.Intermediate):
                 return 10
+            else:
+                return self
 
     class Ten(Base): pass
     class Intermediate(Base): pass
