@@ -778,6 +778,95 @@ def nutils_dispatch(f):
     return wrapper
 
 
+class IDSetView:
+
+    def __init__(self, init=()):
+        self._dict = init._dict if isinstance(init, IDSetView) else {id(obj): obj for obj in init}
+
+    def __len__(self):
+        return len(self._dict)
+
+    def __bool__(self):
+        return bool(self._dict)
+
+    def __iter__(self):
+        return iter(self._dict.values())
+
+    def __and__(self, other):
+        return self.copy().__iand__(other)
+
+    def __or__(self, other):
+        return self.copy().__ior__(other)
+
+    def __sub__(self, other):
+        return self.copy().__isub__(other)
+
+    def isdisjoint(self, other):
+        return self._dict.isdisjoint(IDSetView(other))
+
+    def intersection(self, other):
+        return self.__and__(IDSetView(other))
+
+    def difference(self, other):
+        return self.__sub__(IDSetView(other))
+
+    def union(self, other):
+        return self.__or__(IDSetView(other))
+
+    def __repr__(self):
+        return '{' + ', '.join(map(repr, self)) + '}'
+
+    def copy(self):
+        return IDSet(self)
+
+
+class IDSet(IDSetView):
+
+    def __init__(self, init=()):
+        self._dict = init._dict.copy() if isinstance(init, IDSetView) else {id(obj): obj for obj in init}
+
+    def __iand__(self, other):
+        if not isinstance(other, IDSetView):
+            return NotImplemented
+        if not other._dict:
+            self._dict.clear()
+        elif self._dict:
+            for k in set(self._dict) - set(other._dict):
+                del self._dict[k]
+        return self
+
+    def __ior__(self, other):
+        if not isinstance(other, IDSetView):
+            return NotImplemented
+        self._dict.update(other._dict)
+        return self
+
+    def __isub__(self, other):
+        if not isinstance(other, IDSetView):
+            return NotImplemented
+        for k in other._dict:
+            self._dict.pop(k, None)
+        return self
+
+    def add(self, obj):
+        self._dict[id(obj)] = obj
+
+    def pop(self):
+        return self._dict.popitem()[1]
+
+    def intersection_update(self, other):
+        self.__iand__(IDSetView(other))
+
+    def difference_update(self, other):
+        self.__isub__(IDSetView(other))
+
+    def update(self, other):
+        self.__ior__(IDSetView(other))
+
+    def view(self):
+        return IDSetView(self)
+
+
 class IDDict:
     '''Mapping from instance (is, not ==) to value. Keys need not be hashable.'''
 
