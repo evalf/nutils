@@ -576,3 +576,13 @@ class replace(TestCase):
         newobj = self.subs10(obj, 20)
         self.assertEqual(type(newobj), type(obj))
         self.assertEqual(newobj.args, (5, {7, 20}))
+
+    def test_shallow_direct(self):
+        ten = self.Ten()
+        obj = self.Base(5, {7, ten})
+        def subs(arg):
+            if isinstance(arg, self.Ten):
+                return 20
+        newobj = util.shallow_replace(subs, obj)
+        self.assertEqual(type(newobj), type(obj))
+        self.assertEqual(newobj.args, (5, {7, 20}))

@@ -1020,7 +1020,7 @@ class deep_replace_property:
         return rstack[0]
 
 
-def shallow_replace(func):
+def shallow_replace(func, *funcargs, **funckwargs):
     '''decorator for deep object replacement
 
     Generates a deep replacement method for reduceable objects based on a
@@ -1043,42 +1043,43 @@ def shallow_replace(func):
         The method that searches the object to perform the replacements.
     '''
 
+    if not funcargs and not funckwargs: # decorator
+        # it would be nice to use partial here but then the decorator doesn't work with methods
+        return functools.wraps(func)(lambda *args, **kwargs: shallow_replace(func, *args, **kwargs))
+
+    target, *funcargs = funcargs
     recreate = collections.namedtuple('recreate', ['f', 'nargs', 'orig'])
 
-    @functools.wraps(func)
-    def wrapped(target, *funcargs, **funckwargs):
-        fstack = [target] # stack of unprocessed objects and command tokens
-        rstack = [] # stack of processed objects
-        cache = IDDict() # cache of seen objects
+    fstack = [target] # stack of unprocessed objects and command tokens
+    rstack = [] # stack of processed objects
+    cache = IDDict() # cache of seen objects
 
-        while fstack:
-            obj = fstack.pop()
+    while fstack:
+        obj = fstack.pop()
 
-            if isinstance(obj, recreate):
-                f, nargs, orig = obj
-                r = f(*[rstack.pop() for _ in range(nargs)])
-                cache[orig] = r
-                rstack.append(r)
+        if isinstance(obj, recreate):
+            f, nargs, orig = obj
+            r = f(*[rstack.pop() for _ in range(nargs)])
+            cache[orig] = r
+            rstack.append(r)
 
-            elif (r := cache.get(obj)) is not None:
-                rstack.append(r)
+        elif (r := cache.get(obj)) is not None:
+            rstack.append(r)
 
-            elif (r := func(obj, *funcargs, **funckwargs)) is not None:
-                cache[obj] = r
-                rstack.append(r)
+        elif (r := func(obj, *funcargs, **funckwargs)) is not None:
+            cache[obj] = r
+            rstack.append(r)
 
-            elif reduced := _reduce(obj):
-                f, args = reduced
-                fstack.append(recreate(f, len(args), obj))
-                fstack.extend(args)
+        elif reduced := _reduce(obj):
+            f, args = reduced
+            fstack.append(recreate(f, len(args), obj))
+            fstack.extend(args)
 
-            else: # obj cannot be reduced
-                rstack.append(obj)
+        else: # obj cannot be reduced
+            rstack.append(obj)
 
-        assert len(rstack) == 1
-        return rstack[0]
-
-    return wrapped
+    assert len(rstack) == 1
+    return rstack[0]
 
 
 # vim:sw=4:sts=4:et
