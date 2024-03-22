@@ -451,6 +451,81 @@ class IDDict(TestCase):
         self.assertEqual(repr(self.d), "{'a': 1, 'b': 2}")
 
 
+class IDSet(TestCase):
+
+    def setUp(self):
+        self.a, self.b, self.c = 'abc'
+        self.ab = util.IDSet([self.a, self.b])
+        self.ac = util.IDSet([self.a, self.c])
+
+    def test_union(self):
+        union = self.ab | self.ac
+        self.assertEqual(list(union), ['a', 'b', 'c'])
+        union = self.ac.union([self.a, self.b])
+        self.assertEqual(list(union), ['a', 'c', 'b'])
+
+    def test_union_update(self):
+        self.ab |= self.ac
+        self.assertEqual(list(self.ab), ['a', 'b', 'c'])
+        self.ac.update([self.a, self.b])
+        self.assertEqual(list(self.ac), ['a', 'c', 'b'])
+
+    def test_intersection(self):
+        intersection = self.ab & self.ac
+        self.assertEqual(list(intersection), ['a'])
+        intersection = self.ab.intersection([self.a, self.c])
+        self.assertEqual(list(intersection), ['a'])
+
+    def test_intersection_update(self):
+        self.ab &= self.ac
+        self.assertEqual(list(self.ab), ['a'])
+        self.ac.intersection_update([self.a, self.b])
+        self.assertEqual(list(self.ac), ['a'])
+
+    def test_difference(self):
+        difference = self.ab - self.ac
+        self.assertEqual(list(difference), ['b'])
+        difference = self.ac - self.ab
+        self.assertEqual(list(difference), ['c'])
+
+    def test_difference_update(self):
+        self.ab -= self.ac
+        self.assertEqual(list(self.ab), ['b'])
+        self.ac.difference_update([self.a, self.b])
+        self.assertEqual(list(self.ac), ['c'])
+
+    def test_add(self):
+        self.ab.add(self.a)
+        self.assertEqual(list(self.ab), ['a', 'b'])
+        self.ab.add(self.c)
+        self.assertEqual(list(self.ab), ['a', 'b', 'c'])
+        self.ac.add(self.b)
+        self.assertEqual(list(self.ac), ['a', 'c', 'b'])
+
+    def test_pop(self):
+        self.assertEqual(self.ab.pop(), 'b')
+        self.assertEqual(list(self.ab), ['a'])
+
+    def test_copy(self):
+        copy = self.ab.copy()
+        self.ab.pop()
+        self.assertEqual(list(self.ab), ['a'])
+        self.assertEqual(list(copy), ['a', 'b'])
+
+    def test_view(self):
+        view = self.ab.view()
+        self.ab.pop()
+        self.assertEqual(list(view), ['a'])
+        with self.assertRaises(AttributeError):
+            view.pop()
+
+    def test_str(self):
+        self.assertEqual(str(self.ab), "{'a', 'b'}")
+
+    def test_repr(self):
+        self.assertEqual(repr(self.ab), "{'a', 'b'}")
+
+
 class replace(TestCase):
 
     class Base:
@@ -465,8 +540,10 @@ class replace(TestCase):
             self.called = True
             if isinstance(self, replace.Ten):
                 return replace.Intermediate() # to test recursion
-            if isinstance(self, replace.Intermediate):
+            elif isinstance(self, replace.Intermediate):
                 return 10
+            else:
+                return self
 
     class Ten(Base): pass
     class Intermediate(Base): pass
@@ -499,5 +576,15 @@ class replace(TestCase):
         ten = self.Ten()
         obj = self.Base(5, {7, ten})
         newobj = self.subs10(obj, 20)
+        self.assertEqual(type(newobj), type(obj))
+        self.assertEqual(newobj.args, (5, {7, 20}))
+
+    def test_shallow_direct(self):
+        ten = self.Ten()
+        obj = self.Base(5, {7, ten})
+        def subs(arg):
+            if isinstance(arg, self.Ten):
+                return 20
+        newobj = util.shallow_replace(subs, obj)
         self.assertEqual(type(newobj), type(obj))
         self.assertEqual(newobj.args, (5, {7, 20}))

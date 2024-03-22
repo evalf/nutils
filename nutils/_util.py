@@ -778,6 +778,95 @@ def nutils_dispatch(f):
     return wrapper
 
 
+class IDSetView:
+
+    def __init__(self, init=()):
+        self._dict = init._dict if isinstance(init, IDSetView) else {id(obj): obj for obj in init}
+
+    def __len__(self):
+        return len(self._dict)
+
+    def __bool__(self):
+        return bool(self._dict)
+
+    def __iter__(self):
+        return iter(self._dict.values())
+
+    def __and__(self, other):
+        return self.copy().__iand__(other)
+
+    def __or__(self, other):
+        return self.copy().__ior__(other)
+
+    def __sub__(self, other):
+        return self.copy().__isub__(other)
+
+    def isdisjoint(self, other):
+        return self._dict.isdisjoint(IDSetView(other))
+
+    def intersection(self, other):
+        return self.__and__(IDSetView(other))
+
+    def difference(self, other):
+        return self.__sub__(IDSetView(other))
+
+    def union(self, other):
+        return self.__or__(IDSetView(other))
+
+    def __repr__(self):
+        return '{' + ', '.join(map(repr, self)) + '}'
+
+    def copy(self):
+        return IDSet(self)
+
+
+class IDSet(IDSetView):
+
+    def __init__(self, init=()):
+        self._dict = init._dict.copy() if isinstance(init, IDSetView) else {id(obj): obj for obj in init}
+
+    def __iand__(self, other):
+        if not isinstance(other, IDSetView):
+            return NotImplemented
+        if not other._dict:
+            self._dict.clear()
+        elif self._dict:
+            for k in set(self._dict) - set(other._dict):
+                del self._dict[k]
+        return self
+
+    def __ior__(self, other):
+        if not isinstance(other, IDSetView):
+            return NotImplemented
+        self._dict.update(other._dict)
+        return self
+
+    def __isub__(self, other):
+        if not isinstance(other, IDSetView):
+            return NotImplemented
+        for k in other._dict:
+            self._dict.pop(k, None)
+        return self
+
+    def add(self, obj):
+        self._dict[id(obj)] = obj
+
+    def pop(self):
+        return self._dict.popitem()[1]
+
+    def intersection_update(self, other):
+        self.__iand__(IDSetView(other))
+
+    def difference_update(self, other):
+        self.__isub__(IDSetView(other))
+
+    def update(self, other):
+        self.__ior__(IDSetView(other))
+
+    def view(self):
+        return IDSetView(self)
+
+
 class IDDict:
     '''Mapping from instance (is, not ==) to value. Keys need not be hashable.'''
 
@@ -821,11 +910,8 @@ class IDDict:
     def __contains__(self, key):
         return self.__dict.__contains__(id(key))
 
-    def __str__(self):
-        return '{' + ', '.join(f'{k!r}: {v!r}' for k, v in self.items()) + '}'
-
     def __repr__(self):
-        return self.__str__()
+        return '{' + ', '.join(f'{k!r}: {v!r}' for k, v in self.items()) + '}'
 
 
 def _tuple(*args):
@@ -865,7 +951,7 @@ class deep_replace_property:
     Args
     ----
     func
-        Callable which maps an object onto a new object, or ``None`` if no
+        Callable which maps an object onto a new object, or onto itself if no
         replacement is made. It must have precisely one positional argument for
         the object.
     '''
@@ -889,7 +975,7 @@ class deep_replace_property:
     def __get__(self, obj, objtype=None):
         fstack = [obj] # stack of unprocessed objects and command tokens
         rstack = [] # stack of processed objects
-        ostack = [] # stack of original objects to cache new value into
+        ostack = IDSet() # stack of original objects to cache new value into
 
         while fstack:
             obj = fstack.pop()
@@ -897,7 +983,7 @@ class deep_replace_property:
             if isinstance(obj, self.recreate): # recreate object from rstack
                 f, nargs = obj
                 r = f(*[rstack.pop() for _ in range(nargs)])
-                if isinstance(r, self.owner) and (newr := self.func(r)) is not None:
+                if isinstance(r, self.owner) and (newr := self.func(r)) is not r:
                     fstack.append(newr) # recursion
                 else:
                     rstack.append(r)
@@ -913,10 +999,9 @@ class deep_replace_property:
                 if (r := obj.__dict__.get(self.name)) is not None: # in cache
                     rstack.append(r if r is not self.identity else obj)
                 elif obj in ostack:
-                    index = ostack.index(obj)
-                    raise Exception(f'{type(obj).__name__}.{self.name} is caught in a loop of size {len(ostack)-index}')
+                    raise Exception(f'{type(obj).__name__}.{self.name} is caught in a loop')
                 else:
-                    ostack.append(obj)
+                    ostack.add(obj)
                     fstack.append(ostack)
                     f, args = obj.__reduce__()
                     fstack.append(self.recreate(f, len(args)))
@@ -935,7 +1020,7 @@ class deep_replace_property:
         return rstack[0]
 
 
-def shallow_replace(func):
+def shallow_replace(func, *funcargs, **funckwargs):
     '''decorator for deep object replacement
 
     Generates a deep replacement method for reduceable objects based on a
@@ -958,42 +1043,43 @@ def shallow_replace(func):
         The method that searches the object to perform the replacements.
     '''
 
+    if not funcargs and not funckwargs: # decorator
+        # it would be nice to use partial here but then the decorator doesn't work with methods
+        return functools.wraps(func)(lambda *args, **kwargs: shallow_replace(func, *args, **kwargs))
+
+    target, *funcargs = funcargs
     recreate = collections.namedtuple('recreate', ['f', 'nargs', 'orig'])
 
-    @functools.wraps(func)
-    def wrapped(target, *funcargs, **funckwargs):
-        fstack = [target] # stack of unprocessed objects and command tokens
-        rstack = [] # stack of processed objects
-        cache = IDDict() # cache of seen objects
+    fstack = [target] # stack of unprocessed objects and command tokens
+    rstack = [] # stack of processed objects
+    cache = IDDict() # cache of seen objects
 
-        while fstack:
-            obj = fstack.pop()
+    while fstack:
+        obj = fstack.pop()
 
-            if isinstance(obj, recreate):
-                f, nargs, orig = obj
-                r = f(*[rstack.pop() for _ in range(nargs)])
-                cache[orig] = r
-                rstack.append(r)
+        if isinstance(obj, recreate):
+            f, nargs, orig = obj
+            r = f(*[rstack.pop() for _ in range(nargs)])
+            cache[orig] = r
+            rstack.append(r)
 
-            elif (r := cache.get(obj)) is not None:
-                rstack.append(r)
+        elif (r := cache.get(obj)) is not None:
+            rstack.append(r)
 
-            elif (r := func(obj, *funcargs, **funckwargs)) is not None:
-                cache[obj] = r
-                rstack.append(r)
+        elif (r := func(obj, *funcargs, **funckwargs)) is not None:
+            cache[obj] = r
+            rstack.append(r)
 
-            elif reduced := _reduce(obj):
-                f, args = reduced
-                fstack.append(recreate(f, len(args), obj))
-                fstack.extend(args)
+        elif reduced := _reduce(obj):
+            f, args = reduced
+            fstack.append(recreate(f, len(args), obj))
+            fstack.extend(args)
 
-            else: # obj cannot be reduced
-                rstack.append(obj)
+        else: # obj cannot be reduced
+            rstack.append(obj)
 
-        assert len(rstack) == 1
-        return rstack[0]
-
-    return wrapped
+    assert len(rstack) == 1
+    return rstack[0]
 
 
 # vim:sw=4:sts=4:et
