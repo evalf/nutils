@@ -328,10 +328,10 @@ class Evaluable(types.Singleton):
 
     @cached_property
     def _loop_concatenate_deps(self):
-        deps = []
+        deps = util.IDSet()
         for arg in self.__args:
-            deps += [dep for dep in arg._loop_concatenate_deps if dep not in deps]
-        return tuple(deps)
+            deps |= arg._loop_concatenate_deps
+        return deps.view()
 
     def _combine_loop_concatenates(self, outer_exclude):
         while True:
@@ -4352,7 +4352,7 @@ class LoopConcatenate(Array):
 
     @property
     def _loop_concatenate_deps(self):
-        return (self,) + super()._loop_concatenate_deps
+        return (util.IDSet([self]) | super()._loop_concatenate_deps).view()
 
     def _intbounds_impl(self):
         return self.func._intbounds
