@@ -58,7 +58,7 @@ class Node(Generic[Metadata], metaclass=abc.ABCMeta):
         subgraph_children = _collect_subgraphs(self)
         id_gen = map(str, itertools.count())
         self._collect_graphviz_nodes_edges({}, id_gen, nodes, edges, None, fill_color)
-        return ''.join(itertools.chain(['digraph {bgcolor="darkgray";'], _generate_graphviz_subgraphs(subgraph_children, nodes, None, id_gen), edges, ['}']))
+        return ''.join(itertools.chain(['digraph {bgcolor="darkgray";'], _generate_graphviz_subgraphs(subgraph_children, nodes, None, id_gen, 0), edges, ['}']))
 
     def export_graphviz(self, *, fill_color: Optional[GraphvizColorCallback] = None, dot_path: str = 'dot', image_type: str = 'svg') -> None:
         src = self.generate_graphviz_source(fill_color=fill_color)
@@ -156,6 +156,19 @@ class RegularNode(Node[Metadata]):
             yield from arg.walk(seen)
 
 
+class TupleNode(RegularNode[Metadata]):
+
+    def __init__(self, items: Tuple[Node, ...], metadata: Metadata, subgraph: Optional[Subgraph] = None) -> None:
+        self.items = items
+        super().__init__(label='Tuple', args=items, kwargs={}, metadata=metadata, subgraph=subgraph)
+
+    def __len__(self) -> int:
+        return len(self.items)
+
+    def __getitem__(self, index: int) -> Node:
+        return self.items[index]
+
+
 class DuplicatedLeafNode(Node[Metadata]):
 
     def __init__(self, label: str, metadata: Metadata) -> None:
@@ -237,9 +250,9 @@ def _generate_asciitree_subgraphs(children: Mapping[Optional[Subgraph], Sequence
         yield from _generate_asciitree_subgraphs(children, id_gen_map, child, bridge+('├ ' if i else '└ '), bridge+('│ ' if i else '  '))
 
 
-def _generate_graphviz_subgraphs(children: Mapping[Optional[Subgraph], Sequence[Subgraph]], nodes: Mapping[Optional[Subgraph], Sequence[str]], subgraph: Optional[Subgraph], id_gen: Iterator[str]) -> Iterator[str]:
+def _generate_graphviz_subgraphs(children: Mapping[Optional[Subgraph], Sequence[Subgraph]], nodes: Mapping[Optional[Subgraph], Sequence[str]], subgraph: Optional[Subgraph], id_gen: Iterator[str], depth: int) -> Iterator[str]:
     for child in children[subgraph]:
-        yield 'subgraph cluster{} {{bgcolor="lightgray";color="none";'.format(next(id_gen))
-        yield from _generate_graphviz_subgraphs(children, nodes, child, id_gen)
+        yield 'subgraph cluster{} {{bgcolor="{}";color="none";'.format(next(id_gen), 'darkgray' if depth % 2 else 'lightgray')
+        yield from _generate_graphviz_subgraphs(children, nodes, child, id_gen, depth + 1)
         yield '}'
     yield from nodes.get(subgraph, ())
