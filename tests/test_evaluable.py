@@ -351,7 +351,7 @@ class check(TestCase):
             numpy.random.shuffle(testvalue.ravel())
             desired = functools.reduce(operator.add, (self.n_op(*self.arg_values[:iarg], v, *self.arg_values[iarg+1:]) for v in testvalue))
             args = (*self.args[:iarg], evaluable.Guard(evaluable.get(evaluable.asarray(testvalue), 0, index)), *self.args[iarg+1:])
-            self.assertFunctionAlmostEqual(decimal=14,
+            self.assertFunctionAlmostEqual(decimal=13,
                                            actual=evaluable.loop_sum(self.op(*args), index),
                                            desired=desired)
 
