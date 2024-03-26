@@ -364,10 +364,9 @@ class Evaluable(types.Singleton):
                 # (the remainder of `exclude`). The latter consists of loops that are
                 # invariant w.r.t. the current loop `index`.
                 data = data._combine_loop_concatenates(exclude)
-                combined = LoopConcatenateCombined(tuple(map(tuple, data)), index._name, index.length)
+                combined = LoopConcatenateCombined(tuple(map(tuple, data)), index._name, index.length, tuple(lc._intbounds for lc in lcs))
                 for i, lc in enumerate(lcs):
-                    intbounds = dict(zip(('_lower', '_upper'), lc._intbounds)) if lc.dtype == int else {}
-                    replacements[lc] = ArrayFromTuple(combined, i, lc.shape, lc.dtype, **intbounds)
+                    replacements[lc] = ArrayFromTuple(combined, i, lc.shape, lc.dtype)
             if replacements:
                 self = util.shallow_replace(lambda key: replacements.get(key) if isinstance(key, LoopConcatenate) else None)(self)
             else:
@@ -425,6 +424,10 @@ class Tuple(Evaluable):
             return cached
         cache[self] = node = TupleNode(tuple(item._node(cache, subgraph, times) for item in self.items), (type(self).__name__, times[self]), subgraph=subgraph)
         return node
+
+    @property
+    def _intbounds_tuple(self):
+        return tuple(item._intbounds for item in self.items)
 
 
 # ARRAYFUNC
@@ -2692,13 +2695,11 @@ class Eig(Evaluable):
 
 class ArrayFromTuple(Array):
 
-    def __init__(self, arrays: Evaluable, index: int, shape: typing.Tuple[Array, ...], dtype: Dtype, *, _lower=float('-inf'), _upper=float('inf')):
+    def __init__(self, arrays: Evaluable, index: int, shape: typing.Tuple[Array, ...], dtype: Dtype):
         assert isinstance(arrays, Evaluable), f'arrays={arrays!r}'
         assert isinstance(index, int), f'index=f{index}'
         self.arrays = arrays
         self.index = index
-        self._lower = _lower
-        self._upper = _upper
         super().__init__(args=(arrays,), shape=shape, dtype=dtype)
 
     def _simplified(self):
@@ -2721,7 +2722,8 @@ class ArrayFromTuple(Array):
         return node
 
     def _intbounds_impl(self):
-        return self._lower, self._upper
+        intbounds = getattr(self.arrays, '_intbounds_tuple', None)
+        return intbounds[self.index] if intbounds else (float('-inf'), float('inf'))
 
 
 class Zeros(Array):
@@ -2941,8 +2943,8 @@ class SwapInflateTake(Evaluable):
             return Tuple(tuple(map(constant, self.eval())))
 
     def __iter__(self):
-        shape = ArrayFromTuple(self, index=2, shape=(), dtype=int, _lower=0),
-        return (ArrayFromTuple(self, index=index, shape=shape, dtype=int, _lower=0) for index in range(2))
+        shape = ArrayFromTuple(self, index=2, shape=(), dtype=int),
+        return (ArrayFromTuple(self, index=index, shape=shape, dtype=int) for index in range(2))
 
     @staticmethod
     def evalf(inflateidx, takeidx):
@@ -2972,6 +2974,10 @@ class SwapInflateTake(Evaluable):
                     newinflate.append(i)
                     newtake.append(j)
         return numpy.array(newtake, dtype=int), numpy.array(newinflate, dtype=int), numpy.array(len(newtake), dtype=int)
+
+    @property
+    def _intbounds_tuple(self):
+        return ((0, float('inf')),) * 3
 
 
 class Diagonalize(Array):
@@ -4278,7 +4284,7 @@ class LoopConcatenate(Array):
             raise ValueError('expected an array with at least one axis')
         if any(self.index in n.arguments for n in shape):
             raise ValueError('the shape of the function must not depend on the index')
-        self._lcc = LoopConcatenateCombined((self.funcdata,), index_name, length)
+        self._lcc = LoopConcatenateCombined((self.funcdata,), index_name, length, (self.func._intbounds,))
         super().__init__(args=(self._lcc,), shape=tuple(shape), dtype=self.func.dtype)
 
     @staticmethod
@@ -4354,7 +4360,7 @@ class LoopConcatenate(Array):
 
 class LoopConcatenateCombined(Evaluable):
 
-    def __init__(self, funcdatas: typing.Tuple[typing.Tuple[Array, ...], ...], index_name: str, length: Array):
+    def __init__(self, funcdatas: typing.Tuple[typing.Tuple[Array, ...], ...], index_name: str, length: Array, intbounds):
         assert isinstance(funcdatas, tuple) and all(isinstance(funcdata, tuple) and all(isinstance(d, Array) for d in funcdata) for funcdata in funcdatas), f'funcdatas={funcdatas!r}'
         assert isinstance(index_name, str), f'index_name={index_name}'
         assert _isindex(length), f'length={length!r}'
@@ -4362,6 +4368,7 @@ class LoopConcatenateCombined(Evaluable):
         self._funcs = tuple(func for func, start, stop, *shape in funcdatas)
         self._index_name = index_name
         self._index = loop_index(index_name, length)
+        self._intbounds_tuple = intbounds
         if any(not func.ndim for func in self._funcs):
             raise ValueError('expected an array with at least one axis')
         shapes = tuple(Tuple(tuple(shape)) for func, start, stop, *shape in funcdatas)
@@ -4947,7 +4954,7 @@ def loop_concatenate_combined(funcs, index):
     unique_funcs = []
     unique_funcs.extend(func for func in funcs if func not in unique_funcs)
     unique_func_data = tuple(_loop_concatenate_data(func, index) for func in unique_funcs)
-    loop = LoopConcatenateCombined(unique_func_data, index._name, index.length)
+    loop = LoopConcatenateCombined(unique_func_data, index._name, index.length, tuple(func._intbounds for func in unique_funcs))
     return tuple(ArrayFromTuple(loop, unique_funcs.index(func), tuple(shape), func.dtype) for func, start, stop, *shape in unique_func_data)
 
 

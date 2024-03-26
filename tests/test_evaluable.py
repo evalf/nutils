@@ -766,7 +766,11 @@ class intbounds(TestCase):
         self.assertEqual(evaluable.BoolToInt(evaluable.constant(numpy.array([False, True], dtype=bool)))._intbounds, (0, 1))
 
     def test_array_from_tuple(self):
-        self.assertEqual(evaluable.ArrayFromTuple(evaluable.Tuple((evaluable.Argument('n', (evaluable.constant(3),), int),)), 0, (evaluable.constant(3),), int, _lower=-2, _upper=3)._intbounds, (-2, 3))
+        A = self.S('A', 2, 4)
+        B = self.S('B', -5, 3)
+        tpl = evaluable.Tuple((A, B))
+        self.assertEqual(evaluable.ArrayFromTuple(tpl, 0, A.shape, A.dtype)._intbounds, (2, 4))
+        self.assertEqual(evaluable.ArrayFromTuple(tpl, 1, B.shape, B.dtype)._intbounds, (-5, 3))
 
     def test_inflate(self):
         self.assertEqual(evaluable.Inflate(self.R(4, (2, 3)), evaluable.constant(numpy.arange(6).reshape(2, 3)), evaluable.constant(7))._intbounds, (0, 9))
@@ -1112,8 +1116,8 @@ class combine_loop_concatenates(TestCase):
         A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, evaluable.constant(1)), i, i+1, evaluable.constant(3)), i._name, i.length)
         B = evaluable.LoopConcatenate((evaluable.InsertAxis(i, evaluable.constant(2)), i*2, i*2+2, evaluable.constant(6)), i._name, i.length)
         actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-        L = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, evaluable.constant(1)), i, i+1, evaluable.constant(3)), (evaluable.InsertAxis(i, evaluable.constant(2)), i*2, i*2+2, evaluable.constant(6))), i._name, i.length)
-        desired = evaluable.Tuple((evaluable.ArrayFromTuple(L, 0, (evaluable.constant(3),), int, **dict(zip(('_lower', '_upper'), A._intbounds))), evaluable.ArrayFromTuple(L, 1, (evaluable.constant(6),), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
+        L = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, evaluable.constant(1)), i, i+1, evaluable.constant(3)), (evaluable.InsertAxis(i, evaluable.constant(2)), i*2, i*2+2, evaluable.constant(6))), i._name, i.length, (A._intbounds, B._intbounds))
+        desired = evaluable.Tuple((evaluable.ArrayFromTuple(L, 0, (evaluable.constant(3),), int), evaluable.ArrayFromTuple(L, 1, (evaluable.constant(6),), int)))
         self.assertEqual(actual, desired)
 
     def test_different_index(self):
@@ -1122,9 +1126,9 @@ class combine_loop_concatenates(TestCase):
         A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, evaluable.constant(1)), i, i+1, evaluable.constant(3)), i._name, i.length)
         B = evaluable.LoopConcatenate((evaluable.InsertAxis(j, evaluable.constant(1)), j, j+1, evaluable.constant(3)), j._name, j.length)
         actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-        L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, evaluable.constant(1)), i, i+evaluable.constant(1), evaluable.constant(3)),), i._name, i.length)
-        L2 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(j, evaluable.constant(1)), j, j+evaluable.constant(1), evaluable.constant(3)),), j._name, j.length)
-        desired = evaluable.Tuple((evaluable.ArrayFromTuple(L1, 0, (evaluable.constant(3),), int, **dict(zip(('_lower', '_upper'), A._intbounds))), evaluable.ArrayFromTuple(L2, 0, (evaluable.constant(3),), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
+        L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, evaluable.constant(1)), i, i+evaluable.constant(1), evaluable.constant(3)),), i._name, i.length, (A._intbounds,))
+        L2 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(j, evaluable.constant(1)), j, j+evaluable.constant(1), evaluable.constant(3)),), j._name, j.length, (B._intbounds,))
+        desired = evaluable.Tuple((evaluable.ArrayFromTuple(L1, 0, (evaluable.constant(3),), int), evaluable.ArrayFromTuple(L2, 0, (evaluable.constant(3),), int)))
         self.assertEqual(actual, desired)
 
     def test_nested_invariant(self):
@@ -1132,11 +1136,11 @@ class combine_loop_concatenates(TestCase):
         A = evaluable.LoopConcatenate((evaluable.InsertAxis(i, evaluable.constant(1)), i, i+1, evaluable.constant(3)), i._name, i.length)
         B = evaluable.LoopConcatenate((A, i*3, i*3+3, evaluable.constant(9)), i._name, i.length)
         actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-        L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, evaluable.constant(1)), i, i+1, evaluable.constant(3)),), i._name, i.length)
-        A_ = evaluable.ArrayFromTuple(L1, 0, (evaluable.constant(3),), int, **dict(zip(('_lower', '_upper'), A._intbounds)))
-        L2 = evaluable.LoopConcatenateCombined(((A_, i*3, i*3+3, evaluable.constant(9)),), i._name, i.length)
+        L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i, evaluable.constant(1)), i, i+1, evaluable.constant(3)),), i._name, i.length, (A._intbounds,))
+        A_ = evaluable.ArrayFromTuple(L1, 0, (evaluable.constant(3),), int)
+        L2 = evaluable.LoopConcatenateCombined(((A_, i*3, i*3+3, evaluable.constant(9)),), i._name, i.length, (B._intbounds,))
         self.assertIn(A_, L2._Evaluable__args)
-        desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (evaluable.constant(9),), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
+        desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (evaluable.constant(9),), int)))
         self.assertEqual(actual, desired)
 
     def test_nested_variant(self):
@@ -1145,11 +1149,11 @@ class combine_loop_concatenates(TestCase):
         A = evaluable.LoopConcatenate((evaluable.InsertAxis(i+j, evaluable.constant(1)), i, i+1, evaluable.constant(3)), i._name, i.length)
         B = evaluable.LoopConcatenate((A, j*3, j*3+3, evaluable.constant(9)), j._name, j.length)
         actual = evaluable.Tuple((A, B))._combine_loop_concatenates(set())
-        L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i+j, evaluable.constant(1)), i, i+1, evaluable.constant(3)),), i._name, i.length)
-        A_ = evaluable.ArrayFromTuple(L1, 0, (evaluable.constant(3),), int, **dict(zip(('_lower', '_upper'), A._intbounds)))
-        L2 = evaluable.LoopConcatenateCombined(((A_, j*3, j*3+3, evaluable.constant(9)),), j._name, j.length)
+        L1 = evaluable.LoopConcatenateCombined(((evaluable.InsertAxis(i+j, evaluable.constant(1)), i, i+1, evaluable.constant(3)),), i._name, i.length, (A._intbounds,))
+        A_ = evaluable.ArrayFromTuple(L1, 0, (evaluable.constant(3),), int)
+        L2 = evaluable.LoopConcatenateCombined(((A_, j*3, j*3+3, evaluable.constant(9)),), j._name, j.length, (B._intbounds,))
         self.assertNotIn(A_, L2._Evaluable__args)
-        desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (evaluable.constant(9),), int, **dict(zip(('_lower', '_upper'), B._intbounds)))))
+        desired = evaluable.Tuple((A_, evaluable.ArrayFromTuple(L2, 0, (evaluable.constant(9),), int)))
         self.assertEqual(actual, desired)
 
 

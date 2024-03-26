@@ -658,6 +658,10 @@ class _EvaluablePointsFromSequence(evaluable.Evaluable):
 
     @property
     def npoints(self) -> evaluable.Array:
-        return evaluable.ArrayFromTuple(self, index=2, shape=(), dtype=int, _lower=0)
+        return evaluable.ArrayFromTuple(self, index=2, shape=(), dtype=int)
+
+    @property
+    def _intbounds_tuple(self):
+        return (float('-inf'), float('inf')), (float('-inf'), float('inf')), (0, float('inf'))
 
 # vim:sw=4:sts=4:et
