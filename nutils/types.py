@@ -411,14 +411,16 @@ class frozenmultiset(collections.abc.Container):
     >>> a = frozenmultiset(['spam', 'bacon', 'spam'])
     >>> b = frozenmultiset(['sausage', 'spam'])
 
-    The :class:`frozenmultiset` objects support ``+``, ``-`` and ``&`` operators:
+    The :class:`frozenmultiset` objects support ``|``, ``&``, ``^`` and ``-`` operators:
 
-    >>> a + b
-    frozenmultiset(['spam', 'bacon', 'spam', 'sausage', 'spam'])
-    >>> a - b
-    frozenmultiset(['bacon', 'spam'])
+    >>> a | b
+    frozenmultiset(['spam', 'spam', 'spam', 'bacon', 'sausage'])
     >>> a & b
     frozenmultiset(['spam'])
+    >>> a ^ b
+    frozenmultiset(['spam', 'bacon', 'sausage'])
+    >>> a - b
+    frozenmultiset(['spam', 'bacon'])
 
     The order of the items is irrelevant:
 
@@ -435,14 +437,14 @@ class frozenmultiset(collections.abc.Container):
         if isinstance(items, frozenmultiset):
             return items
         self = object.__new__(cls)
-        self.__items = tuple(items)
-        self.__key = frozenset((item, self.__items.count(item)) for item in self.__items)
+        self.__items = collections.Counter(items)
+        assert all(n > 0 for n in self.__items.values())
         return self
 
     @cached_property
     def __nutils_hash__(self):
         h = hashlib.sha1('{}.{}\0'.format(type(self).__module__, type(self).__qualname__).encode())
-        for item in sorted('{:04d}'.format(count).encode()+nutils_hash(item) for item, count in self.__key):
+        for item in sorted('{:04d}'.format(count).encode()+nutils_hash(item) for item, count in self.__items.items()):
             h.update(item)
         return h.digest()
 
@@ -453,25 +455,18 @@ class frozenmultiset(collections.abc.Container):
         minimum of multiplicitie of the left and right hand side.
         '''
 
-        items = list(self.__items)
-        isect = []
-        for item in other:
-            try:
-                items.remove(item)
-            except ValueError:
-                pass
-            else:
-                isect.append(item)
-        return frozenmultiset(isect)
+        return frozenmultiset(self.__items & other.__items)
 
-    def __add__(self, other):
+    def __or__(self, other):
         '''
         Return a :class:`frozenmultiset` with elements from the left and right hand
         sides with a multiplicity equal to the sum of the left and right hand
         sides.
         '''
 
-        return frozenmultiset(self.__items + tuple(other))
+        return frozenmultiset(self.__items + other.__items)
+
+    __add__ = __or__ # for backwards compatibility
 
     def __sub__(self, other):
         '''
@@ -481,25 +476,24 @@ class frozenmultiset(collections.abc.Container):
         omitted.
         '''
 
-        items = list(self.__items)
-        for item in other:
-            try:
-                items.remove(item)
-            except ValueError:
-                pass
-        return frozenmultiset(items)
+        return frozenmultiset(self.__items - other.__items)
 
-    __reduce__ = lambda self: (frozenmultiset, (self.__items,))
-    __hash__ = lambda self: hash(self.__key)
-    __eq__ = lambda self, other: type(other) is type(self) and self.__key == other.__key
+    def __xor__(self, other):
+        xor = self.__items.copy()
+        xor.subtract(other.__items)
+        return frozenmultiset({k: abs(n) for k, n in xor.items() if n})
+
+    def isdisjoint(self, other):
+        return self.__items.keys().isdisjoint(other)
+
+    __iter__ = lambda self: self.__items.elements()
+    __reduce__ = lambda self: (frozenmultiset, (tuple(self),))
+    __hash__ = lambda self: hash(frozenset(self.__items.items()))
+    __eq__ = lambda self, other: self is other or type(other) is type(self) and self.__items == other.__items
     __contains__ = lambda self, item: item in self.__items
-    __iter__ = lambda self: iter(self.__items)
-    __len__ = lambda self: len(self.__items)
+    __len__ = lambda self: sum(self.__items.values(), 0) # NOTE as of python 3.10 we can use __items.total()
     __bool__ = lambda self: bool(self.__items)
-
-    isdisjoint = lambda self, other: not any(item in self.__items for item in other)
-
-    __repr__ = __str__ = lambda self: '{}({})'.format(type(self).__name__, list(self.__items))
+    __repr__ = lambda self: f'frozenmultiset({list(self)})'
 
 
 def frozenarray(arg, *, copy=True, dtype=None):

@@ -254,11 +254,6 @@ class frozenmultiset(TestCase):
                 for item in 'spam', 'bacon', 'sausage':
                     self.assertEqual({k: tuple(frozen).count(k) for k in set(src)}, {'spam': 2, 'bacon': 1, 'sausage': 1})
 
-    def test_preserve_order(self):
-        for src in [('spam', 'bacon', 'sausage', 'spam'), ('spam', 'egg', 'spam', 'spam', 'bacon', 'spam')]:
-            with self.subTest(src=src):
-                self.assertEqual(tuple(nutils.types.frozenmultiset(src)), src)
-
     def test_and(self):
         for l, r, lar in [[['spam', 'eggs'], ['spam', 'spam', 'eggs'], ['spam', 'eggs']],
                           [['spam'], ['eggs'], []],
@@ -322,11 +317,17 @@ class frozenmultiset(TestCase):
         self.assertTrue(nutils.types.frozenmultiset(['spam', 'eggs']))
         self.assertFalse(nutils.types.frozenmultiset([]))
 
-    def test_add(self):
+    def test_or(self):
         l = nutils.types.frozenmultiset(['spam', 'bacon'])
         r = nutils.types.frozenmultiset(['sausage', 'spam'])
-        lpr = nutils.types.frozenmultiset(['spam', 'bacon', 'sausage', 'spam'])
-        self.assertEqual(l+r, lpr)
+        lor = nutils.types.frozenmultiset(['spam', 'bacon', 'sausage', 'spam'])
+        self.assertEqual(l|r, lor)
+
+    def test_xor(self):
+        l = nutils.types.frozenmultiset(['spam', 'bacon', 'spam'])
+        r = nutils.types.frozenmultiset(['sausage', 'spam'])
+        lxr = nutils.types.frozenmultiset(['bacon', 'spam', 'sausage'])
+        self.assertEqual(l^r, lxr)
 
     def test_isdisjoint(self):
         for l, r, disjoint in [[['spam', 'eggs'], ['spam', 'spam', 'eggs'], False],
