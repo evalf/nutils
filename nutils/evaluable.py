@@ -382,7 +382,7 @@ class Evaluable(types.Singleton):
 
             replacements = util.IDDict()
             if len(loops) >= 2:
-                combined = _LoopTuple(tuple(loops), index.name, index.length)
+                combined = _LoopTuple(tuple(loops), index.loop_id, index.length)
                 combined = combined._combine_loops(combined.body_arg._loop_deps - combined._loop_deps)
                 for i, loop in enumerate(loops):
                     replacements[loop] = ArrayFromTuple(combined, i, loop.shape, loop.dtype)
@@ -4146,12 +4146,21 @@ class TransformBasis(Array):
             return diagonalize(ones((self._source.fromdims,), dtype=float))
 
 
+class _LoopId(types.Singleton):
+
+    def __init__(self, id):
+        self.id = id
+
+    def __str__(self):
+        return str(self.id)
+
+
 class _LoopIndex(Array):
 
-    def __init__(self, name: str, length: Array):
-        assert isinstance(name, str), f'name={name!r}'
+    def __init__(self, loop_id: _LoopId, length: Array):
+        assert isinstance(loop_id, _LoopId), f'loop_id={loop_id!r}'
         assert _isindex(length), f'length={length!r}'
-        self.name = name
+        self.loop_id = loop_id
         self.length = length
         super().__init__(args=(EVALARGS, self.length), shape=(), dtype=int)
 
@@ -4160,12 +4169,15 @@ class _LoopIndex(Array):
             length = self.length.__index__()
         except:
             length = '?'
-        return 'LoopIndex({}, length={})'.format(self._name, length)
+        return f'LoopIndex({self.loop_id}, length={length})'
+
+    def evalf(self, *args):
+        raise ValueError(f'`_LoopIndex` outside `Loop` with corresponding `_LoopId`: {self.loop_id}.')
 
     def _node(self, cache, subgraph, times):
         if self in cache:
             return cache[self]
-        cache[self] = node = RegularNode('LoopIndex', (), dict(length=self.length._node(cache, subgraph, times)), (type(self).__name__, _Stats()), subgraph)
+        cache[self] = node = RegularNode(f'LoopIndex {self.loop_id}', (), dict(length=self.length._node(cache, subgraph, times)), (type(self).__name__, _Stats()), subgraph)
         return node
 
     def _intbounds_impl(self):
@@ -4190,14 +4202,14 @@ class Loop(Evaluable):
     *   method ``evalf_loop_body(output, body_arg)``.
     '''
 
-    def __init__(self, index_name: str, length: Array, init_arg: Evaluable, body_arg: Evaluable, *args, **kwargs):
-        assert isinstance(index_name, str), f'index_name={index_name!r}'
+    def __init__(self, loop_id: _LoopId, length: Array, init_arg: Evaluable, body_arg: Evaluable, *args, **kwargs):
+        assert isinstance(loop_id, _LoopId), f'loop_id={loop_id!r}'
         assert isinstance(length, Array), f'length={length!r}'
         assert isinstance(init_arg, Evaluable), f'init_arg={init_arg!r}'
         assert isinstance(body_arg, Evaluable), f'body_arg={init_arg!r}'
-        self.index_name = index_name
+        self.loop_id = loop_id
         self.length = length
-        self.index = _LoopIndex(index_name, length)
+        self.index = _LoopIndex(loop_id, length)
         self.init_arg = init_arg
         self.body_arg = body_arg
         if self.index in init_arg.arguments:
@@ -4219,7 +4231,7 @@ class Loop(Evaluable):
         output = self.evalf_loop_init(init_arg)
         length = length.__index__()
         values = [None] + list(invariants) + [None] * len(serialized_evalf)
-        with log.context(f'loop {self.index.name}'.replace('{', '{{').replace('}', '}}') + ' {:3.0f}%', 0) as log_ctx:
+        with log.context(f'loop {self.index.loop_id}'.replace('{', '{{').replace('}', '}}') + ' {:3.0f}%', 0) as log_ctx:
             fork = parallel.fork(length)
             if fork:
                 raw_index = multiprocessing.RawValue('i', 0)
@@ -4286,11 +4298,11 @@ class Loop(Evaluable):
 
 class _LoopTuple(Loop):
 
-    def __init__(self, loops: typing.Tuple[Loop], index_name: str, length: Array):
-        assert isinstance(loops, tuple) and all(isinstance(loop, Loop) and loop.index_name == index_name and loop.length == length for loop in loops), f'loops={loops}'
+    def __init__(self, loops: typing.Tuple[Loop], loop_id: _LoopId, length: Array):
+        assert isinstance(loops, tuple) and all(isinstance(loop, Loop) and loop.loop_id == loop_id and loop.length == length for loop in loops), f'loops={loops}'
         self.loops = loops
         super().__init__(
-            index_name=index_name,
+            loop_id=loop_id,
             length=length,
             init_arg=Tuple(tuple(loop.init_arg for loop in loops)),
             body_arg=Tuple(tuple(loop.body_arg for loop in loops)),
@@ -4320,11 +4332,11 @@ class _LoopTuple(Loop):
 
 class LoopSum(Loop, Array):
 
-    def __init__(self, func: Array, shape: typing.Tuple[Array, ...], index_name: str, length: Array):
+    def __init__(self, func: Array, shape: typing.Tuple[Array, ...], loop_id: _LoopId, length: Array):
         assert isinstance(func, Array) and func.dtype != bool, f'func={func!r}'
         assert func.ndim == len(shape)
         self.func = func
-        super().__init__(init_arg=Tuple(shape), body_arg=func, index_name=index_name, length=length, shape=shape, dtype=func.dtype)
+        super().__init__(init_arg=Tuple(shape), body_arg=func, loop_id=loop_id, length=length, shape=shape, dtype=func.dtype)
 
     def evalf_loop_init(self, shape):
         return parallel.shzeros(tuple(n.__index__() for n in shape), dtype=self.dtype)
@@ -4341,7 +4353,7 @@ class LoopSum(Loop, Array):
             return cached
         kwargs = {'shape[{}]'.format(i): n._node(cache, subgraph, times) for i, n in enumerate(self.shape)}
         kwargs['func'] = self.func._node(cache, subgraph, times)
-        cache[self] = node = RegularNode('LoopSum', (), kwargs, (type(self).__name__, times[self]), subgraph)
+        cache[self] = node = RegularNode(f'LoopSum {self.loop_id}', (), kwargs, (type(self).__name__, times[self]), subgraph)
         return node
 
     def _simplified(self):
@@ -4423,7 +4435,7 @@ class _SizesToOffsets(Array):
 
 class LoopConcatenate(Loop, Array):
 
-    def __init__(self, func: Array, start: Array, stop: Array, concat_length: Array, index_name: str, length: Array):
+    def __init__(self, func: Array, start: Array, stop: Array, concat_length: Array, loop_id: _LoopId, length: Array):
         assert isinstance(func, Array), f'func={func}'
         assert _isindex(start), f'start={start}'
         assert _isindex(stop), f'stop={stop}'
@@ -4434,7 +4446,7 @@ class LoopConcatenate(Loop, Array):
         if not self.func.ndim:
             raise ValueError('expected an array with at least one axis')
         shape = *func.shape[:-1], concat_length
-        super().__init__(init_arg=Tuple(shape), body_arg=Tuple((func, start, stop)), index_name=index_name, length=length, shape=shape, dtype=func.dtype)
+        super().__init__(init_arg=Tuple(shape), body_arg=Tuple((func, start, stop)), loop_id=loop_id, length=length, shape=shape, dtype=func.dtype)
 
     def evalf_loop_init(self, shape):
         return parallel.shempty(tuple(n.__index__() for n in shape), dtype=self.dtype)
@@ -4454,7 +4466,7 @@ class LoopConcatenate(Loop, Array):
         kwargs['start'] = self.start._node(cache, subgraph, times)
         kwargs['stop'] = self.stop._node(cache, subgraph, times)
         kwargs['func'] = self.func._node(cache, subgraph, times)
-        cache[self] = node = RegularNode('LoopConcatenate', (), kwargs, (type(self).__name__, times[self]), subgraph)
+        cache[self] = node = RegularNode(f'LoopConcatenate {self.loop_id}', (), kwargs, (type(self).__name__, times[self]), subgraph)
         return node
 
     def _simplified(self):
@@ -4995,14 +5007,16 @@ def appendaxes(func, shape):
 
 
 def loop_index(name, length):
-    return _LoopIndex(name, asarray(length))
+    if not isinstance(name, str):
+        return ValueError('`name` must be a `str` but got `{name!r}`')
+    return _LoopIndex(_LoopId(name), asarray(length))
 
 
 def loop_sum(func, index):
     func = asarray(func)
     if not isinstance(index, _LoopIndex):
         raise TypeError(f'expected _LoopIndex, got {index!r}')
-    return LoopSum(func, func.shape, index.name, index.length)
+    return LoopSum(func, func.shape, index.loop_id, index.length)
 
 
 def loop_concatenate(func, index):
@@ -5018,7 +5032,7 @@ def loop_concatenate(func, index):
     start = Take(offsets, index)
     stop = Take(offsets, index+1)
     concat_length = Take(offsets, index.length)
-    return LoopConcatenate(func, start, stop, concat_length, index.name, index.length)
+    return LoopConcatenate(func, start, stop, concat_length, index.loop_id, index.length)
 
 
 @util.shallow_replace

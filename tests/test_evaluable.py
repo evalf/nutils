@@ -905,8 +905,8 @@ class asciitree(TestCase):
                          'A\n'
                          '└ B = Loop\n'
                          'NODES\n'
-                         '%B0 = LoopSum\n'
-                         '└ func = %B1 = LoopIndex\n'
+                         '%B0 = LoopSum i\n'
+                         '└ func = %B1 = LoopIndex i\n'
                          '  └ length = 2\n')
 
     @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
@@ -918,7 +918,7 @@ class asciitree(TestCase):
                          'A\n'
                          '└ B = Loop\n'
                          'NODES\n'
-                         '%B0 = LoopConcatenate\n'
+                         '%B0 = LoopConcatenate i\n'
                          '├ shape[0] = %A0 = Take; i:; [2,2]\n'
                          '│ ├ %A1 = _SizesToOffsets; i:3; [0,2]\n'
                          '│ │ └ %A2 = InsertAxis; i:(2); [1,1]\n'
@@ -927,7 +927,7 @@ class asciitree(TestCase):
                          '│ └ 2\n'
                          '├ start = %B1 = Take; i:; [0,2]\n'
                          '│ ├ %A1\n'
-                         '│ └ %B2 = LoopIndex\n'
+                         '│ └ %B2 = LoopIndex i\n'
                          '│   └ length = 2\n'
                          '├ stop = %B3 = Take; i:; [0,2]\n'
                          '│ ├ %A1\n'
@@ -1086,7 +1086,7 @@ class combine_loops(TestCase):
         assert loops
         index = loops[0].index
         assert all(loop.index == index for loop in loops[1:])
-        combined = evaluable._LoopTuple(loops, index.name, index.length)
+        combined = evaluable._LoopTuple(loops, index.loop_id, index.length)
         return [evaluable.ArrayFromTuple(combined, i, loop.shape, loop.dtype) for i, loop in enumerate(loops)]
 
     def test_same_index(self):
