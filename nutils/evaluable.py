@@ -938,6 +938,15 @@ class Array(Evaluable, metaclass=_ArrayMeta):
             lower, upper = self._intbounds
             return lower if lower == upper else None
 
+    def _compile_with_out(self, builder, out, out_block_id, mode):
+        # Compiles `self` and writes the result to `out`. It is the
+        # responsibility of the caller to ensure that `out_block_id <=
+        # builder.get_block_id(self)`. Valid values for mode are
+        #
+        #     'assign': results are assigned to `out`
+        #     'iadd': results add added to `out`
+        return NotImplemented
+
 
 class Orthonormal(Array):
     'make a vector orthonormal to a subspace'
@@ -1316,6 +1325,11 @@ class Transpose(Array):
     def _compile_expression(self, py_self, func):
         axes = _pyast.Tuple(tuple(map(_pyast.LiteralInt, self.axes)))
         return _pyast.Variable('numpy').get_attr('transpose').call(func, axes)
+
+    def _compile_with_out(self, builder, out, out_block_id, mode):
+        invaxes = _pyast.Tuple(tuple(map(_pyast.LiteralInt, self._invaxes)))
+        inv_trans_out = _pyast.Variable('numpy').get_attr('transpose').call(out, invaxes)
+        builder.compile_with_out(self.func, inv_trans_out, out_block_id, mode)
 
     @property
     def _node_details(self):
@@ -1792,10 +1806,26 @@ class Add(Array):
         #
         # We instead rely on Inflate._add to handle this situation.
 
+
     evalf = staticmethod(numpy.add)
+
+    def _compile(self, builder):
+        if any(builder._ndependents[func] == 1 and type(func)._compile_with_out != Array._compile_with_out for func in self.funcs):
+            out, out_block_id = builder.new_empty_array_for_evaluable(self)
+            self._compile_with_out(builder, out, out_block_id, 'assign')
+            return out
+        else:
+            return super()._compile(builder)
 
     def _compile_expression(self, py_self, func1, func2):
         return _pyast.BinOp(func1, '+', func2)
+
+    def _compile_with_out(self, builder, out, out_block_id, mode):
+        assert mode in ('iadd', 'assign')
+        if mode == 'assign':
+            builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
+        for func in self.funcs:
+            builder.compile_with_out(func, out, out_block_id, 'iadd')
 
     def _sum(self, axis):
         return add(*[sum(f, axis) for f in self._terms])
@@ -3005,6 +3035,14 @@ class Inflate(Array):
         numpy.add.at(inflated, (slice(None),)*(self.ndim-1)+(indices,), array)
         return inflated
 
+    def _compile_with_out(self, builder, out, out_block_id, mode):
+        assert mode in ('iadd', 'assign')
+        if mode == 'assign':
+            builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
+        indices = _pyast.Tuple((_pyast.Variable('slice').call(_pyast.Variable('None')),)*(self.ndim-1) + (builder.compile(self.dofmap),))
+        values = builder.compile(self.func)
+        builder.get_block_for_evaluable(self).array_add_at(out, indices, values)
+
     def _inflate(self, dofmap, length, axis):
         if dofmap.ndim == 0 and dofmap == self.dofmap and length == self.length:
             return diagonalize(self, -1, axis)
@@ -3170,6 +3208,17 @@ class Diagonalize(Array):
         diag = numpy.core.multiarray.c_einsum('...ii->...i', result)
         diag[:] = arr
         return result
+
+    def _compile(self, builder):
+        out, out_block_id = builder.new_empty_array_for_evaluable(self)
+        self._compile_with_out(builder, out, out_block_id, mode='assign')
+        return out
+
+    def _compile_with_out(self, builder, out, out_block_id, mode):
+        out_diag = _pyast.Variable('numpy').get_attr('core').get_attr('multiarray').get_attr('c_einsum').call(_pyast.LiteralStr('...ii->...i'), out)
+        if mode == 'assign':
+            builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
+        builder.compile_with_out(self.func, out_diag, out_block_id, mode)
 
     def _derivative(self, var, seen):
         return diagonalize(derivative(self.func, var, seen), self.ndim-2, self.ndim-1)
@@ -4502,13 +4551,23 @@ class LoopSum(Loop, Array):
 
     def _compile(self, builder):
         out, out_block_id = builder.new_empty_array_for_evaluable(self)
-        builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
+        # `out_block_id` is always at the beginning the scope this evaluable
+        # belongs to (out_block_id = (*builder.get_block_id(self)[:-1], 0), so
+        # we're not reaching `NotImplemented` in `self._compile_with_out`.
+        self._compile_with_out(builder, out, out_block_id, mode='assign')
+        return out
+
+    def _compile_with_out(self, builder, out, out_block_id, mode):
+        assert mode in ('iadd', 'assign')
+        if out_block_id > builder.get_block_id(self.index):
+            # The loop body comes before the definition of `out`.
+            return NotImplemented
+        if mode == 'assign':
+            builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
         index_block_id = builder.get_block_id(self.index)
         body_block_id = builtins.max(index_block_id, builder.get_block_id(self.func))
         assert body_block_id[:-1] == index_block_id[:-1]
-        func = builder.compile(self.func)
-        builder.get_block_for_evaluable(self, block_id=body_block_id).array_iadd(out, func)
-        return out
+        builder.compile_with_out(self.func, out, body_block_id, 'iadd')
 
     def evalf_loop_init(self, shape):
         return parallel.shzeros(tuple(n.__index__() for n in shape), dtype=self.dtype)
@@ -4622,13 +4681,22 @@ class LoopConcatenate(Loop, Array):
 
     def _compile(self, builder):
         out, out_block_id = builder.new_empty_array_for_evaluable(self)
-        start, stop, func = builder.compile((self.start, self.stop, self.func))
+        # `out_block_id` is always at the beginning the scope this evaluable
+        # belongs to (out_block_id = (*builder.get_block_id(self)[:-1], 0), so
+        # we're not reaching `NotImplemented` in `self._compile_with_out`.
+        self._compile_with_out(builder, out, out_block_id, mode='assign')
+        return out
+
+    def _compile_with_out(self, builder, out, out_block_id, mode):
+        if out_block_id > builder.get_block_id(self.index):
+            # The loop body comes before the definition of `out`.
+            return NotImplemented
+        start, stop = builder.compile((self.start, self.stop))
         index_block_id = builder.get_block_id(self.index)
         body_block_id = builtins.max((index_block_id, *map(builder.get_block_id, (self.start, self.stop))))
         assert body_block_id[:-1] == index_block_id[:-1]
         out_slice = out.get_item(_pyast.Tuple((_pyast.Raw('...'), _pyast.Variable('slice').call(start, stop))))
-        builder.get_block_for_evaluable(self, block_id=body_block_id).array_copy(out_slice, func)
-        return out
+        builder.compile_with_out(self.func, out_slice, body_block_id, mode)
 
     def evalf_loop_init(self, shape):
         return parallel.shempty(tuple(n.__index__() for n in shape), dtype=self.dtype)
@@ -5648,7 +5716,7 @@ def _define_loop_block_structure(targets: typing.Tuple[Evaluable, ...]) -> typin
 def _compile_to_pyast(funcs, globals, evaluables, new_index, cache, stats, parallel, loop_lengths, evaluable_block_ids):
     # Count the number of dependents for each `Evaluable` in `funcs`. This is
     # used by the builder to decide if an `Evaluable` can be compiled with
-    # `_compile_iadd`.
+    # `_compile_with_out(..., mode='iadd')`.
     ndependents = collections.defaultdict(lambda: 0)
     seen = set()
     stack = []
@@ -5765,6 +5833,19 @@ class _BlockTreeBuilder:
                     block.assert_equal(out.get_attr('shape').get_item(_pyast.LiteralInt(i)), _pyast.LiteralInt(n.__index__()))
         return out
 
+    def compile_with_out(self, evaluable: Evaluable, out: _pyast.Expression, out_block_id: _BlockId, mode: str) -> None:
+        self._get_evaluable_index(evaluable)
+        evaluable_block_id = self.get_block_id(evaluable)
+        if self._ndependents[evaluable] > 1 or evaluable_block_id < out_block_id or evaluable._compile_with_out(self, out, out_block_id, mode) is NotImplemented:
+            value = self.compile(evaluable)
+            block = self.get_block_for_evaluable(evaluable, block_id=builtins.max(evaluable_block_id, out_block_id))
+            if mode == 'assign':
+                block.array_copy(out, value)
+            elif mode == 'iadd':
+                block.array_iadd(out, value)
+            else:
+                raise ValueError(f'invalid mode: {mode}')
+
     def new_empty_array_for_evaluable(self, array: Array) -> _pyast.Variable:
         # Creates a new empty array and assigns the array to variable `v{id}`
         # where `id` is the unique index of `array`.
@@ -5774,7 +5855,7 @@ class _BlockTreeBuilder:
         # soon as the shape is known). `out`, however, must not be used outside
         # the loop where `array` resides, if any. This is to prevent compiling
         # a dependency of `array` that lives outside that loop using
-        # `_compile_iadd`.
+        # `_compile_with_out`.
         alloc_block_id = builtins.max(map(self.get_block_id, array.shape)) if array.ndim else (0,)
         out_block_id = builtins.max((*self.get_block_id(array)[:-1], 0), alloc_block_id)
         if self._parallel and len(out_block_id) == 1:
