@@ -1082,4 +1082,47 @@ def shallow_replace(func, *funcargs, **funckwargs):
     return rstack[0]
 
 
+def tree_walk(visit_node, /, *roots):
+    '''calls ``visit_node`` for every node in ``roots``
+
+    The callable ``visit_node`` takes one node as argument and should return an
+    iterator over the child nodes to visit. Every identical node is visited
+    only once.
+
+    Examples
+    --------
+
+    >>> def visit(node):
+    ...     if isinstance(node, list):
+    ...         return node
+    ...     else:
+    ...         print(node)
+    ...         return ()
+    >>> tree_walk(visit, [1, [2, 3]])
+    3
+    2
+    1
+
+    Identical nodes, ``a`` in the following example, are visited once:
+
+    >>> a = [1, 2]
+    >>> tree_walk(visit, [a, a])
+    2
+    1
+    '''
+
+    stack = []
+    seen = set()
+    for root in roots:
+        if id(root) not in seen:
+            stack.append(root)
+            seen.add(id(root))
+    while stack:
+        node = stack.pop()
+        for dep in visit_node(node):
+            if id(dep) not in seen:
+                stack.append(dep)
+                seen.add(id(dep))
+
+
 # vim:sw=4:sts=4:et
