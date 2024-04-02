@@ -4146,14 +4146,14 @@ class TransformBasis(Array):
             return diagonalize(ones((self._source.fromdims,), dtype=float))
 
 
-class _LoopIndex(Argument):
+class _LoopIndex(Array):
 
     def __init__(self, name: str, length: Array):
         assert isinstance(name, str), f'name={name!r}'
         assert _isindex(length), f'length={length!r}'
         self.name = name
         self.length = length
-        super().__init__(name, (), int)
+        super().__init__(args=(EVALARGS, self.length), shape=(), dtype=int)
 
     def __str__(self):
         try:
@@ -4175,6 +4175,10 @@ class _LoopIndex(Argument):
     def _simplified(self):
         if _equals_scalar_constant(self.length, 1):
             return Zeros((), int)
+
+    @property
+    def arguments(self):
+        return frozenset({self})
 
 
 class Loop(Evaluable):
