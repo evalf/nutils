@@ -956,7 +956,7 @@ class _Transpose(Array):
         arg = self._arg.lower(args)
         offset = len(args.points_shape)
         axes = (*range(offset), *(i+offset for i in self._axes))
-        return evaluable.Transpose(arg, axes)
+        return evaluable.transpose(arg, axes)
 
 
 class _Opposite(Array):
