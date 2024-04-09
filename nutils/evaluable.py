@@ -1196,6 +1196,9 @@ class InsertAxis(Array):
     def _inverse(self, axis1, axis2):
         if axis1 < self.ndim-1 and axis2 < self.ndim-1:
             return InsertAxis(inverse(self.func, (axis1, axis2)), self.length)
+        # either axis1 or axis2 is inserted
+        if self.length._intbounds[0] > 1: # matrix is at least 2x2
+            return singular_like(self)
 
     def _loopsum(self, index):
         return InsertAxis(loop_sum(self.func, index), self.length)
@@ -1443,11 +1446,13 @@ class Inverse(Array):
         super().__init__(args=(func,), shape=func.shape, dtype=func.dtype)
 
     def _simplified(self):
+        if _equals_scalar_constant(self.func.shape[-1], 1):
+            return reciprocal(self.func)
+        if _equals_scalar_constant(self.func.shape[-1], 0):
+            return singular_like(self)
         result = self.func._inverse(self.ndim-2, self.ndim-1)
         if result is not None:
             return result
-        if _equals_scalar_constant(self.func.shape[-1], 1):
-            return reciprocal(self.func)
 
     evalf = staticmethod(numeric.inv)
 
@@ -2763,6 +2768,17 @@ class ArrayFromTuple(Array):
         return intbounds[self.index] if intbounds else (float('-inf'), float('inf'))
 
 
+class Singular(Array):
+
+    def __init__(self, dtype):
+        assert dtype in (float, complex), 'Singular dtype must be float or complex'
+        super().__init__(args=(), shape=(), dtype=dtype)
+
+    def evalf(self):
+        warnings.warn('singular matrix', RuntimeWarning)
+        return numpy.array(numpy.nan, self.dtype)
+
+
 class Zeros(Array):
     'zero'
 
@@ -2838,6 +2854,9 @@ class Zeros(Array):
 
     def _intbounds_impl(self):
         return 0, 0
+
+    def _inverse(self, axis1, axis2):
+        return singular_like(self)
 
 
 class Inflate(Array):
@@ -4644,6 +4663,10 @@ def ones(shape, dtype=float):
 
 def ones_like(arr):
     return ones(arr.shape, arr.dtype)
+
+
+def singular_like(arr):
+    return appendaxes(Singular(arr.dtype), arr.shape)
 
 
 def reciprocal(arg):
