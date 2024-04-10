@@ -502,6 +502,11 @@ class IDSet(TestCase):
         self.ac.add(self.b)
         self.assertEqual(list(self.ac), ['a', 'c', 'b'])
 
+    def test_isdisjoint(self):
+        self.assertTrue(self.ab.isdisjoint(self.c))
+        self.assertTrue(self.ac.isdisjoint(self.b))
+        self.assertFalse(self.ac.isdisjoint(self.a))
+
     def test_pop(self):
         self.assertEqual(self.ab.pop(), 'b')
         self.assertEqual(list(self.ab), ['a'])

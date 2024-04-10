@@ -802,7 +802,7 @@ class IDSetView:
         return self.copy().__isub__(other)
 
     def isdisjoint(self, other):
-        return self._dict.isdisjoint(IDSetView(other))
+        return self._dict.keys().isdisjoint(IDSetView(other)._dict)
 
     def intersection(self, other):
         return self.__and__(IDSetView(other))
