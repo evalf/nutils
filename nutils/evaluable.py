@@ -316,7 +316,7 @@ class Evaluable(types.Singleton):
 
     @util.deep_replace_property
     def _optimized_for_numpy1(obj):
-        retval = obj._simplified() or obj._optimized_for_numpy()
+        retval = obj._optimized_for_numpy()
         if retval is None:
             return obj
         if isinstance(obj, Array):
@@ -1404,6 +1404,10 @@ class Transpose(Array):
     def _simplified(self):
         return self.func._transpose(self.axes)
 
+    def _optimized_for_numpy(self):
+        if isinstance(self.func, Einsum):
+            return Einsum(self.func.args, self.func.args_idx, tuple(self.func.out_idx[i] for i in self.axes))
+
     def evalf(self, arr):
         return arr.transpose(self.axes)
 
@@ -1749,17 +1753,19 @@ class Multiply(Array):
 
     def _optimized_for_numpy(self):
         if self.dtype == bool:
-            return None
-        factors = tuple(self._factors)
-        for i, fi in enumerate(factors):
-            if fi._const_uniform == -1:
-                return Negative(multiply(*factors[:i], *factors[i+1:]))
-            if fi.dtype != complex and Sign(fi) in factors:
-                i, j = sorted([i, factors.index(Sign(fi))])
-                return multiply(*factors[:i], *factors[i+1:j], *factors[j+1:], Absolute(fi))
+            return
+        func1, func2 = self.funcs
+        if func1._const_uniform == -1:
+            return Negative(func2)
+        if func2._const_uniform == -1:
+            return Negative(func1)
+        if isinstance(func1, Sign) and func1.func == func2:
+            return Absolute(func2)
+        if isinstance(func2, Sign) and func2.func == func1:
+            return Absolute(func1)
         if self.ndim:
-            args, args_idx = zip(*map(unalign, factors))
-            return Einsum(args, args_idx, tuple(range(self.ndim)))
+            r = tuple(range(self.ndim))
+            return Einsum((func1, func2), (r, r), r)
 
     evalf = staticmethod(numpy.multiply)
 
@@ -2045,24 +2051,20 @@ class Einsum(Array):
     def _node_details(self):
         return self._einsumfmt
 
-    def _simplified(self):
+    def _optimized_for_numpy(self):
         for i, arg in enumerate(self.args):
-            if isinstance(arg, Transpose):  # absorb `Transpose`
-                idx = tuple(map(self.args_idx[i].__getitem__, numpy.argsort(arg.axes)))
-                return Einsum(self.args[:i]+(arg.func,)+self.args[i+1:], self.args_idx[:i]+(idx,)+self.args_idx[i+1:], self.out_idx)
-
-    def _sum(self, axis):
-        if not (0 <= axis < self.ndim):
-            raise IndexError('Axis out of range.')
-        return Einsum(self.args, self.args_idx, self.out_idx[:axis] + self.out_idx[axis+1:])
-
-    def _takediag(self, axis1, axis2):
-        if not (0 <= axis1 < axis2 < self.ndim):
-            raise IndexError('Axis out of range.')
-        ikeep, irm = self.out_idx[axis1], self.out_idx[axis2]
-        args_idx = tuple(tuple(ikeep if i == irm else i for i in idx) for idx in self.args_idx)
-        return Einsum(self.args, args_idx, self.out_idx[:axis1] + self.out_idx[axis1+1:axis2] + self.out_idx[axis2+1:] + (ikeep,))
-
+            if isinstance(arg, Einsum) and not arg._has_summed_axes:
+                new_arg = arg.args
+                new_idx = tuple(tuple(self.args_idx[i][arg.out_idx.index(j)] for j in arg_idx) for arg_idx in arg.args_idx)
+            elif isinstance(arg, Transpose):
+                new_arg = arg.func,
+                new_idx = tuple(self.args_idx[i][j] for j in numpy.argsort(arg.axes)),
+            elif isinstance(arg, InsertAxis):
+                new_arg = arg.func,
+                new_idx = self.args_idx[i][:-1],
+            else:
+                continue
+            return Einsum(self.args[:i] + new_arg + self.args[i+1:], self.args_idx[:i] + new_idx + self.args_idx[i+1:], self.out_idx)
 
 class Sum(Array):
 
@@ -2115,6 +2117,12 @@ class Sum(Array):
         if _equals_scalar_constant(self.func.shape[-1], 1):
             return Take(self.func, constant(0))
         return self.func._sum(self.ndim)
+
+    def _optimized_for_numpy(self):
+        if isinstance(self.func, Einsum):
+            return Einsum(self.func.args, self.func.args_idx, self.func.out_idx[:-1])
+        if isinstance(self.func, Multiply) and self.dtype != bool:
+            return Einsum(tuple(self.func.funcs), (tuple(range(self.func.ndim)),)*2, tuple(range(self.ndim)))
 
     def _sum(self, axis):
         trysum = self.func._sum(axis)
@@ -2476,8 +2484,6 @@ class Power(Array):
             return Reciprocal(self.func)
         elif p == -2:
             return Reciprocal(self.func * self.func)
-        else:
-            return self._simplified()
 
     evalf = staticmethod(numpy.power)
 
