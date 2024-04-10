@@ -1,4 +1,4 @@
 'Numerical Utilities for Finite Element Analysis'
 
-__version__ = version = '9a24'
+__version__ = version = '9a25'
 version_name = 'jook-sing'

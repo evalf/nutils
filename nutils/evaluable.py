@@ -272,12 +272,16 @@ class Evaluable(types.Singleton):
         for i, (op, indices) in enumerate(self.serialized, start=1):
             s = [f'%{i} = {op}']
             if indices:
+                args = [f'%{i}' for i in indices]
                 try:
                     sig = inspect.signature(op.evalf)
                 except ValueError:
-                    s.extend(f'%{i}' for i in indices)
+                    pass
                 else:
-                    s.extend(f'{param}=%{i}' for param, i in zip(sig.parameters, indices))
+                    for i, param in enumerate(sig.parameters.values()):
+                        if i < len(args) and param.kind == param.POSITIONAL_OR_KEYWORD:
+                            args[i] = param.name + '=' + args[i]
+                s.extend(args)
             yield ' '.join(s)
 
     def _format_stack(self, values, e):
@@ -529,14 +533,12 @@ def imag(arg):
         return zeros_like(arg)
 
 
-def transpose(arg, trans=None):
+def transpose(arg, trans):
     arg = asarray(arg)
-    if trans is None:
-        normtrans = tuple(range(arg.ndim-1, -1, -1))
-    else:
-        normtrans = tuple(numeric.normdim(arg.ndim, sh).__index__() for sh in trans)
-        assert sorted(normtrans) == list(range(arg.ndim))
-    return Transpose(arg, normtrans)
+    trans = tuple(i.__index__() for i in trans)
+    if all(i == n for i, n in enumerate(trans)):
+        return arg
+    return Transpose(arg, trans)
 
 
 def swapaxes(arg, axis1, axis2):
@@ -617,7 +619,7 @@ def unalign(*args, naxes: int = None):
         if not ret:  # first argument
             commonwhere = tuple(i for i in where if i < naxes)
         if where != commonwhere + keep:
-            unaligned = Transpose(unaligned, tuple(where.index(n) for n in commonwhere + keep))
+            unaligned = transpose(unaligned, tuple(where.index(n) for n in commonwhere + keep))
         ret.append(unaligned)
     return (*ret, commonwhere)
 
@@ -755,7 +757,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
             index = self.__index = int(self.simplified.eval())
         return index
 
-    T = property(lambda self: transpose(self))
+    T = property(lambda self: transpose(self, tuple(range(self.ndim-1, -1, -1))))
 
     __add__ = __radd__ = add
     __sub__ = lambda self, other: subtract(self, other)
@@ -775,16 +777,23 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     __inv__ = lambda self: LogicalNot(self) if self.dtype == bool else NotImplemented
 
     def _shape_str(self, form):
-        dtype = self.dtype.__name__[0] if hasattr(self, 'dtype') else '?'
-        shape = [str(n.__index__()) if n.isconstant else '?' for n in self.shape]
-        for i in set(range(self.ndim)) - set(self._unaligned[1]):
-            shape[i] = f'({shape[i]})'
-        for i, _ in self._inflations:
-            shape[i] = f'~{shape[i]}'
-        for axes in self._diagonals:
-            for i in axes:
-                shape[i] = f'{shape[i]}/'
-        return f'{dtype}:{",".join(shape)}'
+        prefix = shape = suffix = ''
+        try:
+            prefix = self.dtype.__name__[0] + ':'
+            shape = ['?'] * self.ndim
+            for i, n in enumerate(self.shape):
+                if n.isconstant:
+                    shape[i] = str(n.__index__())
+            for i in set(range(self.ndim)) - set(self._unaligned[1]):
+                shape[i] = f'({shape[i]})'
+            for i, _ in self._inflations:
+                shape[i] = f'~{shape[i]}'
+            for axes in self._diagonals:
+                for i in axes:
+                    shape[i] = f'{shape[i]}/'
+        except:
+            suffix = '(e)'
+        return prefix + ','.join(shape) + suffix
 
     sum = sum
     prod = product
@@ -1026,7 +1035,7 @@ class Constant(Array):
         assert 0 <= axis1 < axis2 < self.ndim
         axes = (*range(axis1), *range(axis1+1, axis2), *range(axis2+1, self.ndim), axis1, axis2)
         value = numpy.transpose(self.value, axes)
-        return constant(numpy.transpose(numpy.linalg.inv(value), numpy.argsort(axes)))
+        return constant(numpy.transpose(Inverse.evalf(value), numpy.argsort(axes)))
 
     def _product(self):
         return constant((numpy.all if self.dtype == bool else numpy.prod)(self.value, -1))
@@ -1187,6 +1196,9 @@ class InsertAxis(Array):
     def _inverse(self, axis1, axis2):
         if axis1 < self.ndim-1 and axis2 < self.ndim-1:
             return InsertAxis(inverse(self.func, (axis1, axis2)), self.length)
+        # either axis1 or axis2 is inserted
+        if self.length._intbounds[0] > 1: # matrix is at least 2x2
+            return singular_like(self)
 
     def _loopsum(self, index):
         return InsertAxis(loop_sum(self.func, index), self.length)
@@ -1209,7 +1221,7 @@ class InsertAxis(Array):
 class Transpose(Array):
 
     @classmethod
-    def _mk_axes(cls, ndim, axes, invert=False):
+    def _mk_axes(cls, ndim, axes):
         axes = [numeric.normdim(ndim, axis) for axis in axes]
         if all(a == b for a, b in enumerate(axes, start=ndim-len(axes))):
             return
@@ -1237,6 +1249,7 @@ class Transpose(Array):
         assert isinstance(func, Array), f'func={func!r}'
         assert isinstance(axes, tuple) and all(isinstance(axis, int) for axis in axes), f'axes={axes!r}'
         assert sorted(axes) == list(range(func.ndim))
+        assert axes != tuple(range(func.ndim))
         self.func = func
         self.axes = axes
         super().__init__(args=(func,), shape=tuple(func.shape[n] for n in axes), dtype=func.dtype)
@@ -1247,7 +1260,7 @@ class Transpose(Array):
 
     @cached_property
     def _inflations(self):
-        return tuple((self._invaxes[axis], types.frozendict((dofmap, Transpose(func, self._axes_for(dofmap.ndim, self._invaxes[axis]))) for dofmap, func in parts.items())) for axis, parts in self.func._inflations)
+        return tuple((self._invaxes[axis], types.frozendict((dofmap, transpose(func, self._axes_for(dofmap.ndim, self._invaxes[axis]))) for dofmap, func in parts.items())) for axis, parts in self.func._inflations)
 
     @cached_property
     def _unaligned(self):
@@ -1259,8 +1272,6 @@ class Transpose(Array):
         return tuple(n.__index__() for n in numpy.argsort(self.axes))
 
     def _simplified(self):
-        if self.axes == tuple(range(self.ndim)):
-            return self.func
         return self.func._transpose(self.axes)
 
     def evalf(self, arr):
@@ -1278,26 +1289,22 @@ class Transpose(Array):
             # to separately account for the trivial case.
             return self.func
         newaxes = tuple(self.axes[i] for i in axes)
-        return Transpose(self.func, newaxes)
+        return transpose(self.func, newaxes)
 
     def _takediag(self, axis1, axis2):
         assert axis1 < axis2
         orig1, orig2 = sorted(self.axes[axis] for axis in [axis1, axis2])
-        if orig1 == self.ndim-2:
-            return Transpose(TakeDiag(self.func), (*self.axes[:axis1], *self.axes[axis1+1:axis2], *self.axes[axis2+1:], self.ndim-2))
         trytakediag = self.func._takediag(orig1, orig2)
         if trytakediag is not None:
             exclude_orig = [ax-(ax > orig1)-(ax > orig2) for ax in self.axes[:axis1] + self.axes[axis1+1:axis2] + self.axes[axis2+1:]]
-            return Transpose(trytakediag, (*exclude_orig, self.ndim-2))
+            return transpose(trytakediag, (*exclude_orig, self.ndim-2))
 
     def _sum(self, i):
         axis = self.axes[i]
         trysum = self.func._sum(axis)
         if trysum is not None:
             axes = tuple(ax-(ax > axis) for ax in self.axes if ax != axis)
-            return Transpose(trysum, axes)
-        if axis == self.ndim - 1:
-            return Transpose(Sum(self.func), self._axes_for(0, i))
+            return transpose(trysum, axes)
 
     def _derivative(self, var, seen):
         return transpose(derivative(self.func, var, seen), self.axes+tuple(range(self.ndim, self.ndim+var.ndim)))
@@ -1324,9 +1331,7 @@ class Transpose(Array):
     def _take(self, indices, axis):
         trytake = self.func._take(indices, self.axes[axis])
         if trytake is not None:
-            return Transpose(trytake, self._axes_for(indices.ndim, axis))
-        if self.axes[axis] == self.ndim - 1:
-            return Transpose(Take(self.func, indices), self._axes_for(indices.ndim, axis))
+            return transpose(trytake, self._axes_for(indices.ndim, axis))
 
     def _axes_for(self, ndim, axis):
         funcaxis = self.axes[axis]
@@ -1347,7 +1352,7 @@ class Transpose(Array):
         if tryunravel is not None:
             axes = [ax + (ax > orig_axis) for ax in self.axes]
             axes.insert(axis+1, orig_axis+1)
-            return Transpose(tryunravel, tuple(axes))
+            return transpose(tryunravel, tuple(axes))
 
     def _product(self):
         if self.axes[-1] == self.ndim-1:
@@ -1358,7 +1363,7 @@ class Transpose(Array):
         trydet = self.func._determinant(orig1, orig2)
         if trydet:
             axes = tuple(ax-(ax > orig1)-(ax > orig2) for ax in self.axes if ax != orig1 and ax != orig2)
-            return Transpose(trydet, axes)
+            return transpose(trydet, axes)
 
     def _inverse(self, axis1, axis2):
         tryinv = self.func._inverse(self.axes[axis1], self.axes[axis2])
@@ -1376,7 +1381,7 @@ class Transpose(Array):
             if tryinflate is not None:
                 axes = [ax-(ax > i)*(dofmap.ndim-1) for ax in self.axes]
                 axes[axis:axis+dofmap.ndim] = i,
-                return Transpose(tryinflate, tuple(axes))
+                return transpose(tryinflate, tuple(axes))
 
     def _diagonalize(self, axis):
         trydiagonalize = self.func._diagonalize(self.axes[axis])
@@ -1436,16 +1441,18 @@ class Inverse(Array):
     '''
 
     def __init__(self, func: Array):
-        assert isinstance(func, Array) and func.dtype != bool and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2]), f'func={func!r}'
+        assert isinstance(func, Array) and func.dtype in (float, complex) and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2]), f'func={func!r}'
         self.func = func
-        super().__init__(args=(func,), shape=func.shape, dtype=complex if func.dtype == complex else float)
+        super().__init__(args=(func,), shape=func.shape, dtype=func.dtype)
 
     def _simplified(self):
+        if _equals_scalar_constant(self.func.shape[-1], 1):
+            return reciprocal(self.func)
+        if _equals_scalar_constant(self.func.shape[-1], 0):
+            return singular_like(self)
         result = self.func._inverse(self.ndim-2, self.ndim-1)
         if result is not None:
             return result
-        if _equals_scalar_constant(self.func.shape[-1], 1):
-            return reciprocal(self.func)
 
     evalf = staticmethod(numeric.inv)
 
@@ -1477,9 +1484,9 @@ class Inverse(Array):
 class Determinant(Array):
 
     def __init__(self, func: Array):
-        assert isarray(func) and func.dtype != bool and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2])
+        assert isarray(func) and func.dtype in (float, complex) and func.ndim >= 2 and _equals_simplified(func.shape[-1], func.shape[-2])
         self.func = func
-        super().__init__(args=(func,), shape=func.shape[:-2], dtype=complex if func.dtype == complex else float)
+        super().__init__(args=(func,), shape=func.shape[:-2], dtype=func.dtype)
 
     def _simplified(self):
         result = self.func._determinant(self.ndim, self.ndim+1)
@@ -1892,6 +1899,12 @@ class Sum(Array):
         else:
             return min(lower_func * lower_length, lower_func * upper_length), max(upper_func * lower_length, upper_func * upper_length)
 
+    def _take(self, index, axis):
+        return Sum(_take(self.func, index, axis))
+
+    def _takediag(self, axis1, axis2):
+        return sum(_takediag(self.func, axis1, axis2), -2)
+
 
 class TakeDiag(Array):
 
@@ -1913,16 +1926,16 @@ class TakeDiag(Array):
         return takediag(derivative(self.func, var, seen), self.ndim-1, self.ndim)
 
     def _take(self, index, axis):
-        if axis < self.ndim - 1:
-            return TakeDiag(_take(self.func, index, axis))
-        func = _take(Take(self.func, index), index, self.ndim-1)
-        for i in reversed(range(self.ndim-1, self.ndim-1+index.ndim)):
-            func = takediag(func, i, i+index.ndim)
-        return func
+        if axis < self.ndim - 1 and (simple := self.func._take(index, axis)):
+            return TakeDiag(simple)
+
+    def _takediag(self, axis1, axis2):
+        if axis1 < self.ndim-1 and axis2 < self.ndim-1 and (simple := self.func._takediag(axis1, axis2)):
+            return takediag(simple, -3, -2)
 
     def _sum(self, axis):
-        if axis != self.ndim - 1:
-            return TakeDiag(sum(self.func, axis))
+        if axis != self.ndim - 1 and (simple := self.func._sum(axis)):
+            return TakeDiag(simple)
 
     def _intbounds_impl(self):
         return self.func._intbounds
@@ -1966,9 +1979,13 @@ class Take(Array):
         if trytake is not None:
             return Take(trytake, self.indices)
 
+    def _takediag(self, axis1, axis2):
+        if axis1 < self.func.ndim-1 and axis2 < self.func.ndim-1:
+            return _take(_takediag(self.func, axis1, axis2), self.indices, self.func.ndim-3)
+
     def _sum(self, axis):
-        if axis < self.func.ndim - 1:
-            return Take(sum(self.func, axis), self.indices)
+        if axis < self.func.ndim - 1 and (simple := self.func._sum(axis)):
+            return Take(simple, self.indices)
 
     def _intbounds_impl(self):
         return self.func._intbounds
@@ -2347,7 +2364,7 @@ class Equal(Pointwise):
         if self.ndim == 2:
             u1, w1 = unalign(a1)
             u2, w2 = unalign(a2)
-            if u1 == u2 and isinstance(u1, Range):
+            if u1.ndim == u2.ndim == 1 and u1 == u2 and w1 != w2 and isinstance(u1, Range):
                 # NOTE: Once we introduce isunique we can relax the Range bound
                 return Diagonalize(ones(u1.shape, bool))
         return super()._simplified()
@@ -2665,23 +2682,22 @@ def Elemwise(data: typing.Tuple[types.arraydata, ...], index: Array, dtype: Dtyp
         index = Take(constant(indices), index)
     # Move all axes with constant shape to the left and ravel the remainder.
     is_constant = numpy.all(shapes[1:] == shapes[0], axis=0)
-    nconstant = is_constant.sum()
-    reorder = numpy.argsort(~is_constant)
-    raveled = [numpy.transpose(d, reorder).reshape(*shapes[0, reorder[:nconstant]], -1) for d in unique]
+    const_axes = tuple(is_constant.nonzero()[0])
+    var_axes = tuple((~is_constant).nonzero()[0])
+    raveled = [numpy.transpose(d, const_axes + var_axes).reshape(*shapes[0, const_axes], -1) for d in unique]
     # Concatenate the raveled axis, take slices, unravel and reorder the axes to
     # the original position.
     concat = constant(numpy.concatenate(raveled, axis=-1))
-    if is_constant.all():
+    if not var_axes:
         return Take(concat, index)
-    var_shape = tuple(shape[i] for i in reorder[nconstant:])
-    cumprod = list(var_shape)
-    for i in reversed(range(len(var_shape)-1)):
+    cumprod = [shape[i] for i in var_axes]
+    for i in reversed(range(len(cumprod)-1)):
         cumprod[i] *= cumprod[i+1]  # work backwards so that the shape check matches in Unravel
     offsets = _SizesToOffsets(asarray([d.shape[-1] for d in raveled]))
     elemwise = Take(concat, Range(cumprod[0]) + Take(offsets, index))
-    for i in range(len(var_shape)-1):
-        elemwise = Unravel(elemwise, var_shape[i], cumprod[i+1])
-    return Transpose.inv(elemwise, reorder)
+    for i in range(len(var_axes)-1):
+        elemwise = Unravel(elemwise, shape[var_axes[i]], cumprod[i+1])
+    return Transpose.from_end(elemwise, *var_axes)
 
 
 class Eig(Evaluable):
@@ -2750,6 +2766,17 @@ class ArrayFromTuple(Array):
     def _intbounds_impl(self):
         intbounds = getattr(self.arrays, '_intbounds_tuple', None)
         return intbounds[self.index] if intbounds else (float('-inf'), float('inf'))
+
+
+class Singular(Array):
+
+    def __init__(self, dtype):
+        assert dtype in (float, complex), 'Singular dtype must be float or complex'
+        super().__init__(args=(), shape=(), dtype=dtype)
+
+    def evalf(self):
+        warnings.warn('singular matrix', RuntimeWarning)
+        return numpy.array(numpy.nan, self.dtype)
 
 
 class Zeros(Array):
@@ -2827,6 +2854,9 @@ class Zeros(Array):
 
     def _intbounds_impl(self):
         return 0, 0
+
+    def _inverse(self, axis1, axis2):
+        return singular_like(self)
 
 
 class Inflate(Array):
@@ -4635,6 +4665,10 @@ def ones_like(arr):
     return ones(arr.shape, arr.dtype)
 
 
+def singular_like(arr):
+    return appendaxes(Singular(arr.dtype), arr.shape)
+
+
 def reciprocal(arg):
     arg = asarray(arg)
     if arg.dtype in (bool, int):
@@ -4780,6 +4814,8 @@ def determinant(arg, axes=(-2, -1)):
     arg = asarray(arg)
     if arg.dtype == bool:
         raise ValueError('The boolean determinant is not supported.')
+    if arg.dtype == int:
+        arg = IntToFloat(arg)
     return Determinant(Transpose.to_end(arg, *axes))
 
 
@@ -4792,15 +4828,17 @@ def grammium(arg, axes=(-2, -1)):
 def sqrt_abs_det_gram(arg, axes=(-2, -1)):
     arg = Transpose.to_end(arg, *axes)
     if _equals_simplified(arg.shape[-1], arg.shape[-2]):
-        return abs(Determinant(arg))
+        return abs(determinant(arg))
     else:
-        return sqrt(abs(Determinant(grammium(arg))))
+        return sqrt(abs(determinant(grammium(arg))))
 
 
 def inverse(arg, axes=(-2, -1)):
     arg = asarray(arg)
     if arg.dtype == bool:
         raise ValueError('The boolean inverse is not supported.')
+    if arg.dtype == int:
+        arg = IntToFloat(arg)
     return Transpose.from_end(Inverse(Transpose.to_end(arg, *axes)), *axes)
 
 
@@ -4808,8 +4846,8 @@ def takediag(arg, axis=-2, rmaxis=-1):
     arg = asarray(arg)
     axis = numeric.normdim(arg.ndim, axis)
     rmaxis = numeric.normdim(arg.ndim, rmaxis)
-    assert axis < rmaxis
-    return Transpose.from_end(_takediag(arg, axis, rmaxis), axis)
+    assert axis != rmaxis
+    return Transpose.from_end(_takediag(arg, axis, rmaxis), axis-(axis>=rmaxis))
 
 
 def _takediag(arg, axis1=-2, axis2=-1):
@@ -4837,8 +4875,7 @@ def diagonalize(arg, axis=-1, newaxis=-1):
     arg = asarray(arg)
     axis = numeric.normdim(arg.ndim, axis)
     newaxis = numeric.normdim(arg.ndim+1, newaxis)
-    assert axis < newaxis
-    return Transpose.from_end(Diagonalize(Transpose.to_end(arg, axis)), axis, newaxis)
+    return Transpose.from_end(Diagonalize(Transpose.to_end(arg, axis)), axis + (axis>=newaxis), newaxis)
 
 
 def sign(arg):
@@ -5102,7 +5139,7 @@ def einsum(fmt, *args, **dims):
             if c not in index:
                 index[c] = arg.ndim
                 arg = InsertAxis(arg, shapes[c])
-        v = Transpose(arg, tuple(index[c] for c in sall))
+        v = transpose(arg, tuple(index[c] for c in sall))
         ret = v if ret is None else ret * v
     for i in range(len(sout), len(sall)):
         ret = Sum(ret)
@@ -5150,7 +5187,7 @@ if __name__ == '__main__':
         Transpose, Ravel,  # reinterpretation
         InsertAxis, Inflate, Diagonalize,  # size increasing
         Multiply, Add, LoopSum, Sign, Power, Inverse, Unravel,  # size preserving
-        Product, Determinant, TakeDiag, Take, Sum)  # size decreasing
+        Product, Determinant, Sum, Take, TakeDiag)  # size decreasing
     # The simplify priority defines the preferred order in which operations are
     # performed: shape decreasing operations such as Sum and Take should be done
     # as soon as possible, and shape increasing operations such as Inflate and
