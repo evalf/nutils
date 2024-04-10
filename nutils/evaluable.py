@@ -272,12 +272,16 @@ class Evaluable(types.Singleton):
         for i, (op, indices) in enumerate(self.serialized, start=1):
             s = [f'%{i} = {op}']
             if indices:
+                args = [f'%{i}' for i in indices]
                 try:
                     sig = inspect.signature(op.evalf)
                 except ValueError:
-                    s.extend(f'%{i}' for i in indices)
+                    pass
                 else:
-                    s.extend(f'{param}=%{i}' for param, i in zip(sig.parameters, indices))
+                    for i, param in enumerate(sig.parameters.values()):
+                        if i < len(args) and param.kind == param.POSITIONAL_OR_KEYWORD:
+                            args[i] = param.name + '=' + args[i]
+                s.extend(args)
             yield ' '.join(s)
 
     def _format_stack(self, values, e):
