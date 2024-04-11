@@ -276,6 +276,9 @@ class Statements:
 
         raise NotImplementedError
 
+    def filter(self, f) -> Statements:
+        raise NotImplementedError
+
 
 class Block(Statements):
     '''List of statements.
@@ -302,6 +305,12 @@ class Block(Statements):
         '''Appends `item` the the list.'''
 
         self._items.append(item)
+
+    def filter(self, f):
+        if (filtered := f(self)) is not None:
+            return filtered
+        else:
+            return Block(item.filter(f) for item in self._items)
 
 
 class If(Statements):
@@ -338,6 +347,12 @@ class If(Statements):
     def __bool__(self):
         return bool(self.body) or bool(self.else_body)
 
+    def filter(self, f):
+        if (filtered := f(self)) is not None:
+            return filtered
+        else:
+            return If(self.condition, self.body.filter(f), self.else_body.filter(f))
+
 
 @dataclass
 @_dataclass_type_checker
@@ -365,6 +380,12 @@ class ForLoop(Statements):
 
     def __bool__(self):
         return bool(self.body)
+
+    def filter(self, f):
+        if (filtered := f(self)) is not None:
+            return filtered
+        else:
+            return ForLoop(self.var, self.iterable, self.body.filter(f))
 
 
 @dataclass
@@ -407,6 +428,12 @@ class With(Statements):
     def __bool__(self):
         return not self.omit_if_body_is_empty or bool(self.body)
 
+    def filter(self, f):
+        if (filtered := f(self)) is not None:
+            return filtered
+        else:
+            return With(self.item, self.body.filter(f), self.as_, self.omit_if_body_is_empty)
+
 
 @dataclass
 @_dataclass_type_checker
@@ -428,6 +455,9 @@ class Assign(Statements):
     def __bool__(self):
         return True
 
+    def filter(self, f):
+        return filtered if (filtered := f(self)) is not None else self
+
 
 @dataclass
 @_dataclass_type_checker
@@ -447,6 +477,9 @@ class Exec(Statements):
 
     def __bool__(self):
         return True
+
+    def filter(self, f):
+        return filtered if (filtered := f(self)) is not None else self
 
 
 @dataclass
@@ -468,6 +501,9 @@ class Assert(Statements):
     def __bool__(self):
         return True
 
+    def filter(self, f):
+        return filtered if (filtered := f(self)) is not None else self
+
 
 @dataclass
 @_dataclass_type_checker
@@ -487,6 +523,9 @@ class Raise(Statements):
 
     def __bool__(self):
         return True
+
+    def filter(self, f):
+        return filtered if (filtered := f(self)) is not None else self
 
 
 @dataclass
@@ -509,6 +548,9 @@ class Global(Statements):
 
     def __bool__(self):
         return bool(self.variables)
+
+    def filter(self, f):
+        return filtered if (filtered := f(self)) is not None else self
 
 
 @dataclass
@@ -554,3 +596,9 @@ class CommentBlock(Statements):
 
     def __bool__(self):
         return bool(self.statements)
+
+    def filter(self, f):
+        if (filtered := f(self)) is not None:
+            return filtered
+        else:
+            return CommentBlock(self.comment, self.statements.filter(f))

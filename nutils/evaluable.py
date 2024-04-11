@@ -5475,7 +5475,7 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
             yield data
 
 
-def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = None):
+def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = None, cache_const_intermediates: bool = True):
     '''Returns a callable that evaluates ``func``.
 
     The return value of the callable matches the structure of ``func``. If
@@ -5496,6 +5496,9 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
     stats : ``'log'`` or ``None``
         If ``'log'`` the compiled function will log the durations of individual
         :class:`Evaluable`\\s referenced by ``func``.
+    cache_const_intermediates : :class:`bool`
+        If true, the returned callable caches parts of ``func`` that can be
+        reused for a second call.
 
     Returns
     -------
@@ -5620,7 +5623,7 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
         elif isinstance(obj, (tuple, list)):
             stack.append(MakeTuple(len(obj)))
             stack.extend(reversed(obj))
-        elif isinstance(obj, Evaluable):
+        elif isinstance(obj, Array) or isinstance(obj, Evaluable) and not cache_const_intermediates:
             funcs.append(obj)
             ret_fmt.append('{}')
         else:
@@ -5655,6 +5658,16 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
     # Cache of compiled evaluables. Maps `Evaluable` to `_pyast.Expression`,
     # but mostly `_pyast.Variable`.
     cache = {}
+    # Dict of evaluable (`Evaluable`) to list of compiled blocks
+    # (`_pyast.Block`). Blocks for evaluables compiled using
+    # `_compile_with_out` are added to the origin, the evaluable that initiates
+    # inplace compilation.
+    evaluable_block_map = {}
+    # Dict of evaluable (`Evaluable`) to set (`util.IDSet`) of dependencies
+    # (`Evaluable`). This is mostly equal to `Evaluable.__args`, but in case of
+    # inplace compilation the evaluables the dependencies that are compiled
+    # inplace are omitted and their dependencies are added to the origin.
+    evaluable_deps = {None: util.IDSet()}
 
     # Count the number of dependents for each `Evaluable` in `funcs`. This is
     # used by the builder to decide if an `Evaluable` can be compiled with
@@ -5694,7 +5707,7 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
 
     compile_parallel = parallel.maxprocs.current > 1 and any(loop_length_index) and not stats
 
-    builder = _BlockTreeBuilder(blocks, evaluable_block_ids, globals, evaluables, new_index, cache, stats, compile_parallel, ndependents)
+    builder = _BlockTreeBuilder(blocks, evaluable_block_ids, globals, evaluables, new_index, cache, stats, compile_parallel, ndependents, evaluable_block_map, evaluable_deps)
 
     # Compile `funcs`.
     py_funcs = builder.compile(funcs)
@@ -5718,6 +5731,39 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
         blocks[loop_id].append(blocks.pop((*loop_id[:-1], loop_id[-1] + 1)))
     main = blocks.pop((0,))
     assert not blocks
+
+    if cache_const_intermediates:
+        # Collect all evaluables that are to be recomputed on a rerun in
+        # `rerun_evaluables` and collect all direct dependencies of the
+        # `rerun_evaluables` that are constant in `cache_evaluables`. The
+        # `cache_evaluable` are not recursed into.
+        rerun_evaluables = util.IDSet()
+        cache_evaluables = util.IDSet()
+        def collect(evaluable):
+            if evaluable.isconstant:
+                cache_evaluables.add(evaluable)
+                return ()
+            else:
+                rerun_evaluables.add(evaluable)
+                return evaluable_deps.get(evaluable, ())
+        util.tree_walk(collect, *evaluable_deps[None])
+        cache_vars = tuple(cache[evaluable] for evaluable in cache_evaluables)
+        # Find all blocks that are to be omitted for a rerun: the blocks of all
+        # compiled evaluables that are not part of `rerun_evaluables`.
+        rerun_skip_evaluables = util.IDSet(evaluable_block_map) - rerun_evaluables
+        rerun_skip_blocks = util.IDSet(itertools.chain.from_iterable(evaluable_block_map[e] for e in rerun_skip_evaluables))
+        # Filter the blocks to be skipped from `main` for the rerun.
+        main_rerun = main.filter(lambda stmts: _pyast.Block() if stmts in rerun_skip_blocks else None)
+        first_run = _pyast.Variable('first_run')
+        # Make all cached results immutable.
+        for v in cache_vars:
+            main.append(_pyast.Exec(v.get_attr('setflags').call(write=_pyast.LiteralBool(False))))
+        # Combine `main` (for the first run) and `main_rerun` into `main`.
+        main.append(_pyast.Assign(first_run, _pyast.LiteralBool(False)))
+        main = _pyast.Block([
+            _pyast.Global((first_run,) + cache_vars),
+            _pyast.If(first_run, main, main_rerun),
+        ])
 
     if compile_parallel:
         main = _pyast.Block([
@@ -5835,6 +5881,9 @@ class _BlockTreeBuilder:
         stats: bool,
         parallel: bool,
         ndependents: typing.Mapping[Evaluable, int],
+        evaluable_block_map: typing.Mapping[Evaluable, typing.List[_pyast.Block]],
+        evaluable_deps: typing.Mapping[typing.Optional[Evaluable], typing.Set[Evaluable]],
+        origin: typing.Optional[Evaluable] = None,
     ):
         self._blocks = blocks
         self._evaluable_block_ids = evaluable_block_ids
@@ -5845,6 +5894,9 @@ class _BlockTreeBuilder:
         self._stats = stats
         self._parallel = parallel
         self.ndependents = ndependents
+        self._evaluable_block_map = evaluable_block_map
+        self._evaluable_deps = evaluable_deps
+        self._origin = origin
         self._shared_arrays = set()
         self._new_eid = map('e{}'.format, new_index).__next__
         self.new_var = lambda: _pyast.Variable('v{}'.format(next(new_index)))
@@ -5853,8 +5905,22 @@ class _BlockTreeBuilder:
         # Compiles the tree defined by `evaluable` and returns the result of `evaluable`.
         if isinstance(evaluable, tuple):
             return _pyast.Tuple(tuple(map(self.compile, evaluable)))
+        self._evaluable_deps.setdefault(self._origin, util.IDSet()).add(evaluable)
         if (out := self._compiled_cache.get(evaluable)) is None:
-            self._compiled_cache[evaluable] = out = evaluable._compile(self)
+            evaluable_builder = _BlockTreeBuilder(
+                self._blocks,
+                self._evaluable_block_ids,
+                self._globals,
+                self._evaluables,
+                self._new_index,
+                self._compiled_cache,
+                self._stats,
+                self._parallel,
+                self.ndependents,
+                self._evaluable_block_map,
+                self._evaluable_deps,
+                evaluable)
+            self._compiled_cache[evaluable] = out = evaluable._compile(evaluable_builder)
             if debug_flags.evalf and isinstance(evaluable, Array):
                 block = self.get_block(self.get_block_id(evaluable))
                 block.assert_equal(out.get_attr('dtype').get_attr('kind'), _pyast.LiteralStr(_array_dtype_to_kind[evaluable.dtype]))
@@ -5922,6 +5988,8 @@ class _BlockTreeBuilder:
         # Returns a block builder for the given block id.
         block = _pyast.Block()
         self._blocks[block_id].append(block)
+        if self._origin:
+            self._evaluable_block_map.setdefault(self._origin, []).append(block)
         return _BlockBuilder(self, block)
 
     def get_block_for_evaluable(self, evaluable: Evaluable, *, block_id: typing.Optional[_BlockId] = None, comment: str = '') -> '_BlockBuilder':
@@ -5935,6 +6003,8 @@ class _BlockTreeBuilder:
         block_builder = _BlockBuilder(self, block)
 
         description = f'{type(evaluable).__name__} {eid}'
+        if self._origin and evaluable is not self._origin:
+            description = f'{description}, origin: {type(self._origin).__name__} e{self._get_evaluable_index(self._origin)}'
         if comment:
             description  = f'{description}; {comment}'
         block = _pyast.CommentBlock(description, block)
@@ -5943,6 +6013,8 @@ class _BlockTreeBuilder:
             block = _pyast.With(_pyast.Variable('stats').get_item(_pyast.Variable(eid)), block, omit_if_body_is_empty=True)
 
         self._blocks[block_id].append(block)
+        if self._origin:
+            self._evaluable_block_map.setdefault(self._origin, []).append(block)
         return block_builder
 
     def get_variable_for_evaluable(self, evaluable: Evaluable) -> _pyast.Variable:
