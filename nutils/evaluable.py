@@ -5474,7 +5474,7 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
             yield data
 
 
-def compile(func, *, simplify: bool = True, stats: typing.Optional[bool] = None):
+def compile(func, *, simplify: bool = True, stats: typing.Optional[bool] = None, cache_const_intermediates: bool = True):
     # Compiles `Evaluable`s to Python code. Every `Loop` is assigned a unique
     # loop id with `_define_loop_block_structure` and based on these loop ids
     # every `Evaluable` defines a block id where the Python code for that
@@ -5571,7 +5571,7 @@ def compile(func, *, simplify: bool = True, stats: typing.Optional[bool] = None)
             ret_fmt[m:] = ['(' + ', '.join(ret_fmt[m:]) + (',)' if obj.n == 1 else ')')]
         elif isinstance(obj, (tuple, list)):
             stack[:0] = [*obj, MakeTuple(len(obj))]
-        elif isinstance(obj, Evaluable):
+        elif isinstance(obj, Array) or isinstance(obj, Evaluable) and not cache_const_intermediates:
             funcs.append(obj)
             ret_fmt.append('{}')
         else:
@@ -5637,13 +5637,64 @@ def compile(func, *, simplify: bool = True, stats: typing.Optional[bool] = None)
         stats_init.append(_pyast.Assign(_pyast.Variable('stats'), _pyast.Variable('collections').get_attr('defaultdict').call(_pyast.Variable('Stats'))))
         stats_exit.append(_pyast.Exec(_pyast.Variable('log_stats').call(_pyast.Variable('ret_tuple'), _pyast.Variable('stats'))))
 
-    script = StringIO()
-    print('def compiled(**a):', file=script)
-    stats_init.write_py(script, '    ')
-    main.write_py(script, '    ')
-    stats_exit.write_py(script, '    ')
-    print('    return ' + ret_fmt.format(*[v.py_expr for v in py_funcs]), file=script)
-    script = script.getvalue()
+    if cache_const_intermediates:
+        # If `funcs` contain `Evaluable`s that are constant but not `Constant`,
+        # then we can cache these values for use in a second call to `main`.
+        # Here we collect all these evaluables in `keep_vars` and all
+        # `Constant`s in `keep_consts`.
+        keep_consts = {}
+        keep_vars = {}
+        for evaluable in evaluables:
+            if not evaluable.isconstant or not isinstance(evaluable, Array):
+                continue
+            value = cache.get(evaluable)
+            if not isinstance(value, _pyast.Variable):
+                continue
+            if value.py_expr in globals:
+                keep_consts[evaluable] = value
+            else:
+                keep_vars[evaluable] = value
+        if not keep_vars:
+            cache_const_intermediates = False
+
+    if cache_const_intermediates:
+
+        # Compile again with a cache of compiled evaluables consisting only of
+        # the `keep_vars` and `keep_consts`. The set `used_keep_vars` tracks
+        # which `keep_vars` are accessed, which is used to prune unused entries
+        # from `keep_vars`.
+        used_keep_vars = set()
+        cache_rerun = collections.ChainMap({}, keep_consts, _MappingViewTrackAccessed(keep_vars, used_keep_vars))
+        main_rerun, py_funcs_rerun = _compile_to_pyast(funcs, globals, evaluables, new_index, cache_rerun, bool(stats), compile_parallel, loop_lengths, evaluable_block_ids)
+        keep_vars = tuple(v for v in sorted(map(keep_vars.get, used_keep_vars)))
+
+        for v in keep_vars:
+            main.append(_pyast.Exec(v.get_attr('setflags').call(write=_pyast.LiteralBool(False))))
+        main.append(_pyast.Assign(_pyast.Variable('first_run'), _pyast.LiteralBool(False)))
+
+        script = StringIO()
+        print('def compiled(**a):', file=script)
+        print('    global {}'.format(', '.join(itertools.chain(('first_run',), (v.py_expr for v in keep_vars)))), file=script)
+        stats_init.write_py(script, '    ')
+        print('    if first_run:', file=script)
+        main.write_py(script, '        ')
+        stats_exit.write_py(script, '        ')
+        print('        return ' + ret_fmt.format(*[v.py_expr for v in py_funcs]), file=script)
+        print('    else:', file=script)
+        main_rerun.write_py(script, '        ')
+        stats_exit.write_py(script, '        ')
+        print('        return ' + ret_fmt.format(*[v.py_expr for v in py_funcs_rerun]), file=script)
+        script = script.getvalue()
+
+    else:
+
+        script = StringIO()
+        print('def compiled(**a):', file=script)
+        stats_init.write_py(script, '    ')
+        main.write_py(script, '    ')
+        stats_exit.write_py(script, '    ')
+        print('    return ' + ret_fmt.format(*[v.py_expr for v in py_funcs]), file=script)
+        script = script.getvalue()
 
     name = 'compiled_{}'.format(hashlib.sha256(script.encode('utf-8')).hexdigest())
 
@@ -6035,6 +6086,21 @@ class _BlockBuilder:
     def array_fill_zeros(self, array: _pyast.Expression):
         # Appends statements for filling `array` with zeros.
         self.exec(array.get_attr('fill').call(_pyast.LiteralInt(0)))
+
+
+class _MappingViewTrackAccessed:
+
+    def __init__(self, items: dict, accessed: set):
+        self.__items = items
+        self.__accessed = accessed
+
+    def __getitem__(self, key):
+        value = self.__items.__getitem__(key)
+        self.__accessed.add(key)
+        return value
+
+    def __contains__(self, key):
+        return self.__items.__contains__(key)
 
 
 if __name__ == '__main__':
