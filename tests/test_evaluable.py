@@ -400,17 +400,17 @@ class check(TestCase):
         cache = {}
         times = collections.defaultdict(evaluable._Stats)
         with self.subTest('new'):
-            node = self.actual._node(cache, None, times)
+            node = self.actual._node(cache, None, times, False)
             if node:
                 self.assertIn(self.actual, cache)
                 self.assertEqual(cache[self.actual], node)
         with self.subTest('from-cache'):
             if node:
-                self.assertEqual(self.actual._node(cache, None, times), node)
+                self.assertEqual(self.actual._node(cache, None, times, False), node)
         with self.subTest('with-times'):
             times = collections.defaultdict(evaluable._Stats)
             self.actual.eval_withtimes(times, **dict(zip(self.arg_names, self.arg_values)))
-            self.actual._node(cache, None, times)
+            self.actual._node(cache, None, times, False)
 
 
 def generate(*shape, real, imag, zero, negative):
