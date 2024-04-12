@@ -199,10 +199,10 @@ class Evaluable(types.Singleton):
     def _serialized_evalf(self):
         return zip(itertools.chain(self._serialized_evalf_head, (self.evalf,)), self.dependencytree[1:])
 
-    def _node(self, cache, subgraph, times):
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
             return cache[self]
-        args = tuple(arg._node(cache, subgraph, times) for arg in self.__args)
+        args = tuple(arg._node(cache, subgraph, times, unique_loop_ids) for arg in self.__args)
         label = '\n'.join(filter(None, (type(self).__name__, self._node_details)))
         cache[self] = node = RegularNode(label, args, {}, (type(self).__name__, times[self]), subgraph)
         return node
@@ -214,7 +214,7 @@ class Evaluable(types.Singleton):
     def asciitree(self, richoutput=False):
         'string representation'
 
-        return self._node({}, None, collections.defaultdict(_Stats)).generate_asciitree(richoutput)
+        return self._node({}, None, collections.defaultdict(_Stats), False).generate_asciitree(richoutput)
 
     def __str__(self):
         return self.__class__.__name__
@@ -258,7 +258,7 @@ class Evaluable(types.Singleton):
             return self.eval_withtimes(stats, **args)
         with log.context('eval'):
             yield eval
-            node = self._node({}, None, stats)
+            node = self._node({}, None, stats, False)
             maxtime = builtins.max(n.metadata[1].time for n in node.walk(set()))
             tottime = builtins.sum(n.metadata[1].time for n in node.walk(set()))
             aggstats = tuple((key, builtins.sum(v.time for v in values), builtins.sum(v.ncalls for v in values)) for key, values in util.gather(n.metadata for n in node.walk(set())))
@@ -408,7 +408,7 @@ class EVALARGS(Evaluable):
     def __init__(self):
         super().__init__(args=())
 
-    def _node(self, cache, subgraph, times):
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         return InvisibleNode((type(self).__name__, _Stats()))
 
 
@@ -450,10 +450,10 @@ class Tuple(Evaluable):
 
         return Tuple(tuple(other) + self.items)
 
-    def _node(self, cache, subgraph, times):
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         if (cached := cache.get(self)) is not None:
             return cached
-        cache[self] = node = TupleNode(tuple(item._node(cache, subgraph, times) for item in self.items), (type(self).__name__, times[self]), subgraph=subgraph)
+        cache[self] = node = TupleNode(tuple(item._node(cache, subgraph, times, unique_loop_ids) for item in self.items), (type(self).__name__, times[self]), subgraph=subgraph)
         return node
 
     @property
@@ -832,10 +832,10 @@ class Array(Evaluable, metaclass=_ArrayMeta):
         indices = [prependaxes(appendaxes(Range(length), self.shape[i+1:]), self.shape[:i]) for i, length in enumerate(self.shape)]
         return (*indices, self),
 
-    def _node(self, cache, subgraph, times):
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
             return cache[self]
-        args = tuple(arg._node(cache, subgraph, times) for arg in self._Evaluable__args)
+        args = tuple(arg._node(cache, subgraph, times, unique_loop_ids) for arg in self._Evaluable__args)
         bounds = '[{},{}]'.format(*self._intbounds) if self.dtype == int else None
         label = '\n'.join(filter(None, (type(self).__name__, self._node_details, self._shape_str(form=repr), bounds)))
         cache[self] = node = RegularNode(label, args, {}, (type(self).__name__, times[self]), subgraph)
@@ -1002,9 +1002,9 @@ class Constant(Array):
     def evalf(self):
         return self.value
 
-    def _node(self, cache, subgraph, times):
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         if self.ndim:
-            return super()._node(cache, subgraph, times)
+            return super()._node(cache, subgraph, times, unique_loop_ids)
         elif self in cache:
             return cache[self]
         else:
@@ -2755,10 +2755,10 @@ class ArrayFromTuple(Array):
         assert isinstance(arrays, tuple)
         return arrays[self.index]
 
-    def _node(self, cache, subgraph, times):
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
             return cache[self]
-        node = self.arrays._node(cache, subgraph, times)
+        node = self.arrays._node(cache, subgraph, times, unique_loop_ids)
         if isinstance(node, TupleNode):
             node = node[self.index]
         cache[self] = node
@@ -2793,9 +2793,9 @@ class Zeros(Array):
     def evalf(self, *shape):
         return numpy.zeros(shape, dtype=self.dtype)
 
-    def _node(self, cache, subgraph, times):
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         if self.ndim:
-            return super()._node(cache, subgraph, times)
+            return super()._node(cache, subgraph, times, unique_loop_ids)
         elif self in cache:
             return cache[self]
         else:
@@ -3271,7 +3271,7 @@ class Argument(DerivativeTargetBase):
     def __str__(self):
         return '{} {!r} <{}>'.format(self.__class__.__name__, self._name, self._shape_str(form=str))
 
-    def _node(self, cache, subgraph, times):
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
             return cache[self]
         else:
@@ -4181,10 +4181,10 @@ class _LoopIndex(Array):
     def evalf(self, *args):
         raise ValueError(f'`_LoopIndex` outside `Loop` with corresponding `_LoopId`: {self.loop_id}.')
 
-    def _node(self, cache, subgraph, times):
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
             return cache[self]
-        cache[self] = node = RegularNode(f'LoopIndex {self.loop_id}', (), dict(length=self.length._node(cache, subgraph, times)), (type(self).__name__, _Stats()), subgraph)
+        cache[self] = node = RegularNode(f'LoopIndex {self.loop_id}', (), dict(length=self.length._node(cache, subgraph, times, unique_loop_ids)), (type(self).__name__, _Stats()), subgraph)
         return node
 
     def _intbounds_impl(self):
@@ -4282,16 +4282,21 @@ class Loop(Evaluable):
         with times[self]:
             self.evalf_loop_body(output, body_arg)
 
-    def _node(self, cache, subgraph, times):
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         if (cached := cache.get(self)) is not None:
             return cached
         for arg in itertools.chain(self._invariants, (self.init_arg,)):
-            arg._node(cache, subgraph, times)
-        loopcache = cache.copy()
-        loopcache.pop(self.index, None)
-        loopgraph = Subgraph('Loop', subgraph)
-        looptimes = times.get(self, collections.defaultdict(_Stats))
-        cache[self] = node = self._node_loop_body(loopcache, loopgraph, looptimes)
+            arg._node(cache, subgraph, times, unique_loop_ids)
+        if unique_loop_ids:
+            loopcache = cache
+            loopgraph = cache.setdefault(('subgraph', self.loop_id), Subgraph('Loop', subgraph))
+            looptimes = times
+        else:
+            loopcache = cache.copy()
+            loopcache.pop(self.index, None)
+            loopgraph = Subgraph('Loop', subgraph)
+            looptimes = times.get(self, collections.defaultdict(_Stats))
+        cache[self] = node = self._node_loop_body(loopcache, loopgraph, looptimes, unique_loop_ids)
         return node
 
     @property
@@ -4362,11 +4367,11 @@ class LoopSum(Loop, Array):
     def _derivative(self, var, seen):
         return loop_sum(derivative(self.func, var, seen), self.index)
 
-    def _node_loop_body(self, cache, subgraph, times):
+    def _node_loop_body(self, cache, subgraph, times, unique_loop_ids):
         if (cached := cache.get(self)) is not None:
             return cached
-        kwargs = {'shape[{}]'.format(i): n._node(cache, subgraph, times) for i, n in enumerate(self.shape)}
-        kwargs['func'] = self.func._node(cache, subgraph, times)
+        kwargs = {'shape[{}]'.format(i): n._node(cache, subgraph, times, unique_loop_ids) for i, n in enumerate(self.shape)}
+        kwargs['func'] = self.func._node(cache, subgraph, times, unique_loop_ids)
         cache[self] = node = RegularNode(f'LoopSum {self.loop_id}', (), kwargs, (type(self).__name__, times[self]), subgraph)
         return node
 
@@ -4473,13 +4478,13 @@ class LoopConcatenate(Loop, Array):
     def _derivative(self, var, seen):
         return Transpose.from_end(loop_concatenate(Transpose.to_end(derivative(self.func, var, seen), self.ndim-1), self.index), self.ndim-1)
 
-    def _node_loop_body(self, cache, subgraph, times):
+    def _node_loop_body(self, cache, subgraph, times, unique_loop_ids):
         if (cached := cache.get(self)) is not None:
             return cached
-        kwargs = {'shape[{}]'.format(i): n._node(cache, subgraph, times) for i, n in enumerate(self.shape)}
-        kwargs['start'] = self.start._node(cache, subgraph, times)
-        kwargs['stop'] = self.stop._node(cache, subgraph, times)
-        kwargs['func'] = self.func._node(cache, subgraph, times)
+        kwargs = {'shape[{}]'.format(i): n._node(cache, subgraph, times, unique_loop_ids) for i, n in enumerate(self.shape)}
+        kwargs['start'] = self.start._node(cache, subgraph, times, unique_loop_ids)
+        kwargs['stop'] = self.stop._node(cache, subgraph, times, unique_loop_ids)
+        kwargs['func'] = self.func._node(cache, subgraph, times, unique_loop_ids)
         cache[self] = node = RegularNode(f'LoopConcatenate {self.loop_id}', (), kwargs, (type(self).__name__, times[self]), subgraph)
         return node
 
