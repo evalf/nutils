@@ -454,6 +454,9 @@ class Tuple(Evaluable):
     def evalf(*items):
         return items
 
+    def _compile_expression(self, py_self, *items):
+        return _pyast.Tuple(items)
+
     def __iter__(self):
         'iterate'
 
@@ -1158,6 +1161,12 @@ class InsertAxis(Array):
         except ValueError:  # non-contiguous data
             return numpy.repeat(func[..., numpy.newaxis], length, -1)
 
+    def _compile_expression(self, py_self, func, length):
+        if _equals_scalar_constant(self.length, 1):
+            return func.get_item(_pyast.Tuple((_pyast.Raw('...'), _pyast.Variable('numpy').get_attr('newaxis'))))
+        else:
+            return super()._compile_expression(py_self, func, length)
+
     def _derivative(self, var, seen):
         return insertaxis(derivative(self.func, var, seen), self.ndim-1, self.length)
 
@@ -1304,6 +1313,10 @@ class Transpose(Array):
     def evalf(self, arr):
         return arr.transpose(self.axes)
 
+    def _compile_expression(self, py_self, func):
+        axes = _pyast.Tuple(tuple(map(_pyast.LiteralInt, self.axes)))
+        return _pyast.Variable('numpy').get_attr('transpose').call(func, axes)
+
     @property
     def _node_details(self):
         return ','.join(map(str, self.axes))
@@ -1440,6 +1453,9 @@ class Product(Array):
         self.func = func
         self.evalf = functools.partial(numpy.all if func.dtype == bool else numpy.prod, axis=-1)
         super().__init__(args=(func,), shape=func.shape[:-1], dtype=func.dtype)
+
+    def _compile_expression(self, py_self, func):
+        return _pyast.Variable('numpy').get_attr('all' if self.dtype == bool else 'prod').call(func, axis=_pyast.LiteralInt(-1))
 
     def _simplified(self):
         if _equals_scalar_constant(self.func.shape[-1], 1):
@@ -1581,6 +1597,9 @@ class Multiply(Array):
             return Einsum(tuple(self.funcs), (r, r), r)
 
     evalf = staticmethod(numpy.multiply)
+
+    def _compile_expression(self, py_self, func1, func2):
+        return _pyast.BinOp(func1, '*', func2)
 
     def _sum(self, axis):
         factors = tuple(self._factors)
@@ -1775,6 +1794,9 @@ class Add(Array):
 
     evalf = staticmethod(numpy.add)
 
+    def _compile_expression(self, py_self, func1, func2):
+        return _pyast.BinOp(func1, '+', func2)
+
     def _sum(self, axis):
         return add(*[sum(f, axis) for f in self._terms])
 
@@ -1852,6 +1874,9 @@ class Einsum(Array):
             args = tuple(numpy.asarray(arg, order='F') for arg in args)
         return numpy.core.multiarray.c_einsum(self._einsumfmt, *args)
 
+    def _compile_expression(self, py_self, *args):
+        return _pyast.Variable('numpy').get_attr('core').get_attr('multiarray').get_attr('c_einsum').call(_pyast.LiteralStr(self._einsumfmt), *args)
+
     @property
     def _node_details(self):
         return self._einsumfmt
@@ -1874,6 +1899,9 @@ class Sum(Array):
         self.func = func
         self.evalf = functools.partial(numpy.any if func.dtype == bool else numpy.sum, axis=-1)
         super().__init__(args=(func,), shape=func.shape[:-1], dtype=func.dtype)
+
+    def _compile_expression(self, py_self, func):
+        return _pyast.Variable('numpy').get_attr('any' if self.dtype == bool else 'sum').call(func, axis=_pyast.LiteralInt(-1))
 
     def _simplified(self):
         if _equals_scalar_constant(self.func.shape[-1], 1):
@@ -1961,6 +1989,9 @@ class TakeDiag(Array):
     def evalf(arr):
         return numpy.einsum('...kk->...k', arr, optimize=False)
 
+    def _compile_expression(self, py_self, arr):
+        return _pyast.Variable('numpy').get_attr('core').get_attr('multiarray').get_attr('c_einsum').call(_pyast.LiteralStr('...kk->...k'), arr)
+
     def _derivative(self, var, seen):
         return takediag(derivative(self.func, var, seen), self.ndim-1, self.ndim)
 
@@ -2007,6 +2038,9 @@ class Take(Array):
     @staticmethod
     def evalf(arr, indices):
         return arr[..., indices]
+
+    def _compile_expression(self, py_self, arr, indices):
+        return _pyast.Variable('numpy').get_attr('take').call(arr, indices, axis=_pyast.LiteralInt(-1))
 
     def _derivative(self, var, seen):
         return _take(derivative(self.func, var, seen), self.indices, self.func.ndim-1)
@@ -2059,6 +2093,9 @@ class Power(Array):
             return Reciprocal(self.func * self.func)
 
     evalf = staticmethod(numpy.power)
+
+    def _compile_expression(self, py_self, func, power):
+        return _pyast.Variable('numpy').get_attr('power').call(func, power)
 
     def _derivative(self, var, seen):
         if self.power.isconstant:
@@ -2186,9 +2223,16 @@ class Holomorphic(Pointwise):
 class Reciprocal(Holomorphic):
     evalf = staticmethod(numpy.reciprocal)
 
+    def _compile_expression(self, py_self, value):
+        return _pyast.Variable('numpy').get_attr('reciprocal').call(value)
+
 
 class Negative(Pointwise):
     evalf = staticmethod(numpy.negative)
+
+    def _compile_expression(self, py_self, value):
+        return _pyast.UnaryOp('-', value)
+
     def return_type(T):
         if T == bool:
             raise ValueError('boolean values cannot be negated')
@@ -2201,6 +2245,10 @@ class Negative(Pointwise):
 
 class FloorDivide(Pointwise):
     evalf = staticmethod(numpy.floor_divide)
+
+    def _compile_expression(self, py_self, dividend, divisor):
+        return _pyast.BinOp(dividend, '//', divisor)
+
     def return_type(dividend, divisor):
         if dividend != divisor:
             raise ValueError(f'All arguments must have the same dtype but got {dividend} and {divisor}.')
@@ -2230,6 +2278,9 @@ class FloorDivide(Pointwise):
 
 class Absolute(Pointwise):
     evalf = staticmethod(numpy.absolute)
+
+    def _compile_expression(self, py_self, value):
+        return _pyast.Variable('numpy').get_attr('absolute').call(value)
 
     def return_type(T):
         if T == bool:
@@ -2334,6 +2385,9 @@ class Log(Holomorphic):
 
 class Mod(Pointwise):
     evalf = staticmethod(numpy.mod)
+
+    def _compile_expression(self, py_self, dividend, divisor):
+        return _pyast.BinOp(dividend, '%', divisor)
 
     def return_type(dividend, divisor):
         if dividend != divisor:
@@ -2527,6 +2581,9 @@ class Cast(Pointwise):
 
     def evalf(self, arg):
         return numpy.array(arg, dtype=self.dtype)
+
+    def _compile_expression(self, py_self, arg):
+        return _pyast.Variable('numpy').get_attr('array').call(arg, dtype=_pyast.Variable(self.dtype.__name__))
 
     def _simplified(self):
         arg, = self.args
@@ -2791,6 +2848,9 @@ class ArrayFromTuple(Array):
         assert isinstance(arrays, tuple)
         return arrays[self.index]
 
+    def _compile_expression(self, py_self, arrays):
+        return arrays.get_item(_pyast.LiteralInt(self.index))
+
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
             return cache[self]
@@ -2828,6 +2888,9 @@ class Zeros(Array):
 
     def evalf(self, *shape):
         return numpy.zeros(shape, dtype=self.dtype)
+
+    def _compile_expression(self, py_self, *shape):
+        return _pyast.Variable('numpy').get_attr('zeros').call(_pyast.Tuple(shape), dtype=_pyast.Variable(self.dtype.__name__))
 
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if self.ndim:
@@ -3180,6 +3243,9 @@ class Guard(Array):
     def evalf(dat):
         return dat
 
+    def _compile(self, builder):
+        return builder.compile(self.fun)
+
     def _derivative(self, var, seen):
         return Guard(derivative(self.fun, var, seen))
 
@@ -3195,6 +3261,9 @@ class Find(Array):
     @staticmethod
     def evalf(where):
         return where.nonzero()[0]
+
+    def _compile_expression(self, py_self, where):
+        return _pyast.Variable('numpy').get_attr('nonzero').call(where).get_item(_pyast.LiteralInt(0))
 
     def _simplified(self):
         if self.isconstant:
@@ -3243,6 +3312,9 @@ class WithDerivative(Array):
     @staticmethod
     def evalf(func: numpy.ndarray) -> numpy.ndarray:
         return func
+
+    def _compile(self, builder):
+        return builder.compile(self._func)
 
     def _derivative(self, var: DerivativeTargetBase, seen) -> Array:
         if var == self._var:
@@ -3703,6 +3775,11 @@ class PolyDegree(Array):
     def evalf(self, ncoeffs):
         return numpy.array(poly.degree(self.nvars, ncoeffs.__index__()))
 
+    def _compile_expression(self, py_self, ncoeffs):
+        ncoeffs = ncoeffs.get_attr('__index__').call()
+        degree = _pyast.Variable('poly').get_attr('degree').call(_pyast.LiteralInt(self.nvars), ncoeffs)
+        return _pyast.Variable('numpy').get_attr('int_').call(degree)
+
     def _intbounds_impl(self):
         lower, upper = self.ncoeffs._intbounds
         try:
@@ -3741,6 +3818,11 @@ class PolyNCoeffs(Array):
 
     def evalf(self, degree):
         return numpy.array(poly.ncoeffs(self.nvars, degree.__index__()))
+
+    def _compile_expression(self, py_self, degree):
+        degree = degree.get_attr('__index__').call()
+        ncoeffs = _pyast.Variable('poly').get_attr('ncoeffs').call(_pyast.LiteralInt(self.nvars), degree)
+        return _pyast.Variable('numpy').get_attr('int_').call(ncoeffs)
 
     def _intbounds_impl(self):
         lower, upper = self.degree._intbounds
@@ -3952,6 +4034,9 @@ class Choose(Array):
     @staticmethod
     def evalf(index, *choices):
         return numpy.choose(index, choices)
+
+    def _compile_expression(self, py_self, index, *choices):
+        return _pyast.Variable('numpy').get_attr('choose').call(index, _pyast.Tuple(choices))
 
     def _derivative(self, var, seen):
         return Choose(appendaxes(self.index, var.shape), *(derivative(choice, var, seen) for choice in self.choices))
