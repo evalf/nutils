@@ -612,6 +612,34 @@ _check('searchsorted', lambda a: evaluable.SearchSorted(evaluable.asarray(a), ar
 _check('searchsorted_sorter', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=types.arraydata([.2,.8,.4,0,.6,1]), side='left', sorter=types.arraydata([3,0,2,4,1,5])), lambda a: numpy.searchsorted([.2,.8,.4,0,.6,1], a, sorter=[3,0,2,4,1,5]).astype(int), POS(4, 2))
 
 
+class compile(TestCase):
+
+    def test_array_arg(self):
+        a = evaluable.Argument('a', (), int)
+        f = evaluable.compile(a)
+        self.assertEqual(f(a=1), 1)
+
+    def test_tuple_arg(self):
+        a = evaluable.Argument('a', (), int)
+        b = evaluable.Argument('b', (), int)
+        f = evaluable.compile((a, b))
+        self.assertEqual(f(a=1, b=2), (1, 2))
+
+    def test_nested_arg(self):
+        a = evaluable.Argument('a', (), int)
+        b = evaluable.Argument('b', (), int)
+        c = evaluable.Argument('c', (), int)
+        f = evaluable.compile((a, (b, c)))
+        self.assertEqual(f(a=1, b=2, c=3), (1, (2, 3)))
+
+    def test_stats(self):
+        a = evaluable.Argument('a', (), int)
+        f = evaluable.compile(a, stats='log')
+        with self.assertLogs('nutils', logging.INFO) as cm:
+            f(a=1)
+            self.assertTrue(cm.output[0].startswith('INFO:nutils:total time:'))
+
+
 class intbounds(TestCase):
 
     @staticmethod

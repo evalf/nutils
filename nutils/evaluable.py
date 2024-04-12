@@ -28,7 +28,7 @@ if typing.TYPE_CHECKING:
 else:
     Protocol = object
 
-from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, sparse
+from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, sparse, _pyast
 from functools import cached_property
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph, TupleNode
 import nutils_poly as poly
@@ -51,6 +51,9 @@ import contextlib
 import subprocess
 import os
 import multiprocessing
+import hashlib
+import linecache
+from io import StringIO
 
 graphviz = os.environ.get('NUTILS_GRAPHVIZ')
 
@@ -63,8 +66,10 @@ def simplified(value: 'Evaluable'):
 
 
 _array_dtypes = bool, int, float, complex
+_array_dtype_to_kind = {bool: 'b', int: 'i', float: 'f', complex: 'c'}
 asdtype = lambda arg: arg if any(arg is dtype for dtype in _array_dtypes) else {'f': float, 'i': int, 'b': bool, 'c': complex}[numpy.dtype(arg).kind]
 Dtype = typing.Union[_array_dtypes]
+_BlockId = typing.Tuple[int, ...]
 
 
 def asarray(arg):
@@ -402,6 +407,30 @@ class Evaluable(types.Singleton):
                 self = util.shallow_replace(replacements.get, self)
 
         return self
+
+    def _compile(self, builder: '_BlockTreeBuilder') -> _pyast.Expression:
+        # Compiles the entire tree defined by this evaluable.
+        #
+        # Arguments must be compiled via `builder.compile`, not by directly
+        # calling `Evaluable._compile`, because the former caches the compiled
+        # evaluables.
+        args = builder.compile(self.__args)
+        expression = self._compile_expression(builder.get_evaluable_expr(self), *args)
+        out = builder.get_variable_for_evaluable(self)
+        builder.get_block_for_evaluable(self).assign_to(out, expression)
+        return out
+
+    def _compile_expression(self, py_self: _pyast.Variable, *args: _pyast.Expression):
+        # Compiles this evaluable given compiled arguments.
+        #
+        # `py_self` is a variable that refers to `self`.
+
+        # Instead of triggering an exception in `Evaluable.evalf` when running
+        # the generated code, we raise an exception during compile time.
+        if self.evalf is Evaluable.evalf:
+            raise NotImplementedError
+
+        return py_self.get_attr('evalf').call(*args)
 
 
 class EVALARGS(Evaluable):
@@ -1001,6 +1030,13 @@ class Constant(Array):
 
     def evalf(self):
         return self.value
+
+    def _compile(self, builder):
+        # `self.value` is always a `numpy.ndarray`. If the array is 0d, we
+        # convert the array to a `numpy.number` (`self.value[()]`), which
+        # behaves like a `numpy.ndarray`, and has much faster implementations
+        # for add, multiply etc.
+        return builder.add_constant_for_evaluable(self, self.value[()] if self.ndim == 0 else self.value)
 
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if self.ndim:
@@ -3249,6 +3285,22 @@ class Argument(DerivativeTargetBase):
         self._name = name
         super().__init__(args=(EVALARGS, *shape), shape=shape, dtype=dtype)
 
+    def _compile(self, builder):
+        shape = builder.compile(self.shape)
+        out = builder.get_variable_for_evaluable(self)
+        block = builder.get_block_for_evaluable(self)
+        block.assign_to(out, _pyast.Variable('numpy').get_attr('asarray').call(builder.get_argument(self._name), dtype=_pyast.Variable(self.dtype.__name__)))
+        block.if_(_pyast.BinOp(shape, '!=', out.get_attr('shape'))).raise_(
+            _pyast.Variable('ValueError').call(
+                _pyast.LiteralStr('argument {!r} has the wrong shape: expected {}, got {}').get_attr('format').call(
+                    _pyast.LiteralStr(self._name),
+                    shape,
+                    out.get_attr('shape'),
+                ),
+            ),
+        )
+        return out
+
     def evalf(self, evalargs, *shape):
         try:
             value = evalargs[self._name]
@@ -3305,6 +3357,9 @@ class IdentifierDerivativeTarget(DerivativeTargetBase):
 
     def evalf(self):
         raise Exception('{} cannot be evaluabled'.format(type(self).__name__))
+
+    def _compile(self, builder):
+        raise Exception(f'{type(self).__name__} cannot be evaluated')
 
 
 class Ravel(Array):
@@ -4181,6 +4236,9 @@ class _LoopIndex(Array):
     def evalf(self, *args):
         raise ValueError(f'`_LoopIndex` outside `Loop` with corresponding `_LoopId`: {self.loop_id}.')
 
+    def _compile(self, builder):
+        raise ValueError(f'`_LoopIndex` outside `Loop` with corresponding `_LoopId`: {self.loop_id}.')
+
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
             return cache[self]
@@ -4357,6 +4415,16 @@ class LoopSum(Loop, Array):
         self.func = func
         super().__init__(init_arg=Tuple(shape), body_arg=func, loop_id=loop_id, length=length, shape=shape, dtype=func.dtype)
 
+    def _compile(self, builder):
+        out, out_block_id = builder.new_empty_array_for_evaluable(self)
+        builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
+        index_block_id = builder.get_block_id(self.index)
+        body_block_id = builtins.max(index_block_id, builder.get_block_id(self.func))
+        assert body_block_id[:-1] == index_block_id[:-1]
+        func = builder.compile(self.func)
+        builder.get_block_for_evaluable(self, block_id=body_block_id).array_iadd(out, func)
+        return out
+
     def evalf_loop_init(self, shape):
         return parallel.shzeros(tuple(n.__index__() for n in shape), dtype=self.dtype)
 
@@ -4466,6 +4534,16 @@ class LoopConcatenate(Loop, Array):
             raise ValueError('expected an array with at least one axis')
         shape = *func.shape[:-1], concat_length
         super().__init__(init_arg=Tuple(shape), body_arg=Tuple((func, start, stop)), loop_id=loop_id, length=length, shape=shape, dtype=func.dtype)
+
+    def _compile(self, builder):
+        out, out_block_id = builder.new_empty_array_for_evaluable(self)
+        start, stop, func = builder.compile((self.start, self.stop, self.func))
+        index_block_id = builder.get_block_id(self.index)
+        body_block_id = builtins.max((index_block_id, *map(builder.get_block_id, (self.start, self.stop))))
+        assert body_block_id[:-1] == index_block_id[:-1]
+        out_slice = out.get_item(_pyast.Tuple((_pyast.Raw('...'), _pyast.Variable('slice').call(start, stop))))
+        builder.get_block_for_evaluable(self, block_id=body_block_id).array_copy(out_slice, func)
+        return out
 
     def evalf_loop_init(self, shape):
         return parallel.shempty(tuple(n.__index__() for n in shape), dtype=self.dtype)
@@ -5241,6 +5319,556 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
                     d['index']['i'+str(idim)] = ii
                 start = stop
             yield data
+
+
+def compile(func, *, simplify: bool = True, stats: typing.Optional[bool] = None):
+    # Compiles `Evaluable`s to Python code. Every `Loop` is assigned a unique
+    # loop id with `_define_loop_block_structure` and based on these loop ids
+    # every `Evaluable` defines a block id where the Python code for that
+    # evaluable should be positioned.
+    #
+    # The loop and block ids are multi-indices, tuples of ints, defined such
+    # that the loop id of a child loop always starts with the loop id of the
+    # parent loop and such that if some loop B depends on some loop A, both
+    # having the same parent loop (or no parent loop), the id of A is smaller
+    # than the id of B. Finally, two loops in the same parent loop are assigned
+    # the same id if they have the same length and do not depend on each other.
+    #
+    # The block ids are derived from the loop ids. If some evaluable depends on
+    # one or more loop indices, the block id of that evaluable starts with the
+    # loop id of the innermost loop and has one extra index that does not refer
+    # to a loop. The block id of a loop is the loop id with the rightmost index
+    # incremented by one. If an `Evaluable` does not depend on loop indices or
+    # loops, the block id is `(0,)`.
+    #
+    # The following two examples illustrate the definition of the loop ids from
+    # the original loop names. The first example has two nested loops, because
+    # the inner loop depends on both the index for the inner loop `j` and the
+    # outer loop `i`. The outer loop, `e0`, gets loop id `(0,)`, the inner
+    # loop, `e1`, id `(0,0)`:
+    #
+    #                            loop_id      block_id
+    #     e0: LoopSum            'i'->(0,)    (1,)
+    #     └ e1: LoopSum          'j'->(0,0)   (0,1)
+    #       └ e2: Add                         (0,0,0)
+    #         ├ e3: LoopIndex    'j'->(0,0)   (0,0,0)
+    #         │ └ e4: Constant                (0,)
+    #         └ e5: LoopIndex    'i'->(0,)    (0,0)
+    #           └ e6: Constant                (0,)
+    #
+    # Note that `e4` and `e6` are the lengths of the loops. In the second
+    # example loop `e9` does not depend on loop index `i`, but is a dependency
+    # of loop `e7`. Therefor, `e9` gets loop id `(0,)` and `e7` id `(1,)`
+    # (adjacent to `e9`):
+    #
+    #                            loop_id      block_id
+    #     e7: LoopSum            'i'->(1,)    (2,)
+    #     └ e8: Add                           (1,0)
+    #       ├ e9: LoopSum        'j'->(0,)    (1,)
+    #       │ └ e10: LoopIndex   'j'->(0,)    (0,0)
+    #       │   └ e4: Constant                (0,)
+    #       └ e11: LoopIndex     'i'->(1,)    (1,0)
+    #         └ e6: Constant                  (0,)
+    #
+    # Having defined the loop and block ids, the loops (without content) are
+    # serialized. For the first example this gives
+    #
+    #     def compiled(**a):
+    #         # contents of blocks[0,]
+    #         for v5 in range(c6):
+    #             # contents of blocks[0,0]
+    #             for v3 in range(c4):
+    #                 # contents of blocks[0,0,0]
+    #             # contents of blocks[0,1]
+    #         # contents of blocks[1,]
+    #         return v0
+    #
+    # The final step is the serialization of the `Evaluable`s. Each `Evaluable`
+    # compiles first its dependencies, then itself, placing the statements in
+    # the block with the corresponding block id. The serialization of the first
+    # example (without inplace additions):
+    #
+    #     def compiled(**a):
+    #         v0 = numpy.zeros((), int) # e0 init
+    #         for v5 in range(c6):
+    #             v1 = numpy.zeros((), int) # e1 init
+    #             for v3 in range(c4):
+    #                 v2 = v3 + v5
+    #                 v1 += v2 # e1 update
+    #             # e1 exit
+    #             v0 += v1 # e0 update
+    #         # e0 exit
+    #         return v0
+
+    if stats is None:
+        stats = 'log' if graphviz else False
+    elif stats not in ('log', False):
+        raise ValueError(f'`stats` must be `None`, `False` or `"log"` but got {stats!r}')
+
+    # Build return value format string `ret` with the same structure as `func`
+    # and convert `func` to a flat list.
+    stack = [func]
+    ret_fmt = []
+    funcs = []
+    MakeTuple = collections.namedtuple('MakeTuple', ('n'))
+    while stack:
+        obj = stack.pop(0)
+        if isinstance(obj, MakeTuple):
+            m = len(ret_fmt) - obj.n
+            ret_fmt[m:] = ['(' + ', '.join(ret_fmt[m:]) + (',)' if obj.n == 1 else ')')]
+        elif isinstance(obj, (tuple, list)):
+            stack[:0] = [*obj, MakeTuple(len(obj))]
+        elif isinstance(obj, Evaluable):
+            funcs.append(obj)
+            ret_fmt.append('{}')
+        else:
+            raise ValueError('expected a `nutils.evaluable.Array`, `tuple` or `list` but got {obj!r}')
+    ret_fmt, = ret_fmt
+
+    # Simplify and optimize `funcs`.
+    if simplify:
+        funcs = [func.simplified for func in funcs]
+    funcs = [func._optimized_for_numpy1 for func in funcs]
+    funcs = _define_loop_block_structure(tuple(funcs))
+    assert not any(isinstance(arg, _LoopIndex) for func in funcs for arg in func.arguments)
+
+    # Collect the loop ids and lengths from all loops in `funcs` and assert
+    # that all loops with the same id also have the same length. `loop_lengths`
+    # maps id to `Evaluable` length. Also populate the `Evaluable` to block id
+    # map, `evaluable_block_ids` with the loops and loop indices.
+    loop_lengths = {}
+    evaluable_block_ids = {}
+    for func in funcs:
+        for loop in func._loops:
+            if loop in evaluable_block_ids:
+                continue
+            loop_id = loop.loop_id
+            assert isinstance(loop_id.id, tuple) and loop_id.id and all(isinstance(n, int) for n in loop_id.id)
+            evaluable_block_ids[loop] = *loop_id.id[:-1], loop_id.id[-1] + 1
+            prev_loop_length = loop_lengths.get(loop_id)
+            if prev_loop_length is None:
+                loop_lengths[loop_id] = loop.length
+                evaluable_block_ids[loop.index] = *loop_id.id, 0
+            elif prev_loop_length != loop.length:
+                raise ValueError(f'multiple loops with the same id ({loop_id}) but different lengths')
+
+    compile_parallel = parallel.maxprocs.current > 1 and any(loop_lengths) and not stats
+
+    # The globals of the compiled function.
+    globals = dict(
+        collections=collections,
+        first_run=True,
+        log_stats=_log_stats,
+        multiprocessing=multiprocessing,
+        numeric=numeric,
+        numpy=numpy,
+        parallel=parallel,
+        poly=poly,
+        ret_tuple=Tuple(funcs),
+        Stats=_Stats,
+    )
+    # Counter for generating unique indices, e.g. for creating variables.
+    new_index = itertools.count()
+    # Dict of encountered evaluables and their assigned index (using
+    # `new_index`). Populated by `_compile_to_pyast`.
+    evaluables = {}
+    # Cache of compiled evaluables. Maps `Evaluable` to `_pyast.Expression`,
+    # but mostly `_pyast.Variable`.
+    cache = {}
+
+    main, py_funcs = _compile_to_pyast(funcs, globals, evaluables, new_index, cache, bool(stats), compile_parallel, loop_lengths, evaluable_block_ids)
+
+    stats_init = _pyast.Block()
+    stats_exit = _pyast.Block()
+    if stats == 'log':
+        stats_init.append(_pyast.Assign(_pyast.Variable('stats'), _pyast.Variable('collections').get_attr('defaultdict').call(_pyast.Variable('Stats'))))
+        stats_exit.append(_pyast.Exec(_pyast.Variable('log_stats').call(_pyast.Variable('ret_tuple'), _pyast.Variable('stats'))))
+
+    script = StringIO()
+    print('def compiled(**a):', file=script)
+    stats_init.write_py(script, '    ')
+    main.write_py(script, '    ')
+    stats_exit.write_py(script, '    ')
+    print('    return ' + ret_fmt.format(*[v.py_expr for v in py_funcs]), file=script)
+    script = script.getvalue()
+
+    name = 'compiled_{}'.format(hashlib.sha256(script.encode('utf-8')).hexdigest())
+
+    # Make sure we can see `script` in tracebacks and `pdb`.
+    # From: https://stackoverflow.com/a/39625821
+    linecache.cache[name] = (len(script), None, [line+'\n' for line in script.splitlines()], name)
+
+    # Compile.
+    eval(builtins.compile(script, name, 'exec'), globals)
+    return globals['compiled']
+
+
+def _define_loop_block_structure(targets: typing.Tuple[Evaluable, ...]) -> typing.Tuple[Evaluable, ...]:
+    # To aid the serialization of the `targets`, this function replaces the
+    # existing loop ids of `Loop` subclasses with unique ids, such that
+    # every sibling `Evaluable` of the `targets` can be related to exactly
+    # one loop (possibly nested in other loops).
+    #
+    # The new ids are multi-indices, tuples of ints, defined such that the
+    # id of a child loop always starts with the id of the parent loop and
+    # such that if some loop B depends on some loop A, both having the same
+    # parent loop (or no parent loop), the id of A is smaller than the id
+    # of B. Finally, two loops in the same parent loop are assigned the
+    # same id if they have the same length and do not depend on each other.
+
+    unique_targets = _make_loop_ids_unique(targets)
+
+    queue = util.IDSet()
+    for target in unique_targets:
+        queue.update(target._loops)
+    nloops = len(queue)
+
+    def collect(indices):
+        # Find all adjacent loops and form groups of loops that have the same
+        # length and can be evaluated simultaneously. For each group the nested
+        # loops are collected. After reversal, `groups` lists the groups and
+        # the nested groups in the order at which they must be evaluated.
+        groups = []
+        while True:
+            group = []
+            for loop in queue:
+                if indices and indices.isdisjoint(loop.arguments) or group and loop.length != group[0].length:
+                    continue
+                if not any(loop in other._loops for other in queue if other is not loop):
+                    group.append(loop)
+            if not group:
+                break
+            queue.difference_update(group)
+            nested = collect(frozenset(loop.index for loop in group))
+            groups.append((group, nested))
+        groups.reverse()
+        return groups
+
+    groups = collect(frozenset())
+    assert not queue
+
+    # Assign new ids.
+    def build_id_map(groups, parent_id):
+        for i, (loops, nested) in enumerate(groups):
+            id = *parent_id, i
+            for loop in loops:
+                id_map[loop.loop_id] = _LoopId(id)
+            build_id_map(nested, id)
+
+    id_map = util.IDDict()
+    build_id_map(groups, ())
+    return tuple(util.shallow_replace(id_map.get, target) for target in unique_targets)
+
+
+def _compile_to_pyast(funcs, globals, evaluables, new_index, cache, stats, parallel, loop_lengths, evaluable_block_ids):
+    # Count the number of dependents for each `Evaluable` in `funcs`. This is
+    # used by the builder to decide if an `Evaluable` can be compiled with
+    # `_compile_iadd`.
+    ndependents = collections.defaultdict(lambda: 0)
+    seen = set()
+    stack = []
+    for func in funcs:
+        if id(func) not in seen:
+            seen.add(id(func))
+            stack.append(func)
+            ndependents[func] = 1
+    while stack:
+        func = stack.pop()
+        for arg in ((func.init_arg, func.body_arg) if isinstance(func, Loop) else func._Evaluable__args):
+            if arg not in cache:
+                ndependents[arg] += 1
+                if id(arg) not in seen:
+                    seen.add(id(arg))
+                    stack.append(arg)
+
+    # Prepare blocks and serialize loops.
+    blocks = {}
+    loop_blocks = {}
+    loop_blocks[()] = main = _pyast.Block()
+    blocks[(0,)] = first = _pyast.Block()
+    main.append(first)
+
+    builder = _BlockTreeBuilder(blocks, evaluable_block_ids, globals, evaluables, new_index, cache, stats, parallel, ndependents)
+    if parallel:
+        first.append(_pyast.Assign(_pyast.Variable('lock'), _pyast.Variable('multiprocessing').get_attr('Lock').call()))
+    for loop_id, length in sorted(loop_lengths.items(), key=lambda item: item[0].id):
+        loop_block_id = loop_id.id
+        py_length = builder.compile(length)
+        loop_blocks[loop_block_id] = body = _pyast.Block()
+        blocks[(*loop_block_id, 0)] = first = _pyast.Block()
+        body.append(first)
+        loop_index = _LoopIndex(loop_id, length)
+        evaluable_block_ids[loop_index] = *loop_block_id, 0
+        cache[loop_index] = py_loop_index = builder.get_variable_for_evaluable(loop_index)
+        if len(loop_block_id) == 1 and parallel:
+            py_range = builder.new_var()
+            py_range_numpy_int = _pyast.Variable('map').call(_pyast.Variable('numpy').get_attr('int_'), py_range)
+            loop_block = _pyast.ForLoop(py_loop_index, py_range_numpy_int, body)
+            loop_block = _pyast.With(
+                _pyast.Variable('parallel').get_attr('ctxrange').call(_pyast.LiteralStr(f'loop {loop_id}'), py_length),
+                as_=py_range,
+                body=loop_block,
+                omit_if_body_is_empty=True,
+            )
+        else:
+            py_range = _pyast.Variable('range').call(py_length)
+            py_range_numpy_int = _pyast.Variable('map').call(_pyast.Variable('numpy').get_attr('int_'), py_range)
+            loop_block = _pyast.ForLoop(py_loop_index, py_range_numpy_int, body)
+        loop_blocks[loop_block_id[:-1]].append(loop_block)
+        blocks[(*loop_block_id[:-1], loop_block_id[-1] + 1)] = after = _pyast.Block()
+        loop_blocks[loop_block_id[:-1]].append(after)
+
+    # Serialize `funcs`.
+    py_funcs = builder.compile(funcs)
+
+    return main, py_funcs
+
+
+def _log_stats(func, stats):
+    node = func._node({}, None, stats, True)
+    maxtime = builtins.max(n.metadata[1].time for n in node.walk(set()))
+    tottime = builtins.sum(n.metadata[1].time for n in node.walk(set()))
+    aggstats = tuple((key, builtins.sum(v.time for v in values), builtins.sum(v.ncalls for v in values)) for key, values in util.gather(n.metadata for n in node.walk(set())))
+    fill_color = (lambda node: '0,{:.2f},1'.format(node.metadata[1].time/maxtime)) if maxtime else None
+    if graphviz:
+        node.export_graphviz(fill_color=fill_color, dot_path=graphviz)
+    log.info('total time: {:.0f}ms\n'.format(tottime/1e6) + '\n'.join('{:4.0f} {} ({} calls, avg {:.3f} per call)'.format(t / 1e6, k, n, t / (1e6*n))
+                                                                      for k, t, n in sorted(aggstats, reverse=True, key=lambda item: item[1]) if n))
+
+
+class _BlockTreeBuilder:
+
+    def __init__(
+        self,
+        blocks: typing.Dict[_BlockId, _pyast.Block],
+        evaluable_block_ids: typing.Dict[Evaluable, _BlockId],
+        globals: typing.Dict[str, typing.Any],
+        evaluables: typing.Dict[Evaluable, int],
+        new_index: typing.Iterator[int],
+        compiled_cache: dict,
+        stats: bool,
+        parallel: bool,
+        ndependents: typing.Mapping[Evaluable, int],
+    ):
+        self._blocks = blocks
+        self._evaluable_block_ids = evaluable_block_ids
+        self._globals = globals
+        self._evaluables = evaluables
+        self._new_index = new_index
+        self._compiled_cache = compiled_cache
+        self._stats = stats
+        self._parallel = parallel
+        self._ndependents = ndependents
+        self._shared_arrays = set()
+        self._new_eid = map('e{}'.format, new_index).__next__
+        self.new_var = lambda: _pyast.Variable('v{}'.format(next(new_index)))
+
+    def compile(self, evaluable: Evaluable) -> _pyast.Expression:
+        # Compiles the tree defined by `evaluable` and returns the result of `evaluable`.
+        if isinstance(evaluable, tuple):
+            return _pyast.Tuple(tuple(map(self.compile, evaluable)))
+        if (cached := self._compiled_cache.get(evaluable)) is not None:
+            return cached
+        self._get_evaluable_index(evaluable)
+        self._compiled_cache[evaluable] = out = evaluable._compile(self)
+        if debug_flags.evalf and isinstance(evaluable, Array):
+            block = self.get_block(self.get_block_id(evaluable))
+            block.assert_equal(out.get_attr('dtype').get_attr('kind'), _pyast.LiteralStr(_array_dtype_to_kind[evaluable.dtype]))
+            block.assert_equal(out.get_attr('ndim'), _pyast.LiteralInt(evaluable.ndim))
+            for i, n in enumerate(evaluable.shape):
+                if isinstance(n, Constant):
+                    block.assert_equal(out.get_attr('shape').get_item(_pyast.LiteralInt(i)), _pyast.LiteralInt(n.__index__()))
+        return out
+
+    def new_empty_array_for_evaluable(self, array: Array) -> _pyast.Variable:
+        # Creates a new empty array and assigns the array to variable `v{id}`
+        # where `id` is the unique index of `array`.
+        shape = self.compile(array.shape)
+        out = self.get_variable_for_evaluable(array)
+        # Allocation of `out` should happen as early as possible (that is: as
+        # soon as the shape is known). `out`, however, must not be used outside
+        # the loop where `array` resides, if any. This is to prevent compiling
+        # a dependency of `array` that lives outside that loop using
+        # `_compile_iadd`.
+        alloc_block_id = builtins.max(map(self.get_block_id, array.shape)) if array.ndim else (0,)
+        out_block_id = builtins.max((*self.get_block_id(array)[:-1], 0), alloc_block_id)
+        if self._parallel and len(out_block_id) == 1:
+            # Because `self._parallel` is true, the outer-most loops will be
+            # parallelized using fork. If `array` is evaluated inside a loop,
+            # `out` must not be a shared array. However, if `array` originates
+            # outside an outer loop, which is the case in this if-branch, then
+            # `array` might initiate an inplace add inside a loop, in which
+            # case `out` must be a shared memory array or we'll only see
+            # updates to `out` from the parent process.
+            self._shared_arrays.add(out)
+            py_alloc = _pyast.Variable('parallel').get_attr('shempty')
+        else:
+            py_alloc = _pyast.Variable('numpy').get_attr('empty')
+        alloc_block = self.get_block_for_evaluable(array, block_id=alloc_block_id, comment='alloc')
+        alloc_block.assign_to(out, py_alloc.call(shape, dtype=_pyast.Variable(array.dtype.__name__)))
+        return out, out_block_id
+
+    def add_constant_for_evaluable(self, evaluable: Evaluable, value) -> _pyast.Variable:
+        # Assigns `value` to constant `c{id}` where `id` is the unique index of
+        # `evaluable`. It is an error to assign `value` to `evaluable` multiple
+        # times unless the values are identical.
+        const = _pyast.Variable('c{}'.format(self._get_evaluable_index(evaluable)))
+        if self._globals.setdefault(const.py_expr, value) is not value:
+            raise ValueError('Cannot assign different values to the same constant.')
+        return const
+
+    def get_argument(self, name: str) -> _pyast.Variable:
+        # Returns the argument with the given `name`.
+        return _pyast.Variable('a').get_item(_pyast.LiteralStr(name))
+
+    def get_block(self, block_id: _BlockId) -> '_BlockBuilder':
+        # Returns a block builder for the given block id.
+        return _BlockBuilder(self, self._blocks[block_id])
+
+    def get_block_for_evaluable(self, evaluable: Evaluable, *, block_id: typing.Optional[_BlockId] = None, comment: str = '') -> '_BlockBuilder':
+        # Appends a comment identifying `evaluable` to the block with the given
+        # id, or `self.get_block_id(evaluable)` if absent, optionally suffixed
+        # with `comment`, and returns the block.
+        eid = 'e{}'.format(self._get_evaluable_index(evaluable))
+        if block_id is None:
+            block_id = self.get_block_id(evaluable)
+        comment = '; '.join(filter(None, [eid, f'{type(evaluable).__name__}', evaluable._node_details, comment]))
+        block = self._blocks[block_id]
+        if self._stats:
+            with_stats_block = _pyast.Block()
+            block.append(_pyast.With(_pyast.Variable('stats').get_item(_pyast.Variable(eid)), with_stats_block, omit_if_body_is_empty=True))
+            block = with_stats_block
+        block.append(_pyast.Comment(comment))
+        return _BlockBuilder(self, block)
+
+    def get_variable_for_evaluable(self, evaluable: Evaluable) -> _pyast.Variable:
+        # Returns the variable `v{id}` where `id` is the unique index of `evaluable`.
+        #
+        # To aid introspection of the generated code, every evaluable has
+        # exactly one variable at its disposal that shares the index with the
+        # index of the evaluable. Care should be taken that this variable is
+        # not reused (within the same scope). The cache in
+        # `_BlockTreeBuilder.compile` already prevents repeated calls to
+        # `Evaluable._compile` on the same `evaluable`, so calling this method
+        # once in `Evaluable._compile` is safe as long as it is not called
+        # somewhere else.
+        return _pyast.Variable('v{}'.format(self._get_evaluable_index(evaluable)))
+
+    def get_evaluable_expr(self, evaluable: Evaluable) -> _pyast.Variable:
+        # Returns the variable `e{id}` referring to `evaluable` where `id` is
+        # the unique index of `evaluable`.
+        return _pyast.Variable('e{}'.format(self._get_evaluable_index(evaluable)))
+
+    def _get_evaluable_index(self, evaluable: Evaluable) -> int:
+        # Assigns a unique index to `evaluable` if not already assigned and
+        # returns the index.
+        if (index := self._evaluables.get(evaluable)) is None:
+            self._evaluables[evaluable] = index = next(self._new_index)
+            self._globals[f'e{index}'] = evaluable
+        return index
+
+    def get_block_id(self, evaluable: Evaluable) -> _BlockId:
+        # The id of the block where this `Evaluable` must be evaluated.
+        if (block_id := self._evaluable_block_ids.get(evaluable)) is None:
+            assert not isinstance(evaluable, _LoopIndex)
+            if evaluable._Evaluable__args:
+                arg_block_ids = tuple(map(self.get_block_id, evaluable._Evaluable__args))
+                # Select the first block where all arguments are within scope as
+                # the block where `evaluable` must be evaluated.
+                block_id = builtins.max(arg_block_ids)
+                # If an evaluable is evaluated in some (possibly nested) loop,
+                # the value goes out of scope as soon as the loop exits. All
+                # arguments must therefor be defined in the same loop as
+                # `evaluable`, or a parent loop, but not an adjacent loop. All
+                # but the last item of the block id identify loops, hence we
+                # need to assert that for all arguments all but the last items
+                # of the block id matches the start of the chosen block id of
+                # `evaluable`.
+                assert all(len(arg_block_id) > 0 and arg_block_id[:-1] == block_id[:len(arg_block_id)-1] for arg_block_id in arg_block_ids)
+            else:
+                block_id = 0,
+            self._evaluable_block_ids[evaluable] = block_id
+        return block_id
+
+
+class _BlockBuilder:
+
+    def __init__(self, parent, block):
+        self._parent = parent
+        self._block = block
+        self.new_var = parent.new_var
+
+    def _needs_lock(self, /, *args, **kwargs):
+        # Returns true if any of the arguments references variables that
+        # require a lock.
+        variables = frozenset().union(*(arg.variables for arg in args), *(arg.variables for arg in kwargs.values()))
+        return not self._parent._shared_arrays.isdisjoint(variables)
+
+    def _block_for(self, /, *args, **kwargs):
+        # If any of the arguments references variables that require a lock,
+        # return a new block that is enclosed in a `with lock` block. Otherwise
+        # simply return our block.
+        if self._needs_lock(*args, **kwargs):
+            block = _pyast.Block()
+            self._block.append(_pyast.With(_pyast.Variable('lock'), block))
+            return block
+        else:
+            return self._block
+
+    def exec(self, expression: _pyast.Expression):
+        # Appends the statement `{expression}`. Returns nothing.
+        self._block_for(expression).append(_pyast.Exec(expression))
+
+    def assign_to(self, lhs: _pyast.Expression, rhs: _pyast.Expression) -> _pyast.Variable:
+        # Appends the statement `{lhs} = {rhs}` and returns `lhs`.
+        self._block_for(lhs, rhs).append(_pyast.Assign(lhs, rhs))
+        return lhs
+
+    def assert_true(self, condition: _pyast.Expression):
+        # Appends the statement `assert {condition}`.
+        self._block_for(condition).append(_pyast.Assert(condition))
+
+    def assert_equal(self, a: _pyast.Expression, b: _pyast.Expression):
+        # Appends the statement `assert {a} == {b}`.
+        self.assert_true(_pyast.BinOp(a, '==', b))
+
+    def if_(self, condition: _pyast.Expression) -> '_BlockBuilder':
+        # Appends the statement `if {condition}` and returns the if-body.
+        if self._needs_lock(condition):
+            # We don't want to hold the lock longer than necessary and we must
+            # prevent acquiring the lock twice,
+            #
+            # with lock:
+            #    if condition: # needs lock
+            #        with lock:
+            #            # needs lock
+            #
+            # Instead we evaluate the condition before the if statement and
+            # proceed with the if statement with the lock released.
+            condition = self.assign(_pyast.Variable('bool').call(condition))
+        body = _pyast.Block()
+        self._block.append(_pyast.If(condition, body))
+        return _BlockBuilder(self._parent, body)
+
+    def raise_(self, exception: _pyast.Expression):
+        # Appends the statement `raise {exception}`.
+        self._block_for(exception).append(_pyast.Raise(exception))
+
+    def array_copy(self, dst: _pyast.Expression, src: _pyast.Expression) -> _pyast.Variable:
+        # Appends statements for copying array `src` to array `dst`.
+        self.exec(_pyast.Variable('numpy').get_attr('copyto').call(dst, src))
+
+    def array_iadd(self, acc: _pyast.Expression, inc: _pyast.Expression):
+        # Appends statements for incrementing array `acc` with array `inc`.
+        self.exec(_pyast.Variable('numpy').get_attr('add').call(acc, inc, out=acc))
+
+    def array_add_at(self, out: _pyast.Expression, indices: _pyast.Expression, values: _pyast.Expression):
+        # Appends statements for incrementing array `out` with array `values` at `indices`.
+        self.exec(_pyast.Variable('numpy').get_attr('add').get_attr('at').call(out, indices, values))
+
+    def array_fill_zeros(self, array: _pyast.Expression):
+        # Appends statements for filling `array` with zeros.
+        self.exec(array.get_attr('fill').call(_pyast.LiteralInt(0)))
 
 
 if __name__ == '__main__':
