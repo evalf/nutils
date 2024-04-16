@@ -102,12 +102,12 @@ class _DontFork:
 def shempty(shape, dtype=float):
     '''create uninitialized array in shared memory'''
 
-    if numeric.isint(shape):
-        shape = shape,
+    if not isinstance(shape, (tuple, list)):
+        shape = shape.__index__(),
     else:
-        assert all(numeric.isint(sh) for sh in shape)
+        shape = tuple(sh.__index__() for sh in shape)
     dtype = numpy.dtype(dtype)
-    size = util.product(map(int, shape), int(dtype.itemsize))
+    size = util.product(shape, int(dtype.itemsize))
     if size == 0 or maxprocs.current == 1:
         return numpy.empty(shape, dtype)
     # `mmap(-1,...)` will allocate *anonymous* memory.  Although linux' man page
