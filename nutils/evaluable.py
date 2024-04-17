@@ -4633,6 +4633,39 @@ def _dependencies_sans_invariants(func, arg):
     return tuple(invariants), tuple(dependencies)
 
 
+def _make_loop_ids_unique(funcs: typing.Tuple[Evaluable, ...]) -> typing.Tuple[Evaluable, ...]:
+    # Replaces all `_LoopId` instances such that every distinct `Loop` has its
+    # own loop id.
+
+    loops = util.IDSet()
+    for func in funcs:
+        loops |= func._loops
+    old_ids = {loop.loop_id for loop in loops}
+    if len(old_ids) == len(loops):
+        # All loops already have unique ids.
+        return funcs
+
+    new_ids = filter(lambda id: id not in old_ids, map(_LoopId, itertools.count()))
+    cache = {}
+
+    @util.shallow_replace
+    def replace_inner(obj, root=None):
+        if obj is root or not isinstance(obj, Loop):
+            return
+        if (cached := cache.get(obj)) is not None:
+            return cached
+        old = obj.loop_id
+        new = next(new_ids)
+        # Replace `old` with `new`, but don't traverse nested loops with id `old`.
+        new_obj = util.shallow_replace(lambda x: new if x is old else x if x is not obj and isinstance(x, Loop) and x.loop_id is old else None, obj)
+        if new_obj._loops:
+            new_obj = replace_inner(new_obj, new_obj)
+        cache[obj] = new_obj
+        return new_obj
+
+    return tuple(map(replace_inner, funcs))
+
+
 class _Stats:
 
     def __init__(self, ncalls: int = 0, time: int = 0) -> None:
