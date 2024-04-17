@@ -1152,6 +1152,47 @@ class combine_loops(TestCase):
         self.assertEqual(F._combine_loops(), Fc)
 
 
+class make_loop_ids_unique(TestCase):
+
+    @staticmethod
+    def loop_index(id):
+        return evaluable._LoopIndex(evaluable._LoopId(id), evaluable.constant(3))
+
+    @staticmethod
+    def loop_sum(func, index):
+        return evaluable.LoopSum(func, (), index.loop_id, index.length)
+
+    def test_already_unique(self):
+        i, j = map(self.loop_index, 'ij')
+        A = self.loop_sum(self.loop_sum(i + j, j), i)
+        self.assertEqual(evaluable._make_loop_ids_unique((A,)), (A,))
+
+    def test_dependent(self):
+        i0, i1, i2 = map(self.loop_index, range(3))
+        A = self.loop_sum(self.loop_sum(i0, i0), i0)
+        B = self.loop_sum(self.loop_sum(i2, i2), i1)
+        self.assertEqual(evaluable._make_loop_ids_unique((A,)), (B,))
+
+    def test_nested(self):
+        i0, i1, i2, i3, i4 = map(self.loop_index, range(5))
+        A = self.loop_sum(self.loop_sum(self.loop_sum(i0 + i2, i0) + i0, i2), i0)
+        B = self.loop_sum(self.loop_sum(self.loop_sum(i4 + i3, i4) + i1, i3), i1)
+        self.assertEqual(evaluable._make_loop_ids_unique((A,)), (B,))
+
+    def test_cache_same_inner_loop(self):
+        i0, i1, i2, i3, i4 = map(self.loop_index, range(5))
+        A = self.loop_sum(self.loop_sum(i0, i0), i1) % self.loop_sum(self.loop_sum(i0, i0) + i1, i1)
+        B = self.loop_sum(self.loop_sum(i3, i3), i4) % self.loop_sum(self.loop_sum(i3, i3) + i2, i2)
+        self.assertEqual(evaluable._make_loop_ids_unique((A,)), (B,))
+
+    def test_cache_different_inner_loop(self):
+        i0, i1, i2, i3, i4, i5 = map(self.loop_index, range(6))
+        # The inner loops look the same, but are different because index `i1` refers to different loops.
+        A = self.loop_sum(self.loop_sum(i0 + i1, i0), i1) % self.loop_sum(self.loop_sum(i0 + i1, i0) + i1, i1)
+        B = self.loop_sum(self.loop_sum(i5 + i4, i5), i4) % self.loop_sum(self.loop_sum(i3 + i2, i3) + i2, i2)
+        self.assertEqual(evaluable._make_loop_ids_unique((A,)), (B,))
+
+
 class Einsum(TestCase):
 
     def test_swapaxes(self):
