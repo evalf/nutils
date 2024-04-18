@@ -856,7 +856,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     _insertaxis = lambda self, axis, length: None
     _add = lambda self, other: None
     _diagonalize = lambda self, axis: None
-    _sign = lambda self: None
     _eig = lambda self, symmetric: None
     _inflate = lambda self, dofmap, length, axis: None
     _rinflate = lambda self, func, length, axis: None
@@ -1065,9 +1064,6 @@ class Constant(Array):
             eigvec = eigvec.astype(complex, copy=False)
         return Tuple((constant(eigval), constant(eigvec)))
 
-    def _sign(self):
-        return constant(numpy.sign(self.value))
-
     def _intbounds_impl(self):
         if self.dtype == int and self.value.size:
             return int(self.value.min()), int(self.value.max())
@@ -1160,9 +1156,6 @@ class InsertAxis(Array):
     def _insertaxis(self, axis, length):
         if axis == self.ndim - 1:
             return InsertAxis(InsertAxis(self.func, length), self.length)
-
-    def _sign(self):
-        return InsertAxis(Sign(self.func), self.length)
 
     def _loopsum(self, index):
         return InsertAxis(loop_sum(self.func, index), self.length)
@@ -1367,9 +1360,6 @@ class Transpose(Array):
         axes = [ax+(ax > funcaxis)*(ndim-1) for ax in self.axes if ax != funcaxis]
         axes[axis:axis] = range(funcaxis, funcaxis + ndim)
         return tuple(axes)
-
-    def _sign(self):
-        return Transpose(Sign(self.func), self.axes)
 
     def _ravel(self, axis):
         if self.axes[axis] == self.ndim-2 and self.axes[axis+1] == self.ndim-1:
@@ -1674,9 +1664,6 @@ class Multiply(Array):
         func1, func2 = self.funcs
         return einsum('A,AB->AB', func1, derivative(func2, var, seen)) \
             + einsum('A,AB->AB', func2, derivative(func1, var, seen))
-
-    def _sign(self):
-        return multiply(*[Sign(f) for f in self._factors])
 
     @cached_property
     def _assparse(self):
@@ -2859,10 +2846,6 @@ class IntToFloat(Cast):
         if isinstance(other, __class__):
             return self._newargs(self.args[0] * other.args[0])
 
-    def _sign(self):
-        assert self.dtype != complex
-        return self._newargs(sign(self.args[0]))
-
     def _derivative(self, var, seen):
         return Zeros(self.shape + var.shape, dtype=self.dtype)
 
@@ -2932,12 +2915,12 @@ class Sign(Array):
                 yield op, tuple(Sign(arg) for arg in args)
 
     def _simplified(self):
-        return self.func._sign()
+        if simple := self._as_any(constant, insertaxis, multiply, IntToFloat, diagonalize, ravel):
+            return simple
+        for f, in self.func._as(sign):
+            return self.func
 
     evalf = staticmethod(numpy.sign)
-
-    def _sign(self):
-        return self
 
     def _derivative(self, var, seen):
         return Zeros(self.shape + var.shape, dtype=self.dtype)
@@ -3239,10 +3222,6 @@ class Inflate(Array):
         if axis != self.ndim-1:
             return _inflate(diagonalize(self.func, axis), self.dofmap, self.length, self.ndim-1)
 
-    def _sign(self):
-        if self.dofmap.isconstant and _isunique(self.dofmap.eval()):
-            return Inflate(Sign(self.func), self.dofmap, self.length)
-
     @cached_property
     def _assparse(self):
         chunks = []
@@ -3381,9 +3360,6 @@ class Diagonalize(Array):
 
     def _derivative(self, var, seen):
         return diagonalize(derivative(self.func, var, seen), self.ndim-2, self.ndim-1)
-
-    def _sign(self):
-        return Diagonalize(Sign(self.func))
 
     def _loopsum(self, index):
         return Diagonalize(loop_sum(self.func, index))
@@ -3664,9 +3640,6 @@ class Ravel(Array):
 
     def _insertaxis(self, axis, length):
         return ravel(insertaxis(self.func, axis+(axis == self.ndim), length), self.ndim-(axis == self.ndim))
-
-    def _sign(self):
-        return Ravel(Sign(self.func))
 
     def _loopsum(self, index):
         return Ravel(loop_sum(self.func, index))
