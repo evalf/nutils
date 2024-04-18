@@ -851,7 +851,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
         return node
 
     # simplifications
-    _transpose = lambda self, axes: None
     _insertaxis = lambda self, axis, length: None
     _diagonalize = lambda self, axis: None
     _eig = lambda self, symmetric: None
@@ -1040,9 +1039,6 @@ class Constant(Array):
     @cached_property
     def _isunit(self):
         return numpy.equal(self.value, 1).all()
-
-    def _transpose(self, axes):
-        return constant(self.value.transpose(axes))
 
     def _eig(self, symmetric):
         eigval, eigvec = (numpy.linalg.eigh if symmetric else numpy.linalg.eig)(self.value)
@@ -1284,7 +1280,10 @@ class Transpose(Array):
         return tuple(n.__index__() for n in numpy.argsort(self.axes))
 
     def _simplified(self):
-        return self.func._transpose(self.axes)
+        if isinstance(self.func, Zeros):
+            return zeros_like(self)
+        for f, axes in self.func._as(transpose):
+            return transpose(f, tuple(axes[i] for i in self.axes))
 
     def _optimized_for_numpy(self):
         if isinstance(self.func, Einsum):
@@ -1296,16 +1295,6 @@ class Transpose(Array):
     @property
     def _node_details(self):
         return ','.join(map(str, self.axes))
-
-    def _transpose(self, axes):
-        if axes == self._invaxes:
-            # NOTE: While we could leave this particular simplification to be dealt
-            # with by Transpose, the benefit of handling it directly is that _add and
-            # _multiply can rely on _transpose for the right hand side without having
-            # to separately account for the trivial case.
-            return self.func
-        newaxes = tuple(self.axes[i] for i in axes)
-        return transpose(self.func, newaxes)
 
     def _derivative(self, var, seen):
         return transpose(derivative(self.func, var, seen), self.axes+tuple(range(self.ndim, self.ndim+var.ndim)))
@@ -3020,10 +3009,6 @@ class Zeros(Array):
 
     def _diagonalize(self, axis):
         return Zeros(self.shape+(self.shape[axis],), dtype=self.dtype)
-
-    def _transpose(self, axes):
-        shape = tuple(self.shape[n] for n in axes)
-        return Zeros(shape, dtype=self.dtype)
 
     def _insertaxis(self, axis, length):
         return Zeros(self.shape[:axis]+(length,)+self.shape[axis:], self.dtype)
