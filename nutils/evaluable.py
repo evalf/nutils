@@ -867,6 +867,27 @@ class Array(Evaluable, metaclass=_ArrayMeta):
 
     representations = ()
 
+    def _as(self, op, condition=None):
+        return (args for op_, args in self.representations if op_ is op and (condition is None or condition(*args)))
+
+    def _as_any(self, *ops):
+        for op, args in self.representations:
+            if op in ops:
+                return op(*args)
+
+    def _iter_into(self, binary_op):
+        queue = [(self, (), set())]
+        for f, rem, ops in queue:
+            yield f, rem, ops
+            ops = ops.copy()
+            for op, args in f.representations:
+                if op is binary_op:
+                    a, b = args
+                    queue.append((a, (b, *rem), ops))
+                    queue.append((b, (a, *rem), ops))
+                    break
+                ops.add(op)
+
     @property
     def _unaligned(self):
         return self, tuple(range(self.ndim))
