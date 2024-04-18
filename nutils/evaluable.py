@@ -326,6 +326,13 @@ class Evaluable(types.Singleton):
         return
 
     @cached_property
+    def _loops(self):
+        deps = util.IDSet()
+        for arg in self.__args:
+            deps |= arg._loops
+        return deps.view()
+
+    @cached_property
     def _loop_deps(self):
         deps = util.IDSet()
         for arg in self.__args:
@@ -4286,6 +4293,13 @@ class Loop(Evaluable):
         looptimes = times.get(self, collections.defaultdict(_Stats))
         cache[self] = node = self._node_loop_body(loopcache, loopgraph, looptimes)
         return node
+
+    @property
+    def _loops(self):
+        deps = util.IDSet([self])
+        deps |= self.init_arg._loops
+        deps |= self.body_arg._loops
+        return deps.view()
 
     @property
     def _loop_deps(self):
