@@ -146,20 +146,6 @@ class Evaluable(types.Singleton):
     def evalf(*args):
         raise NotImplementedError('Evaluable derivatives should implement the evalf method')
 
-    def evalf_withtimes(self, times, *args):
-        with times[self]:
-            return self.evalf(*args)
-
-    @cached_property
-    def dependencies(self):
-        '''collection of all function arguments'''
-        deps = {}
-        for func in self.__args:
-            funcdeps = func.dependencies
-            deps.update(funcdeps)
-            deps[func] = len(funcdeps)
-        return types.frozendict(deps)
-
     @cached_property
     def arguments(self):
         'a frozenset of all arguments of this evaluable'
@@ -168,41 +154,6 @@ class Evaluable(types.Singleton):
     @property
     def isconstant(self):
         return not self.arguments
-
-    @cached_property
-    def ordereddeps(self):
-        '''collection of all function arguments such that the arguments to
-        dependencies[i] can be found in dependencies[:i]'''
-        deps = self.dependencies.copy()
-        deps.pop(EVALARGS, None)
-        return tuple([EVALARGS] + sorted(deps, key=deps.__getitem__))
-
-    @cached_property
-    def dependencytree(self):
-        '''lookup table of function arguments into ordereddeps, such that
-        ordereddeps[i].__args[j] == ordereddeps[dependencytree[i][j]], and
-        self.__args[j] == ordereddeps[dependencytree[-1][j]]'''
-        args = self.ordereddeps
-        return tuple(tuple(map(args.index, func.__args)) for func in args+(self,))
-
-    @property
-    def serialized(self):
-        return zip(self.ordereddeps[1:]+(self,), self.dependencytree[1:])
-
-    # This property is a derivation of `ordereddeps[1:]` where the `Evaluable`
-    # instances are mapped to the `evalf` methods of the instances. Asserting
-    # that functions are immutable is difficult and currently
-    # `types._isimmutable` marks all functions as mutable. Since the
-    # `types.CacheMeta` machinery asserts immutability of the property, we have
-    # to resort to a regular `functools.cached_property`. Nevertheless, this
-    # property should be treated as if it is immutable.
-    @cached_property
-    def _serialized_evalf_head(self):
-        return tuple(op.evalf for op in self.ordereddeps[1:])
-
-    @property
-    def _serialized_evalf(self):
-        return zip(itertools.chain(self._serialized_evalf_head, (self.evalf,)), self.dependencytree[1:])
 
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
@@ -229,34 +180,6 @@ class Evaluable(types.Singleton):
         '''Evaluate function on a specified element, point set.'''
 
         return compile(self, simplify=False, stats=False, cache_const_intermediates=False)
-
-    def _iter_stack(self):
-        yield '%0 = EVALARGS'
-        for i, (op, indices) in enumerate(self.serialized, start=1):
-            s = [f'%{i} = {op}']
-            if indices:
-                args = [f'%{i}' for i in indices]
-                try:
-                    sig = inspect.signature(op.evalf)
-                except ValueError:
-                    pass
-                else:
-                    for i, param in enumerate(sig.parameters.values()):
-                        if i < len(args) and param.kind == param.POSITIONAL_OR_KEYWORD:
-                            args[i] = param.name + '=' + args[i]
-                s.extend(args)
-            yield ' '.join(s)
-
-    def _format_stack(self, values, e):
-        lines = [f'evaluation failed in step {len(values)}/{len(self.dependencies)+1}']
-        stack = self._iter_stack()
-        for v, op in zip(values, stack): # NOTE values must come first to avoid popping next item from stack
-            s = f'{type(v).__name__}'
-            if numeric.isarray(v):
-                s += f'<{v.dtype.kind}:{",".join(str(n) for n in v.shape)}>'
-            lines.append(f'{op} --> {s}')
-        lines.append(f'{next(stack)} --> {e}')
-        return '\n  '.join(lines)
 
     @util.deep_replace_property
     def simplified(obj):
@@ -293,77 +216,6 @@ class Evaluable(types.Singleton):
             deps |= arg._loops
         return deps.view()
 
-    @cached_property
-    def _loop_deps(self):
-        deps = util.IDSet()
-        for arg in self.__args:
-            deps |= arg._loop_deps
-        return deps.view()
-
-    def _combine_loops(self, candidates=None):
-        if candidates is None:
-            candidates = self._loop_deps
-        candidates = candidates.copy()
-
-        while candidates:
-            # Select the loops from candidates that can be combined. Given an
-            # index, we select all loops that have that index and are not a
-            # dependency of another loop in `candidates`. The latter ensures
-            # that the `candidates` do not disappear from `self` other than the
-            # deliberate combining performed here. To illustrate this, consider
-            # the following abstract loop structure
-            #
-            #     A: Add
-            #       B: LoopSum, loop_index=i
-            #         C: Add
-            #           D: LoopSum, loop_index=j
-            #             ..., does not depend on i
-            #           E: LoopSum, loop_index=j
-            #             ..., does not depend on i
-            #       F: LoopSum, loop_index=i
-            #         ...
-            #
-            # Loops D and E are invariant loops of B. The default candidates of
-            # A are B, D, E and F. By combing D and E first, B would be replaced by B',
-            #
-            #     A: Add
-            #       B': LoopSum, loop_index=i
-            #         C': Add
-            #           D': ArrayFromTuple, index=0
-            #             DE': LoopTuple(D, E), loop_index=j
-            #           E': ArrayFromTuple, index=0
-            #             DE'
-            #       F: LoopSum, loop_index=i
-            #         ...
-            #
-            # which is not in the set of candidates and we'd miss the
-            # opportunity to combine B' with F. Or worse: we combine B with F,
-            # ignore the former (`ArrayFromTuple`) *and* keep B'.
-            loops = []
-            for loop in candidates:
-                if loops and loop.index != loops[0].index:
-                    continue # take one index at a time
-                if all(loop not in other._loop_deps for other in candidates if other is not loop):
-                    loops.append(loop)
-            candidates.difference_update(loops)
-            index = loops[0].index
-
-            replacements = util.IDDict()
-            if len(loops) >= 2:
-                combined = _LoopTuple(tuple(loops), index.loop_id, index.length)
-                combined = combined._combine_loops(combined.body_arg._loop_deps - combined._loop_deps)
-                for i, loop in enumerate(loops):
-                    replacements[loop] = ArrayFromTuple(combined, i, loop.shape, loop.dtype)
-            else:
-                loop, = loops
-                combined = loop._combine_loops(loop.body_arg._loop_deps - loop._loop_deps)
-                if combined != loop:
-                    replacements[loop] = combined
-            if replacements:
-                self = util.shallow_replace(replacements.get, self)
-
-        return self
-
     def _compile(self, builder: '_BlockTreeBuilder') -> _pyast.Expression:
         # Compiles the entire tree defined by this evaluable.
         #
@@ -389,26 +241,11 @@ class Evaluable(types.Singleton):
         return py_self.get_attr('evalf').call(*args)
 
 
-class EVALARGS(Evaluable):
-    def __init__(self):
-        super().__init__(args=())
-
-    def _node(self, cache, subgraph, times, unique_loop_ids):
-        return InvisibleNode((type(self).__name__, _Stats()))
-
-
-EVALARGS = EVALARGS()
-
-
 class Tuple(Evaluable):
 
     def __init__(self, items):
         self.items = items
         super().__init__(items)
-
-    @staticmethod
-    def evalf(*items):
-        return items
 
     def _compile_expression(self, py_self, *items):
         return _pyast.Tuple(items)
@@ -972,9 +809,6 @@ class Constant(Array):
     def eval(self, /, **evalargs):
         return self.value
 
-    def evalf(self):
-        return self.value
-
     def _compile(self, builder):
         # `self.value` is always a `numpy.ndarray`. If the array is 0d, we
         # convert the array to a `numpy.number` (`self.value[()]`), which
@@ -1251,9 +1085,6 @@ class Transpose(Array):
     def _simplified(self):
         return self.func._transpose(self.axes)
 
-    def evalf(self, arr):
-        return arr.transpose(self.axes)
-
     def _compile_expression(self, py_self, func):
         axes = _pyast.Tuple(tuple(map(_pyast.LiteralInt, self.axes)))
         return _pyast.Variable('numpy').get_attr('transpose').call(func, axes)
@@ -1397,7 +1228,6 @@ class Product(Array):
     def __init__(self, func: Array):
         assert isinstance(func, Array), f'func={func!r}'
         self.func = func
-        self.evalf = functools.partial(numpy.all if func.dtype == bool else numpy.prod, axis=-1)
         super().__init__(args=(func,), shape=func.shape[:-1], dtype=func.dtype)
 
     def _compile_expression(self, py_self, func):
@@ -1541,8 +1371,6 @@ class Multiply(Array):
         if self.ndim:
             r = tuple(range(self.ndim))
             return Einsum(tuple(self.funcs), (r, r), r)
-
-    evalf = staticmethod(numpy.multiply)
 
     def _compile_expression(self, py_self, func1, func2):
         return _pyast.BinOp(func1, '*', func2)
@@ -1738,9 +1566,6 @@ class Add(Array):
         #
         # We instead rely on Inflate._add to handle this situation.
 
-
-    evalf = staticmethod(numpy.add)
-
     def _compile(self, builder):
         if any(builder.ndependents[func] == 1 and type(func)._compile_with_out != Array._compile_with_out for func in self.funcs):
             out, out_block_id = builder.new_empty_array_for_evaluable(self)
@@ -1830,11 +1655,6 @@ class Einsum(Array):
         self._einsumfmt = ','.join(''.join(chr(97+i) for i in idx) for idx in args_idx) + '->' + ''.join(chr(97+i) for i in out_idx)
         self._has_summed_axes = len(lengths) > len(out_idx)
         super().__init__(args=self.args, shape=shape, dtype=dtype)
-
-    def evalf(self, *args):
-        if self._has_summed_axes:
-            args = tuple(numpy.asarray(arg, order='F') for arg in args)
-        return numpy.core.multiarray.c_einsum(self._einsumfmt, *args)
 
     def _compile_expression(self, py_self, *args):
         return _pyast.Variable('numpy').get_attr('core').get_attr('multiarray').get_attr('c_einsum').call(_pyast.LiteralStr(self._einsumfmt), *args)
@@ -1947,10 +1767,6 @@ class TakeDiag(Array):
             axes = [i-(i>rmaxis) for i in axes[:-1]]
             return transpose(Einsum(func.args, args_idx, func.out_idx[:rmaxis] + func.out_idx[rmaxis+1:]), axes)
 
-    @staticmethod
-    def evalf(arr):
-        return numpy.einsum('...kk->...k', arr, optimize=False)
-
     def _compile_expression(self, py_self, arr):
         return _pyast.Variable('numpy').get_attr('core').get_attr('multiarray').get_attr('c_einsum').call(_pyast.LiteralStr('...kk->...k'), arr)
 
@@ -1996,10 +1812,6 @@ class Take(Array):
         for axis, parts in self.func._inflations:
             if axis == self.func.ndim - 1:
                 return util.sum(Inflate(func, dofmap, self.func.shape[-1])._take(self.indices, self.func.ndim - 1) for dofmap, func in parts.items())
-
-    @staticmethod
-    def evalf(arr, indices):
-        return arr[..., indices]
 
     def _compile_expression(self, py_self, arr, indices):
         return _pyast.Variable('numpy').get_attr('take').call(arr, indices, axis=_pyast.LiteralInt(-1))
@@ -2053,8 +1865,6 @@ class Power(Array):
             return Reciprocal(self.func)
         elif p == -2:
             return Reciprocal(self.func * self.func)
-
-    evalf = staticmethod(numpy.power)
 
     def _compile_expression(self, py_self, func, power):
         return _pyast.Variable('numpy').get_attr('power').call(func, power)
@@ -2183,14 +1993,12 @@ class Holomorphic(Pointwise):
 
 
 class Reciprocal(Holomorphic):
-    evalf = staticmethod(numpy.reciprocal)
 
     def _compile_expression(self, py_self, value):
         return _pyast.Variable('numpy').get_attr('reciprocal').call(value)
 
 
 class Negative(Pointwise):
-    evalf = staticmethod(numpy.negative)
 
     def _compile_expression(self, py_self, value):
         return _pyast.UnaryOp('-', value)
@@ -2206,7 +2014,6 @@ class Negative(Pointwise):
 
 
 class FloorDivide(Pointwise):
-    evalf = staticmethod(numpy.floor_divide)
 
     def _compile_expression(self, py_self, dividend, divisor):
         return _pyast.BinOp(dividend, '//', divisor)
@@ -2239,7 +2046,6 @@ class FloorDivide(Pointwise):
 
 
 class Absolute(Pointwise):
-    evalf = staticmethod(numpy.absolute)
 
     def _compile_expression(self, py_self, value):
         return _pyast.Variable('numpy').get_attr('absolute').call(value)
@@ -2346,7 +2152,6 @@ class Log(Holomorphic):
 
 
 class Mod(Pointwise):
-    evalf = staticmethod(numpy.mod)
 
     def _compile_expression(self, py_self, dividend, divisor):
         return _pyast.BinOp(dividend, '%', divisor)
@@ -2540,9 +2345,6 @@ class Imag(Pointwise):
 
 
 class Cast(Pointwise):
-
-    def evalf(self, arg):
-        return numpy.array(arg, dtype=self.dtype)
 
     def _compile_expression(self, py_self, arg):
         return _pyast.Variable('numpy').get_attr('array').call(arg, dtype=_pyast.Variable(self.dtype.__name__))
@@ -2806,10 +2608,6 @@ class ArrayFromTuple(Array):
             # Tuple and its components be exposed to the function tree.
             return self.arrays[self.index]
 
-    def evalf(self, arrays):
-        assert isinstance(arrays, tuple)
-        return arrays[self.index]
-
     def _compile_expression(self, py_self, arrays):
         return arrays.get_item(_pyast.LiteralInt(self.index))
 
@@ -2847,9 +2645,6 @@ class Zeros(Array):
     @cached_property
     def _unaligned(self):
         return Zeros((), self.dtype), ()
-
-    def evalf(self, *shape):
-        return numpy.zeros(shape, dtype=self.dtype)
 
     def _compile_expression(self, py_self, *shape):
         return _pyast.Variable('numpy').get_attr('zeros').call(_pyast.Tuple(shape), dtype=_pyast.Variable(self.dtype.__name__))
@@ -3134,13 +2929,6 @@ class Diagonalize(Array):
             return InsertAxis(self.func, 1)
         return self.func._diagonalize(self.ndim-2)
 
-    @staticmethod
-    def evalf(arr):
-        result = numpy.zeros(arr.shape+(arr.shape[-1],), dtype=arr.dtype, order='F')
-        diag = numpy.core.multiarray.c_einsum('...ii->...i', result)
-        diag[:] = arr
-        return result
-
     def _compile(self, builder):
         out, out_block_id = builder.new_empty_array_for_evaluable(self)
         self._compile_with_out(builder, out, out_block_id, mode='assign')
@@ -3220,10 +3008,6 @@ class Guard(Array):
     def isconstant(self):
         return False  # avoid simplifications based on fun being constant
 
-    @staticmethod
-    def evalf(dat):
-        return dat
-
     def _compile(self, builder):
         return builder.compile(self.fun)
 
@@ -3238,10 +3022,6 @@ class Find(Array):
         assert isarray(where) and where.ndim == 1 and where.dtype == bool
         self.where = where
         super().__init__(args=(where,), shape=(Sum(BoolToInt(where)),), dtype=int)
-
-    @staticmethod
-    def evalf(where):
-        return where.nonzero()[0]
 
     def _compile_expression(self, py_self, where):
         return _pyast.Variable('numpy').get_attr('nonzero').call(where).get_item(_pyast.LiteralInt(0))
@@ -3289,10 +3069,6 @@ class WithDerivative(Array):
     @property
     def arguments(self):
         return self._func.arguments | {self._var}
-
-    @staticmethod
-    def evalf(func: numpy.ndarray) -> numpy.ndarray:
-        return func
 
     def _compile(self, builder):
         return builder.compile(self._func)
@@ -3397,9 +3173,6 @@ class IdentifierDerivativeTarget(DerivativeTargetBase):
     def __init__(self, identifier, shape):
         self.identifier = identifier
         super().__init__(args=(), shape=shape, dtype=float)
-
-    def evalf(self):
-        raise Exception('{} cannot be evaluabled'.format(type(self).__name__))
 
     def _compile(self, builder):
         raise Exception(f'{type(self).__name__} cannot be evaluated')
@@ -3743,9 +3516,6 @@ class PolyDegree(Array):
         self.nvars = nvars
         super().__init__(args=(ncoeffs,), shape=(), dtype=int)
 
-    def evalf(self, ncoeffs):
-        return numpy.array(poly.degree(self.nvars, ncoeffs.__index__()))
-
     def _compile_expression(self, py_self, ncoeffs):
         ncoeffs = ncoeffs.get_attr('__index__').call()
         degree = _pyast.Variable('poly').get_attr('degree').call(_pyast.LiteralInt(self.nvars), ncoeffs)
@@ -3786,9 +3556,6 @@ class PolyNCoeffs(Array):
         self.nvars = nvars
         self.degree = degree
         super().__init__(args=(degree,), shape=(), dtype=int)
-
-    def evalf(self, degree):
-        return numpy.array(poly.ncoeffs(self.nvars, degree.__index__()))
 
     def _compile_expression(self, py_self, degree):
         degree = degree.get_attr('__index__').call()
@@ -4001,10 +3768,6 @@ class Choose(Array):
         self.index = index
         self.choices = choices
         super().__init__(args=(index,)+choices, shape=shape, dtype=dtype)
-
-    @staticmethod
-    def evalf(index, *choices):
-        return numpy.choose(index, choices)
 
     def _compile_expression(self, py_self, index, *choices):
         return _pyast.Variable('numpy').get_attr('choose').call(index, _pyast.Tuple(choices))
@@ -4332,66 +4095,7 @@ class Loop(Evaluable):
         self.body_arg = body_arg
         if self.index in init_arg.arguments:
             raise ValueError('the loop initialization arguments must not depend on the index')
-        self._invariants, self._dependencies = _dependencies_sans_invariants(body_arg, self.index)
-        super().__init__(args=(length, init_arg, *self._invariants), *args, **kwargs)
-
-    @cached_property
-    def _serialized_loop(self):
-        indices = {d: i for i, d in enumerate(itertools.chain([self.index], self._invariants, self._dependencies))}
-        return tuple((dep, tuple(map(indices.__getitem__, dep._Evaluable__args))) for dep in self._dependencies)
-
-    @cached_property
-    def _serialized_loop_evalf(self):
-        return tuple((dep.evalf, indices) for dep, indices in self._serialized_loop)
-
-    def evalf(self, length, init_arg, *invariants):
-        serialized_evalf = self._serialized_loop_evalf
-        output = self.evalf_loop_init(init_arg)
-        length = length.__index__()
-        values = [None] + list(invariants) + [None] * len(serialized_evalf)
-        with log.context(f'loop {self.index.loop_id}'.replace('{', '{{').replace('}', '}}') + ' {:3.0f}%', 0) as log_ctx:
-            fork = parallel.fork(length)
-            if fork:
-                raw_index = multiprocessing.RawValue('i', 0)
-                lock = multiprocessing.Lock()
-                with fork as pid:
-                    with lock:
-                        index = raw_index.value
-                        raw_index.value = index + 1
-                    while index < length:
-                        if not pid:
-                            log_ctx(100*index/length)
-                        values[0] = numpy.array(index)
-                        for o, (op_evalf, indices) in enumerate(serialized_evalf, len(invariants) + 1):
-                            values[o] = op_evalf(*[values[i] for i in indices])
-                        with lock:
-                            self.evalf_loop_body(output, values[-1])
-                            index = raw_index.value
-                            raw_index.value = index + 1
-            else:
-                for index in range(length):
-                    values[0] = numpy.array(index)
-                    for o, (op_evalf, indices) in enumerate(serialized_evalf, len(invariants) + 1):
-                        values[o] = op_evalf(*[values[i] for i in indices])
-                    self.evalf_loop_body(output, values[-1])
-                    log_ctx(100*(index+1)/length)
-            return output
-
-    def evalf_withtimes(self, times, length, init_arg, *invariants):
-        serialized = self._serialized_loop
-        subtimes = times.setdefault(self, collections.defaultdict(_Stats))
-        output = self.evalf_loop_init(init_arg)
-        values = [None] + list(invariants) + [None] * len(serialized)
-        for index in range(length):
-            values[0] = numpy.array(index)
-            for o, (op, indices) in enumerate(serialized, len(invariants) + 1):
-                values[o] = op.evalf_withtimes(subtimes, *[values[i] for i in indices])
-            self.evalf_loop_body_withtimes(subtimes, output, values[-1])
-        return output
-
-    def evalf_loop_body_withtimes(self, times, output, body_arg):
-        with times[self]:
-            self.evalf_loop_body(output, body_arg)
+        super().__init__(args=(length, init_arg, body_arg), *args, **kwargs)
 
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if (cached := cache.get(self)) is not None:
@@ -4420,57 +4124,11 @@ class Loop(Evaluable):
 
     @cached_property
     def arguments(self):
-        return self.length.arguments | self.init_arg.arguments | (self.body_arg.arguments - frozenset({self.index})
+        return super().arguments - frozenset({self.index})
 
     @property
     def _loops(self):
-        deps = util.IDSet([self])
-        deps |= self.length._loops
-        deps |= self.init_arg._loops
-        deps |= self.body_arg._loops
-        return deps.view()
-
-    @property
-    def _loop_deps(self):
-        deps = util.IDSet([self])
-        deps |= self.init_arg._loop_deps
-        for arg in self._invariants:
-            deps |= arg._loop_deps
-        return deps.view()
-
-
-class _LoopTuple(Loop):
-
-    def __init__(self, loops: typing.Tuple[Loop], loop_id: _LoopId, length: Array):
-        assert isinstance(loops, tuple) and all(isinstance(loop, Loop) and loop.loop_id == loop_id and loop.length == length for loop in loops), f'loops={loops}'
-        self.loops = loops
-        super().__init__(
-            loop_id=loop_id,
-            length=length,
-            init_arg=Tuple(tuple(loop.init_arg for loop in loops)),
-            body_arg=Tuple(tuple(loop.body_arg for loop in loops)),
-        )
-
-    def evalf_loop_init(self, args):
-        return tuple(loop.evalf_loop_init(arg) for loop, arg in zip(self.loops, args))
-
-    def evalf_loop_body(self, outputs, args):
-        for loop, output, arg in zip(self.loops, outputs, args):
-            loop.evalf_loop_body(output, arg)
-
-    def evalf_loop_body_withtimes(self, times, outputs, args):
-        for loop, output, arg in zip(self.loops, outputs, args):
-            loop.evalf_loop_body_withtimes(times, output, arg)
-
-    def _node_loop_body(self, cache, subgraph, times):
-        if (cached := cache.get(self)) is not None:
-            return cached
-        cache[self] = node = TupleNode(tuple(item._node_loop_body(cache, subgraph, times) for item in self.loops), metadata=(type(self).__name__, times[self]), subgraph=subgraph)
-        return node
-
-    @property
-    def _intbounds_tuple(self):
-        return tuple(loop._intbounds for loop in self.loops)
+        return (util.IDSet([self]) | super()._loops).view()
 
 
 class LoopSum(Loop, Array):
@@ -4500,13 +4158,6 @@ class LoopSum(Loop, Array):
         body_block_id = builtins.max(index_block_id, builder.get_block_id(self.func))
         assert body_block_id[:-1] == index_block_id[:-1]
         builder.compile_with_out(self.func, out, body_block_id, 'iadd')
-
-    def evalf_loop_init(self, shape):
-        return parallel.shzeros(tuple(n.__index__() for n in shape), dtype=self.dtype)
-
-    @staticmethod
-    def evalf_loop_body(output, func):
-        output += func
 
     def _derivative(self, var, seen):
         return loop_sum(derivative(self.func, var, seen), self.index)
@@ -4629,14 +4280,6 @@ class LoopConcatenate(Loop, Array):
         assert body_block_id[:-1] == index_block_id[:-1]
         out_slice = out.get_item(_pyast.Tuple((_pyast.Raw('...'), _pyast.Variable('slice').call(start, stop))))
         builder.compile_with_out(self.func, out_slice, body_block_id, mode)
-
-    def evalf_loop_init(self, shape):
-        return parallel.shempty(tuple(n.__index__() for n in shape), dtype=self.dtype)
-
-    @staticmethod
-    def evalf_loop_body(output, arg):
-        func, start, stop = arg
-        output[..., start:stop] = func
 
     def _derivative(self, var, seen):
         return Transpose.from_end(loop_concatenate(Transpose.to_end(derivative(self.func, var, seen), self.ndim-1), self.index), self.ndim-1)
@@ -4776,28 +4419,6 @@ def _inflate_scalar(arg, shape):
 
 def _isunique(array):
     return numpy.unique(array).size == array.size
-
-
-_AddDependency = collections.namedtuple('_AddDependency', ['dependency'])
-
-def _dependencies_sans_invariants(func, arg):
-    invariants = []
-    dependencies = []
-    cache = {arg}
-    stack = [func]
-    while stack:
-        func_ = stack.pop()
-        if isinstance(func_, _AddDependency):
-            dependencies.append(func_.dependency)
-        elif func_ not in cache:
-            cache.add(func_)
-            if arg in func_.arguments:
-                stack.append(_AddDependency(func_))
-                stack.extend(func_._Evaluable__args)
-            else:
-                invariants.append(func_)
-    assert (dependencies or invariants or [arg])[-1] == func
-    return tuple(invariants), tuple(dependencies)
 
 
 def _make_loop_ids_unique(funcs: typing.Tuple[Evaluable, ...]) -> typing.Tuple[Evaluable, ...]:
@@ -5604,10 +5225,9 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
     # `_compile_with_out(..., mode='iadd')`.
     ndependents = collections.defaultdict(lambda: 0)
     def update_ndependents(func):
-        args = (func.length, func.init_arg, func.body_arg) if isinstance(func, Loop) else func._Evaluable__args
-        for arg in args:
+        for arg in func._Evaluable__args:
             ndependents[arg] += 1
-        return args
+        return func._Evaluable__args
     util.tree_walk(update_ndependents, *funcs)
 
     # Collect the loop ids and lengths from all loops in `funcs` and assert
