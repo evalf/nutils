@@ -851,7 +851,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
         return node
 
     # simplifications
-    _eig = lambda self, symmetric: None
 
     representations = ()
 
@@ -1031,13 +1030,6 @@ class Constant(Array):
     @cached_property
     def _isunit(self):
         return numpy.equal(self.value, 1).all()
-
-    def _eig(self, symmetric):
-        eigval, eigvec = (numpy.linalg.eigh if symmetric else numpy.linalg.eig)(self.value)
-        if not symmetric:
-            eigval = eigval.astype(complex, copy=False)
-            eigvec = eigvec.astype(complex, copy=False)
-        return Tuple((constant(eigval), constant(eigvec)))
 
     def _intbounds_impl(self):
         if self.dtype == int and self.value.size:
@@ -1406,10 +1398,6 @@ class Inverse(Array):
 
     def _derivative(self, var, seen):
         return -einsum('Aij,AjkB,Akl->AilB', self, derivative(self.func, var, seen), self)
-
-    def _eig(self, symmetric):
-        eigval, eigvec = Eig(self.func, symmetric)
-        return Tuple((reciprocal(eigval), eigvec))
 
 
 class Determinant(Array):
@@ -2876,7 +2864,16 @@ class Eig(Evaluable):
         return ArrayFromTuple(self, index=index, shape=shape, dtype=dtype)
 
     def _simplified(self):
-        return self.func._eig(self.symmetric)
+        for v, in self.func._as(constant):
+            eigval, eigvec = (numpy.linalg.eigh if self.symmetric else numpy.linalg.eig)(v)
+            if not self.symmetric:
+                eigval = eigval.astype(complex, copy=False)
+                eigvec = eigvec.astype(complex, copy=False)
+            return Tuple((constant(eigval), constant(eigvec)))
+        for f, *axes in self.func._as(inverse):
+            if min(axes) == f.ndim-2:
+                eigval, eigvec = Eig(f, self.symmetric)
+                return Tuple((reciprocal(eigval), eigvec))
 
     def evalf(self, arr):
         w, vt = (numpy.linalg.eigh if self.symmetric else numpy.linalg.eig)(arr)
