@@ -851,7 +851,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
         return node
 
     # simplifications
-    _multiply = lambda self, other: None
     _transpose = lambda self, axes: None
     _insertaxis = lambda self, axis, length: None
     _diagonalize = lambda self, axis: None
@@ -1045,12 +1044,6 @@ class Constant(Array):
     def _transpose(self, axes):
         return constant(self.value.transpose(axes))
 
-    def _multiply(self, other):
-        if self._isunit:
-            return other
-        if isinstance(other, Constant):
-            return constant(numpy.multiply(self.value, other.value))
-
     def _eig(self, symmetric):
         eigval, eigvec = (numpy.linalg.eigh if symmetric else numpy.linalg.eig)(self.value)
         if not symmetric:
@@ -1126,11 +1119,6 @@ class InsertAxis(Array):
 
     def _derivative(self, var, seen):
         return insertaxis(derivative(self.func, var, seen), self.ndim-1, self.length)
-
-    def _multiply(self, other):
-        unaligned1, unaligned2, where = unalign(self, other)
-        if len(where) != self.ndim:
-            return align(unaligned1 * unaligned2, where, self.shape)
 
     def _diagonalize(self, axis):
         if axis < self.ndim - 1:
@@ -1321,16 +1309,6 @@ class Transpose(Array):
 
     def _derivative(self, var, seen):
         return transpose(derivative(self.func, var, seen), self.axes+tuple(range(self.ndim, self.ndim+var.ndim)))
-
-    def _multiply(self, other):
-        other_trans = other._transpose(self._invaxes)
-        if other_trans is not None and not isinstance(other_trans, Transpose):
-            # The second clause is to avoid infinite recursions; see
-            # tests.test_evaluable.simplify.test_multiply_transpose.
-            return Transpose(multiply(self.func, other_trans), self.axes)
-        trymultiply = self.func._multiply(Transpose(other, self._invaxes))
-        if trymultiply is not None:
-            return Transpose(trymultiply, self.axes)
 
     def _axes_for(self, ndim, axis):
         funcaxis = self.axes[axis]
@@ -1574,22 +1552,52 @@ class Multiply(Array):
                 yield op1, (args1[0] * args2[0], *args1[1:])
 
     def _simplified(self):
-        factors = tuple(self._factors)
-        for j, fj in enumerate(factors):
-            if fj._const_uniform == 1:
-                return multiply(*factors[:j], *factors[j+1:])
-            for i, parts in fj._inflations:
-                return util.sum(_inflate(multiply(f, *(_take(fi, dofmap, i) for fi in factors[:j] + factors[j+1:])), dofmap, self.shape[i], i) for dofmap, f in parts.items())
-            for axis1, axis2, *other in map(sorted, fj._diagonals):
-                return diagonalize(multiply(*(takediag(f, axis1, axis2) for f in factors)), axis1, axis2)
-            for i, fi in enumerate(factors[:j]):
-                if self.dtype == bool and fi == fj:
-                    return multiply(*factors[:j], *factors[j+1:])
-                unaligned1, unaligned2, where = unalign(fi, fj)
-                fij = align(unaligned1 * unaligned2, where, self.shape) if len(where) != self.ndim \
-                    else fi._multiply(fj) or fj._multiply(fi)
-                if fij:
-                    return multiply(*factors[:i], *factors[i+1:j], *factors[j+1:], fij)
+        func1, func2 = self.funcs
+        if isinstance(func1, Zeros) or isinstance(func2, Zeros):
+            return zeros_like(self)
+        if func1._const_uniform == self.dtype(1):
+            return func2
+        if func2._const_uniform == self.dtype(1):
+            return func1
+        combine_ops = transpose, BoolToInt, IntToFloat, FloatToComplex, constant, ravel, diagonalize, insertaxis # highest priority last
+        for (f1, rem1, ops1), (f2, rem2, ops2) in util.iter_product(func1._iter_into(multiply), func2._iter_into(multiply)):
+            # note: in first iteration, f1 + f2 == self
+            if self.dtype == bool and f1 == f2:
+                return multiply(f1, *rem1, *rem2)
+            severed_ops = ops1 | ops2
+            for op, args in (f1 * f2).representations:
+                if op in combine_ops and severed_ops.isdisjoint(combine_ops[combine_ops.index(op):]):
+                    return multiply(op(*args), *rem1, *rem2)
+        for a, b in (func1, func2), (func2, func1):
+            stack = [a]
+            terms = []
+            while stack:
+                term = stack.pop()
+                for op, args in term.representations:
+                    if op is diagonalize:
+                        f, axis, newaxis = args
+                        terms.append(op(f * takediag(b, axis+(axis>=newaxis), newaxis), axis, newaxis))
+                        break
+                    elif op is _inflate:
+                        f, dofmap, length, axis = args
+                        terms.append(op(f * _take(b, dofmap, axis), dofmap, length, axis))
+                        break
+                    elif op is ravel:
+                        f, axis = args
+                        terms.append(op(f * unravel(b, axis, f.shape[axis:axis+2]), axis))
+                        break
+                    elif op is loop_sum:
+                        f, index = args
+                        if index not in b.arguments:
+                            terms.append(op(f * b, index))
+                            break
+                    elif op is add:
+                        stack.extend(args)
+                        break
+                else:
+                    break
+            else:
+                return add(*terms)
 
     def _optimized_for_numpy(self):
         if self.dtype == bool:
@@ -1735,15 +1743,6 @@ class Add(Array):
 
     def _derivative(self, var, seen):
         return add(*[derivative(f, var, seen) for f in self._terms])
-
-    def _multiply(self, other):
-        f_other = [f._multiply(other) or other._multiply(f) or (f._inflations or f._diagonals) and f * other for f in self._terms]
-        if all(f_other):
-            # NOTE: As this operation is the precise opposite of Multiply._add, there
-            # appears to be a great risk of recursion. However, since both factors
-            # are sparse, we can be certain that subsequent simpifications will
-            # irreversibly process the new terms before reaching this point.
-            return add(*f_other)
 
     @cached_property
     def _assparse(self):
@@ -2769,10 +2768,6 @@ class IntToFloat(Cast):
             raise TypeError(f'Expected an array with dtype int but got {T.__name__}.')
         return float
 
-    def _multiply(self, other):
-        if isinstance(other, __class__):
-            return self._newargs(self.args[0] * other.args[0])
-
     def _derivative(self, var, seen):
         return Zeros(self.shape + var.shape, dtype=self.dtype)
 
@@ -2783,10 +2778,6 @@ class FloatToComplex(Cast):
         if T != float:
             raise TypeError(f'Expected an array with dtype float but got {T.__name__}.')
         return complex
-
-    def _multiply(self, other):
-        if isinstance(other, __class__):
-            return self._newargs(self.args[0] * other.args[0])
 
     def _real(self):
         return self.args[0]
@@ -3027,9 +3018,6 @@ class Zeros(Array):
             cache[self] = node = DuplicatedLeafNode('0', (type(self).__name__, times[self]))
             return node
 
-    def _multiply(self, other):
-        return self
-
     def _diagonalize(self, axis):
         return Zeros(self.shape+(self.shape[axis],), dtype=self.dtype)
 
@@ -3130,9 +3118,6 @@ class Inflate(Array):
 
     def _derivative(self, var, seen):
         return _inflate(derivative(self.func, var, seen), self.dofmap, self.length, self.ndim-1)
-
-    def _multiply(self, other):
-        return Inflate(multiply(self.func, Take(other, self.dofmap)), self.dofmap, self.length)
 
     def _diagonalize(self, axis):
         if axis != self.ndim-1:
@@ -3527,11 +3512,6 @@ class Ravel(Array):
     @staticmethod
     def evalf(f):
         return f.reshape(f.shape[:-2] + (f.shape[-2]*f.shape[-1],))
-
-    def _multiply(self, other):
-        if isinstance(other, Ravel) and equalshape(other.func.shape[-2:], self.func.shape[-2:]):
-            return Ravel(multiply(self.func, other.func))
-        return Ravel(multiply(self.func, Unravel(other, *self.func.shape[-2:])))
 
     def _derivative(self, var, seen):
         return ravel(derivative(self.func, var, seen), axis=self.ndim-1)
@@ -4105,10 +4085,6 @@ class Choose(Array):
         if len(where) < self.ndim:
             return align(Choose(index, *choices), where, self.shape)
 
-    def _multiply(self, other):
-        if isinstance(other, Choose) and self.index == other.index:
-            return Choose(self.index, *map(multiply, self.choices, other.choices))
-
     def _get(self, i, item):
         return Choose(get(self.index, i, item), *(get(choice, i, item) for choice in self.choices))
 
@@ -4541,13 +4517,6 @@ class LoopSum(Loop, Array):
             return self.func * astype(self.index.length, self.func.dtype)
         if simple := self._as_any(insertaxis, diagonalize, ravel):
             return simple
-
-    def _multiply(self, other):
-        # If `other` depends on `self.index`, e.g. because `self` is the inner
-        # loop of two nested `LoopSum`s over the same index, then we should not
-        # move `other` inside this loop.
-        if self.index not in other.arguments:
-            return loop_sum(self.func * other, self.index)
 
     @cached_property
     def _assparse(self):
