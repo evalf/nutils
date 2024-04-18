@@ -858,7 +858,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     _add = lambda self, other: None
     _inverse = lambda self, axis1, axis2: None
     _diagonalize = lambda self, axis: None
-    _product = lambda self: None
     _sign = lambda self: None
     _eig = lambda self, symmetric: None
     _inflate = lambda self, dofmap, length, axis: None
@@ -1062,9 +1061,6 @@ class Constant(Array):
         value = numpy.transpose(self.value, axes)
         return constant(numpy.transpose(Inverse.evalf(value), numpy.argsort(axes)))
 
-    def _product(self):
-        return constant((numpy.all if self.dtype == bool else numpy.prod)(self.value, -1))
-
     def _multiply(self, other):
         if self._isunit:
             return other
@@ -1157,9 +1153,6 @@ class InsertAxis(Array):
 
     def _derivative(self, var, seen):
         return insertaxis(derivative(self.func, var, seen), self.ndim-1, self.length)
-
-    def _product(self):
-        return self.func if self.dtype == bool else self.func**astype(self.length, self.func.dtype)
 
     def _power(self, n):
         unaligned1, unaligned2, where = unalign(self, n)
@@ -1425,10 +1418,6 @@ class Transpose(Array):
             axes.insert(axis+1, orig_axis+1)
             return transpose(tryunravel, tuple(axes))
 
-    def _product(self):
-        if self.axes[-1] == self.ndim-1:
-            return Transpose(Product(self.func), self.axes[:-1])
-
     def _inverse(self, axis1, axis2):
         tryinv = self.func._inverse(self.axes[axis1], self.axes[axis2])
         if tryinv:
@@ -1505,7 +1494,18 @@ class Product(Array):
     def _simplified(self):
         if _equals_scalar_constant(self.func.shape[-1], 1):
             return get(self.func, self.ndim, constant(0))
-        return self.func._product()
+        if simple := self._as_any(constant, insertaxis, multiply, IntToFloat, FloatToComplex):
+            return simple
+        for f, axis, newaxis in self.func._as(diagonalize):
+            if newaxis == f.ndim or axis == f.ndim-1:
+                # TODO what if func.shape[-1] is not constant 1 but _may_ be one
+                return zeros_like(self)
+        for f, axis in self.func._as(ravel):
+            if axis == f.ndim-2:
+                return Product(Product(f))
+        for f, axis, length in self.func._as(insertaxis):
+            if axis == self.ndim:
+                return f if self.dtype == bool else f**astype(length, self.dtype)
 
     def _derivative(self, var, seen):
         grad = derivative(self.func, var, seen)
@@ -1716,9 +1716,6 @@ class Multiply(Array):
             # special case via Constant._add, it is not obvious that this is in
             # all situations an improvement.
             return zeros_like(self)
-
-    def _product(self):
-        return multiply(*[Product(f) for f in self._factors])
 
     def _derivative(self, var, seen):
         func1, func2 = self.funcs
@@ -2932,9 +2929,6 @@ class IntToFloat(Cast):
         if isinstance(other, __class__):
             return self._newargs(self.args[0] * other.args[0])
 
-    def _product(self):
-        return self._newargs(product(self.args[0], -1))
-
     def _sign(self):
         assert self.dtype != complex
         return self._newargs(sign(self.args[0]))
@@ -2957,9 +2951,6 @@ class FloatToComplex(Cast):
     def _multiply(self, other):
         if isinstance(other, __class__):
             return self._newargs(self.args[0] * other.args[0])
-
-    def _product(self):
-        return self._newargs(product(self.args[0], -1))
 
     def _real(self):
         return self.args[0]
@@ -3489,10 +3480,6 @@ class Diagonalize(Array):
     def _sign(self):
         return Diagonalize(Sign(self.func))
 
-    def _product(self):
-        if numeric.isint(self.shape[-1]) and self.shape[-1] > 1:
-            return Zeros(self.shape[:-1], dtype=self.dtype)
-
     def _loopsum(self, index):
         return Diagonalize(loop_sum(self.func, index))
 
@@ -3784,9 +3771,6 @@ class Ravel(Array):
 
     def _sign(self):
         return Ravel(Sign(self.func))
-
-    def _product(self):
-        return Product(Product(self.func))
 
     def _loopsum(self, index):
         return Ravel(loop_sum(self.func, index))
@@ -4354,12 +4338,6 @@ class Choose(Array):
 
     def _get(self, i, item):
         return Choose(get(self.index, i, item), *(get(choice, i, item) for choice in self.choices))
-
-    def _product(self):
-        unaligned, where = unalign(self.index)
-        if self.ndim-1 not in where:
-            index = align(unaligned, where, self.shape[:-1])
-            return Choose(index, *map(Product, self.choices))
 
 
 class NormDim(Array):
