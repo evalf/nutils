@@ -860,7 +860,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     _inflate = lambda self, dofmap, length, axis: None
     _rinflate = lambda self, func, length, axis: None
     _ravel = lambda self, axis: None
-    _loopsum = lambda self, loop_index: None  # NOTE: type of `loop_index` is `_LoopIndex`
     _real = lambda self: None
     _imag = lambda self: None
     _conjugate = lambda self: None
@@ -1157,9 +1156,6 @@ class InsertAxis(Array):
         if axis == self.ndim - 1:
             return InsertAxis(InsertAxis(self.func, length), self.length)
 
-    def _loopsum(self, index):
-        return InsertAxis(loop_sum(self.func, index), self.length)
-
     @cached_property
     def _assparse(self):
         return tuple((*(InsertAxis(idx, self.length) for idx in indices), prependaxes(Range(self.length), values.shape), InsertAxis(values, self.length)) for *indices, values in self.func._assparse)
@@ -1384,9 +1380,6 @@ class Transpose(Array):
 
     def _insertaxis(self, axis, length):
         return Transpose(InsertAxis(self.func, length), self.axes[:axis] + (self.ndim,) + self.axes[axis:])
-
-    def _loopsum(self, index):
-        return Transpose(loop_sum(self.func, index), self.axes)
 
     @cached_property
     def _assparse(self):
@@ -1796,14 +1789,6 @@ class Add(Array):
 
     def _derivative(self, var, seen):
         return add(*[derivative(f, var, seen) for f in self._terms])
-
-    def _loopsum(self, index):
-        dep = []
-        indep = []
-        for f in self._terms:
-            (dep if index in f.arguments else indep).append(f)
-        if indep:
-            return add(*indep) * astype(index.length, self.dtype) + loop_sum(add(*dep), index)
 
     def _multiply(self, other):
         f_other = [f._multiply(other) or other._multiply(f) or (f._inflations or f._diagonals) and f * other for f in self._terms]
@@ -3361,9 +3346,6 @@ class Diagonalize(Array):
     def _derivative(self, var, seen):
         return diagonalize(derivative(self.func, var, seen), self.ndim-2, self.ndim-1)
 
-    def _loopsum(self, index):
-        return Diagonalize(loop_sum(self.func, index))
-
     @cached_property
     def _assparse(self):
         return tuple((*indices, indices[-1], values) for *indices, values in self.func._assparse)
@@ -3640,9 +3622,6 @@ class Ravel(Array):
 
     def _insertaxis(self, axis, length):
         return ravel(insertaxis(self.func, axis+(axis == self.ndim), length), self.ndim-(axis == self.ndim))
-
-    def _loopsum(self, index):
-        return Ravel(loop_sum(self.func, index))
 
     @cached_property
     def _assparse(self):
@@ -4628,11 +4607,12 @@ class LoopSum(Loop, Array):
         return node
 
     def _simplified(self):
-        if iszero(self.func):
+        if isinstance(self.func, Zeros):
             return zeros_like(self)
-        elif self.index not in self.func.arguments:
+        if self.index not in self.func.arguments:
             return self.func * astype(self.index.length, self.func.dtype)
-        return self.func._loopsum(self.index)
+        if simple := self._as_any(insertaxis, diagonalize, ravel):
+            return simple
 
     def _add(self, other):
         if isinstance(other, LoopSum) and other.index == self.index:
