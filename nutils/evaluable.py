@@ -856,7 +856,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     _insertaxis = lambda self, axis, length: None
     _power = lambda self, n: None
     _add = lambda self, other: None
-    _determinant = lambda self, axis1, axis2: None
     _inverse = lambda self, axis1, axis2: None
     _diagonalize = lambda self, axis: None
     _product = lambda self: None
@@ -1090,10 +1089,6 @@ class Constant(Array):
         shape = self.value.shape[:axis] + shape + self.value.shape[axis+1:]
         return constant(self.value.reshape(shape))
 
-    def _determinant(self, axis1, axis2):
-        value = numpy.transpose(self.value, tuple(i for i in range(self.ndim) if i != axis1 and i != axis2) + (axis1, axis2))
-        return constant(numpy.linalg.det(value))
-
     def _intbounds_impl(self):
         if self.dtype == int and self.value.size:
             return int(self.value.min()), int(self.value.max())
@@ -1203,10 +1198,6 @@ class InsertAxis(Array):
 
     def _sign(self):
         return InsertAxis(Sign(self.func), self.length)
-
-    def _determinant(self, axis1, axis2):
-        if axis1 < self.ndim-1 and axis2 < self.ndim-1:
-            return InsertAxis(determinant(self.func, (axis1, axis2)), self.length)
 
     def _inverse(self, axis1, axis2):
         if axis1 < self.ndim-1 and axis2 < self.ndim-1:
@@ -1438,13 +1429,6 @@ class Transpose(Array):
         if self.axes[-1] == self.ndim-1:
             return Transpose(Product(self.func), self.axes[:-1])
 
-    def _determinant(self, axis1, axis2):
-        orig1, orig2 = self.axes[axis1], self.axes[axis2]
-        trydet = self.func._determinant(orig1, orig2)
-        if trydet:
-            axes = tuple(ax-(ax > orig1)-(ax > orig2) for ax in self.axes if ax != orig1 and ax != orig2)
-            return transpose(trydet, axes)
-
     def _inverse(self, axis1, axis2):
         tryinv = self.func._inverse(self.axes[axis1], self.axes[axis2])
         if tryinv:
@@ -1582,10 +1566,6 @@ class Inverse(Array):
         eigval, eigvec = Eig(self.func, symmetric)
         return Tuple((reciprocal(eigval), eigvec))
 
-    def _determinant(self, axis1, axis2):
-        if sorted([axis1, axis2]) == [self.ndim-2, self.ndim-1]:
-            return reciprocal(Determinant(self.func))
-
     def _unravel(self, axis, shape):
         if axis < self.ndim-2:
             return Inverse(unravel(self.func, axis, shape))
@@ -1623,11 +1603,26 @@ class Determinant(Array):
                 yield op, (numpy.linalg.det(v),)
 
     def _simplified(self):
-        result = self.func._determinant(self.ndim, self.ndim+1)
-        if result is not None:
-            return result
+        if _equals_scalar_constant(self.func.shape[-1], 0):
+            return ones_like(self)
+        if isinstance(self.func, Zeros):
+            return zeros_like(self)
         if _equals_scalar_constant(self.func.shape[-1], 1):
             return Take(Take(self.func, zeros((), int)), zeros((), int))
+        for f, *axes in self.func._as(inverse):
+            if min(axes) == self.func.ndim-2 and max(axes) == self.func.ndim-1:
+                return reciprocal(Determinant(f))
+        for f, axis, newaxis in self.func._as(diagonalize, lambda f, i, j: i == f.ndim-1 and j >= f.ndim-1):
+            return Product(f)
+        if simple := self._as_any(constant, insertaxis, diagonalize):
+            return simple
+        for factor, rem, ops in self.func._iter_into(multiply):
+            for f, axis, length in factor._as(insertaxis, lambda f, i, n: i >= self.ndim):
+                if not rem:
+                    # TODO what if func.shape[-1] is not constant 1 but _may_ be one
+                    return zeros_like(self)
+                for f, axis, length in f._as(insertaxis, lambda f, i, n: i >= self.ndim):
+                    return f**astype(self.func.shape[-1], self.dtype) * Determinant(multiply(*rem))
 
     evalf = staticmethod(numpy.linalg.det)
 
@@ -1721,18 +1716,6 @@ class Multiply(Array):
             # special case via Constant._add, it is not obvious that this is in
             # all situations an improvement.
             return zeros_like(self)
-
-    def _determinant(self, axis1, axis2):
-        axis1, axis2 = sorted([axis1, axis2])
-        factors = tuple(self._factors)
-        if all(_equals_scalar_constant(self.shape[axis], 1) for axis in (axis1, axis2)):
-            return multiply(*[determinant(f, (axis1, axis2)) for f in factors])
-        for i, fi in enumerate(factors):
-            unaligned, where = unalign(fi)
-            if axis1 not in where and axis2 not in where:
-                det = determinant(multiply(*factors[:i], *factors[i+1:]), (axis1, axis2))
-                scale = align(unaligned**astype(self.shape[axis1], unaligned.dtype), [i-(i > axis1)-(i > axis2) for i in where if i not in (axis1, axis2)], det.shape)
-                return det * scale
 
     def _product(self):
         return multiply(*[Product(f) for f in self._factors])
@@ -3246,18 +3229,6 @@ class Zeros(Array):
     def _ravel(self, axis):
         return Zeros(self.shape[:axis] + (self.shape[axis]*self.shape[axis+1],) + self.shape[axis+2:], self.dtype)
 
-    def _determinant(self, axis1, axis2):
-        assert axis1 != axis2
-        length = self.shape[axis1]
-        assert length == self.shape[axis2]
-        i, j = sorted([axis1, axis2])
-        shape = (*self.shape[:i], *self.shape[i+1:j], *self.shape[j+1:])
-        dtype = complex if self.dtype == complex else float
-        if iszero(length):
-            return ones(shape, dtype)
-        else:
-            return Zeros(shape, dtype)
-
     @cached_property
     def _assparse(self):
         return ()
@@ -3507,12 +3478,6 @@ class Diagonalize(Array):
     def _inverse(self, axis1, axis2):
         if sorted([axis1, axis2]) == [self.ndim-2, self.ndim-1]:
             return Diagonalize(reciprocal(self.func))
-
-    def _determinant(self, axis1, axis2):
-        if sorted([axis1, axis2]) == [self.ndim-2, self.ndim-1]:
-            return Product(self.func)
-        elif axis1 < self.ndim-2 and axis2 < self.ndim-2:
-            return Diagonalize(determinant(self.func, (axis1, axis2)))
 
     def _unravel(self, axis, shape):
         if axis >= self.ndim - 2:
