@@ -305,7 +305,13 @@ class Evaluable(types.Singleton):
         return retval
 
     def _simplified(self):
-        return
+        # The _simplified methods aim to bring the evaluable into an equivalent
+        # form that is cheaper to evaluate. To avoid circular edits, the
+        # proposed equivalent form should be a higher priority operation than
+        # the original based on the following order (high to low): Ravel,
+        # InsertAxis, Inflate, Diagonalize, Multiply, Add, LoopSum, Sign,
+        # Power, Inverse, Unravel, Product, Determinant, Sum, Take, TakeDiag.
+        pass
 
     @cached_property
     def optimized_for_numpy(self):
@@ -5108,33 +5114,5 @@ _POINTWISE = [Pointwise]
 for _c in _POINTWISE:
     _POINTWISE.extend(_c.__subclasses__())
 
-
-if __name__ == '__main__':
-    # Diagnostics for the development for simplify operations.
-    simplify_priority = (
-        Transpose, Ravel,  # reinterpretation
-        InsertAxis, Inflate, Diagonalize,  # size increasing
-        Multiply, Add, LoopSum, Sign, Power, Inverse, Unravel,  # size preserving
-        Product, Determinant, Sum, Take, TakeDiag)  # size decreasing
-    # The simplify priority defines the preferred order in which operations are
-    # performed: shape decreasing operations such as Sum and Take should be done
-    # as soon as possible, and shape increasing operations such as Inflate and
-    # Diagonalize as late as possible. In shuffling the order of operations the
-    # two classes might annihilate each other, for example when a Sum passes
-    # through a Diagonalize. Any shape increasing operations that remain should
-    # end up at the surface, exposing sparsity by means of the _assparse method.
-    attrs = ['_'+cls.__name__.lower() for cls in simplify_priority]
-    # The simplify operations responsible for swapping (a.o.) are methods named
-    # '_add', '_multiply', etc. In order to avoid recursions the operations
-    # should only be defined in the direction defined by operator priority. The
-    # following code warns gainst violations of this rule and lists permissible
-    # simplifications that have not yet been implemented.
-    for i, cls in enumerate(simplify_priority):
-        warn = [attr for attr in attrs[:i] if getattr(cls, attr) is not getattr(Array, attr)]
-        if warn:
-            print('[!] {} should not define {}'.format(cls.__name__, ', '.join(warn)))
-        missing = [attr for attr in attrs[i+1:] if not getattr(cls, attr) is not getattr(Array, attr)]
-        if missing:
-            print('[ ] {} could define {}'.format(cls.__name__, ', '.join(missing)))
 
 # vim:sw=4:sts=4:et
