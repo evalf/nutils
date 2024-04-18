@@ -856,7 +856,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     _insertaxis = lambda self, axis, length: None
     _power = lambda self, n: None
     _add = lambda self, other: None
-    _inverse = lambda self, axis1, axis2: None
     _diagonalize = lambda self, axis: None
     _sign = lambda self: None
     _eig = lambda self, symmetric: None
@@ -1054,12 +1053,6 @@ class Constant(Array):
         if isinstance(other, Constant):
             return constant(numpy.add(self.value, other.value))
 
-    def _inverse(self, axis1, axis2):
-        assert 0 <= axis1 < axis2 < self.ndim
-        axes = (*range(axis1), *range(axis1+1, axis2), *range(axis2+1, self.ndim), axis1, axis2)
-        value = numpy.transpose(self.value, axes)
-        return constant(numpy.transpose(Inverse.evalf(value), numpy.argsort(axes)))
-
     def _multiply(self, other):
         if self._isunit:
             return other
@@ -1180,13 +1173,6 @@ class InsertAxis(Array):
 
     def _sign(self):
         return InsertAxis(Sign(self.func), self.length)
-
-    def _inverse(self, axis1, axis2):
-        if axis1 < self.ndim-1 and axis2 < self.ndim-1:
-            return InsertAxis(inverse(self.func, (axis1, axis2)), self.length)
-        # either axis1 or axis2 is inserted
-        if self.length._intbounds[0] > 1: # matrix is at least 2x2
-            return singular_like(self)
 
     def _loopsum(self, index):
         return InsertAxis(loop_sum(self.func, index), self.length)
@@ -1399,11 +1385,6 @@ class Transpose(Array):
     def _sign(self):
         return Transpose(Sign(self.func), self.axes)
 
-    def _inverse(self, axis1, axis2):
-        tryinv = self.func._inverse(self.axes[axis1], self.axes[axis2])
-        if tryinv:
-            return Transpose(tryinv, self.axes)
-
     def _ravel(self, axis):
         if self.axes[axis] == self.ndim-2 and self.axes[axis+1] == self.ndim-1:
             return Transpose(Ravel(self.func), self.axes[:-1])
@@ -1530,13 +1511,22 @@ class Inverse(Array):
                 yield op, (numpy.linalg.inv(v),)
 
     def _simplified(self):
+        if isinstance(self.func, Zeros):
+            return singular_like(self)
         if _equals_scalar_constant(self.func.shape[-1], 1):
             return reciprocal(self.func)
         if _equals_scalar_constant(self.func.shape[-1], 0):
             return singular_like(self)
-        result = self.func._inverse(self.ndim-2, self.ndim-1)
-        if result is not None:
-            return result
+        for f, axis, newaxis in self.func._as(diagonalize, lambda f, i, j: i == f.ndim-1 and j >= f.ndim-1):
+            return Diagonalize(reciprocal(f))
+        # try to separate scalar multiplications
+        for factor, rem, ops in self.func._iter_into(multiply):
+            for f, axis, length in factor._as(insertaxis, lambda f, i, n: i >= self.ndim-2):
+                if not rem:
+                    # TODO what if func.shape[-1] is not constant 1 but _may_ be one
+                    return singular_like(self)
+                for f, axis, length in f._as(insertaxis, lambda f, i, n: i >= self.ndim-2):
+                    return reciprocal(factor) * Inverse(multiply(*rem))
 
     evalf = staticmethod(numeric.inv)
 
@@ -1701,13 +1691,6 @@ class Multiply(Array):
 
     def _sign(self):
         return multiply(*[Sign(f) for f in self._factors])
-
-    def _inverse(self, axis1, axis2):
-        factors = tuple(self._factors)
-        for i, fi in enumerate(factors):
-            if set(unalign(fi)[1]).isdisjoint((axis1, axis2)):
-                inv = inverse(multiply(*factors[:i], *factors[i+1:]), (axis1, axis2))
-                return divide(inv, fi)
 
     @cached_property
     def _assparse(self):
@@ -3185,9 +3168,6 @@ class Zeros(Array):
     def _intbounds_impl(self):
         return 0, 0
 
-    def _inverse(self, axis1, axis2):
-        return singular_like(self)
-
 
 class Inflate(Array):
 
@@ -3419,10 +3399,6 @@ class Diagonalize(Array):
 
     def _derivative(self, var, seen):
         return diagonalize(derivative(self.func, var, seen), self.ndim-2, self.ndim-1)
-
-    def _inverse(self, axis1, axis2):
-        if sorted([axis1, axis2]) == [self.ndim-2, self.ndim-1]:
-            return Diagonalize(reciprocal(self.func))
 
     def _sign(self):
         return Diagonalize(Sign(self.func))
