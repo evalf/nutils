@@ -2280,6 +2280,8 @@ class Pointwise(Array):
     deriv = None
     parameters = ()
     dependencies = util.abstract_property()
+    linear = () # indices of linear arguments, implies zero_preserving
+    zero_preserving = () # indices of nonlinear arguments that map zero to zero
 
     def __post_init__(self):
         self.shape = self.dependencies[0].shape
@@ -2315,6 +2317,14 @@ class Pointwise(Array):
         if len(self.dependencies) == 1 and isinstance(self.dependencies[0], Transpose):
             arg, = self.dependencies
             return Transpose(self._newargs(arg.func), arg.axes)
+        for i in self.linear + self.zero_preserving:
+            if iszero(self.dependencies[i]):
+                return zeros_like(self)
+            for axis1, axis2, *other in map(sorted, self.dependencies[i]._diagonals):
+                return diagonalize(self._newargs(*[takediag(arg, axis1, axis2) for arg in self.dependencies]), axis1, axis2)
+        for i in self.linear:
+            for axis, parts in self.dependencies[i]._inflations:
+                return util.sum(_inflate(self._newargs(*self.dependencies[:i], func, *self.dependencies[i+1:]), dofmap, self.shape[axis], axis) for dofmap, func in parts.items())
         *uninserted, where = unalign(*self.dependencies)
         if len(where) != self.ndim:
             return align(self._newargs(*uninserted), where, self.shape)
@@ -2369,6 +2379,8 @@ class Reciprocal(Holomorphic):
 
 class Negative(Holomorphic):
 
+    linear = 0,
+
     def _compile_expression(self, value):
         return _pyast.UnaryOp('-', value)
 
@@ -2388,6 +2400,8 @@ class FloorDivide(Pointwise):
 
     dividend: Array
     divisor: Array
+
+    zero_preserving = 0,
 
     @property
     def dependencies(self):
@@ -2429,6 +2443,8 @@ class Absolute(Pointwise):
 
     arg: Array
 
+    zero_preserving = 0,
+
     @property
     def dependencies(self):
         return self.arg,
@@ -2456,11 +2472,6 @@ class Cos(Holomorphic):
     'Cosine, element-wise.'
     deriv = lambda x: -Sin(x),
 
-    def _simplified(self):
-        if iszero(self.arg):
-            return ones(self.shape, dtype=self.dtype)
-        return super()._simplified()
-
     def _compile_expression(self, x):
         return _pyast.Variable('numpy').get_attr('cos').call(x)
 
@@ -2469,10 +2480,7 @@ class Sin(Holomorphic):
     'Sine, element-wise.'
     deriv = Cos,
 
-    def _simplified(self):
-        if iszero(self.arg):
-            return zeros(self.shape, dtype=self.dtype)
-        return super()._simplified()
+    zero_preserving = 0,
 
     def _compile_expression(self, x):
         return _pyast.Variable('numpy').get_attr('sin').call(x)
@@ -2480,6 +2488,9 @@ class Sin(Holomorphic):
 
 class Tan(Holomorphic):
     'Tangent, element-wise.'
+
+    zero_preserving = 0,
+
     deriv = lambda x: Cos(x)**astype(-2, x.dtype),
 
     def _compile_expression(self, x):
@@ -2488,6 +2499,9 @@ class Tan(Holomorphic):
 
 class ArcSin(Holomorphic):
     'Inverse sine, element-wise.'
+
+    zero_preserving = 0,
+
     deriv = lambda x: reciprocal(sqrt(astype(1, x.dtype)-x**astype(2, x.dtype))),
 
     def _compile_expression(self, x):
@@ -2504,6 +2518,9 @@ class ArcCos(Holomorphic):
 
 class ArcTan(Holomorphic):
     'Inverse tangent, element-wise.'
+
+    zero_preserving = 0,
+
     deriv = lambda x: reciprocal(astype(1, x.dtype)+x**astype(2, x.dtype)),
 
     def _compile_expression(self, x):
@@ -2534,6 +2551,9 @@ class CosH(Holomorphic):
 
 class SinH(Holomorphic):
     'Hyperbolic sine, element-wise.'
+
+    zero_preserving = 0,
+
     deriv = CosH,
 
     def _compile_expression(self, x):
@@ -2542,6 +2562,9 @@ class SinH(Holomorphic):
 
 class TanH(Holomorphic):
     'Hyperbolic tangent, element-wise.'
+
+    zero_preserving = 0,
+
     deriv = lambda x: astype(1, x.dtype) - TanH(x)**astype(2, x.dtype),
 
     def _compile_expression(self, x):
@@ -2550,6 +2573,9 @@ class TanH(Holomorphic):
 
 class ArcTanH(Holomorphic):
     'Inverse hyperbolic tangent, element-wise.'
+
+    zero_preserving = 0,
+
     deriv = lambda x: reciprocal(astype(1, x.dtype)-x**astype(2, x.dtype)),
 
     def _compile_expression(self, x):
@@ -2571,6 +2597,8 @@ class Log(Holomorphic):
 
 
 class Mod(Pointwise):
+
+    zero_preserving = 0,
 
     dividend: Array
     divisor: Array
@@ -2815,6 +2843,8 @@ class Conjugate(Pointwise):
 
     arg: Array
 
+    linear = 0,
+
     @property
     def dependencies(self):
         return self.arg,
@@ -2840,6 +2870,8 @@ class Real(Pointwise):
 
     arg: Array
 
+    linear = 0,
+
     @property
     def dependencies(self):
         return self.arg,
@@ -2864,6 +2896,8 @@ class Real(Pointwise):
 class Imag(Pointwise):
 
     arg: Array
+
+    linear = 0,
 
     @property
     def dependencies(self):
@@ -2897,13 +2931,6 @@ class Cast(Pointwise):
     def _compile_expression(self, arg):
         return _pyast.Variable('numpy').get_attr('array').call(arg, dtype=self.ast_dtype)
 
-    def _simplified(self):
-        if iszero(self.arg):
-            return zeros_like(self)
-        for axis, parts in self.arg._inflations:
-            return util.sum(_inflate(self._newargs(func), dofmap, self.shape[axis], axis) for dofmap, func in parts.items())
-        return super()._simplified()
-
     def _intbounds_impl(self):
         if self.arg.dtype == bool:
             return 0, 1
@@ -2919,6 +2946,8 @@ class Cast(Pointwise):
 
 class BoolToInt(Cast):
 
+    zero_preserving = 0,
+
     @cached_property
     def dtype(self):
         T = self.arg.dtype
@@ -2928,6 +2957,8 @@ class BoolToInt(Cast):
 
 
 class IntToFloat(Cast):
+
+    linear = 0,
 
     @cached_property
     def dtype(self):
@@ -2959,6 +2990,8 @@ class IntToFloat(Cast):
 
 
 class FloatToComplex(Cast):
+
+    linear = 0,
 
     @cached_property
     def dtype(self):
