@@ -853,8 +853,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     # simplifications
     _insertaxis = lambda self, axis, length: None
     _eig = lambda self, symmetric: None
-    _inflate = lambda self, dofmap, length, axis: None
-    _rinflate = lambda self, func, length, axis: None
     _ravel = lambda self, axis: None
     _real = lambda self: None
     _imag = lambda self: None
@@ -1115,12 +1113,6 @@ class InsertAxis(Array):
     def _derivative(self, var, seen):
         return insertaxis(derivative(self.func, var, seen), self.ndim-1, self.length)
 
-    def _inflate(self, dofmap, length, axis):
-        if axis + dofmap.ndim < self.ndim:
-            return InsertAxis(_inflate(self.func, dofmap, length, axis), self.length)
-        elif axis == self.ndim:
-            return insertaxis(Inflate(self.func, dofmap, length), self.ndim - 1, self.length)
-
     def _insertaxis(self, axis, length):
         if axis == self.ndim - 1:
             return InsertAxis(InsertAxis(self.func, length), self.length)
@@ -1303,18 +1295,6 @@ class Transpose(Array):
     def _ravel(self, axis):
         if self.axes[axis] == self.ndim-2 and self.axes[axis+1] == self.ndim-1:
             return Transpose(Ravel(self.func), self.axes[:-1])
-
-    def _inflate(self, dofmap, length, axis):
-        i = self.axes[axis] if dofmap.ndim else self.func.ndim
-        if self.axes[axis:axis+dofmap.ndim] == tuple(range(i, i+dofmap.ndim)):
-            tryinflate = self.func._inflate(dofmap, length, i)
-            if tryinflate is not None:
-                axes = [ax-(ax > i)*(dofmap.ndim-1) for ax in self.axes]
-                axes[axis:axis+dofmap.ndim] = i,
-                return transpose(tryinflate, tuple(axes))
-
-    def _rinflate(self, func, length, axis):
-        return Inflate(transpose(func, (*range(axis), *(axis+i for i in self.axes), *range(axis+self.ndim, func.ndim))), self.func, length)
 
     def _insertaxis(self, axis, length):
         return Transpose(InsertAxis(self.func, length), self.axes[:axis] + (self.ndim,) + self.axes[axis:])
@@ -3000,9 +2980,6 @@ class Zeros(Array):
     def _insertaxis(self, axis, length):
         return Zeros(self.shape[:axis]+(length,)+self.shape[axis:], self.dtype)
 
-    def _inflate(self, dofmap, length, axis):
-        return Zeros(self.shape[:axis] + (length,) + self.shape[axis+dofmap.ndim:], dtype=self.dtype)
-
     def _ravel(self, axis):
         return Zeros(self.shape[:axis] + (self.shape[axis]*self.shape[axis+1],) + self.shape[axis+2:], self.dtype)
 
@@ -3063,17 +3040,28 @@ class Inflate(Array):
         return tuple(inflations)
 
     def _simplified(self):
+        if isinstance(self.func, Zeros):
+            return zeros_like(self)
         for axis in range(self.dofmap.ndim):
             if _equals_scalar_constant(self.dofmap.shape[axis], 1):
                 return Inflate(_take(self.func, constant(0), self.func.ndim-self.dofmap.ndim+axis), _take(self.dofmap, constant(0), axis), self.length)
-        for axis, parts in self.func._inflations:
-            i = axis - (self.ndim-1)
-            if i >= 0:
-                return util.sum(Inflate(f, _take(self.dofmap, ind, i), self.length) for ind, f in parts.items())
         if self.dofmap.ndim == 0 and _equals_scalar_constant(self.dofmap, 0) and _equals_scalar_constant(self.length, 1):
             return InsertAxis(self.func, constant(1))
-        return self.func._inflate(self.dofmap, self.length, self.ndim-1) \
-            or self.dofmap._rinflate(self.func, self.length, self.ndim-1)
+        for f, axis in self.func._as(ravel):
+            if axis >= self.ndim-1:
+                return Inflate(f, unravel(self.dofmap, axis-(self.ndim-1), f.shape[axis:axis+2]), self.length)
+        for f, dofmap, length, axis in self.func._as(_inflate):
+            i = axis - (self.ndim-1)
+            if i >= 0:
+                return Inflate(f, _take(self.dofmap, dofmap, i), self.length)
+        for ia, ib, na, nb, where in self.dofmap._as(ravelindex):
+            if _equals_simplified(self.length, na * nb) and where[ia.ndim:].all():
+                return Ravel(Inflate(_inflate(self.func, ia, na, self.func.ndim - self.dofmap.ndim), ib, nb))
+        for length, in self.dofmap._as(Range):
+            if length == self.length:
+                return self.func
+        if simple := self._as_any(ravel, insertaxis):
+            return simple
 
     def evalf(self, array, indices, length):
         assert indices.ndim == self.dofmap.ndim
@@ -3083,10 +3071,6 @@ class Inflate(Array):
         inflated = numpy.zeros(array.shape[:array.ndim-indices.ndim] + (length,), dtype=self.dtype)
         numpy.add.at(inflated, (slice(None),)*(self.ndim-1)+(indices,), array)
         return inflated
-
-    def _inflate(self, dofmap, length, axis):
-        if dofmap.ndim == 0 and dofmap == self.dofmap and length == self.length:
-            return diagonalize(self, -1, axis)
 
     def _derivative(self, var, seen):
         return _inflate(derivative(self.func, var, seen), self.dofmap, self.length, self.ndim-1)
@@ -3487,14 +3471,6 @@ class Ravel(Array):
     def _derivative(self, var, seen):
         return ravel(derivative(self.func, var, seen), axis=self.ndim-1)
 
-    def _inflate(self, dofmap, length, axis):
-        if axis < self.ndim-dofmap.ndim:
-            return Ravel(_inflate(self.func, dofmap, length, axis))
-        elif dofmap.ndim == 0:
-            return ravel(Inflate(self.func, dofmap, length), self.ndim-1)
-        else:
-            return _inflate(self.func, Unravel(dofmap, *self.func.shape[-2:]), length, axis)
-
     def _insertaxis(self, axis, length):
         return ravel(insertaxis(self.func, axis+(axis == self.ndim), length), self.ndim-(axis == self.ndim))
 
@@ -3650,10 +3626,6 @@ class RavelIndex(Array):
     def evalf(ia, ib, nb):
         return ia[(...,)+(numpy.newaxis,)*ib.ndim] * nb + ib
 
-    def _rinflate(self, func, length, axis):
-        if _equals_simplified(length, self._length):
-            return Ravel(Inflate(_inflate(func, self._ia, self._na, func.ndim - self.ndim), self._ib, self._nb))
-
     def _intbounds_impl(self):
         nbmin, nbmax = self._nb._intbounds
         iamin, iamax = self._ia._intbounds
@@ -3671,10 +3643,6 @@ class Range(Array):
     @property
     def representations(self):
         return (Range, (self.length,)),
-
-    def _rinflate(self, func, length, axis):
-        if length == self.length:
-            return func
 
     evalf = staticmethod(numpy.arange)
 
