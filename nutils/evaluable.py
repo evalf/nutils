@@ -861,7 +861,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     _rtake = lambda self, index, axis: None
     _determinant = lambda self, axis1, axis2: None
     _inverse = lambda self, axis1, axis2: None
-    _takediag = lambda self, axis1, axis2: None
     _diagonalize = lambda self, axis: None
     _product = lambda self: None
     _sign = lambda self: None
@@ -1079,11 +1078,6 @@ class Constant(Array):
         if isinstance(other, Constant):
             return constant(numpy.multiply(self.value, other.value))
 
-    def _takediag(self, axis1, axis2):
-        assert axis1 < axis2
-        return constant(numpy.einsum('...kk->...k', numpy.transpose(self.value,
-                                                                    list(range(axis1)) + list(range(axis1+1, axis2)) + list(range(axis2+1, self.ndim)) + [axis1, axis2])))
-
     def _take(self, index, axis):
         if index.isconstant:
             index_ = index.eval()
@@ -1221,13 +1215,6 @@ class InsertAxis(Array):
         if axis == self.ndim - 1:
             return appendaxes(self.func, index.shape)
         return InsertAxis(_take(self.func, index, axis), self.length)
-
-    def _takediag(self, axis1, axis2):
-        assert axis1 < axis2
-        if axis2 == self.ndim-1:
-            return Transpose.to_end(self.func, axis1)
-        else:
-            return insertaxis(_takediag(self.func, axis1, axis2), self.ndim-3, self.length)
 
     def _unravel(self, axis, shape):
         if axis == self.ndim - 1:
@@ -1425,14 +1412,6 @@ class Transpose(Array):
         newaxes = tuple(self.axes[i] for i in axes)
         return transpose(self.func, newaxes)
 
-    def _takediag(self, axis1, axis2):
-        assert axis1 < axis2
-        orig1, orig2 = sorted(self.axes[axis] for axis in [axis1, axis2])
-        trytakediag = self.func._takediag(orig1, orig2)
-        if trytakediag is not None:
-            exclude_orig = [ax-(ax > orig1)-(ax > orig2) for ax in self.axes[:axis1] + self.axes[axis1+1:axis2] + self.axes[axis2+1:]]
-            return transpose(trytakediag, (*exclude_orig, self.ndim-2))
-
     def _sum(self, i):
         axis = self.axes[i]
         trysum = self.func._sum(axis)
@@ -1585,9 +1564,6 @@ class Product(Array):
     def _take(self, indices, axis):
         return Product(_take(self.func, indices, axis))
 
-    def _takediag(self, axis1, axis2):
-        return product(_takediag(self.func, axis1, axis2), self.ndim-2)
-
 
 class Inverse(Array):
     '''
@@ -1650,11 +1626,6 @@ class Inverse(Array):
         if axis < self.ndim - 2:
             return Inverse(_take(self.func, indices, axis))
 
-    def _takediag(self, axis1, axis2):
-        assert axis1 < axis2
-        if axis2 < self.ndim-2:
-            return inverse(_takediag(self.func, axis1, axis2), (self.ndim-4, self.ndim-3))
-
     def _unravel(self, axis, shape):
         if axis < self.ndim-2:
             return Inverse(unravel(self.func, axis, shape))
@@ -1705,9 +1676,6 @@ class Determinant(Array):
 
     def _take(self, index, axis):
         return Determinant(_take(self.func, index, axis))
-
-    def _takediag(self, axis1, axis2):
-        return determinant(_takediag(self.func, axis1, axis2), (self.ndim-2, self.ndim-1))
 
 
 class Multiply(Array):
@@ -1824,9 +1792,6 @@ class Multiply(Array):
         func1, func2 = self.funcs
         return einsum('A,AB->AB', func1, derivative(func2, var, seen)) \
             + einsum('A,AB->AB', func2, derivative(func1, var, seen))
-
-    def _takediag(self, axis1, axis2):
-        return multiply(*[_takediag(f, axis1, axis2) for f in self._factors])
 
     def _take(self, index, axis):
         return multiply(*[_take(f, index, axis) for f in self._factors])
@@ -1978,9 +1943,6 @@ class Add(Array):
 
     def _derivative(self, var, seen):
         return add(*[derivative(f, var, seen) for f in self._terms])
-
-    def _takediag(self, axis1, axis2):
-        return add(*[_takediag(f, axis1, axis2) for f in self._terms])
 
     def _take(self, index, axis):
         return add(*[_take(f, index, axis) for f in self._terms])
@@ -2165,9 +2127,6 @@ class Sum(Array):
     def _take(self, index, axis):
         return Sum(_take(self.func, index, axis))
 
-    def _takediag(self, axis1, axis2):
-        return sum(_takediag(self.func, axis1, axis2), -2)
-
 
 class TakeDiag(Array):
 
@@ -2273,9 +2232,15 @@ class TakeDiag(Array):
                     yield op, (ia, ib, na, nb, numpy.concatenate([where[:-2], numpy.full(self.indices.ndim, where[-1])]))
 
     def _simplified(self):
-        if _equals_scalar_constant(self.shape[-1], 1):
-            return Take(self.func, constant(0))
-        return self.func._takediag(self.ndim-1, self.ndim)
+        if isinstance(self.func, Zeros):
+            return zeros_like(self)
+        for f, axis, length in self.func._as(insertaxis, lambda f, a, l: a >= f.ndim-1):
+            return f
+        for f, axis, newaxis in self.func._as(diagonalize):
+            if axis == f.ndim-1 and newaxis >= f.ndim-1:
+                return f
+        if simple := self._as_any(ravel, unravel, insertaxis, _inflate, diagonalize, add, multiply, constant, product, inverse, determinant, sum, loop_sum, loop_concatenate, Choose, ravelindex, polyval, polymul, polygrad, legendre, SearchSorted, *_POINTWISE, _take, power, sign):
+            return simple
 
     @staticmethod
     def evalf(arr):
@@ -2287,10 +2252,6 @@ class TakeDiag(Array):
     def _take(self, index, axis):
         if axis < self.ndim - 1 and (simple := self.func._take(index, axis)):
             return TakeDiag(simple)
-
-    def _takediag(self, axis1, axis2):
-        if axis1 < self.ndim-1 and axis2 < self.ndim-1 and (simple := self.func._takediag(axis1, axis2)):
-            return takediag(simple, -3, -2)
 
     def _sum(self, axis):
         if axis != self.ndim - 1 and (simple := self.func._sum(axis)):
@@ -2427,10 +2388,6 @@ class Take(Array):
         if trytake is not None:
             return Take(trytake, self.indices)
 
-    def _takediag(self, axis1, axis2):
-        if axis1 < self.func.ndim-1 and axis2 < self.func.ndim-1:
-            return _take(_takediag(self.func, axis1, axis2), self.indices, self.func.ndim-3)
-
     def _sum(self, axis):
         if axis < self.func.ndim - 1 and (simple := self.func._sum(axis)):
             return Take(simple, self.indices)
@@ -2511,12 +2468,6 @@ class Power(Array):
         if iszero(self.power % astype(2, self.power.dtype)) and not iszero(newpower % astype(2, newpower.dtype)):
             func = abs(func)
         return Power(func, newpower)
-
-    def _takediag(self, axis1, axis2):
-        return Power(_takediag(self.func, axis1, axis2), _takediag(self.power, axis1, axis2))
-
-    def _take(self, index, axis):
-        return Power(_take(self.func, index, axis), _take(self.power, index, axis))
 
     def _unravel(self, axis, shape):
         return Power(unravel(self.func, axis, shape), unravel(self.power, axis, shape))
@@ -2615,9 +2566,6 @@ class Pointwise(Array):
             return util.sum(einsum('A,AB->AB', deriv(*self.args, **self.params), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.deriv))
         else:
             return super()._derivative(var, seen)
-
-    def _takediag(self, axis1, axis2):
-        return self._newargs(*[_takediag(arg, axis1, axis2) for arg in self.args])
 
     def _take(self, index, axis):
         return self._newargs(*[_take(arg, index, axis) for arg in self.args])
@@ -3119,9 +3067,6 @@ class Sign(Array):
 
     evalf = staticmethod(numpy.sign)
 
-    def _takediag(self, axis1, axis2):
-        return Sign(_takediag(self.func, axis1, axis2))
-
     def _take(self, index, axis):
         return Sign(_take(self.func, index, axis))
 
@@ -3332,9 +3277,6 @@ class Zeros(Array):
     def _insertaxis(self, axis, length):
         return Zeros(self.shape[:axis]+(length,)+self.shape[axis:], self.dtype)
 
-    def _takediag(self, axis1, axis2):
-        return Zeros(self.shape[:axis1]+self.shape[axis1+1:axis2]+self.shape[axis2+1:self.ndim]+(self.shape[axis1],), dtype=self.dtype)
-
     def _take(self, index, axis):
         return Zeros(self.shape[:axis] + index.shape + self.shape[axis+1:], dtype=self.dtype)
 
@@ -3454,16 +3396,6 @@ class Inflate(Array):
     def _add(self, other):
         if isinstance(other, Inflate) and self.dofmap == other.dofmap:
             return Inflate(add(self.func, other.func), self.dofmap, self.length)
-
-    def _takediag(self, axis1, axis2):
-        assert axis1 < axis2
-        if axis2 == self.ndim-1:
-            func = _take(self.func, self.dofmap, axis1)
-            for i in range(self.dofmap.ndim):
-                func = _takediag(func, axis1, axis2+self.dofmap.ndim-1-i)
-            return Inflate(func, self.dofmap, self.length)
-        else:
-            return _inflate(_takediag(self.func, axis1, axis2), self.dofmap, self.length, self.ndim-3)
 
     def _take(self, index, axis):
         if axis != self.ndim-1:
@@ -3657,14 +3589,6 @@ class Diagonalize(Array):
         if axis >= self.ndim - 2:
             return self.func
         return Diagonalize(sum(self.func, axis))
-
-    def _takediag(self, axis1, axis2):
-        if axis1 == self.ndim-2:  # axis2 == self.ndim-1
-            return self.func
-        elif axis2 >= self.ndim-2:
-            return diagonalize(_takediag(self.func, axis1, self.ndim-2), self.ndim-3, self.ndim-2)
-        else:
-            return diagonalize(_takediag(self.func, axis1, axis2), self.ndim-4, self.ndim-3)
 
     def _take(self, index, axis):
         if axis < self.ndim - 2:
@@ -3958,14 +3882,6 @@ class Ravel(Array):
     def _derivative(self, var, seen):
         return ravel(derivative(self.func, var, seen), axis=self.ndim-1)
 
-    def _takediag(self, axis1, axis2):
-        assert axis1 < axis2
-        if axis2 <= self.ndim-2:
-            return ravel(_takediag(self.func, axis1, axis2), self.ndim-3)
-        else:
-            unraveled = unravel(self.func, axis1, self.func.shape[-2:])
-            return Ravel(_takediag(_takediag(unraveled, axis1, -2), axis1, -2))
-
     def _take(self, index, axis):
         if axis != self.ndim-1:
             return Ravel(_take(self.func, index, axis))
@@ -4104,10 +4020,6 @@ class Unravel(Array):
     @staticmethod
     def evalf(f, sh1, sh2):
         return f.reshape(f.shape[:-1] + (sh1, sh2))
-
-    def _takediag(self, axis1, axis2):
-        if axis2 < self.ndim-2:
-            return unravel(_takediag(self.func, axis1, axis2), self.ndim-4, self.shape[-2:])
 
     def _take(self, index, axis):
         if axis < self.ndim - 2:
@@ -4449,12 +4361,6 @@ class PolyMul(Array):
         if iszero(self.coeffs_left) or iszero(self.coeffs_right):
             return zeros_like(self)
 
-    def _takediag(self, axis1, axis2):
-        if axis1 < self.ndim - 1 and axis2 < self.ndim - 1:
-            coeffs_left = Transpose.to_end(_takediag(self.coeffs_left, axis1, axis2), -2)
-            coeffs_right = Transpose.to_end(_takediag(self.coeffs_right, axis1, axis2), -2)
-            return Transpose.to_end(PolyMul(coeffs_left, coeffs_right, self.vars), -2)
-
     def _take(self, index, axis):
         if axis < self.ndim - 1:
             return PolyMul(_take(self.coeffs_left, index, axis), _take(self.coeffs_right, index, axis), self.vars)
@@ -4518,11 +4424,6 @@ class PolyGrad(Array):
         elif _equals_scalar_constant(self.degree, 1):
             return InsertAxis(Take(self.coeffs, constant(self.nvars - 1) - Range(constant(self.nvars))), constant(1))
 
-    def _takediag(self, axis1, axis2):
-        if axis1 < self.ndim - 2 and axis2 < self.ndim - 2:
-            coeffs = Transpose.to_end(_takediag(self.coeffs, axis1, axis2), -2)
-            return Transpose.from_end(PolyGrad(coeffs, self.nvars), -3, -2)
-
     def _take(self, index, axis):
         if axis < self.ndim - 2:
             return PolyGrad(_take(self.coeffs, index, axis), self.nvars)
@@ -4581,10 +4482,6 @@ class Legendre(Array):
         if where != tuple(range(self._x.ndim)):
             return align(Legendre(unaligned, self._degree), (*where, self.ndim-1), self.shape)
 
-    def _takediag(self, axis1, axis2):
-        if axis1 < self.ndim - 1 and axis2 < self.ndim - 1:
-            return Transpose.to_end(Legendre(_takediag(self._x, axis1, axis2), self._degree), -2)
-
     def _take(self, index, axis):
         if axis < self.ndim - 1:
             return Legendre(_take(self._x, index, axis), self._degree)
@@ -4641,9 +4538,6 @@ class Choose(Array):
 
     def _take(self, index, axis):
         return Choose(_take(self.index, index, axis), *(_take(choice, index, axis) for choice in self.choices))
-
-    def _takediag(self, axis, rmaxis):
-        return Choose(takediag(self.index, axis, rmaxis), *(takediag(choice, axis, rmaxis) for choice in self.choices))
 
     def _product(self):
         unaligned, where = unalign(self.index)
@@ -5080,9 +4974,6 @@ class LoopSum(Loop, Array):
             return self.func * astype(self.index.length, self.func.dtype)
         return self.func._loopsum(self.index)
 
-    def _takediag(self, axis1, axis2):
-        return loop_sum(_takediag(self.func, axis1, axis2), self.index)
-
     def _take(self, index, axis):
         return loop_sum(_take(self.func, index, axis), self.index)
 
@@ -5215,10 +5106,6 @@ class LoopConcatenate(Loop, Array):
             return
         return align(f, where, self.shape)
 
-    def _takediag(self, axis1, axis2):
-        if axis1 < self.ndim-1 and axis2 < self.ndim-1:
-            return Transpose.from_end(loop_concatenate(Transpose.to_end(_takediag(self.func, axis1, axis2), -2), self.index), -2)
-
     def _take(self, index, axis):
         if axis < self.ndim-1:
             return loop_concatenate(_take(self.func, index, axis), self.index)
@@ -5270,9 +5157,6 @@ class SearchSorted(Array):
 
     def _intbounds_impl(self):
         return 0, self._array.shape[0]
-
-    def _takediag(self, axis1, axis2):
-        return SearchSorted(_takediag(self._arg, axis1, axis2), array=self._array, side=self._side, sorter=self._sorter)
 
     def _take(self, index, axis):
         return SearchSorted(_take(self._arg, index, axis), array=self._array, side=self._side, sorter=self._sorter)
@@ -5582,11 +5466,7 @@ def takediag(arg, axis=-2, rmaxis=-1):
     axis = numeric.normdim(arg.ndim, axis)
     rmaxis = numeric.normdim(arg.ndim, rmaxis)
     assert axis != rmaxis
-    return Transpose.from_end(_takediag(arg, axis, rmaxis), axis-(axis>=rmaxis))
-
-
-def _takediag(arg, axis1=-2, axis2=-1):
-    return TakeDiag(Transpose.to_end(arg, axis1, axis2))
+    return Transpose.from_end(TakeDiag(Transpose.to_end(arg, axis, rmaxis)), axis-(axis>=rmaxis))
 
 
 def derivative(func, var, seen=None):
