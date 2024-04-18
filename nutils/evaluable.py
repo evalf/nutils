@@ -862,7 +862,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     _eig = lambda self, symmetric: None
     _inflate = lambda self, dofmap, length, axis: None
     _rinflate = lambda self, func, length, axis: None
-    _unravel = lambda self, axis, shape: None
     _ravel = lambda self, axis: None
     _loopsum = lambda self, loop_index: None  # NOTE: type of `loop_index` is `_LoopIndex`
     _real = lambda self: None
@@ -1081,10 +1080,6 @@ class Constant(Array):
     def _sign(self):
         return constant(numpy.sign(self.value))
 
-    def _unravel(self, axis, shape):
-        shape = self.value.shape[:axis] + shape + self.value.shape[axis+1:]
-        return constant(self.value.reshape(shape))
-
     def _intbounds_impl(self):
         if self.dtype == int and self.value.size:
             return int(self.value.min()), int(self.value.max())
@@ -1182,12 +1177,6 @@ class InsertAxis(Array):
     def _insertaxis(self, axis, length):
         if axis == self.ndim - 1:
             return InsertAxis(InsertAxis(self.func, length), self.length)
-
-    def _unravel(self, axis, shape):
-        if axis == self.ndim - 1:
-            return InsertAxis(InsertAxis(self.func, shape[0]), shape[1])
-        else:
-            return InsertAxis(unravel(self.func, axis, shape), self.length)
 
     def _sign(self):
         return InsertAxis(Sign(self.func), self.length)
@@ -1410,14 +1399,6 @@ class Transpose(Array):
     def _sign(self):
         return Transpose(Sign(self.func), self.axes)
 
-    def _unravel(self, axis, shape):
-        orig_axis = self.axes[axis]
-        tryunravel = self.func._unravel(orig_axis, shape)
-        if tryunravel is not None:
-            axes = [ax + (ax > orig_axis) for ax in self.axes]
-            axes.insert(axis+1, orig_axis+1)
-            return transpose(tryunravel, tuple(axes))
-
     def _inverse(self, axis1, axis2):
         tryinv = self.func._inverse(self.axes[axis1], self.axes[axis2])
         if tryinv:
@@ -1565,10 +1546,6 @@ class Inverse(Array):
     def _eig(self, symmetric):
         eigval, eigvec = Eig(self.func, symmetric)
         return Tuple((reciprocal(eigval), eigvec))
-
-    def _unravel(self, axis, shape):
-        if axis < self.ndim-2:
-            return Inverse(unravel(self.func, axis, shape))
 
 
 class Determinant(Array):
@@ -1725,9 +1702,6 @@ class Multiply(Array):
     def _sign(self):
         return multiply(*[Sign(f) for f in self._factors])
 
-    def _unravel(self, axis, shape):
-        return multiply(*[unravel(f, axis, shape) for f in self._factors])
-
     def _inverse(self, axis1, axis2):
         factors = tuple(self._factors)
         for i, fi in enumerate(factors):
@@ -1866,9 +1840,6 @@ class Add(Array):
 
     def _derivative(self, var, seen):
         return add(*[derivative(f, var, seen) for f in self._terms])
-
-    def _unravel(self, axis, shape):
-        return add(*[unravel(f, axis, shape) for f in self._terms])
 
     def _loopsum(self, index):
         dep = []
@@ -2423,9 +2394,6 @@ class Power(Array):
             func = abs(func)
         return Power(func, newpower)
 
-    def _unravel(self, axis, shape):
-        return Power(unravel(self.func, axis, shape), unravel(self.power, axis, shape))
-
 
 class Pointwise(Array):
     '''
@@ -2520,9 +2488,6 @@ class Pointwise(Array):
             return util.sum(einsum('A,AB->AB', deriv(*self.args, **self.params), derivative(arg, var, seen)) for arg, deriv in zip(self.args, self.deriv))
         else:
             return super()._derivative(var, seen)
-
-    def _unravel(self, axis, shape):
-        return self._newargs(*[unravel(arg, axis, shape) for arg in self.args])
 
 
 class Holomorphic(Pointwise):
@@ -3009,9 +2974,6 @@ class Sign(Array):
     def _sign(self):
         return self
 
-    def _unravel(self, axis, shape):
-        return Sign(unravel(self.func, axis, shape))
-
     def _derivative(self, var, seen):
         return Zeros(self.shape + var.shape, dtype=self.dtype)
 
@@ -3213,10 +3175,6 @@ class Zeros(Array):
     def _inflate(self, dofmap, length, axis):
         return Zeros(self.shape[:axis] + (length,) + self.shape[axis+dofmap.ndim:], dtype=self.dtype)
 
-    def _unravel(self, axis, shape):
-        shape = self.shape[:axis] + shape + self.shape[axis+1:]
-        return Zeros(shape, dtype=self.dtype)
-
     def _ravel(self, axis):
         return Zeros(self.shape[:axis] + (self.shape[axis]*self.shape[axis+1],) + self.shape[axis+2:], self.dtype)
 
@@ -3318,10 +3276,6 @@ class Inflate(Array):
     def _diagonalize(self, axis):
         if axis != self.ndim-1:
             return _inflate(diagonalize(self.func, axis), self.dofmap, self.length, self.ndim-1)
-
-    def _unravel(self, axis, shape):
-        if axis != self.ndim-1:
-            return Inflate(unravel(self.func, axis, shape), self.dofmap, self.length)
 
     def _sign(self):
         if self.dofmap.isconstant and _isunique(self.dofmap.eval()):
@@ -3469,13 +3423,6 @@ class Diagonalize(Array):
     def _inverse(self, axis1, axis2):
         if sorted([axis1, axis2]) == [self.ndim-2, self.ndim-1]:
             return Diagonalize(reciprocal(self.func))
-
-    def _unravel(self, axis, shape):
-        if axis >= self.ndim - 2:
-            diag = diagonalize(diagonalize(Unravel(self.func, *shape), self.ndim-2, self.ndim), self.ndim-1, self.ndim+1)
-            return ravel(diag, self.ndim if axis == self.ndim-2 else self.ndim-2)
-        else:
-            return Diagonalize(unravel(self.func, axis, shape))
 
     def _sign(self):
         return Diagonalize(Sign(self.func))
@@ -3745,12 +3692,6 @@ class Ravel(Array):
     def _derivative(self, var, seen):
         return ravel(derivative(self.func, var, seen), axis=self.ndim-1)
 
-    def _unravel(self, axis, shape):
-        if axis != self.ndim-1:
-            return Ravel(unravel(self.func, axis, shape))
-        elif equalshape(shape, self.func.shape[-2:]):
-            return self.func
-
     def _inflate(self, dofmap, length, axis):
         if axis < self.ndim-dofmap.ndim:
             return Ravel(_inflate(self.func, dofmap, length, axis))
@@ -3860,11 +3801,30 @@ class Unravel(Array):
                 yield op, (Unravel(f, *self.shape[-2:]), *args)
 
     def _simplified(self):
+        if isinstance(self.func, Zeros):
+            return zeros_like(self)
         if _equals_scalar_constant(self.shape[-2], 1):
             return insertaxis(self.func, self.ndim-2, constant(1))
         if _equals_scalar_constant(self.shape[-1], 1):
             return insertaxis(self.func, self.ndim-1, constant(1))
-        return self.func._unravel(self.ndim-2, self.shape[-2:])
+        if simple := self._as_any(_inflate, diagonalize, ravel, constant, insertaxis, inverse, multiply, add, power, Choose, sign, *_POINTWISE, ravelindex, polyval, polymul, polygrad, legendre, loop_sum, loop_concatenate, SearchSorted):
+            return simple
+        for f, axis, newaxis in self.func._as(diagonalize):
+            if newaxis == f.ndim:
+                f = unravel(f, axis, self.shape[-2:])
+                f = diagonalize(f, axis, newaxis+1)
+                f = diagonalize(f, axis+1, newaxis+2)
+                return ravel(f, axis)
+            elif axis == f.ndim-1:
+                f = unravel(f, axis, self.shape[-2:])
+                f = diagonalize(f, axis, newaxis)
+                f = diagonalize(f, axis+2, newaxis+1)
+                return ravel(f, newaxis)
+        for f, axis in self.func._as(ravel):
+            if axis == f.ndim-2 and equalshape(f.shape[-2:], self.shape[-2:]):
+                return f
+        for length, in self.func._as(Range):
+            return RavelIndex(Range(self.shape[0]), Range(self.shape[1]), self.shape[0], self.shape[1])
 
     def _derivative(self, var, seen):
         return unravel(derivative(self.func, var, seen), axis=self.ndim-2, shape=self.shape[-2:])
@@ -3912,12 +3872,6 @@ class RavelIndex(Array):
         if _equals_simplified(length, self._length):
             return Ravel(Inflate(_inflate(func, self._ia, self._na, func.ndim - self.ndim), self._ib, self._nb))
 
-    def _unravel(self, axis, shape):
-        if axis < self._ia.ndim:
-            return RavelIndex(unravel(self._ia, axis, shape), self._ib, self._na, self._nb)
-        else:
-            return RavelIndex(self._ia, unravel(self._ib, axis-self._ia.ndim, shape), self._na, self._nb)
-
     def _intbounds_impl(self):
         nbmin, nbmax = self._nb._intbounds
         iamin, iamax = self._ia._intbounds
@@ -3935,10 +3889,6 @@ class Range(Array):
     @property
     def representations(self):
         return (Range, (self.length,)),
-
-    def _unravel(self, axis, shape):
-        if len(shape) == 2:
-            return RavelIndex(Range(shape[0]), Range(shape[1]), shape[0], shape[1])
 
     def _rinflate(self, func, length, axis):
         if length == self.length:
@@ -4182,10 +4132,6 @@ class PolyMul(Array):
         if iszero(self.coeffs_left) or iszero(self.coeffs_right):
             return zeros_like(self)
 
-    def _unravel(self, axis, shape):
-        if axis < self.ndim - 1:
-            return PolyMul(unravel(self.coeffs_left, axis, shape), unravel(self.coeffs_right, axis, shape), self.vars)
-
 
 class PolyGrad(Array):
     '''Compute the coefficients for the gradient of a polynomial
@@ -4241,10 +4187,6 @@ class PolyGrad(Array):
         elif _equals_scalar_constant(self.degree, 1):
             return InsertAxis(Take(self.coeffs, constant(self.nvars - 1) - Range(constant(self.nvars))), constant(1))
 
-    def _unravel(self, axis, shape):
-        if axis < self.ndim - 2:
-            return PolyGrad(unravel(self.coeffs, axis, shape), self.nvars)
-
 
 class Legendre(Array):
     '''Series of Legendre polynomial up to and including the given degree.
@@ -4294,10 +4236,6 @@ class Legendre(Array):
         unaligned, where = unalign(self._x)
         if where != tuple(range(self._x.ndim)):
             return align(Legendre(unaligned, self._degree), (*where, self.ndim-1), self.shape)
-
-    def _unravel(self, axis, shape):
-        if axis < self.ndim - 1:
-            return Legendre(unravel(self._x, axis, shape), self._degree)
 
 
 class Choose(Array):
@@ -4768,9 +4706,6 @@ class LoopSum(Loop, Array):
             return self.func * astype(self.index.length, self.func.dtype)
         return self.func._loopsum(self.index)
 
-    def _unravel(self, axis, shape):
-        return loop_sum(unravel(self.func, axis, shape), self.index)
-
     def _add(self, other):
         if isinstance(other, LoopSum) and other.index == self.index:
             return loop_sum(self.func + other.func, self.index)
@@ -4894,10 +4829,6 @@ class LoopConcatenate(Loop, Array):
             return
         return align(f, where, self.shape)
 
-    def _unravel(self, axis, shape):
-        if axis < self.ndim-1:
-            return loop_concatenate(unravel(self.func, axis, shape), self.index)
-
     @cached_property
     def _assparse(self):
         chunks = []
@@ -4941,9 +4872,6 @@ class SearchSorted(Array):
 
     def _intbounds_impl(self):
         return 0, self._array.shape[0]
-
-    def _unravel(self, axis, shape):
-        return SearchSorted(unravel(self._arg, axis, shape), array=self._array, side=self._side, sorter=self._sorter)
 
 
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
