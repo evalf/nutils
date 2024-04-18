@@ -2283,19 +2283,10 @@ class Pointwise(Array):
         return cls(*(prependaxes(appendaxes(arg, shape[r:]), shape[:l]) for arg, l, r in zip(args, offsets[:-1], offsets[1:])))
 
     def _simplified(self):
-        for i in self.linear + self.zero_preserving:
-            if iszero(self.args[i]):
-                return zeros_like(self)
-            for axis1, axis2, *other in map(sorted, self.args[i]._diagonals):
-                return diagonalize(self._newargs(*[takediag(arg, axis1, axis2) for arg in self.args]), axis1, axis2)
-        for i in self.linear:
-            for axis, parts in self.args[i]._inflations:
-                return util.sum(_inflate(self._newargs(*self.args[:i], func, *self.args[i+1:]), dofmap, self.shape[axis], axis) for dofmap, func in parts.items())
-        if isinstance(self.args[0], Transpose) and all(isinstance(arg, Transpose) and arg.axes == self.args[0].axes for arg in self.args[1:]):
-            return Transpose(self._newargs(*[arg.func for arg in self.args]), self.args[0].axes)
-        *uninserted, where = unalign(*self.args)
-        if len(where) != self.ndim:
-            return align(self._newargs(*uninserted), where, self.shape)
+        if any(isinstance(self.args[i], Zeros) for i in self.linear + self.zero_preserving):
+            return zeros_like(self)
+        if simple := self._as_any(transpose, insertaxis, ravel, diagonalize, _inflate, constant):
+            return simple
 
     def _derivative(self, var, seen):
         if self.dtype == complex or var.dtype == complex:
