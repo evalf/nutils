@@ -852,7 +852,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
 
     # simplifications
     _insertaxis = lambda self, axis, length: None
-    _diagonalize = lambda self, axis: None
     _eig = lambda self, symmetric: None
     _inflate = lambda self, dofmap, length, axis: None
     _rinflate = lambda self, func, length, axis: None
@@ -1116,10 +1115,6 @@ class InsertAxis(Array):
     def _derivative(self, var, seen):
         return insertaxis(derivative(self.func, var, seen), self.ndim-1, self.length)
 
-    def _diagonalize(self, axis):
-        if axis < self.ndim - 1:
-            return insertaxis(diagonalize(self.func, axis, self.ndim - 1), self.ndim - 1, self.length)
-
     def _inflate(self, dofmap, length, axis):
         if axis + dofmap.ndim < self.ndim:
             return InsertAxis(_inflate(self.func, dofmap, length, axis), self.length)
@@ -1320,11 +1315,6 @@ class Transpose(Array):
 
     def _rinflate(self, func, length, axis):
         return Inflate(transpose(func, (*range(axis), *(axis+i for i in self.axes), *range(axis+self.ndim, func.ndim))), self.func, length)
-
-    def _diagonalize(self, axis):
-        trydiagonalize = self.func._diagonalize(self.axes[axis])
-        if trydiagonalize is not None:
-            return Transpose(trydiagonalize, self.axes + (self.ndim,))
 
     def _insertaxis(self, axis, length):
         return Transpose(InsertAxis(self.func, length), self.axes[:axis] + (self.ndim,) + self.axes[axis:])
@@ -3007,9 +2997,6 @@ class Zeros(Array):
             cache[self] = node = DuplicatedLeafNode('0', (type(self).__name__, times[self]))
             return node
 
-    def _diagonalize(self, axis):
-        return Zeros(self.shape+(self.shape[axis],), dtype=self.dtype)
-
     def _insertaxis(self, axis, length):
         return Zeros(self.shape[:axis]+(length,)+self.shape[axis:], self.dtype)
 
@@ -3103,10 +3090,6 @@ class Inflate(Array):
 
     def _derivative(self, var, seen):
         return _inflate(derivative(self.func, var, seen), self.dofmap, self.length, self.ndim-1)
-
-    def _diagonalize(self, axis):
-        if axis != self.ndim-1:
-            return _inflate(diagonalize(self.func, axis), self.dofmap, self.length, self.ndim-1)
 
     @cached_property
     def _assparse(self):
@@ -3233,9 +3216,12 @@ class Diagonalize(Array):
                      if axis < self.ndim-2)
 
     def _simplified(self):
+        if isinstance(self.func, Zeros):
+            return zeros_like(self)
         if self.shape[-1] == 1:
             return InsertAxis(self.func, 1)
-        return self.func._diagonalize(self.ndim-2)
+        if simple := self._as_any(ravel, insertaxis, _inflate):
+            return simple
 
     @staticmethod
     def evalf(arr):
@@ -3508,10 +3494,6 @@ class Ravel(Array):
             return ravel(Inflate(self.func, dofmap, length), self.ndim-1)
         else:
             return _inflate(self.func, Unravel(dofmap, *self.func.shape[-2:]), length, axis)
-
-    def _diagonalize(self, axis):
-        if axis != self.ndim-1:
-            return ravel(diagonalize(self.func, axis), self.ndim-1)
 
     def _insertaxis(self, axis, length):
         return ravel(insertaxis(self.func, axis+(axis == self.ndim), length), self.ndim-(axis == self.ndim))
