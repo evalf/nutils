@@ -856,7 +856,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     _insertaxis = lambda self, axis, length: None
     _power = lambda self, n: None
     _add = lambda self, other: None
-    _sum = lambda self, axis: None
     _determinant = lambda self, axis1, axis2: None
     _inverse = lambda self, axis1, axis2: None
     _diagonalize = lambda self, axis: None
@@ -1054,9 +1053,6 @@ class Constant(Array):
     def _transpose(self, axes):
         return constant(self.value.transpose(axes))
 
-    def _sum(self, axis):
-        return constant((numpy.any if self.dtype == bool else numpy.sum)(self.value, axis))
-
     def _add(self, other):
         if isinstance(other, Constant):
             return constant(numpy.add(self.value, other.value))
@@ -1166,11 +1162,6 @@ class InsertAxis(Array):
 
     def _derivative(self, var, seen):
         return insertaxis(derivative(self.func, var, seen), self.ndim-1, self.length)
-
-    def _sum(self, i):
-        if i == self.ndim - 1:
-            return self.func if self.dtype == bool else self.func * astype(self.length, self.func.dtype)
-        return InsertAxis(sum(self.func, i), self.length)
 
     def _product(self):
         return self.func if self.dtype == bool else self.func**astype(self.length, self.func.dtype)
@@ -1399,13 +1390,6 @@ class Transpose(Array):
             return self.func
         newaxes = tuple(self.axes[i] for i in axes)
         return transpose(self.func, newaxes)
-
-    def _sum(self, i):
-        axis = self.axes[i]
-        trysum = self.func._sum(axis)
-        if trysum is not None:
-            axes = tuple(ax-(ax > axis) for ax in self.axes if ax != axis)
-            return transpose(trysum, axes)
 
     def _derivative(self, var, seen):
         return transpose(derivative(self.func, var, seen), self.axes+tuple(range(self.ndim, self.ndim+var.ndim)))
@@ -1713,14 +1697,6 @@ class Multiply(Array):
 
     evalf = staticmethod(numpy.multiply)
 
-    def _sum(self, axis):
-        factors = tuple(self._factors)
-        for i, fi in enumerate(factors):
-            unaligned, where = unalign(fi)
-            if axis not in where:
-                summed = sum(multiply(*factors[:i], *factors[i+1:]), axis)
-                return summed * align(unaligned, [i-(i > axis) for i in where], summed.shape)
-
     def _add(self, other):
         factors = list(self._factors)
         other_factors = []
@@ -1908,9 +1884,6 @@ class Add(Array):
 
     evalf = staticmethod(numpy.add)
 
-    def _sum(self, axis):
-        return add(*[sum(f, axis) for f in self._terms])
-
     def _derivative(self, var, seen):
         return add(*[derivative(f, var, seen) for f in self._terms])
 
@@ -2046,20 +2019,48 @@ class Sum(Array):
                 yield op, (Sum(f), index)
 
     def _simplified(self):
+        if isinstance(self.func, Zeros):
+            return zeros_like(self)
         if _equals_scalar_constant(self.func.shape[-1], 1):
             return Take(self.func, constant(0))
-        return self.func._sum(self.ndim)
+        if simple := self._as_any(insertaxis, diagonalize, _inflate, add, ravel, constant, IntToFloat, FloatToComplex, loop_sum):
+            return simple
+        for op, args in self.func.representations:
+            if op is _inflate:
+                f, dofmap, length, axis = args
+                if axis == self.ndim:
+                    # NOTE is this correct if dofmap has repeated indices?
+                    for i in range(dofmap.ndim):
+                        f = Sum(f)
+                    return f
+            elif op is insertaxis:
+                f, axis, length = args
+                if axis == f.ndim:
+                    return f * astype(length, f.dtype) if f.dtype != bool else f
+            elif op is diagonalize:
+                f, axis, newaxis = args
+                if newaxis == self.func.ndim-1:
+                    return f
+                if axis == f.ndim-1:
+                    return Transpose.from_end(f, newaxis)
+            elif op is ravel:
+                f, axis = args
+                if axis == f.ndim-2:
+                    return Sum(Sum(f))
+        for factor, rem, ops in self.func._iter_into(multiply):
+            for f, axis, length in factor._as(insertaxis, lambda f, i, n: i == self.ndim):
+                if rem:
+                    return f * Sum(multiply(*rem))
+                elif self.dtype == bool:
+                    return f
+                else:
+                    return f * astype(length, self.dtype)
 
     def _optimized_for_numpy(self):
         if isinstance(self.func, Einsum):
             return Einsum(self.func.args, self.func.args_idx, self.func.out_idx[:-1])
         if isinstance(self.func, Multiply) and self.dtype != bool:
             return Einsum(tuple(self.func.funcs), (tuple(range(self.func.ndim)),)*2, tuple(range(self.ndim)))
-
-    def _sum(self, axis):
-        trysum = self.func._sum(axis)
-        if trysum is not None:
-            return Sum(trysum)
 
     def _derivative(self, var, seen):
         return sum(derivative(self.func, var, seen), self.ndim)
@@ -2213,10 +2214,6 @@ class TakeDiag(Array):
     def _derivative(self, var, seen):
         return takediag(derivative(self.func, var, seen), self.ndim-1, self.ndim)
 
-    def _sum(self, axis):
-        if axis != self.ndim - 1 and (simple := self.func._sum(axis)):
-            return TakeDiag(simple)
-
     def _intbounds_impl(self):
         return self.func._intbounds
 
@@ -2368,10 +2365,6 @@ class Take(Array):
 
     def _derivative(self, var, seen):
         return _take(derivative(self.func, var, seen), self.indices, self.func.ndim-1)
-
-    def _sum(self, axis):
-        if axis < self.func.ndim - 1 and (simple := self.func._sum(axis)):
-            return Take(simple, self.indices)
 
     def _intbounds_impl(self):
         return self.func._intbounds
@@ -2956,9 +2949,6 @@ class IntToFloat(Cast):
         if isinstance(other, __class__):
             return self._newargs(self.args[0] * other.args[0])
 
-    def _sum(self, axis):
-        return self._newargs(sum(self.args[0], axis))
-
     def _product(self):
         return self._newargs(product(self.args[0], -1))
 
@@ -2984,9 +2974,6 @@ class FloatToComplex(Cast):
     def _multiply(self, other):
         if isinstance(other, __class__):
             return self._newargs(self.args[0] * other.args[0])
-
-    def _sum(self, axis):
-        return self._newargs(sum(self.args[0], axis))
 
     def _product(self):
         return self._newargs(product(self.args[0], -1))
@@ -3242,9 +3229,6 @@ class Zeros(Array):
     def _diagonalize(self, axis):
         return Zeros(self.shape+(self.shape[axis],), dtype=self.dtype)
 
-    def _sum(self, axis):
-        return Zeros(self.shape[:axis] + self.shape[axis+1:], dtype=self.dtype)
-
     def _transpose(self, axes):
         shape = tuple(self.shape[n] for n in axes)
         return Zeros(shape, dtype=self.dtype)
@@ -3372,14 +3356,6 @@ class Inflate(Array):
     def _diagonalize(self, axis):
         if axis != self.ndim-1:
             return _inflate(diagonalize(self.func, axis), self.dofmap, self.length, self.ndim-1)
-
-    def _sum(self, axis):
-        if axis == self.ndim-1:
-            func = self.func
-            for i in range(self.dofmap.ndim):
-                func = Sum(func)
-            return func
-        return Inflate(sum(self.func, axis), self.dofmap, self.length)
 
     def _unravel(self, axis, shape):
         if axis != self.ndim-1:
@@ -3537,11 +3513,6 @@ class Diagonalize(Array):
             return Product(self.func)
         elif axis1 < self.ndim-2 and axis2 < self.ndim-2:
             return Diagonalize(determinant(self.func, (axis1, axis2)))
-
-    def _sum(self, axis):
-        if axis >= self.ndim - 2:
-            return self.func
-        return Diagonalize(sum(self.func, axis))
 
     def _unravel(self, axis, shape):
         if axis >= self.ndim - 2:
@@ -3819,11 +3790,6 @@ class Ravel(Array):
     def _add(self, other):
         return Ravel(self.func + Unravel(other, *self.func.shape[-2:]))
 
-    def _sum(self, axis):
-        if axis == self.ndim-1:
-            return Sum(Sum(self.func))
-        return Ravel(sum(self.func, axis))
-
     def _derivative(self, var, seen):
         return ravel(derivative(self.func, var, seen), axis=self.ndim-1)
 
@@ -3957,10 +3923,6 @@ class Unravel(Array):
     @staticmethod
     def evalf(f, sh1, sh2):
         return f.reshape(f.shape[:-1] + (sh1, sh2))
-
-    def _sum(self, axis):
-        if axis < self.ndim - 2:
-            return Unravel(sum(self.func, axis), *self.shape[-2:])
 
     @cached_property
     def _assparse(self):
@@ -4428,12 +4390,6 @@ class Choose(Array):
     def _get(self, i, item):
         return Choose(get(self.index, i, item), *(get(choice, i, item) for choice in self.choices))
 
-    def _sum(self, axis):
-        unaligned, where = unalign(self.index)
-        if axis not in where:
-            index = align(unaligned, [i-(i > axis) for i in where], self.shape[:axis]+self.shape[axis+1:])
-            return Choose(index, *(sum(choice, axis) for choice in self.choices))
-
     def _product(self):
         unaligned, where = unalign(self.index)
         if self.ndim-1 not in where:
@@ -4871,9 +4827,6 @@ class LoopSum(Loop, Array):
 
     def _unravel(self, axis, shape):
         return loop_sum(unravel(self.func, axis, shape), self.index)
-
-    def _sum(self, axis):
-        return loop_sum(sum(self.func, axis), self.index)
 
     def _add(self, other):
         if isinstance(other, LoopSum) and other.index == self.index:
