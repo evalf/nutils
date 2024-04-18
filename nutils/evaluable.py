@@ -852,7 +852,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
 
     # simplifications
     _eig = lambda self, symmetric: None
-    _ravel = lambda self, axis: None
     _real = lambda self: None
     _imag = lambda self: None
     _conjugate = lambda self: None
@@ -1289,10 +1288,6 @@ class Transpose(Array):
         axes = [ax+(ax > funcaxis)*(ndim-1) for ax in self.axes if ax != funcaxis]
         axes[axis:axis] = range(funcaxis, funcaxis + ndim)
         return tuple(axes)
-
-    def _ravel(self, axis):
-        if self.axes[axis] == self.ndim-2 and self.axes[axis+1] == self.ndim-1:
-            return Transpose(Ravel(self.func), self.axes[:-1])
 
     @cached_property
     def _assparse(self):
@@ -2972,9 +2967,6 @@ class Zeros(Array):
             cache[self] = node = DuplicatedLeafNode('0', (type(self).__name__, times[self]))
             return node
 
-    def _ravel(self, axis):
-        return Zeros(self.shape[:axis] + (self.shape[axis]*self.shape[axis+1],) + self.shape[axis+2:], self.dtype)
-
     @cached_property
     def _assparse(self):
         return ()
@@ -3450,11 +3442,12 @@ class Ravel(Array):
         return tuple(inflations)
 
     def _simplified(self):
+        if isinstance(self.func, Zeros):
+            return zeros_like(self)
         if _equals_scalar_constant(self.func.shape[-2], 1):
             return get(self.func, -2, constant(0))
         if _equals_scalar_constant(self.func.shape[-1], 1):
             return get(self.func, -1, constant(0))
-        return self.func._ravel(self.ndim-1)
 
     @staticmethod
     def evalf(f):
