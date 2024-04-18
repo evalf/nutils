@@ -1630,14 +1630,6 @@ class Add(Array):
             inflations.append((axis, types.frozendict((dofmap, util.sum(parts[dofmap] for parts in (parts1, parts2) if dofmap in parts)) for dofmap in dofmaps)))
         return tuple(inflations)
 
-    @property
-    def _terms(self):
-        for func in self.funcs:
-            if isinstance(func, Add):
-                yield from func._terms
-            else:
-                yield func
-
     @util.reentrant_iter.property
     def representations(self):
         yield add, tuple(self.funcs)
@@ -1672,18 +1664,19 @@ class Add(Array):
     evalf = staticmethod(numpy.add)
 
     def _derivative(self, var, seen):
-        return add(*[derivative(f, var, seen) for f in self._terms])
+        func1, func2 = self.funcs
+        return derivative(func1, var, seen) + derivative(func2, var, seen)
 
     @cached_property
     def _assparse(self):
         if self.dtype == bool:
             return super()._assparse
-        else:
-            return _gathersparsechunks(itertools.chain(*[f._assparse for f in self._terms]))
+        func1, func2 = self.funcs
+        return _gathersparsechunks(func1._assparse + func2._assparse)
 
     def _intbounds_impl(self):
-        lowers, uppers = zip(*[f._intbounds for f in self._terms])
-        return builtins.sum(lowers), builtins.sum(uppers)
+        (lower1, upper1), (lower2, upper2) = [f._intbounds for f in self.funcs]
+        return lower1 + lower2, upper1 + upper2
 
 
 class Einsum(Array):
