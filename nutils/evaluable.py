@@ -1798,7 +1798,7 @@ class Add(Array):
 class Einsum(Array):
 
     def __init__(self, args: typing.Tuple[Array, ...], args_idx: typing.Tuple[typing.Tuple[int, ...], ...], out_idx: typing.Tuple[int, ...]):
-        assert isinstance(args, tuple) and all(isinstance(arg, Array) for arg in args), f'arg={arg!r}'
+        assert isinstance(args, tuple) and all(isinstance(arg, Array) for arg in args), f'args={args!r}'
         assert isinstance(args_idx, tuple) and all(isinstance(arg_idx, tuple) and all(isinstance(n, int) for n in arg_idx) for arg_idx in args_idx), f'args_idx={args_idx!r}'
         assert isinstance(out_idx, tuple) and all(isinstance(n, int) for n in out_idx) and len(out_idx) == len(set(out_idx)), f'out_idx={out_idx!r}'
         assert len(args_idx) == len(args) and all(len(idx) == arg.ndim for idx, arg in zip(args_idx, args)), f'len(args_idx)={len(args_idx)}, len(args)={len(args)}'
@@ -1815,7 +1815,7 @@ class Einsum(Array):
         try:
             shape = tuple(lengths[i] for i in out_idx)
         except KeyError:
-            raise ValueError('Output axis {} is not listed in any of the arguments.'.format(', '.join(i for i in out_idx if i not in lengths)))
+            raise ValueError('Output axis {} is not listed in any of the arguments.'.format(', '.join(str(i) for i in out_idx if i not in lengths)))
         self.args = args
         self.args_idx = args_idx
         self.out_idx = out_idx
