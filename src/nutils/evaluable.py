@@ -677,6 +677,24 @@ class Array(Evaluable):
     def _as(self, op):
         return (args for op_, args in self.representations if op_ is op)
 
+    def _as_any(self, *ops):
+        for op, args in self.representations:
+            if op in ops:
+                return op(*args)
+
+    def _iter_into(self, binary_op):
+        queue = [(self, (), set())]
+        for f, rem, ops in queue:
+            yield f, rem, ops
+            ops = ops.copy()
+            for op, args in f.representations:
+                if op is binary_op:
+                    a, b = args
+                    queue.append((a, (b, *rem), ops))
+                    queue.append((b, (a, *rem), ops))
+                    break
+                ops.add(op)
+
     _diagonals = ()
     _inflations = ()
 
