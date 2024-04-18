@@ -1753,7 +1753,7 @@ class Einsum(Array):
         try:
             shape = tuple(lengths[i] for i in out_idx)
         except KeyError:
-            raise ValueError('Output axis {} is not listed in any of the arguments.'.format(', '.join(i for i in out_idx if i not in lengths)))
+            raise ValueError('Output axis {} is not listed in any of the arguments.'.format(', '.join(str(i) for i in out_idx if i not in lengths)))
         self.args = args
         self.args_idx = args_idx
         self.out_idx = out_idx

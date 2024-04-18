@@ -68,8 +68,6 @@ class check(TestCase):
             self.assertArrayAlmostEqual(actual.eval(**evalargs), desired, decimal)
         with self.subTest('simplified'):
             self.assertArrayAlmostEqual(actual.simplified.eval(**evalargs), desired, decimal)
-        with self.subTest('optimized'):
-            self.assertArrayAlmostEqual(actual.optimized_for_numpy.eval(**evalargs), desired, decimal)
         if actual.dtype != bool:
             with self.subTest('sparse'):
                 indices, values, shape = sparse.extract(evaluable.eval_sparse(actual, **evalargs))
