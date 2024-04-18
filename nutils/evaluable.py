@@ -854,7 +854,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     _multiply = lambda self, other: None
     _transpose = lambda self, axes: None
     _insertaxis = lambda self, axis, length: None
-    _power = lambda self, n: None
     _add = lambda self, other: None
     _diagonalize = lambda self, axis: None
     _sign = lambda self: None
@@ -1059,10 +1058,6 @@ class Constant(Array):
         if isinstance(other, Constant):
             return constant(numpy.multiply(self.value, other.value))
 
-    def _power(self, n):
-        if isinstance(n, Constant):
-            return constant(numpy.power(self.value, n.value))
-
     def _eig(self, symmetric):
         eigval, eigvec = (numpy.linalg.eigh if symmetric else numpy.linalg.eig)(self.value)
         if not symmetric:
@@ -1141,11 +1136,6 @@ class InsertAxis(Array):
 
     def _derivative(self, var, seen):
         return insertaxis(derivative(self.func, var, seen), self.ndim-1, self.length)
-
-    def _power(self, n):
-        unaligned1, unaligned2, where = unalign(self, n)
-        if len(where) != self.ndim:
-            return align(unaligned1 ** unaligned2, where, self.shape)
 
     def _add(self, other):
         unaligned1, unaligned2, where = unalign(self, other)
@@ -1377,10 +1367,6 @@ class Transpose(Array):
         axes = [ax+(ax > funcaxis)*(ndim-1) for ax in self.axes if ax != funcaxis]
         axes[axis:axis] = range(funcaxis, funcaxis + ndim)
         return tuple(axes)
-
-    def _power(self, n):
-        n_trans = Transpose(n, self._invaxes)
-        return Transpose(Power(self.func, n_trans), self.axes)
 
     def _sign(self):
         return Transpose(Sign(self.func), self.axes)
@@ -2336,15 +2322,20 @@ class Power(Array):
                         yield op, (Power(f1, f2), axis1)
 
     def _simplified(self):
-        if iszero(self.power):
+        if isinstance(self.power, Zeros):
             return ones_like(self)
+        if simple := self._as_any(constant, insertaxis, ravel):
+            return simple
         p = self.power._const_uniform
         if p == 1:
             return self.func
         elif p == 2:
             return self.func * self.func
-        else:
-            return self.func._power(self.power)
+        if self.dtype != complex:
+            for f, q in self.func._as(power):
+                if p and p % 2 != 0 and (q_ := q._const_uniform) and q_ % 2 == 0: # power was even, becomes odd
+                    f = abs(f)
+                return Power(f, self.power * q)
 
     def _optimized_for_numpy(self):
         p = self.power._const_uniform
@@ -2367,15 +2358,6 @@ class Power(Array):
         # self` = power` * ln func * self + power * func` * func**(power-1)
         return einsum('A,A,AB->AB', self.power, power(self.func, self.power - astype(1, self.power.dtype)), derivative(self.func, var, seen)) \
             + einsum('A,A,AB->AB', ln(self.func), self, derivative(self.power, var, seen))
-
-    def _power(self, n):
-        if self.dtype == complex or n.dtype == complex:
-            return
-        func = self.func
-        newpower = multiply(self.power, n)
-        if iszero(self.power % astype(2, self.power.dtype)) and not iszero(newpower % astype(2, newpower.dtype)):
-            func = abs(func)
-        return Power(func, newpower)
 
 
 class Pointwise(Array):
@@ -3682,9 +3664,6 @@ class Ravel(Array):
 
     def _insertaxis(self, axis, length):
         return ravel(insertaxis(self.func, axis+(axis == self.ndim), length), self.ndim-(axis == self.ndim))
-
-    def _power(self, n):
-        return Ravel(Power(self.func, Unravel(n, *self.func.shape[-2:])))
 
     def _sign(self):
         return Ravel(Sign(self.func))
