@@ -852,9 +852,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
 
     # simplifications
     _eig = lambda self, symmetric: None
-    _real = lambda self: None
-    _imag = lambda self: None
-    _conjugate = lambda self: None
 
     representations = ()
 
@@ -2648,9 +2645,8 @@ class Conjugate(Pointwise):
         return complex
 
     def _simplified(self):
-        retval = self.args[0]._conjugate()
-        if retval is not None:
-            return retval
+        for f, in self.args[0]._as(FloatToComplex):
+            return FloatToComplex(f)
         return super()._simplified()
 
 
@@ -2663,9 +2659,8 @@ class Real(Pointwise):
         return float
 
     def _simplified(self):
-        retval = self.args[0]._real()
-        if retval is not None:
-            return retval
+        for f, in self.args[0]._as(FloatToComplex):
+            return f
         return super()._simplified()
 
 
@@ -2678,9 +2673,8 @@ class Imag(Pointwise):
         return float
 
     def _simplified(self):
-        retval = self.args[0]._imag()
-        if retval is not None:
-            return retval
+        for f, in self.args[0]._as(FloatToComplex):
+            return zeros_like(self)
         return super()._simplified()
 
 
@@ -2727,15 +2721,6 @@ class FloatToComplex(Cast):
         if T != float:
             raise TypeError(f'Expected an array with dtype float but got {T.__name__}.')
         return complex
-
-    def _real(self):
-        return self.args[0]
-
-    def _imag(self):
-        return zeros_like(self.args[0])
-
-    def _conjugate(self):
-        return self
 
     def _derivative(self, var, seen):
         if var.dtype == complex:
