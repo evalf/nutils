@@ -3694,16 +3694,12 @@ class Polyval(Array):
         return dpoints + dcoeffs
 
     def _simplified(self):
-        ncoeffs_lower, ncoeffs_upper = self.coeffs.shape[-1]._intbounds
-        if iszero(self.coeffs):
+        if isinstance(self.coeffs, Zeros):
             return zeros_like(self)
-        elif _equals_scalar_constant(self.coeffs.shape[-1], 1):
+        if _equals_scalar_constant(self.coeffs.shape[-1], 1):
             return prependaxes(get(self.coeffs, -1, constant(0)), self.points.shape[:-1])
-        points, where_points = unalign(self.points, naxes=self.points.ndim - 1)
-        coeffs, where_coeffs = unalign(self.coeffs, naxes=self.coeffs.ndim - 1)
-        if len(where_points) + len(where_coeffs) < self.ndim:
-            where = *where_points, *(axis + self.points.ndim - 1 for axis in where_coeffs)
-            return align(Polyval(coeffs, points), where, self.shape)
+        if simple := self._as_any(insertaxis):
+            return simple
 
 
 class PolyDegree(Array):
