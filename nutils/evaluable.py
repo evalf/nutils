@@ -1468,14 +1468,6 @@ class Multiply(Array):
         assert equalshape(func1.shape, func2.shape) and func1.dtype == func2.dtype, 'Multiply({}, {})'.format(func1, func2)
         super().__init__(args=tuple(self.funcs), shape=func1.shape, dtype=func1.dtype)
 
-    @property
-    def _factors(self):
-        for func in self.funcs:
-            if isinstance(func, Multiply):
-                yield from func._factors
-            else:
-                yield func
-
     @util.reentrant_iter.property
     def representations(self):
         yield multiply, tuple(self.funcs)
@@ -1564,7 +1556,11 @@ class Multiply(Array):
         # inserted) axes in common with the other clusters, and store them in
         # uninserted form.
         clusters = []
-        for f in self._factors:
+        factors = list(self.funcs)
+        for f in factors:
+            if isinstance(f, Multiply):
+                factors.extend(f.funcs)
+                continue
             uninserted, where = unalign(f)
             for i in reversed(range(len(clusters))):
                 if set(where) & set(clusters[i][1]):
