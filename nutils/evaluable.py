@@ -851,7 +851,6 @@ class Array(Evaluable, metaclass=_ArrayMeta):
         return node
 
     # simplifications
-    _insertaxis = lambda self, axis, length: None
     _eig = lambda self, symmetric: None
     _ravel = lambda self, axis: None
     _real = lambda self: None
@@ -1097,9 +1096,12 @@ class InsertAxis(Array):
         return tuple((axis, types.frozendict((dofmap, InsertAxis(func, self.length)) for dofmap, func in parts.items())) for axis, parts in self.func._inflations)
 
     def _simplified(self):
+        if isinstance(self.func, Zeros):
+            return zeros_like(self)
         if _equals_scalar_constant(self.length, 0):
             return zeros_like(self)
-        return self.func._insertaxis(self.ndim-1, self.length)
+        if simple := self._as_any(ravel):
+            return simple
 
     @staticmethod
     def evalf(func, length):
@@ -1112,10 +1114,6 @@ class InsertAxis(Array):
 
     def _derivative(self, var, seen):
         return insertaxis(derivative(self.func, var, seen), self.ndim-1, self.length)
-
-    def _insertaxis(self, axis, length):
-        if axis == self.ndim - 1:
-            return InsertAxis(InsertAxis(self.func, length), self.length)
 
     @cached_property
     def _assparse(self):
@@ -1295,9 +1293,6 @@ class Transpose(Array):
     def _ravel(self, axis):
         if self.axes[axis] == self.ndim-2 and self.axes[axis+1] == self.ndim-1:
             return Transpose(Ravel(self.func), self.axes[:-1])
-
-    def _insertaxis(self, axis, length):
-        return Transpose(InsertAxis(self.func, length), self.axes[:axis] + (self.ndim,) + self.axes[axis:])
 
     @cached_property
     def _assparse(self):
@@ -2977,9 +2972,6 @@ class Zeros(Array):
             cache[self] = node = DuplicatedLeafNode('0', (type(self).__name__, times[self]))
             return node
 
-    def _insertaxis(self, axis, length):
-        return Zeros(self.shape[:axis]+(length,)+self.shape[axis:], self.dtype)
-
     def _ravel(self, axis):
         return Zeros(self.shape[:axis] + (self.shape[axis]*self.shape[axis+1],) + self.shape[axis+2:], self.dtype)
 
@@ -3470,9 +3462,6 @@ class Ravel(Array):
 
     def _derivative(self, var, seen):
         return ravel(derivative(self.func, var, seen), axis=self.ndim-1)
-
-    def _insertaxis(self, axis, length):
-        return ravel(insertaxis(self.func, axis+(axis == self.ndim), length), self.ndim-(axis == self.ndim))
 
     @cached_property
     def _assparse(self):
