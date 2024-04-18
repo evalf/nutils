@@ -2062,6 +2062,8 @@ class Pointwise(Array):
 
     deriv = None
     return_type = None
+    linear = () # indices of linear arguments
+    zero_preserving = () # indices of nonlinear arguments that map zero to zero
 
     def __init__(self, *args: Array, **params):
         assert all(isinstance(arg, Array) for arg in args), f'args={args!r}'
@@ -2100,9 +2102,16 @@ class Pointwise(Array):
         return cls(*(prependaxes(appendaxes(arg, shape[r:]), shape[:l]) for arg, l, r in zip(args, offsets[:-1], offsets[1:])))
 
     def _simplified(self):
-        if len(self.args) == 1 and isinstance(self.args[0], Transpose):
-            arg, = self.args
-            return Transpose(self._newargs(arg.func), arg.axes)
+        for i in self.linear + self.zero_preserving:
+            if iszero(self.args[i]):
+                return zeros_like(self)
+            for axis1, axis2, *other in map(sorted, self.args[i]._diagonals):
+                return diagonalize(self._newargs(*[takediag(arg, axis1, axis2) for arg in self.args]), axis1, axis2)
+        for i in self.linear:
+            for axis, parts in self.args[i]._inflations:
+                return util.sum(_inflate(self._newargs(*self.args[:i], func, *self.args[i+1:]), dofmap, self.shape[axis], axis) for dofmap, func in parts.items())
+        if isinstance(self.args[0], Transpose) and all(isinstance(arg, Transpose) and arg.axes == self.args[0].axes for arg in self.args[1:]):
+            return Transpose(self._newargs(*[arg.func for arg in self.args]), self.args[0].axes)
         *uninserted, where = unalign(*self.args)
         if len(where) != self.ndim:
             return align(self._newargs(*uninserted), where, self.shape)
@@ -2151,6 +2160,7 @@ class Reciprocal(Holomorphic):
 
 
 class Negative(Pointwise):
+    linear = 0,
     evalf = staticmethod(numpy.negative)
     def return_type(T):
         if T == bool:
@@ -2163,6 +2173,7 @@ class Negative(Pointwise):
 
 
 class FloorDivide(Pointwise):
+    zero_preserving = 0,
     evalf = staticmethod(numpy.floor_divide)
     def return_type(dividend, divisor):
         if dividend != divisor:
@@ -2192,6 +2203,7 @@ class FloorDivide(Pointwise):
 
 
 class Absolute(Pointwise):
+    zero_preserving = 0,
     evalf = staticmethod(numpy.absolute)
 
     def return_type(T):
@@ -2213,33 +2225,24 @@ class Cos(Holomorphic):
     evalf = staticmethod(numpy.cos)
     deriv = lambda x: -Sin(x),
 
-    def _simplified(self):
-        arg, = self.args
-        if iszero(arg):
-            return ones(self.shape, dtype=self.dtype)
-        return super()._simplified()
-
 
 class Sin(Holomorphic):
     'Sine, element-wise.'
+    zero_preserving = 0,
     evalf = staticmethod(numpy.sin)
     deriv = Cos,
-
-    def _simplified(self):
-        arg, = self.args
-        if iszero(arg):
-            return zeros(self.shape, dtype=self.dtype)
-        return super()._simplified()
 
 
 class Tan(Holomorphic):
     'Tangent, element-wise.'
+    zero_preserving = 0,
     evalf = staticmethod(numpy.tan)
     deriv = lambda x: Cos(x)**astype(-2, x.dtype),
 
 
 class ArcSin(Holomorphic):
     'Inverse sine, element-wise.'
+    zero_preserving = 0,
     evalf = staticmethod(numpy.arcsin)
     deriv = lambda x: reciprocal(sqrt(astype(1, x.dtype)-x**astype(2, x.dtype))),
 
@@ -2252,6 +2255,7 @@ class ArcCos(Holomorphic):
 
 class ArcTan(Holomorphic):
     'Inverse tangent, element-wise.'
+    zero_preserving = 0,
     evalf = staticmethod(numpy.arctan)
     deriv = lambda x: reciprocal(astype(1, x.dtype)+x**astype(2, x.dtype)),
 
@@ -2269,18 +2273,21 @@ class CosH(Holomorphic):
 
 class SinH(Holomorphic):
     'Hyperbolic sine, element-wise.'
+    zero_preserving = 0,
     evalf = staticmethod(numpy.sinh)
     deriv = CosH,
 
 
 class TanH(Holomorphic):
     'Hyperbolic tangent, element-wise.'
+    zero_preserving = 0,
     evalf = staticmethod(numpy.tanh)
     deriv = lambda x: astype(1, x.dtype) - TanH(x)**astype(2, x.dtype),
 
 
 class ArcTanH(Holomorphic):
     'Inverse hyperbolic tangent, element-wise.'
+    zero_preserving = 0,
     evalf = staticmethod(numpy.arctanh)
     deriv = lambda x: reciprocal(astype(1, x.dtype)-x**astype(2, x.dtype)),
 
@@ -2296,6 +2303,7 @@ class Log(Holomorphic):
 
 
 class Mod(Pointwise):
+    zero_preserving = 0,
     evalf = staticmethod(numpy.mod)
 
     def return_type(dividend, divisor):
@@ -2445,6 +2453,7 @@ class Maximum(Pointwise):
 
 
 class Conjugate(Pointwise):
+    linear = 0,
     evalf = staticmethod(numpy.conjugate)
     def return_type(T):
         if T != complex:
@@ -2459,6 +2468,7 @@ class Conjugate(Pointwise):
 
 
 class Real(Pointwise):
+    linear = 0,
     evalf = staticmethod(numpy.real)
     def return_type(T):
         if T != complex:
@@ -2473,6 +2483,7 @@ class Real(Pointwise):
 
 
 class Imag(Pointwise):
+    linear = 0,
     evalf = staticmethod(numpy.imag)
     def return_type(T):
         if T != complex:
@@ -2491,14 +2502,6 @@ class Cast(Pointwise):
     def evalf(self, arg):
         return numpy.array(arg, dtype=self.dtype)
 
-    def _simplified(self):
-        arg, = self.args
-        if iszero(arg):
-            return zeros_like(self)
-        for axis, parts in arg._inflations:
-            return util.sum(_inflate(self._newargs(func), dofmap, self.shape[axis], axis) for dofmap, func in parts.items())
-        return super()._simplified()
-
     def _intbounds_impl(self):
         if self.args[0].dtype == bool:
             return 0, 1
@@ -2513,6 +2516,7 @@ class Cast(Pointwise):
 
 
 class BoolToInt(Cast):
+    zero_preserving = 0,
     def return_type(T):
         if T != bool:
             raise TypeError(f'Expected an array with dtype bool but got {T.__name__}.')
@@ -2520,6 +2524,7 @@ class BoolToInt(Cast):
 
 
 class IntToFloat(Cast):
+    linear = 0,
     def return_type(T):
         if T != int:
             raise TypeError(f'Expected an array with dtype int but got {T.__name__}.')
@@ -2548,6 +2553,7 @@ class IntToFloat(Cast):
 
 
 class FloatToComplex(Cast):
+    linear = 0,
     def return_type(T):
         if T != float:
             raise TypeError(f'Expected an array with dtype float but got {T.__name__}.')
