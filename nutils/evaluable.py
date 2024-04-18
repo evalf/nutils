@@ -647,33 +647,6 @@ if debug_flags.sparse:
                 namespace['_assparse'] = _chunked_assparse_checker(namespace['_assparse'])
             return super().__new__(mcls, name, bases, namespace)
 
-if debug_flags.evalf:
-    class _evalf_checker:
-        def __init__(self, orig):
-            self.orig = orig
-
-        def __set_name__(self, owner, name):
-            if hasattr(self.orig, '__set_name__'):
-                self.orig.__set_name__(owner, name)
-
-        def __get__(self, instance, owner):
-            evalf = self.orig.__get__(instance, owner)
-
-            @functools.wraps(evalf)
-            def evalf_with_check(*args, **kwargs):
-                res = evalf(*args, **kwargs)
-                assert not hasattr(instance, 'dtype') or asdtype(res.dtype) == instance.dtype, ((instance.dtype, res.dtype), instance, res)
-                assert not hasattr(instance, 'ndim') or res.ndim == instance.ndim
-                assert not hasattr(instance, 'shape') or all(m == n for m, n in zip(res.shape, instance.shape) if isinstance(n, int)), 'shape mismatch'
-                return res
-            return evalf_with_check
-
-    class _ArrayMeta(_ArrayMeta):
-        def __new__(mcls, name, bases, namespace):
-            if 'evalf' in namespace:
-                namespace['evalf'] = _evalf_checker(namespace['evalf'])
-            return super().__new__(mcls, name, bases, namespace)
-
 
 class AsEvaluableArray(Protocol):
     'Protocol for conversion into an :class:`Array`.'
