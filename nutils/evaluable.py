@@ -3577,6 +3577,10 @@ class RavelIndex(Array):
                 f, axis, length = args
                 yield op, (RavelIndex(self._ia, f, self._na, self._nb), self._ia.ndim+axis, length)
 
+    def _simplified(self):
+        if simple := self._as_any(insertaxis):
+            return simple
+
     @staticmethod
     def evalf(ia, ib, nb):
         return ia[(...,)+(numpy.newaxis,)*ib.ndim] * nb + ib
