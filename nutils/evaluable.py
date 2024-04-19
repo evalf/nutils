@@ -3934,9 +3934,8 @@ class Legendre(Array):
         return einsum('Ai,AB->AiB', dself, derivative(self._x, var, seen))
 
     def _simplified(self):
-        unaligned, where = unalign(self._x)
-        if where != tuple(range(self._x.ndim)):
-            return align(Legendre(unaligned, self._degree), (*where, self.ndim-1), self.shape)
+        if simple := self._as_any(insertaxis):
+            return simple
 
 
 class Choose(Array):
