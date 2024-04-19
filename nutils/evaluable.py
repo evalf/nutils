@@ -3363,7 +3363,7 @@ class Argument(DerivativeTargetBase):
         assert isinstance(name, str), f'name={name!r}'
         assert isinstance(shape, tuple) and all(_isindex(n) for n in shape), f'shape={shape!r}'
         self._name = name
-        super().__init__(args=(EVALARGS, *shape), shape=shape, dtype=dtype)
+        super().__init__(args=shape, shape=shape, dtype=dtype)
 
     def _compile(self, builder):
         shape = builder.compile(self.shape)
@@ -3380,16 +3380,6 @@ class Argument(DerivativeTargetBase):
             ),
         )
         return out
-
-    def evalf(self, evalargs, *shape):
-        try:
-            value = evalargs[self._name]
-        except KeyError:
-            raise ValueError(f'argument {self._name!r} missing')
-        value = numpy.asarray(value)
-        if value.shape != shape:
-            raise ValueError(f'argument {self._name!r} has the wrong shape: expected {shape}, got {value.shape}')
-        return value.astype(self.dtype, casting='safe', copy=False)
 
     def _derivative(self, var, seen):
         if isinstance(var, Argument) and var._name == self._name and self.dtype in (float, complex):
@@ -4317,7 +4307,7 @@ class _LoopIndex(Array):
         assert _isindex(length), f'length={length!r}'
         self.loop_id = loop_id
         self.length = length
-        super().__init__(args=(EVALARGS, self.length), shape=(), dtype=int)
+        super().__init__(args=(self.length,), shape=(), dtype=int)
 
     def __str__(self):
         try:
@@ -4325,9 +4315,6 @@ class _LoopIndex(Array):
         except:
             length = '?'
         return f'LoopIndex({self.loop_id}, length={length})'
-
-    def evalf(self, *args):
-        raise ValueError(f'`_LoopIndex` outside `Loop` with corresponding `_LoopId`: {self.loop_id}.')
 
     def _compile(self, builder):
         raise ValueError(f'`_LoopIndex` outside `Loop` with corresponding `_LoopId`: {self.loop_id}.')
