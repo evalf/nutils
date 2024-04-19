@@ -1145,4 +1145,9 @@ def iter_product(iter1, iter2):
         yield from zip(reversed(items1), items2[i:])
 
 
+def iter_many(iters):
+    iter0, *rem = iters
+    return ((v, *w) for v, w in iter_product(iter0, iter_many(rem))) if rem else ((v,) for v in iter0)
+
+
 # vim:sw=4:sts=4:et
