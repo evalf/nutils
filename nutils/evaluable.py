@@ -3885,10 +3885,12 @@ class PolyGrad(Array):
             return poly.GradPlan(self.nvars, degree)
 
     def _simplified(self):
-        if iszero(self.coeffs) or _equals_scalar_constant(self.degree, 0):
+        if isinstance(self.coeffs, Zeros) or _equals_scalar_constant(self.degree, 0):
             return zeros_like(self)
-        elif _equals_scalar_constant(self.degree, 1):
+        if _equals_scalar_constant(self.degree, 1):
             return InsertAxis(Take(self.coeffs, constant(self.nvars - 1) - Range(constant(self.nvars))), constant(1))
+        if simple := self._as_any(insertaxis):
+            return simple
 
 
 class Legendre(Array):
