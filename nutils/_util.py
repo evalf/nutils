@@ -1082,4 +1082,72 @@ def shallow_replace(func, *funcargs, **funckwargs):
     return rstack[0]
 
 
+class reentrant_iter:
+
+    def __init__(self, iterable):
+        self.iterator = iter(iterable)
+        self.items = []
+
+    def __iter__(self):
+        return self.Iter(self.iterator, self.items)
+
+    class Iter:
+        def __init__(self, iterator, items):
+            self.iterator = iterator
+            self.items = items
+            self.index = 0
+        def __iter__(self):
+            return self
+        def __next__(self):
+            if self.index == len(self.items):
+                v = next(self.iterator)
+                assert self.index == len(self.items)
+                self.items.append(v)
+            else:
+                v = self.items[self.index]
+            self.index += 1
+            return v
+
+    @classmethod
+    def property(cls, f):
+        return functools.cached_property(lambda self: cls(f(self)))
+
+
+def iter_product(iter1, iter2):
+    iter1 = iter(iter1)
+    iter2 = iter(iter2)
+    try:
+        item1 = next(iter1)
+        item2 = next(iter2)
+    except StopIteration:
+        return
+    yield item1, item2
+    items1 = [item1]
+    items2 = [item2]
+    try:
+        for item1 in iter1:
+            items1.append(item1)
+            items2.append(next(iter2))
+            yield from zip(reversed(items1), items2)
+    except StopIteration:
+        del items1[0]
+        yield from zip(reversed(items1), items2)
+        for item1 in iter1:
+            del items1[0]
+            items1.append(item1)
+            yield from zip(reversed(items1), items2)
+    else:
+        for item2 in iter2:
+            del items2[0]
+            items2.append(item2)
+            yield from zip(reversed(items1), items2)
+    for i in range(1, len(items2)):
+        yield from zip(reversed(items1), items2[i:])
+
+
+def iter_many(iters):
+    iter0, *rem = iters
+    return ((v, *w) for v, w in iter_product(iter0, iter_many(rem))) if rem else ((v,) for v in iter0)
+
+
 # vim:sw=4:sts=4:et

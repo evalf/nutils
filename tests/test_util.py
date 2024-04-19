@@ -593,3 +593,147 @@ class replace(TestCase):
         newobj = util.shallow_replace(subs, obj)
         self.assertEqual(type(newobj), type(obj))
         self.assertEqual(newobj.args, (5, {7, 20}))
+
+
+class reentrant_iter(TestCase):
+
+    def setUp(self):
+        def gen():
+            yield 1
+            yield 2
+            yield 3
+        self.it = util.reentrant_iter(gen())
+
+    def test_simple(self):
+        self.assertEqual(tuple(self.it), (1, 2, 3))
+
+    def test_aaabbb(self):
+        a = iter(self.it)
+        b = iter(self.it)
+        self.assertEqual(tuple(a), (1, 2, 3))
+        self.assertEqual(tuple(b), (1, 2, 3))
+
+    def test_aababb(self):
+        a = iter(self.it)
+        b = iter(self.it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(next(a), 2)
+        self.assertEqual(next(b), 1)
+        self.assertEqual(tuple(a), (3,))
+        self.assertEqual(tuple(b), (2, 3))
+
+    def test_aabbab(self):
+        a = iter(self.it)
+        b = iter(self.it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(next(a), 2)
+        self.assertEqual(next(b), 1)
+        self.assertEqual(next(b), 2)
+        self.assertEqual(tuple(a), (3,))
+        self.assertEqual(tuple(b), (3,))
+
+    def test_aabbba(self):
+        a = iter(self.it)
+        b = iter(self.it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(next(a), 2)
+        self.assertEqual(tuple(b), (1, 2, 3))
+        self.assertEqual(tuple(a), (3,))
+
+    def test_abaabb(self):
+        a = iter(self.it)
+        b = iter(self.it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(next(b), 1)
+        self.assertEqual(tuple(a), (2, 3))
+        self.assertEqual(tuple(b), (2, 3))
+
+    def test_ababab(self):
+        a = iter(self.it)
+        b = iter(self.it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(next(b), 1)
+        self.assertEqual(next(a), 2)
+        self.assertEqual(next(b), 2)
+        self.assertEqual(tuple(a), (3,))
+        self.assertEqual(tuple(b), (3,))
+
+    def test_ababba(self):
+        a = iter(self.it)
+        b = iter(self.it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(next(b), 1)
+        self.assertEqual(next(a), 2)
+        self.assertEqual(tuple(b), (2, 3))
+        self.assertEqual(tuple(a), (3,))
+
+    def test_abbaab(self):
+        a = iter(self.it)
+        b = iter(self.it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(next(b), 1)
+        self.assertEqual(next(b), 2)
+        self.assertEqual(tuple(a), (2, 3))
+        self.assertEqual(tuple(b), (3,))
+
+    def test_abbaba(self):
+        a = iter(self.it)
+        b = iter(self.it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(next(b), 1)
+        self.assertEqual(next(b), 2)
+        self.assertEqual(next(a), 2)
+        self.assertEqual(tuple(b), (3,))
+        self.assertEqual(tuple(a), (3,))
+
+    def test_abbbaa(self):
+        a = iter(self.it)
+        b = iter(self.it)
+        self.assertEqual(next(a), 1)
+        self.assertEqual(tuple(b), (1, 2, 3))
+        self.assertEqual(tuple(a), (2, 3))
+
+    def test_property(self):
+        n = 0
+        class A:
+            @util.reentrant_iter.property
+            def x(self):
+                nonlocal n
+                for i in range(3):
+                    yield i
+                    n += 1
+        a = A()
+        it = iter(a.x)
+        self.assertEqual(next(it), 0)
+        self.assertEqual(n, 0)
+        self.assertEqual(next(it), 1)
+        self.assertEqual(n, 1)
+        for i, item in enumerate(a.x):
+            self.assertEqual(item, i)
+            self.assertEqual(n, max(i, 1))
+        self.assertEqual(n, 3)
+        self.assertEqual(tuple(a.x), (0, 1, 2))
+        self.assertEqual(n, 3)
+
+
+class iter_product(TestCase):
+
+    def test_a_eq_b(self):
+        it = util.iter_product([1,2,3], ['a','b','c'])
+        self.assertEqual(list(it), [(1,'a'), (2,'a'), (1,'b'), (3,'a'), (2,'b'), (1,'c'), (3,'b'), (2,'c'), (3,'c')])
+
+    def test_a_gt_b(self):
+        it = util.iter_product([1,2,3,4], ['a','b'])
+        self.assertEqual(list(it), [(1,'a'), (2,'a'), (1,'b'), (3,'a'), (2,'b'), (4,'a'), (3,'b'), (4,'b')])
+
+    def test_a_lt_b(self):
+        it = util.iter_product([1,2], ['a','b','c','d'])
+        self.assertEqual(list(it), [(1,'a'), (2,'a'), (1,'b'), (2,'b'), (1,'c'), (2,'c'), (1,'d'), (2,'d')])
+
+    def test_a_empty(self):
+        it = util.iter_product([], ['a','b','c'])
+        self.assertEqual(list(it), [])
+
+    def test_b_empty(self):
+        it = util.iter_product([1,2,3], [])
+        self.assertEqual(list(it), [])
