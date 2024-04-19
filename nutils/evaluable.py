@@ -224,53 +224,11 @@ class Evaluable(types.Singleton):
     def __str__(self):
         return self.__class__.__name__
 
-    def eval(self, **evalargs):
+    @property
+    def eval(self):
         '''Evaluate function on a specified element, point set.'''
 
-        values = [evalargs]
-        try:
-            values.extend(op_evalf(*[values[i] for i in indices]) for op_evalf, indices in self._serialized_evalf)
-        except KeyboardInterrupt:
-            raise
-        except Exception as e:
-            log.error(self._format_stack(values, e))
-            raise
-        else:
-            return values[-1]
-
-    def eval_withtimes(self, times, **evalargs):
-        '''Evaluate function on a specified element, point set while measure time of each step.'''
-
-        values = [evalargs]
-        try:
-            values.extend(op.evalf_withtimes(times, *[values[i] for i in indices]) for op, indices in self.serialized)
-        except KeyboardInterrupt:
-            raise
-        except Exception as e:
-            log.error(self._format_stack(values, e))
-            raise
-        else:
-            return values[-1]
-
-    @contextlib.contextmanager
-    def session(self, graphviz):
-        if graphviz is None:
-            yield self.eval
-            return
-        stats = collections.defaultdict(_Stats)
-
-        def eval(**args):
-            return self.eval_withtimes(stats, **args)
-        with log.context('eval'):
-            yield eval
-            node = self._node({}, None, stats, False)
-            maxtime = builtins.max(n.metadata[1].time for n in node.walk(set()))
-            tottime = builtins.sum(n.metadata[1].time for n in node.walk(set()))
-            aggstats = tuple((key, builtins.sum(v.time for v in values), builtins.sum(v.ncalls for v in values)) for key, values in util.gather(n.metadata for n in node.walk(set())))
-            fill_color = (lambda node: '0,{:.2f},1'.format(node.metadata[1].time/maxtime)) if maxtime else None
-            node.export_graphviz(fill_color=fill_color, dot_path=graphviz)
-            log.info('total time: {:.0f}ms\n'.format(tottime/1e6) + '\n'.join('{:4.0f} {} ({} calls, avg {:.3f} per call)'.format(t / 1e6, k, n, t / (1e6*n))
-                                                                              for k, t, n in sorted(aggstats, reverse=True, key=lambda item: item[1]) if n))
+        return compile(self, simplify=False, stats=False, cache_const_intermediates=False)
 
     def _iter_stack(self):
         yield '%0 = EVALARGS'
@@ -1037,6 +995,9 @@ class Constant(Array):
             first, *others = numpy.rollaxis(self.value, i)
             if all(numpy.equal(first, other).all() for other in others):
                 return insertaxis(constant(first), i, sh)
+
+    def eval(self, /, **evalargs):
+        return self.value
 
     def evalf(self):
         return self.value

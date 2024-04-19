@@ -102,15 +102,6 @@ class check(TestCase):
                                        actual=self.actual,
                                        desired=self.desired)
 
-    @unittest.skipIf(sys.version_info < (3, 7), 'time.perf_counter_ns is not available')
-    def test_eval_withtimes(self):
-        evalargs = dict(zip(self.arg_names, self.arg_values))
-        without_times = self.actual.eval(**evalargs)
-        stats = collections.defaultdict(evaluable._Stats)
-        with_times = self.actual.eval_withtimes(stats, **evalargs)
-        self.assertArrayAlmostEqual(with_times, without_times, 15)
-        self.assertIn(self.actual, stats)
-
     def test_getitem(self):
         for idim in range(self.actual.ndim):
             for item in range(self.desired.shape[idim]):
@@ -407,10 +398,6 @@ class check(TestCase):
         with self.subTest('from-cache'):
             if node:
                 self.assertEqual(self.actual._node(cache, None, times, False), node)
-        with self.subTest('with-times'):
-            times = collections.defaultdict(evaluable._Stats)
-            self.actual.eval_withtimes(times, **dict(zip(self.arg_names, self.arg_values)))
-            self.actual._node(cache, None, times, False)
 
 
 def generate(*shape, real, imag, zero, negative):
@@ -658,12 +645,11 @@ class intbounds(TestCase):
             self._argname = argname
             self._lower = lower
             self._upper = upper
-            super().__init__(args=(evaluable.EVALARGS,), shape=(), dtype=int)
+            super().__init__(args=(evaluable.Argument(argname, shape=(), dtype=int),), shape=(), dtype=int)
 
-        def evalf(self, evalargs):
-            value = numpy.array(evalargs[self._argname])
-            assert self._lower <= value <= self._upper
-            return numpy.array(value)
+        def evalf(self, value):
+            assert self._lower <= value[()] <= self._upper
+            return value
 
         @property
         def _intbounds(self):
@@ -976,7 +962,7 @@ class simplify(TestCase):
             def __init__(self, lower, upper):
                 self._lower = lower
                 self._upper = upper
-                super().__init__(args=(evaluable.EVALARGS,), shape=(), dtype=int)
+                super().__init__(args=(evaluable.Argument('R', shape=(), dtype=int),), shape=(), dtype=int)
 
             def evalf(self, evalargs):
                 raise NotImplementedError
@@ -1395,29 +1381,6 @@ class unalign(TestCase):
     def test_unequal_naxes(self):
         with self.assertRaises(ValueError):
             evaluable.unalign(evaluable.zeros(tuple(map(evaluable.constant, (2, 3)))), evaluable.zeros(tuple(map(evaluable.constant, (2, 3, 4)))))
-
-
-class log_error(TestCase):
-
-    class Fail(evaluable.Array):
-        def __init__(self, arg1, arg2):
-            super().__init__(args=(arg1, arg2), shape=(), dtype=int)
-        @staticmethod
-        def evalf(arg1, arg2):
-            raise RuntimeError('operation failed intentially.')
-
-    def test(self):
-        a1 = evaluable.asarray(1.)
-        a2 = evaluable.asarray([2.,3.])
-        with self.assertLogs('nutils', logging.ERROR) as cm, self.assertRaises(RuntimeError):
-            self.Fail(a1+evaluable.Sum(a2), a1).eval()
-        self.assertEqual(cm.output[0], '''ERROR:nutils:evaluation failed in step 5/5
-  %0 = EVALARGS --> dict
-  %1 = nutils.evaluable.Constant<f:> --> ndarray<f:>
-  %2 = nutils.evaluable.Constant<f:2> --> ndarray<f:2>
-  %3 = nutils.evaluable.Sum<f:> a=%2 --> float64
-  %4 = nutils.evaluable.Add<f:> %1 %3 --> float64
-  %5 = tests.test_evaluable.Fail<i:> arg1=%4 arg2=%1 --> operation failed intentially.''')
 
 
 class Poly(TestCase):
