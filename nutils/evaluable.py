@@ -3830,8 +3830,10 @@ class PolyMul(Array):
             return poly.MulPlan(self.vars, degree_left, degree_right)
 
     def _simplified(self):
-        if iszero(self.coeffs_left) or iszero(self.coeffs_right):
+        if isinstance(self.coeffs_left, Zeros) or isinstance(self.coeffs_right, Zeros):
             return zeros_like(self)
+        if simple := self._as_any(insertaxis):
+            return simple
 
 
 class PolyGrad(Array):
