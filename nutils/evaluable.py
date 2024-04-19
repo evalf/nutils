@@ -1517,6 +1517,9 @@ class Transpose(Array):
                 axes[axis:axis+dofmap.ndim] = i,
                 return transpose(tryinflate, tuple(axes))
 
+    def _rinflate(self, func, length, axis):
+        return Inflate(transpose(func, (*range(axis), *(axis+i for i in self.axes), *range(axis+self.ndim, func.ndim))), self.func, length)
+
     def _diagonalize(self, axis):
         trydiagonalize = self.func._diagonalize(self.axes[axis])
         if trydiagonalize is not None:
