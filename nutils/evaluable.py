@@ -4423,8 +4423,16 @@ class Loop(Evaluable):
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if (cached := cache.get(self)) is not None:
             return cached
-        for arg in itertools.chain(self._invariants, (self.init_arg,)):
-            arg._node(cache, subgraph, times, unique_loop_ids)
+
+        # Populate the `cache` with objects that do not depend on `self.index`.
+        stack = [self.length, self.init_arg, self.body_arg]
+        while stack:
+            func = stack.pop()
+            if self.index in func.arguments:
+                stack.extend(func._Evaluable__args)
+            else:
+                func._node(cache, subgraph, times, unique_loop_ids)
+
         if unique_loop_ids:
             loopcache = cache
             loopgraph = cache.setdefault(('subgraph', self.loop_id), Subgraph('Loop', subgraph))
