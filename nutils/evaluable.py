@@ -314,9 +314,7 @@ class Evaluable(types.Singleton):
 
     @cached_property
     def optimized_for_numpy(self):
-        return self.simplified \
-                   ._optimized_for_numpy1 \
-                   ._combine_loops()
+        return self.simplified._optimized_for_numpy1
 
     @util.deep_replace_property
     def _optimized_for_numpy1(obj):
