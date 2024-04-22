@@ -4437,6 +4437,10 @@ class Loop(Evaluable):
         cache[self] = node = self._node_loop_body(loopcache, loopgraph, looptimes, unique_loop_ids)
         return node
 
+    @cached_property
+    def arguments(self):
+        return self.length.arguments | self.init_arg.arguments | (self.body_arg.arguments - frozenset({self.index})
+
     @property
     def _loops(self):
         deps = util.IDSet([self])
