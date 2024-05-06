@@ -376,7 +376,8 @@ class check(TestCase):
                     approx = numpy.zeros_like(exact)
                     scale = 1
                 else:
-                    fdvals = numpy.stack([self.actual.eval(**collections.ChainMap({arg_name: numpy.asarray(x0+eps*n*dx)}, evalargs)) for n in (*-fddeltas, *fddeltas)], axis=0)
+                    actual_eval = self.actual.eval
+                    fdvals = numpy.stack([actual_eval(**collections.ChainMap({arg_name: numpy.asarray(x0+eps*n*dx)}, evalargs)) for n in (*-fddeltas, *fddeltas)], axis=0)
                     if fdvals.dtype.kind == 'i':
                         fdvals = fdvals.astype(float)
                     fdvals = fdvals.reshape(2, len(fddeltas), *fdvals.shape[1:])
@@ -842,9 +843,9 @@ class elemwise(TestCase):
     def assertElemwise(self, items):
         items = tuple(map(types.arraydata, items))
         index = evaluable.Argument('index', (), int)
-        elemwise = evaluable.Elemwise(items, index, int)
+        elemwise = evaluable.Elemwise(items, index, int).eval
         for i, item in enumerate(items):
-            self.assertEqual(elemwise.eval(index=i).tolist(), numpy.asarray(item).tolist())
+            self.assertEqual(elemwise(index=i).tolist(), numpy.asarray(item).tolist())
 
     def test_const_values(self):
         self.assertElemwise((numpy.arange(2*3*4).reshape(2, 3, 4),)*3)
