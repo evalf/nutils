@@ -5026,6 +5026,7 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
         yield data
 
 
+@functools.lru_cache(32)
 def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = None, cache_const_intermediates: bool = True):
     '''Returns a callable that evaluates ``func``.
 
