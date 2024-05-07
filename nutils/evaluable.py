@@ -5029,6 +5029,7 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
         yield data
 
 
+@functools.lru_cache(256)
 def compile(func, *, simplify: bool = True, stats: typing.Optional[bool] = None, cache_const_intermediates: bool = True):
     # Compiles `Evaluable`s to Python code. Every `Loop` is assigned a unique
     # loop id with `_define_loop_block_structure` and based on these loop ids
