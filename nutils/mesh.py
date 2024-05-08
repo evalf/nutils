@@ -279,13 +279,9 @@ def multipatch(patches, nelems, patchverts=None):
             ]).T
         coords.append(patchcoords)
 
-    # build patch boundary data
-
-    boundarydata = topology.MultipatchTopology.build_boundarydata(patches)
-
     # join patch topologies, geometries
 
-    topo = topology.MultipatchTopology(tuple(map(topology.Patch, topos, patches, boundarydata)))
+    topo = topology.MultipatchTopology(topos, patches)
     funcsp = topo.basis('spline', degree=1, patchcontinuous=False)
     geom = (funcsp * numpy.concatenate(coords, axis=1)).sum(-1)
 

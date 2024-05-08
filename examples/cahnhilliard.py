@@ -246,22 +246,22 @@ class test(testing.TestCase):
         args = main(epsilon=parse('5cm'), mobility=parse('1μL*s/kg'), nelems=3, etype='multipatch', degree=2, timestep=parse('1h'), endtime=parse('2h'))
         with self.subTest('concentration'):
             self.assertAlmostEqual64(args['φ'], '''
-                eNoNyE9Ik3EYB3BwZohodpCSIk9NQub7/n7PA5IHu7Y6xKBbgUQK0mGUMIS6jIgmJRZitc3MEi/VxQVz
-                XsouDcHn+7w///B22HYU/wTBOuwUmcfPp8Yhr/JfrnOJJ3iU2/g1X+YHXKMcrdnvVLYt9NwMmlTfBn2g
-                ZhL71OZMl214H72yu+6KmtFdpPxFbzjcu3Rl59rmafdMe1xVS7iFdk2jKdjRcb0JHxGQhriDs/oeoRTk
-                SMoyiJN4JVl5I7OSdLeDqJ6y2ybtj6Ahb8NDXTr+PLpRoEWy9If2qUCz9oV/n+ZsJajil9/hcvyS77JS
-                iSbJcJEStGxbqWC+mHp/zc7bIdttV82cv2aS/ufYuOurLATr2qPzXjX2wx3qCZ1AHMbNBBVd8rZiDXdD
-                v+FM0KEJdGIEXfhtHppJ7ypdpEf2yGV0zER60ziPBc2ik/9Rltpp2tituCb6c8G5YBcHGEAU21KUKXmC
-                ZlzAT3knjyUvn+SefJVNWTl2TXrxHyMaybw=''')
+                eNoNwk1I02EcB/AGnYQCQcvDBqYYVGz7P8/v93QIyhdYK8lyDktKx8ouQ0hz6EEdjOpWdIqCXrAONrAg
+                AhGGBSHhxe/v+f//8yVpWIGXgk5DSAjf+HzyZsKkTZv5xdf5PN01A8aYCndwgrKq2hw0bzjEtfTdmfIK
+                /JBX6Z2eiN6zz+Uf+bSt76g635WoFHVO59SfyFE3KxsIqU2nyZmMOF6rjclbeSTDcmNfv3RLFEEoXEIe
+                s/iKT3iMJ3iJaczgPUL2s4wISQVFvEBKG92oLkSSblGCEuezvEgnKKOueWXp46tczz/pMI2qW94DkzPt
+                5pDJ8yx16Sqzw/M8xt+orCvObb7IB7hAazql5laDtK4zuqSGnd3lTrcuHCid9pLumh20W7JQivkfXbFL
+                ckq+oDV6LHzTv+8esc0iOKOeOqlIjT9oe6SMBBE906/V35N52y9JjvMPukxLaqh03DasxN0tGZD/2JaU
+                /MYCpvABWZzDFaQxjl60YAgFdKMT7XiFgOwBQRG+vg==''')
         with self.subTest('chemical-potential'):
             self.assertAlmostEqual64(args['η'], '''
-                eNoBggF9/lU4VTgzOIo4kDhIOCY3Lzd5Ngw4xjf1N1o3YzV70II3ijZoNuIyZcpFybM1jjXxzgY28TVH
-                zyLKzMjGyXfICsjfx73Hl8dyMzozgstEylLKFsqEyU3I2snuyJvHZMc7yLzHKctJy6rKqci4yGDIrcqK
-                yvLID8royADInMcIyJ7HI8jnx13HcMdax2fHWNPez6/JHzZENjI1V8jHx7AxHMpqx2PHpMgAyDk4SDgR
-                OH84gThhONA3ejY/OJw3Y84NyYY2C8x1NqU2BjfJyQTKYC9rN303ATZmNnY3TTaMNmI0e8mFyf3KKjYz
-                Nj80DDD+Mn3MhsqCM/bLsslNyRo3BzcuNUbLEMk7yDfI0snXyWjJu817zdTK+8hRyLPJt8jYx4/HEMiy
-                x5wzXTNbzP02CTdQNmLKFslCNc7MRcjSx5DJZ8hiOG04JDjJN4020jBZySIwQsvxyJDInMlnyCzIxMes
-                x3DHmMeAx1fHVMdfx0vHS8dsxzzHl8csxz3HSceixxfIfsLEFg==''')
+                eNoN0F8onWEcB/AjQ1pNoZb8u8Ki0HvO+zy/F4uJ2eTG7I9W1q602toOdS4pIXZSs+zUpJN2ywXJboTE
+                /H7f53lf08nalZqkJldGmXYzbj+Xn2X6StM0RKf6v0rtvKS3dI8yqFOd2W5k0i3K0MfhLPNeiuQ+NVC6
+                O4NK6ec33ESKYu4/PJdJjnGzJm0jIRvIT45zcnc19SVo9PPMX3FkClOYxBg+YxuMqmt5KsOyJ9UoQ1Jm
+                RORCbuI2DuQAh/iNfbxCCPOSr+v0kKp1e/yQKUSH99g7olZKKt8HHE956d4G/dLFasXGKUHvqIXiulnN
+                +7m6TEf1pm7TnaokcMMPw2nK1eeqVtUEp86WMxuei9REup1Rm/P9xk6j32XJ1tmPZs2kTML0mj6sSYVs
+                mxPzw6pgwNQjKgmzZKr8wVSBncaieOq1unSb3PLgkSnFChlqp096ws3y15GNdowgiif4w3fkhYzLkjzg
+                AV7kM74rz/gDf+M8iV0fLvAxt8mWXAGfucYq''')
 
 
 if __name__ == '__main__':
