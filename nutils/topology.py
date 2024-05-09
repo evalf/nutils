@@ -3039,98 +3039,45 @@ class HierarchicalTopology(TransformChainsTopology):
         return function.PlainBasis(hbasis_coeffs, hbasis_dofs, ndofs, self.f_index, self.f_coords)
 
 
-@dataclass(eq=True, frozen=True)
-class PatchBoundary:
-
-    id: Tuple[int, ...]
-    dim: int
-    side: int
-    reverse: Tuple[bool, ...]
-    transpose: Tuple[int, ...]
-
-    def apply_transform(self, array):
-        return array[tuple(slice(None, None, -1) if i else slice(None) for i in self.reverse)].transpose(self.transpose)
-
-
-@dataclass(eq=True, frozen=True)
-class Patch:
-
-    topo: Topology
-    verts: types.arraydata
-    boundaries: Tuple[PatchBoundary, ...]
-
-
 class MultipatchTopology(TransformChainsTopology):
     'multipatch topology'
 
-    @staticmethod
-    def build_boundarydata(connectivity):
-        'build boundary data based on connectivity'
+    def __init__(self, topos: Sequence[Topology], connectivity):
 
-        boundarydata = []
-        for patch in connectivity:
-            ndims = len(patch.shape)
-            patchboundarydata = []
-            for dim, side in itertools.product(range(ndims), [-1, 0]):
-                # ignore vertices at opposite face
-                verts = numpy.array(patch)
-                opposite = tuple({0: -1, -1: 0}[side] if i == dim else slice(None) for i in range(ndims))
-                verts[opposite] = verts.max()+1
-                if len(set(verts.flat)) != 2**(ndims-1)+1:
-                    raise NotImplementedError('Cannot compute canonical boundary if vertices are used more than once.')
-                # reverse axes such that lowest vertex index is at first position
-                reverse = tuple(map(bool, numpy.unravel_index(verts.argmin(), verts.shape)))
-                verts = verts[tuple(slice(None, None, -1) if i else slice(None) for i in reverse)]
-                # transpose such that second lowest vertex connects to lowest vertex in first dimension, third in second dimension, et cetera
-                k = [verts[tuple(1 if i == j else 0 for j in range(ndims))] for i in range(ndims)]
-                transpose = tuple(sorted(range(ndims), key=k.__getitem__))
-                verts = verts.transpose(transpose)
-                # boundarid
-                boundaryid = tuple(verts[..., 0].flat)
-                patchboundarydata.append(PatchBoundary(boundaryid, dim, side, reverse, transpose))
-            boundarydata.append(tuple(patchboundarydata))
+        self._topos = tuple(topos)
+        self._connectivity = numpy.array(connectivity)
 
-        return boundarydata
-
-    def __init__(self, patches: Sequence[Patch]):
-        assert isinstance(patches, Sequence) and all(isinstance(patch, Patch) for patch in patches), f'patches={patches!r}'
-        self.patches = tuple(patches)
-
-        space = patches[0].topo.space
-        assert all(patch.topo.space == space for patch in patches)
-
-        for boundaryid, patchdata in self._patchinterfaces.items():
-            if len(patchdata) == 1:
-                continue
-            transposes = set()
-            reverses = set()
-            for topo, boundary in patchdata:
-                assert boundary.transpose[-1] == boundary.dim
-                transposes.add(tuple(i-1 if i > boundary.dim else i for i in boundary.transpose[:-1]))
-                reverses.add(boundary.reverse[:boundary.dim]+boundary.reverse[boundary.dim+1:])
-            if len(transposes) != 1 or len(reverses) != 1:
-                raise NotImplementedError('patch interfaces must have the same order of axes and the same orientation per axis')
+        space = self._topos[0].space
+        assert all(topo.space == space for topo in self._topos)
 
         super().__init__(
             space,
-            util.sum(patch.topo.references for patch in self.patches),
-            transformseq.chain([patch.topo.transforms for patch in self.patches], self.patches[0].topo.transforms.todims, self.patches[0].topo.ndims),
-            transformseq.chain([patch.topo.opposites for patch in self.patches], self.patches[0].topo.transforms.todims, self.patches[0].topo.ndims))
+            util.sum(topo.references for topo in self._topos),
+            transformseq.chain([topo.transforms for topo in self._topos], self._topos[0].transforms.todims, self._topos[0].ndims),
+            transformseq.chain([topo.opposites for topo in self._topos], self._topos[0].transforms.todims, self._topos[0].ndims))
 
-    @cached_property
-    def _patchinterfaces(self):
-        patchinterfaces = {}
-        for patch in self.patches:
-            for boundary in patch.boundaries:
-                patchinterfaces.setdefault(boundary.id, []).append((patch.topo, boundary))
-        return types.frozendict({
-            boundaryid: tuple(data)
-            for boundaryid, data in patchinterfaces.items()
-            if len(data) > 1
-        })
+        sides = {}
+        for topo, verts in zip(self._topos, self._connectivity):
+            for idim, iside, idx in self._iter_boundaries():
+                bverts = verts[idx]
+                sides.setdefault(frozenset(bverts.flat), []).append((bverts, (topo, idim, iside)))
+
+        self._boundaries = []
+        self._interfaces = []
+        for patchdata in sides.values():
+            (bverts0, *other_bverts), data = zip(*patchdata)
+            if not other_bverts:
+                self._boundaries.append(data[0])
+            else:
+                if not all((bverts == bverts0).all() for bverts in other_bverts):
+                    raise NotImplementedError('patch interfaces must have the same order of axes and the same orientation per axis')
+                self._interfaces.append((bverts0, data))
+
+    def _iter_boundaries(self):
+        return ((idim, iside, (slice(None),)*idim + (iside,)) for idim in range(self.ndims) for iside in (-1, 0))
 
     def get_groups(self, *groups: str) -> TransformChainsTopology:
-        topos = (patch.topo if 'patch{}'.format(i) in groups else patch.topo.get_groups(*groups) for i, patch in enumerate(self.patches))
+        topos = (topo if 'patch{}'.format(i) in groups else topo.get_groups(*groups) for i, topo in enumerate(self._topos))
         topos = tuple(filter(None, topos))
         if len(topos) == 0:
             return self.empty_like()
@@ -3138,6 +3085,9 @@ class MultipatchTopology(TransformChainsTopology):
             return topos[0]
         else:
             return DisjointUnionTopology(topos)
+
+    def basis_std(self, degree, patchcontinuous=True):
+        return self.basis_spline(degree, patchcontinuous, continuity=0)
 
     def basis_spline(self, degree, patchcontinuous=True, knotvalues=None, knotmultiplicities=None, *, continuity=-1):
         '''spline from vertices
@@ -3191,8 +3141,8 @@ class MultipatchTopology(TransformChainsTopology):
         dofmap = []
         dofcount = 0
         commonboundarydofs = {}
-        for ipatch, patch in enumerate(self.patches):
-            # build structured spline basis on patch `patch.topo`
+        for ipatch, (topo, verts) in enumerate(zip(self._topos, self._connectivity)):
+            # build structured spline basis on patch `topo`
             patchknotvalues = []
             patchknotmultiplicities = []
             for idim in range(self.ndims):
@@ -3200,7 +3150,7 @@ class MultipatchTopology(TransformChainsTopology):
                 right = tuple(1 if j == idim else slice(None) for j in range(self.ndims))
                 dimknotvalues = set()
                 dimknotmultiplicities = set()
-                for edge in zip(patch.verts[left].flat, patch.verts[right].flat):
+                for edge in zip(verts[left].flat, verts[right].flat):
                     v = knotvalues.get(edge, knotvalues.get(None, missing))
                     m = knotmultiplicities.get(edge, knotmultiplicities.get(None, missing))
                     if v is missing:
@@ -3215,17 +3165,17 @@ class MultipatchTopology(TransformChainsTopology):
                     raise 'ambiguous knot multiplicities for patch {}, dimension {}'.format(ipatch, idim)
                 patchknotvalues.extend(dimknotvalues)
                 patchknotmultiplicities.extend(dimknotmultiplicities)
-            patchcoeffs, patchdofmap, patchdofcount = patch.topo._basis_spline(degree, knotvalues=patchknotvalues, knotmultiplicities=patchknotmultiplicities, continuity=continuity)
+            patchcoeffs, patchdofmap, patchdofcount = topo._basis_spline(degree, knotvalues=patchknotvalues, knotmultiplicities=patchknotmultiplicities, continuity=continuity)
             coeffs.extend(patchcoeffs)
             dofmap.extend(types.frozenarray(dofs+dofcount, copy=False) for dofs in patchdofmap)
             if patchcontinuous:
                 # reconstruct multidimensional dof structure
                 dofs = dofcount + numpy.arange(numpy.prod(patchdofcount), dtype=int).reshape(patchdofcount)
-                for boundary in patch.boundaries:
+                for idim, iside, idx in self._iter_boundaries():
                     # get patch boundary dofs and reorder to canonical form
-                    boundarydofs = boundary.apply_transform(dofs)[..., 0].ravel()
+                    boundarydofs = dofs[idx].ravel()
                     # append boundary dofs to list (in increasing order, automatic by outer loop and dof increment)
-                    commonboundarydofs.setdefault(boundary.id, []).append(boundarydofs)
+                    commonboundarydofs.setdefault(tuple(verts[idx].flat), []).append(boundarydofs)
             dofcount += numpy.prod(patchdofcount)
 
         if patchcontinuous:
@@ -3240,28 +3190,25 @@ class MultipatchTopology(TransformChainsTopology):
     def basis_patch(self):
         'degree zero patchwise discontinuous basis'
 
-        transforms = transformseq.PlainTransforms(tuple((patch.topo.root,) for patch in self.patches), self.ndims, self.ndims)
+        transforms = transformseq.PlainTransforms(tuple((topo.root,) for topo in self._topos), self.ndims, self.ndims)
         index = function.transforms_index(self.space, transforms)
         coords = function.transforms_coords(self.space, transforms)
-        return function.DiscontBasis([types.frozenarray([[1]], dtype=float)]*len(self.patches), index, coords)
+        return function.DiscontBasis([types.frozenarray([[1]], dtype=float)]*len(self._topos), index, coords)
 
     @cached_property
     def boundary(self):
         'boundary'
 
+        if not self._boundaries:
+            return EmptyTopology(self.space, self.transforms.todims, self.ndims-1)
+
         subtopos = []
         subnames = []
-        for i, patch in enumerate(self.patches):
-            for boundary in patch.boundaries:
-                if boundary.id in self._patchinterfaces:
-                    continue
-                name = patch.topo._bnames[boundary.dim][boundary.side]
-                subtopos.append(patch.topo.boundary[name])
-                subnames.append('patch{}-{}'.format(i, name))
-        if len(subtopos) == 0:
-            return EmptyTopology(self.space, self.transforms.todims, self.ndims-1)
-        else:
-            return DisjointUnionTopology(subtopos, subnames)
+        for i, (topo, idim, iside) in enumerate(self._boundaries):
+            name = topo._bnames[idim][iside]
+            subtopos.append(topo.boundary[name])
+            subnames.append('patch{}-{}'.format(i, name))
+        return DisjointUnionTopology(subtopos, subnames)
 
     @cached_property
     def interfaces(self):
@@ -3272,36 +3219,23 @@ class MultipatchTopology(TransformChainsTopology):
         patch via ``'intrapatch'``.
         '''
 
-        intrapatchtopo = EmptyTopology(self.space, self.transforms.todims, self.ndims-1) if not self.patches else \
-            DisjointUnionTopology([patch.topo.interfaces for patch in self.patches])
+        intrapatchtopo = EmptyTopology(self.space, self.transforms.todims, self.ndims-1) if not self._topos else \
+            DisjointUnionTopology([topo.interfaces for topo in self._topos])
 
         btopos = []
         bconnectivity = []
-        for boundaryid, patchdata in self._patchinterfaces.items():
+        for bverts, patchdata in self._interfaces:
             if len(patchdata) > 2:
                 raise ValueError('Cannot create interfaces of multipatch topologies with more than two interface connections.')
-            pairs = []
-            references = None
-            for topo, boundary in patchdata:
-                btopo = topo.boundary[topo._bnames[boundary.dim][boundary.side]]
-                if references is None:
-                    references = numeric.asobjvector(btopo.references).reshape(btopo.shape)
-                    references = references[tuple(_ if i == boundary.dim else slice(None) for i in range(self.ndims))]
-                    references = boundary.apply_transform(references)[..., 0]
-                    references = tuple(references.flat)
-                transforms = numeric.asobjvector(btopo.transforms).reshape(btopo.shape)
-                transforms = transforms[tuple(_ if i == boundary.dim else slice(None) for i in range(self.ndims))]
-                transforms = boundary.apply_transform(transforms)[..., 0]
-                pairs.append(tuple(map(transform.canonical, transforms.flat)))
+            boundaries = [topo.boundary[topo._bnames[idim][iside]] for topo, idim, iside in patchdata]
+            transforms, opposites = [btopo.transforms for btopo in boundaries]
+            references, opposite_references = [btopo.references for btopo in boundaries]
+            assert references == opposite_references
             # create structured topology of joined element pairs
-            references = References.from_iter(references, self.ndims-1)
-            transforms, opposites = pairs
-            transforms = transformseq.PlainTransforms(transforms, self.transforms.todims, self.ndims-1)
-            opposites = transformseq.PlainTransforms(opposites, self.transforms.todims, self.ndims-1)
             btopos.append(TransformChainsTopology(self.space, references, transforms, opposites))
-            bconnectivity.append(numpy.array(boundaryid).reshape((2,)*(self.ndims-1)))
+            bconnectivity.append(bverts)
         # create multipatch topology of interpatch boundaries
-        interpatchtopo = MultipatchTopology(tuple(map(Patch, btopos, bconnectivity, self.build_boundarydata(bconnectivity))))
+        interpatchtopo = MultipatchTopology(btopos, bconnectivity)
 
         return DisjointUnionTopology((intrapatchtopo, interpatchtopo), ('intrapatch', 'interpatch'))
 
@@ -3309,11 +3243,11 @@ class MultipatchTopology(TransformChainsTopology):
     def connectivity(self):
         connectivity = []
         patchinterfaces = {}
-        for patch in self.patches:  # len(connectivity) represents the element offset for the current patch
-            ielems = numpy.arange(len(patch.topo)).reshape(patch.topo.shape) + len(connectivity)
-            for boundary in patch.boundaries:
-                patchinterfaces.setdefault(boundary.id, []).append((boundary.apply_transform(ielems)[..., 0], boundary.dim * 2 + (boundary.side == 0)))
-            connectivity.extend(patch.topo.connectivity + len(connectivity) * numpy.not_equal(patch.topo.connectivity, -1))
+        for topo, verts in zip(self._topos, self._connectivity):  # len(connectivity) represents the element offset for the current patch
+            ielems = numpy.arange(len(topo)).reshape(topo.shape) + len(connectivity)
+            for idim, iside, idx in self._iter_boundaries():
+                patchinterfaces.setdefault(tuple(verts[idx].flat), []).append((ielems[idx], idim * 2 + (iside == 0)))
+            connectivity.extend(topo.connectivity + len(connectivity) * numpy.not_equal(topo.connectivity, -1))
         connectivity = numpy.array(connectivity)
         for patchdata in patchinterfaces.values():
             if len(patchdata) > 2:
@@ -3331,6 +3265,6 @@ class MultipatchTopology(TransformChainsTopology):
     def refined(self):
         'refine'
 
-        return MultipatchTopology(tuple(Patch(patch.topo.refined, patch.verts, patch.boundaries) for patch in self.patches))
+        return MultipatchTopology([topo.refined for topo in self._topos], self._connectivity)
 
 # vim:sw=4:sts=4:et

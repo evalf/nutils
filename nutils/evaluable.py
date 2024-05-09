@@ -415,12 +415,16 @@ class Evaluable(types.Singleton):
         for i, (op, indices) in enumerate(self.serialized, start=1):
             s = [f'%{i} = {op}']
             if indices:
+                args = [f'%{i}' for i in indices]
                 try:
                     sig = inspect.signature(op.evalf)
                 except ValueError:
-                    s.extend(f'%{i}' for i in indices)
+                    pass
                 else:
-                    s.extend(f'{param}=%{i}' for param, i in zip(sig.parameters, indices))
+                    for i, param in enumerate(sig.parameters.values()):
+                        if i < len(args) and param.kind == param.POSITIONAL_OR_KEYWORD:
+                            args[i] = param.name + '=' + args[i]
+                s.extend(args)
             yield ' '.join(s)
 
     def _format_stack(self, values, e):
@@ -2417,6 +2421,7 @@ class Mod(Pointwise):
             lower_dividend, upper_dividend = dividend._intbounds
             if 0 <= lower_dividend and upper_dividend < lower_divisor:
                 return dividend
+        return super()._simplified()
 
 
 class ArcTan2(Pointwise):
@@ -2447,7 +2452,7 @@ class Equal(Pointwise):
         if self.ndim == 2:
             u1, w1 = unalign(a1)
             u2, w2 = unalign(a2)
-            if u1 == u2 and isinstance(u1, Range):
+            if u1.ndim == u2.ndim == 1 and u1 == u2 and w1 != w2 and isinstance(u1, Range):
                 # NOTE: Once we introduce isunique we can relax the Range bound
                 return Diagonalize(ones(u1.shape, bool))
         return super()._simplified()

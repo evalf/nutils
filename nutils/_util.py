@@ -519,7 +519,7 @@ def log_arguments(f):
         with treelog.context('arguments'):
             for k, v in bound.arguments.items():
                 try:
-                    s = stringly.dumps(sig.parameters[k].annotation, v)
+                    s = stringly.dumps(_infer_type(sig.parameters[k]), v)
                 except:
                     s = str(v)
                 treelog.info(f'{k}={s}')
@@ -694,6 +694,16 @@ def add_htmllog(outrootdir: str = '~/public_html', outrooturi: str = '', scriptn
             treelog.info(f'log written to: {loguri}')
 
 
+def _infer_type(param):
+    '''Infer argument type from annotation or default value.'''
+
+    if param.annotation is not param.empty:
+        return param.annotation
+    if param.default is not param.empty:
+        return type(param.default)
+    raise Exception(f'cannot determine type for argument {param.name!r}')
+
+
 def cli(f, *, argv=None):
     '''Call a function using command line arguments.'''
 
@@ -706,11 +716,7 @@ def cli(f, *, argv=None):
     mandatory = set()
 
     for param in inspect.signature(f).parameters.values():
-        T = param.annotation
-        if T == param.empty and param.default != param.empty:
-            T = type(param.default)
-        if T == param.empty:
-            raise Exception(f'cannot determine type for argument {param.name!r}')
+        T = _infer_type(param)
         try:
             s = stringly.serializer.get(T)
         except Exception as e:
