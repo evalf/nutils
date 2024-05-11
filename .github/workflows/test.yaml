@@ -91,7 +91,7 @@ jobs:
           _numpy_version: ${{ matrix.numpy-version }}
         run: |
           python -um pip install --upgrade --upgrade-strategy eager wheel
-          python -um pip install --upgrade --upgrade-strategy eager coverage numpy$_numpy_version
+          python -um pip install --upgrade --upgrade-strategy eager numpy$_numpy_version
           # Install Nutils from `dist` dir created in job `build-python-package`.
           python -um pip install "$_wheel[import_gmsh,export_mpl]"
       - name: Install Scipy
@@ -103,11 +103,40 @@ jobs:
           python -um pip install --upgrade --upgrade-strategy eager mkl
           python -um devtools.gha.configure_mkl
       - name: Test
-        run: python -um coverage run -m unittest discover -b -q -t . -s tests
-      - name: Post-process coverage
-        run: python -um devtools.gha.coverage_report_xml
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
+        env:
+          COVERAGE_ID: ${{ matrix.name }}
+        run: python -um devtools.gha.unittest
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: _coverage_${{ matrix.name }}
+          path: target/coverage/
+          if-no-files-found: error
+  process-coverage:
+    if: ${{ always() }}
+    needs: test
+    name: 'Test coverage'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: _coverage_*
+          path: target/coverage
+          merge-multiple: true
+      - name: Generate summary
+        run: python -um devtools.gha.report_coverage
+      - name: Upload lcov artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: target/coverage/coverage.info
+      - name: Delete temporary coverage artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -um devtools.gha.delete_coverage_artifacts
   test-examples:
     needs: build-python-package
     name: 'Test examples ${{ matrix.os }}'
