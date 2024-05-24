@@ -15,7 +15,7 @@ Quantity type with a string value.
     >>> from nutils import SI
     >>> v = SI.parse('7μN*5h/6g')
 
-The Quantity constructor recognizes the multiplication (\*) and division (/)
+The Quantity constructor recognizes the multiplication (\\*) and division (/)
 operators to separate factors. Every factor can be prefixed with a scale and
 suffixed with a power. The remainder must be either a unit, or else a unit with
 a metric prefix.
