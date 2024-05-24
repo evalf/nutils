@@ -404,9 +404,13 @@ class Assign(Statements):
 
     lhs: Expression
     rhs: Expression
+    comment: typing.Optional[str] = None
 
     def write_py(self, script: TextIOBase, indent: str) -> None:
-        print(f'{indent}{self.lhs.py_expr} = {self.rhs.py_expr}', file=script)
+        script.write(f'{indent}{self.lhs.py_expr} = {self.rhs.py_expr}')
+        if self.comment:
+            script.write(f' # {self.comment}')
+        print(file=script)
 
     def __bool__(self):
         return True
@@ -464,28 +468,6 @@ class Raise(Statements):
 
     def write_py(self, script: TextIOBase, indent: str) -> None:
         print(f'{indent}raise {self.exception.py_expr}', file=script)
-
-    def __bool__(self):
-        return True
-
-
-@dataclass
-@_dataclass_type_checker
-class Comment(Statements):
-    '''Raise statement.
-
-    Generates
-
-        # {comment_line}
-
-    for each line in `comment`.
-    '''
-
-    comment: str
-
-    def write_py(self, script: TextIOBase, indent: str) -> None:
-        for line in self.comment.splitlines():
-            print(f'{indent}# {line}', file=script)
 
     def __bool__(self):
         return True

@@ -225,7 +225,8 @@ class Evaluable(types.Singleton):
         args = builder.compile(self.__args)
         expression = self._compile_expression(builder.get_evaluable_expr(self), *args)
         out = builder.get_variable_for_evaluable(self)
-        builder.get_block_for_evaluable(self).assign_to(out, expression)
+        comment = f'{type(self).__name__} (e{builder._get_evaluable_index(self)})'
+        builder.get_block_for_evaluable(self).assign_to(out, expression, comment)
         return out
 
     def _compile_expression(self, py_self: _pyast.Variable, *args: _pyast.Expression):
@@ -1580,7 +1581,7 @@ class Add(Array):
     def _compile_with_out(self, builder, out, out_block_id, mode):
         assert mode in ('iadd', 'assign')
         if mode == 'assign':
-            builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
+            builder.get_block_for_evaluable(self, block_id=out_block_id).array_fill_zeros(out)
         for func in self.funcs:
             builder.compile_with_out(func, out, out_block_id, 'iadd')
 
@@ -2765,7 +2766,7 @@ class Inflate(Array):
     def _compile_with_out(self, builder, out, out_block_id, mode):
         assert mode in ('iadd', 'assign')
         if mode == 'assign':
-            builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
+            builder.get_block_for_evaluable(self, block_id=out_block_id).array_fill_zeros(out)
         indices = _pyast.Tuple((_pyast.Variable('slice').call(_pyast.Variable('None')),)*(self.ndim-1) + (builder.compile(self.dofmap),))
         values = builder.compile(self.func)
         builder.get_block_for_evaluable(self).array_add_at(out, indices, values)
@@ -2937,7 +2938,7 @@ class Diagonalize(Array):
     def _compile_with_out(self, builder, out, out_block_id, mode):
         out_diag = _pyast.Variable('numpy').get_attr('core').get_attr('multiarray').get_attr('c_einsum').call(_pyast.LiteralStr('...ii->...i'), out)
         if mode == 'assign':
-            builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
+            builder.get_block_for_evaluable(self, block_id=out_block_id).array_fill_zeros(out)
         builder.compile_with_out(self.func, out_diag, out_block_id, mode)
 
     def _derivative(self, var, seen):
@@ -4156,7 +4157,7 @@ class LoopSum(Loop, Array):
             # The loop body comes before the definition of `out`.
             return NotImplemented
         if mode == 'assign':
-            builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
+            builder.get_block_for_evaluable(self, block_id=out_block_id).array_fill_zeros(out)
         index_block_id = builder.get_block_id(self.index)
         body_block_id = builtins.max(index_block_id, builder.get_block_id(self.func))
         assert body_block_id[:-1] == index_block_id[:-1]
@@ -5477,8 +5478,8 @@ class _BlockTreeBuilder:
             py_alloc = _pyast.Variable('parallel').get_attr('shempty')
         else:
             py_alloc = _pyast.Variable('numpy').get_attr('empty')
-        alloc_block = self.get_block_for_evaluable(array, block_id=alloc_block_id, comment='alloc')
-        alloc_block.assign_to(out, py_alloc.call(shape, dtype=_pyast.Variable(array.dtype.__name__)))
+        alloc_block = self.get_block_for_evaluable(array, block_id=alloc_block_id)
+        alloc_block.assign_to(out, py_alloc.call(shape, dtype=_pyast.Variable(array.dtype.__name__)), comment='alloc')
         return out, out_block_id
 
     def add_constant_for_evaluable(self, evaluable: Evaluable, value) -> _pyast.Variable:
@@ -5498,20 +5499,15 @@ class _BlockTreeBuilder:
         # Returns a block builder for the given block id.
         return _BlockBuilder(self, self._blocks[block_id])
 
-    def get_block_for_evaluable(self, evaluable: Evaluable, *, block_id: typing.Optional[_BlockId] = None, comment: str = '') -> '_BlockBuilder':
-        # Appends a comment identifying `evaluable` to the block with the given
-        # id, or `self.get_block_id(evaluable)` if absent, optionally suffixed
-        # with `comment`, and returns the block.
+    def get_block_for_evaluable(self, evaluable: Evaluable, *, block_id: typing.Optional[_BlockId] = None) -> '_BlockBuilder':
         eid = 'e{}'.format(self._get_evaluable_index(evaluable))
         if block_id is None:
             block_id = self.get_block_id(evaluable)
-        comment = '; '.join(filter(None, [eid, f'{type(evaluable).__name__}', evaluable._node_details, comment]))
         block = self._blocks[block_id]
         if self._stats:
             with_stats_block = _pyast.Block()
             block.append(_pyast.With(_pyast.Variable('stats').get_item(_pyast.Variable(eid)), with_stats_block, omit_if_body_is_empty=True))
             block = with_stats_block
-        block.append(_pyast.Comment(comment))
         return _BlockBuilder(self, block)
 
     def get_variable_for_evaluable(self, evaluable: Evaluable) -> _pyast.Variable:
@@ -5592,9 +5588,9 @@ class _BlockBuilder:
         # Appends the statement `{expression}`. Returns nothing.
         self._block_for(expression).append(_pyast.Exec(expression))
 
-    def assign_to(self, lhs: _pyast.Expression, rhs: _pyast.Expression) -> _pyast.Variable:
+    def assign_to(self, lhs: _pyast.Expression, rhs: _pyast.Expression, comment: typing.Optional[str] = None) -> _pyast.Variable:
         # Appends the statement `{lhs} = {rhs}` and returns `lhs`.
-        self._block_for(lhs, rhs).append(_pyast.Assign(lhs, rhs))
+        self._block_for(lhs, rhs).append(_pyast.Assign(lhs, rhs, comment))
         return lhs
 
     def assert_true(self, condition: _pyast.Expression):
