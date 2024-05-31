@@ -56,10 +56,11 @@ class Common:
     def test_get_lower_args(self):
         assert len(self.desired_transform_chains) == len(self.desired_points) == self.desired_nelems
         args = self.sample.get_lower_args(evaluable.Argument('ielem', (), int))
+        args_points_shape = evaluable.compile(args.points_shape)
         for ielem, (desired_chains, desired_points) in enumerate(zip(self.desired_transform_chains, self.desired_points)):
             assert len(desired_chains) == len(desired_points) == len(self.desired_spaces)
             desired_shape = tuple(p.coords.shape[0] for p in desired_points)
-            actual_shape = tuple(n.__index__() for n in evaluable.Tuple(args.points_shape).eval(ielem=ielem))
+            actual_shape = tuple(n.__index__() for n in args_points_shape(ielem=ielem))
             self.assertEqual(actual_shape, desired_shape)
             offset = 0
             for space, desired_chain, desired_point in zip(self.desired_spaces, desired_chains, desired_points):

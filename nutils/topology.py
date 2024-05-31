@@ -2349,7 +2349,8 @@ class StructuredTopology(TransformChainsTopology):
         geom_ = self.sample('uniform', n).eval(geom, **arguments) \
             .reshape(*self.shape, *[n] * self.ndims, self.ndims) \
             .transpose(*(i+j for i in range(self.ndims) for j in (0, self.ndims)), self.ndims*2) \
-            .reshape(*sampleshape, self.ndims)
+            .reshape(*sampleshape, self.ndims) \
+            .copy()
         # strategy: fit an affine plane through the minima and maxima of a uniform sample,
         # and evaluate the error as the largest difference on the remaining sample points
         xmin, xmax = geom_.reshape(-1, self.ndims)[[0, -1]]

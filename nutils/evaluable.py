@@ -88,7 +88,8 @@ def _isindex(arg):
 def _equals_scalar_constant(arg: 'Array', value: Dtype):
     assert isinstance(arg, Array) and arg.ndim == 0, f'arg={arg!r}'
     assert arg.dtype == type(value), f'arg.dtype={arg.dtype}, type(value)={type(value)}'
-    return arg.isconstant and arg.eval() == value
+    if arg.isconstant and not arg._loops:
+        return arg._const_value == value
 
 
 def _equals_simplified(arg1: 'Array', arg2: 'Array'):
@@ -104,7 +105,7 @@ def _equals_simplified(arg1: 'Array', arg2: 'Array'):
     if arg1.arguments != arg2.arguments:
         return False
     if arg1.isconstant: # implies arg2.isconstant
-        return numpy.all(arg1.eval() == arg2.eval())
+        return numpy.all(arg1._const_value == arg2._const_value)
 
 
 def equalshape(N: typing.Tuple['Array', ...], M: typing.Tuple['Array', ...]):
@@ -175,6 +176,15 @@ class Evaluable(types.Singleton):
     def __str__(self):
         return self.__class__.__name__
 
+    @cached_property
+    def _const_value(self):
+        args = tuple(map(_pyast.Variable('args').get_item, map(_pyast.LiteralInt, range(len(self.__args) + 1))))
+        try:
+            expr = self._compile_expression(*args)
+        except NotImplementedError:
+            return self.eval()
+        return eval(expr.py_expr, dict(numpy=numpy, numeric=numeric, parallel=parallel, poly=poly, collections=collections, multiprocessing=multiprocessing, treelog=log, args=(self, *(arg._const_value for arg in self.__args))))
+
     @property
     def eval(self):
         '''Evaluate function on a specified element, point set.'''
@@ -208,6 +218,27 @@ class Evaluable(types.Singleton):
 
     def _optimized_for_numpy(self):
         return
+
+    @util.shallow_replace
+    def _merge_inflates(self):
+        if isinstance(self, Inflate):
+            func = self.func
+            dofmaps = self.dofmap,
+            dofshape = self.dofmap.shape
+            lengths = self.length,
+            while True:
+                for axis, parts in func._inflations:
+                    if axis == func.ndim - len(dofshape) - 1 and len(parts) == 1:
+                        lengths = (func.shape[axis],) + lengths
+                        (dofmap, func), = parts.items()
+                        dofmaps = appendaxes(dofmap, dofshape), *[prependaxes(d, dofmap.shape) for d in dofmaps]
+                        dofshape = dofmap.shape + dofshape
+                        break # continue the outer while loop
+                else:
+                    break
+            # merge inner inflates
+            func = func._merge_inflates()
+            return _MultiInflate(func, dofmaps, lengths)
 
     @cached_property
     def _loops(self):
@@ -462,19 +493,15 @@ if debug_flags.sparse:
         def _assparse(self):
             chunks = orig.func(self)
             assert isinstance(chunks, tuple)
-            assert all(isinstance(chunk, tuple) for chunk in chunks)
-            assert all(all(isinstance(item, Array) for item in chunk) for chunk in chunks)
-            if self.ndim:
-                for *indices, values in chunks:
-                    assert len(indices) == self.ndim
-                    assert all(idx.dtype == int for idx in indices)
-                    assert all(equalshape(idx.shape, values.shape) for idx in indices)
-            elif chunks:
-                assert len(chunks) == 1
-                chunk, = chunks
-                assert len(chunk) == 1
-                values, = chunk
-                assert values.shape == ()
+            assert all(isinstance(chunk, tuple) and len(chunk) == 3 for chunk in chunks)
+            for loop_indices, _, _ in chunks:
+                assert isinstance(loop_indices, tuple) and all(isinstance(loop_index, _LoopIndex) for loop_index in loop_indices)
+            for _, indices, values in chunks:
+                assert isinstance(values, Array)
+                assert isinstance(indices, tuple) and all(isinstance(index, Array) for index in indices)
+                assert len(indices) == self.ndim
+                assert all(idx.dtype == int for idx in indices)
+                assert all(equalshape(idx.shape, values.shape) for idx in indices)
             return chunks
         return _assparse
 
@@ -553,7 +580,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
         except AttributeError:
             if self.ndim or self.dtype not in (int, bool) or not self.isconstant:
                 raise TypeError('cannot convert {!r} to int'.format(self))
-            index = self.__index = int(self.simplified.eval())
+            index = self.__index = int(self.simplified._const_value)
         return index
 
     T = property(lambda self: transpose(self, tuple(range(self.ndim-1, -1, -1))))
@@ -581,7 +608,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
             prefix = self.dtype.__name__[0] + ':'
             shape = ['?'] * self.ndim
             for i, n in enumerate(self.shape):
-                if n.isconstant:
+                if n.isconstant and not n._loops:
                     shape[i] = str(n.__index__())
             for i in set(range(self.ndim)) - set(self._unaligned[1]):
                 shape[i] = f'({shape[i]})'
@@ -627,8 +654,62 @@ class Array(Evaluable, metaclass=_ArrayMeta):
         #       for i0,...,ik,v in zip(I0.eval().ravel(),...,Ik.eval().ravel(),V.eval().ravel()):
         #         dense[i0,...,ik] = v
 
-        indices = [prependaxes(appendaxes(Range(length), self.shape[i+1:]), self.shape[:i]) for i, length in enumerate(self.shape)]
-        return (*indices, self),
+        indices = tuple(prependaxes(appendaxes(Range(length), self.shape[i+1:]), self.shape[:i]) for i, length in enumerate(self.shape))
+        return ((), indices, self),
+
+    def as_coo(self, *, simplify: bool = True):
+        if self.dtype == bool:
+            raise ValueError('A boolean array cannot be represented as a sparse coo array.')
+        if simplify:
+            self = self.simplified
+        self, = _make_loop_ids_unique((self,))
+        if not self.ndim:
+            return InsertAxis(self, constant(1)), ()
+        sparse = self._assparse
+        if not sparse:
+            assert iszero(self)
+            return zeros((constant(0),), dtype=self.dtype), (zeros((constant(0),), dtype=int),) * self.ndim
+
+        # Concatenate all indices.
+        raveled_indices = []
+        index_strides = tuple(itertools.accumulate(reversed(self.shape[1:]), operator.mul, initial=ones((), dtype=int)))[::-1]
+        offsets = []
+        chunk_offset = constant(0)
+        for chunk_loop_indices, chunk_indices, _ in sparse:
+            chunk_indices = add(*(_flat(i) * n for i, n in zip(chunk_indices, index_strides)))
+            offset = chunk_offset
+            for loop_index in reversed(chunk_loop_indices):
+                chunk_indices = loop_concatenate(chunk_indices, loop_index)
+                offset += chunk_indices.start
+            offsets.append(offset)
+            chunk_offset += chunk_indices.shape[0]
+            raveled_indices.append(chunk_indices)
+        raveled_indices = concatenate(raveled_indices)
+        # Make the `indices` unique.
+        raveled_indices, inverse = _UniqueWithInverse(raveled_indices)
+        nnz = raveled_indices.shape[0]
+        # Unravel the `indices`.
+        indices = []
+        for n in reversed(self.shape[1:]):
+            n = InsertAxis(n, raveled_indices.shape[0])
+            indices.append(raveled_indices % n)
+            raveled_indices = FloorDivide(raveled_indices, n)
+        indices = raveled_indices, *reversed(indices)
+        # Combine `inverse` with `values` per chunk.
+        values = []
+        for offset, (chunk_loop_indices, _, chunk_values) in zip(offsets, sparse):
+            assert chunk_values.dtype == self.dtype
+            chunk_values = _flat(chunk_values)
+            chunk_inverse = Take(inverse, Range(chunk_values.shape[0]) + offset)
+            values.append(functools.reduce(loop_sum, reversed(chunk_loop_indices), Inflate(chunk_values, chunk_inverse, nnz)))
+        values = add(*values)
+        return values, indices
+
+    def as_coo_with_shape(self, *, simplify: bool = True):
+        if simplify:
+            self = self.simplified
+        values, indices = self.as_coo(simplify=False)
+        return values, indices, self.shape
 
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
@@ -671,6 +752,11 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     _diagonals = ()
     _inflations = ()
 
+    @property
+    def _as_range_with_offset(self):
+        if self.ndim == 1 and _equals_scalar_constant(self.shape[0], 1):
+            return self.shape[0], _OfnTakeUnit(self, constant(0))
+
     def _derivative(self, var, seen):
         if self.dtype in (bool, int) or var not in self.arguments:
             return Zeros(self.shape + var.shape, dtype=self.dtype)
@@ -685,7 +771,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     @cached_property
     def _intbounds(self):
         # inclusive lower and upper bounds
-        if self.ndim == 0 and self.dtype == int and self.isconstant:
+        if self.ndim == 0 and self.dtype == int and self.isconstant and not self._loops:
             value = self.__index__()
             return value, value
         else:
@@ -864,7 +950,7 @@ class Constant(Array):
 
     def _take(self, index, axis):
         if index.isconstant:
-            index_ = index.eval()
+            index_ = index._const_value
             return constant(self.value.take(index_, axis))
 
     def _power(self, n):
@@ -1019,7 +1105,7 @@ class InsertAxis(Array):
 
     @cached_property
     def _assparse(self):
-        return tuple((*(InsertAxis(idx, self.length) for idx in indices), prependaxes(Range(self.length), values.shape), InsertAxis(values, self.length)) for *indices, values in self.func._assparse)
+        return tuple((loop_indices, (*(InsertAxis(idx, self.length) for idx in indices), prependaxes(Range(self.length), values.shape)), InsertAxis(values, self.length)) for loop_indices, indices, values in self.func._assparse)
 
     def _intbounds_impl(self):
         return self.func._intbounds
@@ -1213,7 +1299,7 @@ class Transpose(Array):
 
     @cached_property
     def _assparse(self):
-        return tuple((*(indices[i] for i in self.axes), values) for *indices, values in self.func._assparse)
+        return tuple((loop_indices, tuple(indices[i] for i in self.axes), values) for loop_indices, indices, values in self.func._assparse)
 
     def _intbounds_impl(self):
         return self.func._intbounds
@@ -1383,6 +1469,12 @@ class Multiply(Array):
                 summed = sum(multiply(*factors[:i], *factors[i+1:]), axis)
                 return summed * align(unaligned, [i-(i > axis) for i in where], summed.shape)
 
+    def _loopsum(self, index):
+        factors = tuple(self._factors)
+        for i, fi in enumerate(factors):
+            if index not in fi.arguments:
+                return fi * loop_sum(multiply(*factors[:i], *factors[i+1:]), index)
+
     def _add(self, other):
         factors = list(self._factors)
         other_factors = []
@@ -1474,18 +1566,21 @@ class Multiply(Array):
         uninserteds, wheres = zip(*clusters)
         sparse = []
         for items in itertools.product(*[u._assparse for u in uninserteds]):
-            shape = util.sum(f.shape for *ind, f in items)
+            if builtins.sum(len(loop_indices) > 0 for loop_indices, _, _ in items) > 1:
+                return super()._assparse
+            loop_indices = builtins.max((loop_indices for loop_indices, _, _ in items), key=len)
+            shape = util.sum(f.shape for _, _, f in items)
             indices = [None] * self.ndim
             factors = []
             a = 0
-            for where, (*ind, f) in zip(wheres, items):
+            for where, (_, ind, f) in zip(wheres, items):
                 b = a + f.ndim
                 r = numpy.arange(a, b)
                 for i, indi in zip(where, ind):
                     indices[i] = align(indi, r, shape)
                 factors.append(align(f, r, shape))
                 a = b
-            sparse.append((*indices, multiply(*factors)))
+            sparse.append((loop_indices, tuple(indices), multiply(*factors)))
         return tuple(sparse)
 
     def _intbounds_impl(self):
@@ -1516,10 +1611,10 @@ class Add(Array):
             parts2 = func2_inflations[axis]
             dofmaps = set(parts1) | set(parts2)
             if (len(parts1) < len(dofmaps) and len(parts2) < len(dofmaps)  # neither set is a subset of the other; total may be dense
-                    and self.shape[axis].isconstant and all(dofmap.isconstant for dofmap in dofmaps)):
+                    and self.shape[axis].isconstant and all(dofmap.isconstant and not dofmap._loops for dofmap in dofmaps)):
                 mask = numpy.zeros(int(self.shape[axis]), dtype=bool)
                 for dofmap in dofmaps:
-                    mask[dofmap.eval()] = True
+                    mask[dofmap._const_value] = True
                 if mask.all():  # axis adds up to dense
                     continue
             inflations.append((axis, types.frozendict((dofmap, util.sum(parts[dofmap] for parts in (parts1, parts2) if dofmap in parts)) for dofmap in dofmaps)))
@@ -1627,6 +1722,16 @@ class Add(Array):
         lowers, uppers = zip(*[f._intbounds for f in self._terms])
         return builtins.sum(lowers), builtins.sum(uppers)
 
+    @cached_property
+    def _as_range_with_offset(self):
+        if self.ndim != 1:
+            return
+        for func1, func2 in (self.funcs, reversed(tuple(self.funcs))):
+            if (length_offset1 := func1._as_range_with_offset) is not None and isinstance(func2, InsertAxis):
+                length, offset1 = length_offset1
+                offset2 = func2.func
+                return length, offset1 + offset2
+
 
 class Einsum(Array):
 
@@ -1648,7 +1753,7 @@ class Einsum(Array):
         try:
             shape = tuple(lengths[i] for i in out_idx)
         except KeyError:
-            raise ValueError('Output axis {} is not listed in any of the arguments.'.format(', '.join(i for i in out_idx if i not in lengths)))
+            raise ValueError('Output axis {} is not listed in any of the arguments.'.format(', '.join(str(i) for i in out_idx if i not in lengths)))
         self.args = args
         self.args_idx = args_idx
         self.out_idx = out_idx
@@ -1672,6 +1777,10 @@ class Einsum(Array):
             else:
                 continue
             return Einsum(self.args[:i]+(arg.func,)+self.args[i+1:], self.args_idx[:i]+(idx,)+self.args_idx[i+1:], self.out_idx)
+
+    def _intbounds_impl(self):
+        lower = 0 if all(arg._intbounds[0] >= 0 for arg in self.args) else float('-inf')
+        return lower, float('inf')
 
 
 class Sum(Array):
@@ -1711,6 +1820,8 @@ class Sum(Array):
 
     @cached_property
     def _assparse(self):
+        # TODO
+        return super()._assparse
         if self.dtype == bool:
             return super()._assparse
         chunks = []
@@ -1794,6 +1905,7 @@ class Take(Array):
     def __init__(self, func: Array, indices: Array):
         assert isinstance(func, Array) and func.ndim > 0, f'func={func!r}'
         assert isinstance(indices, Array) and indices.dtype == int, f'indices={indices!r}'
+        #assert isinstance(indices, Array) and indices.dtype == int and indices._intbounds[0] >= 0, f'indices={indices!r}'
         self.func = func
         self.indices = indices
         super().__init__(args=(func, indices), shape=func.shape[:-1]+indices.shape, dtype=func.dtype)
@@ -1812,6 +1924,13 @@ class Take(Array):
         for axis, parts in self.func._inflations:
             if axis == self.func.ndim - 1:
                 return util.sum(Inflate(func, dofmap, self.func.shape[-1])._take(self.indices, self.func.ndim - 1) for dofmap, func in parts.items())
+
+    def _optimized_for_numpy(self):
+        if self.indices.ndim == 0:
+            return _OfnTakeUnit(self.func, self.indices)
+        if (length_offset := self.indices._as_range_with_offset) is not None:
+            length, offset = length_offset
+            return _OfnTakeSlice(self.func, offset, length)
 
     def _compile_expression(self, py_self, arr, indices):
         return _pyast.Variable('numpy').get_attr('take').call(arr, indices, axis=_pyast.LiteralInt(-1))
@@ -1833,6 +1952,42 @@ class Take(Array):
     def _sum(self, axis):
         if axis < self.func.ndim - 1 and (simple := self.func._sum(axis)):
             return Take(simple, self.indices)
+
+    def _intbounds_impl(self):
+        return self.func._intbounds
+
+
+class _OfnTakeUnit(Array):
+
+    def __init__(self, func: Array, index: Array):
+        assert isinstance(func, Array) and func.ndim > 0, f'func={func!r}'
+        assert isinstance(index, Array) and index.dtype == int and index.ndim == 0, f'index={index!r}'
+        #assert _isindex(index), f'index={index!r}'
+        self.func = func
+        self.index = index
+        super().__init__(args=(func, index), shape=func.shape[:-1], dtype=func.dtype)
+
+    def _compile_expression(self, py_self, func, index):
+        return func.get_item(_pyast.Tuple((_pyast.Raw('...'), index)))
+
+    def _intbounds_impl(self):
+        return self.func._intbounds
+
+
+class _OfnTakeSlice(Array):
+
+    def __init__(self, func: Array, start: Array, length: Array):
+        assert isinstance(func, Array) and func.ndim > 0, f'func={func!r}'
+        assert _isindex(start), f'start={start!r}'
+        assert _isindex(length), f'stop={stop!r}'
+        self.func = func
+        self.start = start
+        self.length = length
+        super().__init__(args=(func, start, length), shape=(*func.shape[:-1], length), dtype=func.dtype)
+
+    def _compile_expression(self, py_self, func, start, length):
+        stop = _pyast.BinOp(start, '+', length)
+        return func.get_item(_pyast.Tuple((_pyast.Raw('...'), _pyast.Raw('slice').call(start, stop))))
 
     def _intbounds_impl(self):
         return self.func._intbounds
@@ -1871,7 +2026,7 @@ class Power(Array):
 
     def _derivative(self, var, seen):
         if self.power.isconstant:
-            p = self.power.eval()
+            p = self.power._const_value
             return einsum('A,A,AB->AB', constant(p), power(self.func, p - (p != 0)), derivative(self.func, var, seen))
         if self.dtype == complex:
             raise NotImplementedError('The complex derivative is not implemented.')
@@ -2830,7 +2985,7 @@ class Inflate(Array):
             return Inflate(unravel(self.func, axis, shape), self.dofmap, self.length)
 
     def _sign(self):
-        if self.dofmap.isconstant and _isunique(self.dofmap.eval()):
+        if self.dofmap.isconstant and _isunique(self.dofmap._const_value):
             return Inflate(Sign(self.func), self.dofmap, self.length)
 
     @cached_property
@@ -2839,13 +2994,49 @@ class Inflate(Array):
         flat_dofmap = _flat(self.dofmap)
         keep_dim = self.func.ndim - self.dofmap.ndim
         strides = (1, *itertools.accumulate(self.dofmap.shape[:0:-1], operator.mul))[::-1]
-        for *indices, values in self.func._assparse:
+        for loop_indices, indices, values in self.func._assparse:
             if self.dofmap.ndim:
                 inflate_indices = Take(flat_dofmap, functools.reduce(operator.add, map(operator.mul, indices[keep_dim:], strides)))
             else:
                 inflate_indices = appendaxes(self.dofmap, values.shape)
-            chunks.append((*indices[:keep_dim], inflate_indices, values))
+            chunks.append((loop_indices, (*indices[:keep_dim], inflate_indices), values))
         return tuple(chunks)
+
+    def _intbounds_impl(self):
+        lower, upper = self.func._intbounds
+        return min(lower, 0), max(upper, 0)
+
+
+class _MultiInflate(Array):
+
+    def __init__(self, func: Array, dofmaps: typing.Tuple[Array, ...], lengths: typing.Tuple[Array, ...]):
+        assert isinstance(func, Array), f'func={func!r}'
+        assert isinstance(dofmaps, tuple) and all(isinstance(dofmap, Array) and dofmap.dtype == int for dofmap in dofmaps), f'dofmaps={dofmaps!r}'
+        assert isinstance(lengths, tuple) and all(map(_isindex, lengths)), f'lengths={lengths!r}'
+        assert len(dofmaps) == len(lengths)
+        self._ndofmaps = len(dofmaps)
+        self._npointwise = func.ndim - dofmaps[0].ndim
+        assert self._npointwise >= 0
+        assert all(dofmap.ndim == dofmaps[0].ndim and equalshape(dofmap.shape, func.shape[self._npointwise:]) for dofmap in dofmaps)
+        self.func = func
+        self.dofmaps = dofmaps
+        self.lengths = lengths
+        self._indices_head = (slice(None),) * self._npointwise
+        super().__init__(args=(func, *dofmaps, *lengths), shape=func.shape[:self._npointwise] + lengths, dtype=func.dtype)
+
+    def evalf(self, array, *args):
+        inflated = numpy.zeros(array.shape[:self._npointwise] + tuple(args[self._ndofmaps:]), dtype=self.dtype)
+        numpy.add.at(inflated, self._indices_head + tuple(args[:self._ndofmaps]), array)
+        return inflated
+
+    def _compile_with_out(self, builder, out, out_block_id, mode):
+        assert mode in ('iadd', 'assign')
+        if mode == 'assign':
+            builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
+        indices = (_pyast.Raw('slice(None)'),) * self._npointwise
+        indices += tuple(builder.compile(self.dofmaps))
+        values = builder.compile(self.func)
+        builder.get_block_for_evaluable(self).array_add_at(out, _pyast.Tuple(indices), values)
 
     def _intbounds_impl(self):
         lower, upper = self.func._intbounds
@@ -2861,7 +3052,7 @@ class SwapInflateTake(Evaluable):
 
     def _simplified(self):
         if self.isconstant:
-            return Tuple(tuple(map(constant, self.eval())))
+            return Tuple(tuple(map(constant, self._const_value)))
 
     def __iter__(self):
         shape = ArrayFromTuple(self, index=2, shape=(), dtype=int),
@@ -2993,7 +3184,7 @@ class Diagonalize(Array):
 
     @cached_property
     def _assparse(self):
-        return tuple((*indices, indices[-1], values) for *indices, values in self.func._assparse)
+        return tuple((loop_indices, (*indices, indices[-1]), values) for loop_indices, indices, values in self.func._assparse)
 
 
 class Guard(Array):
@@ -3028,7 +3219,10 @@ class Find(Array):
 
     def _simplified(self):
         if self.isconstant:
-            return constant(self.eval())
+            return constant(self._const_value)
+
+    def _intbounds_impl(self):
+        return 0, self.shape[0]._intbounds[1]
 
 
 class DerivativeTargetBase(Array):
@@ -3284,7 +3478,7 @@ class Ravel(Array):
 
     @cached_property
     def _assparse(self):
-        return tuple((*indices[:-2], indices[-2]*self.func.shape[-1]+indices[-1], values) for *indices, values in self.func._assparse)
+        return tuple((loop_indices, (*indices[:-2], indices[-2]*self.func.shape[-1]+indices[-1]), values) for loop_indices, indices, values in self.func._assparse)
 
     def _intbounds_impl(self):
         return self.func._intbounds_impl()
@@ -3328,7 +3522,7 @@ class Unravel(Array):
 
     @cached_property
     def _assparse(self):
-        return tuple((*indices[:-1], *divmod(indices[-1], appendaxes(self.shape[-1], values.shape)), values) for *indices, values in self.func._assparse)
+        return tuple((loop_indices, (*indices[:-1], *divmod(indices[-1], appendaxes(self.shape[-1], values.shape))), values) for loop_indices, indices, values in self.func._assparse)
 
 
 class RavelIndex(Array):
@@ -3404,6 +3598,10 @@ class Range(Array):
         lower, upper = self.length._intbounds
         assert lower >= 0
         return 0, max(0, upper - 1)
+
+    @cached_property
+    def _as_range_with_offset(self):
+        return self.length, zeros((), dtype=int)
 
 
 class InRange(Array):
@@ -3842,7 +4040,7 @@ class NormDim(Array):
         if isinstance(lower_length, int) and lower_length == upper_length and -lower_length <= lower_index and upper_index < 0:
             return self.index + lower_length
         if self.length.isconstant and self.index.isconstant:
-            return constant(self.eval())
+            return constant(self._const_value)
 
     def _intbounds_impl(self):
         lower_length, upper_length = self.length._intbounds
@@ -4193,34 +4391,16 @@ class LoopSum(Loop, Array):
         if isinstance(other, LoopSum) and other.index == self.index:
             return loop_sum(self.func + other.func, self.index)
 
-    def _multiply(self, other):
-        # If `other` depends on `self.index`, e.g. because `self` is the inner
-        # loop of two nested `LoopSum`s over the same index, then we should not
-        # move `other` inside this loop.
-        if self.index not in other.arguments:
-            return loop_sum(self.func * other, self.index)
+    #def _multiply(self, other):
+    #    # If `other` depends on `self.index`, e.g. because `self` is the inner
+    #    # loop of two nested `LoopSum`s over the same index, then we should not
+    #    # move `other` inside this loop.
+    #    if self.index not in other.arguments:
+    #        return loop_sum(self.func * other, self.index)
 
     @cached_property
     def _assparse(self):
-        chunks = []
-        for *elem_indices, elem_values in self.func._assparse:
-            if self.ndim == 0:
-                values = loop_concatenate(InsertAxis(elem_values, constant(1)), self.index)
-                while values.ndim:
-                    values = Sum(values)
-                chunks.append((values,))
-            else:
-                if elem_values.ndim == 0:
-                    *elem_indices, elem_values = (InsertAxis(arr, constant(1)) for arr in (*elem_indices, elem_values))
-                else:
-                    # minimize ravels by transposing all variable length axes to the end
-                    variable = tuple(i for i, n in enumerate(elem_values.shape) if self.index in n.arguments)
-                    *elem_indices, elem_values = (Transpose.to_end(arr, *variable) for arr in (*elem_indices, elem_values))
-                    for i in variable[:-1]:
-                        *elem_indices, elem_values = map(Ravel, (*elem_indices, elem_values))
-                    assert all(self.index not in n.arguments for n in elem_values.shape[:-1])
-                chunks.append(tuple(loop_concatenate(arr, self.index) for arr in (*elem_indices, elem_values)))
-        return tuple(chunks)
+        return tuple(((self.index, *loop_indices), indices, values) for loop_indices, indices, values in self.func._assparse)
 
 
 class _SizesToOffsets(Array):
@@ -4334,9 +4514,9 @@ class LoopConcatenate(Loop, Array):
     @cached_property
     def _assparse(self):
         chunks = []
-        for *indices, last_index, values in self.func._assparse:
+        for loop_indices, (*indices, last_index), values in self.func._assparse:
             last_index = last_index + prependaxes(self.start, last_index.shape)
-            chunks.append(tuple(loop_concatenate(_flat(arr), self.index) for arr in (*indices, last_index, values)))
+            chunks.append(((self.index, *loop_indices), (*indices, last_index), values))
         return tuple(chunks)
 
     def _intbounds_impl(self):
@@ -4381,6 +4561,33 @@ class SearchSorted(Array):
         return SearchSorted(unravel(self._arg, axis, shape), array=self._array, side=self._side, sorter=self._sorter)
 
 
+class _UniqueWithInverse(Evaluable):
+
+    def __init__(self, func: Array):
+        assert isinstance(func, Array) and func.dtype == int and func.ndim == 1, f'func={func!r}'
+        self.func = func
+        super().__init__(args=(func,))
+
+    def evalf(self, func):
+        result, inverse = numpy.unique(func, return_inverse=True)
+        return result, inverse, numpy.array(result.shape[-1])
+
+    def __len__(self):
+        return 2
+
+    def __iter__(self):
+        len_unique = ArrayFromTuple(self, index=2, shape=(), dtype=int)
+        unique = ArrayFromTuple(self, index=0, shape=(len_unique,), dtype=int)
+        inverse = ArrayFromTuple(self, index=1, shape=self.func.shape, dtype=int)
+        return iter((unique, inverse))
+
+    @property
+    def _intbounds_tuple(self):
+        func_lower, func_upper = self.func._intbounds
+        len_unique_upper = self.func.shape[-1]._intbounds[1]
+        return (func_lower, func_upper), (0, len_unique_upper), (0, len_unique_upper)
+
+
 # AUXILIARY FUNCTIONS (FOR INTERNAL USE)
 
 
@@ -4392,7 +4599,7 @@ def _gatherblocks(blocks):
 
 
 def _gathersparsechunks(chunks):
-    return tuple((*ind, util.sum(funcs)) for ind, funcs in util.gather((tuple(ind), func) for *ind, func in chunks))
+    return tuple((loop_indices, ind, util.sum(funcs)) for (loop_indices, ind), funcs in util.gather(((loop_indices, ind), func) for loop_indices, ind, func in chunks))
 
 
 def _numpy_align(a, b):
@@ -4643,7 +4850,7 @@ def stack(args, axis=0):
 
 def repeat(arg, length, axis):
     arg = asarray(arg)
-    assert _equals_scalar_constant(arg.shape[axis], 1)
+    assert arg.shape[axis].__index__() == 1
     return insertaxis(get(arg, axis, constant(0)), axis, length)
 
 
@@ -4763,7 +4970,7 @@ def take(arg: Array, index: Array, axis: int):
         assert _equals_simplified(index.shape[0], length)
         index = Find(index)
     elif index.isconstant:
-        index_ = index.eval()
+        index_ = index._const_value
         ineg = numpy.less(index_, 0)
         if not length.isconstant:
             if ineg.any():
@@ -4797,7 +5004,7 @@ def _inflate(arg: Array, dofmap: Array, length: Array, axis: int):
 
 def mask(arg, mask: Array, axis: int = 0):
     assert isinstance(arg, Array), f'arg={arg!r}'
-    assert isinstance(mask, numpy.ndarray) and mask.dtype == bool and mask.ndim == 1 and _equals_scalar_constant(arg.shape[axis], len(mask)), f'mask={mask!r}'
+    assert isinstance(mask, numpy.ndarray) and mask.dtype == bool and mask.ndim == 1 and arg.shape[axis].__index__() == len(mask), f'mask={mask!r}'
     index, = mask.nonzero()
     return _take(arg, constant(index), axis)
 
@@ -5009,21 +5216,17 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
     '''
 
     funcs = [func.as_evaluable_array for func in funcs]
-    shape_chunks = compile(tuple(builtins.sum(func.simplified._assparse, func.shape) for func in funcs))
-    for func, args in zip(funcs, shape_chunks(**arguments)):
-        shape = tuple(map(int, args[:func.ndim]))
-        chunks = [args[i:i+func.ndim+1] for i in range(func.ndim, len(args), func.ndim+1)]
-        length = builtins.sum(values.size for *indices, values in chunks)
-        data = numpy.empty((length,), dtype=sparse.dtype(shape, func.dtype))
-        start = 0
-        for *indices, values in chunks:
-            stop = start + values.size
-            d = data[start:stop].reshape(values.shape)
-            d['value'] = values
+    shape_chunks = compile(tuple(func if func.dtype == bool else func.as_coo_with_shape() for func in funcs))
+    for func, data in zip(funcs, shape_chunks(**arguments)):
+        if func.dtype == bool:
+            yield sparse.fromarray(data)
+        else:
+            values, indices, shape = data
+            data = numpy.empty((len(values),), dtype=sparse.dtype(shape, values.dtype))
+            data['value'] = values
             for idim, ii in enumerate(indices):
-                d['index']['i'+str(idim)] = ii
-            start = stop
-        yield data
+                data['index']['i'+str(idim)] = ii
+            yield data
 
 
 @functools.lru_cache(32)
@@ -5185,6 +5388,7 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
     # Simplify and optimize `funcs`.
     if simplify:
         funcs = [func.simplified for func in funcs]
+    funcs = [func._merge_inflates() for func in funcs]
     funcs = [func._optimized_for_numpy1 for func in funcs]
     funcs = _define_loop_block_structure(tuple(funcs))
     assert not any(isinstance(arg, _LoopIndex) for func in funcs for arg in func.arguments)

@@ -167,7 +167,7 @@ class Sample(types.Singleton):
         '''
 
 
-        return function.evaluate(*map(self.integral, funcs), _post=function._convert, arguments=arguments)
+        return function.evaluate(*map(self.integral, funcs), _convert=function._convert_dense_vec_sparse_matrix, arguments=arguments)
 
     @util.single_or_multiple
     def integrate_sparse(self, funcs, /, **arguments):
@@ -181,7 +181,7 @@ class Sample(types.Singleton):
             Optional arguments for function evaluation.
         '''
 
-        return function.evaluate(*map(self.integral, funcs), _post=lambda x: x, arguments=arguments)
+        return function.evaluate(*map(self.integral, funcs), _convert=function._convert_sparse, arguments=arguments)
 
     def integral(self, __func: function.IntoArray) -> function.Array:
         '''Create Integral object for postponed integration.
@@ -220,7 +220,7 @@ class Sample(types.Singleton):
             Optional arguments for function evaluation.
         '''
 
-        return function.evaluate(*map(self, funcs), _post=lambda x: x, arguments=arguments)
+        return function.evaluate(*map(self, funcs), _convert=function._convert_sparse, arguments=arguments)
 
     def _integral(self, func: function.Array) -> function.Array:
         '''Create Integral object for postponed integration.

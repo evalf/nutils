@@ -68,17 +68,16 @@ class check(TestCase):
             self.assertArrayAlmostEqual(actual.eval(**evalargs), desired, decimal)
         with self.subTest('simplified'):
             self.assertArrayAlmostEqual(actual.simplified.eval(**evalargs), desired, decimal)
-        with self.subTest('optimized'):
-            self.assertArrayAlmostEqual(actual.optimized_for_numpy.eval(**evalargs), desired, decimal)
-        with self.subTest('sparse'):
-            indices, values, shape = sparse.extract(evaluable.eval_sparse(actual, **evalargs))
-            self.assertEqual(tuple(map(int, shape)), desired.shape)
-            if not indices:
-                dense = values.sum()
-            else:
-                dense = numpy.zeros(desired.shape, values.dtype)
-                numpy.add.at(dense, indices, values)
-            self.assertArrayAlmostEqual(dense, desired, decimal)
+        if actual.dtype != bool:
+            with self.subTest('sparse'):
+                indices, values, shape = sparse.extract(evaluable.eval_sparse(actual, **evalargs))
+                self.assertEqual(tuple(map(int, shape)), desired.shape)
+                if not indices:
+                    dense = values.sum()
+                else:
+                    dense = numpy.zeros(desired.shape, values.dtype)
+                    numpy.add.at(dense, indices, values)
+                self.assertArrayAlmostEqual(dense, desired, decimal)
 
     def test_str(self):
         a = evaluable.Array((), shape=(evaluable.constant(2), evaluable.constant(3)), dtype=float)
@@ -133,7 +132,7 @@ class check(TestCase):
         if self.actual.dtype == float:
             for ax1, ax2 in self.pairs:
                 items = self.actual, *evaluable.eig(self.actual, axes=(ax1, ax2))
-                A, L, V = evaluable.Tuple(items).simplified.eval(**dict(zip(self.arg_names, self.arg_values)))
+                A, L, V = evaluable.compile(items, simplify=True, stats=False)(**dict(zip(self.arg_names, self.arg_values)))
                 self.assertArrayAlmostEqual(decimal=11,
                                             actual=(numpy.expand_dims(V, ax2) * numpy.expand_dims(L, ax2+1).swapaxes(ax1, ax2+1)).sum(ax2+1),
                                             desired=(numpy.expand_dims(A, ax2) * numpy.expand_dims(V, ax2+1).swapaxes(ax1, ax2+1)).sum(ax2+1))
@@ -377,7 +376,8 @@ class check(TestCase):
                     approx = numpy.zeros_like(exact)
                     scale = 1
                 else:
-                    fdvals = numpy.stack([self.actual.eval(**collections.ChainMap({arg_name: numpy.asarray(x0+eps*n*dx)}, evalargs)) for n in (*-fddeltas, *fddeltas)], axis=0)
+                    actual_eval = self.actual.eval
+                    fdvals = numpy.stack([actual_eval(**collections.ChainMap({arg_name: numpy.asarray(x0+eps*n*dx)}, evalargs)) for n in (*-fddeltas, *fddeltas)], axis=0)
                     if fdvals.dtype.kind == 'i':
                         fdvals = fdvals.astype(float)
                     fdvals = fdvals.reshape(2, len(fddeltas), *fdvals.shape[1:])
@@ -843,9 +843,9 @@ class elemwise(TestCase):
     def assertElemwise(self, items):
         items = tuple(map(types.arraydata, items))
         index = evaluable.Argument('index', (), int)
-        elemwise = evaluable.Elemwise(items, index, int)
+        elemwise = evaluable.Elemwise(items, index, int).eval
         for i, item in enumerate(items):
-            self.assertEqual(elemwise.eval(index=i).tolist(), numpy.asarray(item).tolist())
+            self.assertEqual(elemwise(index=i).tolist(), numpy.asarray(item).tolist())
 
     def test_const_values(self):
         self.assertElemwise((numpy.arange(2*3*4).reshape(2, 3, 4),)*3)

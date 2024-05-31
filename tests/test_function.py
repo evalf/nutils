@@ -1187,11 +1187,11 @@ class CommonBasis:
         points = ref.getpoints('bezier', 4)
         coordinates = evaluable.constant(points.coords)
         lowerargs = function.LowerArgs.for_space('X', (self.checktransforms,), evaluable.Argument('ielem', (), int), coordinates)
-        lowered = self.basis.lower(lowerargs)
+        lowered = evaluable.compile(self.basis.lower(lowerargs), stats=False)
         with _builtin_warnings.catch_warnings():
             _builtin_warnings.simplefilter('ignore', category=evaluable.ExpensiveEvaluationWarning)
             for ielem in range(self.checknelems):
-                value = lowered.eval(ielem=ielem)
+                value = lowered(ielem=ielem)
                 if value.shape[0] == 1:
                     value = numpy.tile(value, (points.npoints, 1))
                 self.assertAllAlmostEqual(value, self.checkeval(ielem, points))
