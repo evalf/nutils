@@ -564,7 +564,7 @@ def lru_cache(func):
                 for base in _array_bases(arg):
                     if base.flags.writeable:
                         return func(*args)
-                bases.append(base if base.base is None else base.base)
+                bases.append(base if base.base is None or isinstance(base.base, numpy.number) else base.base)
                 key.append(tuple(map(arg.__array_interface__.__getitem__, ['data', 'strides', 'shape', 'typestr'])))
             else:
                 key.append((type(arg), arg))

@@ -28,7 +28,7 @@ if typing.TYPE_CHECKING:
 else:
     Protocol = object
 
-from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, sparse
+from . import debug_flags, _util as util, types, numeric, cache, warnings, parallel, sparse, _pyast
 from functools import cached_property
 from ._graph import Node, RegularNode, DuplicatedLeafNode, InvisibleNode, Subgraph, TupleNode
 import nutils_poly as poly
@@ -51,6 +51,9 @@ import contextlib
 import subprocess
 import os
 import multiprocessing
+import hashlib
+import linecache
+from io import StringIO
 
 graphviz = os.environ.get('NUTILS_GRAPHVIZ')
 
@@ -63,8 +66,10 @@ def simplified(value: 'Evaluable'):
 
 
 _array_dtypes = bool, int, float, complex
+_array_dtype_to_kind = {bool: 'b', int: 'i', float: 'f', complex: 'c'}
 asdtype = lambda arg: arg if any(arg is dtype for dtype in _array_dtypes) else {'f': float, 'i': int, 'b': bool, 'c': complex}[numpy.dtype(arg).kind]
 Dtype = typing.Union[_array_dtypes]
+_BlockId = typing.Tuple[int, ...]
 
 
 def asarray(arg):
@@ -141,20 +146,6 @@ class Evaluable(types.Singleton):
     def evalf(*args):
         raise NotImplementedError('Evaluable derivatives should implement the evalf method')
 
-    def evalf_withtimes(self, times, *args):
-        with times[self]:
-            return self.evalf(*args)
-
-    @cached_property
-    def dependencies(self):
-        '''collection of all function arguments'''
-        deps = {}
-        for func in self.__args:
-            funcdeps = func.dependencies
-            deps.update(funcdeps)
-            deps[func] = len(funcdeps)
-        return types.frozendict(deps)
-
     @cached_property
     def arguments(self):
         'a frozenset of all arguments of this evaluable'
@@ -162,47 +153,12 @@ class Evaluable(types.Singleton):
 
     @property
     def isconstant(self):
-        return EVALARGS not in self.dependencies and not self.arguments
+        return not self.arguments
 
-    @cached_property
-    def ordereddeps(self):
-        '''collection of all function arguments such that the arguments to
-        dependencies[i] can be found in dependencies[:i]'''
-        deps = self.dependencies.copy()
-        deps.pop(EVALARGS, None)
-        return tuple([EVALARGS] + sorted(deps, key=deps.__getitem__))
-
-    @cached_property
-    def dependencytree(self):
-        '''lookup table of function arguments into ordereddeps, such that
-        ordereddeps[i].__args[j] == ordereddeps[dependencytree[i][j]], and
-        self.__args[j] == ordereddeps[dependencytree[-1][j]]'''
-        args = self.ordereddeps
-        return tuple(tuple(map(args.index, func.__args)) for func in args+(self,))
-
-    @property
-    def serialized(self):
-        return zip(self.ordereddeps[1:]+(self,), self.dependencytree[1:])
-
-    # This property is a derivation of `ordereddeps[1:]` where the `Evaluable`
-    # instances are mapped to the `evalf` methods of the instances. Asserting
-    # that functions are immutable is difficult and currently
-    # `types._isimmutable` marks all functions as mutable. Since the
-    # `types.CacheMeta` machinery asserts immutability of the property, we have
-    # to resort to a regular `functools.cached_property`. Nevertheless, this
-    # property should be treated as if it is immutable.
-    @cached_property
-    def _serialized_evalf_head(self):
-        return tuple(op.evalf for op in self.ordereddeps[1:])
-
-    @property
-    def _serialized_evalf(self):
-        return zip(itertools.chain(self._serialized_evalf_head, (self.evalf,)), self.dependencytree[1:])
-
-    def _node(self, cache, subgraph, times):
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
             return cache[self]
-        args = tuple(arg._node(cache, subgraph, times) for arg in self.__args)
+        args = tuple(arg._node(cache, subgraph, times, unique_loop_ids) for arg in self.__args)
         label = '\n'.join(filter(None, (type(self).__name__, self._node_details)))
         cache[self] = node = RegularNode(label, args, {}, (type(self).__name__, times[self]), subgraph)
         return node
@@ -214,86 +170,16 @@ class Evaluable(types.Singleton):
     def asciitree(self, richoutput=False):
         'string representation'
 
-        return self._node({}, None, collections.defaultdict(_Stats)).generate_asciitree(richoutput)
+        return self._node({}, None, collections.defaultdict(_Stats), False).generate_asciitree(richoutput)
 
     def __str__(self):
         return self.__class__.__name__
 
-    def eval(self, **evalargs):
+    @property
+    def eval(self):
         '''Evaluate function on a specified element, point set.'''
 
-        values = [evalargs]
-        try:
-            values.extend(op_evalf(*[values[i] for i in indices]) for op_evalf, indices in self._serialized_evalf)
-        except KeyboardInterrupt:
-            raise
-        except Exception as e:
-            log.error(self._format_stack(values, e))
-            raise
-        else:
-            return values[-1]
-
-    def eval_withtimes(self, times, **evalargs):
-        '''Evaluate function on a specified element, point set while measure time of each step.'''
-
-        values = [evalargs]
-        try:
-            values.extend(op.evalf_withtimes(times, *[values[i] for i in indices]) for op, indices in self.serialized)
-        except KeyboardInterrupt:
-            raise
-        except Exception as e:
-            log.error(self._format_stack(values, e))
-            raise
-        else:
-            return values[-1]
-
-    @contextlib.contextmanager
-    def session(self, graphviz):
-        if graphviz is None:
-            yield self.eval
-            return
-        stats = collections.defaultdict(_Stats)
-
-        def eval(**args):
-            return self.eval_withtimes(stats, **args)
-        with log.context('eval'):
-            yield eval
-            node = self._node({}, None, stats)
-            maxtime = builtins.max(n.metadata[1].time for n in node.walk(set()))
-            tottime = builtins.sum(n.metadata[1].time for n in node.walk(set()))
-            aggstats = tuple((key, builtins.sum(v.time for v in values), builtins.sum(v.ncalls for v in values)) for key, values in util.gather(n.metadata for n in node.walk(set())))
-            fill_color = (lambda node: '0,{:.2f},1'.format(node.metadata[1].time/maxtime)) if maxtime else None
-            node.export_graphviz(fill_color=fill_color, dot_path=graphviz)
-            log.info('total time: {:.0f}ms\n'.format(tottime/1e6) + '\n'.join('{:4.0f} {} ({} calls, avg {:.3f} per call)'.format(t / 1e6, k, n, t / (1e6*n))
-                                                                              for k, t, n in sorted(aggstats, reverse=True, key=lambda item: item[1]) if n))
-
-    def _iter_stack(self):
-        yield '%0 = EVALARGS'
-        for i, (op, indices) in enumerate(self.serialized, start=1):
-            s = [f'%{i} = {op}']
-            if indices:
-                args = [f'%{i}' for i in indices]
-                try:
-                    sig = inspect.signature(op.evalf)
-                except ValueError:
-                    pass
-                else:
-                    for i, param in enumerate(sig.parameters.values()):
-                        if i < len(args) and param.kind == param.POSITIONAL_OR_KEYWORD:
-                            args[i] = param.name + '=' + args[i]
-                s.extend(args)
-            yield ' '.join(s)
-
-    def _format_stack(self, values, e):
-        lines = [f'evaluation failed in step {len(values)}/{len(self.dependencies)+1}']
-        stack = self._iter_stack()
-        for v, op in zip(values, stack): # NOTE values must come first to avoid popping next item from stack
-            s = f'{type(v).__name__}'
-            if numeric.isarray(v):
-                s += f'<{v.dtype.kind}:{",".join(str(n) for n in v.shape)}>'
-            lines.append(f'{op} --> {s}')
-        lines.append(f'{next(stack)} --> {e}')
-        return '\n  '.join(lines)
+        return compile(self, simplify=False, stats=False, cache_const_intermediates=False)
 
     @util.deep_replace_property
     def simplified(obj):
@@ -309,10 +195,7 @@ class Evaluable(types.Singleton):
 
     @cached_property
     def optimized_for_numpy(self):
-        return self.simplified \
-                   ._optimized_for_numpy1 \
-                   ._deep_flatten_constants() \
-                   ._combine_loops()
+        return self.simplified._optimized_for_numpy1
 
     @util.deep_replace_property
     def _optimized_for_numpy1(obj):
@@ -326,92 +209,36 @@ class Evaluable(types.Singleton):
     def _optimized_for_numpy(self):
         return
 
-    @util.shallow_replace
-    def _deep_flatten_constants(self):
-        if isinstance(self, Array):
-            return self._flatten_constant()
-
     @cached_property
-    def _loop_deps(self):
+    def _loops(self):
         deps = util.IDSet()
         for arg in self.__args:
-            deps |= arg._loop_deps
+            deps |= arg._loops
         return deps.view()
 
-    def _combine_loops(self, candidates=None):
-        if candidates is None:
-            candidates = self._loop_deps
-        candidates = candidates.copy()
+    def _compile(self, builder: '_BlockTreeBuilder') -> _pyast.Expression:
+        # Compiles the entire tree defined by this evaluable.
+        #
+        # Arguments must be compiled via `builder.compile`, not by directly
+        # calling `Evaluable._compile`, because the former caches the compiled
+        # evaluables.
+        args = builder.compile(self.__args)
+        expression = self._compile_expression(builder.get_evaluable_expr(self), *args)
+        out = builder.get_variable_for_evaluable(self)
+        builder.get_block_for_evaluable(self).assign_to(out, expression)
+        return out
 
-        while candidates:
-            # Select the loops from candidates that can be combined. Given an
-            # index, we select all loops that have that index and are not a
-            # dependency of another loop in `candidates`. The latter ensures
-            # that the `candidates` do not disappear from `self` other than the
-            # deliberate combining performed here. To illustrate this, consider
-            # the following abstract loop structure
-            #
-            #     A: Add
-            #       B: LoopSum, loop_index=i
-            #         C: Add
-            #           D: LoopSum, loop_index=j
-            #             ..., does not depend on i
-            #           E: LoopSum, loop_index=j
-            #             ..., does not depend on i
-            #       F: LoopSum, loop_index=i
-            #         ...
-            #
-            # Loops D and E are invariant loops of B. The default candidates of
-            # A are B, D, E and F. By combing D and E first, B would be replaced by B',
-            #
-            #     A: Add
-            #       B': LoopSum, loop_index=i
-            #         C': Add
-            #           D': ArrayFromTuple, index=0
-            #             DE': LoopTuple(D, E), loop_index=j
-            #           E': ArrayFromTuple, index=0
-            #             DE'
-            #       F: LoopSum, loop_index=i
-            #         ...
-            #
-            # which is not in the set of candidates and we'd miss the
-            # opportunity to combine B' with F. Or worse: we combine B with F,
-            # ignore the former (`ArrayFromTuple`) *and* keep B'.
-            loops = []
-            for loop in candidates:
-                if loops and loop.index != loops[0].index:
-                    continue # take one index at a time
-                if all(loop not in other._loop_deps for other in candidates if other is not loop):
-                    loops.append(loop)
-            candidates.difference_update(loops)
-            index = loops[0].index
+    def _compile_expression(self, py_self: _pyast.Variable, *args: _pyast.Expression):
+        # Compiles this evaluable given compiled arguments.
+        #
+        # `py_self` is a variable that refers to `self`.
 
-            replacements = util.IDDict()
-            if len(loops) >= 2:
-                combined = _LoopTuple(tuple(loops), index.name, index.length)
-                combined = combined._combine_loops(combined.body_arg._loop_deps - combined._loop_deps)
-                for i, loop in enumerate(loops):
-                    replacements[loop] = ArrayFromTuple(combined, i, loop.shape, loop.dtype)
-            else:
-                loop, = loops
-                combined = loop._combine_loops(loop.body_arg._loop_deps - loop._loop_deps)
-                if combined != loop:
-                    replacements[loop] = combined
-            if replacements:
-                self = util.shallow_replace(replacements.get, self)
+        # Instead of triggering an exception in `Evaluable.evalf` when running
+        # the generated code, we raise an exception during compile time.
+        if self.evalf is Evaluable.evalf:
+            raise NotImplementedError
 
-        return self
-
-
-class EVALARGS(Evaluable):
-    def __init__(self):
-        super().__init__(args=())
-
-    def _node(self, cache, subgraph, times):
-        return InvisibleNode((type(self).__name__, _Stats()))
-
-
-EVALARGS = EVALARGS()
+        return py_self.get_attr('evalf').call(*args)
 
 
 class Tuple(Evaluable):
@@ -420,9 +247,8 @@ class Tuple(Evaluable):
         self.items = items
         super().__init__(items)
 
-    @staticmethod
-    def evalf(*items):
-        return items
+    def _compile_expression(self, py_self, *items):
+        return _pyast.Tuple(items)
 
     def __iter__(self):
         'iterate'
@@ -449,10 +275,10 @@ class Tuple(Evaluable):
 
         return Tuple(tuple(other) + self.items)
 
-    def _node(self, cache, subgraph, times):
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         if (cached := cache.get(self)) is not None:
             return cached
-        cache[self] = node = TupleNode(tuple(item._node(cache, subgraph, times) for item in self.items), (type(self).__name__, times[self]), subgraph=subgraph)
+        cache[self] = node = TupleNode(tuple(item._node(cache, subgraph, times, unique_loop_ids) for item in self.items), (type(self).__name__, times[self]), subgraph=subgraph)
         return node
 
     @property
@@ -658,33 +484,6 @@ if debug_flags.sparse:
                 namespace['_assparse'] = _chunked_assparse_checker(namespace['_assparse'])
             return super().__new__(mcls, name, bases, namespace)
 
-if debug_flags.evalf:
-    class _evalf_checker:
-        def __init__(self, orig):
-            self.orig = orig
-
-        def __set_name__(self, owner, name):
-            if hasattr(self.orig, '__set_name__'):
-                self.orig.__set_name__(owner, name)
-
-        def __get__(self, instance, owner):
-            evalf = self.orig.__get__(instance, owner)
-
-            @functools.wraps(evalf)
-            def evalf_with_check(*args, **kwargs):
-                res = evalf(*args, **kwargs)
-                assert not hasattr(instance, 'dtype') or asdtype(res.dtype) == instance.dtype, ((instance.dtype, res.dtype), instance, res)
-                assert not hasattr(instance, 'ndim') or res.ndim == instance.ndim
-                assert not hasattr(instance, 'shape') or all(m == n for m, n in zip(res.shape, instance.shape) if isinstance(n, int)), 'shape mismatch'
-                return res
-            return evalf_with_check
-
-    class _ArrayMeta(_ArrayMeta):
-        def __new__(mcls, name, bases, namespace):
-            if 'evalf' in namespace:
-                namespace['evalf'] = _evalf_checker(namespace['evalf'])
-            return super().__new__(mcls, name, bases, namespace)
-
 
 class AsEvaluableArray(Protocol):
     'Protocol for conversion into an :class:`Array`.'
@@ -831,10 +630,10 @@ class Array(Evaluable, metaclass=_ArrayMeta):
         indices = [prependaxes(appendaxes(Range(length), self.shape[i+1:]), self.shape[:i]) for i, length in enumerate(self.shape)]
         return (*indices, self),
 
-    def _node(self, cache, subgraph, times):
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
             return cache[self]
-        args = tuple(arg._node(cache, subgraph, times) for arg in self._Evaluable__args)
+        args = tuple(arg._node(cache, subgraph, times, unique_loop_ids) for arg in self._Evaluable__args)
         bounds = '[{},{}]'.format(*self._intbounds) if self.dtype == int else None
         label = '\n'.join(filter(None, (type(self).__name__, self._node_details, self._shape_str(form=repr), bounds)))
         cache[self] = node = RegularNode(label, args, {}, (type(self).__name__, times[self]), subgraph)
@@ -905,9 +704,14 @@ class Array(Evaluable, metaclass=_ArrayMeta):
             lower, upper = self._intbounds
             return lower if lower == upper else None
 
-    def _flatten_constant(self):
-        if self.isconstant:
-            return constant(self.eval())
+    def _compile_with_out(self, builder, out, out_block_id, mode):
+        # Compiles `self` and writes the result to `out`. It is the
+        # responsibility of the caller to ensure that `out_block_id <=
+        # builder.get_block_id(self)`. Valid values for mode are
+        #
+        #     'assign': results are assigned to `out`
+        #     'iadd': results add added to `out`
+        return NotImplemented
 
 
 class Orthonormal(Array):
@@ -1002,12 +806,19 @@ class Constant(Array):
             if all(numpy.equal(first, other).all() for other in others):
                 return insertaxis(constant(first), i, sh)
 
-    def evalf(self):
+    def eval(self, /, **evalargs):
         return self.value
 
-    def _node(self, cache, subgraph, times):
+    def _compile(self, builder):
+        # `self.value` is always a `numpy.ndarray`. If the array is 0d, we
+        # convert the array to a `numpy.number` (`self.value[()]`), which
+        # behaves like a `numpy.ndarray`, and has much faster implementations
+        # for add, multiply etc.
+        return builder.add_constant_for_evaluable(self, self.value[()] if self.ndim == 0 else self.value)
+
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         if self.ndim:
-            return super()._node(cache, subgraph, times)
+            return super()._node(cache, subgraph, times, unique_loop_ids)
         elif self in cache:
             return cache[self]
         else:
@@ -1089,9 +900,6 @@ class Constant(Array):
         if self.ndim == 0:
             return self.dtype(self.value[()])
 
-    def _flatten_constant(self):
-        pass
-
 
 class InsertAxis(Array):
 
@@ -1127,6 +935,12 @@ class InsertAxis(Array):
             return numpy.ndarray(buffer=func, dtype=func.dtype, shape=(*func.shape, length), strides=(*func.strides, 0))
         except ValueError:  # non-contiguous data
             return numpy.repeat(func[..., numpy.newaxis], length, -1)
+
+    def _compile_expression(self, py_self, func, length):
+        if _equals_scalar_constant(self.length, 1):
+            return func.get_item(_pyast.Tuple((_pyast.Raw('...'), _pyast.Variable('numpy').get_attr('newaxis'))))
+        else:
+            return super()._compile_expression(py_self, func, length)
 
     def _derivative(self, var, seen):
         return insertaxis(derivative(self.func, var, seen), self.ndim-1, self.length)
@@ -1214,9 +1028,6 @@ class InsertAxis(Array):
     def _const_uniform(self):
         return self.func._const_uniform
 
-    def _flatten_constant(self):
-        pass
-
 
 class Transpose(Array):
 
@@ -1274,8 +1085,14 @@ class Transpose(Array):
     def _simplified(self):
         return self.func._transpose(self.axes)
 
-    def evalf(self, arr):
-        return arr.transpose(self.axes)
+    def _compile_expression(self, py_self, func):
+        axes = _pyast.Tuple(tuple(map(_pyast.LiteralInt, self.axes)))
+        return _pyast.Variable('numpy').get_attr('transpose').call(func, axes)
+
+    def _compile_with_out(self, builder, out, out_block_id, mode):
+        invaxes = _pyast.Tuple(tuple(map(_pyast.LiteralInt, self._invaxes)))
+        inv_trans_out = _pyast.Variable('numpy').get_attr('transpose').call(out, invaxes)
+        builder.compile_with_out(self.func, inv_trans_out, out_block_id, mode)
 
     @property
     def _node_details(self):
@@ -1405,17 +1222,16 @@ class Transpose(Array):
     def _const_uniform(self):
         return self.func._const_uniform
 
-    def _flatten_constant(self):
-        pass
-
 
 class Product(Array):
 
     def __init__(self, func: Array):
         assert isinstance(func, Array), f'func={func!r}'
         self.func = func
-        self.evalf = functools.partial(numpy.all if func.dtype == bool else numpy.prod, axis=-1)
         super().__init__(args=(func,), shape=func.shape[:-1], dtype=func.dtype)
+
+    def _compile_expression(self, py_self, func):
+        return _pyast.Variable('numpy').get_attr('all' if self.dtype == bool else 'prod').call(func, axis=_pyast.LiteralInt(-1))
 
     def _simplified(self):
         if _equals_scalar_constant(self.func.shape[-1], 1):
@@ -1556,7 +1372,8 @@ class Multiply(Array):
             r = tuple(range(self.ndim))
             return Einsum(tuple(self.funcs), (r, r), r)
 
-    evalf = staticmethod(numpy.multiply)
+    def _compile_expression(self, py_self, func1, func2):
+        return _pyast.BinOp(func1, '*', func2)
 
     def _sum(self, axis):
         factors = tuple(self._factors)
@@ -1749,7 +1566,23 @@ class Add(Array):
         #
         # We instead rely on Inflate._add to handle this situation.
 
-    evalf = staticmethod(numpy.add)
+    def _compile(self, builder):
+        if any(builder.ndependents[func] == 1 and type(func)._compile_with_out != Array._compile_with_out for func in self.funcs):
+            out, out_block_id = builder.new_empty_array_for_evaluable(self)
+            self._compile_with_out(builder, out, out_block_id, 'assign')
+            return out
+        else:
+            return super()._compile(builder)
+
+    def _compile_expression(self, py_self, func1, func2):
+        return _pyast.BinOp(func1, '+', func2)
+
+    def _compile_with_out(self, builder, out, out_block_id, mode):
+        assert mode in ('iadd', 'assign')
+        if mode == 'assign':
+            builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
+        for func in self.funcs:
+            builder.compile_with_out(func, out, out_block_id, 'iadd')
 
     def _sum(self, axis):
         return add(*[sum(f, axis) for f in self._terms])
@@ -1823,10 +1656,8 @@ class Einsum(Array):
         self._has_summed_axes = len(lengths) > len(out_idx)
         super().__init__(args=self.args, shape=shape, dtype=dtype)
 
-    def evalf(self, *args):
-        if self._has_summed_axes:
-            args = tuple(numpy.asarray(arg, order='F') for arg in args)
-        return numpy.core.multiarray.c_einsum(self._einsumfmt, *args)
+    def _compile_expression(self, py_self, *args):
+        return _pyast.Variable('numpy').get_attr('core').get_attr('multiarray').get_attr('c_einsum').call(_pyast.LiteralStr(self._einsumfmt), *args)
 
     @property
     def _node_details(self):
@@ -1850,6 +1681,9 @@ class Sum(Array):
         self.func = func
         self.evalf = functools.partial(numpy.any if func.dtype == bool else numpy.sum, axis=-1)
         super().__init__(args=(func,), shape=func.shape[:-1], dtype=func.dtype)
+
+    def _compile_expression(self, py_self, func):
+        return _pyast.Variable('numpy').get_attr('any' if self.dtype == bool else 'sum').call(func, axis=_pyast.LiteralInt(-1))
 
     def _simplified(self):
         if _equals_scalar_constant(self.func.shape[-1], 1):
@@ -1933,9 +1767,8 @@ class TakeDiag(Array):
             axes = [i-(i>rmaxis) for i in axes[:-1]]
             return transpose(Einsum(func.args, args_idx, func.out_idx[:rmaxis] + func.out_idx[rmaxis+1:]), axes)
 
-    @staticmethod
-    def evalf(arr):
-        return numpy.einsum('...kk->...k', arr, optimize=False)
+    def _compile_expression(self, py_self, arr):
+        return _pyast.Variable('numpy').get_attr('core').get_attr('multiarray').get_attr('c_einsum').call(_pyast.LiteralStr('...kk->...k'), arr)
 
     def _derivative(self, var, seen):
         return takediag(derivative(self.func, var, seen), self.ndim-1, self.ndim)
@@ -1980,9 +1813,8 @@ class Take(Array):
             if axis == self.func.ndim - 1:
                 return util.sum(Inflate(func, dofmap, self.func.shape[-1])._take(self.indices, self.func.ndim - 1) for dofmap, func in parts.items())
 
-    @staticmethod
-    def evalf(arr, indices):
-        return arr[..., indices]
+    def _compile_expression(self, py_self, arr, indices):
+        return _pyast.Variable('numpy').get_attr('take').call(arr, indices, axis=_pyast.LiteralInt(-1))
 
     def _derivative(self, var, seen):
         return _take(derivative(self.func, var, seen), self.indices, self.func.ndim-1)
@@ -2034,7 +1866,8 @@ class Power(Array):
         elif p == -2:
             return Reciprocal(self.func * self.func)
 
-    evalf = staticmethod(numpy.power)
+    def _compile_expression(self, py_self, func, power):
+        return _pyast.Variable('numpy').get_attr('power').call(func, power)
 
     def _derivative(self, var, seen):
         if self.power.isconstant:
@@ -2160,11 +1993,16 @@ class Holomorphic(Pointwise):
 
 
 class Reciprocal(Holomorphic):
-    evalf = staticmethod(numpy.reciprocal)
+
+    def _compile_expression(self, py_self, value):
+        return _pyast.Variable('numpy').get_attr('reciprocal').call(value)
 
 
 class Negative(Pointwise):
-    evalf = staticmethod(numpy.negative)
+
+    def _compile_expression(self, py_self, value):
+        return _pyast.UnaryOp('-', value)
+
     def return_type(T):
         if T == bool:
             raise ValueError('boolean values cannot be negated')
@@ -2176,7 +2014,10 @@ class Negative(Pointwise):
 
 
 class FloorDivide(Pointwise):
-    evalf = staticmethod(numpy.floor_divide)
+
+    def _compile_expression(self, py_self, dividend, divisor):
+        return _pyast.BinOp(dividend, '//', divisor)
+
     def return_type(dividend, divisor):
         if dividend != divisor:
             raise ValueError(f'All arguments must have the same dtype but got {dividend} and {divisor}.')
@@ -2205,7 +2046,9 @@ class FloorDivide(Pointwise):
 
 
 class Absolute(Pointwise):
-    evalf = staticmethod(numpy.absolute)
+
+    def _compile_expression(self, py_self, value):
+        return _pyast.Variable('numpy').get_attr('absolute').call(value)
 
     def return_type(T):
         if T == bool:
@@ -2309,7 +2152,9 @@ class Log(Holomorphic):
 
 
 class Mod(Pointwise):
-    evalf = staticmethod(numpy.mod)
+
+    def _compile_expression(self, py_self, dividend, divisor):
+        return _pyast.BinOp(dividend, '%', divisor)
 
     def return_type(dividend, divisor):
         if dividend != divisor:
@@ -2501,8 +2346,8 @@ class Imag(Pointwise):
 
 class Cast(Pointwise):
 
-    def evalf(self, arg):
-        return numpy.array(arg, dtype=self.dtype)
+    def _compile_expression(self, py_self, arg):
+        return _pyast.Variable('numpy').get_attr('array').call(arg, dtype=_pyast.Variable(self.dtype.__name__))
 
     def _simplified(self):
         arg, = self.args
@@ -2763,14 +2608,13 @@ class ArrayFromTuple(Array):
             # Tuple and its components be exposed to the function tree.
             return self.arrays[self.index]
 
-    def evalf(self, arrays):
-        assert isinstance(arrays, tuple)
-        return arrays[self.index]
+    def _compile_expression(self, py_self, arrays):
+        return arrays.get_item(_pyast.LiteralInt(self.index))
 
-    def _node(self, cache, subgraph, times):
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
             return cache[self]
-        node = self.arrays._node(cache, subgraph, times)
+        node = self.arrays._node(cache, subgraph, times, unique_loop_ids)
         if isinstance(node, TupleNode):
             node = node[self.index]
         cache[self] = node
@@ -2802,12 +2646,12 @@ class Zeros(Array):
     def _unaligned(self):
         return Zeros((), self.dtype), ()
 
-    def evalf(self, *shape):
-        return numpy.zeros(shape, dtype=self.dtype)
+    def _compile_expression(self, py_self, *shape):
+        return _pyast.Variable('numpy').get_attr('zeros').call(_pyast.Tuple(shape), dtype=_pyast.Variable(self.dtype.__name__))
 
-    def _node(self, cache, subgraph, times):
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         if self.ndim:
-            return super()._node(cache, subgraph, times)
+            return super()._node(cache, subgraph, times, unique_loop_ids)
         elif self in cache:
             return cache[self]
         else:
@@ -2917,6 +2761,14 @@ class Inflate(Array):
         inflated = numpy.zeros(array.shape[:array.ndim-indices.ndim] + (length,), dtype=self.dtype)
         numpy.add.at(inflated, (slice(None),)*(self.ndim-1)+(indices,), array)
         return inflated
+
+    def _compile_with_out(self, builder, out, out_block_id, mode):
+        assert mode in ('iadd', 'assign')
+        if mode == 'assign':
+            builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
+        indices = _pyast.Tuple((_pyast.Variable('slice').call(_pyast.Variable('None')),)*(self.ndim-1) + (builder.compile(self.dofmap),))
+        values = builder.compile(self.func)
+        builder.get_block_for_evaluable(self).array_add_at(out, indices, values)
 
     def _inflate(self, dofmap, length, axis):
         if dofmap.ndim == 0 and dofmap == self.dofmap and length == self.length:
@@ -3077,12 +2929,16 @@ class Diagonalize(Array):
             return InsertAxis(self.func, 1)
         return self.func._diagonalize(self.ndim-2)
 
-    @staticmethod
-    def evalf(arr):
-        result = numpy.zeros(arr.shape+(arr.shape[-1],), dtype=arr.dtype, order='F')
-        diag = numpy.core.multiarray.c_einsum('...ii->...i', result)
-        diag[:] = arr
-        return result
+    def _compile(self, builder):
+        out, out_block_id = builder.new_empty_array_for_evaluable(self)
+        self._compile_with_out(builder, out, out_block_id, mode='assign')
+        return out
+
+    def _compile_with_out(self, builder, out, out_block_id, mode):
+        out_diag = _pyast.Variable('numpy').get_attr('core').get_attr('multiarray').get_attr('c_einsum').call(_pyast.LiteralStr('...ii->...i'), out)
+        if mode == 'assign':
+            builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
+        builder.compile_with_out(self.func, out_diag, out_block_id, mode)
 
     def _derivative(self, var, seen):
         return diagonalize(derivative(self.func, var, seen), self.ndim-2, self.ndim-1)
@@ -3152,9 +3008,8 @@ class Guard(Array):
     def isconstant(self):
         return False  # avoid simplifications based on fun being constant
 
-    @staticmethod
-    def evalf(dat):
-        return dat
+    def _compile(self, builder):
+        return builder.compile(self.fun)
 
     def _derivative(self, var, seen):
         return Guard(derivative(self.fun, var, seen))
@@ -3168,9 +3023,8 @@ class Find(Array):
         self.where = where
         super().__init__(args=(where,), shape=(Sum(BoolToInt(where)),), dtype=int)
 
-    @staticmethod
-    def evalf(where):
-        return where.nonzero()[0]
+    def _compile_expression(self, py_self, where):
+        return _pyast.Variable('numpy').get_attr('nonzero').call(where).get_item(_pyast.LiteralInt(0))
 
     def _simplified(self):
         if self.isconstant:
@@ -3216,9 +3070,8 @@ class WithDerivative(Array):
     def arguments(self):
         return self._func.arguments | {self._var}
 
-    @staticmethod
-    def evalf(func: numpy.ndarray) -> numpy.ndarray:
-        return func
+    def _compile(self, builder):
+        return builder.compile(self._func)
 
     def _derivative(self, var: DerivativeTargetBase, seen) -> Array:
         if var == self._var:
@@ -3259,17 +3112,23 @@ class Argument(DerivativeTargetBase):
         assert isinstance(name, str), f'name={name!r}'
         assert isinstance(shape, tuple) and all(_isindex(n) for n in shape), f'shape={shape!r}'
         self._name = name
-        super().__init__(args=(EVALARGS, *shape), shape=shape, dtype=dtype)
+        super().__init__(args=shape, shape=shape, dtype=dtype)
 
-    def evalf(self, evalargs, *shape):
-        try:
-            value = evalargs[self._name]
-        except KeyError:
-            raise ValueError(f'argument {self._name!r} missing')
-        value = numpy.asarray(value)
-        if value.shape != shape:
-            raise ValueError(f'argument {self._name!r} has the wrong shape: expected {shape}, got {value.shape}')
-        return value.astype(self.dtype, casting='safe', copy=False)
+    def _compile(self, builder):
+        shape = builder.compile(self.shape)
+        out = builder.get_variable_for_evaluable(self)
+        block = builder.get_block_for_evaluable(self)
+        block.assign_to(out, _pyast.Variable('numpy').get_attr('asarray').call(builder.get_argument(self._name), dtype=_pyast.Variable(self.dtype.__name__)))
+        block.if_(_pyast.BinOp(shape, '!=', out.get_attr('shape'))).raise_(
+            _pyast.Variable('ValueError').call(
+                _pyast.LiteralStr('argument {!r} has the wrong shape: expected {}, got {}').get_attr('format').call(
+                    _pyast.LiteralStr(self._name),
+                    shape,
+                    out.get_attr('shape'),
+                ),
+            ),
+        )
+        return out
 
     def _derivative(self, var, seen):
         if isinstance(var, Argument) and var._name == self._name and self.dtype in (float, complex):
@@ -3283,7 +3142,7 @@ class Argument(DerivativeTargetBase):
     def __str__(self):
         return '{} {!r} <{}>'.format(self.__class__.__name__, self._name, self._shape_str(form=str))
 
-    def _node(self, cache, subgraph, times):
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
             return cache[self]
         else:
@@ -3315,8 +3174,8 @@ class IdentifierDerivativeTarget(DerivativeTargetBase):
         self.identifier = identifier
         super().__init__(args=(), shape=shape, dtype=float)
 
-    def evalf(self):
-        raise Exception('{} cannot be evaluabled'.format(type(self).__name__))
+    def _compile(self, builder):
+        raise Exception(f'{type(self).__name__} cannot be evaluated')
 
 
 class Ravel(Array):
@@ -3657,8 +3516,10 @@ class PolyDegree(Array):
         self.nvars = nvars
         super().__init__(args=(ncoeffs,), shape=(), dtype=int)
 
-    def evalf(self, ncoeffs):
-        return numpy.array(poly.degree(self.nvars, ncoeffs.__index__()))
+    def _compile_expression(self, py_self, ncoeffs):
+        ncoeffs = ncoeffs.get_attr('__index__').call()
+        degree = _pyast.Variable('poly').get_attr('degree').call(_pyast.LiteralInt(self.nvars), ncoeffs)
+        return _pyast.Variable('numpy').get_attr('int_').call(degree)
 
     def _intbounds_impl(self):
         lower, upper = self.ncoeffs._intbounds
@@ -3696,8 +3557,10 @@ class PolyNCoeffs(Array):
         self.degree = degree
         super().__init__(args=(degree,), shape=(), dtype=int)
 
-    def evalf(self, degree):
-        return numpy.array(poly.ncoeffs(self.nvars, degree.__index__()))
+    def _compile_expression(self, py_self, degree):
+        degree = degree.get_attr('__index__').call()
+        ncoeffs = _pyast.Variable('poly').get_attr('ncoeffs').call(_pyast.LiteralInt(self.nvars), degree)
+        return _pyast.Variable('numpy').get_attr('int_').call(ncoeffs)
 
     def _intbounds_impl(self):
         lower, upper = self.degree._intbounds
@@ -3906,9 +3769,8 @@ class Choose(Array):
         self.choices = choices
         super().__init__(args=(index,)+choices, shape=shape, dtype=dtype)
 
-    @staticmethod
-    def evalf(index, *choices):
-        return numpy.choose(index, choices)
+    def _compile_expression(self, py_self, index, *choices):
+        return _pyast.Variable('numpy').get_attr('choose').call(index, _pyast.Tuple(choices))
 
     def _derivative(self, var, seen):
         return Choose(appendaxes(self.index, var.shape), *(derivative(choice, var, seen) for choice in self.choices))
@@ -4165,26 +4027,38 @@ class TransformBasis(Array):
             return diagonalize(ones((self._source.fromdims,), dtype=float))
 
 
-class _LoopIndex(Argument):
+class _LoopId(types.Singleton):
 
-    def __init__(self, name: str, length: Array):
-        assert isinstance(name, str), f'name={name!r}'
+    def __init__(self, id):
+        self.id = id
+
+    def __str__(self):
+        return str(self.id)
+
+
+class _LoopIndex(Array):
+
+    def __init__(self, loop_id: _LoopId, length: Array):
+        assert isinstance(loop_id, _LoopId), f'loop_id={loop_id!r}'
         assert _isindex(length), f'length={length!r}'
-        self.name = name
+        self.loop_id = loop_id
         self.length = length
-        super().__init__(name, (), int)
+        super().__init__(args=(self.length,), shape=(), dtype=int)
 
     def __str__(self):
         try:
             length = self.length.__index__()
         except:
             length = '?'
-        return 'LoopIndex({}, length={})'.format(self._name, length)
+        return f'LoopIndex({self.loop_id}, length={length})'
 
-    def _node(self, cache, subgraph, times):
+    def _compile(self, builder):
+        raise ValueError(f'`_LoopIndex` outside `Loop` with corresponding `_LoopId`: {self.loop_id}.')
+
+    def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
             return cache[self]
-        cache[self] = node = RegularNode('LoopIndex', (), dict(length=self.length._node(cache, subgraph, times)), (type(self).__name__, _Stats()), subgraph)
+        cache[self] = node = RegularNode(f'LoopIndex {self.loop_id}', (), dict(length=self.length._node(cache, subgraph, times, unique_loop_ids)), (type(self).__name__, _Stats()), subgraph)
         return node
 
     def _intbounds_impl(self):
@@ -4194,6 +4068,10 @@ class _LoopIndex(Argument):
     def _simplified(self):
         if _equals_scalar_constant(self.length, 1):
             return Zeros((), int)
+
+    @property
+    def arguments(self):
+        return frozenset({self})
 
 
 class Loop(Evaluable):
@@ -4205,158 +4083,91 @@ class Loop(Evaluable):
     *   method ``evalf_loop_body(output, body_arg)``.
     '''
 
-    def __init__(self, index_name: str, length: Array, init_arg: Evaluable, body_arg: Evaluable, *args, **kwargs):
-        assert isinstance(index_name, str), f'index_name={index_name!r}'
+    def __init__(self, loop_id: _LoopId, length: Array, init_args: typing.Tuple[Evaluable, ...], body_args: typing.Tuple[Evaluable, ...], *args, **kwargs):
+        assert isinstance(loop_id, _LoopId), f'loop_id={loop_id!r}'
         assert isinstance(length, Array), f'length={length!r}'
-        assert isinstance(init_arg, Evaluable), f'init_arg={init_arg!r}'
-        assert isinstance(body_arg, Evaluable), f'body_arg={init_arg!r}'
-        self.index_name = index_name
+        assert isinstance(init_args, tuple) and all(isinstance(arg, Evaluable) for arg in init_args), f'init_args={init_args!r}'
+        assert isinstance(body_args, tuple) and all(isinstance(arg, Evaluable) for arg in body_args), f'body_args={body_args!r}'
+        self.loop_id = loop_id
         self.length = length
-        self.index = _LoopIndex(index_name, length)
-        self.init_arg = init_arg
-        self.body_arg = body_arg
-        if self.index in init_arg.arguments:
+        self.index = _LoopIndex(loop_id, length)
+        self.init_args = init_args
+        self.body_args = body_args
+        if any(self.index in arg.arguments for arg in init_args):
             raise ValueError('the loop initialization arguments must not depend on the index')
-        self._invariants, self._dependencies = _dependencies_sans_invariants(body_arg, self.index)
-        super().__init__(args=(length, init_arg, *self._invariants), *args, **kwargs)
+        super().__init__(args=(length, *init_args, *body_args), *args, **kwargs)
 
-    @cached_property
-    def _serialized_loop(self):
-        indices = {d: i for i, d in enumerate(itertools.chain([self.index], self._invariants, self._dependencies))}
-        return tuple((dep, tuple(map(indices.__getitem__, dep._Evaluable__args))) for dep in self._dependencies)
+    def _node(self, cache, subgraph, times, unique_loop_ids):
+        if (cached := cache.get(self)) is not None:
+            return cached
 
-    @cached_property
-    def _serialized_loop_evalf(self):
-        return tuple((dep.evalf, indices) for dep, indices in self._serialized_loop)
-
-    def evalf(self, length, init_arg, *invariants):
-        serialized_evalf = self._serialized_loop_evalf
-        output = self.evalf_loop_init(init_arg)
-        length = length.__index__()
-        values = [None] + list(invariants) + [None] * len(serialized_evalf)
-        with log.context(f'loop {self.index.name}'.replace('{', '{{').replace('}', '}}') + ' {:3.0f}%', 0) as log_ctx:
-            fork = parallel.fork(length)
-            if fork:
-                raw_index = multiprocessing.RawValue('i', 0)
-                lock = multiprocessing.Lock()
-                with fork as pid:
-                    with lock:
-                        index = raw_index.value
-                        raw_index.value = index + 1
-                    while index < length:
-                        if not pid:
-                            log_ctx(100*index/length)
-                        values[0] = numpy.array(index)
-                        for o, (op_evalf, indices) in enumerate(serialized_evalf, len(invariants) + 1):
-                            values[o] = op_evalf(*[values[i] for i in indices])
-                        with lock:
-                            self.evalf_loop_body(output, values[-1])
-                            index = raw_index.value
-                            raw_index.value = index + 1
+        # Populate the `cache` with objects that do not depend on `self.index`.
+        stack = [self.length, *self.init_args, *self.body_args]
+        while stack:
+            func = stack.pop()
+            if self.index in func.arguments:
+                stack.extend(func._Evaluable__args)
             else:
-                for index in range(length):
-                    values[0] = numpy.array(index)
-                    for o, (op_evalf, indices) in enumerate(serialized_evalf, len(invariants) + 1):
-                        values[o] = op_evalf(*[values[i] for i in indices])
-                    self.evalf_loop_body(output, values[-1])
-                    log_ctx(100*(index+1)/length)
-            return output
+                func._node(cache, subgraph, times, unique_loop_ids)
 
-    def evalf_withtimes(self, times, length, init_arg, *invariants):
-        serialized = self._serialized_loop
-        subtimes = times.setdefault(self, collections.defaultdict(_Stats))
-        output = self.evalf_loop_init(init_arg)
-        values = [None] + list(invariants) + [None] * len(serialized)
-        for index in range(length):
-            values[0] = numpy.array(index)
-            for o, (op, indices) in enumerate(serialized, len(invariants) + 1):
-                values[o] = op.evalf_withtimes(subtimes, *[values[i] for i in indices])
-            self.evalf_loop_body_withtimes(subtimes, output, values[-1])
-        return output
-
-    def evalf_loop_body_withtimes(self, times, output, body_arg):
-        with times[self]:
-            self.evalf_loop_body(output, body_arg)
-
-    def _node(self, cache, subgraph, times):
-        if (cached := cache.get(self)) is not None:
-            return cached
-        for arg in itertools.chain(self._invariants, (self.init_arg,)):
-            arg._node(cache, subgraph, times)
-        loopcache = cache.copy()
-        loopcache.pop(self.index, None)
-        loopgraph = Subgraph('Loop', subgraph)
-        looptimes = times.get(self, collections.defaultdict(_Stats))
-        cache[self] = node = self._node_loop_body(loopcache, loopgraph, looptimes)
+        if unique_loop_ids:
+            loopcache = cache
+            loopgraph = cache.setdefault(('subgraph', self.loop_id), Subgraph('Loop', subgraph))
+            looptimes = times
+        else:
+            loopcache = cache.copy()
+            loopcache.pop(self.index, None)
+            loopgraph = Subgraph('Loop', subgraph)
+            looptimes = times.get(self, collections.defaultdict(_Stats))
+        cache[self] = node = self._node_loop_body(loopcache, loopgraph, looptimes, unique_loop_ids)
         return node
 
-    @property
-    def _loop_deps(self):
-        deps = util.IDSet([self])
-        deps |= self.init_arg._loop_deps
-        for arg in self._invariants:
-            deps |= arg._loop_deps
-        return deps.view()
-
-
-class _LoopTuple(Loop):
-
-    def __init__(self, loops: typing.Tuple[Loop], index_name: str, length: Array):
-        assert isinstance(loops, tuple) and all(isinstance(loop, Loop) and loop.index_name == index_name and loop.length == length for loop in loops), f'loops={loops}'
-        self.loops = loops
-        super().__init__(
-            index_name=index_name,
-            length=length,
-            init_arg=Tuple(tuple(loop.init_arg for loop in loops)),
-            body_arg=Tuple(tuple(loop.body_arg for loop in loops)),
-        )
-
-    def evalf_loop_init(self, args):
-        return tuple(loop.evalf_loop_init(arg) for loop, arg in zip(self.loops, args))
-
-    def evalf_loop_body(self, outputs, args):
-        for loop, output, arg in zip(self.loops, outputs, args):
-            loop.evalf_loop_body(output, arg)
-
-    def evalf_loop_body_withtimes(self, times, outputs, args):
-        for loop, output, arg in zip(self.loops, outputs, args):
-            loop.evalf_loop_body_withtimes(times, output, arg)
-
-    def _node_loop_body(self, cache, subgraph, times):
-        if (cached := cache.get(self)) is not None:
-            return cached
-        cache[self] = node = TupleNode(tuple(item._node_loop_body(cache, subgraph, times) for item in self.loops), metadata=(type(self).__name__, times[self]), subgraph=subgraph)
-        return node
+    @cached_property
+    def arguments(self):
+        return super().arguments - frozenset({self.index})
 
     @property
-    def _intbounds_tuple(self):
-        return tuple(loop._intbounds for loop in self.loops)
+    def _loops(self):
+        return (util.IDSet([self]) | super()._loops).view()
 
 
 class LoopSum(Loop, Array):
 
-    def __init__(self, func: Array, shape: typing.Tuple[Array, ...], index_name: str, length: Array):
+    def __init__(self, func: Array, shape: typing.Tuple[Array, ...], loop_id: _LoopId, length: Array):
         assert isinstance(func, Array) and func.dtype != bool, f'func={func!r}'
         assert func.ndim == len(shape)
         self.func = func
-        super().__init__(init_arg=Tuple(shape), body_arg=func, index_name=index_name, length=length, shape=shape, dtype=func.dtype)
+        super().__init__(init_args=shape, body_args=(func,), loop_id=loop_id, length=length, shape=shape, dtype=func.dtype)
 
-    def evalf_loop_init(self, shape):
-        return parallel.shzeros(tuple(n.__index__() for n in shape), dtype=self.dtype)
+    def _compile(self, builder):
+        out, out_block_id = builder.new_empty_array_for_evaluable(self)
+        # `out_block_id` is always at the beginning the scope this evaluable
+        # belongs to (out_block_id = (*builder.get_block_id(self)[:-1], 0), so
+        # we're not reaching `NotImplemented` in `self._compile_with_out`.
+        self._compile_with_out(builder, out, out_block_id, mode='assign')
+        return out
 
-    @staticmethod
-    def evalf_loop_body(output, func):
-        output += func
+    def _compile_with_out(self, builder, out, out_block_id, mode):
+        assert mode in ('iadd', 'assign')
+        if out_block_id > builder.get_block_id(self.index):
+            # The loop body comes before the definition of `out`.
+            return NotImplemented
+        if mode == 'assign':
+            builder.get_block_for_evaluable(self, block_id=out_block_id, comment='zero').array_fill_zeros(out)
+        index_block_id = builder.get_block_id(self.index)
+        body_block_id = builtins.max(index_block_id, builder.get_block_id(self.func))
+        assert body_block_id[:-1] == index_block_id[:-1]
+        builder.compile_with_out(self.func, out, body_block_id, 'iadd')
 
     def _derivative(self, var, seen):
         return loop_sum(derivative(self.func, var, seen), self.index)
 
-    def _node_loop_body(self, cache, subgraph, times):
+    def _node_loop_body(self, cache, subgraph, times, unique_loop_ids):
         if (cached := cache.get(self)) is not None:
             return cached
-        kwargs = {'shape[{}]'.format(i): n._node(cache, subgraph, times) for i, n in enumerate(self.shape)}
-        kwargs['func'] = self.func._node(cache, subgraph, times)
-        cache[self] = node = RegularNode('LoopSum', (), kwargs, (type(self).__name__, times[self]), subgraph)
+        kwargs = {'shape[{}]'.format(i): n._node(cache, subgraph, times, unique_loop_ids) for i, n in enumerate(self.shape)}
+        kwargs['func'] = self.func._node(cache, subgraph, times, unique_loop_ids)
+        cache[self] = node = RegularNode(f'LoopSum {self.loop_id}', (), kwargs, (type(self).__name__, times[self]), subgraph)
         return node
 
     def _simplified(self):
@@ -4438,7 +4249,7 @@ class _SizesToOffsets(Array):
 
 class LoopConcatenate(Loop, Array):
 
-    def __init__(self, func: Array, start: Array, stop: Array, concat_length: Array, index_name: str, length: Array):
+    def __init__(self, func: Array, start: Array, stop: Array, concat_length: Array, loop_id: _LoopId, length: Array):
         assert isinstance(func, Array), f'func={func}'
         assert _isindex(start), f'start={start}'
         assert _isindex(stop), f'stop={stop}'
@@ -4449,27 +4260,38 @@ class LoopConcatenate(Loop, Array):
         if not self.func.ndim:
             raise ValueError('expected an array with at least one axis')
         shape = *func.shape[:-1], concat_length
-        super().__init__(init_arg=Tuple(shape), body_arg=Tuple((func, start, stop)), index_name=index_name, length=length, shape=shape, dtype=func.dtype)
+        super().__init__(init_args=shape, body_args=(func, start, stop), loop_id=loop_id, length=length, shape=shape, dtype=func.dtype)
 
-    def evalf_loop_init(self, shape):
-        return parallel.shempty(tuple(n.__index__() for n in shape), dtype=self.dtype)
+    def _compile(self, builder):
+        out, out_block_id = builder.new_empty_array_for_evaluable(self)
+        # `out_block_id` is always at the beginning the scope this evaluable
+        # belongs to (out_block_id = (*builder.get_block_id(self)[:-1], 0), so
+        # we're not reaching `NotImplemented` in `self._compile_with_out`.
+        self._compile_with_out(builder, out, out_block_id, mode='assign')
+        return out
 
-    @staticmethod
-    def evalf_loop_body(output, arg):
-        func, start, stop = arg
-        output[..., start:stop] = func
+    def _compile_with_out(self, builder, out, out_block_id, mode):
+        if out_block_id > builder.get_block_id(self.index):
+            # The loop body comes before the definition of `out`.
+            return NotImplemented
+        start, stop = builder.compile((self.start, self.stop))
+        index_block_id = builder.get_block_id(self.index)
+        body_block_id = builtins.max((index_block_id, *map(builder.get_block_id, (self.start, self.stop))))
+        assert body_block_id[:-1] == index_block_id[:-1]
+        out_slice = out.get_item(_pyast.Tuple((_pyast.Raw('...'), _pyast.Variable('slice').call(start, stop))))
+        builder.compile_with_out(self.func, out_slice, body_block_id, mode)
 
     def _derivative(self, var, seen):
         return Transpose.from_end(loop_concatenate(Transpose.to_end(derivative(self.func, var, seen), self.ndim-1), self.index), self.ndim-1)
 
-    def _node_loop_body(self, cache, subgraph, times):
+    def _node_loop_body(self, cache, subgraph, times, unique_loop_ids):
         if (cached := cache.get(self)) is not None:
             return cached
-        kwargs = {'shape[{}]'.format(i): n._node(cache, subgraph, times) for i, n in enumerate(self.shape)}
-        kwargs['start'] = self.start._node(cache, subgraph, times)
-        kwargs['stop'] = self.stop._node(cache, subgraph, times)
-        kwargs['func'] = self.func._node(cache, subgraph, times)
-        cache[self] = node = RegularNode('LoopConcatenate', (), kwargs, (type(self).__name__, times[self]), subgraph)
+        kwargs = {'shape[{}]'.format(i): n._node(cache, subgraph, times, unique_loop_ids) for i, n in enumerate(self.shape)}
+        kwargs['start'] = self.start._node(cache, subgraph, times, unique_loop_ids)
+        kwargs['stop'] = self.stop._node(cache, subgraph, times, unique_loop_ids)
+        kwargs['func'] = self.func._node(cache, subgraph, times, unique_loop_ids)
+        cache[self] = node = RegularNode(f'LoopConcatenate {self.loop_id}', (), kwargs, (type(self).__name__, times[self]), subgraph)
         return node
 
     def _simplified(self):
@@ -4599,26 +4421,37 @@ def _isunique(array):
     return numpy.unique(array).size == array.size
 
 
-_AddDependency = collections.namedtuple('_AddDependency', ['dependency'])
+def _make_loop_ids_unique(funcs: typing.Tuple[Evaluable, ...]) -> typing.Tuple[Evaluable, ...]:
+    # Replaces all `_LoopId` instances such that every distinct `Loop` has its
+    # own loop id.
 
-def _dependencies_sans_invariants(func, arg):
-    invariants = []
-    dependencies = []
-    cache = {arg}
-    stack = [func]
-    while stack:
-        func_ = stack.pop()
-        if isinstance(func_, _AddDependency):
-            dependencies.append(func_.dependency)
-        elif func_ not in cache:
-            cache.add(func_)
-            if arg in func_.arguments:
-                stack.append(_AddDependency(func_))
-                stack.extend(func_._Evaluable__args)
-            else:
-                invariants.append(func_)
-    assert (dependencies or invariants or [arg])[-1] == func
-    return tuple(invariants), tuple(dependencies)
+    loops = util.IDSet()
+    for func in funcs:
+        loops |= func._loops
+    old_ids = {loop.loop_id for loop in loops}
+    if len(old_ids) == len(loops):
+        # All loops already have unique ids.
+        return funcs
+
+    new_ids = filter(lambda id: id not in old_ids, map(_LoopId, itertools.count()))
+    cache = {}
+
+    @util.shallow_replace
+    def replace_inner(obj, root=None):
+        if obj is root or not isinstance(obj, Loop):
+            return
+        if (cached := cache.get(obj)) is not None:
+            return cached
+        old = obj.loop_id
+        new = next(new_ids)
+        # Replace `old` with `new`, but don't traverse nested loops with id `old`.
+        new_obj = util.shallow_replace(lambda x: new if x is old else x if x is not obj and isinstance(x, Loop) and x.loop_id is old else None, obj)
+        if new_obj._loops:
+            new_obj = replace_inner(new_obj, new_obj)
+        cache[obj] = new_obj
+        return new_obj
+
+    return tuple(map(replace_inner, funcs))
 
 
 class _Stats:
@@ -4941,8 +4774,6 @@ def take(arg: Array, index: Array, axis: int):
             return _take(arg, constant(index_ + ineg * int(length)), axis)
         elif numpy.greater_equal(index_, int(length)).any():
             raise IndexError('indices out of bounds: {} >= {}'.format(index_, int(length)))
-        elif numpy.greater(numpy.diff(index_), 0).all():
-            return mask(arg, numeric.asboolean(index_, int(length)), axis)
     return _take(arg, index, axis)
 
 
@@ -5012,14 +4843,16 @@ def appendaxes(func, shape):
 
 
 def loop_index(name, length):
-    return _LoopIndex(name, asarray(length))
+    if not isinstance(name, str):
+        return ValueError('`name` must be a `str` but got `{name!r}`')
+    return _LoopIndex(_LoopId(name), asarray(length))
 
 
 def loop_sum(func, index):
     func = asarray(func)
     if not isinstance(index, _LoopIndex):
         raise TypeError(f'expected _LoopIndex, got {index!r}')
-    return LoopSum(func, func.shape, index.name, index.length)
+    return LoopSum(func, func.shape, index.loop_id, index.length)
 
 
 def loop_concatenate(func, index):
@@ -5035,7 +4868,7 @@ def loop_concatenate(func, index):
     start = Take(offsets, index)
     stop = Take(offsets, index+1)
     concat_length = Take(offsets, index.length)
-    return LoopConcatenate(func, start, stop, concat_length, index.name, index.length)
+    return LoopConcatenate(func, start, stop, concat_length, index.loop_id, index.length)
 
 
 @util.shallow_replace
@@ -5176,22 +5009,697 @@ def eval_sparse(funcs: AsEvaluableArray, **arguments: typing.Mapping[str, numpy.
     '''
 
     funcs = [func.as_evaluable_array for func in funcs]
-    shape_chunks = Tuple(tuple(Tuple(builtins.sum(func.simplified._assparse, func.shape)) for func in funcs))
-    with shape_chunks.optimized_for_numpy.session(graphviz=graphviz) as eval:
-        for func, args in zip(funcs, eval(**arguments)):
-            shape = tuple(map(int, args[:func.ndim]))
-            chunks = [args[i:i+func.ndim+1] for i in range(func.ndim, len(args), func.ndim+1)]
-            length = builtins.sum(values.size for *indices, values in chunks)
-            data = numpy.empty((length,), dtype=sparse.dtype(shape, func.dtype))
-            start = 0
-            for *indices, values in chunks:
-                stop = start + values.size
-                d = data[start:stop].reshape(values.shape)
-                d['value'] = values
-                for idim, ii in enumerate(indices):
-                    d['index']['i'+str(idim)] = ii
-                start = stop
-            yield data
+    shape_chunks = compile(tuple(builtins.sum(func.simplified._assparse, func.shape) for func in funcs))
+    for func, args in zip(funcs, shape_chunks(**arguments)):
+        shape = tuple(map(int, args[:func.ndim]))
+        chunks = [args[i:i+func.ndim+1] for i in range(func.ndim, len(args), func.ndim+1)]
+        length = builtins.sum(values.size for *indices, values in chunks)
+        data = numpy.empty((length,), dtype=sparse.dtype(shape, func.dtype))
+        start = 0
+        for *indices, values in chunks:
+            stop = start + values.size
+            d = data[start:stop].reshape(values.shape)
+            d['value'] = values
+            for idim, ii in enumerate(indices):
+                d['index']['i'+str(idim)] = ii
+            start = stop
+        yield data
+
+
+@functools.lru_cache(32)
+def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = None, cache_const_intermediates: bool = True):
+    '''Returns a callable that evaluates ``func``.
+
+    The return value of the callable matches the structure of ``func``. If
+    ``func`` is a single :class:`Evaluable`, the returned callable returns a
+    single array. If ``func`` is a tuple, the returned callable returns a tuple
+    as well.
+
+    If ``func`` depends on :class:`Argument`\\s, their values must be passed to
+    the callable using keywords arguments. Arguments that are unknown to
+    ``func`` are silently ignored.
+
+    Args
+    ----
+    func : :class:`Evaluable` or (possibly nested) tuples of :class:`Evaluable`\\s
+        The function or functions to compile.
+    simplify : :class:`bool`
+        If true, ``func`` will be simplified before compilation.
+    stats : ``'log'`` or ``None``
+        If ``'log'`` the compiled function will log the durations of individual
+        :class:`Evaluable`\\s referenced by ``func``.
+    cache_const_intermediates : :class:`bool`
+        If true, the returned callable caches parts of ``func`` that can be
+        reused for a second call.
+
+    Returns
+    -------
+    :any:`callable`
+        The callable that evaluates ``func``.
+
+    Examples
+    --------
+
+    Compiling a single function with argument ``arg``.
+
+    >>> arg = Argument('arg', (), int)
+    >>> f = arg + constant(1)
+    >>> compiled = compile(f)
+    >>> compiled(arg=1)
+    2
+
+    The return value of the compiled function matches the structure of the
+    functions passed to :func:`compile`:
+
+    >>> g = arg * constant(3)
+    >>> h = arg * arg
+    >>> compiled = compile((f, (g, h)))
+    >>> compiled(arg=2)
+    (3, (6, 4))
+    '''
+
+    # Compiles `Evaluable`s to Python code. Every `Loop` is assigned a unique
+    # loop id with `_define_loop_block_structure` and based on these loop ids
+    # every `Evaluable` defines a block id where the Python code for that
+    # evaluable should be positioned.
+    #
+    # The loop and block ids are multi-indices, tuples of ints, defined such
+    # that the loop id of a child loop always starts with the loop id of the
+    # parent loop and such that if some loop B depends on some loop A, both
+    # having the same parent loop (or no parent loop), the id of A is smaller
+    # than the id of B. Finally, two loops in the same parent loop are assigned
+    # the same id if they have the same length and do not depend on each other.
+    #
+    # The block ids are derived from the loop ids. If some evaluable depends on
+    # one or more loop indices, the block id of that evaluable starts with the
+    # loop id of the innermost loop and has one extra index that does not refer
+    # to a loop. The block id of a loop is the loop id with the rightmost index
+    # incremented by one. If an `Evaluable` does not depend on loop indices or
+    # loops, the block id is `(0,)`.
+    #
+    # The following two examples illustrate the definition of the loop ids from
+    # the original loop names. The first example has two nested loops, because
+    # the inner loop depends on both the index for the inner loop `j` and the
+    # outer loop `i`. The outer loop, `e0`, gets loop id `(0,)`, the inner
+    # loop, `e1`, id `(0,0)`:
+    #
+    #                            loop_id      block_id
+    #     e0: LoopSum            'i'->(0,)    (1,)
+    #     └ e1: LoopSum          'j'->(0,0)   (0,1)
+    #       └ e2: Add                         (0,0,0)
+    #         ├ e3: LoopIndex    'j'->(0,0)   (0,0,0)
+    #         │ └ e4: Constant                (0,)
+    #         └ e5: LoopIndex    'i'->(0,)    (0,0)
+    #           └ e6: Constant                (0,)
+    #
+    # Note that `e4` and `e6` are the lengths of the loops. In the second
+    # example loop `e9` does not depend on loop index `i`, but is a dependency
+    # of loop `e7`. Therefor, `e9` gets loop id `(0,)` and `e7` id `(1,)`
+    # (adjacent to `e9`):
+    #
+    #                            loop_id      block_id
+    #     e7: LoopSum            'i'->(1,)    (2,)
+    #     └ e8: Add                           (1,0)
+    #       ├ e9: LoopSum        'j'->(0,)    (1,)
+    #       │ └ e10: LoopIndex   'j'->(0,)    (0,0)
+    #       │   └ e4: Constant                (0,)
+    #       └ e11: LoopIndex     'i'->(1,)    (1,0)
+    #         └ e6: Constant                  (0,)
+    #
+    # Having defined the loop and block ids, the loops (without content) are
+    # serialized. For the first example this gives
+    #
+    #     def compiled(**a):
+    #         # contents of blocks[0,]
+    #         for v5 in range(c6):
+    #             # contents of blocks[0,0]
+    #             for v3 in range(c4):
+    #                 # contents of blocks[0,0,0]
+    #             # contents of blocks[0,1]
+    #         # contents of blocks[1,]
+    #         return v0
+    #
+    # The final step is the serialization of the `Evaluable`s. Each `Evaluable`
+    # compiles first its dependencies, then itself, placing the statements in
+    # the block with the corresponding block id. The serialization of the first
+    # example (without inplace additions):
+    #
+    #     def compiled(**a):
+    #         v0 = numpy.zeros((), int) # e0 init
+    #         for v5 in range(c6):
+    #             v1 = numpy.zeros((), int) # e1 init
+    #             for v3 in range(c4):
+    #                 v2 = v3 + v5
+    #                 v1 += v2 # e1 update
+    #             # e1 exit
+    #             v0 += v1 # e0 update
+    #         # e0 exit
+    #         return v0
+
+    if stats is None:
+        stats = 'log' if graphviz else False
+    elif stats not in ('log', False):
+        raise ValueError(f'`stats` must be `None`, `False` or `"log"` but got {stats!r}')
+
+    # Build return value format string `ret` with the same structure as `func`
+    # and convert `func` to a flat list.
+    stack = [func]
+    ret_fmt = []
+    funcs = []
+    MakeTuple = collections.namedtuple('MakeTuple', ('n'))
+    while stack:
+        obj = stack.pop()
+        if isinstance(obj, MakeTuple):
+            m = len(ret_fmt) - obj.n
+            ret_fmt[m:] = ['(' + ', '.join(ret_fmt[m:]) + (',)' if obj.n == 1 else ')')]
+        elif isinstance(obj, (tuple, list)):
+            stack.append(MakeTuple(len(obj)))
+            stack.extend(reversed(obj))
+        elif isinstance(obj, Array) or isinstance(obj, Evaluable) and not cache_const_intermediates:
+            funcs.append(obj)
+            ret_fmt.append('{}')
+        else:
+            raise ValueError('expected a `nutils.evaluable.Array`, `tuple` or `list` but got {obj!r}')
+    ret_fmt, = ret_fmt
+
+    # Simplify and optimize `funcs`.
+    if simplify:
+        funcs = [func.simplified for func in funcs]
+    funcs = [func._optimized_for_numpy1 for func in funcs]
+    funcs = _define_loop_block_structure(tuple(funcs))
+    assert not any(isinstance(arg, _LoopIndex) for func in funcs for arg in func.arguments)
+
+    # The globals of the compiled function.
+    globals = dict(
+        collections=collections,
+        first_run=True,
+        log_stats=_log_stats,
+        multiprocessing=multiprocessing,
+        numeric=numeric,
+        numpy=numpy,
+        parallel=parallel,
+        poly=poly,
+        ret_tuple=Tuple(funcs),
+        Stats=_Stats,
+        treelog=log,
+    )
+    # Counter for generating unique indices, e.g. for creating variables.
+    new_index = itertools.count()
+    # Dict of encountered evaluables and their assigned index.
+    evaluables = {}
+    # Cache of compiled evaluables. Maps `Evaluable` to `_pyast.Expression`,
+    # but mostly `_pyast.Variable`.
+    cache = {}
+    # Dict of evaluable (`Evaluable`) to list of compiled blocks
+    # (`_pyast.Block`). Blocks for evaluables compiled using
+    # `_compile_with_out` are added to the origin, the evaluable that initiates
+    # inplace compilation.
+    evaluable_block_map = {}
+    # Dict of evaluable (`Evaluable`) to set (`util.IDSet`) of dependencies
+    # (`Evaluable`). This is mostly equal to `Evaluable.__args`, but in case of
+    # inplace compilation the evaluables the dependencies that are compiled
+    # inplace are omitted and their dependencies are added to the origin.
+    evaluable_deps = {None: util.IDSet()}
+
+    # Count the number of dependents for each `Evaluable` in `funcs`. This is
+    # used by the builder to decide if an `Evaluable` can be compiled with
+    # `_compile_with_out(..., mode='iadd')`.
+    ndependents = collections.defaultdict(lambda: 0)
+    def update_ndependents(func):
+        for arg in func._Evaluable__args:
+            ndependents[arg] += 1
+        return func._Evaluable__args
+    util.tree_walk(update_ndependents, *funcs)
+
+    # Collect the loop ids and lengths from all loops in `funcs` and assert
+    # that all loops with the same id also have the same length. `loop_lengths`
+    # maps id to `Evaluable` length. Also populate the `Evaluable` to block id
+    # map, `evaluable_block_ids`, with the loops and loop indices. Create
+    # blocks for each loop body and trailer.
+    blocks = {(0,): _pyast.Block()}
+    loop_length_index = {}
+    evaluable_block_ids = {}
+    for loop in util.IDSet(loop for func in funcs for loop in func._loops):
+        loop_id = loop.loop_id.id
+        assert isinstance(loop_id, tuple) and loop_id and all(isinstance(n, int) for n in loop_id)
+        evaluable_block_ids[loop] = *loop_id[:-1], loop_id[-1] + 1
+        if (prev := loop_length_index.get(loop_id)) is not None:
+            length, _ = prev
+            if length != loop.length:
+                raise ValueError(f'multiple loops with the same id ({loop_id}) but different lengths')
+            continue
+        evaluable_block_ids[loop.index] = *loop_id, 0
+        # Reserve a variable for the loop index.
+        cache[loop.index] = py_index = _pyast.Variable('i' + '_'.join(map(str, loop_id)))
+        loop_length_index[loop_id] = loop.length, py_index
+        # Create blocks for the loop body and the loop trailer.
+        blocks[(*loop_id, 0)] = _pyast.Block()
+        blocks[(*loop_id[:-1], loop_id[-1] + 1)] = _pyast.Block()
+
+    compile_parallel = parallel.maxprocs.current > 1 and any(loop_length_index) and not stats
+
+    builder = _BlockTreeBuilder(blocks, evaluable_block_ids, globals, evaluables, new_index, cache, stats, compile_parallel, ndependents, evaluable_block_map, evaluable_deps)
+
+    # Compile `funcs`.
+    py_funcs = builder.compile(funcs)
+
+    # Generate loops and merge loop blocks and trailing blocks into preceding
+    # blocks, starting with the inner-most loops which have no succeeding
+    # loops, all the way down to block `(0,)`.
+    for loop_id, (length, py_loop_index) in sorted(loop_length_index.items(), key=lambda kv: (len(kv[0]), kv[0][-1]), reverse=True):
+        py_length = builder.compile(length)
+        body = blocks.pop((*loop_id, 0))
+        loop_name = _pyast.LiteralStr('loop {}'.format(','.join(map(str, loop_id))))
+        py_range = builder.new_var()
+        py_range_numpy_int = _pyast.Variable('map').call(_pyast.Variable('numpy').get_attr('int_'), py_range)
+        loop_block = _pyast.ForLoop(py_loop_index, py_range_numpy_int, body)
+        if len(loop_id) == 1 and compile_parallel:
+            iter_context = _pyast.Variable('parallel').get_attr('ctxrange').call(loop_name, py_length)
+        else:
+            iter_context = _pyast.Variable('treelog').get_attr('iter').get_attr('wrap').call(_pyast.Variable('parallel').get_attr('_pct').call(loop_name, py_length), _pyast.Variable('range').call(py_length))
+        loop_block = _pyast.With(iter_context, as_=py_range, body=loop_block, omit_if_body_is_empty=True)
+        blocks[loop_id].append(loop_block)
+        blocks[loop_id].append(blocks.pop((*loop_id[:-1], loop_id[-1] + 1)))
+    main = blocks.pop((0,))
+    assert not blocks
+
+    if cache_const_intermediates:
+        # Collect all evaluables that are to be recomputed on a rerun in
+        # `rerun_evaluables` and collect all direct dependencies of the
+        # `rerun_evaluables` that are constant in `cache_evaluables`. The
+        # `cache_evaluable` are not recursed into.
+        rerun_evaluables = util.IDSet()
+        cache_evaluables = util.IDSet()
+        def collect(evaluable):
+            if evaluable.isconstant:
+                cache_evaluables.add(evaluable)
+                return ()
+            else:
+                rerun_evaluables.add(evaluable)
+                return evaluable_deps.get(evaluable, ())
+        util.tree_walk(collect, *evaluable_deps[None])
+        cache_vars = tuple(cache[evaluable] for evaluable in cache_evaluables)
+        # Find all blocks that are to be omitted for a rerun: the blocks of all
+        # compiled evaluables that are not part of `rerun_evaluables`.
+        rerun_skip_evaluables = util.IDSet(evaluable_block_map) - rerun_evaluables
+        rerun_skip_blocks = util.IDSet(itertools.chain.from_iterable(evaluable_block_map[e] for e in rerun_skip_evaluables))
+        # Filter the blocks to be skipped from `main` for the rerun.
+        main_rerun = main.filter(lambda stmts: _pyast.Block() if stmts in rerun_skip_blocks else None)
+        first_run = _pyast.Variable('first_run')
+        # Make all cached results immutable.
+        for v in cache_vars:
+            main.append(_pyast.Exec(v.get_attr('setflags').call(write=_pyast.LiteralBool(False))))
+        # Combine `main` (for the first run) and `main_rerun` into `main`.
+        main.append(_pyast.Assign(first_run, _pyast.LiteralBool(False)))
+        main = _pyast.Block([
+            _pyast.Global((first_run,) + cache_vars),
+            _pyast.If(first_run, main, main_rerun),
+        ])
+
+    if compile_parallel:
+        main = _pyast.Block([
+            _pyast.Assign(_pyast.Variable('lock'), _pyast.Variable('multiprocessing').get_attr('Lock').call()),
+            main,
+        ])
+
+    if stats == 'log':
+        main = _pyast.Block([
+            _pyast.Assign(_pyast.Variable('stats'), _pyast.Variable('collections').get_attr('defaultdict').call(_pyast.Variable('Stats'))),
+            main,
+            _pyast.Exec(_pyast.Variable('log_stats').call(_pyast.Variable('ret_tuple'), _pyast.Variable('stats'))),
+        ])
+
+    script = StringIO()
+    print('def compiled(**a):', file=script)
+    for line in main.lines:
+        print('    ' + line, file=script)
+    print('    return ' + ret_fmt.format(*[v.py_expr for v in py_funcs]), file=script)
+    script = script.getvalue()
+
+    name = 'compiled_{}'.format(hashlib.sha256(script.encode('utf-8')).hexdigest())
+
+    if debug_flags.compile:
+        print(script)
+
+    # Make sure we can see `script` in tracebacks and `pdb`.
+    # From: https://stackoverflow.com/a/39625821
+    linecache.cache[name] = (len(script), None, [line+'\n' for line in script.splitlines()], name)
+
+    # Compile.
+    eval(builtins.compile(script, name, 'exec'), globals)
+    return globals['compiled']
+
+
+def _define_loop_block_structure(targets: typing.Tuple[Evaluable, ...]) -> typing.Tuple[Evaluable, ...]:
+    # To aid the serialization of the `targets`, this function replaces the
+    # existing loop ids of `Loop` subclasses with unique ids, such that
+    # every sibling `Evaluable` of the `targets` can be related to exactly
+    # one loop (possibly nested in other loops).
+    #
+    # The new ids are multi-indices, tuples of ints, defined such that the
+    # id of a child loop always starts with the id of the parent loop and
+    # such that if some loop B depends on some loop A, both having the same
+    # parent loop (or no parent loop), the id of A is smaller than the id
+    # of B. Finally, two loops in the same parent loop are assigned the
+    # same id if they have the same length and do not depend on each other.
+
+    unique_targets = _make_loop_ids_unique(targets)
+
+    queue = util.IDSet()
+    for target in unique_targets:
+        queue.update(target._loops)
+    nloops = len(queue)
+
+    def collect(indices):
+        # Find all adjacent loops and form groups of loops that have the same
+        # length and can be evaluated simultaneously. For each group the nested
+        # loops are collected. After reversal, `groups` lists the groups and
+        # the nested groups in the order at which they must be evaluated.
+        groups = []
+        while True:
+            group = []
+            for loop in queue:
+                if indices and indices.isdisjoint(loop.arguments) or group and loop.length != group[0].length:
+                    continue
+                if not any(loop in other._loops for other in queue if other is not loop):
+                    group.append(loop)
+            if not group:
+                break
+            queue.difference_update(group)
+            nested = collect(frozenset(loop.index for loop in group))
+            groups.append((group, nested))
+        groups.reverse()
+        return groups
+
+    groups = collect(frozenset())
+    assert not queue
+
+    # Assign new ids.
+    def build_id_map(groups, parent_id):
+        for i, (loops, nested) in enumerate(groups):
+            id = *parent_id, i
+            for loop in loops:
+                id_map[loop.loop_id] = _LoopId(id)
+            build_id_map(nested, id)
+
+    id_map = util.IDDict()
+    build_id_map(groups, ())
+    return tuple(util.shallow_replace(id_map.get, target) for target in unique_targets)
+
+
+def _log_stats(func, stats):
+    node = func._node({}, None, stats, True)
+    maxtime = builtins.max(n.metadata[1].time for n in node.walk(set()))
+    tottime = builtins.sum(n.metadata[1].time for n in node.walk(set()))
+    aggstats = tuple((key, builtins.sum(v.time for v in values), builtins.sum(v.ncalls for v in values)) for key, values in util.gather(n.metadata for n in node.walk(set())))
+    fill_color = (lambda node: '0,{:.2f},1'.format(node.metadata[1].time/maxtime)) if maxtime else None
+    if graphviz:
+        node.export_graphviz(fill_color=fill_color, dot_path=graphviz)
+    log.info('total time: {:.0f}ms\n'.format(tottime/1e6) + '\n'.join('{:4.0f} {} ({} calls, avg {:.3f} per call)'.format(t / 1e6, k, n, t / (1e6*n))
+                                                                      for k, t, n in sorted(aggstats, reverse=True, key=lambda item: item[1]) if n))
+
+
+class _BlockTreeBuilder:
+
+    def __init__(
+        self,
+        blocks: typing.Dict[_BlockId, _pyast.Block],
+        evaluable_block_ids: typing.Dict[Evaluable, _BlockId],
+        globals: typing.Dict[str, typing.Any],
+        evaluables: typing.Dict[Evaluable, int],
+        new_index: typing.Iterator[int],
+        compiled_cache: dict,
+        stats: bool,
+        parallel: bool,
+        ndependents: typing.Mapping[Evaluable, int],
+        evaluable_block_map: typing.Mapping[Evaluable, typing.List[_pyast.Block]],
+        evaluable_deps: typing.Mapping[typing.Optional[Evaluable], typing.Set[Evaluable]],
+        origin: typing.Optional[Evaluable] = None,
+    ):
+        self._blocks = blocks
+        self._evaluable_block_ids = evaluable_block_ids
+        self._globals = globals
+        self._evaluables = evaluables
+        self._new_index = new_index
+        self._compiled_cache = compiled_cache
+        self._stats = stats
+        self._parallel = parallel
+        self.ndependents = ndependents
+        self._evaluable_block_map = evaluable_block_map
+        self._evaluable_deps = evaluable_deps
+        self._origin = origin
+        self._shared_arrays = set()
+        self._new_eid = map('e{}'.format, new_index).__next__
+        self.new_var = lambda: _pyast.Variable('v{}'.format(next(new_index)))
+
+    def compile(self, evaluable: Evaluable) -> _pyast.Expression:
+        # Compiles the tree defined by `evaluable` and returns the result of `evaluable`.
+        if isinstance(evaluable, tuple):
+            return _pyast.Tuple(tuple(map(self.compile, evaluable)))
+        self._evaluable_deps.setdefault(self._origin, util.IDSet()).add(evaluable)
+        if (out := self._compiled_cache.get(evaluable)) is None:
+            evaluable_builder = _BlockTreeBuilder(
+                self._blocks,
+                self._evaluable_block_ids,
+                self._globals,
+                self._evaluables,
+                self._new_index,
+                self._compiled_cache,
+                self._stats,
+                self._parallel,
+                self.ndependents,
+                self._evaluable_block_map,
+                self._evaluable_deps,
+                evaluable)
+            self._compiled_cache[evaluable] = out = evaluable._compile(evaluable_builder)
+            if debug_flags.evalf and isinstance(evaluable, Array):
+                block = self.get_block(self.get_block_id(evaluable))
+                block.assert_equal(out.get_attr('dtype').get_attr('kind'), _pyast.LiteralStr(_array_dtype_to_kind[evaluable.dtype]))
+                block.assert_equal(out.get_attr('ndim'), _pyast.LiteralInt(evaluable.ndim))
+                for i, n in enumerate(evaluable.shape):
+                    if isinstance(n, Constant):
+                        block.assert_equal(out.get_attr('shape').get_item(_pyast.LiteralInt(i)), _pyast.LiteralInt(n.__index__()))
+        return out
+
+    def compile_with_out(self, evaluable: Evaluable, out: _pyast.Expression, out_block_id: _BlockId, mode: str) -> None:
+        self._get_evaluable_index(evaluable)
+        evaluable_block_id = self.get_block_id(evaluable)
+        if self.ndependents[evaluable] > 1 or evaluable_block_id < out_block_id or evaluable._compile_with_out(self, out, out_block_id, mode) is NotImplemented:
+            value = self.compile(evaluable)
+            block = self.get_block_for_evaluable(evaluable, block_id=builtins.max(evaluable_block_id, out_block_id))
+            if mode == 'assign':
+                block.array_copy(out, value)
+            elif mode == 'iadd':
+                block.array_iadd(out, value)
+            else:
+                raise ValueError(f'invalid mode: {mode}')
+
+    def new_empty_array_for_evaluable(self, array: Array) -> _pyast.Variable:
+        # Creates a new empty array and assigns the array to variable `v{id}`
+        # where `id` is the unique index of `array`.
+        shape = self.compile(array.shape)
+        out = self.get_variable_for_evaluable(array)
+        # Allocation of `out` should happen as early as possible (that is: as
+        # soon as the shape is known). `out`, however, must not be used outside
+        # the loop where `array` resides, if any. This is to prevent compiling
+        # a dependency of `array` that lives outside that loop using
+        # `_compile_with_out`.
+        alloc_block_id = builtins.max(map(self.get_block_id, array.shape)) if array.ndim else (0,)
+        out_block_id = builtins.max((*self.get_block_id(array)[:-1], 0), alloc_block_id)
+        if self._parallel and len(out_block_id) == 1:
+            # Because `self._parallel` is true, the outer-most loops will be
+            # parallelized using fork. If `array` is evaluated inside a loop,
+            # `out` must not be a shared array. However, if `array` originates
+            # outside an outer loop, which is the case in this if-branch, then
+            # `array` might initiate an inplace add inside a loop, in which
+            # case `out` must be a shared memory array or we'll only see
+            # updates to `out` from the parent process.
+            self._shared_arrays.add(out)
+            py_alloc = _pyast.Variable('parallel').get_attr('shempty')
+        else:
+            py_alloc = _pyast.Variable('numpy').get_attr('empty')
+        alloc_block = self.get_block_for_evaluable(array, block_id=alloc_block_id, comment='alloc')
+        alloc_block.assign_to(out, py_alloc.call(shape, dtype=_pyast.Variable(array.dtype.__name__)))
+        return out, out_block_id
+
+    def add_constant_for_evaluable(self, evaluable: Evaluable, value) -> _pyast.Variable:
+        # Assigns `value` to constant `c{id}` where `id` is the unique index of
+        # `evaluable`. It is an error to assign `value` to `evaluable` multiple
+        # times unless the values are identical.
+        const = _pyast.Variable('c{}'.format(self._get_evaluable_index(evaluable)))
+        if self._globals.setdefault(const.py_expr, value) is not value:
+            raise ValueError('Cannot assign different values to the same constant.')
+        return const
+
+    def get_argument(self, name: str) -> _pyast.Variable:
+        # Returns the argument with the given `name`.
+        return _pyast.Variable('a').get_item(_pyast.LiteralStr(name))
+
+    def get_block(self, block_id: _BlockId) -> '_BlockBuilder':
+        # Returns a block builder for the given block id.
+        block = _pyast.Block()
+        self._blocks[block_id].append(block)
+        if self._origin:
+            self._evaluable_block_map.setdefault(self._origin, []).append(block)
+        return _BlockBuilder(self, block)
+
+    def get_block_for_evaluable(self, evaluable: Evaluable, *, block_id: typing.Optional[_BlockId] = None, comment: str = '') -> '_BlockBuilder':
+        # Appends a comment identifying `evaluable` to the block with the given
+        # id, or `self.get_block_id(evaluable)` if absent, optionally suffixed
+        # with `comment`, and returns the block.
+        eid = 'e{}'.format(self._get_evaluable_index(evaluable))
+        if block_id is None:
+            block_id = self.get_block_id(evaluable)
+        block = _pyast.Block()
+        block_builder = _BlockBuilder(self, block)
+
+        description = f'{type(evaluable).__name__} {eid}'
+        if self._origin and evaluable is not self._origin:
+            description = f'{description}, origin: {type(self._origin).__name__} e{self._get_evaluable_index(self._origin)}'
+        if comment:
+            description  = f'{description}; {comment}'
+        block = _pyast.CommentBlock(description, block)
+
+        if self._stats:
+            block = _pyast.With(_pyast.Variable('stats').get_item(_pyast.Variable(eid)), block, omit_if_body_is_empty=True)
+
+        self._blocks[block_id].append(block)
+        if self._origin:
+            self._evaluable_block_map.setdefault(self._origin, []).append(block)
+        return block_builder
+
+    def get_variable_for_evaluable(self, evaluable: Evaluable) -> _pyast.Variable:
+        # Returns the variable `v{id}` where `id` is the unique index of `evaluable`.
+        #
+        # To aid introspection of the generated code, every evaluable has
+        # exactly one variable at its disposal that shares the index with the
+        # index of the evaluable. Care should be taken that this variable is
+        # not reused (within the same scope). The cache in
+        # `_BlockTreeBuilder.compile` already prevents repeated calls to
+        # `Evaluable._compile` on the same `evaluable`, so calling this method
+        # once in `Evaluable._compile` is safe as long as it is not called
+        # somewhere else.
+        return _pyast.Variable('v{}'.format(self._get_evaluable_index(evaluable)))
+
+    def get_evaluable_expr(self, evaluable: Evaluable) -> _pyast.Variable:
+        # Returns the variable `e{id}` referring to `evaluable` where `id` is
+        # the unique index of `evaluable`.
+        return _pyast.Variable('e{}'.format(self._get_evaluable_index(evaluable)))
+
+    def _get_evaluable_index(self, evaluable: Evaluable) -> int:
+        # Assigns a unique index to `evaluable` if not already assigned and
+        # returns the index.
+        if (index := self._evaluables.get(evaluable)) is None:
+            self._evaluables[evaluable] = index = next(self._new_index)
+            self._globals[f'e{index}'] = evaluable
+        return index
+
+    def get_block_id(self, evaluable: Evaluable) -> _BlockId:
+        # The id of the block where this `Evaluable` must be evaluated.
+        if (block_id := self._evaluable_block_ids.get(evaluable)) is None:
+            assert not isinstance(evaluable, _LoopIndex)
+            if evaluable._Evaluable__args:
+                arg_block_ids = tuple(map(self.get_block_id, evaluable._Evaluable__args))
+                # Select the first block where all arguments are within scope as
+                # the block where `evaluable` must be evaluated.
+                block_id = builtins.max(arg_block_ids)
+                # If an evaluable is evaluated in some (possibly nested) loop,
+                # the value goes out of scope as soon as the loop exits. All
+                # arguments must therefor be defined in the same loop as
+                # `evaluable`, or a parent loop, but not an adjacent loop. All
+                # but the last item of the block id identify loops, hence we
+                # need to assert that for all arguments all but the last items
+                # of the block id matches the start of the chosen block id of
+                # `evaluable`.
+                assert all(len(arg_block_id) > 0 and arg_block_id[:-1] == block_id[:len(arg_block_id)-1] for arg_block_id in arg_block_ids)
+            else:
+                block_id = 0,
+            self._evaluable_block_ids[evaluable] = block_id
+        return block_id
+
+
+class _BlockBuilder:
+
+    def __init__(self, parent, block):
+        self._parent = parent
+        self._block = block
+        self.new_var = parent.new_var
+
+    def _needs_lock(self, /, *args, **kwargs):
+        # Returns true if any of the arguments references variables that
+        # require a lock.
+        variables = frozenset().union(*(arg.variables for arg in args), *(arg.variables for arg in kwargs.values()))
+        return not self._parent._shared_arrays.isdisjoint(variables)
+
+    def _block_for(self, /, *args, **kwargs):
+        # If any of the arguments references variables that require a lock,
+        # return a new block that is enclosed in a `with lock` block. Otherwise
+        # simply return our block.
+        if self._needs_lock(*args, **kwargs):
+            block = _pyast.Block()
+            self._block.append(_pyast.With(_pyast.Variable('lock'), block))
+            return block
+        else:
+            return self._block
+
+    def exec(self, expression: _pyast.Expression):
+        # Appends the statement `{expression}`. Returns nothing.
+        self._block_for(expression).append(_pyast.Exec(expression))
+
+    def assign_to(self, lhs: _pyast.Expression, rhs: _pyast.Expression) -> _pyast.Variable:
+        # Appends the statement `{lhs} = {rhs}` and returns `lhs`.
+        self._block_for(lhs, rhs).append(_pyast.Assign(lhs, rhs))
+        return lhs
+
+    def eval(self, expression: _pyast.Expression) -> _pyast.Variable:
+        # Evaluates `expression` and assigns the value to a new variable.
+        return self.assign_to(self.new_var(), expression)
+
+    def assert_true(self, condition: _pyast.Expression):
+        # Appends the statement `assert {condition}`.
+        self._block_for(condition).append(_pyast.Assert(condition))
+
+    def assert_equal(self, a: _pyast.Expression, b: _pyast.Expression):
+        # Appends the statement `assert {a} == {b}`.
+        self.assert_true(_pyast.BinOp(a, '==', b))
+
+    def if_(self, condition: _pyast.Expression) -> '_BlockBuilder':
+        # Appends the statement `if {condition}` and returns the if-body.
+        if self._needs_lock(condition):
+            # We don't want to hold the lock longer than necessary and we must
+            # prevent acquiring the lock twice,
+            #
+            # with lock:
+            #    if condition: # needs lock
+            #        with lock:
+            #            # needs lock
+            #
+            # Instead we evaluate the condition before the if statement and
+            # proceed with the if statement with the lock released.
+            condition = self.eval(_pyast.Variable('bool').call(condition))
+        body = _pyast.Block()
+        self._block.append(_pyast.If(condition, body))
+        return _BlockBuilder(self._parent, body)
+
+    def raise_(self, exception: _pyast.Expression):
+        # Appends the statement `raise {exception}`.
+        self._block_for(exception).append(_pyast.Raise(exception))
+
+    def array_copy(self, dst: _pyast.Expression, src: _pyast.Expression) -> _pyast.Variable:
+        # Appends statements for copying array `src` to array `dst`.
+        self.exec(_pyast.Variable('numpy').get_attr('copyto').call(dst, src))
+
+    def array_iadd(self, acc: _pyast.Expression, inc: _pyast.Expression):
+        # Appends statements for incrementing array `acc` with array `inc`.
+        self.exec(_pyast.Variable('numpy').get_attr('add').call(acc, inc, out=acc))
+
+    def array_add_at(self, out: _pyast.Expression, indices: _pyast.Expression, values: _pyast.Expression):
+        # Appends statements for incrementing array `out` with array `values` at `indices`.
+        self.exec(_pyast.Variable('numpy').get_attr('add').get_attr('at').call(out, indices, values))
+
+    def array_fill_zeros(self, array: _pyast.Expression):
+        # Appends statements for filling `array` with zeros.
+        self.exec(array.get_attr('fill').call(_pyast.LiteralInt(0)))
 
 
 if __name__ == '__main__':

@@ -102,15 +102,6 @@ class check(TestCase):
                                        actual=self.actual,
                                        desired=self.desired)
 
-    @unittest.skipIf(sys.version_info < (3, 7), 'time.perf_counter_ns is not available')
-    def test_eval_withtimes(self):
-        evalargs = dict(zip(self.arg_names, self.arg_values))
-        without_times = self.actual.eval(**evalargs)
-        stats = collections.defaultdict(evaluable._Stats)
-        with_times = self.actual.eval_withtimes(stats, **evalargs)
-        self.assertArrayAlmostEqual(with_times, without_times, 15)
-        self.assertIn(self.actual, stats)
-
     def test_getitem(self):
         for idim in range(self.actual.ndim):
             for item in range(self.desired.shape[idim]):
@@ -400,17 +391,13 @@ class check(TestCase):
         cache = {}
         times = collections.defaultdict(evaluable._Stats)
         with self.subTest('new'):
-            node = self.actual._node(cache, None, times)
+            node = self.actual._node(cache, None, times, False)
             if node:
                 self.assertIn(self.actual, cache)
                 self.assertEqual(cache[self.actual], node)
         with self.subTest('from-cache'):
             if node:
-                self.assertEqual(self.actual._node(cache, None, times), node)
-        with self.subTest('with-times'):
-            times = collections.defaultdict(evaluable._Stats)
-            self.actual.eval_withtimes(times, **dict(zip(self.arg_names, self.arg_values)))
-            self.actual._node(cache, None, times)
+                self.assertEqual(self.actual._node(cache, None, times, False), node)
 
 
 def generate(*shape, real, imag, zero, negative):
@@ -612,6 +599,34 @@ _check('searchsorted', lambda a: evaluable.SearchSorted(evaluable.asarray(a), ar
 _check('searchsorted_sorter', lambda a: evaluable.SearchSorted(evaluable.asarray(a), array=types.arraydata([.2,.8,.4,0,.6,1]), side='left', sorter=types.arraydata([3,0,2,4,1,5])), lambda a: numpy.searchsorted([.2,.8,.4,0,.6,1], a, sorter=[3,0,2,4,1,5]).astype(int), POS(4, 2))
 
 
+class compile(TestCase):
+
+    def test_array_arg(self):
+        a = evaluable.Argument('a', (), int)
+        f = evaluable.compile(a)
+        self.assertEqual(f(a=1), 1)
+
+    def test_tuple_arg(self):
+        a = evaluable.Argument('a', (), int)
+        b = evaluable.Argument('b', (), int)
+        f = evaluable.compile((a, b))
+        self.assertEqual(f(a=1, b=2), (1, 2))
+
+    def test_nested_arg(self):
+        a = evaluable.Argument('a', (), int)
+        b = evaluable.Argument('b', (), int)
+        c = evaluable.Argument('c', (), int)
+        f = evaluable.compile((a, (b, c)))
+        self.assertEqual(f(a=1, b=2, c=3), (1, (2, 3)))
+
+    def test_stats(self):
+        a = evaluable.Argument('a', (), int)
+        f = evaluable.compile(a, stats='log')
+        with self.assertLogs('nutils', logging.INFO) as cm:
+            f(a=1)
+            self.assertTrue(cm.output[0].startswith('INFO:nutils:total time:'))
+
+
 class intbounds(TestCase):
 
     @staticmethod
@@ -630,12 +645,11 @@ class intbounds(TestCase):
             self._argname = argname
             self._lower = lower
             self._upper = upper
-            super().__init__(args=(evaluable.EVALARGS,), shape=(), dtype=int)
+            super().__init__(args=(evaluable.Argument(argname, shape=(), dtype=int),), shape=(), dtype=int)
 
-        def evalf(self, evalargs):
-            value = numpy.array(evalargs[self._argname])
-            assert self._lower <= value <= self._upper
-            return numpy.array(value)
+        def evalf(self, value):
+            assert self._lower <= value[()] <= self._upper
+            return value
 
         @property
         def _intbounds(self):
@@ -905,8 +919,8 @@ class asciitree(TestCase):
                          'A\n'
                          '└ B = Loop\n'
                          'NODES\n'
-                         '%B0 = LoopSum\n'
-                         '└ func = %B1 = LoopIndex\n'
+                         '%B0 = LoopSum i\n'
+                         '└ func = %B1 = LoopIndex i\n'
                          '  └ length = 2\n')
 
     @unittest.skipIf(sys.version_info < (3, 6), 'test requires dicts maintaining insertion order')
@@ -918,7 +932,7 @@ class asciitree(TestCase):
                          'A\n'
                          '└ B = Loop\n'
                          'NODES\n'
-                         '%B0 = LoopConcatenate\n'
+                         '%B0 = LoopConcatenate i\n'
                          '├ shape[0] = %A0 = Take; i:; [2,2]\n'
                          '│ ├ %A1 = _SizesToOffsets; i:3; [0,2]\n'
                          '│ │ └ %A2 = InsertAxis; i:(2); [1,1]\n'
@@ -927,7 +941,7 @@ class asciitree(TestCase):
                          '│ └ 2\n'
                          '├ start = %B1 = Take; i:; [0,2]\n'
                          '│ ├ %A1\n'
-                         '│ └ %B2 = LoopIndex\n'
+                         '│ └ %B2 = LoopIndex i\n'
                          '│   └ length = 2\n'
                          '├ stop = %B3 = Take; i:; [0,2]\n'
                          '│ ├ %A1\n'
@@ -948,7 +962,7 @@ class simplify(TestCase):
             def __init__(self, lower, upper):
                 self._lower = lower
                 self._upper = upper
-                super().__init__(args=(evaluable.EVALARGS,), shape=(), dtype=int)
+                super().__init__(args=(evaluable.Argument('R', shape=(), dtype=int),), shape=(), dtype=int)
 
             def evalf(self, evalargs):
                 raise NotImplementedError
@@ -1079,77 +1093,45 @@ class memory(TestCase):
             t.simplified
 
 
-class combine_loops(TestCase):
+class make_loop_ids_unique(TestCase):
 
     @staticmethod
-    def _combine(*loops):
-        assert loops
-        index = loops[0].index
-        assert all(loop.index == index for loop in loops[1:])
-        combined = evaluable._LoopTuple(loops, index.name, index.length)
-        return [evaluable.ArrayFromTuple(combined, i, loop.shape, loop.dtype) for i, loop in enumerate(loops)]
+    def loop_index(id):
+        return evaluable._LoopIndex(evaluable._LoopId(id), evaluable.constant(3))
 
-    def test_same_index(self):
-        i = evaluable.loop_index('i', 3)
-        A = evaluable.loop_concatenate(evaluable.InsertAxis(i, evaluable.constant(1)), i)
-        B = evaluable.loop_sum(i, i)
-        C = A + evaluable.appendaxes(B, A.shape)
+    @staticmethod
+    def loop_sum(func, index):
+        return evaluable.LoopSum(func, (), index.loop_id, index.length)
 
-        Ac, Bc = self._combine(A, B)
-        Cc = Ac + evaluable.appendaxes(Bc, Ac.shape)
+    def test_already_unique(self):
+        i, j = map(self.loop_index, 'ij')
+        A = self.loop_sum(self.loop_sum(i + j, j), i)
+        self.assertEqual(evaluable._make_loop_ids_unique((A,)), (A,))
 
-        self.assertEqual(C._combine_loops(), Cc)
-
-    def test_different_index(self):
-        i = evaluable.loop_index('i', 3)
-        j = evaluable.loop_index('j', 3)
-        A = evaluable.loop_concatenate(evaluable.InsertAxis(i, evaluable.constant(1)), i)
-        B = evaluable.loop_sum(j, j)
-        C = A + evaluable.appendaxes(B, A.shape)
-
-        self.assertEqual(C._combine_loops(), C)
-
-    def test_invariant(self):
-        i = evaluable.loop_index('i', 3)
-        A = evaluable.loop_sum(i, i)
-        B = evaluable.loop_sum(i + 1, i)
-        C = evaluable.loop_sum(A + B, i)
-
-        Ac, Bc = self._combine(A, B)
-        Cc = evaluable.loop_sum(Ac + Bc, i)
-
-        with self.subTest('default candidates'):
-            self.assertEqual(C._combine_loops(), Cc)
-        with self.subTest('custom candidates'):
-            self.assertEqual(C._combine_loops(util.IDSet([A, B, C])), Cc)
+    def test_dependent(self):
+        i0, i1, i2 = map(self.loop_index, range(3))
+        A = self.loop_sum(self.loop_sum(i0, i0), i0)
+        B = self.loop_sum(self.loop_sum(i2, i2), i1)
+        self.assertEqual(evaluable._make_loop_ids_unique((A,)), (B,))
 
     def test_nested(self):
-        i = evaluable.loop_index('i', 3)
-        j = evaluable.loop_index('j', 3)
-        A = evaluable.loop_sum(i + j, i)
-        B = evaluable.loop_sum(i + j + 1, i)
-        C = evaluable.loop_sum(A + B, j)
+        i0, i1, i2, i3, i4 = map(self.loop_index, range(5))
+        A = self.loop_sum(self.loop_sum(self.loop_sum(i0 + i2, i0) + i0, i2), i0)
+        B = self.loop_sum(self.loop_sum(self.loop_sum(i4 + i3, i4) + i1, i3), i1)
+        self.assertEqual(evaluable._make_loop_ids_unique((A,)), (B,))
 
-        Ac, Bc = self._combine(A, B)
-        Cc = evaluable.loop_sum(Ac + Bc, index=j)
+    def test_cache_same_inner_loop(self):
+        i0, i1, i2, i3, i4 = map(self.loop_index, range(5))
+        A = self.loop_sum(self.loop_sum(i0, i0), i1) % self.loop_sum(self.loop_sum(i0, i0) + i1, i1)
+        B = self.loop_sum(self.loop_sum(i3, i3), i4) % self.loop_sum(self.loop_sum(i3, i3) + i2, i2)
+        self.assertEqual(evaluable._make_loop_ids_unique((A,)), (B,))
 
-        self.assertEqual(C._combine_loops(), Cc)
-
-    def test_invariant_and_nested(self):
-        i = evaluable.loop_index('i', 3)
-        j = evaluable.loop_index('j', 3)
-        A = evaluable.loop_sum(i + j, i)
-        B = evaluable.loop_sum(i + j + 1, i)
-        C = evaluable.loop_sum(i + j + 2, i)
-        D = evaluable.loop_sum(A + B, j)
-        E = evaluable.loop_sum(B + C, j)
-        F = D + E
-
-        Ac, Bc, Cc = self._combine(A, B, C)
-        Dc, Ec = self._combine(evaluable.loop_sum(Ac + Bc, j), evaluable.loop_sum(Bc + Cc, j))
-        Fc = Dc + Ec
-
-        self.assertEqual(F._combine_loops(), Fc)
+    def test_cache_different_inner_loop(self):
+        i0, i1, i2, i3, i4, i5 = map(self.loop_index, range(6))
+        # The inner loops look the same, but are different because index `i1` refers to different loops.
+        A = self.loop_sum(self.loop_sum(i0 + i1, i0), i1) % self.loop_sum(self.loop_sum(i0 + i1, i0) + i1, i1)
+        B = self.loop_sum(self.loop_sum(i5 + i4, i5), i4) % self.loop_sum(self.loop_sum(i3 + i2, i3) + i2, i2)
+        self.assertEqual(evaluable._make_loop_ids_unique((A,)), (B,))
 
 
 class Einsum(TestCase):
@@ -1326,29 +1308,6 @@ class unalign(TestCase):
     def test_unequal_naxes(self):
         with self.assertRaises(ValueError):
             evaluable.unalign(evaluable.zeros(tuple(map(evaluable.constant, (2, 3)))), evaluable.zeros(tuple(map(evaluable.constant, (2, 3, 4)))))
-
-
-class log_error(TestCase):
-
-    class Fail(evaluable.Array):
-        def __init__(self, arg1, arg2):
-            super().__init__(args=(arg1, arg2), shape=(), dtype=int)
-        @staticmethod
-        def evalf(arg1, arg2):
-            raise RuntimeError('operation failed intentially.')
-
-    def test(self):
-        a1 = evaluable.asarray(1.)
-        a2 = evaluable.asarray([2.,3.])
-        with self.assertLogs('nutils', logging.ERROR) as cm, self.assertRaises(RuntimeError):
-            self.Fail(a1+evaluable.Sum(a2), a1).eval()
-        self.assertEqual(cm.output[0], '''ERROR:nutils:evaluation failed in step 5/5
-  %0 = EVALARGS --> dict
-  %1 = nutils.evaluable.Constant<f:> --> ndarray<f:>
-  %2 = nutils.evaluable.Constant<f:2> --> ndarray<f:2>
-  %3 = nutils.evaluable.Sum<f:> a=%2 --> float64
-  %4 = nutils.evaluable.Add<f:> %1 %3 --> float64
-  %5 = tests.test_evaluable.Fail<i:> arg1=%4 arg2=%1 --> operation failed intentially.''')
 
 
 class Poly(TestCase):

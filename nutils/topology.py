@@ -803,7 +803,7 @@ class Topology:
         _ielem = evaluable.Argument('_locate_ielem', shape=(), dtype=int)
         _point = evaluable.Argument('_locate_point', shape=(evaluable.constant(self.ndims),))
         egeom = geom.lower(self._lower_args(_ielem, _point))
-        xJ = evaluable.Tuple((egeom, evaluable.derivative(egeom, _point))).simplified
+        xJ = evaluable.compile((egeom, evaluable.derivative(egeom, _point)), stats=False)
         with parallel.ctxrange('locating', len(coords)) as ipoints:
             for ipoint in ipoints:
                 xt = coords[ipoint]  # target
@@ -819,7 +819,7 @@ class Topology:
                         if iiter > maxiter > 0:
                             break  # maximum number of iterations reached
                         iiter += 1
-                        xp, Jp = xJ.eval(**arguments)
+                        xp, Jp = xJ(**arguments)
                         dx = xt - xp
                         ex0 = ex
                         ex = numpy.linalg.norm(dx)
@@ -1557,10 +1557,10 @@ class TransformChainsTopology(Topology):
         if leveltopo is None:
             ielem_arg = evaluable.Argument('_trim_index', (), dtype=int)
             coordinates = self.references.getpoints('vertex', maxrefine).get_evaluable_coords(ielem_arg)
-            levelset = levelset.lower(function.LowerArgs.for_space(self.space, (self.transforms, self.opposites), ielem_arg, coordinates)).optimized_for_numpy
+            levelset = evaluable.compile(levelset.lower(function.LowerArgs.for_space(self.space, (self.transforms, self.opposites), ielem_arg, coordinates)), stats=False)
             with log.iter.percentage('trimming', range(len(self)), self.references) as items:
                 for ielem, ref in items:
-                    levels = levelset.eval(_trim_index=ielem, **arguments)
+                    levels = levelset(_trim_index=ielem, **arguments)
                     refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
         else:
             # `levelset` is evaluable on `leveltopo`, which must be a uniform
@@ -1593,8 +1593,8 @@ class TransformChainsTopology(Topology):
                         if degree not in lowered_levelset:
                             coordinates = leveltopo.references.getpoints('vertex', degree).get_evaluable_coords(ielem_arg)
                             lower_args = function.LowerArgs.for_space(self.space, (leveltopo.transforms, leveltopo.opposites), ielem_arg, coordinates)
-                            lowered_levelset[degree] = levelset.lower(lower_args).optimized_for_numpy
-                        levels[indices] = lowered_levelset[degree].eval(_ielem=ielem, **arguments)
+                            lowered_levelset[degree] = evaluable.compile(levelset.lower(lower_args), stats=False)
+                        levels[indices] = lowered_levelset[degree](_ielem=ielem, **arguments)
                         mask[indices] = False
                     refs.append(ref.trim(levels, maxrefine=maxrefine, ndivisions=ndivisions))
             log.debug('cache', fcache.stats)
