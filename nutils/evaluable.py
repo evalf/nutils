@@ -140,7 +140,7 @@ class Evaluable(types.Singleton):
     def __init__(self, args: typing.Tuple['Evaluable', ...]):
         assert isinstance(args, tuple) and all(isinstance(arg, Evaluable) for arg in args), f'args={args!r}'
         super().__init__()
-        self.__args = args
+        self.dependencies = args
 
     @staticmethod
     def evalf(*args):
@@ -149,7 +149,7 @@ class Evaluable(types.Singleton):
     @cached_property
     def arguments(self):
         'a frozenset of all arguments of this evaluable'
-        return frozenset().union(*(child.arguments for child in self.__args))
+        return frozenset().union(*(child.arguments for child in self.dependencies))
 
     @property
     def isconstant(self):
@@ -158,7 +158,7 @@ class Evaluable(types.Singleton):
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
             return cache[self]
-        args = tuple(arg._node(cache, subgraph, times, unique_loop_ids) for arg in self.__args)
+        args = tuple(arg._node(cache, subgraph, times, unique_loop_ids) for arg in self.dependencies)
         label = '\n'.join(filter(None, (type(self).__name__, self._node_details)))
         cache[self] = node = RegularNode(label, args, {}, (type(self).__name__, times[self]), subgraph)
         return node
@@ -212,7 +212,7 @@ class Evaluable(types.Singleton):
     @cached_property
     def _loops(self):
         deps = util.IDSet()
-        for arg in self.__args:
+        for arg in self.dependencies:
             deps |= arg._loops
         return deps.view()
 
@@ -222,7 +222,7 @@ class Evaluable(types.Singleton):
         # Arguments must be compiled via `builder.compile`, not by directly
         # calling `Evaluable._compile`, because the former caches the compiled
         # evaluables.
-        args = builder.compile(self.__args)
+        args = builder.compile(self.dependencies)
         expression = self._compile_expression(builder.get_evaluable_expr(self), *args)
         out = builder.get_variable_for_evaluable(self)
         builder.get_block_for_evaluable(self).assign_to(out, expression)
@@ -629,7 +629,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if self in cache:
             return cache[self]
-        args = tuple(arg._node(cache, subgraph, times, unique_loop_ids) for arg in self._Evaluable__args)
+        args = tuple(arg._node(cache, subgraph, times, unique_loop_ids) for arg in self.dependencies)
         bounds = '[{},{}]'.format(*self._intbounds) if self.dtype == int else None
         label = '\n'.join(filter(None, (type(self).__name__, self._node_details, self._shape_str(form=repr), bounds)))
         cache[self] = node = RegularNode(label, args, {}, (type(self).__name__, times[self]), subgraph)
@@ -4426,7 +4426,7 @@ class Loop(Array):
         while stack:
             func = stack.pop()
             if self.index in func.arguments:
-                stack.extend(func._Evaluable__args)
+                stack.extend(func.dependencies)
             else:
                 func._node(cache, subgraph, times, unique_loop_ids)
 
@@ -5563,7 +5563,7 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
     # inplace compilation.
     evaluable_block_map = {}
     # Dict of evaluable (`Evaluable`) to set (`util.IDSet`) of dependencies
-    # (`Evaluable`). This is mostly equal to `Evaluable.__args`, but in case of
+    # (`Evaluable`). This is mostly equal to `Evaluable.dependencies`, but in case of
     # inplace compilation the evaluables the dependencies that are compiled
     # inplace are omitted and their dependencies are added to the origin.
     evaluable_deps = {None: util.IDSet()}
@@ -5573,9 +5573,9 @@ def compile(func, /, *, simplify: bool = True, stats: typing.Optional[str] = Non
     # `_compile_with_out(..., mode='iadd')`.
     ndependents = collections.defaultdict(lambda: 0)
     def update_ndependents(func):
-        for arg in func._Evaluable__args:
+        for arg in func.dependencies:
             ndependents[arg] += 1
-        return func._Evaluable__args
+        return func.dependencies
     util.tree_walk(update_ndependents, *funcs)
 
     # Collect the loop ids and lengths from all loops in `funcs` and assert
@@ -5945,8 +5945,8 @@ class _BlockTreeBuilder:
         # The id of the block where this `Evaluable` must be evaluated.
         if (block_id := self._evaluable_block_ids.get(evaluable)) is None:
             assert not isinstance(evaluable, _LoopIndex)
-            if evaluable._Evaluable__args:
-                arg_block_ids = tuple(map(self.get_block_id, evaluable._Evaluable__args))
+            if evaluable.dependencies:
+                arg_block_ids = tuple(map(self.get_block_id, evaluable.dependencies))
                 # Select the first block where all arguments are within scope as
                 # the block where `evaluable` must be evaluated.
                 block_id = builtins.max(arg_block_ids)
