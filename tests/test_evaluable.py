@@ -80,10 +80,6 @@ class check(TestCase):
                 numpy.add.at(dense, indices, values)
             self.assertArrayAlmostEqual(dense, desired, decimal)
 
-    def test_str(self):
-        a = evaluable.Array((), shape=(evaluable.constant(2), evaluable.constant(3)), dtype=float)
-        self.assertEqual(str(a), 'nutils.evaluable.Array<f:2,3>')
-
     def test_evalconst(self):
         self.assertFunctionAlmostEqual(decimal=14,
                                        desired=self.n_op(*self.arg_values),
@@ -641,11 +637,14 @@ class intbounds(TestCase):
 
     class S(evaluable.Array):
         # An evaluable scalar argument with given bounds.
+        dtype = int
+        shape = ()
+
         def __init__(self, argname, lower, upper):
             self._argname = argname
             self._lower = lower
             self._upper = upper
-            super().__init__(args=(evaluable.Argument(argname, shape=(), dtype=int),), shape=(), dtype=int)
+            super().__init__(args=(evaluable.Argument(argname, shape=(), dtype=int),))
 
         def evalf(self, value):
             assert self._lower <= value[()] <= self._upper
@@ -663,8 +662,11 @@ class intbounds(TestCase):
 
     def test_default(self):
         class Test(evaluable.Array):
+            dtype = int
+            shape = ()
+
             def __init__(self):
-                super().__init__(args=(evaluable.Argument('dummy', (), int),), shape=(), dtype=int)
+                super().__init__(args=(evaluable.Argument('dummy', (), int),))
 
             def evalf(self):
                 raise NotImplementedError
@@ -882,11 +884,13 @@ class derivative(TestCase):
         # Tests whether `evaluable.Array._derivative` correctly raises an
         # exception when taking a derivative to one of the arguments present in
         # its `.arguments`.
-        class DefaultDeriv(evaluable.Array): pass
+        class DefaultDeriv(evaluable.Array):
+            dtype = float
+            shape = ()
         has_arg = evaluable.Argument('has_arg', (), float)
         has_not_arg = evaluable.Argument('has_not_arg', (), float)
         func = evaluable.WithDerivative(evaluable.Zeros((), float), has_arg, evaluable.Zeros((), float))
-        func = DefaultDeriv((func,), (), float)
+        func = DefaultDeriv((func,))
         with self.assertRaises(NotImplementedError):
             evaluable.derivative(func, has_arg)
         self.assertTrue(evaluable.iszero(evaluable.derivative(func, has_not_arg)))
@@ -959,10 +963,13 @@ class simplify(TestCase):
 
         class R(evaluable.Array):
             # An evaluable scalar argument with given bounds.
+            dtype = int
+            shape = ()
+
             def __init__(self, lower, upper):
                 self._lower = lower
                 self._upper = upper
-                super().__init__(args=(evaluable.Argument('R', shape=(), dtype=int),), shape=(), dtype=int)
+                super().__init__(args=(evaluable.Argument('R', shape=(), dtype=int),))
 
             def evalf(self, evalargs):
                 raise NotImplementedError
@@ -1081,8 +1088,11 @@ class memory(TestCase):
             pass
 
         class A(evaluable.Array):
+            dtype = float
+            shape = ()
+
             def __init__(self):
-                super().__init__(args=(), shape=(), dtype=float)
+                super().__init__(args=())
 
             def _simplified(self):
                 raise MyException

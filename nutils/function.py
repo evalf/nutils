@@ -767,7 +767,13 @@ class _CustomEvaluable(evaluable.Array):
         self.lower_args = lower_args
         self.spaces = spaces
         self.function_arguments = arguments
-        super().__init__((evaluable.Tuple(lower_args.points_shape), *(arg for arg in args if isinstance(arg, evaluable.Array))), shape=(*lower_args.points_shape, *map(evaluable.constant, shape)), dtype=dtype)
+        self.dtype = dtype
+        self.argshape = shape
+        super().__init__((evaluable.Tuple(lower_args.points_shape), *(arg for arg in args if isinstance(arg, evaluable.Array))))
+
+    @cached_property
+    def shape(self):
+        return *self.lower_args.points_shape, *map(evaluable.constant, self.argshape)
 
     @property
     def _node_details(self) -> str:
