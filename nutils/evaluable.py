@@ -4061,7 +4061,7 @@ class _LoopIndex(Array):
         return frozenset({self})
 
 
-class Loop(Evaluable):
+class Loop(Array):
     '''Base class for evaluable loops.
 
     Subclasses must implement
@@ -4070,7 +4070,7 @@ class Loop(Evaluable):
     *   method ``evalf_loop_body(output, body_arg)``.
     '''
 
-    def __init__(self, loop_id: _LoopId, length: Array, init_args: typing.Tuple[Evaluable, ...], body_args: typing.Tuple[Evaluable, ...], *args, **kwargs):
+    def __init__(self, loop_id: _LoopId, length: Array, init_args: typing.Tuple[Evaluable, ...], body_args: typing.Tuple[Evaluable, ...], shape: typing.Tuple[Array, ...], dtype: Dtype):
         assert isinstance(loop_id, _LoopId), f'loop_id={loop_id!r}'
         assert isinstance(length, Array), f'length={length!r}'
         assert isinstance(init_args, tuple) and all(isinstance(arg, Evaluable) for arg in init_args), f'init_args={init_args!r}'
@@ -4082,7 +4082,7 @@ class Loop(Evaluable):
         self.body_args = body_args
         if any(self.index in arg.arguments for arg in init_args):
             raise ValueError('the loop initialization arguments must not depend on the index')
-        super().__init__(args=(length, *init_args, *body_args), *args, **kwargs)
+        super().__init__(args=(length, *init_args, *body_args), shape=shape, dtype=dtype)
 
     def _node(self, cache, subgraph, times, unique_loop_ids):
         if (cached := cache.get(self)) is not None:
@@ -4118,7 +4118,7 @@ class Loop(Evaluable):
         return (util.IDSet([self]) | super()._loops).view()
 
 
-class LoopSum(Loop, Array):
+class LoopSum(Loop):
 
     def __init__(self, func: Array, shape: typing.Tuple[Array, ...], loop_id: _LoopId, length: Array):
         assert isinstance(func, Array) and func.dtype != bool, f'func={func!r}'
@@ -4234,7 +4234,7 @@ class _SizesToOffsets(Array):
         return 0, (0 if n == 0 or m == 0 else n * m)
 
 
-class LoopConcatenate(Loop, Array):
+class LoopConcatenate(Loop):
 
     def __init__(self, func: Array, start: Array, stop: Array, concat_length: Array, loop_id: _LoopId, length: Array):
         assert isinstance(func, Array), f'func={func}'
