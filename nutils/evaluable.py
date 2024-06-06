@@ -452,37 +452,27 @@ def unalign(*args, naxes: int = None):
 # ARRAYS
 
 
-_ArrayMeta = type(Evaluable)
-
-if debug_flags.sparse:
-    def _chunked_assparse_checker(orig):
-        assert isinstance(orig, cached_property)
-
-        @cached_property
-        def _assparse(self):
-            chunks = orig.func(self)
-            assert isinstance(chunks, tuple)
-            assert all(isinstance(chunk, tuple) for chunk in chunks)
-            assert all(all(isinstance(item, Array) for item in chunk) for chunk in chunks)
-            if self.ndim:
-                for *indices, values in chunks:
-                    assert len(indices) == self.ndim
-                    assert all(idx.dtype == int for idx in indices)
-                    assert all(equalshape(idx.shape, values.shape) for idx in indices)
-            elif chunks:
-                assert len(chunks) == 1
-                chunk, = chunks
-                assert len(chunk) == 1
-                values, = chunk
-                assert values.shape == ()
-            return chunks
-        return _assparse
-
-    class _ArrayMeta(_ArrayMeta):
-        def __new__(mcls, name, bases, namespace):
-            if '_assparse' in namespace:
-                namespace['_assparse'] = _chunked_assparse_checker(namespace['_assparse'])
-            return super().__new__(mcls, name, bases, namespace)
+def verify_sparse_chunks(func):
+    if not debug_flags.sparse:
+        return func
+    def _assparse(self):
+        chunks = func(self)
+        assert isinstance(chunks, tuple)
+        assert all(isinstance(chunk, tuple) for chunk in chunks)
+        assert all(all(isinstance(item, Array) for item in chunk) for chunk in chunks)
+        if self.ndim:
+            for *indices, values in chunks:
+                assert len(indices) == self.ndim
+                assert all(idx.dtype == int for idx in indices)
+                assert all(equalshape(idx.shape, values.shape) for idx in indices)
+        elif chunks:
+            assert len(chunks) == 1
+            chunk, = chunks
+            assert len(chunk) == 1
+            values, = chunk
+            assert values.shape == ()
+        return chunks
+    return _assparse
 
 
 class AsEvaluableArray(Protocol):
@@ -493,7 +483,7 @@ class AsEvaluableArray(Protocol):
         'Lower this object to a :class:`nutils.evaluable.Array`.'
 
 
-class Array(Evaluable, metaclass=_ArrayMeta):
+class Array(Evaluable):
     '''
     Base class for array valued functions.
 
@@ -607,6 +597,7 @@ class Array(Evaluable, metaclass=_ArrayMeta):
         return imag(self)
 
     @cached_property
+    @verify_sparse_chunks
     def _assparse(self):
         # Convert to a sequence of sparse COO arrays. The returned data is a tuple
         # of `(*indices, values)` tuples, where `values` is an `Array` with the
@@ -1044,6 +1035,7 @@ class InsertAxis(Array):
         return InsertAxis(loop_sum(self.func, index), self.length)
 
     @cached_property
+    @verify_sparse_chunks
     def _assparse(self):
         return tuple((*(InsertAxis(idx, self.length) for idx in indices), prependaxes(Range(self.length), values.shape), InsertAxis(values, self.length)) for *indices, values in self.func._assparse)
 
@@ -1236,6 +1228,7 @@ class Transpose(Array):
         return Transpose(loop_sum(self.func, index), self.axes)
 
     @cached_property
+    @verify_sparse_chunks
     def _assparse(self):
         return tuple((*(indices[i] for i in self.axes), values) for *indices, values in self.func._assparse)
 
@@ -1519,6 +1512,7 @@ class Multiply(Array):
                 return divide(inv, fi)
 
     @cached_property
+    @verify_sparse_chunks
     def _assparse(self):
         if self.dtype == bool:
             return super()._assparse
@@ -1702,6 +1696,7 @@ class Add(Array):
             return add(*f_other)
 
     @cached_property
+    @verify_sparse_chunks
     def _assparse(self):
         if self.dtype == bool:
             return super()._assparse
@@ -1818,6 +1813,7 @@ class Sum(Array):
         return sum(derivative(self.func, var, seen), self.ndim)
 
     @cached_property
+    @verify_sparse_chunks
     def _assparse(self):
         if self.dtype == bool:
             return super()._assparse
@@ -2936,6 +2932,7 @@ class Zeros(Array):
             return Zeros(shape, dtype)
 
     @cached_property
+    @verify_sparse_chunks
     def _assparse(self):
         return ()
 
@@ -3075,6 +3072,7 @@ class Inflate(Array):
             return Inflate(Sign(self.func), self.dofmap, self.length)
 
     @cached_property
+    @verify_sparse_chunks
     def _assparse(self):
         chunks = []
         flat_dofmap = _flat(self.dofmap)
@@ -3247,6 +3245,7 @@ class Diagonalize(Array):
         return Diagonalize(loop_sum(self.func, index))
 
     @cached_property
+    @verify_sparse_chunks
     def _assparse(self):
         return tuple((*indices, indices[-1], values) for *indices, values in self.func._assparse)
 
@@ -3588,6 +3587,7 @@ class Ravel(Array):
         return Ravel(unaligned), (*where, self.ndim - 1)
 
     @cached_property
+    @verify_sparse_chunks
     def _assparse(self):
         return tuple((*indices[:-2], indices[-2]*self.func.shape[-1]+indices[-1], values) for *indices, values in self.func._assparse)
 
@@ -3645,6 +3645,7 @@ class Unravel(Array):
             return Unravel(sum(self.func, axis), *self.shape[-2:])
 
     @cached_property
+    @verify_sparse_chunks
     def _assparse(self):
         return tuple((*indices[:-1], *divmod(indices[-1], appendaxes(self.shape[-1], values.shape)), values) for *indices, values in self.func._assparse)
 
@@ -4664,6 +4665,7 @@ class LoopSum(Loop):
             return loop_sum(self.func * other, self.index)
 
     @cached_property
+    @verify_sparse_chunks
     def _assparse(self):
         chunks = []
         for *elem_indices, elem_values in self.func._assparse:
@@ -4814,6 +4816,7 @@ class LoopConcatenate(Loop):
             return loop_concatenate(unravel(self.func, axis, shape), self.index)
 
     @cached_property
+    @verify_sparse_chunks
     def _assparse(self):
         chunks = []
         for *indices, last_index, values in self.func._assparse:
