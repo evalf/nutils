@@ -2008,7 +2008,6 @@ class Pointwise(Array):
     '''
 
     deriv = None
-    return_type = None
 
     def __init__(self, *args: Array, **params):
         assert all(isinstance(arg, Array) for arg in args), f'args={args!r}'
@@ -2019,10 +2018,6 @@ class Pointwise(Array):
         if params:
             self.evalf = functools.partial(self.evalf, **params)
         super().__init__(args=args)
-
-    @cached_property
-    def dtype(self):
-        return self.__class__.return_type(*[arg.dtype for arg in self.args], **self.params)
 
     @cached_property
     def shape(self):
@@ -2084,14 +2079,12 @@ class Holomorphic(Pointwise):
     Abstract base class for holomorphic array functions.
     '''
 
-    @staticmethod
-    def return_type(*dtypes, **params):
-        return_type = dtypes[-1]
-        if not all(dtype == return_type for dtype in dtypes[:-1]):
-            raise ValueError('All arguments must have the same dtype but got {} and {}.'.format(', '.join(map(str, dtypes[:-1])), return_type))
-        if return_type not in (float, complex):
-            raise ValueError(f'{self.__class__.__name__} is not defined for arguments of dtype {return_type}')
-        return return_type
+    @cached_property
+    def dtype(self):
+        arg, = self.args
+        if arg.dtype not in (float, complex):
+            raise ValueError(f'{self.__class__.__name__} is not defined for arguments of dtype {arg.dtype}')
+        return arg.dtype
 
     def _derivative(self, var, seen):
         if self.deriv is not None:
@@ -2111,7 +2104,9 @@ class Negative(Pointwise):
     def _compile_expression(self, py_self, value):
         return _pyast.UnaryOp('-', value)
 
-    def return_type(T):
+    @cached_property
+    def dtype(self):
+        T = self.args[0].dtype
         if T == bool:
             raise ValueError('boolean values cannot be negated')
         return T
@@ -2126,7 +2121,9 @@ class FloorDivide(Pointwise):
     def _compile_expression(self, py_self, dividend, divisor):
         return _pyast.BinOp(dividend, '//', divisor)
 
-    def return_type(dividend, divisor):
+    @cached_property
+    def dtype(self):
+        dividend, divisor = [arg.dtype for arg in self.args]
         if dividend != divisor:
             raise ValueError(f'All arguments must have the same dtype but got {dividend} and {divisor}.')
         if dividend == bool:
@@ -2158,7 +2155,9 @@ class Absolute(Pointwise):
     def _compile_expression(self, py_self, value):
         return _pyast.Variable('numpy').get_attr('absolute').call(value)
 
-    def return_type(T):
+    @cached_property
+    def dtype(self):
+        T = self.args[0].dtype
         if T == bool:
             raise ValueError('The boolean absolute value is not implemented.')
         return float if T == complex else T
@@ -2264,7 +2263,9 @@ class Mod(Pointwise):
     def _compile_expression(self, py_self, dividend, divisor):
         return _pyast.BinOp(dividend, '%', divisor)
 
-    def return_type(dividend, divisor):
+    @cached_property
+    def dtype(self):
+        dividend, divisor = [arg.dtype for arg in self.args]
         if dividend != divisor:
             raise ValueError(f'All arguments must have the same dtype but got {dividend} and {divisor}.')
         if dividend == bool:
@@ -2298,7 +2299,10 @@ class Mod(Pointwise):
 class ArcTan2(Pointwise):
     evalf = staticmethod(numpy.arctan2)
     deriv = lambda x, y: y / (x**astype(2, x.dtype) + y**astype(2, x.dtype)), lambda x, y: -x / (x**astype(2, x.dtype) + y**astype(2, x.dtype))
-    def return_type(T1, T2):
+
+    @cached_property
+    def dtype(self):
+        T1, T2 = [arg.dtype for arg in self.args]
         if T1 == complex or T2 == complex:
             raise ValueError('arctan2 is not defined for complex numbers')
         return float
@@ -2306,7 +2310,10 @@ class ArcTan2(Pointwise):
 
 class Greater(Pointwise):
     evalf = staticmethod(numpy.greater)
-    def return_type(T1, T2):
+
+    @cached_property
+    def dtype(self):
+        T1, T2 = [arg.dtype for arg in self.args]
         if T1 != T2:
             raise ValueError('Cannot compare different dtypes.')
         elif T1 == complex:
@@ -2318,7 +2325,10 @@ class Greater(Pointwise):
 
 class Equal(Pointwise):
     evalf = staticmethod(numpy.equal)
-    def return_type(T1, T2):
+
+    @cached_property
+    def dtype(self):
+        T1, T2 = [arg.dtype for arg in self.args]
         if T1 != T2:
             raise ValueError('Cannot compare different dtypes.')
         return bool
@@ -2338,7 +2348,10 @@ class Equal(Pointwise):
 
 class Less(Pointwise):
     evalf = staticmethod(numpy.less)
-    def return_type(T1, T2):
+
+    @cached_property
+    def dtype(self):
+        T1, T2 = [arg.dtype for arg in self.args]
         if T1 != T2:
             raise ValueError('Cannot compare different dtypes.')
         elif T1 == complex:
@@ -2350,7 +2363,10 @@ class Less(Pointwise):
 
 class LogicalNot(Pointwise):
     evalf = staticmethod(numpy.logical_not)
-    def return_type(T):
+
+    @cached_property
+    def dtype(self):
+        T = self.args[0].dtype
         if T != bool:
             raise ValueError(f'Expected a boolean but got {T}.')
         return bool
@@ -2365,7 +2381,10 @@ class LogicalNot(Pointwise):
 class Minimum(Pointwise):
     evalf = staticmethod(numpy.minimum)
     deriv = lambda x, y: .5 - .5 * Sign(x - y), lambda x, y: .5 + .5 * Sign(x - y)
-    def return_type(T1, T2):
+
+    @cached_property
+    def dtype(self):
+        T1, T2 = [arg.dtype for arg in self.args]
         if T1 == complex or T2 == complex:
             raise ValueError('Complex numbers have no total order.')
         return float if float in (T1, T2) else int if int in (T1, T2) else bool
@@ -2389,7 +2408,10 @@ class Minimum(Pointwise):
 class Maximum(Pointwise):
     evalf = staticmethod(numpy.maximum)
     deriv = lambda x, y: .5 + .5 * Sign(x - y), lambda x, y: .5 - .5 * Sign(x - y)
-    def return_type(T1, T2):
+
+    @cached_property
+    def dtype(self):
+        T1, T2 = [arg.dtype for arg in self.args]
         if T1 == complex or T2 == complex:
             raise ValueError('Complex numbers have no total order.')
         return float if float in (T1, T2) else int if int in (T1, T2) else bool
@@ -2412,7 +2434,10 @@ class Maximum(Pointwise):
 
 class Conjugate(Pointwise):
     evalf = staticmethod(numpy.conjugate)
-    def return_type(T):
+
+    @cached_property
+    def dtype(self):
+        T = self.args[0].dtype
         if T != complex:
             raise ValueError(f'Conjugate is not defined for arguments of type {T}')
         return complex
@@ -2426,7 +2451,10 @@ class Conjugate(Pointwise):
 
 class Real(Pointwise):
     evalf = staticmethod(numpy.real)
-    def return_type(T):
+
+    @cached_property
+    def dtype(self):
+        T = self.args[0].dtype
         if T != complex:
             raise ValueError(f'Real is not defined for arguments of type {T}')
         return float
@@ -2440,7 +2468,10 @@ class Real(Pointwise):
 
 class Imag(Pointwise):
     evalf = staticmethod(numpy.imag)
-    def return_type(T):
+
+    @cached_property
+    def dtype(self):
+        T = self.args[0].dtype
         if T != complex:
             raise ValueError(f'Real is not defined for arguments of type {T}')
         return float
@@ -2479,14 +2510,20 @@ class Cast(Pointwise):
 
 
 class BoolToInt(Cast):
-    def return_type(T):
+
+    @cached_property
+    def dtype(self):
+        T = self.args[0].dtype
         if T != bool:
             raise TypeError(f'Expected an array with dtype bool but got {T.__name__}.')
         return int
 
 
 class IntToFloat(Cast):
-    def return_type(T):
+
+    @cached_property
+    def dtype(self):
+        T = self.args[0].dtype
         if T != int:
             raise TypeError(f'Expected an array with dtype int but got {T.__name__}.')
         return float
@@ -2514,7 +2551,10 @@ class IntToFloat(Cast):
 
 
 class FloatToComplex(Cast):
-    def return_type(T):
+
+    @cached_property
+    def dtype(self):
+        T = self.args[0].dtype
         if T != float:
             raise TypeError(f'Expected an array with dtype float but got {T.__name__}.')
         return complex
