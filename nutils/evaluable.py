@@ -1031,26 +1031,17 @@ class InsertAxis(Array):
 
 class Transpose(Array):
 
-    @classmethod
-    def _mk_axes(cls, ndim, axes):
+    def _end(array, *axes, post):
+        ndim = array.ndim
         axes = [numeric.normdim(ndim, axis) for axis in axes]
         if all(a == b for a, b in enumerate(axes, start=ndim-len(axes))):
-            return
+            return array
         trans = [i for i in range(ndim) if i not in axes]
         trans.extend(axes)
-        if len(trans) != ndim:
-            raise Exception('duplicate axes')
-        return tuple(trans)
+        return Transpose(array, post(trans))
 
-    @classmethod
-    def from_end(cls, array, *axes):
-        trans = cls._mk_axes(array.ndim, axes)
-        return cls(array, util.untake(trans)) if trans else array
-
-    @classmethod
-    def to_end(cls, array, *axes):
-        trans = cls._mk_axes(array.ndim, axes)
-        return cls(array, trans) if trans else array
+    to_end = functools.partial(_end, post=tuple)
+    from_end = functools.partial(_end, post=util.untake)
 
     def __init__(self, func: Array, axes: typing.Tuple[int, ...]):
         assert isinstance(func, Array), f'func={func!r}'
