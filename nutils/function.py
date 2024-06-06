@@ -769,7 +769,10 @@ class _CustomEvaluable(evaluable.Array):
         self.function_arguments = arguments
         self.dtype = dtype
         self.argshape = shape
-        super().__init__((evaluable.Tuple(lower_args.points_shape), *(arg for arg in args if isinstance(arg, evaluable.Array))))
+
+    @property
+    def dependencies(self):
+        return evaluable.Tuple(self.lower_args.points_shape), *(arg for arg in self.args if isinstance(arg, evaluable.Array))
 
     @cached_property
     def shape(self):

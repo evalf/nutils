@@ -644,7 +644,10 @@ class intbounds(TestCase):
             self._argname = argname
             self._lower = lower
             self._upper = upper
-            super().__init__(args=(evaluable.Argument(argname, shape=(), dtype=int),))
+
+        @property
+        def dependencies(self):
+            return evaluable.Argument(self._argname, shape=(), dtype=int),
 
         def evalf(self, value):
             assert self._lower <= value[()] <= self._upper
@@ -665,8 +668,9 @@ class intbounds(TestCase):
             dtype = int
             shape = ()
 
-            def __init__(self):
-                super().__init__(args=(evaluable.Argument('dummy', (), int),))
+            @property
+            def dependencies(self):
+                return evaluable.Argument('dummy', (), int),
 
             def evalf(self):
                 raise NotImplementedError
@@ -884,13 +888,13 @@ class derivative(TestCase):
         # Tests whether `evaluable.Array._derivative` correctly raises an
         # exception when taking a derivative to one of the arguments present in
         # its `.arguments`.
+        has_arg = evaluable.Argument('has_arg', (), float)
+        has_not_arg = evaluable.Argument('has_not_arg', (), float)
         class DefaultDeriv(evaluable.Array):
             dtype = float
             shape = ()
-        has_arg = evaluable.Argument('has_arg', (), float)
-        has_not_arg = evaluable.Argument('has_not_arg', (), float)
-        func = evaluable.WithDerivative(evaluable.Zeros((), float), has_arg, evaluable.Zeros((), float))
-        func = DefaultDeriv((func,))
+            dependencies = evaluable.WithDerivative(evaluable.Zeros((), float), has_arg, evaluable.Zeros((), float)),
+        func = DefaultDeriv()
         with self.assertRaises(NotImplementedError):
             evaluable.derivative(func, has_arg)
         self.assertTrue(evaluable.iszero(evaluable.derivative(func, has_not_arg)))
@@ -969,7 +973,10 @@ class simplify(TestCase):
             def __init__(self, lower, upper):
                 self._lower = lower
                 self._upper = upper
-                super().__init__(args=(evaluable.Argument('R', shape=(), dtype=int),))
+
+            @property
+            def dependencies(self):
+                return evaluable.Argument('R', shape=(), dtype=int),
 
             def evalf(self, evalargs):
                 raise NotImplementedError
@@ -1090,9 +1097,6 @@ class memory(TestCase):
         class A(evaluable.Array):
             dtype = float
             shape = ()
-
-            def __init__(self):
-                super().__init__(args=())
 
             def _simplified(self):
                 raise MyException

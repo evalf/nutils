@@ -642,7 +642,11 @@ class _EvaluablePointsFromSequence(evaluable.Evaluable):
 
     def __init__(self, seq: PointsSequence, index: evaluable.Array) -> None:
         self._seq = seq
-        super().__init__(args=(index,))
+        self.index = index
+
+    @property
+    def dependencies(self):
+        return self.index,
 
     def evalf(self, index: numpy.ndarray) -> Tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]:
         pnts = self._seq.get(index.__index__())
