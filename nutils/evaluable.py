@@ -585,7 +585,7 @@ class Array(Evaluable):
     dot = dot
     swapaxes = swapaxes
     transpose = transpose
-    choose = lambda self, choices: Choose(self, *choices)
+    choose = lambda self, choices: Choose(self, stack(choices, -1))
     conjugate = conjugate
 
     @property
@@ -4151,65 +4151,64 @@ class Legendre(Array):
 class Choose(Array):
     '''Function equivalent of :func:`numpy.choose`.'''
 
-    def __init__(self, index: Array, *choices: Array):
+    def __init__(self, index: Array, choices: Array):
         assert isinstance(index, Array) and index.dtype == int, f'index={index!r}'
-        assert isinstance(choices, tuple) and all(isinstance(choice, Array) for choice in choices), f'choices={choices!r}'
-        dtype = choices[0].dtype
-        assert all(choice.dtype == dtype for choice in choices[1:])
-        shape = index.shape
-        assert all(equalshape(choice.shape, shape) for choice in choices)
+        assert isinstance(choices, Array), f'choices={choices!r}'
+        assert equalshape(choices.shape[:-1], index.shape)
         self.index = index
         self.choices = choices
 
     @property
     def dependencies(self):
-        return self.index, *self.choices
+        return self.index, self.choices
 
     @cached_property
     def dtype(self):
-        return self.choices[0].dtype
+        return self.choices.dtype
 
     @cached_property
     def shape(self):
         return self.index.shape
 
-    def _compile_expression(self, py_self, index, *choices):
-        return _pyast.Variable('numpy').get_attr('choose').call(index, _pyast.Tuple(choices))
+    def _compile_expression(self, py_self, index, choices):
+        choices = _pyast.Variable('numpy').get_attr('moveaxis').call(choices, _pyast.LiteralInt(-1), _pyast.LiteralInt(0))
+        return _pyast.Variable('numpy').get_attr('choose').call(index, choices)
 
     def _derivative(self, var, seen):
-        return Choose(appendaxes(self.index, var.shape), *(derivative(choice, var, seen) for choice in self.choices))
+        return Choose(appendaxes(self.index, var.shape), Transpose.to_end(derivative(self.choices, var, seen), self.ndim))
 
     def _simplified(self):
-        if all(choice == self.choices[0] for choice in self.choices[1:]):
-            return self.choices[0]
-        index, *choices, where = unalign(self.index, *self.choices)
+        choices, where = unalign(self.choices)
+        if self.ndim not in where:
+            return align(choices, where, self.shape)
+        index, choices, where = unalign(self.index, self.choices, naxes=self.ndim)
         if len(where) < self.ndim:
-            return align(Choose(index, *choices), where, self.shape)
+            return align(Choose(index, choices), where, self.shape)
 
     def _multiply(self, other):
         if isinstance(other, Choose) and self.index == other.index:
-            return Choose(self.index, *map(multiply, self.choices, other.choices))
+            return Choose(self.index, self.choices * other.choices)
 
     def _get(self, i, item):
-        return Choose(get(self.index, i, item), *(get(choice, i, item) for choice in self.choices))
+        return Choose(get(self.index, i, item), get(self.choices, i, item))
 
     def _sum(self, axis):
         unaligned, where = unalign(self.index)
         if axis not in where:
             index = align(unaligned, [i-(i > axis) for i in where], self.shape[:axis]+self.shape[axis+1:])
-            return Choose(index, *(sum(choice, axis) for choice in self.choices))
+            return Choose(index, sum(self.choices, axis))
 
     def _take(self, index, axis):
-        return Choose(_take(self.index, index, axis), *(_take(choice, index, axis) for choice in self.choices))
+        return Choose(_take(self.index, index, axis), _take(self.choices, index, axis))
 
     def _takediag(self, axis, rmaxis):
-        return Choose(takediag(self.index, axis, rmaxis), *(takediag(choice, axis, rmaxis) for choice in self.choices))
+        return Choose(takediag(self.index, axis, rmaxis), takediag(self.choices, axis, rmaxis))
 
     def _product(self):
         unaligned, where = unalign(self.index)
         if self.ndim-1 not in where:
             index = align(unaligned, where, self.shape[:-1])
-            return Choose(index, *map(Product, self.choices))
+            return Choose(index, product(self.choices, self.ndim-1))
 
 
 class NormDim(Array):

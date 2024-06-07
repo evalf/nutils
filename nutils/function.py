@@ -3331,7 +3331,7 @@ class __implementations__:
     @implements(numpy.choose)
     def choose(a, choices):
         a, *choices = broadcast_arrays(a, *typecast_arrays(*choices))
-        return _Wrapper(evaluable.Choose, a, *choices, shape=a.shape, dtype=choices[0].dtype)
+        return _Wrapper(evaluable.Choose, a, numpy.stack(choices, -1), shape=a.shape, dtype=choices[0].dtype)
 
     @implements(numpy.linalg.norm)
     def norm(x, ord=None, axis=None):
